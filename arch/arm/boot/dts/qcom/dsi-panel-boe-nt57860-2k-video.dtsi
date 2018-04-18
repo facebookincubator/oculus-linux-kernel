@@ -1,0 +1,248 @@
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&mdss_mdp {
+	dsi_2k_boe_nt57860_video: qcom,mdss_dsi_boe_2k_nt35597_video {
+		qcom,mdss-dsi-panel-name = "boe 2k nt57860 dsi panel";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+		qcom,mdss-dsi-panel-framerate = <60>;
+		qcom,mdss-dsi-virtual-channel-id = <0>;
+		qcom,mdss-dsi-stream = <0>;
+		qcom,mdss-dsi-panel-width = <720>;
+		qcom,mdss-dsi-panel-height = <2560>;
+		qcom,mdss-dsi-h-front-porch = <30>;
+		qcom,mdss-dsi-h-back-porch = <30>;
+		qcom,mdss-dsi-h-pulse-width = <1>;
+		qcom,mdss-dsi-h-sync-skew = <0>;
+		qcom,mdss-dsi-v-back-porch = <10>;
+		qcom,mdss-dsi-v-front-porch = <2169>;
+		qcom,mdss-dsi-v-pulse-width = <1>;
+		qcom,mdss-dsi-bpp = <24>;
+		qcom,mdss-dsi-border-color = <0>;
+		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
+		qcom,mdss-dsi-h-sync-pulse = <0>;
+		qcom,mdss-dsi-traffic-mode = "burst_mode";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-lane-2-state;
+		qcom,mdss-dsi-lane-3-state;
+		qcom,mdss-dsi-panel-timings = [d9 6a 48 00 b0 b0 52 6c 57 03 04 00];
+		qcom,mdss-dsi-t-clk-post = <0xc>;
+		qcom,mdss-dsi-t-clk-pre = <0x28>;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+		qcom,mdss-dsi-reset-sequence = <0 10>, <1 20>, <0 20>, <1 20>;
+		qcom,mdss-dsi-te-pin-select = <1>;
+		qcom,mdss-dsi-wr-mem-start = <0x2c>;
+		qcom,mdss-dsi-wr-mem-continue = <0x3c>;
+		qcom,mdss-dsi-te-dcs-command = <1>;
+		qcom,mdss-dsi-te-check-enable;
+		qcom,mdss-dsi-te-using-te-pin;
+		qcom,ulps-enabled;
+		qcom,dcs-cmd-by-left;
+		qcom,mdss-dsi-tx-eot-append;
+		qcom,mdss-pan-physical-width-dimension = <68>;
+		qcom,mdss-pan-physical-height-dimension = <121>;
+
+		qcom,mdss-dsi-panel-hdr-enabled;
+		// Scale by 1 / 50000 to get x & y coordinates
+		qcom,mdss-dsi-panel-hdr-color-primaries = <
+			14700 15700 // W - x: 0.294, y: 0.314
+			32700 17200 // R - x: 0.654, y: 0.344
+			17050 31400 // G - x: 0.341. y: 0.628
+			7450 3350>; // B - x: 0.149, y: 0.067
+		// Scale by 1 / 10000 to get nits
+		qcom,mdss-dsi-panel-peak-brightness = <1000000>;
+		qcom,mdss-dsi-panel-blackness-level = <1400>;
+
+		// Default to 10% base DC
+		oculus,bklt-duty-cycle-numerator = <1000>;
+		oculus,bklt-duty-cycle-denominator = <10000>;
+
+		qcom,adjust-timer-wakeup-ms = <1>;
+		qcom,mdss-dsi-panel-status-command = [06 01 00 01 05 00 02 0A 08];
+		qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+		qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+		qcom,mdss-dsi-panel-status-value = <0x9c>;
+		/*qcom,esd-check-enabled;*/
+		qcom,mdss-dsi-panel-status-read-length = <1>;
+		qcom,mdss-dsi-on-command = [
+			15 01 00 00 00 00 02 ff d0
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 05 88
+
+			15 01 00 00 00 00 02 ff 25
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 c4 10
+			15 01 00 00 00 00 02 65 02
+			15 01 00 00 00 00 02 66 34
+			15 01 00 00 00 00 02 67 7e
+
+			15 01 00 00 00 00 02 ff 10
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 c0 83
+			39 01 00 00 00 00 05 3b 00 0b 08 79
+			39 01 00 00 00 00 05 be 00 0b 08 79
+			15 01 00 00 00 00 02 bb 03
+			15 01 00 00 00 00 02 35 00
+			15 01 00 00 00 00 02 36 00
+			05 01 00 00 78 00 01 11 /* sleep out + delay 120ms */
+			05 01 00 00 78 00 01 29 /* display on + delay 120ms */
+			07 01 00 00 0a 00 02 01 00];
+
+		qcom,mdss-dsi-off-command = [
+			05 01 00 00 78 00 02 28 00
+			05 01 00 00 78 00 02 10 00];
+
+		qcom,compression-mode = "dsc";
+		qcom,config-select = <&dsi_boe_2k_video_config0>;
+
+		dsi_boe_2k_video_config0: config0 {
+			qcom,mdss-dsc-encoders = <1>;
+			qcom,mdss-dsc-slice-height = <16>;
+			qcom,mdss-dsc-slice-width = <720>;
+			qcom,mdss-dsc-slice-per-pkt = <1>;
+
+			qcom,mdss-dsc-bit-per-component = <8>;
+			qcom,mdss-dsc-bit-per-pixel = <8>;
+			qcom,mdss-dsc-block-prediction-enable;
+		};
+
+	};
+
+	/* XXX(sgosselin): only to prototype 72Hz */
+	dsi_2k_72hz_boe_nt57860_video: qcom,mdss_dsi_boe_2k_72hz_nt35597_video {
+		qcom,mdss-dsi-panel-name = "boe 2k nt57860 dsi panel with 72hz";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+		qcom,mdss-dsi-panel-framerate = <72>;
+		qcom,mdss-dsi-virtual-channel-id = <0>;
+		qcom,mdss-dsi-stream = <0>;
+		qcom,mdss-dsi-panel-width = <720>;
+		qcom,mdss-dsi-panel-height = <2560>;
+		qcom,mdss-dsi-h-front-porch = <30>;
+		qcom,mdss-dsi-h-back-porch = <30>;
+		qcom,mdss-dsi-h-pulse-width = <1>;
+		qcom,mdss-dsi-h-sync-skew = <0>;
+		qcom,mdss-dsi-v-back-porch = <10>;
+		qcom,mdss-dsi-v-front-porch = <1612>;
+		qcom,mdss-dsi-v-pulse-width = <1>;
+		qcom,mdss-dsi-bpp = <24>;
+		qcom,mdss-dsi-border-color = <0>;
+		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
+		qcom,mdss-dsi-h-sync-pulse = <0>;
+		qcom,mdss-dsi-traffic-mode = "burst_mode";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-lane-2-state;
+		qcom,mdss-dsi-lane-3-state;
+		qcom,mdss-dsi-panel-timings = [d9 6a 48 00 b0 b0 52 6c 57 03 04 00];
+		qcom,mdss-dsi-t-clk-post = <0xa>;
+		qcom,mdss-dsi-t-clk-pre = <0x21>;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+		qcom,mdss-dsi-reset-sequence = <1 20>, <0 20>, <1 20>;
+		qcom,mdss-dsi-te-pin-select = <1>;
+		qcom,mdss-dsi-wr-mem-start = <0x2c>;
+		qcom,mdss-dsi-wr-mem-continue = <0x3c>;
+		qcom,mdss-dsi-te-dcs-command = <1>;
+		qcom,mdss-dsi-te-check-enable;
+		qcom,mdss-dsi-te-using-te-pin;
+		qcom,ulps-enabled;
+		qcom,dcs-cmd-by-left;
+		qcom,mdss-dsi-tx-eot-append;
+		qcom,mdss-pan-physical-width-dimension = <68>;
+		qcom,mdss-pan-physical-height-dimension = <121>;
+
+		qcom,mdss-dsi-panel-hdr-enabled;
+		// Scale by 1 / 50000 to get x & y coordinates
+		qcom,mdss-dsi-panel-hdr-color-primaries = <
+			14700 15700 // W - x: 0.294, y: 0.314
+			32700 17200 // R - x: 0.654, y: 0.344
+			17050 31400 // G - x: 0.341. y: 0.628
+			7450 3350>; // B - x: 0.149, y: 0.067
+		// Scale by 1 / 10000 to get nits
+		qcom,mdss-dsi-panel-peak-brightness = <1000000>;
+		qcom,mdss-dsi-panel-blackness-level = <1400>;
+
+		// Default to 10% base DC
+		oculus,bklt-duty-cycle-numerator = <1000>;
+		oculus,bklt-duty-cycle-denominator = <10000>;
+
+		qcom,adjust-timer-wakeup-ms = <1>;
+		qcom,mdss-dsi-panel-status-command = [06 01 00 01 05 00 02 0A 08];
+		qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+		qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+		qcom,mdss-dsi-panel-status-value = <0x9c>;
+		/*qcom,esd-check-enabled;*/
+		qcom,mdss-dsi-panel-status-read-length = <1>;
+		qcom,mdss-dsi-on-command = [
+			15 01 00 00 00 00 02 ff e0
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 52 22
+
+			15 01 00 00 00 00 02 ff 24
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 30 03
+			15 01 00 00 00 00 02 f5 8f
+
+			15 01 00 00 00 00 02 ff 25
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 c4 10
+			15 01 00 00 00 00 02 61 24
+			15 01 00 00 00 00 02 62 66
+			15 01 00 00 00 00 02 65 01
+			15 01 00 00 00 00 02 66 d6
+			15 01 00 00 00 00 02 67 69
+
+			15 01 00 00 00 00 02 ff 10
+			15 01 00 00 00 00 02 fb 01
+			15 01 00 00 00 00 02 c0 83
+			39 01 00 00 00 00 05 3b 00 0b 06 4c
+			39 01 00 00 00 00 05 be 00 0b 06 4c
+			15 01 00 00 00 00 02 bb 03
+			15 01 00 00 00 00 02 35 00
+			15 01 00 00 00 00 02 36 00
+			05 01 00 00 78 00 01 11 /* sleep out + delay 120ms */
+			05 01 00 00 78 00 01 29 /* display on + delay 120ms */
+			07 01 00 00 0a 00 02 01 00];
+
+		qcom,mdss-dsi-off-command = [
+			05 01 00 00 78 00 02 28 00
+			05 01 00 00 78 00 02 10 00];
+
+		qcom,compression-mode = "dsc";
+		qcom,config-select = <&dsi_boe_2k_72hz_video_config0>;
+
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
+		qcom,mdss-dsi-pan-disable-early-wakeup-dfps-update;
+		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+		qcom,mdss-dsi-min-refresh-rate = <60>;
+		qcom,mdss-dsi-max-refresh-rate = <72>;
+		dsi_boe_2k_72hz_video_config0: config0 {
+			qcom,mdss-dsc-encoders = <1>;
+			qcom,mdss-dsc-slice-height = <16>;
+			qcom,mdss-dsc-slice-width = <720>;
+			qcom,mdss-dsc-slice-per-pkt = <1>;
+
+			qcom,mdss-dsc-bit-per-component = <8>;
+			qcom,mdss-dsc-bit-per-pixel = <8>;
+			qcom,mdss-dsc-block-prediction-enable;
+		};
+
+	};
+};

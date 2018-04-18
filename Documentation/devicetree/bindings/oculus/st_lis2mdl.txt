@@ -1,0 +1,23 @@
+/* Oculus thin IMU driver for ST LIS2MDL sensor */
+
+Required properties:
+	- compatible: should be "oculus,lis2mdl"
+	- int1-gpio: interrupt mapping for GPIO IRQ, it should by configured with
+		     flags IRQ_TYPE_LEVEL_HIGH
+	- vdd-supply = regulator supply for the device
+	- vdd-voltage-min = min regulator voltage in uV for the device (32-bit val)
+	- vdd-voltage-max = max regulator voltage in uV for the device (32-bit val)
+	- vio-supply = regulator supply for the device
+	- vio-voltage-min = min regulator voltage in uV for the device (32-bit val)
+	- vio-voltage-max = max regulator voltage in uV for the device (32-bit val)
+
+lis2mdl@0 {
+	compatible = "oculus,lis2mdl";
+	int1-gpio = <1 IRQ_TYPE_LEVEL_HIGH>;
+	vdd-supply = <&pm8994_lvs2>;
+	vdd-voltage-min = 1800000;
+	vdd-voltage-max = 1800000;
+	vio-supply = <&pm8994_lvs2>;
+	vio-voltage-min = 1800000;
+	vio-voltage-max = 1800000;
+};

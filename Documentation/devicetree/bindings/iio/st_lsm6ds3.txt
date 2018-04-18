@@ -1,0 +1,19 @@
+/* STMicroelectronics lsm6ds3 sensor */
+
+Required properties:
+	- compatible : should be "st,lsm6ds3"
+	- reg : the I2C address of the sensor
+
+Optional properties:
+	- interrupt-parent : should be the phandle for the interrupt controller
+	- interrupts : interrupt mapping for GPIO IRQ, it should by configured with
+		flags IRQ_TYPE_LEVEL_HIGH
+
+Example:
+
+lsm6ds3@6b {
+	compatible = "st,lsm6ds3";
+	reg = <0x6b>;
+	interrupt-parent = <&gpio>;
+	interrupts = <1 IRQ_TYPE_LEVEL_HIGH>;
+};

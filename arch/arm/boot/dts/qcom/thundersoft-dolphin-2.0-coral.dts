@@ -1,0 +1,458 @@
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+/dts-v1/;
+
+#include "apq8096-v3.dtsi"
+#include "msm8996-cdp.dtsi"
+
+/ {
+	model = "Thundersoft Dolphin 2.0 SOM + Coral";
+	compatible = "qcom,apq8096-cdp", "qcom,apq8096", "qcom,cdp";
+	qcom,board-id = <1 0>, <0x01000001 0>;
+
+	mtp_battery_data: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "batterydata-oculus_6400mAh.dtsi"
+	};
+
+	reserved-memory {
+		pstore_reserve_mem: pstore_reserve_mem_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			linux,remove-completely;
+			reg = <0x0 0x9ff00000 0x0 0x00100000>;
+			label = "pstore_reserve_mem";
+		};
+		adsp_mem: adsp_region {
+			size = <0 0x1000000>;
+		};
+	};
+};
+
+&soc {
+	/delete-node/ gpio_keys;
+
+	qcom,memshare {
+		status = "disabled";
+	};
+
+	qcom,msm-thermal {
+		qcom,limit-temp = <85>;
+		qcom,core-limit-temp = <95>;
+		qcom,freq-mitigation-temp = <100>;
+		qcom,freq-mitigation-temp-hysteresis = <15>;
+	};
+
+	qcom,cnss {
+		/delete-property/ wlan-ant-switch-supply;
+	};
+
+	qcom,rmnet-ipa {
+		status = "okay";
+	};
+
+	sound-9335 {
+		qcom,audio-routing =
+			"AIF4 VI", "MCLK",
+			"RX_BIAS", "MCLK",
+			"MADINPUT", "MCLK",
+			"AMIC1", "MIC BIAS3",
+			"MIC BIAS3", "Analog Mic7",
+			"AMIC2", "MIC BIAS2",
+			"MIC BIAS2", "Headset Mic",
+			"AMIC3", "MIC BIAS3",
+			"MIC BIAS3", "ANCRight Headset Mic",
+			"AMIC4", "MIC BIAS3",
+			"MIC BIAS3", "ANCLeft Headset Mic",
+			"AMIC5", "MIC BIAS4",
+			"MIC BIAS4", "Handset Mic",
+			"AMIC6", "MIC BIAS4",
+			"MIC BIAS4", "Analog Mic6",
+			"DMIC0", "MIC BIAS1",
+			"MIC BIAS1", "Digital Mic0",
+			"DMIC1", "MIC BIAS3",
+			"MIC BIAS3", "Digital Mic1",
+			"DMIC2", "MIC BIAS3",
+			"MIC BIAS3", "Digital Mic2",
+			"DMIC3", "MIC BIAS4",
+			"MIC BIAS4", "Digital Mic3",
+			"DMIC4", "MIC BIAS4",
+			"MIC BIAS4", "Digital Mic4",
+			"DMIC5", "MIC BIAS4",
+			"MIC BIAS4", "Digital Mic5",
+			"SpkrLeft IN", "SPK1 OUT",
+			"SpkrRight IN", "SPK2 OUT";
+		qcom,hdmi-audio-rx;
+		qcom,no-codec;
+		asoc-codec = <&stub_codec>, <&hdmi_audio>;
+		asoc-codec-names = "msm-stub-codec.1", "msm-hdmi-audio-codec-rx";
+		/delete-property/ qcom,wsa-max-devs;
+	};
+
+	qcom,msm-mdsprpc-mem {
+		compatible = "qcom,msm-mdsprpc-mem-region";
+		memory-region = <&adsp_mem>;
+	};
+};
+
+&dai_mi2s {
+	status = "disabled";
+};
+
+&ipa_hw {
+	status = "okay";
+};
+
+&wsa881x_211 {
+	qcom,spkr-sd-n-gpio = <&pmi8994_mpps 1 0>;
+};
+
+&mdss_dsi {
+	status = "disabled";
+};
+
+&mdss_dsi0 {
+	status = "disabled";
+	/delete-property/ oled-vdda-supply;
+	vdd-supply = <&pm8994_l18>;
+};
+
+&mdss_dsi1 {
+	status = "disabled";
+};
+
+&pm8994_pwm_1 {
+	status = "okay";
+};
+
+&pm8994_gpios {
+	gpio@c300 {
+		qcom,mode = <1>;
+		qcom,output-type = <0>;
+		qcom,invert = <0>;
+		qcom,pull = <5>;
+		qcom,src-sel = <4>;
+		qcom,out-strength = <2>;
+		qcom,master-en = <1>;
+	};
+};
+
+&pmi8994_charger {
+	/delete-property/ qcom,iterm-ma;
+	/delete-property/ qcom,charging-disabled;
+	qcom,iterm-disabled;
+	qcom,fastchg-current-ma = <3000>;
+	qcom,float-voltage-mv = <4220>;
+	qcom,thermal-mitigation = <3000 2000 1000 0>;
+};
+
+&pmi8994_fg {
+	qcom,battery-data = <&mtp_battery_data>;
+	qcom,ext-sense-type;
+	qcom,fg-iterm-ma = <225>;
+	qcom,fg-chg-iterm-ma = <200>;
+	qcom,fg-cc-cv-threshold-mv = <4200>;
+	qcom,fg-cutoff-voltage-mv = <3500>;
+};
+
+&pmi8994_wled {
+	qcom,en-phase-stag;
+	qcom,led-strings-list = [00 01 02];
+};
+
+&spmi_bus {
+	qcom,pmi8994@2 {
+		oculus,coral-fan {
+			compatible = "oculus,coral-fan";
+			oculus,coral-fan-en-gpio = <&tlmm 79 1>;
+			pwms = <&pm8994_pwm_1 0 0>;
+		};
+	};
+
+	qcom,pmi8994@3 {
+		qcom,leds@d000 {
+			status = "disabled";
+		};
+	};
+
+	qcom,power-on@800 {
+		qcom,pon_1 {
+			qcom,s2-timer = <0>;
+			qcom,s2-type = <4>;
+		};
+
+		qcom,pon_2 {
+			qcom,support-reset = <1>;
+			qcom,s1-timer = <0>;
+			qcom,s2-timer = <1000>;
+			qcom,s2-type = <7>;
+			linux,code = <113>;
+		};
+
+		qcom,pon_3 {
+			qcom,s1-timer = <0>;
+		};
+	};
+};
+
+&i2c_7 {
+	/delete-node/ silabs4705@11;
+
+	tca6507@45 {
+		compatible = "ti,tca6507";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x45>;
+		gpio-controller;
+		#gpio-cells = <2>;
+
+		tca6507,en = <&tlmm 75 0x1>;
+		led0: blue-aux@0 {
+			label = "blue";
+			reg = <0x0>;
+		};
+
+		led1: red-aux@1 {
+			label = "red";
+			reg = <0x1>;
+		};
+
+		led2: green-aux@2 {
+			label = "green";
+			reg = <0x2>;
+		};
+	};
+
+	smb1351-charger@1d {
+		compatible = "qcom,smb1351-charger";
+		reg = <0x1d>;
+		qcom,parallel-charger;
+		qcom,float-voltage-mv = <42000>;
+		qcom,recharge-mv = <100>;
+		qcom,parallel-en-pin-polarity = <0>;
+		smb1351-i2c-pullup-supply = <&pm8994_s4>;
+	};
+
+	tusb320-type-c@61 {
+		compatible = "ti,usb-type-c";
+		reg = <0x61>;
+		//vdd_io-supply = <&pm8950_l5>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <58 2>;    /* MSM GPIO 58, TRIGGER_FALLING */
+		//pericom,enb-gpio = <&msm_gpio 101 0x1>;	/* active low ENB */
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&usbc_int_default>;
+		ptn360,sel-gpio = <&tlmm 77 0x1>;	/* active low ENB */
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbc_int_default>;
+	};
+};
+
+&tlmm {
+	pcie0_poweron_default: pcie0_poweron_default {
+		mux {
+			pins = "gpio71", "gpio72", "gpio95";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio71", "gpio72", "gpio95";
+			drive-strength = <2>;
+			output-high;
+		};
+	};
+
+	usbc_int_default: usbc_int_default {
+		mux {
+			pins = "gpio77", "gpio58";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio77", "gpio58";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};
+
+&pcie0 {
+	pinctrl-0 = <&pcie0_clkreq_default
+		&pcie0_perst_default
+		&pcie0_wake_default
+		&pcie0_poweron_default>;
+};
+
+&tpiu {
+	status = "disabled";
+};
+
+&spi_0 {
+	status = "disabled";
+};
+
+&mdss_hdmi_tx {
+	qcom,hdmi-tx-redriver-en = <&tlmm 1 0>;
+};
+
+&clock_audio {
+	status = "disabled";
+};
+
+&sdhc_2 {
+	status = "disabled";
+};
+
+&i2c_12 {
+	status = "disabled";
+};
+
+&i2c_8 {
+	status = "disabled";
+};
+
+&i2c_6 {
+	status = "disabled";
+};
+
+&pm8994_l1 {
+	regulator-min-microvolt = <1200000>;
+	regulator-max-microvolt = <1200000>;
+	qcom,init-voltage = <1200000>;
+};
+
+&pm8994_l3 {
+	regulator-min-microvolt = <1100000>;
+	regulator-max-microvolt = <1100000>;
+	qcom,init-voltage = <1100000>;
+};
+
+&pm8994_l16 {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	qcom,init-voltage = <2800000>;
+};
+
+&pm8994_l17 {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	qcom,init-voltage = <2800000>;
+};
+
+&pm8994_l29 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	qcom,init-voltage = <3300000>;
+};
+
+&actuator0 {
+	status = "disabled";
+};
+
+&actuator1 {
+	status = "disabled";
+};
+
+&ois0 {
+	status = "disabled";
+};
+
+&led_flash0 {
+	status = "disabled";
+};
+
+&cci {
+	qcom,camera@0 {
+		cam_vdig-supply = <&pm8994_l3>;
+		/delete-property/ qcom,vdd-cx-supply;
+		/delete-property/ qcom,vdd-cx-name;
+		/delete-property/ qcom,actuator-src;
+		/delete-property/ qcom,ois-src;
+		/delete-property/ qcom,led-flash-src;
+		qcom,cam-vreg-min-voltage = <1100000 0 2800000>;
+		qcom,cam-vreg-max-voltage = <1100000 0 2800000>;
+		gpios = <&tlmm 13 0>,
+			<&tlmm 12 0>,
+			<&tlmm 30 0>;
+	};
+
+	qcom,camera@1 {
+		cam_vdig-supply = <&pm8994_l1>;
+		cam_vana-supply = <&pm8994_l17>;
+		/delete-property/ qcom,vdd-cx-supply;
+		/delete-property/ qcom,vdd-cx-name;
+		qcom,cam-vreg-min-voltage = <1200000 0 2800000>;
+		qcom,cam-vreg-max-voltage = <1200000 0 2800000>;
+		gpios = <&tlmm 14 0>,
+			<&tlmm 12 0>,
+			<&tlmm 80 0>;
+	};
+
+	qcom,camera@2 {
+		/delete-property/ qcom,eeprom-src;
+		/delete-property/ qcom,actuator-src;
+		cam_vdig-supply = <&pm8994_l1>;
+		cam_vana-supply = <&pm8994_l17>;
+		/delete-property/ qcom,vdd-cx-supply;
+		/delete-property/ qcom,vdd-cx-name;
+		qcom,cam-vreg-min-voltage = <1200000 0 2800000>;
+		qcom,cam-vreg-max-voltage = <1200000 0 2800000>;
+		gpios = <&tlmm 15 0>,
+			<&tlmm 12 0>,
+			<&tlmm 21 0>;
+	};
+
+	qcom,camera@3 {
+		cell-index = <3>;
+		compatible = "qcom,camera";
+		reg = <0x03>;
+		qcom,csiphy-sd-index = <2>;
+		qcom,csid-sd-index = <3>;
+		qcom,mount-angle = <90>;
+		cam_vdig-supply = <&pm8994_l1>;
+		cam_vio-supply = <&pm8994_lvs1>;
+		cam_vana-supply = <&pm8994_l17>;
+		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
+		qcom,cam-vreg-min-voltage = <1200000 0 2800000>;
+		qcom,cam-vreg-max-voltage = <1200000 0 2800000>;
+		qcom,cam-vreg-op-mode = <105000 0 80000>;
+		qcom,gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk2_active &cam_sensor_front_active>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend &cam_sensor_front_suspend>;
+		gpios = <&tlmm 15 0>,
+			<&tlmm 12 0>,
+			<&tlmm 122 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-standby = <2>;
+		qcom,gpio-req-tbl-num = <0 1 2>;
+		qcom,gpio-req-tbl-flags = <1 0 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK3",
+					  "CAM_RESET3",
+					  "CAM_STANDBY3";
+		qcom,sensor-position = <0>;
+		qcom,sensor-mode = <0>;
+		qcom,cci-master = <1>;
+		status = "ok";
+		clocks = <&clock_mmss clk_mclk2_clk_src>,
+			<&clock_mmss clk_camss_mclk2_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+};
+
+&cam_sensor_mclk2_active {
+	config {
+		drive-strength = <16>;
+	};
+};
