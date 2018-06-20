@@ -3005,6 +3005,20 @@ static int fg_get_cycle_count(struct fg_chip *chip)
 	return count;
 }
 
+static int fg_get_aggregate_cycle_count(struct fg_chip *chip)
+{
+	int i;
+	int count = 0;
+
+	if (!chip->cyc_ctr.en)
+		return 0;
+
+	for (i = 0; i < BUCKET_COUNT; i++)
+		count += chip->cyc_ctr.count[i];
+
+	return count / BUCKET_COUNT;
+}
+
 static void half_float_to_buffer(int64_t uval, u8 *buffer)
 {
 	u16 raw;
@@ -4474,6 +4488,7 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_CYCLE_COUNT_ID,
+	POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_HI_POWER,
 	POWER_SUPPLY_PROP_SOC_REPORTING_READY,
 	POWER_SUPPLY_PROP_IGNORE_FALSE_NEGATIVE_ISENSE,
@@ -4560,6 +4575,9 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
 		val->intval = chip->cyc_ctr.id;
+		break;
+	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
+		val->intval = fg_get_aggregate_cycle_count(chip);
 		break;
 	case POWER_SUPPLY_PROP_RESISTANCE_ID:
 		val->intval = get_sram_prop_now(chip, FG_DATA_BATT_ID);
@@ -7790,11 +7808,54 @@ unlock_mutex:
 	return ret;
 }
 
+static int fg_memif_sram_dump_open(struct inode *inode, struct file *file)
+{
+	int rc = 0;
+	struct fg_trans *trans = NULL;
+
+	/*
+	 * SRAM dump is a wrapper of the fg_memif interface with pre-determined
+	 * address and length. Thus, use the 'data' debugfs node and initialize
+	 * the transaction object accordingly.
+	 */
+	rc = fg_memif_data_open(inode, file);
+	if (rc) {
+		pr_err("%s: fg_memif_data_open() failed, rc=%d\n",
+			__func__, rc);
+		return rc;
+	}
+
+	trans = file->private_data;
+	trans->addr = SRAM_DUMP_START;
+	trans->cnt = SRAM_DUMP_LEN;
+	trans->offset = trans->addr;
+
+	return 0;
+}
+
+static int fg_memif_sram_dump_close(struct inode *inode, struct file *file)
+{
+	return fg_memif_dfs_close(inode, file);
+}
+
+static ssize_t fg_memif_sram_dump_read(struct file *file, char __user *buf,
+	size_t count, loff_t *ppos)
+{
+	return fg_memif_dfs_reg_read(file, buf, count, ppos);
+}
+
 static const struct file_operations fg_memif_dfs_reg_fops = {
 	.open		= fg_memif_data_open,
 	.release	= fg_memif_dfs_close,
 	.read		= fg_memif_dfs_reg_read,
 	.write		= fg_memif_dfs_reg_write,
+};
+
+/* File operations for the sram_data sysfs node. */
+static const struct file_operations fg_memif_sram_data_fops = {
+	.open           = fg_memif_sram_dump_open,
+	.release        = fg_memif_sram_dump_close,
+	.read           = fg_memif_sram_dump_read,
 };
 
 /**
@@ -7883,6 +7944,13 @@ int fg_dfs_create(struct fg_chip *chip)
 							&fg_memif_dfs_reg_fops);
 	if (!file) {
 		pr_err("error creating 'data' entry\n");
+		goto err_remove_fs;
+	}
+
+	file = debugfs_create_file("sram_dump", S_IRUSR, root, &dbgfs_data,
+		&fg_memif_sram_data_fops);
+	if (!file) {
+		pr_err("error creating 'sram_dump' entry\n");
 		goto err_remove_fs;
 	}
 

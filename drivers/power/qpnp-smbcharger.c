@@ -125,6 +125,15 @@ struct smbchg_chip {
 	int				bmd_pin_src;
 	int				jeita_temp_hard_limit;
 	int				aicl_rerun_period_s;
+	int				batt_stage_1_cycle_thresh;
+	int				batt_stage_1_fastchg_current_ma;
+	int				batt_stage_2_cycle_thresh;
+	int				batt_stage_2_vfloat_mv;
+	unsigned int			cc_stage_mv_thresh_cnt;
+	unsigned int			*cc_stage_mv_thresh;
+	unsigned int			cc_stage_temp_thresh_cnt;
+	unsigned int			*cc_stage_temp_thresh;
+	unsigned int			*cc_stage_fastchg_current_ma;
 	bool				use_vfloat_adjustments;
 	bool				iterm_disabled;
 	bool				bmd_algo_disabled;
@@ -145,6 +154,7 @@ struct smbchg_chip {
 	bool				hvdcp_not_supported;
 	bool				otg_pinctrl;
 	bool				cfg_override_usb_current;
+	bool				use_batt_stage_adjustments;
 	u8				original_usbin_allowance;
 	struct parallel_usb_cfg		parallel;
 	struct delayed_work		parallel_en_work;
@@ -250,6 +260,7 @@ struct smbchg_chip {
 	struct work_struct		usb_set_online_work;
 	struct delayed_work		vfloat_adjust_work;
 	struct delayed_work		hvdcp_det_work;
+	struct delayed_work		batt_stage_check_work;
 	spinlock_t			sec_access_lock;
 	struct mutex			therm_lvl_lock;
 	struct mutex			usb_set_online_lock;
@@ -329,12 +340,15 @@ enum wake_reason {
 	PM_ESR_PULSE = BIT(2),
 	PM_PARALLEL_TAPER = BIT(3),
 	PM_DETECT_HVDCP = BIT(4),
+	PM_BATT_STAGE_CHECK = BIT(5),
 };
 
 enum fcc_voters {
 	ESR_PULSE_FCC_VOTER,
 	BATT_TYPE_FCC_VOTER,
 	RESTRICTED_CHG_FCC_VOTER,
+	CYCLE_CHECK_FCC_VOTER,
+	CC_STAGE_CHECK_FCC_VOTER,
 	NUM_FCC_VOTER,
 };
 
@@ -1165,6 +1179,20 @@ static int get_prop_batt_voltage_max_design(struct smbchg_chip *chip)
 		uv = DEFAULT_BATT_VOLTAGE_MAX_DESIGN;
 	}
 	return uv;
+}
+
+#define DEFAULT_BATT_CYCLES	10
+static int get_prop_batt_aggregate_cycle_count(struct smbchg_chip *chip)
+{
+	int cycles, rc;
+
+	rc = get_property_from_fg(chip,
+			POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT, &cycles);
+	if (rc) {
+		pr_smb(PR_STATUS, "Couldn't get cycle count rc = %d\n", rc);
+		cycles = DEFAULT_BATT_CYCLES;
+	}
+	return cycles;
 }
 
 static int get_prop_batt_health(struct smbchg_chip *chip)
@@ -3314,6 +3342,22 @@ static int smbchg_force_tlim_en(struct smbchg_chip *chip, bool enable)
 	return rc;
 }
 
+static void smbchg_batt_stage_check(struct smbchg_chip *chip, bool enable)
+{
+	if (!chip->use_batt_stage_adjustments)
+		return;
+
+	if (enable) {
+		smbchg_stay_awake(chip, PM_BATT_STAGE_CHECK);
+		pr_smb(PR_STATUS, "Starting battery stage check\n");
+		schedule_delayed_work(&chip->batt_stage_check_work, 0);
+	} else {
+		cancel_delayed_work_sync(&chip->batt_stage_check_work);
+		pr_smb(PR_STATUS, "Stopping battery stage check\n");
+		smbchg_relax(chip, PM_BATT_STAGE_CHECK);
+	}
+}
+
 static void smbchg_vfloat_adjust_check(struct smbchg_chip *chip)
 {
 	if (!chip->use_vfloat_adjustments)
@@ -4440,6 +4484,85 @@ reschedule:
 	return;
 }
 
+static int get_cc_stage_current_limit(struct smbchg_chip *chip, int temp,
+		int voltage_mv)
+{
+	int i, temp_bucket, voltage_bucket;
+
+	/* Get temperature threshold bucket */
+	for (i = 0; i < chip->cc_stage_temp_thresh_cnt; i++) {
+		if (temp < chip->cc_stage_temp_thresh[i])
+			break;
+	}
+	temp_bucket = i - 1;
+
+	pr_smb(PR_MISC, "battery temperature falls in bucket: %d\n",
+			temp_bucket);
+
+	/* Get voltage threshold bucket */
+	for (i = 0; i < chip->cc_stage_mv_thresh_cnt; i++) {
+		if (voltage_mv < chip->cc_stage_mv_thresh[i])
+			break;
+	}
+	voltage_bucket = i - 1;
+
+	pr_smb(PR_MISC, "battery voltage falls in bucket: %d\n",
+			voltage_bucket);
+
+	return chip->cc_stage_fastchg_current_ma[temp_bucket *
+		chip->cc_stage_temp_thresh_cnt + voltage_bucket];
+}
+
+#define BATT_STAGE_CHECK_DELAY_MS	5000
+static void smbchg_batt_stage_check_work(struct work_struct *work)
+{
+	struct smbchg_chip *chip = container_of(work,
+				struct smbchg_chip,
+				batt_stage_check_work.work);
+	int rc = 0;
+	int fastchg_current_ma = 0;
+	int cycles = get_prop_batt_aggregate_cycle_count(chip);
+	int temp = get_prop_batt_temp(chip);
+	int voltage_mv = get_prop_batt_voltage_now(chip) / 1000;
+
+	if (cycles >= chip->batt_stage_1_cycle_thresh) {
+		/* restrict fast charge current */
+		chip->cfg_fastchg_current_ma = chip->batt_stage_1_fastchg_current_ma;
+		rc = vote(chip->fcc_votable, CYCLE_CHECK_FCC_VOTER, true,
+				chip->cfg_fastchg_current_ma);
+		if (rc < 0) {
+			dev_err(chip->dev,
+				"Couldn't set fastcharge current: %d\n", rc);
+		}
+	}
+
+	if (cycles >= chip->batt_stage_2_cycle_thresh) {
+		/* restrict max charge capacity */
+		pr_smb(PR_STATUS, "limited float voltage to %d\n",
+				chip->batt_stage_2_vfloat_mv);
+		rc = smbchg_float_voltage_set(chip, chip->batt_stage_2_vfloat_mv);
+		if (rc < 0) {
+			dev_err(chip->dev,
+				"Couldn't set float voltage: %d\n", rc);
+		}
+	}
+
+	fastchg_current_ma = get_cc_stage_current_limit(chip, temp, voltage_mv);
+
+	pr_smb(PR_STATUS, "CC current limit: %d\n", fastchg_current_ma);
+
+	/* Must always vote, current restrict/unrestrict is not binary choice */
+	rc = vote(chip->fcc_votable, CC_STAGE_CHECK_FCC_VOTER, true,
+			fastchg_current_ma);
+	if (rc < 0) {
+		dev_err(chip->dev,
+			"Couldn't set fastcharge current: %d\n", rc);
+	}
+
+	schedule_delayed_work(&chip->batt_stage_check_work,
+			msecs_to_jiffies(BATT_STAGE_CHECK_DELAY_MS));
+}
+
 static int smbchg_charging_status_change(struct smbchg_chip *chip)
 {
 	smbchg_vfloat_adjust_check(chip);
@@ -4736,6 +4859,8 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	/* Clear typec current status */
 	if (chip->typec_psy)
 		chip->typec_current_ma = 0;
+	/* Stop battery stage check workqueue */
+	smbchg_batt_stage_check(chip, false);
 	/* cancel/wait for hvdcp pending work if any */
 	cancel_delayed_work_sync(&chip->hvdcp_det_work);
 	smbchg_relax(chip, PM_DETECT_HVDCP);
@@ -4842,6 +4967,9 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 		schedule_delayed_work(&chip->hvdcp_det_work,
 					msecs_to_jiffies(HVDCP_NOTIFY_MS));
 	}
+
+	/* Start battery stage check workqueue once USB is available */
+	smbchg_batt_stage_check(chip, true);
 
 	smbchg_detect_parallel_charger(chip);
 
@@ -7400,6 +7528,96 @@ err:
 	return rc;
 }
 
+static int smb_parse_cc_stage_dt(struct smbchg_chip *chip)
+{
+	struct device_node *node = chip->dev->of_node;
+	int i, j, rc = 0;
+	int total_elements, size;
+	struct property *prop;
+	const __be32 *data;
+
+	if (of_find_property(node, "qcom,cc-stage-mv-thresh",
+				&chip->cc_stage_mv_thresh_cnt)) {
+		chip->cc_stage_mv_thresh = devm_kzalloc(chip->dev,
+				chip->cc_stage_mv_thresh_cnt, GFP_KERNEL);
+		if (chip->cc_stage_mv_thresh == NULL) {
+			dev_err(chip->dev,
+				"CC voltage thresholds kzalloc() failed.\n");
+			return -ENOMEM;
+		}
+		chip->cc_stage_mv_thresh_cnt /= sizeof(int);
+		rc = of_property_read_u32_array(node,
+				"qcom,cc-stage-mv-thresh",
+				chip->cc_stage_mv_thresh,
+				chip->cc_stage_mv_thresh_cnt);
+		if (rc) {
+			dev_err(chip->dev,
+				"Failed to read CC voltage thresholds.\n");
+			return rc;
+		}
+	}
+
+	if (of_find_property(node, "qcom,cc-stage-temp-thresh",
+				&chip->cc_stage_temp_thresh_cnt)) {
+		chip->cc_stage_temp_thresh = devm_kzalloc(chip->dev,
+				chip->cc_stage_temp_thresh_cnt, GFP_KERNEL);
+		if (chip->cc_stage_temp_thresh == NULL) {
+			dev_err(chip->dev,
+				"CC temp thresholds kzalloc() failed.\n");
+			return -ENOMEM;
+		}
+
+		chip->cc_stage_temp_thresh_cnt /= sizeof(int);
+		rc = of_property_read_u32_array(node,
+				"qcom,cc-stage-temp-thresh",
+				chip->cc_stage_temp_thresh,
+				chip->cc_stage_temp_thresh_cnt);
+		if (rc) {
+			dev_err(chip->dev,
+				"Failed to read CC temp thresholds.\n");
+			return rc;
+		}
+	}
+
+	prop = of_find_property(node, "qcom,cc-stage-fastchg-current-ma",
+				&size);
+	if (!prop) {
+		dev_err(chip->dev, "Failed to read CC fastcharge limits.\n");
+		return -EINVAL;
+	}
+
+	total_elements = size / sizeof(int);
+
+	if (total_elements != chip->cc_stage_temp_thresh_cnt *
+			chip->cc_stage_mv_thresh_cnt) {
+		dev_err(chip->dev, "Invalid fastcharge current limit map.\n");
+		return -EINVAL;
+	}
+
+	chip->cc_stage_fastchg_current_ma = devm_kzalloc(chip->dev, size,
+			GFP_KERNEL);
+	if (chip->cc_stage_fastchg_current_ma == NULL) {
+		dev_err(chip->dev, "CC current limits kzalloc() failed.\n");
+		return -ENOMEM;
+	}
+
+	data = prop->value;
+	/*
+	 * Arrange array so it resembles the following:
+	 *       mv1   mv1
+	 * t1   1000   500
+	 * t2   1400  1000
+	 */
+	for (i = 0; i < chip->cc_stage_temp_thresh_cnt; i++) {
+		for (j = 0; j < chip->cc_stage_mv_thresh_cnt; j++) {
+			chip->cc_stage_fastchg_current_ma[i *
+				chip->cc_stage_temp_thresh_cnt + j] = be32_to_cpup(data++);
+		}
+	}
+
+	return 0;
+}
+
 #define DEFAULT_VLED_MAX_UV		3500000
 #define DEFAULT_FCC_MA			2000
 static int smb_parse_dt(struct smbchg_chip *chip)
@@ -7482,6 +7700,18 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 	OF_PROP_READ(chip, chip->vchg_adc_channel,
 			"vchg-adc-channel-id", rc, 1);
 
+	/* Get age-based battery configuration */
+	OF_PROP_READ(chip, chip->batt_stage_1_cycle_thresh,
+			"stage-1-cycle-count", rc, 1);
+	OF_PROP_READ(chip, chip->batt_stage_1_fastchg_current_ma,
+			"stage-1-fastchg-current-ma", rc, 1);
+	OF_PROP_READ(chip, chip->batt_stage_2_cycle_thresh,
+			"stage-2-cycle-count", rc, 1);
+	OF_PROP_READ(chip, chip->batt_stage_2_vfloat_mv,
+			"stage-2-float-voltage-mv", rc, 1);
+
+	smb_parse_cc_stage_dt(chip);
+
 	/* read boolean configuration properties */
 	chip->use_vfloat_adjustments = of_property_read_bool(node,
 						"qcom,autoadjust-vfloat");
@@ -7505,6 +7735,8 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 					"qcom,force-aicl-rerun");
 	chip->skip_usb_suspend_for_fake_battery = of_property_read_bool(node,
 				"qcom,skip-usb-suspend-for-fake-battery");
+	chip->use_batt_stage_adjustments = of_property_read_bool(node,
+			"qcom,batt-stage-adjustments");
 
 	/* parse the battery missing detection pin source */
 	rc = of_property_read_string(chip->spmi->dev.of_node,
@@ -8200,6 +8432,8 @@ static int smbchg_probe(struct spmi_device *spmi)
 			smbchg_parallel_usb_en_work);
 	INIT_DELAYED_WORK(&chip->vfloat_adjust_work, smbchg_vfloat_adjust_work);
 	INIT_DELAYED_WORK(&chip->hvdcp_det_work, smbchg_hvdcp_det_work);
+	INIT_DELAYED_WORK(&chip->batt_stage_check_work,
+			smbchg_batt_stage_check_work);
 	init_completion(&chip->src_det_lowered);
 	init_completion(&chip->src_det_raised);
 	init_completion(&chip->usbin_uv_lowered);

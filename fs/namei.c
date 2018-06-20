@@ -2517,6 +2517,11 @@ static inline int may_create(struct vfsmount *mnt, struct inode *dir, struct den
 	return inode_permission2(mnt, dir, MAY_WRITE | MAY_EXEC);
 }
 
+static inline int same_dentry(const struct dentry *p1, const struct dentry *p2)
+{
+	return p1 == p2 || (p1 && p2 && p1->d_inode == p2->d_inode);
+}
+
 /*
  * p1 and p2 should be directories on the same fs.
  */
@@ -2524,7 +2529,7 @@ struct dentry *lock_rename(struct dentry *p1, struct dentry *p2)
 {
 	struct dentry *p;
 
-	if (p1 == p2) {
+	if (same_dentry(p1, p2)) {
 		mutex_lock_nested(&p1->d_inode->i_mutex, I_MUTEX_PARENT);
 		return NULL;
 	}
@@ -2554,7 +2559,7 @@ EXPORT_SYMBOL(lock_rename);
 void unlock_rename(struct dentry *p1, struct dentry *p2)
 {
 	mutex_unlock(&p1->d_inode->i_mutex);
-	if (p1 != p2) {
+	if (!same_dentry(p1, p2)) {
 		mutex_unlock(&p2->d_inode->i_mutex);
 		mutex_unlock(&p1->d_inode->i_sb->s_vfs_rename_mutex);
 	}

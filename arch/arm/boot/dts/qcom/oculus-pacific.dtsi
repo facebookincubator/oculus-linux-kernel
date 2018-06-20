@@ -372,6 +372,16 @@
 			<6820000 7820000 550 700 600>,
 			<7820000 8500000 550 700 550>;
 
+	qcom,batt-stage-adjustments;
+	qcom,stage-1-cycle-count = <200>;
+	qcom,stage-1-fastchg-current-ma = <1000>;
+	qcom,stage-2-cycle-count = <500>;
+	qcom,stage-2-float-voltage-mv = <3600>;
+	qcom,cc-stage-mv-thresh = <0 3900>;
+	qcom,cc-stage-temp-thresh = <0 150>;
+	qcom,cc-stage-fastchg-current-ma = <1000 500>,
+		<1400 1000>;
+
 	qcom,thermal-mitigation = <1500 1000 600 0>;
 	qcom,fastchg-current-ma = <1400>;
 	qcom,fastchg-current-comp = <250>;
