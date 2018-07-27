@@ -232,16 +232,33 @@ static int set_interrupt_config_locked(struct minisensor_device *ddata,
 		return 0;
 	}
 
-	if (cfg->mode == MINI_SENSOR_INTR_READ_RANGE) {
-		if (ddata->state.interrupt_config.mode !=
-			MINI_SENSOR_INTR_DISABLED)
-			return -EBUSY;
+	if (ddata->state.interrupt_config.mode != MINI_SENSOR_INTR_DISABLED)
+		return -EBUSY;
 
+	if (cfg->mode == MINI_SENSOR_INTR_READ_FIXED_RANGE) {
 		if (cfg->range.len == 0 || cfg->range.len > SPI_RX_LIMIT)
 			return -EINVAL;
 
 		dev_dbg(ddata->dev, "enable interrupts: read addr:%02x len:%d\n",
 				cfg->range.reg, (unsigned) cfg->range.len);
+		ddata->state.interrupt_config = *cfg;
+		enable_irq(ddata->spi->irq);
+		return 0;
+	}
+
+	if (cfg->mode == MINI_SENSOR_INTR_READ_FIFO) {
+		/* setup default values to skip checks later */
+		if (!cfg->fifo.len_mask)
+			cfg->fifo.len_mask = 0xff;
+		if (!cfg->fifo.len_multiplier)
+			cfg->fifo.len_multiplier = 1;
+
+		dev_dbg(ddata->dev, "enable interrupts: status addr:%02x mask:%02x shift:%02x multiplier:%02x data addr:%02x\n",
+			(unsigned) cfg->fifo.status_reg,
+			(unsigned) cfg->fifo.len_mask,
+			(unsigned) cfg->fifo.len_right_shift,
+			(unsigned) cfg->fifo.len_multiplier,
+			(unsigned) cfg->fifo.data_reg);
 		ddata->state.interrupt_config = *cfg;
 		enable_irq(ddata->spi->irq);
 		return 0;
@@ -277,7 +294,7 @@ static irqreturn_t isr_thread_fn(int irq, void *p)
 		goto exit;
 	}
 
-	if (cfg->mode == MINI_SENSOR_INTR_READ_RANGE) {
+	if (cfg->mode == MINI_SENSOR_INTR_READ_FIXED_RANGE) {
 		u8 *buf;
 		struct minisensor_event event = {
 			.timestamp = irq_timestamp,
@@ -297,6 +314,54 @@ static irqreturn_t isr_thread_fn(int irq, void *p)
 		rc = miscfifo_send_header_payload(&ddata->mf,
 				(void *) &event, sizeof(event),
 				buf, cfg->range.len);
+		goto exit_io_unlock;
+	}
+
+	if (cfg->mode == MINI_SENSOR_INTR_READ_FIFO) {
+		u8 *buf;
+		int len;
+
+		struct minisensor_event event = {
+			.timestamp = irq_timestamp,
+		};
+
+		mutex_lock(&ddata->io.lock);
+
+		/* read from the 'length register' (e.g. fifo status) */
+		len = spi_reg_read1_locked(ddata, cfg->fifo.status_reg);
+		if (len < 0) {
+			rc = len;
+			dev_err_ratelimited(ddata->dev,
+				"error reading len-reg (in isr): %d\n", rc);
+			goto exit_io_unlock;
+		}
+
+		event.fifo_status = len;
+
+		/* manipulate the value to get the number of bytes to read */
+		len &= cfg->fifo.len_mask;
+		len >>= cfg->fifo.len_right_shift;
+		len *= cfg->fifo.len_multiplier;
+		event.len = len;
+		if (len == 0) {
+			dev_err_ratelimited(ddata->dev,
+				"got 0 length read from raw value: %02x\n",
+				event.fifo_status);
+			goto exit_io_unlock;
+		}
+
+		/* read from the 'data' register (e.g. fifo) */
+		buf = spi_reg_read_locked(
+			ddata, cfg->fifo.data_reg, len);
+		if (IS_ERR(buf)) {
+			rc = PTR_ERR(buf);
+			dev_err_ratelimited(ddata->dev,
+				"error reading src-reg (in isr): %d\n", rc);
+			goto exit_io_unlock;
+		}
+
+		miscfifo_send_header_payload(&ddata->mf,
+				(void *) &event, sizeof(event), buf, len);
 		goto exit_io_unlock;
 	}
 
@@ -695,8 +760,8 @@ static int run_pm_commands(struct minisensor_device *ddata, bool suspend)
 	mutex_lock(&ddata->state.lock);
 
 	interrupts_enabled =
-		ddata->state.interrupt_config.mode ==
-			MINI_SENSOR_INTR_READ_RANGE;
+		ddata->state.interrupt_config.mode != MINI_SENSOR_INTR_DISABLED;
+
 	if (suspend) {
 		dev_dbg(ddata->dev, "suspending");
 		cfg = &ddata->state.suspend_cfg;

@@ -302,8 +302,6 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
  * create.  If the priority is not set in the flags, then the kernel can
  * assign any priority it desires for the context.
  */
-#define KGSL_CONTEXT_PRIORITY_MED	0x8
-
 static inline void _set_context_priority(struct adreno_context *drawctxt)
 {
 	/* If the priority is not set by user, set it for them */

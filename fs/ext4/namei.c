@@ -1546,6 +1546,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 	struct inode *inode;
 	struct ext4_dir_entry_2 *de;
 	struct buffer_head *bh;
+	struct dentry *ret_dentry;
 
        if (ext4_encrypted_inode(dir)) {
                int res = ext4_get_encryption_info(dir);
@@ -1604,7 +1605,19 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 			return ERR_PTR(-EPERM);
 		}
 	}
-	return d_splice_alias(inode, dentry);
+
+	ret_dentry = d_splice_alias(inode, dentry);
+	if (ret_dentry) {
+		/*
+		 * If an existing dentry was found by d_splice_alias(), make
+		 * sure its d_fsdata is up to date.
+		 */
+		spin_lock(&ret_dentry->d_lock);
+		ret_dentry->d_fsdata = dentry->d_fsdata;
+		spin_unlock(&ret_dentry->d_lock);
+	}
+
+	return ret_dentry;
 }
 
 

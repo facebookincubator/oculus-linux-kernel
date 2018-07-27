@@ -105,6 +105,10 @@ struct kgsl_context;
  * @full_cache_threshold: the threshold that triggers a full cache flush
  * @workqueue: Pointer to a single threaded workqueue
  * @mem_workqueue: Pointer to a workqueue for deferring memory entries
+ * @dealloc_workqueue: A dedicated workqueue used to deallocate memory
+ * entries for requests originating from latency sensitive threads; this
+ * is separate from @mem_workqueue to avoid failures when the latter is
+ * being drained
  */
 struct kgsl_driver {
 	struct cdev cdev;
@@ -136,6 +140,7 @@ struct kgsl_driver {
 	unsigned int full_cache_threshold;
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
+	struct workqueue_struct *dealloc_workqueue;
 	struct kthread_worker worker;
 	struct task_struct *worker_thread;
 };

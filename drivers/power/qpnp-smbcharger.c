@@ -78,6 +78,25 @@ struct ilim_map {
 	struct ilim_entry	*entries;
 };
 
+struct limit_entry {
+	int fastchg_limit;
+	int vfloat_limit;
+};
+
+struct cycle_thresh_map {
+	int				cycle_thresh_len;
+	int				*cycle_thresh;
+	int				vbatt_thresh_len;
+	int				*vbatt_thresh;
+	struct limit_entry		*limits;
+};
+
+struct limit_map {
+	int				temp_thresh_len;
+	int				*temp_thresh;
+	struct cycle_thresh_map		*cycle_limits;
+};
+
 struct smbchg_version_tables {
 	const int			*dc_ilim_ma_table;
 	int				dc_ilim_ma_len;
@@ -125,15 +144,7 @@ struct smbchg_chip {
 	int				bmd_pin_src;
 	int				jeita_temp_hard_limit;
 	int				aicl_rerun_period_s;
-	int				batt_stage_1_cycle_thresh;
-	int				batt_stage_1_fastchg_current_ma;
-	int				batt_stage_2_cycle_thresh;
-	int				batt_stage_2_vfloat_mv;
-	unsigned int			cc_stage_mv_thresh_cnt;
-	unsigned int			*cc_stage_mv_thresh;
-	unsigned int			cc_stage_temp_thresh_cnt;
-	unsigned int			*cc_stage_temp_thresh;
-	unsigned int			*cc_stage_fastchg_current_ma;
+	struct limit_map		chg_limits_map;
 	bool				use_vfloat_adjustments;
 	bool				iterm_disabled;
 	bool				bmd_algo_disabled;
@@ -153,6 +164,7 @@ struct smbchg_chip {
 	bool				skip_usb_suspend_for_fake_battery;
 	bool				hvdcp_not_supported;
 	bool				otg_pinctrl;
+	u32				otg_current_limit;
 	bool				cfg_override_usb_current;
 	bool				use_batt_stage_adjustments;
 	u8				original_usbin_allowance;
@@ -347,7 +359,6 @@ enum fcc_voters {
 	ESR_PULSE_FCC_VOTER,
 	BATT_TYPE_FCC_VOTER,
 	RESTRICTED_CHG_FCC_VOTER,
-	CYCLE_CHECK_FCC_VOTER,
 	CC_STAGE_CHECK_FCC_VOTER,
 	NUM_FCC_VOTER,
 };
@@ -3260,6 +3271,53 @@ static int smbchg_switch_buck_frequency(struct smbchg_chip *chip,
 	return 0;
 }
 
+
+/* By default, OTG current limit is set to 0x0 which corresponds to 250mA. */
+#define OTG_DEFAULT_CURRENT_LIMIT	(250)
+#define OTG_ICFG			(0xF3)
+#define OTG_ICFG_250_MA			(0x0)
+#define OTG_ICFG_600_MA			(0x1)
+#define OTG_ICFG_750_MA			(0x2)
+#define OTG_ICFG_1000_MA		(0x3)
+#define OTG_ICFG_MASK			(SMB_MASK(1, 0))
+static int smbchg_otg_configure_current_limit(struct smbchg_chip *chip)
+{
+	u8 icfg_value;
+	int rc;
+
+	/* Convert OTG current limit into a value for the OTG_ICFG register. */
+	switch (chip->otg_current_limit) {
+	case 250:
+		icfg_value = OTG_ICFG_250_MA;
+		break;
+	case 600:
+		icfg_value = OTG_ICFG_600_MA;
+		break;
+	case 750:
+		icfg_value = OTG_ICFG_750_MA;
+		break;
+	case 1000:
+		icfg_value = OTG_ICFG_1000_MA;
+		break;
+	default:
+		dev_err(chip->dev, "Invalid OTG current limit: %dmA\n",
+			chip->otg_current_limit);
+		return -EINVAL;
+	}
+
+	rc = smbchg_sec_masked_write(chip, chip->otg_base + OTG_ICFG,
+		OTG_ICFG_MASK, icfg_value);
+	if (rc < 0) {
+		dev_err(chip->dev, "Cannot set OTG current limit: %d\n", rc);
+		return rc;
+	}
+
+	dev_info(chip->dev, "Set OTG current limit to: %dmA (OTG_ICFG=0x%X)\n",
+		chip->otg_current_limit, icfg_value);
+
+	return 0;
+}
+
 #define OTG_TRIM6		0xF6
 #define TR_ENB_SKIP_BIT		BIT(2)
 #define OTG_EN_BIT		BIT(0)
@@ -4393,7 +4451,6 @@ static void smbchg_vfloat_adjust_work(struct work_struct *work)
 	int vbat_uv, vbat_mv, ibat_ua, rc, delta_vfloat_mv;
 	bool taper, enable;
 
-	smbchg_stay_awake(chip, PM_REASON_VFLOAT_ADJUST);
 	taper = (get_prop_charge_type(chip)
 		== POWER_SUPPLY_CHARGE_TYPE_TAPER);
 	enable = taper && (chip->parallel.current_max_ma == 0);
@@ -4484,80 +4541,61 @@ reschedule:
 	return;
 }
 
-static int get_cc_stage_current_limit(struct smbchg_chip *chip, int temp,
-		int voltage_mv)
-{
-	int i, temp_bucket, voltage_bucket;
-
-	/* Get temperature threshold bucket */
-	for (i = 0; i < chip->cc_stage_temp_thresh_cnt; i++) {
-		if (temp < chip->cc_stage_temp_thresh[i])
-			break;
-	}
-	temp_bucket = i - 1;
-
-	pr_smb(PR_MISC, "battery temperature falls in bucket: %d\n",
-			temp_bucket);
-
-	/* Get voltage threshold bucket */
-	for (i = 0; i < chip->cc_stage_mv_thresh_cnt; i++) {
-		if (voltage_mv < chip->cc_stage_mv_thresh[i])
-			break;
-	}
-	voltage_bucket = i - 1;
-
-	pr_smb(PR_MISC, "battery voltage falls in bucket: %d\n",
-			voltage_bucket);
-
-	return chip->cc_stage_fastchg_current_ma[temp_bucket *
-		chip->cc_stage_temp_thresh_cnt + voltage_bucket];
-}
-
 #define BATT_STAGE_CHECK_DELAY_MS	5000
+#define CURRENT_LIMIT_STAGES		2
 static void smbchg_batt_stage_check_work(struct work_struct *work)
 {
 	struct smbchg_chip *chip = container_of(work,
 				struct smbchg_chip,
 				batt_stage_check_work.work);
 	int rc = 0;
-	int fastchg_current_ma = 0;
+	struct limit_map *map = &chip->chg_limits_map;
+	struct cycle_thresh_map *cycle_map = NULL;
+	struct limit_entry *limit = NULL;
+	int temp_bucket, cycle_bucket, vbatt_bucket;
 	int cycles = get_prop_batt_aggregate_cycle_count(chip);
 	int temp = get_prop_batt_temp(chip);
 	int voltage_mv = get_prop_batt_voltage_now(chip) / 1000;
 
-	if (cycles >= chip->batt_stage_1_cycle_thresh) {
-		/* restrict fast charge current */
-		chip->cfg_fastchg_current_ma = chip->batt_stage_1_fastchg_current_ma;
-		rc = vote(chip->fcc_votable, CYCLE_CHECK_FCC_VOTER, true,
-				chip->cfg_fastchg_current_ma);
-		if (rc < 0) {
-			dev_err(chip->dev,
-				"Couldn't set fastcharge current: %d\n", rc);
-		}
-	}
+	for (temp_bucket = 0; temp_bucket < map->temp_thresh_len - 1;
+			temp_bucket++)
+		if (temp >= map->temp_thresh[temp_bucket] &&
+			temp < map->temp_thresh[temp_bucket + 1])
+			break;
 
-	if (cycles >= chip->batt_stage_2_cycle_thresh) {
-		/* restrict max charge capacity */
-		pr_smb(PR_STATUS, "limited float voltage to %d\n",
-				chip->batt_stage_2_vfloat_mv);
-		rc = smbchg_float_voltage_set(chip, chip->batt_stage_2_vfloat_mv);
-		if (rc < 0) {
-			dev_err(chip->dev,
-				"Couldn't set float voltage: %d\n", rc);
-		}
-	}
+	cycle_map = &map->cycle_limits[temp_bucket];
 
-	fastchg_current_ma = get_cc_stage_current_limit(chip, temp, voltage_mv);
+	for (cycle_bucket = 0; cycle_bucket < cycle_map->cycle_thresh_len - 1;
+			cycle_bucket++)
+		if (cycles >= cycle_map->cycle_thresh[cycle_bucket] &&
+			cycles < cycle_map->cycle_thresh[cycle_bucket + 1])
+			break;
 
-	pr_smb(PR_STATUS, "CC current limit: %d\n", fastchg_current_ma);
+	for (vbatt_bucket = 0; vbatt_bucket < CURRENT_LIMIT_STAGES - 1;
+			vbatt_bucket++)
+		if (voltage_mv < cycle_map->vbatt_thresh[vbatt_bucket])
+			break;
 
-	/* Must always vote, current restrict/unrestrict is not binary choice */
+	limit = &cycle_map->limits[
+		cycle_bucket * CURRENT_LIMIT_STAGES + vbatt_bucket];
+
+	chip->cfg_fastchg_current_ma = limit->fastchg_limit;
 	rc = vote(chip->fcc_votable, CC_STAGE_CHECK_FCC_VOTER, true,
-			fastchg_current_ma);
+			chip->cfg_fastchg_current_ma);
 	if (rc < 0) {
 		dev_err(chip->dev,
 			"Couldn't set fastcharge current: %d\n", rc);
 	}
+
+	pr_smb(PR_STATUS, "CC current limit: %d\n", limit->fastchg_limit);
+
+	rc = smbchg_float_voltage_set(chip, limit->vfloat_limit);
+	if (rc < 0) {
+		dev_err(chip->dev,
+			"Couldn't set float voltage: %d\n", rc);
+	}
+
+	pr_smb(PR_STATUS, "Float voltage limit: %d\n", limit->vfloat_limit);
 
 	schedule_delayed_work(&chip->batt_stage_check_work,
 			msecs_to_jiffies(BATT_STAGE_CHECK_DELAY_MS));
@@ -7389,6 +7427,13 @@ static int smbchg_hw_init(struct smbchg_chip *chip)
 		}
 	}
 
+	rc = smbchg_otg_configure_current_limit(chip);
+	if (rc < 0) {
+		dev_err(chip->dev, "Could not set OTG current limit rc = %d\n",
+			rc);
+		return rc;
+	}
+
 	if (chip->wa_flags & SMBCHG_BATT_OV_WA)
 		batt_ov_wa_check(chip);
 
@@ -7528,90 +7573,143 @@ err:
 	return rc;
 }
 
-static int smb_parse_cc_stage_dt(struct smbchg_chip *chip)
+static int smb_verify_limits_dt(struct smbchg_chip *chip)
 {
 	struct device_node *node = chip->dev->of_node;
-	int i, j, rc = 0;
-	int total_elements, size;
+	int temp_size, cycle_size, mv_size, limits_size;
+
+	if (!of_find_property(node, "qcom,stage-temp-thresh", &temp_size)) {
+		dev_err(chip->dev,
+			"stage-temp-thresh missing\n");
+		return -EINVAL;
+	}
+	if (!of_find_property(node, "qcom,stage-cycle-thresh", &cycle_size)) {
+		dev_err(chip->dev,
+			"stage-temp-thresh missing\n");
+		return -EINVAL;
+	}
+	if (!of_find_property(node, "qcom,stage-mv-thresh", &mv_size)) {
+		dev_err(chip->dev,
+			"stage-mv-thresh missing\n");
+		return -EINVAL;
+	}
+	if (!of_find_property(node, "qcom,stage-limits", &limits_size)) {
+		dev_err(chip->dev,
+			"stage-limits missing\n");
+		return -EINVAL;
+	}
+
+	temp_size /= sizeof(int);
+	cycle_size /= sizeof(int);
+	mv_size /= sizeof(int);
+	limits_size /= sizeof(int);
+
+	if (cycle_size != mv_size) {
+		dev_err(chip->dev,
+			"cycle-thresh size must equal mv-thresh size\n");
+		return -EINVAL;
+	}
+
+	if (limits_size != (cycle_size * temp_size) * CURRENT_LIMIT_STAGES * 2) {
+		dev_err(chip->dev,
+			"stage-limits size is invalid\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int smb_parse_limits_dt(struct smbchg_chip *chip)
+{
+	struct device_node *node = chip->dev->of_node;
 	struct property *prop;
 	const __be32 *data;
+	int i, j, k, offset, total_elements, size, rc = 0;
+	struct limit_map *map = &chip->chg_limits_map;
+	struct cycle_thresh_map *cycle_map = NULL;
+	struct limit_entry *limits = NULL;
 
-	if (of_find_property(node, "qcom,cc-stage-mv-thresh",
-				&chip->cc_stage_mv_thresh_cnt)) {
-		chip->cc_stage_mv_thresh = devm_kzalloc(chip->dev,
-				chip->cc_stage_mv_thresh_cnt, GFP_KERNEL);
-		if (chip->cc_stage_mv_thresh == NULL) {
-			dev_err(chip->dev,
-				"CC voltage thresholds kzalloc() failed.\n");
-			return -ENOMEM;
-		}
-		chip->cc_stage_mv_thresh_cnt /= sizeof(int);
-		rc = of_property_read_u32_array(node,
-				"qcom,cc-stage-mv-thresh",
-				chip->cc_stage_mv_thresh,
-				chip->cc_stage_mv_thresh_cnt);
-		if (rc) {
-			dev_err(chip->dev,
-				"Failed to read CC voltage thresholds.\n");
-			return rc;
-		}
-	}
+	if (!chip->use_batt_stage_adjustments)
+		return 0;
 
-	if (of_find_property(node, "qcom,cc-stage-temp-thresh",
-				&chip->cc_stage_temp_thresh_cnt)) {
-		chip->cc_stage_temp_thresh = devm_kzalloc(chip->dev,
-				chip->cc_stage_temp_thresh_cnt, GFP_KERNEL);
-		if (chip->cc_stage_temp_thresh == NULL) {
-			dev_err(chip->dev,
-				"CC temp thresholds kzalloc() failed.\n");
-			return -ENOMEM;
-		}
-
-		chip->cc_stage_temp_thresh_cnt /= sizeof(int);
-		rc = of_property_read_u32_array(node,
-				"qcom,cc-stage-temp-thresh",
-				chip->cc_stage_temp_thresh,
-				chip->cc_stage_temp_thresh_cnt);
-		if (rc) {
-			dev_err(chip->dev,
-				"Failed to read CC temp thresholds.\n");
-			return rc;
-		}
-	}
-
-	prop = of_find_property(node, "qcom,cc-stage-fastchg-current-ma",
-				&size);
-	if (!prop) {
-		dev_err(chip->dev, "Failed to read CC fastcharge limits.\n");
+	if (smb_verify_limits_dt(chip) < 0) {
+		chip->use_batt_stage_adjustments = false;
 		return -EINVAL;
 	}
 
-	total_elements = size / sizeof(int);
-
-	if (total_elements != chip->cc_stage_temp_thresh_cnt *
-			chip->cc_stage_mv_thresh_cnt) {
-		dev_err(chip->dev, "Invalid fastcharge current limit map.\n");
-		return -EINVAL;
-	}
-
-	chip->cc_stage_fastchg_current_ma = devm_kzalloc(chip->dev, size,
-			GFP_KERNEL);
-	if (chip->cc_stage_fastchg_current_ma == NULL) {
-		dev_err(chip->dev, "CC current limits kzalloc() failed.\n");
+	of_find_property(node, "qcom,stage-temp-thresh", &size);
+	map->temp_thresh = devm_kzalloc(chip->dev, size, GFP_KERNEL);
+	if (map->temp_thresh == NULL)
 		return -ENOMEM;
+	map->temp_thresh_len = size / sizeof(int);
+	rc = of_property_read_u32_array(node,
+			"qcom,stage-temp-thresh",
+			map->temp_thresh,
+			map->temp_thresh_len);
+	if (rc) {
+		dev_err(chip->dev, "temp_thresh read failed.\n");
+		return rc;
 	}
 
+	map->cycle_limits = devm_kzalloc(chip->dev,
+			sizeof(struct cycle_thresh_map) *
+			map->temp_thresh_len, GFP_KERNEL);
+	if (map->cycle_limits == NULL)
+		return -ENOMEM;
+
+	for (i = 0; i < map->temp_thresh_len; i++) {
+		cycle_map = &map->cycle_limits[i];
+
+		of_find_property(node, "qcom,stage-cycle-thresh", &size);
+		cycle_map->cycle_thresh = devm_kzalloc(chip->dev, size, GFP_KERNEL);
+		if (cycle_map->cycle_thresh == NULL)
+			return -ENOMEM;
+		cycle_map->cycle_thresh_len = size / sizeof(int);
+		rc = of_property_read_u32_array(node,
+				"qcom,stage-cycle-thresh",
+				cycle_map->cycle_thresh,
+				cycle_map->cycle_thresh_len);
+		if (rc) {
+			dev_err(chip->dev, "cycle_thresh read failed.\n");
+			return rc;
+		}
+
+		of_find_property(node, "qcom,stage-mv-thresh", &size);
+		cycle_map->vbatt_thresh = devm_kzalloc(chip->dev, size, GFP_KERNEL);
+		if (cycle_map->vbatt_thresh == NULL)
+			return -ENOMEM;
+		cycle_map->vbatt_thresh_len = size / sizeof(int);
+		rc = of_property_read_u32_array(node,
+				"qcom,stage-mv-thresh",
+				cycle_map->vbatt_thresh,
+				cycle_map->vbatt_thresh_len);
+		if (rc) {
+			dev_err(chip->dev, "vbatt_thresh read failed.\n");
+			return rc;
+		}
+
+		cycle_map->limits = devm_kzalloc(chip->dev,
+				sizeof(struct limit_entry) *
+				cycle_map->cycle_thresh_len *
+				CURRENT_LIMIT_STAGES, GFP_KERNEL);
+		if (cycle_map->limits == NULL)
+			return -ENOMEM;
+	}
+
+	prop = of_find_property(node, "qcom,stage-limits", &size);
+	total_elements = size / sizeof(int);
 	data = prop->value;
-	/*
-	 * Arrange array so it resembles the following:
-	 *       mv1   mv1
-	 * t1   1000   500
-	 * t2   1400  1000
-	 */
-	for (i = 0; i < chip->cc_stage_temp_thresh_cnt; i++) {
-		for (j = 0; j < chip->cc_stage_mv_thresh_cnt; j++) {
-			chip->cc_stage_fastchg_current_ma[i *
-				chip->cc_stage_temp_thresh_cnt + j] = be32_to_cpup(data++);
+	for (i = 0; i < map->temp_thresh_len; i++) {
+		cycle_map = &map->cycle_limits[i];
+		limits = cycle_map->limits;
+		for (j = 0; j < cycle_map->cycle_thresh_len; j++) {
+			for (k = 0; k < CURRENT_LIMIT_STAGES; k++) {
+				offset = j * CURRENT_LIMIT_STAGES + k;
+				limits[offset].fastchg_limit =
+					be32_to_cpup(data++);
+				limits[offset].vfloat_limit =
+					be32_to_cpup(data++);
+			}
 		}
 	}
 
@@ -7700,18 +7798,6 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 	OF_PROP_READ(chip, chip->vchg_adc_channel,
 			"vchg-adc-channel-id", rc, 1);
 
-	/* Get age-based battery configuration */
-	OF_PROP_READ(chip, chip->batt_stage_1_cycle_thresh,
-			"stage-1-cycle-count", rc, 1);
-	OF_PROP_READ(chip, chip->batt_stage_1_fastchg_current_ma,
-			"stage-1-fastchg-current-ma", rc, 1);
-	OF_PROP_READ(chip, chip->batt_stage_2_cycle_thresh,
-			"stage-2-cycle-count", rc, 1);
-	OF_PROP_READ(chip, chip->batt_stage_2_vfloat_mv,
-			"stage-2-float-voltage-mv", rc, 1);
-
-	smb_parse_cc_stage_dt(chip);
-
 	/* read boolean configuration properties */
 	chip->use_vfloat_adjustments = of_property_read_bool(node,
 						"qcom,autoadjust-vfloat");
@@ -7737,6 +7823,9 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 				"qcom,skip-usb-suspend-for-fake-battery");
 	chip->use_batt_stage_adjustments = of_property_read_bool(node,
 			"qcom,batt-stage-adjustments");
+
+	/* Get age-based battery configuration */
+	smb_parse_limits_dt(chip);
 
 	/* parse the battery missing detection pin source */
 	rc = of_property_read_string(chip->spmi->dev.of_node,
@@ -7828,6 +7917,12 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 				"qcom,skip-usb-notification");
 
 	chip->otg_pinctrl = of_property_read_bool(node, "qcom,otg-pinctrl");
+
+	/* Get configuration for OTG current limit. */
+	rc = of_property_read_u32(node, "qcom,otg-current-limit",
+		&chip->otg_current_limit);
+	if (rc < 0)
+		chip->otg_current_limit = OTG_DEFAULT_CURRENT_LIMIT;
 
 	chip->cfg_override_usb_current = of_property_read_bool(node,
 				"qcom,override-usb-current");

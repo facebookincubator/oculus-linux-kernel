@@ -415,6 +415,17 @@ config DM_FLAKEY
        ---help---
          A target that intermittently fails I/O for debugging purposes.
 
+config DM_VERITY_HASH_PREFETCH_MIN_SIZE
+	int "Verity hash prefetch minimum size"
+	depends on DM_VERITY
+	range 1 4096
+	default 1
+	---help---
+	  This sets minimum number of hash blocks to prefetch for dm-verity.
+	  For devices like eMMC, having larger prefetch size like 128 can improve
+	  performance with increased memory consumption for keeping more hashes
+	  in RAM.
+
 config DM_VERITY
 	tristate "Verity target support"
 	depends on BLK_DEV_DM

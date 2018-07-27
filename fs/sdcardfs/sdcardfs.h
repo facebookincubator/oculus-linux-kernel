@@ -173,8 +173,9 @@ extern struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 				unsigned int flags);
 extern struct inode *sdcardfs_iget(struct super_block *sb,
 				 struct inode *lower_inode, userid_t id);
-extern int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
-			    struct path *lower_path, userid_t id);
+extern struct dentry *sdcardfs_interpose(struct dentry *dentry,
+				struct super_block *sb, struct path *lower_path,
+				userid_t id);
 
 /* file private data */
 struct sdcardfs_file_info {

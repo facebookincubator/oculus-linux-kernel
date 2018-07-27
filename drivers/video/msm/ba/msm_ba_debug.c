@@ -68,13 +68,9 @@ static ssize_t dev_info_read(struct file *file, char __user *buf,
 	if (NULL == dbg_buf)
 		return 0;
 
-	dbg_buf = kmalloc(sizeof(struct debug_buffer), GFP_KERNEL);
-	if (NULL == dbg_buf)
-		return 0;
-
 	INIT_DBG_BUF(dbg_buf);
 	write_str(dbg_buf, "===============================");
-	write_str(dbg_buf, "DEV: 0x%p", dev_ctxt);
+	write_str(dbg_buf, "DEV: 0x%pK", dev_ctxt);
 	write_str(dbg_buf, "===============================");
 	write_str(dbg_buf, "state: %d", dev_ctxt->state);
 

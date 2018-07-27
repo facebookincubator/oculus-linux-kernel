@@ -507,7 +507,6 @@ static int32_t msm_flash_init(
 	return 0;
 }
 
-#ifdef CONFIG_COMPAT
 static int32_t msm_flash_init_prepare(
 	struct msm_flash_ctrl_t *flash_ctrl,
 	struct msm_flash_cfg_data_t *flash_data)

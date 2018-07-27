@@ -20,6 +20,7 @@ struct minisensor_event {
 	__u64 timestamp;
 	__u32 type; /*1 of enum minisensor_event_type */
 	__u32 len;
+	__u32 fifo_status;
 	__u8 data[];
 } __attribute__((packed));
 
@@ -32,7 +33,8 @@ struct minisensor_reg_operation {
 
 enum minisensor_interrupt_mode {
 	MINI_SENSOR_INTR_DISABLED,
-	MINI_SENSOR_INTR_READ_RANGE,
+	MINI_SENSOR_INTR_READ_FIXED_RANGE,
+	MINI_SENSOR_INTR_READ_FIFO,
 };
 
 struct minisensor_interrupt_config {
@@ -42,6 +44,13 @@ struct minisensor_interrupt_config {
 			__u16 reg;
 			__u32 len;
 		} range;
+		struct {
+			__u16 status_reg;
+			__u8 len_mask;
+			__u8 len_right_shift;
+			__u8 len_multiplier;
+			__u16 data_reg;
+		} fifo;
 	};
 };
 

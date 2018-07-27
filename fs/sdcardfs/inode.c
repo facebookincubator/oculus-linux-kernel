@@ -67,6 +67,7 @@ static int sdcardfs_create(struct inode *dir, struct dentry *dentry,
 	const struct cred *saved_cred = NULL;
 	struct fs_struct *saved_fs;
 	struct fs_struct *copied_fs;
+	struct dentry *ret_dentry;
 
 	if (!check_caller_access_to_name(dir, &dentry->d_name)) {
 		err = -EACCES;
@@ -97,13 +98,17 @@ static int sdcardfs_create(struct inode *dir, struct dentry *dentry,
 	if (err)
 		goto out;
 
-	err = sdcardfs_interpose(dentry, dir->i_sb, &lower_path,
+	ret_dentry = sdcardfs_interpose(dentry, dir->i_sb, &lower_path,
 			SDCARDFS_I(dir)->data->userid);
-	if (err)
+	if (IS_ERR(ret_dentry)) {
+		err = PTR_ERR(ret_dentry);
 		goto out;
+	}
 	fsstack_copy_attr_times(dir, sdcardfs_lower_inode(dir));
 	fsstack_copy_inode_size(dir, lower_parent_dentry->d_inode);
-	fixup_lower_ownership(dentry, dentry->d_name.name);
+	fixup_lower_ownership(ret_dentry ?: dentry, dentry->d_name.name);
+	if (ret_dentry)
+		dput(ret_dentry);
 
 out:
 	current->fs = saved_fs;
@@ -275,6 +280,7 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	struct fs_struct *copied_fs;
 	struct qstr q_obb = QSTR_LITERAL("obb");
 	struct qstr q_data = QSTR_LITERAL("data");
+	struct dentry *ret_dentry;
 
 	if (!check_caller_access_to_name(dir, &dentry->d_name)) {
 		err = -EACCES;
@@ -338,8 +344,15 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 			make_nomedia_in_obb = 1;
 	}
 
-	err = sdcardfs_interpose(dentry, dir->i_sb, &lower_path, pd->userid);
-	if (err) {
+	/*
+	 * sdcardfs_interpose() calls d_splice_alias() and may return an
+	 * existing dentry -- use it whenever the associated d_inode is
+	 * needed.
+	 */
+	ret_dentry =
+		sdcardfs_interpose(dentry, dir->i_sb, &lower_path, pd->userid);
+	if (IS_ERR(ret_dentry)) {
+		err = PTR_ERR(ret_dentry);
 		unlock_dir(lower_parent_dentry);
 		goto out;
 	}
@@ -348,7 +361,7 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	fsstack_copy_inode_size(dir, lower_parent_dentry->d_inode);
 	/* update number of links on parent directory */
 	set_nlink(dir, sdcardfs_lower_inode(dir)->i_nlink);
-	fixup_lower_ownership(dentry, dentry->d_name.name);
+	fixup_lower_ownership(ret_dentry ?: dentry, dentry->d_name.name);
 	unlock_dir(lower_parent_dentry);
 	if ((!sbi->options.multiuser) && (qstr_case_eq(&dentry->d_name, &q_obb))
 		&& (pd->perm == PERM_ANDROID) && (pd->userid == 0))
@@ -358,16 +371,21 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	if (make_nomedia_in_obb ||
 		((pd->perm == PERM_ANDROID)
 				&& (qstr_case_eq(&dentry->d_name, &q_data)))) {
+		struct inode *inode = ret_dentry ? ret_dentry->d_inode : dentry->d_inode;
+
 		REVERT_CRED(saved_cred);
-		OVERRIDE_CRED(SDCARDFS_SB(dir->i_sb), saved_cred, SDCARDFS_I(dentry->d_inode));
+		OVERRIDE_CRED(SDCARDFS_SB(dir->i_sb), saved_cred, SDCARDFS_I(inode));
 		set_fs_pwd(current->fs, &lower_path);
 		touch_err = touch(".nomedia", 0664);
 		if (touch_err) {
 			pr_err("sdcardfs: failed to create .nomedia in %s: %d\n",
 							lower_path.dentry->d_name.name, touch_err);
-			goto out;
 		}
 	}
+
+	if (ret_dentry)
+		dput(ret_dentry);
+
 out:
 	current->fs = saved_fs;
 	free_fs_struct(copied_fs);

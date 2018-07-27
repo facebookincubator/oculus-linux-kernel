@@ -639,10 +639,8 @@ struct fg_chip {
 	bool			batt_info_restore;
 	bool			*batt_range_ocv;
 	int			*batt_range_pct;
-#if defined(CONFIG_PACIFIC_BOARD)
-	/* adc_tm parameters */
-	struct qpnp_vadc_chip *vadc_dev;
-#endif
+	/* Battery cycle count */
+	int			fake_battery_cycle_count;
 };
 
 /* FG_MEMIF DEBUGFS structures */
@@ -2705,18 +2703,12 @@ static bool is_charger_available(struct fg_chip *chip);
 static void update_temp_data(struct work_struct *work)
 {
 	s16 temp;
-#if defined(CONFIG_PACIFIC_BOARD)
-	s16 temp2;
-#endif
 	u8 reg[2];
 	bool tried_again = false;
 	int rc, ret, timeout = TEMP_PERIOD_TIMEOUT_MS;
 	struct fg_chip *chip = container_of(work,
 				struct fg_chip,
 				update_temp_work.work);
-#if defined(CONFIG_PACIFIC_BOARD)
-	struct qpnp_vadc_result adc_result;
-#endif
 	if (chip->fg_restarting)
 		goto resched;
 
@@ -2757,18 +2749,8 @@ wait:
 		goto out;
 	}
 
-#if defined(CONFIG_PACIFIC_BOARD)
 	temp = reg[0] | (reg[1] << 8);
 	temp = (temp * TEMP_LSB_16B / 1000) - DECIKELVIN;
-	rc = qpnp_vadc_read(chip->vadc_dev, LR_MUX6_PU1_AMUX_THM3, &adc_result);
-	temp2 = adc_result.physical * 10;
-
-	if (temp >= 0 && temp2 > temp && (temp2 - temp) > 50)
-		temp = temp2;
-
-	if (temp < 0 && temp2 < temp && (temp - temp2) > 50)
-		temp = temp2;
-#endif
 
 	/*
 	 * If temperature is within the specified range (e.g. -60C and 150C),
@@ -4497,27 +4479,6 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_BATTERY_INFO_ID,
 };
 
-#if defined(CONFIG_PACIFIC_BOARD)
-static ssize_t fg_battery_temp_sec_show(struct device *dev,
-					struct device_attribute *attr,
-					char *buf)
-{
-	struct fg_chip *chip = dev_get_drvdata(dev);
-
-	int rc;
-	struct qpnp_vadc_result adc_result;
-
-	rc = qpnp_vadc_read(chip->vadc_dev, LR_MUX6_PU1_AMUX_THM3, &adc_result);
-
-	return snprintf(buf, PAGE_SIZE, "%d\n",
-			(int32_t)adc_result.physical * 10);
-}
-
-static struct device_attribute attrs[] = { __ATTR(
-		temp_sec, S_IRUGO | S_IWUSR | S_IWGRP,
-		fg_battery_temp_sec_show, NULL) };
-#endif
-
 static int fg_power_get_property(struct power_supply *psy,
 				       enum power_supply_property psp,
 				       union power_supply_propval *val)
@@ -4577,7 +4538,10 @@ static int fg_power_get_property(struct power_supply *psy,
 		val->intval = chip->cyc_ctr.id;
 		break;
 	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
-		val->intval = fg_get_aggregate_cycle_count(chip);
+		if (chip->fake_battery_cycle_count >= 0)
+			val->intval = chip->fake_battery_cycle_count;
+		else
+			val->intval = fg_get_aggregate_cycle_count(chip);
 		break;
 	case POWER_SUPPLY_PROP_RESISTANCE_ID:
 		val->intval = get_sram_prop_now(chip, FG_DATA_BATT_ID);
@@ -4758,6 +4722,9 @@ static int fg_power_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATTERY_INFO_ID:
 		chip->batt_info_id = val->intval;
 		break;
+	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
+		chip->fake_battery_cycle_count = val->intval;
+		break;
 	default:
 		return -EINVAL;
 	};
@@ -4774,6 +4741,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
 	case POWER_SUPPLY_PROP_BATTERY_INFO:
 	case POWER_SUPPLY_PROP_BATTERY_INFO_ID:
+	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
 		return 1;
 	default:
 		break;
@@ -7451,9 +7419,6 @@ static void fg_cleanup(struct fg_chip *chip)
 {
 	fg_cancel_all_works(chip);
 	power_supply_unregister(&chip->bms_psy);
-#if defined(CONFIG_PACIFIC_BOARD)
-	sysfs_remove_file(&chip->spmi->dev.kobj, &attrs[0].attr);
-#endif
 	mutex_destroy(&chip->rslow_comp.lock);
 	mutex_destroy(&chip->rw_lock);
 	mutex_destroy(&chip->cyc_ctr.lock);
@@ -8694,9 +8659,6 @@ static int fg_probe(struct spmi_device *spmi)
 	struct fg_chip *chip;
 	struct spmi_resource *spmi_resource;
 	struct resource *resource;
-#if defined(CONFIG_PACIFIC_BOARD)
-	struct qpnp_vadc_chip *vadc_dev = NULL;
-#endif
 	u8 subtype, reg;
 	int rc = 0;
 
@@ -8719,19 +8681,7 @@ static int fg_probe(struct spmi_device *spmi)
 	chip->spmi = spmi;
 	chip->dev = &(spmi->dev);
 
-#if defined(CONFIG_PACIFIC_BOARD)
-	if (of_find_property(spmi->dev.of_node, "qcom,tempsec-vadc", NULL)) {
-		vadc_dev = qpnp_get_vadc(&spmi->dev, "tempsec");
-		if (IS_ERR(vadc_dev)) {
-			rc = PTR_ERR(vadc_dev);
-			if (rc != -EPROBE_DEFER)
-				dev_err(&spmi->dev, "Couldn't get vadc rc=%d\n",
-					rc);
-			return rc;
-		}
-	}
-#endif
-
+	chip->fake_battery_cycle_count = -EINVAL;
 	wakeup_source_init(&chip->empty_check_wakeup_source.source,
 			"qpnp_fg_empty_check");
 	wakeup_source_init(&chip->memif_wakeup_source.source,
@@ -8911,16 +8861,6 @@ static int fg_probe(struct spmi_device *spmi)
 	chip->bms_psy.supplied_to = fg_supplicants;
 	chip->bms_psy.num_supplicants = ARRAY_SIZE(fg_supplicants);
 	chip->bms_psy.property_is_writeable = fg_property_is_writeable;
-
-#if defined(CONFIG_PACIFIC_BOARD)
-	chip->vadc_dev = vadc_dev;
-	rc = sysfs_create_file(&chip->spmi->dev.kobj, &attrs[0].attr);
-	if (rc < 0) {
-		dev_err(chip->dev, "%s: Failed to create sysfs attributes\n",
-			__func__);
-		sysfs_remove_file(&chip->spmi->dev.kobj, &attrs[0].attr);
-	}
-#endif
 
 	rc = power_supply_register(chip->dev, &chip->bms_psy);
 	if (rc < 0) {

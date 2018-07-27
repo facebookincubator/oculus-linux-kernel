@@ -502,6 +502,7 @@ static void verity_prefetch_io(struct work_struct *work)
 		container_of(work, struct dm_verity_prefetch_work, work);
 	struct dm_verity *v = pw->v;
 	int i;
+	sector_t prefetch_blocks;
 
 	for (i = v->levels - 2; i >= 0; i--) {
 		sector_t hash_block_start;
@@ -524,8 +525,15 @@ static void verity_prefetch_io(struct work_struct *work)
 				hash_block_end = v->hash_blocks - 1;
 		}
 no_prefetch_cluster:
+		prefetch_blocks =
+			max((sector_t)CONFIG_DM_VERITY_HASH_PREFETCH_MIN_SIZE,
+				hash_block_end - hash_block_start + 1);
+		if ((hash_block_start + prefetch_blocks) >=
+			(v->hash_start + v->hash_blocks)) {
+			prefetch_blocks = hash_block_end - hash_block_start + 1;
+		}
 		dm_bufio_prefetch(v->bufio, hash_block_start,
-				  hash_block_end - hash_block_start + 1);
+				  prefetch_blocks);
 	}
 
 	kfree(pw);

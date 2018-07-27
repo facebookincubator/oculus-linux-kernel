@@ -33,9 +33,6 @@ static inline void __user *to_user_ptr(u64 address)
 	return (void __user *)(uintptr_t)address;
 }
 
-/* Don't want to limit commands, just for safety. */
-#define MAX_CMDS   1000000
-#define MAX_BOS    1000000
 static struct msm_gem_submit *submit_create(struct drm_device *dev,
 		struct msm_gpu *gpu, uint32_t nr)
 {
@@ -43,10 +40,6 @@ static struct msm_gem_submit *submit_create(struct drm_device *dev,
 	uint64_t sz = sizeof(*submit) + (nr * sizeof(submit->bos[0]));
 
 	if (sz > SIZE_MAX)
-		return NULL;
-
-	if (nr_cmds < 0 || nr_cmds > MAX_CMDS ||
-			nr_bos < 0 || nr_bos > MAX_BOS)
 		return NULL;
 
 	submit = kmalloc(sz, GFP_TEMPORARY | __GFP_NOWARN | __GFP_NORETRY);

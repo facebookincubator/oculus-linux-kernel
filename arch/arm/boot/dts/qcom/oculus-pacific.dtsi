@@ -319,6 +319,20 @@
 	];
 };
 
+&dsi_2k_90hz_boe_nt57860_video {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <819>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-panel-timings-phy-v2 = [
+		1f 1c 05 06 03 03 04 a0
+		1f 1c 05 06 03 03 04 a0
+		1f 1c 05 06 03 03 04 a0
+		1f 1c 05 06 03 03 04 a0
+		1f 11 05 06 03 03 04 a0
+	];
+};
+
 &dsi_2k_jdi_nt36860_video {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
 	qcom,mdss-dsi-bl-min-level = <819>;
@@ -373,14 +387,27 @@
 			<7820000 8500000 550 700 550>;
 
 	qcom,batt-stage-adjustments;
-	qcom,stage-1-cycle-count = <200>;
-	qcom,stage-1-fastchg-current-ma = <1000>;
-	qcom,stage-2-cycle-count = <500>;
-	qcom,stage-2-float-voltage-mv = <3600>;
-	qcom,cc-stage-mv-thresh = <0 3900>;
-	qcom,cc-stage-temp-thresh = <0 150>;
-	qcom,cc-stage-fastchg-current-ma = <1000 500>,
-		<1400 1000>;
+
+	qcom,stage-temp-thresh = <0 150>;
+	qcom,stage-cycle-thresh = <0 200 300 600>;
+	qcom,stage-mv-thresh = <3900 3700 3600 3600>;
+	qcom,stage-limits =
+		<1000 4160>,
+		<1000 4160>,
+		<1000 4160>,
+		<500 4160>,
+		<800 4160>,
+		<500 4160>,
+		<800 3600>,
+		<500 3600>,
+		<1400 4160>,
+		<1000 4160>,
+		<1400 4160>,
+		<800 4160>,
+		<800 4160>,
+		<800 4160>,
+		<800 3600>,
+		<800 3600>;
 
 	qcom,thermal-mitigation = <1500 1000 600 0>;
 	qcom,fastchg-current-ma = <1400>;
@@ -429,7 +456,6 @@
 &pmi8994_fg {
 	qcom,battery-data = <&cdp_battery_data>;
 	qcom,ext-sense-type;
-	qcom,tempsec-vadc = <&pm8994_vadc>;
 	qcom,resume-soc = <95>;
 	qcom,fg-delta-soc = <1>;
 	qcom,fg-iterm-ma = <200>;
@@ -438,10 +464,10 @@
 	qcom,fg-cutoff-voltage-mv = <3300>;
 	qcom,hold-soc-while-full;
 	qcom,irq-volt-empty-mv = <3200>;
-	qcom,cold-bat-decidegc = <100>;
+	qcom,cold-bat-decidegc = <50>;
 	qcom,cool-bat-decidegc = <120>;
-	qcom,warm-bat-decidegc = <430>;
-	qcom,hot-bat-decidegc = <450>;
+	qcom,warm-bat-decidegc = <420>;
+	qcom,hot-bat-decidegc = <440>;
 	qcom,cold-hot-jeita-hysteresis = <0 10>; /*50->49 recharge*/
 };
 

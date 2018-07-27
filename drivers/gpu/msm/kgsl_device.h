@@ -349,6 +349,7 @@ struct kgsl_thread_private;
  * @pwr_constraint: power constraint from userspace for this context
  * @fault_count: number of times gpu hanged in last _context_throttle_time ms
  * @fault_time: time of the first gpu hang in last _context_throttle_time ms
+ * @node: list node for context_list in kgsl_process_private
  */
 struct kgsl_context {
 	struct kref refcount;
@@ -367,6 +368,7 @@ struct kgsl_context {
 	struct kgsl_pwr_constraint pwr_constraint;
 	unsigned int fault_count;
 	unsigned long fault_time;
+	struct list_head node;
 };
 
 #define _context_comm(_c) \
@@ -398,6 +400,7 @@ struct kgsl_context {
  * @syncsource_idr: sync sources created by this process
  * @syncsource_lock: Spinlock to protect the syncsource idr
  * @fd_count: Counter for the number of FDs for this process
+ * @context_list: List of high priority contexts allocated by this process
  */
 struct kgsl_process_private {
 	unsigned long priv;
@@ -417,6 +420,8 @@ struct kgsl_process_private {
 	struct idr syncsource_idr;
 	spinlock_t syncsource_lock;
 	int fd_count;
+	struct list_head context_list;
+	rwlock_t context_list_lock;
 };
 
 struct kgsl_thread_private {

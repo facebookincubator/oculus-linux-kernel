@@ -617,6 +617,17 @@ static void handle_rx(struct uart_port *port, unsigned int misr)
 	tty_flip_buffer_push(tty->port);
 }
 
+static void reset_dm_count(struct uart_port *port, int count)
+{
+	unsigned int vid;
+
+	vid = UART_TO_MSM(port)->ver_id;
+
+	wait_for_xmitr(port);
+	msm_hsl_write(port, count, regmap[vid][UARTDM_NCF_TX]);
+	msm_hsl_read(port, regmap[vid][UARTDM_NCF_TX]);
+}
+
 static void handle_tx(struct uart_port *port)
 {
 	struct circ_buf *xmit = &port->state->xmit;
@@ -636,16 +647,12 @@ static void handle_tx(struct uart_port *port)
 
 	/* Handle x_char */
 	if (port->x_char) {
-		wait_for_xmitr(port);
-		msm_hsl_write(port, tx_count + 1, regmap[vid][UARTDM_NCF_TX]);
-		msm_hsl_read(port, regmap[vid][UARTDM_NCF_TX]);
+		reset_dm_count(port, tx_count + 1);
 		msm_hsl_write(port, port->x_char, regmap[vid][UARTDM_TF]);
 		port->icount.tx++;
 		port->x_char = 0;
 	} else if (tx_count) {
-		wait_for_xmitr(port);
-		msm_hsl_write(port, tx_count, regmap[vid][UARTDM_NCF_TX]);
-		msm_hsl_read(port, regmap[vid][UARTDM_NCF_TX]);
+		reset_dm_count(port, tx_count);
 	}
 	if (!tx_count) {
 		msm_hsl_stop_tx(port);
@@ -762,6 +769,10 @@ static void msm_hsl_reset(struct uart_port *port)
 	msm_hsl_write(port, RESET_BREAK_INT, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RESET_CTS, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RFR_LOW, regmap[vid][UARTDM_CR]);
+
+	/* Disable DM modes */
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_DMEN]);
+
 }
 
 static unsigned int msm_hsl_get_mctrl(struct uart_port *port)
@@ -1296,6 +1307,108 @@ static void msm_hsl_power(struct uart_port *port, unsigned int state,
 	}
 }
 
+#ifdef CONFIG_CONSOLE_POLL
+
+/* defines from msm_serial.h */
+#define UARTDM_DMEN_RX_SC_ENABLE BIT(5)
+#define UARTDM_DMEN_TX_SC_ENABLE BIT(4)
+
+#define UARTDM_RXFS_BUF_SHIFT	0x7
+#define UARTDM_RXFS_BUF_MASK	0x7
+
+static int msm_poll_get_char_dm(struct uart_port *port)
+{
+	int c;
+	static u32 slop;
+	static int count;
+	unsigned char *sp = (unsigned char *)&slop;
+	unsigned int vid;
+
+	vid = UART_TO_MSM(port)->ver_id;
+
+	/* Check if a previous read had more than one char */
+	if (count) {
+		c = sp[sizeof(slop) - count];
+		count--;
+	/* Or if FIFO is empty */
+	} else if (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) & UARTDM_SR_RXRDY_BMSK)) { /* bit 0  */
+		/*
+		 * If RX packing buffer has less than a word, force stale to
+		 * push contents into RX FIFO
+		 */
+		count = msm_hsl_read(port, regmap[vid][UARTDM_RXFS]);
+		count = (count >> UARTDM_RXFS_BUF_SHIFT) & UARTDM_RXFS_BUF_MASK;
+		if (count) {
+			msm_hsl_write(port, FORCE_STALE_EVENT, regmap[vid][UARTDM_CR]);
+			slop = msm_hsl_read(port, regmap[vid][UARTDM_RF]);
+			c = sp[0];
+			count--;
+			msm_hsl_write(port, RESET_STALE_INT, regmap[vid][UARTDM_CR]);
+			msm_hsl_write(port, 0xFF, regmap[vid][UARTDM_DMRX]);
+			msm_hsl_write(port, STALE_EVENT_ENABLE, regmap[vid][UARTDM_CR]);
+		} else {
+			c = NO_POLL_CHAR;
+		}
+	/* FIFO has a word */
+	} else {
+		slop = msm_hsl_read(port, regmap[vid][UARTDM_RF]);
+		c = sp[0];
+		count = sizeof(slop) - 1;
+	}
+
+	return c;
+}
+
+static int msm_poll_get_char(struct uart_port *port)
+{
+	u32 imr;
+	int c;
+	unsigned int vid;
+
+	vid = UART_TO_MSM(port)->ver_id;
+
+	/* Disable all interrupts */
+	imr = msm_hsl_read(port, regmap[vid][UARTDM_IMR]);
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_IMR]);
+
+	c = msm_poll_get_char_dm(port);
+
+	/* Enable interrupts */
+	msm_hsl_write(port, imr, regmap[vid][UARTDM_IMR]);
+
+	return c;
+}
+
+static void msm_poll_put_char(struct uart_port *port, unsigned char c)
+{
+	u32 imr;
+	unsigned int vid;
+
+	vid = UART_TO_MSM(port)->ver_id;
+
+	/* Disable all interrupts */
+	imr = msm_hsl_read(port, regmap[vid][UARTDM_IMR]);
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_IMR]);
+
+	reset_dm_count(port, 1);
+
+	/* Wait until FIFO is empty */
+	while (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) & UARTDM_SR_TXRDY_BMSK))
+		cpu_relax();
+
+	/* Write a character */
+	msm_hsl_write(port, c, regmap[vid][UARTDM_TF]);
+
+	/* Wait until FIFO is empty */
+	while (!(msm_hsl_read(port, regmap[vid][UARTDM_SR]) & UARTDM_SR_TXRDY_BMSK))
+		cpu_relax();
+
+	/* Enable interrupts */
+	msm_hsl_write(port, imr, regmap[vid][UARTDM_IMR]);
+}
+#endif
+
+
 static struct uart_ops msm_hsl_uart_pops = {
 	.tx_empty = msm_hsl_tx_empty,
 	.set_mctrl = msm_hsl_set_mctrl,
@@ -1314,6 +1427,10 @@ static struct uart_ops msm_hsl_uart_pops = {
 	.config_port = msm_hsl_config_port,
 	.verify_port = msm_hsl_verify_port,
 	.pm = msm_hsl_power,
+#ifdef CONFIG_CONSOLE_POLL
+	.poll_get_char	= msm_poll_get_char,
+	.poll_put_char	= msm_poll_put_char,
+#endif
 };
 
 static struct msm_hsl_port msm_hsl_uart_ports[] = {
