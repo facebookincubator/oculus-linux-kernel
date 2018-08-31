@@ -4807,6 +4807,14 @@ static void mdss_mdp_mixer_setup(struct mdss_mdp_ctl *master_ctl,
 		if (!pipe->src_fmt->alpha_enable && bg_alpha_enable)
 			mixer_op_mode = 0;
 
+		if (pipe->color_type != 0) {
+			blend_op = (MDSS_MDP_BLEND_FG_ALPHA_FG_CONST |
+					MDSS_MDP_BLEND_BG_ALPHA_BG_CONST);
+			fg_alpha = 0xFF;
+			/* make sure other color channels aren't overwritten */
+			bg_alpha = 0xFF;
+		}
+
 		__mdss_mdp_mixer_update_cfg_masks(pipe->num,
 				pipe->multirect.num, stage, &mixercfg);
 

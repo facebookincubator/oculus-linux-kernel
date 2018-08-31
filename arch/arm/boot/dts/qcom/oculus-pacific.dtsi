@@ -390,24 +390,24 @@
 
 	qcom,stage-temp-thresh = <0 150>;
 	qcom,stage-cycle-thresh = <0 200 300 600>;
-	qcom,stage-mv-thresh = <3900 3700 3600 3600>;
+	qcom,stage-mv-thresh = <3900 3800 3600 3600>;
 	qcom,stage-limits =
-		<1000 4160>,
+		<1400 4160>,
 		<1000 4160>,
 		<1000 4160>,
 		<500 4160>,
 		<800 4160>,
 		<500 4160>,
-		<800 3600>,
-		<500 3600>,
+		<800 4160>,
+		<500 4160>,
 		<1400 4160>,
 		<1000 4160>,
-		<1400 4160>,
+		<1200 4160>,
 		<800 4160>,
 		<800 4160>,
 		<800 4160>,
-		<800 3600>,
-		<800 3600>;
+		<800 4160>,
+		<800 4160>;
 
 	qcom,thermal-mitigation = <1500 1000 600 0>;
 	qcom,fastchg-current-ma = <1400>;
@@ -416,6 +416,8 @@
 	qcom,float-voltage-comp = <1>;
 	qcom,charging-timeout-mins = <384>;
 	qcom,precharging-timeout-mins = <96>;
+
+	qcom,otg-current-limit = <600>;
 
 	/delete-property/ qcom,charge-unknown-battery;
 	/delete-property/ qcom,parallel-usb-min-current-ma;

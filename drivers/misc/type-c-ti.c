@@ -39,9 +39,6 @@
 #define TI_STS_8_REG		0x8
 #define TI_STS_9_REG		0x9
 #define TI_INTS_STATUS		BIT(4)
-#ifdef CONFIG_CORAL_BOARD
-#define TI_DIR_STATUS		BIT(5)
-#endif
 
 static bool disable_on_suspend;
 module_param(disable_on_suspend , bool, S_IRUGO | S_IWUSR);
@@ -56,9 +53,6 @@ struct ti_usb_type_c {
 	u8			status_8_reg;
 	u8			status_9_reg;
 	int			enb_gpio;
-#ifdef CONFIG_CORAL_BOARD
-	int			sel_gpio;
-#endif
 	int			enb_gpio_polarity;
 	struct regulator	*i2c_1p8;
 };
@@ -87,12 +81,6 @@ static int tiusb_read_regdata(struct i2c_client *i2c)
 
 	dev_dbg(&i2c->dev, "i2c read from 0x%x-[%x %x]\n", saddr,
 				ti_usb->status_8_reg, ti_usb->status_9_reg);
-#ifdef CONFIG_CORAL_BOARD
-	if (ti_usb->status_9_reg & TI_DIR_STATUS)
-		gpio_set_value(ti_usb->sel_gpio, 0);
-	else
-		gpio_set_value(ti_usb->sel_gpio, 1);
-#endif
 	if (!(ti_usb->status_9_reg & TI_INTS_STATUS)) {
 		dev_err(&i2c->dev, "intr_status is 0!, ignore interrupt\n");
 		ti_usb->attach_state = false;
@@ -171,7 +159,6 @@ out:
 	return IRQ_HANDLED;
 }
 
-#ifndef CONFIG_CORAL_BOARD
 static int tiusb_gpio_config(struct ti_usb_type_c *ti, bool enable)
 {
 	int ret = 0;
@@ -202,29 +189,6 @@ static int tiusb_gpio_config(struct ti_usb_type_c *ti, bool enable)
 
 	return ret;
 }
-#else
-static int tiusb_gpio_config(struct ti_usb_type_c *ti)
-{
-	int ret = 0;
-
-	ret = devm_gpio_request(&ti->client->dev, ti->sel_gpio,
-					"ti_typec_sel_gpio");
-	if (ret) {
-		pr_err("unable to request gpio [%d]\n", ti->sel_gpio);
-		return ret;
-	}
-
-	ret = gpio_direction_output(ti->sel_gpio, 1);
-	if (ret) {
-		dev_err(&ti->client->dev, "set dir failed for gpio[%d]\n", ti->sel_gpio);
-		return ret;
-	}
-
-	gpio_set_value(ti->sel_gpio, 0);
-
-	return ret;
-}
-#endif
 
 static int tiusb_ldo_init(struct ti_usb_type_c *ti, bool init)
 {
@@ -294,7 +258,6 @@ static int tiusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	if (!disable_on_suspend)
 		disable_on_suspend = of_property_read_bool(np,
 						"ti,disable-on-suspend");
-#ifndef CONFIG_CORAL_BOARD
 	ti_usb->enb_gpio = of_get_named_gpio_flags(np, "ti,enb-gpio", 0,
 							&flags);
 	if (!gpio_is_valid(ti_usb->enb_gpio)) {
@@ -305,25 +268,12 @@ static int tiusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 		if (ret)
 			goto out;
 	}
-#else
-	ti_usb->sel_gpio = of_get_named_gpio_flags(np, "ptn360,sel-gpio", 0,
-							&flags);
-	if (!gpio_is_valid(ti_usb->sel_gpio)) {
-		dev_dbg(&i2c->dev, "enb gpio_get fail:%d\n", ti_usb->sel_gpio);
-	} else {
-		ret = tiusb_gpio_config(ti_usb);
-		if (ret)
-			goto out;
-	}
-#endif
 
-#ifndef CONFIG_CORAL_BOARD
 	ret = tiusb_ldo_init(ti_usb, true);
 	if (ret) {
 		dev_err(&ti_usb->client->dev, "i2c ldo init failed\n");
 		goto gpio_disable;
 	}
-#endif
 
 	ret = tiusb_read_regdata(i2c);
 	if (ret == -EIO) {
@@ -349,11 +299,9 @@ static int tiusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 
 ldo_disable:
 	tiusb_ldo_init(ti_usb, false);
-#ifndef CONFIG_CORAL_BOARD
 gpio_disable:
 	if (gpio_is_valid(ti_usb->enb_gpio))
 		tiusb_gpio_config(ti_usb, false);
-#endif
 out:
 	return ret;
 }
@@ -363,10 +311,8 @@ static int tiusb_remove(struct i2c_client *i2c)
 	struct ti_usb_type_c *ti_usb = i2c_get_clientdata(i2c);
 
 	tiusb_ldo_init(ti_usb, false);
-#ifndef CONFIG_CORAL_BOARD
 	if (gpio_is_valid(ti_usb->enb_gpio))
 		tiusb_gpio_config(ti_usb, false);
-#endif
 	devm_kfree(&i2c->dev, ti_usb);
 
 	return 0;
@@ -385,13 +331,11 @@ static int tiusb_i2c_suspend(struct device *dev)
 	if (ti->attach_state)
 		return 0;
 
-#ifndef CONFIG_CORAL_BOARD
 	regulator_set_voltage(ti->i2c_1p8, 0, TIUSB_1P8_VOL_MAX);
 	regulator_disable(ti->i2c_1p8);
 
 	if (disable_on_suspend)
 		gpio_set_value(ti->enb_gpio, !ti->enb_gpio_polarity);
-#endif
 
 	return 0;
 }
@@ -409,7 +353,6 @@ static int tiusb_i2c_resume(struct device *dev)
 		return 0;
 	}
 
-#ifndef CONFIG_CORAL_BOARD
 	if (disable_on_suspend) {
 		gpio_set_value(ti->enb_gpio, ti->enb_gpio_polarity);
 		msleep(TI_I2C_DELAY_MS);
@@ -423,7 +366,6 @@ static int tiusb_i2c_resume(struct device *dev)
 	rc = regulator_enable(ti->i2c_1p8);
 	if (rc)
 		dev_err(&ti->client->dev, "unable to enable 1p8-reg(%d)\n", rc);
-#endif
 
 	enable_irq(ti->client->irq);
 

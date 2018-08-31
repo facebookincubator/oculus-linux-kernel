@@ -315,13 +315,6 @@ config OCULUS
 	help
 	  Enable support for Oculus systems and boards.
 
-config CORAL_BOARD
-	depends on OCULUS
-	default n
-	bool "Monterey proto0 board driver"
-	help
-	  Support for the Monterey proto0 board driver.
-
 config PACIFIC_BOARD
 	depends on OCULUS
 	default n

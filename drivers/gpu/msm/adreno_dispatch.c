@@ -19,6 +19,7 @@
 
 #include "kgsl.h"
 #include "kgsl_cffdump.h"
+#include "kgsl_device.h"
 #include "kgsl_sharedmem.h"
 #include "adreno.h"
 #include "adreno_ringbuffer.h"
@@ -1184,8 +1185,18 @@ int adreno_dispatcher_queue_cmd(struct adreno_device *adreno_dev,
 	 * queue will try to schedule new commands anyway.
 	 */
 
-	if (dispatch_q->inflight < _context_cmdbatch_burst)
-		adreno_dispatcher_issuecmds(adreno_dev);
+	if (dispatch_q->inflight < _context_cmdbatch_burst) {
+		/*
+		 * If called on a high priority context, try to issue commands
+		 * immediately, otherwise queue it on the kthread.  This avoids
+		 * submission delays due to priority inversion when a low-pri
+		 * thread gets preempted after acquiring the dispatcher mutex.
+		 */
+		if (kgsl_context_high_priority(&drawctxt->base))
+			adreno_dispatcher_issuecmds(adreno_dev);
+		else
+			adreno_dispatcher_schedule(KGSL_DEVICE(adreno_dev));
+	}
 
 	return 0;
 }

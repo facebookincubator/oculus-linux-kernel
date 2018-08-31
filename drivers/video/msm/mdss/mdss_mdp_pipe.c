@@ -2085,6 +2085,21 @@ exit:
 	mdss_mdp_pipe_write(pipe, MDSS_MDP_REG_SSPP_CDP_CTRL, cdp_settings);
 }
 
+/* replace non-matching components of the unpack pattern with C3_ALPHA */
+static inline u32 unpack_filter(u32 unpack, u8 keep)
+{
+	u32 result = 0, shift = 0;
+
+	while (unpack > 0) {
+		u32 val = (unpack & 0xFF);
+
+		result |= (((val == keep) ? val : C3_ALPHA) << shift);
+		unpack >>= 8;
+		shift += 8;
+	}
+	return result;
+}
+
 static int mdss_mdp_format_setup(struct mdss_mdp_pipe *pipe)
 {
 	struct mdss_mdp_format_params *fmt;
@@ -2134,6 +2149,19 @@ static int mdss_mdp_format_setup(struct mdss_mdp_pipe *pipe)
 			(fmt->unpack_tight << 17) |
 			(fmt->unpack_align_msb << 18) |
 			((fmt->bpp - 1) << 9);
+
+	/* optionally modify unpack to only use a single color channel */
+	switch (pipe->color_type) {
+	case MDP_LAYER_COLOR_R:
+		unpack = unpack_filter(unpack, C2_R_Cr); /* e.g. 0x03030302 */
+		break;
+	case MDP_LAYER_COLOR_G:
+		unpack = unpack_filter(unpack, C0_G_Y);
+		break;
+	case MDP_LAYER_COLOR_B:
+		unpack = unpack_filter(unpack, C1_B_Cb);
+		break;
+	}
 
 	if (mdss_mdp_is_ubwc_format(fmt)) {
 		opmode |= BIT(0);

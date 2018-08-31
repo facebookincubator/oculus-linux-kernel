@@ -500,11 +500,6 @@ static int _kgsl_get_context_id(struct kgsl_device *device)
 	return id;
 }
 
-static inline bool kgsl_context_high_priority(struct kgsl_context *context)
-{
-	return context->priority < KGSL_CONTEXT_PRIORITY_MED;
-}
-
 /**
  * kgsl_context_init() - helper to initialize kgsl_context members
  * @dev_priv: the owner of the context

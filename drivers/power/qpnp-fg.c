@@ -219,8 +219,12 @@ enum fg_mem_data_index {
 	FG_DATA_CURRENT,
 	FG_DATA_BATT_ESR,
 	FG_DATA_BATT_ESR_COUNT,
+	FG_DATA_RSLOW,
+	FG_DATA_CUTOFF_SOC,
 	FG_DATA_BATT_SOC,
 	FG_DATA_CC_CHARGE,
+	FG_DATA_SYSTEM_SOC,
+	FG_DATA_MONOTONIC_SOC,
 	FG_DATA_VINT_ERR,
 	FG_DATA_CPRED_VOLTAGE,
 	/* values below this only gets read once per profile reload */
@@ -271,8 +275,12 @@ static struct fg_mem_data fg_data[FG_DATA_MAX] = {
 	DATA(CURRENT,         0x5CC,   3,      2,     -EINVAL),
 	DATA(BATT_ESR,        0x554,   2,      2,     -EINVAL),
 	DATA(BATT_ESR_COUNT,  0x558,   2,      2,     -EINVAL),
+	DATA(RSLOW,           0x558,   0,      2,     -EINVAL),
+	DATA(CUTOFF_SOC,      0x564,   0,      3,     -EINVAL),
 	DATA(BATT_SOC,        0x56C,   1,      3,     -EINVAL),
 	DATA(CC_CHARGE,       0x570,   0,      4,     -EINVAL),
+	DATA(SYSTEM_SOC,      0x574,   0,      2,     -EINVAL),
+	DATA(MONOTONIC_SOC,   0x574,   2,      2,     -EINVAL),
 	DATA(VINT_ERR,        0x560,   0,      4,     -EINVAL),
 	DATA(CPRED_VOLTAGE,   0x540,   0,      2,     -EINVAL),
 	DATA(BATT_ID,         0x594,   1,      1,     -EINVAL),
@@ -2532,6 +2540,9 @@ static int update_sram_data(struct fg_chip *chip, int *resched_ms)
 		case FG_DATA_BATT_ESR_COUNT:
 			fg_data[i].value = (u16)temp;
 			break;
+		case FG_DATA_RSLOW:
+			fg_data[i].value = float_decode((u16) temp);
+			break;
 		case FG_DATA_BATT_ID:
 			if (battid_valid)
 				fg_data[i].value = reg[0] * LSB_8B;
@@ -2539,6 +2550,9 @@ static int update_sram_data(struct fg_chip *chip, int *resched_ms)
 		case FG_DATA_BATT_ID_INFO:
 			if (battid_valid)
 				fg_data[i].value = reg[0];
+			break;
+		case FG_DATA_CUTOFF_SOC:
+			fg_data[i].value = (u32)temp;
 			break;
 		case FG_DATA_BATT_SOC:
 			fg_data[i].value = div64_s64((temp * 10000),
@@ -2549,6 +2563,12 @@ static int update_sram_data(struct fg_chip *chip, int *resched_ms)
 			fg_data[i].value = div64_s64(
 					temp * (int64_t)chip->nom_cap_uah,
 					FULL_PERCENT_28BIT);
+			break;
+		case FG_DATA_MONOTONIC_SOC:
+			fg_data[i].value = (u16)temp;
+			break;
+		case FG_DATA_SYSTEM_SOC:
+			fg_data[i].value = (u16)temp;
 			break;
 		case FG_DATA_VINT_ERR:
 			temp = twos_compliment_extend(temp, fg_data[i].len);
@@ -4477,6 +4497,12 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_ENABLE_JEITA_DETECTION,
 	POWER_SUPPLY_PROP_BATTERY_INFO,
 	POWER_SUPPLY_PROP_BATTERY_INFO_ID,
+	POWER_SUPPLY_PROP_CHARGE_BATTERY,
+	POWER_SUPPLY_PROP_CHARGE_CUTOFF,
+	POWER_SUPPLY_PROP_CHARGE_MONOTONIC,
+	POWER_SUPPLY_PROP_CHARGE_SYSTEM,
+	POWER_SUPPLY_PROP_RESISTANCE_SLOW,
+	POWER_SUPPLY_PROP_VOLTAGE_PREDICTED,
 };
 
 static int fg_power_get_property(struct power_supply *psy,
@@ -4587,6 +4613,24 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_BATTERY_INFO_ID:
 		val->intval = chip->batt_info_id;
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_BATTERY:
+		val->intval = get_sram_prop_now(chip, FG_DATA_BATT_SOC);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_CUTOFF:
+		val->intval = get_sram_prop_now(chip, FG_DATA_CUTOFF_SOC);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_MONOTONIC:
+		val->intval = get_sram_prop_now(chip, FG_DATA_MONOTONIC_SOC);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_SYSTEM:
+		val->intval = get_sram_prop_now(chip, FG_DATA_SYSTEM_SOC);
+		break;
+	case POWER_SUPPLY_PROP_RESISTANCE_SLOW:
+		val->intval = get_sram_prop_now(chip, FG_DATA_RSLOW);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_PREDICTED:
+		val->intval = get_sram_prop_now(chip, FG_DATA_CPRED_VOLTAGE);
 		break;
 	default:
 		return -EINVAL;

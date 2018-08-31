@@ -158,6 +158,11 @@ struct mdp_layer_plane {
 	uint32_t stride;
 };
 
+/* Configure the pipe to use a single color component. */
+#define MDP_LAYER_COLOR_R	0x1
+#define MDP_LAYER_COLOR_G	0x2
+#define MDP_LAYER_COLOR_B	0x3
+
 struct mdp_layer_buffer {
 	/* layer width in pixels. */
 	uint32_t width;
@@ -194,7 +199,13 @@ struct mdp_layer_buffer {
 	int	 fence;
 
 	/* 32bits reserved value for future usage. */
-	uint32_t reserved;
+	union {
+		struct {
+			/* use a single color channel from this buffer */
+			uint8_t color_type;
+		};
+		uint32_t reserved;
+	};
 };
 
 /*

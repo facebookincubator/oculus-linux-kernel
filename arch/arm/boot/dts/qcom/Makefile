@@ -2,9 +2,6 @@ ifeq ($(CONFIG_PACIFIC_BOARD),y)
 dtb-$(CONFIG_ARCH_MSM8996) += oculus-pacific-v1.0.dtb \
 	oculus-pacific-v1.1.dtb
 else
-ifeq ($(CONFIG_CORAL_BOARD),y)
-dtb-$(CONFIG_ARCH_MSM8996) += thundersoft-dolphin-2.0-coral.dtb
-else
 dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	msm8996-v2-pmi8994-mtp.dtb \
 	msm8996-v2-pmi8994-pmk8001-cdp.dtb \
@@ -129,7 +126,6 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	apq8096-v3-pmi8996-mdm9x55-i2s-mtp.dtb \
 	apq8096-v3-pmi8996-mdm9x55-slimbus-mtp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
-endif
 endif
 
 dtb-$(CONFIG_ARCH_MSMCOBALT) += msmcobalt-sim.dtb \

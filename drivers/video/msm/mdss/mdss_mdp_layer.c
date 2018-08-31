@@ -531,6 +531,15 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 	pipe->async_update = (layer->flags & MDP_LAYER_ASYNC) ? true : false;
 	pipe->csc_coeff_set = layer->color_space;
 
+	/*
+	 * if color_type is set, only use the specified color channel; this
+	 * relies on C3_ALPHA in the unpack pattern, so we'll only do it if
+	 * we have enough channels (some 16-bit formats like RGB_565 are not
+	 * supported)
+	 */
+	if (pipe->src_fmt->unpack_count == 4)
+		pipe->color_type = layer->buffer.color_type;
+
 	if (mixer->ctl) {
 		pipe->dst.x += mixer->ctl->border_x_off;
 		pipe->dst.y += mixer->ctl->border_y_off;

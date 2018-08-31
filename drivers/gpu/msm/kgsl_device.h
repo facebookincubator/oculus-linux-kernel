@@ -703,6 +703,14 @@ static inline bool kgsl_context_invalid(struct kgsl_context *context)
 						&context->priv));
 }
 
+/**
+ * kgsl_context_high_priority() - check if context has elevated priority
+ * @context: the context
+ */
+static inline bool kgsl_context_high_priority(struct kgsl_context *context)
+{
+	return context->priority < KGSL_CONTEXT_PRIORITY_MED;
+}
 
 /**
  * kgsl_context_get() - get a pointer to a KGSL context

@@ -27,4 +27,3 @@ obj-$(CONFIG_MSM_11AD) += msm_11ad/
 obj-$(CONFIG_MSM_MHI_DEV) += mhi_dev/
 obj-$(CONFIG_SSM) += ssm.o
 obj-$(CONFIG_OCULUS) += oculus-system-info.o
-obj-$(CONFIG_CORAL_BOARD) += coral-board.o

@@ -137,7 +137,7 @@ struct task_struct		*kgdb_usethread;
 struct task_struct		*kgdb_contthread;
 
 int				kgdb_single_step;
-static pid_t			kgdb_sstep_pid;
+static struct task_struct	*kgdb_sstep_thread;
 
 /* to keep track of the CPU which is doing the single stepping*/
 atomic_t			kgdb_cpu_doing_single_step = ATOMIC_INIT(-1);
@@ -557,7 +557,7 @@ return_normal:
 	 */
 	if (atomic_read(&kgdb_cpu_doing_single_step) != -1 &&
 	    (kgdb_info[cpu].task &&
-	     kgdb_info[cpu].task->pid != kgdb_sstep_pid) && --sstep_tries) {
+	     kgdb_info[cpu].task != kgdb_sstep_thread) && --sstep_tries) {
 		atomic_set(&kgdb_active, -1);
 		raw_spin_unlock(&dbg_master_lock);
 		dbg_touch_watchdogs();
@@ -656,9 +656,9 @@ kgdb_restore:
 	if (atomic_read(&kgdb_cpu_doing_single_step) != -1) {
 		int sstep_cpu = atomic_read(&kgdb_cpu_doing_single_step);
 		if (kgdb_info[sstep_cpu].task)
-			kgdb_sstep_pid = kgdb_info[sstep_cpu].task->pid;
+			kgdb_sstep_thread = kgdb_info[sstep_cpu].task;
 		else
-			kgdb_sstep_pid = 0;
+			kgdb_sstep_thread = NULL;
 	}
 	if (arch_kgdb_ops.correct_hw_break)
 		arch_kgdb_ops.correct_hw_break();

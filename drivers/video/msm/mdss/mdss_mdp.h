@@ -771,6 +771,9 @@ struct mdss_mdp_pipe {
 	u8 supported_formats[BITS_TO_BYTES(MDP_IMGTYPE_LIMIT1)];
 
 	struct mdss_mdp_pipe_multirect_params multirect;
+
+	/* if non-zero, only use the specified color channel */
+	u8 color_type;
 };
 
 struct mdss_mdp_writeback_arg {

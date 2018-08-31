@@ -254,6 +254,12 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(enable_jeita_detection),
 	POWER_SUPPLY_ATTR(battery_info),
 	POWER_SUPPLY_ATTR(battery_info_id),
+	POWER_SUPPLY_ATTR(charge_battery),
+	POWER_SUPPLY_ATTR(charge_cutoff),
+	POWER_SUPPLY_ATTR(charge_monotonic),
+	POWER_SUPPLY_ATTR(charge_system),
+	POWER_SUPPLY_ATTR(resistance_slow),
+	POWER_SUPPLY_ATTR(voltage_predicted),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
 	/* Properties of type `const char *' */
