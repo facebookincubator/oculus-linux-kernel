@@ -35,7 +35,6 @@
  */
 DEFINE_PER_CPU(struct cpuinfo_arm64, cpu_data);
 static struct cpuinfo_arm64 boot_cpu_data;
-static bool mixed_endian_el0 = true;
 
 static char *icache_policy_str[] = {
 	[ICACHE_POLICY_RESERVED] = "RESERVED/UNKNOWN",
@@ -69,161 +68,51 @@ static void cpuinfo_detect_icache_policy(struct cpuinfo_arm64 *info)
 	pr_debug("Detected %s I-cache on CPU%d\n", icache_policy_str[l1ip], cpu);
 }
 
-bool cpu_supports_mixed_endian_el0(void)
-{
-	return id_aa64mmfr0_mixed_endian_el0(read_cpuid(ID_AA64MMFR0_EL1));
-}
-
-bool system_supports_mixed_endian_el0(void)
-{
-	return mixed_endian_el0;
-}
-
-static void update_mixed_endian_el0_support(struct cpuinfo_arm64 *info)
-{
-	mixed_endian_el0 &= id_aa64mmfr0_mixed_endian_el0(info->reg_id_aa64mmfr0);
-}
-
-static void update_cpu_features(struct cpuinfo_arm64 *info)
-{
-	update_mixed_endian_el0_support(info);
-}
-
-static int check_reg_mask(char *name, u64 mask, u64 boot, u64 cur, int cpu)
-{
-	if ((boot & mask) == (cur & mask))
-		return 0;
-
-	pr_warn("SANITY CHECK: Unexpected variation in %s. Boot CPU: %#016lx, CPU%d: %#016lx\n",
-		name, (unsigned long)boot, cpu, (unsigned long)cur);
-
-	return 1;
-}
-
-#define CHECK_MASK(field, mask, boot, cur, cpu) \
-	check_reg_mask(#field, mask, (boot)->reg_ ## field, (cur)->reg_ ## field, cpu)
-
-#define CHECK(field, boot, cur, cpu) \
-	CHECK_MASK(field, ~0ULL, boot, cur, cpu)
-
-/*
- * Verify that CPUs don't have unexpected differences that will cause problems.
- */
-static void cpuinfo_sanity_check(struct cpuinfo_arm64 *cur)
-{
-	unsigned int cpu = smp_processor_id();
-	struct cpuinfo_arm64 *boot = &boot_cpu_data;
-	unsigned int diff = 0;
-
-	/*
-	 * The kernel can handle differing I-cache policies, but otherwise
-	 * caches should look identical. Userspace JITs will make use of
-	 * *minLine.
-	 */
-	diff |= CHECK_MASK(ctr, 0xffff3fff, boot, cur, cpu);
-
-	/*
-	 * Userspace may perform DC ZVA instructions. Mismatched block sizes
-	 * could result in too much or too little memory being zeroed if a
-	 * process is preempted and migrated between CPUs.
-	 */
-	diff |= CHECK(dczid, boot, cur, cpu);
-
-	/* If different, timekeeping will be broken (especially with KVM) */
-	diff |= CHECK(cntfrq, boot, cur, cpu);
-
-	/*
-	 * Even in big.LITTLE, processors should be identical instruction-set
-	 * wise.
-	 */
-	diff |= CHECK(id_aa64isar0, boot, cur, cpu);
-	diff |= CHECK(id_aa64isar1, boot, cur, cpu);
-
-	/*
-	 * Differing PARange support is fine as long as all peripherals and
-	 * memory are mapped within the minimum PARange of all CPUs.
-	 * Linux should not care about secure memory.
-	 * ID_AA64MMFR1 is currently RES0.
-	 */
-	diff |= CHECK_MASK(id_aa64mmfr0, 0xffffffffffff0ff0, boot, cur, cpu);
-	diff |= CHECK(id_aa64mmfr1, boot, cur, cpu);
-
-	/*
-	 * EL3 is not our concern.
-	 * ID_AA64PFR1 is currently RES0.
-	 */
-	diff |= CHECK_MASK(id_aa64pfr0, 0xffffffffffff0fff, boot, cur, cpu);
-	diff |= CHECK(id_aa64pfr1, boot, cur, cpu);
-
-	/*
-	 * If we have AArch32, we care about 32-bit features for compat. These
-	 * registers should be RES0 otherwise.
-	 */
-	diff |= CHECK(id_isar0, boot, cur, cpu);
-	diff |= CHECK(id_isar1, boot, cur, cpu);
-	diff |= CHECK(id_isar2, boot, cur, cpu);
-	diff |= CHECK(id_isar3, boot, cur, cpu);
-	diff |= CHECK(id_isar4, boot, cur, cpu);
-	diff |= CHECK(id_isar5, boot, cur, cpu);
-	diff |= CHECK(id_mmfr0, boot, cur, cpu);
-	diff |= CHECK(id_mmfr1, boot, cur, cpu);
-	diff |= CHECK(id_mmfr2, boot, cur, cpu);
-	diff |= CHECK(id_mmfr3, boot, cur, cpu);
-	diff |= CHECK(id_pfr0, boot, cur, cpu);
-	diff |= CHECK(id_pfr1, boot, cur, cpu);
-
-	/*
-	 * Mismatched CPU features are a recipe for disaster. Don't even
-	 * pretend to support them.
-	 */
-	WARN_TAINT_ONCE(diff, TAINT_CPU_OUT_OF_SPEC,
-			"Unsupported CPU feature variation.");
-}
-
 static void __cpuinfo_store_cpu(struct cpuinfo_arm64 *info)
 {
 	info->reg_cntfrq = arch_timer_get_cntfrq();
 	info->reg_ctr = read_cpuid_cachetype();
-	info->reg_dczid = read_cpuid(DCZID_EL0);
+	info->reg_dczid = read_cpuid(SYS_DCZID_EL0);
 	info->reg_midr = read_cpuid_id();
 
-	info->reg_id_aa64isar0 = read_cpuid(ID_AA64ISAR0_EL1);
-	info->reg_id_aa64isar1 = read_cpuid(ID_AA64ISAR1_EL1);
-	/*
-	 * Explicitly mask out 16KB granule since we donot
-	 * want to support it
-	 */
-	info->reg_id_aa64mmfr0 = read_cpuid(ID_AA64MMFR0_EL1) &
-					(~MMFR0_EL1_16KGRAN_MASK);
-	info->reg_id_aa64mmfr1 = read_cpuid(ID_AA64MMFR1_EL1);
-	info->reg_id_aa64pfr0 = read_cpuid(ID_AA64PFR0_EL1);
-	info->reg_id_aa64pfr1 = read_cpuid(ID_AA64PFR1_EL1);
+	info->reg_id_aa64dfr0 = read_cpuid(SYS_ID_AA64DFR0_EL1);
+	info->reg_id_aa64dfr1 = read_cpuid(SYS_ID_AA64DFR1_EL1);
+	info->reg_id_aa64isar0 = read_cpuid(SYS_ID_AA64ISAR0_EL1);
+	info->reg_id_aa64isar1 = read_cpuid(SYS_ID_AA64ISAR1_EL1);
+	info->reg_id_aa64mmfr0 = read_cpuid(SYS_ID_AA64MMFR0_EL1);
+	info->reg_id_aa64mmfr1 = read_cpuid(SYS_ID_AA64MMFR1_EL1);
+	info->reg_id_aa64mmfr2 = read_cpuid(SYS_ID_AA64MMFR2_EL1);
+	info->reg_id_aa64pfr0 = read_cpuid(SYS_ID_AA64PFR0_EL1);
+	info->reg_id_aa64pfr1 = read_cpuid(SYS_ID_AA64PFR1_EL1);
 
-	info->reg_id_isar0 = read_cpuid(ID_ISAR0_EL1);
-	info->reg_id_isar1 = read_cpuid(ID_ISAR1_EL1);
-	info->reg_id_isar2 = read_cpuid(ID_ISAR2_EL1);
-	info->reg_id_isar3 = read_cpuid(ID_ISAR3_EL1);
-	info->reg_id_isar4 = read_cpuid(ID_ISAR4_EL1);
-	info->reg_id_isar5 = read_cpuid(ID_ISAR5_EL1);
-	info->reg_id_mmfr0 = read_cpuid(ID_MMFR0_EL1);
-	info->reg_id_mmfr1 = read_cpuid(ID_MMFR1_EL1);
-	info->reg_id_mmfr2 = read_cpuid(ID_MMFR2_EL1);
-	info->reg_id_mmfr3 = read_cpuid(ID_MMFR3_EL1);
-	info->reg_id_pfr0 = read_cpuid(ID_PFR0_EL1);
-	info->reg_id_pfr1 = read_cpuid(ID_PFR1_EL1);
+	info->reg_id_dfr0 = read_cpuid(SYS_ID_DFR0_EL1);
+	info->reg_id_isar0 = read_cpuid(SYS_ID_ISAR0_EL1);
+	info->reg_id_isar1 = read_cpuid(SYS_ID_ISAR1_EL1);
+	info->reg_id_isar2 = read_cpuid(SYS_ID_ISAR2_EL1);
+	info->reg_id_isar3 = read_cpuid(SYS_ID_ISAR3_EL1);
+	info->reg_id_isar4 = read_cpuid(SYS_ID_ISAR4_EL1);
+	info->reg_id_isar5 = read_cpuid(SYS_ID_ISAR5_EL1);
+	info->reg_id_mmfr0 = read_cpuid(SYS_ID_MMFR0_EL1);
+	info->reg_id_mmfr1 = read_cpuid(SYS_ID_MMFR1_EL1);
+	info->reg_id_mmfr2 = read_cpuid(SYS_ID_MMFR2_EL1);
+	info->reg_id_mmfr3 = read_cpuid(SYS_ID_MMFR3_EL1);
+	info->reg_id_pfr0 = read_cpuid(SYS_ID_PFR0_EL1);
+	info->reg_id_pfr1 = read_cpuid(SYS_ID_PFR1_EL1);
+
+	info->reg_mvfr0 = read_cpuid(SYS_MVFR0_EL1);
+	info->reg_mvfr1 = read_cpuid(SYS_MVFR1_EL1);
+	info->reg_mvfr2 = read_cpuid(SYS_MVFR2_EL1);
 
 	cpuinfo_detect_icache_policy(info);
 
 	check_local_cpu_errata();
-	check_local_cpu_features();
-	update_cpu_features(info);
 }
 
 void cpuinfo_store_cpu(void)
 {
 	struct cpuinfo_arm64 *info = this_cpu_ptr(&cpu_data);
 	__cpuinfo_store_cpu(info);
-	cpuinfo_sanity_check(info);
+	update_cpu_features(smp_processor_id(), info, &boot_cpu_data);
 }
 
 void __init cpuinfo_store_boot_cpu(void)
@@ -232,6 +121,7 @@ void __init cpuinfo_store_boot_cpu(void)
 	__cpuinfo_store_cpu(info);
 
 	boot_cpu_data = *info;
+	init_cpu_features(&boot_cpu_data);
 }
 
 u64 __attribute_const__ icache_get_ccsidr(void)

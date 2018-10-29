@@ -39,8 +39,6 @@ extern u64 cpu_do_resume(phys_addr_t ptr, u64 idmap_ttbr);
 
 #include <asm/memory.h>
 
-#define cpu_switch_mm(pgd,mm) cpu_do_switch_mm(virt_to_phys(pgd),mm)
-
 #define cpu_get_pgd()					\
 ({							\
 	unsigned long pg;				\

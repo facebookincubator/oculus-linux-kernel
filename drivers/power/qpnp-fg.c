@@ -13,7 +13,9 @@
 #define pr_fmt(fmt)	"FG: %s: " fmt, __func__
 
 #include <linux/atomic.h>
+#include <linux/crc32.h>
 #include <linux/delay.h>
+#include <linux/firmware.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
 #include <linux/rtc.h>
@@ -36,6 +38,7 @@
 #include <linux/string_helpers.h>
 #include <linux/alarmtimer.h>
 #include <linux/qpnp/qpnp-revid.h>
+#include <linux/qpnp-fg.h>
 
 /* Register offsets */
 
@@ -73,7 +76,7 @@
 #define QPNP_FG_DEV_NAME "qcom,qpnp-fg"
 #define MEM_IF_TIMEOUT_MS	5000
 #define FG_CYCLE_MS		1500
-#define BUCKET_COUNT		8
+#define BUCKET_COUNT		QPNP_FG_BUCKET_COUNT
 #define BUCKET_SOC_PCT		(256 / BUCKET_COUNT)
 
 #define BCL_MA_TO_ADC(_current, _adc_val) {		\
@@ -2884,6 +2887,29 @@ static void restore_cycle_counter(struct fg_chip *chip)
 	fg_mem_release(chip);
 }
 
+static void restore_cycle_counter_sram(struct fg_chip *chip,
+		struct fg_cycle_counts *counts)
+{
+	int i, rc, address;
+
+	if (!chip->cyc_ctr.en)
+		return;
+
+	fg_mem_lock(chip);
+	for (i = 0; i < BUCKET_COUNT; i++) {
+		pr_debug("BATT_CYCLE_NUMBER[%d] = 0x%04x\n",
+				i, counts->buckets[i].count);
+		address = BATT_CYCLE_NUMBER_REG + counts->buckets[i].id * 2;
+		rc = fg_mem_write(chip, (u8 *)&counts->buckets[i].count,
+				address, sizeof(u16),
+				BATT_CYCLE_OFFSET, 0);
+		if (rc)
+			pr_err("Failed to write BATT_CYCLE_NUMBER[%d] rc: %d\n",
+				i, rc);
+	}
+	fg_mem_release(chip);
+}
+
 static void clear_cycle_counter(struct fg_chip *chip)
 {
 	int rc = 0, len, i;
@@ -2991,6 +3017,58 @@ out:
 	mutex_unlock(&chip->cyc_ctr.lock);
 }
 
+#define CYCLE_STATS_FILE "cycle_stats.bin"
+static int load_cycle_counter(struct fg_chip *chip)
+{
+	int rc = 0;
+	u32 crc;
+	const struct firmware *fw = NULL;
+	struct fg_cycle_counts *counts = NULL;
+
+	mutex_lock(&chip->cyc_ctr.lock);
+
+	rc = request_firmware(&fw, CYCLE_STATS_FILE, chip->dev);
+	if (rc) {
+		pr_err("%s: failed to load %s\n", __func__, CYCLE_STATS_FILE);
+		goto out;
+	}
+
+	counts = (struct fg_cycle_counts *)fw->data;
+	if (counts->magic != QPNP_FG_CYCLE_COUNTS_MAGIC) {
+		rc = -EINVAL;
+		pr_err("%s: %s: invalid magic\n", __func__, CYCLE_STATS_FILE);
+		goto out;
+	}
+
+	if (counts->bucket_count != BUCKET_COUNT) {
+		rc = -EINVAL;
+		pr_err("%s: invalid bucket count: %d\n",
+			__func__, counts->bucket_count);
+		goto out;
+	}
+
+	/*
+	 * Linux crc32 expects pre/post (crc ^ 0xffffffff) step
+	 * to be performed by caller
+	 */
+	crc = crc32(~0, (const unsigned char*) counts,
+			sizeof(struct fg_cycle_counts) - 4) ^ ~0;
+	if (counts->crc32 != crc) {
+		rc = -EINVAL;
+		pr_err("%s: invalid checksum: 0x%08x, expected: 0x%08x\n",
+			__func__, crc, counts->crc32);
+		goto out;
+	}
+
+	restore_cycle_counter_sram(chip, counts);
+	restore_cycle_counter(chip);
+
+out:
+	release_firmware(fw);
+	mutex_unlock(&chip->cyc_ctr.lock);
+	return rc;
+}
+
 static int fg_get_cycle_count(struct fg_chip *chip)
 {
 	int count;
@@ -3015,8 +3093,10 @@ static int fg_get_aggregate_cycle_count(struct fg_chip *chip)
 	if (!chip->cyc_ctr.en)
 		return 0;
 
+	mutex_lock(&chip->cyc_ctr.lock);
 	for (i = 0; i < BUCKET_COUNT; i++)
 		count += chip->cyc_ctr.count[i];
+	mutex_unlock(&chip->cyc_ctr.lock);
 
 	return count / BUCKET_COUNT;
 }
@@ -4503,6 +4583,7 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_SYSTEM,
 	POWER_SUPPLY_PROP_RESISTANCE_SLOW,
 	POWER_SUPPLY_PROP_VOLTAGE_PREDICTED,
+	POWER_SUPPLY_PROP_CALIBRATE,
 };
 
 static int fg_power_get_property(struct power_supply *psy,
@@ -4631,6 +4712,9 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_PREDICTED:
 		val->intval = get_sram_prop_now(chip, FG_DATA_CPRED_VOLTAGE);
+		break;
+	case POWER_SUPPLY_PROP_CALIBRATE:
+		val->intval = 0;
 		break;
 	default:
 		return -EINVAL;
@@ -4769,6 +4853,9 @@ static int fg_power_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
 		chip->fake_battery_cycle_count = val->intval;
 		break;
+	case POWER_SUPPLY_PROP_CALIBRATE:
+		rc = load_cycle_counter(chip);
+		break;
 	default:
 		return -EINVAL;
 	};
@@ -4786,6 +4873,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATTERY_INFO:
 	case POWER_SUPPLY_PROP_BATTERY_INFO_ID:
 	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
+	case POWER_SUPPLY_PROP_CALIBRATE:
 		return 1;
 	default:
 		break;

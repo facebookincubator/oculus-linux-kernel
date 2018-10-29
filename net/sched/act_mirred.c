@@ -156,8 +156,19 @@ static int tcf_mirred(struct sk_buff *skb, const struct tc_action *a,
 		goto out;
 
 	if (!(at & AT_EGRESS)) {
-		if (m->tcfm_ok_push)
+		if (m->tcfm_ok_push) {
+			if (skb_headroom(skb2) < skb2->dev->hard_header_len) {
+				size_t delta = skb2->dev->hard_header_len
+						- skb_headroom(skb2);
+				if (pskb_expand_head(skb2,
+					SKB_DATA_ALIGN(delta), 0, GFP_ATOMIC)) {
+					kfree_skb(skb2);
+					skb2 = NULL;
+					goto out;
+				}
+			}
 			skb_push(skb2, skb2->dev->hard_header_len);
+		}
 	}
 
 	/* mirror is always swallowed */

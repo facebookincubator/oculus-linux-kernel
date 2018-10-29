@@ -126,7 +126,7 @@ nintendo	Nintendo
 nokia	Nokia
 nvidia	NVIDIA
 nxp	NXP Semiconductors
-oculus  Oculus VR, LLC
+oculus  Facebook Technologies, LLC
 onnn	ON Semiconductor Corp.
 opencores	OpenCores.org
 ovti	OmniVision Technologies, Inc.

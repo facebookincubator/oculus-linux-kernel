@@ -492,6 +492,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 	pipe->mfd = mfd;
 	pipe->play_cnt = 0;
 	pipe->flags = 0;
+	pipe->color_type = 0;
 
 	if (layer->flags & MDP_LAYER_FLIP_LR)
 		pipe->flags = MDP_FLIP_LR;

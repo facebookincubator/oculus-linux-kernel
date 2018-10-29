@@ -3879,6 +3879,28 @@ skip_current_for_non_sdp:
 	power_supply_changed(&chip->batt_psy);
 }
 
+/* Sends a OTG_ENABLE_FAILURE=1 uevent status to user-space. */
+static void smbchg_otg_report_enable_failure(struct smbchg_chip *chip)
+{
+	char *envp[2] = { "OTG_ENABLE_FAILED=1", NULL };
+	int rc;
+
+	pr_debug("%s: called\n", __func__);
+
+	if (!chip) {
+		pr_err("%s: invalid argument\n", __func__);
+		return;
+	}
+
+	rc = kobject_uevent_env(&chip->dev->kobj, KOBJ_CHANGE,
+		envp);
+	if (!rc) {
+		pr_err("%s: kobject_uevent_env() failed, rc=%d\n",
+			__func__, rc);
+		return;
+	}
+}
+
 static int smbchg_otg_regulator_enable(struct regulator_dev *rdev)
 {
 	int rc = 0;
@@ -4888,6 +4910,7 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 {
 	struct power_supply *parallel_psy = get_parallel_psy(chip);
 	int rc;
+	union power_supply_propval voltage_max = {0, };
 
 	pr_smb(PR_STATUS, "triggered\n");
 	smbchg_aicl_deglitch_wa_check(chip);
@@ -4939,6 +4962,10 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 		HVDCP_SHORT_DEGLITCH_VOTER, false, 0);
 	if (!chip->hvdcp_not_supported)
 		restore_from_hvdcp_detection(chip);
+		voltage_max.intval = 0;
+		rc = chip->usb_psy->set_property(chip->usb_psy,
+						POWER_SUPPLY_PROP_VOLTAGE_MAX,
+						&voltage_max);
 }
 
 static bool is_usbin_uv_high(struct smbchg_chip *chip)
@@ -4954,12 +4981,14 @@ static bool is_usbin_uv_high(struct smbchg_chip *chip)
 	return reg &= USBIN_UV_BIT;
 }
 
+#define DEFAULT_VBUS_VOLTAGE 5000000
 #define HVDCP_NOTIFY_MS		2500
 static void handle_usb_insertion(struct smbchg_chip *chip)
 {
 	enum power_supply_type usb_supply_type;
 	int rc;
 	char *usb_type_name = "null";
+	union power_supply_propval voltage_max = {0, };
 
 	pr_smb(PR_STATUS, "triggered\n");
 	/* usb inserted */
@@ -4997,6 +5026,10 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 				POWER_SUPPLY_HEALTH_GOOD, rc);
 	}
 	schedule_work(&chip->usb_set_online_work);
+	voltage_max.intval = DEFAULT_VBUS_VOLTAGE;
+	rc = chip->usb_psy->set_property(chip->usb_psy,
+					POWER_SUPPLY_PROP_VOLTAGE_MAX,
+					&voltage_max);
 
 	if (!chip->hvdcp_not_supported &&
 			(usb_supply_type == POWER_SUPPLY_TYPE_USB_DCP)) {
@@ -6780,6 +6813,10 @@ static irqreturn_t otg_oc_handler(int irq, void *_chip)
 		if (rc)
 			pr_err("Failed to reset OTG OC state rc=%d\n", rc);
 		chip->otg_enable_time = ktime_get();
+	} else {
+		smbchg_otg_report_enable_failure(chip);
+		pr_err("%s: could not re-enable OTG after too many over-current events\n",
+			__func__);
 	}
 	return IRQ_HANDLED;
 }

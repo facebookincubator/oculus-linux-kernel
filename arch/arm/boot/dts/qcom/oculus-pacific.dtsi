@@ -40,6 +40,14 @@
 			reg = <0x0 0x9ff00000 0x0 0x00100000>;
 			label = "pstore_reserve_mem";
 		};
+
+		oculus_dma_memory: oculus_dma_region {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0 0x00000000 0 0xffffffff>;
+			reusable;
+			alignment = <0 0x100000>;
+			size = <0 0x200000>;
+		};
 	};
 
 	ramoops {
@@ -95,7 +103,7 @@
 
 	sound-9335 {
 		qcom,model = "msm8996-tasha-cdp-snd-card";
-		qcom,hdmi-audio-rx;
+		/delete-property/ qcom,hdmi-audio-rx;
 		asoc-codec = <&stub_codec>, <&hdmi_audio>;
 		asoc-codec-names = "msm-stub-codec.1",
 			"msm-hdmi-audio-codec-rx";
@@ -150,6 +158,14 @@
 		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 				<&clock_gcc clk_gcc_blsp1_qup5_spi_apps_clk>;
 		status = "ok";
+	};
+
+	qcom,ion {
+		qcom,ion-heap@30 {
+			reg = <30>;
+			memory-region = <&oculus_dma_memory>;
+			qcom,ion-heap-type = "DMA";
+		};
 	};
 
 	qcom,sensor-information {
