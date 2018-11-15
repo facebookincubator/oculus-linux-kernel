@@ -15,6 +15,7 @@
 #include <linux/hash.h>
 #include "hfi_packetization.h"
 #include "msm_vidc_debug.h"
+#include "vidc_profile.h"
 
 /* Set up look-up tables to convert HAL_* to HFI_*.
  *
@@ -869,6 +870,8 @@ int create_pkt_cmd_session_etb_decoder(
 	pkt->input_tag = input_frame->clnt_data;
 	pkt->packet_buffer = (u32)input_frame->device_addr;
 
+	rc = vidc_profile_start(session, input_frame->timestamp);
+
 	trace_msm_v4l2_vidc_buffer_event_start("ETB",
 		input_frame->device_addr, input_frame->timestamp,
 		input_frame->alloc_len, input_frame->filled_len,
@@ -903,6 +906,8 @@ int create_pkt_cmd_session_etb_encoder(
 	pkt->input_tag = input_frame->clnt_data;
 	pkt->packet_buffer = (u32)input_frame->device_addr;
 	pkt->extra_data_buffer = (u32)input_frame->extradata_addr;
+
+	rc = vidc_profile_start(session, input_frame->timestamp);
 
 	trace_msm_v4l2_vidc_buffer_event_start("ETB",
 		input_frame->device_addr, input_frame->timestamp,

@@ -259,5 +259,7 @@ int venus_hfi_initialize(struct hfi_device *hdev, u32 device_id,
 		hfi_cmd_response_callback callback);
 bool venus_hfi_is_session_supported(unsigned long sessions_supported,
 		enum vidc_vote_data_session session_type);
+int venus_hfi_is_encoder_decoder(struct vidc_hal_msg_pkt_hdr *msg,
+		bool *is_encoder, bool *is_decoder);
 
 #endif

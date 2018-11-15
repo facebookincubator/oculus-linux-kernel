@@ -2480,7 +2480,16 @@ static void __set_default_sys_properties(struct venus_hfi_device *device)
 
 static void __session_clean(struct hal_session *session)
 {
+	struct vidc_buffer_entry *buf_entry, *next;
+
 	dprintk(VIDC_DBG, "deleted the session: %pK\n", session);
+
+	list_for_each_entry_safe(
+			buf_entry, next, &session->profile_head, list) {
+		list_del(&buf_entry->list);
+		kfree(buf_entry);
+	}
+
 	list_del(&session->list);
 	/* Poison the session handle with zeros */
 	*session = (struct hal_session){ {0} };
@@ -2540,6 +2549,8 @@ static int venus_hfi_session_init(void *device, void *session_id,
 	s->device = dev;
 	s->codec = codec_type;
 	s->domain = session_type;
+	INIT_LIST_HEAD(&s->profile_head);
+
 	dprintk(VIDC_DBG,
 		"%s: inst %pK, session %pK, codec 0x%x, domain 0x%x\n",
 		__func__, session_id, s, s->codec, s->domain);
@@ -3553,6 +3564,17 @@ static int __response_handler(struct venus_hfi_device *device)
 			}
 
 			*session_id = session->session_id;
+
+			if (info->response_type == HAL_SESSION_FTB_DONE) {
+				u64 timestamp;
+				struct vidc_hal_fbd *data =
+					&info->response.data.output_done;
+
+				timestamp = (((u64)data->timestamp_hi) << 32)
+					+ ((u64)data->timestamp_lo);
+				vidc_profile_end(session, timestamp,
+					session->is_decoder);
+			}
 		}
 
 		if (packet_count >= max_packets &&

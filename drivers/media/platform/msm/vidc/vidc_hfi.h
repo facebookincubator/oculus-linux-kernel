@@ -16,6 +16,7 @@
 #include <media/msm_media_info.h>
 #include "vidc_hfi_helper.h"
 #include "vidc_hfi_api.h"
+#include "vidc_profile.h"
 
 #define HFI_EVENT_SESSION_SEQUENCE_CHANGED (HFI_OX_BASE + 0x3)
 #define HFI_EVENT_SESSION_PROPERTY_CHANGED (HFI_OX_BASE + 0x4)
@@ -908,6 +909,7 @@ struct hal_session {
 	enum hal_video_codec codec;
 	enum hal_domain domain;
 	void *device;
+	struct list_head profile_head;
 };
 
 struct hal_device_data {

@@ -11,7 +11,8 @@ obj-$(CONFIG_MSM_VIDC_V4L2) := 	msm_v4l2_vidc.o \
 				hfi_packetization.o \
 				vidc_hfi.o \
 				venus_boot.o \
-				msm_vidc_dcvs.o
+				msm_vidc_dcvs.o \
+				vidc_profile.o
 
 obj-$(CONFIG_MSM_VIDC_V4L2) += governors/
 

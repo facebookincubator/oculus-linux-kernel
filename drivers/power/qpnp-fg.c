@@ -4570,6 +4570,7 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_CYCLE_COUNT_ID,
+	POWER_SUPPLY_PROP_FAKE_AGGREGATE_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_HI_POWER,
 	POWER_SUPPLY_PROP_SOC_REPORTING_READY,
@@ -4643,6 +4644,9 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
 		val->intval = chip->cyc_ctr.id;
+		break;
+	case POWER_SUPPLY_PROP_FAKE_AGGREGATE_CYCLE_COUNT:
+		val->intval = chip->fake_battery_cycle_count;
 		break;
 	case POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT:
 		if (chip->fake_battery_cycle_count >= 0)

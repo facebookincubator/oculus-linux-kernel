@@ -31,6 +31,7 @@
 #include "msm_vidc_resources.h"
 #include "venus_boot.h"
 #include "vidc_hfi_api.h"
+#include "vidc_profile.h"
 
 #define BASE_DEVICE_NUMBER 32
 
@@ -434,11 +435,20 @@ static ssize_t store_capability_version(struct device *dev,
 static DEVICE_ATTR(capability_version, S_IRUGO, show_capability_version,
 		store_capability_version);
 
+static DEVICE_ATTR(decoder_active_time, 0444,
+	vidc_profile_decoder_active_time_show, NULL);
+
+static DEVICE_ATTR(encoder_active_time, 0444,
+	vidc_profile_encoder_active_time_show, NULL);
+
+
 static struct attribute *msm_vidc_core_attrs[] = {
 		&dev_attr_pwr_collapse_delay.attr,
 		&dev_attr_thermal_level.attr,
 		&dev_attr_platform_version.attr,
 		&dev_attr_capability_version.attr,
+		&dev_attr_decoder_active_time.attr,
+		&dev_attr_encoder_active_time.attr,
 		NULL
 };
 
@@ -507,6 +517,9 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 		dprintk(VIDC_ERR, "Failed to init core\n");
 		goto err_core_init;
 	}
+
+	vidc_profile_init();
+
 	rc = sysfs_create_group(&pdev->dev.kobj, &msm_vidc_core_attr_group);
 	if (rc) {
 		dprintk(VIDC_ERR,
