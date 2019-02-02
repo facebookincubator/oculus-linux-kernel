@@ -151,7 +151,7 @@ static int i2c_reg_write_usr_locked(struct lis2mdl_device *ddata,
 
 	dev_vdbg(ddata->dev, "write addr:%02x, len:%zu data: %*phN\n",
 			addr, len, (int) len, buf);
-	if (xfer.len > BUF_SZ_TX) {
+	if (WARN_ON(len > (BUF_SZ_TX - 1))) {
 		dev_err(ddata->dev, "invalid write size: %zu", len);
 		return -EINVAL;
 	}

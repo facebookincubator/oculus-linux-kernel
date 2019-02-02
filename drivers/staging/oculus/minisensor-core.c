@@ -80,7 +80,7 @@ static int spi_reg_write_usr_locked(struct minisensor_device *ddata,
 
 	dev_vdbg(ddata->dev, "write addr:%02x, len:%zu data: %*phN\n",
 			addr, len, (int) len, buf);
-	if (xfer.len > SPI_TX_LIMIT) {
+	if (WARN_ON(len > (SPI_TX_LIMIT - 1))) {
 		dev_err(ddata->dev, "invalid write size: %zu", len);
 		return -EINVAL;
 	}

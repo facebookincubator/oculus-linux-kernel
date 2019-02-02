@@ -3472,6 +3472,11 @@
 		memory-region = <&adsp_mem>;
 	};
 
+	qcom,msm-mdsprpc-mem {
+		compatible = "qcom,msm-mdsprpc-mem-region";
+		memory-region = <&adsp_mem>;
+	};
+
 	qcom,msm_fastrpc {
 		compatible = "qcom,msm-fastrpc-adsp";
 
