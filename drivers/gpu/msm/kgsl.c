@@ -640,8 +640,6 @@ static void kgsl_context_detach(struct kgsl_context *context)
 	if (test_and_set_bit(KGSL_CONTEXT_PRIV_DETACHED, &context->priv))
 		return;
 
-	kgsl_thread_private_close(context->thread_priv);
-
 	device = context->device;
 
 	trace_kgsl_context_detach(device, context);
@@ -700,6 +698,7 @@ kgsl_context_destroy(struct kref *kref)
 	write_unlock(&device->context_lock);
 
 	kgsl_sync_timeline_destroy(context);
+	kgsl_thread_private_close(context->thread_priv);
 	kgsl_process_private_put(context->proc_priv);
 
 	device->ftbl->drawctxt_destroy(context);

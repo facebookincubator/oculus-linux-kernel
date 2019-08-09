@@ -405,7 +405,7 @@
 	qcom,batt-stage-adjustments;
 
 	qcom,stage-temp-thresh = <0 150>;
-	qcom,stage-cycle-thresh = <0 200 300 600>;
+	qcom,stage-cycle-thresh = <0 200 300 1100>;
 	qcom,stage-mv-thresh = <3900 3800 3600 3600>;
 	qcom,stage-limits =
 		<1400 4160>,
@@ -414,16 +414,16 @@
 		<500 4160>,
 		<800 4160>,
 		<500 4160>,
-		<800 4160>,
-		<500 4160>,
+		<800 3600>,
+		<500 3600>,
 		<1400 4160>,
 		<1000 4160>,
 		<1200 4160>,
 		<800 4160>,
 		<800 4160>,
 		<800 4160>,
-		<800 4160>,
-		<800 4160>;
+		<800 3600>,
+		<800 3600>;
 
 	qcom,thermal-mitigation = <1500 1000 600 0>;
 	qcom,fastchg-current-ma = <1400>;
