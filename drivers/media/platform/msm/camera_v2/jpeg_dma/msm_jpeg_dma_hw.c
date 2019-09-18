@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -70,6 +70,18 @@ static const struct msm_jpegdma_block msm_jpegdma_block_sel[] = {
 		.reg_val = 0,
 	},
 };
+
+/*
+* jpegdma_do_div - long division.
+* @num: dividend
+* @den: divisor
+* returns quotient value.
+*/
+static inline long long jpegdma_do_div(long long num, long long den)
+{
+	do_div(num, den);
+	return num;
+}
 
 /*
  * msm_jpegdma_hw_read_reg - dma read from register.
@@ -819,9 +831,9 @@ static int msm_jpegdma_hw_calc_speed(struct msm_jpegdma_device *dma,
 	}
 
 	speed->bus_ab = calc_rate * 2;
-	speed->bus_ib = (real_clock *
-		(MSM_JPEGDMA_BW_NUM + MSM_JPEGDMA_BW_DEN - 1)) /
-		MSM_JPEGDMA_BW_DEN;
+	speed->bus_ib = jpegdma_do_div((real_clock *
+		(MSM_JPEGDMA_BW_NUM + MSM_JPEGDMA_BW_DEN - 1)),
+		MSM_JPEGDMA_BW_DEN);
 	speed->core_clock = real_clock;
 	dev_dbg(dma->dev, "Speed core clk %llu ab %llu ib %llu fps %d\n",
 		speed->core_clock, speed->bus_ab, speed->bus_ib, size->fps);
@@ -923,13 +935,15 @@ static int msm_jpegdma_hw_calc_config(struct msm_jpegdma_size_config *size_cfg,
 
 	in_width = size_cfg->in_size.width;
 	out_width = size_cfg->out_size.width;
-	scale_hor = (in_width * MSM_JPEGDMA_SCALE_UNI) / out_width;
+	scale_hor = jpegdma_do_div((in_width * MSM_JPEGDMA_SCALE_UNI),
+		out_width);
 	if (scale_hor != MSM_JPEGDMA_SCALE_UNI)
 		config->scale_cfg.enable = 1;
 
 	in_height = size_cfg->in_size.height;
 	out_height = size_cfg->out_size.height;
-	scale_ver = (in_height * MSM_JPEGDMA_SCALE_UNI) / out_height;
+	scale_ver = jpegdma_do_div((in_height * MSM_JPEGDMA_SCALE_UNI),
+		out_height);
 	if (scale_ver != MSM_JPEGDMA_SCALE_UNI)
 		config->scale_cfg.enable = 1;
 
@@ -946,23 +960,23 @@ static int msm_jpegdma_hw_calc_config(struct msm_jpegdma_size_config *size_cfg,
 	config->block_cfg.block = msm_jpegdma_block_sel[i];
 
 	if (plane->active_pipes > 1) {
-		phase = (out_height * scale_ver + (plane->active_pipes - 1)) /
-			plane->active_pipes;
+		phase = jpegdma_do_div((out_height * scale_ver +
+			(plane->active_pipes - 1)), plane->active_pipes);
 		phase &= (MSM_JPEGDMA_SCALE_UNI - 1);
-		out_height = (out_height + (plane->active_pipes - 1)) /
-			plane->active_pipes;
+		out_height = jpegdma_do_div((out_height +
+			(plane->active_pipes - 1)), plane->active_pipes);
 		in_height = (out_height * scale_ver) / MSM_JPEGDMA_SCALE_UNI;
 	}
 
-	config->block_cfg.blocks_per_row = out_width /
-		config->block_cfg.block.width;
+	config->block_cfg.blocks_per_row = (uint32_t) jpegdma_do_div(out_width,
+		config->block_cfg.block.width);
 
 	config->block_cfg.blocks_per_col = out_height;
 
 	config->block_cfg.h_step = config->block_cfg.block.width;
-
-	config->block_cfg.h_step_last = out_width %
-		config->block_cfg.block.width;
+	config->size_cfg.out_size.width = out_width;
+	config->block_cfg.h_step_last = (uint32_t) do_div(out_width,
+		config->block_cfg.block.width);
 	if (!config->block_cfg.h_step_last)
 		config->block_cfg.h_step_last = config->block_cfg.h_step;
 	else
@@ -974,7 +988,6 @@ static int msm_jpegdma_hw_calc_config(struct msm_jpegdma_size_config *size_cfg,
 	config->size_cfg = *size_cfg;
 	config->size_cfg.in_size.width = in_width;
 	config->size_cfg.in_size.height = in_height;
-	config->size_cfg.out_size.width = out_width;
 	config->size_cfg.out_size.height = out_height;
 	config->in_offset = 0;
 	config->out_offset = 0;
@@ -1013,14 +1026,16 @@ int msm_jpegdma_hw_check_config(struct msm_jpegdma_device *dma,
 
 	in_width = size_cfg->in_size.width;
 	out_width = size_cfg->out_size.width;
-	scale = ((in_width * MSM_JPEGDMA_SCALE_UNI)) / out_width;
+	scale = jpegdma_do_div(((in_width * MSM_JPEGDMA_SCALE_UNI)),
+		out_width);
 	if (scale < MSM_JPEGDMA_SCALE_UNI)
 		return -EINVAL;
 
 
 	in_height = size_cfg->in_size.height;
 	out_height = size_cfg->out_size.height;
-	scale = (in_height * MSM_JPEGDMA_SCALE_UNI) / out_height;
+	scale = jpegdma_do_div((in_height * MSM_JPEGDMA_SCALE_UNI),
+		out_height);
 	if (scale < MSM_JPEGDMA_SCALE_UNI)
 		return -EINVAL;
 
@@ -1366,12 +1381,31 @@ int msm_jpegdma_hw_get_mem_resources(struct platform_device *pdev,
 }
 
 /*
+ * msm_jpegdma_hw_get_max_downscale - Get max downscale factor from dtsi.
+ * @dma: Pointer to dma device.
+ */
+int msm_jpegdma_hw_get_max_downscale(struct msm_jpegdma_device *dma)
+{
+	int ret;
+	int max_ds_factor;
+
+	ret = of_property_read_u32(dma->dev->of_node,
+		"qcom,max-ds-factor", &max_ds_factor);
+	if (ret < 0) {
+		dev_err(dma->dev, "cannot read qcom,max-ds-factor from dtsi\n");
+		return ret;
+	}
+	dev_dbg(dma->dev, "max_ds_factor is %d\n", max_ds_factor);
+	return max_ds_factor;
+}
+
+/*
  * msm_jpegdma_hw_get_qos - Get dma qos settings from device-tree.
  * @dma: Pointer to dma device.
  */
 int msm_jpegdma_hw_get_qos(struct msm_jpegdma_device *dma)
 {
-	int i;
+	int i, j;
 	int ret;
 	unsigned int cnt;
 	const void *property;
@@ -1382,32 +1416,37 @@ int msm_jpegdma_hw_get_qos(struct msm_jpegdma_device *dma)
 		dev_dbg(dma->dev, "Missing qos settings\n");
 		return 0;
 	}
-	cnt /= 4;
 
-	dma->qos_regs = kzalloc((sizeof(*dma->qos_regs) * cnt), GFP_KERNEL);
+	cnt /= 4;
+	if (cnt % 2)
+		return -EINVAL;
+
+	dma->qos_regs_num = cnt / 2;
+
+	dma->qos_regs = kzalloc((sizeof(struct jpegdma_reg_cfg) *
+		dma->qos_regs_num), GFP_KERNEL);
 	if (!dma->qos_regs)
 		return -ENOMEM;
 
-	for (i = 0; i < cnt; i = i + 2) {
+	for (i = 0, j = 0; i < cnt; i += 2, j++) {
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,qos-reg-settings", i,
-			&dma->qos_regs[i].reg);
+			&dma->qos_regs[j].reg);
 		if (ret < 0) {
-			dev_err(dma->dev, "can not read qos reg %d\n", i);
+			dev_err(dma->dev, "can not read qos reg %d\n", j);
 			goto error;
 		}
 
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,qos-reg-settings", i + 1,
-			&dma->qos_regs[i].val);
+			&dma->qos_regs[j].val);
 		if (ret < 0) {
-			dev_err(dma->dev, "can not read qos setting %d\n", i);
+			dev_err(dma->dev, "can not read qos setting %d\n", j);
 			goto error;
 		}
-		dev_dbg(dma->dev, "Qos idx %d, reg %x val %x\n", i,
-			dma->qos_regs[i].reg, dma->qos_regs[i].val);
+		dev_dbg(dma->dev, "Qos idx %d, reg %x val %x\n", j,
+			dma->qos_regs[j].reg, dma->qos_regs[j].val);
 	}
-	dma->qos_regs_num = cnt;
 
 	return 0;
 error:
@@ -1433,7 +1472,7 @@ void msm_jpegdma_hw_put_qos(struct msm_jpegdma_device *dma)
  */
 int msm_jpegdma_hw_get_vbif(struct msm_jpegdma_device *dma)
 {
-	int i;
+	int i, j;
 	int ret;
 	unsigned int cnt;
 	const void *property;
@@ -1444,33 +1483,38 @@ int msm_jpegdma_hw_get_vbif(struct msm_jpegdma_device *dma)
 		dev_dbg(dma->dev, "Missing vbif settings\n");
 		return 0;
 	}
-	cnt /= 4;
 
-	dma->vbif_regs = kzalloc((sizeof(*dma->vbif_regs) * cnt), GFP_KERNEL);
+	cnt /= 4;
+	if (cnt % 2)
+		return -EINVAL;
+
+	dma->vbif_regs_num = cnt / 2;
+
+	dma->vbif_regs = kzalloc((sizeof(struct jpegdma_reg_cfg) *
+		dma->vbif_regs_num), GFP_KERNEL);
 	if (!dma->vbif_regs)
 		return -ENOMEM;
 
-	for (i = 0; i < cnt; i = i + 2) {
+	for (i = 0, j = 0; i < cnt; i += 2, j++) {
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,vbif-reg-settings", i,
-			&dma->vbif_regs[i].reg);
+			&dma->vbif_regs[j].reg);
 		if (ret < 0) {
-			dev_err(dma->dev, "can not read vbif reg %d\n", i);
+			dev_err(dma->dev, "can not read vbif reg %d\n", j);
 			goto error;
 		}
 
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,vbif-reg-settings", i + 1,
-			&dma->vbif_regs[i].val);
+			&dma->vbif_regs[j].val);
 		if (ret < 0) {
-			dev_err(dma->dev, "can not read vbif setting %d\n", i);
+			dev_err(dma->dev, "can not read vbif setting %d\n", j);
 			goto error;
 		}
 
-		dev_dbg(dma->dev, "Vbif idx %d, reg %x val %x\n", i,
-			dma->vbif_regs[i].reg, dma->vbif_regs[i].val);
+		dev_dbg(dma->dev, "Vbif idx %d, reg %x val %x\n", j,
+			dma->vbif_regs[j].reg, dma->vbif_regs[j].val);
 	}
-	dma->vbif_regs_num = cnt;
 
 	return 0;
 error:
@@ -1496,7 +1540,7 @@ void msm_jpegdma_hw_put_vbif(struct msm_jpegdma_device *dma)
  */
 int msm_jpegdma_hw_get_prefetch(struct msm_jpegdma_device *dma)
 {
-	int i;
+	int i, j;
 	int ret;
 	unsigned int cnt;
 	const void *property;
@@ -1507,35 +1551,39 @@ int msm_jpegdma_hw_get_prefetch(struct msm_jpegdma_device *dma)
 		dev_dbg(dma->dev, "Missing prefetch settings\n");
 		return 0;
 	}
-	cnt /= 4;
 
-	dma->prefetch_regs = kcalloc(cnt, sizeof(*dma->prefetch_regs),
-		GFP_KERNEL);
+	cnt /= 4;
+	if (cnt % 2)
+		return -EINVAL;
+
+	dma->prefetch_regs_num = cnt / 2;
+
+	dma->prefetch_regs = kzalloc((sizeof(struct jpegdma_reg_cfg) *
+		dma->prefetch_regs_num), GFP_KERNEL);
 	if (!dma->prefetch_regs)
 		return -ENOMEM;
 
-	for (i = 0; i < cnt; i = i + 2) {
+	for (i = 0, j = 0; i < cnt; i += 2, j++) {
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,prefetch-reg-settings", i,
-			&dma->prefetch_regs[i].reg);
+			&dma->prefetch_regs[j].reg);
 		if (ret < 0) {
-			dev_err(dma->dev, "can not read prefetch reg %d\n", i);
+			dev_err(dma->dev, "can not read prefetch reg %d\n", j);
 			goto error;
 		}
 
 		ret = of_property_read_u32_index(dma->dev->of_node,
 			"qcom,prefetch-reg-settings", i + 1,
-			&dma->prefetch_regs[i].val);
+			&dma->prefetch_regs[j].val);
 		if (ret < 0) {
 			dev_err(dma->dev, "can not read prefetch setting %d\n",
-				i);
+				j);
 			goto error;
 		}
 
-		dev_dbg(dma->dev, "Prefetch idx %d, reg %x val %x\n", i,
-			dma->prefetch_regs[i].reg, dma->prefetch_regs[i].val);
+		dev_dbg(dma->dev, "Prefetch idx %d, reg %x val %x\n", j,
+			dma->prefetch_regs[j].reg, dma->prefetch_regs[j].val);
 	}
-	dma->prefetch_regs_num = cnt;
 
 	return 0;
 error:
@@ -1711,7 +1759,7 @@ void msm_jpegdma_hw_put(struct msm_jpegdma_device *dma)
  */
 static int msm_jpegdma_hw_attach_iommu(struct msm_jpegdma_device *dma)
 {
-	int ret;
+	int ret = -EINVAL;
 
 	mutex_lock(&dma->lock);
 
@@ -1794,7 +1842,7 @@ int msm_jpegdma_hw_map_buffer(struct msm_jpegdma_device *dma, int fd,
 	buf->fd = fd;
 
 	ret = cam_smmu_get_phy_addr(dma->iommu_hndl, buf->fd,
-		CAM_SMMU_MAP_RW, &buf->addr, &buf->size);
+		CAM_SMMU_MAP_RW, &buf->addr, (size_t *)&buf->size);
 	if (ret < 0) {
 		dev_err(dma->dev, "Can not get physical address\n");
 		goto error_get_phy;

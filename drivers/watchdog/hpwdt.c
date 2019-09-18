@@ -588,7 +588,7 @@ static long hpwdt_ioctl(struct file *file, unsigned int cmd,
 {
 	void __user *argp = (void __user *)arg;
 	int __user *p = argp;
-	int new_margin;
+	int new_margin, options;
 	int ret = -ENOTTY;
 
 	switch (cmd) {
@@ -606,6 +606,20 @@ static long hpwdt_ioctl(struct file *file, unsigned int cmd,
 	case WDIOC_KEEPALIVE:
 		hpwdt_ping();
 		ret = 0;
+		break;
+
+	case WDIOC_SETOPTIONS:
+		ret = get_user(options, p);
+		if (ret)
+			break;
+
+		if (options & WDIOS_DISABLECARD)
+			hpwdt_stop();
+
+		if (options & WDIOS_ENABLECARD) {
+			hpwdt_start();
+			hpwdt_ping();
+		}
 		break;
 
 	case WDIOC_SETTIMEOUT:
@@ -745,7 +759,7 @@ static int hpwdt_init_nmi_decoding(struct pci_dev *dev)
 
 	dev_info(&dev->dev,
 			"HP Watchdog Timer Driver: NMI decoding initialized"
-			", allow kernel dump: %s (default = 0/OFF)\n",
+			", allow kernel dump: %s (default = 1/ON)\n",
 			(allow_kdump == 0) ? "OFF" : "ON");
 	return 0;
 

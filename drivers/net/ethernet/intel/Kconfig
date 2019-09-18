@@ -6,9 +6,7 @@ config NET_VENDOR_INTEL
 	bool "Intel devices"
 	default y
 	---help---
-	  If you have a network (Ethernet) card belonging to this class, say Y
-	  and read the Ethernet-HOWTO, available from
-	  <http://www.tldp.org/docs.html#howto>.
+	  If you have a network (Ethernet) card belonging to this class, say Y.
 
 	  Note that the answer to this question doesn't directly affect the
 	  kernel: saying N will just cause the configurator to skip all
@@ -191,6 +189,17 @@ config IXGBE
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called ixgbe.
+
+config IXGBE_VXLAN
+	bool "Virtual eXtensible Local Area Network Support"
+	default n
+	depends on IXGBE && VXLAN && !(IXGBE=y && VXLAN=m)
+	---help---
+	  This allows one to create VXLAN virtual interfaces that provide
+	  Layer 2 Networks over Layer 3 Networks. VXLAN is often used
+	  to tunnel virtual network infrastructure in virtualized environments.
+	  Say Y here if you want to use Virtual eXtensible Local Area Network
+	  (VXLAN) in the driver.
 
 config IXGBE_HWMON
 	bool "Intel(R) 10GbE PCI Express adapters HWMON support"

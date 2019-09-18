@@ -42,7 +42,6 @@
 #include <linux/hid.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/usb.h>
 #include <linux/input/mt.h>
 #include <linux/string.h>
 
@@ -62,20 +61,25 @@ MODULE_LICENSE("GPL");
 #define MT_QUIRK_ALWAYS_VALID		(1 << 4)
 #define MT_QUIRK_VALID_IS_INRANGE	(1 << 5)
 #define MT_QUIRK_VALID_IS_CONFIDENCE	(1 << 6)
+#define MT_QUIRK_CONFIDENCE		(1 << 7)
 #define MT_QUIRK_SLOT_IS_CONTACTID_MINUS_ONE	(1 << 8)
 #define MT_QUIRK_NO_AREA		(1 << 9)
 #define MT_QUIRK_IGNORE_DUPLICATES	(1 << 10)
 #define MT_QUIRK_HOVERING		(1 << 11)
 #define MT_QUIRK_CONTACT_CNT_ACCURATE	(1 << 12)
+#define MT_QUIRK_FORCE_GET_FEATURE	(1 << 13)
 
 #define MT_INPUTMODE_TOUCHSCREEN	0x02
 #define MT_INPUTMODE_TOUCHPAD		0x03
+
+#define MT_BUTTONTYPE_CLICKPAD		0
 
 struct mt_slot {
 	__s32 x, y, cx, cy, p, w, h;
 	__s32 contactid;	/* the device ContactID assigned to this slot */
 	bool touch_state;	/* is the touch valid? */
 	bool inrange_state;	/* is the finger in proximity of the sensor? */
+	bool confidence_state;  /* is the touch made by a finger? */
 };
 
 struct mt_class {
@@ -115,6 +119,8 @@ struct mt_device {
 	__u8 touches_by_report;	/* how many touches are present in one report:
 				* 1 means we should use a serial protocol
 				* > 1 means hybrid (multitouch) protocol */
+	__u8 buttons_count;	/* number of physical buttons per touchpad */
+	bool is_buttonpad;	/* is this device a button pad? */
 	bool serial_maybe;	/* need to check for serial protocol */
 	bool curvalid;		/* is the current contact valid? */
 	unsigned mt_flags;	/* flags to pass to input-mt */
@@ -150,6 +156,7 @@ static void mt_post_parse(struct mt_device *td);
 #define MT_CLS_FLATFROG				0x0107
 #define MT_CLS_GENERALTOUCH_TWOFINGERS		0x0108
 #define MT_CLS_GENERALTOUCH_PWT_TENFINGERS	0x0109
+#define MT_CLS_VTL				0x0110
 
 #define MT_DEFAULT_MAXCONTACT	10
 #define MT_MAX_MAXCONTACT	250
@@ -255,6 +262,11 @@ static struct mt_class mt_classes[] = {
 		.sn_move = 2048,
 		.maxcontacts = 40,
 	},
+	{ .name = MT_CLS_VTL,
+		.quirks = MT_QUIRK_ALWAYS_VALID |
+			MT_QUIRK_CONTACT_CNT_ACCURATE |
+			MT_QUIRK_FORCE_GET_FEATURE,
+	},
 	{ }
 };
 
@@ -299,6 +311,41 @@ static struct attribute_group mt_attribute_group = {
 	.attrs = sysfs_attrs
 };
 
+static void mt_get_feature(struct hid_device *hdev, struct hid_report *report)
+{
+	struct mt_device *td = hid_get_drvdata(hdev);
+	int ret, size = hid_report_len(report);
+	u8 *buf;
+
+	/*
+	 * Only fetch the feature report if initial reports are not already
+	 * been retrieved. Currently this is only done for Windows 8 touch
+	 * devices.
+	 */
+	if (!(hdev->quirks & HID_QUIRK_NO_INIT_REPORTS))
+		return;
+	if (td->mtclass.name != MT_CLS_WIN_8)
+		return;
+
+	buf = hid_alloc_report_buf(report, GFP_KERNEL);
+	if (!buf)
+		return;
+
+	ret = hid_hw_raw_request(hdev, report->id, buf, size,
+				 HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
+	if (ret < 0) {
+		dev_warn(&hdev->dev, "failed to fetch feature %d\n",
+			 report->id);
+	} else {
+		ret = hid_report_raw_event(hdev, HID_FEATURE_REPORT, buf,
+					   size, 0);
+		if (ret)
+			dev_warn(&hdev->dev, "failed to report feature\n");
+	}
+
+	kfree(buf);
+}
+
 static void mt_feature_mapping(struct hid_device *hdev,
 		struct hid_field *field, struct hid_usage *usage)
 {
@@ -328,6 +375,8 @@ static void mt_feature_mapping(struct hid_device *hdev,
 
 		break;
 	case HID_DG_CONTACTMAX:
+		mt_get_feature(hdev, field->report);
+
 		td->maxcontact_report_id = field->report->id;
 		td->maxcontacts = field->value[0];
 		if (!td->maxcontacts &&
@@ -337,6 +386,22 @@ static void mt_feature_mapping(struct hid_device *hdev,
 			/* check if the maxcontacts is given by the class */
 			td->maxcontacts = td->mtclass.maxcontacts;
 
+		break;
+	case HID_DG_BUTTONTYPE:
+		if (usage->usage_index >= field->report_count) {
+			dev_err(&hdev->dev, "HID_DG_BUTTONTYPE out of range\n");
+			break;
+		}
+
+		mt_get_feature(hdev, field->report);
+		if (field->value[usage->usage_index] == MT_BUTTONTYPE_CLICKPAD)
+			td->is_buttonpad = true;
+
+		break;
+	case 0xff0000c5:
+		/* Retrieve the Win8 blob once to enable some devices */
+		if (usage->usage_index == 0)
+			mt_get_feature(hdev, field->report);
 		break;
 	}
 }
@@ -383,15 +448,9 @@ static int mt_touch_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 		td->inputmode_value = MT_INPUTMODE_TOUCHPAD;
 	}
 
-	/* Only map fields from TouchScreen or TouchPad collections.
-         * We need to ignore fields that belong to other collections
-         * such as Mouse that might have the same GenericDesktop usages. */
-	if (field->application == HID_DG_TOUCHSCREEN)
-		set_bit(INPUT_PROP_DIRECT, hi->input->propbit);
-	else if (field->application == HID_DG_TOUCHPAD)
-		set_bit(INPUT_PROP_POINTER, hi->input->propbit);
-	else
-		return 0;
+	/* count the buttons on touchpads */
+	if ((usage->hid & HID_USAGE_PAGE) == HID_UP_BUTTON)
+		td->buttons_count++;
 
 	if (usage->usage_index)
 		prev_usage = &field->usage[usage->usage_index - 1];
@@ -445,6 +504,9 @@ static int mt_touch_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			mt_store_field(usage, td, hi);
 			return 1;
 		case HID_DG_CONFIDENCE:
+			if (cls->name == MT_CLS_WIN_8 &&
+				field->application == HID_DG_TOUCHPAD)
+				cls->quirks |= MT_QUIRK_CONFIDENCE;
 			mt_store_field(usage, td, hi);
 			return 1;
 		case HID_DG_TIPSWITCH:
@@ -557,6 +619,7 @@ static void mt_complete_slot(struct mt_device *td, struct input_dev *input)
 		return;
 
 	if (td->curvalid || (td->mtclass.quirks & MT_QUIRK_ALWAYS_VALID)) {
+		int active;
 		int slotnum = mt_compute_slot(td, input);
 		struct mt_slot *s = &td->curdata;
 		struct input_mt *mt = input->mt;
@@ -571,10 +634,14 @@ static void mt_complete_slot(struct mt_device *td, struct input_dev *input)
 				return;
 		}
 
+		if (!(td->mtclass.quirks & MT_QUIRK_CONFIDENCE))
+			s->confidence_state = 1;
+		active = (s->touch_state || s->inrange_state) &&
+							s->confidence_state;
+
 		input_mt_slot(input, slotnum);
-		input_mt_report_slot_state(input, MT_TOOL_FINGER,
-			s->touch_state || s->inrange_state);
-		if (s->touch_state || s->inrange_state) {
+		input_mt_report_slot_state(input, MT_TOOL_FINGER, active);
+		if (active) {
 			/* this finger is in proximity of the sensor */
 			int wide = (s->w > s->h);
 			/* divided by two to match visual scale of touch */
@@ -639,6 +706,8 @@ static void mt_process_mt_event(struct hid_device *hid, struct hid_field *field,
 			td->curdata.touch_state = value;
 			break;
 		case HID_DG_CONFIDENCE:
+			if (quirks & MT_QUIRK_CONFIDENCE)
+				td->curdata.confidence_state = value;
 			if (quirks & MT_QUIRK_VALID_IS_CONFIDENCE)
 				td->curvalid = value;
 			break;
@@ -743,6 +812,13 @@ static int mt_touch_input_configured(struct hid_device *hdev,
 	if (cls->quirks & MT_QUIRK_NOT_SEEN_MEANS_UP)
 		td->mt_flags |= INPUT_MT_DROP_UNUSED;
 
+	/* check for clickpads */
+	if ((td->mt_flags & INPUT_MT_POINTER) && (td->buttons_count == 1))
+		td->is_buttonpad = true;
+
+	if (td->is_buttonpad)
+		__set_bit(INPUT_PROP_BUTTONPAD, input->propbit);
+
 	ret = input_mt_init_slots(input, td->maxcontacts, td->mt_flags);
 	if (ret)
 		return ret;
@@ -772,8 +848,15 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 	/*
 	 * some egalax touchscreens have "application == HID_DG_TOUCHSCREEN"
 	 * for the stylus.
+	 * The check for mt_report_id ensures we don't process
+	 * HID_DG_CONTACTCOUNT from the pen report as it is outside the physical
+	 * collection, but within the report ID.
 	 */
 	if (field->physical == HID_DG_STYLUS)
+		return 0;
+	else if ((field->physical == 0) &&
+		 (field->report->id != td->mt_report_id) &&
+		 (td->mt_report_id != -1))
 		return 0;
 
 	if (field->application == HID_DG_TOUCHSCREEN ||
@@ -834,6 +917,9 @@ static void mt_set_input_mode(struct hid_device *hdev)
 	struct mt_device *td = hid_get_drvdata(hdev);
 	struct hid_report *r;
 	struct hid_report_enum *re;
+	struct mt_class *cls = &td->mtclass;
+	char *buf;
+	int report_len;
 
 	if (td->inputmode < 0)
 		return;
@@ -841,6 +927,18 @@ static void mt_set_input_mode(struct hid_device *hdev)
 	re = &(hdev->report_enum[HID_FEATURE_REPORT]);
 	r = re->report_id_hash[td->inputmode];
 	if (r) {
+		if (cls->quirks & MT_QUIRK_FORCE_GET_FEATURE) {
+			report_len = hid_report_len(r);
+			buf = hid_alloc_report_buf(r, GFP_KERNEL);
+			if (!buf) {
+				hid_err(hdev, "failed to allocate buffer for report\n");
+				return;
+			}
+			hid_hw_raw_request(hdev, r->id, buf, report_len,
+					   HID_FEATURE_REPORT,
+					   HID_REQ_GET_REPORT);
+			kfree(buf);
+		}
 		r->field[0]->value[td->inputmode_index] = td->inputmode_value;
 		hid_hw_request(hdev, r, HID_REQ_SET_REPORT);
 	}
@@ -944,6 +1042,9 @@ static int mt_input_configured(struct hid_device *hdev, struct hid_input *hi)
 		case HID_DG_TOUCHSCREEN:
 			/* we do not set suffix = "Touchscreen" */
 			break;
+		case HID_DG_TOUCHPAD:
+			suffix = "Touchpad";
+			break;
 		case HID_GD_SYSTEM_CONTROL:
 			suffix = "System Control";
 			break;
@@ -1004,8 +1105,13 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		 * reports. Fortunately, the Win8 spec says that all touches
 		 * should be sent during each report, making the initialization
 		 * of input reports unnecessary.
+		 *
+		 * In addition some touchpads do not behave well if we read
+		 * all feature reports from them. Instead we prevent
+		 * initial report fetching and then selectively fetch each
+		 * report we are interested in.
 		 */
-		hdev->quirks |= HID_QUIRK_NO_INIT_INPUT_REPORTS;
+		hdev->quirks |= HID_QUIRK_NO_INIT_REPORTS;
 
 	td = devm_kzalloc(&hdev->dev, sizeof(struct mt_device), GFP_KERNEL);
 	if (!td) {
@@ -1122,6 +1228,14 @@ static const struct hid_device_id mt_devices[] = {
 	{  .driver_data = MT_CLS_NSMU,
 		MT_USB_DEVICE(USB_VENDOR_ID_CHUNGHWAT,
 			USB_DEVICE_ID_CHUNGHWAT_MULTITOUCH) },
+
+	/* CJTouch panels */
+	{ .driver_data = MT_CLS_NSMU,
+		MT_USB_DEVICE(USB_VENDOR_ID_CJTOUCH,
+			USB_DEVICE_ID_CJTOUCH_MULTI_TOUCH_0020) },
+	{ .driver_data = MT_CLS_NSMU,
+		MT_USB_DEVICE(USB_VENDOR_ID_CJTOUCH,
+			USB_DEVICE_ID_CJTOUCH_MULTI_TOUCH_0040) },
 
 	/* CVTouch panels */
 	{ .driver_data = MT_CLS_NSMU,
@@ -1311,6 +1425,11 @@ static const struct hid_device_id mt_devices[] = {
 	{ .driver_data = MT_CLS_NSMU,
 		MT_USB_DEVICE(USB_VENDOR_ID_UNITEC,
 			USB_DEVICE_ID_UNITEC_USB_TOUCH_0A19) },
+
+	/* VTL panels */
+	{ .driver_data = MT_CLS_VTL,
+		MT_USB_DEVICE(USB_VENDOR_ID_VTL,
+			USB_DEVICE_ID_VTL_MULTITOUCH_FF3F) },
 
 	/* Wistron panels */
 	{ .driver_data = MT_CLS_NSMU,

@@ -274,7 +274,7 @@ static int construct_get_dest_keyring(struct key **_dest_keyring)
 			if (cred->request_key_auth) {
 				authkey = cred->request_key_auth;
 				down_read(&authkey->sem);
-				rka = authkey->payload.data;
+				rka = authkey->payload.data[0];
 				if (!test_bit(KEY_FLAG_REVOKED,
 					      &authkey->flags))
 					dest_keyring =
@@ -437,6 +437,7 @@ link_check_failed:
 
 link_prealloc_failed:
 	mutex_unlock(&user->cons_lock);
+	key_put(key);
 	kleave(" = %d [prelink]", ret);
 	return ret;
 
@@ -461,6 +462,9 @@ static struct key *construct_key_and_link(struct keyring_search_context *ctx,
 	int ret;
 
 	kenter("");
+
+	if (ctx->index_key.type == &key_type_keyring)
+		return ERR_PTR(-EPERM);
 
 	ret = construct_get_dest_keyring(&dest_keyring);
 	if (ret)
@@ -620,7 +624,7 @@ int wait_for_key_construction(struct key *key, bool intr)
 		return -ERESTARTSYS;
 	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags)) {
 		smp_rmb();
-		return key->type_data.reject_error;
+		return key->reject_error;
 	}
 	return key_validate(key);
 }

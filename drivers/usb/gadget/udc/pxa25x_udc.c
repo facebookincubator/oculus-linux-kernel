@@ -998,8 +998,7 @@ static int pxa25x_udc_vbus_draw(struct usb_gadget *_gadget, unsigned mA)
 
 static int pxa25x_udc_start(struct usb_gadget *g,
 		struct usb_gadget_driver *driver);
-static int pxa25x_udc_stop(struct usb_gadget *g,
-		struct usb_gadget_driver *driver);
+static int pxa25x_udc_stop(struct usb_gadget *g);
 
 static const struct usb_gadget_ops pxa25x_udc_ops = {
 	.get_frame	= pxa25x_udc_get_frame,
@@ -1135,11 +1134,7 @@ static const struct file_operations debug_fops = {
 		dev->debugfs_udc = debugfs_create_file(dev->gadget.name, \
 			S_IRUGO, NULL, dev, &debug_fops); \
 	} while (0)
-#define remove_debug_files(dev) \
-	do { \
-		if (dev->debugfs_udc) \
-			debugfs_remove(dev->debugfs_udc); \
-	} while (0)
+#define remove_debug_files(dev) debugfs_remove(dev->debugfs_udc)
 
 #else	/* !CONFIG_USB_GADGET_DEBUG_FILES */
 
@@ -1181,6 +1176,7 @@ static void udc_reinit(struct pxa25x_udc *dev)
 	INIT_LIST_HEAD (&dev->gadget.ep_list);
 	INIT_LIST_HEAD (&dev->gadget.ep0->ep_list);
 	dev->ep0state = EP0_IDLE;
+	dev->gadget.quirk_altset_not_supp = 1;
 
 	/* basic endpoint records init */
 	for (i = 0; i < PXA_UDC_NUM_ENDPOINTS; i++) {
@@ -1277,11 +1273,37 @@ static int pxa25x_udc_start(struct usb_gadget *g,
 			goto bind_fail;
 	}
 
-	pullup(dev);
 	dump_state(dev);
 	return 0;
 bind_fail:
 	return retval;
+}
+
+static void
+reset_gadget(struct pxa25x_udc *dev, struct usb_gadget_driver *driver)
+{
+	int i;
+
+	/* don't disconnect drivers more than once */
+	if (dev->gadget.speed == USB_SPEED_UNKNOWN)
+		driver = NULL;
+	dev->gadget.speed = USB_SPEED_UNKNOWN;
+
+	/* prevent new request submissions, kill any outstanding requests  */
+	for (i = 0; i < PXA_UDC_NUM_ENDPOINTS; i++) {
+		struct pxa25x_ep *ep = &dev->ep[i];
+
+		ep->stopped = 1;
+		nuke(ep, -ESHUTDOWN);
+	}
+	del_timer_sync(&dev->timer);
+
+	/* report reset; the driver is already quiesced */
+	if (driver)
+		usb_gadget_udc_reset(&dev->gadget, driver);
+
+	/* re-init driver-visible data structures */
+	udc_reinit(dev);
 }
 
 static void
@@ -1311,15 +1333,13 @@ stop_activity(struct pxa25x_udc *dev, struct usb_gadget_driver *driver)
 	udc_reinit(dev);
 }
 
-static int pxa25x_udc_stop(struct usb_gadget*g,
-		struct usb_gadget_driver *driver)
+static int pxa25x_udc_stop(struct usb_gadget*g)
 {
 	struct pxa25x_udc	*dev = to_pxa25x(g);
 
 	local_irq_disable();
 	dev->pullup = 0;
-	pullup(dev);
-	stop_activity(dev, driver);
+	stop_activity(dev, NULL);
 	local_irq_enable();
 
 	if (!IS_ERR_OR_NULL(dev->transceiver))
@@ -1723,7 +1743,7 @@ pxa25x_udc_irq(int irq, void *_dev)
 				/* reset driver and endpoints,
 				 * in case that's not yet done
 				 */
-				stop_activity (dev, dev->driver);
+				reset_gadget(dev, dev->driver);
 
 			} else {
 				DBG(DBG_VERBOSE, "USB reset end\n");
@@ -1802,6 +1822,8 @@ static struct pxa25x_udc memory = {
 			.name		= ep0name,
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= EP0_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_CONTROL,
+						USB_EP_CAPS_DIR_ALL),
 		},
 		.dev		= &memory,
 		.reg_udccs	= &UDCCS0,
@@ -1814,6 +1836,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep1in-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1827,6 +1851,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep2out-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1842,6 +1868,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep3in-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -1855,6 +1883,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep4out-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -1869,6 +1899,7 @@ static struct pxa25x_udc memory = {
 			.name		= "ep5in-int",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= INT_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(0, 0),
 		},
 		.dev		= &memory,
 		.fifo_size	= INT_FIFO_SIZE,
@@ -1884,6 +1915,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep6in-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1897,6 +1930,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep7out-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1911,6 +1946,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep8in-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -1924,6 +1961,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep9out-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -1938,6 +1977,7 @@ static struct pxa25x_udc memory = {
 			.name		= "ep10in-int",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= INT_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(0, 0),
 		},
 		.dev		= &memory,
 		.fifo_size	= INT_FIFO_SIZE,
@@ -1953,6 +1993,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep11in-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1966,6 +2008,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep12out-bulk",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= BULK_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= BULK_FIFO_SIZE,
@@ -1980,6 +2024,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep13in-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_IN),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -1993,6 +2039,8 @@ static struct pxa25x_udc memory = {
 			.name		= "ep14out-iso",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= ISO_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
+						USB_EP_CAPS_DIR_OUT),
 		},
 		.dev		= &memory,
 		.fifo_size	= ISO_FIFO_SIZE,
@@ -2007,6 +2055,7 @@ static struct pxa25x_udc memory = {
 			.name		= "ep15in-int",
 			.ops		= &pxa25x_ep_ops,
 			.maxpacket	= INT_FIFO_SIZE,
+			.caps		= USB_EP_CAPS(0, 0),
 		},
 		.dev		= &memory,
 		.fifo_size	= INT_FIFO_SIZE,
@@ -2271,7 +2320,6 @@ static struct platform_driver udc_driver = {
 	.suspend	= pxa25x_udc_suspend,
 	.resume		= pxa25x_udc_resume,
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "pxa25x-udc",
 	},
 };

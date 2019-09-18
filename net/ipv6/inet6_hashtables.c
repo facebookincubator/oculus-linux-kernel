@@ -114,6 +114,8 @@ static inline int compute_score(struct sock *sk, struct net *net,
 				return -1;
 			score++;
 		}
+		if (sk->sk_incoming_cpu == raw_smp_processor_id())
+			score++;
 	}
 	return score;
 }
@@ -252,7 +254,7 @@ not_unique:
 	return -EADDRNOTAVAIL;
 }
 
-static inline u32 inet6_sk_port_offset(const struct sock *sk)
+static u32 inet6_sk_port_offset(const struct sock *sk)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 
@@ -264,7 +266,11 @@ static inline u32 inet6_sk_port_offset(const struct sock *sk)
 int inet6_hash_connect(struct inet_timewait_death_row *death_row,
 		       struct sock *sk)
 {
-	return __inet_hash_connect(death_row, sk, inet6_sk_port_offset(sk),
+	u32 port_offset = 0;
+
+	if (!inet_sk(sk)->inet_num)
+		port_offset = inet6_sk_port_offset(sk);
+	return __inet_hash_connect(death_row, sk, port_offset,
 				   __inet6_check_established);
 }
 EXPORT_SYMBOL_GPL(inet6_hash_connect);

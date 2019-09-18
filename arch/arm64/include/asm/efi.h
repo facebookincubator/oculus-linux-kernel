@@ -1,7 +1,6 @@
 #ifndef _ASM_EFI_H
 #define _ASM_EFI_H
 
-#include <asm/cpufeature.h>
 #include <asm/io.h>
 #include <asm/neon.h>
 

@@ -145,7 +145,7 @@ static const struct key_entry hp_wmi_keymap[] = {
 	{ KE_KEY, 0x20e8, { KEY_MEDIA } },
 	{ KE_KEY, 0x2142, { KEY_MEDIA } },
 	{ KE_KEY, 0x213b, { KEY_INFO } },
-	{ KE_KEY, 0x2169, { KEY_DIRECTION } },
+	{ KE_KEY, 0x2169, { KEY_ROTATE_DISPLAY } },
 	{ KE_KEY, 0x216a, { KEY_SETUP } },
 	{ KE_KEY, 0x231b, { KEY_HELP } },
 	{ KE_END, 0 }
@@ -723,6 +723,11 @@ static int __init hp_wmi_rfkill_setup(struct platform_device *device)
 	if (err)
 		return err;
 
+	err = hp_wmi_perform_query(HPWMI_WIRELESS_QUERY, 1, &wireless,
+				   sizeof(wireless), 0);
+	if (err)
+		return err;
+
 	if (wireless & 0x1) {
 		wifi_rfkill = rfkill_alloc("hp-wifi", &device->dev,
 					   RFKILL_TYPE_WLAN,
@@ -910,7 +915,7 @@ static int __init hp_wmi_bios_setup(struct platform_device *device)
 	gps_rfkill = NULL;
 	rfkill2_count = 0;
 
-	if (hp_wmi_bios_2009_later() || hp_wmi_rfkill_setup(device))
+	if (hp_wmi_rfkill_setup(device))
 		hp_wmi_rfkill2_setup(device);
 
 	err = device_create_file(&device->dev, &dev_attr_display);
@@ -1015,7 +1020,6 @@ static const struct dev_pm_ops hp_wmi_pm_ops = {
 static struct platform_driver hp_wmi_driver = {
 	.driver = {
 		.name = "hp-wmi",
-		.owner = THIS_MODULE,
 		.pm = &hp_wmi_pm_ops,
 	},
 	.remove = __exit_p(hp_wmi_bios_remove),

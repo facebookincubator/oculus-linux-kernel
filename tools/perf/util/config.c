@@ -12,6 +12,7 @@
 #include "cache.h"
 #include "exec_cmd.h"
 #include "util/hist.h"  /* perf_hist_config */
+#include "util/llvm-utils.h"   /* perf_llvm_config */
 
 #define MAXNAME (256)
 
@@ -408,6 +409,9 @@ int perf_default_config(const char *var, const char *value,
 	if (!prefixcmp(var, "call-graph."))
 		return perf_callchain_config(var, value);
 
+	if (!prefixcmp(var, "llvm."))
+		return perf_llvm_config(var, value);
+
 	/* Add other config variables here. */
 	return 0;
 }
@@ -522,7 +526,7 @@ static int buildid_dir_command_config(const char *var, const char *value,
 	const char *v;
 
 	/* same dir for all commands */
-	if (!prefixcmp(var, "buildid.") && !strcmp(var + 8, "dir")) {
+	if (!strcmp(var, "buildid.dir")) {
 		v = perf_config_dirname(var, value);
 		if (!v)
 			return -1;
@@ -539,12 +543,14 @@ static void check_buildid_dir_config(void)
 	perf_config(buildid_dir_command_config, &c);
 }
 
-void set_buildid_dir(void)
+void set_buildid_dir(const char *dir)
 {
-	buildid_dir[0] = '\0';
+	if (dir)
+		scnprintf(buildid_dir, MAXPATHLEN-1, "%s", dir);
 
 	/* try config file */
-	check_buildid_dir_config();
+	if (buildid_dir[0] == '\0')
+		check_buildid_dir_config();
 
 	/* default to $HOME/.debug */
 	if (buildid_dir[0] == '\0') {

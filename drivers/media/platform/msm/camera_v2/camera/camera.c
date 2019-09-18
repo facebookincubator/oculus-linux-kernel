@@ -27,6 +27,7 @@
 #include <linux/iommu.h>
 #include <linux/platform_device.h>
 #include <media/v4l2-fh.h>
+#include <media/videobuf2-v4l2.h>
 
 #include "camera.h"
 #include "msm.h"
@@ -544,7 +545,7 @@ static int camera_v4l2_fh_open(struct file *filep)
 {
 	struct msm_video_device *pvdev = video_drvdata(filep);
 	struct camera_v4l2_private *sp;
-	unsigned int stream_id;
+	unsigned long stream_id;
 
 	sp = kzalloc(sizeof(*sp), GFP_KERNEL);
 	if (!sp) {
@@ -603,7 +604,6 @@ static int camera_v4l2_vb2_q_init(struct file *filep)
 	/* default queue type */
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	q->io_modes = VB2_USERPTR;
-	q->io_flags = 0;
 	q->buf_struct_size = sizeof(struct msm_vb2_buffer);
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	return vb2_queue_init(q);
@@ -624,7 +624,7 @@ static int camera_v4l2_open(struct file *filep)
 	int rc = 0;
 	struct v4l2_event event;
 	struct msm_video_device *pvdev = video_drvdata(filep);
-	unsigned int opn_idx, idx;
+	unsigned long opn_idx, idx;
 	BUG_ON(!pvdev);
 
 	mutex_lock(&pvdev->video_drvdata_mutex);
@@ -855,7 +855,7 @@ static struct v4l2_file_operations camera_v4l2_fops = {
 	.open	= camera_v4l2_open,
 	.poll	= camera_v4l2_poll,
 	.release = camera_v4l2_close,
-	.ioctl   = video_ioctl2,
+	.unlocked_ioctl   = video_ioctl2,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl32 = camera_v4l2_compat_ioctl,
 #endif
@@ -957,3 +957,5 @@ video_fail:
 init_end:
 	return rc;
 }
+
+EXPORT_SYMBOL(camera_init_v4l2);

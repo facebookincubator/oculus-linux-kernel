@@ -1,4 +1,4 @@
-* Qualcomm MSM Camera SMMU
+* Qualcomm Technologies, Inc. MSM Camera SMMU
 
 [Root level node]
 The complete set of context banks for camera are encapsulated under this
@@ -34,3 +34,4 @@ Example:
       qcom,scratch-buf-support;
     }
   }
+

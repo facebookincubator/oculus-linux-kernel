@@ -7,7 +7,7 @@
 #define ASMARM_DEVICE_H
 
 struct dev_archdata {
-	struct dma_map_ops	*dma_ops;
+	const struct dma_map_ops	*dma_ops;
 #ifdef CONFIG_DMABOUNCE
 	struct dmabounce_device_info *dmabounce;
 #endif
@@ -17,6 +17,7 @@ struct dev_archdata {
 #ifdef CONFIG_ARM_DMA_USE_IOMMU
 	struct dma_iommu_mapping	*mapping;
 #endif
+	bool dma_coherent;
 };
 
 struct omap_device;
@@ -25,7 +26,6 @@ struct pdev_archdata {
 #ifdef CONFIG_ARCH_OMAP
 	struct omap_device *od;
 #endif
-	u64 dma_mask;
 };
 
 #ifdef CONFIG_ARM_DMA_USE_IOMMU

@@ -68,6 +68,13 @@ struct ext4_encryption_context {
 #define EXT4_KEY_DESC_PREFIX "ext4:"
 #define EXT4_KEY_DESC_PREFIX_SIZE 5
 
+/* This is passed in from userspace into the kernel keyring */
+struct ext4_encryption_key {
+        __u32 mode;
+        char raw[EXT4_MAX_KEY_SIZE];
+        __u32 size;
+} __attribute__((__packed__));
+
 struct ext4_crypt_info {
 	char		ci_data_mode;
 	char		ci_filename_mode;
@@ -77,6 +84,8 @@ struct ext4_crypt_info {
 	char		ci_master_key[EXT4_KEY_DESCRIPTOR_SIZE];
 	char		ci_raw_key[EXT4_MAX_KEY_SIZE];
 };
+
+
 
 #define EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL             0x00000001
 #define EXT4_WRITE_PATH_FL			      0x00000002
@@ -152,7 +161,5 @@ static inline u32 encrypted_symlink_data_len(u32 l)
 		l = EXT4_CRYPTO_BLOCK_SIZE;
 	return (l + sizeof(struct ext4_encrypted_symlink_data) - 1);
 }
-
-void ext4_set_bio_crypt_context(struct inode *inode, struct bio *bio);
 
 #endif	/* _EXT4_CRYPTO_H */

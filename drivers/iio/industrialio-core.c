@@ -70,19 +70,27 @@ static const char * const iio_chan_type_name_spec[] = {
 	[IIO_CCT] = "cct",
 	[IIO_PRESSURE] = "pressure",
 	[IIO_HUMIDITYRELATIVE] = "humidityrelative",
-	[IIO_SIGN_MOTION] = "sign_motion",
-	[IIO_STEP_DETECTOR] = "step_detector",
-	[IIO_STEP_COUNTER] = "step_counter",
-	[IIO_TILT] = "tilt",
-	[IIO_TAP] = "tap",
-	[IIO_TAP_TAP] = "tap_tap",
-	[IIO_WRIST_TILT_GESTURE] = "wrist",
+	[IIO_ACTIVITY] = "activity",
+	[IIO_STEPS] = "steps",
+	[IIO_ENERGY] = "energy",
+	[IIO_DISTANCE] = "distance",
+	[IIO_VELOCITY] = "velocity",
+	[IIO_CONCENTRATION] = "concentration",
+	[IIO_RESISTANCE] = "resistance",
 };
 
 static const char * const iio_modifier_names[] = {
 	[IIO_MOD_X] = "x",
 	[IIO_MOD_Y] = "y",
 	[IIO_MOD_Z] = "z",
+	[IIO_MOD_X_AND_Y] = "x&y",
+	[IIO_MOD_X_AND_Z] = "x&z",
+	[IIO_MOD_Y_AND_Z] = "y&z",
+	[IIO_MOD_X_AND_Y_AND_Z] = "x&y&z",
+	[IIO_MOD_X_OR_Y] = "x|y",
+	[IIO_MOD_X_OR_Z] = "x|z",
+	[IIO_MOD_Y_OR_Z] = "y|z",
+	[IIO_MOD_X_OR_Y_OR_Z] = "x|y|z",
 	[IIO_MOD_ROOT_SUM_SQUARED_X_Y] = "sqrt(x^2+y^2)",
 	[IIO_MOD_SUM_SQUARED_X_Y_Z] = "x^2+y^2+z^2",
 	[IIO_MOD_LIGHT_BOTH] = "both",
@@ -98,6 +106,15 @@ static const char * const iio_modifier_names[] = {
 	[IIO_MOD_NORTH_TRUE] = "from_north_true",
 	[IIO_MOD_NORTH_MAGN_TILT_COMP] = "from_north_magnetic_tilt_comp",
 	[IIO_MOD_NORTH_TRUE_TILT_COMP] = "from_north_true_tilt_comp",
+	[IIO_MOD_RUNNING] = "running",
+	[IIO_MOD_JOGGING] = "jogging",
+	[IIO_MOD_WALKING] = "walking",
+	[IIO_MOD_STILL] = "still",
+	[IIO_MOD_ROOT_SUM_SQUARED_X_Y_Z] = "sqrt(x^2+y^2+z^2)",
+	[IIO_MOD_I] = "i",
+	[IIO_MOD_Q] = "q",
+	[IIO_MOD_CO2] = "co2",
+	[IIO_MOD_VOC] = "voc",
 };
 
 /* relies on pairs of these shared then separate */
@@ -114,12 +131,21 @@ static const char * const iio_chan_info_postfix[] = {
 	[IIO_CHAN_INFO_AVERAGE_RAW] = "mean_raw",
 	[IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY]
 	= "filter_low_pass_3db_frequency",
+	[IIO_CHAN_INFO_HIGH_PASS_FILTER_3DB_FREQUENCY]
+	= "filter_high_pass_3db_frequency",
 	[IIO_CHAN_INFO_SAMP_FREQ] = "sampling_frequency",
 	[IIO_CHAN_INFO_FREQUENCY] = "frequency",
 	[IIO_CHAN_INFO_PHASE] = "phase",
 	[IIO_CHAN_INFO_HARDWAREGAIN] = "hardwaregain",
 	[IIO_CHAN_INFO_HYSTERESIS] = "hysteresis",
 	[IIO_CHAN_INFO_INT_TIME] = "integration_time",
+	[IIO_CHAN_INFO_ENABLE] = "en",
+	[IIO_CHAN_INFO_CALIBHEIGHT] = "calibheight",
+	[IIO_CHAN_INFO_CALIBWEIGHT] = "calibweight",
+	[IIO_CHAN_INFO_DEBOUNCE_COUNT] = "debounce_count",
+	[IIO_CHAN_INFO_DEBOUNCE_TIME] = "debounce_time",
+	[IIO_CHAN_INFO_CALIBEMISSIVITY] = "calibemissivity",
+	[IIO_CHAN_INFO_OVERSAMPLING_RATIO] = "oversampling_ratio",
 };
 
 /**
@@ -384,10 +410,16 @@ EXPORT_SYMBOL_GPL(iio_enum_write);
 
 /**
  * iio_format_value() - Formats a IIO value into its string representation
- * @buf: The buffer to which the formated value gets written
- * @type: One of the IIO_VAL_... constants. This decides how the val and val2
- *        parameters are formatted.
- * @vals: pointer to the values, exact meaning depends on the type parameter.
+ * @buf:	The buffer to which the formatted value gets written
+ * @type:	One of the IIO_VAL_... constants. This decides how the val
+ *		and val2 parameters are formatted.
+ * @size:	Number of IIO value entries contained in vals
+ * @vals:	Pointer to the values, exact meaning depends on the
+ *		type parameter.
+ *
+ * Return: 0 by default, a negative number on failure or the
+ *	   total number of characters written for a type that belongs
+ *	   to the IIO_VAL_... constant.
  */
 ssize_t iio_format_value(char *buf, unsigned int type, int size, int *vals)
 {
@@ -623,7 +655,7 @@ int __iio_device_attr_init(struct device_attribute *dev_attr,
 			break;
 		case IIO_SEPARATE:
 			if (!chan->indexed) {
-				WARN_ON("Differential channels must be indexed\n");
+				WARN(1, "Differential channels must be indexed\n");
 				ret = -EINVAL;
 				goto error_free_full_postfix;
 			}
@@ -934,7 +966,7 @@ static void iio_device_unregister_sysfs(struct iio_dev *indio_dev)
 static void iio_dev_release(struct device *device)
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(device);
-	if (indio_dev->modes & INDIO_BUFFER_TRIGGERED)
+	if (indio_dev->modes & (INDIO_BUFFER_TRIGGERED | INDIO_EVENT_TRIGGERED))
 		iio_device_unregister_trigger_consumer(indio_dev);
 	iio_device_unregister_eventset(indio_dev);
 	iio_device_unregister_sysfs(indio_dev);
@@ -1043,7 +1075,6 @@ struct iio_dev *devm_iio_device_alloc(struct device *dev, int sizeof_priv)
 	if (!ptr)
 		return NULL;
 
-	/* use raw alloc_dr for kmalloc caller tracing */
 	iio_dev = iio_device_alloc(sizeof_priv);
 	if (iio_dev) {
 		*ptr = iio_dev;
@@ -1075,6 +1106,11 @@ EXPORT_SYMBOL_GPL(devm_iio_device_free);
 
 /**
  * iio_chrdev_open() - chrdev file open for buffer access and ioctls
+ * @inode:	Inode structure for identifying the device in the file system
+ * @filp:	File structure for iio device used to keep and later access
+ *		private data
+ *
+ * Return: 0 on success or -EBUSY if the device is already opened
  **/
 static int iio_chrdev_open(struct inode *inode, struct file *filp)
 {
@@ -1093,7 +1129,11 @@ static int iio_chrdev_open(struct inode *inode, struct file *filp)
 
 /**
  * iio_chrdev_release() - chrdev file close buffer access and ioctls
- **/
+ * @inode:	Inode structure pointer for the char device
+ * @filp:	File structure pointer for the char device
+ *
+ * Return: 0 for successful release
+ */
 static int iio_chrdev_release(struct inode *inode, struct file *filp)
 {
 	struct iio_dev *indio_dev = container_of(inode->i_cdev,
@@ -1117,6 +1157,8 @@ static long iio_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	if (cmd == IIO_GET_EVENT_FD_IOCTL) {
 		fd = iio_event_getfd(indio_dev);
+		if (fd < 0)
+			return fd;
 		if (copy_to_user(ip, &fd, sizeof(fd)))
 			return -EFAULT;
 		return 0;
@@ -1135,6 +1177,29 @@ static const struct file_operations iio_buffer_fileops = {
 	.compat_ioctl = iio_ioctl,
 };
 
+static int iio_check_unique_scan_index(struct iio_dev *indio_dev)
+{
+	int i, j;
+	const struct iio_chan_spec *channels = indio_dev->channels;
+
+	if (!(indio_dev->modes & INDIO_ALL_BUFFER_MODES))
+		return 0;
+
+	for (i = 0; i < indio_dev->num_channels - 1; i++) {
+		if (channels[i].scan_index < 0)
+			continue;
+		for (j = i + 1; j < indio_dev->num_channels; j++)
+			if (channels[i].scan_index == channels[j].scan_index) {
+				dev_err(&indio_dev->dev,
+					"Duplicate scan index %d\n",
+					channels[i].scan_index);
+				return -EINVAL;
+			}
+	}
+
+	return 0;
+}
+
 static const struct iio_buffer_setup_ops noop_ring_setup_ops;
 
 /**
@@ -1149,6 +1214,10 @@ int iio_device_register(struct iio_dev *indio_dev)
 	if (!indio_dev->dev.of_node && indio_dev->dev.parent)
 		indio_dev->dev.of_node = indio_dev->dev.parent->of_node;
 
+	ret = iio_check_unique_scan_index(indio_dev);
+	if (ret < 0)
+		return ret;
+
 	/* configure elements for the chrdev */
 	indio_dev->dev.devt = MKDEV(MAJOR(iio_devt), indio_dev->id);
 
@@ -1158,11 +1227,19 @@ int iio_device_register(struct iio_dev *indio_dev)
 			"Failed to register debugfs interfaces\n");
 		return ret;
 	}
+
+	ret = iio_buffer_alloc_sysfs_and_mask(indio_dev);
+	if (ret) {
+		dev_err(indio_dev->dev.parent,
+			"Failed to create buffer sysfs interfaces\n");
+		goto error_unreg_debugfs;
+	}
+
 	ret = iio_device_register_sysfs(indio_dev);
 	if (ret) {
 		dev_err(indio_dev->dev.parent,
 			"Failed to register sysfs interfaces\n");
-		goto error_unreg_debugfs;
+		goto error_buffer_free_sysfs;
 	}
 	ret = iio_device_register_eventset(indio_dev);
 	if (ret) {
@@ -1170,7 +1247,7 @@ int iio_device_register(struct iio_dev *indio_dev)
 			"Failed to register event set\n");
 		goto error_free_sysfs;
 	}
-	if (indio_dev->modes & INDIO_BUFFER_TRIGGERED)
+	if (indio_dev->modes & (INDIO_BUFFER_TRIGGERED | INDIO_EVENT_TRIGGERED))
 		iio_device_register_trigger_consumer(indio_dev);
 
 	if ((indio_dev->modes & INDIO_ALL_BUFFER_MODES) &&
@@ -1195,6 +1272,8 @@ error_unreg_eventset:
 	iio_device_unregister_eventset(indio_dev);
 error_free_sysfs:
 	iio_device_unregister_sysfs(indio_dev);
+error_buffer_free_sysfs:
+	iio_buffer_free_sysfs_and_mask(indio_dev);
 error_unreg_debugfs:
 	iio_device_unregister_debugfs(indio_dev);
 	return ret;
@@ -1223,6 +1302,8 @@ void iio_device_unregister(struct iio_dev *indio_dev)
 	iio_buffer_wakeup_poll(indio_dev);
 
 	mutex_unlock(&indio_dev->info_exist_lock);
+
+	iio_buffer_free_sysfs_and_mask(indio_dev);
 }
 EXPORT_SYMBOL(iio_device_unregister);
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014, 2016-2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -42,6 +42,7 @@ module_param_named(boot_enable, boot_enable, int, S_IRUGO);
 static int etm4_count;
 static struct etmv4_drvdata *etmdrvdata[NR_CPUS];
 static struct notifier_block etm4_cpu_notifier;
+static struct notifier_block etm4_cpu_dying_notifier;
 
 static void etm4_os_unlock(void *info)
 {
@@ -68,24 +69,8 @@ static bool etm4_arch_supported(u8 arch)
 static int etm4_trace_id(struct coresight_device *csdev)
 {
 	struct etmv4_drvdata *drvdata = dev_get_drvdata(csdev->dev.parent);
-	unsigned long flags;
-	int trace_id = -1;
 
-	if (!drvdata->enable)
-		return drvdata->trcid;
-
-	pm_runtime_get_sync(drvdata->dev);
-	spin_lock_irqsave(&drvdata->spinlock, flags);
-
-	CS_UNLOCK(drvdata->base);
-	trace_id = readl_relaxed(drvdata->base + TRCTRACEIDR);
-	trace_id &= ETM_TRACEID_MASK;
-	CS_LOCK(drvdata->base);
-
-	spin_unlock_irqrestore(&drvdata->spinlock, flags);
-	pm_runtime_put(drvdata->dev);
-
-	return trace_id;
+	return drvdata->trcid;
 }
 
 static void etm4_enable_hw(void *info)
@@ -2492,8 +2477,6 @@ static void etm4_init_default_data(struct etmv4_drvdata *drvdata)
 	if (drvdata->nr_addr_cmp)
 		drvdata->vinst_ctrl |= BIT(9);
 
-	/* no address range filtering for ViewInst */
-	drvdata->viiectlr = 0x0;
 	/* no start-stop filtering for ViewInst */
 	drvdata->vissctlr = 0x0;
 
@@ -2527,6 +2510,9 @@ static void etm4_init_default_data(struct etmv4_drvdata *drvdata)
 		drvdata->addr_val[1] = (unsigned long)_etext;
 		drvdata->addr_type[0] = ETM_ADDR_TYPE_RANGE;
 		drvdata->addr_type[1] = ETM_ADDR_TYPE_RANGE;
+
+		/* address range filtering for ViewInst */
+		drvdata->viiectlr = 0x1;
 	}
 
 	for (i = 0; i < drvdata->numcidc; i++) {
@@ -2548,6 +2534,43 @@ static void etm4_init_default_data(struct etmv4_drvdata *drvdata)
 	drvdata->trcid = 0x1 + drvdata->cpu;
 }
 
+static int etm4_set_reg_dump(struct etmv4_drvdata *drvdata)
+{
+	int ret;
+	void *baddr;
+	struct amba_device *adev;
+	struct resource *res;
+	struct device *dev = drvdata->dev;
+	struct msm_dump_entry dump_entry;
+	uint32_t size;
+
+	adev = to_amba_device(dev);
+	if (!adev)
+		return -EINVAL;
+
+	res = &adev->res;
+	size = resource_size(res);
+
+	baddr = devm_kzalloc(dev, size, GFP_KERNEL);
+	if (!baddr)
+		return -ENOMEM;
+
+	drvdata->reg_data.addr = virt_to_phys(baddr);
+	drvdata->reg_data.len = size;
+	scnprintf(drvdata->reg_data.name, sizeof(drvdata->reg_data.name),
+		"KETM_REG%d", drvdata->cpu);
+
+	dump_entry.id = MSM_DUMP_DATA_ETM_REG + drvdata->cpu;
+	dump_entry.addr = virt_to_phys(&drvdata->reg_data);
+
+	ret = msm_dump_data_register(MSM_DUMP_TABLE_APPS,
+				     &dump_entry);
+	if (ret)
+		devm_kfree(dev, baddr);
+
+	return ret;
+}
+
 static int etm4_late_init(struct etmv4_drvdata *drvdata)
 {
 	int ret;
@@ -2558,6 +2581,10 @@ static int etm4_late_init(struct etmv4_drvdata *drvdata)
 		return -EINVAL;
 
 	etm4_init_default_data(drvdata);
+
+	ret = etm4_set_reg_dump(drvdata);
+	if (ret)
+		dev_err(dev, "ETM REG dump setup failed. ret %d\n", ret);
 
 	desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
 	if (!desc)
@@ -2658,20 +2685,15 @@ static int etm4_cpu_callback(struct notifier_block *nfb, unsigned long action,
 			clk_disable[cpu] = false;
 		}
 		break;
-
-	case CPU_DYING:
-		spin_lock(&etmdrvdata[cpu]->spinlock);
-		if (etmdrvdata[cpu]->enable)
-			etm4_disable_hw(etmdrvdata[cpu]);
-		spin_unlock(&etmdrvdata[cpu]->spinlock);
-		break;
 	}
 out:
 	return NOTIFY_OK;
 
 err_init:
-	if (--etm4_count == 0)
+	if (--etm4_count == 0) {
 		unregister_hotcpu_notifier(&etm4_cpu_notifier);
+		unregister_hotcpu_notifier(&etm4_cpu_dying_notifier);
+	}
 
 	if (clk_disable[cpu]) {
 		pm_runtime_put(etmdrvdata[cpu]->dev);
@@ -2689,6 +2711,31 @@ err_clk_init:
 
 static struct notifier_block etm4_cpu_notifier = {
 	.notifier_call = etm4_cpu_callback,
+};
+
+static int etm4_cpu_dying_callback(struct notifier_block *nfb,
+				   unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+
+	if (!etmdrvdata[cpu])
+		goto out;
+
+	switch (action & (~CPU_TASKS_FROZEN)) {
+	case CPU_DYING:
+		spin_lock(&etmdrvdata[cpu]->spinlock);
+		if (etmdrvdata[cpu]->enable)
+			etm4_disable_hw(etmdrvdata[cpu]);
+		spin_unlock(&etmdrvdata[cpu]->spinlock);
+		break;
+	}
+out:
+	return NOTIFY_OK;
+}
+
+static struct notifier_block etm4_cpu_dying_notifier = {
+	.notifier_call = etm4_cpu_dying_callback,
+	.priority = 1,
 };
 
 static int etm4_probe(struct amba_device *adev, const struct amba_id *id)
@@ -2725,7 +2772,11 @@ static int etm4_probe(struct amba_device *adev, const struct amba_id *id)
 	spin_lock_init(&drvdata->spinlock);
 	mutex_init(&drvdata->mutex);
 
-	drvdata->cpu = pdata ? pdata->cpu : 0;
+	drvdata->cpu = pdata ? pdata->cpu : -1;
+	if (drvdata->cpu == -1) {
+		dev_err(drvdata->dev, "invalid ETM cpu handle\n");
+		return -EINVAL;
+	}
 
 	get_online_cpus();
 
@@ -2745,10 +2796,16 @@ static int etm4_probe(struct amba_device *adev, const struct amba_id *id)
 
 	etmdrvdata[drvdata->cpu] = drvdata;
 
-	if (!etm4_count++)
+	if (!etm4_count++) {
 		register_hotcpu_notifier(&etm4_cpu_notifier);
+		register_hotcpu_notifier(&etm4_cpu_dying_notifier);
+	}
 
 	put_online_cpus();
+
+	ret = clk_set_rate(adev->pclk, CORESIGHT_CLK_RATE_TRACE);
+	if (ret)
+		return ret;
 
 	pm_runtime_put(&adev->dev);
 
@@ -2765,8 +2822,12 @@ static int etm4_probe(struct amba_device *adev, const struct amba_id *id)
 	return 0;
 
 err_late_init:
-	if (--etm4_count == 0)
+	if (--etm4_count == 0) {
 		unregister_hotcpu_notifier(&etm4_cpu_notifier);
+		unregister_hotcpu_notifier(&etm4_cpu_dying_notifier);
+	}
+	etmdrvdata[drvdata->cpu] = NULL;
+	dev_set_drvdata(dev, NULL);
 	return ret;
 }
 
@@ -2775,8 +2836,10 @@ static int etm4_remove(struct amba_device *adev)
 	struct etmv4_drvdata *drvdata = amba_get_drvdata(adev);
 
 	coresight_unregister(drvdata->csdev);
-	if (--etm4_count == 0)
+	if (--etm4_count == 0) {
 		unregister_hotcpu_notifier(&etm4_cpu_notifier);
+		unregister_hotcpu_notifier(&etm4_cpu_dying_notifier);
+	}
 
 	return 0;
 }

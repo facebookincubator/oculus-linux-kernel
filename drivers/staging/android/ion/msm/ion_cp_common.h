@@ -74,8 +74,6 @@ int ion_cp_secure_buffer(struct ion_buffer *buffer, int version, void *data,
 
 int ion_cp_unsecure_buffer(struct ion_buffer *buffer, int force_unsecure);
 
-bool msm_secure_v2_is_supported(void);
-
 #else
 static inline int ion_cp_change_chunks_state(unsigned long chunks,
 			unsigned int nchunks, unsigned int chunk_size,
@@ -109,12 +107,6 @@ static inline int ion_cp_unsecure_buffer(struct ion_buffer *buffer,
 {
 	return -ENODEV;
 }
-
-static inline bool msm_secure_v2_is_supported(void)
-{
-	return false;
-}
-
 #endif
 
 #endif

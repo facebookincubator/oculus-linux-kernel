@@ -29,7 +29,7 @@
 #include "e1000_mac.h"
 #include "e1000_82575.h"
 
-#include <linux/clocksource.h>
+#include <linux/timecounter.h>
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/bitops.h>
@@ -343,6 +343,9 @@ struct hwmon_buff {
 	};
 #endif
 
+#define IGB_N_EXTTS	2
+#define IGB_N_PEROUT	2
+#define IGB_N_SDP	4
 #define IGB_RETA_SIZE	128
 
 /* board specific private data structure */
@@ -385,6 +388,8 @@ struct igb_adapter {
 	u32 en_mng_pt;
 	u16 link_speed;
 	u16 link_duplex;
+
+	u8 __iomem *io_addr; /* Mainly for iounmap use */
 
 	struct work_struct reset_task;
 	struct work_struct watchdog_task;
@@ -438,6 +443,12 @@ struct igb_adapter {
 	struct timecounter tc;
 	u32 tx_hwtstamp_timeouts;
 	u32 rx_hwtstamp_cleared;
+
+	struct ptp_pin_desc sdp_config[IGB_N_SDP];
+	struct {
+		struct timespec64 start;
+		struct timespec64 period;
+	} perout[IGB_N_PEROUT];
 
 	char fw_version[32];
 #ifdef CONFIG_IGB_HWMON

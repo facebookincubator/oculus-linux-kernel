@@ -57,6 +57,13 @@ static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp
 
 DEFINE_PER_CPU(struct task_struct *, ksoftirqd);
 
+/*
+ * active_softirqs -- per cpu, a mask of softirqs that are being handled,
+ * with the expectation that approximate answers are acceptable and therefore
+ * no synchronization.
+ */
+DEFINE_PER_CPU(__u32, active_softirqs);
+
 const char * const softirq_to_name[NR_SOFTIRQS] = {
 	"HI", "TIMER", "NET_TX", "NET_RX", "BLOCK", "BLOCK_IOPOLL",
 	"TASKLET", "SCHED", "HRTIMER", "RCU"
@@ -114,8 +121,12 @@ void __local_bh_disable_ip(unsigned long ip, unsigned int cnt)
 		trace_softirqs_off(ip);
 	raw_local_irq_restore(flags);
 
-	if (preempt_count() == cnt)
+	if (preempt_count() == cnt) {
+#ifdef CONFIG_DEBUG_PREEMPT
+		current->preempt_disable_ip = get_parent_ip(CALLER_ADDR1);
+#endif
 		trace_preempt_off(CALLER_ADDR0, get_parent_ip(CALLER_ADDR1));
+	}
 }
 EXPORT_SYMBOL(__local_bh_disable_ip);
 #endif /* CONFIG_TRACE_IRQFLAGS */
@@ -249,6 +260,7 @@ asmlinkage __visible void __do_softirq(void)
 restart:
 	/* Reset the pending bitmask before enabling irqs */
 	set_softirq_pending(0);
+	__this_cpu_write(active_softirqs, pending);
 
 	local_irq_enable();
 
@@ -278,6 +290,7 @@ restart:
 		pending >>= softirq_bit;
 	}
 
+	__this_cpu_write(active_softirqs, 0);
 	rcu_bh_qs();
 	local_irq_disable();
 
@@ -657,12 +670,7 @@ static void run_ksoftirqd(unsigned int cpu)
 		 */
 		__do_softirq();
 		local_irq_enable();
-		cond_resched();
-
-		preempt_disable();
-		rcu_note_context_switch(cpu);
-		preempt_enable();
-
+		cond_resched_rcu_qs();
 		return;
 	}
 	local_irq_enable();

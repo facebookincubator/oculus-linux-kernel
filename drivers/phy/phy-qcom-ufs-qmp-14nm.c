@@ -226,7 +226,7 @@ out:
 	return err;
 }
 
-struct phy_ops ufs_qcom_phy_qmp_14nm_phy_ops = {
+static const struct phy_ops ufs_qcom_phy_qmp_14nm_phy_ops = {
 	.init		= ufs_qcom_phy_qmp_14nm_init,
 	.exit		= ufs_qcom_phy_exit,
 	.power_on	= ufs_qcom_phy_power_on,
@@ -234,7 +234,7 @@ struct phy_ops ufs_qcom_phy_qmp_14nm_phy_ops = {
 	.owner		= THIS_MODULE,
 };
 
-struct ufs_qcom_phy_specific_ops phy_14nm_ops = {
+static struct ufs_qcom_phy_specific_ops phy_14nm_ops = {
 	.calibrate_phy		= ufs_qcom_phy_qmp_14nm_phy_calibrate,
 	.start_serdes		= ufs_qcom_phy_qmp_14nm_start_serdes,
 	.is_physical_coding_sublayer_ready = ufs_qcom_phy_qmp_14nm_is_pcs_ready,
@@ -303,7 +303,6 @@ static struct platform_driver ufs_qcom_phy_qmp_14nm_driver = {
 	.driver = {
 		.of_match_table = ufs_qcom_phy_qmp_14nm_of_match,
 		.name = "ufs_qcom_phy_qmp_14nm",
-		.owner = THIS_MODULE,
 	},
 };
 

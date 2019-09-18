@@ -109,7 +109,7 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		goto out;
 
 	/* If our top's inode is gone, we may be out of date */
-	inode = igrab(dentry->d_inode);
+	inode = igrab(d_inode(dentry));
 	if (inode) {
 		data = top_data_get(SDCARDFS_I(inode));
 		if (!data || data->abandoned) {

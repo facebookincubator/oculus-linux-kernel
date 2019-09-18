@@ -16,16 +16,33 @@
 
 #include <linux/types.h>
 
-#define FASTRPC_IOCTL_INVOKE  _IOWR('R', 1, struct fastrpc_ioctl_invoke)
-#define FASTRPC_IOCTL_MMAP    _IOWR('R', 2, struct fastrpc_ioctl_mmap)
-#define FASTRPC_IOCTL_MUNMAP  _IOWR('R', 3, struct fastrpc_ioctl_munmap)
-#define FASTRPC_IOCTL_INVOKE_FD  _IOWR('R', 4, struct fastrpc_ioctl_invoke_fd)
-#define FASTRPC_IOCTL_SETMODE    _IOWR('R', 5, uint32_t)
-#define FASTRPC_IOCTL_INIT       _IOWR('R', 6, struct fastrpc_ioctl_init)
+#define FASTRPC_IOCTL_INVOKE	_IOWR('R', 1, struct fastrpc_ioctl_invoke)
+#define FASTRPC_IOCTL_MMAP	_IOWR('R', 2, struct fastrpc_ioctl_mmap)
+#define FASTRPC_IOCTL_MUNMAP	_IOWR('R', 3, struct fastrpc_ioctl_munmap)
+#define FASTRPC_IOCTL_INVOKE_FD	_IOWR('R', 4, struct fastrpc_ioctl_invoke_fd)
+#define FASTRPC_IOCTL_SETMODE	_IOWR('R', 5, uint32_t)
+#define FASTRPC_IOCTL_INIT	_IOWR('R', 6, struct fastrpc_ioctl_init)
+#define FASTRPC_IOCTL_INVOKE_ATTRS \
+				_IOWR('R', 7, struct fastrpc_ioctl_invoke_attrs)
 #define FASTRPC_IOCTL_GETINFO	_IOWR('R', 8, uint32_t)
+#define FASTRPC_IOCTL_GETPERF	_IOWR('R', 9, struct fastrpc_ioctl_perf)
+#define FASTRPC_IOCTL_INIT_ATTRS _IOWR('R', 10, struct fastrpc_ioctl_init_attrs)
+#define FASTRPC_IOCTL_MUNMAP_FD	_IOWR('R', 13, struct fastrpc_ioctl_munmap_fd)
+
 #define FASTRPC_GLINK_GUID "fastrpcglink-apps-dsp"
 #define FASTRPC_SMD_GUID "fastrpcsmd-apps-dsp"
 #define DEVICE_NAME      "adsprpc-smd"
+
+/* Set for buffers that have no virtual mapping in userspace */
+#define FASTRPC_ATTR_NOVA (0x1)
+
+/* Set for buffers that are NOT dma coherent */
+#define FASTRPC_ATTR_NON_COHERENT (0x2)
+
+/* Set for buffers that are dma coherent */
+#define FASTRPC_ATTR_COHERENT (0x4)
+
+#define FASTRPC_ATTR_KEEP_MAP (0x10)
 
 /* Driver should operate in parallel with the co-processor */
 #define FASTRPC_MODE_PARALLEL    0
@@ -33,9 +50,13 @@
 /* Driver should operate in serial mode with the co-processor */
 #define FASTRPC_MODE_SERIAL      1
 
+/* Driver should operate in profile mode with the co-processor */
+#define FASTRPC_MODE_PROFILE     2
+
 /* INIT a new process or attach to guestos */
 #define FASTRPC_INIT_ATTACH      0
 #define FASTRPC_INIT_CREATE      1
+#define FASTRPC_INIT_CREATE_STATIC  2
 
 /* Retrives number of input buffers from the scalars parameter */
 #define REMOTE_SCALARS_INBUFS(sc)        (((sc) >> 16) & 0x0ff)
@@ -95,11 +116,18 @@ do {\
 
 struct remote_buf64 {
 	uint64_t pv;
-	int64_t len;
+	uint64_t len;
+};
+
+struct remote_dma_handle64 {
+	int fd;
+	uint32_t offset;
+	uint32_t len;
 };
 
 union remote_arg64 {
 	struct remote_buf64	buf;
+	struct remote_dma_handle64 dma;
 	uint32_t h;
 };
 
@@ -110,8 +138,14 @@ struct remote_buf {
 	size_t len;		/* length of buffer */
 };
 
+struct remote_dma_handle {
+	int fd;
+	uint32_t offset;
+};
+
 union remote_arg {
 	struct remote_buf buf;	/* buffer info */
+	struct remote_dma_handle dma;
 	uint32_t h;		/* remote handle */
 };
 
@@ -126,6 +160,12 @@ struct fastrpc_ioctl_invoke_fd {
 	int *fds;		/* fd list */
 };
 
+struct fastrpc_ioctl_invoke_attrs {
+	struct fastrpc_ioctl_invoke inv;
+	int *fds;		/* fd list */
+	unsigned *attrs;	/* attribute list */
+};
+
 struct fastrpc_ioctl_init {
 	uint32_t flags;		/* one of FASTRPC_INIT_* macros */
 	uintptr_t file;		/* pointer to elf file */
@@ -136,18 +176,36 @@ struct fastrpc_ioctl_init {
 	int32_t memfd;		/* ION fd for the mem */
 };
 
+struct fastrpc_ioctl_init_attrs {
+		struct fastrpc_ioctl_init init;
+		int attrs;
+		unsigned int siglen;
+};
+
 struct fastrpc_ioctl_munmap {
 	uintptr_t vaddrout;	/* address to unmap */
 	size_t size;		/* size */
 };
 
+struct fastrpc_ioctl_munmap_fd {
+	int     fd;		/* fd */
+	uint32_t  flags;	/* control flags */
+	uintptr_t va;	        /* va */
+	ssize_t  len;
+};
 
 struct fastrpc_ioctl_mmap {
 	int fd;				/* ion fd */
 	uint32_t flags;			/* flags for dsp to map with */
-	uintptr_t vaddrin;	/* optional virtual address */
+	uintptr_t vaddrin;		/* optional virtual address */
 	size_t size;			/* size */
 	uintptr_t vaddrout;		/* dsps virtual address */
+};
+
+struct fastrpc_ioctl_perf {			/* kernel performance data */
+	uintptr_t data;
+	uint32_t numkeys;
+	uintptr_t keys;
 };
 
 struct smq_null_invoke {
@@ -186,13 +244,14 @@ static inline struct smq_invoke_buf *smq_invoke_buf_start(remote_arg64_t *pra,
 							uint32_t sc)
 {
 	unsigned int len = REMOTE_SCALARS_LENGTH(sc);
+
 	return (struct smq_invoke_buf *)(&pra[len]);
 }
 
 static inline struct smq_phy_page *smq_phy_page_start(uint32_t sc,
 						struct smq_invoke_buf *buf)
 {
-	uint32_t nTotal = REMOTE_SCALARS_INBUFS(sc)+REMOTE_SCALARS_OUTBUFS(sc);
+	int nTotal = REMOTE_SCALARS_LENGTH(sc);
 	return (struct smq_phy_page *)(&buf[nTotal]);
 }
 

@@ -1,7 +1,7 @@
 /*
  * max14577.c - mfd core driver for the Maxim 14577/77836
  *
- * Copyright (C) 2014 Samsung Electrnoics
+ * Copyright (C) 2014 Samsung Electronics
  * Chanwoo Choi <cw00.choi@samsung.com>
  * Krzysztof Kozlowski <k.kozlowski@samsung.com>
  *
@@ -532,7 +532,6 @@ static SIMPLE_DEV_PM_OPS(max14577_pm, max14577_suspend, max14577_resume);
 static struct i2c_driver max14577_i2c_driver = {
 	.driver = {
 		.name = "max14577",
-		.owner = THIS_MODULE,
 		.pm = &max14577_pm,
 		.of_match_table = max14577_dt_match,
 	},

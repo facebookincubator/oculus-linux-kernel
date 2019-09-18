@@ -30,6 +30,7 @@ int dm_linear_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	struct linear_c *lc;
 	unsigned long long tmp;
 	char dummy;
+	int ret;
 
 	if (argc != 2) {
 		ti->error = "Invalid argument count";
@@ -38,18 +39,20 @@ int dm_linear_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	lc = kmalloc(sizeof(*lc), GFP_KERNEL);
 	if (lc == NULL) {
-		ti->error = "dm-linear: Cannot allocate linear context";
+		ti->error = "Cannot allocate linear context";
 		return -ENOMEM;
 	}
 
+	ret = -EINVAL;
 	if (sscanf(argv[1], "%llu%c", &tmp, &dummy) != 1) {
-		ti->error = "dm-linear: Invalid device sector";
+		ti->error = "Invalid device sector";
 		goto bad;
 	}
 	lc->start = tmp;
 
-	if (dm_get_device(ti, argv[0], dm_table_get_mode(ti->table), &lc->dev)) {
-		ti->error = "dm-linear: Device lookup failed";
+	ret = dm_get_device(ti, argv[0], dm_table_get_mode(ti->table), &lc->dev);
+	if (ret) {
+		ti->error = "Device lookup failed";
 		goto bad;
 	}
 
@@ -61,8 +64,9 @@ int dm_linear_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
       bad:
 	kfree(lc);
-	return -EINVAL;
+	return ret;
 }
+EXPORT_SYMBOL_GPL(dm_linear_ctr);
 
 void dm_linear_dtr(struct dm_target *ti)
 {
@@ -71,6 +75,7 @@ void dm_linear_dtr(struct dm_target *ti)
 	dm_put_device(ti, lc->dev);
 	kfree(lc);
 }
+EXPORT_SYMBOL_GPL(dm_linear_dtr);
 
 static sector_t linear_map_sector(struct dm_target *ti, sector_t bi_sector)
 {
@@ -95,6 +100,7 @@ int dm_linear_map(struct dm_target *ti, struct bio *bio)
 
 	return DM_MAPIO_REMAPPED;
 }
+EXPORT_SYMBOL_GPL(dm_linear_map);
 
 void dm_linear_status(struct dm_target *ti, status_type_t type,
 			  unsigned status_flags, char *result, unsigned maxlen)
@@ -112,40 +118,25 @@ void dm_linear_status(struct dm_target *ti, status_type_t type,
 		break;
 	}
 }
+EXPORT_SYMBOL_GPL(dm_linear_status);
 
-int dm_linear_ioctl(struct dm_target *ti, unsigned int cmd,
-			unsigned long arg)
+int dm_linear_prepare_ioctl(struct dm_target *ti,
+		struct block_device **bdev, fmode_t *mode)
 {
 	struct linear_c *lc = (struct linear_c *) ti->private;
 	struct dm_dev *dev = lc->dev;
-	int r = 0;
+
+	*bdev = dev->bdev;
 
 	/*
 	 * Only pass ioctls through if the device sizes match exactly.
 	 */
 	if (lc->start ||
 	    ti->len != i_size_read(dev->bdev->bd_inode) >> SECTOR_SHIFT)
-		r = scsi_verify_blk_ioctl(NULL, cmd);
-
-	return r ? : __blkdev_driver_ioctl(dev->bdev, dev->mode, cmd, arg);
+		return 1;
+	return 0;
 }
-EXPORT_SYMBOL_GPL(dm_linear_ioctl);
-
-int dm_linear_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
-			struct bio_vec *biovec, int max_size)
-{
-	struct linear_c *lc = ti->private;
-	struct request_queue *q = bdev_get_queue(lc->dev->bdev);
-
-	if (!q->merge_bvec_fn)
-		return max_size;
-
-	bvm->bi_bdev = lc->dev->bdev;
-	bvm->bi_sector = linear_map_sector(ti, bvm->bi_sector);
-
-	return min(max_size, q->merge_bvec_fn(q, bvm, biovec));
-}
-EXPORT_SYMBOL_GPL(dm_linear_merge);
+EXPORT_SYMBOL_GPL(dm_linear_prepare_ioctl);
 
 int dm_linear_iterate_devices(struct dm_target *ti,
 				  iterate_devices_callout_fn fn, void *data)
@@ -154,6 +145,7 @@ int dm_linear_iterate_devices(struct dm_target *ti,
 
 	return fn(ti, lc->dev, lc->start, ti->len, data);
 }
+EXPORT_SYMBOL_GPL(dm_linear_iterate_devices);
 
 static struct target_type linear_target = {
 	.name   = "linear",
@@ -163,8 +155,7 @@ static struct target_type linear_target = {
 	.dtr    = dm_linear_dtr,
 	.map    = dm_linear_map,
 	.status = dm_linear_status,
-	.ioctl  = dm_linear_ioctl,
-	.merge  = dm_linear_merge,
+	.prepare_ioctl  = dm_linear_prepare_ioctl,
 	.iterate_devices = dm_linear_iterate_devices,
 };
 

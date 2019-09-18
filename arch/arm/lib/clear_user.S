@@ -9,6 +9,7 @@
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
+#include <asm/unwind.h>
 
 		.text
 
@@ -20,6 +21,8 @@
  */
 ENTRY(__clear_user_std)
 WEAK(arm_clear_user)
+UNWIND(.fnstart)
+UNWIND(.save {r1, lr})
 		stmfd	sp!, {r1, lr}
 		mov	r2, #0
 		cmp	r1, #4
@@ -44,10 +47,11 @@ WEAK(arm_clear_user)
 USER(		strnebt	r2, [r0])
 		mov	r0, #0
 		ldmfd	sp!, {r1, pc}
+UNWIND(.fnend)
 ENDPROC(arm_clear_user)
 ENDPROC(__clear_user_std)
 
-		.pushsection .fixup,"ax"
+		.pushsection .text.fixup,"ax"
 		.align	0
 9001:		ldmfd	sp!, {r0, pc}
 		.popsection

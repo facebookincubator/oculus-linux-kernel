@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -23,6 +23,18 @@ struct freq_tbl {
 	u8 pre_div;
 	u16 m;
 	u16 n;
+	unsigned long src_freq;
+#define FIXED_FREQ_SRC   0
+};
+
+/**
+ * struct parent_map - map table for PLL source select configuration values
+ * @src: source PLL
+ * @cfg: configuration value
+ */
+struct parent_map {
+	u8 src;
+	u8 cfg;
 };
 
 /**
@@ -65,7 +77,7 @@ struct pre_div {
 struct src_sel {
 	u8		src_sel_shift;
 #define SRC_SEL_MASK	0x7
-	const u8	*parent_map;
+	const struct parent_map	*parent_map;
 };
 
 /**
@@ -96,6 +108,10 @@ struct clk_rcg {
 
 extern const struct clk_ops clk_rcg_ops;
 extern const struct clk_ops clk_rcg_bypass_ops;
+extern const struct clk_ops clk_rcg_bypass2_ops;
+extern const struct clk_ops clk_rcg_pixel_ops;
+extern const struct clk_ops clk_rcg_esc_ops;
+extern const struct clk_ops clk_rcg_lcc_ops;
 
 #define to_clk_rcg(_hw) container_of(to_clk_regmap(_hw), struct clk_rcg, clkr)
 
@@ -142,24 +158,40 @@ extern const struct clk_ops clk_dyn_rcg_ops;
  * @hid_width: number of bits in half integer divider
  * @parent_map: map from software's parent index to hardware's src_sel field
  * @freq_tbl: frequency table
+ * @current_freq: last cached frequency when using branches with shared RCGs
+ * @enable_safe_config: When set, the RCG is parked at CXO when it's disabled
  * @clkr: regmap clock handle
- * @lock: register lock
+ * @flags: set if RCG needs to be force enabled/disabled during
+ * power sequence.
  *
  */
 struct clk_rcg2 {
 	u32			cmd_rcgr;
 	u8			mnd_width;
 	u8			hid_width;
-	const u8		*parent_map;
+	const struct parent_map	*parent_map;
 	const struct freq_tbl	*freq_tbl;
+	unsigned long		current_freq;
+	u32		new_index;
+	u32		curr_index;
+	bool			enable_safe_config;
 	struct clk_regmap	clkr;
+
+	u8 flags;
+#define FORCE_ENABLE_RCGR	BIT(0)
 };
 
 #define to_clk_rcg2(_hw) container_of(to_clk_regmap(_hw), struct clk_rcg2, clkr)
 
 extern const struct clk_ops clk_rcg2_ops;
+extern const struct clk_ops clk_rcg2_shared_ops;
 extern const struct clk_ops clk_edp_pixel_ops;
 extern const struct clk_ops clk_byte_ops;
+extern const struct clk_ops clk_byte2_ops;
 extern const struct clk_ops clk_pixel_ops;
+extern const struct clk_ops clk_gfx3d_ops;
+extern const struct clk_ops clk_gfx3d_src_ops;
+extern const struct clk_ops clk_dp_ops;
+extern const struct clk_ops clk_esc_ops;
 
 #endif

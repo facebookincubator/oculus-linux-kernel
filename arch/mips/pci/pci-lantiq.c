@@ -20,8 +20,6 @@
 #include <linux/of_irq.h>
 #include <linux/of_pci.h>
 
-#include <asm/pci.h>
-#include <asm/gpio.h>
 #include <asm/addrspace.h>
 
 #include <lantiq_soc.h>
@@ -242,7 +240,6 @@ static struct platform_driver ltq_pci_driver = {
 	.probe = ltq_pci_probe,
 	.driver = {
 		.name = "pci-xway",
-		.owner = THIS_MODULE,
 		.of_match_table = ltq_pci_match,
 	},
 };

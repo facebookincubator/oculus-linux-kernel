@@ -1,4 +1,4 @@
-* Qualcomm MSM EEPROM
+* Qualcomm Technologies, Inc. MSM EEPROM
 
 EEPROM is an one time programmed(OTP) device that stores the calibration data
 use for camera sensor. It may either be integrated in the sensor module or in

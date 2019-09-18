@@ -423,36 +423,7 @@ upload:
 
 	return 0;
 }
-static int __init check_prereq(void)
-{
-	struct cpuinfo_x86 *c = &cpu_data(0);
 
-	if (!xen_initial_domain())
-		return -ENODEV;
-
-	if (!acpi_gbl_FADT.smi_command)
-		return -ENODEV;
-
-	if (c->x86_vendor == X86_VENDOR_INTEL) {
-		if (!cpu_has(c, X86_FEATURE_EST))
-			return -ENODEV;
-
-		return 0;
-	}
-	if (c->x86_vendor == X86_VENDOR_AMD) {
-		/* Copied from powernow-k8.h, can't include ../cpufreq/powernow
-		 * as we get compile warnings for the static functions.
-		 */
-#define CPUID_FREQ_VOLT_CAPABILITIES    0x80000007
-#define USE_HW_PSTATE                   0x00000080
-		u32 eax, ebx, ecx, edx;
-		cpuid(CPUID_FREQ_VOLT_CAPABILITIES, &eax, &ebx, &ecx, &edx);
-		if ((edx & USE_HW_PSTATE) != USE_HW_PSTATE)
-			return -ENODEV;
-		return 0;
-	}
-	return -ENODEV;
-}
 /* acpi_perf_data is a pointer to percpu data. */
 static struct acpi_processor_performance __percpu *acpi_perf_data;
 
@@ -509,10 +480,10 @@ struct notifier_block xen_acpi_processor_resume_nb = {
 static int __init xen_acpi_processor_init(void)
 {
 	unsigned int i;
-	int rc = check_prereq();
+	int rc;
 
-	if (rc)
-		return rc;
+	if (!xen_initial_domain())
+		return -ENODEV;
 
 	nr_acpi_bits = get_max_acpi_id() + 1;
 	acpi_ids_done = kcalloc(BITS_TO_LONGS(nr_acpi_bits), sizeof(unsigned long), GFP_KERNEL);
@@ -560,11 +531,9 @@ static int __init xen_acpi_processor_init(void)
 
 	return 0;
 err_unregister:
-	for_each_possible_cpu(i) {
-		struct acpi_processor_performance *perf;
-		perf = per_cpu_ptr(acpi_perf_data, i);
-		acpi_processor_unregister_performance(perf, i);
-	}
+	for_each_possible_cpu(i)
+		acpi_processor_unregister_performance(i);
+
 err_out:
 	/* Freeing a NULL pointer is OK: alloc_percpu zeroes. */
 	free_acpi_perf_data();
@@ -579,11 +548,9 @@ static void __exit xen_acpi_processor_exit(void)
 	kfree(acpi_ids_done);
 	kfree(acpi_id_present);
 	kfree(acpi_id_cst_present);
-	for_each_possible_cpu(i) {
-		struct acpi_processor_performance *perf;
-		perf = per_cpu_ptr(acpi_perf_data, i);
-		acpi_processor_unregister_performance(perf, i);
-	}
+	for_each_possible_cpu(i)
+		acpi_processor_unregister_performance(i);
+
 	free_acpi_perf_data();
 }
 

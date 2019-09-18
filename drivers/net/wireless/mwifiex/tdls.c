@@ -24,6 +24,7 @@
 #define TDLS_REQ_FIX_LEN      6
 #define TDLS_RESP_FIX_LEN     8
 #define TDLS_CONFIRM_FIX_LEN  6
+#define MWIFIEX_TDLS_WMM_INFO_SIZE 7
 
 static void mwifiex_restore_tdls_packets(struct mwifiex_private *priv,
 					 const u8 *mac, u8 status)
@@ -36,7 +37,7 @@ static void mwifiex_restore_tdls_packets(struct mwifiex_private *priv,
 	u32 tid;
 	u8 tid_down;
 
-	dev_dbg(priv->adapter->dev, "%s: %pM\n", __func__, mac);
+	mwifiex_dbg(priv->adapter, DATA, "%s: %pM\n", __func__, mac);
 	spin_lock_irqsave(&priv->wmm.ra_list_spinlock, flags);
 
 	skb_queue_walk_safe(&priv->tdls_txq, skb, tmp) {
@@ -48,7 +49,7 @@ static void mwifiex_restore_tdls_packets(struct mwifiex_private *priv,
 		tid = skb->priority;
 		tid_down = mwifiex_wmm_downgrade_tid(priv, tid);
 
-		if (status == TDLS_SETUP_COMPLETE) {
+		if (mwifiex_is_tdls_link_setup(status)) {
 			ra_list = mwifiex_wmm_get_queue_raptr(priv, tid, mac);
 			ra_list->tdls_link = true;
 			tx_info->flags |= MWIFIEX_BUF_FLAG_TDLS_PKT;
@@ -93,7 +94,7 @@ static void mwifiex_hold_tdls_packets(struct mwifiex_private *priv,
 	unsigned long flags;
 	int i;
 
-	dev_dbg(priv->adapter->dev, "%s: %pM\n", __func__, mac);
+	mwifiex_dbg(priv->adapter, DATA, "%s: %pM\n", __func__, mac);
 	spin_lock_irqsave(&priv->wmm.ra_list_spinlock, flags);
 
 	for (i = 0; i < MAX_NUM_TID; i++) {
@@ -131,8 +132,8 @@ mwifiex_tdls_append_rates_ie(struct mwifiex_private *priv,
 	supp_rates_size = min_t(u16, rates_size, MWIFIEX_TDLS_SUPPORTED_RATES);
 
 	if (skb_tailroom(skb) < rates_size + 4) {
-		dev_err(priv->adapter->dev,
-			"Insuffient space while adding rates\n");
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "Insuffient space while adding rates\n");
 		return -ENOMEM;
 	}
 
@@ -163,7 +164,7 @@ static void mwifiex_tdls_add_aid(struct mwifiex_private *priv,
 	pos = (void *)skb_put(skb, 4);
 	*pos++ = WLAN_EID_AID;
 	*pos++ = 2;
-	*pos++ = le16_to_cpu(assoc_rsp->a_id);
+	memcpy(pos, &assoc_rsp->a_id, sizeof(assoc_rsp->a_id));
 
 	return;
 }
@@ -198,9 +199,15 @@ mwifiex_tdls_add_ht_oper(struct mwifiex_private *priv, const u8 *mac,
 
 	sta_ptr = mwifiex_get_sta_entry(priv, mac);
 	if (unlikely(!sta_ptr)) {
-		dev_warn(priv->adapter->dev,
-			 "TDLS peer station not found in list\n");
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "TDLS peer station not found in list\n");
 		return -1;
+	}
+
+	if (!(le16_to_cpu(sta_ptr->tdls_cap.ht_capb.cap_info))) {
+		mwifiex_dbg(priv->adapter, WARN,
+			    "TDLS peer doesn't support ht capabilities\n");
+		return 0;
 	}
 
 	pos = (void *)skb_put(skb, sizeof(struct ieee80211_ht_operation) + 2);
@@ -246,15 +253,22 @@ static int mwifiex_tdls_add_vht_oper(struct mwifiex_private *priv,
 
 	sta_ptr = mwifiex_get_sta_entry(priv, mac);
 	if (unlikely(!sta_ptr)) {
-		dev_warn(adapter->dev, "TDLS peer station not found in list\n");
+		mwifiex_dbg(adapter, ERROR,
+			    "TDLS peer station not found in list\n");
 		return -1;
+	}
+
+	if (!(le32_to_cpu(sta_ptr->tdls_cap.vhtcap.vht_cap_info))) {
+		mwifiex_dbg(adapter, WARN,
+			    "TDLS peer doesn't support vht capabilities\n");
+		return 0;
 	}
 
 	if (!mwifiex_is_bss_in_11ac_mode(priv)) {
 		if (sta_ptr->tdls_cap.extcap.ext_capab[7] &
 		   WLAN_EXT_CAPA8_TDLS_WIDE_BW_ENABLED) {
-			dev_dbg(adapter->dev,
-				"TDLS peer doesn't support wider bandwitdh\n");
+			mwifiex_dbg(adapter, WARN,
+				    "TDLS peer doesn't support wider bandwidth\n");
 			return 0;
 		}
 	} else {
@@ -353,6 +367,7 @@ static void mwifiex_tdls_add_ext_capab(struct mwifiex_private *priv,
 	extcap->ieee_hdr.len = 8;
 	memset(extcap->ext_capab, 0, 8);
 	extcap->ext_capab[4] |= WLAN_EXT_CAPA5_TDLS_ENABLED;
+	extcap->ext_capab[3] |= WLAN_EXT_CAPA4_TDLS_CHAN_SWITCH;
 
 	if (priv->adapter->is_hw_11ac_capable)
 		extcap->ext_capab[7] |= WLAN_EXT_CAPA8_TDLS_WIDE_BW_ENABLED;
@@ -365,6 +380,55 @@ static void mwifiex_tdls_add_qos_capab(struct sk_buff *skb)
 	*pos++ = WLAN_EID_QOS_CAPA;
 	*pos++ = 1;
 	*pos++ = MWIFIEX_TDLS_DEF_QOS_CAPAB;
+}
+
+static void
+mwifiex_tdls_add_wmm_param_ie(struct mwifiex_private *priv, struct sk_buff *skb)
+{
+	struct ieee80211_wmm_param_ie *wmm;
+	u8 ac_vi[] = {0x42, 0x43, 0x5e, 0x00};
+	u8 ac_vo[] = {0x62, 0x32, 0x2f, 0x00};
+	u8 ac_be[] = {0x03, 0xa4, 0x00, 0x00};
+	u8 ac_bk[] = {0x27, 0xa4, 0x00, 0x00};
+
+	wmm = (void *)skb_put(skb, sizeof(*wmm));
+	memset(wmm, 0, sizeof(*wmm));
+
+	wmm->element_id = WLAN_EID_VENDOR_SPECIFIC;
+	wmm->len = sizeof(*wmm) - 2;
+	wmm->oui[0] = 0x00; /* Microsoft OUI 00:50:F2 */
+	wmm->oui[1] = 0x50;
+	wmm->oui[2] = 0xf2;
+	wmm->oui_type = 2; /* WME */
+	wmm->oui_subtype = 1; /* WME param */
+	wmm->version = 1; /* WME ver */
+	wmm->qos_info = 0; /* U-APSD not in use */
+
+	/* use default WMM AC parameters for TDLS link*/
+	memcpy(&wmm->ac[0], ac_be, sizeof(ac_be));
+	memcpy(&wmm->ac[1], ac_bk, sizeof(ac_bk));
+	memcpy(&wmm->ac[2], ac_vi, sizeof(ac_vi));
+	memcpy(&wmm->ac[3], ac_vo, sizeof(ac_vo));
+}
+
+static void
+mwifiex_add_wmm_info_ie(struct mwifiex_private *priv, struct sk_buff *skb,
+			u8 qosinfo)
+{
+	u8 *buf;
+
+	buf = (void *)skb_put(skb, MWIFIEX_TDLS_WMM_INFO_SIZE +
+			      sizeof(struct ieee_types_header));
+
+	*buf++ = WLAN_EID_VENDOR_SPECIFIC;
+	*buf++ = 7; /* len */
+	*buf++ = 0x00; /* Microsoft OUI 00:50:F2 */
+	*buf++ = 0x50;
+	*buf++ = 0xf2;
+	*buf++ = 2; /* WME */
+	*buf++ = 0; /* WME info */
+	*buf++ = 1; /* WME ver */
+	*buf++ = qosinfo; /* U-APSD no in use */
 }
 
 static int mwifiex_prep_tdls_encap_data(struct mwifiex_private *priv,
@@ -421,6 +485,7 @@ static int mwifiex_prep_tdls_encap_data(struct mwifiex_private *priv,
 
 		mwifiex_tdls_add_ext_capab(priv, skb);
 		mwifiex_tdls_add_qos_capab(skb);
+		mwifiex_add_wmm_info_ie(priv, skb, 0);
 		break;
 
 	case WLAN_TDLS_SETUP_RESPONSE:
@@ -458,6 +523,7 @@ static int mwifiex_prep_tdls_encap_data(struct mwifiex_private *priv,
 
 		mwifiex_tdls_add_ext_capab(priv, skb);
 		mwifiex_tdls_add_qos_capab(skb);
+		mwifiex_add_wmm_info_ie(priv, skb, 0);
 		break;
 
 	case WLAN_TDLS_SETUP_CONFIRM:
@@ -466,6 +532,8 @@ static int mwifiex_prep_tdls_encap_data(struct mwifiex_private *priv,
 		skb_put(skb, sizeof(tf->u.setup_cfm));
 		tf->u.setup_cfm.status_code = cpu_to_le16(status_code);
 		tf->u.setup_cfm.dialog_token = dialog_token;
+
+		mwifiex_tdls_add_wmm_param_ie(priv, skb);
 		if (priv->adapter->is_hw_11ac_capable) {
 			ret = mwifiex_tdls_add_vht_oper(priv, peer, skb);
 			if (ret) {
@@ -500,7 +568,7 @@ static int mwifiex_prep_tdls_encap_data(struct mwifiex_private *priv,
 		tf->u.discover_req.dialog_token = dialog_token;
 		break;
 	default:
-		dev_err(priv->adapter->dev, "Unknown TDLS frame type.\n");
+		mwifiex_dbg(priv->adapter, ERROR, "Unknown TDLS frame type.\n");
 		return -EINVAL;
 	}
 
@@ -544,6 +612,7 @@ int mwifiex_send_tdls_data_frame(struct mwifiex_private *priv, const u8 *peer,
 		  sizeof(struct ieee_types_bss_co_2040) +
 		  sizeof(struct ieee80211_ht_operation) +
 		  sizeof(struct ieee80211_tdls_lnkie) +
+		  sizeof(struct ieee80211_wmm_param_ie) +
 		  extra_ies_len;
 
 	if (priv->adapter->is_hw_11ac_capable)
@@ -553,8 +622,8 @@ int mwifiex_send_tdls_data_frame(struct mwifiex_private *priv, const u8 *peer,
 
 	skb = dev_alloc_skb(skb_len);
 	if (!skb) {
-		dev_err(priv->adapter->dev,
-			"allocate skb failed for management frame\n");
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "allocate skb failed for management frame\n");
 		return -ENOMEM;
 	}
 	skb_reserve(skb, MWIFIEX_MIN_DATA_HEADER_LEN);
@@ -687,7 +756,7 @@ mwifiex_construct_tdls_action_frame(struct mwifiex_private *priv,
 		mwifiex_tdls_add_qos_capab(skb);
 		break;
 	default:
-		dev_err(priv->adapter->dev, "Unknown TDLS action frame type\n");
+		mwifiex_dbg(priv->adapter, ERROR, "Unknown TDLS action frame type\n");
 		return -EINVAL;
 	}
 
@@ -726,8 +795,8 @@ int mwifiex_send_tdls_action_frame(struct mwifiex_private *priv, const u8 *peer,
 
 	skb = dev_alloc_skb(skb_len);
 	if (!skb) {
-		dev_err(priv->adapter->dev,
-			"allocate skb failed for management frame\n");
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "allocate skb failed for management frame\n");
 		return -ENOMEM;
 	}
 
@@ -793,8 +862,8 @@ void mwifiex_process_tdls_action_frame(struct mwifiex_private *priv,
 
 	peer = buf + ETH_ALEN;
 	action = *(buf + sizeof(struct ethhdr) + 2);
-	dev_dbg(priv->adapter->dev,
-		"rx:tdls action: peer=%pM, action=%d\n", peer, action);
+	mwifiex_dbg(priv->adapter, DATA,
+		    "rx:tdls action: peer=%pM, action=%d\n", peer, action);
 
 	switch (action) {
 	case WLAN_TDLS_SETUP_REQUEST:
@@ -825,7 +894,7 @@ void mwifiex_process_tdls_action_frame(struct mwifiex_private *priv,
 		ie_len = len - sizeof(struct ethhdr) - TDLS_CONFIRM_FIX_LEN;
 		break;
 	default:
-		dev_dbg(priv->adapter->dev, "Unknown TDLS frame type.\n");
+		mwifiex_dbg(priv->adapter, ERROR, "Unknown TDLS frame type.\n");
 		return;
 	}
 
@@ -912,8 +981,8 @@ mwifiex_tdls_process_config_link(struct mwifiex_private *priv, const u8 *peer)
 	sta_ptr = mwifiex_get_sta_entry(priv, peer);
 
 	if (!sta_ptr || sta_ptr->tdls_status == TDLS_SETUP_FAILURE) {
-		dev_err(priv->adapter->dev,
-			"link absent for peer %pM; cannot config\n", peer);
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "link absent for peer %pM; cannot config\n", peer);
 		return -EINVAL;
 	}
 
@@ -933,8 +1002,8 @@ mwifiex_tdls_process_create_link(struct mwifiex_private *priv, const u8 *peer)
 	sta_ptr = mwifiex_get_sta_entry(priv, peer);
 
 	if (sta_ptr && sta_ptr->tdls_status == TDLS_SETUP_INPROGRESS) {
-		dev_dbg(priv->adapter->dev,
-			"Setup already in progress for peer %pM\n", peer);
+		mwifiex_dbg(priv->adapter, WARN,
+			    "Setup already in progress for peer %pM\n", peer);
 		return 0;
 	}
 
@@ -973,6 +1042,7 @@ mwifiex_tdls_process_disable_link(struct mwifiex_private *priv, const u8 *peer)
 	}
 
 	mwifiex_restore_tdls_packets(priv, peer, TDLS_LINK_TEARDOWN);
+	mwifiex_auto_tdls_update_peer_status(priv, peer, TDLS_NOT_SETUP);
 	memcpy(&tdls_oper.peer_mac, peer, ETH_ALEN);
 	tdls_oper.tdls_action = MWIFIEX_TDLS_DISABLE_LINK;
 	return mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_OPER,
@@ -990,8 +1060,8 @@ mwifiex_tdls_process_enable_link(struct mwifiex_private *priv, const u8 *peer)
 	sta_ptr = mwifiex_get_sta_entry(priv, peer);
 
 	if (sta_ptr && (sta_ptr->tdls_status != TDLS_SETUP_FAILURE)) {
-		dev_dbg(priv->adapter->dev,
-			"tdls: enable link %pM success\n", peer);
+		mwifiex_dbg(priv->adapter, MSG,
+			    "tdls: enable link %pM success\n", peer);
 
 		sta_ptr->tdls_status = TDLS_SETUP_COMPLETE;
 
@@ -1014,12 +1084,19 @@ mwifiex_tdls_process_enable_link(struct mwifiex_private *priv, const u8 *peer)
 			for (i = 0; i < MAX_NUM_TID; i++)
 				sta_ptr->ampdu_sta[i] = BA_STREAM_NOT_ALLOWED;
 		}
+		if (sta_ptr->tdls_cap.extcap.ext_capab[3] &
+		    WLAN_EXT_CAPA4_TDLS_CHAN_SWITCH) {
+			mwifiex_config_tdls_enable(priv);
+			mwifiex_config_tdls_cs_params(priv);
+		}
 
 		memset(sta_ptr->rx_seq, 0xff, sizeof(sta_ptr->rx_seq));
 		mwifiex_restore_tdls_packets(priv, peer, TDLS_SETUP_COMPLETE);
+		mwifiex_auto_tdls_update_peer_status(priv, peer,
+						     TDLS_SETUP_COMPLETE);
 	} else {
-		dev_dbg(priv->adapter->dev,
-			"tdls: enable link %pM failed\n", peer);
+		mwifiex_dbg(priv->adapter, ERROR,
+			    "tdls: enable link %pM failed\n", peer);
 		if (sta_ptr) {
 			mwifiex_11n_cleanup_reorder_tbl(priv);
 			spin_lock_irqsave(&priv->wmm.ra_list_spinlock,
@@ -1030,6 +1107,8 @@ mwifiex_tdls_process_enable_link(struct mwifiex_private *priv, const u8 *peer)
 			mwifiex_del_sta_entry(priv, peer);
 		}
 		mwifiex_restore_tdls_packets(priv, peer, TDLS_LINK_TEARDOWN);
+		mwifiex_auto_tdls_update_peer_status(priv, peer,
+						     TDLS_NOT_SETUP);
 
 		return -1;
 	}
@@ -1063,6 +1142,36 @@ int mwifiex_get_tdls_link_status(struct mwifiex_private *priv, const u8 *mac)
 	return TDLS_NOT_SETUP;
 }
 
+int mwifiex_get_tdls_list(struct mwifiex_private *priv,
+			  struct tdls_peer_info *buf)
+{
+	struct mwifiex_sta_node *sta_ptr;
+	struct tdls_peer_info *peer = buf;
+	int count = 0;
+	unsigned long flags;
+
+	if (!ISSUPP_TDLS_ENABLED(priv->adapter->fw_cap_info))
+		return 0;
+
+	/* make sure we are in station mode and connected */
+	if (!(priv->bss_type == MWIFIEX_BSS_TYPE_STA && priv->media_connected))
+		return 0;
+
+	spin_lock_irqsave(&priv->sta_list_spinlock, flags);
+	list_for_each_entry(sta_ptr, &priv->sta_list, list) {
+		if (mwifiex_is_tdls_link_setup(sta_ptr->tdls_status)) {
+			ether_addr_copy(peer->peer_addr, sta_ptr->mac_addr);
+			peer++;
+			count++;
+			if (count >= MWIFIEX_MAX_TDLS_PEER_SUPPORTED)
+				break;
+		}
+	}
+	spin_unlock_irqrestore(&priv->sta_list_spinlock, flags);
+
+	return count;
+}
+
 void mwifiex_disable_all_tdls_links(struct mwifiex_private *priv)
 {
 	struct mwifiex_sta_node *sta_ptr;
@@ -1090,10 +1199,302 @@ void mwifiex_disable_all_tdls_links(struct mwifiex_private *priv)
 		tdls_oper.tdls_action = MWIFIEX_TDLS_DISABLE_LINK;
 		if (mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_OPER,
 				     HostCmd_ACT_GEN_SET, 0, &tdls_oper, false))
-			dev_warn(priv->adapter->dev,
-				 "Disable link failed for TDLS peer %pM",
-				 sta_ptr->mac_addr);
+			mwifiex_dbg(priv->adapter, ERROR,
+				    "Disable link failed for TDLS peer %pM",
+				    sta_ptr->mac_addr);
 	}
 
 	mwifiex_del_all_sta_list(priv);
+}
+
+int mwifiex_tdls_check_tx(struct mwifiex_private *priv, struct sk_buff *skb)
+{
+	struct mwifiex_auto_tdls_peer *peer;
+	unsigned long flags;
+	u8 mac[ETH_ALEN];
+
+	ether_addr_copy(mac, skb->data);
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry(peer, &priv->auto_tdls_list, list) {
+		if (!memcmp(mac, peer->mac_addr, ETH_ALEN)) {
+			if (peer->rssi <= MWIFIEX_TDLS_RSSI_HIGH &&
+			    peer->tdls_status == TDLS_NOT_SETUP &&
+			    (peer->failure_count <
+			     MWIFIEX_TDLS_MAX_FAIL_COUNT)) {
+				peer->tdls_status = TDLS_SETUP_INPROGRESS;
+				mwifiex_dbg(priv->adapter, INFO,
+					    "setup TDLS link, peer=%pM rssi=%d\n",
+					    peer->mac_addr, peer->rssi);
+
+				cfg80211_tdls_oper_request(priv->netdev,
+							   peer->mac_addr,
+							   NL80211_TDLS_SETUP,
+							   0, GFP_ATOMIC);
+				peer->do_setup = false;
+				priv->check_tdls_tx = false;
+			} else if (peer->failure_count <
+				   MWIFIEX_TDLS_MAX_FAIL_COUNT &&
+				   peer->do_discover) {
+				mwifiex_send_tdls_data_frame(priv,
+							     peer->mac_addr,
+						    WLAN_TDLS_DISCOVERY_REQUEST,
+							     1, 0, NULL, 0);
+				peer->do_discover = false;
+			}
+		}
+	}
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+
+	return 0;
+}
+
+void mwifiex_flush_auto_tdls_list(struct mwifiex_private *priv)
+{
+	struct mwifiex_auto_tdls_peer *peer, *tmp_node;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry_safe(peer, tmp_node, &priv->auto_tdls_list, list) {
+		list_del(&peer->list);
+		kfree(peer);
+	}
+
+	INIT_LIST_HEAD(&priv->auto_tdls_list);
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+	priv->check_tdls_tx = false;
+}
+
+void mwifiex_add_auto_tdls_peer(struct mwifiex_private *priv, const u8 *mac)
+{
+	struct mwifiex_auto_tdls_peer *tdls_peer;
+	unsigned long flags;
+
+	if (!priv->adapter->auto_tdls)
+		return;
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry(tdls_peer, &priv->auto_tdls_list, list) {
+		if (!memcmp(tdls_peer->mac_addr, mac, ETH_ALEN)) {
+			tdls_peer->tdls_status = TDLS_SETUP_INPROGRESS;
+			tdls_peer->rssi_jiffies = jiffies;
+			spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+			return;
+		}
+	}
+
+	/* create new TDLS peer */
+	tdls_peer = kzalloc(sizeof(*tdls_peer), GFP_ATOMIC);
+	if (tdls_peer) {
+		ether_addr_copy(tdls_peer->mac_addr, mac);
+		tdls_peer->tdls_status = TDLS_SETUP_INPROGRESS;
+		tdls_peer->rssi_jiffies = jiffies;
+		INIT_LIST_HEAD(&tdls_peer->list);
+		list_add_tail(&tdls_peer->list, &priv->auto_tdls_list);
+		mwifiex_dbg(priv->adapter, INFO,
+			    "Add auto TDLS peer= %pM to list\n", mac);
+	}
+
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+}
+
+void mwifiex_auto_tdls_update_peer_status(struct mwifiex_private *priv,
+					  const u8 *mac, u8 link_status)
+{
+	struct mwifiex_auto_tdls_peer *peer;
+	unsigned long flags;
+
+	if (!priv->adapter->auto_tdls)
+		return;
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry(peer, &priv->auto_tdls_list, list) {
+		if (!memcmp(peer->mac_addr, mac, ETH_ALEN)) {
+			if ((link_status == TDLS_NOT_SETUP) &&
+			    (peer->tdls_status == TDLS_SETUP_INPROGRESS))
+				peer->failure_count++;
+			else if (mwifiex_is_tdls_link_setup(link_status))
+				peer->failure_count = 0;
+
+			peer->tdls_status = link_status;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+}
+
+void mwifiex_auto_tdls_update_peer_signal(struct mwifiex_private *priv,
+					  u8 *mac, s8 snr, s8 nflr)
+{
+	struct mwifiex_auto_tdls_peer *peer;
+	unsigned long flags;
+
+	if (!priv->adapter->auto_tdls)
+		return;
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry(peer, &priv->auto_tdls_list, list) {
+		if (!memcmp(peer->mac_addr, mac, ETH_ALEN)) {
+			peer->rssi = nflr - snr;
+			peer->rssi_jiffies = jiffies;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+}
+
+void mwifiex_check_auto_tdls(unsigned long context)
+{
+	struct mwifiex_private *priv = (struct mwifiex_private *)context;
+	struct mwifiex_auto_tdls_peer *tdls_peer;
+	unsigned long flags;
+	u16 reason = WLAN_REASON_TDLS_TEARDOWN_UNSPECIFIED;
+
+	if (WARN_ON_ONCE(!priv || !priv->adapter)) {
+		pr_err("mwifiex: %s: adapter or private structure is NULL\n",
+		       __func__);
+		return;
+	}
+
+	if (unlikely(!priv->adapter->auto_tdls))
+		return;
+
+	if (!priv->auto_tdls_timer_active) {
+		mwifiex_dbg(priv->adapter, INFO,
+			    "auto TDLS timer inactive; return");
+		return;
+	}
+
+	priv->check_tdls_tx = false;
+
+	if (list_empty(&priv->auto_tdls_list)) {
+		mod_timer(&priv->auto_tdls_timer,
+			  jiffies +
+			  msecs_to_jiffies(MWIFIEX_TIMER_10S));
+		return;
+	}
+
+	spin_lock_irqsave(&priv->auto_tdls_lock, flags);
+	list_for_each_entry(tdls_peer, &priv->auto_tdls_list, list) {
+		if ((jiffies - tdls_peer->rssi_jiffies) >
+		    (MWIFIEX_AUTO_TDLS_IDLE_TIME * HZ)) {
+			tdls_peer->rssi = 0;
+			tdls_peer->do_discover = true;
+			priv->check_tdls_tx = true;
+		}
+
+		if (((tdls_peer->rssi >= MWIFIEX_TDLS_RSSI_LOW) ||
+		     !tdls_peer->rssi) &&
+		    mwifiex_is_tdls_link_setup(tdls_peer->tdls_status)) {
+			tdls_peer->tdls_status = TDLS_LINK_TEARDOWN;
+			mwifiex_dbg(priv->adapter, MSG,
+				    "teardown TDLS link,peer=%pM rssi=%d\n",
+				    tdls_peer->mac_addr, -tdls_peer->rssi);
+			tdls_peer->do_discover = true;
+			priv->check_tdls_tx = true;
+			cfg80211_tdls_oper_request(priv->netdev,
+						   tdls_peer->mac_addr,
+						   NL80211_TDLS_TEARDOWN,
+						   reason, GFP_ATOMIC);
+		} else if (tdls_peer->rssi &&
+			   tdls_peer->rssi <= MWIFIEX_TDLS_RSSI_HIGH &&
+			   tdls_peer->tdls_status == TDLS_NOT_SETUP &&
+			   tdls_peer->failure_count <
+			   MWIFIEX_TDLS_MAX_FAIL_COUNT) {
+				priv->check_tdls_tx = true;
+				tdls_peer->do_setup = true;
+				mwifiex_dbg(priv->adapter, INFO,
+					    "check TDLS with peer=%pM\t"
+					    "rssi=%d\n", tdls_peer->mac_addr,
+					    tdls_peer->rssi);
+		}
+	}
+	spin_unlock_irqrestore(&priv->auto_tdls_lock, flags);
+
+	mod_timer(&priv->auto_tdls_timer,
+		  jiffies + msecs_to_jiffies(MWIFIEX_TIMER_10S));
+}
+
+void mwifiex_setup_auto_tdls_timer(struct mwifiex_private *priv)
+{
+	setup_timer(&priv->auto_tdls_timer, mwifiex_check_auto_tdls,
+		    (unsigned long)priv);
+	priv->auto_tdls_timer_active = true;
+	mod_timer(&priv->auto_tdls_timer,
+		  jiffies + msecs_to_jiffies(MWIFIEX_TIMER_10S));
+}
+
+void mwifiex_clean_auto_tdls(struct mwifiex_private *priv)
+{
+	if (ISSUPP_TDLS_ENABLED(priv->adapter->fw_cap_info) &&
+	    priv->adapter->auto_tdls &&
+	    priv->bss_type == MWIFIEX_BSS_TYPE_STA) {
+		priv->auto_tdls_timer_active = false;
+		del_timer(&priv->auto_tdls_timer);
+		mwifiex_flush_auto_tdls_list(priv);
+	}
+}
+
+static int mwifiex_config_tdls(struct mwifiex_private *priv, u8 enable)
+{
+	struct mwifiex_tdls_config config;
+
+	config.enable = cpu_to_le16(enable);
+	return mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_CONFIG,
+				ACT_TDLS_CS_ENABLE_CONFIG, 0, &config, true);
+}
+
+int mwifiex_config_tdls_enable(struct mwifiex_private *priv)
+{
+	return mwifiex_config_tdls(priv, true);
+}
+
+int mwifiex_config_tdls_disable(struct mwifiex_private *priv)
+{
+	return mwifiex_config_tdls(priv, false);
+}
+
+int mwifiex_config_tdls_cs_params(struct mwifiex_private *priv)
+{
+	struct mwifiex_tdls_config_cs_params config_tdls_cs_params;
+
+	config_tdls_cs_params.unit_time = MWIFIEX_DEF_CS_UNIT_TIME;
+	config_tdls_cs_params.thr_otherlink = MWIFIEX_DEF_CS_THR_OTHERLINK;
+	config_tdls_cs_params.thr_directlink = MWIFIEX_DEF_THR_DIRECTLINK;
+
+	return mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_CONFIG,
+				ACT_TDLS_CS_PARAMS, 0,
+				&config_tdls_cs_params, true);
+}
+
+int mwifiex_stop_tdls_cs(struct mwifiex_private *priv, const u8 *peer_mac)
+{
+	struct mwifiex_tdls_stop_cs_params stop_tdls_cs_params;
+
+	ether_addr_copy(stop_tdls_cs_params.peer_mac, peer_mac);
+
+	return mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_CONFIG,
+				ACT_TDLS_CS_STOP, 0,
+				&stop_tdls_cs_params, true);
+}
+
+int mwifiex_start_tdls_cs(struct mwifiex_private *priv, const u8 *peer_mac,
+			  u8 primary_chan, u8 second_chan_offset, u8 band)
+{
+	struct mwifiex_tdls_init_cs_params start_tdls_cs_params;
+
+	ether_addr_copy(start_tdls_cs_params.peer_mac, peer_mac);
+	start_tdls_cs_params.primary_chan = primary_chan;
+	start_tdls_cs_params.second_chan_offset = second_chan_offset;
+	start_tdls_cs_params.band = band;
+
+	start_tdls_cs_params.switch_time = cpu_to_le16(MWIFIEX_DEF_CS_TIME);
+	start_tdls_cs_params.switch_timeout =
+					cpu_to_le16(MWIFIEX_DEF_CS_TIMEOUT);
+	start_tdls_cs_params.reg_class = MWIFIEX_DEF_CS_REG_CLASS;
+	start_tdls_cs_params.periodicity = MWIFIEX_DEF_CS_PERIODICITY;
+
+	return mwifiex_send_cmd(priv, HostCmd_CMD_TDLS_CONFIG,
+				ACT_TDLS_CS_INIT, 0,
+				&start_tdls_cs_params, true);
 }

@@ -40,7 +40,7 @@ config USB_ZERO
 	  dynamically linked module called "g_zero".
 
 config USB_ZERO_HNPTEST
-	boolean "HNP Test Device"
+	bool "HNP Test Device"
 	depends on USB_ZERO && USB_OTG
 	help
 	  You can configure this device to enumerate using the device
@@ -287,6 +287,7 @@ config USB_MIDI_GADGET
 	depends on SND
 	select USB_LIBCOMPOSITE
 	select SND_RAWMIDI
+	select USB_F_MIDI
 	help
 	  The MIDI Gadget acts as a USB Audio device, with one MIDI
 	  input and one MIDI output. These MIDI jacks appear as
@@ -300,6 +301,7 @@ config USB_MIDI_GADGET
 config USB_G_PRINTER
 	tristate "Printer Gadget"
 	select USB_LIBCOMPOSITE
+	select USB_F_PRINTER
 	help
 	  The Printer Gadget channels data between the USB host and a
 	  userspace program driving the print engine. The user space
@@ -337,6 +339,7 @@ config USB_CDC_COMPOSITE
 config USB_G_NOKIA
 	tristate "Nokia composite gadget"
 	depends on PHONET
+	depends on BLOCK
 	select USB_LIBCOMPOSITE
 	select USB_U_SERIAL
 	select USB_U_ETHER
@@ -344,6 +347,7 @@ config USB_G_NOKIA
 	select USB_F_OBEX
 	select USB_F_PHONET
 	select USB_F_ECM
+	select USB_F_MASS_STORAGE
 	help
 	  The Nokia composite gadget provides support for acm, obex
 	  and phonet in only one composite gadget driver.
@@ -419,6 +423,7 @@ endif # TTY
 config USB_G_HID
 	tristate "HID Gadget"
 	select USB_LIBCOMPOSITE
+	select USB_F_HID
 	help
 	  The HID gadget driver provides generic emulation of USB
 	  Human Interface Devices (HID).

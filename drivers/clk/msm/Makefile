@@ -1,49 +1,33 @@
-obj-y				+= clock.o
-obj-y				+= clock-dummy.o
-obj-y				+= clock-generic.o
-obj-y				+= clock-local2.o
-obj-y				+= clock-pll.o
-obj-y				+= clock-alpha-pll.o
-obj-y				+= clock-rpm.o
-obj-y				+= clock-voter.o
-obj-y				+= clock-pm.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-dummy.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-generic.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-local2.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-pll.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-alpha-pll.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-rpm.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-voter.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= reset.o
 
 obj-$(CONFIG_MSM_CLK_CONTROLLER_V2)	+= msm-clock-controller.o
 
-obj-$(CONFIG_DEBUG_FS)		+= clock-debug.o
+ifeq ($(CONFIG_DEBUG_FS), y)
+	obj-$(CONFIG_COMMON_CLK_MSM)	+= clock-debug.o
+endif
 
 # MSM 8996
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-gcc-8996.o
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-mmss-8996.o
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-cpu-8996.o
-obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-osm.o
+ifeq ($(CONFIG_COMMON_CLK_MSM), y)
+	obj-$(CONFIG_ARCH_MSM8996) += clock-gcc-8996.o
+	obj-$(CONFIG_ARCH_MSM8996) += clock-mmss-8996.o
+	obj-$(CONFIG_ARCH_MSM8996) += clock-cpu-8996.o
+endif
 
-# MSM COBALT
-obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-gcc-cobalt.o
-obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-gpu-cobalt.o
-obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-mmss-cobalt.o
+# MSM 8998
+ifeq ($(CONFIG_COMMON_CLK_MSM), y)
+	obj-$(CONFIG_ARCH_MSM8998)	+= clock-gcc-8998.o
+	obj-$(CONFIG_ARCH_MSM8998)	+= clock-gpu-8998.o
+	obj-$(CONFIG_ARCH_MSM8998)	+= clock-mmss-8998.o
+	obj-$(CONFIG_ARCH_MSM8998)	+= clock-osm.o
+endif
 
-# MDMCALIFORNIUM
-obj-$(CONFIG_ARCH_MDMCALIFORNIUM)	+= clock-gcc-californium.o
-
-# MDM9607
-obj-$(CONFIG_ARCH_MDM9607)	+=clock-gcc-mdm9607.o
-
-# MSM8909
-obj-$(CONFIG_ARCH_MSM8909)	+= clock-rpm-8909.o
-obj-$(CONFIG_ARCH_MSM8909)	+= clock-gcc-8909.o
-
-# ACPU clock
-obj-$(CONFIG_ARCH_MDM9640)      += clock-a7.o
-obj-$(CONFIG_ARCH_MDMCALIFORNIUM)	+= clock-a7.o
-obj-$(CONFIG_ARCH_MDM9607)	+= clock-a7.o
-obj-$(CONFIG_ARCH_MSM8916)	+= clock-a7.o
-obj-$(CONFIG_ARCH_MSM8909)	+= clock-a7.o
-obj-$(CONFIG_ARCH_MSM8916)	+= clock-cpu-8939.o
-obj-$(CONFIG_ARCH_MSM8916)	+= clock-gcc-8952.o
-obj-$(CONFIG_ARCH_MSM8916)	+= clock-gcc-8953.o
-obj-$(CONFIG_ARCH_MSM8916)	+= clock-rcgwr.o
-obj-$(CONFIG_ARCH_MSM8916)      += clock-cpu-8953.o
-
-obj-y				+= gdsc.o
-obj-y				+= mdss/
+obj-$(CONFIG_COMMON_CLK_MSM)	+= gdsc.o
+obj-$(CONFIG_COMMON_CLK_MSM)	+= mdss/

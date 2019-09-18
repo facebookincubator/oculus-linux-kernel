@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -108,11 +108,6 @@ struct pwm_duty_cycles {
 	int start_idx;
 };
 
-int pwm_config_period(struct pwm_device *pwm,
-			     struct pwm_period_config *pwm_p);
-
-int pwm_config_pwm_value(struct pwm_device *pwm, int pwm_value);
-
 /*
  * enum pm_pwm_mode - PWM mode selection
  * %PM_PWM_MODE_PWM - Select PWM mode
@@ -122,8 +117,6 @@ enum pm_pwm_mode {
 	PM_PWM_MODE_PWM,
 	PM_PWM_MODE_LPG,
 };
-
-int pwm_change_mode(struct pwm_device *pwm, enum pm_pwm_mode mode);
 
 /*
  * lut_params: Lookup table (LUT) parameters
@@ -143,6 +136,16 @@ struct lut_params {
 	int flags;
 };
 
+#if IS_ENABLED(CONFIG_PWM_QPNP)
+int pwm_config_period(struct pwm_device *pwm,
+			     struct pwm_period_config *pwm_p);
+
+int pwm_config_pwm_value(struct pwm_device *pwm, int pwm_value);
+
+
+int pwm_change_mode(struct pwm_device *pwm, enum pm_pwm_mode mode);
+
+
 int pwm_lut_config(struct pwm_device *pwm, int period_us,
 		int duty_pct[], struct lut_params lut_params);
 
@@ -151,6 +154,36 @@ int pwm_lut_config(struct pwm_device *pwm, int period_us,
  */
 int pwm_config_us(struct pwm_device *pwm,
 		int duty_us, int period_us);
+
+#else
+static inline int pwm_config_period(struct pwm_device *pwm,
+			     struct pwm_period_config *pwm_p)
+{
+	return -EINVAL;
+}
+
+static inline int pwm_config_pwm_value(struct pwm_device *pwm, int pwm_value)
+{
+	return -EINVAL;
+}
+
+static inline int pwm_change_mode(struct pwm_device *pwm, enum pm_pwm_mode mode)
+{
+	return -EINVAL;
+}
+
+static inline int pwm_lut_config(struct pwm_device *pwm, int period_us,
+		int duty_pct[], struct lut_params lut_params)
+{
+	return -EINVAL;
+}
+
+static inline int pwm_config_us(struct pwm_device *pwm,
+		int duty_us, int period_us)
+{
+	return -EINVAL;
+}
+#endif
 
 /* Standard APIs supported */
 /*

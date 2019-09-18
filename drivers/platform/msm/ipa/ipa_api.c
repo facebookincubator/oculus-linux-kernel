@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,7 +26,8 @@
 #define IPA_API_DISPATCH_RETURN(api, p...) \
 	do { \
 		if (!ipa_api_ctrl) { \
-			pr_err("IPA HW is not supported on this target\n"); \
+			pr_err("%s:%d IPA HW is not supported\n", \
+				__func__, __LINE__); \
 			ret = -EPERM; \
 		} \
 		else { \
@@ -44,7 +45,8 @@
 #define IPA_API_DISPATCH(api, p...) \
 	do { \
 		if (!ipa_api_ctrl) \
-			pr_err("IPA HW is not supported on this target\n"); \
+			pr_err("%s:%d IPA HW is not supported\n", \
+				__func__, __LINE__); \
 		else { \
 			if (ipa_api_ctrl->api) { \
 				ipa_api_ctrl->api(p); \
@@ -59,7 +61,8 @@
 #define IPA_API_DISPATCH_RETURN_PTR(api, p...) \
 	do { \
 		if (!ipa_api_ctrl) { \
-			pr_err("IPA HW is not supported on this target\n"); \
+			pr_err("%s:%d IPA HW is not supported\n", \
+				__func__, __LINE__); \
 			ret = NULL; \
 		} \
 		else { \
@@ -77,7 +80,8 @@
 #define IPA_API_DISPATCH_RETURN_BOOL(api, p...) \
 	do { \
 		if (!ipa_api_ctrl) { \
-			pr_err("IPA HW is not supported on this target\n"); \
+			pr_err("%s:%d IPA HW is not supported\n", \
+				__func__, __LINE__); \
 			ret = false; \
 		} \
 		else { \
@@ -109,7 +113,8 @@ const char *ipa_clients_strings[IPA_CLIENT_MAX] = {
 	__stringify(IPA_CLIENT_A5_WLAN_AMPDU_PROD),
 	__stringify(IPA_CLIENT_A2_EMBEDDED_PROD),
 	__stringify(IPA_CLIENT_A2_TETHERED_PROD),
-	__stringify(IPA_CLIENT_APPS_LAN_WAN_PROD),
+	__stringify(IPA_CLIENT_APPS_LAN_PROD),
+	__stringify(IPA_CLIENT_APPS_WAN_PROD),
 	__stringify(IPA_CLIENT_APPS_CMD_PROD),
 	__stringify(IPA_CLIENT_ODU_PROD),
 	__stringify(IPA_CLIENT_MHI_PROD),
@@ -167,6 +172,124 @@ const char *ipa_clients_strings[IPA_CLIENT_MAX] = {
 	__stringify(IPA_CLIENT_TEST4_CONS),
 };
 
+/**
+ * ipa_write_64() - convert 64 bit value to byte array
+ * @w: 64 bit integer
+ * @dest: byte array
+ *
+ * Return value: converted value
+ */
+u8 *ipa_write_64(u64 w, u8 *dest)
+{
+	if (unlikely(dest == NULL)) {
+		pr_err("ipa_write_64: NULL address!\n");
+		return dest;
+	}
+	*dest++ = (u8)((w) & 0xFF);
+	*dest++ = (u8)((w >> 8) & 0xFF);
+	*dest++ = (u8)((w >> 16) & 0xFF);
+	*dest++ = (u8)((w >> 24) & 0xFF);
+	*dest++ = (u8)((w >> 32) & 0xFF);
+	*dest++ = (u8)((w >> 40) & 0xFF);
+	*dest++ = (u8)((w >> 48) & 0xFF);
+	*dest++ = (u8)((w >> 56) & 0xFF);
+
+	return dest;
+}
+
+/**
+ * ipa_write_32() - convert 32 bit value to byte array
+ * @w: 32 bit integer
+ * @dest: byte array
+ *
+ * Return value: converted value
+ */
+u8 *ipa_write_32(u32 w, u8 *dest)
+{
+	if (unlikely(dest == NULL)) {
+		pr_err("ipa_write_32: NULL address!\n");
+		return dest;
+	}
+	*dest++ = (u8)((w) & 0xFF);
+	*dest++ = (u8)((w >> 8) & 0xFF);
+	*dest++ = (u8)((w >> 16) & 0xFF);
+	*dest++ = (u8)((w >> 24) & 0xFF);
+
+	return dest;
+}
+
+/**
+ * ipa_write_16() - convert 16 bit value to byte array
+ * @hw: 16 bit integer
+ * @dest: byte array
+ *
+ * Return value: converted value
+ */
+u8 *ipa_write_16(u16 hw, u8 *dest)
+{
+	if (unlikely(dest == NULL)) {
+		pr_err("ipa_write_16: NULL address!\n");
+		return dest;
+	}
+	*dest++ = (u8)((hw) & 0xFF);
+	*dest++ = (u8)((hw >> 8) & 0xFF);
+
+	return dest;
+}
+
+/**
+ * ipa_write_8() - convert 8 bit value to byte array
+ * @hw: 8 bit integer
+ * @dest: byte array
+ *
+ * Return value: converted value
+ */
+u8 *ipa_write_8(u8 b, u8 *dest)
+{
+	if (unlikely(dest == NULL)) {
+		pr_err("ipa_write_8: NULL address!\n");
+		return dest;
+	}
+	*dest++ = (b) & 0xFF;
+
+	return dest;
+}
+
+/**
+ * ipa_pad_to_64() - pad byte array to 64 bit value
+ * @dest: byte array
+ *
+ * Return value: padded value
+ */
+u8 *ipa_pad_to_64(u8 *dest)
+{
+	int i = (long)dest & 0x7;
+	int j;
+
+	if (i)
+		for (j = 0; j < (8 - i); j++)
+			*dest++ = 0;
+
+	return dest;
+}
+
+/**
+ * ipa_pad_to_32() - pad byte array to 32 bit value
+ * @dest: byte array
+ *
+ * Return value: padded value
+ */
+u8 *ipa_pad_to_32(u8 *dest)
+{
+	int i = (long)dest & 0x3;
+	int j;
+
+	if (i)
+		for (j = 0; j < (4 - i); j++)
+			*dest++ = 0;
+
+	return dest;
+}
 
 /**
  * ipa_connect() - low-level IPA client connect
@@ -1512,6 +1635,25 @@ u16 ipa_get_smem_restr_bytes(void)
 EXPORT_SYMBOL(ipa_get_smem_restr_bytes);
 
 /**
+ * ipa_broadcast_wdi_quota_reach_ind() - quota reach
+ * @uint32_t fid: [in] input netdev ID
+ * @uint64_t num_bytes: [in] used bytes
+ *
+ * Returns:	0 on success, negative on failure
+ */
+int ipa_broadcast_wdi_quota_reach_ind(uint32_t fid,
+		uint64_t num_bytes)
+{
+	int ret;
+
+	IPA_API_DISPATCH_RETURN(ipa_broadcast_wdi_quota_reach_ind,
+		fid, num_bytes);
+
+	return ret;
+}
+EXPORT_SYMBOL(ipa_broadcast_wdi_quota_reach_ind);
+
+/**
  * ipa_uc_wdi_get_dbpa() - To retrieve
  * doorbell physical address of wlan pipes
  * @param:  [in/out] input/output parameters
@@ -2450,6 +2592,12 @@ const char *ipa_get_version_string(enum ipa_hw_type ver)
 	case IPA_HW_v3_1:
 		str = "3.1";
 		break;
+	case IPA_HW_v3_5:
+		str = "3.5";
+		break;
+	case IPA_HW_v3_5_1:
+		str = "3.5.1";
+		break;
 	default:
 		str = "Invalid version";
 		break;
@@ -2508,6 +2656,8 @@ static int ipa_generic_plat_drv_probe(struct platform_device *pdev_p)
 		break;
 	case IPA_HW_v3_0:
 	case IPA_HW_v3_1:
+	case IPA_HW_v3_5:
+	case IPA_HW_v3_5_1:
 		result = ipa3_plat_drv_probe(pdev_p, ipa_api_ctrl,
 			ipa_plat_drv_match);
 		break;
@@ -2718,6 +2868,37 @@ void ipa_assert(void)
 }
 
 /**
+ * ipa_rx_poll() - Poll the rx packets from IPA HW in the
+ * softirq context
+ *
+ * @budget: number of packets to be polled in single iteration
+ *
+ * Return codes: >= 0  : Actual number of packets polled
+ *
+ */
+int ipa_rx_poll(u32 clnt_hdl, int budget)
+{
+	int ret;
+
+	IPA_API_DISPATCH_RETURN(ipa_rx_poll, clnt_hdl, budget);
+
+	return ret;
+}
+EXPORT_SYMBOL(ipa_rx_poll);
+
+/**
+ * ipa_recycle_wan_skb() - Recycle the Wan skb
+ *
+ * @skb: skb that needs to recycle
+ *
+ */
+void ipa_recycle_wan_skb(struct sk_buff *skb)
+{
+	IPA_API_DISPATCH(ipa_recycle_wan_skb, skb);
+}
+EXPORT_SYMBOL(ipa_recycle_wan_skb);
+
+/**
  * ipa_setup_uc_ntn_pipes() - setup uc offload pipes
  */
 int ipa_setup_uc_ntn_pipes(struct ipa_ntn_conn_in_params *inp,
@@ -2745,6 +2926,22 @@ int ipa_tear_down_uc_offload_pipes(int ipa_ep_idx_ul,
 
 	return ret;
 }
+
+/**
+ * ipa_get_pdev() - return a pointer to IPA dev struct
+ *
+ * Return value: a pointer to IPA dev struct
+ *
+ */
+struct device *ipa_get_pdev(void)
+{
+	struct device *ret;
+
+	IPA_API_DISPATCH_RETURN_PTR(ipa_get_pdev);
+
+	return ret;
+}
+EXPORT_SYMBOL(ipa_get_pdev);
 
 static const struct dev_pm_ops ipa_pm_ops = {
 	.suspend_noirq = ipa_ap_suspend,

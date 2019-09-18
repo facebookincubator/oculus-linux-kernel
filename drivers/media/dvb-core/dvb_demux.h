@@ -4,8 +4,6 @@
  * Copyright (C) 2000-2001 Marcus Metzler & Ralph Metzler
  *                         for convergence integrated media GmbH
  *
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation; either version 2.1
@@ -205,7 +203,7 @@ struct dvb_demux_feed {
 	int first_frame_in_seq_notified;
 	u64 last_pattern_tsp_num;
 	int pattern_num;
-	const struct dvb_dmx_video_patterns *patterns[DVB_DMX_MAX_SEARCH_PATTERN_NUM];
+const struct dvb_dmx_video_patterns *patterns[DVB_DMX_MAX_SEARCH_PATTERN_NUM];
 	struct dvb_dmx_video_prefix_size_masks prefix_size;
 	u16 peslen;
 	u32 pes_tei_counter;
@@ -356,6 +354,31 @@ static inline int dvb_dmx_is_video_feed(struct dvb_demux_feed *feed)
 		(feed->pes_type == DMX_PES_VIDEO1) ||
 		(feed->pes_type == DMX_PES_VIDEO2) ||
 		(feed->pes_type == DMX_PES_VIDEO3))
+		return 1;
+
+	return 0;
+}
+
+/**
+ * dvb_dmx_is_audio_feed - Returns whether the PES feed
+ * is audio one.
+ *
+ * @feed: The feed to be checked.
+ *
+ * Return     1 if feed is audio feed, 0 otherwise.
+ */
+static inline int dvb_dmx_is_audio_feed(struct dvb_demux_feed *feed)
+{
+	if (feed->type != DMX_TYPE_TS)
+		return 0;
+
+	if (feed->ts_type & (~TS_DECODER))
+		return 0;
+
+	if ((feed->pes_type == DMX_PES_AUDIO0) ||
+		(feed->pes_type == DMX_PES_AUDIO1) ||
+		(feed->pes_type == DMX_PES_AUDIO2) ||
+		(feed->pes_type == DMX_PES_AUDIO3))
 		return 1;
 
 	return 0;

@@ -10,14 +10,14 @@
  * GNU General Public License for more details.
  */
 
-#include <dt-bindings/msm/power-on.h>
-
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/spmi/spmi.h>
 &spmi_bus {
 	qcom,pmk8001@6 {
-		spmi-slave-container;
-		reg = <0x6>;
-		#address-cells = <1>;
-		#size-cells = <1>;
+		compatible ="qcom,spmi-pmic";
+		reg = <0x6 SPMI_USID>;
+		#address-cells = <2>;
+		#size-cells = <0>;
 
 		pmk8001_revid: qcom,revid@100 {
 			compatible = "qcom,qpnp-revid";
@@ -28,12 +28,9 @@
 			compatible = "qcom,qpnp-power-on";
 			reg = <0x800 0x100>;
 			qcom,secondary-pon-reset;
-			qcom,hard-reset-poweroff-type =
-				<PON_POWER_OFF_SHUTDOWN>;
 		};
 
 		pmk8001_gpios: gpios {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-pin";
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -67,7 +64,6 @@
 		};
 
 		qcom,pmk8001_rtc {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-rtc";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -79,15 +75,15 @@
 			};
 			qcom,pmk8001_rtc_alarm@6100 {
 				reg = <0x6100 0x100>;
-				interrupts = <0x6 0x61 0x1>;
+				interrupts = <0x6 0x61 0x1 IRQ_TYPE_NONE>;
 			};
 		};
 	};
 
 	qcom,pmk8001@7 {
-		spmi-slave-container;
-		reg = <0x7>;
-		#address-cells = <1>;
-		#size-cells = <1>;
+		compatible ="qcom,spmi-pmic";
+		reg = <0x7 SPMI_USID>;
+		#address-cells = <2>;
+		#size-cells = <0>;
 	};
 };

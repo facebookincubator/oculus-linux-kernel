@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -50,6 +50,8 @@ static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
 static int  i2c_msm_pm_resume(struct device *dev);
 static void i2c_msm_pm_suspend(struct device *dev);
 static void i2c_msm_clk_path_init(struct i2c_msm_ctrl *ctrl);
+static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
+						bool runtime_active);
 
 /* string table for enum i2c_msm_xfer_mode_id */
 const char * const i2c_msm_mode_str_tbl[] = {
@@ -1149,10 +1151,18 @@ static void i2c_msm_dma_xfer_unprepare(struct i2c_msm_ctrl *ctrl)
 							buf_itr->dma_dir);
 }
 
-static void i2c_msm_dma_callback_xfer_complete(void *dma_async_param)
+static void i2c_msm_dma_callback_tx_complete(void *dma_async_param)
 {
 	struct i2c_msm_ctrl *ctrl = dma_async_param;
+
 	complete(&ctrl->xfer.complete);
+}
+
+static void i2c_msm_dma_callback_rx_complete(void *dma_async_param)
+{
+	struct i2c_msm_ctrl *ctrl = dma_async_param;
+
+	complete(&ctrl->xfer.rx_complete);
 }
 
 /*
@@ -1267,14 +1277,16 @@ static int i2c_msm_dma_xfer_process(struct i2c_msm_ctrl *ctrl)
 	}
 
 	/* callback defined for tx dma desc */
-	dma_desc_tx->callback       = i2c_msm_dma_callback_xfer_complete;
+	dma_desc_tx->callback       = i2c_msm_dma_callback_tx_complete;
 	dma_desc_tx->callback_param = ctrl;
 	dmaengine_submit(dma_desc_tx);
 	dma_async_issue_pending(tx->dma_chan);
 
 	/* queue the rx dma desc */
 	dma_desc_rx = dmaengine_prep_slave_sg(rx->dma_chan, sg_rx,
-					sg_rx_itr - sg_rx, rx->dir, 0);
+					sg_rx_itr - sg_rx, rx->dir,
+					(SPS_IOVEC_FLAG_EOT |
+							SPS_IOVEC_FLAG_NWD));
 	if (dma_desc_rx < 0) {
 		dev_err(ctrl->dev,
 			"error dmaengine_prep_slave_sg rx:%ld\n",
@@ -1283,6 +1295,8 @@ static int i2c_msm_dma_xfer_process(struct i2c_msm_ctrl *ctrl)
 		goto dma_xfer_end;
 	}
 
+	dma_desc_rx->callback       = i2c_msm_dma_callback_rx_complete;
+	dma_desc_rx->callback_param = ctrl;
 	dmaengine_submit(dma_desc_rx);
 	dma_async_issue_pending(rx->dma_chan);
 
@@ -1295,6 +1309,8 @@ static int i2c_msm_dma_xfer_process(struct i2c_msm_ctrl *ctrl)
 	}
 
 	ret = i2c_msm_xfer_wait_for_completion(ctrl, &ctrl->xfer.complete);
+	if (!ret && ctrl->xfer.rx_cnt)
+		i2c_msm_xfer_wait_for_completion(ctrl, &ctrl->xfer.rx_complete);
 
 dma_xfer_end:
 	/* free scatter-gather lists */
@@ -2052,13 +2068,14 @@ static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
 	long  time_left;
 	int   ret = 0;
 
-	time_left = wait_for_completion_timeout(complete, xfer->timeout);
+	time_left = wait_for_completion_timeout(complete,
+						xfer->timeout);
 	if (!time_left) {
 		xfer->err = I2C_MSM_ERR_TIMEOUT;
 		i2c_msm_dbg_dump_diag(ctrl, false, 0, 0);
 		ret = -EIO;
 		i2c_msm_prof_evnt_add(ctrl, MSM_ERR, I2C_MSM_COMPLT_FL,
-						xfer->timeout, time_left, 0);
+					xfer->timeout, time_left, 0);
 	} else {
 		/* return an error if one detected by ISR */
 		if (xfer->err)
@@ -2157,27 +2174,54 @@ static bool i2c_msm_xfer_next_buf(struct i2c_msm_ctrl *ctrl)
 	return  true;
 }
 
-static void i2c_msm_pm_clk_disable_unprepare(struct i2c_msm_ctrl *ctrl)
+static void i2c_msm_pm_clk_unprepare(struct i2c_msm_ctrl *ctrl)
 {
-	clk_disable_unprepare(ctrl->rsrcs.core_clk);
-	clk_disable_unprepare(ctrl->rsrcs.iface_clk);
+	clk_unprepare(ctrl->rsrcs.core_clk);
+	clk_unprepare(ctrl->rsrcs.iface_clk);
 }
 
-static int i2c_msm_pm_clk_prepare_enable(struct i2c_msm_ctrl *ctrl)
+static int i2c_msm_pm_clk_prepare(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
-	ret = clk_prepare_enable(ctrl->rsrcs.iface_clk);
+	ret = clk_prepare(ctrl->rsrcs.iface_clk);
 	if (ret) {
 		dev_err(ctrl->dev,
-			"error on clk_prepare_enable(iface_clk):%d\n", ret);
+			"error on clk_prepare(iface_clk):%d\n", ret);
 		return ret;
 	}
 
-	ret = clk_prepare_enable(ctrl->rsrcs.core_clk);
+	ret = clk_prepare(ctrl->rsrcs.core_clk);
 	if (ret) {
-		clk_disable_unprepare(ctrl->rsrcs.iface_clk);
+		clk_unprepare(ctrl->rsrcs.iface_clk);
 		dev_err(ctrl->dev,
-			"error clk_prepare_enable(core_clk):%d\n", ret);
+			"error clk_prepare(core_clk):%d\n", ret);
+	}
+	return ret;
+}
+
+static void i2c_msm_pm_clk_disable(struct i2c_msm_ctrl *ctrl)
+{
+	clk_disable(ctrl->rsrcs.core_clk);
+	clk_disable(ctrl->rsrcs.iface_clk);
+}
+
+static int i2c_msm_pm_clk_enable(struct i2c_msm_ctrl *ctrl)
+{
+	int ret;
+
+	ret = clk_enable(ctrl->rsrcs.iface_clk);
+	if (ret) {
+		dev_err(ctrl->dev,
+			"error on clk_enable(iface_clk):%d\n", ret);
+		i2c_msm_pm_clk_unprepare(ctrl);
+		return ret;
+	}
+	ret = clk_enable(ctrl->rsrcs.core_clk);
+	if (ret) {
+		clk_disable(ctrl->rsrcs.iface_clk);
+		i2c_msm_pm_clk_unprepare(ctrl);
+		dev_err(ctrl->dev,
+			"error clk_enable(core_clk):%d\n", ret);
 	}
 	return ret;
 }
@@ -2185,19 +2229,9 @@ static int i2c_msm_pm_clk_prepare_enable(struct i2c_msm_ctrl *ctrl)
 static int i2c_msm_pm_xfer_start(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
-	struct i2c_msm_xfer *xfer = &ctrl->xfer;
 	mutex_lock(&ctrl->xfer.mtx);
 
-	/* if system is suspended just bail out */
-	if (ctrl->pwr_state == I2C_MSM_PM_SYS_SUSPENDED) {
-		struct i2c_msg *msgs = xfer->msgs + xfer->cur_buf.msg_idx;
-		dev_err(ctrl->dev,
-				"slave:0x%x is calling xfer when system is suspended\n",
-				msgs->addr);
-		mutex_unlock(&ctrl->xfer.mtx);
-		return -EIO;
-	}
-
+	i2c_msm_pm_pinctrl_state(ctrl, true);
 	pm_runtime_get_sync(ctrl->dev);
 	/*
 	 * if runtime PM callback was not invoked (when both runtime-pm
@@ -2208,7 +2242,7 @@ static int i2c_msm_pm_xfer_start(struct i2c_msm_ctrl *ctrl)
 		i2c_msm_pm_resume(ctrl->dev);
 	}
 
-	ret = i2c_msm_pm_clk_prepare_enable(ctrl);
+	ret = i2c_msm_pm_clk_enable(ctrl);
 	if (ret) {
 		mutex_unlock(&ctrl->xfer.mtx);
 		return ret;
@@ -2235,13 +2269,14 @@ static void i2c_msm_pm_xfer_end(struct i2c_msm_ctrl *ctrl)
 	if (ctrl->xfer.mode_id == I2C_MSM_XFER_MODE_DMA)
 		i2c_msm_dma_free_channels(ctrl);
 
-	i2c_msm_pm_clk_disable_unprepare(ctrl);
-	if (pm_runtime_enabled(ctrl->dev)) {
-		pm_runtime_mark_last_busy(ctrl->dev);
-		pm_runtime_put_autosuspend(ctrl->dev);
-	} else {
+	i2c_msm_pm_clk_disable(ctrl);
+
+	if (!pm_runtime_enabled(ctrl->dev))
 		i2c_msm_pm_suspend(ctrl->dev);
-	}
+
+	pm_runtime_mark_last_busy(ctrl->dev);
+	pm_runtime_put_autosuspend(ctrl->dev);
+	i2c_msm_pm_pinctrl_state(ctrl, false);
 	mutex_unlock(&ctrl->xfer.mtx);
 }
 
@@ -2281,6 +2316,14 @@ i2c_msm_frmwrk_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		return PTR_ERR(msgs);
 	}
 
+	/* if system is suspended just bail out */
+	if (ctrl->pwr_state == I2C_MSM_PM_SYS_SUSPENDED) {
+		dev_err(ctrl->dev,
+				"slave:0x%x is calling xfer when system is suspended\n",
+				msgs->addr);
+		return -EIO;
+	}
+
 	ret = i2c_msm_pm_xfer_start(ctrl);
 	if (ret)
 		return ret;
@@ -2296,6 +2339,8 @@ i2c_msm_frmwrk_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	xfer->tx_ovrhd_cnt = 0;
 	atomic_set(&xfer->event_cnt, 0);
 	init_completion(&xfer->complete);
+	init_completion(&xfer->rx_complete);
+
 	xfer->cur_buf.is_init = false;
 	xfer->cur_buf.msg_idx = 0;
 
@@ -2663,7 +2708,7 @@ static void i2c_msm_pm_suspend(struct device *dev)
 		return;
 	}
 	i2c_msm_dbg(ctrl, MSM_DBG, "suspending...");
-	i2c_msm_pm_pinctrl_state(ctrl, false);
+	i2c_msm_pm_clk_unprepare(ctrl);
 	i2c_msm_clk_path_unvote(ctrl);
 
 	/*
@@ -2690,7 +2735,7 @@ static int i2c_msm_pm_resume(struct device *dev)
 	i2c_msm_dbg(ctrl, MSM_DBG, "resuming...");
 
 	i2c_msm_clk_path_vote(ctrl);
-	i2c_msm_pm_pinctrl_state(ctrl, true);
+	i2c_msm_pm_clk_prepare(ctrl);
 	ctrl->pwr_state = I2C_MSM_PM_RT_ACTIVE;
 	return 0;
 }
@@ -2744,7 +2789,7 @@ static int i2c_msm_pm_sys_resume_noirq(struct device *dev)
 }
 #endif
 
-#ifdef CONFIG_PM_RUNTIME
+#ifdef CONFIG_PM
 static void i2c_msm_pm_rt_init(struct device *dev)
 {
 	pm_runtime_set_suspended(dev);
@@ -2870,9 +2915,13 @@ static int i2c_msm_probe(struct platform_device *pdev)
 	/* vote for clock to enable reading the version number off the HW */
 	i2c_msm_clk_path_vote(ctrl);
 
-	ret = i2c_msm_pm_clk_prepare_enable(ctrl);
+	ret = i2c_msm_pm_clk_prepare(ctrl);
+	if (ret)
+		goto clk_err;
+
+	ret = i2c_msm_pm_clk_enable(ctrl);
 	if (ret) {
-		dev_err(ctrl->dev, "error in enabling clocks:%d\n", ret);
+		i2c_msm_pm_clk_unprepare(ctrl);
 		goto clk_err;
 	}
 
@@ -2884,7 +2933,8 @@ static int i2c_msm_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(ctrl->dev, "error error on qup software reset\n");
 
-	i2c_msm_pm_clk_disable_unprepare(ctrl);
+	i2c_msm_pm_clk_disable(ctrl);
+	i2c_msm_pm_clk_unprepare(ctrl);
 	i2c_msm_clk_path_unvote(ctrl);
 
 	ret = i2c_msm_rsrcs_gpio_pinctrl_init(ctrl);

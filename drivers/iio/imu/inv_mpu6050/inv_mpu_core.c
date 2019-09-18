@@ -23,6 +23,8 @@
 #include <linux/kfifo.h>
 #include <linux/spinlock.h>
 #include <linux/iio/iio.h>
+#include <linux/i2c-mux.h>
+#include <linux/acpi.h>
 #include "inv_mpu_iio.h"
 
 /*
@@ -52,6 +54,7 @@ static const struct inv_mpu6050_reg_map reg_set_6050 = {
 	.int_enable             = INV_MPU6050_REG_INT_ENABLE,
 	.pwr_mgmt_1             = INV_MPU6050_REG_PWR_MGMT_1,
 	.pwr_mgmt_2             = INV_MPU6050_REG_PWR_MGMT_2,
+	.int_pin_cfg		= INV_MPU6050_REG_INT_PIN_CFG,
 };
 
 static const struct inv_mpu6050_chip_config chip_config_6050 = {
@@ -75,6 +78,83 @@ static const struct inv_mpu6050_hw hw_info[INV_NUM_PARTS] = {
 int inv_mpu6050_write_reg(struct inv_mpu6050_state *st, int reg, u8 d)
 {
 	return i2c_smbus_write_i2c_block_data(st->client, reg, 1, &d);
+}
+
+/*
+ * The i2c read/write needs to happen in unlocked mode. As the parent
+ * adapter is common. If we use locked versions, it will fail as
+ * the mux adapter will lock the parent i2c adapter, while calling
+ * select/deselect functions.
+ */
+static int inv_mpu6050_write_reg_unlocked(struct inv_mpu6050_state *st,
+					  u8 reg, u8 d)
+{
+	int ret;
+	u8 buf[2];
+	struct i2c_msg msg[1] = {
+		{
+			.addr = st->client->addr,
+			.flags = 0,
+			.len = sizeof(buf),
+			.buf = buf,
+		}
+	};
+
+	buf[0] = reg;
+	buf[1] = d;
+	ret = __i2c_transfer(st->client->adapter, msg, 1);
+	if (ret != 1)
+		return ret;
+
+	return 0;
+}
+
+static int inv_mpu6050_select_bypass(struct i2c_adapter *adap, void *mux_priv,
+				     u32 chan_id)
+{
+	struct iio_dev *indio_dev = mux_priv;
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
+	int ret = 0;
+
+	/* Use the same mutex which was used everywhere to protect power-op */
+	mutex_lock(&indio_dev->mlock);
+	if (!st->powerup_count) {
+		ret = inv_mpu6050_write_reg_unlocked(st, st->reg->pwr_mgmt_1,
+						     0);
+		if (ret)
+			goto write_error;
+
+		msleep(INV_MPU6050_REG_UP_TIME);
+	}
+	if (!ret) {
+		st->powerup_count++;
+		ret = inv_mpu6050_write_reg_unlocked(st, st->reg->int_pin_cfg,
+						     st->client->irq |
+						     INV_MPU6050_BIT_BYPASS_EN);
+	}
+write_error:
+	mutex_unlock(&indio_dev->mlock);
+
+	return ret;
+}
+
+static int inv_mpu6050_deselect_bypass(struct i2c_adapter *adap,
+				       void *mux_priv, u32 chan_id)
+{
+	struct iio_dev *indio_dev = mux_priv;
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
+
+	mutex_lock(&indio_dev->mlock);
+	/* It doesn't really mattter, if any of the calls fails */
+	inv_mpu6050_write_reg_unlocked(st, st->reg->int_pin_cfg,
+				       st->client->irq);
+	st->powerup_count--;
+	if (!st->powerup_count)
+		inv_mpu6050_write_reg_unlocked(st, st->reg->pwr_mgmt_1,
+					       INV_MPU6050_BIT_SLEEP);
+	mutex_unlock(&indio_dev->mlock);
+
+	return 0;
 }
 
 int inv_mpu6050_switch_engine(struct inv_mpu6050_state *st, bool en, u32 mask)
@@ -133,13 +213,22 @@ int inv_mpu6050_switch_engine(struct inv_mpu6050_state *st, bool en, u32 mask)
 
 int inv_mpu6050_set_power_itg(struct inv_mpu6050_state *st, bool power_on)
 {
-	int result;
+	int result = 0;
 
-	if (power_on)
-		result = inv_mpu6050_write_reg(st, st->reg->pwr_mgmt_1, 0);
-	else
-		result = inv_mpu6050_write_reg(st, st->reg->pwr_mgmt_1,
-						INV_MPU6050_BIT_SLEEP);
+	if (power_on) {
+		/* Already under indio-dev->mlock mutex */
+		if (!st->powerup_count)
+			result = inv_mpu6050_write_reg(st, st->reg->pwr_mgmt_1,
+						       0);
+		if (!result)
+			st->powerup_count++;
+	} else {
+		st->powerup_count--;
+		if (!st->powerup_count)
+			result = inv_mpu6050_write_reg(st, st->reg->pwr_mgmt_1,
+						       INV_MPU6050_BIT_SLEEP);
+	}
+
 	if (result)
 		return result;
 
@@ -321,42 +410,63 @@ error_read_raw:
 	}
 }
 
-static int inv_mpu6050_write_fsr(struct inv_mpu6050_state *st, int fsr)
+static int inv_mpu6050_write_gyro_scale(struct inv_mpu6050_state *st, int val)
 {
-	int result;
+	int result, i;
 	u8 d;
 
-	if (fsr < 0 || fsr > INV_MPU6050_MAX_GYRO_FS_PARAM)
-		return -EINVAL;
-	if (fsr == st->chip_config.fsr)
-		return 0;
+	for (i = 0; i < ARRAY_SIZE(gyro_scale_6050); ++i) {
+		if (gyro_scale_6050[i] == val) {
+			d = (i << INV_MPU6050_GYRO_CONFIG_FSR_SHIFT);
+			result = inv_mpu6050_write_reg(st,
+					st->reg->gyro_config, d);
+			if (result)
+				return result;
 
-	d = (fsr << INV_MPU6050_GYRO_CONFIG_FSR_SHIFT);
-	result = inv_mpu6050_write_reg(st, st->reg->gyro_config, d);
-	if (result)
-		return result;
-	st->chip_config.fsr = fsr;
+			st->chip_config.fsr = i;
+			return 0;
+		}
+	}
 
-	return 0;
+	return -EINVAL;
 }
 
-static int inv_mpu6050_write_accel_fs(struct inv_mpu6050_state *st, int fs)
+static int inv_write_raw_get_fmt(struct iio_dev *indio_dev,
+				 struct iio_chan_spec const *chan, long mask)
 {
-	int result;
+	switch (mask) {
+	case IIO_CHAN_INFO_SCALE:
+		switch (chan->type) {
+		case IIO_ANGL_VEL:
+			return IIO_VAL_INT_PLUS_NANO;
+		default:
+			return IIO_VAL_INT_PLUS_MICRO;
+		}
+	default:
+		return IIO_VAL_INT_PLUS_MICRO;
+	}
+
+	return -EINVAL;
+}
+static int inv_mpu6050_write_accel_scale(struct inv_mpu6050_state *st, int val)
+{
+	int result, i;
 	u8 d;
 
-	if (fs < 0 || fs > INV_MPU6050_MAX_ACCL_FS_PARAM)
-		return -EINVAL;
-	if (fs == st->chip_config.accl_fs)
-		return 0;
+	for (i = 0; i < ARRAY_SIZE(accel_scale); ++i) {
+		if (accel_scale[i] == val) {
+			d = (i << INV_MPU6050_ACCL_CONFIG_FSR_SHIFT);
+			result = inv_mpu6050_write_reg(st,
+					st->reg->accl_config, d);
+			if (result)
+				return result;
 
-	d = (fs << INV_MPU6050_ACCL_CONFIG_FSR_SHIFT);
-	result = inv_mpu6050_write_reg(st, st->reg->accl_config, d);
-	if (result)
-		return result;
-	st->chip_config.accl_fs = fs;
+			st->chip_config.accl_fs = i;
+			return 0;
+		}
+	}
 
-	return 0;
+	return -EINVAL;
 }
 
 static int inv_mpu6050_write_raw(struct iio_dev *indio_dev,
@@ -382,10 +492,10 @@ static int inv_mpu6050_write_raw(struct iio_dev *indio_dev,
 	case IIO_CHAN_INFO_SCALE:
 		switch (chan->type) {
 		case IIO_ANGL_VEL:
-			result = inv_mpu6050_write_fsr(st, val);
+			result = inv_mpu6050_write_gyro_scale(st, val2);
 			break;
 		case IIO_ACCEL:
-			result = inv_mpu6050_write_accel_fs(st, val);
+			result = inv_mpu6050_write_accel_scale(st, val2);
 			break;
 		default:
 			result = -EINVAL;
@@ -580,6 +690,10 @@ static const struct iio_chan_spec inv_mpu_channels[] = {
 
 /* constant IIO attribute */
 static IIO_CONST_ATTR_SAMP_FREQ_AVAIL("10 20 50 100 200 500");
+static IIO_CONST_ATTR(in_anglvel_scale_available,
+					  "0.000133090 0.000266181 0.000532362 0.001064724");
+static IIO_CONST_ATTR(in_accel_scale_available,
+					  "0.000598 0.001196 0.002392 0.004785");
 static IIO_DEV_ATTR_SAMP_FREQ(S_IRUGO | S_IWUSR, inv_fifo_rate_show,
 	inv_mpu6050_fifo_rate_store);
 static IIO_DEVICE_ATTR(in_gyro_matrix, S_IRUGO, inv_attr_show, NULL,
@@ -592,6 +706,8 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_in_accel_matrix.dev_attr.attr,
 	&iio_dev_attr_sampling_frequency.dev_attr.attr,
 	&iio_const_attr_sampling_frequency_available.dev_attr.attr,
+	&iio_const_attr_in_accel_scale_available.dev_attr.attr,
+	&iio_const_attr_in_anglvel_scale_available.dev_attr.attr,
 	NULL,
 };
 
@@ -603,6 +719,7 @@ static const struct iio_info mpu_info = {
 	.driver_module = THIS_MODULE,
 	.read_raw = &inv_mpu6050_read_raw,
 	.write_raw = &inv_mpu6050_write_raw,
+	.write_raw_get_fmt = &inv_write_raw_get_fmt,
 	.attrs = &inv_attribute_group,
 	.validate_trigger = inv_mpu6050_validate_trigger,
 };
@@ -673,6 +790,7 @@ static int inv_mpu_probe(struct i2c_client *client,
 
 	st = iio_priv(indio_dev);
 	st->client = client;
+	st->powerup_count = 0;
 	pdata = dev_get_platdata(&client->dev);
 	if (pdata)
 		st->plat_data = *pdata;
@@ -690,7 +808,11 @@ static int inv_mpu_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, indio_dev);
 	indio_dev->dev.parent = &client->dev;
-	indio_dev->name = id->name;
+	/* id will be NULL when enumerated via ACPI */
+	if (id)
+		indio_dev->name = (char *)id->name;
+	else
+		indio_dev->name = (char *)dev_name(&client->dev);
 	indio_dev->channels = inv_mpu_channels;
 	indio_dev->num_channels = ARRAY_SIZE(inv_mpu_channels);
 
@@ -720,8 +842,27 @@ static int inv_mpu_probe(struct i2c_client *client,
 		goto out_remove_trigger;
 	}
 
+	st->mux_adapter = i2c_add_mux_adapter(client->adapter,
+					      &client->dev,
+					      indio_dev,
+					      0, 0, 0,
+					      inv_mpu6050_select_bypass,
+					      inv_mpu6050_deselect_bypass);
+	if (!st->mux_adapter) {
+		result = -ENODEV;
+		goto out_unreg_device;
+	}
+
+	result = inv_mpu_acpi_create_mux_client(st);
+	if (result)
+		goto out_del_mux;
+
 	return 0;
 
+out_del_mux:
+	i2c_del_mux_adapter(st->mux_adapter);
+out_unreg_device:
+	iio_device_unregister(indio_dev);
 out_remove_trigger:
 	inv_mpu6050_remove_trigger(st);
 out_unreg_ring:
@@ -734,6 +875,8 @@ static int inv_mpu_remove(struct i2c_client *client)
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 	struct inv_mpu6050_state *st = iio_priv(indio_dev);
 
+	inv_mpu_acpi_delete_mux_client(st);
+	i2c_del_mux_adapter(st->mux_adapter);
 	iio_device_unregister(indio_dev);
 	inv_mpu6050_remove_trigger(st);
 	iio_triggered_buffer_cleanup(indio_dev);
@@ -772,14 +915,21 @@ static const struct i2c_device_id inv_mpu_id[] = {
 
 MODULE_DEVICE_TABLE(i2c, inv_mpu_id);
 
+static const struct acpi_device_id inv_acpi_match[] = {
+	{"INVN6500", 0},
+	{ },
+};
+
+MODULE_DEVICE_TABLE(acpi, inv_acpi_match);
+
 static struct i2c_driver inv_mpu_driver = {
 	.probe		=	inv_mpu_probe,
 	.remove		=	inv_mpu_remove,
 	.id_table	=	inv_mpu_id,
 	.driver = {
-		.owner	=	THIS_MODULE,
 		.name	=	"inv-mpu6050",
 		.pm     =       INV_MPU6050_PMOPS,
+		.acpi_match_table = ACPI_PTR(inv_acpi_match),
 	},
 };
 

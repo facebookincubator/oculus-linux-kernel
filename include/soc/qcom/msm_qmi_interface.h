@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -105,6 +105,7 @@ enum qmi_error_type_v01 {
 	QMI_ERR_CLIENT_IDS_EXHAUSTED_V01 = 0x0005,
 	QMI_ERR_INVALID_ID_V01 = 0x0029,
 	QMI_ERR_ENCODING_V01 = 0x003A,
+	QMI_ERR_DISABLED_V01 = 0x0045,
 	QMI_ERR_INCOMPATIBLE_STATE_V01 = 0x005A,
 	QMI_ERR_NOT_SUPPORTED_V01 = 0x005E,
 	QMI_ERR_TYPE_MAX_ENUM_VAL_V01 = INT_MAX,

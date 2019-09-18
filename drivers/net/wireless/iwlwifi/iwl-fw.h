@@ -6,7 +6,7 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2008 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
+ * Copyright(c) 2013 - 2015 Intel Mobile Communications GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -32,7 +32,7 @@
  * BSD LICENSE
  *
  * Copyright(c) 2005 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
+ * Copyright(c) 2013 - 2015 Intel Mobile Communications GmbH
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,112 +68,7 @@
 #include <net/mac80211.h>
 
 #include "iwl-fw-file.h"
-
-/**
- * enum iwl_ucode_tlv_flag - ucode API flags
- * @IWL_UCODE_TLV_FLAGS_PAN: This is PAN capable microcode; this previously
- *	was a separate TLV but moved here to save space.
- * @IWL_UCODE_TLV_FLAGS_NEWSCAN: new uCode scan behaviour on hidden SSID,
- *	treats good CRC threshold as a boolean
- * @IWL_UCODE_TLV_FLAGS_MFP: This uCode image supports MFP (802.11w).
- * @IWL_UCODE_TLV_FLAGS_P2P: This uCode image supports P2P.
- * @IWL_UCODE_TLV_FLAGS_DW_BC_TABLE: The SCD byte count table is in DWORDS
- * @IWL_UCODE_TLV_FLAGS_UAPSD_SUPPORT: This uCode image supports uAPSD
- * @IWL_UCODE_TLV_FLAGS_SHORT_BL: 16 entries of black list instead of 64 in scan
- *	offload profile config command.
- * @IWL_UCODE_TLV_FLAGS_D3_6_IPV6_ADDRS: D3 image supports up to six
- *	(rather than two) IPv6 addresses
- * @IWL_UCODE_TLV_FLAGS_NO_BASIC_SSID: not sending a probe with the SSID element
- *	from the probe request template.
- * @IWL_UCODE_TLV_FLAGS_NEW_NSOFFL_SMALL: new NS offload (small version)
- * @IWL_UCODE_TLV_FLAGS_NEW_NSOFFL_LARGE: new NS offload (large version)
- * @IWL_UCODE_TLV_FLAGS_P2P_PM: P2P client supports PM as a stand alone MAC
- * @IWL_UCODE_TLV_FLAGS_P2P_BSS_PS_DCM: support power save on BSS station and
- *	P2P client interfaces simultaneously if they are in different bindings.
- * @IWL_UCODE_TLV_FLAGS_P2P_BSS_PS_SCM: support power save on BSS station and
- *	P2P client interfaces simultaneously if they are in same bindings.
- * @IWL_UCODE_TLV_FLAGS_UAPSD_SUPPORT: General support for uAPSD
- * @IWL_UCODE_TLV_FLAGS_P2P_PS_UAPSD: P2P client supports uAPSD power save
- * @IWL_UCODE_TLV_FLAGS_BCAST_FILTERING: uCode supports broadcast filtering.
- * @IWL_UCODE_TLV_FLAGS_GO_UAPSD: AP/GO interfaces support uAPSD clients
- * @IWL_UCODE_TLV_FLAGS_EBS_SUPPORT: this uCode image supports EBS.
- */
-enum iwl_ucode_tlv_flag {
-	IWL_UCODE_TLV_FLAGS_PAN			= BIT(0),
-	IWL_UCODE_TLV_FLAGS_NEWSCAN		= BIT(1),
-	IWL_UCODE_TLV_FLAGS_MFP			= BIT(2),
-	IWL_UCODE_TLV_FLAGS_P2P			= BIT(3),
-	IWL_UCODE_TLV_FLAGS_DW_BC_TABLE		= BIT(4),
-	IWL_UCODE_TLV_FLAGS_SHORT_BL		= BIT(7),
-	IWL_UCODE_TLV_FLAGS_D3_6_IPV6_ADDRS	= BIT(10),
-	IWL_UCODE_TLV_FLAGS_NO_BASIC_SSID	= BIT(12),
-	IWL_UCODE_TLV_FLAGS_NEW_NSOFFL_SMALL	= BIT(15),
-	IWL_UCODE_TLV_FLAGS_NEW_NSOFFL_LARGE	= BIT(16),
-	IWL_UCODE_TLV_FLAGS_P2P_PM		= BIT(21),
-	IWL_UCODE_TLV_FLAGS_BSS_P2P_PS_DCM	= BIT(22),
-	IWL_UCODE_TLV_FLAGS_BSS_P2P_PS_SCM	= BIT(23),
-	IWL_UCODE_TLV_FLAGS_UAPSD_SUPPORT	= BIT(24),
-	IWL_UCODE_TLV_FLAGS_EBS_SUPPORT		= BIT(25),
-	IWL_UCODE_TLV_FLAGS_P2P_PS_UAPSD	= BIT(26),
-	IWL_UCODE_TLV_FLAGS_BCAST_FILTERING	= BIT(29),
-	IWL_UCODE_TLV_FLAGS_GO_UAPSD		= BIT(30),
-};
-
-/**
- * enum iwl_ucode_tlv_api - ucode api
- * @IWL_UCODE_TLV_API_WOWLAN_CONFIG_TID: wowlan config includes tid field.
- * @IWL_UCODE_TLV_CAPA_EXTENDED_BEACON: Support Extended beacon notification
- * @IWL_UCODE_TLV_API_BT_COEX_SPLIT: new API for BT Coex
- * @IWL_UCODE_TLV_API_CSA_FLOW: ucode can do unbind-bind flow for CSA.
- * @IWL_UCODE_TLV_API_DISABLE_STA_TX: ucode supports tx_disable bit.
- * @IWL_UCODE_TLV_API_LMAC_SCAN: This ucode uses LMAC unified scan API.
- * @IWL_UCODE_TLV_API_SF_NO_DUMMY_NOTIF: ucode supports disabling dummy notif.
- * @IWL_UCODE_TLV_API_FRAGMENTED_SCAN: This ucode supports active dwell time
- *	longer than the passive one, which is essential for fragmented scan.
- */
-enum iwl_ucode_tlv_api {
-	IWL_UCODE_TLV_API_WOWLAN_CONFIG_TID	= BIT(0),
-	IWL_UCODE_TLV_CAPA_EXTENDED_BEACON	= BIT(1),
-	IWL_UCODE_TLV_API_BT_COEX_SPLIT         = BIT(3),
-	IWL_UCODE_TLV_API_CSA_FLOW		= BIT(4),
-	IWL_UCODE_TLV_API_DISABLE_STA_TX	= BIT(5),
-	IWL_UCODE_TLV_API_LMAC_SCAN		= BIT(6),
-	IWL_UCODE_TLV_API_SF_NO_DUMMY_NOTIF	= BIT(7),
-	IWL_UCODE_TLV_API_FRAGMENTED_SCAN	= BIT(8),
-};
-
-/**
- * enum iwl_ucode_tlv_capa - ucode capabilities
- * @IWL_UCODE_TLV_CAPA_D0I3_SUPPORT: supports D0i3
- * @IWL_UCODE_TLV_CAPA_TXPOWER_INSERTION_SUPPORT: supports insertion of current
- *	tx power value into TPC Report action frame and Link Measurement Report
- *	action frame
- * @IWL_UCODE_TLV_CAPA_DS_PARAM_SET_IE_SUPPORT: supports adding DS params
- *	element in probe requests.
- * @IWL_UCODE_TLV_CAPA_WFA_TPC_REP_IE_SUPPORT: supports adding TPC Report IE in
- *	probe requests.
- * @IWL_UCODE_TLV_CAPA_QUIET_PERIOD_SUPPORT: supports Quiet Period requests
- * @IWL_UCODE_TLV_CAPA_DQA_SUPPORT: supports dynamic queue allocation (DQA),
- *	which also implies support for the scheduler configuration command
- * @IWL_UCODE_TLV_CAPA_HOTSPOT_SUPPORT: supports Hot Spot Command
- */
-enum iwl_ucode_tlv_capa {
-	IWL_UCODE_TLV_CAPA_D0I3_SUPPORT			= BIT(0),
-	IWL_UCODE_TLV_CAPA_TXPOWER_INSERTION_SUPPORT	= BIT(8),
-	IWL_UCODE_TLV_CAPA_DS_PARAM_SET_IE_SUPPORT	= BIT(9),
-	IWL_UCODE_TLV_CAPA_WFA_TPC_REP_IE_SUPPORT	= BIT(10),
-	IWL_UCODE_TLV_CAPA_QUIET_PERIOD_SUPPORT		= BIT(11),
-	IWL_UCODE_TLV_CAPA_DQA_SUPPORT			= BIT(12),
-	IWL_UCODE_TLV_CAPA_HOTSPOT_SUPPORT		= BIT(18),
-};
-
-/* The default calibrate table size if not specified by firmware file */
-#define IWL_DEFAULT_STANDARD_PHY_CALIBRATE_TBL_SIZE	18
-#define IWL_MAX_STANDARD_PHY_CALIBRATE_TBL_SIZE		19
-#define IWL_MAX_PHY_CALIBRATE_TBL_SIZE			253
-
-/* The default max probe length if not specified by the firmware file */
-#define IWL_DEFAULT_MAX_PROBE_LENGTH	200
+#include "iwl-fw-error-dump.h"
 
 /**
  * enum iwl_ucode_type
@@ -183,11 +78,13 @@ enum iwl_ucode_tlv_capa {
  * @IWL_UCODE_REGULAR: Normal runtime ucode
  * @IWL_UCODE_INIT: Initial ucode
  * @IWL_UCODE_WOWLAN: Wake on Wireless enabled ucode
+ * @IWL_UCODE_REGULAR_USNIFFER: Normal runtime ucode when using usniffer image
  */
 enum iwl_ucode_type {
 	IWL_UCODE_REGULAR,
 	IWL_UCODE_INIT,
 	IWL_UCODE_WOWLAN,
+	IWL_UCODE_REGULAR_USNIFFER,
 	IWL_UCODE_TYPE_MAX,
 };
 
@@ -202,23 +99,29 @@ enum iwl_ucode_sec {
 	IWL_UCODE_SECTION_DATA,
 	IWL_UCODE_SECTION_INST,
 };
-/*
- * For 16.0 uCode and above, there is no differentiation between sections,
- * just an offset to the HW address.
- */
-#define IWL_UCODE_SECTION_MAX 12
-#define IWL_API_ARRAY_SIZE	1
-#define IWL_CAPABILITIES_ARRAY_SIZE	1
-#define CPU1_CPU2_SEPARATOR_SECTION	0xFFFFCCCC
 
 struct iwl_ucode_capabilities {
 	u32 max_probe_length;
 	u32 n_scan_channels;
 	u32 standard_phy_calibration_size;
 	u32 flags;
-	u32 api[IWL_API_ARRAY_SIZE];
-	u32 capa[IWL_CAPABILITIES_ARRAY_SIZE];
+	unsigned long _api[BITS_TO_LONGS(NUM_IWL_UCODE_TLV_API)];
+	unsigned long _capa[BITS_TO_LONGS(NUM_IWL_UCODE_TLV_CAPA)];
 };
+
+static inline bool
+fw_has_api(const struct iwl_ucode_capabilities *capabilities,
+	   iwl_ucode_tlv_api_t api)
+{
+	return test_bit((__force long)api, capabilities->_api);
+}
+
+static inline bool
+fw_has_capa(const struct iwl_ucode_capabilities *capabilities,
+	    iwl_ucode_tlv_capa_t capa)
+{
+	return test_bit((__force long)capa, capabilities->_capa);
+}
 
 /* one for each uCode image (inst/data, init/runtime/wowlan) */
 struct fw_desc {
@@ -229,8 +132,8 @@ struct fw_desc {
 
 struct fw_img {
 	struct fw_desc sec[IWL_UCODE_SECTION_MAX];
-	bool is_secure;
 	bool is_dual_cpus;
+	u32 paging_mem_size;
 };
 
 struct iwl_sf_region {
@@ -238,65 +141,47 @@ struct iwl_sf_region {
 	u32 size;
 };
 
-/* uCode version contains 4 values: Major/Minor/API/Serial */
-#define IWL_UCODE_MAJOR(ver)	(((ver) & 0xFF000000) >> 24)
-#define IWL_UCODE_MINOR(ver)	(((ver) & 0x00FF0000) >> 16)
-#define IWL_UCODE_API(ver)	(((ver) & 0x0000FF00) >> 8)
-#define IWL_UCODE_SERIAL(ver)	((ver) & 0x000000FF)
+/*
+ * Block paging calculations
+ */
+#define PAGE_2_EXP_SIZE 12 /* 4K == 2^12 */
+#define FW_PAGING_SIZE BIT(PAGE_2_EXP_SIZE) /* page size is 4KB */
+#define PAGE_PER_GROUP_2_EXP_SIZE 3
+/* 8 pages per group */
+#define NUM_OF_PAGE_PER_GROUP BIT(PAGE_PER_GROUP_2_EXP_SIZE)
+/* don't change, support only 32KB size */
+#define PAGING_BLOCK_SIZE (NUM_OF_PAGE_PER_GROUP * FW_PAGING_SIZE)
+/* 32K == 2^15 */
+#define BLOCK_2_EXP_SIZE (PAGE_2_EXP_SIZE + PAGE_PER_GROUP_2_EXP_SIZE)
 
 /*
- * Calibration control struct.
- * Sent as part of the phy configuration command.
- * @flow_trigger: bitmap for which calibrations to perform according to
- *		flow triggers.
- * @event_trigger: bitmap for which calibrations to perform according to
- *		event triggers.
+ * Image paging calculations
  */
-struct iwl_tlv_calib_ctrl {
-	__le32 flow_trigger;
-	__le32 event_trigger;
-} __packed;
+#define BLOCK_PER_IMAGE_2_EXP_SIZE 5
+/* 2^5 == 32 blocks per image */
+#define NUM_OF_BLOCK_PER_IMAGE BIT(BLOCK_PER_IMAGE_2_EXP_SIZE)
+/* maximum image size 1024KB */
+#define MAX_PAGING_IMAGE_SIZE (NUM_OF_BLOCK_PER_IMAGE * PAGING_BLOCK_SIZE)
 
-enum iwl_fw_phy_cfg {
-	FW_PHY_CFG_RADIO_TYPE_POS = 0,
-	FW_PHY_CFG_RADIO_TYPE = 0x3 << FW_PHY_CFG_RADIO_TYPE_POS,
-	FW_PHY_CFG_RADIO_STEP_POS = 2,
-	FW_PHY_CFG_RADIO_STEP = 0x3 << FW_PHY_CFG_RADIO_STEP_POS,
-	FW_PHY_CFG_RADIO_DASH_POS = 4,
-	FW_PHY_CFG_RADIO_DASH = 0x3 << FW_PHY_CFG_RADIO_DASH_POS,
-	FW_PHY_CFG_TX_CHAIN_POS = 16,
-	FW_PHY_CFG_TX_CHAIN = 0xf << FW_PHY_CFG_TX_CHAIN_POS,
-	FW_PHY_CFG_RX_CHAIN_POS = 20,
-	FW_PHY_CFG_RX_CHAIN = 0xf << FW_PHY_CFG_RX_CHAIN_POS,
-};
+/* Virtual address signature */
+#define PAGING_ADDR_SIG 0xAA000000
 
-#define IWL_UCODE_MAX_CS		1
+#define PAGING_CMD_IS_SECURED BIT(9)
+#define PAGING_CMD_IS_ENABLED BIT(8)
+#define PAGING_CMD_NUM_OF_PAGES_IN_LAST_GRP_POS	0
+#define PAGING_TLV_SECURE_MASK 1
 
 /**
- * struct iwl_fw_cipher_scheme - a cipher scheme supported by FW.
- * @cipher: a cipher suite selector
- * @flags: cipher scheme flags (currently reserved for a future use)
- * @hdr_len: a size of MPDU security header
- * @pn_len: a size of PN
- * @pn_off: an offset of pn from the beginning of the security header
- * @key_idx_off: an offset of key index byte in the security header
- * @key_idx_mask: a bit mask of key_idx bits
- * @key_idx_shift: bit shift needed to get key_idx
- * @mic_len: mic length in bytes
- * @hw_cipher: a HW cipher index used in host commands
+ * struct iwl_fw_paging
+ * @fw_paging_phys: page phy pointer
+ * @fw_paging_block: pointer to the allocated block
+ * @fw_paging_size: page size
  */
-struct iwl_fw_cipher_scheme {
-	__le32 cipher;
-	u8 flags;
-	u8 hdr_len;
-	u8 pn_len;
-	u8 pn_off;
-	u8 key_idx_off;
-	u8 key_idx_mask;
-	u8 key_idx_shift;
-	u8 mic_len;
-	u8 hw_cipher;
-} __packed;
+struct iwl_fw_paging {
+	dma_addr_t fw_paging_phys;
+	struct page *fw_paging_block;
+	u32 fw_paging_size;
+};
 
 /**
  * struct iwl_fw_cscheme_list - a cipher scheme list
@@ -307,6 +192,30 @@ struct iwl_fw_cscheme_list {
 	u8 size;
 	struct iwl_fw_cipher_scheme cs[];
 } __packed;
+
+/**
+ * struct iwl_gscan_capabilities - gscan capabilities supported by FW
+ * @max_scan_cache_size: total space allocated for scan results (in bytes).
+ * @max_scan_buckets: maximum number of channel buckets.
+ * @max_ap_cache_per_scan: maximum number of APs that can be stored per scan.
+ * @max_rssi_sample_size: number of RSSI samples used for averaging RSSI.
+ * @max_scan_reporting_threshold: max possible report threshold. in percentage.
+ * @max_hotlist_aps: maximum number of entries for hotlist APs.
+ * @max_significant_change_aps: maximum number of entries for significant
+ *	change APs.
+ * @max_bssid_history_entries: number of BSSID/RSSI entries that the device can
+ *	hold.
+ */
+struct iwl_gscan_capabilities {
+	u32 max_scan_cache_size;
+	u32 max_scan_buckets;
+	u32 max_ap_cache_per_scan;
+	u32 max_rssi_sample_size;
+	u32 max_scan_reporting_threshold;
+	u32 max_hotlist_aps;
+	u32 max_significant_change_aps;
+	u32 max_bssid_history_entries;
+};
 
 /**
  * struct iwl_fw - variables associated with the firmware
@@ -324,6 +233,15 @@ struct iwl_fw_cscheme_list {
  * @inst_errlog_ptr: error log offfset for runtime ucode.
  * @mvm_fw: indicates this is MVM firmware
  * @cipher_scheme: optional external cipher scheme.
+ * @human_readable: human readable version
+ * @sdio_adma_addr: the default address to set for the ADMA in SDIO mode until
+ *	we get the ALIVE from the uCode
+ * @dbg_dest_tlv: points to the destination TLV for debug
+ * @dbg_conf_tlv: array of pointers to configuration TLVs for debug
+ * @dbg_conf_tlv_len: lengths of the @dbg_conf_tlv entries
+ * @dbg_trigger_tlv: array of pointers to triggers TLVs
+ * @dbg_trigger_tlv_len: lengths of the @dbg_trigger_tlv entries
+ * @dbg_dest_reg_num: num of reg_ops in %dbg_dest_tlv
  */
 struct iwl_fw {
 	u32 ucode_ver;
@@ -348,6 +266,57 @@ struct iwl_fw {
 
 	struct ieee80211_cipher_scheme cs[IWL_UCODE_MAX_CS];
 	u8 human_readable[FW_VER_HUMAN_READABLE_SZ];
+
+	u32 sdio_adma_addr;
+
+	struct iwl_fw_dbg_dest_tlv *dbg_dest_tlv;
+	struct iwl_fw_dbg_conf_tlv *dbg_conf_tlv[FW_DBG_CONF_MAX];
+	size_t dbg_conf_tlv_len[FW_DBG_CONF_MAX];
+	struct iwl_fw_dbg_trigger_tlv *dbg_trigger_tlv[FW_DBG_TRIGGER_MAX];
+	size_t dbg_trigger_tlv_len[FW_DBG_TRIGGER_MAX];
+	u8 dbg_dest_reg_num;
+	struct iwl_gscan_capabilities gscan_capa;
 };
+
+static inline const char *get_fw_dbg_mode_string(int mode)
+{
+	switch (mode) {
+	case SMEM_MODE:
+		return "SMEM";
+	case EXTERNAL_MODE:
+		return "EXTERNAL_DRAM";
+	case MARBH_MODE:
+		return "MARBH";
+	case MIPI_MODE:
+		return "MIPI";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static inline bool
+iwl_fw_dbg_conf_usniffer(const struct iwl_fw *fw, u8 id)
+{
+	const struct iwl_fw_dbg_conf_tlv *conf_tlv = fw->dbg_conf_tlv[id];
+
+	if (!conf_tlv)
+		return false;
+
+	return conf_tlv->usniffer;
+}
+
+#define iwl_fw_dbg_trigger_enabled(fw, id) ({			\
+	void *__dbg_trigger = (fw)->dbg_trigger_tlv[(id)];	\
+	unlikely(__dbg_trigger);				\
+})
+
+static inline struct iwl_fw_dbg_trigger_tlv*
+iwl_fw_dbg_get_trigger(const struct iwl_fw *fw, u8 id)
+{
+	if (WARN_ON(id >= ARRAY_SIZE(fw->dbg_trigger_tlv)))
+		return NULL;
+
+	return fw->dbg_trigger_tlv[id];
+}
 
 #endif  /* __iwl_fw_h__ */

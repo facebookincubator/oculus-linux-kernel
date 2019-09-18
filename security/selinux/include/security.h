@@ -12,7 +12,6 @@
 #include <linux/dcache.h>
 #include <linux/magic.h>
 #include <linux/types.h>
-#include "flask.h"
 
 #define SECSID_NULL			0x00000000 /* unspecified SID */
 #define SECSID_WILD			0xffffffff /* wildcard SID */
@@ -165,6 +164,8 @@ int security_sid_to_context_force(u32 sid, char **scontext, u32 *scontext_len);
 
 int security_context_to_sid(const char *scontext, u32 scontext_len,
 			    u32 *out_sid, gfp_t gfp);
+
+int security_context_str_to_sid(const char *scontext, u32 *out_sid, gfp_t gfp);
 
 int security_context_to_sid_default(const char *scontext, u32 scontext_len,
 				    u32 *out_sid, u32 def_sid, gfp_t gfp_flags);

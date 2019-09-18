@@ -26,9 +26,7 @@
 #include "include/msm_csid_3_5_hwreg.h"
 #include "include/msm_csid_3_4_1_hwreg.h"
 #include "include/msm_csid_3_4_2_hwreg.h"
-#include "include/msm_csid_3_4_3_hwreg.h"
 #include "include/msm_csid_3_6_0_hwreg.h"
-#include "include/msm_csid_3_5_1_hwreg.h"
 #include "cam_hw_ops.h"
 
 #define V4L2_IDENT_CSID                            50002
@@ -43,12 +41,11 @@
 #define CSID_VERSION_V34                      0x30040000
 #define CSID_VERSION_V34_1                    0x30040001
 #define CSID_VERSION_V34_2                    0x30040002
-#define CSID_VERSION_V34_3                    0x30040003
 #define CSID_VERSION_V36                      0x30060000
 #define CSID_VERSION_V37                      0x30070000
 #define CSID_VERSION_V35                      0x30050000
-#define CSID_VERSION_V35_1                    0x30050001
 #define CSID_VERSION_V40                      0x40000000
+#define CSID_VERSION_V50                      0x50000000
 #define MSM_CSID_DRV_NAME                    "msm_csid"
 
 #define DBG_CSID                             0
@@ -230,16 +227,34 @@ static void msm_csid_set_sof_freeze_debug_reg(
 static int msm_csid_reset(struct csid_device *csid_dev)
 {
 	int32_t rc = 0;
+	uint32_t irq = 0, irq_bitshift;
+
+	irq_bitshift = csid_dev->ctrl_reg->csid_reg.csid_rst_done_irq_bitshift;
 	msm_camera_io_w(csid_dev->ctrl_reg->csid_reg.csid_rst_stb_all,
 		csid_dev->base +
 		csid_dev->ctrl_reg->csid_reg.csid_rst_cmd_addr);
 	rc = wait_for_completion_timeout(&csid_dev->reset_complete,
 		CSID_TIMEOUT);
-	if (rc <= 0) {
+	if (rc < 0) {
 		pr_err("wait_for_completion in msm_csid_reset fail rc = %d\n",
 			rc);
+	} else if (rc == 0) {
+		irq = msm_camera_io_r(csid_dev->base +
+			csid_dev->ctrl_reg->csid_reg.csid_irq_status_addr);
+		pr_err_ratelimited("%s CSID%d_IRQ_STATUS_ADDR = 0x%x\n",
+			__func__, csid_dev->pdev->id, irq);
+		if (irq & (0x1 << irq_bitshift)) {
+			rc = 1;
+			CDBG("%s succeeded", __func__);
+		} else {
+			rc = 0;
+			pr_err("%s reset csid_irq_status failed = 0x%x\n",
+				__func__, irq);
+		}
 		if (rc == 0)
 			rc = -ETIMEDOUT;
+	} else {
+		CDBG("%s succeeded", __func__);
 	}
 	return rc;
 }
@@ -387,7 +402,7 @@ static int msm_csid_config(struct csid_device *csid_dev,
 			msm_camera_io_w(val, csidbase +
 			csid_dev->ctrl_reg->csid_reg.csid_core_ctrl_1_addr);
 		}
-		if (csid_dev->hw_version == CSID_VERSION_V35 &&
+		if (csid_dev->hw_version >= CSID_VERSION_V35 &&
 			csid_params->csi_3p_sel == 1) {
 			csid_dev->csid_3p_enabled = 1;
 			val = (csid_params->lane_cnt - 1) << ENABLE_3P_BIT;
@@ -1159,12 +1174,6 @@ static int csid_probe(struct platform_device *pdev)
 		new_csid_dev->ctrl_reg->csid_lane_assign =
 			csid_lane_assign_v3_4_2;
 	} else if (of_device_is_compatible(new_csid_dev->pdev->dev.of_node,
-		"qcom,csid-v3.4.3")) {
-		new_csid_dev->ctrl_reg->csid_reg = csid_v3_4_3;
-		new_csid_dev->hw_dts_version = CSID_VERSION_V34_3;
-		new_csid_dev->ctrl_reg->csid_lane_assign =
-			csid_lane_assign_v3_4_3;
-	} else if (of_device_is_compatible(new_csid_dev->pdev->dev.of_node,
 		"qcom,csid-v3.6.0")) {
 		new_csid_dev->ctrl_reg->csid_reg = csid_v3_6_0;
 		new_csid_dev->hw_dts_version = CSID_VERSION_V36;
@@ -1177,11 +1186,11 @@ static int csid_probe(struct platform_device *pdev)
 			csid_lane_assign_v3_5;
 		new_csid_dev->hw_dts_version = CSID_VERSION_V35;
 	} else if (of_device_is_compatible(new_csid_dev->pdev->dev.of_node,
-		"qcom,csid-v3.5.1")) {
-		new_csid_dev->ctrl_reg->csid_reg = csid_v3_5_1;
+		"qcom,csid-v5.0")) {
+		new_csid_dev->ctrl_reg->csid_reg = csid_v3_5;
 		new_csid_dev->ctrl_reg->csid_lane_assign =
-			csid_lane_assign_v3_5_1;
-		new_csid_dev->hw_dts_version = CSID_VERSION_V35_1;
+			csid_lane_assign_v3_5;
+		new_csid_dev->hw_dts_version = CSID_VERSION_V50;
 	} else {
 		pr_err("%s:%d, invalid hw version : 0x%x", __func__, __LINE__,
 			new_csid_dev->hw_dts_version);

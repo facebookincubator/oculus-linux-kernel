@@ -1,6 +1,9 @@
 #ifndef _UAPI_MHI_H
 #define _UAPI_MHI_H
 
+#include <linux/types.h>
+#include <linux/ioctl.h>
+
 enum peripheral_ep_type {
 	DATA_EP_TYPE_RESERVED,
 	DATA_EP_TYPE_HSIC,
@@ -12,12 +15,12 @@ enum peripheral_ep_type {
 
 struct peripheral_ep_info {
 	enum peripheral_ep_type		ep_type;
-	u32				peripheral_iface_id;
+	__u32				peripheral_iface_id;
 };
 
 struct ipa_ep_pair {
-	u32 cons_pipe_num;
-	u32 prod_pipe_num;
+	__u32				cons_pipe_num;
+	__u32				prod_pipe_num;
 };
 
 struct ep_info {

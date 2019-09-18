@@ -171,7 +171,11 @@ int pil_do_ramdump(struct pil_desc *desc, void *ramdump_dev)
 	ret = do_elf_ramdump(ramdump_dev, ramdump_segs, count);
 	kfree(ramdump_segs);
 
-	if (!ret && desc->subsys_vmid > 0)
+	if (ret)
+		pil_err(desc, "%s: Ramdump collection failed for subsys %s rc:%d\n",
+				__func__, desc->name, ret);
+
+	if (desc->subsys_vmid > 0)
 		ret = pil_assign_mem_to_subsys(desc, priv->region_start,
 				(priv->region_end - priv->region_start));
 
@@ -189,8 +193,8 @@ int pil_assign_mem_to_subsys(struct pil_desc *desc, phys_addr_t addr,
 
 	ret = hyp_assign_phys(addr, size, srcVM, 1, destVM, destVMperm, 1);
 	if (ret)
-		pil_err(desc, "%s: failed for %pa address of size %zx - subsys VMid %d\n",
-				__func__, &addr, size, desc->subsys_vmid);
+		pil_err(desc, "%s: failed for %pa address of size %zx - subsys VMid %d rc:%d\n",
+				__func__, &addr, size, desc->subsys_vmid, ret);
 	return ret;
 }
 EXPORT_SYMBOL(pil_assign_mem_to_subsys);
@@ -205,8 +209,8 @@ int pil_assign_mem_to_linux(struct pil_desc *desc, phys_addr_t addr,
 
 	ret = hyp_assign_phys(addr, size, srcVM, 1, destVM, destVMperm, 1);
 	if (ret)
-		panic("%s: failed for %pa address of size %zx - subsys VMid %d. Fatal error.\n",
-				__func__, &addr, size, desc->subsys_vmid);
+		panic("%s: failed for %pa address of size %zx - subsys VMid %d rc:%d\n",
+				__func__, &addr, size, desc->subsys_vmid, ret);
 
 	return ret;
 }
@@ -222,8 +226,8 @@ int pil_assign_mem_to_subsys_and_linux(struct pil_desc *desc,
 
 	ret = hyp_assign_phys(addr, size, srcVM, 1, destVM, destVMperm, 2);
 	if (ret)
-		pil_err(desc, "%s: failed for %pa address of size %zx - subsys VMid %d\n",
-				__func__, &addr, size, desc->subsys_vmid);
+		pil_err(desc, "%s: failed for %pa address of size %zx - subsys VMid %d rc:%d\n",
+				__func__, &addr, size, desc->subsys_vmid, ret);
 
 	return ret;
 }
@@ -355,9 +359,9 @@ static struct pil_seg *pil_init_seg(const struct pil_desc *desc,
 	struct pil_seg *seg;
 
 	if (!reloc && memblock_overlaps_memory(phdr->p_paddr, phdr->p_memsz)) {
-		pil_err(desc, "kernel memory would be overwritten [%#08lx, %#08lx)\n",
-			(unsigned long)phdr->p_paddr,
-			(unsigned long)(phdr->p_paddr + phdr->p_memsz));
+		pil_err(desc, "Segment not relocatable,kernel memory would be overwritten[%#08lx, %#08lx)\n",
+		(unsigned long)phdr->p_paddr,
+		(unsigned long)(phdr->p_paddr + phdr->p_memsz));
 		return ERR_PTR(-EPERM);
 	}
 
@@ -667,8 +671,8 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 					      seg->filesz, desc->map_fw_mem,
 					      desc->unmap_fw_mem, map_data);
 		if (ret < 0) {
-			pil_err(desc, "Failed to locate blob %s or blob is too big.\n",
-				fw_name);
+			pil_err(desc, "Failed to locate blob %s or blob is too big(rc:%d)\n",
+				fw_name, ret);
 			return ret;
 		}
 
@@ -704,7 +708,8 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 	if (desc->ops->verify_blob) {
 		ret = desc->ops->verify_blob(desc, seg->paddr, seg->sz);
 		if (ret)
-			pil_err(desc, "Blob%u failed verification\n", num);
+			pil_err(desc, "Blob%u failed verification(rc:%d)\n",
+								num, ret);
 	}
 
 	return ret;
@@ -779,7 +784,7 @@ int pil_boot(struct pil_desc *desc)
 	snprintf(fw_name, sizeof(fw_name), "%s.mdt", desc->fw_name);
 	ret = request_firmware(&fw, fw_name, desc->dev);
 	if (ret) {
-		pil_err(desc, "Failed to locate %s\n", fw_name);
+		pil_err(desc, "Failed to locate %s(rc:%d)\n", fw_name, ret);
 		goto out;
 	}
 
@@ -817,16 +822,14 @@ int pil_boot(struct pil_desc *desc)
 	desc->priv->unvoted_flag = 0;
 	ret = pil_proxy_vote(desc);
 	if (ret) {
-		pil_err(desc, "Failed to proxy vote\n");
+		pil_err(desc, "Failed to proxy vote(rc:%d)\n", ret);
 		goto release_fw;
 	}
 
 	if (desc->ops->init_image)
-		ret = desc->ops->init_image(desc, fw->data, fw->size,
-			priv->region_start,
-			priv->region_end - priv->region_start);
+		ret = desc->ops->init_image(desc, fw->data, fw->size);
 	if (ret) {
-		pil_err(desc, "Invalid firmware metadata\n");
+		pil_err(desc, "Initializing image failed(rc:%d)\n", ret);
 		goto err_boot;
 	}
 
@@ -834,11 +837,24 @@ int pil_boot(struct pil_desc *desc)
 		ret = desc->ops->mem_setup(desc, priv->region_start,
 				priv->region_end - priv->region_start);
 	if (ret) {
-		pil_err(desc, "Memory setup error\n");
+		pil_err(desc, "Memory setup error(rc:%d)\n", ret);
 		goto err_deinit_image;
 	}
 
 	if (desc->subsys_vmid > 0) {
+		/**
+		 * In case of modem ssr, we need to assign memory back to linux.
+		 * This is not true after cold boot since linux already owns it.
+		 * Also for secure boot devices, modem memory has to be released
+		 * after MBA is booted
+		 */
+		if (desc->modem_ssr) {
+			ret = pil_assign_mem_to_linux(desc, priv->region_start,
+				(priv->region_end - priv->region_start));
+			if (ret)
+				pil_err(desc, "Failed to assign to linux, ret- %d\n",
+								ret);
+		}
 		ret = pil_assign_mem_to_subsys_and_linux(desc,
 				priv->region_start,
 				(priv->region_end - priv->region_start));
@@ -870,7 +886,7 @@ int pil_boot(struct pil_desc *desc)
 
 	ret = desc->ops->auth_and_reset(desc);
 	if (ret) {
-		pil_err(desc, "Failed to bring out of reset\n");
+		pil_err(desc, "Failed to bring out of reset(rc:%d)\n", ret);
 		goto err_auth_and_reset;
 	}
 	pil_info(desc, "Brought out of reset\n");
@@ -908,8 +924,6 @@ out:
 					&desc->attrs);
 			priv->region = NULL;
 		}
-		if (desc->clear_fw_region && priv->region_start)
-			pil_clear_segment(desc);
 		pil_release_mmap(desc);
 	}
 	return ret;

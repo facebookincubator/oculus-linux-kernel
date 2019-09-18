@@ -34,17 +34,6 @@ MODULE_PARM_DESC(mhi_msg_lvl, "dbg lvl");
 module_param(mhi_ipc_log_lvl, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(mhi_ipc_log_lvl, "dbg lvl");
 
-const char * const mhi_states_str[MHI_STATE_LIMIT] = {
-	"RESET",
-	"READY",
-	"M0",
-	"M1",
-	"M2",
-	"M3",
-	"BHI",
-	"SYS_ERR",
-};
-
 static ssize_t mhi_dbgfs_chan_read(struct file *fp, char __user *buf,
 				size_t count, loff_t *offp)
 {
@@ -219,9 +208,9 @@ static ssize_t mhi_dbgfs_state_read(struct file *fp, char __user *buf,
 	amnt_copied =
 	scnprintf(mhi_dev_ctxt->chan_info,
 			MHI_LOG_SIZE,
-			"%s %s %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d, %s, %d, %s %d\n",
+			"%s %u %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d %s %d, %s, %d, %s %d\n",
 			"Our State:",
-			TO_MHI_STATE_STR(mhi_dev_ctxt->mhi_state),
+			mhi_dev_ctxt->mhi_state,
 			"M0->M1:",
 			mhi_dev_ctxt->counters.m0_m1,
 			"M0<-M1:",
@@ -310,7 +299,7 @@ uintptr_t mhi_p2v_addr(struct mhi_device_ctxt *mhi_dev_ctxt,
 			enum MHI_RING_TYPE type,
 			u32 chan, uintptr_t phy_ptr)
 {
-	uintptr_t virtual_ptr = 0;
+	uintptr_t virtual_ptr;
 	struct mhi_ring_ctxt *cs = &mhi_dev_ctxt->dev_space.ring_ctxt;
 
 	switch (type) {

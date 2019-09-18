@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2014, Intel Corp.
+ * Copyright (C) 2000 - 2015, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -696,7 +696,7 @@ acpi_ns_get_device_callback(acpi_handle obj_handle,
 			return (AE_CTRL_DEPTH);
 		}
 
-		no_match = ACPI_STRCMP(hid->string, info->hid);
+		no_match = strcmp(hid->string, info->hid);
 		ACPI_FREE(hid);
 
 		if (no_match) {
@@ -715,8 +715,7 @@ acpi_ns_get_device_callback(acpi_handle obj_handle,
 
 			found = FALSE;
 			for (i = 0; i < cid->count; i++) {
-				if (ACPI_STRCMP(cid->ids[i].string, info->hid)
-				    == 0) {
+				if (strcmp(cid->ids[i].string, info->hid) == 0) {
 
 					/* Found a matching CID */
 

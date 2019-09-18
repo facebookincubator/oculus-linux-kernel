@@ -6,7 +6,8 @@ the QPNP Charger and BMS drivers via device tree.
 qcom,battery-data node required properties:
 - qcom,rpull-up-kohm : The vadc pullup resistor's resistance value in kOhms.
 - qcom,vref-batt-therm-uv : The vadc voltage used to make readings.
-			For Qualcomm VADCs this should be 1800000uV.
+			For Qualcomm Technologies, Inc. VADCs, this should be
+			1800000uV.
 
 qcom,battery-data node optional properties:
 - qcom,batt-id-range-pct : The area of variation between upper and lower bound

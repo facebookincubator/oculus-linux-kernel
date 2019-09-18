@@ -52,18 +52,11 @@ static ssize_t hidraw_read(struct file *file, char __user *buffer, size_t count,
 	mutex_lock(&list->read_mutex);
 
 	while (ret == 0) {
-		int head, tail;
-
-		spin_lock_irq(&list->queue_lock);
-		head = list->head;
-		tail = list->tail;
-		spin_unlock_irq(&list->queue_lock);
-
-		if (head == tail) {
+		if (list->head == list->tail) {
 			add_wait_queue(&list->hidraw->wait, &wait);
 			set_current_state(TASK_INTERRUPTIBLE);
 
-			while (head == tail) {
+			while (list->head == list->tail) {
 				if (signal_pending(current)) {
 					ret = -ERESTARTSYS;
 					break;
@@ -82,10 +75,6 @@ static ssize_t hidraw_read(struct file *file, char __user *buffer, size_t count,
 				schedule();
 				mutex_lock(&list->read_mutex);
 				set_current_state(TASK_INTERRUPTIBLE);
-				spin_lock_irq(&list->queue_lock);
-				head = list->head;
-				tail = list->tail;
-				spin_unlock_irq(&list->queue_lock);
 			}
 
 			set_current_state(TASK_RUNNING);
@@ -95,22 +84,20 @@ static ssize_t hidraw_read(struct file *file, char __user *buffer, size_t count,
 		if (ret)
 			goto out;
 
-		len = list->buffer[tail].len > count ?
-			count : list->buffer[tail].len;
+		len = list->buffer[list->tail].len > count ?
+			count : list->buffer[list->tail].len;
 
-		if (list->buffer[tail].value) {
-			if (copy_to_user(buffer, list->buffer[tail].value, len)) {
+		if (list->buffer[list->tail].value) {
+			if (copy_to_user(buffer, list->buffer[list->tail].value, len)) {
 				ret = -EFAULT;
 				goto out;
 			}
 			ret = len;
 		}
 
-		kfree(list->buffer[tail].value);
-		list->buffer[tail].value = NULL;
-		spin_lock_irq(&list->queue_lock);
+		kfree(list->buffer[list->tail].value);
+		list->buffer[list->tail].value = NULL;
 		list->tail = (list->tail + 1) & (HIDRAW_BUFFER_SIZE - 1);
-		spin_unlock_irq(&list->queue_lock);
 	}
 out:
 	mutex_unlock(&list->read_mutex);
@@ -284,6 +271,7 @@ static int hidraw_open(struct inode *inode, struct file *file)
 	unsigned int minor = iminor(inode);
 	struct hidraw *dev;
 	struct hidraw_list *list;
+	unsigned long flags;
 	int err = 0;
 
 	if (!(list = kzalloc(sizeof(struct hidraw_list), GFP_KERNEL))) {
@@ -315,11 +303,9 @@ static int hidraw_open(struct inode *inode, struct file *file)
 
 	list->hidraw = hidraw_table[minor];
 	mutex_init(&list->read_mutex);
-	spin_lock_init(&list->queue_lock);
-	init_rcu_head(&list->rcu);
-
-	list_add_tail_rcu(&list->node, &hidraw_table[minor]->list);
-
+	spin_lock_irqsave(&hidraw_table[minor]->list_lock, flags);
+	list_add_tail(&list->node, &hidraw_table[minor]->list);
+	spin_unlock_irqrestore(&hidraw_table[minor]->list_lock, flags);
 	file->private_data = list;
 out_unlock:
 	mutex_unlock(&minors_lock);
@@ -362,21 +348,18 @@ static void drop_ref(struct hidraw *hidraw, int exists_bit)
 	}
 }
 
-static void hidraw_delete_rcu(struct rcu_head * arg)
-{
-	struct hidraw_list *list = container_of(arg, struct hidraw_list, rcu);
-	kfree(list);
-}
-
 static int hidraw_release(struct inode * inode, struct file * file)
 {
 	unsigned int minor = iminor(inode);
 	struct hidraw_list *list = file->private_data;
+	unsigned long flags;
 
 	mutex_lock(&minors_lock);
 
-	list_del_rcu(&list->node);
-	call_rcu(&list->rcu, hidraw_delete_rcu);
+	spin_lock_irqsave(&hidraw_table[minor]->list_lock, flags);
+	list_del(&list->node);
+	spin_unlock_irqrestore(&hidraw_table[minor]->list_lock, flags);
+	kfree(list);
 
 	drop_ref(hidraw_table[minor], 0);
 
@@ -504,33 +487,24 @@ int hidraw_report_event(struct hid_device *hid, u8 *data, int len)
 	struct hidraw *dev = hid->hidraw;
 	struct hidraw_list *list;
 	int ret = 0;
+	unsigned long flags;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(list, &dev->list, node) {
-		int new_head, head, tail;
-		unsigned long flags;
+	spin_lock_irqsave(&dev->list_lock, flags);
+	list_for_each_entry(list, &dev->list, node) {
+		int new_head = (list->head + 1) & (HIDRAW_BUFFER_SIZE - 1);
 
-		spin_lock_irqsave(&list->queue_lock, flags);
-		head = list->head;
-		tail = list->tail;
-		spin_unlock_irqrestore(&list->queue_lock, flags);
-
-		new_head = (head + 1) & (HIDRAW_BUFFER_SIZE - 1);
-
-		if (new_head == tail)
+		if (new_head == list->tail)
 			continue;
 
-		if (!(list->buffer[head].value = kmemdup(data, len, GFP_ATOMIC))) {
+		if (!(list->buffer[list->head].value = kmemdup(data, len, GFP_ATOMIC))) {
 			ret = -ENOMEM;
 			break;
 		}
-		list->buffer[head].len = len;
-		spin_lock_irqsave(&list->queue_lock, flags);
+		list->buffer[list->head].len = len;
 		list->head = new_head;
-		spin_unlock_irqrestore(&list->queue_lock, flags);
 		kill_fasync(&list->fasync, SIGIO, POLL_IN);
 	}
-	rcu_read_unlock();
+	spin_unlock_irqrestore(&dev->list_lock, flags);
 
 	wake_up_interruptible(&dev->wait);
 	return ret;
@@ -578,7 +552,8 @@ int hidraw_connect(struct hid_device *hid)
 	}
 
 	init_waitqueue_head(&dev->wait);
-	INIT_LIST_HEAD_RCU(&dev->list);
+	spin_lock_init(&dev->list_lock);
+	INIT_LIST_HEAD(&dev->list);
 
 	dev->hid = hid;
 	dev->minor = minor;

@@ -181,7 +181,7 @@ static void txx9spi_work_one(struct txx9spi *c, struct spi_message *m)
 		u32 data;
 		unsigned int len = t->len;
 		unsigned int wsize;
-		u32 speed_hz = t->speed_hz ? : spi->max_speed_hz;
+		u32 speed_hz = t->speed_hz;
 		u8 bits_per_word = t->bits_per_word;
 
 		wsize = bits_per_word >> 3; /* in bytes */
@@ -402,8 +402,7 @@ exit_busy:
 exit:
 	if (c->workqueue)
 		destroy_workqueue(c->workqueue);
-	if (c->clk)
-		clk_disable(c->clk);
+	clk_disable(c->clk);
 	spi_master_put(master);
 	return ret;
 }
@@ -426,7 +425,6 @@ static struct platform_driver txx9spi_driver = {
 	.remove = txx9spi_remove,
 	.driver = {
 		.name = "spi_txx9",
-		.owner = THIS_MODULE,
 	},
 };
 

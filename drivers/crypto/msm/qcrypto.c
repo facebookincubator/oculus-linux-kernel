@@ -262,7 +262,7 @@ static void qcrypto_free_req_control(struct crypto_engine *pce,
 	preq->arsp = NULL;
 	/* free req */
 	if (xchg(&preq->in_use, false) == false) {
-		pr_warn("request info %p free already\n", preq);
+		pr_warn("request info %pK free already\n", preq);
 	} else {
 		atomic_dec(&pce->req_count);
 	}
@@ -381,6 +381,7 @@ EXPORT_SYMBOL(qcrypto_get_engine_list);
 enum qcrypto_alg_type {
 	QCRYPTO_ALG_CIPHER	= 0,
 	QCRYPTO_ALG_SHA	= 1,
+	QCRYPTO_ALG_AEAD = 2,
 	QCRYPTO_ALG_LAST
 };
 
@@ -388,6 +389,7 @@ struct qcrypto_alg {
 	struct list_head entry;
 	struct crypto_alg cipher_alg;
 	struct ahash_alg sha_alg;
+	struct aead_alg aead_alg;
 	enum qcrypto_alg_type alg_type;
 	struct crypto_priv *cp;
 };
@@ -436,9 +438,7 @@ struct qcrypto_cipher_req_ctx {
 	unsigned int ivsize;
 	int  aead;
 	struct scatterlist asg;		/* Formatted associated data sg  */
-	unsigned char *assoc;		/* Pointer to formatted assoc data */
-	unsigned int assoclen;		/* Save Unformatted assoc data length */
-	struct scatterlist *assoc_sg;	/* Save Unformatted assoc data sg */
+	unsigned char *adata;		/* Pointer to formatted assoc data */
 	enum qce_cipher_alg_enum alg;
 	enum qce_cipher_dir_enum dir;
 	enum qce_cipher_mode_enum mode;
@@ -452,8 +452,8 @@ struct qcrypto_cipher_req_ctx {
 	struct aead_request *aead_req;
 	struct ahash_request *fb_hash_req;
 	uint8_t	fb_ahash_digest[SHA256_DIGEST_SIZE];
-	struct scatterlist fb_ahash_sg[3];
-	char *fb_ahash_assoc_iv;
+	struct scatterlist fb_ablkcipher_src_sg[2];
+	struct scatterlist fb_ablkcipher_dst_sg[2];
 	char *fb_aes_iv;
 	unsigned int  fb_ahash_length;
 	struct ablkcipher_request *fb_aes_req;
@@ -729,7 +729,7 @@ static int qcrypto_count_sg(struct scatterlist *sg, int nbytes)
 {
 	int i;
 
-	for (i = 0; nbytes > 0 && sg != NULL; i++, sg = scatterwalk_sg_next(sg))
+	for (i = 0; nbytes > 0 && sg != NULL; i++, sg = sg_next(sg))
 		nbytes -= sg->length;
 
 	return i;
@@ -742,15 +742,11 @@ static size_t qcrypto_sg_copy_from_buffer(struct scatterlist *sgl,
 	size_t offset, len;
 
 	for (i = 0, offset = 0; i < nents; ++i) {
-		if (NULL == sgl) {
-			pr_err("qcrypto.c: qcrypto_sg_copy_from_buffer, sgl = NULL");
-			break;
-		}
 		len = sg_copy_from_buffer(sgl, 1, buf, buflen);
 		buf += len;
 		buflen -= len;
 		offset += len;
-		sgl = scatterwalk_sg_next(sgl);
+		sgl = sg_next(sgl);
 	}
 
 	return offset;
@@ -763,15 +759,11 @@ static size_t qcrypto_sg_copy_to_buffer(struct scatterlist *sgl,
 	size_t offset, len;
 
 	for (i = 0, offset = 0; i < nents; ++i) {
-		if (NULL == sgl) {
-			pr_err("qcrypto.c: qcrypto_sg_copy_from_buffer, sgl = NULL");
-			break;
-		}
 		len = sg_copy_to_buffer(sgl, 1, buf, buflen);
 		buf += len;
 		buflen -= len;
 		offset += len;
-		sgl = scatterwalk_sg_next(sgl);
+		sgl = sg_next(sgl);
 	}
 
 	return offset;
@@ -813,19 +805,32 @@ static struct qcrypto_alg *_qcrypto_cipher_alg_alloc(struct crypto_priv *cp,
 	return q_alg;
 };
 
-static int _qcrypto_cipher_cra_init(struct crypto_tfm *tfm)
+static struct qcrypto_alg *_qcrypto_aead_alg_alloc(struct crypto_priv *cp,
+		struct aead_alg *template)
 {
-	struct crypto_alg *alg = tfm->__crt_alg;
 	struct qcrypto_alg *q_alg;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
 
+	q_alg = kzalloc(sizeof(struct qcrypto_alg), GFP_KERNEL);
+	if (!q_alg)
+		return ERR_PTR(-ENOMEM);
 
-	q_alg = container_of(alg, struct qcrypto_alg, cipher_alg);
+	q_alg->alg_type = QCRYPTO_ALG_AEAD;
+	q_alg->aead_alg = *template;
+	q_alg->cp = cp;
+
+	return q_alg;
+};
+
+static int _qcrypto_cipher_ctx_init(struct qcrypto_cipher_ctx *ctx,
+					struct qcrypto_alg *q_alg)
+{
+	if (!ctx || !q_alg) {
+		pr_err("ctx or q_alg is NULL\n");
+		return -EINVAL;
+	}
 	ctx->flags = 0;
-
 	/* update context with ptr to cp */
 	ctx->cp = q_alg->cp;
-
 	/* random first IV */
 	get_random_bytes(ctx->iv, QCRYPTO_MAX_IV_LENGTH);
 	if (_qcrypto_init_assign) {
@@ -837,6 +842,16 @@ static int _qcrypto_cipher_cra_init(struct crypto_tfm *tfm)
 	INIT_LIST_HEAD(&ctx->rsp_queue);
 	ctx->auth_alg = QCE_HASH_LAST;
 	return 0;
+}
+
+static int _qcrypto_cipher_cra_init(struct crypto_tfm *tfm)
+{
+	struct crypto_alg *alg = tfm->__crt_alg;
+	struct qcrypto_alg *q_alg;
+	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+
+	q_alg = container_of(alg, struct qcrypto_alg, cipher_alg);
+	return _qcrypto_cipher_ctx_init(ctx, q_alg);
 };
 
 static int _qcrypto_ahash_cra_init(struct crypto_tfm *tfm)
@@ -933,36 +948,67 @@ static int _qcrypto_cra_aes_ablkcipher_init(struct crypto_tfm *tfm)
 	return _qcrypto_cra_ablkcipher_init(tfm);
 };
 
-static int _qcrypto_cra_aead_sha1_init(struct crypto_tfm *tfm)
+static int _qcrypto_aead_cra_init(struct crypto_aead *tfm)
+{
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
+	struct aead_alg *aeadalg = crypto_aead_alg(tfm);
+	struct qcrypto_alg *q_alg = container_of(aeadalg, struct qcrypto_alg,
+						aead_alg);
+	return _qcrypto_cipher_ctx_init(ctx, q_alg);
+};
+
+static int _qcrypto_cra_aead_sha1_init(struct crypto_aead *tfm)
 {
 	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
 	ctx->auth_alg = QCE_HASH_SHA1_HMAC;
 	return rc;
 }
 
-static int _qcrypto_cra_aead_sha256_init(struct crypto_tfm *tfm)
+static int _qcrypto_cra_aead_sha256_init(struct crypto_aead *tfm)
 {
 	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
 	ctx->auth_alg = QCE_HASH_SHA256_HMAC;
 	return rc;
 }
 
-static int _qcrypto_cra_aead_aes_sha1_init(struct crypto_tfm *tfm)
+static int _qcrypto_cra_aead_ccm_init(struct  crypto_aead *tfm)
 {
 	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
+
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
+	ctx->auth_alg =  QCE_HASH_AES_CMAC;
+	return rc;
+}
+
+static int _qcrypto_cra_aead_rfc4309_ccm_init(struct  crypto_aead *tfm)
+{
+	int rc;
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
+
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
+	ctx->auth_alg =  QCE_HASH_AES_CMAC;
+	return rc;
+}
+
+static int _qcrypto_cra_aead_aes_sha1_init(struct crypto_aead *tfm)
+{
+	int rc;
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 	struct crypto_priv *cp = &qcrypto_dev;
 
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
 	if (rc)
 		return rc;
 	ctx->cipher_aes192_fb = NULL;
@@ -986,14 +1032,14 @@ static int _qcrypto_cra_aead_aes_sha1_init(struct crypto_tfm *tfm)
 	return 0;
 }
 
-static int _qcrypto_cra_aead_aes_sha256_init(struct crypto_tfm *tfm)
+static int _qcrypto_cra_aead_aes_sha256_init(struct crypto_aead *tfm)
 {
 	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 	struct crypto_priv *cp = &qcrypto_dev;
 
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
+	crypto_aead_set_reqsize(tfm, sizeof(struct qcrypto_cipher_req_ctx));
+	rc = _qcrypto_aead_cra_init(tfm);
 	if (rc)
 		return rc;
 	ctx->cipher_aes192_fb = NULL;
@@ -1017,28 +1063,6 @@ static int _qcrypto_cra_aead_aes_sha256_init(struct crypto_tfm *tfm)
 	return 0;
 }
 
-static int _qcrypto_cra_aead_ccm_init(struct crypto_tfm *tfm)
-{
-	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
-
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
-	ctx->auth_alg =  QCE_HASH_AES_CMAC;
-	return rc;
-}
-
-static int _qcrypto_cra_aead_rfc4309_ccm_init(struct crypto_tfm *tfm)
-{
-	int rc;
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
-
-	tfm->crt_aead.reqsize = sizeof(struct qcrypto_cipher_req_ctx);
-	rc = _qcrypto_cipher_cra_init(tfm);
-	ctx->auth_alg =  QCE_HASH_AES_CMAC;
-	return rc;
-}
-
 static void _qcrypto_cra_ablkcipher_exit(struct crypto_tfm *tfm)
 {
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
@@ -1057,17 +1081,17 @@ static void _qcrypto_cra_aes_ablkcipher_exit(struct crypto_tfm *tfm)
 	ctx->cipher_aes192_fb = NULL;
 }
 
-static void _qcrypto_cra_aead_exit(struct crypto_tfm *tfm)
+static void _qcrypto_cra_aead_exit(struct crypto_aead *tfm)
 {
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 
 	if (!list_empty(&ctx->rsp_queue))
 		pr_err("_qcrypto__cra_aead_exit: requests still outstanding");
 }
 
-static void _qcrypto_cra_aead_aes_exit(struct crypto_tfm *tfm)
+static void _qcrypto_cra_aead_aes_exit(struct crypto_aead *tfm)
 {
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct qcrypto_cipher_ctx *ctx = crypto_aead_ctx(tfm);
 
 	if (!list_empty(&ctx->rsp_queue))
 		pr_err("_qcrypto__cra_aead_exit: requests still outstanding");
@@ -1300,6 +1324,8 @@ static void _qcrypto_remove_engine(struct crypto_engine *pengine)
 			crypto_unregister_alg(&q_alg->cipher_alg);
 		if (q_alg->alg_type == QCRYPTO_ALG_SHA)
 			crypto_unregister_ahash(&q_alg->sha_alg);
+		if (q_alg->alg_type == QCRYPTO_ALG_AEAD)
+			crypto_unregister_aead(&q_alg->aead_alg);
 		list_del(&q_alg->entry);
 		kzfree(q_alg);
 	}
@@ -1693,7 +1719,7 @@ static void _qce_ahash_complete(void *cookie, unsigned char *digest,
 	}
 
 #ifdef QCRYPTO_DEBUG
-	dev_info(&pengine->pdev->dev, "_qce_ahash_complete: %p ret %d\n",
+	dev_info(&pengine->pdev->dev, "_qce_ahash_complete: %pK ret %d\n",
 				areq, ret);
 #endif
 	if (digest) {
@@ -1752,7 +1778,7 @@ static void _qce_ablk_cipher_complete(void *cookie, unsigned char *icb,
 	}
 
 #ifdef QCRYPTO_DEBUG
-	dev_info(&pengine->pdev->dev, "_qce_ablk_cipher_complete: %p ret %d\n",
+	dev_info(&pengine->pdev->dev, "_qce_ablk_cipher_complete: %pK ret %d\n",
 				areq, ret);
 #endif
 	if (iv)
@@ -1786,7 +1812,6 @@ static void _qce_ablk_cipher_complete(void *cookie, unsigned char *icb,
 	req_done(pqcrypto_req_control);
 };
 
-
 static void _qce_aead_complete(void *cookie, unsigned char *icv,
 				unsigned char *iv, int ret)
 {
@@ -1794,7 +1819,6 @@ static void _qce_aead_complete(void *cookie, unsigned char *icv,
 	struct crypto_async_request *async_req;
 	struct crypto_aead *aead = crypto_aead_reqtfm(areq);
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(areq->base.tfm);
-	struct crypto_priv *cp = ctx->cp;
 	struct qcrypto_cipher_req_ctx *rctx;
 	struct crypto_stat *pstat;
 	struct crypto_engine *pengine;
@@ -1812,70 +1836,15 @@ static void _qce_aead_complete(void *cookie, unsigned char *icv,
 	}
 
 	if (rctx->mode == QCE_MODE_CCM) {
-		if (cp->ce_support.aligned_only)  {
-			struct qcrypto_cipher_req_ctx *rctx;
-			uint32_t bytes = 0;
-			uint32_t nbytes = 0;
-			uint32_t num_sg = 0;
-
-			rctx = aead_request_ctx(areq);
-			areq->src = rctx->orig_src;
-			areq->dst = rctx->orig_dst;
-			if (rctx->dir == QCE_ENCRYPT)
-				nbytes = areq->cryptlen +
-						crypto_aead_authsize(aead);
-			else
-				nbytes = areq->cryptlen -
-						crypto_aead_authsize(aead);
-			num_sg = qcrypto_count_sg(areq->dst, nbytes);
-			bytes = qcrypto_sg_copy_from_buffer(areq->dst, num_sg,
-					((char *)rctx->data + areq->assoclen),
-					nbytes);
-			if (bytes != nbytes)
-				pr_warn("bytes copied=0x%x bytes to copy= 0x%x",
-						bytes, nbytes);
-			kzfree(rctx->data);
-		}
-		kzfree(rctx->assoc);
-		areq->assoc = rctx->assoc_sg;
-		areq->assoclen = rctx->assoclen;
+		kzfree(rctx->adata);
 	} else {
 		uint32_t ivsize = crypto_aead_ivsize(aead);
-
-		/* for aead operations, other than aes(ccm) */
-		if (cp->ce_support.aligned_only)  {
-			struct qcrypto_cipher_req_ctx *rctx;
-			uint32_t bytes = 0;
-			uint32_t nbytes = 0;
-			uint32_t num_sg = 0;
-			uint32_t offset = areq->assoclen + ivsize;
-
-			rctx = aead_request_ctx(areq);
-			areq->src = rctx->orig_src;
-			areq->dst = rctx->orig_dst;
-
-			if (rctx->dir == QCE_ENCRYPT)
-				nbytes = areq->cryptlen;
-			else
-				nbytes = areq->cryptlen -
-						crypto_aead_authsize(aead);
-			num_sg = qcrypto_count_sg(areq->dst, nbytes);
-			bytes = qcrypto_sg_copy_from_buffer(
-					areq->dst,
-					num_sg,
-					(char *)rctx->data + offset,
-					nbytes);
-			if (bytes != nbytes)
-				pr_warn("bytes copied=0x%x bytes to copy= 0x%x",
-						bytes, nbytes);
-			kzfree(rctx->data);
-		}
 
 		if (ret == 0) {
 			if (rctx->dir  == QCE_ENCRYPT) {
 				/* copy the icv to dst */
 				scatterwalk_map_and_copy(icv, areq->dst,
-						areq->cryptlen,
+						areq->cryptlen + areq->assoclen,
 						ctx->authsize, 1);
 
 			} else {
@@ -1883,8 +1852,9 @@ static void _qce_aead_complete(void *cookie, unsigned char *icv,
 
 				/* compare icv from src */
 				scatterwalk_map_and_copy(tmp,
-					areq->src, areq->cryptlen -
-					ctx->authsize, ctx->authsize, 0);
+					areq->src, areq->assoclen +
+					areq->cryptlen - ctx->authsize,
+					ctx->authsize, 0);
 				ret = memcmp(icv, tmp, ctx->authsize);
 				if (ret != 0)
 					ret = -EBADMSG;
@@ -1948,26 +1918,12 @@ static int qccrypto_set_aead_ccm_nonce(struct qce_req *qreq)
 }
 
 static int qcrypto_aead_ccm_format_adata(struct qce_req *qreq, uint32_t alen,
-						struct scatterlist *sg)
+				struct scatterlist *sg, unsigned char *adata)
 {
-	unsigned char *adata;
 	uint32_t len;
 	uint32_t bytes = 0;
 	uint32_t num_sg = 0;
 
-	if (alen == 0) {
-		qreq->assoc = NULL;
-		qreq->assoclen = 0;
-		return 0;
-	}
-
-	qreq->assoc = kzalloc((alen + 0x64), GFP_ATOMIC);
-	if (!qreq->assoc) {
-		pr_err("qcrypto Memory allocation of adata FAIL, error %ld\n",
-				PTR_ERR(qreq->assoc));
-		return -ENOMEM;
-	}
-	adata = qreq->assoc;
 	/*
 	 * Add control info for associated data
 	 * RFC 3610 and NIST Special Publication 800-38C
@@ -2172,154 +2128,34 @@ static int _qcrypto_process_aead(struct  crypto_engine *pengine,
 		if (ret)
 			return ret;
 
-		/* Format Associated data    */
-		ret = qcrypto_aead_ccm_format_adata(&qreq,
-						req->assoclen,
-						req->assoc);
-		if (ret)
-			return ret;
-
-		if (pengine->pcp->ce_support.aligned_only) {
-			uint32_t bytes = 0;
-			uint32_t num_sg = 0;
-
-			rctx->orig_src = req->src;
-			rctx->orig_dst = req->dst;
-
-			if ((MAX_ALIGN_SIZE*2 > UINT_MAX - qreq.assoclen) ||
-				((MAX_ALIGN_SIZE*2 + qreq.assoclen) >
-						UINT_MAX - qreq.authsize) ||
-				((MAX_ALIGN_SIZE*2 + qreq.assoclen +
-						qreq.authsize) >
-						UINT_MAX - req->cryptlen)) {
-				pr_err("Integer overflow on aead req length.\n");
-				return -EINVAL;
-			}
-
-			rctx->data = kzalloc((req->cryptlen + qreq.assoclen +
-					qreq.authsize + MAX_ALIGN_SIZE*2),
-					GFP_ATOMIC);
-			if (rctx->data == NULL) {
-				pr_err("Mem Alloc fail rctx->data, err %ld\n",
-							PTR_ERR(rctx->data));
-				kzfree(qreq.assoc);
+		if (req->assoclen) {
+			rctx->adata = kzalloc((req->assoclen + 0x64),
+								GFP_ATOMIC);
+			if (!rctx->adata)
 				return -ENOMEM;
-			}
-			if (qreq.assoclen)
-				memcpy((char *)rctx->data, qreq.assoc,
-						 qreq.assoclen);
-
-			num_sg = qcrypto_count_sg(req->src, req->cryptlen);
-			bytes = qcrypto_sg_copy_to_buffer(req->src, num_sg,
-				rctx->data + qreq.assoclen , req->cryptlen);
-			if (bytes != req->cryptlen)
-				pr_warn("bytes copied=0x%x bytes to copy= 0x%x",
-							bytes, req->cryptlen);
-			sg_set_buf(&rctx->ssg, rctx->data, req->cryptlen +
-							qreq.assoclen);
-			sg_mark_end(&rctx->ssg);
-
-			if (qreq.dir == QCE_ENCRYPT)
-				sg_set_buf(&rctx->dsg, rctx->data,
-					qreq.assoclen + qreq.cryptlen +
-					ALIGN(qreq.authsize, 64));
-			else
-				sg_set_buf(&rctx->dsg, rctx->data,
-						qreq.assoclen + req->cryptlen +
-						qreq.authsize);
-			sg_mark_end(&rctx->dsg);
-
-			req->src = &rctx->ssg;
-			req->dst = &rctx->dsg;
+			/* Format Associated data    */
+			ret = qcrypto_aead_ccm_format_adata(&qreq,
+						req->assoclen,
+						req->src,
+						rctx->adata);
+		} else {
+			qreq.assoclen = 0;
+			rctx->adata = NULL;
 		}
-		/*
-		 * Save the original associated data
-		 * length and sg
-		 */
-		rctx->assoc_sg  = req->assoc;
-		rctx->assoclen  = req->assoclen;
-		rctx->assoc  = qreq.assoc;
+		if (ret) {
+			kzfree(rctx->adata);
+			return ret;
+		}
+
 		/*
 		 * update req with new formatted associated
 		 * data info
 		 */
-		req->assoc = &rctx->asg;
-		req->assoclen = qreq.assoclen;
-		sg_set_buf(req->assoc, qreq.assoc,
-					req->assoclen);
-		sg_mark_end(req->assoc);
-	} else {
-		/* for aead operations, other than aes(ccm) */
-		if (pengine->pcp->ce_support.aligned_only) {
-			uint32_t bytes = 0;
-			uint32_t num_sg = 0;
-
-			rctx->orig_src = req->src;
-			rctx->orig_dst = req->dst;
-			/*
-			 * The data area should be big enough to
-			 * include  assoicated data, ciphering data stream,
-			 * generated MAC, and CCM padding.
-			 */
-			if ((MAX_ALIGN_SIZE * 2 > UINT_MAX - req->assoclen) ||
-				((MAX_ALIGN_SIZE * 2 + req->assoclen) >
-						UINT_MAX - qreq.ivsize) ||
-				((MAX_ALIGN_SIZE * 2 + req->assoclen
-					+ qreq.ivsize)
-						> UINT_MAX - req->cryptlen)) {
-				pr_err("Integer overflow on aead req length.\n");
-				return -EINVAL;
-			}
-
-			rctx->data = kzalloc(
-					(req->cryptlen +
-						req->assoclen +
-						qreq.ivsize +
-						MAX_ALIGN_SIZE * 2),
-					GFP_ATOMIC);
-			if (rctx->data == NULL) {
-				pr_err("Mem Alloc fail rctx->data, err %ld\n",
-						PTR_ERR(rctx->data));
-				return -ENOMEM;
-			}
-
-			/* copy associated data */
-			num_sg = qcrypto_count_sg(req->assoc, req->assoclen);
-			bytes = qcrypto_sg_copy_to_buffer(
-				req->assoc, num_sg,
-				rctx->data, req->assoclen);
-
-			if (bytes != req->assoclen)
-				pr_warn("bytes copied=0x%x bytes to copy= 0x%x",
-						bytes, req->assoclen);
-
-			/* copy iv */
-			memcpy(rctx->data + req->assoclen, qreq.iv,
-				qreq.ivsize);
-
-			/* copy src */
-			num_sg = qcrypto_count_sg(req->src, req->cryptlen);
-			bytes = qcrypto_sg_copy_to_buffer(
-					req->src,
-					num_sg,
-					rctx->data + req->assoclen +
-						qreq.ivsize,
-					req->cryptlen);
-			if (bytes != req->cryptlen)
-				pr_warn("bytes copied=0x%x bytes to copy= 0x%x",
-						bytes, req->cryptlen);
-			sg_set_buf(&rctx->ssg, rctx->data,
-				req->cryptlen + req->assoclen
-					+ qreq.ivsize);
-			sg_mark_end(&rctx->ssg);
-
-			sg_set_buf(&rctx->dsg, rctx->data,
-				req->cryptlen + req->assoclen
-					+ qreq.ivsize);
-			sg_mark_end(&rctx->dsg);
-			req->src = &rctx->ssg;
-			req->dst = &rctx->dsg;
-		}
+		qreq.asg = &rctx->asg;
+		if (rctx->adata)
+			sg_set_buf(qreq.asg, rctx->adata,
+					qreq.assoclen);
+		sg_mark_end(qreq.asg);
 	}
 	ret =  qce_aead_req(pengine->qce, &qreq);
 
@@ -2636,7 +2472,7 @@ static int _qcrypto_enc_aes_ecb(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 					CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_ecb: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_ecb: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -2666,7 +2502,7 @@ static int _qcrypto_enc_aes_cbc(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 					CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_cbc: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_cbc: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -2696,7 +2532,7 @@ static int _qcrypto_enc_aes_ctr(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 				CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_ctr: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_enc_aes_ctr: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -2880,7 +2716,7 @@ static int _qcrypto_dec_aes_ecb(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 				CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_ecb: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_ecb: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -2910,7 +2746,7 @@ static int _qcrypto_dec_aes_cbc(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 				CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_cbc: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_cbc: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -2940,7 +2776,7 @@ static int _qcrypto_dec_aes_ctr(struct ablkcipher_request *req)
 	BUG_ON(crypto_tfm_alg_type(req->base.tfm) !=
 					CRYPTO_ALG_TYPE_ABLKCIPHER);
 #ifdef QCRYPTO_DEBUG
-	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_ctr: %p\n", req);
+	dev_info(&ctx->pengine->pdev->dev, "_qcrypto_dec_aes_ctr: %pK\n", req);
 #endif
 
 	if ((ctx->enc_key_len == AES_KEYSIZE_192) &&
@@ -3065,7 +2901,6 @@ static int _qcrypto_dec_aes_xts(struct ablkcipher_request *req)
 	return _qcrypto_queue_req(cp, ctx->pengine, &req->base);
 };
 
-
 static int _qcrypto_aead_decrypt_aes_ccm(struct aead_request *req)
 {
 	struct qcrypto_cipher_req_ctx *rctx;
@@ -3113,6 +2948,7 @@ static int _qcrypto_aead_rfc4309_dec_aes_ccm(struct aead_request *req)
 	pstat->aead_rfc4309_ccm_aes_dec++;
 	return _qcrypto_queue_req(cp, ctx->pengine, &req->base);
 }
+
 static int _qcrypto_aead_setauthsize(struct crypto_aead *authenc,
 				unsigned int authsize)
 {
@@ -3159,7 +2995,6 @@ static int _qcrypto_aead_rfc4309_ccm_setauthsize(struct crypto_aead *authenc,
 	ctx->authsize = authsize;
 	return 0;
 }
-
 
 static int _qcrypto_aead_setkey(struct crypto_aead *tfm, const u8 *key,
 			unsigned int keylen)
@@ -3270,7 +3105,6 @@ static void _qcrypto_aead_aes_192_fb_a_cb(struct qcrypto_cipher_req_ctx *rctx,
 		ahash_request_free(rctx->fb_hash_req);
 	rctx->fb_aes_req = NULL;
 	rctx->fb_hash_req = NULL;
-	kfree(rctx->fb_ahash_assoc_iv);
 	kfree(rctx->fb_aes_iv);
 	areq->complete(areq, res);
 }
@@ -3288,7 +3122,7 @@ static void _aead_aes_fb_stage2_ahash_complete(
 	/* copy icv */
 	if (err == 0)
 		scatterwalk_map_and_copy(rctx->fb_ahash_digest,
-					req->dst,
+					rctx->fb_aes_dst,
 					req->cryptlen,
 					ctx->authsize, 1);
 	_qcrypto_aead_aes_192_fb_a_cb(rctx, err);
@@ -3341,7 +3175,7 @@ static void _aead_aes_fb_stage1_ahash_complete(
 	if (err == 0) {
 		unsigned char tmp[ctx->authsize];
 
-		scatterwalk_map_and_copy(tmp, req->src,
+		scatterwalk_map_and_copy(tmp, rctx->fb_aes_src,
 			req->cryptlen - ctx->authsize, ctx->authsize, 0);
 		if (memcmp(rctx->fb_ahash_digest, tmp, ctx->authsize) != 0)
 			err = -EBADMSG;
@@ -3378,7 +3212,7 @@ static void _aead_aes_fb_stage1_encrypt_complete(
 	/* copy icv */
 	if (err == 0) {
 		scatterwalk_map_and_copy(rctx->fb_ahash_digest,
-					req->dst,
+					rctx->fb_aes_dst,
 					req->cryptlen,
 					ctx->authsize, 1);
 	}
@@ -3389,16 +3223,15 @@ static void _aead_aes_fb_stage1_encrypt_complete(
 static int _qcrypto_aead_aes_192_fallback(struct aead_request *req,
 							bool is_encrypt)
 {
+	int rc = -EINVAL;
 	struct qcrypto_cipher_req_ctx *rctx = aead_request_ctx(req);
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
 	struct crypto_aead *aead_tfm = crypto_aead_reqtfm(req);
 	struct ablkcipher_request *aes_req = NULL;
 	struct ahash_request *ahash_req = NULL;
-	int rc = -EINVAL;
 	int nbytes;
-	int num_sg;
+	struct scatterlist *src, *dst;
 
-	rctx->fb_ahash_assoc_iv = NULL;
 	rctx->fb_aes_iv = NULL;
 	aes_req = ablkcipher_request_alloc(ctx->cipher_aes192_fb, GFP_KERNEL);
 	if (!aes_req)
@@ -3409,32 +3242,19 @@ static int _qcrypto_aead_aes_192_fallback(struct aead_request *req,
 	rctx->fb_aes_req = aes_req;
 	rctx->fb_hash_req = ahash_req;
 	rctx->aead_req = req;
-	num_sg = qcrypto_count_sg(req->assoc, req->assoclen);
-	rctx->fb_ahash_assoc_iv = kzalloc(req->assoclen +
-				crypto_aead_ivsize(aead_tfm), GFP_ATOMIC);
-	if (!rctx->fb_ahash_assoc_iv)
-		goto ret;
-	if (req->assoclen)
-		qcrypto_sg_copy_to_buffer(req->assoc, num_sg,
-			rctx->fb_ahash_assoc_iv, req->assoclen);
-	memcpy(rctx->fb_ahash_assoc_iv + req->assoclen,
-			req->iv,  crypto_aead_ivsize(aead_tfm));
-	memset(rctx->fb_ahash_sg, 0, sizeof(rctx->fb_ahash_sg));
-	sg_set_buf(&rctx->fb_ahash_sg[0], rctx->fb_ahash_assoc_iv,
-				req->assoclen + crypto_aead_ivsize(aead_tfm));
-	sg_mark_end(&rctx->fb_ahash_sg[1]);
+	/* assoc and iv are sitting in the beginning of src sg list */
+	/* Similarly, assoc and iv are sitting in the beginning of dst list */
+	src = scatterwalk_ffwd(rctx->fb_ablkcipher_src_sg, req->src,
+				req->assoclen);
+	dst = scatterwalk_ffwd(rctx->fb_ablkcipher_dst_sg, req->dst,
+				req->assoclen);
 
 	nbytes = req->cryptlen;
-	if (is_encrypt) {
-		sg_chain(&rctx->fb_ahash_sg[0], 2, req->dst);
-	} else {
-		sg_chain(&rctx->fb_ahash_sg[0], 2, req->src);
+	if (!is_encrypt)
 		nbytes -=  ctx->authsize;
-	}
-	rctx->fb_ahash_length = nbytes + crypto_aead_ivsize(aead_tfm)
-							+ req->assoclen;
-	rctx->fb_aes_src = req->src;
-	rctx->fb_aes_dst = req->dst;
+	rctx->fb_ahash_length = nbytes +  req->assoclen;
+	rctx->fb_aes_src = src;
+	rctx->fb_aes_dst = dst;
 	rctx->fb_aes_cryptlen = nbytes;
 	rctx->ivsize = crypto_aead_ivsize(aead_tfm);
 	rctx->fb_aes_iv = kzalloc(rctx->ivsize, GFP_ATOMIC);
@@ -3444,7 +3264,12 @@ static int _qcrypto_aead_aes_192_fallback(struct aead_request *req,
 	ablkcipher_request_set_crypt(aes_req, rctx->fb_aes_src,
 					rctx->fb_aes_dst,
 					rctx->fb_aes_cryptlen, rctx->fb_aes_iv);
-	ahash_request_set_crypt(ahash_req, &rctx->fb_ahash_sg[0],
+	if (is_encrypt)
+		ahash_request_set_crypt(ahash_req, req->dst,
+					rctx->fb_ahash_digest,
+					rctx->fb_ahash_length);
+	else
+		ahash_request_set_crypt(ahash_req, req->src,
 					rctx->fb_ahash_digest,
 					rctx->fb_ahash_length);
 
@@ -3461,7 +3286,7 @@ static int _qcrypto_aead_aes_192_fallback(struct aead_request *req,
 			if (rc == 0) {
 				/* copy icv */
 				scatterwalk_map_and_copy(rctx->fb_ahash_digest,
-					req->dst,
+					dst,
 					req->cryptlen,
 					ctx->authsize, 1);
 			}
@@ -3481,7 +3306,7 @@ static int _qcrypto_aead_aes_192_fallback(struct aead_request *req,
 
 			/* compare icv */
 			scatterwalk_map_and_copy(tmp,
-				req->src, req->cryptlen - ctx->authsize,
+				src, req->cryptlen - ctx->authsize,
 				ctx->authsize, 0);
 			if (memcmp(rctx->fb_ahash_digest, tmp,
 							ctx->authsize) != 0)
@@ -3498,7 +3323,6 @@ ret:
 		ablkcipher_request_free(aes_req);
 	if (ahash_req)
 		ahash_request_free(ahash_req);
-	kfree(rctx->fb_ahash_assoc_iv);
 	kfree(rctx->fb_aes_iv);
 	return rc;
 }
@@ -3514,7 +3338,7 @@ static int _qcrypto_aead_encrypt_aes_cbc(struct aead_request *req)
 
 #ifdef QCRYPTO_DEBUG
 	dev_info(&ctx->pengine->pdev->dev,
-			 "_qcrypto_aead_encrypt_aes_cbc: %p\n", req);
+			 "_qcrypto_aead_encrypt_aes_cbc: %pK\n", req);
 #endif
 
 	rctx = aead_request_ctx(req);
@@ -3545,7 +3369,7 @@ static int _qcrypto_aead_decrypt_aes_cbc(struct aead_request *req)
 
 #ifdef QCRYPTO_DEBUG
 	dev_info(&ctx->pengine->pdev->dev,
-			 "_qcrypto_aead_decrypt_aes_cbc: %p\n", req);
+			 "_qcrypto_aead_decrypt_aes_cbc: %pK\n", req);
 #endif
 	rctx = aead_request_ctx(req);
 	rctx->aead = 1;
@@ -3566,41 +3390,6 @@ static int _qcrypto_aead_decrypt_aes_cbc(struct aead_request *req)
 	return _qcrypto_queue_req(cp, ctx->pengine, &req->base);
 }
 
-static int _qcrypto_aead_givencrypt_aes_cbc(struct aead_givcrypt_request *req)
-{
-	struct aead_request *areq = &req->areq;
-	struct crypto_aead *authenc = crypto_aead_reqtfm(areq);
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(areq->base.tfm);
-	struct crypto_priv *cp = ctx->cp;
-	struct qcrypto_cipher_req_ctx *rctx;
-	struct crypto_stat *pstat;
-
-	pstat = &_qcrypto_stat;
-
-	rctx = aead_request_ctx(areq);
-	rctx->aead = 1;
-	rctx->alg = CIPHER_ALG_AES;
-	rctx->dir = QCE_ENCRYPT;
-	rctx->mode = QCE_MODE_CBC;
-	rctx->iv = req->giv;	/* generated iv */
-	rctx->aead_req = areq;
-
-	memcpy(req->giv, ctx->iv, crypto_aead_ivsize(authenc));
-	 /* avoid consecutive packets going out with same IV */
-	*(__be64 *)req->giv ^= cpu_to_be64(req->seq);
-
-	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
-		pstat->aead_sha1_aes_enc++;
-	else
-		pstat->aead_sha256_aes_enc++;
-	if (ctx->enc_key_len == AES_KEYSIZE_192 &&  ctx->cipher_aes192_fb &&
-						ctx->ahash_aead_aes192_fb) {
-		areq->iv = req->giv;
-		return _qcrypto_aead_aes_192_fallback(areq, true);
-	}
-	return _qcrypto_queue_req(cp, ctx->pengine, &areq->base);
-}
-
 static int _qcrypto_aead_encrypt_des_cbc(struct aead_request *req)
 {
 	struct qcrypto_cipher_req_ctx *rctx;
@@ -3616,7 +3405,6 @@ static int _qcrypto_aead_encrypt_des_cbc(struct aead_request *req)
 	rctx->dir = QCE_ENCRYPT;
 	rctx->mode = QCE_MODE_CBC;
 	rctx->iv = req->iv;
-	rctx->aead_req = req;
 
 	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
 		pstat->aead_sha1_des_enc++;
@@ -3640,42 +3428,12 @@ static int _qcrypto_aead_decrypt_des_cbc(struct aead_request *req)
 	rctx->dir = QCE_DECRYPT;
 	rctx->mode = QCE_MODE_CBC;
 	rctx->iv = req->iv;
-	rctx->aead_req = req;
 
 	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
 		pstat->aead_sha1_des_dec++;
 	else
 		pstat->aead_sha256_des_dec++;
 	return _qcrypto_queue_req(cp, ctx->pengine, &req->base);
-}
-
-static int _qcrypto_aead_givencrypt_des_cbc(struct aead_givcrypt_request *req)
-{
-	struct aead_request *areq = &req->areq;
-	struct crypto_aead *authenc = crypto_aead_reqtfm(areq);
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(areq->base.tfm);
-	struct crypto_priv *cp = ctx->cp;
-	struct qcrypto_cipher_req_ctx *rctx;
-	struct crypto_stat *pstat;
-
-	pstat = &_qcrypto_stat;
-
-	rctx = aead_request_ctx(areq);
-	rctx->aead = 1;
-	rctx->alg = CIPHER_ALG_DES;
-	rctx->dir = QCE_ENCRYPT;
-	rctx->mode = QCE_MODE_CBC;
-	rctx->iv = req->giv;	/* generated iv */
-	rctx->aead_req = areq;
-
-	memcpy(req->giv, ctx->iv, crypto_aead_ivsize(authenc));
-	 /* avoid consecutive packets going out with same IV */
-	*(__be64 *)req->giv ^= cpu_to_be64(req->seq);
-	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
-		pstat->aead_sha1_des_enc++;
-	else
-		pstat->aead_sha256_des_enc++;
-	return _qcrypto_queue_req(cp, ctx->pengine, &areq->base);
 }
 
 static int _qcrypto_aead_encrypt_3des_cbc(struct aead_request *req)
@@ -3693,7 +3451,6 @@ static int _qcrypto_aead_encrypt_3des_cbc(struct aead_request *req)
 	rctx->dir = QCE_ENCRYPT;
 	rctx->mode = QCE_MODE_CBC;
 	rctx->iv = req->iv;
-	rctx->aead_req = req;
 
 	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
 		pstat->aead_sha1_3des_enc++;
@@ -3717,42 +3474,12 @@ static int _qcrypto_aead_decrypt_3des_cbc(struct aead_request *req)
 	rctx->dir = QCE_DECRYPT;
 	rctx->mode = QCE_MODE_CBC;
 	rctx->iv = req->iv;
-	rctx->aead_req = req;
 
 	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
 		pstat->aead_sha1_3des_dec++;
 	else
 		pstat->aead_sha256_3des_dec++;
 	return _qcrypto_queue_req(cp, ctx->pengine, &req->base);
-}
-
-static int _qcrypto_aead_givencrypt_3des_cbc(struct aead_givcrypt_request *req)
-{
-	struct aead_request *areq = &req->areq;
-	struct crypto_aead *authenc = crypto_aead_reqtfm(areq);
-	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(areq->base.tfm);
-	struct crypto_priv *cp = ctx->cp;
-	struct qcrypto_cipher_req_ctx *rctx;
-	struct crypto_stat *pstat;
-
-	pstat = &_qcrypto_stat;
-
-	rctx = aead_request_ctx(areq);
-	rctx->aead = 1;
-	rctx->alg = CIPHER_ALG_3DES;
-	rctx->dir = QCE_ENCRYPT;
-	rctx->mode = QCE_MODE_CBC;
-	rctx->iv = req->giv;	/* generated iv */
-	rctx->aead_req = areq;
-
-	memcpy(req->giv, ctx->iv, crypto_aead_ivsize(authenc));
-	 /* avoid consecutive packets going out with same IV */
-	*(__be64 *)req->giv ^= cpu_to_be64(req->seq);
-	if (ctx->auth_alg == QCE_HASH_SHA1_HMAC)
-		pstat->aead_sha1_3des_enc++;
-	else
-		pstat->aead_sha256_3des_enc++;
-	return _qcrypto_queue_req(cp, ctx->pengine, &areq->base);
 }
 
 static int _sha_init(struct ahash_request *req)
@@ -4018,11 +3745,7 @@ static int _sha_update(struct ahash_request  *req, uint32_t sha_block_size)
 		if ((len + sg_last->length) > nbytes)
 			break;
 		len += sg_last->length;
-		sg_last = scatterwalk_sg_next(sg_last);
-		if (NULL == sg_last) {
-			pr_err("qcrypto.c: _sha_update, sg_last = NULL");
-			break;
-		}
+		sg_last = sg_next(sg_last);
 	}
 	if (rctx->trailing_buf_len) {
 		if (cp->ce_support.aligned_only)  {
@@ -4044,10 +3767,7 @@ static int _sha_update(struct ahash_request  *req, uint32_t sha_block_size)
 			req->src = rctx->sg;
 			sg_mark_end(&rctx->sg[0]);
 		} else {
-			if (sg_last)
-				sg_mark_end(sg_last);
-			else
-				pr_err("qcrypto: _sha_update, sg_last= NULL");
+			sg_mark_end(sg_last);
 			memset(rctx->sg, 0, sizeof(rctx->sg));
 			sg_set_buf(&rctx->sg[0], staging,
 						rctx->trailing_buf_len);
@@ -4056,10 +3776,7 @@ static int _sha_update(struct ahash_request  *req, uint32_t sha_block_size)
 			req->src = rctx->sg;
 		}
 	} else
-		if (sg_last)
-			sg_mark_end(sg_last);
-		else
-			pr_err("qcrypto.c: _sha_update, sg_last = NULL");
+		sg_mark_end(sg_last);
 
 	req->nbytes = nbytes;
 	rctx->trailing_buf_len = trailing_buf_len;
@@ -4975,213 +4692,174 @@ static struct crypto_alg _qcrypto_ablk_cipher_xts_algo = {
 	},
 };
 
-static struct crypto_alg _qcrypto_aead_sha1_hmac_algos[] = {
+static struct aead_alg _qcrypto_aead_sha1_hmac_algos[] = {
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha1),cbc(aes))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha1-cbc-aes",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = AES_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_aes_sha1_init,
-		.cra_exit	= _qcrypto_cra_aead_aes_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = AES_BLOCK_SIZE,
 				.maxauthsize    = SHA1_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_aes_cbc,
 				.decrypt = _qcrypto_aead_decrypt_aes_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_aes_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_aes_sha1_init,
+		.exit	= _qcrypto_cra_aead_aes_exit,
 	},
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha1),cbc(des))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha1-cbc-des",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = DES_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_sha1_init,
-		.cra_exit	= _qcrypto_cra_aead_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = DES_BLOCK_SIZE,
 				.maxauthsize    = SHA1_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_des_cbc,
 				.decrypt = _qcrypto_aead_decrypt_des_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_des_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_sha1_init,
+		.exit	= _qcrypto_cra_aead_exit,
 	},
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha1),cbc(des3_ede))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha1-cbc-3des",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = DES3_EDE_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_sha1_init,
-		.cra_exit	= _qcrypto_cra_aead_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = DES3_EDE_BLOCK_SIZE,
 				.maxauthsize    = SHA1_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_3des_cbc,
 				.decrypt = _qcrypto_aead_decrypt_3des_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_3des_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_sha1_init,
+		.exit	= _qcrypto_cra_aead_exit,
 	},
 };
 
-static struct crypto_alg _qcrypto_aead_sha256_hmac_algos[] = {
+static struct aead_alg _qcrypto_aead_sha256_hmac_algos[] = {
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha256),cbc(aes))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha256-cbc-aes",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = AES_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_aes_sha256_init,
-		.cra_exit	= _qcrypto_cra_aead_aes_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = AES_BLOCK_SIZE,
 				.maxauthsize    = SHA256_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_aes_cbc,
 				.decrypt = _qcrypto_aead_decrypt_aes_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_aes_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_aes_sha256_init,
+		.exit	= _qcrypto_cra_aead_aes_exit,
 	},
 
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha256),cbc(des))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha256-cbc-des",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = DES_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_sha256_init,
-		.cra_exit	= _qcrypto_cra_aead_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = DES_BLOCK_SIZE,
 				.maxauthsize    = SHA256_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_des_cbc,
 				.decrypt = _qcrypto_aead_decrypt_des_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_des_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_sha256_init,
+		.exit	= _qcrypto_cra_aead_exit,
 	},
 	{
+		.base = {
 		.cra_name	= "authenc(hmac(sha256),cbc(des3_ede))",
 		.cra_driver_name = "qcrypto-aead-hmac-sha256-cbc-3des",
 		.cra_priority	= 300,
-		.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
+			.cra_flags	= CRYPTO_ALG_ASYNC,
 		.cra_blocksize  = DES3_EDE_BLOCK_SIZE,
 		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
 		.cra_alignmask	= 0,
-		.cra_type	= &crypto_aead_type,
 		.cra_module	= THIS_MODULE,
-		.cra_init	= _qcrypto_cra_aead_sha256_init,
-		.cra_exit	= _qcrypto_cra_aead_exit,
-		.cra_u		= {
-			.aead = {
+		},
 				.ivsize         = DES3_EDE_BLOCK_SIZE,
 				.maxauthsize    = SHA256_DIGEST_SIZE,
 				.setkey = _qcrypto_aead_setkey,
 				.setauthsize = _qcrypto_aead_setauthsize,
 				.encrypt = _qcrypto_aead_encrypt_3des_cbc,
 				.decrypt = _qcrypto_aead_decrypt_3des_cbc,
-				.givencrypt = _qcrypto_aead_givencrypt_3des_cbc,
-				.geniv = "<built-in>",
-			}
-		}
+		.init	= _qcrypto_cra_aead_sha256_init,
+		.exit	= _qcrypto_cra_aead_exit,
 	},
 };
 
-static struct crypto_alg _qcrypto_aead_ccm_algo = {
-	.cra_name	= "ccm(aes)",
-	.cra_driver_name = "qcrypto-aes-ccm",
-	.cra_priority	= 300,
-	.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
-	.cra_blocksize  = AES_BLOCK_SIZE,
-	.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
-	.cra_alignmask	= 0,
-	.cra_type	= &crypto_aead_type,
-	.cra_module	= THIS_MODULE,
-	.cra_init	= _qcrypto_cra_aead_ccm_init,
-	.cra_exit	= _qcrypto_cra_aead_exit,
-	.cra_u		= {
-		.aead = {
-			.ivsize         = AES_BLOCK_SIZE,
-			.maxauthsize    = AES_BLOCK_SIZE,
-			.setkey = _qcrypto_aead_ccm_setkey,
-			.setauthsize = _qcrypto_aead_ccm_setauthsize,
-			.encrypt = _qcrypto_aead_encrypt_aes_ccm,
-			.decrypt = _qcrypto_aead_decrypt_aes_ccm,
-			.geniv = "<built-in>",
-		}
-	}
+static struct aead_alg _qcrypto_aead_ccm_algo = {
+	.base = {
+		.cra_name	= "ccm(aes)",
+		.cra_driver_name = "qcrypto-aes-ccm",
+		.cra_priority	= 300,
+		.cra_flags	= CRYPTO_ALG_ASYNC,
+		.cra_blocksize  = AES_BLOCK_SIZE,
+		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
+		.cra_alignmask	= 0,
+		.cra_module	= THIS_MODULE,
+	},
+	.ivsize         = AES_BLOCK_SIZE,
+	.maxauthsize    = AES_BLOCK_SIZE,
+	.setkey = _qcrypto_aead_ccm_setkey,
+	.setauthsize = _qcrypto_aead_ccm_setauthsize,
+	.encrypt = _qcrypto_aead_encrypt_aes_ccm,
+	.decrypt = _qcrypto_aead_decrypt_aes_ccm,
+	.init	= _qcrypto_cra_aead_ccm_init,
+	.exit	= _qcrypto_cra_aead_exit,
 };
 
-static struct crypto_alg _qcrypto_aead_rfc4309_ccm_algo = {
-	.cra_name	= "rfc4309(ccm(aes))",
-	.cra_driver_name = "qcrypto-rfc4309-aes-ccm",
-	.cra_priority	= 300,
-	.cra_flags	= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC,
-	.cra_blocksize  = 1,
-	.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
-	.cra_alignmask	= 0,
-	.cra_type	= &crypto_nivaead_type,
-	.cra_module	= THIS_MODULE,
-	.cra_init	= _qcrypto_cra_aead_rfc4309_ccm_init,
-	.cra_exit	= _qcrypto_cra_aead_exit,
-	.cra_u		= {
-		.aead = {
-			.ivsize         = 8,
-			.maxauthsize    = 16,
-			.setkey = _qcrypto_aead_rfc4309_ccm_setkey,
-			.setauthsize = _qcrypto_aead_rfc4309_ccm_setauthsize,
-			.encrypt = _qcrypto_aead_rfc4309_enc_aes_ccm,
-			.decrypt = _qcrypto_aead_rfc4309_dec_aes_ccm,
-			.geniv = "seqiv",
-		}
-	}
+static struct aead_alg _qcrypto_aead_rfc4309_ccm_algo = {
+	.base = {
+		.cra_name	= "rfc4309(ccm(aes))",
+		.cra_driver_name = "qcrypto-rfc4309-aes-ccm",
+		.cra_priority	= 300,
+		.cra_flags	= CRYPTO_ALG_ASYNC,
+		.cra_blocksize  = 1,
+		.cra_ctxsize	= sizeof(struct qcrypto_cipher_ctx),
+		.cra_alignmask	= 0,
+		.cra_module	= THIS_MODULE,
+	},
+	.ivsize         = 8,
+	.maxauthsize    = 16,
+	.setkey = _qcrypto_aead_rfc4309_ccm_setkey,
+	.setauthsize = _qcrypto_aead_rfc4309_ccm_setauthsize,
+	.encrypt = _qcrypto_aead_rfc4309_enc_aes_ccm,
+	.decrypt = _qcrypto_aead_rfc4309_dec_aes_ccm,
+	.init	= _qcrypto_cra_aead_rfc4309_ccm_init,
+	.exit	= _qcrypto_cra_aead_exit,
 };
-
 
 static int  _qcrypto_probe(struct platform_device *pdev)
 {
@@ -5413,7 +5091,7 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 									i++) {
 			struct qcrypto_alg *q_alg;
 
-			q_alg = _qcrypto_cipher_alg_alloc(cp,
+			q_alg = _qcrypto_aead_alg_alloc(cp,
 					&_qcrypto_aead_sha1_hmac_algos[i]);
 			if (IS_ERR(q_alg)) {
 				rc = PTR_ERR(q_alg);
@@ -5421,26 +5099,26 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 			}
 			if (cp->ce_support.use_sw_aead_algo) {
 				rc = _qcrypto_prefix_alg_cra_name(
-					q_alg->cipher_alg.cra_name,
-					strlen(q_alg->cipher_alg.cra_name));
+					q_alg->aead_alg.base.cra_name,
+					strlen(q_alg->aead_alg.base.cra_name));
 				if (rc) {
 					dev_err(&pdev->dev,
 						"The algorithm name %s is too long.\n",
-						q_alg->cipher_alg.cra_name);
+						q_alg->aead_alg.base.cra_name);
 					kfree(q_alg);
 					goto err;
 				}
 			}
-			rc = crypto_register_alg(&q_alg->cipher_alg);
+			rc = crypto_register_aead(&q_alg->aead_alg);
 			if (rc) {
 				dev_err(&pdev->dev,
 					"%s alg registration failed\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 				kfree(q_alg);
 			} else {
 				list_add_tail(&q_alg->entry, &cp->alg_list);
 				dev_info(&pdev->dev, "%s\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 			}
 		}
 	}
@@ -5451,7 +5129,7 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 									i++) {
 			struct qcrypto_alg *q_alg;
 
-			q_alg = _qcrypto_cipher_alg_alloc(cp,
+			q_alg = _qcrypto_aead_alg_alloc(cp,
 					&_qcrypto_aead_sha256_hmac_algos[i]);
 			if (IS_ERR(q_alg)) {
 				rc = PTR_ERR(q_alg);
@@ -5459,26 +5137,26 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 			}
 			if (cp->ce_support.use_sw_aead_algo) {
 				rc = _qcrypto_prefix_alg_cra_name(
-					q_alg->cipher_alg.cra_name,
-					strlen(q_alg->cipher_alg.cra_name));
+					q_alg->aead_alg.base.cra_name,
+					strlen(q_alg->aead_alg.base.cra_name));
 				if (rc) {
 					dev_err(&pdev->dev,
 						"The algorithm name %s is too long.\n",
-						q_alg->cipher_alg.cra_name);
+						q_alg->aead_alg.base.cra_name);
 					kfree(q_alg);
 					goto err;
 				}
 			}
-			rc = crypto_register_alg(&q_alg->cipher_alg);
+			rc = crypto_register_aead(&q_alg->aead_alg);
 			if (rc) {
 				dev_err(&pdev->dev,
 					"%s alg registration failed\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 				kfree(q_alg);
 			} else {
 				list_add_tail(&q_alg->entry, &cp->alg_list);
 				dev_info(&pdev->dev, "%s\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 			}
 		}
 	}
@@ -5528,35 +5206,35 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	if (cp->ce_support.aes_ccm) {
 		struct qcrypto_alg *q_alg;
 
-		q_alg = _qcrypto_cipher_alg_alloc(cp, &_qcrypto_aead_ccm_algo);
+		q_alg = _qcrypto_aead_alg_alloc(cp, &_qcrypto_aead_ccm_algo);
 		if (IS_ERR(q_alg)) {
 			rc = PTR_ERR(q_alg);
 			goto err;
 		}
 		if (cp->ce_support.use_sw_aes_ccm_algo) {
 			rc = _qcrypto_prefix_alg_cra_name(
-					q_alg->cipher_alg.cra_name,
-					strlen(q_alg->cipher_alg.cra_name));
+					q_alg->aead_alg.base.cra_name,
+					strlen(q_alg->aead_alg.base.cra_name));
 			if (rc) {
 				dev_err(&pdev->dev,
 						"The algorithm name %s is too long.\n",
-						q_alg->cipher_alg.cra_name);
+						q_alg->aead_alg.base.cra_name);
 				kfree(q_alg);
 				goto err;
 			}
 		}
-		rc = crypto_register_alg(&q_alg->cipher_alg);
+		rc = crypto_register_aead(&q_alg->aead_alg);
 		if (rc) {
 			dev_err(&pdev->dev, "%s alg registration failed\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 			kzfree(q_alg);
 		} else {
 			list_add_tail(&q_alg->entry, &cp->alg_list);
 			dev_info(&pdev->dev, "%s\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 		}
 
-		q_alg = _qcrypto_cipher_alg_alloc(cp,
+		q_alg = _qcrypto_aead_alg_alloc(cp,
 					&_qcrypto_aead_rfc4309_ccm_algo);
 		if (IS_ERR(q_alg)) {
 			rc = PTR_ERR(q_alg);
@@ -5565,28 +5243,27 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 
 		if (cp->ce_support.use_sw_aes_ccm_algo) {
 			rc = _qcrypto_prefix_alg_cra_name(
-					q_alg->cipher_alg.cra_name,
-					strlen(q_alg->cipher_alg.cra_name));
+					q_alg->aead_alg.base.cra_name,
+					strlen(q_alg->aead_alg.base.cra_name));
 			if (rc) {
 				dev_err(&pdev->dev,
 						"The algorithm name %s is too long.\n",
-						q_alg->cipher_alg.cra_name);
+						q_alg->aead_alg.base.cra_name);
 				kfree(q_alg);
 				goto err;
 			}
 		}
-		rc = crypto_register_alg(&q_alg->cipher_alg);
+		rc = crypto_register_aead(&q_alg->aead_alg);
 		if (rc) {
 			dev_err(&pdev->dev, "%s alg registration failed\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 			kfree(q_alg);
 		} else {
 			list_add_tail(&q_alg->entry, &cp->alg_list);
 			dev_info(&pdev->dev, "%s\n",
-					q_alg->cipher_alg.cra_driver_name);
+					q_alg->aead_alg.base.cra_driver_name);
 		}
 	}
-
 	mutex_unlock(&cp->engine_lock);
 
 

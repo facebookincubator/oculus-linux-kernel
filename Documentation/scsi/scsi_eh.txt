@@ -172,7 +172,7 @@ ways.
 
  - eh_strategy_handler() callback
 	This is one big callback which should perform whole error
-	handling.  As such, it should do all choirs SCSI midlayer
+	handling.  As such, it should do all chores the SCSI midlayer
 	performs during recovery.  This will be discussed in [2-2].
 
  Once recovery is complete, SCSI EH resumes normal operation by
@@ -263,19 +263,23 @@ scmd->allowed.
 
  3. scmd recovered
     ACTION: scsi_eh_finish_cmd() is invoked to EH-finish scmd
-	- shost->host_failed--
 	- clear scmd->eh_eflags
 	- scsi_setup_cmd_retry()
 	- move from local eh_work_q to local eh_done_q
     LOCKING: none
+    CONCURRENCY: at most one thread per separate eh_work_q to
+		 keep queue manipulation lockless
 
  4. EH completes
     ACTION: scsi_eh_flush_done_q() retries scmds or notifies upper
-	    layer of failure.
+	    layer of failure. May be called concurrently but must have
+	    a no more than one thread per separate eh_work_q to
+	    manipulate the queue locklessly
 	- scmd is removed from eh_done_q and scmd->eh_entry is cleared
 	- if retry is necessary, scmd is requeued using
           scsi_queue_insert()
 	- otherwise, scsi_finish_command() is invoked for scmd
+	- zero shost->host_failed
     LOCKING: queue or finish function performs appropriate locking
 
 
@@ -428,7 +432,7 @@ scmd->allowed.
 scsi_unjam_host() and it is responsible for whole recovery process.
 On completion, the handler should have made lower layers forget about
 all failed scmds and either ready for new commands or offline.  Also,
-it should perform SCSI EH maintenance choirs to maintain integrity of
+it should perform SCSI EH maintenance chores to maintain integrity of
 SCSI midlayer.  IOW, of the steps described in [2-1-2], all steps
 except for #1 must be implemented by eh_strategy_handler().
 

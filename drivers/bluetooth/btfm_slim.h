@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,12 +13,12 @@
 #define BTFM_SLIM_H
 #include <linux/slimbus/slimbus.h>
 
-#define BTFMSLIM_DBG(fmt, arg...)  pr_debug("%s: " fmt "\n" , __func__ , ## arg)
-#define BTFMSLIM_INFO(fmt, arg...) pr_info("%s: " fmt "\n" , __func__ , ## arg)
-#define BTFMSLIM_ERR(fmt, arg...)  pr_err("%s: " fmt "\n" , __func__ , ## arg)
+#define BTFMSLIM_DBG(fmt, arg...)  pr_debug("%s: " fmt "\n", __func__, ## arg)
+#define BTFMSLIM_INFO(fmt, arg...) pr_info("%s: " fmt "\n", __func__, ## arg)
+#define BTFMSLIM_ERR(fmt, arg...)  pr_err("%s: " fmt "\n", __func__, ## arg)
 
 /* Vendor specific defines
- This should redefines in slimbus slave specific header
+ * This should redefines in slimbus slave specific header
 */
 #define SLIM_SLAVE_COMPATIBLE_STR	"btfmslim_slave"
 #define SLIM_SLAVE_REG_OFFSET		0x0000
@@ -39,7 +39,7 @@
 enum {
 	BTFM_FM_SLIM_TX = 0,
 	BTFM_BT_SCO_SLIM_TX,
-	BTFM_BT_SCO_SLIM_RX,
+	BTFM_BT_SCO_A2DP_SLIM_RX,
 	BTFM_BT_SPLIT_A2DP_SLIM_RX,
 	BTFM_SLIM_NUM_CODEC_DAIS
 };
@@ -68,6 +68,7 @@ struct btfmslim {
 
 	uint32_t num_rx_port;
 	uint32_t num_tx_port;
+	uint32_t sample_rate;
 
 	struct btfmslim_ch *rx_chs;
 	struct btfmslim_ch *tx_chs;

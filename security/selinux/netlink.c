@@ -21,7 +21,6 @@
 #include <net/netlink.h>
 
 #include "security.h"
-#include "avc.h"
 
 static struct sock *selnl;
 

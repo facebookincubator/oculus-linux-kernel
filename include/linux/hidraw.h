@@ -23,6 +23,7 @@ struct hidraw {
 	wait_queue_head_t wait;
 	struct hid_device *hid;
 	struct device *dev;
+	spinlock_t list_lock;
 	struct list_head list;
 };
 
@@ -39,8 +40,6 @@ struct hidraw_list {
 	struct hidraw *hidraw;
 	struct list_head node;
 	struct mutex read_mutex;
-	struct rcu_head rcu;
-	spinlock_t queue_lock;
 };
 
 #ifdef CONFIG_HIDRAW

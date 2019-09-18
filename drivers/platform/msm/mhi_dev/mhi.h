@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -18,8 +18,10 @@
 #include <linux/ipc_logging.h>
 #include <linux/dma-mapping.h>
 
-/* MHI control data structures alloted by the host, including
- * channel context array, event context array, command context and rings */
+/**
+ * MHI control data structures alloted by the host, including
+ * channel context array, event context array, command context and rings.
+ */
 
 /* Channel context state */
 enum mhi_dev_ch_ctx_state {
@@ -645,7 +647,7 @@ int mhi_dev_close_channel(struct mhi_dev_client *handle_client);
  * @buf: Pointer to the buffer used by the MHI core to copy the data received
  *	 from the Host.
  * @buf_size: Size of the buffer pointer.
- * @chain : Indicate if the recieved data is part of chained packet.
+ * @chain : Indicate if the received data is part of chained packet.
  */
 int mhi_dev_read_channel(struct mhi_dev_client *handle_client,
 				void *buf, uint32_t buf_size, uint32_t *chain);
@@ -690,7 +692,7 @@ void mhi_ring_init(struct mhi_dev_ring *ring,
  * mhi_ring_start() - Fetches the respective transfer ring's context from
  *		the host and updates the write offset.
  * @ring:	Ring for the respective context - Channel/Event/Command.
- * @ctx:	Tranfer ring of type mhi_dev_ring_ctx.
+ * @ctx:	Transfer ring of type mhi_dev_ring_ctx.
  * @dev:	MHI device structure.
  */
 int mhi_ring_start(struct mhi_dev_ring *ring,
@@ -938,7 +940,7 @@ int mhi_dev_mmio_read_chdb_status_interrupts(struct mhi_dev *dev);
 int mhi_dev_mmio_enable_erdb_interrupts(struct mhi_dev *dev);
 
 /**
- mhi_dev_mmio_mask_erdb_interrupts() - Mask all Event doorbell
+ * mhi_dev_mmio_mask_erdb_interrupts() - Mask all Event doorbell
  *		interrupts.
  * @dev:	MHI device structure.
  */

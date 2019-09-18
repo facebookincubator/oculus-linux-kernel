@@ -209,8 +209,6 @@ static int ks8995_reset(struct ks8995_switch *ks)
 	return ks8995_start(ks);
 }
 
-/* ------------------------------------------------------------------------ */
-
 static ssize_t ks8995_registers_read(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *bin_attr, char *buf, loff_t off, size_t count)
 {
@@ -220,18 +218,8 @@ static ssize_t ks8995_registers_read(struct file *filp, struct kobject *kobj,
 	dev = container_of(kobj, struct device, kobj);
 	ks8995 = dev_get_drvdata(dev);
 
-	if (unlikely(off > ks8995->regs_attr.size))
-		return 0;
-
-	if ((off + count) > ks8995->regs_attr.size)
-		count = ks8995->regs_attr.size - off;
-
-	if (unlikely(!count))
-		return count;
-
 	return ks8995_read(ks8995, buf, off, count);
 }
-
 
 static ssize_t ks8995_registers_write(struct file *filp, struct kobject *kobj,
 	struct bin_attribute *bin_attr, char *buf, loff_t off, size_t count)
@@ -242,18 +230,8 @@ static ssize_t ks8995_registers_write(struct file *filp, struct kobject *kobj,
 	dev = container_of(kobj, struct device, kobj);
 	ks8995 = dev_get_drvdata(dev);
 
-	if (unlikely(off >= ks8995->regs_attr.size))
-		return -EFBIG;
-
-	if ((off + count) > ks8995->regs_attr.size)
-		count = ks8995->regs_attr.size - off;
-
-	if (unlikely(!count))
-		return count;
-
 	return ks8995_write(ks8995, buf, off, count);
 }
-
 
 static const struct bin_attribute ks8995_registers_attr = {
 	.attr = {
@@ -353,7 +331,9 @@ static int ks8995_probe(struct spi_device *spi)
 
 static int ks8995_remove(struct spi_device *spi)
 {
-	sysfs_remove_bin_file(&spi->dev.kobj, &ks8995_registers_attr);
+	struct ks8995_switch *ks = spi_get_drvdata(spi);
+
+	sysfs_remove_bin_file(&spi->dev.kobj, &ks->regs_attr);
 
 	return 0;
 }
@@ -363,7 +343,6 @@ static int ks8995_remove(struct spi_device *spi)
 static struct spi_driver ks8995_driver = {
 	.driver = {
 		.name	    = "spi-ks8995",
-		.owner	   = THIS_MODULE,
 	},
 	.probe	  = ks8995_probe,
 	.remove	  = ks8995_remove,

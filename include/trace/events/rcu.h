@@ -36,7 +36,7 @@ TRACE_EVENT(rcu_utilization,
 
 #ifdef CONFIG_RCU_TRACE
 
-#if defined(CONFIG_TREE_RCU) || defined(CONFIG_TREE_PREEMPT_RCU)
+#if defined(CONFIG_TREE_RCU) || defined(CONFIG_PREEMPT_RCU)
 
 /*
  * Tracepoint for grace-period events.  Takes a string identifying the
@@ -345,7 +345,7 @@ TRACE_EVENT(rcu_fqs,
 		  __entry->cpu, __entry->qsevent)
 );
 
-#endif /* #if defined(CONFIG_TREE_RCU) || defined(CONFIG_TREE_PREEMPT_RCU) */
+#endif /* #if defined(CONFIG_TREE_RCU) || defined(CONFIG_PREEMPT_RCU) */
 
 /*
  * Tracepoint for dyntick-idle entry/exit events.  These take a string
@@ -661,7 +661,6 @@ TRACE_EVENT(rcu_torture_read,
  * Tracepoint for _rcu_barrier() execution.  The string "s" describes
  * the _rcu_barrier phase:
  *	"Begin": _rcu_barrier() started.
- *	"Check": _rcu_barrier() checking for piggybacking.
  *	"EarlyExit": _rcu_barrier() piggybacked, thus early exit.
  *	"Inc1": _rcu_barrier() piggyback check counter incremented.
  *	"OfflineNoCB": _rcu_barrier() found callback on never-online CPU

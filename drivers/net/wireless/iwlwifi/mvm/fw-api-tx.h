@@ -124,6 +124,18 @@ enum iwl_tx_flags {
 	TX_CMD_FLG_HCCA_CHUNK		= BIT(31)
 }; /* TX_FLAGS_BITS_API_S_VER_1 */
 
+/**
+ * enum iwl_tx_pm_timeouts - pm timeout values in TX command
+ * @PM_FRAME_NONE: no need to suspend sleep mode
+ * @PM_FRAME_MGMT: fw suspend sleep mode for 100TU
+ * @PM_FRAME_ASSOC: fw suspend sleep mode for 10sec
+ */
+enum iwl_tx_pm_timeouts {
+	PM_FRAME_NONE		= 0,
+	PM_FRAME_MGMT		= 2,
+	PM_FRAME_ASSOC		= 3,
+};
+
 /*
  * TX command security control
  */
@@ -591,5 +603,44 @@ static inline u32 iwl_mvm_get_scd_ssn(struct iwl_mvm_tx_resp *tx_resp)
 	return le32_to_cpup((__le32 *)&tx_resp->status +
 			    tx_resp->frame_count) & 0xfff;
 }
+
+/**
+ * struct iwl_scd_txq_cfg_cmd - New txq hw scheduler config command
+ * @token:
+ * @sta_id: station id
+ * @tid:
+ * @scd_queue: scheduler queue to confiug
+ * @enable: 1 queue enable, 0 queue disable
+ * @aggregate: 1 aggregated queue, 0 otherwise
+ * @tx_fifo: %enum iwl_mvm_tx_fifo
+ * @window: BA window size
+ * @ssn: SSN for the BA agreement
+ */
+struct iwl_scd_txq_cfg_cmd {
+	u8 token;
+	u8 sta_id;
+	u8 tid;
+	u8 scd_queue;
+	u8 enable;
+	u8 aggregate;
+	u8 tx_fifo;
+	u8 window;
+	__le16 ssn;
+	__le16 reserved;
+} __packed; /* SCD_QUEUE_CFG_CMD_API_S_VER_1 */
+
+/**
+ * struct iwl_scd_txq_cfg_rsp
+ * @token: taken from the command
+ * @sta_id: station id from the command
+ * @tid: tid from the command
+ * @scd_queue: scd_queue from the command
+ */
+struct iwl_scd_txq_cfg_rsp {
+	u8 token;
+	u8 sta_id;
+	u8 tid;
+	u8 scd_queue;
+} __packed; /* SCD_QUEUE_CFG_RSP_API_S_VER_1 */
 
 #endif /* __fw_api_tx_h__ */

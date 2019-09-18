@@ -114,16 +114,11 @@ static void arcmsr_hardware_reset(struct AdapterControlBlock *acb);
 static const char *arcmsr_info(struct Scsi_Host *);
 static irqreturn_t arcmsr_interrupt(struct AdapterControlBlock *acb);
 static void arcmsr_free_irq(struct pci_dev *, struct AdapterControlBlock *);
-static int arcmsr_adjust_disk_queue_depth(struct scsi_device *sdev,
-					  int queue_depth, int reason)
+static int arcmsr_adjust_disk_queue_depth(struct scsi_device *sdev, int queue_depth)
 {
-	if (reason != SCSI_QDEPTH_DEFAULT)
-		return -EOPNOTSUPP;
-
 	if (queue_depth > ARCMSR_MAX_CMD_PERLUN)
 		queue_depth = ARCMSR_MAX_CMD_PERLUN;
-	scsi_adjust_queue_depth(sdev, MSG_ORDERED_TAG, queue_depth);
-	return queue_depth;
+	return scsi_change_queue_depth(sdev, queue_depth);
 }
 
 static struct scsi_host_template arcmsr_scsi_host_template = {
@@ -264,10 +259,7 @@ static bool arcmsr_remap_pciregion(struct AdapterControlBlock *acb)
 		addr = (unsigned long)pci_resource_start(pdev, 0);
 		range = pci_resource_len(pdev, 0);
 		flags = pci_resource_flags(pdev, 0);
-		if (flags & IORESOURCE_CACHEABLE)
-			mem_base0 = ioremap(addr, range);
-		else
-			mem_base0 = ioremap_nocache(addr, range);
+		mem_base0 = ioremap(addr, range);
 		if (!mem_base0) {
 			pr_notice("arcmsr%d: memory mapping region fail\n",
 				acb->host->host_no);
@@ -2672,7 +2664,7 @@ static bool arcmsr_hbaB_get_config(struct AdapterControlBlock *acb)
 	if (!arcmsr_hbaB_wait_msgint_ready(acb)) {
 		printk(KERN_NOTICE "arcmsr%d: wait 'get adapter firmware \
 			miscellaneous data' timeout \n", acb->host->host_no);
-		return false;
+		goto err_free_dma;
 	}
 	count = 8;
 	while (count){
@@ -2702,19 +2694,23 @@ static bool arcmsr_hbaB_get_config(struct AdapterControlBlock *acb)
 		acb->firm_model,
 		acb->firm_version);
 
-	acb->signature = readl(&reg->message_rwbuffer[1]);
+	acb->signature = readl(&reg->message_rwbuffer[0]);
 	/*firm_signature,1,00-03*/
-	acb->firm_request_len = readl(&reg->message_rwbuffer[2]);
+	acb->firm_request_len = readl(&reg->message_rwbuffer[1]);
 	/*firm_request_len,1,04-07*/
-	acb->firm_numbers_queue = readl(&reg->message_rwbuffer[3]);
+	acb->firm_numbers_queue = readl(&reg->message_rwbuffer[2]);
 	/*firm_numbers_queue,2,08-11*/
-	acb->firm_sdram_size = readl(&reg->message_rwbuffer[4]);
+	acb->firm_sdram_size = readl(&reg->message_rwbuffer[3]);
 	/*firm_sdram_size,3,12-15*/
-	acb->firm_hd_channels = readl(&reg->message_rwbuffer[5]);
+	acb->firm_hd_channels = readl(&reg->message_rwbuffer[4]);
 	/*firm_ide_channels,4,16-19*/
 	acb->firm_cfg_version = readl(&reg->message_rwbuffer[25]);  /*firm_cfg_version,25,100-103*/
 	/*firm_ide_channels,4,16-19*/
 	return true;
+err_free_dma:
+	dma_free_coherent(&acb->pdev->dev, acb->roundup_ccbsize,
+			acb->dma_coherent2, acb->dma_coherent_handle2);
+	return false;
 }
 
 static bool arcmsr_hbaC_get_config(struct AdapterControlBlock *pACB)
@@ -2888,15 +2884,15 @@ static bool arcmsr_hbaD_get_config(struct AdapterControlBlock *acb)
 		iop_device_map++;
 		count--;
 	}
-	acb->signature = readl(&reg->msgcode_rwbuffer[1]);
+	acb->signature = readl(&reg->msgcode_rwbuffer[0]);
 	/*firm_signature,1,00-03*/
-	acb->firm_request_len = readl(&reg->msgcode_rwbuffer[2]);
+	acb->firm_request_len = readl(&reg->msgcode_rwbuffer[1]);
 	/*firm_request_len,1,04-07*/
-	acb->firm_numbers_queue = readl(&reg->msgcode_rwbuffer[3]);
+	acb->firm_numbers_queue = readl(&reg->msgcode_rwbuffer[2]);
 	/*firm_numbers_queue,2,08-11*/
-	acb->firm_sdram_size = readl(&reg->msgcode_rwbuffer[4]);
+	acb->firm_sdram_size = readl(&reg->msgcode_rwbuffer[3]);
 	/*firm_sdram_size,3,12-15*/
-	acb->firm_hd_channels = readl(&reg->msgcode_rwbuffer[5]);
+	acb->firm_hd_channels = readl(&reg->msgcode_rwbuffer[4]);
 	/*firm_hd_channels,4,16-19*/
 	acb->firm_cfg_version = readl(&reg->msgcode_rwbuffer[25]);
 	pr_notice("Areca RAID Controller%d: Model %s, F/W %s\n",
@@ -3269,7 +3265,7 @@ static int arcmsr_iop_confirm(struct AdapterControlBlock *acb)
 		reg->doneq_index = 0;
 		writel(ARCMSR_MESSAGE_SET_POST_WINDOW, reg->drv2iop_doorbell);
 		if (!arcmsr_hbaB_wait_msgint_ready(acb)) {
-			printk(KERN_NOTICE "arcmsr%d:can not set diver mode\n", \
+			printk(KERN_NOTICE "arcmsr%d: cannot set driver mode\n", \
 				acb->host->host_no);
 			return 1;
 		}

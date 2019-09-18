@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014,2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,7 +15,7 @@
 
 #define VFE47_NUM_STATS_COMP 2
 #define VFE47_NUM_STATS_TYPE 9
-/* composite mask order */
+/*composite mask order*/
 enum msm_vfe47_stats_comp_idx {
 	STATS_COMP_IDX_HDR_BE = 0,
 	STATS_COMP_IDX_BG,
@@ -30,6 +30,8 @@ enum msm_vfe47_stats_comp_idx {
 
 extern struct msm_vfe_hardware_info vfe47_hw_info;
 
+void msm_vfe47_read_and_clear_irq_status(struct vfe_device *vfe_dev,
+	uint32_t *irq_status0, uint32_t *irq_status1);
 void msm_vfe47_read_irq_status(struct vfe_device *vfe_dev,
 	uint32_t *irq_status0, uint32_t *irq_status1);
 void msm_vfe47_enable_camif_error(struct vfe_device *vfe_dev,
@@ -40,7 +42,7 @@ void msm_vfe47_process_reg_update(struct vfe_device *vfe_dev,
 void msm_vfe47_process_epoch_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0, uint32_t irq_status1,
 	struct msm_isp_timestamp *ts);
-void msm_isp47_process_eof_irq(struct vfe_device *vfe_dev,
+void msm_isp47_preprocess_camif_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0);
 void msm_vfe47_reg_update(struct vfe_device *vfe_dev,
 	enum msm_vfe_input_src frame_src);
@@ -58,7 +60,7 @@ void msm_vfe47_axi_cfg_wm_irq_mask(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info);
 void msm_vfe47_axi_clear_wm_irq_mask(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info);
-void msm_vfe47_cfg_framedrop(void __iomem *vfe_base,
+void msm_vfe47_cfg_framedrop(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info, uint32_t framedrop_pattern,
 	uint32_t framedrop_period);
 void msm_vfe47_clear_framedrop(struct vfe_device *vfe_dev,
@@ -66,6 +68,8 @@ void msm_vfe47_clear_framedrop(struct vfe_device *vfe_dev,
 int32_t msm_vfe47_cfg_io_format(struct vfe_device *vfe_dev,
 	enum msm_vfe_axi_stream_src stream_src, uint32_t io_format);
 int msm_vfe47_start_fetch_engine(struct vfe_device *vfe_dev,
+	void *arg);
+int msm_vfe47_start_fetch_engine_multi_pass(struct vfe_device *vfe_dev,
 	void *arg);
 void msm_vfe47_cfg_fetch_engine(struct vfe_device *vfe_dev,
 	struct msm_vfe_pix_cfg *pix_cfg);
@@ -97,7 +101,8 @@ void msm_vfe47_axi_clear_wm_xbar_reg(
 	struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info, uint8_t plane_idx);
 void msm_vfe47_cfg_axi_ub_equal_default(
-	struct vfe_device *vfe_dev, enum msm_vfe_input_src frame_src);
+	struct vfe_device *vfe_dev,
+	enum msm_vfe_input_src frame_src);
 void msm_vfe47_cfg_axi_ub_equal_slicing(
 	struct vfe_device *vfe_dev);
 void msm_vfe47_cfg_axi_ub(struct vfe_device *vfe_dev,
@@ -110,7 +115,7 @@ void msm_vfe47_update_ping_pong_addr(
 	int32_t buf_size);
 int msm_vfe47_axi_halt(struct vfe_device *vfe_dev,
 	uint32_t blocking);
-int msm_vfe47_axi_restart(struct vfe_device *vfe_dev,
+void msm_vfe47_axi_restart(struct vfe_device *vfe_dev,
 	uint32_t blocking, uint32_t enable_camif);
 uint32_t msm_vfe47_get_wm_mask(
 	uint32_t irq_status0, uint32_t irq_status1);
@@ -144,8 +149,8 @@ bool msm_vfe47_is_module_cfg_lock_needed(
 void msm_vfe47_stats_enable_module(struct vfe_device *vfe_dev,
 	uint32_t stats_mask, uint8_t enable);
 void msm_vfe47_stats_update_ping_pong_addr(
-	void __iomem *vfe_base, struct msm_vfe_stats_stream *stream_info,
-	uint32_t pingpong_status, dma_addr_t paddr);
+	struct vfe_device *vfe_dev, struct msm_vfe_stats_stream *stream_info,
+	uint32_t pingpong_status, dma_addr_t paddr, uint32_t buf_size);
 uint32_t msm_vfe47_stats_get_wm_mask(
 	uint32_t irq_status0, uint32_t irq_status1);
 uint32_t msm_vfe47_stats_get_comp_mask(
@@ -196,4 +201,9 @@ int msm_vfe47_update_bandwidth(
 void msm_vfe47_config_irq(struct vfe_device *vfe_dev,
 		uint32_t irq0_mask, uint32_t irq1_mask,
 		enum msm_isp_irq_operation oper);
+int msm_isp47_ahb_clk_cfg(struct vfe_device *vfe_dev,
+			struct msm_isp_ahb_clk_cfg *ahb_cfg);
+void msm_vfe47_set_halt_restart_mask(struct vfe_device *vfe_dev);
+uint32_t msm_vfe47_ub_reg_offset(struct vfe_device *vfe_dev, int wm_idx);
+uint32_t msm_vfe47_get_ub_size(struct vfe_device *vfe_dev);
 #endif /* __MSM_ISP47_H__ */

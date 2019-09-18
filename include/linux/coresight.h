@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,10 +12,6 @@
 
 #ifndef _LINUX_CORESIGHT_H
 #define _LINUX_CORESIGHT_H
-
-#ifdef CONFIG_ARCH_MSM
-#include "coresight_msm.h"
-#else
 
 #include <linux/device.h>
 #include <linux/sched.h>
@@ -99,7 +95,7 @@ struct coresight_dev_subtype {
  * @cpu:	the CPU a source belongs to. Only applicable for ETM/PTMs.
  * @name:	name of the component as shown under sysfs.
  * @nr_inport:	number of input ports for this component.
- * @outports:	list of remote enpoint port number.
+ * @outports:	list of remote endpoint port number.
  * @child_names:name of all child components connected to this device.
  * @child_ports:child component port number the current component is
 		connected  to.
@@ -127,7 +123,7 @@ struct coresight_platform_data {
 		by @coresight_ops.
  * @pdata:	platform data collected from DT.
  * @dev:	The device entity associated to this component.
- * @groups	:operations specific to this component. These will end up
+ * @groups:	operations specific to this component. These will end up
 		in the component's sysfs sub-directory.
  */
 struct coresight_desc {
@@ -141,7 +137,6 @@ struct coresight_desc {
 
 /**
  * struct coresight_connection - representation of a single connection
- * @ref_count:	keeping count a port' references.
  * @outport:	a connection's output port number.
  * @chid_name:	remote component's name.
  * @child_port:	remote component's port number @output is connected to.
@@ -157,6 +152,7 @@ struct coresight_connection {
 
 /**
  * struct coresight_device - representation of a device as used by the framework
+ * @conns:	array of coresight_connections associated to this component.
  * @nr_inport:	number of input port associated to this component.
  * @nr_outport:	number of output port associated to this component.
  * @type:	as defined by @coresight_dev_type.
@@ -198,10 +194,12 @@ struct coresight_device {
  * Operations available for sinks
  * @enable:	enables the sink.
  * @disable:	disables the sink.
+ * @abort:	captures sink trace on abort
  */
 struct coresight_ops_sink {
 	int (*enable)(struct coresight_device *csdev);
 	void (*disable)(struct coresight_device *csdev);
+	void (*abort)(struct coresight_device *csdev);
 };
 
 /**
@@ -243,6 +241,7 @@ extern int coresight_enable(struct coresight_device *csdev);
 extern void coresight_disable(struct coresight_device *csdev);
 extern int coresight_timeout(void __iomem *addr, u32 offset,
 			     int position, int value);
+extern void coresight_abort(void);
 #else
 static inline struct coresight_device *
 coresight_register(struct coresight_desc *desc) { return NULL; }
@@ -252,13 +251,18 @@ coresight_enable(struct coresight_device *csdev) { return -ENOSYS; }
 static inline void coresight_disable(struct coresight_device *csdev) {}
 static inline int coresight_timeout(void __iomem *addr, u32 offset,
 				     int position, int value) { return 1; }
+static inline void coresight_abort(void) {}
 #endif
 
-#ifdef CONFIG_OF
+#if defined(CONFIG_OF) && defined(CONFIG_CORESIGHT)
 extern struct coresight_platform_data *of_get_coresight_platform_data(
+				struct device *dev, struct device_node *node);
+extern struct coresight_cti_data *of_get_coresight_cti_data(
 				struct device *dev, struct device_node *node);
 #else
 static inline struct coresight_platform_data *of_get_coresight_platform_data(
+	struct device *dev, struct device_node *node) { return NULL; }
+static inline struct coresight_cti_data *of_get_coresight_cti_data(
 	struct device *dev, struct device_node *node) { return NULL; }
 #endif
 
@@ -280,8 +284,6 @@ coresight_vpid_to_pid(unsigned long vpid)
 #else
 static inline unsigned long
 coresight_vpid_to_pid(unsigned long vpid) { return vpid; }
-#endif
-
 #endif
 
 #endif

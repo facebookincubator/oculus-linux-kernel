@@ -897,7 +897,7 @@ static int wm8985_set_bias_level(struct snd_soc_codec *codec,
 				    1 << WM8985_VMIDSEL_SHIFT);
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
+		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF) {
 			ret = regulator_bulk_enable(ARRAY_SIZE(wm8985->supplies),
 						    wm8985->supplies);
 			if (ret) {
@@ -957,30 +957,6 @@ static int wm8985_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	}
 
-	codec->dapm.bias_level = level;
-	return 0;
-}
-
-#ifdef CONFIG_PM
-static int wm8985_suspend(struct snd_soc_codec *codec)
-{
-	wm8985_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	return 0;
-}
-
-static int wm8985_resume(struct snd_soc_codec *codec)
-{
-	wm8985_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-	return 0;
-}
-#else
-#define wm8985_suspend NULL
-#define wm8985_resume NULL
-#endif
-
-static int wm8985_remove(struct snd_soc_codec *codec)
-{
-	wm8985_set_bias_level(codec, SND_SOC_BIAS_OFF);
 	return 0;
 }
 
@@ -1023,7 +999,6 @@ static int wm8985_probe(struct snd_soc_codec *codec)
 	snd_soc_update_bits(codec, WM8985_BIAS_CTRL, WM8985_BIASCUT,
 			    WM8985_BIASCUT);
 
-	wm8985_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 	return 0;
 
 err_reg_enable:
@@ -1064,10 +1039,8 @@ static struct snd_soc_dai_driver wm8985_dai = {
 
 static struct snd_soc_codec_driver soc_codec_dev_wm8985 = {
 	.probe = wm8985_probe,
-	.remove = wm8985_remove,
-	.suspend = wm8985_suspend,
-	.resume = wm8985_resume,
 	.set_bias_level = wm8985_set_bias_level,
+	.suspend_bias_off = true,
 
 	.controls = wm8985_snd_controls,
 	.num_controls = ARRAY_SIZE(wm8985_snd_controls),
@@ -1123,7 +1096,6 @@ static int wm8985_spi_remove(struct spi_device *spi)
 static struct spi_driver wm8985_spi_driver = {
 	.driver = {
 		.name = "wm8985",
-		.owner = THIS_MODULE,
 	},
 	.probe = wm8985_spi_probe,
 	.remove = wm8985_spi_remove
@@ -1171,7 +1143,6 @@ MODULE_DEVICE_TABLE(i2c, wm8985_i2c_id);
 static struct i2c_driver wm8985_i2c_driver = {
 	.driver = {
 		.name = "wm8985",
-		.owner = THIS_MODULE,
 	},
 	.probe = wm8985_i2c_probe,
 	.remove = wm8985_i2c_remove,

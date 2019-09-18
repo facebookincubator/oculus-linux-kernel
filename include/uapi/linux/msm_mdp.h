@@ -1,7 +1,11 @@
 #ifndef _UAPI_MSM_MDP_H_
 #define _UAPI_MSM_MDP_H_
 
+#ifndef __KERNEL__
+#include <stdint.h>
+#else
 #include <linux/types.h>
+#endif
 #include <linux/fb.h>
 
 #define MSMFB_IOCTL_MAGIC 'm'
@@ -110,10 +114,12 @@
 #define MDSS_MDP_HW_REV_200	MDSS_MDP_REV(2, 0, 0) /* 8092 v1.0 */
 #define MDSS_MDP_HW_REV_112	MDSS_MDP_REV(1, 12, 0) /* 8952 v1.0 */
 #define MDSS_MDP_HW_REV_114	MDSS_MDP_REV(1, 14, 0) /* 8937 v1.0 */
-#define MDSS_MDP_HW_REV_115	MDSS_MDP_REV(1, 15, 0) /* msm8917 */
-#define MDSS_MDP_HW_REV_116	MDSS_MDP_REV(1, 16, 0) /* msm8953 */
-#define MDSS_MDP_HW_REV_300	MDSS_MDP_REV(3, 0, 0)  /* msmcobalt */
-#define MDSS_MDP_HW_REV_301	MDSS_MDP_REV(3, 0, 1)  /* msmcobalt v1.0 */
+#define MDSS_MDP_HW_REV_115	MDSS_MDP_REV(1, 15, 0) /* msmgold */
+#define MDSS_MDP_HW_REV_116	MDSS_MDP_REV(1, 16, 0) /* msmtitanium */
+#define MDSS_MDP_HW_REV_300	MDSS_MDP_REV(3, 0, 0)  /* msm8998 */
+#define MDSS_MDP_HW_REV_301	MDSS_MDP_REV(3, 0, 1)  /* msm8998 v1.0 */
+#define MDSS_MDP_HW_REV_320	MDSS_MDP_REV(3, 2, 0)  /* sdm660 */
+#define MDSS_MDP_HW_REV_330	MDSS_MDP_REV(3, 3, 0)  /* sdm630 */
 
 enum {
 	NOTIFY_UPDATE_INIT,
@@ -291,6 +297,11 @@ enum mdss_mdp_max_bw_mode {
 #define MDP_FB_PAGE_PROTECTION_INVALID           (5)
 /* Count of the number of MDP_FB_PAGE_PROTECTION_... values. */
 #define MDP_NUM_FB_PAGE_PROTECTION_VALUES        (5)
+
+#define MDP_DEEP_COLOR_YUV444    0x1
+#define MDP_DEEP_COLOR_RGB30B    0x2
+#define MDP_DEEP_COLOR_RGB36B    0x4
+#define MDP_DEEP_COLOR_RGB48B    0x8
 
 struct mdp_rect {
 	uint32_t x;
@@ -616,6 +627,14 @@ struct mdp_igc_lut_data_v1_7 {
 	uint32_t len;
 	uint32_t *c0_c1_data;
 	uint32_t *c2_data;
+};
+
+struct mdp_igc_lut_data_payload {
+	uint32_t table_fmt;
+	uint32_t len;
+	uint64_t __user c0_c1_data;
+	uint64_t __user c2_data;
+	uint32_t strength;
 };
 
 struct mdp_histogram_cfg {
@@ -1015,6 +1034,14 @@ struct mdp_dither_data_v1_7 {
 	uint32_t temporal_en;
 };
 
+struct mdp_pa_dither_data {
+	uint64_t data_flags;
+	uint32_t matrix_sz;
+	uint64_t __user matrix_data;
+	uint32_t strength;
+	uint32_t offset_en;
+};
+
 struct mdp_dither_cfg_data {
 	uint32_t version;
 	uint32_t block;
@@ -1151,6 +1178,11 @@ struct mdss_ad_cfg {
 	uint32_t bl_ctrl_mode;
 };
 
+struct mdss_ad_bl_cfg {
+	uint32_t bl_min_delta;
+	uint32_t bl_low_limit;
+};
+
 /* ops uses standard MDP_PP_* flags */
 struct mdss_ad_init_cfg {
 	uint32_t ops;
@@ -1194,7 +1226,14 @@ enum {
 	mdp_op_calib_buffer,
 	mdp_op_calib_dcm_state,
 	mdp_op_max,
+	mdp_op_pa_dither_cfg,
+	mdp_op_ad_bl_cfg,
+	mdp_op_pp_max = 255,
 };
+#define mdp_op_pa_dither_cfg mdp_op_pa_dither_cfg
+#define mdp_op_pp_max mdp_op_pp_max
+
+#define mdp_op_ad_bl_cfg mdp_op_ad_bl_cfg
 
 enum {
 	WB_FORMAT_NV12,
@@ -1225,6 +1264,7 @@ struct msmfb_mdp_pp {
 		struct mdss_ad_input ad_input;
 		struct mdp_calib_config_buffer calib_buffer;
 		struct mdp_calib_dcm_state calib_dcm;
+		struct mdss_ad_bl_cfg ad_bl_cfg;
 	} data;
 };
 
@@ -1399,7 +1439,14 @@ enum {
 	mdp_pcc_v1_7,
 	mdp_pcc_vmax,
 	mdp_pp_legacy,
+	mdp_dither_pa_v1_7,
+	mdp_igc_v3,
+	mdp_pp_unknown = 255
 };
+
+#define mdp_dither_pa_v1_7 mdp_dither_pa_v1_7
+#define mdp_pp_unknown mdp_pp_unknown
+#define mdp_igc_v3 mdp_igc_v3
 
 /* PP Features */
 enum {
@@ -1413,7 +1460,12 @@ enum {
 	HIST_LUT,
 	HIST,
 	PP_FEATURE_MAX,
+	PA_DITHER,
+	PP_MAX_FEATURES = 25,
 };
+
+#define PA_DITHER PA_DITHER
+#define PP_MAX_FEATURES PP_MAX_FEATURES
 
 struct mdp_pp_feature_version {
 	uint32_t pp_feature;

@@ -168,14 +168,13 @@ void ecryptfs_put_lower_file(struct inode *inode)
 				get_events()->is_hw_crypt_cb())
 			clear_cache_needed = true;
 
+		filemap_write_and_wait(inode->i_mapping);
 		if (clear_cache_needed) {
 			ret = vfs_fsync(inode_info->lower_file, false);
 
 			if (ret)
 				pr_err("failed to sync file ret = %d.\n", ret);
 		}
-
-		filemap_write_and_wait(inode->i_mapping);
 		fput(inode_info->lower_file);
 		inode_info->lower_file = NULL;
 		mutex_unlock(&inode_info->lower_file_mutex);
@@ -436,7 +435,7 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 	if (!cipher_name_set) {
 		int cipher_name_len = strlen(ECRYPTFS_DEFAULT_CIPHER);
 
-		BUG_ON(cipher_name_len >= ECRYPTFS_MAX_CIPHER_NAME_SIZE);
+		BUG_ON(cipher_name_len > ECRYPTFS_MAX_CIPHER_NAME_SIZE);
 		strcpy(mount_crypt_stat->global_default_cipher_name,
 		       ECRYPTFS_DEFAULT_CIPHER);
 	}
@@ -463,7 +462,7 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 	if (!cipher_code) {
 		ecryptfs_printk(
 			KERN_ERR,
-			"eCryptfs doesn't support cipher: %s and key size %lu",
+			"eCryptfs doesn't support cipher: %s and key size %zu",
 			ecryptfs_get_full_cipher(
 				mount_crypt_stat->global_default_cipher_name,
 				mount_crypt_stat->global_default_cipher_mode,
@@ -561,7 +560,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		goto out;
 	}
 
-	rc = bdi_setup_and_register(&sbi->bdi, "ecryptfs", BDI_CAP_MAP_COPY);
+	rc = bdi_setup_and_register(&sbi->bdi, "ecryptfs");
 	if (rc)
 		goto out1;
 
@@ -587,11 +586,11 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		goto out_free;
 	}
 
-	if (check_ruid && !uid_eq(path.dentry->d_inode->i_uid, current_uid())) {
+	if (check_ruid && !uid_eq(d_inode(path.dentry)->i_uid, current_uid())) {
 		rc = -EPERM;
 		printk(KERN_ERR "Mount of device (uid: %d) not owned by "
 		       "requested user (uid: %d)\n",
-			i_uid_read(path.dentry->d_inode),
+			i_uid_read(d_inode(path.dentry)),
 			from_kuid(&init_user_ns, current_uid()));
 		goto out_free;
 	}
@@ -630,7 +629,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		goto out_free;
 	}
 
-	inode = ecryptfs_get_inode(path.dentry->d_inode, s);
+	inode = ecryptfs_get_inode(d_inode(path.dentry), s);
 	rc = PTR_ERR(inode);
 	if (IS_ERR(inode))
 		goto out_free;

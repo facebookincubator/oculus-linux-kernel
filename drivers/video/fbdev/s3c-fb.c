@@ -1630,7 +1630,7 @@ static int s3c_fb_resume(struct device *dev)
 }
 #endif
 
-#ifdef CONFIG_PM_RUNTIME
+#ifdef CONFIG_PM
 static int s3c_fb_runtime_suspend(struct device *dev)
 {
 	struct s3c_fb *sfb = dev_get_drvdata(dev);
@@ -1938,7 +1938,7 @@ static struct s3c_fb_driverdata s3c_fb_data_s3c2443 = {
 	},
 };
 
-static struct platform_device_id s3c_fb_driver_ids[] = {
+static const struct platform_device_id s3c_fb_driver_ids[] = {
 	{
 		.name		= "s3c-fb",
 		.driver_data	= (unsigned long)&s3c_fb_data_64xx,
@@ -1971,7 +1971,6 @@ static struct platform_driver s3c_fb_driver = {
 	.id_table	= s3c_fb_driver_ids,
 	.driver		= {
 		.name	= "s3c-fb",
-		.owner	= THIS_MODULE,
 		.pm	= &s3cfb_pm_ops,
 	},
 };

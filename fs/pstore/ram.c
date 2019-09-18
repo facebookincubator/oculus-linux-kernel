@@ -331,6 +331,24 @@ static int notrace ramoops_pstore_write_buf(enum pstore_type_id type,
 	return 0;
 }
 
+static int notrace ramoops_pstore_write_buf_user(enum pstore_type_id type,
+						 enum kmsg_dump_reason reason,
+						 u64 *id, unsigned int part,
+						 const char __user *buf,
+						 bool compressed, size_t size,
+						 struct pstore_info *psi)
+{
+	if (type == PSTORE_TYPE_PMSG) {
+		struct ramoops_context *cxt = psi->data;
+
+		if (!cxt->mprz)
+			return -ENOMEM;
+		return persistent_ram_write_user(cxt->mprz, buf, size);
+	}
+
+	return -EINVAL;
+}
+
 static int ramoops_pstore_erase(enum pstore_type_id type, u64 id, int count,
 				struct timespec time, struct pstore_info *psi)
 {
@@ -369,6 +387,7 @@ static struct ramoops_context oops_cxt = {
 		.open	= ramoops_pstore_open,
 		.read	= ramoops_pstore_read,
 		.write_buf	= ramoops_pstore_write_buf,
+		.write_buf_user	= ramoops_pstore_write_buf_user,
 		.erase	= ramoops_pstore_erase,
 	},
 };
@@ -412,18 +431,16 @@ static int ramoops_init_przs(struct device *dev, struct ramoops_context *cxt,
 	}
 
 	for (i = 0; i < cxt->max_dump_cnt; i++) {
-		size_t sz = cxt->record_size;
-
-		cxt->przs[i] = persistent_ram_new(*paddr, sz, 0,
+		cxt->przs[i] = persistent_ram_new(*paddr, cxt->record_size, 0,
 						  &cxt->ecc_info,
 						  cxt->memtype);
 		if (IS_ERR(cxt->przs[i])) {
 			err = PTR_ERR(cxt->przs[i]);
 			dev_err(dev, "failed to request mem region (0x%zx@0x%llx): %d\n",
-				sz, (unsigned long long)*paddr, err);
+				cxt->record_size, (unsigned long long)*paddr, err);
 			goto fail_prz;
 		}
-		*paddr += sz;
+		*paddr += cxt->record_size;
 	}
 
 	return 0;
@@ -620,12 +637,12 @@ static int ramoops_probe(struct platform_device *pdev)
 		goto fail_out;
 
 	err = ramoops_init_prz(dev, cxt, &cxt->cprz, &paddr,
-			       cxt->console_size, 0);
+						 cxt->console_size, 0);
 	if (err)
 		goto fail_init_cprz;
 
 	err = ramoops_init_prz(dev, cxt, &cxt->fprz, &paddr, cxt->ftrace_size,
-			       LINUX_VERSION_CODE);
+						 LINUX_VERSION_CODE);
 	if (err)
 		goto fail_init_fprz;
 
@@ -665,6 +682,9 @@ static int ramoops_probe(struct platform_device *pdev)
 	mem_address = pdata->mem_address;
 	record_size = pdata->record_size;
 	dump_oops = pdata->dump_oops;
+	ramoops_console_size = pdata->console_size;
+	ramoops_pmsg_size = pdata->pmsg_size;
+	ramoops_ftrace_size = pdata->ftrace_size;
 
 	pr_info("attached 0x%lx@0x%llx, ecc: %d/%d\n",
 		cxt->size, (unsigned long long)cxt->phys_addr,
@@ -677,7 +697,6 @@ fail_buf:
 	kfree(cxt->pstore.buf);
 fail_clear:
 	cxt->pstore.bufsize = 0;
-	cxt->max_dump_cnt = 0;
 	kfree(cxt->mprz);
 fail_init_mprz:
 	kfree(cxt->fprz);
@@ -689,25 +708,22 @@ fail_out:
 	return err;
 }
 
-static int __exit ramoops_remove(struct platform_device *pdev)
+static int ramoops_remove(struct platform_device *pdev)
 {
-#if 0
-	/* TODO(kees): We cannot unload ramoops since pstore doesn't support
-	 * unregistering yet.
-	 */
 	struct ramoops_context *cxt = &oops_cxt;
 
-	iounmap(cxt->virt_addr);
-	release_mem_region(cxt->phys_addr, cxt->size);
+	pstore_unregister(&cxt->pstore);
 	cxt->max_dump_cnt = 0;
 
-	/* TODO(kees): When pstore supports unregistering, call it here. */
 	kfree(cxt->pstore.buf);
 	cxt->pstore.bufsize = 0;
 
+	persistent_ram_free(cxt->mprz);
+	persistent_ram_free(cxt->fprz);
+	persistent_ram_free(cxt->cprz);
+	ramoops_free_przs(cxt);
+
 	return 0;
-#endif
-	return -EBUSY;
 }
 
 static const struct of_device_id dt_match[] = {
@@ -717,10 +733,9 @@ static const struct of_device_id dt_match[] = {
 
 static struct platform_driver ramoops_driver = {
 	.probe		= ramoops_probe,
-	.remove		= __exit_p(ramoops_remove),
+	.remove		= ramoops_remove,
 	.driver		= {
-		.name	= "ramoops",
-		.owner	= THIS_MODULE,
+		.name		= "ramoops",
 		.of_match_table	= dt_match,
 	},
 };
@@ -740,7 +755,7 @@ static void ramoops_register_dummy(void)
 
 	dummy_data->mem_size = mem_size;
 	dummy_data->mem_address = mem_address;
-	dummy_data->mem_type = 0;
+	dummy_data->mem_type = mem_type;
 	dummy_data->record_size = record_size;
 	dummy_data->console_size = ramoops_console_size;
 	dummy_data->ftrace_size = ramoops_ftrace_size;

@@ -1,4 +1,4 @@
-* Qualcomm MSM Camera SOC
+* Qualcomm Technologies, Inc. MSM Camera SOC
 
 The below set of properties need to be defined by all the camera
 modules in their respective dtsi to adapt to SOC layer

@@ -5,10 +5,6 @@
 /* error code which can't be mistaken for valid address */
 #define EFI_ERROR	(~0UL)
 
-#undef memcpy
-#undef memset
-#undef memmove
-
 void efi_char16_printk(efi_system_table_t *, efi_char16_t *);
 
 efi_status_t efi_open_volume(efi_system_table_t *sys_table_arg, void *__image,
@@ -41,10 +37,17 @@ efi_status_t allocate_new_fdt_and_exit_boot(efi_system_table_t *sys_table,
 					    unsigned long fdt_addr,
 					    unsigned long fdt_size);
 
-void *get_fdt(efi_system_table_t *sys_table);
+void *get_fdt(efi_system_table_t *sys_table, unsigned long *fdt_size);
 
 void efi_get_virtmap(efi_memory_desc_t *memory_map, unsigned long map_size,
 		     unsigned long desc_size, efi_memory_desc_t *runtime_map,
 		     int *count);
+
+efi_status_t efi_get_random_bytes(efi_system_table_t *sys_table,
+				  unsigned long size, u8 *out);
+
+efi_status_t efi_random_alloc(efi_system_table_t *sys_table_arg,
+			      unsigned long size, unsigned long align,
+			      unsigned long *addr, unsigned long random_seed);
 
 #endif

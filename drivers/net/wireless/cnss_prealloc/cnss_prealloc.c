@@ -1,4 +1,4 @@
-/* Copyright (c) 2012,2014-2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012,2014-2015 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,10 +16,10 @@
 #include <linux/stacktrace.h>
 #include <linux/wcnss_wlan.h>
 #include <linux/spinlock.h>
+#include <linux/debugfs.h>
 #ifdef	CONFIG_WCNSS_SKB_PRE_ALLOC
 #include <linux/skbuff.h>
 #endif
-#include <linux/debugfs.h>
 
 static DEFINE_SPINLOCK(alloc_lock);
 
@@ -41,16 +41,6 @@ struct wcnss_prealloc {
 	struct stack_trace trace;
 #endif
 };
-
-#ifdef CONFIG_WCNSS_SKB_PRE_ALLOC
-/* pre-alloced memory for skb */
-static struct wcnss_prealloc wcnss_skb_allocs[] = {
-	{0, 64 * 1024, NULL},
-	{0, 64 * 1024, NULL},
-	{0, 128 * 1024, NULL},
-	{0, 128 * 1024, NULL},
-};
-#endif
 
 /* pre-alloced mem for WLAN driver */
 static struct wcnss_prealloc wcnss_allocs[] = {
@@ -119,39 +109,13 @@ static struct wcnss_prealloc wcnss_allocs[] = {
 	{0, 64 * 1024, NULL},
 	{0, 64 * 1024, NULL},
 	{0, 64 * 1024, NULL},
-	{0, 64 * 1024, NULL},
-	{0, 64 * 1024, NULL},
-	{0, 64 * 1024, NULL},
-	{0, 64 * 1024, NULL},
 	{0, 128 * 1024, NULL},
 	{0, 128 * 1024, NULL},
 };
 
-#ifdef CONFIG_WCNSS_SKB_PRE_ALLOC
-int cnss_skb_prealloc_init(void)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(wcnss_skb_allocs); i++) {
-		wcnss_skb_allocs[i].occupied = 0;
-		wcnss_skb_allocs[i].ptr =
-			dev_alloc_skb(wcnss_skb_allocs[i].size);
-		if (wcnss_skb_allocs[i].ptr == NULL)
-			return -ENOMEM;
-	}
-
-	return 0;
-}
-#else
-int cnss_skb_prealloc_init(void)
-{
-	return 0;
-}
-#endif
-
 int wcnss_prealloc_init(void)
 {
-	int i, ret;
+	int i;
 
 	for (i = 0; i < ARRAY_SIZE(wcnss_allocs); i++) {
 		wcnss_allocs[i].occupied = 0;
@@ -159,24 +123,9 @@ int wcnss_prealloc_init(void)
 		if (wcnss_allocs[i].ptr == NULL)
 			return -ENOMEM;
 	}
-	ret = cnss_skb_prealloc_init();
 
-	return ret;
+	return 0;
 }
-
-#ifdef CONFIG_WCNSS_SKB_PRE_ALLOC
-void cnss_skb_prealloc_deinit(void)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(wcnss_skb_allocs); i++) {
-		dev_kfree_skb(wcnss_skb_allocs[i].ptr);
-		wcnss_skb_allocs[i].ptr = NULL;
-	}
-}
-#else
-void cnss_skb_prealloc_deinit(void) {}
-#endif
 
 void wcnss_prealloc_deinit(void)
 {
@@ -186,8 +135,6 @@ void wcnss_prealloc_deinit(void)
 		kfree(wcnss_allocs[i].ptr);
 		wcnss_allocs[i].ptr = NULL;
 	}
-
-	cnss_skb_prealloc_deinit();
 }
 
 #ifdef CONFIG_SLUB_DEBUG
@@ -234,7 +181,6 @@ void *wcnss_prealloc_get(unsigned int size)
 
 	pr_err("wcnss: %s: prealloc not available for size: %d\n",
 			__func__, size);
-	WARN_ON(1);
 
 	return NULL;
 }
@@ -259,54 +205,6 @@ int wcnss_prealloc_put(void *ptr)
 }
 EXPORT_SYMBOL(wcnss_prealloc_put);
 
-#ifdef CONFIG_WCNSS_SKB_PRE_ALLOC
-struct sk_buff *wcnss_skb_prealloc_get(unsigned int size)
-{
-	int i = 0;
-	unsigned long flags;
-
-	spin_lock_irqsave(&alloc_lock, flags);
-	for (i = 0; i < ARRAY_SIZE(wcnss_skb_allocs); i++) {
-		if (wcnss_skb_allocs[i].occupied)
-			continue;
-
-		if (wcnss_skb_allocs[i].size > size) {
-			/* we found the slot */
-			wcnss_skb_allocs[i].occupied = 1;
-			spin_unlock_irqrestore(&alloc_lock, flags);
-			wcnss_prealloc_save_stack_trace(&wcnss_allocs[i]);
-			return wcnss_skb_allocs[i].ptr;
-		}
-	}
-	spin_unlock_irqrestore(&alloc_lock, flags);
-
-	pr_err("wcnss: %s: prealloc not available for size: %d\n",
-	       __func__, size);
-
-	return NULL;
-}
-EXPORT_SYMBOL(wcnss_skb_prealloc_get);
-
-int wcnss_skb_prealloc_put(struct sk_buff *skb)
-{
-	int i = 0;
-	unsigned long flags;
-
-	spin_lock_irqsave(&alloc_lock, flags);
-	for (i = 0; i < ARRAY_SIZE(wcnss_skb_allocs); i++) {
-		if (wcnss_skb_allocs[i].ptr == skb) {
-			wcnss_skb_allocs[i].occupied = 0;
-			spin_unlock_irqrestore(&alloc_lock, flags);
-			return 1;
-		}
-	}
-	spin_unlock_irqrestore(&alloc_lock, flags);
-
-	return 0;
-}
-EXPORT_SYMBOL(wcnss_skb_prealloc_put);
-#endif
-
 #ifdef CONFIG_SLUB_DEBUG
 void wcnss_prealloc_check_memory_leak(void)
 {
@@ -327,6 +225,8 @@ void wcnss_prealloc_check_memory_leak(void)
 	}
 
 }
+#else
+void wcnss_prealloc_check_memory_leak(void) {}
 #endif
 
 int wcnss_pre_alloc_reset(void)

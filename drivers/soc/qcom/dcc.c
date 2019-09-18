@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -538,6 +538,7 @@ static ssize_t dcc_show_func_type(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
+
 	return scnprintf(buf, PAGE_SIZE, "%s\n",
 			 str_dcc_func_type[drvdata->func_type]);
 }
@@ -582,6 +583,7 @@ static ssize_t dcc_show_data_sink(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
+
 	return scnprintf(buf, PAGE_SIZE, "%s\n",
 			 str_dcc_data_sink[drvdata->data_sink]);
 }
@@ -630,7 +632,7 @@ static ssize_t dcc_store_trigger(struct device *dev,
 	unsigned long val;
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
 
-	if (sscanf(buf, "%lx", &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 	if (val != 1)
 		return -EINVAL;
@@ -652,6 +654,7 @@ static ssize_t dcc_show_enable(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
+
 	return scnprintf(buf, PAGE_SIZE, "%u\n",
 			 (unsigned)drvdata->enable);
 }
@@ -664,7 +667,7 @@ static ssize_t dcc_store_enable(struct device *dev,
 	unsigned long val;
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
 
-	if (sscanf(buf, "%lx", &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	ret = dcc_xpu_unlock(drvdata);
@@ -851,7 +854,7 @@ static ssize_t dcc_store_config_reset(struct device *dev,
 	unsigned long val;
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
 
-	if (sscanf(buf, "%lx", &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	if (val)
@@ -916,6 +919,7 @@ static ssize_t dcc_show_interrupt_disable(struct device *dev,
 					  char *buf)
 {
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
+
 	return scnprintf(buf, PAGE_SIZE, "%u\n",
 			 (unsigned)drvdata->interrupt_disable);
 }
@@ -927,7 +931,7 @@ static ssize_t dcc_store_interrupt_disable(struct device *dev,
 	unsigned long val;
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
 
-	if (sscanf(buf, "%lx", &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->mutex);
@@ -943,6 +947,7 @@ static ssize_t dcc_show_rpm_sw_trigger_on(struct device *dev,
 					  char *buf)
 {
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
+
 	return scnprintf(buf, PAGE_SIZE, "%u\n",
 			 (unsigned)drvdata->rpm_trig_req.enable);
 }
@@ -954,7 +959,7 @@ static ssize_t dcc_store_rpm_sw_trigger_on(struct device *dev,
 	unsigned long val;
 	struct dcc_drvdata *drvdata = dev_get_drvdata(dev);
 
-	if (sscanf(buf, "%lx", &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->mutex);
@@ -1040,11 +1045,8 @@ static ssize_t dcc_sram_read(struct file *file, char __user *data,
 		len = (drvdata->ram_size - *ppos);
 
 	buf = kzalloc(len, GFP_KERNEL);
-	if (!buf) {
-		dev_err(drvdata->dev,
-			"DCC: Couldn't allocate memory for sram read!\n");
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	ret = clk_prepare_enable(drvdata->clk);
 	if (ret) {
@@ -1142,13 +1144,12 @@ static int dcc_sram_dev_init(struct dcc_drvdata *drvdata)
 	size_t node_size;
 	char *node_name = "dcc_sram";
 	struct device *dev = drvdata->dev;
+
 	node_size = strlen(node_name) + 1;
 
 	drvdata->sram_node = devm_kzalloc(dev, node_size, GFP_KERNEL);
-	if (!drvdata->sram_node) {
-		dev_err(drvdata->dev, "DCC: sram node name allocation failed.\n");
+	if (!drvdata->sram_node)
 		return -ENOMEM;
-	}
 
 	strlcpy(drvdata->sram_node, node_name, node_size);
 	ret = dcc_sram_dev_register(drvdata);
@@ -1172,6 +1173,8 @@ static void dcc_allocate_dump_mem(struct dcc_drvdata *drvdata)
 	/* Allocate memory for dcc reg dump */
 	drvdata->reg_buf = devm_kzalloc(dev, drvdata->reg_size, GFP_KERNEL);
 	if (drvdata->reg_buf) {
+		strlcpy(drvdata->reg_data.name, "KDCC_REG",
+				 sizeof(drvdata->reg_data.name));
 		drvdata->reg_data.addr = virt_to_phys(drvdata->reg_buf);
 		drvdata->reg_data.len = drvdata->reg_size;
 		reg_dump_entry.id = MSM_DUMP_DATA_DCC_REG;
@@ -1189,6 +1192,8 @@ static void dcc_allocate_dump_mem(struct dcc_drvdata *drvdata)
 	/* Allocate memory for dcc sram dump */
 	drvdata->sram_buf = devm_kzalloc(dev, drvdata->ram_size, GFP_KERNEL);
 	if (drvdata->sram_buf) {
+		strlcpy(drvdata->sram_data.name, "KDCC_SRAM",
+				 sizeof(drvdata->sram_data.name));
 		drvdata->sram_data.addr = virt_to_phys(drvdata->sram_buf);
 		drvdata->sram_data.len = drvdata->ram_size;
 		sram_dump_entry.id = MSM_DUMP_DATA_DCC_SRAM;

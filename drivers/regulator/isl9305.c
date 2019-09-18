@@ -177,10 +177,13 @@ static int isl9305_i2c_probe(struct i2c_client *i2c,
 
 #ifdef CONFIG_OF
 static const struct of_device_id isl9305_dt_ids[] = {
-	{ .compatible = "isl,isl9305" },
-	{ .compatible = "isl,isl9305h" },
+	{ .compatible = "isl,isl9305" }, /* for backward compat., don't use */
+	{ .compatible = "isil,isl9305" },
+	{ .compatible = "isl,isl9305h" }, /* for backward compat., don't use */
+	{ .compatible = "isil,isl9305h" },
 	{},
 };
+MODULE_DEVICE_TABLE(of, isl9305_dt_ids);
 #endif
 
 static const struct i2c_device_id isl9305_i2c_id[] = {
@@ -193,7 +196,6 @@ MODULE_DEVICE_TABLE(i2c, isl9305_i2c_id);
 static struct i2c_driver isl9305_regulator_driver = {
 	.driver = {
 		.name = "isl9305",
-		.owner = THIS_MODULE,
 		.of_match_table	= of_match_ptr(isl9305_dt_ids),
 	},
 	.probe = isl9305_i2c_probe,

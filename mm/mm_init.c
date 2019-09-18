@@ -11,17 +11,18 @@
 #include <linux/export.h>
 #include <linux/memory.h>
 #include <linux/notifier.h>
+#include <linux/sched.h>
 #include "internal.h"
 
 #ifdef CONFIG_DEBUG_MEMORY_INIT
-int mminit_loglevel;
+int __meminitdata mminit_loglevel;
 
 #ifndef SECTIONS_SHIFT
 #define SECTIONS_SHIFT	0
 #endif
 
 /* The zonelists are simply reported, validation is manual. */
-void mminit_verify_zonelist(void)
+void __init mminit_verify_zonelist(void)
 {
 	int nid;
 
@@ -128,14 +129,6 @@ void __init mminit_verify_pageflags_layout(void)
 			(NODES_MASK << NODES_PGSHIFT) +
 			(SECTIONS_MASK << SECTIONS_PGSHIFT);
 	BUG_ON(or_mask != add_mask);
-}
-
-void __meminit mminit_verify_page_links(struct page *page, enum zone_type zone,
-			unsigned long nid, unsigned long pfn)
-{
-	BUG_ON(page_to_nid(page) != nid);
-	BUG_ON(page_zonenum(page) != zone);
-	BUG_ON(page_to_pfn(page) != pfn);
 }
 
 static __init int set_mminit_loglevel(char *str)

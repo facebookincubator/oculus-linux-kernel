@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,10 +29,29 @@
 #include <linux/kthread.h>
 #include <asm/cacheflush.h>
 
+/*
+ * --- kgsl drawobj flags ---
+ * These flags are same as --- drawobj flags ---
+ * but renamed to reflect that cmdbatch is renamed to drawobj.
+ */
+#define KGSL_DRAWOBJ_MEMLIST           KGSL_CMDBATCH_MEMLIST
+#define KGSL_DRAWOBJ_MARKER            KGSL_CMDBATCH_MARKER
+#define KGSL_DRAWOBJ_SUBMIT_IB_LIST    KGSL_CMDBATCH_SUBMIT_IB_LIST
+#define KGSL_DRAWOBJ_CTX_SWITCH        KGSL_CMDBATCH_CTX_SWITCH
+#define KGSL_DRAWOBJ_PROFILING         KGSL_CMDBATCH_PROFILING
+#define KGSL_DRAWOBJ_PROFILING_KTIME   KGSL_CMDBATCH_PROFILING_KTIME
+#define KGSL_DRAWOBJ_END_OF_FRAME      KGSL_CMDBATCH_END_OF_FRAME
+#define KGSL_DRAWOBJ_SYNC              KGSL_CMDBATCH_SYNC
+#define KGSL_DRAWOBJ_PWR_CONSTRAINT    KGSL_CMDBATCH_PWR_CONSTRAINT
+#define KGSL_DRAWOBJ_SPARSE            KGSL_CMDBATCH_SPARSE
+
+#define kgsl_drawobj_profiling_buffer kgsl_cmdbatch_profiling_buffer
+
+
 /* The number of memstore arrays limits the number of contexts allowed.
  * If more contexts are needed, update multiple for MEMSTORE_SIZE
  */
-#define KGSL_MEMSTORE_SIZE	((int)(PAGE_SIZE * 8))
+#define KGSL_MEMSTORE_SIZE	((int)(PAGE_SIZE * 2))
 #define KGSL_MEMSTORE_GLOBAL	(0)
 #define KGSL_PRIORITY_MAX_RB_LEVELS 4
 #define KGSL_MEMSTORE_MAX	(KGSL_MEMSTORE_SIZE / \
@@ -82,6 +101,7 @@ static inline void KGSL_STATS_ADD(uint64_t size, atomic_long_t *stat,
 
 #define KGSL_MAX_NUMIBS 100000
 #define KGSL_MAX_SYNCPOINTS 32
+#define KGSL_MAX_SPARSE 1000
 
 struct kgsl_device;
 struct kgsl_context;
@@ -105,10 +125,6 @@ struct kgsl_context;
  * @full_cache_threshold: the threshold that triggers a full cache flush
  * @workqueue: Pointer to a single threaded workqueue
  * @mem_workqueue: Pointer to a workqueue for deferring memory entries
- * @dealloc_workqueue: A dedicated workqueue used to deallocate memory
- * entries for requests originating from latency sensitive threads; this
- * is separate from @mem_workqueue to avoid failures when the latter is
- * being drained
  */
 struct kgsl_driver {
 	struct cdev cdev;
@@ -140,7 +156,6 @@ struct kgsl_driver {
 	unsigned int full_cache_threshold;
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
-	struct workqueue_struct *dealloc_workqueue;
 	struct kthread_worker worker;
 	struct task_struct *worker_thread;
 };
@@ -195,6 +210,7 @@ struct kgsl_memdesc_ops {
  * @attrs: dma attributes for this memory
  * @pages: An array of pointers to allocated pages
  * @page_count: Total number of pages allocated
+ * @cur_bindings: Number of sparse pages actively bound
  */
 struct kgsl_memdesc {
 	struct kgsl_pagetable *pagetable;
@@ -213,6 +229,7 @@ struct kgsl_memdesc {
 	struct dma_attrs attrs;
 	struct page **pages;
 	unsigned int page_count;
+	unsigned int cur_bindings;
 };
 
 /*
@@ -246,6 +263,8 @@ struct kgsl_memdesc {
  * @dev_priv: back pointer to the device file that created this entry.
  * @metadata: String containing user specified metadata for the entry
  * @work: Work struct used to schedule a kgsl_mem_entry_put in atomic contexts
+ * @bind_lock: Lock for sparse memory bindings
+ * @bind_tree: RB Tree for sparse memory bindings
  */
 struct kgsl_mem_entry {
 	struct kref refcount;
@@ -257,6 +276,8 @@ struct kgsl_mem_entry {
 	int pending_free;
 	char metadata[KGSL_GPUOBJ_ALLOC_METADATA_MAX + 1];
 	struct work_struct work;
+	spinlock_t bind_lock;
+	struct rb_root bind_tree;
 };
 
 struct kgsl_device_private;
@@ -326,6 +347,24 @@ struct kgsl_protected_registers {
 	int range;
 };
 
+/**
+ * struct sparse_bind_object - Bind metadata
+ * @node: Node for the rb tree
+ * @p_memdesc: Physical memdesc bound to
+ * @v_off: Offset of bind in the virtual entry
+ * @p_off: Offset of bind in the physical memdesc
+ * @size: Size of the bind
+ * @flags: Flags for the bind
+ */
+struct sparse_bind_object {
+	struct rb_node node;
+	struct kgsl_memdesc *p_memdesc;
+	uint64_t v_off;
+	uint64_t p_off;
+	uint64_t size;
+	uint64_t flags;
+};
+
 long kgsl_ioctl_device_getproperty(struct kgsl_device_private *dev_priv,
 					  unsigned int cmd, void *data);
 long kgsl_ioctl_device_setproperty(struct kgsl_device_private *dev_priv,
@@ -388,10 +427,35 @@ long kgsl_ioctl_gpu_command(struct kgsl_device_private *dev_priv,
 long kgsl_ioctl_gpuobj_set_info(struct kgsl_device_private *dev_priv,
 				unsigned int cmd, void *data);
 
+long kgsl_ioctl_sparse_phys_alloc(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_sparse_phys_free(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_sparse_virt_alloc(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_sparse_virt_free(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_sparse_bind(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_sparse_unbind(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_gpu_sparse_command(struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+
+long kgsl_ioctl_allow_uid_high_priority(
+					struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+long kgsl_ioctl_allow_tid_maximum_priority(
+					struct kgsl_device_private *dev_priv,
+					unsigned int cmd, void *data);
+
 void kgsl_mem_entry_destroy(struct kref *kref);
 
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
-			int *egl_surface_count, int *egl_image_count);
+			int *egl_surface_count, int *egl_image_count,
+			int *attach_count);
+void kgsl_print_ion_attachments(struct seq_file *s,
+			struct kgsl_mem_entry *entry);
 
 struct kgsl_mem_entry * __must_check
 kgsl_sharedmem_find(struct kgsl_process_private *private, uint64_t gpuaddr);

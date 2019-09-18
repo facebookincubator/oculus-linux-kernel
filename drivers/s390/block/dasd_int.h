@@ -534,6 +534,7 @@ struct dasd_attention_data {
 #define DASD_FLAG_SAFE_OFFLINE	10	/* safe offline processing requested*/
 #define DASD_FLAG_SAFE_OFFLINE_RUNNING	11	/* safe offline running */
 #define DASD_FLAG_ABORTALL	12	/* Abort all noretry requests */
+#define DASD_FLAG_PATH_VERIFY	13	/* Path verification worker running */
 
 #define DASD_SLEEPON_START_TAG	((void *) 1)
 #define DASD_SLEEPON_END_TAG	((void *) 2)
@@ -651,7 +652,7 @@ dasd_check_blocksize(int bsize)
 #define DASD_PROFILE_GLOBAL_ONLY 2
 
 extern debug_info_t *dasd_debug_area;
-extern struct dasd_profile_info dasd_global_profile_data;
+extern struct dasd_profile dasd_global_profile;
 extern unsigned int dasd_global_profile_level;
 extern const struct block_device_operations dasd_device_operations;
 
@@ -728,7 +729,6 @@ int dasd_device_is_ro(struct dasd_device *);
 void dasd_profile_reset(struct dasd_profile *);
 int dasd_profile_on(struct dasd_profile *);
 void dasd_profile_off(struct dasd_profile *);
-void dasd_global_profile_reset(void);
 char *dasd_get_user_string(const char __user *, size_t);
 
 /* externals in dasd_devmap.c */

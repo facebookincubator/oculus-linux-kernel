@@ -40,7 +40,12 @@ extern void __flush_dcache_icache(void *page_va);
 extern void flush_dcache_icache_page(struct page *page);
 #if defined(CONFIG_PPC32) && !defined(CONFIG_BOOKE)
 extern void __flush_dcache_icache_phys(unsigned long physaddr);
-#endif /* CONFIG_PPC32 && !CONFIG_BOOKE */
+#else
+static inline void __flush_dcache_icache_phys(unsigned long physaddr)
+{
+	BUG();
+}
+#endif
 
 extern void flush_dcache_range(unsigned long start, unsigned long stop);
 #ifdef CONFIG_PPC32
@@ -59,13 +64,6 @@ extern void flush_dcache_phys_range(unsigned long start, unsigned long stop);
 	} while (0)
 #define copy_from_user_page(vma, page, vaddr, dst, src, len) \
 	memcpy(dst, src, len)
-
-
-
-#ifdef CONFIG_DEBUG_PAGEALLOC
-/* internal debugging function */
-void kernel_map_pages(struct page *page, int numpages, int enable);
-#endif
 
 #endif /* __KERNEL__ */
 

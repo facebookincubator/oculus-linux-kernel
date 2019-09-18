@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 #include <media/videobuf2-core.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/msm_jpeg_dma.h>
+#include <linux/clk/msm-clk.h>
 
 #include "msm_jpeg_dma_dev.h"
 #include "msm_jpeg_dma_hw.h"
@@ -311,11 +312,12 @@ static int msm_jpegdma_update_hw_config(struct jpegdma_ctx *ctx)
  * @alloc_ctxs: Array of allocated contexts for each plane.
  */
 static int msm_jpegdma_queue_setup(struct vb2_queue *q,
-	const struct v4l2_format *fmt,
+	const void *parg,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], void *alloc_ctxs[])
 {
 	struct jpegdma_ctx *ctx = vb2_get_drv_priv(q);
+	struct v4l2_format *fmt = (struct v4l2_format *)parg;
 
 	if (NULL == fmt) {
 		switch (q->type) {
@@ -345,8 +347,9 @@ static int msm_jpegdma_queue_setup(struct vb2_queue *q,
 static void msm_jpegdma_buf_queue(struct vb2_buffer *vb)
 {
 	struct jpegdma_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
+	struct vb2_v4l2_buffer *vb2_v4l2_buf = to_vb2_v4l2_buffer(vb);
 
-	v4l2_m2m_buf_queue(ctx->m2m_ctx, vb);
+	v4l2_m2m_buf_queue(ctx->m2m_ctx, vb2_v4l2_buf);
 
 	return;
 }
@@ -417,7 +420,8 @@ static struct vb2_ops msm_jpegdma_vb2_q_ops = {
  * @write: True if buffer will be used for writing the data.
  */
 static void *msm_jpegdma_get_userptr(void *alloc_ctx,
-	unsigned long vaddr, unsigned long size, int write)
+	unsigned long vaddr, unsigned long size,
+	enum dma_data_direction dma_dir)
 {
 	struct msm_jpegdma_device *dma = alloc_ctx;
 	struct msm_jpegdma_buf_handle *buf;
@@ -492,7 +496,7 @@ static int msm_jpegdma_queue_init(void *priv, struct vb2_queue *src_vq,
 	src_vq->drv_priv = ctx;
 	src_vq->mem_ops = &msm_jpegdma_vb2_mem_ops;
 	src_vq->ops = &msm_jpegdma_vb2_q_ops;
-	src_vq->buf_struct_size = sizeof(struct vb2_buffer);
+	src_vq->buf_struct_size = sizeof(struct v4l2_m2m_buffer);
 	src_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 
 	ret = vb2_queue_init(src_vq);
@@ -506,7 +510,7 @@ static int msm_jpegdma_queue_init(void *priv, struct vb2_queue *src_vq,
 	dst_vq->drv_priv = ctx;
 	dst_vq->mem_ops = &msm_jpegdma_vb2_mem_ops;
 	dst_vq->ops = &msm_jpegdma_vb2_q_ops;
-	dst_vq->buf_struct_size = sizeof(struct vb2_buffer);
+	dst_vq->buf_struct_size = sizeof(struct v4l2_m2m_buffer);
 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 
 	ret = vb2_queue_init(dst_vq);
@@ -1031,13 +1035,7 @@ static int msm_jpegdma_s_crop(struct file *file, void *fh,
 	if (crop->c.width % formats[ctx->format_idx].h_align)
 		return -EINVAL;
 
-	if (crop->c.left % formats[ctx->format_idx].h_align)
-		return -EINVAL;
-
 	if (crop->c.height % formats[ctx->format_idx].v_align)
-		return -EINVAL;
-
-	if (crop->c.top % formats[ctx->format_idx].v_align)
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
@@ -1098,6 +1096,30 @@ static int msm_jpegdma_s_parm(struct file *file, void *fh,
 	return 0;
 }
 
+/*
+ * msm_fd_g_ctrl - V4l2 ioctl get control.
+ * @file: Pointer to file struct.
+ * @fh: V4l2 File handle.
+ * @sub: Pointer to v4l2_control struct need to be filled.
+ */
+static int msm_jpegdma_g_ctrl(struct file *file, void *fh,
+	struct v4l2_control *a)
+{
+	struct jpegdma_ctx *ctx = msm_jpegdma_ctx_from_fh(fh);
+
+	switch (a->id) {
+	case V4L2_CID_JPEG_DMA_MAX_DOWN_SCALE:
+		a->value = msm_jpegdma_hw_get_max_downscale(ctx->jdma_device);
+		if (a->value < 0)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /* V4l2 ioctl handlers */
 static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_querycap          = msm_jpegdma_querycap,
@@ -1119,6 +1141,7 @@ static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_s_crop            = msm_jpegdma_s_crop,
 	.vidioc_g_parm            = msm_jpegdma_g_parm,
 	.vidioc_s_parm            = msm_jpegdma_s_parm,
+	.vidioc_g_ctrl            = msm_jpegdma_g_ctrl,
 };
 
 /*
@@ -1128,17 +1151,17 @@ static const struct v4l2_ioctl_ops fd_ioctl_ops = {
  * @dst_buf: Pointer to Vb2 destination buffer.
  */
 static void msm_jpegdma_process_buffers(struct jpegdma_ctx *ctx,
-	struct vb2_buffer *src_buf, struct vb2_buffer *dst_buf)
+	struct vb2_v4l2_buffer *src_buf, struct vb2_v4l2_buffer *dst_buf)
 {
 	struct msm_jpegdma_buf_handle *buf_handle;
 	struct msm_jpegdma_addr addr;
 	int plane_idx;
 	int config_idx;
 
-	buf_handle = dst_buf->planes[0].mem_priv;
+	buf_handle = dst_buf->vb2_buf.planes[0].mem_priv;
 	addr.out_addr = buf_handle->addr;
 
-	buf_handle = src_buf->planes[0].mem_priv;
+	buf_handle = src_buf->vb2_buf.planes[0].mem_priv;
 	addr.in_addr = buf_handle->addr;
 
 	plane_idx = ctx->plane_idx;
@@ -1154,8 +1177,8 @@ static void msm_jpegdma_process_buffers(struct jpegdma_ctx *ctx,
  */
 static void msm_jpegdma_device_run(void *priv)
 {
-	struct vb2_buffer *src_buf;
-	struct vb2_buffer *dst_buf;
+	struct vb2_v4l2_buffer *src_buf;
+	struct vb2_v4l2_buffer *dst_buf;
 	struct jpegdma_ctx *ctx = priv;
 
 	dev_dbg(ctx->jdma_device->dev, "Jpeg v4l2 dma device run E\n");
@@ -1216,8 +1239,8 @@ static struct v4l2_m2m_ops msm_jpegdma_m2m_ops = {
  */
 void msm_jpegdma_isr_processing_done(struct msm_jpegdma_device *dma)
 {
-	struct vb2_buffer *src_buf;
-	struct vb2_buffer *dst_buf;
+	struct vb2_v4l2_buffer *src_buf;
+	struct vb2_v4l2_buffer *dst_buf;
 	struct jpegdma_ctx *ctx;
 
 	mutex_lock(&dma->lock);
@@ -1266,6 +1289,7 @@ static int jpegdma_probe(struct platform_device *pdev)
 {
 	struct msm_jpegdma_device *jpegdma;
 	int ret;
+	int i;
 
 	dev_dbg(&pdev->dev, "jpeg v4l2 DMA probed\n");
 	/* Jpeg dma device struct */
@@ -1300,6 +1324,19 @@ static int jpegdma_probe(struct platform_device *pdev)
 		&jpegdma->clk, &jpegdma->num_clk);
 	if (ret < 0)
 		goto error_get_clocks;
+
+	/*set memcore and mem periphery logic flags to 0*/
+	for (i = 0; i < jpegdma->num_clk; i++) {
+		if ((strcmp(jpegdma->jpeg_clk_info[i].clk_name,
+				"core_clk") == 0) ||
+			(strcmp(jpegdma->jpeg_clk_info[i].clk_name,
+				"mmss_camss_jpeg_axi_clk") == 0)) {
+			msm_camera_set_clk_flags(jpegdma->clk[i],
+				CLKFLAG_NORETAIN_MEM);
+			msm_camera_set_clk_flags(jpegdma->clk[i],
+				CLKFLAG_NORETAIN_PERIPH);
+		}
+	}
 
 	ret = msm_jpegdma_hw_get_qos(jpegdma);
 	if (ret < 0)

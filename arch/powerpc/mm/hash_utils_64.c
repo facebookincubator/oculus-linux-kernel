@@ -57,6 +57,7 @@
 #include <asm/fadump.h>
 #include <asm/firmware.h>
 #include <asm/tm.h>
+#include <asm/trace.h>
 
 #ifdef DEBUG
 #define DBG(fmt...) udbg_printf(fmt)
@@ -639,7 +640,7 @@ extern u32 ht64_call_hpte_updatepp[];
 
 static void __init htab_finish_init(void)
 {
-#ifdef CONFIG_PPC_HAS_HASH_64K
+#ifdef CONFIG_PPC_64K_PAGES
 	patch_branch(ht64_call_hpte_insert1,
 		ppc_function_entry(ppc_md.hpte_insert),
 		BRANCH_SET_LINK);
@@ -652,7 +653,7 @@ static void __init htab_finish_init(void)
 	patch_branch(ht64_call_hpte_updatepp,
 		ppc_function_entry(ppc_md.hpte_updatepp),
 		BRANCH_SET_LINK);
-#endif /* CONFIG_PPC_HAS_HASH_64K */
+#endif /* CONFIG_PPC_64K_PAGES */
 
 	patch_branch(htab_call_hpte_insert1,
 		ppc_function_entry(ppc_md.hpte_insert),
@@ -989,19 +990,23 @@ static void check_paca_psize(unsigned long ea, struct mm_struct *mm,
  * -1 - critical hash insertion error
  * -2 - access not permitted by subpage protection mechanism
  */
-int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, unsigned long trap)
+int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+		 unsigned long access, unsigned long trap,
+		 unsigned long flags)
 {
+	bool is_thp;
 	enum ctx_state prev_state = exception_enter();
 	pgd_t *pgdir;
 	unsigned long vsid;
 	pte_t *ptep;
 	unsigned hugeshift;
 	const struct cpumask *tmp;
-	int rc, user_region = 0, local = 0;
+	int rc, user_region = 0;
 	int psize, ssize;
 
 	DBG_LOW("hash_page(ea=%016lx, access=%lx, trap=%lx\n",
 		ea, access, trap);
+	trace_hash_fault(ea, access, trap);
 
 	/* Get region & vsid */
  	switch (REGION_ID(ea)) {
@@ -1049,7 +1054,7 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, u
 	/* Check CPU locality */
 	tmp = cpumask_of(smp_processor_id());
 	if (user_region && cpumask_equal(mm_cpumask(mm), tmp))
-		local = 1;
+		flags |= HPTE_LOCAL_UPDATE;
 
 #ifndef CONFIG_PPC_64K_PAGES
 	/* If we use 4K pages and our psize is not 4K, then we might
@@ -1064,7 +1069,7 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, u
 #endif /* CONFIG_PPC_64K_PAGES */
 
 	/* Get PTE and page size from page tables */
-	ptep = find_linux_pte_or_hugepte(pgdir, ea, &hugeshift);
+	ptep = __find_linux_pte_or_hugepte(pgdir, ea, &is_thp, &hugeshift);
 	if (ptep == NULL || !pte_present(*ptep)) {
 		DBG_LOW(" no PTE !\n");
 		rc = 1;
@@ -1084,13 +1089,13 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, u
 	}
 
 	if (hugeshift) {
-		if (pmd_trans_huge(*(pmd_t *)ptep))
+		if (is_thp)
 			rc = __hash_page_thp(ea, access, vsid, (pmd_t *)ptep,
-					     trap, local, ssize, psize);
+					     trap, flags, ssize, psize);
 #ifdef CONFIG_HUGETLB_PAGE
 		else
 			rc = __hash_page_huge(ea, access, vsid, ptep, trap,
-					      local, ssize, hugeshift, psize);
+					      flags, ssize, hugeshift, psize);
 #else
 		else {
 			/*
@@ -1147,18 +1152,19 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, u
 		check_paca_psize(ea, mm, psize, user_region);
 #endif /* CONFIG_PPC_64K_PAGES */
 
-#ifdef CONFIG_PPC_HAS_HASH_64K
+#ifdef CONFIG_PPC_64K_PAGES
 	if (psize == MMU_PAGE_64K)
-		rc = __hash_page_64K(ea, access, vsid, ptep, trap, local, ssize);
+		rc = __hash_page_64K(ea, access, vsid, ptep, trap,
+				     flags, ssize);
 	else
-#endif /* CONFIG_PPC_HAS_HASH_64K */
+#endif /* CONFIG_PPC_64K_PAGES */
 	{
 		int spp = subpage_protection(mm, ea);
 		if (access & spp)
 			rc = -2;
 		else
 			rc = __hash_page_4K(ea, access, vsid, ptep, trap,
-					    local, ssize, spp);
+					    flags, ssize, spp);
 	}
 
 	/* Dump some info in case of hash insertion failure, they should
@@ -1181,14 +1187,19 @@ bail:
 }
 EXPORT_SYMBOL_GPL(hash_page_mm);
 
-int hash_page(unsigned long ea, unsigned long access, unsigned long trap)
+int hash_page(unsigned long ea, unsigned long access, unsigned long trap,
+	      unsigned long dsisr)
 {
+	unsigned long flags = 0;
 	struct mm_struct *mm = current->mm;
 
 	if (REGION_ID(ea) == VMALLOC_REGION_ID)
 		mm = &init_mm;
 
-	return hash_page_mm(mm, ea, access, trap);
+	if (dsisr & DSISR_NOHPTE)
+		flags |= HPTE_NOHPTE_UPDATE;
+
+	return hash_page_mm(mm, ea, access, trap, flags);
 }
 EXPORT_SYMBOL_GPL(hash_page);
 
@@ -1200,7 +1211,7 @@ void hash_preload(struct mm_struct *mm, unsigned long ea,
 	pgd_t *pgdir;
 	pte_t *ptep;
 	unsigned long flags;
-	int rc, ssize, local = 0;
+	int rc, ssize, update_flags = 0;
 
 	BUG_ON(REGION_ID(ea) != USER_REGION_ID);
 
@@ -1233,7 +1244,7 @@ void hash_preload(struct mm_struct *mm, unsigned long ea,
 	 * THP pages use update_mmu_cache_pmd. We don't do
 	 * hash preload there. Hence can ignore THP here
 	 */
-	ptep = find_linux_pte_or_hugepte(pgdir, ea, &hugepage_shift);
+	ptep = find_linux_pte_or_hugepte(pgdir, ea, NULL, &hugepage_shift);
 	if (!ptep)
 		goto out_exit;
 
@@ -1251,16 +1262,17 @@ void hash_preload(struct mm_struct *mm, unsigned long ea,
 
 	/* Is that local to this CPU ? */
 	if (cpumask_equal(mm_cpumask(mm), cpumask_of(smp_processor_id())))
-		local = 1;
+		update_flags |= HPTE_LOCAL_UPDATE;
 
 	/* Hash it in */
-#ifdef CONFIG_PPC_HAS_HASH_64K
+#ifdef CONFIG_PPC_64K_PAGES
 	if (mm->context.user_psize == MMU_PAGE_64K)
-		rc = __hash_page_64K(ea, access, vsid, ptep, trap, local, ssize);
+		rc = __hash_page_64K(ea, access, vsid, ptep, trap,
+				     update_flags, ssize);
 	else
-#endif /* CONFIG_PPC_HAS_HASH_64K */
-		rc = __hash_page_4K(ea, access, vsid, ptep, trap, local, ssize,
-				    subpage_protection(mm, ea));
+#endif /* CONFIG_PPC_64K_PAGES */
+		rc = __hash_page_4K(ea, access, vsid, ptep, trap, update_flags,
+				    ssize, subpage_protection(mm, ea));
 
 	/* Dump some info in case of hash insertion failure, they should
 	 * never happen so it is really useful to know if/when they do
@@ -1278,9 +1290,10 @@ out_exit:
  *          do not forget to update the assembly call site !
  */
 void flush_hash_page(unsigned long vpn, real_pte_t pte, int psize, int ssize,
-		     int local)
+		     unsigned long flags)
 {
 	unsigned long hash, index, shift, hidx, slot;
+	int local = flags & HPTE_LOCAL_UPDATE;
 
 	DBG_LOW("flush_hash_page(vpn=%016lx)\n", vpn);
 	pte_iterate_hashed_subpages(pte, psize, vpn, index, shift) {
@@ -1315,6 +1328,79 @@ void flush_hash_page(unsigned long vpn, real_pte_t pte, int psize, int ssize,
 #endif
 }
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+void flush_hash_hugepage(unsigned long vsid, unsigned long addr,
+			 pmd_t *pmdp, unsigned int psize, int ssize,
+			 unsigned long flags)
+{
+	int i, max_hpte_count, valid;
+	unsigned long s_addr;
+	unsigned char *hpte_slot_array;
+	unsigned long hidx, shift, vpn, hash, slot;
+	int local = flags & HPTE_LOCAL_UPDATE;
+
+	s_addr = addr & HPAGE_PMD_MASK;
+	hpte_slot_array = get_hpte_slot_array(pmdp);
+	/*
+	 * IF we try to do a HUGE PTE update after a withdraw is done.
+	 * we will find the below NULL. This happens when we do
+	 * split_huge_page_pmd
+	 */
+	if (!hpte_slot_array)
+		return;
+
+	if (ppc_md.hugepage_invalidate) {
+		ppc_md.hugepage_invalidate(vsid, s_addr, hpte_slot_array,
+					   psize, ssize, local);
+		goto tm_abort;
+	}
+	/*
+	 * No bluk hpte removal support, invalidate each entry
+	 */
+	shift = mmu_psize_defs[psize].shift;
+	max_hpte_count = HPAGE_PMD_SIZE >> shift;
+	for (i = 0; i < max_hpte_count; i++) {
+		/*
+		 * 8 bits per each hpte entries
+		 * 000| [ secondary group (one bit) | hidx (3 bits) | valid bit]
+		 */
+		valid = hpte_valid(hpte_slot_array, i);
+		if (!valid)
+			continue;
+		hidx =  hpte_hash_index(hpte_slot_array, i);
+
+		/* get the vpn */
+		addr = s_addr + (i * (1ul << shift));
+		vpn = hpt_vpn(addr, vsid, ssize);
+		hash = hpt_hash(vpn, shift, ssize);
+		if (hidx & _PTEIDX_SECONDARY)
+			hash = ~hash;
+
+		slot = (hash & htab_hash_mask) * HPTES_PER_GROUP;
+		slot += hidx & _PTEIDX_GROUP_IX;
+		ppc_md.hpte_invalidate(slot, vpn, psize,
+				       MMU_PAGE_16M, ssize, local);
+	}
+tm_abort:
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+	/* Transactions are not aborted by tlbiel, only tlbie.
+	 * Without, syncing a page back to a block device w/ PIO could pick up
+	 * transactional data (bad!) so we force an abort here.  Before the
+	 * sync the page will be made read-only, which will flush_hash_page.
+	 * BIG ISSUE here: if the kernel uses a page from userspace without
+	 * unmapping it first, it may see the speculated version.
+	 */
+	if (local && cpu_has_feature(CPU_FTR_TM) &&
+	    current->thread.regs &&
+	    MSR_TM_ACTIVE(current->thread.regs->msr)) {
+		tm_enable();
+		tm_abort(TM_CAUSE_TLBI);
+	}
+#endif
+	return;
+}
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
 void flush_hash_range(unsigned long number, int local)
 {
 	if (ppc_md.flush_hash_range)
@@ -1322,7 +1408,7 @@ void flush_hash_range(unsigned long number, int local)
 	else {
 		int i;
 		struct ppc64_tlb_batch *batch =
-			&__get_cpu_var(ppc64_tlb_batch);
+			this_cpu_ptr(&ppc64_tlb_batch);
 
 		for (i = 0; i < number; i++)
 			flush_hash_page(batch->vpn[i], batch->pte[i],
@@ -1392,7 +1478,7 @@ static void kernel_map_linear_page(unsigned long vaddr, unsigned long lmi)
 	unsigned long hash;
 	unsigned long vsid = get_kernel_vsid(vaddr, mmu_kernel_ssize);
 	unsigned long vpn = hpt_vpn(vaddr, vsid, mmu_kernel_ssize);
-	unsigned long mode = htab_convert_pte_flags(PAGE_KERNEL);
+	unsigned long mode = htab_convert_pte_flags(pgprot_val(PAGE_KERNEL));
 	long ret;
 
 	hash = hpt_hash(vpn, PAGE_SHIFT, mmu_kernel_ssize);
@@ -1432,7 +1518,7 @@ static void kernel_unmap_linear_page(unsigned long vaddr, unsigned long lmi)
 			       mmu_kernel_ssize, 0);
 }
 
-void kernel_map_pages(struct page *page, int numpages, int enable)
+void __kernel_map_pages(struct page *page, int numpages, int enable)
 {
 	unsigned long flags, vaddr, lmi;
 	int i;

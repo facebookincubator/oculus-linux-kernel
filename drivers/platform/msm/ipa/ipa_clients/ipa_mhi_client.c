@@ -140,25 +140,6 @@ struct ipa_mhi_client_ctx {
 
 static struct ipa_mhi_client_ctx *ipa_mhi_client_ctx;
 
-#ifdef CONFIG_DEBUG_FS
-#define IPA_MHI_MAX_MSG_LEN 512
-static char dbg_buff[IPA_MHI_MAX_MSG_LEN];
-static struct dentry *dent;
-
-static char *ipa_mhi_channel_state_str[] = {
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
-};
-
-#define MHI_CH_STATE_STR(state) \
-	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
-	ipa_mhi_channel_state_str[(state)] : \
-	"INVALID")
-
 static int ipa_mhi_read_write_host(enum ipa_mhi_dma_dir dir, void *dev_addr,
 	u64 host_addr, int size)
 {
@@ -232,6 +213,25 @@ fail_memcopy:
 			mem.phys_base);
 	return res;
 }
+
+#ifdef CONFIG_DEBUG_FS
+#define IPA_MHI_MAX_MSG_LEN 512
+static char dbg_buff[IPA_MHI_MAX_MSG_LEN];
+static struct dentry *dent;
+
+static char *ipa_mhi_channel_state_str[] = {
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
+};
+
+#define MHI_CH_STATE_STR(state) \
+	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
+	ipa_mhi_channel_state_str[(state)] : \
+	"INVALID")
 
 static int ipa_mhi_print_channel_info(struct ipa_mhi_channel_ctx *channel,
 	char *buff, int len)
@@ -459,6 +459,11 @@ static void ipa_mhi_debugfs_init(void)
 	IPA_MHI_FUNC_EXIT();
 	return;
 fail:
+	debugfs_remove_recursive(dent);
+}
+
+static void ipa_mhi_debugfs_destroy(void)
+{
 	debugfs_remove_recursive(dent);
 }
 
@@ -1234,7 +1239,7 @@ static void ipa_mhi_set_holb_on_dl_channels(bool enable,
 		if (-1 == ep_idx) {
 			IPA_MHI_ERR("Client %u is not mapped\n",
 				ipa_mhi_client_ctx->dl_channels[i].client);
-			BUG();
+			ipa_assert();
 			return;
 		}
 		memset(&ep_holb, 0, sizeof(ep_holb));
@@ -1248,7 +1253,7 @@ static void ipa_mhi_set_holb_on_dl_channels(bool enable,
 		res = ipa_cfg_ep_holb(ep_idx, &ep_holb);
 		if (res) {
 			IPA_MHI_ERR("ipa_cfg_ep_holb failed %d\n", res);
-			BUG();
+			ipa_assert();
 			return;
 		}
 	}
@@ -1316,7 +1321,7 @@ static int ipa_mhi_reset_ul_channel(struct ipa_mhi_channel_ctx *channel)
 		if (res) {
 			IPA_MHI_ERR("ipa_mhi_enable_force_clear failed %d\n",
 				res);
-			BUG();
+			ipa_assert();
 			return res;
 		}
 
@@ -1335,7 +1340,7 @@ static int ipa_mhi_reset_ul_channel(struct ipa_mhi_channel_ctx *channel)
 			res = ipa_disable_sps_pipe(channel->client);
 			if (res) {
 				IPA_MHI_ERR("sps_pipe_disable fail %d\n", res);
-				BUG();
+				ipa_assert();
 				return res;
 			}
 		}
@@ -1345,7 +1350,7 @@ static int ipa_mhi_reset_ul_channel(struct ipa_mhi_channel_ctx *channel)
 		if (res) {
 			IPA_MHI_ERR("ipa_mhi_disable_force_clear failed %d\n",
 				res);
-			BUG();
+			ipa_assert();
 			return res;
 		}
 		ipa_mhi_client_ctx->qmi_req_id++;
@@ -1853,7 +1858,7 @@ static int ipa_mhi_suspend_ul(bool force, bool *empty, bool *force_clear)
 				ipa_mhi_client_ctx->qmi_req_id, false);
 			if (res) {
 				IPA_MHI_ERR("failed to enable force clear\n");
-				BUG();
+				ipa_assert();
 				return res;
 			}
 			*force_clear = true;
@@ -1870,7 +1875,7 @@ static int ipa_mhi_suspend_ul(bool force, bool *empty, bool *force_clear)
 					goto fail_suspend_ul_channel;
 				}
 
-				BUG();
+				ipa_assert();
 			}
 		} else {
 			IPA_MHI_DBG("IPA not empty\n");
@@ -1884,7 +1889,7 @@ static int ipa_mhi_suspend_ul(bool force, bool *empty, bool *force_clear)
 		ipa_mhi_disable_force_clear(ipa_mhi_client_ctx->qmi_req_id);
 		if (res) {
 			IPA_MHI_ERR("failed to disable force clear\n");
-			BUG();
+			ipa_assert();
 			return res;
 		}
 		IPA_MHI_DBG("force clear datapath disabled\n");
@@ -1947,7 +1952,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 				&channel->ch_info);
 			if (res) {
 				IPA_MHI_ERR("gsi_query_channel_info failed\n");
-				BUG();
+				ipa_assert();
 				return;
 			}
 
@@ -1958,7 +1963,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 				sizeof(channel->ch_info.rp));
 			if (res) {
 				IPA_MHI_ERR("ipa_mhi_read_write_host failed\n");
-				BUG();
+				ipa_assert();
 				return;
 			}
 		}
@@ -1969,7 +1974,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 			sizeof(((struct ipa_mhi_ch_ctx *)0)->chstate));
 		if (res) {
 			IPA_MHI_ERR("ipa_mhi_read_write_host failed\n");
-			BUG();
+			ipa_assert();
 			return;
 		}
 	}
@@ -1984,7 +1989,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 				&channel->ch_info);
 			if (res) {
 				IPA_MHI_ERR("gsi_query_channel_info failed\n");
-				BUG();
+				ipa_assert();
 				return;
 			}
 
@@ -1995,7 +2000,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 				sizeof(channel->ch_info.rp));
 			if (res) {
 				IPA_MHI_ERR("ipa_mhi_read_write_host failed\n");
-				BUG();
+				ipa_assert();
 				return;
 			}
 		}
@@ -2006,7 +2011,7 @@ static void ipa_mhi_update_host_ch_state(bool update_rp)
 			sizeof(((struct ipa_mhi_ch_ctx *)0)->chstate));
 		if (res) {
 			IPA_MHI_ERR("ipa_mhi_read_write_host failed\n");
-			BUG();
+			ipa_assert();
 		}
 	}
 }
@@ -2138,7 +2143,7 @@ fail_suspend_ul_channel:
 		if (
 		ipa_mhi_disable_force_clear(ipa_mhi_client_ctx->qmi_req_id)) {
 			IPA_MHI_ERR("failed to disable force clear\n");
-			BUG();
+			ipa_assert();
 		}
 		IPA_MHI_DBG("force clear datapath disabled\n");
 		ipa_mhi_client_ctx->qmi_req_id++;
@@ -2310,11 +2315,6 @@ int ipa_mhi_destroy_all_channels(void)
 	return 0;
 }
 
-static void ipa_mhi_debugfs_destroy(void)
-{
-	debugfs_remove_recursive(dent);
-}
-
 /**
  * ipa_mhi_destroy() - Destroy MHI IPA
  *
@@ -2413,7 +2413,7 @@ void ipa_mhi_destroy(void)
 	IPA_MHI_FUNC_EXIT();
 	return;
 fail:
-	BUG();
+	ipa_assert();
 }
 
 /**
@@ -2435,6 +2435,7 @@ int ipa_mhi_init(struct ipa_mhi_init_params *params)
 	int res;
 	struct ipa_rm_create_params mhi_prod_params;
 	struct ipa_rm_create_params mhi_cons_params;
+	struct ipa_rm_perf_profile profile;
 
 	IPA_MHI_FUNC_ENTRY();
 
@@ -2506,6 +2507,14 @@ int ipa_mhi_init(struct ipa_mhi_init_params *params)
 		goto fail_create_rm_prod;
 	}
 
+	memset(&profile, 0, sizeof(profile));
+	profile.max_supported_bandwidth_mbps = 1000;
+	res = ipa_rm_set_perf_profile(IPA_RM_RESOURCE_MHI_PROD, &profile);
+	if (res) {
+		IPA_MHI_ERR("fail to set profile to MHI_PROD\n");
+		goto fail_perf_rm_prod;
+	}
+
 	/* Create CONS in IPA RM */
 	memset(&mhi_cons_params, 0, sizeof(mhi_cons_params));
 	mhi_cons_params.name = IPA_RM_RESOURCE_MHI_CONS;
@@ -2516,6 +2525,14 @@ int ipa_mhi_init(struct ipa_mhi_init_params *params)
 	if (res) {
 		IPA_MHI_ERR("fail to create IPA_RM_RESOURCE_MHI_CONS\n");
 		goto fail_create_rm_cons;
+	}
+
+	memset(&profile, 0, sizeof(profile));
+	profile.max_supported_bandwidth_mbps = 1000;
+	res = ipa_rm_set_perf_profile(IPA_RM_RESOURCE_MHI_CONS, &profile);
+	if (res) {
+		IPA_MHI_ERR("fail to set profile to MHI_CONS\n");
+		goto fail_perf_rm_cons;
 	}
 
 	/* Initialize uC interface */
@@ -2530,7 +2547,10 @@ int ipa_mhi_init(struct ipa_mhi_init_params *params)
 	IPA_MHI_FUNC_EXIT();
 	return 0;
 
+fail_perf_rm_cons:
+	ipa_rm_delete_resource(IPA_RM_RESOURCE_MHI_CONS);
 fail_create_rm_cons:
+fail_perf_rm_prod:
 	ipa_rm_delete_resource(IPA_RM_RESOURCE_MHI_PROD);
 fail_create_rm_prod:
 	destroy_workqueue(ipa_mhi_client_ctx->wq);

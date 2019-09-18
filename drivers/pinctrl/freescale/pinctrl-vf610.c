@@ -299,10 +299,10 @@ static const struct pinctrl_pin_desc vf610_pinctrl_pads[] = {
 static struct imx_pinctrl_soc_info vf610_pinctrl_info = {
 	.pins = vf610_pinctrl_pads,
 	.npins = ARRAY_SIZE(vf610_pinctrl_pads),
-	.flags = SHARE_MUX_CONF_REG,
+	.flags = SHARE_MUX_CONF_REG | ZERO_OFFSET_VALID,
 };
 
-static struct of_device_id vf610_pinctrl_of_match[] = {
+static const struct of_device_id vf610_pinctrl_of_match[] = {
 	{ .compatible = "fsl,vf610-iomuxc", },
 	{ /* sentinel */ }
 };
@@ -315,7 +315,6 @@ static int vf610_pinctrl_probe(struct platform_device *pdev)
 static struct platform_driver vf610_pinctrl_driver = {
 	.driver = {
 		.name = "vf610-pinctrl",
-		.owner = THIS_MODULE,
 		.of_match_table = vf610_pinctrl_of_match,
 	},
 	.probe = vf610_pinctrl_probe,

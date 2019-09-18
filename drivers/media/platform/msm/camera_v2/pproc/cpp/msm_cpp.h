@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 #include "cam_soc_api.h"
 #include "cam_hw_ops.h"
 #include <media/msmb_pproc.h>
+#include <soc/qcom/cx_ipeak.h>
 
 /* hw version info:
   31:28  Major version
@@ -129,6 +130,12 @@ enum cpp_iommu_state {
 	CPP_IOMMU_STATE_ATTACHED,
 };
 
+enum cpp_iommu_fault_state {
+	CPP_IOMMU_FAULT_NONE,
+	CPP_IOMMU_FAULT_DETECTED,
+	CPP_IOMMU_FAULT_RECOVERED,
+};
+
 enum msm_queue {
 	MSM_CAM_Q_CTRL,     /* control command or control command status */
 	MSM_CAM_Q_VFE_EVT,  /* adsp event */
@@ -186,6 +193,7 @@ struct msm_cpp_buff_queue_info_t {
 	uint32_t used;
 	uint16_t session_id;
 	uint16_t stream_id;
+	enum smmu_attach_mode security_mode;
 	struct list_head vb2_buff_head;
 	struct list_head native_buff_head;
 };
@@ -228,6 +236,7 @@ struct cpp_device {
 	struct clk **cpp_clk;
 	struct msm_cam_clk_info *clk_info;
 	size_t num_clks;
+	struct reset_control *micro_iface_reset;
 	struct msm_cam_regulator *cpp_vdd;
 	int num_reg;
 	struct mutex mutex;
@@ -250,6 +259,8 @@ struct cpp_device {
 	uint32_t min_clk_rate;
 
 	int iommu_hdl;
+	struct ion_client *ion_client;
+	enum smmu_attach_mode security_mode;
 	/* Reusing proven tasklet from msm isp */
 	atomic_t irq_cnt;
 	uint8_t taskletq_idx;
@@ -277,13 +288,19 @@ struct cpp_device {
 	uint32_t bus_client;
 	uint32_t bus_idx;
 	uint32_t bus_master_flag;
+	uint32_t micro_reset;
 	struct msm_cpp_payload_params payload_params;
 	struct msm_cpp_vbif_data *vbif_data;
+	bool turbo_vote;
+	struct cx_ipeak_client *cpp_cx_ipeak;
+	enum cpp_iommu_fault_state fault_status;
 };
 
 int msm_cpp_set_micro_clk(struct cpp_device *cpp_dev);
 int msm_update_freq_tbl(struct cpp_device *cpp_dev);
 int msm_cpp_get_clock_index(struct cpp_device *cpp_dev, const char *clk_name);
+int msm_cpp_get_regulator_index(struct cpp_device *cpp_dev,
+	const char *regulator_name);
 long msm_cpp_set_core_clk(struct cpp_device *cpp_dev, long rate, int idx);
 void msm_cpp_fetch_dt_params(struct cpp_device *cpp_dev);
 int msm_cpp_read_payload_params_from_dt(struct cpp_device *cpp_dev);

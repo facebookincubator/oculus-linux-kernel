@@ -2107,13 +2107,12 @@ static int drbd_create_mempools(void)
 	if (drbd_md_io_page_pool == NULL)
 		goto Enomem;
 
-	drbd_request_mempool = mempool_create(number,
-		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
+	drbd_request_mempool = mempool_create_slab_pool(number,
+		drbd_request_cache);
 	if (drbd_request_mempool == NULL)
 		goto Enomem;
 
-	drbd_ee_mempool = mempool_create(number,
-		mempool_alloc_slab, mempool_free_slab, drbd_ee_cache);
+	drbd_ee_mempool = mempool_create_slab_pool(number, drbd_ee_cache);
 	if (drbd_ee_mempool == NULL)
 		goto Enomem;
 
@@ -2360,7 +2359,7 @@ static void drbd_cleanup(void)
  * @congested_data:	User data
  * @bdi_bits:		Bits the BDI flusher thread is currently interested in
  *
- * Returns 1<<BDI_async_congested and/or 1<<BDI_sync_congested if we are congested.
+ * Returns 1<<WB_async_congested and/or 1<<WB_sync_congested if we are congested.
  */
 static int drbd_congested(void *congested_data, int bdi_bits)
 {
@@ -2377,14 +2376,14 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 	}
 
 	if (test_bit(CALLBACK_PENDING, &first_peer_device(device)->connection->flags)) {
-		r |= (1 << BDI_async_congested);
+		r |= (1 << WB_async_congested);
 		/* Without good local data, we would need to read from remote,
 		 * and that would need the worker thread as well, which is
 		 * currently blocked waiting for that usermode helper to
 		 * finish.
 		 */
 		if (!get_ldev_if_state(device, D_UP_TO_DATE))
-			r |= (1 << BDI_sync_congested);
+			r |= (1 << WB_sync_congested);
 		else
 			put_ldev(device);
 		r &= bdi_bits;
@@ -2394,15 +2393,15 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 
 	if (get_ldev(device)) {
 		q = bdev_get_queue(device->ldev->backing_bdev);
-		r = bdi_congested(&q->backing_dev_info, bdi_bits);
+		r = bdi_congested(q->backing_dev_info, bdi_bits);
 		put_ldev(device);
 		if (r)
 			reason = 'b';
 	}
 
-	if (bdi_bits & (1 << BDI_async_congested) &&
+	if (bdi_bits & (1 << WB_async_congested) &&
 	    test_bit(NET_CONGESTED, &first_peer_device(device)->connection->flags)) {
-		r |= (1 << BDI_async_congested);
+		r |= (1 << WB_async_congested);
 		reason = reason == 'b' ? 'a' : 'n';
 	}
 
@@ -2532,10 +2531,6 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
-		/*
-		retcode = ERR_NOMEM;
-		drbd_msg_put_info("unable to allocate cpumask");
-		*/
 
 	/* silently ignore cpu mask on UP kernel */
 	if (nr_cpu_ids > 1 && res_opts->cpu_mask[0] != 0) {
@@ -2731,7 +2726,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	device = minor_to_device(minor);
 	if (device)
-		return ERR_MINOR_EXISTS;
+		return ERR_MINOR_OR_VOLUME_EXISTS;
 
 	/* GFP_KERNEL, we are outside of all write-out paths */
 	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
@@ -2770,8 +2765,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	/* we have no partitions. we contain only ourselves. */
 	device->this_bdev->bd_contains = device->this_bdev;
 
-	q->backing_dev_info.congested_fn = drbd_congested;
-	q->backing_dev_info.congested_data = device;
+	q->backing_dev_info->congested_fn = drbd_congested;
+	q->backing_dev_info->congested_data = device;
 
 	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_flush(q, REQ_FLUSH | REQ_FUA);
@@ -2779,7 +2774,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	   This triggers a max_bio_size message upon first attach or connect */
 	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE_SAFE >> 8);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
-	blk_queue_merge_bvec(q, drbd_merge_bvec);
 	q->queue_lock = &resource->req_lock;
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
@@ -2793,20 +2787,16 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_KERNEL);
 	if (id < 0) {
-		if (id == -ENOSPC) {
-			err = ERR_MINOR_EXISTS;
-			drbd_msg_put_info(adm_ctx->reply_skb, "requested minor exists already");
-		}
+		if (id == -ENOSPC)
+			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_no_minor_idr;
 	}
 	kref_get(&device->kref);
 
 	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
 	if (id < 0) {
-		if (id == -ENOSPC) {
-			err = ERR_MINOR_EXISTS;
-			drbd_msg_put_info(adm_ctx->reply_skb, "requested minor exists already");
-		}
+		if (id == -ENOSPC)
+			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_idr_remove_minor;
 	}
 	kref_get(&device->kref);
@@ -2825,10 +2815,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 		id = idr_alloc(&connection->peer_devices, peer_device, vnr, vnr + 1, GFP_KERNEL);
 		if (id < 0) {
-			if (id == -ENOSPC) {
+			if (id == -ENOSPC)
 				err = ERR_INVALID_REQUEST;
-				drbd_msg_put_info(adm_ctx->reply_skb, "requested volume exists already");
-			}
 			goto out_idr_remove_from_resource;
 		}
 		kref_get(&connection->kref);
@@ -2836,7 +2824,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
-		drbd_msg_put_info(adm_ctx->reply_skb, "unable to create submit workqueue");
 		goto out_idr_remove_vol;
 	}
 

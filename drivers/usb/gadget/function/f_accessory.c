@@ -141,11 +141,11 @@ static struct usb_endpoint_descriptor acc_superspeed_in_desc = {
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_IN,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(1024),
+	.wMaxPacketSize         = cpu_to_le16(1024),
 };
 
 static struct usb_ss_ep_comp_descriptor acc_superspeed_in_comp_desc = {
-	.bLength =		sizeof acc_superspeed_in_comp_desc,
+	.bLength =		sizeof(acc_superspeed_in_comp_desc),
 	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
 
 	/* the following 2 values can be tweaked if necessary */
@@ -158,11 +158,11 @@ static struct usb_endpoint_descriptor acc_superspeed_out_desc = {
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_OUT,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(1024),
+	.wMaxPacketSize         = cpu_to_le16(1024),
 };
 
 static struct usb_ss_ep_comp_descriptor acc_superspeed_out_comp_desc = {
-	.bLength =		sizeof acc_superspeed_out_comp_desc,
+	.bLength =		sizeof(acc_superspeed_out_comp_desc),
 	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
 
 	/* the following 2 values can be tweaked if necessary */
@@ -176,7 +176,7 @@ static struct usb_endpoint_descriptor acc_highspeed_in_desc = {
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_IN,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(512),
+	.wMaxPacketSize         = cpu_to_le16(512),
 };
 
 static struct usb_endpoint_descriptor acc_highspeed_out_desc = {
@@ -184,7 +184,7 @@ static struct usb_endpoint_descriptor acc_highspeed_out_desc = {
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_OUT,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(512),
+	.wMaxPacketSize         = cpu_to_le16(512),
 };
 
 static struct usb_endpoint_descriptor acc_fullspeed_in_desc = {
@@ -575,19 +575,9 @@ static int create_bulk_endpoints(struct acc_dev *dev,
 	ep->driver_data = dev;		/* claim the endpoint */
 	dev->ep_out = ep;
 
-	ep = usb_ep_autoconfig(cdev->gadget, out_desc);
-	if (!ep) {
-		DBG(cdev, "usb_ep_autoconfig for ep_out failed\n");
-		return -ENODEV;
-	}
-	DBG(cdev, "usb_ep_autoconfig for ep_out got %s\n", ep->name);
-	ep->driver_data = dev;		/* claim the endpoint */
-	dev->ep_out = ep;
-
 	/* now allocate requests for our endpoints */
 	for (i = 0; i < TX_REQ_MAX; i++) {
-		req = acc_request_new(dev->ep_in,
-			BULK_BUFFER_SIZE + cdev->gadget->extra_buf_alloc);
+		req = acc_request_new(dev->ep_in, BULK_BUFFER_SIZE);
 		if (!req)
 			goto fail;
 		req->complete = acc_complete_in;
@@ -617,9 +607,7 @@ static ssize_t acc_read(struct file *fp, char __user *buf,
 {
 	struct acc_dev *dev = fp->private_data;
 	struct usb_request *req;
-	ssize_t r = count;
-	unsigned xfer;
-	int len;
+	ssize_t r = count, xfer, len;
 	int ret = 0;
 
 	pr_debug("acc_read(%zu)\n", count);
@@ -1034,11 +1022,6 @@ __acc_function_bind(struct usb_configuration *c,
 }
 
 static int
-acc_function_bind(struct usb_configuration *c, struct usb_function *f) {
-	return __acc_function_bind(c, f, false);
-}
-
-static int
 acc_function_bind_configfs(struct usb_configuration *c,
 			struct usb_function *f) {
 	return __acc_function_bind(c, f, true);
@@ -1197,31 +1180,19 @@ static int acc_function_set_alt(struct usb_function *f,
 	DBG(cdev, "acc_function_set_alt intf: %d alt: %d\n", intf, alt);
 
 	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_in);
-	if (ret) {
-		dev->ep_in->desc = NULL;
-		ERROR(cdev, "config_ep_by_speed failes for ep %s, result %d\n",
-				dev->ep_in->name, ret);
-			return ret;
-	}
-	ret = usb_ep_enable(dev->ep_in);
-	if (ret) {
-		ERROR(cdev, "failed to enable ep %s, result %d\n",
-			dev->ep_in->name, ret);
+	if (ret)
 		return ret;
-	}
+
+	ret = usb_ep_enable(dev->ep_in);
+	if (ret)
+		return ret;
 
 	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_out);
-	if (ret) {
-		dev->ep_out->desc = NULL;
-		ERROR(cdev, "config_ep_by_speed failes for ep %s, result %d\n",
-			dev->ep_out->name, ret);
-		usb_ep_disable(dev->ep_in);
+	if (ret)
 		return ret;
-	}
+
 	ret = usb_ep_enable(dev->ep_out);
 	if (ret) {
-		ERROR(cdev, "failed to enable ep %s, result %d\n",
-				dev->ep_out->name, ret);
 		usb_ep_disable(dev->ep_in);
 		return ret;
 	}
@@ -1247,37 +1218,6 @@ static void acc_function_disable(struct usb_function *f)
 	wake_up(&dev->read_wq);
 
 	VDBG(cdev, "%s disabled\n", dev->function.name);
-}
-
-static int acc_bind_config(struct usb_configuration *c)
-{
-	struct acc_dev *dev = _acc_dev;
-	int ret;
-
-	printk(KERN_INFO "acc_bind_config\n");
-
-	/* allocate a string ID for our interface */
-	if (acc_string_defs[INTERFACE_STRING_INDEX].id == 0) {
-		ret = usb_string_id(c->cdev);
-		if (ret < 0)
-			return ret;
-		acc_string_defs[INTERFACE_STRING_INDEX].id = ret;
-		acc_interface_desc.iInterface = ret;
-	}
-
-	dev->cdev = c->cdev;
-	dev->function.name = "accessory";
-	dev->function.strings = acc_strings,
-	dev->function.fs_descriptors = fs_acc_descs;
-	dev->function.hs_descriptors = hs_acc_descs;
-	if (gadget_is_superspeed(c->cdev->gadget))
-		dev->function.ss_descriptors = ss_acc_descs;
-	dev->function.bind = acc_function_bind;
-	dev->function.unbind = acc_function_unbind;
-	dev->function.set_alt = acc_function_set_alt;
-	dev->function.disable = acc_function_disable;
-
-	return usb_add_function(c, &dev->function);
 }
 
 static int acc_setup(void)
@@ -1431,6 +1371,7 @@ static struct usb_function *acc_alloc(struct usb_function_instance *fi)
 	dev->function.strings = acc_strings,
 	dev->function.fs_descriptors = fs_acc_descs;
 	dev->function.hs_descriptors = hs_acc_descs;
+	dev->function.ss_descriptors = ss_acc_descs;
 	dev->function.bind = acc_function_bind_configfs;
 	dev->function.unbind = acc_function_unbind;
 	dev->function.set_alt = acc_function_set_alt;

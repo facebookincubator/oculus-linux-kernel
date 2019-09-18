@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2014 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -15,7 +15,6 @@
  */
 
 #include <linux/io.h>
-#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #include <linux/of.h>
@@ -24,12 +23,24 @@
 #include <linux/export.h>
 #include <linux/clk/tegra.h>
 #include <dt-bindings/clock/tegra124-car.h>
+#include <dt-bindings/reset/tegra124-car.h>
 
 #include "clk.h"
 #include "clk-id.h"
 
+/*
+ * TEGRA124_CAR_BANK_COUNT: the number of peripheral clock register
+ * banks present in the Tegra124/132 CAR IP block.  The banks are
+ * identified by single letters, e.g.: L, H, U, V, W, X.  See
+ * periph_regs[] in drivers/clk/tegra/clk.c
+ */
+#define TEGRA124_CAR_BANK_COUNT			6
+
 #define CLK_SOURCE_CSITE 0x1d4
 #define CLK_SOURCE_EMC 0x19c
+
+#define RST_DFLL_DVCO			0x2f4
+#define DVFS_DFLL_RESET_SHIFT		0
 
 #define PLLC_BASE 0x80
 #define PLLC_OUT 0x84
@@ -86,6 +97,8 @@
 #define PMC_PLLM_WB0_OVERRIDE 0x1dc
 #define PMC_PLLM_WB0_OVERRIDE_2 0x2b0
 
+#define CCLKG_BURST_POLICY 0x368
+
 #define UTMIP_PLL_CFG2 0x488
 #define UTMIP_PLL_CFG2_STABLE_COUNT(x) (((x) & 0xffff) << 6)
 #define UTMIP_PLL_CFG2_ACTIVE_DLY_COUNT(x) (((x) & 0x3f) << 18)
@@ -118,6 +131,8 @@
 #ifdef CONFIG_PM_SLEEP
 static struct cpu_clk_suspend_context {
 	u32 clk_csite_src;
+	u32 cclkg_burst;
+	u32 cclkg_divider;
 } tegra124_cpu_clk_sctx;
 #endif
 
@@ -128,10 +143,10 @@ static unsigned long osc_freq;
 static unsigned long pll_ref_freq;
 
 static DEFINE_SPINLOCK(pll_d_lock);
-static DEFINE_SPINLOCK(pll_d2_lock);
 static DEFINE_SPINLOCK(pll_e_lock);
 static DEFINE_SPINLOCK(pll_re_lock);
 static DEFINE_SPINLOCK(pll_u_lock);
+static DEFINE_SPINLOCK(emc_lock);
 
 /* possible OSC frequencies in Hz */
 static unsigned long tegra124_input_freq[] = {
@@ -143,16 +158,6 @@ static unsigned long tegra124_input_freq[] = {
 	[9] = 48000000,
 	[12] = 260000000,
 };
-
-static const char *mux_plld_out0_plld2_out0[] = {
-	"pll_d_out0", "pll_d2_out0",
-};
-#define mux_plld_out0_plld2_out0_idx NULL
-
-static const char *mux_pllmcp_clkm[] = {
-	"pll_m", "pll_c", "pll_p", "clk_m", "pll_m_ud", "pll_c2", "pll_c3",
-};
-#define mux_pllmcp_clkm_idx NULL
 
 static struct div_nmp pllxc_nmp = {
 	.divm_shift = 0,
@@ -782,14 +787,12 @@ static struct tegra_clk tegra124_clks[tegra_clk_max] __initdata = {
 	[tegra_clk_sbc2] = { .dt_id = TEGRA124_CLK_SBC2, .present = true },
 	[tegra_clk_sbc3] = { .dt_id = TEGRA124_CLK_SBC3, .present = true },
 	[tegra_clk_i2c5] = { .dt_id = TEGRA124_CLK_I2C5, .present = true },
-	[tegra_clk_dsia] = { .dt_id = TEGRA124_CLK_DSIA, .present = true },
 	[tegra_clk_mipi] = { .dt_id = TEGRA124_CLK_MIPI, .present = true },
 	[tegra_clk_hdmi] = { .dt_id = TEGRA124_CLK_HDMI, .present = true },
 	[tegra_clk_csi] = { .dt_id = TEGRA124_CLK_CSI, .present = true },
 	[tegra_clk_i2c2] = { .dt_id = TEGRA124_CLK_I2C2, .present = true },
 	[tegra_clk_uartc] = { .dt_id = TEGRA124_CLK_UARTC, .present = true },
 	[tegra_clk_mipi_cal] = { .dt_id = TEGRA124_CLK_MIPI_CAL, .present = true },
-	[tegra_clk_emc] = { .dt_id = TEGRA124_CLK_EMC, .present = true },
 	[tegra_clk_usb2] = { .dt_id = TEGRA124_CLK_USB2, .present = true },
 	[tegra_clk_usb3] = { .dt_id = TEGRA124_CLK_USB3, .present = true },
 	[tegra_clk_vde_8] = { .dt_id = TEGRA124_CLK_VDE, .present = true },
@@ -808,7 +811,6 @@ static struct tegra_clk tegra124_clks[tegra_clk_max] __initdata = {
 	[tegra_clk_soc_therm] = { .dt_id = TEGRA124_CLK_SOC_THERM, .present = true },
 	[tegra_clk_dtv] = { .dt_id = TEGRA124_CLK_DTV, .present = true },
 	[tegra_clk_i2cslow] = { .dt_id = TEGRA124_CLK_I2CSLOW, .present = true },
-	[tegra_clk_dsib] = { .dt_id = TEGRA124_CLK_DSIB, .present = true },
 	[tegra_clk_tsec] = { .dt_id = TEGRA124_CLK_TSEC, .present = true },
 	[tegra_clk_xusb_host] = { .dt_id = TEGRA124_CLK_XUSB_HOST, .present = true },
 	[tegra_clk_msenc] = { .dt_id = TEGRA124_CLK_MSENC, .present = true },
@@ -948,8 +950,6 @@ static struct tegra_clk tegra124_clks[tegra_clk_max] __initdata = {
 	[tegra_clk_clk_out_1_mux] = { .dt_id = TEGRA124_CLK_CLK_OUT_1_MUX, .present = true },
 	[tegra_clk_clk_out_2_mux] = { .dt_id = TEGRA124_CLK_CLK_OUT_2_MUX, .present = true },
 	[tegra_clk_clk_out_3_mux] = { .dt_id = TEGRA124_CLK_CLK_OUT_3_MUX, .present = true },
-	[tegra_clk_dsia_mux] = { .dt_id = TEGRA124_CLK_DSIA_MUX, .present = true },
-	[tegra_clk_dsib_mux] = { .dt_id = TEGRA124_CLK_DSIB_MUX, .present = true },
 };
 
 static struct tegra_devclk devclks[] __initdata = {
@@ -1015,6 +1015,9 @@ static struct tegra_devclk devclks[] __initdata = {
 	{ .con_id = "fuse", .dt_id = TEGRA124_CLK_FUSE },
 	{ .dev_id = "rtc-tegra", .dt_id = TEGRA124_CLK_RTC },
 	{ .dev_id = "timer", .dt_id = TEGRA124_CLK_TIMER },
+	{ .con_id = "hda", .dt_id = TEGRA124_CLK_HDA },
+	{ .con_id = "hda2codec_2x", .dt_id = TEGRA124_CLK_HDA2CODEC_2X },
+	{ .con_id = "hda2hdmi", .dt_id = TEGRA124_CLK_HDA2HDMI },
 };
 
 static struct clk **clks;
@@ -1111,23 +1114,23 @@ static __init void tegra124_periph_clk_init(void __iomem *clk_base,
 					1, 2);
 	clks[TEGRA124_CLK_XUSB_SS_DIV2] = clk;
 
-	/* dsia mux */
-	clk = clk_register_mux(NULL, "dsia_mux", mux_plld_out0_plld2_out0,
-			       ARRAY_SIZE(mux_plld_out0_plld2_out0), 0,
-			       clk_base + PLLD_BASE, 25, 1, 0, &pll_d_lock);
-	clks[TEGRA124_CLK_DSIA_MUX] = clk;
+	clk = clk_register_gate(NULL, "pll_d_dsi_out", "pll_d_out0", 0,
+				clk_base + PLLD_MISC, 30, 0, &pll_d_lock);
+	clks[TEGRA124_CLK_PLL_D_DSI_OUT] = clk;
 
-	/* dsib mux */
-	clk = clk_register_mux(NULL, "dsib_mux", mux_plld_out0_plld2_out0,
-			       ARRAY_SIZE(mux_plld_out0_plld2_out0), 0,
-			       clk_base + PLLD2_BASE, 25, 1, 0, &pll_d2_lock);
-	clks[TEGRA124_CLK_DSIB_MUX] = clk;
+	clk = tegra_clk_register_periph_gate("dsia", "pll_d_dsi_out", 0,
+					     clk_base, 0, 48,
+					     periph_clk_enb_refcnt);
+	clks[TEGRA124_CLK_DSIA] = clk;
 
-	/* emc mux */
-	clk = clk_register_mux(NULL, "emc_mux", mux_pllmcp_clkm,
-			       ARRAY_SIZE(mux_pllmcp_clkm), 0,
-			       clk_base + CLK_SOURCE_EMC,
-			       29, 3, 0, NULL);
+	clk = tegra_clk_register_periph_gate("dsib", "pll_d_dsi_out", 0,
+					     clk_base, 0, 82,
+					     periph_clk_enb_refcnt);
+	clks[TEGRA124_CLK_DSIB] = clk;
+
+	clk = tegra_clk_register_mc("mc", "emc", clk_base + CLK_SOURCE_EMC,
+				    &emc_lock);
+	clks[TEGRA124_CLK_MC] = clk;
 
 	/* cml0 */
 	clk = clk_register_gate(NULL, "cml0", "pll_e", 0, clk_base + PLLE_AUX,
@@ -1323,12 +1326,22 @@ static void tegra124_cpu_clock_suspend(void)
 	tegra124_cpu_clk_sctx.clk_csite_src =
 				readl(clk_base + CLK_SOURCE_CSITE);
 	writel(3 << 30, clk_base + CLK_SOURCE_CSITE);
+
+	tegra124_cpu_clk_sctx.cclkg_burst =
+				readl(clk_base + CCLKG_BURST_POLICY);
+	tegra124_cpu_clk_sctx.cclkg_divider =
+				readl(clk_base + CCLKG_BURST_POLICY + 4);
 }
 
 static void tegra124_cpu_clock_resume(void)
 {
 	writel(tegra124_cpu_clk_sctx.clk_csite_src,
 				clk_base + CLK_SOURCE_CSITE);
+
+	writel(tegra124_cpu_clk_sctx.cclkg_burst,
+					clk_base + CCLKG_BURST_POLICY);
+	writel(tegra124_cpu_clk_sctx.cclkg_divider,
+					clk_base + CCLKG_BURST_POLICY + 4);
 }
 #endif
 
@@ -1346,7 +1359,7 @@ static const struct of_device_id pmc_match[] __initconst = {
 	{},
 };
 
-static struct tegra_clk_init_table init_table[] __initdata = {
+static struct tegra_clk_init_table common_init_table[] __initdata = {
 	{TEGRA124_CLK_UARTA, TEGRA124_CLK_PLL_P, 408000000, 0},
 	{TEGRA124_CLK_UARTB, TEGRA124_CLK_PLL_P, 408000000, 0},
 	{TEGRA124_CLK_UARTC, TEGRA124_CLK_PLL_P, 408000000, 0},
@@ -1363,6 +1376,8 @@ static struct tegra_clk_init_table init_table[] __initdata = {
 	{TEGRA124_CLK_I2S4, TEGRA124_CLK_PLL_A_OUT0, 11289600, 0},
 	{TEGRA124_CLK_VDE, TEGRA124_CLK_PLL_P, 0, 0},
 	{TEGRA124_CLK_HOST1X, TEGRA124_CLK_PLL_P, 136000000, 1},
+	{TEGRA124_CLK_DSIALP, TEGRA124_CLK_PLL_P, 68000000, 0},
+	{TEGRA124_CLK_DSIBLP, TEGRA124_CLK_PLL_P, 68000000, 0},
 	{TEGRA124_CLK_SCLK, TEGRA124_CLK_PLL_P_OUT2, 102000000, 1},
 	{TEGRA124_CLK_DFLL_SOC, TEGRA124_CLK_PLL_P, 51000000, 1},
 	{TEGRA124_CLK_DFLL_REF, TEGRA124_CLK_PLL_P, 51000000, 1},
@@ -1379,28 +1394,141 @@ static struct tegra_clk_init_table init_table[] __initdata = {
 	{TEGRA124_CLK_XUSB_HOST_SRC, TEGRA124_CLK_PLL_RE_OUT, 112000000, 0},
 	{TEGRA124_CLK_SATA, TEGRA124_CLK_PLL_P, 104000000, 0},
 	{TEGRA124_CLK_SATA_OOB, TEGRA124_CLK_PLL_P, 204000000, 0},
-	{TEGRA124_CLK_EMC, TEGRA124_CLK_CLK_MAX, 0, 1},
-	{TEGRA124_CLK_CCLK_G, TEGRA124_CLK_CLK_MAX, 0, 1},
 	{TEGRA124_CLK_MSELECT, TEGRA124_CLK_CLK_MAX, 0, 1},
 	{TEGRA124_CLK_CSITE, TEGRA124_CLK_CLK_MAX, 0, 1},
 	{TEGRA124_CLK_TSENSOR, TEGRA124_CLK_CLK_M, 400000, 0},
-	{TEGRA124_CLK_SOC_THERM, TEGRA124_CLK_PLL_P, 51000000, 0},
 	/* This MUST be the last entry. */
 	{TEGRA124_CLK_CLK_MAX, TEGRA124_CLK_CLK_MAX, 0, 0},
 };
 
+static struct tegra_clk_init_table tegra124_init_table[] __initdata = {
+	{TEGRA124_CLK_SOC_THERM, TEGRA124_CLK_PLL_P, 51000000, 0},
+	{TEGRA124_CLK_CCLK_G, TEGRA124_CLK_CLK_MAX, 0, 1},
+	{TEGRA124_CLK_HDA, TEGRA124_CLK_PLL_P, 102000000, 0},
+	{TEGRA124_CLK_HDA2CODEC_2X, TEGRA124_CLK_PLL_P, 48000000, 0},
+	/* This MUST be the last entry. */
+	{TEGRA124_CLK_CLK_MAX, TEGRA124_CLK_CLK_MAX, 0, 0},
+};
+
+/* Tegra132 requires the SOC_THERM clock to remain active */
+static struct tegra_clk_init_table tegra132_init_table[] __initdata = {
+	{TEGRA124_CLK_SOC_THERM, TEGRA124_CLK_PLL_P, 51000000, 1},
+	/* This MUST be the last entry. */
+	{TEGRA124_CLK_CLK_MAX, TEGRA124_CLK_CLK_MAX, 0, 0},
+};
+
+static struct tegra_audio_clk_info tegra124_audio_plls[] = {
+	{ "pll_a", &pll_a_params, tegra_clk_pll_a, "pll_p_out1" },
+};
+
+/**
+ * tegra124_clock_apply_init_table - initialize clocks on Tegra124 SoCs
+ *
+ * Program an initial clock rate and enable or disable clocks needed
+ * by the rest of the kernel, for Tegra124 SoCs.  It is intended to be
+ * called by assigning a pointer to it to tegra_clk_apply_init_table -
+ * this will be called as an arch_initcall.  No return value.
+ */
 static void __init tegra124_clock_apply_init_table(void)
 {
-	tegra_init_from_table(init_table, clks, TEGRA124_CLK_CLK_MAX);
+	tegra_init_from_table(common_init_table, clks, TEGRA124_CLK_CLK_MAX);
+	tegra_init_from_table(tegra124_init_table, clks, TEGRA124_CLK_CLK_MAX);
 }
 
-static void __init tegra124_clock_init(struct device_node *np)
+/**
+ * tegra124_car_barrier - wait for pending writes to the CAR to complete
+ *
+ * Wait for any outstanding writes to the CAR MMIO space from this CPU
+ * to complete before continuing execution.  No return value.
+ */
+static void tegra124_car_barrier(void)
+{
+	readl_relaxed(clk_base + RST_DFLL_DVCO);
+}
+
+/**
+ * tegra124_clock_assert_dfll_dvco_reset - assert the DFLL's DVCO reset
+ *
+ * Assert the reset line of the DFLL's DVCO.  No return value.
+ */
+static void tegra124_clock_assert_dfll_dvco_reset(void)
+{
+	u32 v;
+
+	v = readl_relaxed(clk_base + RST_DFLL_DVCO);
+	v |= (1 << DVFS_DFLL_RESET_SHIFT);
+	writel_relaxed(v, clk_base + RST_DFLL_DVCO);
+	tegra124_car_barrier();
+}
+
+/**
+ * tegra124_clock_deassert_dfll_dvco_reset - deassert the DFLL's DVCO reset
+ *
+ * Deassert the reset line of the DFLL's DVCO, allowing the DVCO to
+ * operate.  No return value.
+ */
+static void tegra124_clock_deassert_dfll_dvco_reset(void)
+{
+	u32 v;
+
+	v = readl_relaxed(clk_base + RST_DFLL_DVCO);
+	v &= ~(1 << DVFS_DFLL_RESET_SHIFT);
+	writel_relaxed(v, clk_base + RST_DFLL_DVCO);
+	tegra124_car_barrier();
+}
+
+static int tegra124_reset_assert(unsigned long id)
+{
+	if (id == TEGRA124_RST_DFLL_DVCO)
+		tegra124_clock_assert_dfll_dvco_reset();
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int tegra124_reset_deassert(unsigned long id)
+{
+	if (id == TEGRA124_RST_DFLL_DVCO)
+		tegra124_clock_deassert_dfll_dvco_reset();
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+/**
+ * tegra132_clock_apply_init_table - initialize clocks on Tegra132 SoCs
+ *
+ * Program an initial clock rate and enable or disable clocks needed
+ * by the rest of the kernel, for Tegra132 SoCs.  It is intended to be
+ * called by assigning a pointer to it to tegra_clk_apply_init_table -
+ * this will be called as an arch_initcall.  No return value.
+ */
+static void __init tegra132_clock_apply_init_table(void)
+{
+	tegra_init_from_table(common_init_table, clks, TEGRA124_CLK_CLK_MAX);
+	tegra_init_from_table(tegra132_init_table, clks, TEGRA124_CLK_CLK_MAX);
+}
+
+/**
+ * tegra124_132_clock_init_pre - clock initialization preamble for T124/T132
+ * @np: struct device_node * of the DT node for the SoC CAR IP block
+ *
+ * Register most of the clocks controlled by the CAR IP block, along
+ * with a few clocks controlled by the PMC IP block.  Everything in
+ * this function should be common to Tegra124 and Tegra132.  XXX The
+ * PMC clock initialization should probably be moved to PMC-specific
+ * driver code.  No return value.
+ */
+static void __init tegra124_132_clock_init_pre(struct device_node *np)
 {
 	struct device_node *node;
+	u32 plld_base;
 
 	clk_base = of_iomap(np, 0);
 	if (!clk_base) {
-		pr_err("ioremap tegra124 CAR failed\n");
+		pr_err("ioremap tegra124/tegra132 CAR failed\n");
 		return;
 	}
 
@@ -1418,27 +1546,100 @@ static void __init tegra124_clock_init(struct device_node *np)
 		return;
 	}
 
-	clks = tegra_clk_init(clk_base, TEGRA124_CLK_CLK_MAX, 6);
+	clks = tegra_clk_init(clk_base, TEGRA124_CLK_CLK_MAX,
+			      TEGRA124_CAR_BANK_COUNT);
 	if (!clks)
 		return;
 
 	if (tegra_osc_clk_init(clk_base, tegra124_clks, tegra124_input_freq,
-		ARRAY_SIZE(tegra124_input_freq), &osc_freq, &pll_ref_freq) < 0)
+			       ARRAY_SIZE(tegra124_input_freq), 1, &osc_freq,
+			       &pll_ref_freq) < 0)
 		return;
 
 	tegra_fixed_clk_init(tegra124_clks);
 	tegra124_pll_init(clk_base, pmc_base);
 	tegra124_periph_clk_init(clk_base, pmc_base);
-	tegra_audio_clk_init(clk_base, pmc_base, tegra124_clks, &pll_a_params);
+	tegra_audio_clk_init(clk_base, pmc_base, tegra124_clks,
+			     tegra124_audio_plls,
+			     ARRAY_SIZE(tegra124_audio_plls));
 	tegra_pmc_clk_init(pmc_base, tegra124_clks);
 
-	tegra_super_clk_gen4_init(clk_base, pmc_base, tegra124_clks,
-					&pll_x_params);
-	tegra_add_of_provider(np);
-	tegra_register_devclks(devclks, ARRAY_SIZE(devclks));
+	/* For Tegra124 & Tegra132, PLLD is the only source for DSIA & DSIB */
+	plld_base = clk_readl(clk_base + PLLD_BASE);
+	plld_base &= ~BIT(25);
+	clk_writel(plld_base, clk_base + PLLD_BASE);
+}
 
-	tegra_clk_apply_init_table = tegra124_clock_apply_init_table;
+/**
+ * tegra124_132_clock_init_post - clock initialization postamble for T124/T132
+ * @np: struct device_node * of the DT node for the SoC CAR IP block
+ *
+ * Register most of the along with a few clocks controlled by the PMC
+ * IP block.  Everything in this function should be common to Tegra124
+ * and Tegra132.  This function must be called after
+ * tegra124_132_clock_init_pre(), otherwise clk_base and pmc_base will
+ * not be set.  No return value.
+ */
+static void __init tegra124_132_clock_init_post(struct device_node *np)
+{
+	tegra_super_clk_gen4_init(clk_base, pmc_base, tegra124_clks,
+				  &pll_x_params);
+	tegra_init_special_resets(1, tegra124_reset_assert,
+				  tegra124_reset_deassert);
+	tegra_add_of_provider(np);
+
+	clks[TEGRA124_CLK_EMC] = tegra_clk_register_emc(clk_base, np,
+							&emc_lock);
+
+	tegra_register_devclks(devclks, ARRAY_SIZE(devclks));
 
 	tegra_cpu_car_ops = &tegra124_cpu_car_ops;
 }
+
+/**
+ * tegra124_clock_init - Tegra124-specific clock initialization
+ * @np: struct device_node * of the DT node for the SoC CAR IP block
+ *
+ * Register most SoC clocks for the Tegra124 system-on-chip.  Most of
+ * this code is shared between the Tegra124 and Tegra132 SoCs,
+ * although some of the initial clock settings and CPU clocks differ.
+ * Intended to be called by the OF init code when a DT node with the
+ * "nvidia,tegra124-car" string is encountered, and declared with
+ * CLK_OF_DECLARE.  No return value.
+ */
+static void __init tegra124_clock_init(struct device_node *np)
+{
+	tegra124_132_clock_init_pre(np);
+	tegra_clk_apply_init_table = tegra124_clock_apply_init_table;
+	tegra124_132_clock_init_post(np);
+}
+
+/**
+ * tegra132_clock_init - Tegra132-specific clock initialization
+ * @np: struct device_node * of the DT node for the SoC CAR IP block
+ *
+ * Register most SoC clocks for the Tegra132 system-on-chip.  Most of
+ * this code is shared between the Tegra124 and Tegra132 SoCs,
+ * although some of the initial clock settings and CPU clocks differ.
+ * Intended to be called by the OF init code when a DT node with the
+ * "nvidia,tegra132-car" string is encountered, and declared with
+ * CLK_OF_DECLARE.  No return value.
+ */
+static void __init tegra132_clock_init(struct device_node *np)
+{
+	tegra124_132_clock_init_pre(np);
+
+	/*
+	 * On Tegra132, these clocks are controlled by the
+	 * CLUSTER_clocks IP block, located in the CPU complex
+	 */
+	tegra124_clks[tegra_clk_cclk_g].present = false;
+	tegra124_clks[tegra_clk_cclk_lp].present = false;
+	tegra124_clks[tegra_clk_pll_x].present = false;
+	tegra124_clks[tegra_clk_pll_x_out0].present = false;
+
+	tegra_clk_apply_init_table = tegra132_clock_apply_init_table;
+	tegra124_132_clock_init_post(np);
+}
 CLK_OF_DECLARE(tegra124, "nvidia,tegra124-car", tegra124_clock_init);
+CLK_OF_DECLARE(tegra132, "nvidia,tegra132-car", tegra132_clock_init);

@@ -93,6 +93,16 @@ config INPUT_BMA150
 	  To compile this driver as a module, choose M here: the
 	  module will be called bma150.
 
+config INPUT_E3X0_BUTTON
+	tristate "NI Ettus Research USRP E3xx Button support."
+	default n
+	help
+	  Say Y here to enable support for the NI Ettus Research
+	  USRP E3xx Button.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called e3x0_button.
+
 config INPUT_HBTP_INPUT
 	tristate "HBTP input driver support"
 	help
@@ -103,16 +113,6 @@ config INPUT_HBTP_INPUT
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called hbtp_input.
-
-config HBTP_INPUT_SECURE_TOUCH
-	bool "Secure Touch support for HBTP Input driver"
-	depends on INPUT_HBTP_INPUT
-	help
-	  This option enables the Secure Touch functionality of the HBTP
-	  Input driver.
-
-	  Say Y to enable this functionality.
-	  If unsure, say N.
 
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
@@ -125,6 +125,18 @@ config INPUT_PCSPKR
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcspkr.
+
+config INPUT_PM8941_PWRKEY
+	tristate "Qualcomm PM8941 power key support"
+	depends on MFD_SPMI_PMIC
+	help
+	  Say Y here if you want support for the power key usually found
+	  on boards using a Qualcomm PM8941 compatible PMIC.
+
+	  If unsure, say Y.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pm8941-pwrkey.
 
 config INPUT_PM8XXX_VIBRATOR
 	tristate "Qualcomm PM8XXX vibrator support"
@@ -149,6 +161,15 @@ config INPUT_PMIC8XXX_PWRKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called pmic8xxx-pwrkey.
 
+config INPUT_QPNP_POWER_ON
+	tristate "QPNP PMIC Power-on support"
+	depends on SPMI
+	help
+	  This option enables device driver support for the power-on
+	  functionality of Qualcomm Technologies, Inc. PNP PMICs.  It supports
+	  reporting the change in status of the KPDPWR_N line (connected to the
+	  power-key) as well as reset features.
+
 config INPUT_SPARCSPKR
 	tristate "SPARC Speaker support"
 	depends on PCI && SPARC64
@@ -166,12 +187,12 @@ config INPUT_M68K_BEEP
 	depends on M68K
 
 config INPUT_MAX77693_HAPTIC
-	tristate "MAXIM MAX77693 haptic controller support"
-	depends on MFD_MAX77693 && PWM
+	tristate "MAXIM MAX77693/MAX77843 haptic controller support"
+	depends on (MFD_MAX77693 || MFD_MAX77843) && PWM
 	select INPUT_FF_MEMLESS
 	help
 	  This option enables support for the haptic controller on
-	  MAXIM MAX77693 chip.
+	  MAXIM MAX77693 and MAX77843 chips.
 
 	  To compile this driver as module, choose M here: the
 	  module will be called max77693-haptic.
@@ -246,7 +267,7 @@ config INPUT_APANEL
 config INPUT_GP2A
 	tristate "Sharp GP2AP002A00F I2C Proximity/Opto sensor driver"
 	depends on I2C
-	depends on GPIOLIB
+	depends on GPIOLIB || COMPILE_TEST
 	help
 	  Say Y here if you have a Sharp GP2AP002A00F proximity/als combo-chip
 	  hooked to an I2C bus.
@@ -256,7 +277,7 @@ config INPUT_GP2A
 
 config INPUT_GPIO_BEEPER
 	tristate "Generic GPIO Beeper support"
-	depends on GPIOLIB
+	depends on GPIOLIB || COMPILE_TEST
 	help
 	  Say Y here if you have a beeper connected to a GPIO pin.
 
@@ -265,7 +286,7 @@ config INPUT_GPIO_BEEPER
 
 config INPUT_GPIO_TILT_POLLED
 	tristate "Polled GPIO tilt switch"
-	depends on GPIOLIB
+	depends on GPIOLIB || COMPILE_TEST
 	select INPUT_POLLDEV
 	help
 	  This driver implements support for tilt switches connected
@@ -426,6 +447,18 @@ config INPUT_CM109
 	  To compile this driver as a module, choose M here: the module will be
 	  called cm109.
 
+config INPUT_REGULATOR_HAPTIC
+	tristate "Regulator haptics support"
+	depends on REGULATOR
+	select INPUT_FF_MEMLESS
+	help
+	  This option enables device driver support for the haptic controlled
+	  by a regulator. This driver supports ff-memless interface
+	  from input framework.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called regulator-haptic.
+
 config INPUT_RETU_PWRBUTTON
 	tristate "Retu Power button Driver"
 	depends on MFD_RETU
@@ -435,6 +468,27 @@ config INPUT_RETU_PWRBUTTON
 
 	  To compile this driver as a module, choose M here. The module will
 	  be called retu-pwrbutton.
+
+config INPUT_TPS65218_PWRBUTTON
+	tristate "TPS65218 Power button driver"
+	depends on MFD_TPS65218
+	help
+	  Say Y here if you want to enable power buttong reporting for
+	  the TPS65218 Power Management IC device.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called tps65218-pwrbutton.
+
+config INPUT_AXP20X_PEK
+	tristate "X-Powers AXP20X power button driver"
+	depends on MFD_AXP20X
+	help
+	  Say Y here if you want to enable power key reporting via the
+	  AXP20X PMIC.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called axp20x-pek.
+
 
 config INPUT_TWL4030_PWRBUTTON
 	tristate "TWL4030 Power button Driver"
@@ -539,7 +593,7 @@ config INPUT_PWM_BEEPER
 
 config INPUT_GPIO_ROTARY_ENCODER
 	tristate "Rotary encoders connected to GPIO pins"
-	depends on GPIOLIB
+	depends on GPIOLIB || COMPILE_TEST
 	help
 	  Say Y here to add support for rotary encoders connected to GPIO lines.
 	  Check file:Documentation/input/rotary-encoder.txt for more
@@ -579,6 +633,16 @@ config INPUT_DA9055_ONKEY
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called da9055_onkey.
+
+config INPUT_DA9063_ONKEY
+	tristate "Dialog DA9062/63 OnKey"
+	depends on MFD_DA9063 || MFD_DA9062
+	help
+	  Support the ONKEY of Dialog DA9063 and DA9062 Power Management ICs
+	  as an input device capable of reporting the power button status.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called da9063_onkey.
 
 config INPUT_DM355EVM
 	tristate "TI DaVinci DM355 EVM Keypad and IR Remote"
@@ -736,7 +800,8 @@ config INPUT_SOC_BUTTON_ARRAY
 
 config INPUT_DRV260X_HAPTICS
 	tristate "TI DRV260X haptics support"
-	depends on INPUT && I2C && GPIOLIB
+	depends on INPUT && I2C
+	depends on GPIOLIB || COMPILE_TEST
 	select INPUT_FF_MEMLESS
 	select REGMAP_I2C
 	help
@@ -744,6 +809,17 @@ config INPUT_DRV260X_HAPTICS
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called drv260x-haptics.
+
+config INPUT_DRV2665_HAPTICS
+	tristate "TI DRV2665 haptics support"
+	depends on INPUT && I2C
+	select INPUT_FF_MEMLESS
+	select REGMAP_I2C
+	help
+	  Say Y to enable support for the TI DRV2665 haptics driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called drv2665-haptics.
 
 config INPUT_DRV2667_HAPTICS
 	tristate "TI DRV2667 haptics support"
@@ -754,6 +830,24 @@ config INPUT_DRV2667_HAPTICS
 	  Say Y to enable support for the TI DRV2667 haptics driver.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called drv260x-haptics.
+	  module will be called drv2667-haptics.
+
+config INPUT_CAPELLA_CM36687
+	tristate "cm36687 optical sensor"
+	depends on I2C
+	help
+	  Say Y here to enable the cm36687 Optical Sensor.
+
+source "drivers/input/misc/ots_pat9125/Kconfig"
+
+config INPUT_STMVL53L0
+	tristate "STM VL53L0 Proximity support"
+	depends on INPUT && I2C
+	help
+	 Say Y here if you want to use STMicroelectronics's proximity sensor
+	 through I2C interface.
+
+	 To compile this driver as a module, choose M here: the
+	 module will be called stmvl53l0.
 
 endif

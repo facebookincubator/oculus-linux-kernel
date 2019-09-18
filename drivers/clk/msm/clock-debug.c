@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2007-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2014, 2016-2017, The Linux Foundation. All rights
+ * reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -77,6 +78,7 @@ static int clock_debug_measure_get(void *data, u64 *val)
 	else
 		is_hw_gated = 0;
 
+	mutex_lock(&clock->prepare_lock);
 	ret = clk_set_parent(measure, clock);
 	if (!ret) {
 		/*
@@ -107,6 +109,7 @@ static int clock_debug_measure_get(void *data, u64 *val)
 	 */
 	meas_rate = clk_get_rate(clock);
 	sw_rate = clk_get_rate(measure->parent);
+	mutex_unlock(&clock->prepare_lock);
 	if (sw_rate && meas_rate >= (sw_rate * 2))
 		*val *= DIV_ROUND_CLOSEST(meas_rate, sw_rate);
 
@@ -355,8 +358,12 @@ static int trace_clocks_show(struct seq_file *m, void *unused)
 		return 1;
 	}
 	list_for_each_entry(c, &clk_list, list) {
+		int vlevel = 0;
+
+		if (c->num_fmax)
+			vlevel = find_vdd_level(c, c->rate);
 		trace_clock_state(c->dbg_name, c->prepare_count, c->count,
-					c->rate);
+					c->rate, vlevel);
 		total_cnt++;
 	}
 	mutex_unlock(&clk_list_lock);

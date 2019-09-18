@@ -356,7 +356,7 @@ static struct irq_chip plgpio_irqchip = {
 	.irq_set_type	= plgpio_irq_set_type,
 };
 
-static void plgpio_irq_handler(unsigned irq, struct irq_desc *desc)
+static void plgpio_irq_handler(struct irq_desc *desc)
 {
 	struct gpio_chip *gc = irq_desc_get_handler_data(desc);
 	struct plgpio *plgpio = container_of(gc, struct plgpio, chip);
@@ -710,7 +710,6 @@ MODULE_DEVICE_TABLE(of, plgpio_of_match);
 static struct platform_driver plgpio_driver = {
 	.probe = plgpio_probe,
 	.driver = {
-		.owner = THIS_MODULE,
 		.name = "spear-plgpio",
 		.pm = &plgpio_dev_pm_ops,
 		.of_match_table = plgpio_of_match,
@@ -724,5 +723,5 @@ static int __init plgpio_init(void)
 subsys_initcall(plgpio_init);
 
 MODULE_AUTHOR("Viresh Kumar <viresh.kumar@linaro.org>");
-MODULE_DESCRIPTION("ST Microlectronics SPEAr PLGPIO driver");
+MODULE_DESCRIPTION("STMicroelectronics SPEAr PLGPIO driver");
 MODULE_LICENSE("GPL");

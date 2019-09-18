@@ -4,10 +4,10 @@ config SND_SOC_MSM_HOSTLESS_PCM
 	tristate
 
 config SND_SOC_MSM_QDSP6V2_INTF
-	bool "SoC Q6 audio driver for APQ8084"
-	depends on MSM_QDSP6_APRV2
+	bool "SoC Q6 audio driver for MSM/APQ"
+	depends on MSM_QDSP6_APRV2_GLINK
 	help
-	 To add support for SoC audio on APQ8084.
+	 To add support for SoC audio on MSM/APQ.
 	 This will enable all the platform specific
 	 interactions towards DSP. It includes asm,
 	 adm and afe interfaces on the DSP.
@@ -15,6 +15,7 @@ config SND_SOC_MSM_QDSP6V2_INTF
 config SND_SOC_QDSP6V2
 	tristate "SoC ALSA audio driver for QDSP6V2"
 	select SND_SOC_MSM_QDSP6V2_INTF
+	select SND_SOC_COMPRESS
 	help
 	 To add support for MSM QDSP6V2 Soc Audio.
 	 This will enable sound soc platform specific
@@ -29,16 +30,6 @@ config SND_SOC_QDSP_DEBUG
 	 is inducing kernel panic upon encountering critical
 	 errors from DSP audio modules
 
-config DOLBY_DAP
-	bool "Enable Dolby DAP"
-	depends on SND_SOC_MSM_QDSP6V2_INTF
-	help
-	 To add support for dolby DAP post processing.
-	 This support is to configure the post processing parameters
-	 to DSP. The configuration includes sending the end point
-	 device, end point dependent post processing parameters and
-	 the various posrt processing parameters
-
 config DOLBY_DS2
 	bool "Enable Dolby DS2"
 	depends on SND_SOC_MSM_QDSP6V2_INTF
@@ -48,6 +39,15 @@ config DOLBY_DS2
 	 to DSP. The configuration includes sending the end point
 	 device, end point dependent post processing parameters and
 	 the various posrt processing parameters
+
+config DOLBY_LICENSE
+	bool "Enable Dolby LICENSE"
+	depends on SND_SOC_MSM_QDSP6V2_INTF
+	help
+	 To add support for dolby DAP post processing,
+	 and retain DAP set license functionality only.
+	 This is required by Dolby GEF implementation which needs
+	 nothing but dolby license validation functionality in driver.
 
 config DTS_EAGLE
 	bool "Enable DTS Eagle Support"
@@ -78,6 +78,15 @@ config QTI_PP
 	 tuning parameters of various modules such as equalizer,
 	 customized mixing.
 
+config QTI_PP_AUDIOSPHERE
+	bool "Enable QTI AUDIOSPHERE PP"
+	depends on SND_SOC_MSM_QDSP6V2_INTF
+	help
+	 To add support for QTI audio sphere post processing.
+	 This support is to configure the post processing
+	 parameters to DSP. The configuration includes sending
+	 tuning parameters of audio sphere module.
+
 config SND_SOC_CPE
 	tristate "CPE drivers"
 	depends on SND_SOC_WCD_CPE
@@ -88,82 +97,89 @@ config SND_SOC_CPE
 	 The configuration includes the cpe lsm driver to enable
 	 listen on codec.
 
-config SPEAKER_EXT_PA
-	bool "External amplifier support"
-	depends on SND_SOC_MSM8996
-	default n
-	help
-	  Enable support for external speaker amplifier.
-
-config EXT_PA_BOOST_5V
-	bool "Enable 5V boost"
-	depends on SPEAKER_EXT_PA
-	default y
-	help
-	  Use 5V boost for external power amplifier.
-
-config SND_SOC_APQ8084
-	tristate "SoC Machine driver for APQ8084 boards"
-	depends on ARCH_APQ8084
-	select SND_SOC_QDSP6V2
-	select SND_SOC_MSM_STUB
-	select SND_SOC_MSM_HOSTLESS_PCM
-	select SND_SOC_WCD9330
-	select SND_SOC_WCD9320
-	select SND_DYNAMIC_MINORS
-	select DOLBY_DAP
-	select DTS_SRS_TM
-	select QTI_PP
-	select SND_SOC_CPE
-	select DOLBY_DS2
-	select SND_HWDEP
-	help
-	 To add support for SoC audio on APQ8084.
-	 This will enable sound soc drivers which
-	 interfaces with DSP, also it will enable
-	 the machine drivers and the corresponding
-	 DAI-links.
-
-config SND_SOC_MSM8994
-	tristate "SoC Machine driver for MSM8994 boards"
-	depends on ARCH_MSM8994
+config SND_SOC_INT_CODEC
+	tristate "SoC Machine driver for SDM660_INT"
+	depends on ARCH_QCOM
 	select SND_SOC_QDSP6V2
 	select SND_SOC_MSM_STUB
 	select SND_SOC_MSM_HOSTLESS_PCM
 	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV2
+	select MSM_QDSP6_APRV2_GLINK
+	select MSM_QDSP6_SSR
+	select MSM_QDSP6_PDR
+	select MSM_QDSP6_NOTIFIER
 	select MSM_QDSP6V2_CODECS
-	select SND_SOC_WCD9330
+	select MSM_CDC_PINCTRL
+	select SND_SOC_MSM_SDW
+	select SND_SOC_SDM660_CDC
 	select SND_SOC_MSM_HDMI_CODEC_RX if FB_MSM_MDSS_HDMI_PANEL
 	select QTI_PP
 	select DTS_SRS_TM
-	select SND_SOC_CPE
-	select MSM_ULTRASOUND
-	select DOLBY_DS2
+	select DOLBY_LICENSE
 	select SND_HWDEP
-        select DTS_EAGLE
+	select MSM_ULTRASOUND
+	select DTS_EAGLE
+	select SND_SOC_SDM660_COMMON
+	select SND_SOC_COMPRESS
+	select PINCTRL_LPI
 	help
-	 To add support for SoC audio on MSM8994.
-	 This will enable sound soc drivers which
-	 interfaces with DSP, also it will enable
-	 the machine drivers and the corresponding
-	 DAI-links.
+	To add support for SoC audio on MSM_INT.
+	This will enable sound soc drivers which
+	interfaces with DSP, also it will enable
+	the machine driver and the corresponding
+	DAI-links
+
+config SND_SOC_EXT_CODEC
+	tristate "SoC Machine driver for SDM660_EXT"
+	depends on ARCH_QCOM
+	select SND_SOC_QDSP6V2
+	select SND_SOC_MSM_STUB
+	select SND_SOC_MSM_HOSTLESS_PCM
+	select SND_DYNAMIC_MINORS
+	select MSM_QDSP6_APRV2_GLINK
+	select MSM_QDSP6_SSR
+	select MSM_QDSP6_PDR
+	select MSM_QDSP6_NOTIFIER
+	select MSM_QDSP6V2_CODECS
+	select SND_SOC_WCD9335
+	select SND_SOC_WCD934X
+	select SND_SOC_WSA881X
+	select SND_SOC_MSM_HDMI_CODEC_RX if FB_MSM_MDSS_HDMI_PANEL
+	select MFD_CORE
+	select QTI_PP
+	select DTS_SRS_TM
+	select DOLBY_LICENSE
+	select SND_SOC_CPE
+	select SND_SOC_WCD_CPE
+	select SND_HWDEP
+	select MSM_ULTRASOUND
+	select DTS_EAGLE
+	select SND_SOC_SDM660_COMMON
+	select SND_SOC_COMPRESS
+	select PINCTRL_LPI
+	help
+	To add support for SoC audio on MSM_EXT.
+	This will enable sound soc drivers which
+	interfaces with DSP, also it will enable
+	the machine driver and the corresponding
+	DAI-links
 
 config SND_SOC_MSM8996
 	tristate "SoC Machine driver for MSM8996 boards"
 	depends on ARCH_MSM8996
+	select SND_SOC_COMPRESS
 	select SND_SOC_QDSP6V2
 	select SND_SOC_MSM_STUB
 	select SND_SOC_MSM_HOSTLESS_PCM
 	select SND_DYNAMIC_MINORS
 	select MSM_QDSP6_APRV2
 	select MSM_QDSP6V2_CODECS
-	select SND_SOC_WCD9330
 	select SND_SOC_WCD9335
 	select SND_SOC_WSA881X
 	select SND_SOC_MSM_HDMI_CODEC_RX if FB_MSM_MDSS_HDMI_PANEL
 	select DTS_SRS_TM
 	select QTI_PP
+	select QTI_PP_AUDIOSPHERE
 	select SND_SOC_CPE
 	select MSM_ULTRASOUND
 	select DOLBY_DS2
@@ -176,110 +192,60 @@ config SND_SOC_MSM8996
 	 the machine driver and the corresponding
 	 DAI-links
 
-config SND_SOC_MSM8X16
-	tristate "SoC Machine driver for MSM8916"
-	depends on ARCH_MSM8953 || ARCH_MSM8937
+config SND_SOC_MSM8998
+	tristate "SoC Machine driver for MSM8998 boards"
+	depends on ARCH_QCOM
+	select SND_SOC_COMPRESS
 	select SND_SOC_QDSP6V2
 	select SND_SOC_MSM_STUB
 	select SND_SOC_MSM_HOSTLESS_PCM
 	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV2
+	select MSM_QDSP6_APRV2_GLINK
+	select MSM_QDSP6_SSR
+	select MSM_QDSP6_PDR
+	select MSM_QDSP6_NOTIFIER
 	select MSM_QDSP6V2_CODECS
-	select SND_SOC_WCD9330
 	select SND_SOC_WCD9335
-	select SND_SOC_MSM8X16_WCD
-	select SND_SOC_WSA881X_ANALOG
+	select SND_SOC_WCD934X
 	select SND_SOC_WSA881X
-	select MFD_CORE
-	select QTI_PP
+	select SND_SOC_MSM_HDMI_CODEC_RX if FB_MSM_MDSS_HDMI_PANEL
 	select DTS_SRS_TM
-	select DOLBY_DAP
-	select DOLBY_DS2
+	select QTI_PP
 	select SND_SOC_CPE
-	select SND_SOC_WCD_CPE
-	select SND_SOC_MSM_HDMI_DBA_CODEC_RX
+	select MSM_ULTRASOUND
+	select DOLBY_LICENSE
 	select SND_HWDEP
         select DTS_EAGLE
 	help
-	 To add support for SoC audio on MSM8996.
+	 To add support for SoC audio on MSM8998.
 	 This will enable sound soc drivers which
 	 interfaces with DSP, also it will enable
 	 the machine driver and the corresponding
 	 DAI-links
 
-config SND_SOC_MDMCALIFORNIUM
-        tristate "SoC Machine driver for MDMCALIFORNIUM boards"
-        depends on ARCH_MDMCALIFORNIUM
-        select SND_SOC_QDSP6V2
-        select SND_SOC_MSM_STUB
-        select SND_SOC_MSM_HOSTLESS_PCM
-        select SND_DYNAMIC_MINORS
-        select MSM_QDSP6_APRV3_GLINK
-        select MSM_QDSP6V2_CODECS
-        select SND_SOC_WCD9335
-        select SND_SOC_WSA881X
-        select SND_HWDEP
-        help
-         To add support for SoC audio on MDMCALIFORNIUM.
-         This will enable sound soc drivers which
-         interfaces with DSP, also it will enable
-         the machine driver and the corresponding
-         DAI-links
-
-config SND_SOC_MDM9607
-	tristate "SoC Machine driver for MDM9607 boards"
-	depends on ARCH_MDM9607
-	select SND_SOC_QDSP6V2
-	select SND_SOC_MSM_STUB
-	select SND_SOC_WCD9330
-	select SND_SOC_WCD9306
-	select SND_SOC_MSM_HOSTLESS_PCM
-	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV3
-	select MSM_QDSP6V2_CODECS
-	select SND_HWDEP
+config SND_SOC_MSM8998_CM710X
+	bool "SoC for MSM8998 with CM710X"
+	depends on SND_SOC_MSM8998
+	select SND_SOC_CM710X_SPI
+	select SND_SOC_CM710X
 	help
-	 To add support for SoC audio on MDM9607 boards.
-	 This will enable sound soc drivers which
-	 interfaces with DSP, also it will enable
-	 the machine drivers and the corresponding
-	 DAI-links.
+	 To add support for SoC audio on MSM8998
+	 with external CM710X codec. This is
+	 essentially an alternate version of the
+	 standard SND_SOC_MSM8998 driver, but
+	 adapted for MSM8998 devices with CM710X
+	 codecs.
 
-config SND_SOC_MSM8909
-	tristate "SoC Machine driver for MSM8909 boards"
-	depends on ARCH_MSM8909
-	select SND_SOC_QDSP6V2
-	select SND_SOC_MSM_STUB
-	select SND_SOC_MSM_HOSTLESS_PCM
-	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV3
-	select MSM_QDSP6V2_CODECS
-	select SND_SOC_MSM8X16_WCD
-	select SND_SOC_WSA881X_ANALOG
-	select SND_HWDEP
+config SND_SOC_660
+	tristate "SoC Machine driver for SDM660 boards"
+	depends on ARCH_SDM660
+	select SND_SOC_INT_CODEC
+	select SND_SOC_EXT_CODEC
 	help
-	 To add support for SoC audio on MSM8909 boards.
+	 To add support for SoC audio on SDM660.
 	 This will enable sound soc drivers which
 	 interfaces with DSP, also it will enable
-	 the machine drivers and the corresponding
-	 DAI-links.
-
-config SND_SOC_MDM9640
-	tristate "SoC Machine driver for MDM9640 boards"
-	depends on ARCH_MDM9640
-	select SND_SOC_QDSP6V2
-	select SND_SOC_MSM_STUB
-	select SND_SOC_WCD9330
-	select SND_SOC_MSM_HOSTLESS_PCM
-	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV3
-	select MSM_QDSP6V2_CODECS
-	select SND_HWDEP
-        help
-	 To add support for SoC audio on MDM9640 boards.
-	 This will enable sound soc drivers which
-	 interfaces with DSP, also it will enable
-	 the machine drivers and the corresponding
-	 DAI-links.
+	 the machine driver and the corresponding
+	 DAI-links
 
 endmenu

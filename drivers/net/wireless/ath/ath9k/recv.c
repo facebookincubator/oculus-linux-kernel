@@ -392,11 +392,6 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	if (sc->cur_chan->rxfilter & FIF_PROBE_REQ)
 		rfilt |= ATH9K_RX_FILTER_PROBEREQ;
 
-	/*
-	 * Set promiscuous mode when FIF_PROMISC_IN_BSS is enabled for station
-	 * mode interface or when in monitor mode. AP mode does not need this
-	 * since it receives all in-BSS frames anyway.
-	 */
 	if (sc->sc_ah->is_monitoring)
 		rfilt |= ATH9K_RX_FILTER_PROM;
 
@@ -408,7 +403,7 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	    (sc->cur_chan->nvifs <= 1) &&
 	    !(sc->cur_chan->rxfilter & FIF_BCN_PRBRESP_PROMISC))
 		rfilt |= ATH9K_RX_FILTER_MYBEACON;
-	else
+	else if (sc->sc_ah->opmode != NL80211_IFTYPE_OCB)
 		rfilt |= ATH9K_RX_FILTER_BEACON;
 
 	if ((sc->sc_ah->opmode == NL80211_IFTYPE_AP) ||
@@ -425,7 +420,8 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 		rfilt |= ATH9K_RX_FILTER_MCAST_BCAST_ALL;
 	}
 
-	if (AR_SREV_9550(sc->sc_ah) || AR_SREV_9531(sc->sc_ah))
+	if (AR_SREV_9550(sc->sc_ah) || AR_SREV_9531(sc->sc_ah) ||
+	    AR_SREV_9561(sc->sc_ah))
 		rfilt |= ATH9K_RX_FILTER_4ADDRESS;
 
 	if (ath9k_is_chanctx_enabled() &&
@@ -495,10 +491,9 @@ bool ath_stoprecv(struct ath_softc *sc)
 
 	if (!(ah->ah_flags & AH_UNPLUGGED) &&
 	    unlikely(!stopped)) {
-		ath_err(ath9k_hw_common(sc->sc_ah),
-			"Could not stop RX, we could be "
-			"confusing the DMA engine when we start RX up\n");
-		ATH_DBG_WARN_ON_ONCE(!stopped);
+		ath_dbg(ath9k_hw_common(sc->sc_ah), RESET,
+			"Failed to stop Rx DMA\n");
+		RESET_STAT_INC(sc, RESET_RX_DMA_ERROR);
 	}
 	return stopped && !reset;
 }
@@ -870,7 +865,7 @@ static int ath9k_rx_skb_preprocess(struct ath_softc *sc,
 	 */
 	if (rx_stats->rs_status & ATH9K_RXERR_PHY) {
 		ath9k_dfs_process_phyerr(sc, hdr, rx_stats, rx_status->mactime);
-		if (ath_process_fft(sc, hdr, rx_stats, rx_status->mactime))
+		if (ath_cmn_process_fft(&sc->spec_priv, hdr, rx_stats, rx_status->mactime))
 			RX_STAT_INC(rx_spectral);
 
 		return -EINVAL;

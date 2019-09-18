@@ -47,13 +47,11 @@ static int of_flash_remove(struct platform_device *dev)
 		return 0;
 	dev_set_drvdata(&dev->dev, NULL);
 
-	if (info->cmtd != info->list[0].mtd) {
+	if (info->cmtd) {
 		mtd_device_unregister(info->cmtd);
-		mtd_concat_destroy(info->cmtd);
+		if (info->cmtd != info->list[0].mtd)
+			mtd_concat_destroy(info->cmtd);
 	}
-
-	if (info->cmtd)
-		mtd_device_unregister(info->cmtd);
 
 	for (i = 0; i < info->list_size; i++) {
 		if (info->list[i].mtd)
@@ -132,6 +130,8 @@ static const char * const *of_get_probes(struct device_node *dp)
 			count++;
 
 	res = kzalloc((count + 1)*sizeof(*res), GFP_KERNEL);
+	if (!res)
+		return NULL;
 	count = 0;
 	while (cplen > 0) {
 		res[count] = cp;
@@ -149,7 +149,7 @@ static void of_free_probes(const char * const *probes)
 		kfree(probes);
 }
 
-static struct of_device_id of_flash_match[];
+static const struct of_device_id of_flash_match[];
 static int of_flash_probe(struct platform_device *dev)
 {
 	const char * const *part_probe_types;
@@ -271,6 +271,16 @@ static int of_flash_probe(struct platform_device *dev)
 			info->list[i].mtd = obsolete_probe(dev,
 							   &info->list[i].map);
 		}
+
+		/* Fall back to mapping region as ROM */
+		if (!info->list[i].mtd) {
+			dev_warn(&dev->dev,
+				"do_map_probe() failed for type %s\n",
+				 probe_type);
+
+			info->list[i].mtd = do_map_probe("map_rom",
+							 &info->list[i].map);
+		}
 		mtd_list[i] = info->list[i].mtd;
 
 		err = -ENXIO;
@@ -280,7 +290,6 @@ static int of_flash_probe(struct platform_device *dev)
 		} else {
 			info->list_size++;
 		}
-		info->list[i].mtd->owner = THIS_MODULE;
 		info->list[i].mtd->dev.parent = &dev->dev;
 	}
 
@@ -303,6 +312,10 @@ static int of_flash_probe(struct platform_device *dev)
 
 	ppdata.of_node = dp;
 	part_probe_types = of_get_probes(dp);
+	if (!part_probe_types) {
+		err = -ENOMEM;
+		goto err_out;
+	}
 	mtd_device_parse_register(info->cmtd, part_probe_types, &ppdata,
 			NULL, 0);
 	of_free_probes(part_probe_types);
@@ -319,7 +332,7 @@ err_flash_remove:
 	return err;
 }
 
-static struct of_device_id of_flash_match[] = {
+static const struct of_device_id of_flash_match[] = {
 	{
 		.compatible	= "cfi-flash",
 		.data		= (void *)"cfi_probe",
@@ -354,7 +367,6 @@ MODULE_DEVICE_TABLE(of, of_flash_match);
 static struct platform_driver of_flash_driver = {
 	.driver = {
 		.name = "of-flash",
-		.owner = THIS_MODULE,
 		.of_match_table = of_flash_match,
 	},
 	.probe		= of_flash_probe,

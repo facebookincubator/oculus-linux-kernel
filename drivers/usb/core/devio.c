@@ -103,7 +103,7 @@ MODULE_PARM_DESC(usbfs_snoop, "true to log all usbfs traffic");
 #define snoop(dev, format, arg...)				\
 	do {							\
 		if (usbfs_snoop)				\
-			dev_info(dev , format , ## arg);	\
+			dev_info(dev, format, ## arg);		\
 	} while (0)
 
 enum snoop_when {
@@ -1082,7 +1082,8 @@ static int proc_bulk(struct usb_dev_state *ps, void __user *arg)
 	ret = usbfs_increase_memory_usage(len1 + sizeof(struct urb));
 	if (ret)
 		return ret;
-	if (!(tbuf = kmalloc(len1, GFP_KERNEL))) {
+	tbuf = kmalloc(len1, GFP_KERNEL);
+	if (!tbuf) {
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -1225,7 +1226,8 @@ static int proc_setintf(struct usb_dev_state *ps, void __user *arg)
 
 	if (copy_from_user(&setintf, arg, sizeof(setintf)))
 		return -EFAULT;
-	if ((ret = checkintf(ps, setintf.interface)))
+	ret = checkintf(ps, setintf.interface);
+	if (ret)
 		return ret;
 
 	destroy_async_on_interface(ps, setintf.interface);
@@ -1320,7 +1322,7 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
 	is_in = (uurb->endpoint & USB_ENDPOINT_DIR_MASK) != 0;
 
 	u = 0;
-	switch(uurb->type) {
+	switch (uurb->type) {
 	case USBDEVFS_URB_TYPE_CONTROL:
 		if (!usb_endpoint_xfer_control(&ep->desc))
 			return -EINVAL;
@@ -1394,7 +1396,8 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
 		number_of_packets = uurb->number_of_packets;
 		isofrmlen = sizeof(struct usbdevfs_iso_packet_desc) *
 				   number_of_packets;
-		if (!(isopkt = kmalloc(isofrmlen, GFP_KERNEL)))
+		isopkt = kmalloc(isofrmlen, GFP_KERNEL);
+		if (!isopkt)
 			return -ENOMEM;
 		if (copy_from_user(isopkt, iso_frame_desc, isofrmlen)) {
 			ret = -EFAULT;
@@ -1527,11 +1530,17 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
 	as->urb->start_frame = uurb->start_frame;
 	as->urb->number_of_packets = number_of_packets;
 	as->urb->stream_id = stream_id;
-	if (uurb->type == USBDEVFS_URB_TYPE_ISO ||
-			ps->dev->speed == USB_SPEED_HIGH)
-		as->urb->interval = 1 << min(15, ep->desc.bInterval - 1);
-	else
-		as->urb->interval = ep->desc.bInterval;
+
+	if (ep->desc.bInterval) {
+		if (uurb->type == USBDEVFS_URB_TYPE_ISO ||
+				ps->dev->speed == USB_SPEED_HIGH ||
+				ps->dev->speed >= USB_SPEED_SUPER)
+			as->urb->interval = 1 <<
+					min(15, ep->desc.bInterval - 1);
+		else
+			as->urb->interval = ep->desc.bInterval;
+	}
+
 	as->urb->context = as;
 	as->urb->complete = async_completed;
 	for (totlen = u = 0; u < number_of_packets; u++) {
@@ -1905,7 +1914,8 @@ static int proc_releaseinterface(struct usb_dev_state *ps, void __user *arg)
 
 	if (get_user(ifnum, (unsigned int __user *)arg))
 		return -EFAULT;
-	if ((ret = releaseintf(ps, ifnum)) < 0)
+	ret = releaseintf(ps, ifnum);
+	if (ret < 0)
 		return ret;
 	destroy_async_on_interface (ps, ifnum);
 	return 0;
@@ -1920,7 +1930,8 @@ static int proc_ioctl(struct usb_dev_state *ps, struct usbdevfs_ioctl *ctl)
 	struct usb_driver       *driver = NULL;
 
 	/* alloc buffer */
-	if ((size = _IOC_SIZE(ctl->ioctl_code)) > 0) {
+	size = _IOC_SIZE(ctl->ioctl_code);
+	if (size > 0) {
 		buf = kmalloc(size, GFP_KERNEL);
 		if (buf == NULL)
 			return -ENOMEM;
@@ -2409,7 +2420,7 @@ static int usbdev_notify(struct notifier_block *self,
 }
 
 static struct notifier_block usbdev_nb = {
-	.notifier_call = 	usbdev_notify,
+	.notifier_call =	usbdev_notify,
 };
 
 static struct cdev usb_device_cdev;

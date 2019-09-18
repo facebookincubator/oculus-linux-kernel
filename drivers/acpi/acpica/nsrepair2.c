@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2014, Intel Corp.
+ * Copyright (C) 2000 - 2015, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -580,7 +580,7 @@ acpi_ns_repair_HID(struct acpi_evaluate_info *info,
 	 * # is a hex digit.
 	 */
 	for (dest = new_string->string.pointer; *source; dest++, source++) {
-		*dest = (char)ACPI_TOUPPER(*source);
+		*dest = (char)toupper((int)*source);
 	}
 
 	acpi_ut_remove_reference(return_object);

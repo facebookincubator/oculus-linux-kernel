@@ -13,6 +13,10 @@
 #include "imx6qdl.dtsi"
 
 / {
+	aliases {
+		i2c3 = &i2c4;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -24,7 +28,7 @@
 			next-level-cache = <&L2>;
 			operating-points = <
 				/* kHz    uV */
-				996000  1275000
+				996000  1250000
 				792000  1175000
 				396000  1075000
 			>;
@@ -102,6 +106,10 @@
 	};
 };
 
+&gpt {
+	compatible = "fsl,imx6dl-gpt", "fsl,imx6q-gpt";
+};
+
 &hdmi {
 	compatible = "fsl,imx6dl-hdmi";
 };
@@ -113,4 +121,8 @@
 	clock-names = "di0_pll", "di1_pll",
 		      "di0_sel", "di1_sel",
 		      "di0", "di1";
+};
+
+&vpu {
+	compatible = "fsl,imx6dl-vpu", "cnm,coda960";
 };

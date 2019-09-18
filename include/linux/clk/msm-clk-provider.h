@@ -29,6 +29,7 @@
 #include <linux/seq_file.h>
 #include <linux/clk/msm-clk.h>
 
+#if defined(CONFIG_COMMON_CLK_MSM)
 /*
  * Bit manipulation macros
  */
@@ -146,7 +147,6 @@ struct clk_ops {
 	void (*post_set_rate)(struct clk *clk, unsigned long old_rate);
 	int (*set_max_rate)(struct clk *clk, unsigned long rate);
 	int (*set_flags)(struct clk *clk, unsigned flags);
-	int (*set_duty_cycle)(struct clk *clk, u32 numerator, u32 denominator);
 	unsigned long (*get_rate)(struct clk *clk);
 	long (*list_rate)(struct clk *clk, unsigned n);
 	int (*is_enabled)(struct clk *clk);
@@ -266,4 +266,5 @@ static inline const char *clk_name(struct clk *c)
 		return "(null)";
 	return c->dbg_name;
 };
+#endif /* CONFIG_COMMON_CLK_MSM */
 #endif

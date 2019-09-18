@@ -56,6 +56,42 @@ struct rk808_rtc {
 	int irq;
 };
 
+/*
+ * The Rockchip calendar used by the RK808 counts November with 31 days. We use
+ * these translation functions to convert its dates to/from the Gregorian
+ * calendar used by the rest of the world. We arbitrarily define Jan 1st, 2016
+ * as the day when both calendars were in sync, and treat all other dates
+ * relative to that.
+ * NOTE: Other system software (e.g. firmware) that reads the same hardware must
+ * implement this exact same conversion algorithm, with the same anchor date.
+ */
+static time64_t nov2dec_transitions(struct rtc_time *tm)
+{
+	return (tm->tm_year + 1900) - 2016 + (tm->tm_mon + 1 > 11 ? 1 : 0);
+}
+
+static void rockchip_to_gregorian(struct rtc_time *tm)
+{
+	/* If it's Nov 31st, rtc_tm_to_time64() will count that like Dec 1st */
+	time64_t time = rtc_tm_to_time64(tm);
+	rtc_time64_to_tm(time + nov2dec_transitions(tm) * 86400, tm);
+}
+
+static void gregorian_to_rockchip(struct rtc_time *tm)
+{
+	time64_t extra_days = nov2dec_transitions(tm);
+	time64_t time = rtc_tm_to_time64(tm);
+	rtc_time64_to_tm(time - extra_days * 86400, tm);
+
+	/* Compensate if we went back over Nov 31st (will work up to 2381) */
+	if (nov2dec_transitions(tm) < extra_days) {
+		if (tm->tm_mon + 1 == 11)
+			tm->tm_mday++;	/* This may result in 31! */
+		else
+			rtc_time64_to_tm(time - (extra_days - 1) * 86400, tm);
+	}
+}
+
 /* Read current time and date in RTC */
 static int rk808_rtc_readtime(struct device *dev, struct rtc_time *tm)
 {
@@ -67,15 +103,21 @@ static int rk808_rtc_readtime(struct device *dev, struct rtc_time *tm)
 	/* Force an update of the shadowed registers right now */
 	ret = regmap_update_bits(rk808->regmap, RK808_RTC_CTRL_REG,
 				 BIT_RTC_CTRL_REG_RTC_GET_TIME,
-				 0);
+				 BIT_RTC_CTRL_REG_RTC_GET_TIME);
 	if (ret) {
 		dev_err(dev, "Failed to update bits rtc_ctrl: %d\n", ret);
 		return ret;
 	}
 
+	/*
+	 * After we set the GET_TIME bit, the rtc time can't be read
+	 * immediately. So we should wait up to 31.25 us, about one cycle of
+	 * 32khz. If we clear the GET_TIME bit here, the time of i2c transfer
+	 * certainly more than 31.25us: 16 * 2.5us at 400kHz bus frequency.
+	 */
 	ret = regmap_update_bits(rk808->regmap, RK808_RTC_CTRL_REG,
 				 BIT_RTC_CTRL_REG_RTC_GET_TIME,
-				 BIT_RTC_CTRL_REG_RTC_GET_TIME);
+				 0);
 	if (ret) {
 		dev_err(dev, "Failed to update bits rtc_ctrl: %d\n", ret);
 		return ret;
@@ -95,9 +137,10 @@ static int rk808_rtc_readtime(struct device *dev, struct rtc_time *tm)
 	tm->tm_mon = (bcd2bin(rtc_data[4] & MONTHS_REG_MSK)) - 1;
 	tm->tm_year = (bcd2bin(rtc_data[5] & YEARS_REG_MSK)) + 100;
 	tm->tm_wday = bcd2bin(rtc_data[6] & WEEKS_REG_MSK);
+	rockchip_to_gregorian(tm);
 	dev_dbg(dev, "RTC date/time %4d-%02d-%02d(%d) %02d:%02d:%02d\n",
 		1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday,
-		tm->tm_wday, tm->tm_hour , tm->tm_min, tm->tm_sec);
+		tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 
 	return ret;
 }
@@ -110,6 +153,10 @@ static int rk808_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	u8 rtc_data[NUM_TIME_REGS];
 	int ret;
 
+	dev_dbg(dev, "set RTC date/time %4d-%02d-%02d(%d) %02d:%02d:%02d\n",
+		1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday,
+		tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+	gregorian_to_rockchip(tm);
 	rtc_data[0] = bin2bcd(tm->tm_sec);
 	rtc_data[1] = bin2bcd(tm->tm_min);
 	rtc_data[2] = bin2bcd(tm->tm_hour);
@@ -117,9 +164,6 @@ static int rk808_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	rtc_data[4] = bin2bcd(tm->tm_mon + 1);
 	rtc_data[5] = bin2bcd(tm->tm_year - 100);
 	rtc_data[6] = bin2bcd(tm->tm_wday);
-	dev_dbg(dev, "set RTC date/time %4d-%02d-%02d(%d) %02d:%02d:%02d\n",
-		1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday,
-		tm->tm_wday, tm->tm_hour , tm->tm_min, tm->tm_sec);
 
 	/* Stop RTC while updating the RTC registers */
 	ret = regmap_update_bits(rk808->regmap, RK808_RTC_CTRL_REG,
@@ -164,6 +208,7 @@ static int rk808_rtc_readalarm(struct device *dev, struct rtc_wkalrm *alrm)
 	alrm->time.tm_mday = bcd2bin(alrm_data[3] & DAYS_REG_MSK);
 	alrm->time.tm_mon = (bcd2bin(alrm_data[4] & MONTHS_REG_MSK)) - 1;
 	alrm->time.tm_year = (bcd2bin(alrm_data[5] & YEARS_REG_MSK)) + 100;
+	rockchip_to_gregorian(&alrm->time);
 
 	ret = regmap_read(rk808->regmap, RK808_RTC_INT_REG, &int_reg);
 	if (ret) {
@@ -221,6 +266,7 @@ static int rk808_rtc_setalarm(struct device *dev, struct rtc_wkalrm *alrm)
 		alrm->time.tm_mday, alrm->time.tm_wday, alrm->time.tm_hour,
 		alrm->time.tm_min, alrm->time.tm_sec);
 
+	gregorian_to_rockchip(&alrm->time);
 	alrm_data[0] = bin2bcd(alrm->time.tm_sec);
 	alrm_data[1] = bin2bcd(alrm->time.tm_min);
 	alrm_data[2] = bin2bcd(alrm->time.tm_hour);

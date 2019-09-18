@@ -20,13 +20,21 @@
 #include <linux/platform_device.h>
 #include <linux/libata.h>
 #include <linux/ahci_platform.h>
+#include <linux/acpi.h>
+#include <linux/pci_ids.h>
 #include "ahci.h"
+
+#define DRV_NAME "ahci"
 
 static const struct ata_port_info ahci_port_info = {
 	.flags		= AHCI_FLAG_COMMON,
 	.pio_mask	= ATA_PIO4,
 	.udma_mask	= ATA_UDMA6,
 	.port_ops	= &ahci_platform_ops,
+};
+
+static struct scsi_host_template ahci_platform_sht = {
+	AHCI_SHT(DRV_NAME),
 };
 
 static int ahci_probe(struct platform_device *pdev)
@@ -43,10 +51,14 @@ static int ahci_probe(struct platform_device *pdev)
 	if (rc)
 		return rc;
 
+	of_property_read_u32(dev->of_node,
+			     "ports-implemented", &hpriv->force_port_map);
+
 	if (of_device_is_compatible(dev->of_node, "hisilicon,hisi-ahci"))
 		hpriv->flags |= AHCI_HFLAG_NO_FBS | AHCI_HFLAG_NO_NCQ;
 
-	rc = ahci_platform_init_host(pdev, hpriv, &ahci_port_info);
+	rc = ahci_platform_init_host(pdev, hpriv, &ahci_port_info,
+				     &ahci_platform_sht);
 	if (rc)
 		goto disable_resources;
 
@@ -71,13 +83,19 @@ static const struct of_device_id ahci_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, ahci_of_match);
 
+static const struct acpi_device_id ahci_acpi_match[] = {
+	{ ACPI_DEVICE_CLASS(PCI_CLASS_STORAGE_SATA_AHCI, 0xffffff) },
+	{},
+};
+MODULE_DEVICE_TABLE(acpi, ahci_acpi_match);
+
 static struct platform_driver ahci_driver = {
 	.probe = ahci_probe,
 	.remove = ata_platform_remove_one,
 	.driver = {
-		.name = "ahci",
-		.owner = THIS_MODULE,
+		.name = DRV_NAME,
 		.of_match_table = ahci_of_match,
+		.acpi_match_table = ahci_acpi_match,
 		.pm = &ahci_pm_ops,
 	},
 };

@@ -85,13 +85,6 @@ struct alua_dh_data {
 static char print_alua_state(int);
 static int alua_check_sense(struct scsi_device *, struct scsi_sense_hdr *);
 
-static inline struct alua_dh_data *get_alua_data(struct scsi_device *sdev)
-{
-	struct scsi_dh_data *scsi_dh_data = sdev->scsi_dh_data;
-	BUG_ON(scsi_dh_data == NULL);
-	return ((struct alua_dh_data *) scsi_dh_data->buf);
-}
-
 static int realloc_buffer(struct alua_dh_data *h, unsigned len)
 {
 	if (h->buff && h->buff != h->inq)
@@ -709,7 +702,7 @@ out:
  */
 static int alua_set_params(struct scsi_device *sdev, const char *params)
 {
-	struct alua_dh_data *h = get_alua_data(sdev);
+	struct alua_dh_data *h = sdev->handler_data;
 	unsigned int optimize = 0, argc;
 	const char *p = params;
 	int result = SCSI_DH_OK;
@@ -747,7 +740,7 @@ MODULE_PARM_DESC(optimize_stpg, "Allow use of a non-optimized path, rather than 
 static int alua_activate(struct scsi_device *sdev,
 			activate_complete fn, void *data)
 {
-	struct alua_dh_data *h = get_alua_data(sdev);
+	struct alua_dh_data *h = sdev->handler_data;
 	int err = SCSI_DH_OK;
 	int stpg = 0;
 
@@ -805,7 +798,7 @@ out:
  */
 static int alua_prep_fn(struct scsi_device *sdev, struct request *req)
 {
-	struct alua_dh_data *h = get_alua_data(sdev);
+	struct alua_dh_data *h = sdev->handler_data;
 	int ret = BLKPREP_OK;
 
 	if (h->state == TPGS_STATE_TRANSITIONING)
@@ -820,13 +813,50 @@ static int alua_prep_fn(struct scsi_device *sdev, struct request *req)
 
 }
 
-static bool alua_match(struct scsi_device *sdev)
+/*
+ * alua_bus_attach - Attach device handler
+ * @sdev: device to be attached to
+ */
+static int alua_bus_attach(struct scsi_device *sdev)
 {
-	return (scsi_device_tpgs(sdev) != 0);
+	struct alua_dh_data *h;
+	int err;
+
+	h = kzalloc(sizeof(*h) , GFP_KERNEL);
+	if (!h)
+		return -ENOMEM;
+	h->tpgs = TPGS_MODE_UNINITIALIZED;
+	h->state = TPGS_STATE_OPTIMIZED;
+	h->group_id = -1;
+	h->rel_port = -1;
+	h->buff = h->inq;
+	h->bufflen = ALUA_INQUIRY_SIZE;
+	h->sdev = sdev;
+
+	err = alua_initialize(sdev, h);
+	if (err != SCSI_DH_OK && err != SCSI_DH_DEV_OFFLINED)
+		goto failed;
+
+	sdev->handler_data = h;
+	return 0;
+failed:
+	kfree(h);
+	return -EINVAL;
 }
 
-static int alua_bus_attach(struct scsi_device *sdev);
-static void alua_bus_detach(struct scsi_device *sdev);
+/*
+ * alua_bus_detach - Detach device handler
+ * @sdev: device to be detached from
+ */
+static void alua_bus_detach(struct scsi_device *sdev)
+{
+	struct alua_dh_data *h = sdev->handler_data;
+
+	if (h->buff && h->inq != h->buff)
+		kfree(h->buff);
+	sdev->handler_data = NULL;
+	kfree(h);
+}
 
 static struct scsi_device_handler alua_dh = {
 	.name = ALUA_DH_NAME,
@@ -837,80 +867,7 @@ static struct scsi_device_handler alua_dh = {
 	.check_sense = alua_check_sense,
 	.activate = alua_activate,
 	.set_params = alua_set_params,
-	.match = alua_match,
 };
-
-/*
- * alua_bus_attach - Attach device handler
- * @sdev: device to be attached to
- */
-static int alua_bus_attach(struct scsi_device *sdev)
-{
-	struct scsi_dh_data *scsi_dh_data;
-	struct alua_dh_data *h;
-	unsigned long flags;
-	int err = SCSI_DH_OK;
-
-	scsi_dh_data = kzalloc(sizeof(*scsi_dh_data)
-			       + sizeof(*h) , GFP_KERNEL);
-	if (!scsi_dh_data) {
-		sdev_printk(KERN_ERR, sdev, "%s: Attach failed\n",
-			    ALUA_DH_NAME);
-		return -ENOMEM;
-	}
-
-	scsi_dh_data->scsi_dh = &alua_dh;
-	h = (struct alua_dh_data *) scsi_dh_data->buf;
-	h->tpgs = TPGS_MODE_UNINITIALIZED;
-	h->state = TPGS_STATE_OPTIMIZED;
-	h->group_id = -1;
-	h->rel_port = -1;
-	h->buff = h->inq;
-	h->bufflen = ALUA_INQUIRY_SIZE;
-	h->sdev = sdev;
-
-	err = alua_initialize(sdev, h);
-	if ((err != SCSI_DH_OK) && (err != SCSI_DH_DEV_OFFLINED))
-		goto failed;
-
-	if (!try_module_get(THIS_MODULE))
-		goto failed;
-
-	spin_lock_irqsave(sdev->request_queue->queue_lock, flags);
-	sdev->scsi_dh_data = scsi_dh_data;
-	spin_unlock_irqrestore(sdev->request_queue->queue_lock, flags);
-	sdev_printk(KERN_NOTICE, sdev, "%s: Attached\n", ALUA_DH_NAME);
-
-	return 0;
-
-failed:
-	kfree(scsi_dh_data);
-	sdev_printk(KERN_ERR, sdev, "%s: not attached\n", ALUA_DH_NAME);
-	return -EINVAL;
-}
-
-/*
- * alua_bus_detach - Detach device handler
- * @sdev: device to be detached from
- */
-static void alua_bus_detach(struct scsi_device *sdev)
-{
-	struct scsi_dh_data *scsi_dh_data;
-	struct alua_dh_data *h;
-	unsigned long flags;
-
-	spin_lock_irqsave(sdev->request_queue->queue_lock, flags);
-	scsi_dh_data = sdev->scsi_dh_data;
-	sdev->scsi_dh_data = NULL;
-	spin_unlock_irqrestore(sdev->request_queue->queue_lock, flags);
-
-	h = (struct alua_dh_data *) scsi_dh_data->buf;
-	if (h->buff && h->inq != h->buff)
-		kfree(h->buff);
-	kfree(scsi_dh_data);
-	module_put(THIS_MODULE);
-	sdev_printk(KERN_NOTICE, sdev, "%s: Detached\n", ALUA_DH_NAME);
-}
 
 static int __init alua_init(void)
 {

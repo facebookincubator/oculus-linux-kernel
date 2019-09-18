@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2016-2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -309,6 +309,9 @@ static int coresight_build_paths(struct coresight_device *csdev,
 	int i, ret = -EINVAL;
 	struct coresight_connection *conn;
 
+	if (!csdev)
+		return ret;
+
 	list_add(&csdev->path_link, path);
 
 	if ((csdev->type == CORESIGHT_DEV_TYPE_SINK ||
@@ -382,6 +385,25 @@ out:
 	mutex_unlock(&coresight_mutex);
 }
 EXPORT_SYMBOL_GPL(coresight_disable);
+
+void coresight_abort(void)
+{
+	if (!mutex_trylock(&coresight_mutex)) {
+		pr_err_ratelimited("coresight: abort could not be processed\n");
+		return;
+	}
+	if (!curr_sink)
+		goto out;
+
+	if (curr_sink->enable && sink_ops(curr_sink)->abort) {
+		sink_ops(curr_sink)->abort(curr_sink);
+		curr_sink->enable = false;
+	}
+
+out:
+	mutex_unlock(&coresight_mutex);
+}
+EXPORT_SYMBOL_GPL(coresight_abort);
 
 static int coresight_disable_all_source(struct device *dev, void *data)
 {
@@ -647,7 +669,7 @@ static int coresight_name_match(struct device *dev, void *data)
 	to_match = data;
 	i_csdev = to_coresight_device(dev);
 
-	if (!strcmp(to_match, dev_name(&i_csdev->dev)))
+	if (to_match && !strcmp(to_match, dev_name(&i_csdev->dev)))
 		return 1;
 
 	return 0;

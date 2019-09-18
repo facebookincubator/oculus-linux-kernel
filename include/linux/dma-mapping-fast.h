@@ -16,6 +16,8 @@
 #include <linux/iommu.h>
 #include <linux/io-pgtable-fast.h>
 
+struct dma_iommu_mapping;
+
 struct dma_fast_smmu_mapping {
 	struct device		*dev;
 	struct iommu_domain	*domain;
@@ -34,6 +36,8 @@ struct dma_fast_smmu_mapping {
 
 	spinlock_t	lock;
 	struct notifier_block notifier;
+
+	int		is_smmu_pt_coherent;
 };
 
 #ifdef CONFIG_IOMMU_IO_PGTABLE_FAST

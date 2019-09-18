@@ -13,6 +13,14 @@ menuconfig CORESIGHT
 
 if CORESIGHT
 
+config CORESIGHT_EVENT
+        tristate "CoreSight Event driver"
+        help
+          This driver provides support for registering with various events
+          and performing CoreSight actions like aborting trace on their
+          occurrence. These events can be controlled by using module
+          parameters.
+
 config CORESIGHT_CSR
 	bool "CoreSight Slave Register driver"
 	help
@@ -71,7 +79,6 @@ config CORESIGHT_SOURCE_ETM3X
 
 config CORESIGHT_SOURCE_ETM4X
 	bool "CoreSight Embedded Trace Macrocell 4.x driver"
-	depends on ARM64
 	select CORESIGHT_LINKS_AND_SINKS
 	help
 	  This driver provides support for the ETM4.x tracer module, tracing the
@@ -105,11 +112,21 @@ config CORESIGHT_QCOM_REPLICATOR
 
 config CORESIGHT_STM
 	bool "CoreSight System Trace Macrocell driver"
-	depends on CORESIGHT_LINKS_AND_SINKS
+	select CORESIGHT_LINKS_AND_SINKS
 	help
 	  This driver provides support for hardware assisted software
 	  instrumentation based tracing. This is primarily useful for
 	  logging useful software events or data.
+
+config CORESIGHT_HWEVENT
+	bool "CoreSight Hardware Event driver"
+	depends on CORESIGHT_STM
+	select CORESIGHT_CSR
+	help
+	  This driver provides support for monitoring and tracing CoreSight
+	  Hardware Event across STM interface. It configures Coresight
+	  Hardware Event mux control registers to select hardware events
+	  based on user input.
 
 config CORESIGHT_CTI
 	bool "CoreSight Cross Trigger Interface driver"
@@ -118,6 +135,17 @@ config CORESIGHT_CTI
 	  used to input or output i.e. pass cross trigger events from one
 	  hardware component to another. It can also be used to pass
 	  software generated events.
+
+config CORESIGHT_CTI_SAVE_DISABLE
+	bool "Turn off CTI save and restore"
+	depends on CORESIGHT_CTI
+	help
+	  Turns off CoreSight CTI save and restore support for cpu CTIs. This
+	  avoids voting for the clocks during probe as well as the associated
+	  save and restore latency at the cost of breaking cpu CTI support on
+	  targets where cpu CTIs have to be preserved across power collapse.
+
+	  If unsure, say 'N' here to avoid breaking cpu CTI support.
 
 config CORESIGHT_TPDA
 	bool "CoreSight Trace, Profiling & Diagnostics Aggregator driver"
@@ -145,5 +173,20 @@ config CORESIGHT_TPDM_DEFAULT_ENABLE
 
 	  If unsure, say 'N' here to avoid potential power and performance
 	  penalty.
+
+config CORESIGHT_QPDI
+	bool "CoreSight PMIC debug interface support"
+	help
+	  This driver provides support for controlling the PMIC debug interface
+	  feature. When enabled via sysfs it allows disagnostic access to the
+	  PMIC. Similarly this debug feature can be disabled via sysfs which
+	  prevents debug dongle detection.
+
+config CORESIGHT_SOURCE_DUMMY
+	bool "Dummy source support"
+	help
+	  Enables support for dummy source devices. Dummy source driver can be
+	  used for CoreSight sources that are owned and configured by some other
+	  subsystem and use Linux drivers to configure rest of trace path.
 
 endif

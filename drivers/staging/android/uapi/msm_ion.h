@@ -3,6 +3,8 @@
 
 #include "ion.h"
 
+#define ION_BIT(nr) (1UL << (nr))
+
 enum msm_ion_heap_types {
 	ION_HEAP_TYPE_MSM_START = ION_HEAP_TYPE_CUSTOM + 1,
 	ION_HEAP_TYPE_SECURE_DMA = ION_HEAP_TYPE_MSM_START,
@@ -29,6 +31,7 @@ enum ion_heap_ids {
 	ION_SECURE_HEAP_ID = 9,
 	ION_SECURE_DISPLAY_HEAP_ID = 10,
 	ION_CP_MFC_HEAP_ID = 12,
+	ION_SPSS_HEAP_ID = 13, /* Secure Processor ION heap */
 	ION_CP_WB_HEAP_ID = 16, /* 8660 only */
 	ION_CAMERA_HEAP_ID = 20, /* 8660 only */
 	ION_SYSTEM_CONTIG_HEAP_ID = 21,
@@ -54,6 +57,8 @@ enum ion_heap_ids {
 #define ION_IOMMU_HEAP_ID ION_SYSTEM_HEAP_ID
 #define ION_HEAP_TYPE_IOMMU ION_HEAP_TYPE_SYSTEM
 
+#define ION_SPSS_HEAP_ID ION_SPSS_HEAP_ID
+
 enum ion_fixed_position {
 	NOT_FIXED,
 	FIXED_LOW,
@@ -75,42 +80,41 @@ enum cp_mem_usage {
  * Flags to be used when allocating from the secure heap for
  * content protection
  */
-#define ION_FLAG_CP_TOUCH (1 << 17)
-#define ION_FLAG_CP_BITSTREAM (1 << 18)
-#define ION_FLAG_CP_PIXEL  (1 << 19)
-#define ION_FLAG_CP_NON_PIXEL (1 << 20)
-#define ION_FLAG_CP_CAMERA (1 << 21)
-#define ION_FLAG_CP_HLOS (1 << 22)
-#define ION_FLAG_CP_HLOS_FREE (1 << 23)
-#define ION_FLAG_CP_SEC_DISPLAY (1 << 25)
-#define ION_FLAG_CP_APP (1 << 26)
+#define ION_FLAG_CP_TOUCH		ION_BIT(17)
+#define ION_FLAG_CP_BITSTREAM		ION_BIT(18)
+#define ION_FLAG_CP_PIXEL		ION_BIT(19)
+#define ION_FLAG_CP_NON_PIXEL		ION_BIT(20)
+#define ION_FLAG_CP_CAMERA		ION_BIT(21)
+#define ION_FLAG_CP_HLOS		ION_BIT(22)
+#define ION_FLAG_CP_HLOS_FREE		ION_BIT(23)
+#define ION_FLAG_CP_SEC_DISPLAY		ION_BIT(25)
+#define ION_FLAG_CP_APP			ION_BIT(26)
+#define ION_FLAG_CP_CAMERA_PREVIEW	ION_BIT(27)
+
 
 /**
  * Flag to allow non continguous allocation of memory from secure
  * heap
  */
-#define ION_FLAG_ALLOW_NON_CONTIG (1 << 24)
+#define ION_FLAG_ALLOW_NON_CONTIG	ION_BIT(24)
 
 /**
  * Flag to use when allocating to indicate that a heap is secure.
  */
-#define ION_FLAG_SECURE (1 << ION_HEAP_ID_RESERVED)
+#define ION_FLAG_SECURE			ION_BIT(ION_HEAP_ID_RESERVED)
 
 /**
  * Flag for clients to force contiguous memort allocation
  *
  * Use of this flag is carefully monitored!
  */
-#define ION_FLAG_FORCE_CONTIGUOUS (1 << 30)
+#define ION_FLAG_FORCE_CONTIGUOUS	ION_BIT(30)
 
 /*
  * Used in conjunction with heap which pool memory to force an allocation
  * to come from the page allocator directly instead of from the pool allocation
  */
-#define ION_FLAG_POOL_FORCE_ALLOC (1 << 16)
-
-
-#define ION_FLAG_POOL_PREFETCH (1 << 27)
+#define ION_FLAG_POOL_FORCE_ALLOC	ION_BIT(16)
 
 /**
 * Deprecated! Please use the corresponding ION_FLAG_*
@@ -121,7 +125,7 @@ enum cp_mem_usage {
 /**
  * Macro should be used with ion_heap_ids defined above.
  */
-#define ION_HEAP(bit) (1 << (bit))
+#define ION_HEAP(bit)			ION_BIT(bit)
 
 #define ION_ADSP_HEAP_NAME	"adsp"
 #define ION_SYSTEM_HEAP_NAME	"system"
@@ -133,6 +137,7 @@ enum cp_mem_usage {
 #define ION_CAMERA_HEAP_NAME	"camera_preview"
 #define ION_IOMMU_HEAP_NAME	"iommu"
 #define ION_MFC_HEAP_NAME	"mfc"
+#define ION_SPSS_HEAP_NAME	"spss"
 #define ION_WB_HEAP_NAME	"wb"
 #define ION_MM_FIRMWARE_HEAP_NAME	"mm_fw"
 #define ION_PIL1_HEAP_NAME  "pil_1"
@@ -140,7 +145,7 @@ enum cp_mem_usage {
 #define ION_QSECOM_HEAP_NAME	"qsecom"
 #define ION_SECURE_HEAP_NAME	"secure_heap"
 #define ION_SECURE_DISPLAY_HEAP_NAME "secure_display"
-#define ION_OCULUS_HEAP_NAME	"oculus"
+#define ION_OCULUS_HEAP_NAME    "oculus"
 
 #define ION_SET_CACHED(__cache)		(__cache | ION_FLAG_CACHED)
 #define ION_SET_UNCACHED(__cache)	(__cache & ~ION_FLAG_CACHED)
@@ -176,7 +181,6 @@ struct ion_prefetch_regions {
 struct ion_prefetch_data {
 	int heap_id;
 	unsigned long len;
-	/* Is unsigned long bad? 32bit compiler vs 64 bit compiler*/
 	struct ion_prefetch_regions __user *regions;
 	unsigned int nr_regions;
 };

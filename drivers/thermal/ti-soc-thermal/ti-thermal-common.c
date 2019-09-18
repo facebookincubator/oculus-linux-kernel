@@ -75,15 +75,15 @@ static inline int ti_thermal_hotspot_temperature(int t, int s, int c)
 }
 
 /* thermal zone ops */
-/* Get temperature callback function for thermal zone*/
-static inline int __ti_thermal_get_temp(void *devdata, long *temp)
+/* Get temperature callback function for thermal zone */
+static inline int __ti_thermal_get_temp(void *devdata, int *temp)
 {
 	struct thermal_zone_device *pcb_tz = NULL;
 	struct ti_thermal_data *data = devdata;
 	struct ti_bandgap *bgp;
 	const struct ti_temp_sensor *s;
 	int ret, tmp, slope, constant;
-	unsigned long pcb_temp;
+	int pcb_temp;
 
 	if (!data)
 		return 0;
@@ -119,7 +119,7 @@ static inline int __ti_thermal_get_temp(void *devdata, long *temp)
 }
 
 static inline int ti_thermal_get_temp(struct thermal_zone_device *thermal,
-				      unsigned long *temp)
+				      int *temp)
 {
 	struct ti_thermal_data *data = thermal->devdata;
 
@@ -229,7 +229,7 @@ static int ti_thermal_get_trip_type(struct thermal_zone_device *thermal,
 
 /* Get trip temperature callback functions for thermal zone */
 static int ti_thermal_get_trip_temp(struct thermal_zone_device *thermal,
-				    int trip, unsigned long *temp)
+				    int trip, int *temp)
 {
 	if (!ti_thermal_is_valid_trip(trip))
 		return -EINVAL;
@@ -280,7 +280,7 @@ static int ti_thermal_get_trend(struct thermal_zone_device *thermal,
 
 /* Get critical temperature callback functions for thermal zone */
 static int ti_thermal_get_crit_temp(struct thermal_zone_device *thermal,
-				    unsigned long *temp)
+				    int *temp)
 {
 	/* shutdown zone */
 	return ti_thermal_get_trip_temp(thermal, OMAP_TRIP_NUMBER - 1, temp);
@@ -410,9 +410,14 @@ int ti_thermal_register_cpu_cooling(struct ti_bandgap *bgp, int id)
 	/* Register cooling device */
 	data->cool_dev = cpufreq_cooling_register(cpu_present_mask);
 	if (IS_ERR(data->cool_dev)) {
-		dev_err(bgp->dev,
-			"Failed to register cpufreq cooling device\n");
-		return PTR_ERR(data->cool_dev);
+		int ret = PTR_ERR(data->cool_dev);
+
+		if (ret != -EPROBE_DEFER)
+			dev_err(bgp->dev,
+				"Failed to register cpu cooling device %d\n",
+				ret);
+
+		return ret;
 	}
 	ti_bandgap_set_sensor_data(bgp, id, data);
 
@@ -425,7 +430,7 @@ int ti_thermal_unregister_cpu_cooling(struct ti_bandgap *bgp, int id)
 
 	data = ti_bandgap_get_sensor_data(bgp, id);
 
-	if (data && data->cool_dev)
+	if (data)
 		cpufreq_cooling_unregister(data->cool_dev);
 
 	return 0;

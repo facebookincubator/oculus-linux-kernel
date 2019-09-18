@@ -18,6 +18,12 @@
 
 struct irq_domain;
 
+/* Matches ACPI PNP id, either _HID or _CID, or ACPI _ADR */
+struct mfd_cell_acpi_match {
+	const char			*pnpid;
+	const unsigned long long	adr;
+};
+
 /*
  * This struct describes the MFD part ("cell").
  * After registration the copy of this structure will become the platform data
@@ -44,8 +50,8 @@ struct mfd_cell {
 	 */
 	const char		*of_compatible;
 
-	/* Matches ACPI PNP id, either _HID or _CID */
-	const char		*acpi_pnpid;
+	/* Matches ACPI */
+	const struct mfd_cell_acpi_match	*acpi_match;
 
 	/*
 	 * These resources can be specified relative to the parent device.
@@ -110,6 +116,13 @@ extern int mfd_add_devices(struct device *parent, int id,
 			   const struct mfd_cell *cells, int n_devs,
 			   struct resource *mem_base,
 			   int irq_base, struct irq_domain *irq_domain);
+
+static inline int mfd_add_hotplug_devices(struct device *parent,
+		const struct mfd_cell *cells, int n_devs)
+{
+	return mfd_add_devices(parent, PLATFORM_DEVID_AUTO, cells, n_devs,
+			NULL, 0, NULL);
+}
 
 extern void mfd_remove_devices(struct device *parent);
 

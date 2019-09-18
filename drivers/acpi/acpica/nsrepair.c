@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2014, Intel Corp.
+ * Copyright (C) 2000 - 2015, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -497,10 +497,10 @@ acpi_ns_remove_null_elements(struct acpi_evaluate_info *info,
 	case ACPI_PTYPE2_MIN:
 	case ACPI_PTYPE2_REV_FIXED:
 	case ACPI_PTYPE2_FIX_VAR:
-
 		break;
 
 	default:
+	case ACPI_PTYPE2_VAR_VAR:
 	case ACPI_PTYPE1_FIXED:
 	case ACPI_PTYPE1_OPTION:
 		return;

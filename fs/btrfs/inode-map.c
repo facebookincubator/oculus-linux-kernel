@@ -178,7 +178,7 @@ static void start_caching(struct btrfs_root *root)
 			  root->root_key.objectid);
 	if (IS_ERR(tsk)) {
 		btrfs_warn(root->fs_info, "failed to start inode caching task");
-		btrfs_clear_and_info(root, CHANGE_INODE_CACHE,
+		btrfs_clear_pending_and_info(root->fs_info, INODE_MAP_CACHE,
 				"disabling inode map caching");
 	}
 }
@@ -246,6 +246,7 @@ void btrfs_unpin_free_ino(struct btrfs_root *root)
 {
 	struct btrfs_free_space_ctl *ctl = root->free_ino_ctl;
 	struct rb_root *rbroot = &root->free_ino_pinned->free_space_offset;
+	spinlock_t *rbroot_lock = &root->free_ino_pinned->tree_lock;
 	struct btrfs_free_space *info;
 	struct rb_node *n;
 	u64 count;
@@ -254,23 +255,29 @@ void btrfs_unpin_free_ino(struct btrfs_root *root)
 		return;
 
 	while (1) {
+		bool add_to_ctl = true;
+
+		spin_lock(rbroot_lock);
 		n = rb_first(rbroot);
-		if (!n)
+		if (!n) {
+			spin_unlock(rbroot_lock);
 			break;
+		}
 
 		info = rb_entry(n, struct btrfs_free_space, offset_index);
 		BUG_ON(info->bitmap); /* Logic error */
 
 		if (info->offset > root->ino_cache_progress)
-			goto free;
+			add_to_ctl = false;
 		else if (info->offset + info->bytes > root->ino_cache_progress)
 			count = root->ino_cache_progress - info->offset + 1;
 		else
 			count = info->bytes;
 
-		__btrfs_add_free_space(ctl, info->offset, count);
-free:
 		rb_erase(&info->offset_index, rbroot);
+		spin_unlock(rbroot_lock);
+		if (add_to_ctl)
+			__btrfs_add_free_space(ctl, info->offset, count);
 		kmem_cache_free(btrfs_free_space_cachep, info);
 	}
 }
@@ -364,6 +371,8 @@ void btrfs_init_free_ino_ctl(struct btrfs_root *root)
 	ctl->start = 0;
 	ctl->private = NULL;
 	ctl->op = &free_ino_op;
+	INIT_LIST_HEAD(&ctl->trimming_ranges);
+	mutex_init(&ctl->cache_writeout_mutex);
 
 	/*
 	 * Initially we allow to use 16K of ram to cache chunks of
@@ -454,7 +463,7 @@ again:
 	}
 
 	if (i_size_read(inode) > 0) {
-		ret = btrfs_truncate_free_space_cache(root, trans, inode);
+		ret = btrfs_truncate_free_space_cache(root, trans, NULL, inode);
 		if (ret) {
 			if (ret != -ENOSPC)
 				btrfs_abort_transaction(trans, root, ret);
@@ -479,17 +488,17 @@ again:
 	/* Just to make sure we have enough space */
 	prealloc += 8 * PAGE_CACHE_SIZE;
 
-	ret = btrfs_delalloc_reserve_space(inode, prealloc);
+	ret = btrfs_delalloc_reserve_space(inode, 0, prealloc);
 	if (ret)
 		goto out_put;
 
 	ret = btrfs_prealloc_file_range_trans(inode, trans, 0, 0, prealloc,
 					      prealloc, prealloc, &alloc_hint);
 	if (ret) {
-		btrfs_delalloc_release_space(inode, prealloc);
+		btrfs_delalloc_release_space(inode, 0, prealloc);
 		goto out_put;
 	}
-	btrfs_free_reserved_data_space(inode, prealloc);
+	btrfs_free_reserved_data_space(inode, 0, prealloc);
 
 	ret = btrfs_write_out_ino_cache(root, trans, path, inode);
 out_put:
@@ -506,7 +515,7 @@ out:
 	return ret;
 }
 
-static int btrfs_find_highest_objectid(struct btrfs_root *root, u64 *objectid)
+int btrfs_find_highest_objectid(struct btrfs_root *root, u64 *objectid)
 {
 	struct btrfs_path *path;
 	int ret;
@@ -545,13 +554,6 @@ int btrfs_find_free_objectid(struct btrfs_root *root, u64 *objectid)
 {
 	int ret;
 	mutex_lock(&root->objectid_mutex);
-
-	if (unlikely(root->highest_objectid < BTRFS_FIRST_FREE_OBJECTID)) {
-		ret = btrfs_find_highest_objectid(root,
-						  &root->highest_objectid);
-		if (ret)
-			goto out;
-	}
 
 	if (unlikely(root->highest_objectid >= BTRFS_LAST_FREE_OBJECTID)) {
 		ret = -ENOSPC;

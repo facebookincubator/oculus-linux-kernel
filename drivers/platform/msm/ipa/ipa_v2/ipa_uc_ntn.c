@@ -14,25 +14,22 @@
 #define IPA_UC_NTN_DB_PA_TX 0x79620DC
 #define IPA_UC_NTN_DB_PA_RX 0x79620D8
 
-static void ipa_uc_ntn_event_handler(struct IpaHwSharedMemCommonMapping_t
-				     *uc_sram_mmio)
-
+static void ipa_uc_ntn_event_handler(
+		struct IpaHwSharedMemCommonMapping_t *uc_sram_mmio)
 {
 	union IpaHwNTNErrorEventData_t ntn_evt;
 
-	if (uc_sram_mmio->eventOp ==
-		IPA_HW_2_CPU_EVENT_NTN_ERROR) {
-			ntn_evt.raw32b = uc_sram_mmio->eventParams;
-			IPADBG("uC NTN evt errType=%u pipe=%d cherrType=%u\n",
-				ntn_evt.params.ntn_error_type,
-				ntn_evt.params.ipa_pipe_number,
-				ntn_evt.params.ntn_ch_err_type);
+	if (uc_sram_mmio->eventOp == IPA_HW_2_CPU_EVENT_NTN_ERROR) {
+		ntn_evt.raw32b = uc_sram_mmio->eventParams;
+		IPADBG("uC NTN evt errType=%u pipe=%d cherrType=%u\n",
+			ntn_evt.params.ntn_error_type,
+			ntn_evt.params.ipa_pipe_number,
+			ntn_evt.params.ntn_ch_err_type);
 	}
 }
 
 static void ipa_uc_ntn_event_log_info_handler(
-struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
-
+		struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
 {
 	if ((uc_event_top_mmio->featureMask & (1 << IPA_HW_FEATURE_NTN)) == 0) {
 		IPAERR("NTN feature missing 0x%x\n",
@@ -42,11 +39,11 @@ struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
 
 	if (uc_event_top_mmio->statsInfo.featureInfo[IPA_HW_FEATURE_NTN].
 		params.size != sizeof(struct IpaHwStatsNTNInfoData_t)) {
-			IPAERR("NTN stats sz invalid exp=%zu is=%u\n",
-				sizeof(struct IpaHwStatsNTNInfoData_t),
-				uc_event_top_mmio->statsInfo.
-				featureInfo[IPA_HW_FEATURE_NTN].params.size);
-			return;
+		IPAERR("NTN stats sz invalid exp=%zu is=%u\n",
+			sizeof(struct IpaHwStatsNTNInfoData_t),
+			uc_event_top_mmio->statsInfo.
+			featureInfo[IPA_HW_FEATURE_NTN].params.size);
+		return;
 	}
 
 	ipa_ctx->uc_ntn_ctx.ntn_uc_stats_ofst = uc_event_top_mmio->
@@ -58,9 +55,9 @@ struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
 		ipa_ctx->ctrl->ipa_reg_base_ofst +
 		IPA_SRAM_DIRECT_ACCESS_N_OFST_v2_0(0) +
 		ipa_ctx->smem_sz) {
-			IPAERR("uc_ntn_stats 0x%x outside SRAM\n",
-				ipa_ctx->uc_ntn_ctx.ntn_uc_stats_ofst);
-			return;
+		IPAERR("uc_ntn_stats 0x%x outside SRAM\n",
+			ipa_ctx->uc_ntn_ctx.ntn_uc_stats_ofst);
+		return;
 	}
 
 	ipa_ctx->uc_ntn_ctx.ntn_uc_stats_mmio =
@@ -153,10 +150,16 @@ int ipa2_register_ipa_ready_cb(void (*ipa_ready_cb)(void *), void *user_data)
 {
 	int ret;
 
+	if (!ipa_ctx) {
+		IPAERR("IPA ctx is null\n");
+		return -ENXIO;
+	}
+
 	ret = ipa2_uc_state_check();
 	if (ret) {
 		ipa_ctx->uc_ntn_ctx.uc_ready_cb = ipa_ready_cb;
 		ipa_ctx->uc_ntn_ctx.priv = user_data;
+		return 0;
 	}
 
 	return -EEXIST;

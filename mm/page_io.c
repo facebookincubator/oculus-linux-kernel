@@ -20,13 +20,9 @@
 #include <linux/buffer_head.h>
 #include <linux/writeback.h>
 #include <linux/frontswap.h>
-#include <linux/aio.h>
 #include <linux/blkdev.h>
-#include <linux/ratelimit.h>
+#include <linux/uio.h>
 #include <asm/pgtable.h>
-
-#define ERROR_LOG_RATE_MS 1000
-static unsigned long error_time;
 
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
@@ -37,22 +33,19 @@ static struct bio *get_swap_bio(gfp_t gfp_flags,
 	if (bio) {
 		bio->bi_iter.bi_sector = map_swap_page(page, &bio->bi_bdev);
 		bio->bi_iter.bi_sector <<= PAGE_SHIFT - 9;
-		bio->bi_io_vec[0].bv_page = page;
-		bio->bi_io_vec[0].bv_len = PAGE_SIZE;
-		bio->bi_io_vec[0].bv_offset = 0;
-		bio->bi_vcnt = 1;
-		bio->bi_iter.bi_size = PAGE_SIZE;
 		bio->bi_end_io = end_io;
+
+		bio_add_page(bio, page, PAGE_SIZE, 0);
+		BUG_ON(bio->bi_iter.bi_size != PAGE_SIZE);
 	}
 	return bio;
 }
 
-void end_swap_bio_write(struct bio *bio, int err)
+void end_swap_bio_write(struct bio *bio)
 {
-	const int uptodate = test_bit(BIO_UPTODATE, &bio->bi_flags);
 	struct page *page = bio->bi_io_vec[0].bv_page;
 
-	if (!uptodate) {
+	if (bio->bi_error) {
 		SetPageError(page);
 		/*
 		 * We failed to write the page out to swap-space.
@@ -63,8 +56,7 @@ void end_swap_bio_write(struct bio *bio, int err)
 		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
 		 */
 		set_page_dirty(page);
-		if (printk_timed_ratelimit(&error_time, ERROR_LOG_RATE_MS))
-			pr_info("Write-error on swap-device (%u:%u:%llu)\n",
+		printk(KERN_ALERT "Write-error on swap-device (%u:%u:%Lu)\n",
 				imajor(bio->bi_bdev->bd_inode),
 				iminor(bio->bi_bdev->bd_inode),
 				(unsigned long long)bio->bi_iter.bi_sector);
@@ -74,16 +66,14 @@ void end_swap_bio_write(struct bio *bio, int err)
 	bio_put(bio);
 }
 
-void end_swap_bio_read(struct bio *bio, int err)
+static void end_swap_bio_read(struct bio *bio)
 {
-	const int uptodate = test_bit(BIO_UPTODATE, &bio->bi_flags);
 	struct page *page = bio->bi_io_vec[0].bv_page;
 
-	if (!uptodate) {
+	if (bio->bi_error) {
 		SetPageError(page);
 		ClearPageUptodate(page);
-		if (printk_timed_ratelimit(&error_time, ERROR_LOG_RATE_MS))
-			pr_info("Read-error on swap-device (%u:%u:%llu)\n",
+		printk(KERN_ALERT "Read-error on swap-device (%u:%u:%Lu)\n",
 				imajor(bio->bi_bdev->bd_inode),
 				iminor(bio->bi_bdev->bd_inode),
 				(unsigned long long)bio->bi_iter.bi_sector);
@@ -260,7 +250,7 @@ static sector_t swap_page_sector(struct page *page)
 }
 
 int __swap_writepage(struct page *page, struct writeback_control *wbc,
-	void (*end_write_func)(struct bio *, int))
+		bio_end_io_t end_write_func)
 {
 	struct bio *bio;
 	int ret, rw = WRITE;
@@ -275,23 +265,15 @@ int __swap_writepage(struct page *page, struct writeback_control *wbc,
 			.bv_len  = PAGE_SIZE,
 			.bv_offset = 0
 		};
-		struct iov_iter from = {
-			.type = ITER_BVEC | WRITE,
-			.count = PAGE_SIZE,
-			.iov_offset = 0,
-			.nr_segs = 1,
-		};
-		from.bvec = &bv;	/* older gcc versions are broken */
+		struct iov_iter from;
 
+		iov_iter_bvec(&from, ITER_BVEC | WRITE, &bv, 1, PAGE_SIZE);
 		init_sync_kiocb(&kiocb, swap_file);
 		kiocb.ki_pos = page_file_offset(page);
-		kiocb.ki_nbytes = PAGE_SIZE;
 
 		set_page_writeback(page);
 		unlock_page(page);
-		ret = mapping->a_ops->direct_IO(ITER_BVEC | WRITE,
-						&kiocb, &from,
-						kiocb.ki_pos);
+		ret = mapping->a_ops->direct_IO(&kiocb, &from, kiocb.ki_pos);
 		if (ret == PAGE_SIZE) {
 			count_vm_event(PSWPOUT);
 			ret = 0;

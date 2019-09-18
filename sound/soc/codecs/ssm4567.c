@@ -10,6 +10,7 @@
  * Licensed under the GPL-2.
  */
 
+#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/i2c.h>
@@ -68,6 +69,22 @@
 #define SSM4567_DAC_FS_32000_48000	0x2
 #define SSM4567_DAC_FS_64000_96000	0x3
 #define SSM4567_DAC_FS_128000_192000	0x4
+
+/* SAI_CTRL_1 */
+#define SSM4567_SAI_CTRL_1_BCLK			BIT(6)
+#define SSM4567_SAI_CTRL_1_TDM_BLCKS_MASK	(0x3 << 4)
+#define SSM4567_SAI_CTRL_1_TDM_BLCKS_32		(0x0 << 4)
+#define SSM4567_SAI_CTRL_1_TDM_BLCKS_48		(0x1 << 4)
+#define SSM4567_SAI_CTRL_1_TDM_BLCKS_64		(0x2 << 4)
+#define SSM4567_SAI_CTRL_1_FSYNC		BIT(3)
+#define SSM4567_SAI_CTRL_1_LJ			BIT(2)
+#define SSM4567_SAI_CTRL_1_TDM			BIT(1)
+#define SSM4567_SAI_CTRL_1_PDM			BIT(0)
+
+/* SAI_CTRL_2 */
+#define SSM4567_SAI_CTRL_2_AUTO_SLOT		BIT(3)
+#define SSM4567_SAI_CTRL_2_TDM_SLOT_MASK	0x7
+#define SSM4567_SAI_CTRL_2_TDM_SLOT(x)		(x)
 
 struct ssm4567 {
 	struct regmap *regmap;
@@ -145,16 +162,38 @@ static const struct snd_kcontrol_new ssm4567_snd_controls[] = {
 	SOC_SINGLE_TLV("Master Playback Volume", SSM4567_REG_DAC_VOLUME, 0,
 		0xff, 1, ssm4567_vol_tlv),
 	SOC_SINGLE("DAC Low Power Mode Switch", SSM4567_REG_DAC_CTRL, 4, 1, 0),
+	SOC_SINGLE("DAC High Pass Filter Switch", SSM4567_REG_DAC_CTRL,
+		5, 1, 0),
 };
+
+static const struct snd_kcontrol_new ssm4567_amplifier_boost_control =
+	SOC_DAPM_SINGLE("Switch", SSM4567_REG_POWER_CTRL, 1, 1, 1);
 
 static const struct snd_soc_dapm_widget ssm4567_dapm_widgets[] = {
 	SND_SOC_DAPM_DAC("DAC", "HiFi Playback", SSM4567_REG_POWER_CTRL, 2, 1),
+	SND_SOC_DAPM_SWITCH("Amplifier Boost", SSM4567_REG_POWER_CTRL, 3, 1,
+		&ssm4567_amplifier_boost_control),
+
+	SND_SOC_DAPM_SIGGEN("Sense"),
+
+	SND_SOC_DAPM_PGA("Current Sense", SSM4567_REG_POWER_CTRL, 4, 1, NULL, 0),
+	SND_SOC_DAPM_PGA("Voltage Sense", SSM4567_REG_POWER_CTRL, 5, 1, NULL, 0),
+	SND_SOC_DAPM_PGA("VBAT Sense", SSM4567_REG_POWER_CTRL, 6, 1, NULL, 0),
 
 	SND_SOC_DAPM_OUTPUT("OUT"),
 };
 
 static const struct snd_soc_dapm_route ssm4567_routes[] = {
+	{ "OUT", NULL, "Amplifier Boost" },
+	{ "Amplifier Boost", "Switch", "DAC" },
 	{ "OUT", NULL, "DAC" },
+
+	{ "Current Sense", NULL, "Sense" },
+	{ "Voltage Sense", NULL, "Sense" },
+	{ "VBAT Sense", NULL, "Sense" },
+	{ "Capture Sense", NULL, "Current Sense" },
+	{ "Capture Sense", NULL, "Voltage Sense" },
+	{ "Capture Sense", NULL, "VBAT Sense" },
 };
 
 static int ssm4567_hw_params(struct snd_pcm_substream *substream,
@@ -192,6 +231,113 @@ static int ssm4567_mute(struct snd_soc_dai *dai, int mute)
 			SSM4567_DAC_MUTE, val);
 }
 
+static int ssm4567_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
+	unsigned int rx_mask, int slots, int width)
+{
+	struct ssm4567 *ssm4567 = snd_soc_dai_get_drvdata(dai);
+	unsigned int blcks;
+	int slot;
+	int ret;
+
+	if (tx_mask == 0)
+		return -EINVAL;
+
+	if (rx_mask && rx_mask != tx_mask)
+		return -EINVAL;
+
+	slot = __ffs(tx_mask);
+	if (tx_mask != BIT(slot))
+		return -EINVAL;
+
+	switch (width) {
+	case 32:
+		blcks = SSM4567_SAI_CTRL_1_TDM_BLCKS_32;
+		break;
+	case 48:
+		blcks = SSM4567_SAI_CTRL_1_TDM_BLCKS_48;
+		break;
+	case 64:
+		blcks = SSM4567_SAI_CTRL_1_TDM_BLCKS_64;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = regmap_update_bits(ssm4567->regmap, SSM4567_REG_SAI_CTRL_2,
+		SSM4567_SAI_CTRL_2_AUTO_SLOT | SSM4567_SAI_CTRL_2_TDM_SLOT_MASK,
+		SSM4567_SAI_CTRL_2_TDM_SLOT(slot));
+	if (ret)
+		return ret;
+
+	return regmap_update_bits(ssm4567->regmap, SSM4567_REG_SAI_CTRL_1,
+		SSM4567_SAI_CTRL_1_TDM_BLCKS_MASK, blcks);
+}
+
+static int ssm4567_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+{
+	struct ssm4567 *ssm4567 = snd_soc_dai_get_drvdata(dai);
+	unsigned int ctrl1 = 0;
+	bool invert_fclk;
+
+	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
+	case SND_SOC_DAIFMT_CBS_CFS:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
+	case SND_SOC_DAIFMT_NB_NF:
+		invert_fclk = false;
+		break;
+	case SND_SOC_DAIFMT_IB_NF:
+		ctrl1 |= SSM4567_SAI_CTRL_1_BCLK;
+		invert_fclk = false;
+		break;
+	case SND_SOC_DAIFMT_NB_IF:
+		ctrl1 |= SSM4567_SAI_CTRL_1_FSYNC;
+		invert_fclk = true;
+		break;
+	case SND_SOC_DAIFMT_IB_IF:
+		ctrl1 |= SSM4567_SAI_CTRL_1_BCLK;
+		invert_fclk = true;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
+	case SND_SOC_DAIFMT_I2S:
+		break;
+	case SND_SOC_DAIFMT_LEFT_J:
+		ctrl1 |= SSM4567_SAI_CTRL_1_LJ;
+		invert_fclk = !invert_fclk;
+		break;
+	case SND_SOC_DAIFMT_DSP_A:
+		ctrl1 |= SSM4567_SAI_CTRL_1_TDM;
+		break;
+	case SND_SOC_DAIFMT_DSP_B:
+		ctrl1 |= SSM4567_SAI_CTRL_1_TDM | SSM4567_SAI_CTRL_1_LJ;
+		break;
+	case SND_SOC_DAIFMT_PDM:
+		ctrl1 |= SSM4567_SAI_CTRL_1_PDM;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (invert_fclk)
+		ctrl1 |= SSM4567_SAI_CTRL_1_FSYNC;
+
+	return regmap_update_bits(ssm4567->regmap, SSM4567_REG_SAI_CTRL_1,
+			SSM4567_SAI_CTRL_1_BCLK |
+			SSM4567_SAI_CTRL_1_FSYNC |
+			SSM4567_SAI_CTRL_1_LJ |
+			SSM4567_SAI_CTRL_1_TDM |
+			SSM4567_SAI_CTRL_1_PDM,
+			ctrl1);
+}
+
 static int ssm4567_set_power(struct ssm4567 *ssm4567, bool enable)
 {
 	int ret = 0;
@@ -206,6 +352,11 @@ static int ssm4567_set_power(struct ssm4567 *ssm4567, bool enable)
 	regcache_cache_only(ssm4567->regmap, !enable);
 
 	if (enable) {
+		ret = regmap_write(ssm4567->regmap, SSM4567_REG_SOFT_RESET,
+			0x00);
+		if (ret)
+			return ret;
+
 		ret = regmap_update_bits(ssm4567->regmap,
 			SSM4567_REG_POWER_CTRL,
 			SSM4567_POWER_SPWDN, 0x00);
@@ -227,7 +378,7 @@ static int ssm4567_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
+		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF)
 			ret = ssm4567_set_power(ssm4567, true);
 		break;
 	case SND_SOC_BIAS_OFF:
@@ -235,23 +386,28 @@ static int ssm4567_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	}
 
-	if (ret)
-		return ret;
-
-	codec->dapm.bias_level = level;
-
-	return 0;
+	return ret;
 }
 
 static const struct snd_soc_dai_ops ssm4567_dai_ops = {
 	.hw_params	= ssm4567_hw_params,
 	.digital_mute	= ssm4567_mute,
+	.set_fmt	= ssm4567_set_dai_fmt,
+	.set_tdm_slot	= ssm4567_set_tdm_slot,
 };
 
 static struct snd_soc_dai_driver ssm4567_dai = {
 	.name = "ssm4567-hifi",
 	.playback = {
 		.stream_name = "Playback",
+		.channels_min = 1,
+		.channels_max = 1,
+		.rates = SNDRV_PCM_RATE_8000_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32,
+	},
+	.capture = {
+		.stream_name = "Capture Sense",
 		.channels_min = 1,
 		.channels_max = 1,
 		.rates = SNDRV_PCM_RATE_8000_192000,
@@ -327,10 +483,20 @@ static const struct i2c_device_id ssm4567_i2c_ids[] = {
 };
 MODULE_DEVICE_TABLE(i2c, ssm4567_i2c_ids);
 
+#ifdef CONFIG_ACPI
+
+static const struct acpi_device_id ssm4567_acpi_match[] = {
+	{ "INT343B", 0 },
+	{},
+};
+MODULE_DEVICE_TABLE(acpi, ssm4567_acpi_match);
+
+#endif
+
 static struct i2c_driver ssm4567_driver = {
 	.driver = {
 		.name = "ssm4567",
-		.owner = THIS_MODULE,
+		.acpi_match_table = ACPI_PTR(ssm4567_acpi_match),
 	},
 	.probe = ssm4567_i2c_probe,
 	.remove = ssm4567_i2c_remove,

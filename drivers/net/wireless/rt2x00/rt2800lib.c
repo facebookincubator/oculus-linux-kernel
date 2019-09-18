@@ -1381,38 +1381,6 @@ int rt2800_config_shared_key(struct rt2x00_dev *rt2x00dev,
 }
 EXPORT_SYMBOL_GPL(rt2800_config_shared_key);
 
-static inline int rt2800_find_wcid(struct rt2x00_dev *rt2x00dev)
-{
-	struct mac_wcid_entry wcid_entry;
-	int idx;
-	u32 offset;
-
-	/*
-	 * Search for the first free WCID entry and return the corresponding
-	 * index.
-	 *
-	 * Make sure the WCID starts _after_ the last possible shared key
-	 * entry (>32).
-	 *
-	 * Since parts of the pairwise key table might be shared with
-	 * the beacon frame buffers 6 & 7 we should only write into the
-	 * first 222 entries.
-	 */
-	for (idx = 33; idx <= 222; idx++) {
-		offset = MAC_WCID_ENTRY(idx);
-		rt2800_register_multiread(rt2x00dev, offset, &wcid_entry,
-					  sizeof(wcid_entry));
-		if (is_broadcast_ether_addr(wcid_entry.mac))
-			return idx;
-	}
-
-	/*
-	 * Use -1 to indicate that we don't have any more space in the WCID
-	 * table.
-	 */
-	return -1;
-}
-
 int rt2800_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 			       struct rt2x00lib_crypto *crypto,
 			       struct ieee80211_key_conf *key)
@@ -1425,7 +1393,7 @@ int rt2800_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 		 * Allow key configuration only for STAs that are
 		 * known by the hw.
 		 */
-		if (crypto->wcid < 0)
+		if (crypto->wcid > WCID_END)
 			return -ENOSPC;
 		key->hw_key_idx = crypto->wcid;
 
@@ -1455,11 +1423,13 @@ int rt2800_sta_add(struct rt2x00_dev *rt2x00dev, struct ieee80211_vif *vif,
 {
 	int wcid;
 	struct rt2x00_sta *sta_priv = sta_to_rt2x00_sta(sta);
+	struct rt2800_drv_data *drv_data = rt2x00dev->drv_data;
 
 	/*
-	 * Find next free WCID.
+	 * Search for the first free WCID entry and return the corresponding
+	 * index.
 	 */
-	wcid = rt2800_find_wcid(rt2x00dev);
+	wcid = find_first_zero_bit(drv_data->sta_ids, STA_IDS_SIZE) + WCID_START;
 
 	/*
 	 * Store selected wcid even if it is invalid so that we can
@@ -1471,8 +1441,10 @@ int rt2800_sta_add(struct rt2x00_dev *rt2x00dev, struct ieee80211_vif *vif,
 	 * No space left in the device, however, we can still communicate
 	 * with the STA -> No error.
 	 */
-	if (wcid < 0)
+	if (wcid > WCID_END)
 		return 0;
+
+	__set_bit(wcid - WCID_START, drv_data->sta_ids);
 
 	/*
 	 * Clean up WCID attributes and write STA address to the device.
@@ -1487,11 +1459,16 @@ EXPORT_SYMBOL_GPL(rt2800_sta_add);
 
 int rt2800_sta_remove(struct rt2x00_dev *rt2x00dev, int wcid)
 {
+	struct rt2800_drv_data *drv_data = rt2x00dev->drv_data;
+
+	if (wcid > WCID_END)
+		return 0;
 	/*
 	 * Remove WCID entry, no need to clean the attributes as they will
 	 * get renewed when the WCID is reused.
 	 */
 	rt2800_config_wcid(rt2x00dev, NULL, wcid);
+	__clear_bit(wcid - WCID_START, drv_data->sta_ids);
 
 	return 0;
 }
@@ -1513,8 +1490,7 @@ void rt2800_config_filter(struct rt2x00_dev *rt2x00dev,
 			   !(filter_flags & FIF_FCSFAIL));
 	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_PHY_ERROR,
 			   !(filter_flags & FIF_PLCPFAIL));
-	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_NOT_TO_ME,
-			   !(filter_flags & FIF_PROMISC_IN_BSS));
+	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_NOT_TO_ME, 1);
 	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_NOT_MY_BSSD, 0);
 	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_VER_ERROR, 1);
 	rt2x00_set_field32(&reg, RX_FILTER_CFG_DROP_MULTICAST,
@@ -4119,7 +4095,20 @@ static void rt2800_config_txpower_rt28xx(struct rt2x00_dev *rt2x00dev,
 	 * expected. We adjust it, based on TSSI reference and boundaries values
 	 * provided in EEPROM.
 	 */
-	delta += rt2800_get_gain_calibration_delta(rt2x00dev);
+	switch (rt2x00dev->chip.rt) {
+	case RT2860:
+	case RT2872:
+	case RT2883:
+	case RT3070:
+	case RT3071:
+	case RT3090:
+	case RT3572:
+		delta += rt2800_get_gain_calibration_delta(rt2x00dev);
+		break;
+	default:
+		/* TODO: temperature compensation code for other chips. */
+		break;
+	}
 
 	/*
 	 * Decrease power according to user settings, on devices with unknown
@@ -4136,25 +4125,19 @@ static void rt2800_config_txpower_rt28xx(struct rt2x00_dev *rt2x00dev,
 	 * TODO: we do not use +6 dBm option to do not increase power beyond
 	 * regulatory limit, however this could be utilized for devices with
 	 * CAPABILITY_POWER_LIMIT.
-	 *
-	 * TODO: add different temperature compensation code for RT3290 & RT5390
-	 * to allow to use BBP_R1 for those chips.
 	 */
-	if (!rt2x00_rt(rt2x00dev, RT3290) &&
-	    !rt2x00_rt(rt2x00dev, RT5390)) {
-		rt2800_bbp_read(rt2x00dev, 1, &r1);
-		if (delta <= -12) {
-			power_ctrl = 2;
-			delta += 12;
-		} else if (delta <= -6) {
-			power_ctrl = 1;
-			delta += 6;
-		} else {
-			power_ctrl = 0;
-		}
-		rt2x00_set_field8(&r1, BBP1_TX_POWER_CTRL, power_ctrl);
-		rt2800_bbp_write(rt2x00dev, 1, r1);
+	if (delta <= -12) {
+		power_ctrl = 2;
+		delta += 12;
+	} else if (delta <= -6) {
+		power_ctrl = 1;
+		delta += 6;
+	} else {
+		power_ctrl = 0;
 	}
+	rt2800_bbp_read(rt2x00dev, 1, &r1);
+	rt2x00_set_field8(&r1, BBP1_TX_POWER_CTRL, power_ctrl);
+	rt2800_bbp_write(rt2x00dev, 1, r1);
 
 	offset = TX_PWR_CFG_0;
 
@@ -7491,13 +7474,12 @@ static int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Initialize all hw fields.
 	 */
-	rt2x00dev->hw->flags =
-	    IEEE80211_HW_SIGNAL_DBM |
-	    IEEE80211_HW_SUPPORTS_PS |
-	    IEEE80211_HW_PS_NULLFUNC_STACK |
-	    IEEE80211_HW_AMPDU_AGGREGATION |
-	    IEEE80211_HW_REPORTS_TX_ACK_STATUS |
-	    IEEE80211_HW_SUPPORTS_HT_CCK_RATES;
+	ieee80211_hw_set(rt2x00dev->hw, SUPPORTS_HT_CCK_RATES);
+	ieee80211_hw_set(rt2x00dev->hw, REPORTS_TX_ACK_STATUS);
+	ieee80211_hw_set(rt2x00dev->hw, AMPDU_AGGREGATION);
+	ieee80211_hw_set(rt2x00dev->hw, PS_NULLFUNC_STACK);
+	ieee80211_hw_set(rt2x00dev->hw, SIGNAL_DBM);
+	ieee80211_hw_set(rt2x00dev->hw, SUPPORTS_PS);
 
 	/*
 	 * Don't set IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING for USB devices
@@ -7507,8 +7489,7 @@ static int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	 * infinitly and thus dropping it after some time.
 	 */
 	if (!rt2x00_is_usb(rt2x00dev))
-		rt2x00dev->hw->flags |=
-			IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING;
+		ieee80211_hw_set(rt2x00dev->hw, HOST_BROADCAST_PS_BUFFERING);
 
 	SET_IEEE80211_DEV(rt2x00dev->hw, rt2x00dev->dev);
 	SET_IEEE80211_PERM_ADDR(rt2x00dev->hw,
@@ -7811,21 +7792,25 @@ EXPORT_SYMBOL_GPL(rt2800_probe_hw);
 /*
  * IEEE80211 stack callback functions.
  */
-void rt2800_get_tkip_seq(struct ieee80211_hw *hw, u8 hw_key_idx, u32 *iv32,
-			 u16 *iv16)
+void rt2800_get_key_seq(struct ieee80211_hw *hw,
+			struct ieee80211_key_conf *key,
+			struct ieee80211_key_seq *seq)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
 	struct mac_iveiv_entry iveiv_entry;
 	u32 offset;
 
-	offset = MAC_IVEIV_ENTRY(hw_key_idx);
+	if (key->cipher != WLAN_CIPHER_SUITE_TKIP)
+		return;
+
+	offset = MAC_IVEIV_ENTRY(key->hw_key_idx);
 	rt2800_register_multiread(rt2x00dev, offset,
 				      &iveiv_entry, sizeof(iveiv_entry));
 
-	memcpy(iv16, &iveiv_entry.iv[0], sizeof(*iv16));
-	memcpy(iv32, &iveiv_entry.iv[4], sizeof(*iv32));
+	memcpy(&seq->tkip.iv16, &iveiv_entry.iv[0], 2);
+	memcpy(&seq->tkip.iv32, &iveiv_entry.iv[4], 4);
 }
-EXPORT_SYMBOL_GPL(rt2800_get_tkip_seq);
+EXPORT_SYMBOL_GPL(rt2800_get_key_seq);
 
 int rt2800_set_rts_threshold(struct ieee80211_hw *hw, u32 value)
 {
@@ -7950,21 +7935,22 @@ u64 rt2800_get_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 EXPORT_SYMBOL_GPL(rt2800_get_tsf);
 
 int rt2800_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-			enum ieee80211_ampdu_mlme_action action,
-			struct ieee80211_sta *sta, u16 tid, u16 *ssn,
-			u8 buf_size)
+			struct ieee80211_ampdu_params *params)
 {
+	struct ieee80211_sta *sta = params->sta;
+	enum ieee80211_ampdu_mlme_action action = params->action;
+	u16 tid = params->tid;
 	struct rt2x00_sta *sta_priv = (struct rt2x00_sta *)sta->drv_priv;
 	int ret = 0;
 
 	/*
 	 * Don't allow aggregation for stations the hardware isn't aware
 	 * of because tx status reports for frames to an unknown station
-	 * always contain wcid=255 and thus we can't distinguish between
-	 * multiple stations which leads to unwanted situations when the
-	 * hw reorders frames due to aggregation.
+	 * always contain wcid=WCID_END+1 and thus we can't distinguish
+	 * between multiple stations which leads to unwanted situations
+	 * when the hw reorders frames due to aggregation.
 	 */
-	if (sta_priv->wcid < 0)
+	if (sta_priv->wcid > WCID_END)
 		return 1;
 
 	switch (action) {
@@ -8013,13 +7999,13 @@ int rt2800_get_survey(struct ieee80211_hw *hw, int idx,
 	rt2800_register_read(rt2x00dev, CH_BUSY_STA_SEC, &busy_ext);
 
 	if (idle || busy) {
-		survey->filled = SURVEY_INFO_CHANNEL_TIME |
-				 SURVEY_INFO_CHANNEL_TIME_BUSY |
-				 SURVEY_INFO_CHANNEL_TIME_EXT_BUSY;
+		survey->filled = SURVEY_INFO_TIME |
+				 SURVEY_INFO_TIME_BUSY |
+				 SURVEY_INFO_TIME_EXT_BUSY;
 
-		survey->channel_time = (idle + busy) / 1000;
-		survey->channel_time_busy = busy / 1000;
-		survey->channel_time_ext_busy = busy_ext / 1000;
+		survey->time = (idle + busy) / 1000;
+		survey->time_busy = busy / 1000;
+		survey->time_ext_busy = busy_ext / 1000;
 	}
 
 	if (!(hw->conf.flags & IEEE80211_CONF_OFFCHANNEL))

@@ -65,7 +65,6 @@
 #endif
 /* struct ptlrpc_request, lustre_msg* */
 #include "../include/lustre_req_layout.h"
-#include "../include/lustre_update.h"
 #include "../include/lustre_acl.h"
 #include "../include/lustre_debug.h"
 
@@ -405,6 +404,7 @@ static const struct req_msg_field *ldlm_intent_layout_client[] = {
 	&RMF_LAYOUT_INTENT,
 	&RMF_EADATA /* for new layout to be set up */
 };
+
 static const struct req_msg_field *ldlm_intent_open_server[] = {
 	&RMF_PTLRPC_BODY,
 	&RMF_DLM_REP,
@@ -578,7 +578,6 @@ static const struct req_msg_field *ost_destroy_client[] = {
 	&RMF_DLM_REQ,
 	&RMF_CAPA1
 };
-
 
 static const struct req_msg_field *ost_brw_client[] = {
 	&RMF_PTLRPC_BODY,
@@ -790,17 +789,17 @@ enum rmf_flags {
 	/**
 	 * The field is a string, must be NUL-terminated.
 	 */
-	RMF_F_STRING = 1 << 0,
+	RMF_F_STRING = BIT(0),
 	/**
 	 * The field's buffer size need not match the declared \a rmf_size.
 	 */
-	RMF_F_NO_SIZE_CHECK = 1 << 1,
+	RMF_F_NO_SIZE_CHECK = BIT(1),
 	/**
 	 * The field's buffer size must be a whole multiple of the declared \a
 	 * rmf_size and the \a rmf_swabber function must work on the declared \a
 	 * rmf_size worth of bytes.
 	 */
-	RMF_F_STRUCT_ARRAY = 1 << 2
+	RMF_F_STRUCT_ARRAY = BIT(2)
 };
 
 struct req_capsule;
@@ -808,12 +807,12 @@ struct req_capsule;
 /*
  * Request fields.
  */
-#define DEFINE_MSGF(name, flags, size, swabber, dumper) {       \
-	.rmf_name    = (name),				  \
-	.rmf_flags   = (flags),				 \
-	.rmf_size    = (size),				  \
-	.rmf_swabber = (void (*)(void*))(swabber),	      \
-	.rmf_dumper  = (void (*)(void*))(dumper)		\
+#define DEFINE_MSGF(name, flags, size, swabber, dumper) {	\
+	.rmf_name    = (name),					\
+	.rmf_flags   = (flags),					\
+	.rmf_size    = (size),					\
+	.rmf_swabber = (void (*)(void *))(swabber),		\
+	.rmf_dumper  = (void (*)(void *))(dumper)		\
 }
 
 struct req_msg_field RMF_GENERIC_DATA =
@@ -980,18 +979,7 @@ EXPORT_SYMBOL(RMF_CONN);
 struct req_msg_field RMF_CONNECT_DATA =
 	DEFINE_MSGF("cdata",
 		    RMF_F_NO_SIZE_CHECK /* we allow extra space for interop */,
-#if LUSTRE_VERSION_CODE > OBD_OCD_VERSION(2, 7, 50, 0)
 		    sizeof(struct obd_connect_data),
-#else
-/* For interoperability with 1.8 and 2.0 clients/servers.
- * The RPC verification code allows larger RPC buffers, but not
- * smaller buffers.  Until we no longer need to keep compatibility
- * with older servers/clients we can only check that the buffer
- * size is at least as large as obd_connect_data_v1.  That is not
- * not in itself harmful, since the chance of just corrupting this
- * field is low.  See JIRA LU-16 for details. */
-		    sizeof(struct obd_connect_data_v1),
-#endif
 		    lustre_swab_connect, NULL);
 EXPORT_SYMBOL(RMF_CONNECT_DATA);
 
@@ -1176,25 +1164,25 @@ EXPORT_SYMBOL(RMF_SWAP_LAYOUTS);
 
 struct req_format {
 	const char *rf_name;
-	int	 rf_idx;
+	int rf_idx;
 	struct {
-		int			  nr;
+		int nr;
 		const struct req_msg_field **d;
 	} rf_fields[RCL_NR];
 };
 
-#define DEFINE_REQ_FMT(name, client, client_nr, server, server_nr) {    \
-	.rf_name   = name,					      \
-	.rf_fields = {						  \
+#define DEFINE_REQ_FMT(name, client, client_nr, server, server_nr) {	\
+	.rf_name = name,						\
+	.rf_fields = {							\
 		[RCL_CLIENT] = {					\
 			.nr = client_nr,				\
-			.d  = client				    \
-		},						      \
+			.d = client					\
+		},							\
 		[RCL_SERVER] = {					\
 			.nr = server_nr,				\
-			.d  = server				    \
-		}						       \
-	}							       \
+			.d = server					\
+		}							\
+	}								\
 }
 
 #define DEFINE_REQ_FMT0(name, client, server)				  \
@@ -1691,7 +1679,7 @@ EXPORT_SYMBOL(req_layout_fini);
  * req_capsule_msg_size().  The \a rc_area information is used by.
  * ptlrpc_request_set_replen().
  */
-void req_capsule_init_area(struct req_capsule *pill)
+static void req_capsule_init_area(struct req_capsule *pill)
 {
 	int i;
 
@@ -1700,7 +1688,6 @@ void req_capsule_init_area(struct req_capsule *pill)
 		pill->rc_area[RCL_SERVER][i] = -1;
 	}
 }
-EXPORT_SYMBOL(req_capsule_init_area);
 
 /**
  * Initialize a pill.
@@ -1781,10 +1768,10 @@ EXPORT_SYMBOL(req_capsule_set);
  * field of a \a pill's \a rc_fmt's RMF's.
  */
 int req_capsule_filled_sizes(struct req_capsule *pill,
-			   enum req_location loc)
+			     enum req_location loc)
 {
 	const struct req_format *fmt = pill->rc_fmt;
-	int		      i;
+	int i;
 
 	LASSERT(fmt != NULL);
 
@@ -1818,8 +1805,8 @@ EXPORT_SYMBOL(req_capsule_filled_sizes);
 int req_capsule_server_pack(struct req_capsule *pill)
 {
 	const struct req_format *fmt;
-	int		      count;
-	int		      rc;
+	int count;
+	int rc;
 
 	LASSERT(pill->rc_loc == RCL_SERVER);
 	fmt = pill->rc_fmt;
@@ -1851,7 +1838,7 @@ static int __req_capsule_offset(const struct req_capsule *pill,
 	LASSERTF(offset > 0, "%s:%s, off=%d, loc=%d\n",
 			    pill->rc_fmt->rf_name,
 			    field->rmf_name, offset, loc);
-	offset --;
+	offset--;
 
 	LASSERT(0 <= offset && offset < REQ_MAX_FIELD_NR);
 	return offset;
@@ -1869,11 +1856,11 @@ swabber_dumper_helper(struct req_capsule *pill,
 		      int offset,
 		      void *value, int len, int dump, void (*swabber)(void *))
 {
-	void    *p;
-	int     i;
-	int     n;
-	int     do_swab;
-	int     inout = loc == RCL_CLIENT;
+	void *p;
+	int i;
+	int n;
+	int do_swab;
+	int inout = loc == RCL_CLIENT;
 
 	swabber = swabber ?: field->rmf_swabber;
 
@@ -1897,8 +1884,8 @@ swabber_dumper_helper(struct req_capsule *pill,
 		swabber(value);
 		ptlrpc_buf_set_swabbed(pill->rc_req, inout, offset);
 		if (dump) {
-			CDEBUG(D_RPCTRACE, "Dump of swabbed field %s "
-			       "follows\n", field->rmf_name);
+			CDEBUG(D_RPCTRACE, "Dump of swabbed field %s follows\n",
+			       field->rmf_name);
 			field->rmf_dumper(value);
 		}
 
@@ -1914,8 +1901,7 @@ swabber_dumper_helper(struct req_capsule *pill,
 	     i < n;
 	     i++, p += field->rmf_size) {
 		if (dump) {
-			CDEBUG(D_RPCTRACE, "Dump of %sarray field %s, "
-			       "element %d follows\n",
+			CDEBUG(D_RPCTRACE, "Dump of %sarray field %s, element %d follows\n",
 			       do_swab ? "unswabbed " : "", field->rmf_name, i);
 			field->rmf_dumper(p);
 		}
@@ -1923,8 +1909,8 @@ swabber_dumper_helper(struct req_capsule *pill,
 			continue;
 		swabber(p);
 		if (dump) {
-			CDEBUG(D_RPCTRACE, "Dump of swabbed array field %s, "
-			       "element %d follows\n", field->rmf_name, i);
+			CDEBUG(D_RPCTRACE, "Dump of swabbed array field %s, element %d follows\n",
+			       field->rmf_name, i);
 			field->rmf_dumper(value);
 		}
 	}
@@ -1949,10 +1935,10 @@ static void *__req_capsule_get(struct req_capsule *pill,
 			       int dump)
 {
 	const struct req_format *fmt;
-	struct lustre_msg       *msg;
-	void		    *value;
-	int		      len;
-	int		      offset;
+	struct lustre_msg *msg;
+	void *value;
+	int len;
+	int offset;
 
 	void *(*getter)(struct lustre_msg *m, int n, int minlen);
 
@@ -1983,8 +1969,7 @@ static void *__req_capsule_get(struct req_capsule *pill,
 		 */
 		len = lustre_msg_buflen(msg, offset);
 		if ((len % field->rmf_size) != 0) {
-			CERROR("%s: array field size mismatch "
-			       "%d modulo %d != 0 (%d)\n",
+			CERROR("%s: array field size mismatch %d modulo %d != 0 (%d)\n",
 			       field->rmf_name, len, field->rmf_size, loc);
 			return NULL;
 		}
@@ -1997,8 +1982,7 @@ static void *__req_capsule_get(struct req_capsule *pill,
 
 	if (value == NULL) {
 		DEBUG_REQ(D_ERROR, pill->rc_req,
-			  "Wrong buffer for field `%s' (%d of %d) "
-			  "in format `%s': %d vs. %d (%s)\n",
+			  "Wrong buffer for field `%s' (%d of %d) in format `%s': %d vs. %d (%s)\n",
 			  field->rmf_name, offset, lustre_msg_bufcount(msg),
 			  fmt->rf_name, lustre_msg_buflen(msg, offset), len,
 			  rcl_names[loc]);
@@ -2009,55 +1993,6 @@ static void *__req_capsule_get(struct req_capsule *pill,
 
 	return value;
 }
-
-/**
- * Dump a request and/or reply
- */
-void __req_capsule_dump(struct req_capsule *pill, enum req_location loc)
-{
-	const struct    req_format *fmt;
-	const struct    req_msg_field *field;
-	int	     len;
-	int	     i;
-
-	fmt = pill->rc_fmt;
-
-	DEBUG_REQ(D_RPCTRACE, pill->rc_req, "BEGIN REQ CAPSULE DUMP\n");
-	for (i = 0; i < fmt->rf_fields[loc].nr; ++i) {
-		field = FMT_FIELD(fmt, loc, i);
-		if (field->rmf_dumper == NULL) {
-			/*
-			 * FIXME Add a default hex dumper for fields that don't
-			 * have a specific dumper
-			 */
-			len = req_capsule_get_size(pill, field, loc);
-			CDEBUG(D_RPCTRACE, "Field %s has no dumper function;"
-			       "field size is %d\n", field->rmf_name, len);
-		} else {
-			/* It's the dumping side-effect that we're interested in */
-			(void) __req_capsule_get(pill, field, loc, NULL, 1);
-		}
-	}
-	CDEBUG(D_RPCTRACE, "END REQ CAPSULE DUMP\n");
-}
-
-/**
- * Dump a request.
- */
-void req_capsule_client_dump(struct req_capsule *pill)
-{
-	__req_capsule_dump(pill, RCL_CLIENT);
-}
-EXPORT_SYMBOL(req_capsule_client_dump);
-
-/**
- * Dump a reply
- */
-void req_capsule_server_dump(struct req_capsule *pill)
-{
-	__req_capsule_dump(pill, RCL_SERVER);
-}
-EXPORT_SYMBOL(req_capsule_server_dump);
 
 /**
  * Trivial wrapper around __req_capsule_get(), that returns the PTLRPC request
@@ -2151,21 +2086,6 @@ void *req_capsule_server_sized_swab_get(struct req_capsule *pill,
 EXPORT_SYMBOL(req_capsule_server_sized_swab_get);
 
 /**
- * Returns the buffer of a \a pill corresponding to the given \a field from the
- * request (if the caller is executing on the server-side) or reply (if the
- * caller is executing on the client-side).
- *
- * This function convenient for use is code that could be executed on the
- * client and server alike.
- */
-const void *req_capsule_other_get(struct req_capsule *pill,
-				  const struct req_msg_field *field)
-{
-	return __req_capsule_get(pill, field, pill->rc_loc ^ 1, NULL, 0);
-}
-EXPORT_SYMBOL(req_capsule_other_get);
-
-/**
  * Set the size of the PTLRPC request/reply (\a loc) buffer for the given \a
  * field of the given \a pill.
  *
@@ -2184,8 +2104,7 @@ void req_capsule_set_size(struct req_capsule *pill,
 	    (size > 0)) {
 		if ((field->rmf_flags & RMF_F_STRUCT_ARRAY) &&
 		    (size % field->rmf_size != 0)) {
-			CERROR("%s: array field size mismatch "
-			       "%d %% %d != 0 (%d)\n",
+			CERROR("%s: array field size mismatch %d %% %d != 0 (%d)\n",
 			       field->rmf_name, size, field->rmf_size, loc);
 			LBUG();
 		} else if (!(field->rmf_flags & RMF_F_STRUCT_ARRAY) &&
@@ -2340,9 +2259,9 @@ EXPORT_SYMBOL(req_capsule_has_field);
  * Returns a non-zero value if the given \a field is present in the given \a
  * pill's PTLRPC request or reply (\a loc), else it returns 0.
  */
-int req_capsule_field_present(const struct req_capsule *pill,
-			      const struct req_msg_field *field,
-			      enum req_location loc)
+static int req_capsule_field_present(const struct req_capsule *pill,
+				     const struct req_msg_field *field,
+				     enum req_location loc)
 {
 	int offset;
 
@@ -2352,7 +2271,6 @@ int req_capsule_field_present(const struct req_capsule *pill,
 	offset = __req_capsule_offset(pill, field, loc);
 	return lustre_msg_bufcount(__req_msg(pill, loc)) > offset;
 }
-EXPORT_SYMBOL(req_capsule_field_present);
 
 /**
  * This function shrinks the size of the _buffer_ of the \a pill's PTLRPC
@@ -2366,9 +2284,9 @@ void req_capsule_shrink(struct req_capsule *pill,
 			enum req_location loc)
 {
 	const struct req_format *fmt;
-	struct lustre_msg       *msg;
-	int		      len;
-	int		      offset;
+	struct lustre_msg *msg;
+	int len;
+	int offset;
 
 	fmt = pill->rc_fmt;
 	LASSERT(fmt != NULL);
@@ -2392,67 +2310,5 @@ void req_capsule_shrink(struct req_capsule *pill,
 }
 EXPORT_SYMBOL(req_capsule_shrink);
 
-int req_capsule_server_grow(struct req_capsule *pill,
-			    const struct req_msg_field *field,
-			    unsigned int newlen)
-{
-	struct ptlrpc_reply_state *rs = pill->rc_req->rq_reply_state, *nrs;
-	char *from, *to;
-	int offset, len, rc;
-
-	LASSERT(pill->rc_fmt != NULL);
-	LASSERT(__req_format_is_sane(pill->rc_fmt));
-	LASSERT(req_capsule_has_field(pill, field, RCL_SERVER));
-	LASSERT(req_capsule_field_present(pill, field, RCL_SERVER));
-
-	len = req_capsule_get_size(pill, field, RCL_SERVER);
-	offset = __req_capsule_offset(pill, field, RCL_SERVER);
-	if (pill->rc_req->rq_repbuf_len >=
-	    lustre_packed_msg_size(pill->rc_req->rq_repmsg) - len + newlen)
-		CERROR("Inplace repack might be done\n");
-
-	pill->rc_req->rq_reply_state = NULL;
-	req_capsule_set_size(pill, field, RCL_SERVER, newlen);
-	rc = req_capsule_server_pack(pill);
-	if (rc) {
-		/* put old rs back, the caller will decide what to do */
-		pill->rc_req->rq_reply_state = rs;
-		return rc;
-	}
-	nrs = pill->rc_req->rq_reply_state;
-	/* Now we need only buffers, copy first chunk */
-	to = lustre_msg_buf(nrs->rs_msg, 0, 0);
-	from = lustre_msg_buf(rs->rs_msg, 0, 0);
-	len = (char *)lustre_msg_buf(rs->rs_msg, offset, 0) - from;
-	memcpy(to, from, len);
-	/* check if we have tail and copy it too */
-	if (rs->rs_msg->lm_bufcount > offset + 1) {
-		to = lustre_msg_buf(nrs->rs_msg, offset + 1, 0);
-		from = lustre_msg_buf(rs->rs_msg, offset + 1, 0);
-		offset = rs->rs_msg->lm_bufcount - 1;
-		len = (char *)lustre_msg_buf(rs->rs_msg, offset, 0) +
-		      cfs_size_round(rs->rs_msg->lm_buflens[offset]) - from;
-		memcpy(to, from, len);
-	}
-	/* drop old reply if everything is fine */
-	if (rs->rs_difficult) {
-		/* copy rs data */
-		int i;
-
-		nrs->rs_difficult = 1;
-		nrs->rs_no_ack = rs->rs_no_ack;
-		for (i = 0; i < rs->rs_nlocks; i++) {
-			nrs->rs_locks[i] = rs->rs_locks[i];
-			nrs->rs_modes[i] = rs->rs_modes[i];
-			nrs->rs_nlocks++;
-		}
-		rs->rs_nlocks = 0;
-		rs->rs_difficult = 0;
-		rs->rs_no_ack = 0;
-	}
-	ptlrpc_rs_decref(rs);
-	return 0;
-}
-EXPORT_SYMBOL(req_capsule_server_grow);
 /* __REQ_LAYOUT_USER__ */
 #endif

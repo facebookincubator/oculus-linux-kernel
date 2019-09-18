@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -74,21 +74,17 @@ static int devfreq_vbif_ev_handler(struct devfreq *devfreq,
 	int ret;
 	struct devfreq_dev_status stat;
 
-	memset(&stat, 0, sizeof(stat));
-
 	switch (event) {
 	case DEVFREQ_GOV_START:
 		mutex_lock(&df_lock);
 		df = devfreq;
-		if (df->profile->get_dev_status)
-			ret = df->profile->get_dev_status(df->dev.parent,
-					&stat);
-		else
-			ret = 0;
-		if (ret || !stat.private_data)
-			pr_warn("Device doesn't take AB votes!\n");
-		else
+		if (df->profile->get_dev_status &&
+			!df->profile->get_dev_status(df->dev.parent, &stat) &&
+			stat.private_data)
 			dev_ab = stat.private_data;
+		else
+			pr_warn("Device doesn't take AB votes!\n");
+
 		mutex_unlock(&df_lock);
 
 		ret = devfreq_vbif_update_bw(0, 0);
@@ -137,7 +133,6 @@ static void __exit devfreq_vbif_exit(void)
 	if (ret)
 		pr_err("%s: failed remove governor %d\n", __func__, ret);
 
-	return;
 }
 module_exit(devfreq_vbif_exit);
 

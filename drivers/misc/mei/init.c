@@ -54,6 +54,35 @@ const char *mei_pg_state_str(enum mei_pg_state state)
 #undef MEI_PG_STATE
 }
 
+/**
+ * mei_fw_status2str - convert fw status registers to printable string
+ *
+ * @fw_status:  firmware status
+ * @buf: string buffer at minimal size MEI_FW_STATUS_STR_SZ
+ * @len: buffer len must be >= MEI_FW_STATUS_STR_SZ
+ *
+ * Return: number of bytes written or -EINVAL if buffer is to small
+ */
+ssize_t mei_fw_status2str(struct mei_fw_status *fw_status,
+			  char *buf, size_t len)
+{
+	ssize_t cnt = 0;
+	int i;
+
+	buf[0] = '\0';
+
+	if (len < MEI_FW_STATUS_STR_SZ)
+		return -EINVAL;
+
+	for (i = 0; i < fw_status->count; i++)
+		cnt += scnprintf(buf + cnt, len - cnt, "%08X ",
+				fw_status->status[i]);
+
+	/* drop last space */
+	buf[cnt] = '\0';
+	return cnt;
+}
+EXPORT_SYMBOL_GPL(mei_fw_status2str);
 
 /**
  * mei_cancel_work - Cancel mei background jobs
@@ -86,12 +115,11 @@ int mei_reset(struct mei_device *dev)
 	    state != MEI_DEV_DISABLED &&
 	    state != MEI_DEV_POWER_DOWN &&
 	    state != MEI_DEV_POWER_UP) {
-		struct mei_fw_status fw_status;
+		char fw_sts_str[MEI_FW_STATUS_STR_SZ];
 
-		mei_fw_status(dev, &fw_status);
-		dev_warn(dev->dev,
-			"unexpected reset: dev_state = %s " FW_STS_FMT "\n",
-			mei_dev_state_str(state), FW_STS_PRM(fw_status));
+		mei_fw_status_str(dev, fw_sts_str, MEI_FW_STATUS_STR_SZ);
+		dev_warn(dev->dev, "unexpected reset: dev_state = %s fw status = %s\n",
+			 mei_dev_state_str(state), fw_sts_str);
 	}
 
 	/* we're already in reset, cancel the init timer
@@ -301,11 +329,9 @@ void mei_stop(struct mei_device *dev)
 {
 	dev_dbg(dev->dev, "stopping the device.\n");
 
-	mei_cancel_work(dev);
-
-	mei_nfc_host_exit(dev);
-
 	mei_cl_bus_remove_devices(dev);
+
+	mei_cancel_work(dev);
 
 	mutex_lock(&dev->device_lock);
 
@@ -333,13 +359,15 @@ bool mei_write_is_idle(struct mei_device *dev)
 {
 	bool idle = (dev->dev_state == MEI_DEV_ENABLED &&
 		list_empty(&dev->ctrl_wr_list.list) &&
-		list_empty(&dev->write_list.list));
+		list_empty(&dev->write_list.list)   &&
+		list_empty(&dev->write_waiting_list.list));
 
-	dev_dbg(dev->dev, "write pg: is idle[%d] state=%s ctrl=%d write=%d\n",
+	dev_dbg(dev->dev, "write pg: is idle[%d] state=%s ctrl=%01d write=%01d wwait=%01d\n",
 		idle,
 		mei_dev_state_str(dev->dev_state),
 		list_empty(&dev->ctrl_wr_list.list),
-		list_empty(&dev->write_list.list));
+		list_empty(&dev->write_list.list),
+		list_empty(&dev->write_waiting_list.list));
 
 	return idle;
 }
@@ -361,6 +389,8 @@ void mei_device_init(struct mei_device *dev,
 	INIT_LIST_HEAD(&dev->device_list);
 	INIT_LIST_HEAD(&dev->me_clients);
 	mutex_init(&dev->device_lock);
+	init_rwsem(&dev->me_clients_rwsem);
+	mutex_init(&dev->cl_bus_lock);
 	init_waitqueue_head(&dev->wait_hw_ready);
 	init_waitqueue_head(&dev->wait_pg);
 	init_waitqueue_head(&dev->wait_hbm_start);
@@ -368,7 +398,6 @@ void mei_device_init(struct mei_device *dev,
 	dev->dev_state = MEI_DEV_INITIALIZING;
 	dev->reset_count = 0;
 
-	mei_io_list_init(&dev->read_list);
 	mei_io_list_init(&dev->write_list);
 	mei_io_list_init(&dev->write_waiting_list);
 	mei_io_list_init(&dev->ctrl_wr_list);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,18 +17,10 @@
 #include <linux/types.h>
 #include <media/msm_sde_rotator.h>
 
-/* internal formats */
-#define SDE_PIX_FMT_Y_CBCR_H2V2_TP10	v4l2_fourcc('T', 'P', '1', '0')
-
 #define SDE_ROT_MAX_PLANES		4
 
 #define UBWC_META_MACRO_W_H		16
 #define UBWC_META_BLOCK_SIZE		256
-
-#define INVALID_WB_FORMAT		0
-#define VALID_ROT_WB_FORMAT		BIT(0)
-#define VALID_MDP_WB_INTF_FORMAT	BIT(1)
-#define VALID_ROT_R3_WB_FORMAT		BIT(2)
 
 /*
  * Value of enum chosen to fit the number of bits
@@ -79,6 +71,7 @@ enum sde_mdp_sspp_chroma_samp_type {
 
 struct sde_mdp_format_params {
 	u32 format;
+	const char *description;
 	u32 flag;
 	u8 is_yuv;
 	u8 is_ubwc;
@@ -111,8 +104,6 @@ struct sde_mdp_format_params *sde_get_format_params(u32 format);
 
 int sde_rot_get_ubwc_micro_dim(u32 format, u16 *w, u16 *h);
 
-bool sde_mdp_is_wb_format(struct sde_mdp_format_params *fmt);
-
 static inline bool sde_mdp_is_tilea4x_format(struct sde_mdp_format_params *fmt)
 {
 	return fmt && (fmt->frame_format == SDE_MDP_FMT_TILE_A4X);
@@ -133,10 +124,34 @@ static inline bool sde_mdp_is_linear_format(struct sde_mdp_format_params *fmt)
 	return fmt && (fmt->frame_format == SDE_MDP_FMT_LINEAR);
 }
 
+static inline bool sde_mdp_is_nv12_format(struct sde_mdp_format_params *fmt)
+{
+	return fmt && (fmt->fetch_planes == SDE_MDP_PLANE_PSEUDO_PLANAR) &&
+			(fmt->chroma_sample == SDE_MDP_CHROMA_420);
+}
+
+static inline bool sde_mdp_is_nv12_8b_format(struct sde_mdp_format_params *fmt)
+{
+	return fmt && sde_mdp_is_nv12_format(fmt) &&
+			(fmt->pixel_mode == SDE_MDP_PIXEL_NORMAL);
+}
+
+static inline bool sde_mdp_is_nv12_10b_format(struct sde_mdp_format_params *fmt)
+{
+	return fmt && sde_mdp_is_nv12_format(fmt) &&
+			(fmt->pixel_mode == SDE_MDP_PIXEL_10BIT);
+}
+
 static inline bool sde_mdp_is_tp10_format(struct sde_mdp_format_params *fmt)
 {
-	return fmt && ((fmt->format == SDE_PIX_FMT_Y_CBCR_H2V2_TP10_UBWC) ||
-			(fmt->format == SDE_PIX_FMT_Y_CBCR_H2V2_TP10));
+	return fmt && sde_mdp_is_nv12_10b_format(fmt) &&
+			fmt->unpack_tight;
+}
+
+static inline bool sde_mdp_is_p010_format(struct sde_mdp_format_params *fmt)
+{
+	return fmt && sde_mdp_is_nv12_10b_format(fmt) &&
+			!fmt->unpack_tight;
 }
 
 static inline bool sde_mdp_is_yuv_format(struct sde_mdp_format_params *fmt)

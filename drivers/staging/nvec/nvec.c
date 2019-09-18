@@ -85,23 +85,20 @@ static struct nvec_chip *nvec_power_handle;
 static const struct mfd_cell nvec_devices[] = {
 	{
 		.name = "nvec-kbd",
-		.id = 1,
 	},
 	{
 		.name = "nvec-mouse",
-		.id = 1,
+	},
+	{
+		.name = "nvec-power",
+		.id = 0,
 	},
 	{
 		.name = "nvec-power",
 		.id = 1,
-	},
-	{
-		.name = "nvec-power",
-		.id = 2,
 	},
 	{
 		.name = "nvec-paz00",
-		.id = 1,
 	},
 };
 
@@ -259,7 +256,7 @@ static void nvec_gpio_set_value(struct nvec_chip *nvec, int value)
  * and return immediately.
  *
  * Returns: 0 on success, a negative error code on failure. If a failure
- * occured, the nvec driver may print an error.
+ * occurred, the nvec driver may print an error.
  */
 int nvec_write_async(struct nvec_chip *nvec, const unsigned char *data,
 			short size)
@@ -713,7 +710,6 @@ static irqreturn_t nvec_interrupt(int irq, void *dev)
 		status & RCVD ? " RCVD" : "",
 		status & RNW ? " RNW" : "");
 
-
 	/*
 	 * TODO: A correct fix needs to be found for this.
 	 *
@@ -806,7 +802,7 @@ static int tegra_nvec_probe(struct platform_device *pdev)
 	}
 
 	nvec = devm_kzalloc(&pdev->dev, sizeof(struct nvec_chip), GFP_KERNEL);
-	if (nvec == NULL)
+	if (!nvec)
 		return -ENOMEM;
 
 	platform_set_drvdata(pdev, nvec);
@@ -891,7 +887,7 @@ static int tegra_nvec_probe(struct platform_device *pdev)
 		nvec_msg_free(nvec, msg);
 	}
 
-	ret = mfd_add_devices(nvec->dev, -1, nvec_devices,
+	ret = mfd_add_devices(nvec->dev, 0, nvec_devices,
 			      ARRAY_SIZE(nvec_devices), NULL, 0, NULL);
 	if (ret)
 		dev_err(nvec->dev, "error adding subdevices\n");
@@ -919,7 +915,7 @@ static int tegra_nvec_remove(struct platform_device *pdev)
 	nvec_unregister_notifier(nvec, &nvec->nvec_status_notifier);
 	cancel_work_sync(&nvec->rx_work);
 	cancel_work_sync(&nvec->tx_work);
-	/* FIXME: needs check wether nvec is responsible for power off */
+	/* FIXME: needs check whether nvec is responsible for power off */
 	pm_power_off = NULL;
 
 	return 0;
@@ -973,7 +969,6 @@ static struct platform_driver nvec_device_driver = {
 	.remove  = tegra_nvec_remove,
 	.driver  = {
 		.name = "nvec",
-		.owner = THIS_MODULE,
 		.pm = &nvec_pm_ops,
 		.of_match_table = nvidia_nvec_of_match,
 	}

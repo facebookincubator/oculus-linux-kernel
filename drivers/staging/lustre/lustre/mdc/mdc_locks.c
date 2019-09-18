@@ -296,10 +296,8 @@ static struct ptlrpc_request *mdc_intent_open_pack(struct obd_export *exp,
 		} else {
 			if (it->it_flags & (FMODE_WRITE|MDS_OPEN_TRUNC))
 				mode = LCK_CW;
-#ifdef FMODE_EXEC
-			else if (it->it_flags & FMODE_EXEC)
+			else if (it->it_flags & __FMODE_EXEC)
 				mode = LCK_PR;
-#endif
 			else
 				mode = LCK_CR;
 		}
@@ -323,12 +321,6 @@ static struct ptlrpc_request *mdc_intent_open_pack(struct obd_export *exp,
 		ldlm_lock_list_put(&cancels, l_bl_ast, count);
 		return ERR_PTR(-ENOMEM);
 	}
-
-	/* parent capability */
-	mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
-	/* child capability, reserve the size according to parent capa, it will
-	 * be filled after we get the reply */
-	mdc_set_capa_size(req, &RMF_CAPA2, op_data->op_capa1);
 
 	req_capsule_set_size(&req->rq_pill, &RMF_NAME, RCL_CLIENT,
 			     op_data->op_namelen + 1);
@@ -371,14 +363,10 @@ mdc_intent_getxattr_pack(struct obd_export *exp,
 	int			rc, count = 0, maxdata;
 	LIST_HEAD(cancels);
 
-
-
 	req = ptlrpc_request_alloc(class_exp2cliimp(exp),
 					&RQF_LDLM_INTENT_GETXATTR);
 	if (req == NULL)
 		return ERR_PTR(-ENOMEM);
-
-	mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
 
 	rc = ldlm_prep_enqueue_req(exp, req, &cancels, count);
 	if (rc) {
@@ -393,8 +381,8 @@ mdc_intent_getxattr_pack(struct obd_export *exp,
 	maxdata = class_exp2cliimp(exp)->imp_connect_data.ocd_max_easize;
 
 	/* pack the intended request */
-	mdc_pack_body(req, &op_data->op_fid1, op_data->op_capa1,
-			op_data->op_valid, maxdata, -1, 0);
+	mdc_pack_body(req, &op_data->op_fid1, op_data->op_valid, maxdata, -1,
+		      0);
 
 	req_capsule_set_size(&req->rq_pill, &RMF_EADATA,
 				RCL_SERVER, maxdata);
@@ -424,7 +412,6 @@ static struct ptlrpc_request *mdc_intent_unlink_pack(struct obd_export *exp,
 	if (req == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
 	req_capsule_set_size(&req->rq_pill, &RMF_NAME, RCL_CLIENT,
 			     op_data->op_namelen + 1);
 
@@ -457,7 +444,7 @@ static struct ptlrpc_request *mdc_intent_getattr_pack(struct obd_export *exp,
 	struct obd_device     *obddev = class_exp2obd(exp);
 	u64		       valid = OBD_MD_FLGETATTR | OBD_MD_FLEASIZE |
 				       OBD_MD_FLMODEASIZE | OBD_MD_FLDIREA |
-				       OBD_MD_FLMDSCAPA | OBD_MD_MEA |
+				       OBD_MD_MEA |
 				       (client_is_remote(exp) ?
 					       OBD_MD_FLRMTPERM : OBD_MD_FLACL);
 	struct ldlm_intent    *lit;
@@ -469,7 +456,6 @@ static struct ptlrpc_request *mdc_intent_getattr_pack(struct obd_export *exp,
 	if (req == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
 	req_capsule_set_size(&req->rq_pill, &RMF_NAME, RCL_CLIENT,
 			     op_data->op_namelen + 1);
 
@@ -707,27 +693,6 @@ static int mdc_finish_enqueue(struct obd_export *exp,
 			if (perm == NULL)
 				return -EPROTO;
 		}
-		if (body->valid & OBD_MD_FLMDSCAPA) {
-			struct lustre_capa *capa, *p;
-
-			capa = req_capsule_server_get(pill, &RMF_CAPA1);
-			if (capa == NULL)
-				return -EPROTO;
-
-			if (it->it_op & IT_OPEN) {
-				/* client fid capa will be checked in replay */
-				p = req_capsule_client_get(pill, &RMF_CAPA2);
-				LASSERT(p);
-				*p = *capa;
-			}
-		}
-		if (body->valid & OBD_MD_FLOSSCAPA) {
-			struct lustre_capa *capa;
-
-			capa = req_capsule_server_get(pill, &RMF_CAPA2);
-			if (capa == NULL)
-				return -EPROTO;
-		}
 	} else if (it->it_op & IT_LAYOUT) {
 		/* maybe the lock was granted right away and layout
 		 * is packed into RMF_DLM_LVB of req */
@@ -748,7 +713,7 @@ static int mdc_finish_enqueue(struct obd_export *exp,
 		LDLM_DEBUG(lock, "layout lock returned by: %s, lvb_len: %d\n",
 			ldlm_it2str(it->it_op), lvb_len);
 
-		OBD_ALLOC_LARGE(lmm, lvb_len);
+		lmm = libcfs_kvzalloc(lvb_len, GFP_NOFS);
 		if (lmm == NULL) {
 			LDLM_LOCK_PUT(lock);
 			return -ENOMEM;
@@ -765,7 +730,7 @@ static int mdc_finish_enqueue(struct obd_export *exp,
 		}
 		unlock_res_and_lock(lock);
 		if (lmm != NULL)
-			OBD_FREE_LARGE(lmm, lvb_len);
+			kvfree(lmm);
 	}
 	if (lock != NULL)
 		LDLM_LOCK_PUT(lock);
@@ -828,8 +793,9 @@ resend:
 		LASSERT(lmm && lmmsize == 0);
 		LASSERTF(einfo->ei_type == LDLM_FLOCK, "lock type %d\n",
 			 einfo->ei_type);
-		policy = (ldlm_policy_data_t *)lmm;
+		policy = lmm;
 		res_id.name[3] = LDLM_FLOCK;
+		req = NULL;
 	} else if (it->it_op & IT_OPEN) {
 		req = mdc_intent_open_pack(exp, it, op_data, lmm, lmmsize,
 					   einfo->ei_cbdata);
@@ -865,7 +831,7 @@ resend:
 	if (resends) {
 		req->rq_generation_set = 1;
 		req->rq_import_generation = generation;
-		req->rq_sent = get_seconds() + resends;
+		req->rq_sent = ktime_get_real_seconds() + resends;
 	}
 
 	/* It is important to obtain rpc_lock first (if applicable), so that
@@ -919,7 +885,7 @@ resend:
 
 	/* Retry the create infinitely when we get -EINPROGRESS from
 	 * server. This is required by the new quota design. */
-	if (it && it->it_op & IT_CREAT &&
+	if (it->it_op & IT_CREAT &&
 	    (int)lockrep->lock_policy_res2 == -EINPROGRESS) {
 		mdc_clear_replay_flag(req, rc);
 		ptlrpc_req_finished(req);
@@ -1252,7 +1218,7 @@ static int mdc_intent_getattr_async_interpret(const struct lu_env *env,
 	rc = mdc_finish_intent_lock(exp, req, &minfo->mi_data, it, lockh);
 
 out:
-	OBD_FREE_PTR(einfo);
+	kfree(einfo);
 	minfo->mi_cb(req, minfo, rc);
 	return 0;
 }
@@ -1308,7 +1274,7 @@ int mdc_intent_getattr_async(struct obd_export *exp,
 	ga->ga_einfo = einfo;
 
 	req->rq_interpret_reply = mdc_intent_getattr_async_interpret;
-	ptlrpcd_add_req(req, PDL_POLICY_LOCAL, -1);
+	ptlrpcd_add_req(req);
 
 	return 0;
 }

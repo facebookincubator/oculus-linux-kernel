@@ -21,27 +21,12 @@
 #include <asm/cputype.h>
 #include <asm/cpufeature.h>
 
-#define MIDR_CORTEX_A53 MIDR_CPU_PART(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A53)
-#define MIDR_CORTEX_A57 MIDR_CPU_PART(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A57)
-#define MIDR_KRYO2XX_SILVER MIDR_CPU_PART(ARM_CPU_IMP_QCOM, ARM_CPU_PART_KRYO2XX_SILVER)
-#define MIDR_QCOM_KRYO MIDR_CPU_PART(ARM_CPU_IMP_QCOM, QCOM_CPU_PART_KRYO)
-#define MIDR_CORTEX_A72 MIDR_CPU_PART(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A72)
-#define MIDR_CORTEX_A75 MIDR_CPU_PART(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A75)
-
-#define CPU_MODEL_MASK (MIDR_IMPLEMENTOR_MASK | MIDR_PARTNUM_MASK | \
-			MIDR_ARCHITECTURE_MASK)
-
 static bool __maybe_unused
 is_affected_midr_range(const struct arm64_cpu_capabilities *entry)
 {
-	u32 midr = read_cpuid_id();
-
-	if ((midr & CPU_MODEL_MASK) != entry->midr_model)
-		return false;
-
-	midr &= MIDR_REVISION_MASK | MIDR_VARIANT_MASK;
-
-	return (midr >= entry->midr_range_min && midr <= entry->midr_range_max);
+	return MIDR_IS_CPU_MODEL_RANGE(read_cpuid_id(), entry->midr_model,
+				       entry->midr_range_min,
+				       entry->midr_range_max);
 }
 
 static bool __maybe_unused
@@ -51,7 +36,7 @@ is_kryo_midr(const struct arm64_cpu_capabilities *entry)
 
 	model = read_cpuid_id();
 	model &= MIDR_IMPLEMENTOR_MASK | (0xf00 << MIDR_PARTNUM_SHIFT) |
-		 MIDR_ARCHITECTURE_MASK;
+		MIDR_ARCHITECTURE_MASK;
 
 	return model == entry->midr_model;
 }
@@ -64,6 +49,8 @@ DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
 
 #ifdef CONFIG_KVM
 extern char __psci_hyp_bp_inval_start[], __psci_hyp_bp_inval_end[];
+extern char __qcom_hyp_sanitize_link_stack_start[];
+extern char __qcom_hyp_sanitize_link_stack_end[];
 
 static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
 				const char *hyp_vecs_end)
@@ -106,10 +93,12 @@ static void __install_bp_hardening_cb(bp_hardening_cb_t fn,
 	spin_unlock(&bp_lock);
 }
 #else
-#define __psci_hyp_bp_inval_start	NULL
-#define __psci_hyp_bp_inval_end		NULL
+#define __psci_hyp_bp_inval_start		NULL
+#define __psci_hyp_bp_inval_end			NULL
+#define __qcom_hyp_sanitize_link_stack_start	NULL
+#define __qcom_hyp_sanitize_link_stack_end	NULL
 
-static void __install_bp_hardening_cb(bp_hardening_cb_t fn,
+static void __maybe_unused __install_bp_hardening_cb(bp_hardening_cb_t fn,
 				      const char *hyp_vecs_start,
 				      const char *hyp_vecs_end)
 {
@@ -117,11 +106,11 @@ static void __install_bp_hardening_cb(bp_hardening_cb_t fn,
 }
 #endif	/* CONFIG_KVM */
 
-static void  __maybe_unused
-install_bp_hardening_cb(const struct arm64_cpu_capabilities *entry,
-			bp_hardening_cb_t fn,
-			const char *hyp_vecs_start,
-			const char *hyp_vecs_end)
+static void __maybe_unused install_bp_hardening_cb(
+				const struct arm64_cpu_capabilities *entry,
+				bp_hardening_cb_t fn,
+				const char *hyp_vecs_start,
+				const char *hyp_vecs_end)
 {
 	u64 pfr0;
 
@@ -135,9 +124,9 @@ install_bp_hardening_cb(const struct arm64_cpu_capabilities *entry,
 	__install_bp_hardening_cb(fn, hyp_vecs_start, hyp_vecs_end);
 }
 
-#include <asm/psci.h>
+#include <linux/psci.h>
 
-static void enable_psci_bp_hardening(void *data)
+static int enable_psci_bp_hardening(void *data)
 {
 	const struct arm64_cpu_capabilities *entry = data;
 
@@ -147,9 +136,10 @@ static void enable_psci_bp_hardening(void *data)
 				       __psci_hyp_bp_inval_start,
 				       __psci_hyp_bp_inval_end);
 
+	return 0;
 }
 
-static void qcom_link_stack_sanitization(void)
+static void __maybe_unused qcom_link_stack_sanitization(void)
 {
 	u64 tmp;
 
@@ -161,22 +151,24 @@ static void qcom_link_stack_sanitization(void)
 		     : "=&r" (tmp));
 }
 
-static void qcom_bp_hardening(void)
+static void __maybe_unused qcom_bp_hardening(void)
 {
 	qcom_link_stack_sanitization();
 	if (psci_ops.get_version)
 		psci_ops.get_version();
 }
 
-static void enable_qcom_bp_hardening(void *data)
+static int __maybe_unused enable_qcom_bp_hardening(void *data)
 {
 	const struct arm64_cpu_capabilities *entry = data;
 
 	install_bp_hardening_cb(entry,
 				(bp_hardening_cb_t)qcom_bp_hardening,
-				 __psci_hyp_bp_inval_start,
-				 __psci_hyp_bp_inval_end);
+				__psci_hyp_bp_inval_start,
+				__psci_hyp_bp_inval_end);
+	return 0;
 }
+
 #endif	/* CONFIG_HARDEN_BRANCH_PREDICTOR */
 
 #define MIDR_RANGE(model, min, max) \
@@ -219,6 +211,15 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 			   (1 << MIDR_VARIANT_SHIFT) | 2),
 	},
 #endif
+#ifdef CONFIG_ARM64_ERRATUM_834220
+	{
+	/* Cortex-A57 r0p0 - r1p2 */
+		.desc = "ARM erratum 834220",
+		.capability = ARM64_WORKAROUND_834220,
+		MIDR_RANGE(MIDR_CORTEX_A57, 0x00,
+			   (1 << MIDR_VARIANT_SHIFT) | 2),
+	},
+#endif
 #ifdef CONFIG_ARM64_ERRATUM_845719
 	{
 	/* Cortex-A53 r0p[01234] */
@@ -233,10 +234,47 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		MIDR_RANGE(MIDR_KRYO2XX_SILVER, 0xA00004, 0xA00004),
 	},
 #endif
+#ifdef CONFIG_CAVIUM_ERRATUM_23154
+	{
+	/* Cavium ThunderX, pass 1.x */
+		.desc = "Cavium erratum 23154",
+		.capability = ARM64_WORKAROUND_CAVIUM_23154,
+		MIDR_RANGE(MIDR_THUNDERX, 0x00, 0x01),
+	},
+#endif
+#ifdef CONFIG_CAVIUM_ERRATUM_27456
+	{
+	/* Cavium ThunderX, T88 pass 1.x - 2.1 */
+		.desc = "Cavium erratum 27456",
+		.capability = ARM64_WORKAROUND_CAVIUM_27456,
+		MIDR_RANGE(MIDR_THUNDERX, 0x00,
+			   (1 << MIDR_VARIANT_SHIFT) | 1),
+	},
+#endif
 #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
 	{
 		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
 		MIDR_ALL_VERSIONS(MIDR_CORTEX_A57),
+		.enable = enable_psci_bp_hardening,
+	},
+	{
+		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
+		MIDR_ALL_VERSIONS(MIDR_CORTEX_A72),
+		.enable = enable_psci_bp_hardening,
+	},
+	{
+		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
+		MIDR_ALL_VERSIONS(MIDR_CORTEX_A73),
+		.enable = enable_psci_bp_hardening,
+	},
+	{
+		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
+		MIDR_ALL_VERSIONS(MIDR_CORTEX_A75),
+		.enable = enable_psci_bp_hardening,
+	},
+	{
+		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
+		MIDR_ALL_VERSIONS(MIDR_KRYO2XX_GOLD),
 		.enable = enable_psci_bp_hardening,
 	},
 	{

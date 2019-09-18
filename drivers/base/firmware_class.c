@@ -95,7 +95,7 @@ static int loading_timeout = 60;	/* In seconds */
 
 static inline long firmware_loading_timeout(void)
 {
-	return loading_timeout > 0 ? loading_timeout * HZ : MAX_SCHEDULE_TIMEOUT;
+	return loading_timeout > 0 ? loading_timeout * HZ : MAX_JIFFY_OFFSET;
 }
 
 /* firmware behavior options */
@@ -157,17 +157,17 @@ struct firmware_buf {
 	int page_array_size;
 	struct list_head pending_list;
 #endif
-	char fw_id[];
+	const char *fw_id;
 };
 
 struct fw_cache_entry {
 	struct list_head list;
-	char name[];
+	const char *name;
 };
 
 struct fw_name_devm {
 	unsigned long magic;
-	char name[];
+	const char *name;
 };
 
 struct fw_desc {
@@ -204,13 +204,17 @@ static struct firmware_buf *__allocate_fw_buf(const char *fw_name,
 {
 	struct firmware_buf *buf;
 
-	buf = kzalloc(sizeof(*buf) + strlen(fw_name) + 1 , GFP_ATOMIC);
-
+	buf = kzalloc(sizeof(*buf), GFP_ATOMIC);
 	if (!buf)
-		return buf;
+		return NULL;
+
+	buf->fw_id = kstrdup_const(fw_name, GFP_ATOMIC);
+	if (!buf->fw_id) {
+		kfree(buf);
+		return NULL;
+	}
 
 	kref_init(&buf->ref);
-	strcpy(buf->fw_id, fw_name);
 	buf->fwc = fwc;
 	init_completion(&buf->completion);
 #ifdef CONFIG_FW_LOADER_USER_HELPER
@@ -268,6 +272,9 @@ static void __fw_free_buf(struct kref *ref)
 		 (unsigned int)buf->size);
 
 	list_del(&buf->list);
+#ifdef CONFIG_FW_LOADER_USER_HELPER
+	list_del(&buf->pending_list);
+#endif
 	spin_unlock(&fwc->lock);
 
 #ifdef CONFIG_FW_LOADER_USER_HELPER
@@ -280,6 +287,7 @@ static void __fw_free_buf(struct kref *ref)
 	} else
 #endif
 		vfree(buf->data);
+	kfree_const(buf->fw_id);
 	kfree(buf);
 }
 
@@ -287,6 +295,7 @@ static void fw_free_buf(struct firmware_buf *buf)
 {
 	struct firmware_cache *fwc = buf->fwc;
 	if (!fwc) {
+		kfree_const(buf->fw_id);
 		kfree(buf);
 		return;
 	}
@@ -360,11 +369,13 @@ static int fw_get_filesystem_firmware(struct device *device,
 				      struct firmware_buf *buf,
 				      phys_addr_t dest_addr, size_t dest_size)
 {
-	int i;
+	int i, len;
 	int rc = -ENOENT;
-	char *path = __getname();
+	char *path;
+
+	path = __getname();
 	if (!path)
-		return false;
+		return -ENOMEM;
 
 	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
 		struct file *file;
@@ -373,7 +384,12 @@ static int fw_get_filesystem_firmware(struct device *device,
 		if (!fw_path[i][0])
 			continue;
 
-		snprintf(path, PATH_MAX, "%s/%s", fw_path[i], buf->fw_id);
+		len = snprintf(path, PATH_MAX, "%s/%s",
+			       fw_path[i], buf->fw_id);
+		if (len >= PATH_MAX) {
+			rc = -ENAMETOOLONG;
+			break;
+		}
 
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file))
@@ -434,6 +450,7 @@ static void fw_name_devm_release(struct device *dev, void *res)
 	if (fwn->magic == (unsigned long)&fw_cache)
 		pr_debug("%s: fw_name-%s devm-%p released\n",
 				__func__, fwn->name, res);
+	kfree_const(fwn->name);
 }
 
 static int fw_devm_match(struct device *dev, void *res,
@@ -464,13 +481,17 @@ static int fw_add_devm_name(struct device *dev, const char *name)
 	if (fwn)
 		return 1;
 
-	fwn = devres_alloc(fw_name_devm_release, sizeof(struct fw_name_devm) +
-			   strlen(name) + 1, GFP_KERNEL);
+	fwn = devres_alloc(fw_name_devm_release, sizeof(struct fw_name_devm),
+			   GFP_KERNEL);
 	if (!fwn)
 		return -ENOMEM;
+	fwn->name = kstrdup_const(name, GFP_KERNEL);
+	if (!fwn->name) {
+		devres_free(fwn);
+		return -ENOMEM;
+	}
 
 	fwn->magic = (unsigned long)&fw_cache;
-	strcpy(fwn->name, name);
 	devres_add(dev, fwn);
 
 	return 0;
@@ -488,7 +509,6 @@ static int fw_add_devm_name(struct device *dev, const char *name)
  */
 #ifdef CONFIG_FW_LOADER_USER_HELPER
 struct firmware_priv {
-	struct delayed_work timeout_work;
 	bool nowait;
 	struct device dev;
 	struct firmware_buf *buf;
@@ -643,8 +663,7 @@ static int fw_map_pages_buf(struct firmware_buf *buf)
 	if (!buf->is_paged_buf)
 		return 0;
 
-	if (buf->data)
-		vunmap(buf->data);
+	vunmap(buf->data);
 	buf->data = vmap(buf->pages, buf->nr_pages, 0, PAGE_KERNEL_RO);
 	if (!buf->data)
 		return -ENOMEM;
@@ -824,7 +843,8 @@ static ssize_t firmware_direct_write(struct file *filp, struct kobject *kobj,
 
 	mutex_lock(&fw_lock);
 	fw = fw_priv->fw;
-	if (!fw || test_bit(FW_STATUS_DONE, &fw_priv->buf->status)) {
+	if (!fw || !fw_priv->buf ||
+			test_bit(FW_STATUS_DONE, &fw_priv->buf->status)) {
 		retval = -ENODEV;
 		goto out;
 	}
@@ -838,13 +858,6 @@ out:
 	mutex_unlock(&fw_lock);
 	return retval;
 }
-
-static struct bin_attribute firmware_direct_attr_data = {
-	.attr = { .name = "data", .mode = 0644 },
-	.size = 0,
-	.read = firmware_direct_read,
-	.write = firmware_direct_write,
-};
 
 static ssize_t firmware_data_read(struct file *filp, struct kobject *kobj,
 				  struct bin_attribute *bin_attr,
@@ -995,15 +1008,47 @@ static struct bin_attribute firmware_attr_data = {
 	.write = firmware_data_write,
 };
 
-static void firmware_class_timeout_work(struct work_struct *work)
-{
-	struct firmware_priv *fw_priv = container_of(work,
-			struct firmware_priv, timeout_work.work);
+static struct bin_attribute firmware_direct_attr_data = {
+	.attr = { .name = "data", .mode = 0644 },
+	.size = 0,
+	.read = firmware_direct_read,
+	.write = firmware_direct_write,
+};
 
-	mutex_lock(&fw_lock);
-	fw_load_abort(fw_priv);
-	mutex_unlock(&fw_lock);
-}
+static struct attribute *fw_dev_attrs[] = {
+	&dev_attr_loading.attr,
+	NULL
+};
+
+static struct bin_attribute *fw_dev_bin_attrs[] = {
+	&firmware_attr_data,
+	NULL
+};
+
+static const struct attribute_group fw_dev_attr_group = {
+	.attrs = fw_dev_attrs,
+	.bin_attrs = fw_dev_bin_attrs,
+};
+
+static struct bin_attribute *fw_dev_direct_bin_attrs[] = {
+	&firmware_direct_attr_data,
+	NULL
+};
+
+static const struct attribute_group fw_dev_direct_attr_group = {
+	.attrs = fw_dev_attrs,
+	.bin_attrs = fw_dev_direct_bin_attrs,
+};
+
+static const struct attribute_group *fw_dev_attr_groups[] = {
+	&fw_dev_attr_group,
+	NULL
+};
+
+static  const struct attribute_group *fw_dev_direct_attr_groups[] = {
+	&fw_dev_direct_attr_group,
+	NULL
+};
 
 static struct firmware_priv *
 fw_create_instance(struct firmware *firmware, struct fw_desc *desc)
@@ -1021,15 +1066,13 @@ fw_create_instance(struct firmware *firmware, struct fw_desc *desc)
 	fw_priv->nowait = !!(desc->opt_flags & FW_OPT_NOWAIT);
 	fw_priv->fw = firmware;
 
-	INIT_DELAYED_WORK(&fw_priv->timeout_work,
-		firmware_class_timeout_work);
-
 	f_dev = &fw_priv->dev;
 
 	device_initialize(f_dev);
 	dev_set_name(f_dev, "%s", desc->name);
 	f_dev->parent = desc->device;
 	f_dev->class = &firmware_class;
+	f_dev->groups = fw_dev_attr_groups;
 exit:
 	return fw_priv;
 }
@@ -1041,11 +1084,12 @@ static int _request_firmware_load(struct firmware_priv *fw_priv,
 	int retval = 0;
 	struct device *f_dev = &fw_priv->dev;
 	struct firmware_buf *buf = fw_priv->buf;
-	struct bin_attribute *fw_attr_data = buf->dest_addr ?
-			&firmware_direct_attr_data : &firmware_attr_data;
 
 	/* fall back on userspace loading */
 	buf->is_paged_buf = buf->dest_addr ? false : true;
+
+	if (buf->dest_addr)
+		f_dev->groups = fw_dev_direct_attr_groups;
 
 	dev_set_uevent_suppress(f_dev, true);
 
@@ -1055,48 +1099,34 @@ static int _request_firmware_load(struct firmware_priv *fw_priv,
 		goto err_put_dev;
 	}
 
-	retval = device_create_bin_file(f_dev, fw_attr_data);
-	if (retval) {
-		dev_err(f_dev, "%s: sysfs_create_bin_file failed\n", __func__);
-		goto err_del_dev;
-	}
-
 	mutex_lock(&fw_lock);
 	list_add(&buf->pending_list, &pending_fw_head);
 	mutex_unlock(&fw_lock);
-
-	retval = device_create_file(f_dev, &dev_attr_loading);
-	if (retval) {
-		mutex_lock(&fw_lock);
-		list_del_init(&buf->pending_list);
-		mutex_unlock(&fw_lock);
-		dev_err(f_dev, "%s: device_create_file failed\n", __func__);
-		goto err_del_bin_attr;
-	}
 
 	if (opt_flags & FW_OPT_UEVENT) {
 		buf->need_uevent = true;
 		dev_set_uevent_suppress(f_dev, false);
 		dev_dbg(f_dev, "firmware: requesting %s\n", buf->fw_id);
-		if (timeout != MAX_SCHEDULE_TIMEOUT)
-			queue_delayed_work(system_power_efficient_wq,
-					   &fw_priv->timeout_work, timeout);
-
 		kobject_uevent(&fw_priv->dev.kobj, KOBJ_ADD);
+	} else {
+		timeout = MAX_JIFFY_OFFSET;
 	}
 
-	wait_for_completion(&buf->completion);
+	retval = wait_for_completion_interruptible_timeout(&buf->completion,
+			timeout);
+	if (retval == -ERESTARTSYS || !retval) {
+		mutex_lock(&fw_lock);
+		fw_load_abort(fw_priv);
+		mutex_unlock(&fw_lock);
+	} else if (retval > 0) {
+		retval = 0;
+	}
 
-	cancel_delayed_work_sync(&fw_priv->timeout_work);
 	if (is_fw_load_aborted(buf))
 		retval = -EAGAIN;
 	else if (!buf->data && buf->is_paged_buf)
 		retval = -ENOMEM;
 
-	device_remove_file(f_dev, &dev_attr_loading);
-err_del_bin_attr:
-	device_remove_bin_file(f_dev, &firmware_attr_data);
-err_del_dev:
 	device_del(f_dev);
 err_put_dev:
 	put_device(f_dev);
@@ -1162,7 +1192,7 @@ static int sync_cached_firmware_buf(struct firmware_buf *buf)
 			break;
 		}
 		mutex_unlock(&fw_lock);
-		wait_for_completion(&buf->completion);
+		ret = wait_for_completion_interruptible(&buf->completion);
 		mutex_lock(&fw_lock);
 	}
 	mutex_unlock(&fw_lock);
@@ -1354,7 +1384,7 @@ static int _request_firmware(struct fw_desc *desc)
  **/
 int
 request_firmware(const struct firmware **firmware_p, const char *name,
-                 struct device *device)
+		 struct device *device)
 {
 	struct fw_desc desc;
 	int ret;
@@ -1376,7 +1406,7 @@ request_firmware(const struct firmware **firmware_p, const char *name,
 EXPORT_SYMBOL(request_firmware);
 
 /**
- * request_firmware: - load firmware directly without usermode helper
+ * request_firmware_direct: - load firmware directly without usermode helper
  * @firmware_p: pointer to firmware image
  * @name: name of firmware file
  * @device: device for which firmware is being loaded
@@ -1673,11 +1703,16 @@ static struct fw_cache_entry *alloc_fw_cache_entry(const char *name)
 {
 	struct fw_cache_entry *fce;
 
-	fce = kzalloc(sizeof(*fce) + strlen(name) + 1, GFP_ATOMIC);
+	fce = kzalloc(sizeof(*fce), GFP_ATOMIC);
 	if (!fce)
 		goto exit;
 
-	strcpy(fce->name, name);
+	fce->name = kstrdup_const(name, GFP_ATOMIC);
+	if (!fce->name) {
+		kfree(fce);
+		fce = NULL;
+		goto exit;
+	}
 exit:
 	return fce;
 }
@@ -1717,6 +1752,7 @@ found:
 
 static void free_fw_cache_entry(struct fw_cache_entry *fce)
 {
+	kfree_const(fce->name);
 	kfree(fce);
 }
 

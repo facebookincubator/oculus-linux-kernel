@@ -11,6 +11,13 @@ config USB_DWC3
 
 if USB_DWC3
 
+config USB_DWC3_ULPI
+	bool "Register ULPI PHY Interface"
+	depends on USB_ULPI_BUS=y || USB_ULPI_BUS=USB_DWC3
+	help
+	  Select this if you have ULPI type PHY attached to your DWC3
+	  controller.
+
 choice
 	bool "DWC3 Mode Selection"
 	default USB_DWC3_DUAL_ROLE if (USB && USB_GADGET)
@@ -55,7 +62,7 @@ config USB_DWC3_OMAP
 
 config USB_DWC3_EXYNOS
 	tristate "Samsung Exynos Platform"
-	depends on ARCH_EXYNOS || COMPILE_TEST
+	depends on ARCH_EXYNOS && OF || COMPILE_TEST
 	default USB_DWC3
 	help
 	  Recent Exynos5 SoCs ship with one DesignWare Core USB3 IP inside,
@@ -96,34 +103,5 @@ config USB_DWC3_QCOM
 	help
 	  Recent Qualcomm SoCs ship with one DesignWare Core USB3 IP inside,
 	  say 'Y' or 'M' if you have one such device.
-
-config USB_DWC3_MSM
-	tristate "DesignWare USB3.0 (DRD) Controller for MSM"
-	depends on ARCH_MSM
-	default USB_DWC3
-	help
-	  Support for DWC3 USB IPs found on Qualcomm MSM/APQ chipset series,
-	  including host, device and dual-role modes of operation.
-	  Say 'Y' or 'M' here if you have one such device
-
-comment "Debugging features"
-
-config USB_DWC3_DEBUG
-	bool "Enable Debugging Messages"
-	help
-	  Say Y here to enable debugging messages on DWC3 Driver.
-
-config USB_DWC3_VERBOSE
-	bool "Enable Verbose Debugging Messages"
-	depends on USB_DWC3_DEBUG
-	help
-	  Say Y here to enable verbose debugging messages on DWC3 Driver.
-
-config DWC3_HOST_USB3_LPM_ENABLE
-	bool "Enable USB3 LPM Capability"
-	depends on USB_DWC3_HOST=y || USB_DWC3_DUAL_ROLE=y
-	default n
-	help
-	  Select this when you want to enable USB3 LPM with dwc3 xhci host.
 
 endif

@@ -25,11 +25,14 @@ Required properties:
 			order as the clocks property.
 				Current values of clock-names are:
 				"src_clk", "core_clk", "iface_clk", "mem_clk", "mem_iface_clk",
-				"alt_mem_iface_clk", "rbbmtimer_clk",  "alwayson_clk"
+				"alt_mem_iface_clk", "rbbmtimer_clk",  "alwayson_clk",
+				"iref_clk"
 				"core_clk" and "iface_clk" are required and others are optional
 
 - qcom,base-leakage-coefficient: Dynamic leakage coefficient.
 - qcom,lm-limit:	Current limit for GPU limit management.
+- qcom,isense-clk-on-level: below or equal this power level isense clock is at XO rate,
+				above this powerlevel isense clock is at working frequency.
 
 Bus Scaling Data:
 - qcom,msm-bus,name: String property to describe the name of the 3D graphics processor.
@@ -80,22 +83,16 @@ DCVS Core info
 Optional Properties:
 - qcom,initial-powerlevel: This value indicates which qcom,gpu-pwrlevel should be used at start time
 			   and when coming back out of resume
-- qcom,restrict-powerlevel: This value to limit max GPU power level jump during the clock switch and
-			   while coming back out of slumber. Max GPU power level jump still allowed
-			   from the restricted-pwerlevel.
 - qcom,bus-control:	   Boolean. Enables an independent bus vote from the gpu frequency
 - qcom,bus-width:	   Bus width in number of bytes. This enables dynamic AB bus voting based on
 			   bus width and actual bus transactions.
 - qcom,gpubw-dev:	   a phandle to a device representing bus bandwidth requirements
 			   (see devdw.txt)
 - qcom,idle-timeout:	   This property represents the time in milliseconds for idle timeout.
-- qcom,deep-nap-timeout:   This property represents the time in milliseconds for entering deeper
-			   power state.
+- qcom,no-nap:		   If it exists software clockgating will be disabled at boot time.
 - qcom,chipid:		   If it exists this property is used to replace
 			   the chip identification read from the GPU hardware.
 			   This is used to override faulty hardware readings.
-- qcom,strtstp-sleepwake:  Boolean. Enables use of GPU SLUMBER instead of SLEEP for power savings
-- qcom,gx-retention:  	   Boolean. Enables use of GX rail RETENTION voltage
 - qcom,disable-busy-time-burst:
 				Boolean. Disables the busy time burst to avoid switching
 				of power level for large frames based on the busy time limit.
@@ -113,6 +110,17 @@ Optional Properties:
 - qcom,l2pc-cpu-mask-latency:
 				The CPU mask latency in microseconds to avoid L2PC
 				on masked CPUs.
+
+- qcom,gpu-cx-ipeak:
+				To handle Cx peak current limit.
+				<phandle bit>
+				phandle - phandle of cx ipeak device node
+				bit     - bit number of client in relevant register
+- qcom,gpu-cx-ipeak-clk:
+				GPU clock threshold for Cx Ipeak voting. KGSL votes
+				to Cx Ipeak driver when GPU clock crosses this threshold.
+				Cx Ipeak can limit peak current based on voting from other clients.
+
 - qcom,force-32bit:
 				Force the GPU to use 32 bit data sizes even if
 				it is capable of doing 64 bit.
@@ -137,15 +145,6 @@ Optional Properties:
 				Specify the size of snapshot in bytes. This will override
 				snapshot size defined in the driver code.
 
-- qcom,enable-ca-jump:
-                                Boolean. Enables use of context aware DCVS
-- qcom,ca-busy-penalty:
-                                This property represents the time in microseconds required to
-                                initiate context aware power level jump.
-- qcom,ca-target-pwrlevel:
-                                This value indicates which qcom,gpu-pwrlevel to jump on in case
-                                of context aware power level jump.
-
 - qcom,gpu-qdss-stm:
 				<baseAddr size>
 				baseAddr - base address of the gpu channels in the qdss stm memory region
@@ -154,6 +153,12 @@ Optional Properties:
 - qcom,tsens-name:
 				Specify the name of GPU temperature sensor. This name will be used
 				to get the temperature from the thermal driver API.
+
+- qcom,enable-midframe-timer:
+				Boolean. Enables the use of midframe sampling timer. This timer
+				samples the GPU powerstats if the cmdbatch expiry takes longer than
+				the threshold set by KGSL_GOVERNOR_CALL_INTERVAL. Enable only if
+				target has NAP state enabled.
 
 GPU Quirks:
 - qcom,gpu-quirk-two-pass-use-wfi:
@@ -166,6 +171,26 @@ GPU Quirks:
 				detection logic
 - qcom,gpu-quirk-dp2clockgating-disable:
 				Disable RB sampler data path clock gating optimization
+- qcom,gpu-quirk-lmloadkill-disable:
+				Use register setting to disable local memory(LM) feature
+				to avoid corner case error
+
+KGSL Memory Pools:
+- qcom,gpu-mempools:		Container for sets of GPU mempools.Multiple sets
+				(pools) can be defined within qcom,gpu-mempools.
+				Each mempool defines a pool order, reserved pages,
+				allocation allowed.
+Properties:
+- compatible:			Must be qcom,gpu-mempools.
+- qcom,mempool-max-pages:	Max pages for all mempools, If not defined there is no limit.
+- qcom,gpu-mempool:		Defines a set of mempools.
+
+Properties:
+- reg:				Index of the pool (0 = lowest pool order).
+- qcom,mempool-page-size:	Size of page.
+- qcom,mempool-reserved:	Number of pages reserved at init time for a pool.
+- qcom,mempool-allocate:	Allocate memory from the system memory when the
+				reserved pool exhausted.
 
 The following properties are optional as collecting data via coresight might
 not be supported for every chipset. The documentation for coresight
@@ -179,7 +204,7 @@ Documentation/devicetree/bindings/coresight/coresight.txt
 - coresight-child-list   List of phandles pointing to the children of this
                          component.
 - coresight-child-ports  List of input port numbers of the children.
-
+- coresight-atid         The unique ATID value of the coresight device
 
 Example of A330 GPU in MSM8916:
 
@@ -234,14 +259,39 @@ Example of A330 GPU in MSM8916:
 		coresight-child-list = <&funnel_in0>;
 		coresight-child-ports = <5>;
 
-		/* Enable context aware freq. scaling */
-		qcom,enable-ca-jump;
+		/* GPU Mempools */
+		qcom,gpu-mempools {
+			#address-cells= <1>;
+			#size-cells = <0>;
+			compatible = "qcom,gpu-mempools";
 
-		/* Context aware jump busy penalty in us */
-		qcom,ca-busy-penalty = <12000>;
-
-		/* Context aware jump target power level */
-		qcom,ca-target-pwrlevel = <1>;
+			/* 4K Page Pool configuration */
+			qcom,gpu-mempool@0 {
+				reg = <0>;
+				qcom,mempool-page-size = <4096>;
+				qcom,mempool-reserved = <2048>;
+				qcom,mempool-allocate;
+			};
+			/* 8K Page Pool configuration */
+			qcom,gpu-mempool@1 {
+				reg = <1>;
+				qcom,mempool-page-size  = <8192>;
+				qcom,mempool-reserved = <1024>;
+				qcom,mempool-allocate;
+			};
+			/* 64K Page Pool configuration */
+			qcom,gpu-mempool@2 {
+				reg = <2>;
+				qcom,mempool-page-size  = <65536>;
+				qcom,mempool-reserved = <256>;
+			};
+			/* 1M Page Pool configuration */
+			qcom,gpu-mempool@3 {
+				reg = <3>;
+				qcom,mempool-page-size  = <1048576>;
+				qcom,mempool-reserved = <32>;
+			};
+		};
 
 		/* Power levels */
 		qcom,gpu-pwrlevels-bins {

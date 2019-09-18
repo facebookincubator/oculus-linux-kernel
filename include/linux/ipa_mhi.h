@@ -56,7 +56,7 @@ struct ipa_mhi_msi_info {
  * @mmio_addr: MHI MMIO physical address
  * @first_ch_idx: First channel ID for hardware accelerated channels.
  * @first_er_idx: First event ring ID for hardware accelerated channels.
- * @assert_bit40: should assert bit 40 in order to access hots space.
+ * @assert_bit40: should assert bit 40 in order to access host space.
  *	if PCIe iATU is configured then not need to assert bit40
  * @notify: client callback
  * @priv: client private data to be provided in client callback

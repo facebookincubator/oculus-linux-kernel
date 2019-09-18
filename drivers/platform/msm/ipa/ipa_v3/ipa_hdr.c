@@ -61,24 +61,29 @@ static int ipa3_generate_hdr_hw_tbl(struct ipa_mem_buffer *mem)
 	return 0;
 }
 
-static void ipa3_hdr_proc_ctx_to_hw_format(struct ipa_mem_buffer *mem,
+static int ipa3_hdr_proc_ctx_to_hw_format(struct ipa_mem_buffer *mem,
 	u32 hdr_base_addr)
 {
 	struct ipa3_hdr_proc_ctx_entry *entry;
+	int ret;
 
 	list_for_each_entry(entry,
 			&ipa3_ctx->hdr_proc_ctx_tbl.head_proc_ctx_entry_list,
 			link) {
 		IPADBG_LOW("processing type %d ofst=%d\n",
 			entry->type, entry->offset_entry->offset);
-		ipahal_cp_proc_ctx_to_hw_buff(entry->type, mem->base,
+		ret = ipahal_cp_proc_ctx_to_hw_buff(entry->type, mem->base,
 				entry->offset_entry->offset,
 				entry->hdr->hdr_len,
 				entry->hdr->is_hdr_proc_ctx,
 				entry->hdr->phys_base,
 				hdr_base_addr,
 				entry->hdr->offset_entry);
+		if (ret)
+			return ret;
 	}
+
+	return 0;
 }
 
 /**
@@ -117,9 +122,7 @@ static int ipa3_generate_hdr_proc_ctx_hw_tbl(u32 hdr_sys_addr,
 	memset(aligned_mem->base, 0, aligned_mem->size);
 	hdr_base_addr = (ipa3_ctx->hdr_tbl_lcl) ? IPA_MEM_PART(apps_hdr_ofst) :
 		hdr_sys_addr;
-	ipa3_hdr_proc_ctx_to_hw_format(aligned_mem, hdr_base_addr);
-
-	return 0;
+	return ipa3_hdr_proc_ctx_to_hw_format(aligned_mem, hdr_base_addr);
 }
 
 /**
@@ -323,7 +326,7 @@ static int __ipa_add_hdr_proc_ctx(struct ipa_hdr_proc_ctx_add *proc_ctx,
 	int needed_len;
 	int mem_size;
 
-	IPADBG_LOW("processing type %d hdr_hdl %d\n",
+	IPADBG_LOW("Add processing type %d hdr_hdl %d\n",
 		proc_ctx->type, proc_ctx->hdr_hdl);
 
 	if (!HDR_PROC_TYPE_IS_VALID(proc_ctx->type)) {
@@ -332,10 +335,17 @@ static int __ipa_add_hdr_proc_ctx(struct ipa_hdr_proc_ctx_add *proc_ctx,
 	}
 
 	hdr_entry = ipa3_id_find(proc_ctx->hdr_hdl);
-	if (!hdr_entry || (hdr_entry->cookie != IPA_HDR_COOKIE)) {
+	if (!hdr_entry) {
 		IPAERR_RL("hdr_hdl is invalid\n");
 		return -EINVAL;
 	}
+	if (hdr_entry->cookie != IPA_HDR_COOKIE) {
+		IPAERR_RL("Invalid header cookie %u\n", hdr_entry->cookie);
+		WARN_ON(1);
+		return -EINVAL;
+	}
+	IPADBG("Associated header is name=%s is_hdr_proc_ctx=%d\n",
+		hdr_entry->name, hdr_entry->is_hdr_proc_ctx);
 
 	entry = kmem_cache_zalloc(ipa3_ctx->hdr_proc_ctx_cache, GFP_KERNEL);
 	if (!entry) {
@@ -400,7 +410,7 @@ static int __ipa_add_hdr_proc_ctx(struct ipa_hdr_proc_ctx_add *proc_ctx,
 	entry->offset_entry = offset;
 	list_add(&entry->link, &htbl->head_proc_ctx_entry_list);
 	htbl->proc_ctx_cnt++;
-	IPADBG_LOW("add proc ctx of sz=%d cnt=%d ofst=%d\n", needed_len,
+	IPADBG("add proc ctx of sz=%d cnt=%d ofst=%d\n", needed_len,
 			htbl->proc_ctx_cnt, offset->offset);
 
 	id = ipa3_id_alloc(entry);
@@ -526,12 +536,12 @@ static int __ipa_add_hdr(struct ipa_hdr_add *hdr)
 	list_add(&entry->link, &htbl->head_hdr_entry_list);
 	htbl->hdr_cnt++;
 	if (entry->is_hdr_proc_ctx)
-		IPADBG_LOW("add hdr of sz=%d hdr_cnt=%d phys_base=%pa\n",
+		IPADBG("add hdr of sz=%d hdr_cnt=%d phys_base=%pa\n",
 			hdr->hdr_len,
 			htbl->hdr_cnt,
 			&entry->phys_base);
 	else
-		IPADBG_LOW("add hdr of sz=%d hdr_cnt=%d ofst=%d\n",
+		IPADBG("add hdr of sz=%d hdr_cnt=%d ofst=%d\n",
 			hdr->hdr_len,
 			htbl->hdr_cnt,
 			entry->offset_entry->offset);
@@ -577,6 +587,8 @@ ipa_insert_failed:
 	}
 	htbl->hdr_cnt--;
 	list_del(&entry->link);
+
+
 bad_hdr_len:
 	entry->cookie = 0;
 	kmem_cache_free(ipa3_ctx->hdr_cache, entry);
@@ -596,7 +608,7 @@ static int __ipa3_del_hdr_proc_ctx(u32 proc_ctx_hdl,
 		return -EINVAL;
 	}
 
-	IPADBG("del ctx proc cnt=%d ofst=%d\n",
+	IPADBG("del proc ctx cnt=%d ofst=%d\n",
 		htbl->proc_ctx_cnt, entry->offset_entry->offset);
 
 	if (by_user && entry->user_deleted) {
@@ -648,11 +660,12 @@ int __ipa3_del_hdr(u32 hdr_hdl, bool by_user)
 	}
 
 	if (entry->is_hdr_proc_ctx)
-		IPADBG("del hdr of sz=%d hdr_cnt=%d phys_base=%pa\n",
+		IPADBG("del hdr of len=%d hdr_cnt=%d phys_base=%pa\n",
 			entry->hdr_len, htbl->hdr_cnt, &entry->phys_base);
 	else
-		IPADBG("del hdr of sz=%d hdr_cnt=%d ofst=%d\n", entry->hdr_len,
-			htbl->hdr_cnt, entry->offset_entry->offset);
+		IPADBG("del hdr of len=%d hdr_cnt=%d ofst=%d\n",
+			entry->hdr_len, htbl->hdr_cnt,
+			entry->offset_entry->offset);
 
 	if (by_user && entry->user_deleted) {
 		IPAERR_RL("proc_ctx already deleted by user\n");
@@ -785,8 +798,8 @@ bail:
 }
 
 /**
- * ipa3_del_hdr() - Remove the specified headers from SW and optionally commit them
- * to IPA HW
+ * ipa3_del_hdr() - Remove the specified headers from SW
+ * and optionally commit them to IPA HW
  * @hdls:	[inout] set of headers to delete
  *
  * Returns:	0 on success, negative on failure

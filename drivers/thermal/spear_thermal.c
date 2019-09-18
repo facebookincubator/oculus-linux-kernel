@@ -38,7 +38,7 @@ struct spear_thermal_dev {
 };
 
 static inline int thermal_get_temp(struct thermal_zone_device *thermal,
-				unsigned long *temp)
+				int *temp)
 {
 	struct spear_thermal_dev *stdev = thermal->devdata;
 
@@ -186,7 +186,6 @@ static struct platform_driver spear_thermal_driver = {
 	.remove = spear_thermal_exit,
 	.driver = {
 		.name = "spear_thermal",
-		.owner = THIS_MODULE,
 		.pm = &spear_thermal_pm_ops,
 		.of_match_table = spear_thermal_id_table,
 	},

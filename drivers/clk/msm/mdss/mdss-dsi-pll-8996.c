@@ -496,18 +496,18 @@ int dsi_pll_clock_register_8996(struct platform_device *pdev,
 
 	/* hr_oclk3, pixel */
 	n2_clk_src_ops = clk_ops_slave_div;
-	n2_clk_src_ops.prepare = dsi_pll_div_prepare;
+	n2_clk_src_ops.prepare = mdss_pll_div_prepare;
 
 	shadow_n2_clk_src_ops = clk_ops_slave_div;
 
 	/* hr_ockl2, byte, vco pll */
 	post_n1_div_clk_src_ops = clk_ops_div;
-	post_n1_div_clk_src_ops.prepare = dsi_pll_div_prepare;
+	post_n1_div_clk_src_ops.prepare = mdss_pll_div_prepare;
 
 	shadow_post_n1_div_clk_src_ops = clk_ops_div;
 
 	byte_clk_src_ops = clk_ops_div;
-	byte_clk_src_ops.prepare = dsi_pll_div_prepare;
+	byte_clk_src_ops.prepare = mdss_pll_div_prepare;
 
 	clk_ops_gen_mux_dsi = clk_ops_gen_mux;
 	clk_ops_gen_mux_dsi.round_rate = parent_round_rate;
@@ -535,12 +535,9 @@ int dsi_pll_clock_register_8996(struct platform_device *pdev,
 		dsi1pll_shadow_vco_clk.priv = pll_res;
 
 		pll_res->vco_delay = VCO_DELAY_USEC;
-		if ((pll_res->target_id == MDSS_PLL_TARGET_8996) ||
-			(pll_res->target_id == MDSS_PLL_TARGET_8953)) {
-			rc = of_msm_clock_register(pdev->dev.of_node,
+		rc = of_msm_clock_register(pdev->dev.of_node,
 				mdss_dsi_pllcc_8996_1,
 				ARRAY_SIZE(mdss_dsi_pllcc_8996_1));
-		}
 	} else {
 		dsi0pll_byte_clk_src.priv = pll_res;
 		dsi0pll_pixel_clk_src.priv = pll_res;
@@ -555,12 +552,9 @@ int dsi_pll_clock_register_8996(struct platform_device *pdev,
 		dsi0pll_shadow_vco_clk.priv = pll_res;
 
 		pll_res->vco_delay = VCO_DELAY_USEC;
-		if ((pll_res->target_id == MDSS_PLL_TARGET_8996) ||
-			(pll_res->target_id == MDSS_PLL_TARGET_8953)) {
-			rc = of_msm_clock_register(pdev->dev.of_node,
+		rc = of_msm_clock_register(pdev->dev.of_node,
 				mdss_dsi_pllcc_8996,
 				ARRAY_SIZE(mdss_dsi_pllcc_8996));
-		}
 	}
 
 	if (!rc) {

@@ -1500,10 +1500,11 @@ pcnet32_probe_pci(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return -ENODEV;
 	}
 
-	if (!pci_dma_supported(pdev, PCNET32_DMA_MASK)) {
+	err = pci_set_dma_mask(pdev, PCNET32_DMA_MASK);
+	if (err) {
 		if (pcnet32_debug & NETIF_MSG_PROBE)
 			pr_err("architecture does not support 32bit PCI busmaster DMA\n");
-		return -ENODEV;
+		return err;
 	}
 	if (!request_region(ioaddr, PCNET32_TOTAL_SIZE, "pcnet32_probe_pci")) {
 		if (pcnet32_debug & NETIF_MSG_PROBE)
@@ -1735,7 +1736,7 @@ pcnet32_probe1(unsigned long ioaddr, int shared, struct pci_dev *pdev)
 
 	/* if the ethernet address is not valid, force to 00:00:00:00:00:00 */
 	if (!is_valid_ether_addr(dev->dev_addr))
-		memset(dev->dev_addr, 0, ETH_ALEN);
+		eth_zero_addr(dev->dev_addr);
 
 	if (pcnet32_debug & NETIF_MSG_PROBE) {
 		pr_cont(" %pM", dev->dev_addr);
@@ -2833,7 +2834,7 @@ static void pcnet32_check_media(struct net_device *dev, int verbose)
 
 /*
  * Check for loss of link and link establishment.
- * Can not use mii_check_media because it does nothing if mode is forced.
+ * Could possibly be changed to use mii_check_media instead.
  */
 
 static void pcnet32_watchdog(struct net_device *dev)

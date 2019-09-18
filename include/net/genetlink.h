@@ -27,10 +27,18 @@ struct genl_info;
  * @maxattr: maximum number of attributes supported
  * @netnsok: set to true if the family can handle network
  *	namespaces and should be presented in all of them
+ * @parallel_ops: operations can be called in parallel and aren't
+ *	synchronized by the core genetlink code
  * @pre_doit: called before an operation's doit callback, it may
  *	do additional, common, filtering and return an error
  * @post_doit: called after an operation's doit callback, it may
  *	undo operations done by pre_doit, for example release locks
+ * @mcast_bind: a socket bound to the given multicast group (which
+ *	is given as the offset into the groups array)
+ * @mcast_unbind: a socket was unbound from the given multicast group.
+ *	Note that unbind() will not be called symmetrically if the
+ *	generic netlink family is removed while there are still open
+ *	sockets.
  * @attrbuf: buffer to store parsed attributes
  * @family_list: family list
  * @mcgrps: multicast groups used by this family (private)
@@ -53,6 +61,8 @@ struct genl_family {
 	void			(*post_doit)(const struct genl_ops *ops,
 					     struct sk_buff *skb,
 					     struct genl_info *info);
+	int			(*mcast_bind)(struct net *net, int group);
+	void			(*mcast_unbind)(struct net *net, int group);
 	struct nlattr **	attrbuf;	/* private */
 	const struct genl_ops *	ops;		/* private */
 	const struct genl_multicast_group *mcgrps; /* private */
@@ -82,9 +92,7 @@ struct genl_info {
 	struct genlmsghdr *	genlhdr;
 	void *			userhdr;
 	struct nlattr **	attrs;
-#ifdef CONFIG_NET_NS
-	struct net *		_net;
-#endif
+	possible_net_t		_net;
 	void *			user_ptr[2];
 	struct sock *		dst_sk;
 };
@@ -175,9 +183,8 @@ _genl_register_family_with_ops_grps(struct genl_family *family,
 					    (grps), ARRAY_SIZE(grps))
 
 int genl_unregister_family(struct genl_family *family);
-void genl_notify(struct genl_family *family,
-		 struct sk_buff *skb, struct net *net, u32 portid,
-		 u32 group, struct nlmsghdr *nlh, gfp_t flags);
+void genl_notify(struct genl_family *family, struct sk_buff *skb,
+		 struct genl_info *info, u32 group, gfp_t flags);
 
 struct sk_buff *genlmsg_new_unicast(size_t payload, struct genl_info *info,
 				    gfp_t flags);
@@ -198,6 +205,23 @@ static inline struct nlmsghdr *genlmsg_nlhdr(void *user_hdr,
 				   family->hdrsize -
 				   GENL_HDRLEN -
 				   NLMSG_HDRLEN);
+}
+
+/**
+ * genlmsg_parse - parse attributes of a genetlink message
+ * @nlh: netlink message header
+ * @family: genetlink message family
+ * @tb: destination array with maxtype+1 elements
+ * @maxtype: maximum attribute type to be expected
+ * @policy: validation policy
+ * */
+static inline int genlmsg_parse(const struct nlmsghdr *nlh,
+				const struct genl_family *family,
+				struct nlattr *tb[], int maxtype,
+				const struct nla_policy *policy)
+{
+	return nlmsg_parse(nlh, family->hdrsize + GENL_HDRLEN, tb, maxtype,
+			   policy);
 }
 
 /**
@@ -240,9 +264,9 @@ static inline void *genlmsg_put_reply(struct sk_buff *skb,
  * @skb: socket buffer the message is stored in
  * @hdr: user specific header
  */
-static inline int genlmsg_end(struct sk_buff *skb, void *hdr)
+static inline void genlmsg_end(struct sk_buff *skb, void *hdr)
 {
-	return nlmsg_end(skb, hdr - GENL_HDRLEN - NLMSG_HDRLEN);
+	nlmsg_end(skb, hdr - GENL_HDRLEN - NLMSG_HDRLEN);
 }
 
 /**
@@ -395,11 +419,11 @@ static inline int genl_set_err(struct genl_family *family, struct net *net,
 }
 
 static inline int genl_has_listeners(struct genl_family *family,
-				     struct sock *sk, unsigned int group)
+				     struct net *net, unsigned int group)
 {
 	if (WARN_ON_ONCE(group >= family->n_mcgrps))
 		return -EINVAL;
 	group = family->mcgrp_offset + group;
-	return netlink_has_listeners(sk, group);
+	return netlink_has_listeners(net->genl_sock, group);
 }
 #endif	/* __NET_GENERIC_NETLINK_H */

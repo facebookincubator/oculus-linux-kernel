@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,6 +45,8 @@
 #include <linux/string.h>
 #include <linux/msm-bus.h>
 #include <linux/interrupt.h>	/* tasklet */
+#include <asm/arch_timer.h> /* Timer */
+#include <linux/avtimer_kernel.h> /* Timer */
 
 /*
  * General defines
@@ -100,6 +102,7 @@
 #define TSIF_TEST_RESET_OFF           (0x1c)
 #define TSIF_TEST_EXPORT_OFF          (0x20)
 #define TSIF_TEST_CURRENT_OFF         (0x24)
+#define TSIF_TTS_CTL_OFF	      (0x38)
 
 #define TSIF_DATA_PORT_OFF            (0x100)
 
@@ -127,6 +130,12 @@
 #define TSIF_STS_CTL_EN_DM        BIT(4)
 #define TSIF_STS_CTL_STOP         BIT(3)
 #define TSIF_STS_CTL_START        BIT(0)
+
+/* bits for TSIF_TTS_CTRL register */
+#define TSIF_TTS_CTL_TTS_ENDIANNESS	BIT(4)
+#define TSIF_TTS_CTL_TTS_SOURCE		BIT(3)
+#define TSIF_TTS_CTL_TTS_LENGTH_1	BIT(1)
+#define TSIF_TTS_CTL_TTS_LENGTH_0	BIT(0)
 
 /*
  * TSPP register offsets
@@ -255,6 +264,7 @@ static const struct debugfs_entry debugfs_tsif_regs[] = {
 	{"test_export",         S_IRUGO | S_IWUSR, TSIF_TEST_EXPORT_OFF},
 	{"test_current",        S_IRUGO,           TSIF_TEST_CURRENT_OFF},
 	{"data_port",           S_IRUSR,           TSIF_DATA_PORT_OFF},
+	{"tts_source",          S_IRUSR | S_IWUSR, TSIF_TTS_CTL_OFF},
 };
 
 static const struct debugfs_entry debugfs_tspp_regs[] = {
@@ -369,6 +379,8 @@ struct tspp_tsif_device {
 	u32 stat_overflow;
 	u32 stat_lost_sync;
 	u32 stat_timeout;
+	enum tsif_tts_source tts_source;
+	u32 lpass_timer_enable;
 };
 
 enum tspp_buf_state {
@@ -457,7 +469,7 @@ struct tspp_device {
 	unsigned int bam_irq;
 	unsigned long bam_handle;
 	struct sps_bam_props bam_props;
-	struct wake_lock wake_lock;
+	struct wakeup_source ws;
 	spinlock_t spinlock;
 	struct tasklet_struct tlet;
 	struct tspp_tsif_device tsif[TSPP_TSIF_INSTANCES];
@@ -477,6 +489,7 @@ struct tspp_device {
 	/* pinctrl */
 	struct mutex mutex;
 	struct tspp_pinctrl pinctrl;
+	unsigned int tts_source; /* Time stamp source type LPASS timer/TCR */
 
 	struct dentry *dent;
 	struct dentry *debugfs_regs[ARRAY_SIZE(debugfs_tspp_regs)];
@@ -911,6 +924,8 @@ static int tspp_start_tsif(struct tspp_tsif_device *tsif_device)
 {
 	int start_hardware = 0;
 	u32 ctl;
+	u32 tts_ctl;
+	int retval;
 
 	if (tsif_device->ref_count == 0) {
 		start_hardware = 1;
@@ -949,25 +964,64 @@ static int tspp_start_tsif(struct tspp_tsif_device *tsif_device)
 					TSIF_STS_CTL_TEST_MODE;
 			break;
 		case TSPP_TSIF_MODE_1:
-			ctl |= TSIF_STS_CTL_EN_TIME_LIM |
-					TSIF_STS_CTL_EN_TCR;
+			ctl |= TSIF_STS_CTL_EN_TIME_LIM;
+			if (tsif_device->tts_source != TSIF_TTS_LPASS_TIMER)
+				ctl |= TSIF_STS_CTL_EN_TCR;
 			break;
 		case TSPP_TSIF_MODE_2:
 			ctl |= TSIF_STS_CTL_EN_TIME_LIM |
-					TSIF_STS_CTL_EN_TCR |
 					TSIF_STS_CTL_MODE_2;
+			if (tsif_device->tts_source != TSIF_TTS_LPASS_TIMER)
+				ctl |= TSIF_STS_CTL_EN_TCR;
 			break;
 		default:
 			pr_warn("tspp: unknown tsif mode 0x%x",
 				tsif_device->mode);
 		}
+		/* Set 4bytes Time Stamp for TCR */
+		if (tsif_device->tts_source == TSIF_TTS_LPASS_TIMER) {
+			if (tsif_device->lpass_timer_enable == 0) {
+				retval = avcs_core_open();
+				if (retval < 0) {
+					pr_warn("tspp: avcs open fail:%d\n",
+						retval);
+					return retval;
+				}
+				retval = avcs_core_disable_power_collapse(1);
+				if (retval  < 0) {
+					pr_warn("tspp: avcs power enable:%d\n",
+						retval);
+					return retval;
+				}
+				tsif_device->lpass_timer_enable = 1;
+			}
+
+			tts_ctl	= readl_relaxed(tsif_device->base +
+						TSIF_TTS_CTL_OFF);
+			tts_ctl = 0;
+			/* Set LPASS Timer TTS source */
+			tts_ctl |= TSIF_TTS_CTL_TTS_SOURCE;
+			 /* Set 4 byte TTS */
+			tts_ctl |= TSIF_TTS_CTL_TTS_LENGTH_0;
+
+			writel_relaxed(tts_ctl, tsif_device->base +
+				       TSIF_TTS_CTL_OFF);
+			/* write TTS control register */
+			wmb();
+			tts_ctl	= readl_relaxed(tsif_device->base +
+						TSIF_TTS_CTL_OFF);
+		}
+
 		writel_relaxed(ctl, tsif_device->base + TSIF_STS_CTL_OFF);
+		/* write Status control register */
+		wmb();
 		writel_relaxed(tsif_device->time_limit,
 			  tsif_device->base + TSIF_TIME_LIMIT_OFF);
 		/* assure register configuration is done before starting TSIF */
 		wmb();
 		writel_relaxed(ctl | TSIF_STS_CTL_START,
 			  tsif_device->base + TSIF_STS_CTL_OFF);
+		/* assure TSIF start configuration */
 		wmb();
 	}
 
@@ -981,14 +1035,20 @@ static int tspp_start_tsif(struct tspp_tsif_device *tsif_device)
 
 static void tspp_stop_tsif(struct tspp_tsif_device *tsif_device)
 {
-	if (tsif_device->ref_count == 0)
+	if (tsif_device->ref_count == 0) {
+		if (tsif_device->lpass_timer_enable == 1) {
+			if (avcs_core_disable_power_collapse(0) == 0)
+				tsif_device->lpass_timer_enable = 0;
+		}
 		return;
+	}
 
 	tsif_device->ref_count--;
 
 	if (tsif_device->ref_count == 0) {
 		writel_relaxed(TSIF_STS_CTL_STOP,
 			tsif_device->base + TSIF_STS_CTL_OFF);
+		/* assure TSIF stop configuration */
 		wmb();
 	}
 }
@@ -1111,6 +1171,7 @@ static int tspp_global_reset(struct tspp_device *pdev)
 		pdev->tsif[i].data_inverse = 0;
 		pdev->tsif[i].sync_inverse = 0;
 		pdev->tsif[i].enable_inverse = 0;
+		pdev->tsif[i].lpass_timer_enable = 0;
 	}
 	writel_relaxed(TSPP_RST_RESET, pdev->base + TSPP_RST);
 	/* assure state is reset before continuing with configuration */
@@ -1129,6 +1190,7 @@ static int tspp_global_reset(struct tspp_device *pdev)
 	val = readl_relaxed(pdev->base + TSPP_CONTROL);
 	writel_relaxed(val | TSPP_CLK_CONTROL_FORCE_PERF_CNT,
 		pdev->base + TSPP_CONTROL);
+	/* assure tspp performance count clock is set to 0 */
 	wmb();
 	memset_io(pdev->tspp_global_performance, 0,
 		sizeof(struct tspp_global_performance_regs));
@@ -1136,9 +1198,11 @@ static int tspp_global_reset(struct tspp_device *pdev)
 		sizeof(struct tspp_pipe_context_regs));
 	memset_io(pdev->tspp_pipe_performance, 0,
 		sizeof(struct tspp_pipe_performance_regs));
+	/* assure tspp pipe context registers are set to 0 */
 	wmb();
 	writel_relaxed(val & ~TSPP_CLK_CONTROL_FORCE_PERF_CNT,
 		pdev->base + TSPP_CONTROL);
+	/* assure tspp performance count clock  is reset */
 	wmb();
 
 	val = readl_relaxed(pdev->base + TSPP_CONFIG);
@@ -1150,6 +1214,7 @@ static int tspp_global_reset(struct tspp_device *pdev)
 	writel_relaxed(0x0007ffff, pdev->base + TSPP_IRQ_MASK);
 	writel_relaxed(0x000fffff, pdev->base + TSPP_IRQ_CLEAR);
 	writel_relaxed(0, pdev->base + TSPP_RST);
+	/* assure tspp reset clear */
 	wmb();
 
 	tspp_key_entry = 0;
@@ -1441,6 +1506,7 @@ int tspp_open_stream(u32 dev, u32 channel_id,
 			val = readl_relaxed(pdev->base + TSPP_CONTROL);
 			writel_relaxed(val & ~TSPP_CONTROL_TSP_TSIF0_SRC_DIS,
 				pdev->base + TSPP_CONTROL);
+			/* Assure BAM TS PKT packet processing is enabled */
 			wmb();
 		}
 		break;
@@ -1460,6 +1526,7 @@ int tspp_open_stream(u32 dev, u32 channel_id,
 			val = readl_relaxed(pdev->base + TSPP_CONTROL);
 			writel_relaxed(val & ~TSPP_CONTROL_TSP_TSIF1_SRC_DIS,
 				pdev->base + TSPP_CONTROL);
+			/* Assure BAM TS PKT packet processing is enabled */
 			wmb();
 		}
 		break;
@@ -1519,6 +1586,7 @@ int tspp_close_stream(u32 dev, u32 channel_id)
 			val = readl_relaxed(pdev->base + TSPP_CONTROL);
 			writel_relaxed(val | TSPP_CONTROL_TSP_TSIF0_SRC_DIS,
 				pdev->base + TSPP_CONTROL);
+			/* Assure BAM TS PKT packet processing is disabled */
 			wmb();
 		}
 		break;
@@ -1532,6 +1600,7 @@ int tspp_close_stream(u32 dev, u32 channel_id)
 			val = readl_relaxed(pdev->base + TSPP_CONTROL);
 			writel_relaxed(val | TSPP_CONTROL_TSP_TSIF1_SRC_DIS,
 				pdev->base + TSPP_CONTROL);
+			/* Assure BAM TS PKT packet processing is disabled */
 			wmb();
 		}
 		break;
@@ -1624,7 +1693,7 @@ int tspp_open_channel(u32 dev, u32 channel_id)
 			}
 		}
 
-		wake_lock(&pdev->wake_lock);
+		__pm_stay_awake(&pdev->ws);
 	}
 
 	/* mark it as used */
@@ -1767,6 +1836,7 @@ int tspp_close_channel(u32 dev, u32 channel_id)
 	/* disable pipe (channel) */
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 	writel_relaxed(val | channel->id, pdev->base + TSPP_PS_DISABLE);
+	/* Assure PS_DISABLE register is set */
 	wmb();
 
 	/* unregister all filters for this channel */
@@ -1797,10 +1867,9 @@ int tspp_close_channel(u32 dev, u32 channel_id)
 	sps_free_endpoint(channel->pipe);
 
 	tspp_destroy_buffers(channel_id, channel);
-	if (channel->dma_pool) {
-		dma_pool_destroy(channel->dma_pool);
-		channel->dma_pool = NULL;
-	}
+
+	dma_pool_destroy(channel->dma_pool);
+	channel->dma_pool = NULL;
 
 	channel->src = TSPP_SOURCE_NONE;
 	channel->mode = TSPP_MODE_DISABLED;
@@ -1815,7 +1884,7 @@ int tspp_close_channel(u32 dev, u32 channel_id)
 		sps_deregister_bam_device(pdev->bam_handle);
 		pdev->bam_handle = SPS_DEV_HANDLE_INVALID;
 
-		wake_unlock(&pdev->wake_lock);
+		__pm_relax(&pdev->ws);
 		tspp_clock_stop(pdev);
 	}
 
@@ -1873,6 +1942,89 @@ int tspp_get_ref_clk_counter(u32 dev, enum tspp_source source, u32 *tcr_counter)
 	return 0;
 }
 EXPORT_SYMBOL(tspp_get_ref_clk_counter);
+
+/**
+ * tspp_get_lpass_time_counter - return the LPASS  Timer counter value.
+ *
+ * @dev: TSPP device (up to TSPP_MAX_DEVICES)
+ * @source: The TSIF source from which the counter should be read
+ * @tcr_counter: the value of TCR counter
+ *
+ * Return  error status
+ *
+ * If source is neither TSIF 0 or TSIF1 0 is returned.
+ */
+int tspp_get_lpass_time_counter(u32 dev, enum tspp_source source,
+			u64 *lpass_time_counter)
+{
+	struct tspp_device *pdev;
+	struct tspp_tsif_device *tsif_device;
+
+	if (!lpass_time_counter)
+		return -EINVAL;
+
+	pdev = tspp_find_by_id(dev);
+	if (!pdev) {
+		pr_err("tspp_get_lpass_time_counter: can't find device %i\n",
+		       dev);
+		return -ENODEV;
+	}
+
+	switch (source) {
+	case TSPP_SOURCE_TSIF0:
+		tsif_device = &pdev->tsif[0];
+		break;
+
+	case TSPP_SOURCE_TSIF1:
+		tsif_device = &pdev->tsif[1];
+		break;
+
+	default:
+		tsif_device = NULL;
+		break;
+	}
+
+	if (tsif_device && tsif_device->ref_count) {
+		if (avcs_core_query_timer(lpass_time_counter) < 0) {
+			pr_err("tspp_get_lpass_time_counter: read error\n");
+			*lpass_time_counter = 0;
+			return -ENETRESET;
+		}
+	} else
+		*lpass_time_counter = 0;
+
+	return 0;
+}
+EXPORT_SYMBOL(tspp_get_lpass_time_counter);
+
+/**
+ * tspp_get_tts_source - Return the TTS source value.
+ *
+ * @dev: TSPP device (up to TSPP_MAX_DEVICES)
+ * @tts_source:Updated TTS source type
+ *
+ * Return  error status
+ *
+ */
+int tspp_get_tts_source(u32 dev, int *tts_source)
+{
+	struct tspp_device *pdev;
+
+	if (tts_source == NULL)
+		return -EINVAL;
+
+	pdev = tspp_find_by_id(dev);
+	if (!pdev) {
+		pr_err("tspp_get_tts_source: can't find device %i\n",
+		       dev);
+		return -ENODEV;
+	}
+
+	*tts_source = pdev->tts_source;
+
+	return 0;
+}
+EXPORT_SYMBOL(tspp_get_tts_source);
 
 /**
  * tspp_add_filter - add a TSPP filter to a channel.
@@ -1953,11 +2105,14 @@ int tspp_add_filter(u32 dev, u32 channel_id,
 	}
 
 	if (channel->mode == TSPP_MODE_PES) {
-		/* if we are already processing in PES mode, disable pipe
-		(channel) and filter to be updated */
+		/*
+		 * if we are already processing in PES mode, disable pipe
+		 * (channel) and filter to be updated
+		 */
 		val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 		writel_relaxed(val | (1 << channel->id),
 			pdev->base + TSPP_PS_DISABLE);
+		/* Assure PS_DISABLE register is set */
 		wmb();
 	}
 
@@ -2005,6 +2160,7 @@ int tspp_add_filter(u32 dev, u32 channel_id,
 	/* reenable pipe */
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 	writel_relaxed(val & ~(1 << channel->id), pdev->base + TSPP_PS_DISABLE);
+	/* Assure PS_DISABLE register is reset */
 	wmb();
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 
@@ -2038,6 +2194,10 @@ int tspp_remove_filter(u32 dev, u32 channel_id,
 		pr_err("tspp: channel id out of range");
 		return -ECHRNG;
 	}
+	if (!filter) {
+		pr_err("tspp: NULL filter pointer");
+		return -EINVAL;
+	}
 	pdev = tspp_find_by_id(dev);
 	if (!pdev) {
 		pr_err("tspp_remove: can't find device %i", dev);
@@ -2055,6 +2215,7 @@ int tspp_remove_filter(u32 dev, u32 channel_id,
 	/* disable pipe (channel) */
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 	writel_relaxed(val | channel->id, pdev->base + TSPP_PS_DISABLE);
+	/* Assure PS_DISABLE register is set */
 	wmb();
 
 	/* update data keys */
@@ -2073,6 +2234,7 @@ int tspp_remove_filter(u32 dev, u32 channel_id,
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 	writel_relaxed(val & ~(1 << channel->id),
 		pdev->base + TSPP_PS_DISABLE);
+	/* Assure PS_DISABLE register is reset */
 	wmb();
 	val = readl_relaxed(pdev->base + TSPP_PS_DISABLE);
 
@@ -2463,7 +2625,8 @@ int tspp_allocate_buffers(u32 dev, u32 channel_id, u32 count, u32 size,
 			channel->data = desc;
 			desc->next = channel->data;
 		} else {
-			last->next = desc;
+			if (last != NULL)
+				last->next = desc;
 		}
 		last = desc;
 		desc->next = channel->data;
@@ -2487,10 +2650,8 @@ int tspp_allocate_buffers(u32 dev, u32 channel_id, u32 count, u32 size,
 		tspp_destroy_buffers(channel_id, channel);
 		channel->buffer_count = 0;
 
-		if (channel->dma_pool) {
-			dma_pool_destroy(channel->dma_pool);
-			channel->dma_pool = NULL;
-		}
+		dma_pool_destroy(channel->dma_pool);
+		channel->dma_pool = NULL;
 		return -ENOMEM;
 	}
 
@@ -2533,6 +2694,7 @@ static int debugfs_iomem_x32_set(void *data, u64 val)
 	}
 
 	writel_relaxed(val, data);
+	/* Assure register write */
 	wmb();
 
 	if (clock_started)
@@ -2871,6 +3033,20 @@ static int msm_tspp_probe(struct platform_device *pdev)
 		goto err_irq;
 	device->req_irqs = false;
 
+	/* Check whether AV timer time stamps are enabled */
+	if (!of_property_read_u32(pdev->dev.of_node, "qcom,lpass-timer-tts",
+				  &device->tts_source)) {
+		if (device->tts_source == 1)
+			device->tts_source = TSIF_TTS_LPASS_TIMER;
+		else
+			device->tts_source = TSIF_TTS_TCR;
+	} else {
+		device->tts_source = TSIF_TTS_TCR;
+	}
+
+	for (i = 0; i < TSPP_TSIF_INSTANCES; i++)
+		device->tsif[i].tts_source = device->tts_source;
+
 	/* power management */
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
@@ -2879,8 +3055,7 @@ static int msm_tspp_probe(struct platform_device *pdev)
 	for (i = 0; i < TSPP_TSIF_INSTANCES; i++)
 		tsif_debugfs_init(&device->tsif[i], i);
 
-	wake_lock_init(&device->wake_lock, WAKE_LOCK_SUSPEND,
-		dev_name(&pdev->dev));
+	wakeup_source_init(&device->ws, dev_name(&pdev->dev));
 
 	/* set up pointers to ram-based 'registers' */
 	device->filters[0] = device->base + TSPP_PID_FILTER_TABLE0;
@@ -2990,7 +3165,7 @@ static int msm_tspp_remove(struct platform_device *pdev)
 	if (device->tsif_bus_client)
 		msm_bus_scale_unregister_client(device->tsif_bus_client);
 
-	wake_lock_destroy(&device->wake_lock);
+	wakeup_source_trash(&device->ws);
 	if (device->req_irqs)
 		msm_tspp_free_irqs(device);
 
@@ -3034,7 +3209,7 @@ static const struct dev_pm_ops tspp_dev_pm_ops = {
 	.runtime_resume = tspp_runtime_resume,
 };
 
-static struct of_device_id msm_match_table[] = {
+static const struct of_device_id msm_match_table[] = {
 	{.compatible = "qcom,msm_tspp"},
 	{}
 };

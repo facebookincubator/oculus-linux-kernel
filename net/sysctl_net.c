@@ -46,7 +46,7 @@ static int net_ctl_permissions(struct ctl_table_header *head,
 	kgid_t root_gid = make_kgid(net->user_ns, 0);
 
 	/* Allow network administrator to have same access as root. */
-	if (ns_capable(net->user_ns, CAP_NET_ADMIN) ||
+	if (ns_capable_noaudit(net->user_ns, CAP_NET_ADMIN) ||
 	    uid_eq(root_uid, current_euid())) {
 		int mode = (table->mode >> 6) & 7;
 		return (mode << 6) | (mode << 3) | mode;
@@ -94,10 +94,14 @@ __init int net_sysctl_init(void)
 		goto out;
 	ret = register_pernet_subsys(&sysctl_pernet_ops);
 	if (ret)
-		goto out;
+		goto out1;
 	register_sysctl_root(&net_sysctl_root);
 out:
 	return ret;
+out1:
+	unregister_sysctl_table(net_header);
+	net_header = NULL;
+	goto out;
 }
 
 struct ctl_table_header *register_net_sysctl(struct net *net,

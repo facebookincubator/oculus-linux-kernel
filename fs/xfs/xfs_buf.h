@@ -23,6 +23,7 @@
 #include <linux/spinlock.h>
 #include <linux/mm.h>
 #include <linux/fs.h>
+#include <linux/dax.h>
 #include <linux/buffer_head.h>
 #include <linux/uio.h>
 #include <linux/list_lru.h>
@@ -131,6 +132,7 @@ struct xfs_buf_map {
 	struct xfs_buf_map (map) = { .bm_bn = (blkno), .bm_len = (numblk) };
 
 struct xfs_buf_ops {
+	char *name;
 	void (*verify_read)(struct xfs_buf *);
 	void (*verify_write)(struct xfs_buf *);
 };
@@ -164,7 +166,8 @@ typedef struct xfs_buf {
 	struct xfs_perag	*b_pag;		/* contains rbtree root */
 	xfs_buftarg_t		*b_target;	/* buffer target (device) */
 	void			*b_addr;	/* virtual address of buffer */
-	struct work_struct	b_iodone_work;
+	struct work_struct	b_ioend_work;
+	struct workqueue_struct	*b_ioend_wq;	/* I/O completion wq */
 	xfs_buf_iodone_t	b_iodone;	/* I/O completion function */
 	struct completion	b_iowait;	/* queue for I/O waiters */
 	void			*b_fspriv;
@@ -298,7 +301,7 @@ extern void xfs_buf_iomove(xfs_buf_t *, size_t, size_t, void *,
 	    xfs_buf_iomove((bp), (off), (len), NULL, XBRW_ZERO)
 
 /* Buffer Utility Routines */
-extern xfs_caddr_t xfs_buf_offset(xfs_buf_t *, size_t);
+extern void *xfs_buf_offset(struct xfs_buf *, size_t);
 
 /* Delayed Write Buffer Routines */
 extern bool xfs_buf_delwri_queue(struct xfs_buf *, struct list_head *);

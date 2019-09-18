@@ -16,6 +16,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ctrls.h>
+#include <media/videobuf2-v4l2.h>
 #include <linux/msm-bus.h>
 #include <media/msm_fd.h>
 #include <linux/dma-buf.h>
@@ -34,6 +35,18 @@
 #define MSM_FD_MAX_FACES_DETECTED 32
 /* Max number of regulators defined in device tree */
 #define MSM_FD_MAX_REGULATOR_NUM 3
+
+/* Conditional spin lock macro */
+#define MSM_FD_SPIN_LOCK(l, f) ({\
+	if (f) \
+		spin_lock(&l); \
+})
+
+/* Conditional spin unlock macro */
+#define MSM_FD_SPIN_UNLOCK(l, f) ({ \
+	if (f) \
+		spin_unlock(&l); \
+})
 
 /*
  * struct msm_fd_size - Structure contain FD size related values.
@@ -117,7 +130,7 @@ struct msm_fd_buf_handle {
  * @list: Buffer is part of FD device processing queue
  */
 struct msm_fd_buffer {
-	struct vb2_buffer vb;
+	struct vb2_v4l2_buffer vb_v4l2_buf;
 	atomic_t active;
 	struct completion completion;
 	struct msm_fd_format format;

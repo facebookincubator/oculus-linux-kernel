@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,7 +22,7 @@
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 
-#define SMP2P_NUM_PROCS				8
+#define SMP2P_NUM_PROCS				16
 #define MAX_RETRIES				20
 
 #define SM_VERSION				1
@@ -146,9 +146,17 @@ static struct processor_specific_info proc_info[SMP2P_NUM_PROCS] = {
 		{"rdbg_adsp", SMEM_LC_DEBUGGER, 16*1024},	/*ADSP*/
 		{0},	/*SMP2P_RESERVED_PROC_1*/
 		{"rdbg_wcnss", 0, 0},		/*WCNSS*/
-		{0},	/*SMP2P_RESERVED_PROC_2*/
-		{0},	/*SMP2P_POWER_PROC*/
-		{0}		/*SMP2P_REMOTE_MOCK_PROC*/
+		{"rdbg_cdsp", SMEM_LC_DEBUGGER, 16*1024},		/*CDSP*/
+		{NULL},	/*SMP2P_POWER_PROC*/
+		{NULL},	/*SMP2P_TZ_PROC*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL},	/*EMPTY*/
+		{NULL}		/*SMP2P_REMOTE_MOCK_PROC*/
 };
 
 static int smq_blockmap_get(struct smq_block_map *block_map,
@@ -222,7 +230,7 @@ static int smq_blockmap_reset(struct smq_block_map *block_map)
 {
 	if (!block_map->map)
 		return SMQ_ENOMEMORY;
-	memset(block_map->map, 0 , block_map->num_blocks + 1);
+	memset(block_map->map, 0, block_map->num_blocks + 1);
 	block_map->index_read = 0;
 
 	return SMQ_SUCCESS;
@@ -259,8 +267,8 @@ static int smq_free(struct smq *smq, void *data)
 	if (smq->lock)
 		mutex_lock(smq->lock);
 
-	if ((SM_VERSION != smq->hdr->producer_version) &&
-		(SMQ_MAGIC_PRODUCER != smq->out->s.init)) {
+	if ((smq->hdr->producer_version != SM_VERSION) &&
+		(smq->out->s.init != SMQ_MAGIC_PRODUCER)) {
 		err = SMQ_UNDERFLOW;
 		goto bail;
 	}
@@ -291,8 +299,8 @@ static int smq_receive(struct smq *smq, void **pp, int *pnsize, int *pbmore)
 	int err = SMQ_SUCCESS;
 	int more = 0;
 
-	if ((SM_VERSION != smq->hdr->producer_version) &&
-		(SMQ_MAGIC_PRODUCER != smq->out->s.init))
+	if ((smq->hdr->producer_version != SM_VERSION) &&
+		(smq->out->s.init != SMQ_MAGIC_PRODUCER))
 		return SMQ_UNDERFLOW;
 
 	if (smq->in->s.index_sent_read == smq->out->s.index_sent_write) {
@@ -313,8 +321,9 @@ static int smq_receive(struct smq *smq, void **pp, int *pnsize, int *pbmore)
 	*pnsize = SM_BLOCKSIZE * node->num_blocks;
 
 	/* Ensure that the reads and writes are updated in the memory
-	when they are done and not cached. Also, ensure that the reads
-	and writes are not reordered as they are shared between two cores. */
+	* when they are done and not cached. Also, ensure that the reads
+	* and writes are not reordered as they are shared between two cores.
+	*/
 	rmb();
 	if (smq->in->s.index_sent_read != smq->out->s.index_sent_write)
 		more = 1;
@@ -334,8 +343,8 @@ static int smq_alloc_send(struct smq *smq, const uint8_t *pcb, int nsize)
 
 	mutex_lock(smq->lock);
 
-	if ((SMQ_MAGIC_CONSUMER == smq->in->s.init) &&
-	 (SM_VERSION == smq->hdr->consumer_version)) {
+	if ((smq->in->s.init == SMQ_MAGIC_CONSUMER) &&
+	 (smq->hdr->consumer_version == SM_VERSION)) {
 		if (smq->out->s.index_check_queue_for_reset ==
 			smq->in->s.index_check_queue_for_reset_ack) {
 			while (smq->out->s.index_free_read !=
@@ -355,10 +364,11 @@ static int smq_alloc_send(struct smq *smq, const uint8_t *pcb, int nsize)
 				smq_blockmap_put(&smq->block_map,
 					node->index_block);
 				/* Ensure that the reads and writes are
-				updated	in the memory when they are done
-				and not cached. Also, ensure that the reads
-				and writes are not reordered as they are
-				shared between two cores. */
+				* updated in the memory when they are done
+				* and not cached. Also, ensure that the reads
+				* and writes are not reordered as they are
+				* shared between two cores.
+				*/
 				rmb();
 			}
 		}
@@ -366,13 +376,13 @@ static int smq_alloc_send(struct smq *smq, const uint8_t *pcb, int nsize)
 
 	num_blocks = ALIGN(nsize, SM_BLOCKSIZE)/SM_BLOCKSIZE;
 	err = smq_blockmap_get(&smq->block_map, &index_block, num_blocks);
-	if (SMQ_SUCCESS != err)
+	if (err != SMQ_SUCCESS)
 		goto bail;
 
 	pv = smq->blocks + (SM_BLOCKSIZE * index_block);
 
 	err = copy_from_user((void *)pv, (void *)pcb, nsize);
-	if (0 != err)
+	if (err != 0)
 		goto bail;
 
 	((struct smq_node *)(smq->out->sent +
@@ -386,7 +396,7 @@ static int smq_alloc_send(struct smq *smq, const uint8_t *pcb, int nsize)
 		% smq->num_blocks;
 
 bail:
-	if (SMQ_SUCCESS != err) {
+	if (err != SMQ_SUCCESS) {
 		if (pv)
 			smq_blockmap_put(&smq->block_map, index_block);
 	}
@@ -400,7 +410,7 @@ static int smq_reset_producer_queue_internal(struct smq *smq,
 	int retval = 0;
 	uint32_t i;
 
-	if (PRODUCER != smq->type)
+	if (smq->type != PRODUCER)
 		goto bail;
 
 	mutex_lock(smq->lock);
@@ -425,9 +435,9 @@ static int smq_check_queue_reset(struct smq *p_cons, struct smq *p_prod)
 	int retval = 0;
 	uint32_t reset_num, i;
 
-	if ((CONSUMER != p_cons->type) ||
-		(SMQ_MAGIC_PRODUCER != p_cons->out->s.init) ||
-		(SM_VERSION != p_cons->hdr->producer_version))
+	if ((p_cons->type != CONSUMER) ||
+		(p_cons->out->s.init != SMQ_MAGIC_PRODUCER) ||
+		(p_cons->hdr->producer_version != SM_VERSION))
 		goto bail;
 
 	reset_num = p_cons->out->s.index_check_queue_for_reset;
@@ -461,7 +471,7 @@ static int check_subsystem_debug_enabled(void *base_addr, int size)
 	num_blocks = (int)((size - sizeof(struct smq_out_state) -
 		sizeof(struct smq_in_state))/(SM_BLOCKSIZE +
 		sizeof(struct smq_node) * 2));
-	if (0 >= num_blocks) {
+	if (num_blocks <= 0) {
 		err = SMQ_EBADPARM;
 		goto bail;
 	}
@@ -472,7 +482,7 @@ static int check_subsystem_debug_enabled(void *base_addr, int size)
 		sizeof(struct smq_node));
 	smq.in = (struct smq_in *)pb;
 
-	if (SMQ_MAGIC_CONSUMER != smq.in->s.init) {
+	if (smq.in->s.init != SMQ_MAGIC_CONSUMER) {
 		pr_err("%s, smq in consumer not initialized", __func__);
 		err = -ECOMM;
 	}
@@ -483,7 +493,7 @@ bail:
 
 static void smq_dtor(struct smq *smq)
 {
-	if (SMQ_MAGIC_INIT == smq->initialized) {
+	if (smq->initialized == SMQ_MAGIC_INIT) {
 		switch (smq->type) {
 		case PRODUCER:
 			smq->out->s.init = 0;
@@ -639,7 +649,7 @@ static int smq_ctor(struct smq *smq, void *base_addr, int size,
 	uint32_t i;
 	int err;
 
-	if (SMQ_MAGIC_INIT == smq->initialized) {
+	if (smq->initialized == SMQ_MAGIC_INIT) {
 		err = SMQ_EBADPARM;
 		goto bail;
 	}
@@ -661,7 +671,7 @@ static int smq_ctor(struct smq *smq, void *base_addr, int size,
 	num_blocks = (int)((size - sizeof(struct smq_out_state) -
 		sizeof(struct smq_in_state))/(SM_BLOCKSIZE +
 		sizeof(struct smq_node) * 2));
-	if (0 >= num_blocks) {
+	if (num_blocks <= 0) {
 		err = SMQ_ENOMEMORY;
 		goto bail;
 	}
@@ -674,13 +684,13 @@ static int smq_ctor(struct smq *smq, void *base_addr, int size,
 		sizeof(struct smq_node));
 	smq->in = (struct smq_in *)pb;
 	smq->type = type;
-	if (PRODUCER == type) {
+	if (type == PRODUCER) {
 		smq->hdr->producer_version = SM_VERSION;
 		for (i = 0; i < smq->num_blocks; i++)
 			(smq->out->sent + i)->index_block = 0xFFFF;
 
 		err = smq_blockmap_ctor(&smq->block_map, smq->num_blocks);
-		if (SMQ_SUCCESS != err)
+		if (err != SMQ_SUCCESS)
 			goto bail;
 
 		smq->out->s.index_sent_write = 0;
@@ -922,8 +932,8 @@ static ssize_t rdbg_read(struct file *filp, char __user *buf, size_t size,
 
 	smq_check_queue_reset(&(rdbgdata->consumer_smrb),
 		&(rdbgdata->producer_smrb));
-	if (SMQ_SUCCESS != smq_receive(&(rdbgdata->consumer_smrb),
-			&p_sent_buffer, &nsize, &more)) {
+	if (smq_receive(&(rdbgdata->consumer_smrb), &p_sent_buffer,
+			&nsize, &more) != SMQ_SUCCESS) {
 		dev_err(rdbgdata->device, "%s: Error in smq_recv(). Err code = %d",
 			__func__, err);
 		err = -ENODATA;

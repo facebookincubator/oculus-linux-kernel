@@ -18,41 +18,7 @@
 #ifndef __ASM_ESR_H
 #define __ASM_ESR_H
 
-#define ESR_EL1_WRITE		(1 << 6)
-#define ESR_EL1_CM		(1 << 8)
-#define ESR_EL1_IL		(1 << 25)
-
-#define ESR_EL1_EC_SHIFT	(26)
-#define ESR_EL1_EC_UNKNOWN	(0x00)
-#define ESR_EL1_EC_WFI		(0x01)
-#define ESR_EL1_EC_CP15_32	(0x03)
-#define ESR_EL1_EC_CP15_64	(0x04)
-#define ESR_EL1_EC_CP14_MR	(0x05)
-#define ESR_EL1_EC_CP14_LS	(0x06)
-#define ESR_EL1_EC_FP_ASIMD	(0x07)
-#define ESR_EL1_EC_CP10_ID	(0x08)
-#define ESR_EL1_EC_CP14_64	(0x0C)
-#define ESR_EL1_EC_ILL_ISS	(0x0E)
-#define ESR_EL1_EC_SVC32	(0x11)
-#define ESR_EL1_EC_SVC64	(0x15)
-#define ESR_EL1_EC_SYS64	(0x18)
-#define ESR_EL1_EC_IABT_EL0	(0x20)
-#define ESR_EL1_EC_IABT_EL1	(0x21)
-#define ESR_EL1_EC_PC_ALIGN	(0x22)
-#define ESR_EL1_EC_DABT_EL0	(0x24)
-#define ESR_EL1_EC_DABT_EL1	(0x25)
-#define ESR_EL1_EC_SP_ALIGN	(0x26)
-#define ESR_EL1_EC_FP_EXC32	(0x28)
-#define ESR_EL1_EC_FP_EXC64	(0x2C)
-#define ESR_EL1_EC_SERROR	(0x2F)
-#define ESR_EL1_EC_BREAKPT_EL0	(0x30)
-#define ESR_EL1_EC_BREAKPT_EL1	(0x31)
-#define ESR_EL1_EC_SOFTSTP_EL0	(0x32)
-#define ESR_EL1_EC_SOFTSTP_EL1	(0x33)
-#define ESR_EL1_EC_WATCHPT_EL0	(0x34)
-#define ESR_EL1_EC_WATCHPT_EL1	(0x35)
-#define ESR_EL1_EC_BKPT32	(0x38)
-#define ESR_EL1_EC_BRK64	(0x3C)
+#include <asm/memory.h>
 
 #define ESR_ELx_EC_UNKNOWN	(0x00)
 #define ESR_ELx_EC_WFx		(0x01)
@@ -108,7 +74,6 @@
 
 #define ESR_ELx_EC_SHIFT	(26)
 #define ESR_ELx_EC_MASK		(UL(0x3F) << ESR_ELx_EC_SHIFT)
-#define ESR_ELx_EC(esr)		(((esr) & ESR_ELx_EC_MASK) >> ESR_ELx_EC_SHIFT)
 
 #define ESR_ELx_IL		(UL(1) << 25)
 #define ESR_ELx_ISS_MASK	(ESR_ELx_IL - 1)
@@ -127,12 +92,21 @@
 #define ESR_ELx_FSC		(0x3F)
 #define ESR_ELx_FSC_TYPE	(0x3C)
 #define ESR_ELx_FSC_EXTABT	(0x10)
+#define ESR_ELx_FSC_ACCESS	(0x08)
 #define ESR_ELx_FSC_FAULT	(0x04)
 #define ESR_ELx_FSC_PERM	(0x0C)
 #define ESR_ELx_CV		(UL(1) << 24)
 #define ESR_ELx_COND_SHIFT	(20)
 #define ESR_ELx_COND_MASK	(UL(0xF) << ESR_ELx_COND_SHIFT)
 #define ESR_ELx_WFx_ISS_WFE	(UL(1) << 0)
+#define ESR_ELx_xVC_IMM_MASK	((1UL << 16) - 1)
+
+/* ESR value templates for specific events */
+
+/* BRK instruction trap from AArch64 state */
+#define ESR_ELx_VAL_BRK64(imm)					\
+	((ESR_ELx_EC_BRK64 << ESR_ELx_EC_SHIFT) | ESR_ELx_IL |	\
+	 ((imm) & 0xffff))
 
 /* ISS field definitions for System instruction traps */
 #define ESR_ELx_SYS64_ISS_RES0_SHIFT	22

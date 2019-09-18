@@ -1,0 +1,72 @@
+
+qcom,3027611_oculus_montereysony_3890mah_averaged_masterslave_sept5th2017 {
+	qcom, = <24>;
+	/* #3027611_Oculus_MontereySony_3890mAh_averaged_MasterSlave_Sept5th2017*/
+	qcom,max-voltage-uv = <4300000>;
+	qcom,nom-batt-capacity-mah = <3890>;
+	qcom,fastchg-current-ma = <1900>;
+	qcom,fg-cc-cv-threshold-mv = <4285>;
+	qcom,batt-id-kohm = <15>;
+	qcom,battery-beta = <3435>;
+	qcom,battery-type = "3027611_oculus_montereysony_3890mah_averaged_masterslave_sept5th2017";
+	qcom,checksum = <0xEFFE>;
+	qcom,gui-version = "PMI8998GUI - 2.0.0.58";
+	qcom,fg-profile-data = [
+		 AC 1F 69 05
+		 A9 0A 33 FC
+		 CC 1C A1 FA
+		 3C ED E2 F4
+		 9F 17 EE 22
+		 E2 45 26 52
+		 51 00 00 00
+		 10 00 00 00
+		 00 00 A4 C2
+		 61 CD 57 AD
+		 1F 00 08 00
+		 4E DD 64 DC
+		 25 FC F2 F2
+		 06 06 FE 02
+		 73 ED 23 4A
+		 10 06 09 20
+		 27 00 14 00
+		 D7 1F 61 05
+		 B4 0A 0A 06
+		 B8 1C 3A 02
+		 DE 04 2D FA
+		 47 18 10 23
+		 58 45 55 53
+		 5B 00 00 00
+		 0E 00 00 00
+		 00 00 02 B4
+		 D8 C2 68 CC
+		 1A 00 00 00
+		 7C EA 64 DC
+		 04 06 37 F3
+		 E4 06 1D 03
+		 34 EC 52 13
+		 99 33 CC FF
+		 07 10 00 00
+		 71 10 66 46
+		 1A 00 40 00
+		 34 01 0A FA
+		 FF 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+	];
+};

@@ -46,7 +46,7 @@ static int32_t msm_ir_led_get_subdev_id(
 		pr_err("subdevice ID is not valid\n");
 		return -EINVAL;
 	}
-	if (MSM_CAMERA_PLATFORM_DEVICE != ir_led_ctrl->ir_led_device_type) {
+	if (ir_led_ctrl->ir_led_device_type != MSM_CAMERA_PLATFORM_DEVICE) {
 		pr_err("device type is not matching\n");
 		return -EINVAL;
 	}

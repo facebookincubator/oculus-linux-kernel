@@ -52,7 +52,6 @@ struct clk_freq_tbl {
 /**
  * struct rcg_clk - root clock generator
  * @cmd_rcgr_reg: command register
- * @mnd_reg_width: Width of MND register
  * @set_rate: function to set frequency
  * @freq_tbl: frequency table for this RCG
  * @current_freq: current RCG frequency
@@ -67,7 +66,6 @@ struct clk_freq_tbl {
  */
 struct rcg_clk {
 	u32 cmd_rcgr_reg;
-	u32 mnd_reg_width;
 
 	void   (*set_rate)(struct rcg_clk *, struct clk_freq_tbl *);
 
@@ -128,6 +126,23 @@ struct branch_clk {
 static inline struct branch_clk *to_branch_clk(struct clk *clk)
 {
 	return container_of(clk, struct branch_clk, c);
+}
+
+/**
+ * struct hw_ctl_clk - Clock structure to enable/disable dynamic clock gating
+ * @c: clk
+ * @cbcr_reg: branch control register
+ * @base: pointer to base address of ioremapped registers.
+ */
+struct hw_ctl_clk {
+	struct clk c;
+	u32 cbcr_reg;
+	void __iomem *const *base;
+};
+
+static inline struct hw_ctl_clk *to_hw_ctl_clk(struct clk *clk)
+{
+	return container_of(clk, struct hw_ctl_clk, c);
 }
 
 /**
@@ -236,9 +251,11 @@ extern struct clk_ops clk_ops_empty;
 extern struct clk_ops clk_ops_rcg;
 extern struct clk_ops clk_ops_rcg_mnd;
 extern struct clk_ops clk_ops_branch;
+extern struct clk_ops clk_ops_branch_hw_ctl;
 extern struct clk_ops clk_ops_vote;
 extern struct clk_ops clk_ops_rcg_hdmi;
 extern struct clk_ops clk_ops_rcg_edp;
+extern struct clk_ops clk_ops_rcg_dp;
 extern struct clk_ops clk_ops_byte;
 extern struct clk_ops clk_ops_pixel;
 extern struct clk_ops clk_ops_byte_multiparent;
@@ -265,4 +282,3 @@ unsigned long measure_get_rate(struct clk *c);
 	}; \
 
 #endif /* __ARCH_ARM_MACH_MSM_CLOCK_LOCAL_2_H */
-

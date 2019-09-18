@@ -129,6 +129,8 @@
 #define CSR_UCODE_DRV_GP1_CLR   (CSR_BASE+0x05c)
 #define CSR_UCODE_DRV_GP2       (CSR_BASE+0x060)
 
+#define CSR_MBOX_SET_REG	(CSR_BASE + 0x88)
+
 #define CSR_LED_REG             (CSR_BASE+0x094)
 #define CSR_DRAM_INT_TBL_REG	(CSR_BASE+0x0A0)
 #define CSR_MAC_SHADOW_REG_CTRL	(CSR_BASE+0x0A8) /* 6000 and up */
@@ -182,7 +184,10 @@
 #define CSR_HW_IF_CONFIG_REG_BIT_NIC_READY	(0x00400000) /* PCI_OWN_SEM */
 #define CSR_HW_IF_CONFIG_REG_BIT_NIC_PREPARE_DONE (0x02000000) /* ME_OWN */
 #define CSR_HW_IF_CONFIG_REG_PREPARE		  (0x08000000) /* WAKE_ME */
+#define CSR_HW_IF_CONFIG_REG_ENABLE_PME		  (0x10000000)
 #define CSR_HW_IF_CONFIG_REG_PERSIST_MODE	  (0x40000000) /* PERSISTENCE */
+
+#define CSR_MBOX_SET_REG_OS_ALIVE		BIT(5)
 
 #define CSR_INT_PERIODIC_DIS			(0x00) /* disable periodic int*/
 #define CSR_INT_PERIODIC_ENA			(0xFF) /* 255*32 usec ~ 8 msec*/
@@ -195,6 +200,7 @@
 #define CSR_INT_BIT_FH_TX        (1 << 27) /* Tx DMA FH_INT[1:0] */
 #define CSR_INT_BIT_SCD          (1 << 26) /* TXQ pointer advanced */
 #define CSR_INT_BIT_SW_ERR       (1 << 25) /* uCode error */
+#define CSR_INT_BIT_PAGING       (1 << 24) /* SDIO PAGING */
 #define CSR_INT_BIT_RF_KILL      (1 << 7)  /* HW RFKILL switch GP_CNTRL[27] toggled */
 #define CSR_INT_BIT_CT_KILL      (1 << 6)  /* Critical temp (chip too hot) rfkill */
 #define CSR_INT_BIT_SW_RX        (1 << 3)  /* Rx, command responses */
@@ -205,6 +211,7 @@
 				 CSR_INT_BIT_HW_ERR  | \
 				 CSR_INT_BIT_FH_TX   | \
 				 CSR_INT_BIT_SW_ERR  | \
+				 CSR_INT_BIT_PAGING  | \
 				 CSR_INT_BIT_RF_KILL | \
 				 CSR_INT_BIT_SW_RX   | \
 				 CSR_INT_BIT_WAKEUP  | \
@@ -302,6 +309,7 @@
 enum {
 	SILICON_A_STEP = 0,
 	SILICON_B_STEP,
+	SILICON_C_STEP,
 };
 
 
@@ -416,6 +424,7 @@ enum {
 
 /* DRAM INT TABLE */
 #define CSR_DRAM_INT_TBL_ENABLE		(1 << 31)
+#define CSR_DRAM_INIT_TBL_WRITE_POINTER	(1 << 28)
 #define CSR_DRAM_INIT_TBL_WRAP_CHECK	(1 << 27)
 
 /*

@@ -8,7 +8,9 @@
  *
  * © 2004 Simtec Electronics
  *
- * Device driver for NAND connected via GPIO
+ * Device driver for NAND flash that uses a memory mapped interface to
+ * read/write the NAND commands and data, and GPIO pins for control signals
+ * (the DT binding refers to this as "GPIO assisted NAND flash")
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -273,7 +275,7 @@ static int gpio_nand_probe(struct platform_device *pdev)
 	chip->cmd_ctrl		= gpio_nand_cmd_ctrl;
 
 	gpiomtd->mtd_info.priv	= chip;
-	gpiomtd->mtd_info.owner	= THIS_MODULE;
+	gpiomtd->mtd_info.dev.parent = &pdev->dev;
 
 	platform_set_drvdata(pdev, gpiomtd);
 
@@ -308,7 +310,6 @@ static struct platform_driver gpio_nand_driver = {
 	.remove		= gpio_nand_remove,
 	.driver		= {
 		.name	= "gpio-nand",
-		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(gpio_nand_id_table),
 	},
 };

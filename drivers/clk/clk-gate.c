@@ -52,6 +52,8 @@ static void clk_gate_endisable(struct clk_hw *hw, int enable)
 
 	if (gate->lock)
 		spin_lock_irqsave(gate->lock, flags);
+	else
+		__acquire(gate->lock);
 
 	if (gate->flags & CLK_GATE_HIWORD_MASK) {
 		reg = BIT(gate->bit_idx + 16);
@@ -70,6 +72,8 @@ static void clk_gate_endisable(struct clk_hw *hw, int enable)
 
 	if (gate->lock)
 		spin_unlock_irqrestore(gate->lock, flags);
+	else
+		__release(gate->lock);
 }
 
 static int clk_gate_enable(struct clk_hw *hw)
@@ -125,7 +129,7 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 {
 	struct clk_gate *gate;
 	struct clk *clk;
-	struct clk_init_data init;
+	struct clk_init_data init = {};
 
 	if (clk_gate_flags & CLK_GATE_HIWORD_MASK) {
 		if (bit_idx > 15) {
@@ -135,11 +139,9 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 	}
 
 	/* allocate the gate */
-	gate = kzalloc(sizeof(struct clk_gate), GFP_KERNEL);
-	if (!gate) {
-		pr_err("%s: could not allocate gated clk\n", __func__);
+	gate = kzalloc(sizeof(*gate), GFP_KERNEL);
+	if (!gate)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	init.name = name;
 	init.ops = &clk_gate_ops;
@@ -162,3 +164,19 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 	return clk;
 }
 EXPORT_SYMBOL_GPL(clk_register_gate);
+
+void clk_unregister_gate(struct clk *clk)
+{
+	struct clk_gate *gate;
+	struct clk_hw *hw;
+
+	hw = __clk_get_hw(clk);
+	if (!hw)
+		return;
+
+	gate = to_clk_gate(hw);
+
+	clk_unregister(clk);
+	kfree(gate);
+}
+EXPORT_SYMBOL_GPL(clk_unregister_gate);

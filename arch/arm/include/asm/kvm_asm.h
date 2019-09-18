@@ -23,7 +23,7 @@
 #define c0_MPIDR	1	/* MultiProcessor ID Register */
 #define c0_CSSELR	2	/* Cache Size Selection Register */
 #define c1_SCTLR	3	/* System Control Register */
-#define c1_ACTLR	4	/* Auxilliary Control Register */
+#define c1_ACTLR	4	/* Auxiliary Control Register */
 #define c1_CPACR	5	/* Coprocessor Access Control */
 #define c2_TTBR0	6	/* Translation Table Base Register 0 */
 #define c2_TTBR0_high	7	/* TTBR0 top 32 bits */
@@ -79,6 +79,8 @@
 #define rr_lo_hi(a1, a2) a1, a2
 #endif
 
+#define kvm_ksym_ref(kva)	(kva)
+
 #ifndef __ASSEMBLY__
 struct kvm;
 struct kvm_vcpu;
@@ -96,6 +98,7 @@ extern char __kvm_hyp_code_end[];
 
 extern void __kvm_flush_vm_context(void);
 extern void __kvm_tlb_flush_vmid_ipa(struct kvm *kvm, phys_addr_t ipa);
+extern void __kvm_tlb_flush_vmid(struct kvm *kvm);
 
 extern int __kvm_vcpu_run(struct kvm_vcpu *vcpu);
 #endif

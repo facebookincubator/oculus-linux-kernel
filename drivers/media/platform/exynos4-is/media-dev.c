@@ -1451,7 +1451,7 @@ static int fimc_md_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_device_id fimc_driver_ids[] __always_unused = {
+static const struct platform_device_id fimc_driver_ids[] __always_unused = {
 	{ .name = "s5p-fimc-md" },
 	{ },
 };
@@ -1469,7 +1469,6 @@ static struct platform_driver fimc_md_driver = {
 	.driver = {
 		.of_match_table = of_match_ptr(fimc_md_of_match),
 		.name		= "s5p-fimc-md",
-		.owner		= THIS_MODULE,
 	}
 };
 

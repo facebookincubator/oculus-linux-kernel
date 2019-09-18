@@ -100,12 +100,12 @@ int ecryptfs_parse_packet_length(unsigned char *data, size_t *size,
 	(*size) = 0;
 	if (data[0] < 192) {
 		/* One-byte length */
-		(*size) = (unsigned char)data[0];
+		(*size) = data[0];
 		(*length_size) = 1;
 	} else if (data[0] < 224) {
 		/* Two-byte length */
-		(*size) = (((unsigned char)(data[0]) - 192) * 256);
-		(*size) += ((unsigned char)(data[1]) + 192);
+		(*size) = (data[0] - 192) * 256;
+		(*size) += data[1] + 192;
 		(*length_size) = 2;
 	} else if (data[0] == 255) {
 		/* If support is added, adjust ECRYPTFS_MAX_PKT_LEN_SIZE */
@@ -162,7 +162,6 @@ write_tag_64_packet(char *signature, struct ecryptfs_session_key *session_key,
 	size_t packet_size_len;
 	char *message;
 	int rc;
-	u32 encrypted_key_size = 0;
 
 	/*
 	 *              ***** TAG 64 Packet Format *****
@@ -201,13 +200,8 @@ write_tag_64_packet(char *signature, struct ecryptfs_session_key *session_key,
 		goto out;
 	}
 	i += packet_size_len;
-
-	encrypted_key_size = (session_key->encrypted_key_size <=
-				sizeof(session_key->encrypted_key)) ?
-				session_key->encrypted_key_size :
-				sizeof(session_key->encrypted_key);
 	memcpy(&message[i], session_key->encrypted_key,
-			encrypted_key_size);
+	       session_key->encrypted_key_size);
 	i += session_key->encrypted_key_size;
 	*packet_len = i;
 out:
@@ -819,10 +813,8 @@ ecryptfs_write_tag_70_packet(char *dest, size_t *remaining_bytes,
 		if (s->block_aligned_filename[s->j] == '\0')
 			s->block_aligned_filename[s->j] = ECRYPTFS_NON_NULL;
 	}
-	if (NULL != filename)
-		memcpy(&s->block_aligned_filename[s->num_rand_bytes], filename,
+	memcpy(&s->block_aligned_filename[s->num_rand_bytes], filename,
 	       filename_size);
-
 	rc = virt_to_scatterlist(s->block_aligned_filename,
 				 s->block_aligned_filename_size, s->src_sg, 2);
 	if (rc < 1) {
@@ -902,7 +894,7 @@ struct ecryptfs_parse_tag_70_packet_silly_stack {
 	struct blkcipher_desc desc;
 	char fnek_sig_hex[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char iv[ECRYPTFS_MAX_IV_BYTES];
-	char cipher_string[ECRYPTFS_MAX_CIPHER_NAME_SIZE];
+	char cipher_string[ECRYPTFS_MAX_CIPHER_NAME_SIZE + 1];
 };
 
 /**
@@ -1702,7 +1694,6 @@ decrypt_passphrase_encrypted_session_key(struct ecryptfs_auth_tok *auth_tok,
 		.flags = CRYPTO_TFM_REQ_MAY_SLEEP
 	};
 	int rc = 0;
-	u32 decrypted_key_size = 0;
 
 	if (unlikely(ecryptfs_verbosity > 0)) {
 		ecryptfs_printk(
@@ -1760,13 +1751,8 @@ decrypt_passphrase_encrypted_session_key(struct ecryptfs_auth_tok *auth_tok,
 		goto out;
 	}
 	auth_tok->session_key.flags |= ECRYPTFS_CONTAINS_DECRYPTED_KEY;
-
-	decrypted_key_size = (auth_tok->session_key.decrypted_key_size <=
-				sizeof(auth_tok->session_key.decrypted_key)) ?
-				auth_tok->session_key.decrypted_key_size :
-				sizeof(auth_tok->session_key.decrypted_key);
 	memcpy(crypt_stat->key, auth_tok->session_key.decrypted_key,
-			decrypted_key_size);
+	       auth_tok->session_key.decrypted_key_size);
 	crypt_stat->flags |= ECRYPTFS_KEY_VALID;
 	if (unlikely(ecryptfs_verbosity > 0)) {
 		ecryptfs_printk(KERN_DEBUG, "FEK of size [%zd]:\n",
@@ -2241,7 +2227,6 @@ write_tag_3_packet(char *dest, size_t *remaining_bytes,
 		.flags = CRYPTO_TFM_REQ_MAY_SLEEP
 	};
 	int rc = 0;
-	size_t enc_key_size = 0;
 
 	(*packet_size) = 0;
 	ecryptfs_from_hex(key_rec->sig, auth_tok->token.password.signature,
@@ -2355,13 +2340,8 @@ write_tag_3_packet(char *dest, size_t *remaining_bytes,
 	if (ecryptfs_verbosity > 0) {
 		ecryptfs_printk(KERN_DEBUG, "EFEK of size [%zd]:\n",
 				key_rec->enc_key_size);
-
-		enc_key_size = key_rec->enc_key_size <=
-				sizeof(key_rec->enc_key) ?
-				key_rec->enc_key_size :
-				sizeof(key_rec->enc_key);
 		ecryptfs_dump_hex(key_rec->enc_key,
-				enc_key_size);
+				  key_rec->enc_key_size);
 	}
 encrypted_session_key_set:
 	/* This format is inspired by OpenPGP; see RFC 2440

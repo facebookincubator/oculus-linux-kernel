@@ -74,7 +74,7 @@
 #define L2ECTLR_INT_ERR		(1 << 30)
 #define L2ECTLR_EXT_ERR		(1 << 29)
 
-#define ESR_SERROR(a)	((a) >> ESR_EL1_EC_SHIFT == ESR_EL1_EC_SERROR)
+#define ESR_SERROR(a)	((a) >> ESR_ELx_EC_SHIFT == ESR_ELx_EC_SERROR)
 #define ESR_VALID(a)	((a) & BIT(24))
 #define ESR_L2_DBE(a) (ESR_SERROR(a) && ESR_VALID(a) && \
 			(((a) & 0x00C00003) == 0x1))
@@ -95,6 +95,12 @@
 #define A57_L2_UE			7
 #define L2_EXT_UE			8
 #define CCI_UE				9
+#define KRYO2XX_SILVER_L1_CE		10
+#define KRYO2XX_SILVER_L1_UE		11
+#define KRYO2XX_SILVER_L2_CE		12
+#define KRYO2XX_SILVER_L2_UE		13
+#define KRYO2XX_GOLD_L2_CE		14
+#define KRYO2XX_GOLD_L2_UE		15
 
 #ifdef CONFIG_EDAC_CORTEX_ARM64_PANIC_ON_UE
 #define ARM64_ERP_PANIC_ON_UE 1
@@ -157,6 +163,12 @@ static const struct errors_edac errors[] = {
 	{"A57 L2 Uncorrectable Error", edac_device_handle_ue },
 	{"L2 External Error", edac_device_handle_ue },
 	{"CCI Error", edac_device_handle_ue },
+	{"Kryo2xx Silver L1 Correctable Error", edac_device_handle_ce },
+	{"Kryo2xx Silver L1 Uncorrectable Error", edac_device_handle_ue },
+	{"Kryo2xx Silver L2 Correctable Error", edac_device_handle_ce },
+	{"Kryo2xx Silver L2 Uncorrectable Error", edac_device_handle_ue },
+	{"Kryo2xx Gold L2 Correctable Error", edac_device_handle_ce },
+	{"Kryo2xx Gold L2 Uncorrectable Error", edac_device_handle_ue },
 };
 
 #define read_l2merrsr_el1 ({                                           \
@@ -195,7 +207,7 @@ static const struct errors_edac errors[] = {
 	asm("msr s3_1_c15_c2_2, %0" : : "r" (val));			\
 })
 
-static void ca53_ca57_print_error_state_regs(void)
+static void kryo2xx_print_error_state_regs(void)
 {
 	u64 l2merrsr;
 	u64 cpumerrsr;
@@ -254,7 +266,7 @@ static void kryo2xx_gold_print_error_state_regs(void)
 			"Double bit error on dirty L2 cacheline\n");
 }
 
-static void ca53_parse_cpumerrsr(struct erp_local_data *ed)
+static void kryo2xx_silver_parse_cpumerrsr(struct erp_local_data *ed)
 {
 	u64 cpumerrsr;
 	int cpuid;
@@ -267,9 +279,11 @@ static void ca53_parse_cpumerrsr(struct erp_local_data *ed)
 	if (A53_CPUMERRSR_FATAL(cpumerrsr))
 		ed->err = DBE;
 
-	edac_printk(KERN_CRIT, EDAC_CPU, "Cortex A53 CPU%d L1 %s Error detected\n",
-					 smp_processor_id(), err_name[ed->err]);
-	ca53_ca57_print_error_state_regs();
+	edac_printk(KERN_CRIT, EDAC_CPU,
+			"Kryo2xx Silver CPU%d L1 %s Error detected\n",
+			smp_processor_id(), err_name[ed->err]);
+
+	kryo2xx_print_error_state_regs();
 	if (ed->err == DBE)
 		edac_printk(KERN_CRIT, EDAC_CPU, "Fatal error\n");
 
@@ -315,15 +329,15 @@ static void ca53_parse_cpumerrsr(struct erp_local_data *ed)
 					 (int) A53_CPUMERRSR_OTHER(cpumerrsr));
 
 	if (ed->err == SBE)
-		errors[A53_L1_CE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L1_CACHE, errors[A53_L1_CE].msg);
+		errors[KRYO2XX_SILVER_L1_CE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L1_CACHE, errors[KRYO2XX_SILVER_L1_CE].msg);
 	else if (ed->err == DBE)
-		errors[A53_L1_UE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L1_CACHE, errors[A53_L1_UE].msg);
+		errors[KRYO2XX_SILVER_L1_UE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L1_CACHE, errors[KRYO2XX_SILVER_L1_UE].msg);
 	write_cpumerrsr_el1(0);
 }
 
-static void ca53_parse_l2merrsr(struct erp_local_data *ed)
+static void kryo2xx_silver_parse_l2merrsr(struct erp_local_data *ed)
 {
 	u64 l2merrsr;
 	u32 l2ectlr;
@@ -338,9 +352,9 @@ static void ca53_parse_l2merrsr(struct erp_local_data *ed)
 	if (A53_L2MERRSR_FATAL(l2merrsr))
 		ed->err = DBE;
 
-	edac_printk(KERN_CRIT, EDAC_CPU, "CortexA53 L2 %s Error detected\n",
-							err_name[ed->err]);
-	ca53_ca57_print_error_state_regs();
+	edac_printk(KERN_CRIT, EDAC_CPU, "Kyro2xx Silver L2 %s Error detected\n",
+			err_name[ed->err]);
+	kryo2xx_print_error_state_regs();
 	if (ed->err == DBE)
 		edac_printk(KERN_CRIT, EDAC_CPU, "Fatal error\n");
 
@@ -373,11 +387,11 @@ static void ca53_parse_l2merrsr(struct erp_local_data *ed)
 					 (int) A53_L2MERRSR_OTHER(l2merrsr));
 
 	if (ed->err == SBE)
-		errors[A53_L2_CE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L2_CACHE, errors[A53_L2_CE].msg);
+		errors[KRYO2XX_SILVER_L2_CE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L2_CACHE, errors[KRYO2XX_SILVER_L2_CE].msg);
 	else if (ed->err == DBE)
-		errors[A53_L2_UE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L2_CACHE, errors[A53_L2_UE].msg);
+		errors[KRYO2XX_SILVER_L2_UE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L2_CACHE, errors[KRYO2XX_SILVER_L2_UE].msg);
 	write_l2merrsr_el1(0);
 }
 
@@ -397,7 +411,7 @@ static void ca57_parse_cpumerrsr(struct erp_local_data *ed)
 
 	edac_printk(KERN_CRIT, EDAC_CPU, "Cortex A57 CPU%d L1 %s Error detected\n",
 					 smp_processor_id(), err_name[ed->err]);
-	ca53_ca57_print_error_state_regs();
+	kryo2xx_print_error_state_regs();
 	if (ed->err == DBE)
 		edac_printk(KERN_CRIT, EDAC_CPU, "Fatal error\n");
 
@@ -462,7 +476,7 @@ static void ca57_parse_l2merrsr(struct erp_local_data *ed)
 
 	edac_printk(KERN_CRIT, EDAC_CPU, "CortexA57 L2 %s Error detected\n",
 							err_name[ed->err]);
-	ca53_ca57_print_error_state_regs();
+	kryo2xx_print_error_state_regs();
 	if (ed->err == DBE)
 		edac_printk(KERN_CRIT, EDAC_CPU, "Fatal error\n");
 
@@ -528,7 +542,7 @@ static void kryo2xx_gold_parse_l2merrsr(struct erp_local_data *ed)
 	if (KRYO2XX_GOLD_L2MERRSR_FATAL(l2merrsr))
 		ed->err = DBE;
 
-	edac_printk(KERN_CRIT, EDAC_CPU, "Gold L2 %s Error detected\n",
+	edac_printk(KERN_CRIT, EDAC_CPU, "Kryo2xx Gold L2 %s Error detected\n",
 							err_name[ed->err]);
 	kryo2xx_gold_print_error_state_regs();
 	if (ed->err == DBE)
@@ -544,16 +558,16 @@ static void kryo2xx_gold_parse_l2merrsr(struct erp_local_data *ed)
 				(int) KRYO2XX_GOLD_L2MERRSR_INDEX(l2merrsr));
 
 	edac_printk(KERN_CRIT, EDAC_CPU, "Repeated error count: %d\n",
-					 (int) KRYO2XX_GOLD_L2MERRSR_REPT(l2merrsr));
+		(int) KRYO2XX_GOLD_L2MERRSR_REPT(l2merrsr));
 	edac_printk(KERN_CRIT, EDAC_CPU, "Other error count: %d\n",
-					 (int) KRYO2XX_GOLD_L2MERRSR_OTHER(l2merrsr));
+		(int) KRYO2XX_GOLD_L2MERRSR_OTHER(l2merrsr));
 
 	if (ed->err == SBE) {
-		errors[A57_L2_CE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L2_CACHE, errors[A57_L2_CE].msg);
+		errors[KRYO2XX_GOLD_L2_CE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L2_CACHE, errors[KRYO2XX_GOLD_L2_CE].msg);
 	} else if (ed->err == DBE) {
-		errors[A57_L2_UE].func(ed->drv->edev_ctl, smp_processor_id(),
-					L2_CACHE, errors[A57_L2_UE].msg);
+		errors[KRYO2XX_GOLD_L2_UE].func(ed->drv->edev_ctl, smp_processor_id(),
+					L2_CACHE, errors[KRYO2XX_GOLD_L2_UE].msg);
 	}
 	write_l2merrsr_el1(0);
 }
@@ -576,8 +590,8 @@ static void arm64_erp_local_handler(void *info)
 	switch (partnum) {
 	case ARM_CPU_PART_CORTEX_A53:
 	case ARM_CPU_PART_KRYO2XX_SILVER:
-		ca53_parse_cpumerrsr(errdata);
-		ca53_parse_l2merrsr(errdata);
+		kryo2xx_silver_parse_cpumerrsr(errdata);
+		kryo2xx_silver_parse_l2merrsr(errdata);
 	break;
 
 	case ARM_CPU_PART_CORTEX_A72:
@@ -688,7 +702,6 @@ static irqreturn_t arm64_cci_handler(int irq, void *drvdata)
 
 	return IRQ_HANDLED;
 }
-
 #ifndef CONFIG_EDAC_CORTEX_ARM64_DBE_IRQ_ONLY
 static void arm64_sbe_handler(struct perf_event *event,
 			      struct perf_sample_data *data,
@@ -701,7 +714,6 @@ static void arm64_sbe_handler(struct perf_event *event,
 	errdata.err = SBE;
 	edac_printk(KERN_CRIT, EDAC_CPU, "ARM64 CPU ERP: Single-bit error interrupt received on CPU %d!\n",
 					cpu);
-	WARN_ON(!panic_on_ce);
 	arm64_erp_local_handler(&errdata);
 }
 #endif
@@ -749,8 +761,8 @@ static void check_sbe_event(struct erp_drvdata *drv)
 	switch (partnum) {
 	case ARM_CPU_PART_CORTEX_A53:
 	case ARM_CPU_PART_KRYO2XX_SILVER:
-		ca53_parse_cpumerrsr(&errdata);
-		ca53_parse_l2merrsr(&errdata);
+		kryo2xx_silver_parse_cpumerrsr(&errdata);
+		kryo2xx_silver_parse_l2merrsr(&errdata);
 	break;
 
 	case ARM_CPU_PART_CORTEX_A72:

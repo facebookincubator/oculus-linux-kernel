@@ -439,7 +439,7 @@ static int au1550nd_probe(struct platform_device *pdev)
 
 	this = &ctx->chip;
 	ctx->info.priv = this;
-	ctx->info.owner = THIS_MODULE;
+	ctx->info.dev.parent = &pdev->dev;
 
 	/* figure out which CS# r->start belongs to */
 	cs = find_nand_cs(r->start);
@@ -503,7 +503,6 @@ static int au1550nd_remove(struct platform_device *pdev)
 static struct platform_driver au1550nd_driver = {
 	.driver = {
 		.name	= "au1550-nand",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= au1550nd_probe,
 	.remove		= au1550nd_remove,

@@ -903,7 +903,7 @@ struct qib_devdata {
 	/* PCI Device ID (here for NodeInfo) */
 	u16 deviceid;
 	/* for write combining settings */
-	unsigned long wc_cookie;
+	int wc_cookie;
 	unsigned long wc_base;
 	unsigned long wc_len;
 
@@ -1136,7 +1136,6 @@ extern struct qib_devdata *qib_lookup(int unit);
 extern u32 qib_cpulist_count;
 extern unsigned long *qib_cpulist;
 
-extern unsigned qib_wc_pat;
 extern unsigned qib_cc_table_size;
 int qib_init(struct qib_devdata *, int);
 int init_chip_wc_pat(struct qib_devdata *dd, u32);
@@ -1460,11 +1459,14 @@ const char *qib_get_unit_name(int unit);
  * Flush write combining store buffers (if present) and perform a write
  * barrier.
  */
+static inline void qib_flush_wc(void)
+{
 #if defined(CONFIG_X86_64)
-#define qib_flush_wc() asm volatile("sfence" : : : "memory")
+	asm volatile("sfence" : : : "memory");
 #else
-#define qib_flush_wc() wmb() /* no reorder around wc flush */
+	wmb(); /* no reorder around wc flush */
 #endif
+}
 
 /* global module parameter variables */
 extern unsigned qib_ibmtu;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,7 +24,7 @@
 #include <linux/of.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/v4l2-mem2mem.h>
 
 #include "sde_rotator_base.h"
@@ -52,188 +52,6 @@
 #define SDE_ROTATOR_DEGREE_270		270
 #define SDE_ROTATOR_DEGREE_180		180
 #define SDE_ROTATOR_DEGREE_90		90
-/*
- * Format description/mapping
- * @pixelformat: external format defined in msm_sde_rotator header.
- *
- * Note RGBA/8888 naming convention follows internal convention and
- * is reverse of standard V4L2 convention.  Description containing
- * prefix 'SDE/' refers to SDE specific conventions and/or features.
- */
-static const struct v4l2_fmtdesc fmtdesc[] = {
-	{
-		.description = "SDE/XRGB_8888",
-		.pixelformat = SDE_PIX_FMT_XRGB_8888,
-	},
-	{
-		.description = "SDE/ARGB_8888",
-		.pixelformat = SDE_PIX_FMT_ARGB_8888,
-	},
-	{
-		.description = "SDE/ABGR_8888",
-		.pixelformat = SDE_PIX_FMT_ABGR_8888,
-	},
-	{
-		.description = "SDE/RGBA_8888",
-		.pixelformat = SDE_PIX_FMT_RGBA_8888,
-	},
-	{
-		.description = "SDE/BGRA_8888",
-		.pixelformat = SDE_PIX_FMT_BGRA_8888,
-	},
-	{
-		.description = "SDE/RGBX_8888",
-		.pixelformat = SDE_PIX_FMT_RGBX_8888,
-	},
-	{
-		.description = "SDE/BGRX_8888",
-		.pixelformat = SDE_PIX_FMT_BGRX_8888,
-	},
-	{
-		.description = "RGBA_5551",
-		.pixelformat = SDE_PIX_FMT_RGBA_5551,
-	},
-	{
-		.description = "ARGB_4444",
-		.pixelformat = SDE_PIX_FMT_ARGB_4444,
-	},
-	{
-		.description = "RGBA_4444",
-		.pixelformat = SDE_PIX_FMT_RGBA_4444,
-	},
-	{
-		.description = "RGB_888",
-		.pixelformat = SDE_PIX_FMT_RGB_888,
-	},
-	{
-		.description = "BGR_888",
-		.pixelformat = SDE_PIX_FMT_BGR_888,
-	},
-	{
-		.description = "RGB_565",
-		.pixelformat = SDE_PIX_FMT_RGB_565,
-	},
-	{
-		.description = "BGR_565",
-		.pixelformat = SDE_PIX_FMT_BGR_565,
-	},
-	{
-		.description = "Y_CB_CR_H2V2",
-		.pixelformat = SDE_PIX_FMT_Y_CB_CR_H2V2,
-	},
-	{
-		.description = "Y_CR_CB_H2V2",
-		.pixelformat = SDE_PIX_FMT_Y_CR_CB_H2V2,
-	},
-	{
-		.description = "SDE/Y_CR_CB_GH2V2",
-		.pixelformat = SDE_PIX_FMT_Y_CR_CB_GH2V2,
-	},
-	{
-		.description = "Y_CBCR_H2V2",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2,
-	},
-	{
-		.description = "Y_CRCB_H2V2",
-		.pixelformat = SDE_PIX_FMT_Y_CRCB_H2V2,
-	},
-	{
-		.description = "Y_CBCR_H1V2",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H1V2,
-	},
-	{
-		.description = "Y_CRCB_H1V2",
-		.pixelformat = SDE_PIX_FMT_Y_CRCB_H1V2,
-	},
-	{
-		.description = "Y_CBCR_H2V1",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V1,
-	},
-	{
-		.description = "Y_CRCB_H2V1",
-		.pixelformat = SDE_PIX_FMT_Y_CRCB_H2V1,
-	},
-	{
-		.description = "YCBYCR_H2V1",
-		.pixelformat = SDE_PIX_FMT_YCBYCR_H2V1,
-	},
-	{
-		.description = "SDE/Y_CBCR_H2V2_VENUS",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2_VENUS,
-	},
-	{
-		.description = "SDE/Y_CRCB_H2V2_VENUS",
-		.pixelformat = SDE_PIX_FMT_Y_CRCB_H2V2_VENUS,
-	},
-	{
-		.description = "SDE/RGBA_8888_UBWC",
-		.pixelformat = SDE_PIX_FMT_RGBA_8888_UBWC,
-	},
-	{
-		.description = "SDE/RGBX_8888_UBWC",
-		.pixelformat = SDE_PIX_FMT_RGBX_8888_UBWC,
-	},
-	{
-		.description = "SDE/RGB_565_UBWC",
-		.pixelformat = SDE_PIX_FMT_RGB_565_UBWC,
-	},
-	{
-		.description = "SDE/Y_CBCR_H2V2_UBWC",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2_UBWC,
-	},
-	{
-		.description = "SDE/RGBA_1010102",
-		.pixelformat = SDE_PIX_FMT_RGBA_1010102,
-	},
-	{
-		.description = "SDE/RGBX_1010102",
-		.pixelformat = SDE_PIX_FMT_RGBX_1010102,
-	},
-	{
-		.description = "SDE/ARGB_2101010",
-		.pixelformat = SDE_PIX_FMT_ARGB_2101010,
-	},
-	{
-		.description = "SDE/XRGB_2101010",
-		.pixelformat = SDE_PIX_FMT_XRGB_2101010,
-	},
-	{
-		.description = "SDE/BGRA_1010102",
-		.pixelformat = SDE_PIX_FMT_BGRA_1010102,
-	},
-	{
-		.description = "SDE/BGRX_1010102",
-		.pixelformat = SDE_PIX_FMT_BGRX_1010102,
-	},
-	{
-		.description = "SDE/ABGR_2101010",
-		.pixelformat = SDE_PIX_FMT_ABGR_2101010,
-	},
-	{
-		.description = "SDE/XBGR_2101010",
-		.pixelformat = SDE_PIX_FMT_XBGR_2101010,
-	},
-	{
-		.description = "SDE/RGBA_1010102_UBWC",
-		.pixelformat = SDE_PIX_FMT_RGBA_1010102_UBWC,
-	},
-	{
-		.description = "SDE/RGBX_1010102_UBWC",
-		.pixelformat = SDE_PIX_FMT_RGBX_1010102_UBWC,
-	},
-	{
-		.description = "SDE/Y_CBCR_H2V2_P010",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2_P010,
-	},
-	{
-		.description = "SDE/Y_CBCR_H2V2_TP10",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2_TP10,
-	},
-	{
-		.description = "SDE/Y_CBCR_H2V2_TP10_UBWC",
-		.pixelformat = SDE_PIX_FMT_Y_CBCR_H2V2_TP10_UBWC,
-	},
-};
 
 static void sde_rotator_submit_handler(struct work_struct *work);
 static void sde_rotator_retire_handler(struct work_struct *work);
@@ -250,26 +68,6 @@ static inline struct sde_rotator_ctx *sde_rotator_ctx_from_fh(
 		struct v4l2_fh *fh)
 {
 	return container_of(fh, struct sde_rotator_ctx, fh);
-}
-
-/*
- * sde_rotator_get_format_idx - Get rotator format lookup index.
- * @ctx: Pointer to rotator ctx.
- * @f: v4l2 format.
- */
-static int sde_rotator_get_format_idx(struct sde_rotator_ctx *ctx,
-	struct v4l2_format *f)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(fmtdesc); i++)
-		if (fmtdesc[i].pixelformat == f->fmt.pix.pixelformat)
-			break;
-
-	if (i == ARRAY_SIZE(fmtdesc))
-		return -EINVAL;
-
-	return i;
 }
 
 /*
@@ -292,6 +90,8 @@ static uint32_t sde_rotator_get_flags_from_ctx(struct sde_rotator_ctx *ctx)
 		ret_flags ^= SDE_ROTATION_FLIP_UD;
 	if (ctx->secure)
 		ret_flags |= SDE_ROTATION_SECURE;
+	if (ctx->secure_camera)
+		ret_flags |= SDE_ROTATION_SECURE_CAMERA;
 	if (ctx->format_out.fmt.pix.field == V4L2_FIELD_INTERLACED &&
 			ctx->format_cap.fmt.pix.field == V4L2_FIELD_NONE)
 		ret_flags |= SDE_ROTATION_DEINTERLACE;
@@ -323,6 +123,25 @@ static void sde_rotator_get_config_from_ctx(struct sde_rotator_ctx *ctx,
 	config->output.format = ctx->format_cap.fmt.pix.pixelformat;
 	config->output.comp_ratio.numer = 1;
 	config->output.comp_ratio.denom = 1;
+
+	/*
+	 * Use compression ratio of the first buffer to estimate
+	 * performance requirement of the session. If core layer does
+	 * not support dynamic per buffer compression ratio recalculation,
+	 * this configuration will determine the overall static compression
+	 * ratio of the session.
+	 */
+	if (ctx->vbinfo_out)
+		config->input.comp_ratio = ctx->vbinfo_out[0].comp_ratio;
+	if (ctx->vbinfo_cap)
+		config->output.comp_ratio = ctx->vbinfo_cap[0].comp_ratio;
+
+	SDEDEV_DBG(ctx->rot_dev->dev, "config s:%d out_cr:%u/%u cap_cr:%u/%u\n",
+			ctx->session_id,
+			config->input.comp_ratio.numer,
+			config->input.comp_ratio.denom,
+			config->output.comp_ratio.numer,
+			config->output.comp_ratio.denom);
 }
 
 /*
@@ -338,7 +157,7 @@ static void sde_rotator_get_item_from_ctx(struct sde_rotator_ctx *ctx,
 	item->session_id = ctx->session_id;
 	item->sequence_id = 0;
 	/* assign high/low priority */
-	item->wb_idx = (ctx->priority >= V4L2_PRIORITY_DEFAULT) ? 0 : 1;
+	item->wb_idx = (ctx->fh.prio >= V4L2_PRIORITY_DEFAULT) ? 0 : 1;
 	item->src_rect.x = ctx->crop_out.left;
 	item->src_rect.y = ctx->crop_out.top;
 	item->src_rect.w = ctx->crop_out.width;
@@ -430,18 +249,19 @@ static int sde_rotator_validate_item(struct sde_rotator_ctx *ctx,
 /*
  * sde_rotator_queue_setup - vb2_ops queue_setup callback.
  * @q: Pointer to vb2 queue struct.
- * @fmt: Pointer to v4l2 format struct (NULL is valid argument).
+ * @parg: Pointer to v4l2 format struct (NULL is valid argument).
  * @num_buffers: Pointer of number of buffers requested.
  * @num_planes: Pointer to number of planes requested.
  * @sizes: Array containing sizes of planes.
  * @alloc_ctxs: Array of allocated contexts for each plane.
  */
 static int sde_rotator_queue_setup(struct vb2_queue *q,
-	const struct v4l2_format *fmt,
+	const void *parg,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], void *alloc_ctxs[])
 {
 	struct sde_rotator_ctx *ctx = vb2_get_drv_priv(q);
+	const struct v4l2_format *fmt = parg;
 	int i;
 
 	if (!num_buffers)
@@ -473,8 +293,11 @@ static int sde_rotator_queue_setup(struct vb2_queue *q,
 					ctx->nbuf_out, GFP_KERNEL);
 		if (!ctx->vbinfo_out)
 			return -ENOMEM;
-		for (i = 0; i < ctx->nbuf_out; i++)
+		for (i = 0; i < ctx->nbuf_out; i++) {
 			ctx->vbinfo_out[i].fd = -1;
+			ctx->vbinfo_out[i].comp_ratio.numer = 1;
+			ctx->vbinfo_out[i].comp_ratio.denom = 1;
+		}
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
 		ctx->nbuf_cap = *num_buffers;
@@ -483,8 +306,11 @@ static int sde_rotator_queue_setup(struct vb2_queue *q,
 					ctx->nbuf_cap, GFP_KERNEL);
 		if (!ctx->vbinfo_cap)
 			return -ENOMEM;
-		for (i = 0; i < ctx->nbuf_cap; i++)
+		for (i = 0; i < ctx->nbuf_cap; i++) {
 			ctx->vbinfo_cap[i].fd = -1;
+			ctx->vbinfo_cap[i].comp_ratio.numer = 1;
+			ctx->vbinfo_cap[i].comp_ratio.denom = 1;
+		}
 		break;
 	default:
 		return -EINVAL;
@@ -500,8 +326,42 @@ static int sde_rotator_queue_setup(struct vb2_queue *q,
 static void sde_rotator_buf_queue(struct vb2_buffer *vb)
 {
 	struct sde_rotator_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 
-	v4l2_m2m_buf_queue(ctx->m2m_ctx, vb);
+	v4l2_m2m_buf_queue(ctx->fh.m2m_ctx, vbuf);
+}
+
+/*
+ * sde_rotator_buf_finish - vb2_ops buf_finish to finalize buffer before going
+ *				back to user space
+ * @vb: Pointer to vb2 buffer struct.
+ */
+static void sde_rotator_buf_finish(struct vb2_buffer *vb)
+{
+	struct sde_rotator_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
+	int i;
+
+	SDEDEV_DBG(ctx->rot_dev->dev,
+			"buf_finish t:%d i:%d s:%d m:%u np:%d up:%lu\n",
+			vb->type, vb->index, vb->state,
+			vb->vb2_queue->memory,
+			vb->num_planes,
+			vb->planes[0].m.userptr);
+
+	if (vb->vb2_queue->memory != VB2_MEMORY_USERPTR)
+		return;
+
+	/*
+	 * We use userptr to tunnel fd, and fd can be the same across qbuf
+	 * even though the underlying buffer is different.  Since vb2 layer
+	 * optimizes memory mapping for userptr by first checking if userptr
+	 * has changed, it will not trigger put_userptr if fd value does
+	 * not change.  In order to force buffer release, we need to clear
+	 * userptr when the current buffer is done and ready to go back to
+	 * user mode. Since 0 is a valid fd, reset userptr to -1 instead.
+	 */
+	for (i = 0; i < vb->num_planes; i++)
+		vb->planes[i].m.userptr = ~0;
 }
 
 /*
@@ -523,23 +383,23 @@ static void sde_rotator_return_all_buffers(struct vb2_queue *q,
 
 	/* return buffers according videobuffer2-core.h */
 	if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-		struct vb2_buffer *buf;
+		struct vb2_v4l2_buffer *buf;
 
-		while ((buf = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx))) {
+		while ((buf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx))) {
 			SDEDEV_DBG(rot_dev->dev,
 					"return vb t:%d i:%d\n",
-					buf->v4l2_buf.type,
-					buf->v4l2_buf.index);
+					buf->vb2_buf.type,
+					buf->vb2_buf.index);
 			v4l2_m2m_buf_done(buf, state);
 		}
 	} else if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-		struct vb2_buffer *buf;
+		struct vb2_v4l2_buffer *buf;
 
-		while ((buf = v4l2_m2m_src_buf_remove(ctx->m2m_ctx))) {
+		while ((buf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx))) {
 			SDEDEV_DBG(rot_dev->dev,
 					"return vb t:%d i:%d\n",
-					buf->v4l2_buf.type,
-					buf->v4l2_buf.index);
+					buf->vb2_buf.type,
+					buf->vb2_buf.index);
 			v4l2_m2m_buf_done(buf, state);
 		}
 	} else {
@@ -556,22 +416,9 @@ static int sde_rotator_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct sde_rotator_ctx *ctx = vb2_get_drv_priv(q);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
-	struct sde_rotation_config config;
-	int ret;
 
 	SDEDEV_DBG(rot_dev->dev, "start streaming s:%d t:%d\n",
 			ctx->session_id, q->type);
-
-	sde_rot_mgr_lock(rot_dev->mgr);
-	sde_rotator_get_config_from_ctx(ctx, &config);
-	ret = sde_rotator_session_config(rot_dev->mgr, ctx->private, &config);
-	sde_rot_mgr_unlock(rot_dev->mgr);
-	if (ret < 0) {
-		SDEDEV_ERR(rot_dev->dev,
-			"fail config in stream on s:%d t:%d r:%d\n",
-			ctx->session_id, q->type, ret);
-		return -EINVAL;
-	}
 
 	if (!IS_ERR_OR_NULL(ctx->request) ||
 				atomic_read(&ctx->command_pending))
@@ -610,11 +457,19 @@ static void sde_rotator_stop_streaming(struct vb2_queue *q)
 			(atomic_read(&ctx->command_pending) == 0),
 			msecs_to_jiffies(rot_dev->streamoff_timeout));
 	mutex_lock(q->lock);
-	if (!ret)
+	if (!ret) {
 		SDEDEV_ERR(rot_dev->dev,
 				"timeout to stream off s:%d t:%d p:%d\n",
 				ctx->session_id, q->type,
 				atomic_read(&ctx->command_pending));
+		sde_rot_mgr_lock(rot_dev->mgr);
+		sde_rotator_cancel_all_requests(rot_dev->mgr, ctx->private);
+		sde_rot_mgr_unlock(rot_dev->mgr);
+		mutex_unlock(q->lock);
+		cancel_work_sync(&ctx->submit_work);
+		cancel_work_sync(&ctx->retire_work);
+		mutex_lock(q->lock);
+	}
 
 	sde_rotator_return_all_buffers(q, VB2_BUF_STATE_ERROR);
 
@@ -625,7 +480,7 @@ static void sde_rotator_stop_streaming(struct vb2_queue *q)
 			struct sde_rotator_vbinfo *vbinfo =
 					&ctx->vbinfo_cap[i];
 
-			if (vbinfo->fence && vbinfo->fd < 0) {
+			if (vbinfo->fence) {
 				/* fence is not used */
 				SDEDEV_DBG(rot_dev->dev,
 						"put fence s:%d t:%d i:%d\n",
@@ -660,6 +515,7 @@ static struct vb2_ops sde_rotator_vb2_q_ops = {
 	.stop_streaming  = sde_rotator_stop_streaming,
 	.wait_prepare	 = vb2_ops_wait_prepare,
 	.wait_finish	 = vb2_ops_wait_finish,
+	.buf_finish      = sde_rotator_buf_finish,
 };
 
 /*
@@ -667,36 +523,56 @@ static struct vb2_ops sde_rotator_vb2_q_ops = {
  * @alloc_ctx: Contexts allocated in buf_setup.
  * @vaddr: Virtual addr passed from userpsace (in our case ion fd)
  * @size: Size of the buffer
- * @write: True if buffer will be used for writing the data.
+ * @dma_dir: DMA data direction of the given buffer.
  */
 static void *sde_rotator_get_userptr(void *alloc_ctx,
-	unsigned long vaddr, unsigned long size, int write)
+	unsigned long vaddr, unsigned long size,
+	enum dma_data_direction dma_dir)
 {
 	struct sde_rotator_ctx *ctx = alloc_ctx;
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
 	struct sde_rotator_buf_handle *buf;
+	struct ion_client *iclient = rot_dev->mdata->iclient;
 
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
 		return ERR_PTR(-ENOMEM);
 
 	buf->fd = vaddr;
-	buf->secure = ctx->secure;
+	buf->secure = ctx->secure || ctx->secure_camera;
 	buf->ctx = ctx;
 	buf->rot_dev = rot_dev;
-	buf->buffer = dma_buf_get(buf->fd);
-
-	if (IS_ERR_OR_NULL(buf->buffer)) {
-		SDEDEV_ERR(rot_dev->dev, "fail get dmabuf fd:%d r:%ld\n",
+	if (ctx->secure_camera) {
+		buf->buffer = NULL;
+		buf->handle = ion_import_dma_buf(iclient,
+				buf->fd);
+		if (IS_ERR_OR_NULL(buf->handle)) {
+			SDEDEV_ERR(rot_dev->dev,
+				"fail get ion_handler fd:%d r:%ld\n",
 				buf->fd, PTR_ERR(buf->buffer));
-		goto error_dma_buf_get;
+			goto error_buf_get;
+		}
+		SDEDEV_DBG(rot_dev->dev,
+				"get ion_handle s:%d fd:%d buf:%pad\n",
+				buf->ctx->session_id,
+				buf->fd, &buf->handle);
+	} else {
+		buf->handle = NULL;
+		buf->buffer = dma_buf_get(buf->fd);
+		if (IS_ERR_OR_NULL(buf->buffer)) {
+			SDEDEV_ERR(rot_dev->dev,
+				"fail get dmabuf fd:%d r:%ld\n",
+				buf->fd, PTR_ERR(buf->buffer));
+			goto error_buf_get;
+		}
+		SDEDEV_DBG(rot_dev->dev,
+				"get dmabuf s:%d fd:%d buf:%pad\n",
+				buf->ctx->session_id,
+				buf->fd, &buf->buffer);
 	}
 
-	SDEDEV_DBG(rot_dev->dev, "get dmabuf s:%d fd:%d buf:%pad\n",
-			buf->ctx->session_id,
-			buf->fd, &buf->buffer);
 	return buf;
-error_dma_buf_get:
+error_buf_get:
 	kfree(buf);
 	return ERR_PTR(-ENOMEM);
 }
@@ -708,6 +584,8 @@ error_dma_buf_get:
 static void sde_rotator_put_userptr(void *buf_priv)
 {
 	struct sde_rotator_buf_handle *buf = buf_priv;
+	struct ion_client *iclient;
+	struct sde_rotator_device *rot_dev;
 
 	if (IS_ERR_OR_NULL(buf))
 		return;
@@ -718,6 +596,9 @@ static void sde_rotator_put_userptr(void *buf_priv)
 		return;
 	}
 
+	rot_dev = buf->ctx->rot_dev;
+	iclient = buf->rot_dev->mdata->iclient;
+
 	SDEDEV_DBG(buf->rot_dev->dev, "put dmabuf s:%d fd:%d buf:%pad\n",
 			buf->ctx->session_id,
 			buf->fd, &buf->buffer);
@@ -725,6 +606,11 @@ static void sde_rotator_put_userptr(void *buf_priv)
 	if (buf->buffer) {
 		dma_buf_put(buf->buffer);
 		buf->buffer = NULL;
+	}
+
+	if (buf->handle) {
+		ion_free(iclient, buf->handle);
+		buf->handle = NULL;
 	}
 
 	kfree(buf_priv);
@@ -745,22 +631,8 @@ static struct vb2_mem_ops sde_rotator_vb2_mem_ops = {
 static int sde_rotator_s_ctx_ctrl(struct sde_rotator_ctx *ctx,
 		s32 *ctx_ctrl, struct v4l2_ctrl *ctrl)
 {
-	struct sde_rotator_device *rot_dev = ctx->rot_dev;
-	struct sde_rotation_config config;
-	s32 prev_val;
-	int ret;
-
-	prev_val = *ctx_ctrl;
 	*ctx_ctrl = ctrl->val;
-	sde_rotator_get_config_from_ctx(ctx, &config);
-	ret = sde_rotator_session_config(rot_dev->mgr, ctx->private, &config);
-	if (ret) {
-		SDEDEV_WARN(rot_dev->dev, "fail %s:%d s:%d\n",
-				ctrl->name, ctrl->val, ctx->session_id);
-		*ctx_ctrl = prev_val;
-	}
-
-	return ret;
+	return 0;
 }
 
 /*
@@ -797,6 +669,9 @@ static int sde_rotator_s_ctrl(struct v4l2_ctrl *ctrl)
 		ret = sde_rotator_s_ctx_ctrl(ctx, &ctx->secure, ctrl);
 		break;
 
+	case V4L2_CID_SDE_ROTATOR_SECURE_CAMERA:
+		ret = sde_rotator_s_ctx_ctrl(ctx, &ctx->secure_camera, ctrl);
+		break;
 	default:
 		v4l2_warn(&rot_dev->v4l2_dev, "invalid control %d\n", ctrl->id);
 		ret = -EINVAL;
@@ -827,6 +702,17 @@ static const struct v4l2_ctrl_config sde_rotator_ctrl_secure = {
 	.step = 1,
 };
 
+static const struct v4l2_ctrl_config sde_rotator_ctrl_secure_camera = {
+	.ops = &sde_rotator_ctrl_ops,
+	.id = V4L2_CID_SDE_ROTATOR_SECURE_CAMERA,
+	.name = "Secure Camera content",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.def = 0,
+	.min = 0,
+	.max = 1,
+	.step = 1,
+};
+
 /*
  * sde_rotator_ctx_show - show context state.
  */
@@ -847,7 +733,7 @@ static ssize_t sde_rotator_ctx_show(struct kobject *kobj,
 	SPRINT("rotate=%d\n", ctx->rotate);
 	SPRINT("hflip=%d\n", ctx->hflip);
 	SPRINT("vflip=%d\n", ctx->vflip);
-	SPRINT("priority=%d\n", ctx->priority);
+	SPRINT("priority=%d\n", ctx->fh.prio);
 	SPRINT("secure=%d\n", ctx->secure);
 	SPRINT("timeperframe=%u %u\n", ctx->timeperframe.numerator,
 			ctx->timeperframe.denominator);
@@ -1021,7 +907,6 @@ static int sde_rotator_open(struct file *file)
 	ctx->hflip = 0;
 	ctx->vflip = 0;
 	ctx->rotate = 0;
-	ctx->priority = V4L2_PRIORITY_DEFAULT;
 	ctx->secure = 0;
 	atomic_set(&ctx->command_pending, 0);
 	ctx->abort_pending = 0;
@@ -1045,10 +930,10 @@ static int sde_rotator_open(struct file *file)
 	file->private_data = &ctx->fh;
 	v4l2_fh_add(&ctx->fh);
 
-	ctx->m2m_ctx = v4l2_m2m_ctx_init(rot_dev->m2m_dev,
+	ctx->fh.m2m_ctx = v4l2_m2m_ctx_init(rot_dev->m2m_dev,
 		ctx, sde_rotator_queue_init);
-	if (IS_ERR_OR_NULL(ctx->m2m_ctx)) {
-		ret = PTR_ERR(ctx->m2m_ctx);
+	if (IS_ERR_OR_NULL(ctx->fh.m2m_ctx)) {
+		ret = PTR_ERR(ctx->fh.m2m_ctx);
 		goto error_m2m_init;
 	}
 
@@ -1104,6 +989,8 @@ static int sde_rotator_open(struct file *file)
 			&sde_rotator_ctrl_ops, V4L2_CID_ROTATE, 0, 270, 90, 0);
 	v4l2_ctrl_new_custom(ctrl_handler,
 			&sde_rotator_ctrl_secure, NULL);
+	v4l2_ctrl_new_custom(ctrl_handler,
+			&sde_rotator_ctrl_secure_camera, NULL);
 	if (ctrl_handler->error) {
 		ret = ctrl_handler->error;
 		v4l2_ctrl_handler_free(ctrl_handler);
@@ -1155,8 +1042,8 @@ static int sde_rotator_release(struct file *file)
 	mutex_lock(&rot_dev->lock);
 	v4l2_ctrl_handler_free(&ctx->ctrl_handler);
 	SDEDEV_DBG(rot_dev->dev, "release streams s:%d\n", session_id);
-	v4l2_m2m_streamoff(file, ctx->m2m_ctx, V4L2_BUF_TYPE_VIDEO_OUTPUT);
-	v4l2_m2m_streamoff(file, ctx->m2m_ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE);
+	v4l2_m2m_streamoff(file, ctx->fh.m2m_ctx, V4L2_BUF_TYPE_VIDEO_OUTPUT);
+	v4l2_m2m_streamoff(file, ctx->fh.m2m_ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 	mutex_unlock(&rot_dev->lock);
 	SDEDEV_DBG(rot_dev->dev, "release submit work s:%d w:%x\n",
 			session_id, work_busy(&ctx->submit_work));
@@ -1174,7 +1061,7 @@ static int sde_rotator_release(struct file *file)
 	destroy_workqueue(ctx->work_queue.rot_work_queue);
 	sysfs_remove_group(&ctx->kobj, &sde_rotator_fs_attr_group);
 	kobject_put(&ctx->kobj);
-	v4l2_m2m_ctx_release(ctx->m2m_ctx);
+	v4l2_m2m_ctx_release(ctx->fh.m2m_ctx);
 	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
 	kfree(ctx->vbinfo_out);
@@ -1199,7 +1086,7 @@ static unsigned int sde_rotator_poll(struct file *file,
 	int ret;
 
 	mutex_lock(&rot_dev->lock);
-	ret = v4l2_m2m_poll(file, ctx->m2m_ctx, wait);
+	ret = v4l2_m2m_poll(file, ctx->fh.m2m_ctx, wait);
 	mutex_unlock(&rot_dev->lock);
 	return ret;
 }
@@ -1228,8 +1115,9 @@ static int sde_rotator_querycap(struct file *file,
 	cap->bus_info[0] = 0;
 	strlcpy(cap->driver, SDE_ROTATOR_DRV_NAME, sizeof(cap->driver));
 	strlcpy(cap->card, SDE_ROTATOR_DRV_NAME, sizeof(cap->card));
-	cap->capabilities = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M |
-		V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_CAPTURE;
+	cap->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M |
+			V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_CAPTURE;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 
 	return 0;
 }
@@ -1243,12 +1131,21 @@ static int sde_rotator_querycap(struct file *file,
 static int sde_rotator_enum_fmt_vid_cap(struct file *file,
 	void *fh, struct v4l2_fmtdesc *f)
 {
-	if (f->index >= ARRAY_SIZE(fmtdesc))
+	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
+	struct sde_rotator_device *rot_dev = ctx->rot_dev;
+	struct sde_mdp_format_params *fmt;
+	u32 pixfmt;
+
+	pixfmt = sde_rotator_get_pixfmt(rot_dev->mgr, f->index, false);
+	if (!pixfmt)
 		return -EINVAL;
 
-	f->pixelformat = fmtdesc[f->index].pixelformat;
-	strlcpy(f->description, fmtdesc[f->index].description,
-		sizeof(f->description));
+	fmt = sde_get_format_params(pixfmt);
+	if (!fmt)
+		return -EINVAL;
+
+	f->pixelformat = pixfmt;
+	strlcpy(f->description, fmt->description, sizeof(f->description));
 
 	return 0;
 }
@@ -1262,12 +1159,21 @@ static int sde_rotator_enum_fmt_vid_cap(struct file *file,
 static int sde_rotator_enum_fmt_vid_out(struct file *file,
 	void *fh, struct v4l2_fmtdesc *f)
 {
-	if (f->index >= ARRAY_SIZE(fmtdesc))
+	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
+	struct sde_rotator_device *rot_dev = ctx->rot_dev;
+	struct sde_mdp_format_params *fmt;
+	u32 pixfmt;
+
+	pixfmt = sde_rotator_get_pixfmt(rot_dev->mgr, f->index, true);
+	if (!pixfmt)
 		return -EINVAL;
 
-	f->pixelformat = fmtdesc[f->index].pixelformat;
-	strlcpy(f->description, fmtdesc[f->index].description,
-		sizeof(f->description));
+	fmt = sde_get_format_params(pixfmt);
+	if (!fmt)
+		return -EINVAL;
+
+	f->pixelformat = pixfmt;
+	strlcpy(f->description, fmt->description, sizeof(f->description));
 
 	return 0;
 }
@@ -1316,19 +1222,22 @@ static int sde_rotator_try_fmt_vid_cap(struct file *file,
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
 	struct sde_rotation_config config;
-	int fmt_idx;
 	int ret;
 
-	fmt_idx = sde_rotator_get_format_idx(ctx, f);
-	if (fmt_idx < 0)
+	if ((f->fmt.pix.width == 0) || (f->fmt.pix.height == 0)) {
+		SDEDEV_WARN(ctx->rot_dev->dev,
+				"Not supporting 0 width/height: %dx%d\n",
+				f->fmt.pix.width, f->fmt.pix.height);
 		return -EINVAL;
+	}
 
 	sde_rot_mgr_lock(rot_dev->mgr);
 	sde_rotator_get_config_from_ctx(ctx, &config);
 	config.output.format = f->fmt.pix.pixelformat;
 	config.output.width = f->fmt.pix.width;
 	config.output.height = f->fmt.pix.height;
-	ret = sde_rotator_verify_config(rot_dev->mgr, &config);
+	config.flags |= SDE_ROTATION_VERIFY_INPUT_ONLY;
+	ret = sde_rotator_verify_config_output(rot_dev->mgr, &config);
 	sde_rot_mgr_unlock(rot_dev->mgr);
 	if (ret) {
 		if ((config.output.width == f->fmt.pix.width) &&
@@ -1345,7 +1254,7 @@ static int sde_rotator_try_fmt_vid_cap(struct file *file,
 	}
 
 	sde_rotator_format_recalc(f);
-	return 0;
+	return ret;
 }
 
 /*
@@ -1360,12 +1269,14 @@ static int sde_rotator_try_fmt_vid_out(struct file *file,
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
 	struct sde_rotation_config config;
-	int fmt_idx;
 	int ret;
 
-	fmt_idx = sde_rotator_get_format_idx(ctx, f);
-	if (fmt_idx < 0)
+	if ((f->fmt.pix.width == 0) || (f->fmt.pix.height == 0)) {
+		SDEDEV_WARN(ctx->rot_dev->dev,
+				"Not supporting 0 width/height: %dx%d\n",
+				f->fmt.pix.width, f->fmt.pix.height);
 		return -EINVAL;
+	}
 
 	sde_rot_mgr_lock(rot_dev->mgr);
 	sde_rotator_get_config_from_ctx(ctx, &config);
@@ -1373,7 +1284,7 @@ static int sde_rotator_try_fmt_vid_out(struct file *file,
 	config.input.width = f->fmt.pix.width;
 	config.input.height = f->fmt.pix.height;
 	config.flags |= SDE_ROTATION_VERIFY_INPUT_ONLY;
-	ret = sde_rotator_verify_config(rot_dev->mgr, &config);
+	ret = sde_rotator_verify_config_input(rot_dev->mgr, &config);
 	sde_rot_mgr_unlock(rot_dev->mgr);
 	if (ret) {
 		if ((config.input.width == f->fmt.pix.width) &&
@@ -1390,7 +1301,7 @@ static int sde_rotator_try_fmt_vid_out(struct file *file,
 	}
 
 	sde_rotator_format_recalc(f);
-	return 0;
+	return ret;
 }
 
 /*
@@ -1404,7 +1315,6 @@ static int sde_rotator_s_fmt_vid_cap(struct file *file,
 {
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
-	struct sde_rotation_config config;
 	int ret;
 
 	ret = sde_rotator_try_fmt_vid_cap(file, fh, f);
@@ -1425,12 +1335,6 @@ static int sde_rotator_s_fmt_vid_cap(struct file *file,
 		f->fmt.pix.pixelformat,
 		f->fmt.pix.field,
 		f->fmt.pix.width, f->fmt.pix.height);
-
-	/* configure hal to current input/output setting */
-	sde_rot_mgr_lock(rot_dev->mgr);
-	sde_rotator_get_config_from_ctx(ctx, &config);
-	sde_rotator_session_config(rot_dev->mgr, ctx->private, &config);
-	sde_rot_mgr_unlock(rot_dev->mgr);
 
 	return 0;
 }
@@ -1481,7 +1385,7 @@ static int sde_rotator_reqbufs(struct file *file,
 {
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 
-	return v4l2_m2m_reqbufs(file, ctx->m2m_ctx, req);
+	return v4l2_m2m_reqbufs(file, ctx->fh.m2m_ctx, req);
 }
 
 /*
@@ -1521,7 +1425,7 @@ static int sde_rotator_qbuf(struct file *file, void *fh,
 		ctx->vbinfo_out[idx].dqbuf_ts = NULL;
 	}
 
-	ret = v4l2_m2m_qbuf(file, ctx->m2m_ctx, buf);
+	ret = v4l2_m2m_qbuf(file, ctx->fh.m2m_ctx, buf);
 	if (ret < 0)
 		SDEDEV_ERR(ctx->rot_dev->dev, "fail qbuf s:%d t:%d r:%d\n",
 				ctx->session_id, buf->type, ret);
@@ -1541,7 +1445,7 @@ static int sde_rotator_dqbuf(struct file *file,
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 	int ret;
 
-	ret = v4l2_m2m_dqbuf(file, ctx->m2m_ctx, buf);
+	ret = v4l2_m2m_dqbuf(file, ctx->fh.m2m_ctx, buf);
 
 	if (ret) {
 		SDEDEV_ERR(ctx->rot_dev->dev,
@@ -1555,7 +1459,7 @@ static int sde_rotator_dqbuf(struct file *file,
 			&& (buf->index < ctx->nbuf_cap)) {
 		int idx = buf->index;
 
-		if (ctx->vbinfo_cap[idx].fence && ctx->vbinfo_cap[idx].fd < 0) {
+		if (ctx->vbinfo_cap[idx].fence) {
 			/* fence is not used */
 			SDEDEV_DBG(ctx->rot_dev->dev, "put fence s:%d i:%d\n",
 					ctx->session_id, idx);
@@ -1592,7 +1496,7 @@ static int sde_rotator_querybuf(struct file *file,
 {
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 
-	return v4l2_m2m_querybuf(file, ctx->m2m_ctx, buf);
+	return v4l2_m2m_querybuf(file, ctx->fh.m2m_ctx, buf);
 }
 
 /*
@@ -1605,12 +1509,41 @@ static int sde_rotator_streamon(struct file *file,
 	void *fh, enum v4l2_buf_type buf_type)
 {
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
+	struct sde_rotator_device *rot_dev = ctx->rot_dev;
+	struct sde_rotation_config config;
+	struct vb2_queue *vq;
 	int ret;
 
 	SDEDEV_DBG(ctx->rot_dev->dev, "stream on s:%d t:%d\n",
 			ctx->session_id, buf_type);
 
-	ret = v4l2_m2m_streamon(file, ctx->m2m_ctx, buf_type);
+	vq = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
+			buf_type == V4L2_BUF_TYPE_VIDEO_OUTPUT ?
+			V4L2_BUF_TYPE_VIDEO_CAPTURE :
+			V4L2_BUF_TYPE_VIDEO_OUTPUT);
+
+	if (!vq) {
+		SDEDEV_ERR(ctx->rot_dev->dev, "fail to get vq on s:%d t:%d\n",
+				ctx->session_id, buf_type);
+		return -EINVAL;
+	}
+
+	if (vb2_is_streaming(vq)) {
+		sde_rot_mgr_lock(rot_dev->mgr);
+		sde_rotator_get_config_from_ctx(ctx, &config);
+		config.flags &= ~SDE_ROTATION_VERIFY_INPUT_ONLY;
+		ret = sde_rotator_session_config(rot_dev->mgr, ctx->private,
+				&config);
+		sde_rot_mgr_unlock(rot_dev->mgr);
+		if (ret < 0) {
+			SDEDEV_ERR(rot_dev->dev,
+				"fail config in stream on s:%d t:%d r:%d\n",
+				ctx->session_id, buf_type, ret);
+			return ret;
+		}
+	}
+
+	ret = v4l2_m2m_streamon(file, ctx->fh.m2m_ctx, buf_type);
 	if (ret < 0)
 		SDEDEV_ERR(ctx->rot_dev->dev, "fail stream on s:%d t:%d\n",
 				ctx->session_id, buf_type);
@@ -1633,7 +1566,7 @@ static int sde_rotator_streamoff(struct file *file,
 	SDEDEV_DBG(ctx->rot_dev->dev, "stream off s:%d t:%d\n",
 			ctx->session_id, buf_type);
 
-	ret = v4l2_m2m_streamoff(file, ctx->m2m_ctx, buf_type);
+	ret = v4l2_m2m_streamoff(file, ctx->fh.m2m_ctx, buf_type);
 	if (ret < 0)
 		SDEDEV_ERR(ctx->rot_dev->dev, "fail stream off s:%d t:%d\n",
 				ctx->session_id, buf_type);
@@ -1715,7 +1648,6 @@ static int sde_rotator_s_crop(struct file *file, void *fh,
 {
 	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
-	struct sde_rotation_config config;
 	struct sde_rotation_item item;
 	struct v4l2_rect rect;
 
@@ -1788,12 +1720,6 @@ static int sde_rotator_s_crop(struct file *file, void *fh,
 		return -EINVAL;
 	}
 
-	/* configure hal to current input/output setting */
-	sde_rot_mgr_lock(rot_dev->mgr);
-	sde_rotator_get_config_from_ctx(ctx, &config);
-	sde_rotator_session_config(rot_dev->mgr, ctx->private, &config);
-	sde_rot_mgr_unlock(rot_dev->mgr);
-
 	return 0;
 }
 
@@ -1845,38 +1771,6 @@ static int sde_rotator_s_parm(struct file *file, void *fh,
 }
 
 /*
- * sde_rotator_g_priority - Get the priority
- * @file: Pointer to file struct.
- * @fh: V4l2 file handle.
- * @p: Pointer to priority enumeration.
- */
-static int sde_rotator_g_priority(struct file *file, void *fh,
-			    enum v4l2_priority *p)
-{
-	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
-
-	if (!p)
-		return -EINVAL;
-	*p = ctx->priority;
-	return 0;
-}
-
-/*
- * sde_rotator_s_priority - Set the priority
- * @file: Pointer to file struct.
- * @fh: V4l2 file handle.
- * @p: Pointer to priority enumeration.
- */
-static int sde_rotator_s_priority(struct file *file, void *fh,
-			    enum v4l2_priority p)
-{
-	struct sde_rotator_ctx *ctx = sde_rotator_ctx_from_fh(fh);
-
-	ctx->priority = p;
-	return 0;
-}
-
-/*
  * sde_rotator_private_ioctl - V4l2 private ioctl handler.
  * @file: Pointer to file struct.
  * @fd: V4l2 device file handle.
@@ -1891,6 +1785,7 @@ static long sde_rotator_private_ioctl(struct file *file, void *fh,
 			sde_rotator_ctx_from_fh(file->private_data);
 	struct sde_rotator_device *rot_dev = ctx->rot_dev;
 	struct msm_sde_rotator_fence *fence = arg;
+	struct msm_sde_rotator_comp_ratio *comp_ratio = arg;
 	struct sde_rotator_vbinfo *vbinfo;
 
 	switch (cmd) {
@@ -1961,6 +1856,7 @@ static long sde_rotator_private_ioctl(struct file *file, void *fh,
 					ctx->session_id);
 				return vbinfo->fd;
 			}
+			vbinfo->fence = NULL;
 		}
 		fence->fd = vbinfo->fd;
 
@@ -1968,6 +1864,52 @@ static long sde_rotator_private_ioctl(struct file *file, void *fh,
 				"VIDIOC_G_SDE_ROTATOR_FENCE s:%d i:%d fd:%d\n",
 				ctx->session_id, fence->index,
 				fence->fd);
+		break;
+	case VIDIOC_S_SDE_ROTATOR_COMP_RATIO:
+		if (!comp_ratio)
+			return -EINVAL;
+		else if (!comp_ratio->numer || !comp_ratio->denom)
+			return -EINVAL;
+		else if (comp_ratio->type == V4L2_BUF_TYPE_VIDEO_OUTPUT &&
+				comp_ratio->index < ctx->nbuf_out)
+			vbinfo = &ctx->vbinfo_out[comp_ratio->index];
+		else if (comp_ratio->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+				comp_ratio->index < ctx->nbuf_cap)
+			vbinfo = &ctx->vbinfo_cap[comp_ratio->index];
+		else
+			return -EINVAL;
+
+		vbinfo->comp_ratio.numer = comp_ratio->numer;
+		vbinfo->comp_ratio.denom = comp_ratio->denom;
+
+		SDEDEV_DBG(rot_dev->dev,
+				"VIDIOC_S_SDE_ROTATOR_COMP_RATIO s:%d i:%d t:%d cr:%u/%u\n",
+				ctx->session_id, comp_ratio->index,
+				comp_ratio->type,
+				vbinfo->comp_ratio.numer,
+				vbinfo->comp_ratio.denom);
+		break;
+	case VIDIOC_G_SDE_ROTATOR_COMP_RATIO:
+		if (!comp_ratio)
+			return -EINVAL;
+		else if (comp_ratio->type == V4L2_BUF_TYPE_VIDEO_OUTPUT &&
+				comp_ratio->index < ctx->nbuf_out)
+			vbinfo = &ctx->vbinfo_out[comp_ratio->index];
+		else if (comp_ratio->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+				comp_ratio->index < ctx->nbuf_cap)
+			vbinfo = &ctx->vbinfo_cap[comp_ratio->index];
+		else
+			return -EINVAL;
+
+		comp_ratio->numer = vbinfo->comp_ratio.numer;
+		comp_ratio->denom = vbinfo->comp_ratio.denom;
+
+		SDEDEV_DBG(rot_dev->dev,
+				"VIDIOC_G_SDE_ROTATOR_COMP_RATIO s:%d i:%d t:%d cr:%u/%u\n",
+				ctx->session_id, comp_ratio->index,
+				comp_ratio->type,
+				comp_ratio->numer,
+				comp_ratio->denom);
 		break;
 	default:
 		SDEDEV_WARN(rot_dev->dev, "invalid ioctl type %x\n", cmd);
@@ -1987,7 +1929,12 @@ static long sde_rotator_private_ioctl(struct file *file, void *fh,
 static long sde_rotator_compat_ioctl32(struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
+	struct video_device *vdev = video_devdata(file);
+	struct sde_rotator_ctx *ctx =
+			sde_rotator_ctx_from_fh(file->private_data);
 	long ret;
+
+	mutex_lock(vdev->lock);
 
 	switch (cmd) {
 	case VIDIOC_S_SDE_ROTATOR_FENCE:
@@ -1997,24 +1944,49 @@ static long sde_rotator_compat_ioctl32(struct file *file,
 
 		if (copy_from_user(&fence, (void __user *)arg,
 				sizeof(struct msm_sde_rotator_fence)))
-			return -EFAULT;
+			goto ioctl32_error;
 
 		ret = sde_rotator_private_ioctl(file, file->private_data,
 			0, cmd, (void *)&fence);
 
 		if (copy_to_user((void __user *)arg, &fence,
 				sizeof(struct msm_sde_rotator_fence)))
-			return -EFAULT;
+			goto ioctl32_error;
+
+		break;
+	}
+	case VIDIOC_S_SDE_ROTATOR_COMP_RATIO:
+	case VIDIOC_G_SDE_ROTATOR_COMP_RATIO:
+	{
+		struct msm_sde_rotator_comp_ratio comp_ratio;
+
+		if (copy_from_user(&comp_ratio, (void __user *)arg,
+				sizeof(struct msm_sde_rotator_comp_ratio)))
+			goto ioctl32_error;
+
+		ret = sde_rotator_private_ioctl(file, file->private_data,
+			0, cmd, (void *)&comp_ratio);
+
+		if (copy_to_user((void __user *)arg, &comp_ratio,
+				sizeof(struct msm_sde_rotator_comp_ratio)))
+			goto ioctl32_error;
 
 		break;
 	}
 	default:
+		SDEDEV_ERR(ctx->rot_dev->dev, "invalid ioctl32 type:%x\n", cmd);
 		ret = -ENOIOCTLCMD;
 		break;
 
 	}
 
+	mutex_unlock(vdev->lock);
 	return ret;
+
+ioctl32_error:
+	mutex_unlock(vdev->lock);
+	SDEDEV_ERR(ctx->rot_dev->dev, "error handling ioctl32 cmd:%x\n", cmd);
+	return -EFAULT;
 }
 #endif
 
@@ -2052,8 +2024,6 @@ static const struct v4l2_ioctl_ops sde_rotator_ioctl_ops = {
 	.vidioc_s_crop            = sde_rotator_s_crop,
 	.vidioc_g_parm            = sde_rotator_g_parm,
 	.vidioc_s_parm            = sde_rotator_s_parm,
-	.vidioc_g_priority	  = sde_rotator_g_priority,
-	.vidioc_s_priority	  = sde_rotator_s_priority,
 	.vidioc_default           = sde_rotator_private_ioctl,
 	.vidioc_log_status        = v4l2_ctrl_log_status,
 	.vidioc_subscribe_event   = sde_rotator_ctrl_subscribe_event,
@@ -2068,8 +2038,8 @@ static const struct v4l2_ioctl_ops sde_rotator_ioctl_ops = {
  */
 static void sde_rotator_retire_handler(struct work_struct *work)
 {
-	struct vb2_buffer *src_buf;
-	struct vb2_buffer *dst_buf;
+	struct vb2_v4l2_buffer *src_buf;
+	struct vb2_v4l2_buffer *dst_buf;
 	struct sde_rotator_ctx *ctx;
 	struct sde_rotator_device *rot_dev;
 
@@ -2104,11 +2074,11 @@ static void sde_rotator_retire_handler(struct work_struct *work)
 		}
 
 		/* pending request. reschedule this context. */
-		v4l2_m2m_try_schedule(ctx->m2m_ctx);
+		v4l2_m2m_try_schedule(ctx->fh.m2m_ctx);
 	} else {
 		/* no pending request. acknowledge the usual way. */
-		src_buf = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
-		dst_buf = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
+		src_buf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
+		dst_buf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx);
 
 		if (!src_buf || !dst_buf) {
 			SDEDEV_ERR(rot_dev->dev,
@@ -2122,7 +2092,7 @@ static void sde_rotator_retire_handler(struct work_struct *work)
 		wake_up(&ctx->wait_queue);
 		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
 		v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_DONE);
-		v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->m2m_ctx);
+		v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->fh.m2m_ctx);
 	}
 	mutex_unlock(&rot_dev->lock);
 }
@@ -2162,17 +2132,19 @@ static int sde_rotator_process_buffers(struct sde_rotator_ctx *ctx,
 		goto error_null_buffer;
 	}
 
-	vbinfo_out = &ctx->vbinfo_out[src_buf->v4l2_buf.index];
-	vbinfo_cap = &ctx->vbinfo_cap[dst_buf->v4l2_buf.index];
+	vbinfo_out = &ctx->vbinfo_out[src_buf->index];
+	vbinfo_cap = &ctx->vbinfo_cap[dst_buf->index];
 
 	SDEDEV_DBG(rot_dev->dev,
-		"process buffer s:%d.%u src:(%u,%u,%u,%u) dst:(%u,%u,%u,%u) rot:%d flip:%d/%d sec:%d\n",
+		"process buffer s:%d.%u src:(%u,%u,%u,%u) dst:(%u,%u,%u,%u) rot:%d flip:%d/%d sec:%d src_cr:%u/%u dst_cr:%u/%u\n",
 		ctx->session_id, vbinfo_cap->fence_ts,
 		ctx->crop_out.left, ctx->crop_out.top,
 		ctx->crop_out.width, ctx->crop_out.height,
 		ctx->crop_cap.left, ctx->crop_cap.top,
 		ctx->crop_cap.width, ctx->crop_cap.height,
-		ctx->rotate, ctx->hflip, ctx->vflip, ctx->secure);
+		ctx->rotate, ctx->hflip, ctx->vflip, ctx->secure,
+		vbinfo_out->comp_ratio.numer, vbinfo_out->comp_ratio.denom,
+		vbinfo_cap->comp_ratio.numer, vbinfo_cap->comp_ratio.denom);
 
 	/* allocate slot for timestamp */
 	ts = stats->ts[stats->count++ % SDE_ROTATOR_NUM_EVENTS];
@@ -2185,7 +2157,7 @@ static int sde_rotator_process_buffers(struct sde_rotator_ctx *ctx,
 
 	trace_rot_entry_fence(
 		ctx->session_id, vbinfo_cap->fence_ts,
-		ctx->priority,
+		ctx->fh.prio,
 		(ctx->rotate << 0) | (ctx->hflip << 8) |
 			(ctx->hflip << 9) | (ctx->secure << 10),
 		ctx->format_out.fmt.pix.pixelformat,
@@ -2227,15 +2199,19 @@ static int sde_rotator_process_buffers(struct sde_rotator_ctx *ctx,
 	sde_rotator_get_item_from_ctx(ctx, &item);
 	item.flags |= SDE_ROTATION_EXT_DMA_BUF;
 	item.input.planes[0].buffer = src_handle->buffer;
+	item.input.planes[0].handle = src_handle->handle;
 	item.input.planes[0].offset = src_handle->addr;
 	item.input.planes[0].stride = ctx->format_out.fmt.pix.bytesperline;
 	item.input.plane_count = 1;
 	item.input.fence = NULL;
+	item.input.comp_ratio = vbinfo_out->comp_ratio;
 	item.output.planes[0].buffer = dst_handle->buffer;
+	item.output.planes[0].handle = dst_handle->handle;
 	item.output.planes[0].offset = dst_handle->addr;
 	item.output.planes[0].stride = ctx->format_cap.fmt.pix.bytesperline;
 	item.output.plane_count = 1;
 	item.output.fence = NULL;
+	item.output.comp_ratio = vbinfo_cap->comp_ratio;
 	item.sequence_id = vbinfo_cap->fence_ts;
 	item.ts = ts;
 
@@ -2279,8 +2255,8 @@ static void sde_rotator_submit_handler(struct work_struct *work)
 {
 	struct sde_rotator_ctx *ctx;
 	struct sde_rotator_device *rot_dev;
-	struct vb2_buffer *src_buf;
-	struct vb2_buffer *dst_buf;
+	struct vb2_v4l2_buffer *src_buf;
+	struct vb2_v4l2_buffer *dst_buf;
 	int ret;
 
 	ctx = container_of(work, struct sde_rotator_ctx, submit_work);
@@ -2305,17 +2281,18 @@ static void sde_rotator_submit_handler(struct work_struct *work)
 	}
 
 	/* submit new request */
-	dst_buf = v4l2_m2m_next_dst_buf(ctx->m2m_ctx);
-	src_buf = v4l2_m2m_next_src_buf(ctx->m2m_ctx);
+	dst_buf = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
+	src_buf = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
 	sde_rot_mgr_lock(rot_dev->mgr);
-	ret = sde_rotator_process_buffers(ctx, src_buf, dst_buf);
+	ret = sde_rotator_process_buffers(ctx, &src_buf->vb2_buf,
+			&dst_buf->vb2_buf);
 	sde_rot_mgr_unlock(rot_dev->mgr);
 	if (ret) {
 		SDEDEV_ERR(rot_dev->dev,
 			"fail process buffer in submit s:%d\n",
 			ctx->session_id);
 		/* advance to device run to clean up buffers */
-		v4l2_m2m_try_schedule(ctx->m2m_ctx);
+		v4l2_m2m_try_schedule(ctx->fh.m2m_ctx);
 	}
 
 	mutex_unlock(&rot_dev->lock);
@@ -2329,8 +2306,8 @@ static void sde_rotator_device_run(void *priv)
 {
 	struct sde_rotator_ctx *ctx = priv;
 	struct sde_rotator_device *rot_dev;
-	struct vb2_buffer *src_buf;
-	struct vb2_buffer *dst_buf;
+	struct vb2_v4l2_buffer *src_buf;
+	struct vb2_v4l2_buffer *dst_buf;
 	int ret;
 
 	if (!ctx || !ctx->rot_dev) {
@@ -2377,8 +2354,8 @@ static void sde_rotator_device_run(void *priv)
 				goto error_process_buffers;
 			}
 
-			src_buf = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
-			dst_buf = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
+			src_buf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
+			dst_buf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx);
 			if (!src_buf || !dst_buf) {
 				SDEDEV_ERR(rot_dev->dev,
 					"null buffer in device run s:%d sb:%p db:%p\n",
@@ -2391,7 +2368,7 @@ static void sde_rotator_device_run(void *priv)
 			wake_up(&ctx->wait_queue);
 			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
 			v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_DONE);
-			v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->m2m_ctx);
+			v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->fh.m2m_ctx);
 		} else {
 			/* pending request not complete. something wrong. */
 			SDEDEV_ERR(rot_dev->dev,
@@ -2411,8 +2388,8 @@ static void sde_rotator_device_run(void *priv)
 		/* no pending request. submit buffer the usual way. */
 		atomic_inc(&ctx->command_pending);
 
-		dst_buf = v4l2_m2m_next_dst_buf(ctx->m2m_ctx);
-		src_buf = v4l2_m2m_next_src_buf(ctx->m2m_ctx);
+		dst_buf = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
+		src_buf = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
 		if (!src_buf || !dst_buf) {
 			SDEDEV_ERR(rot_dev->dev,
 				"null buffer in device run s:%d sb:%p db:%p\n",
@@ -2422,7 +2399,8 @@ static void sde_rotator_device_run(void *priv)
 		}
 
 		sde_rot_mgr_lock(rot_dev->mgr);
-		ret = sde_rotator_process_buffers(ctx, src_buf, dst_buf);
+		ret = sde_rotator_process_buffers(ctx, &src_buf->vb2_buf,
+				&dst_buf->vb2_buf);
 		sde_rot_mgr_unlock(rot_dev->mgr);
 		if (ret) {
 			SDEDEV_ERR(rot_dev->dev,
@@ -2440,14 +2418,14 @@ error_process_buffers:
 error_empty_buffer:
 	atomic_dec(&ctx->command_pending);
 	wake_up(&ctx->wait_queue);
-	src_buf = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
-	dst_buf = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
+	src_buf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
+	dst_buf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx);
 	if (src_buf)
 		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
 	if (dst_buf)
 		v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
 	sde_rotator_resync_timeline(ctx->work_queue.timeline);
-	v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->m2m_ctx);
+	v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->fh.m2m_ctx);
 }
 
 /*
@@ -2467,7 +2445,7 @@ static void sde_rotator_job_abort(void *priv)
 	rot_dev = ctx->rot_dev;
 	SDEDEV_DBG(rot_dev->dev, "job abort s:%d\n", ctx->session_id);
 
-	v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->m2m_ctx);
+	v4l2_m2m_job_finish(rot_dev->m2m_dev, ctx->fh.m2m_ctx);
 }
 
 /*
@@ -2502,8 +2480,8 @@ static int sde_rotator_job_ready(void *priv)
 		SDEDEV_DBG(rot_dev->dev,
 				"submit job s:%d sc:%d dc:%d p:%d\n",
 				ctx->session_id,
-				v4l2_m2m_num_src_bufs_ready(ctx->m2m_ctx),
-				v4l2_m2m_num_dst_bufs_ready(ctx->m2m_ctx),
+				v4l2_m2m_num_src_bufs_ready(ctx->fh.m2m_ctx),
+				v4l2_m2m_num_dst_bufs_ready(ctx->fh.m2m_ctx),
 				atomic_read(&ctx->command_pending));
 		atomic_inc(&ctx->command_pending);
 		queue_work(ctx->work_queue.rot_work_queue, &ctx->submit_work);
@@ -2571,6 +2549,9 @@ static int sde_rotator_probe(struct platform_device *pdev)
 	rot_dev->early_submit = SDE_ROTATOR_EARLY_SUBMIT;
 	rot_dev->fence_timeout = SDE_ROTATOR_FENCE_TIMEOUT;
 	rot_dev->streamoff_timeout = SDE_ROTATOR_STREAM_OFF_TIMEOUT;
+	rot_dev->min_rot_clk = 0;
+	rot_dev->min_bw = 0;
+	rot_dev->min_overhead_us = 0;
 	rot_dev->drvdata = sde_rotator_get_drv_data(&pdev->dev);
 
 	rot_dev->pdev = pdev;
@@ -2691,7 +2672,6 @@ static struct platform_driver rotator_driver = {
 	.resume = sde_rotator_resume,
 	.driver = {
 		.name = SDE_ROTATOR_DRV_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table = sde_rotator_dt_match,
 		.pm = &sde_rotator_pm_ops,
 	},

@@ -72,7 +72,7 @@ struct lp_gpio {
  *
  * per gpio specific registers consist of two 32bit registers per gpio
  * (LP_CONFIG1 and LP_CONFIG2), with 94 gpios there's a total of
- * 188 config registes.
+ * 188 config registers.
  *
  * A simplified view of the register layout look like this:
  *
@@ -234,7 +234,7 @@ static int lp_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
-static void lp_gpio_irq_handler(unsigned hwirq, struct irq_desc *desc)
+static void lp_gpio_irq_handler(struct irq_desc *desc)
 {
 	struct irq_data *data = irq_desc_get_irq_data(desc);
 	struct gpio_chip *gc = irq_desc_get_handler_data(desc);
@@ -450,7 +450,6 @@ static struct platform_driver lp_gpio_driver = {
 	.remove         = lp_gpio_remove,
 	.driver         = {
 		.name   = "lp_gpio",
-		.owner  = THIS_MODULE,
 		.pm	= &lp_gpio_pm_ops,
 		.acpi_match_table = ACPI_PTR(lynxpoint_gpio_acpi_match),
 	},

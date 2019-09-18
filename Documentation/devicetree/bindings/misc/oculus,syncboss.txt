@@ -1,0 +1,7 @@
+Oculus SyncBoss
+
+Required properties:
+- compatible : must be "oculus,syncboss"
+- oculus,syncboss-reset : handle to gpio node for reset pin
+- oculus,syncboss-swdclk : handle to the gpio node for the SWD CLK pin
+- oculus,syncboss-swdio : handle to the gpio node for the SWD IO pin

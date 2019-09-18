@@ -307,11 +307,10 @@ static int wl1273_startup(struct snd_pcm_substream *substream,
 
 	switch (wl1273->mode) {
 	case WL1273_MODE_BT:
-		snd_pcm_hw_constraint_minmax(substream->runtime,
-					     SNDRV_PCM_HW_PARAM_RATE,
-					     8000, 8000);
-		snd_pcm_hw_constraint_minmax(substream->runtime,
-					     SNDRV_PCM_HW_PARAM_CHANNELS, 1, 1);
+		snd_pcm_hw_constraint_single(substream->runtime,
+					     SNDRV_PCM_HW_PARAM_RATE, 8000);
+		snd_pcm_hw_constraint_single(substream->runtime,
+					     SNDRV_PCM_HW_PARAM_CHANNELS, 1);
 		break;
 	case WL1273_MODE_FM_RX:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
@@ -452,7 +451,6 @@ static int wl1273_probe(struct snd_soc_codec *codec)
 {
 	struct wl1273_core **core = codec->dev->platform_data;
 	struct wl1273_priv *wl1273;
-	int r;
 
 	dev_dbg(codec->dev, "%s.\n", __func__);
 
@@ -470,12 +468,7 @@ static int wl1273_probe(struct snd_soc_codec *codec)
 
 	snd_soc_codec_set_drvdata(codec, wl1273);
 
-	r = snd_soc_add_codec_controls(codec, wl1273_controls,
-				 ARRAY_SIZE(wl1273_controls));
-	if (r)
-		kfree(wl1273);
-
-	return r;
+	return 0;
 }
 
 static int wl1273_remove(struct snd_soc_codec *codec)
@@ -492,6 +485,8 @@ static struct snd_soc_codec_driver soc_codec_dev_wl1273 = {
 	.probe = wl1273_probe,
 	.remove = wl1273_remove,
 
+	.controls = wl1273_controls,
+	.num_controls = ARRAY_SIZE(wl1273_controls),
 	.dapm_widgets = wl1273_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(wl1273_dapm_widgets),
 	.dapm_routes = wl1273_dapm_routes,
@@ -515,7 +510,6 @@ MODULE_ALIAS("platform:wl1273-codec");
 static struct platform_driver wl1273_platform_driver = {
 	.driver		= {
 		.name	= "wl1273-codec",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= wl1273_platform_probe,
 	.remove		= wl1273_platform_remove,

@@ -105,7 +105,8 @@ static inline void msm_ispif_cfg_pack_mode(struct ispif_device *ispif,
 {
 	uint32_t pack_addr[2];
 
-	BUG_ON(!ispif);
+	if (WARN_ON(!ispif))
+		return;
 
 	switch (intftype) {
 	case RDI0:

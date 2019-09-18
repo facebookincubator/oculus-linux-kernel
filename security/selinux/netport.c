@@ -41,7 +41,6 @@
 
 #include "netport.h"
 #include "objsec.h"
-#include "avc.h"
 
 #define SEL_NETPORT_HASH_SIZE       256
 #define SEL_NETPORT_HASH_BKT_LIMIT   16

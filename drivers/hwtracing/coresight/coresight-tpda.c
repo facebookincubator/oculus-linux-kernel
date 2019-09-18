@@ -20,7 +20,6 @@
 #include <linux/clk.h>
 #include <linux/bitmap.h>
 #include <linux/of.h>
-#include <linux/of_coresight.h>
 #include <linux/coresight.h>
 
 #include "coresight-priv.h"
@@ -95,6 +94,10 @@ static void __tpda_enable_pre_port(struct tpda_drvdata *drvdata)
 		val = val | BIT(2);
 	else
 		val = val & ~BIT(2);
+
+	/* Force ASYNC-VERSION-FREQTS sequence */
+	val = val | BIT(21);
+
 	tpda_writel(drvdata, val, TPDA_CR);
 
 	/*
@@ -155,8 +158,6 @@ static void __tpda_enable_post_port(struct tpda_drvdata *drvdata)
 
 	if (drvdata->freq_req_val)
 		tpda_writel(drvdata, drvdata->freq_req_val, TPDA_FREQREQ_VAL);
-	else
-		tpda_writel(drvdata, 0x0, TPDA_FREQREQ_VAL);
 
 	val = tpda_readl(drvdata, TPDA_CR);
 	if (drvdata->freq_req)
@@ -254,7 +255,7 @@ static ssize_t tpda_store_trig_async_enable(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -287,7 +288,7 @@ static ssize_t tpda_store_trig_flag_ts_enable(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -320,7 +321,7 @@ static ssize_t tpda_store_trig_freq_enable(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -352,7 +353,7 @@ static ssize_t tpda_store_freq_ts_enable(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -384,7 +385,7 @@ static ssize_t tpda_store_freq_req_val(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -413,7 +414,7 @@ static ssize_t tpda_store_freq_req(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -457,7 +458,7 @@ static ssize_t tpda_store_global_flush_req(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);
@@ -511,7 +512,7 @@ static ssize_t tpda_store_port_flush_req(struct device *dev,
 	struct tpda_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val) != 1)
+	if (kstrtoul(buf, 16, &val))
 		return -EINVAL;
 
 	mutex_lock(&drvdata->lock);

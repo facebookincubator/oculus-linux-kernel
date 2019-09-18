@@ -391,8 +391,7 @@ void sctp_association_free(struct sctp_association *asoc)
 	sctp_asconf_queue_teardown(asoc);
 
 	/* Free pending address space being deleted */
-	if (asoc->asconf_addr_del_pending != NULL)
-		kfree(asoc->asconf_addr_del_pending);
+	kfree(asoc->asconf_addr_del_pending);
 
 	/* AUTH - Free the endpoint shared keys */
 	sctp_auth_destroy_keys(&asoc->endpoint_shared_keys);
@@ -1209,20 +1208,22 @@ void sctp_assoc_update(struct sctp_association *asoc,
  *   within this document.
  *
  * Our basic strategy is to round-robin transports in priorities
- * according to sctp_state_prio_map[] e.g., if no such
+ * according to sctp_trans_score() e.g., if no such
  * transport with state SCTP_ACTIVE exists, round-robin through
  * SCTP_UNKNOWN, etc. You get the picture.
  */
-static const u8 sctp_trans_state_to_prio_map[] = {
-	[SCTP_ACTIVE]	= 3,	/* best case */
-	[SCTP_UNKNOWN]	= 2,
-	[SCTP_PF]	= 1,
-	[SCTP_INACTIVE] = 0,	/* worst case */
-};
-
 static u8 sctp_trans_score(const struct sctp_transport *trans)
 {
-	return sctp_trans_state_to_prio_map[trans->state];
+	switch (trans->state) {
+	case SCTP_ACTIVE:
+		return 3;	/* best case */
+	case SCTP_UNKNOWN:
+		return 2;
+	case SCTP_PF:
+		return 1;
+	default: /* case SCTP_INACTIVE */
+		return 0;	/* worst case */
+	}
 }
 
 static struct sctp_transport *sctp_trans_elect_tie(struct sctp_transport *trans1,
@@ -1589,7 +1590,7 @@ int sctp_assoc_lookup_laddr(struct sctp_association *asoc,
 /* Set an association id for a given association */
 int sctp_assoc_set_id(struct sctp_association *asoc, gfp_t gfp)
 {
-	bool preload = !!(gfp & __GFP_WAIT);
+	bool preload = gfpflags_allow_blocking(gfp);
 	int ret;
 
 	/* If the id is already assigned, keep it. */

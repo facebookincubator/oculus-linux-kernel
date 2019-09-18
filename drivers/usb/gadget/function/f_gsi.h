@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2016, 2018 The Linux Foundation. All rights reserved.
- *
+
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -14,15 +14,30 @@
 #ifndef _F_GSI_H
 #define _F_GSI_H
 
+#include <linux/poll.h>
+#include <linux/miscdevice.h>
+#include <linux/ipa.h>
+#include <uapi/linux/usb/cdc.h>
+#include <linux/usb/ch9.h>
+#include <linux/usb/composite.h>
+#include <linux/usb/gadget.h>
+#include <linux/usb/usb_ctrl_qti.h>
+#include <linux/etherdevice.h>
+#include <linux/debugfs.h>
+#include <linux/ipa_usb.h>
+#include <linux/usb/msm_hsusb.h>
+
 #define GSI_RMNET_CTRL_NAME "rmnet_ctrl"
 #define GSI_MBIM_CTRL_NAME "android_mbim"
 #define GSI_DPL_CTRL_NAME "dpl_ctrl"
 #define GSI_CTRL_NAME_LEN (sizeof(GSI_MBIM_CTRL_NAME)+2)
 #define GSI_MAX_CTRL_PKT_SIZE 4096
+#define GSI_CTRL_DTR (1 << 0)
 
-#define GSI_NUM_IN_BUFFERS 7
+
+#define GSI_NUM_IN_BUFFERS 15
 #define GSI_IN_BUFF_SIZE 2048
-#define GSI_NUM_OUT_BUFFERS 7
+#define GSI_NUM_OUT_BUFFERS 15
 #define GSI_ECM_NUM_OUT_BUFFERS 31
 #define GSI_OUT_AGGR_SIZE 24576
 
@@ -78,6 +93,14 @@ enum connection_state {
 	STATE_SUSPENDED
 };
 
+enum gsi_ctrl_notify_state {
+	GSI_CTRL_NOTIFY_NONE,
+	GSI_CTRL_NOTIFY_CONNECT,
+	GSI_CTRL_NOTIFY_SPEED,
+	GSI_CTRL_NOTIFY_OFFLINE,
+	GSI_CTRL_NOTIFY_RESPONSE_AVAILABLE,
+};
+
 #define MAXQUEUELEN 128
 struct event_queue {
 	u8 event[MAXQUEUELEN];
@@ -92,9 +115,10 @@ struct gsi_ntb_info {
 };
 
 struct gsi_ctrl_pkt {
-	void			*buf;
-	int			len;
-	struct list_head	list;
+	void				*buf;
+	int				len;
+	enum gsi_ctrl_notify_state	type;
+	struct list_head		list;
 };
 
 struct gsi_function_bind_info {
@@ -132,22 +156,13 @@ struct gsi_function_bind_info {
 	u32 notify_buf_len;
 };
 
-enum gsi_ctrl_notify_state {
-	GSI_CTRL_NOTIFY_NONE,
-	GSI_CTRL_NOTIFY_CONNECT,
-	GSI_CTRL_NOTIFY_SPEED,
-	GSI_CTRL_NOTIFY_OFFLINE,
-	GSI_CTRL_NOTIFY_RESPONSE_AVAILABLE,
-};
-
 struct gsi_ctrl_port {
 	char name[GSI_CTRL_NAME_LEN];
 	struct miscdevice ctrl_device;
 
 	struct usb_ep *notify;
 	struct usb_request *notify_req;
-	int notify_state;
-	atomic_t notify_count;
+	bool notify_req_queued;
 
 	atomic_t ctrl_online;
 
@@ -169,6 +184,7 @@ struct gsi_ctrl_port {
 	unsigned copied_from_modem;
 	unsigned modem_to_host;
 	unsigned cpkt_drop_cnt;
+	unsigned get_encap_cnt;
 };
 
 struct gsi_data_port {
@@ -218,7 +234,7 @@ struct f_gsi {
 	u32 vendorID;
 	u8 ethaddr[ETH_ADDR_STR_LEN];
 	const char *manufacturer;
-	int config;
+	struct rndis_params *params;
 	atomic_t connected;
 	bool data_interface_up;
 
@@ -228,8 +244,6 @@ struct f_gsi {
 	struct gsi_data_port d_port;
 	struct gsi_ctrl_port c_port;
 };
-
-static struct f_gsi *gsi_prot_ctx[IPA_USB_MAX_TETH_PROT_SIZE];
 
 static inline struct f_gsi *func_to_gsi(struct usb_function *f)
 {
@@ -244,6 +258,40 @@ static inline struct f_gsi *d_port_to_gsi(struct gsi_data_port *d)
 static inline struct f_gsi *c_port_to_gsi(struct gsi_ctrl_port *d)
 {
 	return container_of(d, struct f_gsi, c_port);
+}
+
+/* for configfs support */
+#define MAX_INST_NAME_LEN	40
+
+struct gsi_opts {
+	struct usb_function_instance func_inst;
+	struct f_gsi *gsi;
+};
+
+static inline struct gsi_opts *to_gsi_opts(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct gsi_opts,
+			    func_inst.group);
+}
+
+static enum ipa_usb_teth_prot name_to_prot_id(const char *name)
+{
+	if (!name)
+		goto error;
+
+	if (!strncmp("rndis", name, MAX_INST_NAME_LEN))
+		return IPA_USB_RNDIS;
+	if (!strncmp("ecm", name, MAX_INST_NAME_LEN))
+		return IPA_USB_ECM;
+	if (!strncmp("rmnet", name, MAX_INST_NAME_LEN))
+		return IPA_USB_RMNET;
+	if (!strncasecmp("mbim", name, MAX_INST_NAME_LEN))
+		return IPA_USB_MBIM;
+	if (!strncasecmp("dpl", name, MAX_INST_NAME_LEN))
+		return IPA_USB_DIAG;
+
+error:
+	return -EINVAL;
 }
 
 /* device descriptors */
@@ -414,7 +462,7 @@ static struct usb_gadget_strings *rmnet_gsi_strings[] = {
 
 /* rndis device descriptors */
 
-/* interface descriptor: */
+/* interface descriptor: Supports "Wireless" RNDIS; auto-detected by Windows*/
 static struct usb_interface_descriptor rndis_gsi_control_intf = {
 	.bLength =		sizeof(rndis_gsi_control_intf),
 	.bDescriptorType =	USB_DT_INTERFACE,
@@ -422,9 +470,9 @@ static struct usb_interface_descriptor rndis_gsi_control_intf = {
 	/* .bInterfaceNumber = DYNAMIC */
 	/* status endpoint is optional; this could be patched later */
 	.bNumEndpoints =	1,
-	.bInterfaceClass =	USB_CLASS_COMM,
-	.bInterfaceSubClass =   USB_CDC_SUBCLASS_ACM,
-	.bInterfaceProtocol =   USB_CDC_ACM_PROTO_VENDOR,
+	.bInterfaceClass =	USB_CLASS_WIRELESS_CONTROLLER,
+	.bInterfaceSubClass =   0x01,
+	.bInterfaceProtocol =   0x03,
 	/* .iInterface = DYNAMIC */
 };
 
@@ -475,15 +523,16 @@ static struct usb_interface_descriptor rndis_gsi_data_intf = {
 	/* .iInterface = DYNAMIC */
 };
 
+/*  Supports "Wireless" RNDIS; auto-detected by Windows */
 static struct usb_interface_assoc_descriptor
 rndis_gsi_iad_descriptor = {
 	.bLength =		sizeof(rndis_gsi_iad_descriptor),
 	.bDescriptorType =	USB_DT_INTERFACE_ASSOCIATION,
 	.bFirstInterface =	0, /* XXX, hardcoded */
 	.bInterfaceCount =	2, /* control + data */
-	.bFunctionClass =	USB_CLASS_COMM,
-	.bFunctionSubClass =	USB_CDC_SUBCLASS_ETHERNET,
-	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
+	.bFunctionClass =	USB_CLASS_WIRELESS_CONTROLLER,
+	.bFunctionSubClass =	0x01,
+	.bFunctionProtocol =	0x03,
 	/* .iFunction = DYNAMIC */
 };
 
@@ -662,11 +711,12 @@ static struct usb_gadget_strings *rndis_gsi_strings[] = {
 };
 
 /* mbim device descriptors */
+#define MBIM_NTB_DEFAULT_IN_SIZE	(0x4000)
 
 static struct usb_cdc_ncm_ntb_parameters mbim_gsi_ntb_parameters = {
 	.wLength = sizeof(mbim_gsi_ntb_parameters),
 	.bmNtbFormatsSupported = cpu_to_le16(USB_CDC_NCM_NTB16_SUPPORTED),
-	.dwNtbInMaxSize = cpu_to_le32(0x4000),
+	.dwNtbInMaxSize = cpu_to_le32(MBIM_NTB_DEFAULT_IN_SIZE),
 	.wNdpInDivisor = cpu_to_le16(4),
 	.wNdpInPayloadRemainder = cpu_to_le16(0),
 	.wNdpInAlignment = cpu_to_le16(4),
@@ -966,18 +1016,6 @@ static struct usb_gadget_strings *mbim_gsi_strings[] = {
  */
 #define MBIM_VENDOR_CODE	0xA5
 
-/* Microsoft OS String */
-static u8 mbim_gsi_os_string[] = {
-	18, /* sizeof(mtp_os_string) */
-	USB_DT_STRING,
-	/* Signature field: "MSFT100" */
-	'M', 0, 'S', 0, 'F', 0, 'T', 0, '1', 0, '0', 0, '0', 0,
-	/* vendor code */
-	MBIM_VENDOR_CODE,
-	/* padding */
-	0
-};
-
 /* Microsoft Extended Configuration Descriptor Header Section */
 struct mbim_gsi_ext_config_desc_header {
 	__le32	dwLength;
@@ -1015,7 +1053,8 @@ static struct {
 	},
 };
 /* ecm device descriptors */
-#define ECM_QC_STATUS_BYTECOUNT		16	/* 8 byte header + data */
+#define ECM_QC_LOG2_STATUS_INTERVAL_MSEC	5
+#define ECM_QC_STATUS_BYTECOUNT			16 /* 8 byte header + data */
 
 /* interface descriptor: */
 static struct usb_interface_descriptor ecm_gsi_control_intf = {

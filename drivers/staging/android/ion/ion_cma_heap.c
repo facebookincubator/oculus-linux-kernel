@@ -64,6 +64,7 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 {
 	struct device *dev = heap->priv;
 	struct ion_cma_buffer_info *info;
+	DEFINE_DMA_ATTRS(attrs);
 
 	dev_dbg(dev, "Request buffer allocation len %ld\n", len);
 
@@ -71,12 +72,16 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	if (!info)
 		return ION_CMA_ALLOCATE_FAILED;
 
-	if (!ION_IS_CACHED(flags))
+	if (!ION_IS_CACHED(flags)) {
 		info->cpu_addr = dma_alloc_writecombine(dev, len,
 					&(info->handle), GFP_KERNEL);
-	else
-		info->cpu_addr = dma_alloc_nonconsistent(dev, len,
-					&(info->handle), GFP_KERNEL);
+	} else {
+		dma_set_attr(DMA_ATTR_FORCE_COHERENT, &attrs);
+		info->cpu_addr = dma_alloc_attrs(dev, len,
+					&(info->handle), GFP_KERNEL, &attrs);
+	}
+	pr_debug("ION allocated new buffer: heap: %u flags: %lx align: %lx info->cpu_addr %p\n",
+					heap->id, flags, align, info->cpu_addr);
 
 	if (!info->cpu_addr) {
 		dev_err(dev, "Fail to allocate buffer\n");
@@ -106,10 +111,16 @@ static void ion_cma_free(struct ion_buffer *buffer)
 {
 	struct device *dev = buffer->heap->priv;
 	struct ion_cma_buffer_info *info = buffer->priv_virt;
+	DEFINE_DMA_ATTRS(attrs);
 
 	dev_dbg(dev, "Release buffer %pK\n", buffer);
 	/* release memory */
-	dma_free_coherent(dev, buffer->size, info->cpu_addr, info->handle);
+
+	if (ION_IS_CACHED(buffer->flags))
+		dma_set_attr(DMA_ATTR_FORCE_COHERENT, &attrs);
+
+	dma_free_attrs(dev, buffer->size, info->cpu_addr, info->handle, &attrs);
+
 	sg_free_table(info->table);
 	/* release sg table */
 	kfree(info->table);
@@ -150,13 +161,16 @@ static int ion_cma_mmap(struct ion_heap *mapper, struct ion_buffer *buffer,
 {
 	struct device *dev = buffer->heap->priv;
 	struct ion_cma_buffer_info *info = buffer->priv_virt;
+	DEFINE_DMA_ATTRS(attrs);
 
-	if (info->is_cached)
+	if (!info->is_cached) {
 		return dma_mmap_nonconsistent(dev, vma, info->cpu_addr,
 				info->handle, buffer->size);
-	else
-		return dma_mmap_writecombine(dev, vma, info->cpu_addr,
-				info->handle, buffer->size);
+	} else {
+		dma_set_attr(DMA_ATTR_FORCE_COHERENT, &attrs);
+		return dma_mmap_attrs(dev, vma, info->cpu_addr,
+				info->handle, buffer->size, &attrs);
+	}
 }
 
 static void *ion_cma_map_kernel(struct ion_heap *heap,

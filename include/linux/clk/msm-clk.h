@@ -14,6 +14,19 @@
 
 #include <linux/notifier.h>
 
+#if defined(CONFIG_COMMON_CLK_QCOM)
+enum branch_mem_flags {
+	CLKFLAG_RETAIN_PERIPH,
+	CLKFLAG_NORETAIN_PERIPH,
+	CLKFLAG_RETAIN_MEM,
+	CLKFLAG_NORETAIN_MEM,
+	CLKFLAG_PERIPH_OFF_SET,
+	CLKFLAG_PERIPH_OFF_CLEAR,
+};
+
+#include <linux/clk.h>
+
+#elif defined(CONFIG_COMMON_CLK_MSM)
 #define CLKFLAG_INVERT			0x00000001
 #define CLKFLAG_NOINVERT		0x00000002
 #define CLKFLAG_NONEST			0x00000004
@@ -54,11 +67,6 @@ int clk_reset(struct clk *clk, enum clk_reset_action action);
 
 /* Set clock-specific configuration parameters */
 int clk_set_flags(struct clk *clk, unsigned long flags);
-
-/* Set clock duty-cycle as a ratio of numerator/denominator for the desired
- * duty cycle
- */
-int clk_set_duty_cycle(struct clk *clk, u32 numerator, u32 denominator);
 
 /* returns the mux selection index associated with a particular parent */
 int parent_to_src_sel(struct clk_src *parents, int num_parents, struct clk *p);
@@ -126,4 +134,5 @@ int msm_clk_notif_register(struct clk *clk, struct notifier_block *nb);
 
 int msm_clk_notif_unregister(struct clk *clk, struct notifier_block *nb);
 
+#endif /* CONFIG_COMMON_CLK_MSM */
 #endif

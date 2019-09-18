@@ -19,13 +19,6 @@ config CNSS_MAC_BUG
 	  to an address for which PCIe root complex would honor the read
 	  without any errors.
 
-config CNSS_SDIO
-	bool "Enable/disable sdio driver for wifi module"
-	depends on CNSS
-	depends on MMC
-	---help---
-	  If enabled, sdio will be supported as I/O interface.
-
 config CLD_DEBUG
 	bool "Enable/disable CLD debug features"
 	help
@@ -81,11 +74,3 @@ config BUS_AUTO_SUSPEND
 	  during system pm.
 	  This config flag controls the feature per target based. The feature
 	  requires CNSS driver support.
-
-source "drivers/net/wireless/cnss/logger/Kconfig"
-
-config WLAN_FEATURE_RX_WAKELOCK
-	bool "Enable RX wake lock feature"
-	help
-	Enable WLAN_FEATURE_HOLD_RX_WAKELOCK which is required to take rx
-	wakelock when driver receives packets from fw.

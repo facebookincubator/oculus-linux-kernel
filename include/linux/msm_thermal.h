@@ -153,6 +153,8 @@ struct device_clnt_data {
 };
 
 #ifdef CONFIG_THERMAL_MONITOR
+extern int msm_thermal_ioctl_init(void);
+extern void msm_thermal_ioctl_cleanup(void);
 extern int msm_thermal_init(struct msm_thermal_data *pdata);
 extern int msm_thermal_device_init(void);
 extern int msm_thermal_set_frequency(uint32_t cpu, uint32_t freq,
@@ -253,6 +255,15 @@ extern int devmgr_client_request_mitigation(struct device_clnt_data *clnt,
 extern void devmgr_unregister_mitigation_client(
 					struct device *dev,
 					struct device_clnt_data *clnt);
+#ifdef CONFIG_QCOM_THERMAL_LIMITS_DCVS
+extern int msm_lmh_dcvsh_sw_notify(int cpu);
+#else
+static inline int msm_lmh_dcvsh_sw_notify(int cpu)
+{
+	return -ENODEV;
+}
+#endif
+
 #else
 static inline int msm_thermal_init(struct msm_thermal_data *pdata)
 {
@@ -327,6 +338,10 @@ static inline void devmgr_unregister_mitigation_client(
 					struct device *dev,
 					struct device_clnt_data *clnt)
 {
+}
+static inline int msm_lmh_dcvsh_sw_notify(int cpu)
+{
+	return -ENODEV;
 }
 #endif
 

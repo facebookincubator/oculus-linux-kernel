@@ -721,9 +721,6 @@ static bool tile_net_poll_aux(struct tile_net_cpu *info, int index)
 	if (!hash_default)
 		__inv_buffer(buf, len);
 
-	/* ISSUE: Is this needed? */
-	dev->last_rx = jiffies;
-
 #ifdef TILE_NET_DUMP_PACKETS
 	dump_packet(buf, len, "rx");
 #endif /* TILE_NET_DUMP_PACKETS */
@@ -2410,9 +2407,8 @@ static int __init network_cpus_setup(char *str)
 		if (cpumask_empty(&network_cpus_map)) {
 			pr_warn("Ignoring network_cpus='%s'\n", str);
 		} else {
-			char buf[1024];
-			cpulist_scnprintf(buf, sizeof(buf), &network_cpus_map);
-			pr_info("Linux network CPUs: %s\n", buf);
+			pr_info("Linux network CPUs: %*pbl\n",
+				cpumask_pr_args(&network_cpus_map));
 			network_cpus_used = true;
 		}
 	}

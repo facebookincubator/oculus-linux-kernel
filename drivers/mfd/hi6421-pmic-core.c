@@ -35,7 +35,7 @@ static const struct mfd_cell hi6421_devs[] = {
 	{ .name = "hi6421-regulator", },
 };
 
-static struct regmap_config hi6421_regmap_config = {
+static const struct regmap_config hi6421_regmap_config = {
 	.reg_bits = 32,
 	.reg_stride = 4,
 	.val_bits = 8,
@@ -93,10 +93,11 @@ static int hi6421_pmic_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id of_hi6421_pmic_match_tbl[] = {
+static const struct of_device_id of_hi6421_pmic_match_tbl[] = {
 	{ .compatible = "hisilicon,hi6421-pmic", },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, of_hi6421_pmic_match_tbl);
 
 static struct platform_driver hi6421_pmic_driver = {
 	.driver = {

@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,11 +23,12 @@
 #include <linux/regulator/consumer.h>
 #include <uapi/linux/hbtp_input.h>
 #include "../input-compat.h"
-#if defined(CONFIG_HBTP_INPUT_SECURE_TOUCH)
+#include <linux/ktime.h>
+#include <linux/uaccess.h>
 #include <linux/gpio.h>
-#include <linux/interrupt.h>
-#endif
 #include <linux/of_gpio.h>
+#include <linux/delay.h>
+#include <linux/completion.h>
 
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>
@@ -36,6 +37,10 @@
 
 #define HBTP_INPUT_NAME			"hbtp_input"
 #define DISP_COORDS_SIZE		2
+
+#define HBTP_PINCTRL_VALID_STATE_CNT		(2)
+#define HBTP_HOLD_DURATION_US			(10)
+#define HBTP_PINCTRL_DDIC_SEQ_NUM		(4)
 
 struct hbtp_data {
 	struct platform_device *pdev;
@@ -46,6 +51,21 @@ struct hbtp_data {
 #if defined(CONFIG_FB)
 	struct notifier_block fb_notif;
 #endif
+	struct pinctrl *ts_pinctrl;
+	struct pinctrl_state *gpio_state_active;
+	struct pinctrl_state *gpio_state_suspend;
+	bool ddic_rst_enabled;
+	struct pinctrl_state *ddic_rst_state_active;
+	struct pinctrl_state *ddic_rst_state_suspend;
+	u32 ts_pinctrl_seq_delay;
+	u32 ddic_pinctrl_seq_delay[HBTP_PINCTRL_DDIC_SEQ_NUM];
+	u32 fb_resume_seq_delay;
+	int lcd_state;
+	bool power_suspended;
+	bool power_sync_enabled;
+	bool power_sig_enabled;
+	struct completion power_resume_sig;
+	struct completion power_suspend_sig;
 	struct regulator *vcc_ana;
 	struct regulator *vcc_dig;
 	int afe_load_ua;
@@ -60,302 +80,104 @@ struct hbtp_data {
 	int def_maxy;		/* Default Max Y */
 	int des_maxx;		/* Desired Max X */
 	int des_maxy;		/* Desired Max Y */
-	int gpio_irq;
-	u32 irq_gpio_flags;
-#if defined(CONFIG_HBTP_INPUT_SECURE_TOUCH)
-	int irq_num;
-	atomic_t st_enabled;
-	atomic_t st_pending_irqs;
-	struct completion st_powerdown;
-	struct completion st_irq_processed;
-	struct completion st_userspace_task;
-	bool st_initialized;
-#endif
 	bool use_scaling;
 	bool override_disp_coords;
 	bool manage_afe_power_ana;
 	bool manage_power_dig;
+	u32 power_on_delay;
+	u32 power_off_delay;
+	bool manage_pin_ctrl;
+	bool afe_force_power_on;
+	bool regulator_enabled;
 };
 
 static struct hbtp_data *hbtp;
 
-#if defined(CONFIG_HBTP_INPUT_SECURE_TOUCH)
-static irqreturn_t hbtp_filter_interrupt(int irq, void *context)
-{
-	if (atomic_read(&hbtp->st_enabled)) {
-		if (atomic_cmpxchg(&hbtp->st_pending_irqs, 0, 1) == 0) {
-			reinit_completion(&hbtp->st_irq_processed);
-			sysfs_notify(&hbtp->pdev->dev.kobj, NULL,
-							"secure_touch");
-			wait_for_completion_interruptible(
-					&hbtp->st_irq_processed);
-		}
-		return IRQ_HANDLED;
-	}
-	return IRQ_NONE;
-}
-
-static void hbtp_secure_touch_init(struct hbtp_data *hbtp)
-{
-	hbtp->st_initialized = 0;
-	init_completion(&hbtp->st_powerdown);
-	init_completion(&hbtp->st_irq_processed);
-	init_completion(&hbtp->st_userspace_task);
-	hbtp->st_initialized = 1;
-}
-
-/*
- * 'blocking' variable will have value 'true' when we want to prevent the driver
- * from accessing the xPU/SMMU protected HW resources while the session is
- * active.
- */
-static void hbtp_secure_touch_stop(struct hbtp_data *hbtp, bool blocking)
-{
-	if (atomic_read(&hbtp->st_enabled)) {
-		atomic_set(&hbtp->st_pending_irqs, -1);
-		sysfs_notify(&hbtp->pdev->dev.kobj, NULL, "secure_touch");
-		if (blocking)
-			wait_for_completion_interruptible(
-					&hbtp->st_powerdown);
-	}
-	dev_dbg(hbtp->pdev->dev.parent, "Secure Touch session stopped\n");
-}
-
-static int hbtp_gpio_configure(struct hbtp_data *hbtp, bool on)
-{
-	int retval = 0;
-
-	if (on) {
-		if (gpio_is_valid(hbtp->gpio_irq)) {
-			retval = gpio_request(hbtp->gpio_irq, "hbtp_irq");
-			if (retval) {
-				dev_err(hbtp->pdev->dev.parent,
-					"unable to request GPIO [%d]\n",
-					hbtp->gpio_irq);
-				goto err_gpio_irq_req;
-			}
-
-			retval = gpio_direction_input(hbtp->gpio_irq);
-			if (retval) {
-				dev_err(hbtp->pdev->dev.parent,
-					"unable to set dir for GPIO[%d]\n",
-					hbtp->gpio_irq);
-				goto err_gpio_irq_dir;
-			}
-		} else {
-			dev_err(hbtp->pdev->dev.parent,
-					"GPIO [%d] is not valid\n",
-					hbtp->gpio_irq);
-		}
-	} else {
-		if (gpio_is_valid(hbtp->gpio_irq))
-			gpio_free(hbtp->gpio_irq);
-	}
-
-	return 0;
-
-err_gpio_irq_dir:
-	if (gpio_is_valid(hbtp->gpio_irq))
-		gpio_free(hbtp->gpio_irq);
-err_gpio_irq_req:
-	return retval;
-}
-
-static ssize_t hbtp_secure_touch_enable_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d", atomic_read(&hbtp->st_enabled));
-}
-
-/*
- * Accept only "0" and "1" valid values.
- * "0" will reset the st_enabled flag, then wake up the reading process and
- * the interrupt handler.
- * The bus driver is notified via pm_runtime that it is not required to stay
- * awake anymore.
- * It will also make sure the queue of events is emptied in the controller,
- * in case a touch happened in between the secure touch being disabled and
- * the local ISR being ungated.
- * "1" will set the st_enabled flag and clear the st_pending_irqs flag.
- * The bus driver is requested via pm_runtime to stay awake.
- */
-static ssize_t hbtp_secure_touch_enable_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	u8 value;
-	int err = 0, retval;
-
-	if (!hbtp->input_dev || !hbtp->st_initialized)
-		return -EIO;
-
-	if (count > 2)
-		return -EINVAL;
-	err = kstrtou8(buf, 10, &value);
-	if (err != 0)
-		return err;
-
-	err = count;
-
-	switch (value) {
-	case 0:
-		if (atomic_read(&hbtp->st_enabled) == 0)
-			break;
-		atomic_set(&hbtp->st_enabled, 0);
-		complete(&hbtp->st_irq_processed);
-		complete(&hbtp->st_powerdown);
-		disable_irq(hbtp->irq_num);
-		free_irq(hbtp->irq_num, hbtp);
-		hbtp_gpio_configure(hbtp, false);
-		reinit_completion(&hbtp->st_userspace_task);
-		sysfs_notify(&hbtp->pdev->dev.kobj, NULL,
-							"secure_touch_enable");
-		wait_for_completion_interruptible(&hbtp->st_userspace_task);
-		sysfs_notify(&hbtp->pdev->dev.kobj, NULL, "secure_touch");
-		break;
-	case 1:
-		if (atomic_read(&hbtp->st_enabled)) {
-			err = -EBUSY;
-			break;
-		}
-		reinit_completion(&hbtp->st_powerdown);
-		reinit_completion(&hbtp->st_irq_processed);
-		reinit_completion(&hbtp->st_userspace_task);
-		atomic_set(&hbtp->st_enabled, 1);
-		sysfs_notify(&hbtp->pdev->dev.kobj, NULL,
-							"secure_touch_enable");
-		atomic_set(&hbtp->st_pending_irqs,  0);
-		wait_for_completion_interruptible(&hbtp->st_userspace_task);
-		retval = hbtp_gpio_configure(hbtp, true);
-		if (retval)
-			return retval;
-
-		hbtp->irq_num = gpio_to_irq(hbtp->gpio_irq);
-		retval = request_threaded_irq(hbtp->irq_num, NULL,
-			hbtp_filter_interrupt,
-			IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-			"hbtp", hbtp);
-		if (retval < 0) {
-			dev_err(hbtp->pdev->dev.parent,
-				"%s: Failed to create irq thread ", __func__);
-			return retval;
-		}
-		break;
-	default:
-		dev_err(hbtp->pdev->dev.parent,
-			"unsupported value: %d\n", value);
-		err = -EINVAL;
-		break;
-	}
-	return err;
-}
-
-/*
- * Accept only "0" and "1" valid values.
- * "0" will reset the st_enabled flag, then wake up the reading process and
- * the interrupt handler.
- * The bus driver is notified via pm_runtime that it is not required to stay
- * awake anymore.
- * It will also make sure the queue of events is emptied in the controller,
- * in case a touch happened in between the secure touch being disabled and
- * the local ISR being ungated.
- * "1" will set the st_enabled flag and clear the st_pending_irqs flag.
- * The bus driver is requested via pm_runtime to stay awake.
- */
-static ssize_t hbtp_secure_touch_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	int val = 0;
-
-	if (atomic_read(&hbtp->st_enabled) == 0)
-		return -EBADF;
-	if (atomic_cmpxchg(&hbtp->st_pending_irqs, -1, 0) == -1)
-		return -EINVAL;
-	if (atomic_cmpxchg(&hbtp->st_pending_irqs, 1, 0) == 1)
-		val = 1;
-	else
-		complete(&hbtp->st_irq_processed);
-	return scnprintf(buf, PAGE_SIZE, "%u", val);
-}
-
-static ssize_t hbtp_secure_touch_userspace_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	u8 value;
-	int err = 0;
-
-	if (!hbtp->input_dev)
-		return -EIO;
-
-	if (count > 2)
-		return -EINVAL;
-	err = kstrtou8(buf, 10, &value);
-	if (err != 0)
-		return err;
-
-	if (value == 0 || value == 1) {
-		dev_dbg(hbtp->pdev->dev.parent,
-			"%s: Userspace is %s\n", __func__,
-			(value == 0) ? "started" : "stopped");
-		complete(&hbtp->st_userspace_task);
-	} else {
-		dev_err(hbtp->pdev->dev.parent,
-			"%s: Wrong value sent\n", __func__);
-	}
-
-	return count;
-}
-
-static DEVICE_ATTR(secure_touch_enable, S_IRUGO | S_IWUSR | S_IWGRP,
-		hbtp_secure_touch_enable_show, hbtp_secure_touch_enable_store);
-static DEVICE_ATTR(secure_touch, S_IRUGO, hbtp_secure_touch_show, NULL);
-static DEVICE_ATTR(secure_touch_userspace, S_IRUGO | S_IWUSR | S_IWGRP,
-		hbtp_secure_touch_enable_show,
-		hbtp_secure_touch_userspace_store);
-#else
-static void hbtp_secure_touch_init(struct hbtp_data *hbtp)
-{
-}
-static void hbtp_secure_touch_stop(struct hbtp_data *data, bool blocking)
-{
-}
+#if defined(CONFIG_FB)
+static int hbtp_fb_suspend(struct hbtp_data *ts);
+static int hbtp_fb_early_resume(struct hbtp_data *ts);
+static int hbtp_fb_resume(struct hbtp_data *ts);
 #endif
-
-static struct attribute *secure_touch_attrs[] = {
-#if defined(CONFIG_HBTP_INPUT_SECURE_TOUCH)
-	&dev_attr_secure_touch_enable.attr,
-	&dev_attr_secure_touch.attr,
-	&dev_attr_secure_touch_userspace.attr,
-	NULL
-#endif
-};
-
-static const struct attribute_group secure_touch_attr_group = {
-	.attrs = secure_touch_attrs,
-};
 
 #if defined(CONFIG_FB)
 static int fb_notifier_callback(struct notifier_block *self,
 				 unsigned long event, void *data)
 {
 	int blank;
+	int lcd_state;
 	struct fb_event *evdata = data;
+	struct fb_info *fbi = NULL;
 	struct hbtp_data *hbtp_data =
-		container_of(self, struct hbtp_data, fb_notif);
-	char *envp[2] = {HBTP_EVENT_TYPE_DISPLAY, NULL};
+	container_of(self, struct hbtp_data, fb_notif);
 
-	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
-		hbtp_data && hbtp_data->input_dev) {
+	if (!evdata) {
+		pr_debug("evdata is NULL");
+		return 0;
+	}
+	fbi = evdata->info;
+
+	/*
+	 * Node 0 is the primary display and others are
+	 * external displays such as HDMI/DP.
+	 * We need to handle only fb event for the primary display.
+	 */
+	if (!fbi || fbi->node != 0) {
+		pr_debug("%s: no need to handle the fb event", __func__);
+		return 0;
+	}
+
+	if (evdata->data && hbtp_data &&
+		(event == FB_EARLY_EVENT_BLANK ||
+		event == FB_R_EARLY_EVENT_BLANK)) {
 		blank = *(int *)(evdata->data);
-		if (blank == FB_BLANK_UNBLANK)
-			kobject_uevent_env(&hbtp_data->input_dev->dev.kobj,
-					KOBJ_ONLINE, envp);
-		else if (blank == FB_BLANK_POWERDOWN) {
-			hbtp_secure_touch_stop(hbtp, true);
-			kobject_uevent_env(&hbtp_data->input_dev->dev.kobj,
-					KOBJ_OFFLINE, envp);
+		lcd_state = hbtp->lcd_state;
+		if (event == FB_EARLY_EVENT_BLANK) {
+			if (blank <= FB_BLANK_NORMAL &&
+				lcd_state == FB_BLANK_POWERDOWN) {
+				pr_debug("%s: receives EARLY_BLANK:UNBLANK\n",
+					__func__);
+				hbtp_fb_early_resume(hbtp_data);
+			} else if (blank == FB_BLANK_POWERDOWN &&
+					lcd_state <= FB_BLANK_NORMAL) {
+				pr_debug("%s: receives EARLY_BLANK:POWERDOWN\n",
+					__func__);
+			} else {
+				pr_debug("%s: receives EARLY_BLANK:%d in %d state\n",
+					__func__, blank, lcd_state);
+			}
+		} else if (event == FB_R_EARLY_EVENT_BLANK) {
+			if (blank <= FB_BLANK_NORMAL) {
+				pr_debug("%s: receives R_EARLY_BALNK:UNBLANK\n",
+					__func__);
+				hbtp_fb_suspend(hbtp_data);
+			} else if (blank == FB_BLANK_POWERDOWN) {
+				pr_debug("%s: receives R_EARLY_BALNK:POWERDOWN\n",
+					__func__);
+			} else {
+				pr_debug("%s: receives R_EARLY_BALNK:%d in %d state\n",
+					__func__, blank, lcd_state);
+			}
 		}
 	}
 
+	if (evdata->data && hbtp_data &&
+		event == FB_EVENT_BLANK) {
+		blank = *(int *)(evdata->data);
+		lcd_state = hbtp->lcd_state;
+		if (blank == FB_BLANK_POWERDOWN &&
+			lcd_state <= FB_BLANK_NORMAL) {
+			pr_debug("%s: receives BLANK:POWERDOWN\n", __func__);
+			hbtp_fb_suspend(hbtp_data);
+		} else if (blank <= FB_BLANK_NORMAL &&
+				lcd_state == FB_BLANK_POWERDOWN) {
+			pr_debug("%s: receives BLANK:UNBLANK\n", __func__);
+			hbtp_fb_resume(hbtp_data);
+		} else {
+			pr_debug("%s: receives BLANK:%d in %d state\n",
+				__func__, blank, lcd_state);
+		}
+		hbtp_data->lcd_state = blank;
+	}
 	return 0;
 }
 #endif
@@ -383,6 +205,8 @@ static int hbtp_input_release(struct inode *inode, struct file *file)
 		return -ENOTTY;
 	}
 	hbtp->count--;
+	if (hbtp->power_sig_enabled)
+		hbtp->power_sig_enabled = false;
 	mutex_unlock(&hbtp->mutex);
 
 	return 0;
@@ -392,7 +216,8 @@ static int hbtp_input_create_input_dev(struct hbtp_input_absinfo *absinfo)
 {
 	struct input_dev *input_dev;
 	struct hbtp_input_absinfo *abs;
-	int i, error;
+	int error;
+	int i;
 
 	input_dev = input_allocate_device();
 	if (!input_dev) {
@@ -512,10 +337,10 @@ static int hbtp_input_report_events(struct hbtp_data *hbtp_data,
 	return 0;
 }
 
-static int reg_set_optimum_mode_check(struct regulator *reg, int load_uA)
+static int reg_set_load_check(struct regulator *reg, int load_uA)
 {
 	return (regulator_count_voltages(reg) > 0) ?
-		regulator_set_optimum_mode(reg, load_uA) : 0;
+		regulator_set_load(reg, load_uA) : 0;
 }
 
 static int hbtp_pdev_power_on(struct hbtp_data *hbtp, bool on)
@@ -536,8 +361,13 @@ static int hbtp_pdev_power_on(struct hbtp_data *hbtp, bool on)
 	if (!on)
 		goto reg_off;
 
+	if (hbtp->regulator_enabled) {
+		pr_debug("%s: regulator already enabled\n", __func__);
+		return 0;
+	}
+
 	if (hbtp->vcc_ana) {
-		ret = reg_set_optimum_mode_check(hbtp->vcc_ana,
+		ret = reg_set_load_check(hbtp->vcc_ana,
 			hbtp->afe_load_ua);
 		if (ret < 0) {
 			pr_err("%s: Regulator vcc_ana set_opt failed rc=%d\n",
@@ -549,12 +379,20 @@ static int hbtp_pdev_power_on(struct hbtp_data *hbtp, bool on)
 		if (ret) {
 			pr_err("%s: Regulator vcc_ana enable failed rc=%d\n",
 				__func__, ret);
-			reg_set_optimum_mode_check(hbtp->vcc_ana, 0);
+			reg_set_load_check(hbtp->vcc_ana, 0);
 			return ret;
 		}
 	}
+
+	if (hbtp->power_on_delay) {
+		pr_debug("%s: power-on-delay = %u\n", __func__,
+			hbtp->power_on_delay);
+		usleep_range(hbtp->power_on_delay,
+			hbtp->power_on_delay + HBTP_HOLD_DURATION_US);
+	}
+
 	if (hbtp->vcc_dig) {
-		ret = reg_set_optimum_mode_check(hbtp->vcc_dig,
+		ret = reg_set_load_check(hbtp->vcc_dig,
 			hbtp->dig_load_ua);
 		if (ret < 0) {
 			pr_err("%s: Regulator vcc_dig set_opt failed rc=%d\n",
@@ -566,23 +404,189 @@ static int hbtp_pdev_power_on(struct hbtp_data *hbtp, bool on)
 		if (ret) {
 			pr_err("%s: Regulator vcc_dig enable failed rc=%d\n",
 				__func__, ret);
-			reg_set_optimum_mode_check(hbtp->vcc_dig, 0);
+			reg_set_load_check(hbtp->vcc_dig, 0);
 			return ret;
 		}
 	}
 
+	hbtp->regulator_enabled = true;
+
 	return 0;
 
 reg_off:
-	if (hbtp->vcc_ana) {
-		reg_set_optimum_mode_check(hbtp->vcc_ana, 0);
-		regulator_disable(hbtp->vcc_ana);
+	if (!hbtp->regulator_enabled) {
+		pr_debug("%s: regulator not enabled\n", __func__);
+		return 0;
 	}
+
 	if (hbtp->vcc_dig) {
-		reg_set_optimum_mode_check(hbtp->vcc_dig, 0);
+		reg_set_load_check(hbtp->vcc_dig, 0);
 		regulator_disable(hbtp->vcc_dig);
 	}
+
+	if (hbtp->power_off_delay) {
+		pr_debug("%s: power-off-delay = %u\n", __func__,
+			hbtp->power_off_delay);
+		usleep_range(hbtp->power_off_delay,
+			hbtp->power_off_delay + HBTP_HOLD_DURATION_US);
+	}
+
+	if (hbtp->vcc_ana) {
+		reg_set_load_check(hbtp->vcc_ana, 0);
+		regulator_disable(hbtp->vcc_ana);
+	}
+
+	hbtp->regulator_enabled = false;
+
 	return 0;
+}
+
+static int hbtp_gpio_select(struct hbtp_data *data, bool on)
+{
+	struct pinctrl_state *pins_state;
+	int ret = 0;
+
+	pins_state = on ? data->gpio_state_active : data->gpio_state_suspend;
+	if (!IS_ERR_OR_NULL(pins_state)) {
+		ret = pinctrl_select_state(data->ts_pinctrl, pins_state);
+		if (ret) {
+			dev_err(&data->pdev->dev,
+				"can not set %s pins\n",
+				on ? "ts_active" : "ts_suspend");
+			return ret;
+		}
+
+		if (on) {
+			if (data->ts_pinctrl_seq_delay) {
+				usleep_range(data->ts_pinctrl_seq_delay,
+					data->ts_pinctrl_seq_delay +
+					HBTP_HOLD_DURATION_US);
+				dev_dbg(&data->pdev->dev, "ts_pinctrl_seq_delay = %u\n",
+					data->ts_pinctrl_seq_delay);
+			}
+		}
+	} else {
+		dev_warn(&data->pdev->dev,
+			"not a valid '%s' pinstate\n",
+			on ? "ts_active" : "ts_suspend");
+		return ret;
+	}
+
+	return ret;
+}
+
+static int hbtp_ddic_rst_select(struct hbtp_data *data, bool on)
+{
+	struct pinctrl_state *active, *suspend;
+	int ret = 0;
+
+	active = data->ddic_rst_state_active;
+	if (IS_ERR_OR_NULL(active)) {
+		dev_warn(&data->pdev->dev,
+			"not a valid ddic_rst_active pinstate\n");
+		return ret;
+	}
+
+	suspend = data->ddic_rst_state_suspend;
+	if (IS_ERR_OR_NULL(suspend)) {
+		dev_warn(&data->pdev->dev,
+			"not a valid ddic_rst_suspend pinstate\n");
+		return ret;
+	}
+
+	if (on) {
+		if (data->ddic_pinctrl_seq_delay[0]) {
+			usleep_range(data->ddic_pinctrl_seq_delay[0],
+				data->ddic_pinctrl_seq_delay[0] +
+				HBTP_HOLD_DURATION_US);
+			dev_dbg(&data->pdev->dev, "ddic_seq_delay[0] = %u\n",
+				data->ddic_pinctrl_seq_delay[0]);
+		}
+
+		ret = pinctrl_select_state(data->ts_pinctrl, active);
+		if (ret) {
+			dev_err(&data->pdev->dev,
+				"can not set ddic_rst_active pins\n");
+			return ret;
+		}
+		if (data->ddic_pinctrl_seq_delay[1]) {
+			usleep_range(data->ddic_pinctrl_seq_delay[1],
+				data->ddic_pinctrl_seq_delay[1] +
+				HBTP_HOLD_DURATION_US);
+			dev_dbg(&data->pdev->dev, "ddic_seq_delay[1] = %u\n",
+				data->ddic_pinctrl_seq_delay[1]);
+		}
+		ret = pinctrl_select_state(data->ts_pinctrl, suspend);
+		if (ret) {
+			dev_err(&data->pdev->dev,
+				"can not set ddic_rst_suspend pins\n");
+			return ret;
+		}
+
+		if (data->ddic_pinctrl_seq_delay[2]) {
+			usleep_range(data->ddic_pinctrl_seq_delay[2],
+				data->ddic_pinctrl_seq_delay[2] +
+				HBTP_HOLD_DURATION_US);
+			dev_dbg(&data->pdev->dev, "ddic_seq_delay[2] = %u\n",
+				data->ddic_pinctrl_seq_delay[2]);
+		}
+
+		ret = pinctrl_select_state(data->ts_pinctrl, active);
+		if (ret) {
+			dev_err(&data->pdev->dev,
+				"can not set ddic_rst_active pins\n");
+			return ret;
+		}
+
+		if (data->ddic_pinctrl_seq_delay[3]) {
+			usleep_range(data->ddic_pinctrl_seq_delay[3],
+				data->ddic_pinctrl_seq_delay[3] +
+				HBTP_HOLD_DURATION_US);
+			dev_dbg(&data->pdev->dev, "ddic_seq_delay[3] = %u\n",
+				data->ddic_pinctrl_seq_delay[3]);
+		}
+	} else {
+		ret = pinctrl_select_state(data->ts_pinctrl, suspend);
+		if (ret) {
+			dev_err(&data->pdev->dev,
+				"can not set ddic_rst_suspend pins\n");
+			return ret;
+		}
+	}
+
+	return ret;
+}
+
+static int hbtp_pinctrl_enable(struct hbtp_data *ts, bool on)
+{
+	int rc = 0;
+
+	if (!ts->manage_pin_ctrl) {
+		pr_info("%s: pinctrl info is not available\n", __func__);
+		return 0;
+	}
+
+	if (!on)
+		goto pinctrl_suspend;
+
+	rc = hbtp_gpio_select(ts, true);
+	if (rc < 0)
+		return -EINVAL;
+
+	if (ts->ddic_rst_enabled) {
+		rc = hbtp_ddic_rst_select(ts, true);
+		if (rc < 0)
+			goto err_ddic_rst_pinctrl_enable;
+	}
+
+	return rc;
+
+pinctrl_suspend:
+	if (ts->ddic_rst_enabled)
+		hbtp_ddic_rst_select(ts, false);
+err_ddic_rst_pinctrl_enable:
+	hbtp_gpio_select(ts, false);
+	return rc;
 }
 
 static long hbtp_input_ioctl_handler(struct file *file, unsigned int cmd,
@@ -593,6 +597,8 @@ static long hbtp_input_ioctl_handler(struct file *file, unsigned int cmd,
 	struct hbtp_input_absinfo absinfo[ABS_MT_LAST - ABS_MT_FIRST + 1];
 	struct hbtp_input_key key_data;
 	enum hbtp_afe_power_cmd power_cmd;
+	enum hbtp_afe_signal afe_signal;
+	enum hbtp_afe_power_ctrl afe_power_ctrl;
 
 	switch (cmd) {
 	case HBTP_SET_ABSPARAM:
@@ -683,6 +689,112 @@ static long hbtp_input_ioctl_handler(struct file *file, unsigned int cmd,
 		input_sync(hbtp->input_dev);
 		break;
 
+	case HBTP_SET_SYNCSIGNAL:
+		if (!hbtp || !hbtp->input_dev) {
+			pr_err("%s: The input device hasn't been created\n",
+				__func__);
+			return -EFAULT;
+		}
+
+		if (!hbtp->power_sig_enabled) {
+			pr_err("%s: power_signal is not enabled", __func__);
+			return -EPERM;
+		}
+
+		if (copy_from_user(&afe_signal, (void *)arg,
+					sizeof(enum hbtp_afe_signal))) {
+			pr_err("%s: Error copying data\n", __func__);
+			return -EFAULT;
+		}
+
+		pr_debug("%s: receives %d signal\n", __func__, afe_signal);
+
+		switch (afe_signal) {
+		case HBTP_AFE_SIGNAL_ON_RESUME:
+			mutex_lock(&hbtp->mutex);
+			if (!hbtp->power_suspended) {
+				complete(&hbtp->power_resume_sig);
+			} else {
+				pr_err("%s: resume signal in wrong state\n",
+					__func__);
+			}
+			mutex_unlock(&hbtp->mutex);
+			break;
+		case HBTP_AFE_SIGNAL_ON_SUSPEND:
+			mutex_lock(&hbtp->mutex);
+			if (hbtp->power_suspended) {
+				complete(&hbtp->power_suspend_sig);
+			} else {
+				pr_err("%s: suspend signal in wrong state\n",
+					__func__);
+			}
+			mutex_unlock(&hbtp->mutex);
+			break;
+		default:
+			pr_err("%s: Unsupported command for afe signal, %d\n",
+				__func__, afe_signal);
+			return -EINVAL;
+		}
+		break;
+	case HBTP_SET_POWER_CTRL:
+		if (!hbtp || !hbtp->input_dev) {
+			pr_err("%s: The input device hasn't been created\n",
+				__func__);
+			return -EFAULT;
+		}
+
+		if (copy_from_user(&afe_power_ctrl, (void *)arg,
+					sizeof(enum hbtp_afe_power_ctrl))) {
+			pr_err("%s: Error copying data\n", __func__);
+			return -EFAULT;
+		}
+		switch (afe_power_ctrl) {
+		case HBTP_AFE_POWER_ENABLE_SYNC:
+			pr_debug("%s: power_sync is enabled\n", __func__);
+			if (!hbtp->manage_pin_ctrl || !hbtp->manage_power_dig ||
+				!hbtp->manage_afe_power_ana) {
+				pr_err("%s: power/pin is not available\n",
+					__func__);
+				return -EFAULT;
+			}
+			mutex_lock(&hbtp->mutex);
+			error = hbtp_pdev_power_on(hbtp, true);
+			if (error) {
+				mutex_unlock(&hbtp->mutex);
+				pr_err("%s: failed to power on\n", __func__);
+				return error;
+			}
+			error  = hbtp_pinctrl_enable(hbtp, true);
+			if (error) {
+				mutex_unlock(&hbtp->mutex);
+				pr_err("%s: failed to enable pins\n", __func__);
+				hbtp_pdev_power_on(hbtp, false);
+				return error;
+			}
+			hbtp->power_sync_enabled = true;
+			mutex_unlock(&hbtp->mutex);
+			pr_debug("%s: power_sync option is enabled\n",
+				__func__);
+			break;
+		case HBTP_AFE_POWER_ENABLE_SYNC_SIGNAL:
+			if (!hbtp->power_sync_enabled) {
+				pr_err("%s: power_sync is not enabled\n",
+					__func__);
+				return -EFAULT;
+			}
+			mutex_lock(&hbtp->mutex);
+			init_completion(&hbtp->power_resume_sig);
+			init_completion(&hbtp->power_suspend_sig);
+			hbtp->power_sig_enabled = true;
+			mutex_unlock(&hbtp->mutex);
+			pr_err("%s: sync_signal option is enabled\n", __func__);
+			break;
+		default:
+			pr_err("%s: unsupported power ctrl, %d\n",
+				__func__, afe_power_ctrl);
+			return -EINVAL;
+		}
+		break;
 	default:
 		pr_err("%s: Unsupported ioctl command %u\n", __func__, cmd);
 		error = -EINVAL;
@@ -789,6 +901,31 @@ static int hbtp_parse_dt(struct device *dev)
 		}
 	}
 
+	if (hbtp->manage_power_dig && hbtp->manage_afe_power_ana) {
+		rc = of_property_read_u32(np,
+				"qcom,afe-power-on-delay-us", &temp_val);
+		if (!rc)
+			hbtp->power_on_delay = (u32)temp_val;
+		else
+			dev_info(dev, "Power-On Delay is not specified\n");
+
+		rc = of_property_read_u32(np,
+				"qcom,afe-power-off-delay-us", &temp_val);
+		if (!rc)
+			hbtp->power_off_delay = (u32)temp_val;
+		else
+			dev_info(dev, "Power-Off Delay is not specified\n");
+
+		dev_dbg(dev, "power-on-delay = %u, power-off-delay = %u\n",
+			hbtp->power_on_delay, hbtp->power_off_delay);
+	}
+
+	hbtp->afe_force_power_on =
+		of_property_read_bool(np, "qcom,afe-force-power-on");
+
+	if (hbtp->afe_force_power_on)
+		hbtp->lcd_state = FB_BLANK_POWERDOWN;
+
 	prop = of_find_property(np, "qcom,display-resolution", NULL);
 	if (prop != NULL) {
 		if (!prop->value)
@@ -812,9 +949,6 @@ static int hbtp_parse_dt(struct device *dev)
 
 		hbtp->override_disp_coords = true;
 	}
-
-	hbtp->gpio_irq = of_get_named_gpio_flags(np,
-				"hbtp,irq-gpio", 0, &hbtp->irq_gpio_flags);
 
 	hbtp->use_scaling = of_property_read_bool(np, "qcom,use-scale");
 	if (hbtp->use_scaling) {
@@ -883,10 +1017,299 @@ static int hbtp_parse_dt(struct device *dev)
 }
 #endif
 
+static int hbtp_pinctrl_init(struct hbtp_data *data)
+{
+	const char *statename;
+	int rc;
+	int state_cnt, i;
+	struct device_node *np = data->pdev->dev.of_node;
+	bool pinctrl_state_act_found = false;
+	bool pinctrl_state_sus_found = false;
+	bool pinctrl_ddic_act_found = false;
+	bool pinctrl_ddic_sus_found = false;
+	int count = 0;
+
+	data->ts_pinctrl = devm_pinctrl_get(&(data->pdev->dev));
+	if (IS_ERR_OR_NULL(data->ts_pinctrl)) {
+		dev_err(&data->pdev->dev,
+			"Target does not use pinctrl\n");
+		rc = PTR_ERR(data->ts_pinctrl);
+		data->ts_pinctrl = NULL;
+		return rc;
+	}
+
+	state_cnt = of_property_count_strings(np, "pinctrl-names");
+	if (state_cnt < HBTP_PINCTRL_VALID_STATE_CNT) {
+		/*
+		 *if pinctrl names are not available then,
+		 *power_sync can't be enabled
+		 */
+		dev_info(&data->pdev->dev,
+				"pinctrl names are not available\n");
+		rc = -EINVAL;
+		goto error;
+	}
+
+	for (i = 0; i < state_cnt; i++) {
+		rc = of_property_read_string_index(np,
+					"pinctrl-names", i, &statename);
+		if (rc) {
+			dev_err(&data->pdev->dev,
+				"failed to read pinctrl states by index\n");
+			goto error;
+		}
+
+		if (!strcmp(statename, "pmx_ts_active")) {
+			data->gpio_state_active
+				= pinctrl_lookup_state(data->ts_pinctrl,
+								statename);
+			if (IS_ERR_OR_NULL(data->gpio_state_active)) {
+				dev_err(&data->pdev->dev,
+					"Can not get ts default state\n");
+				rc = PTR_ERR(data->gpio_state_active);
+				goto error;
+			}
+			pinctrl_state_act_found = true;
+		} else if (!strcmp(statename, "pmx_ts_suspend")) {
+			data->gpio_state_suspend
+				= pinctrl_lookup_state(data->ts_pinctrl,
+								statename);
+			if (IS_ERR_OR_NULL(data->gpio_state_suspend)) {
+				dev_err(&data->pdev->dev,
+					"Can not get ts sleep state\n");
+				rc = PTR_ERR(data->gpio_state_suspend);
+				goto error;
+			}
+			pinctrl_state_sus_found = true;
+		} else if (!strcmp(statename, "ddic_rst_active")) {
+			data->ddic_rst_state_active
+				= pinctrl_lookup_state(data->ts_pinctrl,
+								statename);
+			if (IS_ERR(data->ddic_rst_state_active)) {
+				dev_err(&data->pdev->dev,
+					"Can not get DDIC rst act state\n");
+				rc = PTR_ERR(data->ddic_rst_state_active);
+				goto error;
+			}
+			pinctrl_ddic_act_found = true;
+		} else if (!strcmp(statename, "ddic_rst_suspend")) {
+			data->ddic_rst_state_suspend
+				= pinctrl_lookup_state(data->ts_pinctrl,
+								statename);
+			if (IS_ERR(data->ddic_rst_state_suspend)) {
+				dev_err(&data->pdev->dev,
+					"Can not get DDIC rst sleep state\n");
+				rc = PTR_ERR(data->ddic_rst_state_suspend);
+				goto error;
+			}
+			pinctrl_ddic_sus_found = true;
+		} else {
+			dev_err(&data->pdev->dev, "invalid pinctrl state\n");
+			rc = -EINVAL;
+			goto error;
+		}
+	}
+
+	if (!pinctrl_state_act_found || !pinctrl_state_sus_found) {
+		dev_err(&data->pdev->dev,
+			"missing required pinctrl states\n");
+		rc = -EINVAL;
+		goto error;
+	}
+
+	if (of_property_read_u32(np, "qcom,pmx-ts-on-seq-delay-us",
+			&data->ts_pinctrl_seq_delay)) {
+		dev_warn(&data->pdev->dev, "Can not find ts seq delay\n");
+	}
+
+	if (of_property_read_u32(np, "qcom,fb-resume-delay-us",
+			&data->fb_resume_seq_delay)) {
+		dev_warn(&data->pdev->dev, "Can not find fb resume seq delay\n");
+	}
+
+	if (pinctrl_ddic_act_found && pinctrl_ddic_sus_found) {
+		count = of_property_count_u32_elems(np,
+					"qcom,ddic-rst-on-seq-delay-us");
+		if (count == HBTP_PINCTRL_DDIC_SEQ_NUM) {
+			of_property_read_u32_array(np,
+					"qcom,ddic-rst-on-seq-delay-us",
+					data->ddic_pinctrl_seq_delay, count);
+		} else {
+			dev_err(&data->pdev->dev, "count(%u) is not same as %u\n",
+				(u32)count, HBTP_PINCTRL_DDIC_SEQ_NUM);
+		}
+
+		data->ddic_rst_enabled = true;
+	} else {
+		dev_warn(&data->pdev->dev, "ddic pinctrl act/sus not found\n");
+	}
+
+	data->manage_pin_ctrl = true;
+	return 0;
+
+error:
+	devm_pinctrl_put(data->ts_pinctrl);
+	data->ts_pinctrl = NULL;
+	return rc;
+}
+
+static int hbtp_fb_suspend(struct hbtp_data *ts)
+{
+	int rc;
+	char *envp[2] = {HBTP_EVENT_TYPE_DISPLAY, NULL};
+
+	mutex_lock(&hbtp->mutex);
+	if (ts->pdev && ts->power_sync_enabled) {
+		pr_debug("%s: power_sync is enabled\n", __func__);
+		if (ts->power_suspended) {
+			mutex_unlock(&hbtp->mutex);
+			pr_err("%s: power is not resumed\n", __func__);
+			return 0;
+		}
+		rc = hbtp_pinctrl_enable(ts, false);
+		if (rc) {
+			pr_err("%s: failed to disable GPIO pins\n", __func__);
+			goto err_pin_disable;
+		}
+
+		rc = hbtp_pdev_power_on(ts, false);
+		if (rc) {
+			pr_err("%s: failed to disable power\n", __func__);
+			goto err_power_disable;
+		}
+		ts->power_suspended = true;
+	}
+
+	if (ts->input_dev) {
+		kobject_uevent_env(&ts->input_dev->dev.kobj,
+				KOBJ_OFFLINE, envp);
+
+		if (ts->power_sig_enabled) {
+			pr_debug("%s: power_sig is enabled, wait for signal\n",
+				__func__);
+			mutex_unlock(&hbtp->mutex);
+			rc = wait_for_completion_interruptible(
+				&hbtp->power_suspend_sig);
+			if (rc != 0) {
+				pr_err("%s: wait for suspend is interrupted\n",
+					__func__);
+			}
+			mutex_lock(&hbtp->mutex);
+			pr_debug("%s: Wait is done for suspend\n", __func__);
+		} else {
+			pr_debug("%s: power_sig is NOT enabled", __func__);
+		}
+	}
+
+	mutex_unlock(&hbtp->mutex);
+	return 0;
+err_power_disable:
+	hbtp_pinctrl_enable(ts, true);
+err_pin_disable:
+	mutex_unlock(&hbtp->mutex);
+	return rc;
+}
+
+static int hbtp_fb_early_resume(struct hbtp_data *ts)
+{
+	char *envp[2] = {HBTP_EVENT_TYPE_DISPLAY, NULL};
+	int rc;
+
+	mutex_lock(&hbtp->mutex);
+
+	pr_debug("%s: hbtp_fb_early_resume\n", __func__);
+
+	if (ts->pdev && (ts->power_sync_enabled || ts->afe_force_power_on)) {
+		pr_debug("%s: power_sync is enabled\n", __func__);
+
+		if (!ts->power_suspended &&
+		   (ts->afe_force_power_on == false)) {
+			pr_err("%s: power is not suspended\n", __func__);
+			mutex_unlock(&hbtp->mutex);
+			return 0;
+		}
+
+		if (ts->afe_force_power_on)
+			ts->afe_force_power_on = false;
+
+		rc = hbtp_pdev_power_on(ts, true);
+		if (rc) {
+			pr_err("%s: failed to enable panel power\n", __func__);
+			goto err_power_on;
+		}
+
+		rc = hbtp_pinctrl_enable(ts, true);
+
+		if (rc) {
+			pr_err("%s: failed to enable pin\n", __func__);
+			goto err_pin_enable;
+		}
+
+		ts->power_suspended = false;
+
+		if (ts->input_dev) {
+
+			kobject_uevent_env(&ts->input_dev->dev.kobj,
+							KOBJ_ONLINE, envp);
+
+			if (ts->power_sig_enabled) {
+				pr_err("%s: power_sig is enabled, wait for signal\n",
+					__func__);
+				mutex_unlock(&hbtp->mutex);
+				rc = wait_for_completion_interruptible(
+					&hbtp->power_resume_sig);
+				if (rc != 0) {
+					pr_err("%s: wait for resume is interrupted\n",
+						__func__);
+				}
+				mutex_lock(&hbtp->mutex);
+				pr_debug("%s: wait is done\n", __func__);
+			} else {
+				pr_debug("%s: power_sig is NOT enabled\n",
+					__func__);
+			}
+
+			if (ts->fb_resume_seq_delay) {
+				usleep_range(ts->fb_resume_seq_delay,
+					ts->fb_resume_seq_delay +
+					HBTP_HOLD_DURATION_US);
+				pr_err("%s: fb_resume_seq_delay = %u\n",
+					__func__, ts->fb_resume_seq_delay);
+			}
+		}
+	}
+	mutex_unlock(&hbtp->mutex);
+	return 0;
+
+err_pin_enable:
+	hbtp_pdev_power_on(ts, false);
+err_power_on:
+	mutex_unlock(&hbtp->mutex);
+	return rc;
+}
+
+static int hbtp_fb_resume(struct hbtp_data *ts)
+{
+	char *envp[2] = {HBTP_EVENT_TYPE_DISPLAY, NULL};
+
+	mutex_lock(&hbtp->mutex);
+	if (!ts->power_sync_enabled) {
+		pr_debug("%s: power_sync is disabled, send uevent\n", __func__);
+		if (ts->input_dev) {
+			kobject_uevent_env(&ts->input_dev->dev.kobj,
+				KOBJ_ONLINE, envp);
+		}
+	}
+	mutex_unlock(&hbtp->mutex);
+	return 0;
+}
+
 static int hbtp_pdev_probe(struct platform_device *pdev)
 {
 	int error;
-	struct regulator *vcc_ana = NULL, *vcc_dig = NULL;
+	struct regulator *vcc_ana, *vcc_dig;
+
+	hbtp->pdev = pdev;
 
 	if (pdev->dev.of_node) {
 		error = hbtp_parse_dt(&pdev->dev);
@@ -894,6 +1317,14 @@ static int hbtp_pdev_probe(struct platform_device *pdev)
 			pr_err("%s: parse dt failed, rc=%d\n", __func__, error);
 			return error;
 		}
+	}
+
+	platform_set_drvdata(pdev, hbtp);
+
+	error = hbtp_pinctrl_init(hbtp);
+	if (error) {
+		pr_info("%s: pinctrl isn't available, rc=%d\n", __func__,
+			error);
 	}
 
 	if (hbtp->manage_afe_power_ana) {
@@ -940,30 +1371,11 @@ static int hbtp_pdev_probe(struct platform_device *pdev)
 		hbtp->vcc_dig = vcc_dig;
 	}
 
-	hbtp->pdev = pdev;
-	error = sysfs_create_group(&hbtp->pdev->dev.kobj,
-					&secure_touch_attr_group);
-	if (error) {
-		dev_err(&pdev->dev, "Failed to create sysfs entries\n");
-		goto err_sysfs_create_group;
-	}
-
-	hbtp_secure_touch_init(hbtp);
-	hbtp_secure_touch_stop(hbtp, true);
-
 	return 0;
-
-err_sysfs_create_group:
-	if (hbtp->manage_power_dig)
-		regulator_put(vcc_dig);
-	if (hbtp->manage_afe_power_ana)
-		regulator_put(vcc_ana);
-	return error;
 }
 
 static int hbtp_pdev_remove(struct platform_device *pdev)
 {
-	sysfs_remove_group(&hbtp->pdev->dev.kobj, &secure_touch_attr_group);
 	if (hbtp->vcc_ana || hbtp->vcc_dig) {
 		hbtp_pdev_power_on(hbtp, false);
 		if (hbtp->vcc_ana)
@@ -971,6 +1383,9 @@ static int hbtp_pdev_remove(struct platform_device *pdev)
 		if (hbtp->vcc_dig)
 			regulator_put(hbtp->vcc_dig);
 	}
+
+	if (hbtp->ts_pinctrl)
+		devm_pinctrl_put(hbtp->ts_pinctrl);
 
 	return 0;
 }

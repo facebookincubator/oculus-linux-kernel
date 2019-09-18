@@ -96,6 +96,7 @@ static const struct i2c_device_id ds2482_id[] = {
 	{ "ds2482", 0 },
 	{ }
 };
+MODULE_DEVICE_TABLE(i2c, ds2482_id);
 
 static const struct dev_pm_ops ds2482_pm_ops = {
 	.suspend = ds2482_suspend,
@@ -104,7 +105,6 @@ static const struct dev_pm_ops ds2482_pm_ops = {
 
 static struct i2c_driver ds2482_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "ds2482",
 		.pm = &ds2482_pm_ops,
 	},

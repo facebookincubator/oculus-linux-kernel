@@ -11,10 +11,12 @@ typedef struct {
 	spinlock_t list_lock;
 	struct list_head pgtable_list;
 	struct list_head gmap_list;
-	unsigned long asce_bits;
+	unsigned long asce;
 	unsigned long asce_limit;
 	unsigned long vdso_base;
-	/* The mmu context has extended page tables. */
+	/* The mmu context allocates 4K page tables. */
+	unsigned int alloc_pgste:1;
+	/* The mmu context uses extended page tables. */
 	unsigned int has_pgste:1;
 	/* The mmu context uses storage keys. */
 	unsigned int use_skey:1;

@@ -96,7 +96,6 @@ struct regmap;
  * FORCE_DISABLE  Regulator forcibly shut down by software.
  * VOLTAGE_CHANGE Regulator voltage changed.
  *                Data passed is old voltage cast to (void *).
- * ENABLE         Regulator was enabled.
  * DISABLE        Regulator was disabled.
  * PRE_VOLTAGE_CHANGE   Regulator is about to have voltage changed.
  *                      Data passed is "struct pre_voltage_change_data"
@@ -104,6 +103,7 @@ struct regmap;
  *                      Data passed is old voltage cast to (void *).
  * PRE_DISABLE    Regulator is about to be disabled
  * ABORT_DISABLE  Regulator disable failed for some reason
+ * ENABLE         Regulator was enabled.
  *
  * NOTE: These events can be OR'ed together when passed into handler.
  */
@@ -115,11 +115,12 @@ struct regmap;
 #define REGULATOR_EVENT_OVER_TEMP		0x10
 #define REGULATOR_EVENT_FORCE_DISABLE		0x20
 #define REGULATOR_EVENT_VOLTAGE_CHANGE		0x40
-#define REGULATOR_EVENT_DISABLE 		0x80
+#define REGULATOR_EVENT_DISABLE			0x80
 #define REGULATOR_EVENT_PRE_VOLTAGE_CHANGE	0x100
 #define REGULATOR_EVENT_ABORT_VOLTAGE_CHANGE	0x200
 #define REGULATOR_EVENT_PRE_DISABLE		0x400
 #define REGULATOR_EVENT_ABORT_DISABLE		0x800
+#define REGULATOR_EVENT_ENABLE			0x1000
 
 /**
  * struct pre_voltage_change_data - Data sent with PRE_VOLTAGE_CHANGE event
@@ -133,7 +134,6 @@ struct pre_voltage_change_data {
 	unsigned long min_uV;
 	unsigned long max_uV;
 };
-#define REGULATOR_EVENT_ENABLE			0x80000000
 
 struct regulator;
 
@@ -249,7 +249,7 @@ int regulator_get_current_limit(struct regulator *regulator);
 
 int regulator_set_mode(struct regulator *regulator, unsigned int mode);
 unsigned int regulator_get_mode(struct regulator *regulator);
-int regulator_set_optimum_mode(struct regulator *regulator, int load_uA);
+int regulator_set_load(struct regulator *regulator, int load_uA);
 
 int regulator_allow_bypass(struct regulator *regulator, bool allow);
 
@@ -263,8 +263,12 @@ int regulator_list_hardware_vsel(struct regulator *regulator,
 /* regulator notifier block */
 int regulator_register_notifier(struct regulator *regulator,
 			      struct notifier_block *nb);
+int devm_regulator_register_notifier(struct regulator *regulator,
+				     struct notifier_block *nb);
 int regulator_unregister_notifier(struct regulator *regulator,
 				struct notifier_block *nb);
+void devm_regulator_unregister_notifier(struct regulator *regulator,
+					struct notifier_block *nb);
 
 /* driver data - core doesn't touch */
 void *regulator_get_drvdata(struct regulator *regulator);
@@ -299,7 +303,7 @@ devm_regulator_get(struct device *dev, const char *id)
 static inline struct regulator *__must_check
 regulator_get_exclusive(struct device *dev, const char *id)
 {
-	return NULL;
+	return ERR_PTR(-ENODEV);
 }
 
 static inline struct regulator *__must_check
@@ -490,8 +494,7 @@ static inline unsigned int regulator_get_mode(struct regulator *regulator)
 	return REGULATOR_MODE_NORMAL;
 }
 
-static inline int regulator_set_optimum_mode(struct regulator *regulator,
-					int load_uA)
+static inline int regulator_set_load(struct regulator *regulator, int load_uA)
 {
 	return REGULATOR_MODE_NORMAL;
 }
@@ -526,8 +529,20 @@ static inline int regulator_register_notifier(struct regulator *regulator,
 	return 0;
 }
 
+static inline int devm_regulator_register_notifier(struct regulator *regulator,
+						   struct notifier_block *nb)
+{
+	return 0;
+}
+
 static inline int regulator_unregister_notifier(struct regulator *regulator,
 				struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline int devm_regulator_unregister_notifier(struct regulator *regulator,
+						     struct notifier_block *nb)
 {
 	return 0;
 }
@@ -545,6 +560,11 @@ static inline void regulator_set_drvdata(struct regulator *regulator,
 static inline int regulator_count_voltages(struct regulator *regulator)
 {
 	return 0;
+}
+
+static inline int regulator_list_voltage(struct regulator *regulator, unsigned selector)
+{
+	return -EINVAL;
 }
 
 static inline int regulator_list_corner_voltage(struct regulator *regulator,

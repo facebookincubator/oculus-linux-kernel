@@ -20,6 +20,7 @@ enum functionfs_flags {
 	FUNCTIONFS_HAS_SS_DESC = 4,
 	FUNCTIONFS_HAS_MS_OS_DESC = 8,
 	FUNCTIONFS_VIRTUAL_ADDR = 16,
+	FUNCTIONFS_EVENTFD = 32,
 };
 
 /* Descriptor of an non-audio endpoint */
@@ -43,13 +44,13 @@ struct usb_functionfs_descs_head_v2 {
 	 */
 } __attribute__((packed));
 
-/* Legacy format, deprecated as of 3.14 but still used for MSM */
+/* Legacy format, deprecated as of 3.14. */
 struct usb_functionfs_descs_head {
 	__le32 magic;
 	__le32 length;
 	__le32 fs_count;
 	__le32 hs_count;
-} __attribute__((packed));
+} __attribute__((packed, deprecated));
 
 /* MS OS Descriptor header */
 struct usb_os_desc_header {

@@ -45,7 +45,7 @@
 #include <linux/errno.h>
 #include <linux/unistd.h>
 #include <linux/writeback.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <linux/fs.h>
 #include <linux/pagemap.h>
@@ -121,8 +121,8 @@ static struct ll_cl_context *ll_cl_init(struct file *file,
 			/* this is too bad. Someone is trying to write the
 			 * page w/o holding inode mutex. This means we can
 			 * add dirty pages into cache during truncate */
-			CERROR("Proc %s is dirting page w/o inode lock, this"
-			       "will break truncate.\n", current->comm);
+			CERROR("Proc %s is dirtying page w/o inode lock, this will break truncate\n",
+			       current->comm);
 			dump_stack();
 			LBUG();
 			return ERR_PTR(-EIO);
@@ -145,7 +145,7 @@ static struct ll_cl_context *ll_cl_init(struct file *file,
 		 */
 		io->ci_lockreq = CILR_NEVER;
 
-		pos = (vmpage->index << PAGE_CACHE_SHIFT);
+		pos = vmpage->index << PAGE_CACHE_SHIFT;
 
 		/* Create a temp IO to serve write. */
 		result = cl_io_rw_init(env, io, CIT_WRITE, pos, PAGE_CACHE_SIZE);
@@ -277,14 +277,6 @@ int ll_commit_write(struct file *file, struct page *vmpage, unsigned from,
 	return result;
 }
 
-struct obd_capa *cl_capa_lookup(struct inode *inode, enum cl_req_type crt)
-{
-	__u64 opc;
-
-	opc = crt == CRT_WRITE ? CAPA_OPC_OSS_WRITE : CAPA_OPC_OSS_RW;
-	return ll_osscapa_get(inode, opc);
-}
-
 static void ll_ra_stats_inc_sbi(struct ll_sb_info *sbi, enum ra_stat which);
 
 /**
@@ -335,6 +327,7 @@ static unsigned long ll_ra_count_get(struct ll_sb_info *sbi,
 	 * the RPC boundary from needing an extra read RPC. */
 	if (ria->ria_pages == 0) {
 		long beyond_rpc = (ria->ria_start + ret) % PTLRPC_MAX_BRW_PAGES;
+
 		if (/* beyond_rpc != 0 && */ beyond_rpc < ret)
 			ret -= beyond_rpc;
 	}
@@ -351,6 +344,7 @@ out:
 void ll_ra_count_put(struct ll_sb_info *sbi, unsigned long len)
 {
 	struct ll_ra_info *ra = &sbi->ll_ra_info;
+
 	atomic_sub(len, &ra->ra_cur_pages);
 }
 
@@ -363,6 +357,7 @@ static void ll_ra_stats_inc_sbi(struct ll_sb_info *sbi, enum ra_stat which)
 void ll_ra_stats_inc(struct address_space *mapping, enum ra_stat which)
 {
 	struct ll_sb_info *sbi = ll_i2sbi(mapping->host);
+
 	ll_ra_stats_inc_sbi(sbi, which);
 }
 
@@ -423,30 +418,6 @@ void ll_ra_read_ex(struct file *f, struct ll_ra_read *rar)
 	spin_lock(&ras->ras_lock);
 	list_del_init(&rar->lrr_linkage);
 	spin_unlock(&ras->ras_lock);
-}
-
-static struct ll_ra_read *ll_ra_read_get_locked(struct ll_readahead_state *ras)
-{
-	struct ll_ra_read *scan;
-
-	list_for_each_entry(scan, &ras->ras_read_beads, lrr_linkage) {
-		if (scan->lrr_reader == current)
-			return scan;
-	}
-	return NULL;
-}
-
-struct ll_ra_read *ll_ra_read_get(struct file *f)
-{
-	struct ll_readahead_state *ras;
-	struct ll_ra_read	 *bead;
-
-	ras = ll_ras_get(f);
-
-	spin_lock(&ras->ras_lock);
-	bead = ll_ra_read_get_locked(ras);
-	spin_unlock(&ras->ras_lock);
-	return bead;
 }
 
 static int cl_read_ahead_page(const struct lu_env *env, struct cl_io *io,
@@ -557,6 +528,7 @@ static inline int stride_io_mode(struct ll_readahead_state *ras)
 {
 	return ras->ras_consecutive_stride_requests > 1;
 }
+
 /* The function calculates how much pages will be read in
  * [off, off + length], in such stride IO area,
  * stride_offset = st_off, stride_length = st_len,
@@ -606,8 +578,8 @@ stride_pg_count(pgoff_t st_off, unsigned long st_len, unsigned long st_pgs,
 	else
 		pg_count = start_left + st_pgs * (end - start - 1) + end_left;
 
-	CDEBUG(D_READA, "st_off %lu, st_len %lu st_pgs %lu off %lu length %lu"
-	       "pgcount %lu\n", st_off, st_len, st_pgs, off, length, pg_count);
+	CDEBUG(D_READA, "st_off %lu, st_len %lu st_pgs %lu off %lu length %lu pgcount %lu\n",
+	       st_off, st_len, st_pgs, off, length, pg_count);
 
 	return pg_count;
 }
@@ -656,7 +628,7 @@ static int ll_read_ahead_pages(const struct lu_env *env,
 						page_idx, mapping);
 			if (rc == 1) {
 				(*reserved_pages)--;
-				count ++;
+				count++;
 			} else if (rc == -ENOLCK)
 				break;
 		} else if (stride_ria) {
@@ -667,10 +639,10 @@ static int ll_read_ahead_pages(const struct lu_env *env,
 			/* FIXME: This assertion only is valid when it is for
 			 * forward read-ahead, it will be fixed when backward
 			 * read-ahead is implemented */
-			LASSERTF(page_idx > ria->ria_stoff, "Invalid page_idx %lu"
-				"rs %lu re %lu ro %lu rl %lu rp %lu\n", page_idx,
-				ria->ria_start, ria->ria_end, ria->ria_stoff,
-				ria->ria_length, ria->ria_pages);
+			LASSERTF(page_idx > ria->ria_stoff, "Invalid page_idx %lu rs %lu re %lu ro %lu rl %lu rp %lu\n",
+				 page_idx,
+				 ria->ria_start, ria->ria_end, ria->ria_stoff,
+				 ria->ria_length, ria->ria_pages);
 			offset = page_idx - ria->ria_stoff;
 			offset = offset % (ria->ria_length);
 			if (offset > ria->ria_pages) {
@@ -750,7 +722,7 @@ int ll_readahead(const struct lu_env *env, struct cl_io *io,
 		/* Note: we only trim the RPC, instead of extending the RPC
 		 * to the boundary, so to avoid reading too much pages during
 		 * random reading. */
-		rpc_boundary = ((end + 1) & (~(PTLRPC_MAX_BRW_PAGES - 1)));
+		rpc_boundary = (end + 1) & (~(PTLRPC_MAX_BRW_PAGES - 1));
 		if (rpc_boundary > 0)
 			rpc_boundary--;
 
@@ -890,7 +862,7 @@ static void ras_update_stride_detector(struct ll_readahead_state *ras,
 	if (!stride_io_mode(ras) && (stride_gap != 0 ||
 	     ras->ras_consecutive_stride_requests == 0)) {
 		ras->ras_stride_pages = ras->ras_consecutive_pages;
-		ras->ras_stride_length = stride_gap +ras->ras_consecutive_pages;
+		ras->ras_stride_length = stride_gap+ras->ras_consecutive_pages;
 	}
 	LASSERT(ras->ras_request_index == 0);
 	LASSERT(ras->ras_consecutive_stride_requests == 0);
@@ -902,7 +874,7 @@ static void ras_update_stride_detector(struct ll_readahead_state *ras,
 	}
 
 	ras->ras_stride_pages = ras->ras_consecutive_pages;
-	ras->ras_stride_length = stride_gap +ras->ras_consecutive_pages;
+	ras->ras_stride_length = stride_gap+ras->ras_consecutive_pages;
 
 	RAS_CDEBUG(ras);
 	return;
@@ -927,8 +899,8 @@ static void ras_stride_increase_window(struct ll_readahead_state *ras,
 
 	LASSERT(ras->ras_stride_length > 0);
 	LASSERTF(ras->ras_window_start + ras->ras_window_len
-		 >= ras->ras_stride_offset, "window_start %lu, window_len %lu"
-		 " stride_offset %lu\n", ras->ras_window_start,
+		 >= ras->ras_stride_offset, "window_start %lu, window_len %lu stride_offset %lu\n",
+		 ras->ras_window_start,
 		 ras->ras_window_len, ras->ras_stride_offset);
 
 	stride_len = ras->ras_window_start + ras->ras_window_len -

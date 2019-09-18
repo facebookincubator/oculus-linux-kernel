@@ -75,6 +75,7 @@ EXPORT_SYMBOL(nf_log_unset);
 int nf_log_register(u_int8_t pf, struct nf_logger *logger)
 {
 	int i;
+	int ret = 0;
 
 	if (pf >= ARRAY_SIZE(init_net.nf.nf_loggers))
 		return -EINVAL;
@@ -82,16 +83,25 @@ int nf_log_register(u_int8_t pf, struct nf_logger *logger)
 	mutex_lock(&nf_log_mutex);
 
 	if (pf == NFPROTO_UNSPEC) {
+		for (i = NFPROTO_UNSPEC; i < NFPROTO_NUMPROTO; i++) {
+			if (rcu_access_pointer(loggers[i][logger->type])) {
+				ret = -EEXIST;
+				goto unlock;
+			}
+		}
 		for (i = NFPROTO_UNSPEC; i < NFPROTO_NUMPROTO; i++)
 			rcu_assign_pointer(loggers[i][logger->type], logger);
 	} else {
-		/* register at end of list to honor first register win */
+		if (rcu_access_pointer(loggers[pf][logger->type])) {
+			ret = -EEXIST;
+			goto unlock;
+		}
 		rcu_assign_pointer(loggers[pf][logger->type], logger);
 	}
 
+unlock:
 	mutex_unlock(&nf_log_mutex);
-
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(nf_log_register);
 
@@ -149,8 +159,7 @@ int nf_logger_find_get(int pf, enum nf_log_type type)
 	struct nf_logger *logger;
 	int ret = -ENOENT;
 
-	logger = loggers[pf][type];
-	if (logger == NULL)
+	if (rcu_access_pointer(loggers[pf][type]) == NULL)
 		request_module("nf-logger-%u-%u", pf, type);
 
 	rcu_read_lock();
@@ -207,6 +216,30 @@ void nf_log_packet(struct net *net,
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(nf_log_packet);
+
+void nf_log_trace(struct net *net,
+		  u_int8_t pf,
+		  unsigned int hooknum,
+		  const struct sk_buff *skb,
+		  const struct net_device *in,
+		  const struct net_device *out,
+		  const struct nf_loginfo *loginfo, const char *fmt, ...)
+{
+	va_list args;
+	char prefix[NF_LOG_PREFIXLEN];
+	const struct nf_logger *logger;
+
+	rcu_read_lock();
+	logger = rcu_dereference(net->nf.nf_loggers[pf]);
+	if (logger) {
+		va_start(args, fmt);
+		vsnprintf(prefix, sizeof(prefix), fmt, args);
+		va_end(args);
+		logger->logfn(net, pf, hooknum, skb, in, out, loginfo, prefix);
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(nf_log_trace);
 
 #define S_SIZE (1024 - (sizeof(unsigned int) + 1))
 
@@ -299,35 +332,37 @@ static int seq_show(struct seq_file *s, void *v)
 {
 	loff_t *pos = v;
 	const struct nf_logger *logger;
-	int i, ret;
+	int i;
 	struct net *net = seq_file_net(s);
 
 	logger = nft_log_dereference(net->nf.nf_loggers[*pos]);
 
 	if (!logger)
-		ret = seq_printf(s, "%2lld NONE (", *pos);
+		seq_printf(s, "%2lld NONE (", *pos);
 	else
-		ret = seq_printf(s, "%2lld %s (", *pos, logger->name);
+		seq_printf(s, "%2lld %s (", *pos, logger->name);
 
-	if (ret < 0)
-		return ret;
+	if (seq_has_overflowed(s))
+		return -ENOSPC;
 
 	for (i = 0; i < NF_LOG_TYPE_MAX; i++) {
 		if (loggers[*pos][i] == NULL)
 			continue;
 
 		logger = nft_log_dereference(loggers[*pos][i]);
-		ret = seq_printf(s, "%s", logger->name);
-		if (ret < 0)
-			return ret;
-		if (i == 0 && loggers[*pos][i + 1] != NULL) {
-			ret = seq_printf(s, ",");
-			if (ret < 0)
-				return ret;
-		}
+		seq_printf(s, "%s", logger->name);
+		if (i == 0 && loggers[*pos][i + 1] != NULL)
+			seq_printf(s, ",");
+
+		if (seq_has_overflowed(s))
+			return -ENOSPC;
 	}
 
-	return seq_printf(s, ")\n");
+	seq_printf(s, ")\n");
+
+	if (seq_has_overflowed(s))
+		return -ENOSPC;
+	return 0;
 }
 
 static const struct seq_operations nflog_seq_ops = {
@@ -419,8 +454,7 @@ static int netfilter_log_sysctl_init(struct net *net)
 			nf_log_sysctl_table[i].procname	=
 				nf_log_sysctl_fnames[i];
 			nf_log_sysctl_table[i].data = NULL;
-			nf_log_sysctl_table[i].maxlen =
-				NFLOGGER_NAME_LEN * sizeof(char);
+			nf_log_sysctl_table[i].maxlen = NFLOGGER_NAME_LEN;
 			nf_log_sysctl_table[i].mode = 0644;
 			nf_log_sysctl_table[i].proc_handler =
 				nf_log_proc_dostring;

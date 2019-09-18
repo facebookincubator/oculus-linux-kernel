@@ -19,12 +19,13 @@
 #include <linux/etherdevice.h>
 #include <brcmu_utils.h>
 
-#include "dhd.h"
-#include "dhd_dbg.h"
-#include "dhd_bus.h"
+#include "core.h"
+#include "debug.h"
+#include "bus.h"
 #include "proto.h"
 #include "flowring.h"
 #include "msgbuf.h"
+#include "common.h"
 
 
 #define BRCMF_FLOWRING_HIGH		1024
@@ -33,9 +34,6 @@
 
 #define BRCMF_FLOWRING_HASH_AP(da, fifo, ifidx) (da[5] + fifo + ifidx * 16)
 #define BRCMF_FLOWRING_HASH_STA(fifo, ifidx) (fifo + ifidx * 16)
-
-static const u8 ALLZEROMAC[ETH_ALEN] = { 0, 0, 0, 0, 0, 0 };
-static const u8 ALLFFMAC[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 static const u8 brcmf_flowring_prio2fifo[] = {
 	1,
@@ -137,7 +135,7 @@ u32 brcmf_flowring_create(struct brcmf_flowring *flow, u8 da[ETH_ALEN],
 	hash = flow->hash;
 	for (i = 0; i < BRCMF_FLOWRING_HASHSIZE; i++) {
 		if ((hash[hash_idx].ifidx == BRCMF_FLOWRING_INVALID_IFIDX) &&
-		    (memcmp(hash[hash_idx].mac, ALLZEROMAC, ETH_ALEN) == 0)) {
+		    (is_zero_ether_addr(hash[hash_idx].mac))) {
 			found = true;
 			break;
 		}
@@ -196,11 +194,15 @@ static void brcmf_flowring_block(struct brcmf_flowring *flow, u8 flowid,
 	spin_lock_irqsave(&flow->block_lock, flags);
 
 	ring = flow->rings[flowid];
+	if (ring->blocked == blocked) {
+		spin_unlock_irqrestore(&flow->block_lock, flags);
+		return;
+	}
 	ifidx = brcmf_flowring_ifidx_get(flow, flowid);
 
 	currently_blocked = false;
 	for (i = 0; i < flow->nrofrings; i++) {
-		if (flow->rings[i]) {
+		if ((flow->rings[i]) && (i != flowid)) {
 			ring = flow->rings[i];
 			if ((ring->status == RING_OPEN) &&
 			    (brcmf_flowring_ifidx_get(flow, i) == ifidx)) {
@@ -211,15 +213,15 @@ static void brcmf_flowring_block(struct brcmf_flowring *flow, u8 flowid,
 			}
 		}
 	}
-	ring->blocked = blocked;
-	if (currently_blocked == blocked) {
+	flow->rings[flowid]->blocked = blocked;
+	if (currently_blocked) {
 		spin_unlock_irqrestore(&flow->block_lock, flags);
 		return;
 	}
 
 	bus_if = dev_get_drvdata(flow->dev);
 	drvr = bus_if->drvr;
-	ifp = drvr->iflist[ifidx];
+	ifp = brcmf_get_ifp(drvr, ifidx);
 	brcmf_txflowblock_if(ifp, BRCMF_NETIF_STOP_REASON_FLOW, blocked);
 
 	spin_unlock_irqrestore(&flow->block_lock, flags);
@@ -238,7 +240,7 @@ void brcmf_flowring_delete(struct brcmf_flowring *flow, u8 flowid)
 	brcmf_flowring_block(flow, flowid, false);
 	hash_idx = ring->hash_id;
 	flow->hash[hash_idx].ifidx = BRCMF_FLOWRING_INVALID_IFIDX;
-	memset(flow->hash[hash_idx].mac, 0, ETH_ALEN);
+	eth_zero_addr(flow->hash[hash_idx].mac);
 	flow->rings[flowid] = NULL;
 
 	skb = skb_dequeue(&ring->skblist);
@@ -251,8 +253,8 @@ void brcmf_flowring_delete(struct brcmf_flowring *flow, u8 flowid)
 }
 
 
-void brcmf_flowring_enqueue(struct brcmf_flowring *flow, u8 flowid,
-			    struct sk_buff *skb)
+u32 brcmf_flowring_enqueue(struct brcmf_flowring *flow, u8 flowid,
+			   struct sk_buff *skb)
 {
 	struct brcmf_flowring_ring *ring;
 
@@ -273,6 +275,7 @@ void brcmf_flowring_enqueue(struct brcmf_flowring *flow, u8 flowid,
 		if (skb_queue_len(&ring->skblist) < BRCMF_FLOWRING_LOW)
 			brcmf_flowring_block(flow, flowid, false);
 	}
+	return skb_queue_len(&ring->skblist);
 }
 
 

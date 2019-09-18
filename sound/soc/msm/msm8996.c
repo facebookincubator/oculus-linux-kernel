@@ -37,9 +37,6 @@
 #include "../codecs/wcd9330.h"
 #include "../codecs/wcd9335.h"
 #include "../codecs/wsa881x.h"
-#if defined(CONFIG_SPEAKER_EXT_PA)
-#include <linux/delay.h>
-#endif
 
 #define DRV_NAME "msm8996-asoc-snd"
 
@@ -50,11 +47,6 @@
 #define SAMPLING_RATE_96KHZ     96000
 #define SAMPLING_RATE_192KHZ    192000
 #define SAMPLING_RATE_44P1KHZ   44100
-
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-#define PA_VDD_MIN_UV		5000000
-#define PA_VDD_MAX_UV		5000000
-#endif
 
 #define MSM8996_SPK_ON     1
 #define MSM8996_HIFI_ON    1
@@ -82,11 +74,6 @@ static int slim6_rx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim6_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 
 static struct platform_device *spdev;
-
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-static struct platform_device *ppdev;
-#endif
-
 static int ext_us_amp_gpio = -1;
 static int msm8996_spk_control = 1;
 static int msm_slim_0_rx_ch = 1;
@@ -154,28 +141,11 @@ struct msm8996_wsa881x_dev_info {
 static struct snd_soc_aux_dev *msm8996_aux_dev;
 static struct snd_soc_codec_conf *msm8996_codec_conf;
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-struct msm8996_pinctrl_info {
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *gpio_state_active;
-	struct pinctrl_state *gpio_state_suspend;
-	uint8_t pinctrl_status;
-};
-#endif
-
 struct msm8996_asoc_mach_data {
 	u32 mclk_freq;
 	int us_euro_gpio;
 	int hph_en1_gpio;
 	int hph_en0_gpio;
-#if defined(CONFIG_SPEAKER_EXT_PA)
-	int spk_l_ext_pa_gpio;
-	int spk_r_ext_pa_gpio;
-	struct msm8996_pinctrl_info spk_ext_pa_pinctrl_info;
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-	struct regulator *pa_vdd;
-#endif
-#endif
 	struct snd_info_entry *codec_root;
 };
 
@@ -202,11 +172,6 @@ static int msm_snd_enable_codec_ext_clk(struct snd_soc_codec *codec,
 					int enable, bool dapm);
 static int msm8996_wsa881x_init(struct snd_soc_component *component);
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-extern void tasha_spk_ext_pa_cb(int (*spk_ext_pa)(struct snd_soc_codec *codec,
-			int enable), struct snd_soc_codec *codec);
-#endif
-
 /*
  * Need to report LINEIN
  * if R/L channel impedance is larger than 5K ohm
@@ -227,7 +192,7 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.key_code[6] = 0,
 	.key_code[7] = 0,
 	.linein_th = 5000,
-	.moist_cfg = { V_45_MV, I_3P0_UA },
+	.moisture_en = true,
 	.mbhc_micbias = MIC_BIAS_2,
 	.anc_micbias = MIC_BIAS_2,
 	.enable_anc_mic_detect = false,
@@ -244,63 +209,6 @@ static inline struct snd_mask *param_to_mask(struct snd_pcm_hw_params *p,
 {
 	return &(p->masks[n - SNDRV_PCM_HW_PARAM_FIRST_MASK]);
 }
-
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-static int pa_power_on(struct platform_device *pdev,
-		struct msm8996_asoc_mach_data *pdata, bool on) {
-	int rc;
-
-	if (on) {
-		rc = regulator_enable(pdata->pa_vdd);
-		if (rc)
-			dev_err(&pdev->dev,
-				"Regulator pa-vdd enable failed rc=%d\n", rc);
-	} else {
-		rc = regulator_disable(pdata->pa_vdd);
-		if (rc)
-			dev_err(&pdev->dev,
-				"Regulator pa-vdd disable failed rc=%d\n", rc);
-	}
-	return rc;
-}
-
-static int pa_power_init(struct platform_device *pdev,
-		struct msm8996_asoc_mach_data *pdata, bool on) {
-
-	int rc;
-
-	if (on) {
-		pdata->pa_vdd = regulator_get(&pdev->dev, "pa-vdd");
-		if (IS_ERR(pdata->pa_vdd)) {
-			rc = PTR_ERR(pdata->pa_vdd);
-			dev_err(&pdev->dev,
-				"Regulator get failed pa-vdd rc=%d\n", rc);
-			return rc;
-		}
-
-		if (regulator_count_voltages(pdata->pa_vdd) > 0) {
-			rc = regulator_set_voltage(pdata->pa_vdd, PA_VDD_MIN_UV,
-					PA_VDD_MAX_UV);
-			if (rc) {
-				dev_err(&pdev->dev,
-					"Regulator set failed vdd rc=%d\n", rc);
-				goto reg_vdd_put;
-			}
-		}
-	} else {
-		if (regulator_count_voltages(pdata->pa_vdd) > 0)
-			regulator_set_voltage(pdata->pa_vdd, 0, PA_VDD_MAX_UV);
-
-		regulator_put(pdata->pa_vdd);
-	}
-
-	return 0;
-
-reg_vdd_put:
-	regulator_put(pdata->pa_vdd);
-	return rc;
-}
-#endif
 
 static void param_set_mask(struct snd_pcm_hw_params *p, int n, unsigned bit)
 {
@@ -417,9 +325,8 @@ exit:
 
 static void msm8996_ext_control(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 
-	mutex_lock(&codec->mutex);
 	pr_debug("%s: msm8996_spk_control = %d", __func__,
 		 msm8996_spk_control);
 	if (msm8996_spk_control == MSM8996_SPK_ON) {
@@ -429,7 +336,6 @@ static void msm8996_ext_control(struct snd_soc_codec *codec)
 		snd_soc_dapm_disable_pin(dapm, "Lineout_1 amp");
 		snd_soc_dapm_disable_pin(dapm, "Lineout_2 amp");
 	}
-	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
 }
 
@@ -459,7 +365,7 @@ static int msm8996_set_spk(struct snd_kcontrol *kcontrol,
 
 static int msm8996_hifi_ctrl(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct snd_soc_card *card = codec->component.card;
 	struct msm8996_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(card);
@@ -470,7 +376,6 @@ static int msm8996_hifi_ctrl(struct snd_soc_codec *codec)
 		pr_err("%s: hph_en1_gpio is invalid\n", __func__);
 		return -EINVAL;
 	}
-	mutex_lock(&codec->mutex);
 	if (msm_hifi_control == MSM8996_HIFI_ON) {
 		gpio_direction_output(pdata->hph_en1_gpio, 1);
 		/* 5msec delay needed as per HW requirement */
@@ -478,7 +383,6 @@ static int msm8996_hifi_ctrl(struct snd_soc_codec *codec)
 	} else {
 		gpio_direction_output(pdata->hph_en1_gpio, 0);
 	}
-	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
 	return 0;
 }
@@ -571,13 +475,15 @@ static int msm_snd_enable_codec_ext_clk(struct snd_soc_codec *codec,
 static int msm8996_mclk_event(struct snd_soc_dapm_widget *w,
 				 struct snd_kcontrol *kcontrol, int event)
 {
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+
 	pr_debug("%s: event = %d\n", __func__, event);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		return msm_snd_enable_codec_ext_clk(w->codec, 1, true);
+		return msm_snd_enable_codec_ext_clk(codec, 1, true);
 	case SND_SOC_DAPM_POST_PMD:
-		return msm_snd_enable_codec_ext_clk(w->codec, 0, true);
+		return msm_snd_enable_codec_ext_clk(codec, 0, true);
 	}
 	return 0;
 }
@@ -600,13 +506,15 @@ static int msm_snd_enable_codec_ext_tx_clk(struct snd_soc_codec *codec,
 static int msm8996_mclk_tx_event(struct snd_soc_dapm_widget *w,
 				 struct snd_kcontrol *kcontrol, int event)
 {
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+
 	pr_debug("%s: event = %d\n", __func__, event);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		return msm_snd_enable_codec_ext_tx_clk(w->codec, 1, true);
+		return msm_snd_enable_codec_ext_tx_clk(codec, 1, true);
 	case SND_SOC_DAPM_POST_PMD:
-		return msm_snd_enable_codec_ext_tx_clk(w->codec, 0, true);
+		return msm_snd_enable_codec_ext_tx_clk(codec, 0, true);
 	}
 	return 0;
 }
@@ -614,7 +522,8 @@ static int msm8996_mclk_tx_event(struct snd_soc_dapm_widget *w,
 static int msm_hifi_ctrl_event(struct snd_soc_dapm_widget *w,
 				    struct snd_kcontrol *k, int event)
 {
-	struct snd_soc_card *card = w->codec->component.card;
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_card *card = codec->component.card;
 	struct msm8996_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(card);
 	int ret = 0;
@@ -665,7 +574,6 @@ static const struct snd_soc_dapm_widget msm8996_dapm_widgets[] = {
 	SND_SOC_DAPM_SPK("hifi amp", msm_hifi_ctrl_event),
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
-	SND_SOC_DAPM_MIC("Secondary Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic4", NULL),
@@ -1850,162 +1758,6 @@ static int msm8996_wcd93xx_codec_up(struct snd_soc_codec *codec)
 	return err;
 }
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-static int lct_spk_ext_pa_pinctrl_select(struct msm8996_asoc_mach_data *pdata,
-		bool on)
-{
-	struct msm8996_pinctrl_info *pctrl = &pdata->spk_ext_pa_pinctrl_info;
-	struct pinctrl_state *pins_state;
-	int ret;
-
-	pr_debug("%s, on=%d\n", __func__, on);
-	pins_state = on ? pctrl->gpio_state_active : pctrl->gpio_state_suspend;
-
-	if (!IS_ERR_OR_NULL(pins_state)) {
-		ret = pinctrl_select_state(pctrl->pinctrl, pins_state);
-		if (ret) {
-			pr_err("%s: cannot set pin state\n", __func__);
-			return ret;
-		}
-	} else {
-		pr_err("%s: not a valid %s pin state\n", __func__,
-				on ? "spk_ext_pa_active" : "spk_ext_pasuspend");
-	}
-
-	return 0;
-}
-
-static int is_ext_spk_gpio_support(struct platform_device *pdev,
-			struct msm8996_asoc_mach_data *pdata)
-{
-	const char *spk_l_ext_pa = "qcom,msm-spk-l-ext-pa";
-	const char *spk_r_ext_pa = "qcom,msm-spk-r-ext-pa";
-	struct msm8996_pinctrl_info *pctrl = &pdata->spk_ext_pa_pinctrl_info;
-	int ret = 0;
-
-	pdata->spk_l_ext_pa_gpio =
-		of_get_named_gpio(pdev->dev.of_node, spk_l_ext_pa, 0);
-	pdata->spk_r_ext_pa_gpio =
-		of_get_named_gpio(pdev->dev.of_node, spk_r_ext_pa, 0);
-
-	if ((pdata->spk_l_ext_pa_gpio < 0) || (pdata->spk_r_ext_pa_gpio < 0)) {
-		pr_debug("%s: missing %s or %s in dt node\n", __func__,
-				spk_l_ext_pa, spk_r_ext_pa);
-		return 0;
-	}
-	pr_debug("%s, spk_l_ext_pa_gpio=%d, spk_r_ext_pa_gpio=%d\n",
-		__func__, pdata->spk_l_ext_pa_gpio,
-		pdata->spk_r_ext_pa_gpio);
-	if (!gpio_is_valid(pdata->spk_l_ext_pa_gpio) ||
-			!gpio_is_valid(pdata->spk_r_ext_pa_gpio)) {
-		pr_err("%s: Invalid external speaker gpio: %d, %d",
-			__func__, pdata->spk_l_ext_pa_gpio,
-			pdata->spk_r_ext_pa_gpio);
-		return -EINVAL;
-	}
-
-	ret = gpio_request(pdata->spk_l_ext_pa_gpio,
-		"spk_l_ext_pa");
-	if (ret) {
-		pr_err("%s, unable to request gpio %d\n",
-			__func__, pdata->spk_l_ext_pa_gpio);
-		return -EINVAL;
-	}
-
-	ret = gpio_request(pdata->spk_r_ext_pa_gpio,
-		"spk_r_ext_pa");
-	if (ret) {
-		pr_err("%s, unable to request gpio %d\n",
-			__func__, pdata->spk_r_ext_pa_gpio);
-		return -EINVAL;
-	}
-
-	pctrl->pinctrl = devm_pinctrl_get(&pdev->dev);
-	if (IS_ERR_OR_NULL(pctrl->pinctrl)) {
-		pr_err("%s: Getting pinctrl handle failed\n",
-			__func__);
-		goto err_pinctrl;
-	}
-
-	pctrl->gpio_state_active = pinctrl_lookup_state(
-		pctrl->pinctrl, "spk_ext_pa_active");
-	if (IS_ERR_OR_NULL(pctrl->gpio_state_active)) {
-		pr_err("%s: Failed to get active pinctrl\n",
-				__func__);
-		goto err_pinctrl;
-	}
-
-	pctrl->gpio_state_suspend = pinctrl_lookup_state(
-		pctrl->pinctrl, "spk_ext_pa_suspend");
-	if (IS_ERR_OR_NULL(pctrl->gpio_state_suspend)) {
-		pr_err("%s: Failed to get suspend pinctrl\n",
-				__func__);
-		goto err_pinctrl;
-	}
-
-	pctrl->pinctrl_status = true;
-	return 0;
-
-err_pinctrl:
-	gpio_free(pdata->spk_l_ext_pa_gpio);
-	gpio_free(pdata->spk_r_ext_pa_gpio);
-
-	return -EINVAL;
-}
-
-static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
-{
-	struct snd_soc_card *card = codec->component.card;
-	struct msm8996_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
-	int ret;
-
-	pr_debug("%s: %s external speaker PA %d, %d\n", __func__,
-		enable ? "Enable" : "Disable", pdata->spk_l_ext_pa_gpio,
-		pdata->spk_r_ext_pa_gpio);
-
-	if (!gpio_is_valid(pdata->spk_l_ext_pa_gpio) ||
-			!gpio_is_valid(pdata->spk_r_ext_pa_gpio)) {
-		pr_err("%s: Invalid gpio: %d, %d\n", __func__,
-			pdata->spk_l_ext_pa_gpio, pdata->spk_r_ext_pa_gpio);
-		return false;
-	}
-
-	if (enable) {
-		ret = lct_spk_ext_pa_pinctrl_select(pdata, 1);
-		if (ret) {
-			pr_err("%s: gpio %d or %d set cannot be disabled\n",
-					__func__, pdata->spk_l_ext_pa_gpio,
-					pdata->spk_r_ext_pa_gpio);
-			return ret;
-		}
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-		ret = pa_power_on(ppdev, pdata, true);
-		if (ret)
-			pr_err("%s: pa power off fail!", __func__);
-		usleep_range(5000, 5010);
-#endif
-		gpio_set_value_cansleep(pdata->spk_l_ext_pa_gpio, enable);
-		gpio_set_value_cansleep(pdata->spk_r_ext_pa_gpio, enable);
-	} else {
-		gpio_set_value_cansleep(pdata->spk_l_ext_pa_gpio, enable);
-		gpio_set_value_cansleep(pdata->spk_r_ext_pa_gpio, enable);
-		ret = lct_spk_ext_pa_pinctrl_select(pdata, 0);
-		if (ret) {
-			pr_err("%s: gpio %d or %d set cannot be de-activated.\n",
-					__func__, pdata->spk_l_ext_pa_gpio,
-					pdata->spk_r_ext_pa_gpio);
-			return ret;
-		}
-#if defined(CONFIG_EXT_PA_BOOST_5V)
-		ret = pa_power_on(ppdev, pdata, false);
-		if (ret)
-			pr_err("%s: pa power off fail!", __func__);
-#endif
-	}
-	return 0;
-}
-#endif
-
 static int msm8996_tasha_codec_event_cb(struct snd_soc_codec *codec,
 					enum wcd9335_codec_event codec_event)
 {
@@ -2046,7 +1798,7 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	int err;
 	void *config_data;
 	struct snd_soc_codec *codec = rtd->codec;
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_pcm_runtime *rtd_aux = rtd->card->rtd_aux;
@@ -2110,7 +1862,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "ultrasound amp");
 	snd_soc_dapm_ignore_suspend(dapm, "Handset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Headset Mic");
-	snd_soc_dapm_ignore_suspend(dapm, "Secondary Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "ANCRight Headset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "ANCLeft Headset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
@@ -2158,10 +1909,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	snd_soc_dai_set_channel_map(codec_dai, ARRAY_SIZE(tx_ch),
 				    tx_ch, ARRAY_SIZE(rx_ch), rx_ch);
-
-#if defined(CONFIG_SPEAKER_EXT_PA)
-	tasha_spk_ext_pa_cb(enable_spk_ext_pa, codec);
-#endif
 
 	msm8996_codec_fn.get_afe_config_fn = tasha_get_afe_config;
 	msm8996_codec_fn.mbhc_hs_detect_exit = tasha_mbhc_hs_detect_exit;
@@ -2274,15 +2021,9 @@ static void *def_tasha_mbhc_cal(void)
 		return NULL;
 	}
 
-#ifdef CONFIG_PACIFIC_BOARD
-#define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(tasha_wcd_cal)->X) = (Y))
-	S(v_hs_max, 1600);
-#undef S
-#else
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(tasha_wcd_cal)->X) = (Y))
 	S(v_hs_max, 1500);
 #undef S
-#endif
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(tasha_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
 #undef S
@@ -2675,7 +2416,6 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.dynamic = 1,
 		.async_ops = ASYNC_DPCM_SND_SOC_HW_PARAMS,
 		.dpcm_playback = 1,
-		.dpcm_capture = 1,
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 			 SND_SOC_DPCM_TRIGGER_POST},
 		.codec_dai_name = "snd-soc-dummy-dai",
@@ -3638,7 +3378,7 @@ static int msm8996_wsa881x_init(struct snd_soc_component *component)
 		return -EINVAL;
 	}
 
-	dapm = &codec->dapm;
+	dapm = snd_soc_codec_get_dapm(codec);
 
 	if (!strcmp(component->name_prefix, "SpkrLeft")) {
 		dev_dbg(codec->dev, "%s: setting left ch map to codec %s\n",
@@ -3824,7 +3564,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 {
 	struct snd_soc_card *card = NULL;
 	struct snd_soc_dai_link *dailink;
-	int len = 0;
+	int len_1, len_2, len_3, len_4;
 	const struct of_device_id *match;
 
 	match = of_match_node(msm8996_asoc_machine_of_match, dev->of_node);
@@ -3836,44 +3576,40 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 
 	if (!strcmp(match->data, "tasha_codec")) {
 		card = &snd_soc_card_tasha_msm8996;
-		len = ARRAY_SIZE(msm8996_common_dai_links);
+		len_1 = ARRAY_SIZE(msm8996_common_dai_links);
+		len_2 = len_1 + ARRAY_SIZE(msm8996_tasha_fe_dai_links);
+		len_3 = len_2 + ARRAY_SIZE(msm8996_common_be_dai_links);
 
 		memcpy(msm8996_tasha_dai_links,
 		       msm8996_common_dai_links,
 		       sizeof(msm8996_common_dai_links));
-		if (of_property_read_bool(dev->of_node, "qcom,no-codec")) {
-			dev_dbg(dev, "%s(): no codec\n", __func__);
-		} else {
-			memcpy(msm8996_tasha_dai_links + len,
-			       msm8996_tasha_fe_dai_links,
-			       sizeof(msm8996_tasha_fe_dai_links));
-			len += ARRAY_SIZE(msm8996_tasha_fe_dai_links);
-			memcpy(msm8996_tasha_dai_links + len,
-			       msm8996_tasha_be_dai_links,
-			       sizeof(msm8996_tasha_be_dai_links));
-			len += ARRAY_SIZE(msm8996_tasha_be_dai_links);
-		}
-		memcpy(msm8996_tasha_dai_links + len,
+		memcpy(msm8996_tasha_dai_links + len_1,
+		       msm8996_tasha_fe_dai_links,
+		       sizeof(msm8996_tasha_fe_dai_links));
+		memcpy(msm8996_tasha_dai_links + len_2,
 		       msm8996_common_be_dai_links,
 		       sizeof(msm8996_common_be_dai_links));
-		len += ARRAY_SIZE(msm8996_common_be_dai_links);
+		memcpy(msm8996_tasha_dai_links + len_3,
+		       msm8996_tasha_be_dai_links,
+		       sizeof(msm8996_tasha_be_dai_links));
 
 		dailink = msm8996_tasha_dai_links;
+		len_4 = len_3 + ARRAY_SIZE(msm8996_tasha_be_dai_links);
 	}
 
 	if (of_property_read_bool(dev->of_node, "qcom,hdmi-audio-rx")) {
 		dev_dbg(dev, "%s(): hdmi audio support present\n",
 				__func__);
-		memcpy(dailink + len, msm8996_hdmi_dai_link,
+		memcpy(dailink + len_4, msm8996_hdmi_dai_link,
 			sizeof(msm8996_hdmi_dai_link));
-		len += ARRAY_SIZE(msm8996_hdmi_dai_link);
+		len_4 += ARRAY_SIZE(msm8996_hdmi_dai_link);
 	} else {
 		dev_dbg(dev, "%s(): No hdmi audio support\n", __func__);
 	}
 
 	if (card) {
 		card->dai_link = dailink;
-		card->num_links = len;
+		card->num_links = len_4;
 	}
 
 	return card;
@@ -4194,18 +3930,6 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 	if (ret)
 		dev_info(&pdev->dev, "msm8996_prepare_us_euro failed (%d)\n",
 			ret);
-
-#if defined(CONFIG_SPEAKER_EXT_PA) && defined(CONFIG_EXT_PA_BOOST_5V)
-	ret = is_ext_spk_gpio_support(pdev, pdata);
-	if (ret < 0)
-		pr_warn("%s: doesn't support external speaker pa\n", __func__);
-	else {
-		ppdev = pdev;
-		ret = pa_power_init(pdev, pdata, true);
-		if (ret)
-			pr_err("%s: pa power init fail!", __func__);
-	}
-#endif
 	return 0;
 err:
 	if (pdata->us_euro_gpio > 0) {

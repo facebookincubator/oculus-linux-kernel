@@ -1137,13 +1137,9 @@ static int mxuport_port_probe(struct usb_serial_port *port)
 		return err;
 
 	/* Set interface (RS-232) */
-	err = mxuport_send_ctrl_urb(serial, RQ_VENDOR_SET_INTERFACE,
-				    MX_INT_RS232,
-				    port->port_number);
-	if (err)
-		return err;
-
-	return 0;
+	return mxuport_send_ctrl_urb(serial, RQ_VENDOR_SET_INTERFACE,
+				     MX_INT_RS232,
+				     port->port_number);
 }
 
 static int mxuport_alloc_write_urb(struct usb_serial *serial,
@@ -1263,6 +1259,15 @@ static int mxuport_attach(struct usb_serial *serial)
 	return 0;
 }
 
+static void mxuport_release(struct usb_serial *serial)
+{
+	struct usb_serial_port *port0 = serial->port[0];
+	struct usb_serial_port *port1 = serial->port[1];
+
+	usb_serial_generic_close(port1);
+	usb_serial_generic_close(port0);
+}
+
 static int mxuport_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
 	struct mxuport_port *mxport = usb_get_serial_port_data(port);
@@ -1365,6 +1370,7 @@ static struct usb_serial_driver mxuport_device = {
 	.probe			= mxuport_probe,
 	.port_probe		= mxuport_port_probe,
 	.attach			= mxuport_attach,
+	.release		= mxuport_release,
 	.calc_num_ports		= mxuport_calc_num_ports,
 	.open			= mxuport_open,
 	.close			= mxuport_close,

@@ -23,6 +23,13 @@
 #include <linux/iio/common/st_sensors.h>
 #include "st_magn.h"
 
+int st_magn_trig_set_state(struct iio_trigger *trig, bool state)
+{
+	struct iio_dev *indio_dev = iio_trigger_get_drvdata(trig);
+
+	return st_sensors_set_dataready_irq(indio_dev, state);
+}
+
 static int st_magn_buffer_preenable(struct iio_dev *indio_dev)
 {
 	return st_sensors_set_enable(indio_dev, true);
@@ -31,7 +38,6 @@ static int st_magn_buffer_preenable(struct iio_dev *indio_dev)
 static int st_magn_buffer_postenable(struct iio_dev *indio_dev)
 {
 	int err;
-	u8 outdata[6];
 	struct st_sensor_data *mdata = iio_priv(indio_dev);
 
 	mdata->buffer_data = kmalloc(indio_dev->scan_bytes, GFP_KERNEL);
@@ -44,16 +50,8 @@ static int st_magn_buffer_postenable(struct iio_dev *indio_dev)
 	if (err < 0)
 		goto st_magn_buffer_postenable_error;
 
-	err = mdata->tf->read_multiple_byte(&mdata->tb,
-				mdata->dev, indio_dev->channels[0].address,
-				6, outdata, mdata->multiread_bit);
-	if (err < 0)
-		goto st_magn_buffer_disable_iio_buffer;
+	return err;
 
-	return 0;
-
-st_magn_buffer_disable_iio_buffer:
-	iio_triggered_buffer_predisable(indio_dev);
 st_magn_buffer_postenable_error:
 	kfree(mdata->buffer_data);
 allocate_memory_error:

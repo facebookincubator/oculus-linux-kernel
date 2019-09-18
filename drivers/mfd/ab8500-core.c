@@ -565,16 +565,12 @@ static int ab8500_irq_map(struct irq_domain *d, unsigned int virq,
 	irq_set_chip_and_handler(virq, &ab8500_irq_chip,
 				handle_simple_irq);
 	irq_set_nested_thread(virq, 1);
-#ifdef CONFIG_ARM
-	set_irq_flags(virq, IRQF_VALID);
-#else
 	irq_set_noprobe(virq);
-#endif
 
 	return 0;
 }
 
-static struct irq_domain_ops ab8500_irq_ops = {
+static const struct irq_domain_ops ab8500_irq_ops = {
 	.map    = ab8500_irq_map,
 	.xlate  = irq_domain_xlate_twocell,
 };
@@ -1848,7 +1844,6 @@ static const struct platform_device_id ab8500_id[] = {
 static struct platform_driver ab8500_core_driver = {
 	.driver = {
 		.name = "ab8500-core",
-		.owner = THIS_MODULE,
 	},
 	.probe	= ab8500_probe,
 	.remove	= ab8500_remove,

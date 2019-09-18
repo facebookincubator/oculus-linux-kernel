@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -193,10 +193,34 @@ void ocm_core_open(void)
 		pr_err("%s: Unable to register CORE\n", __func__);
 }
 
+struct cal_block_data *cal_utils_get_cal_block_by_key(
+		struct cal_type_data *cal_type, uint32_t key)
+{
+	struct list_head                *ptr, *next;
+	struct cal_block_data           *cal_block = NULL;
+	struct audio_cal_info_metainfo  *metainfo;
+
+	list_for_each_safe(ptr, next,
+		&cal_type->cal_blocks) {
+
+		cal_block = list_entry(ptr,
+			struct cal_block_data, list);
+		metainfo = (struct audio_cal_info_metainfo *)
+			cal_block->cal_info;
+		if (metainfo->nKey != key) {
+			pr_debug("%s: metainfo key mismatch!!! found:%x, needed:%x\n",
+				__func__, metainfo->nKey, key);
+		} else {
+			pr_debug("%s: metainfo key match found", __func__);
+			return cal_block;
+		}
+	}
+	return NULL;
+}
+
 int32_t core_set_license(uint32_t key, uint32_t module_id)
 {
 	struct avcs_cmd_set_license *cmd_setl = NULL;
-	struct audio_cal_info_metainfo *metainfo = NULL;
 	struct cal_block_data *cal_block = NULL;
 	int rc = 0, packet_size = 0;
 
@@ -210,28 +234,13 @@ int32_t core_set_license(uint32_t key, uint32_t module_id)
 	}
 
 	mutex_lock(&((q6core_lcl.cal_data[META_CAL])->lock));
-	cal_block =
-		cal_utils_get_only_cal_block(q6core_lcl.cal_data[META_CAL]);
+	cal_block = cal_utils_get_cal_block_by_key(
+				q6core_lcl.cal_data[META_CAL], key);
 	if (cal_block == NULL ||
 		cal_block->cal_data.kvaddr == NULL ||
 		cal_block->cal_data.size <= 0) {
 		pr_err("%s: Invalid cal block to send", __func__);
 		rc = -EINVAL;
-		goto cal_data_unlock;
-	}
-	metainfo = (struct audio_cal_info_metainfo *)cal_block->cal_info;
-	if (metainfo == NULL) {
-		pr_err("%s: No metainfo!!!", __func__);
-		rc = -EINVAL;
-		goto cal_data_unlock;
-	}
-	if (metainfo->nKey != key) {
-		pr_err("%s: metainfo key mismatch!!! found:%x, needed:%x\n",
-				__func__, metainfo->nKey, key);
-		rc = -EINVAL;
-		goto cal_data_unlock;
-	} else if (key == 0) {
-		pr_err("%s: metainfo key is %d a invalid key", __func__, key);
 		goto cal_data_unlock;
 	}
 
@@ -268,9 +277,9 @@ int32_t core_set_license(uint32_t key, uint32_t module_id)
 	memcpy((uint8_t *)cmd_setl + sizeof(struct avcs_cmd_set_license),
 		cal_block->cal_data.kvaddr,
 		cal_block->cal_data.size);
-	pr_info("%s: Set license opcode=0x%x ,key=0x%x, id =0x%x, size = %d\n",
+	pr_info("%s: Set license opcode=0x%x, id =0x%x, size = %d\n",
 			__func__, cmd_setl->hdr.opcode,
-			metainfo->nKey, cmd_setl->id, cmd_setl->size);
+			cmd_setl->id, cmd_setl->size);
 	rc = apr_send_pkt(q6core_lcl.core_handle_q, (uint32_t *)cmd_setl);
 	if (rc < 0)
 		pr_err("%s: SET_LICENSE failed op[0x%x]rc[%d]\n",
@@ -387,25 +396,29 @@ bool q6core_is_adsp_ready(void)
 	hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE, 0);
 	hdr.opcode = AVCS_CMD_ADSP_EVENT_GET_STATE;
 
+	mutex_lock(&(q6core_lcl.cmd_lock));
 	ocm_core_open();
-	q6core_lcl.bus_bw_resp_received = 0;
-	rc = apr_send_pkt(q6core_lcl.core_handle_q, (uint32_t *)&hdr);
-	if (rc < 0) {
-		pr_err("%s: Get ADSP state APR packet send event %d\n",
-			__func__, rc);
-		goto bail;
-	}
+	if (q6core_lcl.core_handle_q) {
+		q6core_lcl.bus_bw_resp_received = 0;
+		rc = apr_send_pkt(q6core_lcl.core_handle_q, (uint32_t *)&hdr);
+		if (rc < 0) {
+			pr_err("%s: Get ADSP state APR packet send event %d\n",
+				__func__, rc);
+			goto bail;
+		}
 
-	rc = wait_event_timeout(q6core_lcl.bus_bw_req_wait,
-				(q6core_lcl.bus_bw_resp_received == 1),
-				msecs_to_jiffies(Q6_READY_TIMEOUT_MS));
-	if (rc > 0 && q6core_lcl.bus_bw_resp_received) {
-		/* ensure to read updated param by callback thread */
-		rmb();
-		ret = !!q6core_lcl.param;
+		rc = wait_event_timeout(q6core_lcl.bus_bw_req_wait,
+					(q6core_lcl.bus_bw_resp_received == 1),
+					msecs_to_jiffies(Q6_READY_TIMEOUT_MS));
+		if (rc > 0 && q6core_lcl.bus_bw_resp_received) {
+			/* ensure to read updated param by callback thread */
+			rmb();
+			ret = !!q6core_lcl.param;
+		}
 	}
 bail:
 	pr_debug("%s: leave, rc %d, adsp ready %d\n", __func__, rc, ret);
+	mutex_unlock(&(q6core_lcl.cmd_lock));
 	return ret;
 }
 
@@ -583,6 +596,11 @@ static int q6core_send_custom_topologies(void)
 	struct cal_block_data *cal_block = NULL;
 	struct avcs_cmd_register_topologies reg_top;
 
+	if (!q6core_is_adsp_ready()) {
+		pr_err("%s: ADSP is not ready!\n", __func__);
+		return -ENODEV;
+	}
+
 	memset(&reg_top, 0, sizeof(reg_top));
 	mutex_lock(&q6core_lcl.cal_data[CUST_TOP_CAL]->lock);
 	mutex_lock(&q6core_lcl.cmd_lock);
@@ -596,12 +614,6 @@ static int q6core_send_custom_topologies(void)
 	if (cal_block->cal_data.size <= 0) {
 		pr_debug("%s: cal size is %zd not sending\n",
 			__func__, cal_block->cal_data.size);
-		goto unlock;
-	}
-
-	if (!q6core_is_adsp_ready()) {
-		pr_err("%s: ADSP is not ready!\n", __func__);
-		ret  = -ENODEV;
 		goto unlock;
 	}
 

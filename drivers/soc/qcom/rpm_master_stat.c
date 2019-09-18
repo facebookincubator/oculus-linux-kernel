@@ -1,5 +1,4 @@
-/* Copyright (c) 2012-2014, 2016-2017, The Linux Foundation. All rights
- * reserved.
+/* Copyright (c) 2012-2016, 2017,  The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -285,7 +284,7 @@ static ssize_t msm_rpm_master_stats_file_read(struct file *file,
 		goto exit;
 	}
 
-	if ((*ppos <= pdata->phys_size)) {
+	if (*ppos <= pdata->phys_size) {
 		prvdata->len = msm_rpm_master_copy_stats(prvdata);
 		*ppos = 0;
 	}
@@ -355,10 +354,8 @@ static struct msm_rpm_master_stats_platform_data
 	int rc = 0, i;
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		dev_err(dev, "could not allocate memory for platform data\n");
+	if (!pdata)
 		goto err;
-	}
 
 	rc = of_property_read_u32(node, "qcom,master-stats-version",
 							&pdata->version);
@@ -383,24 +380,22 @@ static struct msm_rpm_master_stats_platform_data
 
 	pdata->masters = devm_kzalloc(dev, sizeof(char *) * pdata->num_masters,
 								GFP_KERNEL);
-	if (!pdata->masters) {
-		dev_err(dev, "%s:Failed to allocated memory\n", __func__);
+	if (!pdata->masters)
 		goto err;
-	}
 
 	/*
 	 * Read master names from DT
 	 */
 	for (i = 0; i < pdata->num_masters; i++) {
 		const char *master_name;
+
 		of_property_read_string_index(node, "qcom,masters",
 							i, &master_name);
 		pdata->masters[i] = devm_kzalloc(dev, sizeof(char) *
 				strlen(master_name) + 1, GFP_KERNEL);
-		if (!pdata->masters[i]) {
-			dev_err(dev, "%s:Failed to get memory\n", __func__);
+		if (!pdata->masters[i])
 			goto err;
-		}
+
 		strlcpy(pdata->masters[i], master_name,
 					strlen(master_name) + 1);
 	}
@@ -463,7 +458,7 @@ static int msm_rpm_master_stats_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id rpm_master_table[] = {
+static const struct of_device_id rpm_master_table[] = {
 	{.compatible = "qcom,rpm-master-stats"},
 	{},
 };
@@ -493,5 +488,4 @@ module_exit(msm_rpm_master_stats_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MSM RPM Master Statistics driver");
-MODULE_VERSION("1.0");
 MODULE_ALIAS("platform:msm_master_stat_log");

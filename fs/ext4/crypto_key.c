@@ -15,6 +15,7 @@
 #include <uapi/linux/keyctl.h>
 
 #include "ext4.h"
+#include "ext4_ice.h"
 #include "xattr.h"
 
 static void derive_crypt_complete(struct crypto_async_request *req, int rc)
@@ -113,7 +114,7 @@ void ext4_free_encryption_info(struct inode *inode,
 
 static int ext4_default_data_encryption_mode(void)
 {
-	return pfk_is_ready() ? EXT4_ENCRYPTION_MODE_PRIVATE :
+	return ext4_is_ice_enabled() ? EXT4_ENCRYPTION_MODE_PRIVATE :
 		EXT4_ENCRYPTION_MODE_AES_256_XTS;
 }
 
@@ -126,7 +127,7 @@ int _ext4_get_encryption_info(struct inode *inode)
 	struct key *keyring_key = NULL;
 	struct ext4_encryption_key *master_key;
 	struct ext4_encryption_context ctx;
-	struct user_key_payload *ukp;
+	const struct user_key_payload *ukp;
 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 	struct crypto_ablkcipher *ctfm;
 	const char *cipher_str;
@@ -222,7 +223,13 @@ retry:
 		goto out;
 	}
 	down_read(&keyring_key->sem);
-	ukp = ((struct user_key_payload *)keyring_key->payload.data);
+	ukp = user_key_payload(keyring_key);
+	if (!ukp) {
+		/* key was revoked before we acquired its semaphore */
+		res = -EKEYREVOKED;
+		up_read(&keyring_key->sem);
+		goto out;
+	}
 	if (ukp->datalen != sizeof(struct ext4_encryption_key)) {
 		res = -EINVAL;
 		up_read(&keyring_key->sem);
@@ -239,14 +246,8 @@ retry:
 		up_read(&keyring_key->sem);
 		goto out;
 	}
-	/* If we don't need to derive, we still want to do everything
-	 * up until now to validate the key. It's cleaner to fail now
-	 * than to fail in block I/O. */
-	if (for_fname ||
-	    crypt_info->ci_data_mode != EXT4_ENCRYPTION_MODE_PRIVATE) {
-		res = ext4_derive_key_aes(ctx.nonce, master_key->raw,
-					  crypt_info->ci_raw_key);
-	}
+	res = ext4_derive_key_aes(ctx.nonce, master_key->raw,
+				  crypt_info->ci_raw_key);
 	up_read(&keyring_key->sem);
 	if (res)
 		goto out;
@@ -256,9 +257,8 @@ got_key:
 		ctfm = crypto_alloc_ablkcipher(cipher_str, 0, 0);
 		if (!ctfm || IS_ERR(ctfm)) {
 			res = ctfm ? PTR_ERR(ctfm) : -ENOMEM;
-			printk(KERN_DEBUG
-			       "%s: error %d (inode %u) allocating crypto "
-			       "tfm\n", __func__, res, (unsigned) inode->i_ino);
+			pr_debug("%s: error %d (inode %u) allocating crypto tfm\n",
+				__func__, res, (unsigned) inode->i_ino);
 			goto out;
 		}
 		crypt_info->ci_ctfm = ctfm;
@@ -269,10 +269,10 @@ got_key:
 					       ext4_encryption_key_size(mode));
 		if (res)
 			goto out;
-		memset(crypt_info->ci_raw_key, 0,
-		       sizeof(crypt_info->ci_raw_key));
-	} else if (!pfk_is_ready()) {
-		printk(KERN_WARNING "%s: ICE support not available\n",
+		memzero_explicit(crypt_info->ci_raw_key,
+			sizeof(crypt_info->ci_raw_key));
+	} else if (!ext4_is_ice_enabled()) {
+		pr_warn("%s: ICE support not available\n",
 		       __func__);
 		res = -EINVAL;
 		goto out;
@@ -286,7 +286,8 @@ got_key:
 out:
 	if (res == -ENOKEY)
 		res = 0;
-	memset(crypt_info->ci_raw_key, 0, sizeof(crypt_info->ci_raw_key));
+	memzero_explicit(crypt_info->ci_raw_key,
+		sizeof(crypt_info->ci_raw_key));
 	ext4_free_crypt_info(crypt_info);
 	return res;
 }
@@ -297,20 +298,3 @@ int ext4_has_encryption_key(struct inode *inode)
 
 	return (ei->i_crypt_info != NULL);
 }
-
-void ext4_set_bio_crypt_context(struct inode *inode, struct bio *bio)
-{
-	struct ext4_crypt_info *ci = ext4_encrypted_inode(inode) ?
-		ext4_encryption_info(inode) : NULL;
-
-	if (S_ISREG(inode->i_mode) && ci &&
-	    (ci->ci_data_mode == EXT4_ENCRYPTION_MODE_PRIVATE)) {
-		BUG_ON(!pfk_is_ready());
-		bio->bi_crypt_ctx.bc_flags |= (BC_ENCRYPT_FL |
-					       BC_AES_256_XTS_FL);
-		bio->bi_crypt_ctx.bc_key_size = EXT4_AES_256_XTS_KEY_SIZE;
-		bio->bi_crypt_ctx.bc_keyring_key = ci->ci_keyring_key;
-	} else
-		bio->bi_crypt_ctx.bc_flags &= ~BC_ENCRYPT_FL;
-}
-EXPORT_SYMBOL(ext4_set_bio_crypt_context); /* TODO(mhalcrow): Just for proof-of-concept */

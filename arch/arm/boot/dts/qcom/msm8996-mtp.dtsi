@@ -48,6 +48,7 @@
 	status = "ok";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_active>;
+
 };
 
 &sdhc_1 {
@@ -335,10 +336,15 @@
 	};
 };
 
+#include "msm8996-sde-display.dtsi"
 #include "msm8996-mdss-panels.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&mdss_hdmi {
+	status = "ok";
 };
 
 &mdss_dsi {
@@ -365,9 +371,24 @@
 	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
 };
 
+&ibb_regulator {
+	qcom,qpnp-ibb-discharge-resistor = <32>;
+};
+
 &labibb {
 	status = "ok";
-	qpnp,qpnp-labibb-mode = "lcd";
+	qcom,qpnp-labibb-mode = "lcd";
+};
+
+&dsi_tosh_720_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,cont-splash-enabled;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_vdd_no_labibb>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
+	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
+	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 };
 
 &dsi_dual_sharp_video {
@@ -375,13 +396,19 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
+	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
 };
 
 &dsi_sharp_1080_cmd {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,cont-splash-enabled;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
+	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
+	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 };
 
 &dsi_dual_nt35597_video {
@@ -389,6 +416,7 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
 };
 
 &dsi_dual_nt35597_cmd {
@@ -396,9 +424,9 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,partial-update-enabled;
-	qcom,panel-roi-alignment = <720 128 720 128 1440 128>;
-	qcom,panel-allow-phy-poweroff;
+	qcom,partial-update-enabled = "single_roi";
+	qcom,panel-roi-alignment = <720 128 720 64 720 64>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
 };
 
 &dsi_nt35950_4k_dsc_cmd {
@@ -420,7 +448,7 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,partial-update-enabled;
+	qcom,partial-update-enabled = "single_roi";
 	/* panel supports slice height of 8/16/32/48/3840 */
 	qcom,panel-roi-alignment = <1080 8 1080 8 1080 8>;
 };
@@ -437,7 +465,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,panel-allow-phy-poweroff;
 };
 
 &dsi_dual_sharp_1080_120hz_cmd {
@@ -469,7 +496,7 @@
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,partial-update-enabled;
+	qcom,partial-update-enabled = "single_roi";
 	qcom,panel-roi-alignment = <4 4 2 2 20 20>;
 };
 
@@ -484,6 +511,17 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 };
 
+&dsi_jdi_1080p_video {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,cont-splash-enabled;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
+	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
+	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
+};
+
 /{
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
@@ -491,19 +529,8 @@
 	};
 };
 
-&pmi8994_charger {
-	qcom,dc-psy-type = "Wipower";
-	qcom,dcin-vadc = <&pmi8994_vadc>;
-	qcom,wipower-default-ilim-map = <4000000 20000000 550 700 300>;
-	qcom,wipower-pt-ilim-map = <4000000 7140000 550 700 300>,
-					<7140000 8140000 550 700 300>,
-					<8140000 9140000 500 700 300>,
-					<9140000 9950000 500 700 300>;
-	qcom,wipower-div2-ilim-map = <4000000 4820000 550 700 300>,
-					<4820000 5820000 550 700 300>,
-					<5820000 6820000 550 650 650>,
-					<6820000 7820000 550 700 600>,
-					<7820000 8500000 550 700 550>;
+&usb3 {
+	extcon = <&pmi8994_charger>;
 };
 
 &i2c_7 {
@@ -514,6 +541,10 @@
 		qcom,float-voltage-mv = <4400>;
 		qcom,recharge-mv = <100>;
 	};
+};
+
+&pmi8994_charger {
+	dpdm-supply = <&qusb_phy0>;
 };
 
 &pmi8994_fg {
@@ -631,6 +662,10 @@
 			interrupts = <125 0x2008>;
 			vdd-supply = <&pm8994_l14>;
 			avdd-supply = <&pm8994_l22>;
+			synaptics,vdd-voltage = <1800000 1800000>;
+			synaptics,avdd-voltage = <3300000 3300000>;
+			synaptics,vdd-current = <40000>;
+			synaptics,avdd-current = <20000>;
 			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
 			pinctrl-0 = <&ts_active>;
 			pinctrl-1 = <&ts_suspend>;
@@ -723,7 +758,6 @@
 			"SpkrLeft IN", "SPK1 OUT",
 			"SpkrRight IN", "SPK2 OUT";
 
-		qcom,hdmi-audio-rx;
 		asoc-codec = <&stub_codec>, <&hdmi_audio>;
 		asoc-codec-names = "msm-stub-codec.1", "msm-hdmi-audio-codec-rx";
 		qcom,hph-en1-gpio = <&pmi8994_gpios 10 0>;

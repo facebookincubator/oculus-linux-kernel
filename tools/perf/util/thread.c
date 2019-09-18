@@ -4,6 +4,7 @@
 #include <string.h>
 #include "session.h"
 #include "thread.h"
+#include "thread-stack.h"
 #include "util.h"
 #include "debug.h"
 #include "comm.h"
@@ -15,9 +16,9 @@ int thread__init_map_groups(struct thread *thread, struct machine *machine)
 	pid_t pid = thread->pid_;
 
 	if (pid == thread->tid || pid == -1) {
-		thread->mg = map_groups__new();
+		thread->mg = map_groups__new(machine);
 	} else {
-		leader = machine__findnew_thread(machine, pid, pid);
+		leader = __machine__findnew_thread(machine, pid, pid);
 		if (leader)
 			thread->mg = map_groups__get(leader->mg);
 	}
@@ -52,7 +53,8 @@ struct thread *thread__new(pid_t pid, pid_t tid)
 			goto err_thread;
 
 		list_add(&comm->list, &thread->comm_list);
-
+		atomic_set(&thread->refcnt, 0);
+		RB_CLEAR_NODE(&thread->rb_node);
 	}
 
 	return thread;
@@ -66,6 +68,10 @@ void thread__delete(struct thread *thread)
 {
 	struct comm *comm, *tmp;
 
+	BUG_ON(!RB_EMPTY_NODE(&thread->rb_node));
+
+	thread_stack__free(thread);
+
 	if (thread->mg) {
 		map_groups__put(thread->mg);
 		thread->mg = NULL;
@@ -77,6 +83,21 @@ void thread__delete(struct thread *thread)
 	unwind__finish_access(thread);
 
 	free(thread);
+}
+
+struct thread *thread__get(struct thread *thread)
+{
+	if (thread)
+		atomic_inc(&thread->refcnt);
+	return thread;
+}
+
+void thread__put(struct thread *thread)
+{
+	if (thread && atomic_dec_and_test(&thread->refcnt)) {
+		list_del_init(&thread->node);
+		thread__delete(thread);
+	}
 }
 
 struct comm *thread__comm(const struct thread *thread)
@@ -100,15 +121,14 @@ struct comm *thread__exec_comm(const struct thread *thread)
 	return last;
 }
 
-/* CHECKME: time should always be 0 if event aren't ordered */
 int __thread__set_comm(struct thread *thread, const char *str, u64 timestamp,
 		       bool exec)
 {
 	struct comm *new, *curr = thread__comm(thread);
 	int err;
 
-	/* Override latest entry if it had no specific time coverage */
-	if (!curr->start && !curr->exec) {
+	/* Override the default :tid entry */
+	if (!thread->comm_set) {
 		err = comm__override(curr, str, timestamp, exec);
 		if (err)
 			return err;
@@ -171,6 +191,12 @@ static int thread__clone_map_groups(struct thread *thread,
 	if (thread->pid_ == parent->pid_)
 		return 0;
 
+	if (thread->mg == parent->mg) {
+		pr_debug("broken map groups on thread %d/%d parent %d/%d\n",
+			 thread->pid_, thread->tid, parent->pid_, parent->tid);
+		return 0;
+	}
+
 	/* But this one is new process, copy maps. */
 	for (i = 0; i < MAP__NR_TYPES; ++i)
 		if (map_groups__clone(thread->mg, parent->mg, i) < 0)
@@ -190,7 +216,6 @@ int thread__fork(struct thread *thread, struct thread *parent, u64 timestamp)
 		err = thread__set_comm(thread, comm, timestamp);
 		if (err)
 			return err;
-		thread->comm_set = true;
 	}
 
 	thread->ppid = parent->tid;
@@ -198,7 +223,6 @@ int thread__fork(struct thread *thread, struct thread *parent, u64 timestamp)
 }
 
 void thread__find_cpumode_addr_location(struct thread *thread,
-					struct machine *machine,
 					enum map_type type, u64 addr,
 					struct addr_location *al)
 {
@@ -211,8 +235,7 @@ void thread__find_cpumode_addr_location(struct thread *thread,
 	};
 
 	for (i = 0; i < ARRAY_SIZE(cpumodes); i++) {
-		thread__find_addr_location(thread, machine, cpumodes[i], type,
-					   addr, al);
+		thread__find_addr_location(thread, cpumodes[i], type, addr, al);
 		if (al->map)
 			break;
 	}

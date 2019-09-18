@@ -1,0 +1,234 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+#include "apq8998-v2.1.dtsi"
+#include "msm8998-mtp.dtsi"
+#include "vs1-camera.dtsi"
+#include "vs1-misc.dtsi"
+#include "vs1-reserved-memory.dtsi"
+#include "vs1-serial.dtsi"
+#include "vs1.dtsi"
+
+/ {
+	oculus,fan {
+		/delete-property/ fan-power;
+		fan,vdd-supply = <&pm8998_l19>;
+		fan,vdd-voltage-level = <3104000 3104000>;
+		pinctrl-0 = <&vs1_fan_irq_active>;
+		pinctrl-1 = <&vs1_fan_irq_suspend>;
+	};
+};
+
+&dsi_panel_pwr_supply_no_labibb {
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "ovr-avdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "ovr-vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <5>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "ovr-vci";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <10>;
+	};
+};
+
+&i2c_2 {
+	status = "disabled";
+
+	cm36687: cm36687@1 {
+		status = "disabled";
+	};
+};
+
+&i2c_7 {
+	status = "disabled";
+
+	/delete-node/ qcom,smb138x@8;
+};
+
+&i2c_8 {
+	cm710x: cm710x@2C {
+		pinctrl-names = "vs1_codec_default", "vs1_codec_suspend",
+			"vs1_codec_hp_en", "vs1_codec_spk_en";
+		pinctrl-0 = <&vs1_codec_sel_package_default
+			&vs1_codec_reset_default
+			&vs1_codec_ldo_en_default
+			&vs1_codec_irq_default
+			&vs1_codec_hp_amp_en_default
+			&vs1_codec_spk_amp_en_default>;
+		pinctrl-1 = <&vs1_codec_ldo_en_suspend
+			&vs1_codec_reset_suspend>;
+		pinctrl-2 = <&vs1_codec_hp_amp_en_active>;
+		pinctrl-3 = <&vs1_codec_spk_amp_en_active>;
+
+		cm710x,fw-parsing = "spi";
+	};
+
+	max98927@3A {
+		status = "disabled";
+	};
+};
+
+&mdss_dsi0 {
+	ovr-avdd-supply = <&panel_avdd_regulator>;
+};
+
+&mdss_dsi1 {
+	ovr-avdd-supply = <&panel_avdd_regulator>;
+};
+
+&pm8998_l19 {
+	regulator-min-microvolt = <3104000>;
+	regulator-max-microvolt = <3104000>;
+};
+
+&pm8998_gpios {
+	/delete-node/ gpio@d100;
+
+	gpio@d400 {
+		qcom,master-en = <0>;
+		status = "okay";
+	};
+};
+
+&pm8998_vadc {
+	chan@17 {
+		label = "ipd_sensor";	/* Channel name used for sysfs entry */
+		reg = <0x17>;		/* AMUX channel number */
+		qcom,decimation = <2>;	/* 2K Sampling rate  */
+		qcom,pre-div-channel-scaling = <0>;	/* 1:1 scaling */
+		qcom,calibration-type = "absolute";
+		qcom,scale-function = <0>;	/* Default scaling to convert raw adc code to voltage */
+		qcom,hw-settle-time = <2>;	/* 200us Settling period for the channel before ADC read */
+		qcom,fast-avg-setup = <0>;
+	};
+};
+
+&pmi8998_charger {
+	qcom,fcc-max-ua = <1900000>;    /* Reduce from 3A */
+};
+
+&pmi8998_fg {
+	qcom,battery-data = <&vs1_batterydata>;
+};
+
+&pmi8998_gpios {
+	/* GPIO 1 for WLED power enable */
+	gpio@c000 {
+		qcom,mode = <1>;
+		qcom,output-type = <0>;
+		qcom,pull = <5>;
+		qcom,vin-sel = <0>;
+		qcom,out-strength = <1>;
+		qcom,src-sel = <0>;
+		qcom,invert = <0>;
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+
+	gpio@c700 {
+		qcom,vin-sel = <1>;
+		status = "okay";
+	};
+};
+
+&pmi8998_wled {
+	qcom,disp-type-amoled;
+	qcom,avdd-mode-spmi;
+	qcom,panel-0-name = "mdss_dsi_sdc_lightman_video";
+	qcom,panel-1-name = "mdss_dsi_auo_960x1600_video";
+	qcom,panel-0-avdd-target-voltage-mv = <7300>;
+	qcom,panel-1-avdd-target-voltage-mv = <6100>;
+};
+
+&soc {
+	panel_avdd_regulator: oled_regulator@0 {
+		compatible = "ovr-oled-avdd";
+		regulator-name = "oled_avdd_regulator";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-boot-on;
+		pmi-en-gpio = <&pmi8998_gpios 1 0>;
+		avdd-en-gpio = <&tlmm 25 0>;
+		en-a-gpio = <&tlmm 5 0>;
+		en-b-gpio = <&tlmm 133 0>;
+		vin-supply = <&pmi8998_bob>;
+		status = "ok";
+	};
+};
+
+&spi_5 {
+	status = "okay";
+
+	cm710x-spi@0 {
+		compatible = "C-Media,cm710x-spi";
+		reg = <0>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&tlmm {
+	vs1_codec {
+		vs1_codec_spk_amp_en_default: vs1_codec_spk_amp_en_default {
+			mux {
+				pins = "gpio54";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio54";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
+
+		vs1_codec_spk_amp_en_active: vs1_codec_spk_amp_en_active {
+			mux {
+				pins = "gpio54";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio54";
+				drive-strength = <2>;
+				output-high;
+			};
+		};
+	};
+};
+
+&spi_12 {
+	oculusnrf@0 {
+		oculus,syncboss-has-prox;
+	};
+};

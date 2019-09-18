@@ -1114,10 +1114,9 @@ static int snd_mixart_free(struct mixart_mgr *mgr)
 	}
 
 	/* release the i/o ports */
-	for (i = 0; i < 2; i++) {
-		if (mgr->mem[i].virt)
-			iounmap(mgr->mem[i].virt);
-	}
+	for (i = 0; i < 2; ++i)
+		iounmap(mgr->mem[i].virt);
+
 	pci_release_regions(mgr->pci);
 
 	/* free flowarray */
@@ -1270,7 +1269,7 @@ static int snd_mixart_probe(struct pci_dev *pci,
 	pci_set_master(pci);
 
 	/* check if we can restrict PCI DMA transfers to 32 bits */
-	if (pci_set_dma_mask(pci, DMA_BIT_MASK(32)) < 0) {
+	if (dma_set_mask(&pci->dev, DMA_BIT_MASK(32)) < 0) {
 		dev_err(&pci->dev,
 			"architecture does not support 32bit PCI busmaster DMA\n");
 		pci_disable_device(pci);

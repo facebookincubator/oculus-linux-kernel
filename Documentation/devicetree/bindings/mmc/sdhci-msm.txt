@@ -1,9 +1,12 @@
-Qualcomm Standard Secure Digital Host Controller (SDHC)
+Qualcomm Technologies, Inc. Standard Secure Digital Host Controller (SDHC)
 
 Secure Digital Host Controller provides standard host interface to SD/MMC/SDIO cards.
 
 Required properties:
   - compatible : should be "qcom,sdhci-msm"
+		For SDCC version 5.0.0, MCI registers are removed from SDCC interface
+		and some registers are moved to HC. New compatible string is added to
+		support this change - "qcom,sdhci-msm-v5".
   - reg : should contain SDHC, SD Core register map.
   - reg-names : indicates various resources passed to driver (via reg proptery) by name.
 		Required "reg-names" are "hc_mem" and "core_mem"
@@ -72,6 +75,11 @@ Optional Properties:
 						during clock scaling. If this property is not
 						defined, then it falls back to the default HS
 						bus speed mode to maintain backward compatibility.
+	- qcom,sdr104-wa: On Certain chipsets, SDR104 mode might be unstable causing CRC errors
+			  on the interface. So there is a workaround implemented to skip printing
+			  register dumps on CRC errors and also downgrade bus speed mode to
+			  SDR50/DDR50 in case of continuous CRC errors. Set this flag to enable
+			  this workaround.
 
 In the following, <supply> can be vdd (flash core voltage) or vdd-io (I/O voltage).
 	- qcom,<supply>-always-on - specifies whether supply should be kept "on" always.

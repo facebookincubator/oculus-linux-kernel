@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,8 +15,10 @@
 #include <linux/sched.h>
 #include <linux/irq.h>
 #include <linux/mfd/core.h>
-#include <linux/mfd/wcd9xxx/core-resource.h>
+#include <linux/regmap.h>
+#include <linux/mfd/wcd9xxx/core.h>
 #include <linux/mfd/wcd9xxx/wcd9xxx_registers.h>
+#include <linux/mfd/wcd9xxx/wcd9xxx-irq.h>
 #include <linux/delay.h>
 #include <linux/irqdomain.h>
 #include <linux/interrupt.h>
@@ -75,9 +77,9 @@ static void wcd9xxx_irq_sync_unlock(struct irq_data *data)
 			pr_err("%s: Array Size out of bound\n", __func__);
 			 return;
 	}
-	if (!wcd9xxx_res->codec_reg_write) {
-		pr_err("%s: Codec reg write callback function not defined\n",
-				__func__);
+	if (!wcd9xxx_res->wcd_core_regmap) {
+		pr_err("%s: Codec core regmap not defined\n",
+			__func__);
 		return;
 	}
 
@@ -90,7 +92,7 @@ static void wcd9xxx_irq_sync_unlock(struct irq_data *data)
 
 			wcd9xxx_res->irq_masks_cache[i] =
 					wcd9xxx_res->irq_masks_cur[i];
-			wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+			regmap_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_MASK_BASE] + i,
 			wcd9xxx_res->irq_masks_cur[i]);
 		}
@@ -244,21 +246,21 @@ static void wcd9xxx_irq_dispatch(struct wcd9xxx_core_resource *wcd9xxx_res,
 			struct intr_data *irqdata)
 {
 	int irqbit = irqdata->intr_num;
-	if (!wcd9xxx_res->codec_reg_write) {
-		pr_err("%s: codec read/write callback not defined\n",
-			   __func__);
+	if (!wcd9xxx_res->wcd_core_regmap) {
+		pr_err("%s: codec core regmap not defined\n",
+			__func__);
 		return;
 	}
 
 	if (irqdata->clear_first) {
 		wcd9xxx_nested_irq_lock(wcd9xxx_res);
-		wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+		regmap_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLEAR_BASE] +
 					      BIT_BYTE(irqbit),
 			BYTE_BIT_MASK(irqbit));
 
 		if (wcd9xxx_get_intf_type() == WCD9XXX_INTERFACE_TYPE_I2C)
-			wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+			regmap_write(wcd9xxx_res->wcd_core_regmap,
 				wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLR_COMMIT],
 				0x02);
 		handle_nested_irq(phyirq_to_virq(wcd9xxx_res, irqbit));
@@ -266,12 +268,12 @@ static void wcd9xxx_irq_dispatch(struct wcd9xxx_core_resource *wcd9xxx_res,
 	} else {
 		wcd9xxx_nested_irq_lock(wcd9xxx_res);
 		handle_nested_irq(phyirq_to_virq(wcd9xxx_res, irqbit));
-		wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+		regmap_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLEAR_BASE] +
 					      BIT_BYTE(irqbit),
 			BYTE_BIT_MASK(irqbit));
 		if (wcd9xxx_get_intf_type() == WCD9XXX_INTERFACE_TYPE_I2C)
-			wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+			regmap_write(wcd9xxx_res->wcd_core_regmap,
 				wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLR_COMMIT],
 				0x02);
 
@@ -295,16 +297,17 @@ static irqreturn_t wcd9xxx_irq_thread(int irq, void *data)
 		return IRQ_NONE;
 	}
 
-	if (!wcd9xxx_res->codec_bulk_read) {
+	if (!wcd9xxx_res->wcd_core_regmap) {
 		dev_err(wcd9xxx_res->dev,
-				"%s: Codec Bulk Register read callback not supplied\n",
+			"%s: Codec core regmap not supplied\n",
 			   __func__);
 		goto err_disable_irq;
 	}
 
-	ret = wcd9xxx_res->codec_bulk_read(wcd9xxx_res,
+	memset(status, 0, sizeof(status));
+	ret = regmap_bulk_read(wcd9xxx_res->wcd_core_regmap,
 		wcd9xxx_res->intr_reg[WCD9XXX_INTR_STATUS_BASE],
-		num_irq_regs, status);
+		status, num_irq_regs);
 
 	if (ret < 0) {
 		dev_err(wcd9xxx_res->dev,
@@ -358,11 +361,11 @@ static irqreturn_t wcd9xxx_irq_thread(int irq, void *data)
 
 		memset(status, 0xff, num_irq_regs);
 
-		ret = wcd9xxx_res->codec_bulk_write(wcd9xxx_res,
+		ret = regmap_bulk_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLEAR_BASE],
-			num_irq_regs, status);
+			status, num_irq_regs);
 		if (wcd9xxx_get_intf_type() == WCD9XXX_INTERFACE_TYPE_I2C)
-			wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+			regmap_write(wcd9xxx_res->wcd_core_regmap,
 				wcd9xxx_res->intr_reg[WCD9XXX_INTR_CLR_COMMIT],
 				0x02);
 	}
@@ -448,9 +451,21 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 {
 	int i, ret;
 	u8 irq_level[wcd9xxx_res->num_irq_regs];
+	struct irq_domain *domain;
+	struct device_node *pnode;
 
 	mutex_init(&wcd9xxx_res->irq_lock);
 	mutex_init(&wcd9xxx_res->nested_irq_lock);
+
+	pnode = of_irq_find_parent(wcd9xxx_res->dev->of_node);
+	if (unlikely(!pnode))
+		return -EINVAL;
+
+	domain = irq_find_host(pnode);
+	if (unlikely(!domain))
+		return -EINVAL;
+
+	wcd9xxx_res->domain = domain;
 
 	wcd9xxx_res->irq = wcd9xxx_irq_get_upstream_irq(wcd9xxx_res);
 	if (!wcd9xxx_res->irq) {
@@ -483,9 +498,9 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 		    wcd9xxx_res->irq_level_high[i] << (i % BITS_PER_BYTE);
 	}
 
-	if (!wcd9xxx_res->codec_reg_write) {
+	if (!wcd9xxx_res->wcd_core_regmap) {
 		dev_err(wcd9xxx_res->dev,
-				"%s: Codec Register write callback not defined\n",
+			"%s: Codec core regmap not defined\n",
 			   __func__);
 		ret = -EINVAL;
 		goto fail_irq_init;
@@ -493,10 +508,10 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 
 	for (i = 0; i < wcd9xxx_res->num_irq_regs; i++) {
 		/* Initialize interrupt mask and level registers */
-		wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+		regmap_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_LEVEL_BASE] + i,
 					irq_level[i]);
-		wcd9xxx_res->codec_reg_write(wcd9xxx_res,
+		regmap_write(wcd9xxx_res->wcd_core_regmap,
 			wcd9xxx_res->intr_reg[WCD9XXX_INTR_MASK_BASE] + i,
 			wcd9xxx_res->irq_masks_cur[i]);
 	}
@@ -539,16 +554,6 @@ int wcd9xxx_request_irq(struct wcd9xxx_core_resource *wcd9xxx_res,
 
 	virq = phyirq_to_virq(wcd9xxx_res, irq);
 
-	/*
-	 * ARM needs us to explicitly flag the IRQ as valid
-	 * and will set them noprobe when we do so.
-	 */
-#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
-	set_irq_flags(virq, IRQF_VALID);
-#else
-	set_irq_noprobe(virq);
-#endif
-
 	return request_threaded_irq(virq, NULL, handler, IRQF_TRIGGER_RISING,
 				    name, data);
 }
@@ -561,7 +566,6 @@ void wcd9xxx_irq_exit(struct wcd9xxx_core_resource *wcd9xxx_res)
 	if (wcd9xxx_res->irq) {
 		disable_irq_wake(wcd9xxx_res->irq);
 		free_irq(wcd9xxx_res->irq, wcd9xxx_res);
-		/* Release parent's of node */
 		wcd9xxx_res->irq = 0;
 		wcd9xxx_irq_put_upstream_irq(wcd9xxx_res);
 	}
@@ -602,17 +606,18 @@ static int wcd9xxx_map_irq(
 	return phyirq_to_virq(wcd9xxx_core_res, irq);
 }
 #else
-int __init wcd9xxx_irq_of_init(struct device_node *node,
+static struct wcd9xxx_irq_drv_data *
+wcd9xxx_irq_add_domain(struct device_node *node,
 			       struct device_node *parent)
 {
-	struct wcd9xxx_irq_drv_data *data;
+	struct wcd9xxx_irq_drv_data *data = NULL;
 
 	pr_debug("%s: node %s, node parent %s\n", __func__,
 		 node->name, node->parent->name);
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
-		return -ENOMEM;
+		return NULL;
 
 	/*
 	 * wcd9xxx_intc interrupt controller supports N to N irq mapping with
@@ -624,28 +629,23 @@ int __init wcd9xxx_irq_of_init(struct device_node *node,
 					     &irq_domain_simple_ops, data);
 	if (!data->domain) {
 		kfree(data);
-		return -ENOMEM;
+		return NULL;
 	}
 
-	return 0;
+	return data;
 }
 
 static struct wcd9xxx_irq_drv_data *
 wcd9xxx_get_irq_drv_d(const struct wcd9xxx_core_resource *wcd9xxx_res)
 {
-	struct device_node *pnode;
 	struct irq_domain *domain;
 
-	pnode = of_irq_find_parent(wcd9xxx_res->dev->of_node);
-	/* Shouldn't happen */
-	if (unlikely(!pnode))
-		return NULL;
+	domain = wcd9xxx_res->domain;
 
-	domain = irq_find_host(pnode);
-	if (unlikely(!domain))
+	if (domain)
+		return domain->host_data;
+	else
 		return NULL;
-
-	return (struct wcd9xxx_irq_drv_data *)domain->host_data;
 }
 
 static int phyirq_to_virq(struct wcd9xxx_core_resource *wcd9xxx_res, int offset)
@@ -676,10 +676,6 @@ static unsigned int wcd9xxx_irq_get_upstream_irq(
 {
 	struct wcd9xxx_irq_drv_data *data;
 
-	/* Hold parent's of node */
-	if (!of_node_get(of_irq_find_parent(wcd9xxx_res->dev->of_node)))
-		return -EINVAL;
-
 	data = wcd9xxx_get_irq_drv_d(wcd9xxx_res);
 	if (!data) {
 		pr_err("%s: interrupt controller is not registerd\n", __func__);
@@ -693,8 +689,7 @@ static unsigned int wcd9xxx_irq_get_upstream_irq(
 static void wcd9xxx_irq_put_upstream_irq(
 			struct wcd9xxx_core_resource *wcd9xxx_res)
 {
-	/* Hold parent's of node */
-	of_node_put(of_irq_find_parent(wcd9xxx_res->dev->of_node));
+	wcd9xxx_res->domain = NULL;
 }
 
 static int wcd9xxx_map_irq(struct wcd9xxx_core_resource *wcd9xxx_res, int irq)
@@ -704,29 +699,34 @@ static int wcd9xxx_map_irq(struct wcd9xxx_core_resource *wcd9xxx_res, int irq)
 
 static int wcd9xxx_irq_probe(struct platform_device *pdev)
 {
-	int irq;
-	struct irq_domain *domain;
+	int irq, dir_apps_irq = -EINVAL;
 	struct wcd9xxx_irq_drv_data *data;
 	struct device_node *node = pdev->dev.of_node;
 	int ret = -EINVAL;
 
 	irq = of_get_named_gpio(node, "qcom,gpio-connect", 0);
-	if (!gpio_is_valid(irq)) {
+	if (!gpio_is_valid(irq))
+		dir_apps_irq = platform_get_irq_byname(pdev, "wcd_irq");
+
+	if (!gpio_is_valid(irq) && dir_apps_irq < 0) {
 		dev_err(&pdev->dev, "TLMM connect gpio not found\n");
 		return -EPROBE_DEFER;
 	} else {
-		irq = gpio_to_irq(irq);
-		if (irq < 0) {
-			dev_err(&pdev->dev, "Unable to configure irq\n");
-			return irq;
+		if (dir_apps_irq > 0) {
+			irq = dir_apps_irq;
+		} else {
+			irq = gpio_to_irq(irq);
+			if (irq < 0) {
+				dev_err(&pdev->dev, "Unable to configure irq\n");
+				return irq;
+			}
 		}
 		dev_dbg(&pdev->dev, "%s: virq = %d\n", __func__, irq);
-		domain = irq_find_host(pdev->dev.of_node);
-		if (unlikely(!domain)) {
-			pr_err("%s: domain is NULL", __func__);
+		data = wcd9xxx_irq_add_domain(node, node->parent);
+		if (!data) {
+			pr_err("%s: irq_add_domain failed\n", __func__);
 			return -EINVAL;
 		}
-		data = (struct wcd9xxx_irq_drv_data *)domain->host_data;
 		data->irq = irq;
 		wmb();
 		ret = 0;
@@ -748,6 +748,9 @@ static int wcd9xxx_irq_remove(struct platform_device *pdev)
 	data = (struct wcd9xxx_irq_drv_data *)domain->host_data;
 	data->irq = 0;
 	wmb();
+	irq_domain_remove(data->domain);
+	kfree(data);
+	domain->host_data = NULL;
 
 	return 0;
 }

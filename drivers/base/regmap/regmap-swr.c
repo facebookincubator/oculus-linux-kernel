@@ -28,20 +28,20 @@ static int regmap_swr_gather_write(void *context,
 	struct device *dev = context;
 	struct swr_device *swr = to_swr_device(dev);
 	struct regmap *map = dev_get_regmap(dev, NULL);
-	size_t addr_bytes, val_bytes;
+	size_t addr_bytes;
+	size_t val_bytes;
 	int i, ret = 0;
 	u16 reg_addr = 0;
-	u8 *value;
 
-	if (swr == NULL) {
-		dev_err(dev, "%s: swr device is NULL\n", __func__);
-		return -EINVAL;
-	}
 	if (map == NULL) {
 		dev_err(dev, "%s: regmap is NULL\n", __func__);
 		return -EINVAL;
 	}
 	addr_bytes = map->format.reg_bytes;
+	if (swr == NULL) {
+		dev_err(dev, "%s: swr device is NULL\n", __func__);
+		return -EINVAL;
+	}
 	if (reg_size != addr_bytes) {
 		dev_err(dev, "%s: reg size %zd bytes not supported\n",
 			__func__, reg_size);
@@ -51,11 +51,12 @@ static int regmap_swr_gather_write(void *context,
 	val_bytes = map->format.val_bytes;
 	/* val_len = val_bytes * val_count */
 	for (i = 0; i < (val_len / val_bytes); i++) {
-		value = (u8 *)val + (val_bytes * i);
-		ret = swr_write(swr, swr->dev_num, (reg_addr + i), value);
+		reg_addr = reg_addr + i;
+		val = (u8 *)val + (val_bytes * i);
+		ret = swr_write(swr, swr->dev_num, reg_addr, val);
 		if (ret < 0) {
 			dev_err(dev, "%s: write reg 0x%x failed, err %d\n",
-				__func__, (reg_addr + i), ret);
+				__func__, reg_addr, ret);
 			break;
 		}
 	}
@@ -162,15 +163,15 @@ static int regmap_swr_read(void *context,
 	int ret = 0;
 	u16 reg_addr = 0;
 
-	if (swr == NULL) {
-		dev_err(dev, "%s: swr is NULL\n", __func__);
-		return -EINVAL;
-	}
 	if (map == NULL) {
 		dev_err(dev, "%s: regmap is NULL\n", __func__);
 		return -EINVAL;
 	}
 	addr_bytes = map->format.reg_bytes;
+	if (swr == NULL) {
+		dev_err(dev, "%s: swr is NULL\n", __func__);
+		return -EINVAL;
+	}
 	if (reg_size != addr_bytes) {
 		dev_err(dev, "%s: register size %zd bytes not supported\n",
 			__func__, reg_size);
@@ -192,18 +193,24 @@ static struct regmap_bus regmap_swr = {
 	.val_format_endian_default = REGMAP_ENDIAN_NATIVE,
 };
 
-struct regmap *regmap_init_swr(struct swr_device *swr,
-				const struct regmap_config *config)
+struct regmap *__regmap_init_swr(struct swr_device *swr,
+				 const struct regmap_config *config,
+				 struct lock_class_key *lock_key,
+				 const char *lock_name)
 {
-	return regmap_init(&swr->dev, &regmap_swr, &swr->dev, config);
+	return __regmap_init(&swr->dev, &regmap_swr, &swr->dev, config,
+			   lock_key, lock_name);
 }
-EXPORT_SYMBOL(regmap_init_swr);
+EXPORT_SYMBOL(__regmap_init_swr);
 
-struct regmap *devm_regmap_init_swr(struct swr_device *swr,
-					const struct regmap_config *config)
+struct regmap *__devm_regmap_init_swr(struct swr_device *swr,
+				      const struct regmap_config *config,
+				      struct lock_class_key *lock_key,
+				      const char *lock_name)
 {
-	return devm_regmap_init(&swr->dev, &regmap_swr, &swr->dev, config);
+	return __devm_regmap_init(&swr->dev, &regmap_swr, &swr->dev, config,
+				lock_key, lock_name);
 }
-EXPORT_SYMBOL(devm_regmap_init_swr);
+EXPORT_SYMBOL(__devm_regmap_init_swr);
 
 MODULE_LICENSE("GPL v2");

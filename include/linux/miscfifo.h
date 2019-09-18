@@ -8,6 +8,13 @@
 #include <linux/poll.h>
 #include <linux/rwsem.h>
 
+/* Function type that can be used with the config filter_fn to
+ * implement per-client packet filtering.
+ */
+typedef bool (*miscfifo_filter_fn)(const void *context,
+				   const u8 *header, size_t header_len,
+				   const u8 *payload, size_t payload_len);
+
 struct miscfifo {
 	struct {
 		/**
@@ -23,6 +30,11 @@ struct miscfifo {
 		bool header_payload;
 
 		size_t kfifo_size;
+
+		/* This filter function can be used to determine which
+		 * packets get sent to a given client.
+		 */
+		miscfifo_filter_fn filter_fn;
 	} config;
 
 	/* state below */
@@ -38,6 +50,7 @@ struct miscfifo_client {
 	struct mutex lock;
 	struct kfifo_rec_ptr_1 fifo;
 	struct list_head node;
+	void *context;
 };
 
 /**
@@ -89,5 +102,23 @@ ssize_t miscfifo_fop_read(struct file *file,
 unsigned int miscfifo_fop_poll(struct file *file,
 	struct poll_table_struct *pt);
 int miscfifo_fop_release(struct inode *inode, struct file *file);
+
+/**
+ * Set context pointer that will be passed to the packet filtering
+ * function (if one was set by miscfifo_fop_set_filter_fn)
+ *
+ * @param  file   file handle
+ * @param  context   context
+ */
+void miscfifo_fop_set_context(struct file *file, void *context);
+
+/**
+ * Get context pointer that was previously set with
+ * miscfifo_fop_setcontext
+ *
+ * @param  file   file handle
+ * @return   context pointer
+ */
+void *miscfifo_fop_get_context(struct file *file);
 
 #endif

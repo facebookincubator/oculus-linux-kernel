@@ -343,7 +343,7 @@ tracesys_next:
 #endif
 
 	comiclr,>>=	__NR_Linux_syscalls, %r20, %r0
-	b,n	.Lsyscall_nosys
+	b,n	.Ltracesys_nosys
 
 	LDREGX  %r20(%r19), %r19
 
@@ -359,6 +359,9 @@ tracesys_next:
 	be      0(%sr7,%r19)
 	ldo	R%tracesys_exit(%r2),%r2
 
+.Ltracesys_nosys:
+	ldo	-ENOSYS(%r0),%r28		/* set errno */
+
 	/* Do *not* call this function on the gateway page, because it
 	makes a direct call to syscall_trace. */
 	
@@ -369,7 +372,7 @@ tracesys_exit:
 	ldo	-16(%r30),%r29			/* Reference param save area */
 #endif
 	ldo	TASK_REGS(%r1),%r26
-	bl	do_syscall_trace_exit,%r2
+	BL	do_syscall_trace_exit,%r2
 	STREG   %r28,TASK_PT_GR28(%r1)          /* save return value now */
 	ldo     -THREAD_SZ_ALGN-FRAME_SIZE(%r30),%r1      /* get task ptr */
 	LDREG	TI_TASK(%r1), %r1
@@ -390,7 +393,7 @@ tracesys_sigexit:
 #ifdef CONFIG_64BIT
 	ldo	-16(%r30),%r29			/* Reference param save area */
 #endif
-	bl	do_syscall_trace_exit,%r2
+	BL	do_syscall_trace_exit,%r2
 	ldo	TASK_REGS(%r1),%r26
 
 	ldil	L%syscall_exit_rfi,%r1

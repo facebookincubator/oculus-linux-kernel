@@ -20,7 +20,7 @@
 #include <linux/threads.h>
 #include <asm/irq.h>
 
-#define NR_IPI	8
+#define NR_IPI	7
 
 typedef struct {
 	unsigned int __softirq_pending;
@@ -42,10 +42,5 @@ static inline void ack_bad_irq(unsigned int irq)
 	extern unsigned long irq_err_count;
 	irq_err_count++;
 }
-
-/*
- * No arch-specific IRQ flags.
- */
-#define set_irq_flags(irq, flags)
 
 #endif /* __ASM_HARDIRQ_H */

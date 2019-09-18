@@ -2,10 +2,10 @@
 #define __ASM_ALTERNATIVE_H
 
 #include <asm/cpufeature.h>
-#include <asm/insn.h>
 
 #ifndef __ASSEMBLY__
 
+#include <linux/init.h>
 #include <linux/kconfig.h>
 #include <linux/types.h>
 #include <linux/stddef.h>
@@ -19,8 +19,8 @@ struct alt_instr {
 	u8  alt_len;		/* size of new instruction(s), <= orig_len */
 };
 
-void apply_alternatives(void);
-void free_alternatives_memory(void);
+void __init apply_alternatives_all(void);
+void apply_alternatives(void *start, size_t length);
 
 #define ALTINSTR_ENTRY(feature)						      \
 	" .word 661b - .\n"				/* label           */ \
@@ -90,15 +90,26 @@ void free_alternatives_memory(void);
 .endm
 
 /*
- * Alternative sequences
+ * Begin an alternative code sequence.
  *
- * The code for the case where the capability is not present will be
- * assembled and linked as normal. There are no restrictions on this
- * code.
+ * The code that follows this macro will be assembled and linked as
+ * normal. There are no restrictions on this code.
+ */
+.macro alternative_if_not cap, enable = 1
+	.if \enable
+	.pushsection .altinstructions, "a"
+	altinstruction_entry 661f, 663f, \cap, 662f-661f, 664f-663f
+	.popsection
+661:
+	.endif
+.endm
+
+/*
+ * Provide the alternative code sequence.
  *
- * The code for the case where the capability is present will be
- * assembled into a special section to be used for dynamic patching.
- * Code for that case must:
+ * The code that follows this macro is assembled into a special
+ * section to be used for dynamic patching. Code that follows this
+ * macro must:
  *
  * 1. Be exactly the same length (in bytes) as the default code
  *    sequence.
@@ -107,62 +118,22 @@ void free_alternatives_memory(void);
  *    alternative sequence it is defined in (branches into an
  *    alternative sequence are not fixed up).
  */
-
-/*
- * Begin an alternative code sequence.
- */
-.macro alternative_if_not cap
-	.set .Lasm_alt_mode, 0
-	.pushsection .altinstructions, "a"
-	altinstruction_entry 661f, 663f, \cap, 662f-661f, 664f-663f
-	.popsection
-661:
-.endm
-
-.macro alternative_if cap
-	.set .Lasm_alt_mode, 1
-	.pushsection .altinstructions, "a"
-	altinstruction_entry 663f, 661f, \cap, 664f-663f, 662f-661f
-	.popsection
-	.pushsection .altinstr_replacement, "ax"
-	.align 2	/* So GAS knows label 661 is suitably aligned */
-661:
-.endm
-
-/*
- * Provide the other half of the alternative code sequence.
- */
-.macro alternative_else
-662:
-	.if .Lasm_alt_mode==0
-	.pushsection .altinstr_replacement, "ax"
-	.else
-	.popsection
-	.endif
+.macro alternative_else, enable = 1
+	.if \enable
+662:	.pushsection .altinstr_replacement, "ax"
 663:
+	.endif
 .endm
 
 /*
  * Complete an alternative code sequence.
  */
-.macro alternative_endif
-664:
-	.if .Lasm_alt_mode==0
-	.popsection
-	.endif
+.macro alternative_endif, enable = 1
+	.if \enable
+664:	.popsection
 	.org	. - (664b-663b) + (662b-661b)
 	.org	. - (662b-661b) + (664b-663b)
-.endm
-
-/*
- * Provides a trivial alternative or default sequence consisting solely
- * of NOPs. The number of NOPs is chosen automatically to match the
- * previous case.
- */
-.macro alternative_else_nop_endif
-alternative_else
-	nops	(662b-661b) / AARCH64_INSN_SIZE
-alternative_endif
+	.endif
 .endm
 
 #define _ALTERNATIVE_CFG(insn1, insn2, cap, cfg, ...)	\
@@ -186,11 +157,8 @@ alternative_endif
 			add	\addr, \addr, \post_inc;
 		alternative_endif
 
-		.section __ex_table,"a";
-		.align	3;
-		.quad	8888b,\l;
-		.quad	8889b,\l;
-		.previous;
+		_asm_extable	8888b,\l;
+		_asm_extable	8889b,\l;
 	.endm
 
 	.macro uao_stp l, reg1, reg2, addr, post_inc
@@ -204,11 +172,8 @@ alternative_endif
 			add	\addr, \addr, \post_inc;
 		alternative_endif
 
-		.section __ex_table,"a";
-		.align	3;
-		.quad	8888b,\l;
-		.quad	8889b,\l;
-		.previous
+		_asm_extable	8888b,\l;
+		_asm_extable	8889b,\l;
 	.endm
 
 	.macro uao_user_alternative l, inst, alt_inst, reg, addr, post_inc
@@ -220,10 +185,7 @@ alternative_endif
 			add		\addr, \addr, \post_inc;
 		alternative_endif
 
-		.section __ex_table,"a";
-		.align	3;
-		.quad	8888b,\l;
-		.previous
+		_asm_extable	8888b,\l;
 	.endm
 #else
 	.macro uao_ldp l, reg1, reg2, addr, post_inc

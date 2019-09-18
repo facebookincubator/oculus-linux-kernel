@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 
 struct iio_dummy_accel_calibscale;
+struct iio_dummy_regs;
 
 /**
  * struct iio_dummy_state - device instance specific state.
@@ -24,7 +25,7 @@ struct iio_dummy_accel_calibscale;
  * @accel_calibscale:		cache for acceleration calibscale
  * @lock:			lock to ensure state is consistent
  * @event_irq:			irq number for event line (faked)
- * @event_val:			cache for event theshold value
+ * @event_val:			cache for event threshold value
  * @event_en:			cache of whether event is enabled
  */
 struct iio_dummy_state {
@@ -33,12 +34,19 @@ struct iio_dummy_state {
 	int differential_adc_val[2];
 	int accel_val;
 	int accel_calibbias;
+	int activity_running;
+	int activity_walking;
 	const struct iio_dummy_accel_calibscale *accel_calibscale;
 	struct mutex lock;
+	struct iio_dummy_regs *regs;
+	int steps_enabled;
+	int steps;
+	int height;
 #ifdef CONFIG_IIO_SIMPLE_DUMMY_EVENTS
 	int event_irq;
 	int event_val;
 	bool event_en;
+	s64 event_timestamp;
 #endif /* CONFIG_IIO_SIMPLE_DUMMY_EVENTS */
 };
 
@@ -72,7 +80,7 @@ int iio_simple_dummy_write_event_value(struct iio_dev *indio_dev,
 				       int val2);
 
 int iio_simple_dummy_events_register(struct iio_dev *indio_dev);
-int iio_simple_dummy_events_unregister(struct iio_dev *indio_dev);
+void iio_simple_dummy_events_unregister(struct iio_dev *indio_dev);
 
 #else /* Stubs for when events are disabled at compile time */
 
@@ -82,40 +90,37 @@ iio_simple_dummy_events_register(struct iio_dev *indio_dev)
 	return 0;
 };
 
-static inline int
+static inline void
 iio_simple_dummy_events_unregister(struct iio_dev *indio_dev)
-{
-	return 0;
-};
+{ };
 
 #endif /* CONFIG_IIO_SIMPLE_DUMMY_EVENTS*/
 
 /**
  * enum iio_simple_dummy_scan_elements - scan index enum
- * @voltage0:		the single ended voltage channel
- * @diffvoltage1m2:	first differential channel
- * @diffvoltage3m4:	second differenial channel
- * @accelx:		acceleration channel
+ * @DUMMY_INDEX_VOLTAGE_0:         the single ended voltage channel
+ * @DUMMY_INDEX_DIFFVOLTAGE_1M2:   first differential channel
+ * @DUMMY_INDEX_DIFFVOLTAGE_3M4:   second differential channel
+ * @DUMMY_INDEX_ACCELX:            acceleration channel
  *
  * Enum provides convenient numbering for the scan index.
  */
 enum iio_simple_dummy_scan_elements {
-	voltage0,
-	diffvoltage1m2,
-	diffvoltage3m4,
-	accelx,
+	DUMMY_INDEX_VOLTAGE_0,
+	DUMMY_INDEX_DIFFVOLTAGE_1M2,
+	DUMMY_INDEX_DIFFVOLTAGE_3M4,
+	DUMMY_INDEX_ACCELX,
 };
 
 #ifdef CONFIG_IIO_SIMPLE_DUMMY_BUFFER
-int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev,
-	const struct iio_chan_spec *channels, unsigned int num_channels);
+int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev);
 void iio_simple_dummy_unconfigure_buffer(struct iio_dev *indio_dev);
 #else
-static inline int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev,
-	const struct iio_chan_spec *channels, unsigned int num_channels)
+static inline int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev)
 {
 	return 0;
 };
+
 static inline
 void iio_simple_dummy_unconfigure_buffer(struct iio_dev *indio_dev)
 {};

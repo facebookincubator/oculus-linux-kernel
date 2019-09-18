@@ -155,7 +155,8 @@ static int ohci_urb_enqueue (
 	int		retval = 0;
 
 	/* every endpoint has a ed, locate and maybe (re)initialize it */
-	if (! (ed = ed_get (ohci, urb->ep, urb->dev, pipe, urb->interval)))
+	ed = ed_get(ohci, urb->ep, urb->dev, pipe, urb->interval);
+	if (! ed)
 		return -ENOMEM;
 
 	/* for the private part of the URB we need the number of TDs (size) */
@@ -277,7 +278,7 @@ static int ohci_urb_enqueue (
 						ed->interval);
 				if (urb_priv->td_cnt >= urb_priv->length) {
 					++urb_priv->td_cnt;	/* Mark it */
-					ohci_dbg(ohci, "iso underrun %p (%u+%u < %u)\n",
+					ohci_dbg(ohci, "iso underrun %pK (%u+%u < %u)\n",
 							urb, frame, length,
 							next);
 				}
@@ -385,7 +386,7 @@ sanitize:
 		/* caller was supposed to have unlinked any requests;
 		 * that's not our job.  can't recover; must leak ed.
 		 */
-		ohci_err (ohci, "leak ed %p (#%02x) state %d%s\n",
+		ohci_err (ohci, "leak ed %pK (#%02x) state %d%s\n",
 			ed, ep->desc.bEndpointAddress, ed->state,
 			list_empty (&ed->td_list) ? "" : " (has tds)");
 		td_free (ohci, ed->dummy);
@@ -1027,7 +1028,7 @@ int ohci_restart(struct ohci_hcd *ohci)
 		case ED_UNLINK:
 			break;
 		default:
-			ohci_dbg(ohci, "bogus ed %p state %d\n",
+			ohci_dbg(ohci, "bogus ed %pK state %d\n",
 					ed, ed->state);
 		}
 
@@ -1247,11 +1248,6 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_MACH_JZ4740
 #include "ohci-jz4740.c"
 #define PLATFORM_DRIVER	ohci_hcd_jz4740_driver
-#endif
-
-#ifdef CONFIG_USB_OCTEON_OHCI
-#include "ohci-octeon.c"
-#define PLATFORM_DRIVER		ohci_octeon_driver
 #endif
 
 #ifdef CONFIG_TILE_USB

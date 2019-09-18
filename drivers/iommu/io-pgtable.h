@@ -22,8 +22,9 @@ enum io_pgtable_fmt {
  *
  * @tlb_flush_all: Synchronously invalidate the entire TLB context.
  * @tlb_add_flush: Queue up a TLB invalidation for a virtual address range.
- * @tlb_sync:      Ensure any queue TLB invalidation has taken effect.
- * @flush_pgtable: Ensure page table updates are visible to the IOMMU.
+ * @tlb_sync:      Ensure any queued TLB invalidation has taken effect, and
+ *                 any corresponding page table updates are visible to the
+ *                 IOMMU.
  * @alloc_pages_exact: Allocate page table memory (optional, defaults to
  *                     alloc_pages_exact)
  * @free_pages_exact:  Free page table memory (optional, defaults to
@@ -37,7 +38,6 @@ struct iommu_gather_ops {
 	void (*tlb_add_flush)(unsigned long iova, size_t size, bool leaf,
 			      void *cookie);
 	void (*tlb_sync)(void *cookie);
-	void (*flush_pgtable)(void *ptr, size_t size, void *cookie);
 	void *(*alloc_pages_exact)(void *cookie, size_t size, gfp_t gfp_mask);
 	void (*free_pages_exact)(void *cookie, void *virt, size_t size);
 };
@@ -52,14 +52,24 @@ struct iommu_gather_ops {
  * @ias:           Input address (iova) size, in bits.
  * @oas:           Output address (paddr) size, in bits.
  * @tlb:           TLB management callbacks for this set of tables.
+ * @iommu_dev:     The device representing the DMA configuration for the
+ *                 page table walker.
  */
 struct io_pgtable_cfg {
+	/*
+	 * IO_PGTABLE_QUIRK_PAGE_TABLE_COHERENT: Set the page table as
+	 * coherent.
+	 */
 	#define IO_PGTABLE_QUIRK_ARM_NS	(1 << 0)	/* Set NS bit in PTEs */
+	#define IO_PGTABLE_QUIRK_PAGE_TABLE_COHERENT (1 << 1)
 	int				quirks;
 	unsigned long			pgsize_bitmap;
 	unsigned int			ias;
 	unsigned int			oas;
 	const struct iommu_gather_ops	*tlb;
+	struct device			*iommu_dev;
+	dma_addr_t			iova_base;
+	dma_addr_t			iova_end;
 
 	/* Low-level data specific to the table format */
 	union {
@@ -111,6 +121,9 @@ struct io_pgtable_ops {
 			size_t size);
 	phys_addr_t (*iova_to_phys)(struct io_pgtable_ops *ops,
 				    unsigned long iova);
+	bool (*is_iova_coherent)(struct io_pgtable_ops *ops,
+				unsigned long iova);
+
 };
 
 /**
@@ -190,5 +203,10 @@ void *io_pgtable_alloc_pages_exact(struct io_pgtable_cfg *cfg, void *cookie,
  */
 void io_pgtable_free_pages_exact(struct io_pgtable_cfg *cfg, void *cookie,
 				 void *virt, size_t size);
+
+extern struct io_pgtable_init_fns io_pgtable_arm_32_lpae_s1_init_fns;
+extern struct io_pgtable_init_fns io_pgtable_arm_32_lpae_s2_init_fns;
+extern struct io_pgtable_init_fns io_pgtable_arm_64_lpae_s1_init_fns;
+extern struct io_pgtable_init_fns io_pgtable_arm_64_lpae_s2_init_fns;
 
 #endif /* __IO_PGTABLE_H */

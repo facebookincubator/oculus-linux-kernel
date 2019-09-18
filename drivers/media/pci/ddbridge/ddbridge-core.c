@@ -1118,8 +1118,7 @@ static void ddb_ports_detach(struct ddb *dev)
 			dvb_input_detach(port->input[1]);
 			break;
 		case DDB_PORT_CI:
-			if (port->output->dev)
-				dvb_unregister_device(port->output->dev);
+			dvb_unregister_device(port->output->dev);
 			if (port->en) {
 				ddb_input_stop(port->input[0]);
 				ddb_output_stop(port->output);
@@ -1631,7 +1630,8 @@ fail1:
 	printk(KERN_ERR "fail1\n");
 	if (dev->msi)
 		pci_disable_msi(dev->pdev);
-	free_irq(dev->pdev->irq, dev);
+	if (stat == 0)
+		free_irq(dev->pdev->irq, dev);
 fail:
 	printk(KERN_ERR "fail\n");
 	ddb_unmap(dev);

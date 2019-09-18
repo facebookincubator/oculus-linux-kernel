@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -41,7 +41,7 @@
 #define LMH_POLLING_MSEC		30
 
 struct lmh_mon_threshold {
-	long				value;
+	int				value;
 	bool				active;
 };
 
@@ -311,7 +311,7 @@ static struct lmh_mon_sensor_data *lmh_match_sensor_name(char *sensor_name)
 	struct lmh_mon_sensor_data *lmh_sensor = NULL;
 
 	list_for_each_entry(lmh_sensor, &lmh_sensor_list, list_ptr) {
-		if (!strnicmp(lmh_sensor->sensor_name, sensor_name,
+		if (!strncasecmp(lmh_sensor->sensor_name, sensor_name,
 			LMH_NAME_MAX))
 			return lmh_sensor;
 	}
@@ -320,7 +320,7 @@ static struct lmh_mon_sensor_data *lmh_match_sensor_name(char *sensor_name)
 }
 
 static void lmh_evaluate_and_notify(struct lmh_mon_sensor_data *lmh_sensor,
-	       long val)
+	       int val)
 {
 	int idx = 0, trip = 0;
 	bool cond = false;
@@ -342,7 +342,7 @@ static void lmh_evaluate_and_notify(struct lmh_mon_sensor_data *lmh_sensor,
 	}
 }
 
-void lmh_update_reading(struct lmh_sensor_ops *ops, long trip_val)
+void lmh_update_reading(struct lmh_sensor_ops *ops, int trip_val)
 {
 	struct lmh_mon_sensor_data *lmh_sensor = NULL;
 
@@ -358,7 +358,7 @@ void lmh_update_reading(struct lmh_sensor_ops *ops, long trip_val)
 		goto interrupt_exit;
 	}
 	down_write(&lmh_sensor->lock);
-	pr_debug("Sensor:[%s] intensity:%ld\n", lmh_sensor->sensor_name,
+	pr_debug("Sensor:[%s] intensity:%d\n", lmh_sensor->sensor_name,
 		trip_val);
 	lmh_evaluate_and_notify(lmh_sensor, trip_val);
 interrupt_exit:
@@ -368,7 +368,7 @@ interrupt_exit:
 	return;
 }
 
-static int lmh_sensor_read(struct thermal_zone_device *dev, unsigned long *val)
+static int lmh_sensor_read(struct thermal_zone_device *dev, int *val)
 {
 	int ret = 0;
 	struct lmh_mon_sensor_data *lmh_sensor;
@@ -453,7 +453,7 @@ static int lmh_activate_trip(struct thermal_zone_device *dev,
 }
 
 static int lmh_get_trip_value(struct thermal_zone_device *dev,
-		int trip, unsigned long *value)
+		int trip, int *value)
 {
 	struct lmh_mon_sensor_data *lmh_sensor;
 
@@ -474,7 +474,7 @@ static int lmh_get_trip_value(struct thermal_zone_device *dev,
 }
 
 static int lmh_set_trip_value(struct thermal_zone_device *dev,
-		int trip, unsigned long value)
+		int trip, int value)
 {
 	struct lmh_mon_sensor_data *lmh_sensor;
 
@@ -631,7 +631,7 @@ static struct lmh_device_data *lmh_match_device_name(char *device_name)
 	struct lmh_device_data *lmh_device = NULL;
 
 	list_for_each_entry(lmh_device, &lmh_device_list, list_ptr) {
-		if (!strnicmp(lmh_device->device_name, device_name,
+		if (!strncasecmp(lmh_device->device_name, device_name,
 			LMH_NAME_MAX))
 			return lmh_device;
 	}
@@ -972,7 +972,7 @@ static int lmh_dbgfs_data_read(struct seq_file *seq_fp, void *data)
 {
 	static uint32_t *read_buf;
 	static int read_buf_size;
-	int idx = 0, ret = 0, print_ret = 0;
+	int idx = 0, ret = 0;
 
 	if (!read_buf_size) {
 		ret = lmh_mon_data->debug_ops->debug_read(
@@ -988,17 +988,16 @@ static int lmh_dbgfs_data_read(struct seq_file *seq_fp, void *data)
 	}
 
 	do {
-		print_ret = seq_printf(seq_fp, "0x%x ", read_buf[idx]);
-		if (print_ret) {
-			pr_err("Seq print error. idx:%d err:%d\n",
-				idx, print_ret);
+		seq_printf(seq_fp, "0x%x ", read_buf[idx]);
+		if (seq_has_overflowed(seq_fp)) {
+			pr_err("Seq overflow. idx:%d\n", idx);
 			goto dfs_read_exit;
 		}
 		idx++;
 		if ((idx % LMH_READ_LINE_LENGTH) == 0) {
-			print_ret = seq_puts(seq_fp, "\n");
-			if (print_ret) {
-				pr_err("Seq print error. err:%d\n", print_ret);
+			seq_puts(seq_fp, "\n");
+			if (seq_has_overflowed(seq_fp)) {
+				pr_err("Seq overflow. idx:%d\n", idx);
 				goto dfs_read_exit;
 			}
 		}

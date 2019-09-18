@@ -465,7 +465,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 		ppol->policy->governor_data;
 	struct sched_load *sl = ppol->sl;
 	struct cpufreq_interactive_cpuinfo *pcpu;
-	unsigned int new_freq = 0;
+	unsigned int new_freq;
 	unsigned int prev_laf = 0, t_prevlaf;
 	unsigned int pred_laf = 0, t_predlaf = 0;
 	unsigned int prev_chfreq, pred_chfreq, chosen_freq;
@@ -479,6 +479,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	bool skip_hispeed_logic, skip_min_sample_time;
 	bool jump_to_max_no_ts = false;
 	bool jump_to_max = false;
+	bool start_hyst = true;
 
 	if (!down_read_trylock(&ppol->enable_sem))
 		return;
@@ -490,7 +491,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	spin_lock_irqsave(&ppol->target_freq_lock, flags);
 	spin_lock(&ppol->load_lock);
 
-	skip_hispeed_logic = tunables->enable_prediction ? true :
+	skip_hispeed_logic =
 		tunables->ignore_hispeed_on_notif && ppol->notif_pending;
 	skip_min_sample_time = tunables->fast_ramp_down && ppol->notif_pending;
 	ppol->notif_pending = false;
@@ -588,8 +589,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 	}
 
 	if (now - ppol->max_freq_hyst_start_time <
-	    tunables->max_freq_hysteresis)
+	    tunables->max_freq_hysteresis) {
+		if (new_freq < ppol->policy->max &&
+				ppol->policy->max <= tunables->hispeed_freq)
+			start_hyst = false;
 		new_freq = max(tunables->hispeed_freq, new_freq);
+	}
 
 	if (!skip_hispeed_logic &&
 	    ppol->target_freq >= tunables->hispeed_freq &&
@@ -646,7 +651,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 		ppol->floor_validate_time = now;
 	}
 
-	if (new_freq >= ppol->policy->max && !jump_to_max_no_ts)
+	if (start_hyst && new_freq >= ppol->policy->max && !jump_to_max_no_ts)
 		ppol->max_freq_hyst_start_time = now;
 
 	if (ppol->target_freq == new_freq &&
@@ -1040,7 +1045,7 @@ static ssize_t store_##file_name(					\
 		const char *buf, size_t count)				\
 {									\
 	int ret;							\
-	long unsigned int val;						\
+	unsigned long int val;						\
 									\
 	ret = kstrtoul(buf, 0, &val);				\
 	if (ret < 0)							\
@@ -1685,20 +1690,16 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 
 		tunables->usage_count = 1;
 		policy->governor_data = tunables;
-		if (!have_governor_per_policy()) {
+		if (!have_governor_per_policy())
 			common_tunables = tunables;
-			WARN_ON(cpufreq_get_global_kobject());
-		}
 
 		rc = sysfs_create_group(get_governor_parent_kobj(policy),
 				get_sysfs_attr());
 		if (rc) {
 			kfree(tunables);
 			policy->governor_data = NULL;
-			if (!have_governor_per_policy()) {
+			if (!have_governor_per_policy())
 				common_tunables = NULL;
-				cpufreq_put_global_kobject();
-			}
 			return rc;
 		}
 
@@ -1732,8 +1733,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			sysfs_remove_group(get_governor_parent_kobj(policy),
 					get_sysfs_attr());
 
-			if (!have_governor_per_policy())
-				cpufreq_put_global_kobject();
 			common_tunables = NULL;
 		}
 

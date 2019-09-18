@@ -1277,7 +1277,7 @@ static inline void mwl8k_save_beacon(struct ieee80211_hw *hw,
 	struct mwl8k_priv *priv = hw->priv;
 
 	priv->capture_beacon = false;
-	memset(priv->capture_bssid, 0, ETH_ALEN);
+	eth_zero_addr(priv->capture_bssid);
 
 	/*
 	 * Use GFP_ATOMIC as rxq_process is called from
@@ -2380,7 +2380,7 @@ mwl8k_set_ht_caps(struct ieee80211_hw *hw,
 	if (cap & MWL8K_CAP_GREENFIELD)
 		band->ht_cap.cap |= IEEE80211_HT_CAP_GRN_FLD;
 	if (cap & MWL8K_CAP_AMPDU) {
-		hw->flags |= IEEE80211_HW_AMPDU_AGGREGATION;
+		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 		band->ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 		band->ht_cap.ampdu_density = IEEE80211_HT_MPDU_DENSITY_NONE;
 	}
@@ -3098,14 +3098,14 @@ static void mwl8k_update_survey(struct mwl8k_priv *priv,
 
 	cca_cnt = ioread32(priv->regs + NOK_CCA_CNT_REG);
 	cca_cnt /= 1000; /* uSecs to mSecs */
-	survey->channel_time_busy = (u64) cca_cnt;
+	survey->time_busy = (u64) cca_cnt;
 
 	rx_rdy = ioread32(priv->regs + BBU_RXRDY_CNT_REG);
 	rx_rdy /= 1000; /* uSecs to mSecs */
-	survey->channel_time_rx = (u64) rx_rdy;
+	survey->time_rx = (u64) rx_rdy;
 
 	priv->channel_time = jiffies - priv->channel_time;
-	survey->channel_time = jiffies_to_msecs(priv->channel_time);
+	survey->time = jiffies_to_msecs(priv->channel_time);
 
 	survey->channel = channel;
 
@@ -3115,9 +3115,9 @@ static void mwl8k_update_survey(struct mwl8k_priv *priv,
 	survey->noise = nf * -1;
 
 	survey->filled = SURVEY_INFO_NOISE_DBM |
-			 SURVEY_INFO_CHANNEL_TIME |
-			 SURVEY_INFO_CHANNEL_TIME_BUSY |
-			 SURVEY_INFO_CHANNEL_TIME_RX;
+			 SURVEY_INFO_TIME |
+			 SURVEY_INFO_TIME_BUSY |
+			 SURVEY_INFO_TIME_RX;
 }
 
 /*
@@ -5019,35 +5019,36 @@ mwl8k_bss_info_changed_sta(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		memcpy(ap_mcs_rates, ap->ht_cap.mcs.rx_mask, 16);
 
 		rcu_read_unlock();
-	}
 
-	if ((changed & BSS_CHANGED_ASSOC) && vif->bss_conf.assoc &&
-	    !priv->ap_fw) {
-		rc = mwl8k_cmd_set_rate(hw, vif, ap_legacy_rates, ap_mcs_rates);
-		if (rc)
-			goto out;
+		if (changed & BSS_CHANGED_ASSOC) {
+			if (!priv->ap_fw) {
+				rc = mwl8k_cmd_set_rate(hw, vif,
+							ap_legacy_rates,
+							ap_mcs_rates);
+				if (rc)
+					goto out;
 
-		rc = mwl8k_cmd_use_fixed_rate_sta(hw);
-		if (rc)
-			goto out;
-	} else {
-		if ((changed & BSS_CHANGED_ASSOC) && vif->bss_conf.assoc &&
-		    priv->ap_fw) {
-			int idx;
-			int rate;
+				rc = mwl8k_cmd_use_fixed_rate_sta(hw);
+				if (rc)
+					goto out;
+			} else {
+				int idx;
+				int rate;
 
-			/* Use AP firmware specific rate command.
-			 */
-			idx = ffs(vif->bss_conf.basic_rates);
-			if (idx)
-				idx--;
+				/* Use AP firmware specific rate command.
+				 */
+				idx = ffs(vif->bss_conf.basic_rates);
+				if (idx)
+					idx--;
 
-			if (hw->conf.chandef.chan->band == IEEE80211_BAND_2GHZ)
-				rate = mwl8k_rates_24[idx].hw_value;
-			else
-				rate = mwl8k_rates_50[idx].hw_value;
+				if (hw->conf.chandef.chan->band ==
+				    IEEE80211_BAND_2GHZ)
+					rate = mwl8k_rates_24[idx].hw_value;
+				else
+					rate = mwl8k_rates_50[idx].hw_value;
 
-			mwl8k_cmd_use_fixed_rate_ap(hw, rate, rate);
+				mwl8k_cmd_use_fixed_rate_ap(hw, rate, rate);
+			}
 		}
 	}
 
@@ -5192,7 +5193,7 @@ mwl8k_configure_filter_sniffer(struct ieee80211_hw *hw,
 		priv->sniffer_enabled = true;
 	}
 
-	*total_flags &=	FIF_PROMISC_IN_BSS | FIF_ALLMULTI |
+	*total_flags &=	FIF_ALLMULTI |
 			FIF_BCN_PRBRESP_PROMISC | FIF_CONTROL |
 			FIF_OTHER_BSS;
 
@@ -5420,18 +5421,20 @@ static int mwl8k_get_survey(struct ieee80211_hw *hw, int idx,
 
 static int
 mwl8k_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		   enum ieee80211_ampdu_mlme_action action,
-		   struct ieee80211_sta *sta, u16 tid, u16 *ssn,
-		   u8 buf_size)
+		   struct ieee80211_ampdu_params *params)
 {
-
+	struct ieee80211_sta *sta = params->sta;
+	enum ieee80211_ampdu_mlme_action action = params->action;
+	u16 tid = params->tid;
+	u16 *ssn = &params->ssn;
+	u8 buf_size = params->buf_size;
 	int i, rc = 0;
 	struct mwl8k_priv *priv = hw->priv;
 	struct mwl8k_ampdu_stream *stream;
 	u8 *addr = sta->addr, idx;
 	struct mwl8k_sta *sta_info = MWL8K_STA(sta);
 
-	if (!(hw->flags & IEEE80211_HW_AMPDU_AGGREGATION))
+	if (!ieee80211_hw_check(hw, AMPDU_AGGREGATION))
 		return -ENOTSUPP;
 
 	spin_lock(&priv->stream_lock);
@@ -5548,7 +5551,9 @@ mwl8k_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	return rc;
 }
 
-static void mwl8k_sw_scan_start(struct ieee80211_hw *hw)
+static void mwl8k_sw_scan_start(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				const u8 *mac_addr)
 {
 	struct mwl8k_priv *priv = hw->priv;
 	u8 tmp;
@@ -5565,7 +5570,8 @@ static void mwl8k_sw_scan_start(struct ieee80211_hw *hw)
 	priv->sw_scan_start = true;
 }
 
-static void mwl8k_sw_scan_complete(struct ieee80211_hw *hw)
+static void mwl8k_sw_scan_complete(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif)
 {
 	struct mwl8k_priv *priv = hw->priv;
 	u8 tmp;
@@ -6073,14 +6079,15 @@ static int mwl8k_firmware_load_success(struct mwl8k_priv *priv)
 	hw->queues = MWL8K_TX_WMM_QUEUES;
 
 	/* Set rssi values to dBm */
-	hw->flags |= IEEE80211_HW_SIGNAL_DBM | IEEE80211_HW_HAS_RATE_CONTROL;
+	ieee80211_hw_set(hw, SIGNAL_DBM);
+	ieee80211_hw_set(hw, HAS_RATE_CONTROL);
 
 	/*
 	 * Ask mac80211 to not to trigger PS mode
 	 * based on PM bit of incoming frames.
 	 */
 	if (priv->ap_fw)
-		hw->flags |= IEEE80211_HW_AP_LINK_PS;
+		ieee80211_hw_set(hw, AP_LINK_PS);
 
 	hw->vif_data_size = sizeof(struct mwl8k_vif);
 	hw->sta_data_size = sizeof(struct mwl8k_sta);

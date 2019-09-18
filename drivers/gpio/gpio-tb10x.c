@@ -138,16 +138,6 @@ static int tb10x_gpio_direction_out(struct gpio_chip *chip,
 	return 0;
 }
 
-static int tb10x_gpio_request(struct gpio_chip *chip, unsigned offset)
-{
-	return pinctrl_request_gpio(chip->base + offset);
-}
-
-static void tb10x_gpio_free(struct gpio_chip *chip, unsigned offset)
-{
-	pinctrl_free_gpio(chip->base + offset);
-}
-
 static int tb10x_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 {
 	struct tb10x_gpio *tb10x_gpio = to_tb10x_gpio(chip);
@@ -195,18 +185,13 @@ static int tb10x_gpio_probe(struct platform_device *pdev)
 	if (of_property_read_u32(dn, "abilis,ngpio", &ngpio))
 		return -EINVAL;
 
-	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource defined.\n");
-		return -EINVAL;
-	}
-
 	tb10x_gpio = devm_kzalloc(&pdev->dev, sizeof(*tb10x_gpio), GFP_KERNEL);
 	if (tb10x_gpio == NULL)
 		return -ENOMEM;
 
 	spin_lock_init(&tb10x_gpio->spinlock);
 
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	tb10x_gpio->base = devm_ioremap_resource(&pdev->dev, mem);
 	if (IS_ERR(tb10x_gpio->base))
 		return PTR_ERR(tb10x_gpio->base);
@@ -218,8 +203,8 @@ static int tb10x_gpio_probe(struct platform_device *pdev)
 	tb10x_gpio->gc.get		= tb10x_gpio_get;
 	tb10x_gpio->gc.direction_output	= tb10x_gpio_direction_out;
 	tb10x_gpio->gc.set		= tb10x_gpio_set;
-	tb10x_gpio->gc.request		= tb10x_gpio_request;
-	tb10x_gpio->gc.free		= tb10x_gpio_free;
+	tb10x_gpio->gc.request		= gpiochip_generic_request;
+	tb10x_gpio->gc.free		= gpiochip_generic_free;
 	tb10x_gpio->gc.base		= -1;
 	tb10x_gpio->gc.ngpio		= ngpio;
 	tb10x_gpio->gc.can_sleep	= false;
@@ -288,7 +273,7 @@ fail_ioremap:
 	return ret;
 }
 
-static int __exit tb10x_gpio_remove(struct platform_device *pdev)
+static int tb10x_gpio_remove(struct platform_device *pdev)
 {
 	struct tb10x_gpio *tb10x_gpio = platform_get_drvdata(pdev);
 
@@ -297,7 +282,6 @@ static int __exit tb10x_gpio_remove(struct platform_device *pdev)
 					BIT(tb10x_gpio->gc.ngpio) - 1, 0, 0);
 		kfree(tb10x_gpio->domain->gc);
 		irq_domain_remove(tb10x_gpio->domain);
-		free_irq(tb10x_gpio->irq, tb10x_gpio);
 	}
 	gpiochip_remove(&tb10x_gpio->gc);
 
@@ -316,7 +300,6 @@ static struct platform_driver tb10x_gpio_driver = {
 	.driver = {
 		.name	= "tb10x-gpio",
 		.of_match_table = tb10x_gpio_dt_ids,
-		.owner	= THIS_MODULE,
 	}
 };
 

@@ -323,7 +323,7 @@ static int __init txx9ndfmc_probe(struct platform_device *dev)
 			continue;
 		chip = &txx9_priv->chip;
 		mtd = &txx9_priv->mtd;
-		mtd->owner = THIS_MODULE;
+		mtd->dev.parent = &dev->dev;
 
 		mtd->priv = chip;
 
@@ -417,7 +417,6 @@ static struct platform_driver txx9ndfmc_driver = {
 	.resume		= txx9ndfmc_resume,
 	.driver		= {
 		.name	= "txx9ndfmc",
-		.owner	= THIS_MODULE,
 	},
 };
 

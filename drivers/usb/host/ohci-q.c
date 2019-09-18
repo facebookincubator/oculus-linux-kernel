@@ -143,7 +143,7 @@ static void periodic_link (struct ohci_hcd *ohci, struct ed *ed)
 {
 	unsigned	i;
 
-	ohci_dbg(ohci, "link %sed %p branch %d [%dus.], interval %d\n",
+	ohci_dbg(ohci, "link %sed %pK branch %d [%dus.], interval %d\n",
 		(ed->hwINFO & cpu_to_hc32 (ohci, ED_ISO)) ? "iso " : "",
 		ed, ed->branch, ed->load, ed->interval);
 
@@ -183,7 +183,6 @@ static int ed_schedule (struct ohci_hcd *ohci, struct ed *ed)
 {
 	int	branch;
 
-	ed->state = ED_OPER;
 	ed->ed_prev = NULL;
 	ed->ed_next = NULL;
 	ed->hwNextED = 0;
@@ -259,6 +258,8 @@ static int ed_schedule (struct ohci_hcd *ohci, struct ed *ed)
 	/* the HC may not see the schedule updates yet, but if it does
 	 * then they'll be properly ordered.
 	 */
+
+	ed->state = ED_OPER;
 	return 0;
 }
 
@@ -286,7 +287,7 @@ static void periodic_unlink (struct ohci_hcd *ohci, struct ed *ed)
 	}
 	ohci_to_hcd(ohci)->self.bandwidth_allocated -= ed->load / ed->interval;
 
-	ohci_dbg(ohci, "unlink %sed %p branch %d [%dus.], interval %d\n",
+	ohci_dbg(ohci, "unlink %sed %pK branch %d [%dus.], interval %d\n",
 		(ed->hwINFO & cpu_to_hc32 (ohci, ED_ISO)) ? "iso " : "",
 		ed, ed->branch, ed->load, ed->interval);
 }
@@ -407,7 +408,8 @@ static struct ed *ed_get (
 
 	spin_lock_irqsave (&ohci->lock, flags);
 
-	if (!(ed = ep->hcpriv)) {
+	ed = ep->hcpriv;
+	if (!ed) {
 		struct td	*td;
 		int		is_out;
 		u32		info;
@@ -785,7 +787,7 @@ static int td_done(struct ohci_hcd *ohci, struct urb *urb, struct td *td)
 
 		if (cc != TD_CC_NOERROR)
 			ohci_dbg(ohci,
-				"urb %p iso td %p (%d) len %d cc %d\n",
+				"urb %pK iso td %pK (%d) len %d cc %d\n",
 				urb, td, 1 + td->index, dlen, cc);
 
 	/* BULK, INT, CONTROL ... drivers see aggregate length/status,
@@ -817,7 +819,7 @@ static int td_done(struct ohci_hcd *ohci, struct urb *urb, struct td *td)
 
 		if (cc != TD_CC_NOERROR && cc < 0x0E)
 			ohci_dbg(ohci,
-				"urb %p td %p (%d) cc %d, len=%d/%d\n",
+				"urb %pK td %pK (%d) cc %d, len=%d/%d\n",
 				urb, td, 1 + td->index, cc,
 				urb->actual_length,
 				urb->transfer_buffer_length);
@@ -883,7 +885,7 @@ static void ed_halted(struct ohci_hcd *ohci, struct td *td, int cc)
 		/* fallthrough */
 	default:
 		ohci_dbg (ohci,
-			"urb %p path %s ep%d%s %08x cc %d --> status %d\n",
+			"urb %pK path %s ep%d%s %08x cc %d --> status %d\n",
 			urb, urb->dev->devpath,
 			usb_pipeendpoint (urb->pipe),
 			usb_pipein (urb->pipe) ? "in" : "out",
@@ -980,10 +982,6 @@ rescan_all:
 		int			completed, modified;
 		__hc32			*prev;
 
-		/* Is this ED already invisible to the hardware? */
-		if (ed->state == ED_IDLE)
-			goto ed_idle;
-
 		/* only take off EDs that the HC isn't using, accounting for
 		 * frame counter wraps and EDs with partially retired TDs
 		 */
@@ -1011,12 +1009,10 @@ skip_ed:
 		}
 
 		/* ED's now officially unlinked, hc doesn't see */
-		ed->state = ED_IDLE;
 		ed->hwHeadP &= ~cpu_to_hc32(ohci, ED_H);
 		ed->hwNextED = 0;
 		wmb();
 		ed->hwINFO &= ~cpu_to_hc32(ohci, ED_SKIP | ED_DEQUEUE);
-ed_idle:
 
 		/* reentrancy:  if we drop the schedule lock, someone might
 		 * have modified this list.  normally it's just prepending
@@ -1087,6 +1083,7 @@ rescan_this:
 		if (list_empty(&ed->td_list)) {
 			*last = ed->ed_next;
 			ed->ed_next = NULL;
+			ed->state = ED_IDLE;
 			list_del(&ed->in_use_list);
 		} else if (ohci->rh_state == OHCI_RH_RUNNING) {
 			*last = ed->ed_next;

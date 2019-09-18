@@ -25,6 +25,7 @@ The device tree parameters for the core hang detection are:
 Required properties:
 
 - compatible : "qcom,core-hang-detect"
+- label: unique name used to created sysfs entry
 - qcom,threshold-arr :
 	Array of APCS_ALIAS*_CORE_HANG_THRESHOLD register address
 	for each core.
@@ -44,7 +45,7 @@ Example:
 			0xB0B809C 0xB18809C 0xB19809C 0xB1A809C 0xB1B809C>;
 	};
 
-  For msm8953:
+  For msmtitanium:
 	qcom,chd {
 		compatible = "qcom,core-hang-detect";
 		qcom,threshold-arr = <0xB1880B0 0xB1980B0 0xB1A80B0

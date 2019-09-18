@@ -40,6 +40,7 @@ static struct workqueue_struct *mem_share_svc_workqueue;
 static uint64_t bootup_request;
 static bool ramdump_event;
 static void *memshare_ramdump_dev[MAX_CLIENTS];
+static struct device *memshare_dev[MAX_CLIENTS];
 
 /* Memshare Driver Structure */
 struct memshare_driver {
@@ -128,13 +129,32 @@ static struct msg_desc mem_share_svc_size_query_resp_desc = {
 static int mem_share_configure_ramdump(void)
 {
 	char client_name[18] = "memshare_";
-	char *clnt;
+	char *clnt = NULL;
 
-	clnt = ((!num_clients) ? "GPS" : ((num_clients == 1) ? "FTM" : "DIAG"));
+	switch (num_clients) {
+	case 0:
+		clnt = "GPS";
+		break;
+	case 1:
+		clnt = "FTM";
+		break;
+	case 2:
+		clnt = "DIAG";
+		break;
+	default:
+		pr_info("memshare: no memshare clients registered\n");
+		return -EINVAL;
+	}
+
 	snprintf(client_name, 18, "memshare_%s", clnt);
-
-	memshare_ramdump_dev[num_clients] = create_ramdump_device(client_name,
-								NULL);
+	if (memshare_dev[num_clients]) {
+		memshare_ramdump_dev[num_clients] =
+			create_ramdump_device(client_name,
+				memshare_dev[num_clients]);
+	} else {
+		pr_err("memshare:%s: invalid memshare device\n", __func__);
+		return -ENODEV;
+	}
 	if (IS_ERR_OR_NULL(memshare_ramdump_dev[num_clients])) {
 		pr_err("memshare: %s: Unable to create memshare ramdump device.\n",
 				__func__);
@@ -248,14 +268,26 @@ void initialize_client(void)
 static int mem_share_do_ramdump(void)
 {
 	int i = 0, ret;
-	char *client_name;
+	char *client_name = NULL;
 
 	for (i = 0; i < num_clients; i++) {
 
 		struct ramdump_segment *ramdump_segments_tmp = NULL;
 
-		client_name = (i == 0) ? "GPS" :
-			((i == 1) ? "FTM" : ((i == 2) ? "DIAG" : "NULL"));
+		switch (i) {
+		case 0:
+			client_name = "GPS";
+			break;
+		case 1:
+			client_name = "FTM";
+			break;
+		case 2:
+			client_name = "DIAG";
+			break;
+		default:
+			pr_info("memshare: no memshare clients registered\n");
+			break;
+		}
 
 		if (!memblock[i].alloted) {
 			pr_err("memshare:%s memblock is not alloted\n",
@@ -295,7 +327,7 @@ static int modem_notifier_cb(struct notifier_block *this, unsigned long code,
 	int ret;
 	u32 source_vmlist[2] = {VMID_HLOS, VMID_MSS_MSA};
 	int dest_vmids[1] = {VMID_HLOS};
-	int dest_perms[1] = {PERM_READ|PERM_WRITE};
+	int dest_perms[1] = {PERM_READ|PERM_WRITE|PERM_EXEC};
 	struct notif_data *notifdata = NULL;
 
 	mutex_lock(&memsh_drv->mem_share);
@@ -466,6 +498,7 @@ static int handle_alloc_generic_req(void *req_h, void *req, void *conn_h)
 	struct mem_alloc_generic_resp_msg_v01 *alloc_resp;
 	int rc, resp = 0;
 	int client_id;
+	uint32_t size = 0;
 
 	alloc_req = (struct mem_alloc_generic_req_msg_v01 *)req;
 	pr_debug("memshare: alloc request client id: %d proc _id: %d\n",
@@ -486,15 +519,17 @@ static int handle_alloc_generic_req(void *req_h, void *req, void *conn_h)
 		pr_err("memshare: %s client not found, requested client: %d, proc_id: %d\n",
 				__func__, alloc_req->client_id,
 				alloc_req->proc_id);
+		kfree(alloc_resp);
+		alloc_resp = NULL;
 		return -EINVAL;
 	}
 
-	memblock[client_id].free_memory += 1;
-	pr_debug("memshare: In %s, free memory count for client id: %d = %d",
-		__func__, memblock[client_id].client_id,
-			memblock[client_id].free_memory);
 	if (!memblock[client_id].alloted) {
-		rc = memshare_alloc(memsh_drv->dev, alloc_req->num_bytes,
+		if (alloc_req->client_id == 1 && alloc_req->num_bytes > 0)
+			size = alloc_req->num_bytes + MEMSHARE_GUARD_BYTES;
+		else
+			size = alloc_req->num_bytes;
+		rc = memshare_alloc(memsh_drv->dev, size,
 					&memblock[client_id]);
 		if (rc) {
 			pr_err("In %s,Unable to allocate memory for requested client\n",
@@ -502,11 +537,16 @@ static int handle_alloc_generic_req(void *req_h, void *req, void *conn_h)
 			resp = 1;
 		}
 		if (!resp) {
+			memblock[client_id].free_memory += 1;
 			memblock[client_id].alloted = 1;
 			memblock[client_id].size = alloc_req->num_bytes;
 			memblock[client_id].peripheral = alloc_req->proc_id;
 		}
 	}
+	pr_debug("memshare: In %s, free memory count for client id: %d = %d",
+		__func__, memblock[client_id].client_id,
+		memblock[client_id].free_memory);
+
 	memblock[client_id].sequence_id = alloc_req->sequence_id;
 
 	fill_alloc_response(alloc_resp, client_id, &resp);
@@ -530,6 +570,9 @@ static int handle_alloc_generic_req(void *req_h, void *req, void *conn_h)
 	if (rc < 0)
 		pr_err("In %s, Error sending the alloc request: %d\n",
 							__func__, rc);
+
+	kfree(alloc_resp);
+	alloc_resp = NULL;
 	return rc;
 }
 
@@ -647,6 +690,8 @@ static int handle_query_size_req(void *req_h, void *req, void *conn_h)
 		pr_err("memshare: %s client not found, requested client: %d, proc_id: %d\n",
 				__func__, query_req->client_id,
 				query_req->proc_id);
+		kfree(query_resp);
+		query_resp = NULL;
 		return -EINVAL;
 	}
 
@@ -672,6 +717,8 @@ static int handle_query_size_req(void *req_h, void *req, void *conn_h)
 		pr_err("In %s, Error sending the query request: %d\n",
 							__func__, rc);
 
+	kfree(query_resp);
+	query_resp = NULL;
 	return rc;
 }
 
@@ -921,9 +968,11 @@ static int memshare_child_probe(struct platform_device *pdev)
   /*
    *	Memshare allocation for guaranteed clients
    */
-	if (memblock[num_clients].guarantee) {
+	if (memblock[num_clients].guarantee && size > 0) {
+		if (client_id == 1)
+			size += MEMSHARE_GUARD_BYTES;
 		rc = memshare_alloc(memsh_child->dev,
-				memblock[num_clients].size,
+				size,
 				&memblock[num_clients]);
 		if (rc) {
 			pr_err("In %s, Unable to allocate memory for guaranteed clients, rc: %d\n",
@@ -931,12 +980,15 @@ static int memshare_child_probe(struct platform_device *pdev)
 			return rc;
 		}
 		memblock[num_clients].alloted = 1;
+		shared_hyp_mapping(num_clients);
 	}
 
 	/*
 	 *  call for creating ramdump dev handlers for
 	 *  memshare clients
 	 */
+
+	memshare_dev[num_clients] = &pdev->dev;
 
 	if (!memblock[num_clients].file_created) {
 		rc = mem_share_configure_ramdump();

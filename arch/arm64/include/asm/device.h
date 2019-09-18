@@ -21,6 +21,7 @@ struct dev_archdata {
 #ifdef CONFIG_IOMMU_API
 	void *iommu;			/* private IOMMU data */
 #endif
+	bool dma_coherent;
 #ifdef CONFIG_ARM64_DMA_USE_IOMMU
 	struct dma_iommu_mapping	*mapping;
 #endif

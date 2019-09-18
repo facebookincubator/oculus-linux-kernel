@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -338,9 +338,8 @@ static void bam_data_start_rx(struct bam_data_port *port)
 	struct sk_buff			*skb;
 	unsigned long			flags;
 
-	if (!port->port_usb) {
+	if (!port->port_usb)
 		return;
-	}
 
 	d = &port->data_ch;
 	ep = port->port_usb->out;
@@ -427,8 +426,8 @@ static void bam_data_epout_complete(struct usb_ep *ep, struct usb_request *req)
 			spin_unlock(&port->port_lock);
 			pr_err_ratelimited("usb bam prod is not granted.\n");
 			return;
-		} else
-			queue_work(bam_data_wq, &d->write_tobam_w);
+		}
+		queue_work(bam_data_wq, &d->write_tobam_w);
 	}
 
 	if (bam_mux_rx_fctrl_support &&
@@ -492,9 +491,8 @@ static int bam_data_sys2bam_alloc_req(struct bam_data_port *port, bool in)
 
 	ret = bam_data_alloc_requests(ep, idle, queue_size, ep_complete,
 			GFP_ATOMIC);
-	if (ret) {
+	if (ret)
 		pr_err("%s: allocation failed\n", __func__);
-	}
 
 	return ret;
 }
@@ -951,19 +949,11 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 
 	} else {
 		/* Configure RX */
-		get_bam2bam_connection_info(d->usb_bam_type,
-				d->src_connection_idx,
-				&d->src_pipe_idx,
-				NULL, NULL, NULL);
 		sps_params = (SPS_PARAMS_SPS_MODE | d->src_pipe_idx |
 			MSM_VENDOR_ID) & ~SPS_PARAMS_TBE;
 		d->rx_req->udc_priv = sps_params;
 
 		/* Configure TX */
-		get_bam2bam_connection_info(d->usb_bam_type,
-				d->dst_connection_idx,
-				&d->dst_pipe_idx,
-				NULL, NULL, NULL);
 		sps_params = (SPS_PARAMS_SPS_MODE | d->dst_pipe_idx |
 			MSM_VENDOR_ID) & ~SPS_PARAMS_TBE;
 		d->tx_req->udc_priv = sps_params;
@@ -1021,6 +1011,7 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 			__func__, ret);
 		goto free_fifos;
 	}
+	gadget->bam2bam_func_enabled = true;
 
 	spin_lock_irqsave(&port->port_lock, flags);
 	if (port->last_event ==  U_BAM_DATA_DISCONNECT_E) {
@@ -1240,10 +1231,8 @@ static int bam2bam_data_port_alloc(int portno)
 	}
 
 	port = kzalloc(sizeof(struct bam_data_port), GFP_KERNEL);
-	if (!port) {
-		pr_err("no memory to allocate port %d\n", portno);
+	if (!port)
 		return -ENOMEM;
-	}
 
 	bam2bam_data_ports[portno] = port;
 	d = &port->data_ch;
@@ -1295,7 +1284,6 @@ void u_bam_data_stop_rndis_ipa(void)
 	int port_num;
 	struct bam_data_port *port;
 	struct bam_data_ch_info *d;
-	unsigned long flags;
 
 	pr_debug("%s\n", __func__);
 
@@ -1313,15 +1301,6 @@ void u_bam_data_stop_rndis_ipa(void)
 		rndis_ipa_reset_trigger();
 		bam_data_stop_endless_tx(port);
 		bam_data_stop_endless_rx(port);
-		if (gadget_is_dwc3(port->gadget)) {
-			spin_lock_irqsave(&port->port_lock, flags);
-			/* check if USB cable is disconnected or not */
-			if (port->port_usb) {
-				msm_ep_unconfig(port->port_usb->in);
-				msm_ep_unconfig(port->port_usb->out);
-			}
-			spin_unlock_irqrestore(&port->port_lock, flags);
-		}
 		queue_work(bam_data_wq, &port->disconnect_w);
 	}
 }
@@ -1422,13 +1401,6 @@ void bam_data_disconnect(struct data_port *gr, enum function_type func,
 			 * to obtain the spinlock as well.
 			 */
 			spin_unlock_irqrestore(&port->port_lock, flags);
-			usb_ep_disable(port->port_usb->in);
-			if (d->tx_req) {
-				usb_ep_free_request(port->port_usb->in,
-								d->tx_req);
-				d->tx_req = NULL;
-			}
-
 			usb_ep_disable(port->port_usb->out);
 			if (d->rx_req) {
 				usb_ep_free_request(port->port_usb->out,
@@ -1436,6 +1408,12 @@ void bam_data_disconnect(struct data_port *gr, enum function_type func,
 				d->rx_req = NULL;
 			}
 
+			usb_ep_disable(port->port_usb->in);
+			if (d->tx_req) {
+				usb_ep_free_request(port->port_usb->in,
+								d->tx_req);
+				d->tx_req = NULL;
+			}
 			spin_lock_irqsave(&port->port_lock, flags);
 
 			/* Only for SYS2BAM mode related UL workaround */
@@ -1764,7 +1742,7 @@ static int bam_data_wake_cb(void *param)
 
 	/*
 	 * In Super-Speed mode, remote wakeup is not allowed for suspended
-	 * functions which have been disallowed by the host to issue Funtion
+	 * functions which have been disallowed by the host to issue Function
 	 * Remote Wakeup.
 	 * Note - We deviate here from the USB 3.0 spec and allow
 	 * non-suspended functions to issue remote-wakeup even if they were not
@@ -1828,7 +1806,7 @@ static void bam_data_stop(void *param, enum usb_bam_pipe_dir dir)
 
 	if (dir == USB_TO_PEER_PERIPHERAL) {
 		/*
-		 * Only handling BAM2BAM, as there is no equivelant to
+		 * Only handling BAM2BAM, as there is no equivalent to
 		 * bam_data_stop_endless_rx() for the SYS2BAM use case
 		 */
 		if (port->data_ch.src_pipe_type == USB_BAM_PIPE_BAM2BAM)

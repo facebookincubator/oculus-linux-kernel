@@ -11,7 +11,6 @@
  */
 
 #include <linux/platform_device.h>
-#include <linux/of_coresight.h>
 #include <linux/coresight.h>
 
 #include "adreno.h"
@@ -201,6 +200,9 @@ static int _adreno_coresight_set(struct adreno_device *adreno_dev)
 		kgsl_regwrite(device, coresight->registers[i].offset,
 			coresight->registers[i].value);
 
+	kgsl_property_read_u32(device, "coresight-atid",
+		(unsigned int *)&(coresight->atid));
+
 	return 0;
 }
 /**
@@ -282,7 +284,16 @@ void adreno_coresight_start(struct adreno_device *adreno_dev)
 		_adreno_coresight_set(adreno_dev);
 }
 
+static int adreno_coresight_trace_id(struct coresight_device *csdev)
+{
+	struct kgsl_device *device = dev_get_drvdata(csdev->dev.parent);
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(ADRENO_DEVICE(device));
+
+	return gpudev->coresight->atid;
+}
+
 static const struct coresight_ops_source adreno_coresight_source_ops = {
+	.trace_id = adreno_coresight_trace_id,
 	.enable = adreno_coresight_enable,
 	.disable = adreno_coresight_disable,
 };
@@ -322,7 +333,6 @@ int adreno_coresight_init(struct adreno_device *adreno_dev)
 	desc.subtype.source_subtype = CORESIGHT_DEV_SUBTYPE_SOURCE_BUS;
 	desc.ops = &adreno_coresight_ops;
 	desc.dev = &device->pdev->dev;
-	desc.owner = THIS_MODULE;
 	desc.groups = gpudev->coresight->groups;
 
 	adreno_dev->csdev = coresight_register(&desc);

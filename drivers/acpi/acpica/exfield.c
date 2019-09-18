@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2014, Intel Corp.
+ * Copyright (C) 2000 - 2015, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -428,7 +428,7 @@ acpi_ex_write_data_to_field(union acpi_operand_object *source_desc,
 		}
 
 		buffer = buffer_desc->buffer.pointer;
-		ACPI_MEMCPY(buffer, source_desc->buffer.pointer, length);
+		memcpy(buffer, source_desc->buffer.pointer, length);
 
 		/* Lock entire transaction if requested */
 

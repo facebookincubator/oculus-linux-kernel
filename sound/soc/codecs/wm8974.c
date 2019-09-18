@@ -514,7 +514,7 @@ static int wm8974_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_STANDBY:
 		power1 |= WM8974_POWER1_BIASEN | WM8974_POWER1_BUFIOEN;
 
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
+		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF) {
 			regcache_sync(dev_get_regmap(codec->dev, NULL));
 
 			/* Initial cap charge at VMID 5k */
@@ -533,7 +533,6 @@ static int wm8974_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	}
 
-	codec->dapm.bias_level = level;
 	return 0;
 }
 
@@ -568,18 +567,6 @@ static struct snd_soc_dai_driver wm8974_dai = {
 	.symmetric_rates = 1,
 };
 
-static int wm8974_suspend(struct snd_soc_codec *codec)
-{
-	wm8974_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	return 0;
-}
-
-static int wm8974_resume(struct snd_soc_codec *codec)
-{
-	wm8974_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-	return 0;
-}
-
 static const struct regmap_config wm8974_regmap = {
 	.reg_bits = 7,
 	.val_bits = 9,
@@ -587,6 +574,7 @@ static const struct regmap_config wm8974_regmap = {
 	.max_register = WM8974_MONOMIX,
 	.reg_defaults = wm8974_reg_defaults,
 	.num_reg_defaults = ARRAY_SIZE(wm8974_reg_defaults),
+	.cache_type = REGCACHE_FLAT,
 };
 
 static int wm8974_probe(struct snd_soc_codec *codec)
@@ -599,24 +587,13 @@ static int wm8974_probe(struct snd_soc_codec *codec)
 		return ret;
 	}
 
-	wm8974_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-
-	return ret;
-}
-
-/* power down chip */
-static int wm8974_remove(struct snd_soc_codec *codec)
-{
-	wm8974_set_bias_level(codec, SND_SOC_BIAS_OFF);
 	return 0;
 }
 
 static struct snd_soc_codec_driver soc_codec_dev_wm8974 = {
 	.probe = 	wm8974_probe,
-	.remove = 	wm8974_remove,
-	.suspend = 	wm8974_suspend,
-	.resume =	wm8974_resume,
 	.set_bias_level = wm8974_set_bias_level,
+	.suspend_bias_off = true,
 
 	.controls = wm8974_snd_controls,
 	.num_controls = ARRAY_SIZE(wm8974_snd_controls),
@@ -658,7 +635,6 @@ MODULE_DEVICE_TABLE(i2c, wm8974_i2c_id);
 static struct i2c_driver wm8974_i2c_driver = {
 	.driver = {
 		.name = "wm8974",
-		.owner = THIS_MODULE,
 	},
 	.probe =    wm8974_i2c_probe,
 	.remove =   wm8974_i2c_remove,

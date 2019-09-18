@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,9 +38,10 @@ TRACE_EVENT(user_fault,
 		__entry->fsr	= fsr;
 	),
 
-	TP_printk("task_name:%s addr:%lu, fsr:%u", __get_str(task_name),\
+	TP_printk("task_name:%s addr:%lu, fsr:%u", __get_str(task_name),
 		__entry->addr, __entry->fsr)
 );
+
 
 struct pt_regs;
 

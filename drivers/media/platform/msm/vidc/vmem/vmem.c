@@ -1,4 +1,5 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,6 +15,7 @@
 
 #include <linux/bitops.h>
 #include <linux/clk.h>
+#include <linux/clk/msm-clk.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -110,6 +112,7 @@ struct vmem {
 	struct {
 		const char *name;
 		struct clk *clk;
+		bool has_mem_retention;
 	} *clocks;
 	int num_clocks;
 	struct {
@@ -185,6 +188,21 @@ static inline int __power_on(struct vmem *v)
 	pr_debug("Enabled regulator vdd\n");
 
 	for (c = 0; c < v->num_clocks; ++c) {
+		if (v->clocks[c].has_mem_retention) {
+			rc = clk_set_flags(v->clocks[c].clk,
+				       CLKFLAG_NORETAIN_PERIPH);
+			if (rc) {
+				pr_warn("Failed set flag NORETAIN_PERIPH %s\n",
+					v->clocks[c].name);
+			}
+			rc = clk_set_flags(v->clocks[c].clk,
+				       CLKFLAG_NORETAIN_MEM);
+			if (rc) {
+				pr_warn("Failed set flag NORETAIN_MEM %s\n",
+					v->clocks[c].name);
+			}
+		}
+
 		rc = clk_prepare_enable(v->clocks[c].clk);
 		if (rc) {
 			pr_err("Failed to enable %s clock (%d)\n",
@@ -208,9 +226,9 @@ exit:
 
 static inline int __power_off(struct vmem *v)
 {
-	int c = 0;
+	int c = v->num_clocks;
 
-	for (c = 0; c < v->num_clocks; ++c) {
+	for (c--; c >= 0; --c) {
 		clk_disable_unprepare(v->clocks[c].clk);
 		pr_debug("Disabled clock %s\n", v->clocks[c].name);
 	}
@@ -310,7 +328,7 @@ int vmem_allocate(size_t size, phys_addr_t *addr)
 		goto exit;
 	}
 	if (!size) {
-		pr_err("%s Invalid size %ld\n", __func__, size);
+		pr_err("%s Invalid size %zu\n", __func__, size);
 		rc = -EINVAL;
 		goto exit;
 	}
@@ -354,6 +372,7 @@ int vmem_allocate(size_t size, phys_addr_t *addr)
 exit:
 	return rc;
 }
+EXPORT_SYMBOL(vmem_allocate);
 
 /**
  * vmem_free: - Frees the memory allocated via vmem_allocate.  Undefined
@@ -383,6 +402,7 @@ void vmem_free(phys_addr_t to_free)
 	__power_off(vmem);
 	atomic_dec(&vmem->alloc_count);
 }
+EXPORT_SYMBOL(vmem_free);
 
 struct vmem_interrupt_cookie {
 	struct vmem *vmem;
@@ -447,6 +467,7 @@ static inline int __init_resources(struct vmem *v,
 		struct platform_device *pdev)
 {
 	int rc = 0, c = 0;
+	int *clock_props = NULL;
 
 	v->irq = platform_get_irq(pdev, 0);
 	if (v->irq < 0) {
@@ -503,6 +524,21 @@ static inline int __init_resources(struct vmem *v,
 		goto exit;
 	}
 
+	clock_props = devm_kzalloc(&pdev->dev,
+					v->num_clocks * sizeof(*clock_props),
+					GFP_KERNEL);
+	if (!clock_props) {
+		pr_err("Failed to allocate clock config table\n");
+		goto exit;
+	}
+
+	rc = of_property_read_u32_array(pdev->dev.of_node, "clock-config",
+			clock_props, v->num_clocks);
+	if (rc) {
+		pr_err("Failed to read clock config\n");
+		goto exit;
+	}
+
 	for (c = 0; c < v->num_clocks; ++c) {
 		const char *name = NULL;
 		struct clk *temp = NULL;
@@ -518,6 +554,7 @@ static inline int __init_resources(struct vmem *v,
 
 		v->clocks[c].clk = temp;
 		v->clocks[c].name = name;
+		v->clocks[c].has_mem_retention = clock_props[c];
 	}
 
 	v->vdd = devm_regulator_get(&pdev->dev, "vdd");
@@ -698,3 +735,5 @@ static void __exit vmem_exit(void)
 
 module_init(vmem_init);
 module_exit(vmem_exit);
+
+MODULE_LICENSE("GPL v2");

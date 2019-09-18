@@ -16,7 +16,7 @@
 #ifndef __CLKSOURCE_ARM_ARCH_TIMER_H
 #define __CLKSOURCE_ARM_ARCH_TIMER_H
 
-#include <linux/clocksource.h>
+#include <linux/timecounter.h>
 #include <linux/types.h>
 
 #define ARCH_TIMER_CTRL_ENABLE		(1 << 0)
@@ -48,8 +48,6 @@ enum arch_timer_reg {
 extern u32 arch_timer_get_rate(void);
 extern u64 (*arch_timer_read_counter)(void);
 extern struct timecounter *arch_timer_get_timecounter(void);
-extern u64 arch_counter_get_cntpct(void);
-extern u64 arch_counter_get_cntvct(void);
 
 #else
 
@@ -67,10 +65,6 @@ static inline struct timecounter *arch_timer_get_timecounter(void)
 {
 	return NULL;
 }
-
-static inline u64 arch_counter_get_cntpct(void) { return 0; }
-
-static inline u64 arch_counter_get_cntvct(void) { return 0; }
 
 #endif
 

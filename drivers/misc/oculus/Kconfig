@@ -1,0 +1,14 @@
+config OCULUSSYNCBOSS
+    tristate "Oculus Monterey SyncBoss Driver"
+    depends on MISCFIFO && SPI
+    default y
+    help
+    Oculus Monterey SyncBoss Driver
+
+config SYNCBOSS_NUM_CAMERAS
+    int
+    prompt "Number of cameras in Oculus Syncboss"
+    depends on OCULUSSYNCBOSS
+    default 4
+    help
+    Number of cameras used in Oculus Syncboss driver

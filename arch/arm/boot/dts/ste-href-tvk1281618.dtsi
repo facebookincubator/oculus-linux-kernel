@@ -99,10 +99,13 @@
 				vddio-supply = <&db8500_vsmps2_reg>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&accel_tvk_mode>;
+				interrupt-parent = <&gpio2>;
+				interrupts = <18 IRQ_TYPE_EDGE_RISING>,
+					     <19 IRQ_TYPE_EDGE_RISING>;
 			};
-			lsm303dlm@1e {
+			lsm303dlh@1e {
 				/* Magnetometer */
-				compatible = "st,lsm303dlm-magn";
+				compatible = "st,lsm303dlh-magn";
 				reg = <0x1e>;
 				vdd-supply = <&ab8500_ldo_aux1_reg>;
 				vddio-supply = <&db8500_vsmps2_reg>;
@@ -130,7 +133,7 @@
 			tc35893 {
 				tc35893_tvk_mode: tc35893_tvk {
 					tvk_cfg {
-						ste,pins = "GPIO218_AH11";
+						pins = "GPIO218_AH11";
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -138,7 +141,7 @@
 			prox {
 				prox_tvk_mode: prox_tvk {
 					tvk_cfg {
-						ste,pins = "GPIO217_AH12";
+						pins = "GPIO217_AH12";
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -146,7 +149,7 @@
 			hall {
 				hall_tvk_mode: hall_tvk {
 					tvk_cfg {
-						ste,pins = "GPIO145_C13";
+						pins = "GPIO145_C13";
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -155,7 +158,7 @@
 				accel_tvk_mode: accel_tvk {
 					/* Accelerometer interrupt lines 1 & 2 */
 					tvk_cfg {
-						ste,pins = "GPIO82_C1", "GPIO83_D3";
+						pins = "GPIO82_C1", "GPIO83_D3";
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -164,11 +167,11 @@
 				magneto_tvk_mode: magneto_tvk {
 					/* Magnetometer uses GPIO 31 and 32, pull these up/down respectively */
 					tvk_cfg1 {
-						ste,pins = "GPIO31_V3";
+						pins = "GPIO31_V3";
 						ste,config = <&gpio_in_pu>;
 					};
 					tvk_cfg2 {
-						ste,pins = "GPIO32_V2";
+						pins = "GPIO32_V2";
 						ste,config = <&gpio_in_pd>;
 					};
 				};

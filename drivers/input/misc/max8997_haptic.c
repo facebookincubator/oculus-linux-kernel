@@ -255,11 +255,13 @@ static int max8997_haptic_probe(struct platform_device *pdev)
 	struct max8997_dev *iodev = dev_get_drvdata(pdev->dev.parent);
 	const struct max8997_platform_data *pdata =
 					dev_get_platdata(iodev->dev);
-	const struct max8997_haptic_platform_data *haptic_pdata =
-					pdata->haptic_pdata;
+	const struct max8997_haptic_platform_data *haptic_pdata = NULL;
 	struct max8997_haptic *chip;
 	struct input_dev *input_dev;
 	int error;
+
+	if (pdata)
+		haptic_pdata = pdata->haptic_pdata;
 
 	if (!haptic_pdata) {
 		dev_err(&pdev->dev, "no haptic platform data\n");
@@ -378,8 +380,7 @@ static int max8997_haptic_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int max8997_haptic_suspend(struct device *dev)
+static int __maybe_unused max8997_haptic_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct max8997_haptic *chip = platform_get_drvdata(pdev);
@@ -388,7 +389,6 @@ static int max8997_haptic_suspend(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(max8997_haptic_pm_ops, max8997_haptic_suspend, NULL);
 
@@ -396,12 +396,11 @@ static const struct platform_device_id max8997_haptic_id[] = {
 	{ "max8997-haptic", 0 },
 	{ },
 };
-MODULE_DEVICE_TABLE(i2c, max8997_haptic_id);
+MODULE_DEVICE_TABLE(platform, max8997_haptic_id);
 
 static struct platform_driver max8997_haptic_driver = {
 	.driver	= {
 		.name	= "max8997-haptic",
-		.owner	= THIS_MODULE,
 		.pm	= &max8997_haptic_pm_ops,
 	},
 	.probe		= max8997_haptic_probe,
@@ -410,7 +409,6 @@ static struct platform_driver max8997_haptic_driver = {
 };
 module_platform_driver(max8997_haptic_driver);
 
-MODULE_ALIAS("platform:max8997-haptic");
 MODULE_AUTHOR("Donggeun Kim <dg77.kim@samsung.com>");
 MODULE_DESCRIPTION("max8997_haptic driver");
 MODULE_LICENSE("GPL");

@@ -250,8 +250,7 @@ struct fuse_file_lock {
 #define FUSE_ASYNC_DIO		(1 << 15)
 #define FUSE_WRITEBACK_CACHE	(1 << 16)
 #define FUSE_NO_OPEN_SUPPORT	(1 << 17)
-
-#define FUSE_SHORTCIRCUIT	(1 << 31)
+#define FUSE_PASSTHROUGH	(1 << 18)
 
 /**
  * CUSE INIT request/reply flags
@@ -483,7 +482,7 @@ struct fuse_create_in {
 struct fuse_open_out {
 	uint64_t	fh;
 	uint32_t	open_flags;
-	int32_t         lower_fd;/* lower layer file descriptor */
+	int32_t         passthrough_fd;
 };
 
 struct fuse_release_in {
@@ -757,5 +756,8 @@ struct fuse_notify_retrieve_in {
 	uint64_t	dummy3;
 	uint64_t	dummy4;
 };
+
+/* Device ioctls: */
+#define FUSE_DEV_IOC_CLONE	_IOR(229, 0, uint32_t)
 
 #endif /* _LINUX_FUSE_H */

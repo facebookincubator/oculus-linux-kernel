@@ -254,6 +254,8 @@ struct link_qual {
 	int tx_failed;
 };
 
+DECLARE_EWMA(rssi, 1024, 8)
+
 /*
  * Antenna settings about the currently active link.
  */
@@ -285,7 +287,7 @@ struct link_ant {
 	 * Similar to the avg_rssi in the link_qual structure
 	 * this value is updated by using the walking average.
 	 */
-	struct ewma rssi_ant;
+	struct ewma_rssi rssi_ant;
 };
 
 /*
@@ -314,7 +316,7 @@ struct link {
 	/*
 	 * Currently active average RSSI value
 	 */
-	struct ewma avg_rssi;
+	struct ewma_rssi avg_rssi;
 
 	/*
 	 * Work structure for scheduling periodic link tuning.
@@ -1019,9 +1021,12 @@ struct rt2x00_bar_list_entry {
  * Register defines.
  * Some registers require multiple attempts before success,
  * in those cases REGISTER_BUSY_COUNT attempts should be
- * taken with a REGISTER_BUSY_DELAY interval.
+ * taken with a REGISTER_BUSY_DELAY interval. Due to USB
+ * bus delays, we do not have to loop so many times to wait
+ * for valid register value on that bus.
  */
 #define REGISTER_BUSY_COUNT	100
+#define REGISTER_USB_BUSY_COUNT 20
 #define REGISTER_BUSY_DELAY	100
 
 /*
@@ -1437,8 +1442,11 @@ int rt2x00mac_sta_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      struct ieee80211_sta *sta);
 int rt2x00mac_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			 struct ieee80211_sta *sta);
-void rt2x00mac_sw_scan_start(struct ieee80211_hw *hw);
-void rt2x00mac_sw_scan_complete(struct ieee80211_hw *hw);
+void rt2x00mac_sw_scan_start(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     const u8 *mac_addr);
+void rt2x00mac_sw_scan_complete(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif);
 int rt2x00mac_get_stats(struct ieee80211_hw *hw,
 			struct ieee80211_low_level_stats *stats);
 void rt2x00mac_bss_info_changed(struct ieee80211_hw *hw,

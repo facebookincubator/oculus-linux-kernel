@@ -73,6 +73,9 @@ u32 q6_ul_filter_rule_hdl[MAX_NUM_Q6_RULE];
 int num_ipa_install_fltr_rule_req_msg;
 struct ipa_install_fltr_rule_req_msg_v01
 		ipa_install_fltr_rule_req_msg_cache[MAX_NUM_QMI_RULE_CACHE];
+int num_ipa_install_fltr_rule_req_ex_msg;
+struct ipa_install_fltr_rule_req_ex_msg_v01
+		ipa_install_fltr_rule_req_ex_msg_cache[MAX_NUM_QMI_RULE_CACHE];
 int num_ipa_fltr_installed_notif_req_msg;
 struct ipa_fltr_installed_notif_req_msg_v01
 		ipa_fltr_installed_notif_req_msg_cache[MAX_NUM_QMI_RULE_CACHE];
@@ -115,6 +118,8 @@ extern struct elem_info ipa3_stop_data_usage_quota_req_msg_data_v01_ei[];
 extern struct elem_info ipa3_stop_data_usage_quota_resp_msg_data_v01_ei[];
 extern struct elem_info ipa3_init_modem_driver_cmplt_req_msg_data_v01_ei[];
 extern struct elem_info ipa3_init_modem_driver_cmplt_resp_msg_data_v01_ei[];
+extern struct elem_info ipa3_install_fltr_rule_req_ex_msg_data_v01_ei[];
+extern struct elem_info ipa3_install_fltr_rule_resp_ex_msg_data_v01_ei[];
 
 /**
  * struct ipa3_rmnet_context - IPA rmnet context
@@ -139,6 +144,9 @@ void ipa3_qmi_service_exit(void);
 /* sending filter-install-request to modem*/
 int ipa3_qmi_filter_request_send(
 	struct ipa_install_fltr_rule_req_msg_v01 *req);
+
+int ipa3_qmi_filter_request_ex_send(
+	struct ipa_install_fltr_rule_req_ex_msg_v01 *req);
 
 /* sending filter-installed-notify-request to modem*/
 int ipa3_qmi_filter_notify_send(struct ipa_fltr_installed_notif_req_msg_v01
@@ -173,13 +181,16 @@ int rmnet_ipa3_poll_tethering_stats(struct wan_ioctl_poll_tethering_stats
 
 int rmnet_ipa3_set_data_quota(struct wan_ioctl_set_data_quota *data);
 
-void ipa3_broadcast_quota_reach_ind(uint32_t mux_id);
+void ipa3_broadcast_quota_reach_ind(uint32_t mux_id,
+	enum ipa_upstream_type upstream_type);
 
 int rmnet_ipa3_set_tether_client_pipe(struct wan_ioctl_set_tether_client_pipe
 	*data);
 
 int rmnet_ipa3_query_tethering_stats(struct wan_ioctl_query_tether_stats *data,
 	bool reset);
+
+int rmnet_ipa3_reset_tethering_stats(struct wan_ioctl_reset_tether_stats *data);
 
 int ipa3_qmi_get_data_stats(struct ipa_get_data_stats_req_msg_v01 *req,
 	struct ipa_get_data_stats_resp_msg_v01 *resp);
@@ -209,6 +220,12 @@ static inline void ipa3_qmi_service_exit(void) { }
 /* sending filter-install-request to modem*/
 static inline int ipa3_qmi_filter_request_send(
 	struct ipa_install_fltr_rule_req_msg_v01 *req)
+{
+	return -EPERM;
+}
+
+static inline int ipa3_qmi_filter_request_ex_send(
+	struct ipa_install_fltr_rule_req_ex_msg_v01 *req)
 {
 	return -EPERM;
 }
@@ -273,7 +290,8 @@ static inline int rmnet_ipa3_set_data_quota(
 	return -EPERM;
 }
 
-static inline void ipa3_broadcast_quota_reach_ind(uint32_t mux_id) { }
+static inline void ipa3_broadcast_quota_reach_ind(uint32_t mux_id,
+	enum ipa_upstream_type upstream_type) { }
 
 static inline int ipa3_qmi_get_data_stats(
 	struct ipa_get_data_stats_req_msg_v01 *req,

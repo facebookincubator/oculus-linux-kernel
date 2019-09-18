@@ -4,7 +4,7 @@
  * Copyright (C) 2003 Al Borchers (alborchers@steinerpoint.com)
  * Copyright (C) 2008 David Brownell
  * Copyright (C) 2008 by Nokia Corporation
- * Copyright (c) 2013-2015 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * This code also borrows from usbserial.c, which is
  * Copyright (C) 1999 - 2002 Greg Kroah-Hartman (greg@kroah.com)
@@ -80,14 +80,12 @@
  * next layer of buffering.  For TX that's a circular buffer; for RX
  * consider it a NOP.  A third layer is provided by the TTY code.
  */
-#define TX_QUEUE_SIZE		8
-#define TX_BUF_SIZE		4096
+#define TX_QUEUE_SIZE          8
+#define TX_BUF_SIZE            4096
 #define WRITE_BUF_SIZE		8192		/* TX only */
 
-#define RX_QUEUE_SIZE		8
-#define RX_BUF_SIZE		4096
-#define EXTRA_ALLOCATION_SIZE	256
-
+#define RX_QUEUE_SIZE          8
+#define RX_BUF_SIZE            4096
 
 /* circular buffer */
 struct gs_buf {
@@ -115,20 +113,22 @@ struct gs_port {
 	int read_allocated;
 	struct list_head	read_queue;
 	unsigned		n_read;
-	struct work_struct	push;
+	struct work_struct      push;
 
 	struct list_head	write_pool;
 	int write_started;
 	int write_allocated;
 	struct gs_buf		port_write_buf;
 	wait_queue_head_t	drain_wait;	/* wait while writes drain */
+	bool                    write_busy;
+	wait_queue_head_t	close_wait;
 
 	/* REVISIT this state ... */
 	struct usb_cdc_line_coding port_line_coding;	/* 8-N-1 etc */
-	unsigned long           nbytes_from_host;
-	unsigned long           nbytes_to_tty;
-	unsigned long           nbytes_from_tty;
-	unsigned long           nbytes_to_host;
+	unsigned long	nbytes_from_host;
+	unsigned long	nbytes_to_tty;
+	unsigned long	nbytes_from_tty;
+	unsigned long	nbytes_to_host;
 };
 
 static struct portmaster {
@@ -137,7 +137,6 @@ static struct portmaster {
 } ports[MAX_U_SERIAL_PORTS];
 
 static struct workqueue_struct *gserial_wq;
-
 #define GS_CLOSE_TIMEOUT		15		/* seconds */
 
 
@@ -303,8 +302,7 @@ gs_buf_get(struct gs_buf *gb, char *buf, unsigned count)
  * usb_request or NULL if there is an error.
  */
 struct usb_request *
-gs_alloc_req(struct usb_ep *ep, unsigned len, size_t extra_sz,
-		gfp_t kmalloc_flags)
+gs_alloc_req(struct usb_ep *ep, unsigned len, gfp_t kmalloc_flags)
 {
 	struct usb_request *req;
 
@@ -312,7 +310,7 @@ gs_alloc_req(struct usb_ep *ep, unsigned len, size_t extra_sz,
 
 	if (req != NULL) {
 		req->length = len;
-		req->buf = kmalloc(len + extra_sz, kmalloc_flags);
+		req->buf = kmalloc(len, kmalloc_flags);
 		if (req->buf == NULL) {
 			usb_ep_free_request(ep, req);
 			return NULL;
@@ -377,7 +375,7 @@ __acquires(&port->port_lock)
 	struct list_head	*pool;
 	struct usb_ep		*in;
 	int			status = 0;
-	static long 		prev_len;
+	static long		prev_len;
 	bool			do_tty_wake = false;
 
 	if (!port || !port->port_usb) {
@@ -388,7 +386,7 @@ __acquires(&port->port_lock)
 	pool = &port->write_pool;
 	in   = port->port_usb->in;
 
-	while (!list_empty(pool)) {
+	while (!port->write_busy && !list_empty(pool)) {
 		struct usb_request	*req;
 		int			len;
 
@@ -413,7 +411,7 @@ __acquires(&port->port_lock)
 				}
 				if (status) {
 					printk(KERN_ERR "%s: %s err %d\n",
-					__func__, "queue", status);
+						__func__, "queue", status);
 					list_add(&req->list, pool);
 				}
 				prev_len = 0;
@@ -437,9 +435,11 @@ __acquires(&port->port_lock)
 		 * NOTE that we may keep sending data for a while after
 		 * the TTY closed (dev->ioport->port_tty is NULL).
 		 */
+		port->write_busy = true;
 		spin_unlock(&port->port_lock);
 		status = usb_ep_queue(in, req, GFP_ATOMIC);
 		spin_lock(&port->port_lock);
+		port->write_busy = false;
 		/*
 		 * If port_usb is NULL, gserial disconnect is called
 		 * while the spinlock is dropped and all requests are
@@ -450,17 +450,18 @@ __acquires(&port->port_lock)
 			gs_free_req(in, req);
 			break;
 		}
+
 		if (status) {
 			pr_debug("%s: %s %s err %d\n",
 					__func__, "queue", in->name, status);
 			list_add(&req->list, pool);
 			break;
 		}
+
 		prev_len = req->length;
 		port->nbytes_from_tty += req->length;
 
 		port->write_started++;
-
 	}
 
 	if (do_tty_wake && port->port.tty)
@@ -512,6 +513,7 @@ __acquires(&port->port_lock)
 		spin_unlock(&port->port_lock);
 		status = usb_ep_queue(out, req, GFP_ATOMIC);
 		spin_lock(&port->port_lock);
+
 		/*
 		 * If port_usb is NULL, gserial disconnect is called
 		 * while the spinlock is dropped and all requests are
@@ -522,6 +524,7 @@ __acquires(&port->port_lock)
 			gs_free_req(out, req);
 			break;
 		}
+
 		if (status) {
 			pr_debug("%s: %s %s err %d\n",
 					__func__, "queue", out->name, status);
@@ -529,7 +532,6 @@ __acquires(&port->port_lock)
 			break;
 		}
 		port->read_started++;
-
 	}
 	return port->read_started;
 }
@@ -613,24 +615,12 @@ static void gs_rx_push(struct work_struct *w)
 		port->read_started--;
 	}
 
-	/*
-	 * Push from tty to ldisc:
-	 * With low_latency set to 0:
-	 * this is handled by a workqueue, so we won't get callbacks
-	 * (tty->ops->flush_chars i.e. gs_flush_chars) and can hold
-	 * port_lock.
-	 * With low_latency set to 1:
-	 * gs_flush_chars (tty->ops->flush_chars) is called synchronosly
-	 * with port_lock held. Hence we need to release it temporarily
-	 * to avoid recursive spinlock.
+	/* Push from tty to ldisc; this is handled by a workqueue,
+	 * so we won't get callbacks and can hold port_lock
 	 */
-	if (do_push) {
-		if (port->port.low_latency)
-			spin_unlock(&port->port_lock);
+	if (do_push)
 		tty_flip_buffer_push(&port->port);
-		if (port->port.low_latency)
-			spin_lock(&port->port_lock);
-	}
+
 
 	/* We want our data queue to become empty ASAP, keeping data
 	 * in the tty and ldisc (not here).  If we couldn't push any
@@ -716,7 +706,7 @@ static void gs_free_requests(struct usb_ep *ep, struct list_head *head,
 }
 
 static int gs_alloc_requests(struct usb_ep *ep, struct list_head *head,
-		int queue_size, int req_size, size_t extra_sz,
+		int queue_size, int req_size,
 		void (*fn)(struct usb_ep *, struct usb_request *),
 		int *allocated)
 {
@@ -729,7 +719,7 @@ static int gs_alloc_requests(struct usb_ep *ep, struct list_head *head,
 	 * be as speedy as we might otherwise be.
 	 */
 	for (i = 0; i < n; i++) {
-		req = gs_alloc_req(ep, req_size, extra_sz, GFP_ATOMIC);
+		req = gs_alloc_req(ep, req_size, GFP_ATOMIC);
 		if (!req)
 			return list_empty(head) ? -ENOMEM : 0;
 		req->complete = fn;
@@ -770,13 +760,13 @@ static int gs_start_io(struct gs_port *port)
 	 * configurations may use different endpoints with a given port;
 	 * and high speed vs full speed changes packet sizes too.
 	 */
-	status = gs_alloc_requests(ep, head, RX_QUEUE_SIZE, RX_BUF_SIZE, 0,
-			 gs_read_complete, &port->read_allocated);
+	status = gs_alloc_requests(ep, head, RX_QUEUE_SIZE, RX_BUF_SIZE,
+			gs_read_complete, &port->read_allocated);
 	if (status)
 		return status;
 
 	status = gs_alloc_requests(port->port_usb->in, &port->write_pool,
-			TX_QUEUE_SIZE, TX_BUF_SIZE, EXTRA_ALLOCATION_SIZE,
+			TX_QUEUE_SIZE, TX_BUF_SIZE,
 			gs_write_complete, &port->write_allocated);
 	if (status) {
 		gs_free_requests(ep, head, &port->read_allocated);
@@ -789,6 +779,7 @@ static int gs_start_io(struct gs_port *port)
 
 	if (!port->port_usb)
 		return -EIO;
+
 	/* unblock any pending writes into our circular buffer */
 	if (started) {
 		tty_wakeup(port->port.tty);
@@ -894,11 +885,6 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 	if (port->port_usb) {
 		struct gserial	*gser = port->port_usb;
 
-		if (gser->flags & ASYNC_LOW_LATENCY) {
-			pr_debug("%s: Setting to low latency", __func__);
-			tty->port->low_latency = 1;
-		}
-
 		pr_debug("gs_open: start ttyGS%d\n", port->port_num);
 		gs_start_io(port);
 
@@ -942,7 +928,8 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 		goto exit;
 	}
 
-	pr_debug("gs_close: ttyGS%d (%pK,%pK) ...\n", port->port_num, tty, file);
+	pr_debug("gs_close: ttyGS%d (%pK,%pK) ...\n",
+			port->port_num, tty, file);
 
 	/* mark port as closing but in use; we can drop port lock
 	 * and sleep if necessary
@@ -975,7 +962,6 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 	else
 		gs_buf_clear(&port->port_write_buf);
 
-	tty->driver_data = NULL;
 	port->port.tty = NULL;
 
 	port->openclose = false;
@@ -983,7 +969,7 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 	pr_debug("gs_close: ttyGS%d (%pK,%pK) done!\n",
 			port->port_num, tty, file);
 
-	wake_up(&port->port.close_wait);
+	wake_up(&port->close_wait);
 exit:
 	spin_unlock_irq(&port->port_lock);
 }
@@ -996,6 +982,7 @@ static int gs_write(struct tty_struct *tty, const unsigned char *buf, int count)
 
 	if (!port)
 		return 0;
+
 	pr_vdebug("gs_write: ttyGS%d (%pK) writing %d bytes\n",
 			port->port_num, tty, count);
 
@@ -1018,7 +1005,7 @@ static int gs_put_char(struct tty_struct *tty, unsigned char ch)
 
 	if (!port)
 		return 0;
-	pr_vdebug("gs_put_char: (%d,%pK) char=0x%x, called from %pKf\n",
+	pr_vdebug("gs_put_char: (%d,%pK) char=0x%x, called from %pKs\n",
 		port->port_num, tty, ch, __builtin_return_address(0));
 
 	spin_lock_irqsave(&port->port_lock, flags);
@@ -1068,8 +1055,6 @@ static int gs_chars_in_buffer(struct tty_struct *tty)
 	unsigned long	flags;
 	int		chars = 0;
 
-	if (!port)
-		return 0;
 	spin_lock_irqsave(&port->port_lock, flags);
 	chars = gs_buf_data_avail(&port->port_write_buf);
 	spin_unlock_irqrestore(&port->port_lock, flags);
@@ -1127,12 +1112,10 @@ static int gs_break_ctl(struct tty_struct *tty, int duration)
 
 static int gs_tiocmget(struct tty_struct *tty)
 {
-	struct gs_port	*port = tty->driver_data;
-	struct gserial	*gser;
+	struct gs_port  *port = tty->driver_data;
+	struct gserial  *gser;
 	unsigned int result = 0;
 
-	if (!port)
-		return -ENODEV;
 	spin_lock_irq(&port->port_lock);
 	gser = port->port_usb;
 	if (!gser) {
@@ -1151,22 +1134,22 @@ static int gs_tiocmget(struct tty_struct *tty)
 
 	if (gser->serial_state & TIOCM_RI)
 		result |= TIOCM_RI;
+
 fail:
 	spin_unlock_irq(&port->port_lock);
 	return result;
 }
 
 static int gs_tiocmset(struct tty_struct *tty,
-	unsigned int set, unsigned int clear)
+		unsigned int set, unsigned int clear)
 {
-	struct gs_port	*port = tty->driver_data;
+	struct gs_port  *port = tty->driver_data;
 	struct gserial *gser;
-	int	status = 0;
+	int status = 0;
 
-	if (!port)
-		return -ENODEV;
 	spin_lock_irq(&port->port_lock);
 	gser = port->port_usb;
+
 	if (!gser) {
 		status = -ENODEV;
 		goto fail;
@@ -1178,18 +1161,21 @@ static int gs_tiocmset(struct tty_struct *tty,
 			status = gser->send_ring_indicator(gser, 1);
 		}
 	}
+
 	if (clear & TIOCM_RI) {
 		if (gser->send_ring_indicator) {
 			gser->serial_state &= ~TIOCM_RI;
 			status = gser->send_ring_indicator(gser, 0);
 		}
 	}
+
 	if (set & TIOCM_CD) {
 		if (gser->send_carrier_detect) {
 			gser->serial_state |= TIOCM_CD;
 			status = gser->send_carrier_detect(gser, 1);
 		}
 	}
+
 	if (clear & TIOCM_CD) {
 		if (gser->send_carrier_detect) {
 			gser->serial_state &= ~TIOCM_CD;
@@ -1200,6 +1186,7 @@ fail:
 	spin_unlock_irq(&port->port_lock);
 	return status;
 }
+
 static const struct tty_operations gs_tty_ops = {
 	.open =			gs_open,
 	.close =		gs_close,
@@ -1210,8 +1197,8 @@ static const struct tty_operations gs_tty_ops = {
 	.chars_in_buffer =	gs_chars_in_buffer,
 	.unthrottle =		gs_unthrottle,
 	.break_ctl =		gs_break_ctl,
-	.tiocmget  =		gs_tiocmget,
-	.tiocmset  =		gs_tiocmset,
+	.tiocmget =		gs_tiocmget,
+	.tiocmset =		gs_tiocmset,
 };
 
 /*-------------------------------------------------------------------------*/
@@ -1237,9 +1224,9 @@ gs_port_alloc(unsigned port_num, struct usb_cdc_line_coding *coding)
 	}
 
 	tty_port_init(&port->port);
-	tty_buffer_set_limit(&port->port, 131072);
 	spin_lock_init(&port->port_lock);
 	init_waitqueue_head(&port->drain_wait);
+	init_waitqueue_head(&port->close_wait);
 
 	INIT_WORK(&port->push, gs_rx_push);
 
@@ -1256,17 +1243,16 @@ out:
 	return ret;
 }
 
-
 #if defined(CONFIG_DEBUG_FS)
 
 #define BUF_SIZE	512
 
 static ssize_t debug_read_status(struct file *file, char __user *ubuf,
-					size_t count, loff_t *ppos)
+				size_t count, loff_t *ppos)
 {
 	struct gs_port *ui_dev = file->private_data;
 	struct tty_struct       *tty;
-	struct gserial		*gser;
+	struct gserial          *gser;
 	char *buf;
 	unsigned long flags;
 	int i = 0;
@@ -1286,19 +1272,19 @@ static ssize_t debug_read_status(struct file *file, char __user *ubuf,
 	spin_lock_irqsave(&ui_dev->port_lock, flags);
 
 	i += scnprintf(buf + i, BUF_SIZE - i,
-		"nbytes_from_host: %lu\n", ui_dev->nbytes_from_host);
+			"nbytes_from_host: %lu\n", ui_dev->nbytes_from_host);
 
 	i += scnprintf(buf + i, BUF_SIZE - i,
-		"nbytes_to_tty: %lu\n", ui_dev->nbytes_to_tty);
+			"nbytes_to_tty: %lu\n", ui_dev->nbytes_to_tty);
 
 	i += scnprintf(buf + i, BUF_SIZE - i, "nbytes_with_usb_OUT_txr: %lu\n",
 			(ui_dev->nbytes_from_host - ui_dev->nbytes_to_tty));
 
 	i += scnprintf(buf + i, BUF_SIZE - i,
-		"nbytes_from_tty: %lu\n", ui_dev->nbytes_from_tty);
+			"nbytes_from_tty: %lu\n", ui_dev->nbytes_from_tty);
 
 	i += scnprintf(buf + i, BUF_SIZE - i,
-		"nbytes_to_host: %lu\n", ui_dev->nbytes_to_host);
+			"nbytes_to_host: %lu\n", ui_dev->nbytes_to_host);
 
 	i += scnprintf(buf + i, BUF_SIZE - i, "nbytes_with_usb_IN_txr: %lu\n",
 			(ui_dev->nbytes_from_tty - ui_dev->nbytes_to_host));
@@ -1314,16 +1300,13 @@ static ssize_t debug_read_status(struct file *file, char __user *ubuf,
 	}
 
 	spin_unlock_irqrestore(&ui_dev->port_lock, flags);
-
 	ret = simple_read_from_buffer(ubuf, count, ppos, buf, i);
-
 	kfree(buf);
-
 	return ret;
 }
 
 static ssize_t debug_write_reset(struct file *file, const char __user *buf,
-			size_t count, loff_t *ppos)
+		size_t count, loff_t *ppos)
 {
 	struct gs_port *ui_dev = file->private_data;
 	unsigned long flags;
@@ -1333,7 +1316,7 @@ static ssize_t debug_write_reset(struct file *file, const char __user *buf,
 
 	spin_lock_irqsave(&ui_dev->port_lock, flags);
 	ui_dev->nbytes_from_host = ui_dev->nbytes_to_tty =
-			ui_dev->nbytes_from_tty = ui_dev->nbytes_to_host = 0;
+		ui_dev->nbytes_from_tty = ui_dev->nbytes_to_host = 0;
 	spin_unlock_irqrestore(&ui_dev->port_lock, flags);
 
 	return count;
@@ -1355,45 +1338,6 @@ const struct file_operations debug_adb_ops = {
 	.read = debug_read_status,
 };
 
-static ssize_t usb_gser_rw_write(struct file *file, const char __user *ubuf,
-				size_t count, loff_t *ppos)
-{
-	struct gs_port *ui_dev = file->private_data;
-	struct gserial *gser;
-	struct usb_function *func;
-	struct usb_gadget   *gadget;
-
-	if (!ui_dev) {
-		pr_err("%s ui_dev is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	gser = ui_dev->port_usb;
-	if (!gser) {
-		pr_err("%s gser is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	func = &gser->func;
-	if (!func) {
-		pr_err("%s func is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	gadget = gser->func.config->cdev->gadget;
-	if ((gadget->speed == USB_SPEED_SUPER) && (func->func_is_suspended)) {
-		pr_debug("%s Calling usb_func_wakeup\n", __func__);
-		usb_func_wakeup(func);
-	}
-
-	return count;
-}
-
-const struct file_operations debug_rem_wakeup_fops = {
-	.open = serial_debug_open,
-	.write = usb_gser_rw_write,
-};
-
 struct dentry *gs_dent;
 static void usb_debugfs_init(struct gs_port *ui_dev, int port_num)
 {
@@ -1411,8 +1355,6 @@ static void usb_debugfs_init(struct gs_port *ui_dev, int port_num)
 			&debug_adb_ops);
 	debugfs_create_file("reset", S_IRUGO | S_IWUSR,
 			gs_dent, ui_dev, &debug_rst_ops);
-	debugfs_create_file("remote_wakeup", S_IWUSR,
-			gs_dent, ui_dev, &debug_rem_wakeup_fops);
 }
 
 static void usb_debugfs_remove(void)
@@ -1438,7 +1380,7 @@ static void gserial_free_port(struct gs_port *port)
 {
 	cancel_work_sync(&port->push);
 	/* wait for old opens to finish */
-	wait_event(port->port.close_wait, gs_closed(port));
+	wait_event(port->close_wait, gs_closed(port));
 	WARN_ON(port->port_usb != NULL);
 	tty_port_destroy(&port->port);
 	kfree(port);
@@ -1448,7 +1390,6 @@ void gserial_free_line(unsigned char port_num)
 {
 	struct gs_port	*port;
 
-	usb_debugfs_remove();
 	mutex_lock(&ports[port_num].lock);
 	if (WARN_ON(!ports[port_num].port)) {
 		mutex_unlock(&ports[port_num].lock);
@@ -1481,7 +1422,6 @@ int gserial_alloc_line(unsigned char *line_num)
 			continue;
 		if (ret)
 			return ret;
-		usb_debugfs_init(ports[port_num].port, port_num);
 		break;
 	}
 	if (ret)
@@ -1491,7 +1431,6 @@ int gserial_alloc_line(unsigned char *line_num)
 
 	tty_dev = tty_port_register_device(&ports[port_num].port->port,
 			gs_tty_driver, port_num, NULL);
-
 	if (IS_ERR(tty_dev)) {
 		struct gs_port	*port;
 		pr_err("%s: failed to register tty for port %d, err %ld\n",
@@ -1577,10 +1516,6 @@ int gserial_connect(struct gserial *gser, u8 port_num)
 	 */
 	if (port->port.count) {
 		pr_debug("gserial_connect: start ttyGS%d\n", port->port_num);
-		if (gser->flags & ASYNC_LOW_LATENCY) {
-			pr_debug("%s: Setting to low latency", __func__);
-			gser->ioport->port.tty->port->low_latency = 1;
-		}
 		gs_start_io(port);
 		if (gser->connect)
 			gser->connect(gser);
@@ -1595,7 +1530,6 @@ int gserial_connect(struct gserial *gser, u8 port_num)
 
 fail_out:
 	usb_ep_disable(gser->in);
-	gser->in->driver_data = NULL;
 	return status;
 }
 EXPORT_SYMBOL_GPL(gserial_connect);
@@ -1635,10 +1569,7 @@ void gserial_disconnect(struct gserial *gser)
 
 	/* disable endpoints, aborting down any active I/O */
 	usb_ep_disable(gser->out);
-	gser->out->driver_data = NULL;
-
 	usb_ep_disable(gser->in);
-	gser->in->driver_data = NULL;
 
 	/* finally, free any unused/unusable I/O buffers */
 	spin_lock_irqsave(&port->port_lock, flags);
@@ -1704,6 +1635,9 @@ static int userial_init(void)
 		goto fail;
 	}
 
+	for (i = 0; i < MAX_U_SERIAL_PORTS; i++)
+		usb_debugfs_init(ports[i].port, i);
+
 	pr_debug("%s: registered %d ttyGS* device%s\n", __func__,
 			MAX_U_SERIAL_PORTS,
 			(MAX_U_SERIAL_PORTS == 1) ? "" : "s");
@@ -1720,6 +1654,7 @@ module_init(userial_init);
 
 static void userial_cleanup(void)
 {
+	usb_debugfs_remove();
 	destroy_workqueue(gserial_wq);
 	tty_unregister_driver(gs_tty_driver);
 	put_tty_driver(gs_tty_driver);

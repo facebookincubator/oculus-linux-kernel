@@ -1,4 +1,4 @@
-/* Copyright (C) 2009-2014 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2009-2015 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -15,19 +15,32 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "main.h"
-#include "distributed-arp-table.h"
 #include "originator.h"
-#include "hash.h"
-#include "translation-table.h"
-#include "routing.h"
+#include "main.h"
+
+#include <linux/errno.h>
+#include <linux/etherdevice.h>
+#include <linux/fs.h>
+#include <linux/jiffies.h>
+#include <linux/kernel.h>
+#include <linux/list.h>
+#include <linux/lockdep.h>
+#include <linux/netdevice.h>
+#include <linux/rculist.h>
+#include <linux/seq_file.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/workqueue.h>
+
+#include "distributed-arp-table.h"
+#include "fragmentation.h"
 #include "gateway_client.h"
 #include "hard-interface.h"
-#include "soft-interface.h"
-#include "bridge_loop_avoidance.h"
-#include "network-coding.h"
-#include "fragmentation.h"
+#include "hash.h"
 #include "multicast.h"
+#include "network-coding.h"
+#include "routing.h"
+#include "translation-table.h"
 
 /* hash class keys */
 static struct lock_class_key batadv_orig_hash_lock_class_key;
@@ -58,7 +71,7 @@ batadv_orig_node_vlan_get(struct batadv_orig_node *orig_node,
 	struct batadv_orig_node_vlan *vlan = NULL, *tmp;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(tmp, &orig_node->vlan_list, list) {
+	hlist_for_each_entry_rcu(tmp, &orig_node->vlan_list, list) {
 		if (tmp->vid != vid)
 			continue;
 
@@ -106,7 +119,7 @@ batadv_orig_node_vlan_new(struct batadv_orig_node *orig_node,
 	atomic_set(&vlan->refcount, 2);
 	vlan->vid = vid;
 
-	list_add_rcu(&vlan->list, &orig_node->vlan_list);
+	hlist_add_head_rcu(&vlan->list, &orig_node->vlan_list);
 
 out:
 	spin_unlock_bh(&orig_node->vlan_list_lock);
@@ -150,86 +163,66 @@ err:
 }
 
 /**
- * batadv_neigh_ifinfo_free_rcu - free the neigh_ifinfo object
- * @rcu: rcu pointer of the neigh_ifinfo object
- */
-static void batadv_neigh_ifinfo_free_rcu(struct rcu_head *rcu)
-{
-	struct batadv_neigh_ifinfo *neigh_ifinfo;
-
-	neigh_ifinfo = container_of(rcu, struct batadv_neigh_ifinfo, rcu);
-
-	if (neigh_ifinfo->if_outgoing != BATADV_IF_DEFAULT)
-		batadv_hardif_free_ref_now(neigh_ifinfo->if_outgoing);
-
-	kfree(neigh_ifinfo);
-}
-
-/**
- * batadv_neigh_ifinfo_free_now - decrement the refcounter and possibly free
- *  the neigh_ifinfo (without rcu callback)
+ * batadv_neigh_ifinfo_release - release neigh_ifinfo from lists and queue for
+ *  free after rcu grace period
  * @neigh_ifinfo: the neigh_ifinfo object to release
  */
 static void
-batadv_neigh_ifinfo_free_ref_now(struct batadv_neigh_ifinfo *neigh_ifinfo)
+batadv_neigh_ifinfo_release(struct batadv_neigh_ifinfo *neigh_ifinfo)
 {
-	if (atomic_dec_and_test(&neigh_ifinfo->refcount))
-		batadv_neigh_ifinfo_free_rcu(&neigh_ifinfo->rcu);
+	if (neigh_ifinfo->if_outgoing != BATADV_IF_DEFAULT)
+		batadv_hardif_free_ref(neigh_ifinfo->if_outgoing);
+
+	kfree_rcu(neigh_ifinfo, rcu);
 }
 
 /**
- * batadv_neigh_ifinfo_free_ref - decrement the refcounter and possibly free
+ * batadv_neigh_ifinfo_free_ref - decrement the refcounter and possibly release
  *  the neigh_ifinfo
  * @neigh_ifinfo: the neigh_ifinfo object to release
  */
 void batadv_neigh_ifinfo_free_ref(struct batadv_neigh_ifinfo *neigh_ifinfo)
 {
 	if (atomic_dec_and_test(&neigh_ifinfo->refcount))
-		call_rcu(&neigh_ifinfo->rcu, batadv_neigh_ifinfo_free_rcu);
+		batadv_neigh_ifinfo_release(neigh_ifinfo);
 }
 
 /**
  * batadv_neigh_node_free_rcu - free the neigh_node
- * @rcu: rcu pointer of the neigh_node
+ * batadv_neigh_node_release - release neigh_node from lists and queue for
+ *  free after rcu grace period
+ * @neigh_node: neigh neighbor to free
  */
-static void batadv_neigh_node_free_rcu(struct rcu_head *rcu)
+static void batadv_neigh_node_release(struct batadv_neigh_node *neigh_node)
 {
 	struct hlist_node *node_tmp;
-	struct batadv_neigh_node *neigh_node;
 	struct batadv_neigh_ifinfo *neigh_ifinfo;
+	struct batadv_algo_ops *bao;
 
-	neigh_node = container_of(rcu, struct batadv_neigh_node, rcu);
+	bao = neigh_node->orig_node->bat_priv->bat_algo_ops;
 
 	hlist_for_each_entry_safe(neigh_ifinfo, node_tmp,
 				  &neigh_node->ifinfo_list, list) {
-		batadv_neigh_ifinfo_free_ref_now(neigh_ifinfo);
+		batadv_neigh_ifinfo_free_ref(neigh_ifinfo);
 	}
-	batadv_hardif_free_ref_now(neigh_node->if_incoming);
 
-	kfree(neigh_node);
-}
+	if (bao->bat_neigh_free)
+		bao->bat_neigh_free(neigh_node);
 
-/**
- * batadv_neigh_node_free_ref_now - decrement the neighbors refcounter
- *  and possibly free it (without rcu callback)
- * @neigh_node: neigh neighbor to free
- */
-static void
-batadv_neigh_node_free_ref_now(struct batadv_neigh_node *neigh_node)
-{
-	if (atomic_dec_and_test(&neigh_node->refcount))
-		batadv_neigh_node_free_rcu(&neigh_node->rcu);
+	batadv_hardif_free_ref(neigh_node->if_incoming);
+
+	kfree_rcu(neigh_node, rcu);
 }
 
 /**
  * batadv_neigh_node_free_ref - decrement the neighbors refcounter
- *  and possibly free it
+ *  and possibly release it
  * @neigh_node: neigh neighbor to free
  */
 void batadv_neigh_node_free_ref(struct batadv_neigh_node *neigh_node)
 {
 	if (atomic_dec_and_test(&neigh_node->refcount))
-		call_rcu(&neigh_node->rcu, batadv_neigh_node_free_rcu);
+		batadv_neigh_node_release(neigh_node);
 }
 
 /**
@@ -424,41 +417,6 @@ out:
 }
 
 /**
- * batadv_neigh_node_new - create and init a new neigh_node object
- * @hard_iface: the interface where the neighbour is connected to
- * @neigh_addr: the mac address of the neighbour interface
- * @orig_node: originator object representing the neighbour
- *
- * Allocates a new neigh_node object and initialises all the generic fields.
- * Returns the new object or NULL on failure.
- */
-struct batadv_neigh_node *
-batadv_neigh_node_new(struct batadv_hard_iface *hard_iface,
-		      const uint8_t *neigh_addr,
-		      struct batadv_orig_node *orig_node)
-{
-	struct batadv_neigh_node *neigh_node;
-
-	neigh_node = kzalloc(sizeof(*neigh_node), GFP_ATOMIC);
-	if (!neigh_node)
-		goto out;
-
-	INIT_HLIST_NODE(&neigh_node->list);
-	INIT_HLIST_HEAD(&neigh_node->ifinfo_list);
-	spin_lock_init(&neigh_node->ifinfo_lock);
-
-	ether_addr_copy(neigh_node->addr, neigh_addr);
-	neigh_node->if_incoming = hard_iface;
-	neigh_node->orig_node = orig_node;
-
-	/* extra reference for return */
-	atomic_set(&neigh_node->refcount, 2);
-
-out:
-	return neigh_node;
-}
-
-/**
  * batadv_neigh_node_get - retrieve a neighbour from the list
  * @orig_node: originator which the neighbour belongs to
  * @hard_iface: the interface where this neighbour is connected to
@@ -468,10 +426,10 @@ out:
  * which is connected through the provided hard interface.
  * Returns NULL if the neighbour is not found.
  */
-struct batadv_neigh_node *
+static struct batadv_neigh_node *
 batadv_neigh_node_get(const struct batadv_orig_node *orig_node,
 		      const struct batadv_hard_iface *hard_iface,
-		      const uint8_t *addr)
+		      const u8 *addr)
 {
 	struct batadv_neigh_node *tmp_neigh_node, *res = NULL;
 
@@ -495,83 +453,102 @@ batadv_neigh_node_get(const struct batadv_orig_node *orig_node,
 }
 
 /**
- * batadv_orig_ifinfo_free_rcu - free the orig_ifinfo object
- * @rcu: rcu pointer of the orig_ifinfo object
+ * batadv_neigh_node_new - create and init a new neigh_node object
+ * @orig_node: originator object representing the neighbour
+ * @hard_iface: the interface where the neighbour is connected to
+ * @neigh_addr: the mac address of the neighbour interface
+ *
+ * Allocates a new neigh_node object and initialises all the generic fields.
+ * Returns the new object or NULL on failure.
  */
-static void batadv_orig_ifinfo_free_rcu(struct rcu_head *rcu)
+struct batadv_neigh_node *
+batadv_neigh_node_new(struct batadv_orig_node *orig_node,
+		      struct batadv_hard_iface *hard_iface,
+		      const u8 *neigh_addr)
 {
-	struct batadv_orig_ifinfo *orig_ifinfo;
+	struct batadv_neigh_node *neigh_node;
+
+	neigh_node = batadv_neigh_node_get(orig_node, hard_iface, neigh_addr);
+	if (neigh_node)
+		goto out;
+
+	neigh_node = kzalloc(sizeof(*neigh_node), GFP_ATOMIC);
+	if (!neigh_node)
+		goto out;
+
+	if (!atomic_inc_not_zero(&hard_iface->refcount)) {
+		kfree(neigh_node);
+		neigh_node = NULL;
+		goto out;
+	}
+
+	INIT_HLIST_NODE(&neigh_node->list);
+	INIT_HLIST_HEAD(&neigh_node->ifinfo_list);
+	spin_lock_init(&neigh_node->ifinfo_lock);
+
+	ether_addr_copy(neigh_node->addr, neigh_addr);
+	neigh_node->if_incoming = hard_iface;
+	neigh_node->orig_node = orig_node;
+
+	/* extra reference for return */
+	atomic_set(&neigh_node->refcount, 2);
+
+	spin_lock_bh(&orig_node->neigh_list_lock);
+	hlist_add_head_rcu(&neigh_node->list, &orig_node->neigh_list);
+	spin_unlock_bh(&orig_node->neigh_list_lock);
+
+	batadv_dbg(BATADV_DBG_BATMAN, orig_node->bat_priv,
+		   "Creating new neighbor %pM for orig_node %pM on interface %s\n",
+		   neigh_addr, orig_node->orig, hard_iface->net_dev->name);
+
+out:
+	return neigh_node;
+}
+
+/**
+ * batadv_orig_ifinfo_release - release orig_ifinfo from lists and queue for
+ *  free after rcu grace period
+ * @orig_ifinfo: the orig_ifinfo object to release
+ */
+static void batadv_orig_ifinfo_release(struct batadv_orig_ifinfo *orig_ifinfo)
+{
 	struct batadv_neigh_node *router;
 
-	orig_ifinfo = container_of(rcu, struct batadv_orig_ifinfo, rcu);
-
 	if (orig_ifinfo->if_outgoing != BATADV_IF_DEFAULT)
-		batadv_hardif_free_ref_now(orig_ifinfo->if_outgoing);
+		batadv_hardif_free_ref(orig_ifinfo->if_outgoing);
 
 	/* this is the last reference to this object */
 	router = rcu_dereference_protected(orig_ifinfo->router, true);
 	if (router)
-		batadv_neigh_node_free_ref_now(router);
-	kfree(orig_ifinfo);
+		batadv_neigh_node_free_ref(router);
+
+	kfree_rcu(orig_ifinfo, rcu);
 }
 
 /**
- * batadv_orig_ifinfo_free_ref - decrement the refcounter and possibly free
- *  the orig_ifinfo (without rcu callback)
- * @orig_ifinfo: the orig_ifinfo object to release
- */
-static void
-batadv_orig_ifinfo_free_ref_now(struct batadv_orig_ifinfo *orig_ifinfo)
-{
-	if (atomic_dec_and_test(&orig_ifinfo->refcount))
-		batadv_orig_ifinfo_free_rcu(&orig_ifinfo->rcu);
-}
-
-/**
- * batadv_orig_ifinfo_free_ref - decrement the refcounter and possibly free
+ * batadv_orig_ifinfo_free_ref - decrement the refcounter and possibly release
  *  the orig_ifinfo
  * @orig_ifinfo: the orig_ifinfo object to release
  */
 void batadv_orig_ifinfo_free_ref(struct batadv_orig_ifinfo *orig_ifinfo)
 {
 	if (atomic_dec_and_test(&orig_ifinfo->refcount))
-		call_rcu(&orig_ifinfo->rcu, batadv_orig_ifinfo_free_rcu);
+		batadv_orig_ifinfo_release(orig_ifinfo);
 }
 
+/**
+ * batadv_orig_node_free_rcu - free the orig_node
+ * @rcu: rcu pointer of the orig_node
+ */
 static void batadv_orig_node_free_rcu(struct rcu_head *rcu)
 {
-	struct hlist_node *node_tmp;
-	struct batadv_neigh_node *neigh_node;
 	struct batadv_orig_node *orig_node;
-	struct batadv_orig_ifinfo *orig_ifinfo;
 
 	orig_node = container_of(rcu, struct batadv_orig_node, rcu);
 
-	spin_lock_bh(&orig_node->neigh_list_lock);
-
-	/* for all neighbors towards this originator ... */
-	hlist_for_each_entry_safe(neigh_node, node_tmp,
-				  &orig_node->neigh_list, list) {
-		hlist_del_rcu(&neigh_node->list);
-		batadv_neigh_node_free_ref_now(neigh_node);
-	}
-
-	hlist_for_each_entry_safe(orig_ifinfo, node_tmp,
-				  &orig_node->ifinfo_list, list) {
-		hlist_del_rcu(&orig_ifinfo->list);
-		batadv_orig_ifinfo_free_ref_now(orig_ifinfo);
-	}
-	spin_unlock_bh(&orig_node->neigh_list_lock);
-
 	batadv_mcast_purge_orig(orig_node);
 
-	/* Free nc_nodes */
-	batadv_nc_purge_orig(orig_node->bat_priv, orig_node, NULL);
-
 	batadv_frag_purge_orig(orig_node, NULL);
-
-	batadv_tt_global_del_orig(orig_node->bat_priv, orig_node, -1,
-				  "originator timed out");
 
 	if (orig_node->bat_priv->bat_algo_ops->bat_orig_free)
 		orig_node->bat_priv->bat_algo_ops->bat_orig_free(orig_node);
@@ -581,25 +558,47 @@ static void batadv_orig_node_free_rcu(struct rcu_head *rcu)
 }
 
 /**
+ * batadv_orig_node_release - release orig_node from lists and queue for
+ *  free after rcu grace period
+ * @orig_node: the orig node to free
+ */
+static void batadv_orig_node_release(struct batadv_orig_node *orig_node)
+{
+	struct hlist_node *node_tmp;
+	struct batadv_neigh_node *neigh_node;
+	struct batadv_orig_ifinfo *orig_ifinfo;
+
+	spin_lock_bh(&orig_node->neigh_list_lock);
+
+	/* for all neighbors towards this originator ... */
+	hlist_for_each_entry_safe(neigh_node, node_tmp,
+				  &orig_node->neigh_list, list) {
+		hlist_del_rcu(&neigh_node->list);
+		batadv_neigh_node_free_ref(neigh_node);
+	}
+
+	hlist_for_each_entry_safe(orig_ifinfo, node_tmp,
+				  &orig_node->ifinfo_list, list) {
+		hlist_del_rcu(&orig_ifinfo->list);
+		batadv_orig_ifinfo_free_ref(orig_ifinfo);
+	}
+	spin_unlock_bh(&orig_node->neigh_list_lock);
+
+	/* Free nc_nodes */
+	batadv_nc_purge_orig(orig_node->bat_priv, orig_node, NULL);
+
+	call_rcu(&orig_node->rcu, batadv_orig_node_free_rcu);
+}
+
+/**
  * batadv_orig_node_free_ref - decrement the orig node refcounter and possibly
- * schedule an rcu callback for freeing it
+ *  release it
  * @orig_node: the orig node to free
  */
 void batadv_orig_node_free_ref(struct batadv_orig_node *orig_node)
 {
 	if (atomic_dec_and_test(&orig_node->refcount))
-		call_rcu(&orig_node->rcu, batadv_orig_node_free_rcu);
-}
-
-/**
- * batadv_orig_node_free_ref_now - decrement the orig node refcounter and
- * possibly free it (without rcu callback)
- * @orig_node: the orig node to free
- */
-void batadv_orig_node_free_ref_now(struct batadv_orig_node *orig_node)
-{
-	if (atomic_dec_and_test(&orig_node->refcount))
-		batadv_orig_node_free_rcu(&orig_node->rcu);
+		batadv_orig_node_release(orig_node);
 }
 
 void batadv_originator_free(struct batadv_priv *bat_priv)
@@ -609,7 +608,7 @@ void batadv_originator_free(struct batadv_priv *bat_priv)
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* spinlock to protect write access */
 	struct batadv_orig_node *orig_node;
-	uint32_t i;
+	u32 i;
 
 	if (!hash)
 		return;
@@ -644,7 +643,7 @@ void batadv_originator_free(struct batadv_priv *bat_priv)
  * Returns the newly created object or NULL on failure.
  */
 struct batadv_orig_node *batadv_orig_node_new(struct batadv_priv *bat_priv,
-					      const uint8_t *addr)
+					      const u8 *addr)
 {
 	struct batadv_orig_node *orig_node;
 	struct batadv_orig_node_vlan *vlan;
@@ -659,7 +658,7 @@ struct batadv_orig_node *batadv_orig_node_new(struct batadv_priv *bat_priv,
 		return NULL;
 
 	INIT_HLIST_HEAD(&orig_node->neigh_list);
-	INIT_LIST_HEAD(&orig_node->vlan_list);
+	INIT_HLIST_HEAD(&orig_node->vlan_list);
 	INIT_HLIST_HEAD(&orig_node->ifinfo_list);
 	spin_lock_init(&orig_node->bcast_seqno_lock);
 	spin_lock_init(&orig_node->neigh_list_lock);
@@ -678,10 +677,16 @@ struct batadv_orig_node *batadv_orig_node_new(struct batadv_priv *bat_priv,
 	atomic_set(&orig_node->last_ttvn, 0);
 	orig_node->tt_buff = NULL;
 	orig_node->tt_buff_len = 0;
+	orig_node->last_seen = jiffies;
 	reset_time = jiffies - 1 - msecs_to_jiffies(BATADV_RESET_PROTECTION_MS);
 	orig_node->bcast_seqno_reset = reset_time;
+
 #ifdef CONFIG_BATMAN_ADV_MCAST
 	orig_node->mcast_flags = BATADV_NO_FLAGS;
+	INIT_HLIST_NODE(&orig_node->mcast_want_all_unsnoopables_node);
+	INIT_HLIST_NODE(&orig_node->mcast_want_all_ipv4_node);
+	INIT_HLIST_NODE(&orig_node->mcast_want_all_ipv6_node);
+	spin_lock_init(&orig_node->mcast_handler_lock);
 #endif
 
 	/* create a vlan object for the "untagged" LAN */
@@ -798,7 +803,6 @@ batadv_purge_orig_ifinfo(struct batadv_priv *bat_priv,
 
 	return ifinfo_purged;
 }
-
 
 /**
  * batadv_purge_orig_neighbors - purges neighbors from originator
@@ -961,7 +965,7 @@ static void _batadv_purge_orig(struct batadv_priv *bat_priv)
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* spinlock to protect write access */
 	struct batadv_orig_node *orig_node;
-	uint32_t i;
+	u32 i;
 
 	if (!hash)
 		return;
@@ -977,6 +981,9 @@ static void _batadv_purge_orig(struct batadv_priv *bat_priv)
 			if (batadv_purge_orig_node(bat_priv, orig_node)) {
 				batadv_gw_node_delete(bat_priv, orig_node);
 				hlist_del_rcu(&orig_node->hash_entry);
+				batadv_tt_global_del_orig(orig_node->bat_priv,
+							  orig_node, -1,
+							  "originator timed out");
 				batadv_orig_node_free_ref(orig_node);
 				continue;
 			}
@@ -987,7 +994,6 @@ static void _batadv_purge_orig(struct batadv_priv *bat_priv)
 		spin_unlock_bh(list_lock);
 	}
 
-	batadv_gw_node_purge(bat_priv);
 	batadv_gw_election(bat_priv);
 }
 
@@ -1092,7 +1098,7 @@ int batadv_orig_hash_add_if(struct batadv_hard_iface *hard_iface,
 	struct batadv_hashtable *hash = bat_priv->orig_hash;
 	struct hlist_head *head;
 	struct batadv_orig_node *orig_node;
-	uint32_t i;
+	u32 i;
 	int ret;
 
 	/* resize all orig nodes because orig_node->bcast_own(_sum) depend on
@@ -1129,7 +1135,7 @@ int batadv_orig_hash_del_if(struct batadv_hard_iface *hard_iface,
 	struct batadv_hard_iface *hard_iface_tmp;
 	struct batadv_orig_node *orig_node;
 	struct batadv_algo_ops *bao = bat_priv->bat_algo_ops;
-	uint32_t i;
+	u32 i;
 	int ret;
 
 	/* resize all orig nodes because orig_node->bcast_own(_sum) depend on

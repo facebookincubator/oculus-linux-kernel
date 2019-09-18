@@ -89,8 +89,12 @@ Optional Properties:
     complex nodes, and is the only property needed in that case.
   - qcom,common-phy: There is a common phy for all the Root Complexes.
   - qcom,smmu-exist: PCIe uses a SMMU.
+  - qcom,smmu-sid-base: The base SMMU SID that PCIe bus driver will use to calculate
+    and assign for each endpoint.
   - qcom,ep-latency: The time (unit: ms) to wait for the PCIe endpoint to become
     stable after power on, before de-assert the PERST to the endpoint.
+  - qcom,wr-halt-size: With base 2, this exponent determines the size of the
+    data that PCIe core will halt on for each write transaction.
   - qcom,cpl-timeout: Completion timeout value. This value specifies the time range
     which the root complex will send out a completion packet if there is no response
     from the endpoint.
@@ -112,6 +116,10 @@ Optional Properties:
 	manager(scm) driver. scm driver uses this device id to restore PCIe
 	controller related security configuration after coming out of the controller
 	power collapse.
+  - resets: reset specifier pair consists of phandle for the reset controller
+    and reset lines used by this controller.
+  - reset-names: reset signal name strings sorted in the same order as the resets
+    property.
 
 Example:
 
@@ -232,13 +240,21 @@ Example:
 			<&clock_gcc clk_gcc_pcie_0_cfg_ahb_clk>,
 			<&clock_gcc clk_gcc_pcie_0_mstr_axi_clk>,
 			<&clock_gcc clk_gcc_pcie_0_slv_axi_clk>,
-			<&clock_gcc clk_pcie_0_phy_ldo>,
-			<&clock_gcc clk_gcc_pcie_phy_0_reset>;
+			<&clock_gcc clk_pcie_0_phy_ldo>;
 
 		clock-names = "pcie_0_pipe_clk", "pcie_0_ref_clk_src",
 				"pcie_0_aux_clk", "pcie_0_cfg_ahb_clk",
 				"pcie_0_mstr_axi_clk", "pcie_0_slv_axi_clk",
 				"pcie_0_ldo";
+
+		resets = <&clock_gcc GCC_PCIE_PHY_BCR>,
+			<&clock_gcc GCC_PCIE_PHY_COM_BCR>,
+			<&clock_gcc GCC_PCIE_PHY_NOCSR_COM_PHY_BCR>,
+			<&clock_gcc GCC_PCIE_0_PHY_BCR>;
+
+		reset-names = "pcie_phy_reset", "pcie_phy_com_reset",
+				"pcie_phy_nocsr_com_phy_reset","pcie_0_phy_reset";
+
 		max-clock-frequency-hz = <125000000>, <0>, <1000000>,
 						<0>, <0>, <0>, <0>;
 		qcom,l0s-supported;
@@ -254,7 +270,9 @@ Example:
 		qcom,tlp-rd-size = <0x5>;
 		qcom,common-phy;
 		qcom,smmu-exist;
+		qcom,smmu-sid-base = <0x1480>;
 		qcom,ep-latency = <100>;
+		qcom,wr-halt-size = <0xa>; /* 1KB */
 		qcom,cpl-timeout = <0x2>;
 
 		iommus = <&anoc0_smmu>;

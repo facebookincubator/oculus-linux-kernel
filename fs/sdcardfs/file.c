@@ -50,7 +50,7 @@ static ssize_t sdcardfs_read(struct file *file, char __user *buf,
 	err = vfs_read(lower_file, buf, count, ppos);
 	/* update our inode atime upon a successful lower read */
 	if (err >= 0)
-		fsstack_copy_attr_atime(dentry->d_inode,
+		fsstack_copy_attr_atime(d_inode(dentry),
 					file_inode(lower_file));
 
 	return err;
@@ -73,9 +73,9 @@ static ssize_t sdcardfs_write(struct file *file, const char __user *buf,
 	err = vfs_write(lower_file, buf, count, ppos);
 	/* update our inode times+sizes upon a successful lower write */
 	if (err >= 0) {
-		fsstack_copy_inode_size(dentry->d_inode,
+		fsstack_copy_inode_size(d_inode(dentry),
 					file_inode(lower_file));
-		fsstack_copy_attr_times(dentry->d_inode,
+		fsstack_copy_attr_times(d_inode(dentry),
 					file_inode(lower_file));
 	}
 
@@ -94,7 +94,7 @@ static int sdcardfs_readdir(struct file *file, struct dir_context *ctx)
 	err = iterate_dir(lower_file, ctx);
 	file->f_pos = lower_file->f_pos;
 	if (err >= 0)		/* copy the atime */
-		fsstack_copy_attr_atime(dentry->d_inode,
+		fsstack_copy_attr_atime(d_inode(dentry),
 					file_inode(lower_file));
 	return err;
 }
@@ -216,7 +216,7 @@ static int sdcardfs_open(struct inode *inode, struct file *file)
 		goto out_err;
 	}
 
-	if (!check_caller_access_to_name(parent->d_inode, &dentry->d_name)) {
+	if (!check_caller_access_to_name(d_inode(parent), &dentry->d_name)) {
 		err = -EACCES;
 		goto out_err;
 	}
@@ -345,35 +345,6 @@ out:
 	return err;
 }
 
-static long sdcardfs_file_fallocate(struct file *file, int mode, loff_t offset,
-				    loff_t length)
-{
-	struct file *lower_file = NULL;
-	struct dentry *dentry = file->f_path.dentry;
-	int err = -EOPNOTSUPP;
-
-	lower_file = sdcardfs_lower_file(file);
-	if (!lower_file || !lower_file->f_op) {
-		err = -EINVAL;
-		goto out;
-	}
-
-	if (lower_file->f_op->fallocate) {
-		err = lower_file->f_op->fallocate(lower_file, mode, offset,
-						  length);
-	}
-
- out:
-	if (err >= 0) {
-		fsstack_copy_inode_size(dentry->d_inode,
-					file_inode(lower_file));
-		fsstack_copy_attr_times(dentry->d_inode,
-					file_inode(lower_file));
-	}
-
-	return err;
-}
-
 /*
  * Sdcardfs read_iter, redirect modified iocb to lower read_iter
  */
@@ -443,7 +414,6 @@ const struct file_operations sdcardfs_main_fops = {
 	.open		= sdcardfs_open,
 	.flush		= sdcardfs_flush,
 	.release	= sdcardfs_file_release,
-	.fallocate	= sdcardfs_file_fallocate,
 	.fsync		= sdcardfs_fsync,
 	.fasync		= sdcardfs_fasync,
 	.read_iter	= sdcardfs_read_iter,

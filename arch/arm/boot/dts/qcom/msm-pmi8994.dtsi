@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,19 +10,15 @@
  * GNU General Public License for more details.
  */
 
-#include <dt-bindings/msm/power-on.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/spmi/spmi.h>
 
 &spmi_bus {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	interrupt-controller;
-	#interrupt-cells = <3>;
-
 	qcom,pmi8994@2 {
-		spmi-slave-container;
-		reg = <0x2>;
-		#address-cells = <1>;
-		#size-cells = <1>;
+		compatible = "qcom,spmi-pmic";
+		reg = <0x2 SPMI_USID>;
+		#address-cells = <2>;
+		#size-cells = <0>;
 
 		pmi8994_revid: qcom,revid@100 {
 			compatible = "qcom,qpnp-revid";
@@ -33,8 +29,6 @@
 			compatible = "qcom,qpnp-power-on";
 			reg = <0x800 0x100>;
 			qcom,secondary-pon-reset;
-			qcom,hard-reset-poweroff-type =
-				<PON_POWER_OFF_SHUTDOWN>;
 			pon_perph_reg: qcom,pon_perph_reg {
 				regulator-name = "pon_spare_reg";
 				qcom,pon-spare-reg-addr = <0x8c>;
@@ -43,7 +37,6 @@
 		};
 
 		pmi8994_gpios: gpios {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-pin";
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -113,7 +106,6 @@
 		};
 
 		pmi8994_mpps: mpps {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-pin";
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -150,8 +142,8 @@
 			compatible = "qcom,msm-bcl";
 			reg = <0x4200 0xFF 0x88E 0x2>;
 			reg-names = "fg_user_adc", "pon_spare";
-			interrupts = <0x2 0x42 0x0>,
-					<0x2 0x42 0x1>;
+			interrupts = <0x2 0x42 0x0 IRQ_TYPE_NONE>,
+					<0x2 0x42 0x1 IRQ_TYPE_NONE>;
 			interrupt-names = "bcl-high-ibat-int",
 					"bcl-low-vbat-int";
 			qcom,vbat-scaling-factor = <39000>;
@@ -172,9 +164,9 @@
 			reg = <0x3100 0x100>;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			interrupts = <0x2 0x31 0x0>,
-					<0x2 0x31 0x3>,
-				     <0x2 0x31 0x4>;
+			interrupts = <0x2 0x31 0x0 IRQ_TYPE_NONE>,
+					<0x2 0x31 0x3 IRQ_TYPE_NONE>,
+				     <0x2 0x31 0x4 IRQ_TYPE_NONE>;
 			interrupt-names =	"eoc-int-en-set",
 						"high-thr-en-set",
 						"low-thr-en-set";
@@ -197,7 +189,6 @@
 		};
 
 		pmi8994_charger: qcom,qpnp-smbcharger {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-smbcharger";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -222,14 +213,14 @@
 
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
-				interrupts =	<0x2 0x10 0x0>,
-						<0x2 0x10 0x1>,
-						<0x2 0x10 0x2>,
-						<0x2 0x10 0x3>,
-						<0x2 0x10 0x4>,
-						<0x2 0x10 0x5>,
-						<0x2 0x10 0x6>,
-						<0x2 0x10 0x7>;
+				interrupts =	<0x2 0x10 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x5 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x6 IRQ_TYPE_NONE>,
+						<0x2 0x10 0x7 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"chg-error",
 							"chg-inhibit",
@@ -247,14 +238,14 @@
 
 			qcom,bat-if@1200 {
 				reg = <0x1200 0x100>;
-				interrupts =	<0x2 0x12 0x0>,
-						<0x2 0x12 0x1>,
-						<0x2 0x12 0x2>,
-						<0x2 0x12 0x3>,
-						<0x2 0x12 0x4>,
-						<0x2 0x12 0x5>,
-						<0x2 0x12 0x6>,
-						<0x2 0x12 0x7>;
+				interrupts =	<0x2 0x12 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x5 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x6 IRQ_TYPE_NONE>,
+						<0x2 0x12 0x7 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"batt-hot",
 							"batt-warm",
@@ -268,13 +259,13 @@
 
 			qcom,usb-chgpth@1300 {
 				reg = <0x1300 0x100>;
-				interrupts =	<0x2 0x13 0x0>,
-						<0x2 0x13 0x1>,
-						<0x2 0x13 0x2>,
-						<0x2 0x13 0x3>,
-						<0x2 0x13 0x4>,
-						<0x2 0x13 0x5>,
-						<0x2 0x13 0x6>;
+				interrupts =	<0x2 0x13 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x5 IRQ_TYPE_NONE>,
+						<0x2 0x13 0x6 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"usbin-uv",
 							"usbin-ov",
@@ -287,8 +278,8 @@
 
 			qcom,dc-chgpth@1400 {
 				reg = <0x1400 0x100>;
-				interrupts =	<0x2 0x14 0x0>,
-						<0x2 0x14 0x1>;
+				interrupts =	<0x2 0x14 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x14 0x1 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"dcin-uv",
 							"dcin-ov";
@@ -296,12 +287,12 @@
 
 			qcom,chgr-misc@1600 {
 				reg = <0x1600 0x100>;
-				interrupts =	<0x2 0x16 0x0>,
-						<0x2 0x16 0x1>,
-						<0x2 0x16 0x2>,
-						<0x2 0x16 0x3>,
-						<0x2 0x16 0x4>,
-						<0x2 0x16 0x5>;
+				interrupts =	<0x2 0x16 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x16 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x16 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x16 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x16 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x16 0x5 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"power-ok",
 							"temp-shutdown",
@@ -313,7 +304,6 @@
 		};
 
 		pmi8994_fg: qcom,fg {
-			spmi-dev-container;
 			compatible = "qcom,qpnp-fg";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -332,14 +322,14 @@
 			qcom,fg-soc@4000 {
 				status = "okay";
 				reg = <0x4000 0x100>;
-				interrupts =	<0x2 0x40 0x0>,
-						<0x2 0x40 0x1>,
-						<0x2 0x40 0x2>,
-						<0x2 0x40 0x3>,
-						<0x2 0x40 0x4>,
-						<0x2 0x40 0x5>,
-						<0x2 0x40 0x6>,
-						<0x2 0x40 0x7>;
+				interrupts =	<0x2 0x40 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x5 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x6 IRQ_TYPE_NONE>,
+						<0x2 0x40 0x7 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"high-soc",
 							"low-soc",
@@ -353,14 +343,14 @@
 
 			qcom,fg-batt@4100 {
 				reg = <0x4100 0x100>;
-				interrupts =	<0x2 0x41 0x0>,
-						<0x2 0x41 0x1>,
-						<0x2 0x41 0x2>,
-						<0x2 0x41 0x3>,
-						<0x2 0x41 0x4>,
-						<0x2 0x41 0x5>,
-						<0x2 0x41 0x6>,
-						<0x2 0x41 0x7>;
+				interrupts =	<0x2 0x41 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x1 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x2 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x3 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x4 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x5 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x6 IRQ_TYPE_NONE>,
+						<0x2 0x41 0x7 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"soft-cold",
 							"soft-hot",
@@ -387,8 +377,8 @@
 			qcom,fg-memif@4400 {
 				status = "okay";
 				reg = <0x4400 0x100>;
-				interrupts =	<0x2 0x44 0x0>,
-						<0x2 0x44 0x1>;
+				interrupts =	<0x2 0x44 0x0 IRQ_TYPE_NONE>,
+						<0x2 0x44 0x1 IRQ_TYPE_NONE>;
 
 				interrupt-names =	"mem-avail",
 							"data-rcvry-sug";
@@ -397,10 +387,10 @@
 	};
 
 	qcom,pmi8994@3 {
-		spmi-slave-container;
-		reg = <0x3>;
-		#address-cells = <1>;
-		#size-cells = <1>;
+		compatible ="qcom,spmi-pmic";
+		reg = <0x3 SPMI_USID>;
+		#address-cells = <2>;
+		#size-cells = <0>;
 
 		pmi8994_pwm_1: pwm@b100 {
 			compatible = "qcom,qpnp-pwm";
@@ -448,7 +438,6 @@
 
 		labibb: qpnp-labibb-regulator {
 			status = "disabled";
-			spmi-dev-container;
 			compatible = "qcom,qpnp-labibb-regulator";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -508,7 +497,7 @@
 				qcom,qpnp-lab-pull-down-enable;
 				qcom,qpnp-lab-switching-clock-frequency =
 									<1600>;
-				qcom,qpnp-lab-limit-maximum-current = <800>;
+				qcom,qpnp-lab-limit-maximum-current = <1600>;
 				qcom,qpnp-lab-limit-max-current-enable;
 				qcom,qpnp-lab-ps-threshold = <20>;
 				qcom,qpnp-lab-ps-enable;
@@ -528,13 +517,13 @@
 					"qpnp-wled-sink-base",
 					"qpnp-wled-ibb-base",
 					"qpnp-wled-lab-base";
-			interrupts = <0x3 0xd8 0x2>;
+			interrupts = <0x3 0xd8 0x2 IRQ_TYPE_NONE>;
 			interrupt-names = "sc-irq";
 			status = "okay";
 			linux,name = "wled";
 			linux,default-trigger = "bkl-trigger";
 			qcom,fdbk-output = "auto";
-			qcom,vref-mv = <350>;
+			qcom,vref-uv = <350000>;
 			qcom,switch-freq-khz = <800>;
 			qcom,ovp-mv = <29500>;
 			qcom,ilim-ma = <980>;
@@ -545,16 +534,18 @@
 			qcom,sync-dly-us = <800>;
 			qcom,fs-curr-ua = <25000>;
 			qcom,cons-sync-write-delay-us = <1000>;
+			qcom,en-phase-stag;
 			qcom,led-strings-list = [00 01 02 03];
 			qcom,en-ext-pfet-sc-pro;
+			qcom,pmic-revid = <&pmi8994_revid>;
 		};
 
 		pmi8994_haptics: qcom,haptic@c000 {
 			status = "disabled";
 			compatible = "qcom,qpnp-haptic";
 			reg = <0xc000 0x100>;
-			interrupts = <0x3 0xc0 0x0>,
-				     <0x3 0xc0 0x1>;
+			interrupts = <0x3 0xc0 0x0 IRQ_TYPE_EDGE_BOTH>,
+				     <0x3 0xc0 0x1 IRQ_TYPE_EDGE_BOTH>;
 			interrupt-names = "sc-irq", "play-irq";
 			vcc_pon-supply = <&pon_perph_reg>;
 			qcom,play-mode = "direct";
@@ -567,8 +558,6 @@
 			qcom,int-pwm-freq-khz = <505>;
 			qcom,en-brake;
 			qcom,brake-pattern = [03 03 00 00];
-			qcom,use-play-irq;
-			qcom,use-sc-irq;
 			qcom,wave-samples = [3e 3e 3e 3e 3e 3e 3e 3e];
 			qcom,wave-rep-cnt = <1>;
 			qcom,wave-samp-rep-cnt = <1>;

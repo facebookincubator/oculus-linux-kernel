@@ -27,9 +27,10 @@
 
 static int dcssblk_open(struct block_device *bdev, fmode_t mode);
 static void dcssblk_release(struct gendisk *disk, fmode_t mode);
-static void dcssblk_make_request(struct request_queue *q, struct bio *bio);
-static int dcssblk_direct_access(struct block_device *bdev, sector_t secnum,
-				 void **kaddr, unsigned long *pfn);
+static blk_qc_t dcssblk_make_request(struct request_queue *q,
+						struct bio *bio);
+static long dcssblk_direct_access(struct block_device *bdev, sector_t secnum,
+			 void __pmem **kaddr, unsigned long *pfn);
 
 static char dcssblk_segments[DCSSBLK_PARM_LEN] = "\0";
 
@@ -438,7 +439,13 @@ dcssblk_save_store(struct device *dev, struct device_attribute *attr, const char
 			pr_info("All DCSSs that map to device %s are "
 				"saved\n", dev_info->segment_name);
 			list_for_each_entry(entry, &dev_info->seg_list, lh) {
-				segment_save(entry->segment_name);
+				if (entry->segment_type == SEG_TYPE_EN ||
+				    entry->segment_type == SEG_TYPE_SN)
+					pr_warn("DCSS %s is of type SN or EN"
+						" and cannot be saved\n",
+						entry->segment_name);
+				else
+					segment_save(entry->segment_name);
 			}
 		}  else {
 			// device is busy => we save it when it becomes
@@ -541,11 +548,11 @@ dcssblk_add_store(struct device *dev, struct device_attribute *attr, const char 
 	 * parse input
 	 */
 	num_of_segments = 0;
-	for (i = 0; ((buf[i] != '\0') && (buf[i] != '\n') && i < count); i++) {
-		for (j = i; (buf[j] != ':') &&
+	for (i = 0; (i < count && (buf[i] != '\0') && (buf[i] != '\n')); i++) {
+		for (j = i; j < count &&
+			(buf[j] != ':') &&
 			(buf[j] != '\0') &&
-			(buf[j] != '\n') &&
-			j < count; j++) {
+			(buf[j] != '\n'); j++) {
 			local_buf[j-i] = toupper(buf[j]);
 		}
 		local_buf[j-i] = '\0';
@@ -717,7 +724,7 @@ dcssblk_remove_store(struct device *dev, struct device_attribute *attr, const ch
 	/*
 	 * parse input
 	 */
-	for (i = 0; ((*(buf+i)!='\0') && (*(buf+i)!='\n') && i < count); i++) {
+	for (i = 0; (i < count && (*(buf+i)!='\0') && (*(buf+i)!='\n')); i++) {
 		local_buf[i] = toupper(buf[i]);
 	}
 	local_buf[i] = '\0';
@@ -797,14 +804,19 @@ dcssblk_release(struct gendisk *disk, fmode_t mode)
 		pr_info("Device %s has become idle and is being saved "
 			"now\n", dev_info->segment_name);
 		list_for_each_entry(entry, &dev_info->seg_list, lh) {
-			segment_save(entry->segment_name);
+			if (entry->segment_type == SEG_TYPE_EN ||
+			    entry->segment_type == SEG_TYPE_SN)
+				pr_warn("DCSS %s is of type SN or EN and cannot"
+					" be saved\n", entry->segment_name);
+			else
+				segment_save(entry->segment_name);
 		}
 		dev_info->save_pending = 0;
 	}
 	up_write(&dcssblk_devices_sem);
 }
 
-static void
+static blk_qc_t
 dcssblk_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct dcssblk_dev_info *dev_info;
@@ -814,6 +826,8 @@ dcssblk_make_request(struct request_queue *q, struct bio *bio)
 	unsigned long page_addr;
 	unsigned long source_addr;
 	unsigned long bytes_done;
+
+	blk_queue_split(q, &bio, q->bio_split);
 
 	bytes_done = 0;
 	dev_info = bio->bi_bdev->bd_disk->private_data;
@@ -860,31 +874,31 @@ dcssblk_make_request(struct request_queue *q, struct bio *bio)
 		}
 		bytes_done += bvec.bv_len;
 	}
-	bio_endio(bio, 0);
-	return;
+	bio_endio(bio);
+	return BLK_QC_T_NONE;
 fail:
 	bio_io_error(bio);
+	return BLK_QC_T_NONE;
 }
 
-static int
+static long
 dcssblk_direct_access (struct block_device *bdev, sector_t secnum,
-			void **kaddr, unsigned long *pfn)
+			void __pmem **kaddr, unsigned long *pfn)
 {
 	struct dcssblk_dev_info *dev_info;
-	unsigned long pgoff;
+	unsigned long offset, dev_sz;
+	void *addr;
 
 	dev_info = bdev->bd_disk->private_data;
 	if (!dev_info)
 		return -ENODEV;
-	if (secnum % (PAGE_SIZE/512))
-		return -EINVAL;
-	pgoff = secnum / (PAGE_SIZE / 512);
-	if ((pgoff+1)*PAGE_SIZE-1 > dev_info->end - dev_info->start)
-		return -ERANGE;
-	*kaddr = (void *) (dev_info->start+pgoff*PAGE_SIZE);
-	*pfn = virt_to_phys(*kaddr) >> PAGE_SHIFT;
+	dev_sz = dev_info->end - dev_info->start;
+	offset = secnum * 512;
+	addr = (void *) (dev_info->start + offset);
+	*pfn = virt_to_phys(addr) >> PAGE_SHIFT;
+	*kaddr = (void __pmem *) addr;
 
-	return 0;
+	return dev_sz - offset;
 }
 
 static void
@@ -896,10 +910,10 @@ dcssblk_check_params(void)
 
 	for (i = 0; (i < DCSSBLK_PARM_LEN) && (dcssblk_segments[i] != '\0');
 	     i++) {
-		for (j = i; (dcssblk_segments[j] != ',')  &&
+		for (j = i; (j < DCSSBLK_PARM_LEN) &&
+			    (dcssblk_segments[j] != ',')  &&
 			    (dcssblk_segments[j] != '\0') &&
-			    (dcssblk_segments[j] != '(')  &&
-			    (j < DCSSBLK_PARM_LEN); j++)
+			    (dcssblk_segments[j] != '('); j++)
 		{
 			buf[j-i] = dcssblk_segments[j];
 		}
@@ -1003,7 +1017,6 @@ static const struct dev_pm_ops dcssblk_pm_ops = {
 static struct platform_driver dcssblk_pdrv = {
 	.driver = {
 		.name	= "dcssblk",
-		.owner	= THIS_MODULE,
 		.pm	= &dcssblk_pm_ops,
 	},
 };

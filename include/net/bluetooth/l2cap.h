@@ -28,6 +28,7 @@
 #define __L2CAP_H
 
 #include <asm/unaligned.h>
+#include <linux/atomic.h>
 
 /* L2CAP defaults */
 #define L2CAP_DEFAULT_MTU		672
@@ -54,6 +55,8 @@
 #define L2CAP_INFO_TIMEOUT		msecs_to_jiffies(4000)
 #define L2CAP_MOVE_TIMEOUT		msecs_to_jiffies(4000)
 #define L2CAP_MOVE_ERTX_TIMEOUT		msecs_to_jiffies(60000)
+#define L2CAP_WAIT_ACK_POLL_PERIOD	msecs_to_jiffies(200)
+#define L2CAP_WAIT_ACK_TIMEOUT		msecs_to_jiffies(10000)
 
 #define L2CAP_A2MP_DEFAULT_MTU		670
 
@@ -140,6 +143,7 @@ struct l2cap_conninfo {
 #define L2CAP_FC_ATT		0x10
 #define L2CAP_FC_SIG_LE		0x20
 #define L2CAP_FC_SMP_LE		0x40
+#define L2CAP_FC_SMP_BREDR	0x80
 
 /* L2CAP Control Field bit masks */
 #define L2CAP_CTRL_SAR			0xC000
@@ -246,6 +250,7 @@ struct l2cap_conn_rsp {
 #define L2CAP_PSM_SDP		0x0001
 #define L2CAP_PSM_RFCOMM	0x0003
 #define L2CAP_PSM_3DSP		0x0021
+#define L2CAP_PSM_IPSP		0x0023 /* 6LoWPAN */
 
 /* channel identifier */
 #define L2CAP_CID_SIGNALING	0x0001
@@ -254,6 +259,7 @@ struct l2cap_conn_rsp {
 #define L2CAP_CID_ATT		0x0004
 #define L2CAP_CID_LE_SIGNALING	0x0005
 #define L2CAP_CID_SMP		0x0006
+#define L2CAP_CID_SMP_BREDR	0x0007
 #define L2CAP_CID_DYN_START	0x0040
 #define L2CAP_CID_DYN_END	0xffff
 #define L2CAP_CID_LE_DYN_END	0x007f
@@ -269,6 +275,8 @@ struct l2cap_conn_rsp {
 #define L2CAP_CR_AUTHORIZATION	0x0006
 #define L2CAP_CR_BAD_KEY_SIZE	0x0007
 #define L2CAP_CR_ENCRYPTION	0x0008
+#define L2CAP_CR_INVALID_SCID	0x0009
+#define L2CAP_CR_SCID_IN_USE	0x0010
 
 /* connect/create channel status */
 #define L2CAP_CS_NO_INFO	0x0000
@@ -481,6 +489,7 @@ struct l2cap_chan {
 	struct hci_conn		*hs_hcon;
 	struct hci_chan		*hs_hchan;
 	struct kref	kref;
+	atomic_t	nesting;
 
 	__u8		state;
 
@@ -604,10 +613,6 @@ struct l2cap_ops {
 	struct sk_buff		*(*alloc_skb) (struct l2cap_chan *chan,
 					       unsigned long hdr_len,
 					       unsigned long len, int nb);
-	int			(*memcpy_fromiovec) (struct l2cap_chan *chan,
-						     unsigned char *kdata,
-						     struct iovec *iov,
-						     int len);
 };
 
 struct l2cap_conn {
@@ -617,8 +622,8 @@ struct l2cap_conn {
 	unsigned int		mtu;
 
 	__u32			feat_mask;
-	__u8			fixed_chan_mask;
-	bool			hs_enabled;
+	__u8			remote_fixed_chan;
+	__u8			local_fixed_chan;
 
 	__u8			info_state;
 	__u8			info_ident;
@@ -713,6 +718,17 @@ enum {
 	FLAG_HOLD_HCI_CONN,
 };
 
+/* Lock nesting levels for L2CAP channels. We need these because lockdep
+ * otherwise considers all channels equal and will e.g. complain about a
+ * connection oriented channel triggering SMP procedures or a listening
+ * channel creating and locking a child channel.
+ */
+enum {
+	L2CAP_NESTING_SMP,
+	L2CAP_NESTING_NORMAL,
+	L2CAP_NESTING_PARENT,
+};
+
 enum {
 	L2CAP_TX_STATE_XMIT,
 	L2CAP_TX_STATE_WAIT_F,
@@ -778,7 +794,7 @@ void l2cap_chan_put(struct l2cap_chan *c);
 
 static inline void l2cap_chan_lock(struct l2cap_chan *chan)
 {
-	mutex_lock(&chan->lock);
+	mutex_lock_nested(&chan->lock, atomic_read(&chan->nesting));
 }
 
 static inline void l2cap_chan_unlock(struct l2cap_chan *chan)
@@ -887,31 +903,6 @@ static inline void l2cap_chan_no_set_shutdown(struct l2cap_chan *chan)
 
 static inline long l2cap_chan_no_get_sndtimeo(struct l2cap_chan *chan)
 {
-	return 0;
-}
-
-static inline int l2cap_chan_no_memcpy_fromiovec(struct l2cap_chan *chan,
-						 unsigned char *kdata,
-						 struct iovec *iov,
-						 int len)
-{
-	/* Following is safe since for compiler definitions of kvec and
-	 * iovec are identical, yielding the same in-core layout and alignment
-	 */
-	struct kvec *vec = (struct kvec *)iov;
-
-	while (len > 0) {
-		if (vec->iov_len) {
-			int copy = min_t(unsigned int, len, vec->iov_len);
-			memcpy(kdata, vec->iov_base, copy);
-			len -= copy;
-			kdata += copy;
-			vec->iov_base += copy;
-			vec->iov_len -= copy;
-		}
-		vec++;
-	}
-
 	return 0;
 }
 

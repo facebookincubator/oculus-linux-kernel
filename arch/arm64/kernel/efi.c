@@ -50,15 +50,6 @@ static struct mm_struct efi_mm = {
 	.mmlist			= LIST_HEAD_INIT(efi_mm.mmlist),
 };
 
-static int uefi_debug __initdata;
-static int __init uefi_debug_setup(char *str)
-{
-	uefi_debug = 1;
-
-	return 0;
-}
-early_param("uefi_debug", uefi_debug_setup);
-
 static int __init is_normal_ram(efi_memory_desc_t *md)
 {
 	if (md->attribute & EFI_MEMORY_WB)
@@ -121,12 +112,12 @@ static int __init uefi_init(void)
 
 	/* Show what we know for posterity */
 	c16 = early_memremap(efi_to_phys(efi.systab->fw_vendor),
-			     sizeof(vendor));
+			     sizeof(vendor) * sizeof(efi_char16_t));
 	if (c16) {
 		for (i = 0; i < (int) sizeof(vendor) - 1 && *c16; ++i)
 			vendor[i] = c16[i];
 		vendor[i] = '\0';
-		early_memunmap(c16, sizeof(vendor));
+		early_memunmap(c16, sizeof(vendor) * sizeof(efi_char16_t));
 	}
 
 	pr_info("EFI v%u.%.02u by %s\n",
@@ -136,7 +127,11 @@ static int __init uefi_init(void)
 	table_size = sizeof(efi_config_table_64_t) * efi.systab->nr_tables;
 	config_tables = early_memremap(efi_to_phys(efi.systab->tables),
 				       table_size);
-
+	if (config_tables == NULL) {
+		pr_warn("Unable to map EFI config table array.\n");
+		retval = -ENOMEM;
+		goto out;
+	}
 	retval = efi_config_parse_tables(config_tables, efi.systab->nr_tables,
 					 sizeof(efi_config_table_64_t), NULL);
 
@@ -157,6 +152,7 @@ static __init int is_reserve_region(efi_memory_desc_t *md)
 	case EFI_BOOT_SERVICES_CODE:
 	case EFI_BOOT_SERVICES_DATA:
 	case EFI_CONVENTIONAL_MEMORY:
+	case EFI_PERSISTENT_MEMORY:
 		return 0;
 	default:
 		break;
@@ -169,14 +165,14 @@ static __init void reserve_regions(void)
 	efi_memory_desc_t *md;
 	u64 paddr, npages, size;
 
-	if (uefi_debug)
+	if (efi_enabled(EFI_DBG))
 		pr_info("Processing EFI memory map:\n");
 
 	for_each_efi_memory_desc(&memmap, md) {
 		paddr = md->phys_addr;
 		npages = md->num_pages;
 
-		if (uefi_debug) {
+		if (efi_enabled(EFI_DBG)) {
 			char buf[64];
 
 			pr_info("  0x%012llx-0x%012llx %s",
@@ -192,11 +188,11 @@ static __init void reserve_regions(void)
 
 		if (is_reserve_region(md)) {
 			memblock_reserve(paddr, size);
-			if (uefi_debug)
+			if (efi_enabled(EFI_DBG))
 				pr_cont("*");
 		}
 
-		if (uefi_debug)
+		if (efi_enabled(EFI_DBG))
 			pr_cont("\n");
 	}
 
@@ -208,15 +204,23 @@ void __init efi_init(void)
 	struct efi_fdt_params params;
 
 	/* Grab UEFI information placed in FDT by stub */
-	if (!efi_get_fdt_params(&params, uefi_debug))
+	if (!efi_get_fdt_params(&params))
 		return;
 
 	efi_system_table = params.system_table;
 
 	memblock_reserve(params.mmap & PAGE_MASK,
 			 PAGE_ALIGN(params.mmap_size + (params.mmap & ~PAGE_MASK)));
-	memmap.phys_map = (void *)params.mmap;
+	memmap.phys_map = params.mmap;
 	memmap.map = early_memremap(params.mmap, params.mmap_size);
+	if (memmap.map == NULL) {
+		/*
+		* If we are booting via UEFI, the UEFI memory map is the only
+		* description of memory we have, so there is little point in
+		* proceeding if we cannot access it.
+		*/
+		panic("Unable to map EFI memory map.\n");
+	}
 	memmap.map_end = memmap.map + params.mmap_size;
 	memmap.desc_size = params.desc_size;
 	memmap.desc_version = params.desc_ver;
@@ -235,18 +239,12 @@ static bool __init efi_virtmap_init(void)
 	init_new_context(NULL, &efi_mm);
 
 	for_each_efi_memory_desc(&memmap, md) {
-		u64 paddr, npages, size;
 		pgprot_t prot;
 
 		if (!(md->attribute & EFI_MEMORY_RUNTIME))
 			continue;
 		if (md->virt_addr == 0)
 			return false;
-
-		paddr = md->phys_addr;
-		npages = md->num_pages;
-		memrange_efi_to_native(&paddr, &npages);
-		size = npages << PAGE_SHIFT;
 
 		pr_info("  EFI remap 0x%016llx => %p\n",
 			md->phys_addr, (void *)md->virt_addr);
@@ -258,12 +256,14 @@ static bool __init efi_virtmap_init(void)
 		 */
 		if (!is_normal_ram(md))
 			prot = __pgprot(PROT_DEVICE_nGnRE);
-		else if (md->type == EFI_RUNTIME_SERVICES_CODE)
+		else if (md->type == EFI_RUNTIME_SERVICES_CODE ||
+			 !PAGE_ALIGNED(md->phys_addr))
 			prot = PAGE_KERNEL_EXEC;
 		else
 			prot = PAGE_KERNEL;
 
-		create_pgd_mapping(&efi_mm, paddr, md->virt_addr, size,
+		create_pgd_mapping(&efi_mm, md->phys_addr, md->virt_addr,
+				   md->num_pages << EFI_PAGE_SHIFT, 
 				   __pgprot(pgprot_val(prot) | PTE_NG));
 	}
 	return true;
@@ -280,22 +280,22 @@ static int __init arm64_enable_runtime_services(void)
 
 	if (!efi_enabled(EFI_BOOT)) {
 		pr_info("EFI services will not be available.\n");
-		return -1;
+		return 0;
 	}
 
 	if (efi_runtime_disabled()) {
 		pr_info("EFI runtime services will be disabled.\n");
-		return -1;
+		return 0;
 	}
 
 	pr_info("Remapping and enabling EFI services.\n");
 
 	mapsize = memmap.map_end - memmap.map;
-	memmap.map = (__force void *)ioremap_cache((phys_addr_t)memmap.phys_map,
+	memmap.map = (__force void *)ioremap_cache(memmap.phys_map,
 						   mapsize);
 	if (!memmap.map) {
 		pr_err("Failed to remap EFI memory map\n");
-		return -1;
+		return -ENOMEM;
 	}
 	memmap.map_end = memmap.map + mapsize;
 	efi.memmap = &memmap;
@@ -304,13 +304,13 @@ static int __init arm64_enable_runtime_services(void)
 						   sizeof(efi_system_table_t));
 	if (!efi.systab) {
 		pr_err("Failed to remap EFI System Table\n");
-		return -1;
+		return -ENOMEM;
 	}
 	set_bit(EFI_SYSTEM_TABLES, &efi.flags);
 
 	if (!efi_virtmap_init()) {
 		pr_err("No UEFI virtual mapping was installed -- runtime services will not be available\n");
-		return -1;
+		return -ENOMEM;
 	}
 
 	/* Set up runtime services function pointers */
@@ -339,30 +339,7 @@ core_initcall(arm64_dmi_init);
 
 static void efi_set_pgd(struct mm_struct *mm)
 {
-	__switch_mm(mm);
-
-	if (system_uses_ttbr0_pan()) {
-		if (mm != current->active_mm) {
-			/*
-			 * Update the current thread's saved ttbr0 since it is
-			 * restored as part of a return from exception. Enable
-			 * access to the valid TTBR0_EL1 and invoke the errata
-			 * workaround directly since there is no return from
-			 * exception when invoking the EFI run-time services.
-			 */
-			update_saved_ttbr0(current, mm);
-			uaccess_ttbr0_enable();
-			post_ttbr_update_workaround();
-		} else {
-			/*
-			 * Defer the switch to the current thread's TTBR0_EL1
-			 * until uaccess_enable(). Restore the current
-			 * thread's saved ttbr0 corresponding to its active_mm
-			 */
-			uaccess_ttbr0_disable();
-			update_saved_ttbr0(current, current->active_mm);
-		}
-	}
+	switch_mm(NULL, mm, NULL);
 }
 
 void efi_virtmap_load(void)
@@ -375,4 +352,13 @@ void efi_virtmap_unload(void)
 {
 	efi_set_pgd(current->active_mm);
 	preempt_enable();
+}
+
+/*
+ * UpdateCapsule() depends on the system being shutdown via
+ * ResetSystem().
+ */
+bool efi_poweroff_required(void)
+{
+	return efi_enabled(EFI_RUNTIME_SERVICES);
 }

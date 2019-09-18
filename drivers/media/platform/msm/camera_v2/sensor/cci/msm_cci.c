@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +32,7 @@
 #define CYCLES_PER_MICRO_SEC_DEFAULT 4915
 #define CCI_MAX_DELAY 1000000
 
-#define CCI_TIMEOUT msecs_to_jiffies(500)
+#define CCI_TIMEOUT msecs_to_jiffies(100)
 
 /* TODO move this somewhere else */
 #define MSM_CCI_DRV_NAME "msm_cci"
@@ -46,6 +46,8 @@
 #else
 #define CCI_DBG(fmt, args...) pr_debug(fmt, ##args)
 #endif
+
+#define CCI_DUMP_REG 0
 
 /* Max bytes that can be read per CCI read transaction */
 #define CCI_READ_MAX 12
@@ -296,7 +298,9 @@ static uint32_t msm_cci_wait(struct cci_device *cci_dev,
 		__func__, __LINE__);
 
 	if (rc <= 0) {
-		msm_cci_dump_registers(cci_dev, master, queue);
+		if (CCI_DUMP_REG)
+			msm_cci_dump_registers(cci_dev, master, queue);
+
 		pr_err("%s: %d wait for queue: %d\n",
 			 __func__, __LINE__, queue);
 		if (rc == 0)
@@ -474,12 +478,9 @@ static void msm_cci_process_half_q(struct cci_device *cci_dev,
 		atomic_set(&cci_dev->cci_master_info[master].q_free[queue], 1);
 		msm_camera_io_w_mb(reg_val, cci_dev->base +
 			CCI_QUEUE_START_ADDR);
-		spin_unlock_irqrestore(&cci_dev->cci_master_info[master].
-						lock_q[queue], flags);
-	} else {
-		spin_unlock_irqrestore(&cci_dev->cci_master_info[master].
-						lock_q[queue], flags);
 	}
+	spin_unlock_irqrestore(&cci_dev->cci_master_info[master].
+					lock_q[queue], flags);
 }
 
 static int32_t msm_cci_process_full_q(struct cci_device *cci_dev,
@@ -606,7 +607,7 @@ static int32_t msm_cci_data_queue(struct cci_device *cci_dev,
 	uint32_t read_val = 0;
 	uint32_t reg_offset;
 	uint32_t val = 0;
-	uint32_t max_queue_size, queue_size = 0;
+	uint32_t max_queue_size;
 	unsigned long flags;
 
 	if (i2c_cmd == NULL) {
@@ -659,11 +660,6 @@ static int32_t msm_cci_data_queue(struct cci_device *cci_dev,
 
 	max_queue_size = cci_dev->cci_i2c_queue_info[master][queue].
 			max_queue_size;
-
-	if (c_ctrl->cmd == MSM_CCI_I2C_WRITE_SEQ)
-		queue_size = max_queue_size;
-	else
-		queue_size = max_queue_size/2;
 	reg_addr = i2c_cmd->reg_addr;
 
 	if (sync_en == MSM_SYNC_ENABLE && cci_dev->valid_sync &&
@@ -694,8 +690,8 @@ static int32_t msm_cci_data_queue(struct cci_device *cci_dev,
 			CCI_I2C_M0_Q0_CUR_WORD_CNT_ADDR + reg_offset);
 		CDBG("%s line %d CUR_WORD_CNT_ADDR %d len %d max %d\n",
 			__func__, __LINE__, read_val, len, max_queue_size);
-		/* + 1 - space alocation for Report CMD */
-		if ((read_val + len + 1) > queue_size) {
+		/* + 1 - space alocation for Report CMD*/
+		if ((read_val + len + 1) > max_queue_size/2) {
 			if ((read_val + len + 1) > max_queue_size) {
 				rc = msm_cci_process_full_q(cci_dev,
 					master, queue);
@@ -936,7 +932,9 @@ static int32_t msm_cci_i2c_read(struct v4l2_subdev *sd,
 	rc = wait_for_completion_timeout(&cci_dev->
 		cci_master_info[master].reset_complete, CCI_TIMEOUT);
 	if (rc <= 0) {
-		msm_cci_dump_registers(cci_dev, master, queue);
+		if (CCI_DUMP_REG)
+			msm_cci_dump_registers(cci_dev, master, queue);
+
 		if (rc == 0)
 			rc = -ETIMEDOUT;
 		pr_err("%s: %d wait_for_completion_timeout rc = %d\n",
@@ -1330,6 +1328,10 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		CDBG("%s:%d master %d\n", __func__, __LINE__, master);
 		if (master < MASTER_MAX && master >= 0) {
 			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+			mutex_lock(&cci_dev->cci_master_info[master].
+				mutex_q[PRIORITY_QUEUE]);
+			mutex_lock(&cci_dev->cci_master_info[master].
+				mutex_q[SYNC_QUEUE]);
 			flush_workqueue(cci_dev->write_wq[master]);
 			/* Re-initialize the completion */
 			reinit_completion(&cci_dev->
@@ -1354,6 +1356,10 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 			if (rc <= 0)
 				pr_err("%s:%d wait failed %d\n", __func__,
 					__LINE__, rc);
+			mutex_unlock(&cci_dev->cci_master_info[master].
+				mutex_q[SYNC_QUEUE]);
+			mutex_unlock(&cci_dev->cci_master_info[master].
+				mutex_q[PRIORITY_QUEUE]);
 			mutex_unlock(&cci_dev->cci_master_info[master].mutex);
 		}
 		return 0;
@@ -1594,6 +1600,12 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 			__LINE__, cci_dev, c_ctrl);
 		rc = -EINVAL;
 		return rc;
+	}
+
+	if (cci_dev->cci_state != CCI_STATE_ENABLED) {
+		pr_err("%s invalid cci state %d\n",
+			__func__, cci_dev->cci_state);
+		return -EINVAL;
 	}
 
 	if (c_ctrl->cci_info->cci_i2c_master >= MASTER_MAX

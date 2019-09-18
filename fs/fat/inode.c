@@ -11,22 +11,14 @@
  */
 
 #include <linux/module.h>
-#include <linux/init.h>
-#include <linux/time.h>
-#include <linux/slab.h>
-#include <linux/seq_file.h>
 #include <linux/pagemap.h>
 #include <linux/mpage.h>
-#include <linux/buffer_head.h>
-#include <linux/mount.h>
-#include <linux/aio.h>
 #include <linux/vfs.h>
+#include <linux/seq_file.h>
 #include <linux/parser.h>
 #include <linux/uio.h>
-#include <linux/writeback.h>
-#include <linux/log2.h>
-#include <linux/hash.h>
 #include <linux/blkdev.h>
+#include <linux/backing-dev.h>
 #include <asm/unaligned.h>
 #include "fat.h"
 
@@ -246,8 +238,7 @@ static int fat_write_end(struct file *file, struct address_space *mapping,
 	return err;
 }
 
-static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
-			     struct iov_iter *iter,
+static ssize_t fat_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 			     loff_t offset)
 {
 	struct file *file = iocb->ki_filp;
@@ -256,7 +247,7 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 	size_t count = iov_iter_count(iter);
 	ssize_t ret;
 
-	if (rw == WRITE) {
+	if (iov_iter_rw(iter) == WRITE) {
 		/*
 		 * FIXME: blockdev_direct_IO() doesn't use ->write_begin(),
 		 * so we need to update the ->mmu_private to block boundary.
@@ -275,8 +266,8 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 	 * FAT need to use the DIO_LOCKING for avoiding the race
 	 * condition of fat_get_block() and ->truncate().
 	 */
-	ret = blockdev_direct_IO(rw, iocb, inode, iter, offset, fat_get_block);
-	if (ret < 0 && (rw & WRITE))
+	ret = blockdev_direct_IO(iocb, inode, iter, offset, fat_get_block);
+	if (ret < 0 && iov_iter_rw(iter) == WRITE)
 		fat_write_failed(mapping, offset + count);
 
 	return ret;
@@ -292,6 +283,18 @@ static sector_t _fat_bmap(struct address_space *mapping, sector_t block)
 	up_read(&MSDOS_I(mapping->host)->truncate_lock);
 
 	return blocknr;
+}
+
+/*
+ * fat_block_truncate_page() zeroes out a mapping from file offset `from'
+ * up to the end of the block which corresponds to `from'.
+ * This is required during truncate to physically zeroout the tail end
+ * of that block so it doesn't yield old data if the file is later grown.
+ * Also, avoid causing failure from fsx for cases of "data past EOF"
+ */
+int fat_block_truncate_page(struct inode *inode, loff_t from)
+{
+	return block_truncate_page(inode->i_mapping, from, fat_get_block);
 }
 
 static const struct address_space_operations fat_aops = {
@@ -568,7 +571,7 @@ static void fat_set_state(struct super_block *sb,
 {
 	struct buffer_head *bh;
 	struct fat_boot_sector *b;
-	struct msdos_sb_info *sbi = sb->s_fs_info;
+	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 
 	/* do not change any thing if mounted read only */
 	if ((sb->s_flags & MS_RDONLY) && !force)
@@ -757,8 +760,9 @@ retry:
 	fat_get_blknr_offset(sbi, i_pos, &blocknr, &offset);
 	bh = sb_bread(sb, blocknr);
 	if (!bh) {
-		fat_msg(sb, KERN_ERR, "unable to read inode block "
-		       "for updating (i_pos %lld)", i_pos);
+		fat_msg_ratelimit(sb, KERN_ERR,
+			"unable to read inode block for updating (i_pos %lld)",
+			i_pos);
 		return -EIO;
 	}
 	spin_lock(&sbi->inode_hash_lock);
@@ -1268,8 +1272,7 @@ out:
 
 static int fat_read_root(struct inode *inode)
 {
-	struct super_block *sb = inode->i_sb;
-	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+	struct msdos_sb_info *sbi = MSDOS_SB(inode->i_sb);
 	int error;
 
 	MSDOS_I(inode)->i_pos = MSDOS_ROOT_INO;

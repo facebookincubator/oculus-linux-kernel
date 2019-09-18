@@ -1,4 +1,4 @@
-* Qualcomm MSM VPU
+* Qualcomm Technologies, Inc. MSM VPU
 
 VPU (Video Processing Unit) applies high quality video post-processing
 functions like noise reduction, deinterlacing, scaling, etc in real-time

@@ -33,9 +33,15 @@
 static const struct mfd_cell tps65217s[] = {
 	{
 		.name = "tps65217-pmic",
+		.of_compatible = "ti,tps65217-pmic",
 	},
 	{
 		.name = "tps65217-bl",
+		.of_compatible = "ti,tps65217-bl",
+	},
+	{
+		.name = "tps65217-charger",
+		.of_compatible = "ti,tps65217-charger",
 	},
 };
 
@@ -143,7 +149,7 @@ int tps65217_clear_bits(struct tps65217 *tps, unsigned int reg,
 }
 EXPORT_SYMBOL_GPL(tps65217_clear_bits);
 
-static struct regmap_config tps65217_regmap_config = {
+static const struct regmap_config tps65217_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 
@@ -154,6 +160,7 @@ static const struct of_device_id tps65217_of_match[] = {
 	{ .compatible = "ti,tps65217", .data = (void *)TPS65217 },
 	{ /* sentinel */ },
 };
+MODULE_DEVICE_TABLE(of, tps65217_of_match);
 
 static int tps65217_probe(struct i2c_client *client,
 				const struct i2c_device_id *ids)
@@ -246,7 +253,6 @@ MODULE_DEVICE_TABLE(i2c, tps65217_id_table);
 static struct i2c_driver tps65217_driver = {
 	.driver		= {
 		.name	= "tps65217",
-		.owner	= THIS_MODULE,
 		.of_match_table = tps65217_of_match,
 	},
 	.id_table	= tps65217_id_table,

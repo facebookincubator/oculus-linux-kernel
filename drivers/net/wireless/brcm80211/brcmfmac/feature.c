@@ -15,18 +15,20 @@
  */
 
 #include <linux/netdevice.h>
+#include <linux/module.h>
 
 #include <brcm_hw_ids.h>
-#include "dhd.h"
-#include "dhd_bus.h"
-#include "dhd_dbg.h"
+#include "core.h"
+#include "bus.h"
+#include "debug.h"
 #include "fwil.h"
 #include "feature.h"
 
-/*
- * firmware error code received if iovar is unsupported.
- */
-#define EBRCMF_FEAT_UNSUPPORTED		23
+
+/* Module param feature_disable (global for all devices) */
+static int brcmf_feature_disable;
+module_param_named(feature_disable, brcmf_feature_disable, int, 0);
+MODULE_PARM_DESC(feature_disable, "Disable features");
 
 /*
  * expand feature list to array of feature strings.
@@ -102,13 +104,45 @@ static void brcmf_feat_iovar_int_get(struct brcmf_if *ifp,
 	}
 }
 
+/**
+ * brcmf_feat_iovar_int_set() - determine feature through iovar set.
+ *
+ * @ifp: interface to query.
+ * @id: feature id.
+ * @name: iovar name.
+ */
+static void brcmf_feat_iovar_int_set(struct brcmf_if *ifp,
+				     enum brcmf_feat_id id, char *name, u32 val)
+{
+	int err;
+
+	err = brcmf_fil_iovar_int_set(ifp, name, val);
+	if (err == 0) {
+		brcmf_dbg(INFO, "enabling feature: %s\n", brcmf_feat_names[id]);
+		ifp->drvr->feat_flags |= BIT(id);
+	} else {
+		brcmf_dbg(TRACE, "%s feature check failed: %d\n",
+			  brcmf_feat_names[id], err);
+	}
+}
+
 void brcmf_feat_attach(struct brcmf_pub *drvr)
 {
-	struct brcmf_if *ifp = drvr->iflist[0];
+	struct brcmf_if *ifp = brcmf_get_ifp(drvr, 0);
 
 	brcmf_feat_iovar_int_get(ifp, BRCMF_FEAT_MCHAN, "mchan");
+	brcmf_feat_iovar_int_get(ifp, BRCMF_FEAT_PNO, "pfn");
 	if (drvr->bus_if->wowl_supported)
 		brcmf_feat_iovar_int_get(ifp, BRCMF_FEAT_WOWL, "wowl");
+	if (drvr->bus_if->chip != BRCM_CC_43362_CHIP_ID)
+		brcmf_feat_iovar_int_set(ifp, BRCMF_FEAT_MBSS, "mbss", 0);
+	brcmf_feat_iovar_int_get(ifp, BRCMF_FEAT_P2P, "p2p");
+
+	if (brcmf_feature_disable) {
+		brcmf_dbg(INFO, "Features: 0x%02x, disable: 0x%02x\n",
+			  ifp->drvr->feat_flags, brcmf_feature_disable);
+		ifp->drvr->feat_flags &= ~brcmf_feature_disable;
+	}
 
 	/* set chip related quirks */
 	switch (drvr->bus_if->chip) {

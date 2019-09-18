@@ -22,6 +22,7 @@
 #include <linux/ktime.h>
 #include <linux/percpu.h>
 #include <linux/lockref.h>
+#include <linux/rhashtable.h>
 
 #define DIO_WAIT	0x00000010
 #define DIO_METADATA	0x00000020
@@ -97,6 +98,7 @@ struct gfs2_rgrpd {
 #define GFS2_RDF_CHECK		0x10000000 /* check for unlinked inodes */
 #define GFS2_RDF_UPTODATE	0x20000000 /* rg is up to date */
 #define GFS2_RDF_ERROR		0x40000000 /* error in rg */
+#define GFS2_RDF_PREFERRED	0x80000000 /* This rgrp is preferred */
 #define GFS2_RDF_MASK		0xf0000000 /* mask for internal flags */
 	spinlock_t rd_rsspin;           /* protects reservation related vars */
 	struct rb_root rd_rstree;       /* multi-block reservation tree */
@@ -202,13 +204,15 @@ enum {
 };
 
 struct lm_lockname {
+	struct gfs2_sbd *ln_sbd;
 	u64 ln_number;
 	unsigned int ln_type;
 };
 
 #define lm_name_equal(name1, name2) \
-        (((name1)->ln_number == (name2)->ln_number) && \
-         ((name1)->ln_type == (name2)->ln_type))
+        (((name1)->ln_number == (name2)->ln_number) &&	\
+	 ((name1)->ln_type == (name2)->ln_type) &&	\
+	 ((name1)->ln_sbd == (name2)->ln_sbd))
 
 
 struct gfs2_glock_operations {
@@ -224,6 +228,7 @@ struct gfs2_glock_operations {
 	const unsigned long go_flags;
 #define GLOF_ASPACE 1
 #define GLOF_LVB    2
+#define GLOF_LRU    4
 };
 
 enum {
@@ -239,7 +244,7 @@ enum {
 };
 
 struct gfs2_lkstats {
-	s64 stats[GFS2_NR_LKSTATS];
+	u64 stats[GFS2_NR_LKSTATS];
 };
 
 enum {
@@ -300,8 +305,10 @@ struct gfs2_blkreserv {
  * to the allocation code.
  */
 struct gfs2_alloc_parms {
-	u32 target;
+	u64 target;
+	u32 min_target;
 	u32 aflags;
+	u64 allowed;
 };
 
 enum {
@@ -323,21 +330,18 @@ enum {
 
 struct gfs2_glock {
 	struct hlist_bl_node gl_list;
-	struct gfs2_sbd *gl_sbd;
 	unsigned long gl_flags;		/* GLF_... */
 	struct lm_lockname gl_name;
 
 	struct lockref gl_lockref;
-#define gl_spin gl_lockref.lock
 
-	/* State fields protected by gl_spin */
+	/* State fields protected by gl_lockref.lock */
 	unsigned int gl_state:2,	/* Current state */
 		     gl_target:2,	/* Target state */
 		     gl_demote_state:2,	/* State requested by remote node */
 		     gl_req:2,		/* State in last dlm request */
 		     gl_reply:8;	/* Last reply from the dlm */
 
-	unsigned int gl_hash;
 	unsigned long gl_demote_time; /* time of first demote request */
 	long gl_hold_time;
 	struct list_head gl_holders;
@@ -363,7 +367,7 @@ struct gfs2_glock {
 			loff_t end;
 		} gl_vm;
 	};
-	struct rcu_head gl_rcu;
+	struct rhash_head gl_node;
 };
 
 #define GFS2_MIN_LVB_SIZE 32	/* Min size of LVB that gfs2 supports */
@@ -429,6 +433,7 @@ enum {
 	QDF_CHANGE		= 1,
 	QDF_LOCKED		= 2,
 	QDF_REFRESH		= 3,
+	QDF_QMSG_QUIET          = 4,
 };
 
 struct gfs2_quota_data {
@@ -587,6 +592,12 @@ enum {
 	SDF_SKIP_DLM_UNLOCK	= 8,
 };
 
+enum gfs2_freeze_state {
+	SFS_UNFROZEN		= 0,
+	SFS_STARTING_FREEZE	= 1,
+	SFS_FROZEN		= 2,
+};
+
 #define GFS2_FSNAME_LEN		256
 
 struct gfs2_inum_host {
@@ -684,6 +695,7 @@ struct gfs2_sbd {
 	struct gfs2_holder sd_live_gh;
 	struct gfs2_glock *sd_rename_gl;
 	struct gfs2_glock *sd_freeze_gl;
+	struct work_struct sd_freeze_work;
 	wait_queue_head_t sd_glock_wait;
 	atomic_t sd_glock_disposal;
 	struct completion sd_locking_init;
@@ -788,6 +800,9 @@ struct gfs2_sbd {
 	wait_queue_head_t sd_log_flush_wait;
 	int sd_log_error;
 
+	atomic_t sd_reserving_log;
+	wait_queue_head_t sd_reserving_log_wait;
+
 	unsigned int sd_log_flush_head;
 	u64 sd_log_flush_wrapped;
 
@@ -797,12 +812,8 @@ struct gfs2_sbd {
 
 	/* For quiescing the filesystem */
 	struct gfs2_holder sd_freeze_gh;
-	struct gfs2_holder sd_freeze_root_gh;
-	struct gfs2_holder sd_thaw_gh;
-	atomic_t sd_log_freeze;
-	atomic_t sd_frozen_root;
-	wait_queue_head_t sd_frozen_root_wait;
-	wait_queue_head_t sd_log_frozen_wait;
+	atomic_t sd_freeze_state;
+	struct mutex sd_freeze_mutex;
 
 	char sd_fsname[GFS2_FSNAME_LEN];
 	char sd_table_name[GFS2_FSNAME_LEN];
@@ -824,7 +835,7 @@ static inline void gfs2_glstats_inc(struct gfs2_glock *gl, int which)
 
 static inline void gfs2_sbstats_inc(const struct gfs2_glock *gl, int which)
 {
-	const struct gfs2_sbd *sdp = gl->gl_sbd;
+	const struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
 	preempt_disable();
 	this_cpu_ptr(sdp->sd_lkstats)->lkstats[gl->gl_name.ln_type].stats[which]++;
 	preempt_enable();

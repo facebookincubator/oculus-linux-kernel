@@ -19,7 +19,9 @@
 #define pr_fmt(fmt) "CPU features: " fmt
 
 #include <linux/bsearch.h>
+#include <linux/cpumask.h>
 #include <linux/sort.h>
+#include <linux/stop_machine.h>
 #include <linux/types.h>
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
@@ -43,7 +45,6 @@ unsigned int compat_elf_hwcap2 __read_mostly;
 #endif
 
 DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
-EXPORT_SYMBOL(cpu_hwcaps);
 
 #define __ARM64_FTR_BITS(SIGNED, STRICT, TYPE, SHIFT, WIDTH, SAFE_VAL) \
 	{						\
@@ -76,6 +77,7 @@ static struct arm64_ftr_bits ftr_id_aa64isar0[] = {
 	ARM64_FTR_BITS(FTR_STRICT, FTR_EXACT, 32, 32, 0),
 	ARM64_FTR_BITS(FTR_STRICT, FTR_EXACT, ID_AA64ISAR0_RDM_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_STRICT, FTR_EXACT, 24, 4, 0),
+	ARM64_FTR_BITS(FTR_STRICT, FTR_LOWER_SAFE, ID_AA64ISAR0_ATOMICS_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_STRICT, FTR_LOWER_SAFE, ID_AA64ISAR0_CRC32_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_STRICT, FTR_LOWER_SAFE, ID_AA64ISAR0_SHA2_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_STRICT, FTR_LOWER_SAFE, ID_AA64ISAR0_SHA1_SHIFT, 4, 0),
@@ -601,6 +603,8 @@ u64 read_system_reg(u32 id)
 	return regp->sys_val;
 }
 
+#include <linux/irqchip/arm-gic-v3.h>
+
 static bool
 feature_matches(u64 reg, const struct arm64_cpu_capabilities *entry)
 {
@@ -618,57 +622,38 @@ has_cpuid_feature(const struct arm64_cpu_capabilities *entry)
 	return feature_matches(val, entry);
 }
 
-#define __ID_FEAT_CHK(reg)						\
-static bool __maybe_unused						\
-has_##reg##_feature(const struct arm64_cpu_capabilities *entry)		\
-{									\
-	u64 val;							\
-									\
-	val = read_cpuid(reg##_el1);					\
-	return feature_matches(val, entry);				\
-}
-
-__ID_FEAT_CHK(id_aa64pfr0);
-__ID_FEAT_CHK(id_aa64mmfr1);
-
-#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
-static int __kpti_forced; /* 0: not forced, >0: forced on, <0: forced off */
-
-static bool unmap_kernel_at_el0(const struct arm64_cpu_capabilities *entry)
+static bool has_useable_gicv3_cpuif(const struct arm64_cpu_capabilities *entry)
 {
-	/* Forced on command line? */
-	if (__kpti_forced) {
-		pr_info_once("kernel page table isolation forced %s by command line option\n",
-			     __kpti_forced > 0 ? "ON" : "OFF");
-		return __kpti_forced > 0;
-	}
+	bool has_sre;
 
-	/* Useful for KASLR robustness */
-	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE))
-		return true;
+	if (!has_cpuid_feature(entry))
+		return false;
 
-	return false;
+	has_sre = gic_enable_sre();
+	if (!has_sre)
+		pr_warn_once("%s present but disabled by higher exception level\n",
+			     entry->desc);
+
+	return has_sre;
 }
 
-static int __init parse_kpti(char *str)
+static bool has_no_hw_prefetch(const struct arm64_cpu_capabilities *entry)
 {
-	bool enabled;
-	int ret = strtobool(str, &enabled);
+	u32 midr = read_cpuid_id();
+	u32 rv_min, rv_max;
 
-	if (ret)
-		return ret;
+	/* Cavium ThunderX pass 1.x and 2.x */
+	rv_min = 0;
+	rv_max = (1 << MIDR_VARIANT_SHIFT) | MIDR_REVISION_MASK;
 
-	__kpti_forced = enabled ? 1 : -1;
-	return 0;
+	return MIDR_IS_CPU_MODEL_RANGE(midr, MIDR_THUNDERX, rv_min, rv_max);
 }
-__setup("kpti=", parse_kpti);
-#endif	/* CONFIG_UNMAP_KERNEL_AT_EL0 */
 
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.desc = "GIC system register CPU interface",
 		.capability = ARM64_HAS_SYSREG_GIC_CPUIF,
-		.matches = has_cpuid_feature,
+		.matches = has_useable_gicv3_cpuif,
 		.sys_reg = SYS_ID_AA64PFR0_EL1,
 		.field_pos = ID_AA64PFR0_GIC_SHIFT,
 		.min_field_value = 1,
@@ -684,6 +669,21 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.enable = cpu_enable_pan,
 	},
 #endif /* CONFIG_ARM64_PAN */
+#if defined(CONFIG_AS_LSE) && defined(CONFIG_ARM64_LSE_ATOMICS)
+	{
+		.desc = "LSE atomic instructions",
+		.capability = ARM64_HAS_LSE_ATOMICS,
+		.matches = has_cpuid_feature,
+		.sys_reg = SYS_ID_AA64ISAR0_EL1,
+		.field_pos = ID_AA64ISAR0_ATOMICS_SHIFT,
+		.min_field_value = 2,
+	},
+#endif /* CONFIG_AS_LSE && CONFIG_ARM64_LSE_ATOMICS */
+	{
+		.desc = "Software prefetching using PRFM",
+		.capability = ARM64_HAS_NO_HW_PREFETCH,
+		.matches = has_no_hw_prefetch,
+	},
 #ifdef CONFIG_ARM64_UAO
 	{
 		.desc = "User Access Override",
@@ -701,12 +701,6 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.matches = cpufeature_pan_not_uao,
 	},
 #endif /* CONFIG_ARM64_PAN */
-#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
-	{
-		.capability = ARM64_UNMAP_KERNEL_AT_EL0,
-		.matches = unmap_kernel_at_el0,
-	},
-#endif
 	{},
 };
 
@@ -727,6 +721,7 @@ static const struct arm64_cpu_capabilities arm64_hwcaps[] = {
 	HWCAP_CAP(SYS_ID_AA64ISAR0_EL1, ID_AA64ISAR0_SHA1_SHIFT, 1, CAP_HWCAP, HWCAP_SHA1),
 	HWCAP_CAP(SYS_ID_AA64ISAR0_EL1, ID_AA64ISAR0_SHA2_SHIFT, 1, CAP_HWCAP, HWCAP_SHA2),
 	HWCAP_CAP(SYS_ID_AA64ISAR0_EL1, ID_AA64ISAR0_CRC32_SHIFT, 1, CAP_HWCAP, HWCAP_CRC32),
+	HWCAP_CAP(SYS_ID_AA64ISAR0_EL1, ID_AA64ISAR0_ATOMICS_SHIFT, 2, CAP_HWCAP, HWCAP_ATOMICS),
 	HWCAP_CAP(SYS_ID_AA64PFR0_EL1, ID_AA64PFR0_FP_SHIFT, 0, CAP_HWCAP, HWCAP_FP),
 	HWCAP_CAP(SYS_ID_AA64PFR0_EL1, ID_AA64PFR0_ASIMD_SHIFT, 0, CAP_HWCAP, HWCAP_ASIMD),
 #ifdef CONFIG_COMPAT
@@ -819,7 +814,14 @@ void __init enable_cpu_capabilities(const struct arm64_cpu_capabilities *caps)
 
 	for (i = 0; caps[i].matches; i++)
 		if (caps[i].enable && cpus_have_cap(caps[i].capability))
-			on_each_cpu(caps[i].enable, (void *)&(caps[i]), true);
+			/*
+			 * Use stop_machine() as it schedules the work allowing
+			 * us to modify PSTATE, instead of on_each_cpu() which
+			 * uses an IPI, giving us a PSTATE that disappears when
+			 * we return.
+			 */
+			stop_machine(caps[i].enable, (void *)&caps[i],
+							cpu_online_mask);
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -934,7 +936,7 @@ void verify_local_cpu_capabilities(void)
 		if (!feature_matches(__raw_read_system_reg(caps[i].sys_reg), &caps[i]))
 			fail_incapable_cpu("arm64_features", &caps[i]);
 		if (caps[i].enable)
-			caps[i].enable((void *)&(caps[i]));
+			caps[i].enable((void *)&caps[i]);
 	}
 
 	for (i = 0, caps = arm64_hwcaps; caps[i].matches; i++) {
@@ -966,8 +968,8 @@ void __init setup_cpu_features(void)
 
 	/* Set the CPU feature capabilies */
 	setup_feature_capabilities();
-	setup_cpu_hwcaps();
 	enable_errata_workarounds();
+	setup_cpu_hwcaps();
 
 	/* Advertise that we have computed the system capabilities */
 	set_sys_caps_initialised();
@@ -980,9 +982,9 @@ void __init setup_cpu_features(void)
 	if (!cwg)
 		pr_warn("No Cache Writeback Granule information, assuming cache line size %d\n",
 			cls);
-	if (L1_CACHE_BYTES < cls)
-		pr_warn("L1_CACHE_BYTES smaller than the Cache Writeback Granule (%d < %d)\n",
-			L1_CACHE_BYTES, cls);
+	if (ARCH_DMA_MINALIGN < cls)
+		pr_warn("ARCH_DMA_MINALIGN smaller than the Cache Writeback Granule (%d < %d)\n",
+			ARCH_DMA_MINALIGN, cls);
 }
 
 static bool __maybe_unused

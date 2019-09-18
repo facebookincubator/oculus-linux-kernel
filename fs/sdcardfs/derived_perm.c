@@ -57,9 +57,9 @@ void setup_derived_state(struct inode *inode, perm_t perm, userid_t userid,
 void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 				const struct qstr *name)
 {
-	struct sdcardfs_inode_info *info = SDCARDFS_I(dentry->d_inode);
+	struct sdcardfs_inode_info *info = SDCARDFS_I(d_inode(dentry));
 	struct sdcardfs_inode_data *parent_data =
-			SDCARDFS_I(parent->d_inode)->data;
+			SDCARDFS_I(d_inode(parent))->data;
 	appid_t appid;
 	unsigned long user_num;
 	int err;
@@ -77,10 +77,10 @@ void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 	 * of using the inode permissions.
 	 */
 
-	inherit_derived_state(parent->d_inode, dentry->d_inode);
+	inherit_derived_state(d_inode(parent), d_inode(dentry));
 
 	/* Files don't get special labels */
-	if (!S_ISDIR(dentry->d_inode->i_mode))
+	if (!S_ISDIR(d_inode(dentry)->i_mode))
 		return;
 	/* Derive custom permissions based on parent and current node */
 	switch (parent_data->perm) {
@@ -176,7 +176,7 @@ void fixup_lower_ownership(struct dentry *dentry, const char *name)
 	gid_t gid = sbi->options.fs_low_gid;
 	struct iattr newattrs;
 
-	info = SDCARDFS_I(dentry->d_inode);
+	info = SDCARDFS_I(d_inode(dentry));
 	info_d = info->data;
 	perm = info_d->perm;
 	if (info_d->under_obb) {
@@ -210,7 +210,7 @@ void fixup_lower_ownership(struct dentry *dentry, const char *name)
 	case PERM_ANDROID:
 	case PERM_ANDROID_DATA:
 	case PERM_ANDROID_MEDIA:
-		if (S_ISDIR(dentry->d_inode->i_mode))
+		if (S_ISDIR(d_inode(dentry)->i_mode))
 			gid = multiuser_get_uid(info_d->userid, AID_MEDIA_RW);
 		else
 			gid = multiuser_get_uid(info_d->userid, get_type(name));
@@ -236,8 +236,8 @@ void fixup_lower_ownership(struct dentry *dentry, const char *name)
 	}
 
 	sdcardfs_get_lower_path(dentry, &path);
-	inode = path.dentry->d_inode;
-	if (path.dentry->d_inode->i_gid.val != gid || path.dentry->d_inode->i_uid.val != uid) {
+	inode = d_inode(path.dentry);
+	if (d_inode(path.dentry)->i_gid.val != gid || d_inode(path.dentry)->i_uid.val != uid) {
 retry_deleg:
 		newattrs.ia_valid = ATTR_GID | ATTR_UID | ATTR_FORCE;
 		newattrs.ia_uid = make_kuid(current_user_ns(), uid);
@@ -292,19 +292,19 @@ static void __fixup_perms_recursive(struct dentry *dentry, struct limit_search *
 	 */
 	WARN(depth > 3, "%s: Max expected depth exceeded!\n", __func__);
 	spin_lock_nested(&dentry->d_lock, depth);
-	if (!dentry->d_inode) {
+	if (!d_inode(dentry)) {
 		spin_unlock(&dentry->d_lock);
 		return;
 	}
-	info = SDCARDFS_I(dentry->d_inode);
+	info = SDCARDFS_I(d_inode(dentry));
 
 	if (needs_fixup(info->data->perm)) {
 		list_for_each_entry(child, &dentry->d_subdirs, d_child) {
 			spin_lock_nested(&child->d_lock, depth + 1);
 			if (!(limit->flags & BY_NAME) || qstr_case_eq(&child->d_name, &limit->name)) {
-				if (child->d_inode) {
+				if (d_inode(child)) {
 					get_derived_permission(dentry, child);
-					fixup_tmp_permissions(child->d_inode);
+					fixup_tmp_permissions(d_inode(child));
 					spin_unlock(&child->d_lock);
 					break;
 				}
@@ -329,7 +329,7 @@ inline void update_derived_permission_lock(struct dentry *dentry)
 {
 	struct dentry *parent;
 
-	if (!dentry || !dentry->d_inode) {
+	if (!dentry || !d_inode(dentry)) {
 		pr_err("sdcardfs: %s: invalid dentry\n", __func__);
 		return;
 	}
@@ -344,14 +344,14 @@ inline void update_derived_permission_lock(struct dentry *dentry)
 			dput(parent);
 		}
 	}
-	fixup_tmp_permissions(dentry->d_inode);
+	fixup_tmp_permissions(d_inode(dentry));
 }
 
 int need_graft_path(struct dentry *dentry)
 {
 	int ret = 0;
 	struct dentry *parent = dget_parent(dentry);
-	struct sdcardfs_inode_info *parent_info = SDCARDFS_I(parent->d_inode);
+	struct sdcardfs_inode_info *parent_info = SDCARDFS_I(d_inode(parent));
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
 	struct qstr obb = QSTR_LITERAL("obb");
 
@@ -415,7 +415,7 @@ int is_base_obbpath(struct dentry *dentry)
 {
 	int ret = 0;
 	struct dentry *parent = dget_parent(dentry);
-	struct sdcardfs_inode_info *parent_info = SDCARDFS_I(parent->d_inode);
+	struct sdcardfs_inode_info *parent_info = SDCARDFS_I(d_inode(parent));
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
 	struct qstr q_obb = QSTR_LITERAL("obb");
 

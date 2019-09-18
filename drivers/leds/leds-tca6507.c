@@ -96,7 +96,6 @@
 #include <linux/workqueue.h>
 #include <linux/leds-tca6507.h>
 #include <linux/of.h>
-#include <linux/of_gpio.h>
 
 /* LED select registers determine the source that drives LED outputs */
 #define TCA6507_LS_LED_OFF	0x0	/* Output HI-Z (off) */
@@ -146,9 +145,6 @@ static int time_codes[TIMECODES] = {
 	0, 64, 128, 192, 256, 384, 512, 768,
 	1024, 1536, 2048, 3072, 4096, 5760, 8128, 16320
 };
-
-
-
 
 /* Convert an led.brightness level (0..255) to a TCA6507 level (0..15) */
 static inline int TO_LEVEL(int brightness)
@@ -202,47 +198,6 @@ static const struct i2c_device_id tca6507_id[] = {
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, tca6507_id);
-struct tca6507_chip *tca;
-
-static ssize_t  blink_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	unsigned long blinking;
-	struct i2c_client *cl = tca->client;
-	ssize_t ret = -EINVAL;
-	ret = kstrtoul(buf, 10, &blinking);
-	if (ret)
-		return ret;
-
-	if (!!blinking)
-	{
-		i2c_smbus_write_byte_data(cl, 0x00, 0x04);
-		i2c_smbus_write_byte_data(cl, 0x01, 0x04);
-		i2c_smbus_write_byte_data(cl, 0x02, 0x04);
-		i2c_smbus_write_byte_data(cl, 0x04, 0x60);
-		i2c_smbus_write_byte_data(cl, 0x06, 0x80);
-		i2c_smbus_write_byte_data(cl, 0x07, 0x80);
-	} else {
-		i2c_smbus_write_byte_data(cl, 0x00, 0x00);
-		i2c_smbus_write_byte_data(cl, 0x01, 0x00);
-		i2c_smbus_write_byte_data(cl, 0x02, 0x00);
-	}
-	return count;
-}
-
-
-static DEVICE_ATTR(blink, 0664, NULL, blink_store);
-
-static struct attribute *blink_attrs[] = {
-	&dev_attr_blink.attr,
-	NULL
-};
-
-
-static const struct attribute_group blink_attr_group = {
-	.attrs = blink_attrs,
-};
-
 
 static int choose_times(int msec, int *c1p, int *c2p)
 {
@@ -735,28 +690,7 @@ tca6507_led_dt_init(struct i2c_client *client)
 	struct tca6507_platform_data *pdata;
 	struct led_info *tca_leds;
 	int count;
-	int en_gpio;
-	int rc;
 
-	en_gpio = of_get_named_gpio(np, "tca6507,en", 0);
-	if (en_gpio < 0) {
-		printk("GPIO <tca6507,en> not found, enable GPIO not used\n");
-		return ERR_PTR(-ENODEV);
-	}
-	if (en_gpio >= 0) {
-		rc = gpio_request(en_gpio, "tca6507,en");
-		if (rc < 0) {
-			printk("failed to request GPIO %d <tca6507,en>\n",en_gpio);
-			return ERR_PTR(-ENODEV);
-		}
-
-		rc = gpio_direction_output(en_gpio, 1);
-		if (rc < 0) {
-			printk( "failed to set GPIO %d <tca6507,en>\n",en_gpio);
-			gpio_free(en_gpio);
-			return ERR_PTR(-ENODEV);
-		}
-	}
 	count = of_get_child_count(np);
 	if (!count || count > NUM_LEDS)
 		return ERR_PTR(-ENODEV);
@@ -801,6 +735,7 @@ static const struct of_device_id of_tca6507_leds_match[] = {
 	{ .compatible = "ti,tca6507", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, of_tca6507_leds_match);
 
 #else
 static struct tca6507_platform_data *
@@ -814,9 +749,10 @@ tca6507_led_dt_init(struct i2c_client *client)
 static int tca6507_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
+	struct tca6507_chip *tca;
 	struct i2c_adapter *adapter;
 	struct tca6507_platform_data *pdata;
-	int err,rc;
+	int err;
 	int i = 0;
 
 	adapter = to_i2c_adapter(client->dev.parent);
@@ -854,15 +790,10 @@ static int tca6507_probe(struct i2c_client *client,
 			l->led_cdev.brightness_set = tca6507_brightness_set;
 			l->led_cdev.blink_set = tca6507_blink_set;
 			l->bank = -1;
-			err = led_classdev_register(&client->dev,&l->led_cdev);
+			err = led_classdev_register(&client->dev,
+						    &l->led_cdev);
 			if (err < 0)
 				goto exit;
-			if(i==2)
-			{
-				rc = sysfs_create_group(&l->led_cdev.dev->kobj,&blink_attr_group);
-				if (rc)
-					goto exit;
-			}
 		}
 	}
 	err = tca6507_probe_gpios(client, tca, pdata);
@@ -900,7 +831,6 @@ static int tca6507_remove(struct i2c_client *client)
 static struct i2c_driver tca6507_driver = {
 	.driver   = {
 		.name    = "leds-tca6507",
-		.owner   = THIS_MODULE,
 		.of_match_table = of_match_ptr(of_tca6507_leds_match),
 	},
 	.probe    = tca6507_probe,

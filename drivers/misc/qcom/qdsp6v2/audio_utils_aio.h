@@ -30,6 +30,10 @@
 #include <asm/atomic.h>
 #include "q6audio_common.h"
 
+#if !defined(CONFIG_DEBUG_FS)
+#include <linux/errno.h>
+#endif
+
 #define TUNNEL_MODE     0x0000
 #define NON_TUNNEL_MODE 0x0001
 
@@ -226,8 +230,22 @@ void audio_aio_async_out_flush(struct q6audio_aio *audio);
 void audio_aio_async_in_flush(struct q6audio_aio *audio);
 void audio_aio_ioport_reset(struct q6audio_aio *audio);
 int enable_volume_ramp(struct q6audio_aio *audio);
+
 #ifdef CONFIG_DEBUG_FS
 int audio_aio_debug_open(struct inode *inode, struct file *file);
 ssize_t audio_aio_debug_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos);
+#else
+static int __maybe_unused audio_aio_debug_open(struct inode *inode,
+					       struct file *file)
+{
+	return -EINVAL;
+}
+
+static ssize_t __maybe_unused audio_aio_debug_read(struct file *file,
+						   char __user *buf,
+						   size_t count, loff_t *ppos)
+{
+	return -EINVAL;
+}
 #endif

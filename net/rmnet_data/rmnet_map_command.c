@@ -18,6 +18,7 @@
 #include <linux/rmnet_data.h>
 #include <linux/net_map.h>
 #include <net/pkt_sched.h>
+#include <net/rmnet_config.h>
 #include "rmnet_data_config.h"
 #include "rmnet_map.h"
 #include "rmnet_data_private.h"
@@ -44,7 +45,7 @@ MODULE_PARM_DESC(rmnet_map_command_stats, "MAP command statistics");
  *      - RMNET_MAP_COMMAND_ACK on success
  */
 static uint8_t rmnet_map_do_flow_control(struct sk_buff *skb,
-					 struct rmnet_phys_ep_conf_s *config,
+					 struct rmnet_phys_ep_config *config,
 					 int enable)
 {
 	struct rmnet_map_control_command_s *cmd;
@@ -116,10 +117,11 @@ static uint8_t rmnet_map_do_flow_control(struct sk_buff *skb,
  */
 static void rmnet_map_send_ack(struct sk_buff *skb,
 			       unsigned char type,
-			       struct rmnet_phys_ep_conf_s *config)
+			       struct rmnet_phys_ep_config *config)
 {
 	struct rmnet_map_control_command_s *cmd;
 	int xmit_status;
+	int rc;
 
 	if (unlikely(!skb))
 		BUG();
@@ -148,6 +150,15 @@ static void rmnet_map_send_ack(struct sk_buff *skb,
 	netif_tx_unlock(skb->dev);
 
 	LOGD("MAP command ACK=%hhu sent with rc: %d", type & 0x03, xmit_status);
+
+	if (xmit_status != NETDEV_TX_OK) {
+		rc = dev_queue_xmit(skb);
+		if (rc != 0) {
+			LOGD("Failed to queue packet for transmission on [%s]",
+			     skb->dev->name);
+		}
+	}
+
 }
 
 /**
@@ -162,7 +173,7 @@ static void rmnet_map_send_ack(struct sk_buff *skb,
  *      - RX_HANDLER_CONSUMED. Command frames are always consumed.
  */
 rx_handler_result_t rmnet_map_command(struct sk_buff *skb,
-				      struct rmnet_phys_ep_conf_s *config)
+				      struct rmnet_phys_ep_config *config)
 {
 	struct rmnet_map_control_command_s *cmd;
 	unsigned char command_name;

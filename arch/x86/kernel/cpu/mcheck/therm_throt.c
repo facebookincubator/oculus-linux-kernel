@@ -385,6 +385,9 @@ static void intel_thermal_interrupt(void)
 {
 	__u64 msr_val;
 
+	if (static_cpu_has(X86_FEATURE_HWP))
+		wrmsrl_safe(MSR_HWP_STATUS, 0);
+
 	rdmsrl(MSR_IA32_THERM_STATUS, msr_val);
 
 	/* Check for violation of core thermal thresholds*/
@@ -500,14 +503,6 @@ void intel_init_thermal(struct cpuinfo_x86 *c)
 	if ((l & MSR_IA32_MISC_ENABLE_TM1) && (h & APIC_DM_SMI)) {
 		if (system_state == SYSTEM_BOOTING)
 			printk(KERN_DEBUG "CPU%d: Thermal monitoring handled by SMI\n", cpu);
-		return;
-	}
-
-	/* Check whether a vector already exists */
-	if (h & APIC_VECTOR_MASK) {
-		printk(KERN_DEBUG
-		       "CPU%d: Thermal LVT vector (%#x) already installed\n",
-		       cpu, (h & APIC_VECTOR_MASK));
 		return;
 	}
 

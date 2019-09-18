@@ -278,7 +278,6 @@ static void fwtty_send_txn_async(struct fwtty_peer *peer,
 			len, fwtty_common_callback, txn);
 }
 
-
 static void __fwtty_restart_tx(struct fwtty_port *port)
 {
 	int len, avail;
@@ -507,7 +506,6 @@ static void fwtty_do_hangup(struct work_struct *work)
 		tty_vhangup(tty);
 	tty_kref_put(tty);
 }
-
 
 static void fwtty_emit_breaks(struct work_struct *work)
 {
@@ -1188,7 +1186,7 @@ static void fwtty_unthrottle(struct tty_struct *tty)
 {
 	struct fwtty_port *port = tty->driver_data;
 
-	fwtty_dbg(port, "CRTSCTS: %d\n", (C_CRTSCTS(tty) != 0));
+	fwtty_dbg(port, "CRTSCTS: %d\n", C_CRTSCTS(tty) != 0);
 
 	fwtty_profile_fifo(port, port->stats.unthrottle);
 
@@ -1621,7 +1619,6 @@ static inline int mgmt_pkt_expected_len(__be16 code)
 
 	case FWSC_VIRT_CABLE_PLUG_RSP:  /* | FWSC_RSP_OK */
 		return sizeof(pkt.hdr) + sizeof(pkt.plug_rsp);
-
 
 	case FWSC_VIRT_CABLE_UNPLUG:
 	case FWSC_VIRT_CABLE_UNPLUG_RSP:
@@ -2818,13 +2815,14 @@ static int __init fwserial_init(void)
 	/* num_ttys/num_ports must not be set above the static alloc avail */
 	if (num_ttys + num_loops > MAX_CARD_PORTS)
 		num_ttys = MAX_CARD_PORTS - num_loops;
+
 	num_ports = num_ttys + num_loops;
 
 	fwtty_driver = tty_alloc_driver(MAX_TOTAL_PORTS, TTY_DRIVER_REAL_RAW
 					| TTY_DRIVER_DYNAMIC_DEV);
 	if (IS_ERR(fwtty_driver)) {
 		err = PTR_ERR(fwtty_driver);
-		return err;
+		goto remove_debugfs;
 	}
 
 	fwtty_driver->driver_name	= KBUILD_MODNAME;
@@ -2926,7 +2924,9 @@ unregister_driver:
 	tty_unregister_driver(fwtty_driver);
 put_tty:
 	put_tty_driver(fwtty_driver);
+remove_debugfs:
 	debugfs_remove_recursive(fwserial_debugfs);
+
 	return err;
 }
 

@@ -190,11 +190,12 @@ static void pppopns_xmit_core(struct work_struct *delivery_work)
 		struct sock *sk_raw = skb->sk;
 		struct kvec iov = {.iov_base = skb->data, .iov_len = skb->len};
 		struct msghdr msg = {
-			.msg_iov = (struct iovec *)&iov,
-			.msg_iovlen = 1,
 			.msg_flags = MSG_NOSIGNAL | MSG_DONTWAIT,
 		};
-		sk_raw->sk_prot->sendmsg(NULL, sk_raw, &msg, skb->len);
+
+		iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, &iov, 1,
+			      skb->len);
+		sk_raw->sk_prot->sendmsg(sk_raw, &msg, skb->len);
 		kfree_skb(skb);
 	}
 	set_fs(old_fs);
@@ -375,11 +376,11 @@ static struct proto_ops pppopns_proto_ops = {
 	.mmap = sock_no_mmap,
 };
 
-static int pppopns_create(struct net *net, struct socket *sock)
+static int pppopns_create(struct net *net, struct socket *sock, int kern)
 {
 	struct sock *sk;
 
-	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppopns_proto);
+	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppopns_proto, kern);
 	if (!sk)
 		return -ENOMEM;
 

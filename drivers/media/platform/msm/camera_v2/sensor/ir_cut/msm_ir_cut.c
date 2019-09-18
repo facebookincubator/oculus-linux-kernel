@@ -46,7 +46,7 @@ static int32_t msm_ir_cut_get_subdev_id(
 		pr_err("failed\n");
 		return -EINVAL;
 	}
-	if (MSM_CAMERA_PLATFORM_DEVICE != ir_cut_ctrl->ir_cut_device_type) {
+	if (ir_cut_ctrl->ir_cut_device_type != MSM_CAMERA_PLATFORM_DEVICE) {
 		pr_err("failed\n");
 		return -EINVAL;
 	}

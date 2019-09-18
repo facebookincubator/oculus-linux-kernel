@@ -17,13 +17,16 @@
 #include <linux/ftrace.h>
 #include <linux/io.h>
 #include <linux/suspend.h>
+#include <linux/vmalloc.h>
 
 #include <asm/init.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <asm/mmu_context.h>
+#include <asm/io_apic.h>
 #include <asm/debugreg.h>
 #include <asm/kexec-bzimage64.h>
+#include <asm/setup.h>
 
 #ifdef CONFIG_KEXEC_FILE
 static struct kexec_file_ops *kexec_file_loaders[] = {
@@ -333,7 +336,7 @@ void arch_crash_save_vmcoreinfo(void)
 	VMCOREINFO_LENGTH(node_data, MAX_NUMNODES);
 #endif
 	vmcoreinfo_append_str("KERNELOFFSET=%lx\n",
-			      (unsigned long)&_text - __START_KERNEL);
+			      kaslr_offset());
 }
 
 /* arch-dependent functionality related to kexec file-based syscall */

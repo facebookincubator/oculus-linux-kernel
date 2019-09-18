@@ -54,7 +54,8 @@ static int pkcs7_validate_trust_one(struct pkcs7_message *pkcs7,
 		/* Look to see if this certificate is present in the trusted
 		 * keys.
 		 */
-		key = x509_request_asymmetric_key(trust_keyring, x509->id,
+		key = x509_request_asymmetric_key(trust_keyring,
+						  x509->id, x509->skid,
 						  false);
 		if (!IS_ERR(key)) {
 			/* One of the X.509 certificates in the PKCS#7 message
@@ -85,8 +86,10 @@ static int pkcs7_validate_trust_one(struct pkcs7_message *pkcs7,
 	/* No match - see if the root certificate has a signer amongst the
 	 * trusted keys.
 	 */
-	if (last && last->authority) {
-		key = x509_request_asymmetric_key(trust_keyring, last->authority,
+	if (last && (last->akid_id || last->akid_skid)) {
+		key = x509_request_asymmetric_key(trust_keyring,
+						  last->akid_id,
+						  last->akid_skid,
 						  false);
 		if (!IS_ERR(key)) {
 			x509 = last;
@@ -103,6 +106,7 @@ static int pkcs7_validate_trust_one(struct pkcs7_message *pkcs7,
 	 */
 	key = x509_request_asymmetric_key(trust_keyring,
 					  sinfo->signing_cert_id,
+					  NULL,
 					  false);
 	if (!IS_ERR(key)) {
 		pr_devel("sinfo %u: Direct signer is key %x\n",
@@ -173,6 +177,8 @@ int pkcs7_validate_trust(struct pkcs7_message *pkcs7,
 	struct x509_certificate *p;
 	int cached_ret = -ENOKEY;
 	int ret;
+
+	*_trusted = false;
 
 	for (p = pkcs7->certs; p; p = p->next)
 		p->seen = false;

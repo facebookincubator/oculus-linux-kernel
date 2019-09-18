@@ -17,9 +17,10 @@
 #include <linux/devfreq.h>
 #include <linux/platform_device.h>
 #include <media/msm_vidc.h>
+#include "soc/qcom/cx_ipeak.h"
 #define MAX_BUFFER_TYPES 32
 
-struct version_table {
+struct platform_version_table {
 	u32 version_mask;
 	u32 version_shift;
 };
@@ -104,6 +105,7 @@ struct clock_info {
 	struct load_freq_table *load_freq_tbl;
 	u32 count;
 	bool has_scaling;
+	bool has_mem_retention;
 };
 
 struct clock_set {
@@ -155,8 +157,7 @@ struct msm_vidc_platform_resources {
 	phys_addr_t register_base;
 	uint32_t register_size;
 	uint32_t irq;
-	struct version_table *pf_ver_tbl;
-	struct version_table *pf_cap_tbl;
+	struct platform_version_table *pf_ver_tbl;
 	struct allowed_clock_rates_table *allowed_clks_tbl;
 	u32 allowed_clks_tbl_size;
 	struct clock_freq_table clock_freq_tbl;
@@ -173,6 +174,7 @@ struct msm_vidc_platform_resources {
 	uint32_t imem_size;
 	enum imem_type imem_type;
 	uint32_t max_load;
+	uint32_t power_conf;
 	struct platform_device *pdev;
 	struct regulator_set regulator_set;
 	struct clock_set clock_set;
@@ -186,9 +188,12 @@ struct msm_vidc_platform_resources {
 	const char *fw_name;
 	const char *hfi_version;
 	bool never_unload_fw;
+	bool debug_timeout;
 	uint32_t pm_qos_latency_us;
 	uint32_t max_inst_count;
 	uint32_t max_secure_inst_count;
+	uint32_t clk_freq_threshold;
+	struct cx_ipeak_client *cx_ipeak_context;
 };
 
 static inline bool is_iommu_present(struct msm_vidc_platform_resources *res)

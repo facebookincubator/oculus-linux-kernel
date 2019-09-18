@@ -1257,6 +1257,7 @@ static void ecm_ipa_debugfs_init(struct ecm_ipa_dev *ecm_ipa_ctx) {}
 static void ecm_ipa_debugfs_destroy(struct ecm_ipa_dev *ecm_ipa_ctx) {}
 
 #endif /* CONFIG_DEBUG_FS */
+
 /**
  * ecm_ipa_ep_cfg() - configure the USB endpoints for ECM
  *

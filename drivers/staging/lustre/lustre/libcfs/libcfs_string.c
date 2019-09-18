@@ -47,7 +47,7 @@ int cfs_str2mask(const char *str, const char *(*bit2str)(int bit),
 		 int *oldmask, int minmask, int allmask)
 {
 	const char *debugstr;
-	char op = 0;
+	char op = '\0';
 	int newmask = minmask, i, len, found = 0;
 
 	/* <str> must be a list of tokens separated by whitespace
@@ -55,10 +55,10 @@ int cfs_str2mask(const char *str, const char *(*bit2str)(int bit),
 	 * appears first in <str>, '*oldmask' is used as the starting point
 	 * (relative), otherwise minmask is used (absolute).  An operator
 	 * applies to all following tokens up to the next operator. */
-	while (*str != 0) {
+	while (*str != '\0') {
 		while (isspace(*str))
 			str++;
-		if (*str == 0)
+		if (*str == '\0')
 			break;
 		if (*str == '+' || *str == '-') {
 			op = *str++;
@@ -67,13 +67,15 @@ int cfs_str2mask(const char *str, const char *(*bit2str)(int bit),
 				newmask = *oldmask;
 			while (isspace(*str))
 				str++;
-			if (*str == 0)	  /* trailing op */
+			if (*str == '\0')  /* trailing op */
 				return -EINVAL;
 		}
 
 		/* find token length */
-		for (len = 0; str[len] != 0 && !isspace(str[len]) &&
-		      str[len] != '+' && str[len] != '-'; len++);
+		len = 0;
+		while (str[len] != '\0' && !isspace(str[len]) &&
+		       str[len] != '+' && str[len] != '-')
+			len++;
 
 		/* match token */
 		found = 0;
@@ -132,7 +134,7 @@ char *cfs_firststr(char *str, size_t size)
 		++end;
 	}
 
-	*end= '\0';
+	*end = '\0';
 out:
 	return str;
 }
@@ -212,6 +214,7 @@ cfs_gettok(struct cfs_lstr *next, char delim, struct cfs_lstr *res)
 	res->ls_len = end - res->ls_str + 1;
 	return 1;
 }
+EXPORT_SYMBOL(cfs_gettok);
 
 /**
  * Converts string to integer.
@@ -229,7 +232,7 @@ cfs_str2num_check(char *str, int nob, unsigned *num,
 	char	*endp;
 
 	str = cfs_trimwhite(str);
-	*num = strtoul(str, &endp, 0);
+	*num = simple_strtoul(str, &endp, 0);
 	if (endp == str)
 		return 0;
 
@@ -240,6 +243,7 @@ cfs_str2num_check(char *str, int nob, unsigned *num,
 
 	return (*num >= min && *num <= max);
 }
+EXPORT_SYMBOL(cfs_str2num_check);
 
 /**
  * Parses \<range_expr\> token of the syntax. If \a bracketed is false,
@@ -319,6 +323,73 @@ cfs_range_expr_parse(struct cfs_lstr *src, unsigned min, unsigned max,
 }
 
 /**
+ * Print the range expression \a re into specified \a buffer.
+ * If \a bracketed is true, expression does not need additional
+ * brackets.
+ *
+ * \retval number of characters written
+ */
+static int
+cfs_range_expr_print(char *buffer, int count, struct cfs_range_expr *expr,
+		     bool bracketed)
+{
+	int i;
+	char s[] = "[";
+	char e[] = "]";
+
+	if (bracketed)
+		s[0] = e[0] = '\0';
+
+	if (expr->re_lo == expr->re_hi)
+		i = scnprintf(buffer, count, "%u", expr->re_lo);
+	else if (expr->re_stride == 1)
+		i = scnprintf(buffer, count, "%s%u-%u%s",
+				s, expr->re_lo, expr->re_hi, e);
+	else
+		i = scnprintf(buffer, count, "%s%u-%u/%u%s",
+				s, expr->re_lo, expr->re_hi,
+				expr->re_stride, e);
+	return i;
+}
+
+/**
+ * Print a list of range expressions (\a expr_list) into specified \a buffer.
+ * If the list contains several expressions, separate them with comma
+ * and surround the list with brackets.
+ *
+ * \retval number of characters written
+ */
+int
+cfs_expr_list_print(char *buffer, int count, struct cfs_expr_list *expr_list)
+{
+	struct cfs_range_expr *expr;
+	int i = 0, j = 0;
+	int numexprs = 0;
+
+	if (count <= 0)
+		return 0;
+
+	list_for_each_entry(expr, &expr_list->el_exprs, re_link)
+		numexprs++;
+
+	if (numexprs > 1)
+		i += scnprintf(buffer + i, count - i, "[");
+
+	list_for_each_entry(expr, &expr_list->el_exprs, re_link) {
+		if (j++ != 0)
+			i += scnprintf(buffer + i, count - i, ",");
+		i += cfs_range_expr_print(buffer + i, count - i, expr,
+					  numexprs > 1);
+	}
+
+	if (numexprs > 1)
+		i += scnprintf(buffer + i, count - i, "]");
+
+	return i;
+}
+EXPORT_SYMBOL(cfs_expr_list_print);
+
+/**
  * Matches value (\a value) against ranges expression list \a expr_list.
  *
  * \retval 1 if \a value matches
@@ -337,6 +408,7 @@ cfs_expr_list_match(__u32 value, struct cfs_expr_list *expr_list)
 
 	return 0;
 }
+EXPORT_SYMBOL(cfs_expr_list_match);
 
 /**
  * Convert express list (\a expr_list) to an array of all matched values
@@ -398,7 +470,7 @@ cfs_expr_list_free(struct cfs_expr_list *expr_list)
 		struct cfs_range_expr *expr;
 
 		expr = list_entry(expr_list->el_exprs.next,
-				      struct cfs_range_expr, re_link),
+				      struct cfs_range_expr, re_link);
 		list_del(&expr->re_link);
 		LIBCFS_FREE(expr, sizeof(*expr));
 	}
@@ -410,8 +482,8 @@ EXPORT_SYMBOL(cfs_expr_list_free);
 /**
  * Parses \<cfs_expr_list\> token of the syntax.
  *
- * \retval 1 if \a str parses to \<number\> | \<expr_list\>
- * \retval 0 otherwise
+ * \retval 0 if \a str parses to \<number\> | \<expr_list\>
+ * \retval -errno otherwise
  */
 int
 cfs_expr_list_parse(char *str, int len, unsigned min, unsigned max,
@@ -489,72 +561,4 @@ cfs_expr_list_free_list(struct list_head *list)
 		cfs_expr_list_free(el);
 	}
 }
-
-int
-cfs_ip_addr_parse(char *str, int len, struct list_head *list)
-{
-	struct cfs_expr_list	*el;
-	struct cfs_lstr		src;
-	int			rc;
-	int			i;
-
-	src.ls_str = str;
-	src.ls_len = len;
-	i = 0;
-
-	while (src.ls_str != NULL) {
-		struct cfs_lstr res;
-
-		if (!cfs_gettok(&src, '.', &res)) {
-			rc = -EINVAL;
-			goto out;
-		}
-
-		rc = cfs_expr_list_parse(res.ls_str, res.ls_len, 0, 255, &el);
-		if (rc != 0)
-			goto out;
-
-		list_add_tail(&el->el_link, list);
-		i++;
-	}
-
-	if (i == 4)
-		return 0;
-
-	rc = -EINVAL;
- out:
-	cfs_expr_list_free_list(list);
-
-	return rc;
-}
-EXPORT_SYMBOL(cfs_ip_addr_parse);
-
-/**
- * Matches address (\a addr) against address set encoded in \a list.
- *
- * \retval 1 if \a addr matches
- * \retval 0 otherwise
- */
-int
-cfs_ip_addr_match(__u32 addr, struct list_head *list)
-{
-	struct cfs_expr_list *el;
-	int i = 0;
-
-	list_for_each_entry_reverse(el, list, el_link) {
-		if (!cfs_expr_list_match(addr & 0xff, el))
-			return 0;
-		addr >>= 8;
-		i++;
-	}
-
-	return i == 4;
-}
-EXPORT_SYMBOL(cfs_ip_addr_match);
-
-void
-cfs_ip_addr_free(struct list_head *list)
-{
-	cfs_expr_list_free_list(list);
-}
-EXPORT_SYMBOL(cfs_ip_addr_free);
+EXPORT_SYMBOL(cfs_expr_list_free_list);

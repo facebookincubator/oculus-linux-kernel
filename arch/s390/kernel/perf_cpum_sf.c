@@ -1019,14 +1019,13 @@ static int perf_push_sample(struct perf_event *event, struct sf_raw_sample *sfr)
 		break;
 	}
 
-	/* The host-program-parameter (hpp) contains the sie control
-	 * block that is set by sie64a() in entry64.S.	Check if hpp
-	 * refers to a valid control block and set sde_regs flags
-	 * accordingly.  This would allow to use hpp values for other
-	 * purposes too.
-	 * For now, simply use a non-zero value as guest indicator.
+	/*
+	 * A non-zero guest program parameter indicates a guest
+	 * sample.
+	 * Note that some early samples might be misaccounted to
+	 * the host.
 	 */
-	if (sfr->basic.hpp)
+	if (sfr->basic.gpp)
 		sde_regs->in_guest = 1;
 
 	overflow = 0;
@@ -1383,7 +1382,6 @@ static int cpumsf_pmu_add(struct perf_event *event, int flags)
 		cpuhw->lsctl.ed = 1;
 
 	/* Set in_use flag and store event */
-	event->hw.idx = 0;	  /* only one sampling event per CPU supported */
 	cpuhw->event = event;
 	cpuhw->flags |= PMU_F_IN_USE;
 
@@ -1416,7 +1414,7 @@ CPUMF_EVENT_ATTR(SF, SF_CYCLES_BASIC_DIAG, PERF_EVENT_CPUM_SF_DIAG);
 
 static struct attribute *cpumsf_pmu_events_attr[] = {
 	CPUMF_EVENT_PTR(SF, SF_CYCLES_BASIC),
-	CPUMF_EVENT_PTR(SF, SF_CYCLES_BASIC_DIAG),
+	NULL,
 	NULL,
 };
 
@@ -1573,7 +1571,7 @@ static int param_set_sfb_size(const char *val, const struct kernel_param *kp)
 }
 
 #define param_check_sfb_size(name, p) __param_check(name, p, void)
-static struct kernel_param_ops param_ops_sfb_size = {
+static const struct kernel_param_ops param_ops_sfb_size = {
 	.set = param_set_sfb_size,
 	.get = param_get_sfb_size,
 };
@@ -1607,8 +1605,11 @@ static int __init init_cpum_sampling_pmu(void)
 		return -EINVAL;
 	}
 
-	if (si.ad)
+	if (si.ad) {
 		sfb_set_limits(CPUM_SF_MIN_SDB, CPUM_SF_MAX_SDB);
+		cpumsf_pmu_events_attr[1] =
+			CPUMF_EVENT_PTR(SF, SF_CYCLES_BASIC_DIAG);
+	}
 
 	sfdbg = debug_register(KMSG_COMPONENT, 2, 1, 80);
 	if (!sfdbg)

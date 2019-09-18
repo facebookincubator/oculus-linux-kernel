@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005 - 2014 Emulex
+ * Copyright (C) 2005 - 2015 Emulex
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -123,7 +123,6 @@ static const struct be_ethtool_stat et_stats[] = {
 	{DRVSTAT_INFO(dma_map_errors)},
 	/* Number of packets dropped due to random early drop function */
 	{DRVSTAT_INFO(eth_red_drops)},
-	{DRVSTAT_INFO(be_on_die_temperature)},
 	{DRVSTAT_INFO(rx_roce_bytes_lsd)},
 	{DRVSTAT_INFO(rx_roce_bytes_msd)},
 	{DRVSTAT_INFO(rx_roce_frames)},
@@ -139,6 +138,7 @@ static const struct be_ethtool_stat et_stats[] = {
 static const struct be_ethtool_stat et_rx_stats[] = {
 	{DRVSTAT_RX_INFO(rx_bytes)},/* If moving this member see above note */
 	{DRVSTAT_RX_INFO(rx_pkts)}, /* If moving this member see above note */
+	{DRVSTAT_RX_INFO(rx_vxlan_offload_pkts)},
 	{DRVSTAT_RX_INFO(rx_compl)},
 	{DRVSTAT_RX_INFO(rx_compl_err)},
 	{DRVSTAT_RX_INFO(rx_mcast_pkts)},
@@ -191,10 +191,9 @@ static const struct be_ethtool_stat et_tx_stats[] = {
 	{DRVSTAT_TX_INFO(tx_internal_parity_err)},
 	{DRVSTAT_TX_INFO(tx_bytes)},
 	{DRVSTAT_TX_INFO(tx_pkts)},
+	{DRVSTAT_TX_INFO(tx_vxlan_offload_pkts)},
 	/* Number of skbs queued for trasmission by the driver */
 	{DRVSTAT_TX_INFO(tx_reqs)},
-	/* Number of TX work request blocks DMAed to HW */
-	{DRVSTAT_TX_INFO(tx_wrbs)},
 	/* Number of times the TX queue was stopped due to lack
 	 * of spaces in the TXQ.
 	 */
@@ -235,9 +234,6 @@ static void be_get_drvinfo(struct net_device *netdev,
 
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
-	drvinfo->testinfo_len = 0;
-	drvinfo->regdump_len = 0;
-	drvinfo->eedump_len = 0;
 }
 
 static u32 lancer_cmd_get_file_len(struct be_adapter *adapter, u8 *file_name)
@@ -369,6 +365,14 @@ static int be_set_coalesce(struct net_device *netdev,
 		aic->et_eqd = max(aic->et_eqd, aic->min_eqd);
 		aic++;
 	}
+
+	/* For Skyhawk, the EQD setting happens via EQ_DB when AIC is enabled.
+	 * When AIC is disabled, persistently force set EQD value via the
+	 * FW cmd, so that we don't have to calculate the delay multiplier
+	 * encode value each time EQ_DB is rung
+	 */
+	if (!et->use_adaptive_rx_coalesce && skyhawk_chip(adapter))
+		be_eqd_update(adapter, true);
 
 	return 0;
 }
@@ -707,15 +711,17 @@ be_set_pauseparam(struct net_device *netdev, struct ethtool_pauseparam *ecmd)
 
 	if (ecmd->autoneg != adapter->phy.fc_autoneg)
 		return -EINVAL;
+
+	status = be_cmd_set_flow_control(adapter, ecmd->tx_pause,
+					 ecmd->rx_pause);
+	if (status) {
+		dev_warn(&adapter->pdev->dev, "Pause param set failed\n");
+		return be_cmd_status(status);
+	}
+
 	adapter->tx_fc = ecmd->tx_pause;
 	adapter->rx_fc = ecmd->rx_pause;
-
-	status = be_cmd_set_flow_control(adapter,
-					 adapter->tx_fc, adapter->rx_fc);
-	if (status)
-		dev_warn(&adapter->pdev->dev, "Pause param set failed\n");
-
-	return be_cmd_status(status);
+	return 0;
 }
 
 static int be_set_phys_id(struct net_device *netdev,
@@ -840,10 +846,21 @@ err:
 static u64 be_loopback_test(struct be_adapter *adapter, u8 loopback_type,
 			    u64 *status)
 {
-	be_cmd_set_loopback(adapter, adapter->hba_port_num, loopback_type, 1);
+	int ret;
+
+	ret = be_cmd_set_loopback(adapter, adapter->hba_port_num,
+				  loopback_type, 1);
+	if (ret)
+		return ret;
+
 	*status = be_cmd_loopback_test(adapter, adapter->hba_port_num,
 				       loopback_type, 1500, 2, 0xabc);
-	be_cmd_set_loopback(adapter, adapter->hba_port_num, BE_NO_LOOPBACK, 1);
+
+	ret = be_cmd_set_loopback(adapter, adapter->hba_port_num,
+				  BE_NO_LOOPBACK, 1);
+	if (ret)
+		return ret;
+
 	return *status;
 }
 
@@ -1045,9 +1062,7 @@ static int be_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd,
 static int be_set_rss_hash_opts(struct be_adapter *adapter,
 				struct ethtool_rxnfc *cmd)
 {
-	struct be_rx_obj *rxo;
-	int status = 0, i, j;
-	u8 rsstable[128];
+	int status;
 	u32 rss_flags = adapter->rss_info.rss_flags;
 
 	if (cmd->data != L3_RSS_FLAGS &&
@@ -1096,20 +1111,11 @@ static int be_set_rss_hash_opts(struct be_adapter *adapter,
 	}
 
 	if (rss_flags == adapter->rss_info.rss_flags)
-		return status;
-
-	if (be_multi_rxq(adapter)) {
-		for (j = 0; j < 128; j += adapter->num_rx_qs - 1) {
-			for_all_rss_queues(adapter, rxo, i) {
-				if ((j + i) >= 128)
-					break;
-				rsstable[j + i] = rxo->rss_id;
-			}
-		}
-	}
+		return 0;
 
 	status = be_cmd_rss_config(adapter, adapter->rss_info.rsstable,
-				   rss_flags, 128, adapter->rss_info.rss_hkey);
+				   rss_flags, RSS_INDIR_TABLE_LEN,
+				   adapter->rss_info.rss_hkey);
 	if (!status)
 		adapter->rss_info.rss_flags = rss_flags;
 
@@ -1173,7 +1179,8 @@ static u32 be_get_rxfh_key_size(struct net_device *netdev)
 	return RSS_HASH_KEY_LEN;
 }
 
-static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey)
+static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey,
+		       u8 *hfunc)
 {
 	struct be_adapter *adapter = netdev_priv(netdev);
 	int i;
@@ -1187,15 +1194,22 @@ static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey)
 	if (hkey)
 		memcpy(hkey, rss->rss_hkey, RSS_HASH_KEY_LEN);
 
+	if (hfunc)
+		*hfunc = ETH_RSS_HASH_TOP;
+
 	return 0;
 }
 
 static int be_set_rxfh(struct net_device *netdev, const u32 *indir,
-		       const u8 *hkey)
+		       const u8 *hkey, const u8 hfunc)
 {
 	int rc = 0, i, j;
 	struct be_adapter *adapter = netdev_priv(netdev);
 	u8 rsstable[RSS_INDIR_TABLE_LEN];
+
+	/* We do not allow change in unsupported parameters */
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE && hfunc != ETH_RSS_HASH_TOP)
+		return -EOPNOTSUPP;
 
 	if (indir) {
 		struct be_rx_obj *rxo;

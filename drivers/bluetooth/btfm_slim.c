@@ -25,6 +25,7 @@
 #include <sound/tlv.h>
 #include <btfm_slim.h>
 #include <btfm_slim_wcn3990.h>
+#include <linux/bluetooth-power.h>
 
 int btfm_slim_write(struct btfmslim *btfmslim,
 		uint16_t reg, int bytes, void *src, uint8_t pgd)
@@ -49,7 +50,7 @@ int btfm_slim_write(struct btfmslim *btfmslim,
 	}
 
 	if (ret) {
-		BTFMSLIM_ERR("failed (%d)" , ret);
+		BTFMSLIM_ERR("failed (%d)", ret);
 		return ret;
 	}
 
@@ -94,7 +95,7 @@ int btfm_slim_read(struct btfmslim *btfmslim, unsigned short reg,
 	}
 
 	if (ret)
-		BTFMSLIM_ERR("failed (%d)" , ret);
+		BTFMSLIM_ERR("failed (%d)", ret);
 
 	for (i = 0; i < bytes; i++)
 		BTFMSLIM_DBG("Read 0x%02x from reg 0x%x", ((uint8_t *)dest)[i],
@@ -126,12 +127,13 @@ int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 	if (!btfmslim || !ch)
 		return -EINVAL;
 
-	BTFMSLIM_DBG("port:%d", ch->port);
+	BTFMSLIM_DBG("port: %d ch: %d", ch->port, ch->ch);
 
 	/* Define the channel with below parameters */
 	prop.prot = SLIM_AUTO_ISO;
 	prop.baser = SLIM_RATE_4000HZ;
-	prop.dataf = SLIM_CH_DATAF_LPCM_AUDIO;
+	prop.dataf = (rates == 48000) ? SLIM_CH_DATAF_NOT_DEFINED
+			: SLIM_CH_DATAF_LPCM_AUDIO;
 	prop.auxf = SLIM_CH_AUXF_NOT_APPLICABLE;
 	prop.ratem = (rates/4000);
 	prop.sampleszbits = 16;
@@ -153,23 +155,22 @@ int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 					rxport, 1);
 			if (ret < 0) {
 				BTFMSLIM_ERR("vendor_port_en failed ret[%d]",
-					ret);
+						ret);
 				goto error;
 			}
 		}
 
 		if (rxport) {
 			BTFMSLIM_INFO("slim_connect_sink(port: %d, ch: %d)",
-				ch->port, ch->ch);
+							ch->port, ch->ch);
 			/* Connect Port with channel given by Machine driver*/
 			ret = slim_connect_sink(btfmslim->slim_pgd,
 				&ch->port_hdl, 1, ch->ch_hdl);
 			if (ret < 0) {
 				BTFMSLIM_ERR("slim_connect_sink failed ret[%d]",
-					ret);
+						ret);
 				goto remove_channel;
 			}
-
 		} else {
 			BTFMSLIM_INFO("slim_connect_src(port: %d, ch: %d)",
 				ch->port, ch->ch);
@@ -178,7 +179,7 @@ int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 				ch->ch_hdl);
 			if (ret < 0) {
 				BTFMSLIM_ERR("slim_connect_src failed ret[%d]",
-					ret);
+						ret);
 				goto remove_channel;
 			}
 		}
@@ -188,6 +189,7 @@ int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 	BTFMSLIM_INFO(
 		"port: %d, ch: %d, grp: %d, ch->grph: 0x%x, ch_hdl: 0x%x",
 		chan->port, chan->ch, grp, chan->grph, chan->ch_hdl);
+
 	ret = slim_control_ch(btfmslim->slim_pgd, (grp ? chan->grph :
 		chan->ch_hdl), SLIM_CH_ACTIVATE, true);
 	if (ret < 0) {
@@ -218,6 +220,7 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 
 	BTFMSLIM_INFO("port:%d, grp: %d, ch->grph:0x%x, ch->ch_hdl:0x%x ",
 		ch->port, grp, ch->grph, ch->ch_hdl);
+
 	/* Remove the channel immediately*/
 	ret = slim_control_ch(btfmslim->slim_pgd, (grp ? ch->grph : ch->ch_hdl),
 			SLIM_CH_REMOVE, true);
@@ -231,7 +234,6 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 			goto error;
 		}
 	}
-
 	/* Disable port through registration setting */
 	for (i = 0; i < nchan; i++, ch++) {
 		if (btfmslim->vendor_port_en) {
@@ -244,9 +246,11 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 			}
 		}
 	}
+
 error:
 	return ret;
 }
+
 static int btfm_slim_get_logical_addr(struct slim_device *slim)
 {
 	int ret = 0;
@@ -494,6 +498,7 @@ static int btfm_slim_probe(struct slim_device *slim)
 	/* Driver specific data allocation */
 	btfm_slim->dev = &slim->dev;
 	ret = btfm_slim_register_codec(&slim->dev);
+	ret = bt_register_slimdev(&slim->dev);
 	return ret;
 
 dealloc:

@@ -1,3 +1,0 @@
-# UAPI Header export list
-header-y += minisensor.h
-header-y += lis2mdl.h

@@ -14,6 +14,7 @@
 #define __MDSS_PLL_H
 
 #include <linux/mdss_io_util.h>
+#include <linux/clk/msm-clock-generic.h>
 #include <linux/io.h>
 
 #define MDSS_PLL_REG_W(base, offset, data)	\
@@ -29,21 +30,20 @@
 			(base) + (offset))
 
 enum {
-	MDSS_DSI_PLL_LPM,
 	MDSS_DSI_PLL_8996,
+	MDSS_DSI_PLL_8998,
+	MDSS_DP_PLL_8998,
 	MDSS_HDMI_PLL_8996,
 	MDSS_HDMI_PLL_8996_V2,
 	MDSS_HDMI_PLL_8996_V3,
 	MDSS_HDMI_PLL_8996_V3_1_8,
+	MDSS_HDMI_PLL_8998_3_3,
+	MDSS_HDMI_PLL_8998_1_8,
 	MDSS_UNKNOWN_PLL,
 };
 
 enum {
 	MDSS_PLL_TARGET_8996,
-	MDSS_PLL_TARGET_8952,
-	MDSS_PLL_TARGET_8937,
-	MDSS_PLL_TARGET_8953,
-	MDSS_PLL_TARGET_8909,
 };
 
 #define DFPS_MAX_NUM_OF_FRAME_RATES 20
@@ -70,7 +70,6 @@ struct dfps_info {
 	struct dfps_panel_info panel_dfps;
 	struct dfps_codes_info codes_dfps[DFPS_MAX_NUM_OF_FRAME_RATES];
 	void *dfps_fb_base;
-	uint32_t chip_serial;
 };
 
 struct mdss_pll_resources {
@@ -135,14 +134,8 @@ struct mdss_pll_resources {
 
 	/*
 	 * caching the pll trim codes in the case of dynamic refresh
-	 * or cmd mode idle screen.
 	 */
 	int		cache_pll_trim_codes[2];
-
-	/*
-	 * caching the pll trim codes rate
-	 */
-	s64		cache_pll_trim_codes_rate;
 
 	/*
 	 * for maintaining the status of saving trim codes
@@ -206,6 +199,23 @@ static inline bool is_gdsc_disabled(struct mdss_pll_resources *pll_res)
 
 	return ((readl_relaxed(pll_res->gdsc_base + 0x4) & BIT(31)) &&
 		(!(readl_relaxed(pll_res->gdsc_base) & BIT(0)))) ? false : true;
+}
+
+static inline int mdss_pll_div_prepare(struct clk *c)
+{
+	struct div_clk *div = to_div_clk(c);
+	/* Restore the divider's value */
+	return div->ops->set_div(div, div->data.div);
+}
+
+static inline int mdss_set_mux_sel(struct mux_clk *clk, int sel)
+{
+	return 0;
+}
+
+static inline int mdss_get_mux_sel(struct mux_clk *clk)
+{
+	return 0;
 }
 
 int mdss_pll_resource_enable(struct mdss_pll_resources *pll_res, bool enable);

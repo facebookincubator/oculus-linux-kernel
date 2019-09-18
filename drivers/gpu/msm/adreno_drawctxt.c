@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -59,14 +59,14 @@ void adreno_drawctxt_dump(struct kgsl_device *device,
 	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_RETIRED, &retire);
 
 	/*
-	 * We may have cmdbatch timer running, which also uses same
+	 * We may have kgsl sync obj timer running, which also uses same
 	 * lock, take a lock with software interrupt disabled (bh)
 	 * to avoid spin lock recursion.
 	 *
 	 * Use Spin trylock because dispatcher can acquire drawctxt->lock
 	 * if context is pending and the fence it is waiting on just got
 	 * signalled. Dispatcher acquires drawctxt->lock and tries to
-	 * delete the cmdbatch timer using del_timer_sync().
+	 * delete the sync obj timer using del_timer_sync().
 	 * del_timer_sync() waits till timer and its pending handlers
 	 * are deleted. But if the timer expires at the same time,
 	 * timer handler could be waiting on drawctxt->lock leading to a
@@ -83,23 +83,27 @@ void adreno_drawctxt_dump(struct kgsl_device *device,
 		context->id, queue, drawctxt->submitted_timestamp,
 		start, retire);
 
-	if (drawctxt->cmdqueue_head != drawctxt->cmdqueue_tail) {
-		struct kgsl_cmdbatch *cmdbatch =
-			drawctxt->cmdqueue[drawctxt->cmdqueue_head];
+	if (drawctxt->drawqueue_head != drawctxt->drawqueue_tail) {
+		struct kgsl_drawobj *drawobj =
+			drawctxt->drawqueue[drawctxt->drawqueue_head];
 
-		if (test_bit(CMDBATCH_FLAG_FENCE_LOG, &cmdbatch->priv)) {
+		if (test_bit(ADRENO_CONTEXT_FENCE_LOG, &context->priv)) {
 			dev_err(device->dev,
 				"  possible deadlock. Context %d might be blocked for itself\n",
 				context->id);
 			goto stats;
 		}
 
-		if (kgsl_cmdbatch_events_pending(cmdbatch)) {
-			dev_err(device->dev,
-				"  context[%d] (ts=%d) Active sync points:\n",
-				context->id, cmdbatch->timestamp);
+		if (drawobj->type == SYNCOBJ_TYPE) {
+			struct kgsl_drawobj_sync *syncobj = SYNCOBJ(drawobj);
 
-			kgsl_dump_syncpoints(device, cmdbatch);
+			if (kgsl_drawobj_events_pending(syncobj)) {
+				dev_err(device->dev,
+					"  context[%d] (ts=%d) Active sync points:\n",
+					context->id, drawobj->timestamp);
+
+				kgsl_dump_syncpoints(device, syncobj);
+			}
 		}
 	}
 
@@ -213,10 +217,12 @@ static int adreno_drawctxt_wait_rb(struct adreno_device *adreno_dev,
 	BUG_ON(!mutex_is_locked(&device->mutex));
 
 	/*
-	 * If the context is invalid then return immediately - we may end up
-	 * waiting for a timestamp that will never come
+	 * If the context is invalid (OR) not submitted commands to GPU
+	 * then return immediately - we may end up waiting for a timestamp
+	 * that will never come
 	 */
-	if (kgsl_context_invalid(context))
+	if (kgsl_context_invalid(context) ||
+			!test_bit(KGSL_CONTEXT_PRIV_SUBMITTED, &context->priv))
 		goto done;
 
 	trace_adreno_drawctxt_wait_start(drawctxt->rb->id, context->id,
@@ -229,19 +235,19 @@ done:
 	return ret;
 }
 
-static int drawctxt_detach_cmdbatches(struct adreno_context *drawctxt,
-		struct kgsl_cmdbatch **list)
+static int drawctxt_detach_drawobjs(struct adreno_context *drawctxt,
+		struct kgsl_drawobj **list)
 {
 	int count = 0;
 
-	while (drawctxt->cmdqueue_head != drawctxt->cmdqueue_tail) {
-		struct kgsl_cmdbatch *cmdbatch =
-			drawctxt->cmdqueue[drawctxt->cmdqueue_head];
+	while (drawctxt->drawqueue_head != drawctxt->drawqueue_tail) {
+		struct kgsl_drawobj *drawobj =
+			drawctxt->drawqueue[drawctxt->drawqueue_head];
 
-		drawctxt->cmdqueue_head = (drawctxt->cmdqueue_head + 1) %
-			ADRENO_CONTEXT_CMDQUEUE_SIZE;
+		drawctxt->drawqueue_head = (drawctxt->drawqueue_head + 1) %
+			ADRENO_CONTEXT_DRAWQUEUE_SIZE;
 
-		list[count++] = cmdbatch;
+		list[count++] = drawobj;
 	}
 
 	return count;
@@ -259,7 +265,7 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 		struct kgsl_context *context)
 {
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
-	struct kgsl_cmdbatch *list[ADRENO_CONTEXT_CMDQUEUE_SIZE];
+	struct kgsl_drawobj *list[ADRENO_CONTEXT_DRAWQUEUE_SIZE];
 	int i, count;
 
 	trace_adreno_drawctxt_invalidate(drawctxt);
@@ -280,13 +286,13 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 			drawctxt->timestamp);
 
 	/* Get rid of commands still waiting in the queue */
-	count = drawctxt_detach_cmdbatches(drawctxt, list);
+	count = drawctxt_detach_drawobjs(drawctxt, list);
 	spin_unlock(&drawctxt->lock);
 
 	for (i = 0; i < count; i++) {
 		kgsl_cancel_events_timestamp(device, &context->events,
 			list[i]->timestamp);
-		kgsl_cmdbatch_destroy(list[i]);
+		kgsl_drawobj_destroy(list[i]);
 	}
 
 	/* Make sure all pending events are processed or cancelled */
@@ -345,7 +351,8 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 		KGSL_CONTEXT_IFH_NOP |
 		KGSL_CONTEXT_SECURE |
 		KGSL_CONTEXT_PREEMPT_STYLE_MASK |
-		KGSL_CONTEXT_NO_SNAPSHOT);
+		KGSL_CONTEXT_NO_SNAPSHOT |
+		KGSL_CONTEXT_SPARSE);
 
 	/* Check for errors before trying to initialize */
 
@@ -387,6 +394,29 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 
 	/* Set the context priority */
 	_set_context_priority(drawctxt);
+
+	/*
+	 * If the TID of the caller matches privileged_tid and it's requesting
+	 * a high-priority context, elevate it to RB[0]. If the UID of the
+	 * caller matches privileged_uid then allow it to get a high-priority
+	 * context. If neither of these cases are true then restrict the
+	 * context to medium-priority at most.
+	 */
+	if (adreno_dev->dev.privileged_tid != -1 &&
+	    adreno_dev->dev.privileged_tid == current->pid &&
+	    drawctxt->base.priority == KGSL_CONTEXT_PRIORITY_HIGH) {
+		/* Elevate this TID's context from high to max priority */
+		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MAX;
+	} else if (adreno_dev->dev.privileged_uid != (uid_t)-1 &&
+	           adreno_dev->dev.privileged_uid != (current_uid()).val &&
+	           drawctxt->base.priority < KGSL_CONTEXT_PRIORITY_MED) {
+		/* Block out this UID's context from getting high+ priority */
+		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MED;
+	}
+	drawctxt->base.flags &= ~KGSL_CONTEXT_PRIORITY_MASK;
+	drawctxt->base.flags |= (drawctxt->base.priority <<
+		KGSL_CONTEXT_PRIORITY_SHIFT);
+
 	/* set the context ringbuffer */
 	drawctxt->rb = adreno_ctx_get_rb(adreno_dev, drawctxt);
 
@@ -451,7 +481,7 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 	struct adreno_context *drawctxt;
 	struct adreno_ringbuffer *rb;
 	int ret, count, i;
-	struct kgsl_cmdbatch *list[ADRENO_CONTEXT_CMDQUEUE_SIZE];
+	struct kgsl_drawobj *list[ADRENO_CONTEXT_DRAWQUEUE_SIZE];
 
 	if (context == NULL)
 		return;
@@ -466,7 +496,7 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 	spin_unlock(&adreno_dev->active_list_lock);
 
 	spin_lock(&drawctxt->lock);
-	count = drawctxt_detach_cmdbatches(drawctxt, list);
+	count = drawctxt_detach_drawobjs(drawctxt, list);
 	spin_unlock(&drawctxt->lock);
 
 	for (i = 0; i < count; i++) {
@@ -476,7 +506,7 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 		 * detached status here.
 		 */
 		adreno_fault_skipcmd_detached(adreno_dev, drawctxt, list[i]);
-		kgsl_cmdbatch_destroy(list[i]);
+		kgsl_drawobj_destroy(list[i]);
 	}
 
 	/*
@@ -497,13 +527,20 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 
 	/*
 	 * If the wait for global fails due to timeout then nothing after this
-	 * point is likely to work very well - BUG_ON() so we can take advantage
-	 * of the debug tools to figure out what the h - e - double hockey
-	 * sticks happened. If EAGAIN error is returned then recovery will kick
-	 * in and there will be no more commands in the RB pipe from this
-	 * context which is waht we are waiting for, so ignore -EAGAIN error
+	 * point is likely to work very well - Get GPU snapshot and BUG_ON()
+	 * so we can take advantage of the debug tools to figure out what the
+	 * h - e - double hockey sticks happened. If EAGAIN error is returned
+	 * then recovery will kick in and there will be no more commands in the
+	 * RB pipe from this context which is waht we are waiting for, so ignore
+	 * -EAGAIN error
 	 */
-	BUG_ON(ret && ret != -EAGAIN);
+	if (ret && ret != -EAGAIN) {
+		KGSL_DRV_ERR(device, "Wait for global ts=%d type=%d error=%d\n",
+				drawctxt->internal_timestamp,
+				drawctxt->type, ret);
+		device->force_panic = 1;
+		kgsl_device_snapshot(device, context);
+	}
 
 	kgsl_sharedmem_writel(device, &device->memstore,
 			KGSL_MEMSTORE_OFFSET(context->id, soptimestamp),

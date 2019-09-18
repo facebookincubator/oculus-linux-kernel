@@ -25,6 +25,7 @@
 #include <linux/types.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
+#include <linux/ktime.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/byteorder.h>
@@ -362,14 +363,6 @@ MODULE_DESCRIPTION("Promise Technology SuperTrak EX Controllers");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(ST_DRIVER_VERSION);
 
-static void stex_gettime(__le64 *time)
-{
-	struct timeval tv;
-
-	do_gettimeofday(&tv);
-	*time = cpu_to_le64(tv.tv_sec);
-}
-
 static struct status_msg *stex_get_status(struct st_hba *hba)
 {
 	struct status_msg *status = hba->status_buffer + hba->status_tail;
@@ -544,31 +537,13 @@ stex_ss_send_cmd(struct st_hba *hba, struct req_msg *req, u16 tag)
 }
 
 static int
-stex_slave_alloc(struct scsi_device *sdev)
-{
-	/* Cheat: usually extracted from Inquiry data */
-	sdev->tagged_supported = 1;
-
-	scsi_activate_tcq(sdev, sdev->host->can_queue);
-
-	return 0;
-}
-
-static int
 stex_slave_config(struct scsi_device *sdev)
 {
 	sdev->use_10_for_rw = 1;
 	sdev->use_10_for_ms = 1;
 	blk_queue_rq_timeout(sdev->request_queue, 60 * HZ);
-	sdev->tagged_supported = 1;
 
 	return 0;
-}
-
-static void
-stex_slave_destroy(struct scsi_device *sdev)
-{
-	scsi_deactivate_tcq(sdev, 1);
 }
 
 static int
@@ -1020,7 +995,7 @@ static int stex_common_handshake(struct st_hba *hba)
 	h->req_cnt = cpu_to_le16(hba->rq_count+1);
 	h->status_sz = cpu_to_le16(sizeof(struct status_msg));
 	h->status_cnt = cpu_to_le16(hba->sts_count+1);
-	stex_gettime(&h->hosttime);
+	h->hosttime = cpu_to_le64(ktime_get_real_seconds());
 	h->partner_type = HMU_PARTNER_TYPE;
 	if (hba->extra_offset) {
 		h->extra_offset = cpu_to_le32(hba->extra_offset);
@@ -1094,7 +1069,7 @@ static int stex_ss_handshake(struct st_hba *hba)
 	h->req_cnt = cpu_to_le16(hba->rq_count+1);
 	h->status_sz = cpu_to_le16(sizeof(struct status_msg));
 	h->status_cnt = cpu_to_le16(hba->sts_count+1);
-	stex_gettime(&h->hosttime);
+	h->hosttime = cpu_to_le64(ktime_get_real_seconds());
 	h->partner_type = HMU_PARTNER_TYPE;
 	h->extra_offset = h->extra_size = 0;
 	scratch_size = (hba->sts_count+1)*sizeof(u32);
@@ -1162,9 +1137,7 @@ static int stex_abort(struct scsi_cmnd *cmd)
 	int result = SUCCESS;
 	unsigned long flags;
 
-	printk(KERN_INFO DRV_NAME
-		"(%s): aborting command\n", pci_name(hba->pdev));
-	scsi_print_command(cmd);
+	scmd_printk(KERN_INFO, cmd, "aborting command\n");
 
 	base = hba->mmio_base;
 	spin_lock_irqsave(host->host_lock, flags);
@@ -1352,9 +1325,8 @@ static int stex_reset(struct scsi_cmnd *cmd)
 
 	hba = (struct st_hba *) &cmd->device->host->hostdata[0];
 
-	printk(KERN_INFO DRV_NAME
-		"(%s): resetting host\n", pci_name(hba->pdev));
-	scsi_print_command(cmd);
+	shost_printk(KERN_INFO, cmd->device->host,
+		     "resetting host\n");
 
 	return stex_do_reset(hba) ? FAILED : SUCCESS;
 }
@@ -1391,9 +1363,7 @@ static struct scsi_host_template driver_template = {
 	.proc_name			= DRV_NAME,
 	.bios_param			= stex_biosparam,
 	.queuecommand			= stex_queuecommand,
-	.slave_alloc			= stex_slave_alloc,
 	.slave_configure		= stex_slave_config,
-	.slave_destroy			= stex_slave_destroy,
 	.eh_abort_handler		= stex_abort,
 	.eh_host_reset_handler		= stex_reset,
 	.this_id			= -1,
@@ -1680,13 +1650,6 @@ static int stex_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	err = stex_handshake(hba);
 	if (err)
 		goto out_free_irq;
-
-	err = scsi_init_shared_tag_map(host, host->can_queue);
-	if (err) {
-		printk(KERN_ERR DRV_NAME "(%s): init shared queue failed\n",
-			pci_name(pdev));
-		goto out_free_irq;
-	}
 
 	pci_set_drvdata(pdev, hba);
 

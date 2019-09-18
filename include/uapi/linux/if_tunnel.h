@@ -69,6 +69,7 @@ enum tunnel_encap_types {
 
 #define TUNNEL_ENCAP_FLAG_CSUM		(1<<0)
 #define TUNNEL_ENCAP_FLAG_CSUM6		(1<<1)
+#define TUNNEL_ENCAP_FLAG_REMCSUM	(1<<2)
 
 /* SIT-mode i_flags */
 #define	SIT_ISATAP	0x0001
@@ -111,6 +112,7 @@ enum {
 	IFLA_GRE_ENCAP_FLAGS,
 	IFLA_GRE_ENCAP_SPORT,
 	IFLA_GRE_ENCAP_DPORT,
+	IFLA_GRE_COLLECT_METADATA,
 	__IFLA_GRE_MAX,
 };
 

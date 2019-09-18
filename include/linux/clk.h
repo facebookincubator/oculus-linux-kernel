@@ -125,6 +125,19 @@ int clk_set_phase(struct clk *clk, int degrees);
  */
 int clk_get_phase(struct clk *clk);
 
+/**
+ * clk_is_match - check if two clk's point to the same hardware clock
+ * @p: clk compared against q
+ * @q: clk compared against p
+ *
+ * Returns true if the two struct clk pointers both point to the same hardware
+ * clock node. Put differently, returns true if struct clk *p and struct clk *q
+ * share the same struct clk_core object.
+ *
+ * Returns false otherwise. Note that two NULL clks are treated as matching.
+ */
+bool clk_is_match(const struct clk *p, const struct clk *q);
+
 #else
 
 static inline long clk_get_accuracy(struct clk *clk)
@@ -140,6 +153,11 @@ static inline long clk_set_phase(struct clk *clk, int phase)
 static inline long clk_get_phase(struct clk *clk)
 {
 	return -ENOTSUPP;
+}
+
+static inline bool clk_is_match(const struct clk *p, const struct clk *q)
+{
+	return p == q;
 }
 
 #endif
@@ -288,6 +306,20 @@ void devm_clk_put(struct device *dev, struct clk *clk);
  * @clk: clock source
  * @rate: desired clock rate in Hz
  *
+ * This answers the question "if I were to pass @rate to clk_set_rate(),
+ * what clock rate would I end up with?" without changing the hardware
+ * in any way.  In other words:
+ *
+ *   rate = clk_round_rate(clk, r);
+ *
+ * and:
+ *
+ *   clk_set_rate(clk, r);
+ *   rate = clk_get_rate(clk);
+ *
+ * are equivalent except the former does not modify the clock hardware
+ * in any way.
+ *
  * Returns rounded clock rate in Hz, or negative errno.
  */
 long clk_round_rate(struct clk *clk, unsigned long rate);
@@ -300,6 +332,46 @@ long clk_round_rate(struct clk *clk, unsigned long rate);
  * Returns success (0) or negative errno.
  */
 int clk_set_rate(struct clk *clk, unsigned long rate);
+
+/**
+ * clk_has_parent - check if a clock is a possible parent for another
+ * @clk: clock source
+ * @parent: parent clock source
+ *
+ * This function can be used in drivers that need to check that a clock can be
+ * the parent of another without actually changing the parent.
+ *
+ * Returns true if @parent is a possible parent for @clk, false otherwise.
+ */
+bool clk_has_parent(struct clk *clk, struct clk *parent);
+
+/**
+ * clk_set_rate_range - set a rate range for a clock source
+ * @clk: clock source
+ * @min: desired minimum clock rate in Hz, inclusive
+ * @max: desired maximum clock rate in Hz, inclusive
+ *
+ * Returns success (0) or negative errno.
+ */
+int clk_set_rate_range(struct clk *clk, unsigned long min, unsigned long max);
+
+/**
+ * clk_set_min_rate - set a minimum clock rate for a clock source
+ * @clk: clock source
+ * @rate: desired minimum clock rate in Hz, inclusive
+ *
+ * Returns success (0) or negative errno.
+ */
+int clk_set_min_rate(struct clk *clk, unsigned long rate);
+
+/**
+ * clk_set_max_rate - set a maximum clock rate for a clock source
+ * @clk: clock source
+ * @rate: desired maximum clock rate in Hz, inclusive
+ *
+ * Returns success (0) or negative errno.
+ */
+int clk_set_max_rate(struct clk *clk, unsigned long rate);
 
 /**
  * clk_set_parent - set the parent clock source for this clock
@@ -335,6 +407,16 @@ struct clk *clk_get_parent(struct clk *clk);
  * clk_get_sys should not be called from within interrupt context.
  */
 struct clk *clk_get_sys(const char *dev_id, const char *con_id);
+
+/**
+ * clk_set_flags - set the custom specific flags for this clock
+ * @clk: clock source
+ * @flags: custom flags which would be hardware specific, defined for specific
+ *	   hardware.
+ *
+ * Returns success 0 or negative errno.
+ */
+int clk_set_flags(struct clk *clk, unsigned long flags);
 
 #else /* !CONFIG_HAVE_CLK */
 
@@ -374,6 +456,11 @@ static inline long clk_round_rate(struct clk *clk, unsigned long rate)
 	return 0;
 }
 
+static inline bool clk_has_parent(struct clk *clk, struct clk *parent)
+{
+	return true;
+}
+
 static inline int clk_set_parent(struct clk *clk, struct clk *parent)
 {
 	return 0;
@@ -407,19 +494,6 @@ static inline void clk_disable_unprepare(struct clk *clk)
 	clk_disable(clk);
 	clk_unprepare(clk);
 }
-
-/**
- * clk_add_alias - add a new clock alias
- * @alias: name for clock alias
- * @alias_dev_name: device name
- * @id: platform specific clock name
- * @dev: device
- *
- * Allows using generic clock names for drivers by adding a new alias.
- * Assumes clkdev, see clkdev.h for more info.
- */
-int clk_add_alias(const char *alias, const char *alias_dev_name, char *id,
-			struct device *dev);
 
 struct device_node;
 struct of_phandle_args;

@@ -38,8 +38,7 @@
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
-#include <asm/i387.h>
-#include <asm/fpu-internal.h>
+#include <asm/fpu/internal.h>
 #include <asm/mmu_context.h>
 #include <asm/prctl.h>
 #include <asm/desc.h>
@@ -53,7 +52,7 @@
 
 asmlinkage extern void ret_from_fork(void);
 
-__visible DEFINE_PER_CPU(unsigned long, old_rsp);
+__visible DEFINE_PER_CPU(unsigned long, rsp_scratch);
 
 /* Prints also some state that isn't saved in the pt_regs */
 void __show_regs(struct pt_regs *regs, int all)
@@ -123,6 +122,7 @@ void __show_regs(struct pt_regs *regs, int all)
 void release_thread(struct task_struct *dead_task)
 {
 	if (dead_task->mm) {
+#ifdef CONFIG_MODIFY_LDT_SYSCALL
 		if (dead_task->mm->context.ldt) {
 			pr_warn("WARNING: dead process %s still has LDT? <%p/%d>\n",
 				dead_task->comm,
@@ -130,6 +130,7 @@ void release_thread(struct task_struct *dead_task)
 				dead_task->mm->context.ldt->size);
 			BUG();
 		}
+#endif
 	}
 }
 
@@ -152,8 +153,8 @@ static inline u32 read_32bit_tls(struct task_struct *t, int tls)
 	return get_desc_base(&t->thread.tls_array[tls]);
 }
 
-int copy_thread(unsigned long clone_flags, unsigned long sp,
-		unsigned long arg, struct task_struct *p)
+int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
+		unsigned long arg, struct task_struct *p, unsigned long tls)
 {
 	int err;
 	struct pt_regs *childregs;
@@ -162,7 +163,6 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 	p->thread.sp0 = (unsigned long)task_stack_page(p) + THREAD_SIZE;
 	childregs = task_pt_regs(p);
 	p->thread.sp = (unsigned long) childregs;
-	p->thread.usersp = me->thread.usersp;
 	set_tsk_thread_flag(p, TIF_FORK);
 	p->thread.io_bitmap_ptr = NULL;
 
@@ -208,12 +208,12 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 	 */
 	if (clone_flags & CLONE_SETTLS) {
 #ifdef CONFIG_IA32_EMULATION
-		if (test_thread_flag(TIF_IA32))
+		if (is_ia32_task())
 			err = do_set_thread_area(p, -1,
-				(struct user_desc __user *)childregs->si, 0);
+				(struct user_desc __user *)tls, 0);
 		else
 #endif
-			err = do_arch_prctl(p, ARCH_SET_FS, childregs->r8);
+			err = do_arch_prctl(p, ARCH_SET_FS, tls);
 		if (err)
 			goto out;
 	}
@@ -236,13 +236,12 @@ start_thread_common(struct pt_regs *regs, unsigned long new_ip,
 	loadsegment(es, _ds);
 	loadsegment(ds, _ds);
 	load_gs_index(0);
-	current->thread.usersp	= new_sp;
 	regs->ip		= new_ip;
 	regs->sp		= new_sp;
-	this_cpu_write(old_rsp, new_sp);
 	regs->cs		= _cs;
 	regs->ss		= _ss;
 	regs->flags		= X86_EFLAGS_IF;
+	force_iret();
 }
 
 void
@@ -252,8 +251,8 @@ start_thread(struct pt_regs *regs, unsigned long new_ip, unsigned long new_sp)
 			    __USER_CS, __USER_DS, 0);
 }
 
-#ifdef CONFIG_IA32_EMULATION
-void start_thread_ia32(struct pt_regs *regs, u32 new_ip, u32 new_sp)
+#ifdef CONFIG_COMPAT
+void compat_start_thread(struct pt_regs *regs, u32 new_ip, u32 new_sp)
 {
 	start_thread_common(regs, new_ip, new_sp,
 			    test_thread_flag(TIF_X32)
@@ -277,15 +276,14 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 {
 	struct thread_struct *prev = &prev_p->thread;
 	struct thread_struct *next = &next_p->thread;
+	struct fpu *prev_fpu = &prev->fpu;
+	struct fpu *next_fpu = &next->fpu;
 	int cpu = smp_processor_id();
-	struct tss_struct *tss = &per_cpu(init_tss, cpu);
+	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	unsigned fsindex, gsindex;
-	fpu_switch_t fpu;
+	fpu_switch_t fpu_switch;
 
-	fpu = switch_fpu_prepare(prev_p, next_p, cpu);
-
-	/* Reload esp0 and ss1. */
-	load_sp0(tss, next);
+	fpu_switch = switch_fpu_prepare(prev_fpu, next_fpu, cpu);
 
 	/* We must save %fs and %gs before load_TLS() because
 	 * %fs and %gs may be cleared by load_TLS().
@@ -305,7 +303,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	 * Leave lazy mode, flushing any hypercalls made here.  This
 	 * must be done after loading TLS entries in the GDT but before
 	 * loading segments that might reference them, and and it must
-	 * be done before math_state_restore, so the TS bit is up to
+	 * be done before fpu__restore(), so the TS bit is up to
 	 * date.
 	 */
 	arch_end_context_switch(next_p);
@@ -335,7 +333,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	/*
 	 * Switch FS and GS.
 	 *
-	 * These are even more complicated than FS and GS: they have
+	 * These are even more complicated than DS and ES: they have
 	 * 64-bit bases are that controlled by arch_prctl.  Those bases
 	 * only differ from the values in the GDT or LDT if the selector
 	 * is 0.
@@ -397,26 +395,15 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 		wrmsrl(MSR_KERNEL_GS_BASE, next->gs);
 	prev->gsindex = gsindex;
 
-	switch_fpu_finish(next_p, fpu);
+	switch_fpu_finish(next_fpu, fpu_switch);
 
 	/*
 	 * Switch the PDA and FPU contexts.
 	 */
-	prev->usersp = this_cpu_read(old_rsp);
-	this_cpu_write(old_rsp, next->usersp);
 	this_cpu_write(current_task, next_p);
 
-	/*
-	 * If it were not for PREEMPT_ACTIVE we could guarantee that the
-	 * preempt_count of all tasks was equal here and this would not be
-	 * needed.
-	 */
-	task_thread_info(prev_p)->saved_preempt_count = this_cpu_read(__preempt_count);
-	this_cpu_write(__preempt_count, task_thread_info(next_p)->saved_preempt_count);
-
-	this_cpu_write(kernel_stack,
-		  (unsigned long)task_stack_page(next_p) +
-		  THREAD_SIZE - KERNEL_STACK_OFFSET);
+	/* Reload esp0 and ss1.  This changes current_thread_info(). */
+	load_sp0(tss, next);
 
 	/*
 	 * Now maybe reload the debug registers and handle I/O bitmaps
@@ -431,10 +418,38 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	 * current_pt_regs()->flags may not match the current task's
 	 * intended IOPL.  We need to switch it manually.
 	 */
-	if (unlikely(xen_pv_domain() &&
+	if (unlikely(static_cpu_has(X86_FEATURE_XENPV) &&
 		     prev->iopl != next->iopl))
 		xen_set_iopl_mask(next->iopl);
 #endif
+
+	if (static_cpu_has_bug(X86_BUG_SYSRET_SS_ATTRS)) {
+		/*
+		 * AMD CPUs have a misfeature: SYSRET sets the SS selector but
+		 * does not update the cached descriptor.  As a result, if we
+		 * do SYSRET while SS is NULL, we'll end up in user mode with
+		 * SS apparently equal to __USER_DS but actually unusable.
+		 *
+		 * The straightforward workaround would be to fix it up just
+		 * before SYSRET, but that would slow down the system call
+		 * fast paths.  Instead, we ensure that SS is never NULL in
+		 * system call context.  We do this by replacing NULL SS
+		 * selectors at every context switch.  SYSCALL sets up a valid
+		 * SS, so the only way to get NULL is to re-enter the kernel
+		 * from CPL 3 through an interrupt.  Since that can't happen
+		 * in the same task as a running syscall, we are guaranteed to
+		 * context switch between every interrupt vector entry and a
+		 * subsequent SYSRET.
+		 *
+		 * We read SS first because SS reads are much faster than
+		 * writes.  Out of caution, we force SS to __KERNEL_DS even if
+		 * it previously had a different non-NULL value.
+		 */
+		unsigned short ss_sel;
+		savesegment(ss, ss_sel);
+		if (ss_sel != __KERNEL_DS)
+			loadsegment(ss, __KERNEL_DS);
+	}
 
 	return prev_p;
 }
@@ -487,62 +502,6 @@ void set_personality_ia32(bool x32)
 	}
 }
 EXPORT_SYMBOL_GPL(set_personality_ia32);
-
-/*
- * Called from fs/proc with a reference on @p to find the function
- * which called into schedule(). This needs to be done carefully
- * because the task might wake up and we might look at a stack
- * changing under us.
- */
-unsigned long get_wchan(struct task_struct *p)
-{
-	unsigned long start, bottom, top, sp, fp, ip;
-	int count = 0;
-
-	if (!p || p == current || p->state == TASK_RUNNING)
-		return 0;
-
-	start = (unsigned long)task_stack_page(p);
-	if (!start)
-		return 0;
-
-	/*
-	 * Layout of the stack page:
-	 *
-	 * ----------- topmax = start + THREAD_SIZE - sizeof(unsigned long)
-	 * PADDING
-	 * ----------- top = topmax - TOP_OF_KERNEL_STACK_PADDING
-	 * stack
-	 * ----------- bottom = start + sizeof(thread_info)
-	 * thread_info
-	 * ----------- start
-	 *
-	 * The tasks stack pointer points at the location where the
-	 * framepointer is stored. The data on the stack is:
-	 * ... IP FP ... IP FP
-	 *
-	 * We need to read FP and IP, so we need to adjust the upper
-	 * bound by another unsigned long.
-	 */
-	top = start + THREAD_SIZE - TOP_OF_KERNEL_STACK_PADDING;
-	top -= 2 * sizeof(unsigned long);
-	bottom = start + sizeof(struct thread_info);
-
-	sp = READ_ONCE(p->thread.sp);
-	if (sp < bottom || sp > top)
-		return 0;
-
-	fp = READ_ONCE(*(unsigned long *)sp);
-	do {
-		if (fp < bottom || fp > top)
-			return 0;
-		ip = READ_ONCE(*(unsigned long *)(fp + sizeof(unsigned long)));
-		if (!in_sched_functions(ip))
-			return ip;
-		fp = READ_ONCE(*(unsigned long *)fp);
-	} while (count++ < 16 && p->state != TASK_RUNNING);
-	return 0;
-}
 
 long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 {
@@ -646,6 +605,5 @@ long sys_arch_prctl(int code, unsigned long addr)
 
 unsigned long KSTK_ESP(struct task_struct *task)
 {
-	return (test_tsk_thread_flag(task, TIF_IA32)) ?
-			(task_pt_regs(task)->sp) : ((task)->thread.usersp);
+	return task_pt_regs(task)->sp;
 }

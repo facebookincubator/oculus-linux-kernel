@@ -19,6 +19,7 @@
  */
 
 #include <linux/errno.h>
+#include <linux/err.h>
 #include <asm/unistd.h>
 #include <asm/processor.h>
 #include <asm/page.h>
@@ -34,6 +35,7 @@
 #include <asm/ftrace.h>
 #include <asm/hw_irq.h>
 #include <asm/context_tracking.h>
+#include <asm/tm.h>
 
 /*
  * System calls.
@@ -49,10 +51,14 @@ exception_marker:
 	.section	".text"
 	.align 7
 
-#undef SHOW_SYSCALLS
-
 	.globl system_call_common
 system_call_common:
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+BEGIN_FTR_SECTION
+	extrdi.	r10, r12, 1, (63-MSR_TS_T_LG) /* transaction active? */
+	bne	tabort_syscall
+END_FTR_SECTION_IFSET(CPU_FTR_TM)
+#endif
 	andi.	r10,r12,MSR_PR
 	mr	r10,r1
 	addi	r1,r1,-INT_FRAME_SIZE
@@ -142,18 +148,10 @@ END_FW_FTR_SECTION_IFSET(FW_FEATURE_SPLPAR)
 	li	r10,1
 	std	r10,SOFTE(r1)
 
-#ifdef SHOW_SYSCALLS
-	bl	do_show_syscall
-	REST_GPR(0,r1)
-	REST_4GPRS(3,r1)
-	REST_2GPRS(7,r1)
-	addi	r9,r1,STACK_FRAME_OVERHEAD
-#endif
 	CURRENT_THREAD_INFO(r11, r1)
 	ld	r10,TI_FLAGS(r11)
-	andi.	r11,r10,_TIF_SYSCALL_T_OR_A
-	bne	syscall_dotrace
-.Lsyscall_dotrace_cont:
+	andi.	r11,r10,_TIF_SYSCALL_DOTRACE
+	bne	syscall_dotrace		/* does not return */
 	cmpldi	0,r0,NR_syscalls
 	bge-	syscall_enosys
 
@@ -178,12 +176,8 @@ system_call:			/* label this so stack traces look sane */
 	mtctr   r12
 	bctrl			/* Call handler */
 
-syscall_exit:
+.Lsyscall_exit:
 	std	r3,RESULT(r1)
-#ifdef SHOW_SYSCALLS
-	bl	do_show_syscall_exit
-	ld	r3,RESULT(r1)
-#endif
 	CURRENT_THREAD_INFO(r12, r1)
 
 	ld	r8,_MSR(r1)
@@ -213,8 +207,8 @@ syscall_exit:
 #endif /* CONFIG_PPC_BOOK3E */
 
 	ld	r9,TI_FLAGS(r12)
-	li	r11,-_LAST_ERRNO
-	andi.	r0,r9,(_TIF_SYSCALL_T_OR_A|_TIF_SINGLESTEP|_TIF_USER_WORK_MASK|_TIF_PERSYSCALL_MASK)
+	li	r11,-MAX_ERRNO
+	andi.	r0,r9,(_TIF_SYSCALL_DOTRACE|_TIF_SINGLESTEP|_TIF_USER_WORK_MASK|_TIF_PERSYSCALL_MASK)
 	bne-	syscall_exit_work
 	cmpld	r3,r11
 	ld	r5,_CCR(r1)
@@ -251,26 +245,38 @@ syscall_dotrace:
 	bl	save_nvgprs
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	bl	do_syscall_trace_enter
+
 	/*
-	 * Restore argument registers possibly just changed.
-	 * We use the return value of do_syscall_trace_enter
-	 * for the call number to look up in the table (r0).
+	 * We use the return value of do_syscall_trace_enter() as the syscall
+	 * number. If the syscall was rejected for any reason do_syscall_trace_enter()
+	 * returns an invalid syscall number and the test below against
+	 * NR_syscalls will fail.
 	 */
 	mr	r0,r3
+
+	/* Restore argument registers just clobbered and/or possibly changed. */
 	ld	r3,GPR3(r1)
 	ld	r4,GPR4(r1)
 	ld	r5,GPR5(r1)
 	ld	r6,GPR6(r1)
 	ld	r7,GPR7(r1)
 	ld	r8,GPR8(r1)
+
+	/* Repopulate r9 and r10 for the system_call path */
 	addi	r9,r1,STACK_FRAME_OVERHEAD
 	CURRENT_THREAD_INFO(r10, r1)
 	ld	r10,TI_FLAGS(r10)
-	b	.Lsyscall_dotrace_cont
+
+	cmpldi	r0,NR_syscalls
+	blt+	system_call
+
+	/* Return code is already in r3 thanks to do_syscall_trace_enter() */
+	b	.Lsyscall_exit
+
 
 syscall_enosys:
 	li	r3,-ENOSYS
-	b	syscall_exit
+	b	.Lsyscall_exit
 	
 syscall_exit_work:
 #ifdef CONFIG_PPC_BOOK3S
@@ -283,7 +289,7 @@ syscall_exit_work:
 	beq+	0f
 	REST_NVGPRS(r1)
 	b	2f
-0:	cmpld	r3,r11		/* r10 is -LAST_ERRNO */
+0:	cmpld	r3,r11		/* r11 is -MAX_ERRNO */
 	blt+	1f
 	andi.	r0,r9,_TIF_NOERROR
 	bne-	1f
@@ -307,7 +313,7 @@ syscall_exit_work:
 
 4:	/* Anything else left to do? */
 	SET_DEFAULT_THREAD_PPR(r3, r10)		/* Set thread.ppr = 3 */
-	andi.	r0,r9,(_TIF_SYSCALL_T_OR_A|_TIF_SINGLESTEP)
+	andi.	r0,r9,(_TIF_SYSCALL_DOTRACE|_TIF_SINGLESTEP)
 	beq	ret_from_except_lite
 
 	/* Re-enable interrupts */
@@ -323,6 +329,34 @@ syscall_exit_work:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	bl	do_syscall_trace_leave
 	b	ret_from_except
+
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+tabort_syscall:
+	/* Firstly we need to enable TM in the kernel */
+	mfmsr	r10
+	li	r13, 1
+	rldimi	r10, r13, MSR_TM_LG, 63-MSR_TM_LG
+	mtmsrd	r10, 0
+
+	/* tabort, this dooms the transaction, nothing else */
+	li	r13, (TM_CAUSE_SYSCALL|TM_CAUSE_PERSISTENT)
+	TABORT(R13)
+
+	/*
+	 * Return directly to userspace. We have corrupted user register state,
+	 * but userspace will never see that register state. Execution will
+	 * resume after the tbegin of the aborted transaction with the
+	 * checkpointed register state.
+	 */
+	li	r13, MSR_RI
+	andc	r10, r10, r13
+	mtmsrd	r10, 1
+	mtspr	SPRN_SRR0, r11
+	mtspr	SPRN_SRR1, r12
+
+	rfid
+	b	.	/* prevent speculative execution */
+#endif
 
 /* Save non-volatile GPRs, if not already saved. */
 _GLOBAL(save_nvgprs)
@@ -347,33 +381,38 @@ _GLOBAL(save_nvgprs)
 _GLOBAL(ppc_fork)
 	bl	save_nvgprs
 	bl	sys_fork
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 _GLOBAL(ppc_vfork)
 	bl	save_nvgprs
 	bl	sys_vfork
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 _GLOBAL(ppc_clone)
 	bl	save_nvgprs
 	bl	sys_clone
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 _GLOBAL(ppc32_swapcontext)
 	bl	save_nvgprs
 	bl	compat_sys_swapcontext
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 _GLOBAL(ppc64_swapcontext)
 	bl	save_nvgprs
 	bl	sys_swapcontext
-	b	syscall_exit
+	b	.Lsyscall_exit
+
+_GLOBAL(ppc_switch_endian)
+	bl	save_nvgprs
+	bl	sys_switch_endian
+	b	.Lsyscall_exit
 
 _GLOBAL(ret_from_fork)
 	bl	schedule_tail
 	REST_NVGPRS(r1)
 	li	r3,0
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 _GLOBAL(ret_from_kernel_thread)
 	bl	schedule_tail
@@ -385,7 +424,7 @@ _GLOBAL(ret_from_kernel_thread)
 #endif
 	blrl
 	li	r3,0
-	b	syscall_exit
+	b	.Lsyscall_exit
 
 /*
  * This routine switches between two different tasks.  The process
@@ -564,7 +603,7 @@ BEGIN_FTR_SECTION
 	ld	r0,THREAD_DSCR(r4)
 	cmpwi	r6,0
 	bne	1f
-	ld	r0,PACA_DSCR(r13)
+	ld	r0,PACA_DSCR_DEFAULT(r13)
 1:
 BEGIN_FTR_SECTION_NESTED(70)
 	mfspr	r8, SPRN_FSCR
@@ -1227,12 +1266,19 @@ _GLOBAL(ftrace_graph_caller)
 	ld	r4, 128(r1)
 	subi	r4, r4, MCOUNT_INSN_SIZE
 
-	/* get the parent address */
+	/* Grab the LR out of the caller stack frame */
 	ld	r11, 112(r1)
-	addi	r3, r11, 16
+	ld	r3, 16(r11)
 
 	bl	prepare_ftrace_return
 	nop
+
+	/*
+	 * prepare_ftrace_return gives us the address we divert to.
+	 * Change the LR in the callers stack frame to this.
+	 */
+	ld	r11, 112(r1)
+	std	r3, 16(r11)
 
 	ld	r0, 128(r1)
 	mtlr	r0
@@ -1240,28 +1286,6 @@ _GLOBAL(ftrace_graph_caller)
 	blr
 
 _GLOBAL(return_to_handler)
-	/* need to save return values */
-	std	r4,  -24(r1)
-	std	r3,  -16(r1)
-	std	r31, -8(r1)
-	mr	r31, r1
-	stdu	r1, -112(r1)
-
-	bl	ftrace_return_to_handler
-	nop
-
-	/* return value has real return address */
-	mtlr	r3
-
-	ld	r1, 0(r1)
-	ld	r4,  -24(r1)
-	ld	r3,  -16(r1)
-	ld	r31, -8(r1)
-
-	/* Jump back to real return address */
-	blr
-
-_GLOBAL(mod_return_to_handler)
 	/* need to save return values */
 	std	r4,  -32(r1)
 	std	r3,  -24(r1)
@@ -1272,7 +1296,7 @@ _GLOBAL(mod_return_to_handler)
 	stdu	r1, -112(r1)
 
 	/*
-	 * We are in a module using the module's TOC.
+	 * We might be called from a module.
 	 * Switch to our TOC to run inside the core kernel.
 	 */
 	ld	r2, PACATOC(r13)

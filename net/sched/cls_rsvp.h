@@ -271,10 +271,6 @@ static unsigned long rsvp_get(struct tcf_proto *tp, u32 handle)
 	return 0;
 }
 
-static void rsvp_put(struct tcf_proto *tp, unsigned long f)
-{
-}
-
 static int rsvp_init(struct tcf_proto *tp)
 {
 	struct rsvp_head *data;
@@ -287,21 +283,38 @@ static int rsvp_init(struct tcf_proto *tp)
 	return -ENOBUFS;
 }
 
-static void
-rsvp_delete_filter(struct tcf_proto *tp, struct rsvp_filter *f)
+static void rsvp_delete_filter_rcu(struct rcu_head *head)
 {
-	tcf_unbind_filter(tp, &f->res);
+	struct rsvp_filter *f = container_of(head, struct rsvp_filter, rcu);
+
 	tcf_exts_destroy(&f->exts);
-	kfree_rcu(f, rcu);
+	kfree(f);
 }
 
-static void rsvp_destroy(struct tcf_proto *tp)
+static void rsvp_delete_filter(struct tcf_proto *tp, struct rsvp_filter *f)
+{
+	tcf_unbind_filter(tp, &f->res);
+	/* all classifiers are required to call tcf_exts_destroy() after rcu
+	 * grace period, since converted-to-rcu actions are relying on that
+	 * in cleanup() callback
+	 */
+	call_rcu(&f->rcu, rsvp_delete_filter_rcu);
+}
+
+static bool rsvp_destroy(struct tcf_proto *tp, bool force)
 {
 	struct rsvp_head *data = rtnl_dereference(tp->root);
 	int h1, h2;
 
 	if (data == NULL)
-		return;
+		return true;
+
+	if (!force) {
+		for (h1 = 0; h1 < 256; h1++) {
+			if (rcu_access_pointer(data->ht[h1]))
+				return false;
+		}
+	}
 
 	RCU_INIT_POINTER(tp->root, NULL);
 
@@ -323,6 +336,7 @@ static void rsvp_destroy(struct tcf_proto *tp)
 		}
 	}
 	kfree_rcu(data, rcu);
+	return true;
 }
 
 static int rsvp_delete(struct tcf_proto *tp, unsigned long arg)
@@ -657,7 +671,6 @@ static int rsvp_dump(struct net *net, struct tcf_proto *tp, unsigned long fh,
 {
 	struct rsvp_filter *f = (struct rsvp_filter *)fh;
 	struct rsvp_session *s;
-	unsigned char *b = skb_tail_pointer(skb);
 	struct nlattr *nest;
 	struct tc_rsvp_pinfo pinfo;
 
@@ -698,7 +711,7 @@ static int rsvp_dump(struct net *net, struct tcf_proto *tp, unsigned long fh,
 	return skb->len;
 
 nla_put_failure:
-	nlmsg_trim(skb, b);
+	nla_nest_cancel(skb, nest);
 	return -1;
 }
 
@@ -708,7 +721,6 @@ static struct tcf_proto_ops RSVP_OPS __read_mostly = {
 	.init		=	rsvp_init,
 	.destroy	=	rsvp_destroy,
 	.get		=	rsvp_get,
-	.put		=	rsvp_put,
 	.change		=	rsvp_change,
 	.delete		=	rsvp_delete,
 	.walk		=	rsvp_walk,

@@ -86,27 +86,39 @@ struct kgsl_threadstat_attribute {
 };
 
 static ssize_t
-threadstat_attr_show(struct kgsl_thread_private *priv, int type, char *buf) {
+threadstat_attr_show(struct kgsl_thread_private *priv, int type, char *buf)
+{
 	return snprintf(buf, PAGE_SIZE, "%llu\n", priv->stats[type]);
 }
 
 #define THREADSTAT_ATTR(_type, _name) \
-{ \
+[_type ## _EVENT] = { \
 	.attr = { .name = __stringify(_name), .mode = 0444 }, \
 	.type = _type, \
 	.show = threadstat_attr_show, \
 }
 
+static ssize_t
+threadstat_multiattr_show(
+	struct kgsl_thread_private *priv, int type, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%llu,%llu,%llu\n",
+		priv->stats[type],
+		priv->stats[type + 1],
+		priv->stats[type + 2]);
+}
+
+#define THREADSTAT_MULTIATTR(_type, _name) \
+[_type ## _EVENT] = { \
+	.attr = { .name = __stringify(_name), .mode = 0444 }, \
+	.type = _type, \
+	.show = threadstat_multiattr_show, \
+}
+
 struct kgsl_threadstat_attribute threadstat_attrs[] = {
-	THREADSTAT_ATTR(KGSL_THREADSTATS_SUBMITTED, submitted),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_SUBMITTED_ID, submitted_id),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_SUBMITTED_COUNT, submitted_count),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_RETIRED, retired),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_RETIRED_ID, retired_id),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_RETIRED_COUNT, retired_count),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_QUEUED, queued),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_QUEUED_ID, queued_id),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_QUEUED_COUNT, queued_count),
+	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_SUBMITTED, submitted),
+	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_RETIRED, retired),
+	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_QUEUED, queued),
 	THREADSTAT_ATTR(KGSL_THREADSTATS_ACTIVE_TIME, active_time),
 };
 
@@ -143,7 +155,7 @@ void kgsl_thread_uninit_sysfs(struct kgsl_thread_private *private)
 {
 	int i;
 
-	for (i = 0; i < KGSL_THREADSTATS_MAX; i++) {
+	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++) {
 		sysfs_put(private->event_sd[i]);
 		sysfs_remove_file(&private->kobj, &threadstat_attrs[i].attr);
 	}
@@ -171,7 +183,7 @@ void kgsl_thread_init_sysfs(struct kgsl_device *device,
 		return;
 	}
 
-	for (i = 0; i < KGSL_THREADSTATS_MAX; i++) {
+	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++) {
 		if (sysfs_create_file(&private->kobj,
 			&threadstat_attrs[i].attr))
 			WARN(1, "Couldn't create sysfs file '%s'\n",

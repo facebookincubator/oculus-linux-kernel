@@ -121,7 +121,7 @@
 #define PCI_IO_OFFSET		0x00200000
 
 /* Size of IO (2MB) */
-#define PCI_IO_SIZE		0x00200000
+#define PCI_IO_SIZE_DGAP	0x00200000
 
 /* Number of boards we support at once. */
 #define	MAXBOARDS	32
@@ -172,7 +172,7 @@
 /*
  * Define a local default termios struct. All ports will be created
  * with this termios initially.  This is the same structure that is defined
- * as the default in tty_io.c with the same settings overriden as in serial.c
+ * as the default in tty_io.c with the same settings overridden as in serial.c
  *
  * In short, this should match the internal serial ports' defaults.
  */
@@ -409,7 +409,6 @@
 #define	ID	76
 #define CABLE	77
 #define CONNECT	78
-#define	IO	79
 #define	MEM	80
 #define DPSZ	81
 
@@ -583,9 +582,6 @@ struct board_t {
 	struct tty_driver	*print_driver;
 	struct tty_port *printer_ports;
 	char		print_name[200];
-
-	u32		dgap_serial_major;
-	u32		dgap_transparent_print_major;
 
 	struct bs_t __iomem *bd_bs;	/* Base structure pointer         */
 
@@ -1155,8 +1151,6 @@ struct cnode {
 	union {
 		struct {
 			char  type;	/* Board Type           */
-			long  port;	/* I/O Address		*/
-			char  *portstr; /* I/O Address in string */
 			long  addr;	/* Memory Address	*/
 			char  *addrstr; /* Memory Address in string */
 			long  pcibus;	/* PCI BUS		*/
@@ -1167,7 +1161,6 @@ struct cnode {
 			char  *id;	/* tty id		*/
 			long  start;	/* start of tty counting */
 			char  *method;  /* Install method       */
-			char  v_port;
 			char  v_addr;
 			char  v_pcibus;
 			char  v_pcislot;

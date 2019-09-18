@@ -28,7 +28,7 @@
 
 #include "fm10k.h"
 
-#define DRV_VERSION	"0.12.2-k"
+#define DRV_VERSION	"0.15.2-k"
 const char fm10k_driver_version[] = DRV_VERSION;
 char fm10k_driver_name[] = "fm10k";
 static const char fm10k_driver_string[] =
@@ -41,6 +41,9 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Switch Host Interface Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
+/* single workqueue for entire fm10k driver */
+struct workqueue_struct *fm10k_workqueue = NULL;
+
 /**
  * fm10k_init_module - Driver Registration Routine
  *
@@ -51,6 +54,10 @@ static int __init fm10k_init_module(void)
 {
 	pr_info("%s - version %s\n", fm10k_driver_string, fm10k_driver_version);
 	pr_info("%s\n", fm10k_copyright);
+
+	/* create driver workqueue */
+	if (!fm10k_workqueue)
+		fm10k_workqueue = create_workqueue("fm10k");
 
 	fm10k_dbg_init();
 
@@ -69,6 +76,11 @@ static void __exit fm10k_exit_module(void)
 	fm10k_unregister_pci_driver();
 
 	fm10k_dbg_exit();
+
+	/* destroy driver workqueue */
+	flush_workqueue(fm10k_workqueue);
+	destroy_workqueue(fm10k_workqueue);
+	fm10k_workqueue = NULL;
 }
 module_exit(fm10k_exit_module);
 
@@ -83,7 +95,7 @@ static bool fm10k_alloc_mapped_page(struct fm10k_ring *rx_ring,
 		return true;
 
 	/* alloc new page for storage */
-	page = alloc_page(GFP_ATOMIC | __GFP_COLD);
+	page = dev_alloc_page();
 	if (unlikely(!page)) {
 		rx_ring->rx_stats.alloc_failed++;
 		return false;
@@ -97,7 +109,6 @@ static bool fm10k_alloc_mapped_page(struct fm10k_ring *rx_ring,
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
 		__free_page(page);
-		bi->page = NULL;
 
 		rx_ring->rx_stats.alloc_failed++;
 		return false;
@@ -147,8 +158,8 @@ void fm10k_alloc_rx_buffers(struct fm10k_ring *rx_ring, u16 cleaned_count)
 			i -= rx_ring->count;
 		}
 
-		/* clear the hdr_addr for the next_to_use descriptor */
-		rx_desc->q.hdr_addr = 0;
+		/* clear the status bits for the next_to_use descriptor */
+		rx_desc->d.staterr = 0;
 
 		cleaned_count--;
 	} while (cleaned_count);
@@ -194,7 +205,7 @@ static void fm10k_reuse_rx_page(struct fm10k_ring *rx_ring,
 	rx_ring->next_to_alloc = (nta < rx_ring->count) ? nta : 0;
 
 	/* transfer page from old buffer to new buffer */
-	memcpy(new_buff, old_buff, sizeof(struct fm10k_rx_buffer));
+	*new_buff = *old_buff;
 
 	/* sync the buffer for use by the device */
 	dma_sync_single_range_for_device(rx_ring->dev, old_buff->dma,
@@ -203,12 +214,17 @@ static void fm10k_reuse_rx_page(struct fm10k_ring *rx_ring,
 					 DMA_FROM_DEVICE);
 }
 
+static inline bool fm10k_page_is_reserved(struct page *page)
+{
+	return (page_to_nid(page) != numa_mem_id()) || page_is_pfmemalloc(page);
+}
+
 static bool fm10k_can_reuse_rx_page(struct fm10k_rx_buffer *rx_buffer,
 				    struct page *page,
-				    unsigned int truesize)
+				    unsigned int __maybe_unused truesize)
 {
 	/* avoid re-using remote pages */
-	if (unlikely(page_to_nid(page) != numa_mem_id()))
+	if (unlikely(fm10k_page_is_reserved(page)))
 		return false;
 
 #if (PAGE_SIZE < 8192)
@@ -218,28 +234,24 @@ static bool fm10k_can_reuse_rx_page(struct fm10k_rx_buffer *rx_buffer,
 
 	/* flip page offset to other buffer */
 	rx_buffer->page_offset ^= FM10K_RX_BUFSZ;
-
-	/* Even if we own the page, we are not allowed to use atomic_set()
-	 * This would break get_page_unless_zero() users.
-	 */
-	atomic_inc(&page->_count);
 #else
 	/* move offset up to the next cache line */
 	rx_buffer->page_offset += truesize;
 
 	if (rx_buffer->page_offset > (PAGE_SIZE - FM10K_RX_BUFSZ))
 		return false;
-
-	/* bump ref count on page before it is given to the stack */
-	get_page(page);
 #endif
+
+	/* Even if we own the page, we are not allowed to use atomic_set()
+	 * This would break get_page_unless_zero() users.
+	 */
+	atomic_inc(&page->_count);
 
 	return true;
 }
 
 /**
  * fm10k_add_rx_frag - Add contents of Rx buffer to sk_buff
- * @rx_ring: rx descriptor ring to transact packets on
  * @rx_buffer: buffer containing page to add
  * @rx_desc: descriptor containing length of buffer written by hardware
  * @skb: sk_buff to place the data into
@@ -252,35 +264,50 @@ static bool fm10k_can_reuse_rx_page(struct fm10k_rx_buffer *rx_buffer,
  * The function will then update the page offset if necessary and return
  * true if the buffer can be reused by the interface.
  **/
-static bool fm10k_add_rx_frag(struct fm10k_ring *rx_ring,
-			      struct fm10k_rx_buffer *rx_buffer,
+static bool fm10k_add_rx_frag(struct fm10k_rx_buffer *rx_buffer,
 			      union fm10k_rx_desc *rx_desc,
 			      struct sk_buff *skb)
 {
 	struct page *page = rx_buffer->page;
+	unsigned char *va = page_address(page) + rx_buffer->page_offset;
 	unsigned int size = le16_to_cpu(rx_desc->w.length);
 #if (PAGE_SIZE < 8192)
 	unsigned int truesize = FM10K_RX_BUFSZ;
 #else
-	unsigned int truesize = ALIGN(size, L1_CACHE_BYTES);
+	unsigned int truesize = SKB_DATA_ALIGN(size);
 #endif
+	unsigned int pull_len;
 
-	if ((size <= FM10K_RX_HDR_LEN) && !skb_is_nonlinear(skb)) {
-		unsigned char *va = page_address(page) + rx_buffer->page_offset;
+	if (unlikely(skb_is_nonlinear(skb)))
+		goto add_tail_frag;
 
+	if (likely(size <= FM10K_RX_HDR_LEN)) {
 		memcpy(__skb_put(skb, size), va, ALIGN(size, sizeof(long)));
 
-		/* we can reuse buffer as-is, just make sure it is local */
-		if (likely(page_to_nid(page) == numa_mem_id()))
+		/* page is not reserved, we can reuse buffer as-is */
+		if (likely(!fm10k_page_is_reserved(page)))
 			return true;
 
 		/* this page cannot be reused so discard it */
-		put_page(page);
+		__free_page(page);
 		return false;
 	}
 
+	/* we need the header to contain the greater of either ETH_HLEN or
+	 * 60 bytes if the skb->len is less than 60 for skb_pad.
+	 */
+	pull_len = eth_get_headlen(va, FM10K_RX_HDR_LEN);
+
+	/* align pull length to size of long to optimize memcpy performance */
+	memcpy(__skb_put(skb, pull_len), va, ALIGN(pull_len, sizeof(long)));
+
+	/* update all of the pointers */
+	va += pull_len;
+	size -= pull_len;
+
+add_tail_frag:
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
-			rx_buffer->page_offset, size, truesize);
+			(unsigned long)va & ~PAGE_MASK, size, truesize);
 
 	return fm10k_can_reuse_rx_page(rx_buffer, page, truesize);
 }
@@ -293,7 +320,6 @@ static struct sk_buff *fm10k_fetch_rx_buffer(struct fm10k_ring *rx_ring,
 	struct page *page;
 
 	rx_buffer = &rx_ring->rx_buffer[rx_ring->next_to_clean];
-
 	page = rx_buffer->page;
 	prefetchw(page);
 
@@ -308,8 +334,8 @@ static struct sk_buff *fm10k_fetch_rx_buffer(struct fm10k_ring *rx_ring,
 #endif
 
 		/* allocate a skb to store the frags */
-		skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
-						FM10K_RX_HDR_LEN);
+		skb = napi_alloc_skb(&rx_ring->q_vector->napi,
+				     FM10K_RX_HDR_LEN);
 		if (unlikely(!skb)) {
 			rx_ring->rx_stats.alloc_failed++;
 			return NULL;
@@ -330,7 +356,7 @@ static struct sk_buff *fm10k_fetch_rx_buffer(struct fm10k_ring *rx_ring,
 				      DMA_FROM_DEVICE);
 
 	/* pull page into skb */
-	if (fm10k_add_rx_frag(rx_ring, rx_buffer, rx_desc, skb)) {
+	if (fm10k_add_rx_frag(rx_buffer, rx_desc, skb)) {
 		/* hand second half of page back to the ring */
 		fm10k_reuse_rx_page(rx_ring, rx_buffer);
 	} else {
@@ -372,6 +398,8 @@ static inline void fm10k_rx_checksum(struct fm10k_ring *ring,
 		return;
 
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	ring->rx_stats.csum_good++;
 }
 
 #define FM10K_RSS_L4_TYPES_MASK \
@@ -412,7 +440,7 @@ static void fm10k_rx_hwtstamp(struct fm10k_ring *rx_ring,
 }
 
 static void fm10k_type_trans(struct fm10k_ring *rx_ring,
-			     union fm10k_rx_desc *rx_desc,
+			     union fm10k_rx_desc __maybe_unused *rx_desc,
 			     struct sk_buff *skb)
 {
 	struct net_device *dev = rx_ring->netdev;
@@ -471,8 +499,11 @@ static unsigned int fm10k_process_skb_fields(struct fm10k_ring *rx_ring,
 	if (rx_desc->w.vlan) {
 		u16 vid = le16_to_cpu(rx_desc->w.vlan);
 
-		if (vid != rx_ring->vid)
+		if ((vid & VLAN_VID_MASK) != rx_ring->vid)
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
+		else if (vid & VLAN_PRIO_MASK)
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+					       vid & VLAN_PRIO_MASK);
 	}
 
 	fm10k_type_trans(rx_ring, rx_desc, skb);
@@ -508,48 +539,6 @@ static bool fm10k_is_non_eop(struct fm10k_ring *rx_ring,
 }
 
 /**
- * fm10k_pull_tail - fm10k specific version of skb_pull_tail
- * @rx_ring: rx descriptor ring packet is being transacted on
- * @rx_desc: pointer to the EOP Rx descriptor
- * @skb: pointer to current skb being adjusted
- *
- * This function is an fm10k specific version of __pskb_pull_tail.  The
- * main difference between this version and the original function is that
- * this function can make several assumptions about the state of things
- * that allow for significant optimizations versus the standard function.
- * As a result we can do things like drop a frag and maintain an accurate
- * truesize for the skb.
- */
-static void fm10k_pull_tail(struct fm10k_ring *rx_ring,
-			    union fm10k_rx_desc *rx_desc,
-			    struct sk_buff *skb)
-{
-	struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[0];
-	unsigned char *va;
-	unsigned int pull_len;
-
-	/* it is valid to use page_address instead of kmap since we are
-	 * working with pages allocated out of the lomem pool per
-	 * alloc_page(GFP_ATOMIC)
-	 */
-	va = skb_frag_address(frag);
-
-	/* we need the header to contain the greater of either ETH_HLEN or
-	 * 60 bytes if the skb->len is less than 60 for skb_pad.
-	 */
-	pull_len = eth_get_headlen(va, FM10K_RX_HDR_LEN);
-
-	/* align pull length to size of long to optimize memcpy performance */
-	skb_copy_to_linear_data(skb, va, ALIGN(pull_len, sizeof(long)));
-
-	/* update all of the pointers */
-	skb_frag_size_sub(frag, pull_len);
-	frag->page_offset += pull_len;
-	skb->data_len -= pull_len;
-	skb->tail += pull_len;
-}
-
-/**
  * fm10k_cleanup_headers - Correct corrupted or empty headers
  * @rx_ring: rx descriptor ring packet is being transacted on
  * @rx_desc: pointer to the EOP Rx descriptor
@@ -569,23 +558,26 @@ static bool fm10k_cleanup_headers(struct fm10k_ring *rx_ring,
 {
 	if (unlikely((fm10k_test_staterr(rx_desc,
 					 FM10K_RXD_STATUS_RXE)))) {
+#define FM10K_TEST_RXD_BIT(rxd, bit) \
+	((rxd)->w.csum_err & cpu_to_le16(bit))
+		if (FM10K_TEST_RXD_BIT(rx_desc, FM10K_RXD_ERR_SWITCH_ERROR))
+			rx_ring->rx_stats.switch_errors++;
+		if (FM10K_TEST_RXD_BIT(rx_desc, FM10K_RXD_ERR_NO_DESCRIPTOR))
+			rx_ring->rx_stats.drops++;
+		if (FM10K_TEST_RXD_BIT(rx_desc, FM10K_RXD_ERR_PP_ERROR))
+			rx_ring->rx_stats.pp_errors++;
+		if (FM10K_TEST_RXD_BIT(rx_desc, FM10K_RXD_ERR_SWITCH_READY))
+			rx_ring->rx_stats.link_errors++;
+		if (FM10K_TEST_RXD_BIT(rx_desc, FM10K_RXD_ERR_TOO_BIG))
+			rx_ring->rx_stats.length_errors++;
 		dev_kfree_skb_any(skb);
 		rx_ring->rx_stats.errors++;
 		return true;
 	}
 
-	/* place header in linear portion of buffer */
-	if (skb_is_nonlinear(skb))
-		fm10k_pull_tail(rx_ring, rx_desc, skb);
-
-	/* if skb_pad returns an error the skb was freed */
-	if (unlikely(skb->len < 60)) {
-		int pad_len = 60 - skb->len;
-
-		if (skb_pad(skb, pad_len))
-			return true;
-		__skb_put(skb, pad_len);
-	}
+	/* if eth_skb_pad returns an error the skb was freed */
+	if (eth_skb_pad(skb))
+		return true;
 
 	return false;
 }
@@ -601,15 +593,15 @@ static void fm10k_receive_skb(struct fm10k_q_vector *q_vector,
 	napi_gro_receive(&q_vector->napi, skb);
 }
 
-static bool fm10k_clean_rx_irq(struct fm10k_q_vector *q_vector,
-			       struct fm10k_ring *rx_ring,
-			       int budget)
+static int fm10k_clean_rx_irq(struct fm10k_q_vector *q_vector,
+			      struct fm10k_ring *rx_ring,
+			      int budget)
 {
 	struct sk_buff *skb = rx_ring->skb;
 	unsigned int total_bytes = 0, total_packets = 0;
 	u16 cleaned_count = fm10k_desc_unused(rx_ring);
 
-	do {
+	while (likely(total_packets < budget)) {
 		union fm10k_rx_desc *rx_desc;
 
 		/* return some buffers to hardware, one at a time is too slow */
@@ -620,14 +612,14 @@ static bool fm10k_clean_rx_irq(struct fm10k_q_vector *q_vector,
 
 		rx_desc = FM10K_RX_DESC(rx_ring, rx_ring->next_to_clean);
 
-		if (!fm10k_test_staterr(rx_desc, FM10K_RXD_STATUS_DD))
+		if (!rx_desc->d.staterr)
 			break;
 
 		/* This memory barrier is needed to keep us from reading
 		 * any other fields out of the rx_desc until we know the
-		 * RXD_STATUS_DD bit is set
+		 * descriptor has been written back
 		 */
-		rmb();
+		dma_rmb();
 
 		/* retrieve a buffer from the ring */
 		skb = fm10k_fetch_rx_buffer(rx_ring, rx_desc, skb);
@@ -658,7 +650,7 @@ static bool fm10k_clean_rx_irq(struct fm10k_q_vector *q_vector,
 
 		/* update budget accounting */
 		total_packets++;
-	} while (likely(total_packets < budget));
+	}
 
 	/* place incomplete frames back on ring for completion */
 	rx_ring->skb = skb;
@@ -670,7 +662,7 @@ static bool fm10k_clean_rx_irq(struct fm10k_q_vector *q_vector,
 	q_vector->rx.total_packets += total_packets;
 	q_vector->rx.total_bytes += total_bytes;
 
-	return total_packets < budget;
+	return total_packets;
 }
 
 #define VXLAN_HLEN (sizeof(struct udphdr) + 8)
@@ -716,10 +708,6 @@ static struct ethhdr *fm10k_gre_is_nvgre(struct sk_buff *skb)
 	if (nvgre_hdr->flags & FM10K_NVGRE_RESERVED0_FLAGS)
 		return NULL;
 
-	/* verify protocol is transparent Ethernet bridging */
-	if (nvgre_hdr->proto != htons(ETH_P_TEB))
-		return NULL;
-
 	/* report start of ethernet header */
 	if (nvgre_hdr->flags & NVGRE_TNI)
 		return (struct ethhdr *)(nvgre_hdr + 1);
@@ -727,10 +715,14 @@ static struct ethhdr *fm10k_gre_is_nvgre(struct sk_buff *skb)
 	return (struct ethhdr *)(&nvgre_hdr->tni);
 }
 
-static __be16 fm10k_tx_encap_offload(struct sk_buff *skb)
+__be16 fm10k_tx_encap_offload(struct sk_buff *skb)
 {
+	u8 l4_hdr = 0, inner_l4_hdr = 0, inner_l4_hlen;
 	struct ethhdr *eth_hdr;
-	u8 l4_hdr = 0;
+
+	if (skb->inner_protocol_type != ENCAP_TYPE_ETHER ||
+	    skb->inner_protocol != htons(ETH_P_TEB))
+		return 0;
 
 	switch (vlan_get_protocol(skb)) {
 	case htons(ETH_P_IP):
@@ -759,11 +751,32 @@ static __be16 fm10k_tx_encap_offload(struct sk_buff *skb)
 
 	switch (eth_hdr->h_proto) {
 	case htons(ETH_P_IP):
+		inner_l4_hdr = inner_ip_hdr(skb)->protocol;
+		break;
 	case htons(ETH_P_IPV6):
+		inner_l4_hdr = inner_ipv6_hdr(skb)->nexthdr;
 		break;
 	default:
 		return 0;
 	}
+
+	switch (inner_l4_hdr) {
+	case IPPROTO_TCP:
+		inner_l4_hlen = inner_tcp_hdrlen(skb);
+		break;
+	case IPPROTO_UDP:
+		inner_l4_hlen = 8;
+		break;
+	default:
+		return 0;
+	}
+
+	/* The hardware allows tunnel offloads only if the combined inner and
+	 * outer header is 184 bytes or less
+	 */
+	if (skb_inner_transport_header(skb) + inner_l4_hlen -
+	    skb_mac_header(skb) > FM10K_TUNNEL_HEADER_LENGTH)
+		return 0;
 
 	return eth_hdr->h_proto;
 }
@@ -882,6 +895,7 @@ static void fm10k_tx_csum(struct fm10k_ring *tx_ring,
 
 	/* update TX checksum flag */
 	first->tx_flags |= FM10K_TX_FLAGS_CSUM;
+	tx_ring->tx_stats.csum_good++;
 
 no_csum:
 	/* populate Tx descriptor header size and mss */
@@ -933,10 +947,10 @@ static int __fm10k_maybe_stop_tx(struct fm10k_ring *tx_ring, u16 size)
 {
 	netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
 
+	/* Memory barrier before checking head and tail */
 	smp_mb();
 
-	/* We need to check again in a case another CPU has just
-	 * made room available. */
+	/* Check again in a case another CPU has just made room available */
 	if (likely(fm10k_desc_unused(tx_ring) < size))
 		return -EBUSY;
 
@@ -970,8 +984,8 @@ static void fm10k_tx_map(struct fm10k_ring *tx_ring,
 	tx_desc = FM10K_TX_DESC(tx_ring, i);
 
 	/* add HW VLAN tag */
-	if (vlan_tx_tag_present(skb))
-		tx_desc->vlan = cpu_to_le16(vlan_tx_tag_get(skb));
+	if (skb_vlan_tag_present(skb))
+		tx_desc->vlan = cpu_to_le16(skb_vlan_tag_get(skb));
 	else
 		tx_desc->vlan = 0;
 
@@ -1083,9 +1097,7 @@ netdev_tx_t fm10k_xmit_frame_ring(struct sk_buff *skb,
 	struct fm10k_tx_buffer *first;
 	int tso;
 	u32 tx_flags = 0;
-#if PAGE_SIZE > FM10K_MAX_DATA_PER_TXD
 	unsigned short f;
-#endif
 	u16 count = TXD_USE_COUNT(skb_headlen(skb));
 
 	/* need: 1 descriptor per page * PAGE_SIZE/FM10K_MAX_DATA_PER_TXD,
@@ -1093,12 +1105,9 @@ netdev_tx_t fm10k_xmit_frame_ring(struct sk_buff *skb,
 	 *       + 2 desc gap to keep tail from touching head
 	 * otherwise try next time
 	 */
-#if PAGE_SIZE > FM10K_MAX_DATA_PER_TXD
 	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
 		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
-#else
-	count += skb_shinfo(skb)->nr_frags;
-#endif
+
 	if (fm10k_maybe_stop_tx(tx_ring, count + 3)) {
 		tx_ring->tx_stats.tx_busy++;
 		return NETDEV_TX_BUSY;
@@ -1181,7 +1190,6 @@ void fm10k_tx_timeout_reset(struct fm10k_intfc *interface)
 {
 	/* Do the reset outside of interrupt context */
 	if (!test_bit(__FM10K_DOWN, &interface->state)) {
-		netdev_err(interface->netdev, "Reset interface\n");
 		interface->tx_timeout_count++;
 		interface->flags |= FM10K_FLAG_RESET_REQUESTED;
 		fm10k_service_event_schedule(interface);
@@ -1414,11 +1422,15 @@ static int fm10k_poll(struct napi_struct *napi, int budget)
 	struct fm10k_q_vector *q_vector =
 			       container_of(napi, struct fm10k_q_vector, napi);
 	struct fm10k_ring *ring;
-	int per_ring_budget;
+	int per_ring_budget, work_done = 0;
 	bool clean_complete = true;
 
 	fm10k_for_each_ring(ring, q_vector->tx)
 		clean_complete &= fm10k_clean_tx_irq(q_vector, ring);
+
+	/* Handle case where we are called by netpoll with a budget of 0 */
+	if (budget <= 0)
+		return budget;
 
 	/* attempt to distribute budget to each queue fairly, but don't
 	 * allow the budget to go below 1 because we'll exit polling
@@ -1428,16 +1440,19 @@ static int fm10k_poll(struct napi_struct *napi, int budget)
 	else
 		per_ring_budget = budget;
 
-	fm10k_for_each_ring(ring, q_vector->rx)
-		clean_complete &= fm10k_clean_rx_irq(q_vector, ring,
-						     per_ring_budget);
+	fm10k_for_each_ring(ring, q_vector->rx) {
+		int work = fm10k_clean_rx_irq(q_vector, ring, per_ring_budget);
+
+		work_done += work;
+		clean_complete &= !!(work < per_ring_budget);
+	}
 
 	/* If all work not completed, return budget and keep polling */
 	if (!clean_complete)
 		return budget;
 
 	/* all work done, exit the polling mode */
-	napi_complete(napi);
+	napi_complete_done(napi, work_done);
 
 	/* re-enable the q_vector */
 	fm10k_qv_enable(q_vector);
@@ -1897,7 +1912,7 @@ static void fm10k_init_reta(struct fm10k_intfc *interface)
 	u32 reta, base;
 
 	/* If the netdev is initialized we have to maintain table if possible */
-	if (interface->netdev->reg_state) {
+	if (interface->netdev->reg_state != NETREG_UNINITIALIZED) {
 		for (i = FM10K_RETA_SIZE; i--;) {
 			reta = interface->reta[i];
 			if ((((reta << 24) >> 24) < rss_i) &&
@@ -1955,8 +1970,10 @@ int fm10k_init_queueing_scheme(struct fm10k_intfc *interface)
 
 	/* Allocate memory for queues */
 	err = fm10k_alloc_q_vectors(interface);
-	if (err)
+	if (err) {
+		fm10k_reset_msix_capability(interface);
 		return err;
+	}
 
 	/* Map rings to devices, and map devices to physical queues */
 	fm10k_assign_rings(interface);

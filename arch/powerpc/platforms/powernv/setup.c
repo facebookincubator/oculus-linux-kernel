@@ -32,7 +32,6 @@
 #include <asm/machdep.h>
 #include <asm/firmware.h>
 #include <asm/xics.h>
-#include <asm/rtas.h>
 #include <asm/opal.h>
 #include <asm/kexec.h>
 #include <asm/smp.h>
@@ -108,7 +107,7 @@ static void pnv_prepare_going_down(void)
 	 * Disable all notifiers from OPAL, we can't
 	 * service interrupts anymore anyway
 	 */
-	opal_notifier_disable();
+	opal_event_shutdown();
 
 	/* Soft disable interrupts */
 	local_irq_disable();
@@ -166,21 +165,6 @@ static void pnv_progress(char *s, unsigned short hex)
 {
 }
 
-static int pnv_dma_set_mask(struct device *dev, u64 dma_mask)
-{
-	if (dev_is_pci(dev))
-		return pnv_pci_dma_set_mask(to_pci_dev(dev), dma_mask);
-	return __dma_set_mask(dev, dma_mask);
-}
-
-static u64 pnv_dma_get_required_mask(struct device *dev)
-{
-	if (dev_is_pci(dev))
-		return pnv_pci_dma_get_required_mask(to_pci_dev(dev));
-
-	return __dma_get_required_mask(dev);
-}
-
 static void pnv_shutdown(void)
 {
 	/* Let the PCI code clear up IODA tables */
@@ -203,7 +187,7 @@ static void pnv_kexec_wait_secondaries_down(void)
 
 	for_each_online_cpu(i) {
 		uint8_t status;
-		int64_t rc;
+		int64_t rc, timeout = 1000;
 
 		if (i == my_cpu)
 			continue;
@@ -219,6 +203,18 @@ static void pnv_kexec_wait_secondaries_down(void)
 				       "(physical %d) to enter OPAL\n",
 				       i, paca[i].hw_cpu_id);
 				notified = i;
+			}
+
+			/*
+			 * On crash secondaries might be unreachable or hung,
+			 * so timeout if we've waited too long
+			 * */
+			mdelay(1);
+			if (timeout-- == 0) {
+				printk(KERN_ERR "kexec: timed out waiting for "
+				       "cpu %d (physical %d) to enter OPAL\n",
+				       i, paca[i].hw_cpu_id);
+				break;
 			}
 		}
 	}
@@ -241,16 +237,16 @@ static void pnv_kexec_cpu_down(int crash_shutdown, int secondary)
 
 		/* Return the CPU to OPAL */
 		opal_return_cpu();
-	} else if (crash_shutdown) {
-		/*
-		 * On crash, we don't wait for secondaries to go
-		 * down as they might be unreachable or hung, so
-		 * instead we just wait a bit and move on.
-		 */
-		mdelay(1);
 	} else {
 		/* Primary waits for the secondaries to have reached OPAL */
 		pnv_kexec_wait_secondaries_down();
+
+		/*
+		 * We might be running as little-endian - now that interrupts
+		 * are disabled, reset the HILE bit to big-endian so we don't
+		 * take interrupts in the wrong endian later
+		 */
+		opal_reinit_cpus(OPAL_REINIT_CPUS_HILE_BE);
 	}
 }
 #endif /* CONFIG_KEXEC */
@@ -265,30 +261,14 @@ static unsigned long pnv_memory_block_size(void)
 static void __init pnv_setup_machdep_opal(void)
 {
 	ppc_md.get_boot_time = opal_get_boot_time;
-	ppc_md.get_rtc_time = opal_get_rtc_time;
-	ppc_md.set_rtc_time = opal_set_rtc_time;
 	ppc_md.restart = pnv_restart;
-	ppc_md.power_off = pnv_power_off;
+	pm_power_off = pnv_power_off;
 	ppc_md.halt = pnv_halt;
 	ppc_md.machine_check_exception = opal_machine_check;
 	ppc_md.mce_check_early_recovery = opal_mce_check_early_recovery;
 	ppc_md.hmi_exception_early = opal_hmi_exception_early;
 	ppc_md.handle_hmi_exception = opal_handle_hmi_exception;
 }
-
-#ifdef CONFIG_PPC_POWERNV_RTAS
-static void __init pnv_setup_machdep_rtas(void)
-{
-	if (rtas_token("get-time-of-day") != RTAS_UNKNOWN_SERVICE) {
-		ppc_md.get_boot_time = rtas_get_boot_time;
-		ppc_md.get_rtc_time = rtas_get_rtc_time;
-		ppc_md.set_rtc_time = rtas_set_rtc_time;
-	}
-	ppc_md.restart = rtas_restart;
-	ppc_md.power_off = rtas_power_off;
-	ppc_md.halt = rtas_halt;
-}
-#endif /* CONFIG_PPC_POWERNV_RTAS */
 
 static int __init pnv_probe(void)
 {
@@ -301,10 +281,6 @@ static int __init pnv_probe(void)
 
 	if (firmware_has_feature(FW_FEATURE_OPAL))
 		pnv_setup_machdep_opal();
-#ifdef CONFIG_PPC_POWERNV_RTAS
-	else if (rtas.base)
-		pnv_setup_machdep_rtas();
-#endif /* CONFIG_PPC_POWERNV_RTAS */
 
 	pr_debug("PowerNV detected !\n");
 
@@ -342,8 +318,6 @@ define_machine(powernv) {
 	.machine_shutdown	= pnv_shutdown,
 	.power_save             = power7_idle,
 	.calibrate_decr		= generic_calibrate_decr,
-	.dma_set_mask		= pnv_dma_set_mask,
-	.dma_get_required_mask	= pnv_dma_get_required_mask,
 #ifdef CONFIG_KEXEC
 	.kexec_cpu_down		= pnv_kexec_cpu_down,
 #endif

@@ -89,7 +89,6 @@
 struct ad5933_state {
 	struct i2c_client		*client;
 	struct regulator		*reg;
-	struct ad5933_platform_data	*pdata;
 	struct delayed_work		work;
 	unsigned long			mclk_hz;
 	unsigned char			ctrl_hb;
@@ -113,7 +112,8 @@ static const struct iio_chan_spec ad5933_channels[] = {
 		.type = IIO_TEMP,
 		.indexed = 1,
 		.channel = 0,
-		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
+			BIT(IIO_CHAN_INFO_SCALE),
 		.address = AD5933_REG_TEMP_DATA,
 		.scan_index = -1,
 		.scan_type = {
@@ -360,11 +360,11 @@ static ssize_t ad5933_show(struct device *dev,
 	mutex_lock(&indio_dev->mlock);
 	switch ((u32) this_attr->address) {
 	case AD5933_OUT_RANGE:
-		len = sprintf(buf, "%d\n",
+		len = sprintf(buf, "%u\n",
 			      st->range_avail[(st->ctrl_hb >> 1) & 0x3]);
 		break;
 	case AD5933_OUT_RANGE_AVAIL:
-		len = sprintf(buf, "%d %d %d %d\n", st->range_avail[0],
+		len = sprintf(buf, "%u %u %u %u\n", st->range_avail[0],
 			      st->range_avail[3], st->range_avail[2],
 			      st->range_avail[1]);
 		break;
@@ -520,12 +520,11 @@ static int ad5933_read_raw(struct iio_dev *indio_dev,
 {
 	struct ad5933_state *st = iio_priv(indio_dev);
 	__be16 dat;
-	int ret = -EINVAL;
+	int ret;
 
-	mutex_lock(&indio_dev->mlock);
 	switch (m) {
 	case IIO_CHAN_INFO_RAW:
-	case IIO_CHAN_INFO_PROCESSED:
+		mutex_lock(&indio_dev->mlock);
 		if (iio_buffer_enabled(indio_dev)) {
 			ret = -EBUSY;
 			goto out;
@@ -543,16 +542,16 @@ static int ad5933_read_raw(struct iio_dev *indio_dev,
 		if (ret < 0)
 			goto out;
 		mutex_unlock(&indio_dev->mlock);
-		ret = be16_to_cpu(dat);
-		/* Temp in Milli degrees Celsius */
-		if (ret < 8192)
-			*val = ret * 1000 / 32;
-		else
-			*val = (ret - 16384) * 1000 / 32;
+		*val = sign_extend32(be16_to_cpu(dat), 13);
 
 		return IIO_VAL_INT;
+	case IIO_CHAN_INFO_SCALE:
+		*val = 1000;
+		*val2 = 5;
+		return IIO_VAL_FRACTIONAL_LOG2;
 	}
 
+	return -EINVAL;
 out:
 	mutex_unlock(&indio_dev->mlock);
 	return ret;
@@ -626,7 +625,7 @@ static int ad5933_register_ring_funcs_and_init(struct iio_dev *indio_dev)
 {
 	struct iio_buffer *buffer;
 
-	buffer = iio_kfifo_allocate(indio_dev);
+	buffer = iio_kfifo_allocate();
 	if (!buffer)
 		return -ENOMEM;
 
@@ -645,7 +644,8 @@ static void ad5933_work(struct work_struct *work)
 	struct ad5933_state *st = container_of(work,
 		struct ad5933_state, work.work);
 	struct iio_dev *indio_dev = i2c_get_clientdata(st->client);
-	signed short buf[2];
+	__be16 buf[2];
+	int val[2];
 	unsigned char status;
 
 	mutex_lock(&indio_dev->mlock);
@@ -669,12 +669,12 @@ static void ad5933_work(struct work_struct *work)
 				scan_count * 2, (u8 *)buf);
 
 		if (scan_count == 2) {
-			buf[0] = be16_to_cpu(buf[0]);
-			buf[1] = be16_to_cpu(buf[1]);
+			val[0] = be16_to_cpu(buf[0]);
+			val[1] = be16_to_cpu(buf[1]);
 		} else {
-			buf[0] = be16_to_cpu(buf[0]);
+			val[0] = be16_to_cpu(buf[0]);
 		}
-		iio_push_to_buffers(indio_dev, buf);
+		iio_push_to_buffers(indio_dev, val);
 	} else {
 		/* no data available - try again later */
 		schedule_delayed_work(&st->work, st->poll_time_jiffies);
@@ -704,7 +704,7 @@ static int ad5933_probe(struct i2c_client *client,
 	struct iio_dev *indio_dev;
 
 	indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*st));
-	if (indio_dev == NULL)
+	if (!indio_dev)
 		return -ENOMEM;
 
 	st = iio_priv(indio_dev);
@@ -712,9 +712,7 @@ static int ad5933_probe(struct i2c_client *client,
 	st->client = client;
 
 	if (!pdata)
-		st->pdata = &ad5933_default_pdata;
-	else
-		st->pdata = pdata;
+		pdata = &ad5933_default_pdata;
 
 	st->reg = devm_regulator_get(&client->dev, "vcc");
 	if (!IS_ERR(st->reg)) {
@@ -727,10 +725,10 @@ static int ad5933_probe(struct i2c_client *client,
 	if (voltage_uv)
 		st->vref_mv = voltage_uv / 1000;
 	else
-		st->vref_mv = st->pdata->vref_mv;
+		st->vref_mv = pdata->vref_mv;
 
-	if (st->pdata->ext_clk_Hz) {
-		st->mclk_hz = st->pdata->ext_clk_Hz;
+	if (pdata->ext_clk_Hz) {
+		st->mclk_hz = pdata->ext_clk_Hz;
 		st->ctrl_lb = AD5933_CTRL_EXT_SYSCLK;
 	} else {
 		st->mclk_hz = AD5933_INT_OSC_FREQ_Hz;
@@ -752,27 +750,16 @@ static int ad5933_probe(struct i2c_client *client,
 	if (ret)
 		goto error_disable_reg;
 
-	ret = iio_buffer_register(indio_dev, ad5933_channels,
-		ARRAY_SIZE(ad5933_channels));
+	ret = ad5933_setup(st);
 	if (ret)
 		goto error_unreg_ring;
 
-	/* enable both REAL and IMAG channels by default */
-	iio_scan_mask_set(indio_dev, indio_dev->buffer, 0);
-	iio_scan_mask_set(indio_dev, indio_dev->buffer, 1);
-
-	ret = ad5933_setup(st);
-	if (ret)
-		goto error_uninitialize_ring;
-
 	ret = iio_device_register(indio_dev);
 	if (ret)
-		goto error_uninitialize_ring;
+		goto error_unreg_ring;
 
 	return 0;
 
-error_uninitialize_ring:
-	iio_buffer_unregister(indio_dev);
 error_unreg_ring:
 	iio_kfifo_free(indio_dev->buffer);
 error_disable_reg:
@@ -788,7 +775,6 @@ static int ad5933_remove(struct i2c_client *client)
 	struct ad5933_state *st = iio_priv(indio_dev);
 
 	iio_device_unregister(indio_dev);
-	iio_buffer_unregister(indio_dev);
 	iio_kfifo_free(indio_dev->buffer);
 	if (!IS_ERR(st->reg))
 		regulator_disable(st->reg);

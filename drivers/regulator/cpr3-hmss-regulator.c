@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +32,7 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
-#include <linux/regulator/kryo-regulator.h>
+#include <linux/regulator/msm-ldo-regulator.h>
 
 #include "cpr3-regulator.h"
 
@@ -87,9 +87,8 @@ struct cpr3_msm8996_hmss_fuses {
 /*
  * Fuse combos 0 -  7 map to CPR fusing revision 0 - 7 with speed bin fuse = 0.
  * Fuse combos 8 - 15 map to CPR fusing revision 0 - 7 with speed bin fuse = 1.
- * Fuse combos 16 - 23 map to CPR fusing revision 0 - 7 with speed bin fuse = 2.
  */
-#define CPR3_MSM8996_HMSS_FUSE_COMBO_COUNT	24
+#define CPR3_MSM8996_HMSS_FUSE_COMBO_COUNT	16
 
 /*
  * Constants which define the name of each fuse corner.  Note that no actual
@@ -420,9 +419,6 @@ static const int msm8996_vdd_mx_fuse_ret_volt[] = {
 
 #define MSM8996_HMSS_AGING_SENSOR_ID		11
 #define MSM8996_HMSS_AGING_BYPASS_MASK0		(GENMASK(7, 0) & ~BIT(3))
-
-/* Use scaled gate count (GCNT) for aging measurements */
-#define MSM8996_HMSS_AGING_GCNT_SCALING_FACTOR	1500
 
 /**
  * cpr3_msm8996_hmss_use_voltage_offset_fuse() - return if this part utilizes
@@ -1236,7 +1232,7 @@ static int cpr3_hmss_kvreg_init(struct cpr3_regulator *vreg)
 	scnprintf(kvreg_name_buf, MAX_VREG_NAME_SIZE,
 		"vdd-thread%d-ldo-supply", id);
 
-	if (!of_find_property(ctrl->dev->of_node, kvreg_name_buf , NULL))
+	if (!of_find_property(ctrl->dev->of_node, kvreg_name_buf, NULL))
 		return 0;
 	else if (!of_find_property(node, "qcom,ldo-min-headroom-voltage", NULL))
 		return 0;
@@ -1505,7 +1501,7 @@ static int cpr3_hmss_init_regulator(struct cpr3_regulator *vreg)
 static int cpr3_hmss_init_aging(struct cpr3_controller *ctrl)
 {
 	struct cpr3_msm8996_hmss_fuses *fuse = NULL;
-	struct cpr3_regulator *vreg = NULL;
+	struct cpr3_regulator *vreg;
 	u32 aging_ro_scale;
 	int i, j, rc;
 
@@ -1520,7 +1516,7 @@ static int cpr3_hmss_init_aging(struct cpr3_controller *ctrl)
 		}
 	}
 
-	if (!vreg || !ctrl->aging_required || !fuse)
+	if (!ctrl->aging_required || !fuse || !vreg)
 		return 0;
 
 	rc = cpr3_parse_array_property(vreg, "qcom,cpr-aging-ro-scaling-factor",
@@ -1545,8 +1541,6 @@ static int cpr3_hmss_init_aging(struct cpr3_controller *ctrl)
 	ctrl->aging_sensor->sensor_id = MSM8996_HMSS_AGING_SENSOR_ID;
 	ctrl->aging_sensor->bypass_mask[0] = MSM8996_HMSS_AGING_BYPASS_MASK0;
 	ctrl->aging_sensor->ro_scale = aging_ro_scale;
-	ctrl->aging_gcnt_scaling_factor
-				= MSM8996_HMSS_AGING_GCNT_SCALING_FACTOR;
 
 	ctrl->aging_sensor->init_quot_diff
 		= cpr3_convert_open_loop_voltage_fuse(0,
@@ -1681,7 +1675,7 @@ static int cpr3_hmss_regulator_resume(struct platform_device *pdev)
 }
 
 /* Data corresponds to the SoC revision */
-static struct of_device_id cpr_regulator_match_table[] = {
+static const struct of_device_id cpr_regulator_match_table[] = {
 	{
 		.compatible = "qcom,cpr3-msm8996-v1-hmss-regulator",
 		.data = (void *)(uintptr_t)1

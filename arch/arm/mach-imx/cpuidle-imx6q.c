@@ -9,7 +9,6 @@
 #include <linux/cpuidle.h>
 #include <linux/module.h>
 #include <asm/cpuidle.h>
-#include <asm/proc-fns.h>
 
 #include "common.h"
 #include "cpuidle.h"
@@ -28,9 +27,9 @@ static int imx6q_enter_wait(struct cpuidle_device *dev,
 		 */
 		if (!spin_trylock(&master_lock))
 			goto idle;
-		imx6q_set_lpm(WAIT_UNCLOCKED);
+		imx6_set_lpm(WAIT_UNCLOCKED);
 		cpu_do_idle();
-		imx6q_set_lpm(WAIT_CLOCKED);
+		imx6_set_lpm(WAIT_CLOCKED);
 		spin_unlock(&master_lock);
 		goto done;
 	}
@@ -53,8 +52,7 @@ static struct cpuidle_driver imx6q_cpuidle_driver = {
 		{
 			.exit_latency = 50,
 			.target_residency = 75,
-			.flags = CPUIDLE_FLAG_TIME_VALID |
-			         CPUIDLE_FLAG_TIMER_STOP,
+			.flags = CPUIDLE_FLAG_TIMER_STOP,
 			.enter = imx6q_enter_wait,
 			.name = "WAIT",
 			.desc = "Clock off",

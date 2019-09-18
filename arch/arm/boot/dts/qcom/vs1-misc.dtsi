@@ -1,0 +1,94 @@
+/* Copyright (c) 2017, Oculus VR. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/ {
+	reserved-memory {
+		/* pstore */
+		ramoops_region: ramoops@9d300000 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0 0x9d300000 0 0x00100000>;
+		};
+
+		oculus_dma_memory: oculus_dma_region {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0 0x00000000 0 0xffffffff>;
+			reusable;
+			alignment = <0 0x200000>;
+			size = <0 0xA000000>;
+		};
+	};
+
+	ramoops {
+		memory-region = <&ramoops_region>;
+		compatible = "ramoops";
+		record-size = <131072>;
+		console-size = <131072>;
+		ftrace-size = <131072>;
+		pmsg-size = <131072>;
+	};
+};
+
+&soc {
+	/* Enable second DSP */
+	glink_mpss: qcom,glink-ssr-modem {
+		qcom,notify-edges = <&glink_lpass>, <&glink_dsps>, <&glink_rpm>;
+	};
+
+	glink_lpass: qcom,glink-ssr-adsp {
+		qcom,notify-edges = <&glink_mpss>, <&glink_dsps>, <&glink_rpm>;
+	};
+
+	glink_dsps: qcom,glink-ssr-dsps {
+		qcom,notify-edges = <&glink_mpss>, <&glink_lpass>, <&glink_rpm>;
+	};
+};
+
+&spmi_bus {
+	qcom,pm8998@0 {
+		qcom,power-on@800 {
+			/* Reset after pressing power for ~12.2 seconds */
+			qcom,pon_1 {
+				qcom,support-reset = <1>;
+				qcom,s1-timer = <10256>;
+				qcom,s2-timer = <2000>;
+				qcom,s2-type = <4>;
+			};
+
+			qcom,pon_3 {
+				qcom,support-reset = <0>;
+			};
+
+		};
+	};
+
+	qcom,pmi8998@2 {
+		/* IPD sensor */
+		pmi8998_misc: qcom,misc@900 {
+			compatible = "qcom,qpnp-misc";
+			reg = <0x900 0x100>;
+		};
+
+		rradc@4500 {
+			qcom,pmic-misc = <&pmi8998_misc>;
+			qcom,misc-adc-premux-sel-reg = <0xe5>;
+		};
+	};
+};
+
+&dai_mi2s0 {
+	qcom,msm-mi2s-rx-lines = <2>;
+	qcom,msm-mi2s-tx-lines = <1>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active &pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+	pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep &pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+};

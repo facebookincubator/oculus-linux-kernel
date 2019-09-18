@@ -213,6 +213,7 @@ int cw1200_add_interface(struct ieee80211_hw *dev,
 	/* __le32 auto_calibration_mode = __cpu_to_le32(1); */
 
 	vif->driver_flags |= IEEE80211_VIF_BEACON_FILTER |
+			     IEEE80211_VIF_SUPPORTS_UAPSD |
 			     IEEE80211_VIF_SUPPORTS_CQM_RSSI;
 
 	mutex_lock(&priv->conf_mutex);
@@ -292,7 +293,7 @@ void cw1200_remove_interface(struct ieee80211_hw *dev,
 	}
 	priv->vif = NULL;
 	priv->mode = NL80211_IFTYPE_MONITOR;
-	memset(priv->mac_addr, 0, ETH_ALEN);
+	eth_zero_addr(priv->mac_addr);
 	memset(&priv->p2p_ps_modeinfo, 0, sizeof(priv->p2p_ps_modeinfo));
 	cw1200_free_keys(priv);
 	cw1200_setup_mac(priv);
@@ -577,13 +578,11 @@ void cw1200_configure_filter(struct ieee80211_hw *dev,
 {
 	struct cw1200_common *priv = dev->priv;
 	bool listening = !!(*total_flags &
-			    (FIF_PROMISC_IN_BSS |
-			     FIF_OTHER_BSS |
+			    (FIF_OTHER_BSS |
 			     FIF_BCN_PRBRESP_PROMISC |
 			     FIF_PROBE_REQ));
 
-	*total_flags &= FIF_PROMISC_IN_BSS |
-			FIF_OTHER_BSS |
+	*total_flags &= FIF_OTHER_BSS |
 			FIF_FCSFAIL |
 			FIF_BCN_PRBRESP_PROMISC |
 			FIF_PROBE_REQ;
@@ -591,14 +590,12 @@ void cw1200_configure_filter(struct ieee80211_hw *dev,
 	down(&priv->scan.lock);
 	mutex_lock(&priv->conf_mutex);
 
-	priv->rx_filter.promiscuous = (*total_flags & FIF_PROMISC_IN_BSS)
-			? 1 : 0;
+	priv->rx_filter.promiscuous = 0;
 	priv->rx_filter.bssid = (*total_flags & (FIF_OTHER_BSS |
 			FIF_PROBE_REQ)) ? 1 : 0;
 	priv->rx_filter.fcs = (*total_flags & FIF_FCSFAIL) ? 1 : 0;
 	priv->disable_beacon_filter = !(*total_flags &
 					(FIF_BCN_PRBRESP_PROMISC |
-					 FIF_PROMISC_IN_BSS |
 					 FIF_PROBE_REQ));
 	if (priv->listening != listening) {
 		priv->listening = listening;
@@ -708,7 +705,8 @@ int cw1200_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 		if (sta)
 			peer_addr = sta->addr;
 
-		key->flags |= IEEE80211_KEY_FLAG_PUT_IV_SPACE;
+		key->flags |= IEEE80211_KEY_FLAG_PUT_IV_SPACE |
+			      IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 
 		switch (key->cipher) {
 		case WLAN_CIPHER_SUITE_WEP40:
@@ -2139,7 +2137,7 @@ int cw1200_ampdu_action(struct ieee80211_hw *hw,
 			struct ieee80211_vif *vif,
 			enum ieee80211_ampdu_mlme_action action,
 			struct ieee80211_sta *sta, u16 tid, u16 *ssn,
-			u8 buf_size)
+			u8 buf_size, bool amsdu)
 {
 	/* Aggregation is implemented fully in firmware,
 	 * including block ack negotiation. Do not allow

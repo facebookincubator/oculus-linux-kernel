@@ -18,7 +18,7 @@
 #include <linux/kallsyms.h>
 #include <linux/seq_file.h>
 #include <linux/suspend.h>
-#include <linux/debugfs.h>
+#include <linux/tracefs.h>
 #include <linux/hardirq.h>
 #include <linux/kthread.h>
 #include <linux/uaccess.h>
@@ -98,6 +98,13 @@ struct ftrace_pid {
 	struct pid *pid;
 };
 
+static bool ftrace_pids_enabled(void)
+{
+	return !list_empty(&ftrace_pids);
+}
+
+static void ftrace_update_trampoline(struct ftrace_ops *ops);
+
 /*
  * ftrace_disabled is set when an anomaly is discovered.
  * ftrace_disabled is much stronger than ftrace_enabled.
@@ -109,7 +116,6 @@ static DEFINE_MUTEX(ftrace_lock);
 static struct ftrace_ops *ftrace_control_list __read_mostly = &ftrace_list_end;
 static struct ftrace_ops *ftrace_ops_list __read_mostly = &ftrace_list_end;
 ftrace_func_t ftrace_trace_function __read_mostly = ftrace_stub;
-ftrace_func_t ftrace_pid_function __read_mostly = ftrace_stub;
 static struct ftrace_ops global_ops;
 static struct ftrace_ops control_ops;
 
@@ -183,14 +189,7 @@ static void ftrace_pid_func(unsigned long ip, unsigned long parent_ip,
 	if (!test_tsk_trace_trace(current))
 		return;
 
-	ftrace_pid_function(ip, parent_ip, op, regs);
-}
-
-static void set_ftrace_pid_function(ftrace_func_t func)
-{
-	/* do not set ftrace_pid_function to itself! */
-	if (func != ftrace_pid_func)
-		ftrace_pid_function = func;
+	op->saved_func(ip, parent_ip, op, regs);
 }
 
 /**
@@ -202,7 +201,6 @@ static void set_ftrace_pid_function(ftrace_func_t func)
 void clear_ftrace_function(void)
 {
 	ftrace_trace_function = ftrace_stub;
-	ftrace_pid_function = ftrace_stub;
 }
 
 static void control_ops_disable_all(struct ftrace_ops *ops)
@@ -245,9 +243,27 @@ static void ftrace_sync_ipi(void *data)
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 static void update_function_graph_func(void);
+
+/* Both enabled by default (can be cleared by function_graph tracer flags */
+static bool fgraph_sleep_time = true;
+static bool fgraph_graph_time = true;
+
 #else
 static inline void update_function_graph_func(void) { }
 #endif
+
+
+static ftrace_func_t ftrace_ops_get_list_func(struct ftrace_ops *ops)
+{
+	/*
+	 * If this is a dynamic ops or we force list func,
+	 * then it needs to call the list anyway.
+	 */
+	if (ops->flags & FTRACE_OPS_FL_DYNAMIC || FTRACE_FORCE_LIST_FUNC)
+		return ftrace_ops_list_func;
+
+	return ftrace_ops_get_func(ops);
+}
 
 static void update_ftrace_function(void)
 {
@@ -270,7 +286,7 @@ static void update_ftrace_function(void)
 	 * then have the mcount trampoline call the function directly.
 	 */
 	} else if (ftrace_ops_list->next == &ftrace_list_end) {
-		func = ftrace_ops_get_func(ftrace_ops_list);
+		func = ftrace_ops_get_list_func(ftrace_ops_list);
 
 	} else {
 		/* Just use the default ftrace_ops */
@@ -387,6 +403,8 @@ static int remove_ftrace_list_ops(struct ftrace_ops **list,
 	return ret;
 }
 
+static void ftrace_update_trampoline(struct ftrace_ops *ops);
+
 static int __register_ftrace_function(struct ftrace_ops *ops)
 {
 	if (ops->flags & FTRACE_OPS_FL_DELETED)
@@ -416,8 +434,18 @@ static int __register_ftrace_function(struct ftrace_ops *ops)
 		if (control_ops_alloc(ops))
 			return -ENOMEM;
 		add_ftrace_list_ops(&ftrace_control_list, &control_ops, ops);
+		/* The control_ops needs the trampoline update */
+		ops = &control_ops;
 	} else
 		add_ftrace_ops(&ftrace_ops_list, ops);
+
+	/* Always save the function, and reset at unregistering */
+	ops->saved_func = ops->func;
+
+	if (ops->flags & FTRACE_OPS_FL_PID && ftrace_pids_enabled())
+		ops->func = ftrace_pid_func;
+
+	ftrace_update_trampoline(ops);
 
 	if (ftrace_enabled)
 		update_ftrace_function();
@@ -444,14 +472,27 @@ static int __unregister_ftrace_function(struct ftrace_ops *ops)
 	if (ftrace_enabled)
 		update_ftrace_function();
 
+	ops->func = ops->saved_func;
+
 	return 0;
 }
 
 static void ftrace_update_pid_func(void)
 {
+	bool enabled = ftrace_pids_enabled();
+	struct ftrace_ops *op;
+
 	/* Only do something if we are tracing something */
 	if (ftrace_trace_function == ftrace_stub)
 		return;
+
+	do_for_each_ftrace_op(op, ftrace_ops_list) {
+		if (op->flags & FTRACE_OPS_FL_PID) {
+			op->func = enabled ? ftrace_pid_func :
+				op->saved_func;
+			ftrace_update_trampoline(op);
+		}
+	} while_for_each_ftrace_op(op);
 
 	update_ftrace_function();
 }
@@ -565,13 +606,13 @@ static int function_stat_cmp(void *p1, void *p2)
 static int function_stat_headers(struct seq_file *m)
 {
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	seq_printf(m, "  Function                               "
-		   "Hit    Time            Avg             s^2\n"
-		      "  --------                               "
-		   "---    ----            ---             ---\n");
+	seq_puts(m, "  Function                               "
+		 "Hit    Time            Avg             s^2\n"
+		    "  --------                               "
+		 "---    ----            ---             ---\n");
 #else
-	seq_printf(m, "  Function                               Hit\n"
-		      "  --------                               ---\n");
+	seq_puts(m, "  Function                               Hit\n"
+		    "  --------                               ---\n");
 #endif
 	return 0;
 }
@@ -594,13 +635,18 @@ static int function_stat_show(struct seq_file *m, void *v)
 		goto out;
 	}
 
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	avg = rec->time;
+	do_div(avg, rec->counter);
+	if (tracing_thresh && (avg < tracing_thresh))
+		goto out;
+#endif
+
 	kallsyms_lookup(rec->ip, NULL, NULL, NULL, str);
 	seq_printf(m, "  %-30.30s  %10lu", str, rec->counter);
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	seq_printf(m, "    ");
-	avg = rec->time;
-	do_div(avg, rec->counter);
+	seq_puts(m, "    ");
 
 	/* Sample standard deviation (s^2) */
 	if (rec->counter <= 1)
@@ -876,7 +922,7 @@ static void profile_graph_return(struct ftrace_graph_ret *trace)
 
 	calltime = trace->rettime - trace->calltime;
 
-	if (!(trace_flags & TRACE_ITER_GRAPH_TIME)) {
+	if (!fgraph_graph_time) {
 		int index;
 
 		index = trace->depth;
@@ -1002,7 +1048,7 @@ static struct tracer_stat function_stats __initdata = {
 	.stat_show	= function_stat_show
 };
 
-static __init void ftrace_profile_debugfs(struct dentry *d_tracer)
+static __init void ftrace_profile_tracefs(struct dentry *d_tracer)
 {
 	struct ftrace_profile_stat *stat;
 	struct dentry *entry;
@@ -1038,15 +1084,15 @@ static __init void ftrace_profile_debugfs(struct dentry *d_tracer)
 		}
 	}
 
-	entry = debugfs_create_file("function_profile_enabled", 0644,
+	entry = tracefs_create_file("function_profile_enabled", 0644,
 				    d_tracer, NULL, &ftrace_profile_fops);
 	if (!entry)
-		pr_warning("Could not create debugfs "
+		pr_warning("Could not create tracefs "
 			   "'function_profile_enabled' entry\n");
 }
 
 #else /* CONFIG_FUNCTION_PROFILER */
-static __init void ftrace_profile_debugfs(struct dentry *d_tracer)
+static __init void ftrace_profile_tracefs(struct dentry *d_tracer)
 {
 }
 #endif /* CONFIG_FUNCTION_PROFILER */
@@ -1114,8 +1160,46 @@ static struct ftrace_ops global_ops = {
 	.local_hash.filter_hash		= EMPTY_HASH,
 	INIT_OPS_HASH(global_ops)
 	.flags				= FTRACE_OPS_FL_RECURSION_SAFE |
-					  FTRACE_OPS_FL_INITIALIZED,
+					  FTRACE_OPS_FL_INITIALIZED |
+					  FTRACE_OPS_FL_PID,
 };
+
+/*
+ * This is used by __kernel_text_address() to return true if the
+ * address is on a dynamically allocated trampoline that would
+ * not return true for either core_kernel_text() or
+ * is_module_text_address().
+ */
+bool is_ftrace_trampoline(unsigned long addr)
+{
+	struct ftrace_ops *op;
+	bool ret = false;
+
+	/*
+	 * Some of the ops may be dynamically allocated,
+	 * they are freed after a synchronize_sched().
+	 */
+	preempt_disable_notrace();
+
+	do_for_each_ftrace_op(op, ftrace_ops_list) {
+		/*
+		 * This is to check for dynamically allocated trampolines.
+		 * Trampolines that are in kernel text will have
+		 * core_kernel_text() return true.
+		 */
+		if (op->trampoline && op->trampoline_size)
+			if (addr >= op->trampoline &&
+			    addr < op->trampoline + op->trampoline_size) {
+				ret = true;
+				goto out;
+			}
+	} while_for_each_ftrace_op(op);
+
+ out:
+	preempt_enable_notrace();
+
+	return ret;
+}
 
 struct ftrace_page {
 	struct ftrace_page	*next;
@@ -1321,6 +1405,9 @@ ftrace_hash_rec_disable_modify(struct ftrace_ops *ops, int filter_hash);
 static void
 ftrace_hash_rec_enable_modify(struct ftrace_ops *ops, int filter_hash);
 
+static int ftrace_hash_ipmodify_update(struct ftrace_ops *ops,
+				       struct ftrace_hash *new_hash);
+
 static int
 ftrace_hash_move(struct ftrace_ops *ops, int enable,
 		 struct ftrace_hash **dst, struct ftrace_hash *src)
@@ -1331,7 +1418,12 @@ ftrace_hash_move(struct ftrace_ops *ops, int enable,
 	struct ftrace_hash *new_hash;
 	int size = src->count;
 	int bits = 0;
+	int ret;
 	int i;
+
+	/* Reject setting notrace hash on IPMODIFY ftrace_ops */
+	if (ops->flags & FTRACE_OPS_FL_IPMODIFY && !enable)
+		return -EINVAL;
 
 	/*
 	 * If the new source is empty, just free dst and assign it
@@ -1366,6 +1458,16 @@ ftrace_hash_move(struct ftrace_ops *ops, int enable,
 	}
 
 update:
+	/* Make sure this can be applied if it is IPMODIFY ftrace_ops */
+	if (enable) {
+		/* IPMODIFY should be updated only when filter_hash updating */
+		ret = ftrace_hash_ipmodify_update(ops, new_hash);
+		if (ret < 0) {
+			free_ftrace_hash(new_hash);
+			return ret;
+		}
+	}
+
 	/*
 	 * Remove the current set, update the hash and add
 	 * them back.
@@ -1730,6 +1832,114 @@ static void ftrace_hash_rec_enable_modify(struct ftrace_ops *ops,
 	ftrace_hash_rec_update_modify(ops, filter_hash, 1);
 }
 
+/*
+ * Try to update IPMODIFY flag on each ftrace_rec. Return 0 if it is OK
+ * or no-needed to update, -EBUSY if it detects a conflict of the flag
+ * on a ftrace_rec, and -EINVAL if the new_hash tries to trace all recs.
+ * Note that old_hash and new_hash has below meanings
+ *  - If the hash is NULL, it hits all recs (if IPMODIFY is set, this is rejected)
+ *  - If the hash is EMPTY_HASH, it hits nothing
+ *  - Anything else hits the recs which match the hash entries.
+ */
+static int __ftrace_hash_update_ipmodify(struct ftrace_ops *ops,
+					 struct ftrace_hash *old_hash,
+					 struct ftrace_hash *new_hash)
+{
+	struct ftrace_page *pg;
+	struct dyn_ftrace *rec, *end = NULL;
+	int in_old, in_new;
+
+	/* Only update if the ops has been registered */
+	if (!(ops->flags & FTRACE_OPS_FL_ENABLED))
+		return 0;
+
+	if (!(ops->flags & FTRACE_OPS_FL_IPMODIFY))
+		return 0;
+
+	/*
+	 * Since the IPMODIFY is a very address sensitive action, we do not
+	 * allow ftrace_ops to set all functions to new hash.
+	 */
+	if (!new_hash || !old_hash)
+		return -EINVAL;
+
+	/* Update rec->flags */
+	do_for_each_ftrace_rec(pg, rec) {
+		/* We need to update only differences of filter_hash */
+		in_old = !!ftrace_lookup_ip(old_hash, rec->ip);
+		in_new = !!ftrace_lookup_ip(new_hash, rec->ip);
+		if (in_old == in_new)
+			continue;
+
+		if (in_new) {
+			/* New entries must ensure no others are using it */
+			if (rec->flags & FTRACE_FL_IPMODIFY)
+				goto rollback;
+			rec->flags |= FTRACE_FL_IPMODIFY;
+		} else /* Removed entry */
+			rec->flags &= ~FTRACE_FL_IPMODIFY;
+	} while_for_each_ftrace_rec();
+
+	return 0;
+
+rollback:
+	end = rec;
+
+	/* Roll back what we did above */
+	do_for_each_ftrace_rec(pg, rec) {
+		if (rec == end)
+			goto err_out;
+
+		in_old = !!ftrace_lookup_ip(old_hash, rec->ip);
+		in_new = !!ftrace_lookup_ip(new_hash, rec->ip);
+		if (in_old == in_new)
+			continue;
+
+		if (in_new)
+			rec->flags &= ~FTRACE_FL_IPMODIFY;
+		else
+			rec->flags |= FTRACE_FL_IPMODIFY;
+	} while_for_each_ftrace_rec();
+
+err_out:
+	return -EBUSY;
+}
+
+static int ftrace_hash_ipmodify_enable(struct ftrace_ops *ops)
+{
+	struct ftrace_hash *hash = ops->func_hash->filter_hash;
+
+	if (ftrace_hash_empty(hash))
+		hash = NULL;
+
+	return __ftrace_hash_update_ipmodify(ops, EMPTY_HASH, hash);
+}
+
+/* Disabling always succeeds */
+static void ftrace_hash_ipmodify_disable(struct ftrace_ops *ops)
+{
+	struct ftrace_hash *hash = ops->func_hash->filter_hash;
+
+	if (ftrace_hash_empty(hash))
+		hash = NULL;
+
+	__ftrace_hash_update_ipmodify(ops, hash, EMPTY_HASH);
+}
+
+static int ftrace_hash_ipmodify_update(struct ftrace_ops *ops,
+				       struct ftrace_hash *new_hash)
+{
+	struct ftrace_hash *old_hash = ops->func_hash->filter_hash;
+
+	if (ftrace_hash_empty(old_hash))
+		old_hash = NULL;
+
+	if (ftrace_hash_empty(new_hash))
+		new_hash = NULL;
+
+	return __ftrace_hash_update_ipmodify(ops, old_hash, new_hash);
+}
+
 static void print_ip_ins(const char *fmt, unsigned char *p)
 {
 	int i;
@@ -1740,10 +1950,13 @@ static void print_ip_ins(const char *fmt, unsigned char *p)
 		printk(KERN_CONT "%s%02x", i ? ":" : "", p[i]);
 }
 
+static struct ftrace_ops *
+ftrace_find_tramp_ops_any(struct dyn_ftrace *rec);
+
 /**
  * ftrace_bug - report and shutdown function tracer
  * @failed: The failed type (EFAULT, EINVAL, EPERM)
- * @ip: The address that failed
+ * @rec: The record that failed
  *
  * The arch code that enables or disables the function tracing
  * can call ftrace_bug() when it has detected a problem in
@@ -1752,8 +1965,10 @@ static void print_ip_ins(const char *fmt, unsigned char *p)
  * EINVAL - if what is read at @ip is not what was expected
  * EPERM - if the problem happens on writting to the @ip address
  */
-void ftrace_bug(int failed, unsigned long ip)
+void ftrace_bug(int failed, struct dyn_ftrace *rec)
 {
+	unsigned long ip = rec ? rec->ip : 0;
+
 	switch (failed) {
 	case -EFAULT:
 		FTRACE_WARN_ON_ONCE(1);
@@ -1765,7 +1980,7 @@ void ftrace_bug(int failed, unsigned long ip)
 		pr_info("ftrace failed to modify ");
 		print_ip_sym(ip);
 		print_ip_ins(" actual: ", (unsigned char *)ip);
-		printk(KERN_CONT "\n");
+		pr_cont("\n");
 		break;
 	case -EPERM:
 		FTRACE_WARN_ON_ONCE(1);
@@ -1776,6 +1991,24 @@ void ftrace_bug(int failed, unsigned long ip)
 		FTRACE_WARN_ON_ONCE(1);
 		pr_info("ftrace faulted on unknown error ");
 		print_ip_sym(ip);
+	}
+	if (rec) {
+		struct ftrace_ops *ops = NULL;
+
+		pr_info("ftrace record flags: %lx\n", rec->flags);
+		pr_cont(" (%ld)%s", ftrace_rec_count(rec),
+			rec->flags & FTRACE_FL_REGS ? " R" : "  ");
+		if (rec->flags & FTRACE_FL_TRAMP_EN) {
+			ops = ftrace_find_tramp_ops_any(rec);
+			if (ops)
+				pr_cont("\ttramp: %pS",
+					(void *)ops->trampoline);
+			else
+				pr_cont("\ttramp: ERROR!");
+
+		}
+		ip = ftrace_get_addr_curr(rec);
+		pr_cont(" expected tramp: %lx\n", ip);
 	}
 }
 
@@ -2103,7 +2336,7 @@ void __weak ftrace_replace_code(int enable)
 	do_for_each_ftrace_rec(pg, rec) {
 		failed = __ftrace_replace_code(rec, enable);
 		if (failed) {
-			ftrace_bug(failed, rec->ip);
+			ftrace_bug(failed, rec);
 			/* Stop processing */
 			return;
 		}
@@ -2185,17 +2418,14 @@ struct dyn_ftrace *ftrace_rec_iter_record(struct ftrace_rec_iter *iter)
 static int
 ftrace_code_disable(struct module *mod, struct dyn_ftrace *rec)
 {
-	unsigned long ip;
 	int ret;
-
-	ip = rec->ip;
 
 	if (unlikely(ftrace_disabled))
 		return 0;
 
 	ret = ftrace_make_nop(mod, rec, MCOUNT_ADDR);
 	if (ret) {
-		ftrace_bug(ret, ip);
+		ftrace_bug(ret, rec);
 		return 0;
 	}
 	return 1;
@@ -2332,6 +2562,10 @@ static void ftrace_run_modify_code(struct ftrace_ops *ops, int command,
 static ftrace_func_t saved_ftrace_func;
 static int ftrace_start_up;
 
+void __weak arch_ftrace_trampoline_free(struct ftrace_ops *ops)
+{
+}
+
 static void control_ops_free(struct ftrace_ops *ops)
 {
 	free_percpu(ops->disabled);
@@ -2381,6 +2615,15 @@ static int ftrace_startup(struct ftrace_ops *ops, int command)
 	 */
 	ops->flags |= FTRACE_OPS_FL_ENABLED | FTRACE_OPS_FL_ADDING;
 
+	ret = ftrace_hash_ipmodify_enable(ops);
+	if (ret < 0) {
+		/* Rollback registration process */
+		__unregister_ftrace_function(ops);
+		ftrace_start_up--;
+		ops->flags &= ~FTRACE_OPS_FL_ENABLED;
+		return ret;
+	}
+
 	ftrace_hash_rec_enable(ops, 1);
 
 	ftrace_startup_enable(command);
@@ -2409,6 +2652,8 @@ static int ftrace_shutdown(struct ftrace_ops *ops, int command)
 	 */
 	WARN_ON_ONCE(ftrace_start_up < 0);
 
+	/* Disabling ipmodify never fails */
+	ftrace_hash_ipmodify_disable(ops);
 	ftrace_hash_rec_disable(ops, 1);
 
 	ops->flags &= ~FTRACE_OPS_FL_ENABLED;
@@ -2482,6 +2727,8 @@ static int ftrace_shutdown(struct ftrace_ops *ops, int command)
 	 */
 	if (ops->flags & (FTRACE_OPS_FL_DYNAMIC | FTRACE_OPS_FL_CONTROL)) {
 		schedule_on_each_cpu(ftrace_sync);
+
+		arch_ftrace_trampoline_free(ops);
 
 		if (ops->flags & FTRACE_OPS_FL_CONTROL)
 			control_ops_free(ops);
@@ -2647,7 +2894,7 @@ static int ftrace_update_code(struct module *mod, struct ftrace_page *new_pgs)
 			if (ftrace_start_up && cnt) {
 				int failed = __ftrace_replace_code(p, 1);
 				if (failed)
-					ftrace_bug(failed, p->ip);
+					ftrace_bug(failed, p);
 			}
 		}
 	}
@@ -2972,6 +3219,22 @@ static void t_stop(struct seq_file *m, void *p)
 	mutex_unlock(&ftrace_lock);
 }
 
+void * __weak
+arch_ftrace_trampoline_func(struct ftrace_ops *ops, struct dyn_ftrace *rec)
+{
+	return NULL;
+}
+
+static void add_trampoline_func(struct seq_file *m, struct ftrace_ops *ops,
+				struct dyn_ftrace *rec)
+{
+	void *ptr;
+
+	ptr = arch_ftrace_trampoline_func(ops, rec);
+	if (ptr)
+		seq_printf(m, " ->%pS", ptr);
+}
+
 static int t_show(struct seq_file *m, void *v)
 {
 	struct ftrace_iterator *iter = m->private;
@@ -2982,9 +3245,9 @@ static int t_show(struct seq_file *m, void *v)
 
 	if (iter->flags & FTRACE_ITER_PRINTALL) {
 		if (iter->flags & FTRACE_ITER_NOTRACE)
-			seq_printf(m, "#### no functions disabled ####\n");
+			seq_puts(m, "#### no functions disabled ####\n");
 		else
-			seq_printf(m, "#### all functions enabled ####\n");
+			seq_puts(m, "#### all functions enabled ####\n");
 		return 0;
 	}
 
@@ -2995,22 +3258,25 @@ static int t_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "%ps", (void *)rec->ip);
 	if (iter->flags & FTRACE_ITER_ENABLED) {
-		seq_printf(m, " (%ld)%s",
-			   ftrace_rec_count(rec),
-			   rec->flags & FTRACE_FL_REGS ? " R" : "  ");
-		if (rec->flags & FTRACE_FL_TRAMP_EN) {
-			struct ftrace_ops *ops;
+		struct ftrace_ops *ops = NULL;
 
+		seq_printf(m, " (%ld)%s%s",
+			   ftrace_rec_count(rec),
+			   rec->flags & FTRACE_FL_REGS ? " R" : "  ",
+			   rec->flags & FTRACE_FL_IPMODIFY ? " I" : "  ");
+		if (rec->flags & FTRACE_FL_TRAMP_EN) {
 			ops = ftrace_find_tramp_ops_any(rec);
 			if (ops)
 				seq_printf(m, "\ttramp: %pS",
 					   (void *)ops->trampoline);
 			else
-				seq_printf(m, "\ttramp: ERROR!");
+				seq_puts(m, "\ttramp: ERROR!");
+
 		}
+		add_trampoline_func(m, ops, rec);
 	}	
 
-	seq_printf(m, "\n");
+	seq_putc(m, '\n');
 
 	return 0;
 }
@@ -3043,9 +3309,6 @@ static int
 ftrace_enabled_open(struct inode *inode, struct file *file)
 {
 	struct ftrace_iterator *iter;
-
-	if (unlikely(ftrace_disabled))
-		return -ENODEV;
 
 	iter = __seq_open_private(file, &show_ftrace_seq_ops, sizeof(*iter));
 	if (iter) {
@@ -3162,27 +3425,35 @@ ftrace_notrace_open(struct inode *inode, struct file *file)
 				 inode, file);
 }
 
-static int ftrace_match(char *str, char *regex, int len, int type)
+/* Type for quick search ftrace basic regexes (globs) from filter_parse_regex */
+struct ftrace_glob {
+	char *search;
+	unsigned len;
+	int type;
+};
+
+static int ftrace_match(char *str, struct ftrace_glob *g)
 {
 	int matched = 0;
 	int slen;
 
-	switch (type) {
+	switch (g->type) {
 	case MATCH_FULL:
-		if (strcmp(str, regex) == 0)
+		if (strcmp(str, g->search) == 0)
 			matched = 1;
 		break;
 	case MATCH_FRONT_ONLY:
-		if (strncmp(str, regex, len) == 0)
+		if (strncmp(str, g->search, g->len) == 0)
 			matched = 1;
 		break;
 	case MATCH_MIDDLE_ONLY:
-		if (strstr(str, regex))
+		if (strstr(str, g->search))
 			matched = 1;
 		break;
 	case MATCH_END_ONLY:
 		slen = strlen(str);
-		if (slen >= len && memcmp(str + slen - len, regex, len) == 0)
+		if (slen >= g->len &&
+		    memcmp(str + slen - g->len, g->search, g->len) == 0)
 			matched = 1;
 		break;
 	}
@@ -3191,13 +3462,13 @@ static int ftrace_match(char *str, char *regex, int len, int type)
 }
 
 static int
-enter_record(struct ftrace_hash *hash, struct dyn_ftrace *rec, int not)
+enter_record(struct ftrace_hash *hash, struct dyn_ftrace *rec, int clear_filter)
 {
 	struct ftrace_func_entry *entry;
 	int ret = 0;
 
 	entry = ftrace_lookup_ip(hash, rec->ip);
-	if (not) {
+	if (clear_filter) {
 		/* Do nothing if it doesn't exist */
 		if (!entry)
 			return 0;
@@ -3214,42 +3485,68 @@ enter_record(struct ftrace_hash *hash, struct dyn_ftrace *rec, int not)
 }
 
 static int
-ftrace_match_record(struct dyn_ftrace *rec, char *mod,
-		    char *regex, int len, int type)
+ftrace_match_record(struct dyn_ftrace *rec, struct ftrace_glob *func_g,
+		struct ftrace_glob *mod_g, int exclude_mod)
 {
 	char str[KSYM_SYMBOL_LEN];
 	char *modname;
 
 	kallsyms_lookup(rec->ip, NULL, NULL, &modname, str);
 
-	if (mod) {
-		/* module lookup requires matching the module */
-		if (!modname || strcmp(modname, mod))
+	if (mod_g) {
+		int mod_matches = (modname) ? ftrace_match(modname, mod_g) : 0;
+
+		/* blank module name to match all modules */
+		if (!mod_g->len) {
+			/* blank module globbing: modname xor exclude_mod */
+			if ((!exclude_mod) != (!modname))
+				goto func_match;
+			return 0;
+		}
+
+		/* not matching the module */
+		if (!modname || !mod_matches) {
+			if (exclude_mod)
+				goto func_match;
+			else
+				return 0;
+		}
+
+		if (mod_matches && exclude_mod)
 			return 0;
 
+func_match:
 		/* blank search means to match all funcs in the mod */
-		if (!len)
+		if (!func_g->len)
 			return 1;
 	}
 
-	return ftrace_match(str, regex, len, type);
+	return ftrace_match(str, func_g);
 }
 
 static int
-match_records(struct ftrace_hash *hash, char *buff,
-	      int len, char *mod, int not)
+match_records(struct ftrace_hash *hash, char *func, int len, char *mod)
 {
-	unsigned search_len = 0;
 	struct ftrace_page *pg;
 	struct dyn_ftrace *rec;
-	int type = MATCH_FULL;
-	char *search = buff;
+	struct ftrace_glob func_g = { .type = MATCH_FULL };
+	struct ftrace_glob mod_g = { .type = MATCH_FULL };
+	struct ftrace_glob *mod_match = (mod) ? &mod_g : NULL;
+	int exclude_mod = 0;
 	int found = 0;
 	int ret;
+	int clear_filter;
 
-	if (len) {
-		type = filter_parse_regex(buff, len, &search, &not);
-		search_len = strlen(search);
+	if (func) {
+		func_g.type = filter_parse_regex(func, len, &func_g.search,
+						 &clear_filter);
+		func_g.len = strlen(func_g.search);
+	}
+
+	if (mod) {
+		mod_g.type = filter_parse_regex(mod, strlen(mod),
+				&mod_g.search, &exclude_mod);
+		mod_g.len = strlen(mod_g.search);
 	}
 
 	mutex_lock(&ftrace_lock);
@@ -3258,8 +3555,8 @@ match_records(struct ftrace_hash *hash, char *buff,
 		goto out_unlock;
 
 	do_for_each_ftrace_rec(pg, rec) {
-		if (ftrace_match_record(rec, mod, search, search_len, type)) {
-			ret = enter_record(hash, rec, not);
+		if (ftrace_match_record(rec, &func_g, mod_match, exclude_mod)) {
+			ret = enter_record(hash, rec, clear_filter);
 			if (ret < 0) {
 				found = ret;
 				goto out_unlock;
@@ -3276,26 +3573,9 @@ match_records(struct ftrace_hash *hash, char *buff,
 static int
 ftrace_match_records(struct ftrace_hash *hash, char *buff, int len)
 {
-	return match_records(hash, buff, len, NULL, 0);
+	return match_records(hash, buff, len, NULL);
 }
 
-static int
-ftrace_match_module_records(struct ftrace_hash *hash, char *buff, char *mod)
-{
-	int not = 0;
-
-	/* blank or '*' mean the same */
-	if (strcmp(buff, "*") == 0)
-		buff[0] = 0;
-
-	/* handle the case of 'dont filter this module' */
-	if (strcmp(buff, "!") == 0 || strcmp(buff, "!*") == 0) {
-		buff[0] = 0;
-		not = 1;
-	}
-
-	return match_records(hash, buff, strlen(buff), mod, not);
-}
 
 /*
  * We register the module command as a template to show others how
@@ -3304,10 +3584,9 @@ ftrace_match_module_records(struct ftrace_hash *hash, char *buff, char *mod)
 
 static int
 ftrace_mod_callback(struct ftrace_hash *hash,
-		    char *func, char *cmd, char *param, int enable)
+		    char *func, char *cmd, char *module, int enable)
 {
-	char *mod;
-	int ret = -EINVAL;
+	int ret;
 
 	/*
 	 * cmd == 'mod' because we only registered this func
@@ -3316,21 +3595,11 @@ ftrace_mod_callback(struct ftrace_hash *hash,
 	 * you can tell which command was used by the cmd
 	 * parameter.
 	 */
-
-	/* we must have a module name */
-	if (!param)
-		return ret;
-
-	mod = strsep(&param, ":");
-	if (!strlen(mod))
-		return ret;
-
-	ret = ftrace_match_module_records(hash, func, mod);
+	ret = match_records(hash, func, strlen(func), module);
 	if (!ret)
-		ret = -EINVAL;
+		return -EINVAL;
 	if (ret < 0)
 		return ret;
-
 	return 0;
 }
 
@@ -3441,19 +3710,20 @@ register_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
 {
 	struct ftrace_ops_hash old_hash_ops;
 	struct ftrace_func_probe *entry;
+	struct ftrace_glob func_g;
 	struct ftrace_hash **orig_hash = &trace_probe_ops.func_hash->filter_hash;
 	struct ftrace_hash *old_hash = *orig_hash;
 	struct ftrace_hash *hash;
 	struct ftrace_page *pg;
 	struct dyn_ftrace *rec;
-	int type, len, not;
+	int not;
 	unsigned long key;
 	int count = 0;
-	char *search;
 	int ret;
 
-	type = filter_parse_regex(glob, strlen(glob), &search, &not);
-	len = strlen(search);
+	func_g.type = filter_parse_regex(glob, strlen(glob),
+			&func_g.search, &not);
+	func_g.len = strlen(func_g.search);
 
 	/* we do not support '!' for function probes */
 	if (WARN_ON(not))
@@ -3480,7 +3750,7 @@ register_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
 
 	do_for_each_ftrace_rec(pg, rec) {
 
-		if (!ftrace_match_record(rec, NULL, search, len, type))
+		if (!ftrace_match_record(rec, &func_g, NULL, 0))
 			continue;
 
 		entry = kmalloc(sizeof(*entry), GFP_KERNEL);
@@ -3553,24 +3823,24 @@ __unregister_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
 	struct ftrace_func_entry *rec_entry;
 	struct ftrace_func_probe *entry;
 	struct ftrace_func_probe *p;
+	struct ftrace_glob func_g;
 	struct ftrace_hash **orig_hash = &trace_probe_ops.func_hash->filter_hash;
 	struct ftrace_hash *old_hash = *orig_hash;
 	struct list_head free_list;
 	struct ftrace_hash *hash;
 	struct hlist_node *tmp;
 	char str[KSYM_SYMBOL_LEN];
-	int type = MATCH_FULL;
-	int i, len = 0;
-	char *search;
-	int ret;
+	int i, ret;
 
 	if (glob && (strcmp(glob, "*") == 0 || !strlen(glob)))
-		glob = NULL;
+		func_g.search = NULL;
 	else if (glob) {
 		int not;
 
-		type = filter_parse_regex(glob, strlen(glob), &search, &not);
-		len = strlen(search);
+		func_g.type = filter_parse_regex(glob, strlen(glob),
+						 &func_g.search, &not);
+		func_g.len = strlen(func_g.search);
+		func_g.search = glob;
 
 		/* we do not support '!' for function probes */
 		if (WARN_ON(not))
@@ -3599,10 +3869,10 @@ __unregister_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
 				continue;
 
 			/* do this last, since it is the most expensive */
-			if (glob) {
+			if (func_g.search) {
 				kallsyms_lookup(entry->ip, NULL, NULL,
 						NULL, str);
-				if (!ftrace_match(str, glob, len, type))
+				if (!ftrace_match(str, &func_g))
 					continue;
 			}
 
@@ -3631,7 +3901,7 @@ __unregister_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
 		ftrace_free_entry(entry);
 	}
 	mutex_unlock(&ftrace_lock);
-		
+
  out_unlock:
 	mutex_unlock(&trace_probe_ops.func_hash->regex_lock);
 	free_ftrace_hash(hash);
@@ -4031,6 +4301,9 @@ static char ftrace_graph_buf[FTRACE_FILTER_SIZE] __initdata;
 static char ftrace_graph_notrace_buf[FTRACE_FILTER_SIZE] __initdata;
 static int ftrace_set_func(unsigned long *array, int *idx, int size, char *buffer);
 
+static unsigned long save_global_trampoline;
+static unsigned long save_global_flags;
+
 static int __init set_graph_function(char *str)
 {
 	strlcpy(ftrace_graph_buf, str, FTRACE_FILTER_SIZE);
@@ -4242,9 +4515,9 @@ static int g_show(struct seq_file *m, void *v)
 		struct ftrace_graph_data *fgd = m->private;
 
 		if (fgd->table == ftrace_graph_funcs)
-			seq_printf(m, "#### all functions enabled ####\n");
+			seq_puts(m, "#### all functions enabled ####\n");
 		else
-			seq_printf(m, "#### no functions disabled ####\n");
+			seq_puts(m, "#### no functions disabled ####\n");
 		return 0;
 	}
 
@@ -4344,21 +4617,21 @@ ftrace_graph_release(struct inode *inode, struct file *file)
 static int
 ftrace_set_func(unsigned long *array, int *idx, int size, char *buffer)
 {
+	struct ftrace_glob func_g;
 	struct dyn_ftrace *rec;
 	struct ftrace_page *pg;
-	int search_len;
 	int fail = 1;
-	int type, not;
-	char *search;
+	int not;
 	bool exists;
 	int i;
 
 	/* decode regex */
-	type = filter_parse_regex(buffer, strlen(buffer), &search, &not);
+	func_g.type = filter_parse_regex(buffer, strlen(buffer),
+					 &func_g.search, &not);
 	if (!not && *idx >= size)
 		return -EBUSY;
 
-	search_len = strlen(search);
+	func_g.len = strlen(func_g.search);
 
 	mutex_lock(&ftrace_lock);
 
@@ -4369,7 +4642,7 @@ ftrace_set_func(unsigned long *array, int *idx, int size, char *buffer)
 
 	do_for_each_ftrace_rec(pg, rec) {
 
-		if (ftrace_match_record(rec, NULL, search, search_len, type)) {
+		if (ftrace_match_record(rec, &func_g, NULL, 0)) {
 			/* if it is in the array */
 			exists = false;
 			for (i = 0; i < *idx; i++) {
@@ -4487,7 +4760,7 @@ void ftrace_destroy_filter_files(struct ftrace_ops *ops)
 	mutex_unlock(&ftrace_lock);
 }
 
-static __init int ftrace_init_dyn_debugfs(struct dentry *d_tracer)
+static __init int ftrace_init_dyn_tracefs(struct dentry *d_tracer)
 {
 
 	trace_create_file("available_filter_functions", 0444,
@@ -4522,17 +4795,6 @@ static int ftrace_cmp_ips(const void *a, const void *b)
 	return 0;
 }
 
-static void ftrace_swap_ips(void *a, void *b, int size)
-{
-	unsigned long *ipa = a;
-	unsigned long *ipb = b;
-	unsigned long t;
-
-	t = *ipa;
-	*ipa = *ipb;
-	*ipb = t;
-}
-
 static int ftrace_process_locs(struct module *mod,
 			       unsigned long *start,
 			       unsigned long *end)
@@ -4552,7 +4814,7 @@ static int ftrace_process_locs(struct module *mod,
 		return 0;
 
 	sort(start, count, sizeof(*start),
-	     ftrace_cmp_ips, ftrace_swap_ips);
+	     ftrace_cmp_ips, NULL);
 
 	start_pg = ftrace_allocate_pages(count);
 	if (!start_pg)
@@ -4755,11 +5017,39 @@ void __init ftrace_init(void)
 	ftrace_disabled = 1;
 }
 
+/* Do nothing if arch does not support this */
+void __weak arch_ftrace_update_trampoline(struct ftrace_ops *ops)
+{
+}
+
+static void ftrace_update_trampoline(struct ftrace_ops *ops)
+{
+
+/*
+ * Currently there's no safe way to free a trampoline when the kernel
+ * is configured with PREEMPT. That is because a task could be preempted
+ * when it jumped to the trampoline, it may be preempted for a long time
+ * depending on the system load, and currently there's no way to know
+ * when it will be off the trampoline. If the trampoline is freed
+ * too early, when the task runs again, it will be executing on freed
+ * memory and crash.
+ */
+#ifdef CONFIG_PREEMPT
+	/* Currently, only non dynamic ops can have a trampoline */
+	if (ops->flags & FTRACE_OPS_FL_DYNAMIC)
+		return;
+#endif
+
+	arch_ftrace_update_trampoline(ops);
+}
+
 #else
 
 static struct ftrace_ops global_ops = {
 	.func			= ftrace_stub,
-	.flags			= FTRACE_OPS_FL_RECURSION_SAFE | FTRACE_OPS_FL_INITIALIZED,
+	.flags			= FTRACE_OPS_FL_RECURSION_SAFE |
+				  FTRACE_OPS_FL_INITIALIZED |
+				  FTRACE_OPS_FL_PID,
 };
 
 static int __init ftrace_nodyn_init(void)
@@ -4769,7 +5059,7 @@ static int __init ftrace_nodyn_init(void)
 }
 core_initcall(ftrace_nodyn_init);
 
-static inline int ftrace_init_dyn_debugfs(struct dentry *d_tracer) { return 0; }
+static inline int ftrace_init_dyn_tracefs(struct dentry *d_tracer) { return 0; }
 static inline void ftrace_startup_enable(int command) { }
 static inline void ftrace_startup_all(int command) { }
 /* Keep as macros so we do not need to define the commands */
@@ -4797,6 +5087,10 @@ ftrace_ops_test(struct ftrace_ops *ops, unsigned long ip, void *regs)
 	return 1;
 }
 
+static void ftrace_update_trampoline(struct ftrace_ops *ops)
+{
+}
+
 #endif /* CONFIG_DYNAMIC_FTRACE */
 
 __init void ftrace_init_global_array_ops(struct trace_array *tr)
@@ -4812,11 +5106,6 @@ void ftrace_init_array_ops(struct trace_array *tr, ftrace_func_t func)
 		if (WARN_ON(tr->ops->func != ftrace_stub))
 			printk("ftrace ops had %pS for function\n",
 			       tr->ops->func);
-		/* Only the top level instance does pid tracing */
-		if (!list_empty(&ftrace_pids)) {
-			set_ftrace_pid_function(func);
-			func = ftrace_pid_func;
-		}
 	}
 	tr->ops->func = func;
 	tr->ops->private = tr;
@@ -4953,13 +5242,6 @@ static void ftrace_ops_recurs_func(unsigned long ip, unsigned long parent_ip,
  */
 ftrace_func_t ftrace_ops_get_func(struct ftrace_ops *ops)
 {
-	/*
-	 * If this is a dynamic ops or we force list func,
-	 * then it needs to call the list anyway.
-	 */
-	if (ops->flags & FTRACE_OPS_FL_DYNAMIC || FTRACE_FORCE_LIST_FUNC)
-		return ftrace_ops_list_func;
-
 	/*
 	 * If the func handles its own recursion, call it directly.
 	 * Otherwise call the recursion protected function that
@@ -5110,7 +5392,7 @@ static void *fpid_start(struct seq_file *m, loff_t *pos)
 {
 	mutex_lock(&ftrace_lock);
 
-	if (list_empty(&ftrace_pids) && (!*pos))
+	if (!ftrace_pids_enabled() && (!*pos))
 		return (void *) 1;
 
 	return seq_list_start(&ftrace_pids, *pos);
@@ -5134,12 +5416,12 @@ static int fpid_show(struct seq_file *m, void *v)
 	const struct ftrace_pid *fpid = list_entry(v, struct ftrace_pid, list);
 
 	if (v == (void *)1) {
-		seq_printf(m, "no pid\n");
+		seq_puts(m, "no pid\n");
 		return 0;
 	}
 
 	if (fpid->pid == ftrace_swapper_pid)
-		seq_printf(m, "swapper tasks\n");
+		seq_puts(m, "swapper tasks\n");
 	else
 		seq_printf(m, "%u\n", pid_vnr(fpid->pid));
 
@@ -5218,24 +5500,24 @@ static const struct file_operations ftrace_pid_fops = {
 	.release	= ftrace_pid_release,
 };
 
-static __init int ftrace_init_debugfs(void)
+static __init int ftrace_init_tracefs(void)
 {
 	struct dentry *d_tracer;
 
 	d_tracer = tracing_init_dentry();
-	if (!d_tracer)
+	if (IS_ERR(d_tracer))
 		return 0;
 
-	ftrace_init_dyn_debugfs(d_tracer);
+	ftrace_init_dyn_tracefs(d_tracer);
 
 	trace_create_file("set_ftrace_pid", 0644, d_tracer,
 			    NULL, &ftrace_pid_fops);
 
-	ftrace_profile_debugfs(d_tracer);
+	ftrace_profile_tracefs(d_tracer);
 
 	return 0;
 }
-fs_initcall(ftrace_init_debugfs);
+fs_initcall(ftrace_init_tracefs);
 
 /**
  * ftrace_kill - kill ftrace
@@ -5349,12 +5631,24 @@ static struct ftrace_ops graph_ops = {
 	.func			= ftrace_stub,
 	.flags			= FTRACE_OPS_FL_RECURSION_SAFE |
 				   FTRACE_OPS_FL_INITIALIZED |
+				   FTRACE_OPS_FL_PID |
 				   FTRACE_OPS_FL_STUB,
 #ifdef FTRACE_GRAPH_TRAMP_ADDR
 	.trampoline		= FTRACE_GRAPH_TRAMP_ADDR,
+	/* trampoline_size is only needed for dynamically allocated tramps */
 #endif
 	ASSIGN_OPS_HASH(graph_ops, &global_ops.local_hash)
 };
+
+void ftrace_graph_sleep_time_control(bool enable)
+{
+	fgraph_sleep_time = enable;
+}
+
+void ftrace_graph_graph_time_control(bool enable)
+{
+	fgraph_graph_time = enable;
+}
 
 int ftrace_graph_entry_stub(struct ftrace_graph_ent *trace)
 {
@@ -5414,7 +5708,7 @@ free:
 }
 
 static void
-ftrace_graph_probe_sched_switch(void *ignore,
+ftrace_graph_probe_sched_switch(void *ignore, bool preempt,
 			struct task_struct *prev, struct task_struct *next)
 {
 	unsigned long long timestamp;
@@ -5424,7 +5718,7 @@ ftrace_graph_probe_sched_switch(void *ignore,
 	 * Does the user want to count the time a function was asleep.
 	 * If so, do not update the time stamps.
 	 */
-	if (trace_flags & TRACE_ITER_SLEEP_TIME)
+	if (fgraph_sleep_time)
 		return;
 
 	timestamp = trace_clock_local();
@@ -5579,7 +5873,6 @@ int register_ftrace_graph(trace_func_graph_ret_t retfunc,
 	update_function_graph_func();
 
 	ret = ftrace_startup(&graph_ops, FTRACE_START_FUNC_RET);
-
 out:
 	mutex_unlock(&ftrace_lock);
 	return ret;
@@ -5599,6 +5892,17 @@ void unregister_ftrace_graph(void)
 	ftrace_shutdown(&graph_ops, FTRACE_STOP_FUNC_RET);
 	unregister_pm_notifier(&ftrace_suspend_notifier);
 	unregister_trace_sched_switch(ftrace_graph_probe_sched_switch, NULL);
+
+#ifdef CONFIG_DYNAMIC_FTRACE
+	/*
+	 * Function graph does not allocate the trampoline, but
+	 * other global_ops do. We need to reset the ALLOC_TRAMP flag
+	 * if one was used.
+	 */
+	global_ops.trampoline = save_global_trampoline;
+	if (save_global_flags & FTRACE_OPS_FL_ALLOC_TRAMP)
+		global_ops.flags |= FTRACE_OPS_FL_ALLOC_TRAMP;
+#endif
 
  out:
 	mutex_unlock(&ftrace_lock);

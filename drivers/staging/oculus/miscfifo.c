@@ -166,12 +166,20 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
 		mutex_lock(&client->lock);
-		while (kfifo_avail(&client->fifo) < needed) {
-			kfifo_skip(&client->fifo);
-			rc++;
+
+		if (!mf->config.filter_fn ||
+		    mf->config.filter_fn(client->context,
+					 NULL, 0,
+					 buf, len)) {
+
+			while (kfifo_avail(&client->fifo) < needed) {
+				kfifo_skip(&client->fifo);
+				rc++;
+			}
+
+			kfifo_in(&client->fifo, buf, len);
 		}
 
-		kfifo_in(&client->fifo, buf, len);
 		mutex_unlock(&client->lock);
 	}
 	up_read(&mf->clients.rw_lock);
@@ -193,7 +201,7 @@ int miscfifo_send_header_payload(struct miscfifo *mf,
 	if (WARN_ON(!mf->config.header_payload))
 		return -EINVAL;
 
-	if (WARN_ON(header_len == 0 || header_len > REC_MAX_LENGTH))
+	if (WARN_ON(header_len > REC_MAX_LENGTH))
 		return -EINVAL;
 
 	if (WARN_ON(payload_len == 0 || payload_len > REC_MAX_LENGTH))
@@ -202,16 +210,24 @@ int miscfifo_send_header_payload(struct miscfifo *mf,
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
 		mutex_lock(&client->lock);
-		/* pack a |header| + |payload| record back to back
-		 * in the fifo */
-		while (kfifo_avail(&client->fifo) < needed) {
-			kfifo_skip(&client->fifo);
-			kfifo_skip(&client->fifo);
-			rc++;
-		}
 
-		kfifo_in(&client->fifo, header, header_len);
-		kfifo_in(&client->fifo, payload, payload_len);
+		if (!mf->config.filter_fn ||
+		    mf->config.filter_fn(client->context,
+					 header, header_len,
+					 payload, payload_len)) {
+
+			/* pack a |header| + |payload| record back to back
+			 * in the fifo
+			 */
+			while (kfifo_avail(&client->fifo) < needed) {
+				kfifo_skip(&client->fifo);
+				kfifo_skip(&client->fifo);
+				rc++;
+			}
+
+			kfifo_in(&client->fifo, header, header_len);
+			kfifo_in(&client->fifo, payload, payload_len);
+		}
 		mutex_unlock(&client->lock);
 	}
 	up_read(&mf->clients.rw_lock);
@@ -253,6 +269,24 @@ void miscfifo_destroy(struct miscfifo *mf)
 	module_put(THIS_MODULE);
 }
 EXPORT_SYMBOL(miscfifo_destroy);
+
+void miscfifo_fop_set_context(struct file *file, void *context)
+{
+	struct miscfifo_client *client = file->private_data;
+
+	mutex_lock(&client->lock);
+	client->context = context;
+	mutex_unlock(&client->lock);
+}
+EXPORT_SYMBOL(miscfifo_fop_setcontext);
+
+void *miscfifo_fop_get_context(struct file *file)
+{
+	struct miscfifo_client *client = file->private_data;
+
+	return client->context;
+}
+EXPORT_SYMBOL(miscfifo_fop_getcontext);
 
 MODULE_AUTHOR("Khalid Zubair <kzubair@oculus.com>");
 MODULE_DESCRIPTION("General purpose chardev fifo implementation");

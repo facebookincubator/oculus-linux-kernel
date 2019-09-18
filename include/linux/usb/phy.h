@@ -1,5 +1,5 @@
-/* USB OTG (On The Go) defines */
 /*
+ * USB PHY defines
  *
  * These APIs may be used between USB controllers.  USB device drivers
  * (for either host or peripheral roles) don't use these calls; they
@@ -45,7 +45,6 @@ enum usb_otg_state {
 	OTG_STATE_B_SRP_INIT,
 	OTG_STATE_B_PERIPHERAL,
 	OTG_STATE_B_SUSPEND,
-	OTG_STATE_B_CHARGER,
 
 	/* extra dual-role default-b states */
 	OTG_STATE_B_WAIT_ACON,
@@ -65,7 +64,7 @@ enum usb_otg_state {
 struct usb_phy;
 struct usb_otg;
 
-/* for transceivers connected thru an ULPI interface, the user must
+/* for phys connected thru an ULPI interface, the user must
  * provide access ops
  */
 struct usb_phy_io_ops {
@@ -79,7 +78,6 @@ struct usb_phy {
 	unsigned int		 flags;
 
 	enum usb_phy_type	type;
-	enum usb_otg_state	state;
 	enum usb_phy_events	last_event;
 
 	struct usb_otg		*otg;
@@ -95,10 +93,10 @@ struct usb_phy {
 	u16			port_status;
 	u16			port_change;
 
-	/* to support controllers that have multiple transceivers */
+	/* to support controllers that have multiple phys */
 	struct list_head	head;
 
-	/* initialize/shutdown the OTG controller */
+	/* initialize/shutdown the phy */
 	int	(*init)(struct usb_phy *x);
 	void	(*shutdown)(struct usb_phy *x);
 
@@ -109,7 +107,7 @@ struct usb_phy {
 	int	(*set_power)(struct usb_phy *x,
 				unsigned mA);
 
-	/* for non-OTG B devices: set transceiver into suspend mode */
+	/* Set phy into suspend mode */
 	int	(*set_suspend)(struct usb_phy *x,
 				int suspend);
 
@@ -128,14 +126,6 @@ struct usb_phy {
 
 	/* reset the PHY clocks */
 	int	(*reset)(struct usb_phy *x);
-
-	/* for notification of usb_phy_dbg_events */
-	void    (*dbg_event)(struct usb_phy *x,
-			char *event, int msg1, int msg2);
-	/* update DP/DM state */
-	int	(*change_dpdm)(struct usb_phy *x, int dpdm);
-	/* return linestate with Idp_src (used for DCD with USB2 PHY) */
-	int	(*dpdm_with_idp_src)(struct usb_phy *x);
 };
 
 /**
@@ -228,10 +218,13 @@ extern struct usb_phy *usb_get_phy_dev(struct device *dev, u8 index);
 extern struct usb_phy *devm_usb_get_phy_dev(struct device *dev, u8 index);
 extern struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	const char *phandle, u8 index);
+extern struct usb_phy *devm_usb_get_phy_by_node(struct device *dev,
+	struct device_node *node, struct notifier_block *nb);
 extern void usb_put_phy(struct usb_phy *);
 extern void devm_usb_put_phy(struct device *dev, struct usb_phy *x);
 extern int usb_bind_phy(const char *dev_name, u8 index,
 				const char *phy_dev_name);
+extern void usb_phy_set_event(struct usb_phy *x, unsigned long event);
 #else
 static inline struct usb_phy *usb_get_phy(enum usb_phy_type type)
 {
@@ -260,6 +253,12 @@ static inline struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	return ERR_PTR(-ENXIO);
 }
 
+static inline struct usb_phy *devm_usb_get_phy_by_node(struct device *dev,
+	struct device_node *node, struct notifier_block *nb)
+{
+	return ERR_PTR(-ENXIO);
+}
+
 static inline void usb_put_phy(struct usb_phy *x)
 {
 }
@@ -273,6 +272,10 @@ static inline int usb_bind_phy(const char *dev_name, u8 index,
 {
 	return -EOPNOTSUPP;
 }
+
+static inline void usb_phy_set_event(struct usb_phy *x, unsigned long event)
+{
+}
 #endif
 
 static inline int
@@ -280,14 +283,6 @@ usb_phy_set_power(struct usb_phy *x, unsigned mA)
 {
 	if (x && x->set_power)
 		return x->set_power(x, mA);
-	return 0;
-}
-
-static inline int
-usb_phy_change_dpdm(struct usb_phy *x, int dpdm)
-{
-	if (x && x->change_dpdm)
-		return x->change_dpdm(x, dpdm);
 	return 0;
 }
 
@@ -326,22 +321,6 @@ usb_phy_notify_disconnect(struct usb_phy *x, enum usb_device_speed speed)
 		return x->notify_disconnect(x, speed);
 	else
 		return 0;
-}
-
-static inline void
-usb_phy_dbg_events(struct usb_phy *x,
-		char *event, int msg1, int msg2)
-{
-	if (x && x->dbg_event)
-		x->dbg_event(x, event, msg1, msg2);
-}
-
-static inline int
-usb_phy_dpdm_with_idp_src(struct usb_phy *x)
-{
-	if (x && x->dpdm_with_idp_src)
-		return x->dpdm_with_idp_src(x);
-	return 0;
 }
 
 /* notifiers */

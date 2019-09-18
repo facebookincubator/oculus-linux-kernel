@@ -91,7 +91,7 @@ static int bcm_kona_usb_phy_power_off(struct phy *gphy)
 	return 0;
 }
 
-static struct phy_ops ops = {
+static const struct phy_ops ops = {
 	.init		= bcm_kona_usb_phy_init,
 	.power_on	= bcm_kona_usb_phy_power_on,
 	.power_off	= bcm_kona_usb_phy_power_off,
@@ -117,7 +117,7 @@ static int bcm_kona_usb2_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, phy);
 
-	gphy = devm_phy_create(dev, NULL, &ops, NULL);
+	gphy = devm_phy_create(dev, NULL, &ops);
 	if (IS_ERR(gphy))
 		return PTR_ERR(gphy);
 

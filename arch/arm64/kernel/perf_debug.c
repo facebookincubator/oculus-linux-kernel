@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,16 +24,11 @@
 static char *descriptions =
 	" 0 arm64: perf: add debug patch logging framework\n"
 	" 1 Perf: arm64: Add L1 counters to tracepoints\n"
-	" 4 Perf: arm64: support hotplug and power collapse\n"
 	" 5 Perf: arm64: add perf user-mode permissions\n"
 	" 6 Perf: arm64: Add debugfs node to clear PMU\n"
 	" 7 Perf: arm64: Update PMU force reset\n"
-	" 9 Perf: arm64: make request irq pmu-dependent\n"
 	"10 Perf: arm64: tracectr: initialize counts after hotplug\n"
 	"11 Perf: arm64: Refine disable/enable in tracecounters\n"
-	"12 Perf: arm64: fix disable of pmu irq during hotplug\n"
-	"13 Perf: arm64: restore registers after reset\n"
-	"14 Perf: arm64: stop counters when going into hotplug\n"
 	"15 Perf: arm64: make debug dir handle exportable\n"
 	"16 Perf: arm64: add perf trace user\n"
 	"17 Perf: arm64: add support for kryo pmu\n"

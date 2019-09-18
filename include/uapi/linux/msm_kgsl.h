@@ -46,11 +46,14 @@
 #define KGSL_CONTEXT_PRIORITY_MASK      0x0000F000
 #define KGSL_CONTEXT_PRIORITY_SHIFT     12
 #define KGSL_CONTEXT_PRIORITY_UNDEF     0
+#define KGSL_CONTEXT_PRIORITY_MAX       0x0
+#define KGSL_CONTEXT_PRIORITY_HIGH      0x4
 #define KGSL_CONTEXT_PRIORITY_MED       0x8
 
 #define KGSL_CONTEXT_IFH_NOP            0x00010000
 #define KGSL_CONTEXT_SECURE             0x00020000
 #define KGSL_CONTEXT_NO_SNAPSHOT        0x00040000
+#define KGSL_CONTEXT_SPARSE             0x00080000
 
 #define KGSL_CONTEXT_PREEMPT_STYLE_MASK       0x0E000000
 #define KGSL_CONTEXT_PREEMPT_STYLE_SHIFT      25
@@ -90,6 +93,7 @@
 #define KGSL_CMDBATCH_END_OF_FRAME	KGSL_CONTEXT_END_OF_FRAME   /* 0x100 */
 #define KGSL_CMDBATCH_SYNC		KGSL_CONTEXT_SYNC           /* 0x400 */
 #define KGSL_CMDBATCH_PWR_CONSTRAINT	KGSL_CONTEXT_PWR_CONSTRAINT /* 0x800 */
+#define KGSL_CMDBATCH_SPARSE	    0x1000 /* 0x1000 */
 
 /*
  * Reserve bits [16:19] and bits [28:31] for possible bits shared between
@@ -122,6 +126,11 @@
 #define KGSL_MEMFLAGS_GPUWRITEONLY 0x02000000U
 #define KGSL_MEMFLAGS_FORCE_32BIT 0x100000000ULL
 
+/* Flag for binding all the virt range to single phys data */
+#define KGSL_SPARSE_BIND_MULTIPLE_TO_PHYS 0x400000000ULL
+#define KGSL_SPARSE_BIND 0x1ULL
+#define KGSL_SPARSE_UNBIND 0x2ULL
+
 /* Memory caching hints */
 #define KGSL_CACHEMODE_MASK       0x0C000000U
 #define KGSL_CACHEMODE_SHIFT 26
@@ -132,6 +141,8 @@
 #define KGSL_CACHEMODE_WRITEBACK 3
 
 #define KGSL_MEMFLAGS_USE_CPU_MAP 0x10000000ULL
+#define KGSL_MEMFLAGS_SPARSE_PHYS 0x20000000ULL
+#define KGSL_MEMFLAGS_SPARSE_VIRT 0x40000000ULL
 
 /* Memory types for which allocations are made */
 #define KGSL_MEMTYPE_MASK		0x0000FF00
@@ -159,6 +170,37 @@
 #define KGSL_MEMTYPE_EGL_SHADOW			19
 #define KGSL_MEMTYPE_MULTISAMPLE		20
 #define KGSL_MEMTYPE_KERNEL			255
+
+/* Memory type for Vulkan objects */
+#define KGSL_MEMTYPE_VK_ANY                               0x20
+#define KGSL_MEMTYPE_VK_INSTANCE                          0x21
+#define KGSL_MEMTYPE_VK_PHYSICALDEVICE                    0x22
+#define KGSL_MEMTYPE_VK_DEVICE                            0x23
+#define KGSL_MEMTYPE_VK_QUEUE                             0x24
+#define KGSL_MEMTYPE_VK_CMDBUFFER                         0x25
+#define KGSL_MEMTYPE_VK_DEVICEMEMORY                      0x26
+#define KGSL_MEMTYPE_VK_BUFFER                            0x27
+#define KGSL_MEMTYPE_VK_BUFFERVIEW                        0x28
+#define KGSL_MEMTYPE_VK_IMAGE                             0x29
+#define KGSL_MEMTYPE_VK_IMAGEVIEW                         0x2A
+#define KGSL_MEMTYPE_VK_SHADERMODULE                      0x2B
+#define KGSL_MEMTYPE_VK_PIPELINE                          0x2C
+#define KGSL_MEMTYPE_VK_PIPELINECACHE                     0x2D
+#define KGSL_MEMTYPE_VK_PIPELINELAYOUT                    0x2E
+#define KGSL_MEMTYPE_VK_SAMPLER                           0x2F
+#define KGSL_MEMTYPE_VK_SAMPLERYCBCRCONVERSIONKHR         0x30
+#define KGSL_MEMTYPE_VK_DESCRIPTORSET                     0x31
+#define KGSL_MEMTYPE_VK_DESCRIPTORSETLAYOUT               0x32
+#define KGSL_MEMTYPE_VK_DESCRIPTORPOOL                    0x33
+#define KGSL_MEMTYPE_VK_FENCE                             0x34
+#define KGSL_MEMTYPE_VK_SEMAPHORE                         0x35
+#define KGSL_MEMTYPE_VK_EVENT                             0x36
+#define KGSL_MEMTYPE_VK_QUERYPOOL                         0x37
+#define KGSL_MEMTYPE_VK_FRAMEBUFFER                       0x38
+#define KGSL_MEMTYPE_VK_RENDERPASS                        0x39
+#define KGSL_MEMTYPE_VK_PROGRAM                           0x3A
+#define KGSL_MEMTYPE_VK_COMMANDPOOL                       0x3B
+#define KGSL_MEMTYPE_VK_QUERY                             0x3C
 
 /*
  * Alignment hint, passed as the power of 2 exponent.
@@ -1457,5 +1499,151 @@ struct kgsl_gpuobj_set_info {
 
 #define IOCTL_KGSL_GPUOBJ_SET_INFO \
 	_IOW(KGSL_IOC_TYPE, 0x4C, struct kgsl_gpuobj_set_info)
+
+/**
+ * struct kgsl_sparse_phys_alloc - Argument for IOCTL_KGSL_SPARSE_PHYS_ALLOC
+ * @size: Size in bytes to back
+ * @pagesize: Pagesize alignment required
+ * @flags: Flags for this allocation
+ * @id: Returned ID for this allocation
+ */
+struct kgsl_sparse_phys_alloc {
+	uint64_t size;
+	uint64_t pagesize;
+	uint64_t flags;
+	unsigned int id;
+};
+
+#define IOCTL_KGSL_SPARSE_PHYS_ALLOC \
+	_IOWR(KGSL_IOC_TYPE, 0x50, struct kgsl_sparse_phys_alloc)
+
+/**
+ * struct kgsl_sparse_phys_free - Argument for IOCTL_KGSL_SPARSE_PHYS_FREE
+ * @id: ID to free
+ */
+struct kgsl_sparse_phys_free {
+	unsigned int id;
+};
+
+#define IOCTL_KGSL_SPARSE_PHYS_FREE \
+	_IOW(KGSL_IOC_TYPE, 0x51, struct kgsl_sparse_phys_free)
+
+/**
+ * struct kgsl_sparse_virt_alloc - Argument for IOCTL_KGSL_SPARSE_VIRT_ALLOC
+ * @size: Size in bytes to reserve
+ * @pagesize: Pagesize alignment required
+ * @flags: Flags for this allocation
+ * @id: Returned ID for this allocation
+ * @gpuaddr: Returned GPU address for this allocation
+ */
+struct kgsl_sparse_virt_alloc {
+	uint64_t size;
+	uint64_t pagesize;
+	uint64_t flags;
+	uint64_t gpuaddr;
+	unsigned int id;
+};
+
+#define IOCTL_KGSL_SPARSE_VIRT_ALLOC \
+	_IOWR(KGSL_IOC_TYPE, 0x52, struct kgsl_sparse_virt_alloc)
+
+/**
+ * struct kgsl_sparse_virt_free - Argument for IOCTL_KGSL_SPARSE_VIRT_FREE
+ * @id: ID to free
+ */
+struct kgsl_sparse_virt_free {
+	unsigned int id;
+};
+
+#define IOCTL_KGSL_SPARSE_VIRT_FREE \
+	_IOW(KGSL_IOC_TYPE, 0x53, struct kgsl_sparse_virt_free)
+
+/**
+ * struct kgsl_sparse_binding_object - Argument for kgsl_sparse_bind
+ * @virtoffset: Offset into the virtual ID
+ * @physoffset: Offset into the physical ID (bind only)
+ * @size: Size in bytes to reserve
+ * @flags: Flags for this kgsl_sparse_binding_object
+ * @id: Physical ID to bind (bind only)
+ */
+struct kgsl_sparse_binding_object {
+	uint64_t virtoffset;
+	uint64_t physoffset;
+	uint64_t size;
+	uint64_t flags;
+	unsigned int id;
+};
+
+/**
+ * struct kgsl_sparse_bind - Argument for IOCTL_KGSL_SPARSE_BIND
+ * @list: List of kgsl_sparse_bind_objects to bind/unbind
+ * @id: Virtual ID to bind/unbind
+ * @size: Size of kgsl_sparse_bind_object
+ * @count: Number of elements in list
+ *
+ */
+struct kgsl_sparse_bind {
+	uint64_t __user list;
+	unsigned int id;
+	unsigned int size;
+	unsigned int count;
+};
+
+#define IOCTL_KGSL_SPARSE_BIND \
+	_IOW(KGSL_IOC_TYPE, 0x54, struct kgsl_sparse_bind)
+
+/**
+ * struct kgsl_gpu_sparse_command - Argument for
+ * IOCTL_KGSL_GPU_SPARSE_COMMAND
+ * @flags: Current flags for the object
+ * @sparselist: List of kgsl_sparse_binding_object to bind/unbind
+ * @synclist: List of kgsl_command_syncpoints
+ * @sparsesize: Size of kgsl_sparse_binding_object
+ * @numsparse: Number of elements in list
+ * @sync_size: Size of kgsl_command_syncpoint structure
+ * @numsyncs: Number of kgsl_command_syncpoints in syncpoint list
+ * @context_id: Context ID submitting the kgsl_gpu_command
+ * @timestamp: Timestamp for the submitted commands
+ * @id: Virtual ID to bind/unbind
+ */
+struct kgsl_gpu_sparse_command {
+	uint64_t flags;
+	uint64_t __user sparselist;
+	uint64_t __user synclist;
+	unsigned int sparsesize;
+	unsigned int numsparse;
+	unsigned int syncsize;
+	unsigned int numsyncs;
+	unsigned int context_id;
+	unsigned int timestamp;
+	unsigned int id;
+};
+
+#define IOCTL_KGSL_GPU_SPARSE_COMMAND \
+	_IOWR(KGSL_IOC_TYPE, 0x55, struct kgsl_gpu_sparse_command)
+
+/**
+ * struct kgsl_allow_uid_high_priority - Argument for
+ * IOCTL_KGSL_ALLOW_UID_HIGH_PRIORITY
+ * @uid: UID to allow to use ringbuffer[1]
+ */
+struct kgsl_allow_uid_high_priority {
+	uid_t uid;
+};
+
+#define IOCTL_KGSL_ALLOW_UID_HIGH_PRIORITY \
+	_IOW(KGSL_IOC_TYPE, 0x56, struct kgsl_allow_uid_high_priority)
+
+/**
+ * struct kgsl_allow_tid_maximum_priority - Argument for
+ * IOCTL_KGSL_ALLOW_TID_MAXIMUM_PRIORITY
+ * @tid: TID to allow to use ringbuffer[0]
+ */
+struct kgsl_allow_tid_maximum_priority {
+	pid_t tid;
+};
+
+#define IOCTL_KGSL_ALLOW_TID_MAXIMUM_PRIORITY \
+	_IOW(KGSL_IOC_TYPE, 0x57, struct kgsl_allow_tid_maximum_priority)
 
 #endif /* _UAPI_MSM_KGSL_H */

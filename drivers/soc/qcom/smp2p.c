@@ -214,6 +214,7 @@ static struct smp2p_interrupt_config smp2p_int_cfgs[SMP2P_NUM_PROCS] = {
 	[SMP2P_AUDIO_PROC].name = "lpass",
 	[SMP2P_SENSOR_PROC].name = "dsps",
 	[SMP2P_WIRELESS_PROC].name = "wcnss",
+	[SMP2P_CDSP_PROC].name = "cdsp",
 	[SMP2P_TZ_PROC].name = "tz",
 	[SMP2P_REMOTE_MOCK_PROC].name = "mock",
 };
@@ -333,6 +334,9 @@ static int smp2p_get_smem_item_id(int write_pid, int read_pid)
 	case SMP2P_WIRELESS_PROC:
 		ret = SMEM_SMP2P_WIRLESS_BASE + read_pid;
 		break;
+	case SMP2P_CDSP_PROC:
+		ret = SMEM_SMP2P_CDSP_BASE + read_pid;
+		break;
 	case SMP2P_POWER_PROC:
 		ret = SMEM_SMP2P_POWER_BASE + read_pid;
 		break;
@@ -373,7 +377,6 @@ static void *smp2p_get_local_smem_item(int remote_pid)
 			}
 		}
 	} else if (remote_pid == SMP2P_REMOTE_MOCK_PROC) {
-#ifdef CONFIG_MSM_SMP2P_TEST
 		/*
 		 * This path is only used during unit testing so
 		 * the GFP_ATOMIC allocation should not be a
@@ -383,9 +386,6 @@ static void *smp2p_get_local_smem_item(int remote_pid)
 			item_ptr = kzalloc(
 					sizeof(struct smp2p_smem_item),
 					GFP_ATOMIC);
-#else
-		return NULL;
-#endif
 	}
 	return item_ptr;
 }
@@ -421,11 +421,7 @@ static void *smp2p_get_remote_smem_item(int remote_pid,
 			item_ptr = smem_get_entry(smem_id, &size,
 								remote_pid, 0);
 	} else if (remote_pid == SMP2P_REMOTE_MOCK_PROC) {
-#ifdef CONFIG_MSM_SMP2P_TEST
 		item_ptr = msm_smp2p_get_remote_mock_smem_item(&size);
-#else
-		return NULL;
-#endif
 	}
 	item_ptr = out_item->ops_ptr->validate_size(remote_pid, item_ptr, size);
 
@@ -1604,9 +1600,7 @@ static void smp2p_send_interrupt(int remote_pid)
 		writel_relaxed(smp2p_int_cfgs[remote_pid].out_int_mask,
 			smp2p_int_cfgs[remote_pid].out_int_ptr);
 	} else {
-#ifdef CONFIG_MSM_SMP2P_TEST
 		smp2p_remote_mock_rx_interrupt();
-#endif
 	}
 }
 

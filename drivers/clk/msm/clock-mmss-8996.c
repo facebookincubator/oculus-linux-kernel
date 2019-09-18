@@ -30,8 +30,9 @@
 #include <dt-bindings/clock/msm-clocks-8996.h>
 #include <dt-bindings/clock/msm-clocks-hwio-8996.h>
 
-#include "vdd-level-8994.h"
+#include "vdd-level-8996.h"
 #include "clock.h"
+#include "reset.h"
 
 static void __iomem *virt_base;
 static void __iomem *virt_base_gpu;
@@ -1518,7 +1519,6 @@ static struct rcg_clk extpclk_clk_src = {
 		.ops = &clk_ops_byte,
 		VDD_DIG_FMAX_MAP3(LOWER, 150000000, LOW, 300000000,
 							NOMINAL, 600000000),
-		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(extpclk_clk_src.c),
 	},
 };
@@ -2532,7 +2532,6 @@ static struct branch_clk mdss_extpclk_clk = {
 		.dbg_name = "mdss_extpclk_clk",
 		.parent = &extpclk_clk_src.c,
 		.ops = &clk_ops_branch,
-		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_extpclk_clk.c),
 	},
 };
@@ -3032,6 +3031,17 @@ static struct branch_clk vmem_maxi_clk = {
 		.ops = &clk_ops_branch,
 		CLK_INIT(vmem_maxi_clk.c),
 	},
+};
+
+static const struct msm_reset_map mmss_msm8996_resets[] = {
+	[VIDEO_BCR] = { 0x1020 },
+	[MDSS_BCR] = { 0x2300 },
+	[CAMSS_MICRO_BCR] = { 0x3490 },
+	[CAMSS_JPEG_BCR] = { 0x35a0 },
+	[CAMSS_VFE0_BCR] = { 0x3660 },
+	[CAMSS_VFE1_BCR] = { 0x3670 },
+	[FD_BCR] = { 0x3b60 },
+	[GPU_GX_BCR] = { 0x4020 },
 };
 
 static struct mux_clk mmss_gcc_dbg_clk = {
@@ -3744,7 +3754,6 @@ int msm_mmsscc_8996_probe(struct platform_device *pdev)
 	ext_byte1_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 	ext_extpclk_clk_src.dev = &pdev->dev;
 	ext_extpclk_clk_src.clk_id = "extpclk_src";
-	ext_extpclk_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 
 	efuse = readl_relaxed(gpu_base);
 	gpu_speed_bin = ((efuse >> EFUSE_SHIFT_v3) & EFUSE_MASK_v3);
@@ -3781,6 +3790,11 @@ int msm_mmsscc_8996_probe(struct platform_device *pdev)
 		if (rc)
 			return rc;
 	}
+
+	 /* Register block resets */
+	msm_reset_controller_register(pdev, mmss_msm8996_resets,
+			ARRAY_SIZE(mmss_msm8996_resets), virt_base);
+
 	dev_info(&pdev->dev, "Registered MMSS clocks.\n");
 
 	return platform_driver_register(&msm_clock_gpu_driver);

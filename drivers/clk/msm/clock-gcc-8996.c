@@ -31,7 +31,8 @@
 #include <dt-bindings/clock/msm-clocks-8996.h>
 #include <dt-bindings/clock/msm-clocks-hwio-8996.h>
 
-#include "vdd-level-8994.h"
+#include "reset.h"
+#include "vdd-level-8996.h"
 
 static void __iomem *virt_base;
 static void __iomem *virt_dbgbase;
@@ -1339,11 +1340,9 @@ static struct rcg_clk pdm2_clk_src = {
 	},
 };
 
+/* Frequency table might change later */
 static struct clk_freq_tbl ftbl_qspi_ser_clk_src[] = {
-	F(  75000000,  gpll0_out_main,    8,    0,     0),
-	F( 150000000,  gpll0_out_main,    4,    0,     0),
-	F( 256000000,  gpll4_out_main,  1.5,    0,     0),
-	F( 300000000,  gpll0_out_main,    2,    0,     0),
+	F( 192000000,  gpll4_out_main,    2,    0,     0),
 	F_END
 };
 
@@ -3144,6 +3143,26 @@ static struct branch_clk gcc_aggre0_noc_mpu_cfg_ahb_clk = {
 	},
 };
 
+static const struct msm_reset_map gcc_msm8996_resets[] = {
+	[QUSB2PHY_PRIM_BCR] = { 0x12038 },
+	[QUSB2PHY_SEC_BCR] = { 0x1203c },
+	[BLSP1_BCR] = { 0x17000 },
+	[BLSP2_BCR] = { 0x25000 },
+	[BOOT_ROM_BCR] = { 0x38000 },
+	[PRNG_BCR] = { 0x34000 },
+	[UFS_BCR] = { 0x75000 },
+	[USB_20_BCR] = { 0x12000 },
+	[USB_30_BCR] = { 0x0f000 },
+	[USB3_PHY_BCR] = { 0x50020 },
+	[USB3PHY_PHY_BCR] = { 0x50024 },
+	[PCIE_0_PHY_BCR] = { 0x6c01c },
+	[PCIE_1_PHY_BCR] = { 0x6d038 },
+	[PCIE_2_PHY_BCR] = { 0x6e038 },
+	[PCIE_PHY_BCR] = { 0x6f000 },
+	[PCIE_PHY_NOCSR_COM_PHY_BCR] = { 0x6f00C },
+	[PCIE_PHY_COM_BCR] = { 0x6f014 },
+};
+
 static struct mux_clk gcc_debug_mux;
 static struct mux_clk gcc_debug_mux_v2;
 static struct clk_ops clk_ops_debug_mux;
@@ -3645,6 +3664,14 @@ static int msm_gcc_8996_probe(struct platform_device *pdev)
 	regval |= BIT(21);
 	writel_relaxed(regval, virt_base + GCC_APCS_CLOCK_BRANCH_ENA_VOTE);
 
+	/*
+	 * Set the HMSS_AHB_CLK_SLEEP_ENA bit to allow the hmss_ahb_clk to be
+	 * turned off by hardware during certain apps low power modes.
+	 */
+	regval = readl_relaxed(virt_base + GCC_APCS_CLOCK_SLEEP_ENA_VOTE);
+	regval |= BIT(21);
+	writel_relaxed(regval, virt_base + GCC_APCS_CLOCK_SLEEP_ENA_VOTE);
+
 	vdd_dig.vdd_uv[1] = RPM_REGULATOR_CORNER_SVS_KRAIT;
 	vdd_dig.regulator[0] = devm_regulator_get(&pdev->dev, "vdd_dig");
 	if (IS_ERR(vdd_dig.regulator[0])) {
@@ -3704,6 +3731,10 @@ static int msm_gcc_8996_probe(struct platform_device *pdev)
 	 * gcc_mmss_bimc_gfx_clk.
 	 */
 	clk_set_flags(&gcc_mmss_bimc_gfx_clk.c, CLKFLAG_RETAIN_MEM);
+
+	/* Register block resets */
+	msm_reset_controller_register(pdev, gcc_msm8996_resets,
+			ARRAY_SIZE(gcc_msm8996_resets), virt_base);
 
 	dev_info(&pdev->dev, "Registered GCC clocks.\n");
 	return 0;

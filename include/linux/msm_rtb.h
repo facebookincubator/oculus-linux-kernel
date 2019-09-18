@@ -36,7 +36,7 @@ struct msm_rtb_platform_data {
 	unsigned int size;
 };
 
-#if defined(CONFIG_MSM_RTB)
+#if defined(CONFIG_QCOM_RTB)
 /*
  * returns 1 if data was logged, 0 otherwise
  */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -174,16 +174,16 @@ enum rndis_ipa_operation {
  */
 struct rndis_ipa_dev {
 	struct net_device *net;
-	u32 tx_filter;
+	bool tx_filter;
 	u32 tx_dropped;
-	u32 tx_dump_enable;
-	u32 rx_filter;
+	bool tx_dump_enable;
+	bool rx_filter;
 	u32 rx_dropped;
-	u32 rx_dump_enable;
-	u32 icmp_filter;
-	u32 rm_enable;
-	u32 deaggregation_enable;
-	u32 during_xmit_error;
+	bool rx_dump_enable;
+	bool icmp_filter;
+	bool rm_enable;
+	bool deaggregation_enable;
+	bool during_xmit_error;
 	struct dentry *directory;
 	uint32_t eth_ipv4_hdr_hdl;
 	uint32_t eth_ipv6_hdr_hdl;

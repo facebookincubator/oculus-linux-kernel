@@ -31,7 +31,7 @@
 		qcom,mdss-dsi-border-color = <0>;
 		qcom,mdss-dsi-on-command = [05 01 00 00 a0 00 02 11 00
 			05 01 00 00 02 00 02 29 00];
-		qcom,mdss-dsi-off-command = [05 01 00 00 02 00 02 28 00
+		qcom,mdss-dsi-pre-off-command = [05 01 00 00 02 00 02 28 00
 				 05 01 00 00 a0 00 02 10 00];
 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
@@ -64,11 +64,7 @@
 		qcom,mdss-dsi-panel-status-check-mode = "bta_check";
 		qcom,mdss-dsi-tx-eot-append;
 		qcom,esd-check-enabled;
-		qcom,mdss-dsi-panel-hdr-enabled;
-		qcom,mdss-dsi-panel-hdr-color-primaries = <14880 15935 32435
-			16555 14945 30910 7790 3415>;
-		qcom,mdss-dsi-panel-peak-brightness = <5643000>;
-		qcom,mdss-dsi-panel-blackness-level = <6134>;
+
 		qcom,config-select = <&dsi_dual_sharp_video_config0>;
 
 		dsi_dual_sharp_video_config0: config0 {

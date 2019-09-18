@@ -18,8 +18,8 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/err.h>
-#include <linux/clk-provider.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 
 #include "clk.h"
 
@@ -264,7 +264,7 @@ static int clk_pll_wait_for_lock(struct tegra_clk_pll *pll)
 	}
 
 	pr_err("%s: Timed out waiting for pll %s lock\n", __func__,
-	       __clk_get_name(pll->hw.clk));
+	       clk_hw_get_name(&pll->hw));
 
 	return -1;
 }
@@ -595,7 +595,7 @@ static int clk_pll_set_rate(struct clk_hw *hw, unsigned long rate,
 	if (pll->params->flags & TEGRA_PLL_FIXED) {
 		if (rate != pll->params->fixed_rate) {
 			pr_err("%s: Can not change %s fixed rate %lu to %lu\n",
-				__func__, __clk_get_name(hw->clk),
+				__func__, clk_hw_get_name(hw),
 				pll->params->fixed_rate, rate);
 			return -EINVAL;
 		}
@@ -605,7 +605,7 @@ static int clk_pll_set_rate(struct clk_hw *hw, unsigned long rate,
 	if (_get_table_rate(hw, &cfg, rate, parent_rate) &&
 	    _calc_rate(hw, &cfg, rate, parent_rate)) {
 		pr_err("%s: Failed to set %s rate %lu\n", __func__,
-		       __clk_get_name(hw->clk), rate);
+		       clk_hw_get_name(hw), rate);
 		WARN_ON(1);
 		return -EINVAL;
 	}
@@ -634,7 +634,7 @@ static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
 
 	/* PLLM is used for memory; we do not change rate */
 	if (pll->params->flags & TEGRA_PLLM)
-		return __clk_get_rate(hw->clk);
+		return clk_hw_get_rate(hw);
 
 	if (_get_table_rate(hw, &cfg, rate, *prate) &&
 	    _calc_rate(hw, &cfg, rate, *prate))
@@ -663,7 +663,7 @@ static unsigned long clk_pll_recalc_rate(struct clk_hw *hw,
 		if (_get_table_rate(hw, &sel, pll->params->fixed_rate,
 					parent_rate)) {
 			pr_err("Clock %s has unknown fixed frequency\n",
-			       __clk_get_name(hw->clk));
+			       clk_hw_get_name(hw));
 			BUG();
 		}
 		return pll->params->fixed_rate;
@@ -816,7 +816,9 @@ const struct clk_ops tegra_clk_plle_ops = {
 	.enable = clk_plle_enable,
 };
 
-#if defined(CONFIG_ARCH_TEGRA_114_SOC) || defined(CONFIG_ARCH_TEGRA_124_SOC)
+#if defined(CONFIG_ARCH_TEGRA_114_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_124_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_132_SOC)
 
 static int _pll_fixed_mdiv(struct tegra_clk_pll_params *pll_params,
 			   unsigned long parent_rate)
@@ -979,7 +981,7 @@ static int clk_pllxc_set_rate(struct clk_hw *hw, unsigned long rate,
 	struct tegra_clk_pll *pll = to_clk_pll(hw);
 	struct tegra_clk_pll_freq_table cfg, old_cfg;
 	unsigned long flags = 0;
-	int ret = 0;
+	int ret;
 
 	ret = _pll_ramp_calc_pll(hw, &cfg, rate, parent_rate);
 	if (ret < 0)
@@ -1003,7 +1005,7 @@ static long clk_pll_ramp_round_rate(struct clk_hw *hw, unsigned long rate,
 				unsigned long *prate)
 {
 	struct tegra_clk_pll_freq_table cfg;
-	int ret = 0, p_div;
+	int ret, p_div;
 	u64 output_rate = *prate;
 
 	ret = _pll_ramp_calc_pll(hw, &cfg, rate, *prate);
@@ -1071,7 +1073,7 @@ static int clk_pllc_enable(struct clk_hw *hw)
 {
 	struct tegra_clk_pll *pll = to_clk_pll(hw);
 	u32 val;
-	int ret = 0;
+	int ret;
 	unsigned long flags = 0;
 
 	if (pll->lock)
@@ -1221,6 +1223,7 @@ static long _pllre_calc_rate(struct tegra_clk_pll *pll,
 
 	return output_rate;
 }
+
 static int clk_pllre_set_rate(struct clk_hw *hw, unsigned long rate,
 				unsigned long parent_rate)
 {
@@ -1505,7 +1508,9 @@ struct clk *tegra_clk_register_plle(const char *name, const char *parent_name,
 	return clk;
 }
 
-#if defined(CONFIG_ARCH_TEGRA_114_SOC) || defined(CONFIG_ARCH_TEGRA_124_SOC)
+#if defined(CONFIG_ARCH_TEGRA_114_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_124_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_132_SOC)
 static const struct clk_ops tegra_clk_pllxc_ops = {
 	.is_enabled = clk_pll_is_enabled,
 	.enable = clk_pll_iddq_enable,
@@ -1565,14 +1570,14 @@ struct clk *tegra_clk_register_pllxc(const char *name, const char *parent_name,
 	parent = __clk_lookup(parent_name);
 	if (!parent) {
 		WARN(1, "parent clk %s of %s must be registered first\n",
-			name, parent_name);
+			parent_name, name);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (!pll_params->pdiv_tohw)
 		return ERR_PTR(-EINVAL);
 
-	parent_rate = __clk_get_rate(parent);
+	parent_rate = clk_get_rate(parent);
 
 	pll_params->vco_min = _clip_vco_min(pll_params->vco_min, parent_rate);
 
@@ -1665,11 +1670,11 @@ struct clk *tegra_clk_register_pllm(const char *name, const char *parent_name,
 	parent = __clk_lookup(parent_name);
 	if (!parent) {
 		WARN(1, "parent clk %s of %s must be registered first\n",
-			name, parent_name);
+			parent_name, name);
 		return ERR_PTR(-EINVAL);
 	}
 
-	parent_rate = __clk_get_rate(parent);
+	parent_rate = clk_get_rate(parent);
 
 	pll_params->vco_min = _clip_vco_min(pll_params->vco_min, parent_rate);
 
@@ -1706,11 +1711,11 @@ struct clk *tegra_clk_register_pllc(const char *name, const char *parent_name,
 	parent = __clk_lookup(parent_name);
 	if (!parent) {
 		WARN(1, "parent clk %s of %s must be registered first\n",
-			name, parent_name);
+			parent_name, name);
 		return ERR_PTR(-EINVAL);
 	}
 
-	parent_rate = __clk_get_rate(parent);
+	parent_rate = clk_get_rate(parent);
 
 	pll_params->vco_min = _clip_vco_min(pll_params->vco_min, parent_rate);
 
@@ -1802,7 +1807,7 @@ struct clk *tegra_clk_register_plle_tegra114(const char *name,
 }
 #endif
 
-#ifdef CONFIG_ARCH_TEGRA_124_SOC
+#if defined(CONFIG_ARCH_TEGRA_124_SOC) || defined(CONFIG_ARCH_TEGRA_132_SOC)
 static const struct clk_ops tegra_clk_pllss_ops = {
 	.is_enabled = clk_pll_is_enabled,
 	.enable = clk_pll_iddq_enable,
@@ -1830,7 +1835,7 @@ struct clk *tegra_clk_register_pllss(const char *name, const char *parent_name,
 	parent = __clk_lookup(parent_name);
 	if (!parent) {
 		WARN(1, "parent clk %s of %s must be registered first\n",
-			name, parent_name);
+			parent_name, name);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -1843,7 +1848,7 @@ struct clk *tegra_clk_register_pllss(const char *name, const char *parent_name,
 	val &= ~PLLSS_REF_SRC_SEL_MASK;
 	pll_writel_base(val, pll);
 
-	parent_rate = __clk_get_rate(parent);
+	parent_rate = clk_get_rate(parent);
 
 	pll_params->vco_min = _clip_vco_min(pll_params->vco_min, parent_rate);
 

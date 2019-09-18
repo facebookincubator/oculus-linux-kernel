@@ -328,16 +328,16 @@ static int mc13783_set_tdm_slot_dac(struct snd_soc_dai *dai,
 	}
 
 	switch (rx_mask) {
-	case 0xfffffffc:
+	case 0x03:
 		val |= SSI_NETWORK_DAC_RXSLOT_0_1;
 		break;
-	case 0xfffffff3:
+	case 0x0c:
 		val |= SSI_NETWORK_DAC_RXSLOT_2_3;
 		break;
-	case 0xffffffcf:
+	case 0x30:
 		val |= SSI_NETWORK_DAC_RXSLOT_4_5;
 		break;
-	case 0xffffff3f:
+	case 0xc0:
 		val |= SSI_NETWORK_DAC_RXSLOT_6_7;
 		break;
 	default:
@@ -360,7 +360,7 @@ static int mc13783_set_tdm_slot_codec(struct snd_soc_dai *dai,
 	if (slots != 4)
 		return -EINVAL;
 
-	if (tx_mask != 0xfffffffc)
+	if (tx_mask != 0x3)
 		return -EINVAL;
 
 	val |= (0x00 << 2);	/* primary timeslot RX/TX(?) is 0 */
@@ -650,14 +650,14 @@ static int mc13783_remove(struct snd_soc_codec *codec)
 #define MC13783_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |\
 	SNDRV_PCM_FMTBIT_S24_LE)
 
-static struct snd_soc_dai_ops mc13783_ops_dac = {
+static const struct snd_soc_dai_ops mc13783_ops_dac = {
 	.hw_params	= mc13783_pcm_hw_params_dac,
 	.set_fmt	= mc13783_set_fmt_async,
 	.set_sysclk	= mc13783_set_sysclk_dac,
 	.set_tdm_slot	= mc13783_set_tdm_slot_dac,
 };
 
-static struct snd_soc_dai_ops mc13783_ops_codec = {
+static const struct snd_soc_dai_ops mc13783_ops_codec = {
 	.hw_params	= mc13783_pcm_hw_params_codec,
 	.set_fmt	= mc13783_set_fmt_async,
 	.set_sysclk	= mc13783_set_sysclk_codec,
@@ -698,7 +698,7 @@ static struct snd_soc_dai_driver mc13783_dai_async[] = {
 	},
 };
 
-static struct snd_soc_dai_ops mc13783_ops_sync = {
+static const struct snd_soc_dai_ops mc13783_ops_sync = {
 	.hw_params	= mc13783_pcm_hw_params_sync,
 	.set_fmt	= mc13783_set_fmt_sync,
 	.set_sysclk	= mc13783_set_sysclk_sync,
@@ -802,7 +802,6 @@ static int mc13783_codec_remove(struct platform_device *pdev)
 static struct platform_driver mc13783_codec_driver = {
 	.driver = {
 		.name	= "mc13783-codec",
-		.owner	= THIS_MODULE,
 	},
 	.remove = mc13783_codec_remove,
 };

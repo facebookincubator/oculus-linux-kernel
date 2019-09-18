@@ -77,7 +77,7 @@ static int32_t msm_ois_download(struct msm_ois_ctrl_t *o_ctrl)
 			&o_ctrl->i2c_client, o_ctrl->oboard_info->opcode.prog,
 			 ptr, bytes_in_tx);
 		if (rc < 0) {
-			pr_err("Failed: remaining bytes to be downloaded: %d",
+			pr_err("Failed:remaining bytes to be downloaded:%d\n",
 				bytes_in_tx);
 			/* abort download fw and return error*/
 			goto release_firmware;
@@ -99,7 +99,7 @@ static int32_t msm_ois_download(struct msm_ois_ctrl_t *o_ctrl)
 			&o_ctrl->i2c_client, o_ctrl->oboard_info->opcode.coeff,
 			ptr, bytes_in_tx);
 		if (rc < 0) {
-			pr_err("Failed: remaining bytes to be downloaded: %d",
+			pr_err("Failed:remaining bytes to be downloaded:%d\n",
 				total_bytes);
 			/* abort download fw*/
 			break;
@@ -120,13 +120,13 @@ static int32_t msm_ois_data_config(struct msm_ois_ctrl_t *o_ctrl,
 
 	CDBG("Enter\n");
 	if (!slave_info) {
-		pr_err("failed : invalid slave_info ");
+		pr_err("failed : invalid slave_info\n");
 		return -EINVAL;
 	}
 	/* fill ois slave info*/
 	if (strlcpy(o_ctrl->oboard_info->ois_name, slave_info->ois_name,
 		sizeof(o_ctrl->oboard_info->ois_name)) < 0) {
-		pr_err("failed: copy_from_user");
+		pr_err("failed: copy_from_user\n");
 		return -EFAULT;
 	}
 	memcpy(&(o_ctrl->oboard_info->opcode), &(slave_info->opcode),

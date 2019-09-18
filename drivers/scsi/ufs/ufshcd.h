@@ -3,7 +3,7 @@
  *
  * This code is based on drivers/scsi/ufs/ufshcd.h
  * Copyright (C) 2011-2013 Samsung India Software Operations
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * Authors:
  *	Santosh Yaraganavi <santosh.sy@samsung.com>
@@ -39,6 +39,7 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/hrtimer.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -55,6 +56,7 @@
 #include <linux/clk.h>
 #include <linux/completion.h>
 #include <linux/regulator/consumer.h>
+#include <linux/reset.h>
 #include "unipro.h"
 
 #include <asm/irq.h>
@@ -74,6 +76,7 @@
 #define UFSHCD_DRIVER_VERSION "0.3"
 
 #define UFS_BIT(x)	BIT(x)
+#define UFS_MASK(x, y)	(x << ((y) % BITS_PER_LONG))
 
 struct ufs_hba;
 
@@ -306,6 +309,9 @@ struct ufs_pwr_mode_info {
  *		 implementations of resetting the hci
  * @dbg_register_dump: used to dump controller debug information
  * @update_sec_cfg: called to restore host controller secure configuration
+ * @get_scale_down_gear: called to get the minimum supported gear to
+ *			 scale down
+ * @set_bus_vote: called to vote for the required bus bandwidth
  * @add_debugfs: used to add debugfs entries
  * @remove_debugfs: used to remove debugfs entries
  */
@@ -329,8 +335,12 @@ struct ufs_hba_variant_ops {
 	int	(*suspend)(struct ufs_hba *, enum ufs_pm_op);
 	int	(*resume)(struct ufs_hba *, enum ufs_pm_op);
 	int	(*full_reset)(struct ufs_hba *);
-	void	(*dbg_register_dump)(struct ufs_hba *hba);
+	void	(*dbg_register_dump)(struct ufs_hba *hba, bool no_sleep);
 	int	(*update_sec_cfg)(struct ufs_hba *hba, bool restore_sec_cfg);
+	u32	(*get_scale_down_gear)(struct ufs_hba *);
+	int	(*set_bus_vote)(struct ufs_hba *, bool);
+	void	(*phy_off)(struct ufs_hba *);
+	void	(*phy_on)(struct ufs_hba *);
 #ifdef CONFIG_DEBUG_FS
 	void	(*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
 	void	(*remove_debugfs)(struct ufs_hba *hba);
@@ -389,8 +399,9 @@ enum clk_gating_state {
 
 /**
  * struct ufs_clk_gating - UFS clock gating related info
- * @gate_work: worker to turn off clocks after some delay as specified in
- * delay_ms
+ * @gate_hrtimer: hrtimer to invoke @gate_work after some delay as
+ * specified in @delay_ms
+ * @gate_work: worker to turn off clocks
  * @ungate_work: worker to turn on clocks that will be used in case of
  * interrupt context
  * @state: the current clocks state
@@ -408,7 +419,8 @@ enum clk_gating_state {
  * completion before gating clocks.
  */
 struct ufs_clk_gating {
-	struct delayed_work gate_work;
+	struct hrtimer gate_hrtimer;
+	struct work_struct gate_work;
 	struct work_struct ungate_work;
 	enum clk_gating_state state;
 	unsigned long delay_ms;
@@ -421,7 +433,7 @@ struct ufs_clk_gating {
 	struct device_attribute enable_attr;
 	bool is_enabled;
 	int active_reqs;
-	struct workqueue_struct *ungating_workq;
+	struct workqueue_struct *clk_gating_workq;
 };
 
 /* Hibern8 state  */
@@ -430,6 +442,7 @@ enum ufshcd_hibern8_on_idle_state {
 	HIBERN8_EXITED,
 	REQ_HIBERN8_ENTER,
 	REQ_HIBERN8_EXIT,
+	AUTO_HIBERN8,
 };
 
 /**
@@ -577,6 +590,22 @@ struct ufshcd_req_stat {
 };
 #endif
 
+enum ufshcd_ctx {
+	QUEUE_CMD,
+	ERR_HNDLR_WORK,
+	H8_EXIT_WORK,
+	UIC_CMD_SEND,
+	PWRCTL_CMD_SEND,
+	TM_CMD_SEND,
+	XFR_REQ_COMPL,
+	CLK_SCALE_WORK,
+};
+
+struct ufshcd_clk_ctx {
+	ktime_t ts;
+	enum ufshcd_ctx ctx;
+};
+
 /**
  * struct ufs_stats - keeps usage/err statistics
  * @enabled: enable tag stats for debugfs
@@ -605,6 +634,10 @@ struct ufs_stats {
 	int query_stats_arr[UPIU_QUERY_OPCODE_MAX][MAX_QUERY_IDN];
 
 #endif
+	u32 last_intr_status;
+	ktime_t last_intr_ts;
+	struct ufshcd_clk_ctx clk_hold;
+	struct ufshcd_clk_ctx clk_rel;
 	u32 hibern8_exit_cnt;
 	ktime_t last_hibern8_exit_tstamp;
 	struct ufs_uic_err_reg_hist pa_err;
@@ -774,6 +807,9 @@ struct ufs_hba {
 	 */
 	#define UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION		UFS_BIT(5)
 
+	/* Auto hibern8 support is broken */
+	#define UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8		UFS_BIT(6)
+
 	unsigned int quirks;	/* Deviations from standard UFSHCI spec. */
 
 	/* Device deviations from standard UFS device spec. */
@@ -882,13 +918,32 @@ struct ufs_hba {
 	enum bkops_status urgent_bkops_lvl;
 	bool is_urgent_bkops_lvl_checked;
 
-	struct rw_semaphore clk_scaling_lock;
+	/* sync b/w diff contexts */
+	struct rw_semaphore lock;
+	unsigned long shutdown_in_prog;
 
+	struct reset_control *core_reset;
 	/* If set, don't gate device ref_clk during clock gating */
 	bool no_ref_clk_gating;
 
 	int scsi_block_reqs_cnt;
+
+	bool full_init_linereset;
+	struct pinctrl *pctrl;
+	
+	int			latency_hist_enabled;
+	struct io_latency_state io_lat_s;
 };
+
+static inline void ufshcd_mark_shutdown_ongoing(struct ufs_hba *hba)
+{
+	set_bit(0, &hba->shutdown_in_prog);
+}
+
+static inline bool ufshcd_is_shutdown_ongoing(struct ufs_hba *hba)
+{
+	return !!(test_bit(0, &hba->shutdown_in_prog));
+}
 
 /* Returns true if clocks can be gated. Otherwise false */
 static inline bool ufshcd_is_clkgating_allowed(struct ufs_hba *hba)
@@ -933,6 +988,12 @@ static inline bool ufshcd_is_intr_aggr_allowed(struct ufs_hba *hba)
 		return false;
 }
 
+static inline bool ufshcd_is_auto_hibern8_supported(struct ufs_hba *hba)
+{
+	return !!((hba->capabilities & MASK_AUTO_HIBERN8_SUPPORT) &&
+		!(hba->quirks & UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8));
+}
+
 static inline bool ufshcd_is_crypto_supported(struct ufs_hba *hba)
 {
 	return !!(hba->capabilities & MASK_CRYPTO_SUPPORT);
@@ -967,13 +1028,15 @@ void ufshcd_remove(struct ufs_hba *);
 int ufshcd_wait_for_register(struct ufs_hba *hba, u32 reg, u32 mask,
 				u32 val, unsigned long interval_us,
 				unsigned long timeout_ms, bool can_sleep);
+int ufshcd_uic_hibern8_enter(struct ufs_hba *hba);
+int ufshcd_uic_hibern8_exit(struct ufs_hba *hba);
 
 /**
- * ufshcd_bind_variant - bind variant specific data to the hba
+ * ufshcd_set_variant - set variant specific data to the hba
  * @hba - per adapter instance
  * @variant - pointer to variant specific data
  */
-static inline void ufshcd_bind_variant(struct ufs_hba *hba, void *variant)
+static inline void ufshcd_set_variant(struct ufs_hba *hba, void *variant)
 {
 	BUG_ON(!hba);
 	hba->priv = variant;
@@ -1044,6 +1107,32 @@ static inline int ufshcd_dme_peer_get(struct ufs_hba *hba,
 				      u32 attr_sel, u32 *mib_val)
 {
 	return ufshcd_dme_get_attr(hba, attr_sel, mib_val, DME_PEER);
+}
+
+/**
+ * ufshcd_dme_rmw - get modify set a dme attribute
+ * @hba - per adapter instance
+ * @mask - mask to apply on read value
+ * @val - actual value to write
+ * @attr - dme attribute
+ */
+static inline int ufshcd_dme_rmw(struct ufs_hba *hba, u32 mask,
+				 u32 val, u32 attr)
+{
+	u32 cfg = 0;
+	int err = 0;
+
+	err = ufshcd_dme_get(hba, UIC_ARG_MIB(attr), &cfg);
+	if (err)
+		goto out;
+
+	cfg &= ~mask;
+	cfg |= (val & mask);
+
+	err = ufshcd_dme_set(hba, UIC_ARG_MIB(attr), cfg);
+
+out:
+	return err;
 }
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
@@ -1164,7 +1253,7 @@ static inline int ufshcd_vops_pwr_change_notify(struct ufs_hba *hba,
 	if (hba->var && hba->var->vops && hba->var->vops->pwr_change_notify)
 		return hba->var->vops->pwr_change_notify(hba, status,
 					dev_max_params, dev_req_params);
-	return 0;
+	return -ENOTSUPP;
 }
 
 static inline int ufshcd_vops_apply_dev_quirks(struct ufs_hba *hba)
@@ -1196,10 +1285,11 @@ static inline int ufshcd_vops_full_reset(struct ufs_hba *hba)
 }
 
 
-static inline void ufshcd_vops_dbg_register_dump(struct ufs_hba *hba)
+static inline void ufshcd_vops_dbg_register_dump(struct ufs_hba *hba,
+						 bool no_sleep)
 {
 	if (hba->var && hba->var->vops && hba->var->vops->dbg_register_dump)
-		hba->var->vops->dbg_register_dump(hba);
+		hba->var->vops->dbg_register_dump(hba, no_sleep);
 }
 
 static inline int ufshcd_vops_update_sec_cfg(struct ufs_hba *hba,
@@ -1207,6 +1297,21 @@ static inline int ufshcd_vops_update_sec_cfg(struct ufs_hba *hba,
 {
 	if (hba->var && hba->var->vops && hba->var->vops->update_sec_cfg)
 		return hba->var->vops->update_sec_cfg(hba, restore_sec_cfg);
+	return 0;
+}
+
+static inline u32 ufshcd_vops_get_scale_down_gear(struct ufs_hba *hba)
+{
+	if (hba->var && hba->var->vops && hba->var->vops->get_scale_down_gear)
+		return hba->var->vops->get_scale_down_gear(hba);
+	/* Default to lowest high speed gear */
+	return UFS_HS_G1;
+}
+
+static inline int ufshcd_vops_set_bus_vote(struct ufs_hba *hba, bool on)
+{
+	if (hba->var && hba->var->vops && hba->var->vops->set_bus_vote)
+		return hba->var->vops->set_bus_vote(hba, on);
 	return 0;
 }
 
@@ -1224,7 +1329,8 @@ static inline void ufshcd_vops_remove_debugfs(struct ufs_hba *hba)
 		hba->var->vops->remove_debugfs(hba);
 }
 #else
-static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba, struct dentry *)
+static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba,
+						struct dentry *root)
 {
 }
 

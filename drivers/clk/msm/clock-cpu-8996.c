@@ -39,7 +39,7 @@
 #include <dt-bindings/clock/msm-clocks-8996.h>
 
 #include "clock.h"
-#include "vdd-level-8994.h"
+#include "vdd-level-8996.h"
 
 enum {
 	APC0_PLL_BASE,
@@ -238,7 +238,6 @@ static struct alpha_pll_clk perfcl_alt_pll = {
 	.post_div_config = 0x100, /* Div-2 */
 	.config_ctl_val = 0x4001051B,
 	.offline_bit_workaround = true,
-	.no_irq_dis = true,
 	.c = {
 		.always_on = true,
 		.parent = &alpha_xo_ao.c,
@@ -301,7 +300,6 @@ static struct alpha_pll_clk pwrcl_alt_pll = {
 	.post_div_config = 0x100, /* Div-2 */
 	.config_ctl_val = 0x4001051B,
 	.offline_bit_workaround = true,
-	.no_irq_dis = true,
 	.c = {
 		.always_on = true,
 		.dbg_name = "pwrcl_alt_pll",

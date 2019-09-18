@@ -2,7 +2,6 @@
 #include <linux/percpu.h>
 #include <linux/slab.h>
 #include <asm/cacheflush.h>
-#include <asm/cpu_ops.h>
 #include <asm/debug-monitors.h>
 #include <asm/pgtable.h>
 #include <asm/memory.h>
@@ -43,7 +42,7 @@ void notrace __cpu_suspend_save(struct cpu_suspend_ctx *ptr,
  * time the notifier runs debug exceptions might have been enabled already,
  * with HW breakpoints registers content still in an unknown state.
  */
-void (*hw_breakpoint_restore)(void *);
+static void (*hw_breakpoint_restore)(void *);
 void __init cpu_suspend_set_dbg_restorer(void (*hw_bp_restore)(void *))
 {
 	/* Prevent multiple restore hook initializations */
@@ -52,36 +51,15 @@ void __init cpu_suspend_set_dbg_restorer(void (*hw_bp_restore)(void *))
 	hw_breakpoint_restore = hw_bp_restore;
 }
 
-/**
- * cpu_suspend() - function to enter a low-power state
- * @arg: argument to pass to CPU suspend operations
- *
- * Return: 0 on success, -EOPNOTSUPP if CPU suspend hook not initialized, CPU
- * operations back-end error code otherwise.
- */
-int cpu_suspend(unsigned long arg)
-{
-	int cpu = smp_processor_id();
-
-	/*
-	 * If cpu_ops have not been registered or suspend
-	 * has not been initialized, cpu_suspend call fails early.
-	 */
-	if (!cpu_ops[cpu] || !cpu_ops[cpu]->cpu_suspend)
-		return -EOPNOTSUPP;
-	return cpu_ops[cpu]->cpu_suspend(arg);
-}
-
 /*
- * __cpu_suspend
+ * cpu_suspend
  *
  * arg: argument to pass to the finisher function
  * fn: finisher function pointer
  *
  */
-int __cpu_suspend(unsigned long arg, int (*fn)(unsigned long))
+int cpu_suspend(unsigned long arg, int (*fn)(unsigned long))
 {
-	struct mm_struct *mm = current->active_mm;
 	int ret;
 	unsigned long flags;
 
@@ -108,18 +86,11 @@ int __cpu_suspend(unsigned long arg, int (*fn)(unsigned long))
 	ret = __cpu_suspend_enter(arg, fn);
 	if (ret == 0) {
 		/*
-		 * We are resuming from reset with TTBR0_EL1 set to the
-		 * idmap to enable the MMU; restore the active_mm mappings in
-		 * TTBR0_EL1 unless the active_mm == &init_mm, in which case
-		 * the thread entered __cpu_suspend with TTBR0_EL1 set to
-		 * reserved TTBR0 page tables and should be restored as such.
+		 * We are resuming from reset with the idmap active in TTBR0_EL1.
+		 * We must uninstall the idmap and restore the expected MMU
+		 * state before we can possibly return to userspace.
 		 */
-		if (mm == &init_mm)
-			cpu_set_reserved_ttbr0();
-		else
-			cpu_switch_mm(mm->pgd, mm);
-
-		local_flush_tlb_all();
+		cpu_uninstall_idmap();
 
 		/*
 		 * Restore per-cpu offset before any kernel
@@ -149,7 +120,6 @@ int __cpu_suspend(unsigned long arg, int (*fn)(unsigned long))
 }
 
 struct sleep_save_sp sleep_save_sp;
-phys_addr_t sleep_idmap_phys;
 
 static int __init cpu_suspend_init(void)
 {
@@ -163,9 +133,7 @@ static int __init cpu_suspend_init(void)
 
 	sleep_save_sp.save_ptr_stash = ctx_ptr;
 	sleep_save_sp.save_ptr_stash_phys = virt_to_phys(ctx_ptr);
-	sleep_idmap_phys = virt_to_phys(idmap_pg_dir);
 	__flush_dcache_area(&sleep_save_sp, sizeof(struct sleep_save_sp));
-	__flush_dcache_area(&sleep_idmap_phys, sizeof(sleep_idmap_phys));
 
 	return 0;
 }

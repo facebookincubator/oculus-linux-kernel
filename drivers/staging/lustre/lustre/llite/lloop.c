@@ -100,8 +100,7 @@
 #include <linux/highmem.h>
 #include <linux/gfp.h>
 #include <linux/pagevec.h>
-
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "../include/lustre_lib.h"
 #include "../include/lustre_lite.h"
@@ -163,7 +162,7 @@ static int max_loop = MAX_LOOP_DEFAULT;
 static struct lloop_device *loop_dev;
 static struct gendisk **disks;
 static struct mutex lloop_mutex;
-static void *ll_iocontrol_magic = NULL;
+static void *ll_iocontrol_magic;
 
 static loff_t get_loop_size(struct lloop_device *lo, struct file *file)
 {
@@ -187,7 +186,7 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 {
 	const struct lu_env  *env   = lo->lo_env;
 	struct cl_io	 *io    = &lo->lo_io;
-	struct inode	 *inode = lo->lo_backing_file->f_dentry->d_inode;
+	struct inode	 *inode = file_inode(lo->lo_backing_file);
 	struct cl_object     *obj = ll_i2info(inode)->lli_clob;
 	pgoff_t	       offset;
 	int		   ret;
@@ -316,7 +315,6 @@ static unsigned int loop_get_bio(struct lloop_device *lo, struct bio **req)
 		if (page_count + (*bio)->bi_vcnt > LLOOP_MAX_SEGMENTS)
 			break;
 
-
 		page_count += (*bio)->bi_vcnt;
 		count++;
 		bio = &(*bio)->bi_next;
@@ -335,11 +333,13 @@ static unsigned int loop_get_bio(struct lloop_device *lo, struct bio **req)
 	return count;
 }
 
-static void loop_make_request(struct request_queue *q, struct bio *old_bio)
+static blk_qc_t loop_make_request(struct request_queue *q, struct bio *old_bio)
 {
 	struct lloop_device *lo = q->queuedata;
 	int rw = bio_rw(old_bio);
 	int inactive;
+
+	blk_queue_split(q, &old_bio, q->bio_split);
 
 	if (!lo)
 		goto err;
@@ -349,7 +349,7 @@ static void loop_make_request(struct request_queue *q, struct bio *old_bio)
 	       old_bio->bi_iter.bi_size);
 
 	spin_lock_irq(&lo->lo_lock);
-	inactive = (lo->lo_state != LLOOP_BOUND);
+	inactive = lo->lo_state != LLOOP_BOUND;
 	spin_unlock_irq(&lo->lo_lock);
 	if (inactive)
 		goto err;
@@ -364,20 +364,23 @@ static void loop_make_request(struct request_queue *q, struct bio *old_bio)
 		goto err;
 	}
 	loop_add_bio(lo, old_bio);
-	return;
+	return BLK_QC_T_NONE;
 err:
-	cfs_bio_io_error(old_bio, old_bio->bi_iter.bi_size);
+	bio_io_error(old_bio);
+	return BLK_QC_T_NONE;
 }
-
 
 static inline void loop_handle_bio(struct lloop_device *lo, struct bio *bio)
 {
 	int ret;
+
 	ret = do_bio_lustrebacked(lo, bio);
 	while (bio) {
 		struct bio *tmp = bio->bi_next;
+
 		bio->bi_next = NULL;
-		cfs_bio_endio(bio, bio->bi_iter.bi_size, ret);
+		bio->bi_error = ret;
+		bio_endio(bio);
 		bio = tmp;
 	}
 }
@@ -428,6 +431,7 @@ static int loop_thread(void *data)
 		wait_event(lo->lo_bh_wait, loop_active(lo));
 		if (!atomic_read(&lo->lo_pending)) {
 			int exiting = 0;
+
 			spin_lock_irq(&lo->lo_lock);
 			exiting = (lo->lo_state == LLOOP_RUNDOWN);
 			spin_unlock_irq(&lo->lo_lock);
@@ -626,7 +630,7 @@ static int lo_ioctl(struct block_device *bdev, fmode_t mode,
 			break;
 		}
 		if (inode == NULL)
-			inode = lo->lo_backing_file->f_dentry->d_inode;
+			inode = file_inode(lo->lo_backing_file);
 		if (lo->lo_state == LLOOP_BOUND)
 			fid = ll_i2info(inode)->lli_fid;
 		else
@@ -692,8 +696,7 @@ static enum llioc_iter lloop_ioctl(struct inode *unused, struct file *file,
 					lo_free = lo;
 				continue;
 			}
-			if (lo->lo_backing_file->f_dentry->d_inode ==
-			    file->f_dentry->d_inode)
+			if (file_inode(lo->lo_backing_file) == file_inode(file))
 				break;
 		}
 		if (lo || !lo_free) {
@@ -778,8 +781,8 @@ static int __init lloop_init(void)
 
 	if (max_loop < 1 || max_loop > 256) {
 		max_loop = MAX_LOOP_DEFAULT;
-		CWARN("lloop: invalid max_loop (must be between"
-		      " 1 and 256), using default (%u)\n", max_loop);
+		CWARN("lloop: invalid max_loop (must be between 1 and 256), using default (%u)\n",
+		      max_loop);
 	}
 
 	lloop_major = register_blkdev(0, "lloop");
@@ -793,11 +796,11 @@ static int __init lloop_init(void)
 	if (ll_iocontrol_magic == NULL)
 		goto out_mem1;
 
-	loop_dev = kzalloc(max_loop * sizeof(*loop_dev), GFP_KERNEL);
+	loop_dev = kcalloc(max_loop, sizeof(*loop_dev), GFP_KERNEL);
 	if (!loop_dev)
 		goto out_mem1;
 
-	disks = kzalloc(max_loop * sizeof(*disks), GFP_KERNEL);
+	disks = kcalloc(max_loop, sizeof(*disks), GFP_KERNEL);
 	if (!disks)
 		goto out_mem2;
 
@@ -842,9 +845,9 @@ out_mem4:
 out_mem3:
 	while (i--)
 		put_disk(disks[i]);
-	OBD_FREE(disks, max_loop * sizeof(*disks));
+	kfree(disks);
 out_mem2:
-	OBD_FREE(loop_dev, max_loop * sizeof(*loop_dev));
+	kfree(loop_dev);
 out_mem1:
 	unregister_blkdev(lloop_major, "lloop");
 	ll_iocontrol_unregister(ll_iocontrol_magic);
@@ -865,8 +868,8 @@ static void lloop_exit(void)
 
 	unregister_blkdev(lloop_major, "lloop");
 
-	OBD_FREE(disks, max_loop * sizeof(*disks));
-	OBD_FREE(loop_dev, max_loop * sizeof(*loop_dev));
+	kfree(disks);
+	kfree(loop_dev);
 }
 
 module_init(lloop_init);

@@ -68,13 +68,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 	newrange.max_proto   = range->max_proto;
 
 	/* Hand modified range to generic setup. */
-#if defined(CONFIG_IP_NF_TARGET_NATTYPE_MODULE)
-	nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
-	return XT_CONTINUE;
-#else
 	return nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
-#endif
-
 }
 EXPORT_SYMBOL_GPL(nf_nat_masquerade_ipv4);
 
@@ -114,10 +108,18 @@ static int masq_inet_event(struct notifier_block *this,
 			   unsigned long event,
 			   void *ptr)
 {
-	struct net_device *dev = ((struct in_ifaddr *)ptr)->ifa_dev->dev;
+	struct in_device *idev = ((struct in_ifaddr *)ptr)->ifa_dev;
 	struct netdev_notifier_info info;
 
-	netdev_notifier_info_init(&info, dev);
+	/* The masq_dev_notifier will catch the case of the device going
+	 * down.  So if the inetdev is dead and being destroyed we have
+	 * no work to do.  Otherwise this is an individual address removal
+	 * and we have to perform the flush.
+	 */
+	if (idev->dead)
+		return NOTIFY_DONE;
+
+	netdev_notifier_info_init(&info, idev->dev);
 	return masq_device_event(this, event, &info);
 }
 

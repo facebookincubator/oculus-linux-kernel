@@ -22,7 +22,7 @@
 
 /* DCBx version control
  */
-char *dcb_ver_array[] = {
+static const char * const dcb_ver_array[] = {
 	"Unknown",
 	"DCBx-CIN",
 	"DCBx-CEE 1.01",
@@ -30,6 +30,15 @@ char *dcb_ver_array[] = {
 	"", "", "",
 	"Auto Negotiated"
 };
+
+static inline bool cxgb4_dcb_state_synced(enum cxgb4_dcb_state state)
+{
+	if (state == CXGB4_DCB_STATE_FW_ALLSYNCED ||
+	    state == CXGB4_DCB_STATE_HOST)
+		return true;
+	else
+		return false;
+}
 
 /* Initialize a port's Data Center Bridging state.  Typically used after a
  * Link Down event.
@@ -243,7 +252,7 @@ void cxgb4_dcb_handle_fw_update(struct adapter *adap,
 				const struct fw_port_cmd *pcmd)
 {
 	const union fw_port_dcb *fwdcb = &pcmd->u.dcb;
-	int port = FW_PORT_CMD_PORTID_GET(be32_to_cpu(pcmd->op_to_portid));
+	int port = FW_PORT_CMD_PORTID_G(be32_to_cpu(pcmd->op_to_portid));
 	struct net_device *dev = adap->port[port];
 	struct port_info *pi = netdev_priv(dev);
 	struct port_dcb_info *dcb = &pi->dcb;
@@ -256,12 +265,12 @@ void cxgb4_dcb_handle_fw_update(struct adapter *adap,
 	if (dcb_type == FW_PORT_DCB_TYPE_CONTROL) {
 		enum cxgb4_dcb_state_input input =
 			((pcmd->u.dcb.control.all_syncd_pkd &
-			  FW_PORT_CMD_ALL_SYNCD)
+			  FW_PORT_CMD_ALL_SYNCD_F)
 			 ? CXGB4_DCB_STATE_FW_ALLSYNCED
 			 : CXGB4_DCB_STATE_FW_INCOMPLETE);
 
 		if (dcb->dcb_version != FW_PORT_DCB_VER_UNKNOWN) {
-			dcb_running_version = FW_PORT_CMD_DCB_VERSION_GET(
+			dcb_running_version = FW_PORT_CMD_DCB_VERSION_G(
 				be16_to_cpu(
 				pcmd->u.dcb.control.dcb_version_to_app_state));
 			if (dcb_running_version == FW_PORT_DCB_VER_CEE1D01 ||
@@ -428,7 +437,10 @@ static void cxgb4_getpgtccfg(struct net_device *dev, int tc,
 	}
 	*pgid = (be32_to_cpu(pcmd.u.dcb.pgid.pgid) >> (tc * 4)) & 0xf;
 
-	INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
+	if (local)
+		INIT_PORT_DCB_READ_LOCAL_CMD(pcmd, pi->port_id);
+	else
+		INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
 	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
@@ -519,7 +531,7 @@ static void cxgb4_setpgtccfg_tx(struct net_device *dev, int tc,
 
 	INIT_PORT_DCB_WRITE_CMD(pcmd, pi->port_id);
 	if (pi->dcb.state == CXGB4_DCB_STATE_HOST)
-		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY);
+		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY_F);
 
 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
 	if (err != FW_PORT_DCB_CFG_SUCCESS)
@@ -583,7 +595,7 @@ static void cxgb4_setpgbwgcfg_tx(struct net_device *dev, int pgid,
 
 	INIT_PORT_DCB_WRITE_CMD(pcmd, pi->port_id);
 	if (pi->dcb.state == CXGB4_DCB_STATE_HOST)
-		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY);
+		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY_F);
 
 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
 
@@ -600,7 +612,7 @@ static void cxgb4_getpfccfg(struct net_device *dev, int priority, u8 *pfccfg)
 	struct port_info *pi = netdev2pinfo(dev);
 	struct port_dcb_info *dcb = &pi->dcb;
 
-	if (dcb->state != CXGB4_DCB_STATE_FW_ALLSYNCED ||
+	if (!cxgb4_dcb_state_synced(dcb->state) ||
 	    priority >= CXGB4_MAX_PRIORITY)
 		*pfccfg = 0;
 	else
@@ -617,13 +629,13 @@ static void cxgb4_setpfccfg(struct net_device *dev, int priority, u8 pfccfg)
 	struct adapter *adap = pi->adapter;
 	int err;
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED ||
+	if (!cxgb4_dcb_state_synced(pi->dcb.state) ||
 	    priority >= CXGB4_MAX_PRIORITY)
 		return;
 
 	INIT_PORT_DCB_WRITE_CMD(pcmd, pi->port_id);
 	if (pi->dcb.state == CXGB4_DCB_STATE_HOST)
-		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY);
+		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY_F);
 
 	pcmd.u.dcb.pfc.type = FW_PORT_DCB_TYPE_PFC;
 	pcmd.u.dcb.pfc.pfcen = pi->dcb.pfcen;
@@ -729,7 +741,7 @@ static u8 cxgb4_getpfcstate(struct net_device *dev)
 {
 	struct port_info *pi = netdev2pinfo(dev);
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return false;
 
 	return pi->dcb.pfcen != 0;
@@ -753,7 +765,7 @@ static int __cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id,
 	struct adapter *adap = pi->adapter;
 	int i;
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return 0;
 
 	for (i = 0; i < CXGB4_MAX_DCBX_APP_SUPPORTED; i++) {
@@ -791,7 +803,9 @@ static int __cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id,
  */
 static int cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id)
 {
-	return __cxgb4_getapp(dev, app_idtype, app_id, 0);
+	/* Convert app_idtype to firmware format before querying */
+	return __cxgb4_getapp(dev, app_idtype == DCB_APP_IDTYPE_ETHTYPE ?
+			      app_idtype : 3, app_id, 0);
 }
 
 /* Write a new Application User Priority Map for the specified Application ID
@@ -805,7 +819,7 @@ static int __cxgb4_setapp(struct net_device *dev, u8 app_idtype, u16 app_id,
 	int i, err;
 
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return -EINVAL;
 
 	/* DCB info gets thrown away on link up */
@@ -842,7 +856,7 @@ static int __cxgb4_setapp(struct net_device *dev, u8 app_idtype, u16 app_id,
 	/* write out new app table entry */
 	INIT_PORT_DCB_WRITE_CMD(pcmd, pi->port_id);
 	if (pi->dcb.state == CXGB4_DCB_STATE_HOST)
-		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY);
+		pcmd.op_to_portid |= cpu_to_be32(FW_PORT_CMD_APPLY_F);
 
 	pcmd.u.dcb.app_priority.type = FW_PORT_DCB_TYPE_APP_ID;
 	pcmd.u.dcb.app_priority.protocolid = cpu_to_be16(app_id);
@@ -893,11 +907,94 @@ cxgb4_ieee_negotiation_complete(struct net_device *dev,
 	struct port_info *pi = netdev2pinfo(dev);
 	struct port_dcb_info *dcb = &pi->dcb;
 
-	if (dcb_subtype && !(dcb->msgs & dcb_subtype))
+	if (dcb->state == CXGB4_DCB_STATE_FW_ALLSYNCED)
+		if (dcb_subtype && !(dcb->msgs & dcb_subtype))
+			return 0;
+
+	return (cxgb4_dcb_state_synced(dcb->state) &&
+		(dcb->supported & DCB_CAP_DCBX_VER_IEEE));
+}
+
+static int cxgb4_ieee_read_ets(struct net_device *dev, struct ieee_ets *ets,
+			       int local)
+{
+	struct port_info *pi = netdev2pinfo(dev);
+	struct port_dcb_info *dcb = &pi->dcb;
+	struct adapter *adap = pi->adapter;
+	uint32_t tc_info;
+	struct fw_port_cmd pcmd;
+	int i, bwg, err;
+
+	if (!(dcb->msgs & (CXGB4_DCB_FW_PGID | CXGB4_DCB_FW_PGRATE)))
 		return 0;
 
-	return (dcb->state == CXGB4_DCB_STATE_FW_ALLSYNCED &&
-		(dcb->supported & DCB_CAP_DCBX_VER_IEEE));
+	ets->ets_cap =  dcb->pg_num_tcs_supported;
+
+	if (local) {
+		ets->willing = 1;
+		INIT_PORT_DCB_READ_LOCAL_CMD(pcmd, pi->port_id);
+	} else {
+		INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
+	}
+
+	pcmd.u.dcb.pgid.type = FW_PORT_DCB_TYPE_PGID;
+	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+		dev_err(adap->pdev_dev, "DCB read PGID failed with %d\n", -err);
+		return err;
+	}
+
+	tc_info = be32_to_cpu(pcmd.u.dcb.pgid.pgid);
+
+	if (local)
+		INIT_PORT_DCB_READ_LOCAL_CMD(pcmd, pi->port_id);
+	else
+		INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
+
+	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
+	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+			-err);
+		return err;
+	}
+
+	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
+		bwg = (tc_info >> ((7 - i) * 4)) & 0xF;
+		ets->prio_tc[i] = bwg;
+		ets->tc_tx_bw[i] = pcmd.u.dcb.pgrate.pgrate[i];
+		ets->tc_rx_bw[i] = ets->tc_tx_bw[i];
+		ets->tc_tsa[i] = pcmd.u.dcb.pgrate.tsa[i];
+	}
+
+	return 0;
+}
+
+static int cxgb4_ieee_get_ets(struct net_device *dev, struct ieee_ets *ets)
+{
+	return cxgb4_ieee_read_ets(dev, ets, 1);
+}
+
+/* We reuse this for peer PFC as well, as we can't have it enabled one way */
+static int cxgb4_ieee_get_pfc(struct net_device *dev, struct ieee_pfc *pfc)
+{
+	struct port_info *pi = netdev2pinfo(dev);
+	struct port_dcb_info *dcb = &pi->dcb;
+
+	memset(pfc, 0, sizeof(struct ieee_pfc));
+
+	if (!(dcb->msgs & CXGB4_DCB_FW_PFC))
+		return 0;
+
+	pfc->pfc_cap = dcb->pfc_num_tcs_supported;
+	pfc->pfc_en = bitswap_1(dcb->pfcen);
+
+	return 0;
+}
+
+static int cxgb4_ieee_peer_ets(struct net_device *dev, struct ieee_ets *ets)
+{
+	return cxgb4_ieee_read_ets(dev, ets, 0);
 }
 
 /* Fill in the Application User Priority Map associated with the
@@ -972,7 +1069,7 @@ static u8 cxgb4_setdcbx(struct net_device *dev, u8 dcb_request)
 
 	/* Can't enable DCB if we haven't successfully negotiated it.
 	 */
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return 1;
 
 	/* There's currently no mechanism to allow for the firmware DCBX
@@ -995,7 +1092,7 @@ static int cxgb4_getpeer_app(struct net_device *dev,
 	struct adapter *adap = pi->adapter;
 	int i, err = 0;
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return 1;
 
 	info->willing = 0;
@@ -1029,7 +1126,7 @@ static int cxgb4_getpeerapp_tbl(struct net_device *dev, struct dcb_app *table)
 	struct adapter *adap = pi->adapter;
 	int i, err = 0;
 
-	if (pi->dcb.state != CXGB4_DCB_STATE_FW_ALLSYNCED)
+	if (!cxgb4_dcb_state_synced(pi->dcb.state))
 		return 1;
 
 	for (i = 0; i < CXGB4_MAX_DCBX_APP_SUPPORTED; i++) {
@@ -1048,7 +1145,7 @@ static int cxgb4_getpeerapp_tbl(struct net_device *dev, struct dcb_app *table)
 		if (!pcmd.u.dcb.app_priority.protocolid)
 			break;
 
-		table[i].selector = pcmd.u.dcb.app_priority.sel_field;
+		table[i].selector = (pcmd.u.dcb.app_priority.sel_field + 1);
 		table[i].protocol =
 			be16_to_cpu(pcmd.u.dcb.app_priority.protocolid);
 		table[i].priority =
@@ -1096,6 +1193,8 @@ static int cxgb4_cee_peer_getpg(struct net_device *dev, struct cee_pg *pg)
 	for (i = 0; i < CXGB4_MAX_PRIORITY; i++)
 		pg->pg_bw[i] = pcmd.u.dcb.pgrate.pgrate[i];
 
+	pg->tcs_supported = pcmd.u.dcb.pgrate.num_tcs_supported;
+
 	return 0;
 }
 
@@ -1106,14 +1205,25 @@ static int cxgb4_cee_peer_getpfc(struct net_device *dev, struct cee_pfc *pfc)
 	struct port_info *pi = netdev2pinfo(dev);
 
 	cxgb4_getnumtcs(dev, DCB_NUMTCS_ATTR_PFC, &(pfc->tcs_supported));
-	pfc->pfc_en = pi->dcb.pfcen;
+
+	/* Firmware sends this to us in a formwat that is a bit flipped version
+	 * of spec, correct it before we send it to host. This is taken care of
+	 * by bit shifting in other uses of pfcen
+	 */
+	pfc->pfc_en = bitswap_1(pi->dcb.pfcen);
+
+	pfc->tcs_supported = pi->dcb.pfc_num_tcs_supported;
 
 	return 0;
 }
 
 const struct dcbnl_rtnl_ops cxgb4_dcb_ops = {
+	.ieee_getets		= cxgb4_ieee_get_ets,
+	.ieee_getpfc		= cxgb4_ieee_get_pfc,
 	.ieee_getapp		= cxgb4_ieee_getapp,
 	.ieee_setapp		= cxgb4_ieee_setapp,
+	.ieee_peer_getets	= cxgb4_ieee_peer_ets,
+	.ieee_peer_getpfc	= cxgb4_ieee_get_pfc,
 
 	/* CEE std */
 	.getstate		= cxgb4_getstate,

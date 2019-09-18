@@ -1,5 +1,5 @@
 menu "Qualcomm Technologies, Inc Per File Encryption security device drivers"
-	depends on ARCH_MSM
+	depends on ARCH_QCOM
 
 config PFT
 	bool "Per-File-Tagger driver"
@@ -15,7 +15,6 @@ config PFT
 config PFK
 	bool "Per-File-Key driver"
 	depends on SECURITY
-	depends on ECRYPT_FS
 	depends on SECURITY_SELINUX
 	default n
 	help

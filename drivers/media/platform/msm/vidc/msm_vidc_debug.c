@@ -13,24 +13,28 @@
 
 #define CREATE_TRACE_POINTS
 #define MAX_SSR_STRING_LEN 10
-#include "msm_vidc_common.h"
 #include "msm_vidc_debug.h"
 #include "vidc_hfi_api.h"
 
 int msm_vidc_debug = VIDC_ERR | VIDC_WARN;
+EXPORT_SYMBOL(msm_vidc_debug);
+
 int msm_vidc_debug_out = VIDC_OUT_PRINTK;
+EXPORT_SYMBOL(msm_vidc_debug_out);
+
 int msm_vidc_fw_debug = 0x18;
 int msm_vidc_fw_debug_mode = 1;
 int msm_vidc_fw_low_power_mode = 1;
-int msm_vidc_hw_rsp_timeout = 1000;
-int msm_vidc_fw_coverage = 0;
-int msm_vidc_dec_dcvs_mode = 1;
-int msm_vidc_enc_dcvs_mode = 1;
-int msm_vidc_sys_idle_indicator = 0;
+int msm_vidc_hw_rsp_timeout = 2000;
+bool msm_vidc_fw_coverage = false;
+bool msm_vidc_vpe_csc_601_to_709 = false;
+bool msm_vidc_dec_dcvs_mode = true;
+bool msm_vidc_enc_dcvs_mode = true;
+bool msm_vidc_sys_idle_indicator = false;
 int msm_vidc_firmware_unload_delay = 15000;
-int msm_vidc_thermal_mitigation_disabled = 0;
-int msm_vidc_bitrate_clock_scaling = 1;
-int msm_vidc_debug_timeout = 0;
+bool msm_vidc_thermal_mitigation_disabled = false;
+bool msm_vidc_bitrate_clock_scaling = true;
+bool msm_vidc_debug_timeout = false;
 
 #define MAX_DBG_BUF_SIZE 4096
 
@@ -293,13 +297,15 @@ static int publish_unreleased_reference(struct msm_vidc_inst *inst,
 	*dbuf = cur;
 	return 0;
 }
-void put_inst_helper(struct kref *kref)
-{
-        struct msm_vidc_inst *inst = container_of(kref,
-                        struct msm_vidc_inst, kref);
 
-        msm_vidc_destroy(inst);
+static void put_inst_helper(struct kref *kref)
+{
+	struct msm_vidc_inst *inst = container_of(kref,
+			struct msm_vidc_inst, kref);
+
+	msm_vidc_destroy(inst);
 }
+
 static ssize_t inst_info_read(struct file *file, char __user *buf,
 		size_t count, loff_t *ppos)
 {
@@ -336,7 +342,7 @@ static ssize_t inst_info_read(struct file *file, char __user *buf,
 	if (!dbuf) {
 		dprintk(VIDC_ERR, "%s: Allocation failed!\n", __func__);
 		len = -ENOMEM;
-                goto failed_alloc;
+		goto failed_alloc;
 	}
 	cur = dbuf;
 	end = cur + MAX_DBG_BUF_SIZE;
@@ -359,13 +365,34 @@ static ssize_t inst_info_read(struct file *file, char __user *buf,
 		cur += write_str(cur, end - cur, "capability: %s\n",
 			i == OUTPUT_PORT ? "Output" : "Capture");
 		cur += write_str(cur, end - cur, "name : %s\n",
-			inst->fmts[i]->name);
+			inst->fmts[i].name);
 		cur += write_str(cur, end - cur, "planes : %d\n",
-			inst->fmts[i]->num_planes);
+			inst->prop.num_planes[i]);
 		cur += write_str(cur, end - cur,
-			"type: %s\n", i == OUTPUT_PORT ?
+			"type: %s\n", inst->fmts[i].type == OUTPUT_PORT ?
 			"Output" : "Capture");
-		for (j = 0; j < inst->fmts[i]->num_planes; j++)
+		switch (inst->buffer_mode_set[i]) {
+		case HAL_BUFFER_MODE_STATIC:
+			cur += write_str(cur, end - cur,
+				"buffer mode : %s\n", "static");
+			break;
+		case HAL_BUFFER_MODE_RING:
+			cur += write_str(cur, end - cur,
+				"buffer mode : %s\n", "ring");
+			break;
+		case HAL_BUFFER_MODE_DYNAMIC:
+			cur += write_str(cur, end - cur,
+				"buffer mode : %s\n", "dynamic");
+			break;
+		default:
+			cur += write_str(cur, end - cur,
+				"buffer mode : unsupported\n");
+		}
+
+		cur += write_str(cur, end - cur, "count: %u\n",
+				inst->bufq[i].vb2_bufq.num_buffers);
+
+		for (j = 0; j < inst->prop.num_planes[i]; j++)
 			cur += write_str(cur, end - cur,
 			"size for plane %d: %u\n", j,
 			inst->bufq[i].vb2_bufq.plane_sizes[j]);
@@ -379,7 +406,6 @@ static ssize_t inst_info_read(struct file *file, char __user *buf,
 		completion_done(&inst->completions[SESSION_MSG_INDEX(i)]) ?
 		"pending" : "done");
 	}
-
 	cur += write_str(cur, end - cur, "ETB Count: %d\n", inst->count.etb);
 	cur += write_str(cur, end - cur, "EBD Count: %d\n", inst->count.ebd);
 	cur += write_str(cur, end - cur, "FTB Count: %d\n", inst->count.ftb);
@@ -391,7 +417,7 @@ static ssize_t inst_info_read(struct file *file, char __user *buf,
 
 	kfree(dbuf);
 failed_alloc:
-        kref_put(&inst->kref, put_inst_helper);
+	kref_put(&inst->kref, put_inst_helper);
 	return len;
 }
 
@@ -419,7 +445,7 @@ struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 		dprintk(VIDC_ERR, "Invalid params, inst: %pK\n", inst);
 		goto exit;
 	}
-	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "inst_%p", inst);
+	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "inst_%pK", inst);
 
 	idata = kzalloc(sizeof(struct core_inst_pair), GFP_KERNEL);
 	if (!idata) {

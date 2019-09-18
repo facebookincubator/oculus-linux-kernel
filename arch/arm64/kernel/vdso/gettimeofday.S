@@ -174,8 +174,6 @@ ENDPROC(__kernel_clock_gettime)
 /* int __kernel_clock_getres(clockid_t clock_id, struct timespec *res); */
 ENTRY(__kernel_clock_getres)
 	.cfi_startproc
-	cbz	w1, 3f
-
 	cmp	w0, #CLOCK_REALTIME
 	ccmp	w0, #CLOCK_MONOTONIC, #0x4, ne
 	b.ne	1f
@@ -188,6 +186,7 @@ ENTRY(__kernel_clock_getres)
 	b.ne	4f
 	ldr	x2, 6f
 2:
+	cbz	w1, 3f
 	stp	xzr, x2, [x1]
 
 3:	/* res == NULL. */
@@ -217,15 +216,24 @@ ENDPROC(__kernel_clock_getres)
 ENTRY(__do_get_tspec)
 	.cfi_startproc
 
+	/* Read the virtual counter. */
+	isb
+#if IS_ENABLED(CONFIG_MSM_TIMER_LEAP)
+#define LEAST_32BITS		0x00000000FFFFFFFF
+reread:
+	mrs	x15, cntvct_el0
+	and	x13, x15, #LEAST_32BITS
+	eor	x13, x13, #LEAST_32BITS
+	cbz	x13, reread
+#else
+	mrs	x15, cntvct_el0
+#endif
+
 	/* Read from the vDSO data page. */
 	ldr	x10, [vdso_data, #VDSO_CS_CYCLE_LAST]
 	ldp	x13, x14, [vdso_data, #VDSO_XTIME_CLK_SEC]
 	ldp	w11, w12, [vdso_data, #VDSO_CS_MULT]
 	seqcnt_read w9
-
-	/* Read the virtual counter. */
-	isb
-	mrs	x15, cntvct_el0
 
 	/* Calculate cycle delta and convert to ns. */
 	sub	x10, x15, x10

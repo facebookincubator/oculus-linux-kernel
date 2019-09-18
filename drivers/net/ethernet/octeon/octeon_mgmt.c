@@ -1344,10 +1344,6 @@ static void octeon_mgmt_get_drvinfo(struct net_device *netdev,
 	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
 	strlcpy(info->fw_version, "N/A", sizeof(info->fw_version));
 	strlcpy(info->bus_info, "N/A", sizeof(info->bus_info));
-	info->n_stats = 0;
-	info->testinfo_len = 0;
-	info->regdump_len = 0;
-	info->eedump_len = 0;
 }
 
 static int octeon_mgmt_get_settings(struct net_device *netdev,
@@ -1557,7 +1553,7 @@ static int octeon_mgmt_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id octeon_mgmt_match[] = {
+static const struct of_device_id octeon_mgmt_match[] = {
 	{
 		.compatible = "cavium,octeon-5750-mix",
 	},
@@ -1568,7 +1564,6 @@ MODULE_DEVICE_TABLE(of, octeon_mgmt_match);
 static struct platform_driver octeon_mgmt_driver = {
 	.driver = {
 		.name		= "octeon_mgmt",
-		.owner		= THIS_MODULE,
 		.of_match_table = octeon_mgmt_match,
 	},
 	.probe		= octeon_mgmt_probe,

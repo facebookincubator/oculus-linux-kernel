@@ -37,6 +37,8 @@ struct brcmf_commonring {
 	unsigned long flags;
 	bool inited;
 	bool was_full;
+
+	atomic_t outstanding_tx;
 };
 
 
@@ -60,7 +62,8 @@ void brcmf_commonring_write_cancel(struct brcmf_commonring *commonring,
 				   u16 n_items);
 void *brcmf_commonring_get_read_ptr(struct brcmf_commonring *commonring,
 				    u16 *n_items);
-int brcmf_commonring_read_complete(struct brcmf_commonring *commonring);
+int brcmf_commonring_read_complete(struct brcmf_commonring *commonring,
+				   u16 n_items);
 
 #define brcmf_commonring_n_items(commonring) (commonring->depth)
 #define brcmf_commonring_len_item(commonring) (commonring->item_len)

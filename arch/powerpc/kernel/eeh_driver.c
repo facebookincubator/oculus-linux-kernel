@@ -83,28 +83,6 @@ static inline void eeh_pcid_put(struct pci_dev *pdev)
 	module_put(pdev->driver->driver.owner);
 }
 
-#if 0
-static void print_device_node_tree(struct pci_dn *pdn, int dent)
-{
-	int i;
-	struct device_node *pc;
-
-	if (!pdn)
-		return;
-	for (i = 0; i < dent; i++)
-		printk(" ");
-	printk("dn=%s mode=%x \tcfg_addr=%x pe_addr=%x \tfull=%s\n",
-		pdn->node->name, pdn->eeh_mode, pdn->eeh_config_addr,
-		pdn->eeh_pe_config_addr, pdn->node->full_name);
-	dent += 3;
-	pc = pdn->node->child;
-	while (pc) {
-		print_device_node_tree(PCI_DN(pc), dent);
-		pc = pc->sibling;
-	}
-}
-#endif
-
 /**
  * eeh_disable_irq - Disable interrupt for the recovering device
  * @dev: PCI device
@@ -186,6 +164,16 @@ static void *eeh_dev_save_state(void *data, void *userdata)
 	struct pci_dev *pdev;
 
 	if (!edev)
+		return NULL;
+
+	/*
+	 * We cannot access the config space on some adapters.
+	 * Otherwise, it will cause fenced PHB. We don't save
+	 * the content in their config space and will restore
+	 * from the initial config space saved when the EEH
+	 * device is created.
+	 */
+	if (edev->pe && (edev->pe->state & EEH_PE_CFG_RESTRICTED))
 		return NULL;
 
 	pdev = eeh_dev_to_pci_dev(edev);
@@ -327,6 +315,19 @@ static void *eeh_dev_restore_state(void *data, void *userdata)
 	if (!edev)
 		return NULL;
 
+	/*
+	 * The content in the config space isn't saved because
+	 * the blocked config space on some adapters. We have
+	 * to restore the initial saved config space when the
+	 * EEH device is created.
+	 */
+	if (edev->pe && (edev->pe->state & EEH_PE_CFG_RESTRICTED)) {
+		if (list_is_last(&edev->list, &edev->pe->edevs))
+			eeh_pe_restore_bars(edev->pe);
+
+		return NULL;
+	}
+
 	pdev = eeh_dev_to_pci_dev(edev);
 	if (!pdev)
 		return NULL;
@@ -438,7 +439,9 @@ static void *eeh_rmv_device(void *data, void *userdata)
 	driver = eeh_pcid_get(dev);
 	if (driver) {
 		eeh_pcid_put(dev);
-		if (driver->err_handler)
+		if (driver->err_handler &&
+		    driver->err_handler->error_detected &&
+		    driver->err_handler->slot_reset)
 			return NULL;
 	}
 
@@ -524,17 +527,12 @@ int eeh_pe_reset_and_recover(struct eeh_pe *pe)
 	/* Save states */
 	eeh_pe_dev_traverse(pe, eeh_dev_save_state, NULL);
 
-	/* Report error */
-	eeh_pe_dev_traverse(pe, eeh_report_error, &result);
-
 	/* Issue reset */
-	eeh_pe_state_mark(pe, EEH_PE_CFG_BLOCKED);
 	ret = eeh_reset_pe(pe);
 	if (ret) {
-		eeh_pe_state_clear(pe, EEH_PE_RECOVERING | EEH_PE_CFG_BLOCKED);
+		eeh_pe_state_clear(pe, EEH_PE_RECOVERING);
 		return ret;
 	}
-	eeh_pe_state_clear(pe, EEH_PE_CFG_BLOCKED);
 
 	/* Unfreeze the PE */
 	ret = eeh_clear_pe_frozen_state(pe, true);
@@ -585,6 +583,7 @@ static int eeh_reset_device(struct eeh_pe *pe, struct pci_bus *bus)
 	 */
 	eeh_pe_state_mark(pe, EEH_PE_KEEP);
 	if (bus) {
+		eeh_pe_state_clear(pe, EEH_PE_PRI_BUS);
 		pci_lock_rescan_remove();
 		pcibios_remove_pci_devices(bus);
 		pci_unlock_rescan_remove();
@@ -601,19 +600,15 @@ static int eeh_reset_device(struct eeh_pe *pe, struct pci_bus *bus)
 	 * config accesses. So we prefer to block them. However, controlled
 	 * PCI config accesses initiated from EEH itself are allowed.
 	 */
-	eeh_pe_state_mark(pe, EEH_PE_CFG_BLOCKED);
 	rc = eeh_reset_pe(pe);
-	if (rc) {
-		eeh_pe_state_clear(pe, EEH_PE_CFG_BLOCKED);
+	if (rc)
 		return rc;
-	}
 
 	pci_lock_rescan_remove();
 
 	/* Restore PE */
 	eeh_ops->configure_bridge(pe);
 	eeh_pe_restore_bars(pe);
-	eeh_pe_state_clear(pe, EEH_PE_CFG_BLOCKED);
 
 	/* Clear frozen state */
 	rc = eeh_clear_pe_frozen_state(pe, false);
@@ -673,7 +668,7 @@ static void eeh_handle_normal_event(struct eeh_pe *pe)
 
 	eeh_pe_update_time_stamp(pe);
 	pe->freeze_count++;
-	if (pe->freeze_count > EEH_MAX_ALLOWED_FREEZES)
+	if (pe->freeze_count > eeh_max_freezes)
 		goto excess_failures;
 	pr_warn("EEH: This PCI device has failed %d times in the last hour\n",
 		pe->freeze_count);
@@ -683,12 +678,20 @@ static void eeh_handle_normal_event(struct eeh_pe *pe)
 	 * to accomplish the reset.  Each child gets a report of the
 	 * status ... if any child can't handle the reset, then the entire
 	 * slot is dlpar removed and added.
+	 *
+	 * When the PHB is fenced, we have to issue a reset to recover from
+	 * the error. Override the result if necessary to have partially
+	 * hotplug for this case.
 	 */
 	pr_info("EEH: Notify device drivers to shutdown\n");
 	eeh_pe_dev_traverse(pe, eeh_report_error, &result);
+	if ((pe->type & EEH_PE_PHB) &&
+	    result != PCI_ERS_RESULT_NONE &&
+	    result != PCI_ERS_RESULT_NEED_RESET)
+		result = PCI_ERS_RESULT_NEED_RESET;
 
 	/* Get the current PCI slot state. This can take a long time,
-	 * sometimes over 3 seconds for certain systems.
+	 * sometimes over 300 seconds for certain systems.
 	 */
 	rc = eeh_ops->wait_state(pe, MAX_WAIT_FOR_RECOVERY*1000);
 	if (rc < 0 || rc == EEH_STATE_NOT_SUPPORT) {
@@ -812,7 +815,7 @@ perm_error:
 	eeh_pe_dev_traverse(pe, eeh_report_failure, NULL);
 
 	/* Mark the PE to be removed permanently */
-	pe->freeze_count = EEH_MAX_ALLOWED_FREEZES + 1;
+	eeh_pe_state_mark(pe, EEH_PE_REMOVED);
 
 	/*
 	 * Shut down the device drivers for good. We mark
@@ -820,6 +823,7 @@ perm_error:
 	 * the their PCI config any more.
 	 */
 	if (frozen_bus) {
+		eeh_pe_state_clear(pe, EEH_PE_PRI_BUS);
 		eeh_pe_dev_mode_mark(pe, EEH_DEV_REMOVED);
 
 		pci_lock_rescan_remove();
@@ -903,6 +907,7 @@ static void eeh_handle_special_event(void)
 					continue;
 
 				/* Notify all devices to be down */
+				eeh_pe_state_clear(pe, EEH_PE_PRI_BUS);
 				bus = eeh_pe_bus_get(phb_pe);
 				eeh_pe_dev_traverse(pe,
 					eeh_report_failure, NULL);

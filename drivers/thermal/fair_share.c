@@ -34,7 +34,7 @@
 static int get_trip_level(struct thermal_zone_device *tz)
 {
 	int count = 0;
-	unsigned long trip_temp;
+	int trip_temp;
 	enum thermal_trip_type trip_type;
 
 	if (tz->trips == 0 || !tz->ops->get_trip_temp)
@@ -69,7 +69,7 @@ static long get_target_state(struct thermal_zone_device *tz,
 }
 
 /**
- * fair_share_throttle - throttles devices asscciated with the given zone
+ * fair_share_throttle - throttles devices associated with the given zone
  * @tz - thermal_zone_device
  *
  * Throttling Logic: This uses three parameters to calculate the new

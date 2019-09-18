@@ -4,11 +4,18 @@ UFSHC nodes are defined to describe on-chip UFS host controllers.
 Each UFS controller instance should have its own node.
 
 Required properties:
-- compatible        : compatible list, contains "jedec,ufs-1.1"
+- compatible		: must contain "jedec,ufs-1.1", may also list one or more
+					  of the following:
+					  "qcom,msm8994-ufshc"
+					  "qcom,msm8996-ufshc"
+					  "qcom,ufshc"
 - interrupts        : <interrupt mapping for UFS host controller IRQ>
 - reg               : <registers mapping>
 		      first entry should contain UFS host controller register address space (mandatory),
                       second entry is the device ref. clock control register map (optional).
+- reset             : reset specifier pair consists of phandle for the reset provider
+                      and reset lines used by this controller.
+- reset-names       : reset signal name strings sorted in the same order as the resets property.
 
 Optional properties:
 - phys                  : phandle to UFS PHY node
@@ -48,6 +55,11 @@ Optional properties:
 - lanes-per-direction:	number of lanes available per direction - either 1 or 2.
 			Note that it is assume same number of lanes is used both directions at once.
 			If not specified, default is 2 lanes per direction.
+- pinctrl-names, pinctrl-0, pinctrl-1,.. pinctrl-n: Refer to "Documentation/devicetree/bindings/pinctrl/pinctrl-bindings.txt"
+			for these optional properties
+
+- non-removable		: defines if the connected ufs device is not removable
+
 
 Note: If above properties are not defined it can be assumed that the supply
 regulators or clocks are always on.
@@ -72,20 +84,21 @@ Example:
 		clocks = <&core 0>, <&ref 0>, <&iface 0>;
 		clock-names = "core_clk", "ref_clk", "iface_clk";
 		freq-table-hz = <100000000 200000000>, <0 0>, <0 0>;
+		resets = <clock_gcc GCC_UFS_BCR>;
+		reset-names = "core_reset";
+		phys = <&ufsphy1>;
+		phy-names = "ufsphy";
 		rpm-level = <3>;
 		spm-level = <5>;
 	};
 
-==== UFS QCOM platform driver properties =====
-* For UFS host controller in QCOM platform following clocks are required -
+==== MSM UFS platform driver properties =====
+* For UFS host controller in MSM platform following clocks are required -
     Controller clock source -
         "core_clk_src", max-clock-frequency-hz = 200MHz
-	"core_clk_unipro_src" - Some controller versions require separate core clock for UniPro.
-				This clock represents the source clock for the core clock of UniPro.
 
     Controller System clock branch:
         "core_clk" - Controller core clock
-	"core_clk_unipro" - Core clock for UniPro
 
     AHB/AXI interface clocks:
         "iface_clk" - AHB interface clock
@@ -129,6 +142,9 @@ enabled and functional in the driver:
 - qcom,pm-qos-default-cpu:		PM QoS voting is based on the cpu associated with each IO request by the block layer.
 					This defined the default cpu used for PM QoS voting in case a specific cpu value is not available.
 
+- qcom,vddp-ref-clk-supply	 : reference clock to ufs device. Controlled by the host driver.
+- qcom,vddp-ref-clk-max-microamp : specifies max. load that can be drawn for
+				   ref-clk supply.
 Example:
 	ufshc@0xfc598000 {
 		...
@@ -177,11 +193,3 @@ Example:
 		qcom,pm-qos-cpu-group-latency-us = <200 300>; /* group0: 200us, group1: 300us */
 		qcom,pm-qos-default-cpu = <0>;
 	};
-
-This is an example to a variant sub-node of ufshc:
-ufs_variant {
-	compatible = "qcom,ufs_variant";
-};
-
-This sub-node holds various specific information that is not defined in the
-standard and that may differ between platforms.

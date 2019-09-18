@@ -80,7 +80,7 @@ unsigned int pxa27x_get_clk_frequency_khz(int info)
 		pr_info("System bus clock: %ld.%02ldMHz\n",
 			clks[4] / 1000000, (clks[4] % 1000000) / 10000);
 	}
-	return (unsigned int)clks[0];
+	return (unsigned int)clks[0] / KHz;
 }
 
 bool pxa27x_is_ppll_disabled(void)
@@ -111,7 +111,7 @@ PARENTS(pxa27x_membus) = { "lcd_base", "lcd_base" };
 	PXA_CKEN_1RATE(dev_id, con_id, bit, parents,			\
 		       &CKEN, CKEN_ ## bit, CLK_IGNORE_UNUSED)
 
-static struct pxa_clk_cken pxa27x_clocks[] = {
+static struct desc_clk_cken pxa27x_clocks[] __initdata = {
 	PXA27X_PBUS_CKEN("pxa2xx-uart.0", NULL, FFUART, 2, 42, 1),
 	PXA27X_PBUS_CKEN("pxa2xx-uart.1", NULL, BTUART, 2, 42, 1),
 	PXA27X_PBUS_CKEN("pxa2xx-uart.2", NULL, STUART, 2, 42, 1),
@@ -353,6 +353,34 @@ static u8 clk_pxa27x_memory_get_parent(struct clk_hw *hw)
 PARENTS(clk_pxa27x_memory) = { "osc_13mhz", "system_bus", "run" };
 MUX_RO_RATE_RO_OPS(clk_pxa27x_memory, "memory");
 
+#define DUMMY_CLK(_con_id, _dev_id, _parent) \
+	{ .con_id = _con_id, .dev_id = _dev_id, .parent = _parent }
+struct dummy_clk {
+	const char *con_id;
+	const char *dev_id;
+	const char *parent;
+};
+static struct dummy_clk dummy_clks[] __initdata = {
+	DUMMY_CLK(NULL, "pxa27x-gpio", "osc_32_768khz"),
+	DUMMY_CLK(NULL, "sa1100-rtc", "osc_32_768khz"),
+	DUMMY_CLK("UARTCLK", "pxa2xx-ir", "STUART"),
+};
+
+static void __init pxa27x_dummy_clocks_init(void)
+{
+	struct clk *clk;
+	struct dummy_clk *d;
+	const char *name;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dummy_clks); i++) {
+		d = &dummy_clks[i];
+		name = d->dev_id ? d->dev_id : d->con_id;
+		clk = clk_register_fixed_factor(NULL, name, d->parent, 0, 1, 1);
+		clk_register_clkdev(clk, d->con_id, d->dev_id);
+	}
+}
+
 static void __init pxa27x_base_clocks_init(void)
 {
 	pxa27x_register_plls();
@@ -362,9 +390,16 @@ static void __init pxa27x_base_clocks_init(void)
 	clk_register_clk_pxa27x_lcd_base();
 }
 
-static int __init pxa27x_clocks_init(void)
+int __init pxa27x_clocks_init(void)
 {
 	pxa27x_base_clocks_init();
+	pxa27x_dummy_clocks_init();
 	return clk_pxa_cken_init(pxa27x_clocks, ARRAY_SIZE(pxa27x_clocks));
 }
-postcore_initcall(pxa27x_clocks_init);
+
+static void __init pxa27x_dt_clocks_init(struct device_node *np)
+{
+	pxa27x_clocks_init();
+	clk_pxa_dt_common_init(np);
+}
+CLK_OF_DECLARE(pxa_clks, "marvell,pxa270-clocks", pxa27x_dt_clocks_init);

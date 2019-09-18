@@ -34,7 +34,6 @@
 #include <linux/platform_device.h>
 #include <soc/qcom/subsystem_restart.h>
 #include <soc/qcom/subsystem_notif.h>
-#include <soc/qcom/socinfo.h>
 #include <soc/qcom/sysmon.h>
 
 #include <asm/current.h>
@@ -174,7 +173,7 @@ struct subsys_device {
 	struct cdev char_dev;
 	dev_t dev_no;
 	struct completion err_ready;
-	bool crashed;
+	enum crash_status crashed;
 	int notif_state;
 	struct list_head list;
 };
@@ -646,7 +645,7 @@ static void subsystem_powerup(struct subsys_device *dev, void *data)
 			current->comm, current->pid, name);
 	}
 	subsys_set_state(dev, SUBSYS_ONLINE);
-	subsys_set_crash_status(dev, false);
+	subsys_set_crash_status(dev, CRASH_STATUS_NO_CRASH);
 }
 
 static int __find_subsys(struct device *dev, void *data)
@@ -711,6 +710,7 @@ static void subsys_stop(struct subsys_device *subsys)
 {
 	const char *name = subsys->desc->name;
 
+	notify_each_subsys_device(&subsys, 1, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	if (!of_property_read_bool(subsys->desc->dev->of_node,
 					"qcom,pil-force-shutdown")) {
 		subsys_set_state(subsys, SUBSYS_OFFLINING);
@@ -720,12 +720,33 @@ static void subsys_stop(struct subsys_device *subsys)
 			pr_debug("Graceful shutdown failed for %s\n", name);
 	}
 
-	notify_each_subsys_device(&subsys, 1, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	subsys->desc->shutdown(subsys->desc, false);
 	subsys_set_state(subsys, SUBSYS_OFFLINE);
 	disable_all_irqs(subsys);
 	notify_each_subsys_device(&subsys, 1, SUBSYS_AFTER_SHUTDOWN, NULL);
 }
+
+int subsystem_set_fwname(const char *name, const char *fw_name)
+{
+	struct subsys_device *subsys;
+
+	if (!name)
+		return -EINVAL;
+
+	if (!fw_name)
+		return -EINVAL;
+
+	subsys = find_subsys(name);
+	if (!subsys)
+		return -EINVAL;
+
+	pr_debug("Changing subsys [%s] fw_name to [%s]\n", name, fw_name);
+	strlcpy(subsys->desc->fw_name, fw_name,
+		sizeof(subsys->desc->fw_name));
+
+	return 0;
+}
+EXPORT_SYMBOL(subsystem_set_fwname);
 
 int wait_for_shutdown_ack(struct subsys_desc *desc)
 {
@@ -1105,12 +1126,13 @@ int subsystem_crashed(const char *name)
 }
 EXPORT_SYMBOL(subsystem_crashed);
 
-void subsys_set_crash_status(struct subsys_device *dev, bool crashed)
+void subsys_set_crash_status(struct subsys_device *dev,
+				enum crash_status crashed)
 {
 	dev->crashed = crashed;
 }
 
-bool subsys_get_crash_status(struct subsys_device *dev)
+enum crash_status subsys_get_crash_status(struct subsys_device *dev)
 {
 	return dev->crashed;
 }

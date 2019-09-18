@@ -920,8 +920,7 @@ static int req_crypt_map(struct dm_target *ti, struct request *clone,
 
 	req_io = mempool_alloc(req_io_pool, gfp_flag);
 	if (!req_io) {
-		DMERR("%s req_io allocation failed\n", __func__);
-		BUG();
+		WARN_ON(1);
 		error = DM_REQ_CRYPT_ERROR;
 		goto submit_request;
 	}
@@ -1022,8 +1021,7 @@ static void deconfigure_qcrypto(void)
 		req_crypt_queue = NULL;
 	}
 
-	if (_req_dm_scatterlist_pool)
-		kmem_cache_destroy(_req_dm_scatterlist_pool);
+	kmem_cache_destroy(_req_dm_scatterlist_pool);
 
 	mutex_lock(&engine_list_mutex);
 	kfree(pfe_eng);
@@ -1042,10 +1040,8 @@ static void req_crypt_dtr(struct dm_target *ti)
 {
 	DMDEBUG("dm-req-crypt Destructor.\n");
 
-	if (req_io_pool) {
-		mempool_destroy(req_io_pool);
-		req_io_pool = NULL;
-	}
+	mempool_destroy(req_io_pool);
+	req_io_pool = NULL;
 
 	if (encryption_mode == DM_REQ_CRYPT_ENCRYPTION_MODE_TRANSPARENT) {
 		kfree(ice_settings);
@@ -1095,8 +1091,8 @@ static int configure_qcrypto(void)
 		goto exit_err;
 	}
 
-	eng_list = kcalloc(num_engines, sizeof(*eng_list), 0);
-	if (NULL == eng_list) {
+	eng_list = kcalloc(num_engines, sizeof(*eng_list), GFP_KERNEL);
+	if (eng_list == NULL) {
 		DMERR("%s engine list allocation failed\n", __func__);
 		err = DM_REQ_CRYPT_ERROR;
 		mutex_unlock(&engine_list_mutex);
@@ -1113,14 +1109,14 @@ static int configure_qcrypto(void)
 	}
 
 	fde_eng = kcalloc(num_engines_fde, sizeof(*fde_eng), GFP_KERNEL);
-	if (NULL == fde_eng) {
+	if (fde_eng == NULL) {
 		DMERR("%s fde engine list allocation failed\n", __func__);
 		mutex_unlock(&engine_list_mutex);
 		goto exit_err;
 	}
 
 	pfe_eng = kcalloc(num_engines_pfe, sizeof(*pfe_eng), GFP_KERNEL);
-	if (NULL == pfe_eng) {
+	if (pfe_eng == NULL) {
 		DMERR("%s pfe engine list allocation failed\n", __func__);
 		mutex_unlock(&engine_list_mutex);
 		goto exit_err;

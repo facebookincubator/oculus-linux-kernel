@@ -189,7 +189,6 @@ static struct platform_device *of_platform_device_create_pdata(
 	of_reserved_mem_device_init(&dev->dev);
 
 	if (of_device_add(dev) != 0) {
-		of_reserved_mem_device_release(&dev->dev);
 		of_dma_deconfigure(&dev->dev);
 		platform_device_put(dev);
 		goto err_clear_flag;
@@ -252,8 +251,6 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 		of_device_make_bus_id(&dev->dev);
 	of_dma_configure(&dev->dev, dev->dev.of_node);
 
-	of_reserved_mem_device_init(&dev->dev);
-
 	/* Allow the HW Peripheral ID to be overridden */
 	prop = of_get_property(node, "arm,primecell-periphid", NULL);
 	if (prop)
@@ -280,7 +277,6 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 	return dev;
 
 err_free:
-	of_reserved_mem_device_release(&dev->dev);
 	amba_device_put(dev);
 err_clear_flag:
 	of_node_clear_flag(node, OF_POPULATED);
@@ -411,8 +407,10 @@ int of_platform_bus_probe(struct device_node *root,
 		if (!of_match_node(matches, child))
 			continue;
 		rc = of_platform_bus_create(child, matches, NULL, parent, false);
-		if (rc)
+		if (rc) {
+			of_node_put(child);
 			break;
+		}
 	}
 
 	of_node_put(root);
@@ -453,8 +451,10 @@ int of_platform_populate(struct device_node *root,
 
 	for_each_child_of_node(root, child) {
 		rc = of_platform_bus_create(child, matches, lookup, parent, true);
-		if (rc)
+		if (rc) {
+			of_node_put(child);
 			break;
+		}
 	}
 	of_node_set_flag(root, OF_POPULATED_BUS);
 
@@ -462,6 +462,15 @@ int of_platform_populate(struct device_node *root,
 	return rc;
 }
 EXPORT_SYMBOL_GPL(of_platform_populate);
+
+int of_platform_default_populate(struct device_node *root,
+				 const struct of_dev_auxdata *lookup,
+				 struct device *parent)
+{
+	return of_platform_populate(root, of_default_bus_match_table, lookup,
+				    parent);
+}
+EXPORT_SYMBOL_GPL(of_platform_default_populate);
 
 static int of_platform_device_destroy(struct device *dev, void *data)
 {

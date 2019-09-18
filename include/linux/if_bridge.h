@@ -15,6 +15,7 @@
 
 #include <linux/netdevice.h>
 #include <uapi/linux/if_bridge.h>
+#include <linux/bitops.h>
 
 struct br_ip {
 	union {
@@ -32,12 +33,25 @@ struct br_ip_list {
 	struct br_ip addr;
 };
 
+#define BR_HAIRPIN_MODE		BIT(0)
+#define BR_BPDU_GUARD		BIT(1)
+#define BR_ROOT_BLOCK		BIT(2)
+#define BR_MULTICAST_FAST_LEAVE	BIT(3)
+#define BR_ADMIN_COST		BIT(4)
+#define BR_LEARNING		BIT(5)
+#define BR_FLOOD		BIT(6)
+#define BR_AUTO_MASK		(BR_FLOOD | BR_LEARNING)
+#define BR_PROMISC		BIT(7)
+#define BR_PROXYARP		BIT(8)
+#define BR_LEARNING_SYNC	BIT(9)
+#define BR_PROXYARP_WIFI	BIT(10)
+
+#define BR_DEFAULT_AGEING_TIME	(300 * HZ)
+
 extern void brioctl_set(int (*ioctl_hook)(struct net *, unsigned int, void __user *));
 
 typedef int br_should_route_hook_t(struct sk_buff *skb);
 extern br_should_route_hook_t __rcu *br_should_route_hook;
-extern struct net_device *br_port_dev_get(struct net_device *dev,
-						unsigned char *addr);
 
 #if IS_ENABLED(CONFIG_BRIDGE) && IS_ENABLED(CONFIG_BRIDGE_IGMP_SNOOPING)
 int br_multicast_list_adjacent(struct net_device *dev,

@@ -1,4 +1,4 @@
-* Qualcomm MSM IRQ Router
+* Qualcomm Technologies, Inc. MSM IRQ Router
 
 Required properties:
 - cell-index: irq router hardware core index

@@ -66,7 +66,7 @@ static unsigned long snd_pcm_timer_resolution(struct snd_timer * timer)
 {
 	struct snd_pcm_substream *substream;
 	unsigned long ret = 0, flags = 0;
-	
+
 	substream = timer->private_data;
 	spin_lock_irqsave(&substream->runtime_lock, flags);
 	if (substream->runtime)

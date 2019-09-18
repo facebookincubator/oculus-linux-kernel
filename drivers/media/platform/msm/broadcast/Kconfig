@@ -3,7 +3,7 @@
 #
 
 config TSPP
-	depends on ARCH_MSM
+	depends on ARCH_QCOM
 	tristate "TSPP (Transport Stream Packet Processor) Support"
 	---help---
 	Transport Stream Packet Processor v1 is used to offload the

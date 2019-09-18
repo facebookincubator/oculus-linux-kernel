@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -121,7 +121,7 @@ struct mhi_uci_ctxt_t {
 } while (0)
 
 
-module_param(mhi_uci_msg_lvl , uint, S_IRUGO | S_IWUSR);
+module_param(mhi_uci_msg_lvl, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(mhi_uci_msg_lvl, "uci dbg lvl");
 
 module_param(mhi_uci_ipc_log_lvl, uint, S_IRUGO | S_IWUSR);
@@ -141,7 +141,7 @@ static int mhi_init_read_chan(struct uci_client *client_handle,
 		enum mhi_client_channel chan)
 {
 	int rc = 0;
-	u32 i , j;
+	u32 i, j;
 	struct chan_attr *chan_attributes;
 	size_t buf_size;
 	void *data_loc;
@@ -623,7 +623,7 @@ static int uci_init_client_attributes(struct mhi_uci_ctxt_t *uci_ctxt)
 			      kmalloc(sizeof(struct mhi_dev_iov) *
 					      chan_attrib->nr_trbs,
 					GFP_KERNEL);
-			if (NULL == client->in_buf_list)
+			if (client->in_buf_list == NULL)
 				return -ENOMEM;
 		}
 		if (i % 2 == 0)
@@ -796,7 +796,7 @@ int mhi_uci_init(void)
 			cdev_init(&uci_ctxt.cdev[i], &mhi_uci_client_fops);
 			uci_ctxt.cdev[i].owner = THIS_MODULE;
 			r = cdev_add(&uci_ctxt.cdev[i],
-					uci_ctxt.start_ctrl_nr + i , 1);
+					uci_ctxt.start_ctrl_nr + i, 1);
 			if (IS_ERR_VALUE(r)) {
 				uci_log(UCI_DBG_ERROR,
 					"Failed to add cdev %d, ret 0x%x\n",

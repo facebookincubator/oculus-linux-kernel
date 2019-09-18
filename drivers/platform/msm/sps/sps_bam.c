@@ -274,7 +274,6 @@ int sps_bam_enable(struct sps_bam *dev)
 	int result;
 	int rc;
 	int MTIenabled;
-	unsigned long irq_arg = 0;
 
 	/* Is this BAM enabled? */
 	if ((dev->state & BAM_STATE_ENABLED))
@@ -285,9 +284,6 @@ int sps_bam_enable(struct sps_bam *dev)
 		SPS_ERR(dev, "sps:No local access to BAM %pa\n", BAM_ID(dev));
 		return SPS_ERROR;
 	}
-
-	if (dev->props.options & SPS_BAM_OPT_IRQ_NO_SUSPEND)
-		irq_arg = IRQF_NO_SUSPEND;
 
 	/* Set interrupt handling */
 	if ((dev->props.options & SPS_BAM_OPT_IRQ_DISABLED) != 0 ||
@@ -301,14 +297,14 @@ int sps_bam_enable(struct sps_bam *dev)
 			if (dev->props.options & SPS_BAM_RES_CONFIRM) {
 				result = request_irq(dev->props.irq,
 					(irq_handler_t) bam_isr,
-					(IRQF_TRIGGER_RISING | irq_arg), "sps", dev);
+					IRQF_TRIGGER_RISING, "sps", dev);
 				SPS_DBG3(dev,
 					"sps:BAM %pa uses edge for IRQ# %d\n",
 					BAM_ID(dev), dev->props.irq);
 			} else {
 				result = request_irq(dev->props.irq,
 					(irq_handler_t) bam_isr,
-					(IRQF_TRIGGER_HIGH | irq_arg), "sps", dev);
+					IRQF_TRIGGER_HIGH, "sps", dev);
 				SPS_DBG3(dev,
 					"sps:BAM %pa uses level for IRQ# %d\n",
 					BAM_ID(dev), dev->props.irq);
@@ -646,18 +642,11 @@ int sps_bam_reset(struct sps_bam *dev)
 		      pipe_index++) {
 			pipe = dev->pipes[pipe_index];
 			if (BAM_PIPE_IS_ASSIGNED(pipe)) {
-				if (!(dev->props.options &
-							SPS_BAM_FORCE_RESET)) {
-					SPS_ERR(dev,
-						"sps:BAM device %pa RESET failed: pipe %d in use\n",
-						BAM_ID(dev), pipe_index);
-					result = SPS_ERROR;
-					break;
-				}
-
-				SPS_DBG2(dev,
-					"sps: BAM %pa is force reset with pipe %d in use\n",
+				SPS_ERR(dev,
+					"sps:BAM device %pa RESET failed: pipe %d in use\n",
 					BAM_ID(dev), pipe_index);
+				result = SPS_ERROR;
+				break;
 			}
 		}
 
@@ -1094,6 +1083,7 @@ int sps_bam_pipe_disconnect(struct sps_bam *dev, u32 pipe_index)
 {
 	struct sps_pipe *pipe;
 	int result;
+	unsigned long flags;
 
 	if (pipe_index >= dev->props.num_pipes) {
 		SPS_ERR(dev, "sps:Invalid BAM %pa pipe: %d\n", BAM_ID(dev),
@@ -1105,8 +1095,10 @@ int sps_bam_pipe_disconnect(struct sps_bam *dev, u32 pipe_index)
 	pipe = dev->pipes[pipe_index];
 	if (BAM_PIPE_IS_ASSIGNED(pipe)) {
 		if ((dev->pipe_active_mask & (1UL << pipe_index))) {
+			spin_lock_irqsave(&dev->isr_lock, flags);
 			list_del(&pipe->list);
 			dev->pipe_active_mask &= ~(1UL << pipe_index);
+			spin_unlock_irqrestore(&dev->isr_lock, flags);
 		}
 		dev->pipe_remote_mask &= ~(1UL << pipe_index);
 		if (pipe->connect.options & SPS_O_NO_DISABLE)

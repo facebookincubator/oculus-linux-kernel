@@ -256,7 +256,7 @@ remap_area_supersections(unsigned long virt, unsigned long pfn,
 }
 #endif
 
-void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
+static void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
 	unsigned long offset, size_t size, unsigned int mtype, void *caller)
 {
 	const struct mem_type *type;
@@ -264,7 +264,6 @@ void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
 	unsigned long addr;
 	struct vm_struct *area;
 	phys_addr_t paddr = __pfn_to_phys(pfn);
-	pgprot_t prot;
 
 #ifndef CONFIG_ARM_LPAE
 	/*
@@ -309,12 +308,6 @@ void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
  	addr = (unsigned long)area->addr;
 	area->phys_addr = paddr;
 
-	prot = __pgprot(type->prot_pte);
-#ifdef CONFIG_ARCH_MSM8953_SOC_SETTINGS
-	if (paddr >= MSM8953_TLMM_START_ADDR &&
-	    paddr <= MSM8953_TLMM_END_ADDR)
-		prot = pgprot_stronglyordered(type->prot_pte);
-#endif
 #if !defined(CONFIG_SMP) && !defined(CONFIG_ARM_LPAE)
 	if (DOMAIN_IO == 0 &&
 	    (((cpu_architecture() >= CPU_ARCH_ARMv6) && (get_cr() & CR_XP)) ||
@@ -327,7 +320,8 @@ void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
 		err = remap_area_sections(addr, pfn, size, type);
 	} else
 #endif
-		err = ioremap_page_range(addr, addr + size, paddr, prot);
+		err = ioremap_page_range(addr, addr + size, paddr,
+					 __pgprot(type->prot_pte));
 
 	if (err) {
  		vunmap((void *)addr);
@@ -370,7 +364,7 @@ __arm_ioremap_pfn(unsigned long pfn, unsigned long offset, size_t size,
 		  unsigned int mtype)
 {
 	return __arm_ioremap_pfn_caller(pfn, offset, size, mtype,
-			__builtin_return_address(0));
+					__builtin_return_address(0));
 }
 EXPORT_SYMBOL(__arm_ioremap_pfn);
 
@@ -378,13 +372,26 @@ void __iomem * (*arch_ioremap_caller)(phys_addr_t, size_t,
 				      unsigned int, void *) =
 	__arm_ioremap_caller;
 
-void __iomem *
-__arm_ioremap(phys_addr_t phys_addr, size_t size, unsigned int mtype)
+void __iomem *ioremap(resource_size_t res_cookie, size_t size)
 {
-	return arch_ioremap_caller(phys_addr, size, mtype,
-		__builtin_return_address(0));
+	return arch_ioremap_caller(res_cookie, size, MT_DEVICE,
+				   __builtin_return_address(0));
 }
-EXPORT_SYMBOL(__arm_ioremap);
+EXPORT_SYMBOL(ioremap);
+
+void __iomem *ioremap_cache(resource_size_t res_cookie, size_t size)
+{
+	return arch_ioremap_caller(res_cookie, size, MT_DEVICE_CACHED,
+				   __builtin_return_address(0));
+}
+EXPORT_SYMBOL(ioremap_cache);
+
+void __iomem *ioremap_wc(resource_size_t res_cookie, size_t size)
+{
+	return arch_ioremap_caller(res_cookie, size, MT_DEVICE_WC,
+				   __builtin_return_address(0));
+}
+EXPORT_SYMBOL(ioremap_wc);
 
 /*
  * Remap an arbitrary physical address space into the kernel virtual
@@ -438,11 +445,11 @@ void __iounmap(volatile void __iomem *io_addr)
 
 void (*arch_iounmap)(volatile void __iomem *) = __iounmap;
 
-void __arm_iounmap(volatile void __iomem *io_addr)
+void iounmap(volatile void __iomem *cookie)
 {
-	arch_iounmap(io_addr);
+	arch_iounmap(cookie);
 }
-EXPORT_SYMBOL(__arm_iounmap);
+EXPORT_SYMBOL(iounmap);
 
 #ifdef CONFIG_PCI
 static int pci_ioremap_mem_type = MT_DEVICE;

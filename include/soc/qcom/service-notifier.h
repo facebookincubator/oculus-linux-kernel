@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,14 @@ enum qmi_servreg_notif_service_state_enum_type_v01 {
 	SERVREG_NOTIF_SERVICE_STATE_UNINIT_V01 = 0x7FFFFFFF,
 };
 
+enum pd_subsys_state {
+	ROOT_PD_DOWN,
+	ROOT_PD_UP,
+	ROOT_PD_ERR_FATAL,
+	ROOT_PD_WDOG_BITE,
+	ROOT_PD_SHUTDOWN,
+	USER_PD_STATE_CHANGE,
+};
 #if defined(CONFIG_MSM_SERVICE_NOTIFIER)
 
 /* service_notif_register_notifier() - Register a notifier for a service
@@ -47,17 +55,25 @@ void *service_notif_register_notifier(const char *service_path, int instance_id,
 int service_notif_unregister_notifier(void *service_notif_handle,
 					struct notifier_block *nb);
 
+int service_notif_pd_restart(const char *service_path, int instance_id);
+
 #else
 
-static void *service_notif_register_notifier(const char *service_path,
+static inline void *service_notif_register_notifier(const char *service_path,
 				int instance_id, struct notifier_block *nb,
 				int *curr_state)
 {
 	return ERR_PTR(-ENODEV);
 }
 
-static int service_notif_unregister_notifier(void *service_notif_handle,
+static inline int service_notif_unregister_notifier(void *service_notif_handle,
 					struct notifier_block *nb)
+{
+	return -ENODEV;
+}
+
+static inline int service_notif_pd_restart(const char *service_path,
+						int instance_id)
 {
 	return -ENODEV;
 }

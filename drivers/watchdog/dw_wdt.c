@@ -35,7 +35,6 @@
 #include <linux/pm.h>
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
-#include <linux/spinlock.h>
 #include <linux/timer.h>
 #include <linux/uaccess.h>
 #include <linux/watchdog.h>
@@ -51,6 +50,8 @@
 /* The maximum TOP (timeout period) value that can be set in the watchdog. */
 #define DW_WDT_MAX_TOP		15
 
+#define DW_WDT_DEFAULT_SECONDS	30
+
 static bool nowayout = WATCHDOG_NOWAYOUT;
 module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started "
@@ -59,7 +60,6 @@ MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started "
 #define WDT_TIMEOUT		(HZ / 2)
 
 static struct {
-	spinlock_t		lock;
 	void __iomem		*regs;
 	struct clk		*clk;
 	unsigned long		in_use;
@@ -96,6 +96,12 @@ static inline void dw_wdt_set_next_heartbeat(void)
 	dw_wdt.next_heartbeat = jiffies + dw_wdt_get_top() * HZ;
 }
 
+static void dw_wdt_keepalive(void)
+{
+	writel(WDOG_COUNTER_RESTART_KICK_VALUE, dw_wdt.regs +
+	       WDOG_COUNTER_RESTART_REG_OFFSET);
+}
+
 static int dw_wdt_set_top(unsigned top_s)
 {
 	int i, top_val = DW_WDT_MAX_TOP;
@@ -110,19 +116,25 @@ static int dw_wdt_set_top(unsigned top_s)
 			break;
 		}
 
-	/* Set the new value in the watchdog. */
+	/*
+	 * Set the new value in the watchdog.  Some versions of dw_wdt
+	 * have have TOPINIT in the TIMEOUT_RANGE register (as per
+	 * CP_WDT_DUAL_TOP in WDT_COMP_PARAMS_1).  On those we
+	 * effectively get a pat of the watchdog right here.
+	 */
 	writel(top_val | top_val << WDOG_TIMEOUT_RANGE_TOPINIT_SHIFT,
 		dw_wdt.regs + WDOG_TIMEOUT_RANGE_REG_OFFSET);
+
+	/*
+	 * Add an explicit pat to handle versions of the watchdog that
+	 * don't have TOPINIT.  This won't hurt on versions that have
+	 * it.
+	 */
+	dw_wdt_keepalive();
 
 	dw_wdt_set_next_heartbeat();
 
 	return dw_wdt_top_in_seconds(top_val);
-}
-
-static void dw_wdt_keepalive(void)
-{
-	writel(WDOG_COUNTER_RESTART_KICK_VALUE, dw_wdt.regs +
-	       WDOG_COUNTER_RESTART_REG_OFFSET);
 }
 
 static int dw_wdt_restart_handle(struct notifier_block *this,
@@ -163,20 +175,17 @@ static int dw_wdt_open(struct inode *inode, struct file *filp)
 	/* Make sure we don't get unloaded. */
 	__module_get(THIS_MODULE);
 
-	spin_lock(&dw_wdt.lock);
 	if (!dw_wdt_is_enabled()) {
 		/*
 		 * The watchdog is not currently enabled. Set the timeout to
-		 * the maximum and then start it.
+		 * something reasonable and then start it.
 		 */
-		dw_wdt_set_top(DW_WDT_MAX_TOP);
+		dw_wdt_set_top(DW_WDT_DEFAULT_SECONDS);
 		writel(WDOG_CONTROL_REG_WDT_EN_MASK,
 		       dw_wdt.regs + WDOG_CONTROL_REG_OFFSET);
 	}
 
 	dw_wdt_set_next_heartbeat();
-
-	spin_unlock(&dw_wdt.lock);
 
 	return nonseekable_open(inode, filp);
 }
@@ -206,6 +215,7 @@ static ssize_t dw_wdt_write(struct file *filp, const char __user *buf,
 	}
 
 	dw_wdt_set_next_heartbeat();
+	dw_wdt_keepalive();
 	mod_timer(&dw_wdt.timer, jiffies + WDT_TIMEOUT);
 
 	return len;
@@ -334,8 +344,6 @@ static int dw_wdt_drv_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	spin_lock_init(&dw_wdt.lock);
-
 	ret = misc_register(&dw_wdt_miscdev);
 	if (ret)
 		goto out_disable_clk;
@@ -382,7 +390,6 @@ static struct platform_driver dw_wdt_driver = {
 	.remove		= dw_wdt_drv_remove,
 	.driver		= {
 		.name	= "dw_wdt",
-		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(dw_wdt_of_match),
 		.pm	= &dw_wdt_pm_ops,
 	},

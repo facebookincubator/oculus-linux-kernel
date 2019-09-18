@@ -42,7 +42,8 @@
 #define IPA_HW_NUM_FEATURES 0x8
 
 /**
- * enum ipa3_hw_features - Values that represent the features supported in IPA HW
+ * enum ipa3_hw_features - Values that represent the features supported
+ * in IPA HW
  * @IPA_HW_FEATURE_COMMON : Feature related to common operation of IPA HW
  * @IPA_HW_FEATURE_MHI : Feature related to MHI operation in IPA HW
  * @IPA_HW_FEATURE_POWER_COLLAPSE: Feature related to IPA Power collapse
@@ -123,12 +124,14 @@ enum ipa3_hw_errors {
  * bits of parameters (immediate parameters) and point on structure in system
  * memory
  * @eventOp : HW->CPU event opcode. See IPA_HW_2_CPU_EVENTS
- * @eventParams : HW->CPU event parameter. The parameter filed can hold 32 bits of
- * parameters (immediate parameters) and point on structure in system memory
+ * @eventParams : HW->CPU event parameter. The parameter filed can hold 32
+ *		bits of parameters (immediate parameters) and point on
+ *		structure in system memory
  * @firstErrorAddress : Contains the address of first error-source on SNOC
- * @hwState : State of HW. The state carries information regarding the error type.
- * @warningCounter : The warnings counter. The counter carries information regarding
- * non fatal errors in HW
+ * @hwState : State of HW. The state carries information regarding the
+ *				error type.
+ * @warningCounter : The warnings counter. The counter carries information
+ *						regarding non fatal errors in HW
  * @interfaceVersionCommon : The Common interface version as reported by HW
  *
  * The shared memory is used for communication between IPA HW and CPU.
@@ -484,10 +487,13 @@ enum ipa_cpu_2_hw_offload_commands {
 /**
  * enum ipa3_hw_offload_channel_states - Values that represent
  * offload channel state machine.
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_INITED_DISABLED : Channel is initialized but disabled
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_RUNNING : Channel is running. Entered after SET_UP_COMMAND is processed successfully
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_INITED_DISABLED : Channel is
+ *			initialized but disabled
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_RUNNING : Channel is running.
+ *			Entered after SET_UP_COMMAND is processed successfully
  * @IPA_HW_OFFLOAD_CHANNEL_STATE_ERROR : Channel is in error state
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_INVALID : Invalid state. Shall not be in use in operational scenario
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_INVALID : Invalid state. Shall not
+ *				be in use in operational scenario
  *
  * These states apply to both Tx and Rx paths. These do not
  * reflect the sub-state the state machine may be in

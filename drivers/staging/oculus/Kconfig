@@ -17,30 +17,4 @@ config MISCFIFO_SAMPLE
 	---help---
 	  Example usage of miscfifo chardev driver
 
-config OCULUS_MINISENSOR_SPI
-	tristate "Mini sensor kernel driver"
-	default n
-	depends on OF
-	depends on SPI
-	depends on SYSFS
-	depends on MISCFIFO
-	---help---
-	  Kernel portion of sensor driver that implement a simple API.
-	  This driver implements a thin interface that handles I/O, interrupts and
-	  time-stamping.  The bulk of the driver implementation / state management
-	  specific to the sensor device will be in userspace.
-
-config OCULUS_LIS2MDL_I2C
-	tristate "Thin ST LIS2MDL Mag Driver (Oculus Version)"
-	default n
-	depends on OF
-	depends on I2C
-	depends on SYSFS
-	depends on MISCFIFO
-	---help---
-	  Kernel portion of ST LIS2MDL Magnetometer driver
-	  This driver implements a thin interface that handles I/O, interrupts and
-	  time-stamping.  The bulk of the driver implementation / state management
-	  will be in userspace.
-
 endmenu

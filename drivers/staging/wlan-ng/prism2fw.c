@@ -238,7 +238,8 @@ static int prism2_fwtry(struct usb_device *udev, wlandevice_t *wlandev)
 *	0	- success
 *	~0	- failure
 ----------------------------------------------------------------*/
-static int prism2_fwapply(const struct ihex_binrec *rfptr, wlandevice_t *wlandev)
+static int prism2_fwapply(const struct ihex_binrec *rfptr,
+			  wlandevice_t *wlandev)
 {
 	signed int result = 0;
 	struct p80211msg_dot11req_mibget getmsg;
@@ -583,13 +584,12 @@ static int mkimage(struct imgchunk *clist, unsigned int *ccnt)
 ----------------------------------------------------------------*/
 static int mkpdrlist(struct pda *pda)
 {
-	int result = 0;
 	u16 *pda16 = (u16 *) pda->buf;
 	int curroff;		/* in 'words' */
 
 	pda->nrec = 0;
 	curroff = 0;
-	while (curroff < (HFA384x_PDA_LEN_MAX / 2) &&
+	while (curroff < (HFA384x_PDA_LEN_MAX / 2 - 1) &&
 	       le16_to_cpu(pda16[curroff + 1]) != HFA384x_PDR_END_OF_PDA) {
 		pda->rec[pda->nrec] = (hfa384x_pdrec_t *) &(pda16[curroff]);
 
@@ -625,16 +625,14 @@ static int mkpdrlist(struct pda *pda)
 		curroff += le16_to_cpu(pda16[curroff]) + 1;
 
 	}
-	if (curroff >= (HFA384x_PDA_LEN_MAX / 2)) {
+	if (curroff >= (HFA384x_PDA_LEN_MAX / 2 - 1)) {
 		pr_err("no end record found or invalid lengths in PDR data, exiting. %x %d\n",
 		       curroff, pda->nrec);
 		return 1;
 	}
-	if (le16_to_cpu(pda16[curroff + 1]) == HFA384x_PDR_END_OF_PDA) {
-		pda->rec[pda->nrec] = (hfa384x_pdrec_t *) &(pda16[curroff]);
-		(pda->nrec)++;
-	}
-	return result;
+	pda->rec[pda->nrec] = (hfa384x_pdrec_t *) &(pda16[curroff]);
+	(pda->nrec)++;
+	return 0;
 }
 
 /*----------------------------------------------------------------
@@ -707,7 +705,10 @@ static int plugimage(struct imgchunk *fchunk, unsigned int nfchunks,
 			continue;
 		}
 
-		/* Validate plug address against chunk data and identify chunk */
+		/*
+		 * Validate plug address against
+		 * chunk data and identify chunk
+		 */
 		for (c = 0; c < nfchunks; c++) {
 			cstart = fchunk[c].addr;
 			cend = fchunk[c].addr + fchunk[c].len;
@@ -922,7 +923,8 @@ static int read_fwfile(const struct ihex_binrec *record)
 				      rcnt,
 				      s3info[ns3info].len,
 				      s3info[ns3info].type);
-			if (((s3info[ns3info].len - 1) * sizeof(u16)) > sizeof(s3info[ns3info].info)) {
+			if (((s3info[ns3info].len - 1) * sizeof(u16)) >
+			   sizeof(s3info[ns3info].info)) {
 				pr_err("S3 inforec length too long - aborting\n");
 				return 1;
 			}
@@ -986,8 +988,8 @@ static int writeimage(wlandevice_t *wlandev, struct imgchunk *fchunk,
 	u32 currlen;
 	u32 currdaddr;
 
-	rstmsg = kmalloc(sizeof(*rstmsg), GFP_KERNEL);
-	rwrmsg = kmalloc(sizeof(*rwrmsg), GFP_KERNEL);
+	rstmsg = kzalloc(sizeof(*rstmsg), GFP_KERNEL);
+	rwrmsg = kzalloc(sizeof(*rwrmsg), GFP_KERNEL);
 	if (!rstmsg || !rwrmsg) {
 		kfree(rstmsg);
 		kfree(rwrmsg);
@@ -997,7 +999,6 @@ static int writeimage(wlandevice_t *wlandev, struct imgchunk *fchunk,
 	}
 
 	/* Initialize the messages */
-	memset(rstmsg, 0, sizeof(*rstmsg));
 	strcpy(rstmsg->devname, wlandev->name);
 	rstmsg->msgcode = DIDmsg_p2req_ramdl_state;
 	rstmsg->msglen = sizeof(*rstmsg);
@@ -1011,7 +1012,6 @@ static int writeimage(wlandevice_t *wlandev, struct imgchunk *fchunk,
 	rstmsg->exeaddr.len = sizeof(u32);
 	rstmsg->resultcode.len = sizeof(u32);
 
-	memset(rwrmsg, 0, sizeof(*rwrmsg));
 	strcpy(rwrmsg->devname, wlandev->name);
 	rwrmsg->msgcode = DIDmsg_p2req_ramdl_write;
 	rwrmsg->msglen = sizeof(*rwrmsg);

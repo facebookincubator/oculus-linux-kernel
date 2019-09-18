@@ -336,7 +336,7 @@ int sdmx_open_session(int *session_handle)
 
 	/* Get and print the app version */
 	version_ret = sdmx_get_version(*session_handle, &version);
-	if (SDMX_SUCCESS == version_ret)
+	if (version_ret == SDMX_SUCCESS)
 		pr_info("TZ SDMX version is %x.%x\n", version >> 8,
 			version & 0xFF);
 	else
@@ -1021,4 +1021,3 @@ out:
 	mutex_unlock(&sdmx_lock[session_handle]);
 	return ret;
 }
-

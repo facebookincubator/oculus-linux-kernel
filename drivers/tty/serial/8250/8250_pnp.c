@@ -41,6 +41,12 @@ static const struct pnp_device_id pnp_dev_table[] = {
 	{	"AEI1240",		0	},
 	/* Rockwell 56K ACF II Fax+Data+Voice Modem */
 	{	"AKY1021",		0 /*SPCI_FL_NO_SHIRQ*/	},
+	/*
+	 * ALi Fast Infrared Controller
+	 * Native driver (ali-ircc) is broken so at least
+	 * it can be used with irtty-sir.
+	 */
+	{	"ALI5123",		0	},
 	/* AZT3005 PnP SOUND DEVICE */
 	{	"AZT4001",		0	},
 	/* Best Data Products Inc. Smart One 336F PnP Modem */
@@ -431,7 +437,7 @@ static int serial_pnp_guess_board(struct pnp_dev *dev)
 static int
 serial_pnp_probe(struct pnp_dev *dev, const struct pnp_device_id *dev_id)
 {
-	struct uart_8250_port uart;
+	struct uart_8250_port uart, *port;
 	int ret, line, flags = dev_id->driver_data;
 
 	if (flags & UNKNOWN_DEV) {
@@ -476,6 +482,10 @@ serial_pnp_probe(struct pnp_dev *dev, const struct pnp_device_id *dev_id)
 	if (line < 0 || (flags & CIR_PORT))
 		return -ENODEV;
 
+	port = serial8250_get_port(line);
+	if (uart_console(&port->port))
+		dev->capabilities |= PNP_CONSOLE;
+
 	pnp_set_drvdata(dev, (void *)((long)line + 1));
 	return 0;
 }
@@ -483,6 +493,8 @@ serial_pnp_probe(struct pnp_dev *dev, const struct pnp_device_id *dev_id)
 static void serial_pnp_remove(struct pnp_dev *dev)
 {
 	long line = (long)pnp_get_drvdata(dev);
+
+	dev->capabilities &= ~PNP_CONSOLE;
 	if (line)
 		serial8250_unregister_port(line - 1);
 }

@@ -22,11 +22,11 @@ static void ipa3_uc_ntn_event_handler(struct IpaHwSharedMemCommonMapping_t
 
 	if (uc_sram_mmio->eventOp ==
 		IPA_HW_2_CPU_EVENT_NTN_ERROR) {
-			ntn_evt.raw32b = uc_sram_mmio->eventParams;
-			IPADBG("uC NTN evt errType=%u pipe=%d cherrType=%u\n",
-				ntn_evt.params.ntn_error_type,
-				ntn_evt.params.ipa_pipe_number,
-				ntn_evt.params.ntn_ch_err_type);
+		ntn_evt.raw32b = uc_sram_mmio->eventParams;
+		IPADBG("uC NTN evt errType=%u pipe=%d cherrType=%u\n",
+			   ntn_evt.params.ntn_error_type,
+			   ntn_evt.params.ipa_pipe_number,
+			   ntn_evt.params.ntn_ch_err_type);
 	}
 }
 
@@ -42,11 +42,11 @@ struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
 
 	if (uc_event_top_mmio->statsInfo.featureInfo[IPA_HW_FEATURE_NTN].
 		params.size != sizeof(struct Ipa3HwStatsNTNInfoData_t)) {
-			IPAERR("NTN stats sz invalid exp=%zu is=%u\n",
-				sizeof(struct Ipa3HwStatsNTNInfoData_t),
-				uc_event_top_mmio->statsInfo.
-				featureInfo[IPA_HW_FEATURE_NTN].params.size);
-			return;
+		IPAERR("NTN stats sz invalid exp=%zu is=%u\n",
+			   sizeof(struct Ipa3HwStatsNTNInfoData_t),
+			   uc_event_top_mmio->statsInfo.
+			   featureInfo[IPA_HW_FEATURE_NTN].params.size);
+		return;
 	}
 
 	ipa3_ctx->uc_ntn_ctx.ntn_uc_stats_ofst = uc_event_top_mmio->
@@ -58,9 +58,9 @@ struct IpaHwEventLogInfoData_t *uc_event_top_mmio)
 		ipa3_ctx->ctrl->ipa_reg_base_ofst +
 		ipahal_get_reg_n_ofst(IPA_SRAM_DIRECT_ACCESS_n, 0) +
 		ipa3_ctx->smem_sz) {
-			IPAERR("uc_ntn_stats 0x%x outside SRAM\n",
-				ipa3_ctx->uc_ntn_ctx.ntn_uc_stats_ofst);
-			return;
+		IPAERR("uc_ntn_stats 0x%x outside SRAM\n",
+			   ipa3_ctx->uc_ntn_ctx.ntn_uc_stats_ofst);
+		return;
 	}
 
 	ipa3_ctx->uc_ntn_ctx.ntn_uc_stats_mmio =

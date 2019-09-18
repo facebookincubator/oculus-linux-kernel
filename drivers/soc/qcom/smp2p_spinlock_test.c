@@ -1,6 +1,6 @@
 /* drivers/soc/qcom/smp2p_spinlock_test.c
  *
- * Copyright (c) 2013-2015, 2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,6 +16,7 @@
 #include <linux/jiffies.h>
 #include <linux/delay.h>
 #include <linux/completion.h>
+#include <linux/module.h>
 #include <linux/remote_spinlock.h>
 #include <soc/qcom/smem.h>
 #include "smem_private.h"
@@ -370,6 +371,11 @@ static void smp2p_ut_remote_spinlock_dsps(struct seq_file *s)
 static void smp2p_ut_remote_spinlock_wcnss(struct seq_file *s)
 {
 	smp2p_ut_remote_spinlock_pid(s, SMP2P_WIRELESS_PROC, false);
+}
+
+static void smp2p_ut_remote_spinlock_cdsp(struct seq_file *s)
+{
+	smp2p_ut_remote_spinlock_pid(s, SMP2P_CDSP_PROC, false);
 }
 
 static void smp2p_ut_remote_spinlock_tz(struct seq_file *s)
@@ -751,6 +757,11 @@ static void smp2p_ut_remote_spinlock_track_wcnss(struct seq_file *s)
 	smp2p_ut_remote_spinlock_track(s, SMP2P_WIRELESS_PROC);
 }
 
+static void smp2p_ut_remote_spinlock_track_cdsp(struct seq_file *s)
+{
+	smp2p_ut_remote_spinlock_track(s, SMP2P_CDSP_PROC);
+}
+
 static void smp2p_ut_remote_spinlock_track_tz(struct seq_file *s)
 {
 	smp2p_ut_remote_spinlock_track(s, SMP2P_TZ_PROC);
@@ -781,6 +792,8 @@ static int __init smp2p_debugfs_init(void)
 		smp2p_ut_remote_spinlock_dsps);
 	smp2p_debug_create("ut_remote_spinlock_wcnss",
 		smp2p_ut_remote_spinlock_wcnss);
+	smp2p_debug_create("ut_remote_spinlock_cdsp",
+		smp2p_ut_remote_spinlock_cdsp);
 	smp2p_debug_create("ut_remote_spinlock_tz",
 		smp2p_ut_remote_spinlock_tz);
 	smp2p_debug_create("ut_remote_spinlock_rpm",
@@ -797,6 +810,8 @@ static int __init smp2p_debugfs_init(void)
 		&smp2p_ut_remote_spinlock_track_dsps);
 	smp2p_debug_create("ut_remote_spinlock_track_wcnss",
 		&smp2p_ut_remote_spinlock_track_wcnss);
+	smp2p_debug_create("ut_remote_spinlock_track_cdsp",
+		&smp2p_ut_remote_spinlock_track_cdsp);
 	smp2p_debug_create("ut_remote_spinlock_track_tz",
 		&smp2p_ut_remote_spinlock_track_tz);
 	return 0;

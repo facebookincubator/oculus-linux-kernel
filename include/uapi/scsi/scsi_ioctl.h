@@ -1,6 +1,8 @@
 #ifndef _SCSI_IOCTL_H
 #define _SCSI_IOCTL_H 
 
+#include <linux/types.h>
+
 #define SCSI_IOCTL_SEND_COMMAND 1
 #define SCSI_IOCTL_TEST_UNIT_READY 2
 #define SCSI_IOCTL_BENCHMARK_COMMAND 3
@@ -59,8 +61,8 @@ typedef struct scsi_fctargaddress {
 #ifdef __KERNEL__
 struct scsi_device;
 
+int scsi_ioctl_block_when_processing_errors(struct scsi_device *sdev,
+		int cmd, bool ndelay);
 extern int scsi_ioctl(struct scsi_device *, int, void __user *);
-extern int scsi_nonblockable_ioctl(struct scsi_device *sdev, int cmd,
-				   void __user *arg, int ndelay);
 #endif /* __KERNEL__ */
 #endif /* _SCSI_IOCTL_H */

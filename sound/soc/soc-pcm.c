@@ -33,6 +33,26 @@
 #include <sound/soc-dpcm.h>
 #include <sound/initval.h>
 
+#define DPCM_MAX_BE_USERS	8
+
+/*
+ * snd_soc_dai_stream_valid() - check if a DAI supports the given stream
+ *
+ * Returns true if the DAI supports the indicated stream type.
+ */
+static bool snd_soc_dai_stream_valid(struct snd_soc_dai *dai, int stream)
+{
+	struct snd_soc_pcm_stream *codec_stream;
+
+	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+		codec_stream = &dai->driver->playback;
+	else
+		codec_stream = &dai->driver->capture;
+
+	/* If the codec specifies any rate at all, it supports the stream. */
+	return codec_stream->rates;
+}
+
 static const struct snd_pcm_hardware no_host_hardware = {
 	.info			= SNDRV_PCM_INFO_MMAP |
 					SNDRV_PCM_INFO_MMAP_VALID |
@@ -206,9 +226,9 @@ static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream,
 		dev_dbg(soc_dai->dev, "ASoC: Symmetry forces %dHz rate\n",
 				soc_dai->rate);
 
-		ret = snd_pcm_hw_constraint_minmax(substream->runtime,
+		ret = snd_pcm_hw_constraint_single(substream->runtime,
 						SNDRV_PCM_HW_PARAM_RATE,
-						soc_dai->rate, soc_dai->rate);
+						soc_dai->rate);
 		if (ret < 0) {
 			dev_err(soc_dai->dev,
 				"ASoC: Unable to apply rate constraint: %d\n",
@@ -222,9 +242,8 @@ static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream,
 		dev_dbg(soc_dai->dev, "ASoC: Symmetry forces %d channel(s)\n",
 				soc_dai->channels);
 
-		ret = snd_pcm_hw_constraint_minmax(substream->runtime,
+		ret = snd_pcm_hw_constraint_single(substream->runtime,
 						SNDRV_PCM_HW_PARAM_CHANNELS,
-						soc_dai->channels,
 						soc_dai->channels);
 		if (ret < 0) {
 			dev_err(soc_dai->dev,
@@ -239,9 +258,8 @@ static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream,
 		dev_dbg(soc_dai->dev, "ASoC: Symmetry forces %d sample bits\n",
 				soc_dai->sample_bits);
 
-		ret = snd_pcm_hw_constraint_minmax(substream->runtime,
+		ret = snd_pcm_hw_constraint_single(substream->runtime,
 						SNDRV_PCM_HW_PARAM_SAMPLE_BITS,
-						soc_dai->sample_bits,
 						soc_dai->sample_bits);
 		if (ret < 0) {
 			dev_err(soc_dai->dev,
@@ -325,34 +343,18 @@ static bool soc_pcm_has_symmetry(struct snd_pcm_substream *substream)
 	return symmetry;
 }
 
-/*
- * List of sample sizes that might go over the bus for parameter
- * application.  There ought to be a wildcard sample size for things
- * like the DAC/ADC resolution to use but there isn't right now.
- */
-static int sample_sizes[] = {
-	8, 16, 24, 32,
-};
-
 static void soc_pcm_set_msb(struct snd_pcm_substream *substream, int bits)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	int ret, i;
+	int ret;
 
 	if (!bits)
 		return;
 
-	for (i = 0; i < ARRAY_SIZE(sample_sizes); i++) {
-		if (bits >= sample_sizes[i])
-			continue;
-
-		ret = snd_pcm_hw_constraint_msbits(substream->runtime, 0,
-						   sample_sizes[i], bits);
-		if (ret != 0)
-			dev_warn(rtd->dev,
-				 "ASoC: Failed to set MSB %d/%d: %d\n",
-				 bits, sample_sizes[i], ret);
-	}
+	ret = snd_pcm_hw_constraint_msbits(substream->runtime, 0, 0, bits);
+	if (ret != 0)
+		dev_warn(rtd->dev, "ASoC: Failed to set MSB %d: %d\n",
+				 bits, ret);
 }
 
 static void soc_pcm_apply_msb(struct snd_pcm_substream *substream)
@@ -411,6 +413,20 @@ static void soc_pcm_init_runtime_hw(struct snd_pcm_substream *substream)
 
 	/* first calculate min/max only for CODECs in the DAI link */
 	for (i = 0; i < rtd->num_codecs; i++) {
+
+		/*
+		 * Skip CODECs which don't support the current stream type.
+		 * Otherwise, since the rate, channel, and format values will
+		 * zero in that case, we would have no usable settings left,
+		 * causing the resulting setup to fail.
+		 * At least one CODEC should match, otherwise we should have
+		 * bailed out on a higher level, since there would be no
+		 * CODEC to support the transfer direction in that case.
+		 */
+		if (!snd_soc_dai_stream_valid(rtd->codec_dais[i],
+					      substream->stream))
+			continue;
+
 		codec_dai_drv = rtd->codec_dais[i]->driver;
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			codec_stream = &codec_dai_drv->playback;
@@ -680,6 +696,8 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 			codec_dai->rate = 0;
 	}
 
+	snd_soc_dai_digital_mute(cpu_dai, 1, substream->stream);
+
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		if (snd_soc_runtime_ignore_pmdown_time(rtd)) {
 			/* powered down playback stream now */
@@ -741,7 +759,7 @@ static int soc_pcm_prepare(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_platform *platform = rtd->platform;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-	struct snd_soc_dai *codec_dai = NULL;
+	struct snd_soc_dai *codec_dai;
 	int i, ret = 0;
 
 	mutex_lock_nested(&rtd->pcm_mutex, rtd->pcm_subclass);
@@ -776,7 +794,8 @@ static int soc_pcm_prepare(struct snd_pcm_substream *substream)
 							      codec_dai);
 			if (ret < 0) {
 				dev_err(codec_dai->dev,
-					"ASoC: DAI prepare error: %d\n", ret);
+					"ASoC: codec DAI prepare error: %d\n",
+					ret);
 				goto out;
 			}
 		}
@@ -785,8 +804,8 @@ static int soc_pcm_prepare(struct snd_pcm_substream *substream)
 	if (cpu_dai->driver->ops && cpu_dai->driver->ops->prepare) {
 		ret = cpu_dai->driver->ops->prepare(substream, cpu_dai);
 		if (ret < 0) {
-			dev_err(cpu_dai->dev, "ASoC: DAI prepare error: %d\n",
-				ret);
+			dev_err(cpu_dai->dev,
+				"ASoC: cpu DAI prepare error: %d\n", ret);
 			goto out;
 		}
 	}
@@ -798,16 +817,21 @@ static int soc_pcm_prepare(struct snd_pcm_substream *substream)
 		cancel_delayed_work(&rtd->delayed_work);
 	}
 
-	if (codec_dai && substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-		if (codec_dai->capture_active == 1)
-			snd_soc_dapm_stream_event(rtd,
-			SNDRV_PCM_STREAM_CAPTURE,
-			SND_SOC_DAPM_STREAM_START);
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		for (i = 0; i < rtd->num_codecs; i++) {
+			codec_dai = rtd->codec_dais[i];
+			if (codec_dai->capture_active == 1)
+				snd_soc_dapm_stream_event(rtd,
+				SNDRV_PCM_STREAM_CAPTURE,
+				SND_SOC_DAPM_STREAM_START);
+		}
 	}
 
 	for (i = 0; i < rtd->num_codecs; i++)
 		snd_soc_dai_digital_mute(rtd->codec_dais[i], 0,
 					 substream->stream);
+	snd_soc_dai_digital_mute(cpu_dai, 0, substream->stream);
+
 out:
 	if (ret < 0 && substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		pr_err("%s: Issue stop stream for codec_dai due to op failure %d = ret\n",
@@ -902,6 +926,23 @@ static int soc_pcm_hw_params(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *codec_dai = rtd->codec_dais[i];
 		struct snd_pcm_hw_params codec_params;
 
+		/*
+		 * Skip CODECs which don't support the current stream type,
+		 * the idea being that if a CODEC is not used for the currently
+		 * set up transfer direction, it should not need to be
+		 * configured, especially since the configuration used might
+		 * not even be supported by that CODEC. There may be cases
+		 * however where a CODEC needs to be set up although it is
+		 * actually not being used for the transfer, e.g. if a
+		 * capture-only CODEC is acting as an LRCLK and/or BCLK master
+		 * for the DAI link including a playback-only CODEC.
+		 * If this becomes necessary, we will have to augment the
+		 * machine driver setup with information on how to act, so
+		 * we can do the right thing here.
+		 */
+		if (!snd_soc_dai_stream_valid(codec_dai, substream->stream))
+			continue;
+
 		/* copy params for each codec */
 		codec_params = *params;
 
@@ -951,6 +992,8 @@ static int soc_pcm_hw_params(struct snd_pcm_substream *substream,
 					DMA_BIT_MASK(sizeof(dma_addr_t) * 8);
 		substream->dma_buffer.private_data = NULL;
 
+		arch_setup_dma_ops(substream->dma_buffer.dev.dev,
+				   0, 0, NULL, 0);
 		ret = snd_pcm_lib_malloc_pages(substream, PAGE_SIZE);
 		if (ret < 0)
 			goto platform_err;
@@ -1208,8 +1251,9 @@ static int dpcm_be_connect(struct snd_soc_pcm_runtime *fe,
 			stream ? "<-" : "->", be->dai_link->name);
 
 #ifdef CONFIG_DEBUG_FS
-	dpcm->debugfs_state = debugfs_create_u32(be->dai_link->name, 0644,
-			fe->debugfs_dpcm_root, &dpcm->state);
+	if (fe->debugfs_dpcm_root)
+		dpcm->debugfs_state = debugfs_create_u32(be->dai_link->name, 0644,
+				fe->debugfs_dpcm_root, &dpcm->state);
 #endif
 	return 1;
 }
@@ -1349,24 +1393,17 @@ static int widget_in_list(struct snd_soc_dapm_widget_list *list,
 }
 
 int dpcm_path_get(struct snd_soc_pcm_runtime *fe,
-	int stream, struct snd_soc_dapm_widget_list **list_)
+	int stream, struct snd_soc_dapm_widget_list **list)
 {
 	struct snd_soc_dai *cpu_dai = fe->cpu_dai;
-	struct snd_soc_dapm_widget_list *list;
 	int paths;
 
-	list = kzalloc(sizeof(struct snd_soc_dapm_widget_list) +
-			sizeof(struct snd_soc_dapm_widget *), GFP_KERNEL);
-	if (list == NULL)
-		return -ENOMEM;
-
 	/* get number of valid DAI paths and their widgets */
-	paths = snd_soc_dapm_dai_get_connected_widgets(cpu_dai, stream, &list);
+	paths = snd_soc_dapm_dai_get_connected_widgets(cpu_dai, stream, list);
 
 	dev_dbg(fe->dev, "ASoC: found %d audio %s paths\n", paths,
 			stream ? "capture" : "playback");
 
-	*list_ = list;
 	return paths;
 }
 
@@ -1424,7 +1461,12 @@ static int dpcm_add_paths(struct snd_soc_pcm_runtime *fe, int stream,
 
 		switch (list->widgets[i]->id) {
 		case snd_soc_dapm_dai_in:
+			if (stream != SNDRV_PCM_STREAM_PLAYBACK)
+				continue;
+			break;
 		case snd_soc_dapm_dai_out:
+			if (stream != SNDRV_PCM_STREAM_CAPTURE)
+				continue;
 			break;
 		default:
 			continue;
@@ -1603,17 +1645,53 @@ unwind:
 }
 
 static void dpcm_init_runtime_hw(struct snd_pcm_runtime *runtime,
-	struct snd_soc_pcm_stream *stream)
+				 struct snd_soc_pcm_stream *stream,
+				 u64 formats)
 {
 	runtime->hw.rate_min = stream->rate_min;
 	runtime->hw.rate_max = stream->rate_max;
 	runtime->hw.channels_min = stream->channels_min;
 	runtime->hw.channels_max = stream->channels_max;
 	if (runtime->hw.formats)
-		runtime->hw.formats &= stream->formats;
+		runtime->hw.formats &= formats & stream->formats;
 	else
-		runtime->hw.formats = stream->formats;
+		runtime->hw.formats = formats & stream->formats;
 	runtime->hw.rates = stream->rates;
+}
+
+static u64 dpcm_runtime_base_format(struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *fe = substream->private_data;
+	struct snd_soc_dpcm *dpcm;
+	u64 formats = ULLONG_MAX;
+	int stream = substream->stream;
+
+	if (!fe->dai_link->dpcm_merged_format)
+		return formats;
+
+	/*
+	 * It returns merged BE codec format
+	 * if FE want to use it (= dpcm_merged_format)
+	 */
+
+	list_for_each_entry(dpcm, &fe->dpcm[stream].be_clients, list_be) {
+		struct snd_soc_pcm_runtime *be = dpcm->be;
+		struct snd_soc_dai_driver *codec_dai_drv;
+		struct snd_soc_pcm_stream *codec_stream;
+		int i;
+
+		for (i = 0; i < be->num_codecs; i++) {
+			codec_dai_drv = be->codec_dais[i]->driver;
+			if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+				codec_stream = &codec_dai_drv->playback;
+			else
+				codec_stream = &codec_dai_drv->capture;
+
+			formats &= codec_stream->formats;
+		}
+	}
+
+	return formats;
 }
 
 static void dpcm_set_fe_runtime(struct snd_pcm_substream *substream)
@@ -1622,11 +1700,12 @@ static void dpcm_set_fe_runtime(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	struct snd_soc_dai_driver *cpu_dai_drv = cpu_dai->driver;
+	u64 format = dpcm_runtime_base_format(substream);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		dpcm_init_runtime_hw(runtime, &cpu_dai_drv->playback);
+		dpcm_init_runtime_hw(runtime, &cpu_dai_drv->playback, format);
 	else
-		dpcm_init_runtime_hw(runtime, &cpu_dai_drv->capture);
+		dpcm_init_runtime_hw(runtime, &cpu_dai_drv->capture, format);
 }
 
 static int dpcm_fe_dai_do_trigger(struct snd_pcm_substream *substream, int cmd);
@@ -1770,6 +1849,10 @@ int dpcm_be_dai_hw_free(struct snd_soc_pcm_runtime *fe, int stream)
 		/* only free hw when no longer used - check all FEs */
 		if (!snd_soc_dpcm_can_be_free_stop(fe, be, stream))
 				continue;
+
+		/* do not free hw if this BE is used by other FE */
+		if (be->dpcm[stream].users > 1)
+			continue;
 
 		if ((be->dpcm[stream].state != SND_SOC_DPCM_STATE_HW_PARAMS) &&
 		    (be->dpcm[stream].state != SND_SOC_DPCM_STATE_PREPARE) &&
@@ -2626,7 +2709,13 @@ int soc_dpcm_runtime_update(struct snd_soc_card *card)
 			fe->dai_link->name);
 
 		/* skip if FE doesn't have playback capability */
-		if (!fe->cpu_dai->driver->playback.channels_min)
+		if (!fe->cpu_dai->driver->playback.channels_min
+		    || !fe->codec_dai->driver->playback.channels_min)
+			goto capture;
+
+		/* skip if FE isn't currently playing */
+		if (!fe->cpu_dai->playback_active
+		    || !fe->codec_dai->playback_active)
 			goto capture;
 
 		paths = dpcm_path_get(fe, SNDRV_PCM_STREAM_PLAYBACK, &list);
@@ -2656,7 +2745,13 @@ int soc_dpcm_runtime_update(struct snd_soc_card *card)
 		dpcm_path_put(&list);
 capture:
 		/* skip if FE doesn't have capture capability */
-		if (!fe->cpu_dai->driver->capture.channels_min)
+		if (!fe->cpu_dai->driver->capture.channels_min
+		    || !fe->codec_dai->driver->capture.channels_min)
+			continue;
+
+		/* skip if FE isn't currently capturing */
+		if (!fe->cpu_dai->capture_active
+		    || !fe->codec_dai->capture_active)
 			continue;
 
 		paths = dpcm_path_get(fe, SNDRV_PCM_STREAM_CAPTURE, &list);
@@ -2845,6 +2940,7 @@ int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 	/* DAPM dai link stream work */
 	INIT_DELAYED_WORK(&rtd->delayed_work, close_delayed_work);
 
+	pcm->nonatomic = rtd->dai_link->nonatomic;
 	rtd->pcm = pcm;
 	pcm->private_data = rtd;
 
@@ -2905,7 +3001,6 @@ int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 		rtd->ops.silence	= platform->driver->ops->silence;
 		rtd->ops.page		= platform->driver->ops->page;
 		rtd->ops.mmap		= platform->driver->ops->mmap;
-		rtd->ops.restart	= platform->driver->ops->restart;
 	}
 
 	if (playback)
@@ -3159,10 +3254,13 @@ static const struct file_operations dpcm_state_fops = {
 	.llseek = default_llseek,
 };
 
-int soc_dpcm_debugfs_add(struct snd_soc_pcm_runtime *rtd)
+void soc_dpcm_debugfs_add(struct snd_soc_pcm_runtime *rtd)
 {
 	if (!rtd->dai_link)
-		return 0;
+		return;
+
+	if (!rtd->card->debugfs_card_root)
+		return;
 
 	rtd->debugfs_dpcm_root = debugfs_create_dir(rtd->dai_link->name,
 			rtd->card->debugfs_card_root);
@@ -3170,13 +3268,11 @@ int soc_dpcm_debugfs_add(struct snd_soc_pcm_runtime *rtd)
 		dev_dbg(rtd->dev,
 			 "ASoC: Failed to create dpcm debugfs directory %s\n",
 			 rtd->dai_link->name);
-		return -EINVAL;
+		return;
 	}
 
 	rtd->debugfs_dpcm_state = debugfs_create_file("state", 0444,
 						rtd->debugfs_dpcm_root,
 						rtd, &dpcm_state_fops);
-
-	return 0;
 }
 #endif

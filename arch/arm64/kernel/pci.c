@@ -10,6 +10,7 @@
  *
  */
 
+#include <linux/acpi.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
@@ -37,6 +38,19 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 	return res->start;
 }
 
+/**
+ * pcibios_enable_device - Enable I/O and memory.
+ * @dev: PCI device to be enabled
+ * @mask: bitmask of BARs to enable
+ */
+int pcibios_enable_device(struct pci_dev *dev, int mask)
+{
+	if (pci_has_flag(PCI_PROBE_ONLY))
+		return 0;
+
+	return pci_enable_resources(dev, mask);
+}
+
 /*
  * Try to assign the IRQ number from DT when adding a new device
  */
@@ -47,24 +61,26 @@ int pcibios_add_device(struct pci_dev *dev)
 	return 0;
 }
 
-
-#ifdef CONFIG_PCI_DOMAINS_GENERIC
-static bool dt_domain_found = false;
-
-void pci_bus_assign_domain_nr(struct pci_bus *bus, struct device *parent)
+/*
+ * raw_pci_read/write - Platform-specific PCI config space access.
+ */
+int raw_pci_read(unsigned int domain, unsigned int bus,
+		  unsigned int devfn, int reg, int len, u32 *val)
 {
-	int domain = of_get_pci_domain_nr(parent->of_node);
+	return -ENXIO;
+}
 
-	if (domain >= 0) {
-		dt_domain_found = true;
-	} else if (dt_domain_found == true) {
-		dev_err(parent, "Node %s is missing \"linux,pci-domain\" property in DT\n",
-			parent->of_node->full_name);
-		return;
-	} else {
-		domain = pci_get_new_domain_nr();
-	}
+int raw_pci_write(unsigned int domain, unsigned int bus,
+		unsigned int devfn, int reg, int len, u32 val)
+{
+	return -ENXIO;
+}
 
-	bus->domain_nr = domain;
+#ifdef CONFIG_ACPI
+/* Root bridge scanning */
+struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
+{
+	/* TODO: Should be revisited when implementing PCI on ACPI */
+	return NULL;
 }
 #endif

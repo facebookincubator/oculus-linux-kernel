@@ -23,8 +23,8 @@ Optional properties:
                 bindings/pinctrl/pinctrl-bindings.txt
   - qcom,is-antenna-shared: Enabled for Platforms with both sdio and pcie QCA
                            Chipsets are attached.
-  - qcom,cnss-enable-bus-bandwidth: define this property when target support to
-					vote for bus bandwidth.
+  - qcom,cnss-enable-bus-bandwidth: Boolean - Define this property when target
+					support to vote for bus bandwidth.
   - qcom,msm-bus,name: client name for msm bus register.
   - qcom,msm-bus,num-cases: number of cases for bus scaling.
   - qcom,msm-bus,num-paths: number of paths for bus scale vector.

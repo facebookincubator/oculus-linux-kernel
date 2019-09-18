@@ -64,6 +64,7 @@
 #include <linux/acpi.h>
 #include <linux/dmi.h>
 #include <linux/backlight.h>
+#include <linux/fb.h>
 #include <linux/input.h>
 #include <linux/kfifo.h>
 #include <linux/platform_device.h>
@@ -71,6 +72,7 @@
 #if defined(CONFIG_LEDS_CLASS) || defined(CONFIG_LEDS_CLASS_MODULE)
 #include <linux/leds.h>
 #endif
+#include <acpi/video.h>
 
 #define FUJITSU_DRIVER_VERSION "0.6.0"
 
@@ -398,7 +400,7 @@ static int bl_get_brightness(struct backlight_device *b)
 static int bl_update_status(struct backlight_device *b)
 {
 	int ret;
-	if (b->props.power == 4)
+	if (b->props.power == FB_BLANK_POWERDOWN)
 		ret = call_fext_func(FUNC_BACKLIGHT, 0x1, 0x4, 0x3);
 	else
 		ret = call_fext_func(FUNC_BACKLIGHT, 0x1, 0x4, 0x0);
@@ -559,7 +561,6 @@ static struct attribute_group fujitsupf_attribute_group = {
 static struct platform_driver fujitsupf_driver = {
 	.driver = {
 		   .name = "fujitsu-laptop",
-		   .owner = THIS_MODULE,
 		   }
 };
 
@@ -1099,7 +1100,7 @@ static int __init fujitsu_init(void)
 
 	/* Register backlight stuff */
 
-	if (!acpi_video_backlight_support()) {
+	if (acpi_video_get_backlight_type() == acpi_backlight_vendor) {
 		struct backlight_properties props;
 
 		memset(&props, 0, sizeof(struct backlight_properties));
@@ -1137,12 +1138,11 @@ static int __init fujitsu_init(void)
 	}
 
 	/* Sync backlight power status (needs FUJ02E3 device, hence deferred) */
-
-	if (!acpi_video_backlight_support()) {
+	if (acpi_video_get_backlight_type() == acpi_backlight_vendor) {
 		if (call_fext_func(FUNC_BACKLIGHT, 0x2, 0x4, 0x0) == 3)
-			fujitsu->bl_device->props.power = 4;
+			fujitsu->bl_device->props.power = FB_BLANK_POWERDOWN;
 		else
-			fujitsu->bl_device->props.power = 0;
+			fujitsu->bl_device->props.power = FB_BLANK_UNBLANK;
 	}
 
 	pr_info("driver " FUJITSU_DRIVER_VERSION " successfully loaded\n");
@@ -1154,8 +1154,7 @@ fail_hotkey1:
 fail_hotkey:
 	platform_driver_unregister(&fujitsupf_driver);
 fail_backlight:
-	if (fujitsu->bl_device)
-		backlight_device_unregister(fujitsu->bl_device);
+	backlight_device_unregister(fujitsu->bl_device);
 fail_sysfs_group:
 	sysfs_remove_group(&fujitsu->pf_device->dev.kobj,
 			   &fujitsupf_attribute_group);
@@ -1179,8 +1178,7 @@ static void __exit fujitsu_cleanup(void)
 
 	platform_driver_unregister(&fujitsupf_driver);
 
-	if (fujitsu->bl_device)
-		backlight_device_unregister(fujitsu->bl_device);
+	backlight_device_unregister(fujitsu->bl_device);
 
 	sysfs_remove_group(&fujitsu->pf_device->dev.kobj,
 			   &fujitsupf_attribute_group);

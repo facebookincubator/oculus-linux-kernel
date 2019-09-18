@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,7 @@
 #define LOW_TEMP_THRESHOLD 5
 #define HIGH_TEMP_THRESHOLD 45
 #define TEMP_INVALID	0xFFFF
-
+#define WSA881X_TEMP_RETRY 3
 /*
  * wsa881x_get_temp - get wsa temperature
  * @thermal: thermal zone device
@@ -34,16 +34,17 @@
  * Return: 0 on success or negative error code on failure.
  */
 int wsa881x_get_temp(struct thermal_zone_device *thermal,
-		     unsigned long *temp)
+		     int *temp)
 {
 	struct wsa881x_tz_priv *pdata;
 	struct snd_soc_codec *codec;
 	struct wsa_temp_register reg;
 	int dmeas, d1, d2;
 	int ret = 0;
-	long temp_val;
+	int temp_val;
 	int t1 = T1_TEMP;
 	int t2 = T2_TEMP;
+	u8 retry = WSA881X_TEMP_RETRY;
 
 	if (!thermal)
 		return -EINVAL;
@@ -60,6 +61,7 @@ int wsa881x_get_temp(struct thermal_zone_device *thermal,
 		pr_err("%s: pdata is NULL\n", __func__);
 		return -EINVAL;
 	}
+temp_retry:
 	if (pdata->wsa_temp_reg_read) {
 		ret = pdata->wsa_temp_reg_read(codec, &reg);
 		if (ret) {
@@ -98,13 +100,17 @@ int wsa881x_get_temp(struct thermal_zone_device *thermal,
 
 	if (temp_val <= LOW_TEMP_THRESHOLD ||
 		temp_val >= HIGH_TEMP_THRESHOLD) {
-		printk_ratelimited("%s: T0: %ld is out of range[%d, %d]\n",
+		printk_ratelimited("%s: T0: %d is out of range[%d, %d]\n",
 				   __func__, temp_val, LOW_TEMP_THRESHOLD,
 				   HIGH_TEMP_THRESHOLD);
+		if (retry--) {
+			msleep(20);
+			goto temp_retry;
+		}
 	}
 	if (temp)
 		*temp = temp_val;
-	pr_debug("%s: t0 measured: %ld dmeas = %d, d1 = %d, d2 = %d\n",
+	pr_debug("%s: t0 measured: %d dmeas = %d, d1 = %d, d2 = %d\n",
 		  __func__, temp_val, dmeas, d1, d2);
 	return ret;
 }

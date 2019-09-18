@@ -48,7 +48,7 @@ struct mmc_command {
 #define mmc_cmd_type(cmd)	((cmd)->flags & MMC_CMD_MASK)
 
 	unsigned int		retries;	/* max number of retries */
-	unsigned int		error;		/* command error */
+	int			error;		/* command error */
 
 /*
  * Standard errno values are used for errors, but some have specific
@@ -79,7 +79,7 @@ struct mmc_data {
 	unsigned int		timeout_clks;	/* data timeout (in clocks) */
 	unsigned int		blksz;		/* data block size */
 	unsigned int		blocks;		/* number of blocks */
-	unsigned int		error;		/* data error */
+	int			error;		/* data error */
 	unsigned int		flags;
 
 #define MMC_DATA_WRITE	(1 << 8)
@@ -92,6 +92,7 @@ struct mmc_data {
 	struct mmc_request	*mrq;		/* associated request */
 
 	unsigned int		sg_len;		/* size of scatter list */
+	int			sg_count;	/* mapped sg entries */
 	struct scatterlist	*sg;		/* I/O scatter list */
 	s32			host_cookie;	/* host private data */
 	bool			fault_injected; /* fault injected */
@@ -109,6 +110,8 @@ struct mmc_request {
 	struct mmc_host		*host;
 	struct mmc_cmdq_req	*cmdq_req;
 	struct request *req;
+	ktime_t io_start;
+	int lat_hist_enabled;
 };
 
 struct mmc_bus_ops {
@@ -124,6 +127,7 @@ struct mmc_bus_ops {
 	int (*power_restore)(struct mmc_host *);
 	int (*alive)(struct mmc_host *);
 	int (*shutdown)(struct mmc_host *);
+	int (*reset)(struct mmc_host *);
 	int (*change_bus_speed)(struct mmc_host *, unsigned long *);
 };
 
@@ -156,14 +160,14 @@ extern int mmc_wait_for_app_cmd(struct mmc_host *, struct mmc_card *,
 	struct mmc_command *, int);
 extern void mmc_check_bkops(struct mmc_card *card);
 extern void mmc_start_manual_bkops(struct mmc_card *card);
-extern int __mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int, bool,
-			bool, bool);
+extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
 extern int __mmc_switch_cmdq_mode(struct mmc_command *cmd, u8 set, u8 index,
 				  u8 value, unsigned int timeout_ms,
 				  bool use_busy_signal, bool ignore_timeout);
-extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
-extern int mmc_send_ext_csd(struct mmc_card *card, u8 *ext_csd);
+extern int mmc_send_tuning(struct mmc_host *host, u32 opcode, int *cmd_error);
+extern int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd);
 extern int mmc_set_auto_bkops(struct mmc_card *card, bool enable);
+extern int mmc_suspend_clk_scaling(struct mmc_host *host);
 
 #define MMC_ERASE_ARG		0x00000000
 #define MMC_SECURE_ERASE_ARG	0x80000000
@@ -191,7 +195,6 @@ extern int mmc_set_blockcount(struct mmc_card *card, unsigned int blockcount,
 			      bool is_rel_write);
 extern int mmc_hw_reset(struct mmc_host *host);
 extern int mmc_cmdq_hw_reset(struct mmc_host *host);
-extern int mmc_hw_reset_check(struct mmc_host *host);
 extern int mmc_can_reset(struct mmc_card *card);
 
 extern void mmc_set_data_timeout(struct mmc_data *, const struct mmc_card *);
@@ -199,6 +202,7 @@ extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
 
 extern int __mmc_claim_host(struct mmc_host *host, atomic_t *abort);
 extern void mmc_release_host(struct mmc_host *host);
+extern int mmc_try_claim_host(struct mmc_host *host, unsigned int delay);
 
 extern void mmc_get_card(struct mmc_card *card);
 extern void mmc_put_card(struct mmc_card *card);
@@ -217,6 +221,7 @@ extern void mmc_cmdq_clk_scaling_start_busy(struct mmc_host *host,
 	bool lock_needed);
 extern void mmc_cmdq_clk_scaling_stop_busy(struct mmc_host *host,
 	bool lock_needed, bool is_cmdq_dcmd);
+extern void mmc_recovery_fallback_lower_speed(struct mmc_host *host);
 
 /**
  *	mmc_claim_host - exclusively claim a host

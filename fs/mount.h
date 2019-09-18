@@ -1,10 +1,12 @@
 #include <linux/mount.h>
 #include <linux/seq_file.h>
 #include <linux/poll.h>
+#include <linux/ns_common.h>
+#include <linux/fs_pin.h>
 
 struct mnt_namespace {
 	atomic_t		count;
-	unsigned int		proc_inum;
+	struct ns_common	ns;
 	struct mount *	root;
 	struct list_head	list;
 	struct user_namespace	*user_ns;
@@ -61,7 +63,8 @@ struct mount {
 	int mnt_group_id;		/* peer group identifier */
 	int mnt_expiry_mark;		/* true if marked for expiry */
 	struct hlist_head mnt_pins;
-	struct path mnt_ex_mountpoint;
+	struct fs_pin mnt_umount;
+	struct dentry *mnt_ex_mountpoint;
 };
 
 #define MNT_NS_INTERNAL ERR_PTR(-EINVAL) /* distinct from any mnt_namespace */
@@ -85,6 +88,7 @@ static inline int is_mounted(struct vfsmount *mnt)
 extern struct mount *__lookup_mnt(struct vfsmount *, struct dentry *);
 extern struct mount *__lookup_mnt_last(struct vfsmount *, struct dentry *);
 
+extern int __legitimize_mnt(struct vfsmount *, unsigned);
 extern bool legitimize_mnt(struct vfsmount *, unsigned);
 
 extern void __detach_mounts(struct dentry *dentry);
@@ -114,7 +118,6 @@ static inline void unlock_mount_hash(void)
 }
 
 struct proc_mounts {
-	struct seq_file m;
 	struct mnt_namespace *ns;
 	struct path root;
 	int (*show)(struct seq_file *, struct vfsmount *);
@@ -122,8 +125,6 @@ struct proc_mounts {
 	u64 cached_event;
 	loff_t cached_index;
 };
-
-#define proc_mounts(p) (container_of((p), struct proc_mounts, m))
 
 extern const struct seq_operations mounts_op;
 

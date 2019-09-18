@@ -14,6 +14,7 @@
 
 #include <asm/asm-compat.h>
 #include <asm/page.h>
+#include <asm/bug.h>
 
 /*
  * This is necessary to get the definition of PGTABLE_RANGE which we
@@ -112,6 +113,7 @@
 #define TLBIEL_INVAL_SET_SHIFT	12
 
 #define POWER7_TLB_SETS		128	/* # sets in POWER7 TLB */
+#define POWER8_TLB_SETS		512	/* # sets in POWER8 TLB */
 
 #ifndef __ASSEMBLY__
 
@@ -316,27 +318,33 @@ static inline unsigned long hpt_hash(unsigned long vpn,
 	return hash & 0x7fffffffffUL;
 }
 
+#define HPTE_LOCAL_UPDATE	0x1
+#define HPTE_NOHPTE_UPDATE	0x2
+
 extern int __hash_page_4K(unsigned long ea, unsigned long access,
 			  unsigned long vsid, pte_t *ptep, unsigned long trap,
-			  unsigned int local, int ssize, int subpage_prot);
+			  unsigned long flags, int ssize, int subpage_prot);
 extern int __hash_page_64K(unsigned long ea, unsigned long access,
 			   unsigned long vsid, pte_t *ptep, unsigned long trap,
-			   unsigned int local, int ssize);
+			   unsigned long flags, int ssize);
 struct mm_struct;
 unsigned int hash_page_do_lazy_icache(unsigned int pp, pte_t pte, int trap);
-extern int hash_page_mm(struct mm_struct *mm, unsigned long ea, unsigned long access, unsigned long trap);
-extern int hash_page(unsigned long ea, unsigned long access, unsigned long trap);
+extern int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+			unsigned long access, unsigned long trap,
+			unsigned long flags);
+extern int hash_page(unsigned long ea, unsigned long access, unsigned long trap,
+		     unsigned long dsisr);
 int __hash_page_huge(unsigned long ea, unsigned long access, unsigned long vsid,
-		     pte_t *ptep, unsigned long trap, int local, int ssize,
-		     unsigned int shift, unsigned int mmu_psize);
+		     pte_t *ptep, unsigned long trap, unsigned long flags,
+		     int ssize, unsigned int shift, unsigned int mmu_psize);
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 extern int __hash_page_thp(unsigned long ea, unsigned long access,
 			   unsigned long vsid, pmd_t *pmdp, unsigned long trap,
-			   int local, int ssize, unsigned int psize);
+			   unsigned long flags, int ssize, unsigned int psize);
 #else
 static inline int __hash_page_thp(unsigned long ea, unsigned long access,
 				  unsigned long vsid, pmd_t *pmdp,
-				  unsigned long trap, int local,
+				  unsigned long trap, unsigned long flags,
 				  int ssize, unsigned int psize)
 {
 	BUG();
@@ -528,6 +536,9 @@ typedef struct {
 #ifdef CONFIG_PPC_64K_PAGES
 	/* for 4K PTE fragment support */
 	void *pte_frag;
+#endif
+#ifdef CONFIG_SPAPR_TCE_IOMMU
+	struct list_head iommu_group_mem_list;
 #endif
 } mm_context_t;
 

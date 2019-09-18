@@ -7,10 +7,10 @@
 
 static __always_inline int preempt_count(void)
 {
-	return current_thread_info()->preempt_count;
+	return READ_ONCE(current_thread_info()->preempt_count);
 }
 
-static __always_inline int *preempt_count_ptr(void)
+static __always_inline volatile int *preempt_count_ptr(void)
 {
 	return &current_thread_info()->preempt_count;
 }
@@ -23,11 +23,8 @@ static __always_inline void preempt_count_set(int pc)
 /*
  * must be macros to avoid header recursion hell
  */
-#define task_preempt_count(p) \
-	(task_thread_info(p)->preempt_count & ~PREEMPT_NEED_RESCHED)
-
 #define init_task_preempt_count(p) do { \
-	task_thread_info(p)->preempt_count = PREEMPT_DISABLED; \
+	task_thread_info(p)->preempt_count = FORK_PREEMPT_COUNT; \
 } while (0)
 
 #define init_idle_preempt_count(p, cpu) do { \
@@ -83,11 +80,8 @@ static __always_inline bool should_resched(int preempt_offset)
 #ifdef CONFIG_PREEMPT
 extern asmlinkage void preempt_schedule(void);
 #define __preempt_schedule() preempt_schedule()
-
-#ifdef CONFIG_CONTEXT_TRACKING
-extern asmlinkage void preempt_schedule_context(void);
-#define __preempt_schedule_context() preempt_schedule_context()
-#endif
+extern asmlinkage void preempt_schedule_notrace(void);
+#define __preempt_schedule_notrace() preempt_schedule_notrace()
 #endif /* CONFIG_PREEMPT */
 
 #endif /* __ASM_PREEMPT_H */

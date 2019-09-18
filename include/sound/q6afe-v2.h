@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -41,6 +41,8 @@
 
 #define AFE_CLK_VERSION_V1    1
 #define AFE_CLK_VERSION_V2    2
+
+typedef int (*routing_cb)(int port);
 
 enum {
 	/* IDX 0->4 */
@@ -108,7 +110,7 @@ enum {
 	IDX_AFE_PORT_ID_QUINARY_MI2S_RX,
 	IDX_AFE_PORT_ID_QUINARY_MI2S_TX,
 	IDX_AFE_PORT_ID_SENARY_MI2S_TX,
-	/* IDX 54-> 118 */
+	/* IDX 54->117 */
 	IDX_AFE_PORT_ID_PRIMARY_TDM_RX_0,
 	IDX_AFE_PORT_ID_PRIMARY_TDM_TX_0,
 	IDX_AFE_PORT_ID_PRIMARY_TDM_RX_1,
@@ -173,6 +175,36 @@ enum {
 	IDX_AFE_PORT_ID_QUATERNARY_TDM_TX_6,
 	IDX_AFE_PORT_ID_QUATERNARY_TDM_RX_7,
 	IDX_AFE_PORT_ID_QUATERNARY_TDM_TX_7,
+	/* IDX 118->121 */
+	IDX_SLIMBUS_7_RX,
+	IDX_SLIMBUS_7_TX,
+	IDX_SLIMBUS_8_RX,
+	IDX_SLIMBUS_8_TX,
+	/* IDX 122-> 123 */
+	IDX_AFE_PORT_ID_USB_RX,
+	IDX_AFE_PORT_ID_USB_TX,
+	/* IDX 124 */
+	IDX_DISPLAY_PORT_RX,
+	/* IDX 125-> 128 */
+	IDX_AFE_PORT_ID_TERTIARY_PCM_RX,
+	IDX_AFE_PORT_ID_TERTIARY_PCM_TX,
+	IDX_AFE_PORT_ID_QUATERNARY_PCM_RX,
+	IDX_AFE_PORT_ID_QUATERNARY_PCM_TX,
+	/* IDX 129-> 142 */
+	IDX_AFE_PORT_ID_INT0_MI2S_RX,
+	IDX_AFE_PORT_ID_INT0_MI2S_TX,
+	IDX_AFE_PORT_ID_INT1_MI2S_RX,
+	IDX_AFE_PORT_ID_INT1_MI2S_TX,
+	IDX_AFE_PORT_ID_INT2_MI2S_RX,
+	IDX_AFE_PORT_ID_INT2_MI2S_TX,
+	IDX_AFE_PORT_ID_INT3_MI2S_RX,
+	IDX_AFE_PORT_ID_INT3_MI2S_TX,
+	IDX_AFE_PORT_ID_INT4_MI2S_RX,
+	IDX_AFE_PORT_ID_INT4_MI2S_TX,
+	IDX_AFE_PORT_ID_INT5_MI2S_RX,
+	IDX_AFE_PORT_ID_INT5_MI2S_TX,
+	IDX_AFE_PORT_ID_INT6_MI2S_RX,
+	IDX_AFE_PORT_ID_INT6_MI2S_TX,
 	AFE_MAX_PORTS
 };
 
@@ -235,7 +267,7 @@ struct aanc_data {
 int afe_open(u16 port_id, union afe_port_config *afe_config, int rate);
 int afe_close(int port_id);
 int afe_loopback(u16 enable, u16 rx_port, u16 tx_port);
-int afe_sidetone(u16 tx_port_id, u16 rx_port_id, u16 enable, uint16_t gain);
+int afe_sidetone_enable(u16 tx_port_id, u16 rx_port_id, bool enable);
 int afe_loopback_gain(u16 port_id, u16 volume);
 int afe_validate_port(u16 port_id);
 int afe_get_port_index(u16 port_id);
@@ -266,6 +298,9 @@ int afe_rt_proxy_port_read(phys_addr_t buf_addr_p,
 void afe_set_cal_mode(u16 port_id, enum afe_cal_mode afe_cal_mode);
 int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	u32 rate);
+int afe_port_start_v2(u16 port_id, union afe_port_config *afe_config,
+		      u32 rate, u16 afe_in_channels, u16 afe_in_bit_width,
+		      struct afe_enc_config *enc_config);
 int afe_spk_prot_feed_back_cfg(int src_port, int dst_port,
 	int l_ch, int r_ch, u32 enable);
 int afe_spk_prot_get_calib_data(struct afe_spkr_prot_get_vi_calib *calib);
@@ -329,5 +364,8 @@ int afe_send_custom_tdm_header_cfg(
 	struct afe_param_id_custom_tdm_header_cfg *custom_tdm_header_cfg,
 	u16 port_id);
 int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
-		u32 rate);
+		       u32 rate, u16 num_groups);
+void afe_set_routing_callback(routing_cb);
+int afe_get_av_dev_drift(struct afe_param_id_dev_timing_stats *timing_stats,
+		u16 port);
 #endif /* __Q6AFE_V2_H__ */

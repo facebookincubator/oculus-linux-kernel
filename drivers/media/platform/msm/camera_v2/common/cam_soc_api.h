@@ -21,6 +21,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
+#include <linux/reset.h>
 #include <soc/qcom/camera2.h>
 
 enum cam_bus_client {
@@ -187,6 +188,33 @@ int msm_camera_clk_enable(struct device *dev,
 long msm_camera_clk_set_rate(struct device *dev,
 				struct clk *clk,
 				long clk_rate);
+
+/**
+ * @brief      : Gets reset info
+ *
+ * This function extracts the reset information for a specific
+ * platform device
+ *
+ * @param pdev   : platform device to get reset information
+ * @param micro_iface_reset : Pointer to populate the reset names
+ *
+ * @return Status of operation. Negative in case of error. Zero otherwise.
+ */
+
+int msm_camera_get_reset_info(struct platform_device *pdev,
+			struct reset_control **micro_iface_reset);
+/**
+ * @brief      : Sets flags of a clock
+ *
+ * This function will set the flags for a specified clock
+ *
+ * @param clk   : Pointer to clock to set flags for
+ * @param flags : The flags to set
+ *
+ * @return Status of operation.
+ */
+
+int msm_camera_set_clk_flags(struct clk *clk, unsigned long flags);
 /**
  * @brief      : Gets regulator info
  *
@@ -200,6 +228,7 @@ long msm_camera_clk_set_rate(struct device *dev,
  *
  * @return Status of operation. Negative in case of error. Zero otherwise.
  */
+
 int msm_camera_get_regulator_info(struct platform_device *pdev,
 		struct msm_cam_regulator **vdd_info, int *num_reg);
 /**
@@ -217,6 +246,23 @@ int msm_camera_get_regulator_info(struct platform_device *pdev,
 
 int msm_camera_regulator_enable(struct msm_cam_regulator *vdd_info,
 				int cnt, int enable);
+
+/**
+ * @brief      : set the regultors mode
+ *
+ * This function sets the regulators for a specific
+ * mode. say:REGULATOR_MODE_FAST/REGULATOR_MODE_NORMAL
+ *
+ * @param vdd_info: Pointer to list of regulators
+ * @param cnt: Number of regulators to enable/disable
+ * @param mode: Flags specifies either enable/disable
+ *
+ * @return Status of operation. Negative in case of error. Zero otherwise.
+ */
+
+int msm_camera_regulator_set_mode(struct msm_cam_regulator *vdd_info,
+				int cnt, bool mode);
+
 
 /**
  * @brief      : Release the regulators

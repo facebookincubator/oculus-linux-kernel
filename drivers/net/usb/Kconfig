@@ -106,6 +106,18 @@ config USB_RTL8152
 	  To compile this driver as a module, choose M here: the
 	  module will be called r8152.
 
+config USB_LAN78XX
+	tristate "Microchip LAN78XX Based USB Ethernet Adapters"
+	select MII
+	select PHYLIB
+	select MICROCHIP_PHY
+	help
+	  This option adds support for Microchip LAN78XX based USB 2
+	  & USB 3 10/100/1000 Ethernet adapters.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called lan78xx.
+
 config USB_USBNET
 	tristate "Multi-purpose USB Networking Framework"
 	select MII
@@ -154,6 +166,7 @@ config USB_NET_AX8817X
 	    * Aten UC210T
 	    * ASIX AX88172
 	    * Billionton Systems, USB2AR
+	    * Billionton Systems, GUSB2AM-1G-B
 	    * Buffalo LUA-U2-KTX
 	    * Corega FEther USB2-TX
 	    * D-Link DUB-E100
@@ -161,6 +174,7 @@ config USB_NET_AX8817X
 	    * Linksys USB200M
 	    * Netgear FA120
 	    * Sitecom LN-029
+	    * Sitecom LN-028
 	    * Intellinet USB 2.0 Ethernet
 	    * ST Lab USB 2.0 Ethernet
 	    * TrendNet TU2-ET100
@@ -397,14 +411,14 @@ config USB_NET_CDC_SUBSET
 	  not generally have permanently assigned Ethernet addresses.
 
 config USB_ALI_M5632
-	boolean "ALi M5632 based 'USB 2.0 Data Link' cables"
+	bool "ALi M5632 based 'USB 2.0 Data Link' cables"
 	depends on USB_NET_CDC_SUBSET
 	help
 	  Choose this option if you're using a host-to-host cable
 	  based on this design, which supports USB 2.0 high speed.
 
 config USB_AN2720
-	boolean "AnchorChips 2720 based cables (Xircom PGUNET, ...)"
+	bool "AnchorChips 2720 based cables (Xircom PGUNET, ...)"
 	depends on USB_NET_CDC_SUBSET
 	help
 	  Choose this option if you're using a host-to-host cable
@@ -412,7 +426,7 @@ config USB_AN2720
 	  Cypress brand.
 
 config USB_BELKIN
-	boolean "eTEK based host-to-host cables (Advance, Belkin, ...)"
+	bool "eTEK based host-to-host cables (Advance, Belkin, ...)"
 	depends on USB_NET_CDC_SUBSET
 	default y
 	help
@@ -421,7 +435,7 @@ config USB_BELKIN
 	  microcontroller, with LEDs that indicate traffic.
 
 config USB_ARMLINUX
-	boolean "Embedded ARM Linux links (iPaq, ...)"
+	bool "Embedded ARM Linux links (iPaq, ...)"
 	depends on USB_NET_CDC_SUBSET
 	default y
 	help
@@ -438,14 +452,14 @@ config USB_ARMLINUX
 	  this simpler protocol by installing a different kernel.
 
 config USB_EPSON2888
-	boolean "Epson 2888 based firmware (DEVELOPMENT)"
+	bool "Epson 2888 based firmware (DEVELOPMENT)"
 	depends on USB_NET_CDC_SUBSET
 	help
 	  Choose this option to support the usb networking links used
 	  by some sample firmware from Epson.
 
 config USB_KC2190
-	boolean "KT Technology KC2190 based cables (InstaNet)"
+	bool "KT Technology KC2190 based cables (InstaNet)"
 	depends on USB_NET_CDC_SUBSET
 	help
 	  Choose this option if you're using a host-to-host cable
@@ -530,7 +544,7 @@ config USB_NET_INT51X1
 
 config USB_CDC_PHONET
 	tristate "CDC Phonet support"
-	depends on PHONET
+	depends on PHONET && USB_USBNET
 	help
 	  Choose this option to support the Phonet interface to a Nokia
 	  cellular modem, as found on most Nokia handsets with the
@@ -572,12 +586,15 @@ config USB_VL600
 
 	  http://ubuntuforums.org/showpost.php?p=10589647&postcount=17
 
-config USBNET_IPA_BRIDGE
-	tristate "USB to IPA bridge"
-	depends on USB_USBNET && IPA
+config USB_NET_CH9200
+	tristate "QingHeng CH9200 USB ethernet support"
+	depends on USB_USBNET
+	select MII
 	help
-	  Select this if you want to enable USB to IPA bridge.
-	  This will pass IP traffic directly to IPA and bypass the network stack.
+	  Choose this option if you have a USB ethernet adapter with a QinHeng
+	  CH9200 chipset.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ch9200.
 
 endif # USB_NET_DRIVERS
-

@@ -232,23 +232,15 @@ static int mmp_pcm_probe(struct platform_device *pdev)
 		mmp_pcm_hardware[SNDRV_PCM_STREAM_CAPTURE].period_bytes_max =
 						pdata->period_max_capture;
 	}
-	return snd_soc_register_platform(&pdev->dev, &mmp_soc_platform);
-}
-
-static int mmp_pcm_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_platform(&pdev->dev);
-	return 0;
+	return devm_snd_soc_register_platform(&pdev->dev, &mmp_soc_platform);
 }
 
 static struct platform_driver mmp_pcm_driver = {
 	.driver = {
 		.name = "mmp-pcm-audio",
-		.owner = THIS_MODULE,
 	},
 
 	.probe = mmp_pcm_probe,
-	.remove = mmp_pcm_remove,
 };
 
 module_platform_driver(mmp_pcm_driver);

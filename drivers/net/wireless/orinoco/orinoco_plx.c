@@ -121,7 +121,7 @@ static int orinoco_plx_cor_reset(struct orinoco_private *priv)
 	mdelay(1);
 
 	/* Just in case, wait more until the card is no longer busy */
-	timeout = jiffies + (PLX_RESET_TIME * HZ / 1000);
+	timeout = jiffies + msecs_to_jiffies(PLX_RESET_TIME);
 	reg = hermes_read_regn(hw, CMD);
 	while (time_before(jiffies, timeout) && (reg & HERMES_CMD_BUSY)) {
 		mdelay(1);
@@ -262,13 +262,15 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 	err = orinoco_if_add(priv, 0, 0, NULL);
 	if (err) {
 		printk(KERN_ERR PFX "orinoco_if_add() failed\n");
-		goto fail;
+		goto fail_wiphy;
 	}
 
 	pci_set_drvdata(pdev, priv);
 
 	return 0;
 
+ fail_wiphy:
+	wiphy_unregister(priv_to_wiphy(priv));
  fail:
 	free_irq(pdev->irq, priv);
 
@@ -299,6 +301,7 @@ static void orinoco_plx_remove_one(struct pci_dev *pdev)
 	struct orinoco_pci_card *card = priv->card;
 
 	orinoco_if_del(priv);
+	wiphy_unregister(priv_to_wiphy(priv));
 	free_irq(pdev->irq, priv);
 	free_orinocodev(priv);
 	pci_iounmap(pdev, priv->hw.iobase);

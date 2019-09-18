@@ -209,16 +209,9 @@ static int panel_dpi_probe_of(struct platform_device *pdev)
 	struct videomode vm;
 	struct gpio_desc *gpio;
 
-	gpio = devm_gpiod_get(&pdev->dev, "enable");
-
-	if (IS_ERR(gpio)) {
-		if (PTR_ERR(gpio) != -ENOENT)
-			return PTR_ERR(gpio);
-		else
-			gpio = NULL;
-	} else {
-		gpiod_direction_output(gpio, 0);
-	}
+	gpio = devm_gpiod_get_optional(&pdev->dev, "enable", GPIOD_OUT_LOW);
+	if (IS_ERR(gpio))
+		return PTR_ERR(gpio);
 
 	ddata->enable_gpio = gpio;
 
@@ -325,7 +318,6 @@ static struct platform_driver panel_dpi_driver = {
 	.remove = __exit_p(panel_dpi_remove),
 	.driver = {
 		.name = "panel-dpi",
-		.owner = THIS_MODULE,
 		.of_match_table = panel_dpi_of_match,
 		.suppress_bind_attrs = true,
 	},

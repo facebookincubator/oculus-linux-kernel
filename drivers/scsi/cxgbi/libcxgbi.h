@@ -1,7 +1,7 @@
 /*
  * libcxgbi.h: Chelsio common library for T3/T4 iSCSI driver.
  *
- * Copyright (c) 2010 Chelsio Communications, Inc.
+ * Copyright (c) 2010-2015 Chelsio Communications, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -234,6 +234,8 @@ struct cxgbi_sock {
 	u32 snd_nxt;
 	u32 snd_una;
 	u32 write_seq;
+	u32 snd_win;
+	u32 rcv_win;
 };
 
 /*
@@ -317,8 +319,8 @@ static inline void cxgbi_skcb_clear_flag(struct sk_buff *skb,
 	__clear_bit(flag, &(cxgbi_skcb_flags(skb)));
 }
 
-static inline int cxgbi_skcb_test_flag(struct sk_buff *skb,
-					enum cxgbi_skcb_flags flag)
+static inline int cxgbi_skcb_test_flag(const struct sk_buff *skb,
+				       enum cxgbi_skcb_flags flag)
 {
 	return test_bit(flag, &(cxgbi_skcb_flags(skb)));
 }
@@ -540,8 +542,6 @@ struct cxgbi_device {
 	struct iscsi_transport *itp;
 
 	unsigned int pfvf;
-	unsigned int snd_win;
-	unsigned int rcv_win;
 	unsigned int rx_credit_thres;
 	unsigned int skb_tx_rsvd;
 	unsigned int skb_rx_extra;	/* for msg coalesced mode */
@@ -685,10 +685,7 @@ static inline void *cxgbi_alloc_big_mem(unsigned int size,
 
 static inline void cxgbi_free_big_mem(void *addr)
 {
-	if (is_vmalloc_addr(addr))
-		vfree(addr);
-	else
-		kfree(addr);
+	kvfree(addr);
 }
 
 static inline void cxgbi_set_iscsi_ipv4(struct cxgbi_hba *chba, __be32 ipaddr)

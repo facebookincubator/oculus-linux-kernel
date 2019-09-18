@@ -253,11 +253,11 @@ static const struct of_device_id bbc_beep_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, bbc_beep_match);
 
 static struct platform_driver bbc_beep_driver = {
 	.driver = {
 		.name = "bbcbeep",
-		.owner = THIS_MODULE,
 		.of_match_table = bbc_beep_match,
 	},
 	.probe		= bbc_beep_probe,
@@ -333,11 +333,11 @@ static const struct of_device_id grover_beep_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, grover_beep_match);
 
 static struct platform_driver grover_beep_driver = {
 	.driver = {
 		.name = "groverbeep",
-		.owner = THIS_MODULE,
 		.of_match_table = grover_beep_match,
 	},
 	.probe		= grover_beep_probe,

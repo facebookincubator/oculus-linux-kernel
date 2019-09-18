@@ -563,7 +563,6 @@ MODULE_DEVICE_TABLE(of, elm_of_match);
 static struct platform_driver elm_driver = {
 	.driver	= {
 		.name	= DRIVER_NAME,
-		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(elm_of_match),
 		.pm	= &elm_pm_ops,
 	},
@@ -575,5 +574,5 @@ module_platform_driver(elm_driver);
 
 MODULE_DESCRIPTION("ELM driver for BCH error correction");
 MODULE_AUTHOR("Texas Instruments");
-MODULE_ALIAS("platform: elm");
+MODULE_ALIAS("platform:" DRIVER_NAME);
 MODULE_LICENSE("GPL v2");

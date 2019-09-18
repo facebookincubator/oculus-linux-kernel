@@ -21,6 +21,7 @@
 
 #include "uvc.h"
 #include "uvc_queue.h"
+#include "uvc_video.h"
 
 /* --------------------------------------------------------------------------
  * Video codecs
@@ -238,17 +239,11 @@ uvc_video_alloc_requests(struct uvc_video *video)
 	unsigned int i;
 	int ret = -ENOMEM;
 
-	if (video->req_size) {
-		pr_err("%s: close the video node and reopen it\n",
-				__func__);
-		return -EBUSY;
-	}
+	BUG_ON(video->req_size);
 
-	req_size = (video->ep->maxpacket & 0x7FF)
+	req_size = video->ep->maxpacket
 		 * max_t(unsigned int, video->ep->maxburst, 1)
-		 * (max_t(unsigned int,
-			 (video->ep->maxpacket >> 11) & 0x3,
-			  video->ep->mult) + 1);
+		 * (video->ep->mult + 1);
 
 	for (i = 0; i < UVC_NUM_REQUESTS; ++i) {
 		video->req_buffer[i] = kmalloc(req_size, GFP_KERNEL);
@@ -396,7 +391,8 @@ int uvcg_video_init(struct uvc_video *video)
 	video->imagesize = 320 * 240 * 2;
 
 	/* Initialize the video buffers queue. */
-	uvcg_queue_init(&video->queue, V4L2_BUF_TYPE_VIDEO_OUTPUT);
+	uvcg_queue_init(&video->queue, V4L2_BUF_TYPE_VIDEO_OUTPUT,
+			&video->mutex);
 	return 0;
 }
 

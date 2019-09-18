@@ -57,7 +57,7 @@ static irqreturn_t pps_gpio_irq_handler(int irq, void *data)
 	int rising_edge;
 
 	/* Get the time stamp first */
-	get_monotonic_boottime(&ts.ts_real);
+	pps_get_ts(&ts);
 
 	info = data;
 
@@ -200,7 +200,6 @@ static struct platform_driver pps_gpio_driver = {
 	.remove		= pps_gpio_remove,
 	.driver		= {
 		.name	= PPS_GPIO_NAME,
-		.owner	= THIS_MODULE,
 		.of_match_table	= pps_gpio_dt_ids,
 	},
 };

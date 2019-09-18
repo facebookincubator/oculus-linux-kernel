@@ -187,10 +187,14 @@ MODULE_DEVICE_TABLE(of, syscon_gpio_ids);
 static int syscon_gpio_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	const struct of_device_id *of_id = of_match_device(syscon_gpio_ids, dev);
+	const struct of_device_id *of_id;
 	struct syscon_gpio_priv *priv;
 	struct device_node *np = dev->of_node;
 	int ret;
+
+	of_id = of_match_device(syscon_gpio_ids, dev);
+	if (!of_id)
+		return -ENODEV;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -219,7 +223,7 @@ static int syscon_gpio_probe(struct platform_device *pdev)
 		ret = of_property_read_u32_index(np, "gpio,syscon-dev", 2,
 						 &priv->dir_reg_offset);
 		if (ret)
-			dev_err(dev, "can't read the dir register offset!\n");
+			dev_dbg(dev, "can't read the dir register offset!\n");
 
 		priv->dir_reg_offset <<= 3;
 	}
@@ -253,7 +257,6 @@ static int syscon_gpio_remove(struct platform_device *pdev)
 static struct platform_driver syscon_gpio_driver = {
 	.driver	= {
 		.name		= "gpio-syscon",
-		.owner		= THIS_MODULE,
 		.of_match_table	= syscon_gpio_ids,
 	},
 	.probe	= syscon_gpio_probe,

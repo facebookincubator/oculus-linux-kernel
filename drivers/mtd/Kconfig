@@ -133,7 +133,7 @@ config MTD_OF_PARTS
 	help
 	  This provides a partition parsing function which derives
 	  the partition map from the children of the flash node,
-	  as described in Documentation/devicetree/booting-without-of.txt.
+	  as described in Documentation/devicetree/bindings/mtd/partition.txt.
 
 config MTD_AR7_PARTS
 	tristate "TI AR7 partitioning support"
@@ -309,16 +309,18 @@ config MTD_SWAP
 	  The driver provides wear leveling by storing erase counter into the
 	  OOB.
 
-config MTD_LAZYECCSTATS
-	bool "MTD Lazy ECC Stats collection support"
-	default y
+config MTD_PARTITIONED_MASTER
+	bool "Retain master device when partitioned"
+	default n
+	depends on MTD
 	help
-	  Normally bad block counts for ECC stats are collected at boot time.
-	  This option delays the badblock stats collection until ECCGETSTATS
-	  ioctl is invoked on the partition.
-
-	  This can significantly decrease boot times depending on the size of
-	  the partition.  If unsure, say 'N'.
+	  For historical reasons, by default, either a master is present or
+	  several partitions are present, but not both. The concern was that
+	  data listed in multiple partitions was dangerous; however, SCSI does
+	  this and it is frequently useful for applications. This config option
+	  leaves the master in even if the device is partitioned. It also makes
+	  the parent of the partition device be the master device, rather than
+	  what lies behind the master.
 
 source "drivers/mtd/chips/Kconfig"
 

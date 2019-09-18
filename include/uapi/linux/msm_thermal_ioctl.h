@@ -89,9 +89,4 @@ enum {
 
 #define MSM_THERMAL_GET_CLUSTER_VOLTAGE_PLAN _IOR(MSM_THERMAL_MAGIC_NUM,\
 		MSM_GET_CLUSTER_VOLTAGE_PLAN, struct msm_thermal_ioctl)
-#ifdef __KERNEL__
-extern int msm_thermal_ioctl_init(void);
-extern void msm_thermal_ioctl_cleanup(void);
-#endif
-
 #endif

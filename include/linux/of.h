@@ -51,6 +51,7 @@ struct device_node {
 	const char *type;
 	phandle phandle;
 	const char *full_name;
+	struct fwnode_handle fwnode;
 
 	struct	property *properties;
 	struct	property *deadprops;	/* removed properties */
@@ -85,6 +86,7 @@ extern struct kobj_type of_node_ktype;
 static inline void of_node_init(struct device_node *node)
 {
 	kobject_init(&node->kobj, &of_node_ktype);
+	node->fwnode.type = FWNODE_OF;
 }
 
 /* true when node is initialized */
@@ -118,7 +120,28 @@ extern struct device_node *of_aliases;
 extern struct device_node *of_stdout;
 extern raw_spinlock_t devtree_lock;
 
+/* flag descriptions (need to be visible even when !CONFIG_OF) */
+#define OF_DYNAMIC	1 /* node and properties were allocated via kmalloc */
+#define OF_DETACHED	2 /* node has been detached from the device tree */
+#define OF_POPULATED	3 /* device already created for the node */
+#define OF_POPULATED_BUS	4 /* of_platform_populate recursed to children of this node */
+
+#define OF_BAD_ADDR	((u64)-1)
+
 #ifdef CONFIG_OF
+void of_core_init(void);
+
+static inline bool is_of_node(struct fwnode_handle *fwnode)
+{
+	return fwnode && fwnode->type == FWNODE_OF;
+}
+
+static inline struct device_node *to_of_node(struct fwnode_handle *fwnode)
+{
+	return is_of_node(fwnode) ?
+		container_of(fwnode, struct device_node, fwnode) : NULL;
+}
+
 static inline bool of_have_populated_dt(void)
 {
 	return of_root != NULL;
@@ -205,16 +228,8 @@ static inline unsigned long of_read_ulong(const __be32 *cell, int size)
 #define of_node_cmp(s1, s2)		strcasecmp((s1), (s2))
 #endif
 
-/* flag descriptions */
-#define OF_DYNAMIC	1 /* node and properties were allocated via kmalloc */
-#define OF_DETACHED	2 /* node has been detached from the device tree */
-#define OF_POPULATED	3 /* device already created for the node */
-#define OF_POPULATED_BUS	4 /* of_platform_populate recursed to children of this node */
-
 #define OF_IS_DYNAMIC(x) test_bit(OF_DYNAMIC, &x->_flags)
 #define OF_MARK_DYNAMIC(x) set_bit(OF_DYNAMIC, &x->_flags)
-
-#define OF_BAD_ADDR	((u64)-1)
 
 static inline const char *of_node_full_name(const struct device_node *np)
 {
@@ -293,6 +308,7 @@ extern int of_property_read_string_helper(struct device_node *np,
 extern int of_device_is_compatible(const struct device_node *device,
 				   const char *);
 extern bool of_device_is_available(const struct device_node *device);
+extern bool of_device_is_big_endian(const struct device_node *device);
 extern const void *of_get_property(const struct device_node *node,
 				const char *name,
 				int *lenp);
@@ -320,6 +336,7 @@ extern int of_count_phandle_with_args(const struct device_node *np,
 
 extern void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align));
 extern int of_alias_get_id(struct device_node *np, const char *stem);
+extern int of_alias_get_highest_id(const char *stem);
 
 extern int of_machine_is_compatible(const char *compat);
 
@@ -362,6 +379,20 @@ bool of_console_check(struct device_node *dn, char *name, int index);
 
 #else /* CONFIG_OF */
 
+static inline void of_core_init(void)
+{
+}
+
+static inline bool is_of_node(struct fwnode_handle *fwnode)
+{
+	return false;
+}
+
+static inline struct device_node *to_of_node(struct fwnode_handle *fwnode)
+{
+	return NULL;
+}
+
 static inline const char* of_node_full_name(const struct device_node *np)
 {
 	return "<no-node>";
@@ -394,6 +425,11 @@ static inline struct device_node *of_find_node_by_path(const char *path)
 
 static inline struct device_node *of_find_node_opts_by_path(const char *path,
 	const char **opts)
+{
+	return NULL;
+}
+
+static inline struct device_node *of_find_node_by_phandle(phandle handle)
 {
 	return NULL;
 }
@@ -440,6 +476,11 @@ static inline int of_device_is_compatible(const struct device_node *device,
 }
 
 static inline bool of_device_is_available(const struct device_node *device)
+{
+	return false;
+}
+
+static inline bool of_device_is_big_endian(const struct device_node *device)
 {
 	return false;
 }
@@ -572,6 +613,11 @@ static inline int of_alias_get_id(struct device_node *np, const char *stem)
 	return -ENOSYS;
 }
 
+static inline int of_alias_get_highest_id(const char *stem)
+{
+	return -ENOSYS;
+}
+
 static inline int of_machine_is_compatible(const char *compat)
 {
 	return 0;
@@ -592,6 +638,38 @@ static inline const char *of_prop_next_string(struct property *prop,
 		const char *cur)
 {
 	return NULL;
+}
+
+static inline int of_node_check_flag(struct device_node *n, unsigned long flag)
+{
+	return 0;
+}
+
+static inline int of_node_test_and_set_flag(struct device_node *n,
+					    unsigned long flag)
+{
+	return 0;
+}
+
+static inline void of_node_set_flag(struct device_node *n, unsigned long flag)
+{
+}
+
+static inline void of_node_clear_flag(struct device_node *n, unsigned long flag)
+{
+}
+
+static inline int of_property_check_flag(struct property *p, unsigned long flag)
+{
+	return 0;
+}
+
+static inline void of_property_set_flag(struct property *p, unsigned long flag)
+{
+}
+
+static inline void of_property_clear_flag(struct property *p, unsigned long flag)
+{
 }
 
 #define of_match_ptr(_ptr)	NULL
@@ -752,22 +830,12 @@ static inline int of_property_read_string_index(struct device_node *np,
  * @propname:	name of the property to be searched.
  *
  * Search for a property in a device node.
- * Returns true if the property exist false otherwise.
+ * Returns true if the property exists false otherwise.
  */
 static inline bool of_property_read_bool(const struct device_node *np,
 					 const char *propname)
 {
 	struct property *prop = of_find_property(np, propname, NULL);
-
-	/*
-	 * Boolean properties have no value cells. The "value" of a boolean
-	 * property is determined by the presence or absence of the property
-	 * itself, and value cells are disregarded entirely. Declaring a
-	 * boolean property with a nonzero number of value cells is a common
-	 * configuration error, since even a boolean property having a value of
-	 * 0 will be treated as "true" by the DT framework.
-	 */
-	WARN_ON(prop && prop->length);
 
 	return prop ? true : false;
 }
@@ -992,6 +1060,17 @@ static inline int of_reconfig_get_state_change(unsigned long action,
 
 /* CONFIG_OF_RESOLVE api */
 extern int of_resolve_phandles(struct device_node *tree);
+
+/**
+ * of_device_is_system_power_controller - Tells if system-power-controller is found for device_node
+ * @np: Pointer to the given device_node
+ *
+ * return true if present false otherwise
+ */
+static inline bool of_device_is_system_power_controller(const struct device_node *np)
+{
+	return of_property_read_bool(np, "system-power-controller");
+}
 
 /**
  * Overlay support
