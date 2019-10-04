@@ -728,6 +728,24 @@ int smblib_rerun_apsd_if_required(struct smb_charger *chg)
 	chg->uusb_apsd_rerun_done = true;
 	smblib_rerun_apsd(chg);
 
+	/*
+	 * legacy cable detecion work disturbs the type-C status,
+	 * read status before the work running
+	 */
+	rc = smblib_multibyte_read(chg,
+				TYPE_C_STATUS_1_REG, chg->typec_status, 5);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't cache USB Type-C status rc=%d\n", rc);
+		return rc;
+	}
+
+	/*
+	* in the case of booting up with USB plugged,
+	* we need to run the work to detect the legacy cable
+	*/
+	if (chg->boot_with_usb)
+		schedule_work(&chg->legacy_detection_work);
+
 	return 0;
 }
 
@@ -2480,6 +2498,25 @@ static int get_rp_based_dcp_current(struct smb_charger *chg, int typec_mode)
 	return rp_ua;
 }
 
+static int get_rp_based_sdp_cdp_current(struct smb_charger *chg, int typec_mode)
+{
+	int rp_ua;
+
+	switch (typec_mode) {
+	case POWER_SUPPLY_TYPEC_SOURCE_HIGH:
+		rp_ua = TYPEC_HIGH_CURRENT_UA;
+		break;
+	case POWER_SUPPLY_TYPEC_SOURCE_MEDIUM:
+		rp_ua = TYPEC_MEDIUM_CURRENT_UA;
+		break;
+	case POWER_SUPPLY_TYPEC_SOURCE_DEFAULT:
+	default:
+		rp_ua = TYPEC_DEFAULT_CURRENT_UA;
+	}
+
+	return rp_ua;
+}
+
 /*******************
  * USB PSY SETTERS *
  * *****************/
@@ -2502,13 +2539,13 @@ static int smblib_handle_usb_current(struct smb_charger *chg,
 {
 	int rc = 0, rp_ua, typec_mode;
 
+	typec_mode = smblib_get_prop_typec_mode(chg);
 	if (chg->real_charger_type == POWER_SUPPLY_TYPE_USB_FLOAT) {
 		if (usb_current == -ETIMEDOUT) {
 			/*
 			 * Valid FLOAT charger, report the current based
 			 * of Rp
 			 */
-			typec_mode = smblib_get_prop_typec_mode(chg);
 			rp_ua = get_rp_based_dcp_current(chg, typec_mode);
 			rc = vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER,
 								true, rp_ua);
@@ -2530,6 +2567,12 @@ static int smblib_handle_usb_current(struct smb_charger *chg,
 			if (rc < 0)
 				return rc;
 		}
+	} else if (!(chg->typec_status[4] & TYPEC_LEGACY_CABLE_STATUS_BIT)
+		&& (chg->real_charger_type == POWER_SUPPLY_TYPE_USB)) {
+		rp_ua = get_rp_based_sdp_cdp_current(chg, typec_mode);
+		rc = vote(chg->usb_icl_votable, USB_PSY_VOTER, true, rp_ua);
+		if (rc < 0)
+			return rc;
 	} else {
 		rc = vote(chg->usb_icl_votable, USB_PSY_VOTER,
 					true, usb_current);
@@ -3558,8 +3601,16 @@ static void smblib_force_legacy_icl(struct smb_charger *chg, int pst)
 	if (chg->pd_active)
 		return;
 
+	typec_mode = smblib_get_prop_typec_mode(chg);
 	switch (pst) {
 	case POWER_SUPPLY_TYPE_USB:
+		if (!(chg->typec_status[4] & TYPEC_LEGACY_CABLE_STATUS_BIT)) {
+			rp_ua = get_rp_based_sdp_cdp_current(chg, typec_mode);
+			vote(chg->usb_icl_votable,
+				LEGACY_UNKNOWN_VOTER, true, rp_ua);
+			break;
+		}
+
 		/*
 		 * USB_PSY will vote to increase the current to 500/900mA once
 		 * enumeration is done. Ensure that USB_PSY has at least voted
@@ -3574,7 +3625,6 @@ static void smblib_force_legacy_icl(struct smb_charger *chg, int pst)
 		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, 1500000);
 		break;
 	case POWER_SUPPLY_TYPE_USB_DCP:
-		typec_mode = smblib_get_prop_typec_mode(chg);
 		rp_ua = get_rp_based_dcp_current(chg, typec_mode);
 		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, rp_ua);
 		break;
@@ -4101,8 +4151,13 @@ void smblib_usb_typec_change(struct smb_charger *chg)
 {
 	int rc;
 
-	rc = smblib_multibyte_read(chg, TYPE_C_STATUS_1_REG,
-							chg->typec_status, 5);
+	if (chg->boot_with_usb)
+		/* update the cable type if boot with usb plugged */
+		rc = smblib_read(chg,
+				TYPE_C_STATUS_5_REG, &chg->typec_status[4]);
+	else
+		rc = smblib_multibyte_read(chg,
+				TYPE_C_STATUS_1_REG, chg->typec_status, 5);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't cache USB Type-C status rc=%d\n", rc);
 		return;
@@ -4647,6 +4702,9 @@ static void smblib_legacy_detection_work(struct work_struct *work)
 	/* wait for type-c detection to complete */
 	msleep(100);
 
+	if (chg->boot_with_usb)
+		goto unlock;
+
 	rc = smblib_read(chg, TYPE_C_STATUS_5_REG, &stat);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read typec stat5 rc = %d\n", rc);
@@ -4857,6 +4915,7 @@ static void smblib_iio_deinit(struct smb_charger *chg)
 int smblib_init(struct smb_charger *chg)
 {
 	int rc = 0;
+	union power_supply_propval val = {0, };
 
 	mutex_init(&chg->lock);
 	mutex_init(&chg->write_lock);
@@ -4917,6 +4976,14 @@ int smblib_init(struct smb_charger *chg)
 		smblib_err(chg, "Unsupported mode %d\n", chg->mode);
 		return -EINVAL;
 	}
+
+	rc = smblib_get_prop_usb_present(chg, &val);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't get usb present rc = %d\n", rc);
+		return rc;
+	}
+
+	chg->boot_with_usb = val.intval ? true : false;
 
 	return rc;
 }
