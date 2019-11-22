@@ -71,7 +71,7 @@
 		qcom,mdss-dsi-mdp-trigger = "none";
 
 		// backlight
-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_none";
+		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
 		qcom,mdss-dsi-bl-min-level = <1>;
 		qcom,mdss-dsi-bl-max-level = <255>;
 

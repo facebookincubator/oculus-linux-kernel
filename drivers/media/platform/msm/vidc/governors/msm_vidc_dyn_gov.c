@@ -341,6 +341,10 @@ static unsigned long __calculate_decoder(struct vidc_bus_vote_data *d,
 
 	unsigned long ret = 0;
 
+	/* Early out for msm-vidc-vmem+ which does not rely on these calcs */
+	if (gm == GOVERNOR_VMEM_PLUS)
+		return __calculate_vmem_plus_ab(d);
+
 	/* Decoder parameters setup */
 	scenario = SCENARIO_WORST;
 
@@ -612,9 +616,6 @@ static unsigned long __calculate_decoder(struct vidc_bus_vote_data *d,
 	case GOVERNOR_VMEM:
 		ret = kbps(fp_round(vmem.total));
 		break;
-	case GOVERNOR_VMEM_PLUS:
-		ret = __calculate_vmem_plus_ab(d);
-		break;
 	default:
 		dprintk(VIDC_ERR, "%s - Unknown governor\n", __func__);
 	}
@@ -667,6 +668,10 @@ static unsigned long __calculate_encoder(struct vidc_bus_vote_data *d,
 	} ddr, vmem;
 
 	unsigned long ret = 0;
+
+	/* Early out for msm-vidc-vmem+ which does not rely on these calcs */
+	if (gm == GOVERNOR_VMEM_PLUS)
+		return __calculate_vmem_plus_ab(d);
 
 	/* Encoder Parameters setup */
 	scenario = SCENARIO_WORST;
@@ -1017,9 +1022,6 @@ static unsigned long __calculate_encoder(struct vidc_bus_vote_data *d,
 	case GOVERNOR_VMEM:
 		ret = kbps(fp_round(vmem.total));
 		break;
-	case GOVERNOR_VMEM_PLUS:
-		ret = __calculate_vmem_plus_ab(d);
-		break;
 	default:
 		dprintk(VIDC_ERR, "%s - Unknown governor\n", __func__);
 	}
@@ -1058,7 +1060,7 @@ static int __get_target_freq(struct devfreq *dev, unsigned long *freq,
 	vidc_data = (struct msm_vidc_gov_data *)stats.private_data;
 
 	for (c = 0; c < vidc_data->data_count; ++c) {
-		if (vidc_data->data->power_mode == VIDC_POWER_TURBO) {
+		if (vidc_data->data[c].power_mode == VIDC_POWER_TURBO) {
 			*freq = INT_MAX;
 			goto exit;
 		}
@@ -1082,10 +1084,19 @@ static int __event_handler(struct devfreq *devfreq, unsigned int event,
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
+		devfreq_monitor_start(devfreq);
+		break;
+
+	case DEVFREQ_GOV_STOP:
+		devfreq_monitor_stop(devfreq);
+		break;
+
+	case DEVFREQ_GOV_SUSPEND:
+		devfreq_monitor_suspend(devfreq);
+		break;
+
 	case DEVFREQ_GOV_RESUME:
-		mutex_lock(&devfreq->lock);
-		rc = update_devfreq(devfreq);
-		mutex_unlock(&devfreq->lock);
+		devfreq_monitor_resume(devfreq);
 		break;
 	}
 

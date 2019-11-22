@@ -16,7 +16,6 @@
 #include <linux/wait.h>
 #include <linux/regulator/consumer.h>
 #include <linux/miscfifo.h>
-#include <linux/wakelock.h>
 #include <uapi/linux/syncboss.h>
 #include <syncboss_camera.h>
 
@@ -368,7 +367,7 @@ struct syncboss_dev_data {
 	/* We grab a wakelock while syncboss is in-use to prevent the
 	 * system from getting suspended in this case
 	 */
-	struct wake_lock syncboss_in_use_wake_lock;
+	struct wakeup_source syncboss_in_use_wake_lock;
 };
 
 typedef void (*syncboss_work_func_t)(struct syncboss_dev_data *devdata);
@@ -1623,7 +1622,7 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	/* Grab a wake lock so we'll reject device suspend requests
 	 * while in active-use
 	 */
-	wake_lock(&devdata->syncboss_in_use_wake_lock);
+	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
 
 	if (devdata->must_enable_camera_temp_sensor_power) {
 		int camera_temp_power_status = 0;
@@ -1790,7 +1789,7 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 	/* Release the wakelock so we won't prevent the device from
 	 * going to sleep.
 	 */
-	wake_unlock(&devdata->syncboss_in_use_wake_lock);
+	__pm_relax(&devdata->syncboss_in_use_wake_lock);
 }
 
 static void stop_streaming(struct syncboss_dev_data *devdata)
@@ -2120,7 +2119,7 @@ static int syncboss_probe(struct spi_device *spi)
 	 */
 	device_init_wakeup(&spi->dev, /*enable*/true);
 
-	wake_lock_init(&devdata->syncboss_in_use_wake_lock, 0, "syncboss");
+	wakeup_source_init(&devdata->syncboss_in_use_wake_lock, "syncboss");
 
 	/* This looks kinda hacky, but starting and then stopping the stream is
 	 * the simplest way to get the SyncBoss in an initial sleep state

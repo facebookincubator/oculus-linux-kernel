@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2012,6 +2012,7 @@ static void handle_fbd(enum hal_command_response cmd, void *data)
 	int extra_idx = 0;
 	int64_t time_usec = 0;
 	struct vb2_v4l2_buffer *vbuf = NULL;
+	struct buffer_info *buffer_info = NULL;
 
 	if (!response) {
 		dprintk(VIDC_ERR, "Invalid response from vidc_hal\n");
@@ -2053,6 +2054,26 @@ static void handle_fbd(enum hal_command_response cmd, void *data)
 				"fbd:Overflow bytesused = %d; length = %d\n",
 				vb->planes[0].bytesused,
 				vb->planes[0].length);
+
+		buffer_info = device_to_uvaddr(&inst->registeredbufs,
+			fill_buf_done->packet_buffer1);
+
+		if (!buffer_info) {
+			dprintk(VIDC_ERR,
+				"%s buffer not found in registered list\n",
+				__func__);
+			return;
+		}
+
+		buffer_info->crop_data.nLeft = fill_buf_done->start_x_coord;
+		buffer_info->crop_data.nTop = fill_buf_done->start_y_coord;
+		buffer_info->crop_data.nWidth = fill_buf_done->frame_width;
+		buffer_info->crop_data.nHeight = fill_buf_done->frame_height;
+		buffer_info->crop_data.width_height[0] =
+						inst->prop.width[CAPTURE_PORT];
+		buffer_info->crop_data.width_height[1] =
+						inst->prop.height[CAPTURE_PORT];
+
 		if (!(fill_buf_done->flags1 &
 			HAL_BUFFERFLAG_TIMESTAMPINVALID)) {
 			time_usec = fill_buf_done->timestamp_hi;
@@ -2366,6 +2387,7 @@ int msm_comm_scale_clocks_load(struct msm_vidc_core *core,
 
 void msm_comm_scale_clocks_and_bus(struct msm_vidc_inst *inst)
 {
+	int rc = 0;
 	struct msm_vidc_core *core;
 	struct hfi_device *hdev;
 	if (!inst || !inst->core || !inst->core->device) {
@@ -2383,6 +2405,10 @@ void msm_comm_scale_clocks_and_bus(struct msm_vidc_inst *inst)
 		dprintk(VIDC_WARN,
 				"Failed to scale DDR bus. Performance might be impacted\n");
 	}
+
+	rc = call_hfi_op(hdev, kick_devfreq, hdev->hfi_device_data);
+	if (rc)
+		dprintk(VIDC_WARN, "Failed to kick devfreq\n");
 }
 
 static inline enum msm_vidc_thermal_level msm_comm_vidc_thermal_level(int level)
@@ -3661,6 +3687,7 @@ static void log_frame(struct msm_vidc_inst *inst, struct vidc_frame_data *data,
 		msm_vidc_debugfs_update(inst, MSM_VIDC_DEBUGFS_EVENT_ETB);
 
 		if (msm_vidc_bitrate_clock_scaling &&
+			!msm_comm_turbo_session(inst) &&
 			inst->session_type == MSM_VIDC_DECODER &&
 			!inst->dcvs_mode)
 				inst->instant_bitrate =
@@ -3679,6 +3706,7 @@ static void log_frame(struct msm_vidc_inst *inst, struct vidc_frame_data *data,
 			type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 
 	if (msm_vidc_bitrate_clock_scaling && !inst->dcvs_mode &&
+		!msm_comm_turbo_session(inst) &&
 		type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE &&
 		inst->session_type == MSM_VIDC_DECODER)
 		if (msm_comm_scale_clocks(inst->core))

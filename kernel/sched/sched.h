@@ -1280,10 +1280,10 @@ dec_cumulative_runnable_avg(struct hmp_sched_stats *stats,
 
 	stats->cumulative_runnable_avg -= task_load;
 
-	BUG_ON((s64)stats->cumulative_runnable_avg < 0);
+	WARN_ON((s64)stats->cumulative_runnable_avg < 0);
 
 	stats->pred_demands_sum -= p->ravg.pred_demand;
-	BUG_ON((s64)stats->pred_demands_sum < 0);
+	WARN_ON((s64)stats->pred_demands_sum < 0);
 }
 
 static inline void
@@ -1295,10 +1295,10 @@ fixup_cumulative_runnable_avg(struct hmp_sched_stats *stats,
 		return;
 
 	stats->cumulative_runnable_avg += task_load_delta;
-	BUG_ON((s64)stats->cumulative_runnable_avg < 0);
+	WARN_ON((s64)stats->cumulative_runnable_avg < 0);
 
 	stats->pred_demands_sum += pred_demand_delta;
-	BUG_ON((s64)stats->pred_demands_sum < 0);
+	WARN_ON((s64)stats->pred_demands_sum < 0);
 }
 
 #define pct_to_real(tunable)	\
