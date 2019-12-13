@@ -5159,8 +5159,10 @@ static void mdss_mdp_mixer_setup(struct mdss_mdp_ctl *master_ctl,
 			mixer_op_mode = 0;
 
 		if (pipe->color_type != 0) {
-			blend_op = (MDSS_MDP_BLEND_FG_ALPHA_FG_CONST |
-				MDSS_MDP_BLEND_BG_ALPHA_BG_CONST);
+			blend_op = (pipe->color_type == MDP_LAYER_MURA) ?
+					MDSS_MDP_BLEND_FG_ALPHA_FG_PIXEL :
+					MDSS_MDP_BLEND_FG_ALPHA_FG_CONST;
+			blend_op |= MDSS_MDP_BLEND_BG_ALPHA_BG_CONST;
 			fg_alpha = 0xFF;
 			bg_alpha = 0xFF;
 		}

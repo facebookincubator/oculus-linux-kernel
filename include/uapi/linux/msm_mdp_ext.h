@@ -280,6 +280,9 @@ struct mdp_layer_plane {
 #define MDP_LAYER_COLOR_G  0x2
 #define MDP_LAYER_COLOR_B  0x3
 
+/* Have a layer "color" type for mura data. */
+#define MDP_LAYER_MURA  0x4
+
 struct mdp_layer_buffer {
 	/* layer width in pixels. */
 	uint32_t width;

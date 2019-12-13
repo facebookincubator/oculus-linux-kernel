@@ -1,0 +1,128 @@
+/* Copyright (c) 2019, Oculus VR. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/ {
+	starlet-compat = "yes";
+};
+
+&tlmm {
+	oculusnrf {
+		// 78 = NSYNC
+		syncboss_nsync: syncboss_nsync {
+			mux {
+				pins = "gpio78";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio78";
+				drive-strength = <6>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+};
+
+&spi_12 {
+	oculusnrf@0 {
+		pinctrl-0 = <&syncboss_float_swd
+			&syncboss_reset_default
+			&syncboss_nsync>;
+		oculus,syncboss-nsync  = <&tlmm 78 0>;
+	};
+};
+
+&cci {
+	/delete-node/ qcom,camera@0;
+	/delete-node/ qcom,camera@1;
+	/delete-node/ qcom,camera@2;
+	/delete-node/ qcom,camera@3;
+	/delete-node/ oculus,camera@0;
+	/delete-node/ oculus,camera@1;
+	/delete-node/ oculus,camera@2;
+	/delete-node/ oculus,camera@3;
+
+	oculus,camera@0 {
+		status = "ok";
+		cell-index = <0>;
+		compatible = "oculus,camera";
+		reg = <0x00>;
+		qcom,csiphy-sd-index = <2>;
+		qcom,csid-sd-index = <2>;
+		qcom,mount-angle = <90>;
+		cam_vio-supply = <&pm8998_s4>;
+		cam_vana-supply = <&pm8998_l22>;
+		cam_vdig-supply = <&pm8998_l14>;
+		qcom,cam-vreg-name = "cam_vio", "cam_vana", "cam_vdig";
+		qcom,cam-vreg-min-voltage = <0 2864000 1880000>;
+		qcom,cam-vreg-max-voltage = <0 2864000 1880000>;
+		qcom,cam-vreg-op-mode = <0 80000 105000>;
+		qcom,gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_inside_out_mclk2_active
+				&cam_inside_out_pwdn2_active>;
+		pinctrl-1 = <&cam_inside_out_mclk2_suspend
+				&cam_inside_out_pwdn2_suspend>;
+		pwdn-gpios = <&tlmm 139 1>;
+		gpios = <&tlmm 15 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK2",
+						"CAMIF_RESET2";
+		qcom,sensor-position = <1>;
+		qcom,sensor-mode = <0>;
+		qcom,cci-master = <1>;
+		clocks = <&clock_mmss clk_mclk2_clk_src>,
+				<&clock_mmss clk_mmss_camss_mclk2_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+
+	oculus,camera@1 {
+		status = "ok";
+		cell-index = <1>;
+		compatible = "oculus,camera";
+		reg = <0x01>;
+		qcom,csiphy-sd-index = <2>;
+		qcom,csid-sd-index = <3>;
+		qcom,mount-angle = <90>;
+		cam_vio-supply = <&pm8998_s4>;
+		cam_vana-supply = <&pm8998_l22>;
+		cam_vdig-supply = <&pm8998_l14>;
+		qcom,cam-vreg-name = "cam_vio", "cam_vana", "cam_vdig";
+		qcom,cam-vreg-min-voltage = <0 2864000 1880000>;
+		qcom,cam-vreg-max-voltage = <0 2864000 1880000>;
+		qcom,cam-vreg-op-mode = <0 80000 105000>;
+		qcom,gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_inside_out_mclk3_active
+				&cam_inside_out_pwdn3_active>;
+		pinctrl-1 = <&cam_inside_out_mclk3_suspend
+				&cam_inside_out_pwdn3_suspend>;
+		pwdn-gpios = <&tlmm 140 1>;
+		gpios = <&tlmm 16 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK3",
+						"CAMIF_RESET3";
+		qcom,sensor-position = <0>;
+		qcom,sensor-mode = <0>;
+		qcom,cci-master = <1>;
+		clocks = <&clock_mmss clk_mclk3_clk_src>,
+				<&clock_mmss clk_mmss_camss_mclk3_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+};

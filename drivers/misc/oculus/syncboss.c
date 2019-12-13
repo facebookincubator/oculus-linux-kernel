@@ -50,6 +50,7 @@ static const struct of_device_id oculus_syncboss_table[] = {
 #define SYNCBOSS_STREAM_DEVICE_NAME "syncboss_stream0"
 #define SYNCBOSS_CONTROL_DEVICE_NAME "syncboss_control0"
 #define SYNCBOSS_PROX_DEVICE_NAME "syncboss_prox0"
+#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync"
 
 #define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
 #define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
@@ -85,6 +86,8 @@ static const struct of_device_id oculus_syncboss_table[] = {
 #define SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN 2
 
 #define SYNCBOSS_MISCFIFO_SIZE 1024
+
+#define SYNCBOSS_NSYNC_MISCFIFO_SIZE 256
 
 #define SYNCBOSS_DEFAULT_POLL_PRIO 52
 
@@ -229,6 +232,11 @@ struct syncboss_dev_data {
 	 */
 	struct miscfifo prox_fifo;
 
+	/* Misc device for NSYNC
+	 */
+	struct miscdevice misc_nsync;
+	struct miscfifo nsync_fifo;
+
 	/* Connected clients reference count */
 	int client_count;
 
@@ -295,6 +303,14 @@ struct syncboss_dev_data {
 	int gpio_wakeup;
 	/* Wakeup IRQ */
 	int wakeup_irq;
+
+	/* GPIO NSYNC */
+	int gpio_nsync;
+	/* NSYNC IRQ */
+	int nsync_irq;
+
+	atomic_long_t nsync_irq_timestamp;
+	u64 nsync_irq_count;
 
 	/* L28 regulator (1.8V) for IMU */
 	struct regulator *imu_core;
@@ -1053,6 +1069,16 @@ static int syncboss_release(struct inode *inode, struct file *f)
 	return 0;
 }
 
+static int syncboss_nsync_open(struct inode *inode, struct file *f)
+{
+	struct syncboss_dev_data *devdata =
+		container_of(f->private_data, struct syncboss_dev_data,
+			     misc_nsync);
+	dev_info(&devdata->spi->dev, "SyncBoss nsync handle opened (%s)",
+		 current->comm);
+	return miscfifo_fop_open(f, &devdata->nsync_fifo);
+}
+
 static const struct file_operations fops = {
 	.open = syncboss_open,
 	.release = syncboss_release,
@@ -1079,6 +1105,14 @@ static const struct file_operations control_fops = {
 static const struct file_operations prox_fops = {
 	.open = syncboss_prox_open,
 	.release = syncboss_prox_release,
+	.read = miscfifo_fop_read,
+	.write = NULL,
+	.poll = miscfifo_fop_poll
+};
+
+static const struct file_operations nsync_fops = {
+	.open = syncboss_nsync_open,
+	.release = miscfifo_fop_release,
 	.read = miscfifo_fop_read,
 	.write = NULL,
 	.poll = miscfifo_fop_poll
@@ -1934,6 +1968,35 @@ static irqreturn_t isr_thread_wakeup(int irq, void *p)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t isr_primary_nsync(int irq, void *p)
+{
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
+
+	atomic_long_set(&devdata->nsync_irq_timestamp, ktime_get_ns());
+
+	return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t isr_thread_nsync(int irq, void *p)
+{
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
+	struct syncboss_nsync_event event = {
+		.timestamp = atomic_long_read(&devdata->nsync_irq_timestamp),
+		.count = ++(devdata->nsync_irq_count),
+	};
+
+	int status = miscfifo_send_buf(
+			&devdata->nsync_fifo,
+			(void *)&event,
+			sizeof(event));
+	if (status < 0)
+		dev_warn_ratelimited(
+			&devdata->spi->dev,
+			"NSYNC fifo send failure: %d\n", status);
+
+	return IRQ_HANDLED;
+}
+
 static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
@@ -1969,6 +2032,8 @@ static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 						0);
 	devdata->gpio_wakeup = of_get_named_gpio(node, "oculus,syncboss-wakeup",
 						0);
+	devdata->gpio_nsync = of_get_named_gpio(node, "oculus,syncboss-nsync",
+						0);
 
 	if (of_find_property(node, "oculus,syncboss-has-prox", NULL))
 		devdata->has_prox = true;
@@ -1976,9 +2041,10 @@ static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	if (of_find_property(node, "oculus,syncboss-must-enable-cam-temp-sensor-power", NULL))
 		devdata->must_enable_camera_temp_sensor_power = true;
 
-	dev_info(&devdata->spi->dev, "GPIOs: reset: %i, swdclk: %i, swdio: %i, wakeup: %i",
+	dev_info(&devdata->spi->dev, "GPIOs: reset: %i, swdclk: %i, swdio: %i, wakeup: %i, nsync: %i",
 		 devdata->gpio_reset, devdata->gpio_swdclk, devdata->gpio_swdio,
-		 devdata->gpio_wakeup);
+		 devdata->gpio_wakeup, devdata->gpio_nsync);
+
 	dev_info(&devdata->spi->dev, "has-prox: %s",
 		 devdata->has_prox ? "true" : "false");
 	dev_info(&devdata->spi->dev, "must-enable-cam-temp-sensor-power: %s",
@@ -2096,6 +2162,22 @@ static int syncboss_probe(struct spi_device *spi)
 			status);
 	}
 
+	if (devdata->gpio_nsync >= 0) {
+		devdata->nsync_fifo.config.kfifo_size = SYNCBOSS_NSYNC_MISCFIFO_SIZE;
+		devdata->nsync_fifo.config.header_payload = false;
+		status = miscfifo_register(&devdata->nsync_fifo);
+
+		devdata->misc_nsync.name = SYNCBOSS_NSYNC_DEVICE_NAME;
+		devdata->misc_nsync.minor = MISC_DYNAMIC_MINOR;
+		devdata->misc_nsync.fops = &nsync_fops;
+
+		status = misc_register(&devdata->misc_nsync);
+		if (status < 0) {
+			dev_err(&spi->dev, "Failed to register misc nsync device, error %i",
+					status);
+		}
+	}
+
 	syncboss_init_sysfs_attrs(devdata);
 	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
 	devdata->reset_requested = false;
@@ -2113,6 +2195,15 @@ static int syncboss_probe(struct spi_device *spi)
 			devdata->misc.name, devdata);
 	}
 
+	if (devdata->gpio_nsync >= 0) {
+		devdata->nsync_irq_count = 0;
+		devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
+		irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
+		status = devm_request_threaded_irq(
+			&spi->dev, devdata->nsync_irq, isr_primary_nsync,
+			isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+			devdata->misc_nsync.name, devdata);
+	}
 
 	/* Init device as a wakeup source (so prox interrupts can hold
 	 * the wake lock)
