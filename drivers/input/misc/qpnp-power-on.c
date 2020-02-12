@@ -372,13 +372,14 @@ EXPORT_SYMBOL(qpnp_pon_set_restart_reason);
 
 int qpnp_pon_set_boot_chime_volume(uint8_t boot_volume)
 {
-	/* Only numbers from 0 to 15 */
-	boot_volume &= 0xF;
-	int rc = 0;
 	struct qpnp_pon *pon = sys_reset_dev;
+	int rc = 0;
 
 	if (!pon)
 		return 0;
+
+	/* Only numbers from 0 to 15 */
+	boot_volume &= 0xF;
 
 	rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
 				GENMASK(7, 4), (boot_volume << 4));

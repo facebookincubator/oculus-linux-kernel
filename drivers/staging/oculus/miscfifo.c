@@ -278,7 +278,7 @@ void miscfifo_fop_set_context(struct file *file, void *context)
 	client->context = context;
 	mutex_unlock(&client->lock);
 }
-EXPORT_SYMBOL(miscfifo_fop_setcontext);
+EXPORT_SYMBOL(miscfifo_fop_set_context);
 
 void *miscfifo_fop_get_context(struct file *file)
 {
@@ -286,7 +286,7 @@ void *miscfifo_fop_get_context(struct file *file)
 
 	return client->context;
 }
-EXPORT_SYMBOL(miscfifo_fop_getcontext);
+EXPORT_SYMBOL(miscfifo_fop_get_context);
 
 MODULE_AUTHOR("Khalid Zubair <kzubair@oculus.com>");
 MODULE_DESCRIPTION("General purpose chardev fifo implementation");

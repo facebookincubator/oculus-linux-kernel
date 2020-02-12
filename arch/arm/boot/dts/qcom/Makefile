@@ -125,7 +125,9 @@ dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-pvt-auo$(starlet_compat).dtb \
 	vs1-pvt-b-auo$(starlet_compat).dtb \
 	vs1-pvt-b-sdc$(starlet_compat).dtb \
-	vs1-ptc.dtb
+	vs1-ptc.dtb \
+	starlet-proto0.dtb
+
 else
 dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 	msm8998-rumi.dtb \

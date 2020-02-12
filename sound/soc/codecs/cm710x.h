@@ -1368,6 +1368,8 @@ struct cm710x_codec_priv {
 	unsigned int EQ[20];
 
 	const char *fw_parsing;
+
+	struct notifier_block pm_nb;
 };
 
 #endif /* __CM710X_H__ */

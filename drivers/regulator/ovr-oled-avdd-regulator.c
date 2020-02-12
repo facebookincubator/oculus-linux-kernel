@@ -94,7 +94,7 @@ static int oled_avdd_enable(struct regulator_dev *rdev)
 	pr_debug("%s: enabling\n", __func__);
 
 	if (cfg->ocp_triggered) {
-		dev_err("%s: OCP triggered, enable not allowed\n", __func__);
+		pr_err("%s: OCP triggered, enable not allowed\n", __func__);
 		return -EINVAL;
 	}
 
