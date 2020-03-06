@@ -313,6 +313,9 @@ struct kgsl_device {
 	/* Allow restricting high and maximum priority contexts */
 	uid_t privileged_uid;
 	pid_t privileged_tid;
+
+	/* pre-fault all pages after mapping a mem entry */
+	bool map_insert_pages;
 };
 
 #define KGSL_MMU_DEVICE(_mmu) \

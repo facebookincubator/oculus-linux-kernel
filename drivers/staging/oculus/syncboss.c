@@ -1,4 +1,5 @@
 #include "syncboss_swd.h"
+#include "swd_registers_nrf.h"
 #include <linux/atomic.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -17,7 +18,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/miscfifo.h>
 #include <uapi/linux/syncboss.h>
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 #include <syncboss_camera.h>
+#endif
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
 static const struct of_device_id oculus_syncboss_table[] = {
@@ -37,10 +40,10 @@ static const struct of_device_id oculus_syncboss_table[] = {
  *
  * The simplest way to enable all of the syncboss verbose debug prints
  * is to run:
- *    echo module syncboss +p > /sys/kernel/debug/dynamic_debug/control
+ *   echo module syncboss +p > /sys/kernel/debug/dynamic_debug/control
  *
  * For more info, see:
- *    http://lxr.free-electrons.com/source/Documentation/dynamic-debug-howto.txt
+ *   http://lxr.free-electrons.com/source/Documentation/dynamic-debug-howto.txt
  */
 
 #define SYNCBOSS_INTERFACE_PIPE_SIZE 4096
@@ -50,7 +53,7 @@ static const struct of_device_id oculus_syncboss_table[] = {
 #define SYNCBOSS_STREAM_DEVICE_NAME "syncboss_stream0"
 #define SYNCBOSS_CONTROL_DEVICE_NAME "syncboss_control0"
 #define SYNCBOSS_PROX_DEVICE_NAME "syncboss_prox0"
-#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync"
+#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync0"
 
 #define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
 #define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
@@ -120,7 +123,7 @@ static const struct of_device_id oculus_syncboss_table[] = {
  */
 #define SYNCBOSS_WAKEUP_EVENT_DURATION_MS 2000
 
-/* The amount of time to supress spurious SPI errors after a syncboss
+/* The amount of time to suppress spurious SPI errors after a syncboss
  * reset
  */
 #define SYNCBOSS_RESET_SPI_SETTLING_TIME_MS 100
@@ -299,6 +302,10 @@ struct syncboss_dev_data {
 	int gpio_swdclk;
 	/* GPIO line for swdio */
 	int gpio_swdio;
+	/* GPIO line for time sync */
+	int gpio_timesync;
+	/* Time sync IRQ */
+	int timesync_irq;
 	/* AP Wakeup line  */
 	int gpio_wakeup;
 	/* Wakeup IRQ */
@@ -309,11 +316,26 @@ struct syncboss_dev_data {
 	/* NSYNC IRQ */
 	int nsync_irq;
 
+	/* Timestamp of the last NSYNC event
+	 * This signal is driven by the NRF using an otherwise unused
+	 * NRF->AP signal and used to synchronize time between the AP
+	 * and NRF.
+	 */
 	atomic_long_t nsync_irq_timestamp;
 	u64 nsync_irq_count;
 
-	/* L28 regulator (1.8V) for IMU */
+	/* Timestamp of last TE event
+	 * This signal is driven by the display hardware's TE line to
+	 * the both NRF and AP. This is used to synchronize time between
+	 * the AP and NRF.
+	 */
+	atomic64_t last_te_timestamp_ns;
+
+	/* Regulator for IMU */
 	struct regulator *imu_core;
+
+	/* Regulator for Magnetometer */
+	struct regulator *mag_core;
 
 	/* CPU core used to schedule SPI transactions */
 	int cpu_core_to_use;
@@ -339,11 +361,13 @@ struct syncboss_dev_data {
 	/* True if the syncboss controlls a prox sensor */
 	bool has_prox;
 
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	/* True if we must enable the camera temperature sensor
 	 * regulator (needed for syncboss to function properly on
 	 * pre-EVT3 units
 	 */
 	bool must_enable_camera_temp_sensor_power;
+#endif
 
 	/* prox calibration values */
 	int prox_canc;
@@ -380,9 +404,7 @@ struct syncboss_dev_data {
 	/* Firmware to flash during update */
 	const struct firmware *fw;
 
-	/* We grab a wakelock while syncboss is in-use to prevent the
-	 * system from getting suspended in this case
-	 */
+	/* Wakelock to prevent suspend while syncboss in use */
 	struct wakeup_source syncboss_in_use_wake_lock;
 };
 
@@ -458,9 +480,11 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
  *      /vendor/firmware/syncboss.bin)
  * next_avail_seq_num - the next available sequence number for control calls
  * enable_data_headers - return data headers with each control/stream message
+ * te_timestamp - timestamp of the last TE event
  */
 
-static ssize_t show_streaming(struct device *dev, struct device_attribute *attr,
+static ssize_t show_streaming(struct device *dev,
+			      struct device_attribute *attr,
 			      char *buf);
 static ssize_t store_streaming(struct device *dev,
 			       struct device_attribute *attr, const char *buf,
@@ -538,6 +562,9 @@ static ssize_t store_enable_headers(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t count);
 
+static ssize_t show_te_timestamp(struct device *dev,
+				struct device_attribute *attr, char *buf);
+
 static DEVICE_ATTR(reset, S_IWUSR, NULL, store_reset);
 static DEVICE_ATTR(spi_max_clk_rate, S_IWUSR | S_IRUGO, show_spi_max_clk_rate,
 		   store_spi_max_clk_rate);
@@ -565,6 +592,7 @@ static DEVICE_ATTR(next_avail_seq_num, S_IRUGO,
 static DEVICE_ATTR(power, S_IWUSR | S_IRUGO, show_power, store_power);
 static DEVICE_ATTR(enable_data_headers, S_IWUSR | S_IRUGO, show_enable_headers,
 		   store_enable_headers);
+static DEVICE_ATTR(te_timestamp, S_IRUGO, show_te_timestamp, NULL);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
@@ -581,6 +609,7 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_power.attr,
 	&dev_attr_enable_data_headers.attr,
+	&dev_attr_te_timestamp.attr,
 	NULL
 };
 
@@ -623,14 +652,16 @@ static int read_cal_int(struct syncboss_dev_data *devdata,
 
 	status = request_firmware(&fw, cal_file_name, &devdata->spi->dev);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "request_firmware(%s) returned %i.  Please ensure the file exists in /vendor/firmware/",
+		dev_err(&devdata->spi->dev,
+			"request_firmware(%s) returned %d. Please ensure syncboss.bin is present",
 			cal_file_name, status);
 		return status;
 	}
 
 	if (fw->size >= sizeof(tempstr)) {
-		dev_err(&devdata->spi->dev, "Unexpected size for %s (size is %i)",
-			cal_file_name, (int)fw->size);
+		dev_err(&devdata->spi->dev,
+			"Unexpected size for %s (size is %zd)",
+			cal_file_name, fw->size);
 		status = -EINVAL;
 		goto error;
 	}
@@ -673,13 +704,15 @@ static void read_prox_cal(struct syncboss_dev_data *devdata)
 	devdata->prox_thdh = read_cal_int(devdata, "PROX_PS_THDH");
 
 	if (!prox_cal_valid(devdata)) {
-		dev_err(&devdata->spi->dev, "Failed read prox calibration data (ver: %i, canc: %i, thdl: %i, thdh: %i)",
-			(int)devdata->prox_config_version, devdata->prox_canc,
+		dev_err(&devdata->spi->dev,
+			"Failed read prox calibration data (ver: %u, canc: %d, thdl: %d, thdh: %d)",
+			devdata->prox_config_version, devdata->prox_canc,
 			devdata->prox_thdl, devdata->prox_thdh);
 		return;
 	}
 
-	dev_info(&devdata->spi->dev, "Prox cal read: canc: %i, thdl: %i, thdh: %i",
+	dev_info(&devdata->spi->dev,
+		 "Prox cal read: canc: %d, thdl: %d, thdh: %d",
 		 devdata->prox_canc, devdata->prox_thdl, devdata->prox_thdh);
 }
 
@@ -797,7 +830,8 @@ static int syncboss_open(struct inode *inode, struct file *f)
 	if (devdata->fw_update_state == SYNCBOSS_FW_UPDATE_STATE_IDLE)
 		syncboss_inc_client_count(devdata);
 	else {
-		dev_err(&devdata->spi->dev, "Cannot open SyncBoss handle while firmware update is in progress");
+		dev_err(&devdata->spi->dev,
+			"Cannot open SyncBoss handle while firmware update is in progress");
 		status = -EINVAL;
 	}
 	mutex_unlock(&devdata->state_mutex);
@@ -815,14 +849,16 @@ static int signal_prox_event(struct syncboss_dev_data *devdata, int evt,
 	if (should_lock) {
 		status = mutex_lock_interruptible(&devdata->state_mutex);
 		if (status != 0) {
-			dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+			dev_err(&devdata->spi->dev,
+				"Failed to get state mutex: %d",
 				status);
 			return status;
 		}
 	}
 
 	if (!devdata->enable_headers) {
-		dev_warn(&devdata->spi->dev, "Prox events not supported without data headers");
+		dev_warn(&devdata->spi->dev,
+			 "Prox events not supported without data headers");
 		return 0;
 	}
 
@@ -838,12 +874,15 @@ static int signal_prox_event(struct syncboss_dev_data *devdata, int evt,
 	if ((evt == SYNCBOSS_PROX_EVENT_SYSTEM_UP) &&
 	    devdata->eat_next_system_up_event) {
 		/* This is a manual reset, so no need to notify clients */
-		dev_info(&devdata->spi->dev, "Eating prox system_up event on reset..yum!");
+		dev_info(&devdata->spi->dev,
+			 "Eating prox system_up event on reset..yum!");
 		devdata->eat_next_system_up_event = false;
 		/* We don't want anyone who opens a prox handle to see this event. */
 		should_update_last_evt = false;
 	} else if (devdata->silence_all_prox_events) {
-		dev_info(&devdata->spi->dev, "Silencing prox event %i", evt);
+		dev_info(&devdata->spi->dev,
+			 "Silencing prox event %d",
+			 evt);
 		/* We don't want anyone who opens a prox handle to see this event. */
 		should_update_last_evt = false;
 	} else {
@@ -854,7 +893,8 @@ static int signal_prox_event(struct syncboss_dev_data *devdata, int evt,
 			(u8 *)&status,
 			sizeof(status));
 		if (status != 0)
-			dev_warn_ratelimited(&devdata->spi->dev, "Fifo overflow (%i)",
+			dev_warn_ratelimited(&devdata->spi->dev,
+					     "Fifo overflow (%d)",
 					     status);
 	}
 
@@ -889,7 +929,9 @@ static int syncboss_prox_open(struct inode *inode, struct file *f)
 
 	/* Send the last prox_event */
 	if (devdata->prox_last_evt != INVALID_PROX_CAL_VALUE) {
-		dev_info(&devdata->spi->dev, "Signaling prox_last_evt (%d)", devdata->prox_last_evt);
+		dev_info(&devdata->spi->dev,
+			 "Signaling prox_last_evt (%d)",
+			 devdata->prox_last_evt);
 		signal_prox_event(devdata, devdata->prox_last_evt,
 				  /*should_lock*/false);
 	}
@@ -974,15 +1016,15 @@ static int syncboss_set_stream_type_filter(struct file *file,
 
 	status = copy_from_user(new_filter, filter, sizeof(*new_filter));
 	if (status != 0) {
-		pr_err("Failed to copy %i bytes from user stream filter\n",
+		pr_err("Failed to copy %d bytes from user stream filter\n",
 		       status);
 		return -EFAULT;
 	}
 
 	/* Sanity check new_filter */
 	if (new_filter->num_selected > SYNCBOSS_MAX_FILTERED_TYPES) {
-		pr_err("Sanity check of user stream filter failed (num_selected = %i)\n",
-		       (int)new_filter->num_selected);
+		pr_err("Sanity check of user stream filter failed (num_selected = %d)\n",
+		       new_filter->num_selected);
 		return -EINVAL;
 	}
 
@@ -1037,7 +1079,8 @@ static s64 ktime_get_ms(void)
 static void syncboss_reset(struct syncboss_dev_data *devdata)
 {
 	if (devdata->gpio_reset < 0) {
-		dev_err(&devdata->spi->dev, "Cannot reset SyncBoss since reset pin was not specified in device tree");
+		dev_err(&devdata->spi->dev,
+			"Cannot reset SyncBoss since reset pin was not specified in device tree");
 		return;
 	}
 
@@ -1161,7 +1204,7 @@ static int queue_tx_packet(struct syncboss_dev_data *devdata, const void *data,
 	status = mutex_lock_interruptible(&devdata->queued_buf_mutex);
 	if (status != 0) {
 		dev_err(&devdata->spi->dev,
-			"Failed to get buffer sem with error %i", status);
+			"Failed to get buffer sem with error %d", status);
 		return status;
 	}
 
@@ -1205,7 +1248,7 @@ static int swap_and_stage_buffers(struct syncboss_dev_data *devdata,
 	if (status != 0) {
 		/* Failed to get the sem */
 		dev_err(&devdata->spi->dev,
-			"Failed to get buffer sem with error %i", status);
+			"Failed to get buffer sem with error %d", status);
 		return status;
 	}
 	transaction =
@@ -1270,12 +1313,13 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 	}
 
 	if (status != 0)
-		dev_warn_ratelimited(&devdata->spi->dev, "Fifo overflow (%i)",
+		dev_warn_ratelimited(&devdata->spi->dev, "Fifo overflow (%d)",
 				     status);
 	return status;
 }
 
-static int parse_and_distribute(struct syncboss_dev_data *devdata, void *rx_buf)
+static int parse_and_distribute(struct syncboss_dev_data *devdata,
+				void *rx_buf)
 {
 	/* Note: This function assumes that rx_buf contains valid data
 	 * (magic num and checksum should have been validated prior to
@@ -1410,7 +1454,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		dev_err(&devdata->spi->dev,
-			"Failed to get state mutex with error %i", status);
+			"Failed to get state mutex with error %d", status);
 		return status;
 	}
 	spi_max_clk_rate = devdata->spi_max_clk_rate;
@@ -1423,13 +1467,13 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	mutex_unlock(&devdata->state_mutex);
 
 	dev_info(&spi->dev, "Entering SPI transfer loop");
-	dev_info(&spi->dev, "  Max Clk Rate            : %i Hz",
+	dev_info(&spi->dev, "  Max Clk Rate            : %d Hz",
 		 spi_max_clk_rate);
-	dev_info(&spi->dev, "  Trans. Len              : %i",
+	dev_info(&spi->dev, "  Trans. Len              : %d",
 		 transaction_length);
-	dev_info(&spi->dev, "  Trans. Period           : %i us",
+	dev_info(&spi->dev, "  Trans. Period           : %d us",
 		 transaction_period_ns / 1000);
-	dev_info(&spi->dev, "  Min time between trans. : %i us",
+	dev_info(&spi->dev, "  Min time between trans. : %d us",
 		 min_time_between_transactions_ns / 1000);
 	dev_info(&spi->dev, "  Headers enabled         : %s",
 		 headers_enabled ? "yes" : "no");
@@ -1442,7 +1486,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			status = swap_and_stage_buffers(devdata, &idx_to_send);
 			if (status != 0) {
 				dev_err(&devdata->spi->dev,
-					"swap_and_stage_buffers failed with error %i",
+					"swap_and_stage_buffers failed: %d",
 					status);
 				goto error;
 			}
@@ -1509,8 +1553,14 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		prev_transaction_end_time_ns = ktime_get_ns();
 
 		if (status != 0) {
-			dev_err(&spi->dev, "spi_sync failed with error %i",
+			dev_err(&spi->dev, "spi_sync failed with error %d",
 				status);
+
+			if (status == -ETIMEDOUT) {
+				/* Retry if needed and keep going */
+				goto retry;
+			}
+
 			break;
 		} else if (spi_nrf_sanity_check_packet(devdata,
 						       spi_xfer.rx_buf)) {
@@ -1526,9 +1576,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 * haven't recently reset the mcu
 			 */
 			if (!recent_reset_event(devdata))
-				dev_warn_ratelimited(&spi->dev, "SPI transaction rejected by SyncBoss");
+				dev_warn_ratelimited(&spi->dev,
+					"SPI transaction rejected by SyncBoss");
 			devdata->stats.num_rejected_transactions++;
 
+retry:
 			/* We only have to retry a transaction if we were
 			 * actually sending some request/command to the
 			 * SyncBoss.  Otherwise, we can just move on.
@@ -1562,12 +1614,14 @@ static void push_prox_cal_and_enable_wake(struct syncboss_dev_data *devdata,
 	if (!devdata->has_prox)
 		return;
 	else if (!prox_cal_valid(devdata)) {
-		dev_warn(&devdata->spi->dev, "Not pushing prox cal since it's invalid");
+		dev_warn(&devdata->spi->dev,
+			 "Not pushing prox cal since it's invalid");
 		return;
 	}
 
 	if (enable)
-		dev_info(&devdata->spi->dev, "Pushing prox cal to device and enabling prox wakeup");
+		dev_info(&devdata->spi->dev,
+			 "Pushing prox cal to device and enabling prox wakeup");
 	else
 		dev_info(&devdata->spi->dev, "Disabling prox wakeup");
 
@@ -1613,7 +1667,9 @@ static void push_prox_cal_and_enable_wake(struct syncboss_dev_data *devdata,
 
 static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 {
-	return gpio_get_value(devdata->gpio_wakeup) == 1;
+	if (gpio_is_valid(devdata->gpio_wakeup))
+		return gpio_get_value(devdata->gpio_wakeup) == 1;
+	return true;
 }
 
 static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
@@ -1624,7 +1680,8 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	for (x = 0; x < SYNCBOSS_SLEEP_TIMEOUT_MS; ++x) {
 		msleep(1);
 		if (is_mcu_awake(devdata) == awake) {
-			dev_info(&devdata->spi->dev, "SyncBoss is %s (after %i ms)",
+			dev_info(&devdata->spi->dev,
+				 "SyncBoss is %s (after %d ms)",
 				 awake ? "awake" : "asleep", x+1);
 			devdata->power_state =
 				awake ? SYNCBOSS_POWER_STATE_RUNNING :
@@ -1648,7 +1705,7 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "Failed to get state lock with error %i",
+		dev_err(&devdata->spi->dev, "Failed to get state lock with error %d",
 			status);
 		return;
 	}
@@ -1658,15 +1715,37 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	 */
 	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
 
+	if (devdata->imu_core) {
+		status = regulator_enable(devdata->imu_core);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable IMU power: %d",
+					status);
+			return;
+		}
+	}
+
+	if (devdata->mag_core) {
+		status = regulator_enable(devdata->mag_core);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable mag power: %d",
+					status);
+			return;
+		}
+	}
+
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	if (devdata->must_enable_camera_temp_sensor_power) {
 		int camera_temp_power_status = 0;
 
-
-		dev_info(&devdata->spi->dev, "Enabling camera temperature sensor power");
+		dev_info(&devdata->spi->dev,
+			 "Enabling camera temperature sensor power");
 		camera_temp_power_status = enable_camera_temp_sensor_power();
 
 		if (camera_temp_power_status == 0) {
-			dev_info(&devdata->spi->dev, "Successfully enabled temp sensor power");
+			dev_info(&devdata->spi->dev,
+				 "Successfully enabled temp sensor power");
 			/* Only need to do this once */
 			devdata->must_enable_camera_temp_sensor_power = false;
 		} else if (camera_temp_power_status == -EAGAIN) {
@@ -1674,12 +1753,15 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 			 * process, this operation might fail.  This
 			 * is ok, we'll just get it later.
 			 */
-			dev_info(&devdata->spi->dev, "Camera temperature sensors not ready yet.  Will try again later");
+			dev_info(&devdata->spi->dev,
+				 "Camera temperature sensors not ready yet. Will try again later");
 		} else {
-			dev_warn(&devdata->spi->dev, "Failed to enable temp sensor power with error %i.",
-				camera_temp_power_status);
+			dev_warn(&devdata->spi->dev,
+				 "Failed to enable temp sensor power: %d.",
+				 camera_temp_power_status);
 		}
 	}
+#endif
 
 	/* As an optimization, only reset the syncboss mcu if it's not
 	 * currently running (or force_reset is specified).  We should
@@ -1698,12 +1780,16 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	mcu_awake = is_mcu_awake(devdata);
 
 	if (force_reset || !mcu_awake || devdata->force_reset_on_open) {
-		dev_info(&devdata->spi->dev, "Resetting mcu (force: %i, mcu awake: %i, force on open: %i)",
-			 !!force_reset, !!mcu_awake, !!devdata->force_reset_on_open);
+		dev_info(&devdata->spi->dev,
+			 "Resetting mcu (force: %d, mcu awake: %d, force on open: %d)",
+			 !!force_reset,
+			 !!mcu_awake,
+			 !!devdata->force_reset_on_open);
 		syncboss_reset(devdata);
 		devdata->force_reset_on_open = false;
 	} else {
-		dev_info(&devdata->spi->dev, "Skipping mcu reset since it's already awake (prox wake?)");
+		dev_info(&devdata->spi->dev,
+			 "Skipping mcu reset since it's already awake");
 	}
 
 	dev_info(&devdata->spi->dev, "Starting stream");
@@ -1770,7 +1856,8 @@ static void shutdown_syncboss_mcu(struct syncboss_dev_data *devdata)
 						  /*awake*/false) == 0);
 
 	if (!is_asleep) {
-		dev_err(&devdata->spi->dev, "SyncBoss failed to sleep within %ims. Forcing reset on next open.",
+		dev_err(&devdata->spi->dev,
+			"SyncBoss failed to sleep within %dms. Forcing reset on next open.",
 			SYNCBOSS_SLEEP_TIMEOUT_MS);
 			devdata->force_reset_on_open = true;
 	}
@@ -1781,7 +1868,9 @@ static void syncboss_on_camera_release(struct syncboss_dev_data *devdata)
 	dev_info(&devdata->spi->dev, "Turning off cameras");
 
 	devdata->cameras_enabled = false;
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	disable_cameras();
+#endif
 }
 
 static void stop_streaming_impl(struct syncboss_dev_data *devdata)
@@ -1790,7 +1879,8 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "Failed to get state lock with error %i",
+		dev_err(&devdata->spi->dev,
+			"Failed to get state lock with error %d",
 			status);
 		return;
 	}
@@ -1799,7 +1889,8 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 	shutdown_syncboss_mcu(devdata);
 
 	if (devdata->cameras_enabled) {
-		dev_warn(&devdata->spi->dev, "Cameras still enabled at shutdown.  Manually forcing camera release");
+		dev_warn(&devdata->spi->dev,
+			"Cameras still enabled at shutdown. Manually forcing camera release");
 		syncboss_on_camera_release(devdata);
 	}
 
@@ -1817,7 +1908,26 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 				  SYNCBOSS_PROX_EVENT_SYSTEM_DOWN,
 				  /*should_lock*/ true);
 	} else {
-		dev_warn(&devdata->spi->dev, "Not stopping worker since it appears to be be NULL");
+		dev_warn(&devdata->spi->dev,
+			"Not stopping worker since it appears to be be NULL");
+	}
+
+	if (devdata->imu_core) {
+		status = regulator_disable(devdata->imu_core);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable IMU power: %d",
+					status);
+		}
+	}
+
+	if (devdata->mag_core) {
+		status = regulator_disable(devdata->mag_core);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable mag power: %d",
+					status);
+		}
 	}
 
 	/* Release the wakelock so we won't prevent the device from
@@ -1852,7 +1962,7 @@ static void prox_wake_set(struct syncboss_dev_data *devdata, bool enable)
 		if (status == 0)
 			dev_info(&devdata->spi->dev, "SyncBoss awake");
 		else {
-			dev_err(&devdata->spi->dev, "SyncBoss failed to boot within %ims",
+			dev_err(&devdata->spi->dev, "SyncBoss failed to boot within %dms",
 				SYNCBOSS_SLEEP_TIMEOUT_MS);
 			goto error;
 		}
@@ -1917,7 +2027,7 @@ static int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata)
 	status = sysfs_create_group(&devdata->spi->dev.kobj,
 				    &syncboss_attr_grp);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "sysfs_create_group failed with error %i",
+		dev_err(&devdata->spi->dev, "sysfs_create_group failed with error %d",
 			status);
 		return status;
 	}
@@ -1925,7 +2035,7 @@ static int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata)
 	status = sysfs_create_link(&devdata->misc.this_device->kobj,
 				   &devdata->spi->dev.kobj, "spi");
 	if (status) {
-		dev_err(&devdata->spi->dev, "sysfs_create_link failed with error %i\n",
+		dev_err(&devdata->spi->dev, "sysfs_create_link failed with error %d\n",
 			status);
 		return status;
 	}
@@ -1997,6 +2107,15 @@ static irqreturn_t isr_thread_nsync(int irq, void *p)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t timesync_irq_handler(int irq, void *p)
+{
+	const uint64_t timestamp_ns = ktime_to_ns(ktime_get());
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *) p;
+
+	atomic64_set(&devdata->last_te_timestamp_ns, timestamp_ns);
+	return IRQ_HANDLED;
+}
+
 static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
@@ -2024,34 +2143,44 @@ static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->syncboss_workqueue = create_singlethread_workqueue(
 						"syncboss_workqueue");
 
-	devdata->gpio_reset = of_get_named_gpio(node, "oculus,syncboss-reset",
-						0);
-	devdata->gpio_swdclk = of_get_named_gpio(node, "oculus,syncboss-swdclk",
-						0);
-	devdata->gpio_swdio = of_get_named_gpio(node, "oculus,syncboss-swdio",
-						0);
-	devdata->gpio_wakeup = of_get_named_gpio(node, "oculus,syncboss-wakeup",
-						0);
-	devdata->gpio_nsync = of_get_named_gpio(node, "oculus,syncboss-nsync",
-						0);
+	devdata->gpio_reset = of_get_named_gpio(node,
+			"oculus,syncboss-reset", 0);
+	devdata->gpio_swdclk = of_get_named_gpio(node,
+			"oculus,syncboss-swdclk", 0);
+	devdata->gpio_swdio = of_get_named_gpio(node,
+			"oculus,syncboss-swdio", 0);
+	devdata->gpio_timesync = of_get_named_gpio(node,
+			"oculus,syncboss-timesync", 0);
+	devdata->gpio_wakeup = of_get_named_gpio(node,
+			"oculus,syncboss-wakeup", 0);
+	devdata->gpio_nsync = of_get_named_gpio(node,
+			"oculus,syncboss-nsync", 0);
 
 	if (of_find_property(node, "oculus,syncboss-has-prox", NULL))
 		devdata->has_prox = true;
 
-	if (of_find_property(node, "oculus,syncboss-must-enable-cam-temp-sensor-power", NULL))
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
+	if (of_find_property(node,
+			"oculus,syncboss-must-enable-cam-temp-sensor-power",
+			NULL))
 		devdata->must_enable_camera_temp_sensor_power = true;
+	dev_info(&devdata->spi->dev, "must-enable-cam-temp-sensor-power: %s",
+		 devdata->must_enable_camera_temp_sensor_power ?
+		 "true" : "false");
+#endif
 
-	dev_info(&devdata->spi->dev, "GPIOs: reset: %i, swdclk: %i, swdio: %i, wakeup: %i, nsync: %i",
-		 devdata->gpio_reset, devdata->gpio_swdclk, devdata->gpio_swdio,
+	dev_info(&devdata->spi->dev,
+		 "GPIOs: reset: %d, swdclk: %d, swdio: %d, timesync: %d, wakeup: %d, nsync: %d",
+		 devdata->gpio_reset, devdata->gpio_swdclk,
+		 devdata->gpio_swdio, devdata->gpio_timesync,
 		 devdata->gpio_wakeup, devdata->gpio_nsync);
 
 	dev_info(&devdata->spi->dev, "has-prox: %s",
 		 devdata->has_prox ? "true" : "false");
-	dev_info(&devdata->spi->dev, "must-enable-cam-temp-sensor-power: %s",
-		 devdata->must_enable_camera_temp_sensor_power ? "true" : "false");
 	if ((devdata->gpio_reset < 0) || (devdata->gpio_swdclk < 0) ||
 	    (devdata->gpio_swdio < 0)) {
-		dev_err(&devdata->spi->dev, "Some GPIO lines not specified in device tree.  We will be unable to reset or update firmware");
+		dev_err(&devdata->spi->dev,
+			"Some GPIO lines not specified in device tree. We will be unable to reset or update firmware");
 	}
 
 	mutex_init(&devdata->queued_buf_mutex);
@@ -2060,49 +2189,82 @@ static void init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	init_waitqueue_head(&devdata->spi_tx_complete);
 }
 
+#define MAX_PROP_SIZE 32
+static int init_syncboss_regulator(struct device *dev,
+		struct regulator **reg, const char *reg_name)
+{
+	int rc = 0;
+	uint32_t voltage[2] = {0};
+	struct device_node *of = dev->of_node;
+	char prop_name[MAX_PROP_SIZE] = {0};
+
+	snprintf(prop_name, MAX_PROP_SIZE, "oculus,%s", reg_name);
+	*reg = regulator_get(dev, prop_name);
+	if (IS_ERR(*reg)) {
+		rc = PTR_ERR(*reg);
+		dev_warn(dev, "%s: Failed to get regulator: %d\n", reg_name, rc);
+		return -EINVAL;
+	}
+
+	snprintf(prop_name, MAX_PROP_SIZE, "oculus,%s-voltage-level", reg_name);
+	rc = of_property_read_u32_array(of, prop_name, voltage, 2);
+	if (rc) {
+		dev_err(dev, "%s: Failed to get voltage range: %d\n", reg_name, rc);
+		goto err_reg_put;
+	}
+
+	rc = regulator_set_voltage(*reg, voltage[0], voltage[1]);
+	if (rc) {
+		dev_err(dev, "%s: Failed to set voltage: %d\n", reg_name, rc);
+		goto err_reg_put;
+	}
+
+	return 0;
+
+err_reg_put:
+	regulator_put(*reg);
+	*reg = NULL;
+	return rc;
+}
+
 static int syncboss_probe(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata = NULL;
-	int x;
 	int status = 0;
-	int ret;
 
 	dev_info(&spi->dev, "syncboss device initializing");
-	dev_info(&spi->dev, "name: %s, max speed: %i, cs: %i, bits/word: %i, mode: 0x%x, irq: %i, modalias: %s, cs_gpio: %i",
-		 dev_name(&spi->dev),
-		 spi->max_speed_hz,
-		 spi->chip_select,
-		 spi->bits_per_word,
-		 spi->mode,
-		 spi->irq,
-		 spi->modalias,
-		 spi->cs_gpio);
+	dev_info(
+		&spi->dev,
+		"name: %s, max speed: %d, cs: %d, bits/word: %d, mode: 0x%x, irq: %d, modalias: %s, cs_gpio: %d",
+		dev_name(&spi->dev), spi->max_speed_hz, spi->chip_select,
+		spi->bits_per_word, spi->mode, spi->irq, spi->modalias,
+		spi->cs_gpio);
 
 	devdata = kzalloc(sizeof(struct syncboss_dev_data), GFP_KERNEL);
 	if (!devdata)
 		return -ENOMEM;
 
-	/* L28 regulator 1.8V enable for Nordic and IMU */
-	devdata->imu_core = regulator_get(&spi->dev, "oculus,imu-core");
-	if (IS_ERR(devdata->imu_core))
-		pr_err("[SYNCBOSS]: L28 regulator getting error!!\n");
-
-	ret = regulator_set_voltage(devdata->imu_core, 1808000, 1808000);
-	if (ret < 0)
-		pr_err("[SYNCBOSS]: L28 regulator setting voltage failed!!\n");
-
-	ret = regulator_enable(devdata->imu_core);
-	if (ret < 0)
-		pr_err("[SYNCBOSS]: L28 regulator enable failed!!\n");
-
-	for (x = 0; x < 2; ++x) {
-		devdata->tx_bufs[x] = kzalloc(SYNCBOSS_MAX_TRANSACTION_LENGTH,
-					      GFP_KERNEL | GFP_DMA);
+	devdata->tx_bufs[0] = kzalloc(SYNCBOSS_MAX_TRANSACTION_LENGTH * 2,
+				      GFP_KERNEL | GFP_DMA);
+	devdata->tx_bufs[1] =
+		((u8 *)devdata->tx_bufs[0]) + SYNCBOSS_MAX_TRANSACTION_LENGTH;
+	if (!devdata->tx_bufs[0]) {
+		kfree(devdata);
+		return -ENOMEM;
 	}
-	devdata->rx_buf = kzalloc(sizeof(struct rx_history_elem),
-				  GFP_KERNEL | GFP_DMA);
+
+	devdata->rx_buf =
+		kzalloc(sizeof(struct rx_history_elem), GFP_KERNEL | GFP_DMA);
+	if (!devdata->rx_buf) {
+		kfree(devdata->tx_bufs[0]);
+		kfree(devdata);
+		return -ENOMEM;
+	}
 
 	init_syncboss_dev_data(devdata, spi);
+
+	init_syncboss_regulator(&spi->dev, &devdata->imu_core, "imu-core");
+	init_syncboss_regulator(&spi->dev, &devdata->mag_core, "mag-core");
 
 	dev_set_drvdata(&spi->dev, devdata);
 
@@ -2115,14 +2277,21 @@ static int syncboss_probe(struct spi_device *spi)
 
 	status = misc_register(&devdata->misc);
 	if (status < 0) {
-		dev_err(&spi->dev, "Failed to register misc device, error %i",
-			status);
+		dev_err(&spi->dev, "%s fails to register misc device, error %d",
+			__func__, status);
+		goto error_after_alloc;
 	}
 
 	devdata->stream_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
 	devdata->stream_fifo.config.header_payload = true;
 	devdata->stream_fifo.config.filter_fn = should_send_stream_packet;
 	status = miscfifo_register(&devdata->stream_fifo);
+	if (status < 0) {
+		dev_err(&spi->dev,
+			"%s fails to register miscfifo device, error %d",
+			__func__, status);
+		goto error_after_misc_register;
+	}
 
 	devdata->misc_stream.name = SYNCBOSS_STREAM_DEVICE_NAME;
 	devdata->misc_stream.minor = MISC_DYNAMIC_MINOR;
@@ -2130,13 +2299,20 @@ static int syncboss_probe(struct spi_device *spi)
 
 	status = misc_register(&devdata->misc_stream);
 	if (status < 0) {
-		dev_err(&spi->dev, "Failed to register misc stream device, error %i",
-			status);
+		dev_err(&spi->dev, "%s fails to register misc device, error %d",
+			__func__, status);
+		goto error_after_stream_fifo_register;
 	}
 
 	devdata->control_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
 	devdata->control_fifo.config.header_payload = true;
 	status = miscfifo_register(&devdata->control_fifo);
+	if (status < 0) {
+		dev_err(&spi->dev,
+			"%s fails to register miscfifo device, error %d",
+			__func__, status);
+		goto error_after_stream_register;
+	}
 
 	devdata->misc_control.name = SYNCBOSS_CONTROL_DEVICE_NAME;
 	devdata->misc_control.minor = MISC_DYNAMIC_MINOR;
@@ -2144,13 +2320,20 @@ static int syncboss_probe(struct spi_device *spi)
 
 	status = misc_register(&devdata->misc_control);
 	if (status < 0) {
-		dev_err(&spi->dev, "Failed to register misc stream device, error %i",
-			status);
+		dev_err(&spi->dev, "%s fails to register misc device, error %d",
+			__func__, status);
+		goto error_after_control_fifo_register;
 	}
 
 	devdata->prox_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
 	devdata->prox_fifo.config.header_payload = true;
 	status = miscfifo_register(&devdata->prox_fifo);
+	if (status < 0) {
+		dev_err(&spi->dev,
+			"%s fails to register miscfifo device, error %d",
+			__func__, status);
+		goto error_after_control_register;
+	}
 
 	devdata->misc_prox.name = SYNCBOSS_PROX_DEVICE_NAME;
 	devdata->misc_prox.minor = MISC_DYNAMIC_MINOR;
@@ -2158,9 +2341,13 @@ static int syncboss_probe(struct spi_device *spi)
 
 	status = misc_register(&devdata->misc_prox);
 	if (status < 0) {
-		dev_err(&spi->dev, "Failed to register misc prox device, error %i",
-			status);
+		dev_err(&spi->dev, "%s fails to register misc device, error %d",
+			__func__, status);
+		goto error_after_prox_fifo_register;
 	}
+
+	/* setup TE timestamp before sysfs nodes get enabled */
+	atomic64_set(&devdata->last_te_timestamp_ns, ktime_to_ns(ktime_get()));
 
 	if (devdata->gpio_nsync >= 0) {
 		devdata->nsync_fifo.config.kfifo_size = SYNCBOSS_NSYNC_MISCFIFO_SIZE;
@@ -2173,26 +2360,53 @@ static int syncboss_probe(struct spi_device *spi)
 
 		status = misc_register(&devdata->misc_nsync);
 		if (status < 0) {
-			dev_err(&spi->dev, "Failed to register misc nsync device, error %i",
+			dev_err(&spi->dev, "Failed to register misc nsync device, error %d",
 					status);
 		}
 	}
 
-	syncboss_init_sysfs_attrs(devdata);
+	status = syncboss_init_sysfs_attrs(devdata);
+	if (status < 0)
+		goto error_after_prox_register;
+
 	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
 	devdata->reset_requested = false;
 	devdata->enable_headers = true;
 
 	/* Init interrupts */
-	if (devdata->gpio_wakeup >= 0) {
-		devdata->wakeup_irq = gpio_to_irq(devdata->gpio_wakeup);
-		irq_set_status_flags(devdata->wakeup_irq, IRQ_DISABLE_UNLAZY);
-		/* This irq must be able to wake up the system */
-		irq_set_irq_wake(devdata->wakeup_irq, /*on*/1);
-		status = devm_request_threaded_irq(
-			&spi->dev, devdata->wakeup_irq, isr_primary_wakeup,
-			isr_thread_wakeup, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-			devdata->misc.name, devdata);
+	if (devdata->gpio_wakeup < 0) {
+		dev_err(&spi->dev, "Missing 'oculus,syncboss-wakeup' GPIO");
+		status = devdata->gpio_wakeup;
+		goto error_after_sysfs;
+	}
+	devdata->wakeup_irq = gpio_to_irq(devdata->gpio_wakeup);
+	irq_set_status_flags(devdata->wakeup_irq, IRQ_DISABLE_UNLAZY);
+	/* This irq must be able to wake up the system */
+	irq_set_irq_wake(devdata->wakeup_irq, /*on*/ 1);
+	status =
+		devm_request_threaded_irq(&spi->dev, devdata->wakeup_irq,
+					  isr_primary_wakeup, isr_thread_wakeup,
+					  IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+					  devdata->misc.name, devdata);
+	if (status < 0) {
+		dev_err(&spi->dev,
+			"%s fails to setup syncboss wakeup, error %d", __func__,
+			status);
+		goto error_after_sysfs;
+	}
+
+	if (devdata->gpio_timesync >= 0) {
+		devdata->timesync_irq = gpio_to_irq(devdata->gpio_timesync);
+		status = devm_request_irq(&spi->dev, devdata->timesync_irq,
+				timesync_irq_handler,
+				IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+				devdata->misc.name, devdata);
+		if (status < 0) {
+			dev_err(&spi->dev,
+				"%s fails to setup syncboss timesync, error %d",
+				__func__, status);
+			goto error_after_sysfs;
+		}
 	}
 
 	if (devdata->gpio_nsync >= 0) {
@@ -2208,7 +2422,7 @@ static int syncboss_probe(struct spi_device *spi)
 	/* Init device as a wakeup source (so prox interrupts can hold
 	 * the wake lock)
 	 */
-	device_init_wakeup(&spi->dev, /*enable*/true);
+	device_init_wakeup(&spi->dev, /*enable*/ true);
 
 	wakeup_source_init(&devdata->syncboss_in_use_wake_lock, "syncboss");
 
@@ -2217,15 +2431,46 @@ static int syncboss_probe(struct spi_device *spi)
 	 */
 	syncboss_queue_work(devdata, start_streaming_force_reset, NULL);
 	syncboss_queue_work(devdata, stop_streaming, NULL);
+	return 0;
+
+error_after_sysfs:
+	syncboss_deinit_sysfs_attrs(devdata);
+error_after_prox_register:
+	misc_deregister(&devdata->misc_prox);
+error_after_prox_fifo_register:
+	miscfifo_destroy(&devdata->prox_fifo);
+error_after_control_register:
+	misc_deregister(&devdata->misc_control);
+error_after_control_fifo_register:
+	miscfifo_destroy(&devdata->control_fifo);
+error_after_stream_register:
+	misc_deregister(&devdata->misc_stream);
+error_after_stream_fifo_register:
+	miscfifo_destroy(&devdata->stream_fifo);
+error_after_misc_register:
+	misc_deregister(&devdata->misc);
+error_after_alloc:
+	kfree(devdata->rx_buf);
+	kfree(devdata->tx_bufs[0]);
+
+	flush_workqueue(devdata->syncboss_workqueue);
+	destroy_workqueue(devdata->syncboss_workqueue);
+
+	kfree(devdata);
 	return status;
 }
 
 static int syncboss_remove(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata = NULL;
-	int x;
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
+
+	if (devdata->imu_core)
+		regulator_put(devdata->imu_core);
+	if (devdata->mag_core)
+		regulator_put(devdata->mag_core);
+
 	syncboss_deinit_sysfs_attrs(devdata);
 
 	misc_deregister(&devdata->misc_stream);
@@ -2237,8 +2482,7 @@ static int syncboss_remove(struct spi_device *spi)
 	miscfifo_destroy(&devdata->control_fifo);
 	miscfifo_destroy(&devdata->prox_fifo);
 
-	for (x = 0; x < 2; ++x)
-		kfree(devdata->tx_bufs[x]);
+	kfree(devdata->tx_bufs[0]);
 	kfree(devdata->rx_buf);
 
 	flush_workqueue(devdata->syncboss_workqueue);
@@ -2252,7 +2496,9 @@ static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata)
 {
 	dev_info(&devdata->spi->dev, "Turning on cameras");
 
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	enable_cameras();
+#endif
 	devdata->cameras_enabled = true;
 }
 
@@ -2281,6 +2527,7 @@ static int queue_packet_with_timeout(struct syncboss_dev_data *devdata,
 				     struct spi_data *packet, size_t size)
 {
 	int status = 0;
+	int wait_status = 0;
 
 	status = queue_tx_packet(devdata, packet, size);
 	if (status == 0)
@@ -2291,29 +2538,37 @@ static int queue_packet_with_timeout(struct syncboss_dev_data *devdata,
 		/* Wait for up to SYNCBOSS_WRITE_STAGE_TIMEOUT_MS for
 		 * buffer space to become available
 		 */
-		int wait_status = 0;
-		dev_dbg(&devdata->spi->dev, "Write buffer full, waiting for a bit..");
+
+		dev_dbg(&devdata->spi->dev,
+			"Write buffer full, waiting for a bit..");
 
 		/* Wait outside of the lock */
 		mutex_unlock(&devdata->state_mutex);
-		wait_status = wait_event_interruptible_timeout(devdata->spi_tx_complete,
-							       (queue_tx_packet(devdata, packet, size) == 0),
-							       msecs_to_jiffies(SYNCBOSS_WRITE_STAGE_TIMEOUT_MS));
+		wait_status = wait_event_interruptible_timeout(
+				devdata->spi_tx_complete,
+				(queue_tx_packet(devdata, packet, size) == 0),
+				msecs_to_jiffies(
+					SYNCBOSS_WRITE_STAGE_TIMEOUT_MS));
 		status = mutex_lock_interruptible(&devdata->state_mutex);
 		if (status != 0) {
-			dev_err(&devdata->spi->dev, "Failed to get state lock with error %i",
+			dev_err(&devdata->spi->dev,
+				"Failed to get state lock with error %d",
 				status);
 			return status;
 		}
 
 		if (wait_status > 0) {
-			dev_dbg(&devdata->spi->dev, "Write successful after wait");
+			dev_dbg(&devdata->spi->dev,
+				"Write successful after wait");
 			return 0;
 		} else if (wait_status == 0) {
-			dev_err(&devdata->spi->dev, "Write timed out after wait");
+			dev_err(&devdata->spi->dev,
+				"Write timed out after wait");
 			return -ETIMEDOUT;
 		} else {
-			dev_err(&devdata->spi->dev, "Write failed after wait with error %i", wait_status);
+			dev_err(&devdata->spi->dev,
+				"Write failed after wait with error %d",
+				wait_status);
 			return wait_status;
 		}
 	} else {
@@ -2334,13 +2589,15 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 
 	if (count > SYNCBOSS_MAX_TRANSACTION_LENGTH ||
 		copy_from_user(packet, (void *)buf, count)) {
-		dev_err(&devdata->spi->dev, "count is too large or copy_from_user failed!\n");
+		dev_err(&devdata->spi->dev,
+			"count is too large or copy_from_user failed!\n");
 		return -ENOBUFS;
 	}
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "Failed to get state lock with error %i",
+		dev_err(&devdata->spi->dev,
+			"Failed to get state lock with error %d",
 			status);
 		return status;
 	}
@@ -2355,12 +2612,13 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 	 */
 	status = count;
 
- error:
+error:
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }
 
-static ssize_t show_streaming(struct device *dev, struct device_attribute *attr,
+static ssize_t show_streaming(struct device *dev,
+			      struct device_attribute *attr,
 			      char *buf)
 {
 	struct syncboss_dev_data *devdata = NULL;
@@ -2372,12 +2630,12 @@ static ssize_t show_streaming(struct device *dev, struct device_attribute *attr,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", !!devdata->is_streaming);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->is_streaming);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2387,7 +2645,8 @@ static ssize_t store_streaming(struct device *dev,
 			       struct device_attribute *attr,
 			       const char *buf, size_t count)
 {
-	dev_info(dev, "Note: The \"streaming\" file is deprecated and writing to this file is a no-op");
+	dev_info(dev,
+		"Note: The \"streaming\" file is deprecated and writing to this file is a no-op");
 	return 0;
 }
 
@@ -2404,7 +2663,7 @@ static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
 
 		status = mutex_lock_interruptible(&devdata->state_mutex);
 		if (status != 0) {
-			dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+			dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 				status);
 			return status;
 		}
@@ -2430,12 +2689,12 @@ static ssize_t show_transaction_length(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", devdata->transaction_length);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->transaction_length);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2455,7 +2714,7 @@ static ssize_t store_transaction_length(struct device *dev,
 		dev_err(dev, "Failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_transaction_length > SYNCBOSS_MAX_TRANSACTION_LENGTH) {
-		dev_err(dev, "Transaction length must be <= %i",
+		dev_err(dev, "Transaction length must be <= %d",
 			SYNCBOSS_MAX_TRANSACTION_LENGTH);
 		return -EINVAL;
 	}
@@ -2463,15 +2722,19 @@ static ssize_t store_transaction_length(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	devdata->transaction_length = (u16)temp_transaction_length;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "Transaction length changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			"Transaction length changed while streaming.");
+		dev_info(dev,
+			"This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
@@ -2500,12 +2763,13 @@ static ssize_t show_next_avail_seq_num(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", devdata->next_avail_seq_num);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
+			   devdata->next_avail_seq_num);
 
 	devdata->next_avail_seq_num = next_seq_num(devdata->next_avail_seq_num);
 
@@ -2524,12 +2788,12 @@ static ssize_t show_cpu_affinity(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", devdata->cpu_core_to_use);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->cpu_core_to_use);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2549,7 +2813,7 @@ static ssize_t store_cpu_affinity(struct device *dev,
 		dev_err(dev, "Failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_cpu_affinity >= NR_CPUS) {
-		dev_err(dev, "CPU affinity must be < %i",
+		dev_err(dev, "CPU affinity must be < %d",
 			NR_CPUS);
 		return -EINVAL;
 	}
@@ -2557,15 +2821,19 @@ static ssize_t store_cpu_affinity(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	devdata->cpu_core_to_use = temp_cpu_affinity;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "CPU affinity changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			"CPU affinity changed while streaming.");
+		dev_info(dev,
+			"This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
@@ -2583,12 +2851,12 @@ static ssize_t show_transaction_period_us(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n",
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
 			   devdata->transaction_period_ns / 1000);
 
 	mutex_unlock(&devdata->state_mutex);
@@ -2613,7 +2881,7 @@ static ssize_t store_transaction_period_us(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
@@ -2621,8 +2889,12 @@ static ssize_t store_transaction_period_us(struct device *dev,
 	devdata->transaction_period_ns = temp_transaction_period_us * 1000;
 	status = count;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "Transaction period changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "Transaction period changed while streaming.");
+		dev_info(dev,
+			 "This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return status;
@@ -2640,14 +2912,14 @@ static ssize_t show_minimum_time_between_transactions_us(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	retval = scnprintf(
-	    buf, PAGE_SIZE, "%i\n",
-	    (int)(devdata->min_time_between_transactions_ns / NSEC_PER_USEC));
+	    buf, PAGE_SIZE, "%ld\n",
+	    (devdata->min_time_between_transactions_ns / NSEC_PER_USEC));
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2672,7 +2944,7 @@ static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
@@ -2681,8 +2953,12 @@ static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
 	    temp_minimum_time_between_transactions_us * NSEC_PER_USEC;
 	status = count;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "Minimum time between transactions changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "Minimum time between transactions changed while streaming.");
+		dev_info(dev,
+			 "This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return status;
@@ -2700,12 +2976,12 @@ static ssize_t show_num_rejected_transactions(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n",
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
 			   devdata->stats.num_rejected_transactions);
 
 	mutex_unlock(&devdata->state_mutex);
@@ -2724,7 +3000,7 @@ static ssize_t show_power(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
@@ -2748,13 +3024,15 @@ static ssize_t show_stats(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	retval = scnprintf(buf, PAGE_SIZE,
-			   "num_bad_magic_numbers\tnum_bad_checksums\tnum_rejected_transactions\n"
+			   "num_bad_magic_numbers\t"
+			   "num_bad_checksums\t"
+			   "num_rejected_transactions\n"
 			   "%u\t%u\t%u\n",
 			   devdata->stats.num_bad_magic_numbers,
 			   devdata->stats.num_bad_checksums,
@@ -2775,12 +3053,12 @@ static ssize_t show_spi_max_clk_rate(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", devdata->spi_max_clk_rate);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->spi_max_clk_rate);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2810,7 +3088,7 @@ static ssize_t store_spi_max_clk_rate(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
@@ -2823,8 +3101,12 @@ static ssize_t store_spi_max_clk_rate(struct device *dev,
 
 	status = count;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "SPI max clock rate changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "SPI max clock rate changed while streaming.");
+		dev_info(dev,
+			 "This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return status;
@@ -2841,12 +3123,12 @@ static ssize_t show_poll_priority(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", devdata->poll_prio);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->poll_prio);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2874,15 +3156,19 @@ static ssize_t store_poll_priority(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	devdata->poll_prio = temp_priority;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "Poll thread priority changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "Poll thread priority changed while streaming.");
+		dev_info(dev,
+			 "This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
@@ -2898,12 +3184,12 @@ static ssize_t show_enable_headers(struct device *dev,
 	retval = mutex_lock_interruptible(&devdata->state_mutex);
 	if (retval != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			retval);
 		return retval;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%i\n", !!devdata->enable_headers);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->enable_headers);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -2927,18 +3213,32 @@ static ssize_t store_enable_headers(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	devdata->enable_headers = !!temp_enable;
 
-	if (devdata->is_streaming)
-		dev_warn(dev, "Enable headers changed while streaming.  This change will not take effect until the stream is stopped and restarted");
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "Enable headers changed while streaming.");
+		dev_info(dev,
+			 "This change will not take effect until the stream is stopped and restarted");
+	}
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
+}
+
+static ssize_t show_te_timestamp(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct syncboss_dev_data *devdata =
+	(struct syncboss_dev_data *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%ld\n",
+		atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
 static ssize_t store_power(struct device *dev,
@@ -2951,8 +3251,8 @@ static ssize_t store_power(struct device *dev,
 
 static int syncboss_swd_is_nvmc_ready(struct swdhandle_t *handle)
 {
-	return (swd_memory_read(handle, SYNCBOSS_SWD_NRF_NVMC_READY) &
-		SYNCBOSS_SWD_NVMC_READY) == SYNCBOSS_SWD_NVMC_READY_Ready;
+	return (swd_memory_read(handle, SWD_NRF_NVMC_READY) &
+		SWD_NRF_NVMC_READY_BM) == SWD_NRF_NVMC_READY_Ready;
 }
 
 static int syncboss_swd_wait_for_nvmc_ready(struct syncboss_dev_data *devdata,
@@ -2970,8 +3270,8 @@ static int syncboss_swd_wait_for_nvmc_ready(struct syncboss_dev_data *devdata,
 		udelay(1000);
 	}
 
-	dev_err(&devdata->spi->dev, "SyncBoss SWD NVMC not ready after %ims",
-		(int)SWD_READY_TIMEOUT_MS);
+	dev_err(&devdata->spi->dev, "SyncBoss SWD NVMC not ready after %llums",
+		SWD_READY_TIMEOUT_MS);
 	return -ETIMEDOUT;
 }
 
@@ -2986,8 +3286,8 @@ static int syncboss_swd_erase_app(struct syncboss_dev_data *devdata,
 		       SYNCBOSS_NUM_FLASH_PAGES));
 
 	swd_halt(handle);
-	swd_memory_write(handle, SYNCBOSS_SWD_NRF_NVMC_CONFIG,
-			 SYNCBOSS_SWD_NVMC_CONFIG_EEN);
+	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
+			 SWD_NRF_NVMC_CONFIG_EEN);
 
 	/* Note: Instead of issuing an ERASEALL command, we erase each page
 	 * separately.  This is to preserve the values in the UICR where we
@@ -2995,15 +3295,15 @@ static int syncboss_swd_erase_app(struct syncboss_dev_data *devdata,
 	 */
 
 	for (x = 0; x < flash_pages_to_erase; ++x) {
-		swd_memory_write(handle, SYNCBOSS_SWD_NRF_NVMC_ERASEPAGE,
+		swd_memory_write(handle, SWD_NRF_NVMC_ERASEPAGE,
 			x * SYNCBOSS_FLASH_PAGE_SIZE);
 		status = syncboss_swd_wait_for_nvmc_ready(devdata, handle);
 		if (status != 0)
 			return status;
 	}
 
-	swd_memory_write(handle, SYNCBOSS_SWD_NRF_NVMC_CONFIG,
-			 SYNCBOSS_SWD_NVMC_CONFIG_REN);
+	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
+			 SWD_NRF_NVMC_CONFIG_REN);
 	return 0;
 }
 
@@ -3014,12 +3314,7 @@ static int syncboss_swd_write_block(struct syncboss_dev_data *devdata,
 	int status = 0;
 	int i = 0;
 	u32 value = 0;
-
-	if ((len % sizeof(u32)) != 0) {
-		dev_err(&devdata->spi->dev,
-			"Block size must be divisible by 4");
-		return -EINVAL;
-	}
+	u32 bytes_left = 0;
 
 	/* TODO: Parameter validation
 	 * assert("Flash write address out of page",
@@ -3027,11 +3322,18 @@ static int syncboss_swd_write_block(struct syncboss_dev_data *devdata,
 	 * assert("Nordic flash size must be multiple of four",
 	 *        (size & 3) == 0);
 	 */
-	swd_memory_write(handle, SYNCBOSS_SWD_NRF_NVMC_CONFIG,
-			 SYNCBOSS_SWD_NVMC_CONFIG_WEN);
+	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
+			 SWD_NRF_NVMC_CONFIG_WEN);
 	for (i = 0; i < len; i += sizeof(u32)) {
-		value = (data[i+0] << 0) | (data[i+1] << 8) |
-			(data[i+2] << 16) | (data[i+3] << 24);
+		bytes_left = len - i;
+		if (bytes_left >= sizeof(u32)) {
+			value = *((u32 *)&data[i]);
+		} else {
+			value = 0;
+			memcpy(&value, &data[i], bytes_left);
+		}
+		value = le32_to_cpu(value);
+
 		swd_memory_write(handle, addr + i, value);
 
 		status = syncboss_swd_wait_for_nvmc_ready(devdata, handle);
@@ -3040,8 +3342,8 @@ static int syncboss_swd_write_block(struct syncboss_dev_data *devdata,
 	}
 
  error:
-	swd_memory_write(handle, SYNCBOSS_SWD_NRF_NVMC_CONFIG,
-			 SYNCBOSS_SWD_NVMC_CONFIG_REN);
+	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
+			 SWD_NRF_NVMC_CONFIG_REN);
 	return status;
 }
 
@@ -3056,18 +3358,20 @@ static int update_firmware(struct syncboss_dev_data *devdata)
 	int bytes_left = 0;
 	int num_available_pages =
 		SYNCBOSS_NUM_FLASH_PAGES - SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN;
-	int max_fw_size_in_bytes =
+	size_t max_fw_size_in_bytes =
 		num_available_pages * SYNCBOSS_FLASH_PAGE_SIZE;
 	const struct firmware *fw = devdata->fw;
 
 	if (fw->size > max_fw_size_in_bytes) {
-		dev_err(&devdata->spi->dev, "Firmware binary size too large.  Provided size %i, max size: %i",
-			(int)fw->size, max_fw_size_in_bytes);
+		dev_err(&devdata->spi->dev,
+			"Firmware binary size too large, provided size: %zd, max size: %zd",
+			fw->size, max_fw_size_in_bytes);
 		return -ENOMEM;
 	}
 
-	dev_info(&devdata->spi->dev, "Updating firmware: Image size: %i bytes...",
-		 (int)fw->size);
+	dev_info(&devdata->spi->dev,
+		 "Updating firmware: Image size: %zd bytes...",
+		 fw->size);
 #if defined(CONFIG_DYNAMIC_DEBUG)
 	print_hex_dump_bytes("Firmware binary to write: ", DUMP_PREFIX_OFFSET,
 			     fw->data, fw->size);
@@ -3084,7 +3388,7 @@ static int update_firmware(struct syncboss_dev_data *devdata)
 		   (fw->size + NRF_BLOCK_SIZE - 1) / NRF_BLOCK_SIZE);
 
 	while (bytes_written < fw->size) {
-		dev_dbg(&devdata->spi->dev, "Writing block %i", iteration_ctr);
+		dev_dbg(&devdata->spi->dev, "Writing block %d", iteration_ctr);
 
 		bytes_left = fw->size - bytes_written;
 		bytes_to_write = min(bytes_left, NRF_BLOCK_SIZE);
@@ -3104,7 +3408,8 @@ static int update_firmware(struct syncboss_dev_data *devdata)
 
 	swd_deinit(&swd_handle);
 
-	dev_info(&devdata->spi->dev, "Done updating firmware.  Issuing syncboss sleep request");
+	dev_info(&devdata->spi->dev, "Done updating firmware. ");
+	dev_info(&devdata->spi->dev, "Issuing syncboss sleep request");
 
 	/* Start then stop the stream to pin-reset syncboss and tell it to
 	 * sleep
@@ -3132,7 +3437,7 @@ static ssize_t show_update_firmware(struct device *dev,
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
@@ -3145,7 +3450,7 @@ static ssize_t show_update_firmware(struct device *dev,
 
 		retval = scnprintf(buf, PAGE_SIZE,
 				   SYNCBOSS_FW_UPDATE_STATE_WRITING_STR
-				   " %i/%i\n",
+				   " %d/%d\n",
 				   atomic_read(&devdata->fw_blocks_written),
 				   atomic_read(&devdata->fw_blocks_to_write));
 	} else {
@@ -3174,17 +3479,19 @@ static ssize_t store_update_firmware(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %i",
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
 
 	if ((devdata->gpio_swdclk < 0) || (devdata->gpio_swdio < 0)) {
-		dev_err(dev, "Cannot update firmware since swd lines were not specified in the device tree");
+		dev_err(dev,
+			"Cannot update firmware since swd lines were not specified");
 		status = -EINVAL;
 		goto error;
 	} else if (devdata->fw_update_state != SYNCBOSS_FW_UPDATE_STATE_IDLE) {
-		dev_err(dev, "Cannot update firmware while firmware update is not in the idle state (is another fw update running?)");
+		dev_err(dev,
+			"Cannot update firmware while firmware update is not in the idle state, is another fw update running?");
 		status = -EINVAL;
 		goto error;
 	} else if (devdata->is_streaming) {
@@ -3195,7 +3502,8 @@ static ssize_t store_update_firmware(struct device *dev,
 
 	status = request_firmware(&devdata->fw, "syncboss.bin", dev);
 	if (status != 0) {
-		dev_err(&devdata->spi->dev, "request_firmware returned %i.  Please ensure syncboss.bin exists in /vendor/firmware/",
+		dev_err(&devdata->spi->dev,
+			"request_firmware: %d, Please ensure syncboss.bin is present.",
 			status);
 		goto error;
 	}

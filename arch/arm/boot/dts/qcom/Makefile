@@ -102,12 +102,15 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	apq8096-v3-pmi8996-mdm9x55-slimbus-mtp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
 
+ifeq ($(CONFIG_OCULUS),y)
+
 ifeq ($(CONFIG_VS1_BOARD),y)
+starlet_compat :=
+endif
+
 # add -starlet to DTB names when asking for starlet compat
 ifeq ($(CONFIG_STARLET8998_COMPAT),y)
 starlet_compat := -starlet
-else
-starlet_compat :=
 endif
 
 dtb-$(CONFIG_ARCH_MSM8998) += \

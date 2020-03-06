@@ -235,7 +235,7 @@ config VS1_BOARD
 
 config STARLET8998_COMPAT
 	bool "Starlet Platform Compat"
-	depends on VS1_BOARD
+	depends on OCULUS
 	help
 	  Enabling this option adds support for the Starlet8998 platform
 	  and enables required drivers.

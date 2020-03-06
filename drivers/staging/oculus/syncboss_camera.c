@@ -146,7 +146,8 @@ fail:
 	return rc;
 }
 
-static int32_t get_pin_control(struct device *dev, struct pinctrl **ppinctrl,
+static int32_t get_pin_control(struct device *dev,
+		struct pinctrl **ppinctrl,
 		struct pinctrl_state **active,
 		struct pinctrl_state **inactive,
 		const char *active_name,
@@ -462,7 +463,8 @@ static int syncboss_camera_power_enable(struct platform_device *pdev,
 	return 0;
 }
 
-static int syncboss_sensor_driver_enable_temp_sensor_power(struct platform_device *pdev)
+static int syncboss_sensor_driver_enable_temp_sensor_power(
+		struct platform_device *pdev)
 {
 	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
 	int rc = 0;
@@ -614,15 +616,15 @@ static int32_t syncboss_sensor_driver_platform_probe(
 			sensor_ctrl->pin_default);
 	if (rc) {
 		pr_err("%s:%d: Unable to set sensor pins to active state: %d\n",
-				__func__, __LINE__, rc);
+		       __func__, __LINE__, rc);
 		goto pinctrl_cleanup;
 	}
 
 	rc = syncboss_camera_get_dt_vreg_data(sensor_ctrl->of_node,
 			&sensor_ctrl->vregs, &sensor_ctrl->num_vregs);
 	if (rc) {
-		pr_err("%s:%d: Failed to get regulator information from device tree: %d\n",
-				__func__, __LINE__, rc);
+		pr_err("%s:%d: Failed to get regulator information: %d\n",
+		       __func__, __LINE__, rc);
 		goto pinctrl_cleanup;
 	}
 
@@ -779,16 +781,16 @@ void enable_cameras(void)
 	int x;
 
 	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err("ERROR: cannot enable cameras before all cameras have been enumerated\n");
+		pr_err("Cannot enable cameras before all cameras have been enumerated\n");
 		return;
 	}
 
 	for (x = 0; x < NUM_CAMERAS; ++x) {
 		if (glob_cameras[x].enabled) {
-			pr_info("Skipping enable for camera @ idx %i (already enabled)\n",
+			pr_info("Skipping enable for camera @ idx %d (already enabled)\n",
 				x);
 		} else {
-			pr_info("Enabling camera @ idx %i\n", x);
+			pr_info("Enabling camera @ idx %d\n", x);
 			syncboss_sensor_driver_resume(glob_cameras[x].pdev);
 			glob_cameras[x].enabled = true;
 		}
@@ -800,18 +802,18 @@ void disable_cameras(void)
 	int x;
 
 	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err("ERROR: cannot disable cameras before all cameras have been enumerated\n");
+		pr_err("Cannot disable cameras before all cameras have been enumerated\n");
 		return;
 	}
 
 	for (x = 0; x < NUM_CAMERAS; ++x) {
 		if (glob_cameras[x].enabled) {
-			pr_info("Disabling camera @ idx %i\n", x);
+			pr_info("Disabling camera @ idx %d\n", x);
 			syncboss_sensor_driver_suspend(glob_cameras[x].pdev,
 						       (pm_message_t){0});
 			glob_cameras[x].enabled = false;
 		} else {
-			pr_info("Skipping disable for camera @ idx %i (already disabled)\n",
+			pr_info("Skipping disable for camera @ idx %d (already disabled)\n",
 				x);
 		}
 	}
@@ -822,13 +824,16 @@ int enable_camera_temp_sensor_power(void)
 	int x;
 
 	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err("ERROR: cannot enable camera regulators before all cameras have been enumerated\n");
+		pr_err(
+			"Cannot enable camera regulators before all cameras have been enumerated\n");
 		return -EAGAIN;
 	}
 
 	for (x = 0; x < NUM_CAMERAS; ++x) {
-		pr_info("Turning on camera temp sensor regulator @ idx %i\n", x);
-		syncboss_sensor_driver_enable_temp_sensor_power(glob_cameras[x].pdev);
+		pr_info("Turning on camera temp sensor regulator @ idx %d\n",
+			x);
+		syncboss_sensor_driver_enable_temp_sensor_power(
+				glob_cameras[x].pdev);
 	}
 	return 0;
 }
