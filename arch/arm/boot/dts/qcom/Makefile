@@ -103,35 +103,33 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
 
 ifeq ($(CONFIG_OCULUS),y)
-
-ifeq ($(CONFIG_VS1_BOARD),y)
-starlet_compat :=
-endif
-
-# add -starlet to DTB names when asking for starlet compat
-ifeq ($(CONFIG_STARLET8998_COMPAT),y)
-starlet_compat := -starlet
-endif
-
+ifneq ($(CONFIG_STARLET_BOARD),y)
 dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-proto-v1.0.dtb \
 	vs1-proto-v2.0.dtb \
 	vs1-proto-v3.0.dtb \
-	vs1-evt1$(starlet_compat).dtb \
-	vs1-evt2-auo$(starlet_compat).dtb \
-	vs1-evt2-sdc$(starlet_compat).dtb \
-	vs1-evt3-sdc$(starlet_compat).dtb \
-	vs1-evt3-auo$(starlet_compat).dtb \
-	vs1-dvt-sdc$(starlet_compat).dtb \
-	vs1-dvt-auo$(starlet_compat).dtb \
-	vs1-pvt-sdc$(starlet_compat).dtb \
-	vs1-pvt-auo$(starlet_compat).dtb \
-	vs1-pvt-b-auo$(starlet_compat).dtb \
-	vs1-pvt-b-sdc$(starlet_compat).dtb \
-	vs1-ptc.dtb \
-	starlet-proto0.dtb
-
+	vs1-evt1.dtb \
+	vs1-evt2-auo.dtb \
+	vs1-evt2-sdc.dtb \
+	vs1-evt3-sdc.dtb \
+	vs1-evt3-auo.dtb \
+	vs1-dvt-sdc.dtb \
+	vs1-dvt-auo.dtb \
+	vs1-pvt-sdc.dtb \
+	vs1-pvt-auo.dtb \
+	vs1-pvt-b-auo.dtb \
+	vs1-pvt-b-sdc.dtb \
+	vs1-ptc.dtb
 else
+ifeq ($(CONFIG_SYNCBOSS_NUM_CAMERAS),2)
+dtb-$(CONFIG_ARCH_MSM8998) += starlet-proto0-biclops.dtb
+else
+ifeq ($(CONFIG_SYNCBOSS_NUM_CAMERAS),3)
+dtb-$(CONFIG_ARCH_MSM8998) += starlet-proto0-triclops.dtb
+endif # CONFIG_SYNCBOSS_NUM_CAMERAS),3
+endif # CONFIG_SYNCBOSS_NUM_CAMERAS),2
+endif # CONFIG_STARLET_BOARD
+else  # CONFIG_OCULUS
 dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 	msm8998-rumi.dtb \
 	msm8998-cdp.dtb \

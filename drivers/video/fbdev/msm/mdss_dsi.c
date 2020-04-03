@@ -45,75 +45,6 @@ static struct mdss_dsi_data *mdss_dsi_res;
 
 static struct pm_qos_request mdss_dsi_pm_qos_request;
 
-static ssize_t mdss_te_event_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	ssize_t retval = 0;
-	struct platform_device *pdev = to_platform_device(dev);
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	u64 te_ticks = 0;
-
-	if (pdev == NULL)
-		return -EAGAIN;
-
-	ctrl_pdata = platform_get_drvdata(pdev);
-	te_ticks = ktime_to_ns(ctrl_pdata->te_time);
-
-	retval = scnprintf(buf, PAGE_SIZE, "TE[%d]=%llu\n",
-		ctrl_pdata->ndx, te_ticks);
-
-	return retval;
-}
-
-static ssize_t mdss_te_event_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	int ret, te_scanline_value;
-
-	if (pdev == NULL)
-		return -EAGAIN;
-
-	ctrl_pdata = platform_get_drvdata(pdev);
-
-	ret = kstrtoint(buf, 10, &te_scanline_value);
-	if (ret || (te_scanline_value < 0)) {
-		pr_err("Invalid input for scanline\n");
-		return -EINVAL;
-	}
-
-	mdss_dsi_set_tear_scanline(ctrl_pdata, te_scanline_value);
-
-	return count;
-}
-
-static DEVICE_ATTR(te_event, S_IRUGO | S_IWUSR | S_IWGRP,
-	mdss_te_event_show, mdss_te_event_store);
-
-static struct attribute *mdss_te_sysfs_attrs[] = {
-	&dev_attr_te_event.attr,
-	NULL,
-};
-
-static struct attribute_group mdss_te_sysfs_group = {
-	.attrs = mdss_te_sysfs_attrs,
-};
-
-irqreturn_t mdss_dsi_handle_te(int irq, void *data)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
-		(struct mdss_dsi_ctrl_pdata *)data;
-
-	ctrl_pdata->te_time = ktime_get();
-	sysfs_notify_dirent(ctrl_pdata->te_event_sd);
-
-	trace_mdss_dsi_handle_te(
-		ctrl_pdata->ndx, ktime_to_ns(ctrl_pdata->te_time));
-
-	return IRQ_HANDLED;
-}
-
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag,
 	u32 **dump_mem)
 {
@@ -3361,8 +3292,6 @@ error:
 	return rc;
 }
 
-static dev_t dsi_first;
-
 static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -3438,23 +3367,6 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	ctrl_pdata->dsi_dev = device_create(fb_class, &pdev->dev,
-		MKDEV(MAJOR(dsi_first), MINOR(dsi_first) + ctrl_pdata->ndx),
-		ctrl_pdata, "dsi%d", ctrl_pdata->ndx);
-
-	rc = sysfs_create_group(&ctrl_pdata->dsi_dev->kobj,
-		&mdss_te_sysfs_group);
-	if (rc != 0)
-		pr_err("mdss_dsi: sysfs_create_group failed!!\n");
-
-	ctrl_pdata->te_event_sd = sysfs_get_dirent(ctrl_pdata->dsi_dev->kobj.sd,
-						   "te_event");
-	if (!ctrl_pdata->te_event_sd) {
-		pr_err("te_event sysfs lookup failed\n");
-		rc = -ENODEV;
-		goto error_shadow_clk_deinit;
-	}
-
 	if (!mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data) ||
 		(mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data) &&
 		(ctrl_pdata->panel_data.panel_info.pdest == DISPLAY_1))) {
@@ -3512,16 +3424,6 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 			goto error_shadow_clk_deinit;
 		}
 		disable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
-	} else {
-		rc = devm_request_irq(&pdev->dev,
-			gpio_to_irq(ctrl_pdata->disp_te_gpio),
-			mdss_dsi_handle_te,
-			IRQF_TRIGGER_RISING | IRQF_NO_THREAD | IRQF_NOBALANCING,
-			"VSYNC_GPIO", ctrl_pdata);
-		if (rc) {
-			pr_err("TE request_irq failed.\n");
-			goto error_shadow_clk_deinit;
-		}
 	}
 
 	rc = mdss_dsi_get_bridge_chip_params(pinfo, ctrl_pdata, pdev);
@@ -3560,8 +3462,6 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	return 0;
 
 error_shadow_clk_deinit:
-	sysfs_remove_group(&ctrl_pdata->dsi_dev->kobj, &mdss_te_sysfs_group);
-
 	mdss_dsi_shadow_clk_deinit(&pdev->dev, ctrl_pdata);
 error_pan_node:
 	mdss_dsi_unregister_bl_settings(ctrl_pdata);
