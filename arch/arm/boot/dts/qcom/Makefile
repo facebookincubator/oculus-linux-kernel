@@ -103,7 +103,9 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
 
 ifeq ($(CONFIG_OCULUS),y)
-ifneq ($(CONFIG_STARLET_BOARD),y)
+ifeq ($(CONFIG_VS2_BOARD),y)
+-include $(srctree)/$(src)/Makefile.*
+else
 dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-proto-v1.0.dtb \
 	vs1-proto-v2.0.dtb \
@@ -118,17 +120,8 @@ dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-pvt-sdc.dtb \
 	vs1-pvt-auo.dtb \
 	vs1-pvt-b-auo.dtb \
-	vs1-pvt-b-sdc.dtb \
-	vs1-ptc.dtb
-else
-ifeq ($(CONFIG_SYNCBOSS_NUM_CAMERAS),2)
-dtb-$(CONFIG_ARCH_MSM8998) += starlet-proto0-biclops.dtb
-else
-ifeq ($(CONFIG_SYNCBOSS_NUM_CAMERAS),3)
-dtb-$(CONFIG_ARCH_MSM8998) += starlet-proto0-triclops.dtb
-endif # CONFIG_SYNCBOSS_NUM_CAMERAS),3
-endif # CONFIG_SYNCBOSS_NUM_CAMERAS),2
-endif # CONFIG_STARLET_BOARD
+	vs1-pvt-b-sdc.dtb
+endif
 else  # CONFIG_OCULUS
 dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 	msm8998-rumi.dtb \
