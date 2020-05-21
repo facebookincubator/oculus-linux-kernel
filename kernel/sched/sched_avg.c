@@ -138,7 +138,7 @@ void sched_update_nr_prod(int cpu, long delta, bool inc)
 	nr_running = per_cpu(nr, cpu);
 	curr_time = sched_clock();
 	diff = curr_time - per_cpu(last_time, cpu);
-	BUG_ON((s64)diff < 0);
+	WARN_ON((s64)diff < 0);
 	per_cpu(last_time, cpu) = curr_time;
 	per_cpu(nr, cpu) = nr_running + (inc ? delta : -delta);
 

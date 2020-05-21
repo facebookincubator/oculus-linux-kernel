@@ -19,7 +19,6 @@
 
 #include <linux/gpio/driver.h>
 #include <linux/gpio/consumer.h>
-#include <stdatomic.h>
 
 /* Info */
 #define CM710X_RESET				0x00
@@ -1361,7 +1360,7 @@ struct cm710x_codec_priv {
 
 	bool bDelayForPopNoise;
 	bool bDspMode;
-	atomic_bool bSuspendRequestPending;
+	atomic_t bSuspendRequestPending;
 
 	struct mutex Dsp_Access_Lock;
 

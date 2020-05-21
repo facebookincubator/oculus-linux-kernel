@@ -816,7 +816,7 @@ static ssize_t cm710x_write_firmware_Codec_CMD(
 	ssize_t ret = 0;
 
 	for (idx = 0; idx < Count; idx++) {
-		if (cm710x_codec->bSuspendRequestPending)
+		if (atomic_read(&cm710x_codec->bSuspendRequestPending))
 			break;
 		reg = I2CCommand[idx * 4];
 		data = I2CCommand[(idx * 4) + 2] |
@@ -858,7 +858,8 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 			"SPI Write chunk Addr 0x%08x Len = %zd\n",
 			uAddr, iWriteSize);
 		ret = cm710x_write_SPI_Dsp(uAddr, fwData, iWriteSize);
-		if (ret != 0 || cm710x_codec->bSuspendRequestPending) {
+		if (ret != 0 ||
+		    atomic_read(&cm710x_codec->bSuspendRequestPending)) {
 			pr_err("%s: Firmware Load Chunk SPI interface failed\n",
 					__func__);
 			ret = -ECANCELED;
@@ -923,7 +924,7 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		cm710x_codec->bDspMode = true;
 
 	fwData += lSize;
-	if (cm710x_codec->bSuspendRequestPending) {
+	if (atomic_read(&cm710x_codec->bSuspendRequestPending)) {
 		ret = -ECANCELED;
 		goto __EXIT;
 	}
@@ -948,7 +949,7 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		dev_info(cm710x_codec->dev, "stardsp = 0x%04x\n", stardsp);
 		if (stardsp != 0x3ff)
 			usleep_range(10000, 15000);
-		if (cm710x_codec->bSuspendRequestPending) {
+		if (atomic_read(&cm710x_codec->bSuspendRequestPending)) {
 			ret = -ECANCELED;
 			break;
 		}
@@ -1707,9 +1708,9 @@ static int cm710x_codec_suspend(struct snd_soc_codec *codec)
 		snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	cm710x_codec->bSuspendRequestPending = true;
+	atomic_set(&cm710x_codec->bSuspendRequestPending, true);
 	cancel_work_sync(&cm710x_codec->fw_download_work);
-	cm710x_codec->bSuspendRequestPending = false;
+	atomic_set(&cm710x_codec->bSuspendRequestPending, false);
 
 	regmap_write(cm710x_codec->virt_regmap, CM710X_RESET, 0x10ec);
 	cm710x_codec->bDspMode = false;
