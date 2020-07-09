@@ -1036,18 +1036,31 @@
 		spi-cpha;
 
 		pinctrl-names = "syncboss_default";
-		pinctrl-0 = <&syncboss_float_swd &syncboss_reset_default>;
+		pinctrl-0 = <&syncboss_reset_default>;
 
-		oculus,swdflavor = "nrf52832";
-		oculus,syncboss-reset  = <&tlmm 126 0>;
-		oculus,syncboss-swdclk = <&tlmm 58 0>;
-		oculus,syncboss-swdio  = <&tlmm 59 0>;
+		oculus,syncboss-reset = <&tlmm 126 0>;
 		oculus,syncboss-timesync = <&tlmm 10 0>;
 		oculus,syncboss-wakeup = <&tlmm 119 0>;
 		oculus,imu-core-supply = <&pm8998_l28>;
 		oculus,imu-core-voltage-level = <1808000 1808000>;
 		oculus,mag-core-supply = <&pm8998_l28>;
 		oculus,mag-core-voltage-level = <1808000 1808000>;
+
+		swd@0 {
+			compatible = "oculus,swd";
+
+			pinctrl-names = "swd_default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			oculus,swd-clk = <&tlmm 58 0>;
+			oculus,swd-io = <&tlmm 59 0>;
+
+			oculus,swd-flavor = "nrf52832";
+			oculus,fw-path = "syncboss.bin";
+			oculus,flash-block-size = <512>;
+			oculus,flash-page-size = <4096>;
+			oculus,flash-page-count = <128>;
+		};
 	};
 };
 
@@ -1121,4 +1134,26 @@
 			size = <0 0x9c00000>;
 		};
 	};
+};
+
+// Disable unused/unnecessary governors
+&memlat_cpu0 {
+	status = "disabled";
+};
+
+&memlat_cpu4 {
+	status = "disabled";
+};
+
+&devfreq_memlat_0 {
+	status = "disabled";
+};
+
+&devfreq_memlat_4 {
+	status = "disabled";
+};
+
+&soc {
+	/delete-node/ devfreq_spdm_cpu;
+	/delete-node/ devfreq_spdm_gov;
 };

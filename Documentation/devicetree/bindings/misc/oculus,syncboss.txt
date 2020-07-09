@@ -3,5 +3,15 @@ Oculus SyncBoss
 Required properties:
 - compatible : must be "oculus,syncboss"
 - oculus,syncboss-reset : handle to gpio node for reset pin
-- oculus,syncboss-swdclk : handle to the gpio node for the SWD CLK pin
-- oculus,syncboss-swdio : handle to the gpio node for the SWD IO pin
+
+Optional properties:
+- oculus,syncboss-timesync = handle to gpio node for timesync pin
+- oculus,syncboss-wakeup = handle to gpio node for wakeup pin
+- oculus,syncboss-nsync = handle to gpio node for nsync pin
+- oculus,imu-core-supply : handle to regulator node to power IMU, if applicable
+- oculus,imu-core-voltage-level = cell with IMU regulator voltage min-max, if
+  applicable
+- oculus,mag-core-supply : handle to regulator node to power magnetometer, if
+  applicable
+- oculus,mag-core-voltage-level : call with magnetometer regulator min-max, if
+  applicable

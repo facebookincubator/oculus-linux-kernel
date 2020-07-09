@@ -2,9 +2,16 @@ Oculus SWD
 
 Required properties:
 - compatible : must be "oculus,swd"
-- oculus,swdflavor : swd flashing subprotocol, one of "nrf", "at91samd"
-- oculus,fwpath : name of firmware, e.g. "myfirmware.bin"
-- oculus,swdclk : handle to the gpio node for the SWD CLK pin
-- oculus,swdio : handle to the gpio node for the SWD IO pin
-- oculus,swd-core-supply : handle to regulator node to power SWD device;
-- oculus,swd-core-voltage-level : cell with acceptable regulator min-max;
+- oculus,swd-flavor : swd flashing subprotocol, one of "nrf52832", "at91samd"
+- oculus,swd-clk : handle to the gpio node for the SWD CLK pin
+- oculus,swd-io : handle to the gpio node for the SWD IO pin
+- oculus,fw-path : name of firmware, e.g. "myfirmware.bin"
+- oculus,flash-block-size: <u32> flash memory block size, in bytes
+- oculus,flash-page-size: <u32> flash memory page size, in bytes
+- oculus,flash-page-count: <u32> number of flash memory page sizes
+
+Optional properties:
+- oculus,swd-core-supply : handle to regulator node to power SWD device, if
+  applicable
+- oculus,swd-core-voltage-level : cell with acceptable regulator min-max, if
+  applicable
