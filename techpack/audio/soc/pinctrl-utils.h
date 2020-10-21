@@ -1,0 +1,1 @@
+../../../../../../kernel/qcom/kona/drivers/pinctrl/pinctrl-utils.h

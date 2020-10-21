@@ -1,0 +1,61 @@
+&vendor {
+	vrapi-front-panel {
+		compatible = "oculus,front-panel-sensor";
+		status = "ok";
+	};
+};
+
+&thermal_zones {
+	cpuss-0-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+	};
+
+	cpuss-1-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+	};
+
+	gpuss-0-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+	};
+
+	gpuss-1-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+	};
+
+	soc {
+		status = "disabled";
+	};
+
+	vrapi-front-panel {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		wake-capable-sensor;
+		trips {
+			virt_trip: virt-trip {
+				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	vrapi-pmem {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 3>;
+		thermal-governor = "user_space";
+		wake-capable-sensor;
+		trips {
+			pop_trip: pop-trip {
+				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+};

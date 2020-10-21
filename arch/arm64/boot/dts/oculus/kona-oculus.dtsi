@@ -1,0 +1,88 @@
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+#include "default-sim-panels.dtsi"
+
+&mdm0 {
+	status = "disabled";
+};
+
+&qupv3_se4_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&reserved_memory {
+	oculus_dma_memory: oculus_dma_region {
+		compatible = "shared-dma-pool";
+		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
+		reusable;
+		alignment = <0x0 0x400000>;
+		size = <0x0 0x4C00000>;
+	};
+
+	ramoops: ramoops {
+		compatible = "ramoops";
+		reg = <0 0x9BA00000 0 0x00200000>;
+		record-size = <131072>;
+		console-size = <131072>;
+		ftrace-size = <131072>;
+		pmsg-size = <131072>;
+	};
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_vol_up_default>;
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&pm8150_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEUP>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+
+	qcom,ion {
+		qcom,ion-heap@30 {
+			reg = <30>;
+			memory-region = <&oculus_dma_memory>;
+			qcom,ion-heap-type = "DMA";
+		};
+	};
+};
+
+&spmi_debug_bus {
+	status = "ok";
+};
+
+&vendor {
+	extcon_usb1: extcon_usb1 {
+		compatible = "linux,extcon-usb-gpio";
+		vbus-gpio = <&pm8150_gpios 10 GPIO_ACTIVE_HIGH>;
+		id-gpio = <&tlmm 91 GPIO_ACTIVE_HIGH>;
+		vbus-out-gpio = <&pm8150_gpios 9 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&usb2_vbus_det_default
+			&usb2_id_det_default
+			&usb2_vbus_boost_default>;
+	};
+};
+
+&usb1 {
+	extcon = <&extcon_usb1>;
+};

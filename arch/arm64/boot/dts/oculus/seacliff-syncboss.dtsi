@@ -1,0 +1,126 @@
+&tlmm {
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio52", "gpio53";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio52", "gpio53";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_float_wake: syncboss_float_wake {
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio5";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio5";
+			drive-strength = <6>;
+			// Active-low logic to reset, so hold high by default
+			output-high;
+		};
+	};
+
+	syncboss_uart_active: syncboss_uart_active {
+		mux {
+			pins = "gpio54", "gpio55";
+			function = "qup17";
+		};
+
+		config {
+			pins = "gpio54", "gpio55";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+		mux {
+			pins = "gpio54";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio54";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
+		mux {
+			pins = "gpio55";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio55";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&qupv3_se17_4uart {
+	status = "ok";
+
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+};
+
+&pm8150a_l7 {
+	regulator-always-on;
+};
+
+&pm8150a_l8 {
+	regulator-always-on;
+};
+
+&qupv3_se19_spi {
+	status = "ok";
+	qcom,rt;
+
+	oculusnrf@0 {
+		status = "okay";
+		compatible = "oculus,syncboss";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "syncboss_default";
+		pinctrl-0 = <&syncboss_float_swd
+			&syncboss_reset_default
+			&syncboss_float_wake>;
+
+		oculus,swdflavor = "nrf52832";
+		oculus,syncboss-reset  = <&tlmm 5 0>;
+		oculus,syncboss-swdclk = <&tlmm 52 0>;
+		oculus,syncboss-swdio  = <&tlmm 53 0>;
+		oculus,syncboss-timesync = <&tlmm 68 0>;
+		oculus,syncboss-wakeup  = <&tlmm 4 0>;
+
+		oculus,syncboss-has-prox;
+	};
+};

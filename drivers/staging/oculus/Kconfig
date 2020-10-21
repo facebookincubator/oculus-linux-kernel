@@ -1,0 +1,87 @@
+comment "Collection of Oculus Driver"
+menu "Oculus Drivers"
+
+config AS5510
+	tristate "AS5510 Hall Effect Sensor i2c driver"
+	default n
+	help
+	  This driver sets up a regmap to read sensor values.
+
+	  With this sensor, can measure IPD. Look at regs 0x0-0x1.
+	  Here is spec sheet:
+	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
+
+config DEPTH_PROJECTOR
+	tristate "Depth Projector Kernel Driver"
+	default n
+	help
+	  Depth Projector Kernel Module to set default gpio values.
+	  This driver sets SWD_IO and SWD_CLK to high impedance mode
+
+config FRONT_PANEL_SENSOR
+	tristate "Front Panel Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a virtual sensor driver representing the front
+	  panel skin temperature of a device.
+
+config HYPERVISOR_GUEST
+	tristate "Hypervisor Guest Kernel Module"
+	default n
+	help
+	  Hypervisor Guest Kernel Module responsible for mapping memory, issuing
+	  hypercalls, and exposing an IOCTL interface to user mode.
+	  During boot the driver claims ownership of device memory, as specified
+	  in the device tree. These regions provide intermediate physical address
+	  space that can in turn contain mappings for circular queues and other
+	  IPC structures.
+	  The driver also installs an interrupt handler to handle port wake-ups
+	  posted by the hypervisor.
+
+config MISCFIFO
+	tristate "miscfifo chardev driver"
+	default n
+	---help---
+	  Like seqfile, this driver provides file operations to
+	  easily implement a chardev backed by a kfifo.
+
+	  Drivers using this chardev only have to call one of the
+	  send() functions to deliver events to userspace.
+
+config MISCFIFO_SAMPLE
+	tristate "miscfifo chardev driver example"
+	default n
+	---help---
+	  Example usage of miscfifo chardev driver
+
+config MOLOKINI
+	tristate "Molokini usbpd driver"
+	default n
+	help
+	  Molokini usbpd kernel module for registering unstructured vdm messages.
+	  Messages will be sent with host device acting as a source and a sink to
+	  Molokini.
+	  Also creates debugfs nodes to advertise Molokini battery parameters.
+
+config SYNCBOSS
+	tristate "Oculus SyncBoss Driver"
+	depends on MISCFIFO && SPI
+	default y
+	---help---
+	  Oculus SyncBoss Driver
+
+config SYNCBOSS_CAMERA_CONTROL
+	bool "Support Syncboss camera control"
+	depends on SYNCBOSS
+	default y
+	---help---
+	  Allow Syncboss driver to control camera hardware
+
+config SYNCBOSS_NUM_CAMERAS
+	int
+	prompt "Number of cameras in Oculus Syncboss"
+	depends on SYNCBOSS
+	default 4
+	---help---
+	  Number of cameras used in Oculus Syncboss driver
+endmenu
