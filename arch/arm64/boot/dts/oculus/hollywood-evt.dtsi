@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pm8150_l10 {
+	qcom,init-voltage = <2960000>;
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	as5510-driver {
+		reg = <0x56>;
+		compatible = "ams,as5510";
+		power-supply = <&pm8150_l10>;
+	};
+};
+
+&cam_cci0 {
+	qcom,cam-sensor1 {
+		csiphy-sd-index = <1>;
+		pinctrl-0 = <&cam_sensor_mclk3_active>;
+		pinctrl-1 = <&cam_sensor_mclk3_suspend>;
+		gpios = <&tlmm 95 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK1";
+		clocks = <&clock_camcc CAM_CC_MCLK1_CLK>;
+	};
+};
+
+&cam_cci1 {
+	qcom,cam-sensor3 {
+		csiphy-sd-index = <3>;
+		pinctrl-0 = <&cam_sensor_mclk1_active>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend>;
+		gpios = <&tlmm 97 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK3";
+		clocks = <&clock_camcc CAM_CC_MCLK3_CLK>;
+	};
+};

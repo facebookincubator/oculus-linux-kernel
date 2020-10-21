@@ -1,0 +1,237 @@
+&tlmm {
+	fan_tach_default: fan_tach_default {
+		mux {
+			pins = "gpio64";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio64";
+			drive-strength = <4>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+&pm8150l_gpios {
+	fan_pwm {
+		fan_pwm_default: fan_pwm_default {
+			pins = "gpio10";
+			function = "func1";
+			bias-disable;
+			power-source = <1>;
+			output-low;
+			qcom,drive-strength = <3>;
+			drive-push-pull;
+			status = "okay";
+		};
+	};
+};
+
+&pm8150l_pwm {
+	status = "okay";
+};
+
+&spmi_bus {
+	qcom,pm8150l@5 {
+		fan: pwm-tach-fan {
+			compatible = "pwm-tach-fan";
+			fan,tach-gpio = <&tlmm 64 0x0>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <13 1>;
+			interrupt-names = "fan_irq";
+			panel = <&dsi_jdi_4k_dsc_video
+				&dsi_jdi_4k_90Hz_dsc_video
+				&dsi_sharp_4k_72Hz_dsc_video
+				&dsi_sharp_4k_90Hz_dsc_video
+				&dsi_sharp_4k_72Hz_dsc_evt2_video
+				&dsi_sharp_4k_90Hz_dsc_evt2_video
+				&dsi_sharp_4k_72Hz_dsc_dvt_video
+				&dsi_sharp_4k_90Hz_dsc_dvt_video>;
+			/*25KHz -> 40000ns*/
+			pwms = <&pm8150l_pwm 1 40000>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&fan_pwm_default &fan_tach_default>;
+			status = "okay";
+			#cooling-cells = <2>;
+			cooling-levels = <0 1000 2000 3000 4000 5000 6000>;
+		};
+	};
+};
+
+&thermal_zones {
+	batt-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			batt_fan_trip0: batt_fan_trip0 {
+				temperature = <250>;
+				hysteresis = <20>;
+				type = "active";
+			};
+
+			batt_fan_trip1: batt_fan_trip1 {
+				temperature = <480>;
+				hysteresis = <20>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			batt_fan_map0: batt_fan_map0 {
+				trip = <&batt_fan_trip0>;
+				/* RPM: 0 - 3000 */
+				cooling-device = <&fan 0 3>;
+			};
+
+			batt_fan_map1: batt_fan_map1 {
+				trip = <&batt_fan_trip1>;
+				/* RPM: 3000 - 6000 */
+				cooling-device = <&fan 3 6>;
+			};
+		};
+	};
+
+	cpu0-3-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&tsens0 5>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			cpu0_3_fan_trip0: cpu0_3_fan_trip0 {
+				temperature = <35000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+
+			cpu0_3_fan_trip1: cpu0_3_fan_trip1 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu0_3_fan_map0: cpu0_3_fan_map0 {
+				trip = <&cpu0_3_fan_trip0>;
+				/* RPM: 0 - 3000 */
+				cooling-device = <&fan 0 3>;
+			};
+
+			cpu0_3_fan_map1: cpu0_3_fan_map1 {
+				trip = <&cpu0_3_fan_trip1>;
+				/* RPM: 3000 - 6000 */
+				cooling-device = <&fan 3 6>;
+			};
+		};
+	};
+
+	cpu4-7-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&tsens0 6>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			cpu4_7_fan_trip0: cpu4_7_fan_trip0 {
+				temperature = <35000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+
+			cpu4_7_fan_trip1: cpu4_7_fan_trip1 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu4_7_fan_map0: cpu4_7_fan_map0 {
+				trip = <&cpu4_7_fan_trip0>;
+				/* RPM: 0 - 3000 */
+				cooling-device = <&fan 0 3>;
+			};
+
+			cpu4_7_fan_map1: cpu4_7_fan_map1 {
+				trip = <&cpu4_7_fan_trip1>;
+				/* RPM: 3000 - 6000 */
+				cooling-device = <&fan 3 6>;
+			};
+		};
+	};
+
+	gpu0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&tsens0 15>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			gpu0_fan_trip0: gpu0_fan_trip0 {
+				temperature = <35000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+
+			gpu0_fan_trip1: gpu0_fan_trip1 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpu0_fan_map0: gpu0_fan_map0 {
+				trip = <&gpu0_fan_trip0>;
+				/* RPM: 0 - 3000 */
+				cooling-device = <&fan 0 3>;
+			};
+
+			gpu0_fan_map1: gpu0_fan_map1 {
+				trip = <&gpu0_fan_trip1>;
+				/* RPM: 3000 - 6000 */
+				cooling-device = <&fan 3 6>;
+			};
+		};
+	};
+
+	gpu1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&tsens1 8>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			gpu1_fan_trip0: gpu1_fan_trip0 {
+				temperature = <35000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+
+			gpu1_fan_trip1: gpu1_fan_trip1 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpu1_fan_map0: gpu1_fan_map0 {
+				trip = <&gpu1_fan_trip0>;
+				/* RPM: 0 - 3000 */
+				cooling-device = <&fan 0 3>;
+			};
+
+			gpu1_fan_map1: gpu1_fan_map1 {
+				trip = <&gpu1_fan_trip1>;
+				/* RPM: 3000 - 6000 */
+				cooling-device = <&fan 3 6>;
+			};
+		};
+	};
+};

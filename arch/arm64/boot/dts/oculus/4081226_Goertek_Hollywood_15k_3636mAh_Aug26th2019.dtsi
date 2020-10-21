@@ -1,0 +1,167 @@
+
+qcom,4081226_goertek_hollywood_15k_3636mah_aug26th2019 {
+	qcom,profile-revision = <24>;
+	/* 4081226_Goertek_hollywood_3636mAh_Aug26th2019*/
+	qcom,max-voltage-uv = <4400000>;
+	qcom,fastchg-current-ma = <2000>;/* 0.5C */
+	qcom,jeita-fcc-ranges-0 = <50 100  720000
+				110 200  2000000
+				201 450  2000000
+				451 550  720000>;
+	qcom,jeita-fcc-ranges-1 = <50 100  720000
+				110 200  2000000
+				201 450  2000000
+				451 550  720000>;
+	qcom,jeita-fv-ranges-0 = <50  100  4400000
+				110 200  4400000
+				210 450  4400000
+				451 550  4170000>;
+	qcom,jeita-fv-ranges-1 = <50  100  4170000
+				110 200  4170000
+				210 450  4170000
+				451 550  3900000>;
+	qcom,cycle-fcc-ranges-0 = <0  300  2000000
+				301 500  2000000
+				501 800  2000000>;
+	qcom,cycle-fcc-ranges-1 = <0  300  2000000
+				301 500  2000000
+				501 800  2000000>;
+	qcom,cycle-fv-ranges-0 = <0   300  4400000
+				301 500  4400000
+				501 800  4300000>;
+	qcom,cycle-fv-ranges-1 = <0   300  4170000
+				301 500  4170000
+				501 800  4000000>;
+	qcom,step-chg-ranges-0 = <3600000 4060000 2000000
+				4061000 4400000 2000000>;
+	qcom,step-chg-ranges-1 = <3600000 4060000 2000000
+				4061000 4400000 2000000>;
+	/* COLD = 0 DegC, HOT = 50 DegC */
+	qcom,jeita-hard-thresholds = <0x58cd 0x1c22>;
+	/* COOL = 10 DegC, WARM = 45 DegC */
+	qcom,jeita-soft-thresholds = <0x4ccc 0x20b8>;
+	/* COLD hys = 12 DegC, WARM hys = 43 DegC */
+	qcom,jeita-soft-hys-thresholds = <0x4a2a 0x22b8>;
+	qcom,jeita-soft-fcc-ua = <720000 720000>;/* 0.2C */
+	qcom,jeita-soft-fv-uv = <4300000 4300000>;
+	qcom,ocv-based-step-chg;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qcom,nom-batt-capacity-mah = <3636>;
+	qcom,batt-id-kohm = <15>;
+	qcom,battery-beta = <4250>;
+	qcom,therm-room-temp = <100000>;
+	qcom,battery-type = "4081226_goertek_hollywood_15k_3636mah_aug26th2019";
+	qcom,therm-coefficients = <0x2318 0xd0c 0xdaf7 0xc556 0x848d>;
+	qcom,therm-center-offset = <0x70>;
+	qcom,therm-pull-up = <100>;
+	qcom,rslow-normal-coeffs = <0xdd 0x05 0x51 0x12>;
+	qcom,rslow-low-coeffs = <0x41 0x15 0xe7 0x05>;
+	qcom,checksum = <0xEF51>;
+	qcom,gui-version = "PM855GUI - 1.0.0.13";
+	qcom,fg-profile-data = [
+		 09 00 17 EA
+		 B5 E5 15 EA
+		 AB E5 00 00
+		 2D BD 7B 8A
+		 FC 87 E9 93
+		 08 84 F1 87
+		 23 00 DD 05
+		 51 12 C6 04
+		 05 02 CE 07
+		 32 00 DE EB
+		 63 ED 85 DC
+		 F1 0B 0A DD
+		 4B C4 C3 0C
+		 B3 01 35 DA
+		 60 00 3C 00
+		 3E 00 3F 00
+		 37 00 30 00
+		 36 00 3D 00
+		 3F 00 47 00
+		 4B 00 60 00
+		 2E 00 36 00
+		 3D 00 38 00
+		 35 00 63 00
+		 53 64 41 00
+		 3F 00 43 08
+		 60 F8 52 00
+		 5D 00 80 10
+		 6F 10 5F 00
+		 B0 28 86 50
+		 6B 60 5F 0B
+		 67 00 D8 00
+		 C1 1F 6E 0D
+		 60 FA 57 05
+		 78 1C 76 0B
+		 7E 0D B0 2A
+		 5D 17 E5 4A
+		 F7 5D EF 03
+		 68 0F 3D 1F
+		 11 06 0B 02
+		 9F 05 E4 1C
+		 01 02 A4 05
+		 B0 0A D3 17
+		 17 22 D5 45
+		 14 5B 72 11
+		 97 1E C8 E6
+		 26 CB 2F C7
+		 DC 1C B1 C1
+		 9D 04 0A BA
+		 B1 17 C1 8B
+		 8E 84 29 A2
+		 72 A0 09 80
+		 E6 FB 90 04
+		 BC 02 B5 02
+		 00 F8 D8 DC
+		 9F E3 F4 07
+		 04 E2 86 C5
+		 42 18 18 F8
+		 27 D5 9E 02
+		 AD 05 7C 01
+		 CE 07 32 00
+		 F9 02 DC 03
+		 43 04 26 01
+		 8C 05 65 03
+		 CE 02 21 02
+		 A7 04 4F 00
+		 3A 00 40 00
+		 43 64 46 00
+		 46 00 46 00
+		 4B E8 47 00
+		 48 00 49 10
+		 43 10 3C 00
+		 4C 28 4D 48
+		 56 58 63 0D
+		 43 00 4E 00
+		 55 08 5B F8
+		 4C 00 46 00
+		 4D 10 63 10
+		 5D 00 70 28
+		 8B 48 58 60
+		 66 0D 6E 00
+		 69 00 49 08
+		 D8 00 49 1F
+		 AA 06 A8 0A
+		 7B 0C ED 1C
+		 0C 23 F5 45
+		 20 5A 8F 18
+		 0A 02 AF 05
+		 A4 03 67 10
+		 3F 0A E7 1F
+		 6D 05 8B 02
+		 95 04 BE 1C
+		 28 03 D0 05
+		 5C 02 6F 18
+		 17 02 8A 05
+		 03 02 6A 00
+		 55 1F 00 06
+		 2F 02 96 06
+		 D8 1C 59 02
+		 20 05 38 03
+		 97 18 56 03
+		 CB 04 21 02
+		 6E 00 25 01
+		 C0 00 FA 00
+		 9B 0E 00 00
+	];
+};

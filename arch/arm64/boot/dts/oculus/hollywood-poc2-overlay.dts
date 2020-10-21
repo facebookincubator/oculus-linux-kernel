@@ -1,0 +1,115 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-kona.h>
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "hollywood.dtsi"
+
+/ {
+	model = "Hollywood (POC2)";
+	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
+	qcom,board-id = <8 10>;
+};
+
+&bluetooth {
+	status = "disabled";
+};
+
+&qupv3_se6_4uart {
+	status = "disabled";
+};
+
+&pm8150a_l4 {
+	status = "ok";
+};
+
+&clock_audio_va_1 {
+	status = "disabled";
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		oculus,syncboss-timesync = <&tlmm 28 0>;
+	};
+};
+
+&qupv3_se8_i2c {
+	status = "disabled";
+};
+
+&qupv3_se6_i2c {
+	status = "disabled";
+};
+
+&ak4331 {
+	status = "disabled";
+};
+
+&cm710x {
+	status = "disabled";
+};
+
+&qupv3_se2_spi {
+	status = "disabled";
+
+	cm710x-spi@0 {
+		status = "disabled";
+	};
+};
+
+&q6core {
+	cm710x_snd {
+		status = "disabled";
+	};
+
+	pri_mi2s_gpios {
+		status = "disabled";
+	};
+};
+
+&pm8150a_l5 {
+	regulator-always-on;
+};
+
+&sde_dsi {
+	qcom,platform-te-gpio = <&tlmm 28 0>;
+};
+
+&slim_aud {
+	status = "disabled";
+};
+
+&tlmm {
+	sdcard_switch: sdcard_switch {
+		mux {
+			pins = "gpio78";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio78";
+			drive-strength = <6>;
+			output-low;
+		};
+	};
+};
+
+&extcon_storage_cd {
+	pinctrl-0 = <&storage_cd
+		&sdcard_switch>;
+};
+
+&ufshc_mem {
+	vccq2-supply = <&pm8150a_l4>;
+};
+
+&ufshc_card {
+	vccq2-supply = <&pm8150a_l4>;
+};
+
+&fan {
+	pinctrl-0 = <&fan_pwm_default>;
+};

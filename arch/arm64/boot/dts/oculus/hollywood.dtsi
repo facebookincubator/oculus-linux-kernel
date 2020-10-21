@@ -1,0 +1,108 @@
+#include "../vendor/qcom/kona-pmic-overlay.dtsi"
+#include "../vendor/qcom/kona-sde-display.dtsi"
+#include "../vendor/qcom/kona-thermal-overlay.dtsi"
+
+#include "kona-oculus.dtsi"
+#include "hollywood-adc.dtsi"
+#include "hollywood-audio.dtsi"
+#include "hollywood-camera.dtsi"
+#include "hollywood-fan.dtsi"
+#include "hollywood-panel.dtsi"
+#include "hollywood-qca6390.dtsi"
+#include "hollywood-syncboss.dtsi"
+#include "hollywood-thermal.dtsi"
+#include "hollywood-ufs.dtsi"
+
+&qupv3_se1_i2c {
+	status = "disabled";
+};
+
+&qupv3_se12_2uart {
+	status = "ok";
+};
+
+&qupv3_se15_i2c {
+	nq@64 {
+		status = "disabled";
+	};
+};
+
+&clock_rpmh {
+	compatible = "qcom,hollywood-rpmh-clk";
+	#clock-cells = <1>;
+};
+
+&vendor {
+	molokini: oculus,molokini {
+		status = "ok";
+		compatible = "oculus,molokini";
+		svid = <0x28330000>;
+		battery-usbpd = <&pm8150b_pdphy>;
+	};
+
+	kona_mtp_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"
+		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
+		#include "4284132_Goertek_Hollywood_25k_3710mAh_Jan13th2020.dtsi"
+		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
+		#include "3783416_Oculus_MontereyScud_3750mAh_averaged_MasterSlave_Aug2nd2019_PM8150BGUI10013.dtsi"
+	};
+};
+
+&pm8150b_charger {
+	status = "ok";
+	qcom,sec-charger-config = <0>;
+	qcom,auto-recharge-soc = <98>;
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,step-charging-enable;
+	qcom,sw-jeita-enable;
+	qcom,wd-bark-time-secs = <16>;
+	qcom,suspend-input-on-debug-batt;
+	qcom,fcc-max-ua = <2000000>;
+	qcom,usb-icl-ua = <3000000>;
+	qcom,dc-icl-ua = <3000000>;
+	qcom,otg-cl-ua = <1500000>;
+};
+
+&pm8150b_fg {
+	status = "ok";
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,hold-soc-while-full;
+	qcom,linearize-soc;
+	qcom,five-pin-battery;
+	qcom,cl-wt-enable;
+	/* ESR fast calibration */
+	qcom,fg-esr-timer-chg-fast = <0 7>;
+	qcom,fg-esr-timer-dischg-fast = <0 7>;
+	qcom,fg-esr-timer-chg-slow = <0 96>;
+	qcom,fg-esr-timer-dischg-slow = <0 96>;
+	qcom,fg-esr-cal-soc-thresh = <26 230>;
+	qcom,fg-esr-cal-temp-thresh = <10 40>;
+
+	qcom,fg-sys-term-current = <(-100)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
+	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
+	qcom,fg-cutoff-voltage = <3400>;
+	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+
+};
+
+&pm8150b_pdphy {
+	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
+		<9000 3000>; /* 9V @ 3A */
+};
+
+&pm8150l_rgb_led {
+	red {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	green {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	blue {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+};

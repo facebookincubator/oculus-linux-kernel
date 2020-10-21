@@ -1,0 +1,16 @@
+as5510
+
+A linear hall effect sensor with i2c communication
+
+Required properties:
+- compatible: must be "ams,as5510"
+- reg: i2c slave address of device
+- power-supply: the regulator associated with the device
+
+Example:
+
+  as5510-driver {
+      compatible = "ams,as5510";
+      reg = <0x56>;
+      power-supply = <&pm8150a_l11>;
+  };
