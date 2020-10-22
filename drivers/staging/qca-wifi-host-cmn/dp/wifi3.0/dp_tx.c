@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1398,37 +1398,46 @@ static void dp_tx_update_tdls_flags(struct dp_tx_desc_s *tx_desc)
 
 /**
  * dp_non_std_tx_comp_free_buff() - Free the non std tx packet buffer
+ * @soc: DP soc handdle
  * @tx_desc: TX descriptor
  * @vdev: datapath vdev handle
  *
  * Return: None
  */
-static void dp_non_std_tx_comp_free_buff(struct dp_tx_desc_s *tx_desc,
+static void dp_non_std_tx_comp_free_buff(struct dp_soc *soc,
+					 struct dp_tx_desc_s *tx_desc,
 					 struct dp_vdev *vdev)
 {
 	struct hal_tx_completion_status ts = {0};
 	qdf_nbuf_t nbuf = tx_desc->nbuf;
 
 	if (qdf_unlikely(!vdev)) {
-		dp_err("vdev is null!");
-		return;
+		dp_err_rl("vdev is null!");
+		goto error;
 	}
 
 	hal_tx_comp_get_status(&tx_desc->comp, &ts, vdev->pdev->soc->hal_soc);
 	if (vdev->tx_non_std_data_callback.func) {
-		qdf_nbuf_set_next(tx_desc->nbuf, NULL);
+		qdf_nbuf_set_next(nbuf, NULL);
 		vdev->tx_non_std_data_callback.func(
 				vdev->tx_non_std_data_callback.ctxt,
 				nbuf, ts.status);
 		return;
+	} else {
+		dp_err_rl("callback func is null");
 	}
+
+error:
+	qdf_nbuf_unmap(soc->osdev, nbuf, QDF_DMA_TO_DEVICE);
+	qdf_nbuf_free(nbuf);
 }
 #else
 static inline void dp_tx_update_tdls_flags(struct dp_tx_desc_s *tx_desc)
 {
 }
 
-static inline void dp_non_std_tx_comp_free_buff(struct dp_tx_desc_s *tx_desc,
+static inline void dp_non_std_tx_comp_free_buff(struct dp_soc *soc,
+						struct dp_tx_desc_s *tx_desc,
 						struct dp_vdev *vdev)
 {
 }
@@ -1534,9 +1543,11 @@ static qdf_nbuf_t dp_tx_send_msdu_single(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 	nbuf = NULL;
 
 fail_return:
-	if (hif_pm_runtime_get(soc->hif_handle) == 0) {
+	if (hif_pm_runtime_get(soc->hif_handle,
+			       RTPM_ID_DW_TX_HW_ENQUEUE) == 0) {
 		hal_srng_access_end(soc->hal_soc, hal_srng);
-		hif_pm_runtime_put(soc->hif_handle);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_DW_TX_HW_ENQUEUE);
 	} else {
 		hal_srng_access_end_reap(soc->hal_soc, hal_srng);
 		hal_srng_set_event(hal_srng, HAL_SRNG_FLUSH_EVENT);
@@ -1707,9 +1718,11 @@ qdf_nbuf_t dp_tx_send_msdu_multiple(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 	nbuf = NULL;
 
 done:
-	if (hif_pm_runtime_get(soc->hif_handle) == 0) {
+	if (hif_pm_runtime_get(soc->hif_handle,
+			       RTPM_ID_DW_TX_HW_ENQUEUE) == 0) {
 		hal_srng_access_end(soc->hal_soc, hal_srng);
-		hif_pm_runtime_put(soc->hif_handle);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_DW_TX_HW_ENQUEUE);
 	} else {
 		hal_srng_access_end_reap(soc->hal_soc, hal_srng);
 		hal_srng_set_event(hal_srng, HAL_SRNG_FLUSH_EVENT);
@@ -2602,7 +2615,7 @@ static inline void dp_tx_comp_free_buf(struct dp_soc *soc,
 
 	/* If it is TDLS mgmt, don't unmap or free the frame */
 	if (desc->flags & DP_TX_DESC_FLAG_TDLS_FRAME)
-		return dp_non_std_tx_comp_free_buff(desc, vdev);
+		return dp_non_std_tx_comp_free_buff(soc, desc, vdev);
 
 	/* 0 : MSDU buffer, 1 : MLE */
 	if (desc->msdu_ext_desc) {
@@ -2731,6 +2744,23 @@ static void dp_tx_compute_delay(struct dp_vdev *vdev,
 	vdev->prev_tx_enq_tstamp = timestamp_ingress;
 }
 
+#ifdef DISABLE_DP_STATS
+static
+inline void dp_update_no_ack_stats(qdf_nbuf_t nbuf, struct dp_peer *peer)
+{
+}
+#else
+static
+inline void dp_update_no_ack_stats(qdf_nbuf_t nbuf, struct dp_peer *peer)
+{
+	enum qdf_proto_subtype subtype = QDF_PROTO_INVALID;
+
+	DPTRACE(qdf_dp_track_noack_check(nbuf, &subtype));
+	if (subtype != QDF_PROTO_INVALID)
+		DP_STATS_INC(peer, tx.no_ack_count[subtype], 1);
+}
+#endif
+
 /**
  * dp_tx_update_peer_stats() - Update peer stats from Tx completion indications
  *				per wbm ring
@@ -2799,6 +2829,7 @@ dp_tx_update_peer_stats(struct dp_tx_desc_s *tx_desc,
 
 	if (ts->status != HAL_TX_TQM_RR_FRAME_ACKED) {
 		tid_stats->comp_fail_cnt++;
+		dp_update_no_ack_stats(tx_desc->nbuf, peer);
 		return;
 	}
 
@@ -3064,8 +3095,7 @@ void dp_tx_comp_process_tx_status(struct dp_tx_desc_s *tx_desc,
 	qdf_nbuf_t nbuf = tx_desc->nbuf;
 
 	if (!vdev || !nbuf) {
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO,
-				"invalid tx descriptor. vdev or nbuf NULL");
+		dp_info_rl("invalid tx descriptor. vdev or nbuf NULL");
 		goto out;
 	}
 
@@ -3640,26 +3670,6 @@ dp_is_tx_desc_flush_match(struct dp_pdev *pdev,
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 /**
- * dp_tx_desc_reset_vdev() - reset vdev to NULL in TX Desc
- *
- * @soc: Handle to DP SoC structure
- * @tx_desc: pointer of one TX desc
- * @desc_pool_id: TX Desc pool id
- */
-static inline void
-dp_tx_desc_reset_vdev(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
-		      uint8_t desc_pool_id)
-{
-	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
-
-	qdf_spin_lock_bh(&pool->flow_pool_lock);
-
-	tx_desc->vdev = NULL;
-
-	qdf_spin_unlock_bh(&pool->flow_pool_lock);
-}
-
-/**
  * dp_tx_desc_flush() - release resources associated
  *                      to TX Desc
  *
@@ -3702,6 +3712,17 @@ static void dp_tx_desc_flush(struct dp_pdev *pdev,
 		    !(tx_desc_pool->desc_pages.cacheable_pages))
 			continue;
 
+		/*
+		 * Add flow pool lock protection in case pool is freed
+		 * due to all tx_desc is recycled when handle TX completion.
+		 * this is not necessary when do force flush as:
+		 * a. double lock will happen if dp_tx_desc_release is
+		 *    also trying to acquire it.
+		 * b. dp interrupt has been disabled before do force TX desc
+		 *    flush in dp_pdev_deinit().
+		 */
+		if (!force_free)
+			qdf_spin_lock_bh(&tx_desc_pool->flow_pool_lock);
 		num_desc = tx_desc_pool->pool_size;
 		num_desc_per_page =
 			tx_desc_pool->desc_pages.num_element_per_page;
@@ -3725,15 +3746,22 @@ static void dp_tx_desc_flush(struct dp_pdev *pdev,
 					dp_tx_comp_free_buf(soc, tx_desc);
 					dp_tx_desc_release(tx_desc, i);
 				} else {
-					dp_tx_desc_reset_vdev(soc, tx_desc,
-							      i);
+					tx_desc->vdev = NULL;
 				}
 			}
 		}
+		if (!force_free)
+			qdf_spin_unlock_bh(&tx_desc_pool->flow_pool_lock);
 	}
 }
 #else /* QCA_LL_TX_FLOW_CONTROL_V2! */
-
+/**
+ * dp_tx_desc_reset_vdev() - reset vdev to NULL in TX Desc
+ *
+ * @soc: Handle to DP soc structure
+ * @tx_desc: pointer of one TX desc
+ * @desc_pool_id: TX Desc pool id
+ */
 static inline void
 dp_tx_desc_reset_vdev(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		      uint8_t desc_pool_id)

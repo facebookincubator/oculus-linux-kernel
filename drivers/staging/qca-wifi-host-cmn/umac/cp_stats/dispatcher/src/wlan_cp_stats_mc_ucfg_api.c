@@ -150,6 +150,7 @@ QDF_STATUS ucfg_mc_cp_stats_inc_wake_lock_stats_by_protocol(
 
 	stats = &psoc_mc_stats->wow_stats;
 	switch (protocol) {
+	case QDF_PROTO_ICMP_REQ:
 	case QDF_PROTO_ICMP_RES:
 		stats->icmpv4_count++;
 		break;

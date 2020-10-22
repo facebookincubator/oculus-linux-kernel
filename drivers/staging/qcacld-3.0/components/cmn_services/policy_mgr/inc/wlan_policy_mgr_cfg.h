@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -355,8 +355,8 @@ CFG_INI_UINT("gEnableOverLapCh", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  * <ini>
  * gDualMacFeatureDisable - Disable Dual MAC feature.
  * @Min: 0
- * @Max: 4
- * @Default: 0
+ * @Max: 6
+ * @Default: 6
  *
  * This ini is used to enable/disable dual MAC feature.
  * 0 - enable DBS
@@ -381,7 +381,7 @@ CFG_INI_UINT("gEnableOverLapCh", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  * </ini>
  */
 #define CFG_DUAL_MAC_FEATURE_DISABLE \
-CFG_INI_UINT("gDualMacFeatureDisable", 0, 6, 0, CFG_VALUE_OR_DEFAULT, \
+CFG_INI_UINT("gDualMacFeatureDisable", 0, 6, 6, CFG_VALUE_OR_DEFAULT, \
 	     "This INI is used to enable/disable Dual MAC feature")
 
 /*
@@ -538,6 +538,49 @@ CFG_INI_UINT("g_sta_sap_scc_on_lte_coex_chan", 0, 1, 1, CFG_VALUE_OR_DEFAULT, \
 CFG_INI_UINT("g_mark_sap_indoor_as_disable", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
 	     "Enable/Disable Indoor channel")
 
+/*
+ * <ini>
+ * g_enable_go_force_scc - Enable/Disable force SCC on P2P GO
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini and along with "gWlanMccToSccSwitchMode" is used to enable
+ * force SCC on P2P GO interface.
+ *
+ * Supported Feature: P2P GO
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+
+#define CFG_P2P_GO_ENABLE_FORCE_SCC \
+CFG_INI_UINT("g_enable_go_force_scc", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
+	     "Enable/Disable P2P GO force SCC")
+
+/*
+ * <ini>
+ * g_prefer_5g_scc_to_dbs - prefer 5g scc to dbs
+ * @Min: 0
+ * @Max: 0xFFFFFFFF
+ * @Default: 0
+ *
+ * This ini is used to give higher priority for 5g scc than dbs.
+ * It is bitmap per enum policy_mgr_con_mode.
+ * For example in GO+STA(5G) mode, when TPUT is onfigured as wlan system
+ * preference option, If 5G SCC needs higher priority than dbs, set it as 0x8.
+ *
+ * Supported Feature: P2P GO
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_PREFER_5G_SCC_TO_DBS \
+CFG_INI_UINT("g_prefer_5g_scc_to_dbs", 0, 0xFFFFFFFF, 0, CFG_VALUE_OR_DEFAULT, \
+	     "5G SCC has higher priority than DBS")
+
 #define CFG_POLICY_MGR_ALL \
 		CFG(CFG_MCC_TO_SCC_SWITCH) \
 		CFG(CFG_CONC_SYS_PREF) \
@@ -557,5 +600,7 @@ CFG_INI_UINT("g_mark_sap_indoor_as_disable", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
 		CFG(CFG_STA_SAP_SCC_ON_LTE_COEX_CHAN)\
 		CFG(CFG_NAN_SAP_SCC_ON_LTE_COEX_CHAN) \
 		CFG(CFG_MARK_INDOOR_AS_DISABLE_FEATURE)\
-		CFG(CFG_ALLOW_MCC_GO_DIFF_BI)
+		CFG(CFG_ALLOW_MCC_GO_DIFF_BI) \
+		CFG(CFG_PREFER_5G_SCC_TO_DBS) \
+		CFG(CFG_P2P_GO_ENABLE_FORCE_SCC)
 #endif

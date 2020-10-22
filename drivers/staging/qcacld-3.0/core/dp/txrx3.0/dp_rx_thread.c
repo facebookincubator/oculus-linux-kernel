@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,7 +39,7 @@ static inline void dp_rx_tm_walk_skb_list(qdf_nbuf_t nbuf_list)
 
 	nbuf = nbuf_list;
 	while (nbuf) {
-		dp_debug("%d nbuf:%pk nbuf->next:%pK nbuf->data:%pk ", i,
+		dp_debug("%d nbuf:%pK nbuf->next:%pK nbuf->data:%pK", i,
 			 nbuf, qdf_nbuf_next(nbuf), qdf_nbuf_data(nbuf));
 		nbuf = qdf_nbuf_next(nbuf);
 		i++;
@@ -102,7 +102,7 @@ static void dp_rx_tm_thread_dump_stats(struct dp_rx_thread *rx_thread)
 	if (!total_queued)
 		return;
 
-	dp_info("thread:%u - qlen:%u queued:(total:%u %s) dequeued:%u stack:%u gro_flushes: %u rx_flushes: %u max_len:%u invalid(peer:%u vdev:%u rx-handle:%u others:%u)",
+	dp_info("thread:%u - qlen:%u queued:(total:%u %s) dequeued:%u stack:%u gro_flushes: %u gro_flushes_by_vdev_del: %u rx_flushes: %u max_len:%u invalid(peer:%u vdev:%u rx-handle:%u others:%u)",
 		rx_thread->id,
 		qdf_nbuf_queue_head_qlen(&rx_thread->nbuf_queue),
 		total_queued,
@@ -110,6 +110,7 @@ static void dp_rx_tm_thread_dump_stats(struct dp_rx_thread *rx_thread)
 		rx_thread->stats.nbuf_dequeued,
 		rx_thread->stats.nbuf_sent_to_stack,
 		rx_thread->stats.gro_flushes,
+		rx_thread->stats.gro_flushes_by_vdev_del,
 		rx_thread->stats.rx_flushed,
 		rx_thread->stats.nbufq_max_len,
 		rx_thread->stats.dropped_invalid_peer,
@@ -357,16 +358,17 @@ static int dp_rx_thread_process_nbufq(struct dp_rx_thread *rx_thread)
 		}
 		cdp_get_os_rx_handles_from_vdev(soc, vdev, &stack_fn,
 						&osif_vdev);
-		if (!stack_fn || !osif_vdev) {
+		dp_debug("rx_thread %pK sending packet %pK to stack", rx_thread,
+			 nbuf_list);
+		if (!stack_fn || !osif_vdev ||
+		    QDF_STATUS_SUCCESS != stack_fn(osif_vdev, nbuf_list)) {
 			rx_thread->stats.dropped_invalid_os_rx_handles +=
 							num_list_elements;
 			qdf_nbuf_list_free(nbuf_list);
-			goto dequeue_rx_thread;
+		} else {
+			rx_thread->stats.nbuf_sent_to_stack +=
+							num_list_elements;
 		}
-		dp_debug("rx_thread %pK sending packet %pK to stack", rx_thread,
-			 nbuf_list);
-		stack_fn(osif_vdev, nbuf_list);
-		rx_thread->stats.nbuf_sent_to_stack += num_list_elements;
 
 dequeue_rx_thread:
 		nbuf_list = dp_rx_tm_thread_dequeue(rx_thread);
@@ -425,9 +427,17 @@ static int dp_rx_thread_sub_loop(struct dp_rx_thread *rx_thread, bool *shutdown)
 
 		dp_rx_thread_process_nbufq(rx_thread);
 
-		if (qdf_atomic_read(&rx_thread->gro_flush_ind)) {
+		if (qdf_atomic_read(&rx_thread->gro_flush_ind) |
+		    qdf_atomic_test_bit(RX_VDEV_DEL_EVENT,
+					&rx_thread->event_flag)) {
 			dp_rx_thread_gro_flush(rx_thread);
 			qdf_atomic_set(&rx_thread->gro_flush_ind, 0);
+		}
+
+		if (qdf_atomic_test_and_clear_bit(RX_VDEV_DEL_EVENT,
+						  &rx_thread->event_flag)) {
+			rx_thread->stats.gro_flushes_by_vdev_del++;
+			qdf_event_set(&rx_thread->vdev_del_event);
 		}
 
 		if (qdf_atomic_test_and_clear_bit(RX_SUSPEND_EVENT,
@@ -435,7 +445,6 @@ static int dp_rx_thread_sub_loop(struct dp_rx_thread *rx_thread, bool *shutdown)
 			dp_debug("received suspend ind (%s) id %d pid %d",
 				 qdf_get_current_comm(), rx_thread->id,
 				 qdf_get_current_pid());
-			qdf_event_reset(&rx_thread->resume_event);
 			qdf_event_set(&rx_thread->suspend_event);
 			dp_debug("waiting for resume (%s) id %d pid %d",
 				 qdf_get_current_comm(), rx_thread->id,
@@ -482,6 +491,8 @@ static int dp_rx_thread_loop(void *arg)
 				 qdf_atomic_test_bit(RX_POST_EVENT,
 						     &rx_thread->event_flag) ||
 				 qdf_atomic_test_bit(RX_SUSPEND_EVENT,
+						     &rx_thread->event_flag) ||
+				 qdf_atomic_test_bit(RX_VDEV_DEL_EVENT,
 						     &rx_thread->event_flag));
 		dp_debug("woken up");
 
@@ -569,6 +580,7 @@ static QDF_STATUS dp_rx_tm_thread_init(struct dp_rx_thread *rx_thread,
 	qdf_event_create(&rx_thread->suspend_event);
 	qdf_event_create(&rx_thread->resume_event);
 	qdf_event_create(&rx_thread->shutdown_event);
+	qdf_event_create(&rx_thread->vdev_del_event);
 	qdf_atomic_init(&rx_thread->gro_flush_ind);
 	qdf_init_waitqueue_head(&rx_thread->wait_q);
 	qdf_scnprintf(thread_name, sizeof(thread_name), "dp_rx_thread_%u", id);
@@ -608,6 +620,7 @@ static QDF_STATUS dp_rx_tm_thread_deinit(struct dp_rx_thread *rx_thread)
 	qdf_event_destroy(&rx_thread->suspend_event);
 	qdf_event_destroy(&rx_thread->resume_event);
 	qdf_event_destroy(&rx_thread->shutdown_event);
+	qdf_event_destroy(&rx_thread->vdev_del_event);
 
 	if (cdp_cfg_get(dp_rx_tm_get_soc_handle(rx_thread->rtm_handle_cmn),
 			cfg_dp_gro_enable))
@@ -672,7 +685,7 @@ ret:
  * @rx_tm_hdl: dp_rx_tm_handle containing the overall thread
  *            infrastructure
  *
- * Return: QDF_STATUS_SUCCESS
+ * Return: Success/Failure
  */
 QDF_STATUS dp_rx_tm_suspend(struct dp_rx_tm_handle *rx_tm_hdl)
 {
@@ -685,9 +698,13 @@ QDF_STATUS dp_rx_tm_suspend(struct dp_rx_tm_handle *rx_tm_hdl)
 		return QDF_STATUS_E_INVAL;
 	}
 
+	rx_tm_hdl->state = DP_RX_THREADS_SUSPENDING;
+
 	for (i = 0; i < rx_tm_hdl->num_dp_rx_threads; i++) {
 		if (!rx_tm_hdl->rx_thread[i])
 			continue;
+		qdf_event_reset(&rx_tm_hdl->rx_thread[i]->resume_event);
+		qdf_event_reset(&rx_tm_hdl->rx_thread[i]->suspend_event);
 		qdf_set_bit(RX_SUSPEND_EVENT,
 			    &rx_tm_hdl->rx_thread[i]->event_flag);
 		qdf_wake_up_interruptible(&rx_tm_hdl->rx_thread[i]->wait_q);
@@ -702,16 +719,22 @@ QDF_STATUS dp_rx_tm_suspend(struct dp_rx_tm_handle *rx_tm_hdl)
 						   DP_RX_THREAD_WAIT_TIMEOUT);
 		if (QDF_IS_STATUS_SUCCESS(qdf_status))
 			dp_debug("thread:%d suspended", rx_thread->id);
-		else if (qdf_status == QDF_STATUS_E_TIMEOUT)
-			dp_err("thread:%d timed out waiting for suspend",
-			       rx_thread->id);
 		else
-			dp_err("thread:%d failed while waiting for suspend",
-			       rx_thread->id);
+			goto suspend_fail;
 	}
 	rx_tm_hdl->state = DP_RX_THREADS_SUSPENDED;
 
 	return QDF_STATUS_SUCCESS;
+
+suspend_fail:
+	dp_err("thread:%d %s(%d) while waiting for suspend",
+	       rx_thread->id,
+	       qdf_status == QDF_STATUS_E_TIMEOUT ? "timeout out" : "failed",
+	       qdf_status);
+
+	dp_rx_tm_resume(rx_tm_hdl);
+
+	return qdf_status;
 }
 
 /**
@@ -721,6 +744,10 @@ QDF_STATUS dp_rx_tm_suspend(struct dp_rx_tm_handle *rx_tm_hdl)
  *              to be flushed out
  * @vdev_id: vdev id for which packets are to be flushed
  *
+ * The function will flush the RX packets by vdev_id in a particular
+ * RX thead queue. And will notify and wait the TX thread to flush the
+ * packets in the NAPI RX GRO hash list
+ *
  * Return: void
  */
 static inline
@@ -729,6 +756,7 @@ void dp_rx_thread_flush_by_vdev_id(struct dp_rx_thread *rx_thread,
 {
 	qdf_nbuf_t nbuf_list, tmp_nbuf_list;
 	uint32_t num_list_elements = 0;
+	QDF_STATUS qdf_status;
 
 	qdf_nbuf_queue_head_lock(&rx_thread->nbuf_queue);
 	QDF_NBUF_QUEUE_WALK_SAFE(&rx_thread->nbuf_queue, nbuf_list,
@@ -744,6 +772,21 @@ void dp_rx_thread_flush_by_vdev_id(struct dp_rx_thread *rx_thread,
 		}
 	}
 	qdf_nbuf_queue_head_unlock(&rx_thread->nbuf_queue);
+
+	qdf_set_bit(RX_VDEV_DEL_EVENT, &rx_thread->event_flag);
+	qdf_wake_up_interruptible(&rx_thread->wait_q);
+
+	qdf_status = qdf_wait_single_event(&rx_thread->vdev_del_event,
+					   DP_RX_THREAD_WAIT_TIMEOUT);
+	if (QDF_IS_STATUS_SUCCESS(qdf_status))
+		dp_debug("thread:%d napi gro flush successfully",
+			 rx_thread->id);
+	else if (qdf_status == QDF_STATUS_E_TIMEOUT)
+		dp_err("thread:%d timed out waiting for napi gro flush",
+		       rx_thread->id);
+	else
+		dp_err("thread:%d failed while waiting for napi gro flush",
+		       rx_thread->id);
 }
 
 /**
@@ -784,7 +827,8 @@ QDF_STATUS dp_rx_tm_resume(struct dp_rx_tm_handle *rx_tm_hdl)
 {
 	int i;
 
-	if (rx_tm_hdl->state != DP_RX_THREADS_SUSPENDED) {
+	if (rx_tm_hdl->state != DP_RX_THREADS_SUSPENDED &&
+	    rx_tm_hdl->state != DP_RX_THREADS_SUSPENDING) {
 		dp_info("resume callback received w/o suspend! Ignoring.");
 		return QDF_STATUS_E_INVAL;
 	}
@@ -793,6 +837,12 @@ QDF_STATUS dp_rx_tm_resume(struct dp_rx_tm_handle *rx_tm_hdl)
 		if (!rx_tm_hdl->rx_thread[i])
 			continue;
 		dp_debug("calling thread %d to resume", i);
+
+		/* postively reset event_flag for DP_RX_THREADS_SUSPENDING
+		 * state
+		 */
+		qdf_clear_bit(RX_SUSPEND_EVENT,
+			      &rx_tm_hdl->rx_thread[i]->event_flag);
 		qdf_event_set(&rx_tm_hdl->rx_thread[i]->resume_event);
 	}
 

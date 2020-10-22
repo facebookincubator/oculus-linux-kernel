@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -22,6 +22,11 @@ bool is_secure_vmid_valid(int vmid)
 		vmid == VMID_CP_SPSS_SP_SHARED ||
 		vmid == VMID_CP_SPSS_HLOS_SHARED ||
 		vmid == VMID_CP_CDSP);
+}
+
+bool is_secure_allocation(unsigned long flags)
+{
+	return !!(flags & (ION_FLAGS_CP_MASK | ION_FLAG_SECURE));
 }
 
 int get_secure_vmid(unsigned long flags)
@@ -90,6 +95,7 @@ int ion_populate_vm_list(unsigned long flags, unsigned int *vm_list,
 	}
 	return 0;
 }
+EXPORT_SYMBOL(ion_populate_vm_list);
 
 int ion_hyp_unassign_sg(struct sg_table *sgt, int *source_vm_list,
 			int source_nelems, bool clear_page_private,

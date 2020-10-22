@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,6 +49,30 @@
 #define CFG_NAN_ENABLE CFG_INI_BOOL("gEnableNanSupport", \
 				    0, \
 				    "Enable NAN Support")
+
+/*
+ * <ini>
+ * nan_separate_iface_support: Separate iface creation for NAN
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * Value is 1 when Host HDD supports separate iface creation
+ * for NAN.
+ *
+ * Related: None
+ *
+ * Supported Feature: NAN
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_NAN_SEPARATE_IFACE_SUPP CFG_INI_BOOL("nan_separate_iface_support", \
+						 1, \
+						 "Seperate iface for NAN")
+
+
 /*
  * <ini>
  * genable_nan_datapath - Enable NaN data path feature. NaN data path
@@ -118,11 +142,62 @@
 						    CFG_VALUE_OR_DEFAULT, \
 						    "NDP Auto Terminate time")
 
+/*
+ * <ini>
+ * gNdpKeepAlivePeriod - To configure duration of how many seconds
+ * to wait to kickout peer if peer is not reachable.
+ *
+ * @Min: 10
+ * @Max: 30
+ * @Default: 20
+ *
+ * Related: None
+ *
+ * Supported Feature: NAN
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+
+#define CFG_NDP_KEEP_ALIVE_PERIOD CFG_INI_UINT( \
+			"gNdpKeepAlivePeriod", \
+			10, \
+			30, \
+			20, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Keep alive timeout of a peer")
+
+/*
+ * <ini>
+ * gSupportMp0Discovery - To support discovery of NAN cluster with
+ * Master Preference (MP) as 0 when a new device is enabling NAN.
+ *
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * Related: None
+ *
+ * Supported Feature: NAN
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_SUPPORT_MP0_DISCOVERY CFG_INI_BOOL( \
+			"gSupportMp0Discovery", \
+			1, \
+			"Enable/Disable discovery of NAN cluster with Master Preference (MP) as 0")
+
 #ifdef WLAN_FEATURE_NAN
-#define CFG_NAN_DISC CFG(CFG_NAN_ENABLE)
+#define CFG_NAN_DISC CFG(CFG_NAN_ENABLE) \
+			CFG(CFG_NDP_KEEP_ALIVE_PERIOD) \
+			CFG(CFG_SUPPORT_MP0_DISCOVERY)
 #define CFG_NAN_DP      CFG(CFG_NAN_DATAPATH_ENABLE) \
 			CFG(CFG_NAN_RANDOMIZE_NDI_MAC) \
-			CFG(CFG_NAN_NDP_INACTIVITY_TIMEOUT)
+			CFG(CFG_NAN_NDP_INACTIVITY_TIMEOUT) \
+			CFG(CFG_NAN_SEPARATE_IFACE_SUPP)
 #else
 #define CFG_NAN_DISC
 #define CFG_NAN_DP

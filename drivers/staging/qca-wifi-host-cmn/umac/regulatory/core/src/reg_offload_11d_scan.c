@@ -45,7 +45,7 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 	uint8_t pdev_id;
 
 	if (!country) {
-		reg_err("country code is NULL");
+		reg_err("Null country code");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -54,16 +54,16 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 	psoc = wlan_pdev_get_psoc(pdev);
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("psoc reg component is NULL");
+		reg_err("Null psoc reg component");
 		return QDF_STATUS_E_INVAL;
 	}
 
 	if (!qdf_mem_cmp(psoc_priv_obj->cur_country, country, REG_ALPHA2_LEN)) {
-		reg_debug("country is not different");
+		reg_debug("same country");
 		return QDF_STATUS_SUCCESS;
 	}
 
-	reg_info("programming new 11d country:%c%c to firmware",
+	reg_info("set new 11d country:%c%c to fW",
 		 country[0], country[1]);
 
 	qdf_mem_copy(country_code.country, country, REG_ALPHA2_LEN + 1);
@@ -99,9 +99,11 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
  */
 static QDF_STATUS reg_send_11d_flush_cbk(struct scheduler_msg *msg)
 {
-	struct wlan_objmgr_psoc *psoc = msg->bodyptr;
+	struct reg_11d_scan_msg *scan_msg_11d = msg->bodyptr;
+	struct wlan_objmgr_psoc *psoc = scan_msg_11d->psoc;
 
 	wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
+	qdf_mem_free(scan_msg_11d);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -114,7 +116,8 @@ static QDF_STATUS reg_send_11d_flush_cbk(struct scheduler_msg *msg)
  */
 static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 {
-	struct wlan_objmgr_psoc *psoc = msg->bodyptr;
+	struct reg_11d_scan_msg *scan_msg_11d = msg->bodyptr;
+	struct wlan_objmgr_psoc *psoc = scan_msg_11d->psoc;
 	struct wlan_lmac_if_reg_tx_ops *tx_ops;
 	struct reg_start_11d_scan_req start_req;
 	struct reg_stop_11d_scan_req stop_req;
@@ -124,17 +127,17 @@ static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("psoc priv obj is NULL");
+		reg_err("Null psoc priv obj");
 		goto end;
 	}
 
 	if (psoc_priv_obj->vdev_id_for_11d_scan == INVALID_VDEV_ID) {
 		psoc_priv_obj->enable_11d_supp = false;
-		reg_err("No valid vdev for 11d scan command");
+		reg_err("Invalid vdev");
 		goto end;
 	}
 
-	if (psoc_priv_obj->enable_11d_supp) {
+	if (scan_msg_11d->enable_11d_supp) {
 		start_req.vdev_id = psoc_priv_obj->vdev_id_for_11d_scan;
 		start_req.scan_period_msec = psoc_priv_obj->scan_11d_interval;
 		start_req.start_interval_msec = 0;
@@ -147,36 +150,37 @@ static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 	}
 
 end:
+	qdf_mem_free(scan_msg_11d);
 	wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
 	return QDF_STATUS_SUCCESS;
 }
 
 /**
  * reg_sched_11d_msg() - Schedules 11d scan message.
- * @psoc: soc context
+ * @scan_msg_11d: 11d scan message
  */
-static QDF_STATUS reg_sched_11d_msg(struct wlan_objmgr_psoc *psoc)
+static QDF_STATUS reg_sched_11d_msg(struct reg_11d_scan_msg *scan_msg_11d)
 {
 	struct scheduler_msg msg = {0};
 	QDF_STATUS status;
 
-	status = wlan_objmgr_psoc_try_get_ref(psoc, WLAN_REGULATORY_SB_ID);
+	status = wlan_objmgr_psoc_try_get_ref(scan_msg_11d->psoc,
+					      WLAN_REGULATORY_SB_ID);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		reg_err("error taking psoc ref cnt");
 		return status;
 	}
 
-	msg.bodyptr = psoc;
+	msg.bodyptr = scan_msg_11d;
 	msg.callback = reg_send_11d_msg_cbk;
 	msg.flush_callback = reg_send_11d_flush_cbk;
 
 	status = scheduler_post_message(QDF_MODULE_ID_REGULATORY,
 					QDF_MODULE_ID_REGULATORY,
 					QDF_MODULE_ID_TARGET_IF, &msg);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
-		reg_err("scheduler msg posting failed");
-	}
+	if (QDF_IS_STATUS_ERROR(status))
+		wlan_objmgr_psoc_release_ref(scan_msg_11d->psoc,
+					     WLAN_REGULATORY_SB_ID);
 
 	return status;
 }
@@ -186,16 +190,17 @@ void reg_run_11d_state_machine(struct wlan_objmgr_psoc *psoc)
 	bool temp_11d_support;
 	struct wlan_regulatory_psoc_priv_obj *psoc_priv_obj;
 	bool world_mode;
+	struct reg_11d_scan_msg *scan_msg_11d;
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("Null reg psoc private obj");
 		return;
 	}
 
 	if (psoc_priv_obj->vdev_id_for_11d_scan == INVALID_VDEV_ID) {
 		psoc_priv_obj->enable_11d_supp = false;
-		reg_err("No valid vdev for 11d scan command");
+		reg_err("Invalid vdev");
 		return;
 	}
 
@@ -222,10 +227,17 @@ void reg_run_11d_state_machine(struct wlan_objmgr_psoc *psoc)
 		  psoc_priv_obj->vdev_id_for_11d_scan);
 
 	if (temp_11d_support != psoc_priv_obj->enable_11d_supp) {
-		if (psoc_priv_obj->is_11d_offloaded)
-			reg_sched_11d_msg(psoc);
-		else
+		if (psoc_priv_obj->is_11d_offloaded) {
+			scan_msg_11d = qdf_mem_malloc(sizeof(*scan_msg_11d));
+			if (!scan_msg_11d)
+				return;
+			scan_msg_11d->psoc = psoc;
+			scan_msg_11d->enable_11d_supp =
+						psoc_priv_obj->enable_11d_supp;
+			reg_sched_11d_msg(scan_msg_11d);
+		} else {
 			reg_11d_host_scan(psoc_priv_obj);
+		}
 	}
 }
 
@@ -288,7 +300,7 @@ QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_vdev *vdev)
 	uint8_t i;
 
 	if (!vdev) {
-		reg_err("vdev is NULL");
+		reg_err("NULL vdev");
 		return QDF_STATUS_E_INVAL;
 	}
 	op_mode = wlan_vdev_mlme_get_opmode(vdev);
@@ -298,7 +310,7 @@ QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_vdev *vdev)
 
 	psoc_priv_obj = reg_get_psoc_obj(parent_psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("NULL reg psoc private obj");
 		return QDF_STATUS_E_FAULT;
 	}
 
@@ -353,7 +365,7 @@ bool reg_is_11d_scan_inprogress(struct wlan_objmgr_psoc *psoc)
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("NULL reg psoc private obj");
 		return false;
 	}
 
@@ -367,16 +379,23 @@ QDF_STATUS reg_save_new_11d_country(struct wlan_objmgr_psoc *psoc,
 	struct wlan_lmac_if_reg_tx_ops *tx_ops;
 	struct set_country country_code;
 	uint8_t pdev_id;
+	uint8_t ctr;
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("NULL reg psoc private obj");
 
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	pdev_id = psoc_priv_obj->def_pdev_id;
-	psoc_priv_obj->new_11d_ctry_pending[pdev_id] = true;
+	/*
+	 * Need firmware to send channel list event
+	 * for all phys. Therefore set pdev_id to 0xFF
+	 */
+	pdev_id = 0xFF;
+	for (ctr = 0; ctr < psoc_priv_obj->num_phy; ctr++)
+		psoc_priv_obj->new_11d_ctry_pending[ctr] = true;
+
 	qdf_mem_copy(country_code.country, country, REG_ALPHA2_LEN + 1);
 	country_code.pdev_id = pdev_id;
 
@@ -386,7 +405,9 @@ QDF_STATUS reg_save_new_11d_country(struct wlan_objmgr_psoc *psoc,
 			tx_ops->set_country_code(psoc, &country_code);
 		} else {
 			reg_err("country set handler is not present");
-			psoc_priv_obj->new_11d_ctry_pending[pdev_id] = false;
+			for (ctr = 0; ctr < psoc_priv_obj->num_phy; ctr++)
+				psoc_priv_obj->new_11d_ctry_pending[ctr] =
+					false;
 			return QDF_STATUS_E_FAULT;
 		}
 	}
@@ -400,7 +421,7 @@ bool reg_11d_enabled_on_host(struct wlan_objmgr_psoc *psoc)
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("NULL reg psoc private obj");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -414,7 +435,7 @@ QDF_STATUS reg_set_11d_offloaded(struct wlan_objmgr_psoc *psoc, bool val)
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("psoc reg component is NULL");
+		reg_err("NULL psoc reg component");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -429,7 +450,7 @@ bool reg_is_11d_offloaded(struct wlan_objmgr_psoc *psoc)
 
 	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
-		reg_err("reg psoc private obj is NULL");
+		reg_err("NULL reg psoc private obj");
 		return false;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -448,9 +448,11 @@ inline int hal_reo_cmd_queue_stats(void *reo_ring, struct hal_soc *soc,
 	HAL_DESC_SET_FIELD(reo_desc, REO_GET_QUEUE_STATS_2, CLEAR_STATS,
 			      cmd->u.stats_params.clear);
 
-	if (hif_pm_runtime_get(soc->hif_handle) == 0) {
+	if (hif_pm_runtime_get(soc->hif_handle,
+			       RTPM_ID_HAL_REO_CMD) == 0) {
 		hal_srng_access_end(soc, reo_ring);
-		hif_pm_runtime_put(soc->hif_handle);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_HAL_REO_CMD);
 	} else {
 		hal_srng_access_end_reap(soc, reo_ring);
 		hal_srng_set_event(reo_ring, HAL_SRNG_FLUSH_EVENT);
@@ -580,9 +582,11 @@ inline int hal_reo_cmd_flush_cache(void *reo_ring, struct hal_soc *soc,
 	HAL_DESC_SET_FIELD(reo_desc, REO_FLUSH_CACHE_2, FLUSH_ENTIRE_CACHE,
 		cp->flush_all);
 
-	if (hif_pm_runtime_get(soc->hif_handle) == 0) {
+	if (hif_pm_runtime_get(soc->hif_handle,
+			       RTPM_ID_HAL_REO_CMD) == 0) {
 		hal_srng_access_end(soc, reo_ring);
-		hif_pm_runtime_put(soc->hif_handle);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_HAL_REO_CMD);
 	} else {
 		hal_srng_access_end_reap(soc, reo_ring);
 		hal_srng_set_event(reo_ring, HAL_SRNG_FLUSH_EVENT);
@@ -897,9 +901,11 @@ inline int hal_reo_cmd_update_rx_queue(void *reo_ring, struct hal_soc *soc,
 	HAL_DESC_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE_8,
 		PN_127_96, p->pn_127_96);
 
-	if (hif_pm_runtime_get(soc->hif_handle) == 0) {
+	if (hif_pm_runtime_get(soc->hif_handle,
+			       RTPM_ID_HAL_REO_CMD) == 0) {
 		hal_srng_access_end(soc, reo_ring);
-		hif_pm_runtime_put(soc->hif_handle);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_HAL_REO_CMD);
 	} else {
 		hal_srng_access_end_reap(soc, reo_ring);
 		hal_srng_set_event(reo_ring, HAL_SRNG_FLUSH_EVENT);

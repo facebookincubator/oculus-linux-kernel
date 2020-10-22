@@ -496,4 +496,11 @@ bool hdd_report_max_rate(mac_handle_t mac_handle,
 
 void wlan_hdd_register_cp_stats_cb(struct hdd_context *hdd_ctx);
 
+/**
+ * hdd_update_sta_arp_stats() - update arp stats
+ * @adapter: adapter context
+ *
+ * Return: An error code or 0 on success.
+ */
+QDF_STATUS hdd_update_sta_arp_stats(struct hdd_adapter *adapter);
 #endif /* end #if !defined(WLAN_HDD_STATS_H) */

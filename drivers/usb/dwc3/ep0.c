@@ -206,7 +206,7 @@ int dwc3_gadget_ep0_queue(struct usb_ep *ep, struct usb_request *request,
 	u32				reg;
 
 	spin_lock_irqsave(&dwc->lock, flags);
-	if (!dep->endpoint.desc || !dwc->softconnect ||
+	if (!dep->endpoint.desc || !dwc->pullups_connected ||
 		!dwc->vbus_active) {
 		dev_err(dwc->dev, "%s: can't queue to disabled endpoint\n",
 				dep->name);
@@ -1054,6 +1054,7 @@ static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
 		maxpacket = dep->endpoint.maxpacket;
 		rem = req->request.length % maxpacket;
 		dwc->ep0_bounced = true;
+		dbg_ep_map(dep->number, req);
 
 		/* prepare normal TRB */
 		dwc3_ep0_prepare_one_trb(dep, req->request.dma,
@@ -1077,6 +1078,8 @@ static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
 		if (ret)
 			return;
 
+		dbg_ep_map(dep->number, req);
+
 		/* prepare normal TRB */
 		dwc3_ep0_prepare_one_trb(dep, req->request.dma,
 					 req->request.length,
@@ -1096,6 +1099,7 @@ static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
 		if (ret)
 			return;
 
+		dbg_ep_map(dep->number, req);
 		dwc3_ep0_prepare_one_trb(dep, req->request.dma,
 				req->request.length, DWC3_TRBCTL_CONTROL_DATA,
 				false);

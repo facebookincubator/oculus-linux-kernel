@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -228,8 +228,12 @@
 	SRNG_REG_ADDR(_srng, _reg, _reg ## _GROUP, SRC)
 
 #define SRNG_REG_WRITE(_srng, _reg, _value, _dir) \
-	hal_write_address_32_mb(_srng->hal_soc, \
-		SRNG_ ## _dir ## _ADDR(_srng, _reg), (_value))
+	hal_write_address_32_mb(_srng->hal_soc,\
+		SRNG_ ## _dir ## _ADDR(_srng, _reg), (_value), false)
+
+#define SRNG_REG_WRITE_CONFIRM(_srng, _reg, _value, _dir) \
+	hal_write_address_32_mb(_srng->hal_soc,\
+		SRNG_ ## _dir ## _ADDR(_srng, _reg), (_value), true)
 
 #define SRNG_REG_READ(_srng, _reg, _dir) \
 	hal_read_address_32_mb(_srng->hal_soc, \
@@ -240,6 +244,9 @@
 
 #define SRNG_DST_REG_WRITE(_srng, _reg, _value) \
 	SRNG_REG_WRITE(_srng, _reg, _value, DST)
+
+#define SRNG_DST_REG_WRITE_CONFIRM(_srng, _reg, _value) \
+	SRNG_REG_WRITE_CONFIRM(_srng, _reg, _value, DST)
 
 #define SRNG_SRC_REG_READ(_srng, _reg) \
 	SRNG_REG_READ(_srng, _reg, SRC)

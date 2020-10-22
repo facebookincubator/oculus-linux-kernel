@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -427,7 +427,7 @@ QDF_STATUS qdf_runtime_pm_get(void)
 		return QDF_STATUS_E_INVAL;
 	}
 
-	ret = hif_pm_runtime_get(ol_sc);
+	ret = hif_pm_runtime_get(ol_sc, RTPM_ID_RESVERD);
 
 	if (ret)
 		return QDF_STATUS_E_FAILURE;
@@ -460,7 +460,7 @@ QDF_STATUS qdf_runtime_pm_put(void)
 		return QDF_STATUS_E_INVAL;
 	}
 
-	ret = hif_pm_runtime_put(ol_sc);
+	ret = hif_pm_runtime_put(ol_sc, RTPM_ID_RESVERD);
 
 	if (ret)
 		return QDF_STATUS_E_FAILURE;
@@ -559,6 +559,10 @@ qdf_export_symbol(__qdf_runtime_lock_init);
 void qdf_runtime_lock_deinit(qdf_runtime_lock_t *lock)
 {
 	void *hif_ctx = cds_get_context(QDF_MODULE_ID_HIF);
+
+	if (!lock)
+		return;
+
 	hif_runtime_lock_deinit(hif_ctx, lock->lock);
 }
 qdf_export_symbol(qdf_runtime_lock_deinit);
@@ -817,9 +821,6 @@ void qdf_lock_stats_cookie_create(struct lock_stats *stats,
 		qdf_atomic_inc(&lock_cookie_get_failures);
 		count = qdf_atomic_inc_return(&lock_cookie_untracked_num);
 		stats->cookie = (void *) DUMMY_LOCK_COOKIE;
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_DEBUG,
-			  "%s: cookie allocation failure, using dummy (%s:%d) count %d",
-			  __func__, func, line, count);
 		return;
 	}
 

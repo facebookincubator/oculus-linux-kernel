@@ -334,7 +334,7 @@ void hdd_select_cbmode(struct hdd_adapter *adapter, uint8_t operationChannel,
  * Return: true or false based on findings
  */
 bool wlan_hdd_is_ap_supports_immediate_power_save(uint8_t *ies, int length);
-void wlan_hdd_del_station(struct hdd_adapter *adapter);
+int wlan_hdd_del_station(struct hdd_adapter *adapter);
 
 #if defined(USE_CFG80211_DEL_STA_V2)
 int wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
@@ -398,6 +398,19 @@ void wlan_hdd_cfg80211_unlink_bss(struct hdd_adapter *adapter,
 void wlan_hdd_cfg80211_acs_ch_select_evt(struct hdd_adapter *adapter);
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * hdd_send_roam_scan_ch_list_event() - roam scan ch list event to user space
+ * @hdd_ctx: HDD context
+ * @vdev_id: vdev id
+ * @buf_len: length of frequency list
+ * @buf: pointer to buffer of frequency list
+ *
+ * Return: None
+ */
+void hdd_send_roam_scan_ch_list_event(struct hdd_context *hdd_ctx,
+				      uint8_t vdev_id, uint16_t buf_len,
+				      uint8_t *buf);
+
 int wlan_hdd_send_roam_auth_event(struct hdd_adapter *adapter, uint8_t *bssid,
 		uint8_t *req_rsn_ie, uint32_t req_rsn_length, uint8_t
 		*rsp_rsn_ie, uint32_t rsp_rsn_length, struct csr_roam_info
@@ -409,6 +422,13 @@ static inline int wlan_hdd_send_roam_auth_event(struct hdd_adapter *adapter,
 		struct csr_roam_info *roam_info_ptr)
 {
 	return 0;
+}
+
+static inline
+void hdd_send_roam_scan_ch_list_event(struct hdd_context *hdd_ctx,
+				      uint8_t vdev_id, uint16_t buf_len,
+				      uint8_t *buf)
+{
 }
 #endif
 
@@ -436,39 +456,25 @@ int wlan_hdd_cfg80211_update_band(struct hdd_context *hdd_ctx,
 				  enum band_info new_band);
 
 /**
- * wlan_hdd_try_disconnect() - try disconnnect from previous connection
+ * wlan_hdd_cfg80211_indicate_disconnect() - Indicate disconnnect to userspace
  * @adapter: Pointer to adapter
+ * @locally_generated: True if the disconnection is internally generated.
+ *                     False if the disconnection is received from peer.
+ * @reason: Disconnect reason as per @enum eSirMacReasonCodes
+ * @disconnect_ies: IEs received in Deauth/Disassoc from peer
+ * @disconnect_ies_len: Length of @disconnect_ies
  *
- * This function is used to disconnect from previous connection
+ * This function is indicate disconnect to the kernel which thus indicates
+ * to the userspace.
  *
- * Return: 0 for success, non-zero for failure
+ * Return: None
  */
-int wlan_hdd_try_disconnect(struct hdd_adapter *adapter);
-
-#if defined(CFG80211_DISCONNECTED_V2) || \
-(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0))
-static inline void
-wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
+void
+wlan_hdd_cfg80211_indicate_disconnect(struct hdd_adapter *adapter,
 				      bool locally_generated,
-				      int reason,
+				      enum eSirMacReasonCodes reason,
 				      uint8_t *disconnect_ies,
-				      uint16_t disconnect_ies_len)
-{
-	cfg80211_disconnected(dev, reason, disconnect_ies, disconnect_ies_len,
-			      locally_generated, GFP_KERNEL);
-}
-#else
-static inline void
-wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
-				      bool locally_generated,
-				      int reason,
-				      uint8_t *disconnect_ies,
-				      uint16_t disconnect_ies_len)
-{
-	cfg80211_disconnected(dev, reason, disconnect_ies, disconnect_ies_len,
-			      GFP_KERNEL);
-}
-#endif
+				      uint16_t disconnect_ies_len);
 
 /**
  * wlan_hdd_inform_bss_frame() - inform bss details to NL80211
@@ -536,23 +542,27 @@ uint8_t hdd_get_sap_operating_band(struct hdd_context *hdd_ctx);
 /**
  * wlan_hdd_try_disconnect() - try disconnnect from previous connection
  * @adapter: Pointer to adapter
+ * @reason: Mac Disconnect reason code as per @enum eSirMacReasonCodes
  *
  * This function is used to disconnect from previous connection
  *
  * Return: 0 for success, non-zero for failure
  */
-int wlan_hdd_try_disconnect(struct hdd_adapter *adapter);
+int wlan_hdd_try_disconnect(struct hdd_adapter *adapter,
+			    enum eSirMacReasonCodes reason);
 
 /**
  * wlan_hdd_disconnect() - hdd disconnect api
  * @adapter: Pointer to adapter
- * @reason: Disconnect reason code
+ * @reason: CSR disconnect reason code as per @enum eCsrRoamDisconnectReason
+ * @mac_reason: Mac Disconnect reason code as per @enum eSirMacReasonCodes
  *
  * This function is used to issue a disconnect request to SME
  *
  * Return: 0 for success, non-zero for failure
  */
-int wlan_hdd_disconnect(struct hdd_adapter *adapter, u16 reason);
+int wlan_hdd_disconnect(struct hdd_adapter *adapter, u16 reason,
+			tSirMacReasonCodes mac_reason);
 
 /**
  * hdd_update_cca_info_cb() - stores congestion value in station context

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -65,6 +65,29 @@ void wlan_scan_cfg_set_active_dwelltime(struct wlan_objmgr_psoc *psoc,
 	if (!scan_obj)
 		return;
 	scan_obj->scan_def.active_dwell = dwell_time;
+}
+
+void wlan_scan_cfg_get_active_2g_dwelltime(struct wlan_objmgr_psoc *psoc,
+					   uint32_t *dwell_time)
+{
+	struct wlan_scan_obj *scan_obj;
+
+	scan_obj = wlan_psoc_get_scan_obj(psoc);
+	if (!scan_obj)
+		return;
+
+	*dwell_time = scan_obj->scan_def.active_dwell_2g;
+}
+
+void wlan_scan_cfg_set_active_2g_dwelltime(struct wlan_objmgr_psoc *psoc,
+					   uint32_t dwell_time)
+{
+	struct wlan_scan_obj *scan_obj;
+
+	scan_obj = wlan_psoc_get_scan_obj(psoc);
+	if (!scan_obj)
+		return;
+	scan_obj->scan_def.active_dwell_2g = dwell_time;
 }
 
 void wlan_scan_cfg_get_conc_active_dwelltime(struct wlan_objmgr_psoc *psoc,
@@ -240,4 +263,15 @@ free:
 		qdf_nbuf_free(buf);
 
 	return status;
+}
+
+qdf_time_t wlan_scan_get_aging_time(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_scan_obj *scan_obj;
+
+	scan_obj = wlan_psoc_get_scan_obj(psoc);
+	if (!scan_obj)
+		return cfg_default(CFG_SCAN_AGING_TIME) * 1000;
+
+	return scan_obj->scan_def.scan_cache_aging_time;
 }

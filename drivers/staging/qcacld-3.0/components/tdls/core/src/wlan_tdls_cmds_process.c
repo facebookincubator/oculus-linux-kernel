@@ -522,7 +522,6 @@ tdls_add_peer_serialize_callback(struct wlan_serialization_command *cmd,
 	}
 
 	req = cmd->umac_cmd;
-	tdls_debug("reason: %d, req %pK", reason, req);
 
 	switch (reason) {
 	case WLAN_SER_CB_ACTIVATE_CMD:
@@ -757,7 +756,7 @@ int tdls_validate_mgmt_request(struct tdls_action_frame_request *tdls_mgmt_req)
 		}
 	}
 
-	tdls_notice("tdls_mgmt" QDF_MAC_ADDR_STR " action %d, dialog_token %d status %d, len = %zu",
+	tdls_debug("tdls_mgmt" QDF_MAC_ADDR_STR " action %d, dialog_token %d status %d, len = %zu",
 		   QDF_MAC_ADDR_ARRAY(tdls_validate->peer_mac),
 		   tdls_validate->action_code, tdls_validate->dialog_token,
 		   tdls_validate->status_code, tdls_validate->len);
@@ -985,7 +984,6 @@ tdls_update_peer_serialize_callback(struct wlan_serialization_command *cmd,
 	}
 
 	req = cmd->umac_cmd;
-	tdls_debug("reason: %d, req %pK", reason, req);
 
 	switch (reason) {
 	case WLAN_SER_CB_ACTIVATE_CMD:
@@ -1109,7 +1107,6 @@ tdls_del_peer_serialize_callback(struct wlan_serialization_command *cmd,
 	}
 
 	req = cmd->umac_cmd;
-	tdls_debug("reason: %d, req %pK", reason, req);
 
 	switch (reason) {
 	case WLAN_SER_CB_ACTIVATE_CMD:
@@ -1427,10 +1424,10 @@ static QDF_STATUS tdls_add_peer_rsp(struct tdls_add_sta_rsp *rsp)
 				conn_rec[sta_idx].index = sta_idx;
 				qdf_copy_macaddr(&conn_rec[sta_idx].peer_mac,
 						 &rsp->peermac);
-				tdls_warn("TDLS: STA IDX at %d is %d of mac "
-					  QDF_MAC_ADDR_STR, sta_idx,
-					  rsp->sta_id, QDF_MAC_ADDR_ARRAY
-					  (rsp->peermac.bytes));
+				tdls_debug("TDLS: Add sta mac "
+					   QDF_MAC_ADDR_STR,
+					   QDF_MAC_ADDR_ARRAY
+					   (rsp->peermac.bytes));
 				break;
 			}
 		}
@@ -1512,7 +1509,7 @@ QDF_STATUS tdls_process_del_peer_rsp(struct tdls_del_sta_rsp *rsp)
 			continue;
 
 		macaddr = rsp->peermac.bytes;
-		tdls_warn("TDLS: del STA IDX = %x", rsp->sta_id);
+		tdls_debug("TDLS: del STA");
 		curr_peer = tdls_find_peer(vdev_obj, macaddr);
 		if (curr_peer) {
 			tdls_debug(QDF_MAC_ADDR_STR " status is %d",
@@ -1718,8 +1715,6 @@ static QDF_STATUS tdls_config_force_peer(
 	struct tdls_peer_update_state *peer_update_param;
 
 	macaddr = req->peer_addr;
-	tdls_debug("NL80211_TDLS_SETUP for " QDF_MAC_ADDR_STR,
-		   QDF_MAC_ADDR_ARRAY(macaddr));
 
 	vdev = req->vdev;
 	pdev = wlan_vdev_get_pdev(vdev);
@@ -1888,9 +1883,9 @@ QDF_STATUS tdls_process_remove_force_peer(struct tdls_oper_request *req)
 		status = QDF_STATUS_E_NULL_VALUE;
 		goto error;
 	}
-
-	tdls_set_peer_link_status(peer, TDLS_LINK_TEARING,
-				  TDLS_LINK_UNSPECIFIED);
+	if (peer->link_status == TDLS_LINK_CONNECTED)
+		tdls_set_peer_link_status(peer, TDLS_LINK_TEARING,
+					  TDLS_LINK_UNSPECIFIED);
 
 	if (soc_obj->tdls_dp_vdev_update)
 		soc_obj->tdls_dp_vdev_update(&soc_obj->soc,

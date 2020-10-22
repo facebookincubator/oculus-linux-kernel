@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -653,7 +653,7 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 	void *arg)
 {
-	int rc = 0;
+	int rc = 0, pkt_opcode = 0;
 	struct cam_control *cmd = (struct cam_control *)arg;
 	struct cam_sensor_power_ctrl_t *power_info =
 		&s_ctrl->sensordata->power_info;
@@ -941,14 +941,28 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		if (s_ctrl->i2c_data.init_settings.is_settings_valid &&
 			(s_ctrl->i2c_data.init_settings.request_id == 0)) {
 
+			pkt_opcode =
+				CAM_SENSOR_PACKET_OPCODE_SENSOR_INITIAL_CONFIG;
 			rc = cam_sensor_apply_settings(s_ctrl, 0,
-				CAM_SENSOR_PACKET_OPCODE_SENSOR_INITIAL_CONFIG);
+				pkt_opcode);
 
+			if ((rc == -EAGAIN) &&
+			(s_ctrl->io_master_info.master_type == CCI_MASTER)) {
+				/* If CCI hardware is resetting we need to wait
+				 * for sometime before reapply
+				 */
+				CAM_WARN(CAM_SENSOR,
+					"Reapplying the Init settings due to cci hw reset");
+				usleep_range(1000, 1010);
+				rc = cam_sensor_apply_settings(s_ctrl, 0,
+					pkt_opcode);
+			}
 			s_ctrl->i2c_data.init_settings.request_id = -1;
 
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR,
-					"cannot apply init settings");
+					"cannot apply init settings rc= %d",
+					rc);
 				delete_request(&s_ctrl->i2c_data.init_settings);
 				goto release_mutex;
 			}
@@ -1328,8 +1342,8 @@ int32_t cam_sensor_flush_request(struct cam_req_mgr_flush_request *flush_req)
 	}
 
 	mutex_lock(&(s_ctrl->cam_sensor_mutex));
-	if (s_ctrl->sensor_state != CAM_SENSOR_START ||
-		s_ctrl->sensor_state != CAM_SENSOR_CONFIG) {
+	if ((s_ctrl->sensor_state != CAM_SENSOR_START) &&
+		(s_ctrl->sensor_state != CAM_SENSOR_CONFIG)) {
 		mutex_unlock(&(s_ctrl->cam_sensor_mutex));
 		return rc;
 	}

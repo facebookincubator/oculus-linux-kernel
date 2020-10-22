@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_IFE_CSID_HW_H_
@@ -72,6 +72,8 @@
 #define CSID_DEBUG_ENABLE_HBI_VBI_INFO            BIT(7)
 #define CSID_DEBUG_DISABLE_EARLY_EOF              BIT(8)
 
+#define CAM_CSID_EVT_PAYLOAD_MAX                  10
+
 /* enum cam_csid_path_halt_mode select the path halt mode control */
 enum cam_csid_path_halt_mode {
 	CSID_HALT_MODE_INTERNAL,
@@ -89,6 +91,24 @@ enum cam_csid_path_timestamp_stb_sel {
 	CSID_TIMESTAMP_STB_POST_HALT,
 	CSID_TIMESTAMP_STB_POST_IRQ,
 	CSID_TIMESTAMP_STB_MAX,
+};
+
+/**
+ * enum cam_ife_pix_path_res_id - Specify the csid patch
+ */
+enum cam_ife_csid_irq_reg {
+	CAM_IFE_CSID_IRQ_REG_RDI_0,
+	CAM_IFE_CSID_IRQ_REG_RDI_1,
+	CAM_IFE_CSID_IRQ_REG_RDI_2,
+	CAM_IFE_CSID_IRQ_REG_RDI_3,
+	CAM_IFE_CSID_IRQ_REG_TOP,
+	CAM_IFE_CSID_IRQ_REG_RX,
+	CAM_IFE_CSID_IRQ_REG_IPP,
+	CAM_IFE_CSID_IRQ_REG_PPP,
+	CAM_IFE_CSID_IRQ_REG_UDI_0,
+	CAM_IFE_CSID_IRQ_REG_UDI_1,
+	CAM_IFE_CSID_IRQ_REG_UDI_2,
+	CAM_IFE_CSID_IRQ_REG_MAX,
 };
 
 struct cam_ife_csid_pxl_reg_offset {
@@ -139,6 +159,8 @@ struct cam_ife_csid_pxl_reg_offset {
 	uint32_t quad_cfa_bin_en_shift_val;
 	uint32_t ccif_violation_en;
 	uint32_t overflow_ctrl_en;
+	uint32_t halt_master_sel_en;
+	uint32_t halt_sel_internal_master_val;
 };
 
 struct cam_ife_csid_rdi_reg_offset {
@@ -371,6 +393,10 @@ struct cam_ife_csid_common_reg_offset {
 	uint32_t measure_en_hbi_vbi_cnt_mask;
 	uint32_t format_measure_en_val;
 	uint32_t num_bytes_out_shift_val;
+	uint32_t format_measure_width_shift_val;
+	uint32_t format_measure_width_mask_val;
+	uint32_t format_measure_height_shift_val;
+	uint32_t format_measure_height_mask_val;
 };
 
 /**
@@ -452,6 +478,7 @@ struct cam_ife_csid_tpg_cfg  {
  * @cnt:              Cid resource reference count.
  * @tpg_set:          Tpg used for this cid resource
  * @is_valid_vc1_dt1: Valid vc1 and dt1
+ * @init_cnt          cid resource init count
  *
  */
 struct cam_ife_csid_cid_data {
@@ -462,6 +489,7 @@ struct cam_ife_csid_cid_data {
 	uint32_t                     cnt;
 	uint32_t                     tpg_set;
 	uint32_t                     is_valid_vc1_dt1;
+	uint32_t                     init_cnt;
 };
 
 
@@ -518,11 +546,31 @@ struct cam_ife_csid_path_cfg {
 };
 
 /**
+ * struct cam_csid_evt_payload- payload for csid hw event
+ * @list       : list head
+ * @evt_type   : Event type from CSID
+ * @irq_status : IRQ Status register
+ * @hw_idx     : Hw index
+ * @priv       : Private data of payload
+ */
+struct cam_csid_evt_payload {
+	struct list_head   list;
+	uint32_t           evt_type;
+	uint32_t           irq_status[CAM_IFE_CSID_IRQ_REG_MAX];
+	uint32_t           hw_idx;
+	void              *priv;
+};
+
+/**
  * struct cam_ife_csid_hw- csid hw device resources data
  *
  * @hw_intf:                  contain the csid hw interface information
  * @hw_info:                  csid hw device information
  * @csid_info:                csid hw specific information
+ * @tasklet:                  tasklet to handle csid errors
+ * @priv:                     private data to be sent with callback
+ * @free_payload_list:        list head for payload
+ * @evt_payload:              Event payload to be passed to tasklet
  * @res_type:                 CSID in resource type
  * @csi2_rx_cfg:              Csi2 rx decoder configuration for csid
  * @tpg_cfg:                  TPG configuration
@@ -545,19 +593,26 @@ struct cam_ife_csid_path_cfg {
  * @clk_rate                  Clock rate
  * @sof_irq_triggered:        Flag is set on receiving event to enable sof irq
  *                            incase of SOF freeze.
+ * @is_resetting:             informs whether reset is started or not.
  * @irq_debug_cnt:            Counter to track sof irq's when above flag is set.
  * @error_irq_count           Error IRQ count, if continuous error irq comes
  *                            need to stop the CSID and mask interrupts.
  * @binning_enable            Flag is set if hardware supports QCFA binning
  * @binning_supported         Flag is set if sensor supports QCFA binning
- *
  * @first_sof_ts              first bootime stamp at the start
  * @prev_qtimer_ts            stores csid timestamp
+ * @epd_supported             Flag is set if sensor supports EPD
+ * @fatal_err_detected        flag to indicate fatal errror is reported
+ * @event_cb                  Callback to hw manager if CSID event reported
  */
 struct cam_ife_csid_hw {
 	struct cam_hw_intf              *hw_intf;
 	struct cam_hw_info              *hw_info;
 	struct cam_ife_csid_hw_info     *csid_info;
+	void                            *tasklet;
+	void                            *priv;
+	struct list_head                 free_payload_list;
+	struct cam_csid_evt_payload      evt_payload[CAM_CSID_EVT_PAYLOAD_MAX];
 	uint32_t                         res_type;
 	struct cam_ife_csid_csi2_rx_cfg  csi2_rx_cfg;
 	struct cam_ife_csid_tpg_cfg      tpg_cfg;
@@ -577,7 +632,13 @@ struct cam_ife_csid_hw {
 	struct completion    csid_udin_complete[CAM_IFE_CSID_UDI_MAX];
 	uint64_t                         csid_debug;
 	uint64_t                         clk_rate;
+	struct cam_isp_sensor_dimension  ipp_path_config;
+	struct cam_isp_sensor_dimension  ppp_path_config;
+	struct cam_isp_sensor_dimension  rdi_path_config[CAM_IFE_CSID_RDI_MAX];
+	uint32_t                         hbi;
+	uint32_t                         vbi;
 	bool                             sof_irq_triggered;
+	bool                             is_resetting;
 	uint32_t                         irq_debug_cnt;
 	uint32_t                         error_irq_count;
 	uint32_t                         device_enabled;
@@ -586,6 +647,9 @@ struct cam_ife_csid_hw {
 	uint32_t                         binning_supported;
 	uint64_t                         prev_boot_timestamp;
 	uint64_t                         prev_qtimer_ts;
+	uint32_t                         epd_supported;
+	bool                             fatal_err_detected;
+	cam_hw_mgr_event_cb_func         event_cb;
 };
 
 int cam_ife_csid_hw_probe_init(struct cam_hw_intf  *csid_hw_intf,

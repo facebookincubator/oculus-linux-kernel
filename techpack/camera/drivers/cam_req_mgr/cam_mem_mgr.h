@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_MEM_MGR_H_
@@ -65,12 +65,16 @@ struct cam_mem_buf_queue {
  * @bitmap: bitmap of the mem mgr utility
  * @bits: max bits of the utility
  * @bufq: array of buffers
+ * @dentry: Debugfs entry
+ * @alloc_profile_enable: Whether to enable alloc profiling
  */
 struct cam_mem_table {
 	struct mutex m_lock;
 	void *bitmap;
 	size_t bits;
 	struct cam_mem_buf_queue bufq[CAM_MEM_BUFQ_MAX];
+	struct dentry *dentry;
+	bool alloc_profile_enable;
 };
 
 /**

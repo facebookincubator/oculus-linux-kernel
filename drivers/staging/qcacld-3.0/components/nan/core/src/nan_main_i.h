@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -59,7 +59,7 @@ struct scheduler_msg;
 	QDF_TRACE_DEBUG_NO_FL(QDF_MODULE_ID_NAN, params)
 
 /* Maximum number of NDP instances supported on each NAN Peer */
-#define MAX_NDP_INSTANCES_PER_PEER 1
+#define MAX_NDP_INSTANCES_PER_PEER 2
 
 /**
  * enum nan_disc_state - NAN Discovery states
@@ -81,12 +81,20 @@ enum nan_disc_state {
  * @dp_enable: NAN Datapath feature enable
  * @ndi_mac_randomize: Randomize NAN datapath interface MAC
  * @ndp_inactivity_timeout: NDP inactivity timeout
+ * @nan_separate_iface_support: To supports separate iface creation for NAN
+ * @ndp_keep_alive_period: To configure duration of how many seconds to
+ * wait to kickout peer if peer is not reachable
+ * @support_mp0_discovery: To support discovery of NAN cluster with Master
+ * Preference (MP) as 0 when a new device is enabling NAN
  */
 struct nan_cfg_params {
 	bool enable;
 	bool dp_enable;
 	bool ndi_mac_randomize;
 	uint16_t ndp_inactivity_timeout;
+	bool nan_separate_iface_support;
+	uint16_t ndp_keep_alive_period;
+	bool support_mp0_discovery;
 };
 
 /**

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 
@@ -253,6 +253,7 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 static void dsi_bridge_disable(struct drm_bridge *bridge)
 {
 	int rc = 0;
+	int private_flags;
 	struct dsi_display *display;
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
 
@@ -261,18 +262,14 @@ static void dsi_bridge_disable(struct drm_bridge *bridge)
 		return;
 	}
 	display = c_bridge->display;
+	private_flags =
+		bridge->encoder->crtc->state->adjusted_mode.private_flags;
 
 	if (display && display->drm_conn) {
-		if (bridge->encoder->crtc->state->adjusted_mode.private_flags &
-			MSM_MODE_FLAG_SEAMLESS_POMS) {
-			display->poms_pending = true;
-			/* Disable ESD thread, during panel mode switch */
-			sde_connector_schedule_status_work(display->drm_conn,
-				false);
-		} else {
-			display->poms_pending = false;
-			sde_connector_helper_bridge_disable(display->drm_conn);
-		}
+		display->poms_pending =
+			private_flags & MSM_MODE_FLAG_SEAMLESS_POMS;
+
+		sde_connector_helper_bridge_disable(display->drm_conn);
 	}
 
 	rc = dsi_display_pre_disable(c_bridge->display);
@@ -426,6 +423,7 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 	/* Reject seamless transition when active changed */
 	if (crtc_state->active_changed &&
 		((dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR) ||
+		(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_POMS) ||
 		(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK))) {
 		DSI_ERR("seamless upon active changed 0x%x %d\n",
 			dsi_mode.dsi_mode_flags, crtc_state->active_changed);
@@ -811,8 +809,8 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 	struct drm_display_mode drm_mode;
 	struct dsi_display *display = data;
 	struct edid edid;
-	u8 width_mm = connector->display_info.width_mm;
-	u8 height_mm = connector->display_info.height_mm;
+	unsigned int width_mm = connector->display_info.width_mm;
+	unsigned int height_mm = connector->display_info.height_mm;
 	const u8 edid_buf[EDID_LENGTH] = {
 		0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x44, 0x6D,
 		0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1B, 0x10, 0x01, 0x03,

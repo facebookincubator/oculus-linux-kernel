@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -295,7 +295,7 @@ struct roam_cmd {
 	bool fStopWds;
 	tSirMacAddr peerMac;
 	tSirMacReasonCodes reason;
-	eCsrRoamDisconnectReason disconnect_reason;
+	tSirMacReasonCodes disconnect_reason;
 };
 
 struct setkey_cmd {
@@ -691,7 +691,7 @@ struct csr_roam_session {
 	bool nss_forced_1x1;
 	bool disable_hi_rssi;
 	bool dhcp_done;
-	uint8_t disconnect_reason;
+	tSirMacReasonCodes disconnect_reason;
 	uint8_t uapsd_mask;
 	struct scan_cmd_info scan_info;
 	qdf_mc_timer_t roaming_offload_timer;

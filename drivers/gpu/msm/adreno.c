@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/delay.h>
 #include <linux/input.h>
@@ -339,6 +339,7 @@ void adreno_fault_detect_stop(struct adreno_device *adreno_dev)
 /* Send an NMI to the GMU */
 void adreno_gmu_send_nmi(struct adreno_device *adreno_dev)
 {
+	u32 val;
 	/* Mask so there's no interrupt caused by NMI */
 	adreno_write_gmureg(adreno_dev,
 			ADRENO_REG_GMU_GMU2HOST_INTR_MASK, 0xFFFFFFFF);
@@ -348,9 +349,10 @@ void adreno_gmu_send_nmi(struct adreno_device *adreno_dev)
 	if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_HFI_USE_REG))
 		adreno_write_gmureg(adreno_dev,
 				ADRENO_REG_GMU_NMI_CONTROL_STATUS, 0);
-	adreno_write_gmureg(adreno_dev,
-			ADRENO_REG_GMU_CM3_CFG,
-			(1 << GMU_CM3_CFG_NONMASKINTR_SHIFT));
+
+	adreno_read_gmureg(adreno_dev, ADRENO_REG_GMU_CM3_CFG, &val);
+	val |= 1 << GMU_CM3_CFG_NONMASKINTR_SHIFT;
+	adreno_write_gmureg(adreno_dev, ADRENO_REG_GMU_CM3_CFG, val);
 
 	/* Make sure the NMI is invoked before we proceed*/
 	wmb();
@@ -1427,6 +1429,9 @@ static int adreno_probe(struct platform_device *pdev)
 	if (adreno_support_64bit(adreno_dev))
 		device->mmu.features |= KGSL_MMU_64BIT;
 
+	if (adreno_is_a6xx(adreno_dev))
+		device->mmu.features |= KGSL_MMU_SMMU_APERTURE;
+
 	device->pwrctrl.bus_width = adreno_dev->gpucore->bus_width;
 
 	status = kgsl_device_platform_probe(device);
@@ -1653,6 +1658,60 @@ static void adreno_fault_detect_init(struct adreno_device *adreno_dev)
 	set_bit(ADRENO_DEVICE_SOFT_FAULT_DETECT, &adreno_dev->priv);
 
 	adreno_fault_detect_start(adreno_dev);
+}
+
+static void do_gbif_halt(struct adreno_device *adreno_dev,
+	u32 halt_reg, u32 ack_reg, u32 mask, const char *client)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	unsigned long t;
+	u32 val;
+
+	adreno_writereg(adreno_dev, halt_reg, mask);
+
+	t = jiffies + msecs_to_jiffies(VBIF_RESET_ACK_TIMEOUT);
+	do {
+		adreno_readreg(adreno_dev, ack_reg, &val);
+		if ((val & mask) == mask)
+			return;
+
+		/*
+		 * If we are attempting GBIF halt in case of stall-on-fault
+		 * then the halt sequence will not complete as long as SMMU
+		 * is stalled.
+		 */
+		kgsl_mmu_pagefault_resume(&device->mmu);
+		usleep_range(10, 100);
+	} while (!time_after(jiffies, t));
+
+	/* Check one last time */
+	kgsl_mmu_pagefault_resume(&device->mmu);
+
+	adreno_readreg(adreno_dev, ack_reg, &val);
+	if ((val & mask) == mask)
+		return;
+
+	dev_err(device->dev, "%s GBIF Halt ack timed out\n", client);
+}
+
+/**
+ * adreno_smmu_resume - Clears stalled/pending transactions in GBIF pipe
+ * and resumes stalled SMMU
+ * @adreno_dev: Pointer to the the adreno device
+ */
+void adreno_smmu_resume(struct adreno_device *adreno_dev)
+{
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
+
+	/* Halt GBIF GX traffic */
+	if (gmu_core_dev_gx_is_on(KGSL_DEVICE(adreno_dev)))
+		do_gbif_halt(adreno_dev, ADRENO_REG_RBBM_GBIF_HALT,
+			ADRENO_REG_RBBM_GBIF_HALT_ACK,
+			gpudev->gbif_gx_halt_mask, "GX");
+
+	/* Halt all CX traffic */
+	do_gbif_halt(adreno_dev, ADRENO_REG_GBIF_HALT,
+		ADRENO_REG_GBIF_HALT_ACK, gpudev->gbif_arb_halt_mask, "CX");
 }
 
 /**
@@ -1986,12 +2045,16 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 
 	/* Send OOB request to turn on the GX */
 	status = gmu_core_dev_oob_set(device, oob_gpu);
-	if (status)
+	if (status) {
+		gmu_core_snapshot(device);
 		goto error_mmu_off;
+	}
 
 	status = gmu_core_dev_hfi_start_msg(device);
-	if (status)
+	if (status) {
+		gmu_core_snapshot(device);
 		goto error_oob_clear;
+	}
 
 	_set_secvid(device);
 
@@ -2241,25 +2304,14 @@ static int adreno_stop(struct kgsl_device *device)
 	error = gmu_core_dev_oob_set(device, oob_gpu);
 	if (error) {
 		gmu_core_dev_oob_clear(device, oob_gpu);
-
-		if (gmu_core_regulator_isenabled(device)) {
-			/* GPU is on. Try recovery */
-			set_bit(GMU_FAULT, &device->gmu_core.flags);
 			gmu_core_snapshot(device);
 			error = -EINVAL;
-		}
+			goto no_gx_power;
 	}
-
-	adreno_dispatcher_stop(adreno_dev);
-
-	adreno_ringbuffer_stop(adreno_dev);
 
 	kgsl_pwrscale_update_stats(device);
 
 	adreno_irqctrl(adreno_dev, 0);
-
-	adreno_llc_deactivate_slice(adreno_dev->gpu_llc_slice);
-	adreno_llc_deactivate_slice(adreno_dev->gpuhtw_llc_slice);
 
 	/* Save active coresight registers if applicable */
 	adreno_coresight_stop(adreno_dev);
@@ -2278,7 +2330,6 @@ static int adreno_stop(struct kgsl_device *device)
 	 */
 
 	if (!error && gmu_core_dev_wait_for_lowest_idle(device)) {
-		set_bit(GMU_FAULT, &device->gmu_core.flags);
 		gmu_core_snapshot(device);
 		/*
 		 * Assume GMU hang after 10ms without responding.
@@ -2290,6 +2341,17 @@ static int adreno_stop(struct kgsl_device *device)
 	}
 
 	adreno_clear_pending_transactions(device);
+
+no_gx_power:
+	adreno_dispatcher_stop(adreno_dev);
+
+	adreno_ringbuffer_stop(adreno_dev);
+
+	if (!IS_ERR_OR_NULL(adreno_dev->gpu_llc_slice))
+		llcc_slice_deactivate(adreno_dev->gpu_llc_slice);
+
+	if (!IS_ERR_OR_NULL(adreno_dev->gpuhtw_llc_slice))
+		llcc_slice_deactivate(adreno_dev->gpuhtw_llc_slice);
 
 	/*
 	 * The halt is not cleared in the above function if we have GBIF.
@@ -2996,7 +3058,15 @@ void adreno_spin_idle_debug(struct adreno_device *adreno_dev,
 
 	dev_err(device->dev, " hwfault=%8.8X\n", hwfault);
 
-	kgsl_device_snapshot(device, NULL, adreno_gmu_gpu_fault(adreno_dev));
+	/*
+	 * If CP is stuck, gmu may not perform as expected. So force a gmu
+	 * snapshot which captures entire state as well as sets the gmu fault
+	 * because things need to be reset anyway.
+	 */
+	if (gmu_core_isenabled(device))
+		gmu_core_snapshot(device);
+	else
+		kgsl_device_snapshot(device, NULL, false);
 }
 
 /**
@@ -3250,12 +3320,15 @@ int adreno_gmu_fenced_write(struct adreno_device *adreno_dev,
 	unsigned int status, i;
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	unsigned int reg_offset = gpudev->reg_offsets->offsets[offset];
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	u64 ts1, ts2;
 
 	adreno_writereg(adreno_dev, offset, val);
 
 	if (!gmu_core_isenabled(KGSL_DEVICE(adreno_dev)))
 		return 0;
 
+	ts1 = gmu_core_dev_read_ao_counter(device);
 	for (i = 0; i < GMU_CORE_LONG_WAKEUP_RETRY_LIMIT; i++) {
 		/*
 		 * Make sure the previous register write is posted before
@@ -3279,17 +3352,20 @@ int adreno_gmu_fenced_write(struct adreno_device *adreno_dev,
 		adreno_writereg(adreno_dev, offset, val);
 
 		if (i == GMU_CORE_SHORT_WAKEUP_RETRY_LIMIT)
-			dev_err(adreno_dev->dev.dev,
-				"Waited %d usecs to write fenced register 0x%x. Continuing to wait...\n",
+			dev_err(device->dev,
+				"Waited %d usecs to write fenced register 0x%x, status 0x%x. Continuing to wait...\n",
 				(GMU_CORE_SHORT_WAKEUP_RETRY_LIMIT *
 				GMU_CORE_WAKEUP_DELAY_US),
-				reg_offset);
+				reg_offset, status);
 	}
 
-	dev_err(adreno_dev->dev.dev,
-		"Timed out waiting %d usecs to write fenced register 0x%x\n",
+	ts2 = gmu_core_dev_read_ao_counter(device);
+	dev_err(device->dev,
+		"fenced write for 0x%x timed out in %dus. timestamps %llu %llu, status 0x%x\n",
+		reg_offset,
 		GMU_CORE_LONG_WAKEUP_RETRY_LIMIT * GMU_CORE_WAKEUP_DELAY_US,
-		reg_offset);
+		ts1, ts2, status);
+
 	return -ETIMEDOUT;
 }
 

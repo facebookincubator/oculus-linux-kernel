@@ -40,6 +40,18 @@ QDF_STATUS wmi_unified_set_gateway_params_cmd(void *wmi_hdl,
 					struct gateway_update_req_param *req);
 #endif
 
+/**
+ * wmi_unified_get_roam_scan_ch_list() - send roam scan channel list get cmd
+ * @wmi_handle: wmi handle
+ * @vdev_id: vdev id
+ *
+ * This function sends roam scan channel list get command to firmware
+ *
+ * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS wmi_unified_get_roam_scan_ch_list(wmi_unified_t wmi_handle,
+					     uint8_t vdev_id);
+
 #ifdef FEATURE_RSSI_MONITOR
 /**
  * wmi_unified_set_rssi_monitoring_cmd() - set rssi monitoring

@@ -21,6 +21,7 @@ struct cam_req_mgr_core_dev_link_setup;
 struct cam_req_mgr_apply_request;
 struct cam_req_mgr_flush_request;
 struct cam_req_mgr_link_evt_data;
+struct cam_req_mgr_dump_info;
 
 #define SKIP_NEXT_FRAME 0x100
 
@@ -49,6 +50,7 @@ typedef int (*cam_req_mgr_notify_stop)(struct cam_req_mgr_notify_stop *);
  * @cam_req_mgr_apply_req   : CRM asks device to apply certain request id.
  * @cam_req_mgr_flush_req   : Flush or cancel request
  * cam_req_mgr_process_evt  : generic events
+ * @cam_req_mgr_dump_req    : dump request
  */
 typedef int (*cam_req_mgr_get_dev_info) (struct cam_req_mgr_device_info *);
 typedef int (*cam_req_mgr_link_setup)(
@@ -56,6 +58,7 @@ typedef int (*cam_req_mgr_link_setup)(
 typedef int (*cam_req_mgr_apply_req)(struct cam_req_mgr_apply_request *);
 typedef int (*cam_req_mgr_flush_req)(struct cam_req_mgr_flush_request *);
 typedef int (*cam_req_mgr_process_evt)(struct cam_req_mgr_link_evt_data *);
+typedef int (*cam_req_mgr_dump_req)(struct cam_req_mgr_dump_info *);
 
 /**
  * @brief          : cam_req_mgr_crm_cb - func table
@@ -81,6 +84,7 @@ struct cam_req_mgr_crm_cb {
  * @apply_req    : payload to apply request id on a device linked
  * @flush_req    : payload to flush request
  * @process_evt  : payload to generic event
+ * @dump_req     : payload to dump request
  */
 struct cam_req_mgr_kmd_ops {
 	cam_req_mgr_get_dev_info     get_dev_info;
@@ -88,6 +92,7 @@ struct cam_req_mgr_kmd_ops {
 	cam_req_mgr_apply_req        apply_req;
 	cam_req_mgr_flush_req        flush_req;
 	cam_req_mgr_process_evt      process_evt;
+	cam_req_mgr_dump_req         dump_req;
 };
 
 /**
@@ -199,13 +204,14 @@ enum cam_req_mgr_link_evt_type {
 
 /**
  * struct cam_req_mgr_trigger_notify
- * @link_hdl : link identifier
- * @dev_hdl  : device handle which has sent this req id
- * @frame_id : frame id for internal tracking
- * @trigger  : trigger point of this notification, CRM will send apply
+ * @link_hdl  : link identifier
+ * @dev_hdl   : device handle which has sent this req id
+ * @frame_id  : frame id for internal tracking
+ * @trigger   : trigger point of this notification, CRM will send apply
  * only to the devices which subscribe to this point.
  * @sof_timestamp_val: Captured time stamp value at sof hw event
- * @req_id   : req id which returned buf_done
+ * @req_id    : req id which returned buf_done
+ * @trigger_id: ID to differentiate between the trigger devices
  */
 struct cam_req_mgr_trigger_notify {
 	int32_t  link_hdl;
@@ -214,6 +220,7 @@ struct cam_req_mgr_trigger_notify {
 	uint32_t trigger;
 	uint64_t sof_timestamp_val;
 	uint64_t req_id;
+	int32_t  trigger_id;
 };
 
 /**
@@ -234,12 +241,18 @@ struct cam_req_mgr_timer_notify {
  * @link_hdl : link identifier
  * @dev_hdl  : device handle which has sent this req id
  * @req_id   : req id which hit error
+ * @frame_id : frame id for internal tracking
+ * @trigger  : trigger point of this notification, CRM will send apply
+ * @sof_timestamp_val : Captured time stamp value at sof hw event
  * @error    : what error device hit while processing this req
  */
 struct cam_req_mgr_error_notify {
 	int32_t  link_hdl;
 	int32_t  dev_hdl;
 	uint64_t req_id;
+	int64_t  frame_id;
+	uint32_t trigger;
+	uint64_t sof_timestamp_val;
 	enum cam_req_mgr_device_error error;
 };
 
@@ -273,12 +286,12 @@ struct cam_req_mgr_notify_stop {
 /* CRM to KMD devices */
 /**
  * struct cam_req_mgr_device_info
- * @dev_hdl : Input_param : device handle for reference
- * @name    : link link or unlink
- * @dev_id  : device id info
- * @p_delay : delay between time settings applied and take effect
- * @trigger : Trigger point for the client
- *
+ * @dev_hdl    : Input_param : device handle for reference
+ * @name       : link link or unlink
+ * @dev_id     : device id info
+ * @p_delay    : delay between time settings applied and take effect
+ * @trigger    : Trigger point for the client
+ * @trigger_on : This device provides trigger
  */
 struct cam_req_mgr_device_info {
 	int32_t                     dev_hdl;
@@ -286,6 +299,7 @@ struct cam_req_mgr_device_info {
 	enum cam_req_mgr_device_id  dev_id;
 	enum cam_pipeline_delay     p_delay;
 	uint32_t                    trigger;
+	bool                        trigger_on;
 };
 
 /**
@@ -296,7 +310,7 @@ struct cam_req_mgr_device_info {
  * @max_delay       : max pipeline delay on this link
  * @crm_cb          : callback funcs to communicate with req mgr
  * @subscribe_event : the mask of trigger points this link subscribes
- *
+ * @trigger_id      : Unique ID provided to the triggering device
  */
 struct cam_req_mgr_core_dev_link_setup {
 	int32_t                    link_enable;
@@ -305,6 +319,7 @@ struct cam_req_mgr_core_dev_link_setup {
 	enum cam_pipeline_delay    max_delay;
 	struct cam_req_mgr_crm_cb *crm_cb;
 	uint32_t                   subscribe_event;
+	int32_t                    trigger_id;
 };
 
 /**
@@ -314,6 +329,7 @@ struct cam_req_mgr_core_dev_link_setup {
  * @request_id       : request id settings to apply
  * @report_if_bubble : report to crm if failure in applying
  * @trigger_point    : the trigger point of this apply
+ * @re_apply         : to skip re_apply for buf_done request
  *
  */
 struct cam_req_mgr_apply_request {
@@ -322,6 +338,7 @@ struct cam_req_mgr_apply_request {
 	uint64_t   request_id;
 	int32_t    report_if_bubble;
 	uint32_t   trigger_point;
+	bool       re_apply;
 };
 
 /**
@@ -365,5 +382,24 @@ struct cam_req_mgr_link_evt_data {
 struct cam_req_mgr_send_request {
 	int32_t    link_hdl;
 	struct cam_req_mgr_req_queue *in_q;
+};
+
+/**
+ * struct cam_req_mgr_dump_info
+ * @req_id      : request id to dump
+ * @offset      : offset of buffer
+ * @error_type  : error type
+ * @buf_handle  : buf handle
+ * @link_hdl    : link identifier
+ * @dev_hdl     : device handle for cross check
+ *
+ */
+struct cam_req_mgr_dump_info {
+	uint64_t    req_id;
+	size_t      offset;
+	uint32_t    error_type;
+	uint32_t    buf_handle;
+	int32_t     link_hdl;
+	int32_t     dev_hdl;
 };
 #endif

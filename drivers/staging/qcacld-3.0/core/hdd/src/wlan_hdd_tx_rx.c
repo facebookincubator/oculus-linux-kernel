@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -554,7 +554,7 @@ static void hdd_get_transmit_sta_id(struct hdd_adapter *adapter,
  */
 static void hdd_clear_tx_rx_connectivity_stats(struct hdd_adapter *adapter)
 {
-	hdd_info("Clear txrx connectivity stats");
+	hdd_debug("Clear txrx connectivity stats");
 	qdf_mem_zero(&adapter->hdd_stats.hdd_arp_stats,
 		     sizeof(adapter->hdd_stats.hdd_arp_stats));
 	qdf_mem_zero(&adapter->hdd_stats.hdd_dns_stats,
@@ -935,16 +935,16 @@ static void __hdd_hard_start_xmit(struct sk_buff *skb,
 
 	if (cds_is_driver_recovering() || cds_is_driver_in_bad_state() ||
 	    cds_is_load_or_unload_in_progress()) {
-		QDF_TRACE(QDF_MODULE_ID_HDD_DATA, QDF_TRACE_LEVEL_INFO_HIGH,
-			  "Recovery/(Un)load in progress, dropping the packet");
+		QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_HDD_DATA,
+				   "Recovery/(Un)load in progress, dropping the packet");
 		goto drop_pkt;
 	}
 
 	wlan_hdd_classify_pkt(skb);
 	if (QDF_NBUF_CB_GET_PACKET_TYPE(skb) == QDF_NBUF_CB_PACKET_TYPE_ARP) {
-		is_arp = true;
 		if (qdf_nbuf_data_is_arp_req(skb) &&
 		    (adapter->track_arp_ip == qdf_nbuf_get_arp_tgt_ip(skb))) {
+			is_arp = true;
 			++adapter->hdd_stats.hdd_arp_stats.tx_arp_req_count;
 			QDF_TRACE(QDF_MODULE_ID_HDD_DATA,
 				  QDF_TRACE_LEVEL_INFO_HIGH,
@@ -1551,14 +1551,14 @@ static void hdd_resolve_rx_ol_mode(struct hdd_context *hdd_ctx)
 	    cdp_cfg_get(soc, cfg_dp_gro_enable))) {
 		cdp_cfg_get(soc, cfg_dp_lro_enable) &&
 			cdp_cfg_get(soc, cfg_dp_gro_enable) ?
-		hdd_err("Can't enable both LRO and GRO, disabling Rx offload") :
-		hdd_info("LRO and GRO both are disabled");
+		hdd_debug("Can't enable both LRO and GRO, disabling Rx offload") :
+		hdd_debug("LRO and GRO both are disabled");
 		hdd_ctx->ol_enable = 0;
 	} else if (cdp_cfg_get(soc, cfg_dp_lro_enable)) {
 		hdd_debug("Rx offload LRO is enabled");
 		hdd_ctx->ol_enable = CFG_LRO_ENABLED;
 	} else {
-		hdd_info("Rx offload: GRO is enabled");
+		hdd_debug("Rx offload: GRO is enabled");
 		hdd_ctx->ol_enable = CFG_GRO_ENABLED;
 	}
 }
@@ -1821,9 +1821,9 @@ static int hdd_rx_ol_send_config(struct hdd_context *hdd_ctx)
 	if (wma_lro_init(&lro_config))
 		return -EAGAIN;
 	else
-		hdd_dp_info("LRO Config: lro_enable: 0x%x tcp_flag 0x%x tcp_flag_mask 0x%x",
-			    lro_config.lro_enable, lro_config.tcp_flag,
-			    lro_config.tcp_flag_mask);
+		hdd_debug("LRO Config: lro_enable: 0x%x tcp_flag 0x%x tcp_flag_mask 0x%x",
+			  lro_config.lro_enable, lro_config.tcp_flag,
+			  lro_config.tcp_flag_mask);
 
 	return 0;
 }
@@ -2110,15 +2110,14 @@ QDF_STATUS hdd_rx_packet_cbk(void *adapter_context,
 		next = skb->next;
 		skb->next = NULL;
 
-		if (QDF_NBUF_CB_PACKET_TYPE_ARP ==
-		    QDF_NBUF_CB_GET_PACKET_TYPE(skb)) {
+		if (qdf_nbuf_is_ipv4_arp_pkt(skb)) {
 			if (qdf_nbuf_data_is_arp_rsp(skb) &&
 				(adapter->track_arp_ip ==
 			     qdf_nbuf_get_arp_src_ip(skb))) {
 				++adapter->hdd_stats.hdd_arp_stats.
 							rx_arp_rsp_count;
 				QDF_TRACE(QDF_MODULE_ID_HDD_DATA,
-						QDF_TRACE_LEVEL_INFO,
+						QDF_TRACE_LEVEL_DEBUG,
 						"%s: ARP packet received",
 						__func__);
 				track_arp = true;
@@ -2230,6 +2229,10 @@ QDF_STATUS hdd_rx_packet_cbk(void *adapter_context,
 				hdd_tx_rx_collect_connectivity_stats_info(
 					skb, adapter,
 					PKT_TYPE_RX_REFUSED, &pkt_type);
+			DPTRACE(qdf_dp_log_proto_pkt_info(NULL, NULL, 0, 0,
+						      QDF_RX,
+						      QDF_TRACE_DEFAULT_MSDU_ID,
+						      QDF_TX_RX_STATUS_DROP));
 
 		}
 	}
@@ -2795,11 +2798,11 @@ void hdd_send_rps_ind(struct hdd_adapter *adapter)
 	hdd_ctxt = WLAN_HDD_GET_CTX(adapter);
 	rps_data.num_queues = NUM_TX_QUEUES;
 
-	hdd_info("cpu_map_list '%s'", hdd_ctxt->config->cpu_map_list);
+	hdd_debug("cpu_map_list '%s'", hdd_ctxt->config->cpu_map_list);
 
 	/* in case no cpu map list is provided, simply return */
 	if (!strlen(hdd_ctxt->config->cpu_map_list)) {
-		hdd_err("no cpu map list found");
+		hdd_debug("no cpu map list found");
 		goto err;
 	}
 
@@ -2817,7 +2820,7 @@ void hdd_send_rps_ind(struct hdd_adapter *adapter)
 				cpu_map_list_len : rps_data.num_queues;
 
 	for (i = 0; i < rps_data.num_queues; i++) {
-		hdd_info("cpu_map_list[%d] = 0x%x",
+		hdd_debug("cpu_map_list[%d] = 0x%x",
 			i, rps_data.cpu_map_list[i]);
 	}
 
@@ -2832,7 +2835,7 @@ void hdd_send_rps_ind(struct hdd_adapter *adapter)
 	return;
 
 err:
-	hdd_err("Wrong RPS configuration. enabling rx_thread");
+	hdd_debug("Wrong RPS configuration. enabling rx_thread");
 	cds_cfg->rps_enabled = false;
 }
 
@@ -3101,6 +3104,8 @@ hdd_dp_dp_trace_cfg_update(struct hdd_config *config,
 	qdf_uint8_array_parse(cfg_get(psoc, CFG_DP_DP_TRACE_CONFIG),
 			      config->dp_trace_config,
 			      sizeof(config->dp_trace_config), &array_out_size);
+	config->dp_proto_event_bitmap = cfg_get(psoc,
+						CFG_DP_PROTO_EVENT_BITMAP);
 }
 #else
 static void

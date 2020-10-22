@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -391,11 +391,15 @@ struct cdp_cmn_ops {
 
 	int(*txrx_soc_get_nss_cfg)(ol_txrx_soc_handle soc);
 	QDF_STATUS (*txrx_intr_attach)(void *soc);
-	void (*set_intr_mode)(struct cdp_soc_t *soc);
 	void (*txrx_intr_detach)(void *soc);
 	void  (*set_pn_check)(struct cdp_vdev *vdev,
 		struct cdp_peer *peer_handle, enum cdp_sec_type sec_type,
 		 uint32_t *rx_pn);
+	void  (*set_key_sec_type)(struct cdp_vdev *vdev,
+				  struct cdp_peer *peer_handle,
+				  enum cdp_sec_type sec_type,
+				  bool is_unicast);
+
 	QDF_STATUS (*update_config_parameters)(struct cdp_soc *psoc,
 			struct cdp_config_params *params);
 
@@ -1044,6 +1048,10 @@ struct cdp_misc_ops {
 					       uint32_t time_in_ms,
 					       uint32_t high_th,
 					       uint32_t low_th);
+	QDF_STATUS (*txrx_ext_stats_request)(struct cdp_pdev *pdev,
+					     struct cdp_txrx_ext_stats *req);
+	QDF_STATUS (*request_rx_hw_stats)(struct cdp_soc_t *soc_hdl,
+					  uint8_t vdev_id);
 };
 
 /**
@@ -1241,10 +1249,16 @@ struct cdp_ipa_ops {
  * struct cdp_bus_ops - mcl bus suspend/resume ops
  * @bus_suspend:
  * @bus_resume:
+ * @process_wow_ack_rsp: handler for wow ack response
+ * @process_target_suspend_req: handler for target suspend request
  */
 struct cdp_bus_ops {
 	QDF_STATUS (*bus_suspend)(struct cdp_pdev *opaque_pdev);
 	QDF_STATUS (*bus_resume)(struct cdp_pdev *opaque_pdev);
+	void (*process_wow_ack_rsp)(struct cdp_soc_t *soc_hdl,
+				    struct cdp_pdev *opaque_pdev);
+	void (*process_target_suspend_req)(struct cdp_soc_t *soc_hdl,
+					   struct cdp_pdev *opaque_pdev);
 };
 
 /**

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -34,8 +34,9 @@
 #define DEFAULT_TEARCHECK_SYNC_THRESH_CONTINUE	4
 
 #define SDE_ENC_WR_PTR_START_TIMEOUT_US 20000
-
-#define SDE_ENC_MAX_POLL_TIMEOUT_US	2000
+#define AUTOREFRESH_SEQ1_POLL_TIME	2000
+#define AUTOREFRESH_SEQ2_POLL_TIME	25000
+#define AUTOREFRESH_SEQ2_POLL_TIMEOUT	1000000
 
 static inline int _sde_encoder_phys_cmd_get_idle_timeout(
 		struct sde_encoder_phys_cmd *cmd_enc)
@@ -322,6 +323,8 @@ static void _sde_encoder_phys_cmd_setup_irq_hw_idx(
 		struct sde_encoder_phys *phys_enc)
 {
 	struct sde_encoder_irq *irq;
+	struct sde_kms *sde_kms = phys_enc->sde_kms;
+	int ret = 0;
 
 	if (!phys_enc || !phys_enc->hw_pp || !phys_enc->hw_ctl) {
 		SDE_ERROR("invalid args %d %d\n", !phys_enc,
@@ -333,6 +336,21 @@ static void _sde_encoder_phys_cmd_setup_irq_hw_idx(
 		SDE_ERROR("invalid intf configuration\n");
 		return;
 	}
+
+	mutex_lock(&sde_kms->vblank_ctl_global_lock);
+
+	if (atomic_read(&phys_enc->vblank_refcount)) {
+		SDE_ERROR(
+		"vblank_refcount mismatch detected, try to reset %d\n",
+				atomic_read(&phys_enc->vblank_refcount));
+		ret = sde_encoder_helper_unregister_irq(phys_enc,
+				INTR_IDX_RDPTR);
+		if (ret)
+			SDE_ERROR(
+				"control vblank irq registration error %d\n",
+					ret);
+	}
+	atomic_set(&phys_enc->vblank_refcount, 0);
 
 	irq = &phys_enc->irq[INTR_IDX_CTL_START];
 	irq->hw_idx = phys_enc->hw_ctl->idx;
@@ -366,6 +384,8 @@ static void _sde_encoder_phys_cmd_setup_irq_hw_idx(
 		irq->hw_idx = phys_enc->hw_intf->idx;
 	else
 		irq->hw_idx = phys_enc->hw_pp->idx;
+
+	mutex_unlock(&sde_kms->vblank_ctl_global_lock);
 
 }
 
@@ -802,13 +822,15 @@ static int sde_encoder_phys_cmd_control_vblank_irq(
 		to_sde_encoder_phys_cmd(phys_enc);
 	int ret = 0;
 	int refcount;
+	struct sde_kms *sde_kms;
 
 	if (!phys_enc || !phys_enc->hw_pp) {
 		SDE_ERROR("invalid encoder\n");
 		return -EINVAL;
 	}
+	sde_kms = phys_enc->sde_kms;
 
-	mutex_lock(phys_enc->vblank_ctl_lock);
+	mutex_lock(&sde_kms->vblank_ctl_global_lock);
 	refcount = atomic_read(&phys_enc->vblank_refcount);
 
 	/* Slave encoders don't report vblank */
@@ -826,11 +848,17 @@ static int sde_encoder_phys_cmd_control_vblank_irq(
 	SDE_EVT32(DRMID(phys_enc->parent), phys_enc->hw_pp->idx - PINGPONG_0,
 			enable, refcount);
 
-	if (enable && atomic_inc_return(&phys_enc->vblank_refcount) == 1)
+	if (enable && atomic_inc_return(&phys_enc->vblank_refcount) == 1) {
 		ret = sde_encoder_helper_register_irq(phys_enc, INTR_IDX_RDPTR);
-	else if (!enable && atomic_dec_return(&phys_enc->vblank_refcount) == 0)
+		if (ret)
+			atomic_dec_return(&phys_enc->vblank_refcount);
+	} else if (!enable &&
+			atomic_dec_return(&phys_enc->vblank_refcount) == 0) {
 		ret = sde_encoder_helper_unregister_irq(phys_enc,
 				INTR_IDX_RDPTR);
+		if (ret)
+			atomic_inc_return(&phys_enc->vblank_refcount);
+	}
 
 end:
 	if (ret) {
@@ -842,7 +870,7 @@ end:
 				enable, refcount, SDE_EVTLOG_ERROR);
 	}
 
-	mutex_unlock(phys_enc->vblank_ctl_lock);
+	mutex_unlock(&sde_kms->vblank_ctl_global_lock);
 	return ret;
 }
 
@@ -1708,12 +1736,118 @@ static void sde_encoder_phys_cmd_update_split_role(
 	_sde_encoder_phys_cmd_update_flush_mask(phys_enc);
 }
 
+static void _sde_encoder_autorefresh_disable_seq1(
+		struct sde_encoder_phys *phys_enc)
+{
+	int trial = 0;
+	struct sde_encoder_phys_cmd *cmd_enc =
+				to_sde_encoder_phys_cmd(phys_enc);
+
+	/*
+	 * If autorefresh is enabled, disable it and make sure it is safe to
+	 * proceed with current frame commit/push. Sequence fallowed is,
+	 * 1. Disable TE - caller will take care of it
+	 * 2. Disable autorefresh config
+	 * 4. Poll for frame transfer ongoing to be false
+	 * 5. Enable TE back - caller will take care of it
+	 */
+	_sde_encoder_phys_cmd_config_autorefresh(phys_enc, 0);
+
+	do {
+		udelay(AUTOREFRESH_SEQ1_POLL_TIME);
+		if ((trial * AUTOREFRESH_SEQ1_POLL_TIME)
+				> (KICKOFF_TIMEOUT_MS * USEC_PER_MSEC)) {
+			SDE_ERROR_CMDENC(cmd_enc,
+					"disable autorefresh failed\n");
+
+			phys_enc->enable_state = SDE_ENC_ERR_NEEDS_HW_RESET;
+			break;
+		}
+
+		trial++;
+	} while (_sde_encoder_phys_cmd_is_ongoing_pptx(phys_enc));
+}
+
+static void _sde_encoder_autorefresh_disable_seq2(
+		struct sde_encoder_phys *phys_enc)
+{
+	int trial = 0;
+	struct sde_hw_mdp *hw_mdp = phys_enc->hw_mdptop;
+	u32 autorefresh_status = 0;
+	struct sde_encoder_phys_cmd *cmd_enc =
+				to_sde_encoder_phys_cmd(phys_enc);
+	struct intf_tear_status tear_status;
+	struct sde_hw_intf *hw_intf = phys_enc->hw_intf;
+
+	if (!hw_mdp->ops.get_autorefresh_status ||
+			!hw_intf->ops.check_and_reset_tearcheck) {
+		SDE_DEBUG_CMDENC(cmd_enc,
+			"autofresh disable seq2 not supported\n");
+		return;
+	}
+
+	/*
+	 * If autorefresh is still enabled after sequence-1, proceed with
+	 * below sequence-2.
+	 * 1. Disable autorefresh config
+	 * 2. Run in loop:
+	 *    2.1 Poll for autorefresh to be disabled
+	 *    2.2 Log read and write count status
+	 *    2.3 Replace te write count with start_pos to meet trigger window
+	 */
+	autorefresh_status = hw_mdp->ops.get_autorefresh_status(hw_mdp,
+					phys_enc->intf_idx);
+	SDE_EVT32(DRMID(phys_enc->parent), phys_enc->intf_idx - INTF_0,
+				autorefresh_status, SDE_EVTLOG_FUNC_CASE1);
+
+	if (!(autorefresh_status & BIT(7))) {
+		usleep_range(AUTOREFRESH_SEQ2_POLL_TIME,
+			AUTOREFRESH_SEQ2_POLL_TIME + 1);
+
+		autorefresh_status = hw_mdp->ops.get_autorefresh_status(hw_mdp,
+					phys_enc->intf_idx);
+		SDE_EVT32(DRMID(phys_enc->parent), phys_enc->intf_idx - INTF_0,
+				autorefresh_status, SDE_EVTLOG_FUNC_CASE2);
+	}
+
+	while (autorefresh_status & BIT(7)) {
+		if (!trial) {
+			SDE_ERROR_CMDENC(cmd_enc,
+			  "autofresh status:0x%x intf:%d\n", autorefresh_status,
+			  phys_enc->intf_idx - INTF_0);
+
+			_sde_encoder_phys_cmd_config_autorefresh(phys_enc, 0);
+		}
+
+		usleep_range(AUTOREFRESH_SEQ2_POLL_TIME,
+				AUTOREFRESH_SEQ2_POLL_TIME + 1);
+		if ((trial * AUTOREFRESH_SEQ2_POLL_TIME)
+			> AUTOREFRESH_SEQ2_POLL_TIMEOUT) {
+			SDE_ERROR_CMDENC(cmd_enc,
+					"disable autorefresh failed\n");
+			SDE_DBG_DUMP("all", "dbg_bus", "vbif_dbg_bus", "panic");
+			break;
+		}
+
+		trial++;
+		autorefresh_status = hw_mdp->ops.get_autorefresh_status(hw_mdp,
+					phys_enc->intf_idx);
+		hw_intf->ops.check_and_reset_tearcheck(hw_intf, &tear_status);
+		SDE_ERROR_CMDENC(cmd_enc,
+			"autofresh status:0x%x intf:%d tear_read:0x%x tear_write:0x%x\n",
+			autorefresh_status, phys_enc->intf_idx - INTF_0,
+			tear_status.read_count, tear_status.write_count);
+		SDE_EVT32(DRMID(phys_enc->parent), phys_enc->intf_idx - INTF_0,
+			autorefresh_status, tear_status.read_count,
+			tear_status.write_count);
+	}
+}
+
 static void sde_encoder_phys_cmd_prepare_commit(
 		struct sde_encoder_phys *phys_enc)
 {
 	struct sde_encoder_phys_cmd *cmd_enc =
 		to_sde_encoder_phys_cmd(phys_enc);
-	int trial = 0;
 
 	if (!phys_enc)
 		return;
@@ -1727,35 +1861,12 @@ static void sde_encoder_phys_cmd_prepare_commit(
 	if (!sde_encoder_phys_cmd_is_autorefresh_enabled(phys_enc))
 		return;
 
-	/*
-	 * If autorefresh is enabled, disable it and make sure it is safe to
-	 * proceed with current frame commit/push. Sequence fallowed is,
-	 * 1. Disable TE
-	 * 2. Disable autorefresh config
-	 * 4. Poll for frame transfer ongoing to be false
-	 * 5. Enable TE back
-	 */
 	sde_encoder_phys_cmd_connect_te(phys_enc, false);
-
-	_sde_encoder_phys_cmd_config_autorefresh(phys_enc, 0);
-
-	do {
-		udelay(SDE_ENC_MAX_POLL_TIMEOUT_US);
-		if ((trial * SDE_ENC_MAX_POLL_TIMEOUT_US)
-				> (KICKOFF_TIMEOUT_MS * USEC_PER_MSEC)) {
-			SDE_ERROR_CMDENC(cmd_enc,
-					"disable autorefresh failed\n");
-
-			phys_enc->enable_state = SDE_ENC_ERR_NEEDS_HW_RESET;
-			break;
-		}
-
-		trial++;
-	} while (_sde_encoder_phys_cmd_is_ongoing_pptx(phys_enc));
-
+	_sde_encoder_autorefresh_disable_seq1(phys_enc);
+	_sde_encoder_autorefresh_disable_seq2(phys_enc);
 	sde_encoder_phys_cmd_connect_te(phys_enc, true);
 
-	SDE_DEBUG_CMDENC(cmd_enc, "disabled autorefresh\n");
+	SDE_DEBUG_CMDENC(cmd_enc, "autorefresh disabled successfully\n");
 }
 
 static void sde_encoder_phys_cmd_trigger_start(
@@ -1776,6 +1887,9 @@ static void sde_encoder_phys_cmd_trigger_start(
 	} else {
 		sde_encoder_helper_trigger_start(phys_enc);
 	}
+
+	/* wr_ptr_wait_success is set true when wr_ptr arrives */
+	cmd_enc->wr_ptr_wait_success = false;
 }
 
 static void sde_encoder_phys_cmd_setup_vsync_source(

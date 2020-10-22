@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/dma-direction.h>
@@ -143,21 +143,63 @@ int msm_vidc_query_ctrl(void *instance, struct v4l2_queryctrl *q_ctrl)
 	}
 	q_ctrl->minimum = ctrl->minimum;
 	q_ctrl->maximum = ctrl->maximum;
+	q_ctrl->default_value = ctrl->default_value;
 	/* remove tier info for HEVC level */
 	if (q_ctrl->id == V4L2_CID_MPEG_VIDEO_HEVC_LEVEL) {
 		q_ctrl->minimum &= ~(0xF << 28);
 		q_ctrl->maximum &= ~(0xF << 28);
 	}
-	if (ctrl->type == V4L2_CTRL_TYPE_MENU)
+	if (ctrl->type == V4L2_CTRL_TYPE_MENU) {
 		q_ctrl->flags = ~(ctrl->menu_skip_mask);
-	else
+	} else {
 		q_ctrl->flags = 0;
-
-	s_vpr_h(inst->sid, "query ctrl: %s: min %d, max %d, flags %#x\n",
-		ctrl->name, q_ctrl->minimum, q_ctrl->maximum, q_ctrl->flags);
+		q_ctrl->step = ctrl->step;
+	}
+	s_vpr_h(inst->sid,
+		"query ctrl: %s: min %d, max %d, default %d step %d flags %#x\n",
+		ctrl->name, q_ctrl->minimum, q_ctrl->maximum,
+		q_ctrl->default_value, q_ctrl->step, q_ctrl->flags);
 	return rc;
 }
 EXPORT_SYMBOL(msm_vidc_query_ctrl);
+
+int msm_vidc_query_menu(void *instance, struct v4l2_querymenu *qmenu)
+{
+	int rc = 0;
+	struct msm_vidc_inst *inst = instance;
+	struct v4l2_ctrl *ctrl;
+
+	if (!inst || !qmenu) {
+		d_vpr_e("%s: invalid params %pK %pK\n",
+			__func__, inst, qmenu);
+		return -EINVAL;
+	}
+
+	ctrl = v4l2_ctrl_find(&inst->ctrl_handler, qmenu->id);
+	if (!ctrl) {
+		s_vpr_e(inst->sid, "%s: get_ctrl failed for id %d\n",
+			__func__, qmenu->id);
+		return -EINVAL;
+	}
+	if (ctrl->type != V4L2_CTRL_TYPE_MENU) {
+		s_vpr_e(inst->sid, "%s: ctrl: %s: type (%d) is not MENU type\n",
+			__func__, ctrl->name, ctrl->type);
+		return -EINVAL;
+	}
+	if (qmenu->index < ctrl->minimum || qmenu->index > ctrl->maximum)
+		return -EINVAL;
+
+	if (ctrl->menu_skip_mask & (1 << qmenu->index))
+		rc = -EINVAL;
+
+	s_vpr_h(inst->sid,
+		"%s: ctrl: %s: min %d, max %d, menu_skip_mask %#x, qmenu: id %d, index %d, %s\n",
+		__func__, ctrl->name, ctrl->minimum, ctrl->maximum,
+		ctrl->menu_skip_mask, qmenu->id, qmenu->index,
+		rc ? "not supported" : "supported");
+	return rc;
+}
+EXPORT_SYMBOL(msm_vidc_query_menu);
 
 int msm_vidc_s_fmt(void *instance, struct v4l2_format *f)
 {
@@ -326,7 +368,6 @@ EXPORT_SYMBOL(msm_vidc_release_buffer);
 int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 {
 	struct msm_vidc_inst *inst = instance;
-	struct msm_vidc_client_data *client_data = NULL;
 	int rc = 0;
 	unsigned int i = 0;
 	struct buf_queue *q = NULL;
@@ -350,6 +391,8 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 		return -EINVAL;
 	}
 
+	inst->last_qbuf_time_ns = ktime_get_ns();
+
 	for (i = 0; i < b->length; i++) {
 		b->m.planes[i].m.fd =
 				b->m.planes[i].reserved[MSM_VIDC_BUFFER_FD];
@@ -365,16 +408,15 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 	}
 
 	if (b->type == INPUT_MPLANE) {
-		client_data = msm_comm_store_client_data(inst,
-			b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_1]);
-		if (!client_data) {
-			s_vpr_e(inst->sid,
-				"%s: failed to store client data\n", __func__);
+		rc = msm_comm_store_input_tag(&inst->etb_data, b->index,
+				b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_1],
+				0, inst->sid);
+		if (rc) {
+			s_vpr_e(inst->sid, "Failed to store input tag");
 			return -EINVAL;
 		}
-		msm_comm_store_input_tag(&inst->etb_data, b->index,
-			client_data->id, 0, inst->sid);
 	}
+
 	/*
 	 * set perf mode for image session buffers so that
 	 * they will be processed quickly
@@ -405,8 +447,6 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 	int rc = 0;
 	unsigned int i = 0;
 	struct buf_queue *q = NULL;
-	u32 input_tag = 0, input_tag2 = 0;
-	bool remove;
 
 	if (!inst || !b || !valid_v4l2_buffer(b, inst)) {
 		d_vpr_e("%s: invalid params, %pK %pK\n",
@@ -437,33 +477,14 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 		b->m.planes[i].reserved[MSM_VIDC_DATA_OFFSET] =
 					b->m.planes[i].data_offset;
 	}
-	/**
-	 * Flush handling:
-	 * Don't fetch tag - if flush issued at input/output port.
-	 * Fetch tag - if atleast 1 ebd received after flush. (Flush_done
-	 * event may be notified to userspace even before client
-	 * dequeus all buffers at FBD, to avoid this race condition
-	 * fetch tag atleast 1 ETB is successfully processed after flush)
-	 */
-	if (b->type == OUTPUT_MPLANE && !inst->in_flush &&
-			!inst->out_flush && inst->clk_data.buffer_counter) {
+	if (b->type == OUTPUT_MPLANE) {
 		rc = msm_comm_fetch_input_tag(&inst->fbd_data, b->index,
-				&input_tag, &input_tag2, inst->sid);
+				&b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_1],
+				&b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_2],
+				inst->sid);
 		if (rc) {
 			s_vpr_e(inst->sid, "Failed to fetch input tag");
 			return -EINVAL;
-		}
-		/**
-		 * During flush input_tag & input_tag2 will be zero.
-		 * Check before retrieving client data
-		 */
-		if (input_tag) {
-			remove = !(b->flags & V4L2_BUF_FLAG_END_OF_SUBFRAME) &&
-					!(b->flags & V4L2_BUF_FLAG_CODECCONFIG);
-			msm_comm_fetch_client_data(inst, remove,
-				input_tag, input_tag2,
-				&b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_1],
-				&b->m.planes[0].reserved[MSM_VIDC_INPUT_TAG_2]);
 		}
 	}
 
@@ -758,8 +779,15 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 
 	b.buffer_type = HFI_BUFFER_OUTPUT;
 	if (inst->session_type == MSM_VIDC_DECODER &&
-		is_secondary_output_mode(inst))
+		is_secondary_output_mode(inst)) {
 		b.buffer_type = HFI_BUFFER_OUTPUT2;
+		rc = msm_comm_update_dpb_bufreqs(inst);
+		if (rc) {
+			s_vpr_e(inst->sid,
+				"%s: set dpb bufreq failed\n", __func__);
+			goto fail_start;
+		}
+	}
 
 	/* Check if current session is under HW capability */
 	rc = msm_vidc_check_session_supported(inst);
@@ -797,6 +825,13 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 	}
 
 	rc = msm_comm_try_get_bufreqs(inst);
+
+	rc = msm_comm_check_memory_supported(inst);
+	if (rc) {
+		s_vpr_e(inst->sid,
+			"Memory not sufficient to proceed current session\n");
+		goto fail_start;
+	}
 
 	f = &inst->fmts[OUTPUT_PORT].v4l2_fmt;
 	b.buffer_size = f->fmt.pix_mp.plane_fmt[0].sizeimage;
@@ -839,15 +874,7 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 		}
 	}
 
-	/*
-	 * if batching enabled previously then you may chose
-	 * to disable it based on recent configuration changes.
-	 * if batching already disabled do not enable it again
-	 * as sufficient extra buffers (required for batch mode
-	 * on both ports) may not have been updated to client.
-	 */
-	if (inst->batch.enable)
-		inst->batch.enable = is_batching_allowed(inst);
+	inst->batch.enable = is_batching_allowed(inst);
 	s_vpr_hp(inst->sid, "%s: batching %s for inst %pK\n",
 		__func__, inst->batch.enable ? "enabled" : "disabled", inst);
 
@@ -1146,7 +1173,9 @@ static void msm_vidc_buf_queue(struct vb2_buffer *vb2)
 
 	if (rc) {
 		print_vb2_buffer("failed vb2-qbuf", inst, vb2);
-		msm_comm_generate_session_error(inst);
+		vb2_buffer_done(vb2, VB2_BUF_STATE_DONE);
+		msm_vidc_queue_v4l2_event(inst,
+			V4L2_EVENT_MSM_VIDC_SYS_ERROR);
 	}
 }
 
@@ -1359,7 +1388,8 @@ static int try_get_ctrl_for_instance(struct msm_vidc_inst *inst,
 			return -EINVAL;
 		vpu_ver = inst->core->platform_data->vpu_ver;
 		ctrl->val = (vpu_ver == VPU_VERSION_IRIS1 ||
-				vpu_ver == VPU_VERSION_IRIS2) ?
+				vpu_ver == VPU_VERSION_IRIS2 ||
+				vpu_ver == VPU_VERSION_IRIS2_1) ?
 				V4L2_CID_MPEG_VIDC_VIDEO_ROI_TYPE_2BYTE :
 				V4L2_CID_MPEG_VIDC_VIDEO_ROI_TYPE_2BIT;
 		break;
@@ -1432,7 +1462,6 @@ void *msm_vidc_open(int core_id, int session_type)
 	INIT_MSM_VIDC_LIST(&inst->cvpbufs);
 	INIT_MSM_VIDC_LIST(&inst->refbufs);
 	INIT_MSM_VIDC_LIST(&inst->eosbufs);
-	INIT_MSM_VIDC_LIST(&inst->client_data);
 	INIT_MSM_VIDC_LIST(&inst->etb_data);
 	INIT_MSM_VIDC_LIST(&inst->fbd_data);
 	INIT_MSM_VIDC_LIST(&inst->window_data);
@@ -1456,6 +1485,7 @@ void *msm_vidc_open(int core_id, int session_type)
 	inst->max_filled_len = 0;
 	inst->entropy_mode = HFI_H264_ENTROPY_CABAC;
 	inst->full_range = COLOR_RANGE_UNSPECIFIED;
+	inst->active = true;
 
 	for (i = SESSION_MSG_INDEX(SESSION_MSG_START);
 		i <= SESSION_MSG_INDEX(SESSION_MSG_END); i++) {
@@ -1550,7 +1580,6 @@ fail_bufq_capture:
 	DEINIT_MSM_VIDC_LIST(&inst->registeredbufs);
 	DEINIT_MSM_VIDC_LIST(&inst->eosbufs);
 	DEINIT_MSM_VIDC_LIST(&inst->input_crs);
-	DEINIT_MSM_VIDC_LIST(&inst->client_data);
 	DEINIT_MSM_VIDC_LIST(&inst->etb_data);
 	DEINIT_MSM_VIDC_LIST(&inst->fbd_data);
 	DEINIT_MSM_VIDC_LIST(&inst->window_data);
@@ -1620,8 +1649,6 @@ static void msm_vidc_cleanup_instance(struct msm_vidc_inst *inst)
 	if (msm_comm_release_input_tag(inst))
 		s_vpr_e(inst->sid, "Failed to release input_tag buffers\n");
 
-	msm_comm_release_client_data(inst, true);
-
 	msm_comm_release_window_data(inst);
 
 	msm_comm_release_eos_buffers(inst);
@@ -1678,7 +1705,6 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
 	DEINIT_MSM_VIDC_LIST(&inst->registeredbufs);
 	DEINIT_MSM_VIDC_LIST(&inst->eosbufs);
 	DEINIT_MSM_VIDC_LIST(&inst->input_crs);
-	DEINIT_MSM_VIDC_LIST(&inst->client_data);
 	DEINIT_MSM_VIDC_LIST(&inst->etb_data);
 	DEINIT_MSM_VIDC_LIST(&inst->fbd_data);
 	DEINIT_MSM_VIDC_LIST(&inst->window_data);

@@ -108,11 +108,6 @@ struct walt_sched_stats {
 	u64 pred_demands_sum_scaled;
 };
 
-struct cpu_cycle {
-	u64 cycles;
-	u64 time;
-};
-
 struct group_cpu_time {
 	u64 curr_runnable_sum;
 	u64 prev_runnable_sum;
@@ -998,7 +993,7 @@ struct rq {
 	u64			avg_irqload;
 	u64			irqload_ts;
 	struct task_struct	*ed_task;
-	struct cpu_cycle	cc;
+	u64			task_exec_scale;
 	u64			old_busy_time, old_busy_time_group;
 	u64			old_estimated_time;
 	u64			curr_runnable_sum;
@@ -2807,7 +2802,6 @@ static inline int same_freq_domain(int src_cpu, int dst_cpu)
 #define	CPU_RESERVED	1
 
 extern enum sched_boost_policy boost_policy;
-extern unsigned int sched_task_filter_util;
 static inline enum sched_boost_policy sched_boost_policy(void)
 {
 	return boost_policy;
@@ -2933,7 +2927,7 @@ static inline enum sched_boost_policy task_boost_policy(struct task_struct *p)
 		 * under conservative boost.
 		 */
 		if (sched_boost() == CONSERVATIVE_BOOST &&
-				task_util(p) <= sched_task_filter_util)
+			task_util(p) <= sysctl_sched_min_task_util_for_boost)
 			policy = SCHED_BOOST_NONE;
 	}
 

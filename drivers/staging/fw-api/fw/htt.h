@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -195,9 +195,19 @@
  *      htt_tx_data_hdr_information
  * 3.73 Add channel pre-calibration data upload and download messages defs for
  *      HTT_T2H_MSG_TYPE_CHAN_CALDATA and HTT_H2T_MSG_TYPE_CHAN_CALDATA
+ * 3.74 Add HTT_T2H_MSG_TYPE_RX_FISA_CFG msg.
+ * 3.75 Add fp_ndp and mo_ndp flags in HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG.
+ * 3.76 Add HTT_H2T_MSG_TYPE_3_TUPLE_HASH_CFG msg.
+ * 3.77 Add HTT_H2T_MSG_TYPE_RX_FULL_MONITOR_MODE msg.
+ * 3.78 Add htt_ppdu_id def.
+ * 3.79 Add HTT_NUM_AC_WMM def.
+ * 3.80 Add add WDS_FREE_COUNT bitfield in T2H PEER_UNMAP_V2 msg.
+ * 3.81 Add ppdu_start_tsf field in HTT_TX_WBM_COMPLETION_V2.
+ * 3.82 Add WIN_SIZE field to HTT_T2H_MSG_TYPE_RX_DELBA msg.
+ * 3.83 Shrink seq_idx field in HTT PPDU ID from 3 bits to 2.
  */
 #define HTT_CURRENT_VERSION_MAJOR 3
-#define HTT_CURRENT_VERSION_MINOR 73
+#define HTT_CURRENT_VERSION_MINOR 83
 
 #define HTT_NUM_TX_FRAG_DESC  1024
 
@@ -247,6 +257,9 @@ enum HTT_AC_WMM {
     HTT_AC_WMM_BK         = 0x1,
     HTT_AC_WMM_VI         = 0x2,
     HTT_AC_WMM_VO         = 0x3,
+
+    HTT_NUM_AC_WMM        = 0x4,
+
     /* extension Access Categories */
     HTT_AC_EXT_NON_QOS    = 0x4,
     HTT_AC_EXT_UCAST_MGMT = 0x5,
@@ -539,6 +552,9 @@ enum htt_h2t_msg_type {
     HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG      = 0x12,
     HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG  = 0x13,
     HTT_H2T_MSG_TYPE_CHAN_CALDATA          = 0x14,
+    HTT_H2T_MSG_TYPE_RX_FISA_CFG           = 0x15,
+    HTT_H2T_MSG_TYPE_3_TUPLE_HASH_CFG      = 0x16,
+    HTT_H2T_MSG_TYPE_RX_FULL_MONITOR_MODE  = 0x17,
 
     /* keep this last */
     HTT_H2T_NUM_MSGS
@@ -2433,7 +2449,9 @@ PREPACK struct htt_tx_wbm_transmit_status {
                               */
        reserved0:        8;
    A_UINT32
-       reserved1:       32;
+       ppdu_start_tsf:  32;  /* PPDU Start timestamp added for multicast
+                              * packets in the wbm completion path
+                              */
 } POSTPACK;
 
 /* DWORD 4 */
@@ -4819,8 +4837,8 @@ enum htt_srng_ring_id {
  *
  *    The message would appear as follows:
  *
- *    |31 28|27|26|25|24|23            16|15          |9 8|7             0|
- *    |-----+--+--+--+--+----------------+------------+---+---------------|
+ *    |31 28|27|26|25|24|23            16|15  | 11| 10|9 8|7             0|
+ *    |-----+--+--+--+--+----------------+----+---+---+---+---------------|
  *    |rsvd1|DT|OV|PS|SS|     ring_id    |     pdev_id    |    msg_type   |
  *    |-------------------------------------------------------------------|
  *    |              rsvd2               |           ring_buffer_size     |
@@ -4843,7 +4861,8 @@ enum htt_srng_ring_id {
  *    |-------------------------------------------------------------------|
  *    |              rsvd3               |      rx_attention_offset       |
  *    |-------------------------------------------------------------------|
- *    |              rsvd4                            | rx_drop_threshold |
+ *    |              rsvd4                    | mo| fp| rx_drop_threshold |
+ *    |                                       |ndp|ndp|                   |
  *    |-------------------------------------------------------------------|
  * Where:
  *     PS = pkt_swap
@@ -4937,6 +4956,10 @@ enum htt_srng_ring_id {
  *                    to source rings. Consumer drops packets if the available
  *                    words in the ring falls below the configured threshold
  *                    value.
+ *        - b'10    - fp_ndp: Flag to indicate FP NDP status tlv is subscribed
+ *                    by host. 1 -> subscribed
+ *        - b`11    - mo_ndp: Flag to indicate MO NDP status tlv is subscribed
+ *                    by host. 1 -> subscribed
  */
 PREPACK struct htt_rx_ring_selection_cfg_t {
     A_UINT32 msg_type:          8,
@@ -4963,7 +4986,9 @@ PREPACK struct htt_rx_ring_selection_cfg_t {
     A_UINT32 rx_attn_offset:       16,
              rsvd3:                16;
     A_UINT32 rx_drop_threshold:    10,
-             rsvd4:                22;
+             fp_ndp:               1,
+             mo_ndp:               1,
+             rsvd4:                20;
 } POSTPACK;
 
 #define HTT_RX_RING_SELECTION_CFG_SZ    (sizeof(struct htt_rx_ring_selection_cfg_t))
@@ -5187,6 +5212,29 @@ PREPACK struct htt_rx_ring_selection_cfg_t {
                 HTT_CHECK_SET_VAL(HTT_RX_RING_SELECTION_CFG_RX_DROP_THRESHOLD, _val); \
                 ((_var) |= ((_val) << HTT_RX_RING_SELECTION_CFG_RX_DROP_THRESHOLD_S)); \
             } while (0)
+
+#define HTT_RX_RING_SELECTION_CFG_FP_NDP_M         0x00000400
+#define HTT_RX_RING_SELECTION_CFG_FP_NDP_S         10
+#define HTT_RX_RING_SELECTION_CFG_FP_NDP_GET(_var) \
+            (((_var) & HTT_RX_RING_SELECTION_CFG_FP_NDP_M) >> \
+                    HTT_RX_RING_SELECTION_CFG_FP_NDP_S)
+#define HTT_RX_RING_SELECTION_CFG_FP_NDP_SET(_var, _val) \
+            do { \
+                HTT_CHECK_SET_VAL(HTT_RX_RING_SELECTION_CFG_FP_NDP, _val); \
+                ((_var) |= ((_val) << HTT_RX_RING_SELECTION_CFG_FP_NDP_S)); \
+            } while (0)
+
+#define HTT_RX_RING_SELECTION_CFG_MO_NDP_M         0x00000800
+#define HTT_RX_RING_SELECTION_CFG_MO_NDP_S         11
+#define HTT_RX_RING_SELECTION_CFG_MO_NDP_GET(_var) \
+            (((_var) & HTT_RX_RING_SELECTION_CFG_MO_NDP_M) >> \
+                    HTT_RX_RING_SELECTION_CFG_MO_NDP_S)
+#define HTT_RX_RING_SELECTION_CFG_MO_NDP_SET(_var, _val) \
+            do { \
+                HTT_CHECK_SET_VAL(HTT_RX_RING_SELECTION_CFG_MO_NDP, _val); \
+                ((_var) |= ((_val) << HTT_RX_RING_SELECTION_CFG_MO_NDP_S)); \
+            } while (0)
+
 
 /*
  * Subtype based MGMT frames enable bits.
@@ -5926,6 +5974,310 @@ enum htt_ip_da_sa_prefix {
         HTT_RX_IPV6_64FF9B,
 };
 
+
+/**
+ * @brief Host-->target HTT RX FISA configure and enable
+ * @details
+ * The host will send this command down to configure and enable the FISA
+ * operational params.
+ * Configure RXOLE_RXOLE_R0_FISA_CTRL and RXOLE_RXOLE_R0_FISA_TIMEOUT_THRESH
+ * register.
+ * Should configure both the MACs.
+ *
+ * dword0 - b'7:0   - msg_type: This will be set to HTT_H2T_MSG_TYPE_RX_FISA_CFG
+ *
+ *          b'15:8  - pdev_id:  0 indicates msg is for all LMAC rings, i.e. soc
+ *                    1, 2, 3 indicates pdev_id 0,1,2 and the msg is for that
+ *                    pdev's LMAC ring.
+ *          b'31:16 - reserved : Reserved for future use
+ *
+ * dword1 - b'0     - enable: Global FISA Enable, 0-FISA Disable, 1-Enable
+ *          b'1     - IPSEC_SKIP_SEARCH: Flow search will be skipped for IP_SEC
+ *                    packets. 1 flow search will be skipped
+ *          b'2     - NON_TCP_SKIP_SEARCH: Flow search will be skipped for Non
+ *                    tcp,udp packets
+ *          b'3     - ADD_IPV4_FIXED_HDR_LEN: Add IPV4 Fixed HDR to length
+ *                    calculation
+ *          b'4     - ADD_IPV6_FIXED_HDR_LEN: Add IPV6 Fixed HDR to length
+ *                    calculation
+ *          b'5     - ADD_TCP_FIXED_HDR_LEN: Add TCP Fixed HDR to length
+ *                    calculation
+ *          b'6     - ADD_UDP_HDR_LEN: Add UDP HDR to length calculation
+ *          b'7     - CHKSUM_CUM_IP_LEN_EN: IPV4 hdr Checksum over cumulative IP
+ *                    length
+ *                    0  L4 checksum will be provided in the RX_MSDU_END tlv
+ *                    1  IPV4 hdr checksum after adjusting for cumulative IP
+ *                       length
+ *          b'8     - DISABLE_TID_CHECK: 1- Disable TID check for MPDU Sequence
+ *                    num jump
+ *          b'9     - DISABLE_TA_CHECK: 1- Disable TA check for MPDU Sequence
+ *                    num jump
+ *          b'10    - DISABLE_QOS_CHECK: 1- Disable checking if qos/nonqos
+ *            data type switch has happend for MPDU Sequence num jump
+ *          b'11    - DISABLE_RAW_CHECK: 1- Disable checking for raw packet type
+ *            for MPDU Sequence num jump
+ *          b'12    - DISABLE_DECRYPT_ERR_CHECK: 1- Disable fisa cache commands
+ *            for decrypt errors
+ *          b'13    - DISABLE_MSDU_DROP_CHECK: 1- Ignore checking of msdu drop
+ *            while aggregating a msdu
+ *          b'17:14 - LIMIT, Aggregtion limit for number of MSDUs.
+ *                    The aggregation is done until (number of MSDUs aggregated
+ *                    < LIMIT + 1)
+ *          b'31:18 - Reserved
+ *
+ *          fisa_control_value - 32bit value FW can write to register
+ *
+ * dword2 - b'31:0  - FISA_TIMEOUT_THRESH, Timeout threshold for aggregation
+ *            Threshold value for FISA timeout (units are microseconds).
+ *            When the global timestamp exceeds this threshold, FISA
+ *            aggregation will be restarted.
+ *            A value of 0 means timeout is disabled.
+ *            Compare the threshold register with timestamp field in
+ *            flow entry to generate timeout for the flow.
+ *
+ * |31                   18 |17  16|15           8|7            0|
+ * |-------------------------------------------------------------|
+ * |        reserved               |   pdev_mask  |   msg type   |
+ * |-------------------------------------------------------------|
+ * |        reserved        |            FISA_CTRL               |
+ * |-------------------------------------------------------------|
+ * |                    FISA_TIMEOUT_THRESH                      |
+ * |-------------------------------------------------------------|
+ */
+PREPACK struct htt_h2t_msg_type_fisa_config_t {
+    A_UINT32 msg_type:8,
+             pdev_id:8,
+             reserved0:16;
+
+    /**
+     * @brief fisa_control - RXOLE_RXOLE_R0_FISA_CTRL  FISA control register
+     * [17:0]
+     */
+     union {
+         struct {
+             A_UINT32 fisa_enable:                1,
+                      ipsec_skip_search:          1,
+                      nontcp_skip_search:         1,
+                      add_ipv4_fixed_hdr_len:     1,
+                      add_ipv6_fixed_hdr_len:     1,
+                      add_tcp_fixed_hdr_len:      1,
+                      add_udp_hdr_len:            1,
+                      chksum_cum_ip_len_en:       1,
+                      disable_tid_check:          1,
+                      disable_ta_check:           1,
+                      disable_qos_check:          1,
+                      disable_raw_check:          1,
+                      disable_decrypt_err_check:  1,
+                      disable_msdu_drop_check:    1,
+                      fisa_aggr_limit:            4,
+                      reserved:                   14;
+         } fisa_control_bits;
+
+         A_UINT32 fisa_control_value;
+    } u_fisa_control;
+
+    /**
+     * @brief fisa_timeout_threshold - RXOLE_RXOLE_R0_FISA_TIMEOUT_THRESH FISA
+     * timeout threshold for aggregation. Unit in usec.
+     * [31:0]
+     */
+     A_UINT32 fisa_timeout_threshold;
+} POSTPACK;
+
+
+/* DWord 0: pdev-ID */
+#define HTT_RX_FISA_CONFIG_PDEV_ID_M                  0x0000ff00
+#define HTT_RX_FISA_CONFIG_PDEV_ID_S                  8
+#define HTT_RX_FISA_CONFIG_PDEV_ID_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_PDEV_ID_M) >> \
+                HTT_RX_FISA_CONFIG_PDEV_ID_S)
+#define HTT_RX_FISA_CONFIG_PDEV_ID_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_PDEV_ID, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_PDEV_ID_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value fisa config */
+#define HTT_RX_FISA_CONFIG_FISA_ENABLE_M             0x00000001
+#define HTT_RX_FISA_CONFIG_FISA_ENABLE_S             0
+#define HTT_RX_FISA_CONFIG_FISA_ENABLE_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_FISA_ENABLE_M) >> \
+                HTT_RX_FISA_CONFIG_FISA_ENABLE_S)
+#define HTT_RX_FISA_CONFIG_FISA_ENABLE_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_FISA_ENABLE, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_FISA_ENABLE_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value ipsec_skip_search */
+#define HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_M             0x00000002
+#define HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_S             1
+#define HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_M) >> \
+                HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_S)
+#define HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_IPSEC_SKIP_SEARCH_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value non_tcp_skip_search */
+#define HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_M             0x00000004
+#define HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_S             2
+#define HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_M) >> \
+                HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_S)
+#define HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_NON_TCP_SKIP_SEARCH_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value add_ipv4_fixed_hdr */
+#define HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_M             0x00000008
+#define HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_S             3
+#define HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_M) >> \
+                HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_S)
+#define HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_ADD_IPV4_FIXED_HDR_LEN_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value add_ipv6_fixed_hdr */
+#define HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_M             0x00000010
+#define HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_S             4
+#define HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_M) >> \
+                HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_S)
+#define HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_ADD_IPV6_FIXED_HDR_LEN_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value tcp_fixed_hdr_len */
+#define HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_M           0x00000020
+#define HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_S           5
+#define HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_M) >> \
+                HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_S)
+#define HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_ADD_TCP_FIXED_HDR_LEN_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value add_udp_hdr_len */
+#define HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_M             0x00000040
+#define HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_S             6
+#define HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_M) >> \
+                HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_S)
+#define HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_ADD_UDP_HDR_LEN_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value chksum_cum_ip_len_en */
+#define HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_M        0x00000080
+#define HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_S        7
+#define HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_M) >> \
+                HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_S)
+#define HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_CHKSUM_CUM_IP_LEN_EN_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value disable_tid_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_M        0x00000100
+#define HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_S        8
+#define HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_TID_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value disable_ta_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_M        0x00000200
+#define HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_S        9
+#define HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_TA_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value disable_qos_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_M        0x00000400
+#define HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_S        10
+#define HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_QOS_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value  disable_raw_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_M        0x00000800
+#define HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_S        11
+#define HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_RAW_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value disable_decrypt_err_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_M        0x00001000
+#define HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_S        12
+#define HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_DECRYPT_ERR_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value disable_msdu_drop_check */
+#define HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_M        0x00002000
+#define HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_S        13
+#define HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_M) >> \
+                HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_S)
+#define HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_DISABLE_MSDU_DROP_CHECK_S)); \
+        } while (0)
+
+/* Dword 1: fisa_control_value fisa_aggr_limit */
+#define HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_M        0x0003c000
+#define HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_S        14
+#define HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_GET(_var) \
+        (((_var) & HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_M) >> \
+                HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_S)
+#define HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT, _val); \
+            ((_var) |= ((_val) << HTT_RX_FISA_CONFIG_FISA_AGGR_LIMIT_S)); \
+        } while (0)
+
+
 PREPACK struct htt_h2t_msg_rx_fse_setup_t {
         A_UINT32 msg_type:8,  /* HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG */
                  pdev_id:8,
@@ -5951,6 +6303,7 @@ PREPACK struct htt_h2t_msg_rx_fse_setup_t {
 
 #define HTT_RX_FSE_SETUP_SZ  (sizeof(struct htt_h2t_msg_rx_fse_setup_t))
 #define HTT_RX_FSE_OPERATION_SZ (sizeof(struct htt_h2t_msg_rx_fse_operation_t))
+#define HTT_RX_FISA_CONFIG_SZ (sizeof(struct htt_h2t_msg_type_fisa_config_t))
 
 #define HTT_RX_FSE_SETUP_HASH_314_288_M 0x07ffffff
 #define HTT_RX_FSE_SETUP_HASH_314_288_S 0
@@ -6173,6 +6526,135 @@ PREPACK struct htt_h2t_msg_rx_fse_operation_t {
 } POSTPACK;
 
 /**
+ * @brief Host-->target HTT RX Full monitor mode register configuration message
+ * @details
+ * The host will send this Full monitor mode register configuration message.
+ * This message can be sent per SOC or per PDEV which is differentiated
+ * by pdev id values.
+ *
+ *       |31                            16|15  11|10   8|7      3|2|1|0|
+ *       |-------------------------------------------------------------|
+ *       |             reserved           |   pdev_id   |  MSG_TYPE    |
+ *       |-------------------------------------------------------------|
+ *       |                      reserved         |Release Ring   |N|Z|E|
+ *       |-------------------------------------------------------------|
+ *
+ * where E  is 1-bit full monitor mode enable/disable.
+ *       Z  is 1-bit additional descriptor for zero mpdu enable/disable
+ *       N  is 1-bit additional descriptor for non zero mdpu enable/disable
+ *
+ * The following field definitions describe the format of the full monitor
+ * mode configuration message sent from the host to target for each pdev.
+ *
+ * Header fields:
+ *  dword0 - b'7:0   - msg_type: This will be set to
+ *                     HTT_H2T_MSG_TYPE_RX_FULL_MONITOR_MODE.
+ *           b'15:8  - pdev_id:  0 indicates msg is for all LMAC rings, i.e. soc
+ *                     1, 2, 3 indicates pdev_id 0,1,2 and the msg is for the
+ *                     specified pdev's LMAC ring.
+ *           b'31:16 - reserved : Reserved for future use.
+ *  dword1 - b'0     - full_monitor_mode enable: This indicates that the full
+ *                     monitor mode rxdma register is to be enabled or disabled.
+ *           b'1     - addnl_descs_zero_mpdus_end: This indicates that the
+ *                     additional descriptors at ppdu end for zero mpdus
+ *                     enabled or disabled.
+ *           b'2     - addnl_descs_non_zero_mpdus_end: This indicates that the
+ *                     additional descriptors at ppdu end for non zero mpdus
+ *                     enabled or disabled.
+ *           b'10:3  - release_ring: This indicates the destination ring
+ *                     selection for the descriptor at the end of PPDU
+ *                     0 - REO ring select
+ *                     1 - FW  ring select
+ *                     2 - SW  ring select
+ *                     3 - Release ring select
+ *                     Refer to htt_rx_full_mon_release_ring.
+ *           b'31:11  - reserved for future use
+ */
+PREPACK struct htt_h2t_msg_rx_full_monitor_mode_t {
+    A_UINT32 msg_type:8,
+             pdev_id:8,
+             reserved0:16;
+    A_UINT32 full_monitor_mode_enable:1,
+             addnl_descs_zero_mpdus_end:1,
+             addnl_descs_non_zero_mpdus_end:1,
+             release_ring:8,
+             reserved1:21;
+} POSTPACK;
+
+/**
+ * Enumeration for full monitor mode destination ring select
+ * 0 - REO destination ring select
+ * 1 - FW destination ring select
+ * 2 - SW destination ring select
+ * 3 - Release destination ring select
+ */
+enum htt_rx_full_mon_release_ring {
+    HTT_RX_MON_RING_REO,
+    HTT_RX_MON_RING_FW,
+    HTT_RX_MON_RING_SW,
+    HTT_RX_MON_RING_RELEASE,
+};
+
+#define HTT_RX_FULL_MONITOR_MODE_SETUP_SZ    (sizeof(struct htt_h2t_msg_rx_full_monitor_mode_t))
+/* DWORD 0: Pdev ID */
+#define HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_M                  0x0000ff00
+#define HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_S                  8
+#define HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_GET(_var) \
+    (((_var) & HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_M) >> \
+     HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_S)
+#define HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID, _val); \
+        ((_var) |= ((_val) << HTT_RX_FULL_MONITOR_MODE_OPERATION_PDEV_ID_S)); \
+    } while (0)
+
+/* DWORD 1:ENABLE */
+#define HTT_RX_FULL_MONITOR_MODE_ENABLE_M      0x00000001
+#define HTT_RX_FULL_MONITOR_MODE_ENABLE_S      0
+
+#define HTT_RX_FULL_MONITOR_MODE_ENABLE_SET(word, enable)           \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_FULL_MONITOR_MODE_ENABLE, enable); \
+        (word) |= ((enable) << HTT_RX_FULL_MONITOR_MODE_ENABLE_S);  \
+    } while (0)
+#define HTT_RX_FULL_MONITOR_MODE_ENABLE_GET(word) \
+    (((word) & HTT_RX_FULL_MONITOR_MODE_ENABLE_M) >> HTT_RX_FULL_MONITOR_MODE_ENABLE_S)
+
+/* DWORD 1:ZERO_MPDU */
+#define HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_M      0x00000002
+#define HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_S      1
+#define HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_SET(word, zerompdu)           \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU, zerompdu); \
+        (word) |= ((zerompdu) << HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_S);  \
+    } while (0)
+#define HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_GET(word) \
+    (((word) & HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_M) >> HTT_RX_FULL_MONITOR_MODE_ZERO_MPDU_S)
+
+
+/* DWORD 1:NON_ZERO_MPDU */
+#define HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_M      0x00000004
+#define HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_S      2
+#define HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_SET(word, nonzerompdu)           \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU, nonzerompdu); \
+        (word) |= ((nonzerompdu) << HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_S);  \
+    } while (0)
+#define HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_GET(word) \
+    (((word) & HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_M) >> HTT_RX_FULL_MONITOR_MODE_NON_ZERO_MPDU_S)
+
+/* DWORD 1:RELEASE_RINGS */
+#define HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_M      0x000007f8
+#define HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_S      3
+#define HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_SET(word, releaserings)           \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS, releaserings); \
+        (word) |= ((releaserings) << HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_S);  \
+    } while (0)
+#define HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_GET(word) \
+    (((word) & HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_M) >> HTT_RX_FULL_MONITOR_MODE_RELEASE_RINGS_S)
+
+/**
  * Enumeration for IP Protocol or IPSEC Protocol
  * IPsec describes the framework for providing security at IP layer.
  * IPsec is defined for both versions of IP: IPV4 and IPV6.
@@ -6294,6 +6776,98 @@ enum htt_rx_fse_operation {
       } while (0)
 #define HTT_RX_FSE_L4_PROTO_GET(word) \
         (((word) & HTT_RX_FSE_L4_PROTO_M) >> HTT_RX_FSE_L4_PROTO_S)
+
+
+/**
+ * @brief HTT_H2T_MSG_TYPE_3_TUPLE_HASH_CFG
+ * host --> target Receive to configure the RxOLE 3-tuple Hash
+ *
+ *     |31            24|23              |15             8|7          2|1|0|
+ *     |----------------+----------------+----------------+----------------|
+ *     |              reserved           |    pdev_id     |    msg_type    |
+ *     |---------------------------------+----------------+----------------|
+ *     |                        reserved                               |E|F|
+ *     |---------------------------------+----------------+----------------|
+ *     Where E = Configure the target to provide the 3-tuple hash value in
+ *                      toeplitz_hash_2_or_4 field of rx_msdu_start tlv
+ *           F = Configure the target to provide the 3-tuple hash value in
+ *                      flow_id_toeplitz field of rx_msdu_start tlv
+ *
+ * The following field definitions describe the format of the 3 tuple hash value
+ * message sent from the host to target as part of initialization sequence.
+ *
+ * Header fields:
+ *  dword0 - b'7:0   - msg_type: This will be set to
+ *                     HTT_H2T_MSG_TYPE_3_TUPLE_HASH_CFG
+ *           b'15:8  - pdev_id:  0 indicates msg is for all LMAC rings, i.e. soc
+ *                     1, 2, 3 indicates pdev_id 0,1,2 and the msg is for the
+ *                     specified pdev's LMAC ring.
+ *           b'31:16 - reserved : Reserved for future use
+ *  dword1 - b'0     - flow_id_toeplitz_field_enable
+ *           b'1     - toeplitz_hash_2_or_4_field_enable
+ *           b'31:2  - reserved : Reserved for future use
+ * ---------+------+----------------------------------------------------------
+ *     bit1 | bit0 |   Functionality
+ * ---------+------+----------------------------------------------------------
+ *       0  |   1  |   Configure the target to provide the 3 tuple hash value
+ *          |      |   in flow_id_toeplitz field
+ * ---------+------+----------------------------------------------------------
+ *       1  |   0  |   Configure the target to provide the 3 tuple hash value
+ *          |      |   in toeplitz_hash_2_or_4 field
+ * ---------+------+----------------------------------------------------------
+ *       1  |   1  |   Configure the target to provide the 3 tuple hash value
+ *          |      |   in both flow_id_toeplitz & toeplitz_hash_2_or_4 field
+ * ---------+------+----------------------------------------------------------
+ *       0  |   0  |   Configure the target to provide the 5 tuple hash value
+ *          |      |   in flow_id_toeplitz field 2 or 4 tuple has value in
+ *          |      |   toeplitz_hash_2_or_4 field
+ *----------------------------------------------------------------------------
+ */
+PREPACK struct htt_h2t_msg_rx_3_tuple_hash_cfg_t {
+    A_UINT32 msg_type                          :8,
+             pdev_id                           :8,
+             reserved0                         :16;
+    A_UINT32 flow_id_toeplitz_field_enable     :1,
+             toeplitz_hash_2_or_4_field_enable :1,
+             reserved1                         :30;
+} POSTPACK;
+
+/* DWORD0 : pdev_id configuration Macros */
+#define HTT_H2T_3_TUPLE_HASH_PDEV_ID_M                  0xff00
+#define HTT_H2T_3_TUPLE_HASH_PDEV_ID_S                  8
+#define HTT_RX_3_TUPLE_HASH_PDEV_ID_GET(_var) \
+        (((_var) & HTT_H2T_3_TUPLE_HASH_PDEV_ID_M) >> \
+                HTT_H2T_3_TUPLE_HASH_PDEV_ID_S)
+#define HTT_RX_3_TUPLE_HASH_PDEV_ID_SET(_var, _val) \
+        do { \
+            HTT_CHECK_SET_VAL(HTT_H2T_3_TUPLE_HASH_PDEV_ID, _val); \
+            ((_var) |= ((_val) << HTT_H2T_3_TUPLE_HASH_PDEV_ID_S)); \
+        } while (0)
+
+/* DWORD1: rx 3 tuple hash value reception field configuration Macros */
+#define HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_M         0x1
+#define HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_S         0
+#define HTT_FLOW_ID_TOEPLITZ_FIELD_CONFIG_GET(_var)    \
+    (((_var) & HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_M) >> \
+        HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_S)
+#define HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG, _val); \
+        ((_var) |= ((_val) << HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG_S)); \
+    } while (0)
+
+#define HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_M         0x2
+#define HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_S         1
+#define HTT_TOEPLITZ_2_OR_4_FIELD_CONFIG_GET(_var)    \
+    (((_var) & HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_M) >> \
+        HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_S)
+#define HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG, _val); \
+        ((_var) |= ((_val) << HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG_S)); \
+    } while (0)
+
+#define HTT_3_TUPLE_HASH_CFG_REQ_BYTES     8
 
 
 
@@ -8886,7 +9460,7 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
  * |-----------------------------------------------------------------------|
  * |                         Peer Delete Duration                          |
  * |-----------------------------------------------------------------------|
- * |                               Reserved_0                              |
+ * |               Reserved_0          |           WDS Free Count          |
  * |-----------------------------------------------------------------------|
  * |                               Reserved_1                              |
  * |-----------------------------------------------------------------------|
@@ -8925,6 +9499,9 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
  *     Bits 31:0
  *     Purpose: Time taken to delete peer, in msec,
  *         Used for monitoring / debugging PEER delete response delay
+ *   - PEER_WDS_FREE_COUNT
+ *     Bits 15:0
+ *     Purpose: Count of WDS entries deleted associated to peer deleted
  */
 
 #define HTT_RX_PEER_UNMAP_V2_VDEV_ID_M      HTT_RX_PEER_MAP_V2_VDEV_ID_M
@@ -8940,6 +9517,9 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
 
 #define HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_M   0xffffffff
 #define HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_S   0
+
+#define HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_M    0x0000ffff
+#define HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_S    0
 
 #define HTT_RX_PEER_UNMAP_V2_VDEV_ID_SET    HTT_RX_PEER_MAP_V2_VDEV_ID_SET
 #define HTT_RX_PEER_UNMAP_V2_VDEV_ID_GET    HTT_RX_PEER_MAP_V2_VDEV_ID_GET
@@ -8958,9 +9538,18 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
 #define HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_GET(word) \
     (((word) & HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_M) >> HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_S)
 
+#define HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_SET(word, value) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT, value); \
+        (word) |= (value) << HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_S; \
+    } while (0)
+#define HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_GET(word) \
+    (((word) & HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_M) >> HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_S)
+
 #define HTT_RX_PEER_UNMAP_V2_MAC_ADDR_OFFSET      4  /* bytes */
 #define HTT_RX_PEER_UNMAP_V2_NEXT_HOP_OFFSET      8  /* bytes */
 #define HTT_RX_PEER_UNMAP_V2_PEER_DELETE_DURATION_OFFSET    12 /* bytes */
+#define HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_OFFSET     16 /* bytes */
 
 #define HTT_RX_PEER_UNMAP_V2_BYTES 28
 
@@ -9090,7 +9679,7 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
  *
  * |31                      20|19  16|15         10|9 8|7               0|
  * |---------------------------------------------------------------------|
- * |          peer ID         |  TID |   reserved  | IR|     msg type    |
+ * |          peer ID         |  TID | window size | IR|     msg type    |
  * |---------------------------------------------------------------------|
  *
  * The following field definitions describe the format of the rx ADDBA
@@ -9109,10 +9698,10 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
  *         2 - recipient (a.k.a. responder)
  *         3 - unused / reserved
  *   - WIN_SIZE
- *     Bits 15:8 (ADDBA only)
+ *     Bits 15:8 for ADDBA, bits 15:10 for DELBA
  *     Purpose: Specifies the length of the block ack window (max = 64).
  *     Value:
- *         block ack window length specified by the received ADDBA
+ *         block ack window length specified by the received ADDBA/DELBA
  *         management message.
  *   - TID
  *     Bits 19:16
@@ -9162,6 +9751,8 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
 
 #define HTT_RX_DELBA_INITIATOR_M   0x00000300
 #define HTT_RX_DELBA_INITIATOR_S   8
+#define HTT_RX_DELBA_WIN_SIZE_M    0x0000FC00
+#define HTT_RX_DELBA_WIN_SIZE_S    10
 #define HTT_RX_DELBA_TID_M         HTT_RX_ADDBA_TID_M
 #define HTT_RX_DELBA_TID_S         HTT_RX_ADDBA_TID_S
 #define HTT_RX_DELBA_PEER_ID_M     HTT_RX_ADDBA_PEER_ID_M
@@ -9179,6 +9770,14 @@ PREPACK struct htt_tx_offload_deliver_ind_hdr_t
     } while (0)
 #define HTT_RX_DELBA_INITIATOR_GET(word) \
     (((word) & HTT_RX_DELBA_INITIATOR_M) >> HTT_RX_DELBA_INITIATOR_S)
+
+#define HTT_RX_DELBA_WIN_SIZE_SET(word, value)                     \
+    do {                                                           \
+        HTT_CHECK_SET_VAL(HTT_RX_DELBA_WIN_SIZE, value);           \
+        (word) |= (value)  << HTT_RX_DELBA_WIN_SIZE_S;             \
+    } while (0)
+#define HTT_RX_DELBA_WIN_SIZE_GET(word) \
+    (((word) & HTT_RX_DELBA_WIN_SIZE_M) >> HTT_RX_DELBA_WIN_SIZE_S)
 
 #define HTT_RX_DELBA_BYTES 4
 
@@ -13437,5 +14036,118 @@ PREPACK struct htt_chan_caldata_msg {
         HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_FREQ2, _val);  \
         ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_FREQ2_S)); \
     } while (0)
+
+
+/**
+ *  @brief - HTT PPDU ID format
+ *
+ *   @details
+ *    The following field definitions describe the format of the PPDU ID.
+ *    The PPDU ID is truncated to 24 bits for TLVs from TQM.
+ *
+ *  |31 30|29        24|     23|22 21|20   19|18  17|16     12|11            0|
+ *  +--------------------------------------------------------------------------
+ *  |rsvd |seq_cmd_type|tqm_cmd|rsvd |seq_idx|mac_id| hwq_ id |      sch id   |
+ *  +--------------------------------------------------------------------------
+ *
+ *   sch id :Schedule command id
+ *   Bits [11 : 0] : monotonically increasing counter to track the
+ *   PPDU posted to a specific transmit queue.
+ *
+ *   hwq_id: Hardware Queue ID.
+ *   Bits [16 : 12] : Indicates the queue id in the hardware transmit queue.
+ *
+ *   mac_id: MAC ID
+ *   Bits [18 : 17] : LMAC ID obtained from the whal_mac_struct
+ *
+ *   seq_idx: Sequence index.
+ *   Bits [21 : 19] : Sequence index indicates all the PPDU belonging to
+ *   a particular TXOP.
+ *
+ *   tqm_cmd: HWSCH/TQM flag.
+ *   Bit [23] : Always set to 0.
+ *
+ *   seq_cmd_type: Sequence command type.
+ *   Bit [29 : 24] : Indicates the frame type for the current sequence.
+ *   Refer to enum HTT_STATS_FTYPE for values.
+ */
+PREPACK struct htt_ppdu_id {
+    A_UINT32
+        sch_id:         12,
+        hwq_id:          5,
+        mac_id:          2,
+        seq_idx:         2,
+        reserved1:       2,
+        tqm_cmd:         1,
+        seq_cmd_type:    6,
+        reserved2:       2;
+} POSTPACK;
+
+#define HTT_PPDU_ID_SCH_ID_S    0
+#define HTT_PPDU_ID_SCH_ID_M    0x00000fff
+#define HTT_PPDU_ID_SCH_ID_GET(_var) \
+    (((_var) & HTT_PPDU_ID_SCH_ID_M) >> HTT_PPDU_ID_SCH_ID_S)
+
+#define HTT_PPDU_ID_SCH_ID_SET(_var, _val) \
+    do {                                             \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_SCH_ID, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_SCH_ID_S)); \
+    } while (0)
+
+#define HTT_PPDU_ID_HWQ_ID_S    12
+#define HTT_PPDU_ID_HWQ_ID_M    0x0001f000
+#define HTT_PPDU_ID_HWQ_ID_GET(_var) \
+    (((_var) & HTT_PPDU_ID_HWQ_ID_M) >> HTT_PPDU_ID_HWQ_ID_S)
+
+#define HTT_PPDU_ID_HWQ_ID_SET(_var, _val) \
+    do {                                             \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_HWQ_ID, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_HWQ_ID_S)); \
+    } while (0)
+
+#define HTT_PPDU_ID_MAC_ID_S    17
+#define HTT_PPDU_ID_MAC_ID_M    0x00060000
+#define HTT_PPDU_ID_MAC_ID_GET(_var) \
+    (((_var) & HTT_PPDU_ID_MAC_ID_M) >> HTT_PPDU_ID_MAC_ID_S)
+
+#define HTT_PPDU_ID_MAC_ID_SET(_var, _val) \
+    do {                                            \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_MAC_ID, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_MAC_ID_S)); \
+    } while (0)
+
+#define HTT_PPDU_ID_SEQ_IDX_S    19
+#define HTT_PPDU_ID_SEQ_IDX_M    0x00180000
+#define HTT_PPDU_ID_SEQ_IDX_GET(_var) \
+    (((_var) & HTT_PPDU_ID_SEQ_IDX_M) >> HTT_PPDU_ID_SEQ_IDX_S)
+
+#define HTT_PPDU_ID_SEQ_IDX_SET(_var, _val) \
+    do {                                            \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_SEQ_IDX, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_SEQ_IDX_S)); \
+    } while (0)
+
+#define HTT_PPDU_ID_TQM_CMD_S    23
+#define HTT_PPDU_ID_TQM_CMD_M    0x00800000
+#define HTT_PPDU_ID_TQM_CMD_GET(_var) \
+    (((_var) & HTT_PPDU_ID_TQM_CMD_M) >> HTT_PPDU_ID_TQM_CMD_S)
+
+#define HTT_PPDU_ID_TQM_CMD_SET(_var, _val) \
+    do {                                             \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_TQM_CMD, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_TQM_CMD_S)); \
+    } while (0)
+
+#define HTT_PPDU_ID_SEQ_CMD_TYPE_S    24
+#define HTT_PPDU_ID_SEQ_CMD_TYPE_M    0x3f000000
+#define HTT_PPDU_ID_SEQ_CMD_TYPE_GET(_var) \
+    (((_var) & HTT_PPDU_ID_SEQ_CMD_TYPE_M) >> HTT_PPDU_ID_SEQ_CMD_TYPE_S)
+
+#define HTT_PPDU_ID_SEQ_CMD_TYPE_SET(_var, _val) \
+    do {                                                 \
+        HTT_CHECK_SET_VAL(HTT_PPDU_ID_SEQ_CMD_TYPE, _val);  \
+        ((_var) |= ((_val) << HTT_PPDU_ID_SEQ_CMD_TYPE_S)); \
+    } while (0)
+
 
 #endif

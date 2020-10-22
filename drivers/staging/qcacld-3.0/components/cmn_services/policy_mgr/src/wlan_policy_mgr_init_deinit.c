@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -366,7 +366,7 @@ QDF_STATUS policy_mgr_psoc_close(struct wlan_objmgr_psoc *psoc)
 	if (pm_ctx->hw_mode.hw_mode_list) {
 		qdf_mem_free(pm_ctx->hw_mode.hw_mode_list);
 		pm_ctx->hw_mode.hw_mode_list = NULL;
-		policy_mgr_info("HW list is freed");
+		policy_mgr_debug("HW list is freed");
 	}
 
 	if (pm_ctx->sta_ap_intf_check_work_info) {
@@ -376,6 +376,34 @@ QDF_STATUS policy_mgr_psoc_close(struct wlan_objmgr_psoc *psoc)
 	}
 
 	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * policy_mgr_update_5g_scc_prefer() - Update pcl if 5g scc is preferred
+ * @psoc: psoc object
+ *
+ * Return: void
+ */
+static void policy_mgr_update_5g_scc_prefer(struct wlan_objmgr_psoc *psoc)
+{
+	enum policy_mgr_con_mode mode;
+
+	for (mode = PM_STA_MODE; mode < PM_MAX_NUM_OF_MODE; mode++) {
+		if (policy_mgr_get_5g_scc_prefer(psoc, mode)) {
+			(*second_connection_pcl_dbs_table)
+				[PM_STA_5_1x1][mode][PM_THROUGHPUT] =
+					PM_SCC_CH_24G;
+			policy_mgr_info("overwrite pm_second_connection_pcl_dbs_2x2_table, index %d mode %d system prefer %d new pcl %d",
+					PM_STA_5_1x1, mode,
+					PM_THROUGHPUT, PM_SCC_CH_24G);
+			(*second_connection_pcl_dbs_table)
+				[PM_STA_5_2x2][mode][PM_THROUGHPUT] =
+					PM_SCC_CH_24G;
+			policy_mgr_info("overwrite pm_second_connection_pcl_dbs_2x2_table, index %d mode %d system prefer %d new pcl %d",
+					PM_STA_5_2x2, mode,
+					PM_THROUGHPUT, PM_SCC_CH_24G);
+		}
+	}
 }
 
 QDF_STATUS policy_mgr_psoc_enable(struct wlan_objmgr_psoc *psoc)
@@ -446,12 +474,14 @@ QDF_STATUS policy_mgr_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	if (policy_mgr_is_hw_dbs_2x2_capable(psoc) ||
 	    policy_mgr_is_hw_dbs_required_for_band(psoc,
 						   HW_MODE_MAC_BAND_2G) ||
-	    policy_mgr_is_2x2_1x1_dbs_capable(psoc))
+	    policy_mgr_is_2x2_1x1_dbs_capable(psoc)) {
 		second_connection_pcl_dbs_table =
 		&pm_second_connection_pcl_dbs_2x2_table;
-	else
+		policy_mgr_update_5g_scc_prefer(psoc);
+	} else {
 		second_connection_pcl_dbs_table =
 		&pm_second_connection_pcl_dbs_1x1_table;
+	}
 
 	if (policy_mgr_is_hw_dbs_2x2_capable(psoc) ||
 	    policy_mgr_is_hw_dbs_required_for_band(psoc,
@@ -635,6 +665,8 @@ QDF_STATUS policy_mgr_register_hdd_cb(struct wlan_objmgr_psoc *psoc,
 		hdd_cbacks->hdd_wapi_security_sta_exist;
 	pm_ctx->hdd_cbacks.hdd_is_chan_switch_in_progress =
 		hdd_cbacks->hdd_is_chan_switch_in_progress;
+	pm_ctx->hdd_cbacks.wlan_hdd_indicate_active_ndp_cnt =
+		hdd_cbacks->wlan_hdd_indicate_active_ndp_cnt;
 
 	return QDF_STATUS_SUCCESS;
 }

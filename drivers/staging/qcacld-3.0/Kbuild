@@ -25,10 +25,24 @@ CONFIG_QCA_CLD_WLAN_PROFILE ?= $(WLAN_PROFILE)
 
 ifeq ($(KERNEL_BUILD), n)
 ifneq ($(ANDROID_BUILD_TOP),)
-      override WLAN_ROOT := $(ANDROID_BUILD_TOP)/$(WLAN_ROOT)
-      override WLAN_COMMON_INC := $(ANDROID_BUILD_TOP)/$(WLAN_COMMON_INC)
-      override WLAN_FW_API := $(ANDROID_BUILD_TOP)/$(WLAN_FW_API)
+      ANDROID_BUILD_TOP_REL := $(shell python -c "import os.path; print(os.path.relpath('$(ANDROID_BUILD_TOP)'))")
+      override WLAN_ROOT := $(ANDROID_BUILD_TOP_REL)/$(WLAN_ROOT)
+      override WLAN_COMMON_INC := $(ANDROID_BUILD_TOP_REL)/$(WLAN_COMMON_INC)
+      override WLAN_FW_API := $(ANDROID_BUILD_TOP_REL)/$(WLAN_FW_API)
 endif
+endif
+
+
+# add configurations in WLAN_CFG_OVERRIDE
+ifneq ($(WLAN_CFG_OVERRIDE),)
+WLAN_CFG_OVERRIDE_FILE := $(WLAN_ROOT)/.wlan_cfg_override
+$(shell echo > $(WLAN_CFG_OVERRIDE_FILE))
+
+$(foreach cfg, $(WLAN_CFG_OVERRIDE), \
+	$(shell echo $(cfg) >> $(WLAN_CFG_OVERRIDE_FILE)))
+
+include $(WLAN_CFG_OVERRIDE_FILE)
+$(warning "Overriding WLAN config with: $(shell cat $(WLAN_CFG_OVERRIDE_FILE))")
 endif
 
 include $(WLAN_ROOT)/configs/$(CONFIG_QCA_CLD_WLAN_PROFILE)_defconfig
@@ -72,6 +86,10 @@ HDD_OBJS := 	$(HDD_SRC_DIR)/wlan_hdd_assoc.o \
 		$(HDD_SRC_DIR)/wlan_hdd_wmm.o \
 		$(HDD_SRC_DIR)/wlan_hdd_wowl.o
 
+ifeq ($(CONFIG_WLAN_FEATURE_PERIODIC_STA_STATS), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_periodic_sta_stats.o
+endif
+
 ifeq ($(CONFIG_WLAN_WEXT_SUPPORT_ENABLE), y)
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_wext.o \
 	    $(HDD_SRC_DIR)/wlan_hdd_hostapd_wext.o
@@ -86,6 +104,7 @@ HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_csr.o
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_connect.o
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_offload.o
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_roam.o
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_config.o
 ifeq ($(CONFIG_WLAN_MWS_INFO_DEBUGFS), y)
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_debugfs_coex.o
 endif
@@ -1766,12 +1785,17 @@ PLD_INC :=	-I$(WLAN_ROOT)/$(PLD_INC_DIR) \
 
 PLD_OBJS :=	$(PLD_SRC_DIR)/pld_common.o
 
-ifeq ($(CONFIG_HIF_PCI), y)
-PLD_OBJS +=	$(PLD_SRC_DIR)/pld_pcie.o
+ifeq ($(CONFIG_PCIE_FW_SIM), y)
+PLD_OBJS +=     $(PLD_SRC_DIR)/pld_pcie_fw_sim.o
+else ifeq ($(CONFIG_HIF_PCI), y)
+PLD_OBJS +=     $(PLD_SRC_DIR)/pld_pcie.o
 endif
-ifeq ($(CONFIG_ICNSS), y)
-PLD_OBJS +=	$(PLD_SRC_DIR)/pld_snoc.o
+ifeq ($(CONFIG_SNOC_FW_SIM),y)
+PLD_OBJS +=     $(PLD_SRC_DIR)/pld_snoc_fw_sim.o
+else ifeq ($(CONFIG_ICNSS),y)
+PLD_OBJS +=     $(PLD_SRC_DIR)/pld_snoc.o
 endif
+
 ifeq ($(CONFIG_QCA_WIFI_SDIO), y)
 PLD_OBJS +=	$(PLD_SRC_DIR)/pld_sdio.o
 endif
@@ -2076,10 +2100,21 @@ cppflags-$(CONFIG_WLAN_FW_OFFLOAD) += -DWLAN_FW_OFFLOAD
 cppflags-$(CONFIG_WLAN_FEATURE_ELNA) += -DWLAN_FEATURE_ELNA
 
 cppflags-$(CONFIG_PLD_SDIO_CNSS_FLAG) += -DCONFIG_PLD_SDIO_CNSS
-cppflags-$(CONFIG_PLD_PCIE_CNSS_FLAG) += -DCONFIG_PLD_PCIE_CNSS
+
+ifeq ($(CONFIG_PLD_PCIE_CNSS_FLAG), y)
+ifeq ($(CONFIG_PCIE_FW_SIM), y)
+cppflags-y += -DCONFIG_PLD_PCIE_FW_SIM
+else
+cppflags-y += -DCONFIG_PLD_PCIE_CNSS
+endif
+endif
+
 cppflags-$(CONFIG_PLD_PCIE_INIT_FLAG) += -DCONFIG_PLD_PCIE_INIT
 cppflags-$(CONFIG_WLAN_FEATURE_DP_RX_THREADS) += -DFEATURE_WLAN_DP_RX_THREADS
 cppflags-$(CONFIG_WLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT) += -DWLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT
+cppflags-$(CONFIG_FEATURE_HAL_DELAYED_REG_WRITE) += -DFEATURE_HAL_DELAYED_REG_WRITE
+
+
 cppflags-$(CONFIG_PLD_USB_CNSS) += -DCONFIG_PLD_USB_CNSS
 cppflags-$(CONFIG_WLAN_RECORD_RX_PADDR) += -DHIF_RECORD_RX_PADDR
 
@@ -2100,7 +2135,13 @@ cppflags-y += -DFEATURE_RUNTIME_PM
 endif
 endif
 
-cppflags-$(CONFIG_ICNSS) += -DCONFIG_PLD_SNOC_ICNSS
+ifeq ($(CONFIG_ICNSS), y)
+ifeq ($(CONFIG_SNOC_FW_SIM), y)
+cppflags-y += -DCONFIG_PLD_SNOC_FW_SIM
+else
+cppflags-y += -DCONFIG_PLD_SNOC_ICNSS
+endif
+endif
 
 cppflags-$(CONFIG_WIFI_3_0_ADRASTEA) += -DQCA_WIFI_3_0_ADRASTEA
 cppflags-$(CONFIG_WIFI_3_0_ADRASTEA) += -DQCA_WIFI_3_0
@@ -2128,6 +2169,7 @@ cppflags-y += -DMSM_PLATFORM
 endif
 
 cppflags-$(CONFIG_WLAN_FEATURE_DP_BUS_BANDWIDTH) += -DWLAN_FEATURE_DP_BUS_BANDWIDTH
+cppflags-$(CONFIG_WLAN_FEATURE_PERIODIC_STA_STATS) += -DWLAN_FEATURE_PERIODIC_STA_STATS
 
 cppflags-y +=	-DQCA_SUPPORT_TXRX_LOCAL_PEER_ID
 
@@ -2272,10 +2314,10 @@ cppflags-$(CONFIG_HL_DP_SUPPORT) += -DQCA_COMPUTE_TX_DELAY_PER_TID
 cppflags-$(CONFIG_LL_DP_SUPPORT) += -DCONFIG_LL_DP_SUPPORT
 cppflags-$(CONFIG_LL_DP_SUPPORT) += -DWLAN_FULL_REORDER_OFFLOAD
 
+cppflags-$(CONFIG_AR6320_SUPPORT) += -DCONFIG_AR6320_SUPPORT
 #Enable High Latency related Flags
 ifeq ($(CONFIG_QCA_WIFI_SDIO), y)
-cppflags-y += -DCONFIG_AR6320_SUPPORT \
-            -DSDIO_3_0 \
+cppflags-y += -DSDIO_3_0 \
             -DHIF_SDIO \
             -DCONFIG_DISABLE_CDC_MAX_PERF_WAR=0 \
             -DCONFIG_ATH_PROCFS_DIAG_SUPPORT \
@@ -2565,6 +2607,8 @@ endif
 ifeq ($(CONFIG_LITHIUM), y)
 cppflags-$(CONFIG_WLAN_TX_FLOW_CONTROL_V2) += -DQCA_AC_BASED_FLOW_CONTROL
 cppflags-y += -DHAL_DISABLE_NON_BA_2K_JUMP_ERROR
+cppflags-y += -DENABLE_HAL_SOC_STATS
+cppflags-y += -DENABLE_HAL_REG_WR_HISTORY
 endif
 
 cppflags-$(CONFIG_WLAN_CLD_PM_QOS) += -DCLD_PM_QOS
@@ -2572,12 +2616,17 @@ cppflags-$(CONFIG_REO_DESC_DEFER_FREE) += -DREO_DESC_DEFER_FREE
 cppflags-$(CONFIG_WLAN_FEATURE_11AX) += -DWLAN_FEATURE_11AX
 cppflags-$(CONFIG_WLAN_FEATURE_11AX) += -DWLAN_FEATURE_11AX_BSS_COLOR
 cppflags-$(CONFIG_WLAN_FEATURE_11AX) += -DSUPPORT_11AX_D3
+cppflags-$(CONFIG_RXDMA_ERR_PKT_DROP) += -DRXDMA_ERR_PKT_DROP
+cppflags-$(CONFIG_DELIVERY_TO_STACK_STATUS_CHECK) += -DDELIVERY_TO_STACK_STATUS_CHECK
 
 cppflags-$(CONFIG_LITHIUM) += -DFEATURE_AST
 cppflags-$(CONFIG_LITHIUM) += -DPEER_PROTECTED_ACCESS
 cppflags-$(CONFIG_LITHIUM) += -DSERIALIZE_QUEUE_SETUP
 cppflags-$(CONFIG_LITHIUM) += -DDP_RX_PKT_NO_PEER_DELIVER
 cppflags-$(CONFIG_LITHIUM) += -DFEATURE_ALIGN_STATS_FROM_DP
+cppflags-$(CONFIG_LITHIUM) += -DDROP_RXDMA_DECRYPT_ERR
+cppflags-$(CONFIG_LITHIUM) += -DDP_RX_SPECIAL_FRAME_NEED
+cppflags-$(CONFIG_LITHIUM) += -DFEATURE_STATS_EXT_V2
 cppflags-$(CONFIG_VERBOSE_DEBUG) += -DENABLE_VERBOSE_DEBUG
 cppflags-$(CONFIG_RX_DESC_DEBUG_CHECK) += -DRX_DESC_DEBUG_CHECK
 cppflags-$(CONFIG_REGISTER_OP_DEBUG) += -DHAL_REGISTER_WRITE_DEBUG
@@ -2611,6 +2660,7 @@ cppflags-y += -DDP_PRINT_ENABLE=0
 cppflags-y += -DATH_SUPPORT_WRAP=0
 cppflags-y += -DQCA_HOST2FW_RXBUF_RING
 cppflags-y += -DHIF_CE_HISTORY_MAX=8192
+cppflags-y += -DDP_PRINT_NO_CONSOLE
 #endof dummy flags
 
 ccflags-$(CONFIG_ENABLE_SIZE_OPTIMIZE) += -Os
@@ -2638,6 +2688,9 @@ cppflags-$(CONFIG_ENABLE_MTRACE_LOG) += -DENABLE_MTRACE_LOG
 
 #Flag to enable/disable Adaptive 11r feature
 cppflags-$(CONFIG_ADAPTIVE_11R) += -DWLAN_ADAPTIVE_11R
+
+#Flag to enable/disable sae single pmk feature feature
+cppflags-$(CONFIG_SAE_SINGLE_PMK) += -DWLAN_SAE_SINGLE_PMK
 
 #Flag to enable NUD tracking
 cppflags-$(CONFIG_WLAN_NUD_TRACKING) += -DWLAN_NUD_TRACKING
@@ -2760,7 +2813,7 @@ ccflags-y += -DWLAN_MAX_PSOCS=$(CONFIG_WLAN_MAX_PSOCS)
 CONFIG_WLAN_MAX_PDEVS ?= 1
 ccflags-y += -DWLAN_MAX_PDEVS=$(CONFIG_WLAN_MAX_PDEVS)
 
-CONFIG_WLAN_MAX_VDEVS ?= 5
+CONFIG_WLAN_MAX_VDEVS ?= 6
 ccflags-y += -DWLAN_MAX_VDEVS=$(CONFIG_WLAN_MAX_VDEVS)
 
 #Maximum pending commands for a vdev is calculated in vdev create handler
@@ -2846,6 +2899,11 @@ cppflags-$(CONFIG_SLUB_DEBUG_ON) += -DHAL_CONFIG_SLUB_DEBUG_ON
 
 cppflags-$(CONFIG_WDI3_STATS_UPDATE) += -DWDI3_STATS_UPDATE
 ccflags-$(CONFIG_WMI_SEND_RECV_QMI) += -DWLAN_FEATURE_WMI_SEND_RECV_QMI
+
+cppflags-$(CONFIG_WLAN_CUSTOM_DSCP_UP_MAP) += -DWLAN_CUSTOM_DSCP_UP_MAP
+cppflags-$(CONFIG_WLAN_SEND_DSCP_UP_MAP_TO_FW) += -DWLAN_SEND_DSCP_UP_MAP_TO_FW
+
+cppflags-$(CONFIG_HIF_CPU_PERF_AFFINE_MASK) += -DHIF_CPU_PERF_AFFINE_MASK
 
 KBUILD_CPPFLAGS += $(cppflags-y)
 

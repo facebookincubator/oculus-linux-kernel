@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -14,6 +14,7 @@
 #include <linux/sched.h>
 #include <linux/ratelimit.h>
 #include <linux/timer.h>
+#include <linux/jiffies.h>
 #include <linux/sched/task.h>
 #ifdef CONFIG_DIAG_OVER_USB
 #include <linux/usb/usbdiag.h>
@@ -536,6 +537,7 @@ static int diag_remove_client_entry(struct file *file)
 		return -EINVAL;
 	}
 
+	mutex_lock(&driver->diagchar_mutex);
 	diagpriv_data = file->private_data;
 	for (i = 0; i < driver->num_clients; i++)
 		if (diagpriv_data && diagpriv_data->pid ==
@@ -545,11 +547,13 @@ static int diag_remove_client_entry(struct file *file)
 		DIAG_LOG(DIAG_DEBUG_USERSPACE,
 			"pid %d, not present in client map\n",
 			diagpriv_data->pid);
+		mutex_unlock(&driver->diagchar_mutex);
 		mutex_unlock(&driver->diag_file_mutex);
 		return -EINVAL;
 	}
 	DIAG_LOG(DIAG_DEBUG_USERSPACE, "diag: %s process exit with pid = %d\n",
 		driver->client_map[i].name, diagpriv_data->pid);
+	mutex_unlock(&driver->diagchar_mutex);
 	/*
 	 * clean up any DCI registrations, if this is a DCI client
 	 * This will specially help in case of ungraceful exit of any DCI client
@@ -2059,6 +2063,9 @@ static int diag_ioctl_lsm_deinit(void)
 	if (!(driver->data_ready[i] & DEINIT_TYPE)) {
 		driver->data_ready[i] |= DEINIT_TYPE;
 		atomic_inc(&driver->data_ready_notif[i]);
+		DIAG_LOG(DIAG_DEBUG_USERSPACE,
+			"Setting DEINIT_TYPE for pid: %d\n",
+			current->tgid);
 	}
 	mutex_unlock(&driver->diagchar_mutex);
 	wake_up_interruptible(&driver->wait_q);
@@ -3085,7 +3092,7 @@ long diagchar_ioctl(struct file *filp,
 static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 				       int pkt_type)
 {
-	int err = 0;
+	int err = 0, wait_err = 0;
 	int ret = PKT_DROP;
 	struct diag_apps_data_t *data = &hdlc_data;
 	struct diag_send_desc_type send = { NULL, NULL, DIAG_STATE_START, 0 };
@@ -3116,8 +3123,15 @@ static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 	send.terminate = 1;
 
 wait_for_buffer:
-	wait_event_interruptible(driver->hdlc_wait_q,
-			(data->flushed == 0));
+	wait_err = wait_event_interruptible_timeout(driver->hdlc_wait_q,
+			(data->flushed == 0),
+			msecs_to_jiffies(PKT_PROCESS_TIMEOUT));
+	if (wait_err <= 0) {
+		DIAG_LOG(DIAG_DEBUG_USERSPACE,
+		"diag: Timeout while waiting for hdlc buffer to be flushed, err: %d\n",
+		wait_err);
+		return PKT_DROP;
+	}
 	spin_lock_irqsave(&driver->diagmem_lock, flags);
 	if (data->flushed) {
 		spin_unlock_irqrestore(&driver->diagmem_lock, flags);
@@ -3168,8 +3182,16 @@ wait_for_buffer:
 			goto fail_free_buf;
 		}
 wait_for_agg_buff:
-		wait_event_interruptible(driver->hdlc_wait_q,
-			(data->flushed == 0));
+		wait_err = wait_event_interruptible_timeout(driver->hdlc_wait_q,
+				(data->flushed == 0),
+				msecs_to_jiffies(PKT_PROCESS_TIMEOUT));
+		if (wait_err <= 0) {
+			DIAG_LOG(DIAG_DEBUG_USERSPACE,
+			"diag: Timeout while waiting for hdlc aggregation buffer to be flushed, err: %d\n",
+			wait_err);
+			return PKT_DROP;
+		}
+
 		spin_lock_irqsave(&driver->diagmem_lock, flags);
 		if (data->flushed) {
 			spin_unlock_irqrestore(&driver->diagmem_lock, flags);
@@ -3227,7 +3249,7 @@ fail_ret:
 static int diag_process_apps_data_non_hdlc(unsigned char *buf, int len,
 					   int pkt_type)
 {
-	int err = 0;
+	int err = 0, wait_err = 0;
 	int ret = PKT_DROP;
 	struct diag_pkt_frame_t header;
 	struct diag_apps_data_t *data = &non_hdlc_data;
@@ -3245,8 +3267,16 @@ static int diag_process_apps_data_non_hdlc(unsigned char *buf, int len,
 		return -EIO;
 	}
 wait_for_buffer:
-	wait_event_interruptible(driver->hdlc_wait_q,
-			(data->flushed == 0));
+	wait_err = wait_event_interruptible_timeout(driver->hdlc_wait_q,
+					(data->flushed == 0),
+					msecs_to_jiffies(PKT_PROCESS_TIMEOUT));
+	if (wait_err <= 0) {
+		DIAG_LOG(DIAG_DEBUG_USERSPACE,
+		"diag: Timeout while waiting for non-hdlc buffer to be flushed, err: %d\n",
+		wait_err);
+		return PKT_DROP;
+	}
+
 	spin_lock_irqsave(&driver->diagmem_lock, flags);
 	if (data->flushed) {
 		spin_unlock_irqrestore(&driver->diagmem_lock, flags);
@@ -3730,6 +3760,9 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 		COPY_USER_SPACE_OR_ERR(buf, data_type, 4);
 		if (ret == -EFAULT)
 			goto exit;
+		DIAG_LOG(DIAG_DEBUG_USERSPACE,
+			"Copied DEINIT_TYPE pkt current->tgid: %d\n",
+			current->tgid);
 		driver->data_ready[index] ^= DEINIT_TYPE;
 		atomic_dec(&driver->data_ready_notif[index]);
 		mutex_unlock(&driver->diagchar_mutex);
@@ -4273,7 +4306,7 @@ static void diag_debug_init(void)
 	 * to be logged to IPC
 	 */
 	diag_debug_mask = DIAG_DEBUG_PERIPHERALS | DIAG_DEBUG_DCI |
-				DIAG_DEBUG_USERSPACE | DIAG_DEBUG_BRIDGE;
+		DIAG_DEBUG_MHI | DIAG_DEBUG_USERSPACE | DIAG_DEBUG_BRIDGE;
 }
 #else
 static void diag_debug_init(void)

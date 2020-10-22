@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/list.h>
@@ -476,23 +476,6 @@ error:
 		display->panel->esd_config.esd_enabled = false;
 }
 
-static bool dsi_display_is_te_based_esd(struct dsi_display *display)
-{
-	u32 status_mode = 0;
-
-	if (!display->panel) {
-		DSI_ERR("Invalid panel data\n");
-		return false;
-	}
-
-	status_mode = display->panel->esd_config.status_mode;
-
-	if (status_mode == ESD_MODE_PANEL_TE &&
-			gpio_is_valid(display->disp_te_gpio))
-		return true;
-	return false;
-}
-
 /* Allocate memory for cmd dma tx buffer */
 static int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display)
 {
@@ -677,7 +660,7 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 			cmds[i].msg.flags |= MIPI_DSI_MSG_USE_LPM;
 		cmds[i].msg.rx_buf = config->status_buf;
 		cmds[i].msg.rx_len = config->status_cmds_rlen[i];
-		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i].msg, flags);
+		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i].msg, &flags);
 		if (rc <= 0) {
 			DSI_ERR("rx cmd transfer failed rc=%d\n", rc);
 			return rc;
@@ -801,7 +784,7 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 	struct dsi_display *dsi_display = display;
 	struct dsi_panel *panel;
 	u32 status_mode;
-	int rc = 0x1;
+	int rc = 0x1, ret;
 	u32 mask;
 
 	if (!dsi_display || !dsi_display->panel)
@@ -839,8 +822,10 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 		goto exit;
 	}
 
-	dsi_display_clk_ctrl(dsi_display->dsi_clk_handle,
+	ret = dsi_display_clk_ctrl(dsi_display->dsi_clk_handle,
 		DSI_ALL_CLKS, DSI_CLK_ON);
+	if (ret)
+		goto release_panel_lock;
 
 	/* Mask error interrupts before attempting ESD read */
 	mask = BIT(DSI_FIFO_OVERFLOW) | BIT(DSI_FIFO_UNDERFLOW);
@@ -1089,6 +1074,24 @@ int dsi_display_set_power(struct drm_connector *connector,
 		display->panel->power_mode = power_mode;
 
 	return rc;
+}
+
+#ifdef CONFIG_DEBUG_FS
+static bool dsi_display_is_te_based_esd(struct dsi_display *display)
+{
+	u32 status_mode = 0;
+
+	if (!display->panel) {
+		DSI_ERR("Invalid panel data\n");
+		return false;
+	}
+
+	status_mode = display->panel->esd_config.status_mode;
+
+	if (status_mode == ESD_MODE_PANEL_TE &&
+			gpio_is_valid(display->disp_te_gpio))
+		return true;
+	return false;
 }
 
 static ssize_t debugfs_dump_info_read(struct file *file,
@@ -1659,6 +1662,16 @@ static int dsi_display_debugfs_deinit(struct dsi_display *display)
 
 	return 0;
 }
+#else
+static int dsi_display_debugfs_init(struct dsi_display *display)
+{
+	return 0;
+}
+static int dsi_display_debugfs_deinit(struct dsi_display *display)
+{
+	return 0;
+}
+#endif /* CONFIG_DEBUG_FS */
 
 static void adjust_timing_by_ctrl_count(const struct dsi_display *display,
 					struct dsi_display_mode *mode)
@@ -2316,7 +2329,7 @@ static int dsi_display_set_clk_src(struct dsi_display *display)
 	m_ctrl = &display->ctrl[display->clk_master_idx];
 
 	rc = dsi_ctrl_set_clock_source(m_ctrl->ctrl,
-		   &display->clock_info.mux_clks);
+				&display->clock_info.mux_clks);
 	if (rc) {
 		DSI_ERR("[%s] failed to set source clocks for master, rc=%d\n",
 			   display->name, rc);
@@ -2330,7 +2343,7 @@ static int dsi_display_set_clk_src(struct dsi_display *display)
 			continue;
 
 		rc = dsi_ctrl_set_clock_source(ctrl->ctrl,
-			   &display->clock_info.mux_clks);
+					&display->clock_info.mux_clks);
 		if (rc) {
 			DSI_ERR("[%s] failed to set source clocks, rc=%d\n",
 				   display->name, rc);
@@ -2730,7 +2743,8 @@ static int dsi_display_broadcast_cmd(struct dsi_display *display,
 		m_flags |= DSI_CTRL_CMD_LAST_COMMAND;
 	}
 
-	if (display->queue_cmd_waits) {
+	if (display->queue_cmd_waits ||
+			msg->flags & MIPI_DSI_MSG_ASYNC_OVERRIDE) {
 		flags |= DSI_CTRL_CMD_ASYNC_WAIT;
 		m_flags |= DSI_CTRL_CMD_ASYNC_WAIT;
 	}
@@ -2740,7 +2754,7 @@ static int dsi_display_broadcast_cmd(struct dsi_display *display,
 	 * 2. Trigger commands
 	 */
 	m_ctrl = &display->ctrl[display->cmd_master_idx];
-	rc = dsi_ctrl_cmd_transfer(m_ctrl->ctrl, msg, m_flags);
+	rc = dsi_ctrl_cmd_transfer(m_ctrl->ctrl, msg, &m_flags);
 	if (rc) {
 		DSI_ERR("[%s] cmd transfer failed on master,rc=%d\n",
 		       display->name, rc);
@@ -2752,7 +2766,7 @@ static int dsi_display_broadcast_cmd(struct dsi_display *display,
 		if (ctrl == m_ctrl)
 			continue;
 
-		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, msg, flags);
+		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, msg, &flags);
 		if (rc) {
 			DSI_ERR("[%s] cmd transfer failed, rc=%d\n",
 			       display->name, rc);
@@ -2890,11 +2904,12 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host,
 				msg->ctrl : 0;
 		u32 cmd_flags = DSI_CTRL_CMD_FETCH_MEMORY;
 
-		if (display->queue_cmd_waits)
+		if (display->queue_cmd_waits ||
+				msg->flags & MIPI_DSI_MSG_ASYNC_OVERRIDE)
 			cmd_flags |= DSI_CTRL_CMD_ASYNC_WAIT;
 
 		rc = dsi_ctrl_cmd_transfer(display->ctrl[ctrl_idx].ctrl, msg,
-				cmd_flags);
+				&cmd_flags);
 		if (rc) {
 			DSI_ERR("[%s] cmd transfer failed, rc=%d\n",
 			       display->name, rc);
@@ -3456,8 +3471,7 @@ int dsi_pre_clkon_cb(void *priv,
 		 * Enable DSI core power
 		 * 1.> PANEL_PM are controlled as part of
 		 *     panel_power_ctrl. Needed not be handled here.
-		 * 2.> CORE_PM are controlled by dsi clk manager.
-		 * 3.> CTRL_PM need to be enabled/disabled
+		 * 2.> CTRL_PM need to be enabled/disabled
 		 *     only during unblank/blank. Their state should
 		 *     not be changed during static screen.
 		 */
@@ -5091,6 +5105,8 @@ static int dsi_display_bind(struct device *dev,
 		if (!display_ctrl->phy || !display_ctrl->ctrl)
 			continue;
 
+		display_ctrl->ctrl->drm_dev = drm;
+
 		rc = dsi_phy_set_clk_freq(display_ctrl->phy,
 				&display_ctrl->ctrl->clk_freq);
 		if (rc) {
@@ -5997,7 +6013,7 @@ void dsi_display_adjust_mode_timing(
 			struct dsi_display_mode *dsi_mode,
 			int lanes, int bpp)
 {
-	u32 new_htotal, new_vtotal, htotal, vtotal, old_htotal;
+	u64 new_htotal, new_vtotal, htotal, vtotal, old_htotal, div;
 
 	if (!dyn_clk_caps->maintain_const_fps)
 		return;
@@ -6012,8 +6028,9 @@ void dsi_display_adjust_mode_timing(
 	case DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_HFP:
 		vtotal = DSI_V_TOTAL(&dsi_mode->timing);
 		old_htotal = DSI_H_TOTAL_DSC(&dsi_mode->timing);
-		new_htotal = (dsi_mode->timing.clk_rate_hz * lanes);
-		new_htotal /= (bpp * vtotal * dsi_mode->timing.refresh_rate);
+		new_htotal = dsi_mode->timing.clk_rate_hz * lanes;
+		div = bpp * vtotal * dsi_mode->timing.refresh_rate;
+		do_div(new_htotal, div);
 		if (old_htotal > new_htotal)
 			dsi_mode->timing.h_front_porch -=
 					(old_htotal - new_htotal);
@@ -6024,8 +6041,9 @@ void dsi_display_adjust_mode_timing(
 
 	case DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_VFP:
 		htotal = DSI_H_TOTAL_DSC(&dsi_mode->timing);
-		new_vtotal = (dsi_mode->timing.clk_rate_hz * lanes);
-		new_vtotal /= (bpp * htotal * dsi_mode->timing.refresh_rate);
+		new_vtotal = dsi_mode->timing.clk_rate_hz * lanes;
+		div = bpp * htotal * dsi_mode->timing.refresh_rate;
+		do_div(new_vtotal, div);
 		dsi_mode->timing.v_front_porch = new_vtotal -
 				dsi_mode->timing.v_back_porch -
 				dsi_mode->timing.v_sync_width -
@@ -6443,7 +6461,8 @@ int dsi_display_validate_mode_change(struct dsi_display *display,
 	mutex_lock(&display->display_lock);
 	dyn_clk_caps = &(display->panel->dyn_clk_caps);
 	if ((cur_mode->timing.v_active == adj_mode->timing.v_active) &&
-		(cur_mode->timing.h_active == adj_mode->timing.h_active)) {
+		(cur_mode->timing.h_active == adj_mode->timing.h_active) &&
+		(cur_mode->panel_mode == adj_mode->panel_mode)) {
 		/* dfps and dynamic clock with const fps use case */
 		if (dsi_display_mode_switch_dfps(cur_mode, adj_mode)) {
 			dsi_panel_get_dfps_caps(display->panel, &dfps_caps);
@@ -6982,12 +7001,14 @@ int dsi_display_prepare(struct dsi_display *display)
 			goto error;
 		}
 
-		/* update dsi ctrl for new mode */
-		rc = dsi_display_pre_switch(display);
-		if (rc)
-			DSI_ERR("[%s] panel pre-prepare-res-switch failed, rc=%d\n",
+		if (!display->is_cont_splash_enabled) {
+			/* update dsi ctrl for new mode */
+			rc = dsi_display_pre_switch(display);
+			if (rc)
+				DSI_ERR("[%s] panel pre-switch failed, rc=%d\n",
 					display->name, rc);
-		goto error;
+			goto error;
+		}
 	}
 
 	if (!(mode->dsi_mode_flags & DSI_MODE_FLAG_POMS) &&
@@ -7534,14 +7555,44 @@ int dsi_display_pre_disable(struct dsi_display *display)
 		if (display->config.panel_mode == DSI_OP_CMD_MODE)
 			dsi_panel_pre_mode_switch_to_video(display->panel);
 
-		if (display->config.panel_mode == DSI_OP_VIDEO_MODE)
+		if (display->config.panel_mode == DSI_OP_VIDEO_MODE) {
+			/*
+			 * Add unbalanced vote for clock & cmd engine to enable
+			 * async trigger of pre video to cmd mode switch.
+			 */
+			rc = dsi_display_clk_ctrl(display->dsi_clk_handle,
+					DSI_ALL_CLKS, DSI_CLK_ON);
+			if (rc) {
+				DSI_ERR("[%s]failed to enable all clocks,rc=%d",
+						display->name, rc);
+				goto exit;
+			}
+
+			rc = dsi_display_cmd_engine_enable(display);
+			if (rc) {
+				DSI_ERR("[%s]failed to enable cmd engine,rc=%d",
+						display->name, rc);
+				goto error_disable_clks;
+			}
+
 			dsi_panel_pre_mode_switch_to_cmd(display->panel);
+		}
 	} else {
 		rc = dsi_panel_pre_disable(display->panel);
 		if (rc)
 			DSI_ERR("[%s] panel pre-disable failed, rc=%d\n",
 				display->name, rc);
 	}
+	goto exit;
+
+error_disable_clks:
+	rc = dsi_display_clk_ctrl(display->dsi_clk_handle,
+			DSI_ALL_CLKS, DSI_CLK_OFF);
+	if (rc)
+		DSI_ERR("[%s] failed to disable all DSI clocks, rc=%d\n",
+		       display->name, rc);
+
+exit:
 	mutex_unlock(&display->display_lock);
 	return rc;
 }
@@ -7608,7 +7659,8 @@ int dsi_display_update_pps(char *pps_cmd, void *disp)
 
 int dsi_display_unprepare(struct dsi_display *display)
 {
-	int rc = 0;
+	int rc = 0, i;
+	struct dsi_display_ctrl *ctrl;
 
 	if (!display) {
 		DSI_ERR("Invalid params\n");
@@ -7628,6 +7680,24 @@ int dsi_display_unprepare(struct dsi_display *display)
 			DSI_ERR("[%s] panel unprepare failed, rc=%d\n",
 			       display->name, rc);
 	}
+
+	/* Remove additional vote added for pre_mode_switch_to_cmd */
+	if (display->poms_pending &&
+			display->config.panel_mode == DSI_OP_VIDEO_MODE) {
+		display_for_each_ctrl(i, display) {
+			ctrl = &display->ctrl[i];
+			if (!ctrl->ctrl || !ctrl->ctrl->dma_wait_queued)
+				continue;
+			flush_workqueue(display->dma_cmd_workq);
+			cancel_work_sync(&ctrl->ctrl->dma_cmd_wait);
+			ctrl->ctrl->dma_wait_queued = false;
+		}
+
+		dsi_display_cmd_engine_disable(display);
+		dsi_display_clk_ctrl(display->dsi_clk_handle,
+				DSI_ALL_CLKS, DSI_CLK_OFF);
+	}
+
 	rc = dsi_display_ctrl_host_disable(display);
 	if (rc)
 		DSI_ERR("[%s] failed to disable DSI host, rc=%d\n",

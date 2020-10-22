@@ -197,6 +197,20 @@ struct rsn_caps {
 };
 
 /**
+ * struct roam_scan_ch_resp - roam scan chan list response to userspace
+ * @vdev_id: vdev id
+ * @num_channels: number of roam scan channels
+ * @command_resp: command response or async event
+ * @chan_list: list of roam scan channels
+ */
+struct roam_scan_ch_resp {
+	uint16_t vdev_id;
+	uint16_t num_channels;
+	uint32_t command_resp;
+	uint32_t *chan_list;
+};
+
+/**
  * struct wlan_beacon_report - Beacon info to be send to userspace
  * @vdev_id: vdev id
  * @ssid: ssid present in beacon
@@ -395,7 +409,8 @@ struct sme_ready_req {
 	QDF_STATUS (*pe_disconnect_cb) (struct mac_context *mac,
 					uint8_t vdev_id,
 					uint8_t *deauth_disassoc_frame,
-					uint16_t deauth_disassoc_frame_len);
+					uint16_t deauth_disassoc_frame_len,
+					uint16_t reason_code);
 };
 
 /**
@@ -708,6 +723,10 @@ struct bss_description {
 #endif
 	uint32_t assoc_disallowed;
 	uint32_t adaptive_11r_ap;
+	uint32_t mbo_oce_enabled_ap;
+#if defined(WLAN_SAE_SINGLE_PMK) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
+	uint32_t is_single_pmk;
+#endif
 	/* Please keep the structure 4 bytes aligned above the ieFields */
 	uint32_t ieFields[1];
 };
@@ -1271,6 +1290,7 @@ struct disassoc_ind {
 	struct qdf_mac_addr peer_macaddr;
 	uint16_t staId;
 	uint32_t reasonCode;
+	bool from_ap;
 };
 
 /* / Definition for Disassociation confirm */
@@ -1331,6 +1351,7 @@ struct deauth_ind {
 	uint16_t staId;
 	uint32_t reasonCode;
 	int8_t rssi;
+	bool from_ap;
 };
 
 /* / Definition for Deauthetication confirm */
@@ -2307,6 +2328,7 @@ struct roam_offload_scan_req {
 	eSirDFSRoamScanMode allowDFSChannelRoam;
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 	uint8_t roam_offload_enabled;
+	bool enable_self_bss_roam;
 	uint8_t PSK_PMK[SIR_ROAM_SCAN_PSK_SIZE];
 	uint32_t pmk_len;
 	uint8_t Prefer5GHz;
@@ -2321,12 +2343,14 @@ struct roam_offload_scan_req {
 	uint8_t RoamKeyMgmtOffloadEnabled;
 	struct pmkid_mode_bits pmkid_modes;
 	bool is_adaptive_11r_connection;
+	bool is_sae_single_pmk;
 
 	/* Idle/Disconnect roam parameters */
 	struct wmi_idle_roam_params idle_roam_params;
 	struct wmi_disconnect_roam_params disconnect_roam_params;
 #endif
 	struct roam_ext_params roam_params;
+	struct roam_triggers roam_triggers;
 	uint8_t  middle_of_roaming;
 	uint32_t hi_rssi_scan_max_count;
 	uint32_t hi_rssi_scan_rssi_delta;
@@ -4577,6 +4601,11 @@ struct sir_sme_ext_cng_chan_req {
 	uint8_t   session_id;
 };
 
+#define IGNORE_NUD_FAIL                      0
+#define DISCONNECT_AFTER_NUD_FAIL            1
+#define ROAM_AFTER_NUD_FAIL                  2
+#define DISCONNECT_AFTER_ROAM_FAIL           3
+
 /**
  * struct sir_sme_ext_change_chan_ind.
  * @session_id: session id
@@ -5596,6 +5625,8 @@ struct wow_enable_params {
 #define AUTO_RATE_GI_800NS	9
 #define AUTO_RATE_GI_1600NS	10
 #define AUTO_RATE_GI_3200NS	11
+
+#define AUTO_RATE_LDPC_DIS_BIT	16
 
 #define SET_AUTO_RATE_SGI_VAL(set_val, bit_mask) \
 	(set_val = (set_val & HE_LTF_ALL) | bit_mask)

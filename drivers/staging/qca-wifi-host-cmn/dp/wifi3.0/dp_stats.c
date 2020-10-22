@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4589,7 +4589,8 @@ dp_print_ring_stats(struct dp_pdev *pdev)
 	uint32_t i;
 	int mac_id;
 
-	if (hif_pm_runtime_get_sync(pdev->soc->hif_handle))
+	if (hif_pm_runtime_get_sync(pdev->soc->hif_handle,
+				    RTPM_ID_DP_PRINT_RING_STATS))
 		return;
 
 	dp_print_ring_stat_from_hal(pdev->soc,
@@ -4651,7 +4652,8 @@ dp_print_ring_stats(struct dp_pdev *pdev)
 					    &pdev->rxdma_err_dst_ring[i],
 					    RXDMA_DST);
 
-	hif_pm_runtime_put(pdev->soc->hif_handle);
+	hif_pm_runtime_put(pdev->soc->hif_handle,
+			   RTPM_ID_DP_PRINT_RING_STATS);
 }
 
 /**
@@ -5110,6 +5112,18 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 			       pdev->soc->stats.rx.err.defrag_peer_uninit);
 		DP_PRINT_STATS("pkts delivered no peer %u",
 			       pdev->soc->stats.rx.err.pkt_delivered_no_peer);
+		DP_PRINT_STATS("2k jump delba sent: %u",
+			       pdev->soc->stats.rx.err.rx_2k_jump_delba_sent);
+		DP_PRINT_STATS("2k jump msdu to stack: %u",
+			       pdev->soc->stats.rx.err.rx_2k_jump_to_stack);
+		DP_PRINT_STATS("2k jump msdu drop: %u",
+			       pdev->soc->stats.rx.err.rx_2k_jump_drop);
+		DP_PRINT_STATS("REO err oor msdu to stack %u",
+			       pdev->soc->stats.rx.err.reo_err_oor_to_stack);
+		DP_PRINT_STATS("REO err oor msdu drop: %u",
+			       pdev->soc->stats.rx.err.reo_err_oor_drop);
+		DP_PRINT_STATS("Rx err msdu rejected: %d",
+			       soc->stats.rx.err.rejected);
 
 		DP_PRINT_STATS("Reo Statistics");
 		DP_PRINT_STATS("near_full: %u ", soc->stats.rx.near_full);
@@ -5117,6 +5131,9 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 			       pdev->soc->stats.rx.err.invalid_rbm);
 		DP_PRINT_STATS("hal ring access fail: %u msdus",
 			       pdev->soc->stats.rx.err.hal_ring_access_fail);
+
+		DP_PRINT_STATS("hal ring access full fail: %u msdus",
+			       pdev->soc->stats.rx.err.hal_ring_access_full_fail);
 
 		for (error_code = 0; error_code < HAL_REO_ERR_MAX;
 				error_code++) {
@@ -5591,6 +5608,8 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 		       soc->stats.rx.err.rx_invalid_peer.num);
 	DP_PRINT_STATS("HAL Ring Access Fail = %d",
 		       soc->stats.rx.err.hal_ring_access_fail);
+	DP_PRINT_STATS("HAL Ring Access Full Fail = %d",
+		       soc->stats.rx.err.hal_ring_access_full_fail);
 	DP_PRINT_STATS("MSDU Done failures = %d",
 		       soc->stats.rx.err.msdu_done_fail);
 	DP_PRINT_STATS("RX frags: %d", soc->stats.rx.rx_frags);
@@ -5611,6 +5630,30 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 
 	DP_PRINT_STATS("RXDMA ERR DUP DESC: %d",
 		       soc->stats.rx.err.hal_rxdma_err_dup);
+
+	DP_PRINT_STATS("RX scatter msdu: %d",
+		       soc->stats.rx.err.scatter_msdu);
+
+	DP_PRINT_STATS("RX wait completed msdu break: %d",
+		       soc->stats.rx.msdu_scatter_wait_break);
+
+	DP_PRINT_STATS("2k jump delba sent: %d",
+		       soc->stats.rx.err.rx_2k_jump_delba_sent);
+
+	DP_PRINT_STATS("2k jump msdu to stack: %d",
+		       soc->stats.rx.err.rx_2k_jump_to_stack);
+
+	DP_PRINT_STATS("2k jump msdu drop: %d",
+		       soc->stats.rx.err.rx_2k_jump_drop);
+
+	DP_PRINT_STATS("REO err oor msdu to stack %d",
+		       soc->stats.rx.err.reo_err_oor_to_stack);
+
+	DP_PRINT_STATS("REO err oor msdu drop: %d",
+		       soc->stats.rx.err.reo_err_oor_drop);
+
+	DP_PRINT_STATS("Rx err msdu rejected: %d",
+		       soc->stats.rx.err.rejected);
 
 	for (i = 0; i < HAL_RXDMA_ERR_MAX; i++) {
 		index += qdf_snprint(&rxdma_error[index],

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -62,10 +62,8 @@ static void reg_call_chan_change_cbks(struct wlan_objmgr_psoc *psoc,
 	}
 
 	cur_chan_list = qdf_mem_malloc(NUM_CHANNELS * sizeof(*cur_chan_list));
-	if (!cur_chan_list) {
-		reg_alert("Mem alloc failed for current channel list");
+	if (!cur_chan_list)
 		return;
-	}
 
 	qdf_mem_copy(cur_chan_list,
 		     pdev_priv_obj->cur_chan_list,
@@ -74,10 +72,9 @@ static void reg_call_chan_change_cbks(struct wlan_objmgr_psoc *psoc,
 
 	if (psoc_priv_obj->ch_avoid_ind) {
 		avoid_freq_ind = qdf_mem_malloc(sizeof(*avoid_freq_ind));
-		if (!avoid_freq_ind) {
-			reg_alert("Mem alloc failed for avoid freq ind");
+		if (!avoid_freq_ind)
 			goto skip_ch_avoid_ind;
-		}
+
 		qdf_mem_copy(&avoid_freq_ind->freq_list,
 			     &psoc_priv_obj->avoid_freq_list,
 				sizeof(struct ch_avoid_ind_type));
@@ -217,7 +214,7 @@ QDF_STATUS reg_send_scheduler_msg_sb(struct wlan_objmgr_psoc *psoc,
 
 	reg_alloc_and_fill_payload(psoc, pdev, &payload);
 	if (!payload) {
-		reg_err("payload memory alloc failed");
+		reg_err("malloc failed");
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_REGULATORY_SB_ID);
 		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
 		return QDF_STATUS_E_NOMEM;
@@ -233,7 +230,6 @@ QDF_STATUS reg_send_scheduler_msg_sb(struct wlan_objmgr_psoc *psoc,
 	if (QDF_IS_STATUS_ERROR(status)) {
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_REGULATORY_SB_ID);
 		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
-		reg_err("scheduler msg posting failed");
 		qdf_mem_free(payload);
 	}
 
@@ -262,7 +258,7 @@ QDF_STATUS reg_send_scheduler_msg_nb(struct wlan_objmgr_psoc *psoc,
 
 	reg_alloc_and_fill_payload(psoc, pdev, &payload);
 	if (!payload) {
-		reg_err("payload memory alloc failed");
+		reg_err("malloc failed");
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_REGULATORY_NB_ID);
 		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_NB_ID);
 		return QDF_STATUS_E_NOMEM;
@@ -277,7 +273,6 @@ QDF_STATUS reg_send_scheduler_msg_nb(struct wlan_objmgr_psoc *psoc,
 	if (QDF_IS_STATUS_ERROR(status)) {
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_REGULATORY_NB_ID);
 		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_NB_ID);
-		reg_err("scheduler msg posting failed");
 		qdf_mem_free(payload);
 	}
 
@@ -348,7 +343,7 @@ void reg_register_chan_change_callback(struct wlan_objmgr_psoc *psoc,
 	qdf_spin_unlock_bh(&psoc_priv_obj->cbk_list_lock);
 
 	if (count == REG_MAX_CHAN_CHANGE_CBKS)
-		reg_err("callback list is full, could not add the cbk");
+		reg_err("callback list is full");
 }
 
 void reg_unregister_chan_change_callback(struct wlan_objmgr_psoc *psoc,

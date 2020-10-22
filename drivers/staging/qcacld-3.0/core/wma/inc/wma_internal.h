@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -203,6 +203,22 @@ int wma_roam_auth_offload_event_handler(WMA_HANDLE handle, uint8_t *event,
 					uint32_t len);
 
 /**
+ * wma_roam_stats_event_handler() - Handle the WMI_ROAM_STATS_EVENTID
+ * from target
+ * @handle: wma_handle
+ * @event:  roam debug stats event data pointer
+ * @len: length of the data
+ *
+ * This function handles the roam debug stats from the target and logs it
+ * to kmsg. This WMI_ROAM_STATS_EVENTID event is received whenever roam
+ * scan trigger happens or when neighbor report is sent by the firmware.
+ *
+ * Return: Success or Failure status
+ */
+int wma_roam_stats_event_handler(WMA_HANDLE handle, uint8_t *event,
+				 uint32_t len);
+
+/**
  * wma_mlme_roam_synch_event_handler_cb() - roam synch event handler
  * @handle: wma handle
  * @event: event data
@@ -232,6 +248,34 @@ int wma_roam_synch_frame_event_handler(void *handle, uint8_t *event,
 static inline int wma_mlme_roam_synch_event_handler_cb(void *handle,
 						       uint8_t *event,
 						       uint32_t len)
+{
+	return 0;
+}
+
+static inline int
+wma_roam_stats_event_handler(WMA_HANDLE handle, uint8_t *event,
+			     uint32_t len)
+{
+	return 0;
+}
+#endif
+
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * wma_roam_scan_chan_list_event_handler() - roam scan chan list event handler
+ * @handle: wma handle
+ * @event: pointer to fw event
+ * @len: length of event
+ *
+ * Return: Success or Failure status
+ */
+int wma_roam_scan_chan_list_event_handler(WMA_HANDLE handle,
+					  uint8_t *event,
+					  uint32_t len);
+#else
+static inline int
+wma_roam_scan_chan_list_event_handler(WMA_HANDLE handle, uint8_t *event,
+				      uint32_t len)
 {
 	return 0;
 }
@@ -837,7 +881,13 @@ void wma_hidden_ssid_vdev_restart(tp_wma_handle wma_handle,
  * wma_power.c functions declarations
  */
 
-void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req);
+/**
+ * wma_enable_sta_ps_mode() - enable sta powersave params in fw
+ * @ps_req: power save request
+ *
+ * Return: none
+ */
+void wma_enable_sta_ps_mode(tpEnablePsParams ps_req);
 
 QDF_STATUS wma_unified_set_sta_ps_param(wmi_unified_t wmi_handle,
 					    uint32_t vdev_id, uint32_t param,
@@ -860,7 +910,7 @@ void wma_set_tx_power(WMA_HANDLE handle,
 void wma_set_max_tx_power(WMA_HANDLE handle,
 				 tMaxTxPowerParams *tx_pwr_params);
 
-void wma_disable_sta_ps_mode(tp_wma_handle wma, tpDisablePsParams ps_req);
+void wma_disable_sta_ps_mode(tpDisablePsParams ps_req);
 
 void wma_enable_uapsd_mode(tp_wma_handle wma, tpEnableUapsdParams ps_req);
 
@@ -977,6 +1027,14 @@ int wma_fast_tx_fail_event_handler(void *handle, uint8_t *data,
  */
 
 #ifdef WLAN_FEATURE_STATS_EXT
+/**
+ * wma_stats_ext_event_handler() - extended stats event handler
+ * @handle:     wma handle
+ * @event_buf:  event buffer received from fw
+ * @len:        length of data
+ *
+ * Return: 0 for success or error code
+ */
 int wma_stats_ext_event_handler(void *handle, uint8_t *event_buf,
 				       uint32_t len);
 #endif
@@ -1205,6 +1263,13 @@ QDF_STATUS wma_process_del_periodic_tx_ptrn_ind(WMA_HANDLE handle,
 						pDelPeriodicTxPtrnParams);
 
 #ifdef WLAN_FEATURE_STATS_EXT
+/**
+ * wma_stats_ext_req() - request ext stats from fw
+ * @wma_ptr: wma handle
+ * @preq: stats ext params
+ *
+ * Return: QDF status
+ */
 QDF_STATUS wma_stats_ext_req(void *wma_ptr, tpStatsExtRequest preq);
 #endif
 
@@ -1682,6 +1747,18 @@ void wma_send_vdev_down(tp_wma_handle wma, struct wma_target_req *req);
  */
 int wma_cold_boot_cal_event_handler(void *wma_ctx, uint8_t *event_buff,
 				    uint32_t len);
+
+#ifdef FEATURE_OEM_DATA
+/**
+ * wma_oem_event_handler() - oem data event handler
+ * @wma_ctx: wma handle
+ * @event_buff: event data
+ * @len: length of event buffer
+ *
+ * Return: Success or Failure status
+ */
+int wma_oem_event_handler(void *wma_ctx, uint8_t *event_buff, uint32_t len);
+#endif
 
 /**
  * wma_set_roam_triggers() - Send roam trigger bitmap to WMI

@@ -529,10 +529,9 @@ void lim_update_bcn_probe_filter(struct mac_context *mac_ctx,
 }
 
 struct pe_session *pe_create_session(struct mac_context *mac,
-			      uint8_t *bssid,
-			      uint8_t *sessionId,
-			      uint16_t numSta, enum bss_type bssType,
-			      uint8_t sme_session_id)
+				     uint8_t *bssid, uint8_t *sessionId,
+				     uint16_t numSta, enum bss_type bssType,
+				     uint8_t vdev_id, enum QDF_OPMODE opmode)
 {
 	QDF_STATUS status;
 	uint8_t i;
@@ -591,6 +590,7 @@ struct pe_session *pe_create_session(struct mac_context *mac,
 	*sessionId = i;
 	session_ptr->peSessionId = i;
 	session_ptr->bssType = bssType;
+	session_ptr->opmode = opmode;
 	session_ptr->gLimPhyMode = WNI_CFG_PHY_MODE_11G;
 	/* Initialize CB mode variables when session is created */
 	session_ptr->htSupportedChannelWidthSet = 0;
@@ -609,8 +609,9 @@ struct pe_session *pe_create_session(struct mac_context *mac,
 	session_ptr->is_session_obss_color_collision_det_enabled =
 		mac->mlme_cfg->obss_ht40.obss_color_collision_offload_enabled;
 
-	pe_debug("Create a new PE session: %d BSSID: "QDF_MAC_ADDR_STR" Max No of STA: %d",
-		*sessionId, QDF_MAC_ADDR_ARRAY(bssid), numSta);
+	pe_debug("Create PE session: %d opmode %d vdev_id %d  BSSID: "QDF_MAC_ADDR_STR" Max No of STA: %d",
+		 *sessionId, opmode, vdev_id, QDF_MAC_ADDR_ARRAY(bssid),
+		 numSta);
 
 	if (eSIR_INFRA_AP_MODE == bssType || eSIR_IBSS_MODE == bssType) {
 		session_ptr->pSchProbeRspTemplate =
@@ -631,14 +632,14 @@ struct pe_session *pe_create_session(struct mac_context *mac,
 	 * reference count.
 	 */
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(mac->psoc,
-						    sme_session_id,
+						    vdev_id,
 						    WLAN_LEGACY_MAC_ID);
 	if (!vdev) {
-		pe_err("vdev is NULL for vdev_id: %u", sme_session_id);
+		pe_err("vdev is NULL for vdev_id: %u", vdev_id);
 		goto free_session_attrs;
 	}
 	session_ptr->vdev = vdev;
-	session_ptr->smeSessionId = sme_session_id;
+	session_ptr->vdev_id = vdev_id;
 	session_ptr->mac_ctx = mac;
 
 	if (eSIR_INFRASTRUCTURE_MODE == bssType)
@@ -844,14 +845,13 @@ void pe_delete_session(struct mac_context *mac_ctx, struct pe_session *session)
 	struct wlan_objmgr_vdev *vdev;
 
 	if (!session || (session && !session->valid)) {
-		pe_err("session is not valid");
+		pe_debug("session already deleted or not valid");
 		return;
 	}
 
-	pe_debug("Trying to delete PE session: %d Opmode: %d BssIdx: %d BSSID: "QDF_MAC_ADDR_STR,
-		session->peSessionId, session->operMode,
-		session->bss_idx,
-		QDF_MAC_ADDR_ARRAY(session->bssId));
+	pe_debug("Delete PE session: %d opmode: %d vdev_id: %d BSSID: "QDF_MAC_ADDR_STR,
+		 session->peSessionId, session->opmode, session->vdev_id,
+		 QDF_MAC_ADDR_ARRAY(session->bssId));
 
 	lim_reset_bcn_probe_filter(mac_ctx, session);
 
@@ -1063,8 +1063,7 @@ struct pe_session *pe_find_session_by_peer_sta(struct mac_context *mac, uint8_t 
 		}
 	}
 
-	pe_debug("Session lookup fails for Peer StaId:");
-	lim_print_mac_addr(mac, sa, LOGD);
+	pe_debug("Session lookup fails for Peer StaId: %pM", sa);
 	return NULL;
 }
 

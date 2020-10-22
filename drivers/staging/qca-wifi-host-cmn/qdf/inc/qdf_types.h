@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,6 +42,9 @@
 
 /* Preprocessor definitions and constants */
 #define QDF_MAX_SGLIST 4
+
+#define CPU_CLUSTER_TYPE_LITTLE 0
+#define CPU_CLUSTER_TYPE_PERF 1
 
 /**
  * struct qdf_sglist - scatter-gather list
@@ -712,9 +715,9 @@ void qdf_vtrace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
 
 #ifdef WLAN_OPEN_P2P_INTERFACE
 /* This should match with WLAN_MAX_INTERFACES */
-#define QDF_MAX_CONCURRENCY_PERSONA  (4)
+#define QDF_MAX_CONCURRENCY_PERSONA  (WLAN_MAX_VDEVS)
 #else
-#define QDF_MAX_CONCURRENCY_PERSONA  (3)
+#define QDF_MAX_CONCURRENCY_PERSONA  (WLAN_MAX_VDEVS - 1)
 #endif
 
 #define QDF_STA_MASK (1 << QDF_STA_MODE)
@@ -835,6 +838,84 @@ QDF_STATUS qdf_uint64_parse(const char *int_str, uint64_t *out_int);
  */
 struct qdf_mac_addr {
 	uint8_t bytes[QDF_MAC_ADDR_SIZE];
+};
+
+/**
+ * enum qdf_proto_subtype - subtype of packet
+ * @QDF_PROTO_EAPOL_M1 - EAPOL 1/4
+ * @QDF_PROTO_EAPOL_M2 - EAPOL 2/4
+ * @QDF_PROTO_EAPOL_M3 - EAPOL 3/4
+ * @QDF_PROTO_EAPOL_M4 - EAPOL 4/4
+ * @QDF_PROTO_DHCP_DISCOVER - discover
+ * @QDF_PROTO_DHCP_REQUEST - request
+ * @QDF_PROTO_DHCP_OFFER - offer
+ * @QDF_PROTO_DHCP_ACK - ACK
+ * @QDF_PROTO_DHCP_NACK - NACK
+ * @QDF_PROTO_DHCP_RELEASE - release
+ * @QDF_PROTO_DHCP_INFORM - inform
+ * @QDF_PROTO_DHCP_DECLINE - decline
+ * @QDF_PROTO_ARP_REQ - arp request
+ * @QDF_PROTO_ARP_RES - arp response
+ * @QDF_PROTO_ICMP_REQ - icmp request
+ * @QDF_PROTO_ICMP_RES - icmp response
+ * @QDF_PROTO_ICMPV6_REQ - icmpv6 request
+ * @QDF_PROTO_ICMPV6_RES - icmpv6 response
+ * @QDF_PROTO_ICMPV6_RS - icmpv6 rs packet
+ * @QDF_PROTO_ICMPV6_RA - icmpv6 ra packet
+ * @QDF_PROTO_ICMPV6_NS - icmpv6 ns packet
+ * @QDF_PROTO_ICMPV6_NA - icmpv6 na packet
+ * @QDF_PROTO_IPV4_UDP - ipv4 udp
+ * @QDF_PROTO_IPV4_TCP - ipv4 tcp
+ * @QDF_PROTO_IPV6_UDP - ipv6 udp
+ * @QDF_PROTO_IPV6_TCP - ipv6 tcp
+ * @QDF_PROTO_MGMT_ASSOC -assoc
+ * @QDF_PROTO_MGMT_DISASSOC - disassoc
+ * @QDF_PROTO_MGMT_AUTH - auth
+ * @QDF_PROTO_MGMT_DEAUTH - deauth
+ * @QDF_ROAM_SYNCH - roam synch indication from fw
+ * @QDF_ROAM_COMPLETE - roam complete cmd to fw
+ * @QDF_ROAM_EVENTID - roam eventid from fw
+ * @QDF_PROTO_DNS_QUERY - dns query
+ * @QDF_PROTO_DNS_RES -dns response
+ */
+enum qdf_proto_subtype {
+	QDF_PROTO_INVALID,
+	QDF_PROTO_EAPOL_M1,
+	QDF_PROTO_EAPOL_M2,
+	QDF_PROTO_EAPOL_M3,
+	QDF_PROTO_EAPOL_M4,
+	QDF_PROTO_DHCP_DISCOVER,
+	QDF_PROTO_DHCP_REQUEST,
+	QDF_PROTO_DHCP_OFFER,
+	QDF_PROTO_DHCP_ACK,
+	QDF_PROTO_DHCP_NACK,
+	QDF_PROTO_DHCP_RELEASE,
+	QDF_PROTO_DHCP_INFORM,
+	QDF_PROTO_DHCP_DECLINE,
+	QDF_PROTO_ARP_REQ,
+	QDF_PROTO_ARP_RES,
+	QDF_PROTO_ICMP_REQ,
+	QDF_PROTO_ICMP_RES,
+	QDF_PROTO_ICMPV6_REQ,
+	QDF_PROTO_ICMPV6_RES,
+	QDF_PROTO_ICMPV6_RS,
+	QDF_PROTO_ICMPV6_RA,
+	QDF_PROTO_ICMPV6_NS,
+	QDF_PROTO_ICMPV6_NA,
+	QDF_PROTO_IPV4_UDP,
+	QDF_PROTO_IPV4_TCP,
+	QDF_PROTO_IPV6_UDP,
+	QDF_PROTO_IPV6_TCP,
+	QDF_PROTO_MGMT_ASSOC,
+	QDF_PROTO_MGMT_DISASSOC,
+	QDF_PROTO_MGMT_AUTH,
+	QDF_PROTO_MGMT_DEAUTH,
+	QDF_ROAM_SYNCH,
+	QDF_ROAM_COMPLETE,
+	QDF_ROAM_EVENTID,
+	QDF_PROTO_DNS_QUERY,
+	QDF_PROTO_DNS_RES,
+	QDF_PROTO_SUBTYPE_MAX
 };
 
 /**
@@ -1271,6 +1352,22 @@ enum qdf_hrtimer_restart_status {
 enum qdf_context_mode {
 	QDF_CONTEXT_HARDWARE = 0,
 	QDF_CONTEXT_TASKLET = 1,
+};
+
+/**
+ * enum qdf_dp_tx_rx_status - TX/RX packet status
+ * @QDF_TX_RX_STATUS_INVALID: default invalid status
+ * @QDF_TX_RX_STATUS_OK: successfully sent + acked
+ * @QDF_TX_RX_STATUS_FW_DISCARD: packet not sent
+ * @QDF_TX_RX_STATUS_NO_ACK: packet sent but no ack
+ * @QDF_TX_RX_STATUS_DROP: packet dropped in host
+ */
+enum qdf_dp_tx_rx_status {
+	QDF_TX_RX_STATUS_INVALID,
+	QDF_TX_RX_STATUS_OK,
+	QDF_TX_RX_STATUS_FW_DISCARD,
+	QDF_TX_RX_STATUS_NO_ACK,
+	QDF_TX_RX_STATUS_DROP,
 };
 
 #endif /* __QDF_TYPES_H */

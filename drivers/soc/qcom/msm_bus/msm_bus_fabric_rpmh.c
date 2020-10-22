@@ -343,22 +343,26 @@ static int tcs_cmd_list_gen(int *n_active,
 			continue;
 		list_for_each_entry(cur_bcm, &cur_bcm_clist[i], link) {
 			commit = false;
-			if ((cur_bcm->node_vec[DUAL_CTX].vec_a ==
-				cur_bcm->node_vec[ACTIVE_CTX].vec_a) &&
-				(cur_bcm->node_vec[DUAL_CTX].vec_b ==
-				cur_bcm->node_vec[ACTIVE_CTX].vec_b)) {
-				if (last_tcs != -1 &&
-					list_is_last(&cur_bcm->link,
-					&cur_bcm_clist[i])) {
-					cmdlist_wake[last_tcs].data |=
-						BCM_TCS_CMD_COMMIT_MASK;
-					cmdlist_sleep[last_tcs].data |=
-						BCM_TCS_CMD_COMMIT_MASK;
-					cmdlist_wake[last_tcs].wait = true;
-					cmdlist_sleep[last_tcs].wait = true;
-					idx++;
+			if (cur_rsc->node_info->id != MSM_BUS_RSC_DISP) {
+				if ((cur_bcm->node_vec[DUAL_CTX].vec_a ==
+					cur_bcm->node_vec[ACTIVE_CTX].vec_a) &&
+					(cur_bcm->node_vec[DUAL_CTX].vec_b ==
+					cur_bcm->node_vec[ACTIVE_CTX].vec_b)) {
+					if (last_tcs != -1 &&
+						list_is_last(&cur_bcm->link,
+						&cur_bcm_clist[i])) {
+						cmdlist_wake[last_tcs].data |=
+							BCM_TCS_CMD_COMMIT_MASK;
+						cmdlist_sleep[last_tcs].data |=
+							BCM_TCS_CMD_COMMIT_MASK;
+						cmdlist_wake[last_tcs].wait =
+							true;
+						cmdlist_sleep[last_tcs].wait =
+							true;
+						idx++;
+					}
+					continue;
 				}
-				continue;
 			}
 			last_tcs = k;
 			n_sleep[idx]++;
@@ -448,6 +452,7 @@ static int bcm_clist_add(struct msm_bus_node_device_type *cur_dev)
 		if (!cur_bcm->dirty) {
 			list_add_tail(&cur_bcm->link,
 					&cur_rsc->rscdev->bcm_clist[cur_vcd]);
+			msm_bus_dbg_add_bcm(cur_bcm);
 			cur_bcm->dirty = true;
 		}
 		cur_bcm->updated = false;
@@ -517,6 +522,7 @@ static int bcm_clist_clean(struct msm_bus_node_device_type *cur_dev)
 			cur_bcm->node_vec[ACTIVE_CTX].vec_b == 0 &&
 			!init_time) {
 			cur_bcm->dirty = false;
+			msm_bus_dbg_remove_bcm(cur_bcm);
 			list_del_init(&cur_bcm->link);
 		}
 	}
@@ -647,14 +653,14 @@ int msm_bus_commit_data(struct list_head *clist)
 			MSM_BUS_ERR("%s: error sending active/awake sets: %d\n",
 						__func__, ret);
 	}
-	if (cnt_wake) {
+	if (cnt_wake || (cur_rsc->node_info->id == MSM_BUS_RSC_DISP)) {
 		ret = rpmh_write_batch(cur_mbox, RPMH_WAKE_ONLY_STATE,
 							cmdlist_wake, n_wake);
 		if (ret)
 			MSM_BUS_ERR("%s: error sending wake sets: %d\n",
 							__func__, ret);
 	}
-	if (cnt_sleep) {
+	if (cnt_sleep || (cur_rsc->node_info->id == MSM_BUS_RSC_DISP)) {
 		ret = rpmh_write_batch(cur_mbox, RPMH_SLEEP_STATE,
 							cmdlist_sleep, n_sleep);
 		if (ret)
@@ -670,7 +676,8 @@ int msm_bus_commit_data(struct list_head *clist)
 
 exit_msm_bus_commit_data:
 	list_for_each_entry_safe(node, node_tmp, clist, link) {
-		bcm_clist_clean(node);
+		if (cur_rsc->node_info->id != MSM_BUS_RSC_DISP)
+			bcm_clist_clean(node);
 		node->dirty = false;
 		list_del_init(&node->link);
 	}

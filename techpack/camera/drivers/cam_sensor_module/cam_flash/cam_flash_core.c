@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -10,6 +10,41 @@
 #include "cam_res_mgr_api.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+
+static int cam_flash_set_gpio(struct cam_flash_ctrl *fctrl,
+	bool enable)
+{
+	int i;
+	struct cam_hw_soc_info *soc_info = NULL;
+	struct cam_soc_gpio_data *gpio_conf = NULL;
+	uint8_t size = 0;
+
+	if (!fctrl) {
+		CAM_ERR(CAM_FLASH, "Flash node is NULL");
+		return -EINVAL;
+	}
+
+	soc_info = &fctrl->soc_info;
+	gpio_conf = soc_info->gpio_data;
+
+	if (gpio_conf == NULL) {
+		CAM_ERR(CAM_FLASH, "GPIO DATA NULL");
+		return -EINVAL;
+	}
+
+	size = gpio_conf->gpio_delay_tbl_size;
+
+	for (i = 0; i < size; i++) {
+		CAM_DBG(CAM_FLASH, "flash %s gpio %d",
+			(enable ? "ENABLE" : "DISABLE"),
+			gpio_conf->cam_gpio_req_tbl[i].gpio);
+		cam_res_mgr_gpio_set_value(gpio_conf->cam_gpio_req_tbl[i].gpio,
+			(enable ? 1 : 0));
+		usleep_range(gpio_conf->gpio_delay_tbl[i] * 1000,
+			gpio_conf->gpio_delay_tbl[i] * 1000 + 10);
+	}
+	return 0;
+}
 
 static int cam_flash_prepare(struct cam_flash_ctrl *flash_ctrl,
 	bool regulator_enable)
@@ -84,7 +119,8 @@ static int cam_flash_prepare(struct cam_flash_ctrl *flash_ctrl,
 	return rc;
 }
 
-static int cam_flash_pmic_flush_nrt(struct cam_flash_ctrl *fctrl)
+static int cam_flash_pmic_gpio_flush_nrt(
+	struct cam_flash_ctrl *fctrl)
 {
 	int j = 0;
 	struct cam_flash_frame_setting *nrt_settings;
@@ -180,10 +216,17 @@ free_power_settings:
 	return rc;
 }
 
-int cam_flash_pmic_power_ops(struct cam_flash_ctrl *fctrl,
+int cam_flash_pmic_gpio_power_ops(
+	struct cam_flash_ctrl *fctrl,
 	bool regulator_enable)
 {
 	int rc = 0;
+
+	/* Gpio flash do not need to power on and off */
+	if (fctrl->soc_info.gpio_data) {
+		CAM_DBG(CAM_FLASH, "gpio based flash not need power");
+		return rc;
+	}
 
 	if (!(fctrl->switch_trigger)) {
 		CAM_ERR(CAM_FLASH, "Invalid argument");
@@ -281,12 +324,15 @@ free_pwr_settings:
 	return rc;
 }
 
-int cam_flash_pmic_flush_request(struct cam_flash_ctrl *fctrl,
+int cam_flash_pmic_gpio_flush_request(
+	struct cam_flash_ctrl *fctrl,
 	enum cam_flash_flush_type type, uint64_t req_id)
 {
 	int rc = 0;
 	int i = 0, j = 0;
 	int frame_offset = 0;
+	bool is_off_needed = false;
+	struct cam_flash_frame_setting *flash_data = NULL;
 
 	if (!fctrl) {
 		CAM_ERR(CAM_FLASH, "Device data is NULL");
@@ -296,30 +342,56 @@ int cam_flash_pmic_flush_request(struct cam_flash_ctrl *fctrl,
 	if (type == FLUSH_ALL) {
 	/* flush all requests*/
 		for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
-			fctrl->per_frame[i].cmn_attr.request_id = 0;
-			fctrl->per_frame[i].cmn_attr.is_settings_valid = false;
-			fctrl->per_frame[i].cmn_attr.count = 0;
+			flash_data =
+				&fctrl->per_frame[i];
+			if ((flash_data->opcode ==
+				CAMERA_SENSOR_FLASH_OP_OFF) &&
+				(flash_data->cmn_attr.request_id > 0) &&
+				flash_data->cmn_attr.is_settings_valid) {
+				is_off_needed = true;
+				CAM_DBG(CAM_FLASH,
+					"FLASH_ALL: Turn off the flash for req %llu",
+					flash_data->cmn_attr.request_id);
+			}
+
+			flash_data->cmn_attr.request_id = 0;
+			flash_data->cmn_attr.is_settings_valid = false;
+			flash_data->cmn_attr.count = 0;
 			for (j = 0; j < CAM_FLASH_MAX_LED_TRIGGERS; j++)
-				fctrl->per_frame[i].led_current_ma[j] = 0;
+				flash_data->led_current_ma[j] = 0;
 		}
 
-		cam_flash_pmic_flush_nrt(fctrl);
+		cam_flash_pmic_gpio_flush_nrt(fctrl);
 	} else if ((type == FLUSH_REQ) && (req_id != 0)) {
 	/* flush request with req_id*/
 		frame_offset = req_id % MAX_PER_FRAME_ARRAY;
-		fctrl->per_frame[frame_offset].cmn_attr.request_id = 0;
-		fctrl->per_frame[frame_offset].cmn_attr.is_settings_valid =
+		flash_data =
+			&fctrl->per_frame[frame_offset];
+
+		if (flash_data->opcode ==
+			CAMERA_SENSOR_FLASH_OP_OFF) {
+			is_off_needed = true;
+			CAM_DBG(CAM_FLASH,
+				"FLASH_REQ: Turn off the flash for req %llu",
+				flash_data->cmn_attr.request_id);
+		}
+
+		flash_data->cmn_attr.request_id = 0;
+		flash_data->cmn_attr.is_settings_valid =
 			false;
-		fctrl->per_frame[frame_offset].cmn_attr.count = 0;
+		flash_data->cmn_attr.count = 0;
 		for (i = 0; i < CAM_FLASH_MAX_LED_TRIGGERS; i++)
-			fctrl->per_frame[frame_offset].led_current_ma[i] = 0;
+			flash_data->led_current_ma[i] = 0;
 	} else if ((type == FLUSH_REQ) && (req_id == 0)) {
 		/* Handels NonRealTime usecase */
-		cam_flash_pmic_flush_nrt(fctrl);
+		cam_flash_pmic_gpio_flush_nrt(fctrl);
 	} else {
 		CAM_ERR(CAM_FLASH, "Invalid arguments");
 		return -EINVAL;
 	}
+
+	if (is_off_needed)
+		cam_flash_off(fctrl);
 
 	return rc;
 }
@@ -427,6 +499,11 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 		flash_ctrl->soc_info.soc_private;
 
 	if (op == CAMERA_SENSOR_FLASH_OP_FIRELOW) {
+		/* Turn On Gpio Flash */
+		if (flash_ctrl->soc_info.gpio_data) {
+			cam_flash_set_gpio(flash_ctrl, true);
+			return 0;
+		}
 		for (i = 0; i < flash_ctrl->torch_num_sources; i++) {
 			if (flash_ctrl->torch_trigger[i]) {
 				max_current = soc_private->torch_max_current[i];
@@ -442,6 +519,11 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 				flash_ctrl->torch_trigger[i], curr);
 		}
 	} else if (op == CAMERA_SENSOR_FLASH_OP_FIREHIGH) {
+		/* Turn On Gpio Flash */
+		if (flash_ctrl->soc_info.gpio_data) {
+			cam_flash_set_gpio(flash_ctrl, true);
+			return 0;
+		}
 		for (i = 0; i < flash_ctrl->flash_num_sources; i++) {
 			if (flash_ctrl->flash_trigger[i]) {
 				max_current = soc_private->flash_max_current[i];
@@ -475,10 +557,14 @@ int cam_flash_off(struct cam_flash_ctrl *flash_ctrl)
 		CAM_ERR(CAM_FLASH, "Flash control Null");
 		return -EINVAL;
 	}
-
+	CAM_DBG(CAM_FLASH, "Flash OFF Triggered");
 	if (flash_ctrl->switch_trigger)
 		cam_res_mgr_led_trigger_event(flash_ctrl->switch_trigger,
 			(enum led_brightness)LED_SWITCH_OFF);
+
+	/* Turn Off Gpio Flash */
+	if (flash_ctrl->soc_info.gpio_data)
+		cam_flash_set_gpio(flash_ctrl, false);
 
 	flash_ctrl->flash_state = CAM_FLASH_STATE_START;
 	return 0;
@@ -567,16 +653,20 @@ static int cam_flash_i2c_delete_req(struct cam_flash_ctrl *fctrl,
 		CAM_DBG(CAM_FLASH, "top: %llu, del_req_id:%llu",
 			top, del_req_id);
 	}
-	fctrl->func_tbl.flush_req(fctrl, FLUSH_REQ, del_req_id);
+
+	cam_flash_i2c_flush_nrt(fctrl);
+
 	return 0;
 }
 
-static int cam_flash_pmic_delete_req(struct cam_flash_ctrl *fctrl,
+static int cam_flash_pmic_gpio_delete_req(
+	struct cam_flash_ctrl *fctrl,
 	uint64_t req_id)
 {
 	int i = 0;
 	struct cam_flash_frame_setting *flash_data = NULL;
 	uint64_t top = 0, del_req_id = 0;
+	int frame_offset = 0;
 
 	if (req_id != 0) {
 		for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
@@ -612,7 +702,16 @@ static int cam_flash_pmic_delete_req(struct cam_flash_ctrl *fctrl,
 			top, del_req_id);
 	}
 
-	fctrl->func_tbl.flush_req(fctrl, FLUSH_REQ, del_req_id);
+	/* delete the request */
+	frame_offset = del_req_id % MAX_PER_FRAME_ARRAY;
+	flash_data = &fctrl->per_frame[frame_offset];
+	flash_data->cmn_attr.request_id = 0;
+	flash_data->cmn_attr.is_settings_valid = false;
+	flash_data->cmn_attr.count = 0;
+
+	for (i = 0; i < CAM_FLASH_MAX_LED_TRIGGERS; i++)
+		flash_data->led_current_ma[i] = 0;
+
 	return 0;
 }
 
@@ -662,6 +761,16 @@ int cam_flash_i2c_apply_setting(struct cam_flash_ctrl *fctrl,
 				list) {
 				rc = cam_sensor_util_i2c_apply_setting
 					(&(fctrl->io_master_info), i2c_list);
+				if ((rc == -EAGAIN) &&
+					(fctrl->io_master_info.master_type ==
+					CCI_MASTER)) {
+					CAM_WARN(CAM_FLASH,
+						"CCI HW is in reset mode: Reapplying Init settings");
+					usleep_range(1000, 1010);
+					rc = cam_sensor_util_i2c_apply_setting
+					(&(fctrl->io_master_info), i2c_list);
+				}
+
 				if (rc) {
 					CAM_ERR(CAM_FLASH,
 					"Failed to apply init settings: %d",
@@ -707,7 +816,8 @@ int cam_flash_i2c_apply_setting(struct cam_flash_ctrl *fctrl,
 	return rc;
 }
 
-int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
+int cam_flash_pmic_gpio_apply_setting(
+	struct cam_flash_ctrl *fctrl,
 	uint64_t req_id)
 {
 	int rc = 0, i = 0;
@@ -884,7 +994,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 	}
 
 nrt_del_req:
-	cam_flash_pmic_delete_req(fctrl, req_id);
+	cam_flash_pmic_gpio_delete_req(fctrl, req_id);
 apply_setting_err:
 	return rc;
 }
@@ -1237,7 +1347,8 @@ update_req_mgr:
 	return rc;
 }
 
-int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
+int cam_flash_pmic_gpio_pkt_parser(
+	struct cam_flash_ctrl *fctrl, void *arg)
 {
 	int rc = 0, i = 0;
 	uintptr_t generic_ptr, cmd_buf_ptr;
@@ -1501,6 +1612,8 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 				flash_data->led_current_ma[i]
 				= flash_operation_info->led_current_ma[i];
 
+			CAM_DBG(CAM_FLASH,
+				"FLASH_CMD_TYPE op:%d", flash_data->opcode);
 			if (flash_data->opcode == CAMERA_SENSOR_FLASH_OP_OFF)
 				add_req.skip_before_applying |= SKIP_NEXT_FRAME;
 		}

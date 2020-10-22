@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -118,6 +118,7 @@ static QDF_STATUS __dp_rx_desc_nbuf_free(struct dp_soc *soc,
 		offset = i % num_desc_per_page;
 		rx_desc_elem = dp_rx_desc_find(page_id, offset, rx_desc_pool);
 		rx_desc = &rx_desc_elem->rx_desc;
+		dp_rx_desc_free_dbg_info(rx_desc);
 		if (rx_desc->in_use) {
 			nbuf = rx_desc->nbuf;
 			if (!rx_desc->unmapped) {
@@ -331,6 +332,7 @@ void dp_rx_add_desc_list_to_free_list(struct dp_soc *soc,
 	temp_list, *local_desc_list, *tail, (*tail)->next);
 	rx_desc_pool->freelist = *local_desc_list;
 	(*tail)->next = temp_list;
+	*tail = NULL;
 
 	qdf_spin_unlock_bh(&rx_desc_pool->lock);
 }

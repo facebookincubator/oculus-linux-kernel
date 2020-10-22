@@ -348,9 +348,6 @@ tdls_send_mgmt_serialize_callback(struct wlan_serialization_command *cmd,
 	}
 	req = cmd->umac_cmd;
 
-	tdls_debug("reason: %d, vdev_id: %d",
-		reason, req->vdev_id);
-
 	switch (reason) {
 	case WLAN_SER_CB_ACTIVATE_CMD:
 		/* command moved to active list */

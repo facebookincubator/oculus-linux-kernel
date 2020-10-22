@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -59,6 +59,7 @@
 #include "cds_ieee80211_common.h"
 #include <wlan_scan_ucfg_api.h>
 #include "wlan_mlme_public_struct.h"
+#include "wlan_p2p_cfg_api.h"
 
 void lim_log_session_states(struct mac_context *mac);
 static void lim_process_normal_hdd_msg(struct mac_context *mac_ctx,
@@ -1081,12 +1082,15 @@ lim_check_mgmt_registered_frames(struct mac_context *mac_ctx, uint8_t *buff_desc
 	uint16_t frm_len;
 	uint8_t type, sub_type;
 	bool match = false;
+	tpSirMacActionFrameHdr action_hdr;
+	uint8_t actionID, category;
 	QDF_STATUS qdf_status;
 
 	hdr = WMA_GET_RX_MAC_HEADER(buff_desc);
 	fc = hdr->fc;
 	frm_type = (fc.type << 2) | (fc.subType << 4);
 	body = WMA_GET_RX_MPDU_DATA(buff_desc);
+	action_hdr = (tpSirMacActionFrameHdr)body;
 	frm_len = WMA_GET_RX_PAYLOAD_LEN(buff_desc);
 
 	qdf_mutex_acquire(&mac_ctx->lim.lim_frame_register_lock);
@@ -1130,10 +1134,36 @@ lim_check_mgmt_registered_frames(struct mac_context *mac_ctx, uint8_t *buff_desc
 		mgmt_frame = next_frm;
 		next_frm = NULL;
 	}
-
 	if (match) {
-		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
-			FL("rcvd frame match with registered frame params"));
+		pe_debug("rcvd frame match with registered frame params");
+
+		/*
+		 * Drop BTM frame received on STA interface if concurrent
+		 * P2P connection is active and p2p_disable_roam ini is
+		 * enabled. This will help to avoid scan triggered by
+		 * userspace after processing the BTM frame from AP so the
+		 * audio glitches are not seen in P2P connection.
+		 */
+		if (cfg_p2p_is_roam_config_disabled(mac_ctx->psoc) &&
+		    session_entry && LIM_IS_STA_ROLE(session_entry) &&
+		    (policy_mgr_mode_specific_connection_count(mac_ctx->psoc,
+						PM_P2P_CLIENT_MODE, NULL) ||
+		     policy_mgr_mode_specific_connection_count(mac_ctx->psoc,
+						PM_P2P_GO_MODE, NULL))) {
+			if (frm_len >= sizeof(*action_hdr) && action_hdr &&
+			    fc.type == SIR_MAC_MGMT_FRAME &&
+			    fc.subType == SIR_MAC_MGMT_ACTION) {
+				actionID = action_hdr->actionID;
+				category = action_hdr->category;
+				if (category == ACTION_CATEGORY_WNM &&
+				    (actionID == WNM_BSS_TM_QUERY ||
+				     actionID == WNM_BSS_TM_REQUEST ||
+				     actionID == WNM_BSS_TM_RESPONSE)) {
+					pe_debug("p2p session active drop BTM frame");
+					return match;
+				}
+			}
+		}
 		/* Indicate this to SME */
 		lim_send_sme_mgmt_frame_ind(mac_ctx, hdr->fc.subType,
 			(uint8_t *) hdr,
@@ -1729,6 +1759,7 @@ static void lim_process_messages(struct mac_context *mac_ctx,
 		/* fall through */
 	case eWNI_SME_ROAM_SCAN_OFFLOAD_REQ:
 	case eWNI_SME_ROAM_INIT_PARAM:
+	case eWNI_SME_ROAM_SEND_PER_REQ:
 	case eWNI_SME_SET_ADDBA_ACCEPT:
 	case eWNI_SME_UPDATE_EDCA_PROFILE:
 	case WNI_SME_UPDATE_MU_EDCA_PARAMS:
@@ -1808,6 +1839,9 @@ static void lim_process_messages(struct mac_context *mac_ctx,
 		break;
 	case SIR_LIM_RX_INVALID_PEER:
 		lim_rx_invalid_peer_process(mac_ctx, msg);
+		break;
+	case SIR_HAL_REQ_SEND_DELBA_REQ_IND:
+		lim_req_send_delba_ind_process(mac_ctx, msg);
 		break;
 	case SIR_LIM_JOIN_FAIL_TIMEOUT:
 	case SIR_LIM_PERIODIC_JOIN_PROBE_REQ_TIMEOUT:

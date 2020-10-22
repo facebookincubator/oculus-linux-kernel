@@ -171,7 +171,8 @@ struct sap_context {
 	uint8_t num_of_channel;
 	uint16_t ch_width_orig;
 	struct ch_params ch_params;
-
+	uint32_t chan_id_before_switch_band;
+	enum phy_ch_width chan_width_before_switch_band;
 	uint32_t auto_channel_select_weight;
 	bool enableOverLapCh;
 	struct sap_acs_cfg *acs_cfg;
@@ -446,6 +447,7 @@ static inline uint8_t sap_indicate_radar(struct sap_context *sap_ctx)
 
 /**
  * sap_select_default_oper_chan() - Select AP mode default operating channel
+ * @mac_ctx: mac context
  * @acs_cfg: pointer to ACS config info
  *
  * Select AP mode default operating channel based on ACS hw mode and channel
@@ -454,7 +456,8 @@ static inline uint8_t sap_indicate_radar(struct sap_context *sap_ctx)
  *
  * Return: Selected operating channel number
  */
-uint8_t sap_select_default_oper_chan(struct sap_acs_cfg *acs_cfg);
+uint8_t sap_select_default_oper_chan(struct mac_context *mac_ctx,
+				     struct sap_acs_cfg *acs_cfg);
 
 /*
  * sap_is_dfs_cac_wait_state() - check if sap is in cac wait state

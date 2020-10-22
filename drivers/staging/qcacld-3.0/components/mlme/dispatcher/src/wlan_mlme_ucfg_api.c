@@ -651,6 +651,22 @@ ucfg_mlme_is_override_ht20_40_24g(struct wlan_objmgr_psoc *psoc, bool *val)
 }
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+QDF_STATUS ucfg_mlme_get_roam_disable_config(struct wlan_objmgr_psoc *psoc,
+					     uint32_t *val)
+{
+	struct wlan_mlme_psoc_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_STA_DISABLE_ROAM);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.lfr.sta_roam_disable;
+
+	 return QDF_STATUS_SUCCESS;
+}
+
 QDF_STATUS
 ucfg_mlme_get_roaming_offload(struct wlan_objmgr_psoc *psoc,
 			      bool *val)
@@ -861,6 +877,14 @@ ucfg_mlme_get_delay_before_vdev_stop(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#if defined(WLAN_SAE_SINGLE_PMK) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
+void ucfg_mlme_update_sae_single_pmk_info(struct wlan_objmgr_vdev *vdev,
+					  struct mlme_pmk_info *sae_single_pmk)
+{
+	wlan_mlme_update_sae_single_pmk(vdev, sae_single_pmk);
+}
+#endif
 
 QDF_STATUS
 ucfg_mlme_get_roam_bmiss_final_bcnt(struct wlan_objmgr_psoc *psoc,

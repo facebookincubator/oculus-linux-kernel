@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -44,6 +44,8 @@
 #include "lim_ft_defs.h"
 #include "lim_session.h"
 #include "lim_ser_des_utils.h"
+#include "cdp_txrx_cmn.h"
+#include "cdp_txrx_peer_ops.h"
 
 /**
  * lim_delete_sta_util - utility function for deleting station context
@@ -198,6 +200,7 @@ void lim_delete_sta_context(struct mac_context *mac_ctx,
 	tpDeleteStaContext msg = (tpDeleteStaContext) lim_msg->bodyptr;
 	struct pe_session *session_entry;
 	tpDphHashNode sta_ds;
+	enum eSirMacReasonCodes reason_code;
 
 	if (!msg) {
 		pe_err("Invalid body pointer in message");
@@ -212,6 +215,8 @@ void lim_delete_sta_context(struct mac_context *mac_ctx,
 
 	switch (msg->reasonCode) {
 	case HAL_DEL_STA_REASON_CODE_KEEP_ALIVE:
+	case HAL_DEL_STA_REASON_CODE_SA_QUERY_TIMEOUT:
+	case HAL_DEL_STA_REASON_CODE_XRETRY:
 		if (LIM_IS_STA_ROLE(session_entry) && !msg->is_tdls) {
 			if (!((session_entry->limMlmState ==
 			    eLIM_MLM_LINK_ESTABLISHED_STATE) &&
@@ -238,9 +243,18 @@ void lim_delete_sta_context(struct mac_context *mac_ctx,
 			lim_send_deauth_mgmt_frame(mac_ctx,
 				eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON,
 				msg->addr2, session_entry, false);
+			if (msg->reasonCode ==
+				HAL_DEL_STA_REASON_CODE_SA_QUERY_TIMEOUT)
+				reason_code = eSIR_MAC_SA_QUERY_TIMEOUT;
+			else if (msg->reasonCode ==
+				HAL_DEL_STA_REASON_CODE_XRETRY)
+				reason_code = eSIR_MAC_PEER_XRETRY_FAIL;
+			else
+				reason_code = eSIR_MAC_PEER_INACTIVITY;
 			lim_tear_down_link_with_ap(mac_ctx,
-				session_entry->peSessionId,
-				eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON);
+						   session_entry->peSessionId,
+						   reason_code,
+						   eLIM_LINK_MONITORING_DEAUTH);
 			/* only break for STA role (non TDLS) */
 			break;
 		}
@@ -265,10 +279,11 @@ void lim_delete_sta_context(struct mac_context *mac_ctx,
 			return;
 		}
 		lim_send_deauth_mgmt_frame(mac_ctx,
-				eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON,
+				eSIR_MAC_BSS_TRANSITION_DISASSOC,
 				session_entry->bssId, session_entry, false);
 		lim_tear_down_link_with_ap(mac_ctx, session_entry->peSessionId,
-					   eSIR_MAC_UNSPEC_FAILURE_REASON);
+					   eSIR_MAC_BSS_TRANSITION_DISASSOC,
+					   eLIM_LINK_MONITORING_DEAUTH);
 		break;
 
 	default:
@@ -335,26 +350,10 @@ lim_trigger_sta_deletion(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 	lim_send_sme_disassoc_ind(mac_ctx, sta_ds, session_entry);
 } /*** end lim_trigger_st_adeletion() ***/
 
-/**
- * lim_tear_down_link_with_ap()
- *
- ***FUNCTION:
- * This function is called when heartbeat (beacon reception)
- * fails on STA
- *
- ***LOGIC:
- *
- ***ASSUMPTIONS:
- *
- ***NOTE:
- *
- * @param  mac - Pointer to Global MAC structure
- * @return None
- */
-
 void
 lim_tear_down_link_with_ap(struct mac_context *mac, uint8_t sessionId,
-			   tSirMacReasonCodes reasonCode)
+			   tSirMacReasonCodes reasonCode,
+			   enum eLimDisassocTrigger trigger)
 {
 	tpDphHashNode sta = NULL;
 
@@ -373,8 +372,9 @@ lim_tear_down_link_with_ap(struct mac_context *mac, uint8_t sessionId,
 	 */
 	pe_session->pmmOffloadInfo.bcnmiss = false;
 
-	pe_info("No ProbeRsp from AP after HB failure for pe/sme id %d/%d",
-		pe_session->peSessionId, pe_session->smeSessionId);
+	pe_info("Session %d Vdev %d reason code %d trigger %d",
+		pe_session->peSessionId, pe_session->vdev_id, reasonCode,
+		trigger);
 
 	/* Announce loss of link to Roaming algorithm */
 	/* and cleanup by sending SME_DISASSOC_REQ to SME */
@@ -400,8 +400,7 @@ lim_tear_down_link_with_ap(struct mac_context *mac, uint8_t sessionId,
 #endif
 
 		sta->mlmStaContext.disassocReason = reasonCode;
-		sta->mlmStaContext.cleanupTrigger =
-			eLIM_LINK_MONITORING_DEAUTH;
+		sta->mlmStaContext.cleanupTrigger = trigger;
 		/* / Issue Deauth Indication to SME. */
 		qdf_mem_copy((uint8_t *) &mlmDeauthInd.peerMacAddr,
 			     sta->staAddr, sizeof(tSirMacAddr));
@@ -413,7 +412,7 @@ lim_tear_down_link_with_ap(struct mac_context *mac, uint8_t sessionId,
 		 * connection, if we connect to same AP after HB failure.
 		 */
 		if (mac->mlme_cfg->sta.deauth_before_connection &&
-		    eSIR_BEACON_MISSED == reasonCode) {
+		    eSIR_MAC_BEACON_MISSED == reasonCode) {
 			int apCount = mac->lim.gLimHeartBeatApMacIndex;
 
 			if (mac->lim.gLimHeartBeatApMacIndex)
@@ -534,14 +533,14 @@ void lim_handle_heart_beat_failure(struct mac_context *mac_ctx,
 					session->dot11mode, NULL, NULL);
 			}
 		} else {
-			pe_debug("HB missed from AP on DFS channel");
 			/*
 			 * Connected on DFS channel so should not send the
 			 * probe request tear down the link directly
 			 */
 			lim_tear_down_link_with_ap(mac_ctx,
 				session->peSessionId,
-				eSIR_BEACON_MISSED);
+				eSIR_MAC_BEACON_MISSED,
+				eLIM_LINK_MONITORING_DEAUTH);
 		}
 	} else {
 		/**
@@ -587,7 +586,7 @@ void lim_rx_invalid_peer_process(struct mac_context *mac_ctx,
 	}
 
 	/* only if SAP mode */
-	if (session_entry->operMode == BSS_OPERATIONAL_MODE_AP) {
+	if (session_entry->bssType == eSIR_INFRA_AP_MODE) {
 		pe_debug("send deauth frame to non-assoc STA");
 		lim_send_deauth_mgmt_frame(mac_ctx,
 					   reason_code,
@@ -597,5 +596,44 @@ void lim_rx_invalid_peer_process(struct mac_context *mac_ctx,
 	}
 
 	qdf_mem_free(msg);
+	lim_msg->bodyptr = NULL;
+}
+
+void lim_req_send_delba_ind_process(struct mac_context *mac_ctx,
+				    struct scheduler_msg *lim_msg)
+{
+	struct lim_delba_req_info *req =
+			(struct lim_delba_req_info *)lim_msg->bodyptr;
+	QDF_STATUS status;
+	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	void *peer, *pdev;
+	uint8_t peer_id;
+
+	if (!req) {
+		pe_err("Invalid body pointer in message");
+		return;
+	}
+	pdev = cds_get_context(QDF_MODULE_ID_TXRX);
+	if (!pdev) {
+		pe_err("delba pdev is NULL");
+		goto error;
+	}
+	peer = cdp_peer_get_ref_by_addr(soc, pdev, req->peer_macaddr, &peer_id,
+					PEER_DEBUG_ID_WMA_DELBA_REQ);
+	if (!peer) {
+		pe_err("delba PEER [%pM] not found", req->peer_macaddr);
+		goto error;
+	}
+
+	status = lim_send_delba_action_frame(mac_ctx, req->vdev_id,
+					     req->peer_macaddr,
+					     req->tid, req->reason_code);
+	if (status != QDF_STATUS_SUCCESS)
+		cdp_delba_tx_completion(soc, peer, req->tid,
+					WMI_MGMT_TX_COMP_TYPE_DISCARD);
+	cdp_peer_release_ref(soc, peer, PEER_DEBUG_ID_WMA_DELBA_REQ);
+
+error:
+	qdf_mem_free(req);
 	lim_msg->bodyptr = NULL;
 }

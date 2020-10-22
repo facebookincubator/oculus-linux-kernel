@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -69,6 +69,7 @@
 #include "wlan_qct_sys.h"
 #include <wlan_scan_ucfg_api.h>
 #include <wlan_blm_api.h>
+#include <lim_assoc_utils.h>
 
 #define ASCII_SPACE_CHARACTER 0x20
 
@@ -362,7 +363,7 @@ char *lim_msg_str(uint32_t msgType)
 	case eWNI_SME_HW_MODE_TRANS_IND:
 		return "eWNI_SME_HW_MODE_TRANS_IND";
 	default:
-		return "INVALID SME message";
+		return "Unknown";
 	}
 }
 
@@ -431,7 +432,7 @@ char *lim_result_code_str(tSirResultCodes resultCode)
 		return "eSIR_SME_HAL_SEND_MESSAGE_FAIL";
 
 	default:
-		return "INVALID resultCode";
+		return "Unknown resultCode";
 	}
 }
 
@@ -713,7 +714,7 @@ uint8_t lim_write_deferred_msg_q(struct mac_context *mac_ctx,
 			cds_flush_logs(WLAN_LOG_TYPE_NON_FATAL,
 				WLAN_LOG_INDICATOR_HOST_DRIVER,
 				WLAN_LOG_REASON_QUEUE_FULL,
-				true, false);
+				false, false);
 		} else {
 			mac_ctx->lim.deferredMsgCnt++;
 		}
@@ -872,7 +873,7 @@ void lim_handle_update_olbc_cache(struct mac_context *mac_ctx)
 	struct pe_session *pe_session = lim_is_ap_session_active(mac_ctx);
 
 	if (!pe_session) {
-		pe_err(" Session not found");
+		pe_debug(" Session not found");
 		return;
 	}
 
@@ -1877,13 +1878,13 @@ static void __lim_process_channel_switch_timeout(struct pe_session *pe_session)
 			lim_tear_down_link_with_ap(mac,
 					   mac->lim.limTimers.
 					   gLimChannelSwitchTimer.sessionId,
-					   eSIR_MAC_UNSPEC_FAILURE_REASON);
+					   eSIR_MAC_UNSUPPORTED_CHANNEL_CSA,
+					   eLIM_LINK_MONITORING_DISASSOC);
 			return;
 		}
 	}
 	switch (pe_session->gLimChannelSwitch.state) {
 	case eLIM_CHANNEL_SWITCH_PRIMARY_ONLY:
-		pe_warn("CHANNEL_SWITCH_PRIMARY_ONLY");
 		lim_switch_primary_channel(mac,
 					   pe_session->gLimChannelSwitch.
 					   primaryChannel, pe_session);
@@ -1891,7 +1892,6 @@ static void __lim_process_channel_switch_timeout(struct pe_session *pe_session)
 			eLIM_CHANNEL_SWITCH_IDLE;
 		break;
 	case eLIM_CHANNEL_SWITCH_PRIMARY_AND_SECONDARY:
-		pe_warn("CHANNEL_SWITCH_PRIMARY_AND_SECONDARY");
 		lim_switch_primary_secondary_channel(mac, pe_session,
 			pe_session->gLimChannelSwitch.primaryChannel,
 			pe_session->gLimChannelSwitch.ch_center_freq_seg0,
@@ -2218,16 +2218,6 @@ void lim_switch_channel_cback(struct mac_context *mac, QDF_STATUS status,
 			pe_session->gLimChannelSwitch.ch_center_freq_seg1;
 
 	pSirSmeSwitchChInd->status = status;
-	pe_debug(
-		"session: %d chan: %d width: %d sec offset: %d seg0: %d seg1: %d status %d",
-		pSirSmeSwitchChInd->sessionId,
-		pSirSmeSwitchChInd->newChannelId,
-		pSirSmeSwitchChInd->chan_params.ch_width,
-		pSirSmeSwitchChInd->chan_params.sec_ch_offset,
-		pSirSmeSwitchChInd->chan_params.center_freq_seg0,
-		pSirSmeSwitchChInd->chan_params.center_freq_seg1,
-		status);
-
 	qdf_mem_copy(pSirSmeSwitchChInd->bssid.bytes, pe_session->bssId,
 		     QDF_MAC_ADDR_SIZE);
 	mmhMsg.bodyptr = pSirSmeSwitchChInd;
@@ -2257,8 +2247,8 @@ void lim_switch_channel_cback(struct mac_context *mac, QDF_STATUS status,
 void lim_switch_primary_channel(struct mac_context *mac, uint8_t newChannel,
 				struct pe_session *pe_session)
 {
-	pe_debug("old chnl: %d --> new chnl: %d",
-		       pe_session->currentOperChannel, newChannel);
+	pe_debug("chan: %d --> chan: %d",
+		 pe_session->currentOperChannel, newChannel);
 
 	pe_session->currentReqChannel = newChannel;
 	pe_session->limRFBand = lim_get_rf_band(newChannel);
@@ -2316,13 +2306,13 @@ void lim_switch_primary_secondary_channel(struct mac_context *mac,
 
 	/* Store the new primary and secondary channel in session entries if different */
 	if (pe_session->currentOperChannel != newChannel) {
-		pe_warn("switch old chnl: %d --> new chnl: %d",
+		pe_warn("chan: %d --> chan: %d",
 			pe_session->currentOperChannel, newChannel);
 		pe_session->currentOperChannel = newChannel;
 	}
 	if (pe_session->htSecondaryChannelOffset !=
 			pe_session->gLimChannelSwitch.sec_ch_offset) {
-		pe_warn("switch old sec chnl: %d --> new sec chnl: %d",
+		pe_warn("HT sec chnl: %d --> HT sec chnl: %d",
 			pe_session->htSecondaryChannelOffset,
 			pe_session->gLimChannelSwitch.sec_ch_offset);
 		pe_session->htSecondaryChannelOffset =
@@ -3835,16 +3825,6 @@ QDF_STATUS lim_tx_complete(void *context, qdf_nbuf_t buf, bool free)
 	return QDF_STATUS_SUCCESS;
 }
 
-static void lim_ht_width_switch_cback(struct mac_context *mac,
-				QDF_STATUS status, uint32_t *data,
-				struct pe_session *pe_session)
-{
-	pe_debug("status %d for ht width switch for vdev %d", status,
-		 pe_session->smeSessionId);
-	if (QDF_IS_STATUS_SUCCESS(status))
-		lim_switch_channel_vdev_started(pe_session);
-}
-
 static void lim_ht_switch_chnl_params(struct pe_session *pe_session)
 {
 	uint8_t center_freq = 0;
@@ -3858,7 +3838,7 @@ static void lim_ht_switch_chnl_params(struct pe_session *pe_session)
 		return;
 	}
 
-	primary_channel = pe_session->gLimChannelSwitch.primaryChannel;
+	primary_channel = pe_session->currentOperChannel;
 	if (eHT_CHANNEL_WIDTH_40MHZ ==
 	    pe_session->htRecommendedTxWidthSet) {
 		ch_width = CH_WIDTH_40MHZ;
@@ -3872,13 +3852,22 @@ static void lim_ht_switch_chnl_params(struct pe_session *pe_session)
 			ch_width = CH_WIDTH_20MHZ;
 	}
 
-	/* notify HAL */
-	pe_debug("HT IE changed: Primary Channel: %d Secondary Channel Offset: %d Channel Width: %d",
+	pe_session->gLimChannelSwitch.primaryChannel = primary_channel;
+	pe_session->currentReqChannel = primary_channel;
+	pe_session->ch_center_freq_seg0 = center_freq;
+	pe_session->gLimChannelSwitch.ch_center_freq_seg0 = center_freq;
+	pe_session->ch_width = ch_width;
+	pe_session->gLimChannelSwitch.ch_width = ch_width;
+	pe_session->gLimChannelSwitch.sec_ch_offset =
+				pe_session->htSecondaryChannelOffset;
+	pe_session->gLimChannelSwitch.ch_center_freq_seg1 = 0;
+
+	pe_debug("HT IE changed: Primary Channel: %d center chan: %d Channel Width: %d",
 		 primary_channel, center_freq,
 		 pe_session->htRecommendedTxWidthSet);
 	pe_session->channelChangeReasonCode =
 			LIM_SWITCH_CHANNEL_HT_WIDTH;
-	mac->lim.gpchangeChannelCallback = lim_ht_width_switch_cback;
+	mac->lim.gpchangeChannelCallback = lim_switch_channel_cback;
 	mac->lim.gpchangeChannelData = NULL;
 
 	lim_send_switch_chnl_params(mac, primary_channel,
@@ -3972,12 +3961,15 @@ void lim_update_sta_run_time_ht_switch_chnl_params(struct mac_context *mac,
 		return;
 	}
 
+	if (lim_is_roam_synch_in_progress(pe_session)) {
+		pe_debug("Roaming in progress, ignore HT IE BW update");
+		return;
+	}
+
 	if (pe_session->htSecondaryChannelOffset !=
 	    (uint8_t) pHTInfo->secondaryChannelOffset
 	    || pe_session->htRecommendedTxWidthSet !=
 	    (uint8_t) pHTInfo->recommendedTxWidthSet) {
-		pe_session->gLimChannelSwitch.primaryChannel =
-							pHTInfo->primaryChannel;
 		pe_session->htSecondaryChannelOffset =
 			(ePhyChanBondState) pHTInfo->secondaryChannelOffset;
 		pe_session->htRecommendedTxWidthSet =
@@ -4793,9 +4785,8 @@ void lim_handle_heart_beat_failure_timeout(struct mac_context *mac_ctx)
 			 * beacon after connection.
 			 */
 			 (psession_entry->currentBssBeaconCnt == 0))) {
-			pe_debug("for session: %d",
-						psession_entry->peSessionId);
-
+			pe_nofl_info("HB fail vdev %d",
+				     psession_entry->vdev_id);
 			lim_send_deauth_mgmt_frame(mac_ctx,
 				eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON,
 				psession_entry->bssId, psession_entry, false);
@@ -4806,7 +4797,8 @@ void lim_handle_heart_beat_failure_timeout(struct mac_context *mac_ctx)
 			 */
 			lim_tear_down_link_with_ap(mac_ctx,
 						psession_entry->peSessionId,
-						eSIR_BEACON_MISSED);
+						eSIR_MAC_BEACON_MISSED,
+						eLIM_LINK_MONITORING_DISASSOC);
 			mac_ctx->lim.gLimProbeFailureAfterHBfailedCnt++;
 		} else {
 			pe_err("Unexpected wt-probe-timeout in state");
@@ -6782,6 +6774,7 @@ void lim_update_usr_he_cap(struct mac_context *mac_ctx, struct pe_session *sessi
 	struct he_cap_network_endian *he_cap_from_ie;
 	uint8_t extracted_buff[DOT11F_IE_HE_CAP_MAX_LEN + 2];
 	QDF_STATUS status;
+	struct sir_vht_config *vht_cfg = &session->vht_config;
 	qdf_mem_zero(extracted_buff, sizeof(extracted_buff));
 	status = lim_strip_ie(mac_ctx, add_ie->probeRespBCNData_buff,
 			&add_ie->probeRespBCNDataLen,
@@ -6808,6 +6801,23 @@ void lim_update_usr_he_cap(struct mac_context *mac_ctx, struct pe_session *sessi
 
 	pe_debug("After update: su_beamformer: %d, su_beamformee: %d, mu_beamformer: %d",
 		he_cap->su_beamformer, he_cap->su_beamformee, he_cap->mu_beamformer);
+	if (!he_cap->su_beamformer) {
+		he_cap->mu_beamformer = 0;
+		he_cap->num_sounding_lt_80 = 0;
+		he_cap->num_sounding_gt_80 = 0;
+		vht_cfg->su_beam_former = 0;
+		vht_cfg->mu_beam_former = 0;
+		vht_cfg->num_soundingdim = 0;
+	}
+	if (!he_cap->su_beamformee) {
+		he_cap->bfee_sts_lt_80 = 0;
+		he_cap->bfee_sts_gt_80 = 0;
+		vht_cfg->su_beam_formee = 0;
+		vht_cfg->mu_beam_formee = 0;
+		vht_cfg->csnof_beamformer_antSup = 0;
+	}
+	wma_set_he_txbf_params(session->vdev_id, he_cap->su_beamformer,
+			       he_cap->su_beamformee, he_cap->mu_beamformer);
 }
 
 void lim_decide_he_op(struct mac_context *mac_ctx, tpAddBssParams add_bss,
@@ -6911,174 +6921,99 @@ void lim_log_he_cap(struct mac_context *mac, tDot11fIEhe_cap *he_cap)
 	if (!he_cap->present)
 		return;
 
-	pe_debug("HE Capabilities:");
+	pe_nofl_debug("HE Capabilities: htc_he 0x%x twt_req 0x%x twt_res 0x%x fragmentation 0x%x max frag msdu amsdu 0x%x min frag 0x%x",
+		      he_cap->htc_he, he_cap->twt_request,
+		      he_cap->twt_responder, he_cap->fragmentation,
+		      he_cap->max_num_frag_msdu_amsdu_exp,
+		      he_cap->min_frag_size);
+	pe_nofl_debug("\ttrig frm mac pad 0x%x multi tid aggr supp 0x%x link adaptaion 0x%x all ack 0x%x trigd_rsp_sched 0x%x a_bsr 0x%x",
+		      he_cap->trigger_frm_mac_pad,
+		      he_cap->multi_tid_aggr_rx_supp,
+		      he_cap->he_link_adaptation, he_cap->all_ack,
+		      he_cap->trigd_rsp_sched, he_cap->a_bsr);
+	pe_nofl_debug("\tBC twt 0x%x ba_32bit_bitmap supp 0x%x mu_cascade 0x%x ack_enabled_multitid 0x%x omi_a_ctrl 0x%x ofdma_ra 0x%x",
+		      he_cap->broadcast_twt, he_cap->ba_32bit_bitmap,
+		      he_cap->mu_cascade, he_cap->ack_enabled_multitid,
+		      he_cap->omi_a_ctrl, he_cap->ofdma_ra);
+	pe_nofl_debug("\tmax_ampdu_len exp ext 0x%x amsdu_frag 0x%x flex_twt_sched 0x%x rx_ctrl frm 0x%x bsrp_ampdu_aggr 0x%x qtp 0x%x a_bqr 0x%x",
+		      he_cap->max_ampdu_len_exp_ext, he_cap->amsdu_frag,
+		      he_cap->flex_twt_sched, he_cap->rx_ctrl_frame,
+		      he_cap->bsrp_ampdu_aggr, he_cap->qtp, he_cap->a_bqr);
+	pe_nofl_debug("\tSR Reponder 0x%x ndp_feedback 0x%x ops_supp 0x%x amsdu_in_ampdu 0x%x multi_tid_aggr_tx 0x%x he_sub_ch_sel_tx 0x%x",
+		      he_cap->spatial_reuse_param_rspder,
+		      he_cap->ndp_feedback_supp,
+		      he_cap->ops_supp, he_cap->amsdu_in_ampdu,
+		      he_cap->multi_tid_aggr_tx_supp,
+		      he_cap->he_sub_ch_sel_tx_supp);
 
-	/* HE MAC capabilities */
-	pe_debug("\tHTC-HE conrol: 0x%01x", he_cap->htc_he);
-	pe_debug("\tTWT Requestor support: 0x%01x",
-			he_cap->twt_request);
-	pe_debug("\tTWT Responder support: 0x%01x",
-			he_cap->twt_responder);
-	pe_debug("\tFragmentation support: 0x%02x",
-			he_cap->fragmentation);
-	pe_debug("\tMax no.of frag MSDUs: 0x%03x",
-			he_cap->max_num_frag_msdu_amsdu_exp);
-	pe_debug("\tMin. frag size: 0x%02x", he_cap->min_frag_size);
-	pe_debug("\tTrigger MAC pad duration: 0x%02x",
-			he_cap->trigger_frm_mac_pad);
-	pe_debug("\tMulti-TID aggr Rx support: 0x%03x",
-		 he_cap->multi_tid_aggr_rx_supp);
-	pe_debug("\tLink adaptation: 0x%02x",
-			he_cap->he_link_adaptation);
-	pe_debug("\tAll ACK support: 0x%01x", he_cap->all_ack);
-	pe_debug("\tTriggered resp. scheduling: 0x%01x",
-		 he_cap->trigd_rsp_sched);
-	pe_debug("\tA-Buff status report: 0x%01x", he_cap->a_bsr);
-	pe_debug("\tBroadcast TWT support: 0x%01x",
-			he_cap->broadcast_twt);
-	pe_debug("\t32bit BA bitmap support: 0x%01x",
-			he_cap->ba_32bit_bitmap);
-	pe_debug("\tMU Cascading support: 0x%01x",
-			he_cap->mu_cascade);
-	pe_debug("\tACK enabled Multi-TID: 0x%01x",
-			he_cap->ack_enabled_multitid);
-	pe_debug("\tOMI A-Control support: 0x%01x",
-			he_cap->omi_a_ctrl);
-	pe_debug("\tOFDMA RA support: 0x%01x", he_cap->ofdma_ra);
-	pe_debug("\tMax A-MPDU Length: 0x%02x",
-			he_cap->max_ampdu_len_exp_ext);
-	pe_debug("\tA-MSDU Fragmentation: 0x%01x",
-			he_cap->amsdu_frag);
-	pe_debug("\tFlex. TWT sched support: 0x%01x",
-			he_cap->flex_twt_sched);
-	pe_debug("\tRx Ctrl frame to MBSS: 0x%01x",
-			he_cap->rx_ctrl_frame);
-	pe_debug("\tBSRP A-MPDU Aggregation: 0x%01x",
-			he_cap->bsrp_ampdu_aggr);
-	pe_debug("\tQuite Time Period support: 0x%01x", he_cap->qtp);
-	pe_debug("\tA-BQR support: 0x%01x", he_cap->a_bqr);
-	pe_debug("\tSR Reponder support: 0x%01x",
-		 he_cap->spatial_reuse_param_rspder);
-	pe_debug("\tNDP Feedback support: 0x%01x", he_cap->ndp_feedback_supp);
-	pe_debug("\tOPS support: 0x%01x", he_cap->ops_supp);
-	pe_debug("\tAMSDU in AMPDU: 0x%01x", he_cap->amsdu_in_ampdu);
-	pe_debug("\tMulti-TID aggr Tx support: 0x%03x",
-		 he_cap->multi_tid_aggr_tx_supp);
-	pe_debug("\tHE sub ch sel tx supp: 0x%01x",
-		 he_cap->he_sub_ch_sel_tx_supp);
-	pe_debug("\tUL 2x996 tone RU supp: 0x%01x",
-		 he_cap->ul_2x996_tone_ru_supp);
-	pe_debug("\tOM ctrl UL MU data dis rx supp: 0x%01x",
-		 he_cap->om_ctrl_ul_mu_data_dis_rx);
-	pe_debug("\tHE dynamic SMPS supp: 0x%01x",
-		 he_cap->he_dynamic_smps);
-	pe_debug("\tPunctured sounding supp: 0x%01x",
-		 he_cap->punctured_sounding_supp);
-	pe_debug("\tHT VHT Trigger frame Rx supp: 0x%01x",
-		 he_cap->ht_vht_trg_frm_rx_supp);
-	/* HE PHY capabilities */
+	pe_nofl_debug("\tul_2x996_tone_ru 0x%x om_ctrl_ul_mu_data_dis_rx 0x%x dynamic_smps 0x%x punctured_sounding 0x%x ht_vht_trg_frm_rx 0x%x",
+		      he_cap->ul_2x996_tone_ru_supp,
+		      he_cap->om_ctrl_ul_mu_data_dis_rx,
+		      he_cap->he_dynamic_smps, he_cap->punctured_sounding_supp,
+		      he_cap->ht_vht_trg_frm_rx_supp);
+
 	chan_width = HE_CH_WIDTH_COMBINE(he_cap->chan_width_0,
 			he_cap->chan_width_1, he_cap->chan_width_2,
 			he_cap->chan_width_3, he_cap->chan_width_4,
 			he_cap->chan_width_5, he_cap->chan_width_6);
 
-	pe_debug("\tChannel width support: 0x%07x", chan_width);
-	pe_debug("\tPreamble puncturing Rx: 0x%04x",
-			he_cap->rx_pream_puncturing);
-	pe_debug("\tClass of device: 0x%01x", he_cap->device_class);
-	pe_debug("\tLDPC coding support: 0x%01x",
-			he_cap->ldpc_coding);
-	pe_debug("\tLTF and GI for HE PPDUs: 0x%02x",
-			he_cap->he_1x_ltf_800_gi_ppdu);
-	pe_debug("\tMidamble TX Rx MAX NSTS: 0x%02x",
-		 he_cap->midamble_tx_rx_max_nsts);
-	pe_debug("\tLTF and GI for NDP: 0x%02x",
-			he_cap->he_4x_ltf_3200_gi_ndp);
-	pe_debug("\tSTBC Tx support (<= 80MHz): 0x%01x",
-		 he_cap->tb_ppdu_tx_stbc_lt_80mhz);
-	pe_debug("\tSTBC Rx support (<= 80MHz): 0x%01x",
-		 he_cap->rx_stbc_lt_80mhz);
-	pe_debug("\tDoppler support: 0x%02x", he_cap->doppler);
-	pe_debug("\tUL MU: 0x%02x", he_cap->ul_mu);
-	pe_debug("\tDCM encoding Tx: 0x%03x", he_cap->dcm_enc_tx);
-	pe_debug("\tDCM encoding Rx: 0x%03x", he_cap->dcm_enc_rx);
-	pe_debug("\tHE MU PPDU payload support: 0x%01x",
-			he_cap->ul_he_mu);
-	pe_debug("\tSU Beamformer: 0x%01x", he_cap->su_beamformer);
-	pe_debug("\tSU Beamformee: 0x%01x", he_cap->su_beamformee);
-	pe_debug("\tMU Beamformer: 0x%01x", he_cap->mu_beamformer);
-	pe_debug("\tBeamformee STS for <= 80Mhz: 0x%03x",
-			he_cap->bfee_sts_lt_80);
-	pe_debug("\tBeamformee STS for > 80Mhz: 0x%03x",
-			he_cap->bfee_sts_gt_80);
-	pe_debug("\tNo. of sounding dim <= 80Mhz: 0x%03x",
-			he_cap->num_sounding_lt_80);
-	pe_debug("\tNo. of sounding dim > 80Mhz: 0x%03x",
-			he_cap->num_sounding_gt_80);
-	pe_debug("\tNg=16 for SU feedback support: 0x%01x",
-			he_cap->su_feedback_tone16);
-	pe_debug("\tNg=16 for MU feedback support: 0x%01x",
-			he_cap->mu_feedback_tone16);
-	pe_debug("\tCodebook size for SU: 0x%01x",
-			he_cap->codebook_su);
-	pe_debug("\tCodebook size for MU: 0x%01x ",
-			he_cap->codebook_mu);
-	pe_debug("\tBeamforming trigger w/ Trigger: 0x%01x",
-			he_cap->beamforming_feedback);
-	pe_debug("\tHE ER SU PPDU payload: 0x%01x",
-			he_cap->he_er_su_ppdu);
-	pe_debug("\tDL MUMIMO on partial BW: 0x%01x",
-			he_cap->dl_mu_mimo_part_bw);
-	pe_debug("\tPPET present: 0x%01x", he_cap->ppet_present);
-	pe_debug("\tSRP based SR-support: 0x%01x", he_cap->srp);
-	pe_debug("\tPower boost factor: 0x%01x", he_cap->power_boost);
-	pe_debug("\t4x HE LTF support: 0x%01x", he_cap->he_ltf_800_gi_4x);
-	pe_debug("\tSTBC Tx support (> 80MHz): 0x%01x",
-		 he_cap->tb_ppdu_tx_stbc_gt_80mhz);
-	pe_debug("\tSTBC Rx support (> 80MHz): 0x%01x",
-		 he_cap->rx_stbc_gt_80mhz);
-	pe_debug("\tMax Nc: 0x%03x", he_cap->max_nc);
-	pe_debug("\tER 4x HE LTF support: 0x%01x", he_cap->er_he_ltf_800_gi_4x);
-	pe_debug("\tHE ppdu 20 in 40M in 2.4G: 0x%01x",
-		 he_cap->he_ppdu_20_in_40Mhz_2G);
-	pe_debug("\tHE ppdu 20 in 160 and 80p80: 0x%01x",
-		 he_cap->he_ppdu_20_in_160_80p80Mhz);
-	pe_debug("\tHE ppdu 80 in 160 and 80p80: 0x%01x",
-		 he_cap->he_ppdu_80_in_160_80p80Mhz);
-	pe_debug("\tER 1x HE LTF GI support: 0x%01x",
-		 he_cap->er_1x_he_ltf_gi);
-	pe_debug("\tmidamble txrx 1x he LTF: 0x%01x",
-		 he_cap->midamble_tx_rx_1x_he_ltf);
-	pe_debug("\tDCM max BW: 0x%02x",
-		 he_cap->dcm_max_bw);
-	pe_debug("\tlonger_than_16_he_sigb_ofdm_sym: 0x%01x",
-		 he_cap->longer_than_16_he_sigb_ofdm_sym);
-	pe_debug("\tnon_trig_cqi_feedback: 0x%01x",
-		 he_cap->non_trig_cqi_feedback);
-	pe_debug("\ttx_1024_qam_lt_242_tone_ru: 0x%01x",
-		 he_cap->tx_1024_qam_lt_242_tone_ru);
-	pe_debug("\trx_1024_qam_lt_242_tone_ru: 0x%01x",
-		 he_cap->rx_1024_qam_lt_242_tone_ru);
-	pe_debug("\trx_full_bw_su_he_mu_compress_sigb: 0x%01x",
-		 he_cap->rx_full_bw_su_he_mu_compress_sigb);
-	pe_debug("\trx_full_bw_su_he_mu_non_cmpr_sigb: 0x%01x",
-		 he_cap->rx_full_bw_su_he_mu_non_cmpr_sigb);
-	pe_debug("\tRx MCS map for <= 80 Mhz: 0x%04x",
-		he_cap->rx_he_mcs_map_lt_80);
-	pe_debug("\tTx MCS map for <= 80 Mhz: 0x%04x",
-		he_cap->tx_he_mcs_map_lt_80);
-	pe_debug("\tRx MCS map for <= 160 Mhz: 0x%04x",
-		*((uint16_t *)he_cap->rx_he_mcs_map_160));
-	pe_debug("\tTx MCS map for <= 160 Mhz: 0x%04x",
-		*((uint16_t *)he_cap->tx_he_mcs_map_160));
-	pe_debug("\tRx MCS map for <= 80+80 Mhz: 0x%04x",
-		*((uint16_t *)he_cap->rx_he_mcs_map_80_80));
-	pe_debug("\tTx MCS map for <= 80+80 Mhz: 0x%04x",
-		*((uint16_t *)he_cap->tx_he_mcs_map_80_80));
+	pe_nofl_debug("\tchan width %d rx_pream_puncturing 0x%x device_class 0x%x ldpc_coding 0x%x 1x_ltf_800_gi_ppdu 0x%x midamble_tx_rx_max_nsts 0x%x",
+		      chan_width, he_cap->rx_pream_puncturing,
+		      he_cap->device_class,
+		      he_cap->ldpc_coding, he_cap->he_1x_ltf_800_gi_ppdu,
+		      he_cap->midamble_tx_rx_max_nsts);
+
+	pe_nofl_debug("\t4x_ltf_3200_gi_ndp 0x%x tb_ppdu_tx_stbc_lt_80mhz 0x%x rx_stbc_lt_80mhz 0x%x doppler 0x%x ul_mu 0x%x dcm_enc_tx 0x%x dcm_enc_rx 0x%x",
+		      he_cap->he_4x_ltf_3200_gi_ndp,
+		      he_cap->tb_ppdu_tx_stbc_lt_80mhz,
+		      he_cap->rx_stbc_lt_80mhz, he_cap->doppler, he_cap->ul_mu,
+		      he_cap->dcm_enc_tx, he_cap->dcm_enc_rx);
+
+	pe_nofl_debug("\tul_he_mu 0x%x su_bfer 0x%x su_fee 0x%x mu_bfer 0x%x bfee_sts_lt_80 0x%x bfee_sts_gt_80 0x%x num_sd_lt_80 0x%x num_sd_gt_80 0x%x",
+		      he_cap->ul_he_mu, he_cap->su_beamformer,
+		      he_cap->su_beamformee,
+		      he_cap->mu_beamformer, he_cap->bfee_sts_lt_80,
+		      he_cap->bfee_sts_gt_80, he_cap->num_sounding_lt_80,
+		      he_cap->num_sounding_gt_80);
+
+	pe_nofl_debug("\tsu_fb_tone16 0x%x mu_fb_tone16 0x%x codebook_su 0x%x codebook_mu 0x%x bforming_feedback 0x%x he_er_su_ppdu 0x%x dl_mu_mimo_part_bw 0x%x",
+		      he_cap->su_feedback_tone16, he_cap->mu_feedback_tone16,
+		      he_cap->codebook_su, he_cap->codebook_mu,
+		      he_cap->beamforming_feedback, he_cap->he_er_su_ppdu,
+		      he_cap->dl_mu_mimo_part_bw);
+
+	pe_nofl_debug("\tppet_present 0x%x srp 0x%x power_boost 0x%x ltf_800_gi_4x 0x%x tb_ppdu_tx_stbc_gt_80mhz 0x%x rx_stbc_gt_80mhz 0x%x max_nc 0x%x",
+		      he_cap->ppet_present, he_cap->srp,
+		      he_cap->power_boost, he_cap->he_ltf_800_gi_4x,
+		      he_cap->tb_ppdu_tx_stbc_gt_80mhz,
+		      he_cap->rx_stbc_gt_80mhz, he_cap->max_nc);
+
+	pe_nofl_debug("\ter_ltf_800_gi_4x 0x%x ppdu_20_in_40Mhz_2G 0x%x ppdu_20_in_160_80p80Mhz 0x%x ppdu_80_in_160_80p80Mhz 0x%x er_1x_ltf_gi 0x%x",
+		      he_cap->er_he_ltf_800_gi_4x,
+		      he_cap->he_ppdu_20_in_40Mhz_2G,
+		      he_cap->he_ppdu_20_in_160_80p80Mhz,
+		      he_cap->he_ppdu_80_in_160_80p80Mhz,
+		      he_cap->er_1x_he_ltf_gi);
+
+	pe_nofl_debug("\tmidamble_tx_rx_1x_ltf 0x%x dcm_max_bw 0x%x longer_than_16_he_sigb_ofdm_sym 0x%x non_trig_cqi_feedback 0x%x tx_1024_qam_lt_242_tone_ru 0x%x",
+		      he_cap->midamble_tx_rx_1x_he_ltf, he_cap->dcm_max_bw,
+		      he_cap->longer_than_16_he_sigb_ofdm_sym,
+		      he_cap->non_trig_cqi_feedback,
+		      he_cap->tx_1024_qam_lt_242_tone_ru);
+
+	pe_nofl_debug("\trx_1024_qam_lt_242_tone_ru 0x%x rx_full_bw_su_he_mu_compress_sigb 0x%x rx_he_mcs_map_lt_80 0x%x tx_he_mcs_map_lt_80 0x%x",
+		      he_cap->rx_1024_qam_lt_242_tone_ru,
+		      he_cap->rx_full_bw_su_he_mu_compress_sigb,
+		      he_cap->rx_he_mcs_map_lt_80,
+		      he_cap->tx_he_mcs_map_lt_80);
 
 	hdr = (struct ppet_hdr *)&he_cap->ppet;
-	pe_debug("\t ppe_th:: nss_count: %d, ru_idx_msk: %d",
-		hdr->nss, hdr->ru_idx_mask);
+	pe_nofl_debug("\tRx MCS map 160 Mhz: 0x%x Tx MCS map 160 Mhz: 0x%x Rx MCS map 80+80 Mhz: 0x%x Tx MCS map 80+80 Mhz: 0x%x ppe_th:: nss_count: %d, ru_idx_msk: %d",
+		      *((uint16_t *)he_cap->rx_he_mcs_map_160),
+		      *((uint16_t *)he_cap->tx_he_mcs_map_160),
+		      *((uint16_t *)he_cap->rx_he_mcs_map_80_80),
+		      *((uint16_t *)he_cap->tx_he_mcs_map_80_80),
+		      hdr->nss, hdr->ru_idx_mask);
 
 	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 		&he_cap->ppet, HE_MAX_PPET_SIZE);
@@ -7086,16 +7021,14 @@ void lim_log_he_cap(struct mac_context *mac, tDot11fIEhe_cap *he_cap)
 
 void lim_log_he_op(struct mac_context *mac, tDot11fIEhe_op *he_ops)
 {
-	pe_debug("bss_color: %0x, default_pe_duration: %0x, twt_required: %0x, txop_rts_threshold: %0x, vht_oper_present: %0x",
+	pe_debug("bss_color 0x%x, default_pe_dur 0x%x, twt_req  0x%x, txop_rts_thres  0x%x, vht_op 0x%x",
 		 he_ops->bss_color, he_ops->default_pe,
 		 he_ops->twt_required, he_ops->txop_rts_threshold,
 		 he_ops->vht_oper_present);
-	pe_debug("\tpart_bss_color %0x, Co-located BSS %0x, BSS color dis %0x",
+	pe_debug("\tpart_bss_color 0x%x, Co-located BSS 0x%x, BSS color dis 0x%x basic mcs nss: 0x%x",
 		 he_ops->partial_bss_col, he_ops->co_located_bss,
-		 he_ops->bss_col_disabled);
-
-	pe_debug("he basic mcs nss: 0x%04x",
-		*((uint16_t *)he_ops->basic_mcs_nss));
+		 he_ops->bss_col_disabled,
+		 *((uint16_t *)he_ops->basic_mcs_nss));
 
 	if (he_ops->vht_oper_present)
 		pe_debug("VHT Info not present in HE Operation");
@@ -7120,7 +7053,8 @@ void lim_update_sta_he_capable(struct mac_context *mac,
 	struct pe_session *session_entry)
 {
 	if (LIM_IS_AP_ROLE(session_entry) || LIM_IS_IBSS_ROLE(session_entry))
-		add_sta_params->he_capable = sta_ds->mlmStaContext.he_capable;
+		add_sta_params->he_capable = sta_ds->mlmStaContext.he_capable &&
+						session_entry->he_capable;
 #ifdef FEATURE_WLAN_TDLS
 	else if (STA_ENTRY_TDLS_PEER == sta_ds->staType)
 		add_sta_params->he_capable = sta_ds->mlmStaContext.he_capable;
@@ -7399,17 +7333,20 @@ QDF_STATUS lim_populate_he_mcs_set(struct mac_context *mac_ctx,
 		return QDF_STATUS_SUCCESS;
 	}
 
-	pe_debug("peer rates lt 80: rx_mcs - 0x%04x tx_mcs - 0x%04x",
+	if (!session_entry) {
+		pe_err("session is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	pe_debug("PEER: lt 80: rx 0x%04x tx 0x%04x, 160: rx 0x%04x tx 0x%04x, 80+80: rx 0x%04x tx 0x%04x",
 		peer_he_caps->rx_he_mcs_map_lt_80,
-		peer_he_caps->tx_he_mcs_map_lt_80);
-	pe_debug("peer rates 160: rx_mcs - 0x%04x tx_mcs - 0x%04x",
+		peer_he_caps->tx_he_mcs_map_lt_80,
 		(*(uint16_t *)peer_he_caps->rx_he_mcs_map_160),
-		(*(uint16_t *)peer_he_caps->tx_he_mcs_map_160));
-	pe_debug("peer rates 80+80: rx_mcs - 0x%04x tx_mcs - 0x%04x",
+		(*(uint16_t *)peer_he_caps->tx_he_mcs_map_160),
 		(*(uint16_t *)peer_he_caps->rx_he_mcs_map_80_80),
 		(*(uint16_t *)peer_he_caps->tx_he_mcs_map_80_80));
 
-	if (session_entry && session_entry->nss == NSS_2x2_MODE) {
+	if (session_entry->nss == NSS_2x2_MODE) {
 		if (mac_ctx->lteCoexAntShare &&
 			IS_24G_CH(session_entry->currentOperChannel)) {
 			if (IS_2X2_CHAIN(session_entry->chainMask))
@@ -7467,14 +7404,11 @@ QDF_STATUS lim_populate_he_mcs_set(struct mac_context *mac_ctx,
 		rates->tx_he_mcs_map_80_80 |= HE_MCS_INV_MSK_4_NSS(1);
 	}
 
-	pe_debug("enable2x2 - %d nss %d",
-		mac_ctx->mlme_cfg->vht_caps.vht_cap_info.enable2x2, nss);
-	pe_debug("he_rx_lt_80 - 0x%x he_tx_lt_80 0x%x",
-		rates->rx_he_mcs_map_lt_80, rates->tx_he_mcs_map_lt_80);
-	pe_debug("he_rx_160 - 0x%x he_tx_160 0x%x",
-		rates->rx_he_mcs_map_160, rates->tx_he_mcs_map_160);
-	pe_debug("he_rx_80_80 - 0x%x he_tx_80_80 0x%x",
-		rates->rx_he_mcs_map_80_80, rates->tx_he_mcs_map_80_80);
+	pe_debug("lt 80: rx 0x%x tx 0x%x, 160: rx 0x%x tx 0x%x, 80_80: rx 0x%x tx 0x%x",
+		 rates->rx_he_mcs_map_lt_80, rates->tx_he_mcs_map_lt_80,
+		 rates->rx_he_mcs_map_160, rates->tx_he_mcs_map_160,
+		 rates->rx_he_mcs_map_80_80, rates->tx_he_mcs_map_80_80);
+
 	return QDF_STATUS_SUCCESS;
 }
 #endif
@@ -7777,12 +7711,9 @@ void lim_process_ap_ecsa_timeout(void *data)
 	/* Stop the timer if already running */
 	qdf_mc_timer_stop(&session->ap_ecsa_timer);
 
-	if (session->gLimChannelSwitch.switchCount) {
+	if (session->gLimChannelSwitch.switchCount)
 		/* Decrement the beacon switch count */
 		session->gLimChannelSwitch.switchCount--;
-		pe_debug("current beacon count %d",
-			 session->gLimChannelSwitch.switchCount);
-	}
 
 	/*
 	 * Send only g_sap_chanswitch_beacon_cnt beacons with CSA IE Set in
@@ -7932,7 +7863,7 @@ QDF_STATUS lim_sta_mlme_vdev_stop_send(struct vdev_mlme_obj *vdev_mlme,
 	}
 
 	connection_fail = mlme_is_connection_fail(vdev_mlme->vdev);
-	pe_info("Send vdev stop, connection_fail %d", connection_fail);
+	pe_debug("Send vdev stop, connection_fail %d", connection_fail);
 	if (connection_fail) {
 		assoc_type = mlme_get_assoc_type(vdev_mlme->vdev);
 		switch (assoc_type) {
@@ -8150,7 +8081,6 @@ QDF_STATUS lim_ap_mlme_vdev_stop_send(struct vdev_mlme_obj *vdev_mlme,
 {
 	struct pe_session *session = (struct pe_session *)data;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t ap_dfs_ch;
 
 	if (!data) {
 		pe_err("data is NULL");
@@ -8158,15 +8088,10 @@ QDF_STATUS lim_ap_mlme_vdev_stop_send(struct vdev_mlme_obj *vdev_mlme,
 	}
 
 	if (LIM_IS_IBSS_ROLE(session) &&
-	    session->mac_ctx->lim.gLimIbssCoalescingHappened) {
+	    session->mac_ctx->lim.gLimIbssCoalescingHappened)
 		ibss_bss_delete(session->mac_ctx, session);
-	} else {
-		if (!policy_mgr_is_dfs_beaconing_present_except_vdev(
-		    session->mac_ctx->psoc, &ap_dfs_ch, session->vdev_id))
-			tgt_dfs_radar_enable(
-				session->mac_ctx->pdev, 0, 0, false);
+	else
 		status =  lim_send_vdev_stop(session);
-	}
 
 	return status;
 }
@@ -8412,7 +8337,7 @@ QDF_STATUS lim_get_capability_info(struct mac_context *mac, uint16_t *pcap,
 	if (mac->mlme_cfg->scoring.apsd_enabled)
 		pcap_info->apsd = 1;
 
-	pcap_info->rrm = mac->rrm.rrmSmeContext.rrmConfig.rrm_enabled;
+	pcap_info->rrm = mac->rrm.rrmConfig.rrm_enabled;
 	pe_debug("RRM: %d", pcap_info->rrm);
 	/* DSSS-OFDM */
 	/* FIXME : no config defined yet. */
@@ -8454,7 +8379,7 @@ void lim_flush_bssid(struct mac_context *mac_ctx, uint8_t *bssid)
 	wlan_objmgr_pdev_release_ref(pdev, WLAN_LEGACY_MAC_ID);
 
 	if (QDF_IS_STATUS_SUCCESS(status))
-		pe_debug("Removed BSS entry:%pM", bssid);
+		pe_debug("Removed BSS entry:%pM from scan cache", bssid);
 
 	if (filter)
 		qdf_mem_free(filter);

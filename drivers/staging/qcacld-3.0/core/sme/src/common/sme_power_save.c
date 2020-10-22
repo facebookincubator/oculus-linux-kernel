@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -138,13 +138,12 @@ static void sme_get_ps_state(struct mac_context *mac_ctx,
  *
  * Return: QDF_STATUS
  */
-static QDF_STATUS sme_ps_enable_ps_req_params(struct mac_context *mac_ctx,
-		uint32_t session_id)
+static QDF_STATUS
+sme_ps_enable_ps_req_params(struct mac_context *mac_ctx, uint32_t vdev_id)
 {
 	struct sEnablePsParams *enable_ps_req_params;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	struct ps_global_info *ps_global_info = &mac_ctx->sme.ps_global_info;
-	struct ps_params *ps_param = &ps_global_info->ps_params[session_id];
+	struct ps_params *ps_param = &ps_global_info->ps_params[vdev_id];
 	enum ps_state ps_state;
 
 	enable_ps_req_params =  qdf_mem_malloc(sizeof(*enable_ps_req_params));
@@ -155,21 +154,21 @@ static QDF_STATUS sme_ps_enable_ps_req_params(struct mac_context *mac_ctx,
 		enable_ps_req_params->psSetting = eSIR_ADDON_ENABLE_UAPSD;
 		sme_ps_fill_uapsd_req_params(mac_ctx,
 				&enable_ps_req_params->uapsdParams,
-				session_id, &ps_state);
+				vdev_id, &ps_state);
 		ps_state = UAPSD_MODE;
 		enable_ps_req_params->uapsdParams.enable_ps = true;
 	} else {
 		enable_ps_req_params->psSetting = eSIR_ADDON_NOTHING;
 		ps_state = LEGACY_POWER_SAVE_MODE;
 	}
-	enable_ps_req_params->sessionid = session_id;
+	enable_ps_req_params->sessionid = vdev_id;
 
-	status = sme_post_ps_msg_to_wma(WMA_ENTER_PS_REQ, enable_ps_req_params);
-	if (!QDF_IS_STATUS_SUCCESS(status))
-		return QDF_STATUS_E_FAILURE;
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-		FL("Message WMA_ENTER_PS_REQ Successfully sent to WMA"));
+	wma_enable_sta_ps_mode(enable_ps_req_params);
+
+	qdf_mem_free(enable_ps_req_params);
+	sme_debug("Powersave Enable sent to FW");
 	ps_param->ps_state = ps_state;
+
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -181,24 +180,23 @@ static QDF_STATUS sme_ps_enable_ps_req_params(struct mac_context *mac_ctx,
  * Return: QDF_STATUS
  */
 static QDF_STATUS sme_ps_disable_ps_req_params(struct mac_context *mac_ctx,
-		uint32_t session_id)
+					       uint32_t vdev_id)
 {
 	struct  sDisablePsParams *disable_ps_req_params;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	disable_ps_req_params = qdf_mem_malloc(sizeof(*disable_ps_req_params));
 	if (!disable_ps_req_params)
 		return QDF_STATUS_E_NOMEM;
 
 	disable_ps_req_params->psSetting = eSIR_ADDON_NOTHING;
-	disable_ps_req_params->sessionid = session_id;
+	disable_ps_req_params->sessionid = vdev_id;
 
-	status = sme_post_ps_msg_to_wma(WMA_EXIT_PS_REQ, disable_ps_req_params);
-	if (!QDF_IS_STATUS_SUCCESS(status))
-		return QDF_STATUS_E_FAILURE;
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-			FL("Message WMA_EXIT_PS_REQ Successfully sent to WMA"));
-	sme_set_ps_state(mac_ctx, session_id, FULL_POWER_MODE);
+	wma_disable_sta_ps_mode(disable_ps_req_params);
+	qdf_mem_free(disable_ps_req_params);
+
+	sme_debug("Powersave disable sent to FW");
+	sme_set_ps_state(mac_ctx, vdev_id, FULL_POWER_MODE);
+
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -323,7 +321,7 @@ QDF_STATUS sme_ps_process_command(struct mac_context *mac_ctx, uint32_t session_
  * sme_enable_sta_ps_check(): Checks if it is ok to enable power save or not.
  * @mac_ctx: global mac context
  * @session_id: session id
- *
+ * @ command: sme_ps_cmd
  * Pre Condition for enabling sta mode power save
  * 1) Sta Mode Ps should be enabled in ini file.
  * 2) Session should be in infra mode and in connected state.
@@ -331,7 +329,7 @@ QDF_STATUS sme_ps_process_command(struct mac_context *mac_ctx, uint32_t session_
  * Return: QDF_STATUS
  */
 QDF_STATUS sme_enable_sta_ps_check(struct mac_context *mac_ctx,
-				   uint32_t session_id)
+				   uint32_t session_id, enum sme_ps_cmd command)
 {
 	struct wlan_mlme_powersave *powersave_params;
 
@@ -346,7 +344,7 @@ QDF_STATUS sme_enable_sta_ps_check(struct mac_context *mac_ctx,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!mac_ctx->usr_cfg_ps_enable) {
+	if (command == SME_PS_ENABLE && !mac_ctx->usr_cfg_ps_enable) {
 		sme_debug("Cannot initiate PS. PS is disabled by usr(ioctl)");
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -386,7 +384,7 @@ QDF_STATUS sme_ps_enable_disable(mac_handle_t mac_handle, uint32_t session_id,
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
 
-	status =  sme_enable_sta_ps_check(mac_ctx, session_id);
+	status =  sme_enable_sta_ps_check(mac_ctx, session_id, command);
 	if (status != QDF_STATUS_SUCCESS) {
 		/*
 		 * In non associated state driver wont handle the power save
@@ -411,13 +409,12 @@ QDF_STATUS sme_ps_timer_flush_sync(mac_handle_t mac_handle, uint8_t session_id)
 	enum ps_state ps_state;
 	QDF_TIMER_STATE tstate;
 	struct sEnablePsParams *req;
-	t_wma_handle *wma;
 
 	QDF_BUG(session_id < WLAN_MAX_VDEVS);
 	if (session_id >= WLAN_MAX_VDEVS)
 		return QDF_STATUS_E_INVAL;
 
-	status = sme_enable_sta_ps_check(mac_ctx, session_id);
+	status = sme_enable_sta_ps_check(mac_ctx, session_id, SME_PS_ENABLE);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		sme_debug("Power save not allowed for vdev id %d", session_id);
 		return QDF_STATUS_SUCCESS;
@@ -431,12 +428,6 @@ QDF_STATUS sme_ps_timer_flush_sync(mac_handle_t mac_handle, uint8_t session_id)
 	sme_debug("flushing powersave enable for vdev %u", session_id);
 
 	qdf_mc_timer_stop(&ps_parm->auto_ps_enable_timer);
-
-	wma = cds_get_context(QDF_MODULE_ID_WMA);
-	if (!wma) {
-		sme_err("wma is null");
-		return QDF_STATUS_E_INVAL;
-	}
 
 	req = qdf_mem_malloc(sizeof(*req));
 	if (!req)
@@ -454,7 +445,7 @@ QDF_STATUS sme_ps_timer_flush_sync(mac_handle_t mac_handle, uint8_t session_id)
 	}
 	req->sessionid = session_id;
 
-	wma_enable_sta_ps_mode(wma, req);
+	wma_enable_sta_ps_mode(req);
 	qdf_mem_free(req);
 
 	ps_parm->ps_state = ps_state;
@@ -475,7 +466,8 @@ QDF_STATUS sme_ps_uapsd_enable(mac_handle_t mac_handle, uint32_t session_id)
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
 
-	status =  sme_enable_sta_ps_check(mac_ctx, session_id);
+	status =  sme_enable_sta_ps_check(mac_ctx, session_id,
+					SME_PS_UAPSD_ENABLE);
 	if (status != QDF_STATUS_SUCCESS)
 		return status;
 	status = sme_ps_process_command(mac_ctx, session_id,
@@ -499,7 +491,8 @@ QDF_STATUS sme_ps_uapsd_disable(mac_handle_t mac_handle, uint32_t session_id)
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
 
-	status = sme_enable_sta_ps_check(mac_ctx, session_id);
+	status = sme_enable_sta_ps_check(mac_ctx, session_id,
+					SME_PS_UAPSD_DISABLE);
 	if (status != QDF_STATUS_SUCCESS)
 		return status;
 	status = sme_ps_process_command(mac_ctx, session_id,
@@ -866,7 +859,7 @@ void sme_auto_ps_entry_timer_expired(void *data)
 	session_id = ps_params->session_id;
 	sme_debug("auto_ps_timer expired, enabling powersave");
 
-	status = sme_enable_sta_ps_check(mac_ctx, session_id);
+	status = sme_enable_sta_ps_check(mac_ctx, session_id, SME_PS_ENABLE);
 	if (QDF_STATUS_SUCCESS == status)
 		sme_ps_enable_disable(MAC_HANDLE(mac_ctx), session_id,
 				      SME_PS_ENABLE);

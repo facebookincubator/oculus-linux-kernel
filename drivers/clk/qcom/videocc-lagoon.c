@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "clk: %s: " fmt, __func__
@@ -23,7 +23,7 @@
 #include "clk-regmap.h"
 #include "common.h"
 #include "reset.h"
-#include "vdd-level-lito.h"
+#include "vdd-level-lagoon.h"
 
 static DEFINE_VDD_REGULATORS(vdd_cx, VDD_NUM, 1, vdd_corner);
 
@@ -78,7 +78,7 @@ static const struct alpha_pll_config video_pll0_config = {
 	.config_ctl_val = 0x20485699,
 	.config_ctl_hi_val = 0x00002067,
 	.test_ctl_val = 0x40000000,
-	.test_ctl_hi_val = 0x00000000,
+	.test_ctl_hi_val = 0x00000002,
 	.user_ctl_val = 0x00000101,
 	.user_ctl_hi_val = 0x00004005,
 };
@@ -323,12 +323,6 @@ static struct clk_regmap *video_cc_lagoon_clocks[] = {
 	[VIDEO_CC_XO_CLK] = &video_cc_xo_clk.clkr,
 	[VIDEO_PLL0] = &video_pll0.clkr,
 	[VIDEO_PLL0_OUT_EVEN] = &video_pll0_out_even.clkr,
-};
-
-static const struct qcom_reset_map video_cc_lito_resets[] = {
-	[VCODEC_VIDEO_CC_INTERFACE_BCR] = { 0x8000 },
-	[VCODEC_VIDEO_CC_MVS0_BCR] = { 0x3000 },
-	[VCODEC_VIDEO_CC_MVSC_BCR] = { 0x2000 },
 };
 
 static const struct regmap_config video_cc_lagoon_regmap_config = {

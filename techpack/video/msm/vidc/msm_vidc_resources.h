@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __MSM_VIDC_RESOURCES_H__
@@ -107,6 +107,11 @@ struct allowed_clock_rates_table {
 	u32 clock_rate;
 };
 
+struct memory_limit_table {
+	u32 ddr_size; /* mega bytes */
+	u32 mem_limit; /* mega bytes */
+};
+
 struct clock_profile_entry {
 	u32 codec_mask;
 	u32 vpp_cycles;
@@ -144,6 +149,8 @@ struct msm_vidc_platform_resources {
 	struct allowed_clock_rates_table *allowed_clks_tbl;
 	u32 allowed_clks_tbl_size;
 	struct clock_freq_table clock_freq_tbl;
+	struct memory_limit_table *mem_limit_tbl;
+	u32 memory_limit_table_size;
 	bool sys_cache_present;
 	bool sys_cache_res_set;
 	struct subcache_set subcache_set;
@@ -151,6 +158,7 @@ struct msm_vidc_platform_resources {
 	struct addr_set qdss_addr_set;
 	struct buffer_usage_set buffer_usage_set;
 	uint32_t max_load;
+	uint32_t max_image_load;
 	uint32_t max_mbpf;
 	uint32_t max_hq_mbs_per_frame;
 	uint32_t max_hq_mbs_per_sec;
@@ -164,6 +172,7 @@ struct msm_vidc_platform_resources {
 	bool sw_power_collapsible;
 	bool slave_side_cp;
 	struct list_head context_banks;
+	struct mutex cb_lock;
 	bool thermal_mitigable;
 	const char *fw_name;
 	const char *hfi_version;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -99,21 +99,27 @@ qdf_export_symbol(qdf_try_allowing_sleep);
  */
 QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer)
 {
+	QDF_TIMER_STATE timer_state = QDF_TIMER_STATE_UNUSED;
+
 	if (!timer) {
 		QDF_ASSERT(0);
-		return QDF_TIMER_STATE_UNUSED;
+		return timer_state;
 	}
+
+	qdf_spin_lock_irqsave(&timer->platform_info.spinlock);
 
 	switch (timer->state) {
 	case QDF_TIMER_STATE_STOPPED:
 	case QDF_TIMER_STATE_STARTING:
 	case QDF_TIMER_STATE_RUNNING:
 	case QDF_TIMER_STATE_UNUSED:
-		return timer->state;
+		timer_state = timer->state;
+		break;
 	default:
 		QDF_ASSERT(0);
-		return QDF_TIMER_STATE_UNUSED;
 	}
+	qdf_spin_unlock_irqrestore(&timer->platform_info.spinlock);
+	return timer_state;
 }
 qdf_export_symbol(qdf_mc_timer_get_current_state);
 
@@ -717,16 +723,16 @@ QDF_STATUS qdf_mc_timer_stop(qdf_mc_timer_t *timer)
 {
 	/* check for invalid pointer */
 	if (!timer) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s Null timer pointer being passed", __func__);
+		QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_QDF,
+				   "%s Null timer pointer", __func__);
 		QDF_ASSERT(0);
 		return QDF_STATUS_E_INVAL;
 	}
 
 	/* check if timer refers to an uninitialized object */
 	if (LINUX_TIMER_COOKIE != timer->platform_info.cookie) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s: Cannot stop uninitialized timer", __func__);
+		QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_QDF,
+				   "%s: Cannot stop uninit timer", __func__);
 		QDF_ASSERT(0);
 
 		return QDF_STATUS_E_INVAL;
@@ -737,17 +743,16 @@ QDF_STATUS qdf_mc_timer_stop(qdf_mc_timer_t *timer)
 
 	if (QDF_TIMER_STATE_RUNNING != timer->state) {
 		qdf_spin_unlock_irqrestore(&timer->platform_info.spinlock);
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_INFO_HIGH,
-			  "%s: Cannot stop timer in state = %d",
-			  __func__, timer->state);
 		return QDF_STATUS_SUCCESS;
 	}
-
-	timer->state = QDF_TIMER_STATE_STOPPED;
 
 	qdf_spin_unlock_irqrestore(&timer->platform_info.spinlock);
 
 	del_timer(&(timer->platform_info.timer));
+
+	qdf_spin_lock_irqsave(&timer->platform_info.spinlock);
+	timer->state = QDF_TIMER_STATE_STOPPED;
+	qdf_spin_unlock_irqrestore(&timer->platform_info.spinlock);
 
 	qdf_try_allowing_sleep(timer->type);
 
@@ -759,16 +764,16 @@ QDF_STATUS qdf_mc_timer_stop_sync(qdf_mc_timer_t *timer)
 {
 	/* check for invalid pointer */
 	if (!timer) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s Null timer pointer being passed", __func__);
+		QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_QDF,
+				   "%s Null timer pointer", __func__);
 		QDF_ASSERT(0);
 		return QDF_STATUS_E_INVAL;
 	}
 
 	/* check if timer refers to an uninitialized object */
 	if (LINUX_TIMER_COOKIE != timer->platform_info.cookie) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s: Cannot stop uninitialized timer", __func__);
+		QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_QDF,
+				   "%s: Cannot stop uninit timer", __func__);
 		QDF_ASSERT(0);
 
 		return QDF_STATUS_E_INVAL;
@@ -779,9 +784,6 @@ QDF_STATUS qdf_mc_timer_stop_sync(qdf_mc_timer_t *timer)
 
 	if (QDF_TIMER_STATE_RUNNING != timer->state) {
 		qdf_spin_unlock_irqrestore(&timer->platform_info.spinlock);
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_INFO_HIGH,
-			  "%s: Cannot stop timer in state = %d",
-			  __func__, timer->state);
 		return QDF_STATUS_SUCCESS;
 	}
 

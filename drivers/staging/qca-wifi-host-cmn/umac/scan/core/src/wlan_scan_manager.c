@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -45,8 +45,6 @@ scm_scan_free_scan_request_mem(struct scan_start_request *req)
 		QDF_ASSERT(0);
 		return QDF_STATUS_E_FAILURE;
 	}
-	scm_debug("freed scan request: 0x%pK, scan_id: %d, requester: %d",
-		  req, req->scan_req.scan_id, req->scan_req.scan_req_id);
 	/* Free vendor(extra) ie */
 	ie = req->scan_req.extraie.ptr;
 	if (ie) {
@@ -154,10 +152,6 @@ static void scm_scan_post_event(struct wlan_objmgr_vdev *vdev,
 	cb_handlers = &(pdev_ev_handler->cb_handlers[0]);
 	requesters = scan->requesters;
 
-	scm_debug("vdev: %d, type: %d, reason: %d, freq: %d, req: %d, scanid: %d",
-		  event->vdev_id, event->type, event->reason, event->chan_freq,
-		  event->requester, event->scan_id);
-
 	listeners = qdf_mem_malloc_atomic(sizeof(*listeners));
 	if (!listeners) {
 		scm_warn("couldn't allocate listeners list");
@@ -184,11 +178,8 @@ static void scm_scan_post_event(struct wlan_objmgr_vdev *vdev,
 	qdf_spin_unlock_bh(&scan->lock);
 
 	/* notify all interested handlers */
-	for (i = 0; i < listeners->count; i++) {
-		scm_debug("func: 0x%pK, arg: 0x%pK",
-			listeners->cb[i].func, listeners->cb[i].arg);
+	for (i = 0; i < listeners->count; i++)
 		listeners->cb[i].func(vdev, event, listeners->cb[i].arg);
-	}
 	qdf_mem_free(listeners);
 }
 
@@ -318,10 +309,6 @@ scm_scan_serialize_callback(struct wlan_serialization_command *cmd,
 	}
 
 	req = cmd->umac_cmd;
-	scm_debug("reason:%d, reqid:%d, scanid:%d, vdevid:%d, vdev:0x%pK",
-		reason, req->scan_req.scan_req_id, req->scan_req.scan_id,
-		req->scan_req.vdev_id, req->vdev);
-
 	if (!req->vdev) {
 		scm_err("NULL vdev. req:0x%pK, reason:%d\n", req, reason);
 		QDF_ASSERT(0);
@@ -438,13 +425,12 @@ scm_update_dbs_scan_ctrl_ext_flag(struct scan_start_request *req)
 	psoc = wlan_vdev_get_psoc(req->vdev);
 
 	if (!policy_mgr_is_dbs_scan_allowed(psoc)) {
-		scm_debug("dbs disabled, going for non-dbs scan");
 		scan_dbs_policy = SCAN_DBS_POLICY_FORCE_NONDBS;
 		goto end;
 	}
 
 	if (!wlan_scan_cfg_honour_nl_scan_policy_flags(psoc)) {
-		scm_debug("nl scan policy flags not honoured, goto end");
+		scm_debug_rl("nl scan policy flags not honoured, goto end");
 		goto end;
 	}
 
@@ -464,8 +450,6 @@ end:
 	req->scan_req.scan_ctrl_flags_ext |=
 		((scan_dbs_policy << SCAN_FLAG_EXT_DBS_SCAN_POLICY_BIT)
 		 & SCAN_FLAG_EXT_DBS_SCAN_POLICY_MASK);
-	scm_debug("scan_ctrl_flags_ext: 0x%x",
-		  req->scan_req.scan_ctrl_flags_ext);
 }
 
 /**
@@ -860,7 +844,8 @@ scm_update_channel_list(struct scan_start_request *req,
 	if ((scan_obj->scan_def.allow_dfs_chan_in_scan &&
 	    (scan_obj->scan_def.allow_dfs_chan_in_first_scan ||
 	     first_scan_done)) &&
-	     !(scan_obj->scan_def.skip_dfs_chan_in_p2p_search && p2p_search))
+	     !(scan_obj->scan_def.skip_dfs_chan_in_p2p_search && p2p_search) &&
+	     !scan_obj->miracast_enabled)
 		skip_dfs_ch = false;
 
 	for (i = 0; i < req->scan_req.chan_list.num_chan; i++) {
@@ -870,10 +855,15 @@ scm_update_channel_list(struct scan_start_request *req,
 		if (skip_dfs_ch &&
 		    wlan_reg_chan_has_dfs_attribute(pdev,
 						    wlan_reg_freq_to_chan(
-								pdev, freq)))
+								pdev, freq))) {
+			scm_nofl_debug("Skip DFS freq %d", freq);
 			continue;
-		if (utils_dfs_is_freq_in_nol(pdev, freq))
+		}
+		if (utils_dfs_is_freq_in_nol(pdev, freq)) {
+			scm_nofl_debug("Skip NOL freq %d", freq);
 			continue;
+		}
+
 		req->scan_req.chan_list.chan[num_scan_channels++] =
 			req->scan_req.chan_list.chan[i];
 	}
@@ -1008,15 +998,59 @@ scm_scan_req_update_params(struct wlan_objmgr_vdev *vdev,
 		ucfg_scan_init_chanlist_params(req, 0, NULL, NULL);
 
 	scm_update_channel_list(req, scan_obj);
-	scm_debug("dwell time: active %d, passive %d, repeat_probe_time %d n_probes %d flags_ext %x, wide_bw_scan: %d priority: %d",
-		  req->scan_req.dwell_time_active,
-		  req->scan_req.dwell_time_passive,
-		  req->scan_req.repeat_probe_time, req->scan_req.n_probes,
-		  req->scan_req.scan_ctrl_flags_ext,
-		  req->scan_req.scan_f_wide_band,
-		  req->scan_req.scan_priority);
 }
 
+static inline void scm_print_scan_req_info(struct scan_req_params *req)
+{
+	uint32_t buff_len;
+	char *chan_buff;
+	uint32_t len = 0;
+	uint8_t idx, count = 0;
+	struct chan_list *chan_lst;
+#define MAX_SCAN_FREQ_TO_PRINT 60
+
+	scm_nofl_debug("Scan start: scan id %d vdev %d Dwell time: act %d pass %d act_2G %d, probe time %d n_probes %d flags %x ext_flag %x events %x policy %d wide_bw %d pri %d",
+		       req->scan_id, req->vdev_id, req->dwell_time_active,
+		       req->dwell_time_passive, req->dwell_time_active_2g,
+		       req->repeat_probe_time, req->n_probes, req->scan_flags,
+		       req->scan_ctrl_flags_ext, req->scan_events,
+		       req->scan_policy_type, req->scan_f_wide_band,
+		       req->scan_priority);
+
+	for (idx = 0; idx < req->num_ssids; idx++)
+		scm_nofl_debug("SSID[%d]: %.*s", idx, req->ssid[idx].length,
+			       req->ssid[idx].ssid);
+
+	chan_lst  = &req->chan_list;
+
+	if (!chan_lst->num_chan)
+		return;
+	/*
+	 * Buffer of (num channl * 5) + 1  to consider the 4 char freq and
+	 * 1 space after it for each channel and 1 to end the string with NULL.
+	 */
+	buff_len =
+		(QDF_MIN(MAX_SCAN_FREQ_TO_PRINT, chan_lst->num_chan) * 5) + 1;
+	chan_buff = qdf_mem_malloc(buff_len);
+	if (!chan_buff)
+		return;
+	scm_nofl_debug("Total freq %d", chan_lst->num_chan);
+	for (idx = 0; idx < chan_lst->num_chan; idx++) {
+		len += qdf_scnprintf(chan_buff + len, buff_len - len, "%d ",
+				     chan_lst->chan[idx].freq);
+		count++;
+		if (count >= MAX_SCAN_FREQ_TO_PRINT) {
+			/* Print the MAX_SCAN_FREQ_TO_PRINT channels */
+			scm_nofl_debug("Freq list: %s", chan_buff);
+			len = 0;
+			count = 0;
+		}
+	}
+	if (len)
+		scm_nofl_debug("Freq list: %s", chan_buff);
+
+	qdf_mem_free(chan_buff);
+}
 QDF_STATUS
 scm_scan_start_req(struct scheduler_msg *msg)
 {
@@ -1025,7 +1059,7 @@ scm_scan_start_req(struct scheduler_msg *msg)
 	struct scan_start_request *req = NULL;
 	struct wlan_scan_obj *scan_obj;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t idx;
+
 
 	if (!msg) {
 		scm_err("msg received is NULL");
@@ -1054,20 +1088,13 @@ scm_scan_start_req(struct scheduler_msg *msg)
 	}
 
 	scm_scan_req_update_params(req->vdev, req, scan_obj);
+	scm_print_scan_req_info(&req->scan_req);
 
 	if (!req->scan_req.chan_list.num_chan) {
-		scm_err("Scan Aborted, 0 channel to scan");
+		scm_info("Reject 0 channel Scan");
 		status = QDF_STATUS_E_NULL_VALUE;
 		goto err;
 	}
-
-	scm_info("request to scan %d channels",
-		 req->scan_req.chan_list.num_chan);
-
-	for (idx = 0; idx < req->scan_req.chan_list.num_chan; idx++)
-		scm_debug("chan[%d]: freq:%d, phymode:%d", idx,
-			  req->scan_req.chan_list.chan[idx].freq,
-			  req->scan_req.chan_list.chan[idx].phymode);
 
 	cmd.cmd_type = WLAN_SER_CMD_SCAN;
 	cmd.cmd_id = req->scan_req.scan_id;
@@ -1082,17 +1109,11 @@ scm_scan_start_req(struct scheduler_msg *msg)
 	if (scan_obj->disable_timeout)
 		cmd.cmd_timeout_duration = 0;
 
-	scm_debug("req: 0x%pK, reqid: %d, scanid: %d, vdevid: %d",
-		  req, req->scan_req.scan_req_id, req->scan_req.scan_id,
-		  req->scan_req.vdev_id);
-
 	qdf_mtrace(QDF_MODULE_ID_SCAN, QDF_MODULE_ID_SERIALIZATION,
 		   WLAN_SER_CMD_SCAN, req->vdev->vdev_objmgr.vdev_id,
 		   req->scan_req.scan_id);
 
 	ser_cmd_status = wlan_serialization_request(&cmd);
-	scm_debug("wlan_serialization_request status:%d", ser_cmd_status);
-
 	switch (ser_cmd_status) {
 	case WLAN_SER_CMD_PENDING:
 		/* command moved to pending list.Do nothing */
@@ -1100,13 +1121,8 @@ scm_scan_start_req(struct scheduler_msg *msg)
 	case WLAN_SER_CMD_ACTIVE:
 		/* command moved to active list. Do nothing */
 		break;
-	case WLAN_SER_CMD_DENIED_LIST_FULL:
-	case WLAN_SER_CMD_DENIED_RULES_FAILED:
-	case WLAN_SER_CMD_DENIED_UNSPECIFIED:
-		goto err;
 	default:
-		QDF_ASSERT(0);
-		status = QDF_STATUS_E_INVAL;
+		scm_debug("ser cmd status %d", ser_cmd_status);
 		goto err;
 	}
 
@@ -1415,8 +1431,7 @@ scm_scan_event_handler(struct scheduler_msg *msg)
 
 	if (scan_start_req->scan_req.scan_req_id != event->requester) {
 		scm_err("req ID mismatch, scan_req_id:%d, event_req_id:%d",
-				scan_start_req->scan_req.scan_req_id,
-				event->requester);
+			scan_start_req->scan_req.scan_req_id, event->requester);
 		goto exit;
 	}
 
@@ -1452,6 +1467,7 @@ QDF_STATUS scm_scan_event_flush_callback(struct scheduler_msg *msg)
 {
 	struct wlan_objmgr_vdev *vdev;
 	struct scan_event_info *event_info;
+	struct scan_event *event;
 
 	if (!msg || !msg->bodyptr) {
 		scm_err("msg or msg->bodyptr is NULL");
@@ -1460,6 +1476,11 @@ QDF_STATUS scm_scan_event_flush_callback(struct scheduler_msg *msg)
 
 	event_info = msg->bodyptr;
 	vdev = event_info->vdev;
+	event = &event_info->event;
+
+	scm_debug("Flush scan event vdev %d type %d reason %d freq: %d req %d scanid %d",
+		  event->vdev_id, event->type, event->reason, event->chan_freq,
+		  event->requester, event->scan_id);
 
 	/* free event info memory */
 	qdf_mem_free(event_info);

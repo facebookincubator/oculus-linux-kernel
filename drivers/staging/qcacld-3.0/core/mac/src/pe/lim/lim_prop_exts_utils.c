@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -256,11 +256,6 @@ lim_extract_ap_capability(struct mac_context *mac_ctx, uint8_t *p_ie,
 	else
 		mac_ctx->lim.htCapabilityPresentInBeacon = 0;
 
-	pe_debug("Bcon: VHTCap.present: %d SU Beamformer: %d BSS_VHT_CAPABLE: %d",
-		beacon_struct->VHTCaps.present,
-		beacon_struct->VHTCaps.suBeamFormerCap,
-		IS_BSS_VHT_CAPABLE(beacon_struct->VHTCaps));
-
 	vht_op = &beacon_struct->VHTOperation;
 	if (IS_BSS_VHT_CAPABLE(beacon_struct->VHTCaps) &&
 			vht_op->present &&
@@ -302,6 +297,9 @@ lim_extract_ap_capability(struct mac_context *mac_ctx, uint8_t *p_ie,
 			else if (center_freq_diff > 16)
 				ap_bcon_ch_width =
 					WNI_CFG_VHT_CHANNEL_WIDTH_80_PLUS_80MHZ;
+			else
+				ap_bcon_ch_width =
+					WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ;
 		}
 
 		fw_vht_ch_wd = wma_get_vht_ch_width();
@@ -354,24 +352,17 @@ lim_extract_ap_capability(struct mac_context *mac_ctx, uint8_t *p_ie,
 				 */
 				vht_ch_wd = WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ;
 				session->ch_center_freq_seg1 = 0;
-			}
-		} else if (vht_ch_wd == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) {
-			/* DUT or AP supports only 80MHz */
-			if (ap_bcon_ch_width ==
-					WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ &&
-					!new_ch_width_dfn)
-				/* AP is in 160MHz mode */
 				session->ch_center_freq_seg0 =
 					lim_get_80Mhz_center_channel(
 						beacon_struct->channelNumber);
-			else
-				session->ch_center_freq_seg1 = 0;
+			}
+		} else if (vht_ch_wd == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) {
+			session->ch_center_freq_seg0 =
+					lim_get_80Mhz_center_channel(
+						beacon_struct->channelNumber);
+			session->ch_center_freq_seg1 = 0;
 		}
 		session->ch_width = vht_ch_wd + 1;
-		pe_debug("cntr_freq0: %d cntr_freq1: %d width: %d",
-				session->ch_center_freq_seg0,
-				session->ch_center_freq_seg1,
-				session->ch_width);
 		if (CH_WIDTH_80MHZ < session->ch_width) {
 			session->vht_config.su_beam_former = 0;
 			session->nss = 1;
@@ -391,6 +382,7 @@ lim_extract_ap_capability(struct mac_context *mac_ctx, uint8_t *p_ie,
 			else
 				session->gLimOperatingMode.chanWidth =
 					CH_WIDTH_160MHZ;
+			session->gLimOperatingMode.rxNSS = session->nss - 1;
 		} else {
 			pe_err("AP does not support op_mode rx");
 		}

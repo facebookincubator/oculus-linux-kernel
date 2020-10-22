@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,11 +32,6 @@
 #include "wlan_policy_mgr_public_struct.h"
 
 struct target_psoc_info;
-
-typedef const enum policy_mgr_pcl_type
-	pm_dbs_pcl_second_connection_table_type
-	[PM_MAX_ONE_CONNECTION_MODE][PM_MAX_NUM_OF_MODE]
-	[PM_MAX_CONC_PRIORITY_MODE];
 
 typedef const enum policy_mgr_pcl_type
 	pm_dbs_pcl_third_connection_table_type
@@ -75,6 +70,7 @@ typedef const enum policy_mgr_conc_next_action
  * @CSA_REASON_UNSAFE_CHANNEL: Unsafe channel.
  * @CSA_REASON_LTE_COEX: LTE coex.
  * @CSA_REASON_CONCURRENT_NAN_EVENT: NAN concurrency.
+ * @CSA_REASON_BAND_RESTRICTED: band disabled or re-enabled
  *
  */
 enum sap_csa_reason_code {
@@ -86,7 +82,8 @@ enum sap_csa_reason_code {
 	CSA_REASON_CONCURRENT_STA_CHANGED_CHANNEL,
 	CSA_REASON_UNSAFE_CHANNEL,
 	CSA_REASON_LTE_COEX,
-	CSA_REASON_CONCURRENT_NAN_EVENT
+	CSA_REASON_CONCURRENT_NAN_EVENT,
+	CSA_REASON_BAND_RESTRICTED
 };
 
 /*
@@ -703,22 +700,6 @@ uint32_t policy_mgr_get_dfs_beaconing_session_id(
 		struct wlan_objmgr_psoc *psoc);
 
 /**
- * policy_mgr_is_dfs_beaconing_present_except_vdev() - to find
- * if any DFS session except the given vdev id
- * @psoc: PSOC object information
- * @channel: pointer to channel that needs to filled
- * @vdev_id: vdev id
- *
- * If any beaconing session except given vdev id such as SAP or GO present and
- * it is on DFS channel then this function will return true
- *
- * Return: true if session is on DFS or false if session is on non-dfs channel
- */
-bool policy_mgr_is_dfs_beaconing_present_except_vdev(
-		struct wlan_objmgr_psoc *psoc, uint8_t *channel,
-		uint8_t vdev_id);
-
-/**
  * policy_mgr_is_any_dfs_beaconing_session_present() - to find
  * if any DFS session
  * @psoc: PSOC object information
@@ -847,7 +828,7 @@ enum policy_mgr_two_connection_mode
  * the current connections list
  * @psoc: PSOC object information
  * @vdev_id: vdev id
- *
+ * @mode: Operating mode
  *
  * This function adds the new connection to the current
  * connections list
@@ -855,7 +836,8 @@ enum policy_mgr_two_connection_mode
  * Return: QDF_STATUS
  */
 QDF_STATUS policy_mgr_incr_connection_count(struct wlan_objmgr_psoc *psoc,
-		uint32_t vdev_id);
+					    uint32_t vdev_id,
+					    enum QDF_OPMODE mode);
 
 /**
  * policy_mgr_update_connection_info() - updates the existing
@@ -1157,6 +1139,7 @@ QDF_STATUS policy_mgr_check_n_start_opportunistic_timer(
  * @reason: Reason for connection update
  * @next_action: next action to happen at policy mgr after
  *		HW mode change
+ * @action: action to be applied before hw mode change
  *
  * Sends the set hw mode request to FW
  *
@@ -1204,7 +1187,7 @@ QDF_STATUS policy_mgr_pdev_set_hw_mode(struct wlan_objmgr_psoc *psoc,
 		enum hw_mode_agile_dfs_capab dfs,
 		enum hw_mode_sbs_capab sbs,
 		enum policy_mgr_conn_update_reason reason,
-		uint8_t next_action);
+		uint8_t next_action, enum policy_mgr_conc_next_action action);
 
 /**
  * policy_mgr_pdev_set_hw_mode_cback() - callback invoked by
@@ -1306,6 +1289,7 @@ struct policy_mgr_sme_cbacks {
  * @hdd_is_chan_switch_in_progress: Check if in any adater channel switch is in
  * progress
  * @wlan_hdd_set_sap_csa_reason: Set the sap csa reason in cases like NAN.
+ * @wlan_hdd_indicate_active_ndp_cnt: indicate active ndp cnt to hdd
  */
 struct policy_mgr_hdd_cbacks {
 	void (*sap_restart_chan_switch_cb)(struct wlan_objmgr_psoc *psoc,
@@ -1324,6 +1308,8 @@ struct policy_mgr_hdd_cbacks {
 	bool (*hdd_is_chan_switch_in_progress)(void);
 	void (*wlan_hdd_set_sap_csa_reason)(struct wlan_objmgr_psoc *psoc,
 					    uint8_t vdev_id, uint8_t reason);
+	void (*wlan_hdd_indicate_active_ndp_cnt)(struct wlan_objmgr_psoc *psoc,
+						 uint8_t vdev_id, uint8_t cnt);
 };
 
 
@@ -1421,6 +1407,25 @@ QDF_STATUS policy_mgr_next_actions(struct wlan_objmgr_psoc *psoc,
 		uint32_t session_id,
 		enum policy_mgr_conc_next_action action,
 		enum policy_mgr_conn_update_reason reason);
+
+/**
+ * policy_mgr_validate_dbs_switch() - Check DBS action valid or not
+ * @psoc: Pointer to psoc
+ * @action: action requested
+ *
+ * This routine will check the current hw mode with requested action.
+ * If we are already in the mode, the caller will do nothing.
+ * This will be called by policy_mgr_next_actions to check the action needed
+ * or not.
+ *
+ * return : QDF_STATUS_SUCCESS, action is allowed.
+ *          QDF_STATUS_E_ALREADY, action is not needed.
+ *          QDF_STATUS_E_FAILURE, error happens.
+ *          QDF_STATUS_E_NOSUPPORT, the requested mode not supported.
+ */
+QDF_STATUS
+policy_mgr_validate_dbs_switch(struct wlan_objmgr_psoc *psoc,
+			       enum policy_mgr_conc_next_action action);
 
 /**
  * policy_mgr_set_dual_mac_scan_config() - Set the dual MAC scan config
@@ -2708,6 +2713,16 @@ bool policy_mgr_is_safe_channel(struct wlan_objmgr_psoc *psoc,
 bool policy_mgr_is_force_scc(struct wlan_objmgr_psoc *psoc);
 
 /**
+ * policy_mgr_go_scc_enforced() - Get GO force SCC enabled or not
+ * @psoc: psoc object
+ *
+ * This function checks if force SCC logic should be used on GO interface.
+ *
+ * Return: True if allow GO force SCC
+ */
+bool policy_mgr_go_scc_enforced(struct wlan_objmgr_psoc *psoc);
+
+/**
  * policy_mgr_valid_sap_conc_channel_check() - checks & updates
  * the channel SAP to come up on in case of STA+SAP concurrency
  * @psoc: PSOC object information
@@ -3149,4 +3164,30 @@ uint32_t policy_mgr_get_mode_specific_conn_info(struct wlan_objmgr_psoc *psoc,
 						uint8_t *channel,
 						uint8_t *vdev_id,
 						enum policy_mgr_con_mode mode);
+
+/**
+ * policy_mgr_get_5g_scc_prefer() - Prefer 5G SCC
+ * @psoc: psoc object
+ * @mode: Connection Mode
+ *
+ * This function checks if 5G SCC is preferred.
+ *
+ * Return: True if 5G SCC is preferred
+ */
+bool policy_mgr_get_5g_scc_prefer(
+	struct wlan_objmgr_psoc *psoc, enum policy_mgr_con_mode mode);
+
+/**
+ * policy_mgr_dump_channel_list() - Print channel list
+ * @len: Length of pcl list
+ * @pcl_channels: pcl channels list
+ * @pcl_weight: pcl weight list
+ *
+ *
+ * Return: True or false
+ */
+bool policy_mgr_dump_channel_list(uint32_t len,
+				  uint8_t *pcl_channels,
+				  uint8_t *pcl_weight);
+
 #endif /* __WLAN_POLICY_MGR_API_H */

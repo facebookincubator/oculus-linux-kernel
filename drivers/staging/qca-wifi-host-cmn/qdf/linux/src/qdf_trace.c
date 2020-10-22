@@ -42,6 +42,7 @@ qdf_declare_param(qdf_log_flush_timer_period, uint);
 
 #include "qdf_time.h"
 #include "qdf_mc_timer.h"
+#include <host_diag_core_log.h>
 
 /* Global qdf print id */
 
@@ -811,6 +812,18 @@ void qdf_dp_set_proto_bitmap(uint32_t val)
 }
 qdf_export_symbol(qdf_dp_set_proto_bitmap);
 
+void qdf_dp_set_proto_event_bitmap(uint32_t value)
+{
+	g_qdf_dp_trace_data.proto_event_bitmap = value;
+}
+
+qdf_export_symbol(qdf_dp_set_proto_event_bitmap);
+
+static uint32_t qdf_dp_get_proto_event_bitmap(void)
+{
+	return g_qdf_dp_trace_data.proto_event_bitmap;
+}
+
 /**
  * qdf_dp_set_no_of_record() - set dp trace no_of_record
  *
@@ -1362,6 +1375,161 @@ static void qdf_dp_add_record(enum QDF_DP_TRACE_ID code, uint8_t pdev_id,
 					QDF_TRACE_DEFAULT_PDEV_ID, info);
 }
 
+/**
+ * qdf_get_rate_limit_by_type() - Get the rate limit by pkt type
+ * @type: packet type
+ *
+ * Return: Rate limit value for a particular packet type
+ */
+static inline
+uint8_t qdf_get_rate_limit_by_type(uint8_t type)
+{
+	switch (type) {
+	case QDF_PROTO_TYPE_DHCP:
+		return QDF_MAX_DHCP_PKTS_PER_SEC;
+	case QDF_PROTO_TYPE_EAPOL:
+		return QDF_MAX_EAPOL_PKTS_PER_SEC;
+	case QDF_PROTO_TYPE_ARP:
+		return QDF_MAX_ARP_PKTS_PER_SEC;
+	case QDF_PROTO_TYPE_DNS:
+		return QDF_MAX_DNS_PKTS_PER_SEC;
+	default:
+		return QDF_MAX_OTHER_PKTS_PER_SEC;
+	}
+}
+
+/**
+ * qdf_get_pkt_type_string() - Get the string based on pkt type
+ * @type: packet type
+ * @subtype: packet subtype
+ *
+ * Return: String based on pkt type
+ */
+static
+uint8_t *qdf_get_pkt_type_string(uint8_t type, uint8_t subtype)
+{
+	switch (subtype) {
+	case QDF_PROTO_EAPOL_M1:
+		return "EAPOL-1";
+	case QDF_PROTO_EAPOL_M2:
+		return "EAPOL-2";
+	case QDF_PROTO_EAPOL_M3:
+		return "EAPOL-3";
+	case QDF_PROTO_EAPOL_M4:
+		return "EAPOL-4";
+	case QDF_PROTO_DHCP_DISCOVER:
+		return "DHCP-D";
+	case QDF_PROTO_DHCP_REQUEST:
+		return "DHCP-R";
+	case QDF_PROTO_DHCP_OFFER:
+		return "DHCP-O";
+	case QDF_PROTO_DHCP_ACK:
+		return "DHCP-A";
+	case QDF_PROTO_DHCP_NACK:
+		return "DHCP-NA";
+	case QDF_PROTO_DHCP_RELEASE:
+		return "DHCP-REL";
+	case QDF_PROTO_DHCP_INFORM:
+		return "DHCP-IN";
+	case QDF_PROTO_DHCP_DECLINE:
+		return "DHCP-DEC";
+	case QDF_PROTO_ARP_REQ:
+		return "ARP-RQ";
+	case QDF_PROTO_ARP_RES:
+		return "ARP-RS";
+	case QDF_PROTO_DNS_QUERY:
+		return "DNS_Q";
+	case QDF_PROTO_DNS_RES:
+		return "DNS_RS";
+	default:
+		switch (type) {
+		case QDF_PROTO_TYPE_EAPOL:
+			return "EAP";
+		case QDF_PROTO_TYPE_DHCP:
+			return "DHCP";
+		case QDF_PROTO_TYPE_ARP:
+			return "ARP";
+		case QDF_PROTO_TYPE_DNS:
+			return "DNS";
+		default:
+			return "UNKNOWN";
+		}
+	}
+}
+
+/**
+ * qdf_get_pkt_status_string() - Get the string based on pkt status
+ * @status: packet status
+ *
+ * Return: String based on pkt status
+ */
+static
+uint8_t *qdf_get_pkt_status_string(uint8_t status)
+{
+	switch (status) {
+	case QDF_TX_RX_STATUS_INVALID:
+		return "inv";
+	case QDF_TX_RX_STATUS_OK:
+		return "succ";
+	case QDF_TX_RX_STATUS_FW_DISCARD:
+		return "disc";
+	case QDF_TX_RX_STATUS_NO_ACK:
+		return "nack";
+	case QDF_TX_RX_STATUS_DROP:
+		return "drop";
+	default:
+		return "unknown";
+	}
+}
+
+/**
+ * qdf_dp_log_proto_pkt_info() - Send diag log with pkt info
+ * @sa: Source MAC address
+ * @da: Destination MAC address
+ * @type: packet type
+ * @subtype: packet subtype
+ * @dir: tx or rx
+ * @msdu_id: MSDU id
+ * @status: status code
+ *
+ * Return: none
+ */
+void qdf_dp_log_proto_pkt_info(uint8_t *sa, uint8_t *da, uint8_t type,
+			       uint8_t subtype, uint8_t dir, uint16_t msdu_id,
+			       uint8_t status)
+{
+	uint8_t pkt_rate_limit;
+	static ulong last_ticks_tx[QDF_PROTO_SUBTYPE_MAX] = {0};
+	static ulong last_ticks_rx[QDF_PROTO_SUBTYPE_MAX] = {0};
+	ulong curr_ticks = jiffies;
+
+	pkt_rate_limit = qdf_get_rate_limit_by_type(type);
+
+	if ((dir == QDF_TX &&
+	     !time_after(curr_ticks,
+			 last_ticks_tx[subtype] + HZ / pkt_rate_limit)) ||
+	    (dir == QDF_RX &&
+	     !time_after(curr_ticks,
+			 last_ticks_rx[subtype] + HZ / pkt_rate_limit)))
+		return;
+
+	if (dir == QDF_TX)
+		last_ticks_tx[subtype] = curr_ticks;
+	else
+		last_ticks_rx[subtype] = curr_ticks;
+
+	if (status == QDF_TX_RX_STATUS_INVALID)
+		qdf_nofl_info("%s %s: SA:%pM DA:%pM",
+			      qdf_get_pkt_type_string(type, subtype),
+			      dir ? "RX":"TX", sa, da);
+	else
+		qdf_nofl_info("%s %s: SA:%pM DA:%pM msdu_id:%d status: %s",
+			      qdf_get_pkt_type_string(type, subtype),
+			      dir ? "RX":"TX", sa, da, msdu_id,
+			      qdf_get_pkt_status_string(status));
+}
+
+qdf_export_symbol(qdf_dp_log_proto_pkt_info);
 
 /**
  * qdf_log_icmpv6_pkt() - log ICMPv6 packet
@@ -1482,13 +1650,31 @@ static bool qdf_log_eapol_pkt(uint8_t vdev_id, struct sk_buff *skb,
 			      enum qdf_proto_dir dir, uint8_t pdev_id)
 {
 	enum qdf_proto_subtype subtype;
+	uint32_t dp_eap_trace;
+	uint32_t dp_eap_event;
 
-	if ((qdf_dp_get_proto_bitmap() & QDF_NBUF_PKT_TRAC_TYPE_EAPOL) &&
-		((dir == QDF_TX && QDF_NBUF_CB_PACKET_TYPE_EAPOL ==
-			QDF_NBUF_CB_GET_PACKET_TYPE(skb)) ||
-		 (dir == QDF_RX && qdf_nbuf_is_ipv4_eapol_pkt(skb) == true))) {
+	dp_eap_trace = qdf_dp_get_proto_bitmap() & QDF_NBUF_PKT_TRAC_TYPE_EAPOL;
+	dp_eap_event = qdf_dp_get_proto_event_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_EAPOL;
 
-		subtype = qdf_nbuf_get_eapol_subtype(skb);
+	if (!dp_eap_trace && !dp_eap_event)
+		return false;
+
+	if (!((dir == QDF_TX && QDF_NBUF_CB_PACKET_TYPE_EAPOL ==
+	       QDF_NBUF_CB_GET_PACKET_TYPE(skb)) ||
+	      (dir == QDF_RX && qdf_nbuf_is_ipv4_eapol_pkt(skb) == true)))
+		return false;
+
+	subtype = qdf_nbuf_get_eapol_subtype(skb);
+
+	if (dp_eap_event && dir == QDF_RX)
+		qdf_dp_log_proto_pkt_info(skb->data + QDF_NBUF_SRC_MAC_OFFSET,
+					  skb->data + QDF_NBUF_DEST_MAC_OFFSET,
+					  QDF_PROTO_TYPE_EAPOL, subtype, dir,
+					  QDF_TRACE_DEFAULT_MSDU_ID,
+					  QDF_TX_RX_STATUS_INVALID);
+
+	if (dp_eap_trace) {
 		QDF_NBUF_CB_DP_TRACE_PRINT(skb) = true;
 		if (QDF_TX == dir)
 			QDF_NBUF_CB_TX_DP_TRACE(skb) = 1;
@@ -1521,9 +1707,9 @@ static bool qdf_log_eapol_pkt(uint8_t vdev_id, struct sk_buff *skb,
 			g_qdf_dp_trace_data.eapol_others++;
 			break;
 		}
-		return true;
 	}
-	return false;
+
+	return true;
 }
 
 /**
@@ -1539,13 +1725,31 @@ static bool qdf_log_dhcp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 			     enum qdf_proto_dir dir, uint8_t pdev_id)
 {
 	enum qdf_proto_subtype subtype = QDF_PROTO_INVALID;
+	uint32_t dp_dhcp_trace;
+	uint32_t dp_dhcp_event;
 
-	if ((qdf_dp_get_proto_bitmap() & QDF_NBUF_PKT_TRAC_TYPE_DHCP) &&
-		((dir == QDF_TX && QDF_NBUF_CB_PACKET_TYPE_DHCP ==
-				QDF_NBUF_CB_GET_PACKET_TYPE(skb)) ||
-		 (dir == QDF_RX && qdf_nbuf_is_ipv4_dhcp_pkt(skb) == true))) {
+	dp_dhcp_trace = qdf_dp_get_proto_bitmap() & QDF_NBUF_PKT_TRAC_TYPE_DHCP;
+	dp_dhcp_event = qdf_dp_get_proto_event_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_DHCP;
 
-		subtype = qdf_nbuf_get_dhcp_subtype(skb);
+	if (!dp_dhcp_trace && !dp_dhcp_event)
+		return false;
+
+	if (!((dir == QDF_TX && QDF_NBUF_CB_PACKET_TYPE_DHCP ==
+	       QDF_NBUF_CB_GET_PACKET_TYPE(skb)) ||
+	      (dir == QDF_RX && qdf_nbuf_is_ipv4_dhcp_pkt(skb) == true)))
+		return false;
+
+	subtype = qdf_nbuf_get_dhcp_subtype(skb);
+
+	if (dp_dhcp_event && dir == QDF_RX)
+		qdf_dp_log_proto_pkt_info(skb->data + QDF_NBUF_SRC_MAC_OFFSET,
+					  skb->data + QDF_NBUF_DEST_MAC_OFFSET,
+					  QDF_PROTO_TYPE_DHCP, subtype, dir,
+					  QDF_TRACE_DEFAULT_MSDU_ID,
+					  QDF_TX_RX_STATUS_INVALID);
+
+	if (dp_dhcp_trace) {
 		QDF_NBUF_CB_DP_TRACE_PRINT(skb) = true;
 		if (QDF_TX == dir)
 			QDF_NBUF_CB_TX_DP_TRACE(skb) = 1;
@@ -1581,10 +1785,9 @@ static bool qdf_log_dhcp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 			g_qdf_dp_trace_data.eapol_others++;
 			break;
 		}
-
-		return true;
 	}
-	return false;
+
+	return true;
 }
 
 /**
@@ -1637,7 +1840,7 @@ static bool qdf_log_arp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 bool qdf_dp_trace_log_pkt(uint8_t vdev_id, struct sk_buff *skb,
 			  enum qdf_proto_dir dir, uint8_t pdev_id)
 {
-	if (!qdf_dp_get_proto_bitmap())
+	if (!qdf_dp_get_proto_bitmap() && !qdf_dp_get_proto_event_bitmap())
 		return false;
 	if (qdf_log_arp_pkt(vdev_id, skb, dir, pdev_id))
 		return true;
@@ -1828,6 +2031,117 @@ void qdf_dp_display_ptr_record(struct qdf_dp_trace_record_s *record,
 }
 qdf_export_symbol(qdf_dp_display_ptr_record);
 
+static
+enum qdf_proto_type qdf_dp_get_pkt_proto_type(qdf_nbuf_t nbuf)
+{
+	uint8_t pkt_type;
+
+	if (!nbuf)
+		return QDF_PROTO_TYPE_MAX;
+
+	if (qdf_nbuf_data_is_dns_query(nbuf) ||
+	    qdf_nbuf_data_is_dns_response(nbuf))
+		return QDF_PROTO_TYPE_DNS;
+
+	pkt_type = QDF_NBUF_CB_GET_PACKET_TYPE(nbuf);
+
+	switch (pkt_type) {
+	case QDF_NBUF_CB_PACKET_TYPE_EAPOL:
+		return QDF_PROTO_TYPE_EAPOL;
+	case QDF_NBUF_CB_PACKET_TYPE_ARP:
+		return QDF_PROTO_TYPE_ARP;
+	case QDF_NBUF_CB_PACKET_TYPE_DHCP:
+		return QDF_PROTO_TYPE_DHCP;
+	default:
+		return QDF_PROTO_TYPE_MAX;
+	}
+}
+
+static
+enum qdf_proto_subtype qdf_dp_get_pkt_subtype(qdf_nbuf_t nbuf,
+					      enum qdf_proto_type pkt_type)
+{
+	switch (pkt_type) {
+	case QDF_PROTO_TYPE_EAPOL:
+		return qdf_nbuf_get_eapol_subtype(nbuf);
+	case QDF_PROTO_TYPE_ARP:
+		return qdf_nbuf_get_arp_subtype(nbuf);
+	case QDF_PROTO_TYPE_DHCP:
+		return qdf_nbuf_get_dhcp_subtype(nbuf);
+	case QDF_PROTO_TYPE_DNS:
+		return (qdf_nbuf_data_is_dns_query(nbuf)) ?
+				QDF_PROTO_DNS_QUERY : QDF_PROTO_DNS_RES;
+	default:
+		return QDF_PROTO_INVALID;
+	}
+}
+
+static
+bool qdf_dp_proto_log_enable_check(enum qdf_proto_type pkt_type,
+				   uint16_t status)
+{
+	if (pkt_type == QDF_PROTO_TYPE_MAX)
+		return false;
+
+	switch (pkt_type) {
+	case QDF_PROTO_TYPE_EAPOL:
+		return qdf_dp_get_proto_event_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_EAPOL;
+	case QDF_PROTO_TYPE_DHCP:
+		return qdf_dp_get_proto_event_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_DHCP;
+	case QDF_PROTO_TYPE_ARP:
+		if (status == QDF_TX_RX_STATUS_OK)
+			return false;
+		else
+			return qdf_dp_get_proto_event_bitmap() &
+					QDF_NBUF_PKT_TRAC_TYPE_ARP;
+	case QDF_PROTO_TYPE_DNS:
+		if (status == QDF_TX_RX_STATUS_OK)
+			return false;
+		else
+			return qdf_dp_get_proto_event_bitmap() &
+					QDF_NBUF_PKT_TRAC_TYPE_DNS;
+	default:
+		return false;
+	}
+}
+
+void qdf_dp_track_noack_check(qdf_nbuf_t nbuf, enum qdf_proto_subtype *subtype)
+{
+	enum qdf_proto_type pkt_type = qdf_dp_get_pkt_proto_type(nbuf);
+	uint16_t dp_track = 0;
+
+	switch (pkt_type) {
+	case QDF_PROTO_TYPE_EAPOL:
+		dp_track = qdf_dp_get_proto_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_EAPOL;
+		break;
+	case QDF_PROTO_TYPE_DHCP:
+		dp_track = qdf_dp_get_proto_bitmap() &
+				QDF_NBUF_PKT_TRAC_TYPE_DHCP;
+		break;
+	case QDF_PROTO_TYPE_ARP:
+		dp_track = qdf_dp_get_proto_bitmap() &
+					QDF_NBUF_PKT_TRAC_TYPE_ARP;
+		break;
+	case QDF_PROTO_TYPE_DNS:
+		dp_track = qdf_dp_get_proto_bitmap() &
+					QDF_NBUF_PKT_TRAC_TYPE_DNS;
+		break;
+	default:
+		break;
+	}
+
+	if (!dp_track) {
+		*subtype = QDF_PROTO_INVALID;
+		return;
+	}
+
+	*subtype = qdf_dp_get_pkt_subtype(nbuf, pkt_type);
+}
+qdf_export_symbol(qdf_dp_track_noack_check);
+
 /**
  * qdf_dp_trace_ptr() - record dptrace
  * @code: dptrace code
@@ -1845,6 +2159,17 @@ void qdf_dp_trace_ptr(qdf_nbuf_t nbuf, enum QDF_DP_TRACE_ID code,
 {
 	struct qdf_dp_trace_ptr_buf buf;
 	int buf_size = sizeof(struct qdf_dp_trace_ptr_buf);
+	enum qdf_proto_type pkt_type;
+
+	pkt_type = qdf_dp_get_pkt_proto_type(nbuf);
+	if ((code == QDF_DP_TRACE_FREE_PACKET_PTR_RECORD ||
+	     code == QDF_DP_TRACE_LI_DP_FREE_PACKET_PTR_RECORD) &&
+	    qdf_dp_proto_log_enable_check(pkt_type, status + 1))
+		qdf_dp_log_proto_pkt_info(nbuf->data + QDF_NBUF_SRC_MAC_OFFSET,
+					 nbuf->data + QDF_NBUF_DEST_MAC_OFFSET,
+					 pkt_type,
+					 qdf_dp_get_pkt_subtype(nbuf, pkt_type),
+					 QDF_TX, msdu_id, status + 1);
 
 	if (qdf_dp_enable_check(nbuf, code, QDF_TX) == false)
 		return;
@@ -1865,6 +2190,17 @@ void qdf_dp_trace_data_pkt(qdf_nbuf_t nbuf, uint8_t pdev_id,
 			   enum qdf_proto_dir dir)
 {
 	struct qdf_dp_trace_data_buf buf;
+	enum qdf_proto_type pkt_type;
+
+	pkt_type = qdf_dp_get_pkt_proto_type(nbuf);
+	if (code == QDF_DP_TRACE_DROP_PACKET_RECORD &&
+	    qdf_dp_proto_log_enable_check(pkt_type, QDF_TX_RX_STATUS_DROP))
+		qdf_dp_log_proto_pkt_info(nbuf->data + QDF_NBUF_SRC_MAC_OFFSET,
+					 nbuf->data + QDF_NBUF_DEST_MAC_OFFSET,
+					 pkt_type,
+					 qdf_dp_get_pkt_subtype(nbuf, pkt_type),
+					 QDF_TX, msdu_id,
+					 QDF_TX_RX_STATUS_DROP);
 
 	buf.msdu_id = msdu_id;
 	if (!qdf_dp_enable_check(nbuf, code, dir))

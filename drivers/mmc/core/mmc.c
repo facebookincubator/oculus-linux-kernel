@@ -2304,6 +2304,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 
 	if (!oldcard)
 		host->card = card;
+	if (host->ops->enter_dbg_mode)
+		host->ops->enter_dbg_mode(host);
 
 	return 0;
 
@@ -2554,11 +2556,6 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 
 	if (mmc_card_suspended(host->card))
 		goto out;
-
-	if (host->cqe_enabled) {
-		host->cqe_ops->cqe_disable(host);
-		host->cqe_enabled = false;
-	}
 
 	if (mmc_card_doing_bkops(host->card)) {
 		err = mmc_stop_bkops(host->card);
@@ -2912,6 +2909,11 @@ static int _mmc_hw_reset(struct mmc_host *host)
 		/* If the card accept RST_n signal, send it. */
 		mmc_set_clock(host, host->f_init);
 		host->ops->hw_reset(host);
+		/*
+		 * Do a brute force power cycle as some controller do not
+		 * have gpio support to power cycle card
+		 */
+		mmc_power_cycle(host, card->ocr);
 		/* Set initial state and call mmc_set_ios */
 		mmc_set_initial_state(host);
 	} else {
@@ -2938,9 +2940,9 @@ static int _mmc_hw_reset(struct mmc_host *host)
 		return ret;
 	}
 
-	ret = mmc_suspend_clk_scaling(host);
+	ret = mmc_resume_clk_scaling(host);
 	if (ret) {
-		pr_err("%s: %s: fail to suspend clock scaling (%d)\n",
+		pr_err("%s: %s: fail to resume clock scaling (%d)\n",
 				mmc_hostname(host), __func__, ret);
 	}
 	return ret;

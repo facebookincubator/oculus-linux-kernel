@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <asm/barrier.h>
@@ -13,8 +13,6 @@
  * These values were determined empirically and shows good E2E bi-
  * directional throughputs
  */
-#define IPA_HOLB_TMR_EN 0x1
-#define IPA_HOLB_TMR_DIS 0x0
 #define IPA_POLL_AGGR_STATE_RETRIES_NUM 3
 #define IPA_POLL_AGGR_STATE_SLEEP_MSEC 1
 
@@ -63,11 +61,22 @@ int ipa3_enable_data_path(u32 clnt_hdl)
 		 * on other end from IPA hw.
 		 */
 		if ((ep->client == IPA_CLIENT_USB_DPL_CONS) ||
-				(ep->client == IPA_CLIENT_MHI_DPL_CONS))
+				(ep->client == IPA_CLIENT_MHI_DPL_CONS)) {
+			holb_cfg.tmr_val = 0;
 			holb_cfg.en = IPA_HOLB_TMR_EN;
-		else
+		} else if ((ipa3_ctx->ipa_hw_type == IPA_HW_v4_2 ||
+			ipa3_ctx->ipa_hw_type == IPA_HW_v4_7) &&
+			(ep->client == IPA_CLIENT_WLAN1_CONS ||
+				ep->client == IPA_CLIENT_USB_CONS)) {
+			holb_cfg.en = IPA_HOLB_TMR_EN;
+			if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5)
+				holb_cfg.tmr_val = IPA_HOLB_TMR_VAL;
+			else
+				holb_cfg.tmr_val = IPA_HOLB_TMR_VAL_4_5;
+		} else {
 			holb_cfg.en = IPA_HOLB_TMR_DIS;
-		holb_cfg.tmr_val = 0;
+			holb_cfg.tmr_val = 0;
+		}
 		res = ipa3_cfg_ep_holb(clnt_hdl, &holb_cfg);
 	}
 
@@ -583,6 +592,15 @@ int ipa3_request_gsi_channel(struct ipa_request_gsi_channel_params *params,
 		IPADBG("ep configuration successful\n");
 	} else {
 		IPADBG("Skipping endpoint configuration.\n");
+		if (IPA_CLIENT_IS_PROD(ipa3_ctx->ep[ipa_ep_idx].client) &&
+			ipa3_ctx->ep[ipa_ep_idx].client == IPA_CLIENT_USB_PROD
+			&& !ipa3_is_mhip_offload_enabled()) {
+			if (ipa3_cfg_ep_seq(ipa_ep_idx,
+						&params->ipa_ep_cfg.seq)) {
+				IPAERR("fail to configure USB pipe seq\n");
+				goto ipa_cfg_ep_fail;
+			}
+		}
 	}
 
 	out_params->clnt_hdl = ipa_ep_idx;
@@ -772,6 +790,7 @@ int ipa3_xdci_start(u32 clnt_hdl, u8 xferrscidx, bool xferrscidx_valid)
 	int result = -EFAULT;
 	enum gsi_status gsi_res;
 	struct ipa_ep_cfg_ctrl ep_cfg_ctrl;
+	int code = 0;
 
 	IPADBG("entry\n");
 	if (clnt_hdl >= ipa3_ctx->ipa_num_pipes  ||
@@ -813,6 +832,20 @@ int ipa3_xdci_start(u32 clnt_hdl, u8 xferrscidx, bool xferrscidx_valid)
 	if (gsi_res != GSI_STATUS_SUCCESS) {
 		IPAERR("Error starting channel: %d\n", gsi_res);
 		goto write_chan_scratch_fail;
+	}
+
+	if (IPA_CLIENT_IS_PROD(ep->client) && ep->skip_ep_cfg &&
+			ipa3_ctx->ipa_endp_delay_wa &&
+			!ipa3_is_mhip_offload_enabled()) {
+		gsi_res = gsi_enable_flow_control_ee(ep->gsi_chan_hdl, 0,
+									&code);
+		if (gsi_res == GSI_STATUS_SUCCESS) {
+			IPADBG("flow control sussess gsi ch %d with code %d\n",
+					ep->gsi_chan_hdl, code);
+		} else {
+			IPADBG("failed to flow control gsi ch %d code %d\n",
+					ep->gsi_chan_hdl, code);
+		}
 	}
 	ipa3_start_gsi_debug_monitor(clnt_hdl);
 	if (!ep->keep_ipa_awake)
@@ -1225,6 +1258,7 @@ int ipa3_start_stop_client_prod_gsi_chnl(enum ipa_client_type client,
 	int result = 0;
 	int pipe_idx;
 	struct ipa3_ep_context *ep;
+	int code = 0;
 
 	if (IPA_CLIENT_IS_CONS(client)) {
 		IPAERR("client (%d) not PROD\n", client);
@@ -1240,10 +1274,20 @@ int ipa3_start_stop_client_prod_gsi_chnl(enum ipa_client_type client,
 
 	client_lock_unlock_cb(client, true);
 	ep = &ipa3_ctx->ep[pipe_idx];
-	if (ep->valid && ep->skip_ep_cfg && ipa3_get_teth_port_status(client)) {
-		if (start_chnl)
+	if (ep->valid && ep->skip_ep_cfg && ipa3_get_teth_port_status(client)
+		&& !ipa3_is_mhip_offload_enabled()) {
+		if (start_chnl) {
 			result = ipa3_start_gsi_channel(pipe_idx);
-		else
+			result = gsi_enable_flow_control_ee(ep->gsi_chan_hdl,
+								0, &code);
+			if (result == GSI_STATUS_SUCCESS) {
+				IPADBG("flow control sussess ch %d code %d\n",
+						ep->gsi_chan_hdl, code);
+			} else {
+				IPADBG("failed to flow control ch %d code %d\n",
+						ep->gsi_chan_hdl, code);
+			}
+		} else
 			result = ipa3_stop_gsi_channel(pipe_idx);
 	}
 	client_lock_unlock_cb(client, false);
@@ -1367,8 +1411,6 @@ int ipa3_xdci_disconnect(u32 clnt_hdl, bool should_force_clear, u32 qmi_req_id)
 	if (!ep->keep_ipa_awake)
 		IPA_ACTIVE_CLIENTS_INC_EP(ipa3_get_client_mapping(clnt_hdl));
 
-	ipa3_disable_data_path(clnt_hdl);
-
 	if (!IPA_CLIENT_IS_CONS(ep->client)) {
 		IPADBG("Stopping PROD channel - hdl=%d clnt=%d\n",
 			clnt_hdl, ep->client);
@@ -1392,6 +1434,9 @@ int ipa3_xdci_disconnect(u32 clnt_hdl, bool should_force_clear, u32 qmi_req_id)
 			goto stop_chan_fail;
 		}
 	}
+
+	ipa3_disable_data_path(clnt_hdl);
+
 	IPA_ACTIVE_CLIENTS_DEC_EP(ipa3_get_client_mapping(clnt_hdl));
 
 	IPADBG("exit\n");
@@ -1596,6 +1641,8 @@ int ipa3_start_gsi_channel(u32 clnt_hdl)
 	int result = -EFAULT;
 	enum gsi_status gsi_res;
 	enum ipa_client_type client_type;
+	struct ipa_ep_cfg_holb holb_cfg;
+	int res = 0;
 
 	IPADBG("entry\n");
 	if (clnt_hdl >= ipa3_ctx->ipa_num_pipes  ||
@@ -1606,6 +1653,23 @@ int ipa3_start_gsi_channel(u32 clnt_hdl)
 
 	ep = &ipa3_ctx->ep[clnt_hdl];
 	client_type = ipa3_get_client_mapping(clnt_hdl);
+	/* Disable HOLB on MHIP RMNET CONS before starting
+	 * USB PROD pipe
+	 */
+	if (ipa3_is_mhip_offload_enabled() &&
+		client_type == IPA_CLIENT_USB_PROD) {
+		memset(&holb_cfg, 0, sizeof(struct ipa_ep_cfg_holb));
+		holb_cfg.en = IPA_HOLB_TMR_DIS;
+		holb_cfg.tmr_val = 0;
+		IPADBG("Disabling HOLB on RMNET CONS pipe");
+		res = ipa3_cfg_ep_holb(ipa3_get_ep_mapping(
+				IPA_CLIENT_MHI_PRIME_RMNET_CONS), &holb_cfg);
+		if (res) {
+			IPAERR("Disable HOLB failed ep:%lu\n",
+				ipa3_get_ep_mapping(
+					IPA_CLIENT_MHI_PRIME_RMNET_CONS));
+		}
+	}
 	if (!ep->keep_ipa_awake)
 		IPA_ACTIVE_CLIENTS_INC_EP(client_type);
 

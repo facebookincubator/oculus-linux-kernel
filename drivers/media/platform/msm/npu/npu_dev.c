@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 /* -------------------------------------------------------------------------
@@ -17,6 +17,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/thermal.h>
 #include <linux/soc/qcom/llcc-qcom.h>
+#include <linux/soc/qcom/cdsprm_cxlimit.h>
 #include <soc/qcom/devfreq_devbw.h>
 
 #include "npu_common.h"
@@ -111,7 +112,8 @@ static int npu_pm_suspend(struct device *dev);
 static int npu_pm_resume(struct device *dev);
 static int __init npu_init(void);
 static void __exit npu_exit(void);
-
+static uint32_t npu_notify_cdsprm_cxlimit_corner(struct npu_device *npu_dev,
+	uint32_t pwr_lvl);
 /* -------------------------------------------------------------------------
  * File Scope Variables
  * -------------------------------------------------------------------------
@@ -387,6 +389,168 @@ static ssize_t boot_store(struct device *dev,
  * Power Related
  * -------------------------------------------------------------------------
  */
+static enum npu_power_level cdsprm_corner_to_npu_power_level(
+	enum cdsprm_npu_corner corner)
+{
+	enum npu_power_level pwr_lvl = NPU_PWRLEVEL_TURBO_L1;
+
+	switch (corner) {
+	case CDSPRM_NPU_CLK_OFF:
+		pwr_lvl = NPU_PWRLEVEL_OFF;
+		break;
+	case CDSPRM_NPU_MIN_SVS:
+		pwr_lvl = NPU_PWRLEVEL_MINSVS;
+		break;
+	case CDSPRM_NPU_LOW_SVS:
+		pwr_lvl = NPU_PWRLEVEL_LOWSVS;
+		break;
+	case CDSPRM_NPU_SVS:
+		pwr_lvl = NPU_PWRLEVEL_SVS;
+		break;
+	case CDSPRM_NPU_SVS_L1:
+		pwr_lvl = NPU_PWRLEVEL_SVS_L1;
+		break;
+	case CDSPRM_NPU_NOM:
+		pwr_lvl = NPU_PWRLEVEL_NOM;
+		break;
+	case CDSPRM_NPU_NOM_L1:
+		pwr_lvl = NPU_PWRLEVEL_NOM_L1;
+		break;
+	case CDSPRM_NPU_TURBO:
+		pwr_lvl = NPU_PWRLEVEL_TURBO;
+		break;
+	case CDSPRM_NPU_TURBO_L1:
+	default:
+		pwr_lvl = NPU_PWRLEVEL_TURBO_L1;
+		break;
+	}
+
+	return pwr_lvl;
+}
+
+static enum cdsprm_npu_corner npu_power_level_to_cdsprm_corner(
+	enum npu_power_level pwr_lvl)
+{
+	enum cdsprm_npu_corner corner = CDSPRM_NPU_MIN_SVS;
+
+	switch (pwr_lvl) {
+	case NPU_PWRLEVEL_OFF:
+		corner = CDSPRM_NPU_CLK_OFF;
+		break;
+	case NPU_PWRLEVEL_MINSVS:
+		corner = CDSPRM_NPU_MIN_SVS;
+		break;
+	case NPU_PWRLEVEL_LOWSVS:
+		corner = CDSPRM_NPU_LOW_SVS;
+		break;
+	case NPU_PWRLEVEL_SVS:
+		corner = CDSPRM_NPU_SVS;
+		break;
+	case NPU_PWRLEVEL_SVS_L1:
+		corner = CDSPRM_NPU_SVS_L1;
+		break;
+	case NPU_PWRLEVEL_NOM:
+		corner = CDSPRM_NPU_NOM;
+		break;
+	case NPU_PWRLEVEL_NOM_L1:
+		corner = CDSPRM_NPU_NOM_L1;
+		break;
+	case NPU_PWRLEVEL_TURBO:
+		corner = CDSPRM_NPU_TURBO;
+		break;
+	case NPU_PWRLEVEL_TURBO_L1:
+	default:
+		corner = CDSPRM_NPU_TURBO_L1;
+		break;
+	}
+
+	return corner;
+}
+
+static int npu_set_cdsprm_corner_limit(enum cdsprm_npu_corner corner)
+{
+	struct npu_pwrctrl *pwr;
+	enum npu_power_level pwr_lvl;
+
+	if (!g_npu_dev)
+		return 0;
+
+	pwr = &g_npu_dev->pwrctrl;
+	pwr_lvl = cdsprm_corner_to_npu_power_level(corner);
+	pwr->cdsprm_pwrlevel = pwr_lvl;
+	NPU_DBG("power level from cdsp %d\n", pwr_lvl);
+
+	return npu_set_power_level(g_npu_dev, false);
+}
+
+const struct cdsprm_npu_limit_cbs cdsprm_npu_limit_cbs = {
+	.set_corner_limit = npu_set_cdsprm_corner_limit,
+};
+
+int npu_notify_cdsprm_cxlimit_activity(struct npu_device *npu_dev, bool enable)
+{
+	if (!npu_dev->cxlimit_registered)
+		return 0;
+
+	NPU_DBG("notify cxlimit %s activity\n", enable ? "enable" : "disable");
+
+	return cdsprm_cxlimit_npu_activity_notify(enable ? 1 : 0);
+}
+
+static uint32_t npu_notify_cdsprm_cxlimit_corner(
+	struct npu_device *npu_dev, uint32_t pwr_lvl)
+{
+	uint32_t corner, pwr_lvl_to_set;
+
+	if (!npu_dev->cxlimit_registered)
+		return pwr_lvl;
+
+	corner = npu_power_level_to_cdsprm_corner(pwr_lvl);
+	corner = cdsprm_cxlimit_npu_corner_notify(corner);
+	pwr_lvl_to_set = cdsprm_corner_to_npu_power_level(corner);
+	NPU_DBG("Notify cdsprm %d:%d\n", pwr_lvl,
+			pwr_lvl_to_set);
+
+	return pwr_lvl_to_set;
+}
+
+int npu_cdsprm_cxlimit_init(struct npu_device *npu_dev)
+{
+	bool enabled;
+	int ret = 0;
+
+	enabled = of_property_read_bool(npu_dev->pdev->dev.of_node,
+		"qcom,npu-cxlimit-enable");
+	NPU_DBG("qcom,npu-xclimit-enable is %s\n", enabled ? "true" : "false");
+
+	npu_dev->cxlimit_registered = false;
+	if (enabled) {
+		ret = cdsprm_cxlimit_npu_limit_register(&cdsprm_npu_limit_cbs);
+		if (ret) {
+			NPU_ERR("register cxlimit npu limit failed\n");
+		} else {
+			NPU_DBG("register cxlimit npu limit succeeds\n");
+			npu_dev->cxlimit_registered = true;
+		}
+	}
+
+	return ret;
+}
+
+int npu_cdsprm_cxlimit_deinit(struct npu_device *npu_dev)
+{
+	int ret = 0;
+
+	if (npu_dev->cxlimit_registered) {
+		ret = cdsprm_cxlimit_npu_limit_deregister();
+		if (ret)
+			NPU_ERR("deregister cxlimit npu limit failed\n");
+		npu_dev->cxlimit_registered = false;
+	}
+
+	return ret;
+}
+
 int npu_enable_core_power(struct npu_device *npu_dev)
 {
 	struct npu_pwrctrl *pwr = &npu_dev->pwrctrl;
@@ -530,6 +694,11 @@ int npu_set_power_level(struct npu_device *npu_dev, bool notify_cxlimit)
 		return 0;
 	}
 
+	/* notify cxlimit to get allowed power level */
+	if ((pwr_level_to_set > pwr->active_pwrlevel) && notify_cxlimit)
+		pwr_level_to_set = npu_notify_cdsprm_cxlimit_corner(
+					npu_dev, pwr_level_to_cdsprm);
+
 	pwr_level_to_set = min(pwr_level_to_set,
 		npu_dev->pwrctrl.cdsprm_pwrlevel);
 
@@ -594,6 +763,12 @@ int npu_set_power_level(struct npu_device *npu_dev, bool notify_cxlimit)
 				pwr_level_to_set);
 
 		ret = 0;
+	}
+
+	if ((pwr_level_to_cdsprm < pwr->active_pwrlevel) && notify_cxlimit) {
+		npu_notify_cdsprm_cxlimit_corner(npu_dev,
+			pwr_level_to_cdsprm);
+		NPU_DBG("Notify cdsprm(post) %d\n", pwr_level_to_cdsprm);
 	}
 
 	pwr->active_pwrlevel = pwr_level_to_set;
@@ -708,6 +883,13 @@ static int npu_enable_clocks(struct npu_device *npu_dev, bool post_pil)
 	uint32_t pwrlevel_to_set, pwrlevel_idx;
 
 	pwrlevel_to_set = pwr->active_pwrlevel;
+	if (!post_pil) {
+		pwrlevel_to_set = npu_notify_cdsprm_cxlimit_corner(
+			npu_dev, pwrlevel_to_set);
+		NPU_DBG("Notify cdsprm %d\n", pwrlevel_to_set);
+		pwr->active_pwrlevel = pwrlevel_to_set;
+	}
+
 	pwrlevel_idx = npu_power_level_to_index(npu_dev, pwrlevel_to_set);
 	pwrlevel = &pwr->pwrlevels[pwrlevel_idx];
 	for (i = 0; i < npu_dev->core_clk_num; i++) {
@@ -774,6 +956,11 @@ static void npu_disable_clocks(struct npu_device *npu_dev, bool post_pil)
 {
 	int i, rc = 0;
 	struct npu_clk *core_clks = npu_dev->core_clks;
+
+	if (!post_pil) {
+		npu_notify_cdsprm_cxlimit_corner(npu_dev, NPU_PWRLEVEL_OFF);
+		NPU_DBG("Notify cdsprm clock off\n");
+	}
 
 	for (i = npu_dev->core_clk_num - 1; i >= 0 ; i--) {
 		if (post_pil) {
@@ -1355,12 +1542,6 @@ static int npu_set_fw_state(struct npu_client *client, uint32_t enable)
 	struct npu_host_ctx *host_ctx = &npu_dev->host_ctx;
 	int rc = 0;
 
-	if (host_ctx->network_num > 0) {
-		NPU_ERR("Need to unload network first\n");
-		mutex_unlock(&npu_dev->dev_lock);
-		return -EINVAL;
-	}
-
 	if (enable) {
 		NPU_DBG("enable fw\n");
 		rc = enable_fw(npu_dev);
@@ -1370,9 +1551,6 @@ static int npu_set_fw_state(struct npu_client *client, uint32_t enable)
 			host_ctx->npu_init_cnt++;
 			NPU_DBG("npu_init_cnt %d\n",
 				host_ctx->npu_init_cnt);
-			/* set npu to lowest power level */
-			if (npu_set_uc_power_level(npu_dev, 1))
-				NPU_WARN("Failed to set uc power level\n");
 		}
 	} else if (host_ctx->npu_init_cnt > 0) {
 		NPU_DBG("disable fw\n");
@@ -1469,7 +1647,7 @@ static int npu_get_property(struct npu_client *client,
 	default:
 		ret = npu_host_get_fw_property(client->npu_dev, &prop);
 		if (ret) {
-			NPU_ERR("npu_host_set_fw_property failed\n");
+			NPU_ERR("npu_host_get_fw_property failed\n");
 			return ret;
 		}
 		break;
@@ -1738,13 +1916,70 @@ int npu_set_bw(struct npu_device *npu_dev, int new_ib, int new_ab)
 	return ret;
 }
 
+#define NPU_FMAX_THRESHOLD 1000000
+static int npu_adjust_max_power_level(struct npu_device *npu_dev)
+{
+	struct npu_pwrctrl *pwr = &npu_dev->pwrctrl;
+	uint32_t fmax_reg_value, fmax, fmax_pwrlvl;
+	struct npu_pwrlevel *level;
+	int i, j;
+
+	if (!npu_dev->qfprom_io.base)
+		return 0;
+
+	/* search for cal clock index */
+	for (j = 0; j < npu_dev->core_clk_num; j++) {
+		if (!strcmp(npu_dev->core_clks[j].clk_name,
+			"cal_hm0_clk"))
+			break;
+	}
+
+	if (j == npu_dev->core_clk_num) {
+		NPU_WARN("can't find clock cal_hm0_clk\n");
+		return 0;
+	}
+
+	/* Read FMAX info if available */
+	fmax_reg_value = (npu_qfprom_reg_read(npu_dev,
+		QFPROM_FMAX_REG_OFFSET) & QFPROM_FMAX_BITS_MASK) >>
+		QFPROM_FMAX_BITS_SHIFT;
+	NPU_DBG("fmax_reg_value %x\n", fmax_reg_value);
+
+	if (fmax_reg_value == 0)
+		return 0;
+
+	/* calculate fmax and truncate to MHz */
+	fmax = fmax_reg_value * 19200000 / 2;
+
+	/* search for the nearest power level */
+	for (i = 0; i < pwr->num_pwrlevels; i++) {
+		level = &pwr->pwrlevels[i];
+
+		if (level->clk_freq[j] >= fmax ||
+			((fmax - level->clk_freq[j]) < NPU_FMAX_THRESHOLD)) {
+			fmax_pwrlvl = level->pwr_level;
+			break;
+		}
+	}
+
+	if (i == pwr->num_pwrlevels)
+		return 0;
+
+	if (fmax_pwrlvl < pwr->max_pwrlevel) {
+		pwr->max_pwrlevel = fmax_pwrlvl;
+		NPU_INFO("Adjust max_pwrlevel to %d[%x]\n", fmax_pwrlvl,
+			fmax_reg_value);
+	}
+
+	return 0;
+}
+
 static int npu_of_parse_pwrlevels(struct npu_device *npu_dev,
 		struct device_node *node)
 {
 	struct npu_pwrctrl *pwr = &npu_dev->pwrctrl;
 	struct device_node *child;
 	uint32_t init_level_index = 0, init_power_level;
-	uint32_t fmax, fmax_pwrlvl;
 
 	pwr->num_pwrlevels = 0;
 	pwr->min_pwrlevel = NPU_PWRLEVEL_TURBO_L1;
@@ -1805,28 +2040,7 @@ static int npu_of_parse_pwrlevels(struct npu_device *npu_dev,
 		}
 	}
 
-	/* Read FMAX info if available */
-	if (npu_dev->qfprom_io.base) {
-		fmax = (npu_qfprom_reg_read(npu_dev,
-			QFPROM_FMAX_REG_OFFSET) & QFPROM_FMAX_BITS_MASK) >>
-			QFPROM_FMAX_BITS_SHIFT;
-		NPU_DBG("fmax %x\n", fmax);
-
-		switch (fmax) {
-		case 0x34:
-			fmax_pwrlvl = NPU_PWRLEVEL_SVS_L1;
-			break;
-		case 0x48:
-			fmax_pwrlvl = NPU_PWRLEVEL_NOM;
-			break;
-		default:
-			fmax_pwrlvl = pwr->max_pwrlevel;
-			break;
-		}
-
-		if (fmax_pwrlvl < pwr->max_pwrlevel)
-			pwr->max_pwrlevel = fmax_pwrlvl;
-	}
+	npu_adjust_max_power_level(npu_dev);
 
 	of_property_read_u32(node, "initial-pwrlevel", &init_level_index);
 	NPU_DBG("initial-pwrlevel %d\n", init_level_index);
@@ -1860,6 +2074,8 @@ static int npu_pwrctrl_init(struct npu_device *npu_dev)
 	struct platform_device *p2dev;
 	struct npu_pwrctrl *pwr = &npu_dev->pwrctrl;
 
+	pwr->devbw_num = 0;
+
 	/* Power levels */
 	node = of_find_node_by_name(pdev->dev.of_node, "qcom,npu-pwrlevels");
 
@@ -1873,15 +2089,17 @@ static int npu_pwrctrl_init(struct npu_device *npu_dev)
 		return ret;
 
 	/* Parse Bandwidth Monitor */
-	pwr->devbw_num = of_property_count_strings(pdev->dev.of_node,
+	ret = of_property_count_strings(pdev->dev.of_node,
 			"qcom,npubw-dev-names");
-	if (pwr->devbw_num <= 0) {
+	if (ret <= 0) {
 		NPU_INFO("npubw-dev-names are not defined\n");
 		return 0;
-	} else if (pwr->devbw_num > NPU_MAX_BW_DEVS) {
-		NPU_ERR("number of devbw %d exceeds limit\n", pwr->devbw_num);
+	} else if (ret > NPU_MAX_BW_DEVS) {
+		NPU_ERR("number of devbw %d exceeds limit\n", ret);
 		return -EINVAL;
 	}
+	pwr->devbw_num = ret;
+	ret = 0;
 
 	for (i = 0; i < pwr->devbw_num; i++) {
 		node = of_parse_phandle(pdev->dev.of_node,
@@ -1980,6 +2198,10 @@ static int npu_ipcc_bridge_mbox_send_data(struct mbox_chan *chan, void *data)
 	ipcc_mbox_chan->npu_mbox->send_data_pending = true;
 	queue_work(host_ctx->wq, &host_ctx->bridge_mbox_work);
 	spin_unlock_irqrestore(&host_ctx->bridge_mbox_lock, flags);
+
+	if (host_ctx->app_crashed)
+		npu_bridge_mbox_send_data(host_ctx,
+					ipcc_mbox_chan->npu_mbox, NULL);
 
 	return 0;
 }
@@ -2428,10 +2650,15 @@ static int npu_probe(struct platform_device *pdev)
 		thermal_cdev_update(tcdev);
 	}
 
+	rc = npu_cdsprm_cxlimit_init(npu_dev);
+	if (rc)
+		goto error_driver_init;
+
 	g_npu_dev = npu_dev;
 
 	return rc;
 error_driver_init:
+	npu_cdsprm_cxlimit_deinit(npu_dev);
 	if (npu_dev->tcdev)
 		thermal_cooling_device_unregister(npu_dev->tcdev);
 	sysfs_remove_group(&npu_dev->device->kobj, &npu_fs_attr_group);
@@ -2456,6 +2683,7 @@ static int npu_remove(struct platform_device *pdev)
 	npu_dev = platform_get_drvdata(pdev);
 	npu_host_deinit(npu_dev);
 	npu_debugfs_deinit(npu_dev);
+	npu_cdsprm_cxlimit_deinit(npu_dev);
 	if (npu_dev->tcdev)
 		thermal_cooling_device_unregister(npu_dev->tcdev);
 	sysfs_remove_group(&npu_dev->device->kobj, &npu_fs_attr_group);

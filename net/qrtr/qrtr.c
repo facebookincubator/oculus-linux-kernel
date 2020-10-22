@@ -135,6 +135,15 @@ static DECLARE_RWSEM(qrtr_node_lock);
 static DEFINE_IDR(qrtr_ports);
 static DEFINE_MUTEX(qrtr_port_lock);
 
+/* backup buffers */
+#define QRTR_BACKUP_HI_NUM	5
+#define QRTR_BACKUP_HI_SIZE	SZ_16K
+#define QRTR_BACKUP_LO_NUM	20
+#define QRTR_BACKUP_LO_SIZE	SZ_1K
+static struct sk_buff_head qrtr_backup_lo;
+static struct sk_buff_head qrtr_backup_hi;
+static struct work_struct qrtr_backup_work;
+
 /**
  * struct qrtr_node - endpoint node
  * @ep_lock: lock for endpoint management and callbacks
@@ -330,7 +339,8 @@ static void __qrtr_node_release(struct kref *kref)
 	if (node->nid != QRTR_EP_NID_AUTO) {
 		radix_tree_for_each_slot(slot, &qrtr_nodes, &iter, 0) {
 			if (node == *slot)
-				radix_tree_delete(&qrtr_nodes, iter.index);
+				radix_tree_iter_delete(&qrtr_nodes, &iter,
+						       slot);
 		}
 	}
 
@@ -346,7 +356,7 @@ static void __qrtr_node_release(struct kref *kref)
 			sock_put(waiter->sk);
 			kfree(waiter);
 		}
-		radix_tree_delete(&node->qrtr_tx_flow, iter.index);
+		radix_tree_iter_delete(&node->qrtr_tx_flow, &iter, slot);
 		kfree(flow);
 	}
 	mutex_unlock(&node->qrtr_tx_lock);
@@ -684,6 +694,59 @@ int qrtr_peek_pkt_size(const void *data)
 }
 EXPORT_SYMBOL(qrtr_peek_pkt_size);
 
+static void qrtr_alloc_backup(struct work_struct *work)
+{
+	struct sk_buff *skb;
+	int errcode;
+
+	while (skb_queue_len(&qrtr_backup_lo) < QRTR_BACKUP_LO_NUM) {
+		skb = alloc_skb_with_frags(sizeof(struct qrtr_hdr_v1),
+					   QRTR_BACKUP_LO_SIZE, 0, &errcode,
+					   GFP_KERNEL);
+		if (!skb)
+			break;
+		skb_queue_tail(&qrtr_backup_lo, skb);
+	}
+	while (skb_queue_len(&qrtr_backup_hi) < QRTR_BACKUP_HI_NUM) {
+		skb = alloc_skb_with_frags(sizeof(struct qrtr_hdr_v1),
+					   QRTR_BACKUP_HI_SIZE, 0, &errcode,
+					   GFP_KERNEL);
+		if (!skb)
+			break;
+		skb_queue_tail(&qrtr_backup_hi, skb);
+	}
+}
+
+static struct sk_buff *qrtr_get_backup(size_t len)
+{
+	struct sk_buff *skb = NULL;
+
+	if (len < QRTR_BACKUP_LO_SIZE)
+		skb = skb_dequeue(&qrtr_backup_lo);
+	else if (len < QRTR_BACKUP_HI_SIZE)
+		skb = skb_dequeue(&qrtr_backup_hi);
+
+	if (skb)
+		queue_work(system_unbound_wq, &qrtr_backup_work);
+
+	return skb;
+}
+
+static void qrtr_backup_init(void)
+{
+	skb_queue_head_init(&qrtr_backup_lo);
+	skb_queue_head_init(&qrtr_backup_hi);
+	INIT_WORK(&qrtr_backup_work, qrtr_alloc_backup);
+	queue_work(system_unbound_wq, &qrtr_backup_work);
+}
+
+static void qrtr_backup_deinit(void)
+{
+	cancel_work_sync(&qrtr_backup_work);
+	skb_queue_purge(&qrtr_backup_lo);
+	skb_queue_purge(&qrtr_backup_hi);
+}
+
 /**
  * qrtr_endpoint_post() - post incoming data
  * @ep: endpoint handle
@@ -708,8 +771,13 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 		return -EINVAL;
 
 	skb = alloc_skb_with_frags(sizeof(*v1), len, 0, &errcode, GFP_ATOMIC);
-	if (!skb)
-		return -ENOMEM;
+	if (!skb) {
+		skb = qrtr_get_backup(len);
+		if (!skb) {
+			pr_err("qrtr: Unable to get skb with len:%lu\n", len);
+			return -ENOMEM;
+		}
+	}
 
 	skb_reserve(skb, sizeof(*v1));
 	cb = (struct qrtr_cb *)skb->cb;
@@ -852,14 +920,12 @@ static bool qrtr_must_forward(struct qrtr_node *src,
 	return false;
 }
 
-static void qrtr_fwd_ctrl_pkt(struct sk_buff *skb)
+static void qrtr_fwd_ctrl_pkt(struct qrtr_node *src, struct sk_buff *skb)
 {
 	struct qrtr_node *node;
-	struct qrtr_node *src;
 	struct qrtr_cb *cb = (struct qrtr_cb *)skb->cb;
 
 	qrtr_skb_align_linearize(skb);
-	src = qrtr_node_lookup(cb->src_node);
 	down_read(&qrtr_node_lock);
 	list_for_each_entry(node, &qrtr_all_epts, item) {
 		struct sockaddr_qrtr from;
@@ -884,7 +950,6 @@ static void qrtr_fwd_ctrl_pkt(struct sk_buff *skb)
 		qrtr_node_enqueue(node, skbn, cb->type, &from, &to, 0);
 	}
 	up_read(&qrtr_node_lock);
-	qrtr_node_release(src);
 }
 
 static void qrtr_fwd_pkt(struct sk_buff *skb, struct qrtr_cb *cb)
@@ -920,7 +985,7 @@ static void qrtr_node_rx_work(struct kthread_work *work)
 		qrtr_node_assign(node, cb->src_node);
 
 		if (cb->type != QRTR_TYPE_DATA)
-			qrtr_fwd_ctrl_pkt(skb);
+			qrtr_fwd_ctrl_pkt(node, skb);
 
 		if (cb->type == QRTR_TYPE_NEW_SERVER &&
 		    skb->len == sizeof(pkt)) {
@@ -1864,6 +1929,8 @@ static int __init qrtr_proto_init(void)
 		proto_unregister(&qrtr_proto);
 	}
 
+	qrtr_backup_init();
+
 	return rc;
 }
 postcore_initcall(qrtr_proto_init);
@@ -1873,6 +1940,8 @@ static void __exit qrtr_proto_fini(void)
 	rtnl_unregister(PF_QIPCRTR, RTM_NEWADDR);
 	sock_unregister(qrtr_family.family);
 	proto_unregister(&qrtr_proto);
+
+	qrtr_backup_deinit();
 }
 module_exit(qrtr_proto_fini);
 

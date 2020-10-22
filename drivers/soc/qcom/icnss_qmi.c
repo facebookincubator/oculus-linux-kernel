@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "icnss_qmi: " fmt
@@ -19,6 +19,7 @@
 #include <linux/ipc_logging.h>
 #include <linux/thread_info.h>
 #include <linux/soc/qcom/qmi.h>
+#include <linux/platform_device.h>
 #include <soc/qcom/icnss.h>
 #include <soc/qcom/service-locator.h>
 #include <soc/qcom/service-notifier.h>
@@ -374,11 +375,14 @@ int wlfw_cap_send_sync_msg(struct icnss_priv *priv)
 				    ret);
 		goto out;
 	} else if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ret = -resp->resp.result;
+		if (resp->resp.error == QMI_ERR_PLAT_CCPM_CLK_INIT_FAILED) {
+			icnss_pr_err("RF card not present\n");
+			goto out;
+		}
+
 		icnss_qmi_fatal_err("QMI Capability request rejected, result:%d error:%d\n",
 			resp->resp.result, resp->resp.error);
-		ret = -resp->resp.result;
-		if (resp->resp.error == QMI_ERR_PLAT_CCPM_CLK_INIT_FAILED)
-			icnss_qmi_fatal_err("RF card not present\n");
 		goto out;
 	}
 
@@ -482,9 +486,14 @@ int wlfw_wlan_mode_send_sync_msg(struct icnss_priv *priv,
 		icnss_qmi_fatal_err("Mode resp wait failed with ret %d\n", ret);
 		goto out;
 	} else if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ret = -resp->resp.result;
+		if (resp->resp.error == QMI_ERR_PLAT_CCPM_CLK_INIT_FAILED) {
+			icnss_pr_err("QMI Mode req rejected as CCPM init failed, result:%d error:%d\n",
+				     resp->resp.result, resp->resp.error);
+			goto out;
+		}
 		icnss_qmi_fatal_err("QMI Mode request rejected, result:%d error:%d\n",
 			resp->resp.result, resp->resp.error);
-		ret = -resp->resp.result;
 		goto out;
 	}
 
@@ -1004,7 +1013,7 @@ out:
 void icnss_handle_rejuvenate(struct icnss_priv *priv)
 {
 	struct icnss_event_pd_service_down_data *event_data;
-	struct icnss_uevent_fw_down_data fw_down_data;
+	struct icnss_uevent_fw_down_data fw_down_data = {0};
 
 	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
 	if (event_data == NULL)
@@ -1039,6 +1048,10 @@ static void msa_ready_ind_cb(struct qmi_handle *qmi, struct sockaddr_qrtr *sq,
 			     struct qmi_txn *txn, const void *data)
 {
 	struct icnss_priv *priv = container_of(qmi, struct icnss_priv, qmi);
+	struct device *dev = &priv->pdev->dev;
+	const struct wlfw_msa_ready_ind_msg_v01 *ind_msg = data;
+	uint64_t msa_base_addr = priv->msa_pa;
+	phys_addr_t hang_data_phy_addr;
 
 	icnss_pr_dbg("Received MSA Ready Indication\n");
 
@@ -1048,6 +1061,59 @@ static void msa_ready_ind_cb(struct qmi_handle *qmi, struct sockaddr_qrtr *sq,
 	}
 
 	priv->stats.msa_ready_ind++;
+
+	/* Check if the length is valid &
+	 * the length should not be 0 and
+	 * should be <=  WLFW_MAX_HANG_EVENT_DATA_SIZE(400)
+	 */
+
+	if (ind_msg->hang_data_length_valid &&
+	    ind_msg->hang_data_length &&
+	    ind_msg->hang_data_length <= WLFW_MAX_HANG_EVENT_DATA_SIZE)
+		priv->hang_event_data_len = ind_msg->hang_data_length;
+	else
+		goto out;
+
+	/* Check if the offset is valid &
+	 * the offset should be in range of 0 to msa_mem_size-hang_data_length
+	 */
+
+	if (ind_msg->hang_data_addr_offset_valid &&
+	    (ind_msg->hang_data_addr_offset <= (priv->msa_mem_size -
+						 ind_msg->hang_data_length)))
+		hang_data_phy_addr = msa_base_addr +
+						ind_msg->hang_data_addr_offset;
+	else
+		goto out;
+
+	if (priv->hang_event_data_pa == hang_data_phy_addr)
+		goto exit;
+
+	priv->hang_event_data_pa = hang_data_phy_addr;
+	priv->hang_event_data_va = devm_ioremap(dev, priv->hang_event_data_pa,
+						ind_msg->hang_data_length);
+
+	if (!priv->hang_event_data_va) {
+		icnss_pr_err("Hang Data ioremap failed: phy addr: %pa\n",
+			     &priv->hang_event_data_pa);
+		goto fail;
+	}
+exit:
+	icnss_pr_dbg("Hang Event Data details,Offset:0x%x, Length:0x%x,va_addr: 0x%pK\n",
+		     ind_msg->hang_data_addr_offset,
+		     ind_msg->hang_data_length,
+		     priv->hang_event_data_va);
+
+	return;
+
+out:
+	icnss_pr_err("Invalid Hang Data details, Offset:0x%x, Length:0x%x",
+		     ind_msg->hang_data_addr_offset,
+		     ind_msg->hang_data_length);
+fail:
+	priv->hang_event_data_va = NULL;
+	priv->hang_event_data_pa = 0;
+	priv->hang_event_data_len = 0;
 }
 
 static void pin_connect_result_ind_cb(struct qmi_handle *qmi,
@@ -1166,7 +1232,6 @@ int icnss_connect_to_fw_server(struct icnss_priv *priv, void *data)
 		ret = -ENODEV;
 		goto out;
 	}
-	set_bit(ICNSS_WLFW_EXISTS, &priv->state);
 
 	sq.sq_family = AF_QIPCRTR;
 	sq.sq_node = event_data->node;
@@ -1190,11 +1255,21 @@ out:
 
 int icnss_clear_server(struct icnss_priv *priv)
 {
+	int ret;
+
 	if (!priv)
 		return -ENODEV;
 
 	icnss_pr_info("QMI Service Disconnected: 0x%lx\n", priv->state);
 	clear_bit(ICNSS_WLFW_CONNECTED, &priv->state);
+
+	icnss_unregister_fw_service(priv);
+
+	ret =  icnss_register_fw_service(priv);
+	if (ret < 0) {
+		icnss_pr_err("WLFW server registration failed\n");
+		ICNSS_ASSERT(0);
+	}
 
 	return 0;
 }

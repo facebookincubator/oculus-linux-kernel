@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -755,13 +755,12 @@ static void tdls_ct_process_cap_supported(struct tdls_peer *curr_peer,
 					struct tdls_vdev_priv_obj *tdls_vdev,
 					struct tdls_soc_priv_obj *tdls_soc_obj)
 {
-	tdls_debug("tx %d rx %d thr.pkt %d/idle %d rssi %d thr.trig %d/tear %d",
-		 curr_peer->tx_pkt, curr_peer->rx_pkt,
-		 tdls_vdev->threshold_config.tx_packet_n,
-		 tdls_vdev->threshold_config.idle_packet_n,
-		 curr_peer->rssi,
-		 tdls_vdev->threshold_config.rssi_trigger_threshold,
-		 tdls_vdev->threshold_config.rssi_teardown_threshold);
+	if (curr_peer->rx_pkt || curr_peer->tx_pkt)
+		tdls_debug(QDF_MAC_ADDR_STR "link_status %d tdls_support %d tx %d rx %d rssi %d",
+			   QDF_MAC_ADDR_ARRAY(curr_peer->peer_mac.bytes),
+			   curr_peer->link_status, curr_peer->tdls_support,
+			   curr_peer->tx_pkt, curr_peer->rx_pkt,
+			   curr_peer->rssi);
 
 	switch (curr_peer->link_status) {
 	case TDLS_LINK_IDLE:
@@ -801,9 +800,11 @@ static void tdls_ct_process_cap_unknown(struct tdls_peer *curr_peer,
 			(!curr_peer->is_forced_peer))
 			return;
 
-	tdls_debug("threshold tx pkt = %d peer tx_pkt = %d & rx_pkt = %d ",
-		tdls_vdev->threshold_config.tx_packet_n, curr_peer->tx_pkt,
-		curr_peer->rx_pkt);
+	if (curr_peer->rx_pkt || curr_peer->tx_pkt)
+		tdls_debug(QDF_MAC_ADDR_STR "link_status %d tdls_support %d tx %d rx %d",
+			   QDF_MAC_ADDR_ARRAY(curr_peer->peer_mac.bytes),
+			   curr_peer->link_status, curr_peer->tdls_support,
+			   curr_peer->tx_pkt, curr_peer->rx_pkt);
 
 	if (!TDLS_IS_LINK_CONNECTED(curr_peer) &&
 	    ((curr_peer->tx_pkt + curr_peer->rx_pkt) >=
@@ -844,10 +845,6 @@ static void tdls_ct_process_peers(struct tdls_peer *curr_peer,
 				  struct tdls_vdev_priv_obj *tdls_vdev_obj,
 				  struct tdls_soc_priv_obj *tdls_soc_obj)
 {
-	tdls_debug(QDF_MAC_ADDR_STR " link_status %d tdls_support %d",
-		 QDF_MAC_ADDR_ARRAY(curr_peer->peer_mac.bytes),
-		 curr_peer->link_status, curr_peer->tdls_support);
-
 	switch (curr_peer->tdls_support) {
 	case TDLS_CAP_SUPPORTED:
 		tdls_ct_process_cap_supported(curr_peer, tdls_vdev_obj,
@@ -973,7 +970,7 @@ int tdls_set_tdls_secoffchanneloffset(struct tdls_soc_priv_obj *tdls_soc,
 		tdls_soc->tdls_channel_offset = BW20;
 		break;
 	case TDLS_SEC_OFFCHAN_OFFSET_40PLUS:
-		tdls_soc->tdls_channel_offset = BW40_LOW_PRIMARY;
+		tdls_soc->tdls_channel_offset = BW40_HIGH_PRIMARY;
 		break;
 	case TDLS_SEC_OFFCHAN_OFFSET_40MINUS:
 		tdls_soc->tdls_channel_offset = BW40_LOW_PRIMARY;
@@ -1054,6 +1051,32 @@ int tdls_set_tdls_offchannelmode(struct wlan_objmgr_vdev *vdev,
 			   tdls_find_opclass(tdls_soc->soc,
 				chan_switch_params.tdls_off_ch,
 				chan_switch_params.tdls_off_ch_bw_offset);
+			if (!chan_switch_params.oper_class) {
+				if (chan_switch_params.tdls_off_ch_bw_offset ==
+				    BW40_HIGH_PRIMARY)
+					chan_switch_params.oper_class =
+					tdls_find_opclass(tdls_soc->soc,
+						chan_switch_params.tdls_off_ch,
+						BW40_LOW_PRIMARY);
+				else if (chan_switch_params.
+					 tdls_off_ch_bw_offset ==
+					 BW40_LOW_PRIMARY)
+					chan_switch_params.oper_class =
+					tdls_find_opclass(tdls_soc->soc,
+						chan_switch_params.tdls_off_ch,
+						BW40_HIGH_PRIMARY);
+				tdls_debug("oper_class:%d",
+					    chan_switch_params.oper_class);
+			}
+		} else if (conn_peer->off_channel_capable &&
+			   conn_peer->pref_off_chan_num) {
+			chan_switch_params.tdls_off_ch =
+				conn_peer->pref_off_chan_num;
+			chan_switch_params.oper_class =
+				tdls_get_opclass_from_bandwidth(
+				tdls_soc, conn_peer->pref_off_chan_num,
+				tdls_soc->tdls_configs.tdls_pre_off_chan_bw,
+				&chan_switch_params.tdls_off_ch_bw_offset);
 		} else {
 			tdls_err("TDLS off-channel parameters are not set yet!!!");
 			return -EINVAL;
@@ -1198,7 +1221,7 @@ void tdls_disable_offchan_and_teardown_links(
 	}
 
 	if (TDLS_SUPPORT_SUSPENDED >= tdls_soc->tdls_current_mode) {
-		tdls_notice("TDLS mode %d is disabled OR not suspended now",
+		tdls_debug("TDLS mode %d is disabled OR not suspended now",
 			   tdls_soc->tdls_current_mode);
 		return;
 	}
@@ -1208,7 +1231,7 @@ void tdls_disable_offchan_and_teardown_links(
 		tdls_in_progress = true;
 
 	if (!(connected_tdls_peers || tdls_in_progress)) {
-		tdls_notice("No TDLS connected/progress peers to delete");
+		tdls_debug("No TDLS connected/progress peers to delete");
 		vdev_id = vdev->vdev_objmgr.vdev_id;
 		if (tdls_soc->set_state_info.set_state_cnt > 0) {
 			tdls_debug("Disable the tdls in FW as second interface is coming up");

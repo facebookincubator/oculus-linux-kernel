@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -430,6 +430,7 @@ static bool sde_crtc_mode_fixup(struct drm_crtc *crtc,
 {
 	SDE_DEBUG("\n");
 
+	sde_cp_mode_switch_prop_dirty(crtc);
 	if ((msm_is_mode_seamless(adjusted_mode) ||
 	     (msm_is_mode_seamless_vrr(adjusted_mode) ||
 	      msm_is_mode_seamless_dyn_clk(adjusted_mode))) &&
@@ -1805,9 +1806,11 @@ int sde_crtc_get_secure_transition_ops(struct drm_crtc *crtc,
 	struct sde_kms *sde_kms;
 	struct sde_mdss_cfg *catalog;
 	struct sde_kms_smmu_state_data *smmu_state;
+	struct drm_device *dev;
 	uint32_t translation_mode = 0, secure_level;
 	int ops  = 0;
 	bool post_commit = false;
+	bool clone_mode = false;
 
 	if (!crtc || !crtc->state) {
 		SDE_ERROR("invalid crtc\n");
@@ -1825,6 +1828,17 @@ int sde_crtc_get_secure_transition_ops(struct drm_crtc *crtc,
 	sde_crtc = to_sde_crtc(crtc);
 	secure_level = sde_crtc_get_secure_level(crtc, crtc->state);
 	catalog = sde_kms->catalog;
+	dev = sde_kms->dev;
+
+	/*
+	 * Loop through encoder list to find out if clone mode is
+	 * enabled on any of the encoders. If clone mode is enabled,
+	 * wait for the cwb commit to be completed, before making
+	 * the secure transition.
+	 */
+	list_for_each_entry(encoder, &crtc->dev->mode_config.encoder_list, head)
+		if (sde_encoder_in_clone_mode(encoder))
+			clone_mode = true;
 
 	/*
 	 * SMMU operations need to be delayed in case of video mode panels
@@ -1866,6 +1880,8 @@ int sde_crtc_get_secure_transition_ops(struct drm_crtc *crtc,
 	case SDE_DRM_FB_SEC_DIR_TRANS:
 		_sde_drm_fb_sec_dir_trans(smmu_state, secure_level,
 				catalog, old_valid_fb, &ops);
+		if (clone_mode && (ops & SDE_KMS_OPS_SECURE_STATE_CHANGE))
+			ops |= SDE_KMS_OPS_WAIT_FOR_TX_DONE;
 		break;
 
 	case SDE_DRM_FB_SEC:
@@ -2374,7 +2390,8 @@ static void sde_crtc_frame_event_work(struct kthread_work *work)
 
 	SDE_EVT32_VERBOSE(DRMID(crtc), fevent->event, SDE_EVTLOG_FUNC_ENTRY);
 
-	in_clone_mode = sde_encoder_in_clone_mode(fevent->connector->encoder);
+	in_clone_mode = (fevent->event & SDE_ENCODER_FRAME_EVENT_CWB_DONE) ?
+			true : false;
 
 	if (!in_clone_mode && (fevent->event & (SDE_ENCODER_FRAME_EVENT_ERROR
 					| SDE_ENCODER_FRAME_EVENT_PANEL_DEAD
@@ -2478,16 +2495,17 @@ static void _sde_crtc_clear_dim_layers_v1(struct sde_crtc_state *cstate)
  * @cstate:      Pointer to sde crtc state
  * @user_ptr:    User ptr for sde_drm_dim_layer_v1 struct
  */
-static void _sde_crtc_set_dim_layer_v1(struct sde_crtc_state *cstate,
-		void __user *usr_ptr)
+static void _sde_crtc_set_dim_layer_v1(struct drm_crtc *crtc,
+	struct sde_crtc_state *cstate, void __user *usr_ptr)
 {
 	struct sde_drm_dim_layer_v1 dim_layer_v1;
 	struct sde_drm_dim_layer_cfg *user_cfg;
 	struct sde_hw_dim_layer *dim_layer;
 	u32 count, i;
+	struct sde_kms *kms;
 
-	if (!cstate) {
-		SDE_ERROR("invalid cstate\n");
+	if (!crtc || !cstate) {
+		SDE_ERROR("invalid crtc or cstate\n");
 		return;
 	}
 	dim_layer = cstate->dim_layer;
@@ -2496,6 +2514,12 @@ static void _sde_crtc_set_dim_layer_v1(struct sde_crtc_state *cstate,
 		/* usr_ptr is null when setting the default property value */
 		_sde_crtc_clear_dim_layers_v1(cstate);
 		SDE_DEBUG("dim_layer data removed\n");
+		return;
+	}
+
+	kms = _sde_crtc_get_kms(crtc);
+	if (!kms || !kms->catalog) {
+		SDE_ERROR("invalid kms\n");
 		return;
 	}
 
@@ -2516,7 +2540,9 @@ static void _sde_crtc_set_dim_layer_v1(struct sde_crtc_state *cstate,
 		user_cfg = &dim_layer_v1.layer_cfg[i];
 
 		dim_layer[i].flags = user_cfg->flags;
-		dim_layer[i].stage = user_cfg->stage + SDE_STAGE_0;
+		dim_layer[i].stage = (kms->catalog->has_base_layer) ?
+					user_cfg->stage : user_cfg->stage +
+					SDE_STAGE_0;
 
 		dim_layer[i].rect.x = user_cfg->rect.x1;
 		dim_layer[i].rect.y = user_cfg->rect.y1;
@@ -3723,9 +3749,6 @@ static int _sde_crtc_vblank_enable_no_lock(
 
 		drm_for_each_encoder_mask(enc, crtc->dev,
 			crtc->state->encoder_mask) {
-			if (enc->crtc != crtc)
-				continue;
-
 			SDE_EVT32(DRMID(&sde_crtc->base), DRMID(enc), enable,
 					sde_crtc->enabled);
 
@@ -3735,9 +3758,6 @@ static int _sde_crtc_vblank_enable_no_lock(
 	} else {
 		drm_for_each_encoder_mask(enc, crtc->dev,
 			crtc->state->encoder_mask) {
-			if (enc->crtc != crtc)
-				continue;
-
 			SDE_EVT32(DRMID(&sde_crtc->base), DRMID(enc), enable,
 					sde_crtc->enabled);
 
@@ -4332,9 +4352,12 @@ static int _sde_crtc_check_secure_blend_config(struct drm_crtc *crtc,
 			int sec_stage = cnt ? pstates[0].sde_pstate->stage :
 						cstate->dim_layer[0].stage;
 
+			if (!sde_kms->catalog->has_base_layer)
+				sec_stage -= SDE_STAGE_0;
+
 			if ((!cnt && !cstate->num_dim_layers) ||
 				(sde_kms->catalog->sui_supported_blendstage
-						!= (sec_stage - SDE_STAGE_0))) {
+						!= sec_stage)) {
 				SDE_ERROR(
 				  "crtc%d: empty cnt%d/dim%d or bad stage%d\n",
 					DRMID(crtc), cnt,
@@ -4382,6 +4405,20 @@ static int _sde_crtc_check_secure_state_smmu_translation(struct drm_crtc *crtc,
 	}
 
 	/*
+	 * Secure display to secure camera needs without direct
+	 * transition is currently not allowed
+	 */
+	if (fb_sec_dir && secure == SDE_DRM_SEC_NON_SEC &&
+		smmu_state->state != ATTACHED &&
+		smmu_state->secure_level == SDE_DRM_SEC_ONLY) {
+
+		SDE_EVT32(DRMID(crtc), fb_ns, fb_sec_dir,
+			smmu_state->state, smmu_state->secure_level,
+			secure);
+		goto sec_err;
+	}
+
+	/*
 	 * In video mode check for null commit before transition
 	 * from secure to non secure and vice versa
 	 */
@@ -4398,14 +4435,17 @@ static int _sde_crtc_check_secure_state_smmu_translation(struct drm_crtc *crtc,
 		SDE_EVT32(DRMID(crtc), fb_ns, fb_sec_dir,
 			smmu_state->state, smmu_state->secure_level,
 			secure, crtc->state->plane_mask, state->plane_mask);
-		SDE_ERROR(
-		 "crtc%d Invalid transition;sec%d state%d slvl%d ns%d sdir%d\n",
-			DRMID(crtc), secure, smmu_state->state,
-			smmu_state->secure_level, fb_ns, fb_sec_dir);
-		return -EINVAL;
+		goto sec_err;
 	}
 
 	return 0;
+
+sec_err:
+	SDE_ERROR(
+	 "crtc%d Invalid transition;sec%d state%d slvl%d ns%d sdir%d\n",
+		DRMID(crtc), secure, smmu_state->state,
+		smmu_state->secure_level, fb_ns, fb_sec_dir);
+	return -EINVAL;
 }
 
 static int _sde_crtc_check_secure_conn(struct drm_crtc *crtc,
@@ -4512,9 +4552,17 @@ static int _sde_crtc_check_get_pstates(struct drm_crtc *crtc,
 	const struct drm_plane_state *pstate;
 	const struct drm_plane_state *pipe_staged[SSPP_MAX];
 	int rc = 0, multirect_count = 0, i, mixer_width, mixer_height;
+	int inc_sde_stage = 0;
+	struct sde_kms *kms;
 
 	sde_crtc = to_sde_crtc(crtc);
 	cstate = to_sde_crtc_state(state);
+
+	kms = _sde_crtc_get_kms(crtc);
+	if (!kms || !kms->catalog) {
+		SDE_ERROR("invalid kms\n");
+		return -EINVAL;
+	}
 
 	memset(pipe_staged, 0, sizeof(pipe_staged));
 
@@ -4541,10 +4589,13 @@ static int _sde_crtc_check_get_pstates(struct drm_crtc *crtc,
 				pstates[*cnt].sde_pstate, PLANE_PROP_ZPOS);
 		pstates[*cnt].pipe_id = sde_plane_pipe(plane);
 
+		if (!kms->catalog->has_base_layer)
+			inc_sde_stage = SDE_STAGE_0;
+
 		/* check dim layer stage with every plane */
 		for (i = 0; i < cstate->num_dim_layers; i++) {
 			if (cstate->dim_layer[i].stage ==
-					(pstates[*cnt].stage + SDE_STAGE_0)) {
+				(pstates[*cnt].stage + inc_sde_stage)) {
 				SDE_ERROR(
 					"plane:%d/dim_layer:%i-same stage:%d\n",
 					plane->base.id, i,
@@ -4620,6 +4671,16 @@ static int _sde_crtc_check_zpos(struct drm_crtc_state *state,
 {
 	int rc = 0, i, z_pos;
 	u32 zpos_cnt = 0;
+	struct drm_crtc *crtc;
+	struct sde_kms *kms;
+
+	crtc = &sde_crtc->base;
+	kms = _sde_crtc_get_kms(crtc);
+
+	if (!kms || !kms->catalog) {
+		SDE_ERROR("Invalid kms\n");
+		return -EINVAL;
+	}
 
 	sort(pstates, cnt, sizeof(pstates[0]), pstate_cmp, NULL);
 
@@ -4659,7 +4720,11 @@ static int _sde_crtc_check_zpos(struct drm_crtc_state *state,
 			zpos_cnt++;
 		}
 
-		pstates[i].sde_pstate->stage = z_pos + SDE_STAGE_0;
+		if (!kms->catalog->has_base_layer)
+			pstates[i].sde_pstate->stage = z_pos + SDE_STAGE_0;
+		else
+			pstates[i].sde_pstate->stage = z_pos;
+
 		SDE_DEBUG("%s: zpos %d", sde_crtc->name, z_pos);
 	}
 	return rc;
@@ -5064,6 +5129,10 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 		sde_kms_info_add_keyint(info, "max_mdp_clk",
 				sde_kms->perf.max_core_clk_rate);
 
+	if (catalog->uidle_cfg.uidle_rev)
+		sde_kms_info_add_keyint(info, "has_uidle",
+			true);
+
 	for (i = 0; i < catalog->limit_count; i++) {
 		sde_kms_info_add_keyint(info,
 			catalog->limit_cfg[i].name,
@@ -5130,6 +5199,9 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 	if (catalog->ubwc_bw_calc_version)
 		sde_kms_info_add_keyint(info, "ubwc_bw_calc_ver",
 				catalog->ubwc_bw_calc_version);
+
+	sde_kms_info_add_keyint(info, "use_baselayer_for_stage",
+			 catalog->has_base_layer);
 
 	msm_property_set_blob(&sde_crtc->property_info, &sde_crtc->blob_info,
 			info->data, SDE_KMS_INFO_DATALEN(info), CRTC_PROP_INFO);
@@ -5223,7 +5295,7 @@ static int sde_crtc_atomic_set_property(struct drm_crtc *crtc,
 		_sde_crtc_set_input_fence_timeout(cstate);
 		break;
 	case CRTC_PROP_DIM_LAYER_V1:
-		_sde_crtc_set_dim_layer_v1(cstate,
+		_sde_crtc_set_dim_layer_v1(crtc, cstate,
 					(void __user *)(uintptr_t)val);
 		break;
 	case CRTC_PROP_ROI_V1:
@@ -6244,6 +6316,7 @@ static int _sde_crtc_event_enable(struct sde_kms *kms,
 			if (!node)
 				return -ENOMEM;
 			INIT_LIST_HEAD(&node->list);
+			INIT_LIST_HEAD(&node->irq.list);
 			node->func = custom_events[i].func;
 			node->event = event;
 			node->state = IRQ_NOINIT;
@@ -6308,7 +6381,7 @@ static int _sde_crtc_event_disable(struct sde_kms *kms,
 	spin_lock_irqsave(&crtc->spin_lock, flags);
 	list_for_each_entry(node, &crtc->user_event_list, list) {
 		if (node->event == event) {
-			list_del(&node->list);
+			list_del_init(&node->list);
 			found = true;
 			break;
 		}
@@ -6336,7 +6409,14 @@ static int _sde_crtc_event_disable(struct sde_kms *kms,
 	}
 
 	ret = node->func(crtc_drm, false, &node->irq);
-	kfree(node);
+	if (ret) {
+		spin_lock_irqsave(&crtc->spin_lock, flags);
+		list_add_tail(&node->list, &crtc->user_event_list);
+		spin_unlock_irqrestore(&crtc->spin_lock, flags);
+	} else {
+		kfree(node);
+	}
+
 	pm_runtime_put_sync(crtc_drm->dev->dev);
 	return ret;
 }

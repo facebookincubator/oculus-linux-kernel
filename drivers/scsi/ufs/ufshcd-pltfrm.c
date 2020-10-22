@@ -195,7 +195,10 @@ static int ufshcd_populate_vreg(struct device *dev, const char *name,
 		goto out;
 	}
 
-	vreg->min_uA = 0;
+	snprintf(prop_name, MAX_PROP_SIZE, "%s-min-microamp", name);
+	if (of_property_read_u32(np, prop_name, &vreg->min_uA))
+		vreg->min_uA = UFS_VREG_LPM_LOAD_UA;
+
 	if (!strcmp(name, "vcc")) {
 		if (of_property_read_bool(np, "vcc-supply-1p8")) {
 			vreg->min_uV = UFS_VREG_VCC_1P8_MIN_UV;
@@ -231,8 +234,16 @@ static int ufshcd_populate_vreg(struct device *dev, const char *name,
 		if (of_property_read_bool(np, "vccq-pwr-collapse-sup"))
 			vreg->sys_suspend_pwr_off = true;
 	} else if (!strcmp(name, "vccq2")) {
-		vreg->min_uV = UFS_VREG_VCCQ2_MIN_UV;
-		vreg->max_uV = UFS_VREG_VCCQ2_MAX_UV;
+		prop = of_get_property(np, "vccq2-voltage-level", &len);
+		if (!prop || (len != (2 * sizeof(__be32)))) {
+			dev_warn(dev, "%s vccq2-voltage-level property.\n",
+				prop ? "invalid format" : "no");
+			vreg->min_uV = UFS_VREG_VCCQ2_MIN_UV;
+			vreg->max_uV = UFS_VREG_VCCQ2_MAX_UV;
+		} else {
+			vreg->min_uV = be32_to_cpup(&prop[0]);
+			vreg->max_uV = be32_to_cpup(&prop[1]);
+		}
 		if (of_property_read_bool(np, "vccq2-pwr-collapse-sup"))
 			vreg->sys_suspend_pwr_off = true;
 	}

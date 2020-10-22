@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -111,7 +111,7 @@ static int diagfwd_bridge_mux_write_done(unsigned char *buf, int len,
 		return -EINVAL;
 	ch = &bridge_info[buf_ctx];
 	if (ch->dev_ops && ch->dev_ops->fwd_complete) {
-		DIAG_LOG(DIAG_DEBUG_MHI,
+		DIAG_LOG(DIAG_DEBUG_BRIDGE,
 		"Write done completion received for buf %pK len:%d\n",
 			buf, len);
 		ch->dev_ops->fwd_complete(ch->id, ch->ctxt, buf, len, 0);
@@ -205,6 +205,12 @@ int diag_remote_dev_open(int id)
 
 void diag_remote_dev_close(int id)
 {
+
+	if (id < 0 || id >= NUM_REMOTE_DEV)
+		return;
+
+	diag_mux_close_device(BRIDGE_TO_MUX(id));
+
 	if (bridge_info[id].type == DIAG_DATA_TYPE)
 		diag_notify_md_client(BRIDGE_TO_MUX(id), 0, DIAG_STATUS_CLOSED);
 
