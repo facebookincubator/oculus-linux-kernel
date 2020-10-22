@@ -166,12 +166,14 @@ struct kgsl_drawobj_sparse {
  * @CMDOBJ_WFI - Force wait-for-idle for the submission
  * @CMDOBJ_PROFILE - store the start / retire ticks for
  * the command obj in the profiling buffer
+ * @CMDOBJ_CONSUMED - Marked when the obj has been consumed
  */
 enum kgsl_drawobj_cmd_priv {
 	CMDOBJ_SKIP = 0,
 	CMDOBJ_FORCE_PREAMBLE,
 	CMDOBJ_WFI,
 	CMDOBJ_PROFILE,
+	CMDOBJ_CONSUMED,
 };
 
 struct kgsl_ibdesc;

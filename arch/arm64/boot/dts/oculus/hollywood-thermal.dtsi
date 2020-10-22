@@ -1,11 +1,40 @@
 &vendor {
-	vrapi-front-panel {
+	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
 		compatible = "oculus,front-panel-sensor";
 		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
+		io-channel-names = "soc_temp";
+
+		thermal-zones = "pcb3-usr", "pcb2-usr", "pcb1-usr", "rfpa-usr",
+				"imu-usr";
+
+		/* Last coefficient must be set for iio-channel reading */
+		coefficients = <2122 (-933) 18156 (-10527) (-1730) 106>;
+		slope-coefficients = <(-223) 2052 (-8703) 1796 6275 (-82)>;
+
+		intercept-charging = <3440>;
+		intercept-discharging = <1940>;
 	};
 };
 
 &thermal_zones {
+	batt-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
+		wake-capable-sensor;
+		trips {
+			batt_trip: batt-trip {
+				temperature = <600>;
+				hysteresis = <10>;
+				type = "passive";
+			};
+		};
+	};
+
 	cpuss-0-usr {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
@@ -34,10 +63,16 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-governor = "user_space";
+		thermal-sensors = <&vrapi_front_panel_sensor>;
 		wake-capable-sensor;
 		trips {
-			virt_trip: virt-trip {
+			virt_trip0: virt-trip0 {
 				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_trip1: virt-trip1 {
+				temperature = <115000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};

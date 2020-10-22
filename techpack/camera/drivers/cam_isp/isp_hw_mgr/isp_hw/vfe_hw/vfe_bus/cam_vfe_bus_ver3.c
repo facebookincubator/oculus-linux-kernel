@@ -2328,6 +2328,7 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_bottom_half(
 
 		evt_info.res_type = vfe_out->res_type;
 		evt_info.hw_idx   = vfe_out->hw_intf->hw_idx;
+		evt_info.timestamp = evt_payload->ts.monotonic_ns;
 
 		rc = cam_vfe_bus_ver3_get_comp_vfe_out_res_id_list(
 			comp_mask, out_list, &num_out,

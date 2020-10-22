@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef WSA883X_INTERNAL_H
 #define WSA883X_INTERNAL_H
 
+#include <asoc/wcd-irq.h>
 #include "wsa883x.h"
 #include "wsa883x-registers.h"
 
@@ -25,7 +26,11 @@
 #define WSA883X_DRV_NAME "wsa883x-codec"
 #define WSA883X_NUM_RETRY	5
 
-#define WSA883X_VERSION_ENTRY_SIZE 27
+#define WSA883X_VERSION_ENTRY_SIZE 32
+#define WSA883X_VARIANT_ENTRY_SIZE 32
+
+#define WSA883X_VERSION_1_0 0
+#define WSA883X_VERSION_1_1 1
 
 enum {
 	G_18DB = 0,
@@ -53,6 +58,21 @@ enum {
 	SWR_COMP_PORT,
 	SWR_BOOST_PORT,
 	SWR_VISENSE_PORT,
+};
+
+enum {
+	BOLERO_WSA_EVT_TX_CH_HOLD_CLEAR = 1,
+	BOLERO_WSA_EVT_PA_OFF_PRE_SSR,
+	BOLERO_WSA_EVT_SSR_DOWN,
+	BOLERO_WSA_EVT_SSR_UP,
+	BOLERO_WSA_EVT_PA_ON_POST_FSCLK,
+};
+
+struct wsa_ctrl_platform_data {
+	void *handle;
+	int (*update_wsa_event)(void *handle, u16 event, u32 data);
+	int (*register_notifier)(void *handle, struct notifier_block *nblock,
+				bool enable);
 };
 
 struct swr_port {
@@ -83,10 +103,13 @@ struct wsa883x_priv {
 	struct mutex res_lock;
 	struct snd_info_entry *entry;
 	struct snd_info_entry *version_entry;
+	struct snd_info_entry *variant_entry;
 	struct device_node *wsa_rst_np;
 	int pa_mute;
 	int curr_temp;
 	int variant;
+	int version;
+	u8 pa_gain;
 	struct irq_domain *virq;
 	struct wcd_irq_info irq_info;
 #ifdef CONFIG_DEBUG_FS
@@ -96,8 +119,16 @@ struct wsa883x_priv {
 	struct dentry *debugfs_reg_dump;
 	unsigned int read_data;
 #endif
+	struct device_node *parent_np;
+	struct platform_device *parent_dev;
+	struct notifier_block parent_nblock;
+	void *handle;
+	int (*register_notifier)(void *handle,
+				struct notifier_block *nblock, bool enable);
+	struct cdc_regulator *regulator;
+	int num_supplies;
+	struct regulator_bulk_data *supplies;
+	unsigned long status_mask;
 };
 
-static int32_t wsa883x_resource_acquire(struct snd_soc_component *component,
-						bool enable);
 #endif /* WSA883X_INTERNAL_H */

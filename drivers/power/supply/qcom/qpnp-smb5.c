@@ -466,6 +466,8 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 
 	chg->lpd_disabled = of_property_read_bool(node, "qcom,lpd-disable");
 
+	chg->dam_enabled = of_property_read_bool(node, "qcom,typec-dam-enable");
+
 	rc = of_property_read_u32(node, "qcom,wd-bark-time-secs",
 					&chip->dt.wd_bark_time);
 	if (rc < 0 || chip->dt.wd_bark_time < MIN_WD_BARK_TIME)

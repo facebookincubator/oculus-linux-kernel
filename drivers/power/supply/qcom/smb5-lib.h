@@ -569,6 +569,7 @@ struct smb_charger {
 	bool			dpdm_enabled;
 	bool			apsd_ext_timeout;
 	bool			qc3p5_detected;
+	bool			dam_enabled;
 
 	/* workaround flag */
 	u32			wa_flags;

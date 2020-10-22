@@ -45,7 +45,7 @@
 #define FAN_STARTUP_TIME_MS 800
 #define MIN_PWM 15
 #define MAX_PWM 255
-#define MAX_RPM 6300
+#define MAX_RPM 7000
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
 
@@ -95,6 +95,25 @@ static ktime_t get_rpm_delay(int rpm)
 	else if (rpm >= 0)
 		return ms_to_ktime(200);
 	return 0;
+}
+
+static unsigned int get_tolerance(int rpm)
+{
+	if (rpm > 4500)
+		return 200;
+	else if (rpm >= 4500)
+		return 180;
+	else if (rpm >= 3500)
+		return 150;
+	else if (rpm >= 2500)
+		return 100;
+	else if (rpm >= 1500)
+		return 80;
+	else if (rpm >= 800)
+		return 60;
+	else if (rpm >= 500)
+		return 50;
+	return 200;
 }
 
 static void reset_counters(struct pwm_fan_ctx *ctx)
@@ -168,7 +187,7 @@ set_pwm_unlock:
 
 static int __set_rpm(struct pwm_fan_ctx *ctx, unsigned long rpm)
 {
-	ssize_t ret;
+	ssize_t ret = 0;
 	int current_rpm_value = 0;
 
 	mutex_lock(&ctx->rpm_lock);
@@ -198,7 +217,6 @@ static ssize_t set_force_failure(struct device *dev, struct device_attribute *at
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
 	unsigned long force_failure;
-	ssize_t ret;
 
 	if (kstrtoul(buf, 10, &force_failure))
 		return -EINVAL;
@@ -351,6 +369,9 @@ pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 			dev_err(&cdev->device, "Cannot set pwm!\n");
 			return ret;
 		}
+	} else {
+		/* Set RPM to expected level once display is on */
+		ctx->resume_rpm_value = ctx->pwm_fan_cooling_levels[state];
 	}
 
 	ctx->pwm_fan_state = state;
@@ -387,9 +408,9 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 	case DRM_PANEL_BLANK_LP:
 		current_rpm_value = ctx->rpm_value;
 		if (current_rpm_value > 0) {
-			ctx->resume_rpm_value = current_rpm_value;
 			__set_rpm(ctx, 0);
 		}
+		ctx->resume_rpm_value = current_rpm_value;
 		ctx->is_display_on = false;
 		break;
 	case DRM_PANEL_BLANK_UNBLANK:
@@ -420,17 +441,17 @@ static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 	/*
 	 * T = T1 + T2 + T3 + T4 = 60 / N (Sec)  N:SPEED (RPM)
 	 * One period has three rising edge interrupts, therefore
-	 * 1 rotation = tach_periods / 2
+	 * 3 rotation = tach_periods / 6
 	 * Refer to ND35C04-19F19-318002200012-REV01
-	 * RPM = (tach_periods / 2) * 60 * 1000 * 1000 / elapsed_us
+	 * RPM = (tach_periods / 6) * 60 * 1000 * 1000 / (elapsed_us / 3)
 	 */
-	if ((ctx->tach_periods % 2) == 0) {
+	if ((ctx->tach_periods % 6) == 0) {
 		s64 elapsed_us = ktime_to_us(ktime_sub(
 					curr_time, ctx->last_tach_timestamp));
 		ctx->last_tach_timestamp = curr_time;
 
-		/* Instant RPM: (60 * 1000 * 1000) us * 1rot / elapsed_us */
-		atomic64_set(&ctx->rpm, 60 * 1000 * 1000 / elapsed_us);
+		/* Instant RPM: (60 * 1000 * 1000) us * 3rot / elapsed_us */
+		atomic64_set(&ctx->rpm, 60 * 3 * 1000 * 1000 / elapsed_us);
 	}
 
 	return IRQ_HANDLED;
@@ -445,6 +466,7 @@ static void fan_work_func(struct work_struct *work)
 	int pwm = ctx->pwm_value;
 	int rpm_value = ctx->rpm_value;
 	int rpm_history_idx = ctx->timer_ticks;
+	int tolerance;
 
 	/*
 	 * Record current RPM value
@@ -464,7 +486,13 @@ static void fan_work_func(struct work_struct *work)
 		ctx->rpm_history[(rpm_history_idx - 1) % MAX_RPM_HISTORY],
 		ctx->rpm_history[(rpm_history_idx - 2) % MAX_RPM_HISTORY]);
 
-	if (abs(rpm_mid - rpm_value) > (rpm_value * 10) / 100) {
+	/*
+	 * To make the actual rpm closer to the set value
+	 * If set value is greater than 2000, tolerance set
+	 * to 200, otherwise set to 10% of set value
+	 */
+	tolerance = get_tolerance(rpm_value);
+	if (abs(rpm_mid - rpm_value) > tolerance) {
 		pwm = (rpm_mid > rpm_value) ? (pwm - 1) : (pwm + 1);
 		/* Restrict to MIN_PWM to MAX_PWM */
 		pwm = max(min(MAX_PWM, pwm), MIN_PWM);
@@ -727,6 +755,9 @@ static int pwm_fan_resume(struct device *dev)
 
 	return __set_rpm(ctx, current_rpm_value);
 }
+#else
+#define pwm_fan_suspend NULL
+#define pwm_fan_resume NULL
 #endif
 
 static SIMPLE_DEV_PM_OPS(pwm_fan_pm, pwm_fan_suspend, pwm_fan_resume);

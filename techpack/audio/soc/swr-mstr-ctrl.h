@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SWR_WCD_CTRL_H
@@ -26,6 +26,7 @@
 #define SWR_ROW_48		0
 #define SWR_ROW_50		1
 #define SWR_ROW_64		3
+#define SWR_COL_04		1 /* Cols = 4 */
 #define SWR_MAX_COL		7 /* Cols = 16 */
 #define SWR_MIN_COL		0 /* Cols = 2 */
 
@@ -42,7 +43,7 @@
 
 #define SWR_MAX_CH_PER_PORT 8
 
-#define SWR_MAX_SLAVE_DEVICES 11
+#define SWRM_NUM_AUTO_ENUM_SLAVES    6
 
 enum {
 	SWR_MSTR_PAUSE,
@@ -81,7 +82,6 @@ struct swrm_mports {
 	bool port_en;
 	u8 ch_en;
 	u8 req_ch;
-	u8 ch_rate;
 	u8 offset1;
 	u8 offset2;
 	u8 sinterval;
@@ -91,6 +91,7 @@ struct swrm_mports {
 	u8 blk_pack_mode;
 	u8 word_length;
 	u8 lane_ctrl;
+	u32 ch_rate;
 };
 
 struct swrm_port_type {
@@ -107,6 +108,7 @@ struct swr_ctrl_platform_data {
 	int (*core_vote)(void *handle, bool enable);
 	int (*reg_irq)(void *handle, irqreturn_t(*irq_handler)(int irq,
 			void *data), void *swr_handle, int type);
+	int (*pinctrl_setup)(void *handle, bool enable);
 };
 
 struct swr_mstr_ctrl {
@@ -139,6 +141,7 @@ struct swr_mstr_ctrl {
 	int (*core_vote)(void *handle, bool enable);
 	int (*reg_irq)(void *handle, irqreturn_t(*irq_handler)(int irq,
 			void *data), void *swr_handle, int type);
+	int (*pinctrl_setup)(void *handle, bool enable);
 	int irq;
 	int wake_irq;
 	int version;
@@ -164,8 +167,10 @@ struct swr_mstr_ctrl {
 	u32 clk_stop_mode0_supp;
 	struct work_struct wakeup_work;
 	u32 ipc_wakeup;
+	u32 dmic_sva;
 	bool dev_up;
 	bool ipc_wakeup_triggered;
+	bool aud_core_err;
 	struct pm_qos_request pm_qos_req;
 	enum swrm_pm_state pm_state;
 	wait_queue_head_t pm_wq;
@@ -178,6 +183,8 @@ struct swr_mstr_ctrl {
 	u32 swr_irq_wakeup_capable;
 	int hw_core_clk_en;
 	int aud_core_clk_en;
+	int clk_src;
+	u32 disable_div2_clk_switch;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_swrm_dent;
 	struct dentry *debugfs_peek;

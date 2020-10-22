@@ -622,9 +622,6 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	uint32_t chipid = 0;
 	struct cam_camera_slave_info *slave_info;
 
-	if (!s_ctrl->sensordata->oculus_is_ap_controlled)
-		return 0;
-
 	slave_info = &(s_ctrl->sensordata->slave_info);
 
 	if (!slave_info) {
@@ -717,32 +714,42 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			goto free_power_settings;
 		}
 
-		/* Power up and probe sensor */
-		rc = cam_sensor_power_up(s_ctrl);
-		if (rc < 0) {
-			CAM_ERR(CAM_SENSOR, "power up failed");
-			goto free_power_settings;
+		if (!s_ctrl->sensordata->oculus_is_ap_controlled) {
+			CAM_INFO(CAM_SENSOR, "Sensor is not AP controlled. Skipping probe");
+			CAM_INFO(CAM_SENSOR,
+				"Expects slot:%d,slave_addr:0x%x,sensor_id:0x%x",
+				s_ctrl->soc_info.index,
+				s_ctrl->sensordata->slave_info.sensor_slave_addr,
+				s_ctrl->sensordata->slave_info.sensor_id);
+		} else {
+			/* Power up and probe sensor */
+			rc = cam_sensor_power_up(s_ctrl);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR, "power up failed");
+				goto free_power_settings;
+			}
+
+			/* Match sensor ID */
+			rc = cam_sensor_match_id(s_ctrl);
+			if (rc < 0) {
+				cam_sensor_power_down(s_ctrl);
+				msleep(20);
+				goto free_power_settings;
+			}
+
+			CAM_INFO(CAM_SENSOR,
+				"Probe success,slot:%d,slave_addr:0x%x,sensor_id:0x%x",
+				s_ctrl->soc_info.index,
+				s_ctrl->sensordata->slave_info.sensor_slave_addr,
+				s_ctrl->sensordata->slave_info.sensor_id);
+
+			rc = cam_sensor_power_down(s_ctrl);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR, "fail in Sensor Power Down");
+				goto free_power_settings;
+			}
 		}
 
-		/* Match sensor ID */
-		rc = cam_sensor_match_id(s_ctrl);
-		if (rc < 0) {
-			cam_sensor_power_down(s_ctrl);
-			msleep(20);
-			goto free_power_settings;
-		}
-
-		CAM_INFO(CAM_SENSOR,
-			"Probe success,slot:%d,slave_addr:0x%x,sensor_id:0x%x",
-			s_ctrl->soc_info.index,
-			s_ctrl->sensordata->slave_info.sensor_slave_addr,
-			s_ctrl->sensordata->slave_info.sensor_id);
-
-		rc = cam_sensor_power_down(s_ctrl);
-		if (rc < 0) {
-			CAM_ERR(CAM_SENSOR, "fail in Sensor Power Down");
-			goto free_power_settings;
-		}
 		/*
 		 * Set probe succeeded flag to 1 so that no other camera shall
 		 * probed on this slot

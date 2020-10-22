@@ -544,6 +544,35 @@ static int msm_drm_display_thread_create(struct sched_param param,
 	struct device *dev)
 {
 	int i, ret = 0;
+	const char *propval = NULL;
+	s32 scanline_advance = 0;
+
+	/*
+	 * allow threads assigned to virtual displays to have a different
+	 * cpumask and priority
+	 */
+	of_property_read_u32(dev->of_node, "qcom,sde-wb-rtprio",
+		&priv->wb_thread_rtprio);
+	propval = of_get_property(dev->of_node, "qcom,sde-wb-cpumask", NULL);
+	if (!propval || cpumask_parse(propval, &priv->wb_thread_cpumask) != 0)
+		cpumask_copy(&priv->wb_thread_cpumask, cpu_all_mask);
+
+	/**
+	 * Set the default lineptr offset for the panel. Device trees don't
+	 * support negative numbers, apparently, so we have to invert it here.
+	 */
+	of_property_read_s32(dev->of_node, "qcom,sde-lineptr-scanline-advance",
+		&scanline_advance);
+	priv->lineptr_offset_default = (scanline_advance > 0) ?
+		-scanline_advance : -256;
+
+	/* Set thresholds for mild and severe tears on the writeback trigger */
+	priv->wb_mild_tear_threshold = 128;
+	priv->wb_severe_tear_threshold = 32;
+	of_property_read_u32(dev->of_node, "qcom,sde-wb-mild-tear-threshold",
+		&priv->wb_mild_tear_threshold);
+	of_property_read_u32(dev->of_node, "qcom,sde-wb-severe-tear-threshold",
+		&priv->wb_severe_tear_threshold);
 
 	/**
 	 * this priority was found during empiric testing to have appropriate
@@ -1723,6 +1752,23 @@ out:
 	return ret;
 }
 
+int msm_ioctl_cac_writeback_trigger(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	SDE_ATRACE_BEGIN(__func__);
+
+	/*
+	 * If writeback-based chromatic aberration correction is enabled,
+	 * kick off the deferred msm_commit immediately instead of waiting
+	 * for the next vsync
+	 */
+	msm_flush_deferred_commit(dev);
+
+	SDE_ATRACE_END(__func__);
+
+	return 0;
+}
+
 static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_GEM_NEW,      msm_ioctl_gem_new,      DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_GEM_CPU_PREP, msm_ioctl_gem_cpu_prep, DRM_AUTH|DRM_RENDER_ALLOW),
@@ -1737,6 +1783,9 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_POWER_CTRL, msm_ioctl_power_ctrl,
 			DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
+			DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_CAC_WRITEBACK_TRIGGER,
+			msm_ioctl_cac_writeback_trigger,
 			DRM_RENDER_ALLOW),
 };
 

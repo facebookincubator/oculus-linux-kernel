@@ -377,12 +377,88 @@ static ssize_t vsync_event_show(struct device *device,
 			ktime_to_ns(sde_crtc->vblank_last_cb_time));
 }
 
+static ssize_t lineptr_event_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	return scnprintf(buf, PAGE_SIZE, "LINEPTR=%llu@%d/%d\n",
+			sde_crtc->lineptr_last_cb_time,
+			sde_crtc->lineptr_last_cb_offset,
+			sde_crtc->lineptr_last_cb_vtotal);
+}
+
+static ssize_t lineptr_offset_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	int lineptr_offset = 0;
+	int res;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtos32(buf, 10, &lineptr_offset);
+	if (res < 0)
+		return res;
+
+	/* Make sure we never accidentally zero out the lineptr offset */
+	if (lineptr_offset == 0)
+		lineptr_offset = -1;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc)
+			continue;
+
+		sde_encoder_set_lineptr_value(enc, lineptr_offset);
+	}
+
+	return count;
+}
+
+static ssize_t wb_num_tears_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", sde_crtc->wb_num_tears);
+}
+
 static DEVICE_ATTR_RO(vsync_event);
+static DEVICE_ATTR_RO(lineptr_event);
+static DEVICE_ATTR_WO(lineptr_offset);
+static DEVICE_ATTR_RO(wb_num_tears);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
+	&dev_attr_lineptr_event.attr,
+	&dev_attr_lineptr_offset.attr,
+	&dev_attr_wb_num_tears.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
 	NULL
@@ -408,6 +484,8 @@ static void sde_crtc_destroy(struct drm_crtc *crtc)
 
 	if (sde_crtc->vsync_event_sf)
 		sysfs_put(sde_crtc->vsync_event_sf);
+	if (sde_crtc->lineptr_event_sf)
+		sysfs_put(sde_crtc->lineptr_event_sf);
 	if (sde_crtc->sysfs_dev)
 		device_unregister(sde_crtc->sysfs_dev);
 
@@ -448,12 +526,25 @@ static void _sde_crtc_setup_blend_cfg(struct sde_crtc_mixer *mixer,
 	uint32_t blend_op, fg_alpha, bg_alpha;
 	uint32_t blend_type;
 	struct sde_hw_mixer *lm = mixer->hw_lm;
+	enum sde_sspp_color_filter color_filter;
 
 	/* default to opaque blending */
 	fg_alpha = sde_plane_get_property(pstate, PLANE_PROP_ALPHA);
 	bg_alpha = 0xFF - fg_alpha;
 	blend_op = SDE_BLEND_FG_ALPHA_FG_CONST | SDE_BLEND_BG_ALPHA_BG_CONST;
 	blend_type = sde_plane_get_property(pstate, PLANE_PROP_BLEND_OP);
+	color_filter = sde_plane_get_property(pstate,
+		PLANE_PROP_COLOR_FILTER);
+
+	if (color_filter != SDE_SSPP_COLOR_FILTER_NONE) {
+		/*
+		 * Each layer represents one color channel; use constant (0xFF)
+		 * bg alpha so previous layers don't get overwritten. Resulting
+		 * blend function is out.rgb = src.rgb + dest.rgb.
+		 */
+		blend_type = SDE_DRM_BLEND_OP_OPAQUE;
+		bg_alpha = 0xFF;
+	}
 
 	SDE_DEBUG("blend type:0x%x blend alpha:0x%x\n", blend_type, fg_alpha);
 
@@ -1683,6 +1774,16 @@ int sde_crtc_find_plane_fb_modes(struct drm_crtc *crtc,
 	return 0;
 }
 
+static void _sde_crtc_flush_planes(struct drm_crtc *crtc)
+{
+	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
+	struct sde_hw_ctl *ctl = sde_crtc->mixers->hw_ctl;
+	struct drm_plane *plane;
+
+	drm_atomic_crtc_for_each_plane(plane, crtc)
+		sde_plane_ctl_flush(plane, ctl, true);
+}
+
 int sde_crtc_state_find_plane_fb_modes(struct drm_crtc_state *state,
 		uint32_t *fb_ns, uint32_t *fb_sec, uint32_t *fb_sec_dir)
 {
@@ -2336,6 +2437,28 @@ static void sde_crtc_vblank_cb(void *data)
 	sysfs_notify_dirent(sde_crtc->vsync_event_sf);
 
 	drm_crtc_handle_vblank(crtc);
+	DRM_DEBUG_VBL("crtc%d\n", crtc->base.id);
+	SDE_EVT32_VERBOSE(DRMID(crtc));
+}
+
+static void sde_crtc_lineptr_cb(void *data, u64 sample_time, int vtotal,
+		int lineptr_offset, bool wb_tear)
+{
+	struct drm_crtc *crtc = (struct drm_crtc *)data;
+	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
+
+	sde_crtc->lineptr_last_cb_time = sample_time;
+	sde_crtc->lineptr_last_cb_vtotal = vtotal;
+	sde_crtc->lineptr_last_cb_offset = lineptr_offset;
+
+	SDE_ATRACE_INT("wb_trigger_headroom", -lineptr_offset);
+	if (wb_tear) {
+		sde_crtc->wb_num_tears++;
+		SDE_ATRACE_INT("wb_trigger_tears", sde_crtc->wb_num_tears);
+	}
+
+	sysfs_notify_dirent(sde_crtc->lineptr_event_sf);
+
 	DRM_DEBUG_VBL("crtc%d\n", crtc->base.id);
 	SDE_EVT32_VERBOSE(DRMID(crtc));
 }
@@ -3183,6 +3306,7 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 	struct drm_device *dev;
 	struct sde_kms *sde_kms;
 	struct sde_splash_display *splash_display;
+	struct sde_crtc_state *cstate;
 	bool cont_splash_enabled = false;
 	size_t i;
 
@@ -3211,6 +3335,7 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 
 	sde_crtc = to_sde_crtc(crtc);
 	dev = crtc->dev;
+	cstate = to_sde_crtc_state(crtc->state);
 
 	if (!sde_crtc->num_mixers) {
 		_sde_crtc_setup_mixers(crtc);
@@ -3237,7 +3362,15 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 	if (unlikely(!sde_crtc->num_mixers))
 		goto end;
 
-	_sde_crtc_blend_setup(crtc, old_state, true);
+	if (!cstate->cac_skip_hw_setup)
+		_sde_crtc_blend_setup(crtc, old_state, true);
+	else {
+		/*
+		 * No need to reconfigure crtc mixers, but make sure that the
+		 * pending flush mask includes all planes.
+		 */
+		_sde_crtc_flush_planes(crtc);
+	}
 	_sde_crtc_dest_scaler_setup(crtc);
 
 	/* cancel the idle notify delayed work */
@@ -3752,8 +3885,11 @@ static int _sde_crtc_vblank_enable_no_lock(
 			SDE_EVT32(DRMID(&sde_crtc->base), DRMID(enc), enable,
 					sde_crtc->enabled);
 
+			sde_crtc->wb_num_tears = 0;
 			sde_encoder_register_vblank_callback(enc,
 					sde_crtc_vblank_cb, (void *)crtc);
+			sde_encoder_register_lineptr_callback(enc,
+					sde_crtc_lineptr_cb, (void *)crtc);
 		}
 	} else {
 		drm_for_each_encoder_mask(enc, crtc->dev,
@@ -3762,6 +3898,7 @@ static int _sde_crtc_vblank_enable_no_lock(
 					sde_crtc->enabled);
 
 			sde_encoder_register_vblank_callback(enc, NULL, NULL);
+			sde_encoder_register_lineptr_callback(enc, NULL, NULL);
 		}
 
 		/* drop lock since power crtc cb may try to re-acquire lock */
@@ -3803,6 +3940,7 @@ static struct drm_crtc_state *sde_crtc_duplicate_state(struct drm_crtc *crtc)
 
 	/* clear destination scaler dirty bit */
 	cstate->ds_dirty = false;
+	cstate->cac_skip_hw_setup = false;
 
 	/* duplicate base helper */
 	__drm_atomic_helper_crtc_duplicate_state(crtc, &cstate->base);
@@ -6278,6 +6416,13 @@ int sde_crtc_post_init(struct drm_device *dev, struct drm_crtc *crtc)
 		sde_crtc->sysfs_dev->kobj.sd, "vsync_event");
 	if (!sde_crtc->vsync_event_sf)
 		SDE_ERROR("crtc:%d vsync_event sysfs create failed\n",
+						crtc->base.id);
+
+	sde_crtc->lineptr_last_cb_offset = 0;
+	sde_crtc->lineptr_event_sf = sysfs_get_dirent(
+		sde_crtc->sysfs_dev->kobj.sd, "lineptr_event");
+	if (!sde_crtc->lineptr_event_sf)
+		SDE_ERROR("crtc:%d lineptr_event sysfs create failed\n",
 						crtc->base.id);
 
 end:

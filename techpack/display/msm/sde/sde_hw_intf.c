@@ -61,6 +61,7 @@
 #define INTF_MISR_CTRL			0x180
 #define INTF_MISR_SIGNATURE		0x184
 
+#define INTF_PROG_LINE_INTR_CONF	0x250
 #define INTF_MUX                        0x25C
 #define INTF_STATUS                     0x26C
 #define INTF_AVR_CONTROL                0x270
@@ -177,6 +178,34 @@ static void sde_hw_intf_avr_ctrl(struct sde_hw_intf *ctx,
 	SDE_REG_WRITE(c, INTF_AVR_MODE, avr_mode);
 }
 
+static int sde_hw_intf_set_lineptr_value(struct sde_hw_intf *ctx, int offset)
+{
+	struct sde_hw_blk_reg_map *c;
+	u32 hsync_period, vsync_period, hsync_skew, pixel_offset;
+	int row_offset;
+
+	if (!ctx)
+		return -EINVAL;
+
+	c = &ctx->hw;
+
+	hsync_period = SDE_REG_READ(c, INTF_HSYNC_CTL) >> 16;
+	vsync_period = SDE_REG_READ(c, INTF_VSYNC_PERIOD_F0) / hsync_period;
+	hsync_skew = SDE_REG_READ(c, INTF_HSYNC_SKEW);
+
+	row_offset = offset;
+	while (row_offset < 0)
+		row_offset += (int)vsync_period;
+	if (row_offset > vsync_period)
+		row_offset = (int)vsync_period;
+
+	pixel_offset = ((u32)row_offset * hsync_period) + hsync_skew - 1;
+	if (pixel_offset == 0)
+		pixel_offset = 1;
+
+	SDE_REG_WRITE(c, INTF_PROG_LINE_INTR_CONF, pixel_offset);
+	return 0;
+}
 
 static void sde_hw_intf_setup_timing_engine(struct sde_hw_intf *ctx,
 		const struct intf_timing_params *p,
@@ -683,6 +712,7 @@ static void _setup_intf_ops(struct sde_hw_intf_ops *ops,
 	ops->avr_setup = sde_hw_intf_avr_setup;
 	ops->avr_trigger = sde_hw_intf_avr_trigger;
 	ops->avr_ctrl = sde_hw_intf_avr_ctrl;
+	ops->set_lineptr_value = sde_hw_intf_set_lineptr_value;
 
 	if (cap & BIT(SDE_INTF_INPUT_CTRL))
 		ops->bind_pingpong_blk = sde_hw_intf_bind_pingpong_blk;

@@ -1,6 +1,7 @@
 #include <linux/platform_device.h>
 #include <media/msm_cam_sensor.h>
 #include <soc/qcom/camera2.h>
+#include <linux/list.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/slab.h>
@@ -19,23 +20,8 @@
 		}					\
 	} while (0)
 
-struct cam_state_t {
-	struct platform_device *pdev;
-	bool enabled;
-};
-
 /* The name of the Vdig supply (we need to treat it specially) */
 #define REGULATOR_VDIG_NAME "cam_vdig"
-
-/* fetch this from defconfig if it is defined there */
-#ifdef CONFIG_SYNCBOSS_NUM_CAMERAS
-#define NUM_CAMERAS CONFIG_SYNCBOSS_NUM_CAMERAS
-#else
-#define NUM_CAMERAS 4
-#endif
-
-static struct cam_state_t glob_cameras[NUM_CAMERAS] = {};
-static int glob_camera_iterator;
 
 extern int msm_camera_get_clk_info(struct platform_device *pdev,
 		struct msm_cam_clk_info **clk_info,
@@ -52,10 +38,12 @@ struct vs1_gpio {
 	unsigned int *target;
 };
 
-struct syncboss_sensor_ctrl_t {
+struct sensor_ctrl {
+	struct list_head list;
 	struct platform_device *pdev;
 
 	uint32_t id;
+	bool enabled;
 
 	struct camera_vreg_t *vregs;
 	int num_vregs;
@@ -75,6 +63,10 @@ struct syncboss_sensor_ctrl_t {
 
 	struct device_node *of_node;
 };
+
+static LIST_HEAD(sensor_ctrl_list);
+static int num_sensors;
+static DEFINE_MUTEX(sensor_ctrl_list_mutex);
 
 static int __init get_androidboot_mode(char *str)
 {
@@ -192,7 +184,7 @@ error:
 }
 
 static int32_t syncboss_sensor_driver_create_v4l_subdev(
-		struct syncboss_sensor_ctrl_t *s_ctrl)
+		struct sensor_ctrl *s_ctrl)
 {
 	int32_t rc = 0;
 	uint32_t session_id = 0;
@@ -434,7 +426,7 @@ vreg_get_fail:
 static int syncboss_camera_power_enable(struct platform_device *pdev,
 					bool enabled)
 {
-	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
+	struct sensor_ctrl *sensor_ctrl = NULL;
 	int rc = 0;
 	int count;
 
@@ -466,7 +458,7 @@ static int syncboss_camera_power_enable(struct platform_device *pdev,
 static int syncboss_sensor_driver_enable_temp_sensor_power(
 		struct platform_device *pdev)
 {
-	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
+	struct sensor_ctrl *sensor_ctrl = NULL;
 	int rc = 0;
 	int count;
 	bool found_regulator = false;
@@ -520,7 +512,7 @@ static int syncboss_sensor_driver_enable_temp_sensor_power(
 static int syncboss_camera_clk_enable(struct platform_device *pdev,
 					bool enabled)
 {
-	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
+	struct sensor_ctrl *sensor_ctrl = NULL;
 	struct msm_cam_clk_info *clk_info = NULL;
 	int rc = 0;
 	int count;
@@ -563,7 +555,7 @@ static int32_t syncboss_sensor_driver_platform_probe(
 		struct platform_device *pdev)
 {
 	int32_t rc = 0;
-	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
+	struct sensor_ctrl *sensor_ctrl = NULL;
 	uint32_t cell_id;
 
 	struct vs1_gpio vs1_syncboss_gpio_table[] = {
@@ -645,8 +637,10 @@ static int32_t syncboss_sensor_driver_platform_probe(
 		goto free_vreg_handles;
 	}
 
-	glob_cameras[glob_camera_iterator++] =
-		(struct cam_state_t){pdev, /*enabled*/false};
+	mutex_lock(&sensor_ctrl_list_mutex);
+	list_add(&sensor_ctrl->list, &sensor_ctrl_list);
+	num_sensors++;
+	mutex_unlock(&sensor_ctrl_list_mutex);
 
 	return rc;
 
@@ -668,18 +662,20 @@ free_sensor_ctrl:
 
 static int syncboss_sensor_platform_remove(struct platform_device *pdev)
 {
-	struct syncboss_sensor_ctrl_t *sensor_ctrl = NULL;
+	struct sensor_ctrl *sensor_ctrl = NULL;
 	int rc = 0;
-	int x;
 
-	for (x = 0; x < NUM_CAMERAS; ++x) {
-		if (glob_cameras[x].pdev == pdev) {
-			glob_cameras[x].pdev = NULL;
-			glob_cameras[x].enabled = false;
-			--glob_camera_iterator;
-			break;
-		}
+	sensor_ctrl = platform_get_drvdata(pdev);
+	if (!sensor_ctrl) {
+		pr_err("%s:%d: Syncboss sensor control data is null!\n",
+				__func__, __LINE__);
+		return 0;
 	}
+
+	mutex_lock(&sensor_ctrl_list_mutex);
+	list_del(&sensor_ctrl->list);
+	num_sensors--;
+	mutex_unlock(&sensor_ctrl_list_mutex);
 
 	syncboss_camera_clk_enable(pdev, false);
 	if (rc) {
@@ -692,12 +688,6 @@ static int syncboss_sensor_platform_remove(struct platform_device *pdev)
 		return rc;
 	}
 
-	sensor_ctrl = platform_get_drvdata(pdev);
-	if (!sensor_ctrl) {
-		pr_err("%s:%d: Syncboss sensor control data is null!\n",
-				__func__, __LINE__);
-		return 0;
-	}
 	kfree(sensor_ctrl->vreg_handles);
 	kfree(sensor_ctrl->vregs);
 
@@ -773,69 +763,75 @@ static int __init syncboss_camera_driver_init(void)
 
 static void __exit syncboss_camera_driver_exit(void)
 {
+	struct sensor_ctrl *sensor, *temp;
+
 	platform_driver_unregister(&syncboss_sensor_platform_driver);
+
+	mutex_lock(&sensor_ctrl_list_mutex);
+
+	list_for_each_entry_safe(sensor, temp, &sensor_ctrl_list, list)
+		list_del(&sensor->list);
+	num_sensors = 0;
+
+	mutex_unlock(&sensor_ctrl_list_mutex);
 }
 
 void enable_cameras(void)
 {
-	int x;
+	struct sensor_ctrl *sensor;
 
-	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err("Cannot enable cameras before all cameras have been enumerated\n");
-		return;
-	}
-
-	for (x = 0; x < NUM_CAMERAS; ++x) {
-		if (glob_cameras[x].enabled) {
+	mutex_lock(&sensor_ctrl_list_mutex);
+	list_for_each_entry(sensor, &sensor_ctrl_list, list) {
+		if (sensor->enabled) {
 			pr_info("Skipping enable for camera @ idx %d (already enabled)\n",
-				x);
+				sensor->id);
 		} else {
-			pr_info("Enabling camera @ idx %d\n", x);
-			syncboss_sensor_driver_resume(glob_cameras[x].pdev);
-			glob_cameras[x].enabled = true;
+			pr_info("Enabling camera @ idx %d\n", sensor->id);
+			syncboss_sensor_driver_resume(sensor->pdev);
+			sensor->enabled = true;
 		}
 	}
+	mutex_unlock(&sensor_ctrl_list_mutex);
 }
 
 void disable_cameras(void)
 {
-	int x;
+	struct sensor_ctrl *sensor;
 
-	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err("Cannot disable cameras before all cameras have been enumerated\n");
-		return;
-	}
-
-	for (x = 0; x < NUM_CAMERAS; ++x) {
-		if (glob_cameras[x].enabled) {
-			pr_info("Disabling camera @ idx %d\n", x);
-			syncboss_sensor_driver_suspend(glob_cameras[x].pdev,
+	mutex_lock(&sensor_ctrl_list_mutex);
+	list_for_each_entry(sensor, &sensor_ctrl_list, list) {
+		if (sensor->enabled) {
+			pr_info("Disabling camera @ idx %d\n", sensor->id);
+			syncboss_sensor_driver_suspend(sensor->pdev,
 						       (pm_message_t){0});
-			glob_cameras[x].enabled = false;
+			sensor->enabled = false;
 		} else {
 			pr_info("Skipping disable for camera @ idx %d (already disabled)\n",
-				x);
+				sensor->id);
 		}
 	}
+	mutex_unlock(&sensor_ctrl_list_mutex);
 }
 
 int enable_camera_temp_sensor_power(void)
 {
-	int x;
+	struct sensor_ctrl *sensor;
 
-	if (glob_camera_iterator != NUM_CAMERAS) {
-		pr_err(
-			"Cannot enable camera regulators before all cameras have been enumerated\n");
-		return -EAGAIN;
-	}
-
-	for (x = 0; x < NUM_CAMERAS; ++x) {
+	mutex_lock(&sensor_ctrl_list_mutex);
+	list_for_each_entry(sensor, &sensor_ctrl_list, list) {
 		pr_info("Turning on camera temp sensor regulator @ idx %d\n",
-			x);
+			sensor->id);
 		syncboss_sensor_driver_enable_temp_sensor_power(
-				glob_cameras[x].pdev);
+				sensor->pdev);
 	}
+	mutex_unlock(&sensor_ctrl_list_mutex);
+
 	return 0;
+}
+
+int get_num_cameras(void)
+{
+	return num_sensors;
 }
 
 module_init(syncboss_camera_driver_init);

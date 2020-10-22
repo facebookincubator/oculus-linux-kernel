@@ -541,7 +541,8 @@ static int parse_cpu(struct device_node *node, struct lpm_cpu *cpu)
 	return 0;
 }
 
-static int parse_cpu_levels(struct device_node *dn, struct lpm_cluster *c)
+static int parse_cpu_levels(struct device_node *dn, struct lpm_cluster *c,
+			    struct cpumask *disallowed_cpus)
 {
 	int ret;
 	struct lpm_cpu *cpu;
@@ -552,6 +553,7 @@ static int parse_cpu_levels(struct device_node *dn, struct lpm_cluster *c)
 
 	if (get_cpumask_for_node(dn, &cpu->related_cpus))
 		return -EINVAL;
+	cpumask_and(&cpu->disallowed_cpus, &cpu->related_cpus, disallowed_cpus);
 
 	cpu->parent = c;
 
@@ -624,7 +626,8 @@ void free_cluster_node(struct lpm_cluster *cluster)
  * child nodes.
  */
 struct lpm_cluster *parse_cluster(struct device_node *node,
-				  struct lpm_cluster *parent)
+				  struct lpm_cluster *parent,
+				  struct cpumask *disallowed_cpus)
 {
 	struct lpm_cluster *c;
 	struct device_node *n;
@@ -658,7 +661,7 @@ struct lpm_cluster *parse_cluster(struct device_node *node,
 		} else if (!of_node_cmp(n->name, "qcom,pm-cluster")) {
 			struct lpm_cluster *child;
 
-			child = parse_cluster(n, c);
+			child = parse_cluster(n, c, disallowed_cpus);
 			if (!child) {
 				pr_err("Failed parse pm-cluster\n");
 				goto failed_parse_cluster;
@@ -669,7 +672,7 @@ struct lpm_cluster *parse_cluster(struct device_node *node,
 					&child->child_cpus);
 			c->aff_level = child->aff_level + 1;
 		} else if (!of_node_cmp(n->name, "qcom,pm-cpu")) {
-			if (parse_cpu_levels(n, c)) {
+			if (parse_cpu_levels(n, c, disallowed_cpus)) {
 				pr_err("Failed parse pm-cpu\n");
 				goto failed_parse_cluster;
 			}
@@ -705,6 +708,13 @@ struct lpm_cluster *lpm_of_parse_cluster(struct platform_device *pdev)
 {
 	struct device_node *top = NULL;
 	struct lpm_cluster *c;
+	struct cpumask disallowed_cpus;
+	const char *propval = NULL;
+
+	propval = of_get_property(pdev->dev.of_node,
+			"qcom,lpm-disallowed-cpumask", NULL);
+	if (!propval || cpumask_parse(propval, &disallowed_cpus) != 0)
+		cpumask_clear(&disallowed_cpus);
 
 	top = of_find_node_by_name(pdev->dev.of_node, "qcom,pm-cluster");
 	if (!top) {
@@ -713,7 +723,7 @@ struct lpm_cluster *lpm_of_parse_cluster(struct platform_device *pdev)
 	}
 
 	lpm_pdev = pdev;
-	c = parse_cluster(top, NULL);
+	c = parse_cluster(top, NULL, &disallowed_cpus);
 	of_node_put(top);
 	return c;
 }

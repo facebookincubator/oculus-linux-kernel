@@ -141,6 +141,7 @@ struct dsi_panel_reset_config {
 	int disp_en_gpio;
 	int lcd_mode_sel_gpio;
 	int power_off_delay;
+	int sec_power_off_delay;
 	u32 mode_sel_state;
 };
 
@@ -218,6 +219,8 @@ struct dsi_panel {
 	int panel_test_gpio;
 	int power_mode;
 	enum dsi_panel_physical_type panel_type;
+
+	int pre_post_panel_on_delay;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)

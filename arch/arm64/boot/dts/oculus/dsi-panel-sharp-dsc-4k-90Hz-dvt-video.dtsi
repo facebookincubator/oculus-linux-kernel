@@ -35,6 +35,7 @@
 		qcom,mdss-dsi-reset-sequence = <0 5>, <1 25>;
 		qcom,adjust-timer-wakeup-ms = <1>;
 		qcom,dsi-supported-dfps-list = <90 80 72 60>;
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 		qcom,mdss-dsi-min-refresh-rate = <60>;
 		qcom,mdss-dsi-max-refresh-rate = <90>;
@@ -56,6 +57,8 @@
 					23 01 00 00 00 00 02 B0 00
 					29 01 00 00 00 00 02 F1 00
 					29 01 00 00 00 00 02 EE 04
+					29 01 00 00 00 00 02 F1 12
+					29 01 00 00 00 00 02 C6 40
 					29 01 00 00 00 00 11 B9 11 5A 01 89 00 00 00 00 03 21 01 89 00 00 00 00
 					29 01 00 00 00 00 02 D6 00
 					29 01 00 00 00 00 7D E6 11 00 00 89 30 80 0E 50 07 80 00 10 01 E0 01 E0 02 00 01 F0 00 20 01 6D 00 06 00 0C 06 67 07 27 18 00 10 F0 03 0C 20 00 06 0B 0B 33 0E 1C 2A 38 46 54 62 69 70 77 79 7B 7D 7E 01 02 01 00 09 40 09 BE 19 FC 19 FA 19 F8 1A 38 1A 78 1A B6 2A F6 2B 34 2B 74 3B 74 63 F4 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -82,7 +85,7 @@
 					29 01 00 00 00 00 11 B9 11 5A 01 89 00 00 00 00 03 21 01 89 00 00 00 00 /* 90Hz backlight settings */
 					29 01 00 00 00 00 11 B9 13 84 01 BA 00 00 00 00 00 BE 01 BA 00 00 00 00 /* 80Hz backlight settings */
 					29 01 00 00 00 00 11 B9 15 97 01 EC 00 00 00 00 16 59 01 EC 00 00 00 00 /* 72Hz backlight settings */
-					29 01 00 00 00 00 11 B9 16 59 02 4E 00 00 00 00 16 59 02 4E 00 00 00 00 /* 60Hz backlight settings */
+					29 01 00 00 00 00 11 B9 16 59 01 9D 00 00 00 00 16 59 01 9D 00 00 00 00 /* 60Hz backlight settings */
 				];
 				qcom,compression-mode = "dsc";
 				qcom,mdss-dsc-slice-height = <16>;

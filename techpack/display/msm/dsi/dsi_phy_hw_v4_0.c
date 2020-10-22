@@ -220,10 +220,13 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 	u32 glbl_hstx_str_ctrl_0 = 0;
 	u32 glbl_rescode_top_ctrl = 0;
 	u32 glbl_rescode_bot_ctrl = 0;
+	u32 glbl_rescode_mid_ctrl = 0;
 
 	if (phy->version == DSI_PHY_VERSION_4_1) {
-		glbl_rescode_top_ctrl = 0x00;
-		glbl_rescode_bot_ctrl = 0x3C;
+		glbl_rescode_top_ctrl = 0x1f;
+		glbl_rescode_bot_ctrl = 0x1f;
+		glbl_rescode_mid_ctrl = 0x20;
+		vreg_ctrl_0 = 0x50;
 		glbl_str_swi_cal_sel_ctrl = 0x00;
 		glbl_hstx_str_ctrl_0 = 0x88;
 	} else {
@@ -266,6 +269,8 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 			glbl_rescode_top_ctrl);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_BOT_CTRL,
 			glbl_rescode_bot_ctrl);
+	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_MID_CTRL,
+			glbl_rescode_mid_ctrl);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_LPTX_STR_CTRL, 0x55);
 
 	/* Remove power down from all blocks */

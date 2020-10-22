@@ -2911,6 +2911,8 @@ static void bq27z561_create_debugfs(struct bq27xxx_device_info *di)
 				    &di->reg_addr);
 	debugfs_create_file("data", 0600, di->debugfs,
 				    di, &reg_data_fops);
+	debugfs_create_x16("mac_cmd", 0600, di->debugfs,
+				    &di->reg_data);
 	debugfs_create_file("mac_data", 0600, di->debugfs,
 				    di, &mac_data_fops);
 	debugfs_create_file("at_rate", 0600, di->debugfs,

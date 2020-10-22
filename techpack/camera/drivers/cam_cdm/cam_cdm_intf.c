@@ -85,7 +85,7 @@ static int get_cdm_index_by_id(char *identifier,
 	CAM_DBG(CAM_CDM, "Looking for HW id of %s count:%d", client_name,
 		cdm_mgr.cdm_count);
 	mutex_lock(&cam_cdm_mgr_lock);
-	for (i = 0; i < cdm_mgr.cdm_count; i++) {
+	for (i = cell_index; i < cdm_mgr.cdm_count; i++) {
 		mutex_lock(&cdm_mgr.nodes[i].lock);
 		CAM_DBG(CAM_CDM, "dt_num_supported_clients=%d",
 			cdm_mgr.nodes[i].data->dt_num_supported_clients);
@@ -125,7 +125,11 @@ int cam_cdm_get_iommu_handle(char *identifier,
 	}
 	CAM_DBG(CAM_CDM, "Looking for Iommu handle of %s", identifier);
 
-	for (i = 0; i < cdm_mgr.cdm_count; i++) {
+	/*
+	 * Search from Index CAM_CDM_HW_ANY as index 0 is reserved for
+	 * virtual cdm which does not have any iommu handles
+	 */
+	for (i = CAM_CDM_HW_ANY; i < cdm_mgr.cdm_count; i++) {
 		mutex_lock(&cdm_mgr.nodes[i].lock);
 		if (!cdm_mgr.nodes[i].data) {
 			mutex_unlock(&cdm_mgr.nodes[i].lock);
@@ -165,7 +169,7 @@ int cam_cdm_acquire(struct cam_cdm_acquire_data *data)
 		return rc;
 	}
 
-	if (data->id > CAM_CDM_HW_ANY) {
+	if (data->id > CAM_CDM_HW_ANY || data->cell_index > CAM_CDM_HW_ANY) {
 		CAM_ERR(CAM_CDM,
 			"only CAM_CDM_VIRTUAL/CAM_CDM_HW_ANY is supported");
 		rc = -EPERM;

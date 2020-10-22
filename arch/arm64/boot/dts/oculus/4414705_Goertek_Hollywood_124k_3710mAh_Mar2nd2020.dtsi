@@ -5,20 +5,20 @@ qcom,4414705_goertek_hollywood_124k_3710mah_mar2nd2020 {
 	qcom,max-voltage-uv = <4400000>;
 	qcom,fastchg-current-ma = <2000>;/* 0.5C */
 	qcom,jeita-fcc-ranges-0 = <50 100  720000
-				110 200  2000000
+				110 200  1820000
 				201 450  2000000
 				451 550  720000>;
 	qcom,jeita-fcc-ranges-1 = <50 100  720000
-				110 200  2000000
+				110 200  1820000
 				201 450  2000000
 				451 550  720000>;
 	qcom,jeita-fv-ranges-0 = <50  100  4400000
 				110 200  4400000
 				210 450  4400000
-				451 550  4170000>;
-	qcom,jeita-fv-ranges-1 = <50  100  4170000
-				110 200  4170000
-				210 450  4170000
+				451 550  4200000>;
+	qcom,jeita-fv-ranges-1 = <50  100  4100000
+				110 200  4100000
+				210 450  4100000
 				451 550  3900000>;
 	qcom,cycle-fcc-ranges-0 = <0  300  2000000
 				301 500  2000000
@@ -29,8 +29,8 @@ qcom,4414705_goertek_hollywood_124k_3710mah_mar2nd2020 {
 	qcom,cycle-fv-ranges-0 = <0   300  4400000
 				301 500  4400000
 				501 800  4300000>;
-	qcom,cycle-fv-ranges-1 = <0   300  4170000
-				301 500  4170000
+	qcom,cycle-fv-ranges-1 = <0   300  4100000
+				301 500  4100000
 				501 800  4000000>;
 	/* rblt-low, rblt-high, max-voltage-throttle */
 	qcom,rblt-ranges = <0   56000  3900000
@@ -39,8 +39,8 @@ qcom,4414705_goertek_hollywood_124k_3710mah_mar2nd2020 {
 				4061000 4400000 2000000>;
 	qcom,step-chg-ranges-1 = <3600000 4060000 2000000
 				4061000 4400000 2000000>;
-	/* COLD = 0 DegC, HOT = 50 DegC */
-	qcom,jeita-hard-thresholds = <0x58cd 0x1c22>;
+	/* COLD = 0 DegC, HOT = 52 DegC */
+	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
 	/* COOL = 10 DegC, WARM = 45 DegC */
 	qcom,jeita-soft-thresholds = <0x4ccc 0x20b8>;
 	/* COLD hys = 12 DegC, WARM hys = 43 DegC */

@@ -15,6 +15,8 @@
 #include "sde_wb.h"
 #include "sde_vbif.h"
 #include "sde_crtc.h"
+#include "sde_plane.h"
+#include "sde_trace.h"
 
 #define to_sde_encoder_phys_wb(x) \
 	container_of(x, struct sde_encoder_phys_wb, base)
@@ -1022,6 +1024,16 @@ static void _sde_encoder_phys_wb_frame_done_helper(void *arg, bool frame_error)
 	if (phys_enc->enable_state == SDE_ENC_DISABLING)
 		goto complete;
 
+	if (atomic_add_unless(&wb_enc->cac_pending, -1, 0)) {
+		/*
+		 * don't notify upper layer yet if this is the first of two
+		 * writeback passes
+		 */
+		atomic_add_unless(&phys_enc->pending_retire_fence_cnt, -1, 0);
+
+		goto complete;
+	}
+
 	if (phys_enc->parent_ops.handle_frame_done &&
 	    atomic_add_unless(&phys_enc->pending_retire_fence_cnt, -1, 0)) {
 		event |= SDE_ENCODER_FRAME_EVENT_DONE |
@@ -1176,6 +1188,7 @@ static void sde_encoder_phys_wb_mode_set(
 
 static int sde_encoder_phys_wb_frame_timeout(struct sde_encoder_phys *phys_enc)
 {
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
 	u32 event = 0;
 
 	while (atomic_add_unless(&phys_enc->pending_retire_fence_cnt, -1, 0) &&
@@ -1196,6 +1209,9 @@ static int sde_encoder_phys_wb_frame_timeout(struct sde_encoder_phys *phys_enc)
 			atomic_read(&phys_enc->pending_retire_fence_cnt));
 	}
 
+	atomic_set(&wb_enc->cac_pending, 0);
+	atomic_set(&wb_enc->cac_kickoff_armed, 0);
+	complete_all(&wb_enc->cac_kickoff_fired);
 	return event;
 }
 
@@ -1313,6 +1329,41 @@ static int sde_encoder_phys_wb_wait_for_cwb_done(
 }
 
 /**
+ * sde_encoder_phys_wb_setup_roi_cac_fast_path - update only the state that
+ * changes between consecutive automatic writeback CAC commits
+ * @phys_enc:	Pointer to physical encoder
+ */
+static void sde_encoder_phys_wb_setup_roi_cac_fast_path(
+		struct sde_encoder_phys *phys_enc)
+
+{
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	struct sde_hw_wb *hw_wb = wb_enc->hw_wb;
+	struct drm_framebuffer *fb;
+
+	fb = sde_wb_get_output_fb(wb_enc->wb_dev);
+	if (!fb) {
+		SDE_ERROR("no output framebuffer\n");
+		return;
+	}
+
+	/*
+	 * wb_fb needs to be reset here (wait_for_commit_done clears it)
+	 * to make sure sde_encoder_phys_wb_trigger_flush has a valid fb
+	 */
+	wb_enc->wb_fb = fb;
+	wb_enc->wb_aspace = (wb_enc->wb_cfg.is_secure) ?
+			wb_enc->aspace[SDE_IOMMU_DOMAIN_SECURE] :
+			wb_enc->aspace[SDE_IOMMU_DOMAIN_UNSECURE];
+	drm_framebuffer_get(fb);
+
+	if (hw_wb->ops.setup_roi)
+		hw_wb->ops.setup_roi(hw_wb, &wb_enc->wb_cfg);
+
+	_sde_encoder_phys_wb_update_flush(phys_enc);
+}
+
+/**
  * sde_encoder_phys_wb_prepare_for_kickoff - pre-kickoff processing
  * @phys_enc:	Pointer to physical encoder
  * @params:	kickoff parameters
@@ -1323,6 +1374,7 @@ static int sde_encoder_phys_wb_prepare_for_kickoff(
 		struct sde_encoder_kickoff_params *params)
 {
 	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	struct sde_crtc_state *cstate;
 
 	SDE_DEBUG("[wb:%d,%u]\n", wb_enc->hw_wb->idx - WB_0,
 			wb_enc->kickoff_count);
@@ -1334,6 +1386,14 @@ static int sde_encoder_phys_wb_prepare_for_kickoff(
 
 	wb_enc->kickoff_count++;
 
+	if (phys_enc->enable_state == SDE_ENC_ENABLED && wb_enc->crtc) {
+		cstate = to_sde_crtc_state(wb_enc->crtc->state);
+		if (cstate->cac_skip_hw_setup) {
+			sde_encoder_phys_wb_setup_roi_cac_fast_path(phys_enc);
+			goto done;
+		}
+	}
+
 	/* set OT limit & enable traffic shaper */
 	sde_encoder_phys_wb_setup(phys_enc);
 
@@ -1341,6 +1401,7 @@ static int sde_encoder_phys_wb_prepare_for_kickoff(
 
 	_sde_encoder_phys_wb_update_cwb_flush(phys_enc, true);
 
+done:
 	/* vote for iommu/clk/bus */
 	wb_enc->start_time = ktime_get();
 
@@ -1381,6 +1442,155 @@ static void sde_encoder_phys_wb_trigger_flush(struct sde_encoder_phys *phys_enc)
 	}
 
 	sde_encoder_helper_trigger_flush(phys_enc);
+}
+
+static bool sde_encoder_phys_wb_is_cac_enabled(
+		struct sde_encoder_phys *phys_enc)
+{
+	enum sde_wb_cac_state cac_state = sde_connector_get_property(
+		phys_enc->connector->state, CONNECTOR_PROP_WB_CAC);
+
+	return cac_state == WB_CAC_ENABLED;
+}
+
+/**
+ * sde_encoder_phys_wb_adjust_cac_offsets - modify SSPP and writeback
+ * registers to switch to the other eye during CAC
+ * @phys_enc:	pointer to the physical encoder
+ */
+static void sde_encoder_phys_wb_adjust_cac_offsets(
+		struct sde_encoder_phys *phys_enc)
+{
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	struct sde_hw_wb *hw_wb = wb_enc->hw_wb;
+	struct drm_plane *plane;
+	int offset;
+
+	SDE_ATRACE_BEGIN(__func__);
+
+	/*
+	 * roi.h equals half of the actual screen size, so move src_rect of
+	 * all source pipes and out_xy down by that amount to switch to the
+	 * second eye (bottom half of input and output buffers)
+	 */
+	offset = wb_enc->wb_cfg.roi.h;
+
+	drm_atomic_crtc_for_each_plane(plane, wb_enc->crtc)
+		sde_plane_adjust_cac_offset(plane, phys_enc->hw_ctl, offset);
+
+	hw_wb->ops.adjust_cac_offset(hw_wb, &wb_enc->wb_cfg, offset);
+
+	/*
+	 * make sure DPU reads the updates values; we are reusing all hw
+	 * resources across the two passes, so writing the same flush mask
+	 * to the CTL_FLUSH register is sufficient
+	 */
+	sde_encoder_phys_wb_trigger_flush(phys_enc);
+
+	SDE_ATRACE_END(__func__);
+}
+
+/**
+ * sde_encoder_phys_wb_cac_dirty - update plane dirty bits to switch back
+ * to the top half of the screen on the next commit
+ * @phys_enc:	pointer to the physical encoder
+ */
+static void sde_encoder_phys_wb_cac_dirty(
+		struct sde_encoder_phys *phys_enc)
+{
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	struct sde_crtc_state *cstate = to_sde_crtc_state(wb_enc->crtc->state);
+	struct drm_plane *plane;
+
+	SDE_ATRACE_BEGIN(__func__);
+
+	drm_atomic_crtc_for_each_plane(plane, wb_enc->crtc)
+		sde_plane_update_dirty_bits(plane, SDE_PLANE_DIRTY_RECTS);
+
+	/* skip redundant programming when rerunning the same commit */
+	cstate->cac_skip_hw_setup = true;
+
+	SDE_ATRACE_END(__func__);
+}
+
+/**
+ * sde_encoder_phys_wb_cac - chromatic aberration correction processing
+ *
+ * Due to the limited number of scaling pipes available, CAC is performed
+ * one eye at a time via writeback. Userspace configures input layers and
+ * the mixer resolution only for the top half of the screen, and this
+ * function handles reconfiguration and kicks off the second pass.
+ *
+ * @phys_enc:	pointer to the physical encoder
+ * @disarm:	disarm writeback for this frame
+ */
+bool sde_encoder_phys_wb_cac(struct sde_encoder_phys *phys_enc, bool disarm)
+{
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	bool fired = false;
+
+	/* Drop out now if CAC hasn't been armed yet or if we should disarm */
+	if (!atomic_xchg(&wb_enc->cac_kickoff_armed, 0) || disarm)
+		goto end;
+
+	/*
+	 * Increment pending_retire_fence_cnt to wait for both wb passes to
+	 * complete, but only invoke the frame_done callback after the last
+	 * one (see _sde_encoder_phys_wb_frame_done_helper).
+	 */
+	atomic_inc(&phys_enc->pending_retire_fence_cnt);
+	atomic_inc(&wb_enc->cac_pending);
+
+	SDE_ATRACE_BEGIN("trigger_start_1");
+	sde_encoder_helper_trigger_start(phys_enc); /* first pass */
+	SDE_ATRACE_END("trigger_start_1");
+
+	/*
+	 * DPU registers are double buffered, so we can update the DPU
+	 * programming for the next pass as soon as the first one begins,
+	 * without waiting for it to complete; this avoids a brief delay
+	 * between the two passes.
+	 */
+	sde_encoder_phys_wb_adjust_cac_offsets(phys_enc);
+	sde_encoder_phys_wb_cac_dirty(phys_enc);
+
+	/* posted start: queue the second pass ahead of time */
+	SDE_ATRACE_BEGIN("trigger_start_2");
+	sde_encoder_helper_trigger_start(phys_enc);
+	SDE_ATRACE_END("trigger_start_2");
+
+	fired = true;
+
+end:
+	complete_all(&wb_enc->cac_kickoff_fired);
+	return fired;
+}
+
+/**
+ * sde_encoder_phys_wb_trigger_start - trigger start of the wb control path
+ * @phys_enc:	Pointer to physical encoder
+ */
+static void sde_encoder_phys_wb_trigger_start(struct sde_encoder_phys *phys_enc)
+{
+	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
+	const int wb_timeout = msecs_to_jiffies(17);
+	static int kickoff_timeouts;
+
+	SDE_ATRACE_BEGIN("sde_encoder_phys_wb_trigger_start");
+	if (!sde_encoder_phys_wb_is_cac_enabled(phys_enc))
+		sde_encoder_helper_trigger_start(phys_enc);
+	else if (phys_enc->enable_state == SDE_ENC_ENABLED) {
+		reinit_completion(&wb_enc->cac_kickoff_fired);
+
+		atomic_set(&wb_enc->cac_kickoff_armed, 1);
+
+		if (!wait_for_completion_timeout(&wb_enc->cac_kickoff_fired,
+				wb_timeout)) {
+			atomic_set(&wb_enc->cac_kickoff_armed, 0);
+			SDE_ATRACE_INT("kickoff_timeouts", kickoff_timeouts++);
+		}
+	}
+	SDE_ATRACE_END("sde_encoder_phys_wb_trigger_start");
 }
 
 /**
@@ -1557,6 +1767,8 @@ static void sde_encoder_phys_wb_disable(struct sde_encoder_phys *phys_enc)
 	struct sde_hw_wb *hw_wb = wb_enc->hw_wb;
 
 	SDE_DEBUG("[wb:%d]\n", hw_wb->idx - WB_0);
+
+	atomic_set(&wb_enc->cac_kickoff_armed, 0);
 
 	if (phys_enc->enable_state == SDE_ENC_DISABLED) {
 		SDE_ERROR("encoder is already disabled\n");
@@ -1742,7 +1954,7 @@ static void sde_encoder_phys_wb_init_ops(struct sde_encoder_phys_ops *ops)
 	ops->prepare_for_kickoff = sde_encoder_phys_wb_prepare_for_kickoff;
 	ops->handle_post_kickoff = sde_encoder_phys_wb_handle_post_kickoff;
 	ops->trigger_flush = sde_encoder_phys_wb_trigger_flush;
-	ops->trigger_start = sde_encoder_helper_trigger_start;
+	ops->trigger_start = sde_encoder_phys_wb_trigger_start;
 	ops->hw_reset = sde_encoder_helper_hw_reset;
 	ops->irq_control = sde_encoder_phys_wb_irq_ctrl;
 	ops->wait_for_tx_complete = sde_encoder_phys_wb_wait_for_cwb_done;
@@ -1839,6 +2051,9 @@ struct sde_encoder_phys *sde_encoder_phys_wb_init(
 	atomic_set(&phys_enc->pending_retire_fence_cnt, 0);
 	atomic_set(&phys_enc->wbirq_refcount, 0);
 	init_waitqueue_head(&phys_enc->pending_kickoff_wq);
+
+	atomic_set(&wb_enc->cac_kickoff_armed, 0);
+	init_completion(&wb_enc->cac_kickoff_fired);
 
 	irq = &phys_enc->irq[INTR_IDX_WB_DONE];
 	INIT_LIST_HEAD(&irq->cb.list);

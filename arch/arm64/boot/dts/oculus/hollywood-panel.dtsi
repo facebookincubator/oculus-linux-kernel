@@ -270,6 +270,11 @@
 	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
 	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 	qcom,sde-has-dest-scaler;
+	qcom,sde-wb-rtprio = <99>;
+	qcom,sde-wb-cpumask = "80"; /* CPU7 */
+	qcom,sde-lineptr-scanline-advance = <256>;
+	qcom,sde-wb-mild-tear-threshold = <128>;
+	qcom,sde-wb-severe-tear-threshold = <40>;
 };
 
 &sde_dsi {

@@ -47,6 +47,7 @@ enum {
 	MIC_EQ_ON_OFF,
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
+	MIC_EQ_AGC_ON_OFF,
 	SPK_L_EQ_PRE_GAIN,
 	SPK_R_EQ_PRE_GAIN,
 	MIC_EQ_PRE_GAIN,
@@ -595,6 +596,12 @@ static bool cm710x_readable_register(struct device *dev, unsigned int reg)
 		return false;
 	}
 }
+
+static void cm710x_update_DSP_Effect_Param(
+	struct cm710x_codec_priv *cm710x_codec,
+	char type,
+	long value
+);
 
 static int get_pin_control(struct cm710x_codec_priv *cm710x)
 {
@@ -1596,6 +1603,19 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 			cm710x_codec->bEnableAEC = true;
 
 		cm710x_update_DSP_Effect_enable(cm710x_codec);
+
+		if (cm710x_codec->bEnableAEC) {
+			/* Skip AEC for headphone devices */
+			cm710x_codec->bSkipAEC = cm710x_codec->bHeadphoneEnable;
+			cm710x_update_DSP_Effect_Param(cm710x_codec,
+				MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC,
+				cm710x_codec->bSkipAEC);
+		} else {
+			cm710x_codec->bSkipAEC = false;
+			cm710x_update_DSP_Effect_Param(cm710x_codec,
+				MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC, 0);
+		}
+
 		dev_info(cm710x_codec->dev,
 			"%s MIC_DSP_AEC_ON_OFF set Value = %ld\n",
 			__func__, ucontrol->value.integer.value[0]);
@@ -1623,6 +1643,17 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 			"%s MIC_EQ_ON_OFF set Value = %ld\n",
 			__func__, ucontrol->value.integer.value[0]);
 
+		break;
+	case MIC_EQ_AGC_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm710x_codec->bEnableAGC = false;
+		else
+			cm710x_codec->bEnableAGC = true;
+
+		cm710x_update_eq_pregain_enable(cm710x_codec);
+		dev_info(cm710x_codec->dev,
+			"%s MIC_EQ_AGC_ON_OFF set Value = %ld\n",
+			__func__, ucontrol->value.integer.value[0]);
 		break;
 	}
 
@@ -1679,6 +1710,16 @@ static int cm710x_get_vu(struct snd_kcontrol *kcontrol,
 
 		dev_info(cm710x_codec->dev,
 			"%s MIC_EQ_ON_OFF get value = %ld\n",
+			__func__, ucontrol->value.integer.value[0]);
+		break;
+	case MIC_EQ_AGC_ON_OFF:
+		if (cm710x_codec->bEnableAGC)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_info(cm710x_codec->dev,
+			"%s MIC_EQ_AGC_ON_OFF get value = %ld\n",
 			__func__, ucontrol->value.integer.value[0]);
 		break;
 	}
@@ -2041,7 +2082,8 @@ static int cm710x_put_eq_q(struct snd_kcontrol *kcontrol,
 		idx = reg - SPK_L_EQ_BAND_01_Q;
 		cm710x_codec->SPKLEQParam[idx+1].Q = q + 1;
 		cm710x_set_eq_value(cm710x_codec,
-			&cm710x_codec->SPKLEQParam[idx], 0x5FFC003C + 4 * idx);
+			&cm710x_codec->SPKLEQParam[idx+1],
+			0x5FFC003C + 4 * idx);
 		break;
 	case SPK_R_EQ_BAND_01_Q:
 	case SPK_R_EQ_BAND_02_Q:
@@ -2052,7 +2094,8 @@ static int cm710x_put_eq_q(struct snd_kcontrol *kcontrol,
 		idx = reg - SPK_R_EQ_BAND_01_Q;
 		cm710x_codec->SPKREQParam[idx+1].Q = q + 1;
 		cm710x_set_eq_value(cm710x_codec,
-			&cm710x_codec->SPKREQParam[idx], 0x5FFC005C + 4 * idx);
+			&cm710x_codec->SPKREQParam[idx+1],
+			0x5FFC005C + 4 * idx);
 		break;
 	case MIC_EQ_BAND_01_Q:
 	case MIC_EQ_BAND_02_Q:
@@ -2063,7 +2106,7 @@ static int cm710x_put_eq_q(struct snd_kcontrol *kcontrol,
 		idx = reg - MIC_EQ_BAND_01_Q;
 		cm710x_codec->MICEQParam[idx+1].Q = q + 1;
 		cm710x_set_eq_value(cm710x_codec,
-			&cm710x_codec->MICEQParam[idx], 0x5FFC007C + 4 * idx);
+			&cm710x_codec->MICEQParam[idx+1], 0x5FFC007C + 4 * idx);
 		break;
 	default:
 		break;
@@ -2135,6 +2178,7 @@ static void cm710x_update_DSP_Effect_Param
 
 	dev_info(cm710x_codec->dev, "%s DSPElement = 0x%08x\n",
 					__func__, DSPElement);
+	usleep_range(10000, 15000);
 	mutex_lock(&cm710x_codec->Dsp_Access_Lock);
 	cm710x_dsp_mode_i2c_write_mem(cm710x_codec->real_regmap,
 				0x5FFC0030, (u8 *)&DSPElement, 4);
@@ -2327,6 +2371,42 @@ static int cm710x_stream_trigger(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+static int cm710x_put_device_switch(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	const struct soc_mixer_control *mc =
+		(const struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+	struct cm710x_codec_priv *cm710x_codec = snd_soc_component_get_drvdata(component);
+
+	int rc;
+	int left = ucontrol->value.integer.value[0];
+	int right = ucontrol->value.integer.value[1];
+	bool enabled = left || right;
+	int reg = mc->reg;
+
+	rc = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
+			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	if (reg == CM710X_STO1_ADC_DIG_VOL)
+		cm710x_codec->bHeadphoneEnable = enabled;
+
+	if (enabled && cm710x_codec->bEnableMicDspProcess &&
+			cm710x_codec->bEnableAEC) {
+		/* Skip AEC for headphone devices */
+		cm710x_codec->bSkipAEC = cm710x_codec->bHeadphoneEnable;
+		cm710x_update_DSP_Effect_Param(cm710x_codec,
+			MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC,
+			cm710x_codec->bSkipAEC);
+	}
+
+	return snd_soc_put_volsw(kcontrol, ucontrol);
+}
+
 static const DECLARE_TLV_DB_SCALE(eq_pre_tlv, -1200, 100, 0);
 static const DECLARE_TLV_DB_SCALE(eq_vol_tlv, -2000, 100, 0);
 static const DECLARE_TLV_DB_SCALE(dac_vol_tlv, -6525, 75, 0);
@@ -2335,14 +2415,16 @@ static const DECLARE_TLV_DB_SCALE(adc_vol_tlv, -1725, 75, 0);
 static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 	SOC_DOUBLE_TLV("Headphone Volume", CM710X_DAC3_DIG_VOL,
 		CM710X_L_VOL_SFT, CM710X_R_VOL_SFT, 87, 0, dac_vol_tlv),
-	SOC_DOUBLE_TLV("Speaker Volume", CM710X_DSP_OUTB6_7_DIG_VOL,
-		9, 1, 63, 0, adc_vol_tlv),
+	SOC_DOUBLE_TLV("Speaker Volume", CM710X_DAC1_DIG_VOL,
+		CM710X_L_VOL_SFT, CM710X_R_VOL_SFT, 87, 0, dac_vol_tlv),
 	SOC_DOUBLE_TLV("MIC Volume", CM710X_STO2_ADC_DIG_VOL,
 		8, 0, 127, 0, adc_vol_tlv),
-	SOC_DOUBLE("Headphone Switch", CM710X_STO1_ADC_DIG_VOL,
-		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
-	SOC_DOUBLE("Speaker Switch", CM710X_STO1_DAC_MIXER,
-		CM710X_M_DAC1_L_STO_L_SFT, CM710X_M_DAC1_R_STO_R_SFT, 1, 1),
+	SOC_DOUBLE_EXT("Headphone Switch", CM710X_STO1_ADC_DIG_VOL,
+		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_device_switch),
+	SOC_DOUBLE_EXT("Speaker Switch", CM710X_STO1_DAC_MIXER,
+		CM710X_M_DAC1_L_STO_L_SFT, CM710X_M_DAC1_R_STO_R_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_device_switch),
 	SOC_DOUBLE("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
 		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
 
@@ -2364,7 +2446,7 @@ static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 				MIC_DSP_MAXNR_BF, 0, 32767, 0,
 		cm710x_get_dsp_param, cm710x_put_dsp_param),
 	SOC_SINGLE_EXT("MIC DSP BeamForming Beam width mode",
-				MIC_DSP_MAXNR_BF_MODE, 0, 2, 0,
+				MIC_DSP_MAXNR_BF_MODE, 0, 3, 0,
 		cm710x_get_dsp_param, cm710x_put_dsp_param),
 
 	SOC_SINGLE_EXT("SPK EQ Switch", SPK_EQ_ON_OFF, 0, 1, 0,
@@ -2497,6 +2579,8 @@ static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 
 	SOC_SINGLE_EXT("MIC EQ Switch", MIC_EQ_ON_OFF, 0, 1, 0,
 		cm710x_get_vu, cm710x_put_vu),
+	SOC_SINGLE_EXT("MIC EQ AGC Switch", MIC_EQ_AGC_ON_OFF, 0, 1, 0,
+		cm710x_get_vu, cm710x_put_vu),
 	SOC_SINGLE_EXT_TLV("MIC EQ Pre Gain", MIC_EQ_PRE_GAIN, 0, 12, 0,
 		cm710x_get_eq_gain, cm710x_put_eq_gain, eq_pre_tlv),
 	SOC_SINGLE_EXT("MIC LowPass FC", MIC_EQ_LOWPASS_FC, 0, 32767, 0,
@@ -2591,7 +2675,7 @@ static int cm710x_playback_in_enum_ext_put(struct snd_kcontrol *kcontrol,
 		dev_dbg(cm710x_codec->dev, "%s select 0\n", __func__);
 		regmap_update_bits(cm710x_codec->virt_regmap,
 				CM710X_ADC_IF_DSP_DAC1_MIXER,
-				0xc0c3, 0x4042);
+				0xc0c3, 0x8080);
 		regmap_update_bits(cm710x_codec->virt_regmap,
 				CM710X_DD1_MIXER,
 				0xFFFF, 0xA2A2);

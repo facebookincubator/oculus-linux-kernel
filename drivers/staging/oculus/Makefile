@@ -14,5 +14,6 @@ obj-$(CONFIG_HYPERVISOR_GUEST)		+= hv_guest.o
 obj-$(CONFIG_MISCFIFO)			+= miscfifo.o
 obj-$(CONFIG_MISCFIFO_SAMPLE)		+= miscfifo-sample.o
 obj-$(CONFIG_MOLOKINI)			+= molokini.o
-obj-$(CONFIG_SYNCBOSS)			+= fwupdate_driver.o fwupdate_manager.o syncboss_swd_ops.o syncboss.o syncboss_common.o syncboss_spi.o syncboss_swd.o hubert_swd_ops.o
+obj-$(CONFIG_NAUTILUS_CLK)		+= nautilus_clk.o
+obj-$(CONFIG_SYNCBOSS)			+= swd_driver.o fwupdate_manager.o fw_helpers.o syncboss_swd_ops.o syncboss_spi.o swd.o hubert_swd_ops.o spi_fastpath.o
 obj-$(CONFIG_SYNCBOSS_CAMERA_CONTROL)	+= syncboss_camera.o

@@ -21,6 +21,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/sde_rsc.h>
+#include <uapi/linux/sched/types.h>
 
 #include "msm_drv.h"
 #include "sde_kms.h"
@@ -191,6 +192,9 @@ enum sde_enc_rc_states {
  * @crtc_vblank_cb:	Callback into the upper layer / CRTC for
  *			notification of the VBLANK
  * @crtc_vblank_cb_data:	Data from upper layer for VBLANK notification
+ * @crtc_lineptr_cb:		Callback into the upper layer / CRTC for
+ *				notification of the lineptr
+ * @crtc_lineptr_cb_data:	Data from upper layer for lineptr notification
  * @crtc_kickoff_cb:		Callback into CRTC that will flush & start
  *				all CTL paths
  * @crtc_kickoff_cb_data:	Opaque user data given to crtc_kickoff_cb
@@ -239,6 +243,7 @@ struct sde_encoder_virt {
 	struct drm_encoder base;
 	spinlock_t enc_spinlock;
 	struct mutex vblank_ctl_lock;
+	struct mutex lineptr_ctl_lock;
 	uint32_t bus_scaling_client;
 
 	uint32_t display_num_of_h_tiles;
@@ -261,6 +266,10 @@ struct sde_encoder_virt {
 
 	void (*crtc_vblank_cb)(void *data);
 	void *crtc_vblank_cb_data;
+
+	void (*crtc_lineptr_cb)(void *data, u64 sample_time, int vtotal,
+			int lineptr_offset, bool wb_tear);
+	void *crtc_lineptr_cb_data;
 
 	struct dentry *debugfs_root;
 	struct mutex enc_lock;
@@ -2389,6 +2398,8 @@ static void _sde_encoder_modeset_helper_locked(struct drm_encoder *drm_enc,
 
 		if (phys && phys->ops.control_vblank_irq)
 			phys->ops.control_vblank_irq(phys, enable);
+		if (phys && phys->ops.control_lineptr_irq)
+			phys->ops.control_lineptr_irq(phys, enable);
 	}
 }
 
@@ -3554,6 +3565,38 @@ static void sde_encoder_off_work(struct kthread_work *work)
 	SDE_ATRACE_END("sde_encoder_off_work");
 }
 
+static void _sde_encoder_setscheduler(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
+	struct msm_drm_private *priv = drm_enc->dev->dev_private;
+	struct sched_param param = { 0 };
+	cpumask_t *cpumask;
+
+	if (!sde_enc->crtc ||
+			sde_enc->crtc->index >= ARRAY_SIZE(priv->disp_thread) ||
+			sde_enc->crtc->index >= ARRAY_SIZE(priv->event_thread))
+		return;
+
+	param.sched_priority = 16; /* see msm_drm_display_thread_create */
+	cpumask = cpu_all_mask;
+
+	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_VIRTUAL) {
+		if (priv->wb_thread_rtprio)
+			param.sched_priority = priv->wb_thread_rtprio;
+		cpumask = &priv->wb_thread_cpumask;
+	}
+
+	sched_setscheduler(priv->disp_thread[sde_enc->crtc->index].thread,
+		SCHED_FIFO, &param);
+	set_cpus_allowed_ptr(priv->disp_thread[sde_enc->crtc->index].thread,
+		cpumask);
+
+	sched_setscheduler(priv->event_thread[sde_enc->crtc->index].thread,
+		SCHED_FIFO, &param);
+	set_cpus_allowed_ptr(priv->event_thread[sde_enc->crtc->index].thread,
+		cpumask);
+}
+
 static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 {
 	struct sde_encoder_virt *sde_enc = NULL;
@@ -3598,6 +3641,8 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 		SDE_ERROR("virt encoder has no master! num_phys %d\n", i);
 		return;
 	}
+
+	_sde_encoder_setscheduler(drm_enc);
 
 	_sde_encoder_input_handler_register(drm_enc);
 
@@ -3948,6 +3993,112 @@ static void sde_encoder_underrun_callback(struct drm_encoder *drm_enc,
 	SDE_ATRACE_END("encoder_underrun_callback");
 }
 
+static bool sde_encoder_calc_lineptr_headroom(struct sde_encoder_virt *sde_enc,
+		u64 *sample_time, int *vtotal_out, int *headroom)
+{
+	struct drm_display_mode *mode;
+	int cur_line, vtotal;
+
+	/* This should *never* be true, but check anyway */
+	if (!headroom || !vtotal_out || !sde_enc || !sde_enc->cur_master ||
+		        sde_enc->disp_info.intf_type != DRM_MODE_CONNECTOR_DSI ||
+			!sde_enc->cur_master->ops.get_line_count) {
+		*sample_time = ktime_to_ns(ktime_get());
+		return false;
+	}
+
+	mode = &sde_enc->cur_master->cached_mode;
+
+	vtotal = mode->vtotal;
+	cur_line = sde_enc->cur_master->ops.get_line_count(sde_enc->cur_master);
+	*sample_time = ktime_to_ns(ktime_get());
+
+	/* Wrap cur_line so that headroom is zeroed at Vsync */
+	if (cur_line < vtotal / 2)
+		cur_line += vtotal;
+
+	*vtotal_out = vtotal;
+	*headroom = vtotal - cur_line;
+	return true;
+}
+
+static void sde_encoder_trigger_wb_cac(struct msm_drm_private *priv,
+		bool disarm)
+{
+	struct drm_encoder *drm_enc;
+	struct sde_encoder_virt *sde_enc;
+	struct sde_encoder_phys *phys_enc;
+	enum sde_intf_mode if_mode;
+	unsigned int i;
+
+	for (i = 0; i < priv->num_encoders; i++) {
+		drm_enc = priv->encoders[i];
+
+		if_mode = sde_encoder_get_intf_mode(drm_enc);
+		if (if_mode != INTF_MODE_WB_BLOCK &&
+				if_mode != INTF_MODE_WB_LINE)
+			continue;
+
+		sde_enc = to_sde_encoder_virt(drm_enc);
+		phys_enc = sde_enc->cur_master;
+		if (phys_enc && phys_enc->enable_state != SDE_ENC_DISABLED &&
+				sde_encoder_phys_wb_cac(phys_enc, disarm))
+			break;
+	}
+}
+
+static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
+		struct sde_encoder_phys *phy_enc)
+{
+	struct sde_encoder_virt *sde_enc = NULL;
+	struct msm_drm_private *priv;
+	unsigned long lock_flags;
+
+	bool lineptr_headroom_calculated;
+	u64 sample_time = 0;
+	int lineptr_headroom = 0;
+	int vtotal = 0;
+
+	bool wb_tear = false;
+	bool wb_disarm = false;
+
+	if (!drm_enc || !phy_enc)
+		return;
+
+	SDE_ATRACE_BEGIN("encoder_lineptr_callback");
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+	priv = drm_enc->dev->dev_private;
+
+	/**
+	 * If a writeback CAC commit is pending, trigger it now unless it would
+	 * result in a severe tear (but we still need to call the trigger func
+	 * to make sure the completion event fires)
+	 */
+	lineptr_headroom_calculated = sde_encoder_calc_lineptr_headroom(
+			sde_enc, &sample_time, &vtotal, &lineptr_headroom);
+	if (lineptr_headroom_calculated) {
+		if (lineptr_headroom < (int)priv->wb_mild_tear_threshold)
+			wb_tear = true;
+		if (lineptr_headroom < (int)priv->wb_severe_tear_threshold)
+			wb_disarm = true;
+	}
+
+	sde_encoder_trigger_wb_cac(priv, wb_disarm);
+
+	/* if a deferred writeback CAC commit is pending, trigger it now */
+	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI)
+		msm_flush_deferred_commit(drm_enc->dev);
+
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
+	if (sde_enc->crtc_lineptr_cb)
+		sde_enc->crtc_lineptr_cb(sde_enc->crtc_lineptr_cb_data,
+			sample_time, vtotal, -lineptr_headroom, wb_tear);
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
+
+	SDE_ATRACE_END("encoder_lineptr_callback");
+}
+
 void sde_encoder_register_vblank_callback(struct drm_encoder *drm_enc,
 		void (*vbl_cb)(void *), void *vbl_data)
 {
@@ -3977,6 +4128,68 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *drm_enc,
 			phys->ops.control_vblank_irq(phys, enable);
 	}
 	sde_enc->vblank_enabled = enable;
+}
+
+void sde_encoder_register_lineptr_callback(struct drm_encoder *drm_enc,
+		void (*lineptr_cb)(void *, u64, int, int, bool),
+		void *lineptr_data)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
+	unsigned long lock_flags;
+	bool enable;
+	int i;
+
+	enable = lineptr_cb ? true : false;
+
+	if (!drm_enc) {
+		SDE_ERROR("invalid encoder\n");
+		return;
+	}
+	SDE_DEBUG_ENC(sde_enc, "\n");
+	SDE_EVT32(DRMID(drm_enc), enable);
+
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
+	sde_enc->crtc_lineptr_cb = lineptr_cb;
+	sde_enc->crtc_lineptr_cb_data = lineptr_data;
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
+
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
+
+		if (phys && phys->ops.control_lineptr_irq)
+			phys->ops.control_lineptr_irq(phys, enable);
+	}
+}
+
+void sde_encoder_set_lineptr_value(struct drm_encoder *drm_enc, int offset)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
+	struct sde_encoder_phys *phys;
+	struct sde_hw_ctl *ctl;
+
+	if (!drm_enc || !sde_enc->cur_master) {
+		SDE_ERROR("invalid encoder\n");
+		return;
+	}
+
+	if (sde_kms_is_suspend_state(drm_enc->dev)) {
+		SDE_ERROR("panel is suspended\n");
+		return;
+	}
+
+	/* Lineptr is only enabled on the primary encoder */
+	phys = sde_enc->cur_master;
+	if (!phys->hw_ctl || !phys->hw_intf || !phys->ops.set_lineptr_value)
+		return;
+
+	ctl = phys->hw_ctl;
+	if (!ctl->ops.update_bitmask_intf || !ctl->ops.trigger_flush)
+		return;
+
+	phys->ops.set_lineptr_value(phys, offset);
+
+	ctl->ops.update_bitmask_intf(ctl, phys->hw_intf->idx, true);
+	ctl->ops.trigger_flush(ctl);
 }
 
 void sde_encoder_register_frame_event_callback(struct drm_encoder *drm_enc,
@@ -5718,6 +5931,7 @@ static int sde_encoder_setup_display(struct sde_encoder_virt *sde_enc,
 	struct sde_encoder_virt_ops parent_ops = {
 		sde_encoder_vblank_callback,
 		sde_encoder_underrun_callback,
+		sde_encoder_lineptr_callback,
 		sde_encoder_frame_done_callback,
 		sde_encoder_get_qsync_fps_callback,
 	};
@@ -5735,6 +5949,7 @@ static int sde_encoder_setup_display(struct sde_encoder_virt *sde_enc,
 	phys_params.parent_ops = parent_ops;
 	phys_params.enc_spinlock = &sde_enc->enc_spinlock;
 	phys_params.vblank_ctl_lock = &sde_enc->vblank_ctl_lock;
+	phys_params.lineptr_ctl_lock = &sde_enc->lineptr_ctl_lock;
 
 	SDE_DEBUG("\n");
 
@@ -5911,6 +6126,7 @@ struct drm_encoder *sde_encoder_init_with_ops(
 	sde_enc->cur_master = NULL;
 	spin_lock_init(&sde_enc->enc_spinlock);
 	mutex_init(&sde_enc->vblank_ctl_lock);
+	mutex_init(&sde_enc->lineptr_ctl_lock);
 	for (i = 0; i < MAX_PHYS_ENCODERS_PER_VIRTUAL; i++)
 		atomic_set(&sde_enc->frame_done_cnt[i], 0);
 	drm_enc = &sde_enc->base;
@@ -6472,4 +6688,3 @@ int sde_encoder_vsync_trigger(struct drm_encoder *encoder)
 
 	return 0;
 }
-

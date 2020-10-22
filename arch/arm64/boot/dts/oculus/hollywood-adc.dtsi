@@ -411,8 +411,8 @@
 	};
 
 	pcb1-usr {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150b_adc_tm ADC_AMUX_THM4_PU2>;
 		trips {
@@ -425,8 +425,8 @@
 	};
 
 	pcb2-usr {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150b_adc_tm ADC_GPIO2_PU2>;
 		trips {
@@ -439,8 +439,8 @@
 	};
 
 	pcb3-usr {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150b_adc_tm ADC_AMUX_THM2_PU2>;
 		trips {

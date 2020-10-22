@@ -21,11 +21,13 @@
  * @mono_time:          Monotonic boot time
  * @vt_time:            AV Timer time
  * @ticks:              Qtimer ticks
+ # @monotonic_ns:       Monotonic time in nano seconds
  */
 struct cam_isp_timestamp {
 	struct timeval          mono_time;
 	struct timeval          vt_time;
 	uint64_t                ticks;
+	uint64_t                monotonic_ns;
 };
 
 /*
@@ -172,6 +174,7 @@ struct cam_isp_resource_node {
  * @hw_idx:         IFE hw index
  * @err_type:       Error type if any
  * @th_reg_val:     Any critical register value captured during th
+ * @timestamp:      The monotonic time of event in top half
  *
  */
 struct cam_isp_hw_event_info {
@@ -180,6 +183,7 @@ struct cam_isp_hw_event_info {
 	uint32_t                       hw_idx;
 	uint32_t                       err_type;
 	uint32_t                       th_reg_val;
+	uint64_t                       timestamp;
 };
 
 /*

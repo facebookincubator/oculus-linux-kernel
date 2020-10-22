@@ -99,6 +99,11 @@ struct sde_hw_intf_ops {
 			bool nonblock, u32 *misr_value);
 
 	/**
+	 * set lineptr scanline offset
+	 */
+	int (*set_lineptr_value)(struct sde_hw_intf *intf, int offset);
+
+	/**
 	 * returns the current scan line count of the display
 	 * video mode panels use get_line_count whereas get_vsync_info
 	 * is used for command mode panels

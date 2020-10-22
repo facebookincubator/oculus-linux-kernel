@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -42,10 +42,12 @@ void audio_aio_cb(uint32_t opcode, uint32_t token,
 {
 	struct q6audio_aio *audio = (struct q6audio_aio *)priv;
 	union msm_audio_event_payload e_payload;
+	unsigned long flags = 0;
 
+	spin_lock_irqsave(&enc_dec_lock, flags);
 	if (audio == NULL) {
 		pr_err("%s: failed to get q6audio value\n", __func__);
-		return;
+		goto error;
 	}
 	switch (opcode) {
 	case ASM_DATA_EVENT_WRITE_DONE_V2:
@@ -111,6 +113,8 @@ void audio_aio_cb(uint32_t opcode, uint32_t token,
 	default:
 		break;
 	}
+error:
+	spin_unlock_irqrestore(&enc_dec_lock, flags);
 }
 
 int extract_meta_out_info(struct q6audio_aio *audio,
