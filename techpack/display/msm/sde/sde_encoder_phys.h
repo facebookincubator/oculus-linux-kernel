@@ -70,6 +70,8 @@ struct sde_encoder_phys;
  *			Note: This is called from IRQ handler context.
  * @handle_underrun_virt: Notify virtual encoder of underrun IRQ reception
  *			Note: This is called from IRQ handler context.
+ * @handle_lineptr_virt: Notify virtual encoder of lineptr IRQ reception
+ *			Note: This is called from IRQ handler context.
  * @handle_frame_done:	Notify virtual encoder that this phys encoder
  *			completes last request frame.
  * @get_qsync_fps:	Returns the min fps for the qsync feature.
@@ -78,6 +80,8 @@ struct sde_encoder_virt_ops {
 	void (*handle_vblank_virt)(struct drm_encoder *parent,
 			struct sde_encoder_phys *phys);
 	void (*handle_underrun_virt)(struct drm_encoder *parent,
+			struct sde_encoder_phys *phys);
+	void (*handle_lineptr_virt)(struct drm_encoder *parent,
 			struct sde_encoder_phys *phys);
 	void (*handle_frame_done)(struct drm_encoder *parent,
 			struct sde_encoder_phys *phys, u32 event);
@@ -106,6 +110,8 @@ struct sde_encoder_virt_ops {
  *				resources that this phys_enc is using.
  *				Expect no overlap between phys_encs.
  * @control_vblank_irq		Register/Deregister for VBLANK IRQ
+ * @control_lineptr_irq:	Register/Deregister for lineptr IRQ
+ * @set_lineptr_value:		Set lineptr offset
  * @wait_for_commit_done:	Wait for hardware to have flushed the
  *				current pending frames to hardware
  * @wait_for_tx_complete:	Wait for hardware to transfer the pixels
@@ -159,6 +165,8 @@ struct sde_encoder_phys_ops {
 			struct sde_encoder_hw_resources *hw_res,
 			struct drm_connector_state *conn_state);
 	int (*control_vblank_irq)(struct sde_encoder_phys *enc, bool enable);
+	int (*control_lineptr_irq)(struct sde_encoder_phys *enc, bool enable);
+	int (*set_lineptr_value)(struct sde_encoder_phys *enc, int offset);
 	int (*wait_for_commit_done)(struct sde_encoder_phys *phys_enc);
 	int (*wait_for_tx_complete)(struct sde_encoder_phys *phys_enc);
 	int (*wait_for_vblank)(struct sde_encoder_phys *phys_enc);
@@ -191,6 +199,7 @@ struct sde_encoder_phys_ops {
 
 /**
  * enum sde_intr_idx - sde encoder interrupt index
+ * @INTR_IDX_PROG_LINE: Programmable line interrupt
  * @INTR_IDX_VSYNC:    Vsync interrupt for video mode panel
  * @INTR_IDX_PINGPONG: Pingpong done interrupt for cmd mode panel
  * @INTR_IDX_UNDERRUN: Underrun interrupt for video and cmd mode panel
@@ -206,6 +215,7 @@ struct sde_encoder_phys_ops {
  * @INTR_IDX_WRPTR:    Writepointer start interrupt for cmd mode panel
  */
 enum sde_intr_idx {
+	INTR_IDX_PROG_LINE,
 	INTR_IDX_VSYNC,
 	INTR_IDX_PINGPONG,
 	INTR_IDX_UNDERRUN,
@@ -273,6 +283,7 @@ struct sde_encoder_irq {
  * @enc_spinlock:	Virtual-Encoder-Wide Spin Lock for IRQ purposes
  * @enable_state:	Enable state tracking
  * @vblank_refcount:	Reference count of vblank request
+ * @lineptr_refcount:	Reference count of lineptr request
  * @wbirq_refcount:	Reference count of wb irq request
  * @vsync_cnt:		Vsync count for the physical encoder
  * @underrun_cnt:	Underrun count for the physical encoder
@@ -289,6 +300,7 @@ struct sde_encoder_irq {
  * @in_clone_mode		Indicates if encoder is in clone mode ref@CWB
  * @vfp_cached:			cached vertical front porch to be used for
  *				programming ROT and MDP fetch start
+ * @lineptr_offset_cached:	Cached lineptr offset (lines relative to Vsync)
  * @frame_trigger_mode:		frame trigger mode indication for command
  *				mode display
  * @avr_post_kickoff_enabled:	Indicates vsync will be triggered at the end of
@@ -321,7 +333,9 @@ struct sde_encoder_phys {
 	spinlock_t *enc_spinlock;
 	enum sde_enc_enable_state enable_state;
 	struct mutex *vblank_ctl_lock;
+	struct mutex *lineptr_ctl_lock;
 	atomic_t vblank_refcount;
+	atomic_t lineptr_refcount;
 	atomic_t wbirq_refcount;
 	atomic_t vsync_cnt;
 	atomic_t underrun_cnt;
@@ -333,6 +347,7 @@ struct sde_encoder_phys {
 	bool cont_splash_enabled;
 	bool in_clone_mode;
 	int vfp_cached;
+	int lineptr_offset_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
 	bool avr_post_kickoff_enabled;
 };
@@ -428,6 +443,9 @@ struct sde_encoder_phys_cmd {
  * @bo_disable:		Buffer object(s) to use during the disabling state
  * @fb_disable:		Frame buffer to use during the disabling state
  * @crtc		Pointer to drm_crtc
+ * @cac_pending:	Non-zero if CAC writeback is in progress
+ * @cac_kickoff_armed:	Non-zero if kickoff has been armed (but not yet fired)
+ * @cac_kickoff_fired:	Completion signal for CAC kickoff
  */
 struct sde_encoder_phys_wb {
 	struct sde_encoder_phys base;
@@ -451,6 +469,9 @@ struct sde_encoder_phys_wb {
 	struct drm_gem_object *bo_disable[SDE_MAX_PLANES];
 	struct drm_framebuffer *fb_disable;
 	struct drm_crtc *crtc;
+	atomic_t cac_pending;
+	atomic_t cac_kickoff_armed;
+	struct completion cac_kickoff_fired;
 };
 
 /**
@@ -474,6 +495,7 @@ struct sde_enc_phys_init_params {
 	enum msm_display_compression_type comp_type;
 	spinlock_t *enc_spinlock;
 	struct mutex *vblank_ctl_lock;
+	struct mutex *lineptr_ctl_lock;
 };
 
 /**
@@ -522,6 +544,8 @@ struct sde_encoder_phys *sde_encoder_phys_wb_init(
 	return NULL;
 }
 #endif
+
+bool sde_encoder_phys_wb_cac(struct sde_encoder_phys *phys_enc, bool disarm);
 
 void sde_encoder_phys_setup_cdm(struct sde_encoder_phys *phys_enc,
 		struct drm_framebuffer *fb, const struct sde_format *format,

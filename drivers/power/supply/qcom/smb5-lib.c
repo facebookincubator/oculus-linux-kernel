@@ -22,7 +22,7 @@
 #include "schgm-flash.h"
 
 #define smblib_err(chg, fmt, ...)		\
-	pr_err("%s: %s: " fmt, chg->name,	\
+	pr_err_ratelimited("%s: %s: " fmt, chg->name,	\
 		__func__, ##__VA_ARGS__)	\
 
 #define smblib_dbg(chg, reason, fmt, ...)			\
@@ -1975,7 +1975,7 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_DEBUG_BATTERY, &pval);
 		if (rc < 0) {
-			pr_err_ratelimited("Couldn't get debug battery prop rc=%d\n",
+			smblib_err(chg, "Couldn't get debug battery prop rc=%d\n",
 					rc);
 		} else if (pval.intval == 1) {
 			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
@@ -3687,19 +3687,26 @@ static int smblib_get_prop_ufp_mode(struct smb_charger *chg)
 	}
 	smblib_dbg(chg, PR_REGISTER, "TYPE_C_STATUS_1 = 0x%02x\n", stat);
 
+	/* Enable Debug Accessory Mode */
+	if (chg->dam_enabled & stat &
+		(SNK_DAM_500MA_BIT | SNK_DAM_1500MA_BIT | SNK_DAM_3000MA_BIT)) {
+		smblib_masked_write(chg, TYPE_C_DEBUG_ACCESS_SINK_REG,
+			TYPEC_DEBUG_ACCESS_SINK_EN_BIT,
+			TYPEC_DEBUG_ACCESS_SINK_EN_BIT);
+	}
+
 	switch (stat & DETECTED_SRC_TYPE_MASK) {
 	case SNK_RP_STD_BIT:
+	case SNK_DAM_500MA_BIT:
 		return POWER_SUPPLY_TYPEC_SOURCE_DEFAULT;
 	case SNK_RP_1P5_BIT:
+	case SNK_DAM_1500MA_BIT:
 		return POWER_SUPPLY_TYPEC_SOURCE_MEDIUM;
 	case SNK_RP_3P0_BIT:
+	case SNK_DAM_3000MA_BIT:
 		return POWER_SUPPLY_TYPEC_SOURCE_HIGH;
 	case SNK_RP_SHORT_BIT:
 		return POWER_SUPPLY_TYPEC_NON_COMPLIANT;
-	case SNK_DAM_500MA_BIT:
-	case SNK_DAM_1500MA_BIT:
-	case SNK_DAM_3000MA_BIT:
-		return POWER_SUPPLY_TYPEC_SINK_DEBUG_ACCESSORY;
 	default:
 		break;
 	}

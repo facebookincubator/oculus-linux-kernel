@@ -1,0 +1,93 @@
+&tlmm {
+	bcm_bt_en_default: bcm_bt_en_default {
+		mux {
+			pins = "gpio21";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio21";
+			drive-strength = <2>;
+			/*output-low;*/
+			bias-pull-down;
+		};
+	};
+
+	bcm_bt_wake_default: bcm_bt_wake_default {
+		mux {
+			pins = "gpio30";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio30";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	bcm_bt_hostwake_default: bcm_bt_hostwake_default {
+		mux {
+			pins = "gpio31";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio31";
+			drive-strength = <2>;
+			bias-pull-down;
+			};
+	};
+
+	bcmdhd_wlan_en: bcmdhd_wlan_en {
+		mux {
+			pins = "gpio20";
+			function = "gpio";
+			};
+		config {
+			pins = "gpio20";
+			drive-strength = <2>;
+			/*output-low;*/
+			bias-pull-down;
+		};
+	};
+
+	bcmdhd_wlan_hostwake_default: bcmdhd_wlan_hostwake_default {
+		mux {
+			pins = "gpio124";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio124";
+			drive-strength = <2>;
+			/*output-low;*/
+			bias-pull-down;
+		};
+	};
+};
+
+&vendor {
+	bt_driver {
+		compatible = "brcm,btdriver";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bcm_bt_en_default>;
+		brcm,bt-reset-gpio = <&tlmm 21 0>;
+		status = "ok";
+	};
+
+	bt_bluesleep {
+		compatible = "brcm,bluesleep";
+		brcm,bt-wake-gpio = <&tlmm 30 0>;
+		brcm,bt-host-wake-gpio = <&tlmm 31 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bcm_bt_wake_default &bcm_bt_hostwake_default>;
+		status = "ok";
+	};
+
+	bcmdhd_wlan {
+		compatible = "android,bcmdhd_wlan";
+		wlan-en-gpio = <&tlmm 20 0>;
+		wlan-host-wake-gpio = <&tlmm 124 0>;
+		/*wlan-smmu-iova-address = <0xa0000000 0x10000000>;*/
+		pinctrl-names = "default";
+		pinctrl-0 = <&bcmdhd_wlan_en &bcmdhd_wlan_hostwake_default>;
+		status = "ok";
+	};
+};

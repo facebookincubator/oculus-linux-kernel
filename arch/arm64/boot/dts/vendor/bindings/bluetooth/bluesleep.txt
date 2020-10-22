@@ -1,0 +1,18 @@
+* Broadcom BlueSleep Mode Driver
+Control Sleep-Mode Protocol on Broadcom Bluetooth devices
+
+Required properties:
+       - compatible: Should be set to one of the following:
+               brcm,bluesleep
+       - brcm,bt-host-wake-gpio: hostwake gpio
+       - brcm,bt-wake-gpio: btwake gpio
+
+Example:
+       bt_bluesleep {
+               compatible = "brcm,bluesleep";
+               brcm,bt-wake-gpio = <&tlmm 30 0>;
+               brcm,bt-host-wake-gpio = <&tlmm 31 0>;
+               pinctrl-names = "default";
+               pinctrl-0 = <&brcm_bt_wake_default &brcm_bt_hostwake_default>;
+               status = "ok";
+       };

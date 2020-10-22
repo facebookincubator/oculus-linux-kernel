@@ -270,18 +270,21 @@ static void programmable_fetch_config(struct sde_encoder_phys *phys_enc,
 	m = phys_enc->sde_kms->catalog;
 
 	vfp_fetch_lines = programmable_fetch_get_num_lines(vid_enc,
-							   timing, true);
+							   timing, false);
 	if (vfp_fetch_lines) {
-		vert_total = get_vertical_total(timing, true);
+		vert_total = get_vertical_total(timing, false);
 		horiz_total = get_horizontal_total(timing);
 		vfp_fetch_start_vsync_counter =
 			(vert_total - vfp_fetch_lines) * horiz_total + 1;
 
 		/**
 		 * Check if we need to throttle the fetch to start
-		 * from second line after the active region.
+		 * from second line after the active region, which
+		 * should only be necessary when the fetch is timed
+		 * during a very short vertical front porch.
 		 */
-		if (m->delay_prg_fetch_start)
+		if (m->delay_prg_fetch_start &&
+				vfp_fetch_lines == timing->v_front_porch)
 			vfp_fetch_start_vsync_counter += horiz_total;
 
 		f.enable = 1;
@@ -424,6 +427,20 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 			phys_enc->vfp_cached = mode.vsync_start - mode.vdisplay;
 	}
 
+	if (!phys_enc->lineptr_offset_cached) {
+		if (phys_enc->parent && phys_enc->parent->dev &&
+				phys_enc->parent->dev->dev_private) {
+			struct msm_drm_private *priv =
+				phys_enc->parent->dev->dev_private;
+			phys_enc->lineptr_offset_cached =
+				priv->lineptr_offset_default;
+		}
+
+		/* If the lineptr offset is still 0, set it just before Vsync */
+		if (!phys_enc->lineptr_offset_cached)
+			phys_enc->lineptr_offset_cached = -1;
+	}
+
 	drm_mode_to_intf_timing_params(vid_enc, &mode, &timing_params);
 
 	vid_enc->timing_params = timing_params;
@@ -440,6 +457,9 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 	phys_enc->hw_intf->ops.setup_timing_gen(phys_enc->hw_intf,
 			&timing_params, fmt);
+
+	phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
+			phys_enc->lineptr_offset_cached);
 
 	if (test_bit(SDE_CTL_ACTIVE_CFG,
 				&phys_enc->hw_ctl->caps->features)) {
@@ -559,6 +579,18 @@ static void sde_encoder_phys_vid_underrun_irq(void *arg, int irq_idx)
 			phys_enc);
 }
 
+static void sde_encoder_phys_vid_lineptr_irq(void *arg, int irq_idx)
+{
+	struct sde_encoder_phys *phys_enc = arg;
+
+	if (!phys_enc)
+		return;
+
+	if (phys_enc->parent_ops.handle_lineptr_virt)
+		phys_enc->parent_ops.handle_lineptr_virt(phys_enc->parent,
+			phys_enc);
+}
+
 static void _sde_encoder_phys_vid_setup_irq_hw_idx(
 		struct sde_encoder_phys *phys_enc)
 {
@@ -575,6 +607,10 @@ static void _sde_encoder_phys_vid_setup_irq_hw_idx(
 		irq->hw_idx = phys_enc->intf_idx;
 
 	irq = &phys_enc->irq[INTR_IDX_UNDERRUN];
+	if (irq->irq_idx < 0)
+		irq->hw_idx = phys_enc->intf_idx;
+
+	irq = &phys_enc->irq[INTR_IDX_PROG_LINE];
 	if (irq->irq_idx < 0)
 		irq->hw_idx = phys_enc->intf_idx;
 }
@@ -706,6 +742,91 @@ end:
 	}
 	mutex_unlock(phys_enc->vblank_ctl_lock);
 	return ret;
+}
+
+static int sde_encoder_phys_vid_control_lineptr_irq(
+		struct sde_encoder_phys *phys_enc,
+		bool enable)
+{
+	int ret = 0;
+	struct sde_encoder_phys_vid *vid_enc;
+	int refcount;
+
+	if (!phys_enc) {
+		SDE_ERROR("invalid encoder\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(phys_enc->lineptr_ctl_lock);
+	refcount = atomic_read(&phys_enc->lineptr_refcount);
+	vid_enc = to_sde_encoder_phys_vid(phys_enc);
+
+	/* Secondary encoders don't report lineptr */
+	if (!sde_encoder_phys_vid_is_master(phys_enc))
+		goto end;
+
+	/* protect against negative */
+	if (!enable && refcount == 0) {
+		ret = -EINVAL;
+		goto end;
+	}
+
+	SDE_DEBUG_VIDENC(vid_enc, "[%pS] enable=%d/%d\n",
+			__builtin_return_address(0),
+			enable, atomic_read(&phys_enc->lineptr_refcount));
+
+	SDE_EVT32(DRMID(phys_enc->parent), enable,
+			atomic_read(&phys_enc->lineptr_refcount));
+
+	if (enable && atomic_inc_return(&phys_enc->lineptr_refcount) == 1) {
+		ret = sde_encoder_helper_register_irq(phys_enc,
+				INTR_IDX_PROG_LINE);
+		if (ret)
+			atomic_dec_return(&phys_enc->lineptr_refcount);
+	} else if (!enable &&
+			atomic_dec_return(&phys_enc->lineptr_refcount) == 0) {
+		ret = sde_encoder_helper_unregister_irq(phys_enc,
+				INTR_IDX_PROG_LINE);
+		if (ret)
+			atomic_inc_return(&phys_enc->lineptr_refcount);
+	}
+
+end:
+	if (ret) {
+		SDE_ERROR_VIDENC(vid_enc,
+				"control lineptr irq error %d, enable %d\n",
+				ret, enable);
+		SDE_EVT32(DRMID(phys_enc->parent),
+				phys_enc->hw_intf->idx - INTF_0,
+				enable, refcount, SDE_EVTLOG_ERROR);
+	}
+	mutex_unlock(phys_enc->lineptr_ctl_lock);
+	return ret;
+}
+
+static int sde_encoder_phys_vid_set_lineptr_value(
+		struct sde_encoder_phys *phys_enc, int offset)
+{
+	unsigned long lock_flags;
+	int rc = 0;
+
+	if (!phys_enc || phys_enc->enable_state == SDE_ENC_DISABLED)
+		return -EINVAL;
+
+	if (!sde_encoder_phys_vid_is_master(phys_enc))
+		return -EINVAL;
+
+	if (!phys_enc->hw_intf || !phys_enc->hw_intf->ops.set_lineptr_value)
+		return -EINVAL;
+
+	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+	rc = phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
+		offset);
+	if (!rc)
+		phys_enc->lineptr_offset_cached = offset;
+	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+
+	return rc;
 }
 
 static bool sde_encoder_phys_vid_wait_dma_trigger(
@@ -1173,16 +1294,21 @@ static void sde_encoder_phys_vid_irq_control(struct sde_encoder_phys *phys_enc,
 	vid_enc = to_sde_encoder_phys_vid(phys_enc);
 
 	SDE_EVT32(DRMID(phys_enc->parent), phys_enc->hw_intf->idx - INTF_0,
-			enable, atomic_read(&phys_enc->vblank_refcount));
+			enable, atomic_read(&phys_enc->vblank_refcount),
+			atomic_read(&phys_enc->lineptr_refcount));
 
 	if (enable) {
 		ret = sde_encoder_phys_vid_control_vblank_irq(phys_enc, true);
+		if (ret)
+			return;
+		ret = sde_encoder_phys_vid_control_lineptr_irq(phys_enc, true);
 		if (ret)
 			return;
 
 		sde_encoder_helper_register_irq(phys_enc, INTR_IDX_UNDERRUN);
 	} else {
 		sde_encoder_phys_vid_control_vblank_irq(phys_enc, false);
+		sde_encoder_phys_vid_control_lineptr_irq(phys_enc, false);
 		sde_encoder_helper_unregister_irq(phys_enc, INTR_IDX_UNDERRUN);
 	}
 }
@@ -1280,6 +1406,8 @@ static void sde_encoder_phys_vid_init_ops(struct sde_encoder_phys_ops *ops)
 	ops->destroy = sde_encoder_phys_vid_destroy;
 	ops->get_hw_resources = sde_encoder_phys_vid_get_hw_resources;
 	ops->control_vblank_irq = sde_encoder_phys_vid_control_vblank_irq;
+	ops->control_lineptr_irq = sde_encoder_phys_vid_control_lineptr_irq;
+	ops->set_lineptr_value = sde_encoder_phys_vid_set_lineptr_value;
 	ops->wait_for_commit_done = sde_encoder_phys_vid_wait_for_vblank;
 	ops->wait_for_vblank = sde_encoder_phys_vid_wait_for_vblank_no_notify;
 	ops->wait_for_tx_complete = sde_encoder_phys_vid_wait_for_vblank;
@@ -1345,6 +1473,7 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	phys_enc->intf_mode = INTF_MODE_VIDEO;
 	phys_enc->enc_spinlock = p->enc_spinlock;
 	phys_enc->vblank_ctl_lock = p->vblank_ctl_lock;
+	phys_enc->lineptr_ctl_lock = p->lineptr_ctl_lock;
 	phys_enc->comp_type = p->comp_type;
 	for (i = 0; i < INTR_IDX_MAX; i++) {
 		irq = &phys_enc->irq[i];
@@ -1366,11 +1495,20 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	irq->intr_idx = INTR_IDX_UNDERRUN;
 	irq->cb.func = sde_encoder_phys_vid_underrun_irq;
 
+	irq = &phys_enc->irq[INTR_IDX_PROG_LINE];
+	irq->name = "lineptr_irq";
+	irq->intr_type = SDE_IRQ_TYPE_PROG_LINE;
+	irq->intr_idx = INTR_IDX_PROG_LINE;
+	irq->cb.func = sde_encoder_phys_vid_lineptr_irq;
+
 	atomic_set(&phys_enc->vblank_refcount, 0);
+	atomic_set(&phys_enc->lineptr_refcount, 0);
 	atomic_set(&phys_enc->pending_kickoff_cnt, 0);
 	atomic_set(&phys_enc->pending_retire_fence_cnt, 0);
 	init_waitqueue_head(&phys_enc->pending_kickoff_wq);
 	phys_enc->enable_state = SDE_ENC_DISABLED;
+
+	phys_enc->lineptr_offset_cached = 0;
 
 	SDE_DEBUG_VIDENC(vid_enc, "created intf idx:%d\n", p->intf_idx);
 

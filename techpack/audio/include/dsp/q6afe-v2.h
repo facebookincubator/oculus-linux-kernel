@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 #ifndef __Q6AFE_V2_H__
 #define __Q6AFE_V2_H__
@@ -45,7 +45,8 @@
 #define AFE_API_VERSION_V4		4
 /* for VAD enable */
 #define AFE_API_VERSION_V6		6
-
+/* for Speaker Protection V4 */
+#define AFE_API_VERSION_V9		9
 
 typedef int (*routing_cb)(int port);
 

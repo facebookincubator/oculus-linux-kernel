@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -36,6 +36,8 @@
 #define WCD937X_VERSION_1_0 1
 #define WCD937X_VERSION_ENTRY_SIZE 32
 #define EAR_RX_PATH_AUX 1
+
+#define NUM_ATTEMPTS 5
 
 enum {
 	CODEC_TX = 0,
@@ -161,6 +163,10 @@ static int wcd937x_set_port_params(struct snd_soc_component *component,
 		map = &wcd937x->tx_port_mapping;
 		num_ports = wcd937x->num_tx_ports;
 		break;
+	default:
+		dev_err(component->dev, "%s Invalid path selected %u\n",
+					__func__, path);
+		return -EINVAL;
 	}
 
 	for (i = 0; i <= num_ports; i++) {
@@ -205,6 +211,10 @@ static int wcd937x_parse_port_mapping(struct device *dev,
 		map = &wcd937x->tx_port_mapping;
 		num_ports = &wcd937x->num_tx_ports;
 		break;
+	default:
+		dev_err(dev, "%s Invalid path selected %u\n",
+				 __func__, path);
+		return -EINVAL;
 	}
 
 	if (!of_find_property(dev->of_node, prop,
@@ -568,7 +578,8 @@ static int wcd937x_codec_ear_dac_event(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_L,
 				0x0F, 0x06);
-		snd_soc_component_update_bits(component,
+		if (wcd937x->comp1_enable)
+			snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_CDC_COMP_CTL_0,
 				0x02, 0x02);
 		usleep_range(5000, 5010);
@@ -586,6 +597,10 @@ static int wcd937x_codec_ear_dac_event(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_L,
 				0x0F, 0x01);
+		if (wcd937x->comp1_enable)
+			snd_soc_component_update_bits(component,
+				WCD937X_DIGITAL_CDC_COMP_CTL_0,
+				0x02, 0x00);
 		break;
 	};
 	return 0;
@@ -1447,7 +1462,7 @@ int wcd937x_micbias_control(struct snd_soc_component *component,
 		mutex_unlock(&wcd937x->ana_tx_clk_lock);
 		if (wcd937x->micb_ref[micb_index] == 1) {
 			snd_soc_component_update_bits(component,
-				WCD937X_DIGITAL_CDC_DIG_CLK_CTL, 0xE0, 0xE0);
+				WCD937X_DIGITAL_CDC_DIG_CLK_CTL, 0xF0, 0xF0);
 			snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);
 			snd_soc_component_update_bits(component,
@@ -1535,16 +1550,31 @@ static int wcd937x_get_logical_addr(struct swr_device *swr_dev)
 {
 	int ret = 0;
 	uint8_t devnum = 0;
+	int num_retry = NUM_ATTEMPTS;
 
-	ret = swr_get_logical_dev_num(swr_dev, swr_dev->addr, &devnum);
-	if (ret) {
-		dev_err(&swr_dev->dev,
-			"%s get devnum %d for dev addr %lx failed\n",
-			__func__, devnum, swr_dev->addr);
-		return ret;
-	}
+	do {
+		ret = swr_get_logical_dev_num(swr_dev, swr_dev->addr, &devnum);
+		if (ret) {
+			dev_err(&swr_dev->dev,
+				"%s get devnum %d for dev addr %lx failed\n",
+				__func__, devnum, swr_dev->addr);
+			/* retry after 1ms */
+			usleep_range(1000, 1010);
+		}
+	} while (ret && --num_retry);
 	swr_dev->dev_num = devnum;
 	return 0;
+}
+
+static bool get_usbc_hs_status(struct snd_soc_component *component,
+			struct wcd_mbhc_config *mbhc_cfg)
+{
+	if (mbhc_cfg->enable_usbc_analog) {
+		if (!(snd_soc_component_read32(component, WCD937X_ANA_MBHC_MECH)
+			& 0x20))
+			return true;
+	}
+	return false;
 }
 
 static int wcd937x_event_notify(struct notifier_block *block,
@@ -1580,20 +1610,22 @@ static int wcd937x_event_notify(struct notifier_block *block,
 					0x80, 0x00);
 		break;
 	case BOLERO_WCD_EVT_SSR_DOWN:
+		wcd937x->mbhc->wcd_mbhc.deinit_in_progress = true;
 		mbhc = &wcd937x->mbhc->wcd_mbhc;
+		wcd937x->usbc_hs_status = get_usbc_hs_status(component,
+						mbhc->mbhc_cfg);
 		wcd937x_mbhc_ssr_down(wcd937x->mbhc, component);
 		wcd937x_reset_low(wcd937x->dev);
 		break;
 	case BOLERO_WCD_EVT_SSR_UP:
 		wcd937x_reset(wcd937x->dev);
+		/* allow reset to take effect */
+		usleep_range(10000, 10010);
 		wcd937x_get_logical_addr(wcd937x->tx_swr_dev);
 		wcd937x_get_logical_addr(wcd937x->rx_swr_dev);
+		wcd937x_init_reg(component);
 		regcache_mark_dirty(wcd937x->regmap);
 		regcache_sync(wcd937x->regmap);
-		/* Enable surge protection */
-		snd_soc_component_update_bits(component,
-				WCD937X_HPH_SURGE_HPHLR_SURGE_EN,
-				0xFF, 0xD9);
 		/* Initialize MBHC module */
 		mbhc = &wcd937x->mbhc->wcd_mbhc;
 		ret = wcd937x_mbhc_post_ssr_init(wcd937x->mbhc, component);
@@ -1602,7 +1634,10 @@ static int wcd937x_event_notify(struct notifier_block *block,
 				__func__);
 		} else {
 			wcd937x_mbhc_hs_detect(component, mbhc->mbhc_cfg);
+			if (wcd937x->usbc_hs_status)
+				mdelay(500);
 		}
+		wcd937x->mbhc->wcd_mbhc.deinit_in_progress = false;
 		break;
 	default:
 		dev_err(component->dev, "%s: invalid event %d\n", __func__,
@@ -3006,7 +3041,7 @@ static void wcd937x_unbind(struct device *dev)
 }
 
 static const struct of_device_id wcd937x_dt_match[] = {
-	{ .compatible = "qcom,wcd937x-codec" },
+	{ .compatible = "qcom,wcd937x-codec" , .data = "wcd937x" },
 	{}
 };
 

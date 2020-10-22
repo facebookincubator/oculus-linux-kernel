@@ -20,9 +20,20 @@
 #include "msm_drv.h"
 #include "msm_gem.h"
 #include "msm_kms.h"
+#include "sde_connector.h"
+#include "sde_crtc.h"
 #include "sde_trace.h"
 
 #define MULTIPLE_CONN_DETECTED(x) (x > 1)
+
+/* Commit is used for chromatic aberration correction */
+#define MSM_COMMIT_FLAG_DPU_CAC		0x1
+
+/* Existing commit had completed and was automatically rescheduled */
+#define MSM_COMMIT_FLAG_AUTOMATIC		0x2
+
+/* Destroy deferred commit without waiting for completion */
+#define MSM_COMMIT_FLAG_CANCEL_DEFERRED	0x4
 
 struct msm_commit {
 	struct drm_device *dev;
@@ -30,6 +41,7 @@ struct msm_commit {
 	uint32_t crtc_mask;
 	uint32_t plane_mask;
 	bool nonblock;
+	uint32_t flags;
 	struct kthread_work commit_work;
 };
 
@@ -313,7 +325,7 @@ msm_crtc_set_mode(struct drm_device *dev, struct drm_atomic_state *old_state)
  * and do the plane commits at the end. This is useful for drivers doing runtime
  * PM since planes updates then only happen when the CRTC is actually enabled.
  */
-void msm_atomic_helper_commit_modeset_disables(struct drm_device *dev,
+static void msm_atomic_helper_commit_modeset_disables(struct drm_device *dev,
 		struct drm_atomic_state *old_state)
 {
 	msm_disable_outputs(dev, old_state);
@@ -481,8 +493,90 @@ int msm_atomic_prepare_fb(struct drm_plane *plane,
 	return msm_framebuffer_prepare(new_state->fb, kms->aspace);
 }
 
-/* The (potentially) asynchronous part of the commit.  At this point
- * nothing can fail short of armageddon.
+/* Submit commit to its kthread's work queue */
+static void msm_queue_commit_work(struct drm_device *dev,
+		struct msm_commit *commit)
+{
+	struct msm_drm_private *priv = dev->dev_private;
+	int i;
+
+	for (i = 0; i < priv->num_crtcs; i++) {
+		if (commit->crtc_mask & drm_crtc_mask(priv->crtcs[i])) {
+			kthread_queue_work(&priv->disp_thread[i].worker,
+				&commit->commit_work);
+			return;
+		}
+	}
+
+	BUG_ON(i == priv->num_crtcs);
+}
+
+/**
+ * msm_set_deferred_commit - flush last deferred commit and update
+ * @dev: DRM device
+ * @commit: a valid commit to be marked as deferred
+ */
+static void msm_set_deferred_commit(struct drm_device *dev,
+		struct msm_commit *commit)
+{
+	struct msm_drm_private *priv = dev->dev_private;
+	struct msm_commit *pending_commit;
+
+	BUG_ON(!commit->nonblock);
+
+	pending_commit = xchg(&priv->deferred_commit, commit);
+	if (pending_commit && commit != pending_commit)
+		msm_queue_commit_work(dev, pending_commit);
+}
+
+/**
+ * msm_prepare_auto_commit - update state before re-commiting
+ * @state: the driver state object
+ */
+static void msm_prepare_auto_commit(struct drm_atomic_state *state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *old_crtc_state;
+	int i;
+
+	SDE_ATRACE_BEGIN(__func__);
+
+	/*
+	 * Update commit_count on the output sde_fence_context as well as
+	 * the connector retire fence to account for the fact that the same
+	 * state is being committed again. Note that fences returned to
+	 * userspace will be signaled only upon initial completion of the
+	 * commit. This is fine -- auto commits are only used for CAC, in
+	 * which case HWComposer uses shared buffer mode and does not wait
+	 * on fences.
+	 */
+	for_each_old_crtc_in_state(state, crtc, old_crtc_state, i) {
+		if (crtc->state->active || crtc->state->active_changed)
+			sde_crtc_prepare_commit(crtc, old_crtc_state);
+	}
+
+	SDE_ATRACE_END(__func__);
+}
+
+/* Check if the commit should be requeued */
+static bool msm_atomic_should_requeue(struct drm_device *dev,
+		struct drm_atomic_state *old_state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *new_crtc_state;
+	int i;
+
+	for_each_new_crtc_in_state(old_state, crtc, new_crtc_state, i) {
+		if (new_crtc_state->active)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * The (potentially) asynchronous part of the commit.  At this point nothing
+ * can fail short of armageddon.
  */
 static void complete_commit(struct msm_commit *c)
 {
@@ -490,17 +584,38 @@ static void complete_commit(struct msm_commit *c)
 	struct drm_device *dev = state->dev;
 	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_kms *kms = priv->kms;
+	struct msm_commit *pending_commit = NULL;
+	bool skip_modeset = false;
+
+	if (c->flags & MSM_COMMIT_FLAG_AUTOMATIC) {
+		/*
+		 * Since this commit has been performed at least once (and
+		 * associated fences have been signaled), release it if a
+		 * new commit is pending.
+		 */
+		if (c->flags & MSM_COMMIT_FLAG_CANCEL_DEFERRED)
+			goto cleanup;
+
+		msm_prepare_auto_commit(state);
+		skip_modeset = true;
+	}
 
 	drm_atomic_helper_wait_for_fences(dev, state, false);
 
 	kms->funcs->prepare_commit(kms, state);
 
-	msm_atomic_helper_commit_modeset_disables(dev, state);
+	if (!skip_modeset)
+		msm_atomic_helper_commit_modeset_disables(dev, state);
 
 	drm_atomic_helper_commit_planes(dev, state,
 				DRM_PLANE_COMMIT_ACTIVE_ONLY);
 
-	msm_atomic_helper_commit_modeset_enables(dev, state);
+	if (!skip_modeset)
+		msm_atomic_helper_commit_modeset_enables(dev, state);
+	else if (kms->funcs->commit) {
+		/* called by modeset_enables; performs crtc commit kickoff */
+		kms->funcs->commit(kms, state);
+	}
 
 	/* NOTE: _wait_for_vblanks() only waits for vblank on
 	 * enabled CRTCs.  So we end up faulting when disabling
@@ -521,6 +636,38 @@ static void complete_commit(struct msm_commit *c)
 
 	kms->funcs->complete_commit(kms, state);
 
+	spin_lock(&priv->pending_crtcs_event.lock);
+
+	/*
+	 * To avoid blocking in msm_atomic_commit(), only reschedule if we
+	 * don't have a pending commit on the same crtc and the crtc is still
+	 * active. If a new commit comes in but writeback hasn't fired for
+	 * some reason, either the cac_kickoff_fired completion event or the
+	 * msm_atomic_wait_for_commit_done call above will time out and the old
+	 * auto-commit will be marked to be cancelled in the msm_atomic_commit
+	 * call.
+	 *
+	 * Adding the logic to trigger the cac_kickoff_fired completion event
+	 * everywhere that could possibly block things up is pretty messy and
+	 * not really worth the added complexity. Just let it time out.
+	 */
+	if ((c->flags & MSM_COMMIT_FLAG_DPU_CAC) &&
+			!(c->crtc_mask & priv->waiting_crtcs)) {
+		c->flags |= MSM_COMMIT_FLAG_AUTOMATIC;
+
+		pending_commit = xchg(&priv->deferred_commit, c);
+		if (pending_commit && c != pending_commit)
+			msm_queue_commit_work(dev, pending_commit);
+		else if (msm_atomic_should_requeue(dev, state))
+			msm_flush_deferred_commit(dev);
+
+		spin_unlock(&priv->pending_crtcs_event.lock);
+		return;
+	}
+
+	spin_unlock(&priv->pending_crtcs_event.lock);
+
+cleanup:
 	drm_atomic_state_put(state);
 
 	commit_destroy(c);
@@ -559,6 +706,59 @@ static struct msm_commit *commit_init(struct drm_atomic_state *state,
 	return c;
 }
 
+/**
+ * msm_flush_deferred_commit_mask - flush if deferred commit's crtc or
+ * plane mask matches the new commit
+ * @dev: DRM device
+ * @commit: new atomic commit; flush unconditionally if NULL
+ */
+static void msm_flush_deferred_commit_mask(struct drm_device *dev,
+		struct msm_commit *commit)
+{
+	struct msm_drm_private *priv = dev->dev_private;
+	struct msm_commit *pending;
+
+	pending = xchg(&priv->deferred_commit, NULL);
+	if (!pending)
+		return;
+
+	if (commit) {
+		if ((commit->crtc_mask & pending->crtc_mask) ||
+				(commit->plane_mask & pending->plane_mask)) {
+			pending->flags |= MSM_COMMIT_FLAG_CANCEL_DEFERRED;
+			msm_queue_commit_work(dev, pending);
+		} else
+			msm_set_deferred_commit(dev, pending); /* restore */
+
+		return;
+	}
+
+	msm_queue_commit_work(dev, pending);
+}
+
+static bool msm_is_cac_commit(struct drm_crtc_state *state)
+{
+	struct drm_connector *conn;
+	struct drm_connector_state *conn_state;
+	int i;
+
+	for_each_new_connector_in_state(state->state, conn, conn_state, i) {
+		if (conn->connector_type != DRM_MODE_CONNECTOR_VIRTUAL)
+			continue;
+
+		if (sde_connector_get_property(
+				conn_state, CONNECTOR_PROP_WB_CAC))
+			return true;
+	}
+
+	return false;
+}
+
+void msm_flush_deferred_commit(struct drm_device *dev)
+{
+	msm_flush_deferred_commit_mask(dev, NULL);
+}
+
 /* Start display thread function */
 static void msm_atomic_commit_dispatch(struct drm_device *dev,
 		struct drm_atomic_state *state, struct msm_commit *commit)
@@ -574,22 +774,28 @@ static void msm_atomic_commit_dispatch(struct drm_device *dev,
 
 	for_each_old_crtc_in_state(state, crtc, crtc_state, i) {
 		for (j = 0; j < priv->num_crtcs; j++) {
-			if (priv->disp_thread[j].crtc_id ==
-						crtc->base.id) {
-				if (priv->disp_thread[j].thread) {
+			if (priv->disp_thread[j].crtc_id !=
+						crtc->base.id)
+				continue;
+
+			if (priv->disp_thread[j].thread) {
+				if (nonblock && msm_is_cac_commit(crtc_state)) {
+					commit->flags |=
+						MSM_COMMIT_FLAG_DPU_CAC;
+					msm_set_deferred_commit(dev, commit);
+				} else
 					kthread_queue_work(
 						&priv->disp_thread[j].worker,
 							&commit->commit_work);
-					/* only return zero if work is
-					 * queued successfully.
-					 */
-					ret = 0;
-				} else {
-					DRM_ERROR(" Error for crtc_id: %d\n",
-						priv->disp_thread[j].crtc_id);
-				}
-				break;
+				/* only return zero if work is
+				 * queued successfully.
+				 */
+				ret = 0;
+			} else {
+				DRM_ERROR(" Error for crtc_id: %d\n",
+					priv->disp_thread[j].crtc_id);
 			}
+			break;
 		}
 		/*
 		 * TODO: handle cases where there will be more than
@@ -691,6 +897,15 @@ int msm_atomic_commit(struct drm_device *dev,
 
 	/* Start Atomic */
 	spin_lock(&priv->pending_crtcs_event.lock);
+
+	/*
+	 * If there's a deferred CAC commit that hasn't been processed
+	 * yet (e.g. because the DSI connector is disabled), we need to
+	 * queue it now to make sure pending_crtcs_event gets signaled.
+	 */
+	msm_flush_deferred_commit_mask(dev, c);
+
+	priv->waiting_crtcs |= c->crtc_mask;
 	ret = wait_event_interruptible_locked(priv->pending_crtcs_event,
 			!(priv->pending_crtcs & c->crtc_mask) &&
 			!(priv->pending_planes & c->plane_mask));
@@ -699,6 +914,8 @@ int msm_atomic_commit(struct drm_device *dev,
 		priv->pending_crtcs |= c->crtc_mask;
 		priv->pending_planes |= c->plane_mask;
 	}
+	priv->waiting_crtcs &= ~c->crtc_mask;
+
 	spin_unlock(&priv->pending_crtcs_event.lock);
 
 	if (ret)

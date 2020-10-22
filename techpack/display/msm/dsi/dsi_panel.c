@@ -538,6 +538,11 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 	if (gpio_is_valid(panel->reset_config.sec_reset_gpio))
 		gpio_set_value(panel->reset_config.sec_reset_gpio, 0);
 
+	if (panel->reset_config.sec_power_off_delay > 0) {
+		usleep_range(panel->reset_config.sec_power_off_delay * 1000,
+				(panel->reset_config.sec_power_off_delay * 1000) + 10);
+	}
+
 	if (gpio_is_valid(panel->reset_config.lcd_mode_sel_gpio))
 		gpio_set_value(panel->reset_config.lcd_mode_sel_gpio, 0);
 
@@ -760,6 +765,8 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 	enum dsi_cmd_set_type type;
 	struct mipi_dsi_device *dsi;
 	int refresh_rate = 0;
+	int32_t default_brightness = 0;
+
 	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
 		return -EINVAL;
 
@@ -804,9 +811,9 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 
 	dsi = &panel->mipi_device;
 
-	int32_t defaultBrightness = (int32_t) ((payload[2] << 8) | payload[3]);
+	default_brightness = (int32_t) ((payload[2] << 8) | payload[3]);
 
-	bl_lvl = (bl_lvl * defaultBrightness) / 1000;
+	bl_lvl = (bl_lvl * default_brightness) / 1000;
 	payload[2] = bl_lvl >> 8;
 	payload[3] = bl_lvl & 0xff;
 	payload[10] = bl_lvl >> 8;
@@ -2148,6 +2155,16 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 		rc = 0;
 	} else if (rc) {
 		DSI_ERR("[%s] cannot read dsi-reset-off-delay\n", panel->name);
+	}
+
+	panel->reset_config.sec_power_off_delay = 0;
+	rc = utils->read_u32(utils->data,
+		"qcom,mdss-dsi-sec-reset-off-delay", &panel->reset_config.sec_power_off_delay);
+	if (rc == -EINVAL) {
+		/* -EINVAL means entry was not found, this is not an error */
+		rc = 0;
+	} else if (rc) {
+		DSI_ERR("[%s] cannot read dsi-sec-reset-off-delay\n", panel->name);
 	}
 
 error_free_arr_32:
@@ -3960,6 +3977,16 @@ int dsi_panel_get_mode(struct dsi_panel *panel,
 		} else {
 			mode->panel_mode = panel->panel_mode;
 		}
+
+		panel->pre_post_panel_on_delay = 0;
+		rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-pre-post-panel-on-delay", &panel->pre_post_panel_on_delay);
+		if (rc == -EINVAL) {
+			/* -EINVAL means entry was not found, this is not an error */
+			rc = 0;
+		} else if (rc) {
+			DSI_ERR("[%s] cannot read pre_post_panel_on_delay\n", panel->name);
+		}
 	}
 	goto done;
 
@@ -4503,6 +4530,11 @@ int dsi_panel_post_enable(struct dsi_panel *panel)
 	if (!panel) {
 		DSI_ERR("invalid params\n");
 		return -EINVAL;
+	}
+
+	if (panel->pre_post_panel_on_delay > 0) {
+		usleep_range(panel->pre_post_panel_on_delay * 1000,
+			(panel->pre_post_panel_on_delay * 1000) + 10);
 	}
 
 	mutex_lock(&panel->panel_lock);

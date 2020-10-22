@@ -476,6 +476,8 @@ struct usbpd {
 	u8			get_battery_status_db;
 	bool			send_get_battery_status;
 	u32			battery_sts_dobj;
+
+	bool			request_svids;
 };
 
 static LIST_HEAD(_usbpd);	/* useful for debugging */
@@ -2826,6 +2828,11 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 				POWER_SUPPLY_PROP_PD_CURRENT_MAX, &val);
 
 		usbpd_set_state(pd, PE_SNK_READY);
+
+		if (pd->request_svids)
+			usbpd_send_svdm(pd, USBPD_SID,
+				USBPD_SVDM_DISCOVER_SVIDS,
+				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 	} else {
 		/* timed out; go to hard reset */
 		usbpd_set_state(pd, PE_SNK_HARD_RESET);
@@ -4768,6 +4775,10 @@ struct usbpd *usbpd_create(struct device *parent)
 			goto put_psy;
 		}
 	}
+
+	/* Send Discovery SVIDs request after PD Contract */
+	pd->request_svids = device_property_read_bool(parent,
+			"qcom,discovery-svids-request");
 
 	pd->current_pr = PR_NONE;
 	pd->current_dr = DR_NONE;

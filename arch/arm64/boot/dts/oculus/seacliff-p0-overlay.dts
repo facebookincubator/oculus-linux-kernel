@@ -13,3 +13,20 @@
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
 	qcom,board-id = <8 61>;
 };
+
+&mdss_mdp {
+	qcom,swap-mixers;
+
+};
+
+&nautilus_clk {
+	status = "disabled";
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_P0_BOARD.bin";
+		};
+	};
+};

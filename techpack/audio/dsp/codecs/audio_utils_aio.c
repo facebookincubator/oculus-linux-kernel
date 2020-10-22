@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2009-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2020, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -588,6 +588,7 @@ int enable_volume_ramp(struct q6audio_aio *audio)
 
 int audio_aio_release(struct inode *inode, struct file *file)
 {
+	unsigned long flags = 0;
 	struct q6audio_aio *audio = file->private_data;
 
 	pr_debug("%s[%pK]\n", __func__, audio);
@@ -631,9 +632,11 @@ int audio_aio_release(struct inode *inode, struct file *file)
 #ifdef CONFIG_DEBUG_FS
 	debugfs_remove(audio->dentry);
 #endif
+	spin_lock_irqsave(&enc_dec_lock, flags);
 	kfree(audio->codec_cfg);
 	kfree(audio);
 	file->private_data = NULL;
+	spin_unlock_irqrestore(&enc_dec_lock, flags);
 	mutex_unlock(&lock);
 	return 0;
 }

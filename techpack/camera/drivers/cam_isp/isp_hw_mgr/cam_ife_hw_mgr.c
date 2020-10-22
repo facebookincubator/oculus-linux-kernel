@@ -2487,7 +2487,6 @@ end:
 static int cam_ife_mgr_acquire_hw_for_offline_ctx(
 	struct cam_ife_hw_mgr_ctx           *ife_ctx,
 	struct cam_isp_in_port_generic_info *in_port,
-	uint32_t                            *num_pix_port,
 	uint32_t                            *acquired_hw_id,
 	uint32_t                            *acquired_hw_path)
 {
@@ -2547,8 +2546,6 @@ static int cam_ife_mgr_acquire_hw_for_offline_ctx(
 		goto err;
 	}
 
-	*num_pix_port += ipp_count + lcr_count;
-
 	return 0;
 
 err:
@@ -2559,8 +2556,7 @@ err:
 static int cam_ife_mgr_acquire_hw_for_ctx(
 	struct cam_ife_hw_mgr_ctx           *ife_ctx,
 	struct cam_isp_in_port_generic_info *in_port,
-	uint32_t *num_pix_port, uint32_t *num_rdi_port,
-	uint32_t *num_pd_port, uint32_t *acquired_hw_id,
+	uint32_t *acquired_hw_id,
 	uint32_t *acquired_hw_path)
 {
 	int rc                                    = -1;
@@ -2574,13 +2570,6 @@ static int cam_ife_mgr_acquire_hw_for_ctx(
 
 	is_dual_vfe = in_port->usage_type;
 	ife_ctx->dsp_enabled = (bool)in_port->dsp_mode;
-
-	/* get root node resource */
-	rc = cam_ife_hw_mgr_acquire_res_root(ife_ctx, in_port);
-	if (rc) {
-		CAM_ERR(CAM_ISP, "Can not acquire csid rx resource");
-		goto err;
-	}
 
 	cam_ife_hw_mgr_preprocess_port(ife_ctx, in_port, &ipp_count,
 		&rdi_count, &ppp_count, &ife_rd_count, &lcr_count);
@@ -2669,10 +2658,6 @@ static int cam_ife_mgr_acquire_hw_for_ctx(
 		CAM_ERR(CAM_ISP, "Acquire IFE OUT resource Failed");
 		goto err;
 	}
-
-	*num_pix_port = ipp_count + ife_rd_count + lcr_count;
-	*num_pd_port = ppp_count;
-	*num_rdi_port = rdi_count;
 
 	return 0;
 err:
@@ -2945,11 +2930,8 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	int rc                                       = -1;
 	int i, j;
 	struct cam_ife_hw_mgr_ctx         *ife_ctx;
-	struct cam_isp_in_port_generic_info   *in_port = NULL;
+	struct cam_isp_in_port_generic_info   **in_port = NULL;
 	struct cam_cdm_acquire_data        cdm_acquire;
-	uint32_t                           num_pix_port_per_in = 0;
-	uint32_t                           num_rdi_port_per_in = 0;
-	uint32_t                           num_pd_port_per_in = 0;
 	uint32_t                           total_pix_port = 0;
 	uint32_t                           total_rdi_port = 0;
 	uint32_t                           total_pd_port = 0;
@@ -2978,8 +2960,76 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	ife_ctx->hw_mgr = ife_hw_mgr;
 
 
+	acquire_hw_info =
+		(struct cam_isp_acquire_hw_info *)acquire_args->acquire_info;
+
+	rc = cam_ife_mgr_check_and_update_fe(ife_ctx, acquire_hw_info,
+		acquire_args->acquire_info_size);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "buffer size is not enough");
+		goto free_ctx;
+	}
+
+	in_port = kcalloc(acquire_hw_info->num_inputs,
+		sizeof(struct cam_isp_in_port_generic_info *),
+		GFP_KERNEL);
+	if (!in_port) {
+		CAM_ERR(CAM_ISP, "Failed to allocate memory");
+		goto free_ctx;
+	}
+
+	/* acquire HW resources */
+	for (i = 0; i < acquire_hw_info->num_inputs; i++) {
+		uint32_t ipp_count = 0;
+		uint32_t rdi_count = 0;
+		uint32_t ppp_count = 0;
+		uint32_t ife_rd_count = 0;
+		uint32_t lcr_count = 0;
+
+		rc = cam_ife_mgr_acquire_get_unified_structure(acquire_hw_info,
+			i, &input_size, &in_port[i]);
+		if (rc < 0) {
+			CAM_ERR(CAM_ISP, "Failed in parsing: %d", rc);
+			goto free_mem;
+		}
+		CAM_DBG(CAM_ISP, "in_res_type %x", in_port[i]->res_type);
+
+		if ((in_port[i]->cust_node) && (!ife_ctx->custom_enabled)) {
+			ife_ctx->custom_enabled = true;
+			/* This can be obtained from uapi */
+			ife_ctx->use_frame_header_ts = true;
+		}
+		if (!ife_ctx->is_offline) {
+			/* get root node resource */
+			rc = cam_ife_hw_mgr_acquire_res_root(ife_ctx,
+				in_port[i]);
+			if (rc) {
+				CAM_ERR(CAM_ISP,
+					"Can not acquire csid rx resource");
+				goto free_mem;
+			}
+		}
+
+		cam_ife_hw_mgr_preprocess_port(ife_ctx, in_port[i], &ipp_count,
+			&rdi_count, &ppp_count, &ife_rd_count, &lcr_count);
+
+		total_pix_port += ipp_count + ife_rd_count + lcr_count;
+		total_rdi_port += rdi_count;
+		total_pd_port += ppp_count;
+	}
+
+	/* Check whether context has only RDI resource */
+	if (!total_pix_port && !total_pd_port) {
+		ife_ctx->is_rdi_only_context = 1;
+		CAM_DBG(CAM_ISP, "RDI only context");
+		cdm_acquire.id = CAM_CDM_VIRTUAL;
+		cdm_acquire.cell_index = CAM_CDM_VIRTUAL;
+	} else {
+		cdm_acquire.id = CAM_CDM_HW_ANY;
+		cdm_acquire.cell_index = CAM_CDM_HW_ANY;
+	}
+
 	memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
-	cdm_acquire.cell_index = 0;
 	cdm_acquire.handle = 0;
 	cdm_acquire.userdata = ife_ctx;
 	cdm_acquire.base_array_cnt = CAM_IFE_HW_NUM_MAX;
@@ -2990,12 +3040,11 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	}
 	cdm_acquire.base_array_cnt = j;
 
-	cdm_acquire.id = CAM_CDM_VIRTUAL;
 	cdm_acquire.cam_cdm_callback = cam_ife_cam_cdm_callback;
 	rc = cam_cdm_acquire(&cdm_acquire);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Failed to acquire the CDM HW");
-		goto free_ctx;
+		goto free_mem;
 	}
 
 	CAM_DBG(CAM_ISP, "Successfully acquired the CDM HW hdl=%x",
@@ -3004,65 +3053,23 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	ife_ctx->cdm_ops = cdm_acquire.ops;
 	atomic_set(&ife_ctx->cdm_done, 1);
 
-	acquire_hw_info =
-		(struct cam_isp_acquire_hw_info *)acquire_args->acquire_info;
-
-	rc = cam_ife_mgr_check_and_update_fe(ife_ctx, acquire_hw_info,
-		acquire_args->acquire_info_size);
-	if (rc) {
-		CAM_ERR(CAM_ISP, "buffer size is not enough");
-		goto free_cdm;
-	}
-
-	/* acquire HW resources */
 	for (i = 0; i < acquire_hw_info->num_inputs; i++) {
-		rc = cam_ife_mgr_acquire_get_unified_structure(acquire_hw_info,
-			i, &input_size, &in_port);
-		if (rc < 0) {
-			CAM_ERR(CAM_ISP, "Failed in parsing: %d", rc);
-			goto free_res;
-		}
-		CAM_DBG(CAM_ISP, "in_res_type %x", in_port->res_type);
-
-		if ((in_port->cust_node) && (!ife_ctx->custom_enabled)) {
-			ife_ctx->custom_enabled = true;
-			/* This can be obtained from uapi */
-			ife_ctx->use_frame_header_ts = true;
-		}
-
 		if (ife_ctx->is_offline)
 			rc = cam_ife_mgr_acquire_hw_for_offline_ctx(
-				ife_ctx, in_port,
-				&num_pix_port_per_in,
+				ife_ctx, in_port[i],
 				&acquire_args->acquired_hw_id[i],
 				acquire_args->acquired_hw_path[i]);
 		else
-			rc = cam_ife_mgr_acquire_hw_for_ctx(ife_ctx, in_port,
-				&num_pix_port_per_in, &num_rdi_port_per_in,
-				&num_pd_port_per_in,
+			rc = cam_ife_mgr_acquire_hw_for_ctx(ife_ctx, in_port[i],
 				&acquire_args->acquired_hw_id[i],
 				acquire_args->acquired_hw_path[i]);
-
-		total_pix_port += num_pix_port_per_in;
-		total_rdi_port += num_rdi_port_per_in;
-		total_pd_port += num_pd_port_per_in;
 
 		if (rc) {
 			cam_ife_hw_mgr_print_acquire_info(ife_ctx,
 				total_pix_port, total_pd_port,
 				total_rdi_port, rc);
-			goto free_mem;
+			goto free_res;
 		}
-
-		kfree(in_port->data);
-		kfree(in_port);
-		in_port = NULL;
-	}
-
-	/* Check whether context has only RDI resource */
-	if (!total_pix_port && !total_pd_port) {
-		ife_ctx->is_rdi_only_context = 1;
-		CAM_DBG(CAM_ISP, "RDI only context");
 	}
 
 	/* Process base info */
@@ -3071,6 +3078,13 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 		CAM_ERR(CAM_ISP, "Process base info failed");
 		goto free_res;
 	}
+
+	for (i = 0; i < acquire_hw_info->num_inputs; i++) {
+		kfree(in_port[i]->data);
+		kfree(in_port[i]);
+	}
+	kfree(in_port);
+	in_port = NULL;
 
 	acquire_args->ctxt_to_hw_map = ife_ctx;
 	acquire_args->custom_enabled = ife_ctx->custom_enabled;
@@ -3088,13 +3102,17 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	cam_ife_hw_mgr_put_ctx(&ife_hw_mgr->used_ctx_list, &ife_ctx);
 
 	return 0;
-free_mem:
-	kfree(in_port->data);
-	kfree(in_port);
 free_res:
 	cam_ife_hw_mgr_release_hw_for_ctx(ife_ctx);
-free_cdm:
 	cam_cdm_release(ife_ctx->cdm_handle);
+free_mem:
+	if (in_port) {
+		for (i = 0; i < acquire_hw_info->num_inputs; i++) {
+			kfree(in_port[i]->data);
+			kfree(in_port[i]);
+		}
+	}
+	kfree(in_port);
 free_ctx:
 	cam_ife_hw_mgr_put_ctx(&ife_hw_mgr->free_ctx_list, &ife_ctx);
 err:
@@ -3156,10 +3174,7 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 	struct cam_isp_in_port_info           *in_port = NULL;
 	struct cam_isp_resource               *isp_resource = NULL;
 	struct cam_cdm_acquire_data            cdm_acquire;
-	struct cam_isp_in_port_generic_info   *gen_port_info = NULL;
-	uint32_t                               num_pix_port_per_in = 0;
-	uint32_t                               num_rdi_port_per_in = 0;
-	uint32_t                               num_pd_port_per_in = 0;
+	struct cam_isp_in_port_generic_info   **gen_port_info = NULL;
 	uint32_t                               total_pd_port = 0;
 	uint32_t                               total_pix_port = 0;
 	uint32_t                               total_rdi_port = 0;
@@ -3185,38 +3200,25 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 
 	ife_ctx->hw_mgr = ife_hw_mgr;
 
+	isp_resource = (struct cam_isp_resource *)acquire_args->acquire_info;
 
-	memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
-	cdm_acquire.cell_index = 0;
-	cdm_acquire.handle = 0;
-	cdm_acquire.userdata = ife_ctx;
-	cdm_acquire.base_array_cnt = CAM_IFE_HW_NUM_MAX;
-	for (i = 0, j = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
-		if (ife_hw_mgr->cdm_reg_map[i])
-			cdm_acquire.base_array[j++] =
-				ife_hw_mgr->cdm_reg_map[i];
-	}
-	cdm_acquire.base_array_cnt = j;
-
-
-	cdm_acquire.id = CAM_CDM_VIRTUAL;
-	cdm_acquire.cam_cdm_callback = cam_ife_cam_cdm_callback;
-	rc = cam_cdm_acquire(&cdm_acquire);
-	if (rc) {
-		CAM_ERR(CAM_ISP, "Failed to acquire the CDM HW");
+	gen_port_info = kcalloc(acquire_args->num_acq,
+		sizeof(struct cam_isp_in_port_generic_info *),
+		GFP_KERNEL);
+	if (!gen_port_info) {
+		CAM_ERR(CAM_ISP, "Failed to allocate memory");
+		rc = -ENOMEM;
 		goto free_ctx;
 	}
 
-	CAM_DBG(CAM_ISP, "Successfully acquired the CDM HW hdl=%x",
-		cdm_acquire.handle);
-	ife_ctx->cdm_handle = cdm_acquire.handle;
-	ife_ctx->cdm_ops = cdm_acquire.ops;
-	atomic_set(&ife_ctx->cdm_done, 1);
-
-	isp_resource = (struct cam_isp_resource *)acquire_args->acquire_info;
-
 	/* acquire HW resources */
 	for (i = 0; i < acquire_args->num_acq; i++) {
+		uint32_t ipp_count = 0;
+		uint32_t rdi_count = 0;
+		uint32_t ppp_count = 0;
+		uint32_t ife_rd_count = 0;
+		uint32_t lcr_count = 0;
+
 		if (isp_resource[i].resource_id != CAM_ISP_RES_ID_PORT)
 			continue;
 
@@ -3244,7 +3246,7 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 					in_port->num_out_res);
 				rc = -EINVAL;
 				kfree(in_port);
-				goto free_res;
+				goto free_mem;
 			}
 
 			in_port_length = sizeof(struct cam_isp_in_port_info) +
@@ -3254,58 +3256,54 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 				CAM_ERR(CAM_ISP, "buffer size is not enough");
 				rc = -EINVAL;
 				kfree(in_port);
-				goto free_res;
+				goto free_mem;
 			}
 
-			gen_port_info = kzalloc(
+			gen_port_info[i] = kzalloc(
 				sizeof(struct cam_isp_in_port_generic_info),
 				GFP_KERNEL);
-			if (gen_port_info == NULL) {
+			if (gen_port_info[i] == NULL) {
 				rc = -ENOMEM;
-				goto free_res;
+				kfree(in_port);
+				goto free_mem;
 			}
 
-			gen_port_info->data = kcalloc(
+			gen_port_info[i]->data = kcalloc(
 				sizeof(struct cam_isp_out_port_generic_info),
 				in_port->num_out_res, GFP_KERNEL);
-			if (gen_port_info->data == NULL) {
-				kfree(gen_port_info);
-				gen_port_info = NULL;
+			if (gen_port_info[i]->data == NULL) {
 				rc = -ENOMEM;
-				goto free_res;
+				kfree(in_port);
+				goto free_mem;
 			}
 
 			cam_ife_mgr_acquire_get_unified_dev_str(in_port,
-				gen_port_info);
-
-			rc = cam_ife_mgr_acquire_hw_for_ctx(ife_ctx,
-				gen_port_info, &num_pix_port_per_in,
-				&num_rdi_port_per_in, &num_pd_port_per_in,
-				&acquire_args->acquired_hw_id[i],
-				acquire_args->acquired_hw_path[i]);
-
-			total_pix_port += num_pix_port_per_in;
-			total_rdi_port += num_rdi_port_per_in;
-			total_pd_port += num_pd_port_per_in;
-
+				gen_port_info[i]);
 			kfree(in_port);
-			if (gen_port_info != NULL) {
-				kfree(gen_port_info->data);
-				kfree(gen_port_info);
-				gen_port_info = NULL;
-			}
+
+			/* get root node resource */
+			rc = cam_ife_hw_mgr_acquire_res_root(ife_ctx,
+				gen_port_info[i]);
 			if (rc) {
-				cam_ife_hw_mgr_print_acquire_info(ife_ctx,
-					total_pix_port, total_pd_port,
-					total_rdi_port, rc);
-				goto free_res;
+				CAM_ERR(CAM_ISP,
+					"Can not acquire csid rx resource");
+				goto free_mem;
 			}
+
+			cam_ife_hw_mgr_preprocess_port(ife_ctx,
+				gen_port_info[i], &ipp_count,
+				&rdi_count, &ppp_count, &ife_rd_count,
+				&lcr_count);
+
+			total_pix_port += ipp_count + ife_rd_count + lcr_count;
+			total_rdi_port += rdi_count;
+			total_pd_port += ppp_count;
 		} else {
 			CAM_ERR(CAM_ISP,
 				"Copy from user failed with in_port = %pK",
 				in_port);
 			rc = -EFAULT;
-			goto free_res;
+			goto free_mem;
 		}
 	}
 
@@ -3313,14 +3311,63 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 	if (!total_pix_port) {
 		ife_ctx->is_rdi_only_context = 1;
 		CAM_DBG(CAM_ISP, "RDI only context");
+		cdm_acquire.id = CAM_CDM_VIRTUAL;
+		cdm_acquire.cell_index = CAM_CDM_VIRTUAL;
+	} else {
+		cdm_acquire.id = CAM_CDM_HW_ANY;
+		cdm_acquire.cell_index = CAM_CDM_HW_ANY;
 	}
 
+	memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
+
+	cdm_acquire.handle = 0;
+	cdm_acquire.userdata = ife_ctx;
+	cdm_acquire.base_array_cnt = CAM_IFE_HW_NUM_MAX;
+	for (i = 0, j = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
+		if (ife_hw_mgr->cdm_reg_map[i])
+			cdm_acquire.base_array[j++] =
+				ife_hw_mgr->cdm_reg_map[i];
+	}
+	cdm_acquire.base_array_cnt = j;
+
+	cdm_acquire.cam_cdm_callback = cam_ife_cam_cdm_callback;
+	rc = cam_cdm_acquire(&cdm_acquire);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "Failed to acquire the CDM HW");
+		goto free_mem;
+	}
+
+	CAM_DBG(CAM_ISP, "Successfully acquired the CDM HW hdl=%x",
+		cdm_acquire.handle);
+	ife_ctx->cdm_handle = cdm_acquire.handle;
+	ife_ctx->cdm_ops = cdm_acquire.ops;
+	atomic_set(&ife_ctx->cdm_done, 1);
+
+	for (i = 0; i < acquire_args->num_acq; i++) {
+		rc = cam_ife_mgr_acquire_hw_for_ctx(ife_ctx,
+			gen_port_info[i],
+			&acquire_args->acquired_hw_id[i],
+			acquire_args->acquired_hw_path[i]);
+		if (rc) {
+			cam_ife_hw_mgr_print_acquire_info(ife_ctx,
+					total_pix_port, total_pd_port,
+					total_rdi_port, rc);
+			goto free_res;
+		}
+	}
 	/* Process base info */
 	rc = cam_ife_mgr_process_base_info(ife_ctx);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Process base info failed");
 		goto free_res;
 	}
+
+	for (i = 0; i < acquire_args->num_acq; i++) {
+		kfree(gen_port_info[i]->data);
+		kfree(gen_port_info[i]);
+	}
+	kfree(gen_port_info);
+	gen_port_info = NULL;
 
 	acquire_args->ctxt_to_hw_map = ife_ctx;
 	ife_ctx->ctx_in_use = 1;
@@ -3335,6 +3382,14 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 free_res:
 	cam_ife_hw_mgr_release_hw_for_ctx(ife_ctx);
 	cam_cdm_release(ife_ctx->cdm_handle);
+free_mem:
+	if (gen_port_info) {
+		for (i = 0; i < acquire_args->num_acq; i++) {
+			kfree(gen_port_info[i]->data);
+			kfree(gen_port_info[i]);
+		}
+		kfree(gen_port_info);
+	}
 free_ctx:
 	cam_ife_hw_mgr_put_ctx(&ife_hw_mgr->free_ctx_list, &ife_ctx);
 err:
@@ -7349,6 +7404,7 @@ static int cam_ife_hw_mgr_handle_hw_buf_done(
 
 	buf_done_event_data.num_handles = 1;
 	buf_done_event_data.resource_handle[0] = event_info->res_id;
+	buf_done_event_data.timestamp = event_info->timestamp;
 
 	if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
 		return 0;

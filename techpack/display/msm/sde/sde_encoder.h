@@ -109,6 +109,23 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *encoder,
 		void (*cb)(void *), void *data);
 
 /**
+ * sde_encoder_register_lineptr_callback - provide callback to encoder that
+ *	will be called on the next lineptr.
+ * @encoder:	encoder pointer
+ * @cb:		callback pointer, provide NULL to deregister and disable IRQs
+ * @data:	user data provided to callback
+ */
+void sde_encoder_register_lineptr_callback(struct drm_encoder *encoder,
+		void (*cb)(void *, u64, int, int, bool), void *data);
+
+/**
+ * sde_encoder_set_lineptr_value - Set the value of the lineptr interrupt.
+ * @drm_enc:	encoder pointer
+ * @offset:	offset in lines
+ */
+void sde_encoder_set_lineptr_value(struct drm_encoder *drm_enc, int offset);
+
+/**
  * sde_encoder_register_frame_event_callback - provide callback to encoder that
  *	will be called after the request is complete, or other events.
  * @encoder:	encoder pointer

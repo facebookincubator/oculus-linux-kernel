@@ -1,20 +1,15 @@
-#include "syncboss_spi.h"
-
-#include "fwupdate_manager.h"
-#include "syncboss_swd_ops.h"
-#include "syncboss_common.h"
-#include "syncboss_swd.h"
-
 #include <linux/atomic.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/kfifo.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -32,13 +27,22 @@
 #include <syncboss_camera.h>
 #endif
 
+#include "fw_helpers.h"
+#include "swd.h"
+#include "spi_fastpath.h"
+
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
 static const struct of_device_id oculus_syncboss_table[] = {
-	{ .compatible = "oculus,syncboss",}, /*Compatible node must match dts*/
+	{ .compatible = "oculus,syncboss" },
+	{ },
+};
+static const struct of_device_id oculus_swd_match_table[] = {
+	{ .compatible = "oculus,swd" },
 	{ },
 };
 #else
-#	 define oculus_syncboss_table NULL
+	#define oculus_syncboss_table NULL
+	#define oculus_swd_match_table NULL
 #endif
 
 /*
@@ -73,7 +77,7 @@ static const struct of_device_id oculus_syncboss_table[] = {
 /* The max amount of time we give SyncBoss to go into a sleep state after
  * issuing it a command to do so.
  */
-#define SYNCBOSS_SLEEP_TIMEOUT_MS 200
+#define SYNCBOSS_SLEEP_TIMEOUT_MS 2000
 
 /* The amount of time to wait for space in the staging buffer to
  * become available when sending a request to syncboss
@@ -89,9 +93,6 @@ static const struct of_device_id oculus_syncboss_table[] = {
 #define SPI_DATA_MAGIC_NUM 0xDEFEC8ED
 
 #define SPI_DATA_REJECTED_MAGIC_NUM 0xCACACACA
-
-#define SYNCBOSS_FLASH_PAGE_SIZE 0x1000
-#define SYNCBOSS_NUM_FLASH_PAGES 128
 
 #define SYNCBOSS_MISCFIFO_SIZE 1024
 
@@ -197,6 +198,15 @@ struct syncboss_stats {
 
 /* Device state */
 struct syncboss_dev_data {
+	/*
+	 * NOTE: swd_ops MUST be the first member of this structure.
+	 * It is retrieved by child devices that expect it to be at
+	 * the start of this (parent) device's drvdata.
+	 */
+	struct swd_ops swd_ops;
+
+	/* Order does not matter for the internal properties below... */
+
 	/* The parent SPI device */
 	struct spi_device *spi;
 
@@ -322,6 +332,9 @@ struct syncboss_dev_data {
 	 */
 	atomic64_t last_te_timestamp_ns;
 
+	/* Regulator for the nRF */
+	struct regulator *mcu_core;
+
 	/* Regulator for IMU */
 	struct regulator *imu_core;
 
@@ -395,8 +408,8 @@ struct syncboss_dev_data {
 	/* Wakelock to prevent suspend while syncboss in use */
 	struct wakeup_source syncboss_in_use_wake_lock;
 
-	/* Data from fwupdate_manager */
-	struct fwupdate_data fwudata;
+	/* True if we should enable the fastpath spi code path */
+	bool use_fastpath;
 };
 
 /* The version of the header the driver is currently using */
@@ -491,12 +504,6 @@ static ssize_t store_spi_max_clk_rate(struct device *dev,
 				      struct device_attribute *attr,
 				      const char *buf, size_t count);
 
-static ssize_t show_update_firmware(struct device *dev,
-				    struct device_attribute *attr, char *buf);
-static ssize_t store_update_firmware(struct device *dev,
-				     struct device_attribute *attr,
-				     const char *buf, size_t count);
-
 static ssize_t show_cpu_affinity(struct device *dev,
 				 struct device_attribute *attr, char *buf);
 static ssize_t store_cpu_affinity(struct device *dev,
@@ -527,6 +534,18 @@ static ssize_t store_power(struct device *dev,
 static ssize_t show_te_timestamp(struct device *dev,
 				struct device_attribute *attr, char *buf);
 
+static ssize_t show_num_cameras(struct device *dev,
+				struct device_attribute *attr, char *buf);
+
+static ssize_t show_enable_fastpath(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf);
+
+static ssize_t store_enable_fastpath(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count);
+
+
 static DEVICE_ATTR(reset, S_IWUSR, NULL, store_reset);
 static DEVICE_ATTR(spi_max_clk_rate, S_IWUSR | S_IRUGO, show_spi_max_clk_rate,
 		   store_spi_max_clk_rate);
@@ -537,8 +556,6 @@ static DEVICE_ATTR(minimum_time_between_transactions_us, S_IWUSR | S_IRUGO,
 		   store_minimum_time_between_transactions_us);
 static DEVICE_ATTR(transaction_length, S_IWUSR | S_IRUGO,
 		   show_transaction_length, store_transaction_length);
-static DEVICE_ATTR(update_firmware, S_IWUSR | S_IRUGO, show_update_firmware,
-		   store_update_firmware);
 static DEVICE_ATTR(cpu_affinity, S_IWUSR | S_IRUGO,
 		   show_cpu_affinity, store_cpu_affinity);
 static DEVICE_ATTR(stats, S_IRUGO,
@@ -549,6 +566,8 @@ static DEVICE_ATTR(next_avail_seq_num, S_IRUGO,
 		   show_next_avail_seq_num, NULL);
 static DEVICE_ATTR(power, S_IWUSR | S_IRUGO, show_power, store_power);
 static DEVICE_ATTR(te_timestamp, S_IRUGO, show_te_timestamp, NULL);
+static DEVICE_ATTR(num_cameras, S_IRUGO, show_num_cameras, NULL);
+static DEVICE_ATTR(enable_fastpath, S_IWUSR | S_IRUGO, show_enable_fastpath, store_enable_fastpath);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
@@ -556,13 +575,14 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_transaction_period_us.attr,
 	&dev_attr_minimum_time_between_transactions_us.attr,
 	&dev_attr_transaction_length.attr,
-	&dev_attr_update_firmware.attr,
 	&dev_attr_cpu_affinity.attr,
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
 	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_power.attr,
 	&dev_attr_te_timestamp.attr,
+	&dev_attr_num_cameras.attr,
+	&dev_attr_enable_fastpath.attr,
 	NULL
 };
 
@@ -606,8 +626,8 @@ static int read_cal_int(struct syncboss_dev_data *devdata,
 	status = request_firmware(&fw, cal_file_name, &devdata->spi->dev);
 	if (status != 0) {
 		dev_err(&devdata->spi->dev,
-			"request_firmware(%s) returned %d. Please ensure syncboss.bin is present",
-			cal_file_name, status);
+			"request_firmware() returned %d. Please ensure %s is present",
+			status, cal_file_name);
 		return status;
 	}
 
@@ -671,10 +691,10 @@ static void read_prox_cal(struct syncboss_dev_data *devdata)
 
 
 static int spi_queue_work(struct syncboss_dev_data *devdata,
-			       syncboss_work_func_t func,
-			       struct completion *work_complete)
+			  fw_work_func_t func,
+			  struct completion *work_complete)
 {
-	return syncboss_queue_work(devdata->syncboss_workqueue,
+	return fw_queue_work(devdata->syncboss_workqueue,
 		devdata, func, work_complete);
 }
 
@@ -694,13 +714,21 @@ static void reset_syncboss(struct syncboss_dev_data *devdata)
 	spi_queue_work(devdata, stop_streaming, NULL);
 }
 
-static void reset_syncboss_cb(int status, struct device *dev)
+static bool is_busy(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	return devdata->is_streaming;
+}
+
+static void fw_update_cb(struct device *child, int status)
 {
 	struct syncboss_dev_data *devdata;
 
 	if (status < 0)
 		return;
-	devdata = dev_get_drvdata(dev);
+
+	devdata = dev_get_drvdata(child->parent);
 	reset_syncboss(devdata);
 }
 
@@ -762,22 +790,40 @@ static int syncboss_dec_client_count(struct syncboss_dev_data *devdata)
 	return 0;
 }
 
+static int fw_update_check_busy(struct device *dev, void *data)
+{
+	struct device_node *node = dev_of_node(dev);
+
+	if (of_device_is_compatible(node, "oculus,swd")) {
+		struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+		if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
+			dev_err(dev, "Cannot open SyncBoss handle while firmware update is in progress");
+			 return -EBUSY;
+		}
+	}
+	return 0;
+}
+
 static int syncboss_open(struct inode *inode, struct file *f)
 {
-	int status = 0;
+	int status;
 	struct syncboss_dev_data *devdata =
 	    container_of(f->private_data, struct syncboss_dev_data, misc);
 	dev_info(&devdata->spi->dev, "SyncBoss handle opened (%s)",
 		 current->comm);
 
 	mutex_lock(&devdata->state_mutex);
-	if (devdata->fwudata.fw_update_state == SYNCBOSS_FW_UPDATE_STATE_IDLE)
-		syncboss_inc_client_count(devdata);
-	else {
-		dev_err(&devdata->spi->dev,
-			"Cannot open SyncBoss handle while firmware update is in progress");
-		status = -EINVAL;
-	}
+
+	/* Ensure a FW update is not in progress */
+	status = device_for_each_child(&devdata->spi->dev, NULL,
+				       fw_update_check_busy);
+	if (status != 0)
+		goto out;
+
+	syncboss_inc_client_count(devdata);
+
+out:
 	mutex_unlock(&devdata->state_mutex);
 
 	return status;
@@ -1391,6 +1437,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	int min_time_between_transactions_ns = 0;
 	bool should_retry_prev_transaction = false;
 	bool headers_enabled = false;
+	bool fastpath_enabled = false;
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
 
@@ -1407,6 +1454,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	min_time_between_transactions_ns =
 		devdata->min_time_between_transactions_ns;
 	headers_enabled = devdata->enable_headers;
+	fastpath_enabled = devdata->use_fastpath;
 
 	mutex_unlock(&devdata->state_mutex);
 
@@ -1421,7 +1469,13 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 min_time_between_transactions_ns / 1000);
 	dev_info(&spi->dev, "  Headers enabled         : %s",
 		 headers_enabled ? "yes" : "no");
+	dev_info(&spi->dev, "  Fastpath enabled        : %s",
+		 fastpath_enabled ? "yes" : "no");
 
+	if (fastpath_enabled) {
+		spi_fastpath_init(spi);
+	}
+	
 	while (!kthread_should_stop()) {
 		int idx_to_send = 0;
 		u64 time_to_wait_ns = min_time_between_transactions_ns;
@@ -1493,7 +1547,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 #endif
 
 		prev_transaction_start_time_ns = ktime_get_ns();
-		status = spi_sync(spi, &spi_msg);
+		if (fastpath_enabled) {
+			status = spi_fastpath_transfer(spi, &spi_msg);
+		} else {
+			status = spi_sync(spi, &spi_msg);
+		}
 		prev_transaction_end_time_ns = ktime_get_ns();
 
 		if (status != 0) {
@@ -1535,9 +1593,12 @@ retry:
 	}
 
  error:
+	if (fastpath_enabled) {
+		spi_fastpath_deinit(spi);
+	}
+
 	while (!kthread_should_stop()) {
-		set_current_state(TASK_INTERRUPTIBLE);
-		msleep(1);
+		msleep_interruptible(1);
 	}
 	dev_info(&spi->dev, "Streaming thread stopped");
 	return status;
@@ -1621,12 +1682,12 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 {
 	int x;
 
-	for (x = 0; x < SYNCBOSS_SLEEP_TIMEOUT_MS; ++x) {
-		msleep(1);
+	for (x = 10; x <= SYNCBOSS_SLEEP_TIMEOUT_MS; x += 10) {
+		msleep(10);
 		if (is_mcu_awake(devdata) == awake) {
 			dev_info(&devdata->spi->dev,
 				 "SyncBoss is %s (after %d ms)",
-				 awake ? "awake" : "asleep", x+1);
+				 awake ? "awake" : "asleep", x);
 			devdata->power_state =
 				awake ? SYNCBOSS_POWER_STATE_RUNNING :
 				SYNCBOSS_POWER_STATE_OFF;
@@ -1661,6 +1722,16 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	 * while in active-use
 	 */
 	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
+
+	if (devdata->mcu_core) {
+		status = regulator_enable(devdata->mcu_core);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable MCU power: %d",
+					status);
+			goto error;
+		}
+	}
 
 	if (devdata->imu_core) {
 		status = regulator_enable(devdata->imu_core);
@@ -1868,6 +1939,15 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 			"Not stopping worker since it appears to be be NULL");
 	}
 
+	if (devdata->mcu_core) {
+		status = regulator_disable(devdata->mcu_core);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable MCU power: %d",
+					status);
+		}
+	}
+
 	if (devdata->imu_core) {
 		status = regulator_disable(devdata->imu_core);
 		if (status < 0) {
@@ -1973,33 +2053,66 @@ static int syncboss_init_pins(struct device *dev)
 	return 0;
 }
 
+static int create_swd_sysfs_symlink(struct device *dev, void *kobj)
+{
+	struct device_node *node = dev_of_node(dev);
+
+	if (of_device_is_compatible(node, "oculus,swd")) {
+		return sysfs_create_link((struct kobject *)kobj, &dev->kobj,
+					 node->name);
+	}
+
+	return 0;
+}
+
+static int remove_swd_sysfs_symlink(struct device *dev, void *kobj)
+{
+	struct device_node *node = dev_of_node(dev);
+
+	if (of_device_is_compatible(node, "oculus,swd"))
+		sysfs_remove_link((struct kobject *)kobj, node->name);
+
+	return 0;
+}
+
 static int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata)
 {
-	int status = 0;
+	struct device *spi_dev = &devdata->spi->dev;
+	int ret;
 
-	status = sysfs_create_group(&devdata->spi->dev.kobj,
-				    &syncboss_attr_grp);
-	if (status != 0) {
-		dev_err(&devdata->spi->dev, "sysfs_create_group failed with error %d",
-			status);
-		return status;
+	ret = sysfs_create_group(&spi_dev->kobj, &syncboss_attr_grp);
+	if (ret) {
+		dev_err(spi_dev, "sysfs_create_group failed: error %d\n", ret);
+		return ret;
 	}
 
-	status = sysfs_create_link(&devdata->misc.this_device->kobj,
-				   &devdata->spi->dev.kobj, "spi");
-	if (status) {
-		dev_err(&devdata->spi->dev, "sysfs_create_link failed with error %d\n",
-			status);
-		return status;
+	ret = sysfs_create_link(&devdata->misc.this_device->kobj,
+				&spi_dev->kobj, "spi");
+	if (ret) {
+		dev_err(spi_dev,
+			"sysfs_create_link(spi) failed: error %d\n", ret);
+		return ret;
 	}
 
-	return status;
+	ret = device_for_each_child(spi_dev, &devdata->misc.this_device->kobj,
+				    create_swd_sysfs_symlink);
+	if (ret) {
+		dev_err(spi_dev,
+			"sysfs_create_link(swd) failed: error %d\n", ret);
+		return ret;
+	}
+
+	return ret;
 }
 
 static void syncboss_deinit_sysfs_attrs(struct syncboss_dev_data *devdata)
 {
+	struct device *spi_dev = &devdata->spi->dev;
+
+	device_for_each_child(spi_dev, &devdata->misc.this_device->kobj,
+			      remove_swd_sysfs_symlink);
 	sysfs_remove_link(&devdata->misc.this_device->kobj, "spi");
-	sysfs_remove_group(&devdata->spi->dev.kobj, &syncboss_attr_grp);
+	sysfs_remove_group(&spi_dev->kobj, &syncboss_attr_grp);
 }
 
 static irqreturn_t isr_primary_wakeup(int irq, void *p)
@@ -2072,10 +2185,8 @@ static irqreturn_t timesync_irq_handler(int irq, void *p)
 static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
-	int status = 0;
-	const char *swdflavor;
 	struct device_node *node = spi->dev.of_node;
-	struct fwupdate_data *fwudata = &devdata->fwudata;
+	u32 temp_transaction_length = 0;
 
 	devdata->spi = spi;
 
@@ -2084,7 +2195,11 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
 	devdata->min_time_between_transactions_ns =
 		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
-	devdata->transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
+	if (!of_property_read_u32(node, "oculus,transaction-length", &temp_transaction_length) &&
+	    (temp_transaction_length <= SYNCBOSS_MAX_TRANSACTION_LENGTH))
+		devdata->transaction_length = (u16)temp_transaction_length;
+	else
+		devdata->transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
 	devdata->spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->transaction_ctr = 0;
 	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
@@ -2095,6 +2210,8 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->prox_config_version = DEFAULT_PROX_CONFIG_VERSION_VALUE;
 	devdata->prox_last_evt = INVALID_PROX_CAL_VALUE;
 
+	devdata->use_fastpath = of_property_read_bool(node, "oculus,syncboss-use-fastpath");
+
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_info(&devdata->spi->dev, "Initial SPI thread cpu affinity: %*pb\n",
 		cpumask_pr_args(&devdata->cpu_affinity));
@@ -2102,28 +2219,8 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->syncboss_workqueue = create_singlethread_workqueue(
 						"syncboss_workqueue");
 
-	fwudata->dev = &spi->dev;
-	mutex_init(&fwudata->state_mutex);
-	fwudata->fw_path = "syncboss.bin";
-	fwudata->on_firmware_update_complete = reset_syncboss_cb;
-
-	status = of_property_read_string(node, "oculus,swdflavor", &swdflavor);
-	if (status < 0) {
-		dev_err(fwudata->dev, "Failed to get oculus,swdflavor: %d", status);
-		return status;
-	}
-
-	status = fwupdate_init_swd_ops(fwudata->dev, fwudata, swdflavor);
-	if (status < 0) {
-		return status;
-	}
-
 	devdata->gpio_reset = of_get_named_gpio(node,
 			"oculus,syncboss-reset", 0);
-	fwudata->gpio_swdclk = of_get_named_gpio(node,
-			"oculus,syncboss-swdclk", 0);
-	fwudata->gpio_swdio = of_get_named_gpio(node,
-			"oculus,syncboss-swdio", 0);
 	devdata->gpio_timesync = of_get_named_gpio(node,
 			"oculus,syncboss-timesync", 0);
 	devdata->gpio_wakeup = of_get_named_gpio(node,
@@ -2145,17 +2242,15 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 #endif
 
 	dev_info(&devdata->spi->dev,
-		 "GPIOs: reset: %d, swdclk: %d, swdio: %d, timesync: %d, wakeup: %d, nsync: %d",
-		 devdata->gpio_reset, devdata->fwudata.gpio_swdclk,
-		 devdata->fwudata.gpio_swdio, devdata->gpio_timesync,
+		 "GPIOs: reset: %d, timesync: %d, wakeup: %d, nsync: %d",
+		 devdata->gpio_reset, devdata->gpio_timesync,
 		 devdata->gpio_wakeup, devdata->gpio_nsync);
 
 	dev_info(&devdata->spi->dev, "has-prox: %s",
 		 devdata->has_prox ? "true" : "false");
-	if ((devdata->gpio_reset < 0) || (devdata->fwudata.gpio_swdclk < 0) ||
-	    (devdata->fwudata.gpio_swdio < 0)) {
+	if (devdata->gpio_reset < 0) {
 		dev_err(&devdata->spi->dev,
-			"Some GPIO lines not specified in device tree. We will be unable to reset or update firmware");
+			"The reset GPIO was not specificed in the device tree. We will be unable to reset or update firmware");
 	}
 
 	mutex_init(&devdata->queued_buf_mutex);
@@ -2182,6 +2277,9 @@ static int syncboss_probe(struct spi_device *spi)
 	if (!devdata)
 		return -ENOMEM;
 
+	devdata->swd_ops.is_busy = is_busy;
+	devdata->swd_ops.fw_update_cb = fw_update_cb;
+
 	devdata->tx_bufs[0] = kzalloc(SYNCBOSS_MAX_TRANSACTION_LENGTH * 2,
 				      GFP_KERNEL | GFP_DMA);
 	devdata->tx_bufs[1] =
@@ -2203,8 +2301,9 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		return status;
 
-	init_syncboss_regulator(&spi->dev, &devdata->imu_core, "imu-core");
-	init_syncboss_regulator(&spi->dev, &devdata->mag_core, "mag-core");
+	fw_init_regulator(&spi->dev, &devdata->mcu_core, "mcu-core");
+	fw_init_regulator(&spi->dev, &devdata->imu_core, "imu-core");
+	fw_init_regulator(&spi->dev, &devdata->mag_core, "mag-core");
 
 	dev_set_drvdata(&spi->dev, devdata);
 
@@ -2305,9 +2404,17 @@ static int syncboss_probe(struct spi_device *spi)
 		}
 	}
 
-	status = syncboss_init_sysfs_attrs(devdata);
+	/*
+	 * Create child SWD fw-update devices, if any
+	 */
+	status = of_platform_populate(spi->dev.of_node, oculus_swd_match_table,
+				      NULL, &spi->dev);
 	if (status < 0)
 		goto error_after_prox_register;
+
+	status = syncboss_init_sysfs_attrs(devdata);
+	if (status < 0)
+		goto error_after_of_platform_populate;
 
 	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
 	devdata->reset_requested = false;
@@ -2374,6 +2481,8 @@ static int syncboss_probe(struct spi_device *spi)
 
 error_after_sysfs:
 	syncboss_deinit_sysfs_attrs(devdata);
+error_after_of_platform_populate:
+	of_platform_depopulate(&spi->dev);
 error_after_prox_register:
 	misc_deregister(&devdata->misc_prox);
 error_after_prox_fifo_register:
@@ -2405,10 +2514,11 @@ static int syncboss_remove(struct spi_device *spi)
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
 
-	if (devdata->imu_core)
-		regulator_put(devdata->imu_core);
-	if (devdata->mag_core)
-		regulator_put(devdata->mag_core);
+	of_platform_depopulate(&spi->dev);
+
+	regulator_put(devdata->mcu_core);
+	regulator_put(devdata->imu_core);
+	regulator_put(devdata->mag_core);
 
 	syncboss_deinit_sysfs_attrs(devdata);
 
@@ -3071,54 +3181,67 @@ static ssize_t store_power(struct device *dev,
 	return 0;
 }
 
-static ssize_t show_update_firmware(struct device *dev,
-				    struct device_attribute *attr, char *buf)
+static ssize_t show_num_cameras(struct device *dev,
+				struct device_attribute *attr, char *buf)
 {
-	struct syncboss_dev_data *devdata = dev_get_drvdata(dev);
+	int num_cams = 0;
+
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
+	num_cams = get_num_cameras();
+#endif
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", num_cams);
+}
+
+static ssize_t show_enable_fastpath(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
 	int status = 0;
-	ssize_t retval = 0;
+	int retval = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		/* Failed to get the sem */
 		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
-		return 0;
+		return status;
 	}
 
-	retval = fwupdate_show_update_firmware(dev, &devdata->fwudata, buf);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->use_fastpath);
 
 	mutex_unlock(&devdata->state_mutex);
-	return retval < 0 ? 0 : retval;
+	return retval;
 }
 
-static ssize_t store_update_firmware(struct device *dev,
+static ssize_t store_enable_fastpath(struct device *dev,
 				     struct device_attribute *attr,
 				     const char *buf, size_t count)
 {
 	int status = 0;
+	u32 temp_fastpath = 0;
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
+	status = kstrtou32(buf, /*base*/10, &temp_fastpath);
+	if (status < 0) {
+		dev_err(dev, "Failed to parse integer out of %s", buf);
+		return -EINVAL;
+	}
+
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
+		/* Failed to get the sem */
 		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
 			status);
 		return status;
 	}
-	if (devdata->is_streaming) {
-		dev_err(dev, "Cannot change firmware state while streaming");
-		status = -EBUSY;
-		goto error;
-	}
 
+	devdata->use_fastpath = !!temp_fastpath;
+	status = count;
 
-	status = fwupdate_store_update_firmware(devdata->syncboss_workqueue,
-						 devdata->fwudata.dev,
-						 &devdata->fwudata,
-						 buf, count);
-
-error:
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }
@@ -3134,3 +3257,18 @@ struct spi_driver oculus_syncboss_driver = {
 	.probe	= syncboss_probe,
 	.remove = syncboss_remove
 };
+
+static int __init syncboss_init(void)
+{
+	return spi_register_driver(&oculus_syncboss_driver);
+}
+
+static void __exit syncboss_exit(void)
+{
+	spi_unregister_driver(&oculus_syncboss_driver);
+}
+
+module_init(syncboss_init);
+module_exit(syncboss_exit);
+MODULE_DESCRIPTION("SYNCBOSS");
+MODULE_LICENSE("GPL v2");

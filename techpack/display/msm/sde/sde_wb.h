@@ -12,6 +12,11 @@
 #include "sde_kms.h"
 #include "sde_connector.h"
 
+enum sde_wb_cac_state {
+	WB_CAC_DISABLED,
+	WB_CAC_ENABLED,
+};
+
 /**
  * struct sde_wb_device - Writeback device context
  * @drm_dev:		Pointer to controlling DRM device

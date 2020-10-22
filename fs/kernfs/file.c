@@ -15,8 +15,14 @@
 #include <linux/pagemap.h>
 #include <linux/sched/mm.h>
 #include <linux/fsnotify.h>
+#include <linux/kthread.h>
+
+#include <uapi/linux/sched/types.h>
 
 #include "kernfs-internal.h"
+
+static DEFINE_KTHREAD_WORKER(kernfs_notify_worker);
+static struct task_struct *kernfs_notify_thread;
 
 /*
  * There's one kernfs_open_file for each open file and one kernfs_open_node
@@ -863,36 +869,9 @@ static __poll_t kernfs_fop_poll(struct file *filp, poll_table *wait)
 	return ret;
 }
 
-static void kernfs_notify_workfn(struct work_struct *work)
+static void __notify_kernfs_node(struct kernfs_node *kn)
 {
-	struct kernfs_node *kn;
-	struct kernfs_open_node *on;
 	struct kernfs_super_info *info;
-repeat:
-	/* pop one off the notify_list */
-	spin_lock_irq(&kernfs_notify_lock);
-	kn = kernfs_notify_list;
-	if (kn == KERNFS_NOTIFY_EOL) {
-		spin_unlock_irq(&kernfs_notify_lock);
-		return;
-	}
-	kernfs_notify_list = kn->attr.notify_next;
-	kn->attr.notify_next = NULL;
-	spin_unlock_irq(&kernfs_notify_lock);
-
-	/* kick poll */
-	spin_lock_irq(&kernfs_open_node_lock);
-
-	on = kn->attr.open;
-	if (on) {
-		atomic_inc(&on->event);
-		wake_up_interruptible(&on->poll);
-	}
-
-	spin_unlock_irq(&kernfs_open_node_lock);
-
-	/* kick fsnotify */
-	mutex_lock(&kernfs_mutex);
 
 	list_for_each_entry(info, &kernfs_root(kn)->supers, node) {
 		struct kernfs_node *parent;
@@ -926,8 +905,28 @@ repeat:
 			 kn->name, 0);
 		iput(inode);
 	}
+}
 
+static void kernfs_notify_workfn(struct kthread_work *work)
+{
+	struct kernfs_node *kn;
+repeat:
+	/* pop one off the notify_list */
+	spin_lock_irq(&kernfs_notify_lock);
+	kn = kernfs_notify_list;
+	if (kn == KERNFS_NOTIFY_EOL) {
+		spin_unlock_irq(&kernfs_notify_lock);
+		return;
+	}
+	kernfs_notify_list = kn->attr.notify_next;
+	kn->attr.notify_next = NULL;
+	spin_unlock_irq(&kernfs_notify_lock);
+
+	/* kick fsnotify */
+	mutex_lock(&kernfs_mutex);
+	__notify_kernfs_node(kn);
 	mutex_unlock(&kernfs_mutex);
+
 	kernfs_put(kn);
 	goto repeat;
 }
@@ -941,20 +940,46 @@ repeat:
  */
 void kernfs_notify(struct kernfs_node *kn)
 {
-	static DECLARE_WORK(kernfs_notify_work, kernfs_notify_workfn);
+	static DEFINE_KTHREAD_WORK(kernfs_notify_work, kernfs_notify_workfn);
 	unsigned long flags;
+	struct kernfs_open_node *on;
 
 	if (WARN_ON(kernfs_type(kn) != KERNFS_FILE))
 		return;
 
-	spin_lock_irqsave(&kernfs_notify_lock, flags);
-	if (!kn->attr.notify_next) {
-		kernfs_get(kn);
-		kn->attr.notify_next = kernfs_notify_list;
-		kernfs_notify_list = kn;
-		schedule_work(&kernfs_notify_work);
+	/* kick poll immediately */
+	spin_lock_irqsave(&kernfs_open_node_lock, flags);
+
+	on = kn->attr.open;
+	if (on) {
+		atomic_inc(&on->event);
+		wake_up_interruptible(&on->poll);
 	}
-	spin_unlock_irqrestore(&kernfs_notify_lock, flags);
+
+	spin_unlock_irqrestore(&kernfs_open_node_lock, flags);
+
+	if (!in_interrupt() && mutex_trylock(&kernfs_mutex)) {
+		/*
+		 * notify the kernfs node directly if not in an interrupt
+		 * and the lock is successfully grabbed
+		 */
+		kernfs_get(kn);
+		__notify_kernfs_node(kn);
+		mutex_unlock(&kernfs_mutex);
+		kernfs_put(kn);
+	} else {
+		/* schedule work to kick fsnotify */
+		BUG_ON(kernfs_notify_thread == NULL);
+		spin_lock_irqsave(&kernfs_notify_lock, flags);
+		if (!kn->attr.notify_next) {
+			kernfs_get(kn);
+			kn->attr.notify_next = kernfs_notify_list;
+			kernfs_notify_list = kn;
+			kthread_queue_work(&kernfs_notify_worker,
+				&kernfs_notify_work);
+		}
+		spin_unlock_irqrestore(&kernfs_notify_lock, flags);
+	}
 }
 EXPORT_SYMBOL_GPL(kernfs_notify);
 
@@ -1034,3 +1059,38 @@ struct kernfs_node *__kernfs_create_file(struct kernfs_node *parent,
 	}
 	return kn;
 }
+
+#ifdef CONFIG_KERNFS_NOTIFIER_CPU_AFFINITY_MASK
+char *kernfs_notifier_cpu_mask = CONFIG_KERNFS_NOTIFIER_CPU_AFFINITY_MASK;
+#else
+char *kernfs_notifier_cpu_mask;
+#endif
+
+static int __init kernfs_init_notify_kthread(void)
+{
+	int rc = 0;
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
+	cpumask_t cpumask;
+
+	kernfs_notify_thread = kthread_run(kthread_worker_fn,
+		&kernfs_notify_worker, "kernfs_notifier");
+	if (IS_ERR(kernfs_notify_thread)) {
+		pr_err("failed to start kernfs notify thread\n");
+		rc = PTR_ERR(kernfs_notify_thread);
+		kernfs_notify_thread = NULL;
+		goto exit;
+	}
+
+	sched_setscheduler(kernfs_notify_thread, SCHED_FIFO, &param);
+
+	if (!kernfs_notifier_cpu_mask)
+		goto exit;
+
+	cpumask_clear(&cpumask);
+	if (!cpumask_parse(kernfs_notifier_cpu_mask, &cpumask))
+		set_cpus_allowed_ptr(kernfs_notify_thread, &cpumask);
+
+exit:
+	return rc;
+}
+early_initcall(kernfs_init_notify_kthread);

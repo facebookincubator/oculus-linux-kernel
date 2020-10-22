@@ -200,6 +200,16 @@ static void sde_hw_wb_roi(struct sde_hw_wb *ctx, struct sde_hw_wb_cfg *wb)
 	SDE_REG_WRITE(c, WB_OUT_SIZE, out_size);
 }
 
+static void sde_hw_wb_adjust_cac_offset(struct sde_hw_wb *ctx,
+		struct sde_hw_wb_cfg *wb,
+		int offset)
+{
+	struct sde_hw_blk_reg_map *c = &ctx->hw;
+	u32 out_xy = ((wb->roi.y + offset) << 16) | wb->roi.x;
+
+	SDE_REG_WRITE(c, WB_OUT_XY, out_xy);
+}
+
 static void sde_hw_wb_setup_qos_lut(struct sde_hw_wb *ctx,
 		struct sde_hw_wb_qos_cfg *cfg)
 {
@@ -304,6 +314,9 @@ static void _setup_wb_ops(struct sde_hw_wb_ops *ops,
 
 	if (test_bit(SDE_WB_CWB_CTRL, &features))
 		ops->program_cwb_ctrl = sde_hw_wb_program_cwb_ctrl;
+
+	if (test_bit(SDE_WB_XY_ROI_OFFSET, &features))
+		ops->adjust_cac_offset = sde_hw_wb_adjust_cac_offset;
 }
 
 static struct sde_hw_blk_ops sde_hw_ops = {

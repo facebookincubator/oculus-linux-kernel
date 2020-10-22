@@ -10,6 +10,7 @@
 #include <linux/ratelimit.h>
 #include <linux/preempt.h>
 #include <linux/wait.h>
+#include <linux/timekeeping.h>
 
 #include "cam_mem_mgr.h"
 #include "cam_sync_api.h"
@@ -955,6 +956,8 @@ static int __cam_isp_ctx_rdi_stream_buf_done_in_activated_state(
 {
 	struct cam_context *ctx = ctx_isp->base;
 	struct cam_isp_stream_image *stream_image;
+	struct cam_isp_hw_done_event_data *done =
+		(struct cam_isp_hw_done_event_data *) evt_data;
 
 	if (list_empty(&ctx_isp->stream_image_active_list)) {
 		CAM_ERR(CAM_ISP, "Buf done with no active request!, ctx %u",
@@ -965,7 +968,9 @@ static int __cam_isp_ctx_rdi_stream_buf_done_in_activated_state(
 		struct cam_isp_stream_image, list_entry);
 	list_del_init(&stream_image->list_entry);
 	ctx_isp->active_req_cnt--;
-	stream_image->capture_timestamp = jiffies_to_msecs(jiffies);
+
+	stream_image->capture_timestamp = done->timestamp;
+
 	/*
 	 * only signal completion when first image is added because,
 	 * if images are already there then we do not wait on the
@@ -4122,6 +4127,7 @@ static int __cam_isp_ctx_release_dev_in_top_state(struct cam_context *ctx,
 	ctx_isp->hw_acquired = false;
 	ctx_isp->init_received = false;
 	ctx_isp->rdi_only_context = false;
+	ctx_isp->skip_req_mgr = false;
 	ctx_isp->req_info.last_bufdone_req_id = 0;
 
 	atomic64_set(&ctx_isp->state_monitor_head, -1);

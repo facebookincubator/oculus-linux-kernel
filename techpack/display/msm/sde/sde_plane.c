@@ -3060,6 +3060,24 @@ static void _sde_plane_update_sharpening(struct sde_plane *psde)
 			&psde->sharp_cfg);
 }
 
+/**
+ * _sde_plane_update_roi_cac_fast_path - update state between two automatic
+ * writeback CAC commits
+ * @plane: pointer to drm plane
+ */
+static void _sde_plane_update_roi_cac_fast_path(struct drm_plane *plane)
+{
+	struct sde_plane *psde = to_sde_plane(plane);
+	struct drm_plane_state *state = plane->state;
+	struct sde_plane_state *pstate = to_sde_plane_state(state);
+
+	if (psde->pipe_hw->ops.setup_rects &&
+			!(psde->color_fill & SDE_PLANE_COLOR_FILL_FLAG))
+		psde->pipe_hw->ops.setup_rects(psde->pipe_hw,
+				&psde->pipe_cfg,
+				pstate->multirect_index);
+}
+
 static void _sde_plane_update_properties(struct drm_plane *plane,
 	struct drm_crtc *crtc, struct drm_framebuffer *fb)
 {
@@ -3136,6 +3154,7 @@ static int sde_plane_sspp_atomic_update(struct drm_plane *plane,
 	struct sde_plane_state *old_pstate;
 	struct drm_crtc *crtc;
 	struct drm_framebuffer *fb;
+	struct sde_crtc_state *cstate;
 	int idx;
 	int dirty_prop_flag;
 
@@ -3164,6 +3183,8 @@ static int sde_plane_sspp_atomic_update(struct drm_plane *plane,
 				!crtc, !fb);
 		return -EINVAL;
 	}
+
+	cstate = to_sde_crtc_state(crtc->state);
 
 	SDE_DEBUG(
 		"plane%d sspp:%dx%d/%4.4s/%llx/%dx%d+%d+%d/%x crtc:%dx%d+%d+%d\n",
@@ -3204,6 +3225,12 @@ static int sde_plane_sspp_atomic_update(struct drm_plane *plane,
 	 */
 	_sde_plane_sspp_atomic_check_mode_changed(psde, state,
 								old_state);
+
+	if ((pstate->dirty & SDE_PLANE_DIRTY_RECTS) &&
+			cstate->cac_skip_hw_setup) {
+		_sde_plane_update_roi_cac_fast_path(plane);
+		return 0;
+	}
 
 	/* re-program the output rects always if partial update roi changed */
 	if (sde_crtc_is_crtc_roi_dirty(crtc->state))
@@ -4237,6 +4264,30 @@ void sde_plane_clear_ubwc_error(struct drm_plane *plane)
 
 	if (psde->pipe_hw->ops.clear_ubwc_error)
 		psde->pipe_hw->ops.clear_ubwc_error(psde->pipe_hw);
+}
+
+void sde_plane_adjust_cac_offset(struct drm_plane *plane,
+		struct sde_hw_ctl *ctl,
+		int offset)
+{
+	struct sde_plane *psde = to_sde_plane(plane);
+	struct sde_hw_pipe *pipe_hw = psde->pipe_hw;
+
+	/* make sure the assigned pipe is included in the flush mask */
+	sde_plane_ctl_flush(plane, ctl, true);
+
+	if (pipe_hw->ops.adjust_cac_offset)
+		pipe_hw->ops.adjust_cac_offset(pipe_hw,
+			&psde->pipe_cfg,
+			offset);
+}
+
+void sde_plane_update_dirty_bits(struct drm_plane *plane,
+		uint32_t dirty)
+{
+	struct sde_plane_state *pstate = to_sde_plane_state(plane->state);
+
+	pstate->dirty |= dirty;
 }
 
 #ifdef CONFIG_DEBUG_FS

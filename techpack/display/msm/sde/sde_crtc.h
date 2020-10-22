@@ -224,8 +224,12 @@ struct sde_crtc_misr_info {
  * @play_count    : frame count between crtc enable and disable
  * @vblank_cb_time  : ktime at vblank count reset
  * @vblank_last_cb_time  : ktime at last vblank notification
+ * @lineptr_last_cb_time : time in ns at last lineptr notification
+ * @lineptr_last_cb_vtotal : total vert scanlines at last lineptr notification
+ * @lineptr_last_cb_offset : lineptr offset at last lineptr notification
  * @sysfs_dev  : sysfs device node for crtc
  * @vsync_event_sf : vsync event notifier sysfs device
+ * @lineptr_event_sf : lineptr event notifier sysfs device
  * @enabled       : whether the SDE CRTC is currently enabled. updated in the
  *                  commit-thread, not state-swap time which is earlier, so
  *                  safe to make decisions on during VBLANK on/off work
@@ -294,9 +298,13 @@ struct sde_crtc {
 	u64 play_count;
 	ktime_t vblank_cb_time;
 	ktime_t vblank_last_cb_time;
+	u64 lineptr_last_cb_time;
+	int lineptr_last_cb_vtotal;
+	int lineptr_last_cb_offset;
 	struct sde_crtc_fps_info fps_info;
 	struct device *sysfs_dev;
 	struct kernfs_node *vsync_event_sf;
+	struct kernfs_node *lineptr_event_sf;
 	bool enabled;
 
 	bool ds_reconfig;
@@ -349,6 +357,9 @@ struct sde_crtc {
 
 	/* qsync information */
 	u32 qsync_min_fps;
+
+	/* CAC writeback information */
+	int wb_num_tears;
 };
 
 #define to_sde_crtc(x) container_of(x, struct sde_crtc, base)
@@ -377,6 +388,7 @@ struct sde_crtc {
  * @num_ds: Number of destination scalers to be configured
  * @num_ds_enabled: Number of destination scalers enabled
  * @ds_dirty: Boolean to indicate if dirty or not
+ * @cac_skip_hw_setup: Indicates that most HW state changes can be skipped
  * @ds_cfg: Destination scaler config
  * @scl3_lut_cfg: QSEED3 lut config
  * @new_perf: new performance state being requested
@@ -405,6 +417,7 @@ struct sde_crtc_state {
 	uint32_t num_ds;
 	uint32_t num_ds_enabled;
 	bool ds_dirty;
+	bool cac_skip_hw_setup;
 	struct sde_hw_ds_cfg ds_cfg[SDE_MAX_DS_COUNT];
 	struct sde_hw_scaler3_lut_cfg scl3_lut_cfg;
 

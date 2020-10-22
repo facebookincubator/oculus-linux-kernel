@@ -124,6 +124,16 @@ struct sde_hw_wb_ops {
 	 */
 	void (*program_cwb_ctrl)(struct sde_hw_wb *ctx, const enum sde_cwb cwb,
 		const enum sde_cwb data_src, bool dspp_out, bool enable);
+
+	/**
+	 * adjust_cac_offset - update output ROI for writeback CAC
+	 * @ctx: pointer to writeback context
+	 * @wb: pointer to writeback config structure
+	 * @offset: value added to wb->roi.y
+	 */
+	void (*adjust_cac_offset)(struct sde_hw_wb *ctx,
+		struct sde_hw_wb_cfg *wb,
+		int offset);
 };
 
 /**

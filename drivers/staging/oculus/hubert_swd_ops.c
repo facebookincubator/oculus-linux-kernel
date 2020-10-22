@@ -1,33 +1,31 @@
-#include "hubert_swd_ops.h"
-
 #include <linux/delay.h>
 
+#include "hubert_swd_ops.h"
 #include "swd_registers_samd.h"
-#include "syncboss_swd.h"
+#include "swd.h"
 
 /* Reading is word-aligned, this will take care of it */
-static inline u8 hubert_swd_read_byte(struct swdhandle_t *handle, u32 address)
+static inline u8 hubert_swd_read_byte(struct device *dev, u32 address)
 {
-	return (swd_memory_read(handle, address) & (0xff << 8*(address % 4)))
+	return (swd_memory_read(dev, address) & (0xff << 8*(address % 4)))
 		>> (8*(address % 4));
 }
 
-static int hubert_swd_is_nvmc_ready(struct swdhandle_t *handle)
+static int hubert_swd_is_nvmc_ready(struct device *dev)
 {
-	return (hubert_swd_read_byte(handle, SWD_SAMD_NVMCTRL_INTFLAG) &
+	return (hubert_swd_read_byte(dev, SWD_SAMD_NVMCTRL_INTFLAG) &
 		SWD_SAMD_NVMCTRL_INTFLAG_READY) ==
 		SWD_SAMD_NVMCTRL_INTFLAG_READY;
 }
 
-static int hubert_swd_wait_for_nvmc_ready(struct device *dev,
-					    struct swdhandle_t *handle)
+static int hubert_swd_wait_for_nvmc_ready(struct device *dev)
 {
 	const u64 SWD_READY_TIMEOUT_MS = 500;
 	u64 timeout_time_ns =
 	    ktime_get_ns() + (SWD_READY_TIMEOUT_MS * NSEC_PER_MSEC);
 
 	while (ktime_get_ns() < timeout_time_ns) {
-		if (hubert_swd_is_nvmc_ready(handle))
+		if (hubert_swd_is_nvmc_ready(dev))
 			return 0;
 		udelay(100);
 	}
@@ -37,27 +35,25 @@ static int hubert_swd_wait_for_nvmc_ready(struct device *dev,
 	return -ETIMEDOUT;
 }
 
-int hubert_swd_erase_app(struct device *dev,
-	struct swdhandle_t *handle)
+int hubert_swd_erase_app(struct device *dev)
 {
 	int status = 0;
 	int i = 0;
-	int flash_pages_to_erase =
-		AT91SAMD_NUM_FW_PAGES - AT91SAMD_NUM_FLASH_PAGES_TO_RETAIN;
-	int flash_rows_to_erase =
-		(flash_pages_to_erase * SWD_SAMD_PAGE_SIZE) / SWD_SAMD_ROW_SIZE;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct flash_info *flash = &devdata->flash_info;
+	int flash_pages_to_erase = flash->num_pages - flash->num_retained_pages;
+	int block_size = flash->block_size; /* also known as "row size" */
+	int flash_blocks_to_erase = (flash_pages_to_erase * flash->page_size)
+					/ block_size;
+	BUG_ON(flash_blocks_to_erase < 0);
 
-	BUILD_BUG_ON(!(AT91SAMD_NUM_FLASH_PAGES_TO_RETAIN <
-		       AT91SAMD_NUM_FW_PAGES));
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLB, 0x00);
 
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLB, 0x00);
-
-	for (i = 0; i < flash_rows_to_erase * SWD_SAMD_ROW_SIZE;
-					i += SWD_SAMD_ROW_SIZE) {
-		swd_memory_write(handle, SWD_SAMD_NVMCTRL_ADDR, i >> 1);
-		swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLA,
-				SWD_SAMD_NVMCTRL_CTRLA_CMD_ER);
-		status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+	for (i = 0; i < flash_blocks_to_erase * block_size; i += block_size) {
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, i >> 1);
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
+				 SWD_SAMD_NVMCTRL_CTRLA_CMD_ER);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			return status;
 	}
@@ -65,9 +61,8 @@ int hubert_swd_erase_app(struct device *dev,
 	return status;
 }
 
-int hubert_swd_write_block(struct device *dev,
-				    struct swdhandle_t *handle, int addr,
-				    const u8 *data, int len)
+int hubert_swd_write_block(struct device *dev, int addr, const u8 *data,
+			   int len)
 {
 	int status = 0;
 	int i = 0;
@@ -81,18 +76,18 @@ int hubert_swd_write_block(struct device *dev,
 	 *        (size & 3) == 0);
 	 */
 
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLB, 0x00);
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLB, 0x00);
 
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_ADDR, addr);
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLA,
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, addr);
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
 				SWD_SAMD_NVMCTRL_CTRLA_CMD_UR);
-	status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+	status = hubert_swd_wait_for_nvmc_ready(dev);
 	if (status != 0)
 		return status;
 
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLA,
-				SWD_SAMD_NVMCTRL_CTRLA_CMD_PBC);
-	status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
+			 SWD_SAMD_NVMCTRL_CTRLA_CMD_PBC);
+	status = hubert_swd_wait_for_nvmc_ready(dev);
 	if (status != 0)
 		return status;
 
@@ -106,18 +101,17 @@ int hubert_swd_write_block(struct device *dev,
 		}
 		value = le32_to_cpu(value);
 
-		swd_memory_write(handle, addr + i, value);
+		swd_memory_write(dev, addr + i, value);
 
-		status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			return status;
 	}
 	return status;
 }
 
-int hubert_swd_read_block(struct device *dev,
-				    struct swdhandle_t *handle, int addr,
-				    const u8 *data, int len)
+int hubert_swd_read_block(struct device *dev, int addr, const u8 *data,
+			  int len)
 {
 	int status = 0;
 	int i = 0;
@@ -131,37 +125,37 @@ int hubert_swd_read_block(struct device *dev,
 	 *        (size & 3) == 0);
 	 */
 
-	hubert_swd_wait_for_nvmc_ready(dev, handle);
+	hubert_swd_wait_for_nvmc_ready(dev);
 
 	for (i = 0; i < len; i += sizeof(u32)) {
 		bytes_left = len - i;
 
-		value = swd_memory_read(handle, addr + i);
+		value = swd_memory_read(dev, addr + i);
 
-		status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			return status;
 	}
 	return status;
 }
 
-static int hubert_swd_wp(struct device *dev, struct swdhandle_t *handle)
+static int hubert_swd_wp(struct device *dev)
 {
-	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLA,
-				SWD_SAMD_NVMCTRL_CTRLA_CMD_WP);
-	return hubert_swd_wait_for_nvmc_ready(dev, handle);
+	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
+			 SWD_SAMD_NVMCTRL_CTRLA_CMD_WP);
+	return hubert_swd_wait_for_nvmc_ready(dev);
 }
 
-static void hubert_swd_reset(struct device *dev, struct swdhandle_t *handle)
+static void hubert_swd_reset(struct device *dev)
 {
-	swd_reset(handle);
+	swd_reset(dev);
 }
 
-int hubert_swd_wp_and_reset(struct device *dev, struct swdhandle_t *handle)
+int hubert_swd_wp_and_reset(struct device *dev)
 {
 	int status = 0;
 
-	status = hubert_swd_wp(dev, handle);
-	hubert_swd_reset(dev, handle);
+	status = hubert_swd_wp(dev);
+	hubert_swd_reset(dev);
 	return status;
 }

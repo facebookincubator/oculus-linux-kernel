@@ -98,9 +98,10 @@
 		polling-delay = <0>;
 		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
 		thermal-governor = "step_wise";
+		wake-capable-sensor;
 		trips {
 			batt_fan_trip0: batt_fan_trip0 {
-				temperature = <250>;
+				temperature = <400>;
 				hysteresis = <20>;
 				type = "active";
 			};
@@ -132,9 +133,10 @@
 		polling-delay = <0>;
 		thermal-sensors = <&tsens0 5>;
 		thermal-governor = "step_wise";
+		wake-capable-sensor;
 		trips {
 			cpu0_3_fan_trip0: cpu0_3_fan_trip0 {
-				temperature = <35000>;
+				temperature = <45000>;
 				hysteresis = <1000>;
 				type = "active";
 			};
@@ -166,9 +168,10 @@
 		polling-delay = <0>;
 		thermal-sensors = <&tsens0 6>;
 		thermal-governor = "step_wise";
+		wake-capable-sensor;
 		trips {
 			cpu4_7_fan_trip0: cpu4_7_fan_trip0 {
-				temperature = <35000>;
+				temperature = <45000>;
 				hysteresis = <1000>;
 				type = "active";
 			};
@@ -200,9 +203,10 @@
 		polling-delay = <0>;
 		thermal-sensors = <&tsens0 15>;
 		thermal-governor = "step_wise";
+		wake-capable-sensor;
 		trips {
 			gpu0_fan_trip0: gpu0_fan_trip0 {
-				temperature = <35000>;
+				temperature = <45000>;
 				hysteresis = <1000>;
 				type = "active";
 			};
@@ -234,9 +238,10 @@
 		polling-delay = <0>;
 		thermal-sensors = <&tsens1 8>;
 		thermal-governor = "step_wise";
+		wake-capable-sensor;
 		trips {
 			gpu1_fan_trip0: gpu1_fan_trip0 {
-				temperature = <35000>;
+				temperature = <45000>;
 				hysteresis = <1000>;
 				type = "active";
 			};

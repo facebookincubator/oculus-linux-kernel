@@ -91,6 +91,13 @@ config THERMAL_DEFAULT_GOV_STEP_WISE
 	  Use the step_wise governor as default. This throttles the
 	  devices one step at a time.
 
+config THERMAL_DEFAULT_GOV_SINGLE_STEP
+	bool "single_step"
+	select THERMAL_GOV_SINGLE_STEP
+	help
+	  Use the single_step governor as default. This throttles the
+	  devices between low and high limits
+
 config THERMAL_DEFAULT_GOV_FAIR_SHARE
 	bool "fair_share"
 	select THERMAL_GOV_FAIR_SHARE
@@ -120,6 +127,12 @@ config THERMAL_GOV_FAIR_SHARE
 	bool "Fair-share thermal governor"
 	help
 	  Enable this to manage platform thermals using fair-share governor.
+
+config THERMAL_GOV_SINGLE_STEP
+	bool "Single_step thermal governor"
+	help
+	  Enable this to manage platform thermals using a simple high/low
+	  governor.
 
 config THERMAL_GOV_STEP_WISE
 	bool "Step_wise thermal governor"

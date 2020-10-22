@@ -163,14 +163,15 @@
 		csiphy-sd-index = <0>;
 		cam_avdd-supply = <&pm8150a_l10>;
 		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l2>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd",
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
-		rgltr-min-voltage = <2960000 1800000 0>;
-		rgltr-max-voltage = <2960000 1800000 0>;
-		rgltr-load-current = <80000 120000 0>;
+		rgltr-min-voltage = <2960000 1800000 1050000 0>;
+		rgltr-max-voltage = <2960000 1800000 1050000 0>;
+		rgltr-load-current = <80000 120000 1050000 0>;
 		gpio-no-mux = <0>;
 		pinctrl-names = "cam_default", "cam_suspend";
 		pinctrl-0 = <&cam_sensor_mclk0_active>;

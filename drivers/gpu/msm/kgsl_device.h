@@ -673,6 +673,8 @@ static inline int kgsl_state_is_awake(struct kgsl_device *device)
 int kgsl_readtimestamp(struct kgsl_device *device, void *priv,
 		enum kgsl_timestamp_type type, unsigned int *timestamp);
 
+int kgsl_check_timestamp_consumed(struct kgsl_device *device,
+		struct kgsl_context *context, unsigned int timestamp);
 int kgsl_check_timestamp(struct kgsl_device *device,
 		struct kgsl_context *context, unsigned int timestamp);
 

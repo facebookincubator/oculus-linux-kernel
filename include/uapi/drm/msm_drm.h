@@ -437,6 +437,7 @@ struct drm_msm_vsync_trigger {
 #define DRM_MSM_RMFB2                  0x43
 #define DRM_MSM_POWER_CTRL             0x44
 #define DRM_MSM_VSYNC_TRIGGER          0x45
+#define DRM_MSM_CAC_WRITEBACK_TRIGGER  0x46
 
 /* sde custom events */
 #define DRM_EVENT_HISTOGRAM 0x80000000
@@ -473,6 +474,8 @@ struct drm_msm_vsync_trigger {
 			DRM_MSM_POWER_CTRL), struct drm_msm_power_ctrl)
 #define DRM_IOCTL_MSM_VSYNC_TRIGGER DRM_IOW((DRM_COMMAND_BASE + \
 			DRM_MSM_VSYNC_TRIGGER), struct drm_msm_vsync_trigger)
+#define DRM_IOCTL_MSM_CAC_WRITEBACK_TRIGGER DRM_IO(DRM_COMMAND_BASE + \
+			DRM_MSM_CAC_WRITEBACK_TRIGGER)
 
 #if defined(__cplusplus)
 }

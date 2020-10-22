@@ -5,6 +5,14 @@
 
 #include <linux/mutex.h>
 #include <linux/usb/usbpd.h>
+#include <linux/workqueue.h>
+
+/* Mount states */
+enum molokini_fw_mount_state {
+	MOLOKINI_FW_OFF_HEAD = 0,
+	MOLOKINI_FW_ON_HEAD,
+	MOLOKINI_FW_UNKNOWN,
+};
 
 /* Protocol types */
 enum molokini_fw_protocol {
@@ -43,6 +51,7 @@ enum molokini_fw_protocol {
 #define MOLOKINI_FW_MANUFACTURER_INFO2 0x7A
 #define MOLOKINI_FW_MANUFACTURER_INFO3 0x7B
 #define MOLOKINI_FW_HMD_MOUNTED 0x80
+#define MOLOKINI_FW_CHARGER_PLUGGED 0x82
 
 /* Vendor Defined Object Section */
 #define VDOS_MAX_BYTES 16
@@ -70,6 +79,7 @@ struct molokini_parameters {
 	u8 rsoc;
 	u8 soh;
 	char device_name[16];
+	bool charger_plugged;
 
 	/* Lifetime data blocks */
 	u16 lifetime1_lower[LIFETIME_1_LOWER_LEN];
@@ -103,6 +113,13 @@ struct molokini_pd {
 	struct dentry *debug_root;
 
 	struct molokini_parameters params;
+
+	/* mount state held locally, messaged as u32 vdo */
+	u32 mount_state;
+	/* last ACK received from Molokini for mount status */
+	enum molokini_fw_mount_state last_mount_ack;
+	/* work for periodically processing HMD mount state */
+	struct delayed_work dwork;
 };
 
 #endif /* _MOLOKINI_H__ */

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -77,10 +77,12 @@ static void wcd_program_hs_vref(struct wcd_mbhc *mbhc)
 	struct snd_soc_component *component = mbhc->component;
 	u32 reg_val;
 
-	plug_type_cfg = WCD_MBHC_CAL_PLUG_TYPE_PTR(mbhc->mbhc_cfg->calibration);
+	plug_type_cfg = WCD_MBHC_CAL_PLUG_TYPE_PTR(
+				mbhc->mbhc_cfg->calibration);
 	reg_val = ((plug_type_cfg->v_hs_max - HS_VREF_MIN_VAL) / 100);
 
-	dev_dbg(component->dev, "%s: reg_val  = %x\n", __func__, reg_val);
+	dev_dbg(component->dev, "%s: reg_val  = %x\n",
+		__func__, reg_val);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_VREF, reg_val);
 }
 
@@ -415,7 +417,6 @@ static void wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc)
 			       &mbhc->hph_pa_dac_state)) {
 		pr_debug("%s: HPHR clear flag and enable PA\n", __func__);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPHR_PA_EN, 1);
-		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPHR_OCP_DET_EN, 1);
 		pa_turned_on = true;
 	}
 	mutex_unlock(&mbhc->hphr_pa_lock);
@@ -424,7 +425,6 @@ static void wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc)
 			       &mbhc->hph_pa_dac_state)) {
 		pr_debug("%s: HPHL clear flag and enable PA\n", __func__);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPHL_PA_EN, 1);
-		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPHL_OCP_DET_EN, 1);
 		pa_turned_on = true;
 	}
 	mutex_unlock(&mbhc->hphl_pa_lock);
@@ -634,11 +634,12 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			}
 			mbhc->hph_type = WCD_MBHC_HPH_NONE;
 			mbhc->zl = mbhc->zr = 0;
-			pr_debug("%s: Reporting removal (%x)\n",
-				 __func__, mbhc->hph_status);
-			wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
-					    0, WCD_MBHC_JACK_MASK);
-
+			if (!mbhc->force_linein) {
+				pr_debug("%s: Reporting removal (%x)\n",
+					 __func__, mbhc->hph_status);
+				wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
+					0, WCD_MBHC_JACK_MASK);
+			}
 			if (mbhc->hph_status == SND_JACK_LINEOUT) {
 
 				pr_debug("%s: Enable micbias\n", __func__);
@@ -731,6 +732,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		}
 
 		mbhc->hph_status |= jack_type;
+
+		if (jack_type == SND_JACK_HEADPHONE &&
+		    mbhc->mbhc_cb->mbhc_micb_ramp_control)
+			mbhc->mbhc_cb->mbhc_micb_ramp_control(component, false);
 
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
@@ -921,6 +926,10 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 						&mbhc->correct_plug_swch);
 	else
 		pr_info("%s: hs_detect_plug work not cancelled\n", __func__);
+
+	/* Enable micbias ramp */
+	if (mbhc->mbhc_cb->mbhc_micb_ramp_control)
+		mbhc->mbhc_cb->mbhc_micb_ramp_control(component, true);
 
 	if (mbhc->mbhc_cb->micbias_enable_status)
 		micbias1 = mbhc->mbhc_cb->micbias_enable_status(mbhc,
@@ -1369,8 +1378,7 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	if (mbhc->mbhc_cfg->moisture_en && mbhc->mbhc_cb->mbhc_moisture_config
 		&& !mbhc->mbhc_cfg->moisture_duty_cycle_en)
 		mbhc->mbhc_cb->mbhc_moisture_config(mbhc);
-	else if (mbhc->mbhc_cfg->moisture_duty_cycle_en &&
-		 mbhc->mbhc_cb->mbhc_moisture_detect_en)
+	else if (mbhc->mbhc_cb->mbhc_moisture_detect_en)
 		mbhc->mbhc_cb->mbhc_moisture_detect_en(mbhc, false);
 
 	/*
@@ -1417,9 +1425,6 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	/* Button Debounce set to 16ms */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);
 
-	/* Enable micbias ramp */
-	if (mbhc->mbhc_cb->mbhc_micb_ramp_control)
-		mbhc->mbhc_cb->mbhc_micb_ramp_control(component, true);
 	/* enable bias */
 	mbhc->mbhc_cb->mbhc_bias(component, true);
 	/* enable MBHC clock */
@@ -1794,6 +1799,8 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_component *component,
 	mbhc->hph_type = WCD_MBHC_HPH_NONE;
 	mbhc->wcd_mbhc_regs = wcd_mbhc_regs;
 	mbhc->swap_thr = GND_MIC_SWAP_THRESHOLD;
+	mbhc->hphl_cross_conn_thr = HPHL_CROSS_CONN_THRESHOLD;
+	mbhc->hphr_cross_conn_thr = HPHR_CROSS_CONN_THRESHOLD;
 
 	if (mbhc->intr_ids == NULL) {
 		pr_err("%s: Interrupt mapping not provided\n", __func__);

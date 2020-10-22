@@ -308,4 +308,22 @@ void sde_plane_setup_src_split_order(struct drm_plane *plane,
  */
 bool sde_plane_is_cache_required(struct drm_plane *plane);
 
+/**
+ * sde_plane_adjust_cac_offset - update plane's src ROI for writeback CAC
+ * @plane: pointer to DRM plane object
+ * @ctl: pointer to control hardware
+ * @offset: value added to src_rect.y
+ */
+void sde_plane_adjust_cac_offset(struct drm_plane *plane,
+		struct sde_hw_ctl *ctl,
+		int offset);
+
+/**
+ * sde_plane_update_dirty_bits - set pipe hw config to update
+ * @plane: pointer to DRM plane object
+ * @dirty: bits to add to pstate->dirty
+ */
+void sde_plane_update_dirty_bits(struct drm_plane *plane,
+		uint32_t dirty);
+
 #endif /* _SDE_PLANE_H_ */

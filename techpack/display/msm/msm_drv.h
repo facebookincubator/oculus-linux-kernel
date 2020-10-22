@@ -22,6 +22,7 @@
 #include <linux/kernel.h>
 #include <linux/clk.h>
 #include <linux/cpufreq.h>
+#include <linux/cpumask.h>
 #include <linux/module.h>
 #include <linux/component.h>
 #include <linux/platform_device.h>
@@ -202,6 +203,7 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_FB_TRANSLATION_MODE,
 	CONNECTOR_PROP_QSYNC_MODE,
 	CONNECTOR_PROP_CMD_FRAME_TRIGGER_MODE,
+	CONNECTOR_PROP_WB_CAC,
 
 	/* total # of properties */
 	CONNECTOR_PROP_COUNT
@@ -589,6 +591,8 @@ struct msm_drm_thread {
 	struct kthread_worker worker;
 };
 
+struct msm_commit;
+
 struct msm_drm_private {
 
 	struct drm_device *dev;
@@ -635,6 +639,7 @@ struct msm_drm_private {
 	/* crtcs pending async atomic updates: */
 	uint32_t pending_crtcs;
 	uint32_t pending_planes;
+	uint32_t waiting_crtcs;
 	wait_queue_head_t pending_crtcs_event;
 
 	unsigned int num_planes;
@@ -699,6 +704,19 @@ struct msm_drm_private {
 
 	/* update the flag when msm driver receives shutdown notification */
 	bool shutdown_in_progress;
+
+	/* writeback commit submitted on next vblank */
+	struct msm_commit *deferred_commit;
+
+	u32 wb_thread_rtprio;
+	cpumask_t wb_thread_cpumask;
+
+	/* lineptr to Vsync offset in scanlines */
+	s32 lineptr_offset_default;
+
+	/* mild/severe tear thresholds for WB trigger */
+	u32 wb_mild_tear_threshold;
+	u32 wb_severe_tear_threshold;
 };
 
 /* get struct msm_kms * from drm_device * */
@@ -732,6 +750,8 @@ void __msm_fence_worker(struct work_struct *work);
 struct drm_atomic_state *msm_atomic_state_alloc(struct drm_device *dev);
 void msm_atomic_state_clear(struct drm_atomic_state *state);
 void msm_atomic_state_free(struct drm_atomic_state *state);
+
+void msm_flush_deferred_commit(struct drm_device *dev);
 
 void msm_gem_unmap_vma(struct msm_gem_address_space *aspace,
 		struct msm_gem_vma *vma, struct sg_table *sgt,

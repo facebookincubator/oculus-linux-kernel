@@ -59,7 +59,7 @@
 #define CAM_UBWC_CFG_VERSION_1              1
 #define CAM_UBWC_CFG_VERSION_2              2
 
-#define CAM_MAX_ACQ_RES    5
+#define CAM_MAX_ACQ_RES    7
 #define CAM_MAX_HW_SPLIT   3
 
 #define CAM_MAX_STREAM_MODE_HANDLES         20

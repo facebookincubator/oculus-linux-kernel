@@ -1232,6 +1232,36 @@ static void sde_hw_sspp_setup_dgm_csc(struct sde_hw_pipe *ctx,
 	SDE_REG_WRITE(&ctx->hw, offset, op_mode);
 }
 
+static void sde_hw_sspp_adjust_cac_offset(struct sde_hw_pipe *ctx,
+		struct sde_hw_pipe_cfg *cfg,
+		int offset)
+{
+	struct sde_hw_blk_reg_map *c = &ctx->hw;
+	u32 src_y, dst_y;
+	u32 idx;
+
+	if (_sspp_subblk_offset(ctx, SDE_SSPP_SRC, &idx) || !cfg)
+		return;
+
+	if ((cfg->src_rect.y + cfg->src_rect.h > offset) ||
+			(cfg->dst_rect.y + cfg->dst_rect.h > offset))
+		return;
+
+	/*
+	 * Src and dst rects for the two eyes are symmetrical about the
+	 * vertical axis of the mid-lens coordinate system (y=offset line
+	 * here).
+	 */
+	src_y = 2 * offset - (cfg->src_rect.y + cfg->src_rect.h);
+	dst_y = offset - (cfg->dst_rect.y + cfg->dst_rect.h);
+
+	if (src_y + cfg->src_rect.h > cfg->layout.height)
+		return;
+
+	SDE_REG_WRITE(c, SSPP_SRC_XY + idx, (src_y << 16) | cfg->src_rect.x);
+	SDE_REG_WRITE(c, SSPP_OUT_XY + idx, (dst_y << 16) | cfg->dst_rect.x);
+}
+
 static void _setup_layer_ops(struct sde_hw_pipe *c,
 		unsigned long features, unsigned long perf_features,
 		bool is_virtual_pipe)
@@ -1311,6 +1341,8 @@ static void _setup_layer_ops(struct sde_hw_pipe *c,
 
 	c->ops.get_ubwc_error = sde_hw_sspp_get_ubwc_error;
 	c->ops.clear_ubwc_error = sde_hw_sspp_clear_ubwc_error;
+
+	c->ops.adjust_cac_offset = sde_hw_sspp_adjust_cac_offset;
 }
 
 static struct sde_sspp_cfg *_sspp_offset(enum sde_sspp sspp,

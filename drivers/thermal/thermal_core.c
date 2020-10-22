@@ -23,6 +23,7 @@
 #include <net/genetlink.h>
 #include <linux/suspend.h>
 #include <linux/kobject.h>
+#include <../base/base.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/thermal.h>
@@ -254,6 +255,10 @@ static int __init thermal_register_governors(void)
 {
 	int result;
 
+	result = thermal_gov_single_step_register();
+	if (result)
+		return result;
+
 	result = thermal_gov_step_wise_register();
 	if (result)
 		return result;
@@ -279,6 +284,7 @@ static int __init thermal_register_governors(void)
 
 static void thermal_unregister_governors(void)
 {
+	thermal_gov_single_step_unregister();
 	thermal_gov_step_wise_unregister();
 	thermal_gov_fair_share_unregister();
 	thermal_gov_bang_bang_unregister();
@@ -1083,6 +1089,14 @@ __thermal_cooling_device_register(struct device_node *np,
 	if (cdev_softlink_kobj == NULL) {
 		cdev_softlink_kobj = kobject_create_and_add("cdev-by-name",
 						cdev->device.kobj.parent);
+		result = sysfs_create_link(&cdev->device.class->p->subsys.kobj,
+							cdev_softlink_kobj,
+							"cdev-by-name");
+		if (result) {
+			dev_err(&cdev->device,
+				"Fail to create cdev_map "
+				"soft link in class\n");
+		}
 	}
 	mutex_unlock(&cdev_softlink_lock);
 
@@ -1401,6 +1415,13 @@ thermal_zone_device_register(const char *type, int trips, int mask,
 	if (tz_softlink_kobj == NULL) {
 		tz_softlink_kobj = kobject_create_and_add("tz-by-name",
 						tz->device.kobj.parent);
+		result = sysfs_create_link(&tz->device.class->p->subsys.kobj,
+							tz_softlink_kobj,
+							"tz-by-name");
+		if (result) {
+			dev_err(&tz->device,
+				"Fail to create tz_map soft link in class\n");
+		}
 	}
 	mutex_unlock(&tz_softlink_lock);
 

@@ -878,6 +878,11 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int chipset_version = 0;
 	long  value  =  -1;
 
+	if (bt_power_pdata == NULL) {
+		BT_PWR_ERR("no device");
+		return -ENODEV;
+	}
+
 	switch (cmd) {
 	case BT_CMD_SLIM_TEST:
 #if defined CONFIG_BT_SLIM_QCA6390 || defined CONFIG_BTFM_SLIM_WCN3990

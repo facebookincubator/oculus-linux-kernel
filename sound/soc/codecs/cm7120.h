@@ -2220,6 +2220,7 @@ enum cm7120_type {
 enum {
 	SPK_POLAR_FLIP_ON_OFF = 0x01,
 	MIC_EQ_ON_OFF,
+	MIC_EQ_AGC_ON_OFF,
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
 	MIC_MONITOR_ON_OFF,
@@ -2258,6 +2259,7 @@ enum {
 	SPK_TEST_I2S34,
 	SPK_TEST_I2S3L,
 	SPK_TEST_I2S4R,
+	HP_IMPEDANCE,
 
 	MIC_EQ_LOWPASS_FC,
 	MIC_EQ_BAND_01_FC,
@@ -2296,6 +2298,8 @@ enum {
 	MIC_DSP_MAXNR,
 	MIC_DSP_NOISEGATE,
 	MIC_DSP_TBRRLOW,
+	MIC_TEST_CTRL3,
+	MIC_MUTE_STO2,
 };
 
 struct EQSpkParam {
@@ -2323,6 +2327,7 @@ struct cm7120_priv {
 	bool bEnableMicDspProcess;
 	bool bEnableAEC;
 	bool bEnableMonitor;
+	bool bEnableAGC;
 
 	struct regulator *codec_3v3;
 	struct regulator *codec_1v8;
@@ -2350,6 +2355,10 @@ struct cm7120_priv {
 	unsigned char i2s34;
 	unsigned char i2s3l;
 	unsigned char i2s4r;
+	unsigned char ctrl3;
+	unsigned char adcsto2;
+
+	unsigned char hp_impedance;
 };
 
 #endif /* __CM7120_H__ */

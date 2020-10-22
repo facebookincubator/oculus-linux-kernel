@@ -1,0 +1,168 @@
+#
+# $ Copyright Open Broadcom $
+#
+#
+# <<Broadcom-WL-IPTag/Open:>>
+#
+config BROADCOM_WIFI
+	bool "Broadcom WiFi Driver"
+	depends on WLAN
+	default n
+	---help---
+	  This is a configuration for Broadcom WLAN driver.
+
+config BCM4330
+	tristate "Broadcom 4330 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4330 chipset.
+
+config BCM4343
+	tristate "Broadcom 4343 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4343 chipset.
+
+config BCM4334
+	tristate "Broadcom 4334 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4334 chipset.
+
+config BCM4335
+	tristate "Broadcom 4335 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4335 chipset.
+
+config BCM4339
+	tristate "Broadcom 4339 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4339 chipset.
+
+config BCM4354
+	tristate "Broadcom 4354 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4354 chipset.
+
+config BCM4358
+	tristate "Broadcom 4358 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4358 chipset.
+
+config BCM4359
+	tristate "Broadcom 4359 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4359 chipset.
+
+config BCM4361
+	tristate "Broadcom 4361 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4361 chipset.
+
+config BCM4375
+	tristate "Broadcom 4375 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4375 chipset.
+
+config BCM4389
+	tristate "Broadcom 4389 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4389 chipset.
+
+config BCM43241
+	tristate "Broadcom 43241 wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 43241 chipset.
+
+config BCM4334W
+	tristate "Broadcom 4334W wireless cards support"
+	depends on BROADCOM_WIFI
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4334W chipset.
+
+config BCM43455
+        tristate "Broadcom 43455 wireless cards support"
+        depends on BROADCOM_WIFI
+        ---help---
+          This module adds support for wireless adapters based on
+          Broadcom 43455 chipset.
+
+config BCMDHD_FW_PATH
+	depends on BROADCOM_WIFI
+	string "Firmware path"
+	default "/system/etc/firmware/fw_bcmdhd.bin"
+	---help---
+	  Path to the firmware file.
+
+config BCMDHD_NVRAM_PATH
+	depends on BROADCOM_WIFI
+	string "NVRAM path"
+	default "/system/etc/wifi/bcmdhd.cal"
+	---help---
+	  Path to the calibration file.
+
+config BROADCOM_WIFI_RESERVED_MEM
+	bool "BROADCOM Reserved memory for wifi device"
+	depends on BROADCOM_WIFI
+	---help---
+	  This is a configuration for Broadcom WLAN driver.
+
+config WIFI_BROADCOM_COB
+        bool "BROADCOM WIFI COB"
+        depends on (BCM43455 || BCM4343)
+        ---help---
+          This is a configuration for Broadcom WIFI COB Type.
+
+config WL_NAN
+	bool "NAN Feature"
+	depends on BROADCOM_WIFI
+	default n
+	---help---
+	  This is a configuration for NAN Feature.
+
+config BCMDHD_PCIE
+	bool "Enable PCIe I/F Support"
+	depends on (BCM4354 || BCM4358 || BCM4359 || BCM4361 || BCM4375 || BCM4389)
+	---help---
+	  Enable PCI Express I/F Support
+
+config BCMDHD_PREALLOC_PKTIDMAP
+	bool "BROADCOM PCIE specific memory reserved for PKTIDMAP"
+	depends on BROADCOM_WIFI_RESERVED_MEM && BCMDHD_PCIE
+	---help---
+	  Preallocated memory support for PCIE interface in Broadcom
+	  WLAN driver.
+
+config BCMDHD_PREALLOC_MEMDUMP
+	bool "BROADCOM PCIE specific memory reserved for MEMDUMP"
+	depends on BROADCOM_WIFI_RESERVED_MEM
+	---help---
+	  Preallocated memory support for dongle memory dump
+config BCMDHD_OOB_HOST_WAKE
+	bool "Use the external WLAN_HOST_WAKE pin"
+	depends on BROADCOM_WIFI
+	default y
+	---help---
+	  Use the external GPIO pin to wake up host

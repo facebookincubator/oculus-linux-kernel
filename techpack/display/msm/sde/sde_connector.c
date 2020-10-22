@@ -16,6 +16,7 @@
 #include "dsi_display.h"
 #include "sde_crtc.h"
 #include "sde_rm.h"
+#include "sde_wb.h"
 
 #define BL_NODE_NAME_SIZE 32
 #define HDR10_PLUS_VSIF_TYPE_CODE      0x81
@@ -67,6 +68,10 @@ static const struct drm_prop_enum_list e_frame_trigger_mode[] = {
 	{FRAME_DONE_WAIT_DEFAULT, "default"},
 	{FRAME_DONE_WAIT_SERIALIZE, "serialize_frame_trigger"},
 	{FRAME_DONE_WAIT_POSTED_START, "posted_start"},
+};
+static const struct drm_prop_enum_list e_wb_cac_state[] = {
+	{WB_CAC_DISABLED, "disabled"},
+	{WB_CAC_ENABLED, "enabled"},
 };
 
 static int sde_backlight_device_update_status(struct backlight_device *bd)
@@ -2572,6 +2577,13 @@ static int _sde_connector_install_properties(struct drm_device *dev,
 			0, 0, e_power_mode,
 			ARRAY_SIZE(e_power_mode),
 			CONNECTOR_PROP_LP);
+
+	if (connector_type == DRM_MODE_CONNECTOR_VIRTUAL) {
+		msm_property_install_enum(&c_conn->property_info, "wb_cac",
+				0x0, 0, e_wb_cac_state,
+				ARRAY_SIZE(e_wb_cac_state),
+				CONNECTOR_PROP_WB_CAC);
+	}
 
 	return 0;
 }

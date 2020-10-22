@@ -1,0 +1,24 @@
+&tlmm {
+	nautilus_clk_pin: projector_clk_pin {
+		mux {
+			pins = "gpio108";
+			function = "gcc_gp3";
+		};
+		config {
+			pins = "gpio108";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&vendor {
+	nautilus_clk: oculus,nautilus_clk {
+		status = "ok";
+		compatible = "oculus,nautilus_clk";
+		pinctrl-names = "nautilus-mclk";
+		pinctrl-0 = <&nautilus_clk_pin>;
+		clocks = <&clock_gcc GCC_GP3_CLK>;
+		clock-names = "nautilus-clock";
+	};
+};

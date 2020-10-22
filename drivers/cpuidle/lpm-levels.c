@@ -74,7 +74,6 @@ struct lpm_debug {
 
 static struct system_pm_ops *sys_pm_ops;
 
-
 struct lpm_cluster *lpm_root_node;
 
 #define MAXSAMPLES 5
@@ -655,7 +654,7 @@ static inline bool lpm_disallowed(s64 sleep_us, int cpu, struct lpm_cpu *pm_cpu)
 	if (cpu_isolated(cpu))
 		goto out;
 
-	if (sleep_disabled)
+	if (cpumask_test_cpu(cpu, &pm_cpu->disallowed_cpus) || sleep_disabled)
 		return true;
 
 	bias_time = sched_lpm_disallowed_time(cpu);

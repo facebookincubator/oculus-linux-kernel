@@ -3,6 +3,10 @@
 
 #include "default-sim-panels.dtsi"
 
+&dump_mem {
+	status = "disabled";
+};
+
 &mdm0 {
 	status = "disabled";
 };
@@ -54,6 +58,10 @@
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
+	};
+
+	mem_dump {
+		status = "disabled";
 	};
 
 	qcom,ion {

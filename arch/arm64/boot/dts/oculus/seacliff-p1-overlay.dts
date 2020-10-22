@@ -7,9 +7,66 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
 #include "seacliff.dtsi"
+#include "seacliff-bcmdhd.dtsi"
 
 / {
 	model = "Seacliff (P1)";
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
 	qcom,board-id = <8 62>;
+};
+
+&qupv3_se0_spi {
+	status = "disabled";
+};
+
+&vendor {
+	bt_qca6390 {
+		status = "disabled";
+	};
+};
+
+&soc {
+	qcom,cnss-qca6390@b0000000 {
+		status = "disabled";
+	};
+};
+
+&cm7120_dev0_speaker_en_default {
+	mux {
+		pins = "gpio146";
+	};
+
+	config {
+		pins = "gpio146";
+	};
+};
+
+&projector {
+	status = "disabled";
+};
+
+&cam_cci0 {
+	qcom,cam-sensor2 {
+		csiphy-sd-index = <0>;
+	};
+	qcom,cam-sensor4 {
+		csiphy-sd-index = <5>;
+	};
+	qcom,cam-sensor5 {
+		csiphy-sd-index = <3>;
+	};
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_P1_BOARD.bin";
+		};
+	};
+};
+
+&pcie0 {
+	wake-gpio = <>;
+	pinctrl-0 = <&pcie0_clkreq_default &pcie0_perst_default>;
+	pinctrl-1 = <&pcie0_clkreq_sleep &pcie0_perst_default>;
 };

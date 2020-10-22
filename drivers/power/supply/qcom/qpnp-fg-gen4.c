@@ -308,6 +308,7 @@ struct fg_gen4_chip {
 	int			current_now;
 	int			calib_level;
 	int			charge_profile;
+	int			debug_cycle_count;
 	bool			first_profile_load;
 	bool			ki_coeff_dischg_en;
 	bool			slope_limit_en;
@@ -4614,7 +4615,11 @@ static int fg_psy_get_property(struct power_supply *psy,
 		rc = fg_gen4_get_charge_counter_shadow(chip, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
-		rc = get_cycle_count(chip->counter, &pval->intval);
+		/* Set debug count to -1 will use the real count */
+		if (chip->debug_cycle_count < 0)
+			rc = get_cycle_count(chip->counter, &pval->intval);
+		else
+			pval->intval = chip->debug_cycle_count;
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNTS:
 		rc = get_cycle_counts(chip->counter, &pval->strval);
@@ -4773,6 +4778,11 @@ static int fg_psy_set_property(struct power_supply *psy,
 		if (fg->fg_psy)
 			power_supply_changed(fg->fg_psy);
 		break;
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
+		chip->debug_cycle_count = pval->intval;
+		if (fg->fg_psy)
+			power_supply_changed(fg->fg_psy);
+		break;
 	default:
 		break;
 	}
@@ -4794,6 +4804,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
 	case POWER_SUPPLY_PROP_CALIBRATE:
 	case POWER_SUPPLY_PROP_CHARGE_PROFILE:
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 		return 1;
 	default:
 		break;
@@ -6296,6 +6307,7 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	chip->calib_level = -EINVAL;
 	chip->soh = -EINVAL;
 	chip->charge_profile = 0;
+	chip->debug_cycle_count = -1;
 	fg->regmap = dev_get_regmap(fg->dev->parent, NULL);
 	if (!fg->regmap) {
 		dev_err(fg->dev, "Parent regmap is unavailable\n");
@@ -6470,6 +6482,10 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	rc = fg_get_battery_voltage(fg, &volt_uv);
 	if (!rc)
 		rc = fg_get_msoc(fg, &msoc);
+
+	if (!rc && msoc == 0)
+		rc = fg_masked_write(fg, BATT_SOC_RESTART(fg), RESTART_GO_BIT,
+			RESTART_GO_BIT);
 
 	if (!rc)
 		rc = fg_gen4_get_battery_temp(fg, &batt_temp);

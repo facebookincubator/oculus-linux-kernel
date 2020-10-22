@@ -25,6 +25,11 @@
  * v0.5: (2020/01/08) Add Mic DSP function
  * v0.6: (2020/03/11) Add BeamForming parameter and debug register access
  * v0.7: (2020/03/19) Fix DSP parameter enum sequence
+ * v0.8: (2020/05/19) Fix SPK/MIC EQ's Q value update bug
+ * v0.9: (2020/06/08) Add AGC function in driver
+ * v1.0: (2020/06/16) Modify "Playback From Mux AIF1" the init default setting
+ * v1.1: (2020/06/17) Fix speaker volume do not control issue
+ * v1.2: (2020/06/24) Add MIC DSP BeamForming Beam width mode control items
  */
 
 #ifndef __CM710X_H__
@@ -1396,7 +1401,7 @@ struct cm710x_codec_priv {
 	bool bEnableMicEQ;
 	bool bEnableMicDspProcess;
 	bool bEnableAEC;
-
+	bool bEnableAGC;
 	char cSpkLeftChPreGain;
 	char cSpkRightChPreGain;
 	char cMicPreGain;
@@ -1406,6 +1411,7 @@ struct cm710x_codec_priv {
 	bool bSkipAEC;
 	short sMaxNRBF;
 	short sMaxNRBFMode;
+	bool bHeadphoneEnable;
 
 	struct EQParam SPKLEQParam[8];
 	struct EQParam SPKREQParam[8];

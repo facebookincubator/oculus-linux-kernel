@@ -40,6 +40,7 @@ struct lpm_cpu_level {
 struct lpm_cpu {
 	struct list_head list;
 	struct cpumask related_cpus;
+	struct cpumask disallowed_cpus;
 	struct lpm_cpu_level levels[NR_LPM_LEVELS];
 	int nlevels;
 	unsigned int psci_mode_shift;

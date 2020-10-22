@@ -622,6 +622,16 @@ struct sde_hw_sspp_ops {
 	 * @ctx: Pointer to pipe context
 	 */
 	u32 (*get_ubwc_error)(struct sde_hw_pipe *ctx);
+
+	/**
+	 * adjust_cac_offset - update pipe src ROI for writeback CAC
+	 * @ctx: pointer to pipe context
+	 * @cfg: pointer to pipe config structure
+	 * @offset: value added to src_rect.y
+	 */
+	void (*adjust_cac_offset)(struct sde_hw_pipe *ctx,
+			struct sde_hw_pipe_cfg *cfg,
+			int offset);
 };
 
 /**

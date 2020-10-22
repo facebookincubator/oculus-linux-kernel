@@ -5782,6 +5782,7 @@ static int msm_vidc_check_mbpf_supported(struct msm_vidc_inst *inst)
 	mutex_unlock(&core->lock);
 
 	if (mbpf > core->resources.max_mbpf) {
+		s_vpr_e(inst->sid, "%s: mbpf > max\n", __func__);
 		msm_vidc_print_running_insts(inst->core);
 		return -EBUSY;
 	}
@@ -6047,13 +6048,17 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 	sid = inst->sid;
 	rc = msm_vidc_check_mbps_supported(inst);
 	if (rc) {
-		s_vpr_e(sid, "%s: Hardware is overloaded\n", __func__);
-		return rc;
+		s_vpr_e(sid, "%s: MBPS limit exceeded\n", __func__);
+		/* Warn, but try to play. */
+		rc = 0;
 	}
 
 	rc = msm_vidc_check_mbpf_supported(inst);
-	if (rc)
-		return rc;
+	if (rc) {
+		s_vpr_e(sid, "%s: MBPF limit exceeded\n", __func__);
+		/* Warn, but try to play. */
+		rc = 0;
+	}
 
 	if (!is_thermal_permissible(core)) {
 		s_vpr_e(sid,
@@ -6158,7 +6163,7 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 			s_vpr_e(sid,
 				"Unsupported width = %u supported max width = %u\n",
 				output_width, width_max);
-				rc = -ENOTSUPP;
+			/* Warn, but try to play. */
 		}
 
 		if (!rc && output_height * output_width >
@@ -6167,7 +6172,7 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 				"Unsupported WxH = (%u)x(%u), max supported is (%u)x(%u)\n",
 				output_width, output_height,
 				width_max, height_max);
-			rc = -ENOTSUPP;
+			/* Warn, but try to play. */
 		}
 		/* Image size max capability has equal width and height,
 		 * hence, don't check mbpf for image sessions.
@@ -6179,7 +6184,7 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 			s_vpr_e(sid, "Unsupported mbpf %d, max %d\n",
 				NUM_MBS_PER_FRAME(input_width, input_height),
 				mbpf_max);
-			rc = -ENOTSUPP;
+			/* Warn, but try to play. */
 		}
 		if (!rc && inst->pic_struct !=
 			MSM_VIDC_PIC_STRUCT_PROGRESSIVE &&

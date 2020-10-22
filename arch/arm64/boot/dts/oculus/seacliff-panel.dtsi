@@ -4,11 +4,13 @@
 &dsi_dual_boe_lcd_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
-	qcom,mdss-dsi-bl-min-level = <102>;
-	qcom,mdss-dsi-bl-max-level = <203>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
 	qcom,platform-reset-gpio = <&tlmm 6 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
 	qcom,dsi-select-clocks =
 		"mux_byte_clk0", "mux_pixel_clk0",
 		"cphy_byte_clk0", "cphy_pixel_clk0";
@@ -27,11 +29,13 @@
 &dsi_dual_boe_lcd_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
-	qcom,mdss-dsi-bl-min-level = <183>;
-	qcom,mdss-dsi-bl-max-level = <366>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
 	qcom,platform-reset-gpio = <&tlmm 6 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
 	qcom,dsi-select-clocks =
 		"mux_byte_clk0", "mux_pixel_clk0",
 		"cphy_byte_clk0", "cphy_pixel_clk0";
@@ -57,6 +61,8 @@
 
 &pm8150l_lcdb {
 	status = "ok";
+	qcom,pwrdn-delay-ms = <8>;
+	qcom,pwrup-delay-ms = <4>;
 };
 
 &lcdb_ldo_vreg {
@@ -81,10 +87,6 @@
 		qcom,supply-disable-load = <0>;
 		qcom,supply-post-on-sleep = <0>;
 	};
-};
-
-&mdss_mdp {
-	qcom,swap-mixers;
 };
 
 &sde_dsi {

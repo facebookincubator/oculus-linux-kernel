@@ -3,6 +3,7 @@
  * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/sched/clock.h>
 
@@ -2360,6 +2361,103 @@ static void cmdobj_profile_ticks(struct adreno_device *adreno_dev,
 	*retire = entry->retired;
 }
 
+static void consume_cmdobj(struct adreno_device *adreno_dev,
+		struct kgsl_drawobj_cmd *cmdobj)
+{
+	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
+	struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
+	struct adreno_context *drawctxt = ADRENO_CONTEXT(drawobj->context);
+	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
+	uint64_t start = 0;
+	uint64_t secs;
+	uint64_t nsecs;
+
+	/* Early out if this cmdobj has already been consumed */
+	if (test_bit(CMDOBJ_CONSUMED, &cmdobj->priv))
+		return;
+
+	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
+		void *ptr = adreno_dev->profile_buffer.hostptr;
+		struct adreno_drawobj_profile_entry *entry;
+
+		entry = (struct adreno_drawobj_profile_entry *)
+			(ptr + (cmdobj->profile_index * sizeof(*entry)));
+		start = entry->started;
+
+		/*
+		 * If the start tick count is less than the sync ticks, the
+		 * ringbuffer has started executing, but it probably hasn't
+		 * reached the command to dump the start time out to memory yet.
+		 * Try waiting for five microseconds, which in testing was
+		 * generally long enough for things to clear, and bail out if
+		 * it's still not ready.
+		 */
+		if (start < thread->sync_ticks) {
+			udelay(5);
+			start = entry->started;
+			if (start < thread->sync_ticks)
+				return;
+		}
+
+		/*
+		 * Calculate the time delta from the sync in nsecs by converting
+		 * from GPU ticks (which operates on a 19.2 MHz timer) and
+		 * add that to the sync ktime.
+		 */
+		thread->stats[KGSL_THREADSTATS_CONSUMED] = thread->sync_ktime +
+			(start - thread->sync_ticks) * 10000 / 192;
+	}
+
+	thread->stats[KGSL_THREADSTATS_CONSUMED_ID] = drawobj->timestamp;
+	thread->stats[KGSL_THREADSTATS_CONSUMED_COUNT]++;
+
+	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_CONSUMED_EVENT]);
+
+	secs = thread->stats[KGSL_THREADSTATS_CONSUMED];
+	nsecs = do_div(secs, 1000000000);
+
+	/*
+	 * For A3xx we still get the rptr from the CP_RB_RPTR instead of
+	 * rptr scratch out address. At this point GPU clocks turned off.
+	 * So avoid reading GPU register directly for A3xx.
+	 */
+	if (adreno_is_a3xx(adreno_dev))
+		trace_adreno_cmdbatch_consumed(drawobj,
+			(int) dispatcher->inflight, start, secs, nsecs,
+			drawctxt->rb, 0);
+	else
+		trace_adreno_cmdbatch_consumed(drawobj,
+			(int) dispatcher->inflight, start, secs, nsecs,
+			drawctxt->rb, adreno_get_rptr(drawctxt->rb));
+
+	/* Mark that this cmdobj has been consumed */
+	set_bit(CMDOBJ_CONSUMED, &cmdobj->priv);
+}
+
+static int adreno_dispatch_consume_drawqueue(struct adreno_device *adreno_dev,
+		struct adreno_dispatcher_drawqueue *drawqueue)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	int count = 0;
+	unsigned int j;
+
+	j = drawqueue->head;
+	while (j != drawqueue->tail) {
+		struct kgsl_drawobj_cmd *cmdobj = drawqueue->cmd_q[j];
+		struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
+
+		if (kgsl_check_timestamp_consumed(device, drawobj->context,
+			drawobj->timestamp)) {
+			consume_cmdobj(adreno_dev, cmdobj);
+			count++;
+		}
+
+		j = DRAWQUEUE_NEXT(j, ADRENO_CONTEXT_DRAWQUEUE_SIZE);
+	}
+
+	return count;
+}
+
 static void retire_cmdobj(struct adreno_device *adreno_dev,
 		struct kgsl_drawobj_cmd *cmdobj)
 {
@@ -2485,7 +2583,10 @@ static void _adreno_dispatch_check_timeout(struct adreno_device *adreno_dev,
 static int adreno_dispatch_process_drawqueue(struct adreno_device *adreno_dev,
 		struct adreno_dispatcher_drawqueue *drawqueue)
 {
-	int count = adreno_dispatch_retire_drawqueue(adreno_dev, drawqueue);
+	int count;
+
+	adreno_dispatch_consume_drawqueue(adreno_dev, drawqueue);
+	count = adreno_dispatch_retire_drawqueue(adreno_dev, drawqueue);
 
 	/* Nothing to do if there are no pending commands */
 	if (adreno_drawqueue_is_empty(drawqueue))
@@ -2573,8 +2674,8 @@ static void adreno_dispatcher_work(struct kthread_work *work)
 	mutex_lock(&dispatcher->mutex);
 
 	/*
-	 * As long as there are inflight commands, process retired comamnds from
-	 * all drawqueues
+	 * As long as there are inflight commands, process consumed/retired
+	 * commands from all drawqueues
 	 */
 	for (i = 0; i < adreno_dev->num_ringbuffers; i++) {
 		struct adreno_dispatcher_drawqueue *drawqueue =

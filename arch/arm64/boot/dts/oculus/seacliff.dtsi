@@ -7,6 +7,7 @@
 #include "seacliff-audio.dtsi"
 #include "seacliff-camera.dtsi"
 #include "seacliff-fan.dtsi"
+#include "seacliff-nautilus-clk.dtsi"
 #include "seacliff-panel.dtsi"
 #include "seacliff-projector.dtsi"
 #include "seacliff-syncboss.dtsi"
@@ -84,6 +85,14 @@
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
+&pm8150a_l2 {
+	regulator-always-on;
+	regulator-min-microvolt = <1050000>;
+	regulator-max-microvolt = <1050000>;
+	qcom,init-voltage = <1050000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
 &pm8150a_l3 {
 	regulator-always-on;
 	qcom,init-voltage = <1200000>;
@@ -145,5 +154,25 @@
 	blue {
 		qcom,continuous-mode;
 		qcom,default-brightness = <10>;
+	};
+};
+
+&dwc1 {
+	status = "disabled";
+};
+
+&usb1 {
+	status = "disabled";
+};
+
+&cam_sensor_mclk5_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk5_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
 	};
 };

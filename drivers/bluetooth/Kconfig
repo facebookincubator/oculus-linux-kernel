@@ -450,4 +450,17 @@ config BT_SLIM_QCA6390
 	  It is designed to adapt any future BT/FM device to implement a specific
 	  chip initialization process and control.
 
+config BT_BCM4361
+	bool "Enable BCM4361 driver"
+	default n
+	help
+	  Adds BCM43XX RFKILL driver for Broadcom BCM4361, BCM4375 chipset
+	  default is n.
+
+config BT_BLUESLEEP
+	bool "Enable Bluesleep driver"
+	default n
+	help
+	  Adds Bluesleep driver for Broadcom chipset.
+	  default is n.
 endmenu
