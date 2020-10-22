@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _MSM_VIDC_H_
@@ -96,6 +96,11 @@ enum session_type {
 	MSM_VIDC_MAX_DEVICES = MSM_VIDC_UNKNOWN,
 };
 
+enum load_type {
+	MSM_VIDC_VIDEO = 0,
+	MSM_VIDC_IMAGE,
+};
+
 union msm_v4l2_cmd {
 	struct v4l2_decoder_cmd dec;
 	struct v4l2_encoder_cmd enc;
@@ -119,6 +124,7 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b);
 int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b);
 int msm_vidc_streamon(void *instance, enum v4l2_buf_type i);
 int msm_vidc_query_ctrl(void *instance, struct v4l2_queryctrl *ctrl);
+int msm_vidc_query_menu(void *instance, struct v4l2_querymenu *qmenu);
 int msm_vidc_streamoff(void *instance, enum v4l2_buf_type i);
 int msm_vidc_comm_cmd(void *instance, union msm_v4l2_cmd *cmd);
 int msm_vidc_poll(void *instance, struct file *filp,

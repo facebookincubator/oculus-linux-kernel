@@ -49,8 +49,11 @@ extern bool is_dp_verbose_debug_enabled;
 #ifdef DP_PRINT_NO_CONSOLE
 #define dp_err_log(params...) \
 	__QDF_TRACE_FL(QDF_TRACE_LEVEL_INFO_HIGH, QDF_MODULE_ID_DP, ## params)
+#define dp_info_rl(params...) \
+	__QDF_TRACE_RL(QDF_TRACE_LEVEL_INFO_HIGH, QDF_MODULE_ID_DP, ## params)
 #else
 #define dp_err_log(params...) QDF_TRACE_ERROR(QDF_MODULE_ID_DP, params)
+#define dp_info_rl(params...) QDF_TRACE_INFO_RL(QDF_MODULE_ID_DP, params)
 #endif /* DP_PRINT_NO_CONSOLE */
 
 #ifdef ENABLE_VERBOSE_DEBUG
@@ -81,7 +84,6 @@ enum verbose_debug_module {
 #define dp_alert_rl(params...) QDF_TRACE_FATAL_RL(QDF_MODULE_ID_DP, params)
 #define dp_err_rl(params...) QDF_TRACE_ERROR_RL(QDF_MODULE_ID_DP, params)
 #define dp_warn_rl(params...) QDF_TRACE_WARN_RL(QDF_MODULE_ID_DP, params)
-#define dp_info_rl(params...) QDF_TRACE_INFO_RL(QDF_MODULE_ID_DP, params)
 #define dp_debug_rl(params...) QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_DP, params)
 
 /**
@@ -1669,26 +1671,6 @@ int cdp_txrx_stats_request(ol_txrx_soc_handle soc, struct cdp_vdev *vdev,
 }
 
 /**
- * cdp_set_intr_mode() - set interrupt mode flag in soc.
- * soc: soc handle
- */
-static inline void cdp_set_intr_mode(ol_txrx_soc_handle soc)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-			  "%s: Invalid Instance:", __func__);
-		QDF_BUG(0);
-		return;
-	}
-
-	if (!soc->ops->cmn_drv_ops ||
-	    !soc->ops->cmn_drv_ops->set_intr_mode)
-		return;
-
-	return soc->ops->cmn_drv_ops->set_intr_mode(soc);
-}
-
-/**
  * cdp_txrx_intr_attach(): function to attach and configure interrupt
  * @soc: soc handle
  */
@@ -1774,6 +1756,34 @@ static inline int cdp_set_pn_check(ol_txrx_soc_handle soc,
 
 	soc->ops->cmn_drv_ops->set_pn_check(vdev, peer_handle,
 			sec_type, rx_pn);
+	return 0;
+}
+
+/**
+ * cdp_set_key_sec_type(): function to set pn check
+ * @soc: soc handle
+ * @sec_type: security type
+ * #is_unicast: ucast or mcast
+ */
+static inline int cdp_set_key_sec_type(ol_txrx_soc_handle soc,
+				       struct cdp_vdev *vdev,
+				       struct cdp_peer *peer_handle,
+				       enum cdp_sec_type sec_type,
+				       bool is_unicast)
+{
+	if (!soc || !soc->ops) {
+		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+				"%s: Invalid Instance:", __func__);
+		QDF_BUG(0);
+		return 0;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+	    !soc->ops->cmn_drv_ops->set_key_sec_type)
+		return 0;
+
+	soc->ops->cmn_drv_ops->set_key_sec_type(vdev, peer_handle,
+			sec_type, is_unicast);
 	return 0;
 }
 

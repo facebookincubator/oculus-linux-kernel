@@ -147,25 +147,11 @@ lim_process_deauth_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 	/* Get reasonCode from Deauthentication frame body */
 	reasonCode = sir_read_u16(pBody);
 
-	pe_debug("Received Deauth frame for Addr: " QDF_MAC_ADDR_STR
-			"(mlm state = %s, sme state = %d systemrole = %d "
-			"RSSI = %d) with reason code %d [%s] from "
-			QDF_MAC_ADDR_STR, QDF_MAC_ADDR_ARRAY(pHdr->da),
-			lim_mlm_state_str(pe_session->limMlmState),
-			pe_session->limSmeState,
-			GET_LIM_SYSTEM_ROLE(pe_session), frame_rssi,
-			reasonCode, lim_dot11_reason_str(reasonCode),
-			QDF_MAC_ADDR_ARRAY(pHdr->sa));
-
-	if (mac->mlme_cfg->gen.fatal_event_trigger &&
-	    (reasonCode != eSIR_MAC_UNSPEC_FAILURE_REASON &&
-	    reasonCode != eSIR_MAC_DEAUTH_LEAVING_BSS_REASON &&
-	    reasonCode != eSIR_MAC_DISASSOC_LEAVING_BSS_REASON)) {
-		cds_flush_logs(WLAN_LOG_TYPE_FATAL,
-			       WLAN_LOG_INDICATOR_HOST_DRIVER,
-			       WLAN_LOG_REASON_DISCONNECT,
-			       true, false);
-	}
+	pe_nofl_info("Deauth RX: vdev %d from %pM for %pM RSSI = %d reason %d mlm state = %d, sme state = %d systemrole = %d ",
+		     pe_session->vdev_id, pHdr->sa, pHdr->da, frame_rssi,
+		     reasonCode, pe_session->limMlmState,
+		     pe_session->limSmeState,
+		     GET_LIM_SYSTEM_ROLE(pe_session));
 
 	lim_diag_event_report(mac, WLAN_PE_DIAG_DEAUTH_FRAME_EVENT,
 		pe_session, 0, reasonCode);
@@ -319,6 +305,15 @@ lim_process_deauth_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 	lim_perform_deauth(mac, pe_session, reasonCode, pHdr->sa,
 			   frame_rssi);
 
+	if (mac->mlme_cfg->gen.fatal_event_trigger &&
+	    (reasonCode != eSIR_MAC_UNSPEC_FAILURE_REASON &&
+	    reasonCode != eSIR_MAC_DEAUTH_LEAVING_BSS_REASON &&
+	    reasonCode != eSIR_MAC_DISASSOC_LEAVING_BSS_REASON)) {
+		cds_flush_logs(WLAN_LOG_TYPE_FATAL,
+			       WLAN_LOG_INDICATOR_HOST_DRIVER,
+			       WLAN_LOG_REASON_DISCONNECT,
+			       false, false);
+	}
 
 } /*** end lim_process_deauth_frame() ***/
 

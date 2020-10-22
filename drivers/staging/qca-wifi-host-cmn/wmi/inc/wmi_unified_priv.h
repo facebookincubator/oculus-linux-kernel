@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1875,6 +1875,30 @@ QDF_STATUS
 				     void *evt_buf, uint32_t *vdev_id,
 				     uint32_t *tx_status);
 
+QDF_STATUS
+(*extract_roam_trigger_stats)(wmi_unified_t wmi_handle,
+			      void *evt_buf,
+			      struct wmi_roam_trigger_info *trig,
+			      uint8_t idx);
+
+QDF_STATUS
+(*extract_roam_scan_stats)(wmi_unified_t wmi_handle,
+			   void *evt_buf,
+			   struct wmi_roam_scan_data *dst, uint8_t idx,
+			   uint8_t chan_idx, uint8_t ap_idx);
+
+QDF_STATUS
+(*extract_roam_result_stats)(wmi_unified_t wmi_handle,
+			     void *evt_buf,
+			     struct wmi_roam_result *dst,
+			     uint8_t idx);
+
+QDF_STATUS
+(*extract_roam_11kv_stats)(wmi_unified_t wmi_handle,
+			   void *evt_buf,
+			   struct wmi_neighbor_report_data *dst,
+			   uint8_t idx, uint8_t rpt_idx);
+
 void (*wmi_pdev_id_conversion_enable)(wmi_unified_t wmi_handle);
 void (*send_time_stamp_sync_cmd)(wmi_unified_t wmi_handle);
 void (*wmi_free_allocated_event)(uint32_t cmd_event_id,
@@ -1999,6 +2023,12 @@ QDF_STATUS (*extract_get_elna_bypass_resp)(wmi_unified_t wmi_handle,
 					 void *resp_buf,
 					 struct get_elna_bypass_response *resp);
 #endif /* WLAN_FEATURE_ELNA */
+#ifdef WLAN_SEND_DSCP_UP_MAP_TO_FW
+QDF_STATUS (*send_dscp_tid_map_cmd)(wmi_unified_t wmi_handle,
+				    uint32_t *dscp_to_tid_map);
+#endif
+QDF_STATUS (*send_roam_scan_ch_list_req_cmd)(wmi_unified_t wmi_hdl,
+					     uint32_t vdev_id);
 };
 
 /* Forward declartion for psoc*/

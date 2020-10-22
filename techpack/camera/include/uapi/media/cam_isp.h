@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __UAPI_CAM_ISP_H__
@@ -92,28 +92,30 @@
 #define CAM_ISP_DSP_MODE_ROUND                  2
 
 /* ISP Generic Cmd Buffer Blob types */
-#define CAM_ISP_GENERIC_BLOB_TYPE_HFR_CONFIG          0
-#define CAM_ISP_GENERIC_BLOB_TYPE_CLOCK_CONFIG        1
-#define CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG           2
-#define CAM_ISP_GENERIC_BLOB_TYPE_UBWC_CONFIG         3
-#define CAM_ISP_GENERIC_BLOB_TYPE_CSID_CLOCK_CONFIG   4
-#define CAM_ISP_GENERIC_BLOB_TYPE_FE_CONFIG           5
-#define CAM_ISP_GENERIC_BLOB_TYPE_UBWC_CONFIG_V2      6
-#define CAM_ISP_GENERIC_BLOB_TYPE_IFE_CORE_CONFIG     7
-#define CAM_ISP_GENERIC_BLOB_TYPE_VFE_OUT_CONFIG      8
-#define CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG_V2        9
-#define CAM_ISP_GENERIC_BLOB_TYPE_CSID_QCFA_CONFIG    12
+#define CAM_ISP_GENERIC_BLOB_TYPE_HFR_CONFIG                0
+#define CAM_ISP_GENERIC_BLOB_TYPE_CLOCK_CONFIG              1
+#define CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG                 2
+#define CAM_ISP_GENERIC_BLOB_TYPE_UBWC_CONFIG               3
+#define CAM_ISP_GENERIC_BLOB_TYPE_CSID_CLOCK_CONFIG         4
+#define CAM_ISP_GENERIC_BLOB_TYPE_FE_CONFIG                 5
+#define CAM_ISP_GENERIC_BLOB_TYPE_UBWC_CONFIG_V2            6
+#define CAM_ISP_GENERIC_BLOB_TYPE_IFE_CORE_CONFIG           7
+#define CAM_ISP_GENERIC_BLOB_TYPE_VFE_OUT_CONFIG            8
+#define CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG_V2              9
+#define CAM_ISP_GENERIC_BLOB_TYPE_CSID_CONFIG               10
+#define CAM_ISP_GENERIC_BLOB_TYPE_SENSOR_DIMENSION_CONFIG   11
+#define CAM_ISP_GENERIC_BLOB_TYPE_CSID_QCFA_CONFIG          12
 
 #define CAM_ISP_VC_DT_CFG    4
 
 #define CAM_ISP_IFE0_HW          0x1
 #define CAM_ISP_IFE1_HW          0x2
-#define CAM_ISP_IFE2_HW          0x4
-#define CAM_ISP_IFE0_LITE_HW     0x100
-#define CAM_ISP_IFE1_LITE_HW     0x200
-#define CAM_ISP_IFE2_LITE_HW     0x400
-#define CAM_ISP_IFE3_LITE_HW     0x800
-#define CAM_ISP_IFE4_LITE_HW     0x1000
+#define CAM_ISP_IFE0_LITE_HW     0x4
+#define CAM_ISP_IFE1_LITE_HW     0x8
+#define CAM_ISP_IFE2_LITE_HW     0x10
+#define CAM_ISP_IFE3_LITE_HW     0x20
+#define CAM_ISP_IFE4_LITE_HW     0x40
+#define CAM_ISP_IFE2_HW          0x100
 
 #define CAM_ISP_PXL_PATH          0x1
 #define CAM_ISP_PPP_PATH          0x2
@@ -133,6 +135,8 @@
 #define CAM_ISP_ACQ_CUSTOM_NONE       0
 #define CAM_ISP_ACQ_CUSTOM_PRIMARY    1
 #define CAM_ISP_ACQ_CUSTOM_SECONDARY  2
+
+#define CAM_IFE_CSID_RDI_MAX          4
 
 /* Query devices */
 /**
@@ -596,6 +600,37 @@ struct cam_fe_config {
 	uint32_t    latency_buf_size;
 } __attribute__((packed));
 
+
+/**
+ * struct cam_isp_sensor_path_dimension
+ *
+ * @width             expected width
+ * @height            expected height
+ * @measure_enabled   flag to indicate if pixel measurement is to be enabled
+ */
+struct cam_isp_sensor_dimension {
+	uint32_t width;
+	uint32_t height;
+	uint32_t measure_enabled;
+} __attribute__((packed));
+
+/**
+ * struct cam_isp_sensor_config - Sensor Dimension configuration
+ *
+ * @ppp_path:                   expected ppp path configuration
+ * @ipp_path:                   expected ipp path configuration
+ * @rdi_path:                   expected rdi path configuration
+ * @hbi:                        HBI value
+ * @vbi:                        VBI value
+ */
+struct cam_isp_sensor_config {
+	struct cam_isp_sensor_dimension  ppp_path;
+	struct cam_isp_sensor_dimension  ipp_path;
+	struct cam_isp_sensor_dimension  rdi_path[CAM_IFE_CSID_RDI_MAX];
+	uint32_t                   hbi;
+	uint32_t                   vbi;
+} __attribute__((packed));
+
 /**
  * struct cam_isp_core_config - ISP core registers configuration
  *
@@ -697,6 +732,15 @@ struct cam_isp_vfe_out_config {
 	uint32_t                      num_ports;
 	uint32_t                      reserved;
 	struct cam_isp_vfe_wm_config  wm_config[1];
+};
+
+/**
+ * struct cam_isp_csid_epd_config  -  Support for EPD Packet config
+ *
+ * @is_epd_sensor      : flag to check if epd supported
+ */
+struct cam_isp_csid_epd_config {
+	uint32_t                      is_epd_supported;
 };
 
 #define CAM_ISP_ACQUIRE_COMMON_VER0         0x1000

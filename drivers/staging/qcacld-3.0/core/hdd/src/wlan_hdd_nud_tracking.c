@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -64,8 +64,15 @@ void hdd_nud_flush_work(struct hdd_adapter *adapter)
 
 void hdd_nud_deinit_tracking(struct hdd_adapter *adapter)
 {
-	hdd_debug("DeInitialize the NUD tracking");
-	qdf_destroy_work(NULL, &adapter->nud_tracking.nud_event_work);
+	struct hdd_context *hdd_ctx;
+
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+
+	if (adapter->device_mode == QDF_STA_MODE &&
+	    hdd_ctx->config->enable_nud_tracking) {
+		hdd_debug("DeInitialize the NUD tracking");
+		qdf_destroy_work(NULL, &adapter->nud_tracking.nud_event_work);
+	}
 }
 
 void hdd_nud_ignore_tracking(struct hdd_adapter *adapter, bool ignoring)
@@ -270,7 +277,8 @@ hdd_handle_nud_fail_non_sta(struct hdd_adapter *adapter)
 	hdd_debug("Disconnecting vdev with vdev id: %d",
 		  adapter->vdev_id);
 	/* Issue Disconnect */
-	status = wlan_hdd_disconnect(adapter, eCSR_DISCONNECT_REASON_DEAUTH);
+	status = wlan_hdd_disconnect(adapter, eCSR_DISCONNECT_REASON_DEAUTH,
+				     eSIR_MAC_GATEWAY_REACHABILITY_FAILURE);
 	if (0 != status) {
 		hdd_err("wlan_hdd_disconnect failed, status: %d",
 			status);
@@ -282,7 +290,8 @@ hdd_handle_nud_fail_non_sta(struct hdd_adapter *adapter)
 static bool
 hdd_is_roam_after_nud_enabled(struct hdd_config *config)
 {
-	if (config->enable_nud_tracking == CFG_DP_ROAM_AFTER_NUD_FAIL)
+	if (config->enable_nud_tracking == ROAM_AFTER_NUD_FAIL ||
+	    config->enable_nud_tracking == DISCONNECT_AFTER_ROAM_FAIL)
 		return true;
 
 	return false;

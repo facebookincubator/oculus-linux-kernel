@@ -1430,6 +1430,29 @@ QDF_STATUS wlansap_filter_ch_based_acs(struct sap_context *sap_ctx,
  */
 uint8_t
 wlansap_get_safe_channel_from_pcl_and_acs_range(struct sap_context *sap_ctx);
+
+/**
+ * wlansap_get_chan_band_restrict() -  get new chan for band change
+ * @sap_ctx: sap context pointer
+ *
+ * Sap/p2p go channel switch from 5G to 2G by CSA when 5G band disabled to
+ * avoid conflict with modem N79.
+ * Sap/p2p go channel restore to 5G channel when 5G band enabled.
+ *
+ * Return - restart channel
+ */
+uint8_t wlansap_get_chan_band_restrict(struct sap_context *sap_ctx);
+
+/**
+ * sap_dump_acs_channel() - dump acs channel list
+ * @acs_cfg: acs config
+ *
+ * This function dump acs channel list
+ *
+ * Return: void.
+ */
+void sap_dump_acs_channel(struct sap_acs_cfg *acs_cfg);
+
 #ifdef __cplusplus
 }
 #endif

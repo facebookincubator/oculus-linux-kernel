@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_IFE_HW_MGR_H_
@@ -81,6 +81,7 @@ struct ctx_base_info {
  * @dentry:                    Debugfs entry
  * @csid_debug:                csid debug information
  * @enable_recovery:           enable recovery
+ * @enable_csid_recovery:      enable csid recovery
  * @enable_diag_sensor_status: enable sensor diagnosis status
  * @enable_req_dump:           Enable request dump on HW errors
  * @per_req_reg_dump:          Enable per request reg dump
@@ -90,6 +91,7 @@ struct cam_ife_hw_mgr_debug {
 	struct dentry  *dentry;
 	uint64_t       csid_debug;
 	uint32_t       enable_recovery;
+	uint32_t       enable_csid_recovery;
 	uint32_t       camif_debug;
 	bool           enable_req_dump;
 	bool           per_req_reg_dump;
@@ -137,9 +139,13 @@ struct cam_ife_hw_mgr_debug {
  * @last_dump_flush_req_id  Last req id for which reg dump on flush was called
  * @last_dump_err_req_id    Last req id for which reg dump on error was called
  * @init_done               indicate whether init hw is done
- * @is_fe_enable            indicate whether fetch engine\read path is enabled
+ * @is_fe_enabled           Indicate whether fetch engine\read path is enabled
  * @is_dual                 indicate whether context is in dual VFE mode
+ * @custom_enabled          update the flag if context is connected to custom HW
+ * @use_frame_header_ts     obtain qtimer ts using frame header
  * @ts                      captured timestamp when the ctx is acquired
+ * @is_offline              Indicate whether context is for offline IFE
+ * @dsp_enabled             Indicate whether dsp is enabled in this context
  */
 struct cam_ife_hw_mgr_ctx {
 	struct list_head                list;
@@ -184,9 +190,13 @@ struct cam_ife_hw_mgr_ctx {
 	uint64_t                        last_dump_flush_req_id;
 	uint64_t                        last_dump_err_req_id;
 	bool                            init_done;
-	bool                            is_fe_enable;
+	bool                            is_fe_enabled;
 	bool                            is_dual;
+	bool                            custom_enabled;
+	bool                            use_frame_header_ts;
 	struct timespec64               ts;
+	bool                            is_offline;
+	bool                            dsp_enabled;
 };
 
 /**
@@ -223,6 +233,7 @@ struct cam_ife_hw_mgr {
 	struct cam_vfe_hw_get_hw_cap   ife_dev_caps[CAM_IFE_HW_NUM_MAX];
 	struct cam_req_mgr_core_workq *workq;
 	struct cam_ife_hw_mgr_debug    debug_cfg;
+	spinlock_t                     ctx_lock;
 };
 
 /**

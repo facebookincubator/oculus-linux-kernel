@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 
@@ -21,8 +21,10 @@
 #include "cam_vfe_soc.h"
 #include "cam_debug_util.h"
 #include "cam_cpas_api.h"
+#include "cam_trace.h"
 
 static const char drv_name[] = "vfe_bus";
+static char rup_controller_name[32] = "";
 
 #define CAM_VFE_BUS_VER3_IRQ_REG0                0
 #define CAM_VFE_BUS_VER3_IRQ_REG1                1
@@ -916,6 +918,7 @@ static int cam_vfe_bus_ver3_handle_rup_top_half(uint32_t evt_id,
 	struct cam_isp_resource_node               *vfe_out = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data       *rsrc_data = NULL;
 	struct cam_vfe_bus_irq_evt_payload         *evt_payload;
+	uint32_t irq_status;
 
 	vfe_out = th_payload->handler_priv;
 	if (!vfe_out) {
@@ -944,6 +947,12 @@ static int cam_vfe_bus_ver3_handle_rup_top_half(uint32_t evt_id,
 	evt_payload->evt_id  = evt_id;
 	for (i = 0; i < th_payload->num_registers; i++)
 		evt_payload->irq_reg_val[i] = th_payload->evt_status_arr[i];
+
+	irq_status =
+		th_payload->evt_status_arr[CAM_IFE_IRQ_BUS_VER3_REG_STATUS0];
+
+	trace_cam_log_event("RUP", "RUP_IRQ", irq_status, 0);
+
 	th_payload->evt_payload_priv = evt_payload;
 
 	return rc;
@@ -2237,6 +2246,8 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_top_half(uint32_t evt_id,
 	struct cam_isp_resource_node               *vfe_out = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data       *rsrc_data = NULL;
 	struct cam_vfe_bus_irq_evt_payload         *evt_payload;
+	struct cam_vfe_bus_ver3_comp_grp_data      *resource_data;
+	uint32_t                                    status_0;
 
 	vfe_out = th_payload->handler_priv;
 	if (!vfe_out) {
@@ -2245,6 +2256,7 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_top_half(uint32_t evt_id,
 	}
 
 	rsrc_data = vfe_out->res_priv;
+	resource_data = rsrc_data->comp_grp->res_priv;
 
 	CAM_DBG(CAM_ISP, "VFE:%d Bus IRQ status_0: 0x%X status_1: 0x%X",
 		rsrc_data->common_data->core_index,
@@ -2272,6 +2284,17 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_top_half(uint32_t evt_id,
 		evt_payload->irq_reg_val[i] = th_payload->evt_status_arr[i];
 
 	th_payload->evt_payload_priv = evt_payload;
+
+	status_0 = th_payload->evt_status_arr[CAM_IFE_IRQ_BUS_VER3_REG_STATUS0];
+
+	if (status_0 & BIT(resource_data->comp_grp_type +
+		rsrc_data->common_data->comp_done_shift)) {
+		trace_cam_log_event("bufdone", "bufdone_IRQ",
+			status_0, resource_data->comp_grp_type);
+	}
+
+	if (status_0 & 0x1)
+		trace_cam_log_event("UnexpectedRUP", "RUP_IRQ", status_0, 40);
 
 	CAM_DBG(CAM_ISP, "Exit");
 	return rc;
@@ -3007,6 +3030,7 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 	uint32_t  i, j, k, size = 0;
 	uint32_t  frame_inc = 0, val;
 	uint32_t loop_size = 0;
+	bool frame_header_enable = false;
 
 	bus_priv = (struct cam_vfe_bus_ver3_priv  *) priv;
 	update_buf =  (struct cam_isp_hw_get_cmd_update *) cmd_args;
@@ -3039,6 +3063,27 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 
 		wm_data = vfe_out_data->wm_res[i]->res_priv;
 		ubwc_client = wm_data->hw_regs->ubwc_regs;
+
+		/* Disable frame header in case it was previously enabled */
+		if ((wm_data->en_cfg) & (1 << 2))
+			wm_data->en_cfg &= ~(1 << 2);
+
+		if (update_buf->wm_update->frame_header &&
+			!frame_header_enable) {
+			wm_data->en_cfg |= 1 << 2;
+			frame_header_enable = true;
+			CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
+					wm_data->hw_regs->frame_header_addr,
+					update_buf->wm_update->frame_header);
+			CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
+					wm_data->hw_regs->frame_header_cfg,
+					update_buf->wm_update->local_id);
+			CAM_DBG(CAM_ISP,
+				"WM: %d en_cfg 0x%x frame_header %pK local_id %u",
+				wm_data->index, wm_data->en_cfg,
+				update_buf->wm_update->frame_header,
+				update_buf->wm_update->local_id);
+		}
 
 		CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
 			wm_data->hw_regs->cfg, wm_data->en_cfg);
@@ -3722,7 +3767,6 @@ int cam_vfe_bus_ver3_init(
 	struct cam_vfe_bus              *vfe_bus_local;
 	struct cam_vfe_bus_ver3_hw_info *ver3_hw_info = bus_hw_info;
 	struct cam_vfe_soc_private      *soc_private = NULL;
-	char rup_controller_name[12] = "";
 
 	CAM_DBG(CAM_ISP, "Enter");
 

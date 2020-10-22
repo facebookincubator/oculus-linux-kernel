@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -46,22 +46,6 @@ static void hdd_deinit_pdev_os_priv(struct wlan_objmgr_pdev *pdev)
 {
 	os_if_spectral_netlink_deinit(pdev);
 	wlan_cfg80211_scan_priv_deinit(pdev);
-}
-
-static struct vdev_osif_priv *
-hdd_init_vdev_os_priv(struct hdd_adapter *adapter)
-{
-	struct vdev_osif_priv *os_priv;
-
-	os_priv = qdf_mem_malloc(sizeof(*os_priv));
-	if (!os_priv)
-		return NULL;
-
-	/* Initialize the vdev OS private structure*/
-	os_priv->wdev = adapter->dev->ieee80211_ptr;
-	os_priv->legacy_osif_priv = adapter;
-
-	return os_priv;
 }
 
 static void hdd_init_psoc_qdf_ctx(struct wlan_objmgr_psoc *psoc)
@@ -241,25 +225,24 @@ int hdd_objmgr_create_and_store_vdev(struct wlan_objmgr_pdev *pdev,
 		return -EINVAL;
 	}
 
-	osif_priv = hdd_init_vdev_os_priv(adapter);
-	if (!osif_priv) {
-		hdd_err("Failed to allocate osif_priv; out of memory");
-		return -ENOMEM;
-	}
-
 	vdev_params.opmode = adapter->device_mode;
-	vdev_params.osifp = osif_priv;
 	qdf_mem_copy(vdev_params.macaddr,
 		     adapter->mac_addr.bytes,
 		     QDF_NET_MAC_ADDR_MAX_LEN);
+
+	vdev_params.size_vdev_priv = sizeof(*osif_priv);
 
 	vdev = wlan_objmgr_vdev_obj_create(pdev, &vdev_params);
 	if (!vdev) {
 		hdd_err("Failed to create vdev object");
 		errno = -ENOMEM;
-		qdf_mem_free(osif_priv);
 		return errno;
 	}
+
+	/* Initialize the vdev OS private structure*/
+	osif_priv = wlan_vdev_get_ospriv(vdev);
+	osif_priv->wdev = adapter->dev->ieee80211_ptr;
+	osif_priv->legacy_osif_priv = adapter;
 
 	/*
 	 * To enable legacy use cases, we need to delay physical vdev destroy
@@ -327,7 +310,7 @@ struct wlan_objmgr_vdev *__hdd_objmgr_get_vdev(struct hdd_adapter *adapter,
 	qdf_spin_unlock_bh(&adapter->vdev_lock);
 
 	if (!vdev)
-		hdd_err("VDEV is NULL (via %s)", func);
+		hdd_debug("VDEV is NULL (via %s)", func);
 
 	return vdev;
 }

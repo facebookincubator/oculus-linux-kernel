@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2002,6 +2002,8 @@
 #define LOG_1X_LAST_C                                   ((0x8E0) + LOG_1X_BASE_C)
 
 #define LOG_WLAN_COLD_BOOT_CAL_DATA_C                  ((0xA18) + LOG_1X_BASE_C)
+
+#define LOG_WLAN_DP_PROTO_PKT_INFO_C                   ((0xA1E) + LOG_1X_BASE_C)
 
 /* This is only here for old (pre equipment ID update) logging code */
 #define LOG_LAST_C                                      (LOG_1X_LAST_C & 0xFFF)

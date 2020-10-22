@@ -34,6 +34,7 @@
 #include "csr_neighbor_roam.h"
 #include "mac_trace.h"
 #include "wlan_policy_mgr_api.h"
+#include "wlan_mlme_api.h"
 
 static const char *lfr_get_config_item_string(uint8_t reason)
 {
@@ -58,8 +59,7 @@ void csr_neighbor_roam_state_transition(struct mac_context *mac_ctx,
 	mac_ctx->roam.neighborRoamInfo[session].prevNeighborRoamState =
 		mac_ctx->roam.neighborRoamInfo[session].neighborRoamState;
 	mac_ctx->roam.neighborRoamInfo[session].neighborRoamState = newstate;
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-		FL("Sessionid (%d) NeighborRoam transition from %s to %s"),
+	sme_nofl_debug("NeighborRoam transition: vdev %d %s --> %s",
 		session, csr_neighbor_roam_state_to_string(
 		mac_ctx->roam.neighborRoamInfo[session].prevNeighborRoamState),
 		csr_neighbor_roam_state_to_string(newstate));
@@ -763,13 +763,33 @@ void csr_roam_reset_roam_params(struct mac_context *mac_ctx)
 	 * clear all the whitelist parameters and remaining
 	 * needs to be retained across connections.
 	 */
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-		FL("Roaming parameters are reset"));
 	roam_params = &mac_ctx->roam.configParam.roam_params;
 	roam_params->num_ssid_allowed_list = 0;
 	qdf_mem_zero(&roam_params->ssid_allowed_list,
 			sizeof(tSirMacSSid) * MAX_SSID_ALLOWED_LIST);
 }
+
+#if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
+static void csr_roam_restore_default_config(struct mac_context *mac_ctx,
+					    uint8_t vdev_id)
+{
+	struct roam_triggers triggers;
+
+	sme_set_roam_config_enable(MAC_HANDLE(mac_ctx), vdev_id, 0);
+
+	triggers.vdev_id = vdev_id;
+	triggers.trigger_bitmap = wlan_mlme_get_roaming_triggers(mac_ctx->psoc);
+	sme_debug("Reset roam trigger bitmap to 0x%x", triggers.trigger_bitmap);
+	sme_set_roam_triggers(MAC_HANDLE(mac_ctx), &triggers);
+	sme_roam_control_restore_default_config(MAC_HANDLE(mac_ctx),
+						vdev_id);
+}
+#else
+static void csr_roam_restore_default_config(struct mac_context *mac_ctx,
+					    uint8_t vdev_id)
+{
+}
+#endif
 
 /**
  * csr_neighbor_roam_indicate_disconnect() - To indicate disconnect
@@ -808,12 +828,7 @@ QDF_STATUS csr_neighbor_roam_indicate_disconnect(struct mac_context *mac,
 	 */
 	csr_roam_free_connect_profile(pPrevProfile);
 	csr_roam_copy_connect_profile(mac, sessionId, pPrevProfile);
-	/*
-	 * clear the roaming parameters that are per connection.
-	 * For a new connection, they have to be programmed again.
-	 */
-	if (!csr_neighbor_middle_of_roaming(mac, sessionId))
-		csr_roam_reset_roam_params(mac);
+
 	if (pSession) {
 		roam_session = &mac->roam.roamSession[sessionId];
 		if (pSession->pCurRoamProfile && (QDF_STA_MODE !=
@@ -902,6 +917,16 @@ QDF_STATUS csr_neighbor_roam_indicate_disconnect(struct mac_context *mac,
 			pNeighborRoamInfo->uOsRequestedHandoff = 0;
 		break;
 	}
+
+	/*
+	 * clear the roaming parameters that are per connection.
+	 * For a new connection, they have to be programmed again.
+	 */
+	if (!csr_neighbor_middle_of_roaming(mac, sessionId)) {
+		csr_roam_reset_roam_params(mac);
+		csr_roam_restore_default_config(mac, sessionId);
+	}
+
 	/*Inform the Firmware to STOP Scanning as the host has a disconnect. */
 	if (csr_roam_is_sta_mode(mac, sessionId))
 		csr_post_roam_state_change(mac, sessionId, ROAM_DEINIT,
@@ -965,8 +990,6 @@ static void csr_neighbor_roam_info_ctx_init(struct mac_context *mac,
 		ngbr_roam_info->is11rAssoc = true;
 	} else
 		ngbr_roam_info->is11rAssoc = false;
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-			FL("11rAssoc is = %d"), ngbr_roam_info->is11rAssoc);
 
 #ifdef FEATURE_WLAN_ESE
 	/* Based on the auth scheme tell if we are 11r */
@@ -976,9 +999,6 @@ static void csr_neighbor_roam_info_ctx_init(struct mac_context *mac,
 		ngbr_roam_info->isESEAssoc = true;
 	} else
 		ngbr_roam_info->isESEAssoc = false;
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-			FL("isESEAssoc is = %d ft = %d"),
-			ngbr_roam_info->isESEAssoc, init_ft_flag);
 #endif
 	/* If "FastRoamEnabled" ini is enabled */
 	if (csr_roam_is_fast_roam_enabled(mac, session_id))
@@ -1006,9 +1026,6 @@ static void csr_neighbor_roam_info_ctx_init(struct mac_context *mac,
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 		if (session->roam_synch_in_progress) {
 			if (mac->roam.pReassocResp) {
-				QDF_TRACE(QDF_MODULE_ID_SME,
-					QDF_TRACE_LEVEL_DEBUG,
-					"Free Reassoc Rsp");
 				qdf_mem_free(mac->roam.pReassocResp);
 				mac->roam.pReassocResp = NULL;
 			}
@@ -1053,16 +1070,16 @@ QDF_STATUS csr_neighbor_roam_indicate_connect(
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	sme_debug("Connect ind. received with session id %d in state %s",
+	sme_debug("Connect ind, vdev id %d in state %s",
 		session_id, mac_trace_get_neighbour_roam_state(
 			ngbr_roam_info->neighborRoamState));
 
 	/* Bail out if this is NOT a STA persona */
 	if (mac->roam.roamSession[session_id].pCurRoamProfile->csrPersona !=
 	QDF_STA_MODE) {
-		sme_err("Ignoring Connect ind received from a non STA. session_id: %d, csrPersonna %d",
-			session_id,
-			(int)session->pCurRoamProfile->csrPersona);
+		sme_debug("Ignoring Connect ind received from a non STA. session_id: %d, csrPersonna %d",
+			  session_id,
+			  (int)session->pCurRoamProfile->csrPersona);
 		return QDF_STATUS_SUCCESS;
 	}
 	/* if a concurrent session is running */

@@ -113,6 +113,7 @@ struct hal_hw_txrx_ops qca8074v2_hal_hw_txrx_ops = {
 	hal_get_hw_hptp_generic,
 	hal_reo_setup_generic,
 	hal_setup_link_idle_list_generic,
+	NULL,
 
 	/* tx */
 	hal_tx_desc_set_dscp_tid_table_id_8074v2,

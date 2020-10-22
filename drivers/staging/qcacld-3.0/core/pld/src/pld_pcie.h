@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,6 +22,7 @@
 #ifdef CONFIG_PLD_PCIE_CNSS
 #include <net/cnss2.h>
 #endif
+#include <linux/pci.h>
 #include "pld_internal.h"
 
 #ifdef DYNAMIC_SINGLE_CHIP
@@ -36,7 +37,7 @@
 
 #endif
 
-#ifndef HIF_PCI
+#ifndef CONFIG_PLD_PCIE_CNSS
 static inline int pld_pcie_register_driver(void)
 {
 	return 0;
@@ -159,6 +160,15 @@ pld_pcie_get_fw_files_for_target(struct device *dev,
 {
 	pld_get_default_fw_files(pfw_files);
 	return 0;
+}
+
+static inline int pld_pcie_prevent_l1(struct device *dev)
+{
+	return 0;
+}
+
+static inline void pld_pcie_allow_l1(struct device *dev)
+{
 }
 
 static inline void pld_pcie_link_down(struct device *dev)
@@ -420,6 +430,16 @@ pld_pcie_smmu_map(struct device *dev,
 		  phys_addr_t paddr, uint32_t *iova_addr, size_t size)
 {
 	return cnss_smmu_map(dev, paddr, iova_addr, size);
+}
+
+static inline int pld_pcie_prevent_l1(struct device *dev)
+{
+	return cnss_pci_prevent_l1(dev);
+}
+
+static inline void pld_pcie_allow_l1(struct device *dev)
+{
+	cnss_pci_allow_l1(dev);
 }
 
 static inline void pld_pcie_link_down(struct device *dev)

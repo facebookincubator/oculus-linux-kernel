@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -593,6 +593,9 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 
 		if (cmds->last_command)
 			cmds->msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
+
+		if (type == DSI_CMD_SET_VID_TO_CMD_SWITCH)
+			cmds->msg.flags |= MIPI_DSI_MSG_ASYNC_OVERRIDE;
 
 		len = ops->transfer(panel->host, &cmds->msg);
 		if (len < 0) {
@@ -3948,9 +3951,11 @@ int dsi_panel_get_mode(struct dsi_panel *panel,
 		if (panel->panel_mode_switch_enabled) {
 			rc = dsi_panel_parse_panel_mode_caps(mode, utils);
 			if (rc) {
-				DSI_ERR("PMS: failed to parse panel mode\n");
 				rc = 0;
 				mode->panel_mode = panel->panel_mode;
+				DSI_INFO(
+				"POMS: panel mode isn't specified in timing[%d]\n",
+				child_idx);
 			}
 		} else {
 			mode->panel_mode = panel->panel_mode;

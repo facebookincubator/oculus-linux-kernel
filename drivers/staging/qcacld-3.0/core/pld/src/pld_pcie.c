@@ -28,6 +28,7 @@
 
 #include "pld_internal.h"
 #include "pld_pcie.h"
+#include "osif_psoc_sync.h"
 
 #ifdef CONFIG_PCI
 
@@ -82,15 +83,28 @@ out:
 static void pld_pcie_remove(struct pci_dev *pdev)
 {
 	struct pld_context *pld_context;
+	int errno;
+	struct osif_psoc_sync *psoc_sync;
+
+	errno = osif_psoc_sync_trans_start_wait(&pdev->dev, &psoc_sync);
+	if (errno)
+		return;
+
+	osif_psoc_sync_unregister(&pdev->dev);
+	osif_psoc_sync_wait_for_ops(psoc_sync);
 
 	pld_context = pld_get_global_context();
 
 	if (!pld_context)
-		return;
+		goto out;
 
 	pld_context->ops->remove(&pdev->dev, PLD_BUS_TYPE_PCIE);
 
 	pld_del_dev(pld_context, &pdev->dev);
+
+out:
+	osif_psoc_sync_trans_stop(psoc_sync);
+	osif_psoc_sync_destroy(psoc_sync);
 }
 
 #ifdef CONFIG_PLD_PCIE_CNSS
@@ -476,11 +490,22 @@ static int pld_pcie_pm_resume_noirq(struct device *dev)
 #endif
 
 static struct pci_device_id pld_pcie_id_table[] = {
-	{ 0x168c, 0x003c, PCI_ANY_ID, PCI_ANY_ID },
+#ifdef CONFIG_AR6320_SUPPORT
 	{ 0x168c, 0x003e, PCI_ANY_ID, PCI_ANY_ID },
+#elif defined(QCA_WIFI_QCA6290)
+	{ 0x17cb, 0x1100, PCI_ANY_ID, PCI_ANY_ID },
+#elif defined(QCA_WIFI_QCA6390)
+	{ 0x17cb, 0x1101, PCI_ANY_ID, PCI_ANY_ID },
+#elif defined(QCA_WIFI_QCA6490)
+	{ 0x17cb, 0x1103, PCI_ANY_ID, PCI_ANY_ID },
+#elif defined(QCN7605_SUPPORT)
+	{ 0x17cb, 0x1102, PCI_ANY_ID, PCI_ANY_ID },
+#else
+	{ 0x168c, 0x003c, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0x168c, 0x0041, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0x168c, 0xabcd, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0x168c, 0x7021, PCI_ANY_ID, PCI_ANY_ID },
+#endif
 	{ 0 }
 };
 

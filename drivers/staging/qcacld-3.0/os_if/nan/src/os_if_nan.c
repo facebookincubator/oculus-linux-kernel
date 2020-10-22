@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -439,7 +439,7 @@ static int __os_if_nan_process_ndi_delete(struct wlan_objmgr_psoc *psoc,
 
 	nan_vdev = os_if_get_ndi_vdev_by_ifname(psoc, iface_name);
 	if (!nan_vdev) {
-		cfg80211_err("Nan datapath interface is not present");
+		cfg80211_debug("Nan datapath interface is not present");
 		return -EINVAL;
 	}
 
@@ -624,6 +624,12 @@ static int __os_if_nan_process_ndp_initiator_req(struct wlan_objmgr_psoc *psoc,
 		goto initiator_req_failed;
 	}
 
+	if (!ucfg_nan_is_sta_ndp_concurrency_allowed(psoc, nan_vdev)) {
+		cfg80211_err("NDP creation not allowed");
+		ret = -EOPNOTSUPP;
+		goto initiator_req_failed;
+	}
+
 	if (!tb[QCA_WLAN_VENDOR_ATTR_NDP_TRANSACTION_ID]) {
 		cfg80211_err("Transaction ID is unavailable");
 		ret = -EINVAL;
@@ -687,8 +693,6 @@ static int __os_if_nan_process_ndp_initiator_req(struct wlan_objmgr_psoc *psoc,
 			     nla_data(tb[QCA_WLAN_VENDOR_ATTR_NDP_IPV6_ADDR]),
 			     QDF_IPV6_ADDR_SIZE);
 	}
-	cfg80211_debug("ipv6 addr present: %d, addr: %pI6",
-		       req.is_ipv6_addr_present, req.ipv6_addr);
 
 	if (os_if_nan_parse_security_params(tb, &req.ncs_sk_type, &req.pmk,
 					    &req.passphrase,
@@ -697,12 +701,6 @@ static int __os_if_nan_process_ndp_initiator_req(struct wlan_objmgr_psoc *psoc,
 		ret = -EINVAL;
 		goto initiator_req_failed;
 	}
-
-	cfg80211_debug("vdev_id: %d, transaction_id: %d, channel: %d, service_instance_id: %d, ndp_app_info_len: %d, csid: %d, peer_discovery_mac_addr: %pM",
-		       wlan_vdev_get_id(nan_vdev), req.transaction_id,
-		       req.channel, req.service_instance_id,
-		       req.ndp_info.ndp_app_info_len, req.ncs_sk_type,
-		       req.peer_discovery_mac_addr.bytes);
 
 	req.vdev = nan_vdev;
 	status = ucfg_nan_req_processor(nan_vdev, &req, NDP_INITIATOR_REQ);
@@ -790,6 +788,12 @@ static int __os_if_nan_process_ndp_responder_req(struct wlan_objmgr_psoc *psoc,
 			ret = -ENODEV;
 			goto responder_req_failed;
 		}
+
+		if (!ucfg_nan_is_sta_ndp_concurrency_allowed(psoc, nan_vdev)) {
+			cfg80211_err("NDP creation not allowed");
+			ret = -EOPNOTSUPP;
+			goto responder_req_failed;
+		}
 	} else {
 		/*
 		 * If the data indication is rejected, the userspace
@@ -869,9 +873,9 @@ static int __os_if_nan_process_ndp_responder_req(struct wlan_objmgr_psoc *psoc,
 	}
 	cfg80211_debug("ipv6 addr present: %d, addr: %pI6",
 		       req.is_ipv6_addr_present, req.ipv6_addr);
-	cfg80211_debug("port %d,  present: %d", req.port, req.is_port_present);
-	cfg80211_debug("protocol %d,  present: %d",
-		       req.protocol, req.is_protocol_present);
+	cfg80211_debug("port %d,  present: %d protocol %d,  present: %d",
+		       req.port, req.is_port_present, req.protocol,
+		       req.is_protocol_present);
 
 	if (os_if_nan_parse_security_params(tb, &req.ncs_sk_type, &req.pmk,
 			&req.passphrase, &req.service_name)) {
@@ -1046,14 +1050,13 @@ int os_if_nan_process_ndp_cmd(struct wlan_objmgr_psoc *psoc,
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_NDP_IFACE_STR]) {
 		iface_name = nla_data(tb[QCA_WLAN_VENDOR_ATTR_NDP_IFACE_STR]);
-		cfg80211_err("Transaction Id: %d NDPCmd: %d iface_name: %s",
-			transaction_id, ndp_cmd_type, iface_name);
+		cfg80211_debug("Transaction Id: %d NDPCmd: %d iface_name: %s",
+			       transaction_id, ndp_cmd_type, iface_name);
 	} else {
-		cfg80211_err("Transaction Id: %d NDPCmd: %d iface_name: unspecified",
-			transaction_id, ndp_cmd_type);
+		cfg80211_debug("Transaction Id: %d NDPCmd: %d iface_name: unspecified",
+			       transaction_id, ndp_cmd_type);
 	}
 
-	cfg80211_debug("Received NDP cmd: %d", ndp_cmd_type);
 	switch (ndp_cmd_type) {
 	case QCA_WLAN_VENDOR_ATTR_NDP_INTERFACE_CREATE:
 		return os_if_nan_process_ndi_create(psoc, tb);
@@ -1215,9 +1218,6 @@ static void os_if_ndp_responder_rsp_handler(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
-	cfg80211_debug("NDP Responder,vdev id %d transaction_id %d status code: %d reason %d",
-		wlan_vdev_get_id(rsp->vdev), rsp->transaction_id,
-		rsp->status, rsp->reason);
 	data_len = osif_ndp_get_ndp_responder_rsp_len();
 	vendor_event = cfg80211_vendor_event_alloc(os_priv->wiphy, NULL,
 				data_len, QCA_NL80211_VENDOR_SUBCMD_NDP_INDEX,
@@ -1422,8 +1422,6 @@ static void os_if_ndp_indication_handler(struct wlan_objmgr_vdev *vdev,
 			    QDF_IPV6_ADDR_SIZE, event->ipv6_addr))
 			goto ndp_indication_nla_failed;
 	}
-	cfg80211_debug("ipv6 addr present: %d, addr: %pI6",
-		       event->is_ipv6_addr_present, event->ipv6_addr);
 
 	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
 	return;
@@ -1486,7 +1484,6 @@ static QDF_STATUS os_if_ndp_confirm_pack_ch_info(struct sk_buff *event,
 	int idx = 0;
 	struct nlattr *ch_array, *ch_element;
 
-	cfg80211_debug("num_ch: %d", ndp_confirm->num_channels);
 	if (!ndp_confirm->num_channels)
 		return QDF_STATUS_SUCCESS;
 
@@ -1495,10 +1492,6 @@ static QDF_STATUS os_if_ndp_confirm_pack_ch_info(struct sk_buff *event,
 		return QDF_STATUS_E_FAULT;
 
 	for (idx = 0; idx < ndp_confirm->num_channels; idx++) {
-		cfg80211_debug("Freq[%d]: freq: %d, width: %d, nss: %d",
-			       idx, ndp_confirm->ch[idx].freq,
-			       ndp_confirm->ch[idx].ch_width,
-			       ndp_confirm->ch[idx].nss);
 		ch_element = nla_nest_start(event, idx);
 		if (!ch_element)
 			return QDF_STATUS_E_FAULT;
@@ -1634,13 +1627,6 @@ os_if_ndp_confirm_ind_handler(struct wlan_objmgr_vdev *vdev,
 			       QCA_WLAN_VENDOR_ATTR_NDP_TRANSPORT_PROTOCOL,
 			       ndp_confirm->protocol))
 			goto ndp_confirm_nla_failed;
-	cfg80211_debug("ipv6 addr present: %d, addr: %pI6",
-		       ndp_confirm->is_ipv6_addr_present,
-		       ndp_confirm->ipv6_addr);
-	cfg80211_debug("port %d,  present: %d",
-		       ndp_confirm->port, ndp_confirm->is_port_present);
-	cfg80211_debug("protocol %d,  present: %d",
-		       ndp_confirm->protocol, ndp_confirm->is_protocol_present);
 
 	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
 	cfg80211_debug("NDP confim sent, ndp instance id: %d, peer addr: %pM rsp_code: %d, reason_code: %d",
@@ -1648,10 +1634,6 @@ os_if_ndp_confirm_ind_handler(struct wlan_objmgr_vdev *vdev,
 		       ndp_confirm->peer_ndi_mac_addr.bytes,
 		       ndp_confirm->rsp_code, ndp_confirm->reason_code);
 
-	cfg80211_debug("NDP confim, ndp app info dump");
-	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG,
-			   ndp_confirm->ndp_info.ndp_app_info,
-			   ndp_confirm->ndp_info.ndp_app_info_len);
 	return;
 ndp_confirm_nla_failed:
 	cfg80211_err("nla_put api failed");
@@ -1727,8 +1709,6 @@ static void os_if_ndp_end_rsp_handler(struct wlan_objmgr_vdev *vdev,
 			rsp->transaction_id))
 		goto ndp_end_rsp_nla_failed;
 
-	cfg80211_debug("NDP End rsp sent, transaction id: %d, status: %d, reason: %d",
-	       rsp->transaction_id, rsp->status, rsp->reason);
 	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
 	return;
 
@@ -1842,9 +1822,8 @@ static void os_if_new_peer_ind_handler(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
-	cfg80211_debug("vdev_id: %d, peer_mac: %pM, sta_id: %d",
-		       vdev_id, peer_ind->peer_mac_addr.bytes,
-		       peer_ind->sta_id);
+	cfg80211_debug("vdev_id: %d, peer_mac: %pM",
+			vdev_id, peer_ind->peer_mac_addr.bytes);
 	ret = cb_obj.new_peer_ind(vdev_id, peer_ind->sta_id,
 				&peer_ind->peer_mac_addr,
 				(active_peers == 0 ? true : false));
@@ -1855,7 +1834,7 @@ static void os_if_new_peer_ind_handler(struct wlan_objmgr_vdev *vdev,
 
 	active_peers++;
 	ucfg_nan_set_active_peers(vdev, active_peers);
-	cfg80211_debug("vdev_id: %d, num_peers: %d", vdev_id, active_peers);
+	cfg80211_debug("num_peers: %d", active_peers);
 }
 
 /**
@@ -1884,9 +1863,8 @@ static void os_if_peer_departed_ind_handler(struct wlan_objmgr_vdev *vdev,
 		cfg80211_err("Invalid new NDP peer params");
 		return;
 	}
-	cfg80211_debug("vdev_id: %d, peer_mac: %pM, sta_id: %d",
-		       vdev_id, peer_ind->peer_mac_addr.bytes,
-		       peer_ind->sta_id);
+	cfg80211_debug("vdev_id: %d, peer_mac: %pM",
+		   vdev_id, peer_ind->peer_mac_addr.bytes);
 	active_peers--;
 	ucfg_nan_set_active_peers(vdev, active_peers);
 	cb_obj.peer_departed_ind(vdev_id, peer_ind->sta_id,
@@ -1954,7 +1932,7 @@ static void os_if_ndp_iface_create_rsp_handler(struct wlan_objmgr_psoc *psoc,
 		create_status = ndi_rsp->status;
 		create_reason = ndi_rsp->reason;
 	} else {
-		cfg80211_err("Invalid ndi create response");
+		cfg80211_debug("Invalid ndi create response");
 		create_fail = true;
 	}
 
@@ -2002,18 +1980,8 @@ static void os_if_ndp_iface_create_rsp_handler(struct wlan_objmgr_psoc *psoc,
 		goto nla_put_failure;
 	}
 
-	cfg80211_debug("sub command: %d, value: %d",
-		       QCA_NL80211_VENDOR_SUBCMD_NDP,
-		       QCA_WLAN_VENDOR_ATTR_NDP_INTERFACE_CREATE);
-	cfg80211_debug("create transaction id: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_TRANSACTION_ID,
-		       create_transaction_id);
-	cfg80211_debug("status code: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_DRV_RESPONSE_STATUS_TYPE,
-		       create_status);
-	cfg80211_debug("Return value: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_DRV_RETURN_VALUE,
-		       create_reason);
+	cfg80211_debug("transaction id: %u status code: %u Reason: %u",
+		       create_transaction_id, create_status, create_reason);
 
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 
@@ -2322,7 +2290,8 @@ int os_if_nan_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
 }
 
 void os_if_nan_post_ndi_create_rsp(struct wlan_objmgr_psoc *psoc,
-				   uint8_t vdev_id, bool success)
+				   uint8_t vdev_id, bool success,
+				   uint8_t sta_id)
 {
 	struct nan_datapath_inf_create_rsp rsp = {0};
 	struct wlan_objmgr_vdev *vdev = wlan_objmgr_get_vdev_by_id_from_psoc(
@@ -2336,6 +2305,7 @@ void os_if_nan_post_ndi_create_rsp(struct wlan_objmgr_psoc *psoc,
 	if (success) {
 		rsp.status = NAN_DATAPATH_RSP_STATUS_SUCCESS;
 		rsp.reason = 0;
+		rsp.sta_id = sta_id;
 		os_if_nan_datapath_event_handler(psoc, vdev,
 						 NAN_DATAPATH_INF_CREATE_RSP,
 						 &rsp);
@@ -2398,14 +2368,17 @@ void os_if_nan_ndi_session_end(struct wlan_objmgr_vdev *vdev)
 	struct sk_buff *vendor_event;
 	struct wlan_objmgr_pdev *pdev = wlan_vdev_get_pdev(vdev);
 	struct pdev_osif_priv *os_priv = wlan_pdev_get_ospriv(pdev);
+	enum nan_datapath_state state;
 
 	/*
 	 * The virtual adapters are stopped and closed even during
 	 * driver unload or stop, the service layer is not required
 	 * to be informed in that case (response is not expected)
 	 */
-	if (NAN_DATA_NDI_DELETING_STATE != ucfg_nan_get_ndi_state(vdev)) {
-		cfg80211_err("NDI interface deleted");
+	state = ucfg_nan_get_ndi_state(vdev);
+	if (state != NAN_DATA_NDI_DELETING_STATE &&
+	    state != NAN_DATA_DISCONNECTED_STATE) {
+		cfg80211_err("NDI interface deleted: state: %u", state);
 		return;
 	}
 
@@ -2450,17 +2423,9 @@ void os_if_nan_ndi_session_end(struct wlan_objmgr_vdev *vdev)
 		goto failure;
 	}
 
-	cfg80211_debug("sub command: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_SUBCMD,
-		       QCA_WLAN_VENDOR_ATTR_NDP_INTERFACE_DELETE);
-	cfg80211_debug("delete transaction id: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_TRANSACTION_ID,
-		       ucfg_nan_get_ndp_delete_transaction_id(vdev));
-	cfg80211_debug("status code: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_DRV_RESPONSE_STATUS_TYPE,
-		       ucfg_nan_get_ndi_delete_rsp_status(vdev));
-	cfg80211_debug("Return value: %d, value: %d",
-		       QCA_WLAN_VENDOR_ATTR_NDP_DRV_RETURN_VALUE,
+	cfg80211_debug("delete transaction id: %u, status code: %u reason: %u",
+		       ucfg_nan_get_ndp_delete_transaction_id(vdev),
+		       ucfg_nan_get_ndi_delete_rsp_status(vdev),
 		       ucfg_nan_get_ndi_delete_rsp_reason(vdev));
 
 	ucfg_nan_set_ndp_delete_transaction_id(vdev, 0);
@@ -2548,7 +2513,6 @@ static int os_if_nan_generic_req(struct wlan_objmgr_psoc *psoc,
 	nla_memcpy(nan_req->params.request_data,
 		   tb[QCA_WLAN_VENDOR_ATTR_NAN_CMD_DATA], buf_len);
 
-	cfg80211_debug("sending NAN Req");
 	status = ucfg_nan_discovery_req(nan_req, NAN_GENERIC_REQ);
 
 	if (QDF_IS_STATUS_SUCCESS(status))
@@ -2597,34 +2561,15 @@ int os_if_nan_legacy_req(struct wlan_objmgr_psoc *psoc, const void *data,
 static int os_if_process_nan_disable_req(struct wlan_objmgr_psoc *psoc,
 					 struct nlattr **tb)
 {
-	struct nan_disable_req *nan_req;
-	uint32_t buf_len;
+	uint8_t *data;
+	uint32_t data_len;
 	QDF_STATUS status;
 
-	buf_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_NAN_CMD_DATA]);
+	data = nla_data(tb[QCA_WLAN_VENDOR_ATTR_NAN_CMD_DATA]);
+	data_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_NAN_CMD_DATA]);
 
-	nan_req = qdf_mem_malloc(sizeof(*nan_req) +  buf_len);
-	if (!nan_req) {
-		cfg80211_err("Request allocation failure");
-		return -ENOMEM;
-	}
+	status = ucfg_disable_nan_discovery(psoc, data, data_len);
 
-	nan_req->psoc = psoc;
-	nan_req->disable_2g_discovery = true;
-	nan_req->disable_5g_discovery = true;
-	nan_req->params.request_data_len = buf_len;
-	nla_memcpy(nan_req->params.request_data,
-		   tb[QCA_WLAN_VENDOR_ATTR_NAN_CMD_DATA], buf_len);
-
-	cfg80211_debug("sending NAN Disable Req");
-	status = ucfg_nan_discovery_req(nan_req, NAN_DISABLE_REQ);
-
-	if (QDF_IS_STATUS_SUCCESS(status))
-		cfg80211_debug("Successfully sent NAN Disable request");
-	else
-		cfg80211_err("Unable to send NAN Disable request");
-
-	qdf_mem_free(nan_req);
 	return qdf_status_to_os_return(status);
 }
 

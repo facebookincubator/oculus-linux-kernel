@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s] " fmt, __func__
@@ -1878,12 +1878,15 @@ static struct drm_connector *_sde_rm_get_connector(
 		struct drm_encoder *enc)
 {
 	struct drm_connector *conn = NULL;
+	struct sde_connector *c_conn = NULL;
 	struct list_head *connector_list =
 			&enc->dev->mode_config.connector_list;
 
-	list_for_each_entry(conn, connector_list, head)
-		if (conn->encoder == enc)
+	list_for_each_entry(conn, connector_list, head) {
+		c_conn = to_sde_connector(conn);
+		if (c_conn->encoder == enc)
 			return conn;
+	}
 
 	return NULL;
 }
@@ -2003,14 +2006,15 @@ void sde_rm_release(struct sde_rm *rm, struct drm_encoder *enc, bool nxt)
 
 	conn = _sde_rm_get_connector(enc);
 	if (!conn) {
-		SDE_ERROR("failed to get connector for enc %d, nxt %d",
-				enc->base.id, nxt);
+		SDE_ERROR("failed to get conn for enc %d nxt %d rsvp[s%de%d]\n",
+				enc->base.id, nxt, rsvp->seq, rsvp->enc_id);
 		goto end;
 	}
 
 	top_ctrl = sde_connector_get_property(conn->state,
 			CONNECTOR_PROP_TOPOLOGY_CONTROL);
 
+	SDE_EVT32(enc->base.id, conn->base.id, rsvp->seq, top_ctrl, nxt);
 	if (top_ctrl & BIT(SDE_RM_TOPCTL_RESERVE_LOCK)) {
 		SDE_DEBUG("rsvp[s%de%d] not releasing locked resources\n",
 				rsvp->seq, rsvp->enc_id);
@@ -2036,7 +2040,8 @@ static int _sde_rm_commit_rsvp(
 	/* Swap next rsvp to be the active */
 	for (type = 0; type < SDE_HW_BLK_MAX; type++) {
 		list_for_each_entry(blk, &rm->hw_blks[type], list) {
-			if (blk->rsvp_nxt) {
+			if (blk->rsvp_nxt && conn_state->best_encoder->base.id
+					 == blk->rsvp_nxt->enc_id) {
 				blk->rsvp = blk->rsvp_nxt;
 				blk->rsvp_nxt = NULL;
 				_sde_rm_dec_resource_info(rm,
@@ -2099,6 +2104,23 @@ int sde_rm_reserve(
 
 	rsvp_cur = _sde_rm_get_rsvp(rm, enc);
 	rsvp_nxt = _sde_rm_get_rsvp_nxt(rm, enc);
+
+	/*
+	 * RM currently relies on rsvp_nxt assigned to the hw blocks to
+	 * commit rsvps. This rsvp_nxt can be cleared by a back to back
+	 * check_only commit with modeset when its predecessor atomic
+	 * commit is delayed / not committed the reservation yet.
+	 * Bail out in such cases so that check only commit
+	 * comes again after earlier commit gets processed.
+	 */
+
+	if (test_only && rsvp_nxt) {
+		SDE_ERROR("cur %d nxt %d enc %d conn %d\n", rsvp_cur->seq,
+			 rsvp_nxt->seq, enc->base.id,
+			 conn_state->connector->base.id);
+		ret = -EINVAL;
+		goto end;
+	}
 
 	if (!test_only && rsvp_nxt)
 		goto commit_rsvp;

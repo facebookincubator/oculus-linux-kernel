@@ -145,6 +145,33 @@ void wma_update_vdev_he_ops(struct wma_vdev_start_req *req,
 void wma_copy_vdev_start_he_ops(struct vdev_start_params *params,
 		struct wma_vdev_start_req *req);
 
+#define DOT11AX_HEMU_MODE 0x30
+#define HE_SUBFEE 0
+#define HE_SUBFER 1
+#define HE_MUBFEE 2
+#define HE_MUBFER 3
+
+/**
+ * wma_set_he_txbf_params() - set HE Tx beamforming params to FW
+ * @vdev_id: VDEV id
+ * @su bfer: SU beamformer capability
+ * @su bfee: SU beamformee capability
+ * @mu bfer: MU beamformer capability
+ *
+ * Return: None
+ */
+void wma_set_he_txbf_params(uint8_t vdev_id, bool su_bfer,
+			    bool su_bfee, bool mu_bfer);
+
+
+/**
+ * wma_set_he_txbf_cfg() - set HE Tx beamforming mlme cfg to FW
+ * @mac: Global MAC context
+ * @vdev_id: VDEV id
+ *
+ * Return: None
+ */
+void wma_set_he_txbf_cfg(struct mac_context *mac, uint8_t vdev_id);
 /**
  * wma_vdev_set_he_bss_params() - set HE OPs in vdev start
  * @wma: pointer to wma handle
@@ -280,6 +307,15 @@ static inline void wma_update_vdev_he_ops(struct wma_vdev_start_req *req,
 
 static inline void wma_copy_vdev_start_he_ops(struct vdev_start_params *params,
 			struct wma_vdev_start_req *req)
+{
+}
+
+static inline void wma_set_he_txbf_params(uint8_t vdev_id, bool su_bfer,
+					  bool su_bfee, bool mu_bfer)
+{
+}
+
+static inline void wma_set_he_txbf_cfg(struct mac_context *mac, uint8_t vdev_id)
 {
 }
 

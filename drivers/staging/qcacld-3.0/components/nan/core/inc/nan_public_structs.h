@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -45,6 +45,7 @@ struct wlan_objmgr_vdev;
 #define NAN_PASSPHRASE_MIN_LEN 8
 #define NAN_PASSPHRASE_MAX_LEN 63
 #define NAN_CH_INFO_MAX_CHANNELS 4
+#define WLAN_WAIT_TIME_NDP_END 2000
 
 #define NAN_PSEUDO_VDEV_ID CFG_TGT_NUM_VDEV
 
@@ -515,6 +516,7 @@ enum nan_event_id_types {
  * @evt_type: NAN Discovery event type
  * @is_nan_enable_success: Status from the NAN Enable Response event
  * @mac_id: MAC ID associated with NAN Discovery from NAN Enable Response event
+ * @vdev_id: vdev id of the interface created for NAN discovery
  * @buf_len: Event buffer length
  * @buf: Event buffer starts here
  */
@@ -523,6 +525,7 @@ struct nan_event_params {
 	enum nan_event_id_types evt_type;
 	bool is_nan_enable_success;
 	uint8_t mac_id;
+	uint8_t vdev_id;
 	uint32_t buf_len;
 	/* Variable length, do not add anything after this */
 	uint8_t buf[];
@@ -791,6 +794,7 @@ struct wlan_nan_rx_ops {
  * @ndi_dbs_supported: Target supports NAN Datapath with DBS
  * @nan_sap_supported: Target supports NAN Discovery with SAP concurrency
  * @ndi_sap_supported: Target supports NAN Datapth with SAP concurrency
+ * @nan_vdev_allowed: Allow separate vdev creation for NAN discovery
  */
 struct nan_tgt_caps {
 	uint32_t nan_disable_supported:1;
@@ -798,6 +802,7 @@ struct nan_tgt_caps {
 	uint32_t ndi_dbs_supported:1;
 	uint32_t nan_sap_supported:1;
 	uint32_t ndi_sap_supported:1;
+	uint32_t nan_vdev_allowed:1;
 };
 
 #endif

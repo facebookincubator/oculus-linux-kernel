@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -681,5 +681,51 @@ static inline void cdp_vdev_set_driver_del_ack_enable(ol_txrx_soc_handle soc,
 	if (soc->ops->misc_ops->vdev_set_driver_del_ack_enable)
 		return soc->ops->misc_ops->vdev_set_driver_del_ack_enable(
 			vdev_id, rx_packets, time_in_ms, high_th, low_th);
+}
+
+/**
+ * cdp_txrx_ext_stats_request(): request dp tx and rx extended stats
+ * @soc: soc handle
+ * @pdev: pdev handle
+ * @req: stats request structure to fill
+ *
+ * return: status
+ */
+static inline QDF_STATUS
+cdp_txrx_ext_stats_request(ol_txrx_soc_handle soc, struct cdp_pdev *pdev,
+			   struct cdp_txrx_ext_stats *req)
+{
+	if (!soc || !soc->ops || !soc->ops->misc_ops || !req) {
+		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+			  "%s: Invalid Instance:", __func__);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (soc->ops->misc_ops->txrx_ext_stats_request)
+		return soc->ops->misc_ops->txrx_ext_stats_request(pdev, req);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * cdp_request_rx_hw_stats(): request rx hw stats
+ * @soc: soc handle
+ * @vdev: vdev handle
+ *
+ * return: none
+ */
+static inline QDF_STATUS
+cdp_request_rx_hw_stats(ol_txrx_soc_handle soc, uint8_t vdev_id)
+{
+	if (!soc || !soc->ops || !soc->ops->misc_ops) {
+		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+			  "%s: Invalid Instance:", __func__);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (soc->ops->misc_ops->request_rx_hw_stats)
+		return soc->ops->misc_ops->request_rx_hw_stats(soc, vdev_id);
+
+	return QDF_STATUS_SUCCESS;
 }
 #endif /* _CDP_TXRX_MISC_H_ */

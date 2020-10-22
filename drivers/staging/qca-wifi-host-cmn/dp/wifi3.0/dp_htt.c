@@ -43,11 +43,16 @@
 #define HTT_PID_BIT_MASK 0x3
 
 #define DP_EXT_MSG_LENGTH 2048
-#define DP_HTT_SEND_HTC_PKT(soc, pkt)                            \
-do {                                                             \
-	if (htc_send_pkt(soc->htc_soc, &pkt->htc_pkt) ==         \
-					QDF_STATUS_SUCCESS)      \
-		htt_htc_misc_pkt_list_add(soc, pkt);             \
+#define DP_HTT_SEND_HTC_PKT(soc, pkt)                                       \
+do {                                                                        \
+	if (htc_send_pkt(soc->htc_soc, &pkt->htc_pkt) ==                    \
+	    QDF_STATUS_SUCCESS) {                                           \
+		htt_htc_misc_pkt_list_add(soc, pkt);                        \
+	} else {                                                            \
+		dp_err("htc_send_pkt failure!!");                           \
+		qdf_nbuf_free((qdf_nbuf_t)(pkt->htc_pkt.pNetBufContext));   \
+		htt_htc_pkt_free(soc, pkt);                                 \
+	}                                                                   \
 } while (0)
 
 #define HTT_MGMT_CTRL_TLV_HDR_RESERVERD_LEN 16
@@ -3404,6 +3409,27 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 			dp_rx_peer_unmap_handler(soc->dp_soc, peer_id,
 						 vdev_id, mac_addr,
 						 is_wds);
+			break;
+		}
+	case HTT_T2H_MSG_TYPE_RX_DELBA:
+		{
+			uint16_t peer_id;
+			uint8_t tid;
+			uint8_t win_sz;
+			QDF_STATUS status;
+
+			peer_id = HTT_RX_DELBA_PEER_ID_GET(*msg_word);
+			tid = HTT_RX_DELBA_TID_GET(*msg_word);
+			win_sz = HTT_RX_DELBA_WIN_SIZE_GET(*msg_word);
+
+			status = dp_rx_delba_ind_handler(
+				soc->dp_soc,
+				peer_id, tid, win_sz);
+
+			QDF_TRACE(QDF_MODULE_ID_TXRX,
+				  QDF_TRACE_LEVEL_INFO,
+				  FL("DELBA PeerID %d BAW %d TID %d stat %d"),
+				  peer_id, win_sz, tid, status);
 			break;
 		}
 	default:

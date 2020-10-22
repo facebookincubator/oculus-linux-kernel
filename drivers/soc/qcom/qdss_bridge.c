@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #define KMSG_COMPONENT "QDSS diag bridge"
@@ -449,17 +449,22 @@ static void usb_notifier(void *priv, unsigned int event,
 {
 	struct qdss_bridge_drvdata *drvdata = priv;
 
-	if (!drvdata)
+	if (!drvdata || drvdata->mode != MHI_TRANSFER_TYPE_USB
+			|| drvdata->opened == DISABLE) {
+		pr_err_ratelimited("%s can't be called in invalid status.\n",
+				__func__);
 		return;
+	}
 
 	switch (event) {
 	case USB_QDSS_CONNECT:
-		usb_qdss_alloc_req(ch, drvdata->nr_trbs, 0);
+		usb_qdss_alloc_req(ch, drvdata->nr_trbs);
 		mhi_queue_read(drvdata);
 		break;
 
 	case USB_QDSS_DISCONNECT:
-		/* Leave MHI/USB open.Only close on MHI disconnect */
+		if (drvdata->opened == ENABLE)
+			usb_qdss_free_req(drvdata->usb_ch);
 		break;
 
 	case USB_QDSS_DATA_WRITE_DONE:

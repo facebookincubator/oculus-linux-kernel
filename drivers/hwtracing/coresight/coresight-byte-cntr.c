@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Description: CoreSight Trace Memory Controller driver
  */
@@ -328,7 +328,8 @@ static int usb_transfer_small_packet(struct qdss_request *usb_req,
 	w_offset = tmc_sg_get_rwp_offset(tmcdrvdata);
 	req_size = ((w_offset < drvdata->offset) ? etr_buf->size : 0) +
 				w_offset - drvdata->offset;
-	req_size = (req_size < USB_BLK_SIZE) ? req_size : USB_BLK_SIZE;
+	req_size = ((req_size + *small_size) < USB_BLK_SIZE) ? req_size :
+		(USB_BLK_SIZE - *small_size);
 
 	while (req_size > 0) {
 
@@ -518,7 +519,7 @@ void usb_bypass_notifier(void *priv, unsigned int event,
 
 	switch (event) {
 	case USB_QDSS_CONNECT:
-		usb_qdss_alloc_req(ch, USB_BUF_NUM, 0);
+		usb_qdss_alloc_req(ch, USB_BUF_NUM);
 		usb_bypass_start(drvdata);
 		queue_work(drvdata->usb_wq, &(drvdata->read_work));
 		break;

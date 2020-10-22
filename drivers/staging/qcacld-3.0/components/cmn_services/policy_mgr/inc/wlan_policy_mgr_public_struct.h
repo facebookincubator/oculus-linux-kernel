@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -799,8 +799,9 @@ enum policy_mgr_band {
  * @POLICY_MGR_UPDATE_REASON_HIDDEN_STA: Connection to Hidden STA
  * @POLICY_MGR_UPDATE_REASON_OPPORTUNISTIC: Opportunistic HW mode update
  * @POLICY_MGR_UPDATE_REASON_NSS_UPDATE: NSS update
- * @POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH: Channel switch
- * @POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH_STA: Channel switch for STA
+ * @POLICY_MGR_UPDATE_REASON_AFTER_CHANNEL_SWITCH: After Channel switch
+ * @POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH_STA: Before Channel switch for STA
+ * @POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH_SAP: Before Channel switch for SAP
  * @POLICY_MGR_UPDATE_REASON_PRI_VDEV_CHANGE: In Dual DBS HW, if the vdev based
  *        2x2 preference enabled, the vdev down may cause prioritized active
  *        vdev change, then DBS hw mode may needs to change from one DBS mode
@@ -817,8 +818,9 @@ enum policy_mgr_conn_update_reason {
 	POLICY_MGR_UPDATE_REASON_HIDDEN_STA,
 	POLICY_MGR_UPDATE_REASON_OPPORTUNISTIC,
 	POLICY_MGR_UPDATE_REASON_NSS_UPDATE,
-	POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH,
+	POLICY_MGR_UPDATE_REASON_AFTER_CHANNEL_SWITCH,
 	POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH_STA,
+	POLICY_MGR_UPDATE_REASON_CHANNEL_SWITCH_SAP,
 	POLICY_MGR_UPDATE_REASON_PRE_CAC,
 	POLICY_MGR_UPDATE_REASON_PRI_VDEV_CHANGE,
 	POLICY_MGR_UPDATE_REASON_NAN_DISCOVERY,
@@ -862,6 +864,7 @@ enum hw_mode_bandwidth {
  * @SET_HW_MODE_STATUS_EHARDWARE: HW mode change prevented by hardware
  * @SET_HW_MODE_STATUS_EPENDING: HW mode change is pending
  * @SET_HW_MODE_STATUS_ECOEX: HW mode change conflict with Coex
+ * @SET_HW_MODE_STATUS_ALREADY: Requested hw mode is already applied to FW.
  */
 enum set_hw_mode_status {
 	SET_HW_MODE_STATUS_OK,
@@ -871,6 +874,7 @@ enum set_hw_mode_status {
 	SET_HW_MODE_STATUS_EHARDWARE,
 	SET_HW_MODE_STATUS_EPENDING,
 	SET_HW_MODE_STATUS_ECOEX,
+	SET_HW_MODE_STATUS_ALREADY,
 };
 
 typedef void (*dual_mac_cb)(enum set_hw_mode_status status,
@@ -1002,6 +1006,7 @@ struct policy_mgr_dual_mac_config {
  * @reason: Reason for HW mode change
  * @session_id: Session id
  * @next_action: next action to happen at policy mgr
+ * @action: current hw change action to be done
  * @context: psoc context
  */
 struct policy_mgr_hw_mode {
@@ -1010,6 +1015,7 @@ struct policy_mgr_hw_mode {
 	enum policy_mgr_conn_update_reason reason;
 	uint32_t session_id;
 	uint8_t next_action;
+	enum policy_mgr_conc_next_action action;
 	struct wlan_objmgr_psoc *context;
 };
 

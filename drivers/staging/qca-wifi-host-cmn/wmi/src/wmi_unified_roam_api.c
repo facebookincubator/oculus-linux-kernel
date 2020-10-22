@@ -339,6 +339,16 @@ QDF_STATUS wmi_unified_offload_11k_cmd(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_unified_get_roam_scan_ch_list(wmi_unified_t wmi_handle,
+					     uint8_t vdev_id)
+{
+	if (wmi_handle->ops->send_roam_scan_ch_list_req_cmd)
+		return wmi_handle->ops->send_roam_scan_ch_list_req_cmd(
+				wmi_handle, vdev_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 QDF_STATUS wmi_unified_invoke_neighbor_report_cmd(void *wmi_hdl,
 			struct wmi_invoke_neighbor_report_params *params)
 {

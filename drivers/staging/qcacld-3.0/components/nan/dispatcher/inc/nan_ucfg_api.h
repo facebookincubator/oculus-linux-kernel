@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,15 +27,20 @@
 #include "nan_public_structs.h"
 
 #ifdef WLAN_FEATURE_NAN
+#define ucfg_nan_set_ndi_state(vdev, state) \
+	__ucfg_nan_set_ndi_state(vdev, state, __func__)
+
 /**
  * ucfg_nan_set_ndi_state: set ndi state
  * @vdev: pointer to vdev object
  * @state: value to set
+ * @func: Caller of this API
  *
  * Return: status of operation
  */
-QDF_STATUS ucfg_nan_set_ndi_state(struct wlan_objmgr_vdev *vdev,
-				  uint32_t state);
+QDF_STATUS __ucfg_nan_set_ndi_state(struct wlan_objmgr_vdev *vdev,
+				    enum nan_datapath_state state,
+				    const char *func);
 
 /**
  * ucfg_nan_psoc_open: Setup NAN priv object params on PSOC open
@@ -347,6 +352,68 @@ QDF_STATUS ucfg_ndi_remove_entry_from_policy_mgr(struct wlan_objmgr_vdev *vdev);
  * Return: True if NAN discovery enable/disable is in progress, false otherwise
  */
 bool ucfg_nan_is_enable_disable_in_progress(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_nan_is_sta_ndp_concurrency_allowed() - Indicates if NDP is allowed
+ * @psoc: pointer to psoc object
+ * @vdev: pointer to vdev object
+ *
+ * If STA+NDI(NDPs) exist and another NDI tries to establish
+ * NDP, then reject the second NDI(NDP).
+ *
+ * Return: true if allowed, false otherwise
+ */
+bool ucfg_nan_is_sta_ndp_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
+					     struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_nan_set_vdev_creation_supp_by_fw()- Set the NAN separate vdev psoc param
+ * @psoc: pointer to psoc object
+ * @set: True if firmware supports NAN separate vdev feature
+ *
+ * Cache the value of set in NAN psoc object param.
+ *
+ * Return: None
+ */
+void
+ucfg_nan_set_vdev_creation_supp_by_fw(struct wlan_objmgr_psoc *psoc, bool set);
+
+/**
+ * ucfg_nan_is_vdev_creation_allowed()- Get support for NAN vdev creation
+ * @psoc: pointer to psoc object
+ *
+ * Return: True if NAN vdev creation is allowed by host and firmware else false
+ */
+bool ucfg_nan_is_vdev_creation_allowed(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_disable_nan_discovery() - Disable NAN discovery
+ * @psoc: pointer to psoc object
+ * @data: Data to be sent to NAN discovery engine, which runs in firmware
+ * @data_len: Length of the data
+ *
+ * Send NAN disable request to firmware by setting the mandatory
+ * params(disable_2g_discovery, disable_5g_discovery) along
+ * with the data, if provided.
+ *
+ * Return: status of operation
+ */
+QDF_STATUS ucfg_disable_nan_discovery(struct wlan_objmgr_psoc *psoc,
+				      uint8_t *data, uint32_t data_len);
+
+/**
+ * ucfg_nan_disable_ndi() - Disable the NDI with given vdev_id
+ * @psoc: pointer to psoc object
+ * @ndi_vdev_id: vdev_id of the NDI to be disabled
+ *
+ * Disable all the NDPs present on the given NDI by sending NDP_END_ALL
+ * to firmware. Firmwere sends an immediate response(NDP_HOST_UPDATE) with
+ * ndp_disable param as 1 followed by NDP_END indication for all the NDPs.
+ *
+ * Return: status of operation
+ */
+QDF_STATUS
+ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id);
 #else /* WLAN_FEATURE_NAN */
 
 static inline
@@ -386,5 +453,36 @@ bool ucfg_nan_is_enable_disable_in_progress(struct wlan_objmgr_psoc *psoc)
 	return false;
 }
 
+static inline
+bool ucfg_nan_is_sta_ndp_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
+					     struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline void
+ucfg_nan_set_vdev_creation_supp_by_fw(struct wlan_objmgr_psoc *psoc, bool set)
+{
+}
+
+static inline
+bool ucfg_nan_is_vdev_creation_allowed(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline
+QDF_STATUS ucfg_disable_nan_discovery(struct wlan_objmgr_psoc *psoc,
+				      uint8_t *data, uint32_t data_len)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS
+ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
+{
+	return QDF_STATUS_E_INVAL;
+}
 #endif /* WLAN_FEATURE_NAN */
 #endif /* _NAN_UCFG_API_H_ */

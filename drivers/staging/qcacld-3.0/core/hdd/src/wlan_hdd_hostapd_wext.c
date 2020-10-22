@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -777,16 +777,7 @@ static __iw_softap_setparam(struct net_device *dev,
 	case QCASAP_SHORT_GI:
 	{
 		hdd_debug("QCASAP_SET_SHORT_GI val %d", set_value);
-		/*
-		 * wma_cli_set_command should be called instead of
-		 * sme_update_ht_config since SGI is used for HT/HE.
-		 * This should be refactored.
-		 *
-		 * SGI is same for 20MHZ and 40MHZ.
-		 */
-		ret = sme_update_ht_config(mac_handle, adapter->vdev_id,
-					   WNI_CFG_HT_CAP_INFO_SHORT_GI_20MHZ,
-					   set_value);
+		ret = hdd_we_set_short_gi(adapter, set_value);
 		if (ret)
 			hdd_err("Failed to set ShortGI value ret: %d", ret);
 		break;
@@ -946,7 +937,7 @@ static __iw_softap_setparam(struct net_device *dev,
 		if (wlan_reg_is_dfs_ch(pdev, ch))
 			tgt_dfs_process_radar_ind(pdev, &radar);
 		else
-			hdd_err("Ignore set radar, op ch(%d) is not dfs", ch);
+			hdd_debug("Ignore set radar, op ch(%d) is not dfs", ch);
 
 		break;
 	}
@@ -2934,7 +2925,7 @@ static const struct iw_priv_args hostapd_private_args[] = {
 	}, {
 		QCASAP_PARAM_LDPC,
 		IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-		0, "set_ldpc"
+		0, "ldpc"
 	}, {
 		QCASAP_PARAM_TX_STBC,
 		IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,

@@ -62,10 +62,10 @@ host-cxxshobjs	:= $(addprefix $(obj)/,$(host-cxxshobjs))
 #####
 # Handle options to gcc. Support building with separate output directory
 
-_hostc_flags   = $(KBUILD_HOSTCFLAGS)   $(HOST_EXTRACFLAGS)   \
-                 $(HOSTCFLAGS_$(basetarget).o)
-_hostcxx_flags = $(KBUILD_HOSTCXXFLAGS) $(HOST_EXTRACXXFLAGS) \
-                 $(HOSTCXXFLAGS_$(basetarget).o)
+_hostc_flags   = $(HOST_PREFERRED_INCLUDE_CFLAGS) $(KBUILD_HOSTCFLAGS) \
+                 $(HOST_EXTRACFLAGS) $(HOSTCFLAGS_$(basetarget).o)
+_hostcxx_flags = $(HOST_PREFERRED_INCLUDE_CXXFLAGS) $(KBUILD_HOSTCXXFLAGS) \
+                 $(HOST_EXTRACXXFLAGS) $(HOSTCXXFLAGS_$(basetarget).o)
 
 ifeq ($(KBUILD_SRC),)
 __hostc_flags	= $(_hostc_flags)

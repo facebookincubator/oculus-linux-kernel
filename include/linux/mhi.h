@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved. */
 
 #ifndef _MHI_H_
 #define _MHI_H_
@@ -263,6 +263,7 @@ struct mhi_controller {
 	void __iomem *bhi;
 	void __iomem *bhie;
 	void __iomem *wake_db;
+	void __iomem *tsync_db;
 	void __iomem *bw_scale_db;
 
 	/* device topology */
@@ -306,7 +307,7 @@ struct mhi_controller {
 	u32 msi_allocated;
 	int *irq; /* interrupt table */
 	struct mhi_event *mhi_event;
-	struct list_head lp_ev_rings; /* low priority event rings */
+	struct list_head sp_ev_rings; /* special purpose event rings */
 
 	/* cmd rings */
 	struct mhi_cmd *mhi_cmd;
@@ -346,8 +347,9 @@ struct mhi_controller {
 
 	/* worker for different state transitions */
 	struct work_struct st_worker;
-	struct work_struct fw_worker;
-	struct work_struct low_priority_worker;
+	struct work_struct special_work;
+	struct workqueue_struct *special_wq;
+
 	wait_queue_head_t state_event;
 
 	/* shadow functions */
@@ -381,7 +383,6 @@ struct mhi_controller {
 
 	/* supports time sync feature */
 	struct mhi_timesync *mhi_tsync;
-	struct mhi_device *tsync_dev;
 	u64 local_timer_freq;
 	u64 remote_timer_freq;
 
@@ -398,10 +399,10 @@ struct mhi_controller {
 	/* controller specific data */
 	const char *name;
 	bool power_down;
-	bool need_force_m3;
-	bool force_m3_done;
+	bool initiate_mhi_reset;
 	void *priv_data;
 	void *log_buf;
+	void *cntrl_log_buf;
 	struct dentry *dentry;
 	struct dentry *parent;
 
@@ -776,6 +777,23 @@ int mhi_force_rddm_mode(struct mhi_controller *mhi_cntrl);
 void mhi_dump_sfr(struct mhi_controller *mhi_cntrl);
 
 /**
+ * mhi_get_remote_time - Get external modem time relative to host time
+ * Trigger event to capture modem time, also capture host time so client
+ * can do a relative drift comparision.
+ * Recommended only tsync device calls this method and do not call this
+ * from atomic context
+ * @mhi_dev: Device associated with the channels
+ * @sequence:unique sequence id track event
+ * @cb_func: callback function to call back
+ */
+int mhi_get_remote_time(struct mhi_device *mhi_dev,
+			u32 sequence,
+			void (*cb_func)(struct mhi_device *mhi_dev,
+					u32 sequence,
+					u64 local_time,
+					u64 remote_time));
+
+/**
  * mhi_get_remote_time_sync - Get external soc time relative to local soc time
  * using MMIO method.
  * @mhi_dev: Device associated with the channels
@@ -838,7 +856,7 @@ char *mhi_get_restart_reason(const char *name);
 #ifdef CONFIG_MHI_DEBUG
 
 #define MHI_VERB(fmt, ...) do { \
-		if (mhi_cntrl->klog_lvl <= MHI_MSG_VERBOSE) \
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_VERBOSE) \
 			pr_dbg("[D][%s] " fmt, __func__, ##__VA_ARGS__);\
 } while (0)
 
@@ -848,8 +866,18 @@ char *mhi_get_restart_reason(const char *name);
 
 #endif
 
+#define MHI_CNTRL_LOG(fmt, ...) do {	\
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_INFO) \
+			pr_info("[I][%s] " fmt, __func__, ##__VA_ARGS__);\
+} while (0)
+
+#define MHI_CNTRL_ERR(fmt, ...) do {	\
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_ERROR) \
+			pr_err("[E][%s] " fmt, __func__, ##__VA_ARGS__); \
+} while (0)
+
 #define MHI_LOG(fmt, ...) do {	\
-		if (mhi_cntrl->klog_lvl <= MHI_MSG_INFO) \
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_INFO) \
 			pr_info("[I][%s] " fmt, __func__, ##__VA_ARGS__);\
 } while (0)
 
@@ -888,6 +916,20 @@ char *mhi_get_restart_reason(const char *name);
 } while (0)
 
 #endif
+
+#define MHI_CNTRL_LOG(fmt, ...) do { \
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_INFO) \
+			pr_err("[I][%s] " fmt, __func__, ##__VA_ARGS__);\
+		ipc_log_string(mhi_cntrl->cntrl_log_buf, "[I][%s] " fmt, \
+			       __func__, ##__VA_ARGS__); \
+} while (0)
+
+#define MHI_CNTRL_ERR(fmt, ...) do { \
+		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_ERROR) \
+			pr_err("[E][%s] " fmt, __func__, ##__VA_ARGS__); \
+		ipc_log_string(mhi_cntrl->cntrl_log_buf, "[E][%s] " fmt, \
+			       __func__, ##__VA_ARGS__); \
+} while (0)
 
 #define MHI_LOG(fmt, ...) do {	\
 		if (mhi_cntrl->klog_lvl <= MHI_MSG_LVL_INFO) \

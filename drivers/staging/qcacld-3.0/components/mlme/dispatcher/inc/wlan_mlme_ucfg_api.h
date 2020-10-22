@@ -1005,6 +1005,16 @@ ucfg_mlme_get_roaming_offload(struct wlan_objmgr_psoc *psoc,
 			      bool *val);
 
 /**
+ * ucfg_mlme_get_roam_disable_config() - Get sta roam disable value
+ * @psoc: pointer to psoc object
+ * @val: Pointer to bitmap of interfaces for those sta roaming is disabled
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_mlme_get_roam_disable_config(struct wlan_objmgr_psoc *psoc,
+					     uint32_t *val);
+
+/**
  * ucfg_mlme_set_roaming_offload() - Enable/disable roaming offload
  * @psoc: pointer to psoc object
  * @val:  enable/disable roaming offload
@@ -1014,7 +1024,27 @@ ucfg_mlme_get_roaming_offload(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 ucfg_mlme_set_roaming_offload(struct wlan_objmgr_psoc *psoc,
 			      bool val);
+
+/**
+ * ucfg_mlme_get_roaming_triggers() - Get roaming triggers bitmap
+ * value
+ * @psoc: pointer to psoc object
+ *
+ * Return: Roaming triggers value
+ */
+static inline uint32_t
+ucfg_mlme_get_roaming_triggers(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_mlme_get_roaming_triggers(psoc);
+}
 #else
+static inline
+QDF_STATUS ucfg_mlme_get_roam_disable_config(struct wlan_objmgr_psoc *psoc,
+					     uint32_t *val)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
 static inline QDF_STATUS
 ucfg_mlme_get_roaming_offload(struct wlan_objmgr_psoc *psoc,
 			      bool *val)
@@ -1029,6 +1059,12 @@ ucfg_mlme_set_roaming_offload(struct wlan_objmgr_psoc *psoc,
 			      bool val)
 {
 	return QDF_STATUS_SUCCESS;
+}
+
+static inline uint32_t
+ucfg_mlme_get_roaming_triggers(struct wlan_objmgr_psoc *psoc)
+{
+	return 0;
 }
 #endif
 
@@ -1173,6 +1209,26 @@ ucfg_mlme_get_delay_before_vdev_stop(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 ucfg_mlme_get_roam_bmiss_final_bcnt(struct wlan_objmgr_psoc *psoc,
 				    uint8_t *val);
+
+#if defined(WLAN_SAE_SINGLE_PMK) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
+/**
+ * ucfg_mlme_update_sae_single_pmk_info() - Update sae_single_pmk_info
+ * @vdev: pointer to VDEV common object
+ * @pmk_info:  Pointer mlme pmkid info
+ *
+ * Return: None
+ */
+void
+ucfg_mlme_update_sae_single_pmk_info(struct wlan_objmgr_vdev *vdev,
+				     struct mlme_pmk_info *pmk_info);
+#else
+static inline void
+ucfg_mlme_update_sae_single_pmk_info(struct wlan_objmgr_vdev *vdev,
+				     struct mlme_pmk_info *pmk_info)
+{
+}
+#endif
+
 /**
  * ucfg_mlme_get_roam_bmiss_first_bcnt() - Get roam bmiss final count
  * @psoc: pointer to psoc object
@@ -3886,6 +3942,27 @@ ucfg_mlme_get_ignore_fw_reg_offload_ind(struct wlan_objmgr_psoc *psoc,
 					bool *disabled)
 {
 	return wlan_mlme_get_ignore_fw_reg_offload_ind(psoc, disabled);
+}
+
+/**
+ * ucfg_mlme_get_discon_reason_n_from_ap() - Get disconnect reason and from ap
+ * @psoc: PSOC pointer
+ * @vdev_id: vdev id
+ * @from_ap: Get the from_ap cached through mlme_set_discon_reason_n_from_ap
+ *           and copy to this buffer.
+ * @reason_code: Get the reason_code cached through
+ *               mlme_set_discon_reason_n_from_ap and copy to this buffer.
+ *
+ * Fetch the contents of from_ap and reason_codes.
+ *
+ * Return: void
+ */
+static inline void
+ucfg_mlme_get_discon_reason_n_from_ap(struct wlan_objmgr_psoc *psoc,
+				      uint8_t vdev_id, bool *from_ap,
+				      uint32_t *reason_code)
+{
+	mlme_get_discon_reason_n_from_ap(psoc, vdev_id, from_ap, reason_code);
 }
 
 #endif /* _WLAN_MLME_UCFG_API_H_ */

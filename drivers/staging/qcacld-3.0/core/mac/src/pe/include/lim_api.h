@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -70,7 +70,7 @@
 #define GET_LIM_PROCESS_DEFD_MESGS(mac) (mac->lim.gLimProcessDefdMsgs)
 #define SET_LIM_PROCESS_DEFD_MESGS(mac, val) \
 		mac->lim.gLimProcessDefdMsgs = val; \
-		pe_debug("%s Defer LIM messages - value %d", __func__, val);
+		pe_debug("Defer LIM msg %d", val);
 
 /* LIM exported function templates */
 #define LIM_MIN_BCN_PR_LENGTH  12
@@ -291,13 +291,16 @@ pe_roam_synch_callback(struct mac_context *mac_ctx,
  * @vdev_id: VDEV in which the event was received
  * @deauth_disassoc_frame: Deauth/disassoc frame received from firmware
  * @deauth_disassoc_frame_len: Length of @deauth_disassoc_frame
+ * @reason_code: Fw sent reason code if disassoc/deauth frame is not
+ * available
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS
 pe_disconnect_callback(struct mac_context *mac, uint8_t vdev_id,
 		       uint8_t *deauth_disassoc_frame,
-		       uint16_t deauth_disassoc_frame_len);
+		       uint16_t deauth_disassoc_frame_len,
+		       uint16_t reason_code);
 
 #else
 static inline QDF_STATUS
@@ -312,7 +315,8 @@ pe_roam_synch_callback(struct mac_context *mac_ctx,
 static inline QDF_STATUS
 pe_disconnect_callback(struct mac_context *mac, uint8_t vdev_id,
 		       uint8_t *deauth_disassoc_frame,
-		       uint16_t deauth_disassoc_frame_len)
+		       uint16_t deauth_disassoc_frame_len,
+		       uint16_t reason_code)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }

@@ -1165,7 +1165,8 @@ typedef struct {
 	QDF_STATUS (*pe_disconnect_cb) (struct mac_context *mac,
 					uint8_t vdev_id,
 					uint8_t *deauth_disassoc_frame,
-					uint16_t deauth_disassoc_frame_len);
+					uint16_t deauth_disassoc_frame_len,
+					uint16_t reason_code);
 	qdf_wake_lock_t wmi_cmd_rsp_wake_lock;
 	qdf_runtime_lock_t wmi_cmd_rsp_runtime_lock;
 	qdf_runtime_lock_t sap_prevent_runtime_pm_lock;
@@ -2280,6 +2281,24 @@ void wma_vdev_clear_pause_bit(uint8_t vdev_id, wmi_tx_pause_type bit_pos)
 }
 
 /**
+ * wma_host_to_fw_phymode() - convert host to fw phymode
+ * @host_phymode: phymode to convert
+ *
+ * Return: one of the values defined in enum WMI_HOST_WLAN_PHY_MODE;
+ *         or WMI_HOST_MODE_UNKNOWN if the conversion fails
+ */
+WMI_HOST_WLAN_PHY_MODE wma_host_to_fw_phymode(enum wlan_phymode host_phymode);
+
+/**
+ * wma_fw_to_host_phymode() - convert fw to host phymode
+ * @phymode: phymode to convert
+ *
+ * Return: one of the values defined in enum wlan_phymode;
+ *         or WLAN_PHYMODE_AUTO if the conversion fails
+ */
+enum wlan_phymode wma_fw_to_host_phymode(WMI_HOST_WLAN_PHY_MODE phymode);
+
+/**
  * wma_process_roaming_config() - process roam request
  * @wma_handle: wma handle
  * @roam_req: roam request parameters
@@ -2550,6 +2569,21 @@ void wma_delete_invalid_peer_entries(uint8_t vdev_id, uint8_t *peer_mac_addr);
  * Return: 0 for success or non-zero on failure
  */
 uint8_t wma_rx_invalid_peer_ind(uint8_t vdev_id, void *wh);
+
+/**
+ * wma_dp_send_delba_ind() - the callback for DP to notify WMA layer
+ * to del ba of rx
+ * @vdev_id: vdev id
+ * @peer_macaddr: peer mac address
+ * @tid: tid of rx
+ * @reason_code: reason code
+ *
+ * Return: 0 for success or non-zero on failure
+ */
+int wma_dp_send_delba_ind(uint8_t vdev_id,
+			  uint8_t *peer_macaddr,
+			  uint8_t tid,
+			  uint8_t reason_code);
 
 /**
  * is_roam_inprogress() - Is vdev in progress

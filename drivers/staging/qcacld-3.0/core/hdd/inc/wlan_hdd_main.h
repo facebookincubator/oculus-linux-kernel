@@ -240,6 +240,8 @@ enum hdd_adapter_flags {
 /* rcpi request timeout in milli seconds */
 #define WLAN_WAIT_TIME_RCPI 500
 
+#define WLAN_WAIT_PEER_CLEANUP 5000
+
 #define MAX_CFG_STRING_LEN  255
 
 /* Maximum time(ms) to wait for external acs response */
@@ -921,6 +923,7 @@ enum dhcp_nego_status {
  * @tx_retry_fw: the number of retried frames from firmware to remote station
  * @tx_retry_exhaust_fw: the number of frames retried but finally failed from
  *                    firmware to remote station
+ * @assoc_req_ies: Assoc request IEs of the peer station
  */
 struct hdd_station_info {
 	bool in_use;
@@ -977,6 +980,7 @@ struct hdd_station_info {
 	uint32_t tx_total_fw;
 	uint32_t tx_retry_fw;
 	uint32_t tx_retry_exhaust_fw;
+	struct wlan_ies assoc_req_ies;
 };
 
 /**
@@ -1139,6 +1143,8 @@ struct hdd_context;
  * @event_flags: a bitmap of hdd_adapter_flags
  * @latency_level: 0 - normal, 1 - moderate, 2 - low, 3 - ultralow
  * @acs_complete_event: acs complete event
+ * @last_disconnect_reason: Last disconnected internal reason code
+ *                          as per enum qca_disconnect_reason_codes
  */
 struct hdd_adapter {
 	/* Magic cookie for adapter sanity verification.  Note that this
@@ -1389,6 +1395,16 @@ struct hdd_adapter {
 #ifdef WLAN_FEATURE_MOTION_DETECTION
 	bool motion_detection_mode;
 #endif /* WLAN_FEATURE_MOTION_DETECTION */
+	enum qca_disconnect_reason_codes last_disconnect_reason;
+
+#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
+	/* Indicate whether to display sta periodic stats */
+	bool is_sta_periodic_stats_enabled;
+	uint16_t periodic_stats_timer_count;
+	uint32_t periodic_stats_timer_counter;
+	qdf_mutex_t sta_periodic_stats_lock;
+#endif /* WLAN_FEATURE_PERIODIC_STA_STATS */
+	qdf_event_t peer_cleanup_done;
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(adapter) (&(adapter)->session.station)
@@ -1809,6 +1825,11 @@ struct hdd_context {
 	/* IPv4 notifier callback for handling ARP offload on change in IP */
 	struct notifier_block ipv4_notifier;
 
+#ifdef FEATURE_RUNTIME_PM
+	struct notifier_block pm_qos_notifier;
+	bool runtime_pm_prevented;
+	qdf_spinlock_t pm_qos_lock;
+#endif
 	/* number of rf chains supported by target */
 	uint32_t  num_rf_chains;
 	/* Is htTxSTBC supported by target */
@@ -1951,6 +1972,7 @@ struct hdd_context {
 #endif
 	qdf_time_t runtime_resume_start_time_stamp;
 	qdf_time_t runtime_suspend_done_time_stamp;
+	bool roam_ch_from_fw_supported;
 };
 
 /**
@@ -2706,10 +2728,24 @@ bool hdd_is_5g_supported(struct hdd_context *hdd_ctx);
  *
  * Return:  true if 2GHz channels are supported
  */
-
 bool hdd_is_2g_supported(struct hdd_context *hdd_ctx);
 
 int wlan_hdd_scan_abort(struct hdd_adapter *adapter);
+
+/**
+ * hdd_indicate_active_ndp_cnt() - Callback to indicate active ndp count to hdd
+ * if ndp connection is on NDI established
+ * @psoc: pointer to psoc object
+ * @vdev_id: vdev id
+ * @cnt: number of active ndp sessions
+ *
+ * This HDD callback registerd with policy manager to indicates number of active
+ * ndp sessions to hdd.
+ *
+ * Return:  none
+ */
+void hdd_indicate_active_ndp_cnt(struct wlan_objmgr_psoc *psoc,
+				 uint8_t vdev_id, uint8_t cnt);
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 static inline bool roaming_offload_enabled(struct hdd_context *hdd_ctx)

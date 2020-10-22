@@ -1020,6 +1020,49 @@
 		};
 	};
 
+	q6-hvx-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&tsens1 4>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			q6_hvx_trip0: q6-hvx-trip0 {
+				temperature = <100000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			cdsp-cdev {
+				trip = <&q6_hvx_trip0>;
+				cooling-device = <&msm_cdsp_rm 3 3>;
+			};
+
+			gpu-cdev {
+				trip = <&q6_hvx_trip0>;
+				cooling-device = <&msm_gpu (THERMAL_MAX_LIMIT-1)
+							(THERMAL_MAX_LIMIT-1)>;
+			};
+
+			modem-pa-cdev {
+				trip = <&q6_hvx_trip0>;
+				cooling-device = <&modem_pa 3 3>;
+			};
+
+			modem-tj-cdev {
+				trip = <&q6_hvx_trip0>;
+				cooling-device = <&modem_tj 3 3>;
+			};
+
+			npu_cdev {
+				trip = <&q6_hvx_trip0>;
+				cooling-device = <&msm_npu 3 3>;
+			};
+		};
+	};
+
 	modem-lte-sub6-pa1 {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;

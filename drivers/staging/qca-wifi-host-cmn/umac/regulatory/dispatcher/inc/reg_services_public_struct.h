@@ -658,6 +658,15 @@ struct reg_start_11d_scan_req {
 };
 
 /**
+ * struct reg_11d_scan_msg: 11d scan message structure
+ * @psoc: pointer to psoc object
+ * @enable_11d_supp: enable 11d scan or disable 11d scan
+ */
+struct reg_11d_scan_msg {
+	struct wlan_objmgr_psoc *psoc;
+	bool enable_11d_supp;
+};
+/**
  * struct reg_stop_11d_scan_req: stop 11d scan request
  * @vdev_id: vdev id
  */
@@ -1063,6 +1072,22 @@ struct unsafe_ch_list {
 struct avoid_freq_ind_data {
 	struct ch_avoid_ind_type freq_list;
 	struct unsafe_ch_list chan_list;
+};
+
+/**
+ * struct reg_ctl_params - reg ctl and regd info
+ * @regd: regdomain pair
+ * @regd_2g: 2g sub domain code
+ * @regd_5g: 5g sub domain code
+ * @ctl_2g: 2g ctl info
+ * @ctl_5g: 5g ctl info
+ */
+struct reg_ctl_params {
+	uint32_t regd;
+	uint16_t regd_2g;
+	uint16_t regd_5g;
+	uint8_t ctl_2g;
+	uint8_t ctl_5g;
 };
 
 #endif

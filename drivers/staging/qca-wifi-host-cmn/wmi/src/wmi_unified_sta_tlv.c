@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -670,7 +670,7 @@ send_update_fw_tdls_state_cmd_tlv(wmi_unified_t wmi_handle,
 	cmd->tdls_peer_kickout_threshold =
 		tdls_param->tdls_peer_kickout_threshold;
 
-	WMI_LOGD("%s: tdls_state: %d, state: %d, "
+	WMI_LOGD("%s: vdev %d tdls_state: %d, state: %d, "
 		 "notification_interval_ms: %d, "
 		 "tx_discovery_threshold: %d, "
 		 "tx_teardown_threshold: %d, "
@@ -684,7 +684,7 @@ send_update_fw_tdls_state_cmd_tlv(wmi_unified_t wmi_handle,
 		 "tdls_puapsd_rx_frame_threshold: %d, "
 		 "teardown_notification_ms: %d, "
 		 "tdls_peer_kickout_threshold: %d",
-		 __func__, tdls_state, cmd->state,
+		 __func__, tdls_param->vdev_id, tdls_state, cmd->state,
 		 cmd->notification_interval_ms,
 		 cmd->tx_discovery_threshold,
 		 cmd->tx_teardown_threshold,
@@ -706,7 +706,6 @@ send_update_fw_tdls_state_cmd_tlv(wmi_unified_t wmi_handle,
 		wmi_buf_free(wmi_buf);
 		return QDF_STATUS_E_FAILURE;
 	}
-	WMI_LOGD("%s: vdev_id %d", __func__, tdls_param->vdev_id);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1122,12 +1121,6 @@ send_reject_ap_list_cmd_tlv(wmi_unified_t wmi_handle,
 	wmi_pdev_bssid_disallow_list_config_param *chan_list;
 	struct reject_ap_config_params *reject_list = reject_params->bssid_list;
 	uint8_t num_of_reject_bssid = reject_params->num_of_reject_bssid;
-
-	if (!num_of_reject_bssid) {
-		WMI_LOGD("%s : invalid number of channels %d", __func__,
-			 num_of_reject_bssid);
-		return QDF_STATUS_E_EMPTY;
-	}
 
 	list_tlv_len = sizeof(*chan_list) * num_of_reject_bssid;
 
@@ -2081,17 +2074,12 @@ static QDF_STATUS send_pdev_set_pcl_cmd_tlv(wmi_unified_t wmi_handle,
 	cmd->pdev_id = wmi_handle->ops->convert_pdev_id_host_to_target(
 							WMI_HOST_PDEV_ID_SOC);
 	cmd->num_chan = chan_len;
-	WMI_LOGD("%s: Total chan (PCL) len:%d", __func__, cmd->num_chan);
-
 	buf_ptr += sizeof(wmi_pdev_set_pcl_cmd_fixed_param);
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_UINT32,
 			(chan_len * sizeof(uint32_t)));
 	cmd_args = (uint32_t *) (buf_ptr + WMI_TLV_HDR_SIZE);
-	for (i = 0; i < chan_len ; i++) {
+	for (i = 0; i < chan_len ; i++)
 		cmd_args[i] = msg->weighed_valid_list[i];
-		WMI_LOGD("%s: chan:%d weight:%d", __func__,
-			 msg->saved_chan_list[i], cmd_args[i]);
-	}
 	wmi_mtrace(WMI_PDEV_SET_PCL_CMDID, NO_SESSION, 0);
 	if (wmi_unified_cmd_send(wmi_handle, buf, len,
 				 WMI_PDEV_SET_PCL_CMDID)) {

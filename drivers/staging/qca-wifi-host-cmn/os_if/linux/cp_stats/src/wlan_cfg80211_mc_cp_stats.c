@@ -43,8 +43,6 @@ static void wlan_cfg80211_mc_cp_stats_dealloc(void *priv)
 {
 	struct stats_event *stats = priv;
 
-	cfg80211_debug("Enter");
-
 	if (!stats) {
 		cfg80211_err("stats is NULL");
 		return;
@@ -56,7 +54,6 @@ static void wlan_cfg80211_mc_cp_stats_dealloc(void *priv)
 	qdf_mem_free(stats->vdev_summary_stats);
 	qdf_mem_free(stats->vdev_chain_rssi);
 	qdf_mem_free(stats->peer_adv_stats);
-	cfg80211_debug("Exit");
 }
 
 /**
@@ -429,8 +426,6 @@ static void get_station_stats_cb(struct stats_event *ev, void *cookie)
 	struct osif_request *request;
 	uint32_t summary_size, rssi_size, peer_adv_size;
 
-	cfg80211_debug("Enter");
-
 	request = osif_request_get(cookie);
 	if (!request) {
 		cfg80211_err("Obsolete request");
@@ -478,8 +473,6 @@ static void get_station_stats_cb(struct stats_event *ev, void *cookie)
 station_stats_cb_fail:
 	osif_request_complete(request);
 	osif_request_put(request);
-
-	cfg80211_debug("Exit");
 }
 
 struct stats_event *

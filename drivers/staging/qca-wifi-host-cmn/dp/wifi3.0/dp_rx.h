@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -23,6 +23,7 @@
 #include "dp_tx.h"
 #include "dp_peer.h"
 #include "dp_internal.h"
+#include <qdf_str.h>
 
 #ifdef RXDMA_OPTIMIZATION
 #ifdef NO_RX_PKT_HDR_TLV
@@ -76,6 +77,35 @@
 #define DP_RX_DESC_MAGIC 0xdec0de
 
 /**
+ * enum dp_rx_desc_state
+ *
+ * @RX_DESC_REPLENISH: rx desc replenished
+ * @RX_DESC_FREELIST: rx desc in freelist
+ */
+enum dp_rx_desc_state {
+	RX_DESC_REPLENISHED,
+	RX_DESC_IN_FREELIST,
+};
+
+/**
+ * struct dp_rx_desc_dbg_info
+ *
+ * @freelist_caller: name of the function that put the
+ *  the rx desc in freelist
+ * @freelist_ts: timestamp when the rx desc is put in
+ *  a freelist
+ * @replenish_caller: name of the function that last
+ *  replenished the rx desc
+ * @replenish_ts: last replenish timestamp
+ */
+struct dp_rx_desc_dbg_info {
+	char freelist_caller[QDF_MEM_FUNC_NAME_SIZE];
+	uint64_t freelist_ts;
+	char replenish_caller[QDF_MEM_FUNC_NAME_SIZE];
+	uint64_t replenish_ts;
+};
+
+/**
  * struct dp_rx_desc
  *
  * @nbuf		: VA of the "skb" posted
@@ -100,6 +130,7 @@ struct dp_rx_desc {
 	uint8_t	 pool_id;
 #ifdef RX_DESC_DEBUG_CHECK
 	uint32_t magic;
+	struct dp_rx_desc_dbg_info *dbg_info;
 #endif
 	uint8_t	in_use:1,
 	unmapped:1;
@@ -144,6 +175,80 @@ struct dp_rx_desc {
 #define DP_RX_DESC_COOKIE_INDEX_GET(_cookie)		\
 	(((_cookie) & RX_DESC_COOKIE_INDEX_MASK) >>	\
 			RX_DESC_COOKIE_INDEX_SHIFT)
+
+#define FRAME_MASK_IPV4_ARP   1
+#define FRAME_MASK_IPV4_DHCP  2
+#define FRAME_MASK_IPV4_EAPOL 4
+#define FRAME_MASK_IPV6_DHCP  8
+
+#define dp_rx_add_to_free_desc_list(head, tail, new) \
+	__dp_rx_add_to_free_desc_list(head, tail, new, __func__)
+
+#define dp_rx_buffers_replenish(soc, mac_id, rxdma_srng, rx_desc_pool, \
+				num_buffers, desc_list, tail) \
+	__dp_rx_buffers_replenish(soc, mac_id, rxdma_srng, rx_desc_pool, \
+				  num_buffers, desc_list, tail, __func__)
+
+#ifdef DP_RX_SPECIAL_FRAME_NEED
+/**
+ * dp_rx_is_special_frame() - check is RX frame special needed
+ *
+ * @nbuf: RX skb pointer
+ * @frame_mask: the mask for speical frame needed
+ *
+ * Check is RX frame wanted matched with mask
+ *
+ * Return: true - special frame needed, false - no
+ */
+static inline
+bool dp_rx_is_special_frame(qdf_nbuf_t nbuf, uint32_t frame_mask)
+{
+	if (((frame_mask & FRAME_MASK_IPV4_ARP) &&
+	     qdf_nbuf_is_ipv4_arp_pkt(nbuf)) ||
+	    ((frame_mask & FRAME_MASK_IPV4_DHCP) &&
+	     qdf_nbuf_is_ipv4_dhcp_pkt(nbuf)) ||
+	    ((frame_mask & FRAME_MASK_IPV4_EAPOL) &&
+	     qdf_nbuf_is_ipv4_eapol_pkt(nbuf)) ||
+	    ((frame_mask & FRAME_MASK_IPV6_DHCP) &&
+	     qdf_nbuf_is_ipv6_dhcp_pkt(nbuf)))
+		return true;
+
+	return false;
+}
+
+/**
+ * dp_rx_deliver_special_frame() - Deliver the RX special frame to stack
+ *				   if matches mask
+ *
+ * @soc: Datapath soc handler
+ * @peer: pointer to DP peer
+ * @nbuf: pointer to the skb of RX frame
+ * @frame_mask: the mask for speical frame needed
+ * @rx_tlv_hdr: start of rx tlv header
+ *
+ * note: Msdu_len must have been stored in QDF_NBUF_CB_RX_PKT_LEN(nbuf) and
+ * single nbuf is expected.
+ *
+ * return: true - nbuf has been delivered to stack, false - not.
+ */
+bool dp_rx_deliver_special_frame(struct dp_soc *soc, struct dp_peer *peer,
+				 qdf_nbuf_t nbuf, uint32_t frame_mask,
+				 uint8_t *rx_tlv_hdr);
+#else
+static inline
+bool dp_rx_is_special_frame(qdf_nbuf_t nbuf, uint32_t frame_mask)
+{
+	return false;
+}
+
+static inline
+bool dp_rx_deliver_special_frame(struct dp_soc *soc, struct dp_peer *peer,
+				 qdf_nbuf_t nbuf, uint32_t frame_mask,
+				 uint8_t *rx_tlv_hdr)
+{
+	return false;
+}
+#endif
 
 /* DOC: Offset to obtain LLC hdr
  *
@@ -510,14 +615,13 @@ dp_rx_wbm_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
  * dp_rx_sg_create() - create a frag_list for MSDUs which are spread across
  *		     multiple nbufs.
  * @nbuf: pointer to the first msdu of an amsdu.
- * @rx_tlv_hdr: pointer to the start of RX TLV headers.
  *
  * This function implements the creation of RX frag_list for cases
  * where an MSDU is spread across multiple nbufs.
  *
  * Return: returns the head nbuf which contains complete frag_list.
  */
-qdf_nbuf_t dp_rx_sg_create(qdf_nbuf_t nbuf, uint8_t *rx_tlv_hdr);
+qdf_nbuf_t dp_rx_sg_create(qdf_nbuf_t nbuf);
 
 /*
  * dp_rx_desc_pool_alloc() - create a pool of software rx_descs
@@ -574,19 +678,92 @@ void dp_rx_desc_pool_free(struct dp_soc *soc,
 void dp_rx_deliver_raw(struct dp_vdev *vdev, qdf_nbuf_t nbuf_list,
 				struct dp_peer *peer);
 
+#ifdef RX_DESC_DEBUG_CHECK
+/*
+ * dp_rx_desc_alloc_dbg_info() - Alloc memory for rx descriptor debug
+ *  structure
+ * @rx_desc: rx descriptor pointer
+ *
+ * Return: None
+ */
+static inline
+void dp_rx_desc_alloc_dbg_info(struct dp_rx_desc *rx_desc)
+{
+	rx_desc->dbg_info = qdf_mem_malloc(sizeof(struct dp_rx_desc_dbg_info));
+}
+
+/*
+ * dp_rx_desc_free_dbg_info() - Free rx descriptor debug
+ *  structure memory
+ * @rx_desc: rx descriptor pointer
+ *
+ * Return: None
+ */
+static inline
+void dp_rx_desc_free_dbg_info(struct dp_rx_desc *rx_desc)
+{
+	qdf_mem_free(rx_desc->dbg_info);
+}
+
+/*
+ * dp_rx_desc_update_dbg_info() - Update rx descriptor debug info
+ *  structure memory
+ * @rx_desc: rx descriptor pointer
+ *
+ * Return: None
+ */
+static
+void dp_rx_desc_update_dbg_info(struct dp_rx_desc *rx_desc,
+				const char *func_name, uint8_t flag)
+{
+	struct dp_rx_desc_dbg_info *info = rx_desc->dbg_info;
+
+	if (!info)
+		return;
+
+	if (flag == RX_DESC_REPLENISHED) {
+		qdf_str_lcopy(info->replenish_caller, func_name,
+			      QDF_MEM_FUNC_NAME_SIZE);
+		info->replenish_ts = qdf_get_log_timestamp();
+	} else {
+		qdf_str_lcopy(info->freelist_caller, func_name,
+			      QDF_MEM_FUNC_NAME_SIZE);
+		info->freelist_ts = qdf_get_log_timestamp();
+	}
+}
+#else
+
+static inline
+void dp_rx_desc_alloc_dbg_info(struct dp_rx_desc *rx_desc)
+{
+}
+
+static inline
+void dp_rx_desc_free_dbg_info(struct dp_rx_desc *rx_desc)
+{
+}
+
+static inline
+void dp_rx_desc_update_dbg_info(struct dp_rx_desc *rx_desc,
+				const char *func_name, uint8_t flag)
+{
+}
+#endif /* RX_DESC_DEBUG_CHECK */
+
 /**
  * dp_rx_add_to_free_desc_list() - Adds to a local free descriptor list
  *
  * @head: pointer to the head of local free list
  * @tail: pointer to the tail of local free list
  * @new: new descriptor that is added to the free list
+ * @func_name: caller func name
  *
  * Return: void:
  */
 static inline
-void dp_rx_add_to_free_desc_list(union dp_rx_desc_list_elem_t **head,
+void __dp_rx_add_to_free_desc_list(union dp_rx_desc_list_elem_t **head,
 				 union dp_rx_desc_list_elem_t **tail,
-				 struct dp_rx_desc *new)
+				 struct dp_rx_desc *new, const char *func_name)
 {
 	qdf_assert(head && new);
 
@@ -595,9 +772,11 @@ void dp_rx_add_to_free_desc_list(union dp_rx_desc_list_elem_t **head,
 
 	((union dp_rx_desc_list_elem_t *)new)->next = *head;
 	*head = (union dp_rx_desc_list_elem_t *)new;
-	if (!*tail)
+	/* reset tail if head->next is NULL */
+	if (!*tail || !(*head)->next)
 		*tail = *head;
 
+	dp_rx_desc_update_dbg_info(new, func_name, RX_DESC_IN_FREELIST);
 }
 
 uint8_t dp_rx_process_invalid_peer(struct dp_soc *soc, qdf_nbuf_t nbuf,
@@ -606,8 +785,8 @@ void dp_rx_process_invalid_peer_wrapper(struct dp_soc *soc,
 		qdf_nbuf_t mpdu, bool mpdu_done, uint8_t mac_id);
 void dp_rx_process_mic_error(struct dp_soc *soc, qdf_nbuf_t nbuf,
 			     uint8_t *rx_tlv_hdr, struct dp_peer *peer);
-void dp_2k_jump_handle(struct dp_soc *soc, qdf_nbuf_t nbuf, uint8_t *rx_tlv_hdr,
-		       uint16_t peer_id, uint8_t tid);
+void dp_2k_jump_handle(struct dp_soc *soc, qdf_nbuf_t nbuf,
+		       uint16_t peer_id, uint8_t tid, uint8_t *rx_tlv_hdr);
 
 
 #define DP_RX_LIST_APPEND(head, tail, elem) \
@@ -1106,14 +1285,16 @@ void dp_rx_mon_update_protocol_tag(struct dp_soc *soc, struct dp_pdev *dp_pdev,
  *	       or NULL during dp rx initialization or out of buffer
  *	       interrupt.
  * @tail: tail of descs list
+ * @func_name: name of the caller function
  * Return: return success or failure
  */
-QDF_STATUS dp_rx_buffers_replenish(struct dp_soc *dp_soc, uint32_t mac_id,
+QDF_STATUS __dp_rx_buffers_replenish(struct dp_soc *dp_soc, uint32_t mac_id,
 				 struct dp_srng *dp_rxdma_srng,
 				 struct rx_desc_pool *rx_desc_pool,
 				 uint32_t num_req_buffers,
 				 union dp_rx_desc_list_elem_t **desc_list,
-				 union dp_rx_desc_list_elem_t **tail);
+				 union dp_rx_desc_list_elem_t **tail,
+				 const char *func_name);
 
 /**
  * dp_rx_link_desc_return() - Return a MPDU link descriptor to HW
@@ -1232,18 +1413,21 @@ void dp_rx_process_rxdma_err(struct dp_soc *soc, qdf_nbuf_t nbuf,
 			     uint8_t *rx_tlv_hdr, struct dp_peer *peer,
 			     uint8_t err_code, uint8_t mac_id);
 
-#ifdef PEER_CACHE_RX_PKTS
 /**
- * dp_rx_flush_rx_cached() - flush cached rx frames
+ * dp_rx_deliver_to_stack() - deliver pkts to network stack
+ * Caller to hold peer refcount and check for valid peer
+ * @soc: soc
+ * @vdev: vdev
  * @peer: peer
- * @drop: set flag to drop frames
+ * @nbuf_head: skb list head
+ * @nbuf_tail: skb list tail
  *
  * Return: None
  */
-void dp_rx_flush_rx_cached(struct dp_peer *peer, bool drop);
-#else
-static inline void dp_rx_flush_rx_cached(struct dp_peer *peer, bool drop)
-{
-}
-#endif
+void dp_rx_deliver_to_stack(struct dp_soc *soc,
+			    struct dp_vdev *vdev,
+			    struct dp_peer *peer,
+			    qdf_nbuf_t nbuf_head,
+			    qdf_nbuf_t nbuf_tail);
+
 #endif /* _DP_RX_H */

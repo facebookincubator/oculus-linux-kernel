@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -282,6 +282,34 @@ struct host_log_cold_boot_cal_data_type {
 	uint32_t flags;
 	uint32_t cb_cal_data_len;
 	uint8_t cb_cal_data[HOST_LOG_MAX_COLD_BOOT_CAL_DATA_SIZE];
+};
+
+/**
+ * struct host_event_proto_pkt_info - DP protocol pkt info
+ * @hdr: Log header
+ * @version: version
+ * @type: data pkt type
+ * @subtype: data pkt subtype
+ * @dir: tx or rx
+ * @sa: source MAC address
+ * @da: destination MAC address
+ * @msdu_id: MSDU id
+ * @status: status
+ *
+ * Structure containing the protocol data pkt info
+ *
+ * LOG_WLAN_DP_PROTO_PKT_INFO_C          0x1A1E
+ */
+struct host_event_proto_pkt_info {
+	log_hdr_type hdr;
+	uint32_t version;
+	uint8_t type;
+	uint8_t subtype;
+	uint8_t dir;
+	uint8_t sa[QDF_MAC_ADDR_SIZE];
+	uint8_t da[QDF_MAC_ADDR_SIZE];
+	uint16_t msdu_id;
+	uint8_t status;
 };
 
 /*-------------------------------------------------------------------------

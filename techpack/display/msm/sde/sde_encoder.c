@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -1110,7 +1110,8 @@ static int sde_encoder_virt_atomic_check(
 	sde_conn_state = to_sde_connector_state(conn_state);
 	sde_crtc_state = to_sde_crtc_state(crtc_state);
 
-	SDE_EVT32(DRMID(drm_enc), drm_atomic_crtc_needs_modeset(crtc_state));
+	SDE_EVT32(DRMID(drm_enc), crtc_state->mode_changed,
+		crtc_state->active_changed, crtc_state->connectors_changed);
 
 	ret = _sde_encoder_atomic_check_phys_enc(sde_enc, crtc_state,
 			conn_state);
@@ -2043,12 +2044,21 @@ static void _sde_encoder_dsc_disable(struct sde_encoder_virt *sde_enc)
 	struct sde_hw_ctl *hw_ctl = NULL;
 	struct sde_ctl_dsc_cfg cfg;
 
-	if (!sde_enc || !sde_enc->phys_encs[0] ||
-			!sde_enc->phys_encs[0]->connector) {
+	if (!_sde_encoder_is_dsc_enabled(&sde_enc->base))
+		return;
+
+	if (!sde_enc || !sde_enc->phys_encs[0]) {
 		SDE_ERROR("invalid params %d %d\n",
 			!sde_enc, sde_enc ? !sde_enc->phys_encs[0] : -1);
 		return;
 	}
+
+	/*
+	 * Connector can be null if the first virt modeset after suspend
+	 * is called with dynamic clock or dms enabled.
+	 */
+	if (!sde_enc->phys_encs[0]->connector)
+		return;
 
 	if (sde_enc->cur_master)
 		hw_ctl = sde_enc->cur_master->hw_ctl;
@@ -2189,6 +2199,7 @@ static int _sde_encoder_update_rsc_client(
 	bool is_vid_mode;
 	struct msm_drm_private *priv;
 	struct sde_kms *sde_kms;
+	struct drm_encoder *enc;
 
 	if (!drm_enc || !drm_enc->dev) {
 		SDE_ERROR("invalid encoder arguments\n");
@@ -2238,6 +2249,12 @@ static int _sde_encoder_update_rsc_client(
 		rsc_state = enable ? SDE_RSC_CMD_STATE : SDE_RSC_IDLE_STATE;
 	else if (sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_VIDEO_MODE))
 		rsc_state = enable ? SDE_RSC_VID_STATE : SDE_RSC_IDLE_STATE;
+
+	drm_for_each_encoder(enc, drm_enc->dev) {
+		if (enc->base.id != drm_enc->base.id &&
+			 sde_encoder_in_cont_splash(enc))
+			rsc_state = SDE_RSC_CLK_STATE;
+	}
 
 	if (IS_SDE_MAJOR_SAME(sde_kms->core_rev, SDE_HW_VER_600) &&
 			 (rsc_state == SDE_RSC_VID_STATE))
@@ -2543,7 +2560,12 @@ static void _sde_encoder_rc_cancel_delayed(struct sde_encoder_virt *sde_enc,
 static int _sde_encoder_rc_kickoff(struct drm_encoder *drm_enc,
 	u32 sw_event, struct sde_encoder_virt *sde_enc, bool is_vid_mode)
 {
+	struct msm_drm_private *priv;
+	struct sde_kms *sde_kms;
 	int ret = 0;
+
+	priv = drm_enc->dev->dev_private;
+	sde_kms = to_sde_kms(priv->kms);
 
 	/* cancel delayed off work, if any */
 	_sde_encoder_rc_cancel_delayed(sde_enc, sw_event);
@@ -2568,6 +2590,7 @@ static int _sde_encoder_rc_kickoff(struct drm_encoder *drm_enc,
 
 	if (is_vid_mode && sde_enc->rc_state == SDE_ENC_RC_STATE_IDLE) {
 		_sde_encoder_irq_control(drm_enc, true);
+		sde_kms_update_pm_qos_irq_request(sde_kms, true, false);
 	} else {
 		/* enable all the clks and resources */
 		ret = _sde_encoder_resource_control_helper(drm_enc,
@@ -2855,6 +2878,14 @@ end:
 static int _sde_encoder_rc_idle(struct drm_encoder *drm_enc,
 	u32 sw_event, struct sde_encoder_virt *sde_enc, bool is_vid_mode)
 {
+	struct msm_drm_private *priv;
+	struct sde_kms *sde_kms;
+	struct drm_crtc *crtc = drm_enc->crtc;
+	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
+
+	priv = drm_enc->dev->dev_private;
+	sde_kms = to_sde_kms(priv->kms);
+
 	mutex_lock(&sde_enc->rc_lock);
 
 	if (sde_enc->rc_state != SDE_ENC_RC_STATE_ON) {
@@ -2873,10 +2904,15 @@ static int _sde_encoder_rc_idle(struct drm_encoder *drm_enc,
 
 	if (is_vid_mode) {
 		_sde_encoder_irq_control(drm_enc, false);
+		sde_kms_update_pm_qos_irq_request(sde_kms, false, false);
 	} else {
 		/* disable all the clks and resources */
 		_sde_encoder_update_rsc_client(drm_enc, false);
 		_sde_encoder_resource_control_helper(drm_enc, false);
+
+		if (!sde_kms->perf.bw_vote_mode)
+			memset(&sde_crtc->cur_perf, 0,
+				sizeof(struct sde_core_perf_params));
 	}
 
 	SDE_EVT32(DRMID(drm_enc), sw_event, sde_enc->rc_state,
@@ -3136,6 +3172,8 @@ static void sde_encoder_virt_mode_set(struct drm_encoder *drm_enc,
 	/* store the mode_info */
 	sde_connector_state_get_mode_info(conn->state, &sde_enc->mode_info);
 
+	sde_crtc_set_compression_ratio(sde_enc->mode_info, sde_enc->crtc);
+
 	/* release resources before seamless mode change */
 	if (msm_is_mode_seamless_dms(adj_mode) ||
 			(msm_is_mode_seamless_dyn_clk(adj_mode) &&
@@ -3345,19 +3383,41 @@ static const struct input_device_id sde_input_ids[] = {
 	{ },
 };
 
-static int _sde_encoder_input_handler_register(
-		struct input_handler *input_handler)
+static void _sde_encoder_input_handler_register(
+		struct drm_encoder *drm_enc)
 {
-	int rc = 0;
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
+	int rc;
 
-	rc = input_register_handler(input_handler);
-	if (rc) {
-		pr_err("input_register_handler failed, rc= %d\n", rc);
-		kfree(input_handler);
-		return rc;
+	if (!sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE))
+		return;
+
+	if (sde_enc->input_handler && !sde_enc->input_handler->private) {
+		sde_enc->input_handler->private = sde_enc;
+
+		/* register input handler if not already registered */
+		rc = input_register_handler(sde_enc->input_handler);
+		if (rc) {
+			SDE_ERROR("input_handler_register failed, rc= %d\n",
+						 rc);
+			kfree(sde_enc->input_handler);
+		}
+	}
+}
+
+static void _sde_encoder_input_handler_unregister(
+		struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
+
+	if (!sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE))
+		return;
+
+	if (sde_enc->input_handler && sde_enc->input_handler->private) {
+		input_unregister_handler(sde_enc->input_handler);
+		sde_enc->input_handler->private = NULL;
 	}
 
-	return rc;
 }
 
 static int _sde_encoder_input_handler(
@@ -3381,7 +3441,6 @@ static int _sde_encoder_input_handler(
 	input_handler->disconnect = _sde_encoder_input_disconnect;
 	input_handler->name = "sde";
 	input_handler->id_table = sde_input_ids;
-	input_handler->private = sde_enc;
 
 	sde_enc->input_handler = input_handler;
 
@@ -3540,18 +3599,11 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 		return;
 	}
 
-	/* register input handler if not already registered */
-	if (sde_enc->input_handler && !msm_is_mode_seamless_dms(cur_mode) &&
-		sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE) &&
-			!msm_is_mode_seamless_dyn_clk(cur_mode)) {
-		ret = _sde_encoder_input_handler_register(
-				sde_enc->input_handler);
-		if (ret)
-			SDE_ERROR(
-			"input handler registration failed, rc = %d\n", ret);
-	}
+	_sde_encoder_input_handler_register(drm_enc);
 
-	if (!(msm_is_mode_seamless_vrr(cur_mode)
+	if ((drm_enc->crtc->state->connectors_changed &&
+			sde_encoder_in_clone_mode(drm_enc)) ||
+			!(msm_is_mode_seamless_vrr(cur_mode)
 			|| msm_is_mode_seamless_dms(cur_mode)
 			|| msm_is_mode_seamless_dyn_clk(cur_mode)))
 		kthread_init_delayed_work(&sde_enc->delayed_off_work,
@@ -3649,9 +3701,7 @@ static void sde_encoder_virt_disable(struct drm_encoder *drm_enc)
 	/* wait for idle */
 	sde_encoder_wait_for_event(drm_enc, MSM_ENC_TX_COMPLETE);
 
-	if (sde_enc->input_handler &&
-		sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE))
-		input_unregister_handler(sde_enc->input_handler);
+	_sde_encoder_input_handler_unregister(drm_enc);
 
 	/*
 	 * For primary command mode and video mode encoders, execute the
@@ -5242,7 +5292,7 @@ int sde_encoder_prepare_commit(struct drm_encoder *drm_enc)
 		if (phys && phys->ops.prepare_commit)
 			phys->ops.prepare_commit(phys);
 
-		if (phys->enable_state == SDE_ENC_ERR_NEEDS_HW_RESET)
+		if (phys && phys->enable_state == SDE_ENC_ERR_NEEDS_HW_RESET)
 			ret = -ETIMEDOUT;
 
 		if (phys && phys->hw_ctl) {
@@ -6213,14 +6263,6 @@ int sde_encoder_update_caps_for_cont_splash(struct drm_encoder *encoder,
 		return ret;
 	}
 
-	ret = sde_rm_reserve(&sde_kms->rm, encoder, encoder->crtc->state,
-			conn->state, false);
-	if (ret) {
-		SDE_ERROR_ENC(sde_enc,
-			"failed to reserve hw resources, %d\n", ret);
-		return ret;
-	}
-
 	if (sde_conn->encoder) {
 		conn->state->best_encoder = sde_conn->encoder;
 		SDE_DEBUG_ENC(sde_enc,
@@ -6229,6 +6271,14 @@ int sde_encoder_update_caps_for_cont_splash(struct drm_encoder *encoder,
 	} else {
 		SDE_ERROR_ENC(sde_enc, "No encoder mapped to connector=%d\n",
 				conn->base.id);
+	}
+
+	ret = sde_rm_reserve(&sde_kms->rm, encoder, encoder->crtc->state,
+			conn->state, false);
+	if (ret) {
+		SDE_ERROR_ENC(sde_enc,
+			"failed to reserve hw resources, %d\n", ret);
+		return ret;
 	}
 
 	SDE_DEBUG_ENC(sde_enc, "connector topology = %llu\n",
@@ -6283,12 +6333,41 @@ int sde_encoder_update_caps_for_cont_splash(struct drm_encoder *encoder,
 	return ret;
 }
 
+static void sde_encoder_wait_for_ctl_idle(struct sde_encoder_virt *sde_enc)
+{
+	int i = 0, rc = 0;
+	struct sde_encoder_phys *phys;
+	struct sde_hw_ctl *ctl;
+
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		phys = sde_enc->phys_encs[i];
+
+		if (!phys || !phys->hw_ctl)
+			return;
+
+		ctl = phys->hw_ctl;
+		if (ctl && ctl->ops.get_scheduler_status) {
+			rc = wait_event_timeout(phys->pending_kickoff_wq,
+				(ctl->ops.get_scheduler_status(ctl) & BIT(0)),
+				msecs_to_jiffies(KICKOFF_TIMEOUT_MS));
+			if (!rc) {
+				SDE_ERROR("wait for ctl idle failed\n");
+				SDE_EVT32(SDE_EVTLOG_ERROR);
+				return;
+			}
+
+			SDE_EVT32(ctl->ops.get_scheduler_status(ctl));
+		}
+	}
+}
+
 int sde_encoder_display_failure_notification(struct drm_encoder *enc,
 	bool skip_pre_kickoff)
 {
 	struct msm_drm_thread *event_thread = NULL;
 	struct msm_drm_private *priv = NULL;
 	struct sde_encoder_virt *sde_enc = NULL;
+	bool posted_start_en = false;
 
 	if (!enc || !enc->dev || !enc->dev->dev_private) {
 		SDE_ERROR("invalid parameters\n");
@@ -6306,9 +6385,15 @@ int sde_encoder_display_failure_notification(struct drm_encoder *enc,
 		return -EINVAL;
 	}
 
-	SDE_EVT32_VERBOSE(DRMID(enc));
-
 	event_thread = &priv->event_thread[sde_enc->crtc->index];
+
+	if (sde_enc->cur_master && sde_enc->cur_master->connector)
+		posted_start_en = (sde_connector_get_property(
+				sde_enc->cur_master->connector->state,
+				CONNECTOR_PROP_CMD_FRAME_TRIGGER_MODE) ==
+				FRAME_DONE_WAIT_POSTED_START) ? true : false;
+
+	SDE_EVT32_VERBOSE(DRMID(enc), posted_start_en);
 
 	if (!skip_pre_kickoff) {
 		kthread_queue_work(&event_thread->worker,
@@ -6323,7 +6408,16 @@ int sde_encoder_display_failure_notification(struct drm_encoder *enc,
 	 */
 	sde_encoder_helper_switch_vsync(enc, true);
 
-	if (!skip_pre_kickoff)
+	if (skip_pre_kickoff)
+		return 0;
+	else if (posted_start_en)
+		/*
+		 * Make sure that the frame transfer is completed after
+		 * switching to watchdog vsync. The timeout will be
+		 * handled in the commit context for posted start usecases.
+		 */
+		sde_encoder_wait_for_ctl_idle(sde_enc);
+	else
 		sde_encoder_wait_for_event(enc, MSM_ENC_TX_COMPLETE);
 
 	return 0;

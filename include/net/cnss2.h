@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved. */
 
 #ifndef _NET_CNSS2_H
 #define _NET_CNSS2_H
@@ -67,6 +67,25 @@ struct cnss_wlan_runtime_ops {
 	int (*runtime_resume)(struct pci_dev *pdev);
 };
 
+enum cnss_driver_status {
+	CNSS_UNINITIALIZED,
+	CNSS_INITIALIZED,
+	CNSS_LOAD_UNLOAD,
+	CNSS_RECOVERY,
+	CNSS_FW_DOWN,
+	CNSS_HANG_EVENT,
+};
+
+struct cnss_hang_event {
+	void *hang_event_data;
+	u16 hang_event_data_len;
+};
+
+struct cnss_uevent_data {
+	enum cnss_driver_status status;
+	void *data;
+};
+
 struct cnss_wlan_driver {
 	char *name;
 	int  (*probe)(struct pci_dev *pdev, const struct pci_device_id *id);
@@ -83,16 +102,10 @@ struct cnss_wlan_driver {
 	int  (*resume_noirq)(struct pci_dev *pdev);
 	void (*modem_status)(struct pci_dev *pdev, int state);
 	void (*update_status)(struct pci_dev *pdev, uint32_t status);
+	int  (*update_event)(struct pci_dev *pdev,
+			     struct cnss_uevent_data *uevent);
 	struct cnss_wlan_runtime_ops *runtime_ops;
 	const struct pci_device_id *id_table;
-};
-
-enum cnss_driver_status {
-	CNSS_UNINITIALIZED,
-	CNSS_INITIALIZED,
-	CNSS_LOAD_UNLOAD,
-	CNSS_RECOVERY,
-	CNSS_FW_DOWN,
 };
 
 struct cnss_ce_tgt_pipe_cfg {
@@ -158,6 +171,8 @@ enum cnss_recovery_reason {
 extern int cnss_wlan_register_driver(struct cnss_wlan_driver *driver);
 extern void cnss_wlan_unregister_driver(struct cnss_wlan_driver *driver);
 extern void cnss_device_crashed(struct device *dev);
+extern int cnss_pci_prevent_l1(struct device *dev);
+extern void cnss_pci_allow_l1(struct device *dev);
 extern int cnss_pci_link_down(struct device *dev);
 extern int cnss_pci_is_device_down(struct device *dev);
 extern void cnss_schedule_recovery(struct device *dev,

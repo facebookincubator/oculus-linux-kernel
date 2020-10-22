@@ -128,15 +128,14 @@ int find_ie_location(struct mac_context *mac, tpSirRSNie pRsnIe, uint8_t EID)
 	bytesLeft = pRsnIe->length;
 
 	while (1) {
-		if (EID == pRsnIe->rsnIEdata[idx]) {
+		if (EID == pRsnIe->rsnIEdata[idx])
 			/* Found it */
 			return idx;
-		} else if (EID != pRsnIe->rsnIEdata[idx] &&
-			/* & if no more IE, */
-			   bytesLeft <= (uint16_t) (ieLen)) {
-			pe_debug("No IE (%d)", EID);
+		if (EID != pRsnIe->rsnIEdata[idx] &&
+		    /* & if no more IE, */
+		    bytesLeft <= (uint16_t)(ieLen))
 			return ret_val;
-		}
+
 		bytesLeft -= ieLen;
 		ieLen = pRsnIe->rsnIEdata[idx + 1] + 2;
 		idx += ieLen;
@@ -716,8 +715,6 @@ populate_dot11f_ht_caps(struct mac_context *mac,
 	if (pe_session) {
 		disable_high_ht_mcs_2x2 =
 				mac->mlme_cfg->rates.disable_high_ht_mcs_2x2;
-		pe_debug("disable HT high MCS INI param[%d]",
-			 disable_high_ht_mcs_2x2);
 		if (pe_session->nss == NSS_1x1_MODE) {
 			pDot11f->supportedMCSSet[1] = 0;
 		} else if (IS_24G_CH(pe_session->currentOperChannel) &&
@@ -872,18 +869,15 @@ static void lim_log_qos_map_set(struct mac_context *mac,
 
 	pe_debug("num of dscp exceptions: %d",
 		pQosMapSet->num_dscp_exceptions);
-	for (i = 0; i < pQosMapSet->num_dscp_exceptions; i++) {
-		pe_debug("dscp value: %d",
-			pQosMapSet->dscp_exceptions[i][0]);
-		pe_debug("User priority value: %d",
-			pQosMapSet->dscp_exceptions[i][1]);
-	}
-	for (i = 0; i < 8; i++) {
-		pe_debug("dscp low for up %d: %d", i,
-			pQosMapSet->dscp_range[i][0]);
-		pe_debug("dscp high for up %d: %d", i,
-			pQosMapSet->dscp_range[i][1]);
-	}
+	for (i = 0; i < pQosMapSet->num_dscp_exceptions; i++)
+		pe_nofl_debug("dscp value: %d, User priority value: %d",
+			      pQosMapSet->dscp_exceptions[i][0],
+			      pQosMapSet->dscp_exceptions[i][1]);
+
+	for (i = 0; i < 8; i++)
+		pe_nofl_debug("For up %d: dscp low: %d, dscp high: %d", i,
+			       pQosMapSet->dscp_range[i][0],
+			       pQosMapSet->dscp_range[i][1]);
 }
 
 QDF_STATUS
@@ -1113,13 +1107,10 @@ populate_dot11f_ext_cap(struct mac_context *mac,
 		pe_debug("11MC support enabled");
 		pDot11f->num_bytes = DOT11F_IE_EXTCAP_MAX_LEN;
 	} else {
-		if (eLIM_AP_ROLE != pe_session->limSystemRole) {
-			pe_debug("11MC support enabled");
+		if (eLIM_AP_ROLE != pe_session->limSystemRole)
 			pDot11f->num_bytes = DOT11F_IE_EXTCAP_MAX_LEN;
-		} else  {
-			pe_debug("11MC support disabled");
+		else
 			pDot11f->num_bytes = DOT11F_IE_EXTCAP_MIN_LEN;
-		}
 	}
 
 	p_ext_cap = (struct s_ext_cap *)pDot11f->bytes;
@@ -3240,6 +3231,7 @@ sir_convert_reassoc_req_frame2_struct(struct mac_context *mac,
 			status, nFrame);
 		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
 				   pFrame, nFrame);
+		qdf_mem_free(ar);
 		return QDF_STATUS_E_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
 		pe_debug("There were warnings while unpacking a Re-association Request (0x%08x, %d bytes):",
@@ -3336,11 +3328,13 @@ sir_convert_reassoc_req_frame2_struct(struct mac_context *mac,
 
 	if (!pAssocReq->ssidPresent) {
 		pe_debug("Received Assoc without SSID IE");
+		qdf_mem_free(ar);
 		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (!pAssocReq->suppRatesPresent && !pAssocReq->extendedRatesPresent) {
 		pe_debug("Received Assoc without supp rate IE");
+		qdf_mem_free(ar);
 		return QDF_STATUS_E_FAILURE;
 	}
 	/* Why no call to 'updateAssocReqFromPropCapability' here, like */
@@ -3720,8 +3714,7 @@ sir_parse_beacon_ie(struct mac_context *mac,
 		qdf_mem_free(pBies);
 		return QDF_STATUS_E_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_debug("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
-			status, nPayload);
+		pe_debug("warnings (0x%08x, %d bytes):", status, nPayload);
 	}
 	/* & "transliterate" from a 'tDot11fBeaconIEs' to a 'tSirProbeRespBeacon'... */
 	if (!pBies->SSID.present) {
@@ -5958,8 +5951,6 @@ QDF_STATUS populate_dot11f_he_caps(struct mac_context *mac_ctx, struct pe_sessio
 	} else {
 		he_cap->ppet.ppe_threshold.num_ppe_th = 0;
 	}
-
-	lim_log_he_cap(mac_ctx, he_cap);
 
 	return QDF_STATUS_SUCCESS;
 }

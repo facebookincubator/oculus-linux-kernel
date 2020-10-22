@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4718,6 +4718,54 @@ QDF_STATUS wmi_unified_send_mws_coex_req_cmd(struct wmi_unified *wmi_handle,
 	if (wmi_handle->ops->send_mws_coex_status_req_cmd)
 		return wmi_handle->ops->send_mws_coex_status_req_cmd(wmi_handle,
 				vdev_id, cmd_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_extract_roam_trigger_stats(wmi_unified_t wmi,
+				       void *evt_buf,
+				       struct wmi_roam_trigger_info *trig,
+				       uint8_t idx)
+{
+	if (wmi->ops->extract_roam_trigger_stats)
+		return wmi->ops->extract_roam_trigger_stats(wmi, evt_buf, trig,
+							    idx);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_extract_roam_scan_stats(wmi_unified_t wmi, void *evt_buf,
+				    struct wmi_roam_scan_data *dst, uint8_t idx,
+				    uint8_t chan_idx, uint8_t ap_idx)
+{
+	if (wmi->ops->extract_roam_scan_stats)
+		return wmi->ops->extract_roam_scan_stats(wmi, evt_buf, dst,
+							 idx, chan_idx, ap_idx);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_extract_roam_result_stats(wmi_unified_t wmi, void *buf,
+				      struct wmi_roam_result *dst,
+				      uint8_t idx)
+{
+	if (wmi->ops->extract_roam_result_stats)
+		return wmi->ops->extract_roam_result_stats(wmi, buf, dst, idx);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_extract_roam_11kv_stats(wmi_unified_t wmi, void *evt_buf,
+				    struct wmi_neighbor_report_data *dst,
+				    uint8_t idx, uint8_t rpt_idx)
+{
+	if (wmi->ops->extract_roam_11kv_stats)
+		return wmi->ops->extract_roam_11kv_stats(wmi, evt_buf, dst, idx,
+							rpt_idx);
 
 	return QDF_STATUS_E_FAILURE;
 }

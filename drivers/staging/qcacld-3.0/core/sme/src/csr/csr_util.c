@@ -992,8 +992,6 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 	uint16_t sap_lfreq, sap_hfreq, intf_lfreq, intf_hfreq, sap_cch = 0;
 	QDF_STATUS status;
 
-	sme_debug("sap_ch: %d sap_phymode: %d", sap_ch, sap_phymode);
-
 	if (mac_ctx->roam.configParam.cc_switch_mode ==
 			QDF_MCC_TO_SCC_SWITCH_DISABLE)
 		return 0;
@@ -1046,10 +1044,6 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 			csr_handle_conc_chnl_overlap_for_sap_go(mac_ctx,
 					session, &sap_ch, &sap_hbw, &sap_cfreq,
 					&intf_ch, &intf_hbw, &intf_cfreq);
-
-			sme_debug("%d: sap_ch:%d sap_hbw:%d sap_cfreq:%d intf_ch:%d intf_hbw:%d, intf_cfreq:%d",
-					i, sap_ch, sap_hbw, sap_cfreq,
-					intf_ch, intf_hbw, intf_cfreq);
 		}
 		if (intf_ch && ((intf_ch > 14 && sap_ch > 14) ||
 				(intf_ch <= 14 && sap_ch <= 14)))
@@ -1059,7 +1053,6 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 	sme_debug("intf_ch:%d sap_ch:%d cc_switch_mode:%d, dbs:%d",
 			intf_ch, sap_ch, cc_switch_mode,
 			policy_mgr_is_dbs_enable(mac_ctx->psoc));
-
 	if (intf_ch && sap_ch != intf_ch &&
 	    !policy_mgr_is_force_scc(mac_ctx->psoc)) {
 		sap_lfreq = sap_cfreq - sap_hbw;
@@ -1067,12 +1060,13 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 		intf_lfreq = intf_cfreq - intf_hbw;
 		intf_hfreq = intf_cfreq + intf_hbw;
 
-		sme_err("SAP:  OCH: %03d OCF: %d CCH: %03d CF: %d BW: %d LF: %d HF: %d INTF: OCH: %03d OCF: %d CCH: %03d CF: %d BW: %d LF: %d HF: %d",
-			sap_ch, cds_chan_to_freq(sap_ch),
-			cds_freq_to_chan(sap_cfreq), sap_cfreq, sap_hbw * 2,
-			sap_lfreq, sap_hfreq, intf_ch,
-			cds_chan_to_freq(intf_ch), cds_freq_to_chan(intf_cfreq),
-			intf_cfreq, intf_hbw * 2, intf_lfreq, intf_hfreq);
+		sme_debug("SAP:  OCH: %03d OCF: %d CCH: %03d CF: %d BW: %d LF: %d HF: %d INTF: OCH: %03d OCF: %d CCH: %03d CF: %d BW: %d LF: %d HF: %d",
+			  sap_ch, cds_chan_to_freq(sap_ch),
+			  cds_freq_to_chan(sap_cfreq), sap_cfreq, sap_hbw * 2,
+			  sap_lfreq, sap_hfreq, intf_ch,
+			  cds_chan_to_freq(intf_ch),
+			  cds_freq_to_chan(intf_cfreq),
+			  intf_cfreq, intf_hbw * 2, intf_lfreq, intf_hfreq);
 
 		if (!(((sap_lfreq > intf_lfreq && sap_lfreq < intf_hfreq) ||
 			(sap_hfreq > intf_lfreq && sap_hfreq < intf_hfreq)) ||
@@ -1110,8 +1104,8 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 	if (intf_ch == sap_ch)
 		intf_ch = 0;
 
-	sme_err("##Concurrent Channels %s Interfering",
-		intf_ch == 0 ? "Not" : "Are");
+	sme_debug("##Concurrent Channels %s Interfering",
+		  intf_ch == 0 ? "Not" : "Are");
 	return intf_ch;
 }
 #endif
@@ -1569,7 +1563,6 @@ uint32_t csr_translate_to_wni_cfg_dot11_mode(struct mac_context *mac,
 
 	switch (csrDot11Mode) {
 	case eCSR_CFG_DOT11_MODE_AUTO:
-		sme_debug("eCSR_CFG_DOT11_MODE_AUTO");
 		if (IS_FEATURE_SUPPORTED_BY_FW(DOT11AX))
 			ret = MLME_DOT11_MODE_11AX;
 		else if (IS_FEATURE_SUPPORTED_BY_FW(DOT11AC))

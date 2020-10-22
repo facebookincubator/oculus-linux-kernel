@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _MSM_VIDC_COMMON_H_
@@ -120,6 +120,11 @@ static inline bool is_grid_session(struct msm_vidc_inst *inst)
 	}
 	return 0;
 }
+
+static inline bool is_video_session(struct msm_vidc_inst *inst)
+{
+	return !is_grid_session(inst);
+}
 static inline bool is_realtime_session(struct msm_vidc_inst *inst)
 {
 	struct v4l2_ctrl *ctrl;
@@ -167,6 +172,18 @@ static inline bool is_output_buffer(struct msm_vidc_buffer *mbuf)
 	return mbuf->vvb.vb2_buf.type == OUTPUT_MPLANE;
 }
 
+static inline bool is_internal_buffer(enum hal_buffer type)
+{
+	u32 buf_type =
+		HAL_BUFFER_INTERNAL_SCRATCH |
+		HAL_BUFFER_INTERNAL_SCRATCH_1 |
+		HAL_BUFFER_INTERNAL_SCRATCH_2 |
+		HAL_BUFFER_INTERNAL_PERSIST |
+		HAL_BUFFER_INTERNAL_PERSIST_1 |
+		HAL_BUFFER_INTERNAL_RECON;
+	return !!(buf_type & type);
+}
+
 static inline int msm_comm_g_ctrl(struct msm_vidc_inst *inst,
 		struct v4l2_control *ctrl)
 {
@@ -177,6 +194,22 @@ static inline int msm_comm_s_ctrl(struct msm_vidc_inst *inst,
 		struct v4l2_control *ctrl)
 {
 	return v4l2_s_ctrl(NULL, &inst->ctrl_handler, ctrl);
+}
+
+static inline bool is_valid_operating_rate(struct msm_vidc_inst *inst, s32 val)
+{
+	struct hal_capability_supported *cap;
+
+	cap = &inst->capability.cap[CAP_OPERATINGRATE];
+
+	if (((val >> 16) < cap->min || (val >> 16) > cap->max) &&
+		val != INT_MAX) {
+		s_vpr_e(inst->sid,
+			"Unsupported operating rate %d min %d max %d\n",
+			val >> 16, cap->min, cap->max);
+		return false;
+	}
+	return true;
 }
 
 bool is_single_session(struct msm_vidc_inst *inst, u32 ignore_flags);
@@ -254,7 +287,9 @@ int msm_comm_get_inst_load(struct msm_vidc_inst *inst,
 int msm_comm_get_inst_load_per_core(struct msm_vidc_inst *inst,
 			enum load_calc_quirks quirks);
 int msm_comm_get_device_load(struct msm_vidc_core *core,
-			enum session_type type, enum load_calc_quirks quirks);
+			enum session_type sess_type,
+			enum load_type load_type,
+			enum load_calc_quirks quirks);
 int msm_comm_set_color_format(struct msm_vidc_inst *inst,
 		enum hal_buffer buffer_type, int fourcc);
 int msm_comm_g_ctrl(struct msm_vidc_inst *inst, struct v4l2_control *ctrl);
@@ -267,6 +302,7 @@ int msm_comm_ctrl_deinit(struct msm_vidc_inst *inst);
 void msm_comm_cleanup_internal_buffers(struct msm_vidc_inst *inst);
 bool msm_comm_turbo_session(struct msm_vidc_inst *inst);
 void msm_comm_print_inst_info(struct msm_vidc_inst *inst);
+void msm_comm_print_insts_info(struct msm_vidc_core *core);
 int msm_comm_v4l2_to_hfi(int id, int value, u32 sid);
 int msm_comm_hfi_to_v4l2(int id, int value, u32 sid);
 int msm_comm_get_v4l2_profile(int fourcc, int profile, u32 sid);
@@ -314,16 +350,11 @@ void print_vb2_buffer(const char *str, struct msm_vidc_inst *inst,
 		struct vb2_buffer *vb2);
 void kref_put_mbuf(struct msm_vidc_buffer *mbuf);
 bool kref_get_mbuf(struct msm_vidc_inst *inst, struct msm_vidc_buffer *mbuf);
-void msm_comm_store_input_tag(struct msm_vidc_list *data_list,
+int msm_comm_store_input_tag(struct msm_vidc_list *data_list,
 		u32 index, u32 itag, u32 itag2, u32 sid);
 int msm_comm_fetch_input_tag(struct msm_vidc_list *data_list,
 		u32 index, u32 *itag, u32 *itag2, u32 sid);
 int msm_comm_release_input_tag(struct msm_vidc_inst *inst);
-struct msm_vidc_client_data *msm_comm_store_client_data(
-	struct msm_vidc_inst *inst, u32 itag);
-void msm_comm_fetch_client_data(struct msm_vidc_inst *inst, bool remove,
-	u32 itag, u32 itag2, u32 *mdata, u32 *mtarget);
-void msm_comm_release_client_data(struct msm_vidc_inst *inst, bool remove);
 int msm_comm_qbufs_batch(struct msm_vidc_inst *inst,
 		struct msm_vidc_buffer *mbuf);
 int msm_comm_qbuf_decode_batch(struct msm_vidc_inst *inst,
@@ -343,4 +374,6 @@ void msm_comm_clear_window_data(struct msm_vidc_inst *inst);
 void msm_comm_release_window_data(struct msm_vidc_inst *inst);
 int msm_comm_set_cvp_skip_ratio(struct msm_vidc_inst *inst,
 	uint32_t capture_rate, uint32_t cvp_rate);
+int msm_comm_check_memory_supported(struct msm_vidc_inst *vidc_inst);
+int msm_comm_update_dpb_bufreqs(struct msm_vidc_inst *inst);
 #endif

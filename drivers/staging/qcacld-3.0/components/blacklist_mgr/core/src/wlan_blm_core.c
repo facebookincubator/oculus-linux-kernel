@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -244,7 +244,7 @@ blm_filter_bssid(struct wlan_objmgr_pdev *pdev, qdf_list_t *scan_list)
 	qdf_list_node_t *cur_node = NULL, *next_node = NULL;
 
 	if (!scan_list || !qdf_list_size(scan_list)) {
-		blm_err("Scan list is NULL or No BSSIDs present");
+		blm_debug("Scan list is NULL or No BSSIDs present");
 		return QDF_STATUS_E_EMPTY;
 	}
 
@@ -650,7 +650,7 @@ static void blm_fill_reject_list(qdf_list_t *reject_db_list,
 	}
 }
 
-static void
+void
 blm_send_reject_ap_list_to_fw(struct wlan_objmgr_pdev *pdev,
 			      qdf_list_t *reject_db_list,
 			      struct blm_config *cfg)
@@ -686,12 +686,6 @@ blm_send_reject_ap_list_to_fw(struct wlan_objmgr_pdev *pdev,
 			     DRIVER_AVOID_TYPE,
 			     PDEV_MAX_NUM_BSSID_DISALLOW_LIST, cfg);
 
-	if (!reject_params.num_of_reject_bssid) {
-		blm_debug("no candidate present in reject ap list.");
-		qdf_mem_free(reject_params.bssid_list);
-		return;
-	}
-
 	status = tgt_blm_send_reject_list_to_fw(pdev, &reject_params);
 
 	if (QDF_IS_STATUS_ERROR(status))
@@ -716,6 +710,12 @@ blm_add_bssid_to_reject_list(struct wlan_objmgr_pdev *pdev,
 
 	if (!blm_ctx || !blm_psoc_obj) {
 		blm_err("blm_ctx or blm_psoc_obj is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (qdf_is_macaddr_zero(&ap_info->bssid) ||
+	    qdf_is_macaddr_group(&ap_info->bssid)) {
+		blm_err("Zero/Broadcast BSSID received, entry not added");
 		return QDF_STATUS_E_INVAL;
 	}
 

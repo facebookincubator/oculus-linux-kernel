@@ -957,6 +957,7 @@ struct csr_neighbor_report_offload_params {
 struct csr_config_params {
 	/* keep this uint32_t. This gets converted to ePhyChannelBondState */
 	uint32_t channelBondingMode24GHz;
+	uint8_t nud_fail_behaviour;
 	uint32_t channelBondingMode5GHz;
 	eCsrPhyMode phyMode;
 	uint32_t HeartbeatThresh50;
@@ -1495,6 +1496,11 @@ static inline void csr_roam_fill_tdls_info(struct mac_context *mac_ctx,
 					   struct join_rsp *join_rsp)
 {}
 #endif
+
+typedef void (*sme_get_raom_scan_ch_callback)(
+				hdd_handle_t hdd_handle,
+				struct roam_scan_ch_resp *roam_ch,
+				void *context);
 
 /**
  * csr_packetdump_timer_stop() - stops packet dump timer

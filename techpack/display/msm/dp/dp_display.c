@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -62,6 +62,7 @@ enum dp_display_states {
 	DP_STATE_SUSPENDED              = BIT(7),
 	DP_STATE_ABORTED                = BIT(8),
 	DP_STATE_HDCP_ABORTED           = BIT(9),
+	DP_STATE_SRC_PWRDN              = BIT(10),
 };
 
 static char *dp_display_state_name(enum dp_display_states state)
@@ -110,6 +111,10 @@ static char *dp_display_state_name(enum dp_display_states state)
 	if (state & DP_STATE_HDCP_ABORTED)
 		len += scnprintf(buf + len, sizeof(buf) - len, "|%s|",
 			"HDCP_ABORTED");
+
+	if (state & DP_STATE_SRC_PWRDN)
+		len += scnprintf(buf + len, sizeof(buf) - len, "|%s|",
+			"SRC_PWRDN");
 
 	if (!strlen(buf))
 		return "DISCONNECTED";
@@ -245,6 +250,30 @@ static bool dp_display_is_ready(struct dp_display_private *dp)
 		dp->hpd->alt_mode_cfg_done;
 }
 
+static void dp_audio_enable(struct dp_display_private *dp, bool enable)
+{
+	struct dp_panel *dp_panel;
+	int idx;
+
+	for (idx = DP_STREAM_0; idx < DP_STREAM_MAX; idx++) {
+		if (!dp->active_panels[idx])
+			continue;
+		dp_panel = dp->active_panels[idx];
+
+		if (dp_panel->audio_supported) {
+			if (enable) {
+				dp_panel->audio->bw_code =
+					dp->link->link_params.bw_code;
+				dp_panel->audio->lane_count =
+					dp->link->link_params.lane_count;
+				dp_panel->audio->on(dp_panel->audio);
+			} else {
+				dp_panel->audio->off(dp_panel->audio);
+			}
+		}
+	}
+}
+
 static void dp_display_update_hdcp_status(struct dp_display_private *dp,
 					bool reset)
 {
@@ -369,6 +398,22 @@ static void dp_display_hdcp_deregister_stream(struct dp_display_private *dp,
 
 		DP_DEBUG("Deregistering stream within HDCP library\n");
 		dp->hdcp.ops->deregister_streams(dp->hdcp.data, 1, &stream);
+	}
+}
+
+static void dp_display_abort_hdcp(struct dp_display_private *dp,
+		bool abort)
+{
+	u32 i = HDCP_VERSION_2P2;
+	struct dp_hdcp_dev *dev = NULL;
+
+	while (i) {
+		dev = &dp->hdcp.dev[i];
+		i >>= 1;
+		if (!(dp->hdcp.source_cap & dev->ver))
+			continue;
+
+		dev->ops->abort(dev->fd, abort);
 	}
 }
 
@@ -636,6 +681,7 @@ static void dp_display_send_hpd_event(struct dp_display_private *dp)
 
 	if (dp->mst.mst_active) {
 		DP_DEBUG("skip notification for mst mode\n");
+		dp_display_state_remove(DP_STATE_DISCONNECT_NOTIFIED);
 		return;
 	}
 
@@ -690,6 +736,24 @@ static int dp_display_send_hpd_notification(struct dp_display_private *dp)
 	bool hpd = !!dp_display_state_is(DP_STATE_CONNECTED);
 
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_ENTRY, dp->state, hpd);
+
+	/*
+	 * Send the notification only if there is any change. This check is
+	 * necessary since it is possible that the connect_work may or may not
+	 * skip sending the notification in order to respond to a pending
+	 * attention message. Attention work thread will always attempt to
+	 * send the notification after successfully handling the attention
+	 * message. This check here will avoid any unintended duplicate
+	 * notifications.
+	 */
+	if (dp_display_state_is(DP_STATE_CONNECT_NOTIFIED) && hpd) {
+		DP_DEBUG("connection notified already, skip notification\n");
+		goto skip_wait;
+	} else if (dp_display_state_is(DP_STATE_DISCONNECT_NOTIFIED) && !hpd) {
+		DP_DEBUG("disonnect notified already, skip notification\n");
+		goto skip_wait;
+	}
+
 	dp->aux->state |= DP_STATE_NOTIFICATION_SENT;
 
 	if (!dp->mst.mst_active)
@@ -804,6 +868,7 @@ static void dp_display_host_init(struct dp_display_private *dp)
 	dp->hpd->host_init(dp->hpd, &dp->catalog->hpd);
 	dp->ctrl->init(dp->ctrl, flip, reset);
 	enable_irq(dp->irq);
+	dp_display_abort_hdcp(dp, false);
 
 	dp_display_state_add(DP_STATE_INITIALIZED);
 
@@ -822,6 +887,25 @@ static void dp_display_host_ready(struct dp_display_private *dp)
 		dp_display_state_log("[already ready]");
 		return;
 	}
+
+	/*
+	 * Reset the aborted state for AUX and CTRL modules. This will
+	 * allow these modules to execute normally in response to the
+	 * cable connection event.
+	 *
+	 * One corner case still exists. While the execution flow ensures
+	 * that cable disconnection flushes all pending work items on the DP
+	 * workqueue, and waits for the user module to clean up the DP
+	 * connection session, it is possible that the system delays can
+	 * lead to timeouts in the connect path. As a result, the actual
+	 * connection callback from user modules can come in late and can
+	 * race against a subsequent connection event here which would have
+	 * reset the aborted flags. There is no clear solution for this since
+	 * the connect/disconnect notifications do not currently have any
+	 * sessions IDs.
+	 */
+	dp->aux->abort(dp->aux, false);
+	dp->ctrl->abort(dp->ctrl, false);
 
 	dp->aux->init(dp->aux, dp->parser->aux_cfg);
 	dp->panel->init(dp->panel);
@@ -862,6 +946,7 @@ static void dp_display_host_deinit(struct dp_display_private *dp)
 		return;
 	}
 
+	dp_display_abort_hdcp(dp, true);
 	dp->ctrl->deinit(dp->ctrl);
 	dp->hpd->host_deinit(dp->hpd, &dp->catalog->hpd);
 	dp->power->deinit(dp->power);
@@ -891,7 +976,26 @@ static int dp_display_process_hpd_high(struct dp_display_private *dp)
 
 	dp->dp_display.max_pclk_khz = min(dp->parser->max_pclk_khz,
 					dp->debug->max_pclk_khz);
-	dp_display_host_init(dp);
+
+	/*
+	 * If dp video session is not restored from a previous session teardown
+	 * by userspace, ensure the host_init is executed, in such a scenario,
+	 * so that all the required DP resources are enabled.
+	 *
+	 * Below is one of the sequences of events which describe the above
+	 * scenario:
+	 *  a. Source initiated power down resulting in host_deinit.
+	 *  b. Sink issues hpd low attention without physical cable disconnect.
+	 *  c. Source initiated power up sequence returns early because hpd is
+	 *     not high.
+	 *  d. Sink issues a hpd high attention event.
+	 */
+	if (dp_display_state_is(DP_STATE_SRC_PWRDN) &&
+			dp_display_state_is(DP_STATE_CONFIGURED)) {
+		dp_display_host_init(dp);
+		dp_display_state_remove(DP_STATE_SRC_PWRDN);
+	}
+
 	dp_display_host_ready(dp);
 
 	dp->link->psm_config(dp->link, &dp->panel->link_info, false);
@@ -929,9 +1033,36 @@ static int dp_display_process_hpd_high(struct dp_display_private *dp)
 end:
 	mutex_unlock(&dp->session_lock);
 
+	/*
+	 * Delay the HPD connect notification to see if sink generates any
+	 * IRQ HPDs immediately after the HPD high.
+	 */
+	usleep_range(10000, 10100);
+
+	/*
+	 * If an IRQ HPD is pending, then do not send a connect notification.
+	 * Once this work returns, the IRQ HPD would be processed and any
+	 * required actions (such as link maintenance) would be done which
+	 * will subsequently send the HPD notification. To keep things simple,
+	 * do this only for SST use-cases. MST use cases require additional
+	 * care in order to handle the side-band communications as well.
+	 *
+	 * One of the main motivations for this is DP LL 1.4 CTS use case
+	 * where it is possible that we could get a test request right after
+	 * a connection, and the strict timing requriements of the test can
+	 * only be met if we do not wait for the e2e connection to be set up.
+	 */
+	if (!dp->mst.mst_active &&
+		(work_busy(&dp->attention_work) == WORK_BUSY_PENDING)) {
+		SDE_EVT32_EXTERNAL(dp->state, 99);
+		DP_DEBUG("Attention pending, skip HPD notification\n");
+		goto skip_notify;
+	}
+
 	if (!rc && !dp_display_state_is(DP_STATE_ABORTED))
 		dp_display_send_hpd_notification(dp);
 
+skip_notify:
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_EXIT, dp->state, rc);
 	return rc;
 }
@@ -959,7 +1090,7 @@ static int dp_display_process_hpd_low(struct dp_display_private *dp)
 
 	dp_display_state_remove(DP_STATE_CONNECTED);
 	dp->process_hpd_connect = false;
-
+	dp_audio_enable(dp, false);
 	dp_display_process_mst_hpd_low(dp);
 
 	if ((dp_display_state_is(DP_STATE_CONNECT_NOTIFIED) ||
@@ -1044,30 +1175,6 @@ static void dp_display_stream_disable(struct dp_display_private *dp,
 	dp->active_stream_cnt--;
 }
 
-static void dp_audio_enable(struct dp_display_private *dp, bool enable)
-{
-	struct dp_panel *dp_panel;
-	int idx;
-
-	for (idx = DP_STREAM_0; idx < DP_STREAM_MAX; idx++) {
-		if (!dp->active_panels[idx])
-			continue;
-		dp_panel = dp->active_panels[idx];
-
-		if (dp_panel->audio_supported) {
-			if (enable) {
-				dp_panel->audio->bw_code =
-					dp->link->link_params.bw_code;
-				dp_panel->audio->lane_count =
-					dp->link->link_params.lane_count;
-				dp_panel->audio->on(dp->panel->audio);
-			} else {
-				dp_panel->audio->off(dp_panel->audio);
-			}
-		}
-	}
-}
-
 static void dp_display_clean(struct dp_display_private *dp)
 {
 	int idx;
@@ -1121,7 +1228,6 @@ static int dp_display_handle_disconnect(struct dp_display_private *dp)
 		dp_display_clean(dp);
 
 	dp_display_host_unready(dp);
-	dp_display_host_deinit(dp);
 
 	mutex_unlock(&dp->session_lock);
 
@@ -1165,18 +1271,23 @@ static int dp_display_usbpd_disconnect_cb(struct device *dev)
 
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_ENTRY, dp->state,
 			dp->debug->psm_enabled);
-	dp_display_state_remove(DP_STATE_CONFIGURED);
 
 	if (dp->debug->psm_enabled && dp_display_state_is(DP_STATE_READY))
 		dp->link->psm_config(dp->link, &dp->panel->link_info, true);
 
 	dp_display_disconnect_sync(dp);
 
+	mutex_lock(&dp->session_lock);
+	dp_display_host_deinit(dp);
+	dp_display_state_remove(DP_STATE_CONFIGURED);
+	mutex_unlock(&dp->session_lock);
+
 	if (!dp->debug->sim_mode && !dp->parser->no_aux_switch
 	    && !dp->parser->gpio_aux_switch)
 		dp->aux->aux_switch(dp->aux, false, ORIENTATION_NONE);
-end:
+
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_EXIT, dp->state);
+end:
 	return rc;
 }
 
@@ -1246,6 +1357,10 @@ static void dp_display_attention_work(struct work_struct *work)
 		if (dp_display_is_sink_count_zero(dp)) {
 			dp_display_handle_disconnect(dp);
 		} else {
+			/*
+			 * connect work should take care of sending
+			 * the HPD notification.
+			 */
 			if (!dp->mst.mst_active)
 				queue_work(dp->wq, &dp->connect_work);
 		}
@@ -1258,6 +1373,10 @@ static void dp_display_attention_work(struct work_struct *work)
 		dp_display_handle_disconnect(dp);
 
 		dp->panel->video_test = true;
+		/*
+		 * connect work should take care of sending
+		 * the HPD notification.
+		 */
 		queue_work(dp->wq, &dp->connect_work);
 
 		goto mst_attention;
@@ -1268,7 +1387,6 @@ static void dp_display_attention_work(struct work_struct *work)
 
 		mutex_lock(&dp->session_lock);
 		dp_audio_enable(dp, false);
-		mutex_unlock(&dp->session_lock);
 
 		if (dp->link->sink_request & DP_TEST_LINK_PHY_TEST_PATTERN) {
 			SDE_EVT32_EXTERNAL(dp->state,
@@ -1287,7 +1405,6 @@ static void dp_display_attention_work(struct work_struct *work)
 			dp->ctrl->link_maintenance(dp->ctrl);
 		}
 
-		mutex_lock(&dp->session_lock);
 		dp_audio_enable(dp, true);
 		mutex_unlock(&dp->session_lock);
 
@@ -1299,6 +1416,18 @@ static void dp_display_attention_work(struct work_struct *work)
 cp_irq:
 	if (dp_display_is_hdcp_enabled(dp) && dp->hdcp.ops->cp_irq)
 		dp->hdcp.ops->cp_irq(dp->hdcp.data);
+
+	if (!dp->mst.mst_active) {
+		/*
+		 * It is possible that the connect_work skipped sending
+		 * the HPD notification if the attention message was
+		 * already pending. Send the notification here to
+		 * account for that. This is not needed if this
+		 * attention work was handling a test request
+		 */
+		dp_display_send_hpd_notification(dp);
+	}
+
 mst_attention:
 	dp_display_mst_attention(dp);
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_EXIT, dp->state);
@@ -1698,8 +1827,36 @@ static int dp_display_prepare(struct dp_display *dp_display, void *panel)
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_ENTRY, dp->state);
 	mutex_lock(&dp->session_lock);
 
-	if (dp_display_state_is(DP_STATE_ABORTED | DP_STATE_ENABLED)) {
-		dp_display_state_show("[not initialized]");
+	/*
+	 * If DP video session is restored by the userspace after display
+	 * disconnect notification from dongle i.e. typeC cable connected to
+	 * source but disconnected at the display side, the DP controller is
+	 * not restored to the desired configured state. So, ensure host_init
+	 * is executed in such a scenario so that all the DP controller
+	 * resources are enabled for the next connection event.
+	 */
+	if (dp_display_state_is(DP_STATE_SRC_PWRDN) &&
+			dp_display_state_is(DP_STATE_CONFIGURED)) {
+		dp_display_host_init(dp);
+		dp_display_state_remove(DP_STATE_SRC_PWRDN);
+	}
+
+	/*
+	 * If the physical connection to the sink is already lost by the time
+	 * we try to set up the connection, we can just skip all the steps
+	 * here safely.
+	 */
+	if (dp_display_state_is(DP_STATE_ABORTED)) {
+		dp_display_state_log("[aborted]");
+		goto end;
+	}
+
+	/*
+	 * If DP_STATE_ENABLED, there is nothing left to do.
+	 * However, this should not happen ideally. So, log this.
+	 */
+	if (dp_display_state_is(DP_STATE_ENABLED)) {
+		dp_display_state_show("[already enabled]");
 		goto end;
 	}
 
@@ -1709,7 +1866,6 @@ static int dp_display_prepare(struct dp_display *dp_display, void *panel)
 	}
 
 	/* For supporting DP_PANEL_SRC_INITIATED_POWER_DOWN case */
-	dp_display_host_init(dp);
 	dp_display_host_ready(dp);
 
 	if (dp->debug->psm_enabled) {
@@ -1820,15 +1976,25 @@ static int dp_display_enable(struct dp_display *dp_display, void *panel)
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_ENTRY, dp->state);
 	mutex_lock(&dp->session_lock);
 
+	/*
+	 * If DP_STATE_READY is not set, we should not do any HW
+	 * programming.
+	 */
 	if (!dp_display_state_is(DP_STATE_READY)) {
 		dp_display_state_show("[host not ready]");
 		goto end;
 	}
 
-	if (dp_display_state_is(DP_STATE_ABORTED)) {
-		dp_display_state_show("[aborted]");
-		goto end;
-	}
+	/*
+	 * It is possible that by the time we get call back to establish
+	 * the DP pipeline e2e, the physical DP connection to the sink is
+	 * already lost. In such cases, the DP_STATE_ABORTED would be set.
+	 * However, it is necessary to NOT abort the display setup here so as
+	 * to ensure that the rest of the system is in a stable state prior to
+	 * handling the disconnect notification.
+	 */
+	if (dp_display_state_is(DP_STATE_ABORTED))
+		dp_display_state_log("[aborted, but continue on]");
 
 	rc = dp_display_stream_enable(dp, panel);
 	if (rc)
@@ -1865,13 +2031,22 @@ static int dp_display_post_enable(struct dp_display *dp_display, void *panel)
 	SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_ENTRY, dp->state);
 	mutex_lock(&dp->session_lock);
 
+	/*
+	 * If DP_STATE_READY is not set, we should not do any HW
+	 * programming.
+	 */
 	if (!dp_display_state_is(DP_STATE_ENABLED)) {
 		dp_display_state_show("[not enabled]");
 		goto end;
 	}
 
+	/*
+	 * If the physical connection to the sink is already lost by the time
+	 * we try to set up the connection, we can just skip all the steps
+	 * here safely.
+	 */
 	if (dp_display_state_is(DP_STATE_ABORTED)) {
-		dp_display_state_show("[aborted]");
+		dp_display_state_log("[aborted]");
 		goto end;
 	}
 
@@ -2090,9 +2265,13 @@ static int dp_display_unprepare(struct dp_display *dp_display, void *panel)
 	 * Check if the power off sequence was triggered
 	 * by a source initialated action like framework
 	 * reboot or suspend-resume but not from normal
-	 * hot plug.
+	 * hot plug. If connector is in MST mode, skip
+	 * powering down host as aux needs to be kept
+	 * alive to handle hot-plug sideband message.
 	 */
-	if (dp_display_is_ready(dp))
+	if (dp_display_is_ready(dp) &&
+		(dp_display_state_is(DP_STATE_SUSPENDED) ||
+		!dp->mst.mst_active))
 		flags |= DP_PANEL_SRC_INITIATED_POWER_DOWN;
 
 	if (dp->active_stream_cnt)
@@ -2105,6 +2284,7 @@ static int dp_display_unprepare(struct dp_display *dp_display, void *panel)
 		dp->ctrl->off(dp->ctrl);
 		dp_display_host_unready(dp);
 		dp_display_host_deinit(dp);
+		dp_display_state_add(DP_STATE_SRC_PWRDN);
 	}
 
 	dp_display_state_remove(DP_STATE_ENABLED);

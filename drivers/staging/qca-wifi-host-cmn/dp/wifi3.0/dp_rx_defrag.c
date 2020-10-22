@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1007,11 +1007,21 @@ static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_peer *peer,
 		peer->rx_tid[tid].dst_ring_desc;
 	void *hal_srng = soc->reo_reinject_ring.hal_srng;
 	struct dp_rx_desc *rx_desc = peer->rx_tid[tid].head_frag_desc;
+	struct dp_rx_reorder_array_elem *rx_reorder_array_elem =
+						peer->rx_tid[tid].array;
+	qdf_nbuf_t nbuf_head;
 
-	head = dp_ipa_handle_rx_reo_reinject(soc, head);
-	if (qdf_unlikely(!head)) {
+	nbuf_head = dp_ipa_handle_rx_reo_reinject(soc, head);
+	if (qdf_unlikely(!nbuf_head)) {
 		dp_err_rl("IPA RX REO reinject failed");
 		return QDF_STATUS_E_FAILURE;
+	}
+
+	/* update new allocated skb in case IPA is enabled */
+	if (nbuf_head != head) {
+		head = nbuf_head;
+		rx_desc->nbuf = head;
+		rx_reorder_array_elem->head = head;
 	}
 
 	ent_ring_desc = hal_srng_src_get_next(soc->hal_soc, hal_srng);
@@ -1423,9 +1433,9 @@ static QDF_STATUS dp_rx_defrag_store_fragment(struct dp_soc *soc,
 		 * however, that might happen while we are in the monitor mode.
 		 * We don't need to handle that here
 		 */
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			"Unknown peer, dropping the fragment");
-
+		dp_info_rl("Unknown peer with peer_id %d, dropping fragment",
+			   peer_id);
+		DP_STATS_INC(soc, rx.rx_frag_err_no_peer, 1);
 		goto discard_frag;
 	}
 
@@ -1550,7 +1560,7 @@ static QDF_STATUS dp_rx_defrag_store_fragment(struct dp_soc *soc,
 		}
 	} else {
 		dp_rx_add_to_free_desc_list(head, tail, rx_desc);
-		*rx_bfs = 1;
+		(*rx_bfs)++;
 
 		/* Return the non-head link desc */
 		if (ring_desc &&
@@ -1591,7 +1601,7 @@ static QDF_STATUS dp_rx_defrag_store_fragment(struct dp_soc *soc,
 
 		dp_rx_add_to_free_desc_list(head, tail,
 				peer->rx_tid[tid].head_frag_desc);
-		*rx_bfs = 1;
+		(*rx_bfs)++;
 
 		if (dp_rx_link_desc_return(soc,
 					peer->rx_tid[tid].dst_ring_desc,
@@ -1632,7 +1642,7 @@ discard_frag:
 	    QDF_STATUS_SUCCESS)
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
 			  "%s: Failed to return link desc", __func__);
-	*rx_bfs = 1;
+	(*rx_bfs)++;
 
 end:
 	if (peer)
@@ -1670,7 +1680,7 @@ uint32_t dp_rx_frag_handle(struct dp_soc *soc, void *ring_desc,
 	uint32_t rx_bufs_used = 0;
 	qdf_nbuf_t msdu = NULL;
 	uint32_t tid;
-	int rx_bfs = 0;
+	uint32_t rx_bfs = 0;
 	struct dp_pdev *pdev;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
@@ -1709,14 +1719,13 @@ uint32_t dp_rx_frag_handle(struct dp_soc *soc, void *ring_desc,
 					     tid, rx_desc, &rx_bfs);
 
 	if (rx_bfs)
-		rx_bufs_used++;
+		rx_bufs_used += rx_bfs;
 
 	if (!QDF_IS_STATUS_SUCCESS(status))
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			  "Rx Defrag err seq#:0x%x msdu_count:%d flags:%d",
-			  mpdu_desc_info->mpdu_seq,
-			  mpdu_desc_info->msdu_count,
-			  mpdu_desc_info->mpdu_flags);
+		dp_info_rl("Rx Defrag err seq#:0x%x msdu_count:%d flags:%d",
+			   mpdu_desc_info->mpdu_seq,
+			   mpdu_desc_info->msdu_count,
+			   mpdu_desc_info->mpdu_flags);
 
 	return rx_bufs_used;
 }

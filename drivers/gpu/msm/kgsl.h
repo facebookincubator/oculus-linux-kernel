@@ -121,6 +121,7 @@ struct kgsl_context;
  * @full_cache_threshold: the threshold that triggers a full cache flush
  * @workqueue: Pointer to a single threaded workqueue
  * @mem_workqueue: Pointer to a workqueue for deferring memory entries
+ * @mem_work: Work struct to schedule mem_workqueue flush
  */
 struct kgsl_driver {
 	struct cdev cdev;
@@ -153,6 +154,7 @@ struct kgsl_driver {
 	unsigned int full_cache_threshold;
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
+	struct work_struct mem_work;
 	struct kthread_worker worker;
 	struct task_struct *worker_thread;
 };
@@ -221,7 +223,7 @@ struct kgsl_memdesc {
 	uint64_t gpuaddr;
 	phys_addr_t physaddr;
 	uint64_t size;
-	uint64_t mapsize;
+	atomic_long_t mapsize;
 	unsigned int priv;
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;
@@ -433,6 +435,7 @@ long kgsl_ioctl_allow_tid_maximum_priority(struct kgsl_device_private *dev_priv,
 					unsigned int cmd, void *data);
 
 void kgsl_mem_entry_destroy(struct kref *kref);
+void kgsl_mem_entry_destroy_deferred(struct kref *kref);
 
 struct kgsl_process_private *kgsl_get_allocator(struct kgsl_mem_entry *entry);
 
@@ -551,6 +554,21 @@ kgsl_mem_entry_put(struct kgsl_mem_entry *entry)
 {
 	if (entry)
 		kref_put(&entry->refcount, kgsl_mem_entry_destroy);
+}
+
+/**
+ * kgsl_mem_entry_put_deferred - Puts refcount and triggers deferred
+ *  mem_entry destroy when refcount goes to zero.
+ * @entry: memory entry to be put.
+ *
+ * Use this to put a memory entry when we don't want to block
+ * the caller while destroying memory entry.
+ */
+static inline void
+kgsl_mem_entry_put_deferred(struct kgsl_mem_entry *entry)
+{
+	if (entry)
+		kref_put(&entry->refcount, kgsl_mem_entry_destroy_deferred);
 }
 
 /*

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -99,8 +99,7 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 	if (!bl_lvl && brightness)
 		bl_lvl = 1;
 
-	if (display->panel->bl_config.bl_update ==
-		BL_UPDATE_DELAY_UNTIL_FIRST_FRAME && !c_conn->allow_bl_update) {
+	if (!c_conn->allow_bl_update) {
 		c_conn->unset_bl_level = bl_lvl;
 		return 0;
 	}
@@ -587,9 +586,7 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 
 	bl_config = &dsi_display->panel->bl_config;
 
-	if (dsi_display->panel->bl_config.bl_update ==
-			BL_UPDATE_DELAY_UNTIL_FIRST_FRAME &&
-			!c_conn->allow_bl_update) {
+	if (!c_conn->allow_bl_update) {
 		c_conn->unset_bl_level = bl_config->bl_level;
 		return 0;
 	}
@@ -787,8 +784,10 @@ int sde_connector_pre_kickoff(struct drm_connector *connector)
 	 * in pre-kickoff. This flag must be reset at the
 	 * end of display pre-kickoff.
 	 */
-	display = (struct dsi_display *)c_conn->display;
-	display->queue_cmd_waits = true;
+	if (c_conn->connector_type == DRM_MODE_CONNECTOR_DSI) {
+		display = (struct dsi_display *)c_conn->display;
+		display->queue_cmd_waits = true;
+	}
 
 	rc = _sde_connector_update_dirty_properties(connector);
 	if (rc) {
@@ -806,7 +805,8 @@ int sde_connector_pre_kickoff(struct drm_connector *connector)
 
 	rc = c_conn->ops.pre_kickoff(connector, c_conn->display, &params);
 
-	display->queue_cmd_waits = false;
+	if (c_conn->connector_type == DRM_MODE_CONNECTOR_DSI)
+		display->queue_cmd_waits = false;
 end:
 	return rc;
 }
@@ -852,21 +852,29 @@ void sde_connector_helper_bridge_disable(struct drm_connector *connector)
 {
 	int rc;
 	struct sde_connector *c_conn = NULL;
+	struct dsi_display *display;
+	bool poms_pending = false;
 
 	if (!connector)
 		return;
 
-	rc = _sde_connector_update_dirty_properties(connector);
-	if (rc) {
-		SDE_ERROR("conn %d final pre kickoff failed %d\n",
-				connector->base.id, rc);
-		SDE_EVT32(connector->base.id, SDE_EVTLOG_ERROR);
+	c_conn = to_sde_connector(connector);
+	if (c_conn->connector_type == DRM_MODE_CONNECTOR_DSI) {
+		display = (struct dsi_display *) c_conn->display;
+		poms_pending = display->poms_pending;
 	}
 
+	if (!poms_pending) {
+		rc = _sde_connector_update_dirty_properties(connector);
+		if (rc) {
+			SDE_ERROR("conn %d final pre kickoff failed %d\n",
+					connector->base.id, rc);
+			SDE_EVT32(connector->base.id, SDE_EVTLOG_ERROR);
+		}
+	}
 	/* Disable ESD thread */
 	sde_connector_schedule_status_work(connector, false);
 
-	c_conn = to_sde_connector(connector);
 	if (c_conn->bl_device) {
 		c_conn->bl_device->props.power = FB_BLANK_POWERDOWN;
 		c_conn->bl_device->props.state |= BL_CORE_FBBLANK;
@@ -2106,6 +2114,8 @@ sde_connector_atomic_best_encoder(struct drm_connector *connector,
 		encoder = c_conn->ops.atomic_best_encoder(connector,
 				c_conn->display, connector_state);
 
+	c_conn->encoder = encoder;
+
 	return encoder;
 }
 
@@ -2220,6 +2230,7 @@ static void sde_connector_check_status_work(struct work_struct *work)
 {
 	struct sde_connector *conn;
 	int rc = 0;
+	struct device *dev;
 
 	conn = container_of(to_delayed_work(work),
 			struct sde_connector, status_work);
@@ -2229,7 +2240,9 @@ static void sde_connector_check_status_work(struct work_struct *work)
 	}
 
 	mutex_lock(&conn->lock);
-	if (!conn->ops.check_status ||
+	dev = conn->base.dev->dev;
+
+	if (!conn->ops.check_status || dev->power.is_suspended ||
 			(conn->dpms_mode != DRM_MODE_DPMS_ON)) {
 		SDE_DEBUG("dpms mode: %d\n", conn->dpms_mode);
 		mutex_unlock(&conn->lock);

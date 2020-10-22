@@ -1040,10 +1040,13 @@ static void f2fs_umount_end(struct super_block *sb, int flags)
 	if ((flags & MNT_FORCE) || atomic_read(&sb->s_active) > 1) {
 		/* to write the latest kbytes_written */
 		if (!(sb->s_flags & MS_RDONLY)) {
+			struct f2fs_sb_info *sbi = F2FS_SB(sb);
 			struct cp_control cpc = {
 				.reason = CP_UMOUNT,
 			};
+			mutex_lock(&sbi->gc_mutex);
 			f2fs_write_checkpoint(F2FS_SB(sb), &cpc);
+			mutex_unlock(&sbi->gc_mutex);
 		}
 	}
 }
@@ -1095,7 +1098,7 @@ static void f2fs_put_super(struct super_block *sb)
 	/* our cp_error case, we can wait for any writeback page */
 	f2fs_flush_merged_writes(sbi);
 
-	f2fs_wait_on_all_pages_writeback(sbi);
+	f2fs_wait_on_all_pages(sbi, F2FS_WB_CP_DATA);
 
 	f2fs_bug_on(sbi, sbi->fsync_node_num);
 

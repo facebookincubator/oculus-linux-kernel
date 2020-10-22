@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -396,20 +396,11 @@ static int32_t scm_calculate_bandwidth_score(
 		cbmode = score_config->cb_mode_5G;
 	}
 
-	if (entry->phy_mode == WLAN_PHYMODE_11AC_VHT80_80 ||
-	    entry->phy_mode == WLAN_PHYMODE_11AC_VHT160)
+	if (IS_WLAN_PHYMODE_160MHZ(entry->phy_mode))
 		ch_width_index = SCM_160MHZ_BW_INDEX;
-	else if (entry->phy_mode == WLAN_PHYMODE_11AC_VHT80)
-		 ch_width_index = SCM_80MHZ_BW_INDEX;
-	else if (entry->phy_mode == WLAN_PHYMODE_11NA_HT40PLUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11NA_HT40MINUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11NG_HT40PLUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11NG_HT40MINUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11NG_HT40 ||
-		 entry->phy_mode == WLAN_PHYMODE_11NA_HT40 ||
-		 entry->phy_mode == WLAN_PHYMODE_11AC_VHT40PLUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11AC_VHT40MINUS ||
-		 entry->phy_mode == WLAN_PHYMODE_11AC_VHT40)
+	else if (IS_WLAN_PHYMODE_80MHZ(entry->phy_mode))
+		ch_width_index = SCM_80MHZ_BW_INDEX;
+	else if (IS_WLAN_PHYMODE_40MHZ(entry->phy_mode))
 		ch_width_index = SCM_40MHZ_BW_INDEX;
 	else
 		ch_width_index = SCM_20MHZ_BW_INDEX;
@@ -824,24 +815,25 @@ int scm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 					    prorated_pcnt, sta_nss);
 	score += nss_score;
 
-	scm_debug("Self Cap: HT %d VHT %d HE %d VHT_24Ghz %d BF cap %d cb_mode_24g %d cb_mode_5G %d NSS %d",
-		  score_config->ht_cap, score_config->vht_cap,
-		  score_config->he_cap,  score_config->vht_24G_cap,
-		  score_config->beamformee_cap, score_config->cb_mode_24G,
-		  score_config->cb_mode_5G, sta_nss);
+	scm_nofl_debug("Self: HT %d VHT %d HE %d VHT_24Ghz %d BF cap %d cb_mode_24g %d cb_mode_5G %d NSS %d",
+		       score_config->ht_cap, score_config->vht_cap,
+		       score_config->he_cap,  score_config->vht_24G_cap,
+		       score_config->beamformee_cap, score_config->cb_mode_24G,
+		       score_config->cb_mode_5G, sta_nss);
 
-	scm_debug("Candidate (BSSID: %pM Chan %d) Cap:: rssi=%d HT=%d VHT=%d HE %d su beamformer %d phymode=%d  air time fraction %d qbss load %d cong_pct %d NSS %d",
-		  entry->bssid.bytes, entry->channel.chan_idx,
-		  entry->rssi_raw, util_scan_entry_htcap(entry) ? 1 : 0,
-		  util_scan_entry_vhtcap(entry) ? 1 : 0,
-		  util_scan_entry_hecap(entry) ? 1 : 0, ap_su_beam_former,
-		  entry->phy_mode, entry->air_time_fraction,
-		  entry->qbss_chan_load, congestion_pct, entry->nss);
+	scm_nofl_debug("Candidate(%pM chan %d): rssi %d HT %d VHT %d HE %d su bfer %d phy %d  air time frac %d qbss %d cong_pct %d NSS %d",
+		       entry->bssid.bytes, entry->channel.chan_idx,
+		       entry->rssi_raw, util_scan_entry_htcap(entry) ? 1 : 0,
+		       util_scan_entry_vhtcap(entry) ? 1 : 0,
+		       util_scan_entry_hecap(entry) ? 1 : 0, ap_su_beam_former,
+		       entry->phy_mode, entry->air_time_fraction,
+		       entry->qbss_chan_load, congestion_pct, entry->nss);
 
-	scm_debug("Candidate Scores : prorated_pcnt %d rssi %d pcl %d ht %d vht %d he %d beamformee %d bw %d band %d congestion %d nss %d oce wan %d TOTAL score %d",
-		  prorated_pcnt, rssi_score, pcl_score, ht_score, vht_score,
-		  he_score, beamformee_score, bandwidth_score, band_score,
-		  congestion_score, nss_score, oce_wan_score, score);
+	scm_nofl_debug("Scores: prorated_pcnt %d rssi %d pcl %d ht %d vht %d he %d bfee %d bw %d band %d congestion %d nss %d oce wan %d TOTAL %d",
+		       prorated_pcnt, rssi_score, pcl_score, ht_score,
+		       vht_score, he_score, beamformee_score, bandwidth_score,
+		       band_score, congestion_score, nss_score, oce_wan_score,
+		       score);
 
 	entry->bss_score = score;
 	return score;

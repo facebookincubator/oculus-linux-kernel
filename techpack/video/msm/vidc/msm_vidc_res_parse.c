@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <asm/dma-iommu.h>
@@ -16,6 +16,15 @@
 enum clock_properties {
 	CLOCK_PROP_HAS_SCALING = 1 << 0,
 	CLOCK_PROP_HAS_MEM_RETENTION    = 1 << 1,
+};
+
+static struct memory_limit_table memory_limit_tbl_mbytes[] = {
+	/* target_memory_size - max_video_cap */
+	{12288, 4096},  /* 12 GB - 4 Gb*/
+	{8192, 3584},   /*  8 GB - 3.5 Gb*/
+	{6144, 2560},   /*  6 GB - 2.5 Gb*/
+	{4096, 1536},   /*  4 GB - 1.5 Gb*/
+	{2048, 768},    /*  2 GB - 0.75 Gb*/
 };
 
 static inline struct device *msm_iommu_get_ctx(const char *ctx_name)
@@ -757,6 +766,9 @@ int read_platform_resources_from_drv_data(
 	res->codec_data = platform_data->codec_data;
 
 	res->sku_version = platform_data->sku_version;
+	res->mem_limit_tbl = memory_limit_tbl_mbytes;
+	res->memory_limit_table_size =
+		ARRAY_SIZE(memory_limit_tbl_mbytes);
 
 	res->fw_name = "venus";
 
@@ -764,6 +776,9 @@ int read_platform_resources_from_drv_data(
 
 	res->max_load = find_key_value(platform_data,
 			"qcom,max-hw-load");
+
+	res->max_image_load = find_key_value(platform_data,
+			"qcom,max-image-load");
 
 	res->max_mbpf = find_key_value(platform_data,
 			"qcom,max-mbpf");
@@ -889,7 +904,6 @@ int read_platform_resources_from_dt(
 	rc = msm_decide_dt_node(res);
 	if (rc)
 		return rc;
-
 
 	INIT_LIST_HEAD(&res->context_banks);
 
@@ -1023,7 +1037,6 @@ int msm_vidc_smmu_fault_handler(struct iommu_domain *domain,
 		struct device *dev, unsigned long iova, int flags, void *token)
 {
 	struct msm_vidc_core *core = token;
-	struct msm_vidc_inst *inst;
 
 	if (!domain || !core) {
 		d_vpr_e("%s: invalid params %pK %pK\n",
@@ -1042,12 +1055,8 @@ int msm_vidc_smmu_fault_handler(struct iommu_domain *domain,
 
 	d_vpr_e("%s: faulting address: %lx\n", __func__, iova);
 
-	mutex_lock(&core->lock);
-	list_for_each_entry(inst, &core->instances, list) {
-		msm_comm_print_inst_info(inst);
-	}
 	core->smmu_fault_handled = true;
-	mutex_unlock(&core->lock);
+	msm_comm_print_insts_info(core);
 	/*
 	 * Return -EINVAL to elicit the default behaviour of smmu driver.
 	 * If we return -EINVAL, then smmu driver assumes page fault handler
@@ -1077,7 +1086,10 @@ static int msm_vidc_populate_context_bank(struct device *dev,
 	}
 
 	INIT_LIST_HEAD(&cb->list);
+
+	mutex_lock(&core->resources.cb_lock);
 	list_add_tail(&cb->list, &core->resources.context_banks);
+	mutex_unlock(&core->resources.cb_lock);
 
 	rc = of_property_read_string(np, "label", &cb->name);
 	if (rc) {
@@ -1157,7 +1169,10 @@ static int msm_vidc_populate_legacy_context_bank(
 			return -ENOMEM;
 		}
 		INIT_LIST_HEAD(&cb->list);
+
+		mutex_lock(&res->cb_lock);
 		list_add_tail(&cb->list, &res->context_banks);
+		mutex_unlock(&res->cb_lock);
 
 		ctx_node = of_parse_phandle(domains_child_node,
 				"qcom,vidc-domain-phandle", 0);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved. */
 
 #include <linux/debugfs.h>
 #include <linux/device.h>
@@ -9,6 +9,7 @@
 #include <linux/list.h>
 #include <linux/of.h>
 #include <linux/module.h>
+#include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/mhi.h>
@@ -95,6 +96,128 @@ const char *to_mhi_pm_state_str(enum MHI_PM_STATE state)
 
 	return mhi_pm_state_str[index];
 }
+
+void mhi_time_async_cb(struct mhi_device *mhi_dev, u32 sequence,
+		       u64 local_time, u64 remote_time)
+{
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+
+	MHI_LOG("Time response: seq:%llx local: %llu remote: %llu (ticks)\n",
+		sequence, local_time, remote_time);
+}
+
+void mhi_time_us_async_cb(struct mhi_device *mhi_dev, u32 sequence,
+			  u64 local_time, u64 remote_time)
+{
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+
+	MHI_LOG("Time response: seq:%llx local: %llu remote: %llu (us)\n",
+		sequence, LOCAL_TICKS_TO_US(local_time),
+		REMOTE_TICKS_TO_US(remote_time));
+}
+
+static ssize_t time_show(struct device *dev,
+			 struct device_attribute *attr,
+			 char *buf)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+	u64 t_host, t_device;
+	int ret;
+
+	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
+	if (ret) {
+		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (ticks)\n",
+			 t_host, t_device);
+}
+static DEVICE_ATTR_RO(time);
+
+static ssize_t time_us_show(struct device *dev,
+			    struct device_attribute *attr,
+			    char *buf)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+	u64 t_host, t_device;
+	int ret;
+
+	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
+	if (ret) {
+		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (us)\n",
+			 LOCAL_TICKS_TO_US(t_host),
+			 REMOTE_TICKS_TO_US(t_device));
+}
+static DEVICE_ATTR_RO(time_us);
+
+static ssize_t time_async_show(struct device *dev,
+			       struct device_attribute *attr,
+			       char *buf)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+	u32 seq = prandom_u32();
+	int ret;
+
+	if (!seq)
+		seq = 1;
+
+	ret = mhi_get_remote_time(mhi_dev, seq, &mhi_time_async_cb);
+	if (ret) {
+		MHI_ERR("Failed to request time, seq:%llx, ret:%d\n", seq, ret);
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
+	}
+
+	return scnprintf(buf, PAGE_SIZE,
+			 "Requested time asynchronously with seq:%llx\n", seq);
+}
+static DEVICE_ATTR_RO(time_async);
+
+static ssize_t time_us_async_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+	u32 seq = prandom_u32();
+	int ret;
+
+	if (!seq)
+		seq = 1;
+
+	ret = mhi_get_remote_time(mhi_dev, seq, &mhi_time_us_async_cb);
+	if (ret) {
+		MHI_ERR("Failed to request time, seq:%llx, ret:%d\n", seq, ret);
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
+	}
+
+	return scnprintf(buf, PAGE_SIZE,
+			 "Requested time asynchronously with seq:%llx\n", seq);
+}
+static DEVICE_ATTR_RO(time_us_async);
+
+static struct attribute *mhi_tsync_attrs[] = {
+	&dev_attr_time.attr,
+	&dev_attr_time_us.attr,
+	&dev_attr_time_async.attr,
+	&dev_attr_time_us_async.attr,
+	NULL,
+};
+
+static const struct attribute_group mhi_tsync_group = {
+	.attrs = mhi_tsync_attrs,
+};
 
 static ssize_t log_level_show(struct device *dev,
 			      struct device_attribute *attr,
@@ -197,15 +320,36 @@ static const struct attribute_group mhi_sysfs_group = {
 	.attrs = mhi_sysfs_attrs,
 };
 
-int mhi_create_sysfs(struct mhi_controller *mhi_cntrl)
+void mhi_create_sysfs(struct mhi_controller *mhi_cntrl)
 {
-	return sysfs_create_group(&mhi_cntrl->mhi_dev->dev.kobj,
-				  &mhi_sysfs_group);
+	sysfs_create_group(&mhi_cntrl->mhi_dev->dev.kobj, &mhi_sysfs_group);
+	if (mhi_cntrl->mhi_tsync)
+		sysfs_create_group(&mhi_cntrl->mhi_dev->dev.kobj,
+				   &mhi_tsync_group);
 }
 
 void mhi_destroy_sysfs(struct mhi_controller *mhi_cntrl)
 {
 	struct mhi_device *mhi_dev = mhi_cntrl->mhi_dev;
+	struct mhi_timesync *mhi_tsync = mhi_cntrl->mhi_tsync;
+	struct tsync_node *tsync, *tmp;
+
+	if (mhi_tsync) {
+		mutex_lock(&mhi_cntrl->tsync_mutex);
+		sysfs_remove_group(&mhi_cntrl->mhi_dev->dev.kobj,
+				   &mhi_tsync_group);
+
+		spin_lock(&mhi_tsync->lock);
+		list_for_each_entry_safe(tsync, tmp, &mhi_tsync->head, node) {
+			list_del(&tsync->node);
+			kfree(tsync);
+		}
+		spin_unlock(&mhi_tsync->lock);
+
+		kfree(mhi_cntrl->mhi_tsync);
+		mhi_cntrl->mhi_tsync = NULL;
+		mutex_unlock(&mhi_cntrl->tsync_mutex);
+	}
 
 	sysfs_remove_group(&mhi_dev->dev.kobj, &mhi_sysfs_group);
 
@@ -225,6 +369,21 @@ static int mhi_alloc_aligned_ring(struct mhi_controller *mhi_cntrl,
 {
 	ring->alloc_size = len + (len - 1);
 	ring->pre_aligned = mhi_alloc_coherent(mhi_cntrl, ring->alloc_size,
+					       &ring->dma_handle, GFP_KERNEL);
+	if (!ring->pre_aligned)
+		return -ENOMEM;
+
+	ring->iommu_base = (ring->dma_handle + (len - 1)) & ~(len - 1);
+	ring->base = ring->pre_aligned + (ring->iommu_base - ring->dma_handle);
+	return 0;
+}
+
+/* MHI protocol require transfer ring to be aligned to ring length */
+static int mhi_alloc_aligned_ring_uncached(
+	struct mhi_controller *mhi_cntrl, struct mhi_ring *ring, u64 len)
+{
+	ring->alloc_size = len + (len - 1);
+	ring->pre_aligned = mhi_alloc_uncached(mhi_cntrl, ring->alloc_size,
 					       &ring->dma_handle, GFP_KERNEL);
 	if (!ring->pre_aligned)
 		return -ENOMEM;
@@ -271,8 +430,8 @@ int mhi_init_irq_setup(struct mhi_controller *mhi_cntrl)
 				  mhi_msi_handlr, IRQF_SHARED | IRQF_NO_SUSPEND,
 				  "mhi", mhi_event);
 		if (ret) {
-			MHI_ERR("Error requesting irq:%d for ev:%d\n",
-				mhi_cntrl->irq[mhi_event->msi], i);
+			MHI_CNTRL_ERR("Error requesting irq:%d for ev:%d\n",
+					mhi_cntrl->irq[mhi_event->msi], i);
 			goto error_request;
 		}
 	}
@@ -318,7 +477,11 @@ void mhi_deinit_dev_ctxt(struct mhi_controller *mhi_cntrl)
 			continue;
 
 		ring = &mhi_event->ring;
-		mhi_free_coherent(mhi_cntrl, ring->alloc_size,
+		if (mhi_event->force_uncached)
+			mhi_free_uncached(mhi_cntrl, ring->alloc_size,
+					  ring->pre_aligned, ring->dma_handle);
+		else
+			mhi_free_coherent(mhi_cntrl, ring->alloc_size,
 				  ring->pre_aligned, ring->dma_handle);
 		ring->base = NULL;
 		ring->iommu_base = 0;
@@ -352,6 +515,11 @@ static int mhi_init_debugfs_mhi_chan_open(struct inode *inode, struct file *fp)
 	return single_open(fp, mhi_debugfs_mhi_chan_show, inode->i_private);
 }
 
+static int mhi_init_debugfs_mhi_vote_open(struct inode *inode, struct file *fp)
+{
+	return single_open(fp, mhi_debugfs_mhi_vote_show, inode->i_private);
+}
+
 static const struct file_operations debugfs_state_ops = {
 	.open = mhi_init_debugfs_mhi_states_open,
 	.release = single_release,
@@ -366,6 +534,12 @@ static const struct file_operations debugfs_ev_ops = {
 
 static const struct file_operations debugfs_chan_ops = {
 	.open = mhi_init_debugfs_mhi_chan_open,
+	.release = single_release,
+	.read = seq_read,
+};
+
+static const struct file_operations debugfs_vote_ops = {
+	.open = mhi_init_debugfs_mhi_vote_open,
 	.release = single_release,
 	.read = seq_read,
 };
@@ -395,6 +569,8 @@ void mhi_init_debugfs(struct mhi_controller *mhi_cntrl)
 				   &debugfs_ev_ops);
 	debugfs_create_file_unsafe("chan", 0444, dentry, mhi_cntrl,
 				   &debugfs_chan_ops);
+	debugfs_create_file_unsafe("vote", 0444, dentry, mhi_cntrl,
+				   &debugfs_vote_ops);
 	debugfs_create_file_unsafe("reset", 0444, dentry, mhi_cntrl,
 				   &debugfs_trigger_reset_fops);
 	mhi_cntrl->dentry = dentry;
@@ -474,7 +650,12 @@ int mhi_init_dev_ctxt(struct mhi_controller *mhi_cntrl)
 
 		ring->el_size = sizeof(struct mhi_tre);
 		ring->len = ring->el_size * ring->elements;
-		ret = mhi_alloc_aligned_ring(mhi_cntrl, ring, ring->len);
+		if (mhi_event->force_uncached)
+			ret = mhi_alloc_aligned_ring_uncached(mhi_cntrl, ring,
+				ring->len);
+		else
+			ret = mhi_alloc_aligned_ring(mhi_cntrl, ring,
+				ring->len);
 		if (ret)
 			goto error_alloc_er;
 
@@ -535,7 +716,11 @@ error_alloc_er:
 		if (mhi_event->offload_ev)
 			continue;
 
-		mhi_free_coherent(mhi_cntrl, ring->alloc_size,
+		if (mhi_event->force_uncached)
+			mhi_free_uncached(mhi_cntrl, ring->alloc_size,
+				  ring->pre_aligned, ring->dma_handle);
+		else
+			mhi_free_coherent(mhi_cntrl, ring->alloc_size,
 				  ring->pre_aligned, ring->dma_handle);
 	}
 	mhi_free_coherent(mhi_cntrl, sizeof(*mhi_ctxt->er_ctxt) *
@@ -569,105 +754,56 @@ static int mhi_get_er_index(struct mhi_controller *mhi_cntrl,
 	return -ENOENT;
 }
 
-int mhi_init_timesync(struct mhi_controller *mhi_cntrl)
+static int mhi_init_timesync(struct mhi_controller *mhi_cntrl)
 {
 	struct mhi_timesync *mhi_tsync;
-	u32 time_offset, db_offset;
-	int ret;
-
-	read_lock_bh(&mhi_cntrl->pm_lock);
-
-	if (!MHI_REG_ACCESS_VALID(mhi_cntrl->pm_state)) {
-		ret = -EIO;
-		goto exit_timesync;
-	}
-
-	ret = mhi_get_capability_offset(mhi_cntrl, TIMESYNC_CAP_ID,
-					&time_offset);
-	if (ret) {
-		MHI_LOG("No timesync capability found\n");
-		goto exit_timesync;
-	}
-
-	read_unlock_bh(&mhi_cntrl->pm_lock);
+	u32 time_offset, time_cfg_offset;
+	int ret, er_index;
 
 	if (!mhi_cntrl->time_get || !mhi_cntrl->lpm_disable ||
 	     !mhi_cntrl->lpm_enable)
 		return -EINVAL;
 
+	ret = mhi_get_capability_offset(mhi_cntrl, TIMESYNC_CAP_ID,
+					&time_offset);
+	if (ret) {
+		MHI_CNTRL_LOG("No timesync capability found\n");
+		return ret;
+	}
+
 	mhi_cntrl->local_timer_freq = arch_timer_get_cntfrq();
 
-	/* register method supported */
-	mhi_tsync = kzalloc(sizeof(*mhi_tsync), GFP_KERNEL);
+	/* register method is supported */
+	mhi_tsync = kzalloc(sizeof(*mhi_tsync), GFP_ATOMIC);
 	if (!mhi_tsync)
 		return -ENOMEM;
 
 	spin_lock_init(&mhi_tsync->lock);
 	INIT_LIST_HEAD(&mhi_tsync->head);
-	init_completion(&mhi_tsync->completion);
 
 	/* save time_offset for obtaining time */
-	MHI_LOG("TIME OFFS:0x%x\n", time_offset);
+	MHI_CNTRL_LOG("TIME OFFS:0x%x\n", time_offset);
 	mhi_tsync->time_reg = mhi_cntrl->regs + time_offset
 			      + TIMESYNC_TIME_LOW_OFFSET;
 
 	mhi_cntrl->mhi_tsync = mhi_tsync;
 
-	ret = mhi_create_timesync_sysfs(mhi_cntrl);
-	if (unlikely(ret)) {
-		/* kernel method still work */
-		MHI_ERR("Failed to create timesync sysfs nodes\n");
+	/* get timesync event ring configuration */
+	er_index = mhi_get_er_index(mhi_cntrl, MHI_ER_TSYNC_ELEMENT_TYPE);
+	if (er_index < 0) {
+		MHI_CNTRL_LOG("Could not find timesync event ring\n");
+		return er_index;
 	}
 
-	read_lock_bh(&mhi_cntrl->pm_lock);
+	mhi_tsync->db_support = true;
 
-	if (!MHI_REG_ACCESS_VALID(mhi_cntrl->pm_state)) {
-		ret = -EIO;
-		goto exit_timesync;
-	}
+	time_cfg_offset = time_offset + TIMESYNC_CFG_OFFSET;
 
-	/* get DB offset if supported, else return */
-	ret = mhi_read_reg(mhi_cntrl, mhi_cntrl->regs,
-			   time_offset + TIMESYNC_DB_OFFSET, &db_offset);
-	if (ret || !db_offset) {
-		ret = 0;
-		goto exit_timesync;
-	}
-
-	MHI_LOG("TIMESYNC_DB OFFS:0x%x\n", db_offset);
-	mhi_tsync->db = mhi_cntrl->regs + db_offset;
-
-	read_unlock_bh(&mhi_cntrl->pm_lock);
-
-	/* get time-sync event ring configuration */
-	ret = mhi_get_er_index(mhi_cntrl, MHI_ER_TSYNC_ELEMENT_TYPE);
-	if (ret < 0) {
-		MHI_LOG("Could not find timesync event ring\n");
-		return ret;
-	}
-
-	mhi_tsync->er_index = ret;
-
-	ret = mhi_send_cmd(mhi_cntrl, NULL, MHI_CMD_TIMSYNC_CFG);
-	if (ret) {
-		MHI_ERR("Failed to send time sync cfg cmd\n");
-		return ret;
-	}
-
-	ret = wait_for_completion_timeout(&mhi_tsync->completion,
-			msecs_to_jiffies(mhi_cntrl->timeout_ms));
-
-	if (!ret || mhi_tsync->ccs != MHI_EV_CC_SUCCESS) {
-		MHI_ERR("Failed to get time cfg cmd completion\n");
-		return -EIO;
-	}
+	/* advertise host support */
+	mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->regs, time_cfg_offset,
+			     MHI_TIMESYNC_DB_SETUP(er_index));
 
 	return 0;
-
-exit_timesync:
-	read_unlock_bh(&mhi_cntrl->pm_lock);
-
-	return ret;
 }
 
 int mhi_init_sfr(struct mhi_controller *mhi_cntrl)
@@ -684,7 +820,7 @@ int mhi_init_sfr(struct mhi_controller *mhi_cntrl)
 	sfr_info->buf_addr = mhi_alloc_coherent(mhi_cntrl, sfr_info->len,
 					&sfr_info->dma_addr, GFP_KERNEL);
 	if (!sfr_info->buf_addr) {
-		MHI_ERR("Failed to allocate memory for sfr\n");
+		MHI_CNTRL_ERR("Failed to allocate memory for sfr\n");
 		return -ENOMEM;
 	}
 
@@ -692,14 +828,14 @@ int mhi_init_sfr(struct mhi_controller *mhi_cntrl)
 
 	ret = mhi_send_cmd(mhi_cntrl, NULL, MHI_CMD_SFR_CFG);
 	if (ret) {
-		MHI_ERR("Failed to send sfr cfg cmd\n");
+		MHI_CNTRL_ERR("Failed to send sfr cfg cmd\n");
 		return ret;
 	}
 
 	ret = wait_for_completion_timeout(&sfr_info->completion,
 			msecs_to_jiffies(mhi_cntrl->timeout_ms));
 	if (!ret || sfr_info->ccs != MHI_EV_CC_SUCCESS) {
-		MHI_ERR("Failed to get sfr cfg cmd completion\n");
+		MHI_CNTRL_ERR("Failed to get sfr cfg cmd completion\n");
 		return -EIO;
 	}
 
@@ -722,12 +858,12 @@ static int mhi_init_bw_scale(struct mhi_controller *mhi_cntrl)
 
 	/* No ER configured to support BW scale */
 	er_index = mhi_get_er_index(mhi_cntrl, MHI_ER_BW_SCALE_ELEMENT_TYPE);
-	if (ret < 0)
+	if (er_index < 0)
 		return er_index;
 
 	bw_cfg_offset += BW_SCALE_CFG_OFFSET;
 
-	MHI_LOG("BW_CFG OFFSET:0x%x\n", bw_cfg_offset);
+	MHI_CNTRL_LOG("BW_CFG OFFSET:0x%x\n", bw_cfg_offset);
 
 	/* advertise host support */
 	mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->regs, bw_cfg_offset,
@@ -816,7 +952,7 @@ int mhi_init_mmio(struct mhi_controller *mhi_cntrl)
 		{ 0, 0, 0 }
 	};
 
-	MHI_LOG("Initializing MMIO\n");
+	MHI_CNTRL_LOG("Initializing MMIO\n");
 
 	/* set up DB register for all the chan rings */
 	ret = mhi_read_reg_field(mhi_cntrl, base, CHDBOFF, CHDBOFF_CHDBOFF_MASK,
@@ -824,7 +960,7 @@ int mhi_init_mmio(struct mhi_controller *mhi_cntrl)
 	if (ret)
 		return -EIO;
 
-	MHI_LOG("CHDBOFF:0x%x\n", val);
+	MHI_CNTRL_LOG("CHDBOFF:0x%x\n", val);
 
 	/* setup wake db */
 	mhi_cntrl->wake_db = base + val + (8 * MHI_DEV_WAKE_DB);
@@ -832,7 +968,8 @@ int mhi_init_mmio(struct mhi_controller *mhi_cntrl)
 	mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->wake_db, 0, 0);
 	mhi_cntrl->wake_set = false;
 
-	/* setup bw scale db */
+	/* setup special purpose doorbells (timesync, bw scale) */
+	mhi_cntrl->tsync_db = base + val + (8 * MHI_TIMESYNC_CHAN_DB);
 	mhi_cntrl->bw_scale_db = base + val + (8 * MHI_BW_SCALE_CHAN_DB);
 
 	/* setup channel db addresses */
@@ -846,7 +983,7 @@ int mhi_init_mmio(struct mhi_controller *mhi_cntrl)
 	if (ret)
 		return -EIO;
 
-	MHI_LOG("ERDBOFF:0x%x\n", val);
+	MHI_CNTRL_LOG("ERDBOFF:0x%x\n", val);
 
 	mhi_event = mhi_cntrl->mhi_event;
 	for (i = 0; i < mhi_cntrl->total_ev_rings; i++, val += 8, mhi_event++) {
@@ -859,14 +996,15 @@ int mhi_init_mmio(struct mhi_controller *mhi_cntrl)
 	/* set up DB register for primary CMD rings */
 	mhi_cntrl->mhi_cmd[PRIMARY_CMD_RING].ring.db_addr = base + CRDB_LOWER;
 
-	MHI_LOG("Programming all MMIO values.\n");
+	MHI_CNTRL_LOG("Programming all MMIO values.\n");
 	for (i = 0; reg_info[i].offset; i++)
 		mhi_write_reg_field(mhi_cntrl, base, reg_info[i].offset,
 				    reg_info[i].mask, reg_info[i].shift,
 				    reg_info[i].val);
 
-	/* setup bandwidth scaling features */
+	/* setup special purpose features such as timesync or bw scaling */
 	mhi_init_bw_scale(mhi_cntrl);
+	mhi_init_timesync(mhi_cntrl);
 
 	return 0;
 }
@@ -1018,7 +1156,7 @@ static int of_parse_ev_cfg(struct mhi_controller *mhi_cntrl,
 	if (!mhi_cntrl->mhi_event)
 		return -ENOMEM;
 
-	INIT_LIST_HEAD(&mhi_cntrl->lp_ev_rings);
+	INIT_LIST_HEAD(&mhi_cntrl->sp_ev_rings);
 
 	/* populate ev ring */
 	mhi_event = mhi_cntrl->mhi_event;
@@ -1028,6 +1166,10 @@ static int of_parse_ev_cfg(struct mhi_controller *mhi_cntrl,
 			continue;
 
 		mhi_event->er_index = i++;
+
+		mhi_event->force_uncached = of_property_read_bool(child,
+				"mhi,force-uncached");
+
 		ret = of_property_read_u32(child, "mhi,num-elements",
 					   (u32 *)&mhi_event->ring.elements);
 		if (ret)
@@ -1083,7 +1225,7 @@ static int of_parse_ev_cfg(struct mhi_controller *mhi_cntrl,
 			mhi_event->process_event = mhi_process_ctrl_ev_ring;
 			break;
 		case MHI_ER_TSYNC_ELEMENT_TYPE:
-			mhi_event->process_event = mhi_process_tsync_event_ring;
+			mhi_event->process_event = mhi_process_tsync_ev_ring;
 			break;
 		case MHI_ER_BW_SCALE_ELEMENT_TYPE:
 			mhi_event->process_event = mhi_process_bw_scale_ev_ring;
@@ -1101,13 +1243,13 @@ static int of_parse_ev_cfg(struct mhi_controller *mhi_cntrl,
 							      "mhi,offload");
 
 		/*
-		 * low priority events are handled in a separate worker thread
+		 * special purpose events are handled in a separate kthread
 		 * to allow for sleeping functions to be called.
 		 */
 		if (!mhi_event->offload_ev) {
-			if (IS_MHI_ER_PRIORITY_LOW(mhi_event))
+			if (IS_MHI_ER_PRIORITY_SPECIAL(mhi_event))
 				list_add_tail(&mhi_event->node,
-						&mhi_cntrl->lp_ev_rings);
+						&mhi_cntrl->sp_ev_rings);
 			else
 				mhi_event->request_irq = true;
 		}
@@ -1393,8 +1535,14 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	spin_lock_init(&mhi_cntrl->transition_lock);
 	spin_lock_init(&mhi_cntrl->wlock);
 	INIT_WORK(&mhi_cntrl->st_worker, mhi_pm_st_worker);
-	INIT_WORK(&mhi_cntrl->low_priority_worker, mhi_low_priority_worker);
 	init_waitqueue_head(&mhi_cntrl->state_event);
+
+	mhi_cntrl->special_wq = alloc_ordered_workqueue("mhi_special_w",
+						WQ_MEM_RECLAIM | WQ_HIGHPRI);
+	if (!mhi_cntrl->special_wq)
+		goto error_alloc_cmd;
+
+	INIT_WORK(&mhi_cntrl->special_work, mhi_special_purpose_work);
 
 	mhi_cmd = mhi_cntrl->mhi_cmd;
 	for (i = 0; i < NR_OF_CMD_RINGS; i++, mhi_cmd++)
@@ -1408,7 +1556,7 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 		mhi_event->mhi_cntrl = mhi_cntrl;
 		spin_lock_init(&mhi_event->lock);
 
-		if (IS_MHI_ER_PRIORITY_LOW(mhi_event))
+		if (IS_MHI_ER_PRIORITY_SPECIAL(mhi_event))
 			continue;
 
 		if (mhi_event->data_type == MHI_ER_CTRL_ELEMENT_TYPE)
@@ -1468,6 +1616,7 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	}
 
 	mhi_dev->dev_type = MHI_CONTROLLER_TYPE;
+	mhi_dev->chan_name = mhi_cntrl->name;
 	mhi_dev->mhi_cntrl = mhi_cntrl;
 	dev_set_name(&mhi_dev->dev, "%04x_%02u.%02u.%02u", mhi_dev->dev_id,
 		     mhi_dev->domain, mhi_dev->bus, mhi_dev->slot);
@@ -1516,6 +1665,7 @@ error_add_dev:
 
 error_alloc_dev:
 	kfree(mhi_cntrl->mhi_cmd);
+	destroy_workqueue(mhi_cntrl->special_wq);
 
 error_alloc_cmd:
 	vfree(mhi_cntrl->mhi_chan);
@@ -1579,7 +1729,7 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 
 	ret = mhi_init_dev_ctxt(mhi_cntrl);
 	if (ret) {
-		MHI_ERR("Error with init dev_ctxt\n");
+		MHI_CNTRL_ERR("Error with init dev_ctxt\n");
 		goto error_dev_ctxt;
 	}
 
@@ -1599,7 +1749,7 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 			ret = mhi_read_reg(mhi_cntrl, mhi_cntrl->regs, BHIEOFF,
 					   &bhie_off);
 			if (ret) {
-				MHI_ERR("Error getting bhie offset\n");
+				MHI_CNTRL_ERR("Error getting bhie offset\n");
 				goto bhie_error;
 			}
 
@@ -1828,10 +1978,6 @@ static int mhi_driver_remove(struct device *dev)
 
 		mutex_unlock(&mhi_chan->mutex);
 	}
-
-
-	if (mhi_cntrl->tsync_dev == mhi_dev)
-		mhi_cntrl->tsync_dev = NULL;
 
 	/* relinquish any pending votes for device */
 	while (atomic_read(&mhi_dev->dev_vote))

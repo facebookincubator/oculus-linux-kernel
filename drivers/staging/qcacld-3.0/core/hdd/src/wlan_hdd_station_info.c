@@ -124,6 +124,12 @@
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_TX_RETRY_FW
 #define REMOTE_TX_RETRY_EXHAUST_FW \
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_TX_RETRY_EXHAUST_FW
+#define DISCONNECT_REASON \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_DRIVER_DISCONNECT_REASON
+#define BEACON_IES \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_BEACON_IES
+#define ASSOC_REQ_IES \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_ASSOC_REQ_IES
 
 /*
  * MSB of rx_mc_bc_cnt indicates whether FW supports rx_mc_bc_cnt
@@ -618,9 +624,10 @@ static int hdd_get_station_info(struct hdd_context *hdd_ctx,
 				struct hdd_adapter *adapter)
 {
 	struct sk_buff *skb = NULL;
-	uint8_t *tmp_hs20 = NULL;
-	uint32_t nl_buf_len;
+	uint8_t *tmp_hs20 = NULL, *ies = NULL;
+	uint32_t nl_buf_len, ie_len = 0;
 	struct hdd_station_ctx *hdd_sta_ctx;
+	QDF_STATUS status;
 
 	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 
@@ -635,7 +642,8 @@ static int hdd_get_station_info(struct hdd_context *hdd_ctx,
 		      sizeof(hdd_sta_ctx->cache_conn_info.txrate.nss) +
 		      sizeof(hdd_sta_ctx->cache_conn_info.roam_count) +
 		      sizeof(hdd_sta_ctx->cache_conn_info.last_auth_type) +
-		      sizeof(hdd_sta_ctx->cache_conn_info.dot11mode);
+		      sizeof(hdd_sta_ctx->cache_conn_info.dot11mode) +
+		      sizeof(uint32_t);
 	if (hdd_sta_ctx->cache_conn_info.conn_flag.vht_present)
 		nl_buf_len += sizeof(hdd_sta_ctx->cache_conn_info.vht_caps);
 	if (hdd_sta_ctx->cache_conn_info.conn_flag.ht_present)
@@ -652,6 +660,11 @@ static int hdd_get_station_info(struct hdd_context *hdd_ctx,
 	if (hdd_sta_ctx->cache_conn_info.conn_flag.vht_op_present)
 		nl_buf_len += sizeof(hdd_sta_ctx->
 						cache_conn_info.vht_operation);
+	status = sme_get_prev_connected_bss_ies(hdd_ctx->mac_handle,
+						adapter->vdev_id,
+						&ies, &ie_len);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		nl_buf_len += ie_len;
 
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(hdd_ctx->wiphy, nl_buf_len);
 	if (!skb) {
@@ -704,10 +717,27 @@ static int hdd_get_station_info(struct hdd_context *hdd_ctx,
 			goto fail;
 		}
 
+	if (nla_put_u32(skb, DISCONNECT_REASON,
+			adapter->last_disconnect_reason)) {
+		hdd_err("Failed to put disconect reason");
+		goto fail;
+	}
+
+	if (ie_len) {
+		if (nla_put(skb, BEACON_IES, ie_len, ies)) {
+			hdd_err("Failed to put beacon IEs");
+			goto fail;
+		}
+		qdf_mem_free(ies);
+		ie_len = 0;
+	}
+
 	return cfg80211_vendor_cmd_reply(skb);
 fail:
 	if (skb)
 		kfree_skb(skb);
+	qdf_mem_free(ies);
+	ie_len = 0;
 	return -EINVAL;
 }
 
@@ -1082,6 +1112,9 @@ static int hdd_get_cached_station_remote(struct hdd_context *hdd_ctx,
 			 NLA_HDRLEN) +
 			(sizeof(stainfo->rx_retry_cnt) +
 			 NLA_HDRLEN);
+	if (stainfo->assoc_req_ies.len)
+		nl_buf_len += stainfo->assoc_req_ies.len + NLA_HDRLEN;
+
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(hdd_ctx->wiphy, nl_buf_len);
 	if (!skb) {
 		hdd_err("cfg80211_vendor_cmd_alloc_reply_skb failed");
@@ -1142,12 +1175,25 @@ static int hdd_get_cached_station_remote(struct hdd_context *hdd_ctx,
 		}
 	}
 
+	if (stainfo->assoc_req_ies.len) {
+		if (nla_put(skb, ASSOC_REQ_IES, stainfo->assoc_req_ies.len,
+			    stainfo->assoc_req_ies.data)) {
+			hdd_err("Failed to put assoc req IEs");
+			goto fail;
+		}
+		qdf_mem_free(stainfo->assoc_req_ies.data);
+		stainfo->assoc_req_ies.data = NULL;
+		stainfo->assoc_req_ies.len = 0;
+	}
 	qdf_mem_zero(stainfo, sizeof(*stainfo));
 
 	return cfg80211_vendor_cmd_reply(skb);
 fail:
 	if (skb)
 		kfree_skb(skb);
+	qdf_mem_free(stainfo->assoc_req_ies.data);
+	stainfo->assoc_req_ies.data = NULL;
+	stainfo->assoc_req_ies.len = 0;
 
 	return -EINVAL;
 }

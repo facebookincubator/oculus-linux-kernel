@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,6 +71,19 @@ static inline void hdd_request_pm_qos(struct device *dev, int val)
 static inline void hdd_remove_pm_qos(struct device *dev)
 {
 	pld_remove_pm_qos(dev);
+}
+
+/**
+ * hdd_get_bandwidth_level() - get current bandwidth level
+ * @data: Context
+ *
+ * Return: current bandwidth level
+ */
+static int hdd_get_bandwidth_level(void *data)
+{
+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+
+	return hdd_get_current_throughput_level(hdd_ctx);
 }
 
 /**
@@ -149,9 +162,11 @@ static void hdd_hif_init_driver_state_callbacks(void *data,
 	cbk->is_load_unload_in_progress = hdd_is_load_or_unload_in_progress;
 	cbk->is_driver_unloading = hdd_is_driver_unloading;
 	cbk->is_target_ready = hdd_is_target_ready;
+	cbk->get_bandwidth_level = hdd_get_bandwidth_level;
 }
 
 /**
+
  * hdd_hif_set_attribute() - API to set CE attribute if memory is limited
  * @hif_ctx: hif context
  *
@@ -211,8 +226,10 @@ static void hdd_deinit_cds_hif_context(void)
 static enum qdf_bus_type to_bus_type(enum pld_bus_type bus_type)
 {
 	switch (bus_type) {
+	case PLD_BUS_TYPE_PCIE_FW_SIM:
 	case PLD_BUS_TYPE_PCIE:
 		return QDF_BUS_TYPE_PCI;
+	case PLD_BUS_TYPE_SNOC_FW_SIM:
 	case PLD_BUS_TYPE_SNOC:
 		return QDF_BUS_TYPE_SNOC;
 	case PLD_BUS_TYPE_SDIO:
@@ -270,7 +287,7 @@ int hdd_hif_open(struct device *dev, void *bdev, const struct hif_bus_id *bid,
 		ret = hdd_napi_create();
 		hdd_debug("hdd_napi_create returned: %d", ret);
 		if (ret == 0)
-			hdd_warn("NAPI: no instances are created");
+			hdd_debug("NAPI: no instances are created");
 		else if (ret < 0) {
 			hdd_err("NAPI creation error, rc: 0x%x, reinit: %d",
 				ret, reinit);
@@ -671,21 +688,7 @@ static void __hdd_soc_remove(struct device *dev)
  */
 static void hdd_soc_remove(struct device *dev)
 {
-	struct osif_psoc_sync *psoc_sync;
-	int errno;
-
-	/* by design, this will fail to lookup if we never probed the SoC */
-	errno = osif_psoc_sync_trans_start_wait(dev, &psoc_sync);
-	if (errno)
-		return;
-
-	osif_psoc_sync_unregister(dev);
-	osif_psoc_sync_wait_for_ops(psoc_sync);
-
 	__hdd_soc_remove(dev);
-
-	osif_psoc_sync_trans_stop(psoc_sync);
-	osif_psoc_sync_destroy(psoc_sync);
 }
 
 #ifdef FEATURE_WLAN_DIAG_SUPPORT
@@ -719,7 +722,7 @@ static void hdd_send_hang_reason(void)
 	enum qdf_hang_reason reason = QDF_REASON_UNSPECIFIED;
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 
-	if (wlan_hdd_validate_context(hdd_ctx))
+	if (!hdd_ctx)
 		return;
 
 	cds_get_recovery_reason(&reason);
@@ -775,6 +778,7 @@ static void __hdd_soc_recovery_shutdown(void)
 
 	/* cancel/flush any pending/active idle shutdown work */
 	hdd_psoc_idle_timer_stop(hdd_ctx);
+	hdd_bus_bw_compute_timer_stop(hdd_ctx);
 
 	/* nothing to do if the soc is already unloaded */
 	if (hdd_ctx->driver_status == DRIVER_MODULES_CLOSED) {
@@ -1047,6 +1051,8 @@ static int __wlan_hdd_bus_suspend(struct wow_enable_params wow_params)
 		goto resume_pmo;
 	}
 
+	pld_request_bus_bandwidth(hdd_ctx->parent_dev, PLD_BUS_WIDTH_NONE);
+
 	hdd_info("bus suspend succeeded");
 	return 0;
 
@@ -1097,7 +1103,7 @@ int wlan_hdd_bus_suspend_noirq(void)
 	int errno;
 	uint32_t pending_events;
 
-	hdd_info("start bus_suspend_noirq");
+	hdd_debug("start bus_suspend_noirq");
 	errno = wlan_hdd_validate_context(hdd_ctx);
 	if (errno) {
 		hdd_err("Invalid HDD context: errno %d", errno);
@@ -1138,7 +1144,7 @@ int wlan_hdd_bus_suspend_noirq(void)
 
 	hdd_ctx->suspend_resume_stats.suspends++;
 
-	hdd_info("bus_suspend_noirq done");
+	hdd_debug("bus_suspend_noirq done");
 	return 0;
 
 resume_hif_noirq:
@@ -1193,6 +1199,8 @@ int wlan_hdd_bus_resume(void)
 		hdd_err("Failed to get hif context");
 		return -EINVAL;
 	}
+
+	pld_request_bus_bandwidth(hdd_ctx->parent_dev, PLD_BUS_WIDTH_MEDIUM);
 
 	status = hif_bus_resume(hif_ctx);
 	if (status) {
@@ -1252,7 +1260,7 @@ int wlan_hdd_bus_resume_noirq(void)
 	int status;
 	QDF_STATUS qdf_status;
 
-	hdd_info("starting bus_resume_noirq");
+	hdd_debug("starting bus_resume_noirq");
 	if (cds_is_driver_recovering())
 		return 0;
 
@@ -1277,7 +1285,7 @@ int wlan_hdd_bus_resume_noirq(void)
 	status = hif_bus_resume_noirq(hif_ctx);
 	QDF_BUG(!status);
 
-	hdd_info("bus_resume_noirq done");
+	hdd_debug("bus_resume_noirq done");
 
 	return status;
 }
@@ -1430,7 +1438,7 @@ static int wlan_hdd_runtime_resume(struct device *dev)
 		hdd_err("PMO Runtime resume failed: %d", status);
 	} else {
 		if (policy_mgr_get_connection_count(hdd_ctx->psoc))
-			hdd_bus_bw_compute_timer_start(hdd_ctx);
+			hdd_bus_bw_compute_timer_try_start(hdd_ctx);
 	}
 
 	hdd_debug("Runtime resume done");
@@ -1764,12 +1772,20 @@ static int wlan_hdd_pld_runtime_suspend(struct device *dev,
 
 	errno = osif_psoc_sync_op_start(dev, &psoc_sync);
 	if (errno)
-		return errno;
+		goto out;
 
 	errno = wlan_hdd_runtime_suspend(dev);
 
 	osif_psoc_sync_op_stop(psoc_sync);
 
+out:
+	/* If it returns other errno to kernel, it will treat
+	 * it as critical issue, so all the future runtime
+	 * PM api will return error, pm runtime can't be work
+	 * anymore. Such case found in SSR.
+	 */
+	if (errno && errno != -EAGAIN && errno != -EBUSY)
+		errno = -EAGAIN;
 	return errno;
 }
 

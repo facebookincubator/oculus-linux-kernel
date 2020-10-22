@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -212,7 +212,7 @@ static void fwol_parse_probe_req_ouis(struct wlan_objmgr_psoc *psoc,
 	whitelist->no_of_probe_req_ouis = 0;
 
 	if (!qdf_str_len(str)) {
-		fwol_info("NO OUIs to parse");
+		fwol_debug("NO OUIs to parse");
 		return;
 	}
 
@@ -475,6 +475,7 @@ QDF_STATUS fwol_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	ucfg_fwol_fetch_tsf_gpio_pin(psoc, fwol_cfg);
 	ucfg_fwol_fetch_tsf_irq_host_gpio_pin(psoc, fwol_cfg);
 	ucfg_fwol_fetch_dhcp_server_settings(psoc, fwol_cfg);
+	fwol_cfg->sap_xlna_bypass = cfg_get(psoc, CFG_SET_SAP_XLNA_BYPASS);
 
 	return status;
 }

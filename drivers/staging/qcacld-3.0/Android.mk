@@ -23,11 +23,10 @@ ifneq ($(findstring opensource,$(LOCAL_PATH)),)
 endif # opensource
 
 # Multi-ko check
-LOCAL_DEV_NAME := $(lastword $(strip \
-	$(subst ~, , \
-	$(subst /, ,$(LOCAL_PATH)))))
+LOCAL_DEV_NAME := $(patsubst .%,%,\
+	$(lastword $(strip $(subst /, ,$(LOCAL_PATH)))))
 
-ifeq (1, $(strip $(shell expr $(words $(strip $(TARGET_WLAN_CHIP))) \>= 2)))
+ifneq ($(TARGET_WLAN_CHIP),)
 
 ifeq ($(LOCAL_DEV_NAME), qcacld-3.0)
 LOCAL_MULTI_KO := true
@@ -40,23 +39,26 @@ endif
 ifeq ($(LOCAL_MULTI_KO), true)
 LOCAL_ANDROID_ROOT := $(shell pwd)
 LOCAL_WLAN_BLD_DIR := $(LOCAL_ANDROID_ROOT)/$(WLAN_BLD_DIR)
-$(shell rm -rf $(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/~*)
+$(shell find $(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/ -maxdepth 1 \
+	-name '.*' ! -name '.git' -exec rm -rf {} +)
 
 $(foreach chip, $(TARGET_WLAN_CHIP), \
-	$($(shell mkdir -p $(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/~$(chip); \
+	$($(shell mkdir -p $(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/.$(chip); \
 	ln -sf $(LOCAL_WLAN_BLD_DIR)/qca-wifi-host-cmn \
-		$(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/~$(chip)/qca-wifi-host-cmn); \
+		$(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/.$(chip)/qca-wifi-host-cmn); \
 	$(foreach node, \
 	$(shell find $(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/ -maxdepth 1 \
-		! -name '.*' ! -name '~*' ! -name '*~' \
+		! -name '.*' ! -name '*~' \
 		! -name '.' ! -name 'qcacld-3.0'), \
 	$(shell ln -sf $(node) \
-	$(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/~$(chip)/$(lastword $(strip $(subst /, ,$(node)))) \
+	$(LOCAL_WLAN_BLD_DIR)/qcacld-3.0/.$(chip)/$(lastword $(strip $(subst /, ,$(node)))) \
 	))))
 
-include $(foreach chip, $(TARGET_WLAN_CHIP), $(LOCAL_PATH)/~$(chip)/Android.mk)
+include $(foreach chip, $(TARGET_WLAN_CHIP), $(LOCAL_PATH)/.$(chip)/Android.mk)
 
 else # Multi-ok check
+
+WLAN_PROFILE := default
 
 ifeq ($(LOCAL_DEV_NAME), qcacld-3.0)
 
@@ -64,16 +66,18 @@ LOCAL_DEV_NAME := wlan
 LOCAL_MOD_NAME := wlan
 CMN_OFFSET := ..
 LOCAL_SRC_DIR :=
-WLAN_PROFILE := default
 TARGET_FW_DIR := firmware/wlan/qca_cld
 TARGET_CFG_PATH := /vendor/etc/wifi
 TARGET_MAC_BIN_PATH := /mnt/vendor/persist
 
 else
 
-LOCAL_SRC_DIR := ~$(LOCAL_DEV_NAME)
+LOCAL_SRC_DIR := .$(LOCAL_DEV_NAME)
 CMN_OFFSET := .
+# Use default profile if WLAN_CFG_USE_DEFAULT defined.
+ifeq ($(WLAN_CFG_USE_DEFAULT),)
 WLAN_PROFILE := $(LOCAL_DEV_NAME)
+endif
 TARGET_FW_DIR := firmware/wlan/qca_cld/$(LOCAL_DEV_NAME)
 TARGET_CFG_PATH := /vendor/etc/wifi/$(LOCAL_DEV_NAME)
 TARGET_MAC_BIN_PATH := /mnt/vendor/persist/$(LOCAL_DEV_NAME)
@@ -111,6 +115,10 @@ KBUILD_OPTIONS += DYNAMIC_SINGLE_CHIP=$(DYNAMIC_SINGLE_CHIP)
 KBUILD_OPTIONS += MODNAME=$(LOCAL_MOD_NAME)
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
 KBUILD_OPTIONS += $(WLAN_SELECT)
+
+ifneq ($(WLAN_CFG_OVERRIDE_$(LOCAL_DEV_NAME)),)
+KBUILD_OPTIONS += WLAN_CFG_OVERRIDE="$(WLAN_CFG_OVERRIDE_$(LOCAL_DEV_NAME))"
+endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(WLAN_CHIPSET)_$(LOCAL_DEV_NAME).ko

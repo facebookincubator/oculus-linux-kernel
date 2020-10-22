@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[sde_rsc_hw:%s:%d]: " fmt, __func__, __LINE__
@@ -106,17 +106,17 @@ static int _rsc_hw_seq_memory_init_v3(struct sde_rsc_priv *rsc)
 
 	/* Mode - 2 sequence */
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x18,
-						0xfab9baa0, rsc->debug_mode);
+						0xbdf9b9a0, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x1c,
-						0x9afebdf9, rsc->debug_mode);
+						0xa13899fe, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x20,
-						0xe1a13899, rsc->debug_mode);
+						0xe0ac81e1, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x24,
-						0xa2e0ac81, rsc->debug_mode);
+						0x3982e2a2, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x28,
-						0x9d3982e2, rsc->debug_mode);
+						0x208cfd9d, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x2c,
-						0x20208cfd, rsc->debug_mode);
+						0x20202020, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_MEM_0_DRV0 + 0x30,
 						0x20202020, rsc->debug_mode);
 
@@ -131,7 +131,8 @@ static int _rsc_hw_seq_memory_init_v3(struct sde_rsc_priv *rsc)
 						0x00209ce7, rsc->debug_mode);
 
 	/* branch address */
-	if (rsc->hw_drv_ver >= SDE_RSC_HW_MAJOR_MINOR_STEP(2,0,5))
+	if (rsc->hw_drv_ver == SDE_RSC_HW_MAJOR_MINOR_STEP(2, 0, 5) ||
+		rsc->hw_drv_ver == SDE_RSC_HW_MAJOR_MINOR_STEP(1, 9, 0))
 		br_offset = 0xf0;
 
 	dss_reg_w(&rsc->drv_io, SDE_RSCC_SEQ_CFG_BR_ADDR_0_DRV0 + br_offset,
@@ -278,7 +279,7 @@ static int sde_rsc_mode2_entry_trigger(struct sde_rsc_priv *rsc)
 			rc = 0;
 			break;
 		}
-		usleep_range(10, 100);
+		usleep_range(50, 100);
 	}
 
 	return rc;
@@ -343,6 +344,12 @@ static int sde_rsc_mode2_entry_v3(struct sde_rsc_priv *rsc)
 	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_SOLVER_MODES_ENABLED_DRV0,
 						0x7, rsc->debug_mode);
 
+	/**
+	 * increase delay time to wait before mode2 entry,
+	 * longer time required subsequent to panel mode change
+	 */
+	if (rsc->post_poms)
+		usleep_range(750, 1000);
 	for (i = 0; i <= MAX_MODE2_ENTRY_TRY; i++) {
 		rc = sde_rsc_mode2_entry_trigger(rsc);
 		if (!rc)

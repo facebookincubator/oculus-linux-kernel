@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SDE_HW_UTIL_H
@@ -160,6 +160,13 @@ struct sde_hw_scaler3_lut_cfg {
 	size_t sep_len;
 };
 
+struct sde_hw_inline_pre_downscale_cfg {
+	u32 pre_downscale_x_0;
+	u32 pre_downscale_x_1;
+	u32 pre_downscale_y_0;
+	u32 pre_downscale_y_1;
+};
+
 u32 *sde_hw_util_get_log_mask_ptr(void);
 
 void sde_reg_write(struct sde_hw_blk_reg_map *c,
@@ -170,6 +177,9 @@ int sde_reg_read(struct sde_hw_blk_reg_map *c, u32 reg_off);
 
 #define SDE_REG_WRITE(c, off, val) sde_reg_write(c, off, val, #off)
 #define SDE_REG_READ(c, off) sde_reg_read(c, off)
+
+#define SDE_IMEM_WRITE(addr, val) writel_relaxed(val, addr)
+#define SDE_IMEM_READ(addr) readl_relaxed(addr)
 
 #define MISR_FRAME_COUNT_MASK		0xFF
 #define MISR_CTRL_ENABLE		BIT(8)
@@ -207,7 +217,7 @@ uint32_t sde_copy_formats(
 		const struct sde_format_extended *src_list,
 		uint32_t src_list_size);
 
-uint32_t sde_get_linetime(struct drm_display_mode *mode);
+uint32_t sde_get_linetime(struct drm_display_mode *mode, int comp_ratio);
 
 static inline bool is_qseed3_rev_qseed3lite(struct sde_mdss_cfg *sde_cfg)
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,6 +39,7 @@
 #include "hif.h"
 #include "multibus.h"
 #include "hif_unit_test_suspend_i.h"
+#include "qdf_cpuhp.h"
 
 #define HIF_MIN_SLEEP_INACTIVITY_TIME_MS     50
 #define HIF_SLEEP_INACTIVITY_TIMER_PERIOD_MS 60
@@ -209,6 +210,10 @@ struct hif_softc {
 #ifdef IPA_OFFLOAD
 	qdf_shared_mem_t *ipa_ce_ring;
 #endif
+#ifdef HIF_CPU_PERF_AFFINE_MASK
+	/* The CPU hotplug event registration handle */
+	struct qdf_cpuhp_handler *cpuhp_event_handle;
+#endif
 };
 
 static inline void *hif_get_hal_handle(void *hif_hdl)
@@ -220,6 +225,25 @@ static inline void *hif_get_hal_handle(void *hif_hdl)
 
 	return sc->hal_soc;
 }
+
+/**
+ * Max waiting time during Runtime PM suspend to finish all
+ * the tasks. This is in the multiple of 10ms.
+ */
+#define HIF_TASK_DRAIN_WAIT_CNT 25
+
+/**
+ * hif_try_complete_tasks() - Try to complete all the pending tasks
+ * @scn: HIF context
+ *
+ * Try to complete all the pending datapath tasks, i.e. tasklets,
+ * DP group tasklets and works which are queued, in a given time
+ * slot.
+ *
+ * Returns: QDF_STATUS_SUCCESS if all the tasks were completed
+ *	QDF error code, if the time slot exhausted
+ */
+QDF_STATUS hif_try_complete_tasks(struct hif_softc *scn);
 
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
 static inline bool hif_is_nss_wifi_enabled(struct hif_softc *sc)
@@ -294,6 +318,15 @@ bool hif_is_driver_unloading(struct hif_softc *scn);
 bool hif_is_load_or_unload_in_progress(struct hif_softc *scn);
 bool hif_is_recovery_in_progress(struct hif_softc *scn);
 bool hif_is_target_ready(struct hif_softc *scn);
+
+/**
+ * hif_get_bandwidth_level() - API to get the current bandwidth level
+ * @scn: HIF Context
+ *
+ * Return: PLD bandwidth level
+ */
+int hif_get_bandwidth_level(struct hif_opaque_softc *hif_handle);
+
 void hif_wlan_disable(struct hif_softc *scn);
 int hif_target_sleep_state_adjust(struct hif_softc *scn,
 					 bool sleep_ok,

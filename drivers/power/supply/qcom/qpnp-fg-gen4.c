@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"FG: %s: " fmt, __func__
@@ -396,6 +396,8 @@ static struct fg_sram_param pm8150b_v1_sram_params[] = {
 		0, NULL, fg_decode_voltage_15b),
 	PARAM(IBAT_FINAL, IBAT_FINAL_WORD, IBAT_FINAL_OFFSET, 2, 1000, 488282,
 		0, NULL, fg_decode_current_16b),
+	PARAM(RCONN, RCONN_WORD, RCONN_OFFSET, 2, 1000, 122070, 0,
+		fg_encode_default, fg_decode_value_16b),
 	PARAM(ESR, ESR_WORD, ESR_OFFSET, 2, 1000, 244141, 0, fg_encode_default,
 		fg_decode_value_16b),
 	PARAM(ESR_MDL, ESR_MDL_WORD, ESR_MDL_OFFSET, 2, 1000, 244141, 0,
@@ -496,6 +498,8 @@ static struct fg_sram_param pm8150b_v2_sram_params[] = {
 		0, NULL, fg_decode_current_16b),
 	PARAM(IBAT_FLT, IBAT_FLT_WORD, IBAT_FLT_OFFSET, 4, 10000, 19073, 0,
 		NULL, fg_decode_current_24b),
+	PARAM(RCONN, RCONN_WORD, RCONN_OFFSET, 2, 1000, 122070, 0,
+		fg_encode_default, fg_decode_value_16b),
 	PARAM(ESR, ESR_WORD, ESR_OFFSET, 2, 1000, 244141, 0, fg_encode_default,
 		fg_decode_value_16b),
 	PARAM(ESR_MDL, ESR_MDL_WORD, ESR_MDL_OFFSET, 2, 1000, 244141, 0,
@@ -2746,14 +2750,14 @@ static int fg_gen4_update_maint_soc(struct fg_dev *fg)
 		goto out;
 	}
 
-	if (msoc > fg->maint_soc) {
+	if (msoc >= fg->maint_soc) {
 		/*
 		 * When the monotonic SOC goes above maintenance SOC, we should
 		 * stop showing the maintenance SOC.
 		 */
 		fg->delta_soc = 0;
 		fg->maint_soc = 0;
-	} else if (fg->maint_soc && msoc <= fg->last_msoc) {
+	} else if (fg->maint_soc && msoc < fg->last_msoc) {
 		/* MSOC is decreasing. Decrease maintenance SOC as well */
 		fg->maint_soc -= 1;
 		if (!(msoc % 10)) {
@@ -3214,7 +3218,7 @@ static int fg_gen4_esr_fast_calib_config(struct fg_gen4_chip *chip, bool en)
 	 * discharging when ESR fast calibration is disabled. Otherwise, keep
 	 * it enabled so that ESR pulses can happen during discharging.
 	 */
-	val = en ? BIT(6) | BIT(7) : 0;
+	val = (en || chip->dt.esr_calib_dischg) ? BIT(6) | BIT(7) : 0;
 	mask = BIT(6) | BIT(7);
 	rc = fg_sram_masked_write(fg, SYS_CONFIG_WORD,
 			SYS_CONFIG_OFFSET, mask, val, FG_IMA_DEFAULT);
@@ -4233,13 +4237,11 @@ static void status_change_work(struct work_struct *work)
 	cycle_count_update(chip->counter, (u32)batt_soc >> 24,
 		fg->charge_status, fg->charge_done, input_present);
 
-	if (fg->charge_status != fg->prev_charge_status) {
-		batt_soc_cp = div64_u64((u64)(u32)batt_soc * CENTI_FULL_SOC,
-					BATT_SOC_32BIT);
-		cap_learning_update(chip->cl, batt_temp, batt_soc_cp,
+	batt_soc_cp = div64_u64((u64)(u32)batt_soc * CENTI_FULL_SOC,
+				BATT_SOC_32BIT);
+	cap_learning_update(chip->cl, batt_temp, batt_soc_cp,
 			fg->charge_status, fg->charge_done, input_present,
 			qnovo_en);
-	}
 
 	rc = fg_gen4_charge_full_update(fg);
 	if (rc < 0)
@@ -4275,7 +4277,6 @@ static void status_change_work(struct work_struct *work)
 		pr_err("Failed to validate SOC scale mode, rc=%d\n", rc);
 
 	ttf_update(chip->ttf, input_present);
-	fg->prev_charge_status = fg->charge_status;
 out:
 	fg_dbg(fg, FG_STATUS, "charge_status:%d charge_type:%d charge_done:%d\n",
 		fg->charge_status, fg->charge_type, fg->charge_done);
@@ -5536,8 +5537,7 @@ static int fg_gen4_hw_init(struct fg_gen4_chip *chip)
 		}
 
 		if (!buf[0] && !buf[1]) {
-			/* Rconn has same encoding as ESR */
-			fg_encode(fg->sp, FG_SRAM_ESR, chip->dt.rconn_uohms,
+			fg_encode(fg->sp, FG_SRAM_RCONN, chip->dt.rconn_uohms,
 				buf);
 			rc = fg_sram_write(fg, RCONN_WORD, RCONN_OFFSET, buf, 2,
 					FG_IMA_DEFAULT);
@@ -5736,15 +5736,6 @@ static int fg_parse_esr_cal_params(struct fg_dev *fg)
 	struct device_node *node = fg->dev->of_node;
 	int rc, i, temp;
 
-	if (chip->dt.esr_timer_dischg_slow[TIMER_RETRY] >= 0 &&
-			chip->dt.esr_timer_dischg_slow[TIMER_MAX] >= 0) {
-		/* ESR calibration only during discharging */
-		chip->dt.esr_calib_dischg = of_property_read_bool(node,
-						"qcom,fg-esr-calib-dischg");
-		if (chip->dt.esr_calib_dischg)
-			return 0;
-	}
-
 	if (!of_find_property(node, "qcom,fg-esr-cal-soc-thresh", NULL) ||
 		!of_find_property(node, "qcom,fg-esr-cal-temp-thresh", NULL))
 		return 0;
@@ -5777,6 +5768,15 @@ static int fg_parse_esr_cal_params(struct fg_dev *fg)
 				ESR_CAL_TEMP_MIN, ESR_CAL_TEMP_MAX);
 			return -EINVAL;
 		}
+	}
+
+	if (chip->dt.esr_timer_dischg_slow[TIMER_RETRY] >= 0 &&
+			chip->dt.esr_timer_dischg_slow[TIMER_MAX] >= 0) {
+		/* ESR calibration only during discharging */
+		chip->dt.esr_calib_dischg = of_property_read_bool(node,
+						"qcom,fg-esr-calib-dischg");
+		if (chip->dt.esr_calib_dischg)
+			return 0;
 	}
 
 	chip->dt.delta_esr_disable_count = DEFAULT_ESR_DISABLE_COUNT;
@@ -6288,7 +6288,6 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	fg->debug_mask = &fg_gen4_debug_mask;
 	fg->irqs = fg_irqs;
 	fg->charge_status = -EINVAL;
-	fg->prev_charge_status = -EINVAL;
 	fg->online_status = -EINVAL;
 	fg->batt_id_ohms = -EINVAL;
 	chip->ki_coeff_full_soc[0] = -EINVAL;

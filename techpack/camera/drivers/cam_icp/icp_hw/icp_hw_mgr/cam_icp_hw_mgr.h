@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef CAM_ICP_HW_MGR_H
@@ -66,6 +66,12 @@
 
 /* Current appliacble vote paths, based on number of UAPI definitions */
 #define CAM_ICP_MAX_PER_PATH_VOTES 6
+
+/*
+ * Response time threshold in ms beyond which a request is not expected
+ * to be with ICP hw
+ */
+#define CAM_ICP_CTX_RESPONSE_TIME_THRESHOLD   300000
 
 /**
  * struct icp_hfi_mem_info
@@ -171,6 +177,7 @@ struct cam_icp_clk_bw_req_internal_v2 {
  * @clk_info: Clock information for a request
  * @clk_info_v2: Clock info for AXI bw voting v2
  * @frame_info: information needed to process request
+ * @submit_timestamp: Submit timestamp to hw
  */
 struct hfi_frame_process_info {
 	struct hfi_cmd_ipebps_async hfi_frame_cmd[CAM_FRAME_CMD_MAX];
@@ -186,6 +193,7 @@ struct hfi_frame_process_info {
 	struct cam_icp_clk_bw_request clk_info[CAM_FRAME_CMD_MAX];
 	struct cam_icp_clk_bw_req_internal_v2 clk_info_v2[CAM_FRAME_CMD_MAX];
 	struct icp_frame_info frame_info[CAM_FRAME_CMD_MAX];
+	ktime_t submit_timestamp[CAM_FRAME_CMD_MAX];
 };
 
 /**
@@ -199,6 +207,7 @@ struct hfi_frame_process_info {
  * @clk_rate: Supported clock rates for the context
  * @num_paths: Number of valid AXI paths
  * @axi_path: ctx based per path bw vote
+ * @bw_included: Whether bw of this context is included in overal voting
  */
 struct cam_ctx_clk_info {
 	uint32_t curr_fc;
@@ -210,6 +219,7 @@ struct cam_ctx_clk_info {
 	int32_t clk_rate[CAM_MAX_VOTE];
 	uint32_t num_paths;
 	struct cam_axi_per_path_bw_vote axi_path[CAM_ICP_MAX_PER_PATH_VOTES];
+	bool bw_included;
 };
 /**
  * struct cam_icp_hw_ctx_data
@@ -232,6 +242,7 @@ struct cam_ctx_clk_info {
  * @watch_dog: watchdog timer handle
  * @watch_dog_reset_counter: Counter for watch dog reset
  * @icp_dev_io_info: io config resource
+ * @last_flush_req: last flush req for this ctx
  */
 struct cam_icp_hw_ctx_data {
 	void *context_priv;
@@ -253,6 +264,7 @@ struct cam_icp_hw_ctx_data {
 	struct cam_req_mgr_timer *watch_dog;
 	uint32_t watch_dog_reset_counter;
 	struct cam_icp_acquire_dev_info icp_dev_io_info;
+	uint64_t last_flush_req;
 };
 
 /**

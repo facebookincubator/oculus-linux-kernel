@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -579,6 +579,9 @@ struct dp_rx_tid {
 	/* Delba reason code for retries */
 	uint8_t delba_rcode;
 
+	/* Coex Override preserved windows size 1 based */
+	uint16_t rx_ba_win_size_override;
+
 };
 
 /**
@@ -708,6 +711,8 @@ struct dp_soc_stats {
 		uint32_t rx_frag_err;
 		/* Fragments dropped due to len errors in skb */
 		uint32_t rx_frag_err_len_error;
+		/* Fragments dropped due to no peer found */
+		uint32_t rx_frag_err_no_peer;
 		/* No of reinjected packets */
 		uint32_t reo_reinject;
 		/* Reap loop packet limit hit */
@@ -716,6 +721,9 @@ struct dp_soc_stats {
 		uint32_t hp_oos2;
 		/* Rx ring near full */
 		uint32_t near_full;
+		/* Break ring reaping as not all scattered msdu received */
+		uint32_t msdu_scatter_wait_break;
+
 		struct {
 			/* Invalid RBM error count */
 			uint32_t invalid_rbm;
@@ -740,6 +748,8 @@ struct dp_soc_stats {
 			struct cdp_pkt_info rx_invalid_pkt_len;
 			/* HAL ring access Fail error count */
 			uint32_t hal_ring_access_fail;
+			/* HAL ring access full Fail error count */
+			uint32_t hal_ring_access_full_fail;
 			/* RX DMA error count */
 			uint32_t rxdma_error[HAL_RXDMA_ERR_MAX];
 			/* RX REO DEST Desc Invalid Magic count */
@@ -756,6 +766,24 @@ struct dp_soc_stats {
 			uint32_t hal_rxdma_err_dup;
 			/* REO cmd send fail/requeue count */
 			uint32_t reo_cmd_send_fail;
+			/* REO cmd send drain count */
+			uint32_t reo_cmd_send_drain;
+			/* RX msdu drop count due to scatter */
+			uint32_t scatter_msdu;
+			/* Delba sent count due to RX 2k jump */
+			uint32_t rx_2k_jump_delba_sent;
+			/* RX 2k jump msdu indicated to stack count */
+			uint32_t rx_2k_jump_to_stack;
+			/* RX 2k jump msdu dropped count */
+			uint32_t rx_2k_jump_drop;
+			/* REO OOR msdu drop count */
+			uint32_t reo_err_oor_drop;
+			/* REO OOR msdu indicated to stack count */
+			uint32_t reo_err_oor_to_stack;
+			/* REO OOR scattered msdu count */
+			uint32_t reo_err_oor_sg_count;
+			/* RX msdu rejected count on delivery to vdev stack_fn*/
+			uint32_t rejected;
 		} err;
 
 		/* packet count per core - per ring */
@@ -1141,7 +1169,18 @@ struct dp_soc {
 	} ipa_uc_rx_rsc;
 
 	qdf_atomic_t ipa_pipes_enabled;
+	bool ipa_first_tx_db_access;
 #endif
+
+#ifdef WLAN_FEATURE_STATS_EXT
+	struct {
+		uint32_t rx_mpdu_received;
+		uint32_t rx_mpdu_missed;
+	} ext_stats;
+	qdf_event_t rx_hw_stats_event;
+	qdf_spinlock_t rx_hw_stats_lock;
+	bool is_last_stats_ctx_init;
+#endif /* WLAN_FEATURE_STATS_EXT */
 
 	/* Smart monitor capability for HKv2 */
 	uint8_t hw_nac_monitor_support;
@@ -1859,6 +1898,9 @@ struct dp_vdev {
 	uint8_t tidmap_prty;
 	/* Self Peer in STA mode */
 	struct dp_peer *vap_self_peer;
+
+	/* vap bss peer mac addr */
+	uint8_t vap_bss_peer_mac_addr[QDF_MAC_ADDR_SIZE];
 };
 
 
@@ -2019,5 +2061,17 @@ struct dp_tx_me_buf_t {
 	struct dp_tx_me_buf_t *next;
 	uint8_t data[QDF_MAC_ADDR_SIZE];
 };
+
+#ifdef WLAN_FEATURE_STATS_EXT
+/*
+ * dp_req_rx_hw_stats_t: RX peer HW stats query structure
+ * @pending_tid_query_cnt: pending tid stats count which waits for REO status
+ * @is_query_timeout: flag to show is stats query timeout
+ */
+struct dp_req_rx_hw_stats_t {
+	qdf_atomic_t pending_tid_stats_cnt;
+	bool is_query_timeout;
+};
+#endif
 
 #endif /* _DP_TYPES_H_ */

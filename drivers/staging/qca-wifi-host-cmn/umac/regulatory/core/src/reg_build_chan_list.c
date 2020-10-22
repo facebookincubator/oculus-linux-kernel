@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -542,8 +542,50 @@ static void reg_modify_chan_list_for_cached_channels(
 }
 #endif
 
-void reg_compute_pdev_current_chan_list(
-		struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+#ifdef CONFIG_REG_CLIENT
+/**
+ * reg_modify_chan_list_for_srd_channels() - Modify SRD channels in ETSI13
+ * @pdev: Pointer to pdev object
+ * @chan_list: Current channel list
+ *
+ * This function converts SRD channels to passive in ETSI13 regulatory domain
+ * when enable_srd_chan_in_master_mode is not set.
+ */
+static void
+reg_modify_chan_list_for_srd_channels(struct wlan_objmgr_pdev *pdev,
+				      struct regulatory_channel *chan_list)
+{
+	enum channel_enum chan_enum;
+
+	if (!reg_is_etsi13_regdmn(pdev))
+		return;
+
+	if (reg_is_etsi13_srd_chan_allowed_master_mode(pdev))
+		return;
+
+	for (chan_enum = 0; chan_enum < NUM_CHANNELS; chan_enum++) {
+		if (chan_list[chan_enum].chan_flags & REGULATORY_CHAN_DISABLED)
+			continue;
+
+		if (reg_is_etsi13_srd_chan(pdev,
+					   chan_list[chan_enum].chan_num)) {
+			chan_list[chan_enum].state =
+				CHANNEL_STATE_DFS;
+			chan_list[chan_enum].chan_flags |=
+				REGULATORY_CHAN_NO_IR;
+		}
+	}
+}
+#else
+static inline void
+reg_modify_chan_list_for_srd_channels(struct wlan_objmgr_pdev *pdev,
+				      struct regulatory_channel *chan_list)
+{
+}
+#endif
+
+void reg_compute_pdev_current_chan_list(struct wlan_regulatory_pdev_priv_obj
+					*pdev_priv_obj)
 {
 	qdf_mem_copy(pdev_priv_obj->cur_chan_list, pdev_priv_obj->mas_chan_list,
 		     NUM_CHANNELS * sizeof(struct regulatory_channel));
@@ -571,6 +613,9 @@ void reg_compute_pdev_current_chan_list(
 					  pdev_priv_obj->en_chan_144);
 
 	reg_modify_chan_list_for_cached_channels(pdev_priv_obj);
+
+	reg_modify_chan_list_for_srd_channels(pdev_priv_obj->pdev_ptr,
+					      pdev_priv_obj->cur_chan_list);
 }
 
 void reg_reset_reg_rules(struct reg_rule_info *reg_rules)
@@ -656,6 +701,77 @@ void reg_propagate_mas_chan_list_to_pdev(struct wlan_objmgr_psoc *psoc,
 	}
 }
 
+#ifdef CONFIG_REG_CLIENT
+/**
+ * reg_send_ctl_info() - Send CTL info to firmware when regdb is not offloaded
+ * @soc_reg: soc private object for regulatory
+ * @regulatory_info: regulatory info
+ * @tx_ops: send operations for regulatory component
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+reg_send_ctl_info(struct wlan_regulatory_psoc_priv_obj *soc_reg,
+		  struct cur_regulatory_info *regulatory_info,
+		  struct wlan_lmac_if_reg_tx_ops *tx_ops)
+{
+	struct wlan_objmgr_psoc *psoc = regulatory_info->psoc;
+	struct reg_ctl_params params = {0};
+	QDF_STATUS status;
+	uint16_t regd_index;
+	uint32_t index_2g, index_5g;
+
+	if (soc_reg->offload_enabled)
+		return QDF_STATUS_SUCCESS;
+
+	if (!tx_ops || !tx_ops->send_ctl_info) {
+		reg_err("No regulatory tx_ops");
+		return QDF_STATUS_E_FAULT;
+	}
+
+	status = reg_get_rdpair_from_regdmn_id(regulatory_info->reg_dmn_pair,
+					       &regd_index);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		reg_err("Failed to get regdomain index for regdomain pair: %x",
+			regulatory_info->reg_dmn_pair);
+		return status;
+	}
+
+	index_2g = g_reg_dmn_pairs[regd_index].dmn_id_2g;
+	index_5g = g_reg_dmn_pairs[regd_index].dmn_id_5g;
+	params.ctl_2g = regdomains_2g[index_2g].ctl_val;
+	params.ctl_5g = regdomains_5g[index_5g].ctl_val;
+	params.regd_2g = reg_2g_sub_dmn_code[index_2g];
+	params.regd_5g = reg_5g_sub_dmn_code[index_5g];
+
+	if (reg_is_world_ctry_code(regulatory_info->reg_dmn_pair))
+		params.regd = regulatory_info->reg_dmn_pair;
+	else
+		params.regd = regulatory_info->ctry_code | COUNTRY_ERD_FLAG;
+
+	reg_debug("regdomain pair = %u, regdomain index = %u",
+		  regulatory_info->reg_dmn_pair, regd_index);
+	reg_debug("index_2g = %u, index_5g = %u, ctl_2g = %x, ctl_5g = %x",
+		  index_2g, index_5g, params.ctl_2g, params.ctl_5g);
+	reg_debug("regd_2g = %x, regd_5g = %x, regd = %x",
+		  params.regd_2g, params.regd_5g, params.regd);
+
+	status = tx_ops->send_ctl_info(psoc, &params);
+	if (QDF_IS_STATUS_ERROR(status))
+		reg_err("Failed to send CTL info to firmware");
+
+	return status;
+}
+#else
+static QDF_STATUS
+reg_send_ctl_info(struct wlan_regulatory_psoc_priv_obj *soc_reg,
+		  struct cur_regulatory_info *regulatory_info,
+		  struct wlan_lmac_if_reg_tx_ops *tx_ops)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 QDF_STATUS reg_process_master_chan_list(
 		struct cur_regulatory_info *regulat_info)
 {
@@ -705,7 +821,7 @@ QDF_STATUS reg_process_master_chan_list(
 	}
 
 	if (regulat_info->status_code != REG_SET_CC_STATUS_PASS) {
-		reg_err("Setting country code failed, status code is %d",
+		reg_err("Set country code failed, status code %d",
 			regulat_info->status_code);
 
 		pdev = wlan_objmgr_get_pdev_by_id(psoc, phy_id, dbg_id);
@@ -816,6 +932,10 @@ QDF_STATUS reg_process_master_chan_list(
 					reg_rule_5g, num_5g_reg_rules,
 					min_bw_5g, mas_chan_list);
 
+	status = reg_send_ctl_info(soc_reg, regulat_info, tx_ops);
+	if (!QDF_IS_STATUS_SUCCESS(status))
+		return status;
+
 	if (soc_reg->new_user_ctry_pending[phy_id]) {
 		soc_reg->new_user_ctry_pending[phy_id] = false;
 		soc_reg->cc_src = SOURCE_USERSPACE;
@@ -870,7 +990,6 @@ QDF_STATUS reg_process_master_chan_list(
 	if (pdev) {
 		reg_propagate_mas_chan_list_to_pdev(psoc, pdev, &dir);
 		wlan_objmgr_pdev_release_ref(pdev, dbg_id);
-		reg_reset_reg_rules(reg_rules);
 	}
 
 	return QDF_STATUS_SUCCESS;

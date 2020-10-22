@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -661,7 +661,7 @@ typedef struct sAniSirLim {
 	QDF_STATUS(*sme_msg_callback)
 		(struct mac_context *mac, struct scheduler_msg *msg);
 	QDF_STATUS(*stop_roaming_callback)
-		(struct mac_context *mac, uint8_t session_id, uint8_t reason,
+		(mac_handle_t mac, uint8_t session_id, uint8_t reason,
 		 uint32_t requestor);
 	uint8_t retry_packet_cnt;
 	uint8_t beacon_probe_rsp_cnt_per_scan;
@@ -679,7 +679,8 @@ struct mgmt_frm_reg_info {
 };
 
 typedef struct sRrmContext {
-	tRrmSMEContext rrmSmeContext;
+	struct rrm_config_param rrmConfig;
+	tRrmSMEContext rrmSmeContext[MAX_MEASUREMENT_REQUEST];
 	tRrmPEContext rrmPEContext;
 } tRrmContext, *tpRrmContext;
 
@@ -753,6 +754,7 @@ struct mac_context {
 	struct wlan_mlme_chain_cfg fw_chain_cfg;
 	struct wlan_mlme_cfg *mlme_cfg;
 	tAniSirLim lim;
+	uint8_t nud_fail_behaviour;
 	struct sch_context sch;
 	tAniSirSys sys;
 

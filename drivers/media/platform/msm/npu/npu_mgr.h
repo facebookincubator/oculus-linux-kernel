@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _NPU_MGR_H
@@ -28,6 +28,9 @@
 #define NW_DEBUG_TIMEOUT msecs_to_jiffies(NW_DEBUG_TIMEOUT_MS)
 #define NPU_MBOX_IDLE_TIMEOUT_MS 500 /* set for 500ms */
 #define NPU_MBOX_IDLE_TIMEOUT msecs_to_jiffies(NPU_MBOX_IDLE_TIMEOUT_MS)
+#define NPU_FW_TIMEOUT_POLL_INTERVAL_MS 10
+#define NPU_FW_ACK_TIMEOUT_MS 5000
+#define NPU_FW_BRINGUP_TIMEOUT_MS (1000 * 60) /* set for 60 seconds */
 #define FIRMWARE_VERSION 0x00001000
 #define MAX_LOADED_NETWORK 32
 #define NPU_IPC_BUF_LENGTH 4096
@@ -123,18 +126,24 @@ struct npu_host_ctx {
 	uint32_t fw_dbg_mode;
 	uint32_t exec_flags_override;
 	atomic_t ipc_trans_id;
-	atomic_t network_exeute_cnt;
+	atomic_t network_execute_cnt;
 
 	uint32_t err_irq_sts;
 	uint32_t wdg_irq_sts;
 	bool fw_error;
 	bool cancel_work;
+	bool app_crashed;
 	struct notifier_block nb;
+	struct notifier_block panic_nb;
 	void *notif_hdle;
 	spinlock_t bridge_mbox_lock;
 	bool bridge_mbox_pwr_on;
 	void *ipc_msg_buf;
 	struct list_head misc_cmd_list;
+
+	struct msm_npu_property fw_caps;
+	bool fw_caps_valid;
+	uint32_t fw_caps_err_code;
 };
 
 struct npu_device;

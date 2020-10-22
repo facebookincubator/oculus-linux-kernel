@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/iopoll.h>
 
@@ -514,10 +514,11 @@ static int sde_hw_intf_setup_autorefresh_config(struct sde_hw_intf *intf,
 
 	c = &intf->hw;
 
+	refresh_cfg = SDE_REG_READ(c, INTF_TEAR_AUTOREFRESH_CONFIG);
 	if (cfg->enable)
 		refresh_cfg = BIT(31) | cfg->frame_count;
 	else
-		refresh_cfg = 0;
+		refresh_cfg &= ~BIT(31);
 
 	SDE_REG_WRITE(c, INTF_TEAR_AUTOREFRESH_CONFIG, refresh_cfg);
 
@@ -635,6 +636,27 @@ static int sde_hw_intf_get_vsync_info(struct sde_hw_intf *intf,
 	return 0;
 }
 
+static int sde_hw_intf_v1_check_and_reset_tearcheck(struct sde_hw_intf *intf,
+		struct intf_tear_status *status)
+{
+	struct sde_hw_blk_reg_map *c = &intf->hw;
+	u32 start_pos;
+
+	if (!intf || !status)
+		return -EINVAL;
+
+	c = &intf->hw;
+
+	status->read_count = SDE_REG_READ(c, INTF_TEAR_INT_COUNT_VAL);
+	start_pos = SDE_REG_READ(c, INTF_TEAR_START_POS);
+	status->write_count = SDE_REG_READ(c, INTF_TEAR_SYNC_WRCOUNT);
+	status->write_count &= 0xffff0000;
+	status->write_count |= start_pos;
+	SDE_REG_WRITE(c, INTF_TEAR_SYNC_WRCOUNT, status->write_count);
+
+	return 0;
+}
+
 static void sde_hw_intf_vsync_sel(struct sde_hw_intf *intf,
 		u32 vsync_source)
 {
@@ -676,6 +698,8 @@ static void _setup_intf_ops(struct sde_hw_intf_ops *ops,
 		ops->poll_timeout_wr_ptr = sde_hw_intf_poll_timeout_wr_ptr;
 		ops->vsync_sel = sde_hw_intf_vsync_sel;
 		ops->get_status = sde_hw_intf_v1_get_status;
+		ops->check_and_reset_tearcheck =
+			sde_hw_intf_v1_check_and_reset_tearcheck;
 	}
 }
 

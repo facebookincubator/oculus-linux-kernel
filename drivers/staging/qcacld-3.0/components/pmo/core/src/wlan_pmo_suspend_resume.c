@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,6 +39,7 @@
 #include "wlan_mlme_ucfg_api.h"
 #include "cfg_mlme_sap.h"
 #include "cfg_ucfg_api.h"
+#include "cdp_txrx_bus.h"
 
 /**
  * pmo_core_get_vdev_dtim_period() - Get vdev dtim period
@@ -530,18 +531,10 @@ QDF_STATUS pmo_core_psoc_user_space_suspend_req(struct wlan_objmgr_psoc *psoc,
 		goto out;
 	}
 
-	/* Suspend all components before sending target suspend command */
-	status = pmo_suspend_all_components(psoc, type);
-	if (status != QDF_STATUS_SUCCESS) {
-		pmo_err("Failed to suspend all component");
-		goto dec_psoc_ref;
-	}
-
 	status = pmo_core_psoc_configure_suspend(psoc, false);
 	if (status != QDF_STATUS_SUCCESS)
 		pmo_err("Failed to configure suspend");
 
-dec_psoc_ref:
 	pmo_psoc_put_ref(psoc);
 out:
 	pmo_exit();
@@ -716,18 +709,10 @@ QDF_STATUS pmo_core_psoc_user_space_resume_req(struct wlan_objmgr_psoc *psoc,
 		goto out;
 	}
 
-	/* Resume all components */
-	status = pmo_resume_all_components(psoc, type);
-	if (status != QDF_STATUS_SUCCESS) {
-		pmo_err("Failed to resume all the components");
-		goto dec_psoc_ref;
-	}
-
 	status = pmo_core_psoc_configure_resume(psoc, false);
 	if (status != QDF_STATUS_SUCCESS)
 		pmo_err("Failed to configure resume");
 
-dec_psoc_ref:
 	pmo_psoc_put_ref(psoc);
 out:
 	pmo_exit();
@@ -873,11 +858,14 @@ QDF_STATUS pmo_core_psoc_suspend_target(struct wlan_objmgr_psoc *psoc,
 	QDF_STATUS status;
 	struct pmo_suspend_params param;
 	struct pmo_psoc_priv_obj *psoc_ctx;
+	void *dp_soc = pmo_core_psoc_get_dp_handle(psoc);
+	void *txrx_pdev = pmo_core_psoc_get_txrx_handle(psoc);
 
 	pmo_enter();
 
 	psoc_ctx = pmo_psoc_get_priv(psoc);
 
+	cdp_process_target_suspend_req(dp_soc, txrx_pdev);
 	qdf_event_reset(&psoc_ctx->wow.target_suspend);
 	param.disable_target_intr = disable_target_intr;
 	status = pmo_tgt_psoc_send_supend_req(psoc, &param);
@@ -1310,10 +1298,10 @@ QDF_STATUS pmo_core_psoc_bus_resume_req(struct wlan_objmgr_psoc *psoc,
 	wow_mode = pmo_core_is_wow_enabled(psoc_ctx);
 	pmo_debug("wow mode %d", wow_mode);
 
-	pmo_core_update_wow_initial_wake_up(psoc_ctx, false);
+	pmo_core_update_wow_initial_wake_up(psoc_ctx, 0);
 
 	/* If target was not suspended, bail out */
-	if (!pmo_tgt_is_target_suspended(psoc)) {
+	if (qdf_is_fw_down() || !pmo_tgt_is_target_suspended(psoc)) {
 		pmo_psoc_put_ref(psoc);
 		goto out;
 	}
@@ -1339,6 +1327,8 @@ void pmo_core_psoc_target_suspend_acknowledge(void *context, bool wow_nack)
 {
 	struct pmo_psoc_priv_obj *psoc_ctx;
 	struct wlan_objmgr_psoc *psoc = (struct wlan_objmgr_psoc *)context;
+	void *dp_soc = pmo_core_psoc_get_dp_handle(psoc);
+	void *txrx_pdev = pmo_core_psoc_get_txrx_handle(psoc);
 	QDF_STATUS status;
 
 	pmo_enter();
@@ -1357,9 +1347,13 @@ void pmo_core_psoc_target_suspend_acknowledge(void *context, bool wow_nack)
 
 	pmo_core_set_wow_nack(psoc_ctx, wow_nack);
 	qdf_event_set(&psoc_ctx->wow.target_suspend);
-	if (wow_nack && !pmo_tgt_psoc_get_runtime_pm_in_progress(psoc)) {
-		qdf_wake_lock_timeout_acquire(&psoc_ctx->wow.wow_wake_lock,
-						PMO_WAKE_LOCK_TIMEOUT);
+	if (!pmo_tgt_psoc_get_runtime_pm_in_progress(psoc)) {
+		if (wow_nack)
+			qdf_wake_lock_timeout_acquire(
+				&psoc_ctx->wow.wow_wake_lock,
+				PMO_WAKE_LOCK_TIMEOUT);
+		else
+			cdp_process_wow_ack_rsp(dp_soc, txrx_pdev);
 	}
 
 	pmo_psoc_put_ref(psoc);
@@ -1437,7 +1431,7 @@ int pmo_core_psoc_clear_target_wake_up(struct wlan_objmgr_psoc *psoc)
 	}
 
 	psoc_ctx = pmo_psoc_get_priv(psoc);
-	pmo_core_update_wow_initial_wake_up(psoc_ctx, false);
+	pmo_core_update_wow_initial_wake_up(psoc_ctx, 0);
 
 	pmo_psoc_put_ref(psoc);
 out:
@@ -1458,7 +1452,7 @@ void pmo_core_psoc_handle_initial_wake_up(void *cb_ctx)
 	}
 
 	psoc_ctx = pmo_psoc_get_priv(psoc);
-	pmo_core_update_wow_initial_wake_up(psoc_ctx, true);
+	pmo_core_update_wow_initial_wake_up(psoc_ctx, 1);
 
 out:
 	pmo_exit();

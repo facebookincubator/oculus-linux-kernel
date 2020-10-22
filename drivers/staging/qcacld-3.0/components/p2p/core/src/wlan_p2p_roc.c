@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -135,8 +135,8 @@ static QDF_STATUS p2p_scan_start(struct p2p_roc_context *roc_ctx)
 		if (req->scan_req.dwell_time_passive > P2P_MAX_ROC_DURATION)
 			req->scan_req.dwell_time_passive = P2P_MAX_ROC_DURATION;
 	}
-	p2p_debug("FW requested roc duration is:%d for chan: %d",
-		  req->scan_req.dwell_time_passive, roc_ctx->chan);
+	p2p_debug("FW requested roc duration is:%d",
+		  req->scan_req.dwell_time_passive);
 
 	status = ucfg_scan_start(req);
 
@@ -233,10 +233,8 @@ static QDF_STATUS p2p_send_roc_event(
 	p2p_evt.chan = roc_ctx->chan;
 	p2p_evt.duration = roc_ctx->duration;
 
-	p2p_debug("p2p soc_obj:%pK, roc_ctx:%pK, vdev_id:%d, roc_event:"
-		"%d, cookie:%llx, chan:%d, duration:%d", p2p_soc_obj,
-		roc_ctx, p2p_evt.vdev_id, p2p_evt.roc_event,
-		p2p_evt.cookie, p2p_evt.chan, p2p_evt.duration);
+	p2p_debug("roc_event: %d, cookie:%llx", p2p_evt.roc_event,
+		  p2p_evt.cookie);
 
 	start_param->event_cb(start_param->event_cb_data, &p2p_evt);
 
@@ -259,8 +257,9 @@ static QDF_STATUS p2p_destroy_roc_ctx(struct p2p_roc_context *roc_ctx,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	struct p2p_soc_priv_obj *p2p_soc_obj = roc_ctx->p2p_soc_obj;
 
-	p2p_debug("p2p_soc_obj:%pK, roc_ctx:%pK, up_layer_event:%d, in_roc_queue:%d",
-		p2p_soc_obj, roc_ctx, up_layer_event, in_roc_queue);
+	p2p_debug("p2p_soc_obj:%pK, roc_ctx:%pK, up_layer_event:%d, in_roc_queue:%d vdev_id:%d chan:%d duration:%d",
+		p2p_soc_obj, roc_ctx, up_layer_event, in_roc_queue,
+		roc_ctx->vdev_id, roc_ctx->chan, roc_ctx->duration);
 
 	if (up_layer_event) {
 		if (roc_ctx->roc_state < ROC_STATE_ON_CHAN)
@@ -296,14 +295,10 @@ static QDF_STATUS p2p_execute_cancel_roc_req(
 	QDF_STATUS status;
 	struct p2p_soc_priv_obj *p2p_soc_obj = roc_ctx->p2p_soc_obj;
 
-	p2p_debug("p2p soc obj:%pK, roc ctx:%pK, vdev_id:%d, scan_id:%d, tx ctx:%pK, chan:%d, phy_mode:%d, duration:%d, roc_type:%d, roc_state:%d",
-		p2p_soc_obj, roc_ctx, roc_ctx->vdev_id,
-		roc_ctx->scan_id, roc_ctx->tx_ctx, roc_ctx->chan,
-		roc_ctx->phy_mode, roc_ctx->duration,
-		roc_ctx->roc_type, roc_ctx->roc_state);
+	p2p_debug("p2p execute cancel roc req");
 
 	roc_ctx->roc_state = ROC_STATE_CANCEL_IN_PROG;
-	qdf_event_reset(&p2p_soc_obj->cancel_roc_done);
+
 	status = qdf_mc_timer_stop_sync(&roc_ctx->roc_timer);
 	if (status != QDF_STATUS_SUCCESS)
 		p2p_err("Failed to stop roc timer, roc %pK", roc_ctx);
@@ -315,7 +310,6 @@ static QDF_STATUS p2p_execute_cancel_roc_req(
 		qdf_mc_timer_destroy(&roc_ctx->roc_timer);
 		p2p_mgmt_rx_ops(p2p_soc_obj->soc, false);
 		p2p_destroy_roc_ctx(roc_ctx, true, true);
-		qdf_event_set(&p2p_soc_obj->cancel_roc_done);
 		return status;
 	}
 
@@ -463,8 +457,7 @@ static QDF_STATUS p2p_process_scan_start_evt(
 	struct p2p_roc_context *roc_ctx)
 {
 	roc_ctx->roc_state = ROC_STATE_STARTED;
-	p2p_debug("scan started, roc ctx:%pK, scan id:%d",
-		roc_ctx, roc_ctx->scan_id);
+	p2p_debug("scan started, scan id:%d", roc_ctx->scan_id);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -489,11 +482,8 @@ static QDF_STATUS p2p_process_ready_on_channel_evt(
 	p2p_soc_obj = roc_ctx->p2p_soc_obj;
 	roc_ctx->roc_state = ROC_STATE_ON_CHAN;
 
-	p2p_debug("p2p soc obj:%pK, roc ctx:%pK, vdev_id:%d, scan_id:%d, tx ctx:%pK, chan:%d, phy_mode:%d, duration:%d, roc_type:%d, roc_state:%d",
-		p2p_soc_obj, roc_ctx, roc_ctx->vdev_id,
-		roc_ctx->scan_id, roc_ctx->tx_ctx, roc_ctx->chan,
-		roc_ctx->phy_mode, roc_ctx->duration,
-		roc_ctx->roc_type, roc_ctx->roc_state);
+	p2p_debug("scan_id:%d, roc_state:%d", roc_ctx->scan_id,
+		  roc_ctx->roc_state);
 
 	status = qdf_mc_timer_start(&roc_ctx->roc_timer,
 		(roc_ctx->duration + P2P_EVENT_PROPAGATE_TIME));
@@ -528,11 +518,7 @@ static QDF_STATUS p2p_process_scan_complete_evt(
 	uint32_t size;
 	struct p2p_soc_priv_obj *p2p_soc_obj = roc_ctx->p2p_soc_obj;
 
-	p2p_debug("p2p soc obj:%pK, roc ctx:%pK, vdev_id:%d, scan_id:%d, tx ctx:%pK, chan:%d, phy_mode:%d, duration:%d, roc_type:%d, roc_state:%d",
-		p2p_soc_obj, roc_ctx, roc_ctx->vdev_id,
-		roc_ctx->scan_id, roc_ctx->tx_ctx, roc_ctx->chan,
-		roc_ctx->phy_mode, roc_ctx->duration,
-		roc_ctx->roc_type, roc_ctx->roc_state);
+	p2p_debug("vdev_id:%d scan_id:%d", roc_ctx->vdev_id, roc_ctx->scan_id);
 
 	/* allow runtime suspend */
 	qdf_runtime_pm_allow_suspend(&p2p_soc_obj->roc_runtime_lock);
@@ -556,10 +542,10 @@ static QDF_STATUS p2p_process_scan_complete_evt(
 				ROC_EVENT_COMPLETED);
 
 	p2p_destroy_roc_ctx(roc_ctx, false, true);
-	qdf_event_set(&p2p_soc_obj->cancel_roc_done);
+	qdf_event_set(&p2p_soc_obj->cleanup_roc_done);
 
 	size = qdf_list_size(&p2p_soc_obj->roc_q);
-	p2p_debug("P2P roc queue size is %d", status);
+
 	if (size > 0) {
 		status = qdf_list_peek_front(&p2p_soc_obj->roc_q,
 				&next_node);
@@ -755,6 +741,7 @@ QDF_STATUS p2p_process_cleanup_roc_queue(
 	struct p2p_cleanup_param *param)
 {
 	uint32_t vdev_id;
+	uint8_t count = 0;
 	QDF_STATUS status, ret;
 	struct p2p_roc_context *roc_ctx;
 	qdf_list_node_t *p_node;
@@ -818,14 +805,13 @@ QDF_STATUS p2p_process_cleanup_roc_queue(
 			    ROC_STATE_CANCEL_IN_PROG)
 				p2p_execute_cancel_roc_req(roc_ctx);
 
-			ret = qdf_wait_single_event(
-				&p2p_soc_obj->cancel_roc_done,
-				P2P_WAIT_CANCEL_ROC);
-			p2p_debug("RoC cancellation done, return:%d", ret);
+			count++;
 		}
 	}
 
-	qdf_event_set(&p2p_soc_obj->cleanup_roc_done);
+	p2p_debug("count %d", count);
+	if (!count)
+		qdf_event_set(&p2p_soc_obj->cleanup_roc_done);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -875,14 +861,15 @@ QDF_STATUS p2p_process_cancel_roc_req(
 	curr_roc_ctx = p2p_find_roc_ctx(p2p_soc_obj,
 				cancel_roc_ctx->cookie);
 
-	p2p_debug("p2p soc obj:%pK, cookie:%llx, roc ctx:%pK",
-		p2p_soc_obj, cancel_roc_ctx->cookie, curr_roc_ctx);
-
 	if (!curr_roc_ctx) {
 		p2p_debug("Failed to find roc req by cookie, cookie %llx",
 				cancel_roc_ctx->cookie);
 		return QDF_STATUS_E_INVAL;
 	}
+
+	p2p_debug("roc ctx:%pK vdev_id:%d, scan_id:%d, roc_type:%d, roc_state:%d",
+		curr_roc_ctx, curr_roc_ctx->vdev_id, curr_roc_ctx->scan_id,
+		curr_roc_ctx->roc_type, curr_roc_ctx->roc_state);
 
 	if (curr_roc_ctx->roc_state == ROC_STATE_IDLE) {
 		status = p2p_destroy_roc_ctx(curr_roc_ctx, true, true);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -206,9 +206,13 @@ typedef  enum  {
     /* NOTE:
      * The above service flags are delivered in the wmi_service_bitmap field
      * of the WMI_SERVICE_READY_EVENT message.
-     * The below service flags are delivered in a WMI_SERVICE_AVAILABLE_EVENT
-     * message rather than in the WMI_SERVICE_READY_EVENT message's
-     * wmi_service_bitmap field.
+     * The below service flags are not delivered in the
+     * WMI_SERVICE_READY_EVENT message's wmi_service_bitmap field,
+     * but instead are delivered in the
+     *     fixed_param.wmi_service_segment_bitmap portion
+     * of the WMI_SERVICE_AVAILABLE_EVENT message, with
+     *     fixed_param.wmi_service_segment_offset
+     * set to 128.
      * The WMI_SERVICE_AVAILABLE_EVENT message immediately precedes the
      * WMI_SERVICE_READY_EVENT message.
      */
@@ -420,17 +424,58 @@ typedef  enum  {
     WMI_SERVICE_BW_RESTRICTED_80P80_SUPPORT = WMI_SERVICE_BW_165MHZ_SUPPORT,
     WMI_SERVICE_NAN_NDI_SAP_SAP_SCC_SUPPORT = 230, /* Support SAP + SAP + NAN discovery + NDI concurrency in SCC mode */
     WMI_SERVICE_NAN_VDEV_SUPPORT = 231, /* indicates firmware is dependent on host to create NAN vdev */
+    WMI_SERVICE_AUDIO_SYNC_SUPPORT = 232, /* Indicate FW supports Audio sync feature */
+    WMI_SERVICE_DUAL_STA_ROAM_SUPPORT = 233, /* Indidate FW support dual STA roaming */
+    WMI_SERVICE_PEER_CREATE_CONF = 234, /* Target will send WMI_PEER_CREATE_CONF_EVENTID after WMI_PEER_CREATE_CMDID is processed */
+    WMI_SERVICE_MULTIPLE_VDEV_RESTART_RESPONSE_SUPPORT = 235, /* indicates firmware supports Multiple vdev restart response */
+    WMI_SERVICE_ROAM_SCAN_CHANNEL_LIST_TO_HOST_SUPPORT = 236, /* Indicates firmware supports sending roam scan channel list to host */
+    WMI_SERVICE_PEER_DELETE_NO_PEER_FLUSH_TIDS_CMD = 237, /* Host should not send WMI_PEER_FLUSH_TIDS_CMD as part of peer delete */
+    WMI_SERVICE_NSS_RATIO_TO_HOST_SUPPORT = 238, /* Indicates firmware supports sending NSS ratio info to host */
+    WMI_SERVICE_WPA3_SUITEB_ROAM_SUPPORT = 239, /* Indicates FW supports WPA3 SUITE B roaming */
+    WMI_SERVICE_PERIODIC_FRAME_INJECT_SUPPORT = 240, /* Indicates FW supports periodic frame injection */
+    WMI_SERVICE_NDI_NDI_STA_SUPPORT = 241, /* Indicates FW support for STA+NDI+NDI */
+    WMI_SERVICE_BW_TRUE_160_SUPPORT = 242, /* Indicates FW supports true 160 BW */
+    WMI_SERVICE_HOST_SCAN_STOP_VDEV_ALL_SUPPORT = 243, /* Indicates FW supports scan stop mode WMI_SCN_STOP_HOST_VAP_ALL */
+    WMI_SERVICE_BEACON_PROTECTION_SUPPORT = 244, /* Indicates FW supports WPA3 Beacon protection */
+    WMI_SERVICE_EMA_AP_SUPPORT = 245, /* FW supports EMA AP feature */
+    WMI_SERVICE_PEER_POWER_SAVE_DURATION_SUPPORT = 246, /* Support for adding Power save duration per client */
+    WMI_SERVICE_5_DOT_9GHZ_SUPPORT = 247, /* Indicates FW supports new 5.9GHZ (scan, connection and so on) */
+    WMI_SERVICE_MU_PREAMBLE_PUNCTURE_SUPPORT = 248, /* Indicates FW supports MU preamble puncture */
+    WMI_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT = 249, /* Support for SRG, SRP based spatial reuse support */
 
 
-    /******* ADD NEW SERVICES HERE *******/
+    /******* ADD NEW SERVICES UP TO 256 HERE *******/
 
-    WMI_MAX_EXT_SERVICE
+    WMI_MAX_EXT_SERVICE = 256,
+
+    /* NOTE:
+     * The above service flags are delivered in the
+     *     fixed_param.wmi_service_segment_bitmap portion
+     * of the WMI_SERVICE_AVAILABLE_EVENT message, with
+     *     fixed_param.wmi_service_segment_offset
+     * set to 128.
+     * The below service flags can be delivered in one of two ways:
+     * 1.  The target can deliver a 2nd SERVICE_AVAILABLE message, with
+     *         fixed_param.wmi_service_segment_offset
+     *     set to 256.
+     *     (This method is acceptable, but not recommended.)
+     * 2.  The target can populate the wmi_service_ext_bitmap[] TLV array
+     *     within the WMI_SERVICE_AVAILABLE_EVENT message.
+     *     (This method is recommended.)
+     */
+
+
+    /******* ADD NEW SERVICES 256 AND BEYOND HERE *******/
+
+
+    WMI_MAX_EXT2_SERVICE
 
 } WMI_SERVICE;
 
 #define WMI_SERVICE_BM_SIZE   ((WMI_MAX_SERVICE + sizeof(A_UINT32)- 1)/sizeof(A_UINT32))
 
 #define WMI_NUM_EXT_SERVICES (WMI_MAX_EXT_SERVICE - WMI_MAX_SERVICE)
+#define WMI_NUM_EXT2_SERVICES (WMI_MAX_EXT2_SERVICE - WMI_MAX_EXT_SERVICE)
 
 /*
  * TEMPORARY WORKAROUND
@@ -498,6 +543,50 @@ typedef  enum  {
             (((pwmi_svc_ext_bmap)[((svc_id) - WMI_MAX_SERVICE) / 32] >> \
                 ((svc_id) & 0x1f)) & 0x1))
 
+#define WMI_SERVICE_EXT2_ENABLE( \
+    pwmi_svc_bmap, pwmi_svc_ext_bmap, pwmi_svc_ext2_bmap, svc_id) \
+    do { \
+        if (svc_id < WMI_MAX_SERVICE) { \
+            WMI_SERVICE_ENABLE(pwmi_svc_bmap, svc_id); \
+        } else if (svc_id < WMI_MAX_EXT_SERVICE) { \
+            WMI_SERVICE_EXT_ENABLE(pwmi_svc_bmap, pwmi_svc_ext_bmap, svc_id); \
+        } else { \
+            int word = ((svc_id) - WMI_MAX_EXT_SERVICE) / 32; \
+            int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
+            (pwmi_svc_ext2_bmap)[word] |= (1 << bit); \
+        } \
+    } while (0)
+
+#define WMI_SERVICE_EXT2_DISABLE( \
+    pwmi_svc_bmap, pwmi_svc_ext_bmap, pwmi_svc_ext2_bmap, svc_id) \
+    do { \
+        if (svc_id < WMI_MAX_SERVICE) { \
+            WMI_SERVICE_DISABLE(pwmi_svc_bmap, svc_id); \
+        } else if (svc_id < WMI_MAX_EXT_SERVICE) { \
+            WMI_SERVICE_DISABLE(pwmi_svc_bmap, pwmi_svc_ext_bmap, svc_id); \
+        } else { \
+            int word = ((svc_id) - WMI_MAX_EXT_SERVICE) / 32; \
+            int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
+            (pwmi_svc_ext2_bmap)[word] &= ~(1 << bit); \
+        } \
+    } while (0)
+
+#define WMI_SERVICE_EXT2_IS_ENABLED( \
+    pwmi_svc_bmap, pwmi_svc_ext_bmap, pwmi_svc_ext2_bmap, svc_id) \
+    /* If the service ID is beyond the known limit, treat it as disabled */ \
+    ((svc_id) >= WMI_MAX_EXT2_SERVICE ? 0 : \
+        /* If service ID is in the non-extension range, use the old check */ \
+        (svc_id) < WMI_MAX_SERVICE ? \
+            WMI_SERVICE_IS_ENABLED(pwmi_svc_bmap, svc_id) : \
+            /* If service ID is in the 1st extended range, check ext_bmap */ \
+            (svc_id) < WMI_MAX_EXT_SERVICE ? \
+                WMI_SERVICE_EXT_IS_ENABLED( \
+                    pwmi_svc_bmap, pwmi_svc_ext_bmap, svc_id) : \
+                /* \
+                 * If service ID is in the 2nd extended range, check ext2_bmap \
+                 */ \
+                (((pwmi_svc_ext2_bmap)[((svc_id) - WMI_MAX_EXT_SERVICE) / 32] >> \
+                ((svc_id) & 0x1f)) & 0x1))
 
 #ifdef __cplusplus
 }

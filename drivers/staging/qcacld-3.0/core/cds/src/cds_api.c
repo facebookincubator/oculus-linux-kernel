@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -86,6 +86,17 @@ static struct __qdf_device g_qdf_ctx;
 static uint8_t cds_multicast_logging;
 
 #ifdef QCA_WIFI_QCA8074
+static inline int
+cds_send_delba(void *pdev_handle,  void *ctrl_peer,
+	       uint8_t *peer_macaddr, uint8_t tid, void *vdev_handle,
+	       uint8_t reason_code)
+{
+	struct wlan_objmgr_vdev *vdev = (struct wlan_objmgr_vdev *)vdev_handle;
+
+	return wma_dp_send_delba_ind(wlan_vdev_get_id(vdev), peer_macaddr, tid,
+				     reason_code);
+}
+
 static struct ol_if_ops  dp_ol_if_ops = {
 	.peer_set_default_routing = target_if_peer_set_default_routing,
 	.peer_rx_reorder_queue_setup = target_if_peer_rx_reorder_queue_setup,
@@ -95,7 +106,8 @@ static struct ol_if_ops  dp_ol_if_ops = {
 	.rx_mic_error = wma_rx_mic_error_ind,
 	.rx_invalid_peer = wma_rx_invalid_peer_ind,
 	.is_roam_inprogress = wma_is_roam_in_progress,
-	.get_con_mode = cds_get_conparam
+	.get_con_mode = cds_get_conparam,
+	.send_delba = cds_send_delba,
     /* TODO: Add any other control path calls required to OL_IF/WMA layer */
 };
 #else
@@ -230,6 +242,7 @@ QDF_STATUS cds_init(void)
 
 	qdf_register_self_recovery_callback(__cds_trigger_recovery);
 	qdf_register_fw_down_callback(cds_is_fw_down);
+	qdf_register_is_driver_unloading_callback(cds_is_driver_unloading);
 	qdf_register_recovering_state_query_callback(cds_is_driver_recovering);
 	qdf_register_drv_connected_callback(cds_is_drv_connected);
 	qdf_register_wmi_send_recv_qmi_callback(cds_wmi_send_recv_qmi);
@@ -256,6 +269,7 @@ void cds_deinit(void)
 
 	qdf_register_recovering_state_query_callback(NULL);
 	qdf_register_fw_down_callback(NULL);
+	qdf_register_is_driver_unloading_callback(NULL);
 	qdf_register_self_recovery_callback(NULL);
 	qdf_register_wmi_send_recv_qmi_callback(NULL);
 
@@ -383,7 +397,7 @@ static void cds_cdp_cfg_attach(struct wlan_objmgr_psoc *psoc)
 	gp_cds_context->cfg_ctx = cdp_cfg_attach(soc, gp_cds_context->qdf_ctx,
 					(void *)(&cdp_cfg));
 	if (!gp_cds_context->cfg_ctx) {
-		WMA_LOGP("%s: failed to init cfg handle", __func__);
+		WMA_LOGD("%s: failed to init cfg handle", __func__);
 		return;
 	}
 
@@ -759,8 +773,6 @@ QDF_STATUS cds_dp_open(struct wlan_objmgr_psoc *psoc)
 	QDF_STATUS qdf_status;
 	struct dp_txrx_config dp_config;
 
-	cdp_set_intr_mode(cds_get_context(QDF_MODULE_ID_SOC));
-
 	cds_set_context(QDF_MODULE_ID_TXRX,
 		cdp_pdev_attach(cds_get_context(QDF_MODULE_ID_SOC),
 			(struct cdp_ctrl_objmgr_pdev *)gp_cds_context->cfg_ctx,
@@ -807,6 +819,26 @@ pdev_detach:
 close:
 	return QDF_STATUS_E_FAILURE;
 }
+
+#ifdef HIF_USB
+static inline void cds_suspend_target(tp_wma_handle wma_handle)
+{
+	QDF_STATUS status;
+	/* Suspend the target and disable interrupt */
+	status = ucfg_pmo_psoc_suspend_target(wma_handle->psoc, 0);
+	if (status)
+		cds_err("Failed to suspend target, status = %d", status);
+}
+#else
+static inline void cds_suspend_target(tp_wma_handle wma_handle)
+{
+	QDF_STATUS status;
+	/* Suspend the target and disable interrupt */
+	status = ucfg_pmo_psoc_suspend_target(wma_handle->psoc, 1);
+	if (status)
+		cds_err("Failed to suspend target, status = %d", status);
+}
+#endif /* HIF_USB */
 
 /**
  * cds_pre_enable() - pre enable cds
@@ -880,6 +912,12 @@ QDF_STATUS cds_pre_enable(void)
 	return QDF_STATUS_SUCCESS;
 
 stop_wmi:
+	/* Send pdev suspend to fw otherwise FW is not aware that
+	 * host is freeing resources.
+	 */
+	if (!(cds_is_driver_recovering() || cds_is_driver_in_bad_state()))
+		cds_suspend_target(gp_cds_context->wma_context);
+
 	hif_ctx = cds_get_context(QDF_MODULE_ID_HIF);
 	if (!hif_ctx)
 		cds_err("%s: Failed to get hif_handle!", __func__);
@@ -1044,26 +1082,6 @@ QDF_STATUS cds_disable(struct wlan_objmgr_psoc *psoc)
 	return qdf_status;
 }
 
-#ifdef HIF_USB
-static inline void cds_suspend_target(tp_wma_handle wma_handle)
-{
-	QDF_STATUS status;
-	/* Suspend the target and disable interrupt */
-	status = ucfg_pmo_psoc_suspend_target(wma_handle->psoc, 0);
-	if (status)
-		cds_err("Failed to suspend target, status = %d", status);
-}
-#else
-static inline void cds_suspend_target(tp_wma_handle wma_handle)
-{
-	QDF_STATUS status;
-	/* Suspend the target and disable interrupt */
-	status = ucfg_pmo_psoc_suspend_target(wma_handle->psoc, 1);
-	if (status)
-		cds_err("Failed to suspend target, status = %d", status);
-}
-#endif /* HIF_USB */
-
 /**
  * cds_post_disable() - post disable cds module
  *
@@ -1109,7 +1127,7 @@ QDF_STATUS cds_post_disable(void)
 	 * - Clean up CE tasklets.
 	 */
 
-	cds_info("send deinit sequence to firmware");
+	cds_debug("send deinit sequence to firmware");
 	if (!(cds_is_driver_recovering() || cds_is_driver_in_bad_state()))
 		cds_suspend_target(wma_handle);
 	hif_disable_isr(hif_ctx);
@@ -1182,11 +1200,6 @@ QDF_STATUS cds_close(struct wlan_objmgr_psoc *psoc)
 	}
 
 	gp_cds_context->mac_context = NULL;
-	/*
-	 * Call this before cdp soc detatch as it used the cdp soc to free the
-	 * cdp vdev if any.
-	 */
-	wma_release_pending_vdev_refs();
 
 	cdp_soc_detach(gp_cds_context->dp_soc);
 	gp_cds_context->dp_soc = NULL;
@@ -1657,6 +1670,9 @@ QDF_STATUS cds_get_vdev_types(enum QDF_OPMODE mode, uint32_t *type,
 		break;
 	case QDF_NDI_MODE:
 		*type = WMI_VDEV_TYPE_NDI;
+		break;
+	case QDF_NAN_DISC_MODE:
+		*type = WMI_VDEV_TYPE_NAN;
 		break;
 	default:
 		cds_err("Invalid device mode %d", mode);
@@ -2364,7 +2380,7 @@ QDF_STATUS cds_flush_logs(uint32_t is_fatal,
 		  is_fatal, indicator, reason_code);
 
 	if (dump_mac_trace)
-		qdf_trace_dump_all(p_cds_context->mac_context, 0, 0, 500, 0);
+		qdf_trace_dump_all(p_cds_context->mac_context, 0, 0, 100, 0);
 
 	if (WLAN_LOG_INDICATOR_HOST_ONLY == indicator) {
 		cds_wlan_flush_host_logs_for_fatal();

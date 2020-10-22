@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <net/ip.h>
@@ -65,7 +65,7 @@
 
 #define IPA_FILT_ROUT_HASH_REG_VAL_v4_2 (0x00000000)
 #define IPA_DMA_TASK_FOR_GSI_TIMEOUT_MSEC (15)
-#define IPA_COAL_CLOSE_FRAME_CMD_TIMEOUT_MSEC (500)
+#define IPA_COAL_CLOSE_FRAME_CMD_TIMEOUT_MSEC (20)
 
 #define IPA_AGGR_BYTE_LIMIT (\
 		IPA_ENDP_INIT_AGGR_N_AGGR_BYTE_LIMIT_BMSK >> \
@@ -2956,8 +2956,10 @@ static struct ipa3_mem_partition ipa_4_1_mem_part = {
 	.uc_descriptor_ram_size		= 0x400,
 	.pdn_config_ofst		= 0xbd8,
 	.pdn_config_size		= 0x50,
-	.stats_quota_ofst		= 0xc30,
-	.stats_quota_size		= 0x60,
+	.stats_quota_q6_ofst		= 0xc30,
+	.stats_quota_q6_size		= 0x60,
+	.stats_quota_ap_ofst		= 0,
+	.stats_quota_ap_size		= 0,
 	.stats_tethering_ofst		= 0xc90,
 	.stats_tethering_size		= 0x140,
 	.stats_flt_v4_ofst		= 0xdd0,
@@ -3045,8 +3047,10 @@ static struct ipa3_mem_partition ipa_4_2_mem_part = {
 	.uc_descriptor_ram_size		= 0x0,
 	.pdn_config_ofst		= 0x9F8,
 	.pdn_config_size		= 0x50,
-	.stats_quota_ofst		= 0xa50,
-	.stats_quota_size		= 0x60,
+	.stats_quota_q6_ofst		= 0xa50,
+	.stats_quota_q6_size		= 0x60,
+	.stats_quota_ap_ofst		= 0,
+	.stats_quota_ap_size		= 0,
 	.stats_tethering_ofst		= 0xab0,
 	.stats_tethering_size		= 0x140,
 	.stats_flt_v4_ofst		= 0xbf0,
@@ -3110,13 +3114,11 @@ static struct ipa3_mem_partition ipa_4_5_mem_part = {
 	.apps_hdr_proc_ctx_size		= 0x200,
 	.apps_hdr_proc_ctx_size_ddr	= 0x0,
 	.nat_tbl_ofst			= 0x1800,
-	.nat_tbl_size			= 0x800,
-	.nat_index_tbl_ofst		= 0x2000,
-	.nat_index_tbl_size		= 0x100,
-	.nat_exp_tbl_ofst		= 0x2100,
-	.nat_exp_tbl_size		= 0x400,
-	.stats_quota_ofst		= 0x2510,
-	.stats_quota_size		= 0x78,
+	.nat_tbl_size			= 0xd00,
+	.stats_quota_q6_ofst		= 0x2510,
+	.stats_quota_q6_size		= 0x30,
+	.stats_quota_ap_ofst		= 0x2540,
+	.stats_quota_ap_size		= 0x48,
 	.stats_tethering_ofst		= 0x2588,
 	.stats_tethering_size		= 0x238,
 	.stats_flt_v4_ofst		= 0,
@@ -3207,15 +3209,13 @@ static struct ipa3_mem_partition ipa_4_7_mem_part = {
 	.apps_hdr_proc_ctx_size		= 0x200,
 	.apps_hdr_proc_ctx_size_ddr	= 0x0,
 	.nat_tbl_ofst			= 0x17A0,
-	.nat_tbl_size			= 0x800,
-	.nat_index_tbl_ofst		= 0x1FA0,
-	.nat_index_tbl_size		= 0x100,
-	.nat_exp_tbl_ofst		= 0x20A0,
-	.nat_exp_tbl_size		= 0x400,
+	.nat_tbl_size			= 0xd00,
 	.pdn_config_ofst		= 0x24A8,
 	.pdn_config_size		= 0x50,
-	.stats_quota_ofst		= 0x2500,
-	.stats_quota_size		= 0x78,
+	.stats_quota_q6_ofst		= 0x2500,
+	.stats_quota_q6_size		= 0x30,
+	.stats_quota_ap_ofst		= 0x2530,
+	.stats_quota_ap_size		= 0x48,
 	.stats_tethering_ofst		= 0x2578,
 	.stats_tethering_size		= 0x238,
 	.stats_flt_v4_ofst		= 0,
@@ -5255,19 +5255,23 @@ int ipa3_cfg_ep_holb(u32 clnt_hdl, const struct ipa_ep_cfg_holb *ep_holb)
 
 	IPA_ACTIVE_CLIENTS_INC_EP(ipa3_get_client_mapping(clnt_hdl));
 
-	ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_EN_n, clnt_hdl,
-		ep_holb);
-
-	/* IPA4.5 issue requires HOLB_EN to be written twice */
-	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5)
+	if (ep_holb->en == IPA_HOLB_TMR_DIS) {
 		ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 			clnt_hdl, ep_holb);
+		goto success;
+	}
+
+	/* Follow HPG sequence to DIS_HOLB, Configure Timer, and HOLB_EN */
+	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5) {
+		ipa3_ctx->ep[clnt_hdl].holb.en = IPA_HOLB_TMR_DIS;
+		ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_EN_n,
+			clnt_hdl, ep_holb);
+	}
 
 	/* Configure timer */
 	if (ipa3_ctx->ipa_hw_type == IPA_HW_v4_2) {
 		ipa3_cal_ep_holb_scale_base_val(ep_holb->tmr_val,
-				&ipa3_ctx->ep[clnt_hdl].holb);
-		goto success;
+			&ipa3_ctx->ep[clnt_hdl].holb);
 	}
 	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5) {
 		int res;
@@ -5283,9 +5287,19 @@ int ipa3_cfg_ep_holb(u32 clnt_hdl, const struct ipa_ep_cfg_holb *ep_holb)
 		}
 	}
 
-success:
 	ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_TIMER_n,
 		clnt_hdl, &ipa3_ctx->ep[clnt_hdl].holb);
+
+	/* Enable HOLB */
+	ipa3_ctx->ep[clnt_hdl].holb.en = IPA_HOLB_TMR_EN;
+	ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_EN_n,
+		clnt_hdl, ep_holb);
+	/* IPA4.5 issue requires HOLB_EN to be written twice */
+	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5)
+		ipahal_write_reg_n_fields(IPA_ENDP_INIT_HOL_BLOCK_EN_n,
+			clnt_hdl, ep_holb);
+
+success:
 	IPA_ACTIVE_CLIENTS_DEC_EP(ipa3_get_client_mapping(clnt_hdl));
 	IPADBG("cfg holb %u ep=%d tmr=%d\n", ep_holb->en, clnt_hdl,
 		ep_holb->tmr_val);
@@ -5335,12 +5349,18 @@ int ipa3_cfg_ep_deaggr(u32 clnt_hdl,
 		clnt_hdl,
 		ep_deaggr->deaggr_hdr_len);
 
+	IPADBG("syspipe_err_detection=%d\n",
+		ep_deaggr->syspipe_err_detection);
+
 	IPADBG("packet_offset_valid=%d\n",
 		ep_deaggr->packet_offset_valid);
 
 	IPADBG("packet_offset_location=%d max_packet_len=%d\n",
 		ep_deaggr->packet_offset_location,
 		ep_deaggr->max_packet_len);
+
+	IPADBG("ignore_min_pkt_err=%d\n",
+		ep_deaggr->ignore_min_pkt_err);
 
 	ep = &ipa3_ctx->ep[clnt_hdl];
 
@@ -5829,32 +5849,12 @@ int ipa3_init_mem_partition(enum ipa_hw_type type)
 	}
 
 	IPADBG("NAT TBL OFST 0x%x SIZE 0x%x\n",
-		IPA_MEM_PART(nat_tbl_ofst),
-		IPA_MEM_PART(nat_tbl_size));
+		   IPA_MEM_PART(nat_tbl_ofst),
+		   IPA_MEM_PART(nat_tbl_size));
 
 	if (IPA_MEM_PART(nat_tbl_ofst) & 31) {
-		IPAERR("NAT TBL OFST 0x%x is unaligned\n",
-			IPA_MEM_PART(nat_tbl_ofst));
-		return -ENODEV;
-	}
-
-	IPADBG("NAT INDEX TBL OFST 0x%x SIZE 0x%x\n",
-		IPA_MEM_PART(nat_index_tbl_ofst),
-		IPA_MEM_PART(nat_index_tbl_size));
-
-	if (IPA_MEM_PART(nat_index_tbl_ofst) & 3) {
-		IPAERR("NAT INDEX TBL OFST 0x%x is unaligned\n",
-			IPA_MEM_PART(nat_index_tbl_ofst));
-		return -ENODEV;
-	}
-
-	IPADBG("NAT EXP TBL OFST 0x%x SIZE 0x%x\n",
-		IPA_MEM_PART(nat_exp_tbl_ofst),
-		IPA_MEM_PART(nat_exp_tbl_size));
-
-	if (IPA_MEM_PART(nat_exp_tbl_ofst) & 31) {
-		IPAERR("NAT EXP TBL OFST 0x%x is unaligned\n",
-			IPA_MEM_PART(nat_exp_tbl_ofst));
+		IPAERR("NAT TBL OFST 0x%x is not aligned properly\n",
+			   IPA_MEM_PART(nat_tbl_ofst));
 		return -ENODEV;
 	}
 
@@ -5868,13 +5868,23 @@ int ipa3_init_mem_partition(enum ipa_hw_type type)
 		return -ENODEV;
 	}
 
-	IPADBG("QUOTA STATS OFST 0x%x SIZE 0x%x\n",
-		IPA_MEM_PART(stats_quota_ofst),
-		IPA_MEM_PART(stats_quota_size));
+	IPADBG("Q6 QUOTA STATS OFST 0x%x SIZE 0x%x\n",
+		IPA_MEM_PART(stats_quota_q6_ofst),
+		IPA_MEM_PART(stats_quota_q6_size));
 
-	if (IPA_MEM_PART(stats_quota_ofst) & 7) {
-		IPAERR("QUOTA STATS OFST 0x%x is unaligned\n",
-			IPA_MEM_PART(stats_quota_ofst));
+	if (IPA_MEM_PART(stats_quota_q6_ofst) & 7) {
+		IPAERR("Q6 QUOTA STATS OFST 0x%x is unaligned\n",
+			IPA_MEM_PART(stats_quota_q6_ofst));
+		return -ENODEV;
+	}
+
+	IPADBG("AP QUOTA STATS OFST 0x%x SIZE 0x%x\n",
+		IPA_MEM_PART(stats_quota_ap_ofst),
+		IPA_MEM_PART(stats_quota_ap_size));
+
+	if (IPA_MEM_PART(stats_quota_ap_ofst) & 7) {
+		IPAERR("AP QUOTA STATS OFST 0x%x is unaligned\n",
+			IPA_MEM_PART(stats_quota_ap_ofst));
 		return -ENODEV;
 	}
 
@@ -6215,7 +6225,7 @@ void ipa3_counter_remove_hdl(int hdl)
 	}
 	/* remove counters belong to this hdl, set used back to 0 */
 	offset = counter->hw_counter.start_id - 1;
-	if (offset >= 0 && offset + counter->hw_counter.num_counters
+	if (offset >= 0 && (offset + counter->hw_counter.num_counters)
 		< IPA_FLT_RT_HW_COUNTER) {
 		memset(&ipa3_ctx->flt_rt_counters.used_hw + offset,
 			   0, counter->hw_counter.num_counters * sizeof(bool));
@@ -6224,7 +6234,7 @@ void ipa3_counter_remove_hdl(int hdl)
 		goto err;
 	}
 	offset = counter->sw_counter.start_id - 1 - IPA_FLT_RT_HW_COUNTER;
-	if (offset >= 0 && offset + counter->sw_counter.num_counters
+	if (offset >= 0 && (offset + counter->sw_counter.num_counters)
 		< IPA_FLT_RT_SW_COUNTER) {
 		memset(&ipa3_ctx->flt_rt_counters.used_sw + offset,
 		   0, counter->sw_counter.num_counters * sizeof(bool));
@@ -6346,11 +6356,20 @@ int ipa3_tag_process(struct ipa3_desc desc[],
 	u32 retry_cnt = 0;
 	struct ipahal_reg_valmask valmask;
 	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int req_num_tag_desc = REQUIRED_TAG_PROCESS_DESCRIPTORS;
+
+	/**
+	 * We use a descriptor for closing coalsceing endpoint
+	 * by immediate command. So, REQUIRED_TAG_PROCESS_DESCRIPTORS
+	 * should be incremented by 1 to overcome buffer overflow.
+	 */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1)
+		req_num_tag_desc += 1;
 
 	/* Not enough room for the required descriptors for the tag process */
-	if (IPA_TAG_MAX_DESC - descs_num < REQUIRED_TAG_PROCESS_DESCRIPTORS) {
+	if (IPA_TAG_MAX_DESC - descs_num < req_num_tag_desc) {
 		IPAERR("up to %d descriptors are allowed (received %d)\n",
-		       IPA_TAG_MAX_DESC - REQUIRED_TAG_PROCESS_DESCRIPTORS,
+		       IPA_TAG_MAX_DESC - req_num_tag_desc,
 		       descs_num);
 		return -ENOMEM;
 	}
@@ -6399,8 +6418,8 @@ int ipa3_tag_process(struct ipa3_desc desc[],
 			goto fail_free_tag_desc;
 		}
 		ipa3_init_imm_cmd_desc(&tag_desc[desc_idx], cmd_pyld);
-		desc[desc_idx].callback = ipa3_tag_destroy_imm;
-		desc[desc_idx].user1 = cmd_pyld;
+		tag_desc[desc_idx].callback = ipa3_tag_destroy_imm;
+		tag_desc[desc_idx].user1 = cmd_pyld;
 		++desc_idx;
 	}
 
@@ -6540,7 +6559,7 @@ fail_free_desc:
 	 * of the initial allocations above
 	 */
 	for (i = descs_num;
-		i < min(REQUIRED_TAG_PROCESS_DESCRIPTORS, desc_idx); i++)
+		i < min(req_num_tag_desc, desc_idx); i++)
 		if (tag_desc[i].callback)
 			tag_desc[i].callback(tag_desc[i].user1,
 				tag_desc[i].user2);
@@ -7595,6 +7614,7 @@ static int __ipa3_stop_gsi_channel(u32 clnt_hdl)
 	struct ipa3_ep_context *ep;
 	enum ipa_client_type client_type;
 	struct IpaHwOffloadStatsAllocCmdData_t *gsi_info;
+	struct ipa_ep_cfg_holb holb_cfg;
 
 	if (clnt_hdl >= ipa3_ctx->ipa_num_pipes ||
 		ipa3_ctx->ep[clnt_hdl].valid == 0) {
@@ -7649,6 +7669,24 @@ static int __ipa3_stop_gsi_channel(u32 clnt_hdl)
 		default:
 			IPADBG("client_type %d not supported\n",
 				client_type);
+		}
+	}
+
+	/* Enable HOLB on MHIP RMNET CONS before stopping
+	 * USB PROD pipe
+	 */
+	if (ipa3_is_mhip_offload_enabled() &&
+		client_type == IPA_CLIENT_USB_PROD) {
+		memset(&holb_cfg, 0, sizeof(struct ipa_ep_cfg_holb));
+		holb_cfg.en = IPA_HOLB_TMR_EN;
+		holb_cfg.tmr_val = 0;
+		IPADBG("Enabling HOLB on RMNET CONS pipe");
+		res = ipa3_cfg_ep_holb(ipa3_get_ep_mapping(
+				IPA_CLIENT_MHI_PRIME_RMNET_CONS), &holb_cfg);
+		if (res) {
+			IPAERR("Enable HOLB failed ep:%lu\n",
+				ipa3_get_ep_mapping(
+					IPA_CLIENT_MHI_PRIME_RMNET_CONS));
 		}
 	}
 
@@ -7745,6 +7783,16 @@ static int _ipa_suspend_resume_pipe(enum ipa_client_type client, bool suspend)
 			ipa_assert();
 		}
 	} else {
+		if (IPA_CLIENT_IS_APPS_PROD(client) ||
+			(client == IPA_CLIENT_APPS_WAN_CONS &&
+			coal_ep_idx != IPA_EP_NOT_ALLOCATED))
+			goto chan_statrt;
+		if (!atomic_read(&ep->sys->curr_polling_state)) {
+			IPADBG("switch ch %ld to callback\n", ep->gsi_chan_hdl);
+			gsi_config_channel_mode(ep->gsi_chan_hdl,
+					GSI_CHAN_MODE_CALLBACK);
+		}
+chan_statrt:
 		res = gsi_start_channel(ep->gsi_chan_hdl);
 		if (res) {
 			IPAERR("failed to start LAN channel\n");
@@ -7771,12 +7819,7 @@ static int _ipa_suspend_resume_pipe(enum ipa_client_type client, bool suspend)
 		gsi_config_channel_mode(ep->gsi_chan_hdl, GSI_CHAN_MODE_POLL);
 		if (!ipa3_gsi_channel_is_quite(ep))
 			return -EAGAIN;
-	} else if (!atomic_read(&ep->sys->curr_polling_state)) {
-		IPADBG("switch ch %ld to callback\n", ep->gsi_chan_hdl);
-		gsi_config_channel_mode(ep->gsi_chan_hdl,
-			GSI_CHAN_MODE_CALLBACK);
 	}
-
 	return 0;
 }
 
@@ -7792,7 +7835,8 @@ void ipa3_force_close_coal(void)
 	ipa3_init_imm_cmd_desc(&desc, ipa3_ctx->coal_cmd_pyld);
 
 	IPADBG("Sending 1 descriptor for coal force close\n");
-	if (ipa3_send_cmd(1, &desc))
+	if (ipa3_send_cmd_timeout(1, &desc,
+				IPA_COAL_CLOSE_FRAME_CMD_TIMEOUT_MSEC))
 		IPADBG("ipa3_send_cmd timedout\n");
 }
 
@@ -8694,3 +8738,48 @@ int ipa3_get_prot_id(enum ipa_client_type client)
 	return prot_id;
 }
 
+int ipa3_app_clk_vote(
+	enum ipa_app_clock_vote_type vote_type)
+{
+	const char *str_ptr = "APP_VOTE";
+	int ret = 0;
+
+	IPADBG("In\n");
+
+	mutex_lock(&ipa3_ctx->app_clock_vote.mutex);
+
+	switch (vote_type) {
+	case IPA_APP_CLK_VOTE:
+		if ((ipa3_ctx->app_clock_vote.cnt + 1) <= IPA_APP_VOTE_MAX) {
+			ipa3_ctx->app_clock_vote.cnt++;
+			IPA_ACTIVE_CLIENTS_INC_SPECIAL(str_ptr);
+		} else {
+			IPAERR_RL("App vote count max hit\n");
+			ret = -EPERM;
+			break;
+		}
+		break;
+	case IPA_APP_CLK_DEVOTE:
+		if (ipa3_ctx->app_clock_vote.cnt) {
+			ipa3_ctx->app_clock_vote.cnt--;
+			IPA_ACTIVE_CLIENTS_DEC_SPECIAL(str_ptr);
+		}
+		break;
+	case IPA_APP_CLK_RESET_VOTE:
+		while (ipa3_ctx->app_clock_vote.cnt > 0) {
+			IPA_ACTIVE_CLIENTS_DEC_SPECIAL(str_ptr);
+			ipa3_ctx->app_clock_vote.cnt--;
+		}
+		break;
+	default:
+		IPAERR_RL("Unknown vote_type(%u)\n", vote_type);
+		ret = -EPERM;
+		break;
+	}
+
+	mutex_unlock(&ipa3_ctx->app_clock_vote.mutex);
+
+	IPADBG("Out\n");
+
+	return ret;
+}

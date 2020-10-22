@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "dp_panel.h"
@@ -2615,8 +2615,6 @@ static int dp_panel_init_panel_info(struct dp_panel *dp_panel)
 	* Control Field" (register 0x600).
 	*/
 	usleep_range(1000, 2000);
-
-	drm_dp_link_probe(panel->aux->drm_aux, &dp_panel->link_info);
 end:
 	return rc;
 }
@@ -3404,6 +3402,7 @@ error:
 void dp_panel_put(struct dp_panel *dp_panel)
 {
 	struct dp_panel_private *panel;
+	struct sde_connector *sde_conn;
 
 	if (!dp_panel)
 		return;
@@ -3411,5 +3410,9 @@ void dp_panel_put(struct dp_panel *dp_panel)
 	panel = container_of(dp_panel, struct dp_panel_private, dp_panel);
 
 	dp_panel_edid_deregister(panel);
+	sde_conn = to_sde_connector(dp_panel->connector);
+	if (sde_conn)
+		sde_conn->drv_panel = NULL;
+
 	devm_kfree(panel->dev, panel);
 }

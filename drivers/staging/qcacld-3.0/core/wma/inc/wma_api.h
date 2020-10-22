@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -179,10 +179,27 @@ bool wma_is_rx_ldpc_supported_for_channel(uint32_t channel);
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 int wma_unified_radio_tx_mem_free(void *handle);
+
+/*
+ * wma_unified_link_stats_results_mem_free() - Free the memory for
+ * link_stats_results->results allocated when event comes.
+ * @link_stats_results: pointer to the memory that is to be freed
+ *
+ * Return: None
+ */
+void
+wma_unified_link_stats_results_mem_free(tSirLLStatsResults *link_stats_results);
+
 #else /* WLAN_FEATURE_LINK_LAYER_STATS */
 static inline int wma_unified_radio_tx_mem_free(void *handle)
 {
 	return 0;
+}
+
+static void
+wma_unified_link_stats_results_mem_free(tSirLLStatsResults *link_stats_results)
+{
+	return;
 }
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
@@ -271,6 +288,25 @@ QDF_STATUS wma_set_cts2self_for_p2p_go(void *wma_handle,
 		uint32_t cts2self_for_p2p_go);
 QDF_STATUS wma_set_tx_rx_aggregation_size
 	(struct sir_set_tx_rx_aggregation_size *tx_rx_aggregation_size);
+
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * wma_get_roam_scan_ch() - API to get roam scan channel list.
+ * @wma_handle: pointer to wma handle.
+ * @vdev_id: vdev id
+ *
+ * Return: QDF_STATUS.
+ */
+QDF_STATUS wma_get_roam_scan_ch(wmi_unified_t wma,
+				uint8_t vdev_id);
+#else
+static inline
+QDF_STATUS wma_get_roam_scan_ch(wmi_unified_t wma,
+				uint8_t vdev_id)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
 
 /**
  * wma_set_tx_rx_aggregation_size_per_ac() - set aggregation size per ac

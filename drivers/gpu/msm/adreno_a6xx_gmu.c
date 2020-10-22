@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 /* soc/qcom/cmd-db.h needs types.h */
@@ -34,7 +34,7 @@ static const unsigned int a6xx_gmu_tcm_registers[] = {
 
 static const unsigned int a6xx_gmu_registers[] = {
 	/* GMU CX */
-	0x1F400, 0x1F407, 0x1F410, 0x1F412, 0x1F500, 0x1F500, 0x1F507, 0x1F50A,
+	0x1F400, 0x1F40B, 0x1F410, 0x1F412, 0x1F500, 0x1F500, 0x1F507, 0x1F50A,
 	0x1F800, 0x1F804, 0x1F807, 0x1F808, 0x1F80B, 0x1F80C, 0x1F80F, 0x1F81C,
 	0x1F824, 0x1F82A, 0x1F82D, 0x1F830, 0x1F840, 0x1F853, 0x1F887, 0x1F889,
 	0x1F8A0, 0x1F8A2, 0x1F8A4, 0x1F8AF, 0x1F8C0, 0x1F8C3, 0x1F8D0, 0x1F8D0,
@@ -120,6 +120,13 @@ static int a6xx_load_pdc_ucode(struct kgsl_device *device)
 	void __iomem *cfg = NULL, *seq = NULL;
 	const struct adreno_a6xx_core *a6xx_core = to_a6xx_core(adreno_dev);
 	u32 vrm_resource_addr = cmd_db_read_addr("vrm.soc");
+	u32 xo_resource_addr = cmd_db_read_addr("xo.lvl");
+
+	if (!xo_resource_addr) {
+		dev_err(&gmu->pdev->dev,
+				"Failed to get 'xo.lvl' addr from cmd_db\n");
+		return -ENOENT;
+	}
 
 	/*
 	 * Older A6x platforms specified PDC registers in the DT using a
@@ -206,7 +213,7 @@ static int a6xx_load_pdc_ucode(struct kgsl_device *device)
 	_regwrite(cfg, PDC_GPU_TCS1_CMD0_MSGID + PDC_CMD_OFFSET * 2, 0x10108);
 
 	_regwrite(cfg, PDC_GPU_TCS1_CMD0_ADDR + PDC_CMD_OFFSET * 2,
-			a6xx_core->pdc_address_offset);
+			xo_resource_addr);
 
 	_regwrite(cfg, PDC_GPU_TCS1_CMD0_DATA + PDC_CMD_OFFSET * 2, 0x0);
 
@@ -228,7 +235,8 @@ static int a6xx_load_pdc_ucode(struct kgsl_device *device)
 	_regwrite(cfg, PDC_GPU_TCS3_CMD0_MSGID + PDC_CMD_OFFSET, 0x10108);
 	_regwrite(cfg, PDC_GPU_TCS3_CMD0_ADDR + PDC_CMD_OFFSET, 0x30000);
 
-	if (adreno_is_a618(adreno_dev) || adreno_is_a650_family(adreno_dev))
+	if (adreno_is_a618(adreno_dev) || adreno_is_a619(adreno_dev) ||
+			adreno_is_a650_family(adreno_dev))
 		_regwrite(cfg, PDC_GPU_TCS3_CMD0_DATA + PDC_CMD_OFFSET, 0x2);
 	else
 		_regwrite(cfg, PDC_GPU_TCS3_CMD0_DATA + PDC_CMD_OFFSET, 0x3);
@@ -236,7 +244,7 @@ static int a6xx_load_pdc_ucode(struct kgsl_device *device)
 	_regwrite(cfg, PDC_GPU_TCS3_CMD0_MSGID + PDC_CMD_OFFSET * 2, 0x10108);
 
 	_regwrite(cfg, PDC_GPU_TCS3_CMD0_ADDR + PDC_CMD_OFFSET * 2,
-			a6xx_core->pdc_address_offset);
+			xo_resource_addr);
 
 	_regwrite(cfg, PDC_GPU_TCS3_CMD0_DATA + PDC_CMD_OFFSET * 2, 0x3);
 
@@ -351,12 +359,22 @@ static int a6xx_gmu_start(struct kgsl_device *device)
 		mask = 0xFFFFFFFF;
 	}
 
+	/**
+	 * We may have asserted gbif halt as part of reset sequence which may
+	 * not get cleared if the gdsc was not reset. So clear it before
+	 * attempting GMU boot.
+	 */
+	if (adreno_has_gbif(ADRENO_DEVICE(device)))
+		kgsl_regwrite(device, A6XX_GBIF_HALT, 0x0);
+
 	/* Set the log wptr index */
 	gmu_core_regwrite(device, A6XX_GPU_GMU_CX_GMU_PWR_COL_CP_RESP,
 			gmu->log_wptr_retention);
 
 	/* Bring GMU out of reset */
 	gmu_core_regwrite(device, A6XX_GMU_CM3_SYSRESET, 0);
+	/* Make sure the request completes before continuing */
+	wmb();
 	if (timed_poll_check(device,
 			A6XX_GMU_CM3_FW_INIT_RESULT,
 			val, GMU_START_TIMEOUT, mask)) {
@@ -804,6 +822,18 @@ static bool a6xx_gmu_gx_is_on(struct kgsl_device *device)
 }
 
 /*
+ * a6xx_gmu_cx_is_on() - Check if CX is on using GPUCC register
+ * @device - Pointer to KGSL device struct
+ */
+static bool a6xx_gmu_cx_is_on(struct kgsl_device *device)
+{
+	unsigned int val;
+
+	gmu_core_regread(device, A6XX_GPU_CC_CX_GDSCR, &val);
+	return (val & BIT(31));
+}
+
+/*
  * a6xx_gmu_sptprac_is_on() - Check if SPTP is on using pwr status register
  * @adreno_dev - Pointer to adreno_device
  * This check should only be performed if the keepalive bit is set or it
@@ -1057,6 +1087,13 @@ static int a6xx_gmu_fw_start(struct kgsl_device *device,
 	gmu_core_regwrite(device, A6XX_GMU_AHB_FENCE_RANGE_0,
 			GMU_FENCE_RANGE_MASK);
 
+	/*
+	 * Make sure that CM3 state is at reset value. Snapshot is changing
+	 * NMI bit and if we boot up GMU with NMI bit set.GMU will boot straight
+	 * in to NMI handler without executing __main code
+	 */
+	gmu_core_regwrite(device, A6XX_GMU_CM3_CFG, 0x4052);
+
 	/* Pass chipid to GMU FW, must happen before starting GMU */
 
 	/* Keep Core and Major bitfields unchanged */
@@ -1171,40 +1208,6 @@ static int a6xx_gmu_load_firmware(struct kgsl_device *device)
 
 #define A6XX_VBIF_XIN_HALT_CTRL1_ACKS   (BIT(0) | BIT(1) | BIT(2) | BIT(3))
 
-static void do_gbif_halt(struct kgsl_device *device, u32 reg, u32 ack_reg,
-	u32 mask, const char *client)
-{
-	u32 ack;
-	unsigned long t;
-
-	kgsl_regwrite(device, reg, mask);
-
-	t = jiffies + msecs_to_jiffies(100);
-	do {
-		kgsl_regread(device, ack_reg, &ack);
-		if ((ack & mask) == mask)
-			return;
-
-		/*
-		 * If we are attempting recovery in case of stall-on-fault
-		 * then the halt sequence will not complete as long as SMMU
-		 * is stalled.
-		 */
-		kgsl_mmu_pagefault_resume(&device->mmu);
-
-		usleep_range(10, 100);
-	} while (!time_after(jiffies, t));
-
-	/* Check one last time */
-	kgsl_mmu_pagefault_resume(&device->mmu);
-
-	kgsl_regread(device, ack_reg, &ack);
-	if ((ack & mask) == mask)
-		return;
-
-	dev_err(device->dev, "%s GBIF halt timed out\n", client);
-}
-
 static int a6xx_gmu_suspend(struct kgsl_device *device)
 {
 	int ret = 0;
@@ -1228,21 +1231,8 @@ static int a6xx_gmu_suspend(struct kgsl_device *device)
 
 	gmu_core_regwrite(device, A6XX_GMU_CM3_SYSRESET, 1);
 
-	if (adreno_has_gbif(adreno_dev)) {
-		struct adreno_gpudev *gpudev =
-			ADRENO_GPU_DEVICE(adreno_dev);
-
-		/* Halt GX traffic */
-		if (a6xx_gmu_gx_is_on(device))
-			do_gbif_halt(device, A6XX_RBBM_GBIF_HALT,
-				A6XX_RBBM_GBIF_HALT_ACK,
-				gpudev->gbif_gx_halt_mask,
-				"GX");
-
-		/* Halt CX traffic */
-		do_gbif_halt(device, A6XX_GBIF_HALT, A6XX_GBIF_HALT_ACK,
-			gpudev->gbif_arb_halt_mask, "CX");
-	}
+	if (adreno_has_gbif(adreno_dev))
+		adreno_smmu_resume(adreno_dev);
 
 	if (a6xx_gmu_gx_is_on(device))
 		kgsl_regwrite(device, A6XX_RBBM_SW_RESET_CMD, 0x1);
@@ -1641,6 +1631,8 @@ static void a6xx_gmu_snapshot(struct kgsl_device *device,
 {
 	unsigned int val;
 
+	dev_err(device->dev, "GMU snapshot started at 0x%llx ticks\n",
+			a6xx_gmu_read_ao_counter(device));
 	a6xx_gmu_snapshot_versions(device, snapshot);
 
 	a6xx_gmu_snapshot_memories(device, snapshot);
@@ -1763,6 +1755,7 @@ struct gmu_dev_ops adreno_a6xx_gmudev = {
 	.enable_lm = a6xx_gmu_enable_lm,
 	.rpmh_gpu_pwrctrl = a6xx_gmu_rpmh_gpu_pwrctrl,
 	.gx_is_on = a6xx_gmu_gx_is_on,
+	.cx_is_on = a6xx_gmu_cx_is_on,
 	.wait_for_lowest_idle = a6xx_gmu_wait_for_lowest_idle,
 	.wait_for_gmu_idle = a6xx_gmu_wait_for_idle,
 	.ifpc_store = a6xx_gmu_ifpc_store,

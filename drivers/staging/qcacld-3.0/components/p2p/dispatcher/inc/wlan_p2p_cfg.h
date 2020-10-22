@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -101,6 +101,6 @@
 #define CFG_P2P_ALL \
 	CFG(CFG_GO_KEEP_ALIVE_PERIOD) \
 	CFG(CFG_GO_LINK_MONITOR_PERIOD) \
-	CFG(CFG_P2P_DEVICE_ADDRESS_ADMINISTRATED)
+	CFG(CFG_P2P_DEVICE_ADDRESS_ADMINISTRATED) \
 
 #endif
