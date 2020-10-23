@@ -768,6 +768,13 @@ static void __hdd_tx_timeout(struct net_device *dev)
 	u64 diff_jiffies;
 	int i = 0;
 
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+
+	if (hdd_ctx->hdd_wlan_suspended) {
+		hdd_debug("Device is suspended, ignore WD timeout");
+		return;
+	}
+
 	TX_TIMEOUT_TRACE(dev, QDF_MODULE_ID_HDD_DATA);
 	DPTRACE(qdf_dp_trace(NULL, QDF_DP_TRACE_HDD_TX_TIMEOUT,
 				NULL, 0, QDF_TX));
@@ -788,7 +795,6 @@ static void __hdd_tx_timeout(struct net_device *dev)
 
 	QDF_TRACE(QDF_MODULE_ID_HDD_DATA, QDF_TRACE_LEVEL_INFO,
 		  "carrier state: %d", netif_carrier_ok(dev));
-	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	wlan_hdd_display_netif_queue_history(hdd_ctx);
 	ol_tx_dump_flow_pool_info();
 

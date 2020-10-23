@@ -17,4 +17,25 @@ config MISCFIFO_SAMPLE
 	---help---
 	  Example usage of miscfifo chardev driver
 
+config SYNCBOSS
+	tristate "Oculus SyncBoss Driver"
+	depends on MISCFIFO && SPI
+	default y
+	---help---
+	  Oculus SyncBoss Driver
+
+config SYNCBOSS_CAMERA_CONTROL
+	bool "Support Syncboss camera control"
+	depends on SYNCBOSS
+	default y
+	---help---
+	  Allow Syncboss driver to control camera hardware
+
+config SYNCBOSS_NUM_CAMERAS
+	int
+	prompt "Number of cameras in Oculus Syncboss"
+	depends on SYNCBOSS
+	default 4
+	---help---
+	  Number of cameras used in Oculus Syncboss driver
 endmenu

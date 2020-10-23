@@ -4601,7 +4601,8 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 	vma->vm_ops = &kgsl_gpumem_vm_ops;
 
 	if (cache == KGSL_CACHEMODE_WRITEBACK
-		|| cache == KGSL_CACHEMODE_WRITETHROUGH) {
+		|| cache == KGSL_CACHEMODE_WRITETHROUGH
+		|| device->map_insert_pages) {
 		int i;
 		unsigned long addr = vma->vm_start;
 		struct kgsl_memdesc *m = &entry->memdesc;
@@ -4611,6 +4612,8 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 
 			vm_insert_page(vma, addr, page);
 			addr += PAGE_SIZE;
+
+			m->mapsize += PAGE_SIZE;
 		}
 	}
 

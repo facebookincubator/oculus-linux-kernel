@@ -1026,6 +1026,10 @@ static int adreno_probe(struct platform_device *pdev)
 	if (input_register_handler(&adreno_input_handler))
 		KGSL_DRV_ERR(device, "Unable to register the input handler\n");
 #endif
+
+	device->map_insert_pages = of_property_read_bool(pdev->dev.of_node,
+		"qcom,map-insert-pages");
+
 out:
 	if (status) {
 		adreno_ringbuffer_close(adreno_dev);

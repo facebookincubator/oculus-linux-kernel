@@ -47,7 +47,7 @@ ssize_t miscfifo_fop_read(struct file *file,
 
 		buf += copied1;
 		len -= copied1;
-		if (kfifo_peek_len(&client->fifo) < len) {
+		if (kfifo_peek_len(&client->fifo) <= len) {
 			rc = kfifo_to_user(&client->fifo, buf, len, &copied2);
 			if (rc != 0) {
 				/* since the header was read, we have to drop the
@@ -65,7 +65,7 @@ ssize_t miscfifo_fop_read(struct file *file,
 	} else {
 		unsigned int copied;
 
-		if (kfifo_peek_len(&client->fifo) < len) {
+		if (kfifo_peek_len(&client->fifo) <= len) {
 			rc = kfifo_to_user(&client->fifo, buf, len, &copied);
 			rc = (rc == 0) ? copied : -EFAULT;
 		} else

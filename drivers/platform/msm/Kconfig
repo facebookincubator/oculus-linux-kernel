@@ -235,7 +235,7 @@ config VS1_BOARD
 
 config unknown28998_COMPAT
 	bool "unknown2 Platform Compat"
-	depends on VS1_BOARD
+	depends on OCULUS
 	help
 	  Enabling this option adds support for the unknown28998 platform
 	  and enables required drivers.

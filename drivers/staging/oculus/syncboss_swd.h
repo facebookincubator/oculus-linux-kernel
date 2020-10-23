@@ -3,22 +3,6 @@
 
 #include <linux/types.h>
 
-#define SYNCBOSS_SWD_NRF_NVMC_READY      0x4001E400
-#define SYNCBOSS_SWD_NRF_NVMC_CONFIG     0x4001E504
-#define SYNCBOSS_SWD_NRF_NVMC_ERASEPAGE  0x4001E508
-#define SYNCBOSS_SWD_NRF_NVMC_ERASEALL   0x4001E50C
-
-#define SYNCBOSS_SWD_NVMC_CONFIG_REN     0
-#define SYNCBOSS_SWD_NVMC_CONFIG_WEN     (1<<0)
-#define SYNCBOSS_SWD_NVMC_CONFIG_EEN     (1<<1)
-
-#define SYNCBOSS_SWD_NVMC_READY          (1<<0)
-#define SYNCBOSS_SWD_NVMC_READY_Busy     (0<<0)
-#define SYNCBOSS_SWD_NVMC_READY_Ready    (1<<0)
-
-#define SYNCBOSS_SWD_NVMC_ERASEALL_NOP   0
-#define SYNCBOSS_SWD_NVMC_ERASEALL_ERASE 1
-
 struct swdhandle_t
 {
 	int gpio_swclk;

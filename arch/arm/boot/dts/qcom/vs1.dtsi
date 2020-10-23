@@ -1044,6 +1044,8 @@
 		oculus,syncboss-wakeup = <&tlmm 119 0>;
 		oculus,imu-core-supply = <&pm8998_l28>;
 		oculus,imu-core-voltage-level = <1808000 1808000>;
+		oculus,mag-core-supply = <&pm8998_l28>;
+		oculus,mag-core-voltage-level = <1808000 1808000>;
 	};
 };
 
@@ -1105,4 +1107,16 @@
 
 &mdss_dp_pll {
 	status = "disabled";
+};
+
+/ {
+	reserved-memory {
+		secure_display_memory: secure_region {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0 0x00000000 0 0xffffffff>;
+			reusable;
+			alignment = <0 0x200000>;
+			size = <0 0x9c00000>;
+		};
+	};
 };

@@ -13,13 +13,13 @@
 		qcom,mdss-pan-physical-height-dimension = <66>;
 
 		qcom,mdss-dsi-panel-hdr-enabled;
-		// Chromaticities from 4 Mar. 2019 factory data query (56374 panels)
+		// Chromaticities from 9 Jan. 2020 factory data query (323654 panels)
 		// Scale by 1 / 50000 to get x & y coordinates
 		qcom,mdss-dsi-panel-hdr-color-primaries = <
-			14785 15820 // W - x: 0.2957, y: 0.3164
-			33070 16890 // R - x: 0.6614, y: 0.3378
-			11445 35825 // G - x: 0.2289, y: 0.7165
-			7070 2135>; // B - x: 0.1414, y: 0.0427
+			14780 15840 // W - x: 0.2956, y: 0.3168
+			33050 16910 // R - x: 0.6610, y: 0.3382
+			11405 35890 // G - x: 0.2281, y: 0.7178
+			7080 2095>; // B - x: 0.1416, y: 0.0419
 		// Scale by 1 / 10000 to get nits
 		qcom,mdss-dsi-panel-peak-brightness = <1000000>;
 		qcom,mdss-dsi-panel-blackness-level = <50>;
