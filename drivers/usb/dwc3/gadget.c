@@ -3214,6 +3214,8 @@ static void dwc3_gadget_suspend_interrupt(struct dwc3 *dwc,
 		if (dwc->gadget.state != USB_STATE_CONFIGURED) {
 			pr_err("%s(): state:%d. Ignore SUSPEND.\n",
 						__func__, dwc->gadget.state);
+			usb_gadget_vbus_draw(&dwc->gadget,
+						USB_VBUS_DRAW(dwc->gadget.speed));
 			return;
 		}
 

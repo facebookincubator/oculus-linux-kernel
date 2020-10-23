@@ -13,7 +13,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  */
-#define DEBUG 1
 #define ENABLE_PM 1
 #include <linux/delay.h>
 #include <linux/device.h>

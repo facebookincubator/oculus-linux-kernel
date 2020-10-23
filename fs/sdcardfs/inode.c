@@ -215,7 +215,7 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	struct fs_struct *copied_fs;
 	struct qstr q_obb = QSTR_LITERAL("obb");
 	struct qstr q_data = QSTR_LITERAL("data");
-	struct dentry *ret_dentry;
+	struct dentry *ret_dentry = NULL;
 
 	if (!check_caller_access_to_name(dir, &dentry->d_name)) {
 		err = -EACCES;
@@ -334,7 +334,7 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	}
 
 out:
-	if (ret_dentry)
+	if (!IS_ERR_OR_NULL(ret_dentry))
 		dput(ret_dentry);
 
 	task_lock(current);

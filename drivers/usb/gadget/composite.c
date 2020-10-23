@@ -23,17 +23,8 @@
 #include <asm/unaligned.h>
 
 #include "u_os_desc.h"
-#define SSUSB_GADGET_VBUS_DRAW 900 /* in mA */
 #define SSUSB_GADGET_VBUS_DRAW_UNITS 8
 #define HSUSB_GADGET_VBUS_DRAW_UNITS 2
-
-/*
- * Based on enumerated USB speed, draw power with set_config and resume
- * HSUSB: 500mA, SSUSB: 900mA
- */
-#define USB_VBUS_DRAW(speed)\
-	(speed == USB_SPEED_SUPER ?\
-	SSUSB_GADGET_VBUS_DRAW : CONFIG_USB_GADGET_VBUS_DRAW)
 
 /* disable LPM by default */
 static bool disable_l1_for_hs = true;
