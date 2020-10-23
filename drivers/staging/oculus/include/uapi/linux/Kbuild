@@ -1,0 +1,2 @@
+header-y += miscfifo.h
+header-y += syncboss.h

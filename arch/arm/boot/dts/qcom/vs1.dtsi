@@ -1038,9 +1038,11 @@
 		pinctrl-names = "syncboss_default";
 		pinctrl-0 = <&syncboss_float_swd &syncboss_reset_default>;
 
+		oculus,swdflavor = "nrf52832";
 		oculus,syncboss-reset  = <&tlmm 126 0>;
 		oculus,syncboss-swdclk = <&tlmm 58 0>;
 		oculus,syncboss-swdio  = <&tlmm 59 0>;
+		oculus,syncboss-timesync = <&tlmm 10 0>;
 		oculus,syncboss-wakeup = <&tlmm 119 0>;
 		oculus,imu-core-supply = <&pm8998_l28>;
 		oculus,imu-core-voltage-level = <1808000 1808000>;

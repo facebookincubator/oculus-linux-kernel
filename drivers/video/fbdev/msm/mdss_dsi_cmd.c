@@ -721,47 +721,6 @@ void mdss_dsi_set_tear_off(struct mdss_dsi_ctrl_pdata *ctrl)
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
-static char set_tear_scanline[3] = {0x44, 0x00, 0x00};
-static struct dsi_cmd_desc dsi_tear_scanline_cmd = {
-{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(set_tear_scanline)},
-set_tear_scanline};
-
-void mdss_dsi_set_tear_scanline(struct mdss_dsi_ctrl_pdata *ctrl, u16 scanline)
-{
-	struct dcs_cmd_req cmdreq;
-	struct mdss_panel_info *pinfo;
-	struct mdss_dsi_ctrl_pdata *sctrl = NULL;
-
-	pinfo = &(ctrl->panel_data.panel_info);
-	if (pinfo->dcs_cmd_by_left && ctrl->ndx != DSI_CTRL_LEFT)
-		return;
-
-	set_tear_scanline[1] = ((scanline & 0xFF00) >> 8);
-	set_tear_scanline[2] = scanline & 0xFF;
-
-	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &dsi_tear_scanline_cmd;
-	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-	cmdreq.rlen = 0;
-	cmdreq.cb = NULL;
-
-	if (!mdss_dsi_sync_wait_enable(ctrl)) {
-		mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-	} else {
-		sctrl = mdss_dsi_get_other_ctrl(ctrl);
-		if (mdss_dsi_sync_wait_trigger(ctrl)) {
-			if (sctrl)
-				mdss_dsi_cmdlist_put(sctrl, &cmdreq);
-			mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-		} else {
-			mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-			if (sctrl)
-				mdss_dsi_cmdlist_put(sctrl, &cmdreq);
-		}
-	}
-}
-
 /*
  * mdss_dsi_cmd_get: ctrl->cmd_mutex acquired by caller
  */

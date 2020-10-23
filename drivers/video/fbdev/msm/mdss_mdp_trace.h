@@ -504,21 +504,6 @@ TRACE_EVENT(mdp_overlay_handle_lineptr,
 			__entry->lineptr_ticks, __entry->lineptr_value)
 );
 
-TRACE_EVENT(mdss_dsi_handle_te,
-	TP_PROTO(int ndx, u64 te_ticks),
-	TP_ARGS(ndx, te_ticks),
-	TP_STRUCT__entry(
-			__field(int, ndx)
-			__field(u64, te_ticks)
-	),
-	TP_fast_assign(
-			__entry->ndx = ndx;
-			__entry->te_ticks = te_ticks;
-	),
-	TP_printk("te_ticks[%d]:%llu",
-			__entry->ndx, __entry->te_ticks)
-);
-
 #endif /* if !defined(TRACE_MDSS_MDP_H) || defined(TRACE_HEADER_MULTI_READ) */
 
 /* This part must be outside protection */

@@ -592,10 +592,6 @@ struct mdss_dsi_ctrl_pdata {
 	bool update_phy_timing; /* flag to recalculate PHY timings */
 
 	bool phy_power_off;
-
-	ktime_t te_time;
-	struct kernfs_node *te_event_sd;
-	struct device *dsi_dev;
 };
 
 struct dsi_status_data {
@@ -634,7 +630,6 @@ int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
-irqreturn_t hw_te_handler(int irq, void *data);
 void disable_esd_thread(void);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 

@@ -25,4 +25,7 @@ u32 swd_memory_read(struct swdhandle_t* handle, u32 address);
 // Write 4 bytes of flash memory at a given address
 void swd_memory_write(struct swdhandle_t* handle, u32 address, u32 data);
 
+// Reset the target
+void swd_reset(struct swdhandle_t *handle);
+
 #endif

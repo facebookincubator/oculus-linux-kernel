@@ -71,6 +71,11 @@
 #define SWD_MEMAP_REG_RW_TAR 0x4
 #define SWD_MEMAP_REG_RW_DRW 0xC
 
+/* Application Interrupt and Reset Control Register */
+#define SWD_REG_AIRCR			0xE000ED0C
+#define SWD_VAL_AIRCR_VECTKEY	0x05FA0000
+#define SWD_VAL_AIRCR_SYSRSTRQ	0x04
+
 /* Core Debug registers */
 #define SWD_REG_DHCSR          	0xE000EDF0
 #define SWD_VAL_DHCSR_DBGKEY    0xa05f0000
@@ -359,4 +364,16 @@ void swd_halt(struct swdhandle_t* handle)
 			 (SWD_VAL_DHCSR_DBGKEY |
 			  SWD_VAL_DHCSR_C_DEBUGEN |
 			  SWD_VAL_DHCSR_C_HALT));
+}
+
+void swd_reset(struct swdhandle_t *handle)
+{
+	swd_memory_write(handle,
+			 SWD_REG_DHCSR,
+			 (SWD_VAL_DHCSR_DBGKEY |
+			  SWD_VAL_DHCSR_C_DEBUGEN |
+			  SWD_VAL_DHCSR_C_HALT));
+	swd_memory_write(handle,
+			 SWD_REG_AIRCR,
+			 (SWD_VAL_AIRCR_VECTKEY | SWD_VAL_AIRCR_SYSRSTRQ));
 }
