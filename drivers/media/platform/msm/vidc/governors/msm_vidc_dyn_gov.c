@@ -1039,6 +1039,11 @@ static unsigned long __calculate(struct vidc_bus_vote_data *d,
 		[HAL_VIDEO_DOMAIN_DECODER] = __calculate_decoder,
 	};
 
+	if (d->domain >= ARRAY_SIZE(calc)) {
+		dprintk(VIDC_ERR, "%s: invalid domain %d\n",
+			__func__, d->domain);
+		return 0;
+	}
 	return calc[d->domain](d, gm);
 }
 
@@ -1058,6 +1063,9 @@ static int __get_target_freq(struct devfreq *dev, unsigned long *freq,
 			struct governor, devfreq_gov);
 	dev->profile->get_dev_status(dev->dev.parent, &stats);
 	vidc_data = (struct msm_vidc_gov_data *)stats.private_data;
+
+	if (!vidc_data || !vidc_data->data_count)
+		goto exit;
 
 	for (c = 0; c < vidc_data->data_count; ++c) {
 		if (vidc_data->data[c].power_mode == VIDC_POWER_TURBO) {

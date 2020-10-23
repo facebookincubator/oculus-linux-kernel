@@ -13,7 +13,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  */
-#define ENABLE_PM 1
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/pm.h>
@@ -32,6 +31,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>
 #include <linux/ctype.h>
+#include <linux/suspend.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -855,7 +855,7 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 			iWriteSize = len;
 		len -= iWriteSize;
 		dev_info(cm710x_codec->dev,
-			"SPI Write chunk Addr 0x%08x Len = %d\n",
+			"SPI Write chunk Addr 0x%08x Len = %zd\n",
 			uAddr, iWriteSize);
 		ret = cm710x_write_SPI_Dsp(uAddr, fwData, iWriteSize);
 		if (ret != 0 || cm710x_codec->bSuspendRequestPending) {
@@ -1073,7 +1073,7 @@ static void cm710x_pop_noise_work(struct work_struct *work)
 			FW_DOWNLOAD_TIMEOUT);
 	if (rc == 0) {
 		pr_err("%s: Firmware download timed out!\n", __func__);
-		return -ETIMEDOUT;
+		return;
 	}
 
 	regmap_update_bits_async(cm710x_codec->virt_regmap,
@@ -1085,15 +1085,41 @@ static void cm710x_pop_noise_work(struct work_struct *work)
 			0x2020, 0x0000);
 }
 
+static int cm710x_pm_notify(struct notifier_block *nb,
+				unsigned long mode, void *_unused)
+{
+	struct cm710x_codec_priv *cm710x_codec =
+			container_of(nb, struct cm710x_codec_priv, pm_nb);
+
+	switch (mode) {
+	case PM_POST_SUSPEND:
+		reinit_completion(&cm710x_codec->fw_download_complete);
+		schedule_work(&cm710x_codec->fw_download_work);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 static int cm710x_codec_probe(struct snd_soc_codec *codec)
 {
 	struct cm710x_codec_priv *cm710x_codec =
 		snd_soc_codec_get_drvdata(codec);
+	int ret = 0;
+
+	ret = cm710x_download_firmware(cm710x_codec);
+	if (ret) {
+		pr_err("%s: Failed to download firmware: %d\n",
+				__func__, ret);
+		return ret;
+	}
 
 	INIT_DELAYED_WORK(&cm710x_codec->avoid_pop_noise,
 		cm710x_pop_noise_work);
 
-	int ret = cm710x_download_firmware(cm710x_codec);
+	cm710x_codec->pm_nb.notifier_call = cm710x_pm_notify;
+	register_pm_notifier(&cm710x_codec->pm_nb);
 
 	complete_all(&cm710x_codec->fw_download_complete);
 
@@ -1117,6 +1143,8 @@ static int cm710x_codec_remove(struct snd_soc_codec *codec)
 			dev_err(cm710x_codec->dev,
 				"pinctrl_select_state error");
 	}
+
+	unregister_pm_notifier(&cm710x_codec->pm_nb);
 
 	return ret;
 }
@@ -1673,7 +1701,6 @@ static const struct snd_soc_dapm_route cm710x_dapm_routes[] = {
 	{ "AIF1TX", NULL, "ADC" },
 };
 
-#ifdef ENABLE_PM
 static int cm710x_codec_suspend(struct snd_soc_codec *codec)
 {
 	struct cm710x_codec_priv *cm710x_codec =
@@ -1742,16 +1769,8 @@ static int cm710x_codec_resume(struct snd_soc_codec *codec)
 				"pinctrl_select_state error");
 	}
 
-	reinit_completion(&cm710x_codec->fw_download_complete);
-
-	schedule_work(&cm710x_codec->fw_download_work);
-
 	return ret;
 }
-#else
-#define cm710x_codec_suspend NULL
-#define cm710x_codec_resume NULL
-#endif
 
 static int cm710x_read(void *context, unsigned int reg, unsigned int *val)
 {

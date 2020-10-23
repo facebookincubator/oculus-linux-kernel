@@ -305,7 +305,6 @@ extern void write_boot_chime_volume(const char *cmd)
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
-	int rc = 0;
 
 #ifdef CONFIG_QCOM_DLOAD_MODE
 

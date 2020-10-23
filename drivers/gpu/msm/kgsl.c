@@ -1839,14 +1839,30 @@ static long gpumem_free_entry_on_timestamp(struct kgsl_device *device,
 		struct kgsl_context *context, unsigned int timestamp)
 {
 	int ret;
-	unsigned int temp;
+	unsigned int queued_ts;
+	unsigned int retired_ts;
+	bool inactive_ctx;
+
+	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_QUEUED, &queued_ts);
+	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_RETIRED,
+		&retired_ts);
+
+	/* workaround for T58584686 */
+	inactive_ctx = (kgsl_context_high_priority(context) &&
+		queued_ts == 0 && retired_ts == 0);
+
+	if (inactive_ctx && timestamp > 0) {
+		KGSL_DRV_ERR(device, "non-zero ts %u on inactive ctxt %u",
+			timestamp, context->id);
+
+		return gpumem_free_entry(entry);
+	}
 
 	if (!kgsl_mem_entry_set_pend(entry))
 		return -EBUSY;
 
-	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_RETIRED, &temp);
-	trace_kgsl_mem_timestamp_queue(device, entry, context->id, temp,
-		timestamp);
+	trace_kgsl_mem_timestamp_queue(device, entry, context->id,
+		retired_ts, timestamp);
 	ret = kgsl_add_event(device, &context->events,
 		timestamp, gpumem_free_func, entry);
 

@@ -125,7 +125,9 @@ dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-pvt-auo$(unknown2_compat).dtb \
 	vs1-pvt-b-auo$(unknown2_compat).dtb \
 	vs1-pvt-b-sdc$(unknown2_compat).dtb \
-	vs1-ptc.dtb
+	vs1-ptc.dtb \
+	unknown2-proto0.dtb
+
 else
 dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 	msm8998-rumi.dtb \

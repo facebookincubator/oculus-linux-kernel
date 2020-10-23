@@ -5431,6 +5431,11 @@ QDF_STATUS cds_get_pcl(enum cds_con_mode mode,
 		return status;
 	}
 
+	if (mode >= CDS_MAX_NUM_OF_MODE) {
+		cds_err("requested mode:%d is not supported", mode);
+		return status;
+	}
+
 	/* find the current connection state from conc_connection_list*/
 	num_connections = cds_get_connection_count();
 	cds_debug("connections:%d pref:%d requested mode:%d",

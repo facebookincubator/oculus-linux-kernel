@@ -4,7 +4,6 @@
 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
 
 		// orientation, resolution
-		qcom,mdss-dsi-panel-orientation = "180";
 		qcom,mdss-dsi-panel-width = <1440>;
 		qcom,mdss-dsi-panel-height = <1600>;
 

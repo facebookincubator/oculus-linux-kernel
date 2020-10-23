@@ -131,7 +131,7 @@ int cm710x_write_SPI_Dsp(u32 addr, u8 *Data, size_t len)
 		return -ENODEV;
 
 	if (addr & 1) {
-		dev_err(&g_spi->dev, "Bad write align 0x%x(%d)\n", addr, len);
+		dev_err(&g_spi->dev, "Bad write align 0x%x(%zd)\n", addr, len);
 		return -EACCES;
 	}
 

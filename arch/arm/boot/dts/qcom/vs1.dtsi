@@ -184,6 +184,10 @@
 		qcom,msm-bus,vectors-KBps =
 					<61 512 0 0>,
 					<61 512 5000000 5000000>;
+
+		dwc3@a800000 {
+			snps,usb3-u1u2-disable;
+		};
 	};
 
 };
