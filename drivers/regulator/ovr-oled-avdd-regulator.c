@@ -35,19 +35,20 @@ static void avdd_en_work_func(struct work_struct *work)
 	struct delayed_work *dw = to_delayed_work(work);
 	struct oled_avdd_config *cfg = container_of(dw,
 			struct oled_avdd_config, avdd_en_work);
+	struct regulator_dev *rdev = cfg->dev;
 
 	int en_a_val = gpio_get_value(cfg->en_a_gpio);
 	int en_b_val = gpio_get_value(cfg->en_b_gpio);
 
 	if (en_a_val == 1 && en_b_val == 1) {
-		pr_debug("%s: AVDD on\n", __func__);
+		dev_dbg(&rdev->dev, "AVDD on\n");
 		/* AVDD on */
 		gpio_set_value(cfg->pmi_en_gpio, 0);
 		gpio_set_value(cfg->avdd_en_gpio, 1);
 		cfg->is_enabled = true;
 	} else if (en_a_val == 0 && en_b_val == 0) {
 		/* AVDD off */
-		pr_debug("%s: AVDD off\n", __func__);
+		dev_dbg(&rdev->dev, "AVDD off\n");
 		gpio_set_value(cfg->pmi_en_gpio, 1);
 		gpio_set_value(cfg->avdd_en_gpio, 0);
 	}
@@ -91,10 +92,10 @@ static int oled_avdd_enable(struct regulator_dev *rdev)
 	int rc = 0;
 	int avdd_en_val = 0, pmi_en_val = 1;
 
-	pr_debug("%s: enabling\n", __func__);
+	dev_dbg(&rdev->dev, "enabling\n");
 
 	if (cfg->ocp_triggered) {
-		pr_err("%s: OCP triggered, enable not allowed\n", __func__);
+		dev_err(&rdev->dev, "OCP triggered, enable not allowed\n");
 		return -EINVAL;
 	}
 
@@ -107,8 +108,8 @@ static int oled_avdd_enable(struct regulator_dev *rdev)
 		pmi_en_val = 0;
 	}
 
-	pr_debug("%s: AVDD_EN: %d, PMI_EN: %d\n",
-			__func__, avdd_en_val, pmi_en_val);
+	dev_dbg(&rdev->dev, "AVDD_EN: %d, PMI_EN: %d\n",
+			avdd_en_val, pmi_en_val);
 
 	rc = gpio_request(cfg->avdd_en_gpio, "avdd_enable");
 	if (rc)
@@ -136,7 +137,7 @@ static int oled_avdd_enable(struct regulator_dev *rdev)
 	if (cfg->is_first_enable)
 		cfg->is_first_enable = false;
 
-	pr_debug("%s: enabled\n", __func__);
+	dev_dbg(&rdev->dev, "enabled\n");
 
 	return 0;
 }
@@ -145,7 +146,7 @@ static int oled_avdd_disable(struct regulator_dev *rdev)
 {
 	struct oled_avdd_config *cfg = rdev_get_drvdata(rdev);
 
-	pr_debug("%s: disabling\n", __func__);
+	dev_dbg(&rdev->dev, "disabling\n");
 
 	disable_irq(gpio_to_irq(cfg->en_a_gpio));
 	disable_irq(gpio_to_irq(cfg->en_b_gpio));
@@ -157,7 +158,7 @@ static int oled_avdd_disable(struct regulator_dev *rdev)
 
 	cfg->is_enabled = false;
 
-	pr_debug("%s: disabled\n", __func__);
+	dev_dbg(&rdev->dev, "disabled\n");
 
 	return 0;
 }
@@ -225,7 +226,7 @@ static int oled_avdd_parse_dt(struct device *dev,
 	if (!gpio_is_valid(cfg->ocp_gpio))
 		dev_dbg(dev, "ocp-gpio not present, skipping\n");
 
-	dev_dbg(dev, "%s: Successfully parsed device tree\n", __func__);
+	dev_dbg(dev, "Successfully parsed device tree\n");
 
 	return 0;
 }
@@ -237,7 +238,7 @@ static int oled_avdd_probe(struct platform_device *pdev)
 	struct regulator_config cfg = {};
 	int rc;
 
-	dev_dbg(&pdev->dev, "%s: probing\n", __func__);
+	dev_dbg(&pdev->dev, "probing\n");
 
 	drvdata = devm_kzalloc(&pdev->dev, sizeof(struct oled_avdd_config),
 			GFP_KERNEL);

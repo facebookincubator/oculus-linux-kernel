@@ -18,6 +18,13 @@ config DEPTH_PROJECTOR
 	  Depth Projector Kernel Module to set default gpio values.
 	  This driver sets SWD_IO and SWD_CLK to high impedance mode
 
+config FRONT_PANEL_SENSOR
+	tristate "Front Panel Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a virtual sensor driver representing the front
+	  panel skin temperature of a device.
+
 config HYPERVISOR_GUEST
 	tristate "Hypervisor Guest Kernel Module"
 	default n
@@ -46,6 +53,15 @@ config MISCFIFO_SAMPLE
 	default n
 	---help---
 	  Example usage of miscfifo chardev driver
+
+config MOLOKINI
+	tristate "Molokini usbpd driver"
+	default n
+	help
+	  Molokini usbpd kernel module for registering unstructured vdm messages.
+	  Messages will be sent with host device acting as a source and a sink to
+	  Molokini.
+	  Also creates debugfs nodes to advertise Molokini battery parameters.
 
 config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"

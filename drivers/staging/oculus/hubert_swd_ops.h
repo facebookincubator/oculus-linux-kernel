@@ -9,6 +9,12 @@
 #define AT91SAMD_BLOCK_SIZE 64
 #define AT91SAMD_MAX_FW_SIZE 0x20000
 
+/* Number of flash pages for fw image */
+#define AT91SAMD_NUM_FW_PAGES (AT91SAMD_MAX_FW_SIZE / AT91SAMD_BLOCK_SIZE)
+
+/* We reserve a few of the last flash pages for persistent config */
+#define AT91SAMD_NUM_FLASH_PAGES_TO_RETAIN 64
+
 int hubert_swd_erase_app(struct device *dev,
 	struct swdhandle_t *handle);
 

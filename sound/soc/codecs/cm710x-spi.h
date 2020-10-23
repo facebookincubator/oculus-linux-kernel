@@ -14,7 +14,7 @@
  * General Public License for more details.
  */
 
-#ifndef __CM710X__SPI_H__
+#ifndef __CM710X_SPI_H__
 #define __CM710X_SPI_H__
 
 int cm710x_write_SPI_Dsp(u32 uAddr, u8 *Data, size_t len);

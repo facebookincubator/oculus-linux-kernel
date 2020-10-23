@@ -37,41 +37,30 @@ static int hubert_swd_wait_for_nvmc_ready(struct device *dev,
 	return -ETIMEDOUT;
 }
 
-static int hubert_swd_wait_for_statusa_done(struct device *dev,
-					    struct swdhandle_t *handle)
-{
-	const u64 SWD_READY_TIMEOUT_MS = 500;
-	u64 timeout_time_ns =
-	    ktime_get_ns() + (SWD_READY_TIMEOUT_MS * NSEC_PER_MSEC);
-
-	while (ktime_get_ns() < timeout_time_ns) {
-		if (hubert_swd_read_byte(handle, SWD_SAMD_DSU_STATUSA) &
-		    SWD_SAMD_DSU_STATUSA_DONE)
-			return 0;
-		udelay(100);
-	}
-
-	dev_err(dev, "Hubert SWD DSU STATUSA not done after %llums",
-		SWD_READY_TIMEOUT_MS);
-	return -ETIMEDOUT;
-}
-
 int hubert_swd_erase_app(struct device *dev,
 	struct swdhandle_t *handle)
 {
 	int status = 0;
+	int i = 0;
+	int flash_pages_to_erase =
+		AT91SAMD_NUM_FW_PAGES - AT91SAMD_NUM_FLASH_PAGES_TO_RETAIN;
+	int flash_rows_to_erase =
+		(flash_pages_to_erase * SWD_SAMD_PAGE_SIZE) / SWD_SAMD_ROW_SIZE;
 
-	/* Clear the STATUSA_DONE Bit */
-	swd_memory_write(handle, SWD_SAMD_DSU_STATUSA,
-			 SWD_SAMD_DSU_STATUSA_DONE);
+	BUILD_BUG_ON(!(AT91SAMD_NUM_FLASH_PAGES_TO_RETAIN <
+		       AT91SAMD_NUM_FW_PAGES));
 
-	/* Write the CTRL_CHIPERASE Bit */
-	swd_memory_write(handle, SWD_SAMD_DSU_CTRL,
-			 SWD_SAMD_DSU_CTRL_CE);
+	swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLB, 0x00);
 
-	status = hubert_swd_wait_for_statusa_done(dev, handle);
-	if (status != 0)
-		return status;
+	for (i = 0; i < flash_rows_to_erase * SWD_SAMD_ROW_SIZE;
+					i += SWD_SAMD_ROW_SIZE) {
+		swd_memory_write(handle, SWD_SAMD_NVMCTRL_ADDR, i >> 1);
+		swd_memory_write(handle, SWD_SAMD_NVMCTRL_CTRLA,
+				SWD_SAMD_NVMCTRL_CTRLA_CMD_ER);
+		status = hubert_swd_wait_for_nvmc_ready(dev, handle);
+		if (status != 0)
+			return status;
+	}
 
 	return status;
 }

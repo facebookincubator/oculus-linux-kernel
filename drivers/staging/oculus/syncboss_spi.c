@@ -93,9 +93,6 @@ static const struct of_device_id oculus_syncboss_table[] = {
 #define SYNCBOSS_FLASH_PAGE_SIZE 0x1000
 #define SYNCBOSS_NUM_FLASH_PAGES 128
 
-/* We reserve a few of the last flash pages for persistent config */
-#define SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN 2
-
 #define SYNCBOSS_MISCFIFO_SIZE 1024
 
 #define SYNCBOSS_NSYNC_MISCFIFO_SIZE 256
@@ -1636,6 +1633,9 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 			return 0;
 		}
 	}
+	dev_err(&devdata->spi->dev,
+		"SyncBoss failed to %s within %dms.",
+		awake ? "wake" : "sleep", SYNCBOSS_SLEEP_TIMEOUT_MS);
 	return -ETIMEDOUT;
 }
 
@@ -1668,7 +1668,7 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 			dev_err(&devdata->spi->dev,
 					"Failed to enable IMU power: %d",
 					status);
-			return;
+			goto error;
 		}
 	}
 
@@ -1678,7 +1678,7 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 			dev_err(&devdata->spi->dev,
 					"Failed to enable mag power: %d",
 					status);
-			return;
+			goto error;
 		}
 	}
 
@@ -1749,12 +1749,17 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 
 	devdata->worker = kthread_create(syncboss_spi_transfer_thread,
 					 devdata->spi, "syncboss:spi_thread");
-	if (devdata->worker) {
-		dev_info(&devdata->spi->dev, "Setting SPI thread cpu affinity: %*pb",
-			cpumask_pr_args(&devdata->cpu_affinity));
-		kthread_bind_mask(devdata->worker, &devdata->cpu_affinity);
-		wake_up_process(devdata->worker);
+	if (IS_ERR(devdata->worker)) {
+		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%ld)",
+			PTR_ERR(devdata->worker));
+		devdata->worker = NULL;
+		goto error;
 	}
+
+	dev_info(&devdata->spi->dev, "Setting SPI thread cpu affinity: %*pb",
+		cpumask_pr_args(&devdata->cpu_affinity));
+	kthread_bind_mask(devdata->worker, &devdata->cpu_affinity);
+	wake_up_process(devdata->worker);
 
 	status = sched_setscheduler(devdata->worker, SCHED_FIFO,
 				    &spi_thread_scheduler_settings);
@@ -1767,6 +1772,7 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	push_prox_cal_and_enable_wake(devdata, devdata->prox_wake_enabled);
 
 	devdata->is_streaming = true;
+error:
 	mutex_unlock(&devdata->state_mutex);
 }
 
@@ -1911,11 +1917,8 @@ static void prox_wake_set(struct syncboss_dev_data *devdata, bool enable)
 		status = wait_for_syncboss_wake_state(devdata, /*awake*/true);
 		if (status == 0)
 			dev_info(&devdata->spi->dev, "SyncBoss awake");
-		else {
-			dev_err(&devdata->spi->dev, "SyncBoss failed to boot within %dms",
-				SYNCBOSS_SLEEP_TIMEOUT_MS);
+		else
 			goto error;
-		}
 	}
 
 	push_prox_cal_and_enable_wake(devdata, enable);
@@ -3125,7 +3128,8 @@ struct spi_driver oculus_syncboss_driver = {
 	.driver = {
 		.name = "oculus_syncboss",
 		.owner = THIS_MODULE,
-		.of_match_table = oculus_syncboss_table
+		.of_match_table = oculus_syncboss_table,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS
 	},
 	.probe	= syncboss_probe,
 	.remove = syncboss_remove

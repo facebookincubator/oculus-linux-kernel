@@ -202,9 +202,9 @@
 #define FG_RR_ADC_SEC_ACCESS			0xd0
 #define FG_RR_ADC_SEC_VALUE			0xa5
 
-#define PULL_UP_RESIST  6800	// 6.8 K * 1000
-#define VOLTAGE_SOURCE  3300	// unit mv
-#define GPIO2_RIN       3650	// 3.65 K * 1000
+#define PULL_UP_RESIST  6800	/* 6.8 K * 1000 */
+#define VOLTAGE_SOURCE  3300	/* mV */
+#define GPIO2_RIN       3650	/* 3.65 K * 1000 */
 
 /*
  * The channel number is not a physical index in hardware,
@@ -553,29 +553,32 @@ static int rradc_post_process_chg_temp(struct rradc_chip *chip,
 
 static int64_t calculate_equivalent_resistance(int result_mv)
 {
-  int64_t equ_resist = 0;
-  equ_resist = div64_s64(PULL_UP_RESIST * result_mv, VOLTAGE_SOURCE - result_mv);
-  printk("[ATEST] equ resistance: %d\n", (int)equ_resist);
+	int64_t equ_resist = equ_resist = div64_s64(PULL_UP_RESIST * result_mv,
+			VOLTAGE_SOURCE - result_mv);
 
-  return equ_resist;
+	pr_debug("[ATEST] equ resistance: %lld\n", equ_resist);
+
+	return equ_resist;
 }
 
 static int64_t calculate_variable_resistance(int equ_resist)
 {
-  int64_t var_resist = div64_s64(GPIO2_RIN * equ_resist, GPIO2_RIN - equ_resist);
-  printk("[ATEST] var resistance: %d\n", (int)var_resist);
+	int64_t var_resist = div64_s64(GPIO2_RIN * equ_resist,
+			GPIO2_RIN - equ_resist);
 
-  return var_resist;
+	pr_debug("[ATEST] var resistance: %lld\n", var_resist);
+
+	return var_resist;
 }
 
 static int64_t calculate_voltage_division(int var_resist)
 {
-  //float volt_div = (float)(VOLTAGE_SOURCE * var_resist) / (float)(var_resist + PULL_UP_RESIST);
-  //LOG("[ATEST] volt division: %f\n", volt_div);
-  int64_t volt_div = div64_s64(VOLTAGE_SOURCE * var_resist, var_resist + PULL_UP_RESIST);
-  printk("[ATEST] volt division: %d\n", (int)volt_div);
+	int64_t volt_div = div64_s64(VOLTAGE_SOURCE * var_resist,
+			var_resist + PULL_UP_RESIST);
 
-  return volt_div;
+	pr_debug("[ATEST] volt division: %lld\n", volt_div);
+
+	return volt_div;
 }
 
 static int rradc_post_process_gpio(struct rradc_chip *chip,
@@ -978,10 +981,10 @@ static int rradc_do_conversion(struct rradc_chip *chip,
 				FG_ADC_RR_ATEST_CTRL_CTL,
 				0);
 
-                if (rc < 0) {
-                        pr_err("Restore ATEST CTRL Bit 0 failed:%d\n", rc);
-                        goto fail;
-                }
+		if (rc < 0) {
+			pr_err("Restore ATEST CTRL Bit 0 failed:%d\n", rc);
+			goto fail;
+		}
 
 		rc = qpnp_misc_write_reg(chip->misc_node,
 				chip->misc_adc_premux_sel_reg, 0);
@@ -990,13 +993,13 @@ static int rradc_do_conversion(struct rradc_chip *chip,
 			goto fail;
 		}
 
-                rc = qpnp_misc_write_reg(chip->misc_node,
-                                FG_RR_ADC_SEC_ACCESS,
-                                0);
-                if (rc < 0) {
-                        pr_err("Error setting secure access %d\n", rc);
-                        goto fail;
-                }
+		rc = qpnp_misc_write_reg(chip->misc_node,
+				FG_RR_ADC_SEC_ACCESS,
+				0);
+		if (rc < 0) {
+			pr_err("Error setting secure access %d\n", rc);
+			goto fail;
+		}
 		break;
 	case RR_ADC_CHG_HOT_TEMP:
 	case RR_ADC_CHG_TOO_HOT_TEMP:

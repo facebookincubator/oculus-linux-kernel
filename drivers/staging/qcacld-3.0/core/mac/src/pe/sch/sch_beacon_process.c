@@ -893,8 +893,6 @@ sch_beacon_process(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 		return;
 	}
 
-	if (bcn.ssidPresent)
-		bcn.ssId.ssId[bcn.ssId.length] = 0;
 	/*
 	 * First process the beacon in the context of any existing AP or BTAP
 	 * session. This takes cares of following two scenarios:
