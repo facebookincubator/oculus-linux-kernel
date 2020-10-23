@@ -284,6 +284,14 @@ struct syncboss_dev_data {
 	/* Mutex that protects the state of this structure */
 	struct mutex state_mutex;
 
+	/* The workqueue serves 2 purposes:
+	 *   1) It allows us to kick off work (such as streaming
+	 *      start/stop) from execution contexts that couldn't do
+	 *      such things directly (such as during driver probe).
+	 *   2) Since this is a "singlethread" workqueue, it provides
+	 *      a mechanism for us to serialize operations without the
+	 *      need for crazy locking mechanisms.
+	 */
 	struct workqueue_struct *syncboss_workqueue;
 
 	/* GPIO line for pin reset */
@@ -439,8 +447,6 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
  * syncboss handle, or close/re-open the syncboss handle after changing these
  * settings.
  *
- * streaming - WRITING DEPRECATED - Read to see if syncboss is currently
-       streaming SPI data
  * transaction_length - set the fixed size of the periodic SPI transaction
  * transaction_period_us - set the period of the SPI requests
  * minimum_time_between_transactions_us - set the minimum amount of time we
@@ -455,16 +461,9 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
  * update_firmware - write 1 to do a firmware update (firmware must be under
  *      /vendor/firmware/syncboss.bin)
  * next_avail_seq_num - the next available sequence number for control calls
- * enable_data_headers - return data headers with each control/stream message
  * te_timestamp - timestamp of the last TE event
  */
 
-static ssize_t show_streaming(struct device *dev,
-			      struct device_attribute *attr,
-			      char *buf);
-static ssize_t store_streaming(struct device *dev,
-			       struct device_attribute *attr, const char *buf,
-			       size_t count);
 static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count);
 
@@ -501,10 +500,6 @@ static ssize_t store_update_firmware(struct device *dev,
 				     struct device_attribute *attr,
 				     const char *buf, size_t count);
 
-static ssize_t show_num_rejected_transactions(struct device *dev,
-					      struct device_attribute *attr,
-					      char *buf);
-
 static ssize_t show_cpu_affinity(struct device *dev,
 				 struct device_attribute *attr, char *buf);
 static ssize_t store_cpu_affinity(struct device *dev,
@@ -532,20 +527,12 @@ static ssize_t store_power(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count);
 
-static ssize_t show_enable_headers(struct device *dev,
-				   struct device_attribute *attr, char *buf);
-static ssize_t store_enable_headers(struct device *dev,
-				    struct device_attribute *attr,
-				    const char *buf, size_t count);
-
 static ssize_t show_te_timestamp(struct device *dev,
 				struct device_attribute *attr, char *buf);
 
 static DEVICE_ATTR(reset, S_IWUSR, NULL, store_reset);
 static DEVICE_ATTR(spi_max_clk_rate, S_IWUSR | S_IRUGO, show_spi_max_clk_rate,
 		   store_spi_max_clk_rate);
-static DEVICE_ATTR(streaming, S_IWUSR | S_IRUGO, show_streaming,
-		   store_streaming);
 static DEVICE_ATTR(transaction_period_us, S_IWUSR | S_IRUGO,
 		   show_transaction_period_us, store_transaction_period_us);
 static DEVICE_ATTR(minimum_time_between_transactions_us, S_IWUSR | S_IRUGO,
@@ -555,8 +542,6 @@ static DEVICE_ATTR(transaction_length, S_IWUSR | S_IRUGO,
 		   show_transaction_length, store_transaction_length);
 static DEVICE_ATTR(update_firmware, S_IWUSR | S_IRUGO, show_update_firmware,
 		   store_update_firmware);
-static DEVICE_ATTR(num_rejected_transactions, S_IRUGO,
-		   show_num_rejected_transactions, NULL);
 static DEVICE_ATTR(cpu_affinity, S_IWUSR | S_IRUGO,
 		   show_cpu_affinity, store_cpu_affinity);
 static DEVICE_ATTR(stats, S_IRUGO,
@@ -566,25 +551,20 @@ static DEVICE_ATTR(poll_prio, S_IWUSR | S_IRUGO,
 static DEVICE_ATTR(next_avail_seq_num, S_IRUGO,
 		   show_next_avail_seq_num, NULL);
 static DEVICE_ATTR(power, S_IWUSR | S_IRUGO, show_power, store_power);
-static DEVICE_ATTR(enable_data_headers, S_IWUSR | S_IRUGO, show_enable_headers,
-		   store_enable_headers);
 static DEVICE_ATTR(te_timestamp, S_IRUGO, show_te_timestamp, NULL);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_spi_max_clk_rate.attr,
-	&dev_attr_streaming.attr,
 	&dev_attr_transaction_period_us.attr,
 	&dev_attr_minimum_time_between_transactions_us.attr,
 	&dev_attr_transaction_length.attr,
 	&dev_attr_update_firmware.attr,
-	&dev_attr_num_rejected_transactions.attr,
 	&dev_attr_cpu_affinity.attr,
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
 	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_power.attr,
-	&dev_attr_enable_data_headers.attr,
 	&dev_attr_te_timestamp.attr,
 	NULL
 };
@@ -704,6 +684,8 @@ static int spi_queue_work(struct syncboss_dev_data *devdata,
 static void start_streaming(void *devdata);
 static void start_streaming_force_reset(void *devdata);
 static void stop_streaming(void *devdata);
+static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
+					bool state);
 
 static void reset_syncboss(struct syncboss_dev_data *devdata)
 {
@@ -711,6 +693,7 @@ static void reset_syncboss(struct syncboss_dev_data *devdata)
 	 * sleep
 	 */
 	spi_queue_work(devdata, start_streaming_force_reset, NULL);
+	wait_for_syncboss_wake_state(devdata, true);
 	spi_queue_work(devdata, stop_streaming, NULL);
 }
 
@@ -1760,6 +1743,10 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	devdata->transaction_ctr = 0;
 	init_queued_buf(devdata, 0);
 
+	/* The worker thread should not be running yet, so the worker
+	 * should always be null here */
+	BUG_ON(devdata->worker != NULL);
+
 	devdata->worker = kthread_create(syncboss_spi_transfer_thread,
 					 devdata->spi, "syncboss:spi_thread");
 	if (devdata->worker) {
@@ -2566,39 +2553,6 @@ error:
 	return status;
 }
 
-static ssize_t show_streaming(struct device *dev,
-			      struct device_attribute *attr,
-			      char *buf)
-{
-	struct syncboss_dev_data *devdata = NULL;
-	int status = 0;
-	ssize_t retval = 0;
-
-	devdata = (struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
-		return status;
-	}
-
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->is_streaming);
-
-	mutex_unlock(&devdata->state_mutex);
-	return retval;
-}
-
-static ssize_t store_streaming(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
-{
-	dev_info(dev,
-		"Note: The \"streaming\" file is deprecated and writing to this file is a no-op");
-	return 0;
-}
-
 static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -2910,30 +2864,6 @@ static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
 	return status;
 }
 
-static ssize_t show_num_rejected_transactions(struct device *dev,
-					      struct device_attribute *attr,
-					      char *buf)
-{
-	int status = 0;
-	int retval = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
-		return status;
-	}
-
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
-			   devdata->stats.num_rejected_transactions);
-
-	mutex_unlock(&devdata->state_mutex);
-	return retval;
-}
-
 static ssize_t show_power(struct device *dev,
 			  struct device_attribute *attr,
 			  char *buf)
@@ -3112,63 +3042,6 @@ static ssize_t store_poll_priority(struct device *dev,
 	if (devdata->is_streaming) {
 		dev_info(dev,
 			 "Poll thread priority changed while streaming.");
-		dev_info(dev,
-			 "This change will not take effect until the stream is stopped and restarted");
-	}
-
-	mutex_unlock(&devdata->state_mutex);
-	return count;
-}
-
-static ssize_t show_enable_headers(struct device *dev,
-				   struct device_attribute *attr, char *buf)
-{
-	int retval = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	retval = mutex_lock_interruptible(&devdata->state_mutex);
-	if (retval != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			retval);
-		return retval;
-	}
-
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->enable_headers);
-
-	mutex_unlock(&devdata->state_mutex);
-	return retval;
-}
-
-static ssize_t store_enable_headers(struct device *dev,
-				    struct device_attribute *attr,
-				    const char *buf, size_t count)
-{
-	int status = 0;
-	u8 temp_enable = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = kstrtou8(buf, /*base*/10, &temp_enable);
-	if (status < 0) {
-		dev_err(dev, "Failed to parse u8 out of %s", buf);
-		return -EINVAL;
-	}
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
-		return status;
-	}
-
-	devdata->enable_headers = !!temp_enable;
-
-	if (devdata->is_streaming) {
-		dev_info(dev,
-			 "Enable headers changed while streaming.");
 		dev_info(dev,
 			 "This change will not take effect until the stream is stopped and restarted");
 	}

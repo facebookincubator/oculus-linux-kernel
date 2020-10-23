@@ -1082,28 +1082,31 @@ tSirRetStatus rrm_process_beacon_req(tpAniSirGlobal mac_ctx, tSirMacAddr peer,
  */
 static
 tSirRetStatus update_rrm_report(tpAniSirGlobal mac_ctx,
-				tpSirMacRadioMeasureReport report,
+				tpSirMacRadioMeasureReport *report,
 				tDot11fRadioMeasurementRequest *rrm_req,
 				uint8_t *num_report, int index)
 {
-	if (report == NULL) {
+	tpSirMacRadioMeasureReport rrm_report;
+
+	if (!*report) {
 		/*
 		 * Allocate memory to send reports for
 		 * any subsequent requests.
 		 */
-		report = qdf_mem_malloc(sizeof(*report) *
+		*report = qdf_mem_malloc(sizeof(tSirMacRadioMeasureReport) *
 			 (rrm_req->num_MeasurementRequest - index));
-		if (NULL == report) {
+		if (!*report) {
 			lim_log(mac_ctx, LOGP, FL("Unable to allocate memory during RRM Req processing"));
 			return eSIR_MEM_ALLOC_FAILED;
 		}
 		lim_log(mac_ctx, LOG3, FL("rrm beacon type incapable of %d report "),
 			*num_report);
 	}
-	report[*num_report].incapable = 1;
-	report[*num_report].type =
+	rrm_report = *report;
+	rrm_report[*num_report].incapable = 1;
+	rrm_report[*num_report].type =
 		rrm_req->MeasurementRequest[index].measurement_type;
-	report[*num_report].token =
+	rrm_report[*num_report].token =
 		 rrm_req->MeasurementRequest[index].measurement_token;
 	(*num_report)++;
 	return eSIR_SUCCESS;
@@ -1187,7 +1190,7 @@ rrm_process_radio_measurement_request(tpAniSirGlobal mac_ctx,
 			break;
 		default:
 			/* Send a report with incapabale bit set. */
-			status = update_rrm_report(mac_ctx, report, rrm_req,
+			status = update_rrm_report(mac_ctx, &report, rrm_req,
 						   &num_report, i);
 			if (eSIR_SUCCESS != status)
 				return status;

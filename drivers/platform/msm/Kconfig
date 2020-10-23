@@ -233,10 +233,10 @@ config VS1_BOARD
 	  Enabling this option adds support for the Oculus Monterey P1 platform
 	  and enables required drivers.
 
-config unknown2_BOARD
-	bool "unknown2 Platform"
+config VS2_BOARD
+	bool "VS2 Board"
 	depends on OCULUS
 	help
-	  Enabling this option adds support for the Oculus unknown2 platform
+	  Enabling this option adds support for the VS2 platform
 	  and enables required drivers.
 endmenu

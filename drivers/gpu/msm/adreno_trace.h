@@ -27,14 +27,17 @@
 #include "adreno_a5xx.h"
 
 TRACE_EVENT(adreno_cmdbatch_queued,
-	TP_PROTO(struct kgsl_drawobj *drawobj, unsigned int queued),
-	TP_ARGS(drawobj, queued),
+	TP_PROTO(struct kgsl_drawobj *drawobj, unsigned int queued,
+		uint64_t secs, uint64_t nsecs),
+	TP_ARGS(drawobj, queued, secs, nsecs),
 	TP_STRUCT__entry(
 		__field(unsigned int, id)
 		__field(unsigned int, timestamp)
 		__field(unsigned int, queued)
 		__field(unsigned int, flags)
 		__field(unsigned int, prio)
+		__field(uint64_t, secs)
+		__field(uint64_t, nsecs)
 	),
 	TP_fast_assign(
 		__entry->id = drawobj->context->id;
@@ -42,29 +45,32 @@ TRACE_EVENT(adreno_cmdbatch_queued,
 		__entry->queued = queued;
 		__entry->flags = drawobj->flags;
 		__entry->prio = drawobj->context->priority;
+		__entry->secs = secs;
+		__entry->nsecs = nsecs;
 	),
 	TP_printk(
-		"ctx=%u ctx_prio=%u ts=%u queued=%u flags=%s",
+		"ctx=%u ctx_prio=%u ts=%u queued=%u flags=%s time=%llu.%09llu",
 			__entry->id, __entry->prio,
 			__entry->timestamp, __entry->queued,
 			__entry->flags ? __print_flags(__entry->flags, "|",
-						KGSL_DRAWOBJ_FLAGS) : "none"
+						KGSL_DRAWOBJ_FLAGS) : "none",
+			__entry->secs, __entry->nsecs
 	)
 );
 
 TRACE_EVENT(adreno_cmdbatch_submitted,
 	TP_PROTO(struct kgsl_drawobj *drawobj, int inflight, uint64_t ticks,
-		unsigned long secs, unsigned long usecs,
+		uint64_t secs, uint64_t nsecs,
 		struct adreno_ringbuffer *rb, unsigned int rptr),
-	TP_ARGS(drawobj, inflight, ticks, secs, usecs, rb, rptr),
+	TP_ARGS(drawobj, inflight, ticks, secs, nsecs, rb, rptr),
 	TP_STRUCT__entry(
 		__field(unsigned int, id)
 		__field(unsigned int, timestamp)
 		__field(int, inflight)
 		__field(unsigned int, flags)
 		__field(uint64_t, ticks)
-		__field(unsigned long, secs)
-		__field(unsigned long, usecs)
+		__field(uint64_t, secs)
+		__field(uint64_t, nsecs)
 		__field(int, prio)
 		__field(int, rb_id)
 		__field(unsigned int, rptr)
@@ -78,7 +84,7 @@ TRACE_EVENT(adreno_cmdbatch_submitted,
 		__entry->flags = drawobj->flags;
 		__entry->ticks = ticks;
 		__entry->secs = secs;
-		__entry->usecs = usecs;
+		__entry->nsecs = nsecs;
 		__entry->prio = drawobj->context->priority;
 		__entry->rb_id = rb->id;
 		__entry->rptr = rptr;
@@ -86,12 +92,12 @@ TRACE_EVENT(adreno_cmdbatch_submitted,
 		__entry->q_inflight = rb->dispatch_q.inflight;
 	),
 	TP_printk(
-		"ctx=%u ctx_prio=%d ts=%u inflight=%d flags=%s ticks=%lld time=%lu.%0lu rb_id=%d r/w=%x/%x, q_inflight=%d",
+		"ctx=%u ctx_prio=%d ts=%u inflight=%d flags=%s ticks=%lld time=%llu.%09llu rb_id=%d r/w=%x/%x, q_inflight=%d",
 			__entry->id, __entry->prio, __entry->timestamp,
 			__entry->inflight,
 			__entry->flags ? __print_flags(__entry->flags, "|",
 				KGSL_DRAWOBJ_FLAGS) : "none",
-			__entry->ticks, __entry->secs, __entry->usecs,
+			__entry->ticks, __entry->secs, __entry->nsecs,
 			__entry->rb_id, __entry->rptr, __entry->wptr,
 			__entry->q_inflight
 	)
@@ -100,9 +106,11 @@ TRACE_EVENT(adreno_cmdbatch_submitted,
 TRACE_EVENT(adreno_cmdbatch_retired,
 	TP_PROTO(struct kgsl_drawobj *drawobj, int inflight,
 		uint64_t start, uint64_t retire,
+		uint64_t secs, uint64_t nsecs,
 		struct adreno_ringbuffer *rb, unsigned int rptr,
 		unsigned long fault_recovery),
-	TP_ARGS(drawobj, inflight, start, retire, rb, rptr, fault_recovery),
+	TP_ARGS(drawobj, inflight, start, retire, secs, nsecs, rb,
+		rptr, fault_recovery),
 	TP_STRUCT__entry(
 		__field(unsigned int, id)
 		__field(unsigned int, timestamp)
@@ -111,6 +119,8 @@ TRACE_EVENT(adreno_cmdbatch_retired,
 		__field(unsigned int, flags)
 		__field(uint64_t, start)
 		__field(uint64_t, retire)
+		__field(uint64_t, secs)
+		__field(uint64_t, nsecs)
 		__field(int, prio)
 		__field(int, rb_id)
 		__field(unsigned int, rptr)
@@ -126,6 +136,8 @@ TRACE_EVENT(adreno_cmdbatch_retired,
 		__entry->flags = drawobj->flags;
 		__entry->start = start;
 		__entry->retire = retire;
+		__entry->secs = secs;
+		__entry->nsecs = nsecs;
 		__entry->prio = drawobj->context->priority;
 		__entry->rb_id = rb->id;
 		__entry->rptr = rptr;
@@ -133,7 +145,7 @@ TRACE_EVENT(adreno_cmdbatch_retired,
 		__entry->q_inflight = rb->dispatch_q.inflight;
 	),
 	TP_printk(
-		"ctx=%u ctx_prio=%d ts=%u inflight=%d recovery=%s flags=%s start=%lld retire=%lld rb_id=%d, r/w=%x/%x, q_inflight=%d",
+		"ctx=%u ctx_prio=%d ts=%u inflight=%d recovery=%s flags=%s start=%lld retire=%lld time=%llu.%09llu rb_id=%d, r/w=%x/%x, q_inflight=%d",
 			__entry->id, __entry->prio, __entry->timestamp,
 			__entry->inflight,
 			__entry->recovery ?
@@ -142,7 +154,7 @@ TRACE_EVENT(adreno_cmdbatch_retired,
 			__entry->flags ? __print_flags(__entry->flags, "|",
 				KGSL_DRAWOBJ_FLAGS) : "none",
 			__entry->start,
-			__entry->retire,
+			__entry->retire, __entry->secs, __entry->nsecs,
 			__entry->rb_id, __entry->rptr, __entry->wptr,
 			__entry->q_inflight
 	)

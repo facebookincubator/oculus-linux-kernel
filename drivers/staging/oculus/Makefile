@@ -1,3 +1,5 @@
+subdir-ccflags-y += -Werror -Wall
+
 USERINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include/uapi
 

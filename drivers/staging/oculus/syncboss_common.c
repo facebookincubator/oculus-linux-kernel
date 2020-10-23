@@ -51,7 +51,7 @@ int syncboss_queue_work(struct workqueue_struct *workqueue,
 		work->work_complete = work_complete;
 	}
 
-	schedule_work(&work->work);
+	queue_work(workqueue, &work->work);
 	return 0;
 }
 

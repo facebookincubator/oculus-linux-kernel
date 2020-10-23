@@ -302,7 +302,7 @@ static int as5510_i2c_remove(struct i2c_client *i2c)
 	return 0;
 }
 
-static int as5510_i2c_suspend(struct device *dev, pm_message_t state)
+static int as5510_i2c_suspend(struct device *dev)
 {
 	struct as5510_priv *client_data;
 	int retval;
@@ -366,6 +366,8 @@ static int as5510_i2c_resume(struct device *dev)
 	return 0;
 }
 
+static SIMPLE_DEV_PM_OPS(as5510_pm_ops, as5510_i2c_suspend, as5510_i2c_resume);
+
 /**************************************************************
  ** ACTUALLY REGISTER DRIVER NOW GIVEN ALL DEFINED FUNCTIONS **
  **************************************************************/
@@ -380,8 +382,7 @@ static struct i2c_driver as5510_i2c_driver = {
 		.name = "as5510",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(as5510_i2c_dt_ids),
-		.suspend = as5510_i2c_suspend,
-		.resume = as5510_i2c_resume,
+		.pm = &as5510_pm_ops,
 	},
 	.probe_new = as5510_i2c_probe,
 	.remove = as5510_i2c_remove,
