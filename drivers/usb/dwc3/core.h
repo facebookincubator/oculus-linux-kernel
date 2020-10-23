@@ -20,6 +20,7 @@
 #define __DRIVERS_USB_DWC3_CORE_H
 
 #include <linux/device.h>
+#include <linux/kthread.h>
 #include <linux/spinlock.h>
 #include <linux/ioport.h>
 #include <linux/list.h>
@@ -1026,8 +1027,9 @@ struct dwc3 {
 
 	u16			imod_interval;
 
-	struct workqueue_struct	*dwc_wq;
-	struct work_struct	bh_work;
+	struct kthread_worker	bh_worker;
+	struct task_struct	*bh_worker_thread;
+	struct kthread_work	bh_work;
 
 	/* IRQ timing statistics */
 	int			irq;

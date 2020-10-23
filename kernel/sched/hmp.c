@@ -2571,7 +2571,7 @@ update_task_rq_cpu_cycles(struct task_struct *p, struct rq *rq, int event,
 			rq->cc.time = irqtime;
 		else
 			rq->cc.time = wallclock - p->ravg.mark_start;
-		BUG_ON((s64)rq->cc.time < 0);
+		WARN_ON((s64)rq->cc.time < 0);
 	}
 
 	p->cpu_cycles = cur_cycles;

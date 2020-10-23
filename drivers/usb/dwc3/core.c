@@ -1036,6 +1036,8 @@ static int dwc3_probe(struct platform_device *pdev)
 	void __iomem		*regs;
 	void			*mem;
 
+	struct sched_param param = { .sched_priority = 1 };
+
 	mem = devm_kzalloc(dev, sizeof(*dwc) + DWC3_ALIGN_MASK, GFP_KERNEL);
 	if (!mem)
 		return -ENOMEM;
@@ -1238,13 +1240,18 @@ static int dwc3_probe(struct platform_device *pdev)
 	dev->dma_parms	= dev->parent->dma_parms;
 	dma_set_coherent_mask(dev, dev->parent->coherent_dma_mask);
 
-	dwc->dwc_wq = alloc_ordered_workqueue("dwc_wq", WQ_HIGHPRI);
-	if (!dwc->dwc_wq) {
-		pr_err("%s: Unable to create workqueue dwc_wq\n", __func__);
+	init_kthread_worker(&dwc->bh_worker);
+
+	dwc->bh_worker_thread = kthread_run(kthread_worker_fn,
+		&dwc->bh_worker, "dwc_bh_worker");
+
+	if (IS_ERR(dwc->bh_worker_thread)) {
+		pr_err("%s: Unable to run kthread dwc_bh_worker\n", __func__);
 		return -ENOMEM;
 	}
 
-	INIT_WORK(&dwc->bh_work, dwc3_bh_work);
+	sched_setscheduler(dwc->bh_worker_thread, SCHED_FIFO, &param);
+	init_kthread_work(&dwc->bh_work, dwc3_bh_work);
 
 	pm_runtime_no_callbacks(dev);
 	pm_runtime_set_active(dev);
@@ -1311,7 +1318,7 @@ err0:
 	 * memory region the next time probe is called.
 	 */
 	res->start -= DWC3_GLOBALS_REGS_START;
-	destroy_workqueue(dwc->dwc_wq);
+	kthread_stop(dwc->bh_worker_thread);
 
 	return ret;
 }
@@ -1341,7 +1348,7 @@ static int dwc3_remove(struct platform_device *pdev)
 	dwc3_core_exit(dwc);
 	dwc3_ulpi_exit(dwc);
 
-	destroy_workqueue(dwc->dwc_wq);
+	kthread_stop(dwc->bh_worker_thread);
 
 	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);

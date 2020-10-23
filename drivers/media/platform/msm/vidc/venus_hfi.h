@@ -15,6 +15,7 @@
 #define __H_VENUS_HFI_H__
 
 #include <linux/clk.h>
+#include <linux/kthread.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/pm_qos.h>
@@ -244,7 +245,9 @@ struct venus_hfi_device {
 	struct vidc_iface_q_info iface_queues[VIDC_IFACEQ_NUMQ];
 	struct smem_client *hal_client;
 	struct hal_data *hal_data;
-	struct workqueue_struct *vidc_workq;
+	struct kthread_worker vidc_worker;
+	struct task_struct *vidc_worker_thread;
+	struct kthread_work venus_hfi_work;
 	struct workqueue_struct *venus_pm_workq;
 	int spur_count;
 	int reg_count;

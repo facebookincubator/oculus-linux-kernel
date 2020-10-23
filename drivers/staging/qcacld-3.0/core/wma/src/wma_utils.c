@@ -754,7 +754,6 @@ static int wma_unified_radio_tx_mem_free(void *handle)
 
 	rs_results = (tSirWifiRadioStat *)&wma_handle->link_stats_results->results[0];
 	for (i = 0; i < wma_handle->link_stats_results->num_radio; i++) {
-		rs_results += i;
 		if (rs_results->tx_time_per_power_level) {
 			qdf_mem_free(rs_results->tx_time_per_power_level);
 			rs_results->tx_time_per_power_level = NULL;
@@ -764,6 +763,7 @@ static int wma_unified_radio_tx_mem_free(void *handle)
 			qdf_mem_free(rs_results->channels);
 			rs_results->channels = NULL;
 		}
+		rs_results++;
 	}
 
 	qdf_mem_free(wma_handle->link_stats_results);

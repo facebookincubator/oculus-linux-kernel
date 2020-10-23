@@ -163,10 +163,19 @@ int msm_vidc_table_event_handler(struct devfreq *devfreq,
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
+		devfreq_monitor_start(devfreq);
+		break;
+
+	case DEVFREQ_GOV_STOP:
+		devfreq_monitor_stop(devfreq);
+		break;
+
+	case DEVFREQ_GOV_SUSPEND:
+		devfreq_monitor_suspend(devfreq);
+		break;
+
 	case DEVFREQ_GOV_RESUME:
-		mutex_lock(&devfreq->lock);
-		rc = update_devfreq(devfreq);
-		mutex_unlock(&devfreq->lock);
+		devfreq_monitor_resume(devfreq);
 		break;
 	}
 

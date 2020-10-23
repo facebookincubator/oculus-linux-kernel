@@ -884,10 +884,6 @@ no_data_count:
 			rc = devfreq_resume_device(bus->devfreq);
 			if (rc)
 				goto err_no_mem;
-
-			/* Kick devfreq awake incase _resume() didn't do it */
-			bus->devfreq->nb.notifier_call(
-				&bus->devfreq->nb, 0, NULL);
 		}
 	}
 
@@ -899,9 +895,29 @@ static int venus_hfi_vote_buses(void *dev, struct vidc_bus_vote_data *d, int n)
 {
 	int rc = 0;
 	struct venus_hfi_device *device = dev;
+	bool current_session_turbo = false;
+	bool new_session_turbo = false;
+	int c;
 
 	if (!device)
 		return -EINVAL;
+
+	for (c = 0; c < device->bus_vote.data_count; ++c) {
+		if (device->bus_vote.data[c].power_mode == VIDC_POWER_TURBO) {
+			current_session_turbo = true;
+			break;
+		}
+	}
+	for (c = 0; c < n; ++c) {
+		if (d[c].power_mode == VIDC_POWER_TURBO) {
+			new_session_turbo = true;
+			break;
+		}
+	}
+
+	/* Early out in case both the old and new sessions are turbo'd. */
+	if (current_session_turbo && new_session_turbo)
+		return rc;
 
 	mutex_lock(&device->lock);
 	rc = __vote_buses(device, d, n);
@@ -1332,6 +1348,27 @@ static int venus_hfi_flush_debug_queue(void *dev)
 exit:
 	mutex_unlock(&device->lock);
 	return rc;
+}
+
+static int venus_hfi_kick_devfreq(void *dev)
+{
+	struct venus_hfi_device *device = dev;
+	struct bus_info *bus = NULL;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s invalid device\n", __func__);
+		return -EINVAL;
+	}
+
+	mutex_lock(&device->lock);
+	venus_hfi_for_each_bus(device, bus) {
+		/* Force a bus vote by kicking devfreq */
+		bus->devfreq->nb.notifier_call(
+			&bus->devfreq->nb, 0, NULL);
+	}
+	mutex_unlock(&device->lock);
+
+	return 0;
 }
 
 static enum hal_default_properties venus_hfi_get_default_properties(void *dev)
@@ -3677,7 +3714,7 @@ exit:
 	return packet_count;
 }
 
-static void venus_hfi_core_work_handler(struct work_struct *work)
+static void venus_hfi_core_work_handler(struct kthread_work *work)
 {
 	struct venus_hfi_device *device = list_first_entry(
 		&hal_ctxt.dev_head, struct venus_hfi_device, list);
@@ -3735,14 +3772,13 @@ err_no_work:
 	 */
 }
 
-static DECLARE_WORK(venus_hfi_work, venus_hfi_core_work_handler);
-
 static irqreturn_t venus_hfi_isr(int irq, void *dev)
 {
 	struct venus_hfi_device *device = dev;
 	dprintk(VIDC_INFO, "Received an interrupt %d\n", irq);
 	disable_irq_nosync(irq);
-	queue_work(device->vidc_workq, &venus_hfi_work);
+	init_kthread_work(&device->venus_hfi_work, venus_hfi_core_work_handler);
+	queue_kthread_work(&device->vidc_worker, &device->venus_hfi_work);
 	return IRQ_HANDLED;
 }
 
@@ -3970,7 +4006,7 @@ static int __init_bus(struct venus_hfi_device *device)
 	venus_hfi_for_each_bus(device, bus) {
 		struct devfreq_dev_profile profile = {
 			.initial_freq = 0,
-			.polling_ms = INT_MAX,
+			.polling_ms = 250,
 			.freq_table = NULL,
 			.max_state = 0,
 			.target = __devfreq_target,
@@ -4643,6 +4679,7 @@ static struct venus_hfi_device *__add_device(u32 device_id,
 {
 	struct venus_hfi_device *hdevice = NULL;
 	int rc = 0;
+	struct sched_param param = { .sched_priority = 1 };
 
 	if (!res || !callback) {
 		dprintk(VIDC_ERR, "Invalid Parameters\n");
@@ -4680,12 +4717,17 @@ static struct venus_hfi_device *__add_device(u32 device_id,
 	hdevice->device_id = device_id;
 	hdevice->callback = callback;
 
-	hdevice->vidc_workq = create_singlethread_workqueue(
-		"msm_vidc_workerq_venus");
-	if (!hdevice->vidc_workq) {
+	init_kthread_worker(&hdevice->vidc_worker);
+
+	hdevice->vidc_worker_thread = kthread_run(kthread_worker_fn,
+		&hdevice->vidc_worker, "msm_vidc_worker");
+
+	if (IS_ERR(hdevice->vidc_worker_thread)) {
 		dprintk(VIDC_ERR, ": create vidc workq failed\n");
 		goto err_cleanup;
 	}
+
+	sched_setscheduler(hdevice->vidc_worker_thread, SCHED_FIFO, &param);
 
 	hdevice->venus_pm_workq = create_singlethread_workqueue(
 			"pm_workerq_venus");
@@ -4706,8 +4748,7 @@ static struct venus_hfi_device *__add_device(u32 device_id,
 	return hdevice;
 
 err_cleanup:
-	if (hdevice->vidc_workq)
-		destroy_workqueue(hdevice->vidc_workq);
+	kthread_stop(hdevice->vidc_worker_thread);
 	kfree(hdevice->response_pkt);
 	kfree(hdevice->raw_packet);
 	kfree(hdevice);
@@ -4745,7 +4786,7 @@ void venus_hfi_delete_device(void *device)
 			hal_ctxt.dev_count--;
 			list_del(&close->list);
 			mutex_destroy(&close->lock);
-			destroy_workqueue(close->vidc_workq);
+			kthread_stop(close->vidc_worker_thread);
 			destroy_workqueue(close->venus_pm_workq);
 			free_irq(dev->hal_data->irq, close);
 			iounmap(dev->hal_data->register_base);
@@ -4790,6 +4831,7 @@ static void venus_init_hfi_callbacks(struct hfi_device *hdev)
 	hdev->get_core_capabilities = venus_hfi_get_core_capabilities;
 	hdev->suspend = venus_hfi_suspend;
 	hdev->flush_debug_queue = venus_hfi_flush_debug_queue;
+	hdev->kick_devfreq = venus_hfi_kick_devfreq;
 	hdev->get_core_clock_rate = venus_hfi_get_core_clock_rate;
 	hdev->get_default_properties = venus_hfi_get_default_properties;
 }
@@ -4819,4 +4861,3 @@ int venus_hfi_initialize(struct hfi_device *hdev, u32 device_id,
 err_venus_hfi_init:
 	return rc;
 }
-

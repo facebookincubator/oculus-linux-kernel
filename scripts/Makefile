@@ -23,7 +23,7 @@ hostprogs-$(CONFIG_SYSTEM_TRUSTED_KEYRING) += extract-cert
 HOSTCFLAGS_sortextable.o = -I$(srctree)/tools/include
 HOSTCFLAGS_asn1_compiler.o = -I$(srctree)/include
 HOSTLOADLIBES_sign-file = -lcrypto
-HOSTLOADLIBES_extract-cert = -lcrypto
+HOSTLOADLIBES_extract-cert = -lcrypto -ldl
 
 always		:= $(hostprogs-y) $(hostprogs-m)
 

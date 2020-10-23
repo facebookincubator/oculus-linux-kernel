@@ -2366,6 +2366,7 @@ int msm_comm_scale_clocks_load(struct msm_vidc_core *core,
 
 void msm_comm_scale_clocks_and_bus(struct msm_vidc_inst *inst)
 {
+	int rc = 0;
 	struct msm_vidc_core *core;
 	struct hfi_device *hdev;
 	if (!inst || !inst->core || !inst->core->device) {
@@ -2383,6 +2384,10 @@ void msm_comm_scale_clocks_and_bus(struct msm_vidc_inst *inst)
 		dprintk(VIDC_WARN,
 				"Failed to scale DDR bus. Performance might be impacted\n");
 	}
+
+	rc = call_hfi_op(hdev, kick_devfreq, hdev->hfi_device_data);
+	if (rc)
+		dprintk(VIDC_WARN, "Failed to kick devfreq\n");
 }
 
 static inline enum msm_vidc_thermal_level msm_comm_vidc_thermal_level(int level)
@@ -3661,6 +3666,7 @@ static void log_frame(struct msm_vidc_inst *inst, struct vidc_frame_data *data,
 		msm_vidc_debugfs_update(inst, MSM_VIDC_DEBUGFS_EVENT_ETB);
 
 		if (msm_vidc_bitrate_clock_scaling &&
+			!msm_comm_turbo_session(inst) &&
 			inst->session_type == MSM_VIDC_DECODER &&
 			!inst->dcvs_mode)
 				inst->instant_bitrate =
@@ -3679,6 +3685,7 @@ static void log_frame(struct msm_vidc_inst *inst, struct vidc_frame_data *data,
 			type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 
 	if (msm_vidc_bitrate_clock_scaling && !inst->dcvs_mode &&
+		!msm_comm_turbo_session(inst) &&
 		type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE &&
 		inst->session_type == MSM_VIDC_DECODER)
 		if (msm_comm_scale_clocks(inst->core))
