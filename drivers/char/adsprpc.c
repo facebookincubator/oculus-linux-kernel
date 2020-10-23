@@ -49,6 +49,9 @@
 #include <soc/qcom/ramdump.h>
 #include <linux/debugfs.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/fastrpc.h>
+
 #define TZ_PIL_PROTECT_MEM_SUBSYS_ID 0x0C
 #define TZ_PIL_CLEAR_PROTECT_MEM_SUBSYS_ID 0x0D
 #define TZ_PIL_AUTH_QDSP6_PROC 1
@@ -176,6 +179,7 @@ struct smq_invoke_ctx {
 	struct fastrpc_buf *lbuf;
 	size_t used;
 	struct fastrpc_file *fl;
+	uint32_t handle;
 	uint32_t sc;
 	struct overlap *overs;
 	struct overlap **overps;
@@ -373,6 +377,7 @@ static void fastrpc_buf_free(struct fastrpc_buf *buf, int cache)
 			hyp_assign_phys(buf->phys, buf_page_size(buf->size),
 				srcVM, 2, destVM, destVMperm, 1);
 		}
+		trace_fastrpc_dma_free(fl->cid, buf->phys, buf->size);
 		dma_free_coherent(fl->sctx->smmu.dev, buf->size, buf->virt,
 					buf->phys);
 	}
@@ -565,6 +570,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, int flags)
 			pr_err("failed to free remote heap allocation\n");
 			return;
 		}
+		trace_fastrpc_dma_free(-1, map->phys, map->size);
 		if (map->phys) {
 			dma_set_attr(DMA_ATTR_SKIP_ZEROING, &attrs);
 			dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
@@ -596,7 +602,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, int flags)
 			hyp_assign_phys(map->phys, buf_page_size(map->size),
 				srcVM, 2, destVM, destVMperm, 1);
 		}
-
+		trace_fastrpc_dma_unmap(fl->cid, map->phys, map->size);
 		if (!IS_ERR_OR_NULL(map->table))
 			dma_buf_unmap_attachment(map->attach, map->table,
 					DMA_BIDIRECTIONAL);
@@ -650,6 +656,8 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd, unsigned attr,
 		VERIFY(err, !dma_alloc_memory(&region_start, len));
 		if (err)
 			goto bail;
+		trace_fastrpc_dma_alloc(fl->cid, (uint64_t)region_start, len,
+			(unsigned long)map->attr, mflags);
 		map->phys = (uintptr_t)region_start;
 		map->size = len;
 		map->va = (uintptr_t)map->phys;
@@ -724,6 +732,9 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd, unsigned attr,
 		} else {
 			map->size = buf_page_size(len);
 		}
+		trace_fastrpc_dma_map(fl->cid, fd, map->phys, map->size,
+			len, mflags, map->uncached);
+
 		vmid = fl->apps->channel[fl->cid].vmid;
 		if (vmid) {
 			int srcVM[1] = {VMID_HLOS};
@@ -796,6 +807,8 @@ static int fastrpc_buf_alloc(struct fastrpc_file *fl, size_t size,
 		goto bail;
 	if (fl->sctx->smmu.cb)
 		buf->phys += ((uint64_t)fl->sctx->smmu.cb << 32);
+	trace_fastrpc_dma_alloc(fl->cid, buf->phys, size, 0, 0);
+
 	vmid = fl->apps->channel[fl->cid].vmid;
 	if (vmid) {
 		int srcVM[1] = {VMID_HLOS};
@@ -972,6 +985,7 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 			goto bail;
 	}
 
+	ctx->handle = invoke->handle;
 	ctx->sc = invoke->sc;
 	if (bufs) {
 		VERIFY(err, 0 == context_build_overlap(ctx));
@@ -1002,7 +1016,8 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 		pr_err("adsprpc: out of context memory\n");
 		goto bail;
 	}
-
+	trace_fastrpc_context_alloc((uint64_t)ctx,
+		ctx->ctxid | fl->pd, ctx->handle, ctx->sc);
 	*po = ctx;
 bail:
 	if (ctx && err)
@@ -1046,12 +1061,16 @@ static void context_free(struct smq_invoke_ctx *ctx)
 	}
 	spin_unlock(&me->ctxlock);
 
+	trace_fastrpc_context_free((uint64_t)ctx,
+		ctx->msg.invoke.header.ctx, ctx->handle, ctx->sc);
 	kfree(ctx);
 }
 
 static void context_notify_user(struct smq_invoke_ctx *ctx, int retval)
 {
 	ctx->retval = retval;
+	trace_fastrpc_context_complete(ctx->fl->cid, (uint64_t)ctx, retval,
+		ctx->msg.invoke.header.ctx, ctx->handle, ctx->sc);
 	complete(&ctx->work);
 }
 
@@ -1062,9 +1081,15 @@ static void fastrpc_notify_users(struct fastrpc_file *me)
 	struct hlist_node *n;
 	spin_lock(&me->hlock);
 	hlist_for_each_entry_safe(ictx, n, &me->clst.pending, hn) {
+		trace_fastrpc_context_complete(me->cid, (uint64_t)ictx,
+			ictx->retval, ictx->msg.invoke.header.ctx,
+			ictx->handle, ictx->sc);
 		complete(&ictx->work);
 	}
 	hlist_for_each_entry_safe(ictx, n, &me->clst.interrupted, hn) {
+		trace_fastrpc_context_complete(me->cid, (uint64_t)ictx,
+			ictx->retval, ictx->msg.invoke.header.ctx,
+			ictx->handle, ictx->sc);
 		complete(&ictx->work);
 	}
 	spin_unlock(&me->hlock);
@@ -1544,6 +1569,8 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 	err = glink_tx(channel_ctx->chan,
 		(void *)&fl->apps->channel[fl->cid], msg, sizeof(*msg),
 		GLINK_TX_REQ_INTENT);
+	trace_fastrpc_rpmsg_send(fl->cid, (uint64_t)ctx, msg->invoke.header.ctx,
+		handle, ctx->sc, msg->invoke.page.addr, msg->invoke.page.size);
  bail:
 	return err;
 }
@@ -1594,8 +1621,12 @@ static int fastrpc_internal_invoke(struct fastrpc_file *fl, uint32_t mode,
 			err = FASTRPC_ENOSUCH;
 		if (err)
 			goto bail;
-		if (ctx)
+		if (ctx) {
+			trace_fastrpc_context_restore(cid, (uint64_t)ctx,
+				ctx->msg.invoke.header.ctx,
+				ctx->handle, ctx->sc);
 			goto wait;
+		}
 	}
 
 	VERIFY(err, 0 == context_alloc(fl, kernel, inv, &ctx));
@@ -1646,8 +1677,11 @@ static int fastrpc_internal_invoke(struct fastrpc_file *fl, uint32_t mode,
 	if (err)
 		goto bail;
  bail:
-	if (ctx && interrupted == -ERESTARTSYS)
+	if (ctx && interrupted == -ERESTARTSYS) {
+		trace_fastrpc_context_interrupt(cid, (uint64_t)ctx,
+			ctx->msg.invoke.header.ctx, ctx->handle, ctx->sc);
 		context_save_interrupted(ctx);
+	}
 	else if (ctx)
 		context_free(ctx);
 	if (fl->ssrcount != fl->apps->channel[cid].ssrcount)
@@ -2238,6 +2272,9 @@ static void fastrpc_glink_notify_rx(void *handle, const void *priv,
 	VERIFY(err, (rsp && size >= sizeof(*rsp)));
 	if (err)
 		goto bail;
+
+	int cid = (int)(uintptr_t)priv;
+	trace_fastrpc_rpmsg_response(cid, rsp->ctx, rsp->retval);
 
 	index = (uint32_t)((rsp->ctx & FASTRPC_CTXID_MASK) >> 4);
 	VERIFY(err, index < FASTRPC_CTX_MAX);

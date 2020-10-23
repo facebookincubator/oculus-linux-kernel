@@ -48,6 +48,9 @@
 #include <linux/init.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
+#include <linux/sched.h>
+#include <linux/mm.h>
+#include <linux/debug_locks.h>
 
 #define TIMER_MARGIN	60		/* Default is 60 seconds */
 static unsigned int soft_margin = TIMER_MARGIN;	/* in seconds */
@@ -81,6 +84,14 @@ static void watchdog_fire(unsigned long);
 static struct timer_list watchdog_ticktock =
 		TIMER_INITIALIZER(watchdog_fire, 0, 0);
 
+static void softdog_print_sys_info(void)
+{
+	show_state_filter(TASK_UNINTERRUPTIBLE);
+	show_mem(0);
+	sysrq_timer_list_show();
+	debug_show_all_locks();
+}
+
 /*
  *	If the timer expires..
  */
@@ -91,9 +102,11 @@ static void watchdog_fire(unsigned long data)
 		pr_crit("Triggered - Reboot ignored\n");
 	else if (soft_panic) {
 		pr_crit("Initiating panic\n");
+		softdog_print_sys_info();
 		panic("Software Watchdog Timer expired");
 	} else {
 		pr_crit("Initiating system reboot\n");
+		softdog_print_sys_info();
 		emergency_restart();
 		pr_crit("Reboot didn't ?????\n");
 	}

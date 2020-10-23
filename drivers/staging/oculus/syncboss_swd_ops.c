@@ -1,18 +1,16 @@
-#include "syncboss_swd_ops.h"
-
 #include <linux/delay.h>
 
+#include "swd.h"
 #include "swd_registers_nrf.h"
-#include "syncboss_swd.h"
+#include "syncboss_swd_ops.h"
 
-static int syncboss_swd_is_nvmc_ready(struct swdhandle_t *handle)
+static int syncboss_swd_is_nvmc_ready(struct device *dev)
 {
-	return (swd_memory_read(handle, SWD_NRF_NVMC_READY) &
+	return (swd_memory_read(dev, SWD_NRF_NVMC_READY) &
 		SWD_NRF_NVMC_READY_BM) == SWD_NRF_NVMC_READY_Ready;
 }
 
-static int syncboss_swd_wait_for_nvmc_ready(struct device *dev,
-					    struct swdhandle_t *handle)
+static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
 {
 	const u64 SWD_READY_TIMEOUT_MS = 500;
 	u64 timeout_time_ns = 0;
@@ -21,7 +19,7 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev,
 	    ktime_get_ns() + (SWD_READY_TIMEOUT_MS * NSEC_PER_MSEC);
 
 	while (ktime_get_ns() < timeout_time_ns) {
-		if (syncboss_swd_is_nvmc_ready(handle))
+		if (syncboss_swd_is_nvmc_ready(dev))
 			return 0;
 		udelay(1000);
 	}
@@ -31,18 +29,18 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev,
 	return -ETIMEDOUT;
 }
 
-int syncboss_swd_erase_app(struct device *dev,
-	struct swdhandle_t *handle)
+int syncboss_swd_erase_app(struct device *dev)
 {
 	int status = 0;
 	int x;
-	int flash_pages_to_erase =
-		SYNCBOSS_NUM_FLASH_PAGES - SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN;
-	BUILD_BUG_ON(!(SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN <
-		       SYNCBOSS_NUM_FLASH_PAGES));
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct flash_info *flash = &devdata->flash_info;
+	int flash_pages_to_erase = flash->num_pages
+					- SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN;
+	BUG_ON(flash_pages_to_erase < 0);
 
-	swd_halt(handle);
-	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
+	swd_halt(dev);
+	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG,
 			 SWD_NRF_NVMC_CONFIG_EEN);
 
 	/* Note: Instead of issuing an ERASEALL command, we erase each page
@@ -51,21 +49,19 @@ int syncboss_swd_erase_app(struct device *dev,
 	 */
 
 	for (x = 0; x < flash_pages_to_erase; ++x) {
-		swd_memory_write(handle, SWD_NRF_NVMC_ERASEPAGE,
-			x * SYNCBOSS_FLASH_PAGE_SIZE);
-		status = syncboss_swd_wait_for_nvmc_ready(dev, handle);
+		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
+			x * flash->page_size);
+		status = syncboss_swd_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			return status;
 	}
 
-	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
-			 SWD_NRF_NVMC_CONFIG_REN);
+	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_REN);
 	return 0;
 }
 
-int syncboss_swd_write_block(struct device *dev,
-				    struct swdhandle_t *handle, int addr,
-				    const u8 *data, int len)
+int syncboss_swd_write_block(struct device *dev, int addr, const u8 *data,
+			     int len)
 {
 	int status = 0;
 	int i = 0;
@@ -78,8 +74,7 @@ int syncboss_swd_write_block(struct device *dev,
 	 * assert("Nordic flash size must be multiple of four",
 	 *        (size & 3) == 0);
 	 */
-	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
-			 SWD_NRF_NVMC_CONFIG_WEN);
+	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_WEN);
 	for (i = 0; i < len; i += sizeof(u32)) {
 		bytes_left = len - i;
 		if (bytes_left >= sizeof(u32)) {
@@ -90,15 +85,14 @@ int syncboss_swd_write_block(struct device *dev,
 		}
 		value = le32_to_cpu(value);
 
-		swd_memory_write(handle, addr + i, value);
+		swd_memory_write(dev, addr + i, value);
 
-		status = syncboss_swd_wait_for_nvmc_ready(dev, handle);
+		status = syncboss_swd_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			goto error;
 	}
 
  error:
-	swd_memory_write(handle, SWD_NRF_NVMC_CONFIG,
-			 SWD_NRF_NVMC_CONFIG_REN);
+	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_REN);
 	return status;
 }

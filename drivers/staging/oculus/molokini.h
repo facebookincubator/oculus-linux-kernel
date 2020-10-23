@@ -5,6 +5,14 @@
 
 #include <linux/mutex.h>
 #include <linux/usb/usbpd.h>
+#include <linux/workqueue.h>
+
+/* Mount states */
+enum molokini_fw_mount_state {
+	MOLOKINI_FW_OFF_HEAD = 0,
+	MOLOKINI_FW_ON_HEAD,
+	MOLOKINI_FW_UNKNOWN,
+};
 
 /* Protocol types */
 enum molokini_fw_protocol {
@@ -103,6 +111,13 @@ struct molokini_pd {
 	struct dentry *debug_root;
 
 	struct molokini_parameters params;
+
+	/* mount state held locally, messaged as u32 vdo */
+	u32 mount_state;
+	/* last ACK received from Molokini for mount status */
+	enum molokini_fw_mount_state last_mount_ack;
+	/* work for periodically processing HMD mount state */
+	struct delayed_work dwork;
 };
 
 #endif /* _MOLOKINI_H__ */

@@ -709,6 +709,25 @@ static struct kgsl_device *kgsl_get_minor(int minor)
 }
 
 /**
+ * kgsl_check_timestamp_consumed() - return true if the specified timestamp is
+ * consumed
+ * @device: Pointer to the KGSL device to check
+ * @context: Pointer to the context for the timestamp
+ * @timestamp: The timestamp to compare
+ */
+int kgsl_check_timestamp_consumed(struct kgsl_device *device,
+	struct kgsl_context *context, unsigned int timestamp)
+{
+	unsigned int ts_processed;
+
+	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_CONSUMED,
+		&ts_processed);
+
+	return (timestamp_cmp(ts_processed, timestamp) >= 0);
+}
+EXPORT_SYMBOL(kgsl_check_timestamp_consumed);
+
+/**
  * kgsl_check_timestamp() - return true if the specified timestamp is retired
  * @device: Pointer to the KGSL device to check
  * @context: Pointer to the context for the timestamp

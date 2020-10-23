@@ -1,6 +1,7 @@
-#include "syncboss_swd.h"
 #include <linux/gpio.h>
 #include <linux/printk.h>
+
+#include "swd.h"
 
 /*
  * Note: Most of this code was taken, with minimal changes, from the
@@ -10,9 +11,6 @@
 /* Note: These values are defined in
  * ARM Debug Interface Architecture Specification ADIv5.2
  */
-
-#define SWD_DIRECTION_OUT 1
-#define SWD_DIRECTION_IN  0
 
 #define SWD_VAL_START   1
 #define SWD_VAL_DP      0
@@ -83,84 +81,88 @@
 #define SWD_VAL_DHCSR_C_DEBUGEN 0x01
 #define SWD_VAL_DHCSR_NOINC_32 	0x23000002
 
-static void swd_wire_write_len(struct swdhandle_t *handle, bool value, int len);
-static bool swd_mode_switch(struct swdhandle_t *handle);
+static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
+			       int len);
+static bool swd_mode_switch(struct swd_dev_data *devdata);
 
-void swd_init(struct swdhandle_t *handle, int gpio_swclk, int gpio_swdio)
+void swd_init(struct device *dev)
 {
-	handle->gpio_swclk = gpio_swclk;
-	handle->gpio_swdio = gpio_swdio;
-	handle->direction = SWD_DIRECTION_OUT;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	devdata->direction = SWD_DIRECTION_OUT;
 
 	/* set swd lines to output and drive both low */
-	gpio_direction_output(handle->gpio_swclk, 0);
-	gpio_direction_output(handle->gpio_swdio, 0);
+	gpio_direction_output(devdata->gpio_swdclk, 0);
+	gpio_direction_output(devdata->gpio_swdio, 0);
 
 	/* must be 150+ clocks @125kHz+ */
-	swd_wire_write_len(handle, 1, 200);
-	swd_mode_switch(handle);
+	swd_wire_write_len(devdata, 1, 200);
+	swd_mode_switch(devdata);
 }
 
-void swd_deinit(struct swdhandle_t *handle)
+void swd_deinit(struct device *dev)
 {
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
 	/* float swd lines */
-	gpio_direction_input(handle->gpio_swclk);
-	gpio_direction_input(handle->gpio_swdio);
+	gpio_direction_input(devdata->gpio_swdclk);
+	gpio_direction_input(devdata->gpio_swdio);
 }
 
-static void swd_wire_clock(struct swdhandle_t *handle)
+static void swd_wire_clock(struct swd_dev_data *devdata)
 {
-	gpio_set_value(handle->gpio_swclk, SWD_CLK_RISING);
-	gpio_set_value(handle->gpio_swclk, SWD_CLK_FALLING);
+	gpio_set_value(devdata->gpio_swdclk, SWD_CLK_RISING);
+	gpio_set_value(devdata->gpio_swdclk, SWD_CLK_FALLING);
 }
 
-static inline void swd_wire_set_direction(struct swdhandle_t *handle,
-					  int direction)
+static inline void swd_wire_set_direction(struct swd_dev_data *devdata,
+					  enum swd_direction direction)
 {
-	if (handle->direction != direction) {
+	if (devdata->direction != direction) {
 		if (direction == SWD_DIRECTION_OUT) {
-			gpio_direction_output(handle->gpio_swdio, 0);
+			gpio_direction_output(devdata->gpio_swdio, 0);
 		} else {
-			gpio_direction_input(handle->gpio_swdio);
+			gpio_direction_input(devdata->gpio_swdio);
 		}
-		handle->direction = direction;
+		devdata->direction = direction;
 	}
 }
 
-void swd_wire_write(struct swdhandle_t *handle, bool value)
+static void swd_wire_write(struct swd_dev_data *devdata, bool value)
 {
-	swd_wire_set_direction(handle, SWD_DIRECTION_OUT);
-	gpio_set_value(handle->gpio_swdio, value);
-	swd_wire_clock(handle);
+	swd_wire_set_direction(devdata, SWD_DIRECTION_OUT);
+	gpio_set_value(devdata->gpio_swdio, value);
+	swd_wire_clock(devdata);
 }
 
-static void swd_wire_write_len(struct swdhandle_t *handle, bool value, int len)
+static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
+			       int len)
 {
 	int i = 0;
 
-	swd_wire_set_direction(handle, SWD_DIRECTION_OUT);
-	gpio_set_value(handle->gpio_swdio, value);
+	swd_wire_set_direction(devdata, SWD_DIRECTION_OUT);
+	gpio_set_value(devdata->gpio_swdio, value);
 	for (i = 0; i < len; i++) {
-		swd_wire_clock(handle);
+		swd_wire_clock(devdata);
 	}
 }
 
-bool swd_wire_read(struct swdhandle_t *handle)
+static bool swd_wire_read(struct swd_dev_data *devdata)
 {
 	bool value = false;
 
-	swd_wire_set_direction(handle, SWD_DIRECTION_IN);
-	value = gpio_get_value(handle->gpio_swdio);
-	swd_wire_clock(handle);
+	swd_wire_set_direction(devdata, SWD_DIRECTION_IN);
+	value = gpio_get_value(devdata->gpio_swdio);
+	swd_wire_clock(devdata);
 	return value;
 }
 
-static void swd_wire_turnaround(struct swdhandle_t *handle)
+static void swd_wire_turnaround(struct swd_dev_data *devdata)
 {
-	swd_wire_read(handle);
+	swd_wire_read(devdata);
 }
 
-static bool swd_wire_header(struct swdhandle_t *handle, bool read,
+static bool swd_wire_header(struct swd_dev_data *devdata, bool read,
 			    bool apndp, u8 reg)
 {
 	u8 ack = 0;
@@ -170,27 +172,27 @@ static bool swd_wire_header(struct swdhandle_t *handle, bool read,
 	bool parity = bitcount & 1;
 
 	while (true) {
-		swd_wire_write(handle, SWD_VAL_START);
-		swd_wire_write(handle, apndp);
-		swd_wire_write(handle, read);
-		swd_wire_write(handle, address2);
-		swd_wire_write(handle, address3);
-		swd_wire_write(handle, parity);
-		swd_wire_write(handle, SWD_VAL_STOP);
-		swd_wire_write(handle, SWD_VAL_PARK);
+		swd_wire_write(devdata, SWD_VAL_START);
+		swd_wire_write(devdata, apndp);
+		swd_wire_write(devdata, read);
+		swd_wire_write(devdata, address2);
+		swd_wire_write(devdata, address3);
+		swd_wire_write(devdata, parity);
+		swd_wire_write(devdata, SWD_VAL_STOP);
+		swd_wire_write(devdata, SWD_VAL_PARK);
 
-		swd_wire_turnaround(handle);
+		swd_wire_turnaround(devdata);
 
 		ack = 0;
-		ack |= swd_wire_read(handle) << 0;
-		ack |= swd_wire_read(handle) << 1;
-		ack |= swd_wire_read(handle) << 2;
+		ack |= swd_wire_read(devdata) << 0;
+		ack |= swd_wire_read(devdata) << 1;
+		ack |= swd_wire_read(devdata) << 2;
 
 		if (ack == SWD_VAL_OK) {
 			return true;
 		}
 
-		swd_wire_turnaround(handle);
+		swd_wire_turnaround(devdata);
 
 		if (ack == SWD_VAL_WAIT) {
 			continue;
@@ -205,95 +207,99 @@ static bool swd_wire_header(struct swdhandle_t *handle, bool read,
 	}
 }
 
-static void swd_dpap_write(struct swdhandle_t *handle, bool apndp,
+static void swd_dpap_write(struct swd_dev_data *devdata, bool apndp,
 			   u8 reg, u32 data)
 {
 	int bitcount = 0;
 	int i = 0;
 	bool parity;
 
-	if (!swd_wire_header(handle, SWD_VAL_WRITE, apndp, reg)) {
+	if (!swd_wire_header(devdata, SWD_VAL_WRITE, apndp, reg)) {
 		/* TODO: Better error handling */
 		printk("JMD: SWD response is invalid/unknown\n");
 		return;
 	}
-	swd_wire_turnaround(handle);
+	swd_wire_turnaround(devdata);
 
 	for (i = 0; i < 32; i++) {
 		bool value = !!(data & (1<<i));
 		bitcount += value;
-		swd_wire_write(handle, value);
+		swd_wire_write(devdata, value);
 	}
 	parity = bitcount & 1;
-	swd_wire_write(handle, parity);
-	swd_wire_write(handle, 0);
+	swd_wire_write(devdata, parity);
+	swd_wire_write(devdata, 0);
 }
 
-static u32 swd_dpap_read(struct swdhandle_t *handle, bool apndp, u8 reg)
+static u32 swd_dpap_read(struct swd_dev_data *devdata, bool apndp, u8 reg)
 {
 	u32 data = 0;
 	int bitcount = 0;
 	int i = 0;
 	bool parity, check;
 
-	if (!swd_wire_header(handle, SWD_VAL_READ, apndp, reg)) {
+	if (!swd_wire_header(devdata, SWD_VAL_READ, apndp, reg)) {
 		/* TODO: Better error handling */
 		printk("JMD: SWD response is invalid/unknown\n");
 		return 0;
 	}
 
 	for (i = 0; i < 32; i++) {
-		bool value = swd_wire_read(handle);
+		bool value = swd_wire_read(devdata);
 		bitcount += value;
 		data |= (value<<i);
 	}
 	parity = bitcount & 1;
-	check = swd_wire_read(handle);
+	check = swd_wire_read(devdata);
 	if (check != parity) {
 		/* TODO: Better error handling */
 		printk("JMD: Parity error\n");
 		return 0;
 	}
-	swd_wire_turnaround(handle);
-	swd_wire_write(handle, 0);
+	swd_wire_turnaround(devdata);
+	swd_wire_write(devdata, 0);
 
 	return data;
 }
 
-void swd_ap_write(struct swdhandle_t *handle, u8 reg, u32 data)
+static void swd_ap_write(struct swd_dev_data *devdata, u8 reg, u32 data)
 {
-	swd_dpap_write(handle, SWD_VAL_AP, reg, data);
+	swd_dpap_write(devdata, SWD_VAL_AP, reg, data);
 }
 
-u32 swd_ap_read(struct swdhandle_t *handle, u8 reg)
+static u32 swd_ap_read(struct swd_dev_data *devdata, u8 reg)
 {
-	return swd_dpap_read(handle, SWD_VAL_AP, reg);
+	return swd_dpap_read(devdata, SWD_VAL_AP, reg);
 }
 
-void swd_dp_write(struct swdhandle_t *handle, u8 reg, u32 data)
+static void swd_dp_write(struct swd_dev_data *devdata, u8 reg, u32 data)
 {
-	swd_dpap_write(handle, SWD_VAL_DP, reg, data);
+	swd_dpap_write(devdata, SWD_VAL_DP, reg, data);
 }
 
-u32 swd_dp_read(struct swdhandle_t *handle, u8 reg)
+static u32 swd_dp_read(struct swd_dev_data *devdata, u8 reg)
 {
-	return swd_dpap_read(handle, SWD_VAL_DP, reg);
+	return swd_dpap_read(devdata, SWD_VAL_DP, reg);
 }
 
-void swd_memory_write(struct swdhandle_t *handle, u32 address, u32 data)
+void swd_memory_write(struct device *dev, u32 address, u32 data)
 {
-	swd_ap_write(handle, SWD_MEMAP_REG_RW_TAR, address);
-	swd_ap_write(handle, SWD_MEMAP_REG_RW_DRW, data);
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	swd_ap_write(devdata, SWD_MEMAP_REG_RW_TAR, address);
+	swd_ap_write(devdata, SWD_MEMAP_REG_RW_DRW, data);
 }
 
-u32 swd_memory_read(struct swdhandle_t *handle, u32 address)
+u32 swd_memory_read(struct device *dev, u32 address)
 {
-	swd_ap_write(handle, SWD_MEMAP_REG_RW_TAR, address);
-	swd_ap_read(handle, SWD_MEMAP_REG_RW_DRW);
-	return swd_dp_read(handle, SWD_DP_REG_RO_RDBUFF);
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	swd_ap_write(devdata, SWD_MEMAP_REG_RW_TAR, address);
+	swd_ap_read(devdata, SWD_MEMAP_REG_RW_DRW);
+	return swd_dp_read(devdata, SWD_DP_REG_RO_RDBUFF);
 }
 
-static bool swd_mode_switch(struct swdhandle_t *handle)
+static bool swd_mode_switch(struct swd_dev_data *devdata)
 {
 	int i = 0;
 	bool status = true;
@@ -301,25 +307,26 @@ static bool swd_mode_switch(struct swdhandle_t *handle)
 	u32 idcode, ack, req;
 
 	/* JTAG to SWD */
-	swd_wire_write_len(handle, 1, 100);
+	swd_wire_write_len(devdata, 1, 100);
 	for (i = 0; i < 16; i++) {
 		bool value = !!(jtag_to_swd & (1<<i));
-		swd_wire_write(handle, value);
+
+		swd_wire_write(devdata, value);
 	}
-	swd_wire_write_len(handle, 1, 100);
-	swd_wire_write_len(handle, 0, 20);
+	swd_wire_write_len(devdata, 1, 100);
+	swd_wire_write_len(devdata, 0, 20);
 
 	/* IDCODE */
-	status = swd_wire_header(handle,
+	status = swd_wire_header(devdata,
 				 SWD_VAL_READ,
 				 SWD_VAL_DP,
 				 SWD_DP_REG_RO_IDCODE);
 	for (i = 0; i < 34; i++) {
-		swd_wire_read(handle);
+		swd_wire_read(devdata);
 	}
 
 	if (status) {
-		idcode = swd_dp_read(handle, 0);
+		idcode = swd_dp_read(devdata, 0);
 		if (!(idcode == SWD_VAL_IDCODE_CM0DAP ||
 		      idcode == SWD_VAL_IDCODE_CM0PDAP ||
 		      idcode == SWD_VAL_IDCODE_STM32L)) {
@@ -327,10 +334,10 @@ static bool swd_mode_switch(struct swdhandle_t *handle)
 			printk("JMD: SWD IDCODE is invalid (0x%x)\n", idcode);
 		}
 
-		swd_dp_write(handle,
+		swd_dp_write(devdata,
 			     SWD_DP_REG_WO_ABORT,
 			     SWD_VAL_ABORT_CLEAR);
-		swd_dp_write(handle,
+		swd_dp_write(devdata,
 			     SWD_DP_REG_WO_SELECT,
 			     SWD_VAL_SELECT_MEMAP);
 
@@ -338,15 +345,15 @@ static bool swd_mode_switch(struct swdhandle_t *handle)
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPACK);
 		req = (1<<SWD_VAL_CTRLSTAT_CSYSPWRUPREQ) |
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPREQ);
-		while ((swd_dp_read(handle, SWD_DP_REG_RW_CTRLSTAT) & ack)
+		while ((swd_dp_read(devdata, SWD_DP_REG_RW_CTRLSTAT) & ack)
 		       != ack) {
-			swd_dp_write(handle, SWD_DP_REG_RW_CTRLSTAT, req);
+			swd_dp_write(devdata, SWD_DP_REG_RW_CTRLSTAT, req);
 		}
 
-		swd_dp_write(handle,
+		swd_dp_write(devdata,
 			     SWD_DP_REG_WO_ABORT,
 			     SWD_VAL_ABORT_CLEAR);
-		swd_ap_write(handle,
+		swd_ap_write(devdata,
 			     SWD_MEMAP_REG_RW_CSW,
 			     SWD_VAL_DHCSR_NOINC_32);
 	}
@@ -354,26 +361,26 @@ static bool swd_mode_switch(struct swdhandle_t *handle)
 	return status;
 }
 
-void swd_halt(struct swdhandle_t* handle)
+void swd_halt(struct device *dev)
 {
-	swd_memory_write(handle,
+	swd_memory_write(dev,
 			 SWD_REG_DHCSR,
 			 SWD_VAL_DHCSR_DBGKEY | SWD_VAL_DHCSR_C_DEBUGEN);
-	swd_memory_write(handle,
+	swd_memory_write(dev,
 			 SWD_REG_DHCSR,
 			 (SWD_VAL_DHCSR_DBGKEY |
 			  SWD_VAL_DHCSR_C_DEBUGEN |
 			  SWD_VAL_DHCSR_C_HALT));
 }
 
-void swd_reset(struct swdhandle_t *handle)
+void swd_reset(struct device *dev)
 {
-	swd_memory_write(handle,
+	swd_memory_write(dev,
 			 SWD_REG_DHCSR,
 			 (SWD_VAL_DHCSR_DBGKEY |
 			  SWD_VAL_DHCSR_C_DEBUGEN |
 			  SWD_VAL_DHCSR_C_HALT));
-	swd_memory_write(handle,
+	swd_memory_write(dev,
 			 SWD_REG_AIRCR,
 			 (SWD_VAL_AIRCR_VECTKEY | SWD_VAL_AIRCR_SYSRSTRQ));
 }
