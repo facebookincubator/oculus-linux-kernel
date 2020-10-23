@@ -112,3 +112,12 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# directories mapped in via AOSP repo
+drivers/staging/fw-api/
+drivers/staging/oculus/
+drivers/staging/qca-wifi-host-cmn/
+drivers/staging/qcacld-3.0/
+
+# track .ignore file
+!.ignore

@@ -4,6 +4,7 @@
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/kfifo.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
@@ -28,6 +29,7 @@
 
 #include "fw_helpers.h"
 #include "swd.h"
+#include "spi_fastpath.h"
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
 static const struct of_device_id oculus_syncboss_table[] = {
@@ -75,7 +77,7 @@ static const struct of_device_id oculus_swd_match_table[] = {
 /* The max amount of time we give SyncBoss to go into a sleep state after
  * issuing it a command to do so.
  */
-#define SYNCBOSS_SLEEP_TIMEOUT_MS 200
+#define SYNCBOSS_SLEEP_TIMEOUT_MS 2000
 
 /* The amount of time to wait for space in the staging buffer to
  * become available when sending a request to syncboss
@@ -402,6 +404,9 @@ struct syncboss_dev_data {
 
 	/* Wakelock to prevent suspend while syncboss in use */
 	struct wakeup_source syncboss_in_use_wake_lock;
+
+	/* True if we should enable the fastpath spi code path */
+	bool use_fastpath;
 };
 
 /* The version of the header the driver is currently using */
@@ -526,6 +531,18 @@ static ssize_t store_power(struct device *dev,
 static ssize_t show_te_timestamp(struct device *dev,
 				struct device_attribute *attr, char *buf);
 
+static ssize_t show_num_cameras(struct device *dev,
+				struct device_attribute *attr, char *buf);
+
+static ssize_t show_enable_fastpath(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf);
+
+static ssize_t store_enable_fastpath(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count);
+
+
 static DEVICE_ATTR(reset, S_IWUSR, NULL, store_reset);
 static DEVICE_ATTR(spi_max_clk_rate, S_IWUSR | S_IRUGO, show_spi_max_clk_rate,
 		   store_spi_max_clk_rate);
@@ -546,6 +563,8 @@ static DEVICE_ATTR(next_avail_seq_num, S_IRUGO,
 		   show_next_avail_seq_num, NULL);
 static DEVICE_ATTR(power, S_IWUSR | S_IRUGO, show_power, store_power);
 static DEVICE_ATTR(te_timestamp, S_IRUGO, show_te_timestamp, NULL);
+static DEVICE_ATTR(num_cameras, S_IRUGO, show_num_cameras, NULL);
+static DEVICE_ATTR(enable_fastpath, S_IWUSR | S_IRUGO, show_enable_fastpath, store_enable_fastpath);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
@@ -559,6 +578,8 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_power.attr,
 	&dev_attr_te_timestamp.attr,
+	&dev_attr_num_cameras.attr,
+	&dev_attr_enable_fastpath.attr,
 	NULL
 };
 
@@ -1413,6 +1434,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	int min_time_between_transactions_ns = 0;
 	bool should_retry_prev_transaction = false;
 	bool headers_enabled = false;
+	bool fastpath_enabled = false;
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
 
@@ -1429,6 +1451,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	min_time_between_transactions_ns =
 		devdata->min_time_between_transactions_ns;
 	headers_enabled = devdata->enable_headers;
+	fastpath_enabled = devdata->use_fastpath;
 
 	mutex_unlock(&devdata->state_mutex);
 
@@ -1443,7 +1466,13 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 min_time_between_transactions_ns / 1000);
 	dev_info(&spi->dev, "  Headers enabled         : %s",
 		 headers_enabled ? "yes" : "no");
+	dev_info(&spi->dev, "  Fastpath enabled        : %s",
+		 fastpath_enabled ? "yes" : "no");
 
+	if (fastpath_enabled) {
+		spi_fastpath_init(spi);
+	}
+	
 	while (!kthread_should_stop()) {
 		int idx_to_send = 0;
 		u64 time_to_wait_ns = min_time_between_transactions_ns;
@@ -1515,7 +1544,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 #endif
 
 		prev_transaction_start_time_ns = ktime_get_ns();
-		status = spi_sync(spi, &spi_msg);
+		if (fastpath_enabled) {
+			status = spi_fastpath_transfer(spi, &spi_msg);
+		} else {
+			status = spi_sync(spi, &spi_msg);
+		}
 		prev_transaction_end_time_ns = ktime_get_ns();
 
 		if (status != 0) {
@@ -1557,9 +1590,12 @@ retry:
 	}
 
  error:
+	if (fastpath_enabled) {
+		spi_fastpath_deinit(spi);
+	}
+
 	while (!kthread_should_stop()) {
-		set_current_state(TASK_INTERRUPTIBLE);
-		msleep(1);
+		msleep_interruptible(1);
 	}
 	dev_info(&spi->dev, "Streaming thread stopped");
 	return status;
@@ -1643,12 +1679,12 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 {
 	int x;
 
-	for (x = 0; x < SYNCBOSS_SLEEP_TIMEOUT_MS; ++x) {
-		msleep(1);
+	for (x = 10; x <= SYNCBOSS_SLEEP_TIMEOUT_MS; x += 10) {
+		msleep(10);
 		if (is_mcu_awake(devdata) == awake) {
 			dev_info(&devdata->spi->dev,
 				 "SyncBoss is %s (after %d ms)",
-				 awake ? "awake" : "asleep", x+1);
+				 awake ? "awake" : "asleep", x);
 			devdata->power_state =
 				awake ? SYNCBOSS_POWER_STATE_RUNNING :
 				SYNCBOSS_POWER_STATE_OFF;
@@ -2146,6 +2182,8 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->prox_thdh = INVALID_PROX_CAL_VALUE;
 	devdata->prox_config_version = DEFAULT_PROX_CONFIG_VERSION_VALUE;
 	devdata->prox_last_evt = INVALID_PROX_CAL_VALUE;
+
+	devdata->use_fastpath = of_property_read_bool(node, "oculus,syncboss-use-fastpath");
 
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_info(&devdata->spi->dev, "Initial SPI thread cpu affinity: %*pb\n",
@@ -3112,6 +3150,71 @@ static ssize_t store_power(struct device *dev,
 {
 	dev_err(dev, "Power file writing deprecated.  This is a no-op");
 	return 0;
+}
+
+static ssize_t show_num_cameras(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	int num_cams = 0;
+
+#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
+	num_cams = get_num_cameras();
+#endif
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", num_cams);
+}
+
+static ssize_t show_enable_fastpath(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	int status = 0;
+	int retval = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		/* Failed to get the sem */
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
+			status);
+		return status;
+	}
+
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->use_fastpath);
+
+	mutex_unlock(&devdata->state_mutex);
+	return retval;
+}
+
+static ssize_t store_enable_fastpath(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	int status = 0;
+	u32 temp_fastpath = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	status = kstrtou32(buf, /*base*/10, &temp_fastpath);
+	if (status < 0) {
+		dev_err(dev, "Failed to parse integer out of %s", buf);
+		return -EINVAL;
+	}
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		/* Failed to get the sem */
+		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
+			status);
+		return status;
+	}
+
+	devdata->use_fastpath = !!temp_fastpath;
+	status = count;
+
+	mutex_unlock(&devdata->state_mutex);
+	return status;
 }
 
 /*SPI Driver Info */

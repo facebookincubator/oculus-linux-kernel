@@ -218,7 +218,8 @@ static struct page **__iommu_dma_alloc_pages(unsigned int count, gfp_t gfp)
 		 */
 		for (order = min_t(unsigned int, order, __fls(count));
 		     order > 0; order--) {
-			page = alloc_pages(gfp | __GFP_NORETRY, order);
+			page = alloc_pages((gfp | __GFP_NORETRY) &
+						~__GFP_RECLAIM, order);
 			if (!page)
 				continue;
 			if (PageCompound(page)) {

@@ -1,0 +1,7 @@
+# This file is used by some grep like tools (rg, ag) etc
+
+# unignore git subrepos
+!drivers/staging/fw-api/
+!drivers/staging/oculus/
+!drivers/staging/qca-wifi-host-cmn/
+!drivers/staging/qcacld-3.0/

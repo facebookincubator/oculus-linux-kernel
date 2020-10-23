@@ -76,12 +76,4 @@ config SYNCBOSS_CAMERA_CONTROL
 	default y
 	---help---
 	  Allow Syncboss driver to control camera hardware
-
-config SYNCBOSS_NUM_CAMERAS
-	int
-	prompt "Number of cameras in Oculus Syncboss"
-	depends on SYNCBOSS
-	default 4
-	---help---
-	  Number of cameras used in Oculus Syncboss driver
 endmenu
