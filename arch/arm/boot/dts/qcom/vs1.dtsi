@@ -793,12 +793,14 @@
 
 &pm8998_l15 {
 	status = "okay";
+	regulator-boot-on;
 };
 
 &pm8998_l18 {
 	status = "okay";
 	regulator-min-microvolt = <3312000>;
 	regulator-max-microvolt = <3312000>;
+	regulator-boot-on;
 };
 
 &pm8998_l28 {

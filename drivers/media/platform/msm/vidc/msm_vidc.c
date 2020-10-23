@@ -405,13 +405,6 @@ static inline void save_v4l2_buffer(struct v4l2_buffer *b,
 		}
 		populate_buf_info(binfo, b, i);
 	}
-
-	if (EXTRADATA_IDX(b->length)) {
-		i = EXTRADATA_IDX(b->length);
-		if (b->m.planes[i].length)
-			binfo->device_addr[i] = binfo->handle[i]->device_addr +
-						binfo->buff_off[i];
-	}
 }
 
 int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)

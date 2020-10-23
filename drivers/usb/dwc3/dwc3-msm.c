@@ -3567,6 +3567,8 @@ static void dwc3_override_vbus_status(struct dwc3_msm *mdwc, bool vbus_present)
 	}
 }
 
+int get_psy_type(struct dwc3_msm *mdwc);
+
 /**
  * dwc3_otg_start_peripheral -  bind/unbind the peripheral controller.
  *
@@ -3596,6 +3598,27 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 		dwc3_msm_block_reset(mdwc, false);
 
 		dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_DEVICE);
+
+		if (get_psy_type(mdwc) == POWER_SUPPLY_TYPE_USB_CDP) {
+			u32 reg;
+
+			dbg_event(0xFF, "cdp pullup dp", 0);
+
+			reg = dwc3_readl(dwc->regs, DWC3_DCFG);
+			reg &= ~(DWC3_DCFG_SPEED_MASK);
+			reg |= DWC3_DCFG_HIGHSPEED;
+			dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+
+			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+			reg |= DWC3_DCTL_RUN_STOP;
+			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+
+			/* complete above write before vbus connect */
+			mb();
+
+			msleep(100);
+		}
+
 		usb_gadget_vbus_connect(&dwc->gadget);
 #ifdef CONFIG_SMP
 		mdwc->pm_qos_req_dma.type = PM_QOS_REQ_AFFINE_IRQ;

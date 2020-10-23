@@ -73,6 +73,8 @@ struct kgsl_clk_stats {
 	unsigned int total;
 	unsigned int busy_old;
 	unsigned int total_old;
+	uint64_t busy_accum;
+	uint64_t total_accum;
 };
 
 struct kgsl_pwr_constraint {

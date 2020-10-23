@@ -4029,6 +4029,38 @@ static struct snd_soc_dai_link msm_common_dai_links[] = {
 	},
 };
 
+static struct snd_soc_dai_link msm_common_be_dai_links[] = {
+	/* Backend AFE DAI Links */
+	{
+		.name = LPASS_BE_AFE_PCM_RX,
+		.stream_name = "AFE Playback",
+		.cpu_dai_name = "msm-dai-q6-dev.224",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_AFE_PCM_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_AFE_PCM_TX,
+		.stream_name = "AFE Capture",
+		.cpu_dai_name = "msm-dai-q6-dev.225",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_AFE_PCM_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ignore_suspend = 1,
+	},
+};
+
 static struct snd_soc_dai_link msm_wcn_be_dai_links[] = {
 	{
 		.name = LPASS_BE_SLIMBUS_7_RX,
@@ -4570,6 +4602,7 @@ static struct snd_soc_dai_link msm_stub_dai_links[
 
 static struct snd_soc_dai_link msm_cm710x_dai_links[
 			 ARRAY_SIZE(msm_common_dai_links) +
+			 ARRAY_SIZE(msm_common_be_dai_links) +
 			 ARRAY_SIZE(msm_wcn_be_dai_links) +
 			 ARRAY_SIZE(msm_mi2s_be_dai_links) +
 			 ARRAY_SIZE(msm_auxpcm_be_dai_links)];
@@ -4651,9 +4684,14 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		memcpy(msm_cm710x_dai_links,
 			msm_common_dai_links,
 			sizeof(msm_common_dai_links));
-		len_2 = len_1;
 
-		total_links = len_2;
+		len_2 = ARRAY_SIZE(msm_common_be_dai_links);
+
+		memcpy(msm_cm710x_dai_links + len_1,
+			msm_common_be_dai_links,
+			sizeof(msm_common_be_dai_links));
+
+		total_links = len_1 + len_2;
 
 		if (of_property_read_bool(dev->of_node, "qcom,wcn-btfm")) {
 			dev_dbg(dev, "%s(): WCN BTFM support present\n",

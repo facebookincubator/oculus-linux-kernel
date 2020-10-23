@@ -948,6 +948,22 @@ static ssize_t kgsl_pwrctrl_gpubusy_show(struct device *dev,
 	return ret;
 }
 
+static ssize_t kgsl_pwrctrl_gpubusy_accum_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	int ret;
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct kgsl_clk_stats *stats;
+
+	if (device == NULL)
+		return 0;
+	stats = &device->pwrctrl.clk_stats;
+
+	return snprintf(buf, PAGE_SIZE, "%llu %llu\n",
+			stats->busy_accum, stats->total_accum);
+}
+
 static ssize_t kgsl_pwrctrl_gpu_available_frequencies_show(
 					struct device *dev,
 					struct device_attribute *attr,
@@ -1557,6 +1573,9 @@ static DEVICE_ATTR(pwrscale, 0644,
 static DEVICE_ATTR(clk_on, 0644,
 	kgsl_pwrctrl_force_clk_on_show,
 	kgsl_pwrctrl_clk_on_store);
+static DEVICE_ATTR(gpubusy_accum, 0444,
+	kgsl_pwrctrl_gpubusy_accum_show,
+	NULL);
 
 static const struct device_attribute *pwrctrl_attr_list[] = {
 	&dev_attr_gpuclk,
@@ -1587,6 +1606,7 @@ static const struct device_attribute *pwrctrl_attr_list[] = {
 	&dev_attr_temp,
 	&dev_attr_pwrscale,
 	&dev_attr_clk_on,
+	&dev_attr_gpubusy_accum,
 	NULL
 };
 
@@ -1638,6 +1658,10 @@ void kgsl_pwrctrl_busy_time(struct kgsl_device *device, u64 time, u64 busy)
 	struct kgsl_clk_stats *stats = &device->pwrctrl.clk_stats;
 	stats->total += time;
 	stats->busy += busy;
+
+	/* these counters are never reset; only deltas are used */
+	stats->total_accum += time;
+	stats->busy_accum += busy;
 
 	if (stats->total < UPDATE_BUSY_VAL)
 		return;
