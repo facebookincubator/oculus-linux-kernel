@@ -2022,8 +2022,6 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 
 		assoc_cnf.resultCode = eSIR_SME_RESOURCES_UNAVAILABLE;
 
-		cds_packet_free((void *)packet);
-
 		lim_post_sme_message(mac_ctx, LIM_MLM_ASSOC_CNF,
 			(uint32_t *) &assoc_cnf);
 

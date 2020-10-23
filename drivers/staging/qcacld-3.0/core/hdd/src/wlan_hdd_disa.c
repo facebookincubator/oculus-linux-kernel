@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -479,6 +479,11 @@ static int __wlan_hdd_cfg80211_encrypt_decrypt_msg(struct wiphy *wiphy,
 		return ret;
 
 	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+
+	if (hdd_ctx->config->is_ps_enabled) {
+		hdd_debug("DISA is not supported when PS is enabled");
+		return -EINVAL;
+	}
 
 	ret = hdd_encrypt_decrypt_msg(adapter, hdd_ctx, data, data_len);
 

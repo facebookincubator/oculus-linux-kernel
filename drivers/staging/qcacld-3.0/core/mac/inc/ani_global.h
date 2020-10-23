@@ -1022,6 +1022,9 @@ typedef struct sAniSirGlobal {
 	/* action ouis info */
 	bool enable_action_oui;
 	struct action_oui_info *oui_info;
+	uint32_t peer_rssi;
+	uint32_t peer_txrate;
+	uint32_t peer_rxrate;
 } tAniSirGlobal;
 
 typedef enum {

@@ -1030,11 +1030,7 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 				     eSAP_UPDATE_SCAN_RESULT,
 				     (void *) eSAP_STATUS_SUCCESS);
 		break;
-	case eCSR_ROAM_LOSTLINK_DETECTED:
-		sap_signal_hdd_event(sap_ctx, csr_roam_info,
-				     eSAP_STA_LOSTLINK_DETECTED,
-				     (void *)eSAP_STATUS_SUCCESS);
-		break;
+
 	default:
 		break;
 	}

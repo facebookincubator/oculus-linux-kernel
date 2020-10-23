@@ -361,4 +361,26 @@ static inline void hdd_wma_send_fastreassoc_cmd(hdd_adapter_t *adapter,
 }
 #endif
 
+/**
+ * hdd_copy_ht_caps()- copy ht caps info from roam info to
+ *  hdd station context.
+ * @hdd_ht_cap: pointer to Source ht_cap info of type ieee80211_ht_cap
+ * @roam_ht_cap: pointer to roam ht_caps info
+ *
+ * Return: None
+ */
+void hdd_copy_ht_caps(struct ieee80211_ht_cap *hdd_ht_cap,
+		      tDot11fIEHTCaps *roam_ht_cap);
+
+/**
+ * hdd_copy_vht_caps()- copy vht caps info from roam info to
+ *  hdd station context.
+ * @hdd_vht_cap: pointer to Source vht_cap info of type ieee80211_vht_cap
+ * @roam_vht_cap: pointer to roam vht_caps info
+ *
+ * Return: None
+ */
+void hdd_copy_vht_caps(struct ieee80211_vht_cap *hdd_vht_cap,
+		       tDot11fIEVHTCaps *roam_vht_cap);
+
 #endif

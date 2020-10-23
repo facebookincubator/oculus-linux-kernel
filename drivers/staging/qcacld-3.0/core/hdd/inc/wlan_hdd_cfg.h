@@ -10778,11 +10778,26 @@ enum hw_filter_mode {
  *
  * </ini>
  */
-
 #define CFG_DTIM_1CHRX_ENABLE_NAME      "gDtim1ChRxEnable"
 #define CFG_DTIM_1CHRX_ENABLE_MIN       (0)
 #define CFG_DTIM_1CHRX_ENABLE_MAX       (1)
 #define CFG_DTIM_1CHRX_ENABLE_DEFAULT   (1)
+
+/*
+ * <ini>
+ * gEnableUnitTestFramework - Enable/Disable unit test framework
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * Usage: Internal (only for dev and test team)
+ *
+ * </ini>
+ */
+#define CFG_ENABLE_UNIT_TEST_FRAMEWORK_NAME    "gEnableUnitTestFramework"
+#define CFG_ENABLE_UNIT_TEST_FRAMEWORK_MIN     (0)
+#define CFG_ENABLE_UNIT_TEST_FRAMEWORK_MAX     (1)
+#define CFG_ENABLE_UINT_TEST_FRAMEWORK_DEFAULT (0)
 
 struct hdd_config {
 	/* Bitmap to track what is explicitly configured */
@@ -11537,6 +11552,7 @@ struct hdd_config {
 	uint8_t action_oui_connect_1x1[MAX_ACTION_OUI_STRING_LEN];
 	uint8_t action_oui_ito_extension[MAX_ACTION_OUI_STRING_LEN];
 	uint8_t action_oui_cckm_1x1[MAX_ACTION_OUI_STRING_LEN];
+	bool is_unit_test_framework_enabled;
 };
 
 #define VAR_OFFSET(_Struct, _Var) (offsetof(_Struct, _Var))

@@ -100,6 +100,7 @@
 #define HDD_FINISH_ULA_TIME_OUT         800
 #define HDD_SET_MCBC_FILTERS_TO_FW      1
 #define HDD_DELETE_MCBC_FILTERS_FROM_FW 0
+#define HDD_UT_SUSPEND_RESUME_LOG_RL (1024)
 
 static int ioctl_debug;
 module_param(ioctl_debug, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -3751,7 +3752,7 @@ int wlan_hdd_get_link_speed(hdd_adapter_t *sta_adapter, uint32_t *link_speed)
 		errno = wlan_hdd_get_linkspeed_for_peermac(sta_adapter, &bssid,
 							   link_speed);
 		if (errno) {
-			hdd_err("Unable to retrieve SME linkspeed: %d", errno);
+			hdd_err("Unable to retrieve SME linkspeed");
 			return errno;
 		}
 		/* linkspeed in units of 500 kbps */
@@ -3789,12 +3790,11 @@ static void hdd_get_peer_rssi_cb(struct sir_peer_info_resp *sta_rssi,
 
 	request = hdd_request_get(context);
 	if (!request) {
-		hdd_err("Obsolete request.");
+		hdd_err("Obsolete request");
 		return;
 	}
 
 	priv = hdd_request_priv(request);
-
 	peer_num = sta_rssi->count;
 	rssi_info = sta_rssi->info;
 
@@ -3842,7 +3842,6 @@ int wlan_hdd_get_peer_rssi(hdd_adapter_t *adapter,
 	}
 
 	cookie = hdd_request_cookie(request);
-
 	qdf_mem_copy(&(rssi_req.peer_macaddr), macaddress,
 		     QDF_MAC_ADDR_SIZE);
 	rssi_req.sessionid = adapter->sessionId;
@@ -6042,8 +6041,13 @@ static void hdd_get_station_statistics_cb(void *stats, void *context)
 	tCsrGlobalClassAStatsInfo *class_a_stats;
 	struct csr_per_chain_rssi_stats_info *per_chain_rssi_stats;
 
-	if ((NULL == stats) || (NULL == context)) {
-		hdd_err("Bad param, pStats [%p] pContext [%p]",
+	if (ioctl_debug) {
+		pr_info("%s: stats [%pK] context [%pK]\n",
+			__func__, stats, context);
+	}
+
+	if (!stats || !context) {
+		hdd_err("Bad param, stats [%pK] context [%pK]",
 			stats, context);
 		return;
 	}
@@ -12467,9 +12471,17 @@ static int __iw_set_two_ints_getnone(struct net_device *dev,
 		ret = wlan_hdd_set_mon_chan(pAdapter, value[1], value[2]);
 		break;
 	case WE_SET_WLAN_SUSPEND:
+		if (!hdd_ctx->config->is_unit_test_framework_enabled) {
+			hdd_info("UT suspend is disabled");
+			return 0;
+		}
 		ret = hdd_wlan_fake_apps_suspend(hdd_ctx->wiphy, dev);
 		break;
 	case WE_SET_WLAN_RESUME:
+		if (!hdd_ctx->config->is_unit_test_framework_enabled) {
+			hdd_info("UT resume is disabled");
+			return 0;
+		}
 		ret = hdd_wlan_fake_apps_resume(hdd_ctx->wiphy, dev);
 		break;
 	default:

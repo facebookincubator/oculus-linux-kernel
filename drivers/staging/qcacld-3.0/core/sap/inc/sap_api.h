@@ -145,7 +145,6 @@ typedef enum {
 	 */
 	eSAP_STA_DISASSOC_EVENT,
 
-	eSAP_STA_LOSTLINK_DETECTED,
 	/* Event sent when user called wlansap_set_key_sta */
 	eSAP_STA_SET_KEY_EVENT,
 	/* Event sent whenever there is MIC failure detected */
@@ -298,6 +297,9 @@ typedef struct sap_StationDisassocCompleteEvent_s {
 	uint32_t statusCode;
 	uint32_t reason_code;
 	eSapDisassocReason reason;
+	int rssi;
+	int tx_rate;
+	int rx_rate;
 } tSap_StationDisassocCompleteEvent;
 
 typedef struct sap_StationSetKeyCompleteEvent_s {

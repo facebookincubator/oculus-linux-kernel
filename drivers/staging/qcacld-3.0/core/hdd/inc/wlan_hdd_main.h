@@ -1061,11 +1061,11 @@ struct hdd_adapter_s {
 	struct net_device_stats stats;
 	/** HDD statistics*/
 	hdd_stats_t hdd_stats;
-
-	/* estimated link speed */
-	u32 estimated_linkspeed;
 	/* SAP peer station info */
 	struct sir_peer_sta_info peer_sta_info;
+
+	/* estimated link speed */
+	uint32_t estimated_linkspeed;
 
 	uint8_t sessionId;
 

@@ -409,6 +409,7 @@ static int wma_ndp_indication_event_handler(void *handle, uint8_t *event_info,
 	wmi_ndp_indication_event_fixed_param *fixed_params;
 	struct ndp_indication_event ind_event = {0};
 	tp_wma_handle wma_handle = handle;
+	size_t total_array_len;
 
 	event = (WMI_NDP_INDICATION_EVENTID_param_tlvs *)event_info;
 	fixed_params =
@@ -424,6 +425,38 @@ static int wma_ndp_indication_event_handler(void *handle, uint8_t *event_info,
 		WMA_LOGE("FW message ndp app info length %d more than TLV hdr %d",
 			 fixed_params->ndp_app_info_len,
 			 event->num_ndp_app_info);
+		return -EINVAL;
+	}
+
+	if (fixed_params->nan_scid_len > event->num_ndp_scid) {
+		WMA_LOGE(FL("Invalid nan_scid_len: %d"),
+			 fixed_params->nan_scid_len);
+		return -EINVAL;
+	}
+
+	if (fixed_params->ndp_cfg_len >
+		(WMI_SVC_MSG_MAX_SIZE - sizeof(*fixed_params))) {
+		WMA_LOGE("%s: excess wmi buffer: ndp_cfg_len %d",
+			 __func__, fixed_params->ndp_cfg_len);
+		return -EINVAL;
+	}
+
+	total_array_len = fixed_params->ndp_cfg_len +
+					sizeof(*fixed_params);
+
+	if (fixed_params->ndp_app_info_len >
+		(WMI_SVC_MSG_MAX_SIZE - total_array_len)) {
+		WMA_LOGE("%s: excess wmi buffer: ndp_cfg_len %d",
+			 __func__, fixed_params->ndp_app_info_len);
+		return -EINVAL;
+	}
+
+	total_array_len += fixed_params->ndp_app_info_len;
+
+	if (fixed_params->nan_scid_len >
+		(WMI_SVC_MSG_MAX_SIZE - total_array_len)) {
+		WMA_LOGE("%s: excess wmi buffer: ndp_cfg_len %d",
+			 __func__, fixed_params->nan_scid_len);
 		return -EINVAL;
 	}
 
@@ -462,15 +495,6 @@ static int wma_ndp_indication_event_handler(void *handle, uint8_t *event_info,
 	ind_event.ncs_sk_type = fixed_params->nan_csid;
 	ind_event.scid.scid_len = fixed_params->nan_scid_len;
 
-	if (fixed_params->ndp_cfg_len > event->num_ndp_cfg ||
-	    fixed_params->ndp_app_info_len > event->num_ndp_app_info ||
-	    fixed_params->nan_scid_len > event->num_ndp_scid) {
-		WMA_LOGD(FL("Invalid ndp_cfg_len: %d, ndp_app_info_len: %d, nan_scid_len: %d"),
-				fixed_params->ndp_cfg_len,
-				fixed_params->ndp_app_info_len,
-				fixed_params->nan_scid_len);
-		return -EINVAL;
-	}
 	if (ind_event.ndp_config.ndp_cfg_len) {
 		ind_event.ndp_config.ndp_cfg =
 			qdf_mem_malloc(fixed_params->ndp_cfg_len);

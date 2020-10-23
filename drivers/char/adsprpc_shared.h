@@ -27,6 +27,7 @@
 #define FASTRPC_IOCTL_GETINFO	_IOWR('R', 8, uint32_t)
 #define FASTRPC_IOCTL_GETPERF	_IOWR('R', 9, struct fastrpc_ioctl_perf)
 #define FASTRPC_IOCTL_INIT_ATTRS _IOWR('R', 10, struct fastrpc_ioctl_init_attrs)
+#define FASTRPC_IOCTL_CONTROL	_IOWR('R', 12, struct fastrpc_ioctl_control)
 #define FASTRPC_IOCTL_MUNMAP_FD	_IOWR('R', 13, struct fastrpc_ioctl_munmap_fd)
 
 #define FASTRPC_GLINK_GUID "fastrpcglink-apps-dsp"
@@ -251,7 +252,7 @@ static inline struct smq_invoke_buf *smq_invoke_buf_start(remote_arg64_t *pra,
 static inline struct smq_phy_page *smq_phy_page_start(uint32_t sc,
 						struct smq_invoke_buf *buf)
 {
-	int nTotal = REMOTE_SCALARS_LENGTH(sc);
+	uint64_t nTotal = REMOTE_SCALARS_LENGTH(sc);
 	return (struct smq_phy_page *)(&buf[nTotal]);
 }
 

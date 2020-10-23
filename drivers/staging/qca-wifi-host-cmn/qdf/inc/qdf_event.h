@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -46,6 +46,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 typedef __qdf_event_t qdf_event_t;
+
 /* Function declarations and documenation */
 
 QDF_STATUS qdf_event_create(qdf_event_t *event);

@@ -1980,12 +1980,9 @@ static int msm_isp_cfg_ping_pong_address(
 	buf = msm_isp_get_stream_buffer(vfe_dev, stream_info);
 
 	if (!buf) {
-		if (stream_info->stream_src == RDI_INTF_0)
-			printk_ratelimited(KERN_ALERT "ISP%d RDI0 drop\n",
-					stream_info->vfe_mask >> 1);
-		else
-			printk_ratelimited(KERN_ALERT "ISP%d RDI1 drop\n",
-					stream_info->vfe_mask >> 1);
+		printk_ratelimited(KERN_ALERT "ISP%d RDI%d drop\n",
+				stream_info->vfe_mask >> 1,
+				stream_info->stream_src == RDI_INTF_0 ? 0 : 1);
 		msm_isp_cfg_stream_scratch(stream_info, pingpong_status);
 		return 0;
 	}

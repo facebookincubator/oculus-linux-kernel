@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -336,6 +336,14 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst);
 int msm_vidc_check_scaling_supported(struct msm_vidc_inst *inst);
 void msm_vidc_queue_v4l2_event(struct msm_vidc_inst *inst, int event_type);
 
+struct crop_info {
+	u32 nLeft;
+	u32 nTop;
+	u32 nWidth;
+	u32 nHeight;
+	u32 width_height[MAX_PORT_NUM];
+};
+
 struct buffer_info {
 	struct list_head list;
 	int type;
@@ -355,6 +363,7 @@ struct buffer_info {
 	bool mapped[VIDEO_MAX_PLANES];
 	int same_fd_ref[VIDEO_MAX_PLANES];
 	struct timeval timestamp;
+	struct crop_info crop_data;
 };
 
 struct buffer_info *device_to_uvaddr(struct msm_vidc_list *buf_list,

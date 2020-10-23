@@ -341,9 +341,8 @@ typedef struct tagCsrEseCckmInfo {
 #endif
 } tCsrEseCckmInfo;
 
-#define CSR_DOT11F_IE_RSN_MAX_LEN   (114)
 typedef struct tagCsrEseCckmIe {
-	uint8_t cckmIe[CSR_DOT11F_IE_RSN_MAX_LEN];
+	uint8_t cckmIe[DOT11F_IE_RSN_MAX_LEN];
 	uint8_t cckmIeLen;
 } tCsrEseCckmIe;
 #endif /* FEATURE_WLAN_ESE */
@@ -1369,6 +1368,7 @@ typedef struct tagCsrRoamInfo {
 	tSirResultCodes statusCode;
 	/* this'd be our own defined or sent from otherBSS(per 802.11spec) */
 	uint32_t reasonCode;
+	uint8_t disassoc_reason;
 	uint8_t staId;         /* Peer stationId when connected */
 	/*
 	 * The DPU signatures will be sent eventually to TL to help it
@@ -1455,6 +1455,9 @@ typedef struct tagCsrRoamInfo {
 	bool reassoc;
 	tSirMacHTChannelWidth ch_width;
 	enum sir_sme_phy_mode mode;
+	int rssi;
+	int tx_rate;
+	int rx_rate;
 } tCsrRoamInfo;
 
 typedef struct tagCsrFreqScanInfo {
