@@ -1,0 +1,20 @@
+comment "Collection of Oculus Driver"
+menu "Oculus Drivers"
+
+config MISCFIFO
+	tristate "miscfifo chardev driver"
+	default n
+	---help---
+	  Like seqfile, this driver provides file operations to
+	  easily implement a chardev backed by a kfifo.
+
+	  Drivers using this chardev only have to call one of the
+	  send() functions to deliver events to userspace.
+
+config MISCFIFO_SAMPLE
+	tristate "miscfifo chardev driver example"
+	default n
+	---help---
+	  Example usage of miscfifo chardev driver
+
+endmenu
