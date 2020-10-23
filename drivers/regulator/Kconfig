@@ -472,6 +472,13 @@ config REGULATOR_MT6397
 	  This driver supports the control of different power rails of device
 	  through regulator interface.
 
+config REGULATOR_OVR_OLED_AVDD
+	tristate "Oculus OLED AVDD regulator driver"
+	help
+	  Say y here to select this option to enable the power regulator of
+	  Oculus OLED AVDD.
+	  This driver controls the AVDD power rail of Oculus OLED displays.
+
 config REGULATOR_PALMAS
 	tristate "TI Palmas PMIC Regulators"
 	depends on MFD_PALMAS

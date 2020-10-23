@@ -10,6 +10,8 @@
  * GNU General Public License for more details.
  */
 
+#error Must fix CVE-2017-18306 before compiling this module
+
 #include <linux/vmalloc.h>
 #include <linux/kernel.h>
 #include <linux/module.h>

@@ -14,6 +14,7 @@
 #define __H_VIDC_HFI_H__
 
 #include <media/msm_media_info.h>
+#include "vidc_threadstats.h"
 #include "vidc_hfi_helper.h"
 #include "vidc_hfi_api.h"
 #include "vidc_profile.h"
@@ -902,6 +903,19 @@ struct hfi_cmd_session_continue_packet {
 	u32 session_id;
 };
 
+struct vidc_thread_private {
+	struct list_head list;
+	struct kobject kobj;
+	struct kref refcount;
+
+	pid_t tid;
+	char comm[TASK_COMM_LEN];
+	int fd_count;
+
+	uint64_t stats[VIDC_THREADSTATS_MAX];
+	struct kernfs_node *event_sd[VIDC_THREADSTATS_EVENT_MAX];
+};
+
 struct hal_session {
 	struct list_head list;
 	void *session_id;
@@ -909,6 +923,7 @@ struct hal_session {
 	enum hal_video_codec codec;
 	enum hal_domain domain;
 	void *device;
+	struct vidc_thread_private *thread_priv;
 	struct list_head profile_head;
 };
 

@@ -2527,6 +2527,7 @@ static void __session_clean(struct hal_session *session)
 
 	dprintk(VIDC_DBG, "deleted the session: %pK\n", session);
 
+	vidc_thread_private_close(session->thread_priv);
 	list_for_each_entry_safe(
 			buf_entry, next, &session->profile_head, list) {
 		list_del(&buf_entry->list);
@@ -2592,6 +2593,14 @@ static int venus_hfi_session_init(void *device, void *session_id,
 	s->codec = codec_type;
 	s->domain = session_type;
 	INIT_LIST_HEAD(&s->profile_head);
+
+	s->thread_priv = vidc_thread_private_open();
+	if (IS_ERR(s->thread_priv)) {
+		dprintk(VIDC_ERR,
+			"Failed to create session thread node, error: %ld\n",
+			PTR_ERR(s->thread_priv));
+		goto err_session_init_fail;
+	}
 
 	dprintk(VIDC_DBG,
 		"%s: inst %pK, session %pK, codec 0x%x, domain 0x%x\n",
@@ -2891,6 +2900,7 @@ static int __session_etb(struct hal_session *session,
 {
 	int rc = 0;
 	struct venus_hfi_device *device = session->device;
+	struct vidc_thread_private *thread = session->thread_priv;
 
 	if (session->is_decoder) {
 		struct hfi_cmd_session_empty_buffer_compressed_packet pkt;
@@ -2931,6 +2941,12 @@ static int __session_etb(struct hal_session *session,
 			goto err_create_pkt;
 	}
 
+	thread->stats[VIDC_THREADSTATS_ETB_TIMESTAMP] =
+		ktime_to_ns(ktime_get());
+	thread->stats[VIDC_THREADSTATS_ETB_ID] = input_frame->timestamp;
+	thread->stats[VIDC_THREADSTATS_ETB_COUNT]++;
+	sysfs_notify_dirent(thread->event_sd[VIDC_THREADSTATS_ETB_EVENT]);
+
 err_create_pkt:
 	return rc;
 }
@@ -2959,6 +2975,7 @@ static int __session_ftb(struct hal_session *session,
 {
 	int rc = 0;
 	struct venus_hfi_device *device = session->device;
+	struct vidc_thread_private *thread = session->thread_priv;
 	struct hfi_cmd_session_fill_buffer_packet pkt;
 
 	rc = call_hfi_pkt_op(device, session_ftb,
@@ -2973,6 +2990,12 @@ static int __session_ftb(struct hal_session *session,
 	else
 		rc = __iface_cmdq_write_relaxed(session->device,
 				&pkt, NULL);
+
+	thread->stats[VIDC_THREADSTATS_FTB_TIMESTAMP] =
+		ktime_to_ns(ktime_get());
+	thread->stats[VIDC_THREADSTATS_FTB_ID] = output_frame->timestamp;
+	thread->stats[VIDC_THREADSTATS_FTB_COUNT]++;
+	sysfs_notify_dirent(thread->event_sd[VIDC_THREADSTATS_FTB_EVENT]);
 
 err_create_pkt:
 	return rc;
@@ -3575,6 +3598,7 @@ static int __response_handler(struct venus_hfi_device *device)
 		 */
 		if (session_id) {
 			struct hal_session *session = NULL;
+			struct vidc_thread_private *thread;
 
 			if (upper_32_bits((uintptr_t)*session_id) != 0) {
 				dprintk(VIDC_WARN,
@@ -3593,6 +3617,7 @@ static int __response_handler(struct venus_hfi_device *device)
 			}
 
 			*session_id = session->session_id;
+			thread = session->thread_priv;
 
 			if (info->response_type == HAL_SESSION_FTB_DONE) {
 				u64 timestamp;
@@ -3603,6 +3628,29 @@ static int __response_handler(struct venus_hfi_device *device)
 					+ ((u64)data->timestamp_lo);
 				vidc_profile_end(session, timestamp,
 					session->is_decoder);
+
+				thread->stats[VIDC_THREADSTATS_FBD_TIMESTAMP] =
+					ktime_to_ns(ktime_get());
+				thread->stats[VIDC_THREADSTATS_FBD_ID] =
+					timestamp;
+				thread->stats[VIDC_THREADSTATS_FBD_COUNT]++;
+				sysfs_notify_dirent(
+					thread->event_sd[VIDC_THREADSTATS_FBD_EVENT]);
+			} else if (info->response_type == HAL_SESSION_ETB_DONE) {
+				u64 timestamp;
+				struct vidc_hal_ebd *data =
+					&info->response.data.input_done;
+
+				timestamp = (((u64)data->timestamp_hi) << 32)
+					+ ((u64)data->timestamp_lo);
+
+				thread->stats[VIDC_THREADSTATS_EBD_TIMESTAMP] =
+					ktime_to_ns(ktime_get());
+				thread->stats[VIDC_THREADSTATS_EBD_ID] =
+					timestamp;
+				thread->stats[VIDC_THREADSTATS_EBD_COUNT]++;
+				sysfs_notify_dirent(
+					thread->event_sd[VIDC_THREADSTATS_EBD_EVENT]);
 			}
 		}
 

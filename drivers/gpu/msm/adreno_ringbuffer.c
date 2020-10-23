@@ -60,11 +60,12 @@ static void _cff_write_ringbuffer(struct adreno_ringbuffer *rb)
 static void adreno_get_submit_time(struct adreno_device *adreno_dev,
 		struct adreno_submit_time *time)
 {
+	ktime_t t;
 	unsigned long flags;
 	/*
 	 * Here we are attempting to create a mapping between the
-	 * GPU time domain (alwayson counter) and the CPU time domain
-	 * (local_clock) by sampling both values as close together as
+	 * GPU time domain (alwayson counter) and the kernel time
+	 * (monotonic) by sampling both values as close together as
 	 * possible. This is useful for many types of debugging and
 	 * profiling. In order to make this mapping as accurate as
 	 * possible, we must turn off interrupts to avoid running
@@ -87,8 +88,9 @@ static void adreno_get_submit_time(struct adreno_device *adreno_dev,
 	} else
 		time->ticks = 0;
 
-	/* Get the kernel clock for time since boot */
-	time->ktime = local_clock();
+	/* Get the kernel monotonic clock */
+	t = ktime_get();
+	time->ktime = ktime_to_ns(t);
 
 	/* Get the timeofday for the wall time (for the user) */
 	getnstimeofday(&time->utime);

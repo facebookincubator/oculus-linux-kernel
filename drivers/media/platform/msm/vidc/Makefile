@@ -14,7 +14,8 @@ msm-vidc-objs := msm_v4l2_vidc.o \
                                 vidc_hfi.o \
                                 venus_boot.o \
                                 msm_vidc_dcvs.o \
-                                vidc_profile.o
+                                vidc_profile.o \
+                                vidc_threadstats.o
 
 obj-$(CONFIG_MSM_VIDC_V4L2) := msm-vidc.o
 

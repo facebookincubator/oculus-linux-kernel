@@ -64,7 +64,7 @@ static void cm710x_SPI_fix_order(u8 *dst, u32 dstlen, const u8 *src, u32 srclen)
 	}
 }
 
-int cm710x_read_SPI_Dsp(u32 addr, u8 *Data, int len)
+int cm710x_read_SPI_Dsp(u32 addr, u8 *Data, size_t len)
 {
 	u32 offset;
 	int status = 0;
@@ -80,7 +80,7 @@ int cm710x_read_SPI_Dsp(u32 addr, u8 *Data, int len)
 		return -ENODEV;
 
 	if ((addr & 1) || (len & 1)) {
-		dev_err(&g_spi->dev, "Bad read align 0x%x(%d)\n", addr, len);
+		dev_err(&g_spi->dev, "Bad read align 0x%x(%zu)\n", addr, len);
 		return -EACCES;
 	}
 
@@ -114,9 +114,10 @@ int cm710x_read_SPI_Dsp(u32 addr, u8 *Data, int len)
 }
 EXPORT_SYMBOL_GPL(cm710x_read_SPI_Dsp);
 
-int cm710x_write_SPI_Dsp(u32 addr, u8 *Data, int len)
+int cm710x_write_SPI_Dsp(u32 addr, u8 *Data, size_t len)
 {
-	u32 offset, len_with_pad = len;
+	u32 offset;
+	size_t len_with_pad = len;
 	int status = 0;
 	struct spi_transfer t;
 	struct spi_message m;

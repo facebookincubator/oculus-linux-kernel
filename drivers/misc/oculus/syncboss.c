@@ -87,7 +87,7 @@ static const struct of_device_id oculus_syncboss_table[] = {
 
 #define SYNCBOSS_MISCFIFO_SIZE 1024
 
-#define SYNCBOSS_DEFAULT_POLL_PRIO 50
+#define SYNCBOSS_DEFAULT_POLL_PRIO 52
 
 /* Valid sequence numbers are from [1, 254] */
 #define SYNCBOSS_MIN_SEQ_NUM 1

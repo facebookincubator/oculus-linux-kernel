@@ -29,6 +29,38 @@
 	};
 };
 
+&dsi_panel_pwr_supply_no_labibb {
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "ovr-avdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "ovr-vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <5>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "ovr-vci";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <10>;
+	};
+};
+
 &i2c_2 {
 	status = "disabled";
 
@@ -66,17 +98,12 @@
 	};
 };
 
-&mdss_dsi {
-	qcom,platform-avdd-gpio = <&tlmm 25 0>;
-	qcom,platform-pmi-gpio = <&pmi8998_gpios 1 0>;
-};
-
 &mdss_dsi0 {
-	qcom,platform-int-gpio = <&tlmm 5 0>;
+	ovr-avdd-supply = <&panel_avdd_regulator>;
 };
 
 &mdss_dsi1 {
-	qcom,platform-int-gpio=<&tlmm 133 0>;
+	ovr-avdd-supply = <&panel_avdd_regulator>;
 };
 
 &pm8998_l19 {
@@ -141,6 +168,22 @@
 	qcom,panel-1-name = "mdss_dsi_auo_960x1600_video";
 	qcom,panel-0-avdd-target-voltage-mv = <7300>;
 	qcom,panel-1-avdd-target-voltage-mv = <6100>;
+};
+
+&soc {
+	panel_avdd_regulator: oled_regulator@0 {
+		compatible = "ovr-oled-avdd";
+		regulator-name = "oled_avdd_regulator";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-boot-on;
+		pmi-en-gpio = <&pmi8998_gpios 1 0>;
+		avdd-en-gpio = <&tlmm 25 0>;
+		en-a-gpio = <&tlmm 5 0>;
+		en-b-gpio = <&tlmm 133 0>;
+		vin-supply = <&pmi8998_bob>;
+		status = "ok";
+	};
 };
 
 &spi_5 {

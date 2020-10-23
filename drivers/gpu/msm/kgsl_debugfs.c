@@ -133,7 +133,8 @@ static int print_mem_entry(void *data, void *ptr)
 	char usage[16];
 	struct kgsl_memdesc *m = &entry->memdesc;
 	unsigned int usermem_type = kgsl_memdesc_usermem_type(m);
-	int egl_surface_count = 0, egl_image_count = 0;
+	int egl_surface_count = 0, egl_image_count = 0,
+			attach_count = 0;
 
 	if (m->flags & KGSL_MEMFLAGS_SPARSE_VIRT)
 		return 0;
@@ -153,15 +154,17 @@ static int print_mem_entry(void *data, void *ptr)
 
 	if (usermem_type == KGSL_MEM_ENTRY_ION)
 		kgsl_get_egl_counts(entry, &egl_surface_count,
-						&egl_image_count);
+						&egl_image_count,
+						&attach_count);
 
-	seq_printf(s, "%pK %pK %16llu %5d %9s %10s %16s %5d %16llu %6d %6d",
+	seq_printf(s, "%pK %pK %16llu %5d %9s %10s %16s %5d %16llu %6d %6d %6d",
 			(uint64_t *)(uintptr_t) m->gpuaddr,
 			(unsigned long *) m->useraddr,
 			m->size, entry->id, flags,
 			memtype_str(usermem_type),
 			usage, (m->sgt ? m->sgt->nents : 0), m->mapsize,
-			egl_surface_count, egl_image_count);
+			egl_surface_count, egl_image_count,
+			attach_count);
 
 	if (usermem_type == KGSL_MEM_ENTRY_ION)
 		kgsl_print_ion_attachments(s, entry);
@@ -231,9 +234,10 @@ static void *process_mem_seq_next(struct seq_file *s, void *ptr,
 static int process_mem_seq_show(struct seq_file *s, void *ptr)
 {
 	if (ptr == SEQ_START_TOKEN) {
-		seq_printf(s, "%16s %16s %16s %5s %9s %10s %16s %5s %16s %6s %6s\n",
+		seq_printf(s, "%16s %16s %16s %5s %9s %10s %16s %5s %16s %6s %6s %6s\n",
 			"gpuaddr", "useraddr", "size", "id", "flags", "type",
-			"usage", "sglen", "mapsize", "eglsrf", "eglimg");
+			"usage", "sglen", "mapsize", "eglsrf", "eglimg",
+			"attms");
 		return 0;
 	} else
 		return print_mem_entry(s, ptr);

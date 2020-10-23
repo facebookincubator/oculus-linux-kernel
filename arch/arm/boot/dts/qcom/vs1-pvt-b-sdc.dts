@@ -27,12 +27,6 @@
 	};
 };
 
-&i2c_8 {
-	cm710x: cm710x@2C {
-		cm710x,spk-reset-gpio = <&tlmm 54 1>;
-	};
-};
-
 &pmi8998_wled {
 	qcom,avdd-target-voltage-mv = <7300>;
 };

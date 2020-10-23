@@ -26,6 +26,10 @@
 		qcom,mdss-dsi-panel-blackness-level = <50>;
 
 		// timings
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
+		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
+		qcom,mdss-dsi-min-refresh-rate = <60>;
+		qcom,mdss-dsi-max-refresh-rate = <72>;
 		qcom,mdss-dsi-panel-framerate = <72>;
 		qcom,mdss-dsi-h-front-porch = <250>;
 		qcom,mdss-dsi-h-back-porch = <110>;

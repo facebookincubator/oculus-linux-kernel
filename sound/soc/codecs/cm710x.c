@@ -806,15 +806,15 @@ static int cm710x_dsp_mode_i2c_write_mem(struct regmap *regmap, u32 uAddr,
 	return ret;
 }
 
-static int cm710x_write_firmware_Codec_CMD(
+static ssize_t cm710x_write_firmware_Codec_CMD(
 		struct cm710x_codec_priv *cm710x_codec,
 		u8 *I2CCommand, int Count)
 {
-	int retSize = 0;
+	size_t retSize = 0;
 	int idx;
 	u32 reg;
 	u32 data;
-	int ret = 0;
+	ssize_t ret = 0;
 
 	for (idx = 0; idx < Count; idx++) {
 		if (cm710x_codec->bSuspendRequestPending)
@@ -823,7 +823,7 @@ static int cm710x_write_firmware_Codec_CMD(
 		data = I2CCommand[(idx * 4) + 2] |
 			I2CCommand[(idx * 4) + 3] << 8;
 		if (reg != 0xFE)
-			ret = regmap_write(cm710x_codec->virt_regmap,
+			ret = (ssize_t)regmap_write(cm710x_codec->virt_regmap,
 					reg, data);
 		else
 			if (data > 20)
@@ -844,9 +844,9 @@ static int cm710x_write_firmware_Codec_CMD(
 }
 
 static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
-		u32 uAddr, u8 *fwData, int len)
+		u32 uAddr, u8 *fwData, size_t len)
 {
-	int iWriteSize = 0;
+	size_t iWriteSize = 0;
 	int ret = 0;
 
 	do {
@@ -881,7 +881,8 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	int iDspBlockCount;
 	u32 uAddr;
 	int idx;
-	int lSize = 0;
+	ssize_t writeSizeOrStatus = 0;
+	size_t lSize = 0;
 	int ret = 0;
 	u32 stardsp;
 
@@ -910,13 +911,14 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	}
 
 	fwData += uAddr;
-	lSize = cm710x_write_firmware_Codec_CMD(cm710x_codec,
+	writeSizeOrStatus = cm710x_write_firmware_Codec_CMD(cm710x_codec,
 			fwData, iI2cCmdCount);
-	if (lSize < 0) {
-		ret = lSize;
+	if (writeSizeOrStatus < 0) {
+		ret = writeSizeOrStatus;
 		pr_err("%s: firmware int codec failed\n", __func__);
 		goto __EXIT;
 	}
+	lSize = (size_t)writeSizeOrStatus;
 
 	if (lSize == iI2cCmdCount * 4)
 		cm710x_codec->bDspMode = true;
@@ -968,14 +970,14 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 
 		if (!strcmp(cm710x_codec->fw_parsing, "i2c")) {
 			dev_info(cm710x_codec->dev,
-					"I2C Load Block %d Addr 0x%08x Len = %d\n",
+					"I2C Load Block %d Addr 0x%08x Len = %zu\n",
 					idx, uAddr, lSize);
 			ret = cm710x_dsp_mode_i2c_write_mem(
 					cm710x_codec->real_regmap,
 					uAddr, fwData, lSize);
 		} else if (!strcmp(cm710x_codec->fw_parsing, "spi")) {
 			dev_info(cm710x_codec->dev,
-					"SPI Load Block %d Addr 0x%08x Len = %d\n",
+					"SPI Load Block %d Addr 0x%08x Len = %zu\n",
 					idx, uAddr, lSize);
 			ret = cm710x_write_chunk_SPI(cm710x_codec,
 					uAddr, fwData, lSize);
@@ -1067,6 +1069,14 @@ static void cm710x_pop_noise_work(struct work_struct *work)
 	struct cm710x_codec_priv *cm710x_codec = container_of(pDelay,
 			struct cm710x_codec_priv, avoid_pop_noise);
 
+	int rc = wait_for_completion_timeout(
+			&cm710x_codec->fw_download_complete,
+			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
+
 	regmap_update_bits_async(cm710x_codec->virt_regmap,
 			CM710X_IF_DSP_DAC2_MIXER,
 			0x0088, 0x0000);
@@ -1122,8 +1132,13 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 		snd_soc_codec_get_drvdata(codec);
 	unsigned int reg = mc->reg;
 
-	wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
+	int rc = wait_for_completion_timeout(
+			&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	switch (reg) {
 	case MIC_ARRAY_ON_OFF:
@@ -1242,6 +1257,7 @@ static int cm710x_put_eq(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct cm710x_codec_priv *cm710x_codec =
 		snd_soc_codec_get_drvdata(codec);
+	int rc = 0;
 
 	unsigned int reg = mc->reg;
 	u8 idx = (u8)(reg - EQ_BAND_00);
@@ -1250,8 +1266,12 @@ static int cm710x_put_eq(struct snd_kcontrol *kcontrol,
 	EQ[idx] = ucontrol->value.integer.value[0];
 	gain = (idx < 20) ? (EQ[idx] - 20) & 0xFF : (12 - EQ[idx]) & 0xFF;
 
-	wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
+	rc = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	cm710x_eq_set_idx(cm710x_codec, idx, gain);
 
@@ -1283,8 +1303,13 @@ static int cm710x_hw_params(struct snd_pcm_substream *substream,
 	u16 tdm_len = 0;
 	u32 resetvalue = 0x80000000;
 
-	wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
+	int rc = wait_for_completion_timeout(
+			&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	switch (params_width(params)) {
 	case 16:
@@ -1425,10 +1450,14 @@ static int cm710x_playback_in_enum_ext_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_dapm_kcontrol_codec(kcontrol);
 	struct cm710x_codec_priv *cm710x_codec =
 			snd_soc_codec_get_drvdata(codec);
-	int ret;
 
-	ret = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
+	int rc = wait_for_completion_timeout(
+			&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	ucontrol->value.integer.value[0] = PlaybackFrom;
 	pr_debug("%s select PlaybackFrom = %d\n", __func__, PlaybackFrom);
@@ -1446,6 +1475,10 @@ static int cm710x_playback_in_enum_ext_put(struct snd_kcontrol *kcontrol,
 
 	ret = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (ret == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	PlaybackFrom = ucontrol->value.integer.value[0];
 	switch (PlaybackFrom) {
@@ -1501,6 +1534,10 @@ static int HP_dapm_power_event(struct snd_soc_dapm_widget *w,
 
 	rc = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	if (!IS_ERR_OR_NULL(cm710x_codec->pin_hp_en)) {
 		switch (event) {
@@ -1539,6 +1576,10 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 
 	rc = wait_for_completion_timeout(&cm710x_codec->fw_download_complete,
 			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	if (!IS_ERR_OR_NULL(cm710x_codec->pin_spk_en)) {
 		switch (event) {
@@ -1893,6 +1934,7 @@ static ssize_t cm710x_Dsp_Mem_Set(struct device *dev,
 
 	return count;
 }
+
 static DEVICE_ATTR(cm710xcodec, 0644, cm710x_Codec_Reg_Show,
 	cm710x_Codec_Reg_Set);
 static DEVICE_ATTR(cm710xdsp, 0644, cm710x_Dsp_Mem_Show,
@@ -1953,7 +1995,7 @@ static const struct regmap_config cm710x_real_regmap_config = {
 };
 
 static const struct regmap_config cm710x_virt_regmap_config = {
-	.name = "virutal_regmap",
+	.name = "virtual_regmap",
 	.reg_bits = 8,
 	.val_bits = 16,
 

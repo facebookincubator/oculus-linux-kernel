@@ -1178,23 +1178,13 @@ static QDF_STATUS sme_rrm_process_neighbor_report(tpAniSirGlobal pMac,
 	tpRrmNeighborReportDesc pNeighborReportDesc;
 	uint8_t i = 0;
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
-	uint32_t sessionId;
 
-	/* Get the session id */
-	status =
-		csr_roam_get_session_id_from_bssid(pMac,
-			   (struct qdf_mac_addr *) pNeighborRpt->bssId,
-			   &sessionId);
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-#ifdef FEATURE_WLAN_ESE
-		/* Clear the cache for ESE. */
-		if (csr_roam_is_ese_assoc(pMac, sessionId)) {
-			rrm_ll_purge_neighbor_cache(pMac,
-						    &pMac->rrm.rrmSmeContext.
-						    neighborReportCache);
-		}
-#endif
-	}
+	/* Purge the cache on reception of unsolicited neighbor report */
+	if (!pMac->rrm.rrmSmeContext.neighborReqControlInfo.
+			isNeighborRspPending)
+		rrm_ll_purge_neighbor_cache(pMac,
+					    &pMac->rrm.rrmSmeContext.
+					    neighborReportCache);
 
 	for (i = 0; i < pNeighborRpt->numNeighborReports; i++) {
 		pNeighborReportDesc =
@@ -1250,6 +1240,7 @@ end:
 		qdf_status = QDF_STATUS_E_FAILURE;
 
 	rrm_indicate_neighbor_report_result(pMac, qdf_status);
+
 	return status;
 }
 

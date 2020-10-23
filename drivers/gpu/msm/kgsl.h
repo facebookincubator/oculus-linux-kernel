@@ -452,7 +452,8 @@ long kgsl_ioctl_allow_tid_maximum_priority(
 void kgsl_mem_entry_destroy(struct kref *kref);
 
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
-			int *egl_surface_count, int *egl_image_count);
+			int *egl_surface_count, int *egl_image_count,
+			int *attach_count);
 void kgsl_print_ion_attachments(struct seq_file *s,
 			struct kgsl_mem_entry *entry);
 

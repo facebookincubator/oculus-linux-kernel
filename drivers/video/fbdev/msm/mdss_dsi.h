@@ -306,24 +306,6 @@ struct dsi_shared_data {
 	u32 pm_qos_req_cnt;
 };
 
-#ifdef CONFIG_VS1_BOARD
-/*
- * Contains logic for Oculus AVDD regulator power sequence.
- * Applicable for variants > P1
- */
-struct ovr_regulator_data {
-	atomic_t refcount;
-	int vddio_1p8_en_gpio;
-	int vci_3p3_en_gpio;
-	int disp_avdd_gpio;
-	int pmi_en_gpio;
-
-	/* System-wide OCP GPIO */
-	struct delayed_work ocp_reg_work;
-	int disp_ocp_int_gpio;
-};
-#endif
-
 struct mdss_dsi_data {
 	bool res_init;
 	struct platform_device *pdev;
@@ -334,9 +316,6 @@ struct mdss_dsi_data {
 	 * mutex, clocks, regulator information, setup information
 	 */
 	struct dsi_shared_data *shared_data;
-#ifdef CONFIG_VS1_BOARD
-	struct ovr_regulator_data *ovr_reg_data;
-#endif
 	u32 *dbg_bus;
 	int dbg_bus_size;
 };
@@ -473,9 +452,6 @@ struct mdss_dsi_ctrl_pdata {
 	int irq_cnt;
 	int disp_te_gpio;
 #ifdef CONFIG_VS1_BOARD
-	struct ovr_regulator_data *ovr_reg_data;	/* P1.5 only */
-	struct delayed_work ovr_reg_work;
-	int disp_int_gpio;	/* P1.5 only */
 	bool panel_enabled;
 #endif
 	int rst_gpio;
@@ -659,9 +635,6 @@ int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
 irqreturn_t hw_te_handler(int irq, void *data);
-#ifdef CONFIG_VS1_BOARD
-irqreturn_t hw_int_handler(int irq, void *data);  /* P1.5 only */
-#endif
 void disable_esd_thread(void);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 

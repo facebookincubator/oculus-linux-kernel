@@ -120,7 +120,8 @@ QDF_STATUS sys_stop(v_CONTEXT_t p_cds_context)
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 		qdf_status = QDF_STATUS_E_BADMSG;
 
-	qdf_status = qdf_wait_single_event(&g_stop_evt, SYS_STOP_TIMEOUT);
+	qdf_status = qdf_wait_for_event_completion(&g_stop_evt,
+			SYS_STOP_TIMEOUT);
 	QDF_ASSERT(QDF_IS_STATUS_SUCCESS(qdf_status));
 
 	qdf_status = qdf_event_destroy(&g_stop_evt);

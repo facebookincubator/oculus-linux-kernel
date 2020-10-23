@@ -35,6 +35,7 @@
 #include <media/msm_media_info.h>
 
 #include "vidc_hfi_api.h"
+#include "vidc_threadstats.h"
 
 #define MSM_VIDC_DRV_NAME "msm_vidc_driver"
 #define MSM_VIDC_VERSION KERNEL_VERSION(0, 0, 1);
@@ -154,6 +155,12 @@ struct msm_vidc_drv {
 	struct dentry *debugfs_root;
 	int thermal_level;
 	u32 platform_version;
+
+	struct class *class;
+	struct device virtdev;
+	struct kobject *threadkobj;
+	struct list_head thread_list;
+	struct mutex thread_mutex;
 };
 
 struct msm_video_device {

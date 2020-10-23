@@ -40,6 +40,7 @@ static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 			goto error_free_pages;
 
 	ion_page_pool_alloc_set_cache_policy(pool, page);
+	mod_zone_page_state(page_zone(page), NR_ION_HEAP, 1 << pool->order);
 
 	return page;
 error_free_pages:
@@ -52,6 +53,7 @@ static void ion_page_pool_free_pages(struct ion_page_pool *pool,
 {
 	ion_page_pool_free_set_cache_policy(pool, page);
 	__free_pages(page, pool->order);
+	mod_zone_page_state(page_zone(page), NR_ION_HEAP, -(1 << pool->order));
 }
 
 static int ion_page_pool_add(struct ion_page_pool *pool, struct page *page)

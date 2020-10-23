@@ -1237,6 +1237,7 @@ static void wlan_hdd_purge_notifier(void)
 	ENTER();
 
 	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	qdf_complete_wait_events();
 	if (!hdd_ctx) {
 		hdd_err("hdd context is NULL return!!");
 		return;

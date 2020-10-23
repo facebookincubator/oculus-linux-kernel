@@ -345,6 +345,9 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 	int rc = 0;
 	struct qpnp_pon *pon = sys_reset_dev;
 
+	/* Only support 8 boot reasons */
+	reason &= 0x7;
+
 	if (!pon)
 		return 0;
 
@@ -353,10 +356,10 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 
 	if (is_pon_gen2(pon))
 		rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
-					   GENMASK(7, 1), (reason << 1));
+					   GENMASK(3, 1), (reason << 1));
 	else
 		rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
-					   GENMASK(7, 2), (reason << 2));
+					   GENMASK(3, 2), (reason << 2));
 
 	if (rc)
 		dev_err(&pon->pdev->dev,
@@ -365,6 +368,28 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 	return rc;
 }
 EXPORT_SYMBOL(qpnp_pon_set_restart_reason);
+
+
+int qpnp_pon_set_boot_chime_volume(uint8_t boot_volume)
+{
+	/* Only numbers from 0 to 15 */
+	boot_volume &= 0xF;
+	int rc = 0;
+	struct qpnp_pon *pon = sys_reset_dev;
+
+	if (!pon)
+		return 0;
+
+	rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
+				GENMASK(7, 4), (boot_volume << 4));
+
+	if (rc)
+		dev_err(&pon->pdev->dev,
+				"Unable to write to addr=%x, rc(%d)\n",
+				QPNP_PON_SOFT_RB_SPARE(pon), rc);
+	return rc;
+}
+EXPORT_SYMBOL(qpnp_pon_set_boot_chime_volume);
 
 /*
  * qpnp_pon_check_hard_reset_stored - Checks if the PMIC need to

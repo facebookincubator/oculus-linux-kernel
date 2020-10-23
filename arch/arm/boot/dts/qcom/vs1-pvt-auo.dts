@@ -21,8 +21,8 @@
 	qcom,board-id = <0x08 0x0F>;
 };
 
-&mdss_dsi {
-	qcom,platform-ocp-int-gpio = <&tlmm 125 0>;
+&panel_avdd_regulator {
+	ocp-gpio = <&tlmm 125 0>;
 };
 
 &pmi8998_wled {

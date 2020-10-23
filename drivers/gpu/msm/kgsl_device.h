@@ -458,7 +458,7 @@ struct kgsl_thread_private {
 	uint64_t sync_ticks;
 
 	uint64_t stats[KGSL_THREADSTATS_MAX];
-	struct kernfs_node *event_sd[KGSL_THREADSTATS_MAX];
+	struct kernfs_node *event_sd[KGSL_THREADSTATS_EVENT_MAX];
 };
 
 /**

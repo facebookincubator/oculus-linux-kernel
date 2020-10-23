@@ -30,7 +30,8 @@ int msm_dcvs_try_enable(struct msm_vidc_inst *inst)
 		return -EINVAL;
 	}
 	inst->dcvs_mode =
-		((inst->session_type == MSM_VIDC_DECODER &&
+		(msm_comm_turbo_session(inst) ||
+		 (inst->session_type == MSM_VIDC_DECODER &&
 		  !msm_vidc_dec_dcvs_mode) ||
 		 (inst->session_type == MSM_VIDC_ENCODER &&
 		  !msm_vidc_enc_dcvs_mode)) ?
@@ -651,5 +652,3 @@ int msm_dcvs_get_extra_buff_count(struct msm_vidc_inst *inst)
 
 	return inst->dcvs.extra_buffer_count;
 }
-
-

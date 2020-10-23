@@ -189,19 +189,7 @@
 };
 
 &tlmm {
-	pcie0 {
-		pcie0_poweron_default: pcie0_poweron_default {
-			mux {
-				pins = "gpio65", "gpio66", "gpio95";
-				function = "gpio";
-			};
-			config {
-				pins = "gpio65", "gpio66", "gpio95";
-				drive-strength = <2>;
-				output-high;
-			};
-		};
-	};
+	/delete-node/ pcie0;
 
 	vs1_misc {
 		vs1_i2c_mux_en_default: vs1_i2c_mux_en_default {
@@ -426,10 +414,11 @@
 };
 
 &pcie0 {
-	pinctrl-0 = <&pcie0_clkreq_default
-		     &pcie0_perst_default
-		     &pcie0_wake_default
-		     &pcie0_poweron_default>;
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+	/delete-property/ perst-gpio;
+	/delete-property/ wake-gpio;
 	status = "disabled";
 };
 
@@ -452,7 +441,7 @@
 	qcom,fg-recharge-voltage = <4250>;
 	qcom,fg-chg-term-current = <200>;
 	qcom,fg-sys-term-current = <(-250)>;
-	qcom,fg-jeita-thresholds = <1 11 43 43>;
+	qcom,fg-jeita-thresholds = <1 11 50 50>;
 	qcom,fg-rconn-mohms = <(-15)>;
 	qcom,fg-force-load-profile;
 };
@@ -533,6 +522,28 @@
 	status = "disabled";
 };
 
+&dsi_panel_pwr_supply_no_labibb {
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "ovr-vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <5>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "ovr-vci";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <10>;
+	};
+};
+
 &dsi_dual_auo_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
 	qcom,cmd-sync-wait-broadcast;
@@ -575,7 +586,7 @@
 };
 
 &pmx_mdss {
-	mdss_dsi_rst_active: mdss_dsi_rst_active {
+	mdss_dsi_active: mdss_dsi_active {
 		mux {
 			pins = "gpio8", "gpio9";
 			function = "gpio";
@@ -587,7 +598,7 @@
 			bias-disable = <0>; /* no pull */
 		};
 	};
-	mdss_dsi_rst_suspend: mdss_dsi_rst_suspend {
+	mdss_dsi_suspend: mdss_dsi_suspend {
 		mux {
 			pins = "gpio8", "gpio9";
 			function = "gpio";
@@ -595,45 +606,44 @@
 
 		config {
 			pins = "gpio8", "gpio9";
-			drive-strength = <2>; /* 2 mA */
-			bias-pull-down; /* pull down */
-		};
-	};
-	mdss_dsi_pwr_active: mdss_dsi_pwr_active {
-		mux {
-			pins = "gpio35", "gpio36";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio35", "gpio36";
-			drive-strength = <2>; /* 2 mA */
-			bias-pull-down; /* pull down */
-		};
-	};
-	mdss_dsi_pwr_suspend: mdss_dsi_pwr_suspend {
-		mux {
-			pins = "gpio35", "gpio36";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio35", "gpio36";
 			drive-strength = <2>; /* 2 mA */
 			bias-pull-down; /* pull down */
 		};
 	};
 };
 
-&mdss_dsi {
-	qcom,platform-vddio-en = <&tlmm 35 0>;
-	qcom,platform-vci-en = <&tlmm 36 0>;
+&soc {
+	panel_vddio_regulator: fixed_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "oled_1p8_vddio_regulator";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		enable-active-high;
+		regulator-boot-on;
+		gpio = <&tlmm 35 0>;
+		vin-supply = <&pmi8998_bob>;
+		status = "ok";
+	};
+
+	panel_vci_regulator: fixed_regulator@1 {
+		compatible = "regulator-fixed";
+		regulator-name = "oled_3p3_vci_regulator";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		regulator-boot-on;
+		gpio = <&tlmm 36 0>;
+		vin-supply = <&pmi8998_bob>;
+		status = "ok";
+	};
 };
 
 &mdss_dsi0 {
 	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_rst_active &mdss_dsi_pwr_active>;
-	pinctrl-1 = <&mdss_dsi_rst_suspend &mdss_dsi_pwr_suspend>;
+	pinctrl-0 = <&mdss_dsi_active>;
+	pinctrl-1 = <&mdss_dsi_suspend>;
+	ovr-vddio-supply = <&panel_vddio_regulator>;
+	ovr-vci-supply = <&panel_vci_regulator>;
 	/delete-property/ qcom,panel-mode-gpio;
 	qcom,dsi-pref-prim-pan = <&dsi_dual_auo_video>;
 	qcom,platform-reset-gpio = <&tlmm 8 0>;
@@ -642,8 +652,10 @@
 
 &mdss_dsi1 {
 	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_rst_active &mdss_dsi_pwr_active>;
-	pinctrl-1 = <&mdss_dsi_rst_suspend &mdss_dsi_pwr_suspend>;
+	pinctrl-0 = <&mdss_dsi_active>;
+	pinctrl-1 = <&mdss_dsi_suspend>;
+	ovr-vddio-supply = <&panel_vddio_regulator>;
+	ovr-vci-supply = <&panel_vci_regulator>;
 	/delete-property/ qcom,panel-mode-gpio;
 	qcom,dsi-pref-prim-pan = <&dsi_dual_auo_video>;
 	qcom,platform-reset-gpio = <&tlmm 9 0>;

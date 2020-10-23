@@ -58,10 +58,8 @@ enum pon_restart_reason {
 	PON_RESTART_REASON_DMVERITY_CORRUPTED	= 0x04,
 	PON_RESTART_REASON_DMVERITY_ENFORCE	= 0x05,
 	PON_RESTART_REASON_KEYS_CLEAR		= 0x06,
-	PON_RESTART_REASON_OEM_UNLOCK		= 0x07,
-	PON_RESTART_REASON_UPGRADE		= 0x08,
-	PON_RESTART_REASON_SILENT_BOOT		= 0x09,
-	PON_RESTART_REASON_KERNEL_PANIC		= 0x0A,
+	PON_RESTART_REASON_KERNEL_PANIC		= 0x07,
+  /* Maximum number of restart reasons supported is 8 */
 };
 
 #ifdef CONFIG_INPUT_QPNP_POWER_ON
@@ -70,6 +68,7 @@ int qpnp_pon_is_warm_reset(void);
 int qpnp_pon_trigger_config(enum pon_trigger_source pon_src, bool enable);
 int qpnp_pon_wd_config(bool enable);
 int qpnp_pon_set_restart_reason(enum pon_restart_reason reason);
+int qpnp_pon_set_boot_chime_volume(uint8_t boot_volume);
 bool qpnp_pon_check_hard_reset_stored(void);
 
 #else

@@ -7368,6 +7368,13 @@ QDF_STATUS csr_scan_save_preferred_network_found(tpAniSirGlobal pMac,
 		uLen = pPrefNetworkFoundInd->frameLength -
 		       (SIR_MAC_HDR_LEN_3A + SIR_MAC_B_PR_SSID_OFFSET);
 	}
+
+	if (uLen > (UINT_MAX - sizeof(tCsrScanResult))) {
+		sme_err("Incorrect len: %d, may leads to int overflow, uLen %d",
+			pPrefNetworkFoundInd->frameLength, uLen);
+		qdf_mem_free(parsed_frm);
+		return QDF_STATUS_E_FAILURE;
+	}
 	pScanResult = qdf_mem_malloc(sizeof(tCsrScanResult) + uLen);
 	if (NULL == pScanResult) {
 		sms_log(pMac, LOGE, FL("fail to allocate memory for frame"));

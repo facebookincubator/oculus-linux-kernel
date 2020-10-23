@@ -45,192 +45,6 @@ static struct mdss_dsi_data *mdss_dsi_res;
 
 static struct pm_qos_request mdss_dsi_pm_qos_request;
 
-#ifdef CONFIG_VS1_BOARD
-static void ovr_regulator_work(struct work_struct *work)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl0_pdata = mdss_dsi_get_ctrl_by_index(0);
-	struct mdss_dsi_ctrl_pdata *ctrl1_pdata = mdss_dsi_get_ctrl_by_index(1);
-	int ctrl0_gpio_val, ctrl1_gpio_val;
-	struct ovr_regulator_data *ordata = ctrl0_pdata->ovr_reg_data;
-
-	ctrl0_gpio_val = gpio_get_value(ctrl0_pdata->disp_int_gpio);
-	ctrl1_gpio_val = gpio_get_value(ctrl1_pdata->disp_int_gpio);
-
-	if (ctrl0_gpio_val == 1 && ctrl1_gpio_val == 1) {
-		/* AVDD on */
-		if (gpio_is_valid(ordata->pmi_en_gpio))
-			gpio_set_value(ordata->pmi_en_gpio, 0);
-		if (gpio_is_valid(ordata->disp_avdd_gpio))
-			gpio_set_value(ordata->disp_avdd_gpio, 1);
-	} else if (ctrl0_gpio_val == 0 && ctrl1_gpio_val == 0) {
-		/* AVDD off */
-		if (gpio_is_valid(ordata->pmi_en_gpio))
-			gpio_set_value(ordata->pmi_en_gpio, 1);
-		if (gpio_is_valid(ordata->disp_avdd_gpio))
-			gpio_set_value(ordata->disp_avdd_gpio, 0);
-	}
-}
-
-static void ocp_regulator_work(struct work_struct *work)
-{
-	struct delayed_work *dw = to_delayed_work(work);
-	struct ovr_regulator_data *ordata = container_of(dw,
-			struct ovr_regulator_data, ocp_reg_work);
-
-	/* AVDD off */
-	if (gpio_is_valid(ordata->pmi_en_gpio))
-		gpio_set_value(ordata->pmi_en_gpio, 1);
-	if (gpio_is_valid(ordata->disp_avdd_gpio))
-		gpio_set_value(ordata->disp_avdd_gpio, 0);
-}
-
-irqreturn_t hw_int_handler(int irq, void *data)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
-		(struct mdss_dsi_ctrl_pdata *)data;
-
-	mod_delayed_work(system_highpri_wq, &ctrl_pdata->ovr_reg_work, 0);
-
-	return IRQ_HANDLED;
-}
-
-/* EVT 2 only */
-irqreturn_t hw_ocp_int_handler(int irq, void *data)
-{
-	struct ovr_regulator_data *ordata = (struct ovr_regulator_data *)data;
-
-	mod_delayed_work(system_highpri_wq, &ordata->ocp_reg_work, 0);
-
-	return IRQ_HANDLED;
-}
-
-static int ovr_regulator_enable(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-		bool enable)
-{
-	struct ovr_regulator_data *ordata = ctrl_pdata->ovr_reg_data;
-	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
-	int rc = 0;
-
-	if (enable) {
-		if (atomic_inc_return(&ordata->refcount) > 1)
-			return 0;
-
-		if (gpio_is_valid(ordata->disp_avdd_gpio)) {
-			rc = gpio_request(ordata->disp_avdd_gpio,
-					"disp_avdd_enable");
-			if (rc) {
-				pr_err("%s: request disp_avdd_gpio gpio failed, rc=%d\n",
-						__func__, rc);
-				goto disp_avdd_gpio_error;
-			}
-			rc = gpio_direction_output(
-				ordata->disp_avdd_gpio,
-				pinfo->cont_splash_enabled ? 1 : 0);
-			if (rc) {
-				pr_err("%s: unable to set dir for disp_avdd_gpio, rc=%d\n",
-						__func__, rc);
-				goto disp_avdd_gpio_error;
-			}
-		}
-
-		if (gpio_is_valid(ordata->pmi_en_gpio)) {
-			rc = gpio_request(ordata->pmi_en_gpio,
-					"pmi_en_gpio");
-			if (rc) {
-				pr_err("%s: request pmi_en_gpio gpio failed, rc=%d\n",
-						__func__, rc);
-				goto pmi_en_gpio_error;
-			}
-			rc = gpio_direction_output(
-				ordata->pmi_en_gpio,
-				pinfo->cont_splash_enabled ? 0 : 1);
-			if (rc) {
-				pr_err("%s: unable to set dir for pmi_en_gpio, rc=%d\n",
-						__func__, rc);
-				goto pmi_en_gpio_error;
-			}
-		}
-
-		if (gpio_is_valid(ordata->vddio_1p8_en_gpio)) {
-			rc = gpio_request(ordata->vddio_1p8_en_gpio,
-					"vddio_1p8_en");
-			if (rc) {
-				pr_err("%s: request vddio_1p8_en failed, rc=%d\n",
-						__func__, rc);
-				goto vddio_1p8_gpio_error;
-			}
-			rc = gpio_direction_output(
-					ordata->vddio_1p8_en_gpio, 1);
-			if (rc) {
-				pr_err("%s: unable to set dir for vddio_1p8_en\n",
-						__func__);
-				goto vddio_1p8_gpio_error;
-			}
-			usleep_range(5000, 10000);
-		}
-
-		if (gpio_is_valid(ordata->vci_3p3_en_gpio)) {
-			rc = gpio_request(ordata->vci_3p3_en_gpio,
-					"vci_3p3_en");
-			if (rc) {
-				pr_err("%s: request vci_3p3_en failed, rc=%d\n",
-						__func__, rc);
-				goto vci_3p3_gpio_error;
-			}
-			rc = gpio_direction_output(ordata->vci_3p3_en_gpio,
-					1);
-			if (rc) {
-				pr_err("%s: unable to set dir for vci_3p3_en gpio\n",
-						__func__);
-				goto vci_3p3_gpio_error;
-			}
-			usleep_range(10000, 15000);
-		}
-	} else {
-		if (atomic_dec_and_test(&ordata->refcount))
-			return 0;
-
-		if (gpio_is_valid(ordata->vci_3p3_en_gpio)) {
-			gpio_set_value((ordata->vci_3p3_en_gpio), 0);
-			usleep_range(5000, 10000);
-		}
-
-		if (gpio_is_valid(ordata->vddio_1p8_en_gpio)) {
-			gpio_set_value((ordata->vddio_1p8_en_gpio), 0);
-			usleep_range(5000, 10000);
-		}
-
-		if (gpio_is_valid(ordata->vddio_1p8_en_gpio))
-			gpio_free(ordata->vddio_1p8_en_gpio);
-
-		if (gpio_is_valid(ordata->vci_3p3_en_gpio))
-			gpio_free(ordata->vci_3p3_en_gpio);
-
-		if (gpio_is_valid(ordata->disp_avdd_gpio))
-			gpio_free(ordata->disp_avdd_gpio);
-
-		if (gpio_is_valid(ordata->pmi_en_gpio))
-			gpio_free(ordata->pmi_en_gpio);
-	}
-
-	return rc;
-
-vci_3p3_gpio_error:
-	if (gpio_is_valid(ordata->vci_3p3_en_gpio))
-		gpio_free(ordata->vci_3p3_en_gpio);
-vddio_1p8_gpio_error:
-	if (gpio_is_valid(ordata->vddio_1p8_en_gpio))
-		gpio_free(ordata->vddio_1p8_en_gpio);
-pmi_en_gpio_error:
-	if (gpio_is_valid(ordata->pmi_en_gpio))
-		gpio_free(ordata->pmi_en_gpio);
-disp_avdd_gpio_error:
-	if (gpio_is_valid(ordata->disp_avdd_gpio))
-		gpio_free(ordata->disp_avdd_gpio);
-	return rc;
-}
-#endif /* CONFIG_VS1_BOARD */
-
 static ssize_t mdss_te_event_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -632,28 +446,11 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-#ifdef CONFIG_VS1_BOARD
-	if (gpio_is_valid(ctrl_pdata->disp_int_gpio))
-		disable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
-
-	if (gpio_is_valid(ctrl_pdata->ovr_reg_data->disp_ocp_int_gpio))
-		disable_irq(gpio_to_irq(
-			ctrl_pdata->ovr_reg_data->disp_ocp_int_gpio));
-#endif
-
 	ret = mdss_dsi_panel_reset(pdata, 0);
 	if (ret) {
 		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
 		ret = 0;
 	}
-
-#ifdef CONFIG_VS1_BOARD
-	usleep_range(10000, 15000);
-	ret = ovr_regulator_enable(ctrl_pdata, false);
-	if (ret)
-		pr_err("%s: Panel regulator disable failed. rc=%d\n",
-				__func__, ret);
-#endif
 
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
@@ -681,20 +478,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-
-#ifdef CONFIG_VS1_BOARD
-	ret = ovr_regulator_enable(ctrl_pdata, true);
-	if (ret)
-		pr_err("%s: Panel regulator enable failed. rc=%d\n",
-				__func__, ret);
-
-	if (gpio_is_valid(ctrl_pdata->disp_int_gpio))
-		enable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
-
-	if (gpio_is_valid(ctrl_pdata->ovr_reg_data->disp_ocp_int_gpio))
-		enable_irq(gpio_to_irq(
-				ctrl_pdata->ovr_reg_data->disp_ocp_int_gpio));
-#endif
 
 	ret = msm_dss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
@@ -3712,22 +3495,6 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-#ifdef CONFIG_VS1_BOARD
-	if (gpio_is_valid(ctrl_pdata->disp_int_gpio)) {
-		rc = devm_request_irq(&pdev->dev,
-				gpio_to_irq(ctrl_pdata->disp_int_gpio),
-				hw_int_handler,
-				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
-				IRQF_NO_THREAD | IRQF_NOBALANCING | IRQF_PERCPU,
-				"INT_GPIO", ctrl_pdata);
-		if (rc) {
-			pr_err("INT request_irq failed\n");
-			goto error_shadow_clk_deinit;
-		}
-		disable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
-	}
-#endif
-
 	rc = mdss_dsi_cont_splash_config(pinfo, ctrl_pdata);
 	if (rc) {
 		pr_err("%s: Failed to set dsi splash config\n", __func__);
@@ -3770,9 +3537,6 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	}
 
 	INIT_DELAYED_WORK(&ctrl_pdata->dba_work, mdss_dsi_dba_work);
-#ifdef CONFIG_VS1_BOARD
-	INIT_DELAYED_WORK(&ctrl_pdata->ovr_reg_work, ovr_regulator_work);
-#endif
 
 	rc = mdss_dsi_ctrl_validate_config(ctrl_pdata);
 	if (rc) {
@@ -3863,61 +3627,6 @@ static int mdss_dsi_parse_dt_params(struct platform_device *pdev,
 	return 0;
 }
 
-#ifdef CONFIG_VS1_BOARD
-static int ovr_regulator_init(struct platform_device *pdev,
-		struct ovr_regulator_data *ordata)
-{
-	int rc;
-
-	ordata->vddio_1p8_en_gpio = of_get_named_gpio(
-			pdev->dev.of_node, "qcom,platform-vddio-en", 0);
-	if (!gpio_is_valid(ordata->vddio_1p8_en_gpio))
-		pr_debug("%s:%d, vddio_1p8_en gpio not specified\n",
-				__func__, __LINE__);
-
-	ordata->vci_3p3_en_gpio = of_get_named_gpio(
-			pdev->dev.of_node, "qcom,platform-vci-en", 0);
-	if (!gpio_is_valid(ordata->vci_3p3_en_gpio))
-		pr_debug("%s:%d, vci_3p3_en gpio not specified\n",
-				__func__, __LINE__);
-
-	ordata->disp_avdd_gpio = of_get_named_gpio(
-			pdev->dev.of_node, "qcom,platform-avdd-gpio", 0);
-	if (!gpio_is_valid(ordata->disp_avdd_gpio))
-		pr_debug("%s:%d, disp_avdd gpio is not specified\n",
-				__func__, __LINE__);
-
-	ordata->pmi_en_gpio = of_get_named_gpio(
-			pdev->dev.of_node, "qcom,platform-pmi-gpio", 0);
-	if (!gpio_is_valid(ordata->pmi_en_gpio))
-		pr_debug("%s:%d pmi_en gpio not specified\n",
-				__func__, __LINE__);
-
-	ordata->disp_ocp_int_gpio = of_get_named_gpio(
-			pdev->dev.of_node, "qcom,platform-ocp-int-gpio", 0);
-	if (gpio_is_valid(ordata->disp_ocp_int_gpio)) {
-		rc = devm_request_irq(&pdev->dev,
-				gpio_to_irq(ordata->disp_ocp_int_gpio),
-				hw_ocp_int_handler,
-				IRQF_TRIGGER_FALLING | IRQF_NO_THREAD |
-				IRQF_NOBALANCING | IRQF_PERCPU,
-				"OCP_INT_GPIO", ordata);
-		if (!rc) {
-			disable_irq(gpio_to_irq(ordata->disp_ocp_int_gpio));
-			INIT_DELAYED_WORK(&ordata->ocp_reg_work,
-					ocp_regulator_work);
-		} else
-			pr_err("OCP INT request_irq failed.\n");
-	} else
-		pr_debug("%s:%d, ocp int gpio not specified\n",
-				__func__, __LINE__);
-
-	atomic_set(&ordata->refcount, 0);
-
-	return 0;
-}
-#endif
-
 static void mdss_dsi_res_deinit(struct platform_device *pdev)
 {
 	int i;
@@ -4000,18 +3709,6 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 			goto mem_fail;
 		}
 
-#ifdef CONFIG_VS1_BOARD
-		mdss_dsi_res->ovr_reg_data = devm_kzalloc(&pdev->dev,
-				sizeof(struct ovr_regulator_data),
-				GFP_KERNEL);
-		if (!mdss_dsi_res->ovr_reg_data) {
-			pr_err("%s Unable to alloc mem for ovr_reg_data\n",
-					__func__);
-			rc = -ENOMEM;
-			goto mem_fail;
-		}
-#endif
-
 		sdata = mdss_dsi_res->shared_data;
 
 		rc = mdss_dsi_parse_dt_params(pdev, sdata);
@@ -4059,15 +3756,6 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 		mutex_init(&sdata->phy_reg_lock);
 		mutex_init(&sdata->pm_qos_lock);
 
-#ifdef CONFIG_VS1_BOARD
-		rc = ovr_regulator_init(pdev, mdss_dsi_res->ovr_reg_data);
-		if (rc) {
-			/* Not present on all variants, log it and move on */
-			pr_debug("%s: failed to init regulator data\n",
-					__func__);
-		}
-#endif
-
 		for (i = 0; i < DSI_CTRL_MAX; i++) {
 			mdss_dsi_res->ctrl_pdata[i] = devm_kzalloc(&pdev->dev,
 					sizeof(struct mdss_dsi_ctrl_pdata),
@@ -4082,10 +3770,6 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 				__func__, i, mdss_dsi_res->ctrl_pdata[i]);
 			mdss_dsi_res->ctrl_pdata[i]->shared_data =
 				mdss_dsi_res->shared_data;
-#ifdef CONFIG_VS1_BOARD
-			mdss_dsi_res->ctrl_pdata[i]->ovr_reg_data =
-				mdss_dsi_res->ovr_reg_data;
-#endif
 		}
 
 		platform_set_drvdata(pdev, mdss_dsi_res);
@@ -4703,16 +4387,6 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 		ctrl_pdata->lcd_mode_sel_gpio = -EINVAL;
 	}
 
-#ifdef CONFIG_VS1_BOARD
-	/*
-	 * Used to signal PMI and AVDD should be enabled
-	 */
-	ctrl_pdata->disp_int_gpio = of_get_named_gpio(
-			ctrl_pdev->dev.of_node, "qcom,platform-int-gpio", 0);
-	if (!gpio_is_valid(ctrl_pdata->disp_int_gpio))
-		pr_debug("%s:%d disp_int gpio not specified\n",
-				__func__, __LINE__);
-#endif
 	return 0;
 }
 

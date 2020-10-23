@@ -27,6 +27,14 @@ enum {
 	KGSL_THREADSTATS_MAX
 };
 
+enum {
+	KGSL_THREADSTATS_SUBMITTED_EVENT = 0,
+	KGSL_THREADSTATS_RETIRED_EVENT,
+	KGSL_THREADSTATS_QUEUED_EVENT,
+	KGSL_THREADSTATS_ACTIVE_TIME_EVENT,
+	KGSL_THREADSTATS_EVENT_MAX
+};
+
 struct kgsl_device;
 struct kgsl_thread_private;
 
@@ -38,4 +46,4 @@ void kgsl_thread_private_close(struct kgsl_thread_private *private);
 struct kgsl_thread_private *kgsl_thread_private_open(
 	struct kgsl_device *device);
 
-#endif /* __KGSL_SHAREDMEM_H */
+#endif /* __KGSL_THREADSTATS_H */

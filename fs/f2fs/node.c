@@ -1427,6 +1427,9 @@ static void __del_from_free_nid_list(struct f2fs_nm_info *nm_i,
 
 static int add_free_nid(struct f2fs_sb_info *sbi, nid_t nid, bool build)
 {
+
+#error you must fix T33104863 in order to enable this config
+
 	struct f2fs_nm_info *nm_i = NM_I(sbi);
 	struct free_nid *i, *e;
 	struct nat_entry *ne;

@@ -276,9 +276,36 @@ static void halt_spmi_pmic_arbiter(void)
 	}
 }
 
+extern void write_boot_chime_volume(const char *cmd)
+{
+	char *volume_substr = NULL;
+	long chime_volume_level = 0;
+	int rc;
+	/* Find the chime volume substring location */
+	volume_substr = strnstr(cmd, ",", 128);
+	if (volume_substr == NULL) {
+		chime_volume_level = 0;
+	} else {
+		volume_substr++; /* skip the comma */
+		rc = kstrtol(volume_substr, 10, &chime_volume_level);
+		if (rc != 0) {
+			pr_err("%s: Unable to parse the chime volume level: %s",
+				__func__, volume_substr);
+			chime_volume_level = 0;
+		}
+	}
+	pr_debug("%s: Set chime volume level to %ld\n",
+			__func__, chime_volume_level);
+	/* Write the boot animation chime volume */
+	qpnp_pon_set_boot_chime_volume((uint8_t) chime_volume_level);
+
+	flush_cache_all();
+}
+
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
+	int rc = 0;
 
 #ifdef CONFIG_QCOM_DLOAD_MODE
 
@@ -324,34 +351,22 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
 			__raw_writel(0x77665502, restart_reason);
-		} else if (!strcmp(cmd, "rtc")) {
+		} else if (!strncmp(cmd, "rtc", 3)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
-		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+		} else if (!strncmp(cmd, "dm-verity device corrupted", 26)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_CORRUPTED);
 			__raw_writel(0x77665508, restart_reason);
-		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+		} else if (!strncmp(cmd, "dm-verity enforcing", 19)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_ENFORCE);
 			__raw_writel(0x77665509, restart_reason);
-		} else if (!strcmp(cmd, "keys clear")) {
+		} else if (!strncmp(cmd, "keys clear", 10)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_KEYS_CLEAR);
 			__raw_writel(0x7766550a, restart_reason);
-		} else if (!strcmp(cmd, "oem unlock")) {
-			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_OEM_UNLOCK);
-			__raw_writel(0x6f656d00, restart_reason);
-		} else if (!strcmp(cmd, "upgrade")) {
-			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_UPGRADE);
-			__raw_writel(0x6f656d00, restart_reason);
-		} else if (!strcmp(cmd, "silent-boot")) {
-			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_SILENT_BOOT);
-			__raw_writel(0x6f656d00, restart_reason);
 		} else if (!strncmp(cmd, "edl", 3) ||
 				!strncmp(cmd, "download", 8)) {
 			enable_emergency_dload_mode();

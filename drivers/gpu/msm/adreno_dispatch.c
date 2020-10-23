@@ -657,9 +657,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = drawobj->timestamp;
 	thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
 
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_ID]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_COUNT]);
+	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_EVENT]);
 
 	trace_adreno_cmdbatch_submitted(drawobj, (int) dispatcher->inflight,
 		time.ticks, (unsigned long) secs, nsecs / 1000, drawctxt->rb,
@@ -1244,6 +1242,7 @@ static unsigned int _check_context_state_to_queue_cmds(
 static void _queue_drawobj(struct adreno_context *drawctxt,
 	struct kgsl_drawobj *drawobj)
 {
+	ktime_t t;
 	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
 
 	/* Put the command into the queue */
@@ -1252,13 +1251,13 @@ static void _queue_drawobj(struct adreno_context *drawctxt,
 			ADRENO_CONTEXT_DRAWQUEUE_SIZE;
 	drawctxt->queued++;
 
-	thread->stats[KGSL_THREADSTATS_QUEUED] = local_clock();
+	/* Get the kernel monotonic clock */
+	t = ktime_get();
+	thread->stats[KGSL_THREADSTATS_QUEUED] = ktime_to_ns(t);
 	thread->stats[KGSL_THREADSTATS_QUEUED_ID] = drawobj->timestamp;
 	thread->stats[KGSL_THREADSTATS_QUEUED_COUNT]++;
 
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_QUEUED]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_QUEUED_ID]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_QUEUED_COUNT]);
+	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_QUEUED_EVENT]);
 
 	trace_adreno_cmdbatch_queued(drawobj, drawctxt->queued);
 }
@@ -2312,8 +2311,6 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 		 * from GPU ticks (which operates on a 19.2 MHz timer) and
 		 * add that to the sync ktime.
 		 */
-		thread->stats[KGSL_THREADSTATS_SUBMITTED] = thread->sync_ktime +
-			(start - thread->sync_ticks) * 10000 / 192;
 		thread->stats[KGSL_THREADSTATS_RETIRED] = thread->sync_ktime +
 			(end - thread->sync_ticks) * 10000 / 192;
 		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
@@ -2323,10 +2320,9 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 	thread->stats[KGSL_THREADSTATS_RETIRED_ID] = drawobj->timestamp;
 	thread->stats[KGSL_THREADSTATS_RETIRED_COUNT]++;
 
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_RETIRED]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_RETIRED_ID]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_RETIRED_COUNT]);
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_ACTIVE_TIME]);
+	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_RETIRED_EVENT]);
+	sysfs_notify_dirent(
+		thread->event_sd[KGSL_THREADSTATS_ACTIVE_TIME_EVENT]);
 
 	/*
 	 * For A3xx we still get the rptr from the CP_RB_RPTR instead of

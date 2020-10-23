@@ -227,7 +227,8 @@ static struct jeita_fv_cfg jeita_fv_config = {
 		/* PROFILE_0 */
 		{
 			/* TEMP_LOW	TEMP_HIGH	FV */
-			{0,		550,		4300000},
+			{0,		430,		4300000},
+			{431,		550,		4060000},
 		},
 		/* PROFILE_1 */
 		{

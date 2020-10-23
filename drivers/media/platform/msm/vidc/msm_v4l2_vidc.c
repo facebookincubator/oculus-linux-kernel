@@ -774,11 +774,48 @@ static int __init msm_vidc_init(void)
 		vidc_driver = NULL;
 	}
 
+	vidc_driver->class = class_create(THIS_MODULE, "vidc");
+
+	if (IS_ERR(vidc_driver->class)) {
+		rc = PTR_ERR(vidc_driver->class);
+		dprintk(VIDC_ERR,
+			"failed to create class for vidc\n");
+		vidc_driver->class = NULL;
+		goto err;
+	}
+
+	/* Make a virtual device for managing core related things
+	 * in sysfs
+	 */
+	vidc_driver->virtdev.class = vidc_driver->class;
+	dev_set_name(&vidc_driver->virtdev, "vidc");
+	rc = device_register(&vidc_driver->virtdev);
+	if (rc) {
+		dprintk(VIDC_ERR,
+			"driver_register failed\n");
+		vidc_driver->virtdev.class = NULL;
+		goto err;
+	}
+
+	INIT_LIST_HEAD(&vidc_driver->thread_list);
+	mutex_init(&vidc_driver->thread_mutex);
+	vidc_driver->threadkobj = kobject_create_and_add(
+		"thread", &vidc_driver->virtdev.kobj);
+
+err:
 	return rc;
 }
 
 static void __exit msm_vidc_exit(void)
 {
+	if (vidc_driver->virtdev.class)
+		device_unregister(&vidc_driver->virtdev);
+
+	if (vidc_driver->class) {
+		class_destroy(vidc_driver->class);
+		vidc_driver->class = NULL;
+	}
+
 	platform_driver_unregister(&msm_vidc_driver);
 	debugfs_remove_recursive(vidc_driver->debugfs_root);
 	mutex_destroy(&vidc_driver->lock);

@@ -2569,7 +2569,8 @@ out:
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
-		int *egl_surface_count, int *egl_image_count)
+		int *egl_surface_count, int *egl_image_count,
+		int *attach_count)
 {
 	struct kgsl_dma_buf_meta *meta = entry->priv_data;
 	struct dma_buf *dmabuf = meta->dmabuf;
@@ -2587,6 +2588,8 @@ void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
 		scan_mem_entry = attachment->priv;
 		if (!scan_mem_entry)
 			continue;
+
+		(*attach_count)++;
 
 		switch (kgsl_memdesc_get_memtype(&scan_mem_entry->memdesc)) {
 		case KGSL_MEMTYPE_EGL_SURFACE:
@@ -2642,7 +2645,7 @@ void kgsl_print_ion_attachments(
 }
 #else
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
-		int *egl_surface_count, int *egl_image_count)
+		int *egl_surface_count, int *egl_image_count, int *attach_count)
 {
 }
 

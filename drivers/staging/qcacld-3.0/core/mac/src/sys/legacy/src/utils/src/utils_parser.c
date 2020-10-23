@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -140,7 +140,7 @@ tSirRetStatus convert_wsc_opaque(tpAniSirGlobal pMac,
 {
 	/* This is awful, I know, but the old code just rammed the IE into */
 	/* an opaque array.  Note that we need to explicitly add the vendorIE and OUI ! */
-	uint8_t curAddIELen = pOld->length;
+	uint16_t curAddIELen = pOld->length;
 
 	pOld->length = curAddIELen + pNew->num_data + 6;
 	pOld->addIEdata[curAddIELen++] = 0xdd;
@@ -159,7 +159,7 @@ tSirRetStatus convert_p2p_opaque(tpAniSirGlobal pMac,
 {
 	/* This is awful, I know, but the old code just rammed the IE into */
 	/* an opaque array.  Note that we need to explicitly add the vendorIE and OUI ! */
-	uint8_t curAddIELen = pOld->length;
+	uint16_t curAddIELen = pOld->length;
 
 	pOld->length = curAddIELen + pNew->num_data + 6;
 	pOld->addIEdata[curAddIELen++] = 0xdd;
@@ -179,7 +179,7 @@ tSirRetStatus convert_wfd_opaque(tpAniSirGlobal pMac,
 {
 	/* This is awful, I know, but the old code just rammed the IE into */
 	/* an opaque array.  Note that we need to explicitly add the vendorIE and OUI ! */
-	uint8_t curAddIELen = pOld->length;
+	uint16_t curAddIELen = pOld->length;
 
 	pOld->length = curAddIELen + pNew->num_data + 6;
 	pOld->addIEdata[curAddIELen++] = 0xdd;

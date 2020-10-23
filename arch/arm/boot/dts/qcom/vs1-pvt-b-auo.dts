@@ -27,14 +27,8 @@
 	};
 };
 
-&i2c_8 {
-	cm710x: cm710x@2C {
-		cm710x,spk-reset-gpio = <&tlmm 54 1>;
-	};
-};
-
-&mdss_dsi {
-	qcom,platform-ocp-int-gpio = <&tlmm 125 0>;
+&panel_avdd_regulator {
+	ocp-gpio = <&tlmm 125 0>;
 };
 
 &pmi8998_wled {
