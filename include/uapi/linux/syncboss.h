@@ -43,6 +43,11 @@ struct syncboss_driver_stream_type_filter {
 	uint8_t num_selected;
 } __packed;
 
+struct syncboss_nsync_event {
+	u64 timestamp;
+	u64 count;
+} __packed;
+
 #define SYNCBOSS_DRIVER_MESSAGE_WAKEUP 1
 #define SYNCBOSS_DRIVER_MESSAGE_PROX_MSG 2
 

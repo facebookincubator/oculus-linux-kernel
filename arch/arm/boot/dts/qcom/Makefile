@@ -103,21 +103,28 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-cdp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
 
 ifeq ($(CONFIG_VS1_BOARD),y)
+# add -unknown2 to DTB names when asking for unknown2 compat
+ifeq ($(CONFIG_unknown28998_COMPAT),y)
+unknown2_compat := -unknown2
+else
+unknown2_compat :=
+endif
+
 dtb-$(CONFIG_ARCH_MSM8998) += \
 	vs1-proto-v1.0.dtb \
 	vs1-proto-v2.0.dtb \
 	vs1-proto-v3.0.dtb \
-	vs1-evt1.dtb \
-	vs1-evt2-auo.dtb \
-	vs1-evt2-sdc.dtb \
-	vs1-evt3-sdc.dtb \
-	vs1-evt3-auo.dtb \
-	vs1-dvt-sdc.dtb \
-	vs1-dvt-auo.dtb \
-	vs1-pvt-sdc.dtb \
-	vs1-pvt-auo.dtb \
-	vs1-pvt-b-auo.dtb \
-	vs1-pvt-b-sdc.dtb \
+	vs1-evt1$(unknown2_compat).dtb \
+	vs1-evt2-auo$(unknown2_compat).dtb \
+	vs1-evt2-sdc$(unknown2_compat).dtb \
+	vs1-evt3-sdc$(unknown2_compat).dtb \
+	vs1-evt3-auo$(unknown2_compat).dtb \
+	vs1-dvt-sdc$(unknown2_compat).dtb \
+	vs1-dvt-auo$(unknown2_compat).dtb \
+	vs1-pvt-sdc$(unknown2_compat).dtb \
+	vs1-pvt-auo$(unknown2_compat).dtb \
+	vs1-pvt-b-auo$(unknown2_compat).dtb \
+	vs1-pvt-b-sdc$(unknown2_compat).dtb \
 	vs1-ptc.dtb
 else
 dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \

@@ -265,6 +265,7 @@ struct msm_vidc_core {
 struct msm_vidc_inst {
 	struct list_head list;
 	struct mutex sync_lock, lock;
+	u32 id;
 	struct msm_vidc_core *core;
 	enum session_type session_type;
 	void *session;

@@ -1151,6 +1151,21 @@ int msm_vidc_dqevent(void *inst, struct v4l2_event *event)
 }
 EXPORT_SYMBOL(msm_vidc_dqevent);
 
+static u32 msm_vidc_get_unique_id(struct msm_vidc_core *core)
+{
+	struct msm_vidc_inst *inst = NULL;
+	u32 id = 0;
+
+	mutex_lock(&core->lock);
+	list_for_each_entry(inst, &core->instances, list) {
+		if (id <= inst->id)
+			id = inst->id + 1;
+	}
+	mutex_unlock(&core->lock);
+
+	return id;
+}
+
 static bool msm_vidc_check_for_inst_overload(struct msm_vidc_core *core)
 {
 	u32 instance_count = 0;
@@ -1263,6 +1278,8 @@ void *msm_vidc_open(int core_id, int session_type)
 	}
 
 	setup_event_queue(inst, &core->vdev[session_type].vdev);
+
+	inst->id = msm_vidc_get_unique_id(core);
 
 	mutex_lock(&core->lock);
 	list_add_tail(&inst->list, &core->instances);

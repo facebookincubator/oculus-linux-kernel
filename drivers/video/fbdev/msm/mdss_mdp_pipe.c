@@ -19,6 +19,7 @@
 #include <linux/mutex.h>
 
 #include "mdss_mdp.h"
+#include "mdss_mdp_pp.h"
 #include "mdss_mdp_trace.h"
 #include "mdss_debug.h"
 
@@ -2169,6 +2170,43 @@ static int mdss_mdp_format_setup(struct mdss_mdp_pipe *pipe)
 		break;
 	case MDP_LAYER_COLOR_B:
 		unpack = unpack_filter(unpack, C1_B_Cb);
+		break;
+	case MDP_LAYER_MURA: {
+		char __iomem *pipe_base = pipe->base +
+				mdata->pp_block_off.dma_pcc_off;
+
+		if (pipe->type != MDSS_MDP_PIPE_TYPE_DMA) {
+			pr_err("Invalid pipe type %d\n", pipe->type);
+			break;
+		}
+
+		/*
+		 * PCC coeff mask 0x3FFFF, scale factor: 0x7FFF
+		 * --------------------------------------------
+		 *  1.0 ==> 0x7FFF
+		 * -0.5 ==> 0x3C000
+		 *
+		 * To do mura correction without a signed blend, we can abuse
+		 * the color correction matrix to subtract the "blue" channel
+		 * (which is normally unused) from the red and green correction
+		 * Setting the layer's blue value to 255 allows us to rescale
+		 * the actual mura correction values from an unsigned 8-bit
+		 * value to a signed 8-bit value.
+		 *
+		 * [[1.0, 0.0, -0.5],
+		 *  [0.0, 1.0, -0.5],
+		 *  [0.0, 0.0,  0.0]]
+		 */
+		writel_relaxed(0x07FFF, pipe_base + 0x10); /* pcc_data->r.r */
+		writel_relaxed(0x07FFF, pipe_base + 0x20); /* pcc_data->g.g */
+		writel_relaxed(0x3C000, pipe_base + 0x28); /* pcc_data->r.b */
+		writel_relaxed(0x3C000, pipe_base + 0x2C); /* pcc_data->g.b */
+		writel_relaxed(0x00000, pipe_base + 0x30); /* pcc_data->b.b */
+		writel_relaxed(BIT(0), pipe_base); /* Enable PCC */
+		pipe->pp_res.pp_sts.pcc_sts |= PP_STS_ENABLE;
+
+		break; }
+	default:
 		break;
 	}
 
