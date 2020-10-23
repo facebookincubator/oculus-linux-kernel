@@ -49,7 +49,6 @@
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/mm.h>
 #include <linux/debug_locks.h>
 
 #define TIMER_MARGIN	60		/* Default is 60 seconds */
@@ -87,8 +86,6 @@ static struct timer_list watchdog_ticktock =
 static void softdog_print_sys_info(void)
 {
 	show_state_filter(TASK_UNINTERRUPTIBLE);
-	show_mem(0);
-	sysrq_timer_list_show();
 	debug_show_all_locks();
 }
 

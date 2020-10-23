@@ -332,6 +332,9 @@ struct syncboss_dev_data {
 	 */
 	atomic64_t last_te_timestamp_ns;
 
+	/* Regulator for the nRF */
+	struct regulator *mcu_core;
+
 	/* Regulator for IMU */
 	struct regulator *imu_core;
 
@@ -623,8 +626,8 @@ static int read_cal_int(struct syncboss_dev_data *devdata,
 	status = request_firmware(&fw, cal_file_name, &devdata->spi->dev);
 	if (status != 0) {
 		dev_err(&devdata->spi->dev,
-			"request_firmware(%s) returned %d. Please ensure syncboss.bin is present",
-			cal_file_name, status);
+			"request_firmware() returned %d. Please ensure %s is present",
+			status, cal_file_name);
 		return status;
 	}
 
@@ -1720,6 +1723,16 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	 */
 	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
 
+	if (devdata->mcu_core) {
+		status = regulator_enable(devdata->mcu_core);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable MCU power: %d",
+					status);
+			goto error;
+		}
+	}
+
 	if (devdata->imu_core) {
 		status = regulator_enable(devdata->imu_core);
 		if (status < 0) {
@@ -1924,6 +1937,15 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 	} else {
 		dev_warn(&devdata->spi->dev,
 			"Not stopping worker since it appears to be be NULL");
+	}
+
+	if (devdata->mcu_core) {
+		status = regulator_disable(devdata->mcu_core);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable MCU power: %d",
+					status);
+		}
 	}
 
 	if (devdata->imu_core) {
@@ -2164,6 +2186,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
 	struct device_node *node = spi->dev.of_node;
+	u32 temp_transaction_length = 0;
 
 	devdata->spi = spi;
 
@@ -2172,7 +2195,11 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
 	devdata->min_time_between_transactions_ns =
 		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
-	devdata->transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
+	if (!of_property_read_u32(node, "oculus,transaction-length", &temp_transaction_length) &&
+	    (temp_transaction_length <= SYNCBOSS_MAX_TRANSACTION_LENGTH))
+		devdata->transaction_length = (u16)temp_transaction_length;
+	else
+		devdata->transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
 	devdata->spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->transaction_ctr = 0;
 	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
@@ -2274,6 +2301,7 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		return status;
 
+	fw_init_regulator(&spi->dev, &devdata->mcu_core, "mcu-core");
 	fw_init_regulator(&spi->dev, &devdata->imu_core, "imu-core");
 	fw_init_regulator(&spi->dev, &devdata->mag_core, "mag-core");
 
@@ -2488,6 +2516,7 @@ static int syncboss_remove(struct spi_device *spi)
 
 	of_platform_depopulate(&spi->dev);
 
+	regulator_put(devdata->mcu_core);
 	regulator_put(devdata->imu_core);
 	regulator_put(devdata->mag_core);
 

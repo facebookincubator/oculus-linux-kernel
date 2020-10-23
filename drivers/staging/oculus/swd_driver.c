@@ -41,6 +41,7 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 	    of_device_is_compatible(parent_node, "oculus,syncboss")) {
 		struct swd_ops *ops = dev_get_drvdata(dev->parent);
 
+		devdata->is_busy = ops->is_busy;
 		devdata->on_firmware_update_complete = ops->fw_update_cb;
 	}
 

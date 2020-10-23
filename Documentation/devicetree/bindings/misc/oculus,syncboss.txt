@@ -8,8 +8,12 @@ Optional properties:
 - oculus,syncboss-timesync = handle to gpio node for timesync pin
 - oculus,syncboss-wakeup = handle to gpio node for wakeup pin
 - oculus,syncboss-nsync = handle to gpio node for nsync pin
-- oculus,imu-core-supply : handle to regulator node to power IMU, if applicable
-- oculus,imu-core-voltage-level = cell with IMU regulator voltage min-max, if
+- oculus,mcu-core-supply : handle to regulator node to power the syncboss MCU,
+  if applicable
+- oculus,mcu-core-voltage-level = cell with mcu regulator voltage min-max, if
+  applicable
+- oculus,imu-core-supply : handle to regulator node to power imu, if applicable
+- oculus,imu-core-voltage-level = cell with imu regulator voltage min-max, if
   applicable
 - oculus,mag-core-supply : handle to regulator node to power magnetometer, if
   applicable

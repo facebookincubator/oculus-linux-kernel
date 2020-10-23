@@ -191,6 +191,8 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_TZ_LOCKED BIT(7)
 /* The memdesc is allocated through contiguous memory */
 #define KGSL_MEMDESC_CONTIG BIT(8)
+/* For global buffers, randomly assign an address from the region */
+#define KGSL_MEMDESC_RANDOM BIT(9)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor

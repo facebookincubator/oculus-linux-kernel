@@ -46,27 +46,11 @@ static int update_firmware(struct device *dev)
 	const int block_size = flash->block_size;
 	const struct firmware *fw = devdata->fw;
 
-	size_t max_fw_size =
-		(flash->num_pages - devdata->swd_ops.reserved_pages)
-		* flash->page_size;
-
-	if (fw->size > max_fw_size) {
-		dev_err(dev,
-			"Firmware binary size too large, provided size: %zd, max size: %zd",
-			fw->size, max_fw_size);
-		return -ENOMEM;
-	}
-
-	if (devdata->is_busy && devdata->is_busy(dev)) {
-		dev_err(dev, "Cannot update firmware while device is busy");
-		return -EINVAL;
-	}
-
 	if (devdata->swd_core) {
 		status = regulator_enable(devdata->swd_core);
 		if (status) {
 			dev_err(dev, "Regulator failed to enable");
-			return status;
+			goto error;
 		}
 	}
 
@@ -91,7 +75,8 @@ static int update_firmware(struct device *dev)
 
 	if (!devdata->swd_ops.target_program_write_block) {
 		dev_err(dev, "SWD write_block is NULL!");
-		return -EINVAL;
+		status = -EINVAL;
+		goto error;
 	}
 
 	while (bytes_written < fw->size) {
@@ -181,6 +166,10 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 {
 	int status = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct flash_info *flash = &devdata->flash_info;
+	size_t max_fw_size =
+		(flash->num_pages - devdata->swd_ops.reserved_pages)
+		* flash->page_size;
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
@@ -193,10 +182,16 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 			"Cannot update firmware since swd lines were not specified");
 		status = -EINVAL;
 		goto error;
-	} else if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
+	}
+	if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
 		dev_err(dev,
 			"Cannot update firmware while firmware update is not in the idle state, is another fw update running?");
 		status = -EINVAL;
+		goto error;
+	}
+	if (devdata->is_busy && devdata->is_busy(dev)) {
+		dev_err(dev, "Cannot update firmware while device is busy");
+		status = -EBUSY;
 		goto error;
 	}
 
@@ -214,12 +209,28 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 		goto error;
 	}
 
+	if (devdata->fw->size > max_fw_size) {
+		dev_err(dev,
+			"Firmware binary size too large, provided size: %zd, max size: %zd",
+			devdata->fw->size, max_fw_size);
+		status = -ENOMEM;
+		goto error;
+	}
+
 	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;
 
 	fw_queue_work(devdata->workqueue, dev, swd_workqueue_fw_update, NULL);
-	status = count;
+
+	mutex_unlock(&devdata->state_mutex);
+
+	return count;
 
 error:
+	if (devdata->fw) {
+		release_firmware(devdata->fw);
+		devdata->fw = NULL;
+	}
+
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }

@@ -1041,6 +1041,8 @@
 		oculus,syncboss-reset = <&tlmm 126 0>;
 		oculus,syncboss-timesync = <&tlmm 10 0>;
 		oculus,syncboss-wakeup = <&tlmm 119 0>;
+		oculus,mcu-core-supply = <&pm8998_l28>;
+		oculus,mcu-core-voltage-level = <1808000 1808000>;
 		oculus,imu-core-supply = <&pm8998_l28>;
 		oculus,imu-core-voltage-level = <1808000 1808000>;
 		oculus,mag-core-supply = <&pm8998_l28>;
@@ -1054,6 +1056,8 @@
 
 			oculus,swd-clk = <&tlmm 58 0>;
 			oculus,swd-io = <&tlmm 59 0>;
+			oculus,swd-core-supply = <&pm8998_l28>;
+			oculus,swd-core-voltage-level = <1808000 1808000>;
 
 			oculus,swd-flavor = "nrf52832";
 			oculus,fw-path = "syncboss.bin";

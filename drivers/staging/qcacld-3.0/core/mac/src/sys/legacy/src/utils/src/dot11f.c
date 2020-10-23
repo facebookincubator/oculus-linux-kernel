@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -812,6 +812,11 @@ uint32_t dot11f_unpack_tlv_authorized_ma_cs(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->mac, pBuf, 6);
 	pBuf += 6;
 	tlvlen -= (uint8_t)6;
@@ -833,6 +838,11 @@ uint32_t dot11f_unpack_tlv_version2(tpAniSirGlobal pCtx,
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	uint8_t tmp5__;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp5__ = *pBuf;
 	pBuf += 1;
 	tlvlen -= 1;
@@ -890,9 +900,19 @@ uint32_t dot11f_unpack_tlv_extended_listen_timing(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->availibilityPeriod, pBuf, 0);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->availibilityInterval, pBuf, 0);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
@@ -910,12 +930,27 @@ uint32_t dot11f_unpack_tlv_listen_channel(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 3)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->countryString, pBuf, 3);
 	pBuf += 3;
 	tlvlen -= (uint8_t)3;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->regulatoryClass = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->channel = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
@@ -1005,9 +1040,19 @@ uint32_t dot11f_unpack_tlv_notice_of_absence(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->index = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->CTSWindowOppPS = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
@@ -1034,12 +1079,27 @@ uint32_t dot11f_unpack_tlv_operating_channel(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 3)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->countryString, pBuf, 3);
 	pBuf += 3;
 	tlvlen -= (uint8_t)3;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->regulatoryClass = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->channel = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
@@ -1057,9 +1117,19 @@ uint32_t dot11f_unpack_tlv_p2_p_capability(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->deviceCapability = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->groupCapability = *pBuf;
 	pBuf += 1;
 	tlvlen -= (uint8_t)1;
@@ -1077,6 +1147,11 @@ uint32_t dot11f_unpack_tlv_p2_p_device_id(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->P2PDeviceAddress, pBuf, 6);
 	pBuf += 6;
 	tlvlen -= (uint8_t)6;
@@ -1101,12 +1176,27 @@ uint32_t dot11f_unpack_tlv_p2_p_device_info(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->P2PDeviceAddress, pBuf, 6);
 	pBuf += 6;
 	tlvlen -= (uint8_t)6;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->configMethod, pBuf, 0);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
+	if (unlikely(tlvlen < 8)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->primaryDeviceType, pBuf, 8);
 	pBuf += 8;
 	tlvlen -= (uint8_t)8;
@@ -1152,12 +1242,27 @@ uint32_t dot11f_unpack_tlv_primary_device_type(tpAniSirGlobal pCtx,
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	(void)pBuf; (void)tlvlen; /* Shutup the compiler */
 	pDst->present = 1;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->primary_category, pBuf, 1);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
+	if (unlikely(tlvlen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->oui, pBuf, 4);
 	pBuf += 4;
 	tlvlen -= (uint8_t)4;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->sub_category, pBuf, 1);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
@@ -1178,12 +1283,27 @@ uint32_t dot11f_unpack_tlv_request_device_type(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->primary_category, pBuf, 1);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
+	if (unlikely(tlvlen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->oui, pBuf, 4);
 	pBuf += 4;
 	tlvlen -= (uint8_t)4;
+	if (unlikely(tlvlen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->sub_category, pBuf, 1);
 	pBuf += 2;
 	tlvlen -= (uint8_t)2;
@@ -1236,6 +1356,11 @@ uint32_t dot11f_unpack_tlv_uuid_e(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->uuid, pBuf, 16);
 	pBuf += 16;
 	tlvlen -= (uint8_t)16;
@@ -1253,6 +1378,11 @@ uint32_t dot11f_unpack_tlv_uuid_r(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->uuid, pBuf, 16);
 	pBuf += 16;
 	tlvlen -= (uint8_t)16;
@@ -1284,6 +1414,11 @@ uint32_t dot11f_unpack_tlv_vendor_extension(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 3)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->vendorId, pBuf, 3);
 	pBuf += 3;
 	tlvlen -= (uint8_t)3;
@@ -1308,6 +1443,11 @@ uint32_t dot11f_unpack_tlv_version(tpAniSirGlobal pCtx,
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	uint8_t tmp6__;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp6__ = *pBuf;
 	pBuf += 1;
 	tlvlen -= 1;
@@ -1330,6 +1470,11 @@ uint32_t dot11f_unpack_tlv_p2_p_interface(tpAniSirGlobal pCtx,
 {
 	uint32_t status = DOT11F_PARSE_SUCCESS;
 	pDst->present = 1;
+	if (unlikely(tlvlen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->P2PDeviceAddress, pBuf, 6);
 	pBuf += 6;
 	tlvlen -= (uint8_t)6;
@@ -1354,14 +1499,29 @@ uint32_t dot11f_unpack_ie_gtk(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp7__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
 	pDst->keyId = tmp7__ >> 0 & 0x3;
 	pDst->reserved = tmp7__ >> 2 & 0x3feb;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->keyLength = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 8)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->RSC, pBuf, 8);
 	pBuf += 8;
 	ielen -= (uint8_t)8;
@@ -1389,15 +1549,35 @@ uint32_t dot11f_unpack_ie_igtk(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->keyID, pBuf, 2);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->IPN, pBuf, 6);
 	pBuf += 6;
 	ielen -= (uint8_t)6;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->keyLength = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 24)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->key, pBuf, 24);
 	(void)pCtx;
 	return status;
@@ -1440,6 +1620,11 @@ uint32_t dot11f_unpack_ie_r1_kh_id(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->PMK_R1_ID, pBuf, 6);
 	(void)pCtx;
 	return status;
@@ -1458,6 +1643,11 @@ uint32_t dot11f_unpack_ie_ap_channel_report(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->regulatoryClass = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -1485,6 +1675,11 @@ uint32_t dot11f_unpack_ie_bcn_reporting_detail(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->reportingDetail = *pBuf;
 	(void)pCtx;
 	return status;
@@ -1527,9 +1722,19 @@ uint32_t dot11f_unpack_ie_beacon_reporting(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->reportingCondition = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->threshold = *pBuf;
 	(void)pCtx;
 	return status;
@@ -1548,6 +1753,11 @@ uint32_t dot11f_unpack_ie_condensed_country_str(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->countryStr, pBuf, 2);
 	(void)pCtx;
 	return status;
@@ -1566,6 +1776,11 @@ uint32_t dot11f_unpack_ie_measurement_pilot(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->measurementPilot = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -1588,6 +1803,11 @@ uint32_t dot11f_unpack_ie_multi_bssid(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->maxBSSIDIndicator = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -1610,12 +1830,27 @@ uint32_t dot11f_unpack_ie_ric_data(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->Identifier = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->resourceDescCount = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->statusCode, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -1634,6 +1869,11 @@ uint32_t dot11f_unpack_ie_ric_descriptor(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->resourceType = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -1661,6 +1901,11 @@ uint32_t dot11f_unpack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp8__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -1672,6 +1917,11 @@ uint32_t dot11f_unpack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 	pDst->BeaconActive = tmp8__ >> 5 & 0x1;
 	pDst->BeaconTable = tmp8__ >> 6 & 0x1;
 	pDst->BeaconRepCond = tmp8__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp9__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -1683,6 +1933,11 @@ uint32_t dot11f_unpack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 	pDst->LCIAzimuth = tmp9__ >> 5 & 0x1;
 	pDst->TCMCapability = tmp9__ >> 6 & 0x1;
 	pDst->triggeredTCM = tmp9__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp10__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -1690,6 +1945,11 @@ uint32_t dot11f_unpack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 	pDst->RRMMIBEnabled = tmp10__ >> 1 & 0x1;
 	pDst->operatingChanMax = tmp10__ >> 2 & 0x7;
 	pDst->nonOperatinChanMax = tmp10__ >> 5 & 0x7;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp11__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -1699,6 +1959,11 @@ uint32_t dot11f_unpack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 	pDst->RCPIMeasurement = tmp11__ >> 5 & 0x1;
 	pDst->RSNIMeasurement = tmp11__ >> 6 & 0x1;
 	pDst->BssAvgAccessDelay = tmp11__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp12__ = *pBuf;
 	pDst->BSSAvailAdmission = tmp12__ >> 0 & 0x1;
 	pDst->AntennaInformation = tmp12__ >> 1 & 0x1;
@@ -1768,6 +2033,11 @@ uint32_t dot11f_unpack_ie_schedule(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp13__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -1775,15 +2045,35 @@ uint32_t dot11f_unpack_ie_schedule(tpAniSirGlobal pCtx,
 	pDst->tsid = tmp13__ >> 1 & 0xf;
 	pDst->direction = tmp13__ >> 5 & 0x3;
 	pDst->reserved = tmp13__ >> 7 & 0x1ff;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_start_time, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_interval, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->max_service_dur, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->spec_interval, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -1802,68 +2092,163 @@ uint32_t dot11f_unpack_ie_tclas(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->user_priority = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->classifier_type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->classifier_mask = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
 	switch (pDst->classifier_type) {
 	case 0:
+		if (unlikely(ielen < 6)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->info.EthParams.source, pBuf, 6);
 		pBuf += 6;
 		ielen -= (uint8_t)6;
+		if (unlikely(ielen < 6)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->info.EthParams.dest, pBuf, 6);
 		pBuf += 6;
 		ielen -= (uint8_t)6;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->info.EthParams.type, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 		break;
 	case 1:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->info.IpParams.version = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
 		switch (pDst->info.IpParams.version) {
 		case 4:
+			if (unlikely(ielen < 4)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV4Params.source, pBuf, 4);
 			pBuf += 4;
 			ielen -= (uint8_t)4;
+			if (unlikely(ielen < 4)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV4Params.dest, pBuf, 4);
 			pBuf += 4;
 			ielen -= (uint8_t)4;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV4Params.src_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV4Params.dest_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.DSCP = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.proto = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.reserved = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
 			break;
 		case 6:
+			if (unlikely(ielen < 16)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.source, pBuf, 16);
 			pBuf += 16;
 			ielen -= (uint8_t)16;
+			if (unlikely(ielen < 16)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.dest, pBuf, 16);
 			pBuf += 16;
 			ielen -= (uint8_t)16;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV6Params.src_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV6Params.dest_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 3)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.flow_label, pBuf, 3);
 			pBuf += 3;
 			ielen -= (uint8_t)3;
@@ -1871,6 +2256,11 @@ uint32_t dot11f_unpack_ie_tclas(tpAniSirGlobal pCtx,
 		}
 		break;
 	case 2:
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->info.Params8021dq.tag_type, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
@@ -1896,6 +2286,11 @@ uint32_t dot11f_unpack_ie_ts_delay(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->delay, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -1914,9 +2309,19 @@ uint32_t dot11f_unpack_ie_tsf_info(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->TsfOffset, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->BeaconIntvl, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -1938,6 +2343,11 @@ uint32_t dot11f_unpack_ie_tspec(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp14__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -1949,55 +2359,135 @@ uint32_t dot11f_unpack_ie_tspec(tpAniSirGlobal pCtx,
 	pDst->psb = tmp14__ >> 10 & 0x1;
 	pDst->user_priority = tmp14__ >> 11 & 0x7;
 	pDst->tsinfo_ack_pol = tmp14__ >> 14 & 0x3;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp15__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->schedule = tmp15__ >> 0 & 0x1;
 	pDst->unused = tmp15__ >> 1 & 0x7f;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp16__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
 	pDst->size = tmp16__ >> 0 & 0x7fff;
 	pDst->fixed = tmp16__ >> 15 & 0x1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->max_msdu_size, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_service_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->max_service_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->inactivity_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->suspension_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_start_time, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->mean_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->peak_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->burst_size, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->delay_bound, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_phy_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->surplus_bw_allowance, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->medium_time, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2019,6 +2509,11 @@ uint32_t dot11f_unpack_ie_vht_caps(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &tmp17__, pBuf, 0);
 	pBuf += 4;
 	ielen -= 4;
@@ -2042,17 +2537,37 @@ uint32_t dot11f_unpack_ie_vht_caps(tpAniSirGlobal pCtx,
 	pDst->rxAntPattern = tmp17__ >> 28 & 0x1;
 	pDst->txAntPattern = tmp17__ >> 29 & 0x1;
 	pDst->reserved1 = tmp17__ >> 30 & 0x3;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->rxMCSMap, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp18__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
 	pDst->rxHighSupDataRate = tmp18__ >> 0 & 0x1fff;
 	pDst->reserved2 = tmp18__ >> 13 & 0x7;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->txMCSMap, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp19__, pBuf, 0);
 	pDst->txSupDataRate = tmp19__ >> 0 & 0x1fff;
 	pDst->reserved3 = tmp19__ >> 13 & 0x7;
@@ -2073,15 +2588,35 @@ uint32_t dot11f_unpack_ie_vht_operation(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->chanWidth = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->chanCenterFreqSeg1 = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->chanCenterFreqSeg2 = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->basicMCSSet, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2101,6 +2636,11 @@ uint32_t dot11f_unpack_ie_wmm_schedule(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2108,6 +2648,11 @@ uint32_t dot11f_unpack_ie_wmm_schedule(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp20__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -2115,15 +2660,35 @@ uint32_t dot11f_unpack_ie_wmm_schedule(tpAniSirGlobal pCtx,
 	pDst->tsid = tmp20__ >> 1 & 0xf;
 	pDst->direction = tmp20__ >> 5 & 0x3;
 	pDst->reserved = tmp20__ >> 7 & 0x1ff;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_start_time, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_interval, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->max_service_dur, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->spec_interval, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2142,6 +2707,11 @@ uint32_t dot11f_unpack_ie_wmmtclas(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2149,68 +2719,163 @@ uint32_t dot11f_unpack_ie_wmmtclas(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->user_priority = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->classifier_type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->classifier_mask = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
 	switch (pDst->classifier_type) {
 	case 0:
+		if (unlikely(ielen < 6)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->info.EthParams.source, pBuf, 6);
 		pBuf += 6;
 		ielen -= (uint8_t)6;
+		if (unlikely(ielen < 6)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->info.EthParams.dest, pBuf, 6);
 		pBuf += 6;
 		ielen -= (uint8_t)6;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->info.EthParams.type, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 		break;
 	case 1:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->info.IpParams.version = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
 		switch (pDst->info.IpParams.version) {
 		case 4:
+			if (unlikely(ielen < 4)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV4Params.source, pBuf, 4);
 			pBuf += 4;
 			ielen -= (uint8_t)4;
+			if (unlikely(ielen < 4)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV4Params.dest, pBuf, 4);
 			pBuf += 4;
 			ielen -= (uint8_t)4;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV4Params.src_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV4Params.dest_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.DSCP = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.proto = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->info.IpParams.params.IpV4Params.reserved = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
 			break;
 		case 6:
+			if (unlikely(ielen < 16)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.source, pBuf, 16);
 			pBuf += 16;
 			ielen -= (uint8_t)16;
+			if (unlikely(ielen < 16)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.dest, pBuf, 16);
 			pBuf += 16;
 			ielen -= (uint8_t)16;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV6Params.src_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->info.IpParams.params.IpV6Params.dest_port, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 3)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->info.IpParams.params.IpV6Params.flow_label, pBuf, 3);
 			pBuf += 3;
 			ielen -= (uint8_t)3;
@@ -2218,6 +2883,11 @@ uint32_t dot11f_unpack_ie_wmmtclas(tpAniSirGlobal pCtx,
 		}
 		break;
 	case 2:
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->info.Params8021dq.tag_type, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
@@ -2240,6 +2910,11 @@ uint32_t dot11f_unpack_ie_wmmtclasproc(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2247,6 +2922,11 @@ uint32_t dot11f_unpack_ie_wmmtclasproc(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->processing = *pBuf;
 	(void)pCtx;
 	return status;
@@ -2265,6 +2945,11 @@ uint32_t dot11f_unpack_ie_wmmts_delay(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2272,6 +2957,11 @@ uint32_t dot11f_unpack_ie_wmmts_delay(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->delay, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2293,6 +2983,11 @@ uint32_t dot11f_unpack_ie_wmmtspec(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2300,6 +2995,11 @@ uint32_t dot11f_unpack_ie_wmmtspec(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp21__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -2311,55 +3011,135 @@ uint32_t dot11f_unpack_ie_wmmtspec(tpAniSirGlobal pCtx,
 	pDst->psb = tmp21__ >> 10 & 0x1;
 	pDst->user_priority = tmp21__ >> 11 & 0x7;
 	pDst->tsinfo_ack_pol = tmp21__ >> 14 & 0x3;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp22__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->tsinfo_rsvd = tmp22__ >> 0 & 0x7f;
 	pDst->burst_size_defn = tmp22__ >> 7 & 0x1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp23__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
 	pDst->size = tmp23__ >> 0 & 0x7fff;
 	pDst->fixed = tmp23__ >> 15 & 0x1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->max_msdu_size, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_service_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->max_service_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->inactivity_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->suspension_int, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->service_start_time, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->mean_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->peak_data_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->burst_size, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->delay_bound, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->min_phy_rate, pBuf, 0);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->surplus_bw_allowance, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->medium_time, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2378,12 +3158,27 @@ uint32_t dot11f_unpack_ie_wider_bw_chan_switch_ann(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->newChanWidth = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->newCenterChanFreq0 = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->newCenterChanFreq1 = *pBuf;
 	(void)pCtx;
 	return status;
@@ -2402,6 +3197,11 @@ uint32_t dot11f_unpack_ie_azimuth_req(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->request = *pBuf;
 	(void)pCtx;
 	return status;
@@ -2420,6 +3220,11 @@ uint32_t dot11f_unpack_ie_max_age(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->max_age, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2467,9 +3272,19 @@ uint32_t dot11f_unpack_ie_neighbor_rpt(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->bssid, pBuf, 6);
 	pBuf += 6;
 	ielen -= (uint8_t)6;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp24__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2480,6 +3295,11 @@ uint32_t dot11f_unpack_ie_neighbor_rpt(tpAniSirGlobal pCtx,
 	pDst->QosCap = tmp24__ >> 5 & 0x1;
 	pDst->apsd = tmp24__ >> 6 & 0x1;
 	pDst->rrm = tmp24__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp25__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2487,15 +3307,35 @@ uint32_t dot11f_unpack_ie_neighbor_rpt(tpAniSirGlobal pCtx,
 	pDst->ImmBA = tmp25__ >> 1 & 0x1;
 	pDst->MobilityDomain = tmp25__ >> 2 & 0x1;
 	pDst->reserved = tmp25__ >> 3 & 0x1f;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->reserved1, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->regulatoryClass = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->channel = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->PhyType = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2523,6 +3363,11 @@ uint32_t dot11f_unpack_ie_req_mac_addr(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->addr, pBuf, 6);
 	(void)pCtx;
 	return status;
@@ -2541,6 +3386,11 @@ uint32_t dot11f_unpack_ie_tgt_mac_addr(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->addr, pBuf, 6);
 	(void)pCtx;
 	return status;
@@ -2583,6 +3433,11 @@ uint32_t dot11f_unpack_ie_aid(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->assocId, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2601,15 +3456,35 @@ uint32_t dot11f_unpack_ie_cf_params(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->cfp_count = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->cfp_period = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->cfp_maxduration, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->cfp_durremaining, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2652,12 +3527,27 @@ uint32_t dot11f_unpack_ie_chan_switch_ann(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->switchMode = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->newChannel = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->switchCount = *pBuf;
 	(void)pCtx;
 	return status;
@@ -2716,6 +3606,11 @@ uint32_t dot11f_unpack_ie_country(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 3)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->country, pBuf, 3);
 	pBuf += 3;
 	ielen -= (uint8_t)3;
@@ -2759,12 +3654,27 @@ uint32_t dot11f_unpack_ie_edca_param_set(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->qos = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->reserved = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp26__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2772,14 +3682,29 @@ uint32_t dot11f_unpack_ie_edca_param_set(tpAniSirGlobal pCtx,
 	pDst->acbe_acm = tmp26__ >> 4 & 0x1;
 	pDst->acbe_aci = tmp26__ >> 5 & 0x3;
 	pDst->unused1 = tmp26__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp27__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acbe_acwmin = tmp27__ >> 0 & 0xf;
 	pDst->acbe_acwmax = tmp27__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acbe_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp28__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2787,14 +3712,29 @@ uint32_t dot11f_unpack_ie_edca_param_set(tpAniSirGlobal pCtx,
 	pDst->acbk_acm = tmp28__ >> 4 & 0x1;
 	pDst->acbk_aci = tmp28__ >> 5 & 0x3;
 	pDst->unused2 = tmp28__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp29__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acbk_acwmin = tmp29__ >> 0 & 0xf;
 	pDst->acbk_acwmax = tmp29__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acbk_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp30__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2802,14 +3742,29 @@ uint32_t dot11f_unpack_ie_edca_param_set(tpAniSirGlobal pCtx,
 	pDst->acvi_acm = tmp30__ >> 4 & 0x1;
 	pDst->acvi_aci = tmp30__ >> 5 & 0x3;
 	pDst->unused3 = tmp30__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp31__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acvi_acwmin = tmp31__ >> 0 & 0xf;
 	pDst->acvi_acwmax = tmp31__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acvi_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp32__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -2817,11 +3772,21 @@ uint32_t dot11f_unpack_ie_edca_param_set(tpAniSirGlobal pCtx,
 	pDst->acvo_acm = tmp32__ >> 4 & 0x1;
 	pDst->acvo_aci = tmp32__ >> 5 & 0x3;
 	pDst->unused4 = tmp32__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp33__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acvo_acwmin = tmp33__ >> 0 & 0xf;
 	pDst->acvo_acwmax = tmp33__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acvo_txoplimit, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2841,6 +3806,11 @@ uint32_t dot11f_unpack_ie_erp_info(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp34__ = *pBuf;
 	pDst->non_erp_present = tmp34__ >> 0 & 0x1;
 	pDst->use_prot = tmp34__ >> 1 & 0x1;
@@ -2888,9 +3858,19 @@ uint32_t dot11f_unpack_ie_ese_rad_mgmt_cap(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->mgmt_state = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp35__ = *pBuf;
 	pDst->mbssid_mask = tmp35__ >> 0 & 0x7;
 	pDst->reserved = tmp35__ >> 3 & 0x1f;
@@ -2911,12 +3891,27 @@ uint32_t dot11f_unpack_ie_ese_traf_strm_met(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->tsid = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->state = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->msmt_interval, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -2935,6 +3930,11 @@ uint32_t dot11f_unpack_ie_ese_traf_strm_rate_set(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->tsid = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -2962,9 +3962,19 @@ uint32_t dot11f_unpack_ie_ese_txmit_power(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->power_limit = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->reserved = *pBuf;
 	(void)pCtx;
 	return status;
@@ -2983,6 +3993,11 @@ uint32_t dot11f_unpack_ie_ese_version(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	(void)pCtx;
 	return status;
@@ -3062,15 +4077,35 @@ uint32_t dot11f_unpack_ie_fh_param_set(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->dwell_time, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->hop_set = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->hop_pattern = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->hop_index = *pBuf;
 	(void)pCtx;
 	return status;
@@ -3089,9 +4124,19 @@ uint32_t dot11f_unpack_ie_fh_params(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->radix = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->nchannels = *pBuf;
 	(void)pCtx;
 	return status;
@@ -3110,15 +4155,35 @@ uint32_t dot11f_unpack_ie_fh_patt_table(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->flag = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->nsets = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->modulus = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->offset = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -3165,17 +4230,37 @@ uint32_t dot11f_unpack_ie_ft_info(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp36__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
 	pDst->reserved = tmp36__ >> 0 & 0xff;
 	pDst->IECount = tmp36__ >> 8 & 0xff;
+	if (unlikely(ielen < 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->MIC, pBuf, 16);
 	pBuf += 16;
 	ielen -= (uint8_t)16;
+	if (unlikely(ielen < 32)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->Anonce, pBuf, 32);
 	pBuf += 32;
 	ielen -= (uint8_t)32;
+	if (unlikely(ielen < 32)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->Snonce, pBuf, 32);
 	pBuf += 32;
 	ielen -= (uint8_t)32;
@@ -3208,6 +4293,11 @@ uint32_t dot11f_unpack_ie_ht_caps(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp37__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -3225,15 +4315,30 @@ uint32_t dot11f_unpack_ie_ht_caps(tpAniSirGlobal pCtx,
 	pDst->psmp = tmp37__ >> 13 & 0x1;
 	pDst->stbcControlFrame = tmp37__ >> 14 & 0x1;
 	pDst->lsigTXOPProtection = tmp37__ >> 15 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp38__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->maxRxAMPDUFactor = tmp38__ >> 0 & 0x3;
 	pDst->mpduDensity = tmp38__ >> 2 & 0x7;
 	pDst->reserved1 = tmp38__ >> 5 & 0x7;
+	if (unlikely(ielen < 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->supportedMCSSet, pBuf, 16);
 	pBuf += 16;
 	ielen -= (uint8_t)16;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp39__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -3242,6 +4347,11 @@ uint32_t dot11f_unpack_ie_ht_caps(tpAniSirGlobal pCtx,
 	pDst->reserved2 = tmp39__ >> 3 & 0x1f;
 	pDst->mcsFeedback = tmp39__ >> 8 & 0x3;
 	pDst->reserved3 = tmp39__ >> 10 & 0x3f;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &tmp40__, pBuf, 0);
 	pBuf += 4;
 	ielen -= 4;
@@ -3261,6 +4371,11 @@ uint32_t dot11f_unpack_ie_ht_caps(tpAniSirGlobal pCtx,
 	pDst->uncompressedSteeringMatrixBFAntennae = tmp40__ >> 21 & 0x3;
 	pDst->compressedSteeringMatrixBFAntennae = tmp40__ >> 23 & 0x3;
 	pDst->reserved4 = tmp40__ >> 25 & 0x7f;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp41__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3299,9 +4414,19 @@ uint32_t dot11f_unpack_ie_ht_info(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->primaryChannel = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp42__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3310,6 +4435,11 @@ uint32_t dot11f_unpack_ie_ht_info(tpAniSirGlobal pCtx,
 	pDst->rifsMode = tmp42__ >> 3 & 0x1;
 	pDst->controlledAccessOnly = tmp42__ >> 4 & 0x1;
 	pDst->serviceIntervalGranularity = tmp42__ >> 5 & 0x7;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp43__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -3318,6 +4448,11 @@ uint32_t dot11f_unpack_ie_ht_info(tpAniSirGlobal pCtx,
 	pDst->transmitBurstLimit = tmp43__ >> 3 & 0x1;
 	pDst->obssNonHTStaPresent = tmp43__ >> 4 & 0x1;
 	pDst->reserved = tmp43__ >> 5 & 0x7ff;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp44__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -3328,6 +4463,11 @@ uint32_t dot11f_unpack_ie_ht_info(tpAniSirGlobal pCtx,
 	pDst->pcoActive = tmp44__ >> 10 & 0x1;
 	pDst->pcoPhase = tmp44__ >> 11 & 0x1;
 	pDst->reserved2 = tmp44__ >> 12 & 0xf;
+	if (unlikely(ielen < 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->basicMCSSet, pBuf, 16);
 	pBuf += 16;
 	ielen -= (uint8_t)16;
@@ -3355,6 +4495,11 @@ uint32_t dot11f_unpack_ie_ibss_params(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->atim, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -3373,12 +4518,27 @@ uint32_t dot11f_unpack_ie_link_identifier(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->bssid, pBuf, 6);
 	pBuf += 6;
 	ielen -= (uint8_t)6;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->InitStaAddr, pBuf, 6);
 	pBuf += 6;
 	ielen -= (uint8_t)6;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->RespStaAddr, pBuf, 6);
 	(void)pCtx;
 	return status;
@@ -3397,6 +4557,11 @@ uint32_t dot11f_unpack_ie_MBO_IE(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 3)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->mbo_cap, pBuf, 3);
 	pBuf += 3;
 	ielen -= (uint8_t)3;
@@ -3440,9 +4605,19 @@ uint32_t dot11f_unpack_ie_measurement_report(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->token = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp45__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3450,6 +4625,11 @@ uint32_t dot11f_unpack_ie_measurement_report(tpAniSirGlobal pCtx,
 	pDst->incapable = tmp45__ >> 1 & 0x1;
 	pDst->refused = tmp45__ >> 2 & 0x1;
 	pDst->unused = tmp45__ >> 3 & 0x1f;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -3458,15 +4638,35 @@ uint32_t dot11f_unpack_ie_measurement_report(tpAniSirGlobal pCtx,
 	} else {
 		switch (pDst->type) {
 		case 0:
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Basic.channel = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 8)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohq(pCtx, &pDst->report.Basic.meas_start_time, pBuf, 0);
 			pBuf += 8;
 			ielen -= (uint8_t)8;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->report.Basic.meas_duration, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			tmp46__ = *pBuf;
 			pBuf += 1;
 			ielen -= 1;
@@ -3478,84 +4678,209 @@ uint32_t dot11f_unpack_ie_measurement_report(tpAniSirGlobal pCtx,
 			pDst->report.Basic.unused = tmp46__ >> 5 & 0x7;
 			break;
 		case 1:
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.CCA.channel = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 8)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohq(pCtx, &pDst->report.CCA.meas_start_time, pBuf, 0);
 			pBuf += 8;
 			ielen -= (uint8_t)8;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->report.CCA.meas_duration, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.CCA.cca_busy_fraction = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
 			break;
 		case 2:
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.channel = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 8)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohq(pCtx, &pDst->report.RPIHistogram.meas_start_time, pBuf, 0);
 			pBuf += 8;
 			ielen -= (uint8_t)8;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->report.RPIHistogram.meas_duration, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi0_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi1_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi2_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi3_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi4_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi5_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi6_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.RPIHistogram.rpi7_density = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
 			break;
 		case 5:
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Beacon.regClass = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Beacon.channel = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 8)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohq(pCtx, &pDst->report.Beacon.meas_start_time, pBuf, 0);
 			pBuf += 8;
 			ielen -= (uint8_t)8;
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->report.Beacon.meas_duration, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			tmp47__ = *pBuf;
 			pBuf += 1;
 			ielen -= 1;
 			pDst->report.Beacon.condensed_PHY = tmp47__ >> 0 & 0x7f;
 			pDst->report.Beacon.reported_frame_type = tmp47__ >> 7 & 0x1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Beacon.RCPI = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Beacon.RSNI = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 6)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			DOT11F_MEMCPY(pCtx, pDst->report.Beacon.BSSID, pBuf, 6);
 			pBuf += 6;
 			ielen -= (uint8_t)6;
+			if (unlikely(ielen < 1)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			pDst->report.Beacon.antenna_id = *pBuf;
 			pBuf += 1;
 			ielen -= (uint8_t)1;
+			if (unlikely(ielen < 4)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohl(pCtx, &pDst->report.Beacon.parent_TSF, pBuf, 0);
 			pBuf += 4;
 			ielen -= (uint8_t)4;
@@ -3657,9 +4982,19 @@ uint32_t dot11f_unpack_ie_measurement_request(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->measurement_token = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp48__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3669,59 +5004,139 @@ uint32_t dot11f_unpack_ie_measurement_request(tpAniSirGlobal pCtx,
 	pDst->report = tmp48__ >> 3 & 0x1;
 	pDst->durationMandatory = tmp48__ >> 4 & 0x1;
 	pDst->unused = tmp48__ >> 5 & 0x7;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->measurement_type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
 	switch (pDst->measurement_type) {
 	case 0:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.Basic.channel_no = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 8)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->measurement_request.Basic.meas_start_time, pBuf, 8);
 		pBuf += 8;
 		ielen -= (uint8_t)8;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.Basic.meas_duration, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 		break;
 	case 1:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.CCA.channel_no = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 8)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->measurement_request.CCA.meas_start_time, pBuf, 8);
 		pBuf += 8;
 		ielen -= (uint8_t)8;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.CCA.meas_duration, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 		break;
 	case 2:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.RPIHistogram.channel_no = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 8)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->measurement_request.RPIHistogram.meas_start_time, pBuf, 8);
 		pBuf += 8;
 		ielen -= (uint8_t)8;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.RPIHistogram.meas_duration, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 		break;
 	case 5:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.Beacon.regClass = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.Beacon.channel = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.Beacon.randomization, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.Beacon.meas_duration, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.Beacon.meas_mode = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
+		if (unlikely(ielen < 6)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->measurement_request.Beacon.BSSID, pBuf, 6);
 		pBuf += 6;
 		ielen -= (uint8_t)6;
@@ -3734,6 +5149,11 @@ uint32_t dot11f_unpack_ie_measurement_request(tpAniSirGlobal pCtx,
 				sizeof(*pDst));
 		break;
 	case 8:
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.lci.loc_subject = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
@@ -3746,9 +5166,19 @@ uint32_t dot11f_unpack_ie_measurement_request(tpAniSirGlobal pCtx,
 				sizeof(*pDst));
 		break;
 	case 16:
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->measurement_request.ftmrr.random_interval, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
+		if (unlikely(ielen < 1)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		pDst->measurement_request.ftmrr.min_ap_count = *pBuf;
 		pBuf += 1;
 		ielen -= (uint8_t)1;
@@ -3779,9 +5209,19 @@ uint32_t dot11f_unpack_ie_mobility_domain(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->MDID, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp49__ = *pBuf;
 	pDst->overDSCap = tmp49__ >> 0 & 0x1;
 	pDst->resourceReqCap = tmp49__ >> 1 & 0x1;
@@ -3832,9 +5272,19 @@ uint32_t dot11f_unpack_ie_neighbor_report(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 6)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->bssid, pBuf, 6);
 	pBuf += 6;
 	ielen -= (uint8_t)6;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp50__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3845,6 +5295,11 @@ uint32_t dot11f_unpack_ie_neighbor_report(tpAniSirGlobal pCtx,
 	pDst->QosCap = tmp50__ >> 5 & 0x1;
 	pDst->apsd = tmp50__ >> 6 & 0x1;
 	pDst->rrm = tmp50__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp51__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -3852,15 +5307,35 @@ uint32_t dot11f_unpack_ie_neighbor_report(tpAniSirGlobal pCtx,
 	pDst->ImmBA = tmp51__ >> 1 & 0x1;
 	pDst->MobilityDomain = tmp51__ >> 2 & 0x1;
 	pDst->reserved = tmp51__ >> 3 & 0x1f;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->reserved1, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->regulatoryClass = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->channel = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->PhyType = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -3888,24 +5363,59 @@ uint32_t dot11f_unpack_ie_obss_scan_parameters(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->obssScanPassiveDwell, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->obssScanActiveDwell, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->bssChannelWidthTriggerScanInterval, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->obssScanPassiveTotalPerChannel, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->obssScanActiveTotalPerChannel, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->bssWidthChannelTransitionDelayFactor, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->obssScanActivityThreshold, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -3925,6 +5435,11 @@ uint32_t dot11f_unpack_ie_operating_mode(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp52__ = *pBuf;
 	pDst->chanWidth = tmp52__ >> 0 & 0x3;
 	pDst->reserved = tmp52__ >> 2 & 0x3;
@@ -4228,9 +5743,19 @@ uint32_t dot11f_unpack_ie_pti_control(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->tid = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->sequence_control, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -4250,6 +5775,11 @@ uint32_t dot11f_unpack_ie_pu_buffer_status(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp53__ = *pBuf;
 	pDst->ac_bk_traffic_aval = tmp53__ >> 0 & 0x1;
 	pDst->ac_be_traffic_aval = tmp53__ >> 1 & 0x1;
@@ -4273,9 +5803,19 @@ uint32_t dot11f_unpack_ie_power_caps(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->minTxPower = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->maxTxPower = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4294,6 +5834,11 @@ uint32_t dot11f_unpack_ie_power_constraints(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->localPowerConstraints = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4312,12 +5857,27 @@ uint32_t dot11f_unpack_ie_qbss_load(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->stacount, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->chautil = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->avail, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -4336,6 +5896,11 @@ uint32_t dot11f_unpack_ie_QCN_IE(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->version, pBuf, 4);
 	(void)pCtx;
 	return status;
@@ -4354,9 +5919,19 @@ uint32_t dot11f_unpack_ie_QComVendorIE(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->channel = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4376,6 +5951,11 @@ uint32_t dot11f_unpack_ie_qos_caps_ap(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp54__ = *pBuf;
 	pDst->count = tmp54__ >> 0 & 0xf;
 	pDst->qack = tmp54__ >> 4 & 0x1;
@@ -4400,6 +5980,11 @@ uint32_t dot11f_unpack_ie_qos_caps_station(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp55__ = *pBuf;
 	pDst->acvo_uapsd = tmp55__ >> 0 & 0x1;
 	pDst->acvi_uapsd = tmp55__ >> 1 & 0x1;
@@ -4449,15 +6034,35 @@ uint32_t dot11f_unpack_ie_quiet(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->count = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->period = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->duration, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->offset, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -4476,6 +6081,11 @@ uint32_t dot11f_unpack_ie_rcpiie(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->rcpi = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4568,6 +6178,11 @@ uint32_t dot11f_unpack_ie_rsn(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->version, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
@@ -4575,6 +6190,11 @@ uint32_t dot11f_unpack_ie_rsn(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->gp_cipher_suite, pBuf, 4);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
@@ -4584,6 +6204,11 @@ uint32_t dot11f_unpack_ie_rsn(tpAniSirGlobal pCtx,
 		pDst->pmkid_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->pwise_cipher_suite_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
@@ -4601,10 +6226,20 @@ uint32_t dot11f_unpack_ie_rsn(tpAniSirGlobal pCtx,
 		pDst->pmkid_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->akm_suite_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 	}
+	if (unlikely(ielen < pDst->akm_suite_count * 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->akm_suite_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -4625,10 +6260,20 @@ uint32_t dot11f_unpack_ie_rsn(tpAniSirGlobal pCtx,
 		pDst->pmkid_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->pmkid_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 	}
+	if (unlikely(ielen < pDst->pmkid_count * 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->pmkid_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -4659,6 +6304,11 @@ uint32_t dot11f_unpack_ie_rsniie(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->rsni = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4781,12 +6431,27 @@ uint32_t dot11f_unpack_ie_tim(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->dtim_count = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->dtim_period = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->bmpctl = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -4814,9 +6479,19 @@ uint32_t dot11f_unpack_ie_tpc_report(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->tx_power = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->link_margin = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4852,12 +6527,27 @@ uint32_t dot11f_unpack_ie_time_advertisement(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->timing_capabilities = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 10)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->time_value, pBuf, 10);
 	pBuf += 10;
 	ielen -= (uint8_t)10;
+	if (unlikely(ielen < 5)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->time_error, pBuf, 5);
 	(void)pCtx;
 	return status;
@@ -4876,9 +6566,19 @@ uint32_t dot11f_unpack_ie_timeout_interval(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->timeoutType = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohl(pCtx, &pDst->timeoutValue, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -4897,18 +6597,43 @@ uint32_t dot11f_unpack_ie_vht_ext_bss_load(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->muMIMOCapStaCount = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->ssUnderUtil = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->FortyMHzUtil = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->EightyMHzUtil = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->OneSixtyMHzUtil = *pBuf;
 	(void)pCtx;
 	return status;
@@ -4962,6 +6687,11 @@ uint32_t dot11f_unpack_ie_wapi(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->version, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
@@ -4969,9 +6699,19 @@ uint32_t dot11f_unpack_ie_wapi(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->akm_suite_count, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < pDst->akm_suite_count * 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->akm_suite_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -4980,9 +6720,19 @@ uint32_t dot11f_unpack_ie_wapi(tpAniSirGlobal pCtx,
 	DOT11F_MEMCPY(pCtx, pDst->akm_suites, pBuf, (pDst->akm_suite_count * 4));
 	pBuf += (pDst->akm_suite_count * 4);
 	ielen -= (pDst->akm_suite_count * 4);
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->unicast_cipher_suite_count, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < pDst->unicast_cipher_suite_count * 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->unicast_cipher_suite_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -4991,9 +6741,19 @@ uint32_t dot11f_unpack_ie_wapi(tpAniSirGlobal pCtx,
 	DOT11F_MEMCPY(pCtx, pDst->unicast_cipher_suites, pBuf, (pDst->unicast_cipher_suite_count * 4));
 	pBuf += (pDst->unicast_cipher_suite_count * 4);
 	ielen -= (pDst->unicast_cipher_suite_count * 4);
+	if (unlikely(ielen < 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	DOT11F_MEMCPY(pCtx, pDst->multicast_cipher_suite, pBuf, 4);
 	pBuf += 4;
 	ielen -= (uint8_t)4;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &tmp56__, pBuf, 0);
 	pBuf += 2;
 	ielen -= 2;
@@ -5003,10 +6763,20 @@ uint32_t dot11f_unpack_ie_wapi(tpAniSirGlobal pCtx,
 		pDst->bkid_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->bkid_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 	}
+	if (unlikely(ielen < pDst->bkid_count * 16)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->bkid_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -5054,9 +6824,19 @@ uint32_t dot11f_unpack_ie_wfatpc(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->txPower = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->linkMargin = *pBuf;
 	(void)pCtx;
 	return status;
@@ -5100,6 +6880,11 @@ uint32_t dot11f_unpack_ie_wmm_caps(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -5107,6 +6892,11 @@ uint32_t dot11f_unpack_ie_wmm_caps(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp57__ = *pBuf;
 	pDst->reserved = tmp57__ >> 0 & 0xf;
 	pDst->qack = tmp57__ >> 4 & 0x1;
@@ -5131,9 +6921,19 @@ uint32_t dot11f_unpack_ie_wmm_info_ap(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp58__ = *pBuf;
 	pDst->param_set_count = tmp58__ >> 0 & 0xf;
 	pDst->reserved = tmp58__ >> 4 & 0x7;
@@ -5156,9 +6956,19 @@ uint32_t dot11f_unpack_ie_wmm_info_station(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp59__ = *pBuf;
 	pDst->acvo_uapsd = tmp59__ >> 0 & 0x1;
 	pDst->acvi_uapsd = tmp59__ >> 1 & 0x1;
@@ -5192,6 +7002,11 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->version = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -5199,12 +7014,27 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 		pDst->present = 0;
 		return status | DOT11F_BAD_FIXED_VALUE;
 	}
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->qosInfo = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->reserved2 = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp60__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -5212,14 +7042,29 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 	pDst->acbe_acm = tmp60__ >> 4 & 0x1;
 	pDst->acbe_aci = tmp60__ >> 5 & 0x3;
 	pDst->unused1 = tmp60__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp61__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acbe_acwmin = tmp61__ >> 0 & 0xf;
 	pDst->acbe_acwmax = tmp61__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acbe_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp62__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -5227,14 +7072,29 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 	pDst->acbk_acm = tmp62__ >> 4 & 0x1;
 	pDst->acbk_aci = tmp62__ >> 5 & 0x3;
 	pDst->unused2 = tmp62__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp63__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acbk_acwmin = tmp63__ >> 0 & 0xf;
 	pDst->acbk_acwmax = tmp63__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acbk_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp64__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -5242,14 +7102,29 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 	pDst->acvi_acm = tmp64__ >> 4 & 0x1;
 	pDst->acvi_aci = tmp64__ >> 5 & 0x3;
 	pDst->unused3 = tmp64__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp65__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acvi_acwmin = tmp65__ >> 0 & 0xf;
 	pDst->acvi_acwmax = tmp65__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acvi_txoplimit, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp66__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -5257,11 +7132,21 @@ uint32_t dot11f_unpack_ie_wmm_params(tpAniSirGlobal pCtx,
 	pDst->acvo_acm = tmp66__ >> 4 & 0x1;
 	pDst->acvo_aci = tmp66__ >> 5 & 0x3;
 	pDst->unused4 = tmp66__ >> 7 & 0x1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp67__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
 	pDst->acvo_acwmin = tmp67__ >> 0 & 0xf;
 	pDst->acvo_acwmax = tmp67__ >> 4 & 0xf;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->acvo_txoplimit, pBuf, 0);
 	(void)pCtx;
 	return status;
@@ -5280,6 +7165,11 @@ uint32_t dot11f_unpack_ie_wpa(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 2)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	framesntohs(pCtx, &pDst->version, pBuf, 0);
 	pBuf += 2;
 	ielen -= (uint8_t)2;
@@ -5294,6 +7184,11 @@ uint32_t dot11f_unpack_ie_wpa(tpAniSirGlobal pCtx,
 		return 0U;
 	} else {
 		pDst->multicast_cipher_present = 1U;
+		if (unlikely(ielen < 4)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		DOT11F_MEMCPY(pCtx, pDst->multicast_cipher, pBuf, 4);
 		pBuf += 4;
 		ielen -= (uint8_t)4;
@@ -5303,10 +7198,20 @@ uint32_t dot11f_unpack_ie_wpa(tpAniSirGlobal pCtx,
 		pDst->auth_suite_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->unicast_cipher_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 	}
+	if (unlikely(ielen < pDst->unicast_cipher_count * 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->unicast_cipher_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -5319,10 +7224,20 @@ uint32_t dot11f_unpack_ie_wpa(tpAniSirGlobal pCtx,
 		pDst->auth_suite_count = 0U;
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->auth_suite_count, pBuf, 0);
 		pBuf += 2;
 		ielen -= (uint8_t)2;
 	}
+	if (unlikely(ielen < pDst->auth_suite_count * 4)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	if (pDst->auth_suite_count > 4) {
 		pDst->present = 0;
 		return DOT11F_SKIPPED_BAD_IE;
@@ -5334,6 +7249,11 @@ uint32_t dot11f_unpack_ie_wpa(tpAniSirGlobal pCtx,
 	if (!ielen) {
 		return 0U;
 	} else {
+		if (unlikely(ielen < 2)) {
+			pDst->present = 0;
+			return DOT11F_INCOMPLETE_IE;
+		}
+
 		framesntohs(pCtx, &pDst->caps, pBuf, 0);
 	}
 	(void)pCtx;
@@ -5862,15 +7782,35 @@ uint32_t dot11f_unpack_ie_ext_chan_switch_ann(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->switch_mode = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->new_reg_class = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->new_channel = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->switch_count = *pBuf;
 	(void)pCtx;
 	return status;
@@ -5890,6 +7830,11 @@ uint32_t dot11f_unpack_ie_hs20vendor_ie(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp68__ = *pBuf;
 	pBuf += 1;
 	ielen -= 1;
@@ -5902,11 +7847,21 @@ uint32_t dot11f_unpack_ie_hs20vendor_ie(tpAniSirGlobal pCtx,
 	} else {
 		switch (pDst->hs_id_present) {
 		case 1:
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->hs_id.pps_mo.pps_mo_id, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
 			break;
 		case 2:
+			if (unlikely(ielen < 2)) {
+				pDst->present = 0;
+				return DOT11F_INCOMPLETE_IE;
+			}
+
 			framesntohs(pCtx, &pDst->hs_id.anqp_domain.anqp_domain_id, pBuf, 0);
 			pBuf += 2;
 			ielen -= (uint8_t)2;
@@ -5931,6 +7886,11 @@ uint32_t dot11f_unpack_ie_ht2040_bss_coexistence(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	tmp69__ = *pBuf;
 	pDst->info_request = tmp69__ >> 0 & 0x1;
 	pDst->forty_mhz_intolerant = tmp69__ >> 1 & 0x1;
@@ -5955,6 +7915,11 @@ uint32_t dot11f_unpack_ie_ht2040_bss_intolerant_report(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->operating_class = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -5982,6 +7947,11 @@ uint32_t dot11f_unpack_ie_sec_chan_offset_ele(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->secondaryChannelOffset = *pBuf;
 	(void)pCtx;
 	return status;
@@ -6015,9 +7985,19 @@ uint32_t dot11f_unpack_ie_vendor_vht_ie(tpAniSirGlobal pCtx,
 	if (pDst->present)
 		status = DOT11F_DUPLICATE_IE;
 	pDst->present = 1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
+	if (unlikely(ielen < 1)) {
+		pDst->present = 0;
+		return DOT11F_INCOMPLETE_IE;
+	}
+
 	pDst->sub_type = *pBuf;
 	pBuf += 1;
 	ielen -= (uint8_t)1;
@@ -13743,6 +15723,9 @@ uint32_t dot11f_pack_tlv_version2(tpAniSirGlobal pCtx,
 		tmp75__ = 0U;
 		tmp75__ |= (pSrc->minor << 0);
 		tmp75__ |= (pSrc->major << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp75__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -14712,6 +16695,9 @@ uint32_t dot11f_pack_tlv_version(tpAniSirGlobal pCtx,
 		tmp76__ = 0U;
 		tmp76__ |= (pSrc->minor << 0);
 		tmp76__ |= (pSrc->major << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp76__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -14833,6 +16819,9 @@ uint32_t dot11f_pack_ie_gtk(tpAniSirGlobal pCtx,
 		tmp77__ = 0U;
 		tmp77__ |= (pSrc->keyId << 0);
 		tmp77__ |= (pSrc->reserved << 2);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp77__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -15264,6 +17253,9 @@ uint32_t dot11f_pack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 		tmp78__ |= (pSrc->BeaconActive << 5);
 		tmp78__ |= (pSrc->BeaconTable << 6);
 		tmp78__ |= (pSrc->BeaconRepCond << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp78__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -15277,6 +17269,9 @@ uint32_t dot11f_pack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 		tmp79__ |= (pSrc->LCIAzimuth << 5);
 		tmp79__ |= (pSrc->TCMCapability << 6);
 		tmp79__ |= (pSrc->triggeredTCM << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp79__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -15286,6 +17281,9 @@ uint32_t dot11f_pack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 		tmp80__ |= (pSrc->RRMMIBEnabled << 1);
 		tmp80__ |= (pSrc->operatingChanMax << 2);
 		tmp80__ |= (pSrc->nonOperatinChanMax << 5);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp80__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -15297,6 +17295,9 @@ uint32_t dot11f_pack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 		tmp81__ |= (pSrc->RCPIMeasurement << 5);
 		tmp81__ |= (pSrc->RSNIMeasurement << 6);
 		tmp81__ |= (pSrc->BssAvgAccessDelay << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp81__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -15307,6 +17308,9 @@ uint32_t dot11f_pack_ie_rrm_enabled_cap(tpAniSirGlobal pCtx,
 		tmp82__ |= (pSrc->fine_time_meas_rpt << 2);
 		tmp82__ |= (pSrc->lci_capability << 3);
 		tmp82__ |= (pSrc->reserved << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp82__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -15401,6 +17405,9 @@ uint32_t dot11f_pack_ie_schedule(tpAniSirGlobal pCtx,
 		tmp83__ |= (pSrc->tsid << 1);
 		tmp83__ |= (pSrc->direction << 5);
 		tmp83__ |= (pSrc->reserved << 7);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp83__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -15648,6 +17655,9 @@ uint32_t dot11f_pack_ie_tspec(tpAniSirGlobal pCtx,
 		tmp84__ |= (pSrc->psb << 10);
 		tmp84__ |= (pSrc->user_priority << 11);
 		tmp84__ |= (pSrc->tsinfo_ack_pol << 14);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp84__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -15655,6 +17665,9 @@ uint32_t dot11f_pack_ie_tspec(tpAniSirGlobal pCtx,
 		tmp85__ = 0U;
 		tmp85__ |= (pSrc->schedule << 0);
 		tmp85__ |= (pSrc->unused << 1);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp85__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -15662,6 +17675,9 @@ uint32_t dot11f_pack_ie_tspec(tpAniSirGlobal pCtx,
 		tmp86__ = 0U;
 		tmp86__ |= (pSrc->size << 0);
 		tmp86__ |= (pSrc->fixed << 15);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp86__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -15758,6 +17774,9 @@ uint32_t dot11f_pack_ie_vht_caps(tpAniSirGlobal pCtx,
 		tmp87__ |= (pSrc->rxAntPattern << 28);
 		tmp87__ |= (pSrc->txAntPattern << 29);
 		tmp87__ |= (pSrc->reserved1 << 30);
+		if (unlikely(nBuf < 4))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtonl(pCtx, pBuf, tmp87__, 0);
 		*pnConsumed += 4;
 		pBuf += 4;
@@ -15768,6 +17787,9 @@ uint32_t dot11f_pack_ie_vht_caps(tpAniSirGlobal pCtx,
 		tmp88__ = 0U;
 		tmp88__ |= (pSrc->rxHighSupDataRate << 0);
 		tmp88__ |= (pSrc->reserved2 << 13);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp88__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -15778,6 +17800,9 @@ uint32_t dot11f_pack_ie_vht_caps(tpAniSirGlobal pCtx,
 		tmp89__ = 0U;
 		tmp89__ |= (pSrc->txSupDataRate << 0);
 		tmp89__ |= (pSrc->reserved3 << 13);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp89__, 0);
 		*pnConsumed += 2;
 		/* fieldsEndFlag  = 1 */
@@ -15865,6 +17890,9 @@ uint32_t dot11f_pack_ie_wmm_schedule(tpAniSirGlobal pCtx,
 		tmp90__ |= (pSrc->tsid << 1);
 		tmp90__ |= (pSrc->direction << 5);
 		tmp90__ |= (pSrc->reserved << 7);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp90__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -16132,6 +18160,9 @@ uint32_t dot11f_pack_ie_wmmtspec(tpAniSirGlobal pCtx,
 		tmp91__ |= (pSrc->psb << 10);
 		tmp91__ |= (pSrc->user_priority << 11);
 		tmp91__ |= (pSrc->tsinfo_ack_pol << 14);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp91__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -16139,6 +18170,9 @@ uint32_t dot11f_pack_ie_wmmtspec(tpAniSirGlobal pCtx,
 		tmp92__ = 0U;
 		tmp92__ |= (pSrc->tsinfo_rsvd << 0);
 		tmp92__ |= (pSrc->burst_size_defn << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp92__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16146,6 +18180,9 @@ uint32_t dot11f_pack_ie_wmmtspec(tpAniSirGlobal pCtx,
 		tmp93__ = 0U;
 		tmp93__ |= (pSrc->size << 0);
 		tmp93__ |= (pSrc->fixed << 15);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp93__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -16327,6 +18364,9 @@ uint32_t dot11f_pack_ie_neighbor_rpt(tpAniSirGlobal pCtx,
 		tmp94__ |= (pSrc->QosCap << 5);
 		tmp94__ |= (pSrc->apsd << 6);
 		tmp94__ |= (pSrc->rrm << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp94__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16336,6 +18376,9 @@ uint32_t dot11f_pack_ie_neighbor_rpt(tpAniSirGlobal pCtx,
 		tmp95__ |= (pSrc->ImmBA << 1);
 		tmp95__ |= (pSrc->MobilityDomain << 2);
 		tmp95__ |= (pSrc->reserved << 3);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp95__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16726,6 +18769,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp96__ |= (pSrc->acbe_acm << 4);
 		tmp96__ |= (pSrc->acbe_aci << 5);
 		tmp96__ |= (pSrc->unused1 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp96__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16733,6 +18779,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp97__ = 0U;
 		tmp97__ |= (pSrc->acbe_acwmin << 0);
 		tmp97__ |= (pSrc->acbe_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp97__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16745,6 +18794,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp98__ |= (pSrc->acbk_acm << 4);
 		tmp98__ |= (pSrc->acbk_aci << 5);
 		tmp98__ |= (pSrc->unused2 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp98__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16752,6 +18804,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp99__ = 0U;
 		tmp99__ |= (pSrc->acbk_acwmin << 0);
 		tmp99__ |= (pSrc->acbk_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp99__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16764,6 +18819,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp100__ |= (pSrc->acvi_acm << 4);
 		tmp100__ |= (pSrc->acvi_aci << 5);
 		tmp100__ |= (pSrc->unused3 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp100__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16771,6 +18829,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp101__ = 0U;
 		tmp101__ |= (pSrc->acvi_acwmin << 0);
 		tmp101__ |= (pSrc->acvi_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp101__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16783,6 +18844,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp102__ |= (pSrc->acvo_acm << 4);
 		tmp102__ |= (pSrc->acvo_aci << 5);
 		tmp102__ |= (pSrc->unused4 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp102__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16790,6 +18854,9 @@ uint32_t dot11f_pack_ie_edca_param_set(tpAniSirGlobal pCtx,
 		tmp103__ = 0U;
 		tmp103__ |= (pSrc->acvo_acwmin << 0);
 		tmp103__ |= (pSrc->acvo_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp103__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -16829,6 +18896,9 @@ uint32_t dot11f_pack_ie_erp_info(tpAniSirGlobal pCtx,
 		tmp104__ |= (pSrc->use_prot << 1);
 		tmp104__ |= (pSrc->barker_preamble << 2);
 		tmp104__ |= (pSrc->unused << 3);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp104__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -16911,6 +18981,9 @@ uint32_t dot11f_pack_ie_ese_rad_mgmt_cap(tpAniSirGlobal pCtx,
 		tmp105__ = 0U;
 		tmp105__ |= (pSrc->mbssid_mask << 0);
 		tmp105__ |= (pSrc->reserved << 3);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp105__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -17343,6 +19416,9 @@ uint32_t dot11f_pack_ie_ht_caps(tpAniSirGlobal pCtx,
 		tmp107__ |= (pSrc->psmp << 13);
 		tmp107__ |= (pSrc->stbcControlFrame << 14);
 		tmp107__ |= (pSrc->lsigTXOPProtection << 15);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp107__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -17351,6 +19427,9 @@ uint32_t dot11f_pack_ie_ht_caps(tpAniSirGlobal pCtx,
 		tmp108__ |= (pSrc->maxRxAMPDUFactor << 0);
 		tmp108__ |= (pSrc->mpduDensity << 2);
 		tmp108__ |= (pSrc->reserved1 << 5);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp108__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17364,6 +19443,9 @@ uint32_t dot11f_pack_ie_ht_caps(tpAniSirGlobal pCtx,
 		tmp109__ |= (pSrc->reserved2 << 3);
 		tmp109__ |= (pSrc->mcsFeedback << 8);
 		tmp109__ |= (pSrc->reserved3 << 10);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp109__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -17385,6 +19467,9 @@ uint32_t dot11f_pack_ie_ht_caps(tpAniSirGlobal pCtx,
 		tmp110__ |= (pSrc->uncompressedSteeringMatrixBFAntennae << 21);
 		tmp110__ |= (pSrc->compressedSteeringMatrixBFAntennae << 23);
 		tmp110__ |= (pSrc->reserved4 << 25);
+		if (unlikely(nBuf < 4))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtonl(pCtx, pBuf, tmp110__, 0);
 		*pnConsumed += 4;
 		pBuf += 4;
@@ -17398,6 +19483,9 @@ uint32_t dot11f_pack_ie_ht_caps(tpAniSirGlobal pCtx,
 		tmp111__ |= (pSrc->rxAS << 5);
 		tmp111__ |= (pSrc->txSoundingPPDUs << 6);
 		tmp111__ |= (pSrc->reserved5 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp111__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17443,6 +19531,9 @@ uint32_t dot11f_pack_ie_ht_info(tpAniSirGlobal pCtx,
 		tmp112__ |= (pSrc->rifsMode << 3);
 		tmp112__ |= (pSrc->controlledAccessOnly << 4);
 		tmp112__ |= (pSrc->serviceIntervalGranularity << 5);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp112__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17453,6 +19544,9 @@ uint32_t dot11f_pack_ie_ht_info(tpAniSirGlobal pCtx,
 		tmp113__ |= (pSrc->transmitBurstLimit << 3);
 		tmp113__ |= (pSrc->obssNonHTStaPresent << 4);
 		tmp113__ |= (pSrc->reserved << 5);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp113__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -17465,6 +19559,9 @@ uint32_t dot11f_pack_ie_ht_info(tpAniSirGlobal pCtx,
 		tmp114__ |= (pSrc->pcoActive << 10);
 		tmp114__ |= (pSrc->pcoPhase << 11);
 		tmp114__ |= (pSrc->reserved2 << 12);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp114__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -17619,6 +19716,9 @@ uint32_t dot11f_pack_ie_measurement_report(tpAniSirGlobal pCtx,
 		tmp115__ |= (pSrc->incapable << 1);
 		tmp115__ |= (pSrc->refused << 2);
 		tmp115__ |= (pSrc->unused << 3);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp115__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17645,6 +19745,9 @@ uint32_t dot11f_pack_ie_measurement_report(tpAniSirGlobal pCtx,
 				tmp116__ |= (pSrc->report.Basic.rader << 3);
 				tmp116__ |= (pSrc->report.Basic.unmeasured << 4);
 				tmp116__ |= (pSrc->report.Basic.unused << 5);
+				if (unlikely(nBuf < 1))
+					return DOT11F_INCOMPLETE_IE;
+
 				*pBuf = tmp116__;
 				*pnConsumed += 1;
 				/* fieldsEndFlag  = 1 */
@@ -17715,6 +19818,9 @@ uint32_t dot11f_pack_ie_measurement_report(tpAniSirGlobal pCtx,
 				tmp117__ = 0U;
 				tmp117__ |= (pSrc->report.Beacon.condensed_PHY << 0);
 				tmp117__ |= (pSrc->report.Beacon.reported_frame_type << 7);
+				if (unlikely(nBuf < 1))
+					return DOT11F_INCOMPLETE_IE;
+
 				*pBuf = tmp117__;
 				*pnConsumed += 1;
 				pBuf += 1;
@@ -17786,6 +19892,9 @@ uint32_t dot11f_pack_ie_measurement_request(tpAniSirGlobal pCtx,
 		tmp118__ |= (pSrc->report << 3);
 		tmp118__ |= (pSrc->durationMandatory << 4);
 		tmp118__ |= (pSrc->unused << 5);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp118__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17916,6 +20025,9 @@ uint32_t dot11f_pack_ie_mobility_domain(tpAniSirGlobal pCtx,
 		tmp119__ |= (pSrc->overDSCap << 0);
 		tmp119__ |= (pSrc->resourceReqCap << 1);
 		tmp119__ |= (pSrc->reserved << 2);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp119__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -17962,6 +20074,9 @@ uint32_t dot11f_pack_ie_neighbor_report(tpAniSirGlobal pCtx,
 		tmp120__ |= (pSrc->QosCap << 5);
 		tmp120__ |= (pSrc->apsd << 6);
 		tmp120__ |= (pSrc->rrm << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp120__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -17971,6 +20086,9 @@ uint32_t dot11f_pack_ie_neighbor_report(tpAniSirGlobal pCtx,
 		tmp121__ |= (pSrc->ImmBA << 1);
 		tmp121__ |= (pSrc->MobilityDomain << 2);
 		tmp121__ |= (pSrc->reserved << 3);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp121__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -18073,6 +20191,9 @@ uint32_t dot11f_pack_ie_operating_mode(tpAniSirGlobal pCtx,
 		tmp122__ |= (pSrc->reserved << 2);
 		tmp122__ |= (pSrc->rxNSS << 4);
 		tmp122__ |= (pSrc->rxNSSType << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp122__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -18563,6 +20684,9 @@ uint32_t dot11f_pack_ie_pu_buffer_status(tpAniSirGlobal pCtx,
 		tmp123__ |= (pSrc->ac_vi_traffic_aval << 2);
 		tmp123__ |= (pSrc->ac_vo_traffic_aval << 3);
 		tmp123__ |= (pSrc->reserved << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp123__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -18771,6 +20895,9 @@ uint32_t dot11f_pack_ie_qos_caps_ap(tpAniSirGlobal pCtx,
 		tmp124__ |= (pSrc->qreq << 5);
 		tmp124__ |= (pSrc->txopreq << 6);
 		tmp124__ |= (pSrc->reserved << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp124__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -18810,6 +20937,9 @@ uint32_t dot11f_pack_ie_qos_caps_station(tpAniSirGlobal pCtx,
 		tmp125__ |= (pSrc->qack << 4);
 		tmp125__ |= (pSrc->max_sp_length << 5);
 		tmp125__ |= (pSrc->more_data_ack << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp125__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -19480,6 +21610,9 @@ uint32_t dot11f_pack_ie_wapi(tpAniSirGlobal pCtx,
 		tmp126__ = 0U;
 		tmp126__ |= (pSrc->preauth << 0);
 		tmp126__ |= (pSrc->reserved << 1);
+		if (unlikely(nBuf < 2))
+			return DOT11F_INCOMPLETE_IE;
+
 		frameshtons(pCtx, pBuf, tmp126__, 0);
 		*pnConsumed += 2;
 		pBuf += 2;
@@ -19648,6 +21781,9 @@ uint32_t dot11f_pack_ie_wmm_caps(tpAniSirGlobal pCtx,
 		tmp127__ |= (pSrc->queue_request << 5);
 		tmp127__ |= (pSrc->txop_request << 6);
 		tmp127__ |= (pSrc->more_ack << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp127__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -19696,6 +21832,9 @@ uint32_t dot11f_pack_ie_wmm_info_ap(tpAniSirGlobal pCtx,
 		tmp128__ |= (pSrc->param_set_count << 0);
 		tmp128__ |= (pSrc->reserved << 4);
 		tmp128__ |= (pSrc->uapsd << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp128__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -19748,6 +21887,9 @@ uint32_t dot11f_pack_ie_wmm_info_station(tpAniSirGlobal pCtx,
 		tmp129__ |= (pSrc->reserved1 << 4);
 		tmp129__ |= (pSrc->max_sp_length << 5);
 		tmp129__ |= (pSrc->reserved2 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp129__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */
@@ -19810,6 +21952,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp130__ |= (pSrc->acbe_acm << 4);
 		tmp130__ |= (pSrc->acbe_aci << 5);
 		tmp130__ |= (pSrc->unused1 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp130__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19817,6 +21962,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp131__ = 0U;
 		tmp131__ |= (pSrc->acbe_acwmin << 0);
 		tmp131__ |= (pSrc->acbe_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp131__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19829,6 +21977,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp132__ |= (pSrc->acbk_acm << 4);
 		tmp132__ |= (pSrc->acbk_aci << 5);
 		tmp132__ |= (pSrc->unused2 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp132__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19836,6 +21987,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp133__ = 0U;
 		tmp133__ |= (pSrc->acbk_acwmin << 0);
 		tmp133__ |= (pSrc->acbk_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp133__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19848,6 +22002,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp134__ |= (pSrc->acvi_acm << 4);
 		tmp134__ |= (pSrc->acvi_aci << 5);
 		tmp134__ |= (pSrc->unused3 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp134__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19855,6 +22012,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp135__ = 0U;
 		tmp135__ |= (pSrc->acvi_acwmin << 0);
 		tmp135__ |= (pSrc->acvi_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp135__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19867,6 +22027,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp136__ |= (pSrc->acvo_acm << 4);
 		tmp136__ |= (pSrc->acvo_aci << 5);
 		tmp136__ |= (pSrc->unused4 << 7);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp136__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -19874,6 +22037,9 @@ uint32_t dot11f_pack_ie_wmm_params(tpAniSirGlobal pCtx,
 		tmp137__ = 0U;
 		tmp137__ |= (pSrc->acvo_acwmin << 0);
 		tmp137__ |= (pSrc->acvo_acwmax << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp137__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -20494,6 +22660,9 @@ uint32_t dot11f_pack_ie_hs20vendor_ie(tpAniSirGlobal pCtx,
 		tmp138__ |= (pSrc->hs_id_present << 1);
 		tmp138__ |= (pSrc->reserved << 3);
 		tmp138__ |= (pSrc->release_num << 4);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp138__;
 		*pnConsumed += 1;
 		pBuf += 1;
@@ -20548,6 +22717,9 @@ uint32_t dot11f_pack_ie_ht2040_bss_coexistence(tpAniSirGlobal pCtx,
 		tmp139__ |= (pSrc->obss_scan_exemption_req << 3);
 		tmp139__ |= (pSrc->obss_scan_exemption_grant << 4);
 		tmp139__ |= (pSrc->unused << 5);
+		if (unlikely(nBuf < 1))
+			return DOT11F_INCOMPLETE_IE;
+
 		*pBuf = tmp139__;
 		*pnConsumed += 1;
 		/* fieldsEndFlag  = 1 */

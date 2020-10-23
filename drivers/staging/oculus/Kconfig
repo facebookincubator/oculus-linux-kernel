@@ -63,6 +63,12 @@ config MOLOKINI
 	  Molokini.
 	  Also creates debugfs nodes to advertise Molokini battery parameters.
 
+config NAUTILUS_CLK
+	tristate "NAUTILUS CLK CONTROL Kernel Driver"
+	default n
+	help
+	  Use GPIO 108 for the clock
+
 config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"
 	depends on MISCFIFO && SPI
@@ -76,4 +82,5 @@ config SYNCBOSS_CAMERA_CONTROL
 	default y
 	---help---
 	  Allow Syncboss driver to control camera hardware
+
 endmenu
