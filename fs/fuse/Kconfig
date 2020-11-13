@@ -1,6 +1,5 @@
 config FUSE_FS
 	tristate "FUSE (Filesystem in Userspace) support"
-	select FS_POSIX_ACL
 	help
 	  With FUSE it is possible to implement a fully functional filesystem
 	  in a userspace program.
@@ -26,3 +25,7 @@ config CUSE
 
 	  If you want to develop or use a userspace character device
 	  based on CUSE, answer Y or M.
+
+config FUSE_FS_POSIX_ACL
+	def_bool y
+	depends on FUSE_FS && FS_POSIX_ACL

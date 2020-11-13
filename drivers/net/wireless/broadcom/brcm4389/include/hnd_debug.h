@@ -32,6 +32,11 @@
 #include <typedefs.h>
 
 /* Includes only when building dongle code */
+#ifdef _RTE_
+#include <event_log.h>
+#include <hnd_trap.h>
+#include <hnd_cons.h>
+#endif
 
 /* We use explicit sizes here since this gets included from different
  * systems.  The sizes must be the size of the creating system
@@ -40,7 +45,7 @@
 
 #ifdef FWID
 extern uint32 gFWID;
-#endif // endif
+#endif
 
 enum hnd_debug_reloc_entry_type {
 	HND_DEBUG_RELOC_ENTRY_TYPE_ROM		= 0u,
@@ -57,12 +62,23 @@ typedef struct hnd_debug_reloc_entry {
 	uint32 size;			/* Specifies the size of the segment */
 } hnd_debug_reloc_entry_t;
 
+#ifdef _RTE_
+/* Define pointers for normal ARM use */
+#define _HD_EVLOG_P		event_log_top_t *
+#define _HD_CONS_P		hnd_cons_t *
+#define _HD_TRAP_P		trap_t *
+#define _HD_DEBUG_RELOC_ENTRY_P	hnd_debug_reloc_entry_t *
+#define _HD_DEBUG_RELOC_P	hnd_debug_reloc_t *
+
+#else
 /* Define pointers for use on other systems */
 #define _HD_EVLOG_P		uint32
 #define _HD_CONS_P		uint32
 #define _HD_TRAP_P		uint32
 #define _HD_DEBUG_RELOC_ENTRY_P	uint32
 #define _HD_DEBUG_RELOC_P	uint32
+
+#endif /* _RTE_ */
 
 /* MMU relocation info in the debug area */
 typedef struct hnd_debug_reloc {
@@ -138,7 +154,7 @@ typedef struct hnd_debug {
 	uint32	rom_base;
 	uint32	rom_size;
 
-	_HD_EVLOG_P PHYS_ADDR_N(event_log_top);	/* EVENT_LOG physical address. */
+	_HD_EVLOG_P event_log_top;	/* EVENT_LOG address. */
 
 	/* To populated fields below,
 	 * INCLUDE_BUILD_SIGNATURE_IN_SOCRAM needs to be enabled

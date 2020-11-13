@@ -31,11 +31,13 @@
 #include <linux/rtnetlink.h>
 #include <net/ieee80211_radiotap.h>
 
+#if defined(BCMDONGLEHOST)
 #include <wlioctl.h>
 #include <bcmutils.h>
 #include <dhd_dbg.h>
 #include <dngl_stats.h>
 #include <dhd.h>
+#endif /* defined(BCMDONGLEHOST) */
 #if defined(__linux__)
 #include <bcmstdlib_s.h>
 #endif /* defined(__linux__) */
@@ -51,7 +53,7 @@ typedef enum monitor_states
  * Some external functions, TODO: move them to dhd_linux.h
  */
 int dhd_add_monitor(const char *name, struct net_device **new_ndev);
-extern int dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
+extern netdev_tx_t dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
 int dhd_del_monitor(struct net_device *ndev);
 int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);
@@ -61,7 +63,7 @@ int dhd_monitor_uninit(void);
  */
 #ifndef DHD_MAX_IFS
 #define DHD_MAX_IFS 16
-#endif // endif
+#endif
 #define MON_PRINT(format, ...) printk("DHD-MON: %s " format, __func__, ##__VA_ARGS__)
 #define MON_TRACE MON_PRINT
 
@@ -84,7 +86,7 @@ static struct net_device* lookup_real_netdev(const char *name);
 static monitor_interface* ndev_to_monif(struct net_device *ndev);
 static int dhd_mon_if_open(struct net_device *ndev);
 static int dhd_mon_if_stop(struct net_device *ndev);
-static int dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *ndev);
+static netdev_tx_t dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 static void dhd_mon_if_set_multicast_list(struct net_device *ndev);
 static int dhd_mon_if_change_mac(struct net_device *ndev, void *addr);
 
@@ -96,7 +98,7 @@ static const struct net_device_ops dhd_mon_if_ops = {
 	.ndo_set_rx_mode = dhd_mon_if_set_multicast_list,
 #else
 	.ndo_set_multicast_list = dhd_mon_if_set_multicast_list,
-#endif // endif
+#endif
 	.ndo_set_mac_address 	= dhd_mon_if_change_mac,
 };
 
@@ -111,6 +113,7 @@ static struct net_device* lookup_real_netdev(const char *name)
 {
 	struct net_device *ndev_found = NULL;
 
+#if defined(BCMDONGLEHOST)
 	int i;
 	int len = 0;
 	int last_name_len = 0;
@@ -141,6 +144,7 @@ static struct net_device* lookup_real_netdev(const char *name)
 			}
 		}
 	}
+#endif /* defined(BCMDONGLEHOST) */
 
 	return ndev_found;
 }
@@ -173,7 +177,7 @@ static int dhd_mon_if_stop(struct net_device *ndev)
 	return ret;
 }
 
-static int dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	int ret = 0;
 	int rtap_len;
@@ -240,7 +244,9 @@ static int dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *n
 		MON_PRINT("if name: %s, matched if name %s\n", ndev->name, mon_if->real_ndev->name);
 
 		/* Use the real net device to transmit the packet */
+#if defined(BCMDONGLEHOST)
 		ret = dhd_start_xmit(skb, mon_if->real_ndev);
+#endif /* defined(BCMDONGLEHOST) */
 
 		return ret;
 	}

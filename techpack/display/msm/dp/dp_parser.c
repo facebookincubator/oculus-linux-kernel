@@ -250,6 +250,7 @@ static int dp_parser_gpio(struct dp_parser *parser)
 	static const char * const dp_gpios[] = {
 		"qcom,aux-en-gpio",
 		"qcom,aux-sel-gpio",
+		"qcom,uart-mux-en-gpio",
 		"qcom,usbplug-cc-gpio",
 	};
 

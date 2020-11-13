@@ -1,4 +1,31 @@
 &vendor {
+	battery_virtual_sensor: battery_virtual_sensor {
+		compatible = "oculus,battery-virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
+		io-channel-names = "soc_temp";
+
+		pcm-thermal-zone = "batt-usr";
+		pcm-thermal-zone-scaling-factor = <100>;
+
+		thermal-zones = "batt-usr", "pcb3-usr", "pcb2-usr", "pcb1-usr",
+				"rfpa-usr", "imu-usr";
+		thermal-zone-scaling-factors = <100 1 1 1 1 1>;
+
+		thermal-zone-coefficients = <10799 5790 (-2178) (-4030) (-6841)
+				6364>;
+		thermal-zone-slope-coefficients = <(-5585) (-7464) (-3741)
+				(-1216) 647 (-8546)>;
+
+		io-scaling-factors = <1>;
+		io-coefficients = <(-899)>;
+		io-slope-coefficients = <(-635)>;
+
+		intercept-discharging = <4261>;
+	};
+
 	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
 		compatible = "oculus,front-panel-sensor";
 		status = "ok";
@@ -10,12 +37,16 @@
 		thermal-zones = "pcb3-usr", "pcb2-usr", "pcb1-usr", "rfpa-usr",
 				"imu-usr";
 
-		/* Last coefficient must be set for iio-channel reading */
-		coefficients = <2122 (-933) 18156 (-10527) (-1730) 106>;
-		slope-coefficients = <(-223) 2052 (-8703) 1796 6275 (-82)>;
+		thermal-zone-coefficients = <2122 (-933) 18156 (-10527)
+				(-1730)>;
+		thermal-zone-slope-coefficients = <(-223) 2052 (-8703) 1796
+				6275>;
 
-		intercept-charging = <3440>;
-		intercept-discharging = <1940>;
+		io-coefficients = <106>;
+		io-slope-coefficients = <(-82)>;
+
+		intercept-charging = <4440>;
+		intercept-discharging = <2940>;
 	};
 };
 
@@ -35,24 +66,29 @@
 		};
 	};
 
-	cpuss-0-usr {
+	batt-virt {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&battery_virtual_sensor>;
+		wake-capable-sensor;
+		trips {
+			batt_virt_trip0: batt-virt-trip0 {
+				temperature = <58500>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			batt_virt_trip1: batt-virt-trip1 {
+				temperature = <60000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
 	};
 
-	cpuss-1-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
-	};
-
-	gpuss-0-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
-	};
-
-	gpuss-1-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+	gpuss-max-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 	};
 
 	soc {
@@ -67,11 +103,16 @@
 		wake-capable-sensor;
 		trips {
 			virt_trip0: virt-trip0 {
-				temperature = <95000>;
+				temperature = <85000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
 			virt_trip1: virt-trip1 {
+				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_trip2: virt-trip2 {
 				temperature = <115000>;
 				hysteresis = <1000>;
 				type = "passive";
@@ -80,8 +121,8 @@
 	};
 
 	vrapi-pmem {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-sensors = <&tsens1 3>;
 		thermal-governor = "user_space";
 		wake-capable-sensor;

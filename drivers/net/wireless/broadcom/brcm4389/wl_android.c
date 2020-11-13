@@ -26,7 +26,7 @@
 #include <net/netlink.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
-#endif // endif
+#endif
 
 #include <wl_android.h>
 #include <wldev_common.h>
@@ -41,14 +41,15 @@
 #include <bcmip.h>
 #ifdef PNO_SUPPORT
 #include <dhd_pno.h>
-#endif // endif
+#endif
 #ifdef BCMSDIO
 #include <bcmsdbus.h>
-#endif // endif
+#endif
 #ifdef WL_CFG80211
 #include <wl_cfg80211.h>
 #include <wl_cfgscan.h>
-#endif // endif
+#include <wl_cfgvif.h>
+#endif
 #ifdef WL_NAN
 #include <wl_cfgnan.h>
 #endif /* WL_NAN */
@@ -74,6 +75,10 @@
 #ifdef DHD_EVENT_LOG_FILTER
 #include <dhd_event_log_filter.h>
 #endif /* DHD_EVENT_LOG_FILTER */
+
+#ifdef WL_TWT
+#include <802.11ah.h>
+#endif /* WL_TWT */
 
 #ifdef WL_STATIC_IF
 #define WL_BSSIDX_MAX	16
@@ -136,6 +141,42 @@
 #ifdef WL_SUPPORT_AUTO_CHANNEL
 #define CMD_SET_HAPD_AUTO_CHANNEL	"HAPD_AUTO_CHANNEL"
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef WL_WTC
+#define CMD_WTC_CONFIG    "SETWTCMODE"
+#endif /* WL_WTC */
+#ifdef SUPPORT_HIDDEN_AP
+/* Hostapd private command */
+#define CMD_SET_HAPD_MAX_NUM_STA	"HAPD_MAX_NUM_STA"
+#define CMD_SET_HAPD_SSID		"HAPD_SSID"
+#define CMD_SET_HAPD_HIDE_SSID		"HAPD_HIDE_SSID"
+#endif /* SUPPORT_HIDDEN_AP */
+#ifdef SUPPORT_SOFTAP_SINGL_DISASSOC
+#define CMD_HAPD_STA_DISASSOC		"HAPD_STA_DISASSOC"
+#endif /* SUPPORT_SOFTAP_SINGL_DISASSOC */
+#ifdef SUPPORT_SET_LPC
+#define CMD_HAPD_LPC_ENABLED		"HAPD_LPC_ENABLED"
+#endif /* SUPPORT_SET_LPC */
+#ifdef SUPPORT_TRIGGER_HANG_EVENT
+#define CMD_TEST_FORCE_HANG		"TEST_FORCE_HANG"
+#endif /* SUPPORT_TRIGGER_HANG_EVENT */
+#ifdef SUPPORT_LTECX
+#define CMD_LTECX_SET		"LTECOEX"
+#endif /* SUPPORT_LTECX */
+#ifdef TEST_TX_POWER_CONTROL
+#define CMD_TEST_SET_TX_POWER		"TEST_SET_TX_POWER"
+#define CMD_TEST_GET_TX_POWER		"TEST_GET_TX_POWER"
+#endif /* TEST_TX_POWER_CONTROL */
+#define CMD_SARLIMIT_TX_CONTROL		"SET_TX_POWER_CALLING"
+#ifdef SUPPORT_SET_TID
+#define CMD_SET_TID		"SET_TID"
+#define CMD_GET_TID		"GET_TID"
+#endif /* SUPPORT_SET_TID */
+#define CMD_ROAM_VSIE_ENAB_SET	"SET_ROAMING_REASON_ENABLED"
+#define CMD_ROAM_VSIE_ENAB_GET	"GET_ROAMING_REASON_ENABLED"
+#define CMD_BR_VSIE_ENAB_SET	"SET_BR_ERR_REASON_ENABLED"
+#define CMD_BR_VSIE_ENAB_GET	"GET_BR_ERR_REASON_ENABLED"
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 #define CMD_KEEP_ALIVE          "KEEPALIVE"
 
 #ifdef PNO_SUPPORT
@@ -155,6 +196,161 @@
 #define DISABLE_RANDOM_MAC "DISABLE_RANDOM_MAC"
 #endif /* SUPPORT_RANDOM_MAC_SCAN */
 #define CMD_GET_FACTORY_MAC      "FACTORY_MAC"
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+
+#ifdef ROAM_API
+#define CMD_ROAMTRIGGER_SET "SETROAMTRIGGER"
+#define CMD_ROAMTRIGGER_GET "GETROAMTRIGGER"
+#define CMD_ROAMDELTA_SET "SETROAMDELTA"
+#define CMD_ROAMDELTA_GET "GETROAMDELTA"
+#define CMD_ROAMSCANPERIOD_SET "SETROAMSCANPERIOD"
+#define CMD_ROAMSCANPERIOD_GET "GETROAMSCANPERIOD"
+#define CMD_FULLROAMSCANPERIOD_SET "SETFULLROAMSCANPERIOD"
+#define CMD_FULLROAMSCANPERIOD_GET "GETFULLROAMSCANPERIOD"
+#define CMD_COUNTRYREV_SET "SETCOUNTRYREV"
+#define CMD_COUNTRYREV_GET "GETCOUNTRYREV"
+#endif /* ROAM_API */
+
+#if defined(SUPPORT_NAN_RANGING_TEST_BW)
+#define CMD_NAN_RANGING_SET_BW "NAN_RANGING_SET_BW"
+#endif /* SUPPORT_NAN_RANGING_TEST_BW */
+
+#ifdef WES_SUPPORT
+#define CMD_GETSCANCHANNELTIMELEGACY "GETSCANCHANNELTIME_LEGACY"
+#define CMD_SETSCANCHANNELTIMELEGACY "SETSCANCHANNELTIME_LEGACY"
+#define CMD_GETSCANUNASSOCTIMELEGACY "GETSCANUNASSOCTIME_LEGACY"
+#define CMD_SETSCANUNASSOCTIMELEGACY "SETSCANUNASSOCTIME_LEGACY"
+#define CMD_GETSCANPASSIVETIMELEGACY "GETSCANPASSIVETIME_LEGACY"
+#define CMD_SETSCANPASSIVETIMELEGACY "SETSCANPASSIVETIME_LEGACY"
+#define CMD_GETSCANHOMETIMELEGACY "GETSCANHOMETIME_LEGACY"
+#define CMD_SETSCANHOMETIMELEGACY "SETSCANHOMETIME_LEGACY"
+#define CMD_GETSCANHOMEAWAYTIMELEGACY "GETSCANHOMEAWAYTIME_LEGACY"
+#define CMD_SETSCANHOMEAWAYTIMELEGACY "SETSCANHOMEAWAYTIME_LEGACY"
+#define CMD_GETROAMSCANCHLEGACY "GETROAMSCANCHANNELS_LEGACY"
+#define CMD_ADDROAMSCANCHLEGACY "ADDROAMSCANCHANNELS_LEGACY"
+#define CMD_GETROAMSCANFQLEGACY "GETROAMSCANFREQUENCIES_LEGACY"
+#define CMD_ADDROAMSCANFQLEGACY "ADDROAMSCANFREQUENCIES_LEGACY"
+#define CMD_GETROAMTRIGLEGACY "GETROAMTRIGGER_LEGACY"
+#define CMD_SETROAMTRIGLEGACY "SETROAMTRIGGER_LEGACY"
+#define CMD_REASSOCLEGACY "REASSOC_LEGACY"
+
+#define CMD_GETROAMSCANCONTROL "GETROAMSCANCONTROL"
+#define CMD_SETROAMSCANCONTROL "SETROAMSCANCONTROL"
+#define CMD_GETROAMSCANCHANNELS "GETROAMSCANCHANNELS"
+#define CMD_SETROAMSCANCHANNELS "SETROAMSCANCHANNELS"
+#define CMD_ADDROAMSCANCHANNELS "ADDROAMSCANCHANNELS"
+#define CMD_GETROAMSCANFREQS "GETROAMSCANFREQUENCIES"
+#define CMD_SETROAMSCANFREQS "SETROAMSCANFREQUENCIES"
+#define CMD_ADDROAMSCANFREQS "ADDROAMSCANFREQUENCIES"
+#define CMD_GETSCANCHANNELTIME "GETSCANCHANNELTIME"
+#define CMD_SETSCANCHANNELTIME "SETSCANCHANNELTIME"
+#define CMD_GETSCANUNASSOCTIME "GETSCANUNASSOCTIME"
+#define CMD_SETSCANUNASSOCTIME "SETSCANUNASSOCTIME"
+#define CMD_GETSCANPASSIVETIME "GETSCANPASSIVETIME"
+#define CMD_SETSCANPASSIVETIME "SETSCANPASSIVETIME"
+#define CMD_GETSCANHOMETIME "GETSCANHOMETIME"
+#define CMD_SETSCANHOMETIME "SETSCANHOMETIME"
+#define CMD_GETSCANHOMEAWAYTIME "GETSCANHOMEAWAYTIME"
+#define CMD_SETSCANHOMEAWAYTIME "SETSCANHOMEAWAYTIME"
+#define CMD_GETSCANNPROBES "GETSCANNPROBES"
+#define CMD_SETSCANNPROBES "SETSCANNPROBES"
+#define CMD_GETDFSSCANMODE "GETDFSSCANMODE"
+#define CMD_SETDFSSCANMODE "SETDFSSCANMODE"
+#define CMD_SETJOINPREFER "SETJOINPREFER"
+
+#define CMD_SENDACTIONFRAME "SENDACTIONFRAME"
+#define CMD_REASSOC "REASSOC"
+
+#define CMD_GETWESMODE "GETWESMODE"
+#define CMD_SETWESMODE "SETWESMODE"
+#define CMD_GETNCHOMODE	"GETNCHOMODE"
+#define CMD_SETNCHOMODE	"SETNCHOMODE"
+
+/* Customer requested to Remove OKCMODE command */
+#define CMD_GETOKCMODE "GETOKCMODE"
+#define CMD_SETOKCMODE "SETOKCMODE"
+
+#define CMD_OKC_SET_PMK "SET_PMK"
+#define CMD_OKC_ENABLE "OKC_ENABLE"
+
+#define CMD_SET_5G160 "CONFIG_5G160"
+
+typedef struct android_wifi_reassoc_params {
+	unsigned char bssid[18];
+	int channel;
+} android_wifi_reassoc_params_t;
+
+#define ANDROID_WIFI_REASSOC_PARAMS_SIZE sizeof(struct android_wifi_reassoc_params)
+
+#define ANDROID_WIFI_ACTION_FRAME_SIZE 1040
+
+typedef struct android_wifi_af_params {
+	unsigned char bssid[18];
+	int channel;
+	int dwell_time;
+	int len;
+	unsigned char data[ANDROID_WIFI_ACTION_FRAME_SIZE];
+} android_wifi_af_params_t;
+
+#define ANDROID_WIFI_AF_PARAMS_SIZE sizeof(struct android_wifi_af_params)
+#endif /* WES_SUPPORT */
+#ifdef SUPPORT_AMPDU_MPDU_CMD
+#define CMD_AMPDU_MPDU		"AMPDU_MPDU"
+#endif /* SUPPORT_AMPDU_MPDU_CMD */
+
+#define CMD_CHANGE_RL 	"CHANGE_RL"
+#define CMD_RESTORE_RL  "RESTORE_RL"
+
+#define CMD_SET_RMC_ENABLE			"SETRMCENABLE"
+#define CMD_SET_RMC_TXRATE			"SETRMCTXRATE"
+#define CMD_SET_RMC_ACTPERIOD		"SETRMCACTIONPERIOD"
+#define CMD_SET_RMC_IDLEPERIOD		"SETRMCIDLEPERIOD"
+#define CMD_SET_RMC_LEADER			"SETRMCLEADER"
+#define CMD_SET_RMC_EVENT			"SETRMCEVENT"
+
+#define CMD_SET_SCSCAN		"SETSINGLEANT"
+#define CMD_GET_SCSCAN		"GETSINGLEANT"
+#ifdef WLTDLS
+#define CMD_TDLS_RESET "TDLS_RESET"
+#endif /* WLTDLS */
+
+#ifdef CONFIG_SILENT_ROAM
+#define CMD_SROAM_TURN_ON	"SROAMTURNON"
+#define CMD_SROAM_SET_INFO	"SROAMSETINFO"
+#define CMD_SROAM_GET_INFO	"SROAMGETINFO"
+#endif /* CONFIG_SILENT_ROAM */
+
+#ifdef CONFIG_ROAM_RSSI_LIMIT
+#define CMD_ROAM_RSSI_LMT	"ROAMRSSILIMIT"
+#endif /* CONFIG_ROAM_RSSI_LIMIT */
+#ifdef CONFIG_ROAM_MIN_DELTA
+#define CMD_ROAM_MIN_DELTA	"ROAMMINSCOREDELTA"
+#endif /* CONFIG_ROAM_MIN_DELTA */
+
+#define CMD_SET_DISCONNECT_IES  "SET_DISCONNECT_IES"
+
+#ifdef FCC_PWR_LIMIT_2G
+#define CMD_GET_FCC_PWR_LIMIT_2G "GET_FCC_CHANNEL"
+#define CMD_SET_FCC_PWR_LIMIT_2G "SET_FCC_CHANNEL"
+/* CUSTOMER_HW4's value differs from BRCM FW value for enable/disable */
+#define CUSTOMER_HW4_ENABLE		0
+#define CUSTOMER_HW4_DISABLE	-1
+#endif /* FCC_PWR_LIMIT_2G */
+#define CUSTOMER_HW4_EN_CONVERT(i)	(i += 1)
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
+
+#ifdef WLFBT
+#define CMD_GET_FTKEY      "GET_FTKEY"
+#endif
+
+#ifdef WLAIBSS
+#define CMD_SETIBSSTXFAILEVENT		"SETIBSSTXFAILEVENT"
+#define CMD_GET_IBSS_PEER_INFO		"GETIBSSPEERINFO"
+#define CMD_GET_IBSS_PEER_INFO_ALL	"GETIBSSPEERINFOALL"
+#define CMD_SETIBSSROUTETABLE		"SETIBSSROUTETABLE"
+#define CMD_SETIBSSAMPDU			"SETIBSSAMPDU"
+#define CMD_SETIBSSANTENNAMODE		"SETIBSSANTENNAMODE"
+#endif /* WLAIBSS */
 
 #define CMD_ROAM_OFFLOAD			"SETROAMOFFLOAD"
 #define CMD_INTERFACE_CREATE			"INTERFACE_CREATE"
@@ -310,7 +506,7 @@ struct connection_stats {
 #ifdef SUPPORT_LQCM
 #define CMD_SET_LQCM_ENABLE			"SET_LQCM_ENABLE"
 #define CMD_GET_LQCM_REPORT			"GET_LQCM_REPORT"
-#endif // endif
+#endif
 
 static LIST_HEAD(miracast_resume_list);
 static u8 miracast_cur_mode;
@@ -446,16 +642,16 @@ static const wl_natoe_sub_cmd_t natoe_cmd_list[] = {
 #define CMD_RESET_GAIN_ADPS	"RESET_GAIN_ADPS"
 #ifndef ADPS_GAIN_2G_PM0_IDLE
 #define ADPS_GAIN_2G_PM0_IDLE 0
-#endif // endif
+#endif
 #ifndef ADPS_GAIN_5G_PM0_IDLE
 #define ADPS_GAIN_5G_PM0_IDLE 0
-#endif // endif
+#endif
 #ifndef ADPS_GAIN_2G_TX_PSPOLL
 #define ADPS_GAIN_2G_TX_PSPOLL 0
-#endif // endif
+#endif
 #ifndef ADPS_GAIN_5G_TX_PSPOLL
 #define ADPS_GAIN_5G_TX_PSPOLL 0
-#endif // endif
+#endif
 #endif	/* WLADPS_ENERGY_GAIN */
 #endif /* WLADPS_PRIVATE_CMD */
 
@@ -498,6 +694,14 @@ static const wl_natoe_sub_cmd_t natoe_cmd_list[] = {
 #ifdef WL_NAN
 #define CMD_GET_NAN_STATUS	"GET_NAN_STATUS"
 #endif /* WL_NAN */
+
+#ifdef WL_TWT
+#define CMD_TWT_SETUP		"TWT_SETUP"
+#define CMD_TWT_TEARDOWN	"TWT_TEARDOWN"
+#define CMD_TWT_INFO		"TWT_INFO_FRM"
+#define CMD_TWT_STATUS_QUERY	"TWT_STATUS"
+#define CMD_TWT_CAPABILITY	"TWT_CAP"
+#endif /* WL_TWT */
 
 /* drv command info structure */
 typedef struct wl_drv_cmd_info {
@@ -546,6 +750,64 @@ static const wl_drv_sub_cmd_t mbo_cmd_list[] = {
 
 #endif /* WL_MBO */
 
+#ifdef WL_GENL
+static s32 wl_genl_handle_msg(struct sk_buff *skb, struct genl_info *info);
+static int wl_genl_init(void);
+static int wl_genl_deinit(void);
+
+extern struct net init_net;
+/* attribute policy: defines which attribute has which type (e.g int, char * etc)
+ * possible values defined in net/netlink.h
+ */
+static struct nla_policy wl_genl_policy[BCM_GENL_ATTR_MAX + 1] = {
+	[BCM_GENL_ATTR_STRING] = { .type = NLA_NUL_STRING },
+	[BCM_GENL_ATTR_MSG] = { .type = NLA_BINARY },
+};
+
+#define WL_GENL_VER 1
+/* family definition */
+static struct genl_family wl_genl_family = {
+	.id = GENL_ID_GENERATE,    /* Genetlink would generate the ID */
+	.hdrsize = 0,
+	.name = "bcm-genl",        /* Netlink I/F for Android */
+	.version = WL_GENL_VER,     /* Version Number */
+	.maxattr = BCM_GENL_ATTR_MAX,
+};
+
+/* commands: mapping between the command enumeration and the actual function */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
+struct genl_ops wl_genl_ops[] = {
+	{
+	.cmd = BCM_GENL_CMD_MSG,
+	.flags = 0,
+	.policy = wl_genl_policy,
+	.doit = wl_genl_handle_msg,
+	.dumpit = NULL,
+	},
+};
+#else
+struct genl_ops wl_genl_ops = {
+	.cmd = BCM_GENL_CMD_MSG,
+	.flags = 0,
+	.policy = wl_genl_policy,
+	.doit = wl_genl_handle_msg,
+	.dumpit = NULL,
+
+};
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
+static struct genl_multicast_group wl_genl_mcast[] = {
+	 { .name = "bcm-genl-mcast", },
+};
+#else
+static struct genl_multicast_group wl_genl_mcast = {
+	.id = GENL_ID_GENERATE,    /* Genetlink would generate the ID */
+	.name = "bcm-genl-mcast",
+};
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) */
+#endif /* WL_GENL */
+
 #ifdef SUPPORT_LQCM
 #define LQCM_ENAB_MASK			0x000000FF	/* LQCM enable flag mask */
 #define LQCM_TX_INDEX_MASK		0x0000FF00	/* LQCM tx index mask */
@@ -568,6 +830,12 @@ int dhd_dev_init_ioctl(struct net_device *dev);
 #ifdef WL_CFG80211
 int wl_cfg80211_get_p2p_dev_addr(struct net_device *net, struct ether_addr *p2pdev_addr);
 int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *command);
+#ifdef WES_SUPPORT
+int wl_cfg80211_set_wes_mode(struct net_device *dev, int mode);
+int wl_cfg80211_get_wes_mode(struct net_device *dev);
+int wl_cfg80211_set_ncho_mode(struct net_device *dev, int mode);
+int wl_cfg80211_get_ncho_mode(struct net_device *dev);
+#endif /* WES_SUPPORT */
 #else
 int wl_cfg80211_get_p2p_dev_addr(struct net_device *net, struct ether_addr *p2pdev_addr)
 { return 0; }
@@ -582,6 +850,9 @@ int wl_cfg80211_set_p2p_ecsa(struct net_device *net, char* buf, int len)
 int wl_cfg80211_increase_p2p_bw(struct net_device *net, char* buf, int len)
 { return 0; }
 #endif /* WK_CFG80211 */
+#if defined(WL_WTC) && defined(CUSTOMER_HW4_PRIVATE_CMD)
+static int wl_android_wtc_config(struct net_device *dev, char *command, int total_len);
+#endif /* WL_WTC && CUSTOMER_HW4_PRIVATE_CMD */
 #ifdef WBTEXT
 static int wl_android_wbtext(struct net_device *dev, char *command, int total_len);
 static int wl_cfg80211_wbtext_btm_timer_threshold(struct net_device *dev,
@@ -592,8 +863,59 @@ static int wl_cfg80211_wbtext_estm_enable(struct net_device *dev,
 	char *command, int total_len);
 static int wlc_wbtext_get_roam_prof(struct net_device *ndev, wl_roamprof_band_t *rp,
 	uint8 band, uint8 *roam_prof_ver, uint8 *roam_prof_size);
+#endif /* WBTEXT */
+#ifdef WES_SUPPORT
+#ifdef WBTEXT
 static int wl_android_wbtext_enable(struct net_device *dev, int mode);
 #endif /* WBTEXT */
+/* wl_roam.c */
+extern int get_roamscan_mode(struct net_device *dev, int *mode);
+extern int set_roamscan_mode(struct net_device *dev, int mode);
+extern int get_roamscan_chanspec_list(struct net_device *dev, chanspec_t *chanspecs);
+extern int set_roamscan_chanspec_list(struct net_device *dev, uint n, chanspec_t *chanspecs);
+extern int add_roamscan_chanspec_list(struct net_device *dev, uint n, chanspec_t *chanspecs);
+
+static char* legacy_cmdlist[] =
+{
+	CMD_GETROAMSCANCHLEGACY, CMD_ADDROAMSCANCHLEGACY,
+	CMD_GETROAMSCANFQLEGACY, CMD_ADDROAMSCANFQLEGACY,
+	CMD_GETROAMTRIGLEGACY, CMD_SETROAMTRIGLEGACY,
+	CMD_REASSOCLEGACY,
+	CMD_GETSCANCHANNELTIMELEGACY, CMD_SETSCANCHANNELTIMELEGACY,
+	CMD_GETSCANUNASSOCTIMELEGACY, CMD_SETSCANUNASSOCTIMELEGACY,
+	CMD_GETSCANPASSIVETIMELEGACY, CMD_SETSCANPASSIVETIMELEGACY,
+	CMD_GETSCANHOMETIMELEGACY, CMD_SETSCANHOMETIMELEGACY,
+	CMD_GETSCANHOMEAWAYTIMELEGACY, CMD_SETSCANHOMEAWAYTIMELEGACY,
+	"\0"
+};
+
+static char* ncho_cmdlist[] =
+{
+	CMD_ROAMTRIGGER_GET, CMD_ROAMTRIGGER_SET,
+	CMD_ROAMDELTA_GET, CMD_ROAMDELTA_SET,
+	CMD_ROAMSCANPERIOD_GET, CMD_ROAMSCANPERIOD_SET,
+	CMD_FULLROAMSCANPERIOD_GET, CMD_FULLROAMSCANPERIOD_SET,
+	CMD_COUNTRYREV_GET, CMD_COUNTRYREV_SET,
+	CMD_GETROAMSCANCONTROL,	CMD_SETROAMSCANCONTROL,
+	CMD_GETROAMSCANCHANNELS, CMD_SETROAMSCANCHANNELS, CMD_ADDROAMSCANCHANNELS,
+	CMD_GETROAMSCANFREQS, CMD_SETROAMSCANFREQS, CMD_ADDROAMSCANFREQS,
+	CMD_SENDACTIONFRAME,
+	CMD_REASSOC,
+	CMD_GETSCANCHANNELTIME,	CMD_SETSCANCHANNELTIME,
+	CMD_GETSCANUNASSOCTIME,	CMD_SETSCANUNASSOCTIME,
+	CMD_GETSCANPASSIVETIME,	CMD_SETSCANPASSIVETIME,
+	CMD_GETSCANHOMETIME, CMD_SETSCANHOMETIME,
+	CMD_GETSCANHOMEAWAYTIME, CMD_SETSCANHOMEAWAYTIME,
+	CMD_GETSCANNPROBES, CMD_SETSCANNPROBES,
+	CMD_GETDFSSCANMODE, CMD_SETDFSSCANMODE,
+	CMD_SETJOINPREFER,
+	CMD_GETWESMODE,	CMD_SETWESMODE,
+	"\0"
+};
+#endif /* WES_SUPPORT */
+#ifdef ROAM_CHANNEL_CACHE
+extern void wl_update_roamscan_cache_by_band(struct net_device *dev, int band);
+#endif /* ROAM_CHANNEL_CACHE */
 
 int wl_android_priority_roam_enable(struct net_device *dev, int mode);
 #ifdef CONFIG_SILENT_ROAM
@@ -601,11 +923,20 @@ int wl_android_sroam_turn_on(struct net_device *dev, int mode);
 #endif /* CONFIG_SILENT_ROAM */
 int wl_android_rcroam_turn_on(struct net_device *dev, int mode);
 
+#ifdef ENABLE_4335BT_WAR
+extern int bcm_bt_lock(int cookie);
+extern void bcm_bt_unlock(int cookie);
+static int lock_cookie_wifi = 'W' | 'i'<<8 | 'F'<<16 | 'i'<<24;	/* cookie is "WiFi" */
+#endif /* ENABLE_4335BT_WAR */
+
 extern bool ap_fw_loaded;
 extern char iface_name[IFNAMSIZ];
+#ifdef DHD_PM_CONTROL_FROM_FILE
+extern bool g_pm_control;
+#endif	/* DHD_PM_CONTROL_FROM_FILE */
 
 /* private command support for restoring roam/scan parameters */
-#if defined(SUPPORT_RESTORE_SCAN_PARAMS)
+#if defined(SUPPORT_RESTORE_SCAN_PARAMS) || defined(WES_SUPPORT)
 #define CMD_RESTORE_SCAN_PARAMS "RESTORE_SCAN_PARAMS"
 
 typedef int (*PRIV_CMD_HANDLER) (struct net_device *dev, char *command);
@@ -644,6 +975,26 @@ int wl_android_set_wes_mode(struct net_device *dev, char *command);
 int wl_android_set_okc_mode(struct net_device *dev, char *command);
 
 /* default values */
+#ifdef ROAM_API
+#define DEFAULT_ROAM_TIRGGER	-75
+#define DEFAULT_ROAM_DELTA	10
+#define DEFAULT_ROAMSCANPERIOD	10
+#define DEFAULT_FULLROAMSCANPERIOD_SET	120
+#endif /* ROAM_API */
+#ifdef WES_SUPPORT
+#define DEFAULT_ROAMSCANCONTROL	0
+#define DEFAULT_SCANCHANNELTIME	40
+#ifdef BCM4361_CHIP
+#define DEFAULT_SCANHOMETIME	60
+#else
+#define DEFAULT_SCANHOMETIME	45
+#endif /* BCM4361_CHIP */
+#define DEFAULT_SCANHOMEAWAYTIME	100
+#define DEFAULT_SCANPROBES	2
+#define DEFAULT_DFSSCANMODE	1
+#define DEFAULT_WESMODE		0
+#define DEFAULT_OKCMODE		1
+#endif /* WES_SUPPORT */
 #define DEFAULT_BAND		0
 #ifdef WBTEXT
 #define DEFAULT_WBTEXT_ENABLE	1
@@ -657,6 +1008,32 @@ static android_restore_scan_params_t restore_params[] =
 	{ CMD_WBTEXT_ENABLE, 0, RESTORE_TYPE_PRIV_CMD_WITH_LEN,
 		.cmd_handler_w_len = wl_android_wbtext},
 #endif /* WBTEXT */
+#ifdef ROAM_API
+	{ CMD_ROAMTRIGGER_SET, DEFAULT_ROAM_TIRGGER,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_roam_trigger},
+	{ CMD_ROAMDELTA_SET, DEFAULT_ROAM_DELTA,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_roam_delta},
+	{ CMD_ROAMSCANPERIOD_SET, DEFAULT_ROAMSCANPERIOD,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_roam_scan_period},
+	{ CMD_FULLROAMSCANPERIOD_SET, DEFAULT_FULLROAMSCANPERIOD_SET,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_full_roam_scan_period},
+#endif /* ROAM_API */
+#ifdef WES_SUPPORT
+	{ CMD_SETROAMSCANCONTROL, DEFAULT_ROAMSCANCONTROL,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_roam_scan_control},
+	{ CMD_SETSCANCHANNELTIME, DEFAULT_SCANCHANNELTIME,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_scan_channel_time},
+	{ CMD_SETSCANHOMETIME, DEFAULT_SCANHOMETIME,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_scan_home_time},
+	{ CMD_GETSCANHOMEAWAYTIME, DEFAULT_SCANHOMEAWAYTIME,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_scan_home_away_time},
+	{ CMD_SETSCANNPROBES, DEFAULT_SCANPROBES,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_scan_nprobes},
+	{ CMD_SETDFSSCANMODE, DEFAULT_DFSSCANMODE,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_scan_dfs_channel_mode},
+	{ CMD_SETWESMODE, DEFAULT_WESMODE,
+		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_wes_mode},
+#endif /* WES_SUPPORT */
 	{ CMD_SETBAND, DEFAULT_BAND,
 		RESTORE_TYPE_PRIV_CMD, .cmd_handler = wl_android_set_band},
 #ifdef WBTEXT
@@ -665,7 +1042,7 @@ static android_restore_scan_params_t restore_params[] =
 #endif /* WBTEXT */
 	{ "\0", 0, RESTORE_TYPE_UNSPECIFIED, .cmd_handler = NULL}
 };
-#endif // endif
+#endif /* SUPPORT_RESTORE_SCAN_PARAMS || WES_SUPPORT */
 
 #ifdef SUPPORT_LATENCY_CRITICAL_DATA
 #define CMD_GET_LATENCY_CRITICAL_DATA	"GET_LATENCY_CRT_DATA"
@@ -681,10 +1058,10 @@ static android_priv_cmd_log_cfg_table_t loging_params[] = {
 	{CMD_GET_SNR, FALSE},
 #ifdef SUPPORT_LQCM
 	{CMD_GET_LQCM_REPORT, FALSE},
-#endif // endif
+#endif
 #ifdef WL_GET_CU
 	{CMD_GET_CHAN_UTIL, FALSE},
-#endif // endif
+#endif
 	{"\0", FALSE}
 };
 
@@ -705,6 +1082,10 @@ static int g_wifi_on = TRUE;
 static char* wl_android_get_band_str(u16 band)
 {
 	switch (band) {
+#ifdef WL_6G_BAND
+		case WLC_BAND_6G:
+			return "6G";
+#endif /* WL_6G_BAND */
 		case WLC_BAND_5G:
 			return "5G";
 		case WLC_BAND_2G:
@@ -724,6 +1105,10 @@ static int wl_android_bandstr_to_fwband(char *band, u8 *fw_band)
 		*fw_band = WLC_BAND_5G;
 	} else if (!strcasecmp(band, "b")) {
 		*fw_band = WLC_BAND_2G;
+#ifdef WL_6G_BAND
+	} else if (!strcasecmp(band, "6g")) {
+		*fw_band = WLC_BAND_6G;
+#endif /* WL_6G_BAND */
 	} else if (!strcasecmp(band, "all")) {
 		*fw_band = WLC_BAND_ALL;
 	} else {
@@ -915,7 +1300,7 @@ static int wl_android_set_suspendmode(struct net_device *dev, char *command)
 		DHD_INFO(("wl_android_set_suspendmode: Suspend Mode %d\n", suspend_flag));
 	else
 		DHD_ERROR(("wl_android_set_suspendmode: failed %d\n", ret));
-#endif // endif
+#endif
 
 	return ret;
 }
@@ -1225,9 +1610,2604 @@ wl_android_set_band(struct net_device *dev, char *command)
 {
 	int error = 0;
 	uint band = *(command + strlen(CMD_SETBAND) + 1) - '0';
+#ifdef WL_HOST_BAND_MGMT
+	int ret = 0;
+	if ((ret = wl_cfg80211_set_band(dev, band)) < 0) {
+		if (ret == BCME_UNSUPPORTED) {
+			/* If roam_var is unsupported, fallback to the original method */
+			WL_ERR(("WL_HOST_BAND_MGMT defined, "
+				"but roam_band iovar unsupported in the firmware\n"));
+		} else {
+			error = -1;
+		}
+	}
+	if (((ret == 0) && (band == WLC_BAND_AUTO)) || (ret == BCME_UNSUPPORTED)) {
+		/* Apply if roam_band iovar is not supported or band setting is AUTO */
+		error = wldev_set_band(dev, band);
+	}
+#else
 	error = wl_cfg80211_set_if_band(dev, band);
+#endif /* WL_HOST_BAND_MGMT */
+#ifdef ROAM_CHANNEL_CACHE
+	wl_update_roamscan_cache_by_band(dev, band);
+#endif /* ROAM_CHANNEL_CACHE */
 	return error;
 }
+
+#if defined(WES_SUPPORT) && defined(WBTEXT)
+static bool wl_android_check_wbtext_support(struct net_device *dev)
+{
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	return dhdp->wbtext_support;
+}
+#endif /* WES_SUPPORT && WBTEXT */
+
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef ROAM_API
+static bool
+wl_android_check_wbtext_policy(struct net_device *dev)
+{
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	if (dhdp->wbtext_policy == WL_BSSTRANS_POLICY_PRODUCT_WBTEXT) {
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static int
+wl_android_set_roam_trigger(struct net_device *dev, char* command)
+{
+	int roam_trigger[2] = {0, 0};
+	int error;
+
+#ifdef WBTEXT
+	if (wl_android_check_wbtext_policy(dev)) {
+		WL_ERR(("blocked to set roam trigger. try with setting roam profile\n"));
+		return BCME_ERROR;
+	}
+#endif /* WBTEXT */
+
+	sscanf(command, "%*s %10d", &roam_trigger[0]);
+	if (roam_trigger[0] >= 0) {
+		WL_ERR(("wrong roam trigger value (%d)\n", roam_trigger[0]));
+		return BCME_ERROR;
+	}
+
+	roam_trigger[1] = WLC_BAND_ALL;
+	error = wldev_ioctl_set(dev, WLC_SET_ROAM_TRIGGER, roam_trigger,
+		sizeof(roam_trigger));
+	if (error != BCME_OK) {
+		WL_ERR(("failed to set roam trigger (%d)\n", error));
+		return BCME_ERROR;
+	}
+
+	return BCME_OK;
+}
+
+static int
+wl_android_get_roam_trigger(struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written, error;
+	int roam_trigger[2] = {0, 0};
+	uint16 band = 0;
+	int chsp = {0};
+	chanspec_t chanspec;
+#ifdef WBTEXT
+	int i;
+	wl_roamprof_band_t rp;
+	uint8 roam_prof_ver = 0, roam_prof_size = 0;
+#endif /* WBTEXT */
+
+	error = wldev_iovar_getint(dev, "chanspec", &chsp);
+	if (error != BCME_OK) {
+		WL_ERR(("failed to get chanspec (%d)\n", error));
+		return BCME_ERROR;
+	}
+
+	chanspec = wl_chspec_driver_to_host(chsp);
+	band = CHSPEC2WLC_BAND(chanspec);
+
+	if (wl_android_check_wbtext_policy(dev)) {
+#ifdef WBTEXT
+		memset_s(&rp, sizeof(rp), 0, sizeof(rp));
+		if ((error = wlc_wbtext_get_roam_prof(dev, &rp, band, &roam_prof_ver,
+			&roam_prof_size))) {
+			WL_ERR(("Getting roam_profile failed with err=%d \n", error));
+			return -EINVAL;
+		}
+		switch (roam_prof_ver) {
+			case WL_ROAM_PROF_VER_1:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v2.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v2.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_2:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v3.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v3.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_3:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			default:
+				WL_ERR(("bad version = %d \n", roam_prof_ver));
+				return BCME_VERSION;
+		}
+#endif /* WBTEXT */
+		if (roam_trigger[0] == 0) {
+			WL_ERR(("roam trigger was not set properly\n"));
+			return BCME_ERROR;
+		}
+	} else {
+		roam_trigger[1] = band;
+		error = wldev_ioctl_get(dev, WLC_GET_ROAM_TRIGGER, roam_trigger,
+			sizeof(roam_trigger));
+		if (error != BCME_OK) {
+			WL_ERR(("failed to get roam trigger (%d)\n", error));
+			return BCME_ERROR;
+		}
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_ROAMTRIGGER_GET, roam_trigger[0]);
+
+	return bytes_written;
+}
+
+#ifdef WBTEXT
+s32
+wl_cfg80211_wbtext_roam_trigger_config(struct net_device *ndev, int roam_trigger)
+{
+	char *commandp = NULL;
+	s32 ret = BCME_OK;
+	char *data;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+	uint8 bandidx = 0;
+
+	commandp = (char *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
+	if (unlikely(!commandp)) {
+		WL_ERR(("%s: failed to allocate memory\n", __func__));
+		ret =  -ENOMEM;
+		goto exit;
+	}
+
+	WL_DBG(("roam trigger %d\n", roam_trigger));
+	if (roam_trigger > 0) {
+		WL_ERR(("Invalid roam trigger value %d\n", roam_trigger));
+		goto exit;
+	}
+
+	for (bandidx = 0; bandidx < MAXBANDS; bandidx++) {
+		char *band;
+		int tri0, tri1, low0, low1, cu0, cu1, dur0, dur1;
+		int tri0_dflt;
+		if (bandidx == BAND_5G_INDEX) {
+			band = "a";
+			tri0_dflt = DEFAULT_WBTEXT_CU_RSSI_TRIG_A;
+		} else {
+			band = "b";
+			tri0_dflt = DEFAULT_WBTEXT_CU_RSSI_TRIG_B;
+		}
+
+		/* Get ROAM Profile
+		 * WBTEXT_PROFILE_CONFIG band
+		 */
+		bzero(commandp, WLC_IOCTL_SMLEN);
+		snprintf(commandp, WLC_IOCTL_SMLEN, "%s %s",
+			CMD_WBTEXT_PROFILE_CONFIG, band);
+		data = (commandp + strlen(CMD_WBTEXT_PROFILE_CONFIG) + 1);
+		wl_cfg80211_wbtext_config(ndev, data, commandp, WLC_IOCTL_SMLEN);
+
+		/* Set ROAM Profile
+		 * WBTEXT_PROFILE_CONFIG band -70 roam_trigger 70 10 roam_trigger -128 0 10
+		 */
+		sscanf(commandp, "RSSI[%d,%d] CU(trigger:%d%%: duration:%ds)"
+			"RSSI[%d,%d] CU(trigger:%d%%: duration:%ds)",
+			&tri0, &low0, &cu0, &dur0, &tri1, &low1, &cu1, &dur1);
+
+		if (tri0_dflt <= roam_trigger) {
+			tri0 = roam_trigger + 1;
+		} else {
+			tri0 = tri0_dflt;
+		}
+
+		memset_s(commandp, WLC_IOCTL_SMLEN, 0, WLC_IOCTL_SMLEN);
+		snprintf(commandp, WLC_IOCTL_SMLEN, "%s %s %d %d %d %d %d %d %d %d",
+			CMD_WBTEXT_PROFILE_CONFIG, band,
+			tri0, roam_trigger, cu0, dur0, roam_trigger, low1, cu1, dur1);
+
+		ret = wl_cfg80211_wbtext_config(ndev, data, commandp, WLC_IOCTL_SMLEN);
+		if (ret != BCME_OK) {
+			WL_ERR(("Failed to set roam_prof %s error = %d\n", data, ret));
+			goto exit;
+		}
+	}
+
+exit:
+	if (commandp) {
+		MFREE(cfg->osh, commandp, WLC_IOCTL_SMLEN);
+	}
+	return ret;
+}
+#endif /* WBTEXT */
+
+static int
+wl_android_set_roam_trigger_legacy(struct net_device *dev, char* command)
+{
+	int roam_trigger[2] = {0, 0};
+	int error;
+
+	sscanf(command, "%*s %10d", &roam_trigger[0]);
+	if (roam_trigger[0] >= 0) {
+		WL_ERR(("wrong roam trigger value (%d)\n", roam_trigger[0]));
+		return BCME_ERROR;
+	}
+
+	if (wl_android_check_wbtext_policy(dev)) {
+#ifdef WBTEXT
+		error = wl_cfg80211_wbtext_roam_trigger_config(dev, roam_trigger[0]);
+		if (error != BCME_OK) {
+			WL_ERR(("failed to set roam prof trigger (%d)\n", error));
+			return BCME_ERROR;
+		}
+#endif /* WBTEXT */
+	} else {
+		if (roam_trigger[0] >= 0) {
+			WL_ERR(("wrong roam trigger value (%d)\n", roam_trigger[0]));
+			return BCME_ERROR;
+		}
+
+		roam_trigger[1] = WLC_BAND_ALL;
+		error = wldev_ioctl_set(dev, WLC_SET_ROAM_TRIGGER, roam_trigger,
+			sizeof(roam_trigger));
+		if (error != BCME_OK) {
+			WL_ERR(("failed to set roam trigger (%d)\n", error));
+			return BCME_ERROR;
+		}
+	}
+
+	return BCME_OK;
+}
+
+int wl_android_set_roam_delta(
+	struct net_device *dev, char* command)
+{
+	int roam_delta[2];
+
+	sscanf(command, "%*s %10d", &roam_delta[0]);
+	roam_delta[1] = WLC_BAND_ALL;
+
+	return wldev_ioctl_set(dev, WLC_SET_ROAM_DELTA, roam_delta,
+		sizeof(roam_delta));
+}
+
+static int wl_android_get_roam_delta(
+	struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written;
+	int roam_delta[2] = {0, 0};
+
+	roam_delta[1] = WLC_BAND_2G;
+	if (wldev_ioctl_get(dev, WLC_GET_ROAM_DELTA, roam_delta,
+		sizeof(roam_delta))) {
+		roam_delta[1] = WLC_BAND_5G;
+#ifdef WL_6G_BAND
+		if (wldev_ioctl_get(dev, WLC_GET_ROAM_DELTA, roam_delta,
+			sizeof(roam_delta))) {
+			roam_delta[1] = WLC_BAND_6G;
+#endif /* WL_6G_BAND */
+			if (wldev_ioctl_get(dev, WLC_GET_ROAM_DELTA, roam_delta,
+				sizeof(roam_delta))) {
+				return -1;
+			}
+#ifdef WL_6G_BAND
+		}
+#endif /* WL_6G_BAND */
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_ROAMDELTA_GET, roam_delta[0]);
+
+	return bytes_written;
+}
+
+int wl_android_set_roam_scan_period(
+	struct net_device *dev, char* command)
+{
+	int roam_scan_period = 0;
+
+	sscanf(command, "%*s %10d", &roam_scan_period);
+	return wldev_ioctl_set(dev, WLC_SET_ROAM_SCAN_PERIOD, &roam_scan_period,
+		sizeof(roam_scan_period));
+}
+
+static int wl_android_get_roam_scan_period(
+	struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written;
+	int roam_scan_period = 0;
+
+	if (wldev_ioctl_get(dev, WLC_GET_ROAM_SCAN_PERIOD, &roam_scan_period,
+		sizeof(roam_scan_period)))
+		return -1;
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_ROAMSCANPERIOD_GET, roam_scan_period);
+
+	return bytes_written;
+}
+
+int wl_android_set_full_roam_scan_period(
+	struct net_device *dev, char* command)
+{
+	int error = 0;
+	int full_roam_scan_period = 0;
+	char smbuf[WLC_IOCTL_SMLEN];
+
+	sscanf(command+sizeof("SETFULLROAMSCANPERIOD"), "%d", &full_roam_scan_period);
+	WL_TRACE(("fullroamperiod = %d\n", full_roam_scan_period));
+
+	error = wldev_iovar_setbuf(dev, "fullroamperiod", &full_roam_scan_period,
+		sizeof(full_roam_scan_period), smbuf, sizeof(smbuf), NULL);
+	if (error) {
+		DHD_ERROR(("Failed to set full roam scan period, error = %d\n", error));
+	}
+
+	return error;
+}
+
+static int wl_android_get_full_roam_scan_period(
+	struct net_device *dev, char *command, int total_len)
+{
+	int error;
+	int bytes_written;
+	int full_roam_scan_period = 0;
+
+	error = wldev_iovar_getint(dev, "fullroamperiod", &full_roam_scan_period);
+
+	if (error) {
+		DHD_ERROR(("%s: get full roam scan period failed code %d\n",
+			__func__, error));
+		return -1;
+	} else {
+		DHD_INFO(("%s: get full roam scan period %d\n", __func__, full_roam_scan_period));
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_FULLROAMSCANPERIOD_GET, full_roam_scan_period);
+
+	return bytes_written;
+}
+
+int wl_android_set_country_rev(
+	struct net_device *dev, char* command)
+{
+	int error = 0;
+	wl_country_t cspec = {{0}, 0, {0} };
+	char country_code[WLC_CNTRY_BUF_SZ];
+	char smbuf[WLC_IOCTL_SMLEN];
+	int rev = 0;
+
+	bzero(country_code, sizeof(country_code));
+	sscanf(command+sizeof("SETCOUNTRYREV"), "%3s %10d", country_code, &rev);
+	WL_TRACE(("country_code = %s, rev = %d\n", country_code, rev));
+
+	memcpy(cspec.country_abbrev, country_code, sizeof(country_code));
+	memcpy(cspec.ccode, country_code, sizeof(country_code));
+	cspec.rev = rev;
+
+	error = wldev_iovar_setbuf(dev, "country", (char *)&cspec,
+		sizeof(cspec), smbuf, sizeof(smbuf), NULL);
+
+	if (error) {
+		DHD_ERROR(("wl_android_set_country_rev: set country '%s/%d' failed code %d\n",
+			cspec.ccode, cspec.rev, error));
+	} else {
+		dhd_bus_country_set(dev, &cspec, true);
+		DHD_INFO(("wl_android_set_country_rev: set country '%s/%d'\n",
+			cspec.ccode, cspec.rev));
+	}
+
+	return error;
+}
+
+static int wl_android_get_country_rev(
+	struct net_device *dev, char *command, int total_len)
+{
+	int error;
+	int bytes_written;
+	char smbuf[WLC_IOCTL_SMLEN];
+	wl_country_t cspec;
+
+	error = wldev_iovar_getbuf(dev, "country", NULL, 0, smbuf,
+		sizeof(smbuf), NULL);
+
+	if (error) {
+		DHD_ERROR(("wl_android_get_country_rev: get country failed code %d\n",
+			error));
+		return -1;
+	} else {
+		memcpy(&cspec, smbuf, sizeof(cspec));
+		DHD_INFO(("wl_android_get_country_rev: get country '%c%c %d'\n",
+			cspec.ccode[0], cspec.ccode[1], cspec.rev));
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %c%c %d",
+		CMD_COUNTRYREV_GET, cspec.ccode[0], cspec.ccode[1], cspec.rev);
+
+	return bytes_written;
+}
+#endif /* ROAM_API */
+
+#ifdef WES_SUPPORT
+int wl_android_get_roam_scan_control(struct net_device *dev, char *command, int total_len)
+{
+	int error = 0;
+	int bytes_written = 0;
+	int mode = 0;
+
+	error = get_roamscan_mode(dev, &mode);
+	if (error) {
+		DHD_ERROR(("wl_android_get_roam_scan_control: Failed to get Scan Control,"
+			" error = %d\n", error));
+		return -1;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETROAMSCANCONTROL, mode);
+
+	return bytes_written;
+}
+
+int wl_android_set_roam_scan_control(struct net_device *dev, char *command)
+{
+	int error = 0;
+	int mode = 0;
+
+	if (sscanf(command, "%*s %d", &mode) != 1) {
+		DHD_ERROR(("wl_android_set_roam_scan_control: Failed to get Parameter\n"));
+		return -1;
+	}
+
+	error = set_roamscan_mode(dev, mode);
+	if (error) {
+		DHD_ERROR(("wl_android_set_roam_scan_control: Failed to set Scan Control %d,"
+		" error = %d\n",
+		 mode, error));
+		return -1;
+	}
+
+	return 0;
+}
+
+int
+wl_android_get_roam_scan_channels(struct net_device *dev, char *command, int total_len, char *cmd)
+{
+	int bytes_written = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+	int nchan = 0, i = 0;
+	int buf_avail, len;
+
+	nchan = get_roamscan_chanspec_list(dev, chanspecs);
+	if (nchan < 0) {
+		WL_ERR(("Failed to Set roamscan channels, n_chan = %d\n", nchan));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", cmd, nchan);
+
+	buf_avail = total_len - bytes_written;
+	for (i = 0; i < nchan; i++) {
+		/* A return value of 'buf_avail' or more means that the output was truncated */
+		len = snprintf(command + bytes_written, buf_avail, " %d",
+			CHSPEC_CHANNEL(chanspecs[i]));
+		if (len >= buf_avail) {
+			WL_ERR(("Insufficient memory, %d bytes\n", total_len));
+			WL_ERR(("Insufficient memory, %d bytes\n", total_len));
+			bytes_written = -1;
+			break;
+		}
+		/* 'buf_avail' decremented by number of bytes written */
+		buf_avail -= len;
+		bytes_written += len;
+	}
+	WL_INFORM(("%s\n", command));
+	return bytes_written;
+}
+
+#define CHANNEL_IDX	1
+int
+wl_android_set_roam_scan_channels(struct net_device *dev, char *command)
+{
+	int error = BCME_OK, i;
+	unsigned char *p = (unsigned char *)(command + strlen(CMD_SETROAMSCANCHANNELS) + 1);
+	uint16 nchan = 0, channel = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+
+	nchan = p[0];
+	if (nchan > MAX_ROAM_CHANNEL) {
+		WL_ERR(("Failed to Set roamscan channnels, n_chan = %d\n", nchan));
+		return BCME_BADARG;
+	}
+
+	for (i = 0; i < nchan; i++) {
+		channel = p[i + CHANNEL_IDX];
+		/* Convert chanspec from channel */
+		chanspecs[i] = wf_channel2chspec(channel, WL_CHANSPEC_BW_20);
+	}
+
+	error = set_roamscan_chanspec_list(dev, nchan, chanspecs);
+	if (error) {
+		WL_ERR(("Failed to Set Scan Channels %d, error = %d\n", p[0], error));
+		return error;
+	}
+
+	return error;
+}
+
+int
+wl_android_add_roam_scan_channels(struct net_device *dev, char *command, uint cmdlen)
+{
+	int i, error = BCME_OK;
+	char *pcmd, *token;
+	uint16 nchan = 0, channel = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+
+	pcmd = (command + cmdlen + 1);
+	/* Parse roam channel count */
+	token = bcmstrtok(&pcmd, " ", NULL);
+	if (!token) {
+		WL_ERR(("Bad argument!\n"));
+		return BCME_BADARG;
+	}
+	nchan = bcm_atoi(token);
+	if (nchan > MAX_ROAM_CHANNEL) {
+		WL_ERR(("Failed to Add roamscan channnels, n_chan = %d\n", nchan));
+		return BCME_BADARG;
+	}
+
+	for (i = 0; i < nchan; i++) {
+		/* Parse roam channel list */
+		token = bcmstrtok(&pcmd, " ", NULL);
+		if (!token) {
+			WL_ERR(("Bad argument!\n"));
+			return BCME_BADARG;
+		}
+		channel = bcm_atoi(token);
+		/* Convert chanspec from channel */
+		if (channel > 0) {
+			chanspecs[i] = wf_channel2chspec(channel, WL_CHANSPEC_BW_20);
+		}
+	}
+
+	error = add_roamscan_chanspec_list(dev, nchan, chanspecs);
+	if (error) {
+		WL_ERR(("Failed to add Scan Channels %s, error = %d\n", pcmd, error));
+	}
+
+	return error;
+}
+
+int
+wl_android_get_roam_scan_freqs(struct net_device *dev, char *command, int total_len, char *cmd)
+{
+	int bytes_written = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+	int nchan = 0, i = 0;
+	int buf_avail, len;
+	u32 freq = 0;
+	uint start_factor = 0;
+
+	nchan = get_roamscan_chanspec_list(dev, chanspecs);
+	if (nchan < 0) {
+		WL_ERR(("Failed to Get roamscan frequencies, n_chan = %d\n", nchan));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", cmd, nchan);
+
+	buf_avail = total_len - bytes_written;
+	for (i = 0; i < nchan; i++) {
+		start_factor = WF_CHAN_FACTOR_2_4_G;
+		if (CHSPEC_BAND(chanspecs[i]) == WL_CHANSPEC_BAND_5G) {
+			start_factor = WF_CHAN_FACTOR_5_G;
+		} else if (CHSPEC_BAND(chanspecs[i]) == WL_CHANSPEC_BAND_6G) {
+			start_factor = WF_CHAN_FACTOR_6_G;
+		}
+		freq = wf_channel2mhz(CHSPEC_CHANNEL(chanspecs[i]), start_factor);
+		/* A return value of 'buf_avail' or more means that the output was truncated */
+		len = snprintf(command + bytes_written, buf_avail, " %d", freq);
+		if (len >= buf_avail) {
+			WL_ERR(("Insufficient memory, %d bytes\n", total_len));
+			bytes_written = -1;
+			break;
+		}
+		/* 'buf_avail' decremented by number of bytes written */
+		buf_avail -= len;
+		bytes_written += len;
+	}
+	WL_INFORM(("%s\n", command));
+	return bytes_written;
+}
+
+int
+wl_android_set_roam_scan_freqs(struct net_device *dev, char *command)
+{
+	int error = BCME_OK, i;
+	char *pcmd, *token;
+	uint16 nchan = 0, freq = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+
+	pcmd = (command + strlen(CMD_SETROAMSCANFREQS) + 1);
+	/* Parse roam channel count */
+	token = bcmstrtok(&pcmd, " ", NULL);
+	if (!token) {
+		WL_ERR(("Bad argument!\n"));
+		return BCME_BADARG;
+	}
+	nchan = bcm_atoi(token);
+	if (nchan > MAX_ROAM_CHANNEL) {
+		WL_ERR(("Failed to Set roamscan frequencies, n_chan = %d\n", nchan));
+		return BCME_BADARG;
+	}
+
+	for (i = 0; i < nchan; i++) {
+		/* Parse roam channel list */
+		token = bcmstrtok(&pcmd, " ", NULL);
+		if (!token) {
+			WL_ERR(("Bad argument!\n"));
+			return BCME_BADARG;
+		}
+		freq = bcm_atoi(token);
+		/* Convert chanspec from frequency */
+		chanspecs[i] = wl_freq_to_chanspec(freq);
+	}
+
+	error = set_roamscan_chanspec_list(dev, nchan, chanspecs);
+	if (error) {
+		WL_ERR(("Failed to set Scan Channels %d, error = %d\n", nchan, error));
+		return error;
+	}
+
+	return error;
+}
+
+int
+wl_android_add_roam_scan_freqs(struct net_device *dev, char *command, uint cmdlen)
+{
+	int i, error = BCME_OK;
+	char *pcmd, *token;
+	uint16 nchan = 0, freq = 0;
+	chanspec_t chanspecs[MAX_ROAM_CHANNEL] = {0};
+
+	pcmd = (command + cmdlen + 1);
+	/* Parse roam channel count */
+	token = bcmstrtok(&pcmd, " ", NULL);
+	if (!token) {
+		WL_ERR(("Bad argument!\n"));
+		return BCME_BADARG;
+	}
+	nchan = bcm_atoi(token);
+	if (nchan > MAX_ROAM_CHANNEL) {
+		WL_ERR(("Failed to Add roamscan frequencies, n_chan = %d\n", nchan));
+		return BCME_BADARG;
+	}
+
+	for (i = 0; i < nchan; i++) {
+		/* Parse roam channel list */
+		token = bcmstrtok(&pcmd, " ", NULL);
+		if (!token) {
+			WL_ERR(("Bad argument!\n"));
+			return BCME_BADARG;
+		}
+		freq = bcm_atoi(token);
+		/* Convert chanspec from channel */
+		if (freq > 0) {
+			chanspecs[i] = wl_freq_to_chanspec(freq);
+		}
+	}
+
+	error = add_roamscan_chanspec_list(dev, nchan, chanspecs);
+	if (error) {
+		WL_ERR(("Failed to add Scan Channels %s, error = %d\n", pcmd, error));
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_channel_time(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int time = 0;
+
+	error = wldev_ioctl_get(dev, WLC_GET_SCAN_CHANNEL_TIME, &time, sizeof(time));
+	if (error) {
+		WL_ERR(("Failed to get Scan Channel Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANCHANNELTIME, time);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_channel_time(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int time = 0;
+
+	if (sscanf(command, "%*s %d", &time) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+
+	if (time == 0) {
+		/* Set default value when Private param is 0. */
+		time = DHD_SCAN_ASSOC_ACTIVE_TIME;
+	}
+#ifdef CUSTOMER_SCAN_TIMEOUT_SETTING
+	wl_cfg80211_custom_scan_time(dev, WL_CUSTOM_SCAN_CHANNEL_TIME, time);
+	error = wldev_ioctl_set(dev, WLC_SET_SCAN_CHANNEL_TIME, &time, sizeof(time));
+#endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
+	if (error) {
+		WL_ERR(("Failed to set Scan Channel Time %d, error = %d\n", time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_unassoc_time(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int time = 0;
+
+	error = wldev_ioctl_get(dev, WLC_GET_SCAN_UNASSOC_TIME, &time, sizeof(time));
+	if (error) {
+		WL_ERR(("Failed to get Scan Unassoc Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANUNASSOCTIME, time);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_unassoc_time(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int time = 0;
+
+	if (sscanf(command, "%*s %d", &time) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+	if (time == 0) {
+		/* Set default value when Private param is 0. */
+		time = DHD_SCAN_UNASSOC_ACTIVE_TIME;
+	}
+#ifdef CUSTOMER_SCAN_TIMEOUT_SETTING
+	wl_cfg80211_custom_scan_time(dev, WL_CUSTOM_SCAN_UNASSOC_TIME, time);
+	error = wldev_ioctl_set(dev, WLC_SET_SCAN_UNASSOC_TIME, &time, sizeof(time));
+#endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
+	if (error) {
+		WL_ERR(("Failed to set Scan Unassoc Time %d, error = %d\n", time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_passive_time(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int time = 0;
+
+	error = wldev_ioctl_get(dev, WLC_GET_SCAN_PASSIVE_TIME, &time, sizeof(time));
+	if (error) {
+		WL_ERR(("Failed to get Scan Passive Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANPASSIVETIME, time);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_passive_time(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int time = 0;
+
+	if (sscanf(command, "%*s %d", &time) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+	if (time == 0) {
+		/* Set default value when Private param is 0. */
+		time = DHD_SCAN_PASSIVE_TIME;
+	}
+#ifdef CUSTOMER_SCAN_TIMEOUT_SETTING
+	wl_cfg80211_custom_scan_time(dev, WL_CUSTOM_SCAN_PASSIVE_TIME, time);
+	error = wldev_ioctl_set(dev, WLC_SET_SCAN_PASSIVE_TIME, &time, sizeof(time));
+#endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
+	if (error) {
+		WL_ERR(("Failed to set Scan Passive Time %d, error = %d\n", time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_home_time(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int time = 0;
+
+	error = wldev_ioctl_get(dev, WLC_GET_SCAN_HOME_TIME, &time, sizeof(time));
+	if (error) {
+		WL_ERR(("Failed to get Scan Home Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANHOMETIME, time);
+
+	return bytes_written;
+}
+
+int wl_android_set_scan_home_time(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int time = 0;
+
+	if (sscanf(command, "%*s %d", &time) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+	if (time == 0) {
+		/* Set default value when Private param is 0. */
+		time = DHD_SCAN_HOME_TIME;
+	}
+#ifdef CUSTOMER_SCAN_TIMEOUT_SETTING
+	wl_cfg80211_custom_scan_time(dev, WL_CUSTOM_SCAN_HOME_TIME, time);
+	error = wldev_ioctl_set(dev, WLC_SET_SCAN_HOME_TIME, &time, sizeof(time));
+#endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
+	if (error) {
+		WL_ERR(("Failed to set Scan Home Time %d, error = %d\n", time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_home_away_time(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int time = 0;
+
+	error = wldev_iovar_getint(dev, "scan_home_away_time", &time);
+	if (error) {
+		WL_ERR(("Failed to get Scan Home Away Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANHOMEAWAYTIME, time);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_home_away_time(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int time = 0;
+
+	if (sscanf(command, "%*s %d", &time) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+	if (time == 0) {
+		/* Set default value when Private param is 0. */
+		time = DHD_SCAN_HOME_AWAY_TIME;
+	}
+#ifdef CUSTOMER_SCAN_TIMEOUT_SETTING
+	wl_cfg80211_custom_scan_time(dev, WL_CUSTOM_SCAN_HOME_AWAY_TIME, time);
+	error = wldev_iovar_setint(dev, "scan_home_away_time", time);
+#endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
+	if (error) {
+		WL_ERR(("Failed to set Scan Home Away Time %d, error = %d\n",  time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_nprobes(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int num = 0;
+
+	error = wldev_ioctl_get(dev, WLC_GET_SCAN_NPROBES, &num, sizeof(num));
+	if (error) {
+		WL_ERR(("Failed to get Scan NProbes, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETSCANNPROBES, num);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_nprobes(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int num = 0;
+
+	if (sscanf(command, "%*s %d", &num) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+
+	error = wldev_ioctl_set(dev, WLC_SET_SCAN_NPROBES, &num, sizeof(num));
+	if (error) {
+		WL_ERR(("Failed to set Scan NProbes %d, error = %d\n", num, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_scan_dfs_channel_mode(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	int bytes_written = 0;
+	int mode = 0;
+	int scan_passive_time = 0;
+
+	error = wldev_iovar_getint(dev, "scan_passive_time", &scan_passive_time);
+	if (error) {
+		WL_ERR(("Failed to get Passive Time, error = %d\n", error));
+		return BCME_ERROR;
+	}
+
+	if (scan_passive_time == 0) {
+		mode = 0;
+	} else {
+		mode = 1;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETDFSSCANMODE, mode);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_scan_dfs_channel_mode(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	int mode = 0;
+	int scan_passive_time = 0;
+
+	if (sscanf(command, "%*s %d", &mode) != 1) {
+		WL_ERR(("Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+
+	if (mode == 1) {
+		scan_passive_time = DHD_SCAN_PASSIVE_TIME;
+	} else if (mode == 0) {
+		scan_passive_time = 0;
+	} else {
+		WL_ERR(("Failed to set Scan DFS channel mode %d\n", mode));
+		return BCME_ERROR;
+	}
+	error = wldev_iovar_setint(dev, "scan_passive_time", scan_passive_time);
+	if (error) {
+		WL_ERR(("Failed to set Scan Passive Time %d, error = %d\n",
+			scan_passive_time, error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+#define JOINPREFFER_BUF_SIZE 12
+
+static int
+wl_android_set_join_prefer(struct net_device *dev, char *command)
+{
+	int error = BCME_OK;
+	char smbuf[WLC_IOCTL_SMLEN];
+	uint8 buf[JOINPREFFER_BUF_SIZE];
+	char *pcmd;
+	int total_len_left;
+	int i;
+	char hex[] = "XX";
+#ifdef WBTEXT
+	int turn_on = OFF;
+	char clear[] = { 0x01, 0x02, 0x00, 0x00, 0x03, 0x02, 0x00, 0x00, 0x04, 0x02, 0x00, 0x00 };
+#endif /* WBTEXT */
+
+	pcmd = command + strlen(CMD_SETJOINPREFER) + 1;
+	total_len_left = strlen(pcmd);
+
+	bzero(buf, sizeof(buf));
+
+	if (total_len_left != JOINPREFFER_BUF_SIZE << 1) {
+		DHD_ERROR(("wl_android_set_join_prefer: Failed to get Parameter\n"));
+		return BCME_ERROR;
+	}
+
+	/* Store the MSB first, as required by join_pref */
+	for (i = 0; i < JOINPREFFER_BUF_SIZE; i++) {
+		hex[0] = *pcmd++;
+		hex[1] = *pcmd++;
+		buf[i] = (uint8)simple_strtoul(hex, NULL, 16);
+	}
+
+#ifdef WBTEXT
+	/* Set WBTEXT mode */
+	turn_on = memcmp(buf, clear, sizeof(buf)) == 0 ? TRUE : FALSE;
+	error = wl_android_wbtext_enable(dev, turn_on);
+	if (error) {
+		WL_ERR(("Failed to set WBTEXT(%d) = %s\n",
+			error, (turn_on ? "Enable" : "Disable")));
+	}
+#endif /* WBTEXT */
+
+	prhex("join pref", (uint8 *)buf, JOINPREFFER_BUF_SIZE);
+	error = wldev_iovar_setbuf(dev, "join_pref", buf, JOINPREFFER_BUF_SIZE,
+		smbuf, sizeof(smbuf), NULL);
+	if (error) {
+		DHD_ERROR(("Failed to set join_pref, error = %d\n", error));
+	}
+
+	return error;
+}
+
+int wl_android_send_action_frame(struct net_device *dev, char *command, int total_len)
+{
+	int error = -1;
+	android_wifi_af_params_t *params = NULL;
+	wl_action_frame_t *action_frame = NULL;
+	wl_af_params_t *af_params = NULL;
+	char *smbuf = NULL;
+	struct ether_addr tmp_bssid;
+	int tmp_channel = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	if (total_len <
+			(strlen(CMD_SENDACTIONFRAME) + 1 + sizeof(android_wifi_af_params_t))) {
+		DHD_ERROR(("wl_android_send_action_frame: Invalid parameters \n"));
+		goto send_action_frame_out;
+	}
+
+	params = (android_wifi_af_params_t *)(command + strlen(CMD_SENDACTIONFRAME) + 1);
+
+	if ((uint16)params->len > ANDROID_WIFI_ACTION_FRAME_SIZE) {
+		DHD_ERROR(("wl_android_send_action_frame: Requested action frame len"
+			" was out of range(%d)\n",
+			params->len));
+		goto send_action_frame_out;
+	}
+
+	smbuf = (char *)MALLOC(cfg->osh, WLC_IOCTL_MAXLEN);
+	if (smbuf == NULL) {
+		DHD_ERROR(("wl_android_send_action_frame: failed to allocated memory %d bytes\n",
+		WLC_IOCTL_MAXLEN));
+		goto send_action_frame_out;
+	}
+
+	af_params = (wl_af_params_t *)MALLOCZ(cfg->osh, WL_WIFI_AF_PARAMS_SIZE);
+	if (af_params == NULL) {
+		DHD_ERROR(("wl_android_send_action_frame: unable to allocate frame\n"));
+		goto send_action_frame_out;
+	}
+
+	bzero(&tmp_bssid, ETHER_ADDR_LEN);
+	if (bcm_ether_atoe((const char *)params->bssid, (struct ether_addr *)&tmp_bssid) == 0) {
+		bzero(&tmp_bssid, ETHER_ADDR_LEN);
+
+		error = wldev_ioctl_get(dev, WLC_GET_BSSID, &tmp_bssid, ETHER_ADDR_LEN);
+		if (error) {
+			bzero(&tmp_bssid, ETHER_ADDR_LEN);
+			DHD_ERROR(("wl_android_send_action_frame: failed to get bssid,"
+				" error=%d\n", error));
+			goto send_action_frame_out;
+		}
+	}
+
+	if (params->channel < 0) {
+		struct channel_info ci;
+		bzero(&ci, sizeof(ci));
+		error = wldev_ioctl_get(dev, WLC_GET_CHANNEL, &ci, sizeof(ci));
+		if (error) {
+			DHD_ERROR(("wl_android_send_action_frame: failed to get channel,"
+				" error=%d\n", error));
+			goto send_action_frame_out;
+		}
+
+		tmp_channel = ci.hw_channel;
+	}
+	else {
+		tmp_channel = params->channel;
+	}
+
+	af_params->channel = tmp_channel;
+	af_params->dwell_time = params->dwell_time;
+	memcpy(&af_params->BSSID, &tmp_bssid, ETHER_ADDR_LEN);
+	action_frame = &af_params->action_frame;
+
+	action_frame->packetId = 0;
+	memcpy(&action_frame->da, &tmp_bssid, ETHER_ADDR_LEN);
+	action_frame->len = (uint16)params->len;
+	memcpy(action_frame->data, params->data, action_frame->len);
+
+	error = wldev_iovar_setbuf(dev, "actframe", af_params,
+		sizeof(wl_af_params_t), smbuf, WLC_IOCTL_MAXLEN, NULL);
+	if (error) {
+		DHD_ERROR(("wl_android_send_action_frame: failed to set action frame,"
+			" error=%d\n", error));
+	}
+
+send_action_frame_out:
+	if (af_params) {
+		MFREE(cfg->osh, af_params, WL_WIFI_AF_PARAMS_SIZE);
+	}
+
+	if (smbuf) {
+		MFREE(cfg->osh, smbuf, WLC_IOCTL_MAXLEN);
+	}
+
+	if (error)
+		return -1;
+	else
+		return 0;
+}
+
+int
+wl_android_reassoc(struct net_device *dev, char *command, int total_len)
+{
+	int error = BCME_OK;
+	android_wifi_reassoc_params_t *params = NULL;
+	chanspec_t channel;
+	u32 params_size;
+	wl_reassoc_params_t reassoc_params;
+	char pcmd[WL_PRIV_CMD_LEN + 1];
+
+	sscanf(command, "%"S(WL_PRIV_CMD_LEN)"s *", pcmd);
+	if (total_len < (strlen(pcmd) + 1 + sizeof(android_wifi_reassoc_params_t))) {
+		WL_ERR(("Invalid parameters %s\n", command));
+		return BCME_ERROR;
+	}
+	params = (android_wifi_reassoc_params_t *)(command + strlen(pcmd) + 1);
+
+	bzero(&reassoc_params, WL_REASSOC_PARAMS_FIXED_SIZE);
+
+	if (bcm_ether_atoe((const char *)params->bssid,
+	(struct ether_addr *)&reassoc_params.bssid) == 0) {
+		WL_ERR(("Invalid bssid \n"));
+		return BCME_BADARG;
+	}
+
+	if (params->channel < 0) {
+		WL_ERR(("Invalid Channel %d\n", params->channel));
+		return BCME_BADARG;
+	}
+
+	reassoc_params.chanspec_num = 1;
+
+	channel = params->channel;
+	if (CHANNEL_IS_2G(channel) || CHANNEL_IS_5G(channel)) {
+		/* If reassoc Param is BSSID and Channel */
+		reassoc_params.chanspec_list[0] = wf_channel2chspec(channel, WL_CHANSPEC_BW_20);
+	} else {
+		/* If reassoc Param is BSSID and Frequency */
+		reassoc_params.chanspec_list[0] = wl_freq_to_chanspec(channel);
+	}
+	params_size = WL_REASSOC_PARAMS_FIXED_SIZE + sizeof(chanspec_t);
+
+	error = wldev_ioctl_set(dev, WLC_REASSOC, &reassoc_params, params_size);
+	if (error) {
+		WL_ERR(("failed to reassoc, error=%d\n", error));
+		return error;
+	}
+	return error;
+}
+
+int wl_android_get_wes_mode(struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written = 0;
+	int mode = 0;
+
+	mode = wl_cfg80211_get_wes_mode(dev);
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETWESMODE, mode);
+
+	return bytes_written;
+}
+
+int wl_android_set_wes_mode(struct net_device *dev, char *command)
+{
+	int error = 0;
+	int mode = 0;
+
+	if (sscanf(command, "%*s %d", &mode) != 1) {
+		DHD_ERROR(("wl_android_set_wes_mode: Failed to get Parameter\n"));
+		return -1;
+	}
+
+	error = wl_cfg80211_set_wes_mode(dev, mode);
+	if (error) {
+		DHD_ERROR(("wl_android_set_wes_mode: Failed to set WES Mode %d, error = %d\n",
+		mode, error));
+		return -1;
+	}
+
+	return 0;
+}
+
+int
+wl_android_get_ncho_mode(struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written = 0;
+	int mode = 0;
+
+	mode = wl_cfg80211_get_ncho_mode(dev);
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GETNCHOMODE, mode);
+
+	return bytes_written;
+}
+
+int
+wl_android_set_ncho_mode(struct net_device *dev, int mode)
+{
+	char cmd[WLC_IOCTL_SMLEN];
+	int error = BCME_OK;
+
+#ifdef WBTEXT
+	/* Set WBTEXT mode */
+	error = wl_android_wbtext_enable(dev, !mode);
+	if (error) {
+		WL_ERR(("Failed to set WBTEXT(%d) = %s\n",
+			error, (mode ? "Disable" : "Enable")));
+	}
+#endif /* WBTEXT */
+	/* Set Piority roam mode */
+	error = wl_android_priority_roam_enable(dev, !mode);
+	if (error) {
+		WL_ERR(("Failed to set Priority Roam(%d) = %s\n",
+			error, (mode ? "Disable" : "Enable")));
+	}
+#ifdef CONFIG_SILENT_ROAM
+	/* Set Silent roam  mode */
+	error = wl_android_sroam_turn_on(dev, !mode);
+	if (error) {
+		WL_ERR(("Failed to set SROAM(%d) = %s\n",
+			error, (mode ? "Disable" : "Enable")));
+	}
+#endif /* CONFIG_SILENT_ROAM */
+	/* Set RCROAM(ROAMEXT) mode */
+	error = wl_android_rcroam_turn_on(dev, !mode);
+	if (error) {
+		WL_ERR(("Failed to set RCROAM(%d) = %s\n",
+			error, (mode ? "Disable" : "Enable")));
+	}
+
+	if (mode == OFF) {
+		/* restore NCHO set parameters */
+		bzero(cmd, WLC_IOCTL_SMLEN);
+		snprintf(cmd, WLC_IOCTL_SMLEN, "%s", CMD_RESTORE_SCAN_PARAMS);
+		error = wl_android_default_set_scan_params(dev, cmd, WLC_IOCTL_SMLEN);
+		if (error) {
+			WL_ERR(("Failed to set RESTORE_SCAN_PARAMS(%d)\n", error));
+		}
+
+		wl_cfg80211_set_wes_mode(dev, OFF);
+		set_roamscan_mode(dev, ROAMSCAN_MODE_NORMAL);
+	}
+
+	error = wl_cfg80211_set_ncho_mode(dev, mode);
+	if (error) {
+		WL_ERR(("Failed to set NCHO Mode %d, error = %d\n", mode, error));
+	}
+
+	return error;
+}
+
+static int
+wl_android_set_pmk(struct net_device *dev, char *command, int total_len)
+{
+	uchar pmk[33];
+	int error = 0;
+	char smbuf[WLC_IOCTL_SMLEN];
+	dhd_pub_t *dhdp;
+#ifdef OKC_DEBUG
+	int i = 0;
+#endif
+
+	if (total_len < (strlen("SET_PMK ") + 32)) {
+		DHD_ERROR(("wl_android_set_pmk: Invalid argument\n"));
+		return -1;
+	}
+
+	dhdp = wl_cfg80211_get_dhdp(dev);
+	if (!dhdp) {
+		DHD_ERROR(("%s: dhdp is NULL\n", __FUNCTION__));
+		return -1;
+	}
+
+	bzero(pmk, sizeof(pmk));
+	DHD_STATLOG_CTRL(dhdp, ST(INSTALL_OKC_PMK), dhd_net2idx(dhdp->info, dev), 0);
+	memcpy((char *)pmk, command + strlen("SET_PMK "), 32);
+	error = wldev_iovar_setbuf(dev, "okc_info_pmk", pmk, 32, smbuf, sizeof(smbuf), NULL);
+	if (error) {
+		DHD_ERROR(("Failed to set PMK for OKC, error = %d\n", error));
+	}
+#ifdef OKC_DEBUG
+	DHD_ERROR(("PMK is "));
+	for (i = 0; i < 32; i++)
+		DHD_ERROR(("%02X ", pmk[i]));
+
+	DHD_ERROR(("\n"));
+#endif
+	return error;
+}
+
+#define BW_5G160_DISABLE   0x7u
+#define BW_5G160_ENABLE    0xFu
+static int
+wl_android_config_5g160(struct net_device *dev, char *command)
+{
+	int ret = 0;
+	u32 enable = 0;
+	wl_bw_cap_t cap;
+	char buf[WLC_IOCTL_SMLEN] = {0};
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	s32 iftype;
+	u32 wlc_up = 0;
+
+	bzero(&cap, sizeof(wl_bw_cap_t));
+	enable = command[strlen(CMD_SET_5G160) + 1] - '0';
+
+	if (bcmcfg_to_prmry_ndev(cfg) != dev) {
+		WL_ERR(("band config on non-sta interface\n"));
+		return -EINVAL;
+	}
+
+	if (wl_get_drv_status(cfg, CONNECTED, dev)) {
+
+		/* Check whether we can do wl down */
+		iftype = wl_cfg80211_get_sec_iface(cfg);
+		if (iftype != WL_IFACE_NOT_PRESENT) {
+			/* Concurrent mode. Skip bw setting. */
+			WL_ERR(("concurrent iface present :%d\n", iftype));
+			return -ENOTSUPP;
+		}
+
+		/* If STA is connected, disassoc before band change */
+		wl_cfg80211_disassoc(dev, WLAN_REASON_DEAUTH_LEAVING);
+	}
+
+	cap.band = WLC_BAND_5G;
+	if (enable) {
+		cap.bw_cap = BW_5G160_ENABLE;
+	} else {
+		cap.bw_cap = BW_5G160_DISABLE;
+	}
+
+	/* bw_cap is down restricted */
+	ret = wldev_ioctl_set(dev, WLC_DOWN, &wlc_up, sizeof(wlc_up));
+	if (ret) {
+		WL_ERR(("%s: WLC_DOWN failed: code: %d\n", __func__, ret));
+		return ret;
+	}
+
+	ret = wldev_iovar_setbuf(dev, "bw_cap", &cap, sizeof(wl_bw_cap_t),
+		buf, sizeof(buf), NULL);
+	if (ret) {
+		WL_ERR(("Failed to %s 5g160, error = %d\n",
+			enable ? "enable" : "disable", ret));
+	} else {
+		WL_INFORM(("bw_cap (0x%x) set successfully!\n", cap.bw_cap));
+	}
+
+	/* fall through to set wlc up */
+	wlc_up = 1;
+	ret = wldev_ioctl_set(dev, WLC_UP, &wlc_up, sizeof(wlc_up));
+	if (ret) {
+		WL_ERR(("%s: WLC_UP failed: code: %d\n", __func__, ret));
+		return ret;
+	}
+
+	return ret;
+}
+
+static int
+wl_android_okc_enable(struct net_device *dev, char *command)
+{
+	int error = 0;
+	char okc_enable = 0;
+
+	okc_enable = command[strlen(CMD_OKC_ENABLE) + 1] - '0';
+	error = wldev_iovar_setint(dev, "okc_enable", okc_enable);
+	if (error) {
+		DHD_ERROR(("Failed to %s OKC, error = %d\n",
+			okc_enable ? "enable" : "disable", error));
+	}
+
+	return error;
+}
+
+static int
+wl_android_legacy_check_command(struct net_device *dev, char *command)
+{
+	int cnt = 0;
+
+	while (strlen(legacy_cmdlist[cnt]) > 0) {
+		if (strnicmp(command, legacy_cmdlist[cnt], strlen(legacy_cmdlist[cnt])) == 0) {
+			char cmd[WL_PRIV_CMD_LEN + 1];
+			sscanf(command, "%"S(WL_PRIV_CMD_LEN)"s ", cmd);
+			if (strlen(legacy_cmdlist[cnt]) == strlen(cmd)) {
+				return TRUE;
+			}
+		}
+		cnt++;
+	}
+	return FALSE;
+}
+
+static int
+wl_android_legacy_private_command(struct net_device *net, char *command, int total_len)
+{
+	int bytes_written = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
+
+	if (cfg->ncho_mode == ON) {
+		WL_ERR(("Enabled NCHO mode\n"));
+		/* In order to avoid Sequential error HANG event. */
+		return BCME_UNSUPPORTED;
+	}
+
+	/* ROAMSCAN CHANNELS Add, Get Command */
+	if (strnicmp(command, CMD_ADDROAMSCANCHLEGACY, strlen(CMD_ADDROAMSCANCHLEGACY)) == 0) {
+		bytes_written = wl_android_add_roam_scan_channels(net, command,
+			strlen(CMD_ADDROAMSCANCHLEGACY));
+	}
+	else if (strnicmp(command, CMD_GETROAMSCANCHLEGACY, strlen(CMD_GETROAMSCANCHLEGACY)) == 0) {
+		bytes_written = wl_android_get_roam_scan_channels(net, command, total_len,
+			CMD_GETROAMSCANCHLEGACY);
+	}
+	/* ROAMSCAN FREQUENCIES Add, Get Command */
+	else if (strnicmp(command, CMD_ADDROAMSCANFQLEGACY, strlen(CMD_ADDROAMSCANFQLEGACY)) == 0) {
+		bytes_written = wl_android_add_roam_scan_freqs(net, command,
+			strlen(CMD_ADDROAMSCANFQLEGACY));
+	}
+	else if (strnicmp(command, CMD_GETROAMSCANFQLEGACY, strlen(CMD_GETROAMSCANFQLEGACY)) == 0) {
+		bytes_written = wl_android_get_roam_scan_freqs(net, command, total_len,
+			CMD_GETROAMSCANFQLEGACY);
+	}
+	else if (strnicmp(command, CMD_GETROAMTRIGLEGACY, strlen(CMD_GETROAMTRIGLEGACY)) == 0) {
+		bytes_written = wl_android_get_roam_trigger(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETROAMTRIGLEGACY, strlen(CMD_SETROAMTRIGLEGACY)) == 0) {
+		bytes_written = wl_android_set_roam_trigger_legacy(net, command);
+	}
+	else if (strnicmp(command, CMD_REASSOCLEGACY, strlen(CMD_REASSOCLEGACY)) == 0) {
+		bytes_written = wl_android_reassoc(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_GETSCANCHANNELTIMELEGACY,
+		strlen(CMD_GETSCANCHANNELTIMELEGACY)) == 0) {
+		bytes_written = wl_android_get_scan_channel_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANCHANNELTIMELEGACY,
+		strlen(CMD_SETSCANCHANNELTIMELEGACY)) == 0) {
+		bytes_written = wl_android_set_scan_channel_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANUNASSOCTIMELEGACY,
+		strlen(CMD_GETSCANUNASSOCTIMELEGACY)) == 0) {
+		bytes_written = wl_android_get_scan_unassoc_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANUNASSOCTIMELEGACY,
+		strlen(CMD_SETSCANUNASSOCTIMELEGACY)) == 0) {
+		bytes_written = wl_android_set_scan_unassoc_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANPASSIVETIMELEGACY,
+		strlen(CMD_GETSCANPASSIVETIMELEGACY)) == 0) {
+		bytes_written = wl_android_get_scan_passive_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANPASSIVETIMELEGACY,
+		strlen(CMD_SETSCANPASSIVETIMELEGACY)) == 0) {
+		bytes_written = wl_android_set_scan_passive_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANHOMETIMELEGACY,
+		strlen(CMD_GETSCANHOMETIMELEGACY)) == 0) {
+		bytes_written = wl_android_get_scan_home_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANHOMETIMELEGACY,
+		strlen(CMD_SETSCANHOMETIMELEGACY)) == 0) {
+		bytes_written = wl_android_set_scan_home_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANHOMEAWAYTIMELEGACY,
+		strlen(CMD_GETSCANHOMEAWAYTIMELEGACY)) == 0) {
+		bytes_written = wl_android_get_scan_home_away_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANHOMEAWAYTIMELEGACY,
+		strlen(CMD_SETSCANHOMEAWAYTIMELEGACY)) == 0) {
+		bytes_written = wl_android_set_scan_home_away_time(net, command);
+	}
+	else {
+		WL_ERR(("Unknown NCHO PRIVATE command %s - ignored\n", command));
+		bytes_written = scnprintf(command, sizeof("FAIL"), "FAIL");
+	}
+
+	return bytes_written;
+}
+
+static int
+wl_android_ncho_check_command(struct net_device *dev, char *command)
+{
+	int cnt = 0;
+
+	while (strlen(ncho_cmdlist[cnt]) > 0) {
+		if (strnicmp(command, ncho_cmdlist[cnt], strlen(ncho_cmdlist[cnt])) == 0) {
+			char cmd[WL_PRIV_CMD_LEN + 1];
+			sscanf(command, "%"S(WL_PRIV_CMD_LEN)"s ", cmd);
+			if (strlen(ncho_cmdlist[cnt]) == strlen(cmd)) {
+				return TRUE;
+			}
+		}
+		cnt++;
+	}
+	return FALSE;
+}
+
+static int
+wl_android_ncho_private_command(struct net_device *net, char *command, int total_len)
+{
+	int bytes_written = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
+
+	if (cfg->ncho_mode == OFF) {
+		WL_ERR(("Disable NCHO mode\n"));
+		/* In order to avoid Sequential error HANG event. */
+		return BCME_UNSUPPORTED;
+	}
+
+#ifdef ROAM_API
+	if (strnicmp(command, CMD_ROAMTRIGGER_SET, strlen(CMD_ROAMTRIGGER_SET)) == 0) {
+		bytes_written = wl_android_set_roam_trigger(net, command);
+	} else if (strnicmp(command, CMD_ROAMTRIGGER_GET, strlen(CMD_ROAMTRIGGER_GET)) == 0) {
+		bytes_written = wl_android_get_roam_trigger(net, command, total_len);
+	} else if (strnicmp(command, CMD_ROAMDELTA_SET, strlen(CMD_ROAMDELTA_SET)) == 0) {
+		bytes_written = wl_android_set_roam_delta(net, command);
+	} else if (strnicmp(command, CMD_ROAMDELTA_GET, strlen(CMD_ROAMDELTA_GET)) == 0) {
+		bytes_written = wl_android_get_roam_delta(net, command, total_len);
+	} else if (strnicmp(command, CMD_ROAMSCANPERIOD_SET,
+		strlen(CMD_ROAMSCANPERIOD_SET)) == 0) {
+		bytes_written = wl_android_set_roam_scan_period(net, command);
+	} else if (strnicmp(command, CMD_ROAMSCANPERIOD_GET,
+		strlen(CMD_ROAMSCANPERIOD_GET)) == 0) {
+		bytes_written = wl_android_get_roam_scan_period(net, command, total_len);
+	} else if (strnicmp(command, CMD_FULLROAMSCANPERIOD_SET,
+		strlen(CMD_FULLROAMSCANPERIOD_SET)) == 0) {
+		bytes_written = wl_android_set_full_roam_scan_period(net, command);
+	} else if (strnicmp(command, CMD_FULLROAMSCANPERIOD_GET,
+		strlen(CMD_FULLROAMSCANPERIOD_GET)) == 0) {
+		bytes_written = wl_android_get_full_roam_scan_period(net, command, total_len);
+	} else if (strnicmp(command, CMD_COUNTRYREV_SET, strlen(CMD_COUNTRYREV_SET)) == 0) {
+		bytes_written = wl_android_set_country_rev(net, command);
+#ifdef FCC_PWR_LIMIT_2G
+		if (wldev_iovar_setint(net, "fccpwrlimit2g", FALSE)) {
+			WL_ERR(("fccpwrlimit2g deactivation is failed\n"));
+		} else {
+			WL_ERR(("fccpwrlimit2g is deactivated\n"));
+		}
+#endif /* FCC_PWR_LIMIT_2G */
+	} else if (strnicmp(command, CMD_COUNTRYREV_GET, strlen(CMD_COUNTRYREV_GET)) == 0) {
+		bytes_written = wl_android_get_country_rev(net, command, total_len);
+	} else
+#endif /* ROAM_API */
+	if (strnicmp(command, CMD_GETROAMSCANCONTROL, strlen(CMD_GETROAMSCANCONTROL)) == 0) {
+		bytes_written = wl_android_get_roam_scan_control(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETROAMSCANCONTROL, strlen(CMD_SETROAMSCANCONTROL)) == 0) {
+		bytes_written = wl_android_set_roam_scan_control(net, command);
+	}
+	/* ROAMSCAN CHANNELS Add, Get, Set Command */
+	else if (strnicmp(command, CMD_ADDROAMSCANCHANNELS, strlen(CMD_ADDROAMSCANCHANNELS)) == 0) {
+		bytes_written = wl_android_add_roam_scan_channels(net, command,
+			strlen(CMD_ADDROAMSCANCHANNELS));
+	}
+	else if (strnicmp(command, CMD_GETROAMSCANCHANNELS, strlen(CMD_GETROAMSCANCHANNELS)) == 0) {
+		bytes_written = wl_android_get_roam_scan_channels(net, command, total_len,
+			CMD_GETROAMSCANCHANNELS);
+	}
+	else if (strnicmp(command, CMD_SETROAMSCANCHANNELS, strlen(CMD_SETROAMSCANCHANNELS)) == 0) {
+		bytes_written = wl_android_set_roam_scan_channels(net, command);
+	}
+	/* ROAMSCAN FREQUENCIES Add, Get, Set Command */
+	else if (strnicmp(command, CMD_ADDROAMSCANFREQS, strlen(CMD_ADDROAMSCANFREQS)) == 0) {
+		bytes_written = wl_android_add_roam_scan_freqs(net, command,
+			strlen(CMD_ADDROAMSCANFREQS));
+	}
+	else if (strnicmp(command, CMD_GETROAMSCANFREQS, strlen(CMD_GETROAMSCANFREQS)) == 0) {
+		bytes_written = wl_android_get_roam_scan_freqs(net, command, total_len,
+			CMD_GETROAMSCANFREQS);
+	}
+	else if (strnicmp(command, CMD_SETROAMSCANFREQS, strlen(CMD_SETROAMSCANFREQS)) == 0) {
+		bytes_written = wl_android_set_roam_scan_freqs(net, command);
+	}
+	else if (strnicmp(command, CMD_SENDACTIONFRAME, strlen(CMD_SENDACTIONFRAME)) == 0) {
+		bytes_written = wl_android_send_action_frame(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_REASSOC, strlen(CMD_REASSOC)) == 0) {
+		bytes_written = wl_android_reassoc(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_GETSCANCHANNELTIME, strlen(CMD_GETSCANCHANNELTIME)) == 0) {
+		bytes_written = wl_android_get_scan_channel_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANCHANNELTIME, strlen(CMD_SETSCANCHANNELTIME)) == 0) {
+		bytes_written = wl_android_set_scan_channel_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANUNASSOCTIME, strlen(CMD_GETSCANUNASSOCTIME)) == 0) {
+		bytes_written = wl_android_get_scan_unassoc_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANUNASSOCTIME, strlen(CMD_SETSCANUNASSOCTIME)) == 0) {
+		bytes_written = wl_android_set_scan_unassoc_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANPASSIVETIME, strlen(CMD_GETSCANPASSIVETIME)) == 0) {
+		bytes_written = wl_android_get_scan_passive_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANPASSIVETIME, strlen(CMD_SETSCANPASSIVETIME)) == 0) {
+		bytes_written = wl_android_set_scan_passive_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANHOMETIME, strlen(CMD_GETSCANHOMETIME)) == 0) {
+		bytes_written = wl_android_get_scan_home_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANHOMETIME, strlen(CMD_SETSCANHOMETIME)) == 0) {
+		bytes_written = wl_android_set_scan_home_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANHOMEAWAYTIME, strlen(CMD_GETSCANHOMEAWAYTIME)) == 0) {
+		bytes_written = wl_android_get_scan_home_away_time(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANHOMEAWAYTIME, strlen(CMD_SETSCANHOMEAWAYTIME)) == 0) {
+		bytes_written = wl_android_set_scan_home_away_time(net, command);
+	}
+	else if (strnicmp(command, CMD_GETSCANNPROBES, strlen(CMD_GETSCANNPROBES)) == 0) {
+		bytes_written = wl_android_get_scan_nprobes(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETSCANNPROBES, strlen(CMD_SETSCANNPROBES)) == 0) {
+		bytes_written = wl_android_set_scan_nprobes(net, command);
+	}
+	else if (strnicmp(command, CMD_GETDFSSCANMODE, strlen(CMD_GETDFSSCANMODE)) == 0) {
+		bytes_written = wl_android_get_scan_dfs_channel_mode(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETDFSSCANMODE, strlen(CMD_SETDFSSCANMODE)) == 0) {
+		bytes_written = wl_android_set_scan_dfs_channel_mode(net, command);
+	}
+	else if (strnicmp(command, CMD_SETJOINPREFER, strlen(CMD_SETJOINPREFER)) == 0) {
+		bytes_written = wl_android_set_join_prefer(net, command);
+	}
+	else if (strnicmp(command, CMD_GETWESMODE, strlen(CMD_GETWESMODE)) == 0) {
+		bytes_written = wl_android_get_wes_mode(net, command, total_len);
+	}
+	else if (strnicmp(command, CMD_SETWESMODE, strlen(CMD_SETWESMODE)) == 0) {
+		bytes_written = wl_android_set_wes_mode(net, command);
+	}
+	else {
+		WL_ERR(("Unknown NCHO PRIVATE command %s - ignored\n", command));
+		bytes_written = scnprintf(command, sizeof("FAIL"), "FAIL");
+	}
+
+	return bytes_written;
+}
+#endif /* WES_SUPPORT */
+
+#if defined(SUPPORT_RESTORE_SCAN_PARAMS) || defined(WES_SUPPORT)
+static int
+wl_android_default_set_scan_params(struct net_device *dev, char *command, int total_len)
+{
+	int error = 0;
+	uint error_cnt = 0;
+	int cnt = 0;
+	char restore_command[WLC_IOCTL_SMLEN];
+
+	while (strlen(restore_params[cnt].command) > 0 && restore_params[cnt].cmd_handler) {
+		snprintf(restore_command, WLC_IOCTL_SMLEN, "%s %d",
+			restore_params[cnt].command, restore_params[cnt].parameter);
+		if (restore_params[cnt].cmd_type == RESTORE_TYPE_PRIV_CMD) {
+			error = restore_params[cnt].cmd_handler(dev, restore_command);
+		}  else if (restore_params[cnt].cmd_type == RESTORE_TYPE_PRIV_CMD_WITH_LEN) {
+			error = restore_params[cnt].cmd_handler_w_len(dev,
+				restore_command, total_len);
+		} else {
+			DHD_ERROR(("Unknown restore command handler\n"));
+			error = -1;
+		}
+		if (error) {
+			DHD_ERROR(("Failed to restore scan parameters %s, error : %d\n",
+				restore_command, error));
+			error_cnt++;
+		}
+		cnt++;
+	}
+	if (error_cnt > 0) {
+		DHD_ERROR(("Got %d error(s) while restoring scan parameters\n",
+			error_cnt));
+		error = -1;
+	}
+	return error;
+}
+#endif /* SUPPORT_RESTORE_SCAN_PARAMS || WES_SUPPORT  */
+
+#ifdef WLTDLS
+int wl_android_tdls_reset(struct net_device *dev)
+{
+	int ret = 0;
+	ret = dhd_tdls_enable(dev, false, false, NULL);
+	if (ret < 0) {
+		DHD_ERROR(("Disable tdls failed. %d\n", ret));
+		return ret;
+	}
+	ret = dhd_tdls_enable(dev, true, true, NULL);
+	if (ret < 0) {
+		DHD_ERROR(("enable tdls failed. %d\n", ret));
+		return ret;
+	}
+	return 0;
+}
+#endif /* WLTDLS */
+
+int
+wl_android_rcroam_turn_on(struct net_device *dev, int rcroam_enab)
+{
+	int ret = BCME_OK;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	u8 ioctl_buf[WLC_IOCTL_SMLEN];
+	wlc_rcroam_t *prcroam;
+	wlc_rcroam_info_v1_t *rcroam;
+	uint rcroamlen = sizeof(*rcroam) + RCROAM_HDRLEN;
+
+	WL_INFORM(("RCROAM mode %s\n", rcroam_enab ? "enable" : "disable"));
+
+	prcroam = (wlc_rcroam_t *)MALLOCZ(dhdp->osh, rcroamlen);
+	if (!prcroam) {
+		WL_ERR(("Fail to malloc buffer\n"));
+		return BCME_NOMEM;
+	}
+
+	/* Get RCROAM param */
+	ret = wldev_iovar_getbuf(dev, "rcroam", NULL, 0, prcroam, rcroamlen, NULL);
+	if (ret) {
+		WL_ERR(("Failed to get RCROAM info(%d)\n", ret));
+		goto done;
+	}
+
+	if (prcroam->ver != WLC_RC_ROAM_CUR_VER) {
+		ret = BCME_VERSION;
+		WL_ERR(("Ver(%d:%d). mismatch RCROAM info(%d)\n",
+			prcroam->ver, WLC_RC_ROAM_CUR_VER, ret));
+		goto done;
+	}
+
+	/* Set RCROAM param */
+	rcroam = (wlc_rcroam_info_v1_t *)prcroam->data;
+	prcroam->ver = WLC_RC_ROAM_CUR_VER;
+	prcroam->len = sizeof(*rcroam);
+	rcroam->enab = rcroam_enab;
+
+	ret = wldev_iovar_setbuf(dev, "rcroam", prcroam, rcroamlen,
+		ioctl_buf, sizeof(ioctl_buf), NULL);
+	if (ret) {
+		WL_ERR(("Failed to set RCROAM %s(%d)\n",
+			rcroam_enab ? "Enable" : "Disable", ret));
+		goto done;
+	}
+done:
+	if (prcroam) {
+		MFREE(dhdp->osh, prcroam, rcroamlen);
+	}
+
+	return ret;
+}
+
+#ifdef CONFIG_SILENT_ROAM
+int
+wl_android_sroam_turn_on(struct net_device *dev, int sroam_mode)
+{
+	int ret = BCME_OK;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	dhdp->sroam_turn_on = sroam_mode;
+	DHD_INFO(("%s Silent mode %s\n", __FUNCTION__,
+		sroam_mode ? "enable" : "disable"));
+
+	if (!sroam_mode) {
+		ret = dhd_sroam_set_mon(dhdp, FALSE);
+		if (ret) {
+			DHD_ERROR(("%s Failed to Set sroam %d\n",
+				__FUNCTION__, ret));
+		}
+	}
+
+	return ret;
+}
+
+int
+wl_android_sroam_set_info(struct net_device *dev, char *data,
+	char *command, int total_len)
+{
+	int ret = BCME_OK;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	size_t slen = strlen(data);
+	u8 ioctl_buf[WLC_IOCTL_SMLEN];
+	wlc_sroam_t *psroam;
+	wlc_sroam_info_t *sroam;
+	uint sroamlen = sizeof(*sroam) + SROAM_HDRLEN;
+
+	data[slen] = '\0';
+	psroam = (wlc_sroam_t *)MALLOCZ(dhdp->osh, sroamlen);
+	if (!psroam) {
+		WL_ERR(("%s Fail to malloc buffer\n", __FUNCTION__));
+		ret = BCME_NOMEM;
+		goto done;
+	}
+
+	psroam->ver = WLC_SILENT_ROAM_CUR_VER;
+	psroam->len = sizeof(*sroam);
+	sroam = (wlc_sroam_info_t *)psroam->data;
+
+	sroam->sroam_on = FALSE;
+	if (*data && *data != '\0') {
+		sroam->sroam_min_rssi = simple_strtol(data, &data, 10);
+		WL_DBG(("1.Minimum RSSI %d\n", sroam->sroam_min_rssi));
+		data++;
+	}
+	if (*data && *data != '\0') {
+		sroam->sroam_rssi_range = simple_strtol(data, &data, 10);
+		WL_DBG(("2.RSSI Range %d\n", sroam->sroam_rssi_range));
+		data++;
+	}
+	if (*data && *data != '\0') {
+		sroam->sroam_score_delta = simple_strtol(data, &data, 10);
+		WL_DBG(("3.Score Delta %d\n", sroam->sroam_score_delta));
+		data++;
+	}
+	if (*data && *data != '\0') {
+		sroam->sroam_period_time = simple_strtol(data, &data, 10);
+		WL_DBG(("4.Sroam period %d\n", sroam->sroam_period_time));
+		data++;
+	}
+	if (*data && *data != '\0') {
+		sroam->sroam_band = simple_strtol(data, &data, 10);
+		WL_DBG(("5.Sroam Band %d\n", sroam->sroam_band));
+		data++;
+	}
+	if (*data && *data != '\0') {
+		sroam->sroam_inact_cnt = simple_strtol(data, &data, 10);
+		WL_DBG(("6.Inactivity Count %d\n", sroam->sroam_inact_cnt));
+		data++;
+	}
+
+	if (*data != '\0') {
+		ret = BCME_BADARG;
+		goto done;
+	}
+
+	ret = wldev_iovar_setbuf(dev, "sroam", psroam, sroamlen, ioctl_buf,
+		sizeof(ioctl_buf), NULL);
+	if (ret) {
+		WL_ERR(("Failed to set silent roam info(%d)\n", ret));
+		goto done;
+	}
+done:
+	if (psroam) {
+		MFREE(dhdp->osh, psroam, sroamlen);
+	}
+
+	return ret;
+}
+
+int
+wl_android_sroam_get_info(struct net_device *dev, char *command, int total_len)
+{
+	int ret = BCME_OK;
+	int bytes_written = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	wlc_sroam_t *psroam;
+	wlc_sroam_info_t *sroam;
+	uint sroamlen = sizeof(*sroam) + SROAM_HDRLEN;
+
+	psroam = (wlc_sroam_t *)MALLOCZ(dhdp->osh, sroamlen);
+	if (!psroam) {
+		WL_ERR(("%s Fail to malloc buffer\n", __FUNCTION__));
+		ret = BCME_NOMEM;
+		goto done;
+	}
+
+	ret = wldev_iovar_getbuf(dev, "sroam", NULL, 0, psroam, sroamlen, NULL);
+	if (ret) {
+		WL_ERR(("Failed to get silent roam info(%d)\n", ret));
+		goto done;
+	}
+
+	if (psroam->ver != WLC_SILENT_ROAM_CUR_VER) {
+		ret = BCME_VERSION;
+		WL_ERR(("Ver(%d:%d). mismatch silent roam info(%d)\n",
+			psroam->ver, WLC_SILENT_ROAM_CUR_VER, ret));
+		goto done;
+	}
+
+	sroam = (wlc_sroam_info_t *)psroam->data;
+	bytes_written = snprintf(command, total_len,
+		"%s %d %d %d %d %d %d %d\n",
+		CMD_SROAM_GET_INFO, sroam->sroam_on, sroam->sroam_min_rssi, sroam->sroam_rssi_range,
+		sroam->sroam_score_delta, sroam->sroam_period_time, sroam->sroam_band,
+		sroam->sroam_inact_cnt);
+	ret = bytes_written;
+
+	WL_DBG(("%s", command));
+done:
+	if (psroam) {
+		MFREE(dhdp->osh, psroam, sroamlen);
+	}
+
+	return ret;
+}
+#endif /* CONFIG_SILENT_ROAM */
+
+int
+wl_android_priority_roam_enable(struct net_device *dev, int mode)
+{
+	int error = BCME_OK;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	u8 ioctl_buf[WLC_IOCTL_SMLEN];
+	wl_prio_roam_prof_v1_t *prio_roam;
+	uint buf_len = sizeof(wl_prio_roam_prof_v1_t) + (uint)strlen("priority_roam") + 1;
+
+	prio_roam = (wl_prio_roam_prof_v1_t *)MALLOCZ(dhdp->osh, buf_len);
+	if (!prio_roam) {
+		WL_ERR(("%s Fail to malloc buffer\n", __FUNCTION__));
+		error = BCME_NOMEM;
+		goto done;
+	}
+
+	error = wldev_iovar_getbuf(dev, "priority_roam", NULL, 0, prio_roam, buf_len, NULL);
+	if (error == BCME_UNSUPPORTED) {
+		WL_ERR(("Priority Roam Unsupport\n"));
+		error = BCME_OK;
+		goto done;
+	} else if (prio_roam->version != WL_PRIO_ROAM_PROF_V1) {
+		WL_ERR(("Priority Roam Version mismatch\n"));
+		goto done;
+	} else if (prio_roam->prio_roam_mode == mode) {
+		WL_DBG(("Priority Roam already set(mode:%d)\n", mode));
+		goto done;
+	}
+
+	prio_roam->version = WL_PRIO_ROAM_PROF_V1;
+	prio_roam->length = sizeof(wl_prio_roam_prof_v1_t);
+	prio_roam->prio_roam_mode = mode;
+
+	error = wldev_iovar_setbuf(dev, "priority_roam", prio_roam,
+		sizeof(wl_prio_roam_prof_v1_t), ioctl_buf, sizeof(ioctl_buf), NULL);
+	if (error) {
+		WL_ERR(("Failed to set Priority Roam %s(%d)\n",
+			mode ? "Enable" : "Disable", error));
+		goto done;
+	}
+done:
+	if (prio_roam) {
+		MFREE(dhdp->osh, prio_roam, sizeof(wl_prio_roam_prof_v1_t));
+	}
+
+	return error;
+}
+
+#ifdef CONFIG_ROAM_RSSI_LIMIT
+int
+wl_android_roam_rssi_limit(struct net_device *dev, char *command, int total_len)
+{
+	int ret = BCME_OK;
+	int argc, bytes_written = 0;
+	int lmt2g, lmt5g;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	argc = sscanf(command, CMD_ROAM_RSSI_LMT " %d %d\n", &lmt2g, &lmt5g);
+
+	if (!argc) {
+		ret = dhd_roam_rssi_limit_get(dhdp, &lmt2g, &lmt5g);
+		if (ret) {
+			WL_ERR(("Failed to Get roam_rssi_limit (%d)\n", ret));
+			return ret;
+		}
+		bytes_written = snprintf(command, total_len, "%d, %d\n", lmt2g, lmt5g);
+		/* Get roam rssi limit */
+		return bytes_written;
+	} else {
+		/* Set roam rssi limit */
+		ret = dhd_roam_rssi_limit_set(dhdp, lmt2g, lmt5g);
+		if (ret) {
+			WL_ERR(("Failed to Set roam_rssi_limit (%d)\n", ret));
+			return ret;
+		}
+	}
+
+	return ret;
+}
+#endif /* CONFIG_ROAM_RSSI_LIMIT */
+
+#ifdef CONFIG_ROAM_MIN_DELTA
+int
+wl_android_roam_min_delta(struct net_device *dev, char *command, int total_len)
+{
+	int ret = BCME_OK;
+	int argc, bytes_written = 0;
+	uint32 delta2g = 0, delta5g = 0, delta = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	argc = sscanf(command, CMD_ROAM_MIN_DELTA " %d\n", &delta);
+
+	if (!argc) {
+		/* Get Minimum ROAM score delta */
+		ret = dhd_roam_min_delta_get(dhdp, &delta2g, &delta5g);
+		if (ret) {
+			WL_ERR(("Failed to Get roam_min_delta (%d)\n", ret));
+			return ret;
+		}
+		bytes_written = snprintf(command, total_len, "%d, %d\n", delta2g, delta5g);
+		return bytes_written;
+	} else {
+		/* Set Minimum ROAM score delta
+		 * Framework set one parameter # wpa_cli driver ROAMMINSCOREDELTA <value>
+		 */
+		ret = dhd_roam_min_delta_set(dhdp, delta, delta);
+		if (ret) {
+			WL_ERR(("Failed to Set roam_min_delta (%d)\n", ret));
+			return ret;
+		}
+	}
+
+	return ret;
+}
+#endif /* CONFIG_ROAM_MIN_DELTA */
+
+static int
+get_int_bytes(uchar *oui_str, uchar *oui, int len)
+{
+	int idx;
+	uchar val;
+	uchar *src, *dest;
+	char hexstr[3];
+
+	if ((oui_str == NULL) || (oui == NULL) || (len == 0)) {
+		return BCME_BADARG;
+	}
+	src = oui_str;
+	dest = oui;
+
+	for (idx = 0; idx < len; idx++) {
+		if (*src == '\0') {
+			*dest = '\0';
+			break;
+		}
+		hexstr[0] = src[0];
+		hexstr[1] = src[1];
+		hexstr[2] = '\0';
+
+		val = (uchar)bcm_strtoul(hexstr, NULL, 16);
+		if (val == (uchar)-1) {
+			return BCME_ERROR;
+		}
+		*dest++ = val;
+		src += 2;
+	}
+	return BCME_OK;
+}
+
+#define TAG_BYTE 0
+static int
+wl_android_set_disconnect_ies(struct net_device *dev, char *command)
+{
+	int cmd_prefix_len = 0;
+	char ie_len = 0;
+	int hex_ie_len = 0;
+	int total_len = 0;
+	int max_len = 0;
+	int cmd_len = 0;
+	uchar disassoc_ie[VNDR_IE_MAX_LEN] = {0};
+	s32 bssidx = 0;
+	struct bcm_cfg80211 *cfg = NULL;
+	s32 ret = 0;
+	cfg = wl_get_cfg(dev);
+
+	cmd_prefix_len = strlen("SET_DISCONNECT_IES ");
+	cmd_len = strlen(command);
+	/*
+	 * <CMD> + <IES in HEX format>
+	 * IES in hex format has to be in following format
+	 * First byte = Tag, Second Byte = len and rest of
+	 * bytes will be value. For ex: SET_DISCONNECT_IES dd0411223344
+	 * tag = dd, len =04. Total IEs len = len + 2
+	 */
+	WL_DBG(("cmd recv = %s\n", command));
+	max_len = MIN(cmd_len, VNDR_IE_MAX_LEN);
+	/* Validate IEs len */
+	get_int_bytes(&command[cmd_prefix_len + 2], &ie_len, 1);
+	WL_INFORM_MEM(("ie_len = %d \n", ie_len));
+	if (ie_len <= 0 || ie_len > max_len) {
+		ret = BCME_BADLEN;
+		return ret;
+	}
+
+	/* Total len in hex is sum of double binary len, tag and len byte */
+	hex_ie_len = (ie_len * 2) + 4;
+	total_len = cmd_prefix_len + hex_ie_len;
+	if (command[total_len] != '\0' || (cmd_len != total_len)) {
+		WL_ERR(("command recv not matching with len, command = %s"
+			"total_len = %d, cmd_len = %d\n", command, total_len, cmd_len));
+		ret = BCME_BADARG;
+		return ret;
+	}
+
+	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
+		WL_ERR(("Find index failed\n"));
+		ret = -EINVAL;
+		return ret;
+	}
+
+	/* Tag and len bytes are also part of total len of ies in binary */
+	ie_len = ie_len + 2;
+	/* Convert IEs in binary */
+	get_int_bytes(&command[cmd_prefix_len], disassoc_ie, ie_len);
+	if (disassoc_ie[TAG_BYTE] != 0xdd) {
+		WL_ERR(("Wrong tag recv, tag = 0x%02x\n", disassoc_ie[TAG_BYTE]));
+		ret = BCME_UNSUPPORTED;
+		return ret;
+	}
+
+	ret = wl_cfg80211_set_mgmt_vndr_ies(cfg,
+		ndev_to_cfgdev(dev), bssidx, VNDR_IE_DISASSOC_FLAG, disassoc_ie, ie_len);
+
+	return ret;
+}
+
+#ifdef FCC_PWR_LIMIT_2G
+int
+wl_android_set_fcc_pwr_limit_2g(struct net_device *dev, char *command)
+{
+	int error = 0;
+	int enable = 0;
+
+	sscanf(command+sizeof("SET_FCC_CHANNEL"), "%d", &enable);
+
+	if ((enable != CUSTOMER_HW4_ENABLE) && (enable != CUSTOMER_HW4_DISABLE)) {
+		DHD_ERROR(("wl_android_set_fcc_pwr_limit_2g: Invalid data\n"));
+		return BCME_ERROR;
+	}
+
+	CUSTOMER_HW4_EN_CONVERT(enable);
+
+	DHD_ERROR(("wl_android_set_fcc_pwr_limit_2g: fccpwrlimit2g set (%d)\n", enable));
+	error = wldev_iovar_setint(dev, "fccpwrlimit2g", enable);
+	if (error) {
+		DHD_ERROR(("wl_android_set_fcc_pwr_limit_2g: fccpwrlimit2g"
+			" set returned (%d)\n", error));
+		return BCME_ERROR;
+	}
+
+	return error;
+}
+
+int
+wl_android_get_fcc_pwr_limit_2g(struct net_device *dev, char *command, int total_len)
+{
+	int error = 0;
+	int enable = 0;
+	int bytes_written = 0;
+
+	error = wldev_iovar_getint(dev, "fccpwrlimit2g", &enable);
+	if (error) {
+		DHD_ERROR(("wl_android_get_fcc_pwr_limit_2g: fccpwrlimit2g get"
+			" error (%d)\n", error));
+		return BCME_ERROR;
+	}
+	DHD_ERROR(("wl_android_get_fcc_pwr_limit_2g: fccpwrlimit2g get (%d)\n", enable));
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GET_FCC_PWR_LIMIT_2G, enable);
+
+	return bytes_written;
+}
+#endif /* FCC_PWR_LIMIT_2G */
+
+/* Additional format of sta_info
+ * tx_pkts, tx_failures, tx_rate(kbps), rssi(main), rssi(aux), tx_pkts_retried,
+ * tx_pkts_retry_exhausted, rx_lastpkt_rssi(main), rx_lastpkt_rssi(aux),
+ * tx_pkts_total, tx_pkts_retries, tx_pkts_fw_total, tx_pkts_fw_retries,
+ * tx_pkts_fw_retry_exhausted
+ */
+#define STA_INFO_ADD_FMT	"%d %d %d %d %d %d %d %d %d %d %d %d %d %d"
+
+#define STAINFO_BAND_2G    0x0001
+#define STAINFO_BAND_5G    0x0002
+#define STAINFO_BAND_6G    0x0004
+#define STAINFO_BAND_60G   0x0008
+s32
+wl_cfg80211_get_sta_info(struct net_device *dev, char* command, int total_len)
+{
+	int bytes_written = -1, ret = 0;
+	char *pos, *token, *cmdstr;
+	bool is_macaddr = FALSE;
+	sta_info_v4_t *sta = NULL;
+	struct ether_addr mac;
+	char *iovar_buf = NULL;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	struct net_device *apdev = NULL;
+#ifdef BCMDONGLEHOST
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+#endif /* BCMDONGLEHOST */
+
+	/* Client information */
+	uint16 cap = 0;
+	uint32 rxrtry = 0, rxmulti = 0;
+	uint32 tx_pkts = 0, tx_failures = 0, tx_rate = 0;
+	uint32 tx_pkts_retried = 0, tx_pkts_retry_exhausted = 0;
+	uint32 tx_pkts_total = 0, tx_pkts_retries = 0;
+	uint32 tx_pkts_fw_total = 0, tx_pkts_fw_retries = 0;
+	uint32 tx_pkts_fw_retry_exhausted = 0;
+	int8 rssi[WL_STA_ANT_MAX] = {0};
+	int8 rx_lastpkt_rssi[WL_STA_ANT_MAX] = {0};
+	wl_if_stats_t *if_stats = NULL;
+	u16 bands = 0;
+	u32 sta_flags = 0;
+	char mac_buf[MAX_NUM_OF_ASSOCLIST *
+		sizeof(struct ether_addr) + sizeof(uint)] = {0};
+	struct maclist *assoc_maclist = (struct maclist *)mac_buf;
+
+	BCM_REFERENCE(if_stats);
+	/* This Command used during only SoftAP mode. */
+	WL_DBG(("%s\n", command));
+
+	/* Check the current op_mode */
+	if (!(dhdp->op_mode & DHD_FLAG_HOSTAP_MODE)) {
+		WL_ERR(("unsupported op mode: %d\n", dhdp->op_mode));
+		return BCME_NOTAP;
+	}
+
+	/*
+	 * DRIVER GETSTAINFO [client MAC or ALL] [ifname]
+	 */
+	pos = command;
+
+	/* drop command */
+	token = bcmstrtok(&pos, " ", NULL);
+
+	/* Client MAC or ALL */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		WL_ERR(("GETSTAINFO subcmd not provided wl_cfg80211_get_sta_info\n"));
+		return -EINVAL;
+	}
+	cmdstr = token;
+
+	bzero(&mac, ETHER_ADDR_LEN);
+	if ((!strncmp(token, "all", 3)) || (!strncmp(token, "ALL", 3))) {
+		is_macaddr = FALSE;
+	} else if ((bcm_ether_atoe(token, &mac))) {
+		is_macaddr = TRUE;
+	} else {
+		WL_ERR(("Failed to get address\n"));
+		return -EINVAL;
+	}
+
+	/* get the interface name */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		/* assign requested dev for compatibility */
+		apdev = dev;
+	} else {
+		/* Find a net_device for SoftAP by interface name */
+		apdev = wl_get_ap_netdev(cfg, token);
+		if (!apdev) {
+			WL_ERR(("cannot find a net_device for SoftAP\n"));
+			return -EINVAL;
+		}
+	}
+
+	iovar_buf = (char *)MALLOCZ(cfg->osh, WLC_IOCTL_MAXLEN);
+	if (!iovar_buf) {
+		WL_ERR(("Failed to allocated memory %d bytes\n",
+			WLC_IOCTL_MAXLEN));
+		return BCME_NOMEM;
+	}
+
+	if (is_macaddr) {
+		int cnt;
+
+		/* get the sta info */
+		ret = wldev_iovar_getbuf(apdev, "sta_info",
+			(struct ether_addr *)mac.octet, ETHER_ADDR_LEN,
+			iovar_buf, WLC_IOCTL_MAXLEN, NULL);
+		if (ret < 0) {
+			WL_ERR(("Get sta_info ERR %d\n", ret));
+
+#ifndef BIGDATA_SOFTAP
+			goto error;
+#endif /* BIGDATA_SOFTAP */
+		}
+
+		sta = (sta_info_v4_t *)iovar_buf;
+		if (dtoh16(sta->ver) != WL_STA_VER_4) {
+			WL_ERR(("sta_info struct version mismatch, "
+				"host ver : %d, fw ver : %d\n", WL_STA_VER_4,
+				dtoh16(sta->ver)));
+
+#ifndef BIGDATA_SOFTAP
+			goto error;
+#endif /* BIGDATA_SOFTAP */
+		}
+		cap = dtoh16(sta->cap);
+		rxrtry = dtoh32(sta->rx_pkts_retried);
+		rxmulti = dtoh32(sta->rx_mcast_pkts);
+		tx_pkts = dtoh32(sta->tx_pkts);
+		tx_failures = dtoh32(sta->tx_failures);
+		tx_rate = dtoh32(sta->tx_rate);
+		tx_pkts_retried = dtoh32(sta->tx_pkts_retried);
+		tx_pkts_retry_exhausted = dtoh32(sta->tx_pkts_retry_exhausted);
+		tx_pkts_total = dtoh32(sta->tx_pkts_total);
+		tx_pkts_retries = dtoh32(sta->tx_pkts_retries);
+		tx_pkts_fw_total = dtoh32(sta->tx_pkts_fw_total);
+		tx_pkts_fw_retries = dtoh32(sta->tx_pkts_fw_retries);
+		tx_pkts_fw_retry_exhausted = dtoh32(sta->tx_pkts_fw_retry_exhausted);
+		sta_flags = dtoh32(sta->flags);
+		if (sta_flags & WL_STA_IS_2G) {
+			bands |= STAINFO_BAND_2G;
+		}
+		if (sta_flags & WL_STA_IS_5G) {
+			bands |= STAINFO_BAND_5G;
+		}
+		if (sta_flags & WL_STA_IS_6G) {
+			bands |= STAINFO_BAND_6G;
+		}
+		for (cnt = WL_ANT_IDX_1; cnt < WL_RSSI_ANT_MAX; cnt++) {
+			rssi[cnt] = sta->rssi[cnt];
+			rx_lastpkt_rssi[cnt] = sta->rx_lastpkt_rssi[cnt];
+		}
+	} else {
+		int i;
+
+		/* Check if there is an associated STA or not */
+		assoc_maclist->count = htod32(MAX_NUM_OF_ASSOCLIST);
+		ret = wldev_ioctl_get(apdev, WLC_GET_ASSOCLIST, assoc_maclist, sizeof(mac_buf));
+
+		if (ret < 0) {
+			WL_ERR(("Fail to get assoc list: %d\n", ret));
+			goto error;
+		}
+
+		assoc_maclist->count = dtoh32(assoc_maclist->count);
+		WL_INFORM(("Assoc count :  %d\n", assoc_maclist->count));
+
+		for (i = 0; i < assoc_maclist->count; i++) {
+			/* get the sta info */
+			ret = wldev_iovar_getbuf(apdev, "sta_info",
+				(struct ether_addr *)assoc_maclist->ea[i].octet, ETHER_ADDR_LEN,
+				iovar_buf, WLC_IOCTL_MAXLEN, NULL);
+
+			if (ret < 0) {
+				WL_ERR(("sta_info err : %d", ret));
+				continue;
+			}
+			sta = (sta_info_v4_t *)iovar_buf;
+			if (dtoh16(sta->ver) == WL_STA_VER_4) {
+				rxrtry += dtoh32(sta->rx_pkts_retried);
+				rxmulti += dtoh32(sta->rx_mcast_pkts);
+				tx_pkts += dtoh32(sta->tx_pkts);
+				tx_failures += dtoh32(sta->tx_failures);
+				tx_pkts_total += dtoh32(sta->tx_pkts_total);
+				tx_pkts_retries += dtoh32(sta->tx_pkts_retries);
+				tx_pkts_fw_total += dtoh32(sta->tx_pkts_fw_total);
+				tx_pkts_fw_retries += dtoh32(sta->tx_pkts_fw_retries);
+				tx_pkts_fw_retry_exhausted +=
+					dtoh32(sta->tx_pkts_fw_retry_exhausted);
+			}
+		}
+	}
+
+	{
+		WL_ERR(("ALL\n"));
+		bytes_written = snprintf(command, total_len,
+			"%s %s Rx_Retry_Pkts=%d Rx_BcMc_Pkts=%d CAP=%04x "
+			STA_INFO_ADD_FMT "\n", CMD_GET_STA_INFO, cmdstr, rxrtry, rxmulti, cap,
+			tx_pkts, tx_failures, tx_rate, (int32)rssi[WL_ANT_IDX_1],
+			(int32)rssi[WL_ANT_IDX_2], tx_pkts_retried,
+			tx_pkts_retry_exhausted, (int32)rx_lastpkt_rssi[WL_ANT_IDX_1],
+			(int32)rx_lastpkt_rssi[WL_ANT_IDX_2], tx_pkts_total,
+			tx_pkts_retries, tx_pkts_fw_total, tx_pkts_fw_retries,
+			tx_pkts_fw_retry_exhausted);
+	}
+	WL_ERR_KERN(("Command: %s", command));
+
+error:
+	if (iovar_buf) {
+		MFREE(cfg->osh, iovar_buf, WLC_IOCTL_MAXLEN);
+	}
+	if (if_stats) {
+		MFREE(cfg->osh, if_stats, sizeof(*if_stats));
+	}
+
+	return bytes_written;
+}
+
+#ifdef WL_WTC
+/*
+ * CMD Format
+ * Enable format for 3 band and 2 band respectively:
+ * DRIVER SETWTCMODE <mode> <scan_type> <rssi_thresh> <ap_rssi_thresg 2G 5G 6G>
+ * DRIVER SETWTCMODE 0 1 -80 -70 -65 -60
+ * DRIVER SETWTCMODE <mode> <scan_type> <rssi_thresh> <ap_rssi_thresg 2G 5G>
+ * DRIVER SETWTCMODE 0 1 -80 -70 -65
+ * Disable format for 3 band and 2 band respectively:
+ * DRIVER SETWTCMODE 1 0 0 0 0 0
+ * DRIVER SETWTCMODE 1 0 0 0 0
+ */
+#define WL_TRIBAND     3
+#define WL_DUALBAND    2
+
+/* For WTC disable, any value >= 1 */
+#define WL_WTC_ENABLE 0
+static int
+wl_android_wtc_config(struct net_device *dev, char *command, int total_len)
+{
+	s32 bw;
+	char *token, *pos;
+	wlc_wtc_args_t *wtc_params;
+	wlc_wtcconfig_info_v1_t *wtc_config;
+	u32 i, wtc_paramslen, maxbands = WL_DUALBAND;
+	u8 buf[WLC_IOCTL_SMLEN] = {0};
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	WL_DBG_MEM(("Enter. cmd:%s\n", command));
+#ifdef WL_6G_BAND
+	if (cfg->band_6g_supported) {
+		maxbands = WL_TRIBAND;
+	}
+#endif	/* WL_6G_BAND */
+	wtc_paramslen = sizeof(wlc_wtcconfig_info_v1_t) + WLC_WTC_ROAM_CONFIG_HDRLEN;
+	wtc_params = (wlc_wtc_args_t*)MALLOCZ(cfg->osh, wtc_paramslen);
+	if (!wtc_params) {
+		WL_ERR(("Error allocating wtc_params\n"));
+		return -ENOMEM;
+	}
+
+	wtc_config = (wlc_wtcconfig_info_v1_t *)wtc_params->data;
+	/* Get wtc config information and check version compatibility */
+	bw = wldev_iovar_getbuf(dev, "wnm_wbtext_wtc_config",
+		(char*)&wtc_params, wtc_paramslen, buf, WLC_IOCTL_SMLEN, 0);
+	if (bw) {
+		WL_ERR(("Error querying wnm_wbtext_wtc_config: %d\n", bw));
+		goto exit;
+	}
+
+	(void)memcpy_s(wtc_params, wtc_paramslen, buf, wtc_paramslen);
+	if (wtc_params->ver != WLC_WTC_ROAM_VER_1) {
+		WL_ERR(("Wrong version:%d\n", wtc_params->ver));
+		bw = -EINVAL;
+		goto exit;
+	}
+
+	if (wtc_params->len != sizeof(wlc_wtcconfig_info_v1_t)) {
+		WL_ERR(("Bad len\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+
+	if (strlen(command) == strlen(CMD_WTC_CONFIG)) {
+		/* No additional arguments given. GET case  */
+		bw += scnprintf(command, (total_len - bw), "%u %u",
+			wtc_config->mode, wtc_config->scantype);
+		bw += scnprintf(command + bw, (total_len - bw), " %d",
+			wtc_config->rssithresh[0]);
+		for (i = 0; i < maxbands; i++) {
+			bw += scnprintf(command + bw, (total_len - bw), " %d",
+				wtc_config->ap_rssithresh[i]);
+		}
+		bw += scnprintf(command + bw, (total_len - bw), "\n");
+	} else {
+		/* SET */
+		pos = command + sizeof(CMD_WTC_CONFIG);
+
+		/* mode */
+		token = strsep((char**)&pos, " ");
+		if (!token) {
+			WL_ERR(("No mode present\n"));
+			bw = -EINVAL;
+			goto exit;
+		}
+		wtc_config->mode = (u8)bcm_atoi(token);
+
+		/* scantype */
+		token = strsep((char**)&pos, " ");
+		if (!token) {
+			WL_ERR(("No scantype present\n"));
+			bw = -EINVAL;
+			goto exit;
+		}
+		wtc_config->scantype = (u8)bcm_atoi(token);
+
+		/* rssithreshold */
+		token = strsep((char**)&pos, " ");
+		if (!token) {
+			WL_ERR(("Invalid arg for rssi threshold\n"));
+			bw = -EINVAL;
+			goto exit;
+		}
+		for (i = 0; i < maxbands; i++) {
+			wtc_config->rssithresh[i] = (s8)bcm_atoi(token);
+		}
+
+		/* AP rssithreshold */
+		for (i = 0; i < maxbands; i++) {
+			token = strsep((char**)&pos, " ");
+			if (!token) {
+				WL_ERR(("Invalid arg for ap threshold\n"));
+				bw = -EINVAL;
+				goto exit;
+			}
+			wtc_config->ap_rssithresh[i] = (s8)bcm_atoi(token);
+		}
+
+		bw = wldev_iovar_setbuf(dev, "wnm_wbtext_wtc_config",
+			(char*)wtc_params, wtc_paramslen, buf, WLC_IOCTL_SMLEN, NULL);
+		if (bw) {
+			WL_ERR(("wtc config set failed. ret:%d\n", bw));
+		}
+	}
+
+exit:
+	if (wtc_params) {
+		MFREE(cfg->osh, wtc_params, wtc_paramslen);
+	}
+	return bw;
+}
+#endif /* WL_WTC */
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 
 #ifdef WBTEXT
 static int wl_android_wbtext(struct net_device *dev, char *command, int total_len)
@@ -1281,6 +4261,7 @@ static int wl_android_wbtext(struct net_device *dev, char *command, int total_le
 	return error;
 }
 
+#ifdef WES_SUPPORT
 static int
 wl_android_wbtext_enable(struct net_device *dev, int mode)
 {
@@ -1299,6 +4280,7 @@ wl_android_wbtext_enable(struct net_device *dev, int mode)
 
 	return error;
 }
+#endif /* WES_SUPPORT */
 
 static int wl_cfg80211_wbtext_btm_timer_threshold(struct net_device *dev,
 	char *command, int total_len)
@@ -1559,7 +4541,7 @@ static int wl_android_set_pno_setup(struct net_device *dev, char *command, int t
 #ifdef PNO_SET_DEBUG
 	memcpy(command, pno_in_example, sizeof(pno_in_example));
 	total_len = sizeof(pno_in_example);
-#endif // endif
+#endif
 	str_ptr = command + strlen(CMD_PNOSETUP_SET);
 	tlv_size_left = total_len - strlen(CMD_PNOSETUP_SET);
 
@@ -1810,6 +4792,64 @@ static int wl_android_get_factory_mac_addr(struct net_device *ndev, char *comman
 	return ret;
 }
 
+#if defined(WLAN_ACCEL_BOOT)
+int wl_android_wifi_accel_on(struct net_device *dev, bool force_reg_on)
+{
+	int ret = 0;
+
+	DHD_ERROR(("%s: force_reg_on = %d\n", __FUNCTION__, force_reg_on));
+	if (!dev) {
+		DHD_ERROR(("%s: dev is null\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	if (force_reg_on) {
+		/* First resume the bus if it is in suspended state */
+		ret = dhd_net_bus_resume(dev, 0);
+		if (ret) {
+			DHD_ERROR(("%s: dhd_net_bus_resume failed\n", __FUNCTION__));
+		}
+		/* Toggle wl_reg_on */
+		ret = wl_android_wifi_off(dev, TRUE);
+		if (ret) {
+			DHD_ERROR(("%s: wl_android_wifi_off failed\n", __FUNCTION__));
+		}
+		ret = wl_android_wifi_on(dev);
+		if (ret) {
+			DHD_ERROR(("%s: wl_android_wifi_on failed\n", __FUNCTION__));
+		}
+	} else {
+		ret = dhd_net_bus_resume(dev, 0);
+	}
+
+	return ret;
+}
+
+int wl_android_wifi_accel_off(struct net_device *dev, bool force_reg_on)
+{
+	int ret = 0;
+
+	DHD_ERROR(("%s: force_reg_on = %d\n", __FUNCTION__, force_reg_on));
+	if (!dev) {
+		DHD_ERROR(("%s: dev is null\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	if (force_reg_on) {
+		DHD_ERROR(("%s: do nothing as wl_reg_on will be toggled in UP\n",
+			__FUNCTION__));
+	} else {
+		ret = dhd_net_bus_suspend(dev);
+	}
+
+	return ret;
+}
+#endif /* WLAN_ACCEL_BOOT */
+
+#ifdef WBRC
+extern int wbrc_wl2bt_reset(void);
+#endif /* WBRC */
+
 /**
  * Global function definitions (declared in wl_android.h)
  */
@@ -1818,8 +4858,10 @@ int wl_android_wifi_on(struct net_device *dev)
 {
 	int ret = 0;
 	int retry = POWERUP_MAX_RETRY;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
 
-	DHD_ERROR(("wl_android_wifi_on in\n"));
+	BCM_REFERENCE(dhdp);
+	DHD_ERROR(("%s g_wifi_on=%d\n", __FUNCTION__, g_wifi_on));
 	if (!dev) {
 		DHD_ERROR(("wl_android_wifi_on: dev is null\n"));
 		return -EINVAL;
@@ -1835,6 +4877,22 @@ int wl_android_wifi_on(struct net_device *dev)
 #ifdef BCMPCIE
 			ret = dhd_net_bus_devreset(dev, FALSE);
 #endif /* BCMPCIE */
+#ifdef WBRC
+			if (dhdp->dhd_induce_bh_error == DHD_INDUCE_BH_ON_FAIL_ONCE) {
+				DHD_ERROR(("%s: dhd_induce_bh_error = %d\n",
+					__FUNCTION__, dhdp->dhd_induce_bh_error));
+				/* Forcefully set error */
+				ret = BCME_ERROR;
+				/* Clear the induced bh error */
+				dhdp->dhd_induce_bh_error = DHD_INDUCE_ERROR_CLEAR;
+			}
+			if (dhdp->dhd_induce_bh_error == DHD_INDUCE_BH_ON_FAIL_ALWAYS) {
+				DHD_ERROR(("%s: dhd_induce_bh_error = %d\n",
+					__FUNCTION__, dhdp->dhd_induce_bh_error));
+				/* Forcefully set error */
+				ret = BCME_ERROR;
+			}
+#endif /* WBRC */
 			if (ret == 0) {
 				break;
 			}
@@ -1844,6 +4902,12 @@ int wl_android_wifi_on(struct net_device *dev)
 			dhd_net_bus_devreset(dev, TRUE);
 #endif /* BCMPCIE */
 			dhd_net_wifi_platform_set_power(dev, FALSE, WIFI_TURNOFF_DELAY);
+#ifdef WBRC
+			/* Inform BT reset which will internally wait till BT reset is done */
+			if (wbrc_wl2bt_reset()) {
+				DHD_ERROR(("Failed to reset BT, nothing to be done!!!!\n"));
+			}
+#endif /* WBRC */
 		} while (retry-- > 0);
 		if (ret != 0) {
 			DHD_ERROR(("\nfailed to power up wifi chip, max retry reached **\n\n"));
@@ -1877,7 +4941,7 @@ int wl_android_wifi_off(struct net_device *dev, bool on_failure)
 {
 	int ret = 0;
 
-	DHD_ERROR(("wl_android_wifi_off in\n"));
+	DHD_ERROR(("%s g_wifi_on=%d on_failure=%d\n", __FUNCTION__, g_wifi_on, on_failure));
 	if (!dev) {
 		DHD_TRACE(("wl_android_wifi_off: dev is null\n"));
 		return -EINVAL;
@@ -1976,7 +5040,9 @@ wl_android_get_connection_stats(struct net_device *dev, char *command, int total
 #ifndef DISABLE_IF_COUNTERS
 	wl_if_stats_t* if_stats = NULL;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+#ifdef BCMDONGLEHOST
 	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+#endif /* BCMDONGLEHOST */
 #endif /* DISABLE_IF_COUNTERS */
 
 	int link_speed = 0;
@@ -2011,9 +5077,11 @@ wl_android_get_connection_stats(struct net_device *dev, char *command, int total
 	}
 	bzero(if_stats, sizeof(*if_stats));
 
+#ifdef BCMDONGLEHOST
 	if (FW_SUPPORTED(dhdp, ifst)) {
 		ret = wl_cfg80211_ifstats_counters(dev, if_stats);
 	} else
+#endif /* BCMDONGLEHOST */
 	{
 		ret = wldev_iovar_getbuf(dev, "if_counters", NULL, 0,
 			(char *)if_stats, sizeof(*if_stats), NULL);
@@ -2920,6 +5988,7 @@ wl_android_mbo_subcmd_cell_data_cap(struct net_device *dev, const wl_drv_sub_cmd
 		/* Skip for CUSTOMER_HW4 - WNM notification
 		 * for cellular data capability is handled by host
 		 */
+#if !defined(CUSTOMER_HW4)
 		/* send a WNM notification request to associated AP */
 		if (wl_get_drv_status(cfg, CONNECTED, dev)) {
 			WL_INFORM(("Sending WNM Notif\n"));
@@ -2930,6 +5999,7 @@ wl_android_mbo_subcmd_cell_data_cap(struct net_device *dev, const wl_drv_sub_cmd
 				ret = -EINVAL;
 			}
 		}
+#endif /* CUSTOMER_HW4 */
 	}
 exit:
 	if (iov_buf) {
@@ -3160,6 +6230,34 @@ exit:
 }
 #endif /* WL_MBO */
 
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef SUPPORT_AMPDU_MPDU_CMD
+/* CMD_AMPDU_MPDU */
+static int
+wl_android_set_ampdu_mpdu(struct net_device *dev, const char* string_num)
+{
+	int err = 0;
+	int ampdu_mpdu;
+
+	ampdu_mpdu = bcm_atoi(string_num);
+
+	if (ampdu_mpdu > 32) {
+		DHD_ERROR(("wl_android_set_ampdu_mpdu : ampdu_mpdu MAX value is 32.\n"));
+		return -1;
+	}
+
+	DHD_ERROR(("wl_android_set_ampdu_mpdu : ampdu_mpdu = %d\n", ampdu_mpdu));
+	err = wldev_iovar_setint(dev, "ampdu_mpdu", ampdu_mpdu);
+	if (err < 0) {
+		DHD_ERROR(("wl_android_set_ampdu_mpdu : ampdu_mpdu set error. %d\n", err));
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* SUPPORT_AMPDU_MPDU_CMD */
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
+
 #if defined(CONFIG_WLAN_BEYONDX) || defined(CONFIG_SEC_5GMODEL)
 extern int wl_cfg80211_send_msg_to_ril(void);
 extern void wl_cfg80211_register_dev_ril_bridge_event_notifier(void);
@@ -3168,7 +6266,368 @@ extern int g_mhs_chan_for_cpcoex;
 #endif /* CONFIG_WLAN_BEYONDX || defined(CONFIG_SEC_5GMODEL) */
 
 #if defined(WL_SUPPORT_AUTO_CHANNEL)
-static int
+static s32
+wl_android_set_auto_channel_scan_state(struct net_device *ndev)
+{
+	u32 val = 0;
+	s32 ret = BCME_ERROR;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+	/* Set interface up, explicitly. */
+	val = 1;
+
+	ret = wldev_ioctl_set(ndev, WLC_UP, (void *)&val, sizeof(val));
+	if (ret < 0) {
+		WL_ERR(("set interface up failed, error = %d\n", ret));
+		goto done;
+	}
+
+	/* Stop all scan explicitly, till auto channel selection complete. */
+	wl_set_drv_status(cfg, SCANNING, ndev);
+	if (cfg->escan_info.ndev == NULL) {
+		ret = BCME_OK;
+		goto done;
+	}
+
+	wl_cfgscan_cancel_scan(cfg);
+
+done:
+	return ret;
+}
+
+s32
+wl_android_get_freq_list_chanspecs(struct net_device *ndev, wl_uint32_list_t *list,
+	s32 buflen, const char* cmd_str, int sta_channel, chanspec_band_t sta_acs_band)
+{
+	u32 freq = 0;
+	chanspec_t chanspec = 0;
+	s32 ret = BCME_OK;
+	int i = 0;
+	char *pcmd, *token;
+	int len = buflen;
+	u32 freq_bands = 0;
+#ifdef WL_6G_BAND
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+#endif /* WL_6G_BAND */
+
+	pcmd = bcmstrstr(cmd_str, FREQ_STR);
+	pcmd += strlen(FREQ_STR);
+
+	len -= sizeof(list->count);
+
+	while ((token = strsep(&pcmd, ",")) != NULL) {
+		if (*token == '\0')
+			continue;
+
+		if (len < sizeof(list->element[i]))
+			break;
+
+		freq = bcm_atoi(token);
+		/* Convert chanspec from frequency */
+		if ((freq > 0) &&
+			((chanspec = wl_freq_to_chanspec(freq)) != INVCHANSPEC)) {
+			WL_DBG(("%s:Adding chanspec in list : 0x%x at the index %d\n",
+				__FUNCTION__, chanspec, i));
+			/* mark all the bands found */
+			freq_bands |= CHSPEC_TO_WLC_BAND(CHSPEC_BAND(chanspec));
+			list->element[i] = chanspec;
+			len -= sizeof(list->element[i]);
+			i++;
+#ifdef WL_5G_SOFTAP_ONLY_ON_DEF_CHAN
+			/* Android includes 2g channels even for 5g band configuration. For
+			 * customers using only single channel 5G AP, set the channel and
+			 * return without doing ACS
+			 */
+			if (CHSPEC_BAND(chanspec) == WL_CHANSPEC_BAND_5G) {
+				WL_INFORM_MEM(("Pick default channnel from 5g\n"));
+				if (!sta_channel) {
+					list->element[0] = chanspec;
+					list->count = 1;
+					return ret;
+				}
+				break;
+			}
+#endif /* WL_5G_SOFTAP_ONLY_ON_DEF_CHAN */
+		}
+		WL_DBG(("** freq_bands=0x%x\n", freq_bands));
+	}
+
+	list->count = i;
+	/* valid chanspec present in the list */
+	if (list->count && sta_channel) {
+		/* STA associated case. Can't do ACS.
+		* Frequency list is order of lower to higher band.
+		* check with the highest band entry.
+		*/
+		chanspec = list->element[i-1];
+		if (sta_acs_band == WL_CHANSPEC_BAND_2G) {
+#ifdef WL_6G_BAND
+			if ((freq_bands & WLC_BAND_6G) && cfg->band_6g_supported) {
+				list->element[0] = wl_freq_to_chanspec(APCS_DEFAULT_6G_FREQ);
+			} else
+#endif /* WL_6G_BAND */
+			if (freq_bands & WLC_BAND_5G) {
+				list->element[0] = wl_freq_to_chanspec(APCS_DEFAULT_5G_FREQ);
+			} else {
+				freq = wl_channel_to_frequency(sta_channel, sta_acs_band);
+				list->element[0] = wl_freq_to_chanspec(freq);
+				WL_INFORM_MEM(("Softap on same band as STA."
+						"Use SCC chanspec:0x%x\n",
+						list->element[0]));
+			}
+		} else if (sta_acs_band == WL_CHANSPEC_BAND_5G) {
+			if (freq_bands & WLC_BAND_5G) {
+				if (sta_channel == APCS_DEFAULT_5G_CH) {
+					list->element[0] =
+						wl_freq_to_chanspec(APCS_DEFAULT_5G_FREQ);
+				} else {
+					list->element[0] =
+						wl_freq_to_chanspec(APCS_DEFAULT_2G_FREQ);
+				}
+			} else {
+				list->element[0] = wl_freq_to_chanspec(APCS_DEFAULT_2G_FREQ);
+			}
+		} else
+#ifdef WL_6G_BAND
+		if (sta_acs_band == WL_CHANSPEC_BAND_6G) {
+			if ((freq_bands & WLC_BAND_6G) && cfg->band_6g_supported) {
+				freq = wl_channel_to_frequency(sta_channel, sta_acs_band);
+				list->element[0] = wl_freq_to_chanspec(freq);
+				WL_INFORM_MEM(("Softap on same band as STA."
+						"Use SCC chanspec:0x%x\n",
+						list->element[0]));
+			} else
+			{
+				list->element[0] = wl_freq_to_chanspec(APCS_DEFAULT_2G_FREQ);
+			}
+		} else
+#endif /* WL_6G_BAND */
+		{
+			WL_ERR(("ACS: Invalid sta acs band: sta_acs_band = 0x%x\n", sta_acs_band));
+			return BCME_ERROR;
+		}
+	}
+	list->count = 1;
+	return ret;
+}
+
+s32
+wl_android_get_band_chanspecs(struct net_device *ndev, void *buf, s32 buflen,
+	chanspec_band_t band, bool acs_req)
+{
+	u32 channel = 0;
+	s32 ret = BCME_ERROR;
+	s32 i = 0;
+	s32 j = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+	wl_uint32_list_t *list = NULL;
+	chanspec_t chanspec = 0;
+
+	if (band != 0xff) {
+		chanspec |= (band | WL_CHANSPEC_BW_20 |
+			WL_CHANSPEC_CTL_SB_NONE);
+		chanspec = wl_chspec_host_to_driver(chanspec);
+	}
+
+	ret = wldev_iovar_getbuf_bsscfg(ndev, "chanspecs", (void *)&chanspec,
+		sizeof(chanspec), buf, buflen, 0, &cfg->ioctl_buf_sync);
+	if (ret < 0) {
+		WL_ERR(("get 'chanspecs' failed, error = %d\n", ret));
+		goto done;
+	}
+
+	list = (wl_uint32_list_t *)buf;
+	/* Skip DFS and inavlid P2P channel. */
+	for (i = 0, j = 0; i < dtoh32(list->count); i++) {
+		if (!CHSPEC_IS20(list->element[i])) {
+			continue;
+		}
+		chanspec = (chanspec_t) dtoh32(list->element[i]);
+		channel = chanspec | WL_CHANSPEC_BW_20;
+		channel = wl_chspec_host_to_driver(channel);
+
+		ret = wldev_iovar_getint(ndev, "per_chan_info", &channel);
+		if (ret < 0) {
+			WL_ERR(("get 'per_chan_info' failed, error = %d\n", ret));
+			goto done;
+		}
+
+		if (CHSPEC_IS5G(chanspec) && (CHANNEL_IS_RADAR(channel) ||
+#ifndef ALLOW_5G_ACS
+			((acs_req == true) && (CHSPEC_CHANNEL(chanspec) != APCS_DEFAULT_5G_CH)) ||
+#endif /* !ALLOW_5G_ACS */
+			(0))) {
+			continue;
+		} else if (!(CHSPEC_IS2G(chanspec) || CHSPEC_IS5G(chanspec)) &&
+			!(CHSPEC_IS_6G_PSC(chanspec))) {
+			continue;
+		}
+		else {
+			list->element[j] = list->element[i];
+			WL_DBG(("Adding chanspec in list : %x\n", list->element[j]));
+		}
+
+		j++;
+	}
+
+	list->count = j;
+
+done:
+	return ret;
+}
+
+static s32
+wl_android_get_best_channel(struct net_device *ndev, void *buf, int buflen,
+	int *channel)
+{
+	s32 ret = BCME_ERROR;
+	int chosen = 0;
+	int retry = 0;
+
+	/* Start auto channel selection scan. */
+	ret = wldev_ioctl_set(ndev, WLC_START_CHANNEL_SEL, NULL, 0);
+	if (ret < 0) {
+		WL_ERR(("can't start auto channel scan, error = %d\n", ret));
+		*channel = 0;
+		goto done;
+	}
+
+	/* Wait for auto channel selection, worst case possible delay is 5250ms. */
+	retry = CHAN_SEL_RETRY_COUNT;
+
+	while (retry--) {
+		OSL_SLEEP(CHAN_SEL_IOCTL_DELAY);
+		chosen = 0;
+		ret = wldev_ioctl_get(ndev, WLC_GET_CHANNEL_SEL, &chosen, sizeof(chosen));
+		if ((ret == 0) && (dtoh32(chosen) != 0)) {
+			*channel = (u16)(chosen & 0x00FF);
+			WL_INFORM_MEM(("selected channel = %d\n", *channel));
+			break;
+		}
+		WL_DBG(("attempt = %d, ret = %d, chosen = %d\n",
+			(CHAN_SEL_RETRY_COUNT - retry), ret, dtoh32(chosen)));
+	}
+
+	if (retry <= 0)	{
+		WL_ERR(("failure, auto channel selection timed out\n"));
+		*channel = 0;
+		ret = BCME_ERROR;
+	}
+
+done:
+	return ret;
+}
+
+static s32
+wl_android_restore_auto_channel_scan_state(struct net_device *ndev)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+	/* Clear scan stop driver status. */
+	wl_clr_drv_status(cfg, SCANNING, ndev);
+
+	return BCME_OK;
+}
+
+s32
+wl_android_get_best_channels(struct net_device *dev, char* cmd, int total_len)
+{
+	int channel = 0;
+	s32 ret = BCME_ERROR;
+	u8 *buf = NULL;
+	char *pos = cmd;
+	struct bcm_cfg80211 *cfg = NULL;
+	struct net_device *ndev = NULL;
+
+	bzero(cmd, total_len);
+	cfg = wl_get_cfg(dev);
+
+	buf = (u8 *)MALLOC(cfg->osh, CHANSPEC_BUF_SIZE);
+	if (buf == NULL) {
+		WL_ERR(("failed to allocate chanspec buffer\n"));
+		return -ENOMEM;
+	}
+
+	/*
+	 * Always use primary interface, irrespective of interface on which
+	 * command came.
+	 */
+	ndev = bcmcfg_to_prmry_ndev(cfg);
+
+	/*
+	 * Make sure that FW and driver are in right state to do auto channel
+	 * selection scan.
+	 */
+	ret = wl_android_set_auto_channel_scan_state(ndev);
+	if (ret < 0) {
+		WL_ERR(("can't set auto channel scan state, error = %d\n", ret));
+		goto done;
+	}
+
+	/* Best channel selection in 2.4GHz band. */
+	ret = wl_android_get_band_chanspecs(ndev, (void *)buf, CHANSPEC_BUF_SIZE,
+		WL_CHANSPEC_BAND_2G, false);
+	if (ret < 0) {
+		WL_ERR(("can't get chanspecs in 2.4GHz, error = %d\n", ret));
+		goto done;
+	}
+
+	ret = wl_android_get_best_channel(ndev, (void *)buf, CHANSPEC_BUF_SIZE,
+		&channel);
+	if (ret < 0) {
+		WL_ERR(("can't select best channel scan in 2.4GHz, error = %d\n", ret));
+		goto done;
+	}
+
+	if (CHANNEL_IS_2G(channel)) {
+		channel = ieee80211_channel_to_frequency(channel, IEEE80211_BAND_2GHZ);
+	} else {
+		WL_ERR(("invalid 2.4GHz channel, channel = %d\n", channel));
+		channel = 0;
+	}
+
+	pos += snprintf(pos, total_len, "%04d ", channel);
+
+	/* Best channel selection in 5GHz band. */
+	ret = wl_android_get_band_chanspecs(ndev, (void *)buf, CHANSPEC_BUF_SIZE,
+		WL_CHANSPEC_BAND_5G, false);
+	if (ret < 0) {
+		WL_ERR(("can't get chanspecs in 5GHz, error = %d\n", ret));
+		goto done;
+	}
+
+	ret = wl_android_get_best_channel(ndev, (void *)buf, CHANSPEC_BUF_SIZE,
+		&channel);
+	if (ret < 0) {
+		WL_ERR(("can't select best channel scan in 5GHz, error = %d\n", ret));
+		goto done;
+	}
+
+	if (CHANNEL_IS_5G(channel)) {
+		channel = ieee80211_channel_to_frequency(channel, IEEE80211_BAND_5GHZ);
+	} else {
+		WL_ERR(("invalid 5GHz channel, channel = %d\n", channel));
+		channel = 0;
+	}
+
+	pos += snprintf(pos, total_len - (pos - cmd), "%04d ", channel);
+
+	/* Set overall best channel same as 5GHz best channel. */
+	pos += snprintf(pos, total_len - (pos - cmd), "%04d ", channel);
+
+done:
+	if (NULL != buf) {
+		MFREE(cfg->osh, buf, CHANSPEC_BUF_SIZE);
+	}
+
+	/* Restore FW and driver back to normal state. */
+	ret = wl_android_restore_auto_channel_scan_state(ndev);
+	if (ret < 0) {
+		WL_ERR(("can't restore auto channel scan state, error = %d\n", ret));
+	}
+
+	return (pos - cmd);
+}
+
+int
 wl_android_set_spect(struct net_device *dev, int spect)
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
@@ -3198,34 +6657,88 @@ wl_android_set_spect(struct net_device *dev, int spect)
 	return err;
 }
 
+int
+wl_android_get_sta_channel(struct bcm_cfg80211 *cfg)
+{
+	chanspec_t *sta_chanspec = NULL;
+	u32 channel = 0;
+
+	if (wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
+		if ((sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
+			bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN))) {
+			channel = wf_chspec_ctlchan(*sta_chanspec);
+		}
+	}
+	return channel;
+}
+
+static int
+wl_cfg80211_get_acs_band(int band)
+{
+	chanspec_band_t acs_band = WLC_ACS_BAND_INVALID;
+	switch (band) {
+		case WLC_BAND_AUTO:
+			WL_DBG(("ACS full channel scan \n"));
+			/* Restricting band to 2G in case of hw_mode any */
+			acs_band = WL_CHANSPEC_BAND_2G;
+			break;
+#ifdef WL_6G_BAND
+		case WLC_BAND_6G:
+			WL_DBG(("ACS 6G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_6G;
+			break;
+#endif /* WL_6G_BAND */
+		case WLC_BAND_5G:
+			WL_DBG(("ACS 5G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_5G;
+			break;
+		case WLC_BAND_2G:
+			/*
+			 * If channel argument is not provided/ argument 20 is provided,
+			 * Restrict channel to 2GHz, 20MHz BW, No SB
+			 */
+			WL_DBG(("ACS 2G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_2G;
+			break;
+		default:
+			WL_ERR(("ACS: No band chosen\n"));
+			break;
+	}
+	WL_DBG(("%s: ACS: band = %d, acs_band = 0x%x\n", __FUNCTION__, band, acs_band));
+	return acs_band;
+}
+
 /* SoftAP feature */
-#define APCS_BAND_2G_LEGACY1	20
-#define APCS_BAND_2G_LEGACY2	0
-#define APCS_BAND_AUTO		"band=auto"
-#define APCS_BAND_2G		"band=2g"
-#define APCS_BAND_5G		"band=5g"
-#define APCS_MAX_2G_CHANNELS	11
-#define APCS_MAX_RETRY		10
-#define APCS_DEFAULT_2G_CH	1
-#define APCS_DEFAULT_5G_CH	149
 static int
 wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 	char* command, int total_len)
 {
-	int channel = 0;
+	int channel = 0, sta_channel = 0;
 	int chosen = 0;
 	int retry = 0;
 	int ret = 0;
 	int spect = 0;
 	u8 *reqbuf = NULL;
-	uint32 band = WLC_BAND_2G, sta_band = WLC_BAND_2G;
+	uint32 band = WLC_BAND_INVALID, sta_band = WLC_BAND_INVALID;
+	chanspec_band_t acs_band = WLC_ACS_BAND_INVALID;
 	uint32 buf_size;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	bool acs_freq_list_present = false;
+	char *pcmd;
+	int freq = 0;
 
 	if (cmd_str) {
 		WL_INFORM(("Command: %s len:%d \n", cmd_str, (int)strlen(cmd_str)));
-		if (strnicmp(cmd_str, APCS_BAND_AUTO, strlen(APCS_BAND_AUTO)) == 0) {
+		pcmd = bcmstrstr(cmd_str, FREQ_STR);
+		if (pcmd) {
+			acs_freq_list_present = true;
+			WL_INFORM_MEM(("ACS has freq list\n"));
+		} else if (strnicmp(cmd_str, APCS_BAND_AUTO, strlen(APCS_BAND_AUTO)) == 0) {
 			band = WLC_BAND_AUTO;
+#ifdef WL_6G_BAND
+		} else if (strnicmp(cmd_str, APCS_BAND_6G, strlen(APCS_BAND_6G)) == 0) {
+			band = WLC_BAND_6G;
+#endif /* WL_6G_BAND */
 		} else if (strnicmp(cmd_str, APCS_BAND_5G, strlen(APCS_BAND_5G)) == 0) {
 			band = WLC_BAND_5G;
 		} else if (strnicmp(cmd_str, APCS_BAND_2G, strlen(APCS_BAND_2G)) == 0) {
@@ -3268,27 +6781,72 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 	/* If STA is connected, return is STA channel, else ACS can be issued,
 	 * set spect to 0 and proceed with ACS
 	 */
-	channel = wl_cfg80211_get_sta_channel(cfg);
-	if (channel) {
-		sta_band = WL_GET_BAND(channel);
+	sta_channel = wl_android_get_sta_channel(cfg);
+	sta_band = WL_GET_BAND(sta_channel);
+	if (sta_channel && (band != WLC_BAND_INVALID)) {
 		switch (sta_band) {
 			case (WLC_BAND_5G): {
-				if (band == WLC_BAND_2G || band == WLC_BAND_AUTO) {
+				if ((sta_channel == APCS_DEFAULT_5G_CH) &&
+					(band == WLC_BAND_5G || band == WLC_BAND_AUTO)) {
+					/* SCC is allowed only for DEF_5G Channel */
+					channel = sta_channel;
+					acs_band = wl_cfg80211_get_acs_band(sta_band);
+				} else {
 					channel = APCS_DEFAULT_2G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
 				}
 				break;
 			}
+#ifdef WL_6G_BAND
+			case (WLC_BAND_6G):
+			{
+				if (band == WLC_BAND_6G || band == WLC_BAND_AUTO) {
+					/* scc */
+					channel = sta_channel;
+					acs_band = wl_cfg80211_get_acs_band(sta_band);
+				} else {
+					channel = APCS_DEFAULT_2G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
+				}
+				break;
+			}
+#endif /* WL_6G_BAND */
 			case (WLC_BAND_2G): {
+#ifdef WL_6G_BAND
+				if (band == WLC_BAND_6G) {
+					channel = APCS_DEFAULT_6G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_6G);
+				} else
+#endif /* WL_6G_BAND */
 				if (band == WLC_BAND_5G) {
 					channel = APCS_DEFAULT_5G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
+				} else if (band == WLC_BAND_AUTO) {
+#ifdef WL_6G_BAND
+					if (cfg->band_6g_supported) {
+						channel = APCS_DEFAULT_6G_CH;
+						acs_band = wl_cfg80211_get_acs_band(WLC_BAND_6G);
+					} else {
+						channel = APCS_DEFAULT_5G_CH;
+						acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
+					}
+#else
+					channel = APCS_DEFAULT_5G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
+#endif	/* WL_6G_BAND */
+				} else {
+					/* scc */
+					channel = sta_channel;
+					acs_band = wl_cfg80211_get_acs_band(sta_band);
 				}
 				break;
 			}
 			default:
 				/* Intentional fall through to use same sta channel for softap */
+				channel = sta_channel;
+				acs_band = wl_cfg80211_get_acs_band(sta_band);
 				break;
 		}
-		WL_DBG(("band = %d, sta_band=%d \n", band, sta_band));
 		goto done2;
 	}
 
@@ -3322,31 +6880,44 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 		return -ENOMEM;
 	}
 
-	if (band == WLC_BAND_AUTO) {
-		WL_DBG(("ACS full channel scan \n"));
-		reqbuf[0] = htod32(0);
-	} else if (band == WLC_BAND_5G) {
-		WL_DBG(("ACS 5G band scan \n"));
-		if ((ret = wl_cfg80211_get_chanspecs_5g(dev, reqbuf, CHANSPEC_BUF_SIZE)) < 0) {
-			WL_ERR(("ACS 5g chanspec retreival failed! \n"));
+	if (acs_freq_list_present) {
+		wl_uint32_list_t *list = NULL;
+		bzero(reqbuf, sizeof(*reqbuf));
+		list = (wl_uint32_list_t *)reqbuf;
+
+		ret = wl_android_get_freq_list_chanspecs(dev, list, CHANSPEC_BUF_SIZE,
+			cmd_str, sta_channel, wl_cfg80211_get_acs_band(sta_band));
+		if (ret < 0) {
+			WL_ERR(("ACS chanspec set failed!\n"));
 			goto done;
 		}
-	} else if (band == WLC_BAND_2G) {
-		/*
-		 * If channel argument is not provided/ argument 20 is provided,
-		 * Restrict channel to 2GHz, 20MHz BW, No SB
-		 */
-		WL_DBG(("ACS 2G band scan \n"));
-		if ((ret = wl_cfg80211_get_chanspecs_2g(dev, reqbuf, CHANSPEC_BUF_SIZE)) < 0) {
-			WL_ERR(("ACS 2g chanspec retreival failed! \n"));
-			goto done;
+
+		/* skip ACS for single channel case */
+		if (list->count == 1) {
+			cfg->acs_chspec = (chanspec_t)list->element[0];
+			channel = wf_chspec_ctlchan((chanspec_t)list->element[0]);
+			acs_band = CHSPEC_BAND((chanspec_t)list->element[0]);
+			WL_INFORM_MEM(("chosen acs_chspec = 0x%x, channel =%d, acs_band =0x%x, "
+				"sta_channel =%d, sta_acs_band = 0x%x\n",
+				cfg->acs_chspec, channel, acs_band,
+				sta_channel, wl_cfg80211_get_acs_band(sta_band)));
+			goto done2;
 		}
 	} else {
-		WL_ERR(("ACS: No band chosen\n"));
-		goto done2;
+		acs_band = wl_cfg80211_get_acs_band(band);
+		if (acs_band == WLC_ACS_BAND_INVALID) {
+			WL_ERR(("ACS: No band chosen\n"));
+			goto done2;
+		}
+
+		if ((ret = wl_android_get_band_chanspecs(dev, reqbuf, CHANSPEC_BUF_SIZE,
+			acs_band, true)) < 0) {
+			WL_ERR(("ACS chanspec retrieval failed! \n"));
+			goto done;
+		}
 	}
 
-	buf_size = (band == WLC_BAND_AUTO) ? sizeof(int) : CHANSPEC_BUF_SIZE;
+	buf_size = CHANSPEC_BUF_SIZE;
 	ret = wldev_ioctl_set(dev, WLC_START_CHANNEL_SEL, (void *)reqbuf,
 		buf_size);
 	if (ret < 0) {
@@ -3356,7 +6927,7 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 	}
 
 	/* Wait for auto channel selection, max 3000 ms */
-	if ((band == WLC_BAND_2G) || (band == WLC_BAND_5G)) {
+	if ((band == WLC_BAND_2G) || (band == WLC_BAND_5G) || (band == WLC_BAND_6G)) {
 		OSL_SLEEP(500);
 	} else {
 		/*
@@ -3377,26 +6948,14 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 		}
 
 		if (chosen) {
-			int chosen_band;
-			int apcs_band;
-#ifdef D11AC_IOTYPES
-			if (wl_cfg80211_get_ioctl_version() == 1) {
-				channel = LCHSPEC_CHANNEL((chanspec_t)chosen);
-			} else {
-				channel = CHSPEC_CHANNEL((chanspec_t)chosen);
-			}
-#else
-			channel = CHSPEC_CHANNEL((chanspec_t)chosen);
-#endif /* D11AC_IOTYPES */
-			apcs_band = (band == WLC_BAND_AUTO) ? WLC_BAND_2G : band;
-			chosen_band = (channel <= CH_MAX_2G_CHANNEL) ? WLC_BAND_2G : WLC_BAND_5G;
-			if (apcs_band == chosen_band) {
-				WL_ERR(("selected channel = %d\n", channel));
-				break;
-			}
+			/* Update chanspec which can be used during softAP bringup with right BW */
+			cfg->acs_chspec = chosen;
+			channel = wf_chspec_ctlchan(chosen);
+			acs_band = CHSPEC_BAND(chosen);
+			break;
 		}
-		WL_DBG(("%d tried, ret = %d, chosen = 0x%x\n",
-			(APCS_MAX_RETRY - retry), ret, chosen));
+		WL_DBG(("%d tried, ret = %d, chosen = 0x%x, acs_band = 0x%x\n",
+			(APCS_MAX_RETRY - retry), ret, chosen, acs_band));
 		OSL_SLEEP(250);
 	}
 
@@ -3405,6 +6964,10 @@ done:
 		/* On failure, fallback to a default channel */
 		if (band == WLC_BAND_5G) {
 			channel = APCS_DEFAULT_5G_CH;
+#ifdef WL_6G_BAND
+		} else if (band == WLC_BAND_6G) {
+			channel = APCS_DEFAULT_6G_CH;
+#endif /* WL_6G_BAND */
 		} else {
 			channel = APCS_DEFAULT_2G_CH;
 		}
@@ -3421,14 +6984,658 @@ done2:
 		MFREE(cfg->osh, reqbuf, CHANSPEC_BUF_SIZE);
 	}
 
-	if (channel) {
-		ret = snprintf(command, total_len, "%d", channel);
+	WL_INFORM_MEM(("band = %d, sta_band=%d acs_channel = %d, acs_band = 0x%x\n",
+			band, sta_band, channel, acs_band));
+	if (channel && (acs_band != WLC_ACS_BAND_INVALID)) {
+		freq = wl_channel_to_frequency(channel, acs_band);
+		if (!freq) {
+			WL_ERR(("ACS: Invalid freq\n"));
+			return BCME_ERROR;
+		}
+		ret = snprintf(command, total_len, "%d freq=%d", channel, freq);
 		WL_INFORM_MEM(("command result is %s \n", command));
 	}
 
 	return ret;
 }
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
+
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+static int
+wl_android_set_roam_vsie_enab(struct net_device *dev, const char *cmd, u32 cmd_len)
+{
+	s32 err = BCME_OK;
+	u32 roam_vsie_enable = 0;
+	u32 cmd_str_len = (u32)strlen(CMD_ROAM_VSIE_ENAB_SET);
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	/* <CMD><SPACE><VAL> */
+	if (!cmd || (cmd_len < (cmd_str_len + 1))) {
+		WL_ERR(("wrong arg\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	if (dev != bcmcfg_to_prmry_ndev(cfg)) {
+		WL_ERR(("config not supported on non primary i/f\n"));
+		err = -ENODEV;
+		goto exit;
+	}
+
+	roam_vsie_enable = cmd[(cmd_str_len + 1)] - '0';
+	if (roam_vsie_enable > 1) {
+		roam_vsie_enable = 1;
+	}
+
+	WL_DBG_MEM(("set roam vsie %d\n", roam_vsie_enable));
+	err = wldev_iovar_setint(dev, "roam_vsie", roam_vsie_enable);
+	if (unlikely(err)) {
+		WL_ERR(("set roam vsie enable failed. ret:%d\n", err));
+	}
+
+exit:
+	return err;
+}
+
+static int
+wl_android_get_roam_vsie_enab(struct net_device *dev, char *cmd, u32 cmd_len)
+{
+	s32 err = BCME_OK;
+	u32 roam_vsie_enable = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	int bytes_written;
+
+	/* <CMD> */
+	if (!cmd) {
+		WL_ERR(("wrong arg\n"));
+		return -1;
+	}
+
+	if (dev != bcmcfg_to_prmry_ndev(cfg)) {
+		WL_ERR(("config not supported on non primary i/f\n"));
+		return -1;
+	}
+
+	err = wldev_iovar_getint(dev, "roam_vsie", &roam_vsie_enable);
+	if (unlikely(err)) {
+		WL_ERR(("get roam vsie enable failed. ret:%d\n", err));
+		return -1;
+	}
+	WL_INFORM_MEM(("get roam vsie %d\n", roam_vsie_enable));
+
+	bytes_written = snprintf(cmd, cmd_len, "%s %d",
+		CMD_ROAM_VSIE_ENAB_GET, roam_vsie_enable);
+
+	return bytes_written;
+}
+
+static int
+wl_android_set_bcn_rpt_vsie_enab(struct net_device *dev, const char *cmd, u32 cmd_len)
+{
+	s32 err;
+	u32 bcn_vsie_enable = 0;
+	u32 cmd_str_len = (u32)strlen(CMD_BR_VSIE_ENAB_SET);
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	/* <CMD><SPACE><VAL> */
+	if (!cmd || (cmd_len < (cmd_str_len + 1))) {
+		WL_ERR(("invalid arg\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	if (dev != bcmcfg_to_prmry_ndev(cfg)) {
+		WL_ERR(("config not supported on non primary i/f\n"));
+		err = -ENODEV;
+		goto exit;
+	}
+
+	bcn_vsie_enable = cmd[cmd_str_len + 1] - '0';
+	if (bcn_vsie_enable > 1) {
+		bcn_vsie_enable = 1;
+	}
+
+	WL_DBG_MEM(("set bcn report vsie %d\n", bcn_vsie_enable));
+	err = wldev_iovar_setint(dev, "bcnrpt_vsie_en", bcn_vsie_enable);
+	if (unlikely(err)) {
+		WL_ERR(("set bcn vsie failed. ret:%d\n", err));
+	}
+
+exit:
+	return err;
+}
+
+static int
+wl_android_get_bcn_rpt_vsie_enab(struct net_device *dev, char *cmd, u32 cmd_len)
+{
+	s32 err = BCME_OK;
+	u32 bcn_vsie_enable = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	int bytes_written;
+
+	/* <CMD> */
+	if (!cmd) {
+		WL_ERR(("wrong arg\n"));
+		return -1;
+	}
+
+	if (dev != bcmcfg_to_prmry_ndev(cfg)) {
+		WL_ERR(("config not supported on non primary i/f\n"));
+		return -1;
+	}
+
+	err = wldev_iovar_getint(dev, "bcnrpt_vsie_en", &bcn_vsie_enable);
+	if (unlikely(err)) {
+		WL_ERR(("get bcn vsie failed. ret:%d\n", err));
+		return -1;
+	}
+	WL_INFORM_MEM(("get bcn report vsie %d\n", bcn_vsie_enable));
+
+	bytes_written = snprintf(cmd, cmd_len, "%s %d",
+		CMD_BR_VSIE_ENAB_GET, bcn_vsie_enable);
+
+	return bytes_written;
+}
+
+#ifdef SUPPORT_HIDDEN_AP
+static int
+wl_android_set_max_num_sta(struct net_device *dev, const char* string_num)
+{
+	int err = BCME_ERROR;
+	int max_assoc;
+
+	max_assoc = bcm_atoi(string_num);
+	DHD_INFO(("wl_android_set_max_num_sta : HAPD_MAX_NUM_STA = %d\n", max_assoc));
+
+	err = wldev_iovar_setint(dev, "maxassoc", max_assoc);
+	if (err < 0) {
+		WL_ERR(("failed to set maxassoc, error:%d\n", err));
+	}
+
+	return err;
+}
+
+static int
+wl_android_set_ssid(struct net_device *dev, const char* hapd_ssid)
+{
+	wlc_ssid_t ssid;
+	s32 ret;
+
+	ssid.SSID_len = strlen(hapd_ssid);
+	if (ssid.SSID_len == 0) {
+		WL_ERR(("wl_android_set_ssids : No SSID\n"));
+		return -1;
+	}
+	if (ssid.SSID_len > DOT11_MAX_SSID_LEN) {
+		ssid.SSID_len = DOT11_MAX_SSID_LEN;
+		WL_ERR(("wl_android_set_ssid : Too long SSID Length %zu\n", strlen(hapd_ssid)));
+	}
+	bcm_strncpy_s(ssid.SSID, sizeof(ssid.SSID), hapd_ssid, ssid.SSID_len);
+	DHD_INFO(("wl_android_set_ssid: HAPD_SSID = %s\n", ssid.SSID));
+	ret = wldev_ioctl_set(dev, WLC_SET_SSID, &ssid, sizeof(wlc_ssid_t));
+	if (ret < 0) {
+		WL_ERR(("wl_android_set_ssid : WLC_SET_SSID Error:%d\n", ret));
+	}
+	return 1;
+
+}
+
+static int
+wl_android_set_hide_ssid(struct net_device *dev, const char* string_num)
+{
+	int hide_ssid;
+	int enable = 0;
+	int err = BCME_ERROR;
+
+	hide_ssid = bcm_atoi(string_num);
+	DHD_INFO(("wl_android_set_hide_ssid: HAPD_HIDE_SSID = %d\n", hide_ssid));
+	if (hide_ssid) {
+		enable = 1;
+	}
+
+	err = wldev_iovar_setint(dev, "closednet", enable);
+	if (err < 0) {
+		WL_ERR(("failed to set closednet, error:%d\n", err));
+	}
+
+	return err;
+}
+#endif /* SUPPORT_HIDDEN_AP */
+
+#ifdef SUPPORT_SOFTAP_SINGL_DISASSOC
+static int
+wl_android_sta_diassoc(struct net_device *dev, const char* straddr)
+{
+	scb_val_t scbval;
+	int error  = 0;
+
+	DHD_INFO(("wl_android_sta_diassoc: deauth STA %s\n", straddr));
+
+	/* Unspecified reason */
+	scbval.val = htod32(1);
+
+	if (bcm_ether_atoe(straddr, &scbval.ea) == 0) {
+		DHD_ERROR(("wl_android_sta_diassoc: Invalid station MAC Address!!!\n"));
+		return -1;
+	}
+
+	DHD_ERROR(("wl_android_sta_diassoc: deauth STA: "MACDBG " scb_val.val %d\n",
+		MAC2STRDBG(scbval.ea.octet), scbval.val));
+
+	error = wldev_ioctl_set(dev, WLC_SCB_DEAUTHENTICATE_FOR_REASON, &scbval,
+		sizeof(scb_val_t));
+	if (error) {
+		DHD_ERROR(("Fail to DEAUTH station, error = %d\n", error));
+	}
+
+	return 1;
+}
+#endif /* SUPPORT_SOFTAP_SINGL_DISASSOC */
+
+#ifdef SUPPORT_SET_LPC
+static int
+wl_android_set_lpc(struct net_device *dev, const char* string_num)
+{
+	int lpc_enabled, ret;
+	s32 val = 1;
+
+	lpc_enabled = bcm_atoi(string_num);
+	DHD_INFO(("wl_android_set_lpc: HAPD_LPC_ENABLED = %d\n", lpc_enabled));
+
+	ret = wldev_ioctl_set(dev, WLC_DOWN, &val, sizeof(s32));
+	if (ret < 0)
+		DHD_ERROR(("WLC_DOWN error %d\n", ret));
+
+	wldev_iovar_setint(dev, "lpc", lpc_enabled);
+
+	ret = wldev_ioctl_set(dev, WLC_UP, &val, sizeof(s32));
+	if (ret < 0)
+		DHD_ERROR(("WLC_UP error %d\n", ret));
+
+	return 1;
+}
+#endif /* SUPPORT_SET_LPC */
+
+static int
+wl_android_ch_res_rl(struct net_device *dev, bool change)
+{
+	int error = 0;
+	s32 srl = 7;
+	s32 lrl = 4;
+	DHD_ERROR(("wl_android_ch_res_rl: enter\n"));
+	if (change) {
+		srl = 4;
+		lrl = 2;
+	}
+
+	BCM_REFERENCE(lrl);
+
+	error = wldev_ioctl_set(dev, WLC_SET_SRL, &srl, sizeof(s32));
+	if (error) {
+		DHD_ERROR(("Failed to set SRL, error = %d\n", error));
+	}
+#ifndef CUSTOM_LONG_RETRY_LIMIT
+	error = wldev_ioctl_set(dev, WLC_SET_LRL, &lrl, sizeof(s32));
+	if (error) {
+		DHD_ERROR(("Failed to set LRL, error = %d\n", error));
+	}
+#endif /* CUSTOM_LONG_RETRY_LIMIT */
+	return error;
+}
+
+#ifdef SUPPORT_LTECX
+#define DEFAULT_WLANRX_PROT	1
+#define DEFAULT_LTERX_PROT	0
+#define DEFAULT_LTETX_ADV	1200
+
+static int
+wl_android_set_ltecx(struct net_device *dev, const char* string_num)
+{
+	uint16 chan_bitmap;
+	int ret;
+
+	chan_bitmap = bcm_strtoul(string_num, NULL, 16);
+
+	DHD_INFO(("wl_android_set_ltecx: LTECOEX 0x%x\n", chan_bitmap));
+
+	if (chan_bitmap) {
+		ret = wldev_iovar_setint(dev, "mws_coex_bitmap", chan_bitmap);
+		if (ret < 0) {
+			DHD_ERROR(("mws_coex_bitmap error %d\n", ret));
+		}
+
+		ret = wldev_iovar_setint(dev, "mws_wlanrx_prot", DEFAULT_WLANRX_PROT);
+		if (ret < 0) {
+			DHD_ERROR(("mws_wlanrx_prot error %d\n", ret));
+		}
+
+		ret = wldev_iovar_setint(dev, "mws_lterx_prot", DEFAULT_LTERX_PROT);
+		if (ret < 0) {
+			DHD_ERROR(("mws_lterx_prot error %d\n", ret));
+		}
+
+		ret = wldev_iovar_setint(dev, "mws_ltetx_adv", DEFAULT_LTETX_ADV);
+		if (ret < 0) {
+			DHD_ERROR(("mws_ltetx_adv error %d\n", ret));
+		}
+	} else {
+		ret = wldev_iovar_setint(dev, "mws_coex_bitmap", chan_bitmap);
+		if (ret < 0) {
+			if (ret == BCME_UNSUPPORTED) {
+				DHD_ERROR(("LTECX_CHAN_BITMAP is UNSUPPORTED\n"));
+			} else {
+				DHD_ERROR(("LTECX_CHAN_BITMAP error %d\n", ret));
+			}
+		}
+	}
+	return 1;
+}
+#endif /* SUPPORT_LTECX */
+
+#ifdef WL_RELMCAST
+static int
+wl_android_rmc_enable(struct net_device *net, int rmc_enable)
+{
+	int err;
+
+	err = wldev_iovar_setint(net, "rmc_ackreq", rmc_enable);
+	if (err != BCME_OK) {
+		DHD_ERROR(("wl_android_rmc_enable: rmc_ackreq, error = %d\n", err));
+	}
+	return err;
+}
+
+static int
+wl_android_rmc_set_leader(struct net_device *dev, const char* straddr)
+{
+	int error  = BCME_OK;
+	char smbuf[WLC_IOCTL_SMLEN];
+	wl_rmc_entry_t rmc_entry;
+	DHD_INFO(("wl_android_rmc_set_leader: Set new RMC leader %s\n", straddr));
+
+	bzero(&rmc_entry, sizeof(wl_rmc_entry_t));
+	if (!bcm_ether_atoe(straddr, &rmc_entry.addr)) {
+		if (strlen(straddr) == 1 && bcm_atoi(straddr) == 0) {
+			DHD_INFO(("wl_android_rmc_set_leader: Set auto leader selection mode\n"));
+			bzero(&rmc_entry, sizeof(wl_rmc_entry_t));
+		} else {
+			DHD_ERROR(("wl_android_rmc_set_leader: No valid mac address provided\n"));
+			return BCME_ERROR;
+		}
+	}
+
+	error = wldev_iovar_setbuf(dev, "rmc_ar", &rmc_entry, sizeof(wl_rmc_entry_t),
+		smbuf, sizeof(smbuf), NULL);
+
+	if (error != BCME_OK) {
+		DHD_ERROR(("wl_android_rmc_set_leader: Unable to set RMC leader, error = %d\n",
+			error));
+	}
+
+	return error;
+}
+
+static int wl_android_set_rmc_event(struct net_device *dev, char *command)
+{
+	int err = 0;
+	int pid = 0;
+
+	if (sscanf(command, CMD_SET_RMC_EVENT " %d", &pid) <= 0) {
+		WL_ERR(("Failed to get Parameter from : %s\n", command));
+		return -1;
+	}
+
+	/* set pid, and if the event was happened, let's send a notification through netlink */
+	wl_cfg80211_set_rmc_pid(dev, pid);
+
+	WL_DBG(("RMC pid=%d\n", pid));
+
+	return err;
+}
+#endif /* WL_RELMCAST */
+
+int wl_android_get_singlecore_scan(struct net_device *dev, char *command, int total_len)
+{
+	int error = 0;
+	int bytes_written = 0;
+	int mode = 0;
+
+	error = wldev_iovar_getint(dev, "scan_ps", &mode);
+	if (error) {
+		DHD_ERROR(("wl_android_get_singlecore_scan: Failed to get single core scan Mode,"
+			" error = %d\n",
+			error));
+		return -1;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d", CMD_GET_SCSCAN, mode);
+
+	return bytes_written;
+}
+
+int wl_android_set_singlecore_scan(struct net_device *dev, char *command)
+{
+	int error = 0;
+	int mode = 0;
+
+	if (sscanf(command, "%*s %d", &mode) != 1) {
+		DHD_ERROR(("wl_android_set_singlecore_scan: Failed to get Parameter\n"));
+		return -1;
+	}
+
+	error = wldev_iovar_setint(dev, "scan_ps", mode);
+	if (error) {
+		DHD_ERROR(("wl_android_set_singlecore_scan[1]: Failed to set Mode %d, error = %d\n",
+		mode, error));
+		return -1;
+	}
+
+	return error;
+}
+#ifdef TEST_TX_POWER_CONTROL
+static int
+wl_android_set_tx_power(struct net_device *dev, const char* string_num)
+{
+	int err = 0;
+	s32 dbm;
+	enum nl80211_tx_power_setting type;
+
+	dbm = bcm_atoi(string_num);
+
+	if (dbm < -1) {
+		DHD_ERROR(("wl_android_set_tx_power: dbm is negative...\n"));
+		return -EINVAL;
+	}
+
+	if (dbm == -1)
+		type = NL80211_TX_POWER_AUTOMATIC;
+	else
+		type = NL80211_TX_POWER_FIXED;
+
+	err = wl_set_tx_power(dev, type, dbm);
+	if (unlikely(err)) {
+		DHD_ERROR(("wl_android_set_tx_power: error (%d)\n", err));
+		return err;
+	}
+
+	return 1;
+}
+
+static int
+wl_android_get_tx_power(struct net_device *dev, char *command, int total_len)
+{
+	int err;
+	int bytes_written;
+	s32 dbm = 0;
+
+	err = wl_get_tx_power(dev, &dbm);
+	if (unlikely(err)) {
+		DHD_ERROR(("wl_android_get_tx_power: error (%d)\n", err));
+		return err;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_TEST_GET_TX_POWER, dbm);
+
+	DHD_ERROR(("wl_android_get_tx_power: GET_TX_POWER: dBm=%d\n", dbm));
+
+	return bytes_written;
+}
+#endif /* TEST_TX_POWER_CONTROL */
+
+static int
+wl_android_set_sarlimit_txctrl(struct net_device *dev, const char* string_num)
+{
+	int err = BCME_ERROR;
+	int setval = 0;
+	s32 mode = bcm_atoi(string_num);
+	s32 mode_bit = 0;
+	int enab = 0;
+
+	/* As Samsung specific and their requirement,
+	 * the mode set as the following form.
+	 * -1 : HEAD SAR disabled
+	 *  0 : HEAD SAR enabled
+	 *  1 : GRIP SAR disabled
+	 *  2 : GRIP SAR enabled
+	 *  3 : NR mmWave SAR disabled
+	 *  4 : NR mmWave SAR enabled
+	 *  5 : NR Sub6 SAR disabled
+	 *  6 : NR Sub6 SAR enabled
+	 *  7 : SAR BACKOFF disabled all
+	 * The 'SAR BACKOFF disabled all' index should be the end of the mode.
+	 */
+	if ((mode < HEAD_SAR_BACKOFF_DISABLE) || (mode > SAR_BACKOFF_DISABLE_ALL)) {
+		DHD_ERROR(("%s: Request for Unsupported:%d\n", __FUNCTION__, bcm_atoi(string_num)));
+		err = BCME_RANGE;
+		goto error;
+	}
+
+	mode_bit = mode + 1;
+	enab = mode_bit % 2;
+	mode_bit = mode_bit / 2;
+
+	err = wldev_iovar_getint(dev, "sar_enable", &setval);
+	if (unlikely(err)) {
+		DHD_ERROR(("%s: Failed to get sar_enable - error (%d)\n", __FUNCTION__, err));
+		goto error;
+	}
+
+	if (mode == SAR_BACKOFF_DISABLE_ALL) {
+		DHD_ERROR(("%s: SAR limit control all mode disable!\n", __FUNCTION__));
+		setval = 0;
+	} else {
+		DHD_ERROR(("%s: SAR limit control mode %d enab %d\n",
+			__FUNCTION__, mode_bit, enab));
+		if (enab) {
+			setval |= (1 << mode_bit);
+		} else {
+			setval &= ~(1 << mode_bit);
+		}
+	}
+
+	err = wldev_iovar_setint(dev, "sar_enable", setval);
+	if (unlikely(err)) {
+		DHD_ERROR(("%s: Failed to set sar_enable - error (%d)\n", __FUNCTION__, err));
+		goto error;
+	}
+	err = BCME_OK;
+error:
+	return err;
+}
+
+#ifdef SUPPORT_SET_TID
+static int
+wl_android_set_tid(struct net_device *dev, char* command)
+{
+	int err = BCME_ERROR;
+	char *pos = command;
+	char *token = NULL;
+	uint8 mode = 0;
+	uint32 uid = 0;
+	uint8 prio = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	if (!dhdp) {
+		WL_ERR(("dhd is NULL\n"));
+		return err;
+	}
+
+	WL_DBG(("%s: command[%s]\n", __FUNCTION__, command));
+
+	/* drop command */
+	token = bcmstrtok(&pos, " ", NULL);
+
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		WL_ERR(("Invalid arguments\n"));
+		return err;
+	}
+
+	mode = bcm_atoi(token);
+
+	if (mode < SET_TID_OFF || mode > SET_TID_BASED_ON_UID) {
+		WL_ERR(("Invalid arguments, mode %d\n", mode));
+			return err;
+	}
+
+	if (mode) {
+		token = bcmstrtok(&pos, " ", NULL);
+		if (!token) {
+			WL_ERR(("Invalid arguments for target uid\n"));
+			return err;
+		}
+
+		uid = bcm_atoi(token);
+
+		token = bcmstrtok(&pos, " ", NULL);
+		if (!token) {
+			WL_ERR(("Invalid arguments for target tid\n"));
+			return err;
+		}
+
+		prio = bcm_atoi(token);
+		if (prio >= 0 && prio <= MAXPRIO) {
+			dhdp->tid_mode = mode;
+			dhdp->target_uid = uid;
+			dhdp->target_tid = prio;
+		} else {
+			WL_ERR(("Invalid arguments, prio %d\n", prio));
+			return err;
+		}
+	} else {
+		dhdp->tid_mode = SET_TID_OFF;
+		dhdp->target_uid = 0;
+		dhdp->target_tid = 0;
+	}
+
+	WL_DBG(("%s mode [%d], uid [%d], tid [%d]\n", __FUNCTION__,
+		dhdp->tid_mode, dhdp->target_uid, dhdp->target_tid));
+
+	err = BCME_OK;
+	return err;
+}
+
+static int
+wl_android_get_tid(struct net_device *dev, char* command, int total_len)
+{
+	int bytes_written = BCME_ERROR;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	if (!dhdp) {
+		WL_ERR(("dhd is NULL\n"));
+		return bytes_written;
+	}
+
+	bytes_written = snprintf(command, total_len, "mode %d uid %d tid %d",
+		dhdp->tid_mode, dhdp->target_uid, dhdp->target_tid);
+
+	WL_DBG(("%s: command results %s\n", __FUNCTION__, command));
+
+	return bytes_written;
+}
+#endif /* SUPPORT_SET_TID */
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 
 int wl_android_set_roam_mode(struct net_device *dev, char *command)
 {
@@ -3867,8 +8074,7 @@ wl_android_set_miracast(struct net_device *dev, char *command)
 			goto resume;
 		}
 
-// MOG-ON: CUSTOMER_HW10
-// MOG-OFF: CUSTOMER_HW10
+#ifndef CUSTOMER_HW10
 
 		/* tunr off pm */
 		ret = wldev_ioctl_get(dev, WLC_GET_PM, &val, sizeof(val));
@@ -3887,6 +8093,7 @@ wl_android_set_miracast(struct net_device *dev, char *command)
 				goto resume;
 			}
 		}
+#endif /* CUSTOMER_HW10 */
 		break;
 	case MIRACAST_MODE_OFF:
 	default:
@@ -3918,7 +8125,7 @@ static int wl_netlink_init(void)
 	struct netlink_kernel_cfg cfg = {
 		.input	= wl_netlink_recv,
 	};
-#endif // endif
+#endif
 
 	if (nl_sk != NULL) {
 		WL_ERR(("nl_sk already exist\n"));
@@ -3932,7 +8139,7 @@ static int wl_netlink_init(void)
 	nl_sk = netlink_kernel_create(&init_net, NETLINK_OXYGEN, THIS_MODULE, &cfg);
 #else
 	nl_sk = netlink_kernel_create(&init_net, NETLINK_OXYGEN, &cfg);
-#endif // endif
+#endif
 
 	if (nl_sk == NULL) {
 		WL_ERR(("nl_sk is not ready\n"));
@@ -3987,6 +8194,321 @@ wl_netlink_send_msg(int pid, int type, int seq, const void *data, size_t size)
 nlmsg_failure:
 	return ret;
 }
+
+#ifdef WLAIBSS
+static int wl_android_set_ibss_txfail_event(struct net_device *dev, char *command, int total_len)
+{
+	int err = 0;
+	int retry = 0;
+	int pid = 0;
+	aibss_txfail_config_t txfail_config = {0, 0, 0, 0, 0};
+	char smbuf[WLC_IOCTL_SMLEN];
+
+	if (sscanf(command, CMD_SETIBSSTXFAILEVENT " %d %d", &retry, &pid) <= 0) {
+		WL_ERR(("Failed to get Parameter from : %s\n", command));
+		return -1;
+	}
+
+	/* set pid, and if the event was happened, let's send a notification through netlink */
+	wl_cfg80211_set_txfail_pid(dev, pid);
+
+#ifdef WL_RELMCAST
+	/* using same pid for RMC, AIBSS shares same pid with RMC and it is set once */
+	wl_cfg80211_set_rmc_pid(dev, pid);
+#endif /* WL_RELMCAST */
+
+	/* If retry value is 0, it disables the functionality for TX Fail. */
+	if (retry > 0) {
+		txfail_config.max_tx_retry = retry;
+		txfail_config.bcn_timeout = 0;	/* 0 : disable tx fail from beacon */
+	}
+	txfail_config.version = AIBSS_TXFAIL_CONFIG_VER_0;
+	txfail_config.len = sizeof(txfail_config);
+
+	err = wldev_iovar_setbuf(dev, "aibss_txfail_config", (void *) &txfail_config,
+		sizeof(aibss_txfail_config_t), smbuf, WLC_IOCTL_SMLEN, NULL);
+	WL_DBG(("retry=%d, pid=%d, err=%d\n", retry, pid, err));
+
+	return ((err == 0)?total_len:err);
+}
+
+static int wl_android_get_ibss_peer_info(struct net_device *dev, char *command,
+	int total_len, bool bAll)
+{
+	int error;
+	int bytes_written = 0;
+	void *buf = NULL;
+	bss_peer_list_info_t peer_list_info;
+	bss_peer_info_t *peer_info;
+	int i;
+	bool found = false;
+	struct ether_addr mac_ea;
+	char *str = command;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	WL_DBG(("get ibss peer info(%s)\n", bAll?"true":"false"));
+
+	if (!bAll) {
+		if (bcmstrtok(&str, " ", NULL) == NULL) {
+			WL_ERR(("invalid command\n"));
+			return -1;
+		}
+
+		if (!str || !bcm_ether_atoe(str, &mac_ea)) {
+			WL_ERR(("invalid MAC address\n"));
+			return -1;
+		}
+	}
+
+	if ((buf = MALLOC(cfg->osh, WLC_IOCTL_MAXLEN)) == NULL) {
+		WL_ERR(("kmalloc failed\n"));
+		return -1;
+	}
+
+	error = wldev_iovar_getbuf(dev, "bss_peer_info", NULL, 0, buf, WLC_IOCTL_MAXLEN, NULL);
+	if (unlikely(error)) {
+		WL_ERR(("could not get ibss peer info (%d)\n", error));
+		MFREE(cfg->osh, buf, WLC_IOCTL_MAXLEN);
+		return -1;
+	}
+
+	memcpy(&peer_list_info, buf, sizeof(peer_list_info));
+	peer_list_info.version = htod16(peer_list_info.version);
+	peer_list_info.bss_peer_info_len = htod16(peer_list_info.bss_peer_info_len);
+	peer_list_info.count = htod32(peer_list_info.count);
+
+	WL_DBG(("ver:%d, len:%d, count:%d\n", peer_list_info.version,
+		peer_list_info.bss_peer_info_len, peer_list_info.count));
+
+	if (peer_list_info.count > 0) {
+		if (bAll)
+			bytes_written += snprintf(&command[bytes_written], total_len, "%u ",
+				peer_list_info.count);
+
+		peer_info = (bss_peer_info_t *) ((char *)buf + BSS_PEER_LIST_INFO_FIXED_LEN);
+
+		for (i = 0; i < peer_list_info.count; i++) {
+
+			WL_DBG(("index:%d rssi:%d, tx:%u, rx:%u\n", i, peer_info->rssi,
+				peer_info->tx_rate, peer_info->rx_rate));
+
+			if (!bAll &&
+				memcmp(&mac_ea, &peer_info->ea, sizeof(struct ether_addr)) == 0) {
+				found = true;
+			}
+
+			if (bAll || found) {
+				bytes_written += snprintf(&command[bytes_written],
+					total_len - bytes_written,
+					MACF" %u %d ", ETHER_TO_MACF(peer_info->ea),
+					peer_info->tx_rate/1000, peer_info->rssi);
+				if (bytes_written >= total_len) {
+					WL_ERR(("wl_android_get_ibss_peer_info: Insufficient"
+						" memory, %d bytes\n",
+						total_len));
+					bytes_written = -1;
+					break;
+				}
+			}
+
+			if (found)
+				break;
+
+			peer_info = (bss_peer_info_t *)((char *)peer_info+sizeof(bss_peer_info_t));
+		}
+	}
+	else {
+		WL_ERR(("could not get ibss peer info : no item\n"));
+	}
+	WL_DBG(("command(%u):%s\n", total_len, command));
+	WL_DBG(("bytes_written:%d\n", bytes_written));
+
+	MFREE(cfg->osh, buf, WLC_IOCTL_MAXLEN);
+	return bytes_written;
+}
+
+int wl_android_set_ibss_routetable(struct net_device *dev, char *command)
+{
+
+	char *pcmd = command;
+	char *str = NULL;
+	ibss_route_tbl_t *route_tbl = NULL;
+	char *ioctl_buf = NULL;
+	s32 err = BCME_OK;
+	uint32 route_tbl_len;
+	uint32 entries;
+	char *endptr;
+	uint32 i = 0;
+	struct ipv4_addr  dipaddr;
+	struct ether_addr ea;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	route_tbl_len = sizeof(ibss_route_tbl_t) +
+		(MAX_IBSS_ROUTE_TBL_ENTRY - 1) * sizeof(ibss_route_entry_t);
+	route_tbl = (ibss_route_tbl_t *)MALLOCZ(cfg->osh, route_tbl_len);
+	if (!route_tbl) {
+		WL_ERR(("Route TBL alloc failed\n"));
+		return -ENOMEM;
+	}
+	ioctl_buf = (char *)MALLOCZ(cfg->osh, WLC_IOCTL_MEDLEN);
+	if (!ioctl_buf) {
+		WL_ERR(("ioctl memory alloc failed\n"));
+		if (route_tbl) {
+			MFREE(cfg->osh, route_tbl, route_tbl_len);
+		}
+		return -ENOMEM;
+	}
+	bzero(ioctl_buf, WLC_IOCTL_MEDLEN);
+
+	/* drop command */
+	str = bcmstrtok(&pcmd, " ", NULL);
+
+	/* get count */
+	str = bcmstrtok(&pcmd, " ",  NULL);
+	if (!str) {
+		WL_ERR(("Invalid number parameter %s\n", str));
+		err = -EINVAL;
+		goto exit;
+	}
+	entries = bcm_strtoul(str, &endptr, 0);
+	if (*endptr != '\0') {
+		WL_ERR(("Invalid number parameter %s\n", str));
+		err = -EINVAL;
+		goto exit;
+	}
+	if (entries > MAX_IBSS_ROUTE_TBL_ENTRY) {
+		WL_ERR(("Invalid entries number %u\n", entries));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	WL_INFORM(("Routing table count:%u\n", entries));
+	route_tbl->num_entry = entries;
+
+	for (i = 0; i < entries; i++) {
+		str = bcmstrtok(&pcmd, " ", NULL);
+		if (!str || !bcm_atoipv4(str, &dipaddr)) {
+			WL_ERR(("Invalid ip string %s\n", str));
+			err = -EINVAL;
+			goto exit;
+		}
+
+		str = bcmstrtok(&pcmd, " ", NULL);
+		if (!str || !bcm_ether_atoe(str, &ea)) {
+			WL_ERR(("Invalid ethernet string %s\n", str));
+			err = -EINVAL;
+			goto exit;
+		}
+		bcopy(&dipaddr, &route_tbl->route_entry[i].ipv4_addr, IPV4_ADDR_LEN);
+		bcopy(&ea, &route_tbl->route_entry[i].nexthop, ETHER_ADDR_LEN);
+	}
+
+	route_tbl_len = sizeof(ibss_route_tbl_t) +
+		((!entries?0:(entries - 1)) * sizeof(ibss_route_entry_t));
+	err = wldev_iovar_setbuf(dev, "ibss_route_tbl",
+		route_tbl, route_tbl_len, ioctl_buf, WLC_IOCTL_MEDLEN, NULL);
+	if (err != BCME_OK) {
+		WL_ERR(("Fail to set iovar %d\n", err));
+		err = -EINVAL;
+	}
+
+exit:
+	if (route_tbl) {
+		MFREE(cfg->osh, route_tbl, sizeof(ibss_route_tbl_t) +
+			(MAX_IBSS_ROUTE_TBL_ENTRY - 1) * sizeof(ibss_route_entry_t));
+	}
+	if (ioctl_buf) {
+		MFREE(cfg->osh, ioctl_buf, WLC_IOCTL_MEDLEN);
+	}
+	return err;
+
+}
+
+int
+wl_android_set_ibss_ampdu(struct net_device *dev, char *command, int total_len)
+{
+	char *pcmd = command;
+	char *str = NULL, *endptr = NULL;
+	struct ampdu_aggr aggr;
+	char smbuf[WLC_IOCTL_SMLEN];
+	int idx;
+	int err = 0;
+	int wme_AC2PRIO[AC_COUNT][2] = {
+		{PRIO_8021D_VO, PRIO_8021D_NC},		/* AC_VO - 3 */
+		{PRIO_8021D_CL, PRIO_8021D_VI},		/* AC_VI - 2 */
+		{PRIO_8021D_BK, PRIO_8021D_NONE},	/* AC_BK - 1 */
+		{PRIO_8021D_BE, PRIO_8021D_EE}};	/* AC_BE - 0 */
+
+	WL_DBG(("set ibss ampdu:%s\n", command));
+
+	bzero(&aggr, sizeof(aggr));
+	/* Cofigure all priorities */
+	aggr.conf_TID_bmap = NBITMASK(NUMPRIO);
+
+	/* acquire parameters */
+	/* drop command */
+	str = bcmstrtok(&pcmd, " ", NULL);
+
+	for (idx = 0; idx < AC_COUNT; idx++) {
+		bool on;
+		str = bcmstrtok(&pcmd, " ", NULL);
+		if (!str) {
+			WL_ERR(("Invalid parameter : %s\n", pcmd));
+			return -EINVAL;
+		}
+		on = bcm_strtoul(str, &endptr, 0) ? TRUE : FALSE;
+		if (*endptr != '\0') {
+			WL_ERR(("Invalid number format %s\n", str));
+			return -EINVAL;
+		}
+		if (on) {
+			setbit(&aggr.enab_TID_bmap, wme_AC2PRIO[idx][0]);
+			setbit(&aggr.enab_TID_bmap, wme_AC2PRIO[idx][1]);
+		}
+	}
+
+	err = wldev_iovar_setbuf(dev, "ampdu_txaggr", (void *)&aggr,
+	sizeof(aggr), smbuf, WLC_IOCTL_SMLEN, NULL);
+
+	return ((err == 0) ? total_len : err);
+}
+
+int wl_android_set_ibss_antenna(struct net_device *dev, char *command, int total_len)
+{
+	char *pcmd = command;
+	char *str = NULL;
+	int txchain, rxchain;
+	int err = 0;
+
+	WL_DBG(("set ibss antenna:%s\n", command));
+
+	/* acquire parameters */
+	/* drop command */
+	str = bcmstrtok(&pcmd, " ", NULL);
+
+	/* TX chain */
+	str = bcmstrtok(&pcmd, " ", NULL);
+	if (!str) {
+		WL_ERR(("Invalid parameter : %s\n", pcmd));
+		return -EINVAL;
+	}
+	txchain = bcm_atoi(str);
+
+	/* RX chain */
+	str = bcmstrtok(&pcmd, " ", NULL);
+	if (!str) {
+		WL_ERR(("Invalid parameter : %s\n", pcmd));
+		return -EINVAL;
+	}
+	rxchain = bcm_atoi(str);
+
+	err = wldev_iovar_setint(dev, "txchain", txchain);
+	if (err != 0)
+		return err;
+	err = wldev_iovar_setint(dev, "rxchain", rxchain);
+	return ((err == 0)?total_len:err);
+}
+#endif /* WLAIBSS */
 
 int wl_keep_alive_set(struct net_device *dev, char* extra)
 {
@@ -4626,11 +9148,6 @@ wl_android_set_irq_cpucore(struct net_device *net, int affinity_cmd)
 	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(net);
 	if (!dhdp) {
 		WL_ERR(("dhd is NULL\n"));
-		return;
-	}
-
-	if (affinity_cmd < PCIE_IRQ_AFFINITY_OFF || affinity_cmd > PCIE_IRQ_AFFINITY_LAST) {
-		WL_ERR(("Wrong Affinity cmds:%d, %s\n", affinity_cmd, __FUNCTION__));
 		return;
 	}
 
@@ -5458,7 +9975,7 @@ uint32 dhd_event_log_filter_serialize(dhd_pub_t *dhdp, char *buf, uint32 tot_len
 #ifdef DHD_EWPR_VER2
 uint32 dhd_event_log_filter_serialize_bit(dhd_pub_t *dhdp, char *buf, uint32 tot_len,
 	int index1, int index2, int index3);
-#endif // endif
+#endif
 
 static int
 wl_android_ewp_filter(struct net_device *dev, char *command, uint32 tot_len)
@@ -5471,11 +9988,16 @@ wl_android_ewp_filter(struct net_device *dev, char *command, uint32 tot_len)
 		strlen(CMD_EWP_FILTER) + 1);
 #else
 	int type = 0;
-#endif // endif
+#endif
 
 	if (!dhdp || !command) {
 		DHD_ERROR(("%s(): dhdp=%p \n", __FUNCTION__, dhdp));
 		return -EINVAL;
+	}
+
+	if (!FW_SUPPORTED(dhdp, ecounters)) {
+		DHD_ERROR(("does not support ecounters!\n"));
+		return BCME_UNSUPPORTED;
 	}
 
 #ifdef DHD_EWPR_VER2
@@ -5492,7 +10014,7 @@ wl_android_ewp_filter(struct net_device *dev, char *command, uint32 tot_len)
 
 	bytes_written += dhd_event_log_filter_serialize(dhdp,
 		&command[bytes_written], tot_len - bytes_written, type);
-#endif // endif
+#endif
 
 	return (int)bytes_written;
 }
@@ -5762,11 +10284,16 @@ wl_android_set_adps_mode(struct net_device *dev, const char* string_num)
 {
 	int err = 0, adps_mode;
 	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+#ifdef DHD_PM_CONTROL_FROM_FILE
+	if (g_pm_control) {
+		return -EPERM;
+	}
+#endif	/* DHD_PM_CONTROL_FROM_FILE */
 
 	adps_mode = bcm_atoi(string_num);
 	WL_ERR(("%s: SET_ADPS %d\n", __FUNCTION__, adps_mode));
 
-	if ((adps_mode < 0) && (1 < adps_mode)) {
+	if (!(adps_mode == 0 || adps_mode == 1)) {
 		WL_ERR(("wl_android_set_adps_mode: Invalid value %d.\n", adps_mode));
 		return -EINVAL;
 	}
@@ -5832,18 +10359,18 @@ wl_android_get_gain_adps(
 {
 	int bytes_written;
 
-	int energy_gain = 0;
+	int ret = 0;
 	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
 
-	energy_gain = dhd_event_log_filter_adps_energy_gain(dhdp);
-	if (energy_gain < 0) {
-		energy_gain = 0;
+	ret = dhd_event_log_filter_adps_energy_gain(dhdp);
+	if (ret < 0) {
+		return ret;
 	}
 
-	WL_ERR(("%s ADPS Energy Gain: %d uAh\n", __FUNCTION__, energy_gain));
+	WL_INFORM(("%s ADPS Energy Gain: %d uAh\n", __FUNCTION__, ret));
 
 	bytes_written = snprintf(command, total_len, "%s %d uAm",
-		CMD_GET_GAIN_ADPS, energy_gain);
+		CMD_GET_GAIN_ADPS, ret);
 
 	return bytes_written;
 }
@@ -5914,6 +10441,7 @@ static int
 _wl_android_bcnrecv_start(struct bcm_cfg80211 *cfg, struct net_device *ndev, bool user_trigger)
 {
 	s32 err = BCME_OK;
+	struct net_device *pdev = bcmcfg_to_prmry_ndev(cfg);
 
 	/* check any scan is in progress before beacon recv scan trigger IOVAR */
 	if (wl_get_drv_status_all(cfg, SCANNING)) {
@@ -5956,14 +10484,15 @@ _wl_android_bcnrecv_start(struct bcm_cfg80211 *cfg, struct net_device *ndev, boo
 #endif /* WL_NAN */
 
 	/* Triggering an sendup_bcn iovar */
-	err = wldev_iovar_setint(ndev, "sendup_bcn", 1);
+	err = wldev_iovar_setint(pdev, "sendup_bcn", 1);
 	if (unlikely(err)) {
 		WL_ERR(("sendup_bcn failed to set, error:%d\n", err));
 	} else {
 		cfg->bcnrecv_info.bcnrecv_state = BEACON_RECV_STARTED;
-		WL_INFORM_MEM(("bcnrecv started. user_trigger:%d\n", user_trigger));
+		WL_INFORM_MEM(("bcnrecv started. user_trigger:%d ifindex:%d\n",
+			user_trigger, ndev->ifindex));
 		if (user_trigger) {
-			if ((err = wl_android_bcnrecv_event(ndev, BCNRECV_ATTR_STATUS,
+			if ((err = wl_android_bcnrecv_event(pdev, BCNRECV_ATTR_STATUS,
 					WL_BCNRECV_STARTED, 0, NULL, 0)) != BCME_OK) {
 				WL_ERR(("failed to send bcnrecv event, error:%d\n", err));
 			}
@@ -5988,13 +10517,11 @@ _wl_android_bcnrecv_stop(struct bcm_cfg80211 *cfg, struct net_device *ndev, uint
 {
 	s32 err = BCME_OK;
 	u32 status;
+	struct net_device *pdev = bcmcfg_to_prmry_ndev(cfg);
 
-	/* Send sendup_bcn iovar for all cases except W_BCNRECV_ROAMABORT reason -
-	 * fw generates roam abort event after aborting the bcnrecv.
-	 */
+	/* Stop bcnrx except for fw abort event case */
 	if (reason != WL_BCNRECV_ROAMABORT) {
-		/* Triggering an sendup_bcn iovar */
-		err = wldev_iovar_setint(ndev, "sendup_bcn", 0);
+		err = wldev_iovar_setint(pdev, "sendup_bcn", 0);
 		if (unlikely(err)) {
 			WL_ERR(("sendup_bcn failed to set error:%d\n", err));
 			goto exit;
@@ -6007,14 +10534,15 @@ _wl_android_bcnrecv_stop(struct bcm_cfg80211 *cfg, struct net_device *ndev, uint
 		status = WL_BCNRECV_SUSPENDED;
 	} else {
 		cfg->bcnrecv_info.bcnrecv_state = BEACON_RECV_STOPPED;
-		WL_INFORM_MEM(("bcnrecv stopped\n"));
+		WL_INFORM_MEM(("bcnrecv stopped. reason:%d ifindex:%d\n",
+			reason, ndev->ifindex));
 		if (reason == WL_BCNRECV_USER_TRIGGER) {
 			status = WL_BCNRECV_STOPPED;
 		} else {
 			status = WL_BCNRECV_ABORTED;
 		}
 	}
-	if ((err = wl_android_bcnrecv_event(ndev, BCNRECV_ATTR_STATUS, status,
+	if ((err = wl_android_bcnrecv_event(pdev, BCNRECV_ATTR_STATUS, status,
 			reason, NULL, 0)) != BCME_OK) {
 		WL_ERR(("failed to send bcnrecv event, error:%d\n", err));
 	}
@@ -6128,22 +10656,30 @@ exit:
 #endif /* WL_BCNRECV */
 
 #ifdef SUPPORT_LATENCY_CRITICAL_DATA
-#define DISABLE_LATENCY_CRT_DATA	0
-#define ENABLE_LATENCY_CRT_DATA		1
 static int
-wl_android_set_latency_crt_data(struct net_device *dev, int enable)
+wl_android_set_latency_crt_data(struct net_device *dev, int mode)
 {
 	int ret;
-
-	if (!(enable == DISABLE_LATENCY_CRT_DATA ||
-		enable == ENABLE_LATENCY_CRT_DATA)) {
+#ifdef DHD_GRO_ENABLE_HOST_CTRL
+	dhd_pub_t *dhdp = NULL;
+#endif /* DHD_GRO_ENABLE_HOST_CTRL */
+	if (mode >= LATENCY_CRT_DATA_MODE_LAST) {
 		return BCME_BADARG;
 	}
-
-	ret = wldev_iovar_setint(dev, "latency_critical_data", enable);
+#ifdef DHD_GRO_ENABLE_HOST_CTRL
+	dhdp = wl_cfg80211_get_dhdp(dev);
+	if (mode != LATENCY_CRT_DATA_MODE_OFF) {
+		WL_ERR(("Not permitted GRO by framework\n"));
+		dhdp->permitted_gro = FALSE;
+	} else {
+		WL_ERR(("Permitted GRO by framework\n"));
+		dhdp->permitted_gro = TRUE;
+	}
+#endif /* DHD_GRO_ENABLE_HOST_CTRL */
+	ret = wldev_iovar_setint(dev, "latency_critical_data", mode);
 	if (ret != BCME_OK) {
-		WL_ERR(("failed to set latency_critical_data enable %d, error = %d\n",
-			enable, ret));
+		WL_ERR(("failed to set latency_critical_data mode %d, error = %d\n",
+			mode, ret));
 		return ret;
 	}
 
@@ -6154,17 +10690,17 @@ static int
 wl_android_get_latency_crt_data(struct net_device *dev, char *command, int total_len)
 {
 	int ret;
-	int enable = DISABLE_LATENCY_CRT_DATA;
+	int mode = LATENCY_CRT_DATA_MODE_OFF;
 	int bytes_written;
 
-	ret = wldev_iovar_getint(dev, "latency_critical_data", &enable);
+	ret = wldev_iovar_getint(dev, "latency_critical_data", &mode);
 	if (ret != BCME_OK) {
 		WL_ERR(("failed to get latency_critical_data error = %d\n", ret));
 		return ret;
 	}
 
 	bytes_written = snprintf(command, total_len, "%s %d",
-		CMD_GET_LATENCY_CRITICAL_DATA, enable);
+		CMD_GET_LATENCY_CRITICAL_DATA, mode);
 
 	return bytes_written;
 }
@@ -6557,7 +11093,7 @@ wl_android_set_softap_ax_mode(struct net_device *dev, const char* cmd_str)
 	}
 
 	WL_INFORM(("HAPD_SET_AX_MODE = %d\n", enable));
-	err = wl_cfg80211_set_he_mode(dev, cfg, bssidx, WL_IF_TYPE_AP, (bool)enable);
+	err = wl_cfg80211_set_he_mode(dev, cfg, bssidx, WL_HE_FEATURES_HE_AP, (bool)enable);
 	if (err) {
 		WL_ERR(("failed to set softap ax mode(%d)\n", enable));
 
@@ -6565,6 +11101,772 @@ wl_android_set_softap_ax_mode(struct net_device *dev, const char* cmd_str)
 exit :
 	return err;
 }
+
+#ifdef WL_TWT
+
+static int
+wl_android_twt_setup(struct net_device *ndev, char *command, int total_len)
+{
+	wl_twt_config_t val;
+	s32 bw;
+	char *token, *pos;
+	u8 mybuf[WLC_IOCTL_SMLEN] = {0};
+	u8 resp_buf[WLC_IOCTL_SMLEN] = {0};
+	u64 twt;
+	uint8 *rem = mybuf;
+	uint16 rem_len = sizeof(mybuf);
+	int32 val32;
+
+	WL_DBG_MEM(("Enter. cmd:%s\n", command));
+
+	if (strlen(command) == strlen(CMD_TWT_SETUP)) {
+		WL_ERR(("Error, twt_setup cmd  missing params\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+
+	bzero(&val, sizeof(val));
+	val.version = WL_TWT_SETUP_VER;
+	val.length = sizeof(val.version) + sizeof(val.length);
+
+	/* Default values, Overide Below */
+	val.desc.wake_time_h = 0xFFFFFFFF;
+	val.desc.wake_time_l = 0xFFFFFFFF;
+	val.desc.wake_int_min = 0xFFFFFFFF;
+	val.desc.wake_int_max = 0xFFFFFFFF;
+	val.desc.wake_dur_min = 0xFFFFFFFF;
+	val.desc.wake_dur_max = 0xFFFFFFFF;
+	val.desc.avg_pkt_num  = 0xFFFFFFFF;
+
+	pos = command + sizeof(CMD_TWT_SETUP);
+
+	/* negotiation_type */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandatory param negotiation type not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	val.desc.negotiation_type  = htod32((u32)bcm_atoi(token));
+
+	/* Wake Duration */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandatory param wake Duration not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	val.desc.wake_dur = htod32((u32)bcm_atoi(token));
+
+	/* Wake interval */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandaory param Wake Interval not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	val.desc.wake_int = htod32((u32)bcm_atoi(token));
+
+	/* Wake Time parameter */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("No Wake Time parameter provided, using default\n"));
+	} else {
+		twt = (u64)bcm_atoi(token);
+		val32 = htod32((u32)(twt >> 32));
+		if ((val32 != -1) && ((int32)(htod32((u32)twt)) != -1)) {
+			val.desc.wake_time_h = htod32((u32)(twt >> 32));
+			val.desc.wake_time_l = htod32((u32)twt);
+		}
+	}
+
+	/* Minimum allowed Wake interval */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("No Minimum allowed Wake interval provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.desc.wake_int_min = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* Max Allowed Wake interval */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Maximum allowed Wake interval not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.desc.wake_int_max = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* Minimum allowed Wake duration */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Maximum allowed Wake duration not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.desc.wake_dur_min = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* Maximum allowed Wake duration */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Maximum allowed Wake duration not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.desc.wake_dur_max = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* Average number of packets */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Average number of packets not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.desc.avg_pkt_num  = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* a peer_address */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Average number of packets not provided, using default\n"));
+	} else {
+		/* get peer mac */
+		if (!bcm_ether_atoe(token, &val.peer)) {
+			DHD_ERROR(("%s : Malformed peer addr\n", __FUNCTION__));
+			bw = BCME_ERROR;
+			goto exit;
+		}
+	}
+
+	bw = bcm_pack_xtlv_entry(&rem, &rem_len, WL_TWT_CMD_CONFIG,
+			sizeof(val), (uint8 *)&val, BCM_XTLV_OPTION_ALIGN32);
+	if (bw != BCME_OK) {
+		goto exit;
+	}
+
+	bw = wldev_iovar_setbuf(ndev, "twt",
+		mybuf, sizeof(mybuf) - rem_len, resp_buf, WLC_IOCTL_SMLEN, NULL);
+	if (bw < 0) {
+		WL_ERR(("twt config set failed. ret:%d\n", bw));
+	}
+exit:
+	return bw;
+}
+
+static int
+wl_android_twt_display_cap(wl_twt_cap_t *result, char *command, int total_len)
+{
+	int rem_len = 0, bytes_written = 0;
+
+	rem_len = total_len;
+	bytes_written = scnprintf(command, rem_len, "Device TWT Capabilities:\n");
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Requester Support %d, \t",
+			!!(result->device_cap & WL_TWT_CAP_FLAGS_REQ_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Responder Support %d, \t",
+			!!(result->device_cap & WL_TWT_CAP_FLAGS_RESP_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Broadcast TWT Support %d, \t",
+			!!(result->device_cap & WL_TWT_CAP_FLAGS_BTWT_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Flexible TWT Support %d, \t",
+			!!(result->device_cap & WL_TWT_CAP_FLAGS_FLEX_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "TWT Required by peer %d, \n",
+			!!(result->device_cap & WL_TWT_CAP_FLAGS_TWT_REQUIRED));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	/* Peer capabilities */
+	bytes_written = scnprintf(command, rem_len, "\nPeer TWT Capabilities:\n");
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Requester Support %d, \t",
+			!!(result->peer_cap & WL_TWT_CAP_FLAGS_REQ_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Responder Support %d, \t",
+			!!(result->peer_cap & WL_TWT_CAP_FLAGS_RESP_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Broadcast TWT Support %d, \t",
+			!!(result->peer_cap & WL_TWT_CAP_FLAGS_BTWT_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "Flexible TWT Support %d, \t",
+			!!(result->peer_cap & WL_TWT_CAP_FLAGS_FLEX_SUPPORT));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "TWT Required by peer %d, \n",
+			!!(result->peer_cap & WL_TWT_CAP_FLAGS_TWT_REQUIRED));
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	bytes_written = scnprintf(command, rem_len, "\t------------"
+		"---------------------------------------------------\n\n");
+	command += bytes_written;
+	rem_len -= bytes_written;
+	WL_DBG(("Device TWT Capabilities:\n"));
+	WL_DBG(("Requester Support %d, \t",
+		!!(result->device_cap & WL_TWT_CAP_FLAGS_REQ_SUPPORT)));
+	WL_DBG(("Responder Support %d, \t",
+		!!(result->device_cap & WL_TWT_CAP_FLAGS_RESP_SUPPORT)));
+	WL_DBG(("Broadcast TWT Support %d, \t",
+		!!(result->device_cap & WL_TWT_CAP_FLAGS_BTWT_SUPPORT)));
+	WL_DBG(("Flexible TWT Support %d, \t",
+		!!(result->device_cap & WL_TWT_CAP_FLAGS_FLEX_SUPPORT)));
+	WL_DBG(("TWT Required by peer %d, \n",
+		!!(result->device_cap & WL_TWT_CAP_FLAGS_TWT_REQUIRED)));
+	/* Peer capabilities */
+	WL_DBG(("\nPeer TWT Capabilities:\n"));
+	WL_DBG(("Requester Support %d, \t",
+		!!(result->peer_cap & WL_TWT_CAP_FLAGS_REQ_SUPPORT)));
+	WL_DBG(("Responder Support %d, \t",
+		!!(result->peer_cap & WL_TWT_CAP_FLAGS_RESP_SUPPORT)));
+	WL_DBG(("Broadcast TWT Support %d, \t",
+		!!(result->peer_cap & WL_TWT_CAP_FLAGS_BTWT_SUPPORT)));
+	WL_DBG(("Flexible TWT Support %d, \t",
+		!!(result->peer_cap & WL_TWT_CAP_FLAGS_FLEX_SUPPORT)));
+	WL_DBG(("TWT Required by peer %d, \n",
+		!!(result->peer_cap & WL_TWT_CAP_FLAGS_TWT_REQUIRED)));
+	WL_DBG(("\t-----------------------------------------------------------------\n\n"));
+
+	if ((total_len - rem_len) > 0) {
+		return (total_len - rem_len);
+	} else {
+		return BCME_ERROR;
+	}
+}
+
+static int
+wl_android_twt_cap(struct net_device *dev, char *command, int total_len)
+{
+	int ret = BCME_OK;
+	char iovbuf[WLC_IOCTL_SMLEN] = {0, };
+	uint8 *pxtlv = NULL;
+	uint8 *iovresp = NULL;
+	wl_twt_cap_cmd_t cmd_cap;
+	wl_twt_cap_t result;
+
+	uint16 buflen = 0, bufstart = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	bzero(&cmd_cap, sizeof(cmd_cap));
+
+	cmd_cap.version = WL_TWT_CAP_CMD_VERSION_1;
+	cmd_cap.length = sizeof(cmd_cap) - OFFSETOF(wl_twt_cap_cmd_t, peer);
+
+	iovresp = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_MEDLEN);
+	if (iovresp == NULL) {
+		DHD_ERROR(("%s: iov resp memory alloc exited\n", __FUNCTION__));
+		goto exit;
+	}
+
+	buflen = bufstart = WLC_IOCTL_SMLEN;
+	pxtlv = (uint8 *)iovbuf;
+
+	ret = bcm_pack_xtlv_entry(&pxtlv, &buflen, WL_TWT_CMD_CAP,
+			sizeof(cmd_cap), (uint8 *)&cmd_cap, BCM_XTLV_OPTION_ALIGN32);
+	if (ret != BCME_OK) {
+		DHD_ERROR(("%s : Error return during pack xtlv :%d\n", __FUNCTION__, ret));
+		goto exit;
+	}
+
+	if ((ret = wldev_iovar_getbuf(dev, "twt", iovbuf, bufstart-buflen,
+		iovresp, WLC_IOCTL_MEDLEN, NULL))) {
+		DHD_ERROR(("Getting twt status failed with err=%d \n", ret));
+		goto exit;
+	}
+	if (ret) {
+		DHD_ERROR(("%s : Error return during twt iovar set :%d\n", __FUNCTION__, ret));
+	}
+
+	(void)memcpy_s(&result, sizeof(result), iovresp, sizeof(result));
+
+	if (dtoh16(result.version) == WL_TWT_CAP_CMD_VERSION_1) {
+		DHD_ERROR(("capability ver %d, \n", dtoh16(result.version)));
+		ret = wl_android_twt_display_cap(&result, command, total_len);
+		return ret;
+	} else {
+		ret = BCME_UNSUPPORTED;
+		DHD_ERROR(("Version 1 unsupported. ver %d, \n", dtoh16(result.version)));
+		goto exit;
+	}
+
+exit:
+	if (iovresp) {
+		MFREE(cfg->osh, iovresp, WLC_IOCTL_MEDLEN);
+	}
+
+	return ret;
+}
+
+static int
+wl_android_twt_status_display_v1(wl_twt_status_v1_t *status, char *command, int total_len)
+{
+	uint i;
+	wl_twt_sdesc_t *desc = NULL;
+	int rem_len = 0, bytes_written = 0;
+
+	rem_len = total_len;
+
+	DHD_ERROR(("\nNumber of Individual TWTs: %d\n", status->num_fid));
+	bytes_written = scnprintf(command, rem_len,
+			"\nNumber of Individual TWTs: %d\n", status->num_fid);
+	command += bytes_written;
+	rem_len -= bytes_written;
+	bytes_written = scnprintf(command, rem_len,
+			"Number of Broadcast TWTs: %d\n", status->num_bid);
+	command += bytes_written;
+	rem_len -= bytes_written;
+	bytes_written = scnprintf(command, rem_len,
+			"TWT SPPS Enabled %d \t STA Wake Status %d \t Wake Override %d\n",
+			!!(status->status_flags & WL_TWT_STATUS_FLAG_SPPS_ENAB),
+			!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_STATE),
+			!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_OVERRIDE));
+	command += bytes_written;
+	rem_len -= bytes_written;
+	WL_DBG(("Number of Broadcast TWTs: %d\n", status->num_bid));
+	WL_DBG(("TWT SPPS Enabled %d \t STA Wake Status %d \t Wake Override %d\n",
+		!!(status->status_flags & WL_TWT_STATUS_FLAG_SPPS_ENAB),
+		!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_STATE),
+		!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_OVERRIDE)));
+	WL_DBG(("\t---------------- Individual TWT list-------------------\n"));
+	bytes_written = scnprintf(command, rem_len,
+			"\t---------------- Individual TWT list-------------------\n");
+	command += bytes_written;
+	rem_len -= bytes_written;
+
+	for (i = 0; i < WL_TWT_MAX_ITWT; i ++) {
+		if ((status->itwt_status[i].state == WL_TWT_ACTIVE) ||
+			(status->itwt_status[i].state == WL_TWT_SUSPEND)) {
+			desc = &status->itwt_status[i].desc;
+			bytes_written = scnprintf(command, rem_len, "\tFlow ID %d \tState %d\t",
+					desc->flow_id,
+					status->itwt_status[i].state);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"peer: "MACF"\n",
+					ETHER_TO_MACF(status->itwt_status[i].peer));
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"Unannounced %d\tTriggered %d\tProtection %d\t"
+					"Info Frame Disabled %d\n",
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED));
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"target wake time: 0x%08x%08x\t",
+					desc->wake_time_h, desc->wake_time_l);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"wake duration: %u\t", desc->wake_dur);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"wake interval: %u\t", desc->wake_int);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"TWT channel: %u\n", desc->channel);
+			command += bytes_written;
+			rem_len -= bytes_written;
+			WL_DBG(("\tFlow ID %d \tState %d\t",
+				desc->flow_id,
+				status->itwt_status[i].state));
+			WL_DBG(("peer: "MACF"\n", ETHER_TO_MACF(status->itwt_status[i].peer)));
+			WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
+				"Info Frame Disabled %d\n",
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
+			WL_DBG(("target wake time: 0x%08x%08x\t",
+				desc->wake_time_h, desc->wake_time_l));
+			WL_DBG(("wake duration: %u\t", desc->wake_dur));
+			WL_DBG(("wake interval: %u\t", desc->wake_int));
+			WL_DBG(("TWT channel: %u\n", desc->channel));
+		}
+	}
+
+	WL_DBG(("\t---------------- Broadcast TWT list-------------------\n"));
+	bytes_written = scnprintf(command, rem_len,
+			"\t---------------- Broadcast TWT list-------------------\n");
+	command += bytes_written;
+	rem_len -= bytes_written;
+	for (i = 0; i < WL_TWT_MAX_BTWT; i ++) {
+		if ((status->btwt_status[i].state == WL_TWT_ACTIVE) ||
+			(status->btwt_status[i].state == WL_TWT_SUSPEND)) {
+			desc = &status->btwt_status[i].desc;
+			bytes_written = scnprintf(command, rem_len,
+					"Broadcast ID %d \tState %d\t",
+					desc->bid, status->btwt_status[i].state);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"peer: "MACF"\n",
+					ETHER_TO_MACF(status->btwt_status[i].peer));
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"Unannounced %d\tTriggered %d\tProtection %d\t"
+					"Info Frame Disabled %d\t",
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED));
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"Frame Recommendation %d\tBTWT Persistence %d\n",
+					desc->frame_recomm, desc->btwt_persistence);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"target wake time: 0x%08x%08x\t",
+					desc->wake_time_h, desc->wake_time_l);
+			command += bytes_written;
+			rem_len -= bytes_written;
+			bytes_written = scnprintf(command, rem_len,
+					"wake duration: %u\t", desc->wake_dur);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"wake interval: %u\t", desc->wake_int);
+			command += bytes_written;
+			rem_len -= bytes_written;
+
+			bytes_written = scnprintf(command, rem_len,
+					"TWT channel: %u\n", desc->channel);
+			command += bytes_written;
+			rem_len -= bytes_written;
+			WL_DBG(("Broadcast ID %d \tState %d\t",
+				desc->bid, status->btwt_status[i].state));
+			WL_DBG(("peer: "MACF"\n", ETHER_TO_MACF(status->btwt_status[i].peer)));
+			WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
+				"Info Frame Disabled %d\t",
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
+			WL_DBG(("Frame Recommendation %d\tBTWT Persistence %d\n",
+				desc->frame_recomm, desc->btwt_persistence));
+			WL_DBG(("target wake time: 0x%08x%08x\t",
+				desc->wake_time_h, desc->wake_time_l));
+			WL_DBG(("wake duration: %u\t", desc->wake_dur));
+			WL_DBG(("wake interval: %u\t", desc->wake_int));
+			WL_DBG(("TWT channel: %u\n", desc->channel));
+		}
+	}
+
+	if ((total_len - rem_len) > 0) {
+		return (total_len - rem_len);
+	} else {
+		return BCME_ERROR;
+	}
+}
+
+static int
+wl_android_twt_status_query(struct net_device *dev, char *command, int total_len)
+{
+	int ret = BCME_OK;
+	char iovbuf[WLC_IOCTL_SMLEN] = {0, };
+	uint8 *pxtlv = NULL;
+	uint8 *iovresp = NULL;
+	wl_twt_status_cmd_v1_t status_cmd;
+	wl_twt_status_v1_t result;
+
+	uint16 buflen = 0, bufstart = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	bzero(&status_cmd, sizeof(status_cmd));
+
+	status_cmd.version = WL_TWT_CMD_STATUS_VERSION_1;
+	status_cmd.length = sizeof(status_cmd) - OFFSETOF(wl_twt_status_cmd_v1_t, peer);
+
+	iovresp = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_MEDLEN);
+	if (iovresp == NULL) {
+		DHD_ERROR(("%s: iov resp memory alloc exited\n", __FUNCTION__));
+		goto exit;
+	}
+
+	buflen = bufstart = WLC_IOCTL_SMLEN;
+	pxtlv = (uint8 *)iovbuf;
+
+	ret = bcm_pack_xtlv_entry(&pxtlv, &buflen, WL_TWT_CMD_STATUS,
+			sizeof(status_cmd), (uint8 *)&status_cmd, BCM_XTLV_OPTION_ALIGN32);
+	if (ret != BCME_OK) {
+		DHD_ERROR(("%s : Error return during pack xtlv :%d\n", __FUNCTION__, ret));
+		goto exit;
+	}
+
+	if ((ret = wldev_iovar_getbuf(dev, "twt", iovbuf, bufstart-buflen,
+		iovresp, WLC_IOCTL_MEDLEN, NULL))) {
+		DHD_ERROR(("Getting twt status failed with err=%d \n", ret));
+		goto exit;
+	}
+	if (ret) {
+		DHD_ERROR(("%s : Error return during twt iovar set :%d\n", __FUNCTION__, ret));
+	}
+
+	(void)memcpy_s(&result, sizeof(result), iovresp, sizeof(result));
+
+	if (dtoh16(result.version) == WL_TWT_CMD_STATUS_VERSION_1) {
+		DHD_ERROR(("status query ver %d, \n", dtoh16(result.version)));
+		ret = wl_android_twt_status_display_v1(&result, command, total_len);
+		return ret;
+	} else {
+		ret = BCME_UNSUPPORTED;
+		DHD_ERROR(("Version 1 unsupported. ver %d, \n", dtoh16(result.version)));
+		goto exit;
+	}
+
+exit:
+	if (iovresp) {
+		MFREE(cfg->osh, iovresp, WLC_IOCTL_MEDLEN);
+	}
+
+	return ret;
+}
+
+static int
+wl_android_twt_info(struct net_device *ndev, char *command, int total_len)
+{
+	wl_twt_info_t val;
+	s32 bw;
+	char *token, *pos;
+	u8 mybuf[WLC_IOCTL_SMLEN] = {0};
+	u8 res_buf[WLC_IOCTL_SMLEN] = {0};
+	u64 twt;
+	uint8 *rem = mybuf;
+	uint16 rem_len = sizeof(mybuf);
+	int32 val32;
+
+	WL_DBG_MEM(("Enter. cmd:%s\n", command));
+
+	if (strlen(command) == strlen(CMD_TWT_INFO)) {
+		WL_ERR(("Error, twt teardown cmd missing params\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+
+	bzero(&val, sizeof(val));
+	val.version = WL_TWT_INFO_VER;
+	val.length = sizeof(val.version) + sizeof(val.length);
+
+	/* Default values, Overide Below */
+	val.infodesc.flow_id = 0xFF;
+	val.desc.next_twt_h = 0xFFFFFFFF;
+	val.desc.next_twt_l = 0xFFFFFFFF;
+
+	pos = command + sizeof(CMD_TWT_TEARDOWN);
+
+	/* (all TWT) */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandatory all TWT type not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	if (htod32((u32)bcm_atoi(token)) == 1) {
+		val.infodesc.flow_flags |= WL_TWT_INFO_FLAG_ALL_TWT;
+	}
+
+	/* Flow ID */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("flow ID  not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.infodesc.flow_id = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* resume offset */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("resume offset not provided, using default\n"));
+	} else {
+		twt = (u64)bcm_atoi(token);
+		val32 = htod32((u32)(twt >> 32));
+		if ((val32 != -1) && ((int32)(htod32((u32)twt)) != -1)) {
+			val.infodesc.next_twt_h = htod32((u32)(twt >> 32));
+			val.infodesc.next_twt_l = htod32((u32)twt);
+			val.infodesc.flow_flags |= WL_TWT_INFO_FLAG_RESUME;
+		}
+	}
+
+	/* peer_address */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Peer Addr not provided, using default\n"));
+	} else {
+		/* get peer mac */
+		if (!bcm_ether_atoe(token, &val.peer)) {
+			DHD_ERROR(("%s : Malformed peer addr\n", __FUNCTION__));
+			bw = BCME_ERROR;
+			goto exit;
+		}
+	}
+
+	bw = bcm_pack_xtlv_entry(&rem, &rem_len, WL_TWT_CMD_INFO,
+		sizeof(val), (uint8 *)&val, BCM_XTLV_OPTION_ALIGN32);
+	if (bw != BCME_OK) {
+		goto exit;
+	}
+
+	bw = wldev_iovar_setbuf(ndev, "twt",
+		mybuf, sizeof(mybuf) - rem_len, res_buf, WLC_IOCTL_SMLEN, NULL);
+	if (bw < 0) {
+		WL_ERR(("twt teardown failed. ret:%d\n", bw));
+	}
+exit:
+	return bw;
+
+}
+
+static int
+wl_android_twt_teardown(struct net_device *ndev, char *command, int total_len)
+{
+	wl_twt_teardown_t val;
+	s32 bw;
+	char *token, *pos;
+	u8 mybuf[WLC_IOCTL_SMLEN] = {0};
+	u8 res_buf[WLC_IOCTL_SMLEN] = {0};
+	uint8 *rem = mybuf;
+	uint16 rem_len = sizeof(mybuf);
+	int32 val32;
+
+	WL_DBG_MEM(("Enter. cmd:%s\n", command));
+
+	if (strlen(command) == strlen(CMD_TWT_TEARDOWN)) {
+		WL_ERR(("Error, twt teardown cmd missing params\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+
+	bzero(&val, sizeof(val));
+	val.version = WL_TWT_TEARDOWN_VER;
+	val.length = sizeof(val.version) + sizeof(val.length);
+
+	/* Default values, Overide Below */
+	val.teardesc.flow_id = 0xFF;
+	val.teardesc.bid = 0xFF;
+
+	pos = command + sizeof(CMD_TWT_TEARDOWN);
+
+	/* negotiation_type */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandatory param negotiation type not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	val.teardesc.negotiation_type  = htod32((u32)bcm_atoi(token));
+
+	/* (all TWT) */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Mandatory all TWT type not present\n"));
+		bw = -EINVAL;
+		goto exit;
+	}
+	val.teardesc.alltwt = htod32((u32)bcm_atoi(token));
+
+	/* Flow ID */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("flow ID  not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.teardesc.flow_id = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* Broadcas ID */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("flow ID  not provided, using default\n"));
+	} else {
+		val32 = htod32((u32)bcm_atoi(token));
+		if (val32 != -1) {
+			val.teardesc.bid = htod32((u32)bcm_atoi(token));
+		}
+	}
+
+	/* peer_address */
+	token = strsep((char**)&pos, " ");
+	if (!token) {
+		WL_ERR(("Peer Addr not provided, using default\n"));
+	} else {
+		/* get peer mac */
+		if (!bcm_ether_atoe(token, &val.peer)) {
+			DHD_ERROR(("%s : Malformed peer addr\n", __FUNCTION__));
+			bw = BCME_ERROR;
+			goto exit;
+		}
+	}
+
+	bw = bcm_pack_xtlv_entry(&rem, &rem_len, WL_TWT_CMD_TEARDOWN,
+		sizeof(val), (uint8 *)&val, BCM_XTLV_OPTION_ALIGN32);
+	if (bw != BCME_OK) {
+		goto exit;
+	}
+
+	bw = wldev_iovar_setbuf(ndev, "twt",
+		mybuf, sizeof(mybuf) - rem_len, res_buf, WLC_IOCTL_SMLEN, NULL);
+	if (bw < 0) {
+		WL_ERR(("twt teardown failed. ret:%d\n", bw));
+	}
+exit:
+	return bw;
+}
+#endif /* WL_TWT */
 
 int
 wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
@@ -6577,11 +11879,15 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 
 	if (strnicmp(command, CMD_START, strlen(CMD_START)) == 0) {
 		DHD_INFO(("wl_handle_private_cmd, Received regular START command\n"));
+#ifdef SUPPORT_DEEP_SLEEP
+		trigger_deep_sleep = 1;
+#else
 #ifdef  BT_OVER_SDIO
 		bytes_written = dhd_net_bus_get(net);
 #else
 		bytes_written = wl_android_wifi_on(net);
 #endif /* BT_OVER_SDIO */
+#endif /* SUPPORT_DEEP_SLEEP */
 	}
 	else if (strnicmp(command, CMD_SETFWPATH, strlen(CMD_SETFWPATH)) == 0) {
 		bytes_written = wl_android_set_fwpath(net, command, priv_cmd.total_len);
@@ -6594,11 +11900,15 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	}
 
 	if (strnicmp(command, CMD_STOP, strlen(CMD_STOP)) == 0) {
+#ifdef SUPPORT_DEEP_SLEEP
+		trigger_deep_sleep = 1;
+#else
 #ifdef  BT_OVER_SDIO
 		bytes_written = dhd_net_bus_put(net);
 #else
 		bytes_written = wl_android_wifi_off(net, FALSE);
 #endif /* BT_OVER_SDIO */
+#endif /* SUPPORT_DEEP_SLEEP */
 	}
 	else if (strnicmp(command, CMD_SCAN_ACTIVE, strlen(CMD_SCAN_ACTIVE)) == 0) {
 		wl_cfg80211_set_passive_scan(net, command);
@@ -6673,32 +11983,55 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_get_band(net, command, priv_cmd.total_len);
 	}
 #ifdef WL_CFG80211
+#ifndef CUSTOMER_SET_COUNTRY
 	/* CUSTOMER_SET_COUNTRY feature is define for only GGSM model */
 	else if (strnicmp(command, CMD_COUNTRY, strlen(CMD_COUNTRY)) == 0) {
 		/*
 		 * Usage examples:
 		 * DRIVER COUNTRY US
 		 * DRIVER COUNTRY US/7
+		 * Wrong revinfo should be filtered:
+		 * DRIVER COUNTRY US/-1
 		 */
 		char *country_code = command + strlen(CMD_COUNTRY) + 1;
 		char *rev_info_delim = country_code + 2; /* 2 bytes of country code */
 		int revinfo = -1;
 #if defined(DHD_BLOB_EXISTENCE_CHECK)
 		dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(net);
-
-		if (dhdp->is_blob) {
-			revinfo = 0;
-		} else
 #endif /* DHD_BLOB_EXISTENCE_CHECK */
 		if ((rev_info_delim) &&
 			(strnicmp(rev_info_delim, CMD_COUNTRY_DELIMITER,
 			strlen(CMD_COUNTRY_DELIMITER)) == 0) &&
 			(rev_info_delim + 1)) {
 			revinfo  = bcm_atoi(rev_info_delim + 1);
+		} else {
+			revinfo = 0;
 		}
+
+		if (revinfo < 0) {
+			DHD_ERROR(("%s:failed due to wrong revinfo %d\n", __FUNCTION__, revinfo));
+			return BCME_BADARG;
+		}
+
+#if defined(DHD_BLOB_EXISTENCE_CHECK)
+		if (dhdp->is_blob) {
+			revinfo = 0;
+		}
+#endif /* DHD_BLOB_EXISTENCE_CHECK */
+
 		bytes_written = wl_cfg80211_set_country_code(net, country_code,
 				true, true, revinfo);
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef FCC_PWR_LIMIT_2G
+		if (wldev_iovar_setint(net, "fccpwrlimit2g", FALSE)) {
+			DHD_ERROR(("%s: fccpwrlimit2g deactivation is failed\n", __FUNCTION__));
+		} else {
+			DHD_ERROR(("%s: fccpwrlimit2g is deactivated\n", __FUNCTION__));
+		}
+#endif /* FCC_PWR_LIMIT_2G */
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 	}
+#endif /* CUSTOMER_SET_COUNTRY */
 #endif /* WL_CFG80211 */
 	else if (strnicmp(command, CMD_SET_CSA, strlen(CMD_SET_CSA)) == 0) {
 		bytes_written = wl_android_set_csa(net, command);
@@ -6711,6 +12044,79 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	} else if (strnicmp(command, CMD_ASSOC_CLIENTS,	strlen(CMD_ASSOC_CLIENTS)) == 0) {
 		bytes_written = wl_android_get_assoclist(net, command, priv_cmd.total_len);
 	}
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+	else if (strnicmp(command, CMD_ROAM_VSIE_ENAB_SET, strlen(CMD_ROAM_VSIE_ENAB_SET)) == 0) {
+		bytes_written = wl_android_set_roam_vsie_enab(net, command, priv_cmd.total_len);
+	} else if (strnicmp(command, CMD_ROAM_VSIE_ENAB_GET, strlen(CMD_ROAM_VSIE_ENAB_GET)) == 0) {
+		bytes_written = wl_android_get_roam_vsie_enab(net, command, priv_cmd.total_len);
+	} else if (strnicmp(command, CMD_BR_VSIE_ENAB_SET, strlen(CMD_BR_VSIE_ENAB_SET)) == 0) {
+		bytes_written = wl_android_set_bcn_rpt_vsie_enab(net, command, priv_cmd.total_len);
+	} else if (strnicmp(command, CMD_BR_VSIE_ENAB_GET, strlen(CMD_BR_VSIE_ENAB_GET)) == 0) {
+		bytes_written = wl_android_get_bcn_rpt_vsie_enab(net, command, priv_cmd.total_len);
+	}
+#ifdef WES_SUPPORT
+	else if (strnicmp(command, CMD_GETNCHOMODE, strlen(CMD_GETNCHOMODE)) == 0) {
+		bytes_written = wl_android_get_ncho_mode(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_SETNCHOMODE, strlen(CMD_SETNCHOMODE)) == 0) {
+		int mode;
+		sscanf(command, "%*s %d", &mode);
+		bytes_written = wl_android_set_ncho_mode(net, mode);
+	}
+	else if (strnicmp(command, CMD_OKC_SET_PMK, strlen(CMD_OKC_SET_PMK)) == 0) {
+		bytes_written = wl_android_set_pmk(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_OKC_ENABLE, strlen(CMD_OKC_ENABLE)) == 0) {
+		bytes_written = wl_android_okc_enable(net, command);
+	}
+	else if (strnicmp(command, CMD_SET_5G160, strlen(CMD_SET_5G160)) == 0) {
+		bytes_written = wl_android_config_5g160(net, command);
+	}
+	else if (wl_android_legacy_check_command(net, command)) {
+		bytes_written = wl_android_legacy_private_command(net, command, priv_cmd.total_len);
+	}
+	else if (wl_android_ncho_check_command(net, command)) {
+		bytes_written = wl_android_ncho_private_command(net, command, priv_cmd.total_len);
+	}
+#endif /* WES_SUPPORT */
+#if defined(SUPPORT_RESTORE_SCAN_PARAMS) || defined(WES_SUPPORT)
+	else if (strnicmp(command, CMD_RESTORE_SCAN_PARAMS, strlen(CMD_RESTORE_SCAN_PARAMS)) == 0) {
+		bytes_written = wl_android_default_set_scan_params(net, command,
+			priv_cmd.total_len);
+	}
+#endif /* SUPPORT_RESTORE_SCAN_PARAMS || WES_SUPPORT */
+#ifdef WLTDLS
+	else if (strnicmp(command, CMD_TDLS_RESET, strlen(CMD_TDLS_RESET)) == 0) {
+		bytes_written = wl_android_tdls_reset(net);
+	}
+#endif /* WLTDLS */
+#ifdef CONFIG_SILENT_ROAM
+	else if (strnicmp(command, CMD_SROAM_TURN_ON, strlen(CMD_SROAM_TURN_ON)) == 0) {
+		int mode = *(command + strlen(CMD_SROAM_TURN_ON) + 1) - '0';
+		bytes_written = wl_android_sroam_turn_on(net, mode);
+	}
+	else if (strnicmp(command, CMD_SROAM_SET_INFO, strlen(CMD_SROAM_SET_INFO)) == 0) {
+		char *data = (command + strlen(CMD_SROAM_SET_INFO) + 1);
+		bytes_written = wl_android_sroam_set_info(net, data, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_SROAM_GET_INFO, strlen(CMD_SROAM_GET_INFO)) == 0) {
+		bytes_written = wl_android_sroam_get_info(net, command, priv_cmd.total_len);
+	}
+#endif /* CONFIG_SILENT_ROAM */
+#ifdef CONFIG_ROAM_RSSI_LIMIT
+	else if (strnicmp(command, CMD_ROAM_RSSI_LMT, strlen(CMD_ROAM_RSSI_LMT)) == 0) {
+		bytes_written = wl_android_roam_rssi_limit(net, command, priv_cmd.total_len);
+	}
+#endif /* CONFIG_ROAM_RSSI_LIMIT */
+#ifdef CONFIG_ROAM_MIN_DELTA
+	else if (strnicmp(command, CMD_ROAM_MIN_DELTA, strlen(CMD_ROAM_MIN_DELTA)) == 0) {
+		bytes_written = wl_android_roam_min_delta(net, command, priv_cmd.total_len);
+	}
+#endif /* CONFIG_ROAM_MIN_DELTA */
+	else if (strnicmp(command, CMD_SET_DISCONNECT_IES, strlen(CMD_SET_DISCONNECT_IES)) == 0) {
+		bytes_written = wl_android_set_disconnect_ies(net, command);
+	}
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 
 #ifdef PNO_SUPPORT
 	else if (strnicmp(command, CMD_PNOSSIDCLR_SET, strlen(CMD_PNOSSIDCLR_SET)) == 0) {
@@ -6737,6 +12143,27 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_cfg80211_set_p2p_noa(net, command + skip,
 			priv_cmd.total_len - skip);
 	}
+#ifdef WL_SDO
+	else if (strnicmp(command, CMD_P2P_SD_OFFLOAD, strlen(CMD_P2P_SD_OFFLOAD)) == 0) {
+		u8 *buf = command;
+		u8 *cmd_id = NULL;
+		int len;
+
+		cmd_id = strsep((char **)&buf, " ");
+		if (!cmd_id) {
+			/* Propagate the error */
+			bytes_written = -EINVAL;
+		} else {
+			/* if buf == NULL, means no arg */
+			if (buf == NULL) {
+				len = 0;
+			} else {
+				len = strlen(buf);
+			}
+			bytes_written = wl_cfg80211_sd_offload(net, cmd_id, buf, len);
+		}
+	}
+#endif /* WL_SDO */
 #ifdef P2P_LISTEN_OFFLOADING
 	else if (strnicmp(command, CMD_P2P_LISTEN_OFFLOAD, strlen(CMD_P2P_LISTEN_OFFLOAD)) == 0) {
 		u8 *sub_command = strchr(command, ' ');
@@ -6774,11 +12201,16 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_cfg80211_set_wps_p2p_ie(net, command + skip,
 			priv_cmd.total_len - skip, *(command + skip - 2) - '0');
 	}
+#ifdef WLFBT
+	else if (strnicmp(command, CMD_GET_FTKEY, strlen(CMD_GET_FTKEY)) == 0) {
+		bytes_written = wl_cfg80211_get_fbt_key(net, command, priv_cmd.total_len);
+	}
+#endif /* WLFBT */
 #endif /* WL_CFG80211 */
 #if defined(WL_SUPPORT_AUTO_CHANNEL)
 	else if (strnicmp(command, CMD_GET_BEST_CHANNELS,
 		strlen(CMD_GET_BEST_CHANNELS)) == 0) {
-		bytes_written = wl_cfg80211_get_best_channels(net, command,
+		bytes_written = wl_android_get_best_channels(net, command,
 			priv_cmd.total_len);
 	}
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
@@ -6790,6 +12222,128 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			priv_cmd.total_len);
 	}
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef SUPPORT_AMPDU_MPDU_CMD
+	/* CMD_AMPDU_MPDU */
+	else if (strnicmp(command, CMD_AMPDU_MPDU, strlen(CMD_AMPDU_MPDU)) == 0) {
+		int skip = strlen(CMD_AMPDU_MPDU) + 1;
+		bytes_written = wl_android_set_ampdu_mpdu(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_AMPDU_MPDU_CMD */
+#if defined(SUPPORT_HIDDEN_AP)
+	else if (strnicmp(command, CMD_SET_HAPD_MAX_NUM_STA,
+		strlen(CMD_SET_HAPD_MAX_NUM_STA)) == 0) {
+		int skip = strlen(CMD_SET_HAPD_MAX_NUM_STA) + 3;
+		wl_android_set_max_num_sta(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_SET_HAPD_SSID,
+		strlen(CMD_SET_HAPD_SSID)) == 0) {
+		int skip = strlen(CMD_SET_HAPD_SSID) + 3;
+		wl_android_set_ssid(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_SET_HAPD_HIDE_SSID,
+		strlen(CMD_SET_HAPD_HIDE_SSID)) == 0) {
+		int skip = strlen(CMD_SET_HAPD_HIDE_SSID) + 3;
+		wl_android_set_hide_ssid(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_HIDDEN_AP */
+#ifdef SUPPORT_SOFTAP_SINGL_DISASSOC
+	else if (strnicmp(command, CMD_HAPD_STA_DISASSOC,
+		strlen(CMD_HAPD_STA_DISASSOC)) == 0) {
+		int skip = strlen(CMD_HAPD_STA_DISASSOC) + 1;
+		wl_android_sta_diassoc(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_SOFTAP_SINGL_DISASSOC */
+#ifdef SUPPORT_SET_LPC
+	else if (strnicmp(command, CMD_HAPD_LPC_ENABLED,
+		strlen(CMD_HAPD_LPC_ENABLED)) == 0) {
+		int skip = strlen(CMD_HAPD_LPC_ENABLED) + 3;
+		wl_android_set_lpc(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_SET_LPC */
+#ifdef SUPPORT_TRIGGER_HANG_EVENT
+	else if (strnicmp(command, CMD_TEST_FORCE_HANG,
+		strlen(CMD_TEST_FORCE_HANG)) == 0) {
+		int skip = strlen(CMD_TEST_FORCE_HANG) + 1;
+		net_os_send_hang_message_reason(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_TRIGGER_HANG_EVENT */
+	else if (strnicmp(command, CMD_CHANGE_RL, strlen(CMD_CHANGE_RL)) == 0)
+		bytes_written = wl_android_ch_res_rl(net, true);
+	else if (strnicmp(command, CMD_RESTORE_RL, strlen(CMD_RESTORE_RL)) == 0)
+		bytes_written = wl_android_ch_res_rl(net, false);
+#ifdef SUPPORT_LTECX
+	else if (strnicmp(command, CMD_LTECX_SET, strlen(CMD_LTECX_SET)) == 0) {
+		int skip = strlen(CMD_LTECX_SET) + 1;
+		bytes_written = wl_android_set_ltecx(net, (const char*)command+skip);
+	}
+#endif /* SUPPORT_LTECX */
+#ifdef WL_RELMCAST
+	else if (strnicmp(command, CMD_SET_RMC_ENABLE, strlen(CMD_SET_RMC_ENABLE)) == 0) {
+		int rmc_enable = *(command + strlen(CMD_SET_RMC_ENABLE) + 1) - '0';
+		bytes_written = wl_android_rmc_enable(net, rmc_enable);
+	}
+	else if (strnicmp(command, CMD_SET_RMC_TXRATE, strlen(CMD_SET_RMC_TXRATE)) == 0) {
+		int rmc_txrate;
+		sscanf(command, "%*s %10d", &rmc_txrate);
+		bytes_written = wldev_iovar_setint(net, "rmc_txrate", rmc_txrate * 2);
+	}
+	else if (strnicmp(command, CMD_SET_RMC_ACTPERIOD, strlen(CMD_SET_RMC_ACTPERIOD)) == 0) {
+		int actperiod;
+		sscanf(command, "%*s %10d", &actperiod);
+		bytes_written = wldev_iovar_setint(net, "rmc_actf_time", actperiod);
+	}
+	else if (strnicmp(command, CMD_SET_RMC_IDLEPERIOD, strlen(CMD_SET_RMC_IDLEPERIOD)) == 0) {
+		int acktimeout;
+		sscanf(command, "%*s %10d", &acktimeout);
+		acktimeout *= 1000;
+		bytes_written = wldev_iovar_setint(net, "rmc_acktmo", acktimeout);
+	}
+	else if (strnicmp(command, CMD_SET_RMC_LEADER, strlen(CMD_SET_RMC_LEADER)) == 0) {
+		int skip = strlen(CMD_SET_RMC_LEADER) + 1;
+		bytes_written = wl_android_rmc_set_leader(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_SET_RMC_EVENT,
+		strlen(CMD_SET_RMC_EVENT)) == 0) {
+		bytes_written = wl_android_set_rmc_event(net, command);
+	}
+#endif /* WL_RELMCAST */
+	else if (strnicmp(command, CMD_GET_SCSCAN, strlen(CMD_GET_SCSCAN)) == 0) {
+		bytes_written = wl_android_get_singlecore_scan(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_SET_SCSCAN, strlen(CMD_SET_SCSCAN)) == 0) {
+		bytes_written = wl_android_set_singlecore_scan(net, command);
+	}
+#ifdef TEST_TX_POWER_CONTROL
+	else if (strnicmp(command, CMD_TEST_SET_TX_POWER,
+		strlen(CMD_TEST_SET_TX_POWER)) == 0) {
+		int skip = strlen(CMD_TEST_SET_TX_POWER) + 1;
+		wl_android_set_tx_power(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_TEST_GET_TX_POWER,
+		strlen(CMD_TEST_GET_TX_POWER)) == 0) {
+		wl_android_get_tx_power(net, command, priv_cmd.total_len);
+	}
+#endif /* TEST_TX_POWER_CONTROL */
+	else if (strnicmp(command, CMD_SARLIMIT_TX_CONTROL,
+		strlen(CMD_SARLIMIT_TX_CONTROL)) == 0) {
+		int skip = strlen(CMD_SARLIMIT_TX_CONTROL) + 1;
+		bytes_written = wl_android_set_sarlimit_txctrl(net, (const char*)command+skip);
+	}
+#ifdef SUPPORT_SET_TID
+	else if (strnicmp(command, CMD_SET_TID, strlen(CMD_SET_TID)) == 0) {
+		bytes_written = wl_android_set_tid(net, command);
+	}
+	else if (strnicmp(command, CMD_GET_TID, strlen(CMD_GET_TID)) == 0) {
+		bytes_written = wl_android_get_tid(net, command, priv_cmd.total_len);
+	}
+#endif /* SUPPORT_SET_TID */
+#ifdef WL_WTC
+	else if (strnicmp(command, CMD_WTC_CONFIG, strlen(CMD_WTC_CONFIG)) == 0) {
+		bytes_written = wl_android_wtc_config(net, command, priv_cmd.total_len);
+	}
+#endif /* WL_WTC */
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 	else if (strnicmp(command, CMD_HAPD_MAC_FILTER, strlen(CMD_HAPD_MAC_FILTER)) == 0) {
 		int skip = strlen(CMD_HAPD_MAC_FILTER) + 1;
 		wl_android_set_mac_address_filter(net, command+skip);
@@ -6806,6 +12360,26 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	else if (strnicmp(command, CMD_SETIBSSBEACONOUIDATA, strlen(CMD_SETIBSSBEACONOUIDATA)) == 0)
 		bytes_written = wl_android_set_ibss_beacon_ouidata(net,
 		command, priv_cmd.total_len);
+#ifdef WLAIBSS
+	else if (strnicmp(command, CMD_SETIBSSTXFAILEVENT,
+		strlen(CMD_SETIBSSTXFAILEVENT)) == 0)
+		bytes_written = wl_android_set_ibss_txfail_event(net, command, priv_cmd.total_len);
+	else if (strnicmp(command, CMD_GET_IBSS_PEER_INFO_ALL,
+		strlen(CMD_GET_IBSS_PEER_INFO_ALL)) == 0)
+		bytes_written = wl_android_get_ibss_peer_info(net, command, priv_cmd.total_len,
+			TRUE);
+	else if (strnicmp(command, CMD_GET_IBSS_PEER_INFO,
+		strlen(CMD_GET_IBSS_PEER_INFO)) == 0)
+		bytes_written = wl_android_get_ibss_peer_info(net, command, priv_cmd.total_len,
+			FALSE);
+	else if (strnicmp(command, CMD_SETIBSSROUTETABLE,
+		strlen(CMD_SETIBSSROUTETABLE)) == 0)
+		bytes_written = wl_android_set_ibss_routetable(net, command);
+	else if (strnicmp(command, CMD_SETIBSSAMPDU, strlen(CMD_SETIBSSAMPDU)) == 0)
+		bytes_written = wl_android_set_ibss_ampdu(net, command, priv_cmd.total_len);
+	else if (strnicmp(command, CMD_SETIBSSANTENNAMODE, strlen(CMD_SETIBSSANTENNAMODE)) == 0)
+		bytes_written = wl_android_set_ibss_antenna(net, command, priv_cmd.total_len);
+#endif /* WLAIBSS */
 	else if (strnicmp(command, CMD_KEEP_ALIVE, strlen(CMD_KEEP_ALIVE)) == 0) {
 		int skip = strlen(CMD_KEEP_ALIVE) + 1;
 		bytes_written = wl_keep_alive_set(net, command + skip);
@@ -6903,6 +12477,21 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	    bytes_written = wl_tbow_teardown(net);
 	}
 #endif /* BT_WIFI_HANDOVER */
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef FCC_PWR_LIMIT_2G
+	else if (strnicmp(command, CMD_GET_FCC_PWR_LIMIT_2G,
+		strlen(CMD_GET_FCC_PWR_LIMIT_2G)) == 0) {
+		bytes_written = wl_android_get_fcc_pwr_limit_2g(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_SET_FCC_PWR_LIMIT_2G,
+		strlen(CMD_SET_FCC_PWR_LIMIT_2G)) == 0) {
+		bytes_written = wl_android_set_fcc_pwr_limit_2g(net, command);
+	}
+#endif /* FCC_PWR_LIMIT_2G */
+	else if (strnicmp(command, CMD_GET_STA_INFO, strlen(CMD_GET_STA_INFO)) == 0) {
+		bytes_written = wl_cfg80211_get_sta_info(net, command, priv_cmd.total_len);
+	}
+#endif /* CUSTOMER_HW4_PRIVATE_CMD */
 	else if (strnicmp(command, CMD_MURX_BFE_CAP,
 			strlen(CMD_MURX_BFE_CAP)) == 0) {
 #ifdef WL_MURX
@@ -6984,7 +12573,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_get_connection_stats(net, command,
 			priv_cmd.total_len);
 	}
-#endif // endif
+#endif
 #ifdef DHD_LOG_DUMP
 	else if (strnicmp(command, CMD_NEW_DEBUG_PRINT_DUMP,
 		strlen(CMD_NEW_DEBUG_PRINT_DUMP)) == 0) {
@@ -7049,7 +12638,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_get_lqcm_report(net, command,
 			priv_cmd.total_len);
 	}
-#endif // endif
+#endif
 	else if (strnicmp(command, CMD_GET_SNR, strlen(CMD_GET_SNR)) == 0) {
 		bytes_written = wl_android_get_snr(net, command, priv_cmd.total_len);
 	}
@@ -7213,6 +12802,23 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_get_latency_crt_data(net, command, priv_cmd.total_len);
 	}
 #endif	/* SUPPORT_LATENCY_CRITICAL_DATA */
+#ifdef WL_TWT
+	else if (strnicmp(command, CMD_TWT_SETUP, strlen(CMD_TWT_SETUP)) == 0) {
+		bytes_written = wl_android_twt_setup(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_TWT_TEARDOWN, strlen(CMD_TWT_TEARDOWN)) == 0) {
+		bytes_written = wl_android_twt_teardown(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_TWT_INFO, strlen(CMD_TWT_INFO)) == 0) {
+		bytes_written = wl_android_twt_info(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_TWT_STATUS_QUERY, strlen(CMD_TWT_STATUS_QUERY)) == 0) {
+		bytes_written = wl_android_twt_status_query(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_TWT_CAPABILITY, strlen(CMD_TWT_CAPABILITY)) == 0) {
+		bytes_written = wl_android_twt_cap(net, command, priv_cmd.total_len);
+	}
+#endif /* WL_TWT */
 	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 		bytes_written = scnprintf(command, sizeof("FAIL"), "FAIL");
@@ -7233,6 +12839,14 @@ int wl_android_init(void)
 		bcm_strncpy_s(iface_name, IFNAMSIZ, "wlan", IFNAMSIZ);
 	}
 
+#ifdef CUSTOMER_HW4_DEBUG
+	/* No Kernel Panic from ASSERT() on customer platform. */
+	g_assert_type = 1;
+#endif /* CUSTOMER_HW4_DEBUG */
+
+#ifdef WL_GENL
+	wl_genl_init();
+#endif
 	wl_netlink_init();
 
 	return ret;
@@ -7243,6 +12857,9 @@ int wl_android_exit(void)
 	int ret = 0;
 	struct io_cfg *cur, *q;
 
+#ifdef WL_GENL
+	wl_genl_deinit();
+#endif /* WL_GENL */
 	wl_netlink_deinit();
 
 	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
@@ -7258,22 +12875,282 @@ int wl_android_exit(void)
 void wl_android_post_init(void)
 {
 
-	if (!dhd_download_fw_on_driverload)
+#ifdef ENABLE_4335BT_WAR
+	bcm_bt_unlock(lock_cookie_wifi);
+	DHD_ERROR(("wl_android_post_init: btlock released\n"));
+#endif /* ENABLE_4335BT_WAR */
+
+	if (!dhd_download_fw_on_driverload) {
 		g_wifi_on = FALSE;
+		DHD_ERROR(("%s: %d", __FUNCTION__, g_wifi_on));
+	}
 }
+
+#ifdef WL_GENL
+/* Generic Netlink Initializaiton */
+static int wl_genl_init(void)
+{
+	int ret;
+
+	WL_DBG(("GEN Netlink Init\n\n"));
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
+	/* register new family */
+	ret = genl_register_family(&wl_genl_family);
+	if (ret != 0)
+		goto failure;
+
+	/* register functions (commands) of the new family */
+	ret = genl_register_ops(&wl_genl_family, &wl_genl_ops);
+	if (ret != 0) {
+		WL_ERR(("register ops failed: %i\n", ret));
+		genl_unregister_family(&wl_genl_family);
+		goto failure;
+	}
+
+	ret = genl_register_mc_group(&wl_genl_family, &wl_genl_mcast);
+#else
+	ret = genl_register_family_with_ops_groups(&wl_genl_family, wl_genl_ops, wl_genl_mcast);
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0) */
+	if (ret != 0) {
+		WL_ERR(("register mc_group failed: %i\n", ret));
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
+		genl_unregister_ops(&wl_genl_family, &wl_genl_ops);
+#endif
+		genl_unregister_family(&wl_genl_family);
+		goto failure;
+	}
+
+	return 0;
+
+failure:
+	WL_ERR(("Registering Netlink failed!!\n"));
+	return -1;
+}
+
+/* Generic netlink deinit */
+static int wl_genl_deinit(void)
+{
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
+	if (genl_unregister_ops(&wl_genl_family, &wl_genl_ops) < 0)
+		WL_ERR(("Unregister wl_genl_ops failed\n"));
+#endif
+	if (genl_unregister_family(&wl_genl_family) < 0)
+		WL_ERR(("Unregister wl_genl_ops failed\n"));
+
+	return 0;
+}
+
+s32 wl_event_to_bcm_event(u16 event_type)
+{
+	/* When you add any new event, please mention the
+	 * version of BCM supplicant supporting it
+	 */
+	u16 event = -1;
+
+	switch (event_type) {
+		case WLC_E_SERVICE_FOUND:
+			event = BCM_E_SVC_FOUND;
+			break;
+		case WLC_E_P2PO_ADD_DEVICE:
+			event = BCM_E_DEV_FOUND;
+			break;
+		case WLC_E_P2PO_DEL_DEVICE:
+			event = BCM_E_DEV_LOST;
+			break;
+	/* Above events are supported from BCM Supp ver 47 Onwards */
+#ifdef BT_WIFI_HANDOVER
+		case WLC_E_BT_WIFI_HANDOVER_REQ:
+			event = BCM_E_DEV_BT_WIFI_HO_REQ;
+			break;
+#endif /* BT_WIFI_HANDOVER */
+
+		default:
+			WL_ERR(("Event not supported\n"));
+	}
+
+	return event;
+}
+
+s32
+wl_genl_send_msg(
+	struct net_device *ndev,
+	u32 event_type,
+	const u8 *buf,
+	u16 len,
+	u8 *subhdr,
+	u16 subhdr_len)
+{
+	int ret = 0;
+	struct sk_buff *skb;
+	void *msg;
+	u32 attr_type = 0;
+	bcm_event_hdr_t *hdr = NULL;
+	int mcast = 1; /* By default sent as mutlicast type */
+	int pid = 0;
+	u8 *ptr = NULL, *p = NULL;
+	u32 tot_len = sizeof(bcm_event_hdr_t) + subhdr_len + len;
+	u16 kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+
+	WL_DBG(("Enter \n"));
+
+	/* Decide between STRING event and Data event */
+	if (event_type == 0)
+		attr_type = BCM_GENL_ATTR_STRING;
+	else
+		attr_type = BCM_GENL_ATTR_MSG;
+
+	skb = genlmsg_new(NLMSG_GOODSIZE, kflags);
+	if (skb == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	msg = genlmsg_put(skb, 0, 0, &wl_genl_family, 0, BCM_GENL_CMD_MSG);
+	if (msg == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	if (attr_type == BCM_GENL_ATTR_STRING) {
+		/* Add a BCM_GENL_MSG attribute. Since it is specified as a string.
+		 * make sure it is null terminated
+		 */
+		if (subhdr || subhdr_len) {
+			WL_ERR(("No sub hdr support for the ATTR STRING type \n"));
+			ret =  -EINVAL;
+			goto out;
+		}
+
+		ret = nla_put_string(skb, BCM_GENL_ATTR_STRING, buf);
+		if (ret != 0) {
+			WL_ERR(("nla_put_string failed\n"));
+			goto out;
+		}
+	} else {
+		/* ATTR_MSG */
+
+		/* Create a single buffer for all */
+		p = ptr = (u8 *)MALLOCZ(cfg->osh, tot_len);
+		if (!ptr) {
+			ret = -ENOMEM;
+			WL_ERR(("ENOMEM!!\n"));
+			goto out;
+		}
+
+		/* Include the bcm event header */
+		hdr = (bcm_event_hdr_t *)ptr;
+		hdr->event_type = wl_event_to_bcm_event(event_type);
+		hdr->len = len + subhdr_len;
+		ptr += sizeof(bcm_event_hdr_t);
+
+		/* Copy subhdr (if any) */
+		if (subhdr && subhdr_len) {
+			memcpy(ptr, subhdr, subhdr_len);
+			ptr += subhdr_len;
+		}
+
+		/* Copy the data */
+		if (buf && len) {
+			memcpy(ptr, buf, len);
+		}
+
+		ret = nla_put(skb, BCM_GENL_ATTR_MSG, tot_len, p);
+		if (ret != 0) {
+			WL_ERR(("nla_put_string failed\n"));
+			goto out;
+		}
+	}
+
+	if (mcast) {
+		int err = 0;
+		/* finalize the message */
+		genlmsg_end(skb, msg);
+		/* NETLINK_CB(skb).dst_group = 1; */
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
+		if ((err = genlmsg_multicast(skb, 0, wl_genl_mcast.id, GFP_ATOMIC)) < 0)
+#else
+		if ((err = genlmsg_multicast(&wl_genl_family, skb, 0, 0, GFP_ATOMIC)) < 0)
+#endif
+			WL_ERR(("genlmsg_multicast for attr(%d) failed. Error:%d \n",
+				attr_type, err));
+		else
+			WL_DBG(("Multicast msg sent successfully. attr_type:%d len:%d \n",
+				attr_type, tot_len));
+	} else {
+		NETLINK_CB(skb).dst_group = 0; /* Not in multicast group */
+
+		/* finalize the message */
+		genlmsg_end(skb, msg);
+
+		/* send the message back */
+		if (genlmsg_unicast(&init_net, skb, pid) < 0)
+			WL_ERR(("genlmsg_unicast failed\n"));
+	}
+
+out:
+	if (p) {
+		MFREE(cfg->osh, p, tot_len);
+	}
+	if (ret)
+		nlmsg_free(skb);
+
+	return ret;
+}
+
+static s32
+wl_genl_handle_msg(
+	struct sk_buff *skb,
+	struct genl_info *info)
+{
+	struct nlattr *na;
+	u8 *data = NULL;
+
+	WL_DBG(("Enter \n"));
+
+	if (info == NULL) {
+		return -EINVAL;
+	}
+
+	na = info->attrs[BCM_GENL_ATTR_MSG];
+	if (!na) {
+		WL_ERR(("nlattribute NULL\n"));
+		return -EINVAL;
+	}
+
+	data = (char *)nla_data(na);
+	if (!data) {
+		WL_ERR(("Invalid data\n"));
+		return -EINVAL;
+	} else {
+		/* Handle the data */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0)) || defined(WL_COMPAT_WIRELESS)
+		WL_DBG(("%s: Data received from pid (%d) \n", __func__,
+			info->snd_pid));
+#else
+		WL_DBG(("%s: Data received from pid (%d) \n", __func__,
+			info->snd_portid));
+#endif /* (LINUX_VERSION < VERSION(3, 7, 0) || WL_COMPAT_WIRELESS */
+	}
+
+	return 0;
+}
+#endif /* WL_GENL */
 
 int wl_fatal_error(void * wl, int rc)
 {
 	return FALSE;
 }
 
-#if defined(BT_OVER_SDIO)
 void
 wl_android_set_wifi_on_flag(bool enable)
 {
+	DHD_ERROR(("%s: %d\n", __FUNCTION__, enable));
 	g_wifi_on = enable;
 }
-#endif /* BT_OVER_SDIO */
 
 #ifdef WL_STATIC_IF
 struct net_device *
@@ -7848,7 +13725,7 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 	if (!*data) {
 		for (i = 0; (i < prof_cnt) && (i < WL_MAX_ROAM_PROF_BRACKETS); i++) {
 			if (roam_prof_ver == WL_ROAM_PROF_VER_1) {
-				bytes_written += snprintf(command+bytes_written,
+				bytes_written += scnprintf(command+bytes_written,
 					total_len - bytes_written,
 					"RSSI[%d,%d] CU(trigger:%d%%: duration:%ds)",
 					rp->v2.roam_prof[i].roam_trigger,
@@ -7856,7 +13733,7 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 					rp->v2.roam_prof[i].channel_usage,
 					rp->v2.roam_prof[i].cu_avg_calc_dur);
 			} else if (roam_prof_ver == WL_ROAM_PROF_VER_2) {
-				bytes_written += snprintf(command+bytes_written,
+				bytes_written += scnprintf(command+bytes_written,
 					total_len - bytes_written,
 					"RSSI[%d,%d] CU(trigger:%d%%: duration:%ds)",
 					rp->v3.roam_prof[i].roam_trigger,
@@ -7873,7 +13750,7 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 					rp->v4.roam_prof[i].cu_avg_calc_dur);
 			}
 		}
-		bytes_written += snprintf(command+bytes_written, total_len - bytes_written, "\n");
+		bytes_written += scnprintf(command+bytes_written, total_len - bytes_written, "\n");
 		err = bytes_written;
 		goto exit;
 	} else {

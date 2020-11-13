@@ -114,6 +114,12 @@
 /* wbus related logging */
 #define EVENT_LOG_SET_WBUS		(28u)
 
+/* bcm trace logging */
+#define EVENT_LOG_SET_BCM_TRACE		(29u)
+
+/* For PM alert related logging */
+#define EVENT_LOG_SET_WL_PS_LOG		(30u)
+
 #ifndef NUM_EVENT_LOG_SETS
 /* Set a maximum number of sets here.  It is not dynamic for
  * efficiency of the EVENT_LOG calls. Old branches could define
@@ -122,15 +128,15 @@
  */
 #ifdef NUM_EVENT_LOG_SETS_V2
 /* for v2, everything has became unsigned */
-#define NUM_EVENT_LOG_SETS (29u)
+#define NUM_EVENT_LOG_SETS (31u)
 #else /* NUM_EVENT_LOG_SETS_V2 */
-#define NUM_EVENT_LOG_SETS (29)
+#define NUM_EVENT_LOG_SETS (31)
 #endif /* NUM_EVENT_LOG_SETS_V2 */
 #endif /* NUM_EVENT_LOG_SETS */
 
 /* send delayed logs when >= 50% of buffer is full */
 #ifndef ECOUNTERS_DELAYED_FLUSH_PERCENTAGE
 #define ECOUNTERS_DELAYED_FLUSH_PERCENTAGE	(50)
-#endif // endif
+#endif
 
 #endif /* _EVENT_LOG_SET_H_ */

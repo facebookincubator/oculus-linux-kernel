@@ -27,6 +27,12 @@
 /* When HOST driver is for PCIE dongle image, we suppose the HOST must provide the entropy
  * input if it does not define the macro BCM_RNG_NO_HOST_ENTROPY
  */
+#if defined(BCMPCIEDEV) && !defined(BCMFUZZ)
+#if !defined(BCM_RNG_HOST_ENTROPY) && !defined(BCM_RNG_NO_HOST_ENTROPY)
+#define BCM_RNG_HOST_ENTROPY
+#define BCM_RNG_PCIEDEV_DEFAULT
+#endif /* !BCM_RNG_HOST_ENTROPY && !BCM_RNG_NO_HOST_ENTROPY */
+#endif /* BCMPCIEDEV */
 
 /* the format of current TCM layout during boot
  *

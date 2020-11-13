@@ -28,7 +28,11 @@
 
 #include <bcmutils.h>
 
+#if defined(LINUX)
 #define PACKED_STRUCT __attribute__ ((packed))
+#else
+#define PACKED_STRUCT
+#endif
 
 #define DBGRING_NAME_MAX 32
 
@@ -109,6 +113,7 @@ typedef struct dhd_dbg_ring {
 #define PAYLOAD_MAX_LEN 65535
 #define PAYLOAD_ECNTR_MAX_LEN 1648u
 #define PAYLOAD_RTT_MAX_LEN 1648u
+#define PAYLOAD_BCM_TRACE_MAX_LEN 1648u
 #define PENDING_LEN_MAX 0xFFFFFFFF
 #define DBG_RING_STATUS_SIZE (sizeof(dhd_dbg_ring_status_t))
 
@@ -121,6 +126,10 @@ typedef struct dhd_dbg_ring {
 
 typedef void (*os_pullreq_t)(void *os_priv, const int ring_id);
 
+dhd_dbg_ring_t *dhd_dbg_ring_alloc_init(dhd_pub_t *dhd, uint16 ring_id,
+	char *ring_name, uint32 ring_sz, void *allocd_buf,
+	bool pull_inactive);
+void dhd_dbg_ring_dealloc_deinit(void **dbgring, dhd_pub_t *dhd);
 int dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 		uint32 ring_sz, void *allocd_buf, bool pull_inactive);
 void dhd_dbg_ring_deinit(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring);

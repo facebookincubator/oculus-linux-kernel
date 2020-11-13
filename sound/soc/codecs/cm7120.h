@@ -2334,6 +2334,9 @@ struct cm7120_priv {
 
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pin_default;
+	struct pinctrl_state *pin_suspend;
+	struct pinctrl_state *pin_spk_en;
+	struct pinctrl_state *pin_spk_suspend;
 
 	struct clk *mclk;
 
@@ -2359,6 +2362,7 @@ struct cm7120_priv {
 	unsigned char adcsto2;
 
 	unsigned char hp_impedance;
+	struct notifier_block pm_nb;
 };
 
 #endif /* __CM7120_H__ */

@@ -30,7 +30,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
@@ -132,7 +132,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #ifndef EAPOL_KEY_HDR_VER_V2
 #define EAPOL_WPA_KEY_MIC_LEN		16u /* deprecated */
 #define EAPOL_WPA_KEY_LEN		95u /* deprecated */
-#endif // endif
+#endif
 
 #define EAPOL_PTK_KEY_MAX_LEN	(EAPOL_WPA_KEY_MAX_MIC_LEN +\
 				EAPOL_WPA_ENCR_KEY_MAX_LEN +\
@@ -240,6 +240,8 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define WPA2_KEY_DATA_SUBTYPE_MAC	3
 #define WPA2_KEY_DATA_SUBTYPE_PMKID	4
 #define WPA2_KEY_DATA_SUBTYPE_IGTK	9
+#define WPA2_KEY_DATA_SUBTYPE_OCI	13
+#define WPA2_KEY_DATA_SUBTYPE_BIGTK	14
 
 /* GTK encapsulation */
 typedef BWL_PRE_PACKED_STRUCT struct {
@@ -256,13 +258,24 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define WPA2_GTK_TRANSMIT	0x04
 
 /* IGTK encapsulation */
+#define EAPOL_RSN_IPN_SIZE	6u
 typedef BWL_PRE_PACKED_STRUCT struct {
 	uint16	key_id;
-	uint8	ipn[6];
+	uint8	ipn[EAPOL_RSN_IPN_SIZE];
 	uint8	key[EAPOL_WPA_MAX_KEY_SIZE];
 } BWL_POST_PACKED_STRUCT eapol_wpa2_key_igtk_encap_t;
 
-#define EAPOL_WPA2_KEY_IGTK_ENCAP_HDR_LEN 	8
+#define EAPOL_WPA2_KEY_IGTK_ENCAP_HDR_LEN	8u
+
+/* BIGTK encapsulation */
+#define EAPOL_RSN_BIPN_SIZE	6u
+typedef BWL_PRE_PACKED_STRUCT struct {
+	uint16  key_id;
+	uint8   bipn[EAPOL_RSN_BIPN_SIZE];
+	uint8   key[EAPOL_WPA_MAX_KEY_SIZE];
+} BWL_POST_PACKED_STRUCT eapol_wpa2_key_bigtk_encap_t;
+
+#define EAPOL_WPA2_KEY_BIGTK_ENCAP_HDR_LEN	8u
 
 /* STAKey encapsulation */
 typedef BWL_PRE_PACKED_STRUCT struct {

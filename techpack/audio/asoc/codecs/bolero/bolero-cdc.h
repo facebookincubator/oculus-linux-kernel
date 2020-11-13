@@ -149,13 +149,6 @@ static inline struct device *bolero_get_device_ptr(struct device *dev,
 	return NULL;
 }
 
-static int bolero_info_create_codec_entry(
-		struct snd_info_entry *codec_root,
-		struct snd_soc_component *component)
-{
-	return 0;
-}
-
 static inline void bolero_clear_amic_tx_hold(struct device *dev, u16 adc_n)
 {
 }
@@ -167,11 +160,6 @@ static inline int bolero_register_wake_irq(struct snd_soc_component *component,
 }
 
 static inline int bolero_runtime_resume(struct device *dev)
-{
-	return 0;
-}
-
-static int bolero_runtime_suspend(struct device *dev)
 {
 	return 0;
 }
@@ -195,28 +183,9 @@ static inline int bolero_register_event_listener(
 	return 0;
 }
 
-static void bolero_wsa_pa_on(struct device *dev)
-{
-}
-
 static inline bool bolero_check_core_votes(struct device *dev)
 {
 	return false;
-}
-
-static int bolero_get_version(struct device *dev)
-{
-	return 0;
-}
-
-static int bolero_dmic_clk_enable(struct snd_soc_component *component,
-			   u32 dmic, u32 tx_mode, bool enable)
-{
-	return 0;
-}
-static int bolero_tx_mclk_enable(struct snd_soc_component *c, bool enable)
-{
-	return 0;
 }
 #endif /* CONFIG_SND_SOC_BOLERO */
 #endif /* BOLERO_CDC_H */

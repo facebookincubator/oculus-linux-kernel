@@ -37,7 +37,7 @@
 #define	_PADLINE(line)	pad ## line
 #define	_XSTR(line)	_PADLINE(line)
 #define	PAD		_XSTR(__LINE__)
-#endif // endif
+#endif
 
 /* PCIE Enumeration space offsets */
 #define  PCIE_CORE_CONFIG_OFFSET	0x0
@@ -94,7 +94,7 @@
 #define PCIEDEV_TRANS_WIN_HOSTMEM	PCIEDEV_TRANS_WIN_1
 #define PCIEDEV_TRANS_WIN_SWPAGING	PCIEDEV_TRANS_WIN_1
 #define PCIEDEV_TRANS_WIN_BT		PCIEDEV_TRANS_WIN_2
-#define PCIEDEV_TRANS_WIN_UNUSED	PCIEDEV_TRANS_WIN_3
+#define PCIEDEV_TRANS_WIN_FWTRACE	PCIEDEV_TRANS_WIN_3
 
 /* dma regs to control the flow between host2dev and dev2host  */
 typedef volatile struct pcie_devdmaregs {
@@ -209,6 +209,8 @@ typedef struct pcie_hmapviolation {
 	uint32	PAD[1];
 } pcie_hmapviolation_t;
 
+#if !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST) || defined(ATE_BUILD) || \
+	defined(BCMDVFS)
 /* SB side: PCIE core and host control registers */
 typedef volatile struct sbpcieregs {
 	uint32 control;		/* host mode only */
@@ -417,7 +419,8 @@ typedef volatile struct sbpcieregs {
 		uint32		PAD[45];		/* 0xC4C-0xCFF */
 	} ftn_ctrl;
 } sbpcieregs_t;
-	/* defined(BCMINTERNAL) || defined(ATE_BUILD) defined(BCMDVFS) */
+#endif /* !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST) || */
+	/* defined(ATE_BUILD) defined(BCMDVFS) */
 
 #define PCIE_CFG_DA_OFFSET 0x400	/* direct access register offset for configuration space */
 
@@ -445,7 +448,6 @@ typedef volatile struct sbpcieregs {
 #define PCIE_TL_CLK_DETCT	0x4000000	/* enable TL clk detection */
 #define PCIE_REQ_PEND_DIS_L1   0x1000000 /* prevents entering L1 on pending requests from host */
 #define PCIE_DIS_L23CLK_GATE	0x10000000	/* disable clk gating in L23(pcie_tl_clk) */
-#define PCIE_HWA_IDX_UPD_EN	0x10000000	/* enable the HWA interface to iDMA */
 
 /* Function control (corerev > 64) */
 #define PCIE_CPLCA_ENABLE		0x01
@@ -1044,8 +1046,6 @@ typedef volatile struct sbpcieregs {
 #define PCIDARErrlog_Addr(rev)	(REV_GE_64(rev) ? 0xA64 : 0xA44)
 #define PCIDARMailboxint(rev)	(REV_GE_64(rev) ? 0xA68 : 0xA48)
 
-#define PCIE_HWA_INDEX_UPDATE_EN	(1 << 1)
-
 #define PCIMSIVecAssign	0x58
 
 /* base of all HMAP window registers */
@@ -1127,6 +1127,7 @@ typedef volatile struct sbpcieregs {
 #define DAR_PCIH2D_DB7_0(rev)	OFFSETOF(sbpcieregs_t, u1.dar_64.h2d_db_7_0)
 #define DAR_PCIH2D_DB7_1(rev)	OFFSETOF(sbpcieregs_t, u1.dar_64.h2d_db_7_1)
 
+#if !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST)
 #define DAR_PCIMailBoxInt(rev)	(REV_GE_64(rev) ? \
 						OFFSETOF(sbpcieregs_t, u1.dar_64.mbox_int) : \
 						OFFSETOF(sbpcieregs_t, u1.dar.mbox_int))
@@ -1136,6 +1137,11 @@ typedef volatile struct sbpcieregs {
 #define DAR_PCIE_DAR_CTRL(rev)	(REV_GE_64(rev) ? \
 						OFFSETOF(sbpcieregs_t, u1.dar_64.dar_ctrl) : \
 						OFFSETOF(sbpcieregs_t, u1.dar.dar_ctrl))
+#else
+#define DAR_PCIMailBoxInt(rev)	PCIE_dar_mailboxint_OFFSET(rev)
+#define DAR_PCIE_PWR_CTRL(rev)	PCIE_dar_power_control_OFFSET(rev)
+#define DAR_PCIE_DAR_CTRL(rev)	PCIE_dar_control_OFFSET(rev)
+#endif
 
 #define DAR_FIS_CTRL(rev)      OFFSETOF(sbpcieregs_t, u1.dar_64.fis_ctrl)
 
@@ -1279,11 +1285,16 @@ typedef volatile struct sbpcieregs {
 #define PCIE_FTN_SWPME_MASK			(1 << PCIE_FTN_SWPME_SHIFT)
 
 #ifdef BCMDRIVER
+#if !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST)
 void pcie_watchdog_reset(osl_t *osh, si_t *sih, uint32 wd_mask, uint32 wd_val);
 void pcie_serdes_iddqdisable(osl_t *osh, si_t *sih, sbpcieregs_t *sbpcieregs);
 void pcie_set_trefup_time_100us(si_t *sih);
 uint32 pcie_cto_to_thresh_default(uint corerev);
 uint32 pcie_corereg(osl_t *osh, volatile void *regs, uint32 offset, uint32 mask, uint32 val);
+#endif /* !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST) */
+#if defined(DONGLEBUILD)
+void pcie_coherent_accenable(osl_t *osh, si_t *sih);
+#endif /* DONGLEBUILD */
 #endif /* BCMDRIVER */
 
 /* DMA intstatus and intmask */
@@ -1299,6 +1310,20 @@ uint32 pcie_corereg(osl_t *osh, volatile void *regs, uint32 offset, uint32 mask,
 #define PD_DMA_INT_MASK_H2D		0x1DC00
 #define PD_DMA_INT_MASK_D2H		0x1DC00
 #define PD_DB_INT_MASK			0xFF0000
+
+#if defined(DONGLEBUILD)
+#if REV_GE_64(BCMPCIEREV)
+#define PD_DEV0_DB_INTSHIFT		8u
+#define PD_DEV1_DB_INTSHIFT		10u
+#define PD_DEV2_DB_INTSHIFT		12u
+#define PD_DEV3_DB_INTSHIFT		14u
+#else
+#define PD_DEV0_DB_INTSHIFT		16u
+#define PD_DEV1_DB_INTSHIFT		18u
+#define PD_DEV2_DB_INTSHIFT		20u
+#define PD_DEV3_DB_INTSHIFT		22u
+#endif /* BCMPCIEREV */
+#endif /* DONGLEBUILD */
 
 #define PCIE_INVALID_OFFSET		0x18003ffc /* Invalid Register Offset for Induce Error */
 #define PCIE_INVALID_DATA		0x55555555 /* Invalid Data for Induce Error */
@@ -1423,11 +1448,7 @@ uint32 pcie_corereg(osl_t *osh, volatile void *regs, uint32 offset, uint32 mask,
 
 #define PD_ERR_TTX_REQ_DURING_D3_FN0	(1u << 10)	/* Tx mem req on iface when in non-D0 */
 
-/* HWA Doorbell-To-Function Mapping */
-#define PD_DB_IDMA_HWA_MASK	(0x03u)
-#define PD_DB_IDMA_HWA_SHIFT	(20u)
-
-/* H2D Doorbell Fields for IDMA / HWA / PWI */
+/* H2D Doorbell Fields for IDMA / PWI */
 #define PD_DB_FRG_ID_SHIFT		(0u)
 #define PD_DB_FRG_ID_MASK		(0xFu)		/* bits 3:0 */
 #define PD_DB_DMA_TYPE_SHIFT		(4u)
@@ -1444,10 +1465,6 @@ uint32 pcie_corereg(osl_t *osh, volatile void *regs, uint32 offset, uint32 mask,
 #define PWI_FLOW_RING_GROUP_ID_SHIFT	(20u)
 #define PWI_HOST_RINGIDX_MASK	(0xFFu) /* Host Ring Index Number[19:12] */
 #define PWI_HOST_RINGIDX_SHIFT	(12u)
-#define PWI_HWA_RINGTYPE_MASK	(0xFu)	/* HWA Ring Type Mapping-[11:8] */
-#define PWI_HWA_RINGTYPE_SHIFT	(8u)
-#define PWI_HWA_RINGIDX_MASK	(0xFFu)	/* HWA Ring Index Mapping- [7:0] */
-#define PWI_HWA_RINGIDX_SHIFT	(0u)
 
 /* DMA_TYPE Values */
 #define PD_DB_DMA_TYPE_NO_IDMA	(0u)

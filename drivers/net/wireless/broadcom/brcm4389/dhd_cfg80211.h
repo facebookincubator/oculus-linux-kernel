@@ -32,10 +32,10 @@
 
 #ifndef WL_ERR
 #define WL_ERR CFG80211_ERR
-#endif // endif
+#endif
 #ifndef WL_TRACE
 #define WL_TRACE CFG80211_TRACE
-#endif // endif
+#endif
 
 s32 dhd_cfg80211_init(struct bcm_cfg80211 *cfg);
 s32 dhd_cfg80211_deinit(struct bcm_cfg80211 *cfg);

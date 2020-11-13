@@ -173,6 +173,13 @@ int vm_swappiness = 60;
  */
 unsigned long vm_total_pages;
 
+/* CPU affinity mask for kswapd thread */
+#ifdef CONFIG_KSWAPD_CPU_AFFINITY_MASK
+char *kswapd_cpu_mask = CONFIG_KSWAPD_CPU_AFFINITY_MASK;
+#else
+char *kswapd_cpu_mask = NULL;
+#endif
+
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
 
@@ -3915,7 +3922,7 @@ static int kswapd(void *p)
 	};
 	const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
 
-	if (!cpumask_empty(cpumask))
+	if (kswapd_cpu_mask == NULL && !cpumask_empty(cpumask))
 		set_cpus_allowed_ptr(tsk, cpumask);
 	current->reclaim_state = &reclaim_state;
 
@@ -4083,6 +4090,13 @@ static int kswapd_cpu_online(unsigned int cpu)
 {
 	int nid;
 
+	/*
+	 * If there's an explicit CPU mask provided for kswapd, don't
+	 * modify it here.
+	 */
+	if (kswapd_cpu_mask != NULL)
+		return 0;
+
 	for_each_node_state(nid, N_MEMORY) {
 		pg_data_t *pgdat = NODE_DATA(nid);
 		const struct cpumask *mask;
@@ -4094,6 +4108,22 @@ static int kswapd_cpu_online(unsigned int cpu)
 			set_cpus_allowed_ptr(pgdat->kswapd, mask);
 	}
 	return 0;
+}
+
+static int set_kswapd_cpu_mask(pg_data_t *pgdat)
+{
+	int ret = 0;
+	cpumask_t tmask;
+
+	if (!kswapd_cpu_mask)
+		return 0;
+
+	cpumask_clear(&tmask);
+	ret = cpumask_parse(kswapd_cpu_mask, &tmask);
+	if (ret)
+		return ret;
+
+	return set_cpus_allowed_ptr(pgdat->kswapd, &tmask);
 }
 
 /*
@@ -4115,6 +4145,9 @@ int kswapd_run(int nid)
 		pr_err("Failed to start kswapd on node %d\n", nid);
 		ret = PTR_ERR(pgdat->kswapd);
 		pgdat->kswapd = NULL;
+	} else if (kswapd_cpu_mask) {
+		if (set_kswapd_cpu_mask(pgdat))
+			pr_warn("error setting kswapd cpu affinity mask\n");
 	}
 	return ret;
 }

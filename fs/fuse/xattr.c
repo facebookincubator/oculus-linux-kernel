@@ -223,12 +223,14 @@ const struct xattr_handler *fuse_xattr_handlers[] = {
 	NULL
 };
 
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
 const struct xattr_handler *fuse_acl_xattr_handlers[] = {
 	&posix_acl_access_xattr_handler,
 	&posix_acl_default_xattr_handler,
 	&fuse_xattr_handler,
 	NULL
 };
+#endif
 
 static const struct xattr_handler fuse_no_acl_access_xattr_handler = {
 	.name  = XATTR_NAME_POSIX_ACL_ACCESS,

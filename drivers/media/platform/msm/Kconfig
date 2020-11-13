@@ -9,6 +9,62 @@ menuconfig SPECTRA_CAMERA
       Enabling this adds support for the camera driver stack including sensor,
       IFE and postprocessing drivers.
 
+config NUM_ATTACHED_CAMERAS
+    int "Number of attached cameras"
+    default 8
+
+config SPECTRA_CAMERA_CUSTOM
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_FACE_DETECTION
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_ICP
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_JPEG
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LRME
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_ACTUATOR
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_EEPROM
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_FLASH
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_OIS
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_DEBUG
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_INFO
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_WARN
+    def_bool n
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_ERROR
+    def_bool y
+    depends on SPECTRA_CAMERA
+
 source "drivers/media/platform/msm/cvp/Kconfig"
 source "drivers/media/platform/msm/npu/Kconfig"
 source "drivers/media/platform/msm/synx/Kconfig"

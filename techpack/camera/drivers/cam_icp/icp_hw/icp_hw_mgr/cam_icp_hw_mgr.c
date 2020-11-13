@@ -2548,20 +2548,19 @@ static int cam_icp_mgr_process_fatal_error(
 
 static void cam_icp_mgr_process_dbg_buf(unsigned int debug_lvl)
 {
-	uint32_t *msg_ptr = NULL, *pkt_ptr = NULL;
+	uint32_t *msg_buf = NULL, *pkt_ptr = NULL;
 	struct hfi_msg_debug *dbg_msg;
-	uint32_t read_len, size_processed = 0;
+	uint32_t read_len = 0, size_processed = 0;
 	uint64_t timestamp = 0;
 	char *dbg_buf;
 	int rc = 0;
 
-	rc = hfi_read_message(icp_hw_mgr.dbg_buf, Q_DBG, &read_len);
-	if (rc)
-		return;
+	rc = hfi_read_message(&msg_buf, Q_DBG, &read_len);
+	if (rc || read_len == 0)
+		goto end;
 
-	msg_ptr = (uint32_t *)icp_hw_mgr.dbg_buf;
+	pkt_ptr = msg_buf;
 	while (true) {
-		pkt_ptr = msg_ptr;
 		if (pkt_ptr[ICP_PACKET_TYPE] == HFI_MSG_SYS_DEBUG) {
 			dbg_msg = (struct hfi_msg_debug *)pkt_ptr;
 			dbg_buf = (char *)&dbg_msg->msg_data;
@@ -2574,13 +2573,13 @@ static void cam_icp_mgr_process_dbg_buf(unsigned int debug_lvl)
 		size_processed += (pkt_ptr[ICP_PACKET_SIZE] >>
 			BYTE_WORD_SHIFT);
 		if (size_processed >= read_len)
-			return;
-		msg_ptr += (pkt_ptr[ICP_PACKET_SIZE] >>
-		BYTE_WORD_SHIFT);
-		pkt_ptr = NULL;
-		dbg_msg = NULL;
-		dbg_buf = NULL;
+			goto end;
+		pkt_ptr += (pkt_ptr[ICP_PACKET_SIZE] >> BYTE_WORD_SHIFT);
 	}
+
+end:
+	if (msg_buf)
+		kfree(msg_buf);
 }
 
 static int cam_icp_process_msg_pkt_type(
@@ -2654,8 +2653,8 @@ static int cam_icp_process_msg_pkt_type(
 
 static int32_t cam_icp_mgr_process_msg(void *priv, void *data)
 {
-	uint32_t read_len, msg_processed_len;
-	uint32_t *msg_ptr = NULL;
+	uint32_t read_len = 0, msg_processed_len;
+	uint32_t *msg_buf = NULL, *pkt_ptr = NULL;
 	struct hfi_msg_work_data *task_data;
 	struct cam_icp_hw_mgr *hw_mgr;
 	int rc = 0;
@@ -2668,14 +2667,15 @@ static int32_t cam_icp_mgr_process_msg(void *priv, void *data)
 	task_data = data;
 	hw_mgr = priv;
 
-	rc = hfi_read_message(icp_hw_mgr.msg_buf, Q_MSG, &read_len);
+	rc = hfi_read_message(&msg_buf, Q_MSG, &read_len);
 	if (rc) {
 		CAM_DBG(CAM_ICP, "Unable to read msg q rc %d", rc);
-	} else {
+		goto end;
+	} else if (read_len > 0) {
 		read_len = read_len << BYTE_WORD_SHIFT;
-		msg_ptr = (uint32_t *)icp_hw_mgr.msg_buf;
+		pkt_ptr = msg_buf;
 		while (true) {
-			cam_icp_process_msg_pkt_type(hw_mgr, msg_ptr,
+			cam_icp_process_msg_pkt_type(hw_mgr, pkt_ptr,
 				&msg_processed_len);
 
 			if (!msg_processed_len) {
@@ -2686,8 +2686,8 @@ static int32_t cam_icp_mgr_process_msg(void *priv, void *data)
 
 			read_len -= msg_processed_len;
 			if (read_len > 0) {
-				msg_ptr += (msg_processed_len >>
-				BYTE_WORD_SHIFT);
+				pkt_ptr += (msg_processed_len >>
+						BYTE_WORD_SHIFT);
 				msg_processed_len = 0;
 			} else {
 				break;
@@ -2703,6 +2703,10 @@ static int32_t cam_icp_mgr_process_msg(void *priv, void *data)
 
 		rc = cam_icp_mgr_trigger_recovery(hw_mgr);
 	}
+
+end:
+	if (msg_buf)
+		kfree(msg_buf);
 
 	return rc;
 }

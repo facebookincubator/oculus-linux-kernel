@@ -29,6 +29,7 @@
 #include "msm-pcm-routing-v2.h"
 #include "asoc/msm-cdc-pinctrl.h"
 #include "asoc/wcd-mbhc-v2.h"
+#include "codecs/audio-ext-clk-up.h"
 #include "codecs/wcd938x/wcd938x-mbhc.h"
 #include "codecs/wsa881x.h"
 #include "codecs/wsa883x/wsa883x.h"
@@ -5424,10 +5425,14 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_dapm_context *dapm;
 	struct snd_card *card;
 	struct snd_info_entry *entry;
+#if IS_ENABLED(CONFIG_WSA_MACRO)
 	struct snd_soc_component *aux_comp;
+#endif
+#if IS_ENABLED(CONFIG_SND_SOC_BOLERO)
 	struct platform_device *pdev = NULL;
 	int i = 0;
 	char *data = NULL;
+#endif
 	struct msm_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(rtd->card);
 
@@ -5484,6 +5489,7 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	snd_soc_dapm_sync(dapm);
 
+#if IS_ENABLED(CONFIG_WSA_MACRO)
 	/*
 	 * Send speaker configuration only for WSA8810.
 	 * Default configuration is for WSA8815.
@@ -5510,7 +5516,9 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			}
 		}
 	}
+#endif
 
+#if IS_ENABLED(CONFIG_SND_SOC_BOLERO)
 	for (i = 0; i < rtd->card->num_aux_devs; i++)
 	{
 		if (msm_aux_dev[i].name != NULL ) {
@@ -5554,6 +5562,7 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			}
 		}
 	}
+#endif
 
 	card = rtd->card->snd_card;
 	if (!pdata->codec_root) {
@@ -5567,8 +5576,12 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		}
 		pdata->codec_root = entry;
 	}
+
+#if IS_ENABLED(CONFIG_SND_SOC_BOLERO)
 	bolero_info_create_codec_entry(pdata->codec_root, component);
 	bolero_register_wake_irq(component, false);
+#endif
+
 	codec_reg_done = true;
 	return 0;
 err:
@@ -8421,6 +8434,18 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	uint index = 0;
 	struct clk *lpass_audio_hw_vote = NULL;
 
+#ifndef CONFIG_SND_SOC_WCD9XXX_V2
+	ret = audio_ref_clk_platform_init();
+	if (ret)
+		pr_err("%s: init extclk fail: %d\n", __func__, ret);
+#endif
+
+#ifndef CONFIG_WCD9XXX_CODEC_CORE_V2
+	ret = msm_cdc_pinctrl_drv_init();
+	if (ret)
+		pr_err("%s: Failed init pinctrl drv: %d\n", __func__, ret);
+#endif
+
 	if (!pdev->dev.of_node) {
 		dev_err(&pdev->dev, "%s: No platform supplied from device tree\n", __func__);
 		return -EINVAL;
@@ -8621,6 +8646,14 @@ static int msm_asoc_machine_remove(struct platform_device *pdev)
 	snd_event_master_deregister(&pdev->dev);
 	snd_soc_unregister_card(card);
 	msm_i2s_auxpcm_deinit();
+
+#ifndef CONFIG_WCD9XXX_CODEC_CORE_V2
+	msm_cdc_pinctrl_drv_exit();
+#endif
+
+#ifndef CONFIG_SND_SOC_WCD9XXX_V2
+	audio_ref_clk_platform_exit();
+#endif
 
 	return 0;
 }

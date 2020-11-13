@@ -3195,7 +3195,7 @@ static struct smb_irq_info smb5_irqs[] = {
 	[WDOG_SNARL_IRQ] = {
 		.name		= "wdog-snarl",
 		.handler	= wdog_snarl_irq_handler,
-		.wake		= true,
+		.wake		= false,
 	},
 	[WDOG_BARK_IRQ] = {
 		.name		= "wdog-bark",

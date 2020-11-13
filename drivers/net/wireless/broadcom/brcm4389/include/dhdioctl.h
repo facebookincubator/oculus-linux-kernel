@@ -61,7 +61,11 @@ typedef enum d11_lpbk_type {
 	M2M_NON_DMA_LPBK = 3,
 	D11_HOST_MEM_LPBK = 4,
 	BMC_HOST_MEM_LPBK = 5,
-	MAX_LPBK = 6
+	M2M_WRITE_TO_RAM = 6,
+	M2M_READ_FROM_RAM = 7,
+	D11_WRITE_TO_RAM = 8,
+	D11_READ_FROM_RAM = 9,
+	MAX_LPBK = 10
 } dma_xfer_type_t;
 
 typedef struct dmaxfer_info {
@@ -83,6 +87,54 @@ typedef struct dmaxfer_info {
 
 #define DHD_FILENAME_MAX 64
 #define DHD_PATHNAME_MAX 128
+
+#ifdef EFI
+struct control_signal_ops {
+	uint32 signal;
+	uint32 val;
+};
+enum {
+	WL_REG_ON = 0,
+	DEVICE_WAKE = 1,
+	TIME_SYNC = 2
+};
+
+typedef struct wifi_properties {
+	uint8 version;
+	uint32 vendor;
+	uint32 model;
+	uint8 mac_addr[6];
+	uint32 chip_revision;
+	uint8 silicon_revision;
+	uint8 is_powered;
+	uint8 is_sleeping;
+	char module_revision[16];	/* null terminated string */
+	uint8 is_fw_loaded;
+	char  fw_filename[DHD_FILENAME_MAX];		/* null terminated string */
+	char nvram_filename[DHD_FILENAME_MAX];	/* null terminated string */
+	uint8 channel;
+	uint8 module_sn[6];
+} wifi_properties_t;
+
+#define DHD_WIFI_PROPERTIES_VERSION 0x1
+
+#define DHD_OTP_SIZE_WORDS 912
+
+typedef struct intr_poll_data {
+	uint16 version;
+	uint16 length;
+	uint32 type;
+	uint32 value;
+} intr_poll_t;
+
+typedef enum intr_poll_data_type {
+	INTR_POLL_DATA_PERIOD = 0,
+	INTR_POLL_DATA_NUM_PKTS_THRESH,
+	INTR_POLL_DATA_PKT_INTVL_THRESH
+} intr_poll_type_t;
+
+#define DHD_INTR_POLL_VERSION 0x1u
+#endif /* EFI */
 
 typedef struct tput_test {
 	uint16 version;
@@ -117,9 +169,6 @@ typedef enum {
 typedef enum dhd_iftype {
 	DHD_IF_TYPE_STA		= 0,
 	DHD_IF_TYPE_AP		= 1,
-
-// MOG-ON: DHD_AWDL
-// MOG-OFF: DHD_AWDL
 
 	DHD_IF_TYPE_NAN_NMI	= 3,
 	DHD_IF_TYPE_NAN		= 4,
@@ -170,6 +219,12 @@ typedef enum dhd_iface_mgmt_policy {
 #define	DHD_IOCTL_MAXLEN	(16384)	/* max length ioctl buffer required */
 #define	DHD_IOCTL_SMLEN		256		/* "small" length ioctl buffer required */
 
+/*
+ * For cases where 16K buf is not sufficient.
+ * Ex:- DHD dump output beffer is more than 16K.
+ */
+#define	DHD_IOCTL_MAXLEN_32K	(32768u)
+
 /* common ioctl definitions */
 #define DHD_GET_MAGIC				0
 #define DHD_GET_VERSION				1
@@ -190,7 +245,11 @@ typedef enum dhd_iface_mgmt_policy {
 #define DHD_GLOM_VAL	0x0400
 #define DHD_EVENT_VAL	0x0800
 #define DHD_BTA_VAL	0x1000
+#if defined(NDIS) && (NDISVER >= 0x0630) && defined(BCMDONGLEHOST)
+#define DHD_SCAN_VAL	0x2000
+#else
 #define DHD_ISCAN_VAL	0x2000
+#endif
 #define DHD_ARPOE_VAL	0x4000
 #define DHD_REORDER_VAL	0x8000
 #define DHD_WL_VAL		0x10000
@@ -308,9 +367,6 @@ typedef struct fw_download_info {
 typedef struct debug_buf_dest_stat {
 	uint32 stat[DEBUG_BUF_DEST_MAX];
 } debug_buf_dest_stat_t;
-
-// MOG-ON: DHD_PKTTS
-// MOG-OFF: DHD_PKTTS
 
 /* devreset */
 #define DHD_DEVRESET_VERSION 1

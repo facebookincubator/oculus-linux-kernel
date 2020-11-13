@@ -585,6 +585,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	struct pwm_fan_ctx *ctx;
 
 	int ret;
+	u32 dt_addr;
 
 #ifdef CONFIG_DRM
 	ret = pwm_fan_set_active_panel(pdev->dev.of_node);
@@ -681,14 +682,23 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_tach_gpio_dir;
 
+	ret = of_property_read_u32(pdev->dev.of_node, "reg", &dt_addr);
+	if (ret)
+		goto err_tach_gpio_dir;
+
 	ctx->pwm_fan_state = ctx->pwm_fan_max_state;
 	if (IS_ENABLED(CONFIG_THERMAL)) {
+		char cdev_name[THERMAL_NAME_LENGTH] = "";
+
+		snprintf(cdev_name, THERMAL_NAME_LENGTH, "pwm-tach-fan%d",
+				dt_addr);
 		cdev = thermal_of_cooling_device_register(pdev->dev.of_node,
-							  "pwm-tach-fan", ctx,
+							  cdev_name, ctx,
 							  &pwm_fan_cooling_ops);
 		if (IS_ERR(cdev)) {
 			dev_err(&pdev->dev,
-				"Failed to register pwm-tach-fan as cooling device");
+				"Failed to register %s as cooling device",
+				cdev_name);
 			ret = PTR_ERR(cdev);
 			goto err_tach_gpio_dir;
 		}

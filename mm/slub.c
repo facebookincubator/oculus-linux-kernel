@@ -30,6 +30,7 @@
 #include <linux/memory.h>
 #include <linux/math64.h>
 #include <linux/fault-inject.h>
+#include <linux/sort.h>
 #include <linux/stacktrace.h>
 #include <linux/prefetch.h>
 #include <linux/memcontrol.h>
@@ -4606,6 +4607,17 @@ static void process_slab(struct loc_track *t, struct kmem_cache *s,
 			add_location(t, s, get_track(s, p, alloc));
 }
 
+static int cmp_location(const void *a, const void *b)
+{
+	const struct location *x = a;
+	const struct location *y = b;
+
+	if (x->count != y->count)
+		return x->count > y->count ? -1 : 1;
+
+	return x->addr < y->addr ? -1 : 1;
+}
+
 static int list_locations(struct kmem_cache *s, char *buf,
 					enum track_item alloc)
 {
@@ -4640,6 +4652,8 @@ static int list_locations(struct kmem_cache *s, char *buf,
 			process_slab(&t, s, page, alloc, map);
 		spin_unlock_irqrestore(&n->list_lock, flags);
 	}
+
+	sort(t.loc, t.count, sizeof(struct location), cmp_location, NULL);
 
 	for (i = 0; i < t.count; i++) {
 		struct location *l = &t.loc[i];

@@ -128,42 +128,51 @@ enum wl_cfgp2p_status {
 /* dword align allocation */
 #define WLC_IOCTL_MAXLEN 8192
 
-// MOG-ON: BCMINTERNAL
-/* Samsung want to print INFO2 instead of ERROR
- * because most of case, ERROR message is not a real ERROR.
- * but it can be regarded as real error case for Tester
- */
-// MOG-OFF: BCMINTERNAL
+#if defined(CUSTOMER_DBG_PREFIX_ENABLE)
+#define USER_PREFIX_CFGP2P		"[cfgp2p][wlan] "
+#define CFGP2P_ERROR_TEXT		USER_PREFIX_CFGP2P
+#define CFGP2P_INFO_TEXT		USER_PREFIX_CFGP2P
+#define CFGP2P_ACTION_TEXT		USER_PREFIX_CFGP2P
+#define CFGP2P_DEBUG_TEXT		USER_PREFIX_CFGP2P
+#else
+#ifdef CUSTOMER_HW4_DEBUG
+#define CFGP2P_ERROR_TEXT		"CFGP2P-INFO2) "
+#else
 #define CFGP2P_ERROR_TEXT		"CFGP2P-ERROR) "
+#endif /* CUSTOMER_HW4_DEBUG */
+#define CFGP2P_INFO_TEXT		"CFGP2P-INFO) "
+#define CFGP2P_ACTION_TEXT		"CFGP2P-ACTION) "
+#define CFGP2P_DEBUG_TEXT		"CFGP2P-DEBUG) "
+#endif /* defined(CUSTOMER_DBG_PREFIX_ENABLE) */
 
 #ifdef DHD_LOG_DUMP
 #define CFGP2P_ERR(args)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_ERR) {				\
-			printk(KERN_INFO CFGP2P_ERROR_TEXT "%s : ", __func__);	\
-			printk args;						\
-			DHD_LOG_DUMP_WRITE("[%s] %s: ",	\
-			dhd_log_dump_get_timestamp(), __func__);	\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_ERROR_TEXT "%s : ", __func__);	\
+			pr_cont args;					\
+			DHD_LOG_DUMP_WRITE_TS_FN;	\
 			DHD_LOG_DUMP_WRITE args;	\
 		}									\
 	} while (0)
 #define	CFGP2P_INFO(args)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_INFO) {				\
-			printk(KERN_INFO "CFGP2P-INFO) %s : ", __func__);	\
-			printk args;						\
-			DHD_LOG_DUMP_WRITE("[%s] %s: ",	\
-			dhd_log_dump_get_timestamp(), __func__);	\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_INFO_TEXT "%s : ", __func__);	\
+			pr_cont args;					\
+			DHD_LOG_DUMP_WRITE_TS_FN;	\
 			DHD_LOG_DUMP_WRITE args;	\
 		}									\
 	} while (0)
 #define	CFGP2P_ACTION(args)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_P2P_ACTION) {			\
-			printk(KERN_DEBUG "CFGP2P-ACTION) %s :", __func__);	\
-			printk args;							\
-			DHD_LOG_DUMP_WRITE("[%s] %s: ",	\
-			dhd_log_dump_get_timestamp(), __func__);	\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_ACTION_TEXT "%s :", __func__);	\
+			pr_cont args;					\
+			DHD_LOG_DUMP_WRITE_TS_FN;	\
 			DHD_LOG_DUMP_WRITE args;	\
 		}									\
 	} while (0)
@@ -171,22 +180,25 @@ enum wl_cfgp2p_status {
 #define CFGP2P_ERR(args)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_ERR) {				\
-			printk(KERN_INFO CFGP2P_ERROR_TEXT "%s : ", __func__);	\
-			printk args;						\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_ERROR_TEXT "%s : ", __func__);	\
+			pr_cont args;					\
 		}									\
 	} while (0)
 #define	CFGP2P_INFO(args)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_INFO) {				\
-			printk(KERN_INFO "CFGP2P-INFO) %s : ", __func__);	\
-			printk args;						\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_INFO_TEXT "%s : ", __func__);	\
+			pr_cont args;					\
 		}									\
 	} while (0)
 #define	CFGP2P_ACTION(args)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_P2P_ACTION) {			\
-			printk(KERN_DEBUG "CFGP2P-ACTION) %s :", __func__);	\
-			printk args;							\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_ACTION_TEXT "%s :", __func__);	\
+			pr_cont args;					\
 		}									\
 	} while (0)
 #endif /* DHD_LOG_DUMP */
@@ -194,8 +206,9 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_DBG(args)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_DBG) {			\
-			printk(KERN_DEBUG "CFGP2P-DEBUG) %s :", __func__);	\
-			printk args;							\
+			WL_DBG_PRINT_SYSTEM_TIME;				\
+			pr_cont(CFGP2P_DEBUG_TEXT "%s :", __func__);	\
+			pr_cont args;					\
 		}									\
 	} while (0)
 
@@ -211,11 +224,11 @@ enum wl_cfgp2p_status {
 
 #ifdef WL_ENABLE_P2P_IF
 #undef WL_ENABLE_P2P_IF
-#endif // endif
+#endif
 
 #ifdef WL_SUPPORT_BACKPORTED_KPATCHES
 #undef WL_SUPPORT_BACKPORTED_KPATCHES
-#endif // endif
+#endif
 #else
 #ifdef WLP2P
 #ifndef WL_ENABLE_P2P_IF
@@ -228,7 +241,7 @@ enum wl_cfgp2p_status {
 #ifndef WL_CFG80211_P2P_DEV_IF
 #ifdef WL_NEWCFG_PRIVCMD_SUPPORT
 #undef WL_NEWCFG_PRIVCMD_SUPPORT
-#endif // endif
+#endif
 #endif /* WL_CFG80211_P2P_DEV_IF */
 
 #if defined(WL_ENABLE_P2P_IF) && (defined(WL_CFG80211_P2P_DEV_IF) || \
@@ -342,7 +355,11 @@ wl_cfgp2p_action_tx_complete(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev
 
 extern s32
 wl_cfgp2p_tx_action_frame(struct bcm_cfg80211 *cfg, struct net_device *dev,
-	wl_af_params_t *af_params, s32 bssidx);
+	wl_af_params_t *af_params, s32 bssidx, const u8 *sa);
+
+extern s32
+wl_actframe_fillup_v2(struct net_device *dev, wl_af_params_v2_t *af_params_v2_p,
+	wl_af_params_t *af_params, const u8 *sa, uint16 wl_af_params_size);
 
 extern void
 wl_cfgp2p_generate_bss_mac(struct bcm_cfg80211 *cfg, struct ether_addr *primary_addr);
@@ -455,7 +472,7 @@ wl_cfgp2p_is_p2p_specific_scan(struct cfg80211_scan_request *request);
 							(subtype == P2P_PAF_PROVDIS_RSP)))
 #define IS_P2P_SOCIAL(ch) ((ch == SOCIAL_CHAN_1) || (ch == SOCIAL_CHAN_2) || (ch == SOCIAL_CHAN_3))
 #define IS_P2P_SSID(ssid, len) (!memcmp(ssid, WL_P2P_WILDCARD_SSID, WL_P2P_WILDCARD_SSID_LEN) && \
-					(len == WL_P2P_WILDCARD_SSID_LEN))
+					(len >= WL_P2P_WILDCARD_SSID_LEN))
 
 /* Min FW ver required to support chanspec
  * instead of channel in actframe iovar.

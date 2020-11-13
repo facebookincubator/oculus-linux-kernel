@@ -16,8 +16,11 @@ subdir-y += lg
 subdir-y += marvell
 subdir-y += mediatek
 subdir-y += nvidia
+ifeq ($(CONFIG_OCULUS),y)
 subdir-y += oculus
+else
 subdir-y += qcom
+endif
 subdir-y += realtek
 subdir-y += renesas
 subdir-y += rockchip

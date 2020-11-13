@@ -48,6 +48,16 @@ struct cycle_fv_cfg {
 	struct range_data		fv_cfg[MAX_STEP_CHG_ENTRIES];
 };
 
+struct chg_disable_cfg {
+	struct step_chg_jeita_param	param;
+	struct range_data		fv_cfg[MAX_STEP_CHG_ENTRIES];
+};
+
+struct rblt_fv_cfg {
+	struct step_chg_jeita_param	param;
+	struct range_data		rblt_cfg[MAX_STEP_CHG_ENTRIES];
+};
+
 struct step_chg_info {
 	struct device		*dev;
 	ktime_t			step_last_update_time;
@@ -60,6 +70,7 @@ struct step_chg_info {
 	bool			sw_jeita_cfg_valid;
 	bool			cycle_cfg_valid;
 	bool			rblt_cfg_valid;
+	bool			chg_disable_cfg_valid;
 	bool			soc_based_step_chg;
 	bool			ocv_based_step_chg;
 	bool			vbat_avg_based_step_chg;
@@ -70,10 +81,10 @@ struct step_chg_info {
 	int			cycle_fcc_index;
 	int			cycle_fv_index;
 	int			step_index;
+	int			chg_disable_index;
+	int			rblt_fv_index;
 	int			get_config_retry_count;
 	int			chg_profile;
-
-	struct range_data rblt_cfg[MAX_STEP_CHG_ENTRIES];
 
 	struct step_chg_cfg	*step_chg_config;
 	struct jeita_fcc_cfg	*jeita_fcc_config;
@@ -82,9 +93,14 @@ struct step_chg_info {
 	struct cycle_fcc_cfg	*cycle_fcc_config;
 	struct cycle_fv_cfg	*cycle_fv_config;
 
+	struct chg_disable_cfg	*chg_disable_config;
+
+	struct rblt_fv_cfg	*rblt_fv_config;
+
 	struct votable		*fcc_votable;
 	struct votable		*fv_votable;
 	struct votable		*usb_icl_votable;
+	struct votable		*chg_disable_votable;
 	struct wakeup_source	*step_chg_ws;
 	struct power_supply	*batt_psy;
 	struct power_supply	*bms_psy;
@@ -433,12 +449,26 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 	chip->rblt_cfg_valid = true;
 	rc = read_range_data_from_node(profile_node,
 			"qcom,rblt-ranges",
-			chip->rblt_cfg,
+			chip->rblt_fv_config->rblt_cfg,
 			RBLT_THRESHOLD_MAX, max_fv_uv);
 	if (rc < 0) {
 		pr_debug("Read qcom,rblt-ranges failed from battery profile, rc=%d\n",
 					rc);
 		chip->rblt_cfg_valid = false;
+	}
+
+	chip->chg_disable_cfg_valid = true;
+	memset(ranges, 0, ARRAY_SIZE(ranges) * sizeof(char));
+	snprintf(ranges, ARRAY_SIZE(ranges), "qcom,chg-disable-ranges-%d",
+			chip->chg_profile);
+	rc = read_range_data_from_node(profile_node,
+			ranges,
+			chip->chg_disable_config->fv_cfg,
+			max_fv_uv, 1);
+	if (rc < 0) {
+		pr_debug("Read qcom,chg-disable-ranges failed from battery profile, rc=%d\n",
+				rc);
+		chip->chg_disable_cfg_valid = false;
 	}
 
 	return rc;
@@ -491,6 +521,16 @@ static void get_config_work(struct work_struct *work)
 			chip->cycle_fv_config->fv_cfg[i].low_threshold,
 			chip->cycle_fv_config->fv_cfg[i].high_threshold,
 			chip->cycle_fv_config->fv_cfg[i].value);
+	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++)
+		pr_debug("chg-disable-cfg: %duV(SoC) ~ %duV(SoC), %d\n",
+			chip->chg_disable_config->fv_cfg[i].low_threshold,
+			chip->chg_disable_config->fv_cfg[i].high_threshold,
+			chip->chg_disable_config->fv_cfg[i].value);
+	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++)
+		pr_debug("rblt-fv-cfg: %dOhm ~ %dOhm, %duV\n",
+			chip->rblt_fv_config->rblt_cfg[i].low_threshold,
+			chip->rblt_fv_config->rblt_cfg[i].high_threshold,
+			chip->rblt_fv_config->rblt_cfg[i].value);
 
 	return;
 
@@ -709,8 +749,9 @@ update_time:
 static int handle_jeita(struct step_chg_info *chip)
 {
 	union power_supply_propval pval = {0, };
-	int rc = 0, fcc_ua = 0, jeita_fcc_ua = 0, cycle_fcc_ua = 0, i;
-	u32 fv_uv = 0, jeita_fv_uv = 0, cycle_fv_uv = 0;
+	int rc = 0, fcc_ua = 0, jeita_fcc_ua = 0, cycle_fcc_ua = 0;
+	u32 fv_uv = 0, jeita_fv_uv = 0, cycle_fv_uv = 0, rblt_fv_uv = 0;
+	int chg_disable = false;
 	u64 elapsed_us;
 
 	rc = power_supply_get_property(chip->batt_psy,
@@ -808,12 +849,13 @@ find_fcc_votable:
 	fv_uv = min(jeita_fv_uv, cycle_fv_uv);
 
 find_fv_votable:
-	chip->fv_votable = find_votable("FV");
+	if (!chip->fv_votable)
+		chip->fv_votable = find_votable("FV");
 	if (!chip->fv_votable)
 		goto update_time;
 
 	if (!chip->rblt_cfg_valid)
-		goto find_usb_icl;
+		goto find_chg_disable_votable;
 
 	/*
 	 * If battery pack rblt is between swelling thresholds then
@@ -825,14 +867,40 @@ find_fv_votable:
 		pr_err("Get rblt value failed, rc=%d\n", rc);
 		goto find_usb_icl;
 	}
-	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++) {
-		if (is_between(chip->rblt_cfg[i].low_threshold,
-			chip->rblt_cfg[i].high_threshold, pval.intval)) {
-			fv_uv = min(fv_uv, chip->rblt_cfg[i].value);
-			pr_debug("RBLT below %dOhm threshold, max charge set to %duv",
-				chip->rblt_cfg[i].high_threshold, fv_uv);
-			break;
-		}
+	rc = get_val(chip->rblt_fv_config->rblt_cfg,
+			chip->rblt_fv_config->param.hysteresis,
+			chip->rblt_fv_index,
+			pval.intval,
+			&chip->rblt_fv_index,
+			&rblt_fv_uv);
+	if (rc < 0)
+		rblt_fv_uv = fv_uv;
+
+	fv_uv = min(fv_uv, rblt_fv_uv);
+
+find_chg_disable_votable:
+	if (!chip->chg_disable_votable)
+		chip->chg_disable_votable = find_votable("CHG_DISABLE");
+
+	if (!chip->chg_disable_votable)
+		goto find_usb_icl;
+
+	if (!chip->chg_disable_cfg_valid)
+		goto find_usb_icl;
+
+	rc = power_supply_get_property(chip->batt_psy,
+			chip->chg_disable_config->param.psy_prop, &pval);
+	if (!rc) {
+		rc = get_val(chip->chg_disable_config->fv_cfg,
+				chip->chg_disable_config->param.hysteresis,
+				chip->chg_disable_index,
+				pval.intval,
+				&chip->chg_disable_index,
+				&chg_disable);
+		if (rc < 0)
+			chg_disable = false;
+
+		vote(chip->chg_disable_votable, JEITA_VOTER, chg_disable, 0);
 	}
 
 find_usb_icl:
@@ -1022,6 +1090,8 @@ int qcom_step_chg_init(struct device *dev,
 	chip->jeita_fv_index = -EINVAL;
 	chip->cycle_fcc_index = -EINVAL;
 	chip->cycle_fv_index = -EINVAL;
+	chip->chg_disable_index = -EINVAL;
+	chip->rblt_fv_index = -EINVAL;
 
 	chip->step_chg_config = devm_kzalloc(dev,
 			sizeof(struct step_chg_cfg), GFP_KERNEL);
@@ -1059,6 +1129,24 @@ int qcom_step_chg_init(struct device *dev,
 	chip->cycle_fv_config->param.psy_prop = POWER_SUPPLY_PROP_CYCLE_COUNT;
 	chip->cycle_fv_config->param.prop_name = "CYCLE_COUNT";
 	chip->cycle_fv_config->param.hysteresis = 0;
+
+	chip->chg_disable_config = devm_kzalloc(dev,
+			sizeof(struct chg_disable_cfg), GFP_KERNEL);
+	if (!chip->chg_disable_config)
+		return -ENOMEM;
+
+	chip->chg_disable_config->param.psy_prop = POWER_SUPPLY_PROP_VOLTAGE_NOW;
+	chip->chg_disable_config->param.prop_name = "VBATT";
+	chip->chg_disable_config->param.hysteresis = 100000;
+
+	chip->rblt_fv_config = devm_kzalloc(dev,
+			sizeof(struct rblt_fv_cfg), GFP_KERNEL);
+	if (!chip->rblt_fv_config)
+		return -ENOMEM;
+
+	chip->rblt_fv_config->param.psy_prop = POWER_SUPPLY_PROP_RBLT;
+	chip->rblt_fv_config->param.prop_name = "RBLT";
+	chip->rblt_fv_config->param.hysteresis = 0;
 
 	INIT_DELAYED_WORK(&chip->status_change_work, status_change_work);
 	INIT_DELAYED_WORK(&chip->get_config_work, get_config_work);

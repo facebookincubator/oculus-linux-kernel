@@ -34,7 +34,7 @@
 #include <string.h>
 #ifndef ASSERT
 #define ASSERT(exp)
-#endif // endif
+#endif
 #endif /* !BCMDRIVER */
 #include <bcmutils.h>
 
@@ -69,17 +69,16 @@ bcm_bloom_create(bcm_bloom_alloc_t alloc_cb,
 		err = BCME_NOMEM;
 		goto done;
 	}
-
 	memset(bp, 0, sizeof(*bp));
+
 	bp->cb_ctx = cb_ctx;
 	bp->max_hash = max_hash;
 	bp->hash = (*alloc_cb)(cb_ctx, sizeof(*bp->hash) * max_hash);
-	memset(bp->hash, 0, sizeof(*bp->hash) * max_hash);
-
 	if (!bp->hash) {
 		err = BCME_NOMEM;
 		goto done;
 	}
+	memset(bp->hash, 0, sizeof(*bp->hash) * max_hash);
 
 	if (filter_size > 0) {
 		bp->filter = (*alloc_cb)(cb_ctx, filter_size);

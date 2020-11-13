@@ -34,7 +34,7 @@
 #include <stdlib.h>
 #ifndef ASSERT
 #define ASSERT(exp)
-#endif // endif
+#endif
 #endif /* !BCMDRIVER */
 
 #include <bcmtlv.h>
@@ -42,7 +42,7 @@
 #include <bcmutils.h>
 
 int
-bcm_xtlv_hdr_size(bcm_xtlv_opts_t opts)
+BCMPOSTTRAPFN(bcm_xtlv_hdr_size)(bcm_xtlv_opts_t opts)
 {
 	int len = (int)OFFSETOF(bcm_xtlv_t, data); /* nominal */
 	if (opts & BCM_XTLV_OPTION_LENU8) --len;
@@ -60,7 +60,7 @@ bcm_valid_xtlv(const bcm_xtlv_t *elt, int buf_len, bcm_xtlv_opts_t opts)
 }
 
 int
-bcm_xtlv_size_for_data(int dlen, bcm_xtlv_opts_t opts)
+BCMPOSTTRAPFN(bcm_xtlv_size_for_data)(int dlen, bcm_xtlv_opts_t opts)
 {
 	int hsz;
 
@@ -209,7 +209,7 @@ bcm_xtlv_head(bcm_xtlvbuf_t *tbuf)
 }
 
 void
-bcm_xtlv_pack_xtlv(bcm_xtlv_t *xtlv, uint16 type, uint16 len, const uint8 *data,
+BCMPOSTTRAPFN(bcm_xtlv_pack_xtlv)(bcm_xtlv_t *xtlv, uint16 type, uint16 len, const uint8 *data,
 	bcm_xtlv_opts_t opts)
 {
 	uint8 *data_buf;

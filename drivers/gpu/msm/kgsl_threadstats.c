@@ -197,6 +197,9 @@ void kgsl_thread_init_sysfs(struct kgsl_device *device,
 
 void kgsl_thread_private_close(struct kgsl_thread_private *private)
 {
+	if (private == NULL)
+		return;
+
 	mutex_lock(&kgsl_driver.process_mutex);
 
 	if (--private->fd_count > 0) {

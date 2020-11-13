@@ -71,7 +71,7 @@ struct molokini_parameters {
 	/* Standard parameters */
 	u16 temp_fg;
 	u16 voltage;
-	u16 battery_status;
+	char battery_status[16];
 	u16 icurrent; /* negative range */
 	u16 remaining_capacity;
 	u16 fcc;

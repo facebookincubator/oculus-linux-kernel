@@ -89,7 +89,8 @@ extern bcm_static_buf_t *bcm_static_buf;
 
 #ifdef DHD_USE_STATIC_CTRLBUF
 #define STATIC_PKT_1PAGE_NUM	0
-#define STATIC_PKT_2PAGE_NUM	128
+/* Should match DHD_SKB_2PAGE_BUF_NUM */
+#define STATIC_PKT_2PAGE_NUM	192
 #else
 #define STATIC_PKT_1PAGE_NUM	8
 #define STATIC_PKT_2PAGE_NUM	8
@@ -135,6 +136,10 @@ struct osl_cmn_info {
 	spinlock_t dbgmem_lock;
 	bcm_mem_link_t *dbgmem_list;
 	bcm_mem_link_t *dbgvmem_list;
+#ifdef BCMDBG_PKT    /* pkt logging for debugging */
+	spinlock_t pktlist_lock;
+	pktlist_info_t pktlist;
+#endif  /* BCMDBG_PKT */
 	spinlock_t pktalloc_lock;
 	atomic_t refcount; /* Number of references to this shared structure. */
 };
@@ -153,7 +158,16 @@ struct osl_info {
 	uint bustype;
 	osl_cmn_t *cmn; /* Common OSL related data shred between two OSH's */
 
+	/* for host drivers, a bus handle is needed when reading from and/or writing to dongle
+	 * registeres, however ai/si utilities only passes osh handle to R_REG and W_REG. as
+	 * a work around, save the bus handle here
+	 */
 	void *bus_handle;
+#ifdef BCMDBG_CTRACE
+	spinlock_t ctrace_lock;
+	struct list_head ctrace_list;
+	int ctrace_num;
+#endif /* BCMDBG_CTRACE */
 #if defined(AXI_TIMEOUTS_NIC)
 	bpt_cb_fn bpt_cb;
 	void *sih;

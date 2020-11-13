@@ -508,44 +508,41 @@ int kgsl_drawobj_sync_add_sync(struct kgsl_device *device,
 	struct kgsl_drawobj_sync *syncobj,
 	struct kgsl_cmd_syncpoint *sync)
 {
-	void *priv;
 	int ret, psize;
 	struct kgsl_drawobj *drawobj = DRAWOBJ(syncobj);
-	int (*func)(struct kgsl_device *device,
-			struct kgsl_drawobj_sync *syncobj,
-			void *priv);
 
-	switch (sync->type) {
-	case KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP:
+	if (sync->type == KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP) {
+		struct kgsl_cmd_syncpoint_timestamp timestamp;
+
 		psize = sizeof(struct kgsl_cmd_syncpoint_timestamp);
-		func = drawobj_add_sync_timestamp;
-		break;
-	case KGSL_CMD_SYNCPOINT_TYPE_FENCE:
+		if (sync->size != psize)
+			goto bad_size;
+
+		copy_from_user(&timestamp, sync->priv, sync->size);
+		ret = drawobj_add_sync_timestamp(device, syncobj, &timestamp);
+	} else if (sync->type == KGSL_CMD_SYNCPOINT_TYPE_FENCE) {
+		struct kgsl_cmd_syncpoint_fence fence;
+
 		psize = sizeof(struct kgsl_cmd_syncpoint_fence);
-		func = drawobj_add_sync_fence;
-		break;
-	default:
+		if (sync->size != psize)
+			goto bad_size;
+
+		copy_from_user(&fence, sync->priv, sync->size);
+		ret = drawobj_add_sync_fence(device, syncobj, &fence);
+	} else {
 		dev_err(device->dev,
 			     "bad syncpoint type ctxt %d type 0x%x size %zu\n",
 			     drawobj->context->id, sync->type, sync->size);
 		return -EINVAL;
 	}
 
-	if (sync->size != psize) {
-		dev_err(device->dev,
-			     "bad syncpoint size ctxt %d type 0x%x size %zu\n",
-			     drawobj->context->id, sync->type, sync->size);
-		return -EINVAL;
-	}
-
-	priv = memdup_user(sync->priv, sync->size);
-	if (IS_ERR(priv))
-		return PTR_ERR(priv);
-
-	ret = func(device, syncobj, priv);
-	kfree(priv);
-
 	return ret;
+
+bad_size:
+	dev_err(device->dev,
+			"bad syncpoint size ctxt %d type 0x%x size %zu\n",
+			drawobj->context->id, sync->type, sync->size);
+	return -EINVAL;
 }
 
 static void add_profiling_buffer(struct kgsl_device *device,

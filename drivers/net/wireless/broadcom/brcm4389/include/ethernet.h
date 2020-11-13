@@ -26,7 +26,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include "typedefs.h"
-#endif // endif
+#endif
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
@@ -150,19 +150,47 @@ BWL_PRE_PACKED_STRUCT struct	ether_addr {
 #define ETHER_ISMULTI(ea) (((const uint8 *)(ea))[0] & 1)
 
 /* compare two ethernet addresses - assumes the pointers can be referenced as shorts */
-#define eacmp(a, b)	((((const uint16 *)(a))[0] ^ ((const uint16 *)(b))[0]) | \
-	                 (((const uint16 *)(a))[1] ^ ((const uint16 *)(b))[1]) | \
-	                 (((const uint16 *)(a))[2] ^ ((const uint16 *)(b))[2]))
+#if defined(DONGLEBUILD) && defined(__ARM_ARCH_7A__) && !defined(BCMFUZZ)
+#define eacmp(a, b)		(((*(const uint32 *)(a)) ^ (*(const uint32 *)(b))) || \
+				 ((*(const uint16 *)(((const uint8 *)(a)) + 4)) ^ \
+				  (*(const uint16 *)(((const uint8 *)(b)) + 4))))
+
+#define ehcmp(a, b)		((((const uint32 *)(a))[0] ^ ((const uint32 *)(b))[0]) || \
+				 (((const uint32 *)(a))[1] ^ ((const uint32 *)(b))[1]) || \
+				 (((const uint32 *)(a))[2] ^ ((const uint32 *)(b))[2]) || \
+				 ((*(const uint16 *)(((const uint32 *)(a)) + 3)) ^ \
+				 (*(const uint16 *)(((const uint32 *)(b)) + 3))))
+#else
+#define eacmp(a, b)		((((const uint16 *)(a))[0] ^ ((const uint16 *)(b))[0]) | \
+				 (((const uint16 *)(a))[1] ^ ((const uint16 *)(b))[1]) | \
+				 (((const uint16 *)(a))[2] ^ ((const uint16 *)(b))[2]))
+
+#define ehcmp(a, b)		((((const uint16 *)(a))[0] ^ ((const uint16 *)(b))[0]) | \
+				 (((const uint16 *)(a))[1] ^ ((const uint16 *)(b))[1]) | \
+				 (((const uint16 *)(a))[2] ^ ((const uint16 *)(b))[2]) | \
+				 (((const uint16 *)(a))[3] ^ ((const uint16 *)(b))[3]) | \
+				 (((const uint16 *)(a))[4] ^ ((const uint16 *)(b))[4]) | \
+				 (((const uint16 *)(a))[5] ^ ((const uint16 *)(b))[5]) | \
+				 (((const uint16 *)(a))[6] ^ ((const uint16 *)(b))[6]))
+#endif /* DONGLEBUILD && __ARM_ARCH_7A__ */
 
 #define	ether_cmp(a, b)	eacmp(a, b)
 
 /* copy an ethernet address - assumes the pointers can be referenced as shorts */
+#if defined(DONGLEBUILD) && defined(__ARM_ARCH_7A__) && !defined(BCMFUZZ)
+#define eacopy(s, d) \
+do { \
+	(*(uint32 *)(d)) = (*(const uint32 *)(s)); \
+	(*(uint16 *)(((uint8 *)(d)) + 4)) = (*(const uint16 *)(((const uint8 *)(s)) + 4)); \
+} while (0)
+#else
 #define eacopy(s, d) \
 do { \
 	((uint16 *)(d))[0] = ((const uint16 *)(s))[0]; \
 	((uint16 *)(d))[1] = ((const uint16 *)(s))[1]; \
 	((uint16 *)(d))[2] = ((const uint16 *)(s))[2]; \
 } while (0)
+#endif /* DONGLEBUILD && __ARM_ARCH_7A__ */
 
 #define	ether_copy(s, d) eacopy(s, d)
 
@@ -183,22 +211,25 @@ do { \
 	((uint16 *)(d))[6] = ((const uint16 *)(s))[6]; \
 } while (0)
 
-static const struct ether_addr ether_bcast = {{255, 255, 255, 255, 255, 255}};
-static const struct ether_addr ether_null = {{0, 0, 0, 0, 0, 0}};
-static const struct ether_addr ether_ipv6_mcast = {{0x33, 0x33, 0x00, 0x00, 0x00, 0x01}};
+/* Dongles use bcmutils functions instead of macros.
+ * Possibly slower but saves over 800 bytes off THUMB dongle image.
+ */
 
-#define ETHER_ISBCAST(ea)	((((const uint8 *)(ea))[0] &		\
-	                          ((const uint8 *)(ea))[1] &		\
-				  ((const uint8 *)(ea))[2] &		\
-				  ((const uint8 *)(ea))[3] &		\
-				  ((const uint8 *)(ea))[4] &		\
-				  ((const uint8 *)(ea))[5]) == 0xff)
-#define ETHER_ISNULLADDR(ea)	((((const uint8 *)(ea))[0] |		\
-				  ((const uint8 *)(ea))[1] |		\
-				  ((const uint8 *)(ea))[2] |		\
-				  ((const uint8 *)(ea))[3] |		\
-				  ((const uint8 *)(ea))[4] |		\
-				  ((const uint8 *)(ea))[5]) == 0)
+extern const struct ether_addr ether_bcast;
+extern const struct ether_addr ether_null;
+extern const struct ether_addr ether_ipv6_mcast;
+
+extern int ether_isbcast(const void *ea);
+extern int ether_isnulladdr(const void *ea);
+
+#define ETHER_ISBCAST(ea)	ether_isbcast(ea)
+
+#if defined(__ARM_ARCH_7A__) && !defined(BCMFUZZ)
+#define ETHER_ISNULLADDR(ea)	(((*(const uint32 *)(ea)) |		\
+				  (*(const uint16 *)(((const uint8 *)(ea)) + 4))) == 0)
+#else
+#define ETHER_ISNULLADDR(ea)	ether_isnulladdr(ea)
+#endif /* __ARM_ARCH_7A__ */
 
 #define ETHER_ISNULLDEST(da)	((((const uint16 *)(da))[0] |           \
 				  ((const uint16 *)(da))[1] |           \

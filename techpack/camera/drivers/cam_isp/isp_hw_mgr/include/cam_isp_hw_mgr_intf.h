@@ -93,7 +93,7 @@ struct cam_isp_start_args {
 struct cam_isp_bw_config_internal_v2 {
 	uint32_t                          usage_type;
 	uint32_t                          num_paths;
-	struct cam_axi_per_path_bw_vote   axi_path[CAM_ISP_MAX_PER_PATH_VOTES];
+	struct cam_axi_per_path_bw_vote   *axi_path;
 };
 
 /**
@@ -110,7 +110,7 @@ struct cam_isp_bw_config_internal {
 	uint32_t                       num_rdi;
 	struct cam_isp_bw_vote         left_pix_vote;
 	struct cam_isp_bw_vote         right_pix_vote;
-	struct cam_isp_bw_vote         rdi_vote[CAM_IFE_RDI_NUM_MAX];
+	struct cam_isp_bw_vote         *rdi_vote;
 };
 
 /**
@@ -126,8 +126,6 @@ struct cam_isp_bw_config_internal {
  * @bw_config_version:      BW config version indicator
  * @bw_config:              BW config information
  * @bw_config_v2:           BW config info for AXI bw voting v2
- * @bw_config_valid:        Flag indicating whether the bw_config at the index
- *                          is valid or not
  * @reg_dump_buf_desc:     cmd buffer descriptors for reg dump
  * @num_reg_dump_buf:      Count of descriptors in reg_dump_buf_desc
  *
@@ -139,9 +137,7 @@ struct cam_isp_prepare_hw_update_data {
 	uint64_t                              frame_header_iova;
 	uint32_t                              frame_header_res_id;
 	uint32_t                              bw_config_version;
-	struct cam_isp_bw_config_internal     bw_config[CAM_IFE_HW_NUM_MAX];
-	struct cam_isp_bw_config_internal_v2  bw_config_v2[CAM_IFE_HW_NUM_MAX];
-	bool                               bw_config_valid[CAM_IFE_HW_NUM_MAX];
+	void                                 *bw_config[CAM_IFE_HW_NUM_MAX];
 	struct cam_cmd_buf_desc               reg_dump_buf_desc[
 						CAM_REG_DUMP_MAX_BUF_ENTRIES];
 	uint32_t                              num_reg_dump_buf;

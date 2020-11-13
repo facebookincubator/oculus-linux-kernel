@@ -27,20 +27,20 @@
 /* The following inside ifndef's so we don't collide with NTDDK.H */
 #ifndef PCI_MAX_BUS
 #define PCI_MAX_BUS		0x100
-#endif // endif
+#endif
 #ifndef PCI_MAX_DEVICES
 #define PCI_MAX_DEVICES		0x20
-#endif // endif
+#endif
 #ifndef PCI_MAX_FUNCTION
 #define PCI_MAX_FUNCTION	0x8
-#endif // endif
+#endif
 
 #ifndef PCI_INVALID_VENDORID
 #define PCI_INVALID_VENDORID	0xffff
-#endif // endif
+#endif
 #ifndef PCI_INVALID_DEVICEID
 #define PCI_INVALID_DEVICEID	0xffff
-#endif // endif
+#endif
 
 /* Convert between bus-slot-function-register and config addresses */
 
@@ -174,6 +174,14 @@ typedef struct _pci_config_regs {
 #define PCI_CFG_ERRATTN_STATUS_FN1	0x8ac
 #define PCI_CFG_ERRATTN_MASK_CMN	0x8b0
 #define PCI_CFG_ERRATTN_STATUS_CMN	0x8b4
+
+#ifdef EFI
+#undef PCI_CLASS_BRIDGE
+#undef PCI_CLASS_OLD
+#undef PCI_CLASS_DISPLAY
+#undef PCI_CLASS_SERIAL
+#undef PCI_CLASS_SATELLITE
+#endif /* EFI */
 
 /* Classes and subclasses */
 

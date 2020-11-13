@@ -25,14 +25,27 @@
 
 #include <typedefs.h>
 
+#if defined(RWL_DONGLE) || defined(UART_REFLECTOR)
+/* For Dongle uart tranport max cmd len is 256 bytes + header length (16 bytes)
+ *  In case of ASD commands we are not sure about how much is the command size
+ *  To be on the safe side, input buf len CBUF_LEN is increased to max (512) bytes.
+ */
+#define RWL_MAX_DATA_LEN 	(512 + 8)	/* allow some extra bytes for '/n' termination */
+#define CBUF_LEN	(RWL_MAX_DATA_LEN + 64)  /* allow 64 bytes for header ("rwl...") */
+#else
 #define CBUF_LEN	(128)
+#endif /* RWL_DONGLE || UART_REFLECTOR */
 
 #ifndef LOG_BUF_LEN
-#if defined(BCM_BIG_LOG)
+#if defined(BCMDBG) || defined(BCM_BIG_LOG)
+#define LOG_BUF_LEN	(16 * 1024)
+#elif defined(ATE_BUILD)
+#define LOG_BUF_LEN	(2 * 1024)
+#elif defined(BCMQT)
 #define LOG_BUF_LEN	(16 * 1024)
 #else
 #define LOG_BUF_LEN	1024
-#endif // endif
+#endif
 #endif /* LOG_BUF_LEN */
 
 #ifdef BOOTLOADER_CONSOLE_OUTPUT
@@ -42,10 +55,15 @@
 #define RWL_MAX_DATA_LEN (4 * 1024 + 8)
 #define CBUF_LEN	(RWL_MAX_DATA_LEN + 64)
 #define LOG_BUF_LEN (16 * 1024)
-#endif // endif
+#endif
 
 typedef struct {
+#ifdef BCMDONGLEHOST
 	uint32		buf;		/* Can't be pointer on (64-bit) hosts */
+#else
+	/* Physical buffer address, read by host code to dump console. */
+	char*		PHYS_ADDR_N(buf);
+#endif
 	uint		buf_size;
 	uint		idx;
 	uint		out_idx;	/* output index */

@@ -72,7 +72,7 @@
 #warning "SDPCM_DEFGLOM_SIZE cannot be higher than SDPCM_MAXGLOM_SIZE!!"
 #undef SDPCM_DEFGLOM_SIZE
 #define SDPCM_DEFGLOM_SIZE SDPCM_MAXGLOM_SIZE
-#endif // endif
+#endif
 
 typedef int SDIOH_API_RC;
 
@@ -95,9 +95,9 @@ extern SDIOH_API_RC sdioh_interrupt_query(sdioh_info_t *si, bool *onoff);
 /* enable or disable SD interrupt */
 extern SDIOH_API_RC sdioh_interrupt_set(sdioh_info_t *si, bool enable_disable);
 
-#if defined(DHD_DEBUG)
+#if defined(DHD_DEBUG) || defined(BCMDBG)
 extern bool sdioh_interrupt_pending(sdioh_info_t *si);
-#endif // endif
+#endif
 
 /* read or write one byte using cmd52 */
 extern SDIOH_API_RC sdioh_request_byte(sdioh_info_t *si, uint rw, uint fnc, uint addr, uint8 *byte);
@@ -137,8 +137,14 @@ extern int sdioh_waitlockfree(sdioh_info_t *si);
 /* Reset and re-initialize the device */
 extern int sdioh_sdio_reset(sdioh_info_t *si);
 
-// MOG-ON: BCMINTERNAL
-// MOG-OFF: BCMINTERNAL
+#ifdef BCMSPI
+/* Function to pass gSPI specific device-status bits to dhd. */
+extern uint32 sdioh_get_dstatus(sdioh_info_t *si);
+
+/* chipid and chiprev info for lower layers to control sw WAR's for hw bugs. */
+extern void sdioh_chipinfo(sdioh_info_t *si, uint32 chip, uint32 chiprev);
+extern void sdioh_dwordmode(sdioh_info_t *si, bool set);
+#endif /* BCMSPI */
 
 #if defined(BCMSDIOH_STD)
 	/*
@@ -146,7 +152,7 @@ extern int sdioh_sdio_reset(sdioh_info_t *si);
 	 * Using define instead of empty stubs for other hosts for now.
 	 */
 	#define SDIOH_SLEEP_ENABLED
-#endif // endif
+#endif
 extern SDIOH_API_RC sdioh_sleep(sdioh_info_t *si, bool enab);
 
 /* GPIO support */

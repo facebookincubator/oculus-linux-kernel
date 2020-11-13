@@ -29,23 +29,23 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // endif
+#endif
 
 /* mutex macros for thread safe */
 #ifdef HND_PKTQ_THREAD_SAFE
 #define HND_PKTQ_MUTEX_DECL(mutex)		OSL_EXT_MUTEX_DECL(mutex)
 #else
 #define HND_PKTQ_MUTEX_DECL(mutex)
-#endif // endif
+#endif
 
 /* osl multi-precedence packet queue */
 #define PKTQ_LEN_MAX            0xFFFFu  /* Max uint16 65535 packets */
 #ifndef PKTQ_LEN_DEFAULT
 #define PKTQ_LEN_DEFAULT        128u	/* Max 128 packets */
-#endif // endif
+#endif
 #ifndef PKTQ_MAX_PREC
 #define PKTQ_MAX_PREC           16	/* Maximum precedence levels */
-#endif // endif
+#endif
 
 /** Queue for a single precedence level */
 typedef struct pktq_prec {
@@ -235,6 +235,7 @@ extern void *spktq_enq_chain(struct spktq *dspq, struct spktq *sspq);
 extern void *spktq_enq(struct spktq *spq, void *p);
 extern void *spktq_enq_head(struct spktq *spq, void *p);
 extern void *spktq_deq(struct spktq *spq);
+extern void *spktq_deq_virt(struct spktq *spq);
 extern void *spktq_deq_tail(struct spktq *spq);
 
 /* operations on a set of precedences in packet queue */
@@ -324,6 +325,6 @@ extern void spktq_cb(void *spq);
 
 #ifdef __cplusplus
 }
-#endif // endif
+#endif
 
 #endif /* _hnd_pktq_h_ */

@@ -87,12 +87,14 @@
 #define BCM4339_CHIP_ID		0x4339		/* 4339 chipcommon chipid */
 #define BCM43430_CHIP_ID	43430		/* 43430 chipcommon chipid */
 #define BCM4345_CHIP_ID		0x4345		/* 4345 chipcommon chipid */
+#define BCM43452_CHIP_ID	43452		/* 43454 chipcommon chipid */
 #define BCM43454_CHIP_ID	43454		/* 43454 chipcommon chipid */
 #define BCM43455_CHIP_ID	43455		/* 43455 chipcommon chipid */
 #define BCM43457_CHIP_ID	43457		/* 43457 chipcommon chipid */
 #define BCM43458_CHIP_ID	43458		/* 43458 chipcommon chipid */
 
 #define BCM4345_CHIP(chipid)	(CHIPID(chipid) == BCM4345_CHIP_ID || \
+				 CHIPID(chipid) == BCM43452_CHIP_ID || \
 				 CHIPID(chipid) == BCM43454_CHIP_ID || \
 				 CHIPID(chipid) == BCM43455_CHIP_ID || \
 				 CHIPID(chipid) == BCM43457_CHIP_ID || \
@@ -135,6 +137,12 @@
 #define BCM4349_CHIP_GRPID		BCM4349_CHIP_ID: \
 					case BCM4355_CHIP_ID: \
 					case BCM4359_CHIP_ID
+#define BCM4350_CHIP(chipid)	((CHIPID(chipid) == BCM4350_CHIP_ID) || \
+				(CHIPID(chipid) == BCM4354_CHIP_ID) || \
+				(CHIPID(chipid) == BCM43567_CHIP_ID) || \
+				(CHIPID(chipid) == BCM43569_CHIP_ID) || \
+				(CHIPID(chipid) == BCM43570_CHIP_ID) || \
+				(CHIPID(chipid) == BCM4358_CHIP_ID)) /* 4350 variations */
 
 /* Board Flags */
 

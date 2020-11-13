@@ -60,6 +60,21 @@ void hdd_sysfs_create_powerstats_interface(void);
  * Return: none
  */
 void hdd_sysfs_destroy_powerstats_interface(void);
+
+/**
+ * hdd_sysfs_create_regulatory_interface() - create regulatory interface
+ *
+ * Return: none
+ */
+void hdd_sysfs_create_regulatory_root_obj(void);
+
+/**
+ * hdd_sysfs_destroy_regulatory_interface() - destroy regulatory interface
+ *
+ * Return: none
+ */
+void hdd_sysfs_destroy_regulatory_root_obj(void);
+
 #else
 static inline
 void hdd_sysfs_create_driver_root_obj(void)
@@ -88,6 +103,16 @@ void hdd_sysfs_create_powerstats_interface(void)
 
 static inline
 void hdd_sysfs_destroy_powerstats_interface(void)
+{
+}
+
+static inline
+void hdd_sysfs_create_regulatory_root_obj(void)
+{
+}
+
+static inline
+void hdd_sysfs_destroy_regulatory_root_obj(void)
 {
 }
 #endif

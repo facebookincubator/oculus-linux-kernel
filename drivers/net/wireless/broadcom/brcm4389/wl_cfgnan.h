@@ -103,7 +103,7 @@
 
 #ifndef strtoul
 #define strtoul(nptr, endptr, base) bcm_strtoul((nptr), (endptr), (base))
-#endif // endif
+#endif
 
 #define NAN_MAC_ADDR_LEN 6u
 #define NAN_DP_MAX_APP_INFO_LEN	512u
@@ -164,6 +164,7 @@
 
 #define NAN_NMI_RAND_PVT_CMD_VENDOR		(1 << 31)
 #define NAN_NMI_RAND_CLUSTER_MERGE_ENAB		(1 << 30)
+#define NAN_NMI_RAND_AUTODAM_LWT_MODE_ENAB	(1 << 29)
 
 #ifdef WL_NAN_DEBUG
 #define NAN_MUTEX_LOCK() {WL_DBG(("Mutex Lock: Enter: %s\n", __FUNCTION__)); \
@@ -301,6 +302,7 @@ typedef struct nan_ranging_inst {
 	bool in_use;
 	uint8 geof_retry_count;
 	uint8 ftm_ssn_retry_count;
+	bool role_concurrency_status;
 } nan_ranging_inst_t;
 
 #define DUMP_NAN_RTT_INST(inst) { printf("svc instance ID %d", (inst)->svc_inst_id); \
@@ -726,88 +728,95 @@ typedef struct wl_nancfg
 	bool ranging_enable;
 } wl_nancfg_t;
 
-extern bool wl_cfgnan_is_enabled(struct bcm_cfg80211 *cfg);
-extern int wl_cfgnan_check_nan_disable_pending(struct bcm_cfg80211 *cfg,
-	bool force_disable, bool is_sync_reqd);
-extern int wl_cfgnan_start_handler(struct net_device *ndev,
+bool wl_cfgnan_is_enabled(struct bcm_cfg80211 *cfg);
+int wl_cfgnan_check_nan_disable_pending(struct bcm_cfg80211 *cfg,
+bool force_disable, bool is_sync_reqd);
+int wl_cfgnan_start_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_config_cmd_data_t *cmd_data, uint32 nan_attr_mask);
-extern int wl_cfgnan_stop_handler(struct net_device *ndev, struct bcm_cfg80211 *cfg);
-extern void wl_cfgnan_delayed_disable(struct work_struct *work);
-extern int wl_cfgnan_config_handler(struct net_device *ndev,
+int wl_cfgnan_stop_handler(struct net_device *ndev, struct bcm_cfg80211 *cfg);
+void wl_cfgnan_delayed_disable(struct work_struct *work);
+int wl_cfgnan_config_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_config_cmd_data_t *cmd_data, uint32 nan_attr_mask);
-extern int wl_cfgnan_support_handler(struct net_device *ndev,
+int wl_cfgnan_support_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_config_cmd_data_t *cmd_data);
-extern int wl_cfgnan_status_handler(struct net_device *ndev,
+int wl_cfgnan_status_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_config_cmd_data_t *cmd_data);
-extern int wl_cfgnan_publish_handler(struct net_device *ndev,
+int wl_cfgnan_publish_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_discover_cmd_data_t *cmd_data);
-extern int wl_cfgnan_subscribe_handler(struct net_device *ndev,
+int wl_cfgnan_subscribe_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_discover_cmd_data_t *cmd_data);
-extern int wl_cfgnan_cancel_pub_handler(struct net_device *ndev,
+int wl_cfgnan_cancel_pub_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_discover_cmd_data_t *cmd_data);
-extern int wl_cfgnan_cancel_sub_handler(struct net_device *ndev,
+int wl_cfgnan_cancel_sub_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_discover_cmd_data_t *cmd_data);
-extern int wl_cfgnan_transmit_handler(struct net_device *ndev,
+int wl_cfgnan_transmit_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_discover_cmd_data_t *cmd_data);
-extern s32 wl_cfgnan_notify_nan_status(struct bcm_cfg80211 *cfg,
+s32 wl_cfgnan_notify_nan_status(struct bcm_cfg80211 *cfg,
 	bcm_struct_cfgdev *cfgdev, const wl_event_msg_t *e, void *data);
-extern int wl_cfgnan_generate_inst_id(struct bcm_cfg80211 *cfg, uint8 *p_inst_id);
-extern int wl_cfgnan_remove_inst_id(struct bcm_cfg80211 *cfg, uint8 inst_id);
-extern int wl_cfgnan_get_capablities_handler(struct net_device *ndev,
+int wl_cfgnan_generate_inst_id(struct bcm_cfg80211 *cfg, uint8 *p_inst_id);
+int wl_cfgnan_remove_inst_id(struct bcm_cfg80211 *cfg, uint8 inst_id);
+int wl_cfgnan_get_capablities_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_hal_capabilities_t *capabilities);
-
-extern int wl_cfgnan_data_path_iface_create_delete_handler(struct net_device *ndev,
+int wl_cfgnan_data_path_iface_create_delete_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, char *ifname, uint16 type, uint8 busstate);
-extern int wl_cfgnan_data_path_request_handler(struct net_device *ndev,
+int wl_cfgnan_data_path_request_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_datapath_cmd_data_t *cmd_data,
 	uint8 *ndp_instance_id);
-extern int wl_cfgnan_data_path_response_handler(struct net_device *ndev,
+int wl_cfgnan_data_path_response_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_datapath_cmd_data_t *cmd_data);
-extern int wl_cfgnan_data_path_end_handler(struct net_device *ndev,
+int wl_cfgnan_data_path_end_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, nan_data_path_id ndp_instance_id,
 	int *status);
+const char * nan_event_to_str(u16 cmd);
 
 #ifdef WL_NAN_DISC_CACHE
-extern int wl_cfgnan_sec_info_handler(struct bcm_cfg80211 *cfg,
+int wl_cfgnan_sec_info_handler(struct bcm_cfg80211 *cfg,
 	nan_datapath_sec_info_cmd_data_t *cmd_data, nan_hal_resp_t *nan_req_resp);
 /* ranging quest and response iovar handler */
-extern int wl_cfgnan_trigger_ranging(struct net_device *ndev,
-	struct bcm_cfg80211 *cfg, void *event_data, nan_svc_info_t *svc,
-	uint8 range_req, bool accept_req);
 #endif /* WL_NAN_DISC_CACHE */
-extern bool wl_cfgnan_is_dp_active(struct net_device *ndev);
-extern nan_ranging_inst_t *wl_cfgnan_get_ranging_inst(struct bcm_cfg80211 *cfg,
-	struct ether_addr *peer, nan_range_role_t range_role);
-extern nan_ranging_inst_t* wl_cfgnan_check_for_ranging(struct bcm_cfg80211 *cfg,
-	struct ether_addr *peer);
-#ifdef RTT_SUPPORT
-extern int wl_cfgnan_trigger_geofencing_ranging(struct net_device *dev,
-	struct ether_addr *peer_addr);
-#endif /* RTT_SUPPORT */
-extern int wl_cfgnan_suspend_geofence_rng_session(struct net_device *ndev,
-	struct ether_addr *peer, int suspend_reason, u8 cancel_flags);
+bool wl_cfgnan_is_dp_active(struct net_device *ndev);
 bool wl_cfgnan_data_dp_exists_with_peer(struct bcm_cfg80211 *cfg,
 	struct ether_addr *peer_addr);
-extern s32 wl_cfgnan_delete_ndp(struct bcm_cfg80211 *cfg, struct net_device *nan_ndev);
-#ifdef RTT_SUPPORT
-int wl_cfgnan_terminate_directed_rtt_sessions(struct net_device *ndev, struct bcm_cfg80211 *cfg);
-void wl_cfgnan_reset_geofence_ranging(struct bcm_cfg80211 *cfg,
-	nan_ranging_inst_t * rng_inst, int sched_reason);
-void wl_cfgnan_reset_geofence_ranging_for_cur_target(dhd_pub_t *dhd, int sched_reason);
-void wl_cfgnan_process_range_report(struct bcm_cfg80211 *cfg,
-	wl_nan_ev_rng_rpt_ind_t *range_res, int rtt_status);
-#endif /* RTT_SUPPORT */
-int wl_cfgnan_cancel_ranging(struct net_device *ndev,
-	struct bcm_cfg80211 *cfg, uint8 *range_id, uint8 flags, uint32 *status);
-bool wl_cfgnan_ranging_allowed(struct bcm_cfg80211 *cfg);
-uint8 wl_cfgnan_cancel_rng_responders(struct net_device *ndev,
-	struct bcm_cfg80211 *cfg);
-extern int wl_cfgnan_get_status(struct net_device *ndev, wl_nan_conf_status_t *nan_status);
+s32 wl_cfgnan_delete_ndp(struct bcm_cfg80211 *cfg, struct net_device *nan_ndev);
 int wl_cfgnan_set_enable_merge(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, uint8 enable, uint32 *status);
 int wl_cfgnan_attach(struct bcm_cfg80211 *cfg);
 void wl_cfgnan_detach(struct bcm_cfg80211 *cfg);
+int wl_cfgnan_get_status(struct net_device *ndev, wl_nan_conf_status_t *nan_status);
+
+#ifdef RTT_SUPPORT
+int wl_cfgnan_trigger_ranging(struct net_device *ndev,
+	struct bcm_cfg80211 *cfg, void *event_data, nan_svc_info_t *svc,
+	uint8 range_req, bool accept_req);
+nan_ranging_inst_t *wl_cfgnan_get_ranging_inst(struct bcm_cfg80211 *cfg,
+	struct ether_addr *peer, nan_range_role_t range_role);
+nan_ranging_inst_t* wl_cfgnan_check_for_ranging(struct bcm_cfg80211 *cfg,
+	struct ether_addr *peer);
+int wl_cfgnan_trigger_geofencing_ranging(struct net_device *dev,
+	struct ether_addr *peer_addr);
+int wl_cfgnan_suspend_geofence_rng_session(struct net_device *ndev,
+	struct ether_addr *peer, int suspend_reason, u8 cancel_flags);
+void wl_cfgnan_suspend_all_geofence_rng_sessions(struct net_device *ndev,
+	int suspend_reason, u8 cancel_flags);
+int wl_cfgnan_terminate_directed_rtt_sessions(struct net_device *ndev, struct bcm_cfg80211 *cfg);
+void wl_cfgnan_reset_geofence_ranging(struct bcm_cfg80211 *cfg,
+	nan_ranging_inst_t * rng_inst, int sched_reason, bool need_rtt_mutex);
+void wl_cfgnan_reset_geofence_ranging_for_cur_target(dhd_pub_t *dhd, int sched_reason);
+void wl_cfgnan_process_range_report(struct bcm_cfg80211 *cfg,
+	wl_nan_ev_rng_rpt_ind_t *range_res, int rtt_status);
+int wl_cfgnan_cancel_ranging(struct net_device *ndev,
+	struct bcm_cfg80211 *cfg, uint8 *range_id, uint8 flags, uint32 *status);
+bool wl_cfgnan_ranging_allowed(struct bcm_cfg80211 *cfg);
+uint8 wl_cfgnan_cancel_rng_responders(struct net_device *ndev);
+bool wl_cfgnan_check_role_concurrency(struct bcm_cfg80211 *cfg,
+	struct ether_addr *peer_addr);
+bool wl_cfgnan_update_geofence_target_idx(struct bcm_cfg80211 *cfg);
+bool wl_cfgnan_ranging_is_in_prog_for_peer(struct bcm_cfg80211 *cfg,
+	struct ether_addr *peer_addr);
+#endif /* RTT_SUPPORT */
+
 typedef enum {
+	NAN_ATTRIBUTE_INVALID				= 0,
 	NAN_ATTRIBUTE_HEADER                            = 100,
 	NAN_ATTRIBUTE_HANDLE                            = 101,
 	NAN_ATTRIBUTE_TRANSAC_ID                        = 102,
@@ -938,7 +947,8 @@ typedef enum {
 	NAN_ATTRIBUTE_DISCOVERY_BEACON_INTERVAL		= 224,
 	NAN_ATTRIBUTE_NSS				= 225,
 	NAN_ATTRIBUTE_ENABLE_RANGING			= 226,
-	NAN_ATTRIBUTE_DW_EARLY_TERM			= 227
+	NAN_ATTRIBUTE_DW_EARLY_TERM			= 227,
+	NAN_ATTRIBUTE_MAX				= 228
 } NAN_ATTRIBUTE;
 
 enum geofence_suspend_reason {

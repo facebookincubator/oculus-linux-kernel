@@ -36,9 +36,12 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 #include <bcmeth.h>
 #include <ethernet.h>
+#ifdef HEALTH_CHECK
+#include <dngl_defs.h>
+#endif /* HEALTH_CHECK */
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
@@ -46,6 +49,7 @@
 #define DNGL_E_RSRVD_1				0x0
 #define DNGL_E_RSRVD_2				0x1
 #define DNGL_E_SOCRAM_IND			0x2
+#define DNGL_E_PROFILE_DATA_IND			0x3
 typedef BWL_PRE_PACKED_STRUCT struct
 {
 	uint16  version; /* Current version is 1 */
@@ -66,6 +70,37 @@ typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_socramind {
 	uint16			length; /* data length */
 	uint8			value[1]; /* data value with variable length specified by length */
 } BWL_POST_PACKED_STRUCT bcm_dngl_socramind_t;
+
+typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_profile_data_ind_t {
+	uint16 tag;
+	uint16 length;
+	uint8 value[];
+} BWL_POST_PACKED_STRUCT bcm_dngl_profile_data_ind_t;
+
+typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_arm_event {
+	uint32 type;
+	uint32 value;
+} BWL_POST_PACKED_STRUCT bcm_dngl_arm_event_t;
+
+#define PROFILE_DATA_IND_INFO 0x1
+
+#define PROFILE_SUB_TYPE_ARM_STATS_INFO 0x1
+
+typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_arm_stats_ind {
+	uint16	tag;
+	uint16	length;
+	uint8	value[];
+} BWL_POST_PACKED_STRUCT bcm_dngl_arm_stats_ind_t;
+
+typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_arm_stats {
+	uint32	cycles;
+	uint32	timestamp;
+	uint16	freq;
+	uint16	roh;
+	uint16	num_events;
+	uint16  seq_no;
+	uint8	value[];
+} BWL_POST_PACKED_STRUCT bcm_dngl_arm_stats_t;
 
 /* SOCRAM_IND type tags */
 typedef enum socram_ind_tag {
@@ -105,6 +140,8 @@ typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_healthcheck {
 #define HEALTH_CHECK_PCIEDEV_LINKSPEED_FALLBACK_IND	0x7
 #define HEALTH_CHECK_PCIEDEV_DSACK_STALL_IND	0x8
 #define HEALTH_CHECK_PCIEDEV_FLOWRING_IND	0x9
+#define HEALTH_CHECK_PCIEDEV_HW_ASSERT_LONG_IND 0xA
+#define HEALTH_CHECK_PCIEDEV_RXPOST_LONG_IND	0xB
 
 #define HC_PCIEDEV_CONFIG_REGLIST_MAX	25
 typedef BWL_PRE_PACKED_STRUCT struct bcm_dngl_pcie_hc {

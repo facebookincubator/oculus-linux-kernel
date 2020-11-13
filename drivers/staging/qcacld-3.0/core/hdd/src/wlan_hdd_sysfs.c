@@ -427,12 +427,36 @@ static DEVICE_ATTR(beacon_stats, 0444,
 		   show_beacon_reception_stats, NULL);
 #endif
 
+static ssize_t regulatory_region_show(struct kobject *kobj,
+		struct kobj_attribute *attr,
+		char *buf)
+{
+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	struct osif_psoc_sync *psoc_sync;
+	ssize_t length;
+	int errno;
+
+	errno = wlan_hdd_validate_context(hdd_ctx);
+	if (errno)
+		return errno;
+
+	errno = osif_psoc_sync_op_start(hdd_ctx->parent_dev, &psoc_sync);
+	if (errno)
+		return errno;
+
+	length = scnprintf(buf, WLAN_SVC_COUNTRY_CODE_LEN, hdd_ctx->reg.alpha2);
+	osif_psoc_sync_op_stop(psoc_sync);
+	return length;
+}
+
 static struct kobj_attribute dr_ver_attribute =
 	__ATTR(driver_version, 0440, show_driver_version, NULL);
 static struct kobj_attribute fw_ver_attribute =
 	__ATTR(version, 0440, show_fw_version, NULL);
 static struct kobj_attribute power_stats_attribute =
 	__ATTR(power_stats, 0444, show_device_power_stats, NULL);
+static struct kobj_attribute regulatory_region_attribute =
+	__ATTR(regulatory_region, 0444, regulatory_region_show, NULL);
 
 void hdd_sysfs_create_version_interface(struct wlan_objmgr_psoc *psoc)
 {
@@ -543,6 +567,24 @@ void hdd_sysfs_destroy_driver_root_obj(void)
 		kobject_put(driver_kobject);
 		driver_kobject = NULL;
 	}
+}
+
+void hdd_sysfs_create_regulatory_root_obj(void)
+{
+	int error;
+
+	if (!wlan_kobject) {
+		hdd_err("could not get driver kobject!");
+		return;
+	}
+	error = sysfs_create_file(wlan_kobject, &regulatory_region_attribute.attr);
+	if (error)
+		hdd_err("could not create country code sysfs file");
+}
+
+void hdd_sysfs_destroy_regulatory_root_obj(void)
+{
+	sysfs_remove_file(wlan_kobject, &regulatory_region_attribute.attr);
 }
 
 #ifdef WLAN_FEATURE_BEACON_RECEPTION_STATS

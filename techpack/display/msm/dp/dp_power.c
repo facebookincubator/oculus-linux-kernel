@@ -358,7 +358,7 @@ static int dp_power_request_gpios(struct dp_power_private *power)
 	struct device *dev;
 	struct dss_module_power *mp;
 	static const char * const gpio_names[] = {
-		"aux_enable", "aux_sel", "usbplug_cc",
+		"aux_enable", "aux_sel", "uart_mux_enable", "usbplug_cc",
 	};
 
 	if (!power) {
@@ -407,12 +407,16 @@ static void dp_power_set_gpio(struct dp_power_private *power, bool flip)
 		if (dp_power_find_gpio(config->gpio_name, "aux-sel"))
 			config->value = flip;
 
+		if (dp_power_find_gpio(config->gpio_name, "uart-mux-en"))
+			config->value = 0;
+
 		if (gpio_is_valid(config->gpio)) {
 			DP_DEBUG("gpio %s, value %d\n", config->gpio_name,
 				config->value);
 
 			if (dp_power_find_gpio(config->gpio_name, "aux-en") ||
-			    dp_power_find_gpio(config->gpio_name, "aux-sel"))
+			    dp_power_find_gpio(config->gpio_name, "aux-sel") ||
+			    dp_power_find_gpio(config->gpio_name, "uart-mux-en"))
 				gpio_direction_output(config->gpio,
 					config->value);
 			else
@@ -426,7 +430,7 @@ static void dp_power_set_gpio(struct dp_power_private *power, bool flip)
 static int dp_power_config_gpios(struct dp_power_private *power, bool flip,
 					bool enable)
 {
-	int rc = 0, i;
+	int rc = 0, i, val;
 	struct dss_module_power *mp;
 	struct dss_gpio *config;
 
@@ -446,8 +450,13 @@ static int dp_power_config_gpios(struct dp_power_private *power, bool flip,
 		dp_power_set_gpio(power, flip);
 	} else {
 		for (i = 0; i < mp->num_gpio; i++) {
+			if (dp_power_find_gpio(config[i].gpio_name, "uart-mux-en"))
+				val = 1;
+			else
+				val = 0;
+
 			if (gpio_is_valid(config[i].gpio)) {
-				gpio_set_value(config[i].gpio, 0);
+				gpio_set_value(config[i].gpio, val);
 				gpio_free(config[i].gpio);
 			}
 		}

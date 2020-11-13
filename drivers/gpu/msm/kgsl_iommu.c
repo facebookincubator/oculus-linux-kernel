@@ -94,8 +94,11 @@ static DECLARE_BITMAP(global_map, GLOBAL_MAP_PAGES);
 
 static int secure_global_size;
 static int global_pt_count;
-static struct kgsl_memdesc gpu_qdss_desc;
 static struct kgsl_memdesc gpu_qtimer_desc;
+
+#ifdef CONFIG_MSM_REMOTEQDSS
+static struct kgsl_memdesc gpu_qdss_desc;
+#endif
 
 void kgsl_print_global_pt_entries(struct seq_file *s)
 {
@@ -252,6 +255,7 @@ static void kgsl_iommu_add_global(struct kgsl_mmu *mmu,
 	global_pt_count++;
 }
 
+#ifdef CONFIG_MSM_REMOTEQDSS
 struct kgsl_memdesc *kgsl_iommu_get_qdss_global_entry(void)
 {
 	return &gpu_qdss_desc;
@@ -295,6 +299,16 @@ static inline void kgsl_cleanup_qdss_desc(struct kgsl_mmu *mmu)
 	kgsl_iommu_remove_global(mmu, &gpu_qdss_desc);
 	kgsl_sharedmem_free(&gpu_qdss_desc);
 }
+#else
+struct kgsl_memdesc *kgsl_iommu_get_qdss_global_entry(void)
+{
+	return NULL;
+}
+
+static void kgsl_setup_qdss_desc(struct kgsl_device *device) {}
+
+static inline void kgsl_cleanup_qdss_desc(struct kgsl_mmu *mmu) {}
+#endif /* CONFIG_MSM_REMOTEQDSS */
 
 struct kgsl_memdesc *kgsl_iommu_get_qtimer_global_entry(void)
 {
@@ -2409,6 +2423,22 @@ static uint64_t kgsl_iommu_find_svm_region(struct kgsl_pagetable *pagetable,
 	return addr;
 }
 
+static bool iommu_addr_in_svm_ranges(struct kgsl_iommu_pt *pt,
+	u64 gpuaddr, u64 size)
+{
+	if ((gpuaddr >= pt->compat_va_start && gpuaddr < pt->compat_va_end) &&
+		((gpuaddr + size) > pt->compat_va_start &&
+			(gpuaddr + size) <= pt->compat_va_end))
+		return true;
+
+	if ((gpuaddr >= pt->svm_start && gpuaddr < pt->svm_end) &&
+		((gpuaddr + size) > pt->svm_start &&
+			(gpuaddr + size) <= pt->svm_end))
+		return true;
+
+	return false;
+}
+
 static int kgsl_iommu_set_svm_region(struct kgsl_pagetable *pagetable,
 		uint64_t gpuaddr, uint64_t size)
 {
@@ -2416,9 +2446,8 @@ static int kgsl_iommu_set_svm_region(struct kgsl_pagetable *pagetable,
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 	struct rb_node *node;
 
-	/* Make sure the requested address doesn't fall in the global range */
-	if (ADDR_IN_GLOBAL(pagetable->mmu, gpuaddr) ||
-			ADDR_IN_GLOBAL(pagetable->mmu, gpuaddr + size))
+	/* Make sure the requested address doesn't fall out of SVM range */
+	if (!iommu_addr_in_svm_ranges(pt, gpuaddr, size))
 		return -ENOMEM;
 
 	spin_lock(&pagetable->lock);

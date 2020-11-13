@@ -765,13 +765,21 @@ void a6xx_preemption_context_destroy(struct kgsl_context *context)
 	struct kgsl_device *device = context->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 
-	if (!adreno_is_preemption_enabled(adreno_dev))
+	if (!adreno_is_preemption_enabled(adreno_dev) ||
+			context->user_ctxt_record == NULL)
 		return;
 
 	gpumem_free_entry(context->user_ctxt_record);
 
 	/* Put the extra ref from gpumem_alloc_entry() */
 	kgsl_mem_entry_put_deferred(context->user_ctxt_record);
+
+	/*
+	 * kgsl_mem_entry_put_deferred holds its own reference to the
+	 * memory entry that is has deferred freeing, so it's safe to
+	 * NULL the pointer here to mark it as destroyed.
+	 */
+	context->user_ctxt_record = NULL;
 }
 
 int a6xx_preemption_context_init(struct kgsl_context *context)
@@ -780,13 +788,14 @@ int a6xx_preemption_context_init(struct kgsl_context *context)
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	uint64_t flags = 0;
 
-	if (!adreno_is_preemption_enabled(adreno_dev))
+	if (!adreno_is_preemption_enabled(adreno_dev) ||
+			context->user_ctxt_record != NULL)
 		return 0;
 
 	if (context->flags & KGSL_CONTEXT_SECURE)
 		flags |= KGSL_MEMFLAGS_SECURE;
 
-	if (kgsl_is_compat_task())
+	if (context->flags & KGSL_CONTEXT_COMPAT_TASK)
 		flags |= KGSL_MEMFLAGS_FORCE_32BIT;
 
 	/*

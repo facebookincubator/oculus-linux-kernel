@@ -31,11 +31,11 @@
 	#include <threadx_osl_ext.h>
 #else
 	#define OSL_EXT_DISABLED
-#endif // endif
+#endif
 
 #ifdef __cplusplus
 extern "C" {
-#endif // endif
+#endif
 
 /* ---- Constants and Types ---------------------------------------------- */
 
@@ -754,6 +754,6 @@ void osl_ext_interrupt_restore(osl_ext_interrupt_state_t state);
 
 #ifdef __cplusplus
 }
-#endif // endif
+#endif
 
 #endif	/* _osl_ext_h_ */

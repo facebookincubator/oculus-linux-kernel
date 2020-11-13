@@ -92,7 +92,7 @@ int fuse_set_acl(struct inode *inode, struct posix_acl *acl, int type)
 	} else {
 		ret = fuse_removexattr(inode, name);
 	}
-	forget_all_cached_acls(inode);
+	fuse_forget_all_cached_acls(inode);
 	fuse_invalidate_attr(inode);
 
 	return ret;

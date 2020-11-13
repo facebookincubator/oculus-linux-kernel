@@ -47,6 +47,7 @@
 #include <pcicfg.h>
 #include <dhd_pcie.h>
 #include <dhd_linux.h>
+#ifdef OEM_ANDROID
 #ifdef CONFIG_ARCH_MSM
 #if defined(CONFIG_PCI_MSM) || defined(CONFIG_ARCH_MSM8996)
 #include <linux/msm_pcie.h>
@@ -54,14 +55,20 @@
 #include <mach/msm_pcie.h>
 #endif /* CONFIG_PCI_MSM */
 #endif /* CONFIG_ARCH_MSM */
+#endif /* OEM_ANDROID */
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 #include <linux/pm_runtime.h>
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
-#if defined(CONFIG_SOC_EXYNOS9830)
+#if defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
+	defined(CONFIG_SOC_EXYNOS9830) || defined(CONFIG_SOC_EXYNOS2100) || \
+	defined(CONFIG_SOC_EXYNOS1000) || defined(CONFIG_SOC_GS101)
 #include <linux/exynos-pci-ctrl.h>
-#endif /* CONFIG_SOC_EXYNOS9830 */
+#endif /* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
+	* CONFIG_SOC_EXYNOS9830 || CONFIG_SOC_EXYNOS2100 ||
+	* CONFIG_SOC_EXYNOS1000 || CONFIG_SOC_GS101
+	*/
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 #ifndef AUTO_SUSPEND_TIMEOUT
@@ -81,9 +88,29 @@
 #include <linux/platform_device.h>
 #endif /* USE_SMMU_ARCH_MSM */
 
-#define PCI_CFG_RETRY 		10
+#ifdef PCIE_OOB
+#include "ftdi_sio_external.h"
+#endif /* PCIE_OOB */
+
+#define PCI_CFG_RETRY 		10	/* PR15065: retry count for pci cfg accesses */
 #define OS_HANDLE_MAGIC		0x1234abcd	/* Magic # to recognize osh */
 #define BCM_MEM_FILENAME_LEN 	24		/* Mem. filename length */
+
+#ifdef PCIE_OOB
+#define HOST_WAKE 4   /* GPIO_0 (HOST_WAKE) - Output from WLAN */
+#define DEVICE_WAKE 5  /* GPIO_1 (DEVICE_WAKE) - Input to WLAN */
+#define BIT_WL_REG_ON 6
+#define BIT_BT_REG_ON 7
+
+int gpio_handle_val = 0;
+unsigned char gpio_port = 0;
+unsigned char gpio_direction = 0;
+#define OOB_PORT "ttyUSB0"
+#endif /* PCIE_OOB */
+
+#ifndef BCMPCI_DEV_ID
+#define BCMPCI_DEV_ID PCI_ANY_ID
+#endif
 
 #ifdef FORCE_TPOWERON
 extern uint32 tpoweron_scale;
@@ -141,6 +168,9 @@ typedef struct dhdpcie_os_info {
 	void			*dev;		/* handle to the underlying device */
 } dhdpcie_os_info_t;
 static irqreturn_t wlan_oob_irq(int irq, void *data);
+#ifdef CUSTOMER_HW2
+extern struct brcm_pcie_wake brcm_pcie_wake;
+#endif /* CUSTOMER_HW2 */
 #endif /* BCMPCIE_OOB_HOST_WAKE */
 
 #ifdef USE_SMMU_ARCH_MSM
@@ -181,6 +211,9 @@ static int dhdpcie_pm_system_resume_noirq(struct device * dev);
 #else
 static int dhdpcie_pci_suspend(struct pci_dev *dev, pm_message_t state);
 static int dhdpcie_pci_resume(struct pci_dev *dev);
+#if defined(BT_OVER_PCIE)
+static int dhdpcie_pci_resume_early(struct pci_dev *dev);
+#endif /* BT_OVER_PCIE */
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 #endif /* DHD_PCIE_RUNTIMEPM */
 
@@ -191,6 +224,11 @@ static int dhdpcie_pm_system_suspend_noirq(struct device * dev);
 static int dhdpcie_pm_system_resume_noirq(struct device * dev);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
+#ifdef SUPPORT_EXYNOS7420
+void exynos_pcie_pm_suspend(int ch_num) {}
+void exynos_pcie_pm_resume(int ch_num) {}
+#endif /* SUPPORT_EXYNOS7420 */
+
 static void dhdpcie_config_save_restore_coherent(dhd_bus_t *bus, bool state);
 
 uint32
@@ -198,14 +236,24 @@ dhdpcie_access_cap(struct pci_dev *pdev, int cap, uint offset, bool is_ext, bool
 	uint32 writeval);
 
 static struct pci_device_id dhdpcie_pci_devid[] __devinitdata = {
-	{ vendor: 0x14e4,
-	device: PCI_ANY_ID,
+	{ vendor: VENDOR_BROADCOM,
+	device: BCMPCI_DEV_ID,
 	subvendor: PCI_ANY_ID,
 	subdevice: PCI_ANY_ID,
 	class: PCI_CLASS_NETWORK_OTHER << 8,
 	class_mask: 0xffff00,
 	driver_data: 0,
 	},
+#if (BCMPCI_DEV_ID != PCI_ANY_ID) && defined(BCMPCI_NOOTP_DEV_ID)
+	{ vendor: VENDOR_BROADCOM,
+	device: BCMPCI_NOOTP_DEV_ID,
+	subvendor: PCI_ANY_ID,
+	subdevice: PCI_ANY_ID,
+	class: PCI_CLASS_NETWORK_OTHER << 8,
+	class_mask: 0xffff00,
+	driver_data: 0,
+	},
+#endif /* BCMPCI_DEV_ID != PCI_ANY_ID && BCMPCI_NOOTP_DEV_ID */
 	{ 0, 0, 0, 0, 0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, dhdpcie_pci_devid);
@@ -238,6 +286,9 @@ static struct pci_driver dhdpcie_driver = {
 #else
 	suspend:	dhdpcie_pci_suspend,
 	resume:		dhdpcie_pci_resume,
+#if defined(BT_OVER_PCIE)
+	resume_early: dhdpcie_pci_resume_early,
+#endif /* BT_OVER_PCIE */
 #endif /* DHD_PCIE_RUNTIMEPM || DHD_PCIE_NATIVE_RUNTIMEPM */
 };
 
@@ -399,6 +450,43 @@ dhdpcie_chip_req_forced_tpoweron(dhd_bus_t *bus)
 	return FALSE;
 }
 #endif /* FORCE_TPOWERON */
+
+#ifdef BT_OVER_PCIE
+int dhd_bus_pwr_off(dhd_pub_t *dhdp, int reason)
+{
+	DHD_ERROR(("%s: WARNING ! function not implemented in %s\n",
+			__FUNCTION__, __FILE__));
+	return BCME_OK;
+}
+
+int dhd_bus_pwr_on(dhd_pub_t *dhdp, int reason)
+{
+	DHD_ERROR(("%s: WARNING ! function not implemented in %s\n",
+			__FUNCTION__, __FILE__));
+	return BCME_OK;
+}
+
+int dhd_bus_pwr_toggle(dhd_pub_t *dhdp, int reason)
+{
+	DHD_ERROR(("%s: WARNING ! function not implemented in %s\n",
+			__FUNCTION__, __FILE__));
+	return BCME_OK;
+}
+
+bool dhdpcie_is_btop_chip(struct dhd_bus *bus)
+{
+	DHD_ERROR(("%s: WARNING ! function not implemented in %s\n",
+			__FUNCTION__, __FILE__));
+	return FALSE;
+}
+
+int dhdpcie_redownload_fw(dhd_pub_t *dhdp)
+{
+	DHD_ERROR(("%s: WARNING ! function not implemented in %s\n",
+			__FUNCTION__, __FILE__));
+	return BCME_OK;
+}
+#endif /* BT_OVER_PCIE */
 
 static bool
 dhd_bus_aspm_enable_dev(dhd_bus_t *bus, struct pci_dev *dev, bool enable)
@@ -592,7 +680,7 @@ dhd_bus_aer_config(dhd_bus_t *bus)
 {
 	uint32 val;
 
-	DHD_ERROR(("%s: Configure AER registers for EP\n", __FUNCTION__));
+	DHD_ERROR_MEM(("%s: Configure AER registers for EP\n", __FUNCTION__));
 	val = dhdpcie_ep_access_cap(bus, PCIE_ADVERRREP_CAPID,
 		PCIE_ADV_CORR_ERR_MASK_OFFSET, TRUE, FALSE, 0);
 	if (val != (uint32)-1) {
@@ -604,7 +692,7 @@ dhd_bus_aer_config(dhd_bus_t *bus)
 			__FUNCTION__, val));
 	}
 
-	DHD_ERROR(("%s: Configure AER registers for RC\n", __FUNCTION__));
+	DHD_ERROR_MEM(("%s: Configure AER registers for RC\n", __FUNCTION__));
 	val = dhdpcie_rc_access_cap(bus, PCIE_ADVERRREP_CAPID,
 		PCIE_ADV_CORR_ERR_MASK_OFFSET, TRUE, FALSE, 0);
 	if (val != (uint32)-1) {
@@ -643,7 +731,7 @@ static int dhdpcie_pm_suspend(struct device *dev)
 	DHD_BUS_BUSY_SET_SUSPEND_IN_PROGRESS(bus->dhd);
 	DHD_GENERAL_UNLOCK(bus->dhd, flags);
 
-	if (!bus->dhd->dongle_reset)
+	if (bus->dhd->up)
 		ret = dhdpcie_set_suspend_resume(bus, TRUE);
 
 	DHD_GENERAL_LOCK(bus->dhd, flags);
@@ -666,7 +754,10 @@ static int dhdpcie_pm_prepare(struct device *dev)
 	}
 
 	bus = pch->bus;
-	DHD_DISABLE_RUNTIME_PM(bus->dhd);
+
+	if (bus->dhd->up)
+		DHD_DISABLE_RUNTIME_PM(bus->dhd);
+
 	bus->chk_pm = TRUE;
 
 	return 0;
@@ -691,7 +782,7 @@ static int dhdpcie_pm_resume(struct device *dev)
 	DHD_BUS_BUSY_SET_RESUME_IN_PROGRESS(bus->dhd);
 	DHD_GENERAL_UNLOCK(bus->dhd, flags);
 
-	if (!bus->dhd->dongle_reset)
+	if (bus->dhd->up)
 		ret = dhdpcie_set_suspend_resume(bus, FALSE);
 
 	DHD_GENERAL_LOCK(bus->dhd, flags);
@@ -713,7 +804,10 @@ static void dhdpcie_pm_complete(struct device *dev)
 	}
 
 	bus = pch->bus;
-	DHD_ENABLE_RUNTIME_PM(bus->dhd);
+
+	if (bus->dhd->up)
+		DHD_ENABLE_RUNTIME_PM(bus->dhd);
+
 	bus->chk_pm = FALSE;
 
 	return;
@@ -784,6 +878,58 @@ static int dhdpcie_pci_suspend(struct pci_dev * pdev, pm_message_t state)
 	return ret;
 }
 
+#if defined(BT_OVER_PCIE)
+static int dhdpcie_pci_resume_early(struct pci_dev *pdev)
+{
+	int ret = 0;
+	dhdpcie_info_t *pch = pci_get_drvdata(pdev);
+	dhd_bus_t *bus = NULL;
+	uint32 pmcsr;
+
+	if (pch) {
+		bus = pch->bus;
+	}
+	if (!bus) {
+		return ret;
+	}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 9))
+	/* On fc30 (linux ver 5.0.9),
+	 *  PMEStat of PMCSR(cfg reg) is cleared before this callback by kernel.
+	 *  So, we use SwPme of FunctionControl(enum reg) instead of PMEStat without kernel change.
+	 */
+	if (bus->sih->buscorerev >= 64) {
+		uint32 ftnctrl;
+		volatile void *regsva = (volatile void *)bus->regs;
+
+		ftnctrl = pcie_corereg(bus->osh, regsva,
+				OFFSETOF(sbpcieregs_t, ftn_ctrl.control), 0, 0);
+		pmcsr = OSL_PCI_READ_CONFIG(bus->osh, PCIE_CFG_PMCSR, sizeof(pmcsr));
+
+		DHD_ERROR(("%s(): pmcsr is 0x%x, ftnctrl is 0x%8x \r\n",
+			__FUNCTION__, pmcsr, ftnctrl));
+		if (ftnctrl & PCIE_FTN_SWPME_MASK) {
+			DHD_ERROR(("%s(): Wakeup due to WLAN \r\n", __FUNCTION__));
+		}
+	} else
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 9)) */
+	{
+		pmcsr = OSL_PCI_READ_CONFIG(bus->osh, PCIE_CFG_PMCSR, sizeof(pmcsr));
+
+		DHD_ERROR(("%s(): pmcsr is 0x%x \r\n", __FUNCTION__, pmcsr));
+		if (pmcsr & PCIE_PMCSR_PMESTAT) {
+			DHD_ERROR(("%s(): Wakeup due to WLAN \r\n", __FUNCTION__));
+		}
+	}
+
+	/*
+	 * TODO: Add code to take adavantage of what is read from pmcsr
+	 */
+
+	return ret;
+}
+#endif /* BT_OVER_PCIE */
+
 static int dhdpcie_pci_resume(struct pci_dev *pdev)
 {
 	int ret = 0;
@@ -828,11 +974,11 @@ static int dhdpcie_set_suspend_resume(dhd_bus_t *bus, bool state)
 	ASSERT(bus && !bus->dhd->dongle_reset);
 
 #ifdef DHD_PCIE_RUNTIMEPM
-		/* if wakelock is held during suspend, return failed */
-		if (state == TRUE && dhd_os_check_wakelock_all(bus->dhd)) {
-			return -EBUSY;
-		}
-		mutex_lock(&bus->pm_lock);
+	/* if wakelock is held during suspend, return failed */
+	if (state == TRUE && dhd_os_check_wakelock_all(bus->dhd)) {
+		return -EBUSY;
+	}
+	mutex_lock(&bus->pm_lock);
 #endif /* DHD_PCIE_RUNTIMEPM */
 
 	/* When firmware is not loaded do the PCI bus */
@@ -845,13 +991,27 @@ static int dhdpcie_set_suspend_resume(dhd_bus_t *bus, bool state)
 		return ret;
 	}
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
-		ret = dhdpcie_bus_suspend(bus, state, byint);
+	ret = dhdpcie_bus_suspend(bus, state, byint);
 #else
-		ret = dhdpcie_bus_suspend(bus, state);
+	ret = dhdpcie_bus_suspend(bus, state);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0) && defined(DHD_TCP_LIMIT_OUTPUT)
+	if (ret == BCME_OK) {
+		/*
+		 * net.ipv4.tcp_limit_output_bytes is used for all ipv4 sockets
+		 * so, returning back to original value when there is no traffic(suspend)
+		 */
+		if (state == TRUE) {
+			dhd_ctrl_tcp_limit_output_bytes(0);
+		} else {
+			dhd_ctrl_tcp_limit_output_bytes(1);
+		}
+	}
+#endif /* LINUX_VERSION_CODE > 4.19.0 && DHD_TCP_LIMIT_OUTPUT */
+
 #ifdef DHD_PCIE_RUNTIMEPM
-		mutex_unlock(&bus->pm_lock);
+	mutex_unlock(&bus->pm_lock);
 #endif /* DHD_PCIE_RUNTIMEPM */
 
 	return ret;
@@ -960,7 +1120,7 @@ static int dhdpcie_pm_system_resume_noirq(struct device * dev)
 }
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 extern void dhd_dpc_tasklet_kill(dhd_pub_t *dhdp);
 #endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 
@@ -972,16 +1132,16 @@ dhdpcie_suspend_dump_cfgregs(struct dhd_bus *bus, char *suspend_state)
 		"PCI_BAR1_WIN(0x%x)=(0x%x)\n",
 		suspend_state,
 		PCIECFGREG_BASEADDR0,
-		dhd_pcie_config_read(bus->osh,
+		dhd_pcie_config_read(bus,
 			PCIECFGREG_BASEADDR0, sizeof(uint32)),
 		PCIECFGREG_BASEADDR1,
-		dhd_pcie_config_read(bus->osh,
+		dhd_pcie_config_read(bus,
 			PCIECFGREG_BASEADDR1, sizeof(uint32)),
 		PCIE_CFG_PMCSR,
-		dhd_pcie_config_read(bus->osh,
+		dhd_pcie_config_read(bus,
 			PCIE_CFG_PMCSR, sizeof(uint32)),
 		PCI_BAR1_WIN,
-		dhd_pcie_config_read(bus->osh,
+		dhd_pcie_config_read(bus,
 			PCI_BAR1_WIN, sizeof(uint32))));
 }
 
@@ -991,23 +1151,33 @@ static int dhdpcie_suspend_dev(struct pci_dev *dev)
 	dhdpcie_info_t *pch = pci_get_drvdata(dev);
 	dhd_bus_t *bus = pch->bus;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 	if (bus->is_linkdown) {
 		DHD_ERROR(("%s: PCIe link is down\n", __FUNCTION__));
 		return BCME_ERROR;
 	}
 #endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 	DHD_ERROR(("%s: Enter\n", __FUNCTION__));
-#if defined(CONFIG_SOC_EXYNOS9830)
+#if defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
+	defined(CONFIG_SOC_EXYNOS9830) || defined(CONFIG_SOC_EXYNOS2100) || \
+	defined(CONFIG_SOC_EXYNOS1000)
 	DHD_ERROR(("%s: Disable L1ss EP side\n", __FUNCTION__));
 	exynos_pcie_l1ss_ctrl(0, PCIE_L1SS_CTRL_WIFI);
-#endif /* CONFIG_SOC_EXYNOS9830 */
+#endif /* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
+	* CONFIG_SOC_EXYNOS9830 || CONFIG_SOC_EXYNOS2100 ||
+	* CONFIG_SOC_EXYNOS1000
+	*/
+#if defined(CONFIG_SOC_GS101)
+	DHD_ERROR(("%s: Disable L1ss EP side\n", __FUNCTION__));
+	exynos_pcie_rc_l1ss_ctrl(0, PCIE_L1SS_CTRL_WIFI, 1);
+#endif /* CONFIG_SOC_GS101 */
+
 	dhdpcie_suspend_dump_cfgregs(bus, "BEFORE_EP_SUSPEND");
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 	dhd_dpc_tasklet_kill(bus->dhd);
 #endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 	pci_save_state(dev);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 	pch->state = pci_store_saved_state(dev);
 #endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 	pci_enable_wake(dev, PCI_D0, TRUE);
@@ -1019,7 +1189,9 @@ static int dhdpcie_suspend_dev(struct pci_dev *dev)
 		DHD_ERROR(("%s: pci_set_power_state error %d\n",
 			__FUNCTION__, ret));
 	}
+#ifdef OEM_ANDROID
 	dev->state_saved = FALSE;
+#endif /* OEM_ANDROID */
 	dhdpcie_suspend_dump_cfgregs(bus, "AFTER_EP_SUSPEND");
 	return ret;
 }
@@ -1053,11 +1225,13 @@ static int dhdpcie_resume_dev(struct pci_dev *dev)
 {
 	int err = 0;
 	dhdpcie_info_t *pch = pci_get_drvdata(dev);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 	pci_load_and_free_saved_state(dev, &pch->state);
 #endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 	DHD_ERROR(("%s: Enter\n", __FUNCTION__));
+#ifdef OEM_ANDROID
 	dev->state_saved = TRUE;
+#endif /* OEM_ANDROID */
 	pci_restore_state(dev);
 
 	/* Resture back current bar1 window */
@@ -1081,10 +1255,20 @@ static int dhdpcie_resume_dev(struct pci_dev *dev)
 	}
 	BCM_REFERENCE(pch);
 	dhdpcie_suspend_dump_cfgregs(pch->bus, "AFTER_EP_RESUME");
-#if defined(CONFIG_SOC_EXYNOS9830)
+#if defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
+	defined(CONFIG_SOC_EXYNOS9830) || defined(CONFIG_SOC_EXYNOS2100) || \
+	defined(CONFIG_SOC_EXYNOS1000)
 	DHD_ERROR(("%s: Enable L1ss EP side\n", __FUNCTION__));
 	exynos_pcie_l1ss_ctrl(1, PCIE_L1SS_CTRL_WIFI);
-#endif /* CONFIG_SOC_EXYNOS9830 */
+#endif /* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
+	* CONFIG_SOC_EXYNOS9830 || CONFIG_SOC_EXYNOS2100 ||
+	* CONFIG_SOC_EXYNOS1000
+	*/
+#if defined(CONFIG_SOC_GS101)
+	DHD_ERROR(("%s: Enable L1ss EP side\n", __FUNCTION__));
+	exynos_pcie_rc_l1ss_ctrl(1, PCIE_L1SS_CTRL_WIFI, 1);
+#endif /* CONFIG_SOC_GS101 */
+
 out:
 	return err;
 }
@@ -1092,12 +1276,8 @@ out:
 static int dhdpcie_resume_host_dev(dhd_bus_t *bus)
 {
 	int bcmerror = 0;
-#ifdef CONFIG_ARCH_MSM
-	bcmerror = dhdpcie_start_host_pcieclock(bus);
-#endif /* CONFIG_ARCH_MSM */
-#ifdef CONFIG_ARCH_TEGRA
-	bcmerror = tegra_pcie_pm_resume();
-#endif /* CONFIG_ARCH_TEGRA */
+
+	bcmerror = dhdpcie_start_host_dev(bus);
 	if (bcmerror < 0) {
 		DHD_ERROR(("%s: PCIe RC resume failed!!! (%d)\n",
 			__FUNCTION__, bcmerror));
@@ -1115,12 +1295,21 @@ static int dhdpcie_resume_host_dev(dhd_bus_t *bus)
 static int dhdpcie_suspend_host_dev(dhd_bus_t *bus)
 {
 	int bcmerror = 0;
-#ifdef CONFIG_ARCH_MSM
-	bcmerror = dhdpcie_stop_host_pcieclock(bus);
-#endif	/* CONFIG_ARCH_MSM */
-#ifdef CONFIG_ARCH_TEGRA
-	bcmerror = tegra_pcie_pm_suspend();
-#endif /* CONFIG_ARCH_TEGRA */
+#ifdef CONFIG_ARCH_EXYNOS
+	/*
+	 * XXX : SWWLAN-82173, SWWLAN-82183 WAR for SS PCIe RC
+	 * SS PCIe RC/EP is 1 to 1 mapping using different channel
+	 * RC0 - LTE, RC1 - WiFi RC0-1 is working independently
+	 */
+
+	if (bus->rc_dev) {
+		pci_save_state(bus->rc_dev);
+	} else {
+		DHD_ERROR(("%s: RC %x:%x handle is NULL\n",
+			__FUNCTION__, PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID));
+	}
+#endif /* CONFIG_ARCH_EXYNOS */
+	bcmerror = dhdpcie_stop_host_dev(bus);
 	return bcmerror;
 }
 
@@ -1279,9 +1468,9 @@ int dhdpcie_pci_suspend_resume(dhd_bus_t *bus, bool state)
 
 	if (state) {
 		dhdpcie_config_save_restore_coherent(bus, state);
-#if !defined(BCMPCIE_OOB_HOST_WAKE)
+#if !defined(BCMPCIE_OOB_HOST_WAKE) && !defined(PCIE_OOB)
 		dhdpcie_pme_active(bus->osh, state);
-#endif // endif
+#endif /* !BCMPCIE_OOB_HOST_WAKE && !PCIE_OOB */
 		rc = dhdpcie_suspend_dev(dev);
 		if (!rc) {
 			dhdpcie_suspend_host_dev(bus);
@@ -1299,11 +1488,12 @@ int dhdpcie_pci_suspend_resume(dhd_bus_t *bus, bool state)
 			if (PCIE_ENUM_RESET_WAR_ENAB(bus->sih->buscorerev)) {
 				dhdpcie_ssreset_dis_enum_rst(bus);
 			}
-#if !defined(BCMPCIE_OOB_HOST_WAKE)
+#if !defined(BCMPCIE_OOB_HOST_WAKE) && !defined(PCIE_OOB)
 			dhdpcie_pme_active(bus->osh, state);
-#endif // endif
+#endif /* !BCMPCIE_OOB_HOST_WAKE && !PCIE_OOB */
 		}
 		dhdpcie_config_save_restore_coherent(bus, state);
+#if defined(OEM_ANDROID)
 #if defined(DHD_HANG_SEND_UP_TEST)
 		if (bus->is_linkdown ||
 			bus->dhd->req_hang_type == HANG_REASON_PCIE_RC_LINK_UP_FAIL) {
@@ -1313,6 +1503,7 @@ int dhdpcie_pci_suspend_resume(dhd_bus_t *bus, bool state)
 			bus->dhd->hang_reason = HANG_REASON_PCIE_RC_LINK_UP_FAIL;
 			dhd_os_send_hang_message(bus->dhd);
 		}
+#endif /* OEM_ANDROID */
 	}
 	return rc;
 }
@@ -1415,7 +1606,7 @@ int
 dhdpcie_detach(dhdpcie_info_t *pch)
 {
 	if (pch) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+#if defined(OEM_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
 		if (!dhd_download_fw_on_driverload) {
 			pci_load_and_free_saved_state(pch->dev, &pch->default_state);
 		}
@@ -1447,22 +1638,23 @@ dhdpcie_pci_remove(struct pci_dev *pdev)
 #ifdef CONFIG_ARCH_MSM
 		msm_pcie_deregister_event(&bus->pcie_event);
 #endif /* CONFIG_ARCH_MSM */
-#ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
-	defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
-	defined(CONFIG_SOC_EXYNOS9830)
+#ifdef CONFIG_ARCH_EXYNOS
 		exynos_pcie_deregister_event(&bus->pcie_event);
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 ||
-	* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
-	* CONFIG_SOC_EXYNOS9830
-	*/
-#endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
+#endif /* CONFIG_ARCH_EXYNOS */
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
 		bus->rc_dev = NULL;
 
 		dhdpcie_bus_release(bus);
 	}
+
+	/*
+	 * For module type driver,
+	 * it needs to back up configuration space before rmmod
+	 * Since original backed up configuration space won't be restored if state_saved = false
+	 * This back up the configuration space again & state_saved = true
+	 */
+	pci_save_state(pdev);
 
 	if (pci_is_enabled(pdev))
 		pci_disable_device(pdev);
@@ -1479,6 +1671,12 @@ dhdpcie_pci_remove(struct pci_dev *pdev)
 	dhdpcie_detach(pch);
 	/* osl detach */
 	osl_detach(osh);
+
+#if defined(BCMPCIE_OOB_HOST_WAKE) && defined(CUSTOMER_HW2) && \
+	defined(CONFIG_ARCH_APQ8084)
+	brcm_pcie_wake.wake_irq = NULL;
+	brcm_pcie_wake.data = NULL;
+#endif /* BCMPCIE_OOB_HOST_WAKE && CUSTOMR_HW2 && CONFIG_ARCH_APQ8084 */
 
 	dhdpcie_init_succeeded = FALSE;
 
@@ -1497,7 +1695,7 @@ dhdpcie_enable_msi(struct pci_dev *pdev, unsigned int min_vecs, unsigned int max
 	return pci_enable_msi_range(pdev, min_vecs, max_vecs);
 #else
 	return pci_enable_msi_block(pdev, max_vecs);
-#endif // endif
+#endif
 }
 
 /* Disable Linux Msi */
@@ -1510,7 +1708,7 @@ dhdpcie_disable_msi(struct pci_dev *pdev)
 	pci_disable_msi(pdev);
 #else
 	pci_disable_msi(pdev);
-#endif // endif
+#endif
 	return;
 }
 
@@ -1583,7 +1781,7 @@ dhdpcie_get_pcieirq(struct dhd_bus *bus, unsigned int *irq)
 #define PRINTF_RESOURCE	"0x%016llx"
 #else
 #define PRINTF_RESOURCE	"0x%08x"
-#endif // endif
+#endif
 
 #ifdef EXYNOS_PCIE_MODULE_PATCH
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
@@ -1608,6 +1806,9 @@ Description:
 Access PCI configuration space, retrieve  PCI allocated resources , updates in resource structure.
 
  */
+#ifdef DHD_DEBUG_REG_DUMP
+uint64 regs_addr;
+#endif /* DHD_DEBUG_REG_DUMP */
 int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 {
 	phys_addr_t  bar0_addr, bar1_addr;
@@ -1622,6 +1823,18 @@ int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 	}
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 #endif /* EXYNOS_MODULE_PATCH */
+
+	/*
+	 * For built-in type driver,
+	 * it can't restore configuration backup because of state_saved = false at first load time
+	 * For module type driver,
+	 * it couldn't remap the BAR0/BAR1 address
+	 * without restoring configuration backup at second load,
+	 * and remains configuration backup in pci_dev, DHD didn't remove it from the bus
+	 * pci_restore_state() restores proper BAR0/BAR1 address
+	 */
+	pci_restore_state(pdev);
+
 	do {
 		if (pci_enable_device(pdev)) {
 			printf("%s: Cannot enable PCI device\n", __FUNCTION__);
@@ -1680,7 +1893,10 @@ int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 			__FUNCTION__, dhdpcie_info->regs, bar0_addr));
 		DHD_TRACE(("%s:Phys addr : tcm_space = %p base addr 0x"PRINTF_RESOURCE" \n",
 			__FUNCTION__, dhdpcie_info->tcm, bar1_addr));
-
+#ifdef DHD_DEBUG_REG_DUMP
+		regs_addr = (uint64)dhdpcie_info->regs;
+		DHD_ERROR(("%s: saved regs_addr = 0x%llx\n", __FUNCTION__, regs_addr));
+#endif /* DHD_DEBUG_REG_DUMP */
 		return 0; /* SUCCESS  */
 	} while (0);
 err:
@@ -1732,21 +1948,18 @@ void dhdpcie_dump_resource(dhd_bus_t *bus)
 	}
 
 	/* BAR0 */
-	DHD_ERROR(("%s: BAR0(VA): 0x%pK, BAR0(PA): "PRINTF_RESOURCE", SIZE: %d\n",
+	DHD_ERROR_MEM(("%s: BAR0(VA): 0x%pK, BAR0(PA): "PRINTF_RESOURCE", SIZE: %d\n",
 		__FUNCTION__, pch->regs, pci_resource_start(bus->dev, 0),
 		DONGLE_REG_MAP_SIZE));
 
 	/* BAR1 */
-	DHD_ERROR(("%s: BAR1(VA): 0x%pK, BAR1(PA): "PRINTF_RESOURCE", SIZE: %d\n",
+	DHD_ERROR_MEM(("%s: BAR1(VA): 0x%pK, BAR1(PA): "PRINTF_RESOURCE", SIZE: %d\n",
 		__FUNCTION__, pch->tcm, pci_resource_start(bus->dev, 2),
 		pch->bar1_size));
 }
 
 #ifdef SUPPORT_LINKDOWN_RECOVERY
-#if defined(CONFIG_ARCH_MSM) || (defined(EXYNOS_PCIE_LINKDOWN_RECOVERY) && \
-	(defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
-	defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
-	defined(CONFIG_SOC_EXYNOS9830)))
+#if defined(CONFIG_ARCH_MSM) || defined(CONFIG_ARCH_EXYNOS)
 void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
 {
 	struct pci_dev *pdev = (struct pci_dev *)noti->user;
@@ -1785,11 +1998,7 @@ void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
 	}
 
 }
-#endif /* CONFIG_ARCH_MSM || (EXYNOS_PCIE_LINKDOWN_RECOVERY &&
-	* (CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 ||
-	*  CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
-	*  CONFIG_SOC_EXYNOS9830))
-	*/
+#endif /* CONFIG_ARCH_MSM || CONFIG_ARCH_EXYNOS */
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
 int dhdpcie_init(struct pci_dev *pdev)
@@ -1928,6 +2137,12 @@ int dhdpcie_init(struct pci_dev *pdev)
 		}
 #endif /* FORCE_TPOWERON */
 
+#if defined(BCMPCIE_OOB_HOST_WAKE) && defined(CUSTOMER_HW2) && \
+	defined(CONFIG_ARCH_APQ8084)
+		brcm_pcie_wake.wake_irq = wlan_oob_irq;
+		brcm_pcie_wake.data = bus;
+#endif /* BCMPCIE_OOB_HOST_WAKE && CUSTOMR_HW2 && CONFIG_ARCH_APQ8084 */
+
 #ifdef DONGLE_ENABLE_ISOLATION
 		bus->dhd->dongle_isolation = TRUE;
 #endif /* DONGLE_ENABLE_ISOLATION */
@@ -1941,20 +2156,13 @@ int dhdpcie_init(struct pci_dev *pdev)
 		msm_pcie_register_event(&bus->pcie_event);
 		bus->no_cfg_restore = FALSE;
 #endif /* CONFIG_ARCH_MSM */
-#ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
-	defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
-	defined(CONFIG_SOC_EXYNOS9830)
+#ifdef CONFIG_ARCH_EXYNOS
 		bus->pcie_event.events = EXYNOS_PCIE_EVENT_LINKDOWN;
 		bus->pcie_event.user = pdev;
 		bus->pcie_event.mode = EXYNOS_PCIE_TRIGGER_CALLBACK;
 		bus->pcie_event.callback = dhdpcie_linkdown_cb;
 		exynos_pcie_register_event(&bus->pcie_event);
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 ||
-	* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820 ||
-	* CONFIG_SOC_EXYNOS9830
-	*/
-#endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
+#endif /* CONFIG_ARCH_EXYNOS */
 		bus->read_shm_fail = FALSE;
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
@@ -2011,7 +2219,9 @@ int dhdpcie_init(struct pci_dev *pdev)
 		}
 
 		dhdpcie_init_succeeded = TRUE;
-
+#ifdef CONFIG_ARCH_MSM
+		sec_pcie_set_use_ep_loaded(bus->rc_dev);
+#endif /* CONFIG_ARCH_MSM */
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 		pm_runtime_set_autosuspend_delay(&pdev->dev, AUTO_SUSPEND_TIMEOUT);
 		pm_runtime_use_autosuspend(&pdev->dev);
@@ -2162,8 +2372,12 @@ dhdpcie_irq_disabled(dhd_bus_t *bus)
 	return desc->depth;
 }
 
+#if defined(CONFIG_ARCH_EXYNOS)
+int pcie_ch_num = EXYNOS_PCIE_CH_NUM;
+#endif /* CONFIG_ARCH_EXYNOS */
+
 int
-dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
+dhdpcie_start_host_dev(dhd_bus_t *bus)
 {
 	int ret = 0;
 #ifdef CONFIG_ARCH_MSM
@@ -2181,6 +2395,9 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 		return BCME_ERROR;
 	}
 
+#ifdef CONFIG_ARCH_EXYNOS
+	exynos_pcie_pm_resume(pcie_ch_num);
+#endif /* CONFIG_ARCH_EXYNOS */
 #ifdef CONFIG_ARCH_MSM
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->no_cfg_restore) {
@@ -2196,19 +2413,23 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 	ret = msm_pcie_pm_control(MSM_PCIE_RESUME, bus->dev->bus->number,
 		bus->dev, NULL, 0);
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
+#endif /* CONFIG_ARCH_MSM */
+#ifdef CONFIG_ARCH_TEGRA
+	ret = tegra_pcie_pm_resume();
+#endif /* CONFIG_ARCH_TEGRA */
+
 	if (ret) {
 		DHD_ERROR(("%s Failed to bring up PCIe link\n", __FUNCTION__));
 		goto done;
 	}
 
 done:
-#endif /* CONFIG_ARCH_MSM */
 	DHD_TRACE(("%s Exit:\n", __FUNCTION__));
 	return ret;
 }
 
 int
-dhdpcie_stop_host_pcieclock(dhd_bus_t *bus)
+dhdpcie_stop_host_dev(dhd_bus_t *bus)
 {
 	int ret = 0;
 #ifdef CONFIG_ARCH_MSM
@@ -2227,6 +2448,9 @@ dhdpcie_stop_host_pcieclock(dhd_bus_t *bus)
 		return BCME_ERROR;
 	}
 
+#ifdef CONFIG_ARCH_EXYNOS
+	exynos_pcie_pm_suspend(pcie_ch_num);
+#endif /* CONFIG_ARCH_EXYNOS */
 #ifdef CONFIG_ARCH_MSM
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->no_cfg_restore) {
@@ -2239,12 +2463,15 @@ dhdpcie_stop_host_pcieclock(dhd_bus_t *bus)
 	ret = msm_pcie_pm_control(MSM_PCIE_SUSPEND, bus->dev->bus->number,
 		bus->dev, NULL, 0);
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
+#endif /* CONFIG_ARCH_MSM */
+#ifdef CONFIG_ARCH_TEGRA
+	ret = tegra_pcie_pm_suspend();
+#endif /* CONFIG_ARCH_TEGRA */
 	if (ret) {
 		DHD_ERROR(("Failed to stop PCIe link\n"));
 		goto done;
 	}
 done:
-#endif /* CONFIG_ARCH_MSM */
 	DHD_TRACE(("%s Exit:\n", __FUNCTION__));
 	return ret;
 }
@@ -2399,7 +2626,10 @@ dhdpcie_alloc_resource(dhd_bus_t *bus)
 			__FUNCTION__, dhdpcie_info->regs, bar0_addr));
 		DHD_TRACE(("%s:Phys addr : tcm_space = %p base addr 0x"PRINTF_RESOURCE" \n",
 			__FUNCTION__, dhdpcie_info->tcm, bar1_addr));
-
+#ifdef DHD_DEBUG_REG_DUMP
+		regs_addr = (uint64)dhdpcie_info->regs;
+		DHD_ERROR(("%s: saved regs_addr = 0x%llx\n", __FUNCTION__, regs_addr));
+#endif /* DHD_DEBUG_REG_DUMP */
 		return 0;
 	} while (0);
 
@@ -2611,6 +2841,12 @@ static irqreturn_t wlan_oob_irq(int irq, void *data)
 	DHD_TRACE(("%s: IRQ ISR\n", __FUNCTION__));
 	bus->last_oob_irq_isr_time = OSL_LOCALTIME_NS();
 #endif /* DHD_USE_PCIE_OOB_THREADED_IRQ */
+
+	if (bus->dhd->up == 0) {
+		DHD_ERROR(("%s: ########### IRQ during dhd pub up is 0 ############\n",
+			__FUNCTION__));
+	}
+
 	bus->oob_intr_count++;
 #ifdef DHD_WAKE_STATUS
 #ifdef DHD_PCIE_RUNTIMEPM
@@ -2692,6 +2928,11 @@ int dhdpcie_oob_intr_register(dhd_bus_t *bus)
 		 * ENXIO (No such device or address). This is because the callback function
 		 * irq_set_wake() is not registered in kernel, hence returning BCME_OK.
 		 */
+#ifdef BOARD_HIKEY
+		DHD_ERROR(("%s: continue eventhough enable_irq_wake failed: %d\n",
+				__FUNCTION__, err));
+		err = BCME_OK;
+#endif /* BOARD_HIKEY */
 		}
 		dhdpcie_osinfo->oob_irq_enabled = TRUE;
 	}
@@ -2746,6 +2987,107 @@ void dhdpcie_oob_intr_unregister(dhd_bus_t *bus)
 }
 #endif /* BCMPCIE_OOB_HOST_WAKE */
 
+#ifdef PCIE_OOB
+void dhdpcie_oob_init(dhd_bus_t *bus)
+{
+	/* XXX this should be passed in as a command line parameter */
+	gpio_handle_val = get_handle(OOB_PORT);
+	if (gpio_handle_val < 0)
+	{
+		DHD_ERROR(("%s: Could not get GPIO handle.\n", __FUNCTION__));
+		ASSERT(FALSE);
+	}
+
+	gpio_direction = 0;
+	ftdi_set_bitmode(gpio_handle_val, 0, BITMODE_BITBANG);
+
+	/* Note BT core is also enabled here */
+	gpio_port = 1 << BIT_WL_REG_ON | 1 << BIT_BT_REG_ON | 1 << DEVICE_WAKE;
+	gpio_write_port(gpio_handle_val, gpio_port);
+
+	gpio_direction = 1 << BIT_WL_REG_ON | 1 << BIT_BT_REG_ON | 1 << DEVICE_WAKE;
+	ftdi_set_bitmode(gpio_handle_val, gpio_direction, BITMODE_BITBANG);
+
+	bus->oob_enabled = TRUE;
+	bus->oob_presuspend = FALSE;
+
+	/* drive the Device_Wake GPIO low on startup */
+	bus->device_wake_state = TRUE;
+	dhd_bus_set_device_wake(bus, FALSE);
+	dhd_bus_doorbell_timeout_reset(bus);
+
+}
+
+void
+dhd_oob_set_bt_reg_on(struct dhd_bus *bus, bool val)
+{
+	DHD_INFO(("Set Device_Wake to %d\n", val));
+	if (val)
+	{
+		gpio_port = gpio_port | (1 << BIT_BT_REG_ON);
+		gpio_write_port(gpio_handle_val, gpio_port);
+	} else {
+		gpio_port = gpio_port & (0xff ^ (1 << BIT_BT_REG_ON));
+		gpio_write_port(gpio_handle_val, gpio_port);
+	}
+}
+
+int
+dhd_oob_get_bt_reg_on(struct dhd_bus *bus)
+{
+	int ret;
+	uint8 val;
+	ret = gpio_read_port(gpio_handle_val, &val);
+
+	if (ret < 0) {
+		/* XXX handle error properly */
+		DHD_ERROR(("gpio_read_port returns %d\n", ret));
+		return ret;
+	}
+
+	if (val & (1 << BIT_BT_REG_ON))
+	{
+		ret = 1;
+	} else {
+		ret = 0;
+	}
+
+	return ret;
+}
+
+int
+dhd_os_oob_set_device_wake(struct dhd_bus *bus, bool val)
+{
+	if (bus->device_wake_state != val)
+	{
+		DHD_INFO(("Set Device_Wake to %d\n", val));
+
+		if (bus->oob_enabled && !bus->oob_presuspend)
+		{
+			if (val)
+			{
+				gpio_port = gpio_port | (1 << DEVICE_WAKE);
+				gpio_write_port_non_block(gpio_handle_val, gpio_port);
+			} else {
+				gpio_port = gpio_port & (0xff ^ (1 << DEVICE_WAKE));
+				gpio_write_port_non_block(gpio_handle_val, gpio_port);
+			}
+		}
+
+		bus->device_wake_state = val;
+	}
+	return BCME_OK;
+}
+
+INLINE void
+dhd_os_ib_set_device_wake(struct dhd_bus *bus, bool val)
+{
+	/* TODO: Currently Inband implementation of Device_Wake is not supported,
+	 * so this function is left empty later this can be used to support the same.
+	 */
+}
+#endif /* PCIE_OOB */
+
 #ifdef DHD_PCIE_RUNTIMEPM
 bool dhd_runtimepm_state(dhd_pub_t *dhd)
 {
@@ -2757,10 +3099,19 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 	bus->idlecount++;
 
 	DHD_TRACE(("%s : Enter \n", __FUNCTION__));
+
+	if (dhd_query_bus_erros(dhd)) {
+		/* Becasue bus_error/dongle_trap ... etc,
+		 * driver don't allow enter suspend, return FALSE
+		 */
+		DHD_GENERAL_UNLOCK(dhd, flags);
+		return FALSE;
+	}
+
 	if ((bus->idletime > 0) && (bus->idlecount >= bus->idletime)) {
 		bus->idlecount = 0;
 		if (DHD_BUS_BUSY_CHECK_IDLE(dhd) && !DHD_BUS_CHECK_DOWN_OR_DOWN_IN_PROGRESS(dhd) &&
-			!DHD_CHECK_CFG_IN_PROGRESS(dhd)) {
+			!DHD_CHECK_CFG_IN_PROGRESS(dhd) && !dhd_os_check_wakelock_all(bus->dhd)) {
 			DHD_ERROR(("%s: DHD Idle state!! -  idletime :%d, wdtick :%d \n",
 					__FUNCTION__, bus->idletime, dhd_runtimepm_ms));
 			bus->bus_wake = 0;
@@ -2783,13 +3134,15 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 					/* Reschedule tasklet to process Rx frames */
 					DHD_ERROR(("%s: Schedule DPC to process pending"
 						" Rx packets\n", __FUNCTION__));
-					dhd_sched_dpc(bus->dhd);
-				}
-				/* enabling host irq deferred from system suspend */
-				if (dhdpcie_irq_disabled(bus)) {
-					dhdpcie_enable_irq(bus);
-					/* increasing intrrupt count when it enabled */
-					bus->resume_intr_enable_count++;
+					/* irq will be enabled at the end of dpc */
+					dhd_schedule_delayed_dpc_on_dpc_cpu(bus->dhd, 0);
+				} else {
+					/* enabling host irq deferred from system suspend */
+					if (dhdpcie_irq_disabled(bus)) {
+						dhdpcie_enable_irq(bus);
+						/* increasing intrrupt count when it enabled */
+						bus->resume_intr_enable_count++;
+					}
 				}
 				smp_wmb();
 				wake_up(&bus->rpm_queue);
@@ -2879,7 +3232,7 @@ bool dhd_runtime_bus_wake(dhd_bus_t *bus, bool wait, void *func_addr)
 
 			DHD_GENERAL_UNLOCK(bus->dhd, flags);
 
-			DHD_ERROR(("Runtime Resume is called in %pf\n", func_addr));
+			DHD_ERROR_RLMT(("Runtime Resume is called in %pf\n", func_addr));
 			smp_wmb();
 			wake_up(&bus->rpm_queue);
 		/* No need to wake up the RPM state thread */
@@ -2960,6 +3313,14 @@ dhd_dongle_mem_dump(void)
 }
 EXPORT_SYMBOL(dhd_dongle_mem_dump);
 #endif /* DHD_FW_COREDUMP */
+
+#ifdef CONFIG_ARCH_MSM
+void
+dhd_bus_inform_ep_loaded_to_rc(dhd_pub_t *dhdp, bool up)
+{
+	sec_pcie_set_ep_driver_loaded(dhdp->bus->rc_dev, up);
+}
+#endif /* CONFIG_ARCH_MSM */
 
 bool
 dhd_bus_check_driver_up(void)

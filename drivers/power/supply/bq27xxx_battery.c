@@ -151,15 +151,19 @@
 #define BQ27Z561_MAC_CMD_GS 0x0056		//GaugingStatus
 #define BQ27Z561_MAC_CMD_MS 0x0057		//ManufacturingStatus
 #define BQ27Z561_MAC_CMD_LDB1 0x0060		//Lifetime Data Block 1
-#define BQ27Z561_MAC_CMD_MI 0x0070		//Manufacture info
+#define BQ27Z561_MAC_CMD_MI_A 0x0070		//Manufacture info A
+
+#define BQ27Z561_MAC_CMD_MI_B 0x007A		//Manufacture info B
+#define BQ27Z561_MAC_CMD_MI_C 0x007B		//Manufacture info C
 
 #define BQ27Z561_MAC_CMD_ROMMODE 0x0F00		//ROMMode
 #define BQ27Z561_MAC_CMD_HDQ 0x7C40		//SwitchToHDQ
 #define BQ27Z561_MAC_CMD_ECO 0xF080		//ExitCalibrationOutput
 #define BQ27Z561_MAC_CMD_OCC 0xF081		//OutputCCandADCforCalibration
 
-#define BQ27Z561_MAC_LEN	40
+#define BQ27Z561_MAC_LEN	128
 #define BQ27Z561_SUB_LEN	4	//2-byte command, 1-byte checksum and 1-byte length
+#define ARC_BATTERY_HEAD	"LGCSWD"	//Head byte of arc battery
 
 static const char * const bq27z561_sealed_status_str[] = {
 	"Reserved", "Full Access", "Unsealed", "Sealed"};
@@ -2166,14 +2170,44 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 				union power_supply_propval *val)
 {
 	int ret;
+	char buf[BQ27Z561_MAC_BLOCK_LEN + 1];
 
-	ret = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MI,
-					di->mac_buf, BQ27Z561_MAC_LEN);
+	memset(di->mac_buf, 0x00, BQ27Z561_MAC_LEN);
+	mutex_lock(&bq27xxx_list_lock);
+	ret = bq27z561_battery_read_mac_block(di,
+			BQ27Z561_MAC_CMD_MI_A, buf,
+			BQ27Z561_MAC_BLOCK_LEN + 1);
 	if (ret < 0) {
 		dev_err(di->dev, "get manufacturer info error\n");
+		mutex_unlock(&bq27xxx_list_lock);
 		return ret;
 	}
+
+	strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+
+	if (strnstr(buf, ARC_BATTERY_HEAD, 6)) {
+		ret = bq27z561_battery_read_mac_block(di,
+				BQ27Z561_MAC_CMD_MI_B, buf,
+				BQ27Z561_MAC_BLOCK_LEN + 1);
+		if (ret < 0) {
+			dev_err(di->dev, "get manufacturer info error\n");
+			mutex_unlock(&bq27xxx_list_lock);
+			return ret;
+		}
+		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+		ret = bq27z561_battery_read_mac_block(di,
+				BQ27Z561_MAC_CMD_MI_C, buf,
+				BQ27Z561_MAC_BLOCK_LEN + 1);
+		if (ret < 0) {
+			dev_err(di->dev, "get manufacturer info error\n");
+			mutex_unlock(&bq27xxx_list_lock);
+			return ret;
+		}
+
+		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+	}
 	val->strval = di->mac_buf;
+	mutex_unlock(&bq27xxx_list_lock);
 	return 0;
 }
 
@@ -2754,7 +2788,7 @@ static ssize_t manufacturer_info_read_file(struct file *file,
 				size_t count, loff_t *ppos)
 {
 	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MI);
+				BQ27Z561_MAC_CMD_MI_A);
 }
 
 static const struct file_operations reg_data_fops = {

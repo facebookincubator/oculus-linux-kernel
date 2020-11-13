@@ -75,68 +75,74 @@
 	*/
 
 typedef enum {
-	WLFC_CTL_TYPE_MAC_OPEN              = 1,
-	WLFC_CTL_TYPE_MAC_CLOSE             = 2,
-	WLFC_CTL_TYPE_MAC_REQUEST_CREDIT    = 3,
-	WLFC_CTL_TYPE_TXSTATUS              = 4,
-	WLFC_CTL_TYPE_PKTTAG                = 5, /** host<->dongle */
+	WLFC_CTL_TYPE_MAC_OPEN			= 1,
+	WLFC_CTL_TYPE_MAC_CLOSE			= 2,
+	WLFC_CTL_TYPE_MAC_REQUEST_CREDIT	= 3,
+	WLFC_CTL_TYPE_TXSTATUS			= 4,
+	WLFC_CTL_TYPE_PKTTAG			= 5, /** host<->dongle */
 
-	WLFC_CTL_TYPE_MACDESC_ADD           = 6,
-	WLFC_CTL_TYPE_MACDESC_DEL           = 7,
-	WLFC_CTL_TYPE_RSSI                  = 8,
+	WLFC_CTL_TYPE_MACDESC_ADD		= 6,
+	WLFC_CTL_TYPE_MACDESC_DEL		= 7,
+	WLFC_CTL_TYPE_RSSI			= 8,
 
-	WLFC_CTL_TYPE_INTERFACE_OPEN        = 9,
-	WLFC_CTL_TYPE_INTERFACE_CLOSE       = 10,
+	WLFC_CTL_TYPE_INTERFACE_OPEN		= 9,
+	WLFC_CTL_TYPE_INTERFACE_CLOSE		= 10,
 
-	WLFC_CTL_TYPE_FIFO_CREDITBACK       = 11,
+	WLFC_CTL_TYPE_FIFO_CREDITBACK		= 11,
 
-	WLFC_CTL_TYPE_PENDING_TRAFFIC_BMP   = 12, /** host->dongle */
-	WLFC_CTL_TYPE_MAC_REQUEST_PACKET    = 13,
-	WLFC_CTL_TYPE_HOST_REORDER_RXPKTS   = 14,
+	WLFC_CTL_TYPE_PENDING_TRAFFIC_BMP	= 12, /** host->dongle */
+	WLFC_CTL_TYPE_MAC_REQUEST_PACKET	= 13,
+	WLFC_CTL_TYPE_HOST_REORDER_RXPKTS	= 14,
 
-	WLFC_CTL_TYPE_TX_ENTRY_STAMP        = 15,
-	WLFC_CTL_TYPE_RX_STAMP              = 16,
+	WLFC_CTL_TYPE_TX_ENTRY_STAMP		= 15,
+	WLFC_CTL_TYPE_RX_STAMP			= 16,
 
-	WLFC_CTL_TYPE_UPD_FLR_FETCH         = 17, /* PCIE_FLOWCTL: Update Flowring Fetch */
+	WLFC_CTL_TYPE_UPD_FLR_FETCH		= 17, /* PCIE_FLOWCTL: Update Flowring Fetch */
 
-	WLFC_CTL_TYPE_TRANS_ID              = 18,
-	WLFC_CTL_TYPE_COMP_TXSTATUS         = 19,
+	WLFC_CTL_TYPE_TRANS_ID			= 18,
+	WLFC_CTL_TYPE_COMP_TXSTATUS		= 19,
 
-	WLFC_CTL_TYPE_TID_OPEN              = 20,
-	WLFC_CTL_TYPE_TID_CLOSE             = 21,
-	WLFC_CTL_TYPE_UPD_FLR_WEIGHT        = 22, /* WLATF_DONGLE */
-	WLFC_CTL_TYPE_ENAB_FFSCH            = 23, /* WLATF_DONGLE */
+	WLFC_CTL_TYPE_TID_OPEN			= 20, /* open flowring/s with tid */
+	WLFC_CTL_TYPE_TID_CLOSE			= 21, /* close flowring/s with tid */
+	WLFC_CTL_TYPE_UPD_FLR_WEIGHT		= 22, /* WLATF_DONGLE */
+	WLFC_CTL_TYPE_ENAB_FFSCH		= 23, /* WLATF_DONGLE */
 
-	WLFC_CTL_TYPE_UPDATE_FLAGS          = 24, /* clear the flags set in flowring */
-	WLFC_CTL_TYPE_CLEAR_SUPPR           = 25, /* free the supression info in the flowring */
+	WLFC_CTL_TYPE_UPDATE_FLAGS		= 24, /* clear the flags set in flowring */
+	WLFC_CTL_TYPE_CLEAR_SUPPR		= 25, /* free the supression info in the flowring */
 
-	WLFC_CTL_TYPE_FLOWID_OPEN           = 26,
-	WLFC_CTL_TYPE_FLOWID_CLOSE          = 27,
+	WLFC_CTL_TYPE_FLOWID_OPEN		= 26, /* open flowring with flowid */
+	WLFC_CTL_TYPE_FLOWID_CLOSE		= 27, /* close flowring with flowid */
 
-	WLFC_CTL_TYPE_PENDING_TX_PKTS       = 28, /* Get the outstandinding packets in host
-	                                           * flowring for the given interface.
-	                                           */
-	WLFC_CTL_TYPE_UPD_SCB_RATESEL_CHANGE= 29, /* Update flow's max rate dynamically */
-	WLFC_CTL_TYPE_AMSDU_STATE           = 30, /* Update flow's AMSDU state (Enabled/Disabled) */
-	WLFC_CTL_TYPE_FILLER                = 255
+	WLFC_CTL_TYPE_PENDING_TX_PKTS		= 28, /* Get the outstandinding packets in host
+							* flowring for the given interface.
+							*/
+	WLFC_CTL_TYPE_UPD_SCB_RATESEL_CHANGE	= 29, /* Upd flow's max rate dynamically */
+	WLFC_CTL_TYPE_AMSDU_STATE		= 30, /* Upd flow's AMSDU state(Enabled/Disabled) */
+	WLFC_CTL_TYPE_APP_STATE			= 31, /* Upd flow's APP state, enable/disable APP */
+	WLFC_CTL_TYPE_HP2P_EXT_TXSTATUS		= 32, /* Hp2p extended tx status */
+	WLFC_CTL_TYPE_HP2P_ACTIVE_STATE		= 33, /* Get status of HP2P ring active or not */
+	WLFC_CTL_TYPE_HP2P_QUERY_LIFETIME	= 34, /* Query lifetime for last unacked */
+	WLFC_CTL_TYPE_FILLER			= 255
 } wlfc_ctl_type_t;
 
-#define WLFC_CTL_VALUE_LEN_FLOWID		2
+#define WLFC_CTL_VALUE_LEN_FLOWID		2u	/* flowid legth in TLV */
 
-#define WLFC_CTL_VALUE_LEN_MACDESC		8	/** handle, interface, MAC */
+#define WLFC_CTL_VALUE_LEN_MACDESC		8u	/** handle, interface, MAC */
 
-#define WLFC_CTL_VALUE_LEN_MAC			1	/** MAC-handle */
-#define WLFC_CTL_VALUE_LEN_RSSI			1
+#define WLFC_CTL_VALUE_LEN_MAC			1u	/** MAC-handle */
+#define WLFC_CTL_VALUE_LEN_RSSI			1u
 
-#define WLFC_CTL_VALUE_LEN_INTERFACE		1
-#define WLFC_CTL_VALUE_LEN_PENDING_TRAFFIC_BMP	2
+#define WLFC_CTL_VALUE_LEN_INTERFACE		1u
+#define WLFC_CTL_VALUE_LEN_PENDING_TRAFFIC_BMP	2u
 
-#define WLFC_CTL_VALUE_LEN_TXSTATUS		4
-#define WLFC_CTL_VALUE_LEN_PKTTAG		4
-#define WLFC_CTL_VALUE_LEN_TIMESTAMP		12	/** 4-byte rate info + 2 TSF */
+#define WLFC_CTL_VALUE_LEN_TXSTATUS		4u
+#define WLFC_CTL_VALUE_LEN_PKTTAG		4u
+#define WLFC_CTL_VALUE_LEN_TIMESTAMP		12u	/** 4-byte rate info + 2 TSF */
 
-#define WLFC_CTL_VALUE_LEN_SEQ			2
-#define WLFC_CTL_VALUE_LEN_TID			2	/* interface index, TID */
+#define WLFC_CTL_VALUE_LEN_SEQ			2u
+#define WLFC_CTL_VALUE_LEN_TID			3u	/* interface index, TID */
+
+#define WLFC_CTL_EXT_TXSTATUS_PAYLOAD_LEN	8u	/* Payload legnth of extention tx status */
 
 /* Reset the flags set for the corresponding flowring of the SCB which is de-inited */
 /* FLOW_RING_FLAG_LAST_TIM | FLOW_RING_FLAG_INFORM_PKTPEND | FLOW_RING_FLAG_PKT_REQ */
@@ -244,6 +250,15 @@ typedef enum {
 	((x) & ~(WL_TXSTATUS_FREERUNCTR_MASK)) | \
 	((ctr) & WL_TXSTATUS_FREERUNCTR_MASK))
 #define WL_TXSTATUS_GET_FREERUNCTR(x)		((x)& WL_TXSTATUS_FREERUNCTR_MASK)
+
+/* packet prio phase bit updated */
+#define WL_SEQ_PKTPRIO_PHASE_MASK	0x1
+#define WL_SEQ_PKTPRIO_PHASE_SHIFT	15
+#define WL_SEQ_SET_PKTPRIO_PHASE(x, val)		((x) = \
+	((x) & ~(WL_SEQ_PKTPRIO_PHASE_MASK << WL_SEQ_PKTPRIO_PHASE_SHIFT)) | \
+	(((val) & WL_SEQ_PKTPRIO_PHASE_MASK) << WL_SEQ_PKTPRIO_PHASE_SHIFT))
+#define WL_SEQ_PKTPRIO_PHASE(x)	(((x) >> WL_SEQ_PKTPRIO_PHASE_SHIFT) & \
+	WL_SEQ_PKTPRIO_PHASE_MASK)
 
 /* AMSDU part of d11 seq number */
 #define WL_SEQ_AMSDU_MASK             0x1 /* allow 1 bit */
@@ -461,5 +476,21 @@ typedef enum {
 #define WLFC_PCIEDEV_LLR_PRIO_MAP	2
 
 void wlc_wlfc_set_pkttime(void* pkt, uint16 time);
+
+/* reason for disabling APP, when none are set, APP will be enabled */
+typedef enum {
+	APP_STS_FLOWRING_NO_APP		= 0u,	/* Reason code used by pciedev */
+	APP_STS_FLOWRING_CLOSED		= 1u,	/* Disable APP as flowring is closed */
+	APP_STS_CRYPTO_UNSUPPORTED	= 2u,	/* Secuirity type doesn't support APP */
+	APP_STS_80211_FRAGMENTATION	= 3u,   /* 802.11 fragmentation enabled */
+	APP_STS_MAX			= 4u	/* MAX */
+} app_disable_reason_s;
+
+/* shared structure between wlc and pciedev layer to set/reset a reason code */
+typedef struct app_upd_sts {
+	bool	set;			/* if set, app is disabled for reason rsn */
+	bool	sta;			/* set if scb/flowring  belong to sta */
+	app_disable_reason_s rsn;	/* APP disable reason codes. */
+} app_upd_sts_t;
 
 #endif /* __wlfc_proto_definitions_h__ */

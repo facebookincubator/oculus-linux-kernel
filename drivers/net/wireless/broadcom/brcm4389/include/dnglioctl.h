@@ -55,9 +55,11 @@
 #define RTED11DMAHOSTLPBK_RUN	0x8914  /* D11 DMA host memory loopback run */
 #define RTEDEVGETTSF		0x8915  /* Get device TSF */
 #define RTEDURATIONUNIT		0x8916  /* Duration unit */
-#define RTEWRITE_WAR_REGS	0x8917
+#define RTEWRITE_WAR_REGS	0x8917  /* write workaround regs */
+#define RTEDEVRMPMK		0x8918  /* Remove PMK */
+#define RTEDEVDBGVAL		0x8919  /* Set debug val */
 /* Ensure last RTE IOCTL define val is assigned to RTEIOCTLEND */
-#define RTEIOCTLEND		0x8917  /* LAST RTE IOCTL value */
+#define RTEIOCTLEND		0x8919  /* LAST RTE IOCTL value */
 
 #define RTE_IOCTL_QUERY		0x00
 #define RTE_IOCTL_SET		0x01
@@ -84,7 +86,10 @@ enum hnd_ioctl_cmd {
 	BUS_SET_MAC_WAKE_STATE = 13,
 	BUS_FRWD_PKT_RXCMPLT = 14,
 	BUS_PCIE_LATENCY_ENAB = 15, /* to enable latency feature in pcie */
-	BUS_GET_MAXITEMS = 16
+	BUS_GET_MAXITEMS = 16,
+	BUS_SET_BUS_CSO_CAP = 17,	/* Update the CSO cap from wl layer to bus layer */
+	BUS_DUMP_RX_DMA_STALL_RELATED_INFO = 18,
+	BUS_UPDATE_RESVPOOL_STATE = 19	/* Update resvpool state */
 };
 
 #define SDPCMDEV_SET_MAXTXPKTGLOM	1
@@ -132,6 +137,16 @@ typedef struct d11_dmalpbk_args {
 	uint8 core_num;
 	uint8 pad[3];
 } d11_dmalpbk_args_t;
+
+typedef enum wl_config_var {
+	WL_VAR_TX_PKTFETCH_INDUCE = 1,
+	WL_VAR_LAST
+} wl_config_var_t;
+
+typedef struct wl_config_buf {
+	wl_config_var_t var;
+	uint32 val;
+} wl_config_buf_t;
 
 /* ================================================================ */
 /* These are the existing ioctls moved from src/include/rte_ioctl.h */

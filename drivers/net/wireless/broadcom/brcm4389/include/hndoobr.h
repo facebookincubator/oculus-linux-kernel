@@ -31,10 +31,16 @@
 #define HND_CORE_MAIN_INTR	0
 #define HND_CORE_ALT_INTR	1
 
+uint32 hnd_oobr_get_clkpwrreq(si_t *sih, uint coreid);
 uint32 hnd_oobr_get_intstatus(si_t *sih);
 int hnd_oobr_get_intr_config(si_t *sih, uint srccidx, uint srcpidx, uint dstcidx, uint *dstpidx);
 int hnd_oobr_set_intr_src(si_t *sih, uint dstcidx, uint dstpidx, uint intrnum);
 void hnd_oobr_init(si_t *sih);
+
+#ifdef BCMDBG
+/* dump oobr registers values to console */
+void hnd_oobr_dump(si_t *sih);
+#endif
 
 #define OOBR_INVALID_PORT       0xFFu
 
@@ -58,7 +64,9 @@ void hnd_oobr_init(si_t *sih);
 typedef volatile struct hndoobr_percore_reg {
 	uint32 sourcesel[OOBR_INTR_PER_CONFREG];        /* 0x00 - 0x0c */
 	uint32 destsel[OOBR_INTR_PER_CONFREG];          /* 0x10 - 0x1c */
-	uint32 reserved[6];
+	uint32 reserved[4];
+	uint32 clkpwrreq;                               /* 0x30 */
+	uint32 extrsrcreq;                              /* 0x34 */
 	uint32 config;                                  /* 0x38 */
 	uint32 reserved1[17];                           /* 0x3c to 0x7c */
 } hndoobr_percore_reg_t;

@@ -1399,6 +1399,7 @@ struct cm710x_codec_priv {
 	struct mutex Dsp_Access_Lock;
 	bool bEnableSpkEQ;
 	bool bEnableMicEQ;
+	bool bEnableMicDspBypass;
 	bool bEnableMicDspProcess;
 	bool bEnableAEC;
 	bool bEnableAGC;

@@ -45,6 +45,7 @@
 enum {
 	SPK_EQ_ON_OFF			= 0x01,
 	MIC_EQ_ON_OFF,
+	MIC_DSP_BYPASS_ON_OFF,
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
 	MIC_EQ_AGC_ON_OFF,
@@ -1354,6 +1355,29 @@ static int cm710x_get_EQ_Default(struct cm710x_codec_priv *cm710x_codec)
 	return 0;
 }
 
+static void cm710x_mic_bypass_dsp(struct cm710x_codec_priv *cm710x_codec,
+					bool enable)
+{
+	if (enable) {
+		/* MIC bypass DSP */
+		regmap_update_bits(cm710x_codec->virt_regmap,
+				CM710X_TDM1_CTRL2, 0xff, 0x31);
+		/* trigger DSP CPU stop */
+		regmap_update_bits(cm710x_codec->virt_regmap,
+				CM710X_PWR_DSP1, 0x1, 0x1);
+		cm710x_codec->bEnableMicDspBypass = true;
+	} else {
+		/* MIC do not bypass DSP */
+		regmap_update_bits(cm710x_codec->virt_regmap,
+				CM710X_TDM1_CTRL2, 0xff, 0x50);
+		/* trigger DSP CPU run */
+		regmap_update_bits(cm710x_codec->virt_regmap,
+				CM710X_PWR_DSP1, 0x1, 0x0);
+		usleep_range(50000, 50100);
+		cm710x_codec->bEnableMicDspBypass = false;
+	}
+}
+
 static int cm710x_download_firmware(struct cm710x_codec_priv *cm710x_codec)
 {
 	u32 version = 0;
@@ -1381,6 +1405,8 @@ static int cm710x_download_firmware(struct cm710x_codec_priv *cm710x_codec)
 			0x5FFC001C, &version);
 	mutex_unlock(&cm710x_codec->Dsp_Access_Lock);
 	pr_debug("%s (%d): Version = %08X\n", __func__, __LINE__, version);
+
+	cm710x_mic_bypass_dsp(cm710x_codec, true);
 
 	ret = cm710x_get_EQ_Default(cm710x_codec);
 
@@ -1585,6 +1611,13 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 	}
 
 	switch (reg) {
+	case MIC_DSP_BYPASS_ON_OFF:
+		cm710x_mic_bypass_dsp(cm710x_codec,
+				ucontrol->value.integer.value[0]);
+		dev_info(cm710x_codec->dev,
+			"%s MIC_DSP_BYPASS_ON_OFF set Value = %ld\n",
+			__func__, ucontrol->value.integer.value[0]);
+		break;
 	case MIC_DSP_PROCESS_ON_OFF:
 		if (ucontrol->value.integer.value[0] == 0)
 			cm710x_codec->bEnableMicDspProcess = false;
@@ -1672,6 +1705,16 @@ static int cm710x_get_vu(struct snd_kcontrol *kcontrol,
 	unsigned int reg = mc->reg;
 
 	switch (reg) {
+	case MIC_DSP_BYPASS_ON_OFF:
+		if (cm710x_codec->bEnableMicDspBypass)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_info(cm710x_codec->dev,
+			"%s MIC_DSP_BYPASS_ON_OFF get value = %ld\n",
+			__func__, ucontrol->value.integer.value[0]);
+		break;
 	case MIC_DSP_PROCESS_ON_OFF:
 		if (cm710x_codec->bEnableMicDspProcess)
 			ucontrol->value.integer.value[0] = true;
@@ -2428,6 +2471,9 @@ static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 	SOC_DOUBLE("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
 		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
 
+	SOC_SINGLE_EXT("Mic DSP Bypass",
+		MIC_DSP_BYPASS_ON_OFF, 0, 1, 0,
+		cm710x_get_vu, cm710x_put_vu),
 	SOC_SINGLE_EXT("Mic DSP Enable",
 		MIC_DSP_PROCESS_ON_OFF, 0, 1, 0,
 		cm710x_get_vu, cm710x_put_vu),

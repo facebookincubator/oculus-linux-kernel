@@ -9,6 +9,10 @@ config QCA_CLD_WLAN
 
 if QCA_CLD_WLAN != n
 
+config QCA_CLD_WLAN_PROFILE
+	string "Default Qualcomm Atheros CLD defconfig profile"
+	default "default"
+
 config QCACLD_WLAN_LFR3
 	bool "Enable the WLAN Legacy Fast Roaming feature Version 3"
 	default n

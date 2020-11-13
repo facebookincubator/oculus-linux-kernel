@@ -28,6 +28,10 @@
 #include <linux/refcount.h>
 #include <linux/user_namespace.h>
 
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
+#include <linux/posix_acl.h>
+#endif
+
 /** Max number of pages that can be used in a single read request */
 #define FUSE_MAX_PAGES_PER_REQ 32
 
@@ -703,6 +707,17 @@ static inline u64 get_node_id(struct inode *inode)
 	return get_fuse_inode(inode)->nodeid;
 }
 
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
+static inline void fuse_forget_all_cached_acls(struct inode *inode)
+{
+       forget_all_cached_acls(inode);
+}
+#else
+static inline void fuse_forget_all_cached_acls(struct inode *inode)
+{
+}
+#endif
+
 /** Device operations */
 extern const struct file_operations fuse_dev_operations;
 
@@ -991,7 +1006,9 @@ ssize_t fuse_getxattr(struct inode *inode, const char *name, void *value,
 ssize_t fuse_listxattr(struct dentry *entry, char *list, size_t size);
 int fuse_removexattr(struct inode *inode, const char *name);
 extern const struct xattr_handler *fuse_xattr_handlers[];
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
 extern const struct xattr_handler *fuse_acl_xattr_handlers[];
+#endif
 extern const struct xattr_handler *fuse_no_acl_xattr_handlers[];
 
 struct posix_acl;

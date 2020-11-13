@@ -536,4 +536,7 @@ int cam_context_handle_set_stream_mode(struct cam_context *ctx,
 int cam_context_handle_stream_mode_cmd(struct cam_context *ctx,
 	struct cam_stream_mode_cmd *cmd);
 
+struct cam_ctx_request *cam_context_alloc_request(struct cam_context *ctx);
+void cam_context_free_request(struct cam_ctx_request *req);
+
 #endif  /* _CAM_CONTEXT_H_ */

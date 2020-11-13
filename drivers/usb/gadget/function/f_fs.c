@@ -1108,9 +1108,15 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		if (ep->ep)
 			ret = ep->status;
 		spin_unlock_irq(&epfile->ffs->eps_lock);
-		if (io_data->read && ret > 0)
+		if (io_data->read && ret > 0) {
+			if (WARN(ep->status > data_len,
+				"actual length %d > %d", ep->status, data_len)) {
+				ret = -EOVERFLOW;
+				goto error_mutex;
+			}
 			ret = __ffs_epfile_read_data(epfile, data, ep->status,
 						     &io_data->data);
+		}
 		goto error_mutex;
 	} else if (!(req = usb_ep_alloc_request(ep->ep, GFP_ATOMIC))) {
 		ret = -ENOMEM;

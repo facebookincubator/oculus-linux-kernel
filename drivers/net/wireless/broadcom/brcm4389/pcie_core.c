@@ -31,6 +31,10 @@
 #include <hndsoc.h>
 #include <sbchipc.h>
 #include <pcicfg.h>
+#if defined(DONGLEBUILD)
+#include <pcieregsoffs.h>
+#include <pcicfg.h>
+#endif
 #include "pcie_core.h"
 #include <bcmdevs.h>
 
@@ -40,18 +44,19 @@
 
 /* function definitions */
 
-#ifdef BCMDRIVER
+#ifdef BCMDRIVER /* this workaround can only be run on the host side since it resets \
+	the chip */
+#if !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST)
 
 /* To avoid build error for dongle standalone test, define CAN_SLEEP if not defined */
 #ifndef CAN_SLEEP
 #define CAN_SLEEP()	(FALSE)
-#endif // endif
+#endif
 
 #ifndef USEC_PER_MSEC
 #define USEC_PER_MSEC	1000
-#endif // endif
+#endif
 
-// MOG-ON: BCMINTERNAL
 /**
  * WAR for CRWLPCIEGEN2-163, needed for all the chips at this point.
  * The PCIe core contains a 'snoop bus', that allows the logic in the PCIe core to read and write
@@ -61,7 +66,6 @@
  * the snoop bus are the device power state, MSI info, L1subenable which may potentially cause
  * problems.
  */
-// MOG-OFF: BCMINTERNAL
 /* wd_mask/wd_val is only for chipc_corerev >= 65 */
 void pcie_watchdog_reset(osl_t *osh, si_t *sih, uint32 wd_mask, uint32 wd_val)
 {
@@ -74,6 +78,29 @@ void pcie_watchdog_reset(osl_t *osh, si_t *sih, uint32 wd_mask, uint32 wd_val)
 		PCIECFGREG_REG_BAR3_CONFIG};
 	sbpcieregs_t *pcieregs = NULL;
 	uint32 origidx = si_coreidx(sih);
+
+#if defined(BCMQT) || defined(BCMFPGA_HW)
+	/*
+	 * JIRA : SWWLAN-283651, 4397A0 WAR : During insmod avoid existing
+	 * PCIE WAR to avoid 'pcie_watchdog_reset'
+	 */
+	if (BCM4397_CHIP(sih->chip)) {
+		return;
+	}
+
+	/* To avoid hang on FPGA, donot reset watchdog */
+	if (CCREV(sih->ccrev) < 65) {
+		si_setcoreidx(sih, origidx);
+		return;
+	}
+#endif
+#ifdef BCMFPGA_HW
+	if (CCREV(sih->ccrev) < 67) {
+		/* To avoid hang on FPGA, donot reset watchdog */
+		si_setcoreidx(sih, origidx);
+		return;
+	}
+#endif
 
 	/* Switch to PCIE2 core */
 	pcieregs = (sbpcieregs_t *)si_setcore(sih, PCIE2_CORE_ID, 0);
@@ -178,5 +205,24 @@ pcie_corereg(osl_t *osh, volatile void *regs, uint32 offset, uint32 mask, uint32
 	}
 	return (R_REG(osh, regsva));
 }
+#endif /* !defined(DONGLEBUILD) || defined(BCMSTANDALONE_TEST) */
 
+#if defined(DONGLEBUILD)
+void  pcie_coherent_accenable(osl_t *osh, si_t *sih)
+{
+	pcieregs_t *pcie = NULL;
+	uint32 val;
+	uint32 origidx = si_coreidx(sih);
+
+	if ((pcie = si_setcore(sih, PCIE2_CORE_ID, 0)) != NULL) {
+		/* PCIe BAR1 coherent access enabled */
+		W_REG(osh, PCIE_configindaddr_ALTBASE(pcie, 0), PCIECFGREG_SPROM_CTRL);
+		val = R_REG(osh, PCIE_configinddata_ALTBASE(pcie, 0));
+		val |= (SPROM_BAR1_COHERENT_ACC_EN | SPROM_BAR2_COHERENT_ACC_EN);
+		W_REG(osh, PCIE_configinddata_ALTBASE(pcie, 0), val);
+	}
+
+	si_setcoreidx(sih, origidx);
+}
+#endif /* DONGLEBUILD */
 #endif /* BCMDRIVER */

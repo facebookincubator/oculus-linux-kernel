@@ -30,6 +30,7 @@
 #include <ethernet.h>
 #include <802.11.h>
 
+/* XXX happens to mirror a section of linux's net_device_stats struct */
 typedef struct {
 	unsigned long	rx_packets;		/* total packets received */
 	unsigned long	tx_packets;		/* total packets transmitted */
@@ -94,7 +95,11 @@ typedef enum {
 						     * element UTF-8 SSID bit is set
 						     */
 #define WIFI_CAPABILITY_COUNTRY      0x00000020     /* set is 802.11 Country Element is present */
+#ifdef LINUX
 #define PACK_ATTRIBUTE __attribute__ ((packed))
+#else
+#define PACK_ATTRIBUTE
+#endif
 typedef struct {
 	wifi_interface_mode mode;     /* interface mode */
 	uint8 mac_addr[6];               /* interface mac address (self) */

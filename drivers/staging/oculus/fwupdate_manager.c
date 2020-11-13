@@ -1,5 +1,7 @@
 #include <linux/firmware.h>
+#include <linux/slab.h>
 #include <linux/regulator/consumer.h>
+#include <linux/uaccess.h>
 
 #include "fw_helpers.h"
 #include "hubert_swd_ops.h"
@@ -17,32 +19,118 @@ static struct {
 	{
 		.flavor = "nrf52832",
 		.swd_ops = {
+			.provisioning_read = syncboss_swd_provisioning_read,
+			.provisioning_write = syncboss_swd_provisioning_write,
 			.target_erase = syncboss_swd_erase_app,
-			.target_program_write_block = syncboss_swd_write_block,
-			.target_program_cleanup = NULL,
+			.target_program_write_chunk = syncboss_swd_write_chunk,
+			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
+			.target_program_read = syncboss_swd_read,
 		}
 	},
 	{
 		.flavor = "at91samd",
 		.swd_ops = {
+			.provisioning_read = hubert_swd_provisioning_read,
+			.provisioning_write = hubert_swd_provisioning_write,
+			.should_force_provision = hubert_swd_should_force_provision,
+			.target_prepare = hubert_swd_prepare,
 			.target_erase = hubert_swd_erase_app,
-			.target_program_write_block = hubert_swd_write_block,
-			.target_program_cleanup = hubert_swd_wp_and_reset
+			.target_program_write_chunk = hubert_swd_write_chunk,
+			.target_get_write_chunk_size = hubert_get_write_chunk_size,
+			.target_program_read = hubert_swd_read,
 		}
 	},
 };
 
+static int check_swd_ops(struct device *dev, struct swd_ops_params *ops)
+{
+	if (!ops->target_erase){
+		dev_err(dev, "target_erase is NULL!");
+		return -ENOSYS;
+	}
+
+	if (!ops->target_program_write_chunk) {
+		dev_err(dev, "target_program_write_chunk is NULL!");
+		return -ENOSYS;
+	}
+
+	if (!ops->target_get_write_chunk_size) {
+		dev_err(dev, "target_get_write_chunk_size is NULL!");
+		return -ENOSYS;
+	}
+
+	return 0;
+}
+
+static int provision_if_needed(struct device *dev)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct swd_ops_params *ops = &devdata->swd_ops;
+	int status, addr, length;
+	bool should_provision;
+	u8 *data = NULL;
+
+	if (!devdata->swd_provisioning)
+		return 0;
+
+	if (!ops->provisioning_read || !ops->provisioning_write) {
+		dev_err(dev, "swd provisioning support not implemented\n");
+		return -EINVAL;
+	}
+
+	addr = devdata->provisioning->flash_addr;
+	length = devdata->provisioning->data_length;
+
+
+	if (ops->should_force_provision && ops->should_force_provision(dev)) {
+		should_provision = true;
+	} else {
+		data = kmalloc(length, GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+
+		status = ops->provisioning_read(dev, addr, data, length);
+		if (status) {
+			dev_err(dev, "Failed to read provisioning data\n");
+			goto out;
+		}
+
+		should_provision = memcmp(data, devdata->provisioning->data, length) != 0;
+	}
+
+
+	if (should_provision) {
+		dev_info(dev, "MCU needs provisioning. Attempting now...\n");
+		status = ops->provisioning_write(dev, addr, devdata->provisioning->data, length);
+		if (status) {
+			dev_err(dev, "Failed to read provisioning data\n");
+			goto out;
+		}
+		dev_info(dev, "MCU provisioning complete\n");
+	} else {
+		dev_info(dev, "MCU already provisioned\n");
+	}
+
+out:
+	kfree(data);
+	return status;
+}
+
 static int update_firmware(struct device *dev)
 {
-	int status = 0;
-	int bytes_written = 0;
+	int status;
 	int iteration_ctr = 0;
-	int bytes_to_write = 0;
-	int bytes_left = 0;
+	size_t bytes_to_write = 0;
+	size_t bytes_written = 0;
+	size_t bytes_left = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct flash_info *flash = &devdata->flash_info;
-	const int block_size = flash->block_size;
 	const struct firmware *fw = devdata->fw;
+	size_t chunk_size;
+
+	status = check_swd_ops(dev, &devdata->swd_ops);
+	if (status) {
+		goto error;
+	}
 
 	if (devdata->swd_core) {
 		status = regulator_enable(devdata->swd_core);
@@ -58,60 +146,64 @@ static int update_firmware(struct device *dev)
 			     fw->data, fw->size);
 #endif
 	swd_init(dev);
+	swd_halt(dev);
 
-	dev_info(dev, "Erasing firmware app");
-	if (devdata->swd_ops.target_erase)
-		status = devdata->swd_ops.target_erase(dev);
-	else
-		dev_err(dev, "SWD target_erase is NULL!");
-
-	if (status != 0)
-		goto error;
-
-	atomic_set(&devdata->fw_blocks_to_write,
-		(fw->size + block_size - 1) / block_size);
-
-	if (!devdata->swd_ops.target_program_write_block) {
-		dev_err(dev, "SWD write_block is NULL!");
-		status = -EINVAL;
-		goto error;
+	/* Configure any target-specific registers needed before the update starts */
+	if (devdata->swd_ops.target_prepare) {
+		status = devdata->swd_ops.target_prepare(dev);
+		if (status)
+			goto error;
 	}
 
+	dev_info(dev, "Erasing firmware app");
+	status = devdata->swd_ops.target_erase(dev);
+	if (status)
+		goto error;
+
+	chunk_size = devdata->swd_ops.target_get_write_chunk_size(dev);
+	atomic_set(&devdata->fw_chunks_to_write, DIV_ROUND_UP(fw->size, chunk_size));
+
 	while (bytes_written < fw->size) {
-		dev_dbg(dev, "Writing block %d", iteration_ctr++);
+		dev_dbg(dev, "Writing chunk %d", iteration_ctr++);
 
 		bytes_left = fw->size - bytes_written;
-		bytes_to_write = min(bytes_left, block_size);
-		status = devdata->swd_ops.target_program_write_block(
+		bytes_to_write = min(bytes_left, chunk_size);
+		status = devdata->swd_ops.target_program_write_chunk(
 						  dev,
 						  bytes_written,
 						  &fw->data[bytes_written],
 						  bytes_to_write);
-		if (status != 0)
+		if (status)
 			goto error;
 
-		dev_dbg(dev, "Done writing block");
+		dev_dbg(dev, "Done writing chunk");
 
 		bytes_written += bytes_to_write;
-
-		atomic_inc(&devdata->fw_blocks_written);
+		atomic_inc(&devdata->fw_chunks_written);
 	}
 
-	if (devdata->swd_ops.target_program_cleanup)
-		devdata->swd_ops.target_program_cleanup(dev);
+	status = provision_if_needed(dev);
+	if (status) {
+		dev_err(dev, "Provisioning failed!\n");
+		goto error;
+	}
 
+	swd_reset(dev);
+	swd_flush(dev);
 	swd_deinit(dev);
 
 	dev_info(dev, "Done updating firmware. ");
 	dev_info(dev, "Issuing sleep request");
 
  error:
+	kfree(devdata->provisioning);
+	devdata->provisioning = NULL;
 	if (devdata->swd_core && regulator_disable(devdata->swd_core))
 		dev_err(dev, "Regulator failed to disable");
 	if (devdata->on_firmware_update_complete)
 		devdata->on_firmware_update_complete(dev, status);
-	atomic_set(&devdata->fw_blocks_written, 0);
-	atomic_set(&devdata->fw_blocks_to_write, 0);
+	atomic_set(&devdata->fw_chunks_written, 0);
+	atomic_set(&devdata->fw_chunks_to_write, 0);
 	devdata->fw_update_state = FW_UPDATE_STATE_IDLE;
 
 	return status;
@@ -139,8 +231,8 @@ ssize_t fwupdate_show_update_firmware(struct device *dev, char *buf)
 		retval = scnprintf(buf, PAGE_SIZE,
 				   FW_UPDATE_STATE_WRITING_STR
 				   " %i/%i\n",
-				   atomic_read(&devdata->fw_blocks_written),
-				   atomic_read(&devdata->fw_blocks_to_write));
+				   atomic_read(&devdata->fw_chunks_written),
+				   atomic_read(&devdata->fw_chunks_to_write));
 	} else {
 		/* In an unknown state */
 		BUG_ON(1);
@@ -159,6 +251,43 @@ static void swd_workqueue_fw_update(void *dev)
 	devdata->fw = NULL;
 }
 
+static int populate_provisioning_data(struct device *dev, const char *buf,
+				      size_t count)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct provisioning *p = (struct provisioning *)buf;
+
+	if (count < sizeof(struct provisioning)) {
+		dev_err(dev, "Failed to read provisioning data header\n");
+		return -EINVAL;
+	}
+
+	if (p->format_version != 0) {
+		dev_err(dev, "Unsupported provisioning format version\n");
+		return -EINVAL;
+	}
+
+	if (sizeof(struct provisioning) + p->data_length != count) {
+		dev_err(dev, "Unexpected provisioning data length\n");
+		return -EINVAL;
+	}
+
+	devdata->provisioning = kmemdup(buf, count, GFP_KERNEL);
+	if (!devdata->provisioning)
+		return -ENOMEM;
+
+	return 0;
+}
+
+/**
+ * fwupdate_store_update_firmware() - handle a write to the update_firmware file
+ * @dev: This device
+ * @buf: Data buffer written from userspace. Expected to be opaque data starting
+ *       with a 'struct provisioning' header.
+ * @count: The number of bytes in buffer
+ *
+ * Return: @count upon success, else a negative value to indicate an error.
+ */
 ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 				       size_t count)
 {
@@ -212,6 +341,12 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 			devdata->fw->size, max_fw_size);
 		status = -ENOMEM;
 		goto error;
+	}
+
+	if (devdata->swd_provisioning) {
+		status = populate_provisioning_data(dev, buf, count);
+		if (status)
+			goto error;
 	}
 
 	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;

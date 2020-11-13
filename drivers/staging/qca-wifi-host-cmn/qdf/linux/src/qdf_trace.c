@@ -140,6 +140,31 @@ void qdf_trace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
 {
 	va_list val;
 
+	switch (level) {
+	case QDF_TRACE_LEVEL_NONE:
+#ifndef WLAN_LOG_FATAL
+	case QDF_TRACE_LEVEL_FATAL:
+#endif
+#ifndef WLAN_LOG_ERROR
+	case QDF_TRACE_LEVEL_ERROR:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_WARN:
+#endif
+#ifndef WLAN_LOG_INFO
+	case QDF_TRACE_LEVEL_INFO_HIGH:
+	case QDF_TRACE_LEVEL_INFO_MED:
+	case QDF_TRACE_LEVEL_INFO_LOW:
+	case QDF_TRACE_LEVEL_INFO:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_DEBUG:
+#endif
+		return;
+	default:
+		break;
+	};
+
 	va_start(val, str_format);
 	qdf_trace_msg_cmn(qdf_pidx, module, level, str_format, val);
 	va_end(val);
@@ -149,6 +174,31 @@ qdf_export_symbol(qdf_trace_msg);
 void qdf_vtrace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
 		    const char *str_format, va_list val)
 {
+	switch (level) {
+	case QDF_TRACE_LEVEL_NONE:
+#ifndef WLAN_LOG_FATAL
+	case QDF_TRACE_LEVEL_FATAL:
+#endif
+#ifndef WLAN_LOG_ERROR
+	case QDF_TRACE_LEVEL_ERROR:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_WARN:
+#endif
+#ifndef WLAN_LOG_INFO
+	case QDF_TRACE_LEVEL_INFO_HIGH:
+	case QDF_TRACE_LEVEL_INFO_MED:
+	case QDF_TRACE_LEVEL_INFO_LOW:
+	case QDF_TRACE_LEVEL_INFO:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_DEBUG:
+#endif
+		return;
+	default:
+		break;
+	};
+
 	qdf_trace_msg_cmn(qdf_pidx, module, level, str_format, val);
 }
 qdf_export_symbol(qdf_vtrace_msg);
@@ -176,6 +226,31 @@ void qdf_trace_hex_dump(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
 {
 	const u8 *ptr = data;
 	int i = 0;
+
+	switch (level) {
+	case QDF_TRACE_LEVEL_NONE:
+#ifndef WLAN_LOG_FATAL
+	case QDF_TRACE_LEVEL_FATAL:
+#endif
+#ifndef WLAN_LOG_ERROR
+	case QDF_TRACE_LEVEL_ERROR:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_WARN:
+#endif
+#ifndef WLAN_LOG_INFO
+	case QDF_TRACE_LEVEL_INFO_HIGH:
+	case QDF_TRACE_LEVEL_INFO_MED:
+	case QDF_TRACE_LEVEL_INFO_LOW:
+	case QDF_TRACE_LEVEL_INFO:
+#endif
+#ifndef WLAN_LOG_WARN
+	case QDF_TRACE_LEVEL_DEBUG:
+#endif
+		return;
+	default:
+		break;
+	};
 
 	if (!qdf_print_is_verbose_enabled(qdf_pidx, module, level))
 		return;

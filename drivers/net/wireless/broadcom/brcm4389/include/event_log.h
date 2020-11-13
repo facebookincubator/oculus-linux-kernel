@@ -33,6 +33,9 @@
 #define LOGSTRS_MAGIC   0x4C4F4753
 #define LOGSTRS_VERSION 0x1
 
+/* max log size */
+#define EVENT_LOG_MAX_SIZE		(64u * 1024u)
+
 /* We make sure that the block size will fit in a single packet
  *  (allowing for a bit of overhead on each packet
  */
@@ -40,7 +43,7 @@
 #define EVENT_LOG_MAX_BLOCK_SIZE	1648
 #else
 #define EVENT_LOG_MAX_BLOCK_SIZE	1400
-#endif // endif
+#endif
 
 #define EVENT_LOG_BLOCK_SIZE_1K		0x400u
 #define EVENT_LOG_WL_BLOCK_SIZE		0x200
@@ -52,7 +55,10 @@
 #define EVENT_LOG_WBUS_BLOCK_SIZE	0x100
 #define EVENT_LOG_PRSV_PERIODIC_BLOCK_SIZE (0x200u)
 
+#define EVENT_LOG_WL_BUF_SIZE		(EVENT_LOG_WL_BLOCK_SIZE * 3u)
+
 #define EVENT_LOG_TOF_INLINE_BLOCK_SIZE	1300u
+#define EVENT_LOG_TOF_INLINE_BUF_SIZE (EVENT_LOG_TOF_INLINE_BLOCK_SIZE * 3u)
 
 #define EVENT_LOG_PRSRV_BUF_SIZE	(EVENT_LOG_MAX_BLOCK_SIZE * 2)
 #define EVENT_LOG_BUS_PRSRV_BUF_SIZE	(EVENT_LOG_BUS_BLOCK_SIZE * 2)
@@ -221,6 +227,8 @@ typedef struct event_log_top {
 	uint16 rate_hc;			/* Max number of prints per second */
 	uint32 hc_timestamp;		/* Timestamp of last hc window starting */
 	bool cpu_freq_changed;		/* Set to TRUE when CPU freq changed */
+	bool hostmem_access_enabled;	/* Is host memory access enabled for log delivery */
+	bool event_trace_enabled;	/* WLC_E_TRACE enabled/disabled */
 } event_log_top_t;
 
 /* structure of the trailing 3 words in logstrs.bin */
@@ -276,7 +284,7 @@ extern bool d3_preserve_enab;
 	#define D3_PRESERVE_ENAB()   (0)
 #else
 	#define D3_PRESERVE_ENAB()   (1)
-#endif // endif
+#endif
 
 #if defined(EVENTLOG_PRSV_PERIODIC)
 extern bool prsv_periodic_enab;
@@ -286,7 +294,7 @@ extern bool prsv_periodic_enab;
 	#define PRSV_PRD_ENAB()   (0)
 #else
 	#define PRSV_PRD_ENAB()   (1)
-#endif // endif
+#endif
 #endif /* EVENTLOG_PRSV_PERIODIC */
 
 /*
@@ -319,7 +327,7 @@ extern bool prsv_periodic_enab;
  *
  */
 
-#if !defined(EVENT_LOG_DUMPER)
+#if !defined(EVENT_LOG_DUMPER) && !defined(DHD_EFI)
 
 #ifndef EVENT_LOG_COMPILE
 
@@ -645,9 +653,11 @@ extern int event_log_get_set_for_buffer(const void *buf);
 extern int event_log_flush_multiple_sets(const int *sets, uint16 num_sets);
 extern int event_log_force_flush_preserve_all(void);
 extern int event_log_get_iovar_handler(int set);
+extern int event_log_enable_hostmem_access(bool hostmem_access_enabled);
+extern int event_log_enable_event_trace(bool event_trace_enabled);
 #endif /* EVENT_LOG_COMPILE */
 
-#endif // endif
+#endif /* !EVENT_LOG_DUMPER && !DHD_EFI */
 
 #endif /* BCMDRIVER */
 

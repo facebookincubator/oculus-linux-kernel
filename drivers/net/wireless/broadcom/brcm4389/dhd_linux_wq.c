@@ -42,6 +42,11 @@
 #include <dhd_dbg.h>
 #include <dhd_linux_wq.h>
 
+/*
+ * XXX: always make sure that the size of this structure is aligned to
+ * the power of 2 (2^n) i.e, if any new variable has to be added then
+ * modify the padding accordingly
+ */
 typedef struct dhd_deferred_event {
 	u8 event;		/* holds the event */
 	void *event_data;	/* holds event specific data */
@@ -358,6 +363,13 @@ dhd_deferred_work_handler(struct work_struct *work)
 			ASSERT(work_event.event < DHD_MAX_WQ_EVENTS);
 			continue;
 		}
+
+		/*
+		 * XXX: don't do NULL check for 'work_event.event_data'
+		 * as for some events like DHD_WQ_WORK_DHD_LOG_DUMP the
+		 * event data is always NULL even though rest of the
+		 * event parameters are valid
+		 */
 
 		if (work_event.event_handler) {
 			work_event.event_handler(deferred_work->dhd_info,

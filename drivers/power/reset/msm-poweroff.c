@@ -162,7 +162,7 @@ int scm_set_dload_mode(int arg1, int arg2)
 				&desc);
 }
 
-#if CONFIG_QCOM_PANIC_TO_DLOAD_MODE
+#ifdef CONFIG_QCOM_PANIC_TO_DLOAD_MODE
 static void set_dload_mode(int on)
 {
 	int ret;

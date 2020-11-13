@@ -26,6 +26,7 @@
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/suspend.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -2818,13 +2819,26 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_component *component =
 		snd_soc_dapm_to_component(w->dapm);
+	struct cm7120_priv *cm7120_codec =
+			snd_soc_component_get_drvdata(component);
+	int rc;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		dev_info(component->dev, "SPK gpio to high\n");
+		rc = pinctrl_select_state(cm7120_codec->pinctrl,
+				cm7120_codec->pin_spk_en);
+		if (rc)
+			dev_err(cm7120_codec->dev,
+				"pinctrl_select_state error");
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		dev_info(component->dev, "SPK gpio to low\n");
+		rc = pinctrl_select_state(cm7120_codec->pinctrl,
+				cm7120_codec->pin_spk_suspend);
+		if (rc)
+			dev_err(cm7120_codec->dev,
+				"pinctrl_select_state error");
 		break;
 	default:
 		dev_err(component->dev,
@@ -3197,6 +3211,23 @@ static int cm7120_set_bias_level(struct snd_soc_component *component,
 	return 0;
 }
 
+static int cm7120_pm_notify(struct notifier_block *nb,
+				unsigned long mode, void *_unused)
+{
+	struct cm7120_priv *cm7120_codec =
+			container_of(nb, struct cm7120_priv, pm_nb);
+
+	switch (mode) {
+	case PM_POST_SUSPEND:
+		reinit_completion(&cm7120_codec->fw_download_complete);
+		schedule_work(&cm7120_codec->fw_download_work);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 static int cm7120_probe(struct snd_soc_component *component)
 {
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
@@ -3246,6 +3277,9 @@ static int cm7120_probe(struct snd_soc_component *component)
 
 	cm7120_set_bias_level(component, SND_SOC_BIAS_OFF);
 
+	cm7120->pm_nb.notifier_call = cm7120_pm_notify;
+	register_pm_notifier(&cm7120->pm_nb);
+
 	ret = cm7120_download_firmware(cm7120);
 
 	complete_all(&cm7120->fw_download_complete);
@@ -3271,11 +3305,64 @@ static void cm7120_remove(struct snd_soc_component *component)
 #ifdef CONFIG_PM
 static int cm7120_suspend(struct snd_soc_component *component)
 {
+	struct cm7120_priv *cm7120_codec =
+		snd_soc_component_get_drvdata(component);
+	int ret;
+
+	cancel_work_sync(&cm7120_codec->fw_download_work);
+	regmap_write(cm7120_codec->virt_regmap, CM7120_RESET, 0x10ec);
+
+	clk_disable_unprepare(cm7120_codec->mclk);
+	ret = pinctrl_select_state(cm7120_codec->pinctrl,
+				cm7120_codec->pin_spk_suspend);
+	if (ret)
+		dev_err(cm7120_codec->dev, "pin_spk_suspend error");
+	ret = pinctrl_select_state(cm7120_codec->pinctrl,
+				cm7120_codec->pin_suspend);
+	if (ret)
+		dev_err(cm7120_codec->dev, "pin_suspend error");
+	usleep_range(1000, 1100);
+
+	ret = regulator_disable(cm7120_codec->codec_3v3);
+	if (ret < 0)
+		dev_err(cm7120_codec->dev, "codec_3v3 disable failed\n");
+
+	usleep_range(1000, 1100);
+
+	ret = regulator_disable(cm7120_codec->codec_1v8);
+	if (ret < 0)
+		dev_err(cm7120_codec->dev, "codec_1v8 disable failed\n");
+
+	cm7120_codec->is_dsp_mode = false;
+
 	return 0;
 }
 
 static int cm7120_resume(struct snd_soc_component *component)
 {
+	struct cm7120_priv *cm7120_codec =
+		snd_soc_component_get_drvdata(component);
+	int ret;
+
+	ret = regulator_enable(cm7120_codec->codec_1v8);
+	if (ret < 0)
+		dev_err(cm7120_codec->dev, "codec_1v8 enable failed\n");
+	usleep_range(1000, 1100);
+
+	ret = regulator_enable(cm7120_codec->codec_3v3);
+	if (ret < 0)
+		dev_err(cm7120_codec->dev, "codec_3v3 enable failed\n");
+	usleep_range(1000, 1100);
+
+	ret = pinctrl_select_state(cm7120_codec->pinctrl,
+				cm7120_codec->pin_default);
+	if (ret)
+		dev_err(cm7120_codec->dev, "pin_default error");
+
+	clk_prepare_enable(cm7120_codec->mclk);
+	usleep_range(2000, 2100);
+	regmap_write(cm7120_codec->real_regmap, CM7120_RESET, 0x10ec);
+
 	return 0;
 }
 #else
@@ -3583,6 +3670,12 @@ static void cm7120_firmware_download_work(struct work_struct *work)
 
 	ret = cm7120_download_firmware(cm7120_codec);
 
+	/*disable 2 ASRC*/
+	regmap_update_bits(cm7120_codec->virt_regmap,
+			CM7120_ASRC2, 0xffff, 0x7003);
+	regmap_update_bits(cm7120_codec->virt_regmap,
+			CM7120_ASRC5, 0xffff, 0x0000);
+
 	complete_all(&cm7120_codec->fw_download_complete);
 }
 static int get_pin_control(struct cm7120_priv *cm7120)
@@ -3605,9 +3698,38 @@ static int get_pin_control(struct cm7120_priv *cm7120)
 		dev_err(cm7120->dev, "failed to get pinctrl default state\n");
 		goto free_pinctrl;
 	}
+
+	cm7120->pin_suspend = pinctrl_lookup_state(cm7120->pinctrl, "suspend");
+	if (IS_ERR_OR_NULL(cm7120->pin_suspend)) {
+		rc = -EINVAL;
+		dev_err(cm7120->dev, "failed to look up suspend pin state");
+		goto free_pinctrl;
+	}
+
+	cm7120->pin_spk_en = pinctrl_lookup_state(cm7120->pinctrl, "spk_en");
+	if (IS_ERR_OR_NULL(cm7120->pin_spk_en)) {
+		rc = PTR_ERR(cm7120->pin_default);
+		dev_err(cm7120->dev, "failed to get spk_en pin state\n");
+		goto free_pinctrl;
+	}
+
+	cm7120->pin_spk_suspend =
+		pinctrl_lookup_state(cm7120->pinctrl, "spk_suspend");
+	if (IS_ERR_OR_NULL(cm7120->pin_spk_suspend)) {
+		rc = PTR_ERR(cm7120->pin_default);
+		dev_err(cm7120->dev, "failed to get spk_suspend pin state\n");
+		goto free_pinctrl;
+	}
+
 	rc = pinctrl_select_state(cm7120->pinctrl, cm7120->pin_default);
 	if (rc) {
 		dev_err(cm7120->dev, "failed to set pinctrl active, %d\n", rc);
+		goto free_pinctrl;
+	}
+
+	rc = pinctrl_select_state(cm7120->pinctrl, cm7120->pin_spk_suspend);
+	if (rc) {
+		dev_err(cm7120->dev, "failed to set spk pin suspend, %d\n", rc);
 		goto free_pinctrl;
 	}
 	return rc;
@@ -3669,12 +3791,14 @@ static int cm7120_i2c_probe(struct i2c_client *i2c,
 	if (ret < 0)
 		dev_err(cm7120->dev, "codec_1v8 regulator_enable failed\n");
 
+	usleep_range(1000, 1100);
+
 	/* regulator codec_3v3 */
 	cm7120->codec_3v3 = regulator_get(cm7120->dev, "cm7120,codec_3v3");
 	if (IS_ERR(cm7120->codec_3v3))
 		dev_err(cm7120->dev, "codec_3v3 regulator_get error\n");
 
-	ret = regulator_set_voltage(cm7120->codec_3v3, 3300000, 3300000);
+	ret = regulator_set_voltage(cm7120->codec_3v3, 3100000, 3100000);
 	if (ret < 0)
 		dev_err(cm7120->dev, "codec_3v3 set_voltage failed\n");
 
@@ -3685,6 +3809,8 @@ static int cm7120_i2c_probe(struct i2c_client *i2c,
 	ret = regulator_enable(cm7120->codec_3v3);
 	if (ret < 0)
 		dev_err(cm7120->dev, "codec_3v3 regulator_enable failed\n");
+
+	usleep_range(1000, 1100);
 
 	ret = get_pin_control(cm7120);
 	if (ret != 0) {

@@ -7,13 +7,28 @@
  * 2 of the License, or (at your option) any later version.
  */
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+#include <linux/mm.h>
+#include <linux/zstd.h>
+#else
+#include <linux/crypto.h>
+#endif
+
 #ifndef _ZCOMP_H_
 #define _ZCOMP_H_
 
 struct zcomp_strm {
 	/* compression/decompression buffer */
 	void *buffer;
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	ZSTD_parameters params;
+	ZSTD_CCtx *cctx;
+	ZSTD_DCtx *dctx;
+	void *cctx_wksp;
+	void *dctx_wksp;
+#else
 	struct crypto_comp *tfm;
+#endif
 };
 
 /* dynamic per-device compression frontend */

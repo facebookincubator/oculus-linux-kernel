@@ -25,11 +25,20 @@
 #ifndef _linuxver_h_
 #define _linuxver_h_
 
+/*
+ * The below pragmas are added as workaround for errors caused by update
+ * of gcc version to 4.8.2. GCC 4.6 adds -Wunused-but-set-variable and
+ * -Wunused-but-set-parameter to -Wall, for some configurations those
+ * warnings are produced in linux kernel. So for now the below pragmas
+ * disable the offending warnings. Permanent solution is to use -isystem
+ * but there is a performance problem with this change on RHEL5 servers
+ *
+ */
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
-#endif // endif
+#endif
 
 #include <typedefs.h>
 #include <linux/version.h>
@@ -40,12 +49,12 @@
 #include <generated/autoconf.h>
 #else
 #include <linux/autoconf.h>
-#endif // endif
+#endif
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0))
 #include <linux/kconfig.h>
-#endif // endif
+#endif
 #include <linux/module.h>
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0))
@@ -54,21 +63,21 @@
 #undef __NO_VERSION__
 #else
 #define __NO_VERSION__
-#endif // endif
+#endif
 #endif	/* LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0) */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 5, 0)
 #define module_param(_name_, _type_, _perm_)	MODULE_PARM(_name_, "i")
 #define module_param_string(_name_, _string_, _size_, _perm_) \
 		MODULE_PARM(_string_, "c" __MODULE_STRING(_size_))
-#endif // endif
+#endif
 
 /* linux/malloc.h is deprecated, use linux/slab.h instead. */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 4, 9))
 #include <linux/malloc.h>
 #else
 #include <linux/slab.h>
-#endif // endif
+#endif
 
 #include <linux/types.h>
 #include <linux/init.h>
@@ -78,6 +87,8 @@
 #include <linux/interrupt.h>
 #include <linux/kthread.h>
 #include <linux/netdevice.h>
+#include <linux/time.h>
+#include <linux/rtc.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 #include <linux/semaphore.h>
 #else
@@ -94,16 +105,16 @@
 #include <linux/tqueue.h>
 #ifndef work_struct
 #define work_struct tq_struct
-#endif // endif
+#endif
 #ifndef INIT_WORK
 #define INIT_WORK(_work, _func, _data) INIT_TQUEUE((_work), (_func), (_data))
-#endif // endif
+#endif
 #ifndef schedule_work
 #define schedule_work(_work) schedule_task((_work))
-#endif // endif
+#endif
 #ifndef flush_scheduled_work
 #define flush_scheduled_work() flush_scheduled_tasks()
-#endif // endif
+#endif
 #endif	/* LINUX_VERSION_CODE > KERNEL_VERSION(2, 5, 41) */
 
 /*
@@ -139,7 +150,7 @@
 	(RHEL_MAJOR == 5))
 /* Exclude RHEL 5 */
 typedef void (*work_func_t)(void *work);
-#endif // endif
+#endif
 #endif	/* >= 2.6.20 */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))
@@ -149,7 +160,7 @@ typedef void irqreturn_t;
 #define IRQ_NONE
 #define IRQ_HANDLED
 #define IRQ_RETVAL(x)
-#endif // endif
+#endif
 #else
 typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 #endif	/* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0) */
@@ -160,7 +171,7 @@ typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 17)
 #ifdef	CONFIG_NET_RADIO
-#endif // endif
+#endif
 #endif	/* < 2.6.17 */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 67)
@@ -172,41 +183,44 @@ typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 #include <linux/sched.h>
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)
 #include <linux/sched/rt.h>
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <uapi/linux/sched/types.h>
+#endif /* LINUX_VERS >= 4.11.0 */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
 #include <net/lib80211.h>
-#endif // endif
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
 #include <linux/ieee80211.h>
 #else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 14)
 #include <net/ieee80211.h>
-#endif // endif
+#endif
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30) */
 
 #ifndef __exit
 #define __exit
-#endif // endif
+#endif
 #ifndef __devexit
 #define __devexit
-#endif // endif
+#endif
 #ifndef __devinit
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0))
 	#define __devinit	__init
 #else
 /* All devices are hotpluggable since linux 3.8.0 */
 	#define __devinit
-#endif // endif
+#endif
 #endif /* !__devinit */
 #ifndef __devinitdata
 #define __devinitdata
-#endif // endif
+#endif
 #ifndef __devexit_p
 #define __devexit_p(x)	x
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 4, 0))
 
@@ -249,7 +263,7 @@ extern void pci_unregister_driver(struct pci_driver *drv);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18))
 #define pci_module_init pci_register_driver
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 2, 18))
 #ifdef MODULE
@@ -258,39 +272,39 @@ extern void pci_unregister_driver(struct pci_driver *drv);
 #else
 #define module_init(x)	__initcall(x);
 #define module_exit(x)	__exitcall(x);
-#endif // endif
+#endif
 #endif	/* LINUX_VERSION_CODE < KERNEL_VERSION(2, 2, 18) */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
 #define WL_USE_NETDEV_OPS
 #else
 #undef WL_USE_NETDEV_OPS
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)) && defined(CONFIG_RFKILL)
 #define WL_CONFIG_RFKILL
 #else
 #undef WL_CONFIG_RFKILL
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 48))
 #define list_for_each(pos, head) \
 	for (pos = (head)->next; pos != (head); pos = pos->next)
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 13))
 #define pci_resource_start(dev, bar)	((dev)->base_address[(bar)])
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 44))
 #define pci_resource_start(dev, bar)	((dev)->resource[(bar)].start)
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 23))
 #define pci_enable_device(dev) do { } while (0)
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 14))
 #define net_device device
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 42))
 
@@ -303,7 +317,7 @@ extern void pci_unregister_driver(struct pci_driver *drv);
 #ifndef PCI_DMA_TODEVICE
 #define	PCI_DMA_TODEVICE	1
 #define	PCI_DMA_FROMDEVICE	2
-#endif // endif
+#endif
 
 typedef u32 dma_addr_t;
 
@@ -340,8 +354,13 @@ static inline void pci_free_consistent(struct pci_dev *hwdev, size_t size,
 {
 	free_pages((unsigned long)vaddr, get_order(size));
 }
+#ifdef ILSIM
+extern uint pci_map_single(void *dev, void *va, uint size, int direction);
+extern void pci_unmap_single(void *dev, uint pa, uint size, int direction);
+#else
 #define pci_map_single(cookie, address, size, dir)	virt_to_bus(address)
 #define pci_unmap_single(cookie, address, size, dir)
+#endif
 
 #endif /* DMA mapping */
 
@@ -379,6 +398,18 @@ extern void timer_cb_compat(struct timer_list *tl);
 #define add_timer(t) add_timer(&((t)->timer))
 #define mod_timer(t, j) mod_timer(&((t)->timer), j)
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) */
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
+#define rtc_time_to_tm(a, b) rtc_time64_to_tm(a, b)
+#else
+#define rtc_time_to_tm(a, b) rtc_time_to_tm(a, b)
+#endif /* LINUX_VER >= 3.19.0 */
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+#define time_to_tm(a, b, c) time64_to_tm(a, b, c)
+#else
+#define time_to_tm(a, b, c) time_to_tm(a, b, c)
+#endif /* LINUX_VER >= 4.20.0 */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 43))
 
@@ -477,7 +508,7 @@ static inline void tasklet_init(struct tasklet_struct *tasklet,
 #else
 #define	PCI_SAVE_STATE(a, b)	pci_save_state(a, b)
 #define	PCI_RESTORE_STATE(a, b)	pci_restore_state(a, b)
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 4, 6))
 static inline int
@@ -521,7 +552,7 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 /* Old cp0 access macros deprecated in 2.4.19 */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 4, 19))
 #define read_c0_count() read_32bit_cp0_register(CP0_COUNT)
-#endif // endif
+#endif
 
 /* Module refcount handled internally in 2.6.x */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
@@ -532,46 +563,46 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 #else
 #define OLD_MOD_INC_USE_COUNT		do {} while (0)
 #define OLD_MOD_DEC_USE_COUNT		do {} while (0)
-#endif // endif
+#endif
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24) */
 #ifndef SET_MODULE_OWNER
 #define SET_MODULE_OWNER(dev)		do {} while (0)
-#endif // endif
+#endif
 #ifndef MOD_INC_USE_COUNT
 #define MOD_INC_USE_COUNT			do {} while (0)
-#endif // endif
+#endif
 #ifndef MOD_DEC_USE_COUNT
 #define MOD_DEC_USE_COUNT			do {} while (0)
-#endif // endif
+#endif
 #define OLD_MOD_INC_USE_COUNT		MOD_INC_USE_COUNT
 #define OLD_MOD_DEC_USE_COUNT		MOD_DEC_USE_COUNT
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24) */
 
 #ifndef SET_NETDEV_DEV
 #define SET_NETDEV_DEV(net, pdev)	do {} while (0)
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 1, 0))
 #ifndef HAVE_FREE_NETDEV
 #define free_netdev(dev)		kfree(dev)
-#endif // endif
+#endif
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 1, 0) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))
 /* struct packet_type redefined in 2.6.x */
 #define af_packet_priv			data
-#endif // endif
+#endif
 
 /* suspend args */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
 #define DRV_SUSPEND_STATE_TYPE pm_message_t
 #else
 #define DRV_SUSPEND_STATE_TYPE uint32
-#endif // endif
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
 #define CHECKSUM_HW	CHECKSUM_PARTIAL
-#endif // endif
+#endif
 
 typedef struct {
 	void	*parent;  /* some external entity that the thread supposed to work for */
@@ -595,7 +626,7 @@ typedef struct {
 #define DBG_THR(x) printk x
 #else
 #define DBG_THR(x)
-#endif // endif
+#endif
 
 extern unsigned long osl_spin_lock(void *lock);
 extern void osl_spin_unlock(void *lock, unsigned long flags);
@@ -645,7 +676,7 @@ static inline bool binary_sema_up(tsk_ctl_t *tsk)
 #define SMP_RD_BARRIER_DEPENDS(x) smp_read_barrier_depends(x)
 #else
 #define SMP_RD_BARRIER_DEPENDS(x) smp_rmb(x)
-#endif // endif
+#endif
 
 #define PROC_START(thread_func, owner, tsk_ctl, flags, name) \
 { \
@@ -761,7 +792,7 @@ if (tsk) send_sig(sig, tsk, 1); \
 { \
 	kill_proc(pid, sig, 1); \
 }
-#endif // endif
+#endif
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0))
@@ -813,7 +844,7 @@ not match our unaligned address for < 2.6.24
 #define DEV_PRIV(dev)	(dev->priv)
 #else
 #define DEV_PRIV(dev)	netdev_priv(dev)
-#endif // endif
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 20)
 #define WL_ISR(i, d, p)         wl_isr((i), (d))
@@ -829,7 +860,7 @@ not match our unaligned address for < 2.6.24
 #define CAN_SLEEP()	((!in_atomic() && !irqs_disabled()))
 #else
 #define CAN_SLEEP()	(FALSE)
-#endif // endif
+#endif
 
 #define KMALLOC_FLAG (CAN_SLEEP() ? GFP_KERNEL: GFP_ATOMIC)
 
@@ -851,7 +882,7 @@ not match our unaligned address for < 2.6.24
  * Overide latest kfifo functions with
  * older version to work on older kernels
  */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)) && !defined(WL_COMPAT_WIRELESS)
 #define kfifo_in_spinlocked(a, b, c, d)		kfifo_put(a, (u8 *)b, c)
 #define kfifo_out_spinlocked(a, b, c, d)	kfifo_get(a, (u8 *)b, c)
 #define kfifo_esize(a)				1
@@ -864,7 +895,7 @@ not match our unaligned address for < 2.6.24
 
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
 #pragma GCC diagnostic pop
-#endif // endif
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0))
 static inline struct inode *file_inode(const struct file *f)

@@ -27,8 +27,13 @@
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
 
-#define DOT11_MESH_FLAGS_AE_MASK	0x3
-#define DOT11_MESH_FLAGS_AE_SHIFT	0
+#define DOT11_MESH_FLAGS_AE_MASK	0x3u
+#define DOT11_MESH_FLAGS_AE_SHIFT	0u
+
+/* Mesh Control Flags: Address Exetension mode values */
+#define DOT11_MESH_AE_NONE              0u
+#define DOT11_MESH_AE_A4                1u
+#define DOT11_MESH_AE_A5_A6             2u
 
 #define DOT11_MESH_CONNECTED_AS_SET         7
 #define DOT11_MESH_NUMBER_PEERING_SET       1
@@ -77,6 +82,10 @@ BWL_PRE_PACKED_STRUCT struct dot11_meshctrl_hdr {
 	struct ether_addr   a5;         /* optional address 5 */
 	struct ether_addr   a6;         /* optional address 6 */
 } BWL_POST_PACKED_STRUCT;
+
+#define DOT11_MESH_CONTROL_MIN_LEN      6u
+#define DOT11_MESH_CONTROL_A4_LEN      12u
+#define DOT11_MESH_CONTROL_A5A6_LEN    18u
 
 /* Mesh Path Selection Action Frame */
 BWL_PRE_PACKED_STRUCT struct dot11_mesh_pathsel {
