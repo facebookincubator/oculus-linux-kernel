@@ -45,8 +45,6 @@ enum ion_heap_ids {
 
 	ION_MM_FIRMWARE_HEAP_ID = 29,
 
-	ION_OCULUS_HEAP_ID = 30,
-
 	ION_HEAP_ID_RESERVED = 31 /** Bit reserved for ION_FLAG_SECURE flag */
 };
 
@@ -145,7 +143,6 @@ enum cp_mem_usage {
 #define ION_QSECOM_HEAP_NAME	"qsecom"
 #define ION_SECURE_HEAP_NAME	"secure_heap"
 #define ION_SECURE_DISPLAY_HEAP_NAME "secure_display"
-#define ION_OCULUS_HEAP_NAME    "oculus"
 
 #define ION_SET_CACHED(__cache)		(__cache | ION_FLAG_CACHED)
 #define ION_SET_UNCACHED(__cache)	(__cache & ~ION_FLAG_CACHED)

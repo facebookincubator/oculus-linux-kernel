@@ -857,7 +857,6 @@ A_STATUS process_sw_event(void *pdev, void *data)
 		return A_ERROR;
 	}
 
-	pl_tgt_hdr = (uint32_t *) fw_data->data;
 	fw_data = (struct ol_fw_data *)data;
 	len = fw_data->len;
 	pl_tgt_hdr = (uint32_t *) fw_data->data;
@@ -939,7 +938,6 @@ A_STATUS process_rate_update(void *pdev, void *data)
 		printk("Invalid data in %s\n", __func__);
 		return A_ERROR;
 	}
-	pl_tgt_hdr = (uint32_t *) fw_data->data;
 	fw_data = (struct ol_fw_data *)data;
 	len = fw_data->len;
 	pl_tgt_hdr = (uint32_t *) fw_data->data;

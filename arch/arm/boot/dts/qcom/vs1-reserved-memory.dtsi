@@ -31,7 +31,7 @@
 };
 
 &pil_slpi_mem {
-	reg = <0 0x8bb00000 0 0xf00000>;
+	status = "disabled";
 };
 
 &pil_ipa_gpu_mem {

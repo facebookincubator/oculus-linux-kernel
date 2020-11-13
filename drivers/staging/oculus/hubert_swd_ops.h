@@ -6,14 +6,16 @@
 
 #include "swd.h"
 
-/* We reserve a few of the last flash pages for persistent config */
-#define SAMD_NUM_FLASH_PAGES_TO_RETAIN 64
+int hubert_swd_prepare(struct device *dev);
+int hubert_swd_provisioning_read(struct device *dev, int addr, u8 *data, size_t len);
+int hubert_swd_provisioning_write(struct device *dev, int addr, u8 *data, size_t len);
+bool hubert_swd_should_force_provision(struct device *dev);
 
 int hubert_swd_erase_app(struct device *dev);
-int hubert_swd_write_block(struct device *dev, int addr, const u8 *data,
-			   int len);
-int hubert_swd_read_block(struct device *dev, int addr, const u8 *data,
-			  int len);
-int hubert_swd_wp_and_reset(struct device *dev);
+int hubert_swd_write_chunk(struct device *dev, int addr, const u8 *data,
+			   size_t len);
+size_t hubert_get_write_chunk_size(struct device *dev);
+int hubert_swd_read(struct device *dev, int addr, u8 *dest,
+		    size_t len);
 
 #endif

@@ -50,7 +50,7 @@ int fw_queue_work(struct workqueue_struct *workqueue, void *data,
 }
 
 
-#define MAX_PROP_SIZE 32
+#define MAX_PROP_SIZE 40
 int fw_init_regulator(struct device *dev, struct regulator **reg,
 		      const char *reg_name)
 {

@@ -1,21 +1,17 @@
-#include <asm/dma-iommu.h>
 #include <linux/delay.h>
 #include <linux/fb.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/hwmon.h>
+#include <linux/interrupt.h>
 #include <linux/module.h>
-#include <linux/msm-bus.h>
-#include <linux/msm_pcie.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
-#include <linux/qcom_iommu.h>
+#include <linux/regulator/consumer.h>
 #include <linux/time.h>
 #include <linux/version.h>
-#include <media/msm_cam_sensor.h>
-#include <soc/qcom/camera2.h>
 
 #define VS1_GPIO_ALLOC 0x8000000UL
 
@@ -38,16 +34,6 @@
 #define DEFAULT_PWM_PERIOD (40 * 1000)
 
 #define MAX_PWM 255
-
-#define PTC_NRF_AP_CAM_MUX "nrf-ap-rst-xvs-mux"
-
-extern int msm_camera_get_clk_info(struct platform_device *pdev,
-		struct msm_cam_clk_info **clk_info,
-		struct clk ***clk_ptr, size_t *num_clk);
-extern int msm_camera_clk_enable(struct device *dev,
-		struct msm_cam_clk_info *clk_info,
-		struct clk **clk_ptr, int num_clk, int enable);
-extern int camera_init_v4l2(struct device *dev, unsigned int *session);
 
 struct fan_ctx {
 	struct device *dev;
@@ -76,13 +62,6 @@ struct vs1_ctx {
 	struct device *dev;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pin_default;
-};
-
-struct ptc_vs1_ctx {
-	struct	device *dev;
-	struct	pinctrl *pinctrl;
-	struct	pinctrl_state *pin_default;
-	int	ptc_nrf_ap_mux_gpio;
 };
 
 struct vs1_gpio {
@@ -397,13 +376,13 @@ static int fan_resume(struct platform_device *pdev)
 static int fb_notifier_callback(struct notifier_block *self,
 				 unsigned long event, void *data)
 {
-	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK)
-		return 0;
-
 	struct fan_ctx *ctx = container_of(self, struct fan_ctx, fb_notif);
 	struct fb_event *evdata = data;
 	int *blank;
+
+	/* If we aren't interested in this event, skip it immediately ... */
+	if (event != FB_EVENT_BLANK)
+		return 0;
 
 	if (evdata && evdata->data && ctx && ctx->dev) {
 		blank = evdata->data;
@@ -584,82 +563,6 @@ static struct platform_driver fan_driver = {
 #endif
 };
 
-static int ptc_vs1_probe(struct platform_device *pdev)
-{
-	struct device *dev = &pdev->dev;
-	struct device_node *of_node = dev->of_node;
-	struct ptc_vs1_ctx *ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
-	int rc = 0;
-	int gpio_num = 0;
-
-	if (!ctx)
-		return -ENOMEM;
-	dev_info(dev, "start ptc vs1 board configuration\n");
-	ctx->dev = dev;
-	ctx->pinctrl = devm_pinctrl_get(dev);
-	if (IS_ERR_OR_NULL(ctx->pinctrl)) {
-		rc = PTR_ERR_OR_ZERO(ctx->pinctrl) ?: -EINVAL;
-		dev_err(dev, "failed to look up pinctrl");
-		goto fail_pinctrl;
-	}
-
-	ctx->pin_default = pinctrl_lookup_state(ctx->pinctrl, "ptc_defaults");
-	if (IS_ERR_OR_NULL(ctx->pin_default)) {
-		rc = PTR_ERR_OR_ZERO(ctx->pin_default) ?: -EINVAL;
-		dev_err(dev, "failed to look up default pin state");
-		goto free_pinctrl;
-	}
-
-	rc = pinctrl_select_state(ctx->pinctrl, ctx->pin_default);
-	if (rc) {
-		dev_err(ctx->dev, "pinctrl_select_state error");
-		goto free_pinctrl;
-	}
-
-	gpio_num = of_get_named_gpio(of_node, PTC_NRF_AP_CAM_MUX, 0);
-	if (!gpio_is_valid(gpio_num)) {
-		dev_err(dev, "%s: failed to request fan power GPIO: %d",
-					__func__, rc);
-		goto free_pinctrl;
-	}
-
-	rc = gpio_request(gpio_num, PTC_NRF_AP_CAM_MUX);
-	if (rc) {
-		dev_err(dev, "failed to request GPIO '%s' (%d): %d",
-			PTC_NRF_AP_CAM_MUX, gpio_num, rc);
-		goto free_pinctrl;
-	}
-
-	rc = gpio_direction_output(gpio_num, 0);
-	if (rc) {
-		dev_err(dev, "failed to configure GPIO to out\n");
-		goto free_pinctrl;
-	}
-
-	rc = gpio_export(gpio_num, true);
-	if (rc) {
-		dev_err(ctx->dev, "gpio export error:\n");
-		goto free_pinctrl;
-	}
-
-	rc = gpio_export_link(dev, PTC_NRF_AP_CAM_MUX, gpio_num);
-	if (rc) {
-		dev_err(ctx->dev, "gpio export link error\n");
-		goto free_pinctrl;
-	}
-
-	ctx->ptc_nrf_ap_mux_gpio = gpio_num;
-	platform_set_drvdata(pdev, ctx);
-	dev_info(dev, "ptc vs1 board configured\n");
-	return rc;
-
-free_pinctrl:
-	devm_pinctrl_put(ctx->pinctrl);
-fail_pinctrl:
-	devm_kfree(dev, ctx);
-	return rc;
-}
-
 static int vs1_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -703,17 +606,6 @@ fail_pinctrl:
 	return rc;
 }
 
-static int ptc_vs1_remove(struct platform_device *pdev)
-{
-	struct ptc_vs1_ctx *ctx = platform_get_drvdata(pdev);
-
-	gpio_unexport(ctx->ptc_nrf_ap_mux_gpio);
-	gpio_free(ctx->ptc_nrf_ap_mux_gpio);
-	devm_pinctrl_put(ctx->pinctrl);
-	devm_kfree(ctx->dev, ctx);
-	return 0;
-}
-
 static int vs1_remove(struct platform_device *pdev)
 {
 	struct vs1_ctx *ctx = platform_get_drvdata(pdev);
@@ -738,21 +630,6 @@ static struct platform_driver vs1_driver = {
 	.remove = vs1_remove,
 };
 
-static const struct of_device_id ptc_of_match[] = {
-	{
-		.compatible = "oculus,ptc-cam-mux",
-	},
-	{},
-};
-
-static struct platform_driver ptc_driver = {
-	.driver = {
-		.name = "oculus,ptc-cam-mux", .of_match_table = ptc_of_match,
-	},
-	.probe = ptc_vs1_probe,
-	.remove = ptc_vs1_remove,
-};
-
 static int __init vs1_driver_init(void)
 {
 	int rc = 0;
@@ -766,12 +643,6 @@ static int __init vs1_driver_init(void)
 	rc = platform_driver_register(&fan_driver);
 	if (rc) {
 		pr_err("Unable to register fan platform driver:%d\n", rc);
-		return rc;
-	}
-
-	rc = platform_driver_register(&ptc_driver);
-	if (rc) {
-		pr_err("Unable to register ptc platform driver:%d\n", rc);
 		return rc;
 	}
 

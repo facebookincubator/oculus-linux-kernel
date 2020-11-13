@@ -88,6 +88,15 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 		return ret;
 	}
 
+	ret = of_property_read_u32(node, "oculus,flash-page-retained-count",
+				   &devdata->flash_info.num_retained_pages);
+	if (ret < 0) {
+		dev_err(dev, "Failed to get flash-page-retained-count: %d\n", ret);
+		return ret;
+	}
+
+	devdata->swd_provisioning = of_property_read_bool(node, "oculus,swd-provisioning");
+
 	/* Regulator is optional and will be initialized to NULL if not found */
 	fw_init_regulator(dev, &devdata->swd_core, "swd-core");
 

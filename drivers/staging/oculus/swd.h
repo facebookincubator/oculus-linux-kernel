@@ -6,6 +6,8 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
+#include "fwupdate_manager.h"
+
 /* Initialize the SWD GPIO state */
 void swd_init(struct device *dev);
 
@@ -15,11 +17,23 @@ void swd_deinit(struct device *dev);
 /* Stop the target */
 void swd_halt(struct device *dev);
 
-/* Read 4 bytes of flash memory from a given address */
+/*
+ * Flush the SW-DP. Should be called after the last SP transaction to be executed
+ * to guarantee it actually takes effect.
+ */
+void swd_flush(struct device *dev);
+
+/* Read 4 bytes of memory from a given address */
 u32 swd_memory_read(struct device *dev, u32 address);
 
-/* Write 4 bytes of flash memory at a given address */
+/* Read 4 bytes of memory from the next address after the previously-read/written word */
+u32 swd_memory_read_next(struct device *dev);
+
+/* Write 4 bytes of memory at a given address */
 void swd_memory_write(struct device *dev, u32 address, u32 data);
+
+/* Write 4 bytes of memory to the next address after the previously-read/written word */
+void swd_memory_write_next(struct device *dev, u32 data);
 
 /* Reset the target */
 void swd_reset(struct device *dev);
@@ -37,26 +51,65 @@ enum fw_update_state {
 };
 
 struct swd_ops_params {
-	/* Reserved pages for persistent storage. Not erased or overwritten. */
-	int reserved_pages;
+	/*
+	 * Read provisioning data from the target flash
+	 * return: 0 success
+	 */
+	int (*provisioning_read)(struct device *dev,
+				 int addr,
+				 u8 *data,
+				 size_t len);
 
-	/* Called before programming starts
+	/*
+	 * Write the provisioning data to target flash
+	 * return: 0 success
+	 */
+	int (*provisioning_write)(struct device *dev,
+				  int addr,
+				  u8 *data,
+				  size_t len);
+
+	/*
+	 * Check if provisioning should be forced
+	 * return: true if so, false otherwise
+	 */
+	bool (*should_force_provision)(struct device *dev);
+
+	/*
+	 * Perform any target-specific configuration needed priort to a FW update
+	 * return: 0 on success
+	 */
+	int (*target_prepare)(struct device *dev);
+
+	/*
+	 * Clear program flash region (but not provisioning region)
 	 * return: 0 on success
 	 */
 	int (*target_erase)(struct device *dev);
 
-	/* Write a single block to target flash
+	/*
+	 * Write a single chunk to target flash
 	 * return: 0 success
 	 */
-	int (*target_program_write_block)(struct device *dev,
+	int (*target_program_write_chunk)(struct device *dev,
 					  int start_addr,
 					  const u8 *data,
-					  int len);
+					  size_t len);
 
-	/* Called after programming done, perform cleanup steps
-	 * return: 0 on success
+	/*
+	 * Get the write granularity.
+	 * return: bytes
 	 */
-	int (*target_program_cleanup)(struct device *dev);
+	size_t (*target_get_write_chunk_size)(struct device *dev);
+
+	/*
+	 * Read from flash
+	 * return: 0 success
+	 */
+	int (*target_program_read)(struct device *dev,
+				   int start_addr,
+				   u8 *dest,
+				   size_t len);
 };
 
 struct swd_ops {
@@ -71,6 +124,7 @@ struct flash_info {
 	u32 block_size;
 	u32 page_size;
 	u32 num_pages;
+	u32 num_retained_pages;
 };
 
 struct swd_dev_data {
@@ -89,11 +143,11 @@ struct swd_dev_data {
 	/* Regulator associated with swd interface */
 	struct regulator *swd_core;
 
-	/* Number of firwmare blocks written (if any) */
-	atomic_t fw_blocks_written;
+	/* Number of firwmare chunks written (if any) */
+	atomic_t fw_chunks_written;
 
-	/* Number of firwmare blocks to be written (if any) */
-	atomic_t fw_blocks_to_write;
+	/* Number of firwmare chunks to be written (if any) */
+	atomic_t fw_chunks_to_write;
 
 	/* Path to firmware e.g. "syncboss.bin" */
 	const char *fw_path;
@@ -118,6 +172,15 @@ struct swd_dev_data {
 
 	/* Direction of current SWD transfer */
 	enum swd_direction direction;
+
+	/*
+	 * Whether provisioning data should be programmed via SWD (ex. board_id,
+	 * serial, handedness)
+	 */
+	bool swd_provisioning;
+
+	/* Provisioning data, when swd_provisioning is true. */
+	struct provisioning *provisioning;
 };
 
 ssize_t fwupdate_show_update_firmware(struct device *dev, char *buf);

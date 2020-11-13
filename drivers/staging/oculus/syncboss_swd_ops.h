@@ -6,11 +6,14 @@
 
 #include "swd.h"
 
-/* We reserve a few of the last flash pages for persistent config */
-#define SYNCBOSS_NUM_FLASH_PAGES_TO_RETAIN 3
+int syncboss_swd_provisioning_read(struct device *dev, int addr, u8 *data, size_t len);
+int syncboss_swd_provisioning_write(struct device *dev, int addr, u8 *data, size_t len);
 
 int syncboss_swd_erase_app(struct device *dev);
-int syncboss_swd_write_block(struct device *dev, int addr, const u8 *data,
-			     int len);
+int syncboss_swd_write_chunk(struct device *dev, int addr, const u8 *data,
+			     size_t len);
+size_t syncboss_get_write_chunk_size(struct device *dev);
+int syncboss_swd_read(struct device *dev, int addr, u8 *dest,
+			    size_t len);
 
 #endif

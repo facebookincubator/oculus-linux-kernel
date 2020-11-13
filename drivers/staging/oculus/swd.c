@@ -79,11 +79,11 @@
 #define SWD_VAL_DHCSR_DBGKEY    0xa05f0000
 #define SWD_VAL_DHCSR_C_HALT    0x02
 #define SWD_VAL_DHCSR_C_DEBUGEN 0x01
-#define SWD_VAL_DHCSR_NOINC_32 	0x23000002
+#define SWD_VAL_DHCSR_INC_32	0x23000012
 
 static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
-			       int len);
-static bool swd_mode_switch(struct swd_dev_data *devdata);
+			       size_t len);
+static bool swd_mode_switch(struct device *dev);
 
 void swd_init(struct device *dev)
 {
@@ -97,7 +97,7 @@ void swd_init(struct device *dev)
 
 	/* must be 150+ clocks @125kHz+ */
 	swd_wire_write_len(devdata, 1, 200);
-	swd_mode_switch(devdata);
+	swd_mode_switch(dev);
 }
 
 void swd_deinit(struct device *dev)
@@ -136,7 +136,7 @@ static void swd_wire_write(struct swd_dev_data *devdata, bool value)
 }
 
 static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
-			       int len)
+			       size_t len)
 {
 	int i = 0;
 
@@ -162,9 +162,11 @@ static void swd_wire_turnaround(struct swd_dev_data *devdata)
 	swd_wire_read(devdata);
 }
 
-static bool swd_wire_header(struct swd_dev_data *devdata, bool read,
+static bool swd_wire_header(struct device *dev, bool read,
 			    bool apndp, u8 reg)
 {
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
 	u8 ack = 0;
 	bool address2 = !!(reg & (1<<2));
 	bool address3 = !!(reg & (1<<3));
@@ -199,28 +201,43 @@ static bool swd_wire_header(struct swd_dev_data *devdata, bool read,
 		}
 
 		if (ack == SWD_VAL_FAULT) {
-			/* TODO: Better error handling */
-			printk("JMD: Bus fault condition\n");
+			dev_err(dev, "Bus fault condition in %s\n", __func__);
 		}
 
 		return false;
 	}
 }
 
-static void swd_dpap_write(struct swd_dev_data *devdata, bool apndp,
-			   u8 reg, u32 data)
+void swd_flush(struct device *dev)
 {
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	int i;
+
+	/*
+	 * Per the Arm Debug Ingerface Architecture Specification,
+	 * 8 clock cycles are requried after the data phase of a
+	 * transfer to "ensure that the transfer can be clocked
+	 * through the SW-DP".
+	 */
+	for (i = 0; i < 8; i++)
+		swd_wire_write(devdata, 0);
+}
+
+static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int bitcount = 0;
 	int i = 0;
 	bool parity;
 
-	if (!swd_wire_header(devdata, SWD_VAL_WRITE, apndp, reg)) {
-		/* TODO: Better error handling */
-		printk("JMD: SWD response is invalid/unknown\n");
+	if (!swd_wire_header(dev, SWD_VAL_WRITE, apndp, reg)) {
+		dev_err(dev, "SWD response is invalid/unknown in %s\n",
+			__func__);
 		return;
 	}
 	swd_wire_turnaround(devdata);
 
+	data = cpu_to_le32(data);
 	for (i = 0; i < 32; i++) {
 		bool value = !!(data & (1<<i));
 		bitcount += value;
@@ -228,19 +245,19 @@ static void swd_dpap_write(struct swd_dev_data *devdata, bool apndp,
 	}
 	parity = bitcount & 1;
 	swd_wire_write(devdata, parity);
-	swd_wire_write(devdata, 0);
 }
 
-static u32 swd_dpap_read(struct swd_dev_data *devdata, bool apndp, u8 reg)
+static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 {
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	u32 data = 0;
 	int bitcount = 0;
 	int i = 0;
 	bool parity, check;
 
-	if (!swd_wire_header(devdata, SWD_VAL_READ, apndp, reg)) {
-		/* TODO: Better error handling */
-		printk("JMD: SWD response is invalid/unknown\n");
+	if (!swd_wire_header(dev, SWD_VAL_READ, apndp, reg)) {
+		dev_err(dev, "SWD response is invalid/unknown in %s\n",
+			__func__);
 		return 0;
 	}
 
@@ -252,55 +269,60 @@ static u32 swd_dpap_read(struct swd_dev_data *devdata, bool apndp, u8 reg)
 	parity = bitcount & 1;
 	check = swd_wire_read(devdata);
 	if (check != parity) {
-		/* TODO: Better error handling */
-		printk("JMD: Parity error\n");
+		dev_err(dev, "SWD Parity error in %s\n", __func__);
 		return 0;
 	}
 	swd_wire_turnaround(devdata);
-	swd_wire_write(devdata, 0);
 
-	return data;
+	return le32_to_cpu(data);
 }
 
-static void swd_ap_write(struct swd_dev_data *devdata, u8 reg, u32 data)
+static void swd_ap_write(struct device *dev, u8 reg, u32 data)
 {
-	swd_dpap_write(devdata, SWD_VAL_AP, reg, data);
+	swd_dpap_write(dev, SWD_VAL_AP, reg, data);
 }
 
-static u32 swd_ap_read(struct swd_dev_data *devdata, u8 reg)
+static u32 swd_ap_read(struct device *dev, u8 reg)
 {
-	return swd_dpap_read(devdata, SWD_VAL_AP, reg);
+	return swd_dpap_read(dev, SWD_VAL_AP, reg);
 }
 
-static void swd_dp_write(struct swd_dev_data *devdata, u8 reg, u32 data)
+static void swd_dp_write(struct device *dev, u8 reg, u32 data)
 {
-	swd_dpap_write(devdata, SWD_VAL_DP, reg, data);
+	swd_dpap_write(dev, SWD_VAL_DP, reg, data);
 }
 
-static u32 swd_dp_read(struct swd_dev_data *devdata, u8 reg)
+static u32 swd_dp_read(struct device *dev, u8 reg)
 {
-	return swd_dpap_read(devdata, SWD_VAL_DP, reg);
+	return swd_dpap_read(dev, SWD_VAL_DP, reg);
 }
 
 void swd_memory_write(struct device *dev, u32 address, u32 data)
 {
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
+	swd_ap_write(dev, SWD_MEMAP_REG_RW_DRW, data);
+}
 
-	swd_ap_write(devdata, SWD_MEMAP_REG_RW_TAR, address);
-	swd_ap_write(devdata, SWD_MEMAP_REG_RW_DRW, data);
+void swd_memory_write_next(struct device *dev, u32 data)
+{
+	swd_ap_write(dev, SWD_MEMAP_REG_RW_DRW, data);
 }
 
 u32 swd_memory_read(struct device *dev, u32 address)
 {
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-
-	swd_ap_write(devdata, SWD_MEMAP_REG_RW_TAR, address);
-	swd_ap_read(devdata, SWD_MEMAP_REG_RW_DRW);
-	return swd_dp_read(devdata, SWD_DP_REG_RO_RDBUFF);
+	swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
+	swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
+	return swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
 }
 
-static bool swd_mode_switch(struct swd_dev_data *devdata)
+u32 swd_memory_read_next(struct device *dev)
 {
+	return swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
+}
+
+static bool swd_mode_switch(struct device *dev)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int i = 0;
 	bool status = true;
 	const u16 jtag_to_swd = 0xE79E;
@@ -317,7 +339,7 @@ static bool swd_mode_switch(struct swd_dev_data *devdata)
 	swd_wire_write_len(devdata, 0, 20);
 
 	/* IDCODE */
-	status = swd_wire_header(devdata,
+	status = swd_wire_header(dev,
 				 SWD_VAL_READ,
 				 SWD_VAL_DP,
 				 SWD_DP_REG_RO_IDCODE);
@@ -326,18 +348,17 @@ static bool swd_mode_switch(struct swd_dev_data *devdata)
 	}
 
 	if (status) {
-		idcode = swd_dp_read(devdata, 0);
+		idcode = swd_dp_read(dev, 0);
 		if (!(idcode == SWD_VAL_IDCODE_CM0DAP ||
 		      idcode == SWD_VAL_IDCODE_CM0PDAP ||
 		      idcode == SWD_VAL_IDCODE_STM32L)) {
-			/* TODO: Better error handling */
-			printk("JMD: SWD IDCODE is invalid (0x%x)\n", idcode);
+			dev_err(dev, "SWD IDCODE is invalid (0x%x)\n", idcode);
 		}
 
-		swd_dp_write(devdata,
+		swd_dp_write(dev,
 			     SWD_DP_REG_WO_ABORT,
 			     SWD_VAL_ABORT_CLEAR);
-		swd_dp_write(devdata,
+		swd_dp_write(dev,
 			     SWD_DP_REG_WO_SELECT,
 			     SWD_VAL_SELECT_MEMAP);
 
@@ -345,17 +366,17 @@ static bool swd_mode_switch(struct swd_dev_data *devdata)
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPACK);
 		req = (1<<SWD_VAL_CTRLSTAT_CSYSPWRUPREQ) |
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPREQ);
-		while ((swd_dp_read(devdata, SWD_DP_REG_RW_CTRLSTAT) & ack)
+		while ((swd_dp_read(dev, SWD_DP_REG_RW_CTRLSTAT) & ack)
 		       != ack) {
-			swd_dp_write(devdata, SWD_DP_REG_RW_CTRLSTAT, req);
+			swd_dp_write(dev, SWD_DP_REG_RW_CTRLSTAT, req);
 		}
 
-		swd_dp_write(devdata,
+		swd_dp_write(dev,
 			     SWD_DP_REG_WO_ABORT,
 			     SWD_VAL_ABORT_CLEAR);
-		swd_ap_write(devdata,
+		swd_ap_write(dev,
 			     SWD_MEMAP_REG_RW_CSW,
-			     SWD_VAL_DHCSR_NOINC_32);
+			     SWD_VAL_DHCSR_INC_32);
 	}
 
 	return status;

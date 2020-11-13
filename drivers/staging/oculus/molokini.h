@@ -51,6 +51,7 @@ enum molokini_fw_protocol {
 #define MOLOKINI_FW_MANUFACTURER_INFO2 0x7A
 #define MOLOKINI_FW_MANUFACTURER_INFO3 0x7B
 #define MOLOKINI_FW_HMD_MOUNTED 0x80
+#define MOLOKINI_FW_CHARGER_PLUGGED 0x82
 
 /* Vendor Defined Object Section */
 #define VDOS_MAX_BYTES 16
@@ -70,7 +71,7 @@ struct molokini_parameters {
 	/* Standard parameters */
 	u16 temp_fg;
 	u16 voltage;
-	u16 battery_status;
+	char battery_status[16];
 	u16 icurrent; /* negative range */
 	u16 remaining_capacity;
 	u16 fcc;
@@ -78,6 +79,7 @@ struct molokini_parameters {
 	u8 rsoc;
 	u8 soh;
 	char device_name[16];
+	bool charger_plugged;
 
 	/* Lifetime data blocks */
 	u16 lifetime1_lower[LIFETIME_1_LOWER_LEN];

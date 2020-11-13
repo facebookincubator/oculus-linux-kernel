@@ -161,14 +161,6 @@
 		status = "disabled";
 	};
 
-	qcom,ion {
-		qcom,ion-heap@30 {
-			reg = <30>;
-			memory-region = <&oculus_dma_memory>;
-			qcom,ion-heap-type = "DMA";
-		};
-	};
-
 	qcom,sensor-information {
 		sensor_information30: qcom,sensor-information-30 {
 		qcom,sensor-type = "adc";
@@ -188,6 +180,10 @@
 		dwc3@a800000 {
 			snps,usb3-u1u2-disable;
 		};
+	};
+
+	qcom,ssc@5c00000 {
+		status = "disabled";
 	};
 
 };
@@ -958,6 +954,19 @@
 			};
 		};
 
+		syncboss_wakeup: syncboss_wakeup {
+			mux {
+				pins = "gpio119";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio119";
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
 		syncboss_reset_default: syncboss_reset_default {
 			mux {
 				pins = "gpio126";
@@ -1036,7 +1045,7 @@
 		spi-cpha;
 
 		pinctrl-names = "syncboss_default";
-		pinctrl-0 = <&syncboss_reset_default>;
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
 		oculus,syncboss-reset = <&tlmm 126 0>;
 		oculus,syncboss-timesync = <&tlmm 10 0>;
@@ -1064,6 +1073,7 @@
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
+			oculus,flash-page-retained-count = <3>;
 		};
 	};
 };
