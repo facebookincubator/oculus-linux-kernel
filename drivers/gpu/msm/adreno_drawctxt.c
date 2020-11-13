@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -328,7 +328,6 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	struct adreno_context *drawctxt;
 	struct kgsl_device *device = dev_priv->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	int ret;
 	unsigned int local;
 
@@ -377,6 +376,15 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	drawctxt->timestamp = 0;
 
 	drawctxt->base.flags = local;
+
+	/*
+	 * If this context is owned by a 32-bit compat process, mark that here.
+	 * We're deferring generation of the context's preemption record and
+	 * the process that ultimately calls the dispatch function where that
+	 * happens may be 64-bit, necessitating this context flag.
+	 */
+	if (kgsl_is_compat_task())
+		drawctxt->base.flags |= KGSL_CONTEXT_COMPAT_TASK;
 
 	/* Always enable per-context timestamps */
 	drawctxt->base.flags |= KGSL_CONTEXT_PER_CONTEXT_TS;
@@ -444,14 +452,6 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 
 	INIT_LIST_HEAD(&drawctxt->active_node);
 
-	if (gpudev->preemption_context_init) {
-		ret = gpudev->preemption_context_init(&drawctxt->base);
-		if (ret != 0) {
-			kgsl_context_detach(&drawctxt->base);
-			return ERR_PTR(ret);
-		}
-	}
-
 	/* copy back whatever flags we dediced were valid */
 	*flags = drawctxt->base.flags;
 	return &drawctxt->base;
@@ -496,11 +496,12 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 	drawctxt = ADRENO_CONTEXT(context);
 	rb = drawctxt->rb;
 
+	spin_lock(&drawctxt->lock);
+
 	spin_lock(&adreno_dev->active_list_lock);
 	list_del_init(&drawctxt->active_node);
 	spin_unlock(&adreno_dev->active_list_lock);
 
-	spin_lock(&drawctxt->lock);
 	count = drawctxt_detach_drawobjs(drawctxt, list);
 	spin_unlock(&drawctxt->lock);
 

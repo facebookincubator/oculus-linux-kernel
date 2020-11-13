@@ -87,7 +87,7 @@ typedef enum {
 #define PACK_ATTRIBUTE __attribute__ ((packed))
 #else
 #define PACK_ATTRIBUTE
-#endif // endif
+#endif
 typedef struct {
 	wifi_interface_mode mode;     /* interface mode */
 	uint8 mac_addr[6];               /* interface mac address (self) */

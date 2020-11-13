@@ -28,6 +28,6 @@
 #include <hnd_armtrap.h>
 #else
 #error "unsupported CPU architecture"
-#endif // endif
+#endif
 
 #endif	/* _hnd_trap_h_ */

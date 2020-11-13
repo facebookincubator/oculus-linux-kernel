@@ -83,6 +83,38 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 /* ERP Cryptosuite */
 #define EAP_ERP_CS_HMAC_SHA256_128	2u
 
+#ifdef  BCMCCX
+#define EAP_LEAP		17
+
+#define LEAP_VERSION		1
+#define LEAP_CHALLENGE_LEN	8
+#define LEAP_RESPONSE_LEN	24
+
+/* LEAP challenge */
+typedef struct {
+	unsigned char version;		/* should be value of LEAP_VERSION */
+	unsigned char reserved;		/* not used */
+	unsigned char chall_len;	/* always value of LEAP_CHALLENGE_LEN */
+	unsigned char challenge[LEAP_CHALLENGE_LEN]; /* random */
+	unsigned char username[1];
+} leap_challenge_t;
+
+#define LEAP_CHALLENGE_HDR_LEN	12
+
+/* LEAP challenge reponse */
+typedef struct {
+	unsigned char version;	/* should be value of LEAP_VERSION */
+	unsigned char reserved;	/* not used */
+	unsigned char resp_len;	/* always value of LEAP_RESPONSE_LEN */
+	/* MS-CHAP hash of challenge and user's password */
+	unsigned char response[LEAP_RESPONSE_LEN];
+	unsigned char username[1];
+} leap_response_t;
+
+#define LEAP_RESPONSE_HDR_LEN	28
+
+#endif /* BCMCCX */
+
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>
 

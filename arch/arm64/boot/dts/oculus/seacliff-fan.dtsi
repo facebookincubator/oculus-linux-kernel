@@ -59,6 +59,7 @@
 &spmi_bus {
 	qcom,pm8150l@5 {
 		fan_0: pwm-tach-fan@0 {
+			reg = <0>;
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 71 0x0>;
 			interrupt-parent = <&tlmm>;
@@ -75,6 +76,7 @@
 		};
 
 		fan_1: pwm-tach-fan@1 {
+			reg = <1>;
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 72 0x0>;
 			interrupt-parent = <&tlmm>;

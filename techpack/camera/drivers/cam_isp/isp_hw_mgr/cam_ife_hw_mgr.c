@@ -3437,7 +3437,7 @@ static const char *cam_isp_util_usage_data_to_string(
 
 static int cam_isp_classify_vote_info(
 	struct cam_ife_hw_mgr_res            *hw_mgr_res,
-	struct cam_isp_bw_config_v2          *bw_config,
+	struct cam_isp_bw_config_internal_v2 *bw_config,
 	struct cam_axi_vote                  *isp_vote,
 	uint32_t                              split_idx,
 	bool                                 *camif_l_bw_updated,
@@ -3530,7 +3530,7 @@ static int cam_isp_classify_vote_info(
 }
 
 static int cam_isp_blob_bw_update_v2(
-	struct cam_isp_bw_config_v2           *bw_config,
+	struct cam_isp_bw_config_internal_v2  *bw_config,
 	struct cam_ife_hw_mgr_ctx             *ctx)
 {
 	struct cam_ife_hw_mgr_res             *hw_mgr_res;
@@ -3593,11 +3593,15 @@ static int cam_isp_blob_bw_update_v2(
 		}
 	}
 
+	if (bw_config->num_paths > 0)
+		kfree(bw_config->axi_path);
+	kfree(bw_config);
+
 	return rc;
 }
 
 static int cam_isp_blob_bw_update(
-	struct cam_isp_bw_config              *bw_config,
+	struct cam_isp_bw_config_internal     *bw_config,
 	struct cam_ife_hw_mgr_ctx             *ctx)
 {
 	struct cam_ife_hw_mgr_res             *hw_mgr_res;
@@ -3690,6 +3694,10 @@ static int cam_isp_blob_bw_update(
 		}
 	}
 
+	if (bw_config->num_rdi > 0)
+		kfree(bw_config->rdi_vote);
+	kfree(bw_config);
+
 	return rc;
 }
 
@@ -3741,7 +3749,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 		ctx, ctx->ctx_index, cfg->request_id, cfg->init_packet);
 
 	for (i = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
-		if (hw_update_data->bw_config_valid[i] == true) {
+		if (hw_update_data->bw_config[i] != NULL) {
 
 			CAM_DBG(CAM_PERF, "idx=%d, bw_config_version=%d",
 				ctx, ctx->ctx_index, i,
@@ -3750,20 +3758,22 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 			if (hw_update_data->bw_config_version ==
 				CAM_ISP_BW_CONFIG_V1) {
 				rc = cam_isp_blob_bw_update(
-					(struct cam_isp_bw_config *)
-					&hw_update_data->bw_config[i], ctx);
+					(struct cam_isp_bw_config_internal *)
+					hw_update_data->bw_config[i], ctx);
 				if (rc)
 					CAM_ERR(CAM_PERF,
 					"Bandwidth Update Failed rc: %d", rc);
+				hw_update_data->bw_config[i] = NULL;
 				bw_config = true;
 			} else if (hw_update_data->bw_config_version ==
 				CAM_ISP_BW_CONFIG_V2) {
 				rc = cam_isp_blob_bw_update_v2(
-					(struct cam_isp_bw_config_v2 *)
-					&hw_update_data->bw_config_v2[i], ctx);
+					(struct cam_isp_bw_config_internal_v2 *)
+					hw_update_data->bw_config[i], ctx);
 				if (rc)
 					CAM_ERR(CAM_PERF,
 					"Bandwidth Update Failed rc: %d", rc);
+				hw_update_data->bw_config[i] = NULL;
 				bw_config = true;
 			} else {
 				CAM_ERR(CAM_PERF,
@@ -5629,6 +5639,8 @@ static int cam_isp_packet_generic_blob_handler(void *user_data,
 	case CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG: {
 		struct cam_isp_bw_config    *bw_config;
 		struct cam_isp_prepare_hw_update_data   *prepare_hw_data;
+		struct cam_isp_bw_config_internal *cfg;
+		int i;
 
 		CAM_WARN_RATE_LIMIT_CUSTOM(CAM_PERF, 300, 1,
 			"Deprecated Blob TYPE_BW_CONFIG");
@@ -5677,17 +5689,35 @@ static int cam_isp_packet_generic_blob_handler(void *user_data,
 
 		prepare_hw_data = (struct cam_isp_prepare_hw_update_data  *)
 			prepare->priv;
+		prepare_hw_data->bw_config[bw_config->usage_type] =
+			kmalloc(sizeof(struct cam_isp_bw_config_internal), GFP_KERNEL);
+		cfg = (struct cam_isp_bw_config_internal *)
+			prepare_hw_data->bw_config[bw_config->usage_type];
 
-		memcpy(&prepare_hw_data->bw_config[bw_config->usage_type],
-			bw_config, sizeof(prepare_hw_data->bw_config[0]));
+		if (bw_config->num_rdi > 0)
+			cfg->rdi_vote = kmalloc_array(bw_config->num_rdi,
+				sizeof(struct cam_isp_bw_vote), GFP_KERNEL);
+		else
+			cfg->rdi_vote = NULL;
+
+		cfg->usage_type = bw_config->usage_type;
+		cfg->num_rdi = bw_config->num_rdi;
+		memcpy(&cfg->left_pix_vote, &bw_config->left_pix_vote,
+			sizeof(struct cam_isp_bw_vote));
+		memcpy(&cfg->right_pix_vote, &bw_config->right_pix_vote,
+			sizeof(struct cam_isp_bw_vote));
+		for (i = 0; i < cfg->num_rdi; i++)
+			memcpy(&cfg->rdi_vote[i], &bw_config->rdi_vote[i],
+				sizeof(struct cam_isp_bw_vote));
+
 		prepare_hw_data->bw_config_version = CAM_ISP_BW_CONFIG_V1;
-		prepare_hw_data->bw_config_valid[bw_config->usage_type] = true;
 	}
 		break;
 	case CAM_ISP_GENERIC_BLOB_TYPE_BW_CONFIG_V2: {
-		size_t bw_config_size = 0;
 		struct cam_isp_bw_config_v2    *bw_config;
 		struct cam_isp_prepare_hw_update_data   *prepare_hw_data;
+		struct cam_isp_bw_config_internal_v2 *cfg;
+		int i;
 
 		if (blob_size < sizeof(struct cam_isp_bw_config_v2)) {
 			CAM_ERR(CAM_ISP, "Invalid blob size %u", blob_size);
@@ -5738,18 +5768,24 @@ static int cam_isp_packet_generic_blob_handler(void *user_data,
 
 		prepare_hw_data = (struct cam_isp_prepare_hw_update_data  *)
 			prepare->priv;
+		prepare_hw_data->bw_config[bw_config->usage_type] =
+			kmalloc(sizeof(struct cam_isp_bw_config_internal_v2), GFP_KERNEL);
+		cfg = (struct cam_isp_bw_config_internal_v2 *)
+			prepare_hw_data->bw_config[bw_config->usage_type];
 
-		memset(&prepare_hw_data->bw_config_v2[bw_config->usage_type],
-			0, sizeof(
-			prepare_hw_data->bw_config_v2[bw_config->usage_type]));
-		bw_config_size = sizeof(struct cam_isp_bw_config_internal_v2) +
-			((bw_config->num_paths - 1) *
-			sizeof(struct cam_axi_per_path_bw_vote));
-		memcpy(&prepare_hw_data->bw_config_v2[bw_config->usage_type],
-			bw_config, bw_config_size);
+		if (bw_config->num_paths > 0)
+			cfg->axi_path = kmalloc_array(bw_config->num_paths,
+				sizeof(struct cam_axi_per_path_bw_vote), GFP_KERNEL);
+		else
+			cfg->axi_path = NULL;
+
+		cfg->usage_type = bw_config->usage_type;
+		cfg->num_paths = bw_config->num_paths;
+		for (i = 0; i < cfg->num_paths; i++)
+			memcpy(&cfg->axi_path[i], &bw_config->axi_path[i],
+				sizeof(struct cam_axi_per_path_bw_vote));
 
 		prepare_hw_data->bw_config_version = CAM_ISP_BW_CONFIG_V2;
-		prepare_hw_data->bw_config_valid[bw_config->usage_type] = true;
 	}
 		break;
 	case CAM_ISP_GENERIC_BLOB_TYPE_UBWC_CONFIG: {
@@ -6131,11 +6167,7 @@ static int cam_ife_mgr_prepare_hw_update(void *hw_mgr_priv,
 	prepare->num_reg_dump_buf = 0;
 
 	memset(&prepare_hw_data->bw_config[0], 0x0,
-		sizeof(prepare_hw_data->bw_config[0]) *
-		CAM_IFE_HW_NUM_MAX);
-	memset(&prepare_hw_data->bw_config_valid[0], 0x0,
-		sizeof(prepare_hw_data->bw_config_valid[0]) *
-		CAM_IFE_HW_NUM_MAX);
+		sizeof(void *) * CAM_IFE_HW_NUM_MAX);
 
 	for (i = 0; i < ctx->num_base; i++) {
 		CAM_DBG(CAM_ISP, "process cmd buffer for device %d", i);

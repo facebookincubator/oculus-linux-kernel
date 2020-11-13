@@ -41,19 +41,25 @@
 
 #ifndef SI_ENUM_BASE_DEFAULT
 #define SI_ENUM_BASE_DEFAULT		0x18000000	/* Enumeration space base */
-#endif // endif
+#endif
 
 #ifndef SI_WRAP_BASE_DEFAULT
 #define SI_WRAP_BASE_DEFAULT		0x18100000	/* Wrapper space base */
-#endif // endif
+#endif
 
 #define WL_BRIDGE1_S	(0x18132000)
 #define WL_BRIDGE2_S	(0x18133000)
 
 /** new(er) chips started locating their chipc core at a different BP address than 0x1800_0000 */
+#ifdef DONGLEBUILD
+// firmware is always compiled for a particular chip
+#define SI_ENUM_BASE(sih)	SI_ENUM_BASE_DEFAULT
+#define SI_WRAP_BASE(sih)	SI_WRAP_BASE_DEFAULT
+#else
 // NIC and DHD driver binaries should support both old(er) and new(er) chips at the same time
 #define SI_ENUM_BASE(sih)	((sih)->enum_base)
 #define SI_WRAP_BASE(sih)	(SI_ENUM_BASE(sih) + 0x00100000)
+#endif /* DONGLEBUILD */
 
 #define SI_CORE_SIZE		0x1000		/* each core gets 4Kbytes for registers */
 
@@ -67,15 +73,18 @@
 #define SI_GPV_SL8_BM_ADDR  0x4a024 /* NIC-400 Slave interface 8 Bypass merge */
 #define SI_GPV_SL9_BM_ADDR  0x4b024 /* NIC-400 Slave interface 9 Bypass merge */
 
-/* AXI ID Node numbers wrt GPV base offset */
-#define NODE_HWA_MASTER		67
-#define NODE_HWA_SLAVE		11
-
 /* AXI Slave Interface Block (ASIB) offsets */
 #define ASIB_FN_MOD2		0x24
 
 #ifndef SI_MAXCORES
+#ifdef _RTE_
+#define	SI_MAXCORES		16		/* Max cores (this is arbitrary, for software
+					 * convenience and could be changed if we
+					 * make any larger chips
+					 */
+#else
 #define	SI_MAXCORES		32		/* NorthStar has more cores */
+#endif /* _RTE_ */
 #endif /* SI_MAXCORES */
 
 #define	SI_MAXBR		4		/* Max bridges (this is arbitrary, for software
@@ -105,7 +114,7 @@
 #define	SI_ARMCA7_ROM		0x00000000	/* ARM Cortex-A7 ROM */
 #ifndef SI_ARMCA7_RAM
 #define	SI_ARMCA7_RAM		0x00200000	/* ARM Cortex-A7 RAM */
-#endif // endif
+#endif
 #define	SI_ARM_FLASH1		0xffff0000	/* ARM Flash Region 1 */
 #define	SI_ARM_FLASH1_SZ	0x00010000	/* ARM Size of Flash Region 1 */
 

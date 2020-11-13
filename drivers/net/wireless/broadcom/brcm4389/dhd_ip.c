@@ -181,7 +181,7 @@ _tdata_psh_info_pool_enq(tcpack_sup_module_t *tcpack_sup_mod,
 	tcpack_sup_mod->tdata_psh_info_free = tdata_psh_info;
 #ifdef DHDTCPACK_SUP_DBG
 	tcpack_sup_mod->psh_info_enq_num++;
-#endif // endif
+#endif
 }
 
 static tdata_psh_info_t*

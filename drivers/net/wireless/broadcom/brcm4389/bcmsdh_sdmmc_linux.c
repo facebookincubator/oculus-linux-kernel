@@ -88,7 +88,7 @@ static int sdioh_probe(struct sdio_func *func)
 
 #ifdef WL_CFG80211
 	wl_cfg80211_set_parent_dev(&func->dev);
-#endif // endif
+#endif
 
 	 /* allocate SDIO Host Controller state info */
 	 osh = osl_attach(&func->dev, SDIO_BUS, TRUE);
@@ -177,6 +177,11 @@ static void bcmsdh_sdmmc_remove(struct sdio_func *func)
 /* devices we support, null terminated */
 static const struct sdio_device_id bcmsdh_sdmmc_ids[] = {
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, SDIO_DEVICE_ID_BROADCOM_DEFAULT) },
+	/* XXX This should not be in the external release, as it will attach to any SDIO
+	 * device, even non-WLAN devices.
+	 * Need to add IDs for the FALCON-based chips and put this under BCMINTERNAL
+	 { SDIO_DEVICE_CLASS(SDIO_CLASS_NONE) },
+	 */
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM4362_CHIP_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM43751_CHIP_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM43752_CHIP_ID) },

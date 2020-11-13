@@ -34,8 +34,13 @@
 #define BCMSDH_INFO_VAL		0x0002 /* Info */
 extern const uint bcmsdh_msglevel;
 
+#ifdef BCMDBG
+#define BCMSDH_ERROR(x)	do { if (bcmsdh_msglevel & BCMSDH_ERROR_VAL) printf x; } while (0)
+#define BCMSDH_INFO(x)	do { if (bcmsdh_msglevel & BCMSDH_INFO_VAL) printf x; } while (0)
+#else /* BCMDBG */
 #define BCMSDH_ERROR(x)
 #define BCMSDH_INFO(x)
+#endif /* BCMDBG */
 
 #if defined(BCMSDIO) && (defined(BCMSDIOH_STD) || defined(BCMSDIOH_BCM) || \
 	defined(BCMSDIOH_SPI))
@@ -46,13 +51,18 @@ extern const uint bcmsdh_msglevel;
 typedef struct bcmsdh_info bcmsdh_info_t;
 typedef void (*bcmsdh_cb_fn_t)(void *);
 
+#if defined(NDIS) && (NDISVER >= 0x0630) && defined(BCMDONGLEHOST)
+extern bcmsdh_info_t *bcmsdh_attach(osl_t *osh, void *cfghdl,
+	void **regsva, uint irq, shared_info_t *sh);
+#else
+
 #if defined(BT_OVER_SDIO)
 typedef enum {
 	NO_HANG_STATE		= 0,
 	HANG_START_STATE		= 1,
 	HANG_RECOVERY_STATE	= 2
 } dhd_hang_state_t;
-#endif // endif
+#endif
 
 extern bcmsdh_info_t *bcmsdh_attach(osl_t *osh, void *sdioh, ulong *regsva);
 /**
@@ -69,6 +79,7 @@ struct bcmsdh_info
 	void	*os_cxt;        /* Pointer to per-OS private data */
 	bool	force_sbwad_calc; /* forces calculation of sbwad instead of using cached value */
 };
+#endif /* defined(NDIS) && (NDISVER >= 0x0630) && defined(BCMDONGLEHOST) */
 
 /* Detach - freeup resources allocated in attach */
 extern int bcmsdh_detach(osl_t *osh, void *sdh);
@@ -86,10 +97,10 @@ extern int bcmsdh_intr_dereg(void *sdh);
 /* Enable/disable SD card interrupt forward */
 extern void bcmsdh_intr_forward(void *sdh, bool pass);
 
-#if defined(DHD_DEBUG)
+#if defined(DHD_DEBUG) || defined(BCMDBG)
 /* Query pending interrupt status from the host controller */
 extern bool bcmsdh_intr_pending(void *sdh);
-#endif // endif
+#endif
 
 /* Register a callback to be called if and when bcmsdh detects
  * device removal. No-op in the case of non-removable/hardwired devices.
@@ -145,9 +156,6 @@ extern bool bcmsdh_regfail(void *sdh);
  * Returns 0 or error code.
  * NOTE: Async operation is not currently supported.
  */
-
-// MOG-ON: BCMINTERNAL
-// MOG-OFF: BCMINTERNAL
 
 typedef void (*bcmsdh_cmplt_fn_t)(void *handle, int status, bool sync_waiting);
 extern int bcmsdh_send_buf(void *sdh, uint32 addr, uint fn, uint flags,
@@ -234,13 +242,14 @@ extern void bcmsdh_device_remove(void * sdh);
 extern int bcmsdh_reg_sdio_notify(void* semaphore);
 extern void bcmsdh_unreg_sdio_notify(void);
 
-#if defined(OOB_INTR_ONLY)
+#if defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID)
 extern int bcmsdh_oob_intr_register(bcmsdh_info_t *bcmsdh, bcmsdh_cb_fn_t oob_irq_handler,
 	void* oob_irq_handler_context);
 extern void bcmsdh_oob_intr_unregister(bcmsdh_info_t *sdh);
 extern void bcmsdh_oob_intr_set(bcmsdh_info_t *sdh, bool enable);
 extern int bcmsdh_get_oob_intr_num(bcmsdh_info_t *bcmsdh);
-#endif // endif
+#endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
+extern void *bcmsdh_get_dev(bcmsdh_info_t *sdh);
 extern void bcmsdh_dev_pm_stay_awake(bcmsdh_info_t *sdh);
 extern void bcmsdh_dev_relax(bcmsdh_info_t *sdh);
 extern bool bcmsdh_dev_pm_enabled(bcmsdh_info_t *sdh);
@@ -259,6 +268,10 @@ extern void bcmsdh_force_sbwad_calc(void *sdh, bool force);
 
 /* Function to pass chipid and rev to lower layers for controlling pr's */
 extern void bcmsdh_chipinfo(void *sdh, uint32 chip, uint32 chiprev);
+
+#ifdef BCMSPI
+extern void bcmsdh_dwordmode(void *sdh, bool set);
+#endif /* BCMSPI */
 
 extern int bcmsdh_sleep(void *sdh, bool enab);
 

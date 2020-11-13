@@ -127,6 +127,9 @@
 #define SBSDIO_Rev8_ALP_AVAIL		0x80
 #define SBSDIO_CSR_MASK			0x1F
 
+/* WAR for PR 40695: determine HT/ALP regardless of actual bit order.  Need to use
+ * before we know corerev.  (Can drop if all supported revs have same bit order.)
+ */
 #define SBSDIO_AVBITS			(SBSDIO_HT_AVAIL | SBSDIO_ALP_AVAIL)
 #define SBSDIO_ALPAV(regval)		((regval) & SBSDIO_AVBITS)
 #define SBSDIO_HTAV(regval)		(((regval) & SBSDIO_AVBITS) == SBSDIO_AVBITS)
@@ -155,7 +158,11 @@
 
 /* direct(mapped) cis space */
 #define SBSDIO_CIS_BASE_COMMON		0x1000		/* MAPPED common CIS address */
+#ifdef BCMSPI
+#define SBSDIO_CIS_SIZE_LIMIT		0x100		/* maximum bytes in one spi CIS */
+#else
 #define SBSDIO_CIS_SIZE_LIMIT		0x200		/* maximum bytes in one CIS */
+#endif /* !BCMSPI */
 #define SBSDIO_OTP_CIS_SIZE_LIMIT       0x078           /* maximum bytes OTP CIS */
 
 #define SBSDIO_CIS_OFT_ADDR_MASK	0x1FFFF		/* cis offset addr is < 17 bits */

@@ -28,4 +28,4 @@
 typedef struct osl_info osl_t;
 typedef struct osl_dmainfo osldma_t;
 extern unsigned int lmtest; /* low memory test */
-#endif // endif
+#endif

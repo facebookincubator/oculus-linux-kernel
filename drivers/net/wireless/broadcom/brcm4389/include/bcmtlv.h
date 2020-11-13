@@ -94,7 +94,7 @@ bcm_tlv_t *bcm_parse_tlvs(const  void *buf, uint buflen, uint key);
 typedef enum {
 	BCM_TLV_ADVANCE_NONE = 0,  // do not adjust the buffer/buflen
 	BCM_TLV_ADVANCE_TO = 1,    // advance to the found tlv
-	BCM_TLV_ADVANCE_PAST = 2,  // advance past the found tlv
+	BCM_TLV_ADVANCE_PAST = 2   // advance past the found tlv
 } bcm_tlv_advance_mode_t;
 
 /* Find an IE of a specific type from a buffer.

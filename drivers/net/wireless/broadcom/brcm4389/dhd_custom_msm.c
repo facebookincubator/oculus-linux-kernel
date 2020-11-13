@@ -31,23 +31,19 @@
 #include <linux/err.h>
 #include <linux/gpio.h>
 #include <linux/skbuff.h>
-#include <wlan_plat.h>
 #include <linux/mmc/host.h>
+#ifdef CONFIG_BCMDHD_PCIE
 #include <linux/msm_pcie.h>
+#endif /* CONFIG_BCMDHD_PCIE */
 #include <linux/fcntl.h>
 #include <linux/fs.h>
 #include <linux/of_gpio.h>
-#if defined(CONFIG_ARCH_MSM8996) || defined(CONFIG_ARCH_MSM8998) || \
-	defined(CONFIG_ARCH_SDM845) || defined(CONFIG_ARCH_SM8150) || defined(CONFIG_ARCH_KONA)
-#include <linux/msm_pcie.h>
-#endif /* CONFIG_ARCH_MSM8996 || CONFIG_ARCH_MSM8998 ||
-	  CONFIG_ARCH_SDM845 || CONFIG_ARCH_SM8150 || CONFIG_ARCH_KONA
-	*/
+#include <wlan_plat.h>
 #include <bcmdevs.h>
 
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
-extern int dhd_init_wlan_mem(void);
 extern void dhd_exit_wlan_mem(void);
+extern int dhd_init_wlan_mem(void);
 extern void *dhd_wlan_mem_prealloc(int section, unsigned long size);
 #endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
@@ -61,13 +57,12 @@ static int wlan_reg_on = -1;
 #define WIFI_WL_REG_ON_PROPNAME		"wlan-en-gpio"
 
 #if defined(CONFIG_ARCH_MSM8996) || defined(CONFIG_ARCH_MSM8998) || \
-	defined(CONFIG_ARCH_SDM845) || defined(CONFIG_ARCH_SM8150) || defined(CONFIG_ARCH_KONA)
+	defined(CONFIG_ARCH_SDM845) || defined(CONFIG_ARCH_SM8150) || defined(CONFIG_ARCH_KONA) \
+	|| defined(CONFIG_ARCH_LAHAINA)
 #define MSM_PCIE_CH_NUM			0
 #else
 #define MSM_PCIE_CH_NUM			1
-#endif /* CONFIG_ARCH_MSM8996 || CONFIG_ARCH_MSM8998
-	  || CONFIG_ARCH_SDM845 || CONFIG_ARCH_SM8150 || CONFIG_ARCH_KONA
-	*/
+#endif /* MSM PCIE Platforms */
 
 #ifdef CONFIG_BCMDHD_OOB_HOST_WAKE
 static int wlan_host_wake_up = -1;
@@ -127,10 +122,6 @@ dhd_wlan_power(int onoff)
 	printk(KERN_INFO"%s Enter: power %s\n", __func__, onoff ? "on" : "off");
 
 	if (onoff) {
-		if (gpio_direction_output(wlan_reg_on, 1)) {
-			printk(KERN_ERR "%s: WL_REG_ON is failed to pull up\n", __FUNCTION__);
-			return -EIO;
-		}
 		if (gpio_get_value(wlan_reg_on)) {
 			printk(KERN_INFO"WL_REG_ON on-step-2 : [%d]\n",
 				gpio_get_value(wlan_reg_on));
@@ -195,6 +186,10 @@ dhd_wlan_reset(int onoff)
 static int
 dhd_wlan_set_carddetect(int val)
 {
+#ifdef CONFIG_BCMDHD_PCIE
+	printk(KERN_INFO "%s: Call msm_pcie_enumerate\n", __FUNCTION__);
+	msm_pcie_enumerate(MSM_PCIE_CH_NUM);
+#endif /* CONFIG_BCMDHD_PCIE */
 	return 0;
 }
 
@@ -268,20 +263,21 @@ fail:
 int
 dhd_wlan_deinit(void)
 {
-	pr_debug("%s\n", __func__);
+#ifdef CONFIG_BCMDHD_OOB_HOST_WAKE
+	gpio_free(wlan_host_wake_up);
+#endif /* CONFIG_BCMDHD_OOB_HOST_WAKE */
+	gpio_free(wlan_reg_on);
+
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
 	dhd_exit_wlan_mem();
-#endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
-	if (gpio_is_valid(wlan_reg_on))
-		gpio_free(wlan_reg_on);
-	if (gpio_is_valid(wlan_host_wake_up))
-		gpio_free(wlan_host_wake_up);
+#endif /*  CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 	return 0;
 }
 
-#if !defined(MODULE)
+#ifndef BCMDHD_MODULAR
 #if defined(CONFIG_ARCH_MSM8996) || defined(CONFIG_ARCH_MSM8998) || \
-	defined(CONFIG_ARCH_SDM845) || defined(CONFIG_ARCH_SM8150) || defined(CONFIG_ARCH_KONA)
+	defined(CONFIG_ARCH_SDM845) || defined(CONFIG_ARCH_SM8150) || defined(CONFIG_ARCH_KONA) \
+	|| defined(CONFIG_ARCH_LAHAINA)
 #if defined(CONFIG_DEFERRED_INITCALLS)
 deferred_module_init(dhd_wlan_init);
 #else
@@ -289,7 +285,5 @@ late_initcall(dhd_wlan_init);
 #endif /* CONFIG_DEFERRED_INITCALLS */
 #else
 device_initcall(dhd_wlan_init);
-#endif /* CONFIG_ARCH_MSM8996 || CONFIG_ARCH_MSM8998
-	* CONFIG_ARCH_SDM845 || CONFIG_ARCH_SM8150 || CONFIG_ARCH_KONA
-	*/
-#endif /* if !defined(MODULE) */
+#endif /* MSM PCIE Platforms */
+#endif /* !BCMDHD_MODULAR */

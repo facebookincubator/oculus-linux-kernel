@@ -1,7 +1,55 @@
+&cam_a5 {
+	status = "disabled";
+};
+
+&cam_bps {
+	status = "disabled";
+};
+
+&cam_jpeg_dma {
+	status = "disabled";
+};
+
+&cam_jpeg_enc {
+	status = "disabled";
+};
+
+&cam_ipe0 {
+	status = "disabled";
+};
+
+&pil_camera_mem {
+	status = "disabled";
+};
+
 &soc {
+	qcom,cam-cdm-intf {
+		cdm-client-names = "vfe", "ife";
+	};
+
+	qcom,cam-icp {
+		status = "disabled";
+	};
+
+	qcom,cam-jpeg {
+		status = "disabled";
+	};
+
 	qcom,cam-res-mgr {
 		compatible = "qcom,cam-res-mgr";
 		status = "ok";
+	};
+
+	msm_cam_icp_fw {
+		status = "disabled";
+	};
+
+	msm_cam_smmu_icp {
+		status = "disabled";
+	};
+
+	msm_cam_smmu_jpeg {
+		status = "disabled";
 	};
 };
 
@@ -141,19 +189,5 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <24000000>;
-	};
-};
-
-&soc {
-	qcom,cam-cdm-intf {
-		cdm-client-names = "vfe",
-			"jpegdma",
-			"jpegenc",
-			"fd",
-			"ife";
-	};
-
-	qcom,cpas-cdm0@ac48000 {
-		cdm-client-names = "ifecpascdm";
 	};
 };

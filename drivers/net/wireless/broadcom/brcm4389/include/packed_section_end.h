@@ -43,7 +43,16 @@
 	#undef BWL_PACKED_SECTION
 #else
 	#error "BWL_PACKED_SECTION is NOT defined!"
-#endif // endif
+#endif
+
+#if defined(_MSC_VER)
+#pragma warning(disable:4103)
+#pragma pack(pop)
+#endif
+
+#if defined(__GNUC__) && defined(EFI)
+#pragma pack(pop)
+#endif
 
 /* Compiler-specific directives for structure packing are declared in
  * packed_section_start.h. This marks the end of the structure packing section,

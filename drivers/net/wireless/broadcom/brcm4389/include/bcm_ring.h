@@ -105,7 +105,7 @@
 #define __ring_aligned                      ____cacheline_aligned
 #else
 #define __ring_aligned
-#endif // endif
+#endif
 
 /* Conditional compile for debug */
 /* #define BCM_RING_DEBUG */

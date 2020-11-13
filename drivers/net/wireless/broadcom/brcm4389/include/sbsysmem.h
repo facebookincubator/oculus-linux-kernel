@@ -116,6 +116,11 @@ typedef volatile struct sysmemregs {
 #define	SYSMEM_SRCI_ROMNB_SHIFT	5
 #define	SYSMEM_SRCI_SRNB_MASK	0x1f
 #define	SYSMEM_SRCI_SRNB_SHIFT	0
+/* Above bits are obsolete and replaced with below in rev 12 */
+#define	SYSMEM_SRCI_NEW_ROMNB_MASK	0xff000000u
+#define	SYSMEM_SRCI_NEW_ROMNB_SHIFT	24u
+#define	SYSMEM_SRCI_NEW_SRNB_MASK	0xff0000u
+#define	SYSMEM_SRCI_NEW_SRNB_SHIFT	16u
 
 /* Standby control register */
 #define	SRSC_SBYOVR_MASK	0x80000000

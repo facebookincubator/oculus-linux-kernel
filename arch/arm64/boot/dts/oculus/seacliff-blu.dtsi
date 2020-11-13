@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&qupv3_se13_spi {
+	status = "ok";
+	blu_left {
+		compatible = "oculus,seacliff-blu";
+		reg = <0x00>;
+		spi-max-frequency = <15000000>;
+	};
+};
+
+&qupv3_se14_spi {
+	status = "ok";
+	blu_right {
+		compatible = "oculus,seacliff-blu";
+		reg = <0x01>;
+		spi-max-frequency = <15000000>;
+	};
+};
+
+&tlmm {
+	blu_gpio_en: blu_gpio_en {
+		mux {
+			pins = "gpio89";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio89";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};

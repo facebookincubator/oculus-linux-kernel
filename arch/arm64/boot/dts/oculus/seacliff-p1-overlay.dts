@@ -15,23 +15,17 @@
 	qcom,board-id = <8 62>;
 };
 
-&qupv3_se0_spi {
-	status = "disabled";
-};
-
-&vendor {
-	bt_qca6390 {
-		status = "disabled";
-	};
-};
-
-&soc {
-	qcom,cnss-qca6390@b0000000 {
-		status = "disabled";
-	};
-};
-
 &cm7120_dev0_speaker_en_default {
+	mux {
+		pins = "gpio146";
+	};
+
+	config {
+		pins = "gpio146";
+	};
+};
+
+&cm7120_dev0_speaker_en_suspend {
 	mux {
 		pins = "gpio146";
 	};
@@ -63,10 +57,4 @@
 			oculus,fw-path = "syncboss_P1_BOARD.bin";
 		};
 	};
-};
-
-&pcie0 {
-	wake-gpio = <>;
-	pinctrl-0 = <&pcie0_clkreq_default &pcie0_perst_default>;
-	pinctrl-1 = <&pcie0_clkreq_sleep &pcie0_perst_default>;
 };

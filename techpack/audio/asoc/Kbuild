@@ -145,6 +145,14 @@ ifdef CONFIG_SND_SOC_SA8155
 	MACHINE_OBJS += sa8155.o
 endif
 
+ifndef CONFIG_WCD9XXX_CODEC_CORE_V2
+	MACHINE_OBJS += codecs/msm-cdc-pinctrl.o
+endif
+
+ifndef CONFIG_SND_SOC_WCD9XXX_V2
+	MACHINE_OBJS += codecs/audio-ext-clk-up.o
+endif
+
 ifdef CONFIG_SND_SOC_CPE
 	CPE_LSM_OBJS += msm-cpe-lsm.o
 endif

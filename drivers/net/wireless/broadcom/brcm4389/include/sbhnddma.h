@@ -280,10 +280,10 @@ typedef volatile struct {
 
 #ifndef D64_USBBURSTLEN
 #define D64_USBBURSTLEN	DMA_BL_64
-#endif // endif
+#endif
 #ifndef D64_SDIOBURSTLEN
 #define D64_SDIOBURSTLEN	DMA_BL_32
-#endif // endif
+#endif
 
 /* transmit channel control */
 #define	D64_XC_XE		0x00000001	/**< transmit enable */
@@ -371,7 +371,9 @@ typedef volatile struct {
 #define DMA_CTRL_ROC		(1u << 1u)	/**< rx overflow continue */
 #define DMA_CTRL_RXMULTI	(1u << 2u)	/**< allow rx scatter to multiple descriptors */
 #define DMA_CTRL_UNFRAMED	(1u << 3u)	/**< Unframed Rx/Tx data */
-#define DMA_CTRL_USB_BOUNDRY4KB_WAR (1u << 4u)
+#define DMA_CTRL_USB_BOUNDRY4KB_WAR (1u << 4u)	/**< USB core REV9's SETUP dma channel's
+						*  buffer can not crossed 4K boundary PR80468
+						*/
 #define DMA_CTRL_DMA_AVOIDANCE_WAR (1u << 5u)	/**< DMA avoidance WAR for 4331 */
 #define DMA_CTRL_RXSINGLE	(1u << 6u)	/**< always single buffer */
 #define DMA_CTRL_SDIO_RXGLOM	(1u << 7u)	/**< DMA Rx glome is enabled */
@@ -384,10 +386,16 @@ typedef volatile struct {
 #define DMA_CTRL_CS		(1u << 10u)	/* channel switch enable */
 #define DMA_CTRL_ROEXT		(1u << 11u)	/* receive frame offset extension support */
 #define DMA_CTRL_RX_ALIGN_8BYTE	(1u << 12u)	/* RXDMA address 8-byte aligned */
-#define DMA_CTRL_HWA_TX		(1u << 13u)	/* HWA tx */
-#define DMA_CTRL_HWA_RX		(1u << 14u)	/* HWA rx */
 #define DMA_CTRL_SHARED_POOL	(1u << 15u)	/** shared descriptor pool */
-#define DMA_CTRL_HWA_DD_POOL	(1u << 16u)	/* HWA tx dma desc pool */
+#define DMA_CTRL_COREUNIT_SHIFT	(17u)		/* Core unit shift */
+#define DMA_CTRL_COREUNIT_MASK	(0x3u << 17u)	/* Core unit mask */
+
+#define DMA_CTRL_SET_COREUNIT(di, coreunit) \
+	((di)->hnddma.dmactrlflags |= \
+	(((coreunit) << DMA_CTRL_COREUNIT_SHIFT) & DMA_CTRL_COREUNIT_MASK))
+
+#define DMA_CTRL_GET_COREUNIT(di) \
+	(((di)->hnddma.dmactrlflags & DMA_CTRL_COREUNIT_MASK) >> DMA_CTRL_COREUNIT_SHIFT)
 
 /* receive descriptor table pointer */
 #define	D64_RP_LD_MASK		0x00001fff	/**< last valid descriptor */
@@ -429,7 +437,13 @@ typedef volatile struct {
 
 /* descriptor control flags 1 */
 #define D64_CTRL_COREFLAGS	0x0ff00000		/**< core specific flags */
-#define D64_CTRL1_COHERENT      ((uint32)1 << 17)       /* cache coherent per transaction */
+
+/**< bzero operation for receive channels or a compare-to-zero operation for transmit engines */
+#define D64_CTRL1_BIT_BZEROBCMP		(15u)
+/* WAR for JIRA CRWLDMA-245 */
+#define D64_DMA_COREFLAGS_WAR_BIT	(25u)
+
+#define D64_CTRL1_COHERENT      ((uint32)1 << 17)       /**< cache coherent per transaction */
 #define	D64_CTRL1_NOTPCIE	((uint32)1 << 18)	/**< buirst size control */
 #define	D64_CTRL1_EOT		((uint32)1 << 28)	/**< end of descriptor table */
 #define	D64_CTRL1_IOC		((uint32)1 << 29)	/**< interrupt on completion */

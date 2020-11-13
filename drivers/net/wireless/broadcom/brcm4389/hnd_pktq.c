@@ -104,7 +104,7 @@ BCMFASTPATH(spktq_enq_chain)(struct spktq *dspq, struct spktq *sspq)
 	sq = &sspq->q;
 
 	if (dq->head) {
-		PKTSETLINK(dq->tail, sq->head);
+		PKTSETLINK(OSL_PHYS_TO_VIRT_ADDR(dq->tail), OSL_VIRT_TO_PHYS_ADDR(sq->head));
 	}
 	else {
 		dq->head = sq->head;
@@ -158,7 +158,7 @@ BCMFASTPATH(spktq_enq)(struct spktq *spq, void *p)
 }
 
 void *
-BCMFASTPATH(pktq_penq_head)(struct pktq *pq, int prec, void *p)
+BCMPOSTTRAPFASTPATH(pktq_penq_head)(struct pktq *pq, int prec, void *p)
 {
 	struct pktq_prec *q;
 
@@ -248,7 +248,7 @@ BCMFASTPATH(pktq_pdeq)(struct pktq *pq, int prec)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 
 	PKTSETLINK(p, NULL);
 
@@ -282,7 +282,43 @@ BCMFASTPATH(spktq_deq)(struct spktq *spq)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
+
+	PKTSETLINK(p, NULL);
+
+done:
+	/* protect shared resource */
+	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
+		return NULL;
+
+	return p;
+}
+
+void*
+BCMFASTPATH(spktq_deq_virt)(struct spktq *spq)
+{
+	struct pktq_prec *q;
+	void *p;
+
+	/* protect shared resource */
+	if (HND_PKTQ_MUTEX_ACQUIRE(&spq->mutex, OSL_EXT_TIME_FOREVER) != OSL_EXT_SUCCESS)
+		return NULL;
+
+	q = &spq->q;
+
+	if ((p = q->head) == NULL)
+		goto done;
+
+	p = (void *)OSL_PHYS_TO_VIRT_ADDR(p);
+
+	if ((q->head = (void*)PKTLINK(p)) == NULL)
+		q->tail = NULL;
+
+	q->n_pkts--;
+
+#ifdef WL_TXQ_STALL
+	q->dequeue_count++;
+#endif
 
 	PKTSETLINK(p, NULL);
 
@@ -326,7 +362,7 @@ BCMFASTPATH(pktq_pdeq_tail)(struct pktq *pq, int prec)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 done:
 	/* protect shared resource */
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
@@ -363,7 +399,7 @@ BCMFASTPATH(spktq_deq_tail)(struct spktq *spq)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 done:
 	/* protect shared resource */
 	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
@@ -443,7 +479,7 @@ BCMFASTPATH(pktq_append)(struct pktq *pq, int prec, struct spktq *list)
 
 #ifdef WL_TXQ_STALL
 	list_q->dequeue_count += list_q->n_pkts;
-#endif // endif
+#endif
 
 	list_q->head = NULL;
 	list_q->tail = NULL;
@@ -490,7 +526,7 @@ BCMFASTPATH(spktq_append)(struct spktq *spq, struct spktq *list)
 
 #ifdef WL_TXQ_STALL
 	list_q->dequeue_count += list_q->n_pkts;
-#endif // endif
+#endif
 
 	list_q->head = NULL;
 	list_q->tail = NULL;
@@ -549,7 +585,7 @@ BCMFASTPATH(pktq_prepend)(struct pktq *pq, int prec, struct spktq *list)
 
 #ifdef WL_TXQ_STALL
 	list_q->dequeue_count += list_q->n_pkts;
-#endif // endif
+#endif
 
 	list_q->head = NULL;
 	list_q->tail = NULL;
@@ -602,7 +638,7 @@ BCMFASTPATH(spktq_prepend)(struct spktq *spq, struct spktq *list)
 
 #ifdef WL_TXQ_STALL
 	list_q->dequeue_count += list_q->n_pkts;
-#endif // endif
+#endif
 
 	list_q->head = NULL;
 	list_q->tail = NULL;
@@ -640,7 +676,7 @@ BCMFASTPATH(pktq_pdeq_prev)(struct pktq *pq, int prec, void *prev_p)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 	PKTSETLINK(prev_p, PKTLINK(p));
 	PKTSETLINK(p, NULL);
 
@@ -695,7 +731,7 @@ BCMFASTPATH(pktq_pdeq_with_fn)(struct pktq *pq, int prec, ifpkt_cb_t fn, int arg
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 	PKTSETLINK(p, NULL);
 
 done:
@@ -744,7 +780,7 @@ BCMFASTPATH(pktq_pdel)(struct pktq *pq, void *pktbuf, int prec)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 
 	PKTSETLINK(pktbuf, NULL);
 	ret = TRUE;
@@ -780,7 +816,7 @@ _pktq_pfilter(struct pktq *pq, int prec, pktq_filter_t fltr, void* fltr_ctx,
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count += wq.n_pkts;
-#endif // endif
+#endif
 
 	pq->n_pkts_tot -= wq.n_pkts;
 
@@ -797,7 +833,7 @@ _pktq_pfilter(struct pktq *pq, int prec, pktq_filter_t fltr, void* fltr_ctx,
 
 #ifdef WL_TXQ_STALL
 		wq.dequeue_count++;
-#endif // endif
+#endif
 
 		/* call the filter function on current packet */
 		ASSERT(fltr != NULL);
@@ -897,7 +933,7 @@ spktq_filter(struct spktq *spq, pktq_filter_t fltr, void* fltr_ctx,
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count += wq.n_pkts;
-#endif // endif
+#endif
 
 	/* protect shared resource */
 	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
@@ -913,7 +949,7 @@ spktq_filter(struct spktq *spq, pktq_filter_t fltr, void* fltr_ctx,
 
 #ifdef WL_TXQ_STALL
 		wq.dequeue_count++;
-#endif // endif
+#endif
 
 		/* call the filter function on current packet */
 		ASSERT(fltr != NULL);
@@ -1067,7 +1103,7 @@ BCMFASTPATH(pktq_deq)(struct pktq *pq, int *prec_out)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 
 	if (prec_out)
 		*prec_out = prec;
@@ -1120,7 +1156,7 @@ BCMFASTPATH(pktq_deq_tail)(struct pktq *pq, int *prec_out)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 
 	if (prec_out)
 		*prec_out = prec;
@@ -1341,7 +1377,7 @@ done:
 }
 /* Priority dequeue from a specific set of precedences */
 void *
-BCMFASTPATH(pktq_mdeq)(struct pktq *pq, uint prec_bmp, int *prec_out)
+BCMPOSTTRAPFASTPATH(pktq_mdeq)(struct pktq *pq, uint prec_bmp, int *prec_out)
 {
 	struct pktq_prec *q;
 	void *p = NULL;
@@ -1373,7 +1409,7 @@ BCMFASTPATH(pktq_mdeq)(struct pktq *pq, uint prec_bmp, int *prec_out)
 
 #ifdef WL_TXQ_STALL
 	q->dequeue_count++;
-#endif // endif
+#endif
 
 	if (prec_out)
 		*prec_out = prec;

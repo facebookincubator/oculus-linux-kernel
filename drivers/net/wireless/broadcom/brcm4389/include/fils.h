@@ -1,5 +1,6 @@
 /*
  * Fundamental types and constants relating to FILS AUTHENTICATION
+ *
  * Copyright (C) 2020, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
@@ -107,6 +108,13 @@ typedef BWL_PRE_PACKED_STRUCT union rnr_tbtt_info_field {
 		uint8		bss_params;
 	} BWL_POST_PACKED_STRUCT len8_t;
 
+	BWL_PRE_PACKED_STRUCT struct len9 {
+		uint8		tbtt_offset;
+		tbtt_bssid_t	bssid;
+		uint8		bss_params;
+		uint8		psd_20mhz;
+	} BWL_POST_PACKED_STRUCT len9_t;
+
 	BWL_PRE_PACKED_STRUCT struct len11 {
 		uint8		tbtt_offset;
 		tbtt_bssid_t	bssid;
@@ -119,6 +127,14 @@ typedef BWL_PRE_PACKED_STRUCT union rnr_tbtt_info_field {
 		uint32		short_ssid;
 		uint8		bss_params;
 	} BWL_POST_PACKED_STRUCT len12_t;
+
+	BWL_PRE_PACKED_STRUCT struct len13 {
+		uint8		tbtt_offset;
+		tbtt_bssid_t	bssid;
+		uint32		short_ssid;
+		uint8		bss_params;
+		uint8		psd_20mhz;
+	} BWL_POST_PACKED_STRUCT len13_t;
 } BWL_POST_PACKED_STRUCT rnr_tbtt_info_field_t;
 
 /* 11ai D11.0 9.4.2.171.1 TBTT Information field */
@@ -209,11 +225,19 @@ typedef BWL_PRE_PACKED_STRUCT struct fils_rnr_element {
 /* NBR_AP TBTT OFFSETfield(1) + BSSID(6)+BSS(1) 8BYTES */
 #define NBR_AP_TBTT_BSSID_BSS_LEN		8U
 
+/* NBR_AP TBTT OFFSETfield(1) + BSSID(6)+BSS(1) + 20Mhz PSD(1) = 9BYTES */
+#define NBR_AP_TBTT_BSSID_BSS_PSD_LEN		9U
+
 /* NBR_AP TBTT OFFSETfield(1) + BSSID(6)+SHORTSSID (4) 11Bytes */
 #define NBR_AP_TBTT_BSSID_SHORT_SSID_LEN	11U
 
 /*  NBR_AP TBTT OFFSETfield(1) + BSSID(6)+SHORTSSID (4)+BSS(1) 12 BYTES */
 #define NBR_AP_TBTT_BSSID_SHORT_SSID_BSS_LEN	12U
+
+/*  NBR_AP TBTT OFFSETfield(1) + BSSID(6) +
+ *  SHORTSSID (4)+BSS(1) + 20Mhz PSD(1) = 13 BYTES
+ */
+#define NBR_AP_TBTT_BSSID_SHORT_SSID_BSS_PSD_LEN	13U
 
 /* FILS Nonce element */
 #define FILS_NONCE_LENGTH 16u
@@ -270,6 +294,16 @@ typedef BWL_PRE_PACKED_STRUCT struct fils_key_confirm_element {
 
 #define FILS_CONFIRM_ELEM_HDR_LEN	(sizeof(fils_key_confirm_element_t))
 
+/* 9.4.2.180 FILS Public Key element */
+typedef BWL_PRE_PACKED_STRUCT struct fils_public_key_element {
+	uint8       elementid;
+	uint8       length;
+	uint8       element_id_ext;
+	uint8       key_type;
+	/* variable len info */
+	uint8       pub_key[];
+} BWL_POST_PACKED_STRUCT fils_public_key_element_t;
+
 /* 11ai D6.0 8.6.8.36 FILS Discovery frame format */
 typedef BWL_PRE_PACKED_STRUCT struct fils_discovery_info_field {
 	uint16		framecontrol;
@@ -281,8 +315,15 @@ typedef BWL_PRE_PACKED_STRUCT struct fils_discovery_info_field {
 
 #define FD_INFO_FIELD_HDR_LEN	(sizeof(fils_discovery_info_field_t))
 
-#define FD_INFO_CAP_SUBFIELD_SIZE			2
-#define FD_INFO_LENGTH_FIELD_SIZE			2
+#define FD_INFO_LENGTH_FIELD_SIZE             1u
+#define FD_INFO_CAP_SUBFIELD_SIZE             2u
+#define FD_INFO_OPCLASS_SUBFIED_SIZE          1u
+#define FD_INFO_PRIM_CHAN_SUBFIELD_SIZE       1u
+#define FD_INFO_APCSN_SUBFIELD_SIZE           1u
+#define FD_INFO_ANO_SUBFIELD_SIZE             1u
+#define FD_INFO_RSN_INFO_SUBFIELD_SIZE        5u
+#define FD_INFO_CH_CENTER_FR_SUBFIELD_SIZE    1u
+#define FD_INFO_MD_SUBFIELD_SIZE              3u
 
 /* FILS Discovery Information field */
 #define FD_INFO_SSID_LENGTH_MASK			(0x001f)

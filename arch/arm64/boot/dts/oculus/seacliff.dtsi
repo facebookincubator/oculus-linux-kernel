@@ -11,7 +11,6 @@
 #include "seacliff-panel.dtsi"
 #include "seacliff-projector.dtsi"
 #include "seacliff-syncboss.dtsi"
-#include "seacliff-qca6390.dtsi"
 #include "seacliff-ufs.dtsi"
 
 &qupv3_se0_spi {
@@ -19,6 +18,10 @@
 };
 
 &qupv3_se5_2uart {
+	status = "ok";
+};
+
+&qupv3_se6_4uart {
 	status = "ok";
 };
 
@@ -61,6 +64,10 @@
 
 &pm8150a_l1 {
 	regulator-always-on;
+};
+
+&pm8150a_l5 {
+	status = "disabled";
 };
 
 &pm8150a_l10 {
@@ -117,10 +124,6 @@
 	};
 };
 
-&oculus_dma_memory {
-	size = <0x0 0xA000000>;
-};
-
 &pm8150b_fg {
 	status = "ok";
 	qcom,battery-data = <&kona_mtp_batterydata>;
@@ -140,6 +143,11 @@
 	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
 	qcom,fg-cutoff-voltage = <3400>;
 	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+};
+
+&pm8150b_pdphy {
+	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
+		<9000 3000>; /* 9V @ 3A */
 };
 
 &pm8150l_rgb_led {

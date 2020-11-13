@@ -156,7 +156,6 @@ typedef struct pkt_cnt_log {
 #define PKT_CNT_RSN_VALID(rsn)	\
 	(((rsn) > (PKT_CNT_RSN_INVALID)) && ((rsn) < (PKT_CNT_RSN_MAX)))
 
-#ifdef DHD_PKTDUMP_ROAM
 static const char pkt_cnt_msg[][20] = {
 	"INVALID",
 	"ROAM_SUCCESS",
@@ -164,7 +163,6 @@ static const char pkt_cnt_msg[][20] = {
 	"CONNECT_SUCCESS",
 	"INVALID"
 };
-#endif
 
 static const char tx_pktfate[][30] = {
 	"TX_PKT_FATE_ACKED",		/* 0: WLFC_CTL_PKTFLAG_DISCARD */
@@ -346,45 +344,6 @@ dhd_is_4way_msg(uint8 *pktdata)
 	}
 
 	return type;
-}
-
-void
-dhd_dump_pkt(dhd_pub_t *dhdp, int ifidx, uint8 *pktdata, uint32 pktlen,
-	bool tx, uint32 *pkthash, uint16 *pktfate)
-{
-	struct ether_header *eh;
-	uint16 ether_type;
-
-	if (!pktdata || pktlen < ETHER_HDR_LEN) {
-		return;
-	}
-
-#if defined(BCMPCIE) && defined(DHD_PKT_LOGGING)
-	if (tx && !pkthash && !pktfate) {
-		return;
-	}
-#endif /* BCMPCIE && DHD_PKT_LOGGING */
-
-	eh = (struct ether_header *)pktdata;
-	ether_type = ntoh16(eh->ether_type);
-	if (ether_type == ETHER_TYPE_802_1X) {
-		dhd_dump_eapol_message(dhdp, ifidx, pktdata, pktlen,
-			tx, pkthash, pktfate);
-	}
-	if (ether_type == ETHER_TYPE_IP) {
-		if (dhd_check_dhcp(pktdata)) {
-			dhd_dhcp_dump(dhdp, ifidx, pktdata, tx, pkthash, pktfate);
-		} else if (dhd_check_icmp(pktdata)) {
-			dhd_icmp_dump(dhdp, ifidx, pktdata, tx, pkthash, pktfate);
-		} else if (dhd_check_dns(pktdata)) {
-			dhd_dns_dump(dhdp, ifidx, pktdata, tx, pkthash, pktfate);
-		}
-	}
-	if (ether_type == ETHER_TYPE_ARP) {
-		if (dhd_check_arp(pktdata)) {
-			dhd_arp_dump(dhdp, ifidx, pktdata, tx, pkthash, pktfate);
-		}
-	}
 }
 
 #ifdef DHD_PKTDUMP_ROAM
@@ -872,16 +831,29 @@ dhd_dump_eapol_message(dhd_pub_t *dhd, int ifidx, uint8 *pktdata,
 #endif /* DHD_8021X_DUMP */
 
 bool
-dhd_check_dhcp(uint8 *pktdata)
+dhd_check_ip_prot(uint8 *pktdata, uint16 ether_type)
 {
 	hdr_fmt_t *b = (hdr_fmt_t *)&pktdata[ETHER_HDR_LEN];
 	struct ipv4_hdr *iph = &b->iph;
 
 	/* check IP header */
-	if ((IPV4_HLEN(iph) < IPV4_HLEN_MIN) ||
-	        IP_VER(iph) != IP_VER_4 ||
-	        IPV4_PROT(iph) != IP_PROT_UDP) {
-	        return FALSE;
+	if ((ether_type != ETHER_TYPE_IP) ||
+		(IPV4_HLEN(iph) < IPV4_HLEN_MIN) ||
+		(IP_VER(iph) != IP_VER_4)) {
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+bool
+dhd_check_dhcp(uint8 *pktdata)
+{
+	hdr_fmt_t *b = (hdr_fmt_t *)&pktdata[ETHER_HDR_LEN];
+	struct ipv4_hdr *iph = &b->iph;
+
+	if (IPV4_PROT(iph) != IP_PROT_UDP) {
+		return FALSE;
 	}
 
 	/* check UDP port for bootp (67, 68) */
@@ -1014,10 +986,7 @@ dhd_check_icmp(uint8 *pktdata)
 	uint8 *pkt = (uint8 *)&pktdata[ETHER_HDR_LEN];
 	struct ipv4_hdr *iph = (struct ipv4_hdr *)pkt;
 
-	/* check IP header */
-	if ((IPV4_HLEN(iph) < IPV4_HLEN_MIN) ||
-		IP_VER(iph) != IP_VER_4 ||
-		IPV4_PROT(iph) != IP_PROT_ICMP) {
+	if (IPV4_PROT(iph) != IP_PROT_ICMP) {
 		return FALSE;
 	}
 
@@ -1091,22 +1060,30 @@ dhd_icmp_dump(dhd_pub_t *dhdp, int ifidx, uint8 *pktdata, bool tx,
 #endif /* DHD_ICMP_DUMP */
 
 bool
-dhd_check_arp(uint8 *pktdata)
+dhd_check_arp(uint8 *pktdata, uint16 ether_type)
 {
 	uint8 *pkt = (uint8 *)&pktdata[ETHER_HDR_LEN];
 	struct bcmarp *arph = (struct bcmarp *)pkt;
 
 	/* validation check */
-	if (arph->htype != hton16(HTYPE_ETHERNET) ||
-		arph->hlen != ETHER_ADDR_LEN ||
-		arph->plen != 4) {
+	if ((ether_type != ETHER_TYPE_ARP) ||
+		(arph->htype != hton16(HTYPE_ETHERNET)) ||
+		(arph->hlen != ETHER_ADDR_LEN) ||
+		(arph->plen != 4)) {
 		return FALSE;
 	}
 	return TRUE;
 }
 
 #ifdef DHD_ARP_DUMP
+#ifdef BOARD_HIKEY
+/* On Hikey, due to continuous ARP prints
+ * DPC not scheduled. Hence rate limit the prints.
+ */
+#define DHD_PKTDUMP_ARP DHD_ERROR_RLMT
+#else
 #define DHD_PKTDUMP_ARP DHD_PKTDUMP
+#endif /* BOARD_HIKEY */
 
 #define ARP_PRINT(str) \
 	do { \
@@ -1180,10 +1157,7 @@ dhd_check_dns(uint8 *pktdata)
 	hdr_fmt_t *dnsh = (hdr_fmt_t *)&pktdata[ETHER_HDR_LEN];
 	struct ipv4_hdr *iph = &dnsh->iph;
 
-	/* check IP header */
-	if ((IPV4_HLEN(iph) < IPV4_HLEN_MIN) ||
-		IP_VER(iph) != IP_VER_4 ||
-		IPV4_PROT(iph) != IP_PROT_UDP) {
+	if (IPV4_PROT(iph) != IP_PROT_UDP) {
 		return FALSE;
 	}
 

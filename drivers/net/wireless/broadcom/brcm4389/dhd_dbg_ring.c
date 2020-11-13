@@ -31,6 +31,64 @@
 #include <dhd_dbg.h>
 #include <dhd_dbg_ring.h>
 
+dhd_dbg_ring_t *
+dhd_dbg_ring_alloc_init(dhd_pub_t *dhd, uint16 ring_id,
+	char *ring_name, uint32 ring_sz, void *allocd_buf,
+	bool pull_inactive)
+{
+	dhd_dbg_ring_t *ring = NULL;
+	int ret = 0;
+	unsigned long flags = 0;
+
+	ring = MALLOCZ(dhd->osh, sizeof(dhd_dbg_ring_t));
+	if (!ring)
+		goto fail;
+
+	ret = dhd_dbg_ring_init(dhd, ring, ring_id,
+			(uint8 *)ring_name, ring_sz,
+			allocd_buf, pull_inactive);
+	if (ret != BCME_OK) {
+		DHD_ERROR(("%s: unable to init ring %s!\n",
+				__FUNCTION__, ring_name));
+		goto fail;
+	}
+	DHD_DBG_RING_LOCK(ring->lock, flags);
+	ring->state = RING_ACTIVE;
+	ring->threshold = 0;
+	DHD_DBG_RING_UNLOCK(ring->lock, flags);
+
+	return ring;
+
+fail:
+	if (ring) {
+		dhd_dbg_ring_deinit(dhd, ring);
+		ring->ring_buf = NULL;
+		ring->ring_size = 0;
+		MFREE(dhd->osh, ring, sizeof(dhd_dbg_ring_t));
+	}
+	return NULL;
+}
+
+void
+dhd_dbg_ring_dealloc_deinit(void **ring_ptr, dhd_pub_t *dhd)
+{
+	dhd_dbg_ring_t *ring = NULL;
+	dhd_dbg_ring_t **dbgring = (dhd_dbg_ring_t **)ring_ptr;
+
+	if (!dbgring)
+		return;
+
+	ring = *dbgring;
+
+	if (ring) {
+		dhd_dbg_ring_deinit(dhd, ring);
+		ring->ring_buf = NULL;
+		ring->ring_size = 0;
+		MFREE(dhd->osh, ring, sizeof(dhd_dbg_ring_t));
+		*dbgring = NULL;
+	}
+}
+
 int
 dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 		uint32 ring_sz, void *allocd_buf, bool pull_inactive)
@@ -39,7 +97,7 @@ dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 	unsigned long flags = 0;
 
 	if (allocd_buf == NULL) {
-			return BCME_NOMEM;
+		return BCME_NOMEM;
 	} else {
 		buf = allocd_buf;
 	}
@@ -136,6 +194,16 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 		return BCME_BADARG;
 	}
 
+#if defined(__linux__)
+	/* Prevents the case of accessing the ring buffer in the HardIRQ context.
+	 * If an interrupt arise after holding ring lock, It could try the same lock.
+	 * This is to use the ring lock as spin_lock_bh instead of spin_lock_irqsave.
+	 */
+	if (in_irq()) {
+		return BCME_BUSY;
+	}
+#endif /* defined(__linux__) */
+
 	DHD_DBG_RING_LOCK(ring->lock, flags);
 
 	if (ring->state != RING_ACTIVE) {
@@ -196,7 +264,7 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 					ring->rp);
 				/* check bounds before incrementing read ptr */
 				if (ring->rp + ENTRY_LENGTH(r_entry) >= ring->ring_size) {
-					DHD_ERROR(("%s: RING%d[%s] rp points out of boundary,"
+					DHD_DBGIF(("%s: RING%d[%s] rp points out of boundary,"
 						"ring->wp=%u, ring->rp=%u, ring->ring_size=%d\n",
 						__FUNCTION__, ring->id, ring->name, ring->wp,
 						ring->rp, ring->ring_size));
@@ -228,7 +296,7 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 
 	/* check before writing to the ring */
 	if (ring->wp + w_len >= ring->ring_size) {
-		DHD_ERROR(("%s: RING%d[%s] wp pointed out of ring boundary, "
+		DHD_DBGIF(("%s: RING%d[%s] wp pointed out of ring boundary, "
 			"wp=%d, ring_size=%d, w_len=%u\n", __FUNCTION__, ring->id,
 			ring->name, ring->wp, ring->ring_size, w_len));
 		ASSERT(0);
@@ -274,7 +342,6 @@ dhd_dbg_ring_pull_single(dhd_dbg_ring_t *ring, void *data, uint32 buf_len, bool 
 	}
 
 	DHD_DBG_RING_LOCK(ring->lock, flags);
-
 	/* pull from ring is allowed for inactive (suspended) ring
 	 * in case of ecounters only, this is because, for ecounters
 	 * when a trap occurs the ring is suspended and data is then
@@ -298,7 +365,7 @@ dhd_dbg_ring_pull_single(dhd_dbg_ring_t *ring, void *data, uint32 buf_len, bool 
 	/* Boundary Check */
 	rlen = ENTRY_LENGTH(r_entry);
 	if ((ring->rp + rlen) > ring->ring_size) {
-		DHD_ERROR(("%s: entry len %d is out of boundary of ring size %d,"
+		DHD_DBGIF(("%s: entry len %d is out of boundary of ring size %d,"
 			" current ring %d[%s] - rp=%d\n", __FUNCTION__, rlen,
 			ring->ring_size, ring->id, ring->name, ring->rp));
 		rlen = 0;
@@ -313,12 +380,17 @@ dhd_dbg_ring_pull_single(dhd_dbg_ring_t *ring, void *data, uint32 buf_len, bool 
 		buf = (char *)r_entry;
 	}
 	if (rlen > buf_len) {
-		DHD_ERROR(("%s: buf len %d is too small for entry len %d\n",
+		DHD_DBGIF(("%s: buf len %d is too small for entry len %d\n",
 			__FUNCTION__, buf_len, rlen));
-		DHD_ERROR(("%s: ring %d[%s] - ring size=%d, wp=%d, rp=%d\n",
+		DHD_DBGIF(("%s: ring %d[%s] - ring size=%d, wp=%d, rp=%d\n",
 			__FUNCTION__, ring->id, ring->name, ring->ring_size,
 			ring->wp, ring->rp));
-		ASSERT(0);
+		/* The state of ringbuffer is different between calculating buf_len
+		 * and current. ring->rp have chance to be update by pushing data
+		 * to ring buffer when unlocking after calculating buf_len.
+		 * But, It doesn't need to ASSERT because we only send up the
+		 * entries stored so far.
+		 */
 		rlen = 0;
 		goto exit;
 	}
@@ -336,7 +408,7 @@ dhd_dbg_ring_pull_single(dhd_dbg_ring_t *ring, void *data, uint32 buf_len, bool 
 		ring->rem_len = 0;
 	}
 	if (ring->rp >= ring->ring_size) {
-		DHD_ERROR(("%s: RING%d[%s] rp pointed out of ring boundary,"
+		DHD_DBGIF(("%s: RING%d[%s] rp pointed out of ring boundary,"
 			" rp=%d, ring_size=%d\n", __FUNCTION__, ring->id,
 			ring->name, ring->rp, ring->ring_size));
 		ASSERT(0);

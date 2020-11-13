@@ -28,9 +28,13 @@
 /* If any feature uses the Generic Netlink Interface, put it here to enable WL_GENL
  * automatically
  */
-#if defined(BT_WIFI_HANDOVER)
+#if defined(WL_SDO) || defined(BT_WIFI_HANDOVER)
 #define WL_GENL
-#endif // endif
+#endif
+
+#ifdef WL_GENL
+#include <net/genetlink.h>
+#endif
 
 typedef struct _android_wifi_priv_cmd {
     char *buf;
@@ -59,11 +63,60 @@ typedef struct _compat_android_wifi_priv_cmd {
 int wl_android_init(void);
 int wl_android_exit(void);
 void wl_android_post_init(void);
+void wl_android_set_wifi_on_flag(bool enable);
+#if defined(WLAN_ACCEL_BOOT)
+int wl_android_wifi_accel_on(struct net_device *dev, bool force_reg_on);
+int wl_android_wifi_accel_off(struct net_device *dev, bool force_reg_on);
+#endif /* WLAN_ACCEL_BOOT */
 int wl_android_wifi_on(struct net_device *dev);
 int wl_android_wifi_off(struct net_device *dev, bool on_failure);
 int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr);
 int wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len);
+int wl_android_set_spect(struct net_device *dev, int spect);
 
+#ifdef WL_GENL
+typedef struct bcm_event_hdr {
+	u16 event_type;
+	u16 len;
+} bcm_event_hdr_t;
+
+/* attributes (variables): the index in this enum is used as a reference for the type,
+ *             userspace application has to indicate the corresponding type
+ *             the policy is used for security considerations
+ */
+enum {
+	BCM_GENL_ATTR_UNSPEC,
+	BCM_GENL_ATTR_STRING,
+	BCM_GENL_ATTR_MSG,
+	__BCM_GENL_ATTR_MAX
+};
+#define BCM_GENL_ATTR_MAX (__BCM_GENL_ATTR_MAX - 1)
+
+/* commands: enumeration of all commands (functions),
+ * used by userspace application to identify command to be ececuted
+ */
+enum {
+	BCM_GENL_CMD_UNSPEC,
+	BCM_GENL_CMD_MSG,
+	__BCM_GENL_CMD_MAX
+};
+#define BCM_GENL_CMD_MAX (__BCM_GENL_CMD_MAX - 1)
+
+/* Enum values used by the BCM supplicant to identify the events */
+enum {
+	BCM_E_UNSPEC,
+	BCM_E_SVC_FOUND,
+	BCM_E_DEV_FOUND,
+	BCM_E_DEV_LOST,
+#ifdef BT_WIFI_HANDOVER
+	BCM_E_DEV_BT_WIFI_HO_REQ,
+#endif
+	BCM_E_MAX
+};
+
+s32 wl_genl_send_msg(struct net_device *ndev, u32 event_type,
+	const u8 *string, u16 len, u8 *hdr, u16 hdrlen);
+#endif /* WL_GENL */
 s32 wl_netlink_send_msg(int pid, int type, int seq, const void *data, size_t size);
 
 /* hostap mac mode */
@@ -86,6 +139,20 @@ s32 wl_netlink_send_msg(int pid, int type, int seq, const void *data, size_t siz
 #define MAX_NUM_MAC_FILT        10
 #define	WL_GET_BAND(ch)	(((uint)(ch) <= CH_MAX_2G_CHANNEL) ?	\
 	WLC_BAND_2G : WLC_BAND_5G)
+
+/* SoftAP auto channel feature */
+#define APCS_BAND_2G_LEGACY1	20
+#define APCS_BAND_2G_LEGACY2	0
+#define APCS_BAND_AUTO		"band=auto"
+#define APCS_BAND_2G		"band=2g"
+#define APCS_BAND_5G		"band=5g"
+#define APCS_BAND_6G		"band=6g"
+#define FREQ_STR		"freq="
+#define APCS_MAX_2G_CHANNELS	11
+#define APCS_MAX_RETRY		10
+#define APCS_DEFAULT_2G_CH	1
+#define APCS_DEFAULT_5G_CH	149
+#define APCS_DEFAULT_6G_CH	5
 
 int wl_android_set_ap_mac_list(struct net_device *dev, int macmode, struct maclist *maclist);
 #ifdef WL_BCNRECV
@@ -116,4 +183,7 @@ extern int wl_android_bcnrecv_event(struct net_device *ndev,
 #define TSPEC_DEF_DIALOG_TOKEN 7
 #endif /* WL_CAC_TS */
 
+#ifdef WL_SUPPORT_AUTO_CHANNEL
+#define WLC_ACS_BAND_INVALID	0xffffu
+#endif /* WL_SUPPORT_AUTO_CHANNEL */
 #define WL_PRIV_CMD_LEN 64

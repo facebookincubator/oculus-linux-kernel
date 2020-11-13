@@ -41,9 +41,6 @@
 #define VENDOR_RICOH		0x1180		/* Ricoh */
 #define VENDOR_JMICRON		0x197b
 
-// MOG-ON: BCMINTERNAL
-// MOG-OFF: BCMINTERNAL
-
 /* PCMCIA vendor IDs */
 #define	VENDOR_BROADCOM_PCMCIA	0x02d0
 
@@ -163,11 +160,6 @@
 /* 4377 802.11ax dualband device with multifunction */
 #define BCM4377_M_D11AX_ID	0x4488
 
-#define BCM4368_D11AC_ID	0x442f
-#define BCM4368_D11AC2G_ID	0x4430
-#define BCM4368_D11AC5G_ID	0x4431
-#define BCM4368_D11ACBT_ID	0x5f30
-
 /* Chip IDs */
 
 #define	BCM43460_CHIP_ID	43460		/* 4360  chipcommon chipid (OTP, RBBU) */
@@ -181,11 +173,6 @@
 #define	BCM4369_CHIP_ID		0x4369          /* 4369 chipcommon chipid */
 #define BCM4375_CHIP_ID		0x4375          /* 4375 chipcommon chipid */
 #define BCM4376_CHIP_ID		0x4376          /* 4376 chipcommon chipid */
-
-#define BCM4368_CHIP_ID		0x4368		/* 4368 chipcommon chipid */
-#define BCM4368_CHIP(chipid)	(CHIPID(chipid) == BCM4368_CHIP_ID)
-
-#define BCM4368_CHIP_GRPID		BCM4368_CHIP_ID
 
 #define BCM4362_CHIP_ID		0x4362          /* 4362 chipcommon chipid */
 #define BCM43751_CHIP_ID	0xAAE7          /* 43751 chipcommon chipid */
@@ -331,7 +318,9 @@
 #define BFL2_DAC_SPUR_IMPROVEMENT 0x00008000       /* Reducing DAC Spurs */
 #define BFL2_GPLL_WAR2	        0x00010000  /* Flag to widen G-band PLL loop b/w */
 #define BFL2_REDUCED_PA_TURNONTIME 0x00010000  /* Flag to reduce PA turn on Time */
-#define BFL2_IPALVLSHIFT_3P3    0x00020000
+#define BFL2_IPALVLSHIFT_3P3    0x00020000  /* Flag to Activate the PR 74115 PA Level Shift
+					     * Workaround where the gpaio pin is connected to 3.3V
+					     */
 #define BFL2_INTERNDET_TXIQCAL  0x00040000  /* Use internal envelope detector for TX IQCAL */
 #define BFL2_XTALBUFOUTEN       0x00080000  /* Keep the buffered Xtal output from radio on */
 				/* Most drivers will turn it off without this flag */

@@ -29,7 +29,7 @@
 #define	_PADLINE(line)	pad ## line
 #define	_XSTR(line)	_PADLINE(line)
 #define	PAD		_XSTR(__LINE__)
-#endif // endif
+#endif
 
 /* enumeration in SB is based on the premise that cores are contiguous in the
  * enumeration space.

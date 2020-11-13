@@ -39,8 +39,6 @@
 
 #define ICP_FRAME_PROCESS_SUCCESS 0
 #define ICP_FRAME_PROCESS_FAILURE 1
-#define ICP_MSG_BUF_SIZE        256
-#define ICP_DBG_BUF_SIZE        102400
 
 #define ICP_CLK_HW_IPE          0x0
 #define ICP_CLK_HW_BPS          0x1
@@ -321,8 +319,6 @@ struct cam_icp_clk_info {
  * @cmd_work: Work queue for hfi commands
  * @msg_work: Work queue for hfi messages
  * @timer_work: Work queue for timer watchdog
- * @msg_buf: Buffer for message data from firmware
- * @dbg_buf: Buffer for debug data from firmware
  * @a5_complete: Completion info
  * @cmd_work_data: Pointer to command work queue task
  * @msg_work_data: Pointer to message work queue task
@@ -371,8 +367,6 @@ struct cam_icp_hw_mgr {
 	struct cam_req_mgr_core_workq *cmd_work;
 	struct cam_req_mgr_core_workq *msg_work;
 	struct cam_req_mgr_core_workq *timer_work;
-	uint32_t msg_buf[ICP_MSG_BUF_SIZE];
-	uint32_t dbg_buf[ICP_DBG_BUF_SIZE];
 	struct completion a5_complete;
 	struct hfi_cmd_work_data *cmd_work_data;
 	struct hfi_msg_work_data *msg_work_data;

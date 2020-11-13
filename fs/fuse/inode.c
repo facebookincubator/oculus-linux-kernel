@@ -343,7 +343,7 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 		return -ENOENT;
 
 	fuse_invalidate_attr(inode);
-	forget_all_cached_acls(inode);
+	fuse_forget_all_cached_acls(inode);
 	if (offset >= 0) {
 		pg_start = offset >> PAGE_SHIFT;
 		if (len <= 0)
@@ -922,8 +922,13 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 				fc->sb->s_time_gran = arg->time_gran;
 			if ((arg->flags & FUSE_POSIX_ACL)) {
 				fc->default_permissions = 1;
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
 				fc->posix_acl = 1;
 				fc->sb->s_xattr = fuse_acl_xattr_handlers;
+#else
+				fc->posix_acl = 0;
+				fc->sb->s_xattr = fuse_no_acl_xattr_handlers;
+#endif
 			}
 			if (arg->flags & FUSE_ABORT_ERROR)
 				fc->abort_err = 1;

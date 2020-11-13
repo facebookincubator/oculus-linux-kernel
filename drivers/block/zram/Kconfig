@@ -15,6 +15,23 @@ config ZRAM
 
 	  See Documentation/blockdev/zram.txt for more information.
 
+config ZRAM_ZSTD_ADVANCED
+	bool "Use advanced Zstd features for ZRAM (forces Zstd algorithm)"
+	depends on ZRAM
+	select ZSTD_COMPRESS
+	select ZSTD_DECOMPRESS
+	help
+	  Bypasses using the crypto API in favor of handling Zstd context
+	  creation directly, allowing the use of some advanced features of
+	  that compression method. Disables selection of alternate algorithms
+	  when enabled.
+
+config ZRAM_ZSTD_COMPRESSION_LEVEL
+	int "Compression level used for Zstd"
+	range 1 22
+	default 3
+	depends on ZRAM && ZRAM_ZSTD_ADVANCED
+
 config ZRAM_DEDUP
 	bool "Deduplication support for ZRAM data"
 	depends on ZRAM

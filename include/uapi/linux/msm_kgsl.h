@@ -77,6 +77,7 @@
 #define KGSL_CONTEXT_TYPE_UNKNOWN	0x1E
 
 #define KGSL_CONTEXT_INVALIDATE_ON_FAULT 0x10000000
+#define KGSL_CONTEXT_COMPAT_TASK	 0x20000000
 
 #define KGSL_CONTEXT_INVALID 0xffffffff
 
@@ -179,6 +180,37 @@
 #define KGSL_MEMTYPE_EGL_SHADOW			19
 #define KGSL_MEMTYPE_MULTISAMPLE		20
 #define KGSL_MEMTYPE_KERNEL			255
+
+/* Memory type for Vulkan objects */
+#define KGSL_MEMTYPE_VK_ANY                               0x20
+#define KGSL_MEMTYPE_VK_INSTANCE                          0x21
+#define KGSL_MEMTYPE_VK_PHYSICALDEVICE                    0x22
+#define KGSL_MEMTYPE_VK_DEVICE                            0x23
+#define KGSL_MEMTYPE_VK_QUEUE                             0x24
+#define KGSL_MEMTYPE_VK_CMDBUFFER                         0x25
+#define KGSL_MEMTYPE_VK_DEVICEMEMORY                      0x26
+#define KGSL_MEMTYPE_VK_BUFFER                            0x27
+#define KGSL_MEMTYPE_VK_BUFFERVIEW                        0x28
+#define KGSL_MEMTYPE_VK_IMAGE                             0x29
+#define KGSL_MEMTYPE_VK_IMAGEVIEW                         0x2A
+#define KGSL_MEMTYPE_VK_SHADERMODULE                      0x2B
+#define KGSL_MEMTYPE_VK_PIPELINE                          0x2C
+#define KGSL_MEMTYPE_VK_PIPELINECACHE                     0x2D
+#define KGSL_MEMTYPE_VK_PIPELINELAYOUT                    0x2E
+#define KGSL_MEMTYPE_VK_SAMPLER                           0x2F
+#define KGSL_MEMTYPE_VK_SAMPLERYCBCRCONVERSIONKHR         0x30
+#define KGSL_MEMTYPE_VK_DESCRIPTORSET                     0x31
+#define KGSL_MEMTYPE_VK_DESCRIPTORSETLAYOUT               0x32
+#define KGSL_MEMTYPE_VK_DESCRIPTORPOOL                    0x33
+#define KGSL_MEMTYPE_VK_FENCE                             0x34
+#define KGSL_MEMTYPE_VK_SEMAPHORE                         0x35
+#define KGSL_MEMTYPE_VK_EVENT                             0x36
+#define KGSL_MEMTYPE_VK_QUERYPOOL                         0x37
+#define KGSL_MEMTYPE_VK_FRAMEBUFFER                       0x38
+#define KGSL_MEMTYPE_VK_RENDERPASS                        0x39
+#define KGSL_MEMTYPE_VK_PROGRAM                           0x3A
+#define KGSL_MEMTYPE_VK_COMMANDPOOL                       0x3B
+#define KGSL_MEMTYPE_VK_QUERY                             0x3C
 
 /*
  * Alignment hint, passed as the power of 2 exponent.

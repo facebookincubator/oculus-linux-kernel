@@ -29,7 +29,7 @@
 #include <osl.h>
 #else
 #include <stddef.h>  /* For size_t */
-#endif // endif
+#endif
 
 struct bcm_bloom_filter;
 typedef struct bcm_bloom_filter bcm_bloom_filter_t;

@@ -24,6 +24,10 @@
 #ifndef __wlfc_host_driver_definitions_h__
 #define __wlfc_host_driver_definitions_h__
 
+#ifdef QMONITOR
+#include <dhd_qmon.h>
+#endif
+
 /* #define OOO_DEBUG */
 
 #define KERNEL_THREAD_RETURN_TYPE int
@@ -79,7 +83,7 @@ typedef struct wlfc_hanger_item {
 	void*	pkt;
 #ifdef PROP_TXSTATUS_DEBUG
 	uint32	push_time;
-#endif // endif
+#endif
 	struct wlfc_hanger_item *next;
 } wlfc_hanger_item_t;
 
@@ -92,6 +96,7 @@ typedef struct wlfc_hanger {
 	uint32 failed_to_pop;
 	uint32 failed_slotfind;
 	uint32 slot_pos;
+	/** XXX: items[1] should be the last element here. Do not add new elements below it. */
 	wlfc_hanger_item_t items[1];
 } wlfc_hanger_t;
 
@@ -106,15 +111,20 @@ typedef struct wlfc_hanger {
 
 #define WLFC_PSQ_LEN			(4096 * 8)
 
+#ifdef BCMDBUS
+#define WLFC_FLOWCONTROL_HIWATER	512
+#define WLFC_FLOWCONTROL_LOWATER	(WLFC_FLOWCONTROL_HIWATER / 4)
+#else
 #define WLFC_FLOWCONTROL_HIWATER	((4096 * 8) - 256)
 #define WLFC_FLOWCONTROL_LOWATER	256
+#endif
 
 #if (WLFC_FLOWCONTROL_HIWATER >= (WLFC_PSQ_LEN - 256))
 #undef WLFC_FLOWCONTROL_HIWATER
 #define WLFC_FLOWCONTROL_HIWATER	(WLFC_PSQ_LEN - 256)
 #undef WLFC_FLOWCONTROL_LOWATER
 #define WLFC_FLOWCONTROL_LOWATER	(WLFC_FLOWCONTROL_HIWATER / 4)
-#endif // endif
+#endif
 
 #define WLFC_LOG_BUF_SIZE		(1024*1024)
 
@@ -135,6 +145,11 @@ typedef struct wlfc_mac_descriptor {
 	struct pktq	psq;    /**< contains both 'delayed' and 'suppressed' packets */
 	/** packets at firmware queue */
 	struct pktq	afq;
+#if defined(BCMINTERNAL) && defined(OOO_DEBUG)
+	uint8 last_send_gen[AC_COUNT+1];
+	uint8 last_send_seq[AC_COUNT+1];
+	uint8 last_complete_seq[AC_COUNT+1];
+#endif /* defined(BCMINTERNAL) && defined(OOO_DEBUG) */
 	/** The AC pending bitmap that was reported to the fw at last change */
 	uint8 traffic_lastreported_bmp;
 	/** The new AC pending bitmap */
@@ -151,14 +166,21 @@ typedef struct wlfc_mac_descriptor {
 	/** flag. TRUE when remote MAC is in suppressed state */
 	uint8 suppressed;
 
+#ifdef QMONITOR
+	dhd_qmon_t qmon;
+#endif /* QMONITOR */
+
 #ifdef PROP_TXSTATUS_DEBUG
 	uint32 dstncredit_sent_packets;
 	uint32 dstncredit_acks;
 	uint32 opened_ct;
 	uint32 closed_ct;
-#endif // endif
+#endif
 	struct wlfc_mac_descriptor* prev;
 	struct wlfc_mac_descriptor* next;
+#ifdef BULK_DEQUEUE
+	uint16 release_count[AC_COUNT + 1];
+#endif
 } wlfc_mac_descriptor_t;
 
 /** A 'commit' is the hand over of a packet from the host OS layer to the layer below (eg DBUS) */
@@ -225,7 +247,7 @@ typedef struct athost_wl_stat_counters {
 	uint32	dropped_qfull[6];
 	uint32	signal_only_pkts_sent;
 	uint32	signal_only_pkts_freed;
-#endif // endif
+#endif
 	uint32	cleanup_txq_cnt;
 	uint32	cleanup_psq_cnt;
 	uint32	cleanup_fw_cnt;
@@ -242,7 +264,7 @@ typedef struct athost_wl_stat_counters {
 #define WLFC_HOST_FIFO_CREDIT_INC_SENTCTRS(ctx, ac) do {} while (0)
 #define WLFC_HOST_FIFO_CREDIT_INC_BACKCTRS(ctx, ac) do {} while (0)
 #define WLFC_HOST_FIFO_DROPPEDCTR_INC(ctx, ac) do {} while (0)
-#endif // endif
+#endif
 #define WLFC_PACKET_BOUND              10
 #define WLFC_FCMODE_NONE				0
 #define WLFC_FCMODE_IMPLIED_CREDIT		1
@@ -332,6 +354,15 @@ typedef struct athost_wl_status_info {
 
 	bool	bcmc_credit_supported;
 
+#if defined(BCMINTERNAL) && defined(OOO_DEBUG)
+	uint8*	log_buf;
+	uint32	log_buf_offset;
+	bool	log_buf_full;
+#endif /* defined(BCMINTERNAL) && defined(OOO_DEBUG) */
+
+#ifdef BULK_DEQUEUE
+	uint8	max_release_count;
+#endif /* total_credit */
 } athost_wl_status_info_t;
 
 /** Please be mindful that total pkttag space is 32 octets only */
@@ -383,6 +414,7 @@ typedef struct dhd_pkttag {
 			uint32 thing2;
 		} sd;
 
+		/* XXX: using the USB typedef here will complicate life for anybody using dhd.h */
 		struct {
 			void *bus;
 			void *urb;
@@ -500,12 +532,15 @@ typedef struct dhd_pkttag {
 #else
 #define DHD_WLFC_CTRINC_MAC_CLOSE(entry)	do {} while (0)
 #define DHD_WLFC_CTRINC_MAC_OPEN(entry)		do {} while (0)
-#endif // endif
+#endif
 
 #ifdef BCM_OBJECT_TRACE
 #define DHD_PKTTAG_SET_SN(tag, val)		((dhd_pkttag_t*)(tag))->sn = (val)
 #define DHD_PKTTAG_SN(tag)			(((dhd_pkttag_t*)(tag))->sn)
 #endif /* BCM_OBJECT_TRACE */
+
+#define DHD_PKTID_IF_SHIFT			(16u)
+#define DHD_PKTID_FIFO_SHIFT			(8u)
 
 /* public functions */
 int dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len,
@@ -515,6 +550,10 @@ int dhd_wlfc_commit_packets(dhd_pub_t *dhdp, f_commitpkt_t fcommit,
 	void* commit_ctx, void *pktbuf, bool need_toggle_host_if);
 int dhd_wlfc_txcomplete(dhd_pub_t *dhd, void *txp, bool success);
 int dhd_wlfc_init(dhd_pub_t *dhd);
+#ifdef SUPPORT_P2P_GO_PS
+int dhd_wlfc_suspend(dhd_pub_t *dhd);
+int dhd_wlfc_resume(dhd_pub_t *dhd);
+#endif /* SUPPORT_P2P_GO_PS */
 int dhd_wlfc_hostreorder_init(dhd_pub_t *dhd);
 int dhd_wlfc_cleanup_txq(dhd_pub_t *dhd, f_processpkt_t fn, void *arg);
 int dhd_wlfc_cleanup(dhd_pub_t *dhd, f_processpkt_t fn, void* arg);
@@ -545,5 +584,6 @@ int dhd_wlfc_set_txstatus_ignore(dhd_pub_t *dhd, int val);
 
 int dhd_wlfc_get_rxpkt_chk(dhd_pub_t *dhd, int *val);
 int dhd_wlfc_set_rxpkt_chk(dhd_pub_t *dhd, int val);
+int dhd_txpkt_log_and_dump(dhd_pub_t *dhdp, void* pkt, uint16 *pktfate_status);
 
 #endif /* __wlfc_host_driver_definitions_h__ */

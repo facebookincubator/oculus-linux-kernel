@@ -39,7 +39,7 @@ typedef struct {
 
 extern void si_lhl_timer_config(si_t *sih, osl_t *osh, int timer_type);
 extern void si_lhl_timer_enable(si_t *sih);
-extern void si_lhl_timer_reset(si_t *sih, uint coreunit);
+extern void si_lhl_timer_reset(si_t *sih, uint coreid, uint coreunit);
 
 extern void si_lhl_setup(si_t *sih, osl_t *osh);
 extern void si_lhl_enable(si_t *sih, osl_t *osh, bool enable);
@@ -76,4 +76,19 @@ extern void si_set_lv_sleep_mode_lhl_config_4389(si_t *sih);
 #define LHL_ABUCK_VOLT_SLEEP_MASK	0x0000000F
 
 extern void si_lhl_mactim0_set(si_t *sih, uint32 val);
+
+/* LHL Chip Control 1 Register */
+#define LHL_1MHZ_FLL_DAC_EXT_SHIFT	(9u)
+#define LHL_1MHZ_FLL_DAC_EXT_MASK	(0xffu << 9u)
+#define LHL_1MHZ_FLL_PRELOAD_MASK	(1u << 17u)
+
+/* LHL Top Level Power Sequence Control Register */
+#define LHL_TOP_PWRSEQ_SLEEP_ENAB_MASK		(1u << 0)
+#define LHL_TOP_PWRSEQ_TOP_ISO_EN_MASK		(1u << 3u)
+#define LHL_TOP_PWRSEQ_TOP_SLB_EN_MASK		(1u << 4u)
+#define LHL_TOP_PWRSEQ_TOP_PWRSW_EN_MASK	(1u << 5u)
+#define LHL_TOP_PWRSEQ_MISCLDO_PU_EN_MASK	(1u << 6u)
+#define LHL_TOP_PWRSEQ_SERDES_SLB_EN_MASK	(1u << 9u)
+#define LHL_TOP_PWRSEQ_SERDES_CLK_DIS_EN_MASK	(1u << 10u)
+
 #endif /* _hndlhl_h_ */

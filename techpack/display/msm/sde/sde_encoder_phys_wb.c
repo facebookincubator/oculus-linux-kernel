@@ -1529,9 +1529,15 @@ bool sde_encoder_phys_wb_cac(struct sde_encoder_phys *phys_enc, bool disarm)
 	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
 	bool fired = false;
 
-	/* Drop out now if CAC hasn't been armed yet or if we should disarm */
-	if (!atomic_xchg(&wb_enc->cac_kickoff_armed, 0) || disarm)
+	/* Drop out now if CAC hasn't been armed yet */
+	if (!atomic_xchg(&wb_enc->cac_kickoff_armed, 0))
 		goto end;
+
+	/* Signal completion immediately if skipping writeback */
+	if (disarm) {
+		_sde_encoder_phys_wb_frame_done_helper(wb_enc, false);
+		goto end;
+	}
 
 	/*
 	 * Increment pending_retire_fence_cnt to wait for both wb passes to
@@ -1573,7 +1579,7 @@ end:
 static void sde_encoder_phys_wb_trigger_start(struct sde_encoder_phys *phys_enc)
 {
 	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
-	const int wb_timeout = msecs_to_jiffies(17);
+	const int wb_timeout = msecs_to_jiffies(17) + 1;
 	static int kickoff_timeouts;
 
 	SDE_ATRACE_BEGIN("sde_encoder_phys_wb_trigger_start");

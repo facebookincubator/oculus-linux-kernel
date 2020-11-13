@@ -14,14 +14,11 @@ ifeq ($(KERNEL_BUILD), y)
 	WLAN_COMMON_ROOT := ../qca-wifi-host-cmn
 	WLAN_COMMON_INC := $(WLAN_ROOT)/$(WLAN_COMMON_ROOT)
 	WLAN_FW_API := $(WLAN_ROOT)/../fw-api/
-	WLAN_PROFILE := default
 endif
 
 WLAN_COMMON_ROOT ?= ../qca-wifi-host-cmn
 WLAN_COMMON_INC ?= $(WLAN_ROOT)/$(WLAN_COMMON_ROOT)
 WLAN_FW_API ?= $(WLAN_ROOT)/../fw-api/
-WLAN_PROFILE ?= default
-CONFIG_QCA_CLD_WLAN_PROFILE ?= $(WLAN_PROFILE)
 
 ifeq ($(KERNEL_BUILD), n)
 ifneq ($(ANDROID_BUILD_TOP),)
@@ -45,7 +42,11 @@ include $(WLAN_CFG_OVERRIDE_FILE)
 $(warning "Overriding WLAN config with: $(shell cat $(WLAN_CFG_OVERRIDE_FILE))")
 endif
 
-include $(WLAN_ROOT)/configs/$(CONFIG_QCA_CLD_WLAN_PROFILE)_defconfig
+WLAN_DEFCONFIG_FILE := $(WLAN_ROOT)/configs/$(patsubst "%",%,$(CONFIG_QCA_CLD_WLAN_PROFILE))_defconfig
+ifeq ("$(wildcard $(srctree)/$(WLAN_DEFCONFIG_FILE))","")
+        $(error "WLAN defconfig file '$(WLAN_DEFCONFIG_FILE)' not found!")
+endif
+include $(WLAN_DEFCONFIG_FILE)
 
 ############ UAPI ############
 UAPI_DIR :=	uapi

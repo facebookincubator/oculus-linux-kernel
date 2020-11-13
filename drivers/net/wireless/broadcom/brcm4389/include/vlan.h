@@ -26,14 +26,14 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
 
 #ifndef	 VLAN_VID_MASK
 #define VLAN_VID_MASK		0xfff	/* low 12 bits are vlan id */
-#endif // endif
+#endif
 
 #define	VLAN_CFI_SHIFT		12	/* canonical format indicator bit */
 #define VLAN_PRI_SHIFT		13	/* user priority */

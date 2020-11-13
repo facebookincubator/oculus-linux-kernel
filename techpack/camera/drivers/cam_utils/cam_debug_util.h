@@ -55,8 +55,12 @@
  * @fmt       :  Formatted string which needs to be print in the log
  *
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_DEBUG
 void cam_debug_log(unsigned int module_id, const char *func, const int line,
 	const char *fmt, ...);
+#endif /* CONFIG_SPECTRA_CAMERA_LOG_DEBUG */
+
+static inline void __cam_log_noop(unsigned int module_id, char *format, ...) {}
 
 /*
  * cam_get_module_name()
@@ -75,9 +79,14 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_ERROR
 #define CAM_ERR(__module, fmt, args...)                            \
 	pr_info("CAM_ERR: %s: %s: %d " fmt "\n",                   \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_ERR(__module, fmt, args...) __cam_log_noop(__module, fmt, ##args)
+#endif
+
 /*
  * CAM_WARN
  * @brief    :  This Macro will print warning logs
@@ -86,9 +95,13 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_WARN
 #define CAM_WARN(__module, fmt, args...)                           \
 	pr_info("CAM_WARN: %s: %s: %d " fmt "\n",                  \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_WARN(__module, fmt, args...) __cam_log_noop(__module, fmt, ##args)
+#endif
 /*
  * CAM_INFO
  * @brief    :  This Macro will print Information logs
@@ -97,9 +110,13 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_INFO
 #define CAM_INFO(__module, fmt, args...)                           \
 	pr_info("CAM_INFO: %s: %s: %d " fmt "\n",                     \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_INFO(__module, fmt, args...) __cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_INFO_RATE_LIMIT
@@ -109,9 +126,14 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_INFO
 #define CAM_INFO_RATE_LIMIT(__module, fmt, args...)                 \
 	pr_info_ratelimited("CAM_INFO: %s: %s: %d " fmt "\n",            \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_INFO_RATE_LIMIT(__module, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_DBG
@@ -121,16 +143,25 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_DEBUG
 #define CAM_DBG(__module, fmt, args...)                            \
 	cam_debug_log(__module, __func__, __LINE__, fmt, ##args)
+#else
+#define CAM_DBG(__module, fmt, args...) __cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_ERR_RATE_LIMIT
  * @brief    :  This Macro will print error print logs with ratelimit
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_ERROR
 #define CAM_ERR_RATE_LIMIT(__module, fmt, args...)                 \
 	pr_info_ratelimited("CAM_ERR: %s: %s: %d " fmt "\n",       \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_ERR_RATE_LIMIT(__module, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 /*
  * CAM_WARN_RATE_LIMIT
  * @brief    :  This Macro will print warning logs with ratelimit
@@ -139,9 +170,14 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_WARN
 #define CAM_WARN_RATE_LIMIT(__module, fmt, args...)                 \
 	pr_info_ratelimited("CAM_WARN: %s: %s: %d " fmt "\n",       \
 		cam_get_module_name(__module), __func__,  __LINE__, ##args)
+#else
+#define CAM_WARN_RATE_LIMIT(__module, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_WARN_RATE_LIMIT_CUSTOM
@@ -153,6 +189,7 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_WARN
 #define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
 	({                                                                  \
 		static DEFINE_RATELIMIT_STATE(_rs,                          \
@@ -164,6 +201,10 @@ const char *cam_get_module_name(unsigned int module_id);
 				cam_get_module_name(__module), __func__,    \
 				__LINE__, ##args);                          \
 	})
+#else
+#define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_INFO_RATE_LIMIT_CUSTOM
@@ -175,6 +216,7 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_INFO
 #define CAM_INFO_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
 	({                                                                  \
 		static DEFINE_RATELIMIT_STATE(_rs,                          \
@@ -186,6 +228,10 @@ const char *cam_get_module_name(unsigned int module_id);
 				cam_get_module_name(__module), __func__,    \
 				__LINE__, ##args);                          \
 	})
+#else
+#define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 
 /*
  * CAM_ERR_RATE_LIMIT_CUSTOM
@@ -197,6 +243,7 @@ const char *cam_get_module_name(unsigned int module_id);
  * @fmt      :  Formatted string which needs to be print in log
  * @args     :  Arguments which needs to be print in log
  */
+#ifdef CONFIG_SPECTRA_CAMERA_LOG_ERROR
 #define CAM_ERR_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
 	({                                                                 \
 		static DEFINE_RATELIMIT_STATE(_rs,                         \
@@ -208,5 +255,9 @@ const char *cam_get_module_name(unsigned int module_id);
 				cam_get_module_name(__module), __func__,   \
 				__LINE__, ##args);                         \
 	})
+#else
+#define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
+	__cam_log_noop(__module, fmt, ##args)
+#endif
 
 #endif /* _CAM_DEBUG_UTIL_H_ */

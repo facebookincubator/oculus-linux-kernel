@@ -341,6 +341,12 @@ struct syncboss_dev_data {
 	/* Regulator for Magnetometer */
 	struct regulator *mag_core;
 
+	/* RF Power Amplifier */
+	struct regulator *rf_amp;
+
+	/* Hall Sensor Power  */
+	struct regulator *hall_sensor;
+
 	/* CPU cores used to schedule SPI transactions */
 	struct cpumask cpu_affinity;
 
@@ -1723,6 +1729,16 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 	 */
 	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
 
+	if (devdata->hall_sensor) {
+		status = regulator_enable(devdata->hall_sensor);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable hall sensor power: %d",
+					status);
+			goto error;
+		}
+	}
+
 	if (devdata->mcu_core) {
 		status = regulator_enable(devdata->mcu_core);
 		if (status < 0) {
@@ -1748,6 +1764,16 @@ static void start_streaming_impl(struct syncboss_dev_data *devdata,
 		if (status < 0) {
 			dev_err(&devdata->spi->dev,
 					"Failed to enable mag power: %d",
+					status);
+			goto error;
+		}
+	}
+
+	if (devdata->rf_amp) {
+		status = regulator_enable(devdata->rf_amp);
+		if (status < 0) {
+			dev_err(&devdata->spi->dev,
+					"Failed to enable rf amp power: %d",
 					status);
 			goto error;
 		}
@@ -1939,6 +1965,15 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 			"Not stopping worker since it appears to be be NULL");
 	}
 
+	if (devdata->rf_amp) {
+		status = regulator_disable(devdata->rf_amp);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable rf amp power: %d",
+					status);
+		}
+	}
+
 	if (devdata->mcu_core) {
 		status = regulator_disable(devdata->mcu_core);
 		if (status < 0) {
@@ -1962,6 +1997,15 @@ static void stop_streaming_impl(struct syncboss_dev_data *devdata)
 		if (status < 0) {
 			dev_warn(&devdata->spi->dev,
 					"Failed to disable mag power: %d",
+					status);
+		}
+	}
+
+	if (devdata->hall_sensor) {
+		status = regulator_disable(devdata->hall_sensor);
+		if (status < 0) {
+			dev_warn(&devdata->spi->dev,
+					"Failed to disable hall sensor power: %d",
 					status);
 		}
 	}
@@ -2301,9 +2345,11 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		return status;
 
+	fw_init_regulator(&spi->dev, &devdata->hall_sensor, "hall-sensor");
 	fw_init_regulator(&spi->dev, &devdata->mcu_core, "mcu-core");
 	fw_init_regulator(&spi->dev, &devdata->imu_core, "imu-core");
 	fw_init_regulator(&spi->dev, &devdata->mag_core, "mag-core");
+	fw_init_regulator(&spi->dev, &devdata->rf_amp, "rf-amp");
 
 	dev_set_drvdata(&spi->dev, devdata);
 
@@ -2516,9 +2562,11 @@ static int syncboss_remove(struct spi_device *spi)
 
 	of_platform_depopulate(&spi->dev);
 
+	regulator_put(devdata->hall_sensor);
 	regulator_put(devdata->mcu_core);
 	regulator_put(devdata->imu_core);
 	regulator_put(devdata->mag_core);
+	regulator_put(devdata->rf_amp);
 
 	syncboss_deinit_sysfs_attrs(devdata);
 

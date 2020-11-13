@@ -26,7 +26,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>
@@ -81,6 +81,7 @@ BWL_PRE_PACKED_STRUCT struct ipv6_addr {
 } BWL_POST_PACKED_STRUCT;
 
 /* use masks, htonl instead of bit fileds */
+#ifndef IL_BIGENDIAN
 
 /* ICMPV6 Header */
 BWL_PRE_PACKED_STRUCT struct icmp6_hdr {
@@ -131,6 +132,8 @@ BWL_PRE_PACKED_STRUCT struct ipv6_frag {
 	uint16	frag_offset;
 	uint32	ident;
 } BWL_POST_PACKED_STRUCT;
+
+#endif /* IL_BIGENDIAN */
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

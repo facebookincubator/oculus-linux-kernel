@@ -138,6 +138,7 @@ void lim_update_assoc_sta_datas(struct mac_context *mac_ctx,
 	bool qos_mode;
 	tDot11fIEVHTCaps *vht_caps = NULL;
 	tDot11fIEhe_cap *he_cap = NULL;
+	struct bss_description *bss_desc = NULL;
 
 	lim_get_phy_mode(mac_ctx, &phy_mode, session_entry);
 	sta_ds->staType = STA_ENTRY_SELF;
@@ -194,10 +195,15 @@ void lim_update_assoc_sta_datas(struct mac_context *mac_ctx,
 	if (lim_is_sta_he_capable(sta_ds))
 		he_cap = &assoc_rsp->he_cap;
 
+	if (session_entry->lim_join_req)
+		bss_desc = &session_entry->lim_join_req->bssDescription;
+
 	if (lim_populate_peer_rate_set(mac_ctx, &sta_ds->supportedRates,
 				assoc_rsp->HTCaps.supportedMCSSet,
 				false, session_entry,
-				vht_caps, he_cap) != QDF_STATUS_SUCCESS) {
+				vht_caps, he_cap,
+				bss_desc) !=
+				QDF_STATUS_SUCCESS) {
 		pe_err("could not get rateset and extended rate set");
 		return;
 	}

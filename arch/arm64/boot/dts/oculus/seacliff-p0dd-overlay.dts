@@ -7,11 +7,12 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
 #include "seacliff.dtsi"
+#include "seacliff-qca6390.dtsi"
 
 / {
 	model = "Seacliff (P0) DD";
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 64>;
+	qcom,board-id = <8 65>;
 };
 
 &cam_cci0 {
@@ -56,5 +57,13 @@
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
 		oculus,cam-mclk-no-power-down;
+	};
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_DOUBLE_DOUBLE_P0.bin";
+		};
 	};
 };

@@ -4080,8 +4080,10 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 	if (lineptr_headroom_calculated) {
 		if (lineptr_headroom < (int)priv->wb_mild_tear_threshold)
 			wb_tear = true;
-		if (lineptr_headroom < (int)priv->wb_severe_tear_threshold)
+		if (lineptr_headroom < (int)priv->wb_severe_tear_threshold) {
+			SDE_ERROR("late lineptr, headroom %d\n", lineptr_headroom);
 			wb_disarm = true;
+		}
 	}
 
 	sde_encoder_trigger_wb_cac(priv, wb_disarm);

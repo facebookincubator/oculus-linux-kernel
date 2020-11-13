@@ -6,9 +6,10 @@ dtbo-$(CONFIG_ARCH_KONA) += \
 	hollywood-evt2-overlay.dtbo \
 	hollywood-dvt-overlay.dtbo \
 	seacliff-dev0-overlay.dtbo \
-	seacliff-p1-overlay.dtbo \
 	seacliff-p0dd-overlay.dtbo \
-	seacliff-p0-overlay.dtbo
+	seacliff-p0-overlay.dtbo \
+	seacliff-p1-overlay.dtbo \
+	seacliff-p2-overlay.dtbo
 
 hollywood-poc2-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 hollywood-p1-1-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
@@ -19,6 +20,7 @@ seacliff-dev0-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/ko
 seacliff-p0dd-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 seacliff-p0-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 seacliff-p1-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
+seacliff-p2-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 endif
 
 always		:= $(dtb-y)

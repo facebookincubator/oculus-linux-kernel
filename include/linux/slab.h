@@ -199,7 +199,11 @@ static inline void __check_heap_object(const void *ptr, unsigned long n,
  * alignment larger than the alignment of a 64-bit integer.
  * Setting ARCH_KMALLOC_MINALIGN in arch headers allows that.
  */
-#if defined(ARCH_DMA_MINALIGN) && ARCH_DMA_MINALIGN > 8
+#if defined(CONFIG_ARCH_HAS_CACHE_LINE_SIZE)
+#define ARCH_KMALLOC_MINALIGN L1_CACHE_BYTES
+#define KMALLOC_MIN_SIZE cache_line_size()
+#define KMALLOC_SHIFT_LOW ilog2(cache_line_size())
+#elif defined(ARCH_DMA_MINALIGN) && ARCH_DMA_MINALIGN > 8
 #define ARCH_KMALLOC_MINALIGN ARCH_DMA_MINALIGN
 #define KMALLOC_MIN_SIZE ARCH_DMA_MINALIGN
 #define KMALLOC_SHIFT_LOW ilog2(ARCH_DMA_MINALIGN)

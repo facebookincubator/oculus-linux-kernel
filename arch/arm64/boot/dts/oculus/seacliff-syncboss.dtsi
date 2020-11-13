@@ -117,6 +117,8 @@
 		oculus,syncboss-wakeup  = <&tlmm 4 0>;
 
 		oculus,syncboss-has-prox;
+		oculus,syncboss-use-fastpath;
+		oculus,transaction-length = <248>;
 
 		swd@0 {
 			compatible = "oculus,swd";

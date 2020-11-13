@@ -76,8 +76,8 @@ enum kgsl_event_results {
 	{ KGSL_CONTEXT_IFH_NOP, "IFH_NOP" }, \
 	{ KGSL_CONTEXT_SECURE, "SECURE" }, \
 	{ KGSL_CONTEXT_NO_SNAPSHOT, "NO_SNAPSHOT" }, \
-	{ KGSL_CONTEXT_SPARSE, "SPARSE" }
-
+	{ KGSL_CONTEXT_SPARSE, "SPARSE" }, \
+	{ KGSL_CONTEXT_COMPAT_TASK, "COMPAT_TASK" }
 
 #define KGSL_CONTEXT_TYPES \
 	{ KGSL_CONTEXT_TYPE_ANY, "ANY" }, \
@@ -570,6 +570,31 @@ struct kgsl_snapshot_object {
 
 struct kgsl_device *kgsl_get_device(int dev_idx);
 
+static inline void __kgsl_process_modify_unreclaimable(pid_t pid, long size)
+{
+	/*
+	 * Fast path for when __kgsl_process_modify_unreclaimable is called from
+	 * the relevant process. Otherwise, search for it using find_get_task_by_vpid
+	 * and be sure to clean up after ourselves.
+	 */
+	if (task_tgid_nr(current) == pid && current->mm)
+		add_mm_counter(current->mm, MM_UNRECLAIMABLE, size);
+	else {
+		struct task_struct *task;
+		struct mm_struct *mm;
+
+		task = find_get_task_by_vpid(pid);
+		if (task) {
+			mm = get_task_mm(task);
+			if (mm) {
+				add_mm_counter(mm, MM_UNRECLAIMABLE, size);
+				mmput(mm);
+			}
+			put_task_struct(task);
+		}
+	}
+}
+
 static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
@@ -577,31 +602,16 @@ static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 
 	if (ret > priv->stats[type].max)
 		priv->stats[type].max = ret;
-	add_mm_counter(current->mm, MM_UNRECLAIMABLE, (size >> PAGE_SHIFT));
+
+	__kgsl_process_modify_unreclaimable(priv->pid, (size >> PAGE_SHIFT));
 }
 
 static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
-	struct pid *pid_struct;
-	struct task_struct *task;
-	struct mm_struct *mm;
-
 	atomic_long_sub(size, &priv->stats[type].cur);
-	pid_struct = find_get_pid(priv->pid);
-	if (pid_struct) {
-		task = get_pid_task(pid_struct, PIDTYPE_PID);
-		if (task) {
-			mm = get_task_mm(task);
-			if (mm) {
-				add_mm_counter(mm, MM_UNRECLAIMABLE,
-					-(size >> PAGE_SHIFT));
-				mmput(mm);
-			}
-			put_task_struct(task);
-		}
-		put_pid(pid_struct);
-	}
+
+	__kgsl_process_modify_unreclaimable(priv->pid, -(size >> PAGE_SHIFT));
 }
 
 static inline bool kgsl_is_register_offset(struct kgsl_device *device,

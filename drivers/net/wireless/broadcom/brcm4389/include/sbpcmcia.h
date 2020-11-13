@@ -402,6 +402,10 @@
 #define HNBU_RSSI_DELTA_5GMU        0xab /* RSSI Cal parameter for 5G mid upper channel */
 #define HNBU_RSSI_DELTA_5GH         0xac /* RSSI Cal parameter for 5G high channel      */
 
+#define HNBU_ACPA_6G_C0         0xad /* paparams for 6G Core0 */
+#define HNBU_ACPA_6G_C1         0xae /* paparams for 6G Core1 */
+#define HNBU_ACPA_6G_C2         0xaf /* paparams for 6G Core2 */
+
 /* sbtmstatelow */
 #define SBTML_INT_ACK		0x40000		/* ack the sb interrupt */
 #define SBTML_INT_EN		0x20000		/* enable sb interrupt */

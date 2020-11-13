@@ -81,6 +81,14 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_JOIN_START),
 	BCMEVENT_NAME(WLC_E_ROAM_START),
 	BCMEVENT_NAME(WLC_E_ASSOC_START),
+#ifdef EXT_STA
+	BCMEVENT_NAME(WLC_E_RESET_COMPLETE),
+	BCMEVENT_NAME(WLC_E_JOIN_START),
+	BCMEVENT_NAME(WLC_E_ROAM_START),
+	BCMEVENT_NAME(WLC_E_ASSOC_START),
+	BCMEVENT_NAME(WLC_E_ASSOC_RECREATED),
+	BCMEVENT_NAME(WLC_E_SPEEDY_RECREATE_FAIL),
+#endif /* EXT_STA */
 #if defined(IBSS_PEER_DISCOVERY_EVENT)
 	BCMEVENT_NAME(WLC_E_IBSS_ASSOC),
 #endif /* defined(IBSS_PEER_DISCOVERY_EVENT) */
@@ -98,25 +106,35 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_IF),
 #ifdef WLP2P
 	BCMEVENT_NAME(WLC_E_P2P_DISC_LISTEN_COMPLETE),
-#endif // endif
+#endif
 	BCMEVENT_NAME(WLC_E_RSSI),
 	BCMEVENT_NAME(WLC_E_PFN_SCAN_COMPLETE),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_RX),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_COMPLETE),
-
-// MOG-ON: BCMWAPI
-// MOG-OFF: BCMWAPI
+#if defined(NDIS)
+	BCMEVENT_NAME(WLC_E_PRE_ASSOC_IND),
+	BCMEVENT_NAME(WLC_E_PRE_REASSOC_IND),
+	BCMEVENT_NAME(WLC_E_CHANNEL_ADOPTED),
+	BCMEVENT_NAME(WLC_E_AP_STARTED),
+	BCMEVENT_NAME(WLC_E_DFS_AP_STOP),
+	BCMEVENT_NAME(WLC_E_DFS_AP_RESUME),
+	BCMEVENT_NAME(WLC_E_ASSOC_IND_NDIS),
+	BCMEVENT_NAME(WLC_E_REASSOC_IND_NDIS),
+	BCMEVENT_NAME(WLC_E_ACTION_FRAME_RX_NDIS),
+	BCMEVENT_NAME(WLC_E_AUTH_REQ),
+	BCMEVENT_NAME(WLC_E_IBSS_COALESCE),
+#endif /* #if defined(NDIS) */
 
 	BCMEVENT_NAME(WLC_E_ESCAN_RESULT),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_OFF_CHAN_COMPLETE),
 #ifdef WLP2P
 	BCMEVENT_NAME(WLC_E_PROBRESP_MSG),
 	BCMEVENT_NAME(WLC_E_P2P_PROBREQ_MSG),
-#endif // endif
+#endif
 #ifdef PROP_TXSTATUS
 	BCMEVENT_NAME(WLC_E_FIFO_CREDIT_MAP),
-#endif // endif
+#endif
 	BCMEVENT_NAME(WLC_E_WAKE_EVENT),
 	BCMEVENT_NAME(WLC_E_DCS_REQUEST),
 	BCMEVENT_NAME(WLC_E_RM_COMPLETE),
@@ -127,7 +145,7 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_PFN_SCAN_ALLGONE),
 #ifdef SOFTAP
 	BCMEVENT_NAME(WLC_E_GTK_PLUMBED),
-#endif // endif
+#endif
 	BCMEVENT_NAME(WLC_E_ASSOC_REQ_IE),
 	BCMEVENT_NAME(WLC_E_ASSOC_RESP_IE),
 	BCMEVENT_NAME(WLC_E_BEACON_FRAME_RX),
@@ -148,29 +166,32 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 #endif /* WLWNM */
 #if defined(WL_PROXDETECT) || defined(RTT_SUPPORT)
 	BCMEVENT_NAME(WLC_E_PROXD),
-#endif // endif
+#endif
 	BCMEVENT_NAME(WLC_E_CCA_CHAN_QUAL),
 	BCMEVENT_NAME(WLC_E_BSSID),
 #ifdef PROP_TXSTATUS
 	BCMEVENT_NAME(WLC_E_BCMC_CREDIT_SUPPORT),
-#endif // endif
+#endif
 	BCMEVENT_NAME(WLC_E_PSTA_PRIMARY_INTF_IND),
 	BCMEVENT_NAME(WLC_E_TXFAIL_THRESH),
+#ifdef WLAIBSS
+	BCMEVENT_NAME(WLC_E_AIBSS_TXFAIL),
+#endif /* WLAIBSS */
 #ifdef GSCAN_SUPPORT
 	BCMEVENT_NAME(WLC_E_PFN_GSCAN_FULL_RESULT),
 	BCMEVENT_NAME(WLC_E_PFN_SSID_EXT),
 #endif /* GSCAN_SUPPORT */
 #ifdef WLBSSLOAD_REPORT
 	BCMEVENT_NAME(WLC_E_BSS_LOAD),
-#endif // endif
+#endif
 #if defined(BT_WIFI_HANDOVER) || defined(WL_TBOW)
 	BCMEVENT_NAME(WLC_E_BT_WIFI_HANDOVER_REQ),
-#endif // endif
+#endif
+#ifdef WLFBT
+	BCMEVENT_NAME(WLC_E_FBT),
+#endif /* WLFBT */
 	BCMEVENT_NAME(WLC_E_AUTHORIZED),
 	BCMEVENT_NAME(WLC_E_PROBREQ_MSG_RX),
-
-// MOG-ON: WLAWDL
-// MOG-OFF: WLAWDL
 
 	BCMEVENT_NAME(WLC_E_CSA_START_IND),
 	BCMEVENT_NAME(WLC_E_CSA_DONE_IND),
@@ -202,6 +223,17 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_OBSS_DETECTION),
 	BCMEVENT_NAME(WLC_E_SC_CHAN_QUAL),
 	BCMEVENT_NAME(WLC_E_DYNSAR),
+	BCMEVENT_NAME(WLC_E_ROAM_CACHE_UPDATE),
+	BCMEVENT_NAME(WLC_E_AP_BCN_DRIFT),
+	BCMEVENT_NAME(WLC_E_PFN_SCAN_ALLGONE_EXT),
+#ifdef WL_CLIENT_SAE
+	BCMEVENT_NAME(WLC_E_AUTH_START),
+#endif /* WL_CLIENT_SAE */
+#ifdef WL_TWT
+	BCMEVENT_NAME(WLC_E_TWT_SETUP),
+	BCMEVENT_NAME(WLC_E_TWT_TEARDOWN),
+	BCMEVENT_NAME(WLC_E_TWT_INFO_FRM)
+#endif /* WL_TWT */
 };
 
 const char *bcmevent_get_name(uint event_type)
@@ -300,11 +332,15 @@ is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
 
 	/* check length in bcmeth_hdr */
 
+#ifdef BCMDONGLEHOST
 	/* temporary - header length not always set properly. When the below
 	 * !BCMDONGLEHOST is in all branches that use trunk DHD, the code
 	 * under BCMDONGLEHOST can be removed.
 	 */
 	evlen = (uint16)(pktend - (uint8 *)&bcm_event->bcm_hdr.version);
+#else
+	evlen = ntoh16_ua((void *)&bcm_event->bcm_hdr.length);
+#endif /* BCMDONGLEHOST */
 	evend = (uint8 *)&bcm_event->bcm_hdr.version + evlen;
 	if (evend != pktend) {
 		err = BCME_BADLEN;
@@ -355,7 +391,7 @@ is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
 		break;
 
 	case BCMILCP_BCM_SUBTYPE_DNGLEVENT:
-#if defined(DNGL_EVENT_SUPPORT)
+#if defined(HEALTH_CHECK) || defined(DNGL_EVENT_SUPPORT)
 		if ((pktlen < sizeof(bcm_dngl_event_t)) ||
 			(evend < ((uint8 *)bcm_event + sizeof(bcm_dngl_event_t)))) {
 			err = BCME_BADLEN;
@@ -385,7 +421,7 @@ is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
 #else
 		err = BCME_UNSUPPORTED;
 		break;
-#endif // endif
+#endif /* HEALTH_CHECK  || DNGL_EVENT_SUPPORT */
 
 	default:
 		err = BCME_NOTFOUND;

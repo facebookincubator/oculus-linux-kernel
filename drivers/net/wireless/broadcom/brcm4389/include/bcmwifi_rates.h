@@ -32,28 +32,17 @@ extern "C" {
 
 #define WL_RATESET_SZ_DSSS		4
 #define WL_RATESET_SZ_OFDM		8
+#if defined(WLPROPRIETARY_11N_RATES)
+#define WL_RATESET_SZ_HT_MCS		10
+#else
+#define WL_RATESET_SZ_HT_MCS		8
+#endif
 #define WL_RATESET_SZ_VHT_MCS		10
 #define WL_RATESET_SZ_VHT_MCS_P		12	/* 10 VHT rates + 2 proprietary rates */
 #define WL_RATESET_SZ_HE_MCS		12	/* 12 HE rates (mcs 0-11) */
+#define WL_RATESET_SZ_EHT_MCS		14u	/* 14 EHT rates (mcs 0-13) */
 
-typedef enum wl_he_rates {
-	HE_RATE_MCS0 = 0,
-	HE_RATE_MCS1,
-	HE_RATE_MCS2,
-	HE_RATE_MCS3,
-	HE_RATE_MCS4,
-	HE_RATE_MCS5,
-	HE_RATE_MCS6,
-	HE_RATE_MCS7,
-	HE_RATE_MCS8,
-	HE_RATE_MCS9,
-	HE_RATE_MCS10,
-	HE_RATE_MCS11
-} wl_he_rates_t;
-
-#define WL_RATESET_SZ_HT_MCS	8
-
-#define WL_RATESET_SZ_HT_IOCTL	8	/* MAC histogram, compatibility with wl utility */
+#define WL_RATESET_SZ_HT_IOCTL		8	/* MAC histogram, compatibility with wl utility */
 
 #define WL_TX_CHAINS_MAX		4
 
@@ -71,6 +60,16 @@ typedef enum wl_tx_bw {
 	WL_TX_BW_20IN160,
 	WL_TX_BW_40IN160,
 	WL_TX_BW_80IN160,
+	WL_TX_BW_240,
+	WL_TX_BW_20IN240,
+	WL_TX_BW_40IN240,
+	WL_TX_BW_80IN240,
+	WL_TX_BW_160IN240,
+	WL_TX_BW_320,
+	WL_TX_BW_20IN320,
+	WL_TX_BW_40IN320,
+	WL_TX_BW_80IN320,
+	WL_TX_BW_160IN320,
 	WL_TX_BW_ALL
 } wl_tx_bw_t;
 
@@ -1216,6 +1215,7 @@ typedef enum clm_ru_rates {
 /* MCS rates */
 #define WLC_MAX_VHT_MCS	11	/**< Std VHT MCS 0-9 plus prop VHT MCS 10-11 */
 #define WLC_MAX_HE_MCS	11	/**< Std HE MCS 0-11 */
+#define WLC_MAX_EHT_MCS	13	/**< Std EHT MCS 0-13 */
 
 /* Convert encoded rate value in plcp header to numerical rates in 500 KHz increments */
 #define OFDM_PHY2MAC_RATE(rlpt)         plcp_ofdm_rate_tbl[(rlpt) & 0x7]
@@ -1228,29 +1228,15 @@ typedef enum clm_ru_rates {
 #define GET_11N_MCS_NSS(mcs) ((mcs) < 32 ? (1 + ((mcs) / 8)) : \
 			      ((mcs) == 32 ? 1 : GET_PROPRIETARY_11N_MCS_NSS(mcs)))
 
+#if defined(WLPROPRIETARY_11N_RATES) /* Broadcom proprietary rate support for 11n */
+#define IS_PROPRIETARY_11N_MCS(mcs) \
+	((mcs) == 87 || (mcs) == 88 || (mcs) == 99 || (mcs) == 100 || (mcs) == 101 || (mcs) == 102)
+#define IS_PROPRIETARY_11N_SS_MCS(mcs) \
+	((mcs) == 87 || (mcs) == 88)
+#else
 #define IS_PROPRIETARY_11N_MCS(mcs)	FALSE
 #define IS_PROPRIETARY_11N_SS_MCS(mcs)	FALSE /**< is proprietary HT single stream MCS */
-
-/* Macros to be used for calculating rate from PLCP (wf_he_plcp_to_rate) */
-#define HE_SU_PLCP2RATE_MCS_MASK	0x0F
-#define HE_SU_PLCP2RATE_MCS_SHIFT	0
-#define HE_SU_PLCP2RATE_NSS_MASK	0x70
-#define HE_SU_PLCP2RATE_NSS_SHIFT	4
-#define HE_MU_PLCP2RATE_LTF_GI_MASK	0x30
-#define HE_MU_PLCP2RATE_LTF_GI_SHIFT	4
-#define HE_MU_PLCP2RATE_STBC_MASK	0x40
-#define HE_MU_PLCP2RATE_STBC_SHIFT	6
-
-/* Macros for HE LTF and GI */
-#define HE_IS_1X_LTF(gi)	((gi) == WL_RSPEC_HE_1x_LTF_GI_0_8us)
-#define HE_IS_2X_LTF(gi)	(((gi) == WL_RSPEC_HE_2x_LTF_GI_0_8us) || \
-				((gi) == WL_RSPEC_HE_2x_LTF_GI_1_6us))
-#define HE_IS_4X_LTF(gi)	((gi) == WL_RSPEC_HE_4x_LTF_GI_3_2us)
-
-#define HE_IS_GI_0_8us(gi)	(((gi) == WL_RSPEC_HE_1x_LTF_GI_0_8us) || \
-				((gi) == WL_RSPEC_HE_2x_LTF_GI_0_8us))
-#define HE_IS_GI_1_6us(gi)	((gi) == WL_RSPEC_HE_2x_LTF_GI_1_6us)
-#define HE_IS_GI_3_2us(gi)	((gi) == WL_RSPEC_HE_4x_LTF_GI_3_2us)
+#endif	/* WLPROPRIETARY_11N_RATES */
 
 extern const uint8 plcp_ofdm_rate_tbl[];
 
@@ -1260,6 +1246,7 @@ uint8 wf_get_single_stream_mcs(uint mcs);
 #define WF_NON_HT_MCS 0x80
 uint8 wf_vht_plcp_to_rate(uint8 *plcp);
 uint8 wf_he_plcp_to_rate(uint8 *plcp, bool is_mu);
+uint8 wf_eht_plcp_to_rate(uint8 *plcp, bool is_mu);
 
 /* convert rate from mcs to Kbps */
 uint wf_mcs_to_rate(uint mcs, uint nss, uint bw, int sgi);
@@ -1268,6 +1255,7 @@ uint wf_he_mcs_to_rate(uint mcs, uint nss, uint bw, uint gi, bool dcm);
 uint wf_mcs_to_Ndbps(uint mcs, uint nss, uint bw);
 uint wf_he_mcs_to_Ndbps(uint mcs, uint nss, uint bw, bool dcm);
 uint32 wf_he_mcs_ru_to_ndbps(uint8 mcs, uint8 nss, bool dcm, uint8 ru_index);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

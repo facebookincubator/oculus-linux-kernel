@@ -50,7 +50,7 @@
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP)
 #include <linux/suspend.h>
 extern volatile bool dhd_mmc_suspend;
-#endif // endif
+#endif
 #include "bcmsdh_sdmmc.h"
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 0, 0)) || (LINUX_VERSION_CODE >= \
@@ -91,12 +91,12 @@ extern int sdio_reset_comm(struct mmc_card *card);
 #define DEFAULT_SDIO_F2_BLKSIZE		512
 #ifndef CUSTOM_SDIO_F2_BLKSIZE
 #define CUSTOM_SDIO_F2_BLKSIZE		DEFAULT_SDIO_F2_BLKSIZE
-#endif // endif
+#endif
 
 #define DEFAULT_SDIO_F1_BLKSIZE		64
 #ifndef CUSTOM_SDIO_F1_BLKSIZE
 #define CUSTOM_SDIO_F1_BLKSIZE		DEFAULT_SDIO_F1_BLKSIZE
-#endif // endif
+#endif
 
 #define MAX_IO_RW_EXTENDED_BLK		511
 
@@ -118,7 +118,7 @@ uint sd_use_dma = TRUE;
 
 #ifndef CUSTOM_RXCHAIN
 #define CUSTOM_RXCHAIN 0
-#endif // endif
+#endif
 
 DHD_PM_RESUME_WAIT_INIT(sdioh_request_byte_wait);
 DHD_PM_RESUME_WAIT_INIT(sdioh_request_word_wait);
@@ -129,6 +129,10 @@ DHD_PM_RESUME_WAIT_INIT(sdioh_request_buffer_wait);
 #define MMC_SDIO_ABORT_RETRY_LIMIT 5
 
 int sdioh_sdmmc_card_regread(sdioh_info_t *sd, int func, uint32 regaddr, int regsize, uint32 *data);
+#ifdef NOTYET
+static int
+sdioh_sdmmc_card_regwrite(sdioh_info_t *sd, int func, uint32 regaddr, int regsize, uint32 data);
+#endif /* NOTYET */
 
 #if defined(BT_OVER_SDIO)
 extern
@@ -340,7 +344,7 @@ sdioh_disable_func_intr(sdioh_info_t *sd)
 	reg &= ~(INTR_CTL_FUNC1_EN | INTR_CTL_FUNC2_EN);
 #if defined(BT_OVER_SDIO)
 	reg &= ~INTR_CTL_FUNC3_EN;
-#endif // endif
+#endif
 	/* Disable master interrupt with the last function interrupt */
 	if (!(reg & 0xFE))
 		reg = 0;
@@ -427,13 +431,13 @@ sdioh_interrupt_query(sdioh_info_t *sd, bool *onoff)
 	return SDIOH_API_RC_SUCCESS;
 }
 
-#if defined(DHD_DEBUG)
+#if defined(DHD_DEBUG) || defined(BCMDBG)
 extern bool
 sdioh_interrupt_pending(sdioh_info_t *sd)
 {
 	return (0);
 }
-#endif // endif
+#endif
 
 uint
 sdioh_query_iofnum(sdioh_info_t *sd)
@@ -469,12 +473,19 @@ const bcm_iovar_t sdioh_iovars[] = {
 	{"sd_ints",	IOV_USEINTS,	0, 0,	IOVT_BOOL,	0 },
 	{"sd_numints",	IOV_NUMINTS,	0, 0,	IOVT_UINT32,	0 },
 	{"sd_numlocalints", IOV_NUMLOCALINTS, 0, 0, IOVT_UINT32,	0 },
+#ifdef BCMINTERNAL
+	{"sd_hostreg",	IOV_HOSTREG,	0, 0,	IOVT_BUFFER,	sizeof(sdreg_t) },
+	{"sd_devreg",	IOV_DEVREG,	0, 0,	IOVT_BUFFER,	sizeof(sdreg_t) },
+#endif /* BCMINTERNAL */
 	{"sd_divisor",	IOV_DIVISOR,	0, 0,	IOVT_UINT32,	0 },
 	{"sd_power",	IOV_POWER,	0, 0,	IOVT_UINT32,	0 },
 	{"sd_clock",	IOV_CLOCK,	0, 0,	IOVT_UINT32,	0 },
 	{"sd_mode",	IOV_SDMODE,	0, 0,	IOVT_UINT32,	100},
 	{"sd_highspeed", IOV_HISPEED,	0, 0,	IOVT_UINT32,	0 },
 	{"sd_rxchain",  IOV_RXCHAIN,    0, 0, 	IOVT_BOOL,	0 },
+#ifdef BCMDBG
+	{"sd_hciregs",	IOV_HCIREGS,	0, 0,	IOVT_BUFFER,	0 },
+#endif
 	{NULL, 0, 0, 0, 0, 0 }
 };
 
@@ -505,6 +516,7 @@ sdioh_iovar_op(sdioh_info_t *si, const char *name,
 	if ((bcmerror = bcm_iovar_lencheck(vi, arg, len, set)) != 0)
 		goto exit;
 
+	/* XXX Copied from dhd, copied from wl; certainly overkill here? */
 	/* Set up params so get and set can share the convenience variables */
 	if (params == NULL) {
 		params = arg;
@@ -565,6 +577,7 @@ sdioh_iovar_op(sdioh_info_t *si, const char *name,
 			break;
 		}
 
+		/* XXX These hardcoded sizes are a hack, remove after proper CIS parsing. */
 		switch (func) {
 		case 0: maxsize = 32; break;
 		case 1: maxsize = BLOCK_SIZE_4318; break;
@@ -687,16 +700,102 @@ sdioh_iovar_op(sdioh_info_t *si, const char *name,
 		int_val = (int32)0;
 		bcopy(&int_val, arg, val_size);
 		break;
+#ifdef BCMINTERNAL
+	case IOV_GVAL(IOV_HOSTREG):
+	{
+		/* XXX Should copy for alignment reasons */
+		sdreg_t *sd_ptr = (sdreg_t *)params;
+
+		if (sd_ptr->offset < SD_SysAddr || sd_ptr->offset > SD_MaxCurCap) {
+			sd_err(("%s: bad offset 0x%x\n", __FUNCTION__, sd_ptr->offset));
+			bcmerror = BCME_BADARG;
+			break;
+		}
+
+		sd_trace(("%s: rreg%d at offset %d\n", __FUNCTION__,
+		                  (sd_ptr->offset & 1) ? 8 : ((sd_ptr->offset & 2) ? 16 : 32),
+		                  sd_ptr->offset));
+		if (sd_ptr->offset & 1)
+			int_val = 8; /* sdioh_sdmmc_rreg8(si, sd_ptr->offset); */
+		else if (sd_ptr->offset & 2)
+			int_val = 16; /* sdioh_sdmmc_rreg16(si, sd_ptr->offset); */
+		else
+			int_val = 32; /* sdioh_sdmmc_rreg(si, sd_ptr->offset); */
+
+		bcopy(&int_val, arg, sizeof(int_val));
+		break;
+	}
+
+	case IOV_SVAL(IOV_HOSTREG):
+	{
+		/* XXX Should copy for alignment reasons */
+		sdreg_t *sd_ptr = (sdreg_t *)params;
+
+		if (sd_ptr->offset < SD_SysAddr || sd_ptr->offset > SD_MaxCurCap) {
+			sd_err(("%s: bad offset 0x%x\n", __FUNCTION__, sd_ptr->offset));
+			bcmerror = BCME_BADARG;
+			break;
+		}
+
+		sd_trace(("%s: wreg%d value 0x%08x at offset %d\n", __FUNCTION__, sd_ptr->value,
+		                  (sd_ptr->offset & 1) ? 8 : ((sd_ptr->offset & 2) ? 16 : 32),
+		                  sd_ptr->offset));
+		break;
+	}
+
+	case IOV_GVAL(IOV_DEVREG):
+	{
+		/* XXX Should copy for alignment reasons */
+		sdreg_t *sd_ptr = (sdreg_t *)params;
+		uint8 data = 0;
+
+		if ((uint)sd_ptr->func > si->num_funcs) {
+			bcmerror = BCME_BADARG;
+			break;
+		}
+
+		if (sdioh_cfg_read(si, sd_ptr->func, sd_ptr->offset, &data)) {
+			bcmerror = BCME_SDIO_ERROR;
+			break;
+		}
+
+		int_val = (int)data;
+		bcopy(&int_val, arg, sizeof(int_val));
+		break;
+	}
+
+	case IOV_SVAL(IOV_DEVREG):
+	{
+		/* XXX Should copy for alignment reasons */
+		sdreg_t *sd_ptr = (sdreg_t *)params;
+		uint8 data = (uint8)sd_ptr->value;
+
+		if ((uint)sd_ptr->func > si->num_funcs) {
+			bcmerror = BCME_BADARG;
+			break;
+		}
+
+		if (sdioh_cfg_write(si, sd_ptr->func, sd_ptr->offset, &data)) {
+			bcmerror = BCME_SDIO_ERROR;
+			break;
+		}
+		break;
+	}
+#endif /* BCMINTERNAL */
 	default:
 		bcmerror = BCME_UNSUPPORTED;
 		break;
 	}
 exit:
 
+	/* XXX Remove protective lock after clients all clean... */
 	return bcmerror;
 }
 
 #if defined(OOB_INTR_ONLY) && defined(HW_OOB)
+/*
+ * XXX dhd -i eth0 sd_devreg 0 0xf2 0x3
+ */
 
 SDIOH_API_RC
 sdioh_enable_hw_oob_intr(sdioh_info_t *sd, bool enable)
@@ -791,7 +890,7 @@ sdioh_request_byte(sdioh_info_t *sd, uint rw, uint func, uint regaddr, uint8 *by
 	int err_ret = 0;
 #if defined(MMC_SDIO_ABORT)
 	int sdio_abort_retry = MMC_SDIO_ABORT_RETRY_LIMIT;
-#endif // endif
+#endif
 
 	sd_info(("%s: rw=%d, func=%d, addr=0x%05x\n", __FUNCTION__, rw, func, regaddr));
 
@@ -875,6 +974,10 @@ sdioh_request_byte(sdioh_info_t *sd, uint rw, uint func, uint regaddr, uint8 *by
 #if defined(MMC_SDIO_ABORT)
 			/* to allow abort command through F1 */
 			else if (regaddr == SDIOD_CCCR_IOABORT) {
+				/* XXX Because of SDIO3.0 host issue on Manta,
+				 * sometimes the abort fails.
+				 * Retrying again will fix this issue.
+				 */
 				while (sdio_abort_retry--) {
 					if (sd->func[func]) {
 						sdio_claim_host(sd->func[func]);
@@ -926,6 +1029,12 @@ sdioh_request_byte(sdioh_info_t *sd, uint rw, uint func, uint regaddr, uint8 *by
 
 	if (err_ret) {
 		if ((regaddr == 0x1001F) && ((err_ret == -ETIMEDOUT) || (err_ret == -EILSEQ))) {
+			/* XXX: Read/Write to SBSDIO_FUNC1_SLEEPCSR could return -110(timeout)
+			 * 	or -84(CRC) error in case the host tries to wake the device up.
+			 *	Skip error log message if err code is -110 or -84 when accessing
+			 *	to SBSDIO_FUNC1_SLEEPCSR to avoid QA misunderstand and DHD shoul
+			 *	print error log message if retry count over the MAX_KSO_ATTEMPTS.
+			 */
 		} else {
 			sd_err(("bcmsdh_sdmmc: Failed to %s byte F%d:@0x%05x=%02x, Err: %d\n",
 				rw ? "Write" : "Read", func, regaddr, *byte, err_ret));
@@ -942,7 +1051,7 @@ sdioh_request_word(sdioh_info_t *sd, uint cmd_type, uint rw, uint func, uint add
 	int err_ret = SDIOH_API_RC_FAIL;
 #if defined(MMC_SDIO_ABORT)
 	int sdio_abort_retry = MMC_SDIO_ABORT_RETRY_LIMIT;
-#endif // endif
+#endif
 
 	if (func == 0) {
 		sd_err(("%s: Only CMD52 allowed to F0.\n", __FUNCTION__));
@@ -1266,6 +1375,7 @@ sdioh_abort(sdioh_info_t *sd, uint func)
 #endif /* defined(MMC_SDIO_ABORT) */
 	sd_trace(("%s: Enter\n", __FUNCTION__));
 
+	/* XXX Standard Linux SDIO Stack cannot perform an abort. */
 #if defined(MMC_SDIO_ABORT)
 	/* issue abort cmd52 command through F1 */
 	sdioh_request_byte(sd, SD_IO_OP_WRITE, SDIO_FUNC_0, SDIOD_CCCR_IOABORT, &t_func);
@@ -1342,7 +1452,10 @@ static void IRQHandler(struct sdio_func *func)
 		ASSERT(sd->intr_handler);
 		ASSERT(sd->intr_handler_arg);
 		(sd->intr_handler)(sd->intr_handler_arg);
-	} else {
+	} else { /* XXX - Do not remove these sd_err messages.  Need to figure
+			          out how to keep interrupts disabled until DHD registers
+			          a handler.
+			  */
 		sd_err(("bcmsdh_sdmmc: ***IRQHandler\n"));
 
 		sd_err(("%s: Not ready for intr: enabled %d, handler %p\n",
@@ -1389,6 +1502,7 @@ sdioh_sdmmc_card_regwrite(sdioh_info_t *sd, int func, uint32 regaddr, int regsiz
 int
 sdioh_start(sdioh_info_t *sd, int stage)
 {
+#if defined(OEM_ANDROID)
 	int ret;
 
 	if (!sd) {
@@ -1464,13 +1578,14 @@ sdioh_start(sdioh_info_t *sd, int stage)
 #else /* defined(OOB_INTR_ONLY) */
 #if defined(HW_OOB)
 			sdioh_enable_func_intr(sd);
-#endif // endif
+#endif
 			bcmsdh_oob_intr_set(sd->bcmsdh, TRUE);
 #endif /* !defined(OOB_INTR_ONLY) */
 		}
 	}
 	else
 		sd_err(("%s Failed\n", __FUNCTION__));
+#endif /* defined(OEM_ANDROID) */
 
 	return (0);
 }
@@ -1478,6 +1593,7 @@ sdioh_start(sdioh_info_t *sd, int stage)
 int
 sdioh_stop(sdioh_info_t *sd)
 {
+#if defined(OEM_ANDROID)
 	/* MSM7201A Android sdio stack has bug with interrupt
 		So internaly within SDIO stack they are polling
 		which cause issue when device is turned off. So
@@ -1495,12 +1611,13 @@ sdioh_stop(sdioh_info_t *sd)
 #else /* defined(OOB_INTR_ONLY) */
 #if defined(HW_OOB)
 		sdioh_disable_func_intr(sd);
-#endif // endif
+#endif
 		bcmsdh_oob_intr_set(sd->bcmsdh, FALSE);
 #endif /* !defined(OOB_INTR_ONLY) */
 	}
 	else
 		sd_err(("%s Failed\n", __FUNCTION__));
+#endif /* defined(OEM_ANDROID) */
 	return (0);
 }
 
@@ -1509,6 +1626,16 @@ sdioh_waitlockfree(sdioh_info_t *sd)
 {
 	return (1);
 }
+
+#ifdef BCMINTERNAL
+extern SDIOH_API_RC
+sdioh_test_diag(sdioh_info_t *sd)
+{
+	sd_trace(("%s: Enter\n", __FUNCTION__));
+	sd_trace(("%s: Exit\n", __FUNCTION__));
+	return (0);
+}
+#endif /* BCMINTERNAL */
 
 SDIOH_API_RC
 sdioh_gpioouten(sdioh_info_t *sd, uint32 gpio)

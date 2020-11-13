@@ -66,7 +66,7 @@ int hfi_write_cmd(void *cmd_ptr);
  *
  * Returns success(zero)/failure(non zero)
  */
-int hfi_read_message(uint32_t *pmsg, uint8_t q_id, uint32_t *words_read);
+int hfi_read_message(uint32_t **pmsg_ptr, uint8_t q_id, uint32_t *words_read);
 
 /**
  * hfi_init() - function initialize hfi after firmware download

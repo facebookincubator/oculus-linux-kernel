@@ -26,6 +26,7 @@
 #define _802_11ax_h_
 
 #include <typedefs.h>
+#include <802.11.h>
 #include <bcmtlv.h>
 
 /* This marks the start of a packed structure section. */
@@ -638,10 +639,18 @@ typedef struct he_op_ie he_op_ie_t;
 #define HE_6G_OP_BW_80              2u
 #define HE_6G_OP_BW_160_80P80       3u
 
-/* Figure 9-787l Control field format in Draft P802.11ax_D5.0 */
+/* Regulatory Info subfield in the United States */
+#define HE_6G_OP_REG_INFO_INDOOR_AP_US  0u
+#define HE_6G_OP_REG_INFO_SP_AP_US      1u
+
+/* Figure 9-788l Control field format in Draft P802.11ax_D6.0 */
 #define HE_6G_CTL_CHBW_MASK         0x03u
 #define HE_6G_OP_CTL_CHBW(ctl) (ctl & HE_6G_CTL_CHBW_MASK)
 #define HE_6G_CTL_DUP_BCN_MASK      0x04u
+#define HE_6G_CTL_REG_INFO_MASK     0x38u
+#define HE_6G_CTL_REG_INFO_SHIFT    3u
+#define HE_6G_OP_CTL_REG_INFO(ctl) \
+	((ctl & HE_6G_CTL_REG_INFO_MASK) >> HE_6G_CTL_REG_INFO_SHIFT)
 
 /* HE 6G Operation info */
 BWL_PRE_PACKED_STRUCT struct he_6g_op_info {
@@ -1035,6 +1044,7 @@ typedef struct he_bsscolor_change_ie he_bsscolor_change_ie_t;
 #include <packed_section_end.h>
 
 /* HE Action Frame */
+/* FIXME: use temporary Offsets until the spec assigns them */
 #define HE_AF_CAT_OFF	0
 #define HE_AF_ACT_OFF	1
 
@@ -1049,6 +1059,7 @@ typedef struct he_bsscolor_change_ie he_bsscolor_change_ie_t;
 #define HE_AF_TWT_INFO_OFF	2
 
 /* HE Action ID */
+/* FIXME: use temporary IDs until ANA assigns them */
 #define HE_ACTION_TWT_SETUP	1
 #define HE_ACTION_TWT_TEARDOWN	2
 #define HE_ACTION_TWT_INFO	3
@@ -1140,12 +1151,14 @@ typedef uint8 he_trig_usrinfo_set_t[HE_TRIG_USRINFO_SZ];
 #define HE_RU_242_TONE			242
 #define HE_RU_484_TONE			484
 #define HE_RU_996_TONE			996
+#define HE_RU_2x996_TONE		1992
 #define HE_MAX_26_TONE_RU_INDX		36
 #define HE_MAX_52_TONE_RU_INDX		52
 #define HE_MAX_106_TONE_RU_INDX		60
 #define HE_MAX_242_TONE_RU_INDX		64
 #define HE_MAX_484_TONE_RU_INDX		66
 #define HE_MAX_996_TONE_RU_INDX		67
+#define HE_MAX_2x996_TONE_RU_INDX	68
 
 /**
  * ref: (Table 28-9 Page 285)

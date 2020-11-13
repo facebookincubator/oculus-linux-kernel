@@ -47,10 +47,18 @@ typedef enum pkt_cnt_rsn {
 	PKT_CNT_RSN_MAX		= 4
 } pkt_cnt_rsn_t;
 
+enum pkt_type {
+	PKT_TYPE_DATA = 0,
+	PKT_TYPE_DHCP = 1,
+	PKT_TYPE_ICMP = 2,
+	PKT_TYPE_DNS = 3,
+	PKT_TYPE_ARP = 4,
+	PKT_TYPE_EAP = 5
+};
+
 extern msg_eapol_t dhd_is_4way_msg(uint8 *pktdata);
 extern void dhd_dump_pkt(dhd_pub_t *dhd, int ifidx, uint8 *pktdata,
 	uint32 pktlen, bool tx, uint32 *pkthash, uint16 *pktfate);
-
 #ifdef DHD_PKTDUMP_ROAM
 extern void dhd_dump_mod_pkt_timer(dhd_pub_t *dhdp, uint16 rsn);
 extern void dhd_dump_pkt_init(dhd_pub_t *dhdp);
@@ -116,9 +124,9 @@ extern void dhd_dump_eapol_message(dhd_pub_t *dhd, int ifidx,
 static INLINE void dhd_dump_eapol_message(dhd_pub_t *dhd, int ifidx,
         uint8 *pktdata, uint32 pktlen, bool tx, uint32 *pkthash, uint16 *pktfate) { }
 #endif /* DHD_8021X_DUMP */
-
+extern bool dhd_check_ip_prot(uint8 *pktdata, uint16 ether_type);
+extern bool dhd_check_arp(uint8 *pktdata, uint16 ether_type);
 extern bool dhd_check_dhcp(uint8 *pktdata);
 extern bool dhd_check_icmp(uint8 *pktdata);
-extern bool dhd_check_arp(uint8 *pktdata);
 extern bool dhd_check_dns(uint8 *pktdata);
 #endif /* __DHD_LINUX_PKTDUMP_H_ */

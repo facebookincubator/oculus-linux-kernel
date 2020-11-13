@@ -30,6 +30,9 @@
 #include <bcmdevs.h>
 #include <hndsoc.h>
 #include <sbchipc.h>
+#if !defined(BCMDONGLEHOST)
+#include <pci_core.h>
+#endif /* !defined(BCMDONGLEHOST) */
 #include <pcicfg.h>
 #include <sbpcmcia.h>
 
@@ -157,7 +160,7 @@ _sb_coresba(const si_info_t *sii)
 	case SDIO_BUS:
 		sbaddr = (uint32)(uintptr)sii->curmap;
 		break;
-#endif // endif
+#endif
 
 	default:
 		sbaddr = BADCOREADDR;
@@ -285,7 +288,7 @@ sb_corereg(si_t *sih, uint coreidx, uint regoff, uint mask, uint val)
 	si_info_t *sii = SI_INFO(sih);
 	si_cores_info_t *cores_info = (si_cores_info_t *)sii->cores_info;
 
-	ASSERT(GOODIDX(coreidx));
+	ASSERT(GOODIDX(coreidx, sii->numcores));
 	ASSERT(regoff < SI_CORE_SIZE);
 	ASSERT((val & ~mask) == 0);
 
@@ -385,7 +388,7 @@ sb_corereg_addr(const si_t *sih, uint coreidx, uint regoff)
 	const si_info_t *sii = SI_INFO(sih);
 	si_cores_info_t *cores_info = (si_cores_info_t *)sii->cores_info;
 
-	ASSERT(GOODIDX(coreidx));
+	ASSERT(GOODIDX(coreidx, sii->numcores));
 	ASSERT(regoff < SI_CORE_SIZE);
 
 	if (coreidx >= SI_MAXCORES)
@@ -670,6 +673,164 @@ sb_addrspacesize(const si_t *sih, uint asidx)
 	return (sb_size(R_SBREG(sii, sb_admatch(sii, asidx))));
 }
 
+#if defined(BCMDBG_ERR) || defined(BCMASSERT_SUPPORT) || defined(BCMDBG_DUMP)
+/* traverse all cores to find and clear source of serror */
+static void
+sb_serr_clear(si_info_t *sii)
+{
+	sbconfig_t *sb;
+	uint origidx;
+	uint i;
+	bcm_int_bitmask_t intr_val;
+	volatile void *corereg = NULL;
+
+	INTR_OFF(sii, &intr_val);
+	origidx = si_coreidx(&sii->pub);
+
+	for (i = 0; i < sii->numcores; i++) {
+		corereg = sb_setcoreidx(&sii->pub, i);
+		if (NULL != corereg) {
+			sb = REGS2SB(corereg);
+			if ((R_SBREG(sii, &sb->sbtmstatehigh)) & SBTMH_SERR) {
+				AND_SBREG(sii, &sb->sbtmstatehigh, ~SBTMH_SERR);
+				SI_ERROR(("sb_serr_clear: SError at core 0x%x\n",
+				          sb_coreid(&sii->pub)));
+			}
+		}
+	}
+
+	sb_setcoreidx(&sii->pub, origidx);
+	INTR_RESTORE(sii, &intr_val);
+}
+
+/*
+ * Check if any inband, outband or timeout errors has happened and clear them.
+ * Must be called with chip clk on !
+ */
+bool
+sb_taclear(si_t *sih, bool details)
+{
+	si_info_t *sii = SI_INFO(sih);
+	bool rc = FALSE;
+	uint32 inband = 0, serror = 0, timeout = 0;
+	volatile uint32 imstate;
+
+	BCM_REFERENCE(sii);
+
+	if (BUSTYPE(sii->pub.bustype) == PCI_BUS) {
+		volatile uint32 stcmd;
+
+		/* inband error is Target abort for PCI */
+		stcmd = OSL_PCI_READ_CONFIG(sii->osh, PCI_CFG_CMD, sizeof(uint32));
+		inband = stcmd & PCI_STAT_TA;
+		if (inband) {
+#ifdef BCMDBG
+			if (details) {
+				SI_ERROR(("\ninband:\n"));
+				si_viewall(sih, FALSE);
+			}
+#endif
+			OSL_PCI_WRITE_CONFIG(sii->osh, PCI_CFG_CMD, sizeof(uint32), stcmd);
+		}
+
+		/* serror */
+		stcmd = OSL_PCI_READ_CONFIG(sii->osh, PCI_INT_STATUS, sizeof(uint32));
+		serror = stcmd & PCI_SBIM_STATUS_SERR;
+		if (serror) {
+#ifdef BCMDBG
+			if (details) {
+				SI_ERROR(("\nserror:\n"));
+				si_viewall(sih, FALSE);
+			}
+#endif
+			sb_serr_clear(sii);
+			OSL_PCI_WRITE_CONFIG(sii->osh, PCI_INT_STATUS, sizeof(uint32), stcmd);
+		}
+
+		/* timeout */
+		imstate = sb_corereg(sih, sii->pub.buscoreidx,
+		                     SBCONFIGOFF + OFFSETOF(sbconfig_t, sbimstate), 0, 0);
+		if ((imstate != 0xffffffff) && (imstate & (SBIM_IBE | SBIM_TO))) {
+			sb_corereg(sih, sii->pub.buscoreidx,
+			           SBCONFIGOFF + OFFSETOF(sbconfig_t, sbimstate), ~0,
+			           (imstate & ~(SBIM_IBE | SBIM_TO)));
+			/* inband = imstate & SBIM_IBE; same as TA above */
+			timeout = imstate & SBIM_TO;
+			if (timeout) {
+#ifdef BCMDBG
+				if (details) {
+					SI_ERROR(("\ntimeout:\n"));
+					si_viewall(sih, FALSE);
+				}
+#endif
+			}
+		}
+
+		if (inband) {
+			/* dump errlog for sonics >= 2.3 */
+			if (sii->pub.socirev == SONICS_2_2)
+				;
+			else {
+				uint32 imerrlog, imerrloga;
+				imerrlog = sb_corereg(sih, sii->pub.buscoreidx, SBIMERRLOG, 0, 0);
+				if (imerrlog & SBTMEL_EC) {
+					imerrloga = sb_corereg(sih, sii->pub.buscoreidx,
+					                       SBIMERRLOGA, 0, 0);
+					BCM_REFERENCE(imerrloga);
+					/* clear errlog */
+					sb_corereg(sih, sii->pub.buscoreidx, SBIMERRLOG, ~0, 0);
+					SI_ERROR(("sb_taclear: ImErrLog 0x%x, ImErrLogA 0x%x\n",
+						imerrlog, imerrloga));
+				}
+			}
+		}
+	}
+#ifdef BCMSDIO
+	else if ((BUSTYPE(sii->pub.bustype) == SDIO_BUS) ||
+	         (BUSTYPE(sii->pub.bustype) == SPI_BUS)) {
+		sbconfig_t *sb;
+		uint origidx;
+		bcm_int_bitmask_t intr_val;
+		volatile void *corereg = NULL;
+		volatile uint32 tmstate;
+
+		INTR_OFF(sii, &intr_val);
+		origidx = si_coreidx(sih);
+
+		corereg = si_setcore(sih, SDIOD_CORE_ID, 0);
+		if (corereg != NULL) {
+			sb = REGS2SB(corereg);
+
+			imstate = R_SBREG(sii, &sb->sbimstate);
+			if ((imstate != 0xffffffff) && (imstate & (SBIM_IBE | SBIM_TO))) {
+				AND_SBREG(sii, &sb->sbimstate, ~(SBIM_IBE | SBIM_TO));
+				/* inband = imstate & SBIM_IBE; cmd error */
+				timeout = imstate & SBIM_TO;
+			}
+			tmstate = R_SBREG(sii, &sb->sbtmstatehigh);
+			if ((tmstate != 0xffffffff) && (tmstate & SBTMH_INT_STATUS)) {
+				sb_serr_clear(sii);
+				serror = 1;
+				OR_SBREG(sii, &sb->sbtmstatelow, SBTML_INT_ACK);
+				AND_SBREG(sii, &sb->sbtmstatelow, ~SBTML_INT_ACK);
+			}
+		}
+
+		sb_setcoreidx(sih, origidx);
+		INTR_RESTORE(sii, &intr_val);
+	}
+#endif /* BCMSDIO */
+
+	if (inband | timeout | serror) {
+		rc = TRUE;
+		SI_ERROR(("sb_taclear: inband 0x%x, serror 0x%x, timeout 0x%x!\n",
+		          inband, serror, timeout));
+	}
+
+	return (rc);
+}
+#endif /* BCMDBG_ERR || BCMASSERT_SUPPORT || BCMDBG_DUMP */
+
 /* do buffered registers update */
 void
 sb_commit(si_t *sih)
@@ -679,7 +840,7 @@ sb_commit(si_t *sih)
 	bcm_int_bitmask_t intr_val;
 
 	origidx = sii->curidx;
-	ASSERT(GOODIDX(origidx));
+	ASSERT(GOODIDX(origidx, sii->numcores));
 
 	INTR_OFF(sii, &intr_val);
 
@@ -691,6 +852,15 @@ sb_commit(si_t *sih)
 		/* do the buffer registers update */
 		W_REG(sii->osh, &ccregs->broadcastaddress, SB_COMMIT);
 		W_REG(sii->osh, &ccregs->broadcastdata, 0x0);
+#if !defined(BCMDONGLEHOST)
+	} else if (PCI(sii)) {
+		sbpciregs_t *pciregs = (sbpciregs_t *)si_setcore(sih, PCI_CORE_ID, 0);
+		ASSERT(pciregs != NULL);
+
+		/* do the buffer registers update */
+		W_REG(sii->osh, &pciregs->bcastaddr, SB_COMMIT);
+		W_REG(sii->osh, &pciregs->bcastdata, 0x0);
+#endif /* !defined(BCMDONGLEHOST) */
 	} else
 		ASSERT(0);
 
@@ -726,6 +896,11 @@ sb_core_disable(const si_t *sih, uint32 bits)
 	if (R_SBREG(sii, &sb->sbtmstatehigh) & SBTMH_BUSY)
 		SI_ERROR(("sb_core_disable: target state still busy\n"));
 
+	/*
+	 * If core is initiator, set the Reject bit and allow Busy to clear.
+	 * sonicsrev < 2.3 chips don't have the Reject and Busy bits (nops).
+	 * Don't assert - dma engine might be stuck (PR4871).
+	 */
 	if (R_SBREG(sii, &sb->sbidlow) & SBIDL_INIT) {
 		OR_SBREG(sii, &sb->sbimstate, SBIM_RJ);
 		dummy = R_SBREG(sii, &sb->sbimstate);
@@ -784,6 +959,7 @@ sb_core_reset(const si_t *sih, uint32 bits, uint32 resetbits)
 	BCM_REFERENCE(dummy);
 	OSL_DELAY(1);
 
+	/* PR3158 - clear any serror */
 	if (R_SBREG(sii, &sb->sbtmstatehigh) & SBTMH_SERR) {
 		W_SBREG(sii, &sb->sbtmstatehigh, 0);
 	}
@@ -853,7 +1029,7 @@ sb_size(uint32 admatch)
 	return (size);
 }
 
-#if defined(BCMDBG_PHYDUMP)
+#if defined(BCMDBG) || defined(BCMDBG_DUMP)|| defined(BCMDBG_PHYDUMP)
 /* print interesting sbconfig registers */
 void
 sb_dumpregs(si_t *sih, struct bcmstrbuf *b)
@@ -888,4 +1064,47 @@ sb_dumpregs(si_t *sih, struct bcmstrbuf *b)
 	sb_setcoreidx(sih, origidx);
 	INTR_RESTORE(sii, &intr_val);
 }
-#endif // endif
+#endif	/* BCMDBG || BCMDBG_DUMP || BCMDBG_PHYDUMP */
+
+#if defined(BCMDBG)
+void
+sb_view(si_t *sih, bool verbose)
+{
+	const si_info_t *sii = SI_INFO(sih);
+	sbconfig_t *sb = REGS2SB(sii->curmap);
+
+	SI_ERROR(("\nCore ID: 0x%x\n", sb_coreid(&sii->pub)));
+
+	if (sii->pub.socirev > SONICS_2_2)
+		SI_ERROR(("sbimerrlog 0x%x sbimerrloga 0x%x\n",
+		         sb_corereg(sih, si_coreidx(&sii->pub), SBIMERRLOG, 0, 0),
+		         sb_corereg(sih, si_coreidx(&sii->pub), SBIMERRLOGA, 0, 0)));
+
+	/* Print important or helpful registers */
+	SI_ERROR(("sbtmerrloga 0x%x sbtmerrlog 0x%x\n",
+	          R_SBREG(sii, &sb->sbtmerrloga), R_SBREG(sii, &sb->sbtmerrlog)));
+	SI_ERROR(("sbimstate 0x%x sbtmstatelow 0x%x sbtmstatehigh 0x%x\n",
+	          R_SBREG(sii, &sb->sbimstate),
+	          R_SBREG(sii, &sb->sbtmstatelow), R_SBREG(sii, &sb->sbtmstatehigh)));
+	SI_ERROR(("sbimconfiglow 0x%x sbtmconfiglow 0x%x\nsbtmconfighigh 0x%x sbidhigh 0x%x\n",
+	          R_SBREG(sii, &sb->sbimconfiglow), R_SBREG(sii, &sb->sbtmconfiglow),
+	          R_SBREG(sii, &sb->sbtmconfighigh), R_SBREG(sii, &sb->sbidhigh)));
+
+	/* Print more detailed registers that are otherwise not relevant */
+	if (verbose) {
+		SI_ERROR(("sbipsflag 0x%x sbtpsflag 0x%x\n",
+		          R_SBREG(sii, &sb->sbipsflag), R_SBREG(sii, &sb->sbtpsflag)));
+		SI_ERROR(("sbadmatch3 0x%x sbadmatch2 0x%x\nsbadmatch1 0x%x sbadmatch0 0x%x\n",
+		          R_SBREG(sii, &sb->sbadmatch3), R_SBREG(sii, &sb->sbadmatch2),
+		          R_SBREG(sii, &sb->sbadmatch1), R_SBREG(sii, &sb->sbadmatch0)));
+		SI_ERROR(("sbintvec 0x%x sbbwa0 0x%x sbimconfighigh 0x%x\n",
+		          R_SBREG(sii, &sb->sbintvec), R_SBREG(sii, &sb->sbbwa0),
+		          R_SBREG(sii, &sb->sbimconfighigh)));
+		SI_ERROR(("sbbconfig 0x%x sbbstate 0x%x\n",
+		          R_SBREG(sii, &sb->sbbconfig), R_SBREG(sii, &sb->sbbstate)));
+		SI_ERROR(("sbactcnfg 0x%x sbflagst 0x%x sbidlow 0x%x \n\n",
+		          R_SBREG(sii, &sb->sbactcnfg), R_SBREG(sii, &sb->sbflagst),
+		          R_SBREG(sii, &sb->sbidlow)));
+	}
+}
+#endif	/* BCMDBG */

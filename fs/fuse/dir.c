@@ -14,7 +14,6 @@
 #include <linux/namei.h>
 #include <linux/slab.h>
 #include <linux/xattr.h>
-#include <linux/posix_acl.h>
 
 static bool fuse_use_readdirplus(struct inode *dir, struct dir_context *ctx)
 {
@@ -237,7 +236,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 		if (ret || (outarg.attr.mode ^ inode->i_mode) & S_IFMT)
 			goto invalid;
 
-		forget_all_cached_acls(inode);
+		fuse_forget_all_cached_acls(inode);
 		fuse_change_attributes(inode, &outarg.attr,
 				       entry_attr_timeout(&outarg),
 				       attr_version);
@@ -992,7 +991,7 @@ static int fuse_update_get_attr(struct inode *inode, struct file *file,
 		sync = time_before64(fi->i_time, get_jiffies_64());
 
 	if (sync) {
-		forget_all_cached_acls(inode);
+		fuse_forget_all_cached_acls(inode);
 		err = fuse_do_getattr(inode, stat, file);
 	} else if (stat) {
 		generic_fillattr(inode, stat);
@@ -1138,7 +1137,7 @@ static int fuse_perm_getattr(struct inode *inode, int mask)
 	if (mask & MAY_NOT_BLOCK)
 		return -ECHILD;
 
-	forget_all_cached_acls(inode);
+	fuse_forget_all_cached_acls(inode);
 	return fuse_do_getattr(inode, NULL, NULL);
 }
 
@@ -1308,7 +1307,7 @@ retry:
 		fi->nlookup++;
 		spin_unlock(&fc->lock);
 
-		forget_all_cached_acls(inode);
+		fuse_forget_all_cached_acls(inode);
 		fuse_change_attributes(inode, &o->attr,
 				       entry_attr_timeout(o),
 				       attr_version);
@@ -1839,7 +1838,7 @@ static int fuse_setattr(struct dentry *entry, struct iattr *attr)
 		 * the filesystem, so forget cached acls for the inode.
 		 */
 		if (fc->posix_acl)
-			forget_all_cached_acls(inode);
+			fuse_forget_all_cached_acls(inode);
 
 		/* Directory mode changed, may need to revalidate access */
 		if (d_is_dir(entry) && (attr->ia_valid & ATTR_MODE))
@@ -1875,8 +1874,10 @@ static const struct inode_operations fuse_dir_inode_operations = {
 	.permission	= fuse_permission,
 	.getattr	= fuse_getattr,
 	.listxattr	= fuse_listxattr,
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
 	.get_acl	= fuse_get_acl,
 	.set_acl	= fuse_set_acl,
+#endif
 };
 
 static const struct file_operations fuse_dir_operations = {
@@ -1895,8 +1896,10 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.permission	= fuse_permission,
 	.getattr	= fuse_getattr,
 	.listxattr	= fuse_listxattr,
+#ifdef CONFIG_FUSE_FS_POSIX_ACL
 	.get_acl	= fuse_get_acl,
 	.set_acl	= fuse_set_acl,
+#endif
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {

@@ -31,7 +31,7 @@
 typedef void (*si_serial_init_fn)(si_t *sih, void *regs, uint irq, uint baud_base, uint reg_shift);
 #else
 typedef void (*si_serial_init_fn)(void *regs, uint irq, uint baud_base, uint reg_shift);
-#endif // endif
+#endif
 extern void si_serial_init(si_t *sih, si_serial_init_fn add);
 
 extern volatile void *hnd_jtagm_init(si_t *sih, uint clkd, bool exttap, uint32 *prev_jtagctrl);

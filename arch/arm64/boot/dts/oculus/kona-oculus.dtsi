@@ -3,12 +3,52 @@
 
 #include "default-sim-panels.dtsi"
 
+&cam_fd {
+	status = "disabled";
+};
+
+&ipa_hw {
+	status = "disabled";
+};
+
+&mhi_netdev_0 {
+	status = "disabled";
+};
+
+&mhi_netdev_0_rsc {
+	status = "disabled";
+};
+
+&pil_slpi_mem {
+	status = "disabled";
+};
+
 &dump_mem {
+	status = "disabled";
+};
+
+&flash_led {
+	status = "disabled";
+};
+
+&i3c0 {
+	status = "disabled";
+};
+
+&i3c1 {
 	status = "disabled";
 };
 
 &mdm0 {
 	status = "disabled";
+};
+
+&pm8150b_haptics {
+	status = "disabled";
+};
+
+&qcom_seecom {
+	reg = <0x82400000 0x1C00000>;
 };
 
 &qupv3_se4_i2c {
@@ -22,15 +62,15 @@
 	};
 };
 
-&reserved_memory {
-	oculus_dma_memory: oculus_dma_region {
-		compatible = "shared-dma-pool";
-		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
-		reusable;
-		alignment = <0x0 0x400000>;
-		size = <0x0 0x4C00000>;
-	};
+&disp_rdump_memory {
+	status = "disabled";
+};
 
+&removed_mem {
+	reg = <0x0 0x80b00000 0x0 0x3500000>;
+};
+
+&reserved_memory {
 	ramoops: ramoops {
 		compatible = "ramoops";
 		reg = <0 0x9BA00000 0 0x00200000>;
@@ -64,17 +104,59 @@
 		status = "disabled";
 	};
 
-	qcom,ion {
-		qcom,ion-heap@30 {
-			reg = <30>;
-			memory-region = <&oculus_dma_memory>;
-			qcom,ion-heap-type = "DMA";
+	qcom,cam-fd {
+		status = "disabled";
+	};
+
+	qcom,cam_smmu {
+		msm_cam_smmu_fd {
+			status = "disabled";
 		};
+	};
+
+	qcom,ipa_fws {
+		status = "disabled";
+	};
+
+	qcom,ipa-mpm {
+		status = "disabled";
+	};
+
+	qcom,ipa_uc {
+		status = "disabled";
+	};
+
+	qcom,msm_gsi {
+		status = "disabled";
+	};
+
+	qcom,rmnet-ipa {
+		status = "disabled";
+	};
+
+	qcom,ssc@5c00000 {
+		status = "disabled";
+	};
+
+	usb_audio_qmi_dev {
+		status = "disabled";
+	};
+
+	usb_emu_phy@a720000 {
+		status = "disabled";
+	};
+
+	usb_nop_phy {
+		status = "disabled";
 	};
 };
 
 &spmi_debug_bus {
 	status = "ok";
+};
+
+&ssc_sensors {
+	status = "disabled";
 };
 
 &vendor {
@@ -93,4 +175,9 @@
 
 &usb1 {
 	extcon = <&extcon_usb1>;
+};
+
+&wlan {
+	reg = <0xb0000000 0x0>;
+	reg-names = "";
 };

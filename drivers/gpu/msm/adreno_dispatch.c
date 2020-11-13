@@ -488,14 +488,23 @@ static inline int adreno_dispatcher_requeue_cmdobj(
  *
  * Add a context to the dispatcher pending list.
  */
-static void  dispatcher_queue_context(struct adreno_device *adreno_dev,
+static int dispatcher_queue_context(struct adreno_device *adreno_dev,
 		struct adreno_context *drawctxt)
 {
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
+	int ret = 0;
 
 	/* Refuse to queue a detached context */
 	if (kgsl_context_detached(&drawctxt->base))
-		return;
+		return ret;
+
+	/* Lazily allocate the drawctxt's preemption record (if necessary) */
+	if (gpudev->preemption_context_init) {
+		ret = gpudev->preemption_context_init(&drawctxt->base);
+		if (ret)
+			return ret;
+	}
 
 	spin_lock(&dispatcher->plist_lock);
 
@@ -508,6 +517,8 @@ static void  dispatcher_queue_context(struct adreno_device *adreno_dev,
 	}
 
 	spin_unlock(&dispatcher->plist_lock);
+
+	return ret;
 }
 
 /**
@@ -1479,8 +1490,15 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 		kgsl_pwrctrl_update_l2pc(&adreno_dev->dev,
 				KGSL_L2PC_QUEUE_TIMEOUT);
 
-	/* Add the context to the dispatcher pending list */
-	dispatcher_queue_context(adreno_dev, drawctxt);
+	/*
+	 * Add the context to the dispatcher pending list. If this has to
+	 * allocate the context's preemption record and that fails, then it'll
+	 * dump out an error code which we need to pass back to the caller. Not
+	 * much else we can do at that point.
+	 */
+	ret = dispatcher_queue_context(adreno_dev, drawctxt);
+	if (ret)
+		return ret;
 
 	/*
 	 * Only issue commands if inflight is less than burst -this prevents us

@@ -62,7 +62,7 @@
 #define CAM_MAX_ACQ_RES    7
 #define CAM_MAX_HW_SPLIT   3
 
-#define CAM_MAX_STREAM_MODE_HANDLES         20
+#define CAM_MAX_STREAM_MODE_HANDLES         30
 
 /* stream mode command bits */
 #define CAM_STREAM_MODE_RETURN_IMAGE (1 << 0)

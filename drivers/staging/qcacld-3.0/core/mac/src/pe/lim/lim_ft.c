@@ -433,7 +433,8 @@ void lim_ft_prepare_add_bss_req(struct mac_context *mac,
 					   pBeaconStruct->HTCaps.supportedMCSSet,
 					   false, ft_session,
 					   &pBeaconStruct->VHTCaps,
-					   &pBeaconStruct->he_cap);
+					   &pBeaconStruct->he_cap,
+					   bssDescription);
 	}
 
 	pAddBssParams->maxTxPower = ft_session->maxTxPower;

@@ -26,7 +26,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 #include <wlioctl.h>
 #include <802.11.h>
 

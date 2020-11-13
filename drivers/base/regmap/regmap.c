@@ -1978,6 +1978,7 @@ int regmap_bulk_write(struct regmap *map, unsigned int reg, const void *val,
 {
 	int ret = 0, i;
 	size_t val_bytes = map->format.val_bytes;
+	size_t total_bytes = val_count * val_bytes;
 
 	if (!IS_ALIGNED(reg, map->reg_stride))
 		return -EINVAL;
@@ -2020,18 +2021,29 @@ int regmap_bulk_write(struct regmap *map, unsigned int reg, const void *val,
 out:
 		map->unlock(map->lock_arg);
 	} else {
+		/*
+		 * Fast path things if the number of bytes needed fits within
+		 * a register, otherwise fall back on using heap allocation.
+		 */
+		unsigned long val_buffer = 0;
 		void *wval;
 
-		wval = kmemdup(val, val_count * val_bytes, map->alloc_flags);
-		if (!wval)
-			return -ENOMEM;
+		if (total_bytes > sizeof(unsigned long)) {
+			wval = kmemdup(val, total_bytes, map->alloc_flags);
+			if (!wval)
+				return -ENOMEM;
+		} else {
+			memcpy(&val_buffer, val, total_bytes);
+			wval = (void *)&val_buffer;
+		}
 
-		for (i = 0; i < val_count * val_bytes; i += val_bytes)
+		for (i = 0; i < total_bytes; i += val_bytes)
 			map->format.parse_inplace(wval + i);
 
-		ret = regmap_raw_write(map, reg, wval, val_bytes * val_count);
+		ret = regmap_raw_write(map, reg, wval, total_bytes);
 
-		kfree(wval);
+		if (total_bytes > sizeof(unsigned long))
+			kfree(wval);
 	}
 	return ret;
 }

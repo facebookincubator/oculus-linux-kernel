@@ -21,14 +21,12 @@
 };
 
 &pm8150a_l4 {
-	regulator-always-on;
 	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150_l16 {
-	regulator-always-on;
-	qcom,init-voltage = <3300000>;
+	qcom,init-voltage = <3100000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
@@ -77,6 +75,19 @@
 				bias-pull-up;
 			};
 		};
+		cm7120_dev0_speaker_en_suspend: cm7120_dev0_speaker_en_suspend {
+			mux {
+				pins = "gpio145";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio145";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
 	};
 
 	cm7120_dev0_codec_ldo_en_pins {
@@ -93,6 +104,19 @@
 				bias-pull-up;
 			};
 		};
+		cm7120_dev0_codec_ldo_en_suspend: cm7120_dev0_ldo_en_suspend {
+			mux {
+				pins = "gpio147";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio147";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
 	};
 
 	cm7120_dev0_codec_reset_pins {
@@ -107,6 +131,19 @@
 				drive-strength = <16>;
 				output-high;
 				bias-no-pull;
+			};
+		};
+		cm7120_dev0_codec_reset_suspend: cm7120_dev0_reset_suspend{
+			mux {
+				pins = "gpio148";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio148";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
 			};
 		};
 	};
@@ -157,10 +194,14 @@
 		cm7120,codec_3v3-supply = <&pm8150_l16>;
 
 		qcom,use-pinctrl = <1>;
-		pinctrl-names = "default";
+		pinctrl-names = "default", "suspend",
+			"spk_en", "spk_suspend";
 		pinctrl-0 = <&cm7120_dev0_codec_ldo_en_default
-			&cm7120_dev0_codec_reset_default
-			&cm7120_dev0_speaker_en_default>;
+			&cm7120_dev0_codec_reset_default>;
+		pinctrl-1 = <&cm7120_dev0_codec_ldo_en_suspend
+			&cm7120_dev0_codec_reset_suspend>;
+		pinctrl-2 = <&cm7120_dev0_speaker_en_default>;
+		pinctrl-3 = <&cm7120_dev0_speaker_en_suspend>;
 	};
 };
 

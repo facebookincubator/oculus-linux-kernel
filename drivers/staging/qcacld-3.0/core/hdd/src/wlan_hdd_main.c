@@ -3424,6 +3424,7 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 
 		hdd_sysfs_create_driver_root_obj();
 		hdd_sysfs_create_version_interface(hdd_ctx->psoc);
+		hdd_sysfs_create_regulatory_root_obj();
 		hdd_sysfs_create_powerstats_interface();
 		hdd_update_hw_sw_info(hdd_ctx);
 
@@ -8169,6 +8170,7 @@ static int hdd_wiphy_init(struct hdd_context *hdd_ctx)
 }
 
 #ifdef WLAN_FEATURE_DP_BUS_BANDWIDTH
+#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 /**
  * hdd_display_periodic_stats() - Function to display periodic stats
  * @hdd_ctx - handle to hdd context
@@ -8228,6 +8230,7 @@ static void hdd_display_periodic_stats(struct hdd_context *hdd_ctx,
 		data_in_time_period = false;
 	}
 }
+#endif /* WLAN_FEATURE_PERIODIC_STA_STATS */
 
 /**
  * hdd_clear_rps_cpu_mask - clear RPS CPU mask for interfaces
@@ -8600,7 +8603,9 @@ static void hdd_pld_request_bus_bandwidth(struct hdd_context *hdd_ctx,
 					  &pm_qos_cpu_mask);
 	}
 
+#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 	hdd_display_periodic_stats(hdd_ctx, (total_pkts > 0) ? true : false);
+#endif
 
 	hdd_periodic_sta_stats_display(hdd_ctx);
 }
@@ -12177,6 +12182,7 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 
 	hdd_sysfs_destroy_powerstats_interface();
 	hdd_sysfs_destroy_version_interface();
+	hdd_sysfs_destroy_regulatory_root_obj();
 	hdd_sysfs_destroy_driver_root_obj();
 	hdd_debug("Closing CDS modules!");
 
@@ -13737,7 +13743,10 @@ int hdd_init(void)
 
 	hdd_trace_init();
 	hdd_register_debug_callback();
+
+#ifdef FEATURE_ROAM_DEBUG
 	wlan_roam_debug_init();
+#endif
 
 	return 0;
 }
@@ -13751,7 +13760,9 @@ int hdd_init(void)
  */
 void hdd_deinit(void)
 {
+#ifdef FEATURE_ROAM_DEBUG
 	wlan_roam_debug_deinit();
+#endif
 
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_sock_deinit_svc();
@@ -14229,6 +14240,7 @@ static QDF_STATUS hdd_qdf_init(void)
 		goto talloc_deinit;
 	}
 
+#ifdef TRACE_RECORD
 	status = qdf_trace_spin_lock_init();
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("Failed to init spinlock; status:%u", status);
@@ -14236,11 +14248,15 @@ static QDF_STATUS hdd_qdf_init(void)
 	}
 
 	qdf_trace_init();
+#endif
+
 	qdf_register_debugcb_init();
 
 	return QDF_STATUS_SUCCESS;
 
+#ifdef TRACE_RECORD
 cpuhp_deinit:
+#endif
 	qdf_cpuhp_deinit();
 talloc_deinit:
 	qdf_talloc_feature_deinit();
@@ -14263,7 +14279,9 @@ static void hdd_qdf_deinit(void)
 {
 	/* currently, no debugcb deinit */
 
+#ifdef TRACE_RECORD
 	qdf_trace_deinit();
+#endif
 
 	/* currently, no trace spinlock deinit */
 

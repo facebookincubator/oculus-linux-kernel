@@ -33,23 +33,44 @@
 #include <wl_cfgscan.h>
 #endif /* WL_CFG80211 */
 
+#if defined(IL_BIGENDIAN)
+#include <bcmendian.h>
+#define htod32(i) (bcmswap32(i))
+#define htod16(i) (bcmswap16(i))
+#define dtoh32(i) (bcmswap32(i))
+#define dtoh16(i) (bcmswap16(i))
+#define htodchanspec(i) htod16(i)
+#define dtohchanspec(i) dtoh16(i)
+#else
 #define htod32(i) (i)
 #define htod16(i) (i)
 #define dtoh32(i) (i)
 #define dtoh16(i) (i)
 #define htodchanspec(i) (i)
 #define dtohchanspec(i) (i)
+#endif
+
+#if defined(CUSTOMER_DBG_PREFIX_ENABLE)
+#define USER_PREFIX_WLDEV		"[wldev][wlan] "
+#define WLDEV_ERROR_TEXT		USER_PREFIX_WLDEV
+#define WLDEV_INFO_TEXT			USER_PREFIX_WLDEV
+#else
+#define WLDEV_ERROR_TEXT		"WLDEV-ERROR) "
+#define WLDEV_INFO_TEXT			"WLDEV-INFO) "
+#endif /* defined(CUSTOMER_DBG_PREFIX_ENABLE) */
 
 #define	WLDEV_ERROR(args)						\
 	do {										\
-		printk(KERN_ERR "WLDEV-ERROR) ");	\
-		printk args;							\
+		WL_DBG_PRINT_SYSTEM_TIME;		\
+		pr_cont(WLDEV_ERROR_TEXT);	\
+		pr_cont args;							\
 	} while (0)
 
 #define	WLDEV_INFO(args)						\
 	do {										\
-		printk(KERN_INFO "WLDEV-INFO) ");	\
-		printk args;							\
+		WL_DBG_PRINT_SYSTEM_TIME;		\
+		pr_cont(WLDEV_INFO_TEXT);	\
+		pr_cont args;							\
 	} while (0)
 
 extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
@@ -60,12 +81,38 @@ static s32 wldev_ioctl(
 	s32 ret = 0;
 	struct wl_ioctl  ioc;
 
+#if defined(BCMDONGLEHOST)
+
 	bzero(&ioc, sizeof(ioc));
 	ioc.cmd = cmd;
 	ioc.buf = arg;
 	ioc.len = len;
 	ioc.set = set;
 	ret = dhd_ioctl_entry_local(dev, (wl_ioctl_t *)&ioc, cmd);
+#else
+	struct ifreq ifr;
+	mm_segment_t fs;
+
+	bzero(&ioc, sizeof(ioc));
+	ioc.cmd = cmd;
+	ioc.buf = arg;
+	ioc.len = len;
+	ioc.set = set;
+
+	strlcpy(ifr.ifr_name, dev->name, sizeof(ifr.ifr_name));
+	ifr.ifr_data = (caddr_t)&ioc;
+
+	fs = get_fs();
+	set_fs(get_ds());
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
+	ret = dev->do_ioctl(dev, &ifr, SIOCDEVPRIVATE);
+#else
+	ret = dev->netdev_ops->ndo_do_ioctl(dev, &ifr, SIOCDEVPRIVATE);
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31) */
+	set_fs(fs);
+
+	ret = 0;
+#endif /* defined(BCMDONGLEHOST) */
 
 	return ret;
 }
@@ -82,11 +129,11 @@ s32 wldev_ioctl_set(
 #if defined(STRICT_GCC_WARNINGS) && defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-qual"
-#endif // endif
+#endif
 	return wldev_ioctl(dev, cmd, (void *)arg, len, 1);
 #if defined(STRICT_GCC_WARNINGS) && defined(__GNUC__)
 #pragma GCC diagnostic pop
-#endif // endif
+#endif
 
 }
 
@@ -457,68 +504,30 @@ int wldev_get_mode(
 	return error;
 }
 int wldev_set_country(
-	struct net_device *dev, char *country_code, bool notify, bool user_enforced, int revinfo)
+	struct net_device *dev, char *country_code, bool notify, int revinfo)
 {
+#if defined(BCMDONGLEHOST)
 	int error = -1;
 	wl_country_t cspec = {{0}, 0, {0}};
-	scb_val_t scbval;
 	char smbuf[WLC_IOCTL_SMLEN];
-#ifdef WL_CFG80211
-	struct wireless_dev *wdev = ndev_to_wdev(dev);
-	struct wiphy *wiphy = wdev->wiphy;
-	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-#endif /* WL_CFG80211 */
 
 	if (!country_code)
 		return error;
 
-	bzero(&scbval, sizeof(scb_val_t));
-	error = wldev_iovar_getbuf(dev, "country", NULL, 0, &cspec, sizeof(cspec), NULL);
+	cspec.rev = revinfo;
+	strlcpy(cspec.country_abbrev, country_code, WL_CCODE_LEN + 1);
+	strlcpy(cspec.ccode, country_code, WL_CCODE_LEN + 1);
+	dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
+	error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
+		smbuf, sizeof(smbuf), NULL);
 	if (error < 0) {
-		WLDEV_ERROR(("wldev_set_country: get country failed = %d\n", error));
+		WLDEV_ERROR(("wldev_set_country: set country for %s as %s rev %d failed\n",
+			country_code, cspec.ccode, cspec.rev));
 		return error;
 	}
-
-	if ((error < 0) ||
-
-// MOG-ON: OEM_ANDROID
-		dhd_force_country_change(dev) ||
-// MOG-OFF: OEM_ANDROID
-
-	    (strncmp(country_code, cspec.ccode, WLC_CNTRY_BUF_SZ) != 0)) {
-
-#ifdef WL_CFG80211
-		if ((user_enforced) && (wl_get_drv_status(cfg, CONNECTED, dev))) {
-#else
-		if (user_enforced) {
-#endif /* WL_CFG80211 */
-			bzero(&scbval, sizeof(scb_val_t));
-			error = wldev_ioctl_set(dev, WLC_DISASSOC,
-			                        &scbval, sizeof(scb_val_t));
-			if (error < 0) {
-				WLDEV_ERROR(("wldev_set_country: set country failed"
-					" due to Disassoc error %d\n",
-					error));
-				return error;
-			}
-		}
-
-		wl_cfg80211_scan_abort(cfg);
-
-		cspec.rev = revinfo;
-		strlcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
-		strlcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
-		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
-		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
-			smbuf, sizeof(smbuf), NULL);
-		if (error < 0) {
-			WLDEV_ERROR(("wldev_set_country: set country for %s as %s rev %d failed\n",
-				country_code, cspec.ccode, cspec.rev));
-			return error;
-		}
-		dhd_bus_country_set(dev, &cspec, notify);
-		WLDEV_INFO(("wldev_set_country: set country for %s as %s rev %d\n",
-			country_code, cspec.ccode, cspec.rev));
-	}
+	dhd_bus_country_set(dev, &cspec, notify);
+	WLDEV_INFO(("wldev_set_country: set country for %s as %s rev %d\n",
+		country_code, cspec.ccode, cspec.rev));
+#endif /* defined(BCMDONGLEHOST) */
 	return 0;
 }

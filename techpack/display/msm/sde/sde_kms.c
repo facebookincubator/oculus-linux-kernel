@@ -3337,7 +3337,8 @@ static int _sde_kms_get_splash_data(struct sde_splash_data *data)
 			}
 
 			mem =  &data->splash_mem[i];
-			if (!node1 || of_address_to_resource(node1, i, &r1)) {
+			if (!node1 || !of_device_is_available(node1) ||
+					of_address_to_resource(node1, i, &r1)) {
 				SDE_DEBUG("failed to find ramdump memory\n");
 				mem->ramdump_base = 0;
 				mem->ramdump_size = 0;

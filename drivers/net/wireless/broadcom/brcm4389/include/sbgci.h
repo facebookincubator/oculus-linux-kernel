@@ -177,7 +177,79 @@ typedef volatile struct {
 	uint32 gci_cncb_2g_lut;				/* 0x488 */
 	uint32 gci_cncb_5g_lut;				/* 0x48c */
 	uint32 gci_cncb_glitch_filter_width;		/* 0x490 */
-	uint32 PAD[PADSZ(0x494, 0xbfc)];		/* 0x494-0xbfc */
+	uint32 PAD[PADSZ(0x494, 0x5fc)];		/* 0x494-0x5fc */
+	uint32 sgr_fifo_control_reg_5g;			/* 0x600 */
+	uint32 sgr_fifo_control_reg_2g;			/* 0x604 */
+	uint32 sgr_fifo_control_reg_bt;			/* 0x608 */
+	uint32 PAD;					/* 0x60c */
+	uint32 sgr_rx_fifo0_read_reg0;			/* 0x610 */
+	uint32 sgr_rx_fifo0_read_reg1;			/* 0x614 */
+	uint32 sgr_rx_fifo0_read_reg2;			/* 0x618 */
+	uint32 sgr_rx_fifo1_read_reg0;			/* 0x61c */
+	uint32 sgr_rx_fifo1_read_reg1;			/* 0x620 */
+	uint32 sgr_rx_fifo1_read_reg2;			/* 0x624 */
+	uint32 sgr_rx_fifo2_read_reg0;			/* 0x628 */
+	uint32 sgr_rx_fifo2_read_reg1;			/* 0x62c */
+	uint32 sgr_rx_fifo2_read_reg2;			/* 0x630 */
+	uint32 sgr_rx_fifo3_read_reg0;			/* 0x634 */
+	uint32 sgr_rx_fifo3_read_reg1;			/* 0x638 */
+	uint32 sgr_rx_fifo3_read_reg2;			/* 0x63c */
+	uint32 sgr_rx_fifo4_read_reg0;			/* 0x640 */
+	uint32 sgr_rx_fifo4_read_reg1;			/* 0x644 */
+	uint32 sgr_rx_fifo4_read_reg2;			/* 0x648 */
+	uint32 sgr_rx_fifo5_read_reg0;			/* 0x64c */
+	uint32 sgr_rx_fifo5_read_reg1;			/* 0x650 */
+	uint32 sgr_rx_fifo5_read_reg2;			/* 0x654 */
+	uint32 sgr_rx_fifo6_read_reg0;			/* 0x658 */
+	uint32 sgr_rx_fifo6_read_reg1;			/* 0x65c */
+	uint32 sgr_rx_fifo6_read_reg2;			/* 0x660 */
+	uint32 sgr_rx_fifo7_read_reg0;			/* 0x664 */
+	uint32 sgr_rx_fifo7_read_reg1;			/* 0x668 */
+	uint32 sgr_rx_fifo7_read_reg2;			/* 0x66c */
+	uint32 sgr_rx_fifo8_read_reg0;			/* 0x670 */
+	uint32 sgr_rx_fifo8_read_reg1;			/* 0x674 */
+	uint32 sgr_rx_fifo8_read_reg2;			/* 0x678 */
+	uint32 sgr_rx_fifo0_read_status;		/* 0x67c */
+	uint32 sgr_rx_fifo1_read_status;		/* 0x680 */
+	uint32 sgr_rx_fifo2_read_status;		/* 0x684 */
+	uint32 sgr_rx_fifo3_read_status;		/* 0x688 */
+	uint32 sgr_rx_fifo4_read_status;		/* 0x68c */
+	uint32 sgr_rx_fifo5_read_status;		/* 0x690 */
+	uint32 sgr_rx_fifo6_read_status;		/* 0x694 */
+	uint32 sgr_rx_fifo7_read_status;		/* 0x698 */
+	uint32 sgr_rx_fifo8_read_status;		/* 0x69c */
+	uint32 wl_tx_fifo_data_idx_reg;			/* 0x6a0 */
+	uint32 wl_tx_fifo_data_reg0;			/* 0x6a4 */
+	uint32 wl_tx_fifo_data_reg1;			/* 0x6a8 */
+	uint32 wl_tx_fifo_data_reg2;			/* 0x6ac */
+	uint32 mac_main_core_tx_fifo_data_idx_reg;	/* 0x6b0 */
+	uint32 mac_main_core_tx_fifo_data_reg0;		/* 0x6b4 */
+	uint32 mac_main_core_tx_fifo_data_reg1;		/* 0x6b8 */
+	uint32 mac_main_core_tx_fifo_data_reg2;		/* 0x6bc */
+	uint32 mac_aux_core_tx_fifo_data_idx_reg;	/* 0x6c0 */
+	uint32 mac_aux_core_tx_fifo_data_reg0;		/* 0x6c4 */
+	uint32 mac_aux_core_tx_fifo_data_reg1;		/* 0x6c8 */
+	uint32 mac_aux_core_tx_fifo_data_reg2;		/* 0x6cc */
+	uint32 bt_tx_fifo_data_idx_reg;			/* 0x6d0 */
+	uint32 bt_tx_fifo_data_reg0;			/* 0x6d4 */
+	uint32 bt_tx_fifo_data_reg1;			/* 0x6d8 */
+	uint32 bt_tx_fifo_data_reg2;			/* 0x6dc */
+	uint32 wci2_tx_fifo_data_reg0;			/* 0x6e0 */
+	uint32 wci2_tx_fifo_data_reg1;			/* 0x6e4 */
+	uint32 sgt_tx_fifo_ctrl;			/* 0x6e8 */
+	uint32 sgt_fifo_status_hpri;			/* 0x6ec */
+	uint32 sgt_fifo_status_norm;			/* 0x6f0 */
+	uint32 sgt_fifo_status_lpri;			/* 0x6f4 */
+	uint32 PAD[PADSZ(0x6f8, 0x7a0)];		/* 0x6f8-0x7a0 */
+	uint32 sg_timestamp_fifo_ctrl;			/* 0x7a4 */
+	uint32 sgr_timestamp_data_rx;			/* 0x7a8 */
+	uint32 sgr_timestamp_data_tx;			/* 0x7ac */
+	uint32 sgr_fifo_int_reg;			/* 0x7b0 */
+	uint32 sgr_fifo_int_mask_reg;			/* 0x7b4 */
+	uint32 sgt_fifo_int_reg;			/* 0x7b8 */
+	uint32 sgt_fifo_int_mask_reg;			/* 0x7bc */
+	uint32 sg_fifo_debug_bus;			/* 0x7c0 */
+	uint32 PAD[PADSZ(0x7c4, 0xbfc)];		/* 0x7c4-0xbfc */
 	uint32 lhl_core_capab_adr;			/* 0xC00 */
 	uint32 lhl_main_ctl_adr;			/* 0xC04 */
 	uint32 lhl_pmu_ctl_adr;				/* 0xC08 */
@@ -269,6 +341,41 @@ typedef volatile struct {
 	uint32 lhl_lp_dn_ctl5_adr;			/* 0xeec */
 	uint32 lhl_top_pwrdn3_ctl_adr;			/* 0xEF0 */
 	uint32 lhl_top_pwrup3_ctl_adr;			/* 0xEF4 */
+	uint32 PAD[PADSZ(0xef8, 0xf00)];		/* 0xEF8 - 0xF00 */
+	uint32 error_status;				/* 0xF04 */
+	uint32 error_parity;				/* 0xF08 */
+	uint32 PAD;					/* 0xF0C */
+	uint32 msg_buf_0[8];				/* 0xF10 - 0xF2C */
+	uint32 PAD[PADSZ(0xf30, 0xf3c)];		/* 0xF30 - 0xF3C */
+	uint32 CTRL_REG0;				/* 0xF40 */
+	uint32 CTRL_REG1;				/* 0xF44 */
+	uint32 chipID;					/* 0xF48 */
+	uint32 PAD[PADSZ(0xf4c, 0xf54)];		/* 0xF4C - 0xF54 */
+	uint32 timestamp_mask0;				/* 0xf58 */
+	uint32 timestamp_mask1;				/* 0xf5c */
+	uint32 wl_event_rdAddress;			/* 0xF60 */
+	uint32 bt_event_rdAddress;			/* 0xF64 */
+	uint32 interrupt_Address;			/* 0xF68 */
+	uint32 PAD[PADSZ(0xf6c, 0xf70)];                /* 0xF6c - 0xF70 */
+	uint32 coex_error_status;			/* 0xF74 */
+	uint32 coex_error_parity;			/* 0xF78 */
+	uint32 PAD;					/* 0xF7C */
+	uint32 ar_buf_01[4];				/* 0xF80 - 0xF8C */
+	uint32 PAD[PADSZ(0xf90,0xfac)];			/* 0xF90 - 0xFAC */
+	uint32 coex_ctrl_reg0;				/* 0xFB0 */
+	uint32 coex_ctrl_reg1;				/* 0xFB4 */
+	uint32 coex_chip_id;				/* 0xFB8 */
+	uint32 PAD[PADSZ(0xfbc, 0xfcc)];		/* 0xFBC - 0xFCC */
+	uint32 coex_wl_event_rd;			/* 0xFD0 */
+	uint32 coex_bt_event_rd;			/* 0xFD4 */
+	uint32 coex_interrupt;				/* 0xFD8 */
+	uint32 PAD;					/* 0xFDC */
+	uint32 spmi_shared_reg_status_intMask_adr;	/* 0xFE0 */
+	uint32 spmi_shared_reg_status_intStatus_adr;	/* 0xFE4 */
+	uint32 spmi_shared_reg_status_wakeMask_adr;	/* 0xFE8 */
+	uint32 spmi_shared_event_map_idx_adr;		/* 0xFEC */
+	uint32 spmi_shared_event_map_data_adr;		/* 0xFF0 */
+	uint32 spmi_coex_event_gpr_status_adr;		/* 0xFF4 */
 } gciregs_t;
 
 #define	GCI_CAP0_REV_MASK	0x000000ff

@@ -12,6 +12,10 @@
 #define DEFAULT_MOLOKINI_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
 
+#define STATUS_FULLY_DISCHARGED BIT(4)
+#define STATUS_FULLY_CHARGED BIT(5)
+#define STATUS_DISCHARGING BIT(6)
+
 /* Period in minutes Molokini firmware will use to send VDM traffic for
  * ON/OFF head mount status. 0 corresponds to the minimum period of 1 minute.
  * This parameter may be set in increments of 1 minute.
@@ -36,7 +40,29 @@
 
 static const size_t molokini_size_bytes[] = { 1, 2, 4, 8, 16, 32 };
 
+static const char * const battery_status_text[] = {
+	"Not charging",
+	"Charging",
+	"Unknown"
+};
+
+enum battery_status_value {
+	NOT_CHARGING = 0,
+	CHARGING,
+	UNKNOWN,
+};
+
 static void molokini_mount_status_work(struct work_struct *work);
+
+static void convert_battery_status(struct molokini_pd *mpd, u16 status)
+{
+	if (!(status & STATUS_FULLY_DISCHARGED) && (status & STATUS_DISCHARGING))
+		strcpy(mpd->params.battery_status, battery_status_text[NOT_CHARGING]);
+	else if ((status & STATUS_FULLY_CHARGED) || !(status & STATUS_DISCHARGING))
+		strcpy(mpd->params.battery_status, battery_status_text[CHARGING]);
+	else
+		strcpy(mpd->params.battery_status, battery_status_text[UNKNOWN]);
+}
 
 static void vdm_connect(struct usbpd_svid_handler *hdlr,
 		bool supports_usb_comm)
@@ -147,7 +173,7 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 		mpd->params.voltage = vdos[0];
 		break;
 	case MOLOKINI_FW_BATT_STATUS:
-		mpd->params.battery_status = vdos[0];
+		convert_battery_status(mpd, vdos[0]);
 		break;
 	case MOLOKINI_FW_CURRENT:
 		mpd->params.icurrent = vdos[0]; /* negative range */
@@ -649,7 +675,7 @@ static ssize_t status_show(struct device *dev,
 		return result;
 	}
 
-	result = scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.battery_status);
+	result = scnprintf(buf, PAGE_SIZE, "%s\n", mpd->params.battery_status);
 	mutex_unlock(&mpd->lock);
 
 	return result;
@@ -662,13 +688,6 @@ static ssize_t status_store(struct device *dev,
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
 	int result;
-	u16 temp;
-
-	result = kstrtou16(buf, 16, &temp);
-	if (result < 0) {
-		dev_err(dev, "Illegal input for status: %s", buf);
-		return result;
-	}
 
 	result = mutex_lock_interruptible(&mpd->lock);
 	if (result != 0) {
@@ -676,7 +695,7 @@ static ssize_t status_store(struct device *dev,
 		return result;
 	}
 
-	mpd->params.battery_status = temp;
+	snprintf(mpd->params.battery_status, sizeof(mpd->params.battery_status), "%s", buf);
 	mutex_unlock(&mpd->lock);
 
 	return count;
@@ -701,6 +720,11 @@ static void molokini_create_sysfs(struct molokini_pd *mpd)
 	result = sysfs_create_groups(&mpd->dev->kobj, molokini_groups);
 	if (!result)
 		dev_err(mpd->dev, "Error creating sysfs entries: %d\n", result);
+}
+
+static void molokini_default_sysfs_values(struct molokini_pd *mpd)
+{
+	strcpy(mpd->params.battery_status, battery_status_text[UNKNOWN]);
 }
 
 static void molokini_mount_status_work(struct work_struct *work)
@@ -804,6 +828,7 @@ static int molokini_probe(struct platform_device *pdev)
 	/* Create nodes here. */
 	molokini_create_debugfs(mpd);
 	molokini_create_sysfs(mpd);
+	molokini_default_sysfs_values(mpd);
 
 	return result;
 }

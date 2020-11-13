@@ -26,7 +26,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 
 /* This marks the start of a packed structure section. */
 #include <packed_section_start.h>

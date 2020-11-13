@@ -91,7 +91,7 @@
 
 &pm8150b_charger {
 	status = "ok";
-	qcom,sec-charger-config = <0>;
+	qcom,sec-charger-config = <2>;
 	qcom,auto-recharge-soc = <98>;
 	io-channels = <&pm8150b_vadc ADC_USB_IN_V_16>,
 		      <&pm8150b_vadc ADC_MID_CHG_DIV6>,

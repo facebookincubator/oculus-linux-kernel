@@ -47,7 +47,7 @@
 
 #ifndef BIT
 #define BIT(x) (1 << (x))
-#endif // endif
+#endif
 
 /* DSSS, CCK and 802.11n rates in [500kbps] units */
 #define WL_MAXRATE	108	/* in 500kbps units */
@@ -67,7 +67,8 @@
 
 #ifdef WL_NAN
 /* RTT Retry Timer Interval */
-#define DHD_RTT_RETRY_TIMER_INTERVAL_MS		3000u
+/* Fix Me: Revert back once retry logic is back in place */
+#define DHD_RTT_RETRY_TIMER_INTERVAL_MS			-1
 #endif /* WL_NAN */
 
 #define DHD_RTT_INVALID_TARGET_INDEX		-1
@@ -165,6 +166,13 @@ typedef enum ranging_type {
 	RTT_TYPE_NAN_GEOFENCE	=	3
 } ranging_type_t;
 
+typedef enum ranging_target_list_mode {
+	RNG_TARGET_LIST_MODE_INVALID	=	0,
+	RNG_TARGET_LIST_MODE_LEGACY	=	1,
+	RNG_TARGET_LIST_MODE_NAN	=	2,
+	RNG_TARGET_LIST_MODE_MIX	=	3
+} ranging_target_list_mode_t;
+
 #define FTM_MAX_NUM_BURST_EXP	14
 #define HAS_11MC_CAP(cap) (cap & RTT_CAP_FTM_WAY)
 #define HAS_ONEWAY_CAP(cap) (cap & RTT_CAP_ONE_WAY)
@@ -217,6 +225,10 @@ typedef struct rtt_target_info {
 	uint32 num_retries_per_ftmr;
 	uint8  LCI_request;
 	uint8  LCR_request;
+#ifdef WL_RTT_LCI
+	bcm_xtlv_t *LCI; /* LCI Report */
+	bcm_xtlv_t *LCR; /* Location Civic Report */
+#endif /* WL_RTT_LCI */
 	/*
 	* Applies to 1-sided and 2-sided RTT. Valid values will
 	* be 2-11 and 15 as specified by the 802.11mc std for
@@ -240,20 +252,37 @@ typedef struct rtt_goefence_target_info {
 
 typedef struct rtt_config_params {
 	int8 rtt_target_cnt;
+	uint8 target_list_mode;
 	rtt_target_info_t *target_info;
 } rtt_config_params_t;
 
+typedef struct rtt_geofence_setup_status {
+	bool geofence_setup_inprog; /* Lock to serialize geofence setup */
+	struct nan_ranging_inst *rng_inst; /* Locked for this ranging instance */
+} rtt_geofence_setup_status_t;
+
 typedef struct rtt_geofence_cfg {
 	int8 geofence_target_cnt;
-	bool rtt_in_progress;
-	bool role_concurr_state;
 	int8 cur_target_idx;
 	rtt_geofence_target_info_t geofence_target_info[RTT_MAX_GEOFENCE_TARGET_CNT];
 	int geofence_rtt_interval;
+	int max_geofence_sessions; /* Polled from FW via IOVAR Query */
+	int geofence_sessions_cnt; /* No. of Geofence/Resp Sessions running currently */
+	rtt_geofence_setup_status_t geofence_setup_status;
 #ifdef RTT_GEOFENCE_CONT
 	bool geofence_cont;
 #endif /* RTT_GEOFENCE_CONT */
 } rtt_geofence_cfg_t;
+
+typedef struct rtt_directed_setup_status {
+	bool directed_na_setup_inprog; /* Lock to serialize directed setup */
+	struct nan_ranging_inst *rng_inst; /* Locked for this ranging instance */
+} rtt_directed_setup_status_t;
+
+typedef struct rtt_directed_cfg {
+	int directed_sessions_cnt; /* No. of Geofence/Resp Sessions running currently */
+	rtt_directed_setup_status_t directed_setup_status;
+} rtt_directed_cfg_t;
 
 /*
  * Keep Adding more reasons
@@ -273,7 +302,9 @@ enum rtt_schedule_reason {
 	RTT_SCHED_RNG_TERM_PEND_ROLE_CHANGE	= 11, /* On Rng Term, while pending role change */
 	RTT_SCHED_RNG_TERM_SUB_SVC_CANCEL	= 12, /* Due rng canc attempt, on sub cancel */
 	RTT_SCHED_RNG_TERM_SUB_SVC_UPD		= 13, /* Due rng canc attempt, on sub update */
-	RTT_SCHED_RNG_TERM_PUB_RNG_CLEAR	= 14  /* Due rng canc attempt, on pub upd/timeout */
+	RTT_SCHED_RNG_TERM_PUB_RNG_CLEAR	= 14, /* Due rng canc attempt, on pub upd/timeout */
+	RTT_SCHED_RNG_RESP_IND			= 15, /* Due to rng resp ind */
+	RTT_SCHED_RNG_DIR_EXCESS_TARGET		= 16  /* On ssn end, if excess dir tgt pending */
 };
 
 /*
@@ -292,6 +323,7 @@ typedef struct rtt_status_info {
 	int		pm; /* to save current value of pm */
 	int8		pm_restore; /* flag to reset the old value of pm */
 	int8		cur_idx; /* current entry to do RTT */
+	int8		start_idx; /* start index for RTT */
 	bool		all_cancel; /* cancel all request once we got the cancel requet */
 	uint32		flags; /* indicate whether device is configured as initiator or target */
 	struct capability {
@@ -301,16 +333,18 @@ typedef struct rtt_status_info {
 		int32 bw        :8;
 	} rtt_capa; /* rtt capability */
 	struct			mutex rtt_mutex;
-	struct			mutex rtt_work_mutex;
 	struct			mutex geofence_mutex;
 	rtt_config_params_t	rtt_config;
 	rtt_geofence_cfg_t	geofence_cfg;
+	rtt_directed_cfg_t	directed_cfg;
 	struct work_struct	work;
 	struct list_head	noti_fn_list;
 	struct list_head	rtt_results_cache; /* store results for RTT */
 	int			rtt_sched_reason; /* rtt_schedule_reason: what scheduled RTT */
 	struct delayed_work	proxd_timeout; /* Proxd Timeout work */
 	struct delayed_work	rtt_retry_timer;   /* Timer for retry RTT after all targets done */
+	bool			rtt_sched; /* TO serialize rtt thread */
+	int			max_nan_rtt_sessions; /* To be Polled from FW via IOVAR Query */
 } rtt_status_info_t;
 
 typedef struct rtt_report {
@@ -423,15 +457,16 @@ void dhd_rtt_get_geofence_cont_ind(dhd_pub_t *dhd, bool* geofence_cont);
 void dhd_rtt_set_geofence_rtt_interval(dhd_pub_t *dhd, int interval);
 #endif /* RTT_GEOFENCE_INTERVAL */
 
-void dhd_rtt_set_role_concurrency_state(dhd_pub_t *dhd, bool state);
+int dhd_rtt_get_geofence_max_sessions(dhd_pub_t *dhd);
 
-bool dhd_rtt_get_role_concurrency_state(dhd_pub_t *dhd);
+bool dhd_rtt_geofence_sessions_maxed_out(dhd_pub_t *dhd);
+
+int dhd_rtt_get_geofence_sessions_cnt(dhd_pub_t *dhd);
+
+int dhd_rtt_update_geofence_sessions_cnt(dhd_pub_t *dhd, bool incr,
+	struct ether_addr *peer_addr);
 
 int8 dhd_rtt_get_geofence_target_cnt(dhd_pub_t *dhd);
-
-void dhd_rtt_set_geofence_rtt_state(dhd_pub_t *dhd, bool state);
-
-bool dhd_rtt_get_geofence_rtt_state(dhd_pub_t *dhd);
 
 rtt_geofence_target_info_t* dhd_rtt_get_geofence_target_head(dhd_pub_t *dhd);
 
@@ -448,9 +483,27 @@ int dhd_rtt_remove_geofence_target(dhd_pub_t *dhd, struct ether_addr *peer_addr)
 int dhd_rtt_delete_geofence_target_list(dhd_pub_t *dhd);
 
 int dhd_rtt_delete_nan_session(dhd_pub_t *dhd);
+
+bool dhd_rtt_nan_is_directed_setup_in_prog(dhd_pub_t *dhd);
+
+bool dhd_rtt_nan_is_directed_setup_in_prog_with_peer(dhd_pub_t *dhd,
+	struct ether_addr *peer);
+
+void dhd_rtt_nan_update_directed_setup_inprog(dhd_pub_t *dhd,
+	struct nan_ranging_inst *rng_inst, bool inprog);
+
+bool dhd_rtt_nan_directed_sessions_allowed(dhd_pub_t *dhd);
+
+bool dhd_rtt_nan_all_directed_sessions_triggered(dhd_pub_t *dhd);
+
+void dhd_rtt_nan_update_directed_sessions_cnt(dhd_pub_t *dhd, bool incr);
 #endif /* WL_NAN */
 
 uint8 dhd_rtt_invalid_states(struct net_device *ndev, struct ether_addr *peer_addr);
+
+int8 dhd_rtt_get_cur_target_idx(dhd_pub_t *dhd);
+
+int8 dhd_rtt_set_next_target_idx(dhd_pub_t *dhd, int start_idx);
 
 void dhd_rtt_schedule_rtt_work_thread(dhd_pub_t *dhd, int sched_reason);
 
@@ -479,12 +532,28 @@ int dhd_rtt_init(dhd_pub_t *dhd);
 int dhd_rtt_deinit(dhd_pub_t *dhd);
 
 #ifdef WL_CFG80211
+#ifdef WL_NAN
 int dhd_rtt_handle_nan_rtt_session_end(dhd_pub_t *dhd,
 	struct ether_addr *peer);
 
 void dhd_rtt_move_geofence_cur_target_idx_to_next(dhd_pub_t *dhd);
 
 int8 dhd_rtt_get_geofence_cur_target_idx(dhd_pub_t *dhd);
+
+void dhd_rtt_set_geofence_cur_target_idx(dhd_pub_t *dhd, int8 idx);
+
+rtt_geofence_setup_status_t* dhd_rtt_get_geofence_setup_status(dhd_pub_t *dhd);
+
+bool dhd_rtt_is_geofence_setup_inprog(dhd_pub_t *dhd);
+
+bool dhd_rtt_is_geofence_setup_inprog_with_peer(dhd_pub_t *dhd,
+	struct ether_addr *peer_addr);
+
+void dhd_rtt_set_geofence_setup_status(dhd_pub_t *dhd, bool inprog,
+	struct ether_addr *peer_addr);
+
+int dhd_rtt_get_max_nan_rtt_sessions_supported(dhd_pub_t *dhd);
+#endif /* WL_NAN */
 #endif /* WL_CFG80211 */
 
 #endif /* __DHD_RTT_H__ */

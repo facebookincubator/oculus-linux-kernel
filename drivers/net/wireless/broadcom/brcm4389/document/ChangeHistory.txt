@@ -1,0 +1,4 @@
+BCM4389 DHD 101.10.371 for FB Project
+
+DHD 101.10.371.2 - 2020.09.15
+ - Initial Release

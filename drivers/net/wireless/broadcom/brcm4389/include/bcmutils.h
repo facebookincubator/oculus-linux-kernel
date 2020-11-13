@@ -29,11 +29,11 @@
 /* For now, protect the bcmerror.h */
 #ifdef BCMUTILS_ERR_CODES
 #include <bcmerror.h>
-#endif // endif
+#endif
 
 #ifdef __cplusplus
 extern "C" {
-#endif // endif
+#endif
 
 #define bcm_strncpy_s(dst, noOfElements, src, count)    strncpy((dst), (src), (count))
 #ifdef FREEBSD
@@ -112,6 +112,10 @@ struct bcmstrbuf {
 #define BCMSTRBUF_LEN(b)	(b->size)
 #define BCMSTRBUF_BUF(b)	(b->buf)
 
+struct ether_addr;
+extern char *bcm_ether_ntoa(const struct ether_addr *ea, char *buf);
+extern int bcm_ether_atoe(const char *p, struct ether_addr *ea);
+
 /* ** driver-only section ** */
 #ifdef BCMDRIVER
 
@@ -128,7 +132,7 @@ struct bcmstrbuf {
  */
 #ifndef SPINWAIT_POLL_PERIOD
 #define SPINWAIT_POLL_PERIOD	10U
-#endif // endif
+#endif
 
 #ifdef BCMFUZZ
 /* fake spinwait for fuzzing */
@@ -138,26 +142,9 @@ struct bcmstrbuf {
 		countdown--; \
 	} \
 }
-#elif defined(PHY_REG_TRACE_FRAMEWORK)
-extern void phy_utils_log_spinwait(int us, int countdown);
-extern bool phy_utils_reg_trace_spinwait_logging;
-extern bool phy_utils_reg_trace_skip_log;
-extern uint64 phy_utils_reg_trace_start_time;
-#define SPINWAIT(exp, us) { \
-	uint countdown = (us) + (SPINWAIT_POLL_PERIOD - 1U); \
-	if (!phy_utils_reg_trace_skip_log) { \
-		phy_utils_reg_trace_spinwait_logging = TRUE; \
-		phy_utils_reg_trace_start_time = 0; \
-	} \
-	while (((exp) != 0) && (uint)(countdown >= SPINWAIT_POLL_PERIOD)) { \
-		OSL_DELAY(SPINWAIT_POLL_PERIOD); \
-		countdown -= SPINWAIT_POLL_PERIOD; \
-	} \
-	if (!phy_utils_reg_trace_skip_log) { \
-		phy_utils_reg_trace_spinwait_logging = FALSE; \
-		phy_utils_log_spinwait(us, countdown); \
-	} \
-}
+
+#define SPINWAIT_TRAP(exp, us) SPINWAIT(exp, us)
+
 #else
 #define SPINWAIT(exp, us) { \
 	uint countdown = (us) + (SPINWAIT_POLL_PERIOD - 1U); \
@@ -166,11 +153,20 @@ extern uint64 phy_utils_reg_trace_start_time;
 		countdown -= SPINWAIT_POLL_PERIOD; \
 	} \
 }
+
+#define SPINWAIT_TRAP(exp, us) { \
+	uint countdown = (us) + (SPINWAIT_POLL_PERIOD - 1U); \
+	while (((exp) != 0) && (uint)(countdown >= SPINWAIT_POLL_PERIOD)) { \
+		OSL_DELAY(SPINWAIT_POLL_PERIOD); \
+		countdown -= SPINWAIT_POLL_PERIOD; \
+	} \
+	if ((exp)) { \
+		OSL_SYS_HALT(); \
+	} \
+}
 #endif /* BCMFUZZ */
 
 /* forward definition of ether_addr structure used by some function prototypes */
-
-struct ether_addr;
 
 extern int ether_isbcast(const void *ea);
 extern int ether_isnulladdr(const void *ea);
@@ -181,7 +177,13 @@ extern int ether_isnulladdr(const void *ea);
 #define CORE_BASE_ADDR_0	0
 #define CORE_BASE_ADDR_1	1
 
+#ifdef DONGLEBUILD
+/* TRIM Tail bytes from lfrag */
+extern void pktfrag_trim_tailbytes(osl_t * osh, void* p, uint16 len, uint8 type);
+#define PKTFRAG_TRIM_TAILBYTES(osh, p, len, type)	pktfrag_trim_tailbytes(osh, p, len, type)
+#else
 #define PKTFRAG_TRIM_TAILBYTES(osh, p, len, type)	PKTSETLEN(osh, p, PKTLEN(osh, p) - len)
+#endif /* DONGLEBUILD */
 
 /* externs */
 /* packet */
@@ -194,46 +196,51 @@ extern uint pktsegcnt(osl_t *osh, void *p);
 extern uint8 *pktdataoffset(osl_t *osh, void *p,  uint offset);
 extern void *pktoffset(osl_t *osh, void *p,  uint offset);
 
+#ifdef WLCSO
+extern uint pkttotlen_no_sfhtoe_hdr(osl_t *osh, void *p, uint toe_hdr_len);
+#else
+#define pkttotlen_no_sfhtoe_hdr(osh, p, hdrlen)	pkttotlen(osh, p)
+#endif /* WLCSO */
+
 /* Get priority from a packet and pass it back in scb (or equiv) */
-#define	PKTPRIO_VDSCP	0x100		/* DSCP prio found after VLAN tag */
-#define	PKTPRIO_VLAN	0x200		/* VLAN prio found */
-#define	PKTPRIO_UPD	0x400		/* DSCP used to update VLAN prio */
-#define	PKTPRIO_DSCP	0x800		/* DSCP prio found */
+#define	PKTPRIO_VDSCP	0x100u		/* DSCP prio found after VLAN tag */
+#define	PKTPRIO_VLAN	0x200u		/* VLAN prio found */
+#define	PKTPRIO_UPD	0x400u		/* DSCP used to update VLAN prio */
+#define	PKTPRIO_DSCP	0x800u		/* DSCP prio found */
 
 /* DSCP type definitions (RFC4594) */
 /* AF1x: High-Throughput Data (RFC2597) */
-#define DSCP_AF11	0x0A
-#define DSCP_AF12	0x0C
-#define DSCP_AF13	0x0E
+#define DSCP_AF11	0x0Au
+#define DSCP_AF12	0x0Cu
+#define DSCP_AF13	0x0Eu
 /* AF2x: Low-Latency Data (RFC2597) */
-#define DSCP_AF21	0x12
-#define DSCP_AF22	0x14
-#define DSCP_AF23	0x16
+#define DSCP_AF21	0x12u
+#define DSCP_AF22	0x14u
+#define DSCP_AF23	0x16u
 /* CS2: OAM (RFC2474) */
-#define DSCP_CS2	0x10
+#define DSCP_CS2	0x10u
 /* AF3x: Multimedia Streaming (RFC2597) */
-#define DSCP_AF31	0x1A
-#define DSCP_AF32	0x1C
-#define DSCP_AF33	0x1E
+#define DSCP_AF31	0x1Au
+#define DSCP_AF32	0x1Cu
+#define DSCP_AF33	0x1Eu
 /* CS3: Broadcast Video (RFC2474) */
-#define DSCP_CS3	0x18
+#define DSCP_CS3	0x18u
 /* VA: VOCIE-ADMIT (RFC5865) */
-#define DSCP_VA		0x2C
+#define DSCP_VA		0x2Cu
 /* EF: Telephony (RFC3246) */
-#define DSCP_EF		0x2E
+#define DSCP_EF		0x2Eu
 /* CS6: Network Control (RFC2474) */
-#define DSCP_CS6	0x30
+#define DSCP_CS6	0x30u
 /* CS7: Network Control (RFC2474) */
-#define DSCP_CS7	0x38
+#define DSCP_CS7	0x38u
 
 extern uint pktsetprio(void *pkt, bool update_vtag);
 extern uint pktsetprio_qms(void *pkt, uint8* up_table, bool update_vtag);
 extern bool pktgetdscp(uint8 *pktdata, uint pktlen, uint8 *dscp);
 
 /* ethernet address */
-extern char *bcm_ether_ntoa(const struct ether_addr *ea, char *buf);
-extern int bcm_ether_atoe(const char *p, struct ether_addr *ea);
-extern int BCMRAMFN(bcm_addrmask_set)(int enable);
+extern uint64 bcm_ether_ntou64(const struct ether_addr *ea) BCMCONSTFN;
+extern int bcm_addrmask_set(int enable);
 extern int bcm_addrmask_get(int *val);
 
 /* ip address */
@@ -248,6 +255,16 @@ extern void bcm_mdelay(uint ms);
 #if defined(BCM_RECLAIM)
 extern bool _nvram_reclaim_enb;
 #define NVRAM_RECLAIM_ENAB() (_nvram_reclaim_enb)
+#ifdef BCMDBG
+#define NVRAM_RECLAIM_CHECK(name)							\
+	if (NVRAM_RECLAIM_ENAB() && (bcm_attach_part_reclaimed == TRUE)) {		\
+		printf("NVRAM already reclaimed, %s\n", (name));			\
+		GCC_DIAGNOSTIC_PUSH_SUPPRESS_NULL_DEREF();				\
+		*(char*) 0 = 0; /* TRAP */						\
+		GCC_DIAGNOSTIC_POP();							\
+		return NULL;								\
+	}
+#else /* BCMDBG */
 #define NVRAM_RECLAIM_CHECK(name)							\
 	if (NVRAM_RECLAIM_ENAB() && (bcm_attach_part_reclaimed == TRUE)) {		\
 		GCC_DIAGNOSTIC_PUSH_SUPPRESS_NULL_DEREF();				\
@@ -255,6 +272,7 @@ extern bool _nvram_reclaim_enb;
 		GCC_DIAGNOSTIC_POP();							\
 		return NULL;								\
 	}
+#endif /* BCMDBG */
 #else /* BCM_RECLAIM */
 #define NVRAM_RECLAIM_CHECK(name)
 #endif /* BCM_RECLAIM */
@@ -281,20 +299,42 @@ extern uint get_slicespecific_var_name(osl_t *osh, char *vars_table_accessor,
 	const char *name, char **name_out);
 
 extern uint getgpiopin(char *vars, char *pin_name, uint def_pin);
+#ifdef BCMDBG
+extern void prpkt(const char *msg, osl_t *osh, void *p0);
+#endif /* BCMDBG */
+#ifdef BCMPERFSTATS
+extern void bcm_perf_enable(void);
+extern void bcmstats(char *fmt);
+extern void bcmlog(char *fmt, uint a1, uint a2);
+extern void bcmdumplog(char *buf, int size);
+extern int bcmdumplogent(char *buf, uint idx);
+#else
 #define bcm_perf_enable()
 #define bcmstats(fmt)
 #define	bcmlog(fmt, a1, a2)
 #define	bcmdumplog(buf, size)	*buf = '\0'
 #define	bcmdumplogent(buf, idx)	-1
+#endif /* BCMPERFSTATS */
 
 #define TSF_TICKS_PER_MS	1000
 #define TS_ENTER		0xdeadbeef	/* Timestamp profiling enter */
 #define TS_EXIT			0xbeefcafe	/* Timestamp profiling exit */
 
+#if defined(BCMTSTAMPEDLOGS)
+/* Store a TSF timestamp and a log line in the log buffer */
+extern void bcmtslog(uint32 tstamp, const char *fmt, uint a1, uint a2);
+/* Print out the log buffer with timestamps */
+extern void bcmprinttslogs(void);
+/* Print out a microsecond timestamp as "sec.ms.us " */
+extern void bcmprinttstamp(uint32 us);
+/* Dump to buffer a microsecond timestamp as "sec.ms.us " */
+extern void bcmdumptslog(struct bcmstrbuf *b);
+#else
 #define bcmtslog(tstamp, fmt, a1, a2)
 #define bcmprinttslogs()
 #define bcmprinttstamp(us)
 #define bcmdumptslog(b)
+#endif /* BCMTSTAMPEDLOGS */
 
 bool bcm_match_buffers(const uint8 *b1, uint b1_len, const uint8 *b2, uint b2_len);
 
@@ -339,10 +379,10 @@ typedef struct wlc_ioctl_cmd {
 	uint16 min_len;			/**< IOCTL command minimum argument len (in bytes) */
 } wlc_ioctl_cmd_t;
 
-#if defined(WLTINYDUMP) || defined(WLMSG_INFORM) || defined(WLMSG_ASSOC) || \
-	defined(WLMSG_PRPKT) || defined(WLMSG_WSEC)
+#if defined(WLTINYDUMP) || defined(BCMDBG) || defined(WLMSG_INFORM) || \
+	defined(WLMSG_ASSOC) || defined(WLMSG_PRPKT) || defined(WLMSG_WSEC)
 extern int bcm_format_ssid(char* buf, const uchar ssid[], uint ssid_len);
-#endif // endif
+#endif /* WLTINYDUMP || BCMDBG || WLMSG_INFORM || WLMSG_ASSOC || WLMSG_PRPKT */
 #endif	/* BCMDRIVER */
 
 /* string */
@@ -492,8 +532,9 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define BCME_PKTTOSS			-71	/* Pkt tossed */
 #define BCME_DNGL_DEVRESET		-72	/* dongle re-attach during DEVRESET */
 #define BCME_ROAM			-73	/* Roam related failures */
+#define BCME_NO_SIG_FILE		-74	/* Signature file is missing */
 
-#define BCME_LAST			BCME_ROAM
+#define BCME_LAST			BCME_NO_SIG_FILE
 
 #define BCME_NOTENABLED BCME_DISABLED
 
@@ -505,7 +546,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define BCME_IOCTL_PATCH_UNSUPPORTED	-9999
 #if (BCME_LAST <= BCME_IOCTL_PATCH_UNSUPPORTED)
 	#error "BCME_LAST <= BCME_IOCTL_PATCH_UNSUPPORTED"
-#endif // endif
+#endif
 
 /* These are collection of BCME Error strings */
 #define BCMERRSTRINGTABLE {		\
@@ -555,34 +596,35 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 	"Scan Rejected",		\
 	"WLCMD usage error",		\
 	"WLCMD ioctl error",		\
-	"RWL serial port error", 	\
+	"RWL serial port error",	\
 	"Disabled",			\
-	"Decrypt error", \
-	"Encrypt error", \
-	"MIC error", \
-	"Replay", \
-	"IE not found", \
-	"Data not found", \
-	"NOT GC", \
-	"PRS REQ FAILED", \
-	"NO P2P SubElement", \
-	"NOA Pending", \
-	"FRAG Q FAILED", \
-	"GET ActionFrame failed", \
-	"scheduler not ready", \
-	"Last IOV batched sub-cmd", \
-	"Mini PMU Cal failed", \
-	"R-cal failed", \
-	"LPF RC Cal failed", \
-	"DAC buf RC Cal failed", \
-	"VCO Cal failed", \
-	"band locked", \
+	"Decrypt error",		\
+	"Encrypt error",		\
+	"MIC error",			\
+	"Replay",			\
+	"IE not found",			\
+	"Data not found",		\
+	"NOT GC",			\
+	"PRS REQ FAILED",		\
+	"NO P2P SubElement",		\
+	"NOA Pending",			\
+	"FRAG Q FAILED",		\
+	"GET ActionFrame failed",	\
+	"scheduler not ready",		\
+	"Last IOV batched sub-cmd",	\
+	"Mini PMU Cal failed",		\
+	"R-cal failed",			\
+	"LPF RC Cal failed",		\
+	"DAC buf RC Cal failed",	\
+	"VCO Cal failed",		\
+	"band locked",			\
 	"Recieved ie with invalid data", \
-	"registration failed", \
+	"registration failed",		\
 	"Registration with zero channels", \
-	"pkt toss", \
-	"Dongle Devreset", \
-	"Critical roam in progress", \
+	"pkt toss",			\
+	"Dongle Devreset",		\
+	"Critical roam in progress",	\
+	"Signature file is missing",	\
 }
 #endif	/* BCMUTILS_ERR_CODES */
 
@@ -617,6 +659,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #endif /* LIMIT_TO_MIN */
 
 #define SIZE_BITS(x) (sizeof(x) * NBBY)
+#define SIZE_BITS32(x) ((uint)sizeof(x) * NBBY)
 
 #define DELTA(curr, prev) ((curr) > (prev) ? ((curr) - (prev)) : \
 	(0xffffffff - (prev) + (curr) + 1))
@@ -625,7 +668,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define ROUNDDN(p, align)	((p) & ~((align) - 1))
 #define	ISALIGNED(a, x)		(((uintptr)(a) & ((x) - 1)) == 0)
 #define ALIGN_ADDR(addr, boundary) (void *)(((uintptr)(addr) + (boundary) - 1) \
-	                                         & ~((boundary) - 1))
+	                                         & ~((uintptr)(boundary) - 1))
 #define ALIGN_SIZE(size, boundary) (((size) + (boundary) - 1) \
 	                                         & ~((boundary) - 1))
 #define	ISPOWEROF2(x)		((((x) - 1) & (x)) == 0)
@@ -653,7 +696,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #ifndef STRUCT_SIZE_THROUGH
 #define STRUCT_SIZE_THROUGH(sptr, fname) \
 	(((uint8*)&((sptr)->fname) - (uint8*)(sptr)) + sizeof((sptr)->fname))
-#endif // endif
+#endif
 
 /* Extracting the size of element in a structure */
 #define SIZE_OF(type, field) sizeof(((type *)0)->field)
@@ -663,11 +706,11 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(a)		(uint32)(sizeof(a) / sizeof(a[0]))
-#endif // endif
+#endif
 
 #ifndef ARRAYLAST /* returns pointer to last array element */
 #define ARRAYLAST(a)		(&a[ARRAYSIZE(a)-1])
-#endif // endif
+#endif
 
 /* Calculates the required pad size. This is mainly used in register structures */
 #define PADSZ(start, end)       ((((end) - (start)) / 4) + 1)
@@ -691,7 +734,7 @@ extern bool isclr(const void *array, uint bit);
 #define	clrbit(a, i)	(((uint8 *)a)[(i) / NBBY] &= ~(1 << ((i) % NBBY)))
 #define	isset(a, i)	(((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY)))
 #define	isclr(a, i)	((((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY))) == 0)
-#endif // endif
+#endif
 #endif /* setbit */
 
 /* read/write/clear field in a consecutive bits in an octet array.
@@ -715,11 +758,40 @@ extern int bcm_find_fsb(uint32 num);
 
 #define	isbitset(a, i)	(((a) & (1 << (i))) != 0)
 
+#if defined DONGLEBUILD
+#define	NBITS(type)	(sizeof(type) * 8)
+#else
 #define	NBITS(type)	((uint32)(sizeof(type) * 8))
+#endif  /* DONGLEBUILD */
 #define NBITVAL(nbits)	(1 << (nbits))
 #define MAXBITVAL(nbits)	((1 << (nbits)) - 1)
 #define	NBITMASK(nbits)	MAXBITVAL(nbits)
 #define MAXNBVAL(nbyte)	MAXBITVAL((nbyte) * 8)
+
+enum {
+	BCM_FMT_BASE32
+};
+typedef int bcm_format_t;
+
+/* encodes using specified format and returns length of output written on success
+ * or a status code BCME_XX on failure. Input and output buffers may overlap.
+ * input will be advanced to the position when function stoped.
+ * out value of in_len will specify the number of processed input bytes.
+ * on input pad_off represents the number of bits (MSBs of the first output byte)
+ * to preserve and on output number of pad bits (LSBs) set to 0 in the output.
+ */
+int bcm_encode(uint8 **in, uint *in_len, bcm_format_t fmt,
+		uint *pad_off, uint8 *out, uint out_size);
+
+/* decodes input in specified format, returns length of output written on success
+ * or a status code BCME_XX on failure. Input and output buffers may overlap.
+ * input will be advanced to the position when function stoped.
+ * out value of in_len will specify the number of processed input bytes.
+ * on input pad_off represents the number of bits (MSBs of the first output byte)
+ * to preserve and on output number of pad bits (LSBs) set to 0 in the output.
+ */
+int bcm_decode(const uint8 **in, uint *in_len, bcm_format_t fmt,
+		uint *pad_off, uint8 *out, uint out_size);
 
 extern void bcm_bitprint32(const uint32 u32);
 
@@ -775,13 +847,23 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 #define MODSUB_POW2(x, y, bound) (((x) - (y)) & ((bound) - 1))
 
 /* crc defines */
-#define CRC8_INIT_VALUE  0xff		/* Initial CRC8 checksum value */
-#define CRC8_GOOD_VALUE  0x9f		/* Good final CRC8 checksum value */
-#define CRC16_INIT_VALUE 0xffff		/* Initial CRC16 checksum value */
-#define CRC16_GOOD_VALUE 0xf0b8		/* Good final CRC16 checksum value */
-#define CRC32_INIT_VALUE 0xffffffff	/* Initial CRC32 checksum value */
-#define CRC32_GOOD_VALUE 0xdebb20e3	/* Good final CRC32 checksum value */
+#define CRC8_INIT_VALUE   0xffu			/* Initial CRC8 checksum value */
+#define CRC8_GOOD_VALUE   0x9fu			/* Good final CRC8 checksum value */
+#define CRC16_INIT_VALUE  0xffffu		/* Initial CRC16 checksum value */
+#define CRC16_GOOD_VALUE  0xf0b8u		/* Good final CRC16 checksum value */
+#define CRC32_INIT_VALUE  0xffffffffu		/* Initial CRC32 checksum value */
+#define CRC32_GOOD_VALUE  0xdebb20e3u		/* Good final CRC32 checksum value */
 
+#ifdef DONGLEBUILD
+#define MACF				"MACADDR:%08x%04x"
+#define ETHERP_TO_MACF(ea)		(uint32)bcm_ether_ntou64(ea), \
+					(uint32)(bcm_ether_ntou64(ea) >> 32)
+
+#define CONST_ETHERP_TO_MACF(ea)	ETHERP_TO_MACF(ea)
+
+#define ETHER_TO_MACF(ea)		ETHERP_TO_MACF(&ea)
+
+#else
 /* use for direct output of MAC address in printf etc */
 #define MACF				"%02x:%02x:%02x:%02x:%02x:%02x"
 #define ETHERP_TO_MACF(ea)	((const struct ether_addr *) (ea))->octet[0], \
@@ -799,10 +881,12 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 				(ea).octet[3], \
 				(ea).octet[4], \
 				(ea).octet[5]
+#endif /* DONGLEBUILD */
 /* use only for debug, the string length can be changed
  * If you want to use this macro to the logic,
  * USE MACF instead
  */
+#if !defined(SIMPLE_MAC_PRINT)
 #define MACDBG "%02x:%02x:%02x:%02x:%02x:%02x"
 #define MAC2STRDBG(ea)	((const uint8*)(ea))[0], \
 			((const uint8*)(ea))[1], \
@@ -810,6 +894,12 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 			((const uint8*)(ea))[3], \
 			((const uint8*)(ea))[4], \
 			((const uint8*)(ea))[5]
+#else
+#define MACDBG				"%02x:xx:xx:xx:x%x:%02x"
+#define MAC2STRDBG(ea)	((const uint8*)(ea))[0], \
+			(((const uint8*)(ea))[4] & 0xf), \
+			((const uint8*)(ea))[5]
+#endif /* SIMPLE_MAC_PRINT */
 
 #define MACOUIDBG "%02x:%x:%02x"
 #define MACOUI2STRDBG(ea)	((const uint8*)(ea))[0], \
@@ -852,7 +942,7 @@ xor_128bit_block(const uint8 *src1, const uint8 *src2, uint8 *dst)
 	if (
 #ifdef __i386__
 	    1 ||
-#endif // endif
+#endif
 	    (((uintptr)src1 | (uintptr)src2 | (uintptr)dst) & 3) == 0) {
 		/* ARM CM3 rel time: 1229 (727 if alignment check could be omitted) */
 		/* x86 supports unaligned.  This version runs 6x-9x faster on x86. */
@@ -885,21 +975,25 @@ int bcm_format_octets(const bcm_bit_desc_t *bd, uint bdsz,
 
 extern int bcm_format_hex(char *str, const void *bytes, uint len);
 
+#ifdef BCMDBG
+extern void deadbeef(void *p, uint len);
+#endif
 extern const char *bcm_crypto_algo_name(uint algo);
 extern char *bcm_chipname(uint chipid, char *buf, uint len);
 extern char *bcm_brev_str(uint32 brev, char *buf);
 extern void printbig(char *buf);
 extern void prhex(const char *msg, const uchar *buf, uint len);
+extern void prhexstr(const char *prefix, const uint8 *buf, uint len, bool newline);
 
 /* bcmerror */
 extern const char *bcmerrorstr(int bcmerror);
 
-#if defined(WLMSG_ASSOC)
+#if defined(BCMDBG) || defined(WLMSG_ASSOC)
 /* get 802.11 frame name based on frame kind - see frame types FC_.. in 802.11.h */
 const char *bcm_80211_fk_name(uint fk);
 #else
 #define bcm_80211_fk_names(_x) ""
-#endif // endif
+#endif
 
 extern int wl_set_up_table(uint8 *up_table, bcm_tlv_t *qos_map_ie);
 
@@ -939,11 +1033,55 @@ extern uint16 bcm_qdbm_to_mw(uint8 qdbm);
 extern uint8 bcm_mw_to_qdbm(uint16 mw);
 extern uint bcm_mkiovar(const char *name, const char *data, uint datalen, char *buf, uint len);
 
+#ifdef BCMDBG_PKT  /* pkt logging for debugging */
+#define PKTLIST_SIZE 3000
+
+#ifdef BCMDBG_PTRACE
+#define PKTTRACE_MAX_BYTES	12
+#define PKTTRACE_MAX_BITS	(PKTTRACE_MAX_BYTES * NBBY)
+
+enum pkttrace_info {
+	PKTLIST_PRECQ,		/* Pkt in Prec Q */
+	PKTLIST_FAIL_PRECQ, 	/* Pkt failed to Q in PRECQ */
+	PKTLIST_DMAQ,		/* Pkt in DMA Q */
+	PKTLIST_MI_TFS_RCVD,	/* Received TX status */
+	PKTLIST_TXDONE,		/* Pkt TX done */
+	PKTLIST_TXFAIL,		/* Pkt TX failed */
+	PKTLIST_PKTFREE,	/* pkt is freed */
+	PKTLIST_PRECREQ,	/* Pkt requeued in precq */
+	PKTLIST_TXFIFO		/* To trace in wlc_fifo */
+};
+#endif /* BCMDBG_PTRACE */
+
+typedef struct pkt_dbginfo {
+	int     line;
+	char    *file;
+	void	*pkt;
+#ifdef BCMDBG_PTRACE
+	char	pkt_trace[PKTTRACE_MAX_BYTES];
+#endif /* BCMDBG_PTRACE */
+} pkt_dbginfo_t;
+
+typedef struct {
+	pkt_dbginfo_t list[PKTLIST_SIZE]; /* List of pointers to packets */
+	uint16 count; /* Total count of the packets */
+} pktlist_info_t;
+
+extern void pktlist_add(pktlist_info_t *pktlist, void *p, int len, char *file);
+extern void pktlist_remove(pktlist_info_t *pktlist, void *p);
+extern char* pktlist_dump(pktlist_info_t *pktlist, char *buf);
+#ifdef BCMDBG_PTRACE
+extern void pktlist_trace(pktlist_info_t *pktlist, void *pkt, uint16 bit);
+#endif /* BCMDBG_PTRACE */
+#endif  /* BCMDBG_PKT */
 unsigned int process_nvram_vars(char *varbuf, unsigned int len);
 bool replace_nvram_variable(char *varbuf, unsigned int buflen, const char *variable,
 	unsigned int *datalen);
 
 /* trace any object allocation / free, with / without features (flags) set to the object */
+#if (defined(DONGLEBUILD) && defined(BCMDBG_MEM) && !defined(BCM_OBJECT_TRACE))
+#define BCM_OBJECT_TRACE
+#endif /* (defined(DONGLEBUILD) && defined(BCMDBG_MEM) && (!defined(BCM_OBJECT_TRACE))) */
 
 #define BCM_OBJDBG_ADD           1
 #define BCM_OBJDBG_REMOVE        2
@@ -1209,44 +1347,44 @@ dll_init(dll_t *node_p)
 /* dll macros returing a pointer to dll_t */
 
 static INLINE dll_t *
-dll_head_p(dll_t *list_p)
+BCMPOSTTRAPFN(dll_head_p)(dll_t *list_p)
 {
 	return list_p->next_p;
 }
 
 static INLINE dll_t *
-dll_tail_p(dll_t *list_p)
+BCMPOSTTRAPFN(dll_tail_p)(dll_t *list_p)
 {
 	return (list_p)->prev_p;
 }
 
 static INLINE dll_t *
-dll_next_p(dll_t *node_p)
+BCMPOSTTRAPFN(dll_next_p)(dll_t *node_p)
 {
 	return (node_p)->next_p;
 }
 
 static INLINE dll_t *
-dll_prev_p(dll_t *node_p)
+BCMPOSTTRAPFN(dll_prev_p)(dll_t *node_p)
 {
 	return (node_p)->prev_p;
 }
 
 static INLINE bool
-dll_empty(dll_t *list_p)
+BCMPOSTTRAPFN(dll_empty)(dll_t *list_p)
 {
 	return ((list_p)->next_p == (list_p));
 }
 
 static INLINE bool
-dll_end(dll_t *list_p, dll_t * node_p)
+BCMPOSTTRAPFN(dll_end)(dll_t *list_p, dll_t * node_p)
 {
 	return (list_p == node_p);
 }
 
 /* inserts the node new_p "after" the node at_p */
 static INLINE void
-dll_insert(dll_t *new_p, dll_t * at_p)
+BCMPOSTTRAPFN(dll_insert)(dll_t *new_p, dll_t * at_p)
 {
 	new_p->next_p = at_p->next_p;
 	new_p->prev_p = at_p;
@@ -1255,20 +1393,20 @@ dll_insert(dll_t *new_p, dll_t * at_p)
 }
 
 static INLINE void
-dll_append(dll_t *list_p, dll_t *node_p)
+BCMPOSTTRAPFN(dll_append)(dll_t *list_p, dll_t *node_p)
 {
 	dll_insert(node_p, dll_tail_p(list_p));
 }
 
 static INLINE void
-dll_prepend(dll_t *list_p, dll_t *node_p)
+BCMPOSTTRAPFN(dll_prepend)(dll_t *list_p, dll_t *node_p)
 {
 	dll_insert(node_p, list_p);
 }
 
 /* deletes a node from any list that it "may" be in, if at all. */
 static INLINE void
-dll_delete(dll_t *node_p)
+BCMPOSTTRAPFN(dll_delete)(dll_t *node_p)
 {
 	node_p->prev_p->next_p = node_p->next_p;
 	node_p->next_p->prev_p = node_p->prev_p;
@@ -1290,6 +1428,9 @@ void * dll_pool_alloc(dll_pool_t * dll_pool_p);
 void dll_pool_free(dll_pool_t * dll_pool_p, void * elem_p);
 void dll_pool_free_tail(dll_pool_t * dll_pool_p, void * elem_p);
 typedef void (* dll_elem_dump)(void * elem_p);
+#ifdef BCMDBG
+void dll_pool_dump(dll_pool_t * dll_pool_p, dll_elem_dump dump);
+#endif
 void dll_pool_detach(void * osh, dll_pool_t * pool, uint16 elems_max, uint16 elem_size);
 
 int valid_bcmerror(int e);
@@ -1318,7 +1459,7 @@ uint16 ipv6_tcp_hdr_cksum(uint8 *ipv6, uint8 *tcp, uint16 tcp_len);
 
 #ifdef __cplusplus
 	}
-#endif // endif
+#endif
 
 /* #define DEBUG_COUNTER */
 #ifdef DEBUG_COUNTER
@@ -1362,9 +1503,11 @@ void counter_printlog(counter_tbl_t *ctr_tbl);
 
 #if defined(__GNUC__)
 #define CALL_SITE __builtin_return_address(0)
+#elif defined(_WIN32)
+#define CALL_SITE _ReturnAddress()
 #else
 #define CALL_SITE ((void*) 0)
-#endif // endif
+#endif
 #ifdef SHOW_LOGTRACE
 #define TRACE_LOG_BUF_MAX_SIZE 1700
 #define RTT_LOG_BUF_MAX_SIZE 1700
@@ -1399,6 +1542,8 @@ typedef struct {
 } dump_dongle_out_t;
 
 extern uint32 sqrt_int(uint32 value);
+
+extern uint8 bcm_get_ceil_pow_2(uint val);
 
 #ifdef BCMDRIVER
 /* structures and routines to process variable sized data */
@@ -1460,7 +1605,7 @@ void varbuf_init(varbuf_t *b, char *buf, uint size);
 int varbuf_append(varbuf_t *b, const char *fmt, ...);
 #if defined(BCMDRIVER)
 int initvars_table(osl_t *osh, char *start, char *end, char **vars, uint *count);
-#endif // endif
+#endif
 
 /* Count the number of trailing zeros in uint32 val
  * Applying unary minus to unsigned value is intentional,
@@ -1476,4 +1621,20 @@ count_trailing_zeros(uint32 val)
 #endif /* BCMDRIVER */
 	return val ? 31u - c : c;
 }
+
+/** Size in bytes of data block, defined by struct with last field, declared as
+ * one/zero element vector - such as wl_uint32_list_t or bcm_xtlv_cbuf_s.
+ * Arguments:
+ * list - address of data block (value is ignored, only type is important)
+ * last_var_len_field - name of last field (usually declared as ...[] or ...[1])
+ * num_elems - number of elements in data block
+ * Example:
+ * wl_uint32_list_t *list;
+ * WL_VAR_LEN_STRUCT_SIZE(list, element, 10);  // Size in bytes of 10-element list
+ */
+#define WL_VAR_LEN_STRUCT_SIZE(list, last_var_len_field, num_elems) \
+	((size_t)((const char *)&((list)->last_var_len_field) - (const char *)(list)) + \
+	(sizeof((list)->last_var_len_field[0]) * (size_t)(num_elems)))
+
+int buf_shift_right(uint8 *buf, uint16 len, uint8 bits);
 #endif	/* _bcmutils_h_ */

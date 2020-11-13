@@ -14,11 +14,14 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include <linux/cpu.h>
-#include <linux/crypto.h>
 
 #include "zcomp.h"
 
 static const char * const backends[] = {
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	/* Only Zstd is available when CONFIG_ZRAM_ZSTD_ADVANCED is enabled */
+	"zstd",
+#else
 	"lzo",
 #if IS_ENABLED(CONFIG_CRYPTO_LZ4)
 	"lz4",
@@ -32,16 +35,57 @@ static const char * const backends[] = {
 #if IS_ENABLED(CONFIG_CRYPTO_ZSTD)
 	"zstd",
 #endif
+#endif
 	NULL
 };
 
 static void zcomp_strm_free(struct zcomp_strm *zstrm)
 {
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	if (!IS_ERR_OR_NULL(zstrm->cctx_wksp)) {
+		kvfree(zstrm->cctx_wksp);
+		zstrm->cctx_wksp = NULL;
+		zstrm->cctx = NULL;
+	}
+
+	if (!IS_ERR_OR_NULL(zstrm->dctx_wksp)) {
+		kvfree(zstrm->dctx_wksp);
+		zstrm->dctx_wksp = NULL;
+		zstrm->dctx = NULL;
+	}
+#else
 	if (!IS_ERR_OR_NULL(zstrm->tfm))
 		crypto_free_comp(zstrm->tfm);
+#endif
 	free_pages((unsigned long)zstrm->buffer, 1);
 	kfree(zstrm);
 }
+
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+static int zcomp_alloc_zstd_contexts(struct zcomp_strm *zstrm)
+{
+	size_t cctx_wksp_size, dctx_wksp_size;
+
+	zstrm->params = ZSTD_getParams(CONFIG_ZRAM_ZSTD_COMPRESSION_LEVEL, PAGE_SIZE, 0);
+	if (zstrm->params.cParams.windowLog > ilog2(PAGE_SIZE))
+		zstrm->params.cParams.windowLog = ilog2(PAGE_SIZE);
+
+	cctx_wksp_size = ZSTD_CCtxWorkspaceBound(zstrm->params.cParams);
+	dctx_wksp_size = ZSTD_DCtxWorkspaceBound();
+
+	zstrm->cctx_wksp = kvmalloc(cctx_wksp_size, GFP_KERNEL | __GFP_ZERO);
+	zstrm->dctx_wksp = kvmalloc(dctx_wksp_size, GFP_KERNEL | __GFP_ZERO);
+	if (IS_ERR_OR_NULL(zstrm->cctx_wksp) || IS_ERR_OR_NULL(zstrm->dctx_wksp))
+		return -ENOMEM;
+
+	zstrm->cctx = ZSTD_initCCtx(zstrm->cctx_wksp, cctx_wksp_size);
+	zstrm->dctx = ZSTD_initDCtx(zstrm->dctx_wksp, dctx_wksp_size);
+	if (!zstrm->cctx || !zstrm->dctx)
+		return -EINVAL;
+
+	return 0;
+}
+#endif
 
 /*
  * allocate new zcomp_strm structure with ->tfm initialized by
@@ -53,17 +97,28 @@ static struct zcomp_strm *zcomp_strm_alloc(struct zcomp *comp)
 	if (!zstrm)
 		return NULL;
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	if (zcomp_alloc_zstd_contexts(zstrm))
+		goto error;
+#else
 	zstrm->tfm = crypto_alloc_comp(comp->name, 0, 0);
+	if (IS_ERR_OR_NULL(zstrm->tfm))
+		goto error;
+#endif
+
 	/*
 	 * allocate 2 pages. 1 for compressed data, plus 1 extra for the
 	 * case when compressed size is larger than the original one
 	 */
 	zstrm->buffer = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, 1);
-	if (IS_ERR_OR_NULL(zstrm->tfm) || !zstrm->buffer) {
-		zcomp_strm_free(zstrm);
-		zstrm = NULL;
-	}
+	if (!zstrm->buffer)
+		goto error;
+
 	return zstrm;
+
+error:
+	zcomp_strm_free(zstrm);
+	return NULL;
 }
 
 bool zcomp_available_algorithm(const char *comp)
@@ -74,6 +129,9 @@ bool zcomp_available_algorithm(const char *comp)
 	if (i >= 0)
 		return true;
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	return false;
+#else
 	/*
 	 * Crypto does not ignore a trailing new line symbol,
 	 * so make sure you don't supply a string containing
@@ -82,6 +140,7 @@ bool zcomp_available_algorithm(const char *comp)
 	 * with any compressing algorithm known to crypto api.
 	 */
 	return crypto_has_comp(comp, 0, 0) == 1;
+#endif
 }
 
 /* show available compressors */
@@ -102,6 +161,7 @@ ssize_t zcomp_available_show(const char *comp, char *buf)
 		}
 	}
 
+#if !IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
 	/*
 	 * Out-of-tree module known to crypto api or a missing
 	 * entry in `backends'.
@@ -109,6 +169,7 @@ ssize_t zcomp_available_show(const char *comp, char *buf)
 	if (!known_algorithm && crypto_has_comp(comp, 0, 0) == 1)
 		sz += scnprintf(buf + sz, PAGE_SIZE - sz - 2,
 				"[%s] ", comp);
+#endif
 
 	sz += scnprintf(buf + sz, PAGE_SIZE - sz, "\n");
 	return sz;
@@ -127,6 +188,10 @@ void zcomp_stream_put(struct zcomp *comp)
 int zcomp_compress(struct zcomp_strm *zstrm,
 		const void *src, unsigned int *dst_len)
 {
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	size_t out_len;
+#endif
+
 	/*
 	 * Our dst memory (zstrm->buffer) is always `2 * PAGE_SIZE' sized
 	 * because sometimes we can endup having a bigger compressed data
@@ -143,9 +208,19 @@ int zcomp_compress(struct zcomp_strm *zstrm,
 	 */
 	*dst_len = PAGE_SIZE * 2;
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	out_len = ZSTD_compressCCtx(zstrm->cctx, zstrm->buffer, *dst_len, src,
+			PAGE_SIZE, zstrm->params);
+	if (ZSTD_isError(out_len))
+		return -EINVAL;
+
+	*dst_len = out_len;
+	return 0;
+#else
 	return crypto_comp_compress(zstrm->tfm,
 			src, PAGE_SIZE,
 			zstrm->buffer, dst_len);
+#endif
 }
 
 int zcomp_decompress(struct zcomp_strm *zstrm,
@@ -153,9 +228,16 @@ int zcomp_decompress(struct zcomp_strm *zstrm,
 {
 	unsigned int dst_len = PAGE_SIZE;
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	size_t out_len;
+
+	out_len = ZSTD_decompressDCtx(zstrm->dctx, dst, dst_len, src, src_len);
+	return ZSTD_isError(out_len) ? -EINVAL : 0;
+#else
 	return crypto_comp_decompress(zstrm->tfm,
 			src, src_len,
 			dst, &dst_len);
+#endif
 }
 
 int zcomp_cpu_up_prepare(unsigned int cpu, struct hlist_node *node)

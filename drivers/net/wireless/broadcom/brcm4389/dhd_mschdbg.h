@@ -20,7 +20,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_mschdbg.h 571265 2015-07-14 20:50:18Z $
+ * $Id: dhd_mschdbg.h 571265 2015-07-14 20:50:18Z eccopark $
  */
 
 #ifndef _dhd_mschdbg_h_

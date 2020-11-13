@@ -54,7 +54,6 @@ enum ion_heap_ids {
 #define ION_AUDIO_HEAP_ID		28
 #define ION_CAMERA_HEAP_ID		20
 #define ION_USER_CONTIG_HEAP_ID		26
-#define ION_OCULUS_HEAP_ID		30
 /**
  * Flags to be used when allocating from the secure heap for
  * content protection

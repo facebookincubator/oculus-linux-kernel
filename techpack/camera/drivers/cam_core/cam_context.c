@@ -664,7 +664,7 @@ int cam_context_init(struct cam_context *ctx,
 	int i;
 
 	/* crm_node_intf is optinal */
-	if (!ctx || !hw_mgr_intf || !req_list) {
+	if (!ctx || !hw_mgr_intf || (!req_list && req_size > 0)) {
 		CAM_ERR(CAM_CORE, "Invalid input parameters");
 		return -EINVAL;
 	}
@@ -747,4 +747,37 @@ void cam_context_getref(struct cam_context *ctx)
 		"ctx device hdl %ld, ref count %d, dev_name %s",
 		ctx->dev_hdl, refcount_read(&(ctx->refcount.refcount)),
 		ctx->dev_name);
+}
+
+/*
+ * Define an kmem cache for the request structures since we allocate and free
+ * them so frequently
+ */
+static struct kmem_cache *cam_ctx_request_cachep;
+
+struct cam_ctx_request *cam_context_alloc_request(struct cam_context *ctx)
+{
+	struct cam_ctx_request *req;
+
+	if (cam_ctx_request_cachep == NULL)
+		cam_ctx_request_cachep = KMEM_CACHE(cam_ctx_request, 0);
+
+	req = kmem_cache_alloc(cam_ctx_request_cachep, GFP_KERNEL);
+	if (req == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&req->list);
+	req->ctx = ctx;
+
+	return req;
+}
+
+void cam_context_free_request(struct cam_ctx_request *req)
+{
+	if (!list_empty(&req->list)) {
+		CAM_ERR(CAM_CORE, "Request %pK still attached!", req);
+		list_del(&req->list);
+	}
+
+	kmem_cache_free(cam_ctx_request_cachep, req);
 }

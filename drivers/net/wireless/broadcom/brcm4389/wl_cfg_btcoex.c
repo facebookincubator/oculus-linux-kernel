@@ -36,7 +36,7 @@
 extern uint dhd_pkt_filter_enable;
 extern uint dhd_master_mode;
 extern void dhd_pktfilter_offload_enable(dhd_pub_t * dhd, char *arg, int enable, int master_mode);
-#endif // endif
+#endif
 
 struct btcoex_info {
 	timer_list_compat_t timer;
@@ -52,7 +52,7 @@ struct btcoex_info {
 	struct net_device *dev;
 };
 
-// MOG-ON: OEM_ANDROID
+#if defined(OEM_ANDROID)
 static struct btcoex_info *btcoex_info_loc = NULL;
 
 /* TODO: clean up the BT-Coex code, it still have some legacy ioctl/iovar functions */
@@ -277,13 +277,13 @@ wl_cfg80211_bt_setflag(struct net_device *dev, bool set)
 #if defined(BT_DHCP_USE_FLAGS)
 	char buf_flag7_dhcp_on[8] = { 7, 00, 00, 00, 0x1, 0x0, 0x00, 0x00 };
 	char buf_flag7_default[8]   = { 7, 00, 00, 00, 0x0, 0x00, 0x00, 0x00};
-#endif // endif
+#endif
 
 #if defined(BT_DHCP_eSCO_FIX)
 	/*  ANREY: New Yury's eSco pacifier */
 	/* set = 1, save & turn on  0 - off & restore prev settings */
 	set_btc_esco_params(dev, set);
-#endif // endif
+#endif
 
 #if defined(BT_DHCP_USE_FLAGS)
 /*  ANdrey: old WI-FI priority boost via flags   */
@@ -298,7 +298,7 @@ wl_cfg80211_bt_setflag(struct net_device *dev, bool set)
 		dev_wlc_bufvar_set(dev, "btc_flags",
 			(char *)&buf_flag7_default[0],
 			sizeof(buf_flag7_default));
-#endif // endif
+#endif
 }
 
 static void wl_cfg80211_bt_timerfunc(ulong data)
@@ -424,6 +424,10 @@ void wl_cfg80211_btcoex_deinit()
 int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *command)
 {
 
+#ifndef OEM_ANDROID
+	static int  pm = PM_FAST;
+	int  pm_local = PM_OFF;
+#endif /* OEM_ANDROID */
 	struct btcoex_info *btco_inf = btcoex_info_loc;
 	char powermode_val = 0;
 	uint8 cmd_len = 0;
@@ -440,12 +444,21 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 	char buf_flag7_default[8] =   { 7, 00, 00, 00, 0x0, 0x00, 0x00, 0x00};
 
 	/* Figure out powermode 1 or o command */
+#ifdef  OEM_ANDROID
 	cmd_len = sizeof(BTCOEXMODE);
+#else
+	cmd_len = sizeof(POWERMODE);
+#endif
 	powermode_val = command[cmd_len];
 
 	WL_INFORM_MEM(("BTCOEX MODE: %c\n", powermode_val));
 	if (powermode_val == '1') {
 		WL_TRACE_HW4(("DHCP session starts\n"));
+
+#if defined(OEM_ANDROID) && defined(DHCP_SCAN_SUPPRESS)
+		/* Suppress scan during the DHCP */
+		wl_cfg80211_scan_suppress(dev, 1);
+#endif /* OEM_ANDROID && DHCP_SCAN_SUPPRESS */
 
 #ifdef PKT_FILTER_SUPPORT
 		dhd->dhcp_in_progress = 1;
@@ -466,6 +479,9 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 
 		/* Retrieve and saved orig regs value */
 		if ((saved_status == FALSE) &&
+#ifndef OEM_ANDROID
+			(!dev_wlc_ioctl(dev, WLC_GET_PM, &pm, sizeof(pm))) &&
+#endif
 			(!dev_wlc_intvar_get_reg(dev, "btc_params", 66,  &saved_reg66)) &&
 			(!dev_wlc_intvar_get_reg(dev, "btc_params", 41,  &saved_reg41)) &&
 			(!dev_wlc_intvar_get_reg(dev, "btc_params", 68,  &saved_reg68)))   {
@@ -474,6 +490,9 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 					saved_reg66, saved_reg41, saved_reg68));
 
 				/* Disable PM mode during dhpc session */
+#ifndef OEM_ANDROID
+				dev_wlc_ioctl(dev, WLC_SET_PM, &pm_local, sizeof(pm_local));
+#endif
 
 				/* Disable PM mode during dhpc session */
 				/* Start  BT timer only for SCO connection */
@@ -503,7 +522,16 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 			WL_ERR(("was called w/o DHCP OFF. Continue\n"));
 		}
 	}
+#ifdef  OEM_ANDROID
 	else if (powermode_val == '2') {
+#else
+	else if (powermode_val == '0') {
+#endif
+
+#if defined(OEM_ANDROID) && defined(DHCP_SCAN_SUPPRESS)
+		/* Since DHCP is complete, enable the scan back */
+		wl_cfg80211_scan_suppress(dev, 0);
+#endif /* OEM_ANDROID */
 
 #ifdef PKT_FILTER_SUPPORT
 		dhd->dhcp_in_progress = 0;
@@ -523,6 +551,9 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 #endif /* PKT_FILTER_SUPPORT */
 
 		/* Restoring PM mode */
+#ifndef OEM_ANDROID
+		dev_wlc_ioctl(dev, WLC_SET_PM, &pm, sizeof(pm));
+#endif
 
 		/* Stop any bt timer because DHCP session is done */
 		WL_TRACE(("disable BT DHCP Timer\n"));
@@ -567,4 +598,4 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 	}
 	return 0;
 }
-// MOG-OFF: OEM_ANDROID
+#endif /* defined(OEM_ANDROID) */

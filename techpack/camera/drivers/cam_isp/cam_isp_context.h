@@ -322,9 +322,6 @@ struct cam_isp_context {
 	struct cam_ctx_ops              *substate_machine;
 	struct cam_isp_ctx_irq_ops      *substate_machine_irq;
 
-	struct cam_ctx_request           req_base[CAM_CTX_REQ_MAX];
-	struct cam_isp_ctx_req           req_isp[CAM_CTX_REQ_MAX];
-
 	void                            *hw_ctx;
 	uint64_t                         sof_timestamp_val;
 	uint64_t                         boot_timestamp;
@@ -366,8 +363,7 @@ struct cam_isp_context {
 	struct list_head                      stream_image_umd_list;
 	struct list_head                      stream_image_active_list;
 	uint32_t                              num_stream_images;
-	struct cam_isp_stream_image
-		stream_images[CAM_MAX_STREAM_MODE_HANDLES];
+	struct cam_isp_stream_image          *stream_images;
 	struct completion                     stream_image_completion;
 	struct cam_isp_stream_image          *stream_image_applied;
 	bool                                  stream_image_wait;

@@ -26,7 +26,7 @@
 
 #ifndef _TYPEDEFS_H_
 #include <typedefs.h>
-#endif // endif
+#endif
 
 #include "eapol.h"
 #include "802.3.h"
@@ -85,9 +85,13 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 	uint16 type;
 	uint16 len;
 
-	if (p == NULL || plen <= 0)
+	if (p == NULL || plen <= 0) {
 		return BCME_ERROR;
+	}
 
+	if (plen < (int)sizeof(*eh)) {
+		return BCME_BUFTOOSHORT;
+	}
 	type  = ntoh16(eh->ether_type);
 
 	bzero(fp, sizeof(frame_proto_t));
@@ -96,38 +100,46 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 	fp->l2 = p;
 	fp->l2_len = (uint16)plen;
 	if (type < ETHER_TYPE_MIN) {
+		if (plen < (int)sizeof(*sh)) {
+			return BCME_BUFTOOSHORT;
+		}
 		if (bcmp(&sh->dsap, llc_snap_hdr, SNAP_HDR_LEN) == 0) {
 			type = ntoh16(sh->type);
 			if (type == ETHER_TYPE_8021Q) {
 				fp->l2_t = FRAME_L2_SNAPVLAN_H;
 				p += sizeof(struct dot3_mac_llc_snap_header);
-				if ((plen -= sizeof(struct dot3_mac_llc_snap_header)) <= 0)
+				if ((plen -= sizeof(struct dot3_mac_llc_snap_header)) <= 0) {
 					return BCME_ERROR;
+				}
 			}
 			else {
 				fp->l2_t = FRAME_L2_SNAP_H;
 				type = ntoh16(svh->ether_type);
 				p += sizeof(struct dot3_mac_llc_snapvlan_header);
-				if ((plen -= sizeof(struct dot3_mac_llc_snapvlan_header)) <= 0)
+				if ((plen -= sizeof(struct dot3_mac_llc_snapvlan_header)) <= 0) {
 					return BCME_ERROR;
+				}
 			}
 		}
-		else
+		else {
 			return BCME_ERROR;
+		}
 	}
 	else {
 		if (type == ETHER_TYPE_8021Q) {
 			fp->l2_t = FRAME_L2_ETHVLAN_H;
 			type = ntoh16(evh->ether_type);
 			p += ETHERVLAN_HDR_LEN;
-			if ((plen -= ETHERVLAN_HDR_LEN) <= 0)
+			if ((plen -= ETHERVLAN_HDR_LEN) <= 0) {
 				return BCME_ERROR;
+			}
 		}
 		else {
 			fp->l2_t = FRAME_L2_ETH_H;
 			p += ETHER_HDR_LEN;
-			if ((plen -= ETHER_HDR_LEN) <= 0)
+			if ((plen -= ETHER_HDR_LEN) <= 0) {
 				return BCME_ERROR;
+			}
 		}
 	}
 	/* L3 header/pointer check */
@@ -135,8 +147,9 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 	fp->l3_len = (uint16)plen;
 	switch (type) {
 	case ETHER_TYPE_ARP: {
-		if ((plen -= ARP_DATA_LEN) < 0)
+		if ((plen -= ARP_DATA_LEN) < 0) {
 			return BCME_ERROR;
+		}
 
 		fp->l3_t = FRAME_L3_ARP_H;
 		/* no layer 4 protocol, return */
@@ -147,23 +160,27 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 		struct ipv4_hdr *iph = (struct ipv4_hdr *)p;
 		len = IPV4_HLEN(iph);
 
-		if ((plen -= len) <= 0)
+		if ((plen -= len) <= 0) {
 			return BCME_ERROR;
+		}
 
 		if (IP_VER(iph) == IP_VER_4 && len >= IPV4_MIN_HEADER_LEN) {
 			fp->l3_t = FRAME_L3_IP_H;
 			type = IPV4_PROT(iph);
 			p += len;
 		}
-		else /* not a valid ipv4 packet */
+		else {
+			/* not a valid ipv4 packet */
 			return BCME_ERROR;
+		}
 		break;
 	}
 	case ETHER_TYPE_IPV6: {
 		struct ipv6_hdr *ip6h = (struct ipv6_hdr *)p;
 
-		if ((plen -= IPV6_MIN_HLEN) <= 0)
+		if ((plen -= IPV6_MIN_HLEN) <= 0) {
 			return BCME_ERROR;
+		}
 
 		if (IP_VER(ip6h) == IP_VER_6) {
 			fp->l3_t = FRAME_L3_IP6_H;
@@ -171,29 +188,34 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 			p += IPV6_MIN_HLEN;
 			if (IPV6_EXTHDR(type)) {
 				uint8 proto = 0;
-				int32 exth_len = ipv6_exthdr_len(p, &proto);
+				int32 exth_len = ipv6_exthdr_len_check(p, plen, &proto);
 				if (exth_len < 0 || ((plen -= exth_len) <= 0))
 					return BCME_ERROR;
 				type = proto;
 				p += exth_len;
 			}
 		}
-		else /* not a valid ipv6 packet */
+		else  {
+			/* not a valid ipv6 packet */
 			return BCME_ERROR;
+		}
 		break;
 	}
 	case ETHER_TYPE_802_1X: {
 		eapol_hdr_t *eapolh = (eapol_hdr_t *)p;
 
-		if ((plen -= EAPOL_HDR_LEN) <= 0)
+		if ((plen -= EAPOL_HDR_LEN) <= 0) {
 			return BCME_ERROR;
+		}
 
 		if (eapolh->type == EAPOL_KEY) {
 			fp->l3_t = FRAME_L3_8021X_EAPOLKEY_H;
 			return BCME_OK;
 		}
-		else /* not a valid ipv6 packet */
+		else {
+			/* not a valid ipv6 packet */
 			return BCME_ERROR;
+		}
 
 		break;
 	}
@@ -209,28 +231,33 @@ hnd_frame_proto(uint8 *p, int plen, frame_proto_t *fp)
 	switch (type) {
 	case IP_PROT_ICMP:
 		fp->l4_t = FRAME_L4_ICMP_H;
-		if ((plen -= sizeof(struct bcmicmp_hdr)) < 0)
+		if ((plen -= sizeof(struct bcmicmp_hdr)) < 0) {
 			return BCME_ERROR;
+		}
 		break;
 	case IP_PROT_IGMP:
 		fp->l4_t = FRAME_L4_IGMP_H;
-		if ((plen -= IGMP_HLEN) < 0)
+		if ((plen -= IGMP_HLEN) < 0) {
 			return BCME_ERROR;
+		}
 		break;
 	case IP_PROT_TCP:
 		fp->l4_t = FRAME_L4_TCP_H;
-		if ((plen -= sizeof(struct bcmtcp_hdr)) < 0)
+		if ((plen -= sizeof(struct bcmtcp_hdr)) < 0) {
 			return BCME_ERROR;
+		}
 		break;
 	case IP_PROT_UDP:
 		fp->l4_t = FRAME_L4_UDP_H;
-		if ((plen -= sizeof(struct bcmudp_hdr)) < 0)
+		if ((plen -= sizeof(struct bcmudp_hdr)) < 0) {
 			return BCME_ERROR;
+		}
 		break;
 	case IP_PROT_ICMP6:
 		fp->l4_t = FRAME_L4_ICMP6_H;
-		if ((plen -= sizeof(struct icmp6_hdr)) < 0)
+		if ((plen -= sizeof(struct icmp6_hdr)) < 0) {
 			return BCME_ERROR;
+		}
 		break;
 	default:
 		break;

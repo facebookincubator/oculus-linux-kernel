@@ -117,6 +117,15 @@ typedef BWL_PRE_PACKED_STRUCT struct
 #define WPA_CIPHER_WEP_104	5	/* WEP (104-bit) */
 #define WPA_CIPHER_BIP		6	/* WEP (104-bit) */
 #define WPA_CIPHER_TPK		7	/* Group addressed traffic not allowed */
+#ifdef BCMCCX
+#define WPA_CIPHER_CKIP		8	/* KP with no MIC */
+#define WPA_CIPHER_CKIP_MMH	9	/* KP with MIC ("CKIP/MMH", "CKIP+CMIC") */
+#define WPA_CIPHER_WEP_MMH	10	/* MIC with no KP ("WEP/MMH", "CMIC") */
+
+#define IS_CCX_CIPHER(cipher)	((cipher) == WPA_CIPHER_CKIP || \
+				 (cipher) == WPA_CIPHER_CKIP_MMH || \
+				 (cipher) == WPA_CIPHER_WEP_MMH)
+#endif /* BCMCCX */
 
 #define WPA_CIPHER_AES_GCM	8	/* AES (GCM) */
 #define WPA_CIPHER_AES_GCM256	9	/* AES (GCM256) */
@@ -124,9 +133,6 @@ typedef BWL_PRE_PACKED_STRUCT struct
 #define WPA_CIPHER_BIP_GMAC_128	11	/* BIP_GMAC_128 */
 #define WPA_CIPHER_BIP_GMAC_256 12	/* BIP_GMAC_256 */
 #define WPA_CIPHER_BIP_CMAC_256 13	/* BIP_CMAC_256 */
-
-// MOG-ON: BCMWAPI
-// MOG-OFF: BCMWAPI
 
 #define IS_WPA_CIPHER(cipher)	((cipher) == WPA_CIPHER_NONE || \
 				 (cipher) == WPA_CIPHER_WEP_40 || \
@@ -143,9 +149,6 @@ typedef BWL_PRE_PACKED_STRUCT struct
 				    (cipher) == WPA_CIPHER_BIP_GMAC_128 || \
 				    (cipher) == WPA_CIPHER_BIP_GMAC_256 || \
 				    (cipher) == WPA_CIPHER_BIP_CMAC_256)
-
-// MOG-ON: BCMWAPI
-// MOG-OFF: BCMWAPI
 
 #define IS_VALID_AKM(akm) ((akm) == RSN_AKM_NONE || \
 			(akm) == RSN_AKM_UNSPECIFIED || \
@@ -201,6 +204,7 @@ typedef BWL_PRE_PACKED_STRUCT struct
 #define RSN_CAP_MFPC			0x0080
 #define RSN_CAP_SPPC			0x0400
 #define RSN_CAP_SPPR			0x0800
+#define RSN_CAP_OCVC			0x4000
 
 /* WPA capabilities defined in 802.11i */
 #define WPA_CAP_4_REPLAY_CNTRS		RSN_CAP_4_REPLAY_CNTRS
@@ -262,9 +266,6 @@ typedef struct rsn_ie_info {
 	uint8 kek2_len;				/* EAPOL KEK2 */
 } rsn_ie_info_t;
 #endif /* RSN_IE_INFO_STRUCT_RELOCATED */
-
-// MOG-ON: BCMWAPI
-// MOG-OFF: BCMWAPI
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

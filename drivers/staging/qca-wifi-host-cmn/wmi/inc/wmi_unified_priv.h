@@ -108,7 +108,29 @@ struct wmi_ext_dbg_msg {
 };
 #endif /*WMI_EXT_DBG */
 
-#ifdef WMI_INTERFACE_EVENT_LOGGING
+#ifndef WMI_INTERFACE_EVENT_LOGGING
+
+static inline void __wmi_log_noop(char *format, ...) { }
+
+#define wmi_alert(params...) __wmi_log_noop(params)
+#define wmi_err(params...) __wmi_log_noop(params)
+#define wmi_warn(params...) __wmi_log_noop(params)
+#define wmi_info(params...) __wmi_log_noop(params)
+#define wmi_debug(params...) __wmi_log_noop(params)
+
+#define wmi_nofl_alert(params...) __wmi_log_noop(params)
+#define wmi_nofl_err(params...) __wmi_log_noop(params)
+#define wmi_nofl_warn(params...) __wmi_log_noop(params)
+#define wmi_nofl_info(params...) __wmi_log_noop(params)
+#define wmi_nofl_debug(params...) __wmi_log_noop(params)
+
+#define wmi_alert_rl(params...) __wmi_log_noop(params)
+#define wmi_err_rl(params...) __wmi_log_noop(params)
+#define wmi_warn_rl(params...) __wmi_log_noop(params)
+#define wmi_info_rl(params...) __wmi_log_noop(params)
+#define wmi_debug_rl(params...) __wmi_log_noop(params)
+
+#else
 
 #ifndef WMI_EVENT_DEBUG_MAX_ENTRY
 #define WMI_EVENT_DEBUG_MAX_ENTRY (1024)
@@ -2061,7 +2083,6 @@ struct wmi_host_abi_version {
 	uint32_t abi_version_ns_3;
 };
 
-#define NUM_DEBUG_INFOS 9
 struct wmi_unified {
 	void *scn_handle;    /* handle to device */
 	osdev_t  osdev; /* handle to use OS-independent services */
@@ -2108,7 +2129,10 @@ struct wmi_unified {
 	uint32_t *services;
 	struct wmi_soc *soc;
 	uint16_t wmi_max_cmds;
+#ifdef WMI_INTERFACE_EVENT_LOGGING
+#define NUM_DEBUG_INFOS 9
 	struct dentry *debugfs_de[NUM_DEBUG_INFOS];
+#endif
 #ifdef WMI_EXT_DBG
 	int wmi_ext_dbg_msg_queue_size;
 	qdf_list_t wmi_ext_dbg_msg_queue;

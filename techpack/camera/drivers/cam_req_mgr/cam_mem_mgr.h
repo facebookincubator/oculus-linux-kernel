@@ -29,7 +29,6 @@ enum cam_smmu_mapping_client {
  * struct cam_mem_buf_queue
  *
  * @dma_buf:     pointer to the allocated dma_buf in the table
- * @q_lock:      mutex lock for buffer
  * @hdls:        list of mapped handles
  * @num_hdl:     number of handles
  * @fd:          file descriptor of buffer
@@ -44,7 +43,6 @@ enum cam_smmu_mapping_client {
  */
 struct cam_mem_buf_queue {
 	struct dma_buf *dma_buf;
-	struct mutex q_lock;
 	int32_t hdls[CAM_MEM_MMU_MAX_HANDLE];
 	int32_t num_hdl;
 	int32_t fd;
