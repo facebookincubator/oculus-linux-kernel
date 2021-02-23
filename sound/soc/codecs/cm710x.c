@@ -817,7 +817,8 @@ static ssize_t cm710x_write_firmware_Codec_CMD(
 
 	for (idx = 0; idx < Count; idx++) {
 		if (atomic_read(&cm710x_codec->bSuspendRequestPending))
-			break;
+			return -ECANCELED;
+
 		reg = I2CCommand[idx * 4];
 		data = I2CCommand[(idx * 4) + 2] |
 			I2CCommand[(idx * 4) + 3] << 8;
@@ -849,6 +850,9 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 	int ret = 0;
 
 	do {
+		if (atomic_read(&cm710x_codec->bSuspendRequestPending))
+			return -ECANCELED;
+
 		if (len > 16 * 1024)
 			iWriteSize = 16 * 1024;
 		else
@@ -858,8 +862,7 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 			"SPI Write chunk Addr 0x%08x Len = %zd\n",
 			uAddr, iWriteSize);
 		ret = cm710x_write_SPI_Dsp(uAddr, fwData, iWriteSize);
-		if (ret != 0 ||
-		    atomic_read(&cm710x_codec->bSuspendRequestPending)) {
+		if (ret != 0) {
 			pr_err("%s: Firmware Load Chunk SPI interface failed\n",
 					__func__);
 			ret = -ECANCELED;
@@ -924,10 +927,6 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		cm710x_codec->bDspMode = true;
 
 	fwData += lSize;
-	if (atomic_read(&cm710x_codec->bSuspendRequestPending)) {
-		ret = -ECANCELED;
-		goto __EXIT;
-	}
 
 	regmap_update_bits(cm710x_codec->virt_regmap, CM710X_IF_DSP_DAC2_MIXER,
 			0x0088, 0x0088);
@@ -938,6 +937,9 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 
 	idx = 0;
 	do {
+		if (atomic_read(&cm710x_codec->bSuspendRequestPending))
+			return -ECANCELED;
+
 		ret = regmap_read(cm710x_codec->virt_regmap, CM710X_PWR_DSP_ST,
 				&stardsp);
 		if (ret < 0)
@@ -949,10 +951,6 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		dev_info(cm710x_codec->dev, "stardsp = 0x%04x\n", stardsp);
 		if (stardsp != 0x3ff)
 			usleep_range(10000, 15000);
-		if (atomic_read(&cm710x_codec->bSuspendRequestPending)) {
-			ret = -ECANCELED;
-			break;
-		}
 	} while (stardsp != 0x3ff && idx < 1000);
 
 	if (stardsp != 0x3ff) {
@@ -962,6 +960,9 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	}
 
 	for (idx = 0; idx < iDspBlockCount; idx++) {
+		if (atomic_read(&cm710x_codec->bSuspendRequestPending))
+			return -ECANCELED;
+
 		uAddr = fwData[0] | (fwData[1] << 8) | (fwData[2] << 16) |
 			(fwData[3] << 24);
 		lSize = fwData[4] | (fwData[5] << 8) | (fwData[6] << 16) |
@@ -1093,8 +1094,12 @@ static int cm710x_pm_notify(struct notifier_block *nb,
 			container_of(nb, struct cm710x_codec_priv, pm_nb);
 
 	switch (mode) {
+	case PM_SUSPEND_PREPARE:
+		atomic_set(&cm710x_codec->bSuspendRequestPending, true);
+		cancel_work_sync(&cm710x_codec->fw_download_work);
+		atomic_set(&cm710x_codec->bSuspendRequestPending, false);
+		break;
 	case PM_POST_SUSPEND:
-		reinit_completion(&cm710x_codec->fw_download_complete);
 		schedule_work(&cm710x_codec->fw_download_work);
 		break;
 	default:
@@ -1214,6 +1219,16 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 			Mute[1] = 0;
 		}
 		pr_debug("%s: entry Mute[1] = %d\n", __func__, Mute[1]);
+		break;
+	/* Need to make sure to update mixer_paths after fw download completes */
+	case CM710X_MONO_DAC_MIXER:
+	case CM710X_STO1_ADC_DIG_VOL:
+	case CM710X_STO2_ADC_DIG_VOL:
+		rc = snd_soc_put_volsw(kcontrol, ucontrol);
+		if (rc != 0) {
+			pr_err("%s: failed to change value in reg: 0x%08x\n", __func__, reg);
+			return rc;
+		}
 		break;
 	}
 
@@ -1464,12 +1479,15 @@ static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 		cm710x_get_eq, cm710x_put_eq, eq_vol_tlv),
 	SOC_SINGLE_EXT_TLV("EQ Band 19", EQ_BAND_19, 0, 40, 0,
 		cm710x_get_eq, cm710x_put_eq, eq_vol_tlv),
-	SOC_DOUBLE("Headphone Switch", CM710X_MONO_DAC_MIXER,
-		CM710X_M_DAC2_L_MONO_L_SFT, CM710X_M_DAC2_R_MONO_R_SFT, 1, 1),
-	SOC_DOUBLE("Speaker Switch", CM710X_STO1_ADC_DIG_VOL,
-		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
-	SOC_DOUBLE("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
-		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
+	SOC_DOUBLE_EXT("Headphone Switch", CM710X_MONO_DAC_MIXER,
+		CM710X_M_DAC2_L_MONO_L_SFT, CM710X_M_DAC2_R_MONO_R_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_vu),
+	SOC_DOUBLE_EXT("Speaker Switch", CM710X_STO1_ADC_DIG_VOL,
+		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_vu),
+	SOC_DOUBLE_EXT("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
+		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_vu),
 };
 
 static int cm710x_playback_in_enum_ext_get(struct snd_kcontrol *kcontrol,
@@ -1708,10 +1726,6 @@ static int cm710x_codec_suspend(struct snd_soc_codec *codec)
 		snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	atomic_set(&cm710x_codec->bSuspendRequestPending, true);
-	cancel_work_sync(&cm710x_codec->fw_download_work);
-	atomic_set(&cm710x_codec->bSuspendRequestPending, false);
-
 	regmap_write(cm710x_codec->virt_regmap, CM710X_RESET, 0x10ec);
 	cm710x_codec->bDspMode = false;
 
@@ -1736,6 +1750,12 @@ static int cm710x_codec_suspend(struct snd_soc_codec *codec)
 	ret = regulator_disable(cm710x_codec->dvdd_core);
 	if (ret < 0)
 		dev_err(cm710x_codec->dev, "DVDD regulator_disable failed\n");
+
+	/*
+	 * Reinitialize completion since powering off regulators requires
+	 * a firmware reload before any audio playback function will work.
+	 */
+	reinit_completion(&cm710x_codec->fw_download_complete);
 
 	return 0;
 }

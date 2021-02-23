@@ -32,7 +32,6 @@ static struct {
 		.swd_ops = {
 			.provisioning_read = hubert_swd_provisioning_read,
 			.provisioning_write = hubert_swd_provisioning_write,
-			.should_force_provision = hubert_swd_should_force_provision,
 			.target_prepare = hubert_swd_prepare,
 			.target_erase = hubert_swd_erase_app,
 			.target_program_write_chunk = hubert_swd_write_chunk,
@@ -67,8 +66,7 @@ static int provision_if_needed(struct device *dev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct swd_ops_params *ops = &devdata->swd_ops;
 	int status, addr, length;
-	bool should_provision;
-	u8 *data = NULL;
+	u8 *data;
 
 	if (!devdata->swd_provisioning)
 		return 0;
@@ -81,25 +79,17 @@ static int provision_if_needed(struct device *dev)
 	addr = devdata->provisioning->flash_addr;
 	length = devdata->provisioning->data_length;
 
+	data = kmalloc(length, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
 
-	if (ops->should_force_provision && ops->should_force_provision(dev)) {
-		should_provision = true;
-	} else {
-		data = kmalloc(length, GFP_KERNEL);
-		if (!data)
-			return -ENOMEM;
-
-		status = ops->provisioning_read(dev, addr, data, length);
-		if (status) {
-			dev_err(dev, "Failed to read provisioning data\n");
-			goto out;
-		}
-
-		should_provision = memcmp(data, devdata->provisioning->data, length) != 0;
+	status = ops->provisioning_read(dev, addr, data, length);
+	if (status) {
+		dev_err(dev, "Failed to read provisioning data\n");
+		goto out;
 	}
 
-
-	if (should_provision) {
+	if (memcmp(data, devdata->provisioning->data, length)) {
 		dev_info(dev, "MCU needs provisioning. Attempting now...\n");
 		status = ops->provisioning_write(dev, addr, devdata->provisioning->data, length);
 		if (status) {

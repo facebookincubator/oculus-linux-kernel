@@ -10,6 +10,7 @@ LINUXINCLUDE	+= \
 obj-$(CONFIG_AS5510)			+= as5510.o
 obj-$(CONFIG_BATTERY_VIRTUAL_SENSOR)	+= battery_virtual_sensor.o
 obj-$(CONFIG_DEPTH_PROJECTOR)		+= projector.o
+obj-$(CONFIG_DISPLAY_VIRTUAL_SENSOR)	+= display_virtual_sensor.o
 obj-$(CONFIG_FRONT_PANEL_SENSOR)	+= front_panel_sensor.o
 obj-$(CONFIG_HYPERVISOR_GUEST)		+= hv_guest.o
 obj-$(CONFIG_MISCFIFO)			+= miscfifo.o
