@@ -27,6 +27,7 @@
 #include "sde_kms.h"
 #include "sde_core_perf.h"
 #include "sde_hw_ds.h"
+#include "dsi_display.h"
 
 #define SDE_CRTC_NAME_SIZE	12
 #define RGB_NUM_COMPONENTS	3
@@ -224,6 +225,8 @@ struct sde_crtc_misr_info {
  * @play_count    : frame count between crtc enable and disable
  * @vblank_cb_time  : ktime at vblank count reset
  * @vblank_last_cb_time  : ktime at last vblank notification
+ * @vblank_last_cb_bl_config  : backlight config at last vblank notification
+ * @vblank_last_cb_mode  : display mode at last vblank notification
  * @lineptr_last_cb_time : time in ns at last lineptr notification
  * @lineptr_last_cb_vtotal : total vert scanlines at last lineptr notification
  * @lineptr_last_cb_offset : lineptr offset at last lineptr notification
@@ -298,6 +301,8 @@ struct sde_crtc {
 	u64 play_count;
 	ktime_t vblank_cb_time;
 	ktime_t vblank_last_cb_time;
+	struct dsi_backlight_config vblank_last_cb_bl_config;
+	struct drm_display_mode vblank_last_cb_mode;
 	u64 lineptr_last_cb_time;
 	int lineptr_last_cb_vtotal;
 	int lineptr_last_cb_offset;

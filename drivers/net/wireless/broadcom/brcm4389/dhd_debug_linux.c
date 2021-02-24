@@ -144,11 +144,6 @@ dbg_ring_poll_worker(struct work_struct *work)
 
 	rlen = dhd_dbg_pull_from_ring(dhdp, ringid, buf, buflen);
 
-	DHD_DBG_RING_LOCK(ring->lock, flags);
-	if (!ring->sched_pull) {
-		ring->sched_pull = TRUE;
-	}
-
 	hdr = (dhd_dbg_ring_entry_t *)buf;
 	while (rlen > 0) {
 		ring_status.read_bytes += ENTRY_LENGTH(hdr);
@@ -159,9 +154,13 @@ dbg_ring_poll_worker(struct work_struct *work)
 		rlen -= ENTRY_LENGTH(hdr);
 		hdr = (dhd_dbg_ring_entry_t *)((char *)hdr + ENTRY_LENGTH(hdr));
 	}
-	DHD_DBG_RING_UNLOCK(ring->lock, flags);
 	MFREE(dhdp->osh, buf, buflen);
 
+	DHD_DBG_RING_LOCK(ring->lock, flags);
+	if (!ring->sched_pull) {
+		ring->sched_pull = TRUE;
+	}
+	DHD_DBG_RING_UNLOCK(ring->lock, flags);
 exit:
 	if (sched) {
 		/* retrigger the work at same interval */
@@ -388,9 +387,10 @@ dhd_os_dbg_start_pkt_monitor(dhd_pub_t *dhdp)
 }
 
 int
-dhd_os_dbg_monitor_tx_pkts(dhd_pub_t *dhdp, void *pkt, uint32 pktid)
+dhd_os_dbg_monitor_tx_pkts(dhd_pub_t *dhdp, void *pkt, uint32 pktid,
+	frame_type type, uint8 mgmt_acked)
 {
-	return dhd_dbg_monitor_tx_pkts(dhdp, pkt, pktid);
+	return dhd_dbg_monitor_tx_pkts(dhdp, pkt, pktid, type, mgmt_acked);
 }
 
 int
@@ -401,9 +401,9 @@ dhd_os_dbg_monitor_tx_status(dhd_pub_t *dhdp, void *pkt, uint32 pktid,
 }
 
 int
-dhd_os_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt)
+dhd_os_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt, frame_type type)
 {
-	return dhd_dbg_monitor_rx_pkts(dhdp, pkt);
+	return dhd_dbg_monitor_rx_pkts(dhdp, pkt, type);
 }
 
 int

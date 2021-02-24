@@ -31,6 +31,7 @@
 #include <bcmip.h>
 #include <bcmendian.h>
 
+#include <dhd.h>
 #include <dhd_dbg.h>
 
 #include <dhd_ip.h>

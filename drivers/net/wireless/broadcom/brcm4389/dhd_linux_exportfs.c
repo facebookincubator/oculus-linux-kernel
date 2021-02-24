@@ -45,11 +45,19 @@ extern dhd_pub_t* g_dhd_pub;
 static int dhd_ring_proc_open(struct inode *inode, struct file *file);
 ssize_t dhd_ring_proc_read(struct file *file, char *buffer, size_t tt, loff_t *loff);
 
-static const struct file_operations dhd_ring_proc_fops = {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0))
+static const struct file_operations dhd_ring_proc_ops = {
 	.open = dhd_ring_proc_open,
 	.read = dhd_ring_proc_read,
 	.release = single_release,
 };
+#else
+static const struct proc_ops dhd_ring_proc_ops = {
+	.proc_open = dhd_ring_proc_open,
+	.proc_read = dhd_ring_proc_read,
+	.proc_release = single_release,
+};
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0) */
 
 static int
 dhd_ring_proc_open(struct inode *inode, struct file *file)
@@ -112,7 +120,7 @@ dhd_dbg_ring_proc_create(dhd_pub_t *dhdp)
 
 	dbg_verbose_ring = dhd_dbg_get_ring_from_ring_id(dhdp, FW_VERBOSE_RING_ID);
 	if (dbg_verbose_ring) {
-		if (!proc_create_data("dhd_trace", S_IRUSR, NULL, &dhd_ring_proc_fops,
+		if (!proc_create_data("dhd_trace", S_IRUSR, NULL, &dhd_ring_proc_ops,
 			dbg_verbose_ring)) {
 			DHD_ERROR(("Failed to create /proc/dhd_trace procfs interface\n"));
 		} else {
@@ -124,7 +132,7 @@ dhd_dbg_ring_proc_create(dhd_pub_t *dhdp)
 #endif /* DEBUGABILITY */
 
 #ifdef EWP_ECNTRS_LOGGING
-	if (!proc_create_data("dhd_ecounters", S_IRUSR, NULL, &dhd_ring_proc_fops,
+	if (!proc_create_data("dhd_ecounters", S_IRUSR, NULL, &dhd_ring_proc_ops,
 		dhdp->ecntr_dbg_ring)) {
 		DHD_ERROR(("Failed to create /proc/dhd_ecounters procfs interface\n"));
 	} else {
@@ -133,7 +141,7 @@ dhd_dbg_ring_proc_create(dhd_pub_t *dhdp)
 #endif /* EWP_ECNTRS_LOGGING */
 
 #ifdef EWP_RTT_LOGGING
-	if (!proc_create_data("dhd_rtt", S_IRUSR, NULL, &dhd_ring_proc_fops,
+	if (!proc_create_data("dhd_rtt", S_IRUSR, NULL, &dhd_ring_proc_ops,
 		dhdp->rtt_dbg_ring)) {
 		DHD_ERROR(("Failed to create /proc/dhd_rtt procfs interface\n"));
 	} else {
@@ -837,7 +845,7 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		iovar_buf, PWRSTATS_IOV_BUF_LEN, NULL);
 	if (err != BCME_OK) {
 		DHD_ERROR(("error (%d) - size = %zu\n", err, sizeof(wl_pwrstats_t)));
-		goto done;
+		goto print_old;
 	}
 
 	/* Check version */
@@ -934,6 +942,12 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		*(uint8**)&p_data += taglen;
 	} while (len >= BCM_XTLV_HDR_SIZE);
 
+print_old:
+	/* [awake|pm]_last_entry_us are provided based on host timestamp.
+	 * These are calculated by dongle timestamp + (delta time of host & dongle)
+	 * If the newly calculated delta time is more than 1 second gap from
+	 * the existing delta time, it is updated to compensate more accurately.
+	 */
 	OSL_GET_LOCALTIME(&ts_sec, &ts_usec);
 	time_delta = ts_sec * USEC_PER_SEC + ts_usec - pwrstats_sysfs.current_ts;
 	if ((time_delta > last_delta) &&
@@ -1114,7 +1128,7 @@ static struct dhd_attr dhd_attr_nvram_path =
 
 #ifdef PWRSTATS_SYSFS
 static struct dhd_attr dhd_attr_pwrstats_path =
-	__ATTR(power_stats, 0660, show_pwrstats_path, NULL);
+	__ATTR(power_stats, 0664, show_pwrstats_path, NULL);
 #endif /* PWRSTATS_SYSFS */
 
 #define to_dhd(k) container_of(k, struct dhd_info, dhd_kobj)
@@ -1182,8 +1196,8 @@ get_mem_val_from_file(void)
 	int ret = 0;
 
 	/* Read memdump info from the file */
-	fp = filp_open(filepath, O_RDONLY, 0);
-	if (IS_ERR(fp)) {
+	fp = dhd_filp_open(filepath, O_RDONLY, 0);
+	if (IS_ERR(fp) || (fp == NULL)) {
 		DHD_ERROR(("%s: File [%s] doesn't exist\n", __FUNCTION__, filepath));
 #if defined(CONFIG_X86) && defined(OEM_ANDROID)
 		/* Check if it is Live Brix Image */
@@ -1193,8 +1207,8 @@ get_mem_val_from_file(void)
 		/* Try if it is Installed Brix Image */
 		filepath = MEMDUMPINFO_INST;
 		DHD_ERROR(("%s: Try File [%s]\n", __FUNCTION__, filepath));
-		fp = filp_open(filepath, O_RDONLY, 0);
-		if (IS_ERR(fp)) {
+		fp = dhd_filp_open(filepath, O_RDONLY, 0);
+		if (IS_ERR(fp) || (fp == NULL)) {
 			DHD_ERROR(("%s: File [%s] doesn't exist\n", __FUNCTION__, filepath));
 			goto done;
 		}
@@ -1204,10 +1218,10 @@ get_mem_val_from_file(void)
 	}
 
 	/* Handle success case */
-	ret = kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
+	ret = dhd_kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
 	if (ret < 0) {
 		DHD_ERROR(("%s: File read error, ret=%d\n", __FUNCTION__, ret));
-		filp_close(fp, NULL);
+		dhd_filp_close(fp, NULL);
 		goto done;
 	}
 
@@ -1215,7 +1229,7 @@ get_mem_val_from_file(void)
 	p_mem_val[sizeof(uint32) - 1] = '\0';
 	mem_val = bcm_atoi(p_mem_val);
 
-	filp_close(fp, NULL);
+	dhd_filp_close(fp, NULL);
 
 done:
 	return mem_val;
@@ -1324,11 +1338,11 @@ get_assert_val_from_file(void)
 	 * 2: Trigger Kernel crash by BUG()
 	 * File doesn't exist: Keep default value (1).
 	 */
-	fp = filp_open(filepath, O_RDONLY, 0);
-	if (IS_ERR(fp)) {
+	fp = dhd_filp_open(filepath, O_RDONLY, 0);
+	if (IS_ERR(fp) || (fp == NULL)) {
 		DHD_ERROR(("%s: File [%s] doesn't exist\n", __FUNCTION__, filepath));
 	} else {
-		int ret = kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
+		int ret = dhd_kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
 		if (ret < 0) {
 			DHD_ERROR(("%s: File read error, ret=%d\n", __FUNCTION__, ret));
 		} else {
@@ -1337,7 +1351,7 @@ get_assert_val_from_file(void)
 			mem_val = bcm_atoi(p_mem_val);
 			DHD_ERROR(("%s: ASSERT ENABLED = %d\n", __FUNCTION__, mem_val));
 		}
-		filp_close(fp, NULL);
+		dhd_filp_close(fp, NULL);
 	}
 
 #ifdef CUSTOMER_HW4_DEBUG

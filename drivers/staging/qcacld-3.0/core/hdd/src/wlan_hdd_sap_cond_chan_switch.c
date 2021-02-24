@@ -100,8 +100,8 @@ static int wlan_hdd_validate_and_get_pre_cac_ch(struct hdd_context *hdd_ctx,
 	QDF_STATUS status;
 	uint32_t weight_len = 0;
 	uint32_t len = CFG_VALID_CHANNEL_LIST_LEN;
-	uint8_t channel_list[QDF_MAX_NUM_CHAN] = {0};
-	uint8_t pcl_weights[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t channel_list[NUM_CHANNELS] = {0};
+	uint8_t pcl_weights[NUM_CHANNELS] = {0};
 	mac_handle_t mac_handle;
 
 	if (channel == 0) {
@@ -447,7 +447,7 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 		*tb[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_MAX + 1];
 	uint32_t freq_len, i;
 	uint32_t *freq;
-	uint8_t chans[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t chans[NUM_CHANNELS] = {0};
 	bool is_dfs_mode_enabled = false;
 
 	hdd_enter_dev(dev);
@@ -499,7 +499,7 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 		tb[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_FREQ_LIST])/
 		sizeof(uint32_t);
 
-	if (freq_len > QDF_MAX_NUM_CHAN) {
+	if (freq_len > NUM_CHANNELS) {
 		hdd_err("insufficient space to hold channels");
 		return -ENOMEM;
 	}

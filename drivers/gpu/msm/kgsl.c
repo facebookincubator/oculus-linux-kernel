@@ -46,6 +46,8 @@
 #define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(32)
 #endif
 
+static struct kmem_cache *kgsl_mem_entry_cache;
+
 /* Mutex used for the IOMMU sync quirk */
 DEFINE_MUTEX(kgsl_mmu_sync);
 EXPORT_SYMBOL(kgsl_mmu_sync);
@@ -227,8 +229,9 @@ EXPORT_SYMBOL(kgsl_readtimestamp);
 
 static struct kgsl_mem_entry *kgsl_mem_entry_create(void)
 {
-	struct kgsl_mem_entry *entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	struct kgsl_mem_entry *entry;
 
+	entry = kmem_cache_zalloc(kgsl_mem_entry_cache, GFP_KERNEL);
 	if (entry != NULL) {
 		kref_init(&entry->refcount);
 		/* put this ref in userspace memory alloc and map ioctls */
@@ -363,7 +366,8 @@ static void mem_entry_destroy(struct kgsl_mem_entry *entry)
 		break;
 	}
 
-	kfree(entry);
+	kfree(entry->metadata);
+	kmem_cache_free(kgsl_mem_entry_cache, entry);
 }
 
 static void _deferred_destroy(struct work_struct *work)
@@ -2832,7 +2836,8 @@ unmap:
 	kgsl_sharedmem_free(&entry->memdesc);
 
 out:
-	kfree(entry);
+	kfree(entry->metadata);
+	kmem_cache_free(kgsl_mem_entry_cache, entry);
 	return ret;
 }
 
@@ -3194,7 +3199,8 @@ error:
 	/* Clear gpuaddr here so userspace doesn't get any wrong ideas */
 	param->gpuaddr = 0;
 
-	kfree(entry);
+	kfree(entry->metadata);
+	kmem_cache_free(kgsl_mem_entry_cache, entry);
 	return result;
 }
 
@@ -3562,7 +3568,8 @@ struct kgsl_mem_entry *gpumem_alloc_entry(
 	kgsl_mem_entry_commit_process(entry);
 	return entry;
 err:
-	kfree(entry);
+	kfree(entry->metadata);
+	kmem_cache_free(kgsl_mem_entry_cache, entry);
 	return ERR_PTR(ret);
 }
 
@@ -3574,10 +3581,20 @@ static void copy_metadata(struct kgsl_mem_entry *entry, uint64_t metadata,
 	if (len == 0)
 		return;
 
-	size = min_t(unsigned int, len, sizeof(entry->metadata) - 1);
+	/* Allocate room for the metadata if it isn't already present */
+	if (!entry->metadata) {
+		entry->metadata = kzalloc(KGSL_GPUOBJ_ALLOC_METADATA_MAX,
+					  GFP_KERNEL);
+		if (!entry->metadata) {
+			pr_err("kgsl: Failed to allocate room for metadata\n");
+			return;
+		}
+	}
+
+	size = min_t(unsigned int, len, KGSL_GPUOBJ_ALLOC_METADATA_MAX - 1);
 
 	if (copy_from_user(entry->metadata, to_user_ptr(metadata), size)) {
-		memset(entry->metadata, 0, sizeof(entry->metadata));
+		memset(entry->metadata, 0, KGSL_GPUOBJ_ALLOC_METADATA_MAX);
 		return;
 	}
 
@@ -3805,7 +3822,8 @@ err_remove_idr:
 err_put_proc_priv:
 	kgsl_process_private_put(process);
 err_free_entry:
-	kfree(entry);
+	kfree(entry->metadata);
+	kmem_cache_free(kgsl_mem_entry_cache, entry);
 
 	return ret;
 }
@@ -3877,7 +3895,8 @@ long kgsl_ioctl_sparse_virt_alloc(struct kgsl_device_private *dev_priv,
 
 	ret = kgsl_mem_entry_attach_process(dev_priv->device, private, entry);
 	if (ret) {
-		kfree(entry);
+		kfree(entry->metadata);
+		kmem_cache_free(kgsl_mem_entry_cache, entry);
 		return ret;
 	}
 
@@ -4622,9 +4641,13 @@ static void
 kgsl_gpumem_vm_close(struct vm_area_struct *vma)
 {
 	struct kgsl_mem_entry *entry  = vma->vm_private_data;
+	long mapsize;
 
 	if (!entry)
 		return;
+
+	mapsize = atomic_long_xchg(&entry->memdesc.mapsize, 0);
+	atomic_long_sub(mapsize, &entry->priv->gpumem_mapped);
 
 	entry->memdesc.useraddr = 0;
 	kgsl_mem_entry_put_deferred(entry);
@@ -5343,6 +5366,8 @@ static void kgsl_core_exit(void)
 	kfree(memfree.list);
 	memset(&memfree, 0, sizeof(memfree));
 
+	kmem_cache_destroy(kgsl_mem_entry_cache);
+
 	unregister_chrdev_region(kgsl_driver.major,
 		ARRAY_SIZE(kgsl_driver.devp));
 }
@@ -5435,6 +5460,12 @@ static int __init kgsl_core_init(void)
 	}
 
 	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
+
+	kgsl_mem_entry_cache = KMEM_CACHE(kgsl_mem_entry, 0);
+	if (!kgsl_mem_entry_cache) {
+		pr_err("kgsl: unable to create mem entry cache\n");
+		goto err;
+	}
 
 	kgsl_events_init();
 

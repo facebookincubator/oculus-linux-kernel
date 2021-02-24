@@ -246,4 +246,7 @@ static inline void dp_tx_comp_process_exception(struct dp_tx_desc_s *tx_desc)
 	return;
 }
 /* TODO TX_FEATURE_NOT_YET */
+
+void dp_tx_desc_flush(struct dp_pdev *pdev, struct dp_vdev *vdev,
+		      bool force_free);
 #endif

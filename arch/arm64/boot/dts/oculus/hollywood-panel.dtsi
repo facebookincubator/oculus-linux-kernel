@@ -11,6 +11,8 @@
 &dsi_jdi_4k_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -35,6 +37,8 @@
 &dsi_jdi_4k_80Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -59,6 +63,8 @@
 &dsi_jdi_4k_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -83,6 +89,8 @@
 &dsi_sharp_4k_72Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <108>; /* 10.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -107,6 +115,8 @@
 &dsi_sharp_4k_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <108>; /* 10.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -131,6 +141,8 @@
 &dsi_sharp_4k_90Hz_dsc_evt2_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <78>; /* 7.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -155,6 +167,8 @@
 &dsi_sharp_4k_72Hz_dsc_evt2_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <78>; /* 7.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -179,6 +193,8 @@
 &dsi_sharp_4k_90Hz_dsc_dvt_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <80>; /* 8.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -203,6 +219,8 @@
 &dsi_sharp_4k_72Hz_dsc_dvt_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <80>; /* 8.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;

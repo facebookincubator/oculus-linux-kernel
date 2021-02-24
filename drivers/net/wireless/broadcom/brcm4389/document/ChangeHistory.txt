@@ -1,4 +1,31 @@
-BCM4389 DHD 101.10.371 for FB Project
+BCM4389 DHD 101.10.418.2 for FB Project R1 Release
+
+DHD 101.10.418.2 - 2020.10.27
+
+New features
+ - GPIO TimeSync
+ - EOT frame in rx path
+
+Other Fixes
+ - Kernel panic from snprintf while handling wifiver info
+ - Added debugging info for AXI slave error
+ - Legacy scan fail due to P2P wildcard SSID
+ - Filled the HE capabilities for 6GHz SoftAP properly
+ - SAE password min length issue
+ - Added delay during sysmem calculation to avoid invalid ramsize
+ - Added rx_icmp count of the wake-up reason to the debug dump
+ - Buffer overrun if passphrase length is 255
+ - EAPOL packet drop in supplicant with SAE-FT
+ - Host IRQ disable/enable mismatches during suspend/resume
+ - Internal MBO issue caused by uninitialized variable
+ - Missing scan status bit clear when scan abort by PNO stop
+ - P2P connection failure due to mac randomization after Android framework reset
+ - PNO scan enable failure due to invalid channel band for 6Ghz channels
+ - SoftAP interface creation failure in an aging test
+ - Compile error with kernel 5.9.x
+ - Wrong print of ifidx/bssidx in the event path
+
+
 
 DHD 101.10.371.2 - 2020.09.15
  - Initial Release

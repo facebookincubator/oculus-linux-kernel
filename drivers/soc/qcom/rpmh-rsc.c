@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s " fmt, KBUILD_MODNAME
@@ -561,6 +561,14 @@ void rpmh_rsc_mode_solver_set(struct rsc_drv *drv, bool enable)
 	int m;
 	struct tcs_group *tcs = get_tcs_of_type(drv, ACTIVE_TCS);
 
+	/*
+	 * If we made an active request on a RSC that does not have a
+	 * dedicated TCS for active state use, then re-purposed wake TCSes
+	 * should be checked for not busy, because we used wake TCSes for
+	 * active requests in this case.
+	 */
+	if (!tcs->num_tcs)
+		tcs = get_tcs_of_type(drv, WAKE_TCS);
 again:
 	spin_lock(&drv->lock);
 	for (m = tcs->offset; m < tcs->offset + tcs->num_tcs; m++) {
@@ -692,7 +700,7 @@ static void print_tcs_info(struct rsc_drv *drv, int tcs_id, unsigned long *accl)
 	}
 }
 
-void rpmh_rsc_debug(struct rsc_drv *drv)
+void rpmh_rsc_debug(struct rsc_drv *drv, struct completion *compl)
 {
 	struct irq_data *rsc_irq_data = irq_get_irq_data(drv->irq);
 	bool irq_sts;
@@ -718,6 +726,8 @@ void rpmh_rsc_debug(struct rsc_drv *drv)
 	irq_get_irqchip_state(drv->irq, IRQCHIP_STATE_PENDING, &irq_sts);
 	pr_warn("HW IRQ %lu is %s at GIC\n", rsc_irq_data->hwirq,
 		irq_sts ? "PENDING" : "NOT PENDING");
+	pr_warn("Completion is %s to finish\n",
+		completion_done(compl) ? "PENDING" : "NOT PENDING");
 
 	for_each_set_bit(i, &accl, ARRAY_SIZE(accl_str)) {
 		strlcat(str, accl_str[i], sizeof(str));

@@ -752,81 +752,75 @@ error:
 }
 
 static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
-		        u32 bl_lvl)
+			u32 bl_lvl)
 {
 	int rc = 0;
-	struct dsi_cmd_desc *cmds;
-	u32 count;
-	struct dsi_display_mode *mode;
-	u8 *set_brightness_cmd;
-	u32 length = 0;
-	u8 *payload = NULL;
-	u8 reg;
-	enum dsi_cmd_set_type type;
+	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
-	int refresh_rate = 0;
-	int32_t default_brightness = 0;
+	struct dsi_backlight_config *bl_config;
+	u32 vtotal, target_scanline, left_scanline, right_scanline;
+
+	u8 reg = 0xB9; /* BLU adjust command */
+	u8 payload[16] = {0}; /* BLU adjust payload */
 
 	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
 		return -EINVAL;
 
-	mode = panel->cur_mode;
-	switch (panel->cur_mode->timing.refresh_rate) {
-	case DFPS_80HZ:
-		refresh_rate = 1;
-		break;
-	case DFPS_72HZ:
-		refresh_rate = 2;
-		break;
-	case DFPS_60HZ:
-		refresh_rate = 3;
-		break;
-	case DFPS_90HZ:
-		refresh_rate = 0;
-		break;
-	}
-
-	/* parse mipi cmd for setting brightness */
-	type = DSI_CMD_SET_JDI_BRIGHTNESS;
-	cmds = mode->priv_info->cmd_sets[type].cmds;
-	count = mode->priv_info->cmd_sets[type].count;
-	length = cmds[refresh_rate].msg.tx_len - 1;
-	payload = kcalloc(length, sizeof(u8), GFP_KERNEL);
-	if (!payload) {
-		rc = -ENOMEM;
-		goto error;
-	}
-
-	if (count == 0) {
-		pr_err("[%s] No commands to be sent for state(%d)\n",
-				panel->name, type);
-		rc = -EINVAL;
-		goto error;
-	}
-
-	set_brightness_cmd = (u8 *) cmds[refresh_rate].msg.tx_buf;
-
-	reg = set_brightness_cmd[0];
-	memcpy(payload, &set_brightness_cmd[1], length * sizeof(u8));
-
 	dsi = &panel->mipi_device;
+	bl_config = &panel->bl_config;
 
-	default_brightness = (int32_t) ((payload[2] << 8) | payload[3]);
+	timing = &panel->cur_mode->timing;
+	vtotal = (u32)DSI_V_TOTAL(timing);
 
-	bl_lvl = (bl_lvl * default_brightness) / 1000;
+	/* Transform backlight level into illumination period in scanlines */
+	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
+
+	/*
+	 * Calculate the last scanline to start on for each BLU without
+	 * overlapping the backlight illumination with the next refresh's
+	 * scanout to the active scanlines of the panel.
+	 */
+	target_scanline = vtotal - timing->v_front_porch + bl_config->jdi_scanline_max_offset;
+	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
+	left_scanline = right_scanline + timing->v_active / 2;
+
+	right_scanline = min(target_scanline, right_scanline);
+	if (right_scanline > vtotal)
+		right_scanline -= vtotal;
+	left_scanline = min(target_scanline, left_scanline);
+	if (left_scanline > vtotal)
+		left_scanline -= vtotal;
+
+	/*
+	 * Payload is eight 16-bit LE values
+	 * parameter 0: Start scanline of right BLU
+	 * parameter 1: Period of right BLU in scanlines
+	 * ~~~
+	 * parameter 4: Start scanline of left BLU
+	 * parameter 5: Period of left BLU in scanlines
+	 * ~~~
+	 */
+	payload[0] = right_scanline >> 8;
+	payload[1] = right_scanline & 0xff;
 	payload[2] = bl_lvl >> 8;
 	payload[3] = bl_lvl & 0xff;
+
+	payload[8] = left_scanline >> 8;
+	payload[9] = left_scanline & 0xff;
 	payload[10] = bl_lvl >> 8;
 	payload[11] = bl_lvl & 0xff;
 
-	rc = mipi_dsi_dcs_write(dsi, reg, payload, length);
+	rc = mipi_dsi_dcs_write(dsi, reg, payload, sizeof(payload));
 	if (rc) {
 		pr_err("failed to set jdi brightness cmds, rc=%d\n", rc);
 		goto error;
 	}
 
+	bl_config->jdi_scanline_duration = bl_lvl;
+	bl_config->jdi_scanline_offset[0] = right_scanline;
+	bl_config->jdi_scanline_offset[1] = left_scanline;
+
 error:
-	kfree(payload);
 	return rc;
 }
 
@@ -1854,7 +1848,6 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
-	"qcom,mdss-dsi-jdi-brightness-commands",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1881,7 +1874,6 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
-	"qcom,mdss-dsi-jdi-brightness-commands-state",
 };
 
 static int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2463,7 +2455,29 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.brightness_max_level = val;
 	}
 
-	if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
+	if (panel->bl_config.type == DSI_BACKLIGHT_JDI) {
+		rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-jdi-default-duty-cycle", &val);
+		if (rc) {
+			DSI_DEBUG("[%s] jdi-default-duty-cycle unspecified, defaulting to 10.0%%\n",
+				panel->name);
+			panel->bl_config.jdi_blu_default_duty = 100;
+		} else {
+			panel->bl_config.jdi_blu_default_duty = val;
+		}
+
+		rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-jdi-default-max-scanline-offset", &val);
+		if (rc) {
+			DSI_DEBUG("[%s] jdi-default-max-scanline-offset unspecified, defaulting to 2000 lines\n",
+				panel->name);
+			panel->bl_config.jdi_scanline_max_offset = 2000;
+		} else {
+			panel->bl_config.jdi_scanline_max_offset = val;
+		}
+
+		rc = 0;
+	} else if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
 		rc = dsi_panel_parse_bl_pwm_config(panel);
 		if (rc) {
 			DSI_ERR("[%s] failed to parse pwm config, rc=%d\n",

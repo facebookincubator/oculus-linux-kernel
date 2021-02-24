@@ -1127,8 +1127,12 @@ static int cluster_configure(struct lpm_cluster *cluster, int idx,
 		 * LPMs (XO and Vmin).
 		 */
 		if (!from_idle) {
+#ifdef CONFIG_COMMON_CLK_DEBUG
 			clock_debug_print_enabled();
+#endif
+#ifdef CONFIG_REGULATOR_DEBUG
 			regulator_debug_print_enabled();
+#endif
 		}
 
 		cpu = get_next_online_cpu(from_idle);

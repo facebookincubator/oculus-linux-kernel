@@ -167,7 +167,7 @@ static int print_mem_entry(void *data, void *ptr)
 			atomic_long_read(&m->mapsize),
 			egl_surface_count, egl_image_count);
 
-	if (entry->metadata[0] != 0)
+	if (entry->metadata)
 		seq_printf(s, " %s", entry->metadata);
 
 	seq_putc(s, '\n');

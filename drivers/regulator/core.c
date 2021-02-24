@@ -57,9 +57,11 @@ static LIST_HEAD(regulator_map_list);
 static LIST_HEAD(regulator_ena_gpio_list);
 static LIST_HEAD(regulator_supply_alias_list);
 static bool has_full_constraints;
-static bool debug_suspend;
 
+#ifdef CONFIG_REGULATOR_DEBUG
+static bool debug_suspend;
 static struct dentry *debugfs_root;
+#endif
 
 /*
  * struct regulator_map
@@ -1441,6 +1443,7 @@ static struct regulator *create_regulator(struct regulator_dev *rdev,
 			goto overflow_err;
 	}
 
+#ifdef CONFIG_REGULATOR_DEBUG
 	regulator->debugfs = debugfs_create_dir(regulator->supply_name,
 						rdev->debugfs);
 	if (!regulator->debugfs) {
@@ -1456,6 +1459,7 @@ static struct regulator *create_regulator(struct regulator_dev *rdev,
 				    regulator->debugfs, regulator,
 				    &constraint_flags_fops);
 	}
+#endif
 
 	/*
 	 * Check now if the regulator is an always on regulator - if
@@ -1847,7 +1851,9 @@ static void _regulator_put(struct regulator *regulator)
 
 	rdev = regulator->rdev;
 
+#ifdef CONFIG_REGULATOR_DEBUG
 	debugfs_remove_recursive(regulator->debugfs);
+#endif
 
 	if (regulator->dev) {
 		int count = 0;
@@ -4132,7 +4138,7 @@ static void regulator_dev_release(struct device *dev)
 	kfree(rdev);
 }
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGULATOR_DEBUG
 
 static int reg_debug_enable_set(void *data, u64 val)
 {
@@ -4967,6 +4973,7 @@ void *regulator_get_init_drvdata(struct regulator_init_data *reg_init_data)
 }
 EXPORT_SYMBOL_GPL(regulator_get_init_drvdata);
 
+#ifdef CONFIG_REGULATOR_DEBUG
 #ifdef CONFIG_DEBUG_FS
 static int supply_map_show(struct seq_file *sf, void *data)
 {
@@ -5185,6 +5192,7 @@ void regulator_debug_print_enabled(void)
 			     _regulator_debug_print_enabled);
 }
 EXPORT_SYMBOL(regulator_debug_print_enabled);
+#endif
 
 static int __init regulator_init(void)
 {
@@ -5192,6 +5200,7 @@ static int __init regulator_init(void)
 
 	ret = class_register(&regulator_class);
 
+#ifdef CONFIG_REGULATOR_DEBUG
 	debugfs_root = debugfs_create_dir("regulator", NULL);
 	if (!debugfs_root)
 		pr_warn("regulator: Failed to create debugfs directory\n");
@@ -5204,6 +5213,7 @@ static int __init regulator_init(void)
 
 	debugfs_create_bool("debug_suspend", 0644, debugfs_root,
 			    &debug_suspend);
+#endif
 
 	regulator_dummy_init();
 

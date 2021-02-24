@@ -5134,6 +5134,14 @@ static void lim_process_sme_channel_change_request(struct mac_context *mac_ctx,
 		      ch_change_req->ch_width, ch_change_req->nw_type,
 		      ch_change_req->dot11mode);
 
+	if (IS_DOT11_MODE_HE(ch_change_req->dot11mode)) {
+		if (wlan_reg_is_24ghz_ch(ch_change_req->targetChannel) &&
+		    !mac_ctx->mlme_cfg->vht_caps.vht_cap_info.b24ghz_band)
+			session_entry->vhtCapability = 0;
+		else if (wlan_reg_is_5ghz_ch(ch_change_req->targetChannel))
+			session_entry->vhtCapability = 1;
+	}
+
 	/* Store the New Channel Params in session_entry */
 	session_entry->ch_width = ch_change_req->ch_width;
 	session_entry->ch_center_freq_seg0 =
@@ -5720,10 +5728,11 @@ static void lim_process_sme_dfs_csa_ie_request(struct mac_context *mac_ctx,
 			 dfs_csa_ie_req->ch_switch_mode;
 
 	/*
-	 * Validate if SAP is operating HT or VHT mode and set the Channel
+	 * Validate if SAP is operating HT or VHT/HE mode and set the Channel
 	 * Switch Wrapper element with the Wide Band Switch subelement.
 	 */
-	if (true != session_entry->vhtCapability)
+	if (!(session_entry->vhtCapability ||
+	      lim_is_session_he_capable(session_entry)))
 		goto skip_vht;
 
 	/* Now encode the Wider Ch BW element depending on the ch width */

@@ -7080,6 +7080,9 @@ void lim_update_session_he_capable(struct mac_context *mac, struct pe_session *s
 {
 	session->he_capable = true;
 	pe_debug("he_capable: %d", session->he_capable);
+	if (wlan_reg_is_24ghz_ch(session->currentOperChannel) &&
+	    !mac->mlme_cfg->vht_caps.vht_cap_info.b24ghz_band)
+		session->vhtCapability = 0;
 }
 
 void lim_update_chan_he_capable(struct mac_context *mac, tpSwitchChannelParams chan)

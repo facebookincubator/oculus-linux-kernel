@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -271,24 +271,30 @@ int cam_cdm_stream_ops_internal(void *hw_priv,
 	if (operation == true) {
 		if (!cdm_hw->open_count) {
 			struct cam_ahb_vote ahb_vote;
-			struct cam_axi_vote axi_vote = {0};
+			struct cam_axi_vote *axi_vote =
+				kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+			if (!axi_vote) {
+				rc = -ENOMEM;
+				goto end;
+			}
 
 			ahb_vote.type = CAM_VOTE_ABSOLUTE;
 			ahb_vote.vote.level = CAM_LOWSVS_VOTE;
-			axi_vote.num_paths = 1;
-			axi_vote.axi_path[0].path_data_type =
+			axi_vote->num_paths = 1;
+			axi_vote->axi_path[0].path_data_type =
 				CAM_AXI_PATH_DATA_ALL;
-			axi_vote.axi_path[0].transac_type =
+			axi_vote->axi_path[0].transac_type =
 				CAM_AXI_TRANSACTION_READ;
-			axi_vote.axi_path[0].camnoc_bw =
+			axi_vote->axi_path[0].camnoc_bw =
 				CAM_CPAS_DEFAULT_AXI_BW;
-			axi_vote.axi_path[0].mnoc_ab_bw =
+			axi_vote->axi_path[0].mnoc_ab_bw =
 				CAM_CPAS_DEFAULT_AXI_BW;
-			axi_vote.axi_path[0].mnoc_ib_bw =
+			axi_vote->axi_path[0].mnoc_ib_bw =
 				CAM_CPAS_DEFAULT_AXI_BW;
 
 			rc = cam_cpas_start(core->cpas_handle,
-				&ahb_vote, &axi_vote);
+				&ahb_vote, axi_vote);
+			kfree(axi_vote);
 			if (rc != 0) {
 				CAM_ERR(CAM_CDM, "CPAS start failed");
 				goto end;
@@ -581,6 +587,31 @@ int cam_cdm_process_cmd(void *hw_priv,
 	case CAM_CDM_HW_INTF_CMD_RESET_HW: {
 		CAM_ERR(CAM_CDM, "CDM HW reset not supported for handle =%x",
 			*((uint32_t *)cmd_args));
+		break;
+	}
+	case CAM_CDM_HW_INTF_CMD_HANG_DETECT: {
+		uint32_t *handle = cmd_args;
+		int idx;
+		struct cam_cdm_client *client;
+
+		if (sizeof(uint32_t) != arg_size) {
+			CAM_ERR(CAM_CDM,
+				"Invalid CDM cmd %d size=%x for handle=%x",
+				cmd, arg_size, *handle);
+				return -EINVAL;
+		}
+
+		idx = CAM_CDM_GET_CLIENT_IDX(*handle);
+		mutex_lock(&cdm_hw->hw_mutex);
+		client = core->clients[idx];
+		if ((!client) || (*handle != client->handle)) {
+			CAM_ERR(CAM_CDM, "Invalid client %pK hdl=%x",
+				client, *handle);
+			mutex_unlock(&cdm_hw->hw_mutex);
+			break;
+		}
+		rc = cam_hw_cdm_hang_detect(cdm_hw, *handle);
+		mutex_unlock(&cdm_hw->hw_mutex);
 		break;
 	}
 	default:

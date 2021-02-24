@@ -190,6 +190,7 @@ enum {
 #endif /* D2H_MINIDUMP */
 	DNGL_TO_HOST_TRAP_ADDR,
 	HOST_SCB_ADDR,		/* update host scb base address to dongle */
+	HOST_CAP2,		/* Host capability 2 flags */
 };
 
 typedef void (*dhd_mb_ring_t) (struct dhd_bus *, uint32);
@@ -288,11 +289,12 @@ extern bool dhd_bus_query_dpc_sched_errors(dhd_pub_t *dhdp);
 extern int dhd_bus_dmaxfer_lpbk(dhd_pub_t *dhdp, uint32 type);
 extern bool dhd_bus_check_driver_up(void);
 extern int dhd_bus_get_cto(dhd_pub_t *dhdp);
+extern bool dhd_bus_get_read_shm(dhd_pub_t *dhdp);
 extern void dhd_bus_set_linkdown(dhd_pub_t *dhdp, bool val);
 extern int dhd_bus_get_linkdown(dhd_pub_t *dhdp);
-#ifdef CONFIG_ARCH_MSM
+#if defined(CONFIG_ARCH_MSM) && defined(CONFIG_SEC_PCIE_L1SS)
 extern void dhd_bus_inform_ep_loaded_to_rc(dhd_pub_t *dhdp, bool up);
-#endif /* CONFIG_ARCH_MSM */
+#endif /* CONFIG_ARCH_MSM  && CONFIG_SEC_PCIE_L1SS */
 extern int dhd_bus_checkdied(struct dhd_bus *bus, char *data, uint size);
 #else
 #define dhd_bus_dump_console_buffer(x)
@@ -303,6 +305,7 @@ static INLINE bool dhd_bus_check_driver_up(void) { return FALSE; }
 extern INLINE void dhd_bus_set_linkdown(dhd_pub_t *dhdp, bool val) { }
 extern INLINE int dhd_bus_get_linkdown(dhd_pub_t *dhdp) { return 0; }
 static INLINE int dhd_bus_get_cto(dhd_pub_t *dhdp) { return 0; }
+static INLINE bool dhd_bus_get_read_shm(dhd_pub_t *dhdp) { return 0; }
 extern INLINE int dhd_bus_checkdied(struct dhd_bus *bus, char *data, uint size) { return 0; }
 #endif /* BCMPCIE */
 

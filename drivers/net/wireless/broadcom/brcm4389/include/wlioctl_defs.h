@@ -530,6 +530,10 @@
 #define FIPS_ENABLED	0x0080
 #endif /* WLFIPS */
 
+#ifdef BCMWAPI_WPI
+#define SMS4_ENABLED		0x0100
+#endif /* BCMWAPI_WPI */
+
 /* wsec macros for operating on the above definitions */
 #ifdef WLWSEC
 #define WSEC_WEP_ENABLED(wsec)	((wsec) & WEP_ENABLED)
@@ -553,12 +557,22 @@
 #define WSEC_CKIP_MIC_ENABLED(wsec)	((wsec) & CKIP_MIC_ENABLED)
 #define WSEC_CKIP_ENABLED(wsec)	((wsec) & (CKIP_KP_ENABLED|CKIP_MIC_ENABLED))
 
+#ifdef BCMWAPI_WPI
+#define WSEC_ENABLED(wsec) \
+	((wsec) & (WEP_ENABLED | TKIP_ENABLED | AES_ENABLED | CKIP_KP_ENABLED |	\
+	  CKIP_MIC_ENABLED | SMS4_ENABLED))
+#endif /* BCMWAPI_WPI */
+
 #ifndef BCMWAPI_WPI /* BCMWAPI_WPI */
 #define WSEC_ENABLED(wsec) \
 		((wsec) & \
 		 (WEP_ENABLED | TKIP_ENABLED | AES_ENABLED | CKIP_KP_ENABLED | CKIP_MIC_ENABLED))
 #endif /* BCMWAPI_WPI */
 #else /* defined BCMCCX */
+
+#ifdef BCMWAPI_WPI
+#define WSEC_ENABLED(wsec)	((wsec) & (WEP_ENABLED | TKIP_ENABLED | AES_ENABLED | SMS4_ENABLED))
+#endif /* BCMWAPI_WPI */
 
 #ifndef BCMWAPI_WPI /* BCMWAPI_WPI */
 #define WSEC_ENABLED(wsec)	((wsec) & (WEP_ENABLED | TKIP_ENABLED | AES_ENABLED))
@@ -569,6 +583,10 @@
 #endif /* WLWSEC */
 
 #define WSEC_SES_OW_ENABLED(wsec)	((wsec) & SES_OW_ENABLED)
+
+#ifdef BCMWAPI_WAI
+#define WSEC_SMS4_ENABLED(wsec)	((wsec) & SMS4_ENABLED)
+#endif /* BCMWAPI_WAI */
 
 /* Following macros are not used any more. Just kept here to
  * avoid build issue in BISON/CARIBOU branch
@@ -1351,6 +1369,8 @@
 #define WL_TX_POWER_F_TXCAP		0x200
 #define WL_TX_POWER_F_HE		0x400
 #define WL_TX_POWER_F_RU_RATE		0x800
+#define WL_TX_POWER_TPE_PSD		0x1000
+#define WL_TX_POWER_TPE_LOC		0x2000
 
 /* Message levels */
 #define WL_ERROR_VAL		0x00000001
@@ -1505,6 +1525,9 @@
 						  */
 #define WL_CHAN_CLM_RESTRICTED     (1u << 8)     /* channel restricted in CLM (i.e. by default) */
 #define WL_CHAN_BAND_6G            (1u << 9)     /* 6GHz-band channel */
+#define WL_CHAN_BAND_6G_VLP        (1u << 10u)   /* 6GHz VLP channel */
+#define WL_CHAN_BAND_6G_PSC        (1u << 11u)   /* 6GHz PSC channel */
+
 #define WL_CHAN_OOS_SHIFT          24u           /* shift for OOS field */
 #define WL_CHAN_OOS_MASK           0xFF000000u   /* field specifying minutes remaining for this
 						  * channel's out-of-service period due to radar
@@ -1548,11 +1571,19 @@
  * It is preserved only for compatibility with older branches that use it
  */
 #ifdef WL_BAND6G
+#ifdef WL_BAND5P9G
+#ifdef WL11AC_80P80
+#define WL_NUMCHANSPECS 466
+#else
+#define WL_NUMCHANSPECS 370
+#endif
+#else
 #ifdef WL11AC_80P80
 #define WL_NUMCHANSPECS 446
 #else
 #define WL_NUMCHANSPECS 350
 #endif
+#endif /* WL_BAND5P9G */
 #else
 #if defined(WL11AC_80P80)
 #define WL_NUMCHANSPECS 206
@@ -2170,11 +2201,11 @@
 #define TOE_ERRTEST_RX_CSUM2	0x00000004
 
 /* ARP Offload feature flags for arp_ol iovar */
-#define ARP_OL_AGENT			0x00000001
-#define ARP_OL_SNOOP			0x00000002
-#define ARP_OL_HOST_AUTO_REPLY		0x00000004
-#define ARP_OL_PEER_AUTO_REPLY		0x00000008
-#define ARP_OL_UPDATE_HOST_CACHE	0x00000010
+#define ARP_OL_AGENT			0x00000001	/* enable processing of rx ARP packets */
+#define ARP_OL_SNOOP			0x00000002	/* populate using ARP pkts from host */
+#define ARP_OL_HOST_AUTO_REPLY		0x00000004	/* reply to ARP request from host */
+#define ARP_OL_PEER_AUTO_REPLY		0x00000008	/* reply to ARP request from peer */
+#define ARP_OL_UPDATE_HOST_CACHE	0x00000010	/* forward new ARP request to host */
 
 /* ARP Offload error injection */
 #define ARP_ERRTEST_REPLY_PEER	0x1

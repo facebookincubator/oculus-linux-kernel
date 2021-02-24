@@ -30,7 +30,7 @@
 #include <hnd_cons.h>
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 #ifdef CONFIG_ARCH_MSM
-#ifdef CONFIG_PCI_MSM
+#if IS_ENABLED(CONFIG_PCI_MSM)
 #include <linux/msm_pcie.h>
 #else
 #include <mach/msm_pcie.h>
@@ -454,10 +454,10 @@ typedef struct dhd_bus {
 	bool	oob_presuspend;
 #endif /* PCIE_OOB || BCMPCIE_OOB_HOST_WAKE */
 	dhdpcie_config_save_t saved_config;
-	ulong resume_intr_enable_count;
-	ulong dpc_intr_enable_count;
-	ulong isr_intr_disable_count;
-	ulong suspend_intr_disable_count;
+	ulong host_irq_enable_count;
+	ulong host_irq_disable_count;
+	ulong dngl_intmask_disable_count;
+	ulong dngl_intmask_enable_count;
 	ulong dpc_return_busdown_count;
 	ulong non_ours_irq_count;
 #ifdef BCMPCIE_OOB_HOST_WAKE
@@ -749,6 +749,7 @@ extern int dhdpcie_disable_irq_nosync(dhd_bus_t *bus);
 extern int dhdpcie_enable_irq(dhd_bus_t *bus);
 
 extern void dhd_bus_dump_dar_registers(struct dhd_bus *bus);
+extern void dhd_bus_dump_imp_cfg_registers(struct dhd_bus *bus);
 
 #if defined(linux) || defined(LINUX)
 extern uint32 dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset);

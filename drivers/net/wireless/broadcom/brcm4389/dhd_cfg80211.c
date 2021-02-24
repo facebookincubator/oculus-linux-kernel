@@ -595,3 +595,26 @@ done:
 	DHD_OS_WAKE_UNLOCK(dhd);
 	return ret;
 }
+
+int
+dhd_set_wsec_info(dhd_pub_t *dhd, uint32 data, int tag)
+{
+	struct net_device *ndev;
+	uint32  wsec_info = data;
+	int ret = BCME_OK;
+
+	ndev = dhd_linux_get_primary_netdev(dhd);
+	if (!ndev) {
+		WL_ERR(("Cannot find primary netdev\n"));
+		return -ENODEV;
+	}
+	BCM_REFERENCE(wsec_info);
+#if defined(WL_CFG80211)
+	ret = wl_cfg80211_set_wsec_info(ndev, &wsec_info, sizeof(wsec_info), tag);
+	if (unlikely(ret)) {
+		WL_ERR(("Set wsec_info tag 0x%04x failed \n", tag));
+	}
+#endif /* WL_CFG80211 */
+
+	return ret;
+}

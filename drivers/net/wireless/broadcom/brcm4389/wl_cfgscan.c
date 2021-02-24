@@ -403,13 +403,13 @@ s32 wl_inform_single_bss(struct bcm_cfg80211 *cfg, wl_bss_info_t *bi, bool updat
 	signal = notif_bss_info->rssi * 100;
 	if (!mgmt->u.probe_resp.timestamp) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39))
-		struct timespec ts;
-		get_monotonic_boottime(&ts);
-		mgmt->u.probe_resp.timestamp = ((u64)ts.tv_sec*1000000)
-				+ ts.tv_nsec / 1000;
+		struct timespec64 ts;
+		ts = ktime_to_timespec64(ktime_get_boottime());
+		mgmt->u.probe_resp.timestamp = ((u64)ts.tv_sec*USEC_PER_SEC)
+				+ (ts.tv_nsec / NSEC_PER_USEC);
 #else
 		struct timeval tv;
-		do_gettimeofday(&tv);
+		ktime_get_real_ts64(&tv);
 		mgmt->u.probe_resp.timestamp = ((u64)tv.tv_sec*1000000)
 				+ tv.tv_usec;
 #endif
@@ -631,7 +631,7 @@ wl_bcnrecv_result_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	s32 err = BCME_OK;
 	struct wiphy *wiphy = NULL;
 	wl_bcnrecv_result_t *bcn_recv = NULL;
-	struct timespec ts;
+	struct timespec64 ts;
 	if (!bi) {
 		WL_ERR(("%s: bi is NULL\n", __func__));
 		err = BCME_NORESOURCE;
@@ -664,9 +664,9 @@ wl_bcnrecv_result_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 		bcn_recv->beacon_interval = bi->beacon_period;
 
 		/* kernal timestamp */
-		get_monotonic_boottime(&ts);
-		bcn_recv->system_time = ((u64)ts.tv_sec*1000000)
-				+ ts.tv_nsec / 1000;
+		ts = ktime_to_timespec64(ktime_get_boottime());
+		bcn_recv->system_time = ((u64)ts.tv_sec*USEC_PER_SEC)
+				+ ts.tv_nsec / NSEC_PER_USEC;
 		bcn_recv->timestamp[0] = bi->timestamp[0];
 		bcn_recv->timestamp[1] = bi->timestamp[1];
 		if ((err = wl_android_bcnrecv_event(cfgdev_to_wlc_ndev(cfgdev, cfg),
@@ -1076,6 +1076,13 @@ wl_escan_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 		}
 	}
 	else if (status == WLC_E_STATUS_SUCCESS) {
+		dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+		if ((dhdp->dhd_induce_error == DHD_INDUCE_SCAN_TIMEOUT) ||
+			(dhdp->dhd_induce_error == DHD_INDUCE_SCAN_TIMEOUT_SCHED_ERROR)) {
+			WL_ERR(("%s: Skip escan complete to induce scantimeout\n", __FUNCTION__));
+			err = BCME_ERROR;
+			goto exit;
+		}
 		cfg->escan_info.escan_state = WL_ESCAN_STATE_IDLE;
 #ifdef DHD_SEND_HANG_ESCAN_SYNCID_MISMATCH
 		cfg->escan_info.prev_escan_aborted = FALSE;
@@ -1319,9 +1326,19 @@ static u32
 wl_cfgscan_map_nl80211_scan_type(struct bcm_cfg80211 *cfg, struct cfg80211_scan_request *request)
 {
 	u32 scan_flags = 0;
+	struct net_device *pri_dev;
+
+	pri_dev = bcmcfg_to_prmry_ndev(cfg);
 
 	if (!request) {
 		return scan_flags;
+	}
+
+	if (cfg->latency_mode &&
+		wl_get_drv_status(cfg, CONNECTED, pri_dev)) {
+		WL_DBG_MEM(("latency mode on. force LP scan\n"));
+		scan_flags |= WL_SCANFLAGS_LOW_POWER_SCAN;
+		goto exit;
 	}
 
 	if (request->flags & NL80211_SCAN_FLAG_LOW_SPAN) {
@@ -1337,6 +1354,7 @@ wl_cfgscan_map_nl80211_scan_type(struct bcm_cfg80211 *cfg, struct cfg80211_scan_
 		scan_flags |= WL_SCANFLAGS_LOW_PRIO;
 	}
 
+exit:
 	WL_INFORM(("scan flags. wl:%x cfg80211:%x\n", scan_flags, request->flags));
 	return scan_flags;
 }
@@ -2277,13 +2295,12 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 			if (ssids[i].ssid_len &&
 				IS_P2P_SSID(ssids[i].ssid, ssids[i].ssid_len)) {
 				/* P2P Scan */
-#ifdef WL_BLOCK_P2P_SCAN_ON_STA
 				if (!(IS_P2P_IFACE(request->wdev))) {
 					/* P2P scan on non-p2p iface. Fail scan */
-					WL_ERR(("p2p_search on non p2p iface\n"));
-					goto scan_out;
+					WL_ERR(("p2p_search on non p2p iface %d\n",
+						request->wdev->iftype));
+					break;
 				}
-#endif /* WL_BLOCK_P2P_SCAN_ON_STA */
 				p2p_ssid = true;
 				break;
 			}
@@ -2672,6 +2689,7 @@ wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 		err = BCME_ERROR;
 		goto out;
 	}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)) && \
 	defined(SUPPORT_RANDOM_MAC_SCAN) && !defined(WL_USE_RANDOMIZED_SCAN)
 	/* Disable scanmac if enabled */
@@ -3497,10 +3515,10 @@ wl_cfg80211_scan_mac_disable(struct net_device *dev)
 #endif /* SUPPORT_RANDOM_MAC_SCAN */
 
 #ifdef WL_SCHED_SCAN
-#define PNO_TIME                    30
-#define PNO_REPEAT                  4
-#define PNO_FREQ_EXPO_MAX           2
-#define PNO_ADAPTIVE_SCAN_LIMIT     60
+#define PNO_TIME                    30u
+#define PNO_REPEAT_MAX              100u
+#define PNO_FREQ_EXPO_MAX           2u
+#define PNO_ADAPTIVE_SCAN_LIMIT     60u
 static bool
 is_ssid_in_list(struct cfg80211_ssid *ssid, struct cfg80211_ssid *ssid_list, int count)
 {
@@ -3525,9 +3543,9 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 {
 	u16 chan_list[WL_NUMCHANNELS] = {0};
 	u32 num_channels = 0;
-	ushort pno_time;
-	int pno_repeat = PNO_REPEAT;
-	int pno_freq_expo_max = PNO_FREQ_EXPO_MAX;
+	ushort pno_time = 0;
+	int pno_repeat = 0;
+	int pno_freq_expo_max = 0;
 	wlc_ssid_ext_t ssids_local[MAX_PFN_LIST_COUNT];
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
@@ -3541,29 +3559,47 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	int i;
 	int ret = 0;
 	unsigned long flags;
+	bool adaptive_pno = false;
 
 	if (!request) {
 		WL_ERR(("Sched scan request was NULL\n"));
 		return -EINVAL;
 	}
 
-	if ((request->n_scan_plans == 1) && request->scan_plans &&
-			(request->scan_plans->interval > PNO_ADAPTIVE_SCAN_LIMIT)) {
-		/* If the host gives a high value for scan interval, then
-		 * doing adaptive scan doesn't make sense. Better stick to the
-		 * scan interval that host gives.
-		 */
-		pno_time = request->scan_plans->interval;
-		pno_repeat = 0;
-		pno_freq_expo_max = 0;
-	} else {
-		/* Run adaptive PNO */
-		pno_time = PNO_TIME;
+	if (!(request->n_scan_plans == 1) || !request->scan_plans) {
+		WL_ERR(("wrong input. plans:%d\n", request->n_scan_plans));
+		return -EINVAL;
 	}
 
-	WL_INFORM(("Enter. ssids:%d match_sets:%d pno_time:%d pno_repeat:%d channels:%d\n",
-		request->n_ssids, request->n_match_sets,
-		pno_time, pno_repeat, request->n_channels));
+#ifndef DISABLE_ADAPTIVE_PNO
+	if (request->scan_plans->interval <= PNO_ADAPTIVE_SCAN_LIMIT) {
+		/* If the host gives a high value for scan interval, then
+		 * doing adaptive scan doesn't make sense. For smaller
+		 * values attempt adaptive scan.
+		 */
+		adaptive_pno = true;
+	}
+#endif /* DISABLE_ADAPTIVE_PNO */
+
+	/* Use host provided iterations */
+	pno_repeat = request->scan_plans->iterations;
+	if (!pno_repeat || pno_repeat > PNO_REPEAT_MAX) {
+		/* (scan_plan->iterations == zero) means infinite */
+		pno_repeat = PNO_REPEAT_MAX;
+	}
+
+	if (adaptive_pno) {
+		/* Run adaptive PNO */
+		pno_time = PNO_TIME;
+		pno_freq_expo_max = PNO_FREQ_EXPO_MAX;
+	} else {
+		/* use host provided values */
+		pno_time = request->scan_plans->interval;
+	}
+
+	WL_INFORM_MEM(("Enter. ssids:%d match_sets:%d pno_time:%d pno_repeat:%d "
+		"channels:%d adaptive:%d\n", request->n_ssids, request->n_match_sets,
+		pno_time, pno_repeat, request->n_channels, adaptive_pno));
 
 	if (!request->n_ssids || !request->n_match_sets) {
 		WL_ERR(("Invalid sched scan req!! n_ssids:%d \n", request->n_ssids));
@@ -3580,7 +3616,7 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 		/* get channel list. Note PNO uses channels and not chanspecs */
 		wl_cfgscan_populate_scan_channels(cfg,
 				request->channels, request->n_channels,
-				chan_list, &num_channels, false, false);
+				chan_list, &num_channels, true, false);
 	}
 
 	if (DBG_RING_ACTIVE(dhdp, DHD_EVENT_RING_ID)) {
@@ -3710,8 +3746,15 @@ wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 
 	mutex_lock(&cfg->scan_sync);
 	if (cfg->sched_scan_req) {
-		WL_PNO((">>> Sched scan running. Aborting it..\n"));
-		_wl_cfgscan_cancel_scan(cfg);
+		if (cfg->sched_scan_running && wl_get_drv_status(cfg, SCANNING, dev)) {
+			/* If targetted escan for PNO is running, abort it */
+			WL_INFORM_MEM(("abort targetted escan\n"));
+			wl_cfgscan_scan_abort(cfg);
+			wl_clr_drv_status(cfg, SCANNING, dev);
+		} else {
+			WL_INFORM_MEM(("pno escan state:%d\n",
+				cfg->sched_scan_running));
+		}
 	}
 	cfg->sched_scan_req = NULL;
 	cfg->sched_scan_running = FALSE;
@@ -3827,6 +3870,10 @@ static void wl_scan_timeout(unsigned long data)
 	if (dhd_query_bus_erros(dhdp)) {
 		return;
 	}
+
+	if (dhdp->memdump_enabled) {
+		dhdp->hang_reason = HANG_REASON_SCAN_TIMEOUT;
+	}
 #if defined(DHD_KERNEL_SCHED_DEBUG) && defined(DHD_FW_COREDUMP)
 	/* DHD triggers Kernel panic if the SCAN timeout occurrs
 	 * due to tasklet or workqueue scheduling problems in the Linux Kernel.
@@ -3837,12 +3884,10 @@ static void wl_scan_timeout(unsigned long data)
 	 * For this reason, customer requestes us to trigger Kernel Panic rather than
 	 * taking a SOCRAM dump.
 	 */
-	if (dhdp->memdump_enabled == DUMP_MEMFILE_BUGON &&
-		((cfg->tsinfo.scan_deq < cfg->tsinfo.scan_enq) ||
-		dhd_bus_query_dpc_sched_errors(dhdp))) {
+	if ((cfg->tsinfo.scan_deq < cfg->tsinfo.scan_enq) ||
+		dhd_bus_query_dpc_sched_errors(dhdp) ||
+		(dhdp->dhd_induce_error == DHD_INDUCE_SCAN_TIMEOUT_SCHED_ERROR)) {
 		WL_ERR(("****SCAN event timeout due to scheduling problem\n"));
-		/* change g_assert_type to trigger Kernel panic */
-		g_assert_type = 2;
 #ifdef RTT_SUPPORT
 		rtt_status = GET_RTTSTATE(dhdp);
 #endif /* RTT_SUPPORT */
@@ -3877,9 +3922,15 @@ static void wl_scan_timeout(unsigned long data)
 			mutex_is_locked(&(rtt_status)->geofence_mutex)));
 #endif /* WL_NAN */
 #endif /* RTT_SUPPORT */
-
-		/* use ASSERT() to trigger panic */
-		ASSERT(0);
+		if (dhdp->memdump_enabled == DUMP_MEMFILE_BUGON) {
+			/* change g_assert_type to trigger Kernel panic */
+			g_assert_type = 2;
+			/* use ASSERT() to trigger panic */
+			ASSERT(0);
+		}
+		if (dhdp->memdump_enabled) {
+			dhdp->hang_reason = HANG_REASON_SCAN_TIMEOUT_SCHED_ERROR;
+		}
 	}
 #endif /* DHD_KERNEL_SCHED_DEBUG && DHD_FW_COREDUMP */
 	dhd_bus_intr_count_dump(dhdp);
@@ -3899,8 +3950,13 @@ static void wl_scan_timeout(unsigned long data)
 
 		bi = next_bss(bss_list, bi);
 		for_each_bss(bss_list, bi, i) {
-			channel = wf_chspec_ctlchan(wl_chspec_driver_to_host(bi->chanspec));
-			WL_ERR(("SSID :%s  Channel :%d\n", bi->SSID, channel));
+			if (wf_chspec_valid(bi->chanspec)) {
+				channel = wf_chspec_ctlchan(wl_chspec_driver_to_host(bi->chanspec));
+				WL_ERR(("SSID :%s  Channel :%d\n", bi->SSID, channel));
+			} else {
+				WL_ERR(("SSID :%s Invalid chanspec :0x%x\n",
+					bi->SSID, bi->chanspec));
+			}
 		}
 	}
 
@@ -3932,10 +3988,11 @@ static void wl_scan_timeout(unsigned long data)
 	 * For the memdump sanity, blocking bus transactions for a while
 	 * Keeping it TRUE causes the sequential private cmd error
 	 */
-	dhdp->scan_timeout_occurred = FALSE;
+	if (!dhdp->memdump_enabled) {
+		dhdp->scan_timeout_occurred = FALSE;
+	}
 #endif /* DHD_FW_COREDUMP */
 #endif /* BCMDONGLEHOST */
-	wl_clr_drv_status(cfg, SCANNING, ndev);
 
 	msg.event_type = hton32(WLC_E_ESCAN_RESULT);
 	msg.status = hton32(WLC_E_STATUS_TIMEOUT);
@@ -3954,6 +4011,17 @@ static void wl_scan_timeout(unsigned long data)
 #if defined(BCMDONGLEHOST) && defined(OEM_ANDROID)
 	DHD_ENABLE_RUNTIME_PM(dhdp);
 #endif /* BCMDONGLEHOST && OEM_ANDROID */
+
+#if defined(BCMDONGLEHOST) && defined(DHD_FW_COREDUMP)
+	if (dhdp->memdump_enabled) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(OEM_ANDROID)
+		dhd_os_send_hang_message(dhdp);
+#else
+		WL_ERR(("%s: HANG event is unsupported\n", __FUNCTION__));
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) && OEM_ANDROID */
+	}
+#endif /* BCMDONGLEHOST && DHD_FW_COREDUMP */
+
 }
 
 s32 wl_init_scan(struct bcm_cfg80211 *cfg)
@@ -4155,7 +4223,7 @@ wl_cfgscan_update_v3_schedscan_results(struct bcm_cfg80211 *cfg, struct net_devi
 			err = wl_cfgp2p_discover_enable_search(cfg, false);
 			if (unlikely(err)) {
 				wl_clr_drv_status(cfg, SCANNING, ndev);
-				return err;
+				goto out_err;
 			}
 			p2p_scan(cfg) = false;
 		}

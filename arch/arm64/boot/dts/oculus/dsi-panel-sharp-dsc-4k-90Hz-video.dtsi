@@ -75,18 +75,6 @@
 					05 01 00 00 78 00 01 10
 				];
 				qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
-				qcom,mdss-dsi-jdi-brightness-commands = [
-				/* 8th parameter: register address for setting brightness
-				* 9th/10th parameter: GPO1_TES1
-				* 11th/12th parameter: GPO1_TEW1, duty for LED1
-				* 17th/18th parameter: GPO2_TES1
-				* 19th/20th parameter: GPO2_TEW1, duty for LED2
-				*/
-					29 01 00 00 00 00 11 B9 11 31 02 12 00 00 00 00 05 25 02 12 00 00 00 00 /* 90Hz backlight settings */
-					29 01 00 00 00 00 11 B9 13 55 02 55 00 00 00 00 04 E2 02 55 00 00 00 00 /* 80Hz backlight settings */
-					29 01 00 00 00 00 11 B9 15 79 02 97 00 00 00 00 04 A0 02 97 00 00 00 00 /* 72Hz backlight settings */
-					29 01 00 00 00 00 11 B9 16 59 02 26 00 00 00 00 16 59 02 26 00 00 00 00 /* 60Hz backlight settings */
-				];
 				qcom,compression-mode = "dsc";
 				qcom,mdss-dsc-slice-height = <16>;
 				qcom,mdss-dsc-slice-width = <480>;

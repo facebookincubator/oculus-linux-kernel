@@ -2345,8 +2345,8 @@ static QDF_STATUS csr_prepare_scan_filter(struct mac_context *mac_ctx,
 
 	filter->num_of_channels =
 		pFilter->ChannelInfo.numOfChannels;
-	if (filter->num_of_channels > QDF_MAX_NUM_CHAN)
-		filter->num_of_channels = QDF_MAX_NUM_CHAN;
+	if (filter->num_of_channels > NUM_CHANNELS)
+		filter->num_of_channels = NUM_CHANNELS;
 	qdf_mem_copy(filter->channel_list,
 			pFilter->ChannelInfo.ChannelList,
 			filter->num_of_channels);
@@ -2432,7 +2432,7 @@ static QDF_STATUS csr_prepare_scan_filter(struct mac_context *mac_ctx,
 		   &pFilter->csrPersona, &new_mode)) {
 			status = policy_mgr_get_pcl(mac_ctx->psoc, new_mode,
 				filter->pcl_channel_list, &len,
-				filter->pcl_weight_list, QDF_MAX_NUM_CHAN);
+				filter->pcl_weight_list, NUM_CHANNELS);
 			filter->num_of_pcl_channels = (uint8_t)len;
 		}
 	}

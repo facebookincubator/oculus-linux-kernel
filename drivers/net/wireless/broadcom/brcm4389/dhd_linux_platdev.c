@@ -215,8 +215,10 @@ int wifi_platform_set_power(wifi_adapter_info_t *adapter, bool on, unsigned long
 #endif /* BCM4335_XTAL_WAR */
 	}
 
-	if (msec && !err)
+	if (msec && !err) {
 		OSL_SLEEP(msec);
+		DHD_ERROR(("%s = %d, sleep done: %lu msec\n", __FUNCTION__, on, msec));
+	}
 
 	if (on && !err)
 		is_power_on = TRUE;

@@ -11,7 +11,7 @@
 
 struct sde_rot_mgr;
 
-#if defined(CONFIG_DEBUG_FS)
+#if defined(CONFIG_MSM_SDE_ROTATOR_DEBUG)
 int sde_rotator_r3_create_debugfs(struct sde_rot_mgr *mgr,
 		struct dentry *debugfs_root);
 #else

@@ -126,6 +126,11 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_IBSS_COALESCE),
 #endif /* #if defined(NDIS) */
 
+#ifdef BCMWAPI_WAI
+	BCMEVENT_NAME(WLC_E_WAI_STA_EVENT),
+	BCMEVENT_NAME(WLC_E_WAI_MSG),
+#endif /* BCMWAPI_WAI */
+
 	BCMEVENT_NAME(WLC_E_ESCAN_RESULT),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_OFF_CHAN_COMPLETE),
 #ifdef WLP2P
@@ -193,6 +198,10 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_AUTHORIZED),
 	BCMEVENT_NAME(WLC_E_PROBREQ_MSG_RX),
 
+#if defined(XRAPI) || defined(TSF_GSYNC)
+	BCMEVENT_NAME(WLC_E_TSF_GSYNC),
+#endif /* XRAPI */
+
 	BCMEVENT_NAME(WLC_E_CSA_START_IND),
 	BCMEVENT_NAME(WLC_E_CSA_DONE_IND),
 	BCMEVENT_NAME(WLC_E_CSA_FAILURE_IND),
@@ -230,9 +239,7 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_AUTH_START),
 #endif /* WL_CLIENT_SAE */
 #ifdef WL_TWT
-	BCMEVENT_NAME(WLC_E_TWT_SETUP),
-	BCMEVENT_NAME(WLC_E_TWT_TEARDOWN),
-	BCMEVENT_NAME(WLC_E_TWT_INFO_FRM)
+	BCMEVENT_NAME(WLC_E_TWT),
 #endif /* WL_TWT */
 };
 

@@ -2,6 +2,11 @@
 /*
  * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  */
+
+#ifndef CONFIG_MSM_SDE_ROTATOR_TRACE
+#define NOTRACE
+#endif
+
 #if !defined(TRACE_SDE_ROTATOR_H) || defined(TRACE_HEADER_MULTI_READ)
 #define TRACE_SDE_ROTATOR_H
 

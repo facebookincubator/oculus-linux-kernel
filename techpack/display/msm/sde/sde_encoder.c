@@ -3953,6 +3953,9 @@ static void sde_encoder_vblank_callback(struct drm_encoder *drm_enc,
 		struct sde_encoder_phys *phy_enc)
 {
 	struct sde_encoder_virt *sde_enc = NULL;
+	struct dsi_display *disp;
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
 	unsigned long lock_flags;
 
 	if (!drm_enc || !phy_enc)
@@ -3962,6 +3965,24 @@ static void sde_encoder_vblank_callback(struct drm_encoder *drm_enc,
 	sde_enc = to_sde_encoder_virt(drm_enc);
 
 	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
+	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI &&
+			sde_enc->cur_master && sde_enc->crtc_vblank_cb_data) {
+		disp = sde_connector_get_display(
+			sde_enc->cur_master->connector);
+
+		if (disp && disp->panel) {
+			crtc = (struct drm_crtc *)sde_enc->crtc_vblank_cb_data;
+			sde_crtc = to_sde_crtc(crtc);
+
+			memcpy(&sde_crtc->vblank_last_cb_bl_config,
+				&disp->panel->bl_config,
+				sizeof(struct dsi_backlight_config));
+			memcpy(&sde_crtc->vblank_last_cb_mode,
+				&sde_enc->cur_master->cached_mode,
+				sizeof(struct drm_display_mode));
+		}
+	}
+
 	if (sde_enc->crtc_vblank_cb)
 		sde_enc->crtc_vblank_cb(sde_enc->crtc_vblank_cb_data);
 	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);

@@ -80,33 +80,38 @@ void dhd_sock_qos_update_bus_flowid(dhd_info_t *dhd, void *pktbuf,
 #else
 /* Feature Disabled dummy implementations */
 
-inline int dhd_init_sock_flows_buf(dhd_info_t *dhd, uint watchdog_ms)
+static inline int
+dhd_init_sock_flows_buf(dhd_info_t *dhd, uint watchdog_ms)
 {
 		BCM_REFERENCE(dhd);
 		return BCME_UNSUPPORTED;
 }
 
-inline int dhd_deinit_sock_flows_buf(dhd_info_t *dhd)
+static inline int
+dhd_deinit_sock_flows_buf(dhd_info_t *dhd)
 {
 		BCM_REFERENCE(dhd);
 		return BCME_UNSUPPORTED;
 }
 
-inline void dhd_update_sock_flows(dhd_info_t *dhd, struct sk_buff *skb)
+static inline void
+dhd_update_sock_flows(dhd_info_t *dhd, struct sk_buff *skb)
 {
 		BCM_REFERENCE(dhd);
 		BCM_REFERENCE(skb);
 		return;
 }
 
-inline void dhd_analyze_sock_flows(dhd_info_t *dhd, uint32 watchdog_ms)
+static inline void
+dhd_analyze_sock_flows(dhd_info_t *dhd, uint32 watchdog_ms)
 {
 	BCM_REFERENCE(dhd);
 	BCM_REFERENCE(dhd_watchdog_ms);
 	return;
 }
 
-inline void dhd_sock_qos_update_bus_flowid(dhd_info_t *dhd, void *pktbuf,
+static inline void
+dhd_sock_qos_update_bus_flowid(dhd_info_t *dhd, void *pktbuf,
 	uint32 bus_flow_id)
 {
 	BCM_REFERENCE(dhd);

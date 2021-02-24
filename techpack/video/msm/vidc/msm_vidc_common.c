@@ -1713,6 +1713,15 @@ static void handle_event_change(enum hal_command_response cmd, void *data)
 		} else {
 			inst->entropy_mode = event_notify->entropy_mode;
 
+			/* configure work mode considering low latency*/
+			if (is_low_latency_hint(inst)) {
+				rc = call_core_op(inst->core, decide_work_mode,
+						  inst);
+				if (rc)
+					s_vpr_e(inst->sid,
+						"%s: Failed to decide work mode\n",
+						__func__);
+			}
 			s_vpr_h(inst->sid,
 				"seq: No parameter change continue session\n");
 			rc = call_hfi_op(hdev, session_continue,
@@ -2872,6 +2881,7 @@ bool is_batching_allowed(struct msm_vidc_inst *inst)
 	 */
 	return (inst->batch.enable &&
 		inst->core->resources.decode_batching &&
+		!is_low_latency_hint(inst) &&
 		is_single_session(inst, ignore_flags) &&
 		is_decode_session(inst) &&
 		!is_thumbnail_session(inst) &&
@@ -6764,40 +6774,33 @@ int msm_comm_qbuf_cache_operations(struct msm_vidc_inst *inst,
 		unsigned long offset, size;
 		enum smem_cache_ops cache_op;
 
-		skip = true;
+		offset = vb->planes[i].data_offset;
+		size = vb->planes[i].length - offset;
+		cache_op = SMEM_CACHE_INVALIDATE;
+		skip = false;
+
 		if (inst->session_type == MSM_VIDC_DECODER) {
 			if (vb->type == INPUT_MPLANE) {
 				if (!i) { /* bitstream */
-					skip = false;
-					offset = vb->planes[i].data_offset;
 					size = vb->planes[i].bytesused;
 					cache_op = SMEM_CACHE_CLEAN_INVALIDATE;
 				}
 			} else if (vb->type == OUTPUT_MPLANE) {
 				if (!i) { /* yuv */
-					skip = false;
-					offset = 0;
-					size = vb->planes[i].length;
-					cache_op = SMEM_CACHE_INVALIDATE;
+					/* all values are correct */
 				}
 			}
 		} else if (inst->session_type == MSM_VIDC_ENCODER) {
 			if (vb->type == INPUT_MPLANE) {
 				if (!i) { /* yuv */
-					skip = false;
-					offset = vb->planes[i].data_offset;
 					size = vb->planes[i].bytesused;
+					cache_op = SMEM_CACHE_CLEAN_INVALIDATE;
+				} else { /* extradata */
 					cache_op = SMEM_CACHE_CLEAN_INVALIDATE;
 				}
 			} else if (vb->type == OUTPUT_MPLANE) {
-				if (!i) { /* bitstream */
-					skip = false;
-					offset = 0;
-					size = vb->planes[i].length;
-					if (inst->max_filled_len)
-						size = inst->max_filled_len;
-					cache_op = SMEM_CACHE_INVALIDATE;
-				}
+				if (!i && inst->max_filled_len)
+					size = inst->max_filled_len;
 			}
 		}
 
@@ -6832,26 +6835,26 @@ int msm_comm_dqbuf_cache_operations(struct msm_vidc_inst *inst,
 		unsigned long offset, size;
 		enum smem_cache_ops cache_op;
 
-		skip = true;
+		offset = vb->planes[i].data_offset;
+		size = vb->planes[i].length - offset;
+		cache_op = SMEM_CACHE_INVALIDATE;
+		skip = false;
+
 		if (inst->session_type == MSM_VIDC_DECODER) {
 			if (vb->type == INPUT_MPLANE) {
-				/* bitstream and extradata */
-				/* we do not need cache operations */
+				if (!i) /* bitstream */
+					skip = true;
 			} else if (vb->type == OUTPUT_MPLANE) {
 				if (!i) { /* yuv */
-					skip = false;
-					offset = vb->planes[i].data_offset;
-					size = vb->planes[i].bytesused;
-					cache_op = SMEM_CACHE_INVALIDATE;
+					/* All values are correct */
 				}
 			}
 		} else if (inst->session_type == MSM_VIDC_ENCODER) {
 			if (vb->type == INPUT_MPLANE) {
 				/* yuv and extradata */
-				/* we do not need cache operations */
+				skip = true;
 			} else if (vb->type == OUTPUT_MPLANE) {
 				if (!i) { /* bitstream */
-					skip = false;
 					/*
 					 * Include vp8e header bytes as well
 					 * by making offset equal to zero
@@ -6859,7 +6862,6 @@ int msm_comm_dqbuf_cache_operations(struct msm_vidc_inst *inst,
 					offset = 0;
 					size = vb->planes[i].bytesused +
 						vb->planes[i].data_offset;
-					cache_op = SMEM_CACHE_INVALIDATE;
 				}
 			}
 		}

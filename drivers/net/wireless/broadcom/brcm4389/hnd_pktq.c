@@ -64,6 +64,8 @@ BCMFASTPATH(pktq_penq)(struct pktq *pq, int prec, void *p)
 	ASSERT_FP(!pktq_full(pq));
 	ASSERT_FP(!pktqprec_full(pq, prec));
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
+
 	q = &pq->q[prec];
 
 	if (q->head)
@@ -138,6 +140,8 @@ BCMFASTPATH(spktq_enq)(struct spktq *spq, void *p)
 
 	ASSERT_FP(!spktq_full(spq));
 
+	PKTSETQCALLER(p, spq, CALL_SITE);
+
 	PKTSETLINK(p, NULL);
 
 	q = &spq->q;
@@ -172,6 +176,8 @@ BCMPOSTTRAPFASTPATH(pktq_penq_head)(struct pktq *pq, int prec, void *p)
 	ASSERT_FP(!pktq_full(pq));
 	ASSERT_FP(!pktqprec_full(pq, prec));
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
+
 	q = &pq->q[prec];
 
 	if (q->head == NULL)
@@ -204,6 +210,7 @@ BCMFASTPATH(spktq_enq_head)(struct spktq *spq, void *p)
 
 	ASSERT_FP(!spktq_full(spq));
 
+	PKTSETQCALLER(p, spq, CALL_SITE);
 	PKTSETLINK(p, NULL);
 
 	q = &spq->q;
@@ -257,6 +264,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
@@ -291,6 +299,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, spq, CALL_SITE);
 	return p;
 }
 
@@ -327,6 +336,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, spq, CALL_SITE);
 	return p;
 }
 
@@ -368,6 +378,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
@@ -405,6 +416,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&spq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, spq, CALL_SITE);
 	return p;
 }
 
@@ -452,6 +464,8 @@ BCMFASTPATH(pktq_append)(struct pktq *pq, int prec, struct spktq *list)
 		return;
 
 	list_q = &list->q;
+
+	PKTSETQCALLER_LIST(list_q->head, list_q->n_pkts, pq, CALL_SITE);
 
 	/* empty list check */
 	if (list_q->head == NULL)
@@ -506,6 +520,8 @@ BCMFASTPATH(spktq_append)(struct spktq *spq, struct spktq *list)
 
 	list_q = &list->q;
 
+	PKTSETQCALLER_LIST(list_q->head, list_q->n_pkts, spq, CALL_SITE);
+
 	/* empty list check */
 	if (list_q->head == NULL)
 		goto done;
@@ -552,6 +568,8 @@ BCMFASTPATH(pktq_prepend)(struct pktq *pq, int prec, struct spktq *list)
 		return;
 
 	list_q = &list->q;
+
+	PKTSETQCALLER_LIST(list_q->head, list_q->n_pkts, pq, CALL_SITE);
 
 	/* empty list check */
 	if (list_q->head == NULL)
@@ -611,6 +629,8 @@ BCMFASTPATH(spktq_prepend)(struct spktq *spq, struct spktq *list)
 		return;
 
 	list_q = &list->q;
+
+	PKTSETQCALLER_LIST(list_q->head, list_q->n_pkts, spq, CALL_SITE);
 
 	/* empty list check */
 	if (list_q->head == NULL)
@@ -685,6 +705,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
@@ -739,6 +760,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
@@ -1115,6 +1137,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
@@ -1168,11 +1191,12 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 
 void *
-pktq_peek(struct pktq *pq, int *prec_out)
+BCMPOSTTRAPFN(pktq_peek)(struct pktq *pq, int *prec_out)
 {
 	int prec;
 	void *p = NULL;
@@ -1423,6 +1447,7 @@ done:
 	if (HND_PKTQ_MUTEX_RELEASE(&pq->mutex) != OSL_EXT_SUCCESS)
 		return NULL;
 
+	PKTSETQCALLER(p, pq, CALL_SITE);
 	return p;
 }
 

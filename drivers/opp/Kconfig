@@ -11,3 +11,8 @@ config PM_OPP
 	  representing individual voltage domains and provides SOC
 	  implementations a ready to use framework to manage OPPs.
 	  For more information, read <file:Documentation/power/opp.txt>
+
+config PM_OPP_DEBUG
+	bool "Debugfs support for OPP framework"
+	depends on PM_OPP && DEBUG_FS
+	default y

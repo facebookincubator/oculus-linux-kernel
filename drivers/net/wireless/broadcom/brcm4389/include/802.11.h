@@ -216,6 +216,7 @@ typedef struct dot11_action_vs_frmhdr dot11_action_vs_frmhdr_t;
 
 #define DOT11_BA_CTL_MTID		0x0002	/* multi tid BA */
 #define DOT11_BA_CTL_COMPRESSED		0x0004	/* compressed bitmap */
+#define DOT11_BA_CTL_GCR		0x0008	/* GCR BAR */
 
 #define DOT11_BA_CTL_NUMMSDU_MASK	0x0FC0	/* num msdu in bitmap mask */
 #define DOT11_BA_CTL_NUMMSDU_SHIFT	6	/* num msdu in bitmap shift */
@@ -238,6 +239,14 @@ BWL_PRE_PACKED_STRUCT struct dot11_bar {
 	uint16			seqnum;		/* Starting Sequence control */
 } BWL_POST_PACKED_STRUCT;
 #define DOT11_BAR_LEN		4		/* BAR frame payload length */
+
+/** GCR BAR frame payload */
+BWL_PRE_PACKED_STRUCT struct dot11_gcr_bar {
+	uint16				bar_control;	/* BAR Control */
+	uint16				seqnum;		/* Starting Sequence control */
+	struct ether_addr		gcr;		/* GCR address */
+} BWL_POST_PACKED_STRUCT;
+#define DOT11_GCR_BAR_LEN		10u		/* GCR BAR frame payload length */
 
 #define DOT11_BA_BITMAP_LEN	128		/* bitmap length */
 #define DOT11_BA_CMP_BITMAP_LEN	8		/* compressed bitmap length */
@@ -551,25 +560,28 @@ typedef struct dot11_vht_transmit_power_envelope dot11_vht_transmit_power_envelo
 	DOT11_TPE_INFO_MAX_TX_PWR_CAT_SHIFT)
 
 /* Maximum Transmit Power Interpretation subfield */
-#define DOT11_TPE_MAX_TX_PWR_INTRPN_LOCAL_EIRP              0u
-#define DOT11_TPE_MAX_TX_PWR_INTRPN_LOCAL_EIRP_PSD          1u
-#define DOT11_TPE_MAX_TX_PWR_INTRPN_REG_CLIENT_EIRP         2u
-#define DOT11_TPE_MAX_TX_PWR_INTRPN_REG_CLIENT_EIRP_PSD     3u
+#define DOT11_TPE_MAX_TX_PWR_INTRPN_LOCAL_EIRP			0u
+#define DOT11_TPE_MAX_TX_PWR_INTRPN_LOCAL_EIRP_PSD		1u
+#define DOT11_TPE_MAX_TX_PWR_INTRPN_REG_CLIENT_EIRP		2u
+#define DOT11_TPE_MAX_TX_PWR_INTRPN_REG_CLIENT_EIRP_PSD		3u
+#define DOT11_TPE_MAX_TX_PWR_INTRPN_MAX				4u
 
 /* Maximum Transmit Power category subfield  */
-#define DOT11_TPE_MAX_TX_PWR_CAT_DEFAULT                 0u
+#define DOT11_TPE_MAX_TX_PWR_CAT_DEFAULT			0u
 
 /* Maximum Transmit Power category subfield in US */
-#define DOT11_TPE_MAX_TX_PWR_CAT_US_DEFAULT              0u
-#define DOT11_TPE_MAX_TX_PWR_CAT_US_SUB_DEV              1u
+#define DOT11_TPE_MAX_TX_PWR_CAT_US_DEFAULT			0u
+#define DOT11_TPE_MAX_TX_PWR_CAT_US_SUB_DEV			1u
+#define DOT11_TPE_MAX_TX_PWR_CAT_MAX				2u
 
 /* Maximum Transmit Power Count subfield values when
  * Maximum Transmit Power Interpretation subfield is 0 or 2
  */
-#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_MHZ                  0u
-#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_MHZ               1u
-#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_80_MHZ            2u
-#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_80_160_MHZ        3u
+#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_MHZ			0u
+#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_MHZ		1u
+#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_80_MHZ		2u
+#define DOT11_TPE_INFO_MAX_TX_CNT_EIRP_20_40_80_160_MHZ		3u
+#define DOT11_TPE_INFO_MAX_TX_PWR_CNT_MAX			7u
 
 /* Maximum Transmit Power Count subfield values when
  * Maximum Transmit Power Interpretation subfield is 1 or 3
@@ -1185,6 +1197,7 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define FC_TYPE_MNG		0	/* management type */
 #define FC_TYPE_CTL		1	/* control type */
 #define FC_TYPE_DATA		2	/* data type */
+#define FC_TYPE_EXT		3	/* extension type */
 
 /* Management Subtypes */
 #define FC_SUBTYPE_ASSOC_REQ		0	/* assoc. request */
@@ -1335,9 +1348,9 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define DOT11_MNG_TIMESTAMP_LEN		8	/* d11 management timestamp length */
 
 /* DUR/ID field in assoc resp is 0xc000 | AID */
-#define DOT11_AID_MASK				0x3fff	/* d11 AID mask */
-#define DOT11_AID_OCTET_VAL_SHIFT		3u	/* AID octet value shift */
-#define DOT11_AID_BIT_POS_IN_OCTET		0x07	/* AID bit position in octet */
+#define DOT11_AID_MASK			0x3fff	/* d11 AID mask */
+#define DOT11_AID_OCTET_VAL_SHIFT	3u	/* AID octet value shift */
+#define DOT11_AID_BIT_POS_IN_OCTET	0x07	/* AID bit position in octet */
 
 /* Reason Codes */
 #define DOT11_RC_RESERVED		0	/* d11 RC reserved */
@@ -1365,10 +1378,13 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define DOT11_RC_BAD_PC			10	/* Unacceptable power capability element */
 #define DOT11_RC_BAD_CHANNELS		11	/* Unacceptable supported channels element */
 
-/* 12 is unused by STA but could be used by AP/GO */
+/* 12 is unused by STA but could be used by AP */
 #define DOT11_RC_DISASSOC_BTM		12	/* Disassociated due to BSS Transition Magmt */
 
 /* 13-23 are WPA/802.11i reason codes defined in wpa.h */
+
+#define DOT11_RC_TDLS_PEER_UNREACH	25
+#define DOT11_RC_TDLS_DOWN_UNSPECIFIED	26
 
 /* 32-39 are QSTA specific reasons added in 11e */
 #define DOT11_RC_UNSPECIFIED_QOS	32	/* unspecified QoS-related reason */
@@ -1397,18 +1413,16 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define DOT11_RC_MESH_CHANSWITCH_REGREQ		65
 #define DOT11_RC_MESH_CHANSWITCH_UNSPEC		66
 
-#define DOT11_RC_POOR_RSSI_CONDITIONS		71	/* Poor RSSI */
+#define DOT11_RC_POOR_RSSI_CONDITIONS	71	/* Poor RSSI */
 #define DOT11_RC_MAX			71	/* Reason codes > 71 are reserved */
-
-#define DOT11_RC_TDLS_PEER_UNREACH	25
-#define DOT11_RC_TDLS_DOWN_UNSPECIFIED	26
 
 /* Status Codes */
 #define DOT11_SC_SUCCESS		0	/* Successful */
 #define DOT11_SC_FAILURE		1	/* Unspecified failure */
-#define DOT11_SC_TDLS_WAKEUP_SCH_ALT 2	/* TDLS wakeup schedule rejected but alternative  */
-					/* schedule provided */
-#define DOT11_SC_TDLS_WAKEUP_SCH_REJ 3	/* TDLS wakeup schedule rejected */
+#define DOT11_SC_TDLS_WAKEUP_SCH_ALT	2	/* TDLS wakeup schedule rejected but
+						 * alternative schedule provided
+						 */
+#define DOT11_SC_TDLS_WAKEUP_SCH_REJ	3	/* TDLS wakeup schedule rejected */
 #define DOT11_SC_TDLS_SEC_DISABLED	5	/* TDLS Security disabled */
 #define DOT11_SC_LIFETIME_REJ		6	/* Unacceptable lifetime */
 #define DOT11_SC_NOT_SAME_BSS		7	/* Not in same BSS */
@@ -1458,9 +1472,9 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 						 * station not supporting the Channel
 						 * Agility option
 						 */
-#define DOT11_SC_ASSOC_SPECTRUM_REQUIRED	22	/* Association denied because Spectrum
-							 * Management capability is required.
-							 */
+#define DOT11_SC_ASSOC_SPECTRUM_REQUIRED 22	/* Association denied because Spectrum
+						 * Management capability is required.
+						 */
 #define DOT11_SC_ASSOC_BAD_POWER_CAP	23	/* Association denied because the info
 						 * in the Power Cap element is
 						 * unacceptable.
@@ -1469,10 +1483,10 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 						 * in the Supported Channel element is
 						 * unacceptable
 						 */
-#define DOT11_SC_ASSOC_SHORTSLOT_REQUIRED	25	/* Association denied due to requesting
-							 * station not supporting the Short Slot
-							 * Time option
-							 */
+#define DOT11_SC_ASSOC_SHORTSLOT_REQUIRED 25	/* Association denied due to requesting
+						 * station not supporting the Short Slot
+						 * Time option
+						 */
 #define DOT11_SC_ASSOC_DSSSOFDM_REQUIRED 26	/* Association denied because requesting station
 						 * does not support the DSSS-OFDM option
 						 */
@@ -1491,7 +1505,7 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define DOT11_SC_POOR_RSSI_CONDN	34	/* Association denied due to poor RSSI */
 #define	DOT11_SC_DECLINED		37	/* request declined */
 #define	DOT11_SC_INVALID_PARAMS		38	/* One or more params have invalid values */
-#define DOT11_SC_INVALID_PAIRWISE_CIPHER	42 /* invalid pairwise cipher */
+#define DOT11_SC_INVALID_PAIRWISE_CIPHER 42	/* invalid pairwise cipher */
 #define	DOT11_SC_INVALID_AKMP		43	/* Association denied due to invalid AKMP */
 #define DOT11_SC_INVALID_RSNIE_CAP	45	/* invalid RSN IE capabilities */
 #define DOT11_SC_DLS_NOT_ALLOWED	48	/* DLS is not allowed in the BSS by policy */
@@ -1499,32 +1513,32 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
 #define	DOT11_SC_INVALID_MDID		54	/* Association denied due to invalid MDID */
 #define	DOT11_SC_INVALID_FTIE		55	/* Association denied due to invalid FTIE */
 
-#define DOT11_SC_ADV_PROTO_NOT_SUPPORTED	59	/* ad proto not supported */
-#define DOT11_SC_NO_OUTSTAND_REQ			60	/* no outstanding req */
-#define DOT11_SC_RSP_NOT_RX_FROM_SERVER		61	/* no response from server */
-#define DOT11_SC_TIMEOUT					62	/* timeout */
-#define DOT11_SC_QUERY_RSP_TOO_LARGE		63	/* query rsp too large */
-#define DOT11_SC_SERVER_UNREACHABLE			65	/* server unreachable */
+#define DOT11_SC_ADV_PROTO_NOT_SUPPORTED 59	/* ad proto not supported */
+#define DOT11_SC_NO_OUTSTAND_REQ	60	/* no outstanding req */
+#define DOT11_SC_RSP_NOT_RX_FROM_SERVER	61	/* no response from server */
+#define DOT11_SC_TIMEOUT		62	/* timeout */
+#define DOT11_SC_QUERY_RSP_TOO_LARGE	63	/* query rsp too large */
+#define DOT11_SC_SERVER_UNREACHABLE	65	/* server unreachable */
 
-#define DOT11_SC_UNEXP_MSG			70	/* Unexpected message */
+#define DOT11_SC_UNEXP_MSG		70	/* Unexpected message */
 #define DOT11_SC_INVALID_SNONCE		71	/* Invalid SNonce */
 #define DOT11_SC_INVALID_RSNIE		72	/* Invalid contents of RSNIE */
 
-#define DOT11_SC_ANTICLOG_TOCKEN_REQUIRED	76	/* Anti-clogging tocken required */
-#define DOT11_SC_INVALID_FINITE_CYCLIC_GRP	77	/* Invalid contents of RSNIE */
-#define DOT11_SC_TRANSMIT_FAILURE		79      /* transmission failure */
+#define DOT11_SC_ANTICLOG_TOCKEN_REQUIRED 76	/* Anti-clogging tocken required */
+#define DOT11_SC_INVALID_FINITE_CYCLIC_GRP 77	/* Invalid contents of RSNIE */
+#define DOT11_SC_TRANSMIT_FAILURE	79      /* transmission failure */
 
-#define DOT11_SC_TCLAS_RESOURCES_EXHAUSTED	81u	/* TCLAS resources exhausted */
+#define DOT11_SC_TCLAS_RESOURCES_EXHAUSTED 81u	/* TCLAS resources exhausted */
 
-#define DOT11_SC_TCLAS_PROCESSING_TERMINATED	97	/* End traffic classification */
+#define DOT11_SC_TCLAS_PROCESSING_TERMINATED 97	/* End traffic classification */
 
-#define DOT11_SC_ASSOC_VHT_REQUIRED		104	/* Association denied because the requesting
-							 * station does not support VHT features.
-							 */
-#define DOT11_SC_UNKNOWN_PASSWORD_IDENTIFIER	123u	/* mismatch of password id */
+#define DOT11_SC_ASSOC_VHT_REQUIRED	104	/* Association denied because the requesting
+						 * station does not support VHT features.
+						 */
+#define DOT11_SC_UNKNOWN_PASSWORD_IDENTIFIER 123u /* mismatch of password id */
 
-#define DOT11_SC_SAE_HASH_TO_ELEMENT		126u	/* SAE Hash-to-element PWE required */
-#define DOT11_SC_SAE_PK				127u	/* SAE PK required */
+#define DOT11_SC_SAE_HASH_TO_ELEMENT	126u	/* SAE Hash-to-element PWE required */
+#define DOT11_SC_SAE_PK			127u	/* SAE PK required */
 
 /* Requested TCLAS processing has been terminated by the AP due to insufficient QoS capacity. */
 #define DOT11_SC_TCLAS_PROCESSING_TERMINATED_INSUFFICIENT_QOS	128u
@@ -1533,6 +1547,16 @@ typedef struct ccx_qfl_ie ccx_qfl_ie_t;
  * higher layer QoS policies.
  */
 #define DOT11_SC_TCLAS_PROCESSING_TERMINATED_POLICY_CONFLICT	129u
+
+/* FIXME: Use these temp. IDs until ANA assigns IDs */
+#define DOT11_SC_NSEP_DENIED_UNAUTHORIZED 130u	/* NSEP priority access denied because
+						 * the non-AP STA is not authorized
+						 * to use the service.
+						 */
+#define DOT11_SC_NSEP_DENIED_OTHER_REASON 131u	/* NSEP priority access denied due to
+						 * reason outside the scope of
+						 * this standard.
+						 */
 
 /* Info Elts, length of INFORMATION portion of Info Elts */
 #define DOT11_MNG_DS_PARAM_LEN			1	/* d11 management DS parameter length */
@@ -1603,6 +1627,7 @@ enum dot11_tag_ids {
 	DOT11_MNG_FTIE_ID			= 55,	/* 11r Fast Bss Transition id */
 	DOT11_MNG_FT_TI_ID			= 56,	/* 11r Timeout Interval id */
 	DOT11_MNG_RDE_ID			= 57,	/* 11r RIC Data Element id */
+	DOT11_MNG_DSE_LOC_ID			= 58,	/* ?? DSE Registered Location */
 	DOT11_MNG_REGCLASS_ID			= 59,	/* d11 management regulatory class id */
 	DOT11_MNG_EXT_CSA_ID			= 60,	/* d11 Extended CSA */
 	DOT11_MNG_HT_ADD			= 61,	/* d11 mgmt additional HT info */
@@ -1622,10 +1647,12 @@ enum dot11_tag_ids {
 	DOT11_MNG_HT_OBSS_ID			= 74,	/* d11 mgmt OBSS HT info */
 	DOT11_MNG_MMIE_ID			= 76,	/* d11 mgmt MIC IE */
 	DOT11_MNG_NONTRANS_BSSID_CAP_ID		= 83,	/* 11k nontransmitted BSSID capability */
+	DOT11_MNG_SSID_LIST_ID			= 84,	/* ?? SSID list */
 	DOT11_MNG_MULTIPLE_BSSIDINDEX_ID	= 85,	/* 11k multiple BSSID index */
 	DOT11_MNG_FMS_DESCR_ID			= 86,	/* 11v FMS descriptor */
 	DOT11_MNG_FMS_REQ_ID			= 87,	/* 11v FMS request id */
 	DOT11_MNG_FMS_RESP_ID			= 88,	/* 11v FMS response id */
+	DOT11_MNG_QOS_TRF_CAP_ID		= 89,	/* ?? QoS Traffic Capabilities */
 	DOT11_MNG_BSS_MAX_IDLE_PERIOD_ID	= 90,	/* 11v bss max idle id */
 	DOT11_MNG_TFS_REQUEST_ID		= 91,	/* 11v tfs request id */
 	DOT11_MNG_TFS_RESPONSE_ID		= 92,	/* 11v tfs response id */
@@ -1741,10 +1768,15 @@ enum dot11_tag_ids {
 #define SAE_EXT_ANTICLOG_TOKEN_CONTAINER_ID	93u	/* SAE Anti-clogging token container */
 #define DOT11_MNG_ANTICLOG_TOKEN_CONTAINER_ID	(DOT11_MNG_ID_EXT_ID + \
 						 SAE_EXT_ANTICLOG_TOKEN_CONTAINER_ID)
-#define EXT_MNG_EHT_CAP_ID			100u	/* EHT Capabilities IE FIXME */
-#define DOT11_MNG_EHT_CAP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_EHT_CAP_ID)
-#define EXT_MNG_EHT_OP_ID			101u	/* EHT Operation IE # FIXME */
+/* FIXME: Use these temp. IDs until ANA assigns IDs */
+#define EXT_MNG_NON_INH_ID			110u	/* Non-inheritance */
+#define DOT11_MNG_NON_INH_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_NON_INH_ID)
+#define EXT_MNG_EHT_OP_ID			111u	/* EHT Operation */
 #define DOT11_MNG_EHT_OP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_EHT_OP_ID)
+#define EXT_MNG_ML_ID				112u	/* Multi-Link */
+#define DOT11_MNG_ML_ID				(DOT11_MNG_ID_EXT_ID + EXT_MNG_ML_ID)
+#define EXT_MNG_EHT_CAP_ID			113u	/* EHT Capabilities */
+#define DOT11_MNG_EHT_CAP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_EHT_CAP_ID)
 
 /* unassigned IDs for ranging parameter elements. To be updated after final
  * assignement.
@@ -2037,7 +2069,7 @@ BWL_PRE_PACKED_STRUCT struct dot11_oper_mode_notif_ie {
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 
-#define DOT11_OPER_MODE_NOTIF_IE_LEN 1
+#define DOT11_OPER_MODE_NOTIF_IE_LEN	1
 
 /* Extended Capability Information Field */
 #define DOT11_OBSS_COEX_MNG_SUPPORT	0x01	/* 20/40 BSS Coexistence Management support */
@@ -2058,7 +2090,7 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 #define DOT11_ACTION_CAT_BLOCKACK	3	/* category block ack */
 #define DOT11_ACTION_CAT_PUBLIC		4	/* category public */
 #define DOT11_ACTION_CAT_RRM		5	/* category radio measurements */
-#define DOT11_ACTION_CAT_FBT	6	/* category fast bss transition */
+#define DOT11_ACTION_CAT_FBT		6	/* category fast bss transition */
 #define DOT11_ACTION_CAT_HT		7	/* category for HT */
 #define DOT11_ACTION_CAT_SA_QUERY	8	/* security association query */
 #define DOT11_ACTION_CAT_PDPA		9	/* protected dual of public action */
@@ -2074,9 +2106,10 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 
 #define DOT11_ACTION_CAT_VHT		21	/* VHT action */
 #define DOT11_ACTION_CAT_S1G		22	/* S1G action */
-/* FIXME: Use temp. ID until ANA assigns one */
-#define DOT11_ACTION_CAT_HE		27	/* HE action frame */
 #define DOT11_ACTION_CAT_FILS		26	/* FILS action frame */
+/* HE Action frames - Draft P802.11ax D7.0 Table 9-53 Category values */
+#define DOT11_ACTION_CAT_HE		30	/* HE action frame */
+#define DOT11_ACTION_CAT_HEP		31	/* Protected HE action frame */
 #define DOT11_ACTION_CAT_VSP		126	/* protected vendor specific */
 #define DOT11_ACTION_CAT_VS		127	/* category Vendor Specific */
 
@@ -4962,6 +4995,11 @@ typedef struct dot11_sae_pk_element dot11_sae_pk_element_t;
 #define WCN_OUI			"\x00\x50\xf2"	/* WCN OUI */
 #define WCN_TYPE		4	/* WCN type */
 
+#ifdef BCMWAPI_WPI
+#define SMS4_KEY_LEN		16
+#define SMS4_WPI_CBC_MAC_LEN	16
+#endif
+
 /* 802.11r protocol definitions */
 
 /** Mobility Domain IE */
@@ -5074,6 +5112,14 @@ typedef struct dot11_ft_rrb_frame dot11_ft_rrb_frame_t;
 
 #define BSSID_INVALID           "\x00\x00\x00\x00\x00\x00"
 #define BSSID_BROADCAST         "\xFF\xFF\xFF\xFF\xFF\xFF"
+
+#ifdef BCMWAPI_WAI
+#define WAPI_IE_MIN_LEN		20	/* WAPI IE min length */
+#define WAPI_VERSION		1	/* WAPI version */
+#define WAPI_VERSION_LEN	2	/* WAPI version length */
+#define WAPI_OUI		"\x00\x14\x72"	/* WAPI OUI */
+#define WAPI_OUI_LEN		DOT11_OUI_LEN	/* WAPI OUI length */
+#endif /* BCMWAPI_WAI */
 
 /* ************* WMM Parameter definitions. ************* */
 #define WMM_OUI			"\x00\x50\xF2"	/* WNN OUI */
@@ -5219,6 +5265,7 @@ typedef struct dot11_ftm_ranging_ndpa dot11_ftm_ranging_ndpa_t;
 #define DOT11_NDPA_TYPE_VHT      0x00
 #define DOT11_NDPA_TYPE_RANGING  0x01
 #define DOT11_NDPA_TYPE_HE       0x02
+#define DOT11_NPDA_TOKEN_SHIFT 2u
 
 #define DOT11_FTM_ERR_NOT_CONT_OFFSET 1
 #define DOT11_FTM_ERR_NOT_CONT_MASK 0x80
@@ -5512,7 +5559,13 @@ enum {
 	FTM_PARAMS_CHAN_INFO_VHT_80_80		= 14,
 	FTM_PARAMS_CHAN_INFO_VHT_160_2_RFLOS	= 15,
 	FTM_PARAMS_CHAN_INFO_VHT_160		= 16,
-	/* Reserved from 17 - 30 */
+	FTM_PARAMS_CHAN_INFO_HE_20		= 17,
+	FTM_PARAMS_CHAN_INFO_HE_40		= 18,
+	FTM_PARAMS_CHAN_INFO_HE_80		= 19,
+	FTM_PARAMS_CHAN_INFO_HE_80_80		= 20,
+	FTM_PARAMS_CHAN_INFO_HE_160_2_RFLOS	= 21,
+	FTM_PARAMS_CHAN_INFO_HE_160		= 22,
+	/* Reserved from 23 - 30 */
 	FTM_PARAMS_CHAN_INFO_DMG_2160		= 31,
 	/* Reserved from 32 - 63 */
 	FTM_PARAMS_CHAN_INFO_MAX		= 63
@@ -5890,11 +5943,18 @@ BWL_PRE_PACKED_STRUCT struct supp_op_classes_ie {
 } BWL_POST_PACKED_STRUCT;
 typedef struct supp_op_classes_ie supp_op_classes_ie_t;
 
-/* Transition mode (bit number) */
-#define TRANSISION_MODE_WPA3_PSK		0u
-#define TRANSITION_MODE_SAE_PK			1u
-#define TRANSITION_MODE_WPA3_ENTERPRISE		2u
-#define TRANSITION_MODE_ENHANCED_OPEN		3u
+/* WPA3 Transition Mode bits */
+#define TRANSISION_MODE_WPA3_PSK		BCM_BIT(0)
+#define TRANSITION_MODE_WPA3_PSK		BCM_BIT(0)
+#define TRANSITION_MODE_SAE_PK			BCM_BIT(1)
+#define TRANSITION_MODE_WPA3_ENTERPRISE		BCM_BIT(2)
+#define TRANSITION_MODE_ENHANCED_OPEN		BCM_BIT(3)
+
+#define TRANSITION_MODE_SUPPORTED_MASK (\
+	TRANSITION_MODE_WPA3_PSK | \
+	TRANSITION_MODE_SAE_PK | \
+	TRANSITION_MODE_WPA3_ENTERPRISE | \
+	TRANSITION_MODE_ENHANCED_OPEN)
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

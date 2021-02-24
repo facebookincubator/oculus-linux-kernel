@@ -277,8 +277,6 @@ struct cam_isp_stream_image {
  * @event_record_head:         Write index to the state monitoring array
  * @event_record:              Event record array
  * @rdi_only_context:          Get context type information.
- * @skip_req_mgr:              Do not submit requests to request manager instead
- *                             use the context workqueue to submit requests.
  *                             true, if context is rdi only context
  * @offline_context:           Indicate whether context is for offline IFE
  * @hw_acquired:               Indicate whether HW resources are acquired
@@ -291,15 +289,6 @@ struct cam_isp_stream_image {
  *                             decide whether to apply request in offline ctx
  * @workq:                     Worker thread for offline ife
  * @trigger_id:                ID provided by CRM for each ctx on the link
- *                             mode and dictated by the flag skip_req_mgr.
- * @last_request_accepted:     The last request that has been submitted.
- * @last_request_signaled:     The last successfully signaled request.
- * @bw_workq:                  Workq to handle bandwidth updates.
- * @bw_work:                   Work item handling bw updates.
- * @hw_update_data:            The bw update data.
- * @hw_update_index:           Index which is to be used in hw_update_data
- * @bw_lock:                   Lock to sync between thread applying bw update
- *                             and user thread that sends new bw data.
  * @stream_image_free_list:    List of free image buffers
  * @stream_image_ready_list:   List of image buffers that are ready
  * @stream_image_umd_list:     List of image buffers sent to umd driver
@@ -338,7 +327,6 @@ struct cam_isp_context {
 	struct cam_isp_context_event_record   event_record[
 		CAM_ISP_CTX_EVENT_MAX][CAM_ISP_CTX_EVENT_RECORD_MAX_ENTRIES];
 	bool                                  rdi_only_context;
-	bool                                  skip_req_mgr;
 	bool                                  offline_context;
 	bool                                  hw_acquired;
 	bool                                  init_received;
@@ -349,14 +337,6 @@ struct cam_isp_context {
 	atomic_t                              rxd_epoch;
 	struct cam_req_mgr_core_workq        *workq;
 	int32_t                               trigger_id;
-	uint64_t                              last_request_accepted;
-	uint64_t                              last_request_signaled;
-
-	struct workqueue_struct              *bw_workq;
-	struct work_struct                    bw_work;
-	struct cam_isp_prepare_hw_update_data hw_update_data[2];
-	uint32_t                              hw_update_index;
-	struct mutex                          bw_lock;
 
 	struct list_head                      stream_image_free_list;
 	struct list_head                      stream_image_ready_list;

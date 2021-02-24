@@ -4345,20 +4345,29 @@ wl_cfgnan_terminate_ranging_session(struct bcm_cfg80211 *cfg,
 	/* Cancel Ranging if in progress for rang_inst */
 	if (NAN_RANGING_IS_IN_PROG(ranging_inst->range_status)) {
 		ret =  wl_cfgnan_cancel_ranging(bcmcfg_to_prmry_ndev(cfg),
-				cfg, &ranging_inst->range_id,
-				NAN_RNG_TERM_FLAG_IMMEDIATE, &status);
+			cfg, &ranging_inst->range_id,
+			NAN_RNG_TERM_FLAG_IMMEDIATE, &status);
 		if (unlikely(ret) || unlikely(status)) {
 			WL_ERR(("%s:nan range cancel failed ret = %d status = %d\n",
 				__FUNCTION__, ret, status));
+			if (ret == BCME_NOTFOUND) {
+				dhd_rtt_update_geofence_sessions_cnt(dhd, FALSE,
+					&ranging_inst->peer_addr);
+				/* Remove ranging instance and clean any corresponding target */
+				wl_cfgnan_remove_ranging_instance(cfg, ranging_inst);
+			}
 		} else {
 			WL_DBG(("Range cancelled \n"));
 			dhd_rtt_update_geofence_sessions_cnt(dhd, FALSE,
-				&ranging_inst->peer_addr);
+					&ranging_inst->peer_addr);
+			/* Remove ranging instance and clean any corresponding target */
+			wl_cfgnan_remove_ranging_instance(cfg, ranging_inst);
 		}
-	}
+	} else {
+		/* Remove ranging instance and clean any corresponding target */
+		wl_cfgnan_remove_ranging_instance(cfg, ranging_inst);
 
-	/* Remove ranging instance and clean any corresponding target */
-	wl_cfgnan_remove_ranging_instance(cfg, ranging_inst);
+	}
 }
 
 /*
@@ -4375,7 +4384,8 @@ wl_cfgnan_terminate_all_obsolete_ranging_sessions(
 
 	for (i = 0; i < NAN_MAX_RANGING_INST; i++) {
 		ranging_inst = &cfg->nancfg->nan_ranging_info[i];
-		if (ranging_inst->in_use) {
+		if (ranging_inst->in_use &&
+			ranging_inst->range_role == NAN_RANGING_ROLE_INITIATOR) {
 			wl_cfgnan_terminate_ranging_session(cfg, ranging_inst);
 		}
 	}
@@ -7924,11 +7934,13 @@ wl_cfgnan_process_range_report(struct bcm_cfg80211 *cfg,
 		rng_inst->geof_retry_count = 0;
 		/*
 		 * Suspend and trigger other targets,
+		 * if setup not in prog and,
 		 * if running sessions maxed out and more
 		 * pending targets waiting for trigger
 		 */
-		if (dhd_rtt_geofence_sessions_maxed_out(dhd) &&
-			(dhd_rtt_get_geofence_target_cnt(dhd) >=
+		if ((!dhd_rtt_is_geofence_setup_inprog(dhd)) &&
+			dhd_rtt_geofence_sessions_maxed_out(dhd) &&
+			(dhd_rtt_get_geofence_target_cnt(dhd) >
 				dhd_rtt_get_geofence_max_sessions(dhd))) {
 			/*
 			 * Update the target idx first, before suspending current target

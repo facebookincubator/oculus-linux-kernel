@@ -4,10 +4,6 @@
 #include "swd_registers_samd.h"
 #include "swd.h"
 
-// FIXME: part of T76730771 workaround
-#define USER_ROW_W0_VAL 0xD8E0C7CF
-#define USER_ROW_W1_VAL 0xFFFF3F5D
-
 /* Reading is word-aligned, this will take care of it */
 static inline u8 hubert_swd_read_byte(struct device *dev, u32 address)
 {
@@ -185,39 +181,44 @@ int hubert_swd_read(struct device *dev, int addr, u8 *dest,
 static int hubert_swd_configure_eeprom(struct device *dev)
 {
 	int status = 0;
+	u32 old_eeprom, new_eeprom = SWD_SAMD_NVM_EEPROM_SIZE_VAL;
 	u32 value_low, value_high;
 
-	// FIXME:
-	// Using USER_ROW_W0_VAL/USER_ROW_W1_VAL instead of swd_memory_read() to work
-	// around T76730771.
-	value_low = USER_ROW_W0_VAL;  // swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W0);
-	value_high = USER_ROW_W1_VAL; // swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W1);
+	// Ensure EEPROM emulation mode is enabled
+	value_low = swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W0);
+	old_eeprom = (value_low & SWD_SAMD_NVM_EEPROM_SIZE_MASK) >> SWD_SAMD_NVM_EEPROM_SIZE_SHIFT;
 
-	// We must erase the old row before updating it.
-	swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, SWD_SAMD_NVM_USER_ROW_W0 >> 1);
-	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA, SWD_SAMD_NVMCTRL_CTRLA_CMD_EAR);
-	status = hubert_swd_wait_for_nvmc_ready(dev);
-	if (status)
-		return status;
+	if (old_eeprom != new_eeprom) {
+		// EEPROM emulation setting need updating. We must erase the old
+		// User Row before updating it.
+		value_high = swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W1);
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, SWD_SAMD_NVM_USER_ROW_W0 >> 1);
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA, SWD_SAMD_NVMCTRL_CTRLA_CMD_EAR);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
+		if (status)
+			return status;
 
-	// Make sure the page buffer is clear before filling it
-	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
-		 SWD_SAMD_NVMCTRL_CTRLA_CMD_PBC);
-	status = hubert_swd_wait_for_nvmc_ready(dev);
-	if (status)
-		return status;
+		// Make sure the page buffer is clear before filling it
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
+			 SWD_SAMD_NVMCTRL_CTRLA_CMD_PBC);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
+		if (status)
+			return status;
 
-	// Write to page buffer
-	value_low &= ~SWD_SAMD_NVM_EEPROM_SIZE_MASK;
-	value_low |= SWD_SAMD_NVM_EEPROM_SIZE_VAL << SWD_SAMD_NVM_EEPROM_SIZE_SHIFT;
-	swd_memory_write(dev, SWD_SAMD_NVM_USER_ROW_W0, value_low);
-	swd_memory_write(dev, SWD_SAMD_NVM_USER_ROW_W1, value_high);
+		// Write to page buffer
+		value_low &= ~SWD_SAMD_NVM_EEPROM_SIZE_MASK;
+		value_low |= new_eeprom << SWD_SAMD_NVM_EEPROM_SIZE_SHIFT;
+		swd_memory_write(dev, SWD_SAMD_NVM_USER_ROW_W0, value_low);
+		swd_memory_write(dev, SWD_SAMD_NVM_USER_ROW_W1, value_high);
 
-	// Write page buffer back to flash
-	swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, SWD_SAMD_NVM_USER_ROW_W0 >> 1);
-	swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
-		 SWD_SAMD_NVMCTRL_CTRLA_CMD_WAP);
-	status = hubert_swd_wait_for_nvmc_ready(dev);
+		// Write page buffer back to flash
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_ADDR, SWD_SAMD_NVM_USER_ROW_W0 >> 1);
+		swd_memory_write(dev, SWD_SAMD_NVMCTRL_CTRLA,
+			 SWD_SAMD_NVMCTRL_CTRLA_CMD_WAP);
+		status = hubert_swd_wait_for_nvmc_ready(dev);
+		if (status)
+			return status;
+	}
 
 	return status;
 }
@@ -287,24 +288,4 @@ int hubert_swd_provisioning_write(struct device *dev, int addr, u8 *data, size_t
 	}
 
 	return 0;
-}
-
-// FIXME: part of T76730771 workaround
-bool hubert_swd_should_force_provision(struct device *dev)
-{
-	u32 value;
-
-	value = swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W0);
-	if (value != USER_ROW_W0_VAL) {
-		dev_warn(dev, "Unexpected USER_ROW_W0 value of 0x%08X. Forcing reprovision\n", value);
-		return true;
-	}
-
-	value = swd_memory_read(dev, SWD_SAMD_NVM_USER_ROW_W1);
-	if (value != USER_ROW_W1_VAL) {
-		dev_warn(dev, "Unexpected USER_ROW_W1 value of 0x%08X. Forcing reprovision\n", value);
-		return true;
-	}
-
-	return false;
 }

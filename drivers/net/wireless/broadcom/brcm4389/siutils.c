@@ -1237,6 +1237,7 @@ si_gpio_enable(si_t *sih, uint32 mask)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
+	case BCM4389_CHIP_GRPID:
 		fnsel = CC_FNSEL_SAMEASPIN;
 	default:
 		;
@@ -1307,6 +1308,7 @@ si_gci_time_sync_gpio_enable(si_t *sih, uint8 gpio, bool state)
 	case BCM4378_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
+	case BCM4389_CHIP_GRPID:
 		si_gci_enable_gpio(sih, gpio, 1 << gpio,
 			state ? 1 << gpio : 0x00);
 		break;
@@ -1338,6 +1340,7 @@ si_gci_time_sync_gpio_init(si_t *sih)
 	case BCM4378_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
+	case BCM4389_CHIP_GRPID:
 		time_sync_gpio = time_sync_opt & 0xff;
 		si_gci_enable_gpio(sih, time_sync_gpio,
 			1 << time_sync_gpio, 0x00);
@@ -1513,6 +1516,7 @@ si_enable_device_wake(si_t *sih, uint8 *wake_mask, uint8 *cur_status)
 	case BCM4378_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
+	case BCM4389_CHIP_GRPID:
 	case BCM4362_CHIP_GRPID:
 		/* device_wake op 1:
 		 * gpio 1, func sel 4,
@@ -2525,6 +2529,7 @@ BCMPOSTTRAPFN(si_gci_chipcontrol)(si_t *sih, uint reg, uint32 mask, uint32 val)
 	si_corereg(sih, GCI_CORE_IDX(sih), GCI_OFFSETOF(sih, gci_indirect_addr), ~0, reg);
 	return si_corereg(sih, GCI_CORE_IDX(sih), GCI_OFFSETOF(sih, gci_chipctrl), mask, val);
 }
+#endif /* !defined(BCMDONGLEHOST) */
 
 /* Read the gci chip status register indexed by 'reg' */
 uint32
@@ -2541,7 +2546,6 @@ BCMPOSTTRAPFN(si_gci_chipstatus)(si_t *sih, uint reg)
 	/* setting mask and value to '0' to use si_corereg for read only purpose */
 	return si_corereg(sih, GCI_CORE_IDX(sih), GCI_OFFSETOF(sih, gci_chipsts), 0, 0);
 }
-#endif /* !defined(BCMDONGLEHOST) */
 
 uint16
 si_chipid(const si_t *sih)
@@ -6894,6 +6898,7 @@ si_gci_shif_config_wake_pin(si_t *sih, uint8 gpio_n, uint8 wake_events,
 			}
 		case BCM4385_CHIP_GRPID :
 		case BCM4387_CHIP_GRPID :
+		case BCM4389_CHIP_GRPID :
 			{
 				if (!gci_gpio) {
 					chipcontrol = (1 << GCI_GPIO_CHIPCTRL_ENAB_EXT_GPIO_BIT);
@@ -6942,6 +6947,8 @@ si_shif_int_enable(si_t *sih, uint8 gpio_n, uint8 wake_events, bool enable)
 }
 #endif /* !defined(BCMDONGLEHOST) */
 
+#define SI_BANKINFO_DELAY_USEC	10u
+
 /** Return the size of the specified SYSMEM bank */
 static uint
 sysmem_banksize(const si_info_t *sii, sysmemregs_t *regs, uint8 idx)
@@ -6950,10 +6957,18 @@ sysmem_banksize(const si_info_t *sii, sysmemregs_t *regs, uint8 idx)
 	uint bankidx = idx;
 
 	W_REG(sii->osh, &regs->bankidx, bankidx);
+	/* Add some delay before reading back bankinfo */
+	OSL_DELAY(SI_BANKINFO_DELAY_USEC);
 	bankinfo = R_REG(sii->osh, &regs->bankinfo);
 	banksize = SYSMEM_BANKINFO_SZBASE * ((bankinfo & SYSMEM_BANKINFO_SZMASK) + 1);
+
+	SI_PRINT(("%s: bankidx:%d bankinfo:0x%x banksize:%d(0x%x)\n",
+		__FUNCTION__, bankidx, bankinfo, banksize, banksize));
+
 	return banksize;
 }
+
+#define SI_COREINFO_DELAY_USEC	10u
 
 /** Return the RAM size of the SYSMEM core */
 uint32
@@ -6982,6 +6997,10 @@ si_sysmem_size(si_t *sih)
 	/* Get info for determining size */
 	if (!(wasup = si_iscoreup(sih)))
 		si_core_reset(sih, 0, 0);
+
+	/* Add some delay before accessing the coreinfo */
+	OSL_DELAY(SI_COREINFO_DELAY_USEC);
+
 	coreinfo = R_REG(sii->osh, &regs->coreinfo);
 
 	/* Number of ROM banks, SW need to skip the ROM banks. */
@@ -6992,6 +7011,10 @@ si_sysmem_size(si_t *sih)
 		nrb = (coreinfo & SYSMEM_SRCI_NEW_ROMNB_MASK) >> SYSMEM_SRCI_NEW_ROMNB_SHIFT;
 		nb = (coreinfo & SYSMEM_SRCI_NEW_SRNB_MASK) >> SYSMEM_SRCI_NEW_SRNB_SHIFT;
 	}
+
+	SI_PRINT(("%s: coreinfo:0x%x num_rom_banks:%d num_ram_baks:%d\n",
+		__FUNCTION__, coreinfo, nrb, nb));
+
 	for (i = 0; i < nb; i++)
 		memsize += sysmem_banksize(sii, regs, i + nrb);
 

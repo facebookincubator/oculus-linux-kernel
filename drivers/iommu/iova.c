@@ -864,7 +864,8 @@ error:
  * dynamic size tuning described in the paper.
  */
 
-#define IOVA_MAG_SIZE 128
+/* Should be N^2 - 1 to account for the size field below */
+#define IOVA_MAG_SIZE 127
 
 struct iova_magazine {
 	unsigned long size;
@@ -877,14 +878,20 @@ struct iova_cpu_rcache {
 	struct iova_magazine *prev;
 };
 
+static struct kmem_cache *iova_magazine_cache;
+static unsigned int iova_magazine_cache_users;
+
 static struct iova_magazine *iova_magazine_alloc(gfp_t flags)
 {
-	return kzalloc(sizeof(struct iova_magazine), flags);
+	return kmem_cache_zalloc(iova_magazine_cache, flags);
 }
 
 static void iova_magazine_free(struct iova_magazine *mag)
 {
-	kfree(mag);
+	if (!mag)
+		return;
+
+	kmem_cache_free(iova_magazine_cache, mag);
 }
 
 static void
@@ -910,14 +917,18 @@ iova_magazine_free_pfns(struct iova_magazine *mag, struct iova_domain *iovad)
 	mag->size = 0;
 }
 
-static bool iova_magazine_full(struct iova_magazine *mag)
+static bool iova_magazine_has_space(struct iova_magazine *mag)
 {
-	return (mag && mag->size == IOVA_MAG_SIZE);
+	if (!mag)
+		return false;
+	return mag->size < IOVA_MAG_SIZE;
 }
 
-static bool iova_magazine_empty(struct iova_magazine *mag)
+static bool iova_magazine_has_pfns(struct iova_magazine *mag)
 {
-	return (!mag || mag->size == 0);
+	if (!mag)
+		return false;
+	return mag->size;
 }
 
 static unsigned long iova_magazine_pop(struct iova_magazine *mag,
@@ -926,7 +937,7 @@ static unsigned long iova_magazine_pop(struct iova_magazine *mag,
 	int i;
 	unsigned long pfn;
 
-	BUG_ON(iova_magazine_empty(mag));
+	BUG_ON(!iova_magazine_has_pfns(mag));
 
 	/* Only fall back to the rbtree if we have no suitable pfns at all */
 	for (i = mag->size - 1; mag->pfns[i] > limit_pfn; i--)
@@ -942,7 +953,7 @@ static unsigned long iova_magazine_pop(struct iova_magazine *mag,
 
 static void iova_magazine_push(struct iova_magazine *mag, unsigned long pfn)
 {
-	BUG_ON(iova_magazine_full(mag));
+	BUG_ON(!iova_magazine_has_space(mag));
 
 	mag->pfns[mag->size++] = pfn;
 }
@@ -954,6 +965,20 @@ static void init_iova_rcaches(struct iova_domain *iovad)
 	unsigned int cpu;
 	int i;
 
+	mutex_lock(&iova_cache_mutex);
+	if (!iova_magazine_cache_users) {
+		iova_magazine_cache = kmem_cache_create("iova_magazine_cache",
+			sizeof(struct iova_magazine), 0, SLAB_ACCOUNT, NULL);
+		if (!iova_magazine_cache) {
+			mutex_unlock(&iova_cache_mutex);
+			printk(KERN_ERR "Couldn't create iova magazine cache\n");
+			return;
+		}
+	}
+
+	iova_magazine_cache_users++;
+	mutex_unlock(&iova_cache_mutex);
+
 	for (i = 0; i < IOVA_RANGE_CACHE_MAX_SIZE; ++i) {
 		rcache = &iovad->rcaches[i];
 		spin_lock_init(&rcache->lock);
@@ -964,8 +989,13 @@ static void init_iova_rcaches(struct iova_domain *iovad)
 		for_each_possible_cpu(cpu) {
 			cpu_rcache = per_cpu_ptr(rcache->cpu_rcaches, cpu);
 			spin_lock_init(&cpu_rcache->lock);
+#ifdef CONFIG_IOMMU_IOVA_LAZY_ALLOCATION
+			cpu_rcache->loaded = NULL;
+			cpu_rcache->prev = NULL;
+#else
 			cpu_rcache->loaded = iova_magazine_alloc(GFP_KERNEL);
 			cpu_rcache->prev = iova_magazine_alloc(GFP_KERNEL);
+#endif
 		}
 	}
 }
@@ -988,9 +1018,17 @@ static bool __iova_rcache_insert(struct iova_domain *iovad,
 	cpu_rcache = raw_cpu_ptr(rcache->cpu_rcaches);
 	spin_lock_irqsave(&cpu_rcache->lock, flags);
 
-	if (!iova_magazine_full(cpu_rcache->loaded)) {
+#ifdef CONFIG_IOMMU_IOVA_LAZY_ALLOCATION
+	/* Lazily allocate CPU rcache magazines. */
+	if (!cpu_rcache->loaded)
+		cpu_rcache->loaded = iova_magazine_alloc(GFP_ATOMIC);
+	if (!cpu_rcache->prev && !iova_magazine_has_space(cpu_rcache->loaded))
+		cpu_rcache->prev = iova_magazine_alloc(GFP_ATOMIC);
+#endif
+
+	if (iova_magazine_has_space(cpu_rcache->loaded)) {
 		can_insert = true;
-	} else if (!iova_magazine_full(cpu_rcache->prev)) {
+	} else if (iova_magazine_has_space(cpu_rcache->prev)) {
 		swap(cpu_rcache->prev, cpu_rcache->loaded);
 		can_insert = true;
 	} else {
@@ -998,7 +1036,8 @@ static bool __iova_rcache_insert(struct iova_domain *iovad,
 
 		if (new_mag) {
 			spin_lock(&rcache->lock);
-			if (rcache->depot_size < MAX_GLOBAL_MAGS) {
+			if (rcache->depot_size < MAX_GLOBAL_MAGS &&
+			    cpu_rcache->loaded) {
 				rcache->depot[rcache->depot_size++] =
 						cpu_rcache->loaded;
 			} else {
@@ -1051,9 +1090,9 @@ static unsigned long __iova_rcache_get(struct iova_rcache *rcache,
 	cpu_rcache = raw_cpu_ptr(rcache->cpu_rcaches);
 	spin_lock_irqsave(&cpu_rcache->lock, flags);
 
-	if (!iova_magazine_empty(cpu_rcache->loaded)) {
+	if (iova_magazine_has_pfns(cpu_rcache->loaded)) {
 		has_pfn = true;
-	} else if (!iova_magazine_empty(cpu_rcache->prev)) {
+	} else if (iova_magazine_has_pfns(cpu_rcache->prev)) {
 		swap(cpu_rcache->prev, cpu_rcache->loaded);
 		has_pfn = true;
 	} else {
@@ -1112,6 +1151,16 @@ static void free_iova_rcaches(struct iova_domain *iovad)
 		for (j = 0; j < rcache->depot_size; ++j)
 			iova_magazine_free(rcache->depot[j]);
 	}
+
+	mutex_lock(&iova_cache_mutex);
+	if (WARN_ON(!iova_magazine_cache_users)) {
+		mutex_unlock(&iova_cache_mutex);
+		return;
+	}
+	iova_magazine_cache_users--;
+	if (!iova_magazine_cache_users)
+		kmem_cache_destroy(iova_magazine_cache);
+	mutex_unlock(&iova_cache_mutex);
 }
 
 /*

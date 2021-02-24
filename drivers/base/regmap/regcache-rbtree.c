@@ -132,7 +132,7 @@ static int regcache_rbtree_insert(struct regmap *map, struct rb_root *root,
 	return 1;
 }
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 static int rbtree_show(struct seq_file *s, void *ignored)
 {
 	struct regmap *map = s->private;
@@ -558,7 +558,7 @@ struct regcache_ops regcache_rbtree_ops = {
 	.name = "rbtree",
 	.init = regcache_rbtree_init,
 	.exit = regcache_rbtree_exit,
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 	.debugfs_init = rbtree_debugfs_init,
 #endif
 	.read = regcache_rbtree_read,

@@ -2035,7 +2035,7 @@ static int dapm_power_widgets(struct snd_soc_card *card, int event)
 	return 0;
 }
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 static ssize_t dapm_widget_power_read_file(struct file *file,
 					   char __user *user_buf,
 					   size_t count, loff_t *ppos)

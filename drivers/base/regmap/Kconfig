@@ -61,8 +61,13 @@ config REGMAP_WCD_IRQ
 	  WCD IRQ. Generic WCD IRQ will be used for
 	  wcd937x and later targets.
 
-config REGMAP_ALLOW_WRITE_DEBUGFS
+config REGMAP_DEBUG
 	depends on REGMAP && DEBUG_FS
+	bool "Enable debugfs support for REGMAP"
+	default n
+
+config REGMAP_ALLOW_WRITE_DEBUGFS
+	depends on REGMAP_DEBUG
 	bool "Allow REGMAP debugfs write"
 	default n
 	help

@@ -141,7 +141,9 @@ static void dp_pdev_detach(struct cdp_pdev *txrx_pdev, int force);
 static struct dp_soc *
 dp_soc_attach(void *ctrl_psoc, HTC_HANDLE htc_handle, qdf_device_t qdf_osdev,
 	      struct ol_if_ops *ol_ops, uint16_t device_id);
+#ifndef REMOVE_PKT_LOG
 static void dp_pktlogmod_exit(struct dp_pdev *handle);
+#endif
 static void *dp_peer_create_wifi3(struct cdp_vdev *vdev_handle,
 				uint8_t *peer_mac_addr,
 				struct cdp_ctrl_objmgr_peer *ctrl_peer);
@@ -394,6 +396,26 @@ static void dp_mon_reap_timer_handler(void *arg)
 	qdf_timer_mod(&soc->mon_reap_timer, DP_INTR_POLL_TIMER_MS);
 }
 
+/**
+ * dp_get_num_rx_contexts() - get number of RX contexts
+ * @soc_hdl: cdp opaque soc handle
+ *
+ * Return: number of RX contexts
+ */
+static int dp_get_num_rx_contexts(struct cdp_soc_t *soc_hdl)
+{
+	int i;
+	int num_rx_contexts = 0;
+
+	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
+
+	for (i = 0; i < wlan_cfg_get_num_contexts(soc->wlan_cfg_ctx); i++)
+		if (wlan_cfg_get_rx_ring_mask(soc->wlan_cfg_ctx, i))
+			num_rx_contexts++;
+
+	return num_rx_contexts;
+}
+
 #ifndef REMOVE_PKT_LOG
 /**
  * dp_pkt_log_init() - API to initialize packet log
@@ -437,26 +459,6 @@ static void dp_pkt_log_con_service(struct cdp_pdev *ppdev, void *scn)
 
 	dp_pkt_log_init((struct cdp_pdev *)pdev, scn);
 	pktlog_htc_attach();
-}
-
-/**
- * dp_get_num_rx_contexts() - get number of RX contexts
- * @soc_hdl: cdp opaque soc handle
- *
- * Return: number of RX contexts
- */
-static int dp_get_num_rx_contexts(struct cdp_soc_t *soc_hdl)
-{
-	int i;
-	int num_rx_contexts = 0;
-
-	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
-
-	for (i = 0; i < wlan_cfg_get_num_contexts(soc->wlan_cfg_ctx); i++)
-		if (wlan_cfg_get_rx_ring_mask(soc->wlan_cfg_ctx, i))
-			num_rx_contexts++;
-
-	return num_rx_contexts;
 }
 
 /**
@@ -3989,7 +3991,9 @@ static void dp_pdev_deinit(struct cdp_pdev *txrx_pdev, int force)
 			       WBM2SW_RELEASE, pdev->pdev_id);
 	}
 
+#ifndef REMOVE_PKT_LOG
 	dp_pktlogmod_exit(pdev);
+#endif
 
 	dp_rx_pdev_detach(pdev);
 	dp_rx_pdev_mon_detach(pdev);
@@ -8698,6 +8702,7 @@ static QDF_STATUS dp_config_for_nac_rssi(struct cdp_vdev *vdev_handle,
 }
 #endif
 
+#ifndef REMOVE_PKT_LOG
 /**
  * dp_enable_peer_based_pktlog() - Set Flag for peer based filtering
  * for pktlog
@@ -8728,6 +8733,7 @@ dp_enable_peer_based_pktlog(
 
 	return QDF_STATUS_SUCCESS;
 }
+#endif
 
 #ifdef WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG
 #ifdef WLAN_SUPPORT_RX_TAG_STATISTICS
@@ -9309,7 +9315,9 @@ static struct cdp_ctrl_ops dp_ops_ctrl = {
 #endif
 	.set_key = dp_set_michael_key,
 	.txrx_get_vdev_param = dp_get_vdev_param,
+#ifndef REMOVE_PKT_LOG
 	.enable_peer_based_pktlog = dp_enable_peer_based_pktlog,
+#endif
 	.calculate_delay_stats = dp_calculate_delay_stats,
 #ifdef WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG
 	.txrx_update_pdev_rx_protocol_tag = dp_update_pdev_rx_protocol_tag,
@@ -9769,8 +9777,10 @@ static struct cdp_misc_ops dp_ops_misc = {
 	.runtime_suspend = dp_runtime_suspend,
 	.runtime_resume = dp_runtime_resume,
 #endif /* FEATURE_RUNTIME_PM */
+#ifndef REMOVE_PKT_LOG
 	.pkt_log_init = dp_pkt_log_init,
 	.pkt_log_con_service = dp_pkt_log_con_service,
+#endif
 	.get_num_rx_contexts = dp_get_num_rx_contexts,
 	.get_tx_ack_stats = dp_tx_get_success_ack_stats,
 #ifdef WLAN_SUPPORT_DATA_STALL
@@ -9841,12 +9851,14 @@ static QDF_STATUS dp_bus_suspend(struct cdp_pdev *opaque_pdev)
 	if (soc->intr_mode == DP_INTR_POLL)
 		qdf_timer_stop(&soc->int_timer);
 
+#ifndef REMOVE_PKT_LOG
 	/* Stop monitor reap timer and reap any pending frames in ring */
 	if (pdev->rx_pktlog_mode != DP_RX_PKTLOG_DISABLED &&
 	    soc->reap_timer_init) {
 		qdf_timer_sync_cancel(&soc->mon_reap_timer);
 		dp_service_mon_rings(soc, DP_MON_REAP_BUDGET);
 	}
+#endif
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -9859,11 +9871,13 @@ static QDF_STATUS dp_bus_resume(struct cdp_pdev *opaque_pdev)
 	if (soc->intr_mode == DP_INTR_POLL)
 		qdf_timer_mod(&soc->int_timer, DP_INTR_POLL_TIMER_MS);
 
+#ifndef REMOVE_PKT_LOG
 	/* Start monitor reap timer */
 	if (pdev->rx_pktlog_mode != DP_RX_PKTLOG_DISABLED &&
 	    soc->reap_timer_init)
 		qdf_timer_mod(&soc->mon_reap_timer,
 			      DP_INTR_POLL_TIMER_MS);
+#endif
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -9878,6 +9892,7 @@ static QDF_STATUS dp_bus_resume(struct cdp_pdev *opaque_pdev)
 static void dp_process_wow_ack_rsp(struct cdp_soc_t *soc_hdl,
 				   struct cdp_pdev *opaque_pdev)
 {
+#ifndef REMOVE_PKT_LOG
 	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
 	struct dp_pdev *pdev = (struct dp_pdev *)opaque_pdev;
 
@@ -9890,6 +9905,7 @@ static void dp_process_wow_ack_rsp(struct cdp_soc_t *soc_hdl,
 	    soc->reap_timer_init) {
 		dp_service_mon_rings(soc, DP_MON_REAP_BUDGET);
 	}
+#endif
 }
 
 /**
@@ -9902,6 +9918,7 @@ static void dp_process_wow_ack_rsp(struct cdp_soc_t *soc_hdl,
 static void dp_process_target_suspend_req(struct cdp_soc_t *soc_hdl,
 					  struct cdp_pdev *opaque_pdev)
 {
+#ifndef REMOVE_PKT_LOG
 	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
 	struct dp_pdev *pdev = (struct dp_pdev *)opaque_pdev;
 
@@ -9916,6 +9933,7 @@ static void dp_process_target_suspend_req(struct cdp_soc_t *soc_hdl,
 		qdf_timer_sync_cancel(&soc->mon_reap_timer);
 		dp_service_mon_rings(soc, DP_MON_REAP_BUDGET);
 	}
+#endif
 }
 
 static struct cdp_bus_ops dp_ops_bus = {
@@ -10282,6 +10300,7 @@ void *dp_get_pdev_for_mac_id(struct dp_soc *soc, uint32_t mac_id)
 	return soc->pdev_list[0];
 }
 
+#ifdef WDI_EVENT_ENABLE
 /*
  * dp_is_hw_dbs_enable() - Procedure to check if DBS is supported
  * @soc:		DP SoC context
@@ -10300,6 +10319,7 @@ void dp_is_hw_dbs_enable(struct dp_soc *soc,
 
 	*max_mac_rings = (dbs_enable)?(*max_mac_rings):1;
 }
+#endif
 
 /*
 * dp_is_soc_reinit() - Check if soc reinit is true
@@ -10470,6 +10490,7 @@ int dp_set_pktlog_wifi3(struct dp_pdev *pdev, uint32_t event,
 				 */
 				return 0;
 			}
+#ifndef REMOVE_PKT_LOG
 			if (pdev->rx_pktlog_mode != DP_RX_PKTLOG_DISABLED) {
 				pdev->rx_pktlog_mode = DP_RX_PKTLOG_DISABLED;
 
@@ -10491,6 +10512,7 @@ int dp_set_pktlog_wifi3(struct dp_pdev *pdev, uint32_t event,
 				if (soc->reap_timer_init)
 					qdf_timer_stop(&soc->mon_reap_timer);
 			}
+#endif
 			break;
 		case WDI_EVENT_LITE_T2H:
 			if (pdev->monitor_vdev) {

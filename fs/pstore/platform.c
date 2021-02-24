@@ -398,8 +398,6 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		}
 	}
 
-	allocate_buf_for_compression();
-
 	oopscount++;
 	while (total < kmsg_bytes) {
 		char *dst;
@@ -457,8 +455,6 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		total += record.size;
 		part++;
 	}
-
-	free_buf_for_compression();
 
 	up(&psinfo->buf_lock);
 }
@@ -587,6 +583,9 @@ int pstore_register(struct pstore_info *psi)
 		return -EINVAL;
 	}
 
+	if (psi->flags & PSTORE_FLAGS_DMESG)
+		allocate_buf_for_compression();
+
 	if (pstore_is_mounted())
 		pstore_get_records(0);
 
@@ -635,6 +634,8 @@ void pstore_unregister(struct pstore_info *psi)
 		pstore_unregister_console();
 	if (psi->flags & PSTORE_FLAGS_DMESG)
 		pstore_unregister_kmsg();
+
+	free_buf_for_compression();
 
 	psinfo = NULL;
 	backend = NULL;
@@ -707,8 +708,6 @@ void pstore_get_backend_records(struct pstore_info *psi,
 	if (psi->open && psi->open(psi))
 		goto out;
 
-	allocate_buf_for_compression();
-
 	/*
 	 * Backend callback read() allocates record.buf. decompress_record()
 	 * may reallocate record.buf. On success, pstore_mkfile() will keep
@@ -743,9 +742,6 @@ void pstore_get_backend_records(struct pstore_info *psi,
 				failed++;
 		}
 	}
-
-	free_buf_for_compression();
-
 	if (psi->close)
 		psi->close(psi);
 out:
@@ -796,6 +792,13 @@ static int __init pstore_init(void)
 	int ret;
 
 	pstore_choose_compression();
+
+	/*
+	 * Check if any pstore backends registered earlier but did not
+	 * initialize compression because crypto was not ready. If so,
+	 * initialize compression now.
+	 */
+	allocate_buf_for_compression();
 
 	ret = pstore_init_fs();
 	if (ret)

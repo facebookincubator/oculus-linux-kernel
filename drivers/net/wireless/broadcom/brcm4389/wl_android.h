@@ -187,3 +187,10 @@ extern int wl_android_bcnrecv_event(struct net_device *ndev,
 #define WLC_ACS_BAND_INVALID	0xffffu
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
 #define WL_PRIV_CMD_LEN 64
+#define CHECK_SCNPRINTF_RET_VAL(ret) \
+	{ \
+		if (ret < 0) { \
+				WL_ERR(("scnprintf failed %d\n", ret)); \
+				return BCME_ERROR; \
+		} \
+	}

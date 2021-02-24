@@ -425,6 +425,11 @@ ai_scan(si_t *sih, void *regs, uint devid)
 			/* cache APB bridge wrapper address for set/clear timeout */
 			if ((mfg == MFGID_ARM) && (cid == APB_BRIDGE_ID)) {
 				ASSERT(sii->num_br < SI_MAXBR);
+				if (sii->num_br >= SI_MAXBR) {
+					SI_ERROR(("bridge number %d is overflowed\n", sii->num_br));
+					goto error;
+				}
+
 				sii->br_wrapba[sii->num_br++] = addrl;
 			}
 

@@ -29,6 +29,8 @@
 #include <linux/reboot.h>
 #include <linux/types.h>
 #include <linux/watchdog.h>
+#include <linux/sched/debug.h>
+#include <linux/debug_locks.h>
 
 #define TIMER_MARGIN	60		/* Default is 60 seconds */
 static unsigned int soft_margin = TIMER_MARGIN;	/* in seconds */
@@ -56,6 +58,12 @@ MODULE_PARM_DESC(soft_panic,
 static struct hrtimer softdog_ticktock;
 static struct hrtimer softdog_preticktock;
 
+static void softdog_print_sys_info(void)
+{
+	show_state_filter(TASK_UNINTERRUPTIBLE);
+	debug_show_all_locks();
+}
+
 static enum hrtimer_restart softdog_fire(struct hrtimer *timer)
 {
 	module_put(THIS_MODULE);
@@ -63,9 +71,11 @@ static enum hrtimer_restart softdog_fire(struct hrtimer *timer)
 		pr_crit("Triggered - Reboot ignored\n");
 	} else if (soft_panic) {
 		pr_crit("Initiating panic\n");
+		softdog_print_sys_info();
 		panic("Software Watchdog Timer expired");
 	} else {
 		pr_crit("Initiating system reboot\n");
+		softdog_print_sys_info();
 		emergency_restart();
 		pr_crit("Reboot didn't ?????\n");
 	}

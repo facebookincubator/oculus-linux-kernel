@@ -9,6 +9,8 @@ dtbo-$(CONFIG_ARCH_KONA) += \
 	unknown1-p0dd-overlay.dtbo \
 	unknown1-p0-overlay.dtbo \
 	unknown1-p1-overlay.dtbo \
+	unknown1-p1-5dd-overlay.dtbo \
+	unknown1-dev2-overlay.dtbo \
 	unknown1-p2-overlay.dtbo
 
 hollywood-poc2-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
@@ -20,6 +22,8 @@ unknown1-dev0-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/ko
 unknown1-p0dd-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 unknown1-p0-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 unknown1-p1-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
+unknown1-p1-5dd-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
+unknown1-dev2-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 unknown1-p2-overlay.dtbo-base := vendor-base/qcom/kona.dtb vendor-base/qcom/kona-v2.dtb
 endif
 

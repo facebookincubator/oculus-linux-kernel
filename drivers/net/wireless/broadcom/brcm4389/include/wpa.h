@@ -134,6 +134,13 @@ typedef BWL_PRE_PACKED_STRUCT struct
 #define WPA_CIPHER_BIP_GMAC_256 12	/* BIP_GMAC_256 */
 #define WPA_CIPHER_BIP_CMAC_256 13	/* BIP_CMAC_256 */
 
+#ifdef BCMWAPI_WAI
+#define WAPI_CIPHER_NONE	WPA_CIPHER_NONE
+#define WAPI_CIPHER_SMS4	11
+
+#define WAPI_CSE_WPI_SMS4	1
+#endif /* BCMWAPI_WAI */
+
 #define IS_WPA_CIPHER(cipher)	((cipher) == WPA_CIPHER_NONE || \
 				 (cipher) == WPA_CIPHER_WEP_40 || \
 				 (cipher) == WPA_CIPHER_WEP_104 || \
@@ -149,6 +156,18 @@ typedef BWL_PRE_PACKED_STRUCT struct
 				    (cipher) == WPA_CIPHER_BIP_GMAC_128 || \
 				    (cipher) == WPA_CIPHER_BIP_GMAC_256 || \
 				    (cipher) == WPA_CIPHER_BIP_CMAC_256)
+
+#ifdef BCMWAPI_WAI
+#define IS_WAPI_CIPHER(cipher)	((cipher) == WAPI_CIPHER_NONE || \
+				 (cipher) == WAPI_CSE_WPI_SMS4)
+
+/* convert WAPI_CSE_WPI_XXX to WAPI_CIPHER_XXX */
+#define WAPI_CSE_WPI_2_CIPHER(cse) ((cse) == WAPI_CSE_WPI_SMS4 ? \
+				WAPI_CIPHER_SMS4 : WAPI_CIPHER_NONE)
+
+#define WAPI_CIPHER_2_CSE_WPI(cipher) ((cipher) == WAPI_CIPHER_SMS4 ? \
+				WAPI_CSE_WPI_SMS4 : WAPI_CIPHER_NONE)
+#endif /* BCMWAPI_WAI */
 
 #define IS_VALID_AKM(akm) ((akm) == RSN_AKM_NONE || \
 			(akm) == RSN_AKM_UNSPECIFIED || \
@@ -266,6 +285,20 @@ typedef struct rsn_ie_info {
 	uint8 kek2_len;				/* EAPOL KEK2 */
 } rsn_ie_info_t;
 #endif /* RSN_IE_INFO_STRUCT_RELOCATED */
+
+#ifdef BCMWAPI_WAI
+#define WAPI_CAP_PREAUTH		RSN_CAP_PREAUTH
+
+/* Other WAI definition */
+#define WAPI_WAI_REQUEST		0x00F1
+#define WAPI_UNICAST_REKEY		0x00F2
+#define WAPI_STA_AGING			0x00F3
+#define WAPI_MUTIL_REKEY		0x00F4
+#define WAPI_STA_STATS			0x00F5
+
+#define WAPI_USK_REKEY_COUNT		0x4000000 /* 0xA00000 */
+#define WAPI_MSK_REKEY_COUNT		0x4000000 /* 0xA00000 */
+#endif /* BCMWAPI_WAI */
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

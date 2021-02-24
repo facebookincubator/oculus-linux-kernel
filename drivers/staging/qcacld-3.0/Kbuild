@@ -44,9 +44,10 @@ endif
 
 WLAN_DEFCONFIG_FILE := $(WLAN_ROOT)/configs/$(patsubst "%",%,$(CONFIG_QCA_CLD_WLAN_PROFILE))_defconfig
 ifeq ("$(wildcard $(srctree)/$(WLAN_DEFCONFIG_FILE))","")
-        $(error "WLAN defconfig file '$(WLAN_DEFCONFIG_FILE)' not found!")
-endif
+        $(warning "WLAN defconfig file '$(WLAN_DEFCONFIG_FILE)' not found!")
+else
 include $(WLAN_DEFCONFIG_FILE)
+endif
 
 ############ UAPI ############
 UAPI_DIR :=	uapi
@@ -2625,7 +2626,6 @@ cppflags-$(CONFIG_LITHIUM) += -DPEER_PROTECTED_ACCESS
 cppflags-$(CONFIG_LITHIUM) += -DSERIALIZE_QUEUE_SETUP
 cppflags-$(CONFIG_LITHIUM) += -DDP_RX_PKT_NO_PEER_DELIVER
 cppflags-$(CONFIG_LITHIUM) += -DFEATURE_ALIGN_STATS_FROM_DP
-cppflags-$(CONFIG_LITHIUM) += -DDROP_RXDMA_DECRYPT_ERR
 cppflags-$(CONFIG_LITHIUM) += -DDP_RX_SPECIAL_FRAME_NEED
 cppflags-$(CONFIG_LITHIUM) += -DFEATURE_STATS_EXT_V2
 cppflags-$(CONFIG_VERBOSE_DEBUG) += -DENABLE_VERBOSE_DEBUG

@@ -49,7 +49,7 @@
 #include <dhd_linux.h>
 #ifdef OEM_ANDROID
 #ifdef CONFIG_ARCH_MSM
-#if defined(CONFIG_PCI_MSM) || defined(CONFIG_ARCH_MSM8996)
+#if IS_ENABLED(CONFIG_PCI_MSM) || defined(CONFIG_ARCH_MSM8996)
 #include <linux/msm_pcie.h>
 #else
 #include <mach/msm_pcie.h>
@@ -92,9 +92,13 @@
 #include "ftdi_sio_external.h"
 #endif /* PCIE_OOB */
 
-#define PCI_CFG_RETRY 		10	/* PR15065: retry count for pci cfg accesses */
+#if defined(WL_CFG80211)
+#include <wl_cfg80211.h>
+#endif	/* WL_CFG80211 */
+
+#define PCI_CFG_RETRY		10		/* PR15065: retry count for pci cfg accesses */
 #define OS_HANDLE_MAGIC		0x1234abcd	/* Magic # to recognize osh */
-#define BCM_MEM_FILENAME_LEN 	24		/* Mem. filename length */
+#define BCM_MEM_FILENAME_LEN	24		/* Mem. filename length */
 
 #ifdef PCIE_OOB
 #define HOST_WAKE 4   /* GPIO_0 (HOST_WAKE) - Output from WLAN */
@@ -2219,9 +2223,9 @@ int dhdpcie_init(struct pci_dev *pdev)
 		}
 
 		dhdpcie_init_succeeded = TRUE;
-#ifdef CONFIG_ARCH_MSM
+#if defined(CONFIG_ARCH_MSM) && defined(CONFIG_SEC_PCIE_L1SS)
 		sec_pcie_set_use_ep_loaded(bus->rc_dev);
-#endif /* CONFIG_ARCH_MSM */
+#endif /* CONFIG_ARCH_MSM && CONFIG_SEC_PCIE_L1SS */
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 		pm_runtime_set_autosuspend_delay(&pdev->dev, AUTO_SUSPEND_TIMEOUT);
 		pm_runtime_use_autosuspend(&pdev->dev);
@@ -3089,10 +3093,49 @@ dhd_os_ib_set_device_wake(struct dhd_bus *bus, bool val)
 #endif /* PCIE_OOB */
 
 #ifdef DHD_PCIE_RUNTIMEPM
+#ifdef WL_CFG80211
+static uint32 dhd_ps_mode_managed_dur(dhd_pub_t *dhdp)
+{
+	uint32 dur = 0;
+
+	struct net_device *primary_ndev;
+	struct bcm_cfg80211 *cfg;
+	struct net_info *_net_info;
+
+	primary_ndev = dhd_linux_get_primary_netdev(dhdp);
+	if (!primary_ndev) {
+		DHD_ERROR(("%s - primary_ndev is NULL\n", __FUNCTION__));
+		return dur;
+	}
+
+	cfg = wl_get_cfg(primary_ndev);
+	if (!cfg) {
+		DHD_ERROR(("%s - cfg is NULL\n", __FUNCTION__));
+		return dur;
+	}
+
+	_net_info = wl_get_netinfo_by_netdev(cfg, primary_ndev);
+	if (!_net_info) {
+		DHD_ERROR(("%s - net_info is NULL\n", __FUNCTION__));
+		return dur;
+	}
+
+	if (_net_info->ps_managed) {
+		dur = (OSL_SYSUPTIME() - _net_info->ps_managed_start_ts) / MSEC_PER_SEC;
+	}
+
+	return dur;
+}
+#endif /* WL_CFG80211 */
+
 bool dhd_runtimepm_state(dhd_pub_t *dhd)
 {
 	dhd_bus_t *bus;
 	unsigned long flags;
+#ifdef WL_CFG80211
+	uint32 ps_mode_off_dur;
+#endif /* WL_CFG80211 */
+
 	bus = dhd->bus;
 
 	DHD_GENERAL_LOCK(dhd, flags);
@@ -3112,8 +3155,15 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 		bus->idlecount = 0;
 		if (DHD_BUS_BUSY_CHECK_IDLE(dhd) && !DHD_BUS_CHECK_DOWN_OR_DOWN_IN_PROGRESS(dhd) &&
 			!DHD_CHECK_CFG_IN_PROGRESS(dhd) && !dhd_os_check_wakelock_all(bus->dhd)) {
+#ifdef WL_CFG80211
+			ps_mode_off_dur = dhd_ps_mode_managed_dur(dhd);
+			DHD_ERROR(("%s: DHD Idle state!! -  idletime :%d, wdtick :%d, "
+				"PS mode off dur: %d sec \n", __FUNCTION__,
+				bus->idletime, dhd_runtimepm_ms, ps_mode_off_dur));
+#else
 			DHD_ERROR(("%s: DHD Idle state!! -  idletime :%d, wdtick :%d \n",
-					__FUNCTION__, bus->idletime, dhd_runtimepm_ms));
+				__FUNCTION__, bus->idletime, dhd_runtimepm_ms));
+#endif /* WL_CFG80211 */
 			bus->bus_wake = 0;
 			DHD_BUS_BUSY_SET_RPM_SUSPEND_IN_PROGRESS(dhd);
 			bus->runtime_resume_done = FALSE;
@@ -3134,15 +3184,7 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 					/* Reschedule tasklet to process Rx frames */
 					DHD_ERROR(("%s: Schedule DPC to process pending"
 						" Rx packets\n", __FUNCTION__));
-					/* irq will be enabled at the end of dpc */
 					dhd_schedule_delayed_dpc_on_dpc_cpu(bus->dhd, 0);
-				} else {
-					/* enabling host irq deferred from system suspend */
-					if (dhdpcie_irq_disabled(bus)) {
-						dhdpcie_enable_irq(bus);
-						/* increasing intrrupt count when it enabled */
-						bus->resume_intr_enable_count++;
-					}
 				}
 				smp_wmb();
 				wake_up(&bus->rpm_queue);
@@ -3179,14 +3221,7 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 				DHD_ERROR(("%s: Schedule DPC to process pending Rx packets\n",
 					__FUNCTION__));
 				bus->rpm_sched_dpc_time = OSL_LOCALTIME_NS();
-				dhd_sched_dpc(bus->dhd);
-			}
-
-			/* enabling host irq deferred from system suspend */
-			if (dhdpcie_irq_disabled(bus)) {
-				dhdpcie_enable_irq(bus);
-				/* increasing intrrupt count when it enabled */
-				bus->resume_intr_enable_count++;
+				dhd_schedule_delayed_dpc_on_dpc_cpu(bus->dhd, 0);
 			}
 
 			smp_wmb();
@@ -3314,13 +3349,13 @@ dhd_dongle_mem_dump(void)
 EXPORT_SYMBOL(dhd_dongle_mem_dump);
 #endif /* DHD_FW_COREDUMP */
 
-#ifdef CONFIG_ARCH_MSM
+#if defined(CONFIG_ARCH_MSM) && defined(CONFIG_SEC_PCIE_L1SS)
 void
 dhd_bus_inform_ep_loaded_to_rc(dhd_pub_t *dhdp, bool up)
 {
 	sec_pcie_set_ep_driver_loaded(dhdp->bus->rc_dev, up);
 }
-#endif /* CONFIG_ARCH_MSM */
+#endif /* CONFIG_ARCH_MSM && CONFIG_SEC_PCIE_L1SS */
 
 bool
 dhd_bus_check_driver_up(void)

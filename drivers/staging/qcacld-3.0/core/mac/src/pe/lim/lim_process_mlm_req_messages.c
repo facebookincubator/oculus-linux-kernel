@@ -178,7 +178,6 @@ static void mlm_add_sta(struct mac_context *mac_ctx, tpAddStaParams sta_param,
 		uint8_t *bssid, uint8_t ht_capable, struct pe_session *session_entry)
 {
 	uint32_t val;
-	uint32_t self_dot11mode = mac_ctx->mlme_cfg->dot11_mode.dot11_mode;
 
 	sta_param->staType = STA_ENTRY_SELF; /* Identifying self */
 
@@ -260,7 +259,7 @@ static void mlm_add_sta(struct mac_context *mac_ctx, tpAddStaParams sta_param,
 	 * Since this is Self-STA, need to populate Self MAX_AMPDU_SIZE
 	 * capabilities
 	 */
-	if (IS_DOT11_MODE_VHT(self_dot11mode)) {
+	if (session_entry->vhtCapability) {
 		sta_param->maxAmpduSize =
 		mac_ctx->mlme_cfg->vht_caps.vht_cap_info.ampdu_len_exponent;
 	}

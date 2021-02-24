@@ -29,6 +29,15 @@ config DEPTH_PROJECTOR
 	  Depth Projector Kernel Module to set default gpio values.
 	  This driver sets SWD_IO and SWD_CLK to high impedance mode
 
+config DISPLAY_VIRTUAL_SENSOR
+	tristate "Display Virtual Sensor Driver"
+	default n
+	depends on OCULUS
+	select VIRTUAL_SENSOR_UTILS
+	help
+	  This driver implements a virtual sensor driver representing the
+	  display temperature of a device.
+
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
 	default n

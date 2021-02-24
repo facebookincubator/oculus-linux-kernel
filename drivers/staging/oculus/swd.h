@@ -70,12 +70,6 @@ struct swd_ops_params {
 				  size_t len);
 
 	/*
-	 * Check if provisioning should be forced
-	 * return: true if so, false otherwise
-	 */
-	bool (*should_force_provision)(struct device *dev);
-
-	/*
 	 * Perform any target-specific configuration needed priort to a FW update
 	 * return: 0 on success
 	 */

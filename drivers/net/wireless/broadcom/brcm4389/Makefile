@@ -219,6 +219,8 @@ DHDCFLAGS += -DDHD_MEM_STATS
 
 # Enable PKTID AUDIT
 	DHDCFLAGS += -DDHD_PKTID_AUDIT_ENABLED
+# Flow ring status trace in ISR and DPC
+	DHDCFLAGS += -DDHD_FLOW_RING_STATUS_TRACE
 endif
 
 ifneq ($(CONFIG_BCMDHD_HTPUT),)
@@ -463,8 +465,6 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
 #Use coherent pool
 	DHDCFLAGS += -DDHD_USE_COHERENT_MEM_FOR_RING
 	DHDCFLAGS += -DDHD_ALLOC_COHERENT_MEM_FROM_ATOMIC_POOL
-# Runtime PM feature
-	DHDCFLAGS += -DDHD_PCIE_RUNTIMEPM -DMAX_IDLE_COUNT=11
 
 #AXI error logging
 DHDCFLAGS += -DDNGL_AXI_ERROR_LOGGING
@@ -600,6 +600,10 @@ DHDCFLAGS += -DDHDTCPSYNC_FLOOD_BLK -DTCP_SYNC_FLOOD_LIMIT=50
 
 # Path name to store the FW Debug symbol files
 DHDCFLAGS += -DPLATFORM_PATH="\"/vendor/etc/wifi/\""
+
+# XRAPI Feature
+DHDCFLAGS += -DXRAPI
+DHDCFLAGS += -DTSF_GSYNC
 
 ##########################
 # driver type
@@ -740,7 +744,7 @@ DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o dhd_custom_cis.o 
     dhd_pno.o dhd_rtt.o dhd_linux_pktdump.o wl_cfg_btcoex.o hnd_pktq.o \
     hnd_pktpool.o wl_cfgvendor.o bcmxtlv.o bcm_app_utils.o dhd_debug.o frag.o \
     dhd_debug_linux.o wl_cfgnan.o dhd_mschdbg.o bcmbloom.o dhd_dbg_ring.o bcmstdlib_s.o \
-    dhd_linux_exportfs.o
+    dhd_linux_exportfs.o dhd_linux_tx.o
 
 # This file will be here only for internal builds and sets flags which may
 # affect subsequent behavior. See extended comment within it for details.
@@ -792,6 +796,10 @@ endif
 
 ifneq ($(filter -DDHD_EVENT_LOG_FILTER, $(DHDCFLAGS)),)
 DHDOFILES += dhd_event_log_filter.o
+endif
+
+ifneq ($(filter -DXRAPI, $(DHDCFLAGS)),)
+DHDOFILES += dhd_xrapi.o
 endif
 
 bcmdhd$(BCM_WLAN_CHIP_SUFFIX)-objs := $(DHDOFILES)

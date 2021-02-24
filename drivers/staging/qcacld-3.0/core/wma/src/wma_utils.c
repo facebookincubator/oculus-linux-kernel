@@ -64,6 +64,7 @@
 #include "host_diag_core_log.h"
 #include <wlan_mlme_api.h>
 #include "cdp_txrx_misc.h"
+#include <cdp_txrx_host_stats.h>
 
 /* MCS Based rate table */
 /* HT MCS parameters with Nss = 1 */
@@ -1608,6 +1609,12 @@ static int wma_unified_link_peer_stats_event_handler(void *handle,
 	size_t link_stats_results_size;
 	bool excess_data = false;
 	uint32_t buf_len = 0;
+	struct cdp_peer_stats *dp_stats = NULL;
+	void *dp_soc = cds_get_context(QDF_MODULE_ID_SOC);
+	uint8_t mcs_index;
+	struct cdp_pdev *txrx_pdev = cds_get_context(QDF_MODULE_ID_TXRX);
+	struct cdp_peer *peer;
+	uint8_t peer_id;
 
 	struct mac_context *mac = cds_get_context(QDF_MODULE_ID_PE);
 
@@ -1717,8 +1724,22 @@ static int wma_unified_link_peer_stats_event_handler(void *handle,
 			     t_peer_stats + next_peer_offset, peer_info_size);
 		next_res_offset += peer_info_size;
 
+		peer = cdp_peer_find_by_addr(dp_soc, txrx_pdev,
+				       (uint8_t *)&peer_stats->peer_mac_address,
+				       &peer_id);
+		if (peer)
+			dp_stats = cdp_host_get_peer_stats(dp_soc, peer);
+
 		/* Copy rate stats associated with this peer */
 		for (count = 0; count < peer_stats->num_rates; count++) {
+			mcs_index = RATE_STAT_GET_MCS_INDEX(rate_stats->rate);
+			if (dp_stats) {
+				if (rate_stats->rate && mcs_index < MAX_MCS)
+					rate_stats->rx_mpdu =
+					    dp_stats->rx.rx_mpdu_cnt[mcs_index];
+				else
+					rate_stats->rx_mpdu = 0;
+			}
 			rate_stats++;
 
 			qdf_mem_copy(results + next_res_offset,

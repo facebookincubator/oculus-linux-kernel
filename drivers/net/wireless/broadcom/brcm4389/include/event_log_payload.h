@@ -1249,13 +1249,13 @@ typedef struct phy_periodic_log_cmn_v4 {
 	uint16 shm_m_prewds_cnt;	/* Count of pre-wds fired in the ucode */
 	uint16 deaf_count;		/* Depth of stay_in_carrier_search function */
 	uint32 last_cal_time;		/* Last cal execution time */
-	uint32 ed20_crs0;		/* ED-CRS status on core 0 */
-	uint32 ed20_crs1;		/* ED-CRS status on core 1 */
+	uint32 ed20_crs0;		/* ED-CRS status on core 0: TODO change to uint16 */
+	uint32 ed20_crs1;		/* ED-CRS status on core 1: TODO change to uint16 */
 	uint32 noise_cal_req_ts;	/* Time-stamp when noise cal was requested */
 	uint32 noise_cal_intr_ts;	/* Time-stamp when noise cal was completed */
 	uint32 phywdg_ts;		/* Time-stamp when wd was fired */
-	uint32 phywd_dur;			/* Duration of the watchdog */
-	uint32 noise_mmt_abort_crs; /* Count of CRS during noise mmt */
+	uint32 phywd_dur;		/* Duration of the watchdog */
+	uint32 noise_mmt_abort_crs;	/* Count of CRS during noise mmt: TODO change to uint16 */
 	uint32 chanspec_set_ts;		/* Time-stamp when chanspec was set */
 	uint32 vcopll_failure_cnt;	/* Number of VCO cal failures
 					* (including failures detected in ucode).
@@ -1284,9 +1284,9 @@ typedef struct phy_periodic_log_cmn_v4 {
 	uint16 dcc_hcfail;		/* dcc health check failure count */
 	uint16 dcc_calfail;		/* dcc failure count */
 
+	uint16 noise_mmt_request_cnt;	/* Count of ucode noise cal request from phy */
+	uint16 crsmin_pwr_apply_cnt;	/* Count of desense power threshold update to phy */
 	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint16 debug_01;
-	uint16 debug_02;
 	uint16 debug_03;
 	uint16 debug_04;
 	uint16 debug_05;
@@ -1321,7 +1321,7 @@ typedef struct phy_periodic_log_core_v3 {
 	int16	psb;		/* psb read during dccal health check */
 	uint8	pktproc;	/* pktproc read during dccal health check */
 
-	int8	pad1; /* Padding byte to align with word */
+	int8	noise_level;	/* noise level = crsmin_pwr if gdb desense is lesser */
 	int8	pad2; /* Padding byte to align with word */
 	int8	pad3; /* Padding byte to align with word */
 } phy_periodic_log_core_v3_t;

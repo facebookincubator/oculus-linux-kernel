@@ -28,10 +28,21 @@
 #define DECLSPEC_ALIGN(x)	__attribute__ ((aligned(x)))
 
 /* Linux Kernel: File Operations: start */
+#ifdef DHD_SUPPORT_VFS_CALL
 extern void * osl_os_open_image(char * filename);
-extern int osl_os_get_image_block(char * buf, int len, void * image);
 extern void osl_os_close_image(void * image);
+extern int osl_os_get_image_block(char * buf, int len, void * image);
 extern int osl_os_image_size(void *image);
+#else
+static INLINE void * osl_os_open_image(char * filename)
+	{ return NULL; }
+static INLINE void osl_os_close_image(void * image)
+	{ return; }
+static INLINE int osl_os_get_image_block(char * buf, int len, void * image)
+	{ return 0; }
+static INLINE int osl_os_image_size(void *image)
+	{ return 0; }
+#endif /* DHD_SUPPORT_VFS_CALL */
 /* Linux Kernel: File Operations: end */
 
 #ifdef BCMDRIVER
@@ -337,9 +348,13 @@ extern uint64 osl_sysuptime_us(void);
 extern uint64 osl_localtime_ns(void);
 extern void osl_get_localtime(uint64 *sec, uint64 *usec);
 extern uint64 osl_systztime_us(void);
+extern char* osl_get_rtctime(void);
 #define OSL_LOCALTIME_NS()	osl_localtime_ns()
 #define OSL_GET_LOCALTIME(sec, usec)	osl_get_localtime((sec), (usec))
 #define OSL_SYSTZTIME_US()	osl_systztime_us()
+#define OSL_GET_RTCTIME()	osl_get_rtctime()
+/* RTC format %02d:%02d:%02d.%06lu, LEN including the trailing null space */
+#define RTC_TIME_BUF_LEN	16u
 #define	printf(fmt, args...)	printk(fmt , ## args)
 #include <linux/kernel.h>	/* for vsn/printf's */
 #include <linux/string.h>	/* for mem*, str* */
@@ -619,9 +634,18 @@ extern uint64 regs_addr;
 /* dereference an address that may cause a bus exception */
 #define	BUSPROBE(val, addr)	({ (val) = R_REG(NULL, (addr)); 0; })
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
+/* 'ioremap_nocache' was deprecated in kernels >= 5.6, so instead we use 'ioremap' which
+ * is no-cache by default since kernels 2.6.25.
+ */
+#define IOREMAP_NO_CACHE(address, size) ioremap(address, size)
+#else /* KERNEL_VERSION < 2.6.25 */
+#define IOREMAP_NO_CACHE(address, size) ioremap_nocache(address, size)
+#endif
+
 /* map/unmap physical to virtual I/O */
 #if !defined(CONFIG_MMC_MSM7X00A)
-#define	REG_MAP(pa, size)	ioremap_nocache((unsigned long)(pa), (unsigned long)(size))
+#define	REG_MAP(pa, size)	IOREMAP_NO_CACHE((unsigned long)(pa), (unsigned long)(size))
 #else
 #define REG_MAP(pa, size)       (void *)(0)
 #endif /* !defined(CONFIG_MMC_MSM7X00A */
@@ -859,4 +883,18 @@ extern void *osl_mutex_lock_init(osl_t *osh);
 extern void osl_mutex_lock_deinit(osl_t *osh, void *lock);
 extern unsigned long osl_mutex_lock(void *lock);
 void osl_mutex_unlock(void *lock, unsigned long flags);
+
+#ifndef CUSTOM_PREFIX
+#define OSL_PRINT(args)	\
+do {			\
+	pr_cont args;	\
+} while (0)
+#else
+#define OSL_PRINT_PREFIX "[%s]"CUSTOM_PREFIX, OSL_GET_RTCTIME()
+#define OSL_PRINT(args)			\
+do {					\
+	pr_cont(OSL_PRINT_PREFIX);	\
+	pr_cont args;			\
+} while (0)
+#endif /* CUSTOM_PREFIX */
 #endif	/* _linux_osl_h_ */

@@ -275,9 +275,9 @@ struct kgsl_mem_entry {
 	void *priv_data;
 	struct rb_node node;
 	unsigned int id;
-	struct kgsl_process_private *priv;
 	int pending_free;
-	char metadata[KGSL_GPUOBJ_ALLOC_METADATA_MAX + 1];
+	struct kgsl_process_private *priv;
+	char *metadata;
 	struct work_struct work;
 	spinlock_t bind_lock;
 	struct rb_root bind_tree;

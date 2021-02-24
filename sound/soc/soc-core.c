@@ -45,7 +45,7 @@
 
 #define NAME_SIZE	32
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 struct dentry *snd_soc_debugfs_root;
 EXPORT_SYMBOL_GPL(snd_soc_debugfs_root);
 #endif
@@ -132,7 +132,7 @@ static const struct attribute_group *soc_dev_attr_groups[] = {
 	NULL
 };
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 static void soc_init_component_debugfs(struct snd_soc_component *component)
 {
 	if (!component->card->debugfs_card_root)
@@ -753,6 +753,28 @@ struct snd_soc_component *soc_find_component(
 	return NULL;
 }
 EXPORT_SYMBOL(soc_find_component);
+
+/**
+ * soc_find_component_locked: soc_find_component with client lock acquired
+ *
+ * @of_node: of_node of the component to query.
+ * @name: name of the component to query.
+ *
+ * function to find out if a component is already registered with ASoC core.
+ *
+ * Returns component handle for success, else NULL error.
+ */
+struct snd_soc_component *soc_find_component_locked(
+	const struct device_node *of_node, const char *name)
+{
+	struct snd_soc_component *component = NULL;
+
+	mutex_lock(&client_mutex);
+	component = soc_find_component(of_node, name);
+	mutex_unlock(&client_mutex);
+	return component;
+}
+EXPORT_SYMBOL(soc_find_component_locked);
 
 /**
  * snd_soc_find_dai - Find a registered DAI
@@ -1537,7 +1559,7 @@ static int soc_probe_link_dais(struct snd_soc_card *card,
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 	/* add DPCM sysfs entries */
 	if (dai_link->dynamic)
 		soc_dpcm_debugfs_add(rtd);
@@ -2016,7 +2038,7 @@ static int snd_soc_instantiate_card(struct snd_soc_card *card)
 	card->dapm.card = card;
 	list_add(&card->dapm.list, &card->dapm_list);
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 	snd_soc_dapm_debugfs_init(&card->dapm, card->debugfs_card_root);
 #endif
 

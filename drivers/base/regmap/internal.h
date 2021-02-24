@@ -76,7 +76,7 @@ struct regmap {
 	struct list_head async_free;
 	int async_ret;
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 	bool debugfs_disable;
 	struct dentry *debugfs;
 	const char *debugfs_name;
@@ -172,7 +172,7 @@ struct regcache_ops {
 	enum regcache_type type;
 	int (*init)(struct regmap *map);
 	int (*exit)(struct regmap *map);
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 	void (*debugfs_init)(struct regmap *map);
 #endif
 	int (*read)(struct regmap *map, unsigned int reg, unsigned int *value);
@@ -218,7 +218,7 @@ struct regmap_field {
 	unsigned int id_offset;
 };
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 extern void regmap_debugfs_initcall(void);
 extern void regmap_debugfs_init(struct regmap *map, const char *name);
 extern void regmap_debugfs_exit(struct regmap *map);
