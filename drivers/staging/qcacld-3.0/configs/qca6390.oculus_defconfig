@@ -32,9 +32,6 @@ CONFIG_CRYPTO_COMPONENT := y
 #Flag to enable Android Packet Filtering
 CONFIG_QCACLD_FEATURE_APF := y
 
-#Flag to enable SARv1 -> SARv2 conversion
-CONFIG_WLAN_FEATURE_SARV1_TO_SARV2 := n
-
 #Flag to enable get firmware state
 CONFIG_QCACLD_FEATURE_FW_STATE := y
 
@@ -68,10 +65,6 @@ CONFIG_WLAN_FEATURE_LPSS := y
 #Flag to enable NAN
 CONFIG_QCACLD_FEATURE_NAN := y
 
-#Flag to enable NAN Data path
-CONFIG_WLAN_FEATURE_NAN_DATAPATH := y
-CONFIG_NAN_CONVERGENCE := y
-
 CONFIG_FEATURE_EPPING := y
 
 #Flag to enable offload packets feature
@@ -91,7 +84,6 @@ CONFIG_WLAN_FEATURE_SAE := y
 
 # Flag to enable NAPI
 CONFIG_WLAN_NAPI := y
-CONFIG_WLAN_NAPI_DEBUG := n
 
 # Flag to enable FW based TX Flow control
 CONFIG_WLAN_TX_FLOW_CONTROL_V2 := y
@@ -130,7 +122,6 @@ CONFIG_RX_OL := y
 CONFIG_TX_TID_OVERRIDE := y
 CONFIG_WLAN_CLD_PM_QOS := y
 CONFIG_REO_DESC_DEFER_FREE := y
-CONFIG_RXDMA_ERR_PKT_DROP := y
 
 #Enable WLAN/Power debugfs feature
 CONFIG_WLAN_DEBUGFS := y
@@ -180,12 +171,6 @@ CONFIG_WLAN_ENABLE_SOCIAL_CHANNELS_5G_ONLY := y
 #Enable power management suspend/resume functionality to PCI
 CONFIG_ATH_BUS_PM := y
 
-#Enable FLOWMAC module support
-CONFIG_ATH_SUPPORT_FLOWMAC_MODULE := n
-
-#Enable spectral support
-CONFIG_ATH_SUPPORT_SPECTRAL := n
-
 #Customize DSCP_to-UP map based on RFC8325
 CONFIG_WLAN_CUSTOM_DSCP_UP_MAP := y
 
@@ -193,9 +178,6 @@ CONFIG_PKTLOG_LEGACY := y
 
 #Endianness selection
 CONFIG_LITTLE_ENDIAN := y
-
-#Enable TX reclaim support
-CONFIG_TX_CREDIT_RECLAIM_SUPPORT := n
 
 #Enable FTM support
 CONFIG_QCA_WIFI_FTM := y
@@ -211,24 +193,8 @@ CONFIG_GTK_OFFLOAD := y
 #Enable EXT WOW
 CONFIG_EXT_WOW := y
 
-#Set this to 1 to catch erroneous Target accesses during debug.
-CONFIG_ATH_PCIE_ACCESS_DEBUG := n
-
-#Disable IPA offload
-CONFIG_IPA3 := n
-CONFIG_IPA_OFFLOAD := n
-
-#Enable Signed firmware support for split binary format
-CONFIG_QCA_SIGNED_SPLIT_BINARY_SUPPORT := n
-
-#Enable single firmware binary format
-CONFIG_QCA_SINGLE_BINARY_SUPPORT := n
-
 #Enable collecting target RAM dump after kernel panic
 CONFIG_TARGET_RAMDUMP_AFTER_KERNEL_PANIC := y
-
-#Flag to enable/disable secure firmware feature
-CONFIG_FEATURE_SECURE_FIRMWARE := n
 
 #Flag to enable Stats Ext implementation
 CONFIG_FEATURE_STATS_EXT := y
@@ -343,10 +309,6 @@ CONFIG_FEATURE_MEMDUMP_ENABLE := y
 CONFIG_FEATURE_WLAN_D0WOW := y
 
 CONFIG_PLD_PCIE_CNSS_FLAG := y
-CONFIG_PLD_PCIE_INIT_FLAG := y
-
-#Enable STATE MACHINE HISTORY
-CONFIG_SM_ENG_HIST := n
 
 #Enable Beacon Reception Stats
 CONFIG_FEATURE_BECN_STATS := y

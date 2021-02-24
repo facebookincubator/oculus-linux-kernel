@@ -2674,7 +2674,7 @@ static int iris_hfi_session_send(void *sess,
 		struct cvp_kmd_hfi_packet *in_pkt)
 {
 	int rc = 0;
-	struct cvp_kmd_hfi_packet pkt;
+	static struct cvp_kmd_hfi_packet pkt;
 	struct cvp_hal_session *session = sess;
 	struct iris_hfi_device *device;
 

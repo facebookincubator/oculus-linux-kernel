@@ -1,24 +1,5 @@
 #include <dt-bindings/clock/qcom,audio-ext-clk.h>
-
-&kona_snd {
-	status = "disabled";
-};
-
-&bolero {
-	status = "disabled";
-};
-
-&lpass_core_hw_vote {
-	status = "disabled";
-};
-
-&lpass_audio_hw_vote {
-	status = "disabled";
-};
-
-&voice_mhi_audio {
-	status = "disabled";
-};
+#include "vendor-base/qcom/kona-lpi.dtsi"
 
 &pm8150a_l4 {
 	qcom,init-voltage = <1800000>;
@@ -61,28 +42,28 @@
 		};
 	};
 
-	cm7120_dev0_speaker_en_pins {
-		cm7120_dev0_speaker_en_default: cm7120_dev0_speaker_en_default {
+	cm7120_speaker_en_pins {
+		cm7120_speaker_en_default: cm7120_speaker_en_default {
 			mux {
-				pins = "gpio145";
+				pins = "gpio146";
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio145";
+				pins = "gpio146";
 				drive-strength = <2>;
 				output-high;
 				bias-pull-up;
 			};
 		};
-		cm7120_dev0_speaker_en_suspend: cm7120_dev0_speaker_en_suspend {
+		cm7120_speaker_en_suspend: cm7120_speaker_en_suspend {
 			mux {
-				pins = "gpio145";
+				pins = "gpio146";
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio145";
+				pins = "gpio146";
 				drive-strength = <2>;
 				output-low;
 				bias-pull-down;
@@ -90,8 +71,8 @@
 		};
 	};
 
-	cm7120_dev0_codec_ldo_en_pins {
-		cm7120_dev0_codec_ldo_en_default: cm7120_dev0_codec_ldo_en_default {
+	cm7120_codec_ldo_en_pins {
+		cm7120_codec_ldo_en_default: cm7120_codec_ldo_en_default {
 			mux {
 				pins = "gpio147";
 				function = "gpio";
@@ -104,7 +85,7 @@
 				bias-pull-up;
 			};
 		};
-		cm7120_dev0_codec_ldo_en_suspend: cm7120_dev0_ldo_en_suspend {
+		cm7120_codec_ldo_en_suspend: cm7120_ldo_en_suspend {
 			mux {
 				pins = "gpio147";
 				function = "gpio";
@@ -119,8 +100,8 @@
 		};
 	};
 
-	cm7120_dev0_codec_reset_pins {
-		cm7120_dev0_codec_reset_default: cm7120_dev0_codec_reset_default{
+	cm7120_codec_reset_pins {
+		cm7120_codec_reset_default: cm7120_codec_reset_default{
 			mux {
 				pins = "gpio148";
 				function = "gpio";
@@ -133,7 +114,7 @@
 				bias-no-pull;
 			};
 		};
-		cm7120_dev0_codec_reset_suspend: cm7120_dev0_reset_suspend{
+		cm7120_codec_reset_suspend: cm7120_reset_suspend{
 			mux {
 				pins = "gpio148";
 				function = "gpio";
@@ -196,12 +177,12 @@
 		qcom,use-pinctrl = <1>;
 		pinctrl-names = "default", "suspend",
 			"spk_en", "spk_suspend";
-		pinctrl-0 = <&cm7120_dev0_codec_ldo_en_default
-			&cm7120_dev0_codec_reset_default>;
-		pinctrl-1 = <&cm7120_dev0_codec_ldo_en_suspend
-			&cm7120_dev0_codec_reset_suspend>;
-		pinctrl-2 = <&cm7120_dev0_speaker_en_default>;
-		pinctrl-3 = <&cm7120_dev0_speaker_en_suspend>;
+		pinctrl-0 = <&cm7120_codec_ldo_en_default
+			&cm7120_codec_reset_default>;
+		pinctrl-1 = <&cm7120_codec_ldo_en_suspend
+			&cm7120_codec_reset_suspend>;
+		pinctrl-2 = <&cm7120_speaker_en_default>;
+		pinctrl-3 = <&cm7120_speaker_en_suspend>;
 	};
 };
 
@@ -212,7 +193,7 @@
 
 &q6core {
 	status = "ok";
-	cm7120_snd {
+	cm7120_snd: cm7120_snd {
 		status = "ok";
 		compatible = "qcom,kona-asoc-snd";
 		qcom,model = "kona-cm7120-snd-card";

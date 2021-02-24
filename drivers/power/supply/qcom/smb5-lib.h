@@ -368,6 +368,7 @@ struct smb_iio {
 	struct iio_channel	*skin_temp_chan;
 	struct iio_channel	*smb_temp_chan;
 	struct iio_channel	*rblt_chan;
+	struct iio_channel	*psns_chan;
 };
 
 struct smb_charger {
@@ -448,6 +449,7 @@ struct smb_charger {
 	struct work_struct	chg_termination_work;
 	struct work_struct	dcin_aicl_work;
 	struct work_struct	cp_status_change_work;
+	struct work_struct	dc_detect_work;
 	struct delayed_work	ps_change_timeout_work;
 	struct delayed_work	clear_hdc_work;
 	struct delayed_work	icl_change_work;
@@ -603,6 +605,8 @@ struct smb_charger {
 	int			dcin_uv_count;
 	ktime_t			dcin_uv_last_time;
 	int			last_wls_vout;
+	int			dcin_icl_voltage;
+	bool			dcin_icl_state;
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -654,6 +658,8 @@ irqreturn_t typec_state_change_irq_handler(int irq, void *data);
 irqreturn_t typec_attach_detach_irq_handler(int irq, void *data);
 irqreturn_t dcin_uv_irq_handler(int irq, void *data);
 irqreturn_t dc_plugin_irq_handler(int irq, void *data);
+irqreturn_t dcin_pon_irq_handler(int irq, void *data);
+irqreturn_t dcin_enable_irq_handler(int irq, void *data);
 irqreturn_t high_duty_cycle_irq_handler(int irq, void *data);
 irqreturn_t switcher_power_ok_irq_handler(int irq, void *data);
 irqreturn_t wdog_snarl_irq_handler(int irq, void *data);
@@ -699,6 +705,8 @@ int smblib_set_prop_input_current_limited(struct smb_charger *chg,
 
 int smblib_get_prop_dc_present(struct smb_charger *chg,
 				union power_supply_propval *val);
+int smblib_get_prop_dc_pd_active(struct smb_charger *chg,
+					union power_supply_propval *val);
 int smblib_get_prop_dc_online(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_dc_current_max(struct smb_charger *chg,

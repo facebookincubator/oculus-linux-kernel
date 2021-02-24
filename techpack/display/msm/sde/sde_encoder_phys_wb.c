@@ -1472,7 +1472,7 @@ static void sde_encoder_phys_wb_adjust_cac_offsets(
 	struct sde_encoder_phys_wb *wb_enc = to_sde_encoder_phys_wb(phys_enc);
 	struct sde_hw_wb *hw_wb = wb_enc->hw_wb;
 	struct drm_plane *plane;
-	int offset;
+	int offset, wb_offset;
 
 	SDE_ATRACE_BEGIN(__func__);
 
@@ -1483,10 +1483,17 @@ static void sde_encoder_phys_wb_adjust_cac_offsets(
 	 */
 	offset = wb_enc->wb_cfg.roi.h;
 
+	/*
+	 * XXX: The UBWC tile size for RGBA8888 is 16x4, so here we adjust the
+	 * offset to be a multiple of 4. However, for reasons currently unknown,
+	 * if offset % 4 == 1, that offset works fine so we leave it untouched (T81695407)
+	 */
+	wb_offset = ((offset & 3) == 1) ? offset : round_up(offset, 4);
+
 	drm_atomic_crtc_for_each_plane(plane, wb_enc->crtc)
 		sde_plane_adjust_cac_offset(plane, phys_enc->hw_ctl, offset);
 
-	hw_wb->ops.adjust_cac_offset(hw_wb, &wb_enc->wb_cfg, offset);
+	hw_wb->ops.adjust_cac_offset(hw_wb, &wb_enc->wb_cfg, wb_offset);
 
 	/*
 	 * make sure DPU reads the updates values; we are reusing all hw

@@ -242,6 +242,10 @@
 	};
 };
 
+&ext_disp {
+	status = "disabled";
+};
+
 &pm8150a_amoled {
 	status = "disabled";
 };

@@ -390,4 +390,6 @@ void sde_encoder_uidle_enable(struct drm_encoder *drm_enc, bool enable);
  */
 int sde_encoder_vsync_trigger(struct drm_encoder *drm_enc);
 
+void sde_encoder_trigger_wb_cac(struct drm_device *drm_dev, bool disarm);
+
 #endif /* __SDE_ENCODER_H__ */

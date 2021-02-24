@@ -22,6 +22,7 @@
 #include "msm_kms.h"
 #include "sde_connector.h"
 #include "sde_crtc.h"
+#include "sde_encoder.h"
 #include "sde_trace.h"
 
 #define MULTIPLE_CONN_DETECTED(x) (x > 1)
@@ -641,15 +642,7 @@ static void complete_commit(struct msm_commit *c)
 	/*
 	 * To avoid blocking in msm_atomic_commit(), only reschedule if we
 	 * don't have a pending commit on the same crtc and the crtc is still
-	 * active. If a new commit comes in but writeback hasn't fired for
-	 * some reason, either the cac_kickoff_fired completion event or the
-	 * msm_atomic_wait_for_commit_done call above will time out and the old
-	 * auto-commit will be marked to be cancelled in the msm_atomic_commit
-	 * call.
-	 *
-	 * Adding the logic to trigger the cac_kickoff_fired completion event
-	 * everywhere that could possibly block things up is pretty messy and
-	 * not really worth the added complexity. Just let it time out.
+	 * active.
 	 */
 	if ((c->flags & MSM_COMMIT_FLAG_DPU_CAC) &&
 			!(c->crtc_mask & priv->waiting_crtcs)) {
@@ -754,6 +747,20 @@ static bool msm_is_cac_commit(struct drm_crtc_state *state)
 	return false;
 }
 
+/**
+ * msm_disarm_wb_cac - cancel the existing commit if writeback hasn't
+ *    started yet. Unblocks the crtc_commit thread that's waiting on
+ *    cac_kickoff_fired.
+ * @dev:	DRM device
+ * @commit:	new atomic commit
+ */
+static void msm_disarm_wb_cac(struct drm_device *dev,
+		struct msm_commit *commit)
+{
+	if (commit->flags & MSM_COMMIT_FLAG_DPU_CAC)
+		sde_encoder_trigger_wb_cac(dev, /* disarm */ true);
+}
+
 void msm_flush_deferred_commit(struct drm_device *dev)
 {
 	msm_flush_deferred_commit_mask(dev, NULL);
@@ -779,14 +786,9 @@ static void msm_atomic_commit_dispatch(struct drm_device *dev,
 				continue;
 
 			if (priv->disp_thread[j].thread) {
-				if (nonblock && msm_is_cac_commit(crtc_state)) {
-					commit->flags |=
-						MSM_COMMIT_FLAG_DPU_CAC;
-					msm_set_deferred_commit(dev, commit);
-				} else
-					kthread_queue_work(
-						&priv->disp_thread[j].worker,
-							&commit->commit_work);
+				kthread_queue_work(
+					&priv->disp_thread[j].worker,
+						&commit->commit_work);
 				/* only return zero if work is
 				 * queued successfully.
 				 */
@@ -869,8 +871,11 @@ int msm_atomic_commit(struct drm_device *dev,
 	/*
 	 * Figure out what crtcs we have:
 	 */
-	for_each_new_crtc_in_state(state, crtc, crtc_state, i)
+	for_each_new_crtc_in_state(state, crtc, crtc_state, i) {
 		c->crtc_mask |= drm_crtc_mask(crtc);
+		if (nonblock && msm_is_cac_commit(crtc_state))
+			c->flags |= MSM_COMMIT_FLAG_DPU_CAC;
+	}
 
 	/*
 	 * Figure out what fence to wait for:
@@ -904,6 +909,7 @@ int msm_atomic_commit(struct drm_device *dev,
 	 * queue it now to make sure pending_crtcs_event gets signaled.
 	 */
 	msm_flush_deferred_commit_mask(dev, c);
+	msm_disarm_wb_cac(dev, c);
 
 	priv->waiting_crtcs |= c->crtc_mask;
 	ret = wait_event_interruptible_locked(priv->pending_crtcs_event,

@@ -1,13 +1,7 @@
 /dts-v1/;
 /plugin/;
 
-#include <dt-bindings/clock/qcom,gcc-kona.h>
-#include <dt-bindings/clock/qcom,camcc-kona.h>
-#include <dt-bindings/clock/qcom,rpmh.h>
-#include <dt-bindings/interrupt-controller/arm-gic.h>
-
-#include "seacliff.dtsi"
-#include "seacliff-qca6390.dtsi"
+#include "seacliff-p0.dtsi"
 
 / {
 	model = "Seacliff (Dev0)";
@@ -17,10 +11,6 @@
 
 &pm8150a_l2 {
 	status = "disabled";
-};
-
-&mdss_mdp {
-	qcom,swap-mixers;
 };
 
 &qupv3_se19_spi {

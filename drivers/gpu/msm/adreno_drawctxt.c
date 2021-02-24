@@ -314,6 +314,27 @@ static inline void _set_context_priority(struct adreno_context *drawctxt)
 		KGSL_CONTEXT_PRIORITY_SHIFT;
 }
 
+static inline bool _is_current_uid_privileged(struct kgsl_device *device)
+{
+	struct kgsl_privileged_uid_node *entry;
+	kuid_t uid;
+
+	/*
+	 * If the privileged UID list is empty, then all UIDs should be
+	 * considered privileged for the purposes of allowing high-priority
+	 * contexts.
+	 */
+	if (list_empty(&device->privileged_uid_list))
+		return true;
+
+	uid = current_uid();
+	list_for_each_entry(entry, &device->privileged_uid_list, node)
+		if (entry->uid == uid.val)
+			return true;
+
+	return false;
+}
+
 /**
  * adreno_drawctxt_create - create a new adreno draw context
  * @dev_priv: the owner of the context
@@ -401,7 +422,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	/*
 	 * If the TID of the caller matches privileged_tid and it's requesting
 	 * a high-priority context, elevate it to RB[0]. If the UID of the
-	 * caller matches privileged_uid then allow it to get a high-priority
+	 * caller is in privileged_uid_list then allow it to get a high-priority
 	 * context. If neither of these cases are true then restrict the
 	 * context to medium-priority at most.
 	 */
@@ -410,8 +431,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	    drawctxt->base.priority == KGSL_CONTEXT_PRIORITY_HIGH) {
 		/* Elevate this TID's context from high to max priority */
 		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MAX;
-	} else if (adreno_dev->dev.privileged_uid != (uid_t)-1 &&
-		   adreno_dev->dev.privileged_uid != (current_uid()).val &&
+	} else if (!_is_current_uid_privileged(&adreno_dev->dev) &&
 		   drawctxt->base.priority < KGSL_CONTEXT_PRIORITY_MED) {
 		/* Block out this UID's context from getting high+ priority */
 		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MED;

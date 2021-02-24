@@ -1,14 +1,7 @@
 /dts-v1/;
 /plugin/;
 
-#include <dt-bindings/clock/qcom,gcc-kona.h>
-#include <dt-bindings/clock/qcom,camcc-kona.h>
-#include <dt-bindings/clock/qcom,rpmh.h>
-#include <dt-bindings/interrupt-controller/arm-gic.h>
-
-#include "seacliff.dtsi"
-#include "seacliff-bcmdhd.dtsi"
-#include "seacliff-blu.dtsi"
+#include "seacliff-p2.dtsi"
 
 / {
 	model = "Seacliff (P2)";
@@ -16,87 +9,10 @@
 	qcom,board-id = <8 64>;
 };
 
-&cam_cci0 {
-	qcom,cam-sensor0 {
-		csiphy-sd-index = <2>;
-	};
-	qcom,cam-sensor1 {
-		csiphy-sd-index = <4>;
-	};
-	qcom,cam-sensor2 {
-		csiphy-sd-index = <1>;
-	};
-	qcom,cam-sensor3 {
-		csiphy-sd-index = <5>;
-	};
-	qcom,cam-sensor4 {
-		csiphy-sd-index = <0>;
-	};
-	qcom,cam-sensor5 {
-		csiphy-sd-index = <3>;
-	};
-};
-
-&cm7120 {
-	cm7120,codec_1v8-supply = <&pm8150_l7>;
-};
-
-&cm7120_dev0_speaker_en_default {
-	mux {
-		pins = "gpio146";
-	};
-
-	config {
-		pins = "gpio146";
-	};
-};
-
-&cm7120_dev0_speaker_en_suspend {
-	mux {
-		pins = "gpio146";
-	};
-
-	config {
-		pins = "gpio146";
-	};
-};
-
-&pm8150a_l4 {
-	status = "disabled";
-};
-
-&pm8150a_l6 {
-	status = "disabled";
-};
-
-&pm8150a_l9 {
-	regulator-max-microvolt = <3000000>;
-	qcom,init-voltage = <3000000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&pm8150a_l11 {
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	qcom,init-voltage = <3120000>;
-};
-
-&pm8150_l7 {
-	qcom,init-voltage = <1800000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&qupv3_se0_spi {
-	status = "disabled";
-};
-
-&qupv3_se5_2uart {
-	status = "disabled";
-};
-
-&qupv3_se15_i2c {
-	cypd3177: cypd3177@08 {
-		compatible = "cy,cypd3177";
-		reg = <0x08>;
-		status = "ok";
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_P2_BOARD.bin";
+		};
 	};
 };

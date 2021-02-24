@@ -1,53 +1,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 
-#include "default-sim-panels.dtsi"
-
-&cam_fd {
-	status = "disabled";
-};
-
-&ipa_hw {
-	status = "disabled";
-};
-
-&mhi_netdev_0 {
-	status = "disabled";
-};
-
-&mhi_netdev_0_rsc {
-	status = "disabled";
-};
-
-&pil_slpi_mem {
-	status = "disabled";
-};
-
-&dump_mem {
-	status = "disabled";
-};
-
 &flash_led {
-	status = "disabled";
-};
-
-&i3c0 {
-	status = "disabled";
-};
-
-&i3c1 {
-	status = "disabled";
-};
-
-&mdm0 {
-	status = "disabled";
-};
-
-&pcie1 {
-	status = "disabled";
-};
-
-&pcie2 {
 	status = "disabled";
 };
 
@@ -68,10 +22,6 @@
 		reg = <0x55>;
 		status = "okay";
 	};
-};
-
-&disp_rdump_memory {
-	status = "disabled";
 };
 
 &removed_mem {
@@ -114,82 +64,6 @@
 			linux,can-disable;
 		};
 	};
-
-	mem_dump {
-		status = "disabled";
-	};
-
-	qcom,cam-fd {
-		status = "disabled";
-	};
-
-	qcom,cam_smmu {
-		msm_cam_smmu_fd {
-			status = "disabled";
-		};
-	};
-
-	qcom,ipa_fws {
-		status = "disabled";
-	};
-
-	qcom,ipa-mpm {
-		status = "disabled";
-	};
-
-	qcom,ipa_uc {
-		status = "disabled";
-	};
-
-	qcom,msm_gsi {
-		status = "disabled";
-	};
-
-	qcom,rmnet-ipa {
-		status = "disabled";
-	};
-
-	qcom,ssc@5c00000 {
-		status = "disabled";
-	};
-
-	usb_audio_qmi_dev {
-		status = "disabled";
-	};
-
-	usb_emu_phy@a720000 {
-		status = "disabled";
-	};
-
-	usb_nop_phy {
-		status = "disabled";
-	};
-};
-
-&spmi_debug_bus {
-	status = "ok";
-};
-
-&ssc_sensors {
-	status = "disabled";
-};
-
-&vendor {
-	extcon_usb1: extcon_usb1 {
-		compatible = "linux,extcon-usb-gpio";
-		vbus-gpio = <&pm8150_gpios 10 GPIO_ACTIVE_HIGH>;
-		id-gpio = <&tlmm 91 GPIO_ACTIVE_HIGH>;
-		vbus-out-gpio = <&pm8150_gpios 9 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&usb2_vbus_det_default
-			&usb2_id_det_default
-			&usb2_vbus_boost_default>;
-	};
-};
-
-&usb1 {
-	extcon = <&extcon_usb1>;
 };
 
 &wlan {

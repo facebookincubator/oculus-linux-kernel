@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/delete-node/ &bolero;
+/delete-node/ &dai_hdmi;
+/delete-node/ &dai_pri_spdif_rx;
+/delete-node/ &dai_pri_spdif_tx;
+/delete-node/ &dai_sec_spdif_rx;
+/delete-node/ &dai_sec_spdif_tx;
+/delete-node/ &kona_snd;
+/delete-node/ &msm_dai_cdc_dma;
+/delete-node/ &voice_mhi_audio;
+
+/ {
+	aliases {
+		/delete-property/ swr0;
+		/delete-property/ swr1;
+		/delete-property/ swr2;
+	};
+};
+
+&soc {
+	/delete-node/ usb_audio_qmi_dev;
+};

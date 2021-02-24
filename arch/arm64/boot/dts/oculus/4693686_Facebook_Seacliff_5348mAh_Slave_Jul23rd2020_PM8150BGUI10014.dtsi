@@ -1,0 +1,176 @@
+
+qcom,4693686_facebook_seacliff_5348mah_slave_jul23rd2020 {
+	qcom,profile-revision = <24>;
+	/* #4693686_Facebook_Seacliff_5348mAh_Slave_Jul23rd2020*/
+	qcom,max-voltage-uv = <4400000>;
+	qcom,fastchg-current-ma = <2674>;/* 0.5C */
+	qcom,jeita-fcc-ranges-0 = <10 100  1069000
+				110 200  2674000
+				201 450  2674000
+				451 550  2674000>;
+	qcom,jeita-fcc-ranges-1 = <10 100  1069000
+				110 200  2674000
+				201 450  2674000
+				451 550  2674000>;
+	qcom,jeita-fv-ranges-0 = <10  100  4400000
+				110 200  4400000
+				210 450  4400000
+				451 550  4200000>;
+	qcom,jeita-fv-ranges-1 = <10  100  4100000
+				110 200  4100000
+				210 450  4100000
+				451 550  3900000>;
+	qcom,cycle-fcc-ranges-0 = <0  300  2674000
+				301 500  2674000
+				501 800  2674000>;
+	qcom,cycle-fcc-ranges-1 = <0  300  2674000
+				301 500  2674000
+				501 800  2674000>;
+	qcom,cycle-fv-ranges-0 = <0   300  4400000
+				301 500  4400000
+				501 800  4300000>;
+	qcom,cycle-fv-ranges-1 = <0   300  4100000
+				301 500  4100000
+				501 800  4000000>;
+	qcom,chg-disable-ranges-0 = <3600000 4100000 0
+				4101000 4400000 0>;
+	qcom,chg-disable-ranges-1 = <3600000 4100000 0
+				4101000 4400000 1>;
+	/* rblt-low, rblt-high, max-voltage-throttle */
+	qcom,rblt-ranges = <0 72200 3900000
+				72300 134800 4200000
+				134900 145700 4400000
+				145800 179400 4200000>;
+	qcom,step-chg-ranges-0 = <3600000 4060000 2674000
+				4061000 4400000 2674000>;
+	qcom,step-chg-ranges-1 = <3600000 4060000 2674000
+				4061000 4400000 2674000>;
+	/* COLD = 0 DegC, HOT = 52 DegC */
+	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
+	/* COOL = 10 DegC, WARM = 45 DegC */
+	qcom,jeita-soft-thresholds = <0x4ccc 0x20b8>;
+	/* COLD hys = 12 DegC, WARM hys = 43 DegC */
+	qcom,jeita-soft-hys-thresholds = <0x4a2a 0x22b8>;
+	qcom,jeita-soft-fcc-ua = <1069000 1069000>;/* 0.2C */
+	qcom,jeita-soft-fv-uv = <4300000 4300000>;
+	qcom,ocv-based-step-chg;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qcom,nom-batt-capacity-mah = <5348>;
+	qcom,batt-id-kohm = <150>;
+	qcom,battery-beta = <4250>;
+	qcom,therm-room-temp = <100000>;
+	qcom,battery-type = "4693686_facebook_seacliff_5348mah_slave_jul23rd2020";
+	qcom,therm-coefficients = <0x2318 0xd0c 0xdaf7 0xc556 0x848d>;
+	qcom,therm-center-offset = <0x70>;
+	qcom,therm-pull-up = <100>;
+	qcom,rslow-normal-coeffs = <0xf2 0x02 0xa3 0x12>;
+	qcom,rslow-low-coeffs = <0xeb 0x06 0x33 0x0b>;
+	qcom,checksum = <0xD2D6>;
+	qcom,gui-version = "PM855GUI - 1.0.0.14";
+	qcom,fg-profile-data = [
+		 09 00 53 EA
+		 85 DC 44 E3
+		 52 DC 00 00
+		 DD BC 63 8A
+		 00 00 3D 92
+		 09 95 2A 80
+		 1A 00 F2 02
+		 A3 12 A8 05
+		 EB F3 CE 07
+		 32 00 0E F2
+		 C3 ED FB E5
+		 2D 02 25 E4
+		 FA BC 2E 22
+		 0B 01 DE D5
+		 60 00 46 00
+		 43 00 40 00
+		 37 00 37 00
+		 3A 00 3A 00
+		 43 00 42 00
+		 3F 00 60 00
+		 28 00 37 00
+		 3C 00 39 00
+		 32 00 54 00
+		 4E 64 40 00
+		 37 00 36 08
+		 60 F8 52 00
+		 4E 00 75 10
+		 5D 10 4B 00
+		 9F 28 6F 48
+		 5A 58 4A 0E
+		 4A 00 D8 F8
+		 AC 1F 7B 05
+		 56 EA 65 05
+		 5E 1C 8D 0B
+		 73 0D B6 22
+		 CC 17 01 42
+		 E5 5D 14 03
+		 68 11 9B 1E
+		 A7 05 C1 02
+		 0D F4 BD 1C
+		 82 02 8C 04
+		 FC 03 E7 17
+		 92 23 C3 44
+		 06 52 61 13
+		 E0 1E 7F EE
+		 54 D3 CE 8C
+		 C9 1C C2 C9
+		 8A 04 EA BB
+		 E6 17 1E 8B
+		 86 85 B4 9A
+		 7B A8 09 80
+		 31 F2 DA 0D
+		 A2 05 B9 03
+		 00 00 CB E4
+		 85 EB F7 F7
+		 BC 03 C7 C4
+		 60 11 11 00
+		 77 CC 35 03
+		 88 05 4D 01
+		 CE 07 32 00
+		 68 01 C1 03
+		 B3 04 5A 05
+		 49 00 5D 04
+		 FD 02 27 01
+		 9F 04 42 00
+		 3B 00 3F 00
+		 46 64 48 00
+		 4B 00 4A 08
+		 4B 00 49 00
+		 4A F8 43 00
+		 47 08 36 00
+		 4D 20 51 40
+		 60 50 66 12
+		 51 00 69 00
+		 7A 08 87 00
+		 8B 00 60 00
+		 4F 10 6F 10
+		 6B 00 81 28
+		 99 48 62 60
+		 78 0C 89 00
+		 92 F8 6A 00
+		 D8 00 7F 1F
+		 D8 05 13 0A
+		 E1 0E E7 1C
+		 87 23 3E 44
+		 19 52 06 18
+		 47 03 40 05
+		 2A 03 7F 10
+		 3F 0A 8F 1F
+		 E0 05 19 02
+		 CC 06 95 1C
+		 AD 03 48 05
+		 F8 02 4F 18
+		 41 02 22 05
+		 89 02 62 00
+		 42 1F 3D 04
+		 F3 03 E4 06
+		 D3 1C 64 02
+		 FC 04 56 03
+		 91 18 3F 03
+		 FA 04 E4 03
+		 6D 00 56 01
+		 C0 00 FA 00
+		 CE 14 00 00
+	];
+};

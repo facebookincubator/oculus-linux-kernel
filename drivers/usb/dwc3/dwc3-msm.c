@@ -119,6 +119,10 @@
 #define DWC3_GEVNTADRHI_EVNTADRHI_GSI_IDX(n)	(n << 16)
 #define DWC3_GEVENT_TYPE_GSI			0x3
 
+#define typec_mode_med_high(typec_mode)			\
+	((typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM	\
+	|| typec_mode == POWER_SUPPLY_TYPEC_SOURCE_HIGH))
+
 enum usb_gsi_reg {
 	GENERAL_CFG_REG,
 	DBL_ADDR_L,
@@ -4475,10 +4479,28 @@ static int get_psy_type(struct dwc3_msm *mdwc)
 	return pval.intval;
 }
 
+static int get_typec_mode(struct dwc3_msm *mdwc)
+{
+	union power_supply_propval pval = {0};
+
+	if (!mdwc->usb_psy) {
+		mdwc->usb_psy = power_supply_get_by_name("usb");
+		if (!mdwc->usb_psy) {
+			dev_err(mdwc->dev, "Could not get usb psy\n");
+			return -ENODEV;
+		}
+	}
+
+	power_supply_get_property(mdwc->usb_psy, POWER_SUPPLY_PROP_TYPEC_MODE,
+			&pval);
+
+	return pval.intval;
+}
+
 static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned int mA)
 {
 	union power_supply_propval pval = {0};
-	int ret, psy_type;
+	int ret, psy_type, typec_mode;
 
 	psy_type = get_psy_type(mdwc);
 	if (psy_type == POWER_SUPPLY_TYPE_USB_FLOAT) {
@@ -4497,7 +4519,11 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned int mA)
 		goto set_prop;
 	}
 
-	if (mdwc->max_power == mA || psy_type != POWER_SUPPLY_TYPE_USB)
+	typec_mode = get_typec_mode(mdwc);
+
+	if (mdwc->max_power == mA || psy_type != POWER_SUPPLY_TYPE_USB ||
+			(psy_type == POWER_SUPPLY_TYPE_USB &&
+			 typec_mode_med_high(typec_mode)))
 		return 0;
 
 	/* Set max current limit in uA */

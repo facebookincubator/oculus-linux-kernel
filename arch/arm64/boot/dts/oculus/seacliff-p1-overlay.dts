@@ -15,30 +15,6 @@
 	qcom,board-id = <8 62>;
 };
 
-&cm7120_dev0_speaker_en_default {
-	mux {
-		pins = "gpio146";
-	};
-
-	config {
-		pins = "gpio146";
-	};
-};
-
-&cm7120_dev0_speaker_en_suspend {
-	mux {
-		pins = "gpio146";
-	};
-
-	config {
-		pins = "gpio146";
-	};
-};
-
-&projector {
-	status = "disabled";
-};
-
 &cam_cci0 {
 	qcom,cam-sensor2 {
 		csiphy-sd-index = <0>;
@@ -49,6 +25,10 @@
 	qcom,cam-sensor5 {
 		csiphy-sd-index = <3>;
 	};
+};
+
+&projector {
+	status = "disabled";
 };
 
 &qupv3_se19_spi {

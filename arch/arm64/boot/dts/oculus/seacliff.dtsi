@@ -120,7 +120,7 @@
 		qcom,batt-id-range-pct = <15>;
 		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"
 		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
-		#include "3783416_Oculus_MontereyScud_3750mAh_averaged_MasterSlave_Aug2nd2019_PM8150BGUI10013.dtsi"
+		#include "4693686_Facebook_Seacliff_5348mAh_Slave_Jul23rd2020_PM8150BGUI10014.dtsi"
 	};
 };
 
@@ -163,14 +163,6 @@
 		qcom,continuous-mode;
 		qcom,default-brightness = <10>;
 	};
-};
-
-&dwc1 {
-	status = "disabled";
-};
-
-&usb1 {
-	status = "disabled";
 };
 
 &cam_sensor_mclk5_active {

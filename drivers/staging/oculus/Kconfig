@@ -21,6 +21,13 @@ config BATTERY_VIRTUAL_SENSOR
 	  This driver implements a virtual sensor driver representing the
 	  battery temperature of a device.
 
+config BLU_FW
+	tristate "Support BLU FW Updates"
+	default n
+	depends on OCULUS
+	---help---
+	  Allow automatic/OTA FW updates for the backlight MCU.
+
 config DEPTH_PROJECTOR
 	tristate "Depth Projector Kernel Driver"
 	default n
@@ -37,6 +44,14 @@ config DISPLAY_VIRTUAL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the
 	  display temperature of a device.
+
+config EYE_FACE_LED
+	tristate "Eye Face Led Kernel Driver"
+	default n
+	depends on OCULUS
+	help
+	  Eye Face LED Kernel Module to set default gpio values.
+	  This driver sets XERR and SAFETY_FLAG to input-enable & bias-disable
 
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
@@ -101,6 +116,13 @@ config OCULUS
 	default y
 	---help---
 	  Enable support for Oculus drivers and features
+
+config SEACLIFF_BLU
+	tristate "Oculus Seacliff SPI BLU Driver"
+	depends on OCULUS
+	default n
+	---help---
+	  Oculus Seacliff SPI BLU Driver for the BOE panels
 
 config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"

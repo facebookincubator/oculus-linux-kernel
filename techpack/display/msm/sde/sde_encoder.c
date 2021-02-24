@@ -4043,14 +4043,16 @@ static bool sde_encoder_calc_lineptr_headroom(struct sde_encoder_virt *sde_enc,
 	return true;
 }
 
-static void sde_encoder_trigger_wb_cac(struct msm_drm_private *priv,
-		bool disarm)
+void sde_encoder_trigger_wb_cac(struct drm_device *dev, bool disarm)
 {
+	struct msm_drm_private *priv = dev->dev_private;
 	struct drm_encoder *drm_enc;
 	struct sde_encoder_virt *sde_enc;
 	struct sde_encoder_phys *phys_enc;
 	enum sde_intf_mode if_mode;
 	unsigned int i;
+
+	SDE_ATRACE_BEGIN("encoder_trigger_wb_cac");
 
 	for (i = 0; i < priv->num_encoders; i++) {
 		drm_enc = priv->encoders[i];
@@ -4066,6 +4068,8 @@ static void sde_encoder_trigger_wb_cac(struct msm_drm_private *priv,
 				sde_encoder_phys_wb_cac(phys_enc, disarm))
 			break;
 	}
+
+	SDE_ATRACE_END("encoder_trigger_wb_cac");
 }
 
 static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
@@ -4107,7 +4111,7 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 		}
 	}
 
-	sde_encoder_trigger_wb_cac(priv, wb_disarm);
+	sde_encoder_trigger_wb_cac(drm_enc->dev, wb_disarm);
 
 	/* if a deferred writeback CAC commit is pending, trigger it now */
 	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI)

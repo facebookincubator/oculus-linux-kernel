@@ -40,7 +40,7 @@
 
 //#define DSP_MODE_USE_SPI
 
-#define VERSION "0.0.9"
+#define VERSION "1.0.1"
 #define CM7120_FIRMWARE "CM7120.bin"
 #define FW_DOWNLOAD_TIMEOUT (1 * HZ)
 
@@ -67,20 +67,10 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
-static int cm7120_get_eq_freq(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol);
-static int cm7120_put_eq_freq(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_get_eq_gain(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_put_eq_gain(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
-static int cm7120_set_eqspk_value(struct cm7120_priv *cm7120_codec,
-		struct EQSpkParam *pEQSpkParam, u32 uAddr);
-static int cm7120_set_spktest_value(struct cm7120_priv *cm7120_codec,
-		char i2s34, char mute);
-static int cm7120_set_bypass_dsp(struct cm7120_priv *cm7120_codec,
-		char mute);
 static int cm7120_set_mic_mute(struct cm7120_priv *cm7120_codec,
 		char mute);
 static int cm7120_get_hp_impedance(struct cm7120_priv *cm7120_codec);
@@ -1916,80 +1906,32 @@ static const struct snd_kcontrol_new cm7120_snd_controls[] = {
 	SOC_SINGLE_TLV("IN4 Capture Volume", CM7120_BST34_CTRL, CM7120_BST4_SFT,
 		       69, 0, bst_tlv),
 
-	/* ADC Digital Volume Control, stereo2 / 0x1c */
-	SOC_DOUBLE("Microphone Capture Switch", CM7120_STO2_ADC_DIG_VOL,
-		   CM7120_L_MUTE_SFT, CM7120_R_MUTE_SFT, 1, 1),
+	/* ADC Digital Capture Switch, stereo2 0x1c and Stereo1 0x1a */
+	SOC_SINGLE_EXT("ADC1 ON_OFF", MIC_ADC1_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("ADC2 ON_OFF", MIC_ADC2_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("ADC3 ON_OFF", MIC_ADC3_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
 
-	SOC_DOUBLE_TLV("Microphone Capture Volume", CM7120_STO2_ADC_DIG_VOL,
-		       CM7120_STO2_ADC_L_VOL_SFT, CM7120_STO2_ADC_R_VOL_SFT,
-		       127, 0, adc_vol_tlv),
+	/* ADC Digital Volume Control, stereo2 0x1c and Stereo1 0x1a */
+	SOC_SINGLE_TLV("Mic1 VOL Capture Volume", CM7120_STO2_ADC_DIG_VOL,
+			CM7120_STO2_ADC_L_VOL_SFT, 127, 0, adc_vol_tlv),
+	SOC_SINGLE_TLV("Mic2 VOL Capture Volume", CM7120_STO2_ADC_DIG_VOL,
+			CM7120_STO2_ADC_R_VOL_SFT, 127, 0, adc_vol_tlv),
+	SOC_SINGLE_TLV("Mic3 VOL Capture Volume", CM7120_STO1_ADC_DIG_VOL,
+			CM7120_STO1_ADC_L_VOL_SFT, 127, 0, adc_vol_tlv),
 
 	/* ADC Boost Volume Control, adc boost gain / 0x20 */
 	SOC_DOUBLE_TLV("Microphone Digital Boost Volume",
-		       CM7120_ADC_BST_GAIN_CTRL1, CM7120_STO2_ADC_L_BST_SFT,
-		       CM7120_STO2_ADC_R_BST_SFT, 3, 0, adc_bst_tlv),
+			CM7120_ADC_BST_GAIN_CTRL1, CM7120_STO2_ADC_L_BST_SFT,
+			CM7120_STO2_ADC_R_BST_SFT, 3, 0, adc_bst_tlv),
 
 	/* ADC1 to HP out */
 	SOC_SINGLE_EXT("Microphone Monitor to HP out", MIC_MONITOR_ON_OFF, 0, 1,
-		       0, cm7120_get_vu, cm7120_put_vu),
+			0, cm7120_get_vu, cm7120_put_vu),
 
-	/* SPK */
-	SOC_SINGLE_EXT("SPK EQ Switch", SPK_POLAR_FLIP_ON_OFF, 0, 1, 0,
-		       cm7120_get_vu, cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ L1 Flip Polarity of Low Freq Enable",
-		       SPK_L1_POLAR_FLIP_LF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ L2 Flip Polarity of Low Freq Enable",
-		       SPK_L2_POLAR_FLIP_LF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ R1 Flip Polarity of Low Freq Enable",
-		       SPK_R1_POLAR_FLIP_LF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ R2 Flip Polarity of Low Freq Enable",
-		       SPK_R2_POLAR_FLIP_LF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ L1 Flip Polarity of High Freq Enable",
-		       SPK_L1_POLAR_FLIP_HF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ L2 Flip Polarity of High Freq Enable",
-		       SPK_L2_POLAR_FLIP_HF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ R1 Flip Polarity of High Freq Enable",
-		       SPK_R1_POLAR_FLIP_HF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ R2 Flip Polarity of High Freq Enable",
-		       SPK_R2_POLAR_FLIP_HF, 0, 1, 0, cm7120_get_vu,
-		       cm7120_put_vu),
-
-	SOC_SINGLE_EXT("SPK EQ L1 Cut Off Freq", SPK_L1_CUT_OFF_FREQ, 0, 32767,
-		       0,
-		       cm7120_get_eq_freq, cm7120_put_eq_freq),
-	SOC_SINGLE_EXT("SPK EQ L2 Cut Off Freq", SPK_L2_CUT_OFF_FREQ, 0, 32767,
-		       0,
-		       cm7120_get_eq_freq, cm7120_put_eq_freq),
-	SOC_SINGLE_EXT("SPK EQ R1 Cut Off Freq", SPK_R1_CUT_OFF_FREQ, 0, 32767,
-		       0,
-		       cm7120_get_eq_freq, cm7120_put_eq_freq),
-	SOC_SINGLE_EXT("SPK EQ R2 Cut Off Freq", SPK_R2_CUT_OFF_FREQ, 0, 32767,
-		       0,
-		       cm7120_get_eq_freq, cm7120_put_eq_freq),
-
-	SOC_SINGLE_EXT("SPK TEST LR I2S34", SPK_TEST_I2S34, 0, 2, 0,
-		       cm7120_get_vu, cm7120_put_vu),
-	SOC_SINGLE_EXT("SPK TEST L1L2 I2S3", SPK_TEST_I2S3L, 0, 2, 0,
-		       cm7120_get_vu, cm7120_put_vu),
-	SOC_SINGLE_EXT("SPK TEST R1R2 I2S4", SPK_TEST_I2S4R, 0, 2, 0,
-		       cm7120_get_vu, cm7120_put_vu),
-	SOC_SINGLE_EXT("MIC TEST Bypass DSP", MIC_TEST_CTRL3, 0, 1, 0,
-			cm7120_get_vu, cm7120_put_vu),
+	/* MIC */
 	SOC_SINGLE_EXT("MIC TEST ADC MUTE", MIC_MUTE_STO2, 0, 3, 0,
 			cm7120_get_vu, cm7120_put_vu),
 	SOC_SINGLE_EXT("Headphone Impedance", HP_IMPEDANCE, 0, 1, 0,
@@ -2001,81 +1943,45 @@ static const struct snd_kcontrol_new cm7120_snd_controls[] = {
 			   cm7120_get_eq_gain, cm7120_put_eq_gain, eq_pre_tlv),
 	SOC_SINGLE_EXT("MIC EQ AGC Switch", MIC_EQ_AGC_ON_OFF, 0, 1, 0,
 			cm7120_get_vu, cm7120_put_vu),
+
+	/* Config REG */
+	SOC_SINGLE_EXT("SPK L1 TO MUTE", SPK_L1_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("SPK L2 TO MUTE", SPK_L2_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("SPK R1 TO MUTE", SPK_R1_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("SPK R2 TO MUTE", SPK_R2_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC TO CHANNEL0", MIC_TO_CHANNEL0, 0, 4, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC TO CHANNEL1", MIC_TO_CHANNEL1, 0, 4, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC TO I2S1 0", MIC_TO_I2S10, 0, 2, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC TO I2S1 1", MIC_TO_I2S11, 0, 2, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("LEFT FIR FLIP", LEFT_FIR_FLIP, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("RIGHT FIR FLIP", RIGHT_FIR_FLIP, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("LEFT FIR ONOFF", LEFT_FIR_ONOFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("RIGHT FIR ONOFF", RIGHT_FIR_ONOFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC FIR ONOFF", MIC_FIR_ONOFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("UPDATE FIR COEFFICIENT", UPDATE_FIR_COEFFICIENT,
+			0, 1, 0, cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("REC L MUTE", REC_L_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("REC R MUTE", REC_R_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("REC I2S1L MUTE", REC_I2S1L_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("REC I2S1R MUTE", REC_I2S1R_MUTE, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
 };
-
-static int cm7120_get_eq_freq(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol)
-{
-	struct soc_mixer_control *mc =
-		(struct soc_mixer_control *)kcontrol->private_value;
-	struct snd_soc_component *component =
-		snd_soc_kcontrol_component(kcontrol);
-	struct cm7120_priv *cm7120_codec =
-		snd_soc_component_get_drvdata(component);
-	unsigned int reg = mc->reg;
-	u8 idx;
-
-	switch (reg) {
-	case SPK_L1_CUT_OFF_FREQ:
-	case SPK_L2_CUT_OFF_FREQ:
-	case SPK_R1_CUT_OFF_FREQ:
-	case SPK_R2_CUT_OFF_FREQ:
-		idx = reg - SPK_L1_CUT_OFF_FREQ;
-		ucontrol->value.integer.value[0] =
-		    cm7120_codec->EQSPKParam[idx].CutOffFreq;
-		dev_info(cm7120_codec->dev,
-			 "%s: SPK_EQ idx[%d] CUT_OFF_FREQ get value = %ld\n",
-			 __func__, idx, ucontrol->value.integer.value[0]);
-		break;
-
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static int cm7120_put_eq_freq(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol)
-{
-	struct soc_mixer_control *mc =
-		(struct soc_mixer_control *)kcontrol->private_value;
-	struct snd_soc_component *component =
-		snd_soc_kcontrol_component(kcontrol);
-	struct cm7120_priv *cm7120_codec =
-		snd_soc_component_get_drvdata(component);
-	unsigned int reg = mc->reg;
-
-	int rc = 0;
-
-	u8 idx;
-
-	rc = wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
-					 FW_DOWNLOAD_TIMEOUT);
-	if (rc == 0) {
-		pr_err("%s: Firmware download timed out!\n", __func__);
-		return -ETIMEDOUT;
-	}
-
-	switch (reg) {
-	case SPK_L1_CUT_OFF_FREQ:
-	case SPK_L2_CUT_OFF_FREQ:
-	case SPK_R1_CUT_OFF_FREQ:
-	case SPK_R2_CUT_OFF_FREQ:
-		idx = reg - SPK_L1_CUT_OFF_FREQ;
-		cm7120_codec->EQSPKParam[idx].CutOffFreq =
-		    ucontrol->value.integer.value[0];
-		cm7120_set_eqspk_value(cm7120_codec,
-				       &cm7120_codec->EQSPKParam[idx],
-				       0x5FFC0038 + 4 * idx);
-		break;
-
-	default:
-		break;
-	}
-
-	return 0;
-}
 
 static int cm7120_get_eq_gain(struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol)
@@ -2135,166 +2041,458 @@ static int cm7120_put_eq_gain(struct snd_kcontrol *kcontrol,
 }
 
 /**
- * 1. Mute I2S3 or Mute I2S4
- *     0: unmute all
- *     1: mute i2s3 (and unmute i2s4)
- *     2: mute i2s4 (and unmute i2s3)
- *
- * 2. Mute Left channel or Mute Right channel of I2S3
- *     0: unmute all
- *     1: mute i2s3l1 (and unmute i2s3l2)
- *     2: mute i2s3l2 (and unmute i2s3l1)
- *
- * 3. Mute Left channel or Mute Right channel of I2S4
- *     0: unmute all
- *     1: mute i2s4r1 (and unmute i2s4r2)
- *     2: mute i2s4r2 (and unmute i2s4r1)
- */
-static int cm7120_set_spktest_value(struct cm7120_priv *cm7120_codec,
-				    char i2s34, char item)
+* 0x5FFC0004: Out config register
+*	Bit 0~3: Mic ID dump to channel 0 (value 0/1/2 as Mic1/Mic2/Mic3,
+*	3/4 as reference signal left/right)
+*	Bit 4~7: Mic ID dump to channel 1
+*	Bit 8~11: Mic ID dump to I2S1 channel 0
+*	Bit 12~15: Mic ID dump to I2S1 channel 1
+*	Bit 16: Left channel HF FIR polarity flip
+*	Bit 17: Right channel HF FIR polarity flip
+*	Bit 18: Left channel FIR on/off
+*	Bit 19: Right channel FIR on/off
+*	Bit 20: Mic FIR on/off
+*	Bit 21: Update FIR coefficient (will be cleared to 0 when done)
+*	Bit 22~23: Reserved
+*	Bit 24: Mute SPK L1
+*	Bit 25: Mute SPK L2
+*	Bit 26: Mute SPK R1
+*	Bit 27: Mute SPK R2
+*	Bit 28: Mute Rec L
+*	Bit 29: Mute Rec R
+*	Bit 30: Mute Rec I2S1 L
+*	Bit 31: Mute Rec I2S1 R
+*/
+static int cm7120_set_config_register(struct cm7120_priv *cm7120_codec,
+		char value, char mute)
 {
-	const u32 dspAddr = 0x5ffc0004;
-	const char bitShift = 28;
 	u32 dspValue = 0;
-	u8 spkMuteValue = 0;
+	u8 recLMuteValue = 0;
+	u8 recRMuteValue = 0;
+	u8 recI2s1LMuteValue = 0;
+	u8 recI2s1RMuteValue = 0;
+	u8 spkR2MuteValue = 0;
+	u8 spkR1MuteValue = 0;
+	u8 spkL2MuteValue = 0;
+	u8 spkL1MuteValue = 0;
+	u8 micChannel0Value = 0;
+	u8 micChannel1Value = 0;
+	u8 micI2S10Value = 0;
+	u8 micI2S11Value = 0;
+	u8 leftFIRfilpValue = 0;
+	u8 rightFIRfilpValue = 0;
+	u8 leftFIRValue = 0;
+	u8 rightFIRValue = 0;
+	u8 micFIRValue = 0;
+	u8 updateFIRValue = 0;
 	int ret = 0;
 
 	if (cm7120_codec->is_dsp_mode) {
 		mutex_lock(&cm7120_codec->dsp_lock);
-		cm7120_dsp_mode_i2c_read_mem(cm7120_codec->real_regmap, dspAddr,
-					     &dspValue);
+		cm7120_dsp_mode_i2c_read_mem(cm7120_codec->real_regmap,
+				CM7120_DSP_OUT_CONFIG_REG, &dspValue);
 		mutex_unlock(&cm7120_codec->dsp_lock);
-		spkMuteValue = 0xf & (dspValue >> bitShift);
 	} else {
-		pr_err("%s: Not in DSP mode!!!\n", __func__);
+		dev_err(cm7120_codec->dev, "%s: Not in DSP mode!\n", __func__);
 		return -EINVAL;
 	}
 
-	switch (i2s34) {
+	dev_dbg(cm7120_codec->dev,
+			"%s: before dspValue = 0x%08x value = %d, mute = %d\n",
+			__func__, dspValue, value, mute);
+
+	switch (value) {
 	case 0:
-		if (item == 0)
-			spkMuteValue = 0;
-		else if (item == 1)
-			spkMuteValue = 0x3;
-		else if (item == 2)
-			spkMuteValue = 0xc;
+		if (mute == 0)
+			spkL1MuteValue = 0x0;
+		else if (mute == 1)
+			spkL1MuteValue = 0x1;
 		else
 			ret = -EINVAL;
 		break;
-
 	case 1:
-		if (item == 0)
-			spkMuteValue &= ~0x3;
-		else if (item == 1) {
-			spkMuteValue &= ~0x3;
-			spkMuteValue |= 0x1;
-		} else if (item == 2) {
-			spkMuteValue &= ~0x3;
-			spkMuteValue |= 0x2;
-		} else
+		if (mute == 0)
+			spkL2MuteValue = 0x0;
+		else if (mute == 1)
+			spkL2MuteValue = 0x1;
+		else
 			ret = -EINVAL;
 		break;
-
 	case 2:
-		if (item == 0) {
-			spkMuteValue &= ~0xc;
-		} else if (item == 1) {
-			spkMuteValue &= ~0xc;
-			spkMuteValue |= 0x4;
-		} else if (item == 2) {
-			spkMuteValue &= ~0xc;
-			spkMuteValue |= 0x8;
-		} else {
+		if (mute == 0)
+			spkR1MuteValue = 0x0;
+		else if (mute == 1)
+			spkR1MuteValue = 0x1;
+		else
 			ret = -EINVAL;
-		}
 		break;
-
+	case 3:
+		if (mute == 0)
+			spkR2MuteValue = 0x0;
+		else if (mute == 1)
+			spkR2MuteValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 4:
+		if (mute == 0)
+			micChannel0Value = 0x00;
+		else if (mute == 1)
+			micChannel0Value = 0x01;
+		else if (mute == 2)
+			micChannel0Value = 0x02;
+		else if (mute == 3)
+			micChannel0Value = 0x03;
+		else if (mute == 4)
+			micChannel0Value = 0x04;
+		else
+			ret = -EINVAL;
+		break;
+	case 5:
+		if (mute == 0)
+			micChannel1Value = 0x00;
+		else if (mute == 1)
+			micChannel1Value = 0x01;
+		else if (mute == 2)
+			micChannel1Value = 0x02;
+		else if (mute == 3)
+			micChannel1Value = 0x03;
+		else if (mute == 4)
+			micChannel1Value = 0x04;
+		else
+			ret = -EINVAL;
+		break;
+	case 6:
+		if (mute == 0)
+			micI2S10Value = 0x00;
+		else if (mute == 1)
+			micI2S10Value = 0x01;
+		else if (mute == 2)
+			micI2S10Value = 0x02;
+		else
+			ret = -EINVAL;
+		break;
+	case 7:
+		if (mute == 0)
+			micI2S11Value = 0x00;
+		else if (mute == 1)
+			micI2S11Value = 0x01;
+		else if (mute == 2)
+			micI2S11Value = 0x02;
+		else
+			ret = -EINVAL;
+		break;
+	case 8:
+		if (mute == 0)
+			leftFIRfilpValue = 0x0;
+		else if (mute == 1)
+			leftFIRfilpValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 9:
+		if (mute == 0)
+			rightFIRfilpValue = 0x0;
+		else if (mute == 1)
+			rightFIRfilpValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 10:
+		if (mute == 0)
+			leftFIRValue = 0x0;
+		else if (mute == 1)
+			leftFIRValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 11:
+		if (mute == 0)
+			rightFIRValue = 0x0;
+		else if (mute == 1)
+			rightFIRValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 12:
+		if (mute == 0)
+			micFIRValue = 0x0;
+		else if (mute == 1)
+			micFIRValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 13:
+		if (mute == 0)
+			updateFIRValue = 0x0;
+		else if (mute == 1)
+			updateFIRValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 14:
+		if (mute == 0)
+			recLMuteValue = 0x0;
+		else if (mute == 1)
+			recLMuteValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 15:
+		if (mute == 0)
+			recRMuteValue = 0x0;
+		else if (mute == 1)
+			recRMuteValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 16:
+		if (mute == 0)
+			recI2s1LMuteValue = 0x0;
+		else if (mute == 1)
+			recI2s1LMuteValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
+	case 17:
+		if (mute == 0)
+			recI2s1RMuteValue = 0x0;
+		else if (mute == 1)
+			recI2s1RMuteValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
 	default:
 		ret = -EINVAL;
 	}
 
 	if (ret == 0) {
 		mutex_lock(&cm7120_codec->dsp_lock);
-		dspValue &= ~(0xf << bitShift);
-		dspValue |= (spkMuteValue << bitShift);
-		pr_debug("%s: after dspValue = 0x%08x\n", __func__, dspValue);
+		dev_dbg(cm7120_codec->dev,
+				"%s: value = %d\n", __func__, value);
+		switch (value) {
+		case 0:
+			/* Speaker L1 Mute */
+			dspValue &= ~CM7120_CSPK_L1_MUTE_MASK;
+			dspValue |= (spkL1MuteValue << CM7120_CSPK_L1_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: CSPKL1MUTE dspValue1 = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 1:
+			/* Speaker L2 Mute */
+			dspValue &= ~CM7120_CSPK_L2_MUTE_MASK;
+			dspValue |= (spkL2MuteValue << CM7120_CSPK_L2_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+					"%s: CSPKL2MUTE dspValue1 = 0x%08x\n",
+					__func__, dspValue);
+			break;
+		case 2:
+			/* Speaker R1 Mute */
+			dspValue &= ~CM7120_CSPK_R1_MUTE_MASK;
+			dspValue |= (spkR1MuteValue << CM7120_CSPK_R1_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+					"%s: CSPKR1MUTE dspValue1 = 0x%08x\n",
+					__func__, dspValue);
+			break;
+		case 3:
+			/* Speaker R2 Mute */
+			dspValue &= ~CM7120_CSPK_R2_MUTE_MASK;
+			dspValue |= (spkR2MuteValue << CM7120_CSPK_R2_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+					"%s: CSPKR2MUTE dspValue1 = 0x%08x\n",
+					__func__, dspValue);
+			break;
+		case 4:
+			/* MicIDdumpToChannel0 */
+			dspValue &= ~CM7120_MIC_ID_DUMP_TO_CHANNEL0_MASK;
+			dspValue |= (micChannel0Value <<
+					CM7120_MIC_ID_DUMP_TO_CHANNEL0_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: MicIDdumpToChannel0 dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 5:
+			/* MicIDdumpToChannel1 */
+			dspValue &= ~CM7120_MIC_ID_DUMP_TO_CHANNEL1_MASK;
+			dspValue |= (micChannel1Value <<
+					CM7120_MIC_ID_DUMP_TO_CHANNEL1_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: MicIDdumpToChannel1 dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 6:
+			/* MicIDdumpToI2S10 */
+			dspValue &= ~CM7120_MIC_ID_DUMP_TO_I2S10_MASK;
+			dspValue |= (micI2S10Value <<
+					CM7120_MIC_ID_DUMP_TO_I2S10_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: MicIDdumpToI2S10 dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 7:
+			/* MicIDdumpToI2S11 */
+			dspValue &= ~CM7120_MIC_ID_DUMP_TO_I2S11_MASK;
+			dspValue |= (micI2S11Value <<
+					CM7120_MIC_ID_DUMP_TO_I2S11_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: MicIDdumpToI2S11 dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 8:
+			/* Left channel high-pass FIR result polarity flip */
+			dspValue &= ~CM7120_LEFT_HIGH_FIR_FLIP_MASK;
+			dspValue |= (leftFIRfilpValue <<
+					CM7120_LEFT_HIGH_FIR_FLIP_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: leftFIRfilpValue dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 9:
+			/* Right channel high-pass FIR result polarity flip */
+			dspValue &= ~CM7120_RIGHT_HIGH_FIR_FLIP_MASK;
+			dspValue |= (rightFIRfilpValue <<
+					CM7120_RIGHT_HIGH_FIR_FLIP_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: rightFIRfilpValue dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 10:
+			/* LeftFIRonoff */
+			dspValue &= ~CM7120_LEFT_FIR_ON_OFF_MASK;
+			dspValue |= (leftFIRValue <<
+					CM7120_LEFT_FIR_ON_OFF_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: LeftFIRonoff dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 11:
+			/* RightFIRonoff */
+			dspValue &= ~CM7120_RIGHT_FIR_ON_OFF_MASK;
+			dspValue |= (rightFIRValue <<
+					CM7120_RIGHT_FIR_ON_OFF_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: RightFIRonoff dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 12:
+			/* MicFIRonoff */
+			dspValue &= ~CM7120_MIC_FIR_ON_OFF_MASK;
+			dspValue |= (micFIRValue <<
+					CM7120_MIC_FIR_ON_OFF_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: MicFIRonoff dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 13:
+			/* UpdateFIRCoefficient */
+			dspValue &= ~CM7120_UPDATE_FIR_COEFFICIENT_MASK;
+			dspValue |= (updateFIRValue <<
+					CM7120_UPDATE_FIR_COEFFICIENT_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: UpdateFIRCoefficient dspValue = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 14:
+			/* REC L Mute */
+			dspValue &= ~CM7120_CREC_L_MUTE_MASK;
+			dspValue |= (recLMuteValue << CM7120_CREC_L_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: CRECLMute dspValue1 = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 15:
+			/* REC R Mute */
+			dspValue &= ~CM7120_CREC_R_MUTE_MASK;
+			dspValue |= (recRMuteValue << CM7120_CREC_R_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: CRECRMute dspValue1 = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 16:
+			/* Rec I2s1 L Mute */
+			dspValue &= ~CM7120_CRECI2S1_L_MUTE_MASK;
+			dspValue |= (recI2s1LMuteValue <<
+					CM7120_CRECI2S1_L_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: CRECI2s1LMute dspValue1 = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		case 17:
+			/* Rec I2s1 R Mute */
+			dspValue &= ~CM7120_CRECI2S1_R_MUTE_MASK;
+			dspValue |= (recI2s1RMuteValue <<
+					CM7120_CRECI2S1_R_MUTE_SFT);
+			dev_dbg(cm7120_codec->dev,
+				"%s: CRECI2s1RMute dspValue1 = 0x%08x\n",
+				__func__, dspValue);
+			break;
+		}
+
+		dev_dbg(cm7120_codec->dev,
+				"%s: after dspValue = 0x%08x\n", __func__,
+				dspValue);
 		cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap,
-					      dspAddr, (u8 *)&dspValue, 4);
+				CM7120_DSP_OUT_CONFIG_REG, (u8 *)&dspValue, 4);
 		mutex_unlock(&cm7120_codec->dsp_lock);
 	}
 
 	if (ret != 0)
-		pr_err("%s: return failed value = 0x%08x\n", __func__, ret);
+		dev_err(cm7120_codec->dev,
+			"%s: return failed value = 0x%08x\n", __func__, ret);
 
 	return ret;
 }
 
-static int cm7120_set_bypass_dsp(struct cm7120_priv *cm7120_codec, char item)
-{
-	dev_dbg(cm7120_codec->dev, "%s: = %d\n", __func__, item);
-
-	if (item == 0)
-		regmap_write(cm7120_codec->virt_regmap,
-				CM7120_TDM2_CTRL3, 0x000c);
-	else
-		regmap_write(cm7120_codec->virt_regmap,
-				CM7120_TDM2_CTRL3, 0x0006);
-
-	return 0;
-}
-
 static int cm7120_set_mic_mute(struct cm7120_priv *cm7120_codec, char item)
 {
-	dev_dbg(cm7120_codec->dev, "%s:  = %d\n", __func__, item);
-
-	regmap_write(cm7120_codec->virt_regmap,
-			CM7120_STO2_ADC_MIXER_CTRL, 0x0000);
-	usleep_range(30000, 35000);
-
 	switch (item) {
-	case 0:
+	case 0: /* MIC ADC default */
 		regmap_write(cm7120_codec->virt_regmap,
 				CM7120_STO2_ADC_MIXER_CTRL, 0x4040);
-		break;
-	case 1:
 		regmap_write(cm7120_codec->virt_regmap,
-				CM7120_STO2_ADC_MIXER_CTRL, 0x40c0);
+				CM7120_STO1_ADC_MIXER_CTRL, 0x4040);
 		break;
-	case 2:
-		regmap_write(cm7120_codec->virt_regmap,
-				CM7120_STO2_ADC_MIXER_CTRL, 0xc040);
+	case 1: /* MIC ADC1 (L) mute */
+		if (cm7120_codec->bEnableADC1)
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO2_ADC_MIXER_CTRL,
+					   CM7120_M_STO2_ADC_L1,
+					   CM7120_M_STO2_ADC_L1);
+		else
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO2_ADC_MIXER_CTRL,
+					   CM7120_M_STO2_ADC_L1, 0);
 		break;
-	case 3:
+	case 2: /* MIC ADC2 (R) mute */
+		if (cm7120_codec->bEnableADC2)
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO2_ADC_MIXER_CTRL,
+					   CM7120_M_STO2_ADC_R1,
+					   CM7120_M_STO2_ADC_R1);
+		else
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO2_ADC_MIXER_CTRL,
+					   CM7120_M_STO2_ADC_R1, 0);
+		break;
+	case 3: /* MIC ADC3 (L) mute */
+		if (cm7120_codec->bEnableADC3)
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO1_ADC_MIXER_CTRL,
+					   CM7120_M_STO1_ADC_L1,
+					   CM7120_M_STO1_ADC_L1);
+		else
+			regmap_update_bits(cm7120_codec->virt_regmap,
+					   CM7120_STO1_ADC_MIXER_CTRL,
+					   CM7120_M_STO1_ADC_L1, 0);
+		break;
+	case 4: /* MIC ADC1/2/3 (LR) mute */
 		regmap_write(cm7120_codec->virt_regmap,
-				CM7120_STO2_ADC_MIXER_CTRL, 0xc0c0);
+		CM7120_STO2_ADC_MIXER_CTRL, 0xc0c0);
+		regmap_write(cm7120_codec->virt_regmap,
+		CM7120_STO1_ADC_MIXER_CTRL, 0xc0c0);
 		break;
 	}
-
-	return 0;
-}
-
-static int cm7120_set_eqspk_value(struct cm7120_priv *cm7120_codec,
-				  struct EQSpkParam *pEQSpkParam, u32 uAddr)
-{
-	u32 EQElement = 0;
-
-	EQElement = pEQSpkParam->PolarFlipLF |
-	    (pEQSpkParam->PolarFlipHF << 1) | (pEQSpkParam->CutOffFreq << 2);
-
-	dev_info(cm7120_codec->dev, "%s --------------------------\n",
-		 __func__);
-	dev_info(cm7120_codec->dev, "%s PolarFlipLF = %d\n", __func__,
-		 pEQSpkParam->PolarFlipLF);
-	dev_info(cm7120_codec->dev, "%s PolarFlipHF = %d\n", __func__,
-		 pEQSpkParam->PolarFlipHF);
-	dev_info(cm7120_codec->dev, "%s CutOffFreq = %d\n", __func__,
-		 pEQSpkParam->CutOffFreq);
-
-	mutex_lock(&cm7120_codec->dsp_lock);
-	cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap, uAddr,
-				      (u8 *)&EQElement, 4);
-	mutex_unlock(&cm7120_codec->dsp_lock);
-
 	return 0;
 }
 
@@ -2324,60 +2522,12 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 	struct cm7120_priv *cm7120_codec =
 		snd_soc_component_get_drvdata(component);
 	unsigned int reg = mc->reg;
-	u8 idx;
+	int adcstr = 0;
 
 	wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
 				    FW_DOWNLOAD_TIMEOUT);
 
 	switch (reg) {
-	case SPK_POLAR_FLIP_ON_OFF:
-		if (ucontrol->value.integer.value[0] == 0)
-			cm7120_codec->bEnableSpkPolarFlip = false;
-		else
-			cm7120_codec->bEnableSpkPolarFlip = true;
-
-		dev_info(cm7120_codec->dev,
-			 "%s SPK_POLAR_FLIP_ON_OFF set Value = %ld\n",
-			 __func__, ucontrol->value.integer.value[0]);
-		cm7120_update_eq_pregain_enable(cm7120_codec);
-		break;
-
-	case SPK_L1_POLAR_FLIP_LF:
-	case SPK_L2_POLAR_FLIP_LF:
-	case SPK_R1_POLAR_FLIP_LF:
-	case SPK_R2_POLAR_FLIP_LF:
-		idx = reg - SPK_L1_POLAR_FLIP_LF;
-		if (ucontrol->value.integer.value[0] == 0)
-			cm7120_codec->EQSPKParam[idx].PolarFlipLF = 0;
-		else
-			cm7120_codec->EQSPKParam[idx].PolarFlipLF = 1;
-
-		dev_info(cm7120_codec->dev,
-			"%s: SPK_EQ idx[%d] POLAR_FLIP_LF enable = %ld\n",
-			__func__, idx, ucontrol->value.integer.value[0]);
-		cm7120_set_eqspk_value(cm7120_codec,
-				       &cm7120_codec->EQSPKParam[idx],
-				       0x5FFC0038 + 4 * idx);
-		break;
-
-	case SPK_L1_POLAR_FLIP_HF:
-	case SPK_L2_POLAR_FLIP_HF:
-	case SPK_R1_POLAR_FLIP_HF:
-	case SPK_R2_POLAR_FLIP_HF:
-		idx = reg - SPK_L1_POLAR_FLIP_HF;
-		if (ucontrol->value.integer.value[0] == 0)
-			cm7120_codec->EQSPKParam[idx].PolarFlipHF = 0;
-		else
-			cm7120_codec->EQSPKParam[idx].PolarFlipHF = 1;
-
-		dev_info(cm7120_codec->dev,
-			"%s: SPK_EQ idx[%d] POLAR_FLIP_HF enable = %ld\n",
-			__func__, idx, ucontrol->value.integer.value[0]);
-		cm7120_set_eqspk_value(cm7120_codec,
-				       &cm7120_codec->EQSPKParam[idx],
-				       0x5FFC0038 + 4 * idx);
-		break;
-
 	case MIC_EQ_ON_OFF:
 		if (ucontrol->value.integer.value[0] == 0)
 			cm7120_codec->bEnableMicEQ = false;
@@ -2385,10 +2535,9 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 			cm7120_codec->bEnableMicEQ = true;
 
 		cm7120_update_eq_pregain_enable(cm7120_codec);
-		dev_info(cm7120_codec->dev,
+		dev_dbg(cm7120_codec->dev,
 			 "%s MIC_EQ_ON_OFF set Value = %ld\n", __func__,
 			 ucontrol->value.integer.value[0]);
-
 		break;
 
 	case MIC_EQ_AGC_ON_OFF:
@@ -2398,8 +2547,45 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 			cm7120_codec->bEnableAGC = true;
 
 		cm7120_update_eq_pregain_enable(cm7120_codec);
-		dev_info(cm7120_codec->dev,
+		dev_dbg(cm7120_codec->dev,
 			"%s MIC_EQ_AGC_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
+	case MIC_ADC1_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableADC1 = false;
+		else
+			cm7120_codec->bEnableADC1 = true;
+
+		adcstr = 1;
+		cm7120_set_mic_mute(cm7120_codec, adcstr);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ADC1_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+	case MIC_ADC2_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableADC2 = false;
+		else
+			cm7120_codec->bEnableADC2 = true;
+
+		adcstr = 2;
+		cm7120_set_mic_mute(cm7120_codec, adcstr);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ADC2_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+	case MIC_ADC3_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableADC3 = false;
+		else
+			cm7120_codec->bEnableADC3 = true;
+
+		adcstr = 3;
+		cm7120_set_mic_mute(cm7120_codec, adcstr);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ADC3_ON_OFF set Value = %ld\n", __func__,
 			ucontrol->value.integer.value[0]);
 		break;
 
@@ -2495,36 +2681,156 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 			ucontrol->value.integer.value[0]);
 		break;
 
-	case SPK_TEST_I2S34:
-		cm7120_codec->i2s34 = ucontrol->value.integer.value[0];
-		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S34: %d\n", __func__,
-			cm7120_codec->i2s34);
-		cm7120_set_spktest_value(cm7120_codec, 0, cm7120_codec->i2s34);
+	case SPK_L1_MUTE:
+		cm7120_codec->spkl1mute = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: SPK_L1_MUTE: %d\n", __func__,
+				cm7120_codec->spkl1mute);
+		cm7120_set_config_register(cm7120_codec, 0,
+				cm7120_codec->spkl1mute);
 		break;
 
-	case SPK_TEST_I2S3L:
-		cm7120_codec->i2s3l = ucontrol->value.integer.value[0];
-		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S3L: %d\n", __func__,
-			cm7120_codec->i2s3l);
-		cm7120_set_spktest_value(cm7120_codec, 1, cm7120_codec->i2s3l);
+	case SPK_L2_MUTE:
+		cm7120_codec->spkl2mute = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: SPK_L2_MUTE: %d\n", __func__,
+				cm7120_codec->spkl2mute);
+		cm7120_set_config_register(cm7120_codec, 1,
+				cm7120_codec->spkl2mute);
 		break;
 
-	case SPK_TEST_I2S4R:
-		cm7120_codec->i2s4r = ucontrol->value.integer.value[0];
-		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S4R: %d\n", __func__,
-			cm7120_codec->i2s4r);
-		cm7120_set_spktest_value(cm7120_codec, 2, cm7120_codec->i2s4r);
+	case SPK_R1_MUTE:
+		cm7120_codec->spkr1mute = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: SPK_R1_MUTE: %d\n", __func__,
+				cm7120_codec->spkr1mute);
+		cm7120_set_config_register(cm7120_codec, 2,
+				cm7120_codec->spkr1mute);
 		break;
 
-	case MIC_TEST_CTRL3:
-		cm7120_codec->ctrl3 = ucontrol->value.integer.value[0];
+	case SPK_R2_MUTE:
+		cm7120_codec->spkr2mute = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: SPK_R2_MUTE: %d\n", __func__,
+				cm7120_codec->spkr2mute);
+		cm7120_set_config_register(cm7120_codec, 3,
+				cm7120_codec->spkr2mute);
+		break;
+
+	case MIC_TO_CHANNEL0:
+		cm7120_codec->mictochannel0 = ucontrol->value.integer.value[0];
 		dev_dbg(cm7120_codec->dev,
-			"%s: MIC_TEST_CTRL3: %d\n",
-			__func__, cm7120_codec->ctrl3);
-		cm7120_set_bypass_dsp(cm7120_codec, cm7120_codec->ctrl3);
+				"%s: MIC_TO_CHANNEL0: %d\n", __func__,
+				cm7120_codec->mictochannel0);
+		cm7120_set_config_register(cm7120_codec, 4,
+				cm7120_codec->mictochannel0);
+		break;
+
+	case MIC_TO_CHANNEL1:
+		cm7120_codec->mictochannel1 = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: MIC_TO_CHANNEL1: %d\n", __func__,
+				cm7120_codec->mictochannel1);
+		cm7120_set_config_register(cm7120_codec, 5,
+				cm7120_codec->mictochannel1);
+		break;
+
+	case MIC_TO_I2S10:
+		cm7120_codec->mictoi2s10 = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_I2S10: %d\n", __func__,
+				cm7120_codec->mictoi2s10);
+		cm7120_set_config_register(cm7120_codec, 6,
+				cm7120_codec->mictoi2s10);
+		break;
+
+	case MIC_TO_I2S11:
+		cm7120_codec->mictoi2s11 = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_I2S11: %d\n", __func__,
+				cm7120_codec->mictoi2s11);
+		cm7120_set_config_register(cm7120_codec, 7,
+				cm7120_codec->mictoi2s11);
+		break;
+
+	case LEFT_FIR_FLIP:
+		cm7120_codec->leftfirflip = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: LEFT_FIR_FLIP: %d\n", __func__,
+				cm7120_codec->leftfirflip);
+		cm7120_set_config_register(cm7120_codec, 8,
+				cm7120_codec->leftfirflip);
+		break;
+
+	case RIGHT_FIR_FLIP:
+		cm7120_codec->rightfirflip = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: RIGHT_FIR_FLIP: %d\n", __func__,
+				cm7120_codec->rightfirflip);
+		cm7120_set_config_register(cm7120_codec, 9,
+				cm7120_codec->rightfirflip);
+		break;
+
+	case LEFT_FIR_ONOFF:
+		cm7120_codec->leftfironoff = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: LEFT_FIR_ONOFF: %d\n", __func__,
+				cm7120_codec->leftfironoff);
+		cm7120_set_config_register(cm7120_codec, 10,
+				cm7120_codec->leftfironoff);
+		break;
+
+	case RIGHT_FIR_ONOFF:
+		cm7120_codec->rightfironoff = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: RIGHT_FIR_ONOFF: %d\n", __func__,
+				cm7120_codec->rightfironoff);
+		cm7120_set_config_register(cm7120_codec, 11,
+				cm7120_codec->rightfironoff);
+		break;
+
+	case MIC_FIR_ONOFF:
+		cm7120_codec->micfironoff = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: MIC_FIR_ONOFF: %d\n", __func__,
+				cm7120_codec->micfironoff);
+		cm7120_set_config_register(cm7120_codec, 12,
+				cm7120_codec->micfironoff);
+		break;
+
+	case UPDATE_FIR_COEFFICIENT:
+		cm7120_codec->updateFIR = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: UPDATE_FIR_COEFFICIENT: %d\n", __func__,
+				cm7120_codec->updateFIR);
+		cm7120_set_config_register(cm7120_codec, 13,
+				cm7120_codec->updateFIR);
+		break;
+
+	case REC_L_MUTE:
+		cm7120_codec->updateFIR = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: REC_L_MUTE: %d\n", __func__,
+				cm7120_codec->updateFIR);
+		cm7120_set_config_register(cm7120_codec, 14,
+				cm7120_codec->updateFIR);
+		break;
+
+	case REC_R_MUTE:
+		cm7120_codec->updateFIR = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev, "%s: REC_R_MUTE: %d\n", __func__,
+				cm7120_codec->updateFIR);
+		cm7120_set_config_register(cm7120_codec, 15,
+				cm7120_codec->updateFIR);
+		break;
+
+	case REC_I2S1L_MUTE:
+		cm7120_codec->updateFIR = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: REC_I2S1L_MUTE: %d\n", __func__,
+				cm7120_codec->updateFIR);
+		cm7120_set_config_register(cm7120_codec, 16,
+				cm7120_codec->updateFIR);
+		break;
+
+	case REC_I2S1R_MUTE:
+		cm7120_codec->updateFIR = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: REC_I2S1R_MUTE: %d\n", __func__,
+				cm7120_codec->updateFIR);
+		cm7120_set_config_register(cm7120_codec, 17,
+				cm7120_codec->updateFIR);
 		break;
 
 	case MIC_MUTE_STO2:
@@ -2553,49 +2859,9 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 	struct cm7120_priv *cm7120_codec =
 		snd_soc_component_get_drvdata(component);
 	unsigned int reg = mc->reg;
-	u8 idx;
 	u32 uData;
 
 	switch (reg) {
-	case SPK_POLAR_FLIP_ON_OFF:
-		if (cm7120_codec->bEnableSpkPolarFlip)
-			ucontrol->value.integer.value[0] = true;
-		else
-			ucontrol->value.integer.value[0] = false;
-
-		dev_info(cm7120_codec->dev,
-			 "%s SPK_POLAR_FLIP_ON_OFF get value = %ld\n", __func__,
-			 ucontrol->value.integer.value[0]);
-		break;
-
-	case SPK_L1_POLAR_FLIP_LF:
-	case SPK_L2_POLAR_FLIP_LF:
-	case SPK_R1_POLAR_FLIP_LF:
-	case SPK_R2_POLAR_FLIP_LF:
-		idx = reg - SPK_L1_POLAR_FLIP_LF;
-		if (cm7120_codec->EQSPKParam[idx].PolarFlipLF)
-			ucontrol->value.integer.value[0] = 1;
-		else
-			ucontrol->value.integer.value[0] = 0;
-		dev_info(cm7120_codec->dev,
-			"%s: SPK_EQ idx[%d] POLAR_FLIP_LF get value = %ld\n",
-			__func__, idx, ucontrol->value.integer.value[0]);
-		break;
-
-	case SPK_L1_POLAR_FLIP_HF:
-	case SPK_L2_POLAR_FLIP_HF:
-	case SPK_R1_POLAR_FLIP_HF:
-	case SPK_R2_POLAR_FLIP_HF:
-		idx = reg - SPK_L1_POLAR_FLIP_HF;
-		if (cm7120_codec->EQSPKParam[idx].PolarFlipHF)
-			ucontrol->value.integer.value[0] = 1;
-		else
-			ucontrol->value.integer.value[0] = 0;
-		dev_info(cm7120_codec->dev,
-			 "%s: SPK_EQ idx[%d] POLAR_FLIP_HF get value = %ld\n",
-			 __func__, idx, ucontrol->value.integer.value[0]);
-		break;
-
 	case MIC_MONITOR_ON_OFF:
 		if (cm7120_codec->bEnableMonitor)
 			ucontrol->value.integer.value[0] = true;
@@ -2618,35 +2884,136 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 			ucontrol->value.integer.value[0]);
 		break;
 
-	case SPK_TEST_I2S34:
-		ucontrol->value.integer.value[0] = cm7120_codec->i2s34;
+	case MIC_ADC1_ON_OFF:
+		if (cm7120_codec->bEnableADC1)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
 		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S34: %d\n", __func__,
-			cm7120_codec->i2s34);
+			"%s MIC_ADC1_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+	case MIC_ADC2_ON_OFF:
+		if (cm7120_codec->bEnableADC2)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ADC2_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
 		break;
 
-	case SPK_TEST_I2S3L:
-		ucontrol->value.integer.value[0] = cm7120_codec->i2s3l;
+	case MIC_ADC3_ON_OFF:
+		if (cm7120_codec->bEnableADC3)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
 		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S3L: %d\n", __func__,
-			cm7120_codec->i2s3l);
+			"%s MIC_ADC3_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
 		break;
 
-	case SPK_TEST_I2S4R:
-		ucontrol->value.integer.value[0] = cm7120_codec->i2s4r;
-		dev_dbg(cm7120_codec->dev,
-			"%s: SPK_TEST_I2S4R: %d\n", __func__,
-			cm7120_codec->i2s4r);
+	case SPK_L1_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->spkl1mute;
+		dev_dbg(cm7120_codec->dev, "%s: SPK_L1_MUTE: %d\n", __func__,
+			cm7120_codec->spkl1mute);
 		break;
 
-	case MIC_TEST_CTRL3:
-		ucontrol->value.integer.value[0] = cm7120_codec->ctrl3;
-		dev_dbg(cm7120_codec->dev, "%s: MIC_TEST_CTRL3:\n", __func__);
+	case SPK_L2_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->spkl2mute;
+		dev_dbg(cm7120_codec->dev, "%s: SPK_L2_MUTE: %d\n", __func__,
+			cm7120_codec->spkl2mute);
+		break;
+
+	case SPK_R1_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->spkr1mute;
+		dev_dbg(cm7120_codec->dev, "%s: SPK_R1_MUTE: %d\n", __func__,
+			cm7120_codec->spkr1mute);
+		break;
+
+	case SPK_R2_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->spkr2mute;
+		dev_dbg(cm7120_codec->dev, "%s: SPK_R2_MUTE: %d\n", __func__,
+			cm7120_codec->spkr2mute);
+		break;
+
+	case MIC_TO_CHANNEL0:
+		ucontrol->value.integer.value[0] = cm7120_codec->mictochannel0;
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_CHANNEL0\n", __func__);
+		break;
+
+	case MIC_TO_CHANNEL1:
+		ucontrol->value.integer.value[0] = cm7120_codec->mictochannel1;
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_CHANNEL1\n", __func__);
+		break;
+
+	case MIC_TO_I2S10:
+		ucontrol->value.integer.value[0] = cm7120_codec->mictoi2s10;
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_I2S10\n", __func__);
+		break;
+
+	case MIC_TO_I2S11:
+		ucontrol->value.integer.value[0] = cm7120_codec->mictoi2s11;
+		dev_dbg(cm7120_codec->dev, "%s: MIC_TO_I2S11\n", __func__);
+		break;
+
+	case LEFT_FIR_FLIP:
+		ucontrol->value.integer.value[0] = cm7120_codec->leftfirflip;
+		dev_dbg(cm7120_codec->dev, "%s: LEFT_FIR_FLIP\n", __func__);
+		break;
+
+	case RIGHT_FIR_FLIP:
+		ucontrol->value.integer.value[0] = cm7120_codec->rightfirflip;
+		dev_dbg(cm7120_codec->dev, "%s: RIGHT_FIR_FLIP\n", __func__);
+		break;
+
+	case LEFT_FIR_ONOFF:
+		ucontrol->value.integer.value[0] = cm7120_codec->leftfironoff;
+		dev_dbg(cm7120_codec->dev, "%s: LEFT_FIR_ONOFF\n", __func__);
+		break;
+
+	case RIGHT_FIR_ONOFF:
+		ucontrol->value.integer.value[0] = cm7120_codec->rightfironoff;
+		dev_dbg(cm7120_codec->dev, "%s: RIGHT_FIR_ONOFF\n", __func__);
+		break;
+
+	case MIC_FIR_ONOFF:
+		ucontrol->value.integer.value[0] = cm7120_codec->micfironoff;
+		dev_dbg(cm7120_codec->dev, "%s: MIC_FIR_ONOFF\n", __func__);
+		break;
+
+	case UPDATE_FIR_COEFFICIENT:
+		ucontrol->value.integer.value[0] = cm7120_codec->updateFIR;
+		dev_dbg(cm7120_codec->dev,
+				"%s: UPDATE_FIR_COEFFICIENT\n", __func__);
+		break;
+
+	case REC_L_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->updateFIR;
+		dev_dbg(cm7120_codec->dev, "%s: REC_L_MUTE\n", __func__);
+		break;
+
+	case REC_R_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->updateFIR;
+		dev_dbg(cm7120_codec->dev, "%s: REC_R_MUTE\n", __func__);
+		break;
+
+	case REC_I2S1L_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->updateFIR;
+		dev_dbg(cm7120_codec->dev, "%s: REC_I2S1L_MUTE\n", __func__);
+		break;
+
+	case REC_I2S1R_MUTE:
+		ucontrol->value.integer.value[0] = cm7120_codec->updateFIR;
+		dev_dbg(cm7120_codec->dev, "%s: REC_I2S1R_MUTE\n", __func__);
 		break;
 
 	case MIC_MUTE_STO2:
 		ucontrol->value.integer.value[0] = cm7120_codec->adcsto2;
-		dev_dbg(cm7120_codec->dev, "%s: MIC_MUTE_STO2:\n", __func__);
+		dev_dbg(cm7120_codec->dev, "%s: MIC_MUTE_STO2\n", __func__);
 		break;
 
 	case HP_IMPEDANCE:
@@ -2665,13 +3032,14 @@ static int cm7120_get_hp_impedance(struct cm7120_priv *cm7120_codec)
 	u32 dwValue = 0;
 
 	regmap_write(cm7120_codec->virt_regmap, 0x0085, 0x0022);
-	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0xFF82);
+	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0x1682);
+	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0x1F82);
+	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0xDF82);
 	regmap_write(cm7120_codec->virt_regmap, 0x0053, 0x1A00);
 	regmap_write(cm7120_codec->virt_regmap, 0x00D4, 0x3300);
 	regmap_write(cm7120_codec->virt_regmap, 0x000A, 0x5353);
 	regmap_write(cm7120_codec->virt_regmap, 0x0614, 0xB090);
-	regmap_write(cm7120_codec->virt_regmap, 0x0060, 0x007B);
-	regmap_write(cm7120_codec->virt_regmap, 0x004D, 0x5D44);
+	regmap_write(cm7120_codec->virt_regmap, 0x0060, 0x0078);
 	regmap_write(cm7120_codec->virt_regmap, 0x019A, 0x2700);
 	regmap_write(cm7120_codec->virt_regmap, 0x019B, 0x1011);
 	regmap_write(cm7120_codec->virt_regmap, 0x01A0, 0xC33D);
@@ -2684,21 +3052,20 @@ static int cm7120_get_hp_impedance(struct cm7120_priv *cm7120_codec)
 		__func__, dwValue);
 
 	/*restore*/
+	regmap_write(cm7120_codec->virt_regmap, 0x0085, 0x2022);
 	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0xDF82);
 	regmap_write(cm7120_codec->virt_regmap, 0x0053, 0x1E00);
 	regmap_write(cm7120_codec->virt_regmap, 0x00D4, 0xB300);
 	regmap_write(cm7120_codec->virt_regmap, 0x000A, 0x5455);
 	regmap_write(cm7120_codec->virt_regmap, 0x0614, 0xA490);
 	regmap_write(cm7120_codec->virt_regmap, 0x0060, 0x0078);
-	regmap_write(cm7120_codec->virt_regmap, 0x004D, 0x4040);
 	regmap_write(cm7120_codec->virt_regmap, 0x019A, 0x0000);
 	regmap_write(cm7120_codec->virt_regmap, 0x019B, 0x0003);
 	regmap_write(cm7120_codec->virt_regmap, 0x01A0, 0x433D);
-	regmap_write(cm7120_codec->virt_regmap, 0x0085, 0x2022);
+	msleep(600);
 
 	return dwValue;
 }
-
 
 static int cm7120_hw_params(struct snd_pcm_substream *substream,
 			    struct snd_pcm_hw_params *params,
@@ -2707,6 +3074,9 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_component *component = dai->component;
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
 	unsigned int val_len = 0;
+	u16 i2s_len = 0;
+	u16 tdm_len = 0;
+	u32 resetvalue = 0x80000000;
 
 	cm7120->sampleRate = params_rate(params);
 
@@ -2729,8 +3099,23 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
+	regmap_update_bits(cm7120->virt_regmap, CM7120_I2S1_SDP,
+			CM7120_I2S_DL_MASK, i2s_len);
+	regmap_update_bits(cm7120->virt_regmap, CM7120_TDM1_CTRL1,
+			0x0300, tdm_len);
 	regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
-			   CM7120_I2S_DL_MASK, val_len);
+			CM7120_I2S_DL_MASK, val_len);
+	regmap_update_bits(cm7120->virt_regmap, CM7120_TDM2_CTRL1,
+			0x0300, 0x300);
+
+	pr_info("%s: i2s_len: 0x%04x tdm_len: 0x%04x val_len: 0x%04x\n",
+		__func__, i2s_len, tdm_len, val_len);
+
+	/* clean inbound */
+	mutex_lock(&cm7120->dsp_lock);
+	cm7120_dsp_mode_i2c_write_mem(cm7120->real_regmap, 0x5FFC0000,
+			(u8 *)&resetvalue, 4);
+	mutex_unlock(&cm7120->dsp_lock);
 
 	return 0;
 }
@@ -2744,7 +3129,7 @@ cm7120_microphone_in_enum_ext_get(struct snd_kcontrol *kcontrol,
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.integer.value[0] = cm7120->microphoneSrc;
-	dev_info(cm7120->dev, "%s microphoneSrc = %d\n", __func__,
+	dev_dbg(cm7120->dev, "%s microphoneSrc = %d\n", __func__,
 		 cm7120->microphoneSrc);
 
 	return 0;
@@ -2760,21 +3145,27 @@ cm7120_microphone_in_enum_ext_put(struct snd_kcontrol *kcontrol,
 	int ret = 0;
 
 	cm7120->microphoneSrc = ucontrol->value.integer.value[0];
-	dev_info(cm7120->dev, "%s microphone Src select %d\n", __func__,
+	dev_dbg(cm7120->dev, "%s microphone Src select %d\n", __func__,
 		 cm7120->microphoneSrc);
 	switch (cm7120->microphoneSrc) {
-		/* ADC1/2 */
+	/* ADC1(L) */
 	case 0:
 		regmap_update_bits(cm7120->virt_regmap,
-				   CM7120_STO2_ADC_MIXER_CTRL,
-				   CM7120_SEL_STO2_ANA_ADC, 0);
+				CM7120_STO2_ADC_MIXER_CTRL,
+				CM7120_SEL_STO2_ANA_ADC, 0);
 		break;
-		/* ADC3/4 */
+	/* ADC2(R) */
 	case 1:
 		regmap_update_bits(cm7120->virt_regmap,
-				   CM7120_STO2_ADC_MIXER_CTRL,
-				   CM7120_SEL_STO2_ANA_ADC,
-				   1 << CM7120_SEL_STO2_ANA_ADC_SFT);
+				CM7120_STO2_ADC_MIXER_CTRL,
+				CM7120_SEL_STO2_ANA_ADC,
+				1 << CM7120_SEL_STO2_ANA_ADC_SFT);
+		break;
+	/* ADC3(L) */
+	case 2:
+		regmap_update_bits(cm7120->virt_regmap,
+				CM7120_STO2_ADC_MIXER_CTRL,
+				CM7120_SEL_STO1_ANA_ADC, 0);
 		break;
 	default:
 		dev_err(cm7120->dev, "%s EINVAL\n", __func__);
@@ -2876,8 +3267,10 @@ static const struct snd_soc_dapm_widget cm7120_dapm_widgets[] = {
 	SND_SOC_DAPM_ADC("ADC3/4", NULL, SND_SOC_NOPM, 0, 0),
 	SND_SOC_DAPM_DAC("DAC1", NULL, SND_SOC_NOPM, 0, 0),
 	SND_SOC_DAPM_DAC("DAC2", NULL, SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_DAC("DAC3", NULL, SND_SOC_NOPM, 0, 0),
 	SND_SOC_DAPM_PGA("DAC1PGA", CM7120_LOUT, 15, 1, NULL, 0),
 	SND_SOC_DAPM_PGA("DAC2PGA", CM7120_LOUT, 7, 1, NULL, 0),
+	SND_SOC_DAPM_PGA("DAC3PGA", CM7120_LOUT, 7, 1, NULL, 0),
 	SND_SOC_DAPM_OUT_DRV_E("HP Driver", SND_SOC_NOPM, 0, 0, NULL, 0,
 			       HP_dapm_power_event,
 			       SND_SOC_DAPM_POST_PMD | SND_SOC_DAPM_POST_PMU),
@@ -2890,12 +3283,20 @@ static const struct snd_soc_dapm_widget cm7120_dapm_widgets[] = {
 	SND_SOC_DAPM_MUX("Microphone From Mux", SND_SOC_NOPM, 0, 0,
 			 &cm7120_microphone_in_mux),
 
-	SND_SOC_DAPM_AIF_IN("AIF2RX", "AIF2 Playback", 0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("AIF2TX", "AIF2 Capture", 0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_MICBIAS("I2S3PWR", CM7120_PWR_DIG1, CM7120_PWR_I2S3_BIT,
-			     0),
-	SND_SOC_DAPM_MICBIAS("I2S4PWR", CM7120_PWR_DIG1, CM7120_PWR_I2S4_BIT,
-			     0),
+	SND_SOC_DAPM_AIF_IN("AIF2RX", "AIF2 Playback", 0,
+				SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_AIF_OUT("AIF2TX", "AIF2 Capture", 0,
+				SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_MICBIAS("I2S3PWR", CM7120_PWR_DIG1,
+				CM7120_PWR_I2S3_BIT, 0),
+	SND_SOC_DAPM_MICBIAS("I2S4PWR", CM7120_PWR_DIG1,
+				CM7120_PWR_I2S4_BIT, 0),
+	SND_SOC_DAPM_AIF_IN("AIF1RX", "AIF1 Playback", 0,
+				SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_AIF_OUT("AIF1TX", "AIF1 Capture", 0,
+				SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_MICBIAS("I2S1PWR", CM7120_PWR_DIG1,
+				CM7120_PWR_I2S1_BIT, 0),
 
 };
 
@@ -2908,18 +3309,28 @@ static const struct snd_soc_dapm_route cm7120_dapm_routes[] = {
 	{ "Microphone From Mux", "ADC3/4", "ADC3/4" },
 	{ "DAC1PGA", NULL, "AIF2RX" },
 	{ "DAC2PGA", NULL, "AIF2RX" },
+	{ "DAC3PGA", NULL, "AIF1RX" },
 	{ "I2S3PWR", NULL, "AIF2RX" },
+	{ "I2S3PWR", NULL, "AIF1RX" },
+	{ "I2S1PWR", NULL, "AIF1RX" },
 	{ "I2S4PWR", NULL, "I2S3PWR" },
 	{ "DAC1", NULL, "DAC1PGA" },
 	{ "DAC2", NULL, "DAC2PGA" },
+	{ "DAC3", NULL, "DAC3PGA" },
 	{ "HP Driver", NULL, "DAC1" },
 	{ "HP Driver", NULL, "DAC2" },
+	{ "HP Driver", NULL, "DAC3" },
 	{ "SPK Driver", NULL, "I2S4PWR" },
+	{ "SPK Driver", NULL, "I2S1PWR" },
 	{ "OUTPUT MIX", "HP Switch", "HP Driver" },
 	{ "OUTPUT MIX", "SPK Switch", "SPK Driver" },
 	{ "OUTL", NULL, "OUTPUT MIX" },
 	{ "OUTR", NULL, "OUTPUT MIX" },
 	{ "AIF2TX", NULL, "Microphone From Mux" },
+	{ "I2S1PWR", NULL, "Microphone From Mux" },
+	{ "AIF1TX", NULL, "I2S1PWR" },
+	{ "AIF1 Capture", NULL, "AIF1TX" },
+	{ "AIF2 Capture", NULL, "AIF2TX" },
 };
 
 static ssize_t cm7120_is_dsp_mode_show(struct device *dev,
@@ -3004,7 +3415,10 @@ static ssize_t cm7120_Codec_Reg_Show(struct device *dev,
 	struct cm7120_priv *cm7120 = dev_get_drvdata(dev);
 	u32 dwValue = 0;
 
-	regmap_read(cm7120->virt_regmap, CodecAddr, &dwValue);
+	if (cm7120->is_dsp_mode)
+		cm7120_dsp_mode_i2c_read(cm7120, CodecAddr, &dwValue);
+	else
+		regmap_read(cm7120->real_regmap, CodecAddr, &dwValue);
 
 	dwValue = dwValue & 0xFFFF;
 	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", dwValue);
@@ -3017,16 +3431,28 @@ static ssize_t cm7120_Codec_Reg_Set(struct device *dev,
 	struct cm7120_priv *cm7120 = dev_get_drvdata(dev);
 	u32 dwAddr = 0, dwData = 0;
 	u32 dwParamCount;
+	u32 dwValue = 0;
 
 	dwParamCount = param_parsing((char *)buf, (u32)count, &dwAddr, &dwData);
 	dwAddr = dwAddr & 0xFFFF;
 	dwData = dwData & 0xFFFF;
 
+	cm7120_dsp_mode_i2c_read(cm7120, 0x00fe, &dwValue);
+	dwValue = dwValue & 0xFFFF;
+
+	if (dwValue == 0x0000)
+		cm7120->is_dsp_mode = false;
+	else
+		cm7120->is_dsp_mode = true;
+
 	if (dwParamCount == 1)
 		CodecAddr = dwAddr;
 	else if (dwParamCount == 2) {
 		CodecAddr = dwAddr;
-		regmap_write(cm7120->virt_regmap, CodecAddr, dwData);
+		if (cm7120->is_dsp_mode)
+			cm7120_dsp_mode_i2c_write(cm7120, CodecAddr, dwData);
+		else
+			regmap_write(cm7120->real_regmap, CodecAddr, dwData);
 	}
 
 	pr_debug("%s %s BufLen=%zu dwParamCount = %d\n", __func__, buf, count,
@@ -3228,6 +3654,152 @@ static int cm7120_pm_notify(struct notifier_block *nb,
 	return 0;
 }
 
+static void cm7120_hp_det_report(struct work_struct *work)
+{
+	int i;
+	bool value = false;
+	struct delayed_work *dwork;
+	struct cm7120_priv *cm7120_codec;
+
+	dwork = to_delayed_work(work);
+	cm7120_codec = container_of(dwork, struct cm7120_priv, hp_det_dwork);
+
+	for (i = 0; i < cm7120_codec->hp_count; i++) {
+		value |= !gpio_get_value(cm7120_codec->hp_irq_gpios[i]);
+		dev_dbg(cm7120_codec->dev,
+			       "%s gpio value = %d\n", __func__, value);
+	}
+
+	if (cm7120_codec->hp_inserted && !value) {
+		snd_soc_jack_report(&cm7120_codec->jack, 0, CM7120_JACK_MASK);
+		cm7120_codec->hp_inserted = false;
+	} else if (!cm7120_codec->hp_inserted && value) {
+		snd_soc_jack_report(&cm7120_codec->jack,
+				SND_JACK_HEADPHONE, CM7120_JACK_MASK);
+		cm7120_codec->hp_inserted = true;
+	}
+}
+
+static irqreturn_t cm7120_headset_det_irq_thread(int irq, void *data)
+{
+	struct cm7120_priv *cm7120_codec;
+
+	cm7120_codec = (struct cm7120_priv *)data;
+	cancel_delayed_work_sync(&cm7120_codec->hp_det_dwork);
+	schedule_delayed_work(&cm7120_codec->hp_det_dwork,
+			msecs_to_jiffies(500));
+
+	return IRQ_HANDLED;
+}
+
+static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
+{
+	struct device *dev;
+	struct device_node *np;
+	char hp_det_gpio_label[50];
+	int i, rc;
+
+	dev = cm7120_codec->dev;
+	np = dev->of_node;
+	cm7120_codec->card = cm7120_codec->component->card;
+
+	if (!np)
+		return -EINVAL;
+
+	cm7120_codec->hp_count = of_gpio_named_count(dev->of_node,
+						"cm7120,headphone-det-gpios");
+	if (cm7120_codec->hp_count < 0) {
+		dev_warn(dev, "Audio jack detetction is not supported.\n");
+		return 0;
+	}
+
+	cm7120_codec->hp_irq_gpios = devm_kcalloc(dev,
+		cm7120_codec->hp_count, sizeof(*cm7120_codec->hp_irq_gpios),
+		GFP_KERNEL);
+	if (!cm7120_codec->hp_irq_gpios) {
+		dev_err(dev, "Cannot allocate hp irq gpios array");
+		rc = -ENOMEM;
+		goto error;
+	}
+
+	cm7120_codec->hp_irqs = devm_kcalloc(dev,
+		     cm7120_codec->hp_count, sizeof(*cm7120_codec->hp_irqs),
+		     GFP_KERNEL);
+	if (!cm7120_codec->hp_irqs) {
+		dev_err(dev, "Cannot allocate hp irq array");
+		rc = -ENOMEM;
+		goto error;
+	}
+
+	for (i = 0; i < cm7120_codec->hp_count; i++) {
+		rc = of_get_named_gpio(np, "cm7120,headphone-det-gpios", i);
+		if (!gpio_is_valid(rc)) {
+			dev_err(dev, "gpio %d is invalid\n", i);
+			rc = -EINVAL;
+			goto error;
+		}
+		cm7120_codec->hp_irq_gpios[i] = rc;
+
+		snprintf(hp_det_gpio_label, sizeof(hp_det_gpio_label),
+				"cm7120 hp det.%d", i);
+		rc = devm_gpio_request(dev, cm7120_codec->hp_irq_gpios[i],
+				hp_det_gpio_label);
+		if (rc) {
+			dev_err(dev, "%s gpio request fail\n",
+					hp_det_gpio_label);
+			rc = -EINVAL;
+			goto error;
+		}
+
+		rc = gpio_direction_input(cm7120_codec->hp_irq_gpios[i]);
+		if (rc) {
+			dev_err(dev, "%s input fail\n", hp_det_gpio_label);
+			rc = -EINVAL;
+			goto error;
+		}
+
+		cm7120_codec->hp_irqs[i] =
+			gpio_to_irq(cm7120_codec->hp_irq_gpios[i]);
+		snprintf(hp_det_gpio_label, sizeof(hp_det_gpio_label),
+				"cm7120.%d", i);
+		rc = devm_request_threaded_irq(dev, cm7120_codec->hp_irqs[i],
+			NULL, cm7120_headset_det_irq_thread,
+			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+			IRQF_ONESHOT, hp_det_gpio_label, cm7120_codec);
+		if (rc != 0) {
+			dev_err(dev, "Failed to request IRQ %d: %d\n",
+				cm7120_codec->hp_irqs[i], rc);
+			rc = -EINVAL;
+			goto error;
+		}
+
+		rc = enable_irq_wake(cm7120_codec->hp_irqs[i]);
+		if (rc) {
+			dev_err(dev,
+				"Failed to set wake interrupt on IRQ %d: %d\n",
+				cm7120_codec->hp_irqs[i], rc);
+			rc = -EINVAL;
+			goto error;
+		}
+	}
+
+	INIT_DELAYED_WORK(&cm7120_codec->hp_det_dwork, cm7120_hp_det_report);
+	rc = snd_soc_card_jack_new(cm7120_codec->card, "CM7120 Headphone",
+		CM7120_JACK_MASK, &cm7120_codec->jack, NULL, 0);
+	if (rc < 0) {
+		dev_err(dev, "Cannot create jack\n");
+		rc = -EINVAL;
+		goto error;
+	}
+
+	schedule_delayed_work(&cm7120_codec->hp_det_dwork,
+			msecs_to_jiffies(200));
+	return 0;
+
+error:
+	return rc;
+}
+
 static int cm7120_probe(struct snd_soc_component *component)
 {
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
@@ -3236,6 +3808,12 @@ static int cm7120_probe(struct snd_soc_component *component)
 	dev_info(cm7120->dev, "Codec driver version %s\n", VERSION);
 
 	cm7120->component = component;
+
+	ret = cm7120_parse_dt_hp_det(cm7120);
+	if (ret < 0) {
+		dev_err(cm7120->dev, "cm7120_parse_dt_hp_det error\n");
+		return ret;
+	}
 
 	/* enable clock */
 	cm7120->mclk = clk_get(cm7120->dev, "cm7120_mclk");
@@ -3434,6 +4012,27 @@ struct snd_soc_dai_driver cm7120_dai[] = {
 		.ops = &cm7120_aif_dai_ops,
 		.symmetric_rates = 1,
 	},
+	{
+		.name = "cm7120-aif1",
+		.id = 0,
+		.base = CM7120_AIF1,
+		.playback = {
+			.stream_name = "AIF1 Playback",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = CM7120_STEREO_RATES,
+			.formats = CM7120_FORMATS,
+		},
+		.capture = {
+			.stream_name = "AIF1 Capture",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = CM7120_STEREO_RATES,
+			.formats = CM7120_FORMATS,
+		},
+		.ops = &cm7120_aif_dai_ops,
+		.symmetric_rates = 1,
+	},
 };
 
 static struct snd_soc_component_driver soc_component_dev_cm7120 = {
@@ -3539,6 +4138,7 @@ static int cm7120_write_firmware_romcode(struct cm7120_priv *cm7120,
 {
 	u32 blockAddr;
 	u32 blockSize;
+	u32 tmpBlockSize;
 	int i, ret;
 	const int headerBlockInfo = 8;
 
@@ -3562,6 +4162,13 @@ static int cm7120_write_firmware_romcode(struct cm7120_priv *cm7120,
 			*(fwHeader + (i * 8) + 7) << 24;
 		pr_info("block[%d] size = 0x%08x\n", i, blockSize);
 
+		tmpBlockSize = blockSize; /* Backup */
+		if (blockSize % 8) {
+			blockSize = 8 * ((blockSize / 8) + 1);
+			pr_info("block[%d] isn't multiple of 8, new size = 0x%08x\n",
+			i, blockSize);
+		}
+
 		ret = cm7120_spi_burst_write(blockAddr, fwData, blockSize);
 		if (ret < 0) {
 			pr_err("%s: cm7120_spi_burst_write() failed!!!\n",
@@ -3570,6 +4177,7 @@ static int cm7120_write_firmware_romcode(struct cm7120_priv *cm7120,
 		}
 		pr_info("block[%d] ---- write successfully ----\n", i);
 
+		blockSize = tmpBlockSize; /* Restore */
 		fwData += blockSize;
 	}
 

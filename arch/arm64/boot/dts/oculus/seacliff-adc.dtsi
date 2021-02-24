@@ -99,13 +99,15 @@
 		      <&pm8150b_vadc ADC_USB_IN_I>,
 		      <&pm8150b_vadc ADC_SBUx>,
 		      <&pm8150b_vadc ADC_VPH_PWR>,
-		      <&pm8150b_vadc ADC_CHG_TEMP>;
+		      <&pm8150b_vadc ADC_CHG_TEMP>,
+		      <&pm8150b_vadc ADC_AMUX_THM3_PU2>;
 	io-channel-names = "usb_in_voltage",
 			   "mid_voltage",
 			   "usb_in_current",
 			   "sbux_res",
 			   "vph_voltage",
-			   "chg_temp";
+			   "chg_temp",
+			   "rblt_res";
 	qcom,battery-data = <&kona_mtp_batterydata>;
 	qcom,sw-jeita-enable;
 	qcom,wd-bark-time-secs = <16>;

@@ -1629,6 +1629,11 @@ static void rrm_iter_meas_timer_handle(void *data)
 		return;
 	}
 
+	if (!sme_rrm_ctx->channelList.ChannelList) {
+		sme_err("ChannelList is NULL");
+		return;
+	}
+
 	sme_debug("Randomization timer expired...send on next channel");
 
 	/* Issue a scan req for next channel. */

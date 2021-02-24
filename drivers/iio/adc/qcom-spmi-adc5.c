@@ -984,6 +984,8 @@ static const struct adc_channels adc_chans_rev2[ADC_MAX_CHANNEL] = {
 	/* Charger prescales SBUx and MID_CHG to fit within 1.8V upper unit */
 	[ADC_SBUx]		= ADC_CHAN_VOLT("chg_sbux", 3,
 					SCALE_HW_CALIB_DEFAULT)
+	[ADC_GPIO4]		= ADC_CHAN_VOLT("psns_vol", 1,
+					SCALE_HW_CALIB_DEFAULT)
 	[ADC_MID_CHG_DIV6]	= ADC_CHAN_VOLT("chg_mid_chg", 6,
 					SCALE_HW_CALIB_DEFAULT)
 	[ADC_BAT_THERM_PU1]	= ADC_CHAN_TEMP("bat_therm_pu1", 1,

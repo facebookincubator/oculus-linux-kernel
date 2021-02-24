@@ -608,6 +608,8 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 	if (chg->chg_param.qc4_max_icl_ua <= 0)
 		chg->chg_param.qc4_max_icl_ua = MICRO_4PA;
 
+	of_property_read_u32(node, "dcin-icl-uv", &chg->dcin_icl_voltage);
+
 	return 0;
 }
 
@@ -659,6 +661,10 @@ static int smb5_parse_dt_adc_channels(struct smb_charger *chg)
 		return rc;
 
 	rc = smblib_get_iio_channel(chg, "rblt_res", &chg->iio.rblt_chan);
+	if (rc < 0)
+		return rc;
+
+	rc = smblib_get_iio_channel(chg, "psns_res", &chg->iio.psns_chan);
 	if (rc < 0)
 		return rc;
 
@@ -1565,6 +1571,7 @@ static enum power_supply_property smb5_dc_props[] = {
 	POWER_SUPPLY_PROP_REAL_TYPE,
 	POWER_SUPPLY_PROP_DC_RESET,
 	POWER_SUPPLY_PROP_AICL_DONE,
+	POWER_SUPPLY_PROP_PD_ACTIVE,
 };
 
 static int smb5_dc_get_prop(struct power_supply *psy,
@@ -1605,6 +1612,9 @@ static int smb5_dc_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_AICL_DONE:
 		val->intval = chg->dcin_aicl_done;
+		break;
+	case POWER_SUPPLY_PROP_PD_ACTIVE:
+		rc = smblib_get_prop_dc_pd_active(chg, val);
 		break;
 	default:
 		return -EINVAL;
@@ -3159,11 +3169,11 @@ static struct smb_irq_info smb5_irqs[] = {
 	},
 	[DCIN_PON_IRQ] = {
 		.name		= "dcin-pon",
-		.handler	= default_irq_handler,
+		.handler	= dcin_pon_irq_handler,
 	},
 	[DCIN_EN_IRQ] = {
 		.name		= "dcin-en",
-		.handler	= default_irq_handler,
+		.handler	= dcin_enable_irq_handler,
 	},
 	/* TYPEC IRQs */
 	[TYPEC_OR_RID_DETECTION_CHANGE_IRQ] = {

@@ -1,0 +1,159 @@
+#include <dt-bindings/clock/qcom,gcc-kona.h>
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "seacliff.dtsi"
+#include "seacliff-bcmdhd.dtsi"
+#include "seacliff-blu.dtsi"
+#include "seacliff-eye-face-led.dtsi"
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		csiphy-sd-index = <2>;
+	};
+	qcom,cam-sensor1 {
+		csiphy-sd-index = <4>;
+	};
+	qcom,cam-sensor2 {
+		csiphy-sd-index = <1>;
+	};
+	qcom,cam-sensor3 {
+		csiphy-sd-index = <5>;
+	};
+	qcom,cam-sensor4 {
+		csiphy-sd-index = <0>;
+	};
+	qcom,cam-sensor5 {
+		csiphy-sd-index = <3>;
+	};
+};
+
+&cm7120 {
+	cm7120,codec_1v8-supply = <&pm8150_l7>;
+	cm7120,headphone-det-gpios = <&tlmm 121 0
+				   &tlmm 113 0>;
+};
+
+&cm7120_snd {
+	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
+	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@3 {
+		qcom,supply-min-voltage = <3120000>;
+		qcom,supply-max-voltage = <3120000>;
+	};
+};
+
+&pm8150a_l4 {
+	status = "disabled";
+};
+
+&pm8150a_l6 {
+	status = "disabled";
+};
+
+&pm8150a_l9 {
+	regulator-max-microvolt = <3000000>;
+	qcom,init-voltage = <3000000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150a_l11 {
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	qcom,init-voltage = <3120000>;
+};
+
+&pm8150_l7 {
+	qcom,init-voltage = <1800000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150b_charger {
+	io-channels = <&pm8150b_vadc ADC_USB_IN_V_16>,
+		      <&pm8150b_vadc ADC_MID_CHG_DIV6>,
+		      <&pm8150b_vadc ADC_USB_IN_I>,
+		      <&pm8150b_vadc ADC_SBUx>,
+		      <&pm8150b_vadc ADC_VPH_PWR>,
+		      <&pm8150b_vadc ADC_CHG_TEMP>,
+		      <&pm8150b_vadc ADC_GPIO4>;
+	io-channel-names = "usb_in_voltage",
+			   "mid_voltage",
+			   "usb_in_current",
+			   "sbux_res",
+			   "vph_voltage",
+			   "chg_temp",
+			   "psns_res";
+	dcin-icl-uv = <40000>;
+};
+
+&pm8150b_vadc {
+	psns_vol@15 {
+		reg = <ADC_GPIO4>;
+		label = "psns_vol";
+		qcom,pre-scaling = <1 1>;
+	};
+};
+
+&q6core {
+	quin_mi2s_gpios: quin_mi2s_gpios {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&lpi_i2s1_sck_active
+			&lpi_i2s1_sd0_active
+			&lpi_i2s1_sd1_active
+			&lpi_i2s1_ws_active>;
+		pinctrl-1 = <&lpi_i2s1_sck_sleep
+			&lpi_i2s1_sd0_sleep
+			&lpi_i2s1_sd1_sleep
+			&lpi_i2s1_ws_sleep>;
+		qcom,lpi-gpios;
+	};
+};
+
+&qupv3_se0_spi {
+	status = "disabled";
+};
+
+&qupv3_se5_2uart {
+	status = "disabled";
+};
+
+&tlmm {
+	cypd3177_irq_default: cypd3177_irq_default {
+		mux {
+			pins = "gpio22", "gpio23";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio22", "gpio23";
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+};
+
+&qupv3_se15_i2c {
+	cypd3177: cypd3177@08 {
+		compatible = "cy,cypd3177";
+		reg = <0x08>;
+		status = "ok";
+		cy,hpi-gpio = <&tlmm 22 0x0>;
+		cy,fault-gpio = <&tlmm 23 0x1>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <13 2>, <14 1>;
+		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cypd3177_irq_default>;
+	};
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_P2_BOARD.bin";
+		};
+	};
+};

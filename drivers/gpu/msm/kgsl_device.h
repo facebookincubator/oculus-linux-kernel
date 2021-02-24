@@ -232,6 +232,16 @@ struct kgsl_sparseobj_node {
 	struct kgsl_sparse_binding_object obj;
 };
 
+/**
+ * struct kgsl_privileged_uid_node - Descriptor for privileged process UIDs
+ * @node: Local list node for the object
+ * @uid: UID of privileged process
+ */
+struct kgsl_privileged_uid_node {
+	struct list_head node;
+	uid_t uid;
+};
+
 struct kgsl_device {
 	struct device *dev;
 	const char *name;
@@ -324,7 +334,7 @@ struct kgsl_device {
 	unsigned int cur_l3_pwrlevel;
 
 	/* Allow restricting high and maximum priority contexts */
-	uid_t privileged_uid;
+	struct list_head privileged_uid_list;
 	pid_t privileged_tid;
 };
 
