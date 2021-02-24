@@ -17,6 +17,7 @@
 #include "sde_crtc.h"
 #include "sde_rm.h"
 #include "sde_wb.h"
+#include <video/mipi_display.h>
 
 #define BL_NODE_NAME_SIZE 32
 #define HDR10_PLUS_VSIF_TYPE_CODE      0x81
@@ -1922,10 +1923,86 @@ end:
 	return rc;
 }
 
+static ssize_t _sde_conn_dcs_cmd_write(struct file *file,
+			const char __user *p, size_t count, loff_t *ppos)
+{
+	struct drm_connector *connector = file->private_data;
+	struct sde_connector *c_conn;
+	char *input, *token, *input_copy, *input_dup, *payload = NULL;
+	const char *delim = " ";
+	struct dsi_display *display;
+	struct mipi_dsi_device *dsi;
+	u32 buf_size, payload_size = 0;
+	u8 buffer[MAX_CMD_PAYLOAD_SIZE];
+	char reg;
+	int rc = 0, strtoint;
+
+	if (*ppos || !connector) {
+		SDE_ERROR("invalid argument(s), conn %d\n", connector != NULL);
+		return 0;
+	}
+
+	c_conn = to_sde_connector(connector);
+	display = c_conn->display;
+	dsi = &display->panel->mipi_device;
+	input = kzalloc(count + 1, GFP_KERNEL);
+	if (!input)
+		return -ENOMEM;
+
+	if (copy_from_user(input, p, count)) {
+		SDE_ERROR("copy from user failed\n");
+		rc = -EFAULT;
+		goto end;
+	}
+	input_copy = kstrdup(input, GFP_KERNEL);
+	if (!input_copy) {
+		rc = -ENOMEM;
+		goto end;
+	}
+
+	input_dup = input_copy;
+	token = strsep(&input_copy, delim);
+	while (token) {
+		rc = kstrtoint(token, 16, &strtoint);
+		if (rc) {
+			SDE_ERROR("input buffer conversion failed\n");
+			goto end;
+		}
+		if (buf_size >= MAX_CMD_PAYLOAD_SIZE) {
+			SDE_ERROR("buffer size exceeding the limit %d\n",
+					MAX_CMD_PAYLOAD_SIZE);
+			goto end;
+		}
+		buffer[buf_size++] = (strtoint & 0xff);
+		token = strsep(&input_copy, delim);
+	}
+	if (!buf_size)
+		goto end;
+	reg = buffer[0];
+	mutex_lock(&c_conn->lock);
+	payload = buf_size > 1 ? buffer + 1 : NULL;
+	payload_size = buf_size - 1;
+	rc = mipi_dsi_dcs_write(dsi, reg, payload,
+			payload_size);
+	mutex_unlock(&c_conn->lock);
+
+end:
+	kfree(input_dup);
+	kfree(input);
+	kfree(input_copy);
+	return count;
+}
+
+
 static const struct file_operations conn_cmd_tx_fops = {
 	.open =		_sde_debugfs_conn_cmd_tx_open,
 	.read =		_sde_debugfs_conn_cmd_tx_sts_read,
 	.write =	_sde_debugfs_conn_cmd_tx_write,
+};
+
+static const struct file_operations conn_dcs_cmd_fops = {
+	.open = simple_open,
+	.write = _sde_conn_dcs_cmd_write,
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -1966,6 +2043,13 @@ static int sde_connector_init_debugfs(struct drm_connector *connector)
 			SDE_ERROR("failed to create connector cmd_tx\n");
 			return -ENOMEM;
 		}
+	}
+
+	if (!debugfs_create_file("dcs_cmd_tx", 0600,
+		connector->debugfs_entry,
+		connector, &conn_dcs_cmd_fops)) {
+		SDE_ERROR("failed to create connector cmd_tx\n");
+		return -ENOMEM;
 	}
 
 	return 0;

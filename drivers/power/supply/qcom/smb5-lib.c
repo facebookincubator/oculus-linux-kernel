@@ -1131,6 +1131,8 @@ static int smblib_notifier_call(struct notifier_block *nb,
 		pm_stay_awake(chg->dev);
 		schedule_work(&chg->cp_status_change_work);
 	}
+	if (!strcmp(psy->desc->name, "wireless"))
+		schedule_work(&chg->dc_detect_work);
 
 	return NOTIFY_OK;
 }
@@ -1409,12 +1411,14 @@ static int set_sdp_current(struct smb_charger *chg, int icl_ua)
 	return rc;
 }
 
+#define DC_VOLTAGE_9V 9000000
 int smblib_set_icl_current(struct smb_charger *chg, int icl_ua)
 {
 	int rc = 0;
 	enum icl_override_mode icl_override = HW_AUTO_MODE;
 	/* suspend if 25mA or less is requested */
 	bool suspend = (icl_ua <= USBIN_25MA);
+	union power_supply_propval dcval;
 
 	if (chg->chg_param.smb_version == PMI632_SUBTYPE)
 		schgm_flash_torch_priority(chg, suspend ? TORCH_BOOST_MODE :
@@ -1469,6 +1473,20 @@ set_mode:
 	}
 
 unsuspend:
+	/* USB PD session is ongoing, ignore DC detection */
+	if (!chg->pd_active) {
+		rc = smblib_get_prop_dc_pd_active(chg, &dcval);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't read dc pd active rc=%d\n",
+				rc);
+			goto out;
+		}
+		if (dcval.intval) {
+			smblib_get_prop_dc_voltage_max(chg, &dcval);
+			if (dcval.intval == DC_VOLTAGE_9V)
+				goto out;
+		}
+	}
 	/* unsuspend after configuring current and override */
 	rc = smblib_set_usb_suspend(chg, false);
 	if (rc < 0) {
@@ -3033,6 +3051,28 @@ int smblib_get_prop_dc_present(struct smb_charger *chg,
 	return 0;
 }
 
+int smblib_get_prop_dc_pd_active(struct smb_charger *chg,
+			union power_supply_propval *val)
+{
+	int rc;
+	val->intval = 0;
+
+	if (!chg->wls_psy)
+		chg->wls_psy = power_supply_get_by_name("wireless");
+
+	if (chg->wls_psy) {
+		rc = power_supply_get_property(chg->wls_psy,
+				POWER_SUPPLY_PROP_PD_ACTIVE, val);
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't get POWER_SUPPLY_PROP_DC_PD_ACTIVE, rc=%d\n",
+					rc);
+			return rc;
+		}
+	}
+
+	return 0;
+}
+
 int smblib_get_prop_dc_online(struct smb_charger *chg,
 			       union power_supply_propval *val)
 {
@@ -3634,6 +3674,25 @@ int smblib_get_prop_rblt(struct smb_charger *chg,
 		return rc;
 	}
 	val->intval = rblt;
+
+	return rc;
+}
+
+int smblib_get_prop_psns(struct smb_charger *chg,
+				 union power_supply_propval *val)
+{
+	int psns_vol, rc;
+
+	if (!chg->iio.psns_chan)
+		return -ENODATA;
+
+	rc = iio_read_channel_processed(chg->iio.psns_chan,
+			&psns_vol);
+	if (rc < 0) {
+		pr_err("Error in reading psns channel, rc=%d\n", rc);
+		return rc;
+	}
+	val->intval = psns_vol;
 
 	return rc;
 }
@@ -4994,6 +5053,36 @@ irqreturn_t default_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+irqreturn_t dcin_pon_irq_handler(int irq, void *data)
+{
+	struct smb_irq_data *irq_data = data;
+	struct smb_charger *chg = irq_data->parent_data;
+	int rc;
+	u8 stat;
+
+	/* after suspend usb, before enable dcin_en */
+	rc = smblib_read(chg, POWER_PATH_STATUS_REG, &stat);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't read POWER_PATH_STATUS_REG rc=%d\n",
+			rc);
+		return IRQ_HANDLED;
+	}
+	if (stat & USBIN_SUSPEND_STS_BIT)
+		smblib_set_usb_suspend(chg, false);
+
+	return IRQ_HANDLED;
+}
+
+irqreturn_t dcin_enable_irq_handler(int irq, void *data)
+{
+	struct smb_irq_data *irq_data = data;
+	struct smb_charger *chg = irq_data->parent_data;
+
+	chg->dcin_icl_state = false;
+
+	return IRQ_HANDLED;
+}
+
 irqreturn_t smb_en_irq_handler(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
@@ -5700,6 +5789,7 @@ irqreturn_t usb_source_change_irq_handler(int irq, void *data)
 	struct smb_charger *chg = irq_data->parent_data;
 	int rc = 0;
 	u8 stat;
+	union power_supply_propval dcval;
 
 	/* PD session is ongoing, ignore BC1.2 and QC detection */
 	if (chg->pd_active)
@@ -5753,6 +5843,17 @@ irqreturn_t usb_source_change_irq_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 	smblib_dbg(chg, PR_INTERRUPT, "APSD_STATUS = 0x%02x\n", stat);
+
+	rc = smblib_get_prop_dc_pd_active(chg, &dcval);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't read dc pd active rc=%d\n", rc);
+		return IRQ_HANDLED;
+	}
+	if (dcval.intval) {
+		smblib_get_prop_dc_voltage_max(chg, &dcval);
+		if (dcval.intval == DC_VOLTAGE_9V)
+			smblib_set_usb_suspend(chg, true);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -6379,6 +6480,13 @@ unlock:
 unvote:
 	vote(chg->awake_votable, DCIN_AICL_VOTER, false, 0);
 	chg->dcin_aicl_done = aicl_done;
+	/*
+	 * When dcin_aicl is done, set dcin_ic_state to true, if there are
+	 * DCIN_UV interrupts triggered before that, it is not need to handle
+	 * them in the dcin_uv_irq_handler function.
+	 */
+	if (chg->dcin_icl_voltage)
+		chg->dcin_icl_state = true;
 }
 
 static void dcin_aicl_work(struct work_struct *work)
@@ -6442,6 +6550,8 @@ irqreturn_t dcin_uv_irq_handler(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
+	union power_supply_propval val;
+	int rc;
 
 	mutex_lock(&chg->dcin_aicl_lock);
 
@@ -6452,6 +6562,17 @@ irqreturn_t dcin_uv_irq_handler(int irq, void *data)
 
 	mutex_unlock(&chg->dcin_aicl_lock);
 
+	if (chg->dcin_icl_state) {
+		rc = smblib_get_prop_psns(chg, &val);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't get the PSNS voltage rc=%d\n",
+				rc);
+			return IRQ_HANDLED;
+		}
+		if (!val.intval)
+			smblib_set_prop_dc_reset(chg);
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -6461,7 +6582,7 @@ irqreturn_t dc_plugin_irq_handler(int irq, void *data)
 	struct smb_charger *chg = irq_data->parent_data;
 	union power_supply_propval pval;
 	int input_present;
-	bool dcin_present, vbus_present;
+	bool dcin_present, vbus_present, usb_online;
 	int rc, wireless_vout = 0, wls_set = 0;
 	int sec_charger;
 
@@ -6475,14 +6596,18 @@ irqreturn_t dc_plugin_irq_handler(int irq, void *data)
 	rc = smblib_is_input_present(chg, &input_present);
 	if (rc < 0)
 		return IRQ_HANDLED;
+	rc = smblib_get_usb_online(chg, &pval);
+	if (rc < 0)
+		smblib_err(chg, "Couldn't get usb online property rc=%d\n", rc);
 
+	usb_online = (bool)pval.intval;
 	dcin_present = input_present & INPUT_PRESENT_DC;
 	vbus_present = input_present & INPUT_PRESENT_USB;
 
 	if (!chg->cp_ilim_votable)
 		chg->cp_ilim_votable = find_votable("CP_ILIM");
 
-	if (dcin_present && !vbus_present) {
+	if (dcin_present && !usb_online) {
 		cancel_work_sync(&chg->dcin_aicl_work);
 
 		/* Reset DCIN ICL to 100 mA */
@@ -7583,6 +7708,31 @@ relax:
 	pm_relax(chg->dev);
 }
 
+#define USBPD_REV_30	2
+static void smblib_dc_detect_work(struct work_struct *work)
+{
+	union power_supply_propval prop_usbval;
+	union power_supply_propval prop_dcval, val;
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+						dc_detect_work);
+	int rc;
+
+	rc = smblib_get_prop_usb_present(chg, &prop_usbval);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't get usb present rc = %d\n", rc);
+		return;
+	}
+	if (prop_usbval.intval) {
+		if (chg->pd_active != USBPD_REV_30) {
+			smblib_get_prop_usb_voltage_max(chg, &prop_usbval);
+			smblib_dbg(chg, PR_WLS, "detect usb voltage max: %d uV\n",
+					prop_usbval.intval);
+			if (prop_usbval.intval < DC_VOLTAGE_9V)
+				smblib_set_usb_suspend(chg, true);
+		}
+	}
+}
+
 static int smblib_create_votables(struct smb_charger *chg)
 {
 	int rc = 0;
@@ -7761,6 +7911,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_WORK(&chg->jeita_update_work, jeita_update_work);
 	INIT_WORK(&chg->dcin_aicl_work, dcin_aicl_work);
 	INIT_WORK(&chg->cp_status_change_work, smblib_cp_status_change_work);
+	INIT_WORK(&chg->dc_detect_work, smblib_dc_detect_work);
 	INIT_DELAYED_WORK(&chg->clear_hdc_work, clear_hdc_work);
 	INIT_DELAYED_WORK(&chg->icl_change_work, smblib_icl_change_work);
 	INIT_DELAYED_WORK(&chg->pl_enable_work, smblib_pl_enable_work);

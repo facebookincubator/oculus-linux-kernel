@@ -4414,21 +4414,48 @@ done:
 	return result;
 }
 
+static inline void kgsl_privileged_uid_list_free(struct kgsl_device *device)
+{
+	struct kgsl_privileged_uid_node *entry, *tmp;
+
+	list_for_each_entry_safe(entry, tmp, &device->privileged_uid_list, node) {
+		list_del_init(&entry->node);
+		kfree(entry);
+	}
+}
+
 long kgsl_ioctl_allow_uid_high_priority(
 		struct kgsl_device_private *dev_priv,
 		unsigned int cmd, void *data)
 {
 	struct kgsl_allow_uid_high_priority *param = data;
 	struct kgsl_device *device = dev_priv->device;
+	struct kgsl_privileged_uid_node *entry;
 
 	if (!capable(CAP_SYS_NICE))
 		return -EPERM;
+
+	/* If the requested UID is -1, clear the list and return. */
+	if (param->uid == -1) {
+		kgsl_privileged_uid_list_free(device);
+		return 0;
+	}
 
 	/*
 	 * Allow UIDs that match the given UID to request high-priority
 	 * contexts.
 	 */
-	device->privileged_uid = param->uid;
+	list_for_each_entry(entry, &device->privileged_uid_list, node)
+		if (entry->uid == param->uid)
+			return 0;
+
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (entry == NULL)
+		return -ENOMEM;
+
+	entry->uid = param->uid;
+
+	list_add(&entry->node, &device->privileged_uid_list);
 
 	return 0;
 }
@@ -5206,10 +5233,10 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 		goto error;
 
 	/*
-	 * Initialize the privileged UID and TID to -1 so that contexts are
+	 * Initialize the privileged UID list and TID to -1 so that contexts are
 	 * not unintentionally elevated/restricted by default.
 	 */
-	device->privileged_uid = (uid_t)-1;
+	INIT_LIST_HEAD(&device->privileged_uid_list);
 	device->privileged_tid = -1;
 
 	if (!devm_request_mem_region(device->dev, device->reg_phys,
@@ -5328,6 +5355,8 @@ void kgsl_device_platform_remove(struct kgsl_device *device)
 	kgsl_mmu_close(device);
 
 	kgsl_pwrctrl_close(device);
+
+	kgsl_privileged_uid_list_free(device);
 
 	kgsl_device_debugfs_close(device);
 	_unregister_device(device);

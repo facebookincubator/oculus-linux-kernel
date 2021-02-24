@@ -1048,6 +1048,7 @@ static void msm_lastclose(struct drm_device *dev)
 	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_kms *kms = priv->kms;
 	struct drm_modeset_acquire_ctx ctx;
+	struct drm_crtc *crtc;
 	int i, rc;
 
 	/* check for splash status before triggering cleanup
@@ -1072,6 +1073,24 @@ static void msm_lastclose(struct drm_device *dev)
 
 	/* wait for pending vblank requests to be executed by worker thread */
 	flush_workqueue(priv->wq);
+
+	/*
+	 * disable vblank interrupts here before swapping in the new state
+	 * so that encoder_mask is still set when sde_crtc_vblank unregisters
+	 * vblank/lineptr callbacks on the previously attached encoder (see
+	 * T80705569)
+	 */
+	drm_for_each_crtc(crtc, dev) {
+		unsigned int crtc_id = drm_crtc_index(crtc);
+
+		SDE_EVT32(DRMID(crtc), crtc_id);
+		drm_crtc_vblank_off(crtc);
+
+		/* wait for sde_crtc_vblank to complete before continuing */
+		if (priv->event_thread[crtc_id].thread)
+			kthread_flush_worker(
+				&priv->event_thread[crtc_id].worker);
+	}
 
 	if (priv->fbdev) {
 		drm_fb_helper_restore_fbdev_mode_unlocked(priv->fbdev);

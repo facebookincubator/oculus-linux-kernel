@@ -31,10 +31,6 @@
 #define MAX_PANEL_JITTER		10
 #define DEFAULT_PANEL_PREFILL_LINES	25
 #define MIN_PREFILL_LINES      35
-#define DFPS_60HZ	60
-#define DFPS_72HZ	72
-#define DFPS_80HZ	80
-#define DFPS_90HZ	90
 
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,

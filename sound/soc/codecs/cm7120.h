@@ -2186,6 +2186,50 @@
 /* Debug String Length */
 #define CM7120_REG_DISP_LEN 12
 
+/* Audio Jack Mask */
+#define CM7120_JACK_MASK  (SND_JACK_MECHANICAL | \
+		SND_JACK_LINEOUT | \
+		SND_JACK_HEADPHONE)
+
+/* DSP (0x5FFC0004) out config register */
+#define CM7120_DSP_OUT_CONFIG_REG 0x5ffc0004
+#define CM7120_CRECI2S1_R_MUTE_MASK (0x1 << 31)
+#define CM7120_CRECI2S1_R_MUTE_SFT 31
+#define CM7120_CRECI2S1_L_MUTE_MASK (0x1 << 30)
+#define CM7120_CRECI2S1_L_MUTE_SFT 30
+#define CM7120_CREC_R_MUTE_MASK (0x1 << 29)
+#define CM7120_CREC_R_MUTE_SFT 29
+#define CM7120_CREC_L_MUTE_MASK (0x1 << 28)
+#define CM7120_CREC_L_MUTE_SFT 28
+#define CM7120_CSPK_R2_MUTE_MASK (0x1 << 27)
+#define CM7120_CSPK_R2_MUTE_SFT 27
+#define CM7120_CSPK_R1_MUTE_MASK (0x1 << 26)
+#define CM7120_CSPK_R1_MUTE_SFT 26
+#define CM7120_CSPK_L2_MUTE_MASK (0x1 << 25)
+#define CM7120_CSPK_L2_MUTE_SFT 25
+#define CM7120_CSPK_L1_MUTE_MASK (0x1 << 24)
+#define CM7120_CSPK_L1_MUTE_SFT 24
+#define CM7120_UPDATE_FIR_COEFFICIENT_MASK (0x1 << 21)
+#define CM7120_UPDATE_FIR_COEFFICIENT_SFT 21
+#define CM7120_MIC_FIR_ON_OFF_MASK (0x1 << 20)
+#define CM7120_MIC_FIR_ON_OFF_SFT 20
+#define CM7120_RIGHT_FIR_ON_OFF_MASK (0x1 << 19)
+#define CM7120_RIGHT_FIR_ON_OFF_SFT 19
+#define CM7120_LEFT_FIR_ON_OFF_MASK (0x1 << 18)
+#define CM7120_LEFT_FIR_ON_OFF_SFT 18
+#define CM7120_RIGHT_HIGH_FIR_FLIP_MASK (0x1 << 17)
+#define CM7120_RIGHT_HIGH_FIR_FLIP_SFT 17
+#define CM7120_LEFT_HIGH_FIR_FLIP_MASK (0x1 << 16)
+#define CM7120_LEFT_HIGH_FIR_FLIP_SFT 16
+#define CM7120_MIC_ID_DUMP_TO_I2S11_MASK (0xf << 12)
+#define CM7120_MIC_ID_DUMP_TO_I2S11_SFT 12
+#define CM7120_MIC_ID_DUMP_TO_I2S10_MASK (0xf << 8)
+#define CM7120_MIC_ID_DUMP_TO_I2S10_SFT 8
+#define CM7120_MIC_ID_DUMP_TO_CHANNEL1_MASK (0xf << 4)
+#define CM7120_MIC_ID_DUMP_TO_CHANNEL1_SFT 4
+#define CM7120_MIC_ID_DUMP_TO_CHANNEL0_MASK (0xf << 0)
+#define CM7120_MIC_ID_DUMP_TO_CHANNEL0_SFT 0
+
 /* System Clock Source */
 enum {
 	CM7120_SCLK_S_MCLK,
@@ -2224,41 +2268,28 @@ enum {
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
 	MIC_MONITOR_ON_OFF,
-
-	SPK_L1_POLAR_FLIP_LF,
-	SPK_L2_POLAR_FLIP_LF,
-	SPK_R1_POLAR_FLIP_LF,
-	SPK_R2_POLAR_FLIP_LF,
-
-	SPK_L1_POLAR_FLIP_HF,
-	SPK_L2_POLAR_FLIP_HF,
-	SPK_R1_POLAR_FLIP_HF,
-	SPK_R2_POLAR_FLIP_HF,
-
-	SPK_L1_CUT_OFF_FREQ,
-	SPK_L2_CUT_OFF_FREQ,
-	SPK_R1_CUT_OFF_FREQ,
-	SPK_R2_CUT_OFF_FREQ,
-
-	SPK_L1_EQ_PRE_GAIN,
-	SPK_L2_EQ_PRE_GAIN,
-	SPK_R1_EQ_PRE_GAIN,
-	SPK_R2_EQ_PRE_GAIN,
-
+	MIC_ADC1_ON_OFF,
+	MIC_ADC2_ON_OFF,
+	MIC_ADC3_ON_OFF,
+	SPK_L1_MUTE,
+	SPK_L2_MUTE,
+	SPK_R1_MUTE,
+	SPK_R2_MUTE,
+	MIC_TO_CHANNEL0,
+	MIC_TO_CHANNEL1,
+	MIC_TO_I2S10,
+	MIC_TO_I2S11,
+	LEFT_FIR_FLIP,
+	RIGHT_FIR_FLIP,
+	LEFT_FIR_ONOFF,
+	RIGHT_FIR_ONOFF,
+	MIC_FIR_ONOFF,
+	UPDATE_FIR_COEFFICIENT,
+	REC_L_MUTE,
+	REC_R_MUTE,
+	REC_I2S1L_MUTE,
+	REC_I2S1R_MUTE,
 	MIC_EQ_PRE_GAIN,
-
-	SPK_L_EQ_LOWPASS_FC,
-	SPK_L_EQ_HIGHPASS_FC,
-	SPK_L_EQ_LOWPASS_GAIN,
-	SPK_L_EQ_HIGHPASS_GAIN,
-	SPK_R_EQ_LOWPASS_FC,
-	SPK_R_EQ_HIGHPASS_FC,
-	SPK_R_EQ_LOWPASS_GAIN,
-	SPK_R_EQ_HIGHPASS_GAIN,
-
-	SPK_TEST_I2S34,
-	SPK_TEST_I2S3L,
-	SPK_TEST_I2S4R,
 	HP_IMPEDANCE,
 
 	MIC_EQ_LOWPASS_FC,
@@ -2298,7 +2329,6 @@ enum {
 	MIC_DSP_MAXNR,
 	MIC_DSP_NOISEGATE,
 	MIC_DSP_TBRRLOW,
-	MIC_TEST_CTRL3,
 	MIC_MUTE_STO2,
 };
 
@@ -2328,6 +2358,9 @@ struct cm7120_priv {
 	bool bEnableAEC;
 	bool bEnableMonitor;
 	bool bEnableAGC;
+	bool bEnableADC1;
+	bool bEnableADC2;
+	bool bEnableADC3;
 
 	struct regulator *codec_3v3;
 	struct regulator *codec_1v8;
@@ -2355,14 +2388,31 @@ struct cm7120_priv {
 	char preGainMic; /* for MIC channel */
 	unsigned char PassFilterOrder; /* 1 ~ 4 */
 
-	unsigned char i2s34;
-	unsigned char i2s3l;
-	unsigned char i2s4r;
-	unsigned char ctrl3;
+	unsigned char spkl1mute;
+	unsigned char spkl2mute;
+	unsigned char spkr1mute;
+	unsigned char spkr2mute;
+	unsigned char mictochannel0;
+	unsigned char mictochannel1;
+	unsigned char mictoi2s10;
+	unsigned char mictoi2s11;
+	unsigned char leftfirflip;
+	unsigned char rightfirflip;
+	unsigned char leftfironoff;
+	unsigned char rightfironoff;
+	unsigned char micfironoff;
+	unsigned char updateFIR;
 	unsigned char adcsto2;
 
 	unsigned char hp_impedance;
 	struct notifier_block pm_nb;
+	unsigned int *hp_irq_gpios;
+	int *hp_irqs;
+	int hp_count;
+	struct delayed_work hp_det_dwork;
+	bool hp_inserted;
+	struct snd_soc_jack jack;
+	struct snd_soc_card *card;
 };
 
 #endif /* __CM7120_H__ */

@@ -33,6 +33,13 @@
 };
 
 &vendor {
+	blu: oculus,blu {
+		status = "ok";
+		compatible = "oculus,blu";
+		boot-gpios = <&tlmm 88 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 89 GPIO_ACTIVE_HIGH>;
+	};
+
 	molokini: oculus,molokini {
 		status = "ok";
 		compatible = "oculus,molokini";
@@ -114,21 +121,8 @@
 	maximum-speed = "super-speed";
 };
 
-&dwc1 {
-	status = "disabled";
-};
-
-&usb1 {
-	status = "disabled";
-};
-
 &soc {
 	qcom,lpm-levels {
 		qcom,lpm-disallowed-cpumask = "80"; /* CPU 7 */
 	};
-};
-
-// Disable memory offlining (T74835259)
-&mem_offline {
-	offline-sizes;
 };

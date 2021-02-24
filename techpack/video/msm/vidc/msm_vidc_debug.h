@@ -87,30 +87,10 @@ extern bool msm_vidc_cvp_usage;
 extern int msm_vidc_err_recovery_disable;
 extern struct log_cookie ctxt[MAX_SUPPORTED_INSTANCES];
 
-#define dprintk(__level, sid, __fmt, ...)	\
-	do { \
-		if (is_print_allowed(sid, __level)) { \
-			if (msm_vidc_debug & VIDC_FTRACE) { \
-				char trace_logbuf[MAX_TRACER_LOG_LENGTH]; \
-				int log_length = snprintf(trace_logbuf, \
-					MAX_TRACER_LOG_LENGTH, \
-					VIDC_DBG_TAG __fmt, \
-					get_debug_level_str(__level), \
-					sid, \
-					get_codec_name(sid), \
-					##__VA_ARGS__); \
-				trace_msm_vidc_printf(trace_logbuf, \
-					log_length); \
-			} \
-			if (msm_vidc_debug & VIDC_PRINTK) { \
-				pr_info(VIDC_DBG_TAG __fmt, \
-					get_debug_level_str(__level), \
-					sid, \
-					get_codec_name(sid), \
-					##__VA_ARGS__); \
-			} \
-		} \
-	} while (0)
+void msm_vidc_dprintk(u32 level, u32 sid, const char *fmt, ...);
+
+#define dprintk(__level, sid, __fmt, ...) \
+	msm_vidc_dprintk(__level, sid, __fmt, ##__VA_ARGS__)
 
 #define s_vpr_e(sid, __fmt, ...) dprintk(VIDC_ERR, sid, __fmt, ##__VA_ARGS__)
 #define s_vpr_h(sid, __fmt, ...) dprintk(VIDC_HIGH, sid, __fmt, ##__VA_ARGS__)
@@ -134,24 +114,10 @@ extern struct log_cookie ctxt[MAX_SUPPORTED_INSTANCES];
 #define d_vpr_b(__fmt, ...) \
 			dprintk(VIDC_BUS, DEFAULT_SID, __fmt, ##__VA_ARGS__)
 
-#define dprintk_firmware(__level, __fmt, ...)	\
-	do { \
-		if (__level & FW_FTRACE) { \
-			char trace_logbuf[MAX_TRACER_LOG_LENGTH]; \
-			int log_length = snprintf(trace_logbuf, \
-				MAX_TRACER_LOG_LENGTH, \
-				FW_DBG_TAG __fmt, \
-				"fw", \
-				##__VA_ARGS__); \
-			trace_msm_vidc_printf(trace_logbuf, \
-				log_length); \
-		} \
-		if (__level & FW_PRINTK) { \
-			pr_info(FW_DBG_TAG __fmt, \
-				"fw", \
-				##__VA_ARGS__); \
-		} \
-	} while (0)
+void msm_vidc_dprintk_firmware(u32 level, const char *fmt, ...);
+
+#define dprintk_firmware(__level, __fmt, ...) \
+	msm_vidc_dprintk_firmware(__level, __fmt, ##__VA_ARGS__)
 
 #define dprintk_ratelimit(__level, __fmt, arg...) \
 	do { \

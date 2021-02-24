@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/delete-node/ &cam_fd;
+
+/delete-node/ &cam_sensor_active_rear;
+/delete-node/ &cam_sensor_suspend_rear;
+/delete-node/ &cam_sensor_active_rear_aux;
+/delete-node/ &cam_sensor_suspend_rear_aux;
+/delete-node/ &cam_sensor_active_rst2;
+/delete-node/ &cam_sensor_suspend_rst2;
+/delete-node/ &cam_sensor_active_3;
+/delete-node/ &cam_sensor_suspend_3;
+/delete-node/ &cam_sensor_active_4;
+/delete-node/ &cam_sensor_suspend_4;
+/delete-node/ &cam_sensor_active_5;
+/delete-node/ &cam_sensor_suspend_5;
+/delete-node/ &cam_sensor_active_6;
+/delete-node/ &cam_sensor_suspend_6;
+/delete-node/ &cam_sensor_6dof_vana_active;
+/delete-node/ &cam_sensor_6dof_vana_suspend;
+/delete-node/ &cam_sensor_6dof_vdig_active;
+/delete-node/ &cam_sensor_6dof_vdig_suspend;
+/delete-node/ &cam_sensor_6dof_vio_active;
+/delete-node/ &cam_sensor_6dof_vio_suspend;
+/delete-node/ &cam_sensor_et_vana_active;
+/delete-node/ &cam_sensor_et_vana_suspend;
+/delete-node/ &cam_sensor_et_vio_active;
+/delete-node/ &cam_sensor_et_vio_suspend;
+/delete-node/ &cam_sensor_rgb_vana_active;
+/delete-node/ &cam_sensor_rgb_vana_suspend;
+/delete-node/ &cam_sensor_rgb_vio_active;
+/delete-node/ &cam_sensor_rgb_vio_suspend;
+/delete-node/ &cam_sensor_rgb_vdig_active;
+/delete-node/ &cam_sensor_rgb_vdig_suspend;
+/delete-node/ &cam_sensor_active_etleft;
+/delete-node/ &cam_sensor_suspend_etleft;
+/delete-node/ &cam_sensor_active_etright;
+/delete-node/ &cam_sensor_suspend_etright;
+/delete-node/ &cam_sensor_active_6dofleft;
+/delete-node/ &cam_sensor_suspend_6dofleft;
+/delete-node/ &cam_sensor_active_6dofright;
+/delete-node/ &cam_sensor_suspend_6dofright;
+/delete-node/ &cam_sensor_active_rgbright;
+/delete-node/ &cam_sensor_suspend_rgbright;
+/delete-node/ &cam_sensor_active_rgbleft;
+/delete-node/ &cam_sensor_suspend_rgbleft;
+
+&soc {
+	/delete-node/ qcom,cam-fd;
+
+	qcom,cam_smmu {
+		/delete-node/ msm_cam_smmu_fd;
+	};
+};
