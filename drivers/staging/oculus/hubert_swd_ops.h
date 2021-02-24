@@ -9,7 +9,6 @@
 int hubert_swd_prepare(struct device *dev);
 int hubert_swd_provisioning_read(struct device *dev, int addr, u8 *data, size_t len);
 int hubert_swd_provisioning_write(struct device *dev, int addr, u8 *data, size_t len);
-bool hubert_swd_should_force_provision(struct device *dev);
 
 int hubert_swd_erase_app(struct device *dev);
 int hubert_swd_write_chunk(struct device *dev, int addr, const u8 *data,

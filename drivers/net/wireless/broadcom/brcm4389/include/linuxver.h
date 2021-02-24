@@ -672,7 +672,9 @@ static inline bool binary_sema_up(tsk_ctl_t *tsk)
 	return sem_up;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0))
+#if  (LINUX_VERSION_CODE > KERNEL_VERSION(5, 6, 0))
+#define SMP_RD_BARRIER_DEPENDS(x)
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0))
 #define SMP_RD_BARRIER_DEPENDS(x) smp_read_barrier_depends(x)
 #else
 #define SMP_RD_BARRIER_DEPENDS(x) smp_rmb(x)
@@ -864,7 +866,10 @@ not match our unaligned address for < 2.6.24
 
 #define KMALLOC_FLAG (CAN_SLEEP() ? GFP_KERNEL: GFP_ATOMIC)
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 170))
+#define RANDOM32	get_random_u32
+#define RANDOM_BYTES    get_random_bytes
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 #define RANDOM32	prandom_u32
 #define RANDOM_BYTES    prandom_bytes
 #else
@@ -915,14 +920,22 @@ int kernel_read_compat(struct file *file, loff_t offset, char *addr, unsigned lo
 #define kernel_read_compat(file, offset, addr, count) kernel_read(file, offset, addr, count)
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0) */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
+#define timespec64 timespec
+#define ktime_get_real_ts64(timespec) ktime_get_real_ts(timespec)
+#define ktime_to_timespec64(timespec) ktime_to_timespec(timespec)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0)) && (LINUX_VERSION_CODE >= \
+	KERNEL_VERSION(4, 20, 0))
 static inline void get_monotonic_boottime(struct timespec *ts)
 {
 	*ts = ktime_to_timespec(ktime_get_boottime());
 }
 #endif /* LINUX_VER >= 4.20 */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0)) && (LINUX_VERSION_CODE >= \
+	KERNEL_VERSION(5, 0, 0))
 static inline void do_gettimeofday(struct timeval *tv)
 {
 	struct timespec64 now;

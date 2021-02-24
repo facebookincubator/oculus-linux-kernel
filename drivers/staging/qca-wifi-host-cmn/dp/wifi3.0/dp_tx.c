@@ -3385,7 +3385,7 @@ uint32_t dp_tx_comp_handler(struct dp_intr *int_ctx, struct dp_soc *soc,
 	struct dp_tx_desc_s *head_desc = NULL;
 	struct dp_tx_desc_s *tail_desc = NULL;
 	uint32_t num_processed = 0;
-	uint32_t count = 0;
+	uint32_t count;
 	bool force_break = false;
 
 	DP_HIST_INIT();
@@ -3394,6 +3394,8 @@ more_data:
 	/* Re-initialize local variables to be re-used */
 		head_desc = NULL;
 		tail_desc = NULL;
+	count = 0;
+
 	if (qdf_unlikely(dp_srng_access_start(int_ctx, soc, hal_srng))) {
 		dp_err("HAL RING Access Failed -- %pK", hal_srng);
 		return 0;
@@ -3688,9 +3690,8 @@ dp_is_tx_desc_flush_match(struct dp_pdev *pdev,
  * the outstanding TX data or reset Vdev to NULL in associated TX
  * Desc.
  */
-static void dp_tx_desc_flush(struct dp_pdev *pdev,
-			     struct dp_vdev *vdev,
-			     bool force_free)
+void dp_tx_desc_flush(struct dp_pdev *pdev, struct dp_vdev *vdev,
+		      bool force_free)
 {
 	uint8_t i;
 	uint32_t j;
@@ -3773,9 +3774,8 @@ dp_tx_desc_reset_vdev(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 	TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
 }
 
-static void dp_tx_desc_flush(struct dp_pdev *pdev,
-			     struct dp_vdev *vdev,
-			     bool force_free)
+void dp_tx_desc_flush(struct dp_pdev *pdev, struct dp_vdev *vdev,
+		      bool force_free)
 {
 	uint8_t i, num_pool;
 	uint32_t j;

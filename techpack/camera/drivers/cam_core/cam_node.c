@@ -776,6 +776,308 @@ err:
 	return rc;
 }
 
+int cam_node_query_cap(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_query_cap_cmd query;
+	int rc = 0;
+
+	if (copy_from_user(&query, u64_to_user_ptr(cmd->handle), sizeof(query))) {
+		rc = -EFAULT;
+		goto end;
+	}
+
+	rc = __cam_node_handle_query_cap(node, &query);
+	if (rc) {
+		CAM_ERR(CAM_CORE, "querycap is failed(rc = %d)",
+			rc);
+		goto end;
+	}
+
+	if (copy_to_user(u64_to_user_ptr(cmd->handle), &query,
+		sizeof(query)))
+		rc = -EFAULT;
+
+end:
+	return rc;
+}
+
+int cam_node_acquire_dev(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_acquire_dev_cmd acquire;
+	int rc = 0;
+
+	if (copy_from_user(&acquire, u64_to_user_ptr(cmd->handle), sizeof(acquire))) {
+		rc = -EFAULT;
+		goto end;
+	}
+	rc = __cam_node_handle_acquire_dev(node, &acquire);
+	if (rc) {
+		CAM_ERR(CAM_CORE, "acquire device failed(rc = %d)",
+			rc);
+		goto end;
+	}
+	if (copy_to_user(u64_to_user_ptr(cmd->handle), &acquire,
+		sizeof(acquire)))
+		rc = -EFAULT;
+
+end:
+	return rc;
+}
+
+int cam_node_acquire_hw(struct cam_node *node, struct cam_control *cmd)
+{
+	uint32_t api_version;
+	void *acquire_ptr = NULL;
+	size_t acquire_size;
+	int rc = 0;
+
+	if (copy_from_user(&api_version, (void __user *)cmd->handle,
+			sizeof(api_version))) {
+		return -EFAULT;
+	}
+
+	if (api_version == 1)
+		acquire_size = sizeof(struct cam_acquire_hw_cmd_v1);
+	else if (api_version == 2)
+		acquire_size = sizeof(struct cam_acquire_hw_cmd_v2);
+	else {
+		CAM_ERR(CAM_CORE, "Unsupported api version %d",
+			api_version);
+		return -EINVAL;
+	}
+
+	acquire_ptr = kzalloc(acquire_size, GFP_KERNEL);
+	if (!acquire_ptr) {
+		CAM_ERR(CAM_CORE, "No memory for acquire HW");
+		return -ENOMEM;
+	}
+
+	if (copy_from_user(acquire_ptr, (void __user *)cmd->handle,
+		acquire_size)) {
+		rc = -EFAULT;
+		goto acquire_kfree;
+	}
+
+	if (api_version == 1) {
+		rc = __cam_node_handle_acquire_hw_v1(node, acquire_ptr);
+		if (rc) {
+			CAM_ERR(CAM_CORE,
+				"acquire device failed(rc = %d)", rc);
+			goto acquire_kfree;
+		}
+	} else if (api_version == 2) {
+		rc = __cam_node_handle_acquire_hw_v2(node, acquire_ptr);
+		if (rc) {
+			CAM_ERR(CAM_CORE,
+				"acquire device failed(rc = %d)", rc);
+			goto acquire_kfree;
+		}
+	}
+
+	if (copy_to_user((void __user *)cmd->handle, acquire_ptr,
+		acquire_size))
+		rc = -EFAULT;
+
+acquire_kfree:
+	kfree(acquire_ptr);
+	return rc;
+}
+
+int cam_node_start_dev(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_start_stop_dev_cmd start;
+	int rc = 0;
+
+	if (copy_from_user(&start, u64_to_user_ptr(cmd->handle),
+			sizeof(start)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_start_dev(node, &start);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"start device failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_stop_dev(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_start_stop_dev_cmd stop;
+	int rc = 0;
+
+	if (copy_from_user(&stop, u64_to_user_ptr(cmd->handle),
+			sizeof(stop)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_stop_dev(node, &stop);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"stop device failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_config_dev(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_config_dev_cmd config;
+	int rc = 0;
+
+	if (copy_from_user(&config, u64_to_user_ptr(cmd->handle),
+			sizeof(config)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_config_dev(node, &config);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"config device failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_set_stream_mode(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_set_stream_mode stream_mode;
+	int rc = 0;
+
+	if (copy_from_user(&stream_mode, u64_to_user_ptr(cmd->handle),
+			sizeof(stream_mode)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_set_stream_mode(node, &stream_mode);
+		if (rc)
+			CAM_ERR(CAM_CORE, "set stream mode failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_stream_mode_cmd(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_stream_mode_cmd stream_mode_cmd;
+	int rc = 0;
+
+	if (copy_from_user(&stream_mode_cmd, u64_to_user_ptr(cmd->handle),
+			sizeof(stream_mode_cmd)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_stream_mode_cmd(node,
+			&stream_mode_cmd);
+		if (rc)
+			CAM_DBG(CAM_CORE, "stream mode cmd failed(rc = %d)", rc);
+		else if (copy_to_user(u64_to_user_ptr(cmd->handle),
+				&stream_mode_cmd, sizeof(stream_mode_cmd)))
+			rc = -EFAULT;
+	}
+
+	return rc;
+}
+
+int cam_node_release_dev(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_release_dev_cmd release;
+	int rc = 0;
+
+	if (copy_from_user(&release, u64_to_user_ptr(cmd->handle), sizeof(release)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_release_dev(node, &release);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"release device failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_release_hw(struct cam_node *node, struct cam_control *cmd)
+{
+	uint32_t api_version;
+	size_t release_size;
+	void *release_ptr = NULL;
+	int rc = 0;
+
+	if (copy_from_user(&api_version, (void __user *)cmd->handle, sizeof(api_version)))
+		return -EFAULT;
+
+	if (api_version == 1)
+		release_size = sizeof(struct cam_release_hw_cmd_v1);
+	else {
+		CAM_ERR(CAM_CORE, "Unsupported api version %d",
+			api_version);
+		return -EINVAL;
+	}
+
+	release_ptr = kzalloc(release_size, GFP_KERNEL);
+	if (!release_ptr) {
+		CAM_ERR(CAM_CORE, "No memory for release HW");
+		return -ENOMEM;
+	}
+
+	if (copy_from_user(release_ptr, (void __user *)cmd->handle, release_size)) {
+		rc = -EFAULT;
+		goto release_kfree;
+	}
+
+	if (api_version == 1) {
+		rc = __cam_node_handle_release_hw_v1(node, release_ptr);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"release device failed(rc = %d)", rc);
+	}
+
+release_kfree:
+	kfree(release_ptr);
+	return rc;
+}
+
+int cam_node_flush_req(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_flush_dev_cmd flush;
+	int rc = 0;
+
+	if (copy_from_user(&flush, u64_to_user_ptr(cmd->handle), sizeof(flush)))
+		rc = -EFAULT;
+	else {
+		rc = __cam_node_handle_flush_dev(node, &flush);
+		if (rc)
+			CAM_ERR(CAM_CORE,
+				"flush device failed(rc = %d)", rc);
+	}
+
+	return rc;
+}
+
+int cam_node_dump_req(struct cam_node *node, struct cam_control *cmd)
+{
+	struct cam_dump_req_cmd dump;
+	int rc = 0;
+
+	if (copy_from_user(&dump, u64_to_user_ptr(cmd->handle),
+			sizeof(dump))) {
+		rc = -EFAULT;
+		goto end;
+	}
+	rc = __cam_node_handle_dump_dev(node, &dump);
+	if (rc) {
+		CAM_ERR(CAM_CORE,
+			"Dump device %s failed(rc = %d) ",
+			node->name, rc);
+		goto end;
+	}
+	if (copy_to_user(u64_to_user_ptr(cmd->handle), &dump, sizeof(dump))) {
+		CAM_ERR(CAM_CORE,
+			"Dump device %s copy_to_user fail",
+			node->name);
+		rc = -EFAULT;
+	}
+
+end:
+	return rc;
+}
+
 int cam_node_handle_ioctl(struct cam_node *node, struct cam_control *cmd)
 {
 	int rc = 0;
@@ -786,280 +1088,42 @@ int cam_node_handle_ioctl(struct cam_node *node, struct cam_control *cmd)
 	CAM_DBG(CAM_CORE, "handle cmd %d", cmd->op_code);
 
 	switch (cmd->op_code) {
-	case CAM_QUERY_CAP: {
-		struct cam_query_cap_cmd query;
-
-		if (copy_from_user(&query, u64_to_user_ptr(cmd->handle),
-			sizeof(query))) {
-			rc = -EFAULT;
-			break;
-		}
-
-		rc = __cam_node_handle_query_cap(node, &query);
-		if (rc) {
-			CAM_ERR(CAM_CORE, "querycap is failed(rc = %d)",
-				rc);
-			break;
-		}
-
-		if (copy_to_user(u64_to_user_ptr(cmd->handle), &query,
-			sizeof(query)))
-			rc = -EFAULT;
-
+	case CAM_QUERY_CAP:
+		rc = cam_node_query_cap(node, cmd);
 		break;
-	}
-	case CAM_ACQUIRE_DEV: {
-		struct cam_acquire_dev_cmd acquire;
-
-		if (copy_from_user(&acquire, u64_to_user_ptr(cmd->handle),
-			sizeof(acquire))) {
-			rc = -EFAULT;
-			break;
-		}
-		rc = __cam_node_handle_acquire_dev(node, &acquire);
-		if (rc) {
-			CAM_ERR(CAM_CORE, "acquire device failed(rc = %d)",
-				rc);
-			break;
-		}
-		if (copy_to_user(u64_to_user_ptr(cmd->handle), &acquire,
-			sizeof(acquire)))
-			rc = -EFAULT;
+	case CAM_ACQUIRE_DEV:
+		rc = cam_node_acquire_dev(node, cmd);
 		break;
-	}
-	case CAM_ACQUIRE_HW: {
-		uint32_t api_version;
-		void *acquire_ptr = NULL;
-		size_t acquire_size;
-
-		if (copy_from_user(&api_version, (void __user *)cmd->handle,
-			sizeof(api_version))) {
-			rc = -EFAULT;
-			break;
-		}
-
-		if (api_version == 1) {
-			acquire_size = sizeof(struct cam_acquire_hw_cmd_v1);
-		} else if (api_version == 2) {
-			acquire_size = sizeof(struct cam_acquire_hw_cmd_v2);
-		} else {
-			CAM_ERR(CAM_CORE, "Unsupported api version %d",
-				api_version);
-			rc = -EINVAL;
-			break;
-		}
-
-		acquire_ptr = kzalloc(acquire_size, GFP_KERNEL);
-		if (!acquire_ptr) {
-			CAM_ERR(CAM_CORE, "No memory for acquire HW");
-			rc = -ENOMEM;
-			break;
-		}
-
-		if (copy_from_user(acquire_ptr, (void __user *)cmd->handle,
-			acquire_size)) {
-			rc = -EFAULT;
-			goto acquire_kfree;
-		}
-
-		if (api_version == 1) {
-			rc = __cam_node_handle_acquire_hw_v1(node, acquire_ptr);
-			if (rc) {
-				CAM_ERR(CAM_CORE,
-					"acquire device failed(rc = %d)", rc);
-				goto acquire_kfree;
-			}
-		} else if (api_version == 2) {
-			rc = __cam_node_handle_acquire_hw_v2(node, acquire_ptr);
-			if (rc) {
-				CAM_ERR(CAM_CORE,
-					"acquire device failed(rc = %d)", rc);
-				goto acquire_kfree;
-			}
-		}
-
-		if (copy_to_user((void __user *)cmd->handle, acquire_ptr,
-			acquire_size))
-			rc = -EFAULT;
-
-acquire_kfree:
-		kfree(acquire_ptr);
+	case CAM_ACQUIRE_HW:
+		rc = cam_node_acquire_hw(node, cmd);
 		break;
-	}
-	case CAM_START_DEV: {
-		struct cam_start_stop_dev_cmd start;
-
-		if (copy_from_user(&start, u64_to_user_ptr(cmd->handle),
-			sizeof(start)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_start_dev(node, &start);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"start device failed(rc = %d)", rc);
-		}
+	case CAM_START_DEV:
+		rc = cam_node_start_dev(node, cmd);
 		break;
-	}
-	case CAM_STOP_DEV: {
-		struct cam_start_stop_dev_cmd stop;
-
-		if (copy_from_user(&stop, u64_to_user_ptr(cmd->handle),
-			sizeof(stop)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_stop_dev(node, &stop);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"stop device failed(rc = %d)", rc);
-		}
+	case CAM_STOP_DEV:
+		rc = cam_node_stop_dev(node, cmd);
 		break;
-	}
-	case CAM_CONFIG_DEV: {
-		struct cam_config_dev_cmd config;
-
-		if (copy_from_user(&config, u64_to_user_ptr(cmd->handle),
-			sizeof(config)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_config_dev(node, &config);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"config device failed(rc = %d)", rc);
-		}
+	case CAM_CONFIG_DEV:
+		rc = cam_node_config_dev(node, cmd);
 		break;
-	}
-	case CAM_SET_STREAM_MODE: {
-		struct cam_set_stream_mode stream_mode;
-
-		if (copy_from_user(&stream_mode, u64_to_user_ptr(cmd->handle),
-			sizeof(stream_mode)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_set_stream_mode(node,
-				&stream_mode);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"set stream mode failed(rc = %d)", rc);
-		}
+	case CAM_SET_STREAM_MODE:
+		rc = cam_node_set_stream_mode(node, cmd);
 		break;
-	}
-	case CAM_STREAM_MODE_CMD: {
-		struct cam_stream_mode_cmd stream_mode_cmd;
-
-		if (copy_from_user(&stream_mode_cmd,
-			u64_to_user_ptr(cmd->handle),
-			sizeof(stream_mode_cmd)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_stream_mode_cmd(node,
-				&stream_mode_cmd);
-			if (rc)
-				CAM_DBG(CAM_CORE,
-					"stream mode cmd failed(rc = %d)", rc);
-			else
-				if (copy_to_user(u64_to_user_ptr(cmd->handle),
-					&stream_mode_cmd,
-					sizeof(stream_mode_cmd)))
-					rc = -EFAULT;
-		}
+	case CAM_STREAM_MODE_CMD:
+		rc = cam_node_stream_mode_cmd(node, cmd);
 		break;
-	}
-	case CAM_RELEASE_DEV: {
-		struct cam_release_dev_cmd release;
-
-		if (copy_from_user(&release, u64_to_user_ptr(cmd->handle),
-			sizeof(release)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_release_dev(node, &release);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"release device failed(rc = %d)", rc);
-		}
+	case CAM_RELEASE_DEV:
+		rc = cam_node_release_dev(node, cmd);
 		break;
-	}
-	case CAM_RELEASE_HW: {
-		uint32_t api_version;
-		size_t release_size;
-		void *release_ptr = NULL;
-
-		if (copy_from_user(&api_version, (void __user *)cmd->handle,
-			sizeof(api_version))) {
-			rc = -EFAULT;
-			break;
-		}
-
-		if (api_version == 1) {
-			release_size = sizeof(struct cam_release_hw_cmd_v1);
-		} else {
-			CAM_ERR(CAM_CORE, "Unsupported api version %d",
-				api_version);
-			rc = -EINVAL;
-			break;
-		}
-
-		release_ptr = kzalloc(release_size, GFP_KERNEL);
-		if (!release_ptr) {
-			CAM_ERR(CAM_CORE, "No memory for release HW");
-			rc = -ENOMEM;
-			break;
-		}
-
-		if (copy_from_user(release_ptr, (void __user *)cmd->handle,
-			release_size)) {
-			rc = -EFAULT;
-			goto release_kfree;
-		}
-
-		if (api_version == 1) {
-			rc = __cam_node_handle_release_hw_v1(node, release_ptr);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"release device failed(rc = %d)", rc);
-		}
-
-release_kfree:
-		kfree(release_ptr);
+	case CAM_RELEASE_HW:
+		rc = cam_node_release_hw(node, cmd);
 		break;
-	}
-	case CAM_FLUSH_REQ: {
-		struct cam_flush_dev_cmd flush;
-
-		if (copy_from_user(&flush, u64_to_user_ptr(cmd->handle),
-			sizeof(flush)))
-			rc = -EFAULT;
-		else {
-			rc = __cam_node_handle_flush_dev(node, &flush);
-			if (rc)
-				CAM_ERR(CAM_CORE,
-					"flush device failed(rc = %d)", rc);
-		}
+	case CAM_FLUSH_REQ:
+		rc = cam_node_flush_req(node, cmd);
 		break;
-	}
-	case CAM_DUMP_REQ: {
-		struct cam_dump_req_cmd dump;
-
-		if (copy_from_user(&dump, u64_to_user_ptr(cmd->handle),
-			sizeof(dump))) {
-			rc = -EFAULT;
-			break;
-		}
-		rc = __cam_node_handle_dump_dev(node, &dump);
-		if (rc) {
-			CAM_ERR(CAM_CORE,
-			    "Dump device %s failed(rc = %d) ",
-			    node->name, rc);
-			break;
-		}
-		if (copy_to_user(u64_to_user_ptr(cmd->handle),
-			&dump, sizeof(dump))) {
-			CAM_ERR(CAM_CORE,
-			    "Dump device %s copy_to_user fail",
-			    node->name);
-			rc = -EFAULT;
-		}
+	case CAM_DUMP_REQ:
+		rc = cam_node_dump_req(node, cmd);
 		break;
-	}
 	default:
 		CAM_ERR(CAM_CORE, "Unknown op code %d", cmd->op_code);
 		rc = -EINVAL;

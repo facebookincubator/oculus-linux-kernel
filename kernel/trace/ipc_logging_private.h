@@ -113,6 +113,9 @@ struct ipc_log_context {
 	struct completion read_avail;
 	struct kref refcount;
 	bool destroyed;
+
+	uint32_t max_num_pages;
+	uint32_t num_pages;
 };
 
 struct dfunc_info {

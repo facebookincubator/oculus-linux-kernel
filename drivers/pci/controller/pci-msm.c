@@ -171,10 +171,10 @@
 #define MSM_PCIE_MAX_VREG (4)
 #define MSM_PCIE_MAX_CLK (14)
 #define MSM_PCIE_MAX_PIPE_CLK (1)
-#define MAX_RC_NUM (3)
-#define MAX_DEVICE_NUM (20)
+#define MAX_RC_NUM (CONFIG_PCI_MSM_MAX_RCS)
+#define MAX_DEVICE_NUM (CONFIG_PCI_MSM_MAX_DEVICES_PER_RC)
 #define PCIE_TLP_RD_SIZE (0x5)
-#define PCIE_LOG_PAGES (50)
+#define PCIE_LOG_PAGES (5)
 #define PCIE_CONF_SPACE_DW (1024)
 #define PCIE_CLEAR (0xdeadbeef)
 #define PCIE_LINK_DOWN (0xffffffff)
@@ -876,6 +876,7 @@ msm_pcie_reset_info[MAX_RC_NUM][MSM_PCIE_MAX_RESET] = {
 		{NULL, "pcie_phy_nocsr_com_phy_reset", false},
 		{NULL, "pcie_0_phy_reset", false}
 	},
+#if MAX_RC_NUM > 1
 	{
 		{NULL, "pcie_1_core_reset", false},
 		{NULL, "pcie_phy_reset", false},
@@ -883,6 +884,7 @@ msm_pcie_reset_info[MAX_RC_NUM][MSM_PCIE_MAX_RESET] = {
 		{NULL, "pcie_phy_nocsr_com_phy_reset", false},
 		{NULL, "pcie_1_phy_reset", false}
 	},
+#if MAX_RC_NUM > 2
 	{
 		{NULL, "pcie_2_core_reset", false},
 		{NULL, "pcie_phy_reset", false},
@@ -890,6 +892,8 @@ msm_pcie_reset_info[MAX_RC_NUM][MSM_PCIE_MAX_RESET] = {
 		{NULL, "pcie_phy_nocsr_com_phy_reset", false},
 		{NULL, "pcie_2_phy_reset", false}
 	}
+#endif
+#endif
 };
 
 /* pipe reset  */
@@ -898,12 +902,16 @@ msm_pcie_pipe_reset_info[MAX_RC_NUM][MSM_PCIE_MAX_PIPE_RESET] = {
 	{
 		{NULL, "pcie_0_phy_pipe_reset", false}
 	},
+#if MAX_RC_NUM > 1
 	{
 		{NULL, "pcie_1_phy_pipe_reset", false}
 	},
+#if MAX_RC_NUM > 2
 	{
 		{NULL, "pcie_2_phy_pipe_reset", false}
 	}
+#endif
+#endif
 };
 
 /* clocks */
@@ -925,6 +933,7 @@ static struct msm_pcie_clk_info_t
 	{NULL, "pcie_phy_cfg_ahb_clk", 0, false, false, false},
 	{NULL, "pcie_phy_aux_clk", 0, false, false, false}
 	},
+#if MAX_RC_NUM > 1
 	{
 	{NULL, "pcie_1_ref_clk_src", 0, false, false, false},
 	{NULL, "pcie_1_aux_clk", 1010000, false, true, false},
@@ -941,6 +950,7 @@ static struct msm_pcie_clk_info_t
 	{NULL, "pcie_phy_cfg_ahb_clk", 0, false, false, false},
 	{NULL, "pcie_phy_aux_clk", 0, false, false, false}
 	},
+#if MAX_RC_NUM > 2
 	{
 	{NULL, "pcie_2_ref_clk_src", 0, false, false, false},
 	{NULL, "pcie_2_aux_clk", 1010000, false, true, false},
@@ -957,6 +967,8 @@ static struct msm_pcie_clk_info_t
 	{NULL, "pcie_phy_cfg_ahb_clk", 0, false, false, false},
 	{NULL, "pcie_phy_aux_clk", 0, false, false, false}
 	}
+#endif
+#endif
 };
 
 /* Pipe Clocks */
@@ -965,12 +977,16 @@ static struct msm_pcie_clk_info_t
 	{
 	{NULL, "pcie_0_pipe_clk", 125000000, true, true, false},
 	},
+#if MAX_RC_NUM > 1
 	{
 	{NULL, "pcie_1_pipe_clk", 125000000, true, true, false},
 	},
+#if MAX_RC_NUM > 2
 	{
 	{NULL, "pcie_2_pipe_clk", 125000000, true, true, false},
 	}
+#endif
+#endif
 };
 
 /* resources */

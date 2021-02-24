@@ -418,6 +418,7 @@ struct sde_connector_dyn_hdr_metadata {
  * @bl_scale: BL scale value for ABA feature
  * @bl_scale_sv: BL scale value for sunlight visibility feature
  * @unset_bl_level: BL level that needs to be set later
+ * @unset_scanline_offset: Scanline offset that needs to be set later
  * @allow_bl_update: Flag to indicate if BL update is allowed currently or not
  * @qsync_mode: Cached Qsync mode, 0=disabled, 1=continuous mode
  * @qsync_updated: Qsync settings were updated
@@ -469,6 +470,7 @@ struct sde_connector {
 	u32 bl_scale;
 	u32 bl_scale_sv;
 	u32 unset_bl_level;
+	u32 unset_scanline_offset;
 	bool allow_bl_update;
 
 	u32 qsync_mode;

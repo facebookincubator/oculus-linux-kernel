@@ -3818,6 +3818,7 @@ wlan_get_crypto_params_from_wpa_ie(struct wlan_crypto_params *crypto_params,
  * @vdev_id: vdev id
  * @ie_ptr: pointer to IEs
  * @ie_len: IE length
+ * @peer_crypto_params: return peer crypto parameters
  *
  * This function gets called from ucfg to check RSN match.
  *
@@ -3825,9 +3826,9 @@ wlan_get_crypto_params_from_wpa_ie(struct wlan_crypto_params *crypto_params,
  */
 bool wlan_crypto_check_rsn_match(struct wlan_objmgr_psoc *psoc,
 				 uint8_t vdev_id, uint8_t *ie_ptr,
-				 uint16_t ie_len)
+				 uint16_t ie_len, struct wlan_crypto_params *
+				 peer_crypto_params)
 {
-	struct wlan_crypto_params peer_crypto_params;
 	struct wlan_objmgr_vdev *vdev;
 	bool match = true;
 	QDF_STATUS status;
@@ -3836,7 +3837,7 @@ bool wlan_crypto_check_rsn_match(struct wlan_objmgr_psoc *psoc,
 		crypto_err("PSOC is NULL");
 		return false;
 	}
-	status = wlan_get_crypto_params_from_rsn_ie(&peer_crypto_params,
+	status = wlan_get_crypto_params_from_rsn_ie(peer_crypto_params,
 						    ie_ptr, ie_len);
 	if (QDF_STATUS_SUCCESS != status) {
 		crypto_err("get crypto prarams from RSN IE failed");
@@ -3849,7 +3850,8 @@ bool wlan_crypto_check_rsn_match(struct wlan_objmgr_psoc *psoc,
 		return false;
 	}
 
-	match = wlan_crypto_rsn_info(vdev, &peer_crypto_params);
+	match = wlan_crypto_rsn_info(vdev, peer_crypto_params);
+
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_CRYPTO_ID);
 
 	return match;
@@ -3861,6 +3863,7 @@ bool wlan_crypto_check_rsn_match(struct wlan_objmgr_psoc *psoc,
  * @vdev_id: vdev id
  * @ie_ptr: pointer to IEs
  * @ie_len: IE length
+ * @peer_crypto_params: return peer crypto parameters
  *
  * This function gets called from ucfg to check WPA match.
  *
@@ -3868,9 +3871,9 @@ bool wlan_crypto_check_rsn_match(struct wlan_objmgr_psoc *psoc,
  */
 bool wlan_crypto_check_wpa_match(struct wlan_objmgr_psoc *psoc,
 				 uint8_t vdev_id, uint8_t *ie_ptr,
-				 uint16_t ie_len)
+				 uint16_t ie_len, struct wlan_crypto_params *
+				 peer_crypto_params)
 {
-	struct wlan_crypto_params peer_crypto_params;
 	struct wlan_objmgr_vdev *vdev;
 	bool match = true;
 	QDF_STATUS status;
@@ -3886,14 +3889,15 @@ bool wlan_crypto_check_wpa_match(struct wlan_objmgr_psoc *psoc,
 		return false;
 	}
 
-	status = wlan_get_crypto_params_from_wpa_ie(&peer_crypto_params,
+	status = wlan_get_crypto_params_from_wpa_ie(peer_crypto_params,
 						    ie_ptr, ie_len);
 	if (QDF_STATUS_SUCCESS != status) {
 		crypto_err("get crypto prarams from WPA IE failed");
 		match = false;
 		goto send_res;
 	}
-	match = wlan_crypto_rsn_info(vdev, &peer_crypto_params);
+	match = wlan_crypto_rsn_info(vdev, peer_crypto_params);
+
 send_res:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_CRYPTO_ID);
 

@@ -87,7 +87,8 @@ struct wl_ibss;
 #endif /* WL_SAE */
 #endif /* !WL_CLIENT_SAE */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0) && !defined(WL_SCAN_TYPE))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)) && !defined(WL_DISABLE_SCAN_TYPE) \
+	&& !defined(WL_SCAN_TYPE)
 #define WL_SCAN_TYPE
 #endif /* WL_SCAN_TYPE */
 
@@ -323,6 +324,31 @@ extern char *dhd_dbg_get_system_timestamp(void);
 	((RADIO_PWRSAVE_MAJOR_VER << RADIO_PWRSAVE_MAJOR_VER_SHIFT)| RADIO_PWRSAVE_MINOR_VER)
 #endif /* SUPPORT_AP_RADIO_PWRSAVE */
 
+#ifdef BCMWAPI_WPI
+#ifdef OEM_ANDROID
+#undef NL80211_WAPI_VERSION_1
+#define NL80211_WAPI_VERSION_1		0
+
+#undef WLAN_AKM_SUITE_WAPI_PSK
+#define WLAN_AKM_SUITE_WAPI_PSK		0x000FACFE /* WAPI */
+
+#undef WLAN_AKM_SUITE_WAPI_CERT
+#define WLAN_AKM_SUITE_WAPI_CERT	0x000FACFF /* WAPI */
+
+#define IS_WAPI_VER(version) (version == NL80211_WAPI_VERSION_1)
+#else
+#undef WLAN_AKM_SUITE_WAPI_PSK
+#define WLAN_AKM_SUITE_WAPI_PSK         0x000FAC04
+
+#undef WLAN_AKM_SUITE_WAPI_CERT
+#define WLAN_AKM_SUITE_WAPI_CERT        0x000FAC12
+
+#undef NL80211_WAPI_VERSION_1
+#define NL80211_WAPI_VERSION_1			1 << 2
+#define IS_WAPI_VER(version) (version & NL80211_WAPI_VERSION_1)
+#endif /* OEM_ANDROID */
+#endif /* BCMWAPI_WPI */
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0))
 #define IS_REGDOM_SELF_MANAGED(wiphy)	\
 	(wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED)
@@ -427,6 +453,8 @@ do {	\
 		WL_DBG_PRINT_SYSTEM_TIME;				\
 		pr_cont(CFG80211_ERROR_TEXT "%s : ", __func__);	\
 		pr_cont args;							\
+		DHD_LOG_DUMP_WRITE_TS_FN;	\
+		DHD_LOG_DUMP_WRITE args;	\
 	}	\
 } while (0)
 #define	WL_ERR_MEM(args)	\
@@ -700,10 +728,9 @@ do {									\
 #define WLAN_AKM_SUITE_8021X_SUITE_B_192	0x000FAC0C
 #endif /* WLAN_AKM_SUITE_8021X_SUITE_B */
 
-/* TODO: even in upstream linux(v5.0), FT-1X-SHA384 isn't defined and supported yet.
- * need to revisit here to sync correct name later.
- */
+#ifndef WLAN_AKM_SUITE_FT_8021X_SHA384
 #define WLAN_AKM_SUITE_FT_8021X_SHA384		0x000FAC0D
+#endif /* WLAN_AKM_SUITE_FT_8021X_SHA384 */
 
 #define WL_AKM_SUITE_SHA256_1X  0x000FAC05
 #define WL_AKM_SUITE_SHA256_PSK 0x000FAC06
@@ -851,6 +878,7 @@ enum wl_status {
 	WL_STATUS_CONNECTED,
 	WL_STATUS_DISCONNECTING,
 	WL_STATUS_AP_CREATING,
+	WL_STATUS_AP_ROLE_UPGRADED,
 	WL_STATUS_AP_CREATED,
 	/* whole sending action frame procedure:
 	 * includes a) 'finding common channel' for public action request frame
@@ -882,6 +910,7 @@ enum wl_status {
 	WL_STATUS_NESTED_CONNECT,
 	WL_STATUS_CFG80211_CONNECT,
 	WL_STATUS_AUTHORIZED
+
 };
 
 typedef enum wl_iftype {
@@ -1150,7 +1179,18 @@ struct net_info {
 	s32 bssidx;
 	wl_cfgbss_t bss;
 	u8 ifidx;
+	u8 passphrase[WSEC_MAX_PASSPHRASE_LEN];
+	u16 passphrase_len;
 	struct list_head list; /* list of all net_info structure */
+
+	bool ps_managed;
+	uint32 ps_managed_start_ts;
+	/* used to comapre with incoming config
+	* Delete config from firmware if both are not matching
+	* If matching, skip configuring iovar again
+	*/
+	u8* passphrase_cfg;
+	u16 passphrase_cfg_len;
 };
 
 #ifdef WL_BCNRECV
@@ -1251,7 +1291,8 @@ struct wl_assoc_ielen {
 #define MIN_JOINEXT_V1_BR2_FW_MINOR 1u
 
 #define MIN_JOINEXT_V1_BR1_FW_MAJOR 14u
-#define MIN_JOINEXT_V1_BR1_FW_MINOR 2u
+#define MIN_JOINEXT_V1_BR1_FW_MINOR_2 2u
+#define MIN_JOINEXT_V1_BR1_FW_MINOR_4 4u
 
 #define PMKDB_WLC_VER 14
 #define MIN_PMKID_LIST_V3_FW_MAJOR 13
@@ -1629,6 +1670,15 @@ typedef enum {
 	WIFI_POWER_SCENARIO_ON_BODY_BT = 5
 } wifi_power_scenario;
 
+#if defined(WL_SAR_TX_POWER) && defined(WL_SAR_TX_POWER_CONFIG)
+#define MAX_SAR_CONFIG_INFO 7
+typedef struct wl_sar_config_info {
+	int8 scenario;
+	int8 sar_tx_power_val;
+	int8 airplane_mode;
+} wl_sar_config_info_t;
+#endif /* WL_SAR_TX_POWER && WL_SAR_TX_POWER_CONFIG */
+
 /* Log timestamp */
 #define LOG_TS(cfg, ts)	cfg->tsinfo.ts = OSL_LOCALTIME_NS();
 #define CLR_TS(cfg, ts)	cfg->tsinfo.ts = 0;
@@ -1930,6 +1980,9 @@ struct bcm_cfg80211 {
 	int ncho_band;
 #ifdef WL_SAR_TX_POWER
 	wifi_power_scenario wifi_tx_power_mode;
+#if defined(WL_SAR_TX_POWER_CONFIG)
+	wl_sar_config_info_t sar_config_info[MAX_SAR_CONFIG_INFO];
+#endif /* WL_SAR_TX_POWER_CONFIG */
 #endif /* WL_SAR_TX_POWER */
 	struct mutex connect_sync;  /* For assoc/resssoc state sync */
 	wl_ctx_tsinfo_t tsinfo;
@@ -1947,6 +2000,12 @@ struct bcm_cfg80211 {
 	struct ether_addr af_randmac;
 	bool randomized_gas_tx;
 	u8 country[WLC_CNTRY_BUF_SZ];
+	u8 latency_mode;
+#ifdef WL_MBO_HOST
+	void *btmreq;
+	uint16 btmreq_len;
+	uint8 btmreq_token;
+#endif /* WL_MBO_HOST */
 };
 
 /* Max auth timeout allowed in case of EAP is 70sec, additional 5 sec for
@@ -2003,6 +2062,22 @@ typedef struct wl_wips_event_info {
 	int16 current_RSSI;
 	int16 deauth_RSSI;
 } wl_wips_event_info_t;
+
+/* Struct used to populate fields needed for
+* wsec_info passphrase iovar config..
+* Passphrase can be configured per
+* 1. SSID
+* 2. SSID + AKM
+* 3. BSSID
+*/
+typedef struct wl_config_passphrase {
+	u8* passphrase;
+	u16 passphrase_len;
+	const u8 *ssid;
+	u8 ssid_len;
+	u8 *bssid;
+	u32 akm;
+} wl_config_passphrase_t;
 
 s32 wl_iftype_to_mode(wl_iftype_t iftype);
 
@@ -2087,6 +2162,13 @@ wl_dealloc_netinfo_by_wdev(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev)
 				MFREE(cfg->osh, bss->wps_ie, bss->wps_ie[1] + 2);
 				bss->wps_ie = NULL;
 			}
+
+			if (_net_info->passphrase_cfg) {
+				MFREE(cfg->osh, _net_info->passphrase_cfg,
+					_net_info->passphrase_cfg_len);
+				_net_info->passphrase_cfg = NULL;
+			}
+
 			list_del(&_net_info->list);
 			cfg->iface_cnt--;
 			MFREE(cfg->osh, _net_info, sizeof(struct net_info));
@@ -2140,6 +2222,8 @@ wl_alloc_netinfo(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		_net_info->roam_off = WL_INVALID;
 		_net_info->bssidx = bssidx;
 		_net_info->ifidx = ifidx;
+		_net_info->ps_managed = FALSE;
+		_net_info->ps_managed_start_ts = 0;
 		WL_CFG_NET_LIST_SYNC_LOCK(&cfg->net_list_sync, flags);
 		cfg->iface_cnt++;
 		list_add(&_net_info->list, &cfg->net_list);
@@ -2510,12 +2594,10 @@ wl_iftype_to_str(int wl_iftype)
 #define ndev_to_wdev(ndev) (ndev->ieee80211_ptr)
 #define wdev_to_ndev(wdev) (wdev->netdev)
 
-#ifdef WL_BLOCK_P2P_SCAN_ON_STA
 #define IS_P2P_IFACE(wdev) (wdev && \
-		((wdev->iftype == NL80211_IFTYPE_P2P_DEVICE) || \
-		(wdev->iftype == NL80211_IFTYPE_P2P_GO) || \
-		(wdev->iftype == NL80211_IFTYPE_P2P_CLIENT)))
-#endif /* WL_BLOCK_P2P_SCAN_ON_STA */
+	((wdev->iftype == NL80211_IFTYPE_P2P_DEVICE) || \
+	(wdev->iftype == NL80211_IFTYPE_P2P_GO) || \
+	(wdev->iftype == NL80211_IFTYPE_P2P_CLIENT)))
 
 #define IS_PRIMARY_NDEV(cfg, ndev)	(ndev == bcmcfg_to_prmry_ndev(cfg))
 #define IS_STA_IFACE(wdev) (wdev && \
@@ -2824,6 +2906,10 @@ struct net_device *wl_cfg80211_get_remain_on_channel_ndev(struct bcm_cfg80211 *c
 #define IDLE_TOKEN_IDX 12
 #endif /* WL_SUPPORT_ACS */
 
+#ifdef BCMWAPI_WPI
+#define is_wapi(cipher) (cipher == WLAN_CIPHER_SUITE_SMS4) ? 1 : 0
+#endif /* BCMWAPI_WPI */
+
 extern int wl_cfg80211_get_ioctl_version(void);
 extern int wl_cfg80211_enable_roam_offload(struct net_device *dev, int enable);
 #ifdef WBTEXT
@@ -2989,10 +3075,8 @@ extern void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
 extern int wl_cfgnan_get_stats(struct bcm_cfg80211 *cfg);
 #endif /* WL_NAN */
 
-#ifdef WL_SAE
 extern s32 wl_cfg80211_set_wsec_info(struct net_device *dev, uint32 *data,
 	uint16 data_len, int tag);
-#endif /* WL_SAE */
 #define WL_CHANNEL_ARRAY_INIT(band_chan_arr)	\
 do {	\
 	u32 arr_size, k;	\
@@ -3071,4 +3155,10 @@ typedef enum auth_assoc_status_ext {
 extern s32 wl_get_auth_assoc_status_ext(struct bcm_cfg80211 *cfg,
 	struct net_device *ndev, const wl_event_msg_t *e);
 #endif	/* AUTH_ASSOC_STATUS_EXT */
+
+s32 wl_cfg80211_set_netinfo_passphrase(struct bcm_cfg80211 *cfg,
+	struct net_device *ndev, const u8* passphrase, u8 len);
+s32 wl_cfg80211_config_passphrase(struct bcm_cfg80211 *cfg,
+	struct net_device *ndev, wl_config_passphrase_t *pp_config);
+
 #endif /* _wl_cfg80211_h_ */

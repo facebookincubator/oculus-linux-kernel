@@ -515,6 +515,72 @@ enum {
 	/* signature package is invalid */
 	BCM_FWSIGN_E_PACKAGE_INVALID		= -4121,
 
+	/* chip info mismatch */
+	BCM_FWSIGN_E_CHIP_INFO_MISMATCH		= -4122,
+
+	/* key use is not valid */
+	BCM_FWSIGN_E_KEY_USE_NOT_VALID		= -4123,
+
+	/* fw tag type invalid */
+	BCM_FWSIGN_E_TAG_TYPE_INVALID		= -4124,
+
+	/* fwenc header invalid */
+	BCM_FWSIGN_E_FWENC_HDR_INVALID		= -4125,
+
+	/* firmware encryption header version mismatch */
+	BCM_FWSIGN_E_FWENC_HDR_VERSION		= -4126,
+
+	/* firmware encryption cipher type not supported */
+	BCM_FWSIGN_E_FWENC_CIPHER_TYPE_UNSUPPORTED = -4127,
+
+	/* firmware encryption tlv type not supported */
+	BCM_FWSIGN_E_FWENC_TLV_TYPE_UNSUPPORTED	= -4128,
+
+	/* firmware encryption invalid kdf info */
+	BCM_FWSIGN_E_FWENC_INVALID_KDFINFO	= -4129,
+
+	/* firmware encryption invalid ec group type length */
+	BCM_FWSIGN_E_FWENC_INVALID_ECG_TYPE_LEN	= -4130,
+
+	/* firmware encryption invalid epub */
+	BCM_FWSIGN_E_FWENC_INVALID_EPUB		= -4131,
+
+	/* firmware encryption invalid iv */
+	BCM_FWSIGN_E_FWENC_INVALID_IV		= -4132,
+
+	/* firmware encryption invalid aad */
+	BCM_FWSIGN_E_FWENC_INVALID_AAD		= -4133,
+
+	/* firmware encryption invalid ROM key */
+	BCM_FWSIGN_E_FWENC_INVALID_ROMKEY	= -4134,
+
+	/* firmware encryption invalid sysmem key */
+	BCM_FWSIGN_E_FWENC_INVALID_SYSMEMKEY	= -4135,
+
+	/* firmware encryption invalid OTP key */
+	BCM_FWSIGN_E_FWENC_INVALID_OTPKEY	= -4136,
+
+	/* firmware encryption key unwrap fail */
+	BCM_FWSIGN_E_FWENC_KEY_UNWRAP_FAIL	= -4137,
+
+	/* firmware encryption generate share secret fail */
+	BCM_FWSIGN_E_FWENC_GEN_SECRET_FAIL	= -4138,
+
+	/* firmware encryption symmetric key derivation fail */
+	BCM_FWSIGN_E_FWENC_KEY_DERIVATION_FAIL	= -4139,
+
+	/* firmware encryption RNG read fail */
+	BCM_FWSIGN_E_FWENC_RNG_FAIL		= -4140,
+
+	/* firmware encryption MAC tampered during decryption */
+	BCM_FWSIGN_E_FWENC_MAC_TAMPERED		= -4141,
+
+	/* firmware encryption decryption failed */
+	BCM_FWSIGN_E_FWENC_DECRYPT_FAIL		= -4142,
+
+	/* firmware encryption decryption in progress */
+	BCM_FWSIGN_E_FWENC_DECRYPT_IN_PROGRESS	= -4143,
+
 	/* last error */
 	BCM_FWSIGN_E_LAST			= -5119
 };
@@ -568,6 +634,45 @@ enum {
 
 	/* Unsupported elliptic curve group */
 	BCM_CRYPTO_E_ASN1_UNSUPPORTED_ECG	= -7173
+};
+
+/* PASN authentication status codes. */
+/* Reserved from -8292 to -9315(1K). */
+enum {
+	/* Terminate PASN authentication if off channel. */
+	WL_PASN_E_OFF_CHANNEL		= -8292,
+	/* Terminate PASN authentication if infa attempt to join. */
+	WL_PASN_E_JOIN_ATTEMPT		= -8293,
+	/* Unexpected PASN auth frame. */
+	WL_PASN_E_AUTH_DISCARD		= -8294,
+	/* Received PASN auth frame carries failure status code. */
+	WL_PASN_E_AUTH_FAILURE		= -8295,
+	/* Transmitted PASN auth frame is not acknowledged by peer. */
+	WL_PASN_E_AUTH_NO_ACK		= -8296,
+	/* Timeout waiting for PASN auth frame. */
+	WL_PASN_E_AUTH_RX_TIMEOUT	= -8297,
+	/* RSN element in PASN auth frame is invalid. */
+	WL_PASN_E_AUTH_INVALID_RSNIE	= -8298,
+	/* PMKID in PASN auth frame is not found. */
+	WL_PASN_E_AUTH_PMKID_NOT_FOUND	= -8299,
+	/* Base AKM in PASN parameters element is not supported. */
+	WL_PASN_E_AUTH_BASE_AKM_NOT_SUPPORTED	= -8300,
+	/* PASN AKM is not supported. */
+	WL_PASN_E_AUTH_PASN_AKM_NOT_SUPPORTED	= -8301,
+	/* Timeout waiting for wrapped data processing completion. */
+	WL_PASN_E_AUTH_WRAPPED_DATA_TIMEOUT	= -8302,
+	/* Wrapped data handler returns error. */
+	WL_PASN_E_AUTH_WRAPPED_DATA_ERROR	= -8303,
+	/* MIC in PASN authentication frame is invalid. */
+	WL_PASN_E_AUTH_MIC_ERROR		= -8304,
+	/* Retry time is exhausted. */
+	WL_PASN_E_AUTH_RETRY_LIMIT_REACHED	= -8305,
+	/* Finite cyclic group indicated in PASN parameters element is not supported. */
+	WL_PASN_E_CRYPTO_UNSUPPORTED_GROUP	= -8306,
+	/* Ephemeral public key in PASN parameters element is not valid. */
+	WL_PASN_E_CRYPTO_INVALID_PUBLIC_KEY	= -8307,
+	/* Generic cryto failure. */
+	WL_PASN_E_CRYPTO_FAILURE		= -8308
 };
 
 #endif	/* BCMUTILS_ERR_CODES */

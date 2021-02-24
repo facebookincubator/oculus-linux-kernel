@@ -1024,7 +1024,7 @@ static int cam_cpas_hw_update_axi_vote(struct cam_hw_info *cpas_hw,
 {
 	struct cam_cpas *cpas_core = (struct cam_cpas *) cpas_hw->core_info;
 	struct cam_cpas_client *cpas_client = NULL;
-	struct cam_axi_vote axi_vote = {0};
+	struct cam_axi_vote *axi_vote;
 	uint32_t client_indx = CAM_CPAS_GET_CLIENT_IDX(client_handle);
 	int rc = 0;
 
@@ -1034,13 +1034,21 @@ static int cam_cpas_hw_update_axi_vote(struct cam_hw_info *cpas_hw,
 		return -EINVAL;
 	}
 
-	memcpy(&axi_vote, client_axi_vote, sizeof(struct cam_axi_vote));
+	axi_vote = kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+	if (!axi_vote) {
+		CAM_ERR(CAM_CPAS, "Failed to allocate axi_vote");
+		return -ENOMEM;
+	}
 
-	if (!CAM_CPAS_CLIENT_VALID(client_indx))
-		return -EINVAL;
+	memcpy(axi_vote, client_axi_vote, sizeof(struct cam_axi_vote));
+
+	if (!CAM_CPAS_CLIENT_VALID(client_indx)) {
+		rc = -EINVAL;
+		goto end;
+	}
 
 	cam_cpas_dump_axi_vote_info(cpas_core->cpas_client[client_indx],
-		"Incoming Vote", &axi_vote);
+		"Incoming Vote", axi_vote);
 
 	mutex_lock(&cpas_hw->hw_mutex);
 	mutex_lock(&cpas_core->client_mutex[client_indx]);
@@ -1054,7 +1062,7 @@ static int cam_cpas_hw_update_axi_vote(struct cam_hw_info *cpas_hw,
 		goto unlock_client;
 	}
 
-	rc = cam_cpas_util_translate_client_paths(&axi_vote);
+	rc = cam_cpas_util_translate_client_paths(axi_vote);
 	if (rc) {
 		CAM_ERR(CAM_CPAS,
 			"Unable to translate per path votes rc: %d", rc);
@@ -1062,14 +1070,16 @@ static int cam_cpas_hw_update_axi_vote(struct cam_hw_info *cpas_hw,
 	}
 
 	cam_cpas_dump_axi_vote_info(cpas_core->cpas_client[client_indx],
-		"Translated Vote", &axi_vote);
+		"Translated Vote", axi_vote);
 
 	rc = cam_cpas_util_apply_client_axi_vote(cpas_hw,
-		cpas_core->cpas_client[client_indx], &axi_vote);
+		cpas_core->cpas_client[client_indx], axi_vote);
 
 unlock_client:
 	mutex_unlock(&cpas_core->client_mutex[client_indx]);
 	mutex_unlock(&cpas_hw->hw_mutex);
+end:
+	kfree(axi_vote);
 	return rc;
 }
 
@@ -1285,7 +1295,7 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 	struct cam_cpas_client *cpas_client;
 	struct cam_ahb_vote *ahb_vote;
 	struct cam_ahb_vote remove_ahb;
-	struct cam_axi_vote axi_vote = {0};
+	struct cam_axi_vote *axi_vote = NULL;
 	enum cam_vote_level applied_level = CAM_SVS_VOTE;
 	int rc, i = 0;
 	struct cam_cpas_private_soc *soc_private = NULL;
@@ -1320,11 +1330,15 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 		return -EINVAL;
 	}
 
-	memcpy(&axi_vote, cmd_hw_start->axi_vote, sizeof(struct cam_axi_vote));
-	for (i = 0; i < axi_vote.num_paths; i++) {
-		if ((axi_vote.axi_path[i].camnoc_bw != 0) ||
-			(axi_vote.axi_path[i].mnoc_ab_bw != 0) ||
-			(axi_vote.axi_path[i].mnoc_ib_bw != 0)) {
+	axi_vote = kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+	if (!axi_vote)
+		return -ENOMEM;
+
+	memcpy(axi_vote, cmd_hw_start->axi_vote, sizeof(struct cam_axi_vote));
+	for (i = 0; i < axi_vote->num_paths; i++) {
+		if ((axi_vote->axi_path[i].camnoc_bw != 0) ||
+			(axi_vote->axi_path[i].mnoc_ab_bw != 0) ||
+			(axi_vote->axi_path[i].mnoc_ib_bw != 0)) {
 			invalid_start = false;
 			break;
 		}
@@ -1332,11 +1346,14 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 
 	if (invalid_start) {
 		CAM_ERR(CAM_CPAS, "Zero start vote");
-		return -EINVAL;
+		rc = -EINVAL;
+		goto end;
 	}
 
-	if (!CAM_CPAS_CLIENT_VALID(client_indx))
-		return -EINVAL;
+	if (!CAM_CPAS_CLIENT_VALID(client_indx)) {
+		rc = -EINVAL;
+		goto end;
+	}
 
 	mutex_lock(&cpas_hw->hw_mutex);
 	mutex_lock(&cpas_core->client_mutex[client_indx]);
@@ -1346,7 +1363,7 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 		CAM_ERR(CAM_CPAS, "client=[%d] is not registered",
 			client_indx);
 		rc = -EPERM;
-		goto error;
+		goto unlock_client;
 	}
 
 	if (CAM_CPAS_CLIENT_STARTED(cpas_core, client_indx)) {
@@ -1354,7 +1371,7 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 			client_indx, cpas_client->data.identifier,
 			cpas_client->data.cell_index);
 		rc = -EPERM;
-		goto error;
+		goto unlock_client;
 	}
 
 	CAM_DBG(CAM_CPAS,
@@ -1365,22 +1382,22 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 	rc = cam_cpas_util_apply_client_ahb_vote(cpas_hw, cpas_client,
 		ahb_vote, &applied_level);
 	if (rc)
-		goto error;
+		goto unlock_client;
 
 	cam_cpas_dump_axi_vote_info(cpas_client, "CPAS Start Vote",
-		&axi_vote);
+		axi_vote);
 
 	/*
 	 * If client has indicated start bw to be applied on all paths
 	 * of client, apply that otherwise apply whatever the client supplies
 	 * for specific paths
 	 */
-	if (axi_vote.axi_path[0].path_data_type ==
+	if (axi_vote->axi_path[0].path_data_type ==
 		CAM_CPAS_API_PATH_DATA_STD_START) {
 		rc = cam_cpas_util_create_vote_all_paths(cpas_client,
-			&axi_vote);
+			axi_vote);
 	} else {
-		rc = cam_cpas_util_translate_client_paths(&axi_vote);
+		rc = cam_cpas_util_translate_client_paths(axi_vote);
 	}
 
 	if (rc) {
@@ -1390,10 +1407,10 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 	}
 
 	cam_cpas_dump_axi_vote_info(cpas_client, "CPAS Start Translated Vote",
-		&axi_vote);
+		axi_vote);
 
 	rc = cam_cpas_util_apply_client_axi_vote(cpas_hw,
-		cpas_client, &axi_vote);
+		cpas_client, axi_vote);
 	if (rc)
 		goto remove_ahb_vote;
 
@@ -1435,21 +1452,19 @@ static int cam_cpas_hw_start(void *hw_priv, void *start_args,
 		client_indx, cpas_client->data.identifier,
 		cpas_client->data.cell_index, cpas_core->streamon_clients);
 
-	mutex_unlock(&cpas_core->client_mutex[client_indx]);
-	mutex_unlock(&cpas_hw->hw_mutex);
-	return rc;
+	goto unlock_client;
 
 remove_axi_vote:
-	memset(&axi_vote, 0x0, sizeof(struct cam_axi_vote));
-	rc = cam_cpas_util_create_vote_all_paths(cpas_client, &axi_vote);
+	memset(axi_vote, 0x0, sizeof(struct cam_axi_vote));
+	rc = cam_cpas_util_create_vote_all_paths(cpas_client, axi_vote);
 	if (rc)
 		CAM_ERR(CAM_CPAS, "Unable to create per path votes rc: %d", rc);
 
 	cam_cpas_dump_axi_vote_info(cpas_client, "CPAS Start fail Vote",
-		&axi_vote);
+		axi_vote);
 
 	rc = cam_cpas_util_apply_client_axi_vote(cpas_hw,
-		cpas_client, &axi_vote);
+		cpas_client, axi_vote);
 	if (rc)
 		CAM_ERR(CAM_CPAS, "Unable to remove axi votes rc: %d", rc);
 
@@ -1461,9 +1476,11 @@ remove_ahb_vote:
 	if (rc)
 		CAM_ERR(CAM_CPAS, "Removing AHB vote failed, rc=%d", rc);
 
-error:
+unlock_client:
 	mutex_unlock(&cpas_core->client_mutex[client_indx]);
 	mutex_unlock(&cpas_hw->hw_mutex);
+end:
+	kfree(axi_vote);
 	return rc;
 }
 
@@ -1481,7 +1498,7 @@ static int cam_cpas_hw_stop(void *hw_priv, void *stop_args,
 	struct cam_cpas_hw_cmd_stop *cmd_hw_stop;
 	struct cam_cpas_client *cpas_client;
 	struct cam_ahb_vote ahb_vote;
-	struct cam_axi_vote axi_vote = {0};
+	struct cam_axi_vote *axi_vote = NULL;
 	struct cam_cpas_private_soc *soc_private = NULL;
 	int rc = 0;
 	long result;
@@ -1571,16 +1588,18 @@ static int cam_cpas_hw_stop(void *hw_priv, void *stop_args,
 	if (rc)
 		goto done;
 
-	rc = cam_cpas_util_create_vote_all_paths(cpas_client, &axi_vote);
+	axi_vote = kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+
+	rc = cam_cpas_util_create_vote_all_paths(cpas_client, axi_vote);
 	if (rc) {
 		CAM_ERR(CAM_CPAS, "Unable to create per path votes rc: %d", rc);
 		goto done;
 	}
 
-	cam_cpas_dump_axi_vote_info(cpas_client, "CPAS Stop Vote", &axi_vote);
+	cam_cpas_dump_axi_vote_info(cpas_client, "CPAS Stop Vote", axi_vote);
 
 	rc = cam_cpas_util_apply_client_axi_vote(cpas_hw,
-		cpas_client, &axi_vote);
+		cpas_client, axi_vote);
 	if (rc)
 		goto done;
 
@@ -1589,6 +1608,8 @@ static int cam_cpas_hw_stop(void *hw_priv, void *stop_args,
 done:
 	mutex_unlock(&cpas_core->client_mutex[client_indx]);
 	mutex_unlock(&cpas_hw->hw_mutex);
+
+	kfree(axi_vote);
 	return rc;
 }
 

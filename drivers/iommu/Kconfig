@@ -121,6 +121,10 @@ config IOMMU_DEFAULT_PASSTHROUGH
 config IOMMU_IOVA
 	tristate
 
+config IOMMU_IOVA_LAZY_ALLOCATION
+	bool "Lazily allocate IOVA magazines"
+	depends on IOMMU_IOVA
+
 config OF_IOMMU
        def_bool y
        depends on OF && IOMMU_API

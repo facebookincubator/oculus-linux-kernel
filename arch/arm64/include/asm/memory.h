@@ -92,7 +92,7 @@
 #define KASAN_THREAD_SHIFT	0
 #endif
 
-#define MIN_THREAD_SHIFT	(14 + KASAN_THREAD_SHIFT)
+#define MIN_THREAD_SHIFT	(PAGE_SHIFT + CONFIG_ARM64_KERNEL_STACK_ORDER + KASAN_THREAD_SHIFT)
 
 /*
  * VMAP'd stacks are allocated at page granularity, so we must ensure that such

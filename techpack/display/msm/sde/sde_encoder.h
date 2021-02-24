@@ -25,6 +25,7 @@
 #include "sde_hw_mdss.h"
 #include "sde_kms.h"
 #include "sde_connector.h"
+#include "dsi_display.h"
 
 #define MAX_CHANNELS_PER_ENC 4
 

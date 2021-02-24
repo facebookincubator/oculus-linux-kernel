@@ -1423,8 +1423,6 @@ wl_cfgvendor_get_wake_reason_stats(struct wiphy *wiphy,
 	}
 
 	ret = nla_put_u32(skb, WAKE_STAT_ATTRIBUTE_CMD_EVENT_COUNT_USED, rc_event_used_cnt);
-#else
-	ret = nla_put_u32(skb, WAKE_STAT_ATTRIBUTE_CMD_EVENT_COUNT_USED, WLC_E_LAST);
 #endif /* CUSTOM_WAKE_REASON_STATS */
 	if (unlikely(ret)) {
 		WL_ERR(("Failed to put Max count of event used, ret=%d\n", ret));
@@ -1482,7 +1480,7 @@ wl_cfgvendor_get_wake_reason_stats(struct wiphy *wiphy,
 		WL_ERR(("Failed to put Total wake due to RX broadcast, ret=%d\n", ret));
 		goto exit;
 	}
-	ret = nla_put_u32(skb, WAKE_STAT_ATTRIBUTE_RX_ICMP_PKT, pwake_count_info->rx_arp);
+	ret = nla_put_u32(skb, WAKE_STAT_ATTRIBUTE_RX_ICMP_PKT, pwake_count_info->rx_icmp);
 	if (unlikely(ret)) {
 		WL_ERR(("Failed to put Total wake due to ICMP pkt, ret=%d\n", ret));
 		goto exit;
@@ -1716,9 +1714,9 @@ wl_cfgvendor_set_latency_mode(struct wiphy *wiphy,
 	u32 latency_mode;
 	const struct nlattr *iter;
 #ifdef SUPPORT_LATENCY_CRITICAL_DATA
-	bool enable;
+	u32 mode = LATENCY_CRT_DATA_MODE_OFF;
 #endif /* SUPPORT_LATENCY_CRITICAL_DATA */
-#ifdef WL_AUTO_QOS
+#if defined(WL_AUTO_QOS)
 	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(wdev->netdev);
 #endif /* WL_AUTO_QOS */
 
@@ -1734,14 +1732,18 @@ wl_cfgvendor_set_latency_mode(struct wiphy *wiphy,
 				dhd_wl_sock_qos_set_status(dhdp, latency_mode);
 #endif /* WL_AUTO_QOS */
 #ifdef SUPPORT_LATENCY_CRITICAL_DATA
-				enable = latency_mode ? true : false;
+				if (latency_mode) {
+					mode = LATENCY_CRT_DATA_MODE_2;
+				}
 				err = wldev_iovar_setint(wdev->netdev,
-						"latency_critical_data", enable);
+						"latency_critical_data", mode);
 				if (err != BCME_OK) {
 					WL_ERR(("failed to set latency_critical_data "
-						"enable %d, error = %d\n", enable, err));
+						"mode %d, error = %d\n", mode, err));
 					/* Proceed with other optimizations possible */
 					err = BCME_OK;
+				} else {
+					WL_INFORM_MEM(("latency_mode:%d\n", mode));
 				}
 #endif /* SUPPORT_LATENCY_CRITICAL_DATA */
 				break;
@@ -3153,6 +3155,7 @@ wl_cfgvendor_set_sae_password(struct wiphy *wiphy,
 	wsec_pmk_t pmk;
 	s32 bssidx;
 
+	BCM_REFERENCE(pmk);
 /* This api not needed for wpa_supplicant based sae authentication */
 #ifdef WL_CLIENT_SAE
 	WL_INFORM_MEM(("Ignore for external sae auth\n"));
@@ -3167,8 +3170,8 @@ wl_cfgvendor_set_sae_password(struct wiphy *wiphy,
 		return BCME_ERROR;
 	}
 
-	if ((len < WSEC_MIN_PSK_LEN) || (len >= WSEC_MAX_PASSPHRASE_LEN)) {
-		WL_ERR(("Invalid passphrase length %d..should be >= 8 and < 256\n",
+	if ((len < 1) || (len > WSEC_MAX_PASSPHRASE_LEN)) {
+		WL_ERR(("Invalid passphrase length %d..should be >= 1 and <= 256\n",
 			len));
 		err = BCME_BADLEN;
 		goto done;
@@ -3179,17 +3182,19 @@ wl_cfgvendor_set_sae_password(struct wiphy *wiphy,
 		WL_ERR(("could not set wpa_auth (0x%x)\n", err));
 		goto done;
 	}
-	pmk.key_len = htod16(len);
-	bcopy((const u8*)data, pmk.key, len);
-	pmk.flags = htod16(WSEC_PASSPHRASE);
 
-	err = wldev_ioctl_set(net, WLC_SET_WSEC_PMK, &pmk, sizeof(pmk));
+	/* Update passphrase in net_info and will be used
+	* in connect/start_ap context
+	*/
+	err = wl_cfg80211_set_netinfo_passphrase(cfg, net, data, len);
+
 	if (err) {
-		WL_ERR(("\n failed to set pmk %d\n", err));
+		WL_ERR(("\n failed to cache sae passphrase %d\n", err));
 		goto done;
 	} else {
 		WL_INFORM_MEM(("sae passphrase set successfully\n"));
 	}
+
 done:
 	return err;
 }
@@ -5334,11 +5339,6 @@ wl_cfgvendor_nan_parse_args(struct wiphy *wiphy, const void *buf,
 				goto exit;
 			}
 			cfg->nancfg->ranging_enable = nla_get_u32(iter);
-			if (cfg->nancfg->ranging_enable == 0) {
-				WL_ERR((" ranging enable is not set \n"));
-				cmd_data->status = BCME_BADARG;
-				goto exit;
-			}
 			break;
 		case NAN_ATTRIBUTE_DW_EARLY_TERM:
 			if (nla_len(iter) != sizeof(uint32)) {
@@ -8400,16 +8400,25 @@ static int wl_cfgvendor_nla_put_pktlogdump_data(struct sk_buff *skb,
 #ifdef DHD_SDTC_ETB_DUMP
 static int wl_cfgvendor_nla_put_sdtc_etb_dump_data(struct sk_buff *skb, struct net_device *ndev)
 {
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(ndev);
 	char memdump_path[MEMDUMP_PATH_LEN];
 	int ret = BCME_OK;
 
+	if (!dhdp->sdtc_etb_inited) {
+		WL_ERR(("sdtc not inited, hence donot collect SDTC dump through HAL\n"));
+		goto exit;
+	}
+	if (dhdp->sdtc_etb_dump_len <= sizeof(etb_info_t)) {
+		WL_ERR(("ETB is of zero size. Hence donot collect SDTC ETB\n"));
+		goto exit;
+	}
 	dhd_get_memdump_filename(ndev, memdump_path, MEMDUMP_PATH_LEN, "sdtc_etb_dump");
 	ret = nla_put_string(skb, DUMP_FILENAME_ATTR_SDTC_ETB_DUMP, memdump_path);
 	if (unlikely(ret)) {
 		WL_ERR(("Failed to nla put stdc etb dump path, ret=%d\n", ret));
 		goto exit;
 	}
-	/* should we give exact length sdtc dump FW has reported dump ? */
+
 	ret = nla_put_u32(skb, DUMP_LEN_ATTR_SDTC_ETB_DUMP, DHD_SDTC_ETB_MEMPOOL_SIZE);
 	if (unlikely(ret)) {
 		WL_ERR(("Failed to nla put stdc etb length, ret=%d\n", ret));
@@ -9375,79 +9384,100 @@ wl_cfgvendor_tx_power_scenario(struct wiphy *wiphy,
 	const struct nlattr *iter;
 	sar_advance_modes sar_tx_power_val = SAR_DISABLE;
 	int airplane_mode = 0;
+#if defined(WL_SAR_TX_POWER_CONFIG)
+	int i = 0;
+	bool found = FALSE;
+#endif /* WL_SAR_TX_POWER_CONFIG */
 
 	nla_for_each_attr(iter, data, len, rem) {
 		type = nla_type(iter);
 		if (type == ANDR_WIFI_ATTRIBUTE_TX_POWER_SCENARIO) {
 			wifi_tx_power_mode = nla_get_s8(iter);
 		} else {
-			WL_ERR(("Unknown attr type: %d\n", type));
+			WL_ERR(("SAR: Unknown attr type: %d\n", type));
 			err = -EINVAL;
 			goto exit;
 		}
 	}
 	/* If sar tx power is already configured, no need to set it again */
 	if (cfg->wifi_tx_power_mode == wifi_tx_power_mode) {
-		WL_INFORM_MEM(("%s, tx_power_mode %d is already set\n",
-			__FUNCTION__, wifi_tx_power_mode));
+		WL_INFORM_MEM(("SAR: tx_power_mode %d is already set\n",
+			wifi_tx_power_mode));
 		err = BCME_OK;
 		goto exit;
 	}
 
-	/* Map Android TX power modes to Brcm power mode */
-	switch (wifi_tx_power_mode) {
-		case WIFI_POWER_SCENARIO_VOICE_CALL:
-		case WIFI_POWER_SCENARIO_DEFAULT:
-			/* SAR disabled */
-			sar_tx_power_val = SAR_DISABLE;
-			airplane_mode = 0;
+#if defined(WL_SAR_TX_POWER_CONFIG)
+	for (i = 0; i < MAX_SAR_CONFIG_INFO; i++) {
+		if (cfg->sar_config_info[i].scenario == WIFI_POWER_SCENARIO_INVALID) {
 			break;
-		case WIFI_POWER_SCENARIO_ON_HEAD_CELL_OFF:
-			/* HEAD mode, Airplane */
-			sar_tx_power_val = SAR_HEAD;
-			airplane_mode = 1;
+		}
+		if (cfg->sar_config_info[i].scenario == wifi_tx_power_mode) {
+			found = TRUE;
+			sar_tx_power_val = cfg->sar_config_info[i].sar_tx_power_val;
+			airplane_mode = cfg->sar_config_info[i].airplane_mode;
+			WL_DBG(("found scenario with new config\n"));
 			break;
-		case WIFI_POWER_SCENARIO_ON_BODY_CELL_OFF:
-			/* GRIP mode, Airplane */
-			sar_tx_power_val = SAR_GRIP;
-			airplane_mode = 1;
-			break;
-		case WIFI_POWER_SCENARIO_ON_BODY_BT:
-			/* BT mode, Airplane */
-			sar_tx_power_val = SAR_BT;
-			airplane_mode = 1;
-			break;
-		case WIFI_POWER_SCENARIO_ON_HEAD_CELL_ON:
-			/* HEAD mode, Normal */
-			sar_tx_power_val = SAR_HEAD;
-			airplane_mode = 0;
-			break;
-		case WIFI_POWER_SCENARIO_ON_BODY_CELL_ON:
-			/* GRIP mode, Normal */
-			sar_tx_power_val = SAR_GRIP;
-			airplane_mode = 0;
-			break;
-		default:
-			WL_ERR(("invalid wifi tx power scenario = %d\n",
-				sar_tx_power_val));
-			err = -EINVAL;
-			goto exit;
+		}
 	}
 
-	WL_DBG(("%s, sar_mode %d airplane_mode %d\n", __FUNCTION__,
-		sar_tx_power_val, airplane_mode));
+	if (!found)
+#endif /* WL_SAR_TX_POWER_CONFIG */
+	{
+		/* Map Android TX power modes to Brcm power mode */
+		switch (wifi_tx_power_mode) {
+			case WIFI_POWER_SCENARIO_VOICE_CALL:
+			case WIFI_POWER_SCENARIO_DEFAULT:
+				/* SAR disabled */
+				sar_tx_power_val = SAR_DISABLE;
+				airplane_mode = 0;
+				break;
+			case WIFI_POWER_SCENARIO_ON_HEAD_CELL_OFF:
+				/* HEAD mode, Airplane */
+				sar_tx_power_val = SAR_HEAD;
+				airplane_mode = 1;
+				break;
+			case WIFI_POWER_SCENARIO_ON_BODY_CELL_OFF:
+				/* GRIP mode, Airplane */
+				sar_tx_power_val = SAR_GRIP;
+				airplane_mode = 1;
+				break;
+			case WIFI_POWER_SCENARIO_ON_BODY_BT:
+				/* BT mode, Airplane */
+				sar_tx_power_val = SAR_BT;
+				airplane_mode = 1;
+				break;
+			case WIFI_POWER_SCENARIO_ON_HEAD_CELL_ON:
+				/* HEAD mode, Normal */
+				sar_tx_power_val = SAR_HEAD;
+				airplane_mode = 0;
+				break;
+			case WIFI_POWER_SCENARIO_ON_BODY_CELL_ON:
+				/* GRIP mode, Normal */
+				sar_tx_power_val = SAR_GRIP;
+				airplane_mode = 0;
+				break;
+			default:
+				WL_ERR(("SAR: invalid wifi tx power scenario = %d\n",
+					sar_tx_power_val));
+				err = -EINVAL;
+				goto exit;
+		}
+	}
+	WL_DBG(("SAR: sar_mode %d airplane_mode %d\n", sar_tx_power_val, airplane_mode));
 	err = wldev_iovar_setint(wdev_to_ndev(wdev), "fccpwrlimit2g", airplane_mode);
 	if (unlikely(err)) {
-		WL_ERR(("%s: Failed to set airplane_mode - error (%d)\n", __FUNCTION__, err));
+		WL_ERR(("SAR: Failed to set airplane_mode - error (%d)\n", err));
 		goto exit;
 	}
 	err = wldev_iovar_setint(wdev_to_ndev(wdev), "sar_enable", sar_tx_power_val);
 	if (unlikely(err)) {
-		WL_ERR(("%s: Failed to set sar_enable - error (%d)\n", __FUNCTION__, err));
+		WL_ERR(("SAR: Failed to set sar_enable - error (%d)\n", err));
 		goto exit;
 	}
 	/* Cache the tx power mode sent by the hal */
 	cfg->wifi_tx_power_mode = wifi_tx_power_mode;
+	WL_INFORM_MEM(("SAR: tx_power_mode %d SUCCESS\n", wifi_tx_power_mode));
 exit:
 	return err;
 }
@@ -9626,7 +9656,7 @@ const struct nla_policy andr_wifi_attr_policy[ANDR_WIFI_ATTRIBUTE_MAX] = {
 	/* Dont see ANDR_WIFI_ATTRIBUTE_RANDOM_MAC being used currently */
 	[ANDR_WIFI_ATTRIBUTE_RANDOM_MAC] = { .type = NLA_U32 },
 	[ANDR_WIFI_ATTRIBUTE_TX_POWER_SCENARIO] = { .type = NLA_S8 },
-	[ANDR_WIFI_ATTRIBUTE_THERMAL_MITIGATION] = { .type = NLA_U32 },
+	[ANDR_WIFI_ATTRIBUTE_THERMAL_MITIGATION] = { .type = NLA_S8 },
 	[ANDR_WIFI_ATTRIBUTE_THERMAL_COMPLETION_WINDOW] = { .type = NLA_U32 },
 };
 
@@ -9659,8 +9689,8 @@ const struct nla_policy dump_buf_policy[DUMP_BUF_ATTR_MAX] = {
 };
 
 const struct nla_policy andr_dbg_policy[DEBUG_ATTRIBUTE_MAX] = {
-	[DEBUG_ATTRIBUTE_GET_DRIVER] = { .type = NLA_UNSPEC },
-	[DEBUG_ATTRIBUTE_GET_FW] = { .type = NLA_UNSPEC },
+	[DEBUG_ATTRIBUTE_GET_DRIVER] = { .type = NLA_BINARY },
+	[DEBUG_ATTRIBUTE_GET_FW] = { .type = NLA_BINARY },
 	[DEBUG_ATTRIBUTE_RING_ID] = { .type = NLA_U32 },
 	[DEBUG_ATTRIBUTE_RING_NAME] = { .type = NLA_NUL_STRING },
 	[DEBUG_ATTRIBUTE_RING_FLAGS] = { .type = NLA_U32 },
@@ -9919,11 +9949,14 @@ const struct nla_policy hal_start_attr_policy[SET_HAL_START_ATTRIBUTE_MAX] = {
 	[SET_HAL_START_ATTRIBUTE_EVENT_SOCK_PID] = { .type = NLA_U32 },
 };
 
+#ifdef WL_CUSTOM_MAPPING_OF_DSCP
 const struct nla_policy custom_setting_attr_policy[CUSTOM_SETTING_ATTRIBUTE_MAX] = {
 	[CUSTOM_SETTING_ATTRIBUTE_DSCP_START] = { .type = NLA_U32 },
 	[CUSTOM_SETTING_ATTRIBUTE_DSCP_END] = { .type = NLA_U32 },
 	[CUSTOM_SETTING_ATTRIBUTE_ACCESS_CATEGORY] = { .type = NLA_U32 },
 };
+#endif /* WL_CUSTOM_MAPPING_OF_DSCP */
+
 #endif /* LINUX_VERSION >= 5.3 */
 
 static struct wiphy_vendor_command wl_vendor_cmds [] = {
@@ -10886,7 +10919,7 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 			.subcmd = WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
-		.doit = wl_cfgvendor_custom_mapping_of_dscp
+		.doit = wl_cfgvendor_custom_mapping_of_dscp,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
 		.policy = custom_setting_attr_policy,
 		.maxattr = CUSTOM_SETTING_ATTRIBUTE_MAX
@@ -10898,7 +10931,7 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 			.subcmd = WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP_RESET
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
-		.doit = wl_cfgvendor_custom_mapping_of_dscp_reset
+		.doit = wl_cfgvendor_custom_mapping_of_dscp_reset,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
 		.policy = custom_setting_attr_policy,
 		.maxattr = CUSTOM_SETTING_ATTRIBUTE_MAX
@@ -10988,7 +11021,9 @@ int wl_cfgvendor_attach(struct wiphy *wiphy, dhd_pub_t *dhd)
 
 #ifdef DEBUGABILITY
 	dhd_os_dbg_register_callback(FW_VERBOSE_RING_ID, wl_cfgvendor_dbg_ring_send_evt);
+#ifdef DHD_DEBUGABILITY_EVENT_RING
 	dhd_os_dbg_register_callback(DHD_EVENT_RING_ID, wl_cfgvendor_dbg_ring_send_evt);
+#endif /* DHD_DEBUGABILITY_EVENT_RING */
 #ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
 	dhd_os_dbg_register_callback(DRIVER_LOG_RING_ID, wl_cfgvendor_dbg_ring_send_evt);
 	dhd_os_dbg_register_callback(ROAM_STATS_RING_ID, wl_cfgvendor_dbg_ring_send_evt);

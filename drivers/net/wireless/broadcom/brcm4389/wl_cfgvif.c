@@ -1209,8 +1209,9 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 	}
 
 	mutex_lock(&cfg->if_sync);
+
 	netinfo = wl_get_netinfo_by_wdev(cfg, ndev->ieee80211_ptr);
-	if (unlikely(!netinfo)) {
+	if (!netinfo) {
 #ifdef WL_STATIC_IF
 		if (IS_CFG80211_STATIC_IF(cfg, ndev)) {
 			/* Incase of static interfaces, the netinfo will be
@@ -1220,12 +1221,11 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 			WL_INFORM_MEM(("skip change vif for static if\n"));
 			ndev->ieee80211_ptr->iftype = type;
 			err = BCME_OK;
-		} else
-#endif /* WL_STATIC_IF */
-		{
-			WL_ERR(("netinfo not found \n"));
-			err = -ENODEV;
+			goto fail;
 		}
+#endif /* WL_STATIC_IF */
+		WL_ERR(("netinfo not found \n"));
+		err = -ENODEV;
 		goto fail;
 	}
 
@@ -1258,11 +1258,17 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 				WL_ERR(("P2P downgrade failed \n"));
 			}
 		} else if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_AP) {
-			/* Downgrade role from AP to STA */
-			if ((err = wl_cfg80211_add_del_bss(cfg, ndev,
-				netinfo->bssidx, wl_iftype, 0, NULL)) < 0) {
-				WL_ERR(("AP-STA Downgrade failed \n"));
-				goto fail;
+			if (!wl_get_drv_status(cfg, AP_ROLE_UPGRADED, ndev)) {
+				/* Interface created with AP type. Downgrade not required */
+				WL_DBG(("Skip AP downgrade\n"));
+			} else {
+				wl_clr_drv_status(cfg, AP_ROLE_UPGRADED, ndev);
+				/* Downgrade role from AP to STA */
+				if ((err = wl_cfg80211_add_del_bss(cfg, ndev,
+					netinfo->bssidx, wl_iftype, 0, NULL)) < 0) {
+					WL_ERR(("AP-STA Downgrade failed \n"));
+					goto fail;
+				}
 			}
 		}
 		break;
@@ -1279,6 +1285,8 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 					WL_ERR(("set ap role failed!\n"));
 					goto fail;
 				}
+				/* Mark AP role upgrade */
+				wl_set_drv_status(cfg, AP_ROLE_UPGRADED, ndev);
 			} else {
 				WL_INFORM_MEM(("AP_CREATED bit set. Skip role change\n"));
 			}
@@ -1291,6 +1299,11 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 		err = wl_cfg80211_change_p2prole(wiphy, ndev, type);
 		break;
 	case NL80211_IFTYPE_MONITOR:
+#ifdef WL_CFG80211_MONITOR
+		if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION) {
+			break;
+		}
+#endif /* WL_CFG80211_MONITOR */
 	case NL80211_IFTYPE_WDS:
 	case NL80211_IFTYPE_MESH_POINT:
 		/* Intentional fall through */
@@ -1418,6 +1431,15 @@ wl_cfg80211_cleanup_virtual_ifaces(struct bcm_cfg80211 *cfg, bool rtnl_lock_reqd
 			{
 				dev_close(iter->ndev);
 				WL_DBG(("Cleaning up iface:%s \n", iter->ndev->name));
+#if defined(WLAN_ACCEL_BOOT)
+				/* Trigger force reg_on to ensure clean up of virtual interface
+				* states in FW for any residual interface states, casued due to
+				* framework crashes
+				*/
+				WL_ERR(("Setting forced reg_on to enusre clearing"
+				" interface states in FW\n"));
+				dhd_dev_set_accel_force_reg_on(iter->ndev);
+#endif /* WLAN_ACCEL_BOOT */
 				wl_cfg80211_post_ifdel(iter->ndev, rtnl_lock_reqd, 0);
 			}
 		}
@@ -1527,8 +1549,8 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 
 	dev = ndev_to_wlc_ndev(dev, cfg);
 	chspec = wl_freq_to_chanspec(chan->center_freq);
-	WL_ERR(("netdev_ifidx(%d), chan_type(%d) target channel(%d) \n",
-		dev->ifindex, channel_type, CHSPEC_CHANNEL(chspec)));
+	WL_ERR(("netdev_ifidx(%d), chan_type(%d) target channel(%d) chan->center_freq (%d)\n",
+		dev->ifindex, channel_type, CHSPEC_CHANNEL(chspec), chan->center_freq));
 
 		if (IS_P2P_GO(dev->ieee80211_ptr) && (CHSPEC_IS6G(chspec))) {
 			WL_ERR(("P2P GO not allowed on 6G\n"));
@@ -1607,9 +1629,9 @@ set_channel:
 		(wf_chspec_ctlchspec(cfg->acs_chspec) == wf_chspec_ctlchspec(cur_chspec))) {
 		WL_DBG(("using acs_chanspec %x\n", cfg->acs_chspec));
 		cur_chspec = cfg->acs_chspec;
-		cfg->acs_chspec = 0;
 	}
 #endif /* WL_6G_BAND */
+	cfg->acs_chspec = 0;
 	if (wf_chspec_valid(cur_chspec)) {
 		/* convert 802.11 ac chanspec to current fw chanspec type */
 		cur_chspec = wl_chspec_host_to_driver(cur_chspec);
@@ -1876,6 +1898,12 @@ wl_validate_wpa2ie(struct net_device *dev, const bcm_tlv_t *wpa2ie, s32 bssidx)
 			gval = AES_ENABLED;
 			break;
 
+#ifdef BCMWAPI_WPI
+		case WAPI_CIPHER_SMS4:
+			gval = SMS4_ENABLED;
+			break;
+#endif
+
 		default:
 			WL_ERR(("No Security Info\n"));
 			break;
@@ -1900,6 +1928,12 @@ wl_validate_wpa2ie(struct net_device *dev, const bcm_tlv_t *wpa2ie, s32 bssidx)
 		case WPA_CIPHER_AES_CCM:
 			pval = AES_ENABLED;
 			break;
+
+#ifdef BCMWAPI_WPI
+		case WAPI_CIPHER_SMS4:
+			pval = SMS4_ENABLED;
+			break;
+#endif
 
 		default:
 			WL_ERR(("No Security Info\n"));
@@ -2219,6 +2253,12 @@ static u32 wl_get_cipher_type(uint8 type)
 			ret = AES_ENABLED;
 			break;
 
+#ifdef BCMWAPI_WPI
+		case WAPI_CIPHER_SMS4:
+			ret = SMS4_ENABLED;
+			break;
+#endif
+
 		default:
 			WL_ERR(("No Security Info\n"));
 	}
@@ -2471,6 +2511,42 @@ exit:
 #endif /* SUPPORT_SOFTAP_WPAWPA2_MIXED */
 
 static s32
+wl_set_ap_passphrase(struct net_device *dev)
+{
+	struct net_info *_net_info;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	wl_config_passphrase_t pp_config;
+	int err = BCME_OK;
+	bzero(&pp_config, sizeof(wl_config_passphrase_t));
+
+	_net_info = wl_get_netinfo_by_netdev(cfg, dev);
+
+	if (_net_info == NULL) {
+		WL_ERR(("net_info not found for iface %s", dev->name));
+		err = BCME_BADARG;
+		goto done;
+	}
+
+	if ((cfg->hostapd_ssid.SSID_len == 0) ||
+		(_net_info->passphrase_len == 0)) {
+		WL_ERR(("Invalid config ssid_len %d passphrase_len %d",
+			cfg->hostapd_ssid.SSID_len, _net_info->passphrase_len));
+		err = BCME_BADARG;
+		goto done;
+	}
+
+	pp_config.ssid = cfg->hostapd_ssid.SSID;
+	pp_config.ssid_len = cfg->hostapd_ssid.SSID_len;
+	pp_config.passphrase = _net_info->passphrase;
+	pp_config.passphrase_len = _net_info->passphrase_len;
+
+	err = wl_cfg80211_config_passphrase(cfg, dev, &pp_config);
+
+done:
+	return err;
+}
+
+static s32
 wl_cfg80211_bcn_validate_sec(
 	struct net_device *dev,
 	struct parsed_ies *ies,
@@ -2513,6 +2589,14 @@ wl_cfg80211_bcn_validate_sec(
 			bss->security_mode = false;
 			return BCME_ERROR;
 		}
+
+		BCM_REFERENCE(wl_set_ap_passphrase);
+#ifdef WL_SAE
+		/* Set SAE passphrase */
+		if (sec->fw_wpa_auth & WPA3_AUTH_SAE_PSK) {
+			wl_set_ap_passphrase(dev);
+		}
+#endif /* WL_SAE */
 
 		if (ies->fils_ind_ie &&
 			(wl_validate_fils_ind_ie(dev, ies->fils_ind_ie, bssidx)  < 0)) {
@@ -3599,8 +3683,21 @@ wl_cfg80211_stop_ap(
 #ifdef BCMDONGLEHOST
 	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 #endif /* BCMDONGLEHOST */
-
+#ifdef CUSTOMER_HW4
+#ifdef DHD_PCIE_RUNTIMEPM
+	int idletime = MAX_IDLE_COUNT;
+#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* CUSTOMER_HW4 */
 	WL_DBG(("Enter \n"));
+
+	 /* wl_cfg80211_start_ap() schedules cfg->ap_work
+	  * and then cancels it if a link up event is recevied.
+	  * Somtimes an android framework calls wl_cfg80211_stop()
+	  * immediately after wl_cfg80211_start_ap().
+	  * In this case we should cancel the work.
+	  */
+
+	cancel_delayed_work_sync(&cfg->ap_work);
 
 	if (wl_cfg80211_get_bus_state(cfg)) {
 		/* since bus is down, iovar will fail. recovery path will bringup the bus. */
@@ -3649,6 +3746,22 @@ wl_cfg80211_stop_ap(
 	}
 
 	if (dev_role == NL80211_IFTYPE_AP) {
+#ifdef CUSTOMER_HW4
+#ifdef DHD_PCIE_RUNTIMEPM
+		if (!dhd_get_idletime(dhd)) {
+			err = dhd_bus_iovar_op(dhd, "idletime", NULL, 0, (void *) &idletime,
+				sizeof(idletime), IOV_SET);
+			WL_ERR(("RPM Disable - Now enable\n"));
+
+			if (!err) {
+				WL_ERR(("RPM Enable\n"));
+			} else {
+				WL_ERR(("RPM Enable err : %d\n", err));
+			}
+		}
+#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* CUSTOMER_HW4 */
+
 #ifdef BCMDONGLEHOST
 #ifdef DISABLE_WL_FRAMEBURST_SOFTAP
 		wl_cfg80211_set_frameburst(cfg, TRUE);
@@ -4193,6 +4306,68 @@ exit:
 }
 #endif /* WL_CFG80211_STA_EVENT || KERNEL_VER < 3.2 */
 
+static void
+wl_update_sta_chanspec_info(struct bcm_cfg80211 *cfg, struct net_device *ndev, const u8 *addr)
+{
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+	u8 *iovar_buf = NULL;
+	u16 iovar_buf_len = WLC_IOCTL_MEDLEN;
+	sta_info_v4_t *sta4;
+	chanspec_t chanspec = 0;
+	s32 ifidx;
+	s32 ret;
+	u16 version;
+
+	ifidx = dhd_net2idx(dhdp->info, ndev);
+	if (ifidx < 0) {
+		WL_ERR(("invalid ifidx\n"));
+		return;
+	}
+
+	iovar_buf = MALLOCZ(cfg->osh, iovar_buf_len);
+	if (!iovar_buf) {
+		WL_ERR(("no memory\n"));
+		return;
+	}
+
+	/* get the sta info */
+	ret = wldev_iovar_getbuf(ndev, "sta_info",
+		addr, ETHER_ADDR_LEN, iovar_buf, iovar_buf_len, NULL);
+	if (ret < 0) {
+		WL_ERR(("get sta_info error %d\n", ret));
+		goto exit;
+	}
+
+	sta4 = (sta_info_v4_t *)iovar_buf;
+	version = dtoh16(sta4->ver);
+	if (version < WL_STA_VER_4) {
+		WL_ERR(("Unsupported sta info ver:%d\n", dtoh16(sta4->ver)));
+		goto exit;
+	}
+
+	if (version == WL_STA_VER_4) {
+		chanspec = dtoh16(sta4->chanspec);
+	} else if (version == WL_STA_VER_5) {
+		sta_info_v5_t *sta5 = (sta_info_v5_t *)iovar_buf;
+		chanspec = dtoh16(sta5->chanspec);
+	} else if (version == WL_STA_VER_6) {
+		sta_info_v6_t *sta6 = (sta_info_v6_t *)iovar_buf;
+		chanspec = dtoh16(sta6->chanspec);
+	} else {
+		WL_ERR(("unsupported STA Info version\n"));
+		goto exit;
+	}
+
+	dhd_update_sta_chanspec_info(dhdp, ifidx, addr, chanspec);
+
+	WL_INFORM_MEM(("[%s] updated client sta info. chanspec:0x%x\n",
+		ndev->name, chanspec));
+exit:
+	if (iovar_buf) {
+		MFREE(cfg->osh, iovar_buf, iovar_buf_len);
+	}
+}
+
 s32
 wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	const wl_event_msg_t *e, void *data)
@@ -4235,6 +4410,24 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		wl_get_p2p_status(cfg, IF_DELETING) && (ndev != bcmcfg_to_prmry_ndev(cfg))) {
 		wl_add_remove_eventmsg(ndev, WLC_E_PROBREQ_MSG, false);
 		WL_INFORM_MEM(("AP mode link down !! \n"));
+#ifdef CUSTOMER_HW4
+#ifdef DHD_PCIE_RUNTIMEPM
+		if (!dhd_get_idletime((dhd_pub_t *)(cfg->pub))) {
+			int idletime = MAX_IDLE_COUNT;
+			int err;
+
+			WL_ERR(("RPM Disable - Now Enable\n"));
+			err = dhd_bus_iovar_op((dhd_pub_t *)(cfg->pub), "idletime", NULL, 0,
+				(void *) &idletime, sizeof(idletime), IOV_SET);
+
+			if (!err) {
+				WL_ERR(("Runtime PM Enable\n"));
+			} else {
+				WL_ERR(("Runtime PM Enable err : %d\n", err));
+			}
+		}
+#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* CUSTOMER_HW4 */
 		complete(&cfg->iface_disable);
 		return 0;
 	}
@@ -4290,6 +4483,9 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			WL_ERR(("No IEs present in ASSOC/REASSOC_IND"));
 			return -EINVAL;
 		}
+
+		wl_update_sta_chanspec_info(cfg, ndev, e->addr.octet);
+
 		sinfo.assoc_req_ies = data;
 		sinfo.assoc_req_ies_len = len;
 		WL_INFORM_MEM(("[%s] new sta event for "MACDBG "\n",
@@ -4775,6 +4971,104 @@ wl_cfg80211_set_mac_acl(struct wiphy *wiphy, struct net_device *cfgdev,
 	return ret;
 }
 #endif /* WL_CFG80211_ACL */
+
+#ifdef WL_CFG80211_MONITOR
+int
+wl_cfg80211_set_monitor_channel(struct wiphy *wiphy, struct cfg80211_chan_def *chandef)
+{
+	int err = BCME_OK;
+	struct bcm_cfg80211 *cfg;
+	struct net_device *ndev;
+	dhd_pub_t *dhdp;
+	u32 bw = WL_CHANSPEC_BW_20;
+	chanspec_t chspec = 0;
+
+	WL_TRACE(("%s: Enter\n", __FUNCTION__));
+
+	if (!wiphy) {
+		WL_ERR(("%s: wiphy is null\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+
+	cfg = wiphy_priv(wiphy);
+	if (!cfg) {
+		WL_ERR(("%s: cfg is null\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+
+	dhdp = (dhd_pub_t *)(cfg->pub);
+	if (!dhdp->monitor_enable) {
+		WL_ERR(("%s: Monitor mode is not enabled\n", __FUNCTION__));
+		return BCME_UNSUPPORTED;
+	}
+
+	ndev = bcmcfg_to_prmry_ndev(cfg);
+	/* Convert from struct cfg80211_chan_def to chanspec_t */
+	chspec = wl_freq_to_chanspec(chandef->chan->center_freq);
+	WL_ERR(("%s: target_channel(%d), target bandwidth(%d)\n",
+		__FUNCTION__, CHSPEC_CHANNEL(chspec), chandef->width));
+
+	if (
+#ifdef WL_6G_BAND
+		CHSPEC_IS6G(chspec) ||
+#endif /* WL_6G_BAND */
+		CHSPEC_IS5G(chspec)) {
+		switch (chandef->width) {
+			case NL80211_CHAN_WIDTH_20:
+				bw = WL_CHANSPEC_BW_20;
+				break;
+			case NL80211_CHAN_WIDTH_40:
+				bw = WL_CHANSPEC_BW_40;
+				break;
+			case NL80211_CHAN_WIDTH_80:
+				bw = WL_CHANSPEC_BW_80;
+				break;
+			case NL80211_CHAN_WIDTH_160:
+				bw = WL_CHANSPEC_BW_160;
+				break;
+			default:
+				err = wl_get_bandwidth_cap(ndev, CHSPEC_BAND(chspec), &bw);
+				if (err < 0) {
+					WL_ERR(("Failed to get bandwidth information, err=%d\n",
+						err));
+					return err;
+				}
+
+				/* In case of 5G downgrade BW to 80MHz
+				 * as 160MHz channels falls in DFS
+				 */
+				if (CHSPEC_IS5G(chspec) && (bw == WL_CHANSPEC_BW_160)) {
+					bw = WL_CHANSPEC_BW_80;
+				}
+				break;
+		}
+	} else if (CHSPEC_IS2G(chspec)) {
+		bw = WL_CHANSPEC_BW_20;
+	} else {
+		WL_ERR(("invalid band (%d)\n", CHSPEC_BAND(chspec)));
+		return -EINVAL;
+	}
+
+	WL_DBG(("%s: chandef->width(%u), bw(%u)\n",
+		__FUNCTION__, chandef->width, bw));
+	chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
+		bw, CHSPEC_BAND(chspec));
+
+	if (!wf_chspec_valid(chspec)) {
+		WL_ERR(("Invalid chanspec 0x%x\n", chspec));
+		return -EINVAL;
+	}
+
+	/* Set chanspec for monitor channel */
+	err = wldev_iovar_setint(ndev, "chanspec", chspec);
+	if (unlikely(err)) {
+		WL_ERR(("%s: Could not set chanspec %d\n", __FUNCTION__, err));
+	}
+
+	return err;
+}
+#endif /* WL_CFG80211_MONITOR */
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 int wl_chspec_chandef(chanspec_t chanspec,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))

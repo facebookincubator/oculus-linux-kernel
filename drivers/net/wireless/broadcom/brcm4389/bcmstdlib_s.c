@@ -204,7 +204,7 @@ exit:
  * of course, the buffer size is zero). It does not pad
  * out the result like strncpy() does.
  */
-size_t strlcpy(char *dest, const char *src, size_t size)
+size_t BCMPOSTTRAPFN(strlcpy)(char *dest, const char *src, size_t size)
 {
 	size_t i;
 

@@ -43,6 +43,14 @@
 	status = "disabled";
 };
 
+&pcie1 {
+	status = "disabled";
+};
+
+&pcie2 {
+	status = "disabled";
+};
+
 &pm8150b_haptics {
 	status = "disabled";
 };
@@ -73,12 +81,19 @@
 &reserved_memory {
 	ramoops: ramoops {
 		compatible = "ramoops";
-		reg = <0 0x9BA00000 0 0x00200000>;
+		reg = <0 0x9BA00000 0 0x00090000>;
 		record-size = <131072>;
 		console-size = <131072>;
-		ftrace-size = <131072>;
 		pmsg-size = <131072>;
 	};
+};
+
+&sde_dsi {
+	qcom,platform-te-gpio = <>;
+};
+
+&sde_dsi1 {
+	qcom,platform-te-gpio = <>;
 };
 
 &soc {

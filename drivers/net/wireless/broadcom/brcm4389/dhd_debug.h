@@ -639,10 +639,11 @@ typedef struct dhd_dbg_rx_report
 
 typedef void (*dbg_pullreq_t)(void *os_priv, const int ring_id);
 typedef void (*dbg_urgent_noti_t) (dhd_pub_t *dhdp, const void *data, const uint32 len);
-typedef int (*dbg_mon_tx_pkts_t) (dhd_pub_t *dhdp, void *pkt, uint32 pktid);
+typedef int (*dbg_mon_tx_pkts_t) (dhd_pub_t *dhdp, void *pkt, uint32 pktid,
+	frame_type type, uint8 mgmt_acked);
 typedef int (*dbg_mon_tx_status_t) (dhd_pub_t *dhdp, void *pkt,
 	uint32 pktid, uint16 status);
-typedef int (*dbg_mon_rx_pkts_t) (dhd_pub_t *dhdp, void *pkt);
+typedef int (*dbg_mon_rx_pkts_t) (dhd_pub_t *dhdp, void *pkt, frame_type type);
 
 typedef struct dhd_dbg_pkt_mon
 {
@@ -682,10 +683,11 @@ typedef struct dhd_dbg {
 		(((status_count) >= (pkt_count)) || ((status_count) >= MAX_FATE_LOG_LEN))
 
 #ifdef DBG_PKT_MON
-#define DHD_DBG_PKT_MON_TX(dhdp, pkt, pktid) \
+#define DHD_DBG_PKT_MON_TX(dhdp, pkt, pktid, type, mgmt_acked) \
 	do { \
 		if ((dhdp) && (dhdp)->dbg && (dhdp)->dbg->pkt_mon.tx_pkt_mon && (pkt)) { \
-			(dhdp)->dbg->pkt_mon.tx_pkt_mon((dhdp), (pkt), (pktid)); \
+			(dhdp)->dbg->pkt_mon.tx_pkt_mon((dhdp), (pkt), \
+			(pktid), (type), (mgmt_acked)); \
 		} \
 	} while (0);
 #define DHD_DBG_PKT_MON_TX_STATUS(dhdp, pkt, pktid, status) \
@@ -694,11 +696,11 @@ typedef struct dhd_dbg {
 			(dhdp)->dbg->pkt_mon.tx_status_mon((dhdp), (pkt), (pktid), (status)); \
 		} \
 	} while (0);
-#define DHD_DBG_PKT_MON_RX(dhdp, pkt) \
+#define DHD_DBG_PKT_MON_RX(dhdp, pkt, type) \
 	do { \
 		if ((dhdp) && (dhdp)->dbg && (dhdp)->dbg->pkt_mon.rx_pkt_mon && (pkt)) { \
 			if (ntoh16((pkt)->protocol) != ETHER_TYPE_BRCM) { \
-				(dhdp)->dbg->pkt_mon.rx_pkt_mon((dhdp), (pkt)); \
+				(dhdp)->dbg->pkt_mon.rx_pkt_mon((dhdp), (pkt), (type)); \
 			} \
 		} \
 	} while (0);
@@ -708,9 +710,9 @@ typedef struct dhd_dbg {
 #define DHD_DBG_PKT_MON_STOP(dhdp) \
 		dhd_os_dbg_stop_pkt_monitor((dhdp));
 #else
-#define DHD_DBG_PKT_MON_TX(dhdp, pkt, pktid)
+#define DHD_DBG_PKT_MON_TX(dhdp, pkt, pktid, type, mgmt_acked)
 #define DHD_DBG_PKT_MON_TX_STATUS(dhdp, pkt, pktid, status)
-#define DHD_DBG_PKT_MON_RX(dhdp, pkt)
+#define DHD_DBG_PKT_MON_RX(dhdp, pkt, type)
 #define DHD_DBG_PKT_MON_START(dhdp)
 #define DHD_DBG_PKT_MON_STOP(dhdp)
 #endif /* DBG_PKT_MON */
@@ -816,10 +818,11 @@ extern int dhd_dbg_attach_pkt_monitor(dhd_pub_t *dhdp,
 		dbg_mon_tx_status_t tx_status_mon,
 		dbg_mon_rx_pkts_t rx_pkt_mon);
 extern int dhd_dbg_start_pkt_monitor(dhd_pub_t *dhdp);
-extern int dhd_dbg_monitor_tx_pkts(dhd_pub_t *dhdp, void *pkt, uint32 pktid);
+extern int dhd_dbg_monitor_tx_pkts(dhd_pub_t *dhdp, void *pkt,
+		uint32 pktid, frame_type type, uint8 mgmt_acked);
 extern int dhd_dbg_monitor_tx_status(dhd_pub_t *dhdp, void *pkt,
 		uint32 pktid, uint16 status);
-extern int dhd_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt);
+extern int dhd_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt, frame_type type);
 extern int dhd_dbg_stop_pkt_monitor(dhd_pub_t *dhdp);
 extern int dhd_dbg_monitor_get_tx_pkts(dhd_pub_t *dhdp, void __user *user_buf,
 		uint16 req_count, uint16 *resp_count);
@@ -855,10 +858,11 @@ extern int dhd_os_dbg_get_feature(dhd_pub_t *dhdp, int32 *features);
 extern int dhd_os_dbg_attach_pkt_monitor(dhd_pub_t *dhdp);
 extern int dhd_os_dbg_start_pkt_monitor(dhd_pub_t *dhdp);
 extern int dhd_os_dbg_monitor_tx_pkts(dhd_pub_t *dhdp, void *pkt,
-	uint32 pktid);
+	uint32 pktid, frame_type type, uint8 mgmt_acked);
 extern int dhd_os_dbg_monitor_tx_status(dhd_pub_t *dhdp, void *pkt,
 	uint32 pktid, uint16 status);
-extern int dhd_os_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt);
+extern int dhd_os_dbg_monitor_rx_pkts(dhd_pub_t *dhdp, void *pkt,
+	frame_type type);
 extern int dhd_os_dbg_stop_pkt_monitor(dhd_pub_t *dhdp);
 extern int dhd_os_dbg_monitor_get_tx_pkts(dhd_pub_t *dhdp,
 	void __user *user_buf, uint16 req_count, uint16 *resp_count);

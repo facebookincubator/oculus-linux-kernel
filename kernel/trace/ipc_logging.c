@@ -59,6 +59,9 @@ static int is_nd_read_empty(struct ipc_log_context *ilctxt)
 	if (!ilctxt)
 		return -EINVAL;
 
+	if (!ilctxt->num_pages)
+		return 1;
+
 	return ((ilctxt->nd_read_page == ilctxt->write_page) &&
 		(ilctxt->nd_read_page->hdr.nd_read_offset ==
 		 ilctxt->write_page->hdr.write_offset));
@@ -77,6 +80,9 @@ static int is_read_empty(struct ipc_log_context *ilctxt)
 {
 	if (!ilctxt)
 		return -EINVAL;
+
+	if (!ilctxt->num_pages)
+		return 1;
 
 	return ((ilctxt->read_page == ilctxt->write_page) &&
 		(ilctxt->read_page->hdr.read_offset ==
@@ -273,6 +279,33 @@ static void msg_drop(struct ipc_log_context *ilctxt)
 	}
 }
 
+static struct ipc_log_page *__alloc_log_page(struct ipc_log_context *ctxt)
+{
+	struct ipc_log_page *pg = NULL;
+	unsigned long flags;
+
+	pg = kzalloc(sizeof(struct ipc_log_page), GFP_ATOMIC);
+	if (!pg)
+		return NULL;
+
+	pg->hdr.log_id = (uint64_t)(uintptr_t)ctxt;
+	pg->hdr.page_num = LOG_PAGE_FLAG | ctxt->num_pages;
+	pg->hdr.ctx_offset = (int64_t)((uint64_t)(uintptr_t)ctxt -
+		(uint64_t)(uintptr_t)&pg->hdr);
+
+	/* set magic last to signal that page init is complete */
+	pg->hdr.magic = IPC_LOGGING_MAGIC_NUM;
+	pg->hdr.nmagic = ~(IPC_LOGGING_MAGIC_NUM);
+
+	spin_lock_irqsave(&ctxt->context_lock_lhb1, flags);
+	list_add_tail(&pg->hdr.list, &ctxt->page_list);
+	ctxt->write_avail += LOG_PAGE_DATA_SIZE;
+	ctxt->num_pages++;
+	spin_unlock_irqrestore(&ctxt->context_lock_lhb1, flags);
+
+	return pg;
+}
+
 /*
  * Commits messages to the FIFO.  If the FIFO is full, then enough
  * messages are dropped to create space for the new message.
@@ -280,6 +313,7 @@ static void msg_drop(struct ipc_log_context *ilctxt)
 void ipc_log_write(void *ctxt, struct encode_context *ectxt)
 {
 	struct ipc_log_context *ilctxt = (struct ipc_log_context *)ctxt;
+	struct ipc_log_page *pg;
 	int bytes_to_write;
 	unsigned long flags;
 
@@ -287,6 +321,31 @@ void ipc_log_write(void *ctxt, struct encode_context *ectxt)
 		pr_err("%s: Invalid ipc_log or encode context\n", __func__);
 		return;
 	}
+
+	/*
+	 * Allocate new page(s) if the log hasn't reached its maximum number
+	 * of pages yet and more space is needed to cover the new write.
+	 */
+	while (ilctxt->num_pages < ilctxt->max_num_pages &&
+			ilctxt->write_avail <= ectxt->offset) {
+		pg = __alloc_log_page(ilctxt);
+		if (!pg) {
+			pr_err("%s: Failed to allocate log page\n", __func__);
+			break;
+		}
+
+		if (!ilctxt->write_page) {
+			ilctxt->first_page = get_first_page(ilctxt);
+			ilctxt->write_page = ilctxt->first_page;
+			ilctxt->read_page = ilctxt->first_page;
+			ilctxt->nd_read_page = ilctxt->first_page;
+		}
+		ilctxt->last_page = pg;
+	}
+
+	/* Break out here if we weren't able to allocate a page to write to. */
+	if (!ilctxt->write_page)
+		return;
 
 	read_lock_irqsave(&context_list_lock_lha1, flags);
 	spin_lock(&ilctxt->context_lock_lhb1);
@@ -795,8 +854,6 @@ void *ipc_log_context_create(int max_num_pages,
 			     const char *mod_name, uint16_t user_version)
 {
 	struct ipc_log_context *ctxt = NULL, *tmp;
-	struct ipc_log_page *pg = NULL;
-	int page_cnt;
 	unsigned long flags;
 
 	/* check if ipc ctxt already exists */
@@ -819,34 +876,14 @@ void *ipc_log_context_create(int max_num_pages,
 	INIT_LIST_HEAD(&ctxt->page_list);
 	INIT_LIST_HEAD(&ctxt->dfunc_info_list);
 	spin_lock_init(&ctxt->context_lock_lhb1);
-	for (page_cnt = 0; page_cnt < max_num_pages; page_cnt++) {
-		pg = kzalloc(sizeof(struct ipc_log_page), GFP_KERNEL);
-		if (!pg)
-			goto release_ipc_log_context;
-		pg->hdr.log_id = (uint64_t)(uintptr_t)ctxt;
-		pg->hdr.page_num = LOG_PAGE_FLAG | page_cnt;
-		pg->hdr.ctx_offset = (int64_t)((uint64_t)(uintptr_t)ctxt -
-			(uint64_t)(uintptr_t)&pg->hdr);
-
-		/* set magic last to signal that page init is complete */
-		pg->hdr.magic = IPC_LOGGING_MAGIC_NUM;
-		pg->hdr.nmagic = ~(IPC_LOGGING_MAGIC_NUM);
-
-		spin_lock_irqsave(&ctxt->context_lock_lhb1, flags);
-		list_add_tail(&pg->hdr.list, &ctxt->page_list);
-		spin_unlock_irqrestore(&ctxt->context_lock_lhb1, flags);
-	}
 
 	ctxt->log_id = (uint64_t)(uintptr_t)ctxt;
 	ctxt->version = IPC_LOG_VERSION;
 	strlcpy(ctxt->name, mod_name, IPC_LOG_MAX_CONTEXT_NAME_LEN);
 	ctxt->user_version = user_version;
-	ctxt->first_page = get_first_page(ctxt);
-	ctxt->last_page = pg;
-	ctxt->write_page = ctxt->first_page;
-	ctxt->read_page = ctxt->first_page;
-	ctxt->nd_read_page = ctxt->first_page;
-	ctxt->write_avail = max_num_pages * LOG_PAGE_DATA_SIZE;
+	ctxt->max_num_pages = max_num_pages;
+	ctxt->num_pages = 0;
+	ctxt->write_avail = 0;
 	ctxt->header_size = sizeof(struct ipc_log_page_header);
 	kref_init(&ctxt->refcount);
 	ctxt->destroyed = false;
@@ -860,15 +897,6 @@ void *ipc_log_context_create(int max_num_pages,
 	list_add_tail(&ctxt->list, &ipc_log_context_list);
 	write_unlock_irqrestore(&context_list_lock_lha1, flags);
 	return (void *)ctxt;
-
-release_ipc_log_context:
-	while (page_cnt-- > 0) {
-		pg = get_first_page(ctxt);
-		list_del(&pg->hdr.list);
-		kfree(pg);
-	}
-	kfree(ctxt);
-	return 0;
 }
 EXPORT_SYMBOL(ipc_log_context_create);
 

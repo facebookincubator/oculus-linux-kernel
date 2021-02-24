@@ -669,6 +669,7 @@ BCMPOSTTRAPFASTPATH(pktpool_deq)(pktpool_t *pktp)
 
 	pktp->avail--;
 
+	PKTSETQCALLER(p, pktp, CALL_SITE);
 	return p;
 }
 
@@ -677,6 +678,7 @@ BCMPOSTTRAPFASTPATH(pktpool_enq)(pktpool_t *pktp, void *p)
 {
 	ASSERT_FP(p != NULL);
 
+	PKTSETQCALLER(p, pktp, CALL_SITE);
 	PKTSETFREELIST(p, pktp->freelist); /* insert at head of pktpool free list */
 	pktp->freelist = p; /* free list points to newly inserted packet */
 
@@ -1170,7 +1172,7 @@ BCMPOSTTRAPFN(pktpool_avail_notify)(pktpool_t *pktp)
 #ifdef APP_RX
 /* Update freelist and avail count for a given packet pool */
 void
-BCMFASTPATH(pktpool_update_freelist)(pktpool_t *pktp, void *p, uint pkts_consumed)
+BCMPOSTTRAPFASTPATH(pktpool_update_freelist)(pktpool_t *pktp, void *p, uint pkts_consumed)
 {
 	ASSERT_FP(pktp->avail >= pkts_consumed);
 

@@ -120,26 +120,30 @@ int cam_ife_csid_enable_soc_resources(
 	int rc = 0;
 	struct cam_csid_soc_private       *soc_private;
 	struct cam_ahb_vote ahb_vote;
-	struct cam_axi_vote axi_vote = {0};
+	struct cam_axi_vote *axi_vote = NULL;
 
 	soc_private = soc_info->soc_private;
 
+	axi_vote = kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+	if (!axi_vote)
+		return -ENOMEM;
+
 	ahb_vote.type = CAM_VOTE_ABSOLUTE;
 	ahb_vote.vote.level = CAM_LOWSVS_VOTE;
-	axi_vote.num_paths = 1;
-	axi_vote.axi_path[0].path_data_type = CAM_AXI_PATH_DATA_ALL;
-	axi_vote.axi_path[0].transac_type = CAM_AXI_TRANSACTION_WRITE;
+	axi_vote->num_paths = 1;
+	axi_vote->axi_path[0].path_data_type = CAM_AXI_PATH_DATA_ALL;
+	axi_vote->axi_path[0].transac_type = CAM_AXI_TRANSACTION_WRITE;
 
-	axi_vote.axi_path[0].camnoc_bw = CAM_CPAS_DEFAULT_AXI_BW;
-	axi_vote.axi_path[0].mnoc_ab_bw = CAM_CPAS_DEFAULT_AXI_BW;
-	axi_vote.axi_path[0].mnoc_ib_bw = CAM_CPAS_DEFAULT_AXI_BW;
+	axi_vote->axi_path[0].camnoc_bw = CAM_CPAS_DEFAULT_AXI_BW;
+	axi_vote->axi_path[0].mnoc_ab_bw = CAM_CPAS_DEFAULT_AXI_BW;
+	axi_vote->axi_path[0].mnoc_ib_bw = CAM_CPAS_DEFAULT_AXI_BW;
 
 	CAM_DBG(CAM_ISP, "csid camnoc_bw:%lld mnoc_ab_bw:%lld mnoc_ib_bw:%lld ",
-		axi_vote.axi_path[0].camnoc_bw,
-		axi_vote.axi_path[0].mnoc_ab_bw,
-		axi_vote.axi_path[0].mnoc_ib_bw);
+		axi_vote->axi_path[0].camnoc_bw,
+		axi_vote->axi_path[0].mnoc_ab_bw,
+		axi_vote->axi_path[0].mnoc_ib_bw);
 
-	rc = cam_cpas_start(soc_private->cpas_handle, &ahb_vote, &axi_vote);
+	rc = cam_cpas_start(soc_private->cpas_handle, &ahb_vote, axi_vote);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Error CPAS start failed");
 		rc = -EFAULT;
@@ -158,6 +162,7 @@ int cam_ife_csid_enable_soc_resources(
 stop_cpas:
 	cam_cpas_stop(soc_private->cpas_handle);
 end:
+	kfree(axi_vote);
 	return rc;
 }
 

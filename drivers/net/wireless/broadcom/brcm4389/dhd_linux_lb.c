@@ -166,8 +166,22 @@ void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 		 * cpumask_next returns >= nr_cpu_ids
 		 */
 		tx_cpu = cpumask_next(napi_cpu, dhd->cpumask_primary_new);
-		if (tx_cpu >= nr_cpu_ids)
-			tx_cpu = 0;
+		if (tx_cpu >= nr_cpu_ids) {
+			/* If no CPU is available for tx processing in primary CPUs,
+			 * choose the same CPU with net_tx_cpu
+			 * in case net_tx_cpu is in primary CPUs.
+			 */
+			cpumask_and(dhd->cpumask_primary_new, dhd->cpumask_primary,
+					dhd->cpumask_curr_avail);
+
+			if (cpumask_test_cpu(net_tx_cpu, dhd->cpumask_primary_new)) {
+				tx_cpu = net_tx_cpu;
+				DHD_INFO(("%s If no CPU is for tx cpu, use net_tx_cpu %d\n",
+					__FUNCTION__, net_tx_cpu));
+			} else {
+				tx_cpu = 0;
+			}
+		}
 	}
 
 	DHD_INFO(("%s After primary CPU check napi_cpu %d tx_cpu %d\n",
@@ -1361,7 +1375,7 @@ dhd_lb_tx_handler(unsigned long data)
 #endif /* DHD_LB_TXP */
 #endif /* DHD_LB */
 
-#if defined(DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON)
+#if defined(SET_PCIE_IRQ_CPU_CORE) || defined(DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON)
 void
 dhd_irq_set_affinity(dhd_pub_t *dhdp, const struct cpumask *cpumask)
 {
@@ -1391,4 +1405,77 @@ dhd_irq_set_affinity(dhd_pub_t *dhdp, const struct cpumask *cpumask)
 		DHD_ERROR(("%s : irq set affinity is failed cpu:0x%lx\n",
 				__FUNCTION__, *cpumask_bits(cpumask)));
 }
-#endif /* DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
+#endif /* SET_PCIE_IRQ_CPU_CORE ||  DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
+
+#ifdef SET_PCIE_IRQ_CPU_CORE
+void
+dhd_set_irq_cpucore(dhd_pub_t *dhdp, int affinity_cmd)
+{
+#if defined(DHD_LB) && defined(DHD_LB_HOST_CTRL)
+	struct dhd_info  *dhd = NULL;
+#endif /* DHD_LB && DHD_LB_HOST_CTRL */
+
+	if (!dhdp) {
+		DHD_ERROR(("%s : dhd is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	if (!dhdp->bus) {
+		DHD_ERROR(("%s : dhd->bus is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	if (affinity_cmd < DHD_AFFINITY_OFF || affinity_cmd > DHD_AFFINITY_LAST) {
+		DHD_ERROR(("Wrong Affinity cmds:%d, %s\n", affinity_cmd, __FUNCTION__));
+		return;
+	}
+
+	DHD_ERROR(("Enter %s, PCIe affinity cmd=0x%x\n", __FUNCTION__, affinity_cmd));
+
+#if defined(DHD_LB) && defined(DHD_LB_HOST_CTRL)
+	dhd = dhdp->info;
+
+	if (affinity_cmd == DHD_AFFINITY_OFF) {
+		dhd->permitted_primary_cpu = FALSE;
+	} else if (affinity_cmd == DHD_AFFINITY_TPUT_150MBPS ||
+		affinity_cmd == DHD_AFFINITY_TPUT_300MBPS) {
+		dhd->permitted_primary_cpu = TRUE;
+	}
+	dhd_select_cpu_candidacy(dhd);
+	/*
+	* It needs to NAPI disable -> enable to raise NET_RX napi CPU core
+	* during Rx traffic
+	* NET_RX does not move to NAPI CPU core if continusly calling napi polling
+	* function
+	*/
+	napi_disable(&dhd->rx_napi_struct);
+	napi_enable(&dhd->rx_napi_struct);
+#endif /* DHD_LB && DHD_LB_HOST_CTRL */
+
+	/*
+		irq_set_affinity() assign dedicated CPU core PCIe interrupt
+		If dedicated CPU core is not on-line,
+		PCIe interrupt scheduled on CPU core 0
+	*/
+	switch (affinity_cmd) {
+		case DHD_AFFINITY_OFF:
+#if defined(DHD_LB) && defined(DHD_LB_HOST_CTRL)
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_secondary);
+#endif /* DHD_LB && DHD_LB_HOST_CTRL */
+			break;
+		case DHD_AFFINITY_TPUT_150MBPS:
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_primary);
+			break;
+		case DHD_AFFINITY_TPUT_300MBPS:
+#ifdef CONFIG_ARCH_EXYNOS
+			dhd_irq_set_affinity(dhdp, cpumask_of(PCIE_IRQ_CPU_CORE));
+#else
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_primary);
+#endif /* CONFIG_ARCH_EXYNOS */
+			break;
+		default:
+			DHD_ERROR(("%s, Unknown PCIe affinity cmd=0x%x\n",
+				__FUNCTION__, affinity_cmd));
+	}
+}
+#endif /* SET_PCIE_IRQ_CPU_CORE */

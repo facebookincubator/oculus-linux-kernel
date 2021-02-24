@@ -66,7 +66,6 @@
 #include <bcmudp.h>
 #include <bcmtcp.h>
 #endif /* DHD_PKTTS */
-
 #if defined(DHD_LB)
 #if !defined(LINUX) && !defined(linux) && !defined(OEM_ANDROID)
 #error "DHD Loadbalancing only supported on LINUX | OEM_ANDROID"
@@ -891,9 +890,12 @@ static void dhd_prot_process_flow_ring_resume_response(dhd_pub_t *dhd, void* msg
 static void dhd_prot_process_flow_ring_suspend_response(dhd_pub_t *dhd, void* msg);
 
 /* Monitor Mode */
-#ifdef WL_MONITOR
+#if defined(WL_MONITOR)
 extern bool dhd_monitor_enabled(dhd_pub_t *dhd, int ifidx);
 extern void dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
+#if defined(DBG_PKT_MON)
+extern void dhd_80211_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
+#endif /* DBG_PKT_MON */
 #endif /* WL_MONITOR */
 
 /* Configure a soft doorbell per D2H ring */
@@ -2769,9 +2771,15 @@ dhd_pktid_map_save_metadata(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, void
 		DHD_PKTID_UNLOCK(map->pktid_lock, flags);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
+
 		}
 #else
 		ASSERT(0);
@@ -2814,15 +2822,22 @@ dhd_pktid_map_save(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, void *pkt,
 
 	DHD_PKTID_LOCK(map->pktid_lock, flags);
 
-	if ((nkey == DHD_PKTID_INVALID) || (nkey > DHD_PKIDMAP_ITEMS(map->items))) {
+	if ((nkey == DHD_PKTID_INVALID) || (nkey > DHD_PKIDMAP_ITEMS(map->items)) ||
+			(dhd->dhd_induce_error == DHD_INDUCE_PKTID_INVALID_SAVE)) {
 		DHD_ERROR(("%s:%d: Error! saving invalid pktid<%u> pkttype<%u>\n",
 			__FUNCTION__, __LINE__, nkey, pkttype));
 		DHD_PKTID_UNLOCK(map->pktid_lock, flags);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
+
 		}
 #else
 		ASSERT(0);
@@ -2896,9 +2911,14 @@ BCMFASTPATH(dhd_pktid_map_retreive_metadata)(dhd_pub_t *dhd, dhd_pktid_map_handl
 		DHD_PKTID_UNLOCK(map->pktid_lock, flags);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
 		}
 #else
 		ASSERT(0);
@@ -2945,15 +2965,21 @@ BCMFASTPATH(dhd_pktid_map_free)(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, 
 	DHD_PKTID_LOCK(map->pktid_lock, flags);
 
 	/* XXX PLEASE DO NOT remove this ASSERT, fix the bug in caller. */
-	if ((nkey == DHD_PKTID_INVALID) || (nkey > DHD_PKIDMAP_ITEMS(map->items))) {
+	if ((nkey == DHD_PKTID_INVALID) || (nkey > DHD_PKIDMAP_ITEMS(map->items)) ||
+			(dhd->dhd_induce_error == DHD_INDUCE_PKTID_INVALID_FREE)) {
 		DHD_ERROR(("%s:%d: Error! Try to free invalid pktid<%u>, pkttype<%d>\n",
 		           __FUNCTION__, __LINE__, nkey, pkttype));
 		DHD_PKTID_UNLOCK(map->pktid_lock, flags);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
 		}
 #else
 		ASSERT(0);
@@ -2975,9 +3001,14 @@ BCMFASTPATH(dhd_pktid_map_free)(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, 
 		/* XXX PLEASE DO NOT remove this ASSERT, fix the bug in caller. */
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
 		}
 #else
 		ASSERT(0);
@@ -3005,9 +3036,14 @@ BCMFASTPATH(dhd_pktid_map_free)(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, 
 		DHD_PKTID_UNLOCK(map->pktid_lock, flags);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
 		}
 #else
 		ASSERT(0);
@@ -3551,6 +3587,24 @@ dhd_alloc_host_scbs(dhd_pub_t *dhd)
 	return ret;
 }
 
+#ifdef DHD_PCIE_PTM
+/*
+ * Currently used to set PCIE PTM capability only.
+ */
+void
+dhd_set_host_cap2(dhd_pub_t *dhd)
+{
+	uint32 data = 0;
+
+	if (dhd->bus->api.fw_rev >= PCIE_SHARED_VERSION_7) {
+		/* Advertise PTM capability */
+		data |= HOSTCAP2_PCIE_PTM;
+		dhd_bus_cmn_writeshared(dhd->bus, &data, sizeof(uint32), HOST_CAP2, 0);
+		DHD_INFO(("Set host_cap2 0x%x\n", data));
+	}
+}
+#endif /* DHD_PCIE_PTM */
+
 void
 dhd_set_host_cap(dhd_pub_t *dhd)
 {
@@ -3744,6 +3798,10 @@ void dhd_agg_inflight_stats_dump(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 	uint64 *inflight_histo = dhd->prot->agg_h2d_db_info.inflight_histo;
 	uint32 i;
 	uint64 total_inflight_histo = 0;
+
+	if (inflight_histo == NULL) {
+		return;
+	}
 
 	bcm_bprintf(strbuf, "inflight: \t count\n");
 	for (i = 0; i < DHD_NUM_INFLIGHT_HISTO_ROWS; i++) {
@@ -3986,6 +4044,11 @@ dhd_prot_init(dhd_pub_t *dhd)
 
 	/* Init the host API version */
 	dhd_set_host_cap(dhd);
+
+#ifdef DHD_PCIE_PTM
+	/* Set host capability 2 flags; for PCIE PTM */
+	dhd_set_host_cap2(dhd);
+#endif /* DHD_PCIE_PTM */
 
 	/* alloc and configure scb host address for dongle */
 	if ((ret = dhd_alloc_host_scbs(dhd))) {
@@ -5005,6 +5068,7 @@ dhd_prot_detach_edl_rings(dhd_pub_t *dhd)
 		MFREE(dhd->prot->osh, dhd->prot->d2hring_edl, sizeof(msgbuf_ring_t));
 		dhd->prot->d2hring_edl = NULL;
 	}
+	DHD_EDL_MEM_DEINIT(dhd);
 }
 #endif	/* EWP_EDL */
 
@@ -6693,12 +6757,14 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, uint bound, int ringt
 
 			pkt = DHD_PKTID_TO_NATIVE(dhd, prot->pktid_rx_map, pktid, pa,
 			        len, dmah, secdma, PKTTYPE_DATA_RX);
+#ifndef CUSTOMER_HW6
 			/* Sanity check of shinfo nrfrags */
 			if (!pkt || (dhd_check_shinfo_nrfrags(dhd, pkt, &pa, pktid) != BCME_OK)) {
 				msg_len -= item_len;
 				msg_addr += item_len;
 				continue;
 			}
+#endif /* CUSTOMER_HW6 */
 			dhd->prot->tot_rxcpl++;
 
 			DMA_UNMAP(dhd->osh, pa, (uint) len, DMA_RX, 0, dmah);
@@ -6797,6 +6863,14 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, uint bound, int ringt
 					DHD_ERROR(("Received non 802.11 packet, "
 						"when monitor mode is enabled\n"));
 				}
+#ifdef DBG_PKT_MON
+			} else {
+				if (msg->flags & BCMPCIE_PKT_FLAGS_FRAME_802_11) {
+					DHD_TRACE(("Received 802.11 packet for PKT MON\n"));
+					dhd_80211_mon_pkt(dhd, msg, pkt, ifidx);
+					continue;
+				}
+#endif /* DBG_PKT_MON */
 			}
 #endif /* WL_MONITOR */
 
@@ -8015,9 +8089,14 @@ BCMFASTPATH(dhd_prot_txstatus_process)(dhd_pub_t *dhd, void *msg)
 		prhex("dhd_prot_txstatus_process:", (uchar *)msg, D2HRING_TXCMPLT_ITEMSIZE);
 #ifdef DHD_FW_COREDUMP
 		if (dhd->memdump_enabled) {
+			dhd->pktid_invalid_occured = TRUE;
 			/* collect core dump */
 			dhd->memdump_type = DUMP_TYPE_PKTID_INVALID;
 			dhd_bus_mem_dump(dhd);
+#ifdef OEM_ANDROID
+			dhd->hang_reason = HANG_REASON_PCIE_PKTID_ERROR;
+			dhd_os_send_hang_message(dhd);
+#endif /* OEM_ANDROID */
 		}
 #else
 		ASSERT(0);
@@ -8643,7 +8722,7 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 	pktlen  = PKTLEN(dhd->osh, PKTBUF);
 
 	/* TODO: XXX: re-look into dropped packets */
-	DHD_DBG_PKT_MON_TX(dhd, PKTBUF, pktid);
+	DHD_DBG_PKT_MON_TX(dhd, PKTBUF, pktid, FRAME_TYPE_ETHERNET_II, 0);
 
 	dhd_handle_pktdata(dhd, ifidx, PKTBUF, pktdata, pktid,
 		pktlen, NULL, &dhd_udr, TRUE, FALSE, TRUE);
@@ -10306,7 +10385,7 @@ dhd_msgbuf_wait_ioctl_cmplt(dhd_pub_t *dhd, uint32 len, void *buf)
 				__FUNCTION__, intstatus, host_irq_disbled));
 			dhd_pcie_intr_count_dump(dhd);
 			dhd_print_tasklet_status(dhd);
-			dhd_prot_process_ctrlbuf(dhd);
+			dhd_schedule_delayed_dpc_on_dpc_cpu(dhd, 0);
 			timeleft = dhd_os_ioctl_resp_wait(dhd, (uint *)&prot->ioctl_received);
 			/* Clear Interrupts */
 			dhdpcie_bus_clear_intstatus(dhd->bus);
@@ -10315,6 +10394,8 @@ dhd_msgbuf_wait_ioctl_cmplt(dhd_pub_t *dhd, uint32 len, void *buf)
 #endif /* DHD_RECOVER_TIMEOUT */
 
 	if (timeleft == 0 && (!dhd->dongle_trap_data) && (!dhd_query_bus_erros(dhd))) {
+		/* Dump important config space registers */
+		dhd_bus_dump_imp_cfg_registers(dhd->bus);
 		if (dhd->check_trap_rot) {
 			/* check dongle trap first */
 			DHD_ERROR(("Check dongle trap in the case of iovar timeout\n"));
@@ -10370,6 +10451,8 @@ dhd_msgbuf_wait_ioctl_cmplt(dhd_pub_t *dhd, uint32 len, void *buf)
 		if (prot->ioctl_received != IOCTL_RETURN_ON_SUCCESS) {
 			DHD_ERROR(("%s: IOCTL failure due to ioctl_received = %d\n",
 				__FUNCTION__, prot->ioctl_received));
+			DHD_ERROR(("%s: setting iovar_timeout_occured\n", __FUNCTION__));
+			dhd->iovar_timeout_occured = TRUE;
 			ret = -EINVAL;
 			goto out;
 		}
@@ -10554,24 +10637,52 @@ static
 int dhd_ring_write(dhd_pub_t *dhd, msgbuf_ring_t *ring, void *file,
 	const void *user_buf, unsigned long *file_posn)
 {
-	int ret = 0;
+	int ret = BCME_ERROR;
 
 	if (ring == NULL) {
 		DHD_ERROR(("%s: Ring not initialised, failed to dump ring contents\n",
 			__FUNCTION__));
-		return BCME_ERROR;
+		goto exit;
 	}
 	if (file) {
+		ret = dhd_os_write_file_posn(file, file_posn, &ring->max_items,
+				sizeof(ring->max_items));
+		if (ret < 0) {
+			DHD_ERROR(("%s: Error writing ring max_items to file !\n",
+				__FUNCTION__));
+			goto exit;
+		}
+		ret = dhd_os_write_file_posn(file, file_posn, &ring->item_len,
+				sizeof(ring->item_len));
+		if (ret < 0) {
+			DHD_ERROR(("%s: Error writing ring length to file !\n",
+				__FUNCTION__));
+			goto exit;
+		}
 		ret = dhd_os_write_file_posn(file, file_posn, (char *)(ring->dma_buf.va),
 				((unsigned long)(ring->max_items) * (ring->item_len)));
 		if (ret < 0) {
 			DHD_ERROR(("%s: write file error !\n", __FUNCTION__));
-			ret = BCME_ERROR;
+			goto exit;
 		}
 	} else if (user_buf) {
+		ret = dhd_export_debug_data(&ring->max_items, NULL, user_buf,
+			sizeof(ring->max_items), (int *)file_posn);
+		if (ret < 0) {
+			goto exit;
+		}
+		ret = dhd_export_debug_data(&ring->item_len, NULL, user_buf,
+			sizeof(ring->item_len), (int *)file_posn);
+		if (ret < 0) {
+			goto exit;
+		}
 		ret = dhd_export_debug_data((char *)(ring->dma_buf.va), NULL, user_buf,
 			((unsigned long)(ring->max_items) * (ring->item_len)), (int *)file_posn);
+		if (ret < 0) {
+			goto exit;
+		}
 	}
+exit:
 	return ret;
 }
 
@@ -10764,8 +10875,10 @@ BCMFASTPATH(dhd_prot_alloc_ring_space)(dhd_pub_t *dhd, msgbuf_ring_t *ring,
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 			/* Check if ring->rd is valid */
 			if (ring->rd >= ring->max_items) {
-				DHD_ERROR(("%s: Invalid rd idx=%d\n", ring->name, ring->rd));
 				dhd->bus->read_shm_fail = TRUE;
+				DHD_ERROR(("%s: Invalid rd idx=%d\n", ring->name, ring->rd));
+				dhd_bus_dump_imp_cfg_registers(dhd->bus);
+				dhd_bus_dump_dar_registers(dhd->bus);
 				return NULL;
 			}
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
@@ -10806,7 +10919,7 @@ dhd_fillup_ioct_reqst(dhd_pub_t *dhd, uint16 len, uint cmd, void* buf, int ifidx
 	uint16 alloced = 0;
 	msgbuf_ring_t *ring = &prot->h2dring_ctrl_subn;
 #ifdef DBG_DW_CHK_PCIE_READ_LATENCY
-	ulong addr = dhd->bus->ring_sh[ring->idx].ring_state_r;
+	uint16 data;
 	ktime_t begin_time, end_time;
 	s64 diff_ns;
 #endif /* DBG_DW_CHK_PCIE_READ_LATENCY */
@@ -10831,7 +10944,7 @@ dhd_fillup_ioct_reqst(dhd_pub_t *dhd, uint16 len, uint cmd, void* buf, int ifidx
 #ifdef DBG_DW_CHK_PCIE_READ_LATENCY
 	preempt_disable();
 	begin_time = ktime_get();
-	R_REG(dhd->osh, (volatile uint16 *)(dhd->bus->tcm + addr));
+	dhd_bus_cmn_readshared(dhd->bus, &data, RING_RD_UPD, ring->idx);
 	end_time = ktime_get();
 	preempt_enable();
 	diff_ns = ktime_to_ns(ktime_sub(end_time, begin_time));
@@ -13843,8 +13956,9 @@ dhd_prot_debug_info_print(dhd_pub_t *dhd)
 	DHD_ERROR(("%s: cur_ioctlresp_bufs_posted %d cur_event_bufs_posted %d\n",
 		__FUNCTION__, prot->cur_ioctlresp_bufs_posted, prot->cur_event_bufs_posted));
 #ifdef DHD_LIMIT_MULTI_CLIENT_FLOWRINGS
-	DHD_ERROR(("%s: multi_client_flow_rings:%d max_multi_client_flow_rings:%d\n",
-		__FUNCTION__, dhd->multi_client_flow_rings, dhd->max_multi_client_flow_rings));
+	DHD_ERROR(("%s: multi_client_flow_rings:%u max_multi_client_flow_rings:%d\n",
+		__FUNCTION__, OSL_ATOMIC_READ(dhd->osh, &dhd->multi_client_flow_rings),
+		dhd->max_multi_client_flow_rings));
 #endif /* DHD_LIMIT_MULTI_CLIENT_FLOWRINGS */
 
 	DHD_ERROR(("pktid_txq_start_cnt: %d\n", prot->pktid_txq_start_cnt));

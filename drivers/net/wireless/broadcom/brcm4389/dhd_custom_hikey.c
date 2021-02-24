@@ -58,6 +58,30 @@ static int wlan_host_wake_up = -1;
 static int wlan_host_wake_irq = 0;
 #define WIFI_WLAN_HOST_WAKE_PROPNAME    "wl_host_wake"
 
+extern void kirin_pcie_power_on_atu_fixup(void) __attribute__ ((weak));
+extern int kirin_pcie_lp_ctrl(u32 enable) __attribute__ ((weak));
+
+void
+dhd_wifi_deinit_gpio(void)
+{
+	/* Disable ASPM before powering off */
+	if (kirin_pcie_lp_ctrl) {
+		kirin_pcie_lp_ctrl(0);
+	} else {
+		DHD_ERROR(("[%s] kirin_pcie_lp_ctrl is NULL. "
+			"ASPM may not work\n", __func__));
+	}
+	if (gpio_direction_output(wlan_reg_on, 0)) {
+		DHD_ERROR(("%s: WL_REG_ON is failed to pull up\n", __FUNCTION__));
+	}
+	if (gpio_get_value(wlan_reg_on)) {
+		DHD_INFO(("WL_REG_ON on-step-2 : [%d]\n",
+			gpio_get_value(wlan_reg_on)));
+	}
+	gpio_free(wlan_host_wake_up);
+	gpio_free(wlan_reg_on);
+}
+
 int
 dhd_wifi_init_gpio(void)
 {
@@ -83,7 +107,7 @@ dhd_wifi_init_gpio(void)
 	 * For reg_on, gpio_request will fail if the gpio is configured to output-high
 	 * in the dts using gpio-hog, so do not return error for failure.
 	 */
-	if (gpio_request_one(wlan_reg_on, GPIOF_OUT_INIT_HIGH, "WL_REG_ON")) {
+	if (gpio_request_one(wlan_reg_on, GPIOF_DIR_OUT, "WL_REG_ON")) {
 		DHD_ERROR(("%s: Failed to request gpio %d for WL_REG_ON, "
 			"might have configured in the dts\n",
 			__FUNCTION__, wlan_reg_on));
@@ -93,7 +117,7 @@ dhd_wifi_init_gpio(void)
 	}
 
 	gpio_reg_on_val = gpio_get_value(wlan_reg_on);
-	DHD_INFO(("%s: Initial WL_REG_ON: [%d]\n",
+	DHD_ERROR(("%s: Initial WL_REG_ON: [%d]\n",
 		__FUNCTION__, gpio_get_value(wlan_reg_on)));
 
 	if (gpio_reg_on_val == 0) {
@@ -102,10 +126,27 @@ dhd_wifi_init_gpio(void)
 			DHD_ERROR(("%s: WL_REG_ON is failed to pull up\n", __FUNCTION__));
 			return -EIO;
 		}
-	}
+		/* Wait for WIFI_TURNON_DELAY due to power stability */
+		msleep(WIFI_TURNON_DELAY);
 
-	/* Wait for WIFI_TURNON_DELAY due to power stability */
-	msleep(WIFI_TURNON_DELAY);
+		/*
+		 * Call Kiric RC ATU fixup else si_attach will fail due to
+		 * improper BAR0/1 address translations
+		 */
+		if (kirin_pcie_power_on_atu_fixup) {
+			kirin_pcie_power_on_atu_fixup();
+		} else {
+			DHD_ERROR(("[%s] kirin_pcie_power_on_atu_fixup is NULL. "
+				"REG_ON may not work\n", __func__));
+		}
+		/* Enable ASPM after powering ON */
+		if (kirin_pcie_lp_ctrl) {
+			kirin_pcie_lp_ctrl(1);
+		} else {
+			DHD_ERROR(("[%s] kirin_pcie_lp_ctrl is NULL. "
+				"ASPM may not work\n", __func__));
+		}
+	}
 
 	/* ========== WLAN_HOST_WAKE ============ */
 	DHD_INFO(("%s: gpio_wlan_host_wake : %d\n", __FUNCTION__, wlan_host_wake_up));
@@ -129,9 +170,6 @@ dhd_wifi_init_gpio(void)
 
 	return 0;
 }
-
-extern void kirin_pcie_power_on_atu_fixup(void) __attribute__ ((weak));
-extern int kirin_pcie_lp_ctrl(u32 enable) __attribute__ ((weak));
 
 int
 dhd_wlan_power(int onoff)
@@ -280,8 +318,7 @@ fail:
 int
 dhd_wlan_deinit(void)
 {
-	gpio_free(wlan_host_wake_up);
-	gpio_free(wlan_reg_on);
+	dhd_wifi_deinit_gpio();
 	return 0;
 }
 #ifndef BCMDHD_MODULAR

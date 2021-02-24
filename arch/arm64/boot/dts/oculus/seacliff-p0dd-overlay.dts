@@ -12,7 +12,7 @@
 / {
 	model = "Seacliff (P0) DD";
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 65>;
+	qcom,board-id = <8 96>;
 };
 
 &cam_cci0 {

@@ -1037,7 +1037,7 @@ QDF_STATUS wlansap_modify_acl(struct sap_context *sap_ctx,
 				/* If a client is deleted from white list and it is connected, send deauth */
 				wlansap_populate_del_sta_params(peer_sta_mac,
 					eCsrForcedDeauthSta,
-					(SIR_MAC_MGMT_DEAUTH >> 4),
+					SIR_MAC_MGMT_DEAUTH,
 					&delStaParams);
 				wlansap_deauth_sta(sap_ctx, &delStaParams);
 				QDF_TRACE(QDF_MODULE_ID_SAP,
@@ -1086,7 +1086,7 @@ QDF_STATUS wlansap_modify_acl(struct sap_context *sap_ctx,
 			/* If we are adding a client to the black list; if its connected, send deauth */
 			wlansap_populate_del_sta_params(peer_sta_mac,
 				eCsrForcedDeauthSta,
-				(SIR_MAC_MGMT_DEAUTH >> 4),
+				SIR_MAC_MGMT_DEAUTH,
 				&delStaParams);
 			wlansap_deauth_sta(sap_ctx, &delStaParams);
 			sap_info("... Now add to black list");
@@ -1210,10 +1210,22 @@ wlansap_update_csa_channel_params(struct sap_context *sap_context,
 		if (sap_context->csr_roamProfile.phyMode ==
 		    eCSR_DOT11_MODE_11ac ||
 		    sap_context->csr_roamProfile.phyMode ==
-		    eCSR_DOT11_MODE_11ac_ONLY)
+		    eCSR_DOT11_MODE_11ac_ONLY ||
+		    sap_context->csr_roamProfile.phyMode ==
+		    eCSR_DOT11_MODE_11ax ||
+		    sap_context->csr_roamProfile.phyMode ==
+		    eCSR_DOT11_MODE_11ax_ONLY) {
 			bw = BW80;
-		else
+		} else if (sap_context->csr_roamProfile.phyMode ==
+			   eCSR_DOT11_MODE_11n ||
+			   sap_context->csr_roamProfile.phyMode ==
+			   eCSR_DOT11_MODE_11n_ONLY) {
 			bw = BW40_HIGH_PRIMARY;
+		} else {
+			/* For legacy 11a mode return 20MHz */
+			mac_ctx->sap.SapDfsInfo.new_chanWidth = CH_WIDTH_20MHZ;
+			return QDF_STATUS_SUCCESS;
+		}
 
 		for (; bw >= BW20; bw--) {
 			uint16_t op_class;
@@ -1720,6 +1732,9 @@ wlansap_set_cac_required_for_chan(struct mac_context *mac_ctx,
 {
 	bool is_ch_dfs = false;
 	bool cac_required;
+	uint8_t vdev_id_list[MAX_NUMBER_OF_CONC_CONNECTIONS];
+	uint8_t chan_list[MAX_NUMBER_OF_CONC_CONNECTIONS];
+	uint8_t sta_cnt, i;
 
 	if (sap_ctx->ch_params.ch_width == CH_WIDTH_160MHZ) {
 		is_ch_dfs = true;
@@ -1748,6 +1763,22 @@ wlansap_set_cac_required_for_chan(struct mac_context *mac_ctx,
 		cac_required = false;
 	else
 		cac_required = true;
+
+	if (cac_required) {
+		sta_cnt =
+		  policy_mgr_get_mode_specific_conn_info(mac_ctx->psoc,
+							 chan_list,
+							 vdev_id_list,
+							 PM_STA_MODE);
+
+		for (i = 0; i < sta_cnt; i++) {
+			if (sap_ctx->channel == chan_list[i]) {
+				sap_debug("STA vdev id %d exists, ignore CAC",
+					  vdev_id_list[i]);
+				cac_required = false;
+			}
+		}
+	}
 
 	mlme_set_cac_required(sap_ctx->vdev, cac_required);
 }
@@ -2329,11 +2360,10 @@ void wlansap_populate_del_sta_params(const uint8_t *mac,
 	else
 		params->reason_code = reason_code;
 
-	if (subtype == (SIR_MAC_MGMT_DEAUTH >> 4) ||
-	    subtype == (SIR_MAC_MGMT_DISASSOC >> 4))
+	if (subtype == SIR_MAC_MGMT_DEAUTH || subtype == SIR_MAC_MGMT_DISASSOC)
 		params->subtype = subtype;
 	else
-		params->subtype = (SIR_MAC_MGMT_DEAUTH >> 4);
+		params->subtype = SIR_MAC_MGMT_DEAUTH;
 
 		sap_debug("Delete STA with RC:%hu subtype:%hhu MAC::"
 			  QDF_MAC_ADDR_STR,

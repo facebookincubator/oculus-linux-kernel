@@ -484,8 +484,23 @@
 #define EVENT_LOG_TAG_PKTFLTR_TRACE		390
 #define EVENT_LOG_TAG_PKTFLTR_WARN		391
 #define EVENT_LOG_TAG_PKTFLTR_ERROR		392
+
+/* LLW */
+#define EVENT_LOG_TAG_LLW_ERR			393
+#define EVENT_LOG_TAG_LLW_INFO			394
+
+#define	EVENT_LOG_TAG_SPMI_INFO			395
+#define	EVENT_LOG_TAG_SPMI_ERROR		396
+#define	EVENT_LOG_TAG_SPMI_TRACE		397
+
+#ifdef WLXRAPI
+/* xrapi */
+#define EVENT_LOG_TAG_XRAPI_ERROR		398
+#define EVENT_LOG_TAG_XRAPI_INFO		399
+#endif	/* WLXRAPI */
+
 /* EVENT_LOG_TAG_MAX	= Set to the same value of last tag, not last tag + 1 */
-#define EVENT_LOG_TAG_MAX			392
+#define EVENT_LOG_TAG_MAX			399
 
 typedef enum wl_el_set_type_def {
 	EVENT_LOG_SET_TYPE_DEFAULT = 0, /* flush the log buffer when it is full - Default option */

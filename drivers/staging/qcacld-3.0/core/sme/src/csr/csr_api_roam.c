@@ -3473,20 +3473,10 @@ QDF_STATUS csr_roam_call_callback(struct mac_context *mac, uint32_t sessionId,
 		csr_dump_connection_stats(mac, pSession, roam_info, u1, u2);
 
 	if (pSession->callback) {
-		if (roam_info) {
+		if (roam_info)
 			roam_info->sessionId = (uint8_t) sessionId;
-			/*
-			 * the reasonCode will be passed to supplicant by
-			 * cfg80211_disconnected. Based on the document,
-			 * the reason code passed to supplicant needs to set
-			 * to 0 if unknown. eSIR_BEACON_MISSED reason code is
-			 * not recognizable so that we set to 0 instead.
-			 */
-			if (roam_info->reasonCode == eSIR_MAC_BEACON_MISSED)
-				roam_info->reasonCode = 0;
-		}
 		status = pSession->callback(pSession->pContext, roam_info,
-					roamId, u1, u2);
+					    roamId, u1, u2);
 	}
 	/*
 	 * EVENT_WLAN_STATUS_V2: eCSR_ROAM_ASSOCIATION_COMPLETION,
@@ -5195,6 +5185,8 @@ static bool csr_roam_select_bss(struct mac_context *mac_ctx,
 	enum policy_mgr_con_mode mode;
 	uint8_t chan_id;
 	QDF_STATUS qdf_status;
+	eCsrPhyMode self_phymode = mac_ctx->roam.configParam.phyMode;
+	tDot11fBeaconIEs *bcn_ies;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_pdev(mac_ctx->pdev,
 						    vdev_id,
@@ -5217,6 +5209,29 @@ static bool csr_roam_select_bss(struct mac_context *mac_ctx,
 		 * sessions exempted
 		 */
 		result = &scan_result->Result;
+		bcn_ies = result->pvIes;
+		/*
+		 * If phymode is configured to DOT11 Only profile.
+		 * Don't connect to profile which is less than them.
+		 */
+		if (bcn_ies && ((self_phymode == eCSR_DOT11_MODE_11n_ONLY &&
+		   !bcn_ies->HTCaps.present) ||
+		   (self_phymode == eCSR_DOT11_MODE_11ac_ONLY &&
+		   !bcn_ies->VHTCaps.present) ||
+		   (self_phymode == eCSR_DOT11_MODE_11ax_ONLY &&
+		   !bcn_ies->he_cap.present))) {
+			sme_info("self_phymode %d mismatch HT %d VHT %d HE %d",
+				self_phymode, bcn_ies->HTCaps.present,
+				bcn_ies->VHTCaps.present,
+				bcn_ies->he_cap.present);
+			*roam_state = eCsrStopRoamingDueToConcurrency;
+			status = true;
+			*roam_bss_entry = csr_ll_next(&bss_list->List,
+						      *roam_bss_entry,
+						      LL_ACCESS_LOCK);
+			continue;
+		}
+
 		/*
 		 * Ignore the BSS if any other vdev is already connected
 		 * to it.
@@ -22497,7 +22512,8 @@ static QDF_STATUS csr_process_roam_sync_callback(struct mac_context *mac_ctx,
 		csr_roam_roaming_offload_timer_action(mac_ctx,
 				0, session_id, ROAMING_OFFLOAD_TIMER_STOP);
 		if (session->discon_in_progress ||
-		    MLME_IS_ROAM_STATE_STOPPED(mac_ctx->psoc, session_id) ||
+		    (MLME_IS_ROAM_STATE_STOPPED(mac_ctx->psoc, session_id) &&
+		    !vdev_roam_params->roam_invoke_in_progress) ||
 		    !CSR_IS_ROAM_JOINED(mac_ctx, session_id)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 				FL("LFR3: Session not in connected state or disconnect is in progress %d"),

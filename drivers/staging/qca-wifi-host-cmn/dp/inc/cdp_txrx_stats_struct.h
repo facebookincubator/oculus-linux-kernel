@@ -575,6 +575,7 @@ struct cdp_tx_stats {
  * @rx_ratecode: Rx rate code of last frame
  * @rx_flags: rx flags
  * @rx_rssi_measured_time: Time at which rssi is measured
+ * @rx_mpdu_cnt: rx mpdu count per MCS rate
  */
 struct cdp_rx_stats {
 	struct cdp_pkt_info to_stack;
@@ -632,6 +633,7 @@ struct cdp_rx_stats {
 	uint32_t rx_ratecode;
 	uint32_t rx_flags;
 	uint32_t rx_rssi_measured_time;
+	uint32_t rx_mpdu_cnt[MAX_MCS];
 };
 
 /* struct cdp_tx_ingress_stats - Tx ingress Stats

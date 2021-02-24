@@ -26,6 +26,15 @@
 	#size-cells = <2>;
 	memory { device_type = "memory"; reg = <0 0 0 0>; };
 
+	mem-offline {
+	    compatible = "qcom,mem-offline";
+	    offline-sizes = <0x1 0x40000000 0x0 0x40000000>,
+			    <0x1 0xc0000000 0x0 0x80000000>,
+			    <0x2 0xc0000000 0x1 0x40000000>;
+	    granule = <512>;
+	    mboxes = <&qmp_aop 0>;
+	};
+
 	aliases {
 		ufshc1 = &ufshc_mem; /* Embedded UFS slot */
 		serial0 = &qupv3_se9_2uart; /* Debug Console */
@@ -803,7 +812,6 @@
 		reg = <0x0 0x280000>;
 		reg-names = "rmtfs";
 		qcom,client-id = <0x00000001>;
-		qcom,guard-memory;
 	};
 
 	qcom,memshare {
@@ -914,7 +922,7 @@
 		compatible = "qcom,lagoon-pdc";
 		reg = <0xb220000 0x30000>, <0x17c000f0 0x64>;
 		qcom,pdc-ranges = <0 480 94>, <94 609 31>, <125 63 1>,
-				  <126 657 12>, <138 139 15>;
+				  <126 655 12>, <138 139 15>;
 		#interrupt-cells = <2>;
 		interrupt-parent = <&intc>;
 		interrupt-controller;
@@ -2182,7 +2190,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1401 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2191,7 +2199,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1402 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2200,7 +2208,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1403 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2209,7 +2217,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1404 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2218,7 +2226,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1405 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2227,7 +2235,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1406 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2236,7 +2244,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1407 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2245,7 +2253,7 @@
 			label = "cdsprpc-smd";
 			iommus = <&apps_smmu 0x1408 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2255,7 +2263,7 @@
 			qcom,secure-context-bank;
 			iommus = <&apps_smmu 0x1409 0x0020>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			qcom,iommu-vmid = <0xA>;
 			dma-coherent;
 		};
@@ -2265,7 +2273,7 @@
 			label = "adsprpc-smd";
 			iommus = <&apps_smmu 0x1003 0x0>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2274,7 +2282,7 @@
 			label = "adsprpc-smd";
 			iommus = <&apps_smmu 0x1004 0x0>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 
@@ -2284,7 +2292,7 @@
 			iommus = <&apps_smmu 0x1005 0x0>;
 			shared-cb  = <5>;
 			qcom,iommu-dma-addr-pool = <0x80000000 0x78000000>;
-			qcom,iommu-faults = "stall-disable";
+			qcom,iommu-faults = "stall-disable", "HUPCF";
 			dma-coherent;
 		};
 	};
@@ -3888,7 +3896,8 @@
 
 &L6P {
 	regulator-max-microvolt = <1800000>;
-	qcom,min-dropout-voltage = <72000>;
+	/* Reduced the headroom by 16mV for AHC */
+	qcom,min-dropout-voltage = <56000>;
 };
 
 &L7P {
@@ -4048,20 +4057,14 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	io-channels = <&pm6150l_vadc ADC_AMUX_THM1_PU2>,
-			<&pm6150l_vadc ADC_AMUX_THM2_PU2>,
 			<&pm6150l_vadc ADC_AMUX_THM3_PU2>,
-			<&pm6150l_vadc ADC_GPIO3_PU2>;
+			<&pm6150l_vadc ADC_GPIO3_PU2>,
+			<&pm6150l_vadc ADC_GPIO4_PU2>;
 
 	/* Channel nodes */
 
 	pa_therm1 {
 		reg = <ADC_AMUX_THM1_PU2>;
-		qcom,ratiometric;
-		qcom,hw-settle-time = <200>;
-	};
-
-	msm_therm {
-		reg = <ADC_AMUX_THM2_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 	};
@@ -4074,6 +4077,12 @@
 
 	rear_cam_flash_therm {
 		reg = <ADC_GPIO3_PU2>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+
+	quiet_therm {
+		reg = <ADC_GPIO4_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 	};
@@ -4099,17 +4108,17 @@
 			#thermal-sensor-cells = <1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			io-channels = <&pm6150l_vadc ADC_GPIO2_PU2>,
-					<&pm6150l_vadc ADC_GPIO4_PU2>;
+			io-channels = <&pm6150l_vadc ADC_AMUX_THM2_PU2>,
+					<&pm6150l_vadc ADC_GPIO2_PU2>;
 
-			rfc_cam_therm {
-				reg = <ADC_GPIO2_PU2>;
+			msm_therm {
+				reg = <ADC_AMUX_THM2_PU2>;
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 			};
 
-			quiet_therm {
-				reg = <ADC_GPIO4_PU2>;
+			rfc_cam_therm {
+				reg = <ADC_GPIO2_PU2>;
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 			};
@@ -4143,3 +4152,4 @@
 
 #include "lagoon-sde.dtsi"
 #include "lagoon-sde-pll.dtsi"
+#include "msm-rdbg.dtsi"

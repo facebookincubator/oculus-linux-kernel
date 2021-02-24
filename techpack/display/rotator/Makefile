@@ -19,7 +19,7 @@ obj-$(CONFIG_MSM_SDE_ROTATOR) += sde_rotator_dev.o \
 obj-$(CONFIG_SYNC_FILE) += \
 	sde_rotator_sync.o \
 
-obj-$(CONFIG_DEBUG_FS) += \
+obj-$(CONFIG_MSM_SDE_ROTATOR_DEBUG) += \
 	sde_rotator_debug.o \
 	sde_rotator_r1_debug.o \
 	sde_rotator_r3_debug.o \

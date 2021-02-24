@@ -3955,6 +3955,8 @@ void dp_htt_stats_copy_tag(struct dp_pdev *pdev, uint8_t tag_type, uint32_t *tag
 	if (dest_ptr)
 		qdf_mem_copy(dest_ptr, tag_buf, size);
 }
+
+#ifdef WDI_EVENT_ENABLE
 QDF_STATUS dp_peer_stats_notify(struct dp_peer *peer)
 {
 	struct dp_pdev *dp_pdev;
@@ -3989,6 +3991,7 @@ QDF_STATUS dp_peer_stats_notify(struct dp_peer *peer)
 
 	return QDF_STATUS_SUCCESS;
 }
+#endif /* WDI_EVENT_ENABLE */
 
 #ifdef CONFIG_WIN
 /**

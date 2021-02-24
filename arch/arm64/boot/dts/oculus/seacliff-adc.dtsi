@@ -48,9 +48,10 @@
 		qcom,pre-scaling = <1 1>;
 	};
 
-	canyonR_therm@54 {
+	cam3_therm@54 {
+		/* Canyon right */
 		reg = <ADC_GPIO3_PU2>;
-		label = "canyonR_therm";
+		label = "cam3_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
@@ -155,9 +156,10 @@
 		qcom,pre-scaling = <1 1>;
 	};
 
-	rgb_therm@52 {
+	cam4_therm@52 {
+		/* Teton */
 		reg = <ADC_GPIO1_PU2>;
-		label = "rgb_therm";
+		label = "cam4_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
@@ -174,9 +176,10 @@
 		qcom,pre-scaling = <1 3>;
 	};
 
-	glacierL_therm@4d {
+	cam0_therm@4d {
+		/* Glacier left */
 		reg = <ADC_AMUX_THM1_PU2>;
-		label = "glacierL_therm";
+		label = "cam0_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
@@ -190,17 +193,19 @@
 		qcom,pre-scaling = <1 1>;
 	};
 
-	glacierR_therm@4f {
+	cam1_therm@4f {
+		/* Glacier right */
 		reg = <ADC_AMUX_THM3_PU2>;
-		label = "glacierR_therm";
+		label = "cam1_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
 	};
 
-	canyonL_therm@52 {
+	cam2_therm@52 {
+		/* Canyon left */
 		reg = <ADC_GPIO1_PU2>;
-		label = "canyonL_therm";
+		label = "cam2_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
@@ -255,7 +260,8 @@
 		qcom,hw-settle-time = <200>;
 	};
 
-	canyonR_therm@54 {
+	cam3_therm@54 {
+		/* Canyon right */
 		reg = <ADC_GPIO3_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
@@ -302,7 +308,8 @@
 		qcom,hw-settle-time = <200>;
 	};
 
-	rgb_therm@52 {
+	cam4_therm@52 {
+		/* Teton */
 		reg = <ADC_GPIO1_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
@@ -331,7 +338,8 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pml_gpio_adc_default>;
 
-	glacierL_therm@4d {
+	cam0_therm@4d {
+		/* Glacier left */
 		reg = <ADC_AMUX_THM1_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
@@ -343,13 +351,15 @@
 		qcom,hw-settle-time = <200>;
 	};
 
-	glacierR_therm@4f {
+	cam1_therm@4f {
+		/* Glacier right */
 		reg = <ADC_AMUX_THM3_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 	};
 
-	canyonL_therm@52 {
+	cam2_therm@52 {
+		/* Canyon left */
 		reg = <ADC_GPIO1_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
@@ -399,7 +409,8 @@
 		};
 	};
 
-	rgb-usr {
+	cam4-usr {
+		/* Teton */
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";
@@ -413,7 +424,8 @@
 		};
 	};
 
-	glacierL-usr {
+	cam0-usr {
+		/* Glacier left */
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";
@@ -441,7 +453,8 @@
 		};
 	};
 
-	glacierR-usr {
+	cam1-usr {
+		/* Glacier right */
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";
@@ -455,7 +468,8 @@
 		};
 	};
 
-	canyonL-usr {
+	cam2-usr {
+		/* Canyon left */
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";
@@ -511,7 +525,8 @@
 		};
 	};
 
-	canyonR-usr {
+	cam3-usr {
+		/* Canyon right */
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";

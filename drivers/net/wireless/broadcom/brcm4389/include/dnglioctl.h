@@ -58,8 +58,9 @@
 #define RTEWRITE_WAR_REGS	0x8917  /* write workaround regs */
 #define RTEDEVRMPMK		0x8918  /* Remove PMK */
 #define RTEDEVDBGVAL		0x8919  /* Set debug val */
+#define RTEDEVVIFDEL		0x891A  /* Delete virtual cfgs */
 /* Ensure last RTE IOCTL define val is assigned to RTEIOCTLEND */
-#define RTEIOCTLEND		0x8919  /* LAST RTE IOCTL value */
+#define RTEIOCTLEND		0x891A  /* LAST RTE IOCTL value */
 
 #define RTE_IOCTL_QUERY		0x00
 #define RTE_IOCTL_SET		0x01

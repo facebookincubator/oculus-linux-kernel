@@ -377,6 +377,35 @@ static ssize_t vsync_event_show(struct device *device,
 			ktime_to_ns(sde_crtc->vblank_last_cb_time));
 }
 
+static ssize_t vsync_timing_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct drm_display_mode *cur_mode = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	cur_mode = &sde_crtc->vblank_last_cb_mode;
+
+	/*
+	 * "<V sync pulse + VBP>,<V active>,<VFP>@<refresh rate>"
+	 *
+	 * DRM's display mode timing parameters are awkward.
+	 * See "drm_modes.h" for a timing diagram.
+	 */
+	return scnprintf(buf, PAGE_SIZE, "%u,%u,%u@%u\n",
+		cur_mode->vtotal - cur_mode->vsync_start,
+		cur_mode->vdisplay,
+		cur_mode->vsync_start - cur_mode->vdisplay,
+		cur_mode->vrefresh);
+}
+
 static ssize_t lineptr_event_show(struct device *device,
 	struct device_attribute *attr, char *buf)
 {
@@ -447,18 +476,138 @@ static ssize_t wb_num_tears_show(struct device *device,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", sde_crtc->wb_num_tears);
 }
 
+static void update_scanline_offset(struct drm_connector *conn,
+		u32 scanline_offset)
+{
+	struct sde_connector *c_conn = to_sde_connector(conn);
+	struct dsi_display *dsi_display = c_conn->display;
+	struct dsi_backlight_config *bl_config;
+
+	if (c_conn->connector_type != DRM_MODE_CONNECTOR_DSI || !dsi_display ||
+			!dsi_display->panel)
+		return;
+
+	bl_config = &dsi_display->panel->bl_config;
+
+	/*
+	 * Skip over this connector if it doesn't support variable
+	 * scanline offset.
+	 */
+	if (bl_config->type != DSI_BACKLIGHT_JDI)
+		return;
+
+	if (!c_conn->allow_bl_update)
+		c_conn->unset_scanline_offset = scanline_offset;
+	else {
+		if (c_conn->unset_bl_level)
+			bl_config->bl_level = c_conn->unset_bl_level;
+		bl_config->jdi_scanline_max_offset = scanline_offset;
+
+		c_conn->ops.set_backlight(&c_conn->base,
+				dsi_display, bl_config->bl_level);
+		c_conn->unset_bl_level = 0;
+		c_conn->unset_scanline_offset = 0;
+	}
+}
+
+static ssize_t backlight_scanline_offset_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_connector *conn;
+	struct sde_crtc_state *cstate;
+	struct drm_device *dev;
+	struct drm_connector_list_iter conn_iter;
+	u32 scanline_offset = 0;
+	int res;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtou32(buf, 10, &scanline_offset);
+	if (res < 0)
+		return res;
+
+	dev = crtc->dev;
+	cstate = to_sde_crtc_state(crtc->state);
+
+	drm_connector_list_iter_begin(dev, &conn_iter);
+	drm_for_each_connector_iter(conn, &conn_iter)
+		if (conn->state && conn->state->crtc == crtc &&
+				cstate->num_connectors < MAX_CONNECTORS)
+			update_scanline_offset(conn, scanline_offset);
+	drm_connector_list_iter_end(&conn_iter);
+
+	return count;
+}
+
+static ssize_t backlight_scanline_offset_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		bl_config->jdi_scanline_max_offset);
+}
+
+static ssize_t backlight_timing_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	/* Format: <BL pulse duration>,<right BL scanline>,<left BL scanline> */
+	return scnprintf(buf, PAGE_SIZE, "%u,%u,%u\n",
+		bl_config->jdi_scanline_duration,
+		bl_config->jdi_scanline_offset[0],
+		bl_config->jdi_scanline_offset[1]);
+}
+
 static DEVICE_ATTR_RO(vsync_event);
+static DEVICE_ATTR_RO(vsync_timing);
 static DEVICE_ATTR_RO(lineptr_event);
 static DEVICE_ATTR_WO(lineptr_offset);
 static DEVICE_ATTR_RO(wb_num_tears);
+static DEVICE_ATTR_RW(backlight_scanline_offset);
+static DEVICE_ATTR_RO(backlight_timing);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
+	&dev_attr_vsync_timing.attr,
 	&dev_attr_lineptr_event.attr,
 	&dev_attr_lineptr_offset.attr,
 	&dev_attr_wb_num_tears.attr,
+	&dev_attr_backlight_scanline_offset.attr,
+	&dev_attr_backlight_timing.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
 	NULL

@@ -218,7 +218,6 @@ dhd_parse_board_information_bcm(dhd_bus_t *bus, int *boardtype,
 #define DEFAULT_CIDINFO_FOR_IPA		"r00a_e000_a0_iPA"
 #define DEFAULT_CIDINFO_FOR_A1		"r01a_e30a_a1"
 #define DEFAULT_CIDINFO_FOR_B0		"r01i_e32_b0"
-
 naming_info_t bcm4361_naming_table[] = {
 	{ {""}, {""}, {""} },
 	{ {"r00a_e000_a0_ePA"}, {"_a0_ePA"}, {"_a0_ePA"} },
@@ -298,7 +297,11 @@ naming_info_t bcm4389_naming_table[] = {
 	{ {"1wk_es50"}, {"_1wk_es50_c1"}, {"_c1"} },
 	{ {"1wk_es51"}, {"_1wk_es51_c1"}, {"_c1"} },
 	{ {"1wk_es10"}, {"_1wk_es10_c1"}, {"_c1"} },
-	{ {"1wk_es11"}, {"_1wk_es11_c1"}, {"_c1"} }
+	{ {"1wk_es11"}, {"_1wk_es11_c1"}, {"_c1"} },
+	{ {"usi_es10"}, {"_ES10_c0"}, {""} },
+	{ {"usi_es11"}, {"_ES11_c0"}, {""} },
+	{ {"usi_es12"}, {"_ES12_c1"}, {"_c1"} },
+	{ {"usi_es13"}, {"_ES13_c1"}, {"_c1"} }
 };
 
 /* select the NVRAM/FW tag naming table */
@@ -1662,7 +1665,11 @@ vid_info_t vid_info[] = {
 	{ 3, { 0x50, 0x22, }, { "murata_mur_1wk_es50" } },
 	{ 3, { 0x51, 0x24, }, { "murata_mur_1wk_es51" } },
 	{ 3, { 0x10, 0x25, }, { "murata_mur_1wk_es10" } },
-	{ 3, { 0x11, 0x25, }, { "murata_mur_1wk_es11" } }
+	{ 3, { 0x11, 0x25, }, { "murata_mur_1wk_es11" } },
+	{ 3, { 0x10, 0x99, }, { "USI_WM_usi_es10" } },
+	{ 3, { 0x11, 0x99, }, { "USI_WM_usi_es11" } },
+	{ 3, { 0x12, 0x99, }, { "USI_WM_usi_es12" } },
+	{ 3, { 0x13, 0x99, }, { "USI_WM_usi_es13" } },
 #endif /* SUPPORT_MIXED_MODULES */
 };
 #else
@@ -1671,6 +1678,7 @@ vid_info_t vid_info[] = {
 };
 #endif /* BCM_CHIP_ID */
 
+uint32 cur_vid_info;
 /* CID managment functions */
 
 char *
@@ -1816,6 +1824,7 @@ write_cid:
 #else
 	strlcpy(cidinfostr, cid_info, MAX_VNAME_LEN);
 #endif /* DHD_EXPORT_CNTL_FILE */
+	memcpy_s(&cur_vid_info, sizeof(cur_vid_info), cur_info->vid, sizeof(cur_vid_info));
 
 	return ret;
 }

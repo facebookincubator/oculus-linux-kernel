@@ -22,6 +22,10 @@ menuconfig SND_SOC
 
 if SND_SOC
 
+config SND_SOC_DEBUG
+	bool "Enable debugfs support for ASoC"
+	default n
+
 config SND_SOC_AC97_BUS
 	bool
 

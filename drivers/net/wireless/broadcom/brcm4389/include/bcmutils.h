@@ -209,10 +209,14 @@ extern uint pkttotlen_no_sfhtoe_hdr(osl_t *osh, void *p, uint toe_hdr_len);
 #define	PKTPRIO_DSCP	0x800u		/* DSCP prio found */
 
 /* DSCP type definitions (RFC4594) */
+/* DF: Standard (RFC2474) */
+#define DSCP_DF         0x00u
 /* AF1x: High-Throughput Data (RFC2597) */
 #define DSCP_AF11	0x0Au
 #define DSCP_AF12	0x0Cu
 #define DSCP_AF13	0x0Eu
+/* CS1: Low-Priority Data (RFC3662) */
+#define DSCP_CS1        0x08u
 /* AF2x: Low-Latency Data (RFC2597) */
 #define DSCP_AF21	0x12u
 #define DSCP_AF22	0x14u
@@ -225,6 +229,14 @@ extern uint pkttotlen_no_sfhtoe_hdr(osl_t *osh, void *p, uint toe_hdr_len);
 #define DSCP_AF33	0x1Eu
 /* CS3: Broadcast Video (RFC2474) */
 #define DSCP_CS3	0x18u
+/* AF4x: Multimedia Conferencing (RFC2597) */
+#define DSCP_AF41       0x22u
+#define DSCP_AF42       0x24u
+#define DSCP_AF43       0x26u
+/* CS4: Real-Time Interactive (RFC2474) */
+#define DSCP_CS4        0x20u
+/* CS5: Signaling (RFC2474) */
+#define DSCP_CS5        0x28u
 /* VA: VOCIE-ADMIT (RFC5865) */
 #define DSCP_VA		0x2Cu
 /* EF: Telephony (RFC3246) */
@@ -756,15 +768,15 @@ extern void clr_bitrange_u32(void *array, uint start, uint end, uint maxbit);
 
 extern int bcm_find_fsb(uint32 num);
 
-#define	isbitset(a, i)	(((a) & (1 << (i))) != 0)
+#define	isbitset(a, i)	(((a) & (1u << (i))) != 0)
 
 #if defined DONGLEBUILD
 #define	NBITS(type)	(sizeof(type) * 8)
 #else
 #define	NBITS(type)	((uint32)(sizeof(type) * 8))
 #endif  /* DONGLEBUILD */
-#define NBITVAL(nbits)	(1 << (nbits))
-#define MAXBITVAL(nbits)	((1 << (nbits)) - 1)
+#define NBITVAL(nbits)	(1u << (nbits))
+#define MAXBITVAL(nbits)	((1u << (nbits)) - 1u)
 #define	NBITMASK(nbits)	MAXBITVAL(nbits)
 #define MAXNBVAL(nbyte)	MAXBITVAL((nbyte) * 8)
 

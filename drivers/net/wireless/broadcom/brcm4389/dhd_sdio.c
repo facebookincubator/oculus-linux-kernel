@@ -1963,7 +1963,7 @@ dhdsdio_bussleep(dhd_bus_t *bus, bool sleep)
 			}
 		} else {
 			err = dhdsdio_clk_devsleep_iovar(bus, FALSE /* wake */);
-#ifdef BT_OVER_SDIO
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(OEM_ANDROID)
 			if (err < 0) {
 				struct net_device *net = NULL;
 				dhd_pub_t *dhd = bus->dhd;
@@ -1977,7 +1977,7 @@ dhdsdio_bussleep(dhd_bus_t *bus, bool sleep)
 					DHD_ERROR(("<< WIFI HANG Fail because net is NULL\n"));
 				}
 			}
-#endif /* BT_OVER_SDIO */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) && OEM_ANDROID */
 		}
 
 		if (err == 0) {
@@ -3305,9 +3305,10 @@ dhd_bus_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	bcm_bprintf(strbuf, " unicast %u multicast %u broadcast %u arp %u\n",
 		bus->wake_counts.rx_ucast, bus->wake_counts.rx_mcast,
 		bus->wake_counts.rx_bcast, bus->wake_counts.rx_arp);
-	bcm_bprintf(strbuf, " multi4 %u multi6 %u icmp6 %u multiother %u\n",
+	bcm_bprintf(strbuf, " multi4 %u multi6 %u icmp %u icmp6 %u multiother %u\n",
 		bus->wake_counts.rx_multi_ipv4, bus->wake_counts.rx_multi_ipv6,
-		bus->wake_counts.rx_icmpv6, bus->wake_counts.rx_multi_other);
+		bus->wake_counts.rx_icmp, bus->wake_counts.rx_icmpv6,
+		bus->wake_counts.rx_multi_other);
 	bcm_bprintf(strbuf, " icmp6_ra %u, icmp6_na %u, icmp6_ns %u\n",
 		bus->wake_counts.rx_icmpv6_ra, bus->wake_counts.rx_icmpv6_na,
 		bus->wake_counts.rx_icmpv6_ns);

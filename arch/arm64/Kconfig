@@ -100,6 +100,7 @@ config ARM64
 	select GENERIC_TIME_VSYSCALL
 	select HANDLE_DOMAIN_IRQ
 	select HARDIRQS_SW_RESEND
+	select HAVE_MOVE_PMD
 	select HAVE_ACPI_APEI if (ACPI && EFI)
 	select HAVE_ALIGNED_STRUCT_PAGE if SLUB
 	select HAVE_ARCH_AUDITSYSCALL
@@ -131,6 +132,7 @@ config ARM64
 	select HAVE_FTRACE_MCOUNT_RECORD
 	select HAVE_FUNCTION_TRACER
 	select HAVE_FUNCTION_GRAPH_TRACER
+	select HAVE_FUTEX_CMPXCHG if MMU && FUTEX
 	select HAVE_GCC_PLUGINS
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
@@ -688,6 +690,13 @@ config ARM64_64K_PAGES
 	  with 64K aligned segments.
 
 endchoice
+
+config ARM64_KERNEL_STACK_ORDER
+	int "Kernel stack size order"
+	range 0 3
+	default 2 if ARM64_4K_PAGES
+	default 0 if ARM64_16K_PAGES
+	default 0 if ARM64_64K_PAGES
 
 choice
 	prompt "Virtual address space size"

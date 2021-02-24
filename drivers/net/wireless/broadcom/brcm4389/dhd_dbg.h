@@ -30,100 +30,17 @@
 #include "wl_nddbg.h"
 #endif /* defined(NDIS) */
 
-#ifdef DHD_LOG_DUMP
-extern char *dhd_log_dump_get_timestamp(void);
-#ifdef DHD_EFI
-/* FW verbose/console output to FW ring buffer */
-extern void dhd_log_dump_print(const char *fmt, ...);
-/* DHD verbose/console output to DHD ring buffer */
-extern void dhd_log_dump_print_drv(const char *fmt, ...);
-#define DHD_LOG_DUMP_WRITE(fmt, ...)	dhd_log_dump_print_drv(fmt, ##__VA_ARGS__)
-#define DHD_LOG_DUMP_WRITE_FW(fmt, ...)	dhd_log_dump_print(fmt, ##__VA_ARGS__)
-#else
-#ifndef _DHD_LOG_DUMP_DEFINITIONS_
-#define _DHD_LOG_DUMP_DEFINITIONS_
-#define GENERAL_LOG_HDR "\n-------------------- General log ---------------------------\n"
-#define PRESERVE_LOG_HDR "\n-------------------- Preserve log ---------------------------\n"
-#define SPECIAL_LOG_HDR "\n-------------------- Special log ---------------------------\n"
-#define DHD_DUMP_LOG_HDR "\n-------------------- 'dhd dump' log -----------------------\n"
-#define EXT_TRAP_LOG_HDR "\n-------------------- Extended trap data -------------------\n"
-#define HEALTH_CHK_LOG_HDR "\n-------------------- Health check data --------------------\n"
-#ifdef DHD_DUMP_PCIE_RINGS
-#define FLOWRING_DUMP_HDR "\n-------------------- Flowring dump --------------------\n"
-#endif /* DHD_DUMP_PCIE_RINGS */
-#define DHD_LOG_DUMP_DLD(fmt, ...) \
-	dhd_log_dump_write(DLD_BUF_TYPE_GENERAL, NULL, 0, fmt, ##__VA_ARGS__)
-#define DHD_LOG_DUMP_DLD_EX(fmt, ...) \
-	dhd_log_dump_write(DLD_BUF_TYPE_SPECIAL, NULL, 0, fmt, ##__VA_ARGS__)
-#define DHD_LOG_DUMP_DLD_PRSRV(fmt, ...) \
-	dhd_log_dump_write(DLD_BUF_TYPE_PRESERVE, NULL, 0, fmt, ##__VA_ARGS__)
-#endif /* !_DHD_LOG_DUMP_DEFINITIONS_ */
-
-#ifndef DHD_LOG_DUMP_RING_DEFINITIONS
-#define DHD_LOG_DUMP_RING_DEFINITIONS
-#ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
-/* Enabled DHD_DEBUGABILITY_LOG_DUMP_RING */
-extern void dhd_dbg_ring_write(int type, char *binary_data,
-	int binary_len, const char *fmt, ...);
-extern char* dhd_dbg_get_system_timestamp(void);
-#define DHD_DBG_RING(fmt, ...) \
-	dhd_dbg_ring_write(DRIVER_LOG_RING_ID, NULL, 0, fmt, ##__VA_ARGS__)
-#define DHD_DBG_RING_EX(fmt, ...) \
-	dhd_dbg_ring_write(FW_VERBOSE_RING_ID, NULL, 0, fmt, ##__VA_ARGS__)
-#define DHD_DBG_RING_ROAM(fmt, ...) \
-	dhd_dbg_ring_write(ROAM_STATS_RING_ID, NULL, 0, fmt, ##__VA_ARGS__)
-
-#define DHD_LOG_DUMP_WRITE		DHD_DBG_RING
-#define DHD_LOG_DUMP_WRITE_EX		DHD_DBG_RING_EX
-#define DHD_LOG_DUMP_WRITE_PRSRV	DHD_DBG_RING
-#define DHD_LOG_DUMP_WRITE_ROAM		DHD_DBG_RING_ROAM
-
-#define DHD_PREFIX_TS "[%s][%s]: ", dhd_dbg_get_system_timestamp(), dhd_log_dump_get_timestamp()
-#define DHD_PREFIX_TS_FN		DHD_PREFIX_TS
-#define DHD_LOG_DUMP_WRITE_TS		DHD_DBG_RING(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_TS_FN	DHD_DBG_RING(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_EX_TS	DHD_DBG_RING_EX(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_EX_TS_FN	DHD_DBG_RING_EX(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_PRSRV_TS	DHD_DBG_RING(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_PRSRV_TS_FN	DHD_DBG_RING(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_ROAM_TS	DHD_DBG_RING_ROAM(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_ROAM_TS_FN	DHD_DBG_RING_ROAM(DHD_PREFIX_TS_FN)
-#else
-/* Not enabled DHD_DEBUGABILITY_LOG_DUMP_RING */
-#define DHD_LOG_DUMP_WRITE		DHD_LOG_DUMP_DLD
-#define DHD_LOG_DUMP_WRITE_EX		DHD_LOG_DUMP_DLD_EX
-#define DHD_LOG_DUMP_WRITE_PRSRV	DHD_LOG_DUMP_DLD_PRSRV
-#define DHD_LOG_DUMP_WRITE_ROAM		DHD_LOG_DUMP_DLD
-
-#define DHD_PREFIX_TS "[%s]: ", dhd_log_dump_get_timestamp()
-#define DHD_PREFIX_TS_FN "[%s] %s: ", dhd_log_dump_get_timestamp(), __func__
-#define DHD_LOG_DUMP_WRITE_TS		DHD_LOG_DUMP_DLD(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_TS_FN	DHD_LOG_DUMP_DLD(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_EX_TS	DHD_LOG_DUMP_DLD_EX(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_EX_TS_FN	DHD_LOG_DUMP_DLD_EX(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_PRSRV_TS	DHD_LOG_DUMP_DLD_PRSRV(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_PRSRV_TS_FN	DHD_LOG_DUMP_DLD_PRSRV(DHD_PREFIX_TS_FN)
-#define DHD_LOG_DUMP_WRITE_ROAM_TS	DHD_LOG_DUMP_DLD(DHD_PREFIX_TS)
-#define DHD_LOG_DUMP_WRITE_ROAM_TS_FN	DHD_LOG_DUMP_DLD(DHD_PREFIX_TS_FN)
-#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */
-#endif /* DHD_LOG_DUMP_RING_DEFINITIONS */
-
-#endif /* DHD_EFI */
-#define CONCISE_DUMP_BUFLEN 32 * 1024
-#define ECNTRS_LOG_HDR "\n-------------------- Ecounters log --------------------------\n"
-#ifdef DHD_STATUS_LOGGING
-#define STATUS_LOG_HDR "\n-------------------- Status log -----------------------\n"
-#endif /* DHD_STATUS_LOGGING */
-#define RTT_LOG_HDR "\n-------------------- RTT log --------------------------\n"
-#define BCM_TRACE_LOG_HDR "\n-------------------- BCM Trace log --------------------------\n"
-#define COOKIE_LOG_HDR "\n-------------------- Cookie List ----------------------------\n"
-#endif /* DHD_LOG_DUMP */
-
 #ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
 /* Only for writing to ring */
 #define DHD_INFO_RING(args)	DHD_ERROR(args)
+/* FW_VERBOSE RING */
+#define DHD_LOG_DUMP_FWLOG	DHD_LOG_DUMP_WRITE_EX
+#define DHD_LOG_DUMP_FWLOG_TS	DHD_LOG_DUMP_WRITE_EX_TS
 #else
 #define DHD_INFO_RING(args)
+/* DLD_BUF_TYPE_GENERAL */
+#define DHD_LOG_DUMP_FWLOG	DHD_LOG_DUMP_WRITE
+#define DHD_LOG_DUMP_FWLOG_TS	DHD_LOG_DUMP_WRITE_TS
 #endif
 
 #if defined(CUSTOMER_DBG_SYSTEM_TIME) && defined(DHD_DEBUGABILITY_LOG_DUMP_RING)
@@ -286,6 +203,7 @@ do {	\
 #define DHD_LOG_MEM(args) \
 do {	\
 	if (dhd_msg_level & DHD_ERROR_VAL) {	\
+		DHD_LOG_DUMP_WRITE_TS;		\
 		DHD_LOG_DUMP_WRITE args;	\
 	}	\
 } while (0)
@@ -310,8 +228,8 @@ do {	\
 		}	\
 	}	\
 	if (dhd_log_level & DHD_EVENT_VAL) {	\
-		DHD_LOG_DUMP_WRITE_TS;		\
-		DHD_LOG_DUMP_WRITE args;	\
+		DHD_LOG_DUMP_FWLOG_TS;		\
+		DHD_LOG_DUMP_FWLOG args;	\
 	}	\
 } while (0)
 /* Re-using 'DHD_MSGTRACE_VAL' for controlling printing of ecounter binary event
@@ -366,6 +284,15 @@ do {	\
 		DHD_LOG_DUMP_WRITE_ROAM args;	\
 	}	\
 } while (0)
+
+#define DHD_PKT_MON(args)	\
+do {	\
+	if (dhd_msg_level & DHD_PKT_MON_VAL) {	\
+		DBG_PRINT_SYSTEM_TIME;	\
+		pr_cont args;		\
+	}	\
+} while (0)
+
 #endif /* DHD_EFI */
 #else /* DHD_LOG_DUMP */
 /* !DHD_LOG_DUMP */
@@ -378,6 +305,7 @@ do {	\
 #define DHD_PRSRV_MEM(args)	DHD_EVENT(args)
 #define DHD_ERROR_EX(args)	DHD_ERROR(args)
 #define DHD_ERROR_ROAM(args)	DHD_ERROR(args)
+#define DHD_PKT_MON(args)	DHD_ERROR(args)
 #endif /* DHD_LOG_DUMP */
 
 #define DHD_DATA(args)		do {if (dhd_msg_level & DHD_DATA_VAL) printf args;} while (0)
@@ -393,20 +321,11 @@ do {	\
 #define DHD_REORDER(args)	do {if (dhd_msg_level & DHD_REORDER_VAL) printf args;} while (0)
 #define DHD_PNO(args)		do {if (dhd_msg_level & DHD_PNO_VAL) printf args;} while (0)
 #define DHD_RTT(args)		do {if (dhd_msg_level & DHD_RTT_VAL) printf args;} while (0)
-#define DHD_PKT_MON(args)	do {if (dhd_msg_level & DHD_PKT_MON_VAL) printf args;} while (0)
 
 #if defined(DHD_LOG_DUMP)
 #if defined(DHD_EFI)
 #define DHD_FWLOG(args) DHD_MSGTRACE_LOG(args)
 #elif defined(DHD_LOG_PRINT_RATE_LIMIT)
-
-#ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
-/* FW_VERBOSE RING */
-#define DHD_LOG_DUMP_FWLOG	DHD_LOG_DUMP_WRITE_EX
-#else
-/* DLD_BUF_TYPE_GENERAL */
-#define DHD_LOG_DUMP_FWLOG	DHD_LOG_DUMP_WRITE
-#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */
 
 #define DHD_FWLOG(args)	\
 do { \
@@ -415,7 +334,7 @@ do { \
 			printf args; \
 	} \
 	if (dhd_log_level & DHD_FWLOG_VAL) { \
-		DHD_LOG_DUMP_WRITE_EX_TS;	\
+		DHD_LOG_DUMP_FWLOG_TS;	\
 		DHD_LOG_DUMP_FWLOG args; \
 	} \
 } while (0)

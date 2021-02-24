@@ -50,7 +50,7 @@ static struct cam_axi_vote *cam_vfe_top_delay_bw_reduction(
 int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 	struct cam_vfe_top_priv_common *top_common, bool start_stop)
 {
-	struct cam_axi_vote agg_vote = {0};
+	struct cam_axi_vote *agg_vote = NULL;
 	struct cam_axi_vote *to_be_applied_axi_vote = NULL;
 	int rc = 0;
 	uint32_t i;
@@ -58,6 +58,10 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 	uint64_t total_bw_new_vote = 0;
 	bool bw_unchanged = true;
 	bool apply_bw_update = false;
+
+	agg_vote = kzalloc(sizeof(struct cam_axi_vote), GFP_KERNEL);
+	if (!agg_vote)
+		return -ENOMEM;
 
 	for (i = 0; i < top_common->num_mux; i++) {
 		if (top_common->axi_vote_control[i] ==
@@ -70,10 +74,11 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 					num_paths +
 					top_common->req_axi_vote[i].num_paths,
 					CAM_CPAS_MAX_PATHS_PER_CLIENT);
-				return -EINVAL;
+				rc = -EINVAL;
+				goto end;
 			}
 
-			memcpy(&agg_vote.axi_path[num_paths],
+			memcpy(&agg_vote->axi_path[num_paths],
 				&top_common->req_axi_vote[i].axi_path[0],
 				top_common->req_axi_vote[i].num_paths *
 				sizeof(
@@ -82,30 +87,30 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 		}
 	}
 
-	agg_vote.num_paths = num_paths;
+	agg_vote->num_paths = num_paths;
 
-	for (i = 0; i < agg_vote.num_paths; i++) {
+	for (i = 0; i < agg_vote->num_paths; i++) {
 		CAM_DBG(CAM_PERF,
 			"ife[%d] : New BW Vote : counter[%d] [%s][%s] [%llu %llu %llu]",
 			top_common->hw_idx,
 			top_common->last_counter,
 			cam_cpas_axi_util_path_type_to_string(
-			agg_vote.axi_path[i].path_data_type),
+			agg_vote->axi_path[i].path_data_type),
 			cam_cpas_axi_util_trans_type_to_string(
-			agg_vote.axi_path[i].transac_type),
-			agg_vote.axi_path[i].camnoc_bw,
-			agg_vote.axi_path[i].mnoc_ab_bw,
-			agg_vote.axi_path[i].mnoc_ib_bw);
+			agg_vote->axi_path[i].transac_type),
+			agg_vote->axi_path[i].camnoc_bw,
+			agg_vote->axi_path[i].mnoc_ab_bw,
+			agg_vote->axi_path[i].mnoc_ib_bw);
 
-		total_bw_new_vote += agg_vote.axi_path[i].camnoc_bw;
+		total_bw_new_vote += agg_vote->axi_path[i].camnoc_bw;
 	}
 
-	memcpy(&top_common->last_vote[top_common->last_counter], &agg_vote,
+	memcpy(&top_common->last_vote[top_common->last_counter], agg_vote,
 		sizeof(struct cam_axi_vote));
 	top_common->last_counter = (top_common->last_counter + 1) %
 		CAM_VFE_DELAY_BW_REDUCTION_NUM_FRAMES;
 
-	if ((agg_vote.num_paths != top_common->applied_axi_vote.num_paths) ||
+	if ((agg_vote->num_paths != top_common->applied_axi_vote.num_paths) ||
 		(total_bw_new_vote != top_common->total_bw_applied))
 		bw_unchanged = false;
 
@@ -116,17 +121,18 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 
 	if (bw_unchanged) {
 		CAM_DBG(CAM_PERF, "BW config unchanged");
-		return 0;
+		goto end;
 	}
 
 	if (start_stop) {
 		/* need to vote current request immediately */
-		to_be_applied_axi_vote = &agg_vote;
+		to_be_applied_axi_vote = agg_vote;
 		/* Reset everything, we can start afresh */
 		memset(top_common->last_vote, 0x0, sizeof(struct cam_axi_vote) *
 			CAM_VFE_DELAY_BW_REDUCTION_NUM_FRAMES);
 		top_common->last_counter = 0;
-		top_common->last_vote[top_common->last_counter] = agg_vote;
+		memcpy(&top_common->last_vote[top_common->last_counter], agg_vote,
+			sizeof(struct cam_axi_vote));
 		top_common->last_counter = (top_common->last_counter + 1) %
 			CAM_VFE_DELAY_BW_REDUCTION_NUM_FRAMES;
 	} else {
@@ -139,7 +145,8 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 			&total_bw_new_vote);
 		if (!to_be_applied_axi_vote) {
 			CAM_ERR(CAM_PERF, "to_be_applied_axi_vote is NULL");
-			return -EINVAL;
+			rc = -EINVAL;
+			goto end;
 		}
 	}
 
@@ -179,6 +186,8 @@ int cam_vfe_top_set_axi_bw_vote(struct cam_vfe_soc_private *soc_private,
 		}
 	}
 
+end:
+	kfree(agg_vote);
 	return rc;
 }
 

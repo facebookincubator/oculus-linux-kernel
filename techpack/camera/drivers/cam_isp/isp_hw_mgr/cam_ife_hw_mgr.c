@@ -25,6 +25,7 @@
 #include "cam_common_util.h"
 
 #define CAM_IFE_HW_ENTRIES_MAX  20
+#define CAM_IFE_HW_CONFIG_WAIT_MAX_TRY  3
 
 #define TZ_SVC_SMMU_PROGRAM 0x15
 #define TZ_SAFE_SYSCALL_ID  0x3
@@ -685,7 +686,7 @@ static void cam_ife_hw_mgr_print_acquire_info(
 		goto fail;
 
 	CAM_INFO(CAM_ISP,
-		"Acquired %s IFE[%d %d] with [%u pix] [%u pd] [%u rdi] ports for ctx:%u",
+		"Successfully acquire %s IFE[%d %d] with [%u pix] [%u pd] [%u rdi] ports for ctx:%u",
 		(hw_mgr_ctx->is_dual) ? "dual" : "single",
 		hw_idx[CAM_ISP_HW_SPLIT_LEFT], hw_idx[CAM_ISP_HW_SPLIT_RIGHT],
 		num_pix_port, num_pd_port, num_rdi_port, hw_mgr_ctx->ctx_index);
@@ -695,7 +696,7 @@ static void cam_ife_hw_mgr_print_acquire_info(
 fail:
 	CAM_ERR(CAM_ISP, "Acquire HW failed for ctx:%u", hw_mgr_ctx->ctx_index);
 	CAM_INFO(CAM_ISP,
-		"Previously acquired %s IFE[%d %d] with [%u pix] [%u pd] [%u rdi] ports for ctx:%u",
+		"Fail to acquire %s IFE[%d %d] with [%u pix] [%u pd] [%u rdi] ports for ctx:%u",
 		(hw_mgr_ctx->is_dual) ? "dual" : "single",
 		hw_idx[CAM_ISP_HW_SPLIT_LEFT], hw_idx[CAM_ISP_HW_SPLIT_RIGHT],
 		num_pix_port, num_pd_port, num_rdi_port, hw_mgr_ctx->ctx_index);
@@ -1556,6 +1557,7 @@ static int cam_ife_hw_mgr_acquire_csid_hw(
 	int i;
 	int rc = -1;
 	struct cam_hw_intf  *hw_intf;
+	struct cam_isp_hw_cmd_query vfe_query;
 
 	if (!ife_hw_mgr || !csid_acquire) {
 		CAM_ERR(CAM_ISP,
@@ -1570,11 +1572,13 @@ static int cam_ife_hw_mgr_acquire_csid_hw(
 				continue;
 
 			if (csid_acquire->in_port->dsp_mode) {
+				vfe_query.query_cmd =
+					CAM_ISP_HW_CMD_QUERY_DSP_MODE;
 				rc = ife_hw_mgr->ife_devices[i]->hw_ops
 					.process_cmd(
 					ife_hw_mgr->ife_devices[i]->hw_priv,
-					CAM_ISP_HW_CMD_QUERY_DSP_MODE,
-					NULL, 0);
+					CAM_ISP_HW_CMD_QUERY,
+					&vfe_query, sizeof(vfe_query));
 				if (rc)
 					continue;
 			}
@@ -1595,10 +1599,12 @@ static int cam_ife_hw_mgr_acquire_csid_hw(
 			continue;
 
 		if (csid_acquire->in_port->dsp_mode) {
+			vfe_query.query_cmd =
+				CAM_ISP_HW_CMD_QUERY_DSP_MODE;
 			rc = ife_hw_mgr->ife_devices[i]->hw_ops.process_cmd(
 				ife_hw_mgr->ife_devices[i]->hw_priv,
-				CAM_ISP_HW_CMD_QUERY_DSP_MODE,
-				NULL, 0);
+				CAM_ISP_HW_CMD_QUERY,
+				&vfe_query, sizeof(vfe_query));
 			if (rc)
 				continue;
 		}
@@ -3711,7 +3717,6 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 	struct cam_cdm_bl_request *cdm_cmd;
 	struct cam_ife_hw_mgr_ctx *ctx;
 	struct cam_isp_prepare_hw_update_data *hw_update_data;
-	bool bw_config = false;
 	unsigned long rem_jiffies = 0;
 
 	if (!hw_mgr_priv || !config_hw_args) {
@@ -3764,7 +3769,6 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 					CAM_ERR(CAM_PERF,
 					"Bandwidth Update Failed rc: %d", rc);
 				hw_update_data->bw_config[i] = NULL;
-				bw_config = true;
 			} else if (hw_update_data->bw_config_version ==
 				CAM_ISP_BW_CONFIG_V2) {
 				rc = cam_isp_blob_bw_update_v2(
@@ -3774,7 +3778,6 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 					CAM_ERR(CAM_PERF,
 					"Bandwidth Update Failed rc: %d", rc);
 				hw_update_data->bw_config[i] = NULL;
-				bw_config = true;
 			} else {
 				CAM_ERR(CAM_PERF,
 					"Invalid bw config version: %d",
@@ -3829,23 +3832,45 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 			return rc;
 		}
 
-		if (cfg->init_packet) {
+		if (!cfg->init_packet)
+			goto end;
+
+		for (i = 0; i < CAM_IFE_HW_CONFIG_WAIT_MAX_TRY; i++) {
 			rem_jiffies = wait_for_completion_timeout(
 				&ctx->config_done_complete,
 				msecs_to_jiffies(300));
 			if (rem_jiffies == 0) {
+				if (!cam_cdm_detect_hang_error(
+						ctx->cdm_handle)) {
+					CAM_INFO(CAM_ISP,
+						"CDM workqueue delay detected, wait for some more time req_id=%llu rc=%d ctx_index %d",
+						cfg->request_id, rc,
+						ctx->ctx_index);
+					continue;
+				}
 				CAM_ERR(CAM_ISP,
 					"config done completion timeout for req_id=%llu ctx_index %d",
 					cfg->request_id, ctx->ctx_index);
 				rc = -ETIMEDOUT;
-			} else
+				goto end;
+			} else {
+				rc = 0;
 				CAM_DBG(CAM_ISP,
 					"config done Success for req_id=%llu ctx_index %d",
 					cfg->request_id, ctx->ctx_index);
+				break;
+			}
 		}
-	} else if (!bw_config) {
+		if ((i == CAM_IFE_HW_CONFIG_WAIT_MAX_TRY) && (rc == 0)) {
+			CAM_ERR(CAM_ISP,
+				"config done completion timeout for req_id=%llu ctx_index %d",
+				cfg->request_id, ctx->ctx_index);
+			rc = -ETIMEDOUT;
+		}
+	} else {
 		CAM_ERR(CAM_ISP, "No commands to config");
 	}
+end:
 	CAM_DBG(CAM_ISP, "Exit: Config Done: %llu",  cfg->request_id);
 
 	return rc;
@@ -7132,6 +7157,9 @@ static int cam_ife_hw_mgr_handle_hw_rup(
 		return 0;
 	}
 
+	if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
+		return 0;
+
 	ife_hwr_irq_rup_cb =
 		ife_hw_mgr_ctx->common.event_cb[CAM_ISP_HW_EVENT_REG_UPDATE];
 
@@ -7142,8 +7170,6 @@ static int cam_ife_hw_mgr_handle_hw_rup(
 			ife_hw_mgr_ctx->master_hw_idx))
 			break;
 
-		if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
-			break;
 		ife_hwr_irq_rup_cb(ife_hw_mgr_ctx->common.cb_priv,
 			CAM_ISP_HW_EVENT_REG_UPDATE, &rup_event_data);
 		break;
@@ -7153,8 +7179,6 @@ static int cam_ife_hw_mgr_handle_hw_rup(
 	case CAM_ISP_HW_VFE_IN_RDI2:
 	case CAM_ISP_HW_VFE_IN_RDI3:
 		if (!ife_hw_mgr_ctx->is_rdi_only_context)
-			break;
-		if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
 			break;
 		ife_hwr_irq_rup_cb(ife_hw_mgr_ctx->common.cb_priv,
 			CAM_ISP_HW_EVENT_REG_UPDATE, &rup_event_data);
@@ -7247,6 +7271,9 @@ static int cam_ife_hw_mgr_handle_hw_epoch(
 		return 0;
 	}
 
+	if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
+		return 0;
+
 	ife_hw_irq_epoch_cb =
 		ife_hw_mgr_ctx->common.event_cb[CAM_ISP_HW_EVENT_EPOCH];
 
@@ -7256,9 +7283,6 @@ static int cam_ife_hw_mgr_handle_hw_epoch(
 		rc = cam_ife_hw_mgr_check_irq_for_dual_vfe(ife_hw_mgr_ctx,
 			CAM_ISP_HW_EVENT_EPOCH);
 		if (!rc) {
-			if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
-				break;
-
 			epoch_done_event_data.frame_id_meta =
 				event_info->th_reg_val;
 			ife_hw_irq_epoch_cb(ife_hw_mgr_ctx->common.cb_priv,
@@ -7301,6 +7325,9 @@ static int cam_ife_hw_mgr_handle_hw_sof(
 		return 0;
 	}
 
+	if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
+		return 0;
+
 	memset(&sof_done_event_data, 0, sizeof(sof_done_event_data));
 
 	ife_hw_irq_sof_cb =
@@ -7327,9 +7354,6 @@ static int cam_ife_hw_mgr_handle_hw_sof(
 			if (ife_hw_mgr_ctx->use_frame_header_ts)
 				sof_done_event_data.timestamp = 0x0;
 
-			if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
-				break;
-
 			ife_hw_irq_sof_cb(ife_hw_mgr_ctx->common.cb_priv,
 				CAM_ISP_HW_EVENT_SOF, &sof_done_event_data);
 		}
@@ -7344,8 +7368,6 @@ static int cam_ife_hw_mgr_handle_hw_sof(
 		cam_ife_mgr_cmd_get_sof_timestamp(ife_hw_mgr_ctx,
 			&sof_done_event_data.timestamp,
 			&sof_done_event_data.boot_time);
-		if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
-			break;
 		ife_hw_irq_sof_cb(ife_hw_mgr_ctx->common.cb_priv,
 			CAM_ISP_HW_EVENT_SOF, &sof_done_event_data);
 		break;
@@ -7381,6 +7403,9 @@ static int cam_ife_hw_mgr_handle_hw_eof(
 		return 0;
 	}
 
+	if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
+		return  0;
+
 	ife_hw_irq_eof_cb =
 		ife_hw_mgr_ctx->common.event_cb[CAM_ISP_HW_EVENT_EOF];
 
@@ -7390,8 +7415,6 @@ static int cam_ife_hw_mgr_handle_hw_eof(
 		rc = cam_ife_hw_mgr_check_irq_for_dual_vfe(ife_hw_mgr_ctx,
 			CAM_ISP_HW_EVENT_EOF);
 		if (!rc) {
-			if (atomic_read(&ife_hw_mgr_ctx->overflow_pending))
-				break;
 			ife_hw_irq_eof_cb(ife_hw_mgr_ctx->common.cb_priv,
 				CAM_ISP_HW_EVENT_EOF, &eof_done_event_data);
 		}
@@ -7643,6 +7666,11 @@ err:
 	return -ENOMEM;
 }
 
+static void cam_req_mgr_process_workq_cam_ife_worker(struct work_struct *w)
+{
+	cam_req_mgr_process_workq(w);
+}
+
 int cam_ife_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 {
 	int rc = -EFAULT;
@@ -7791,7 +7819,8 @@ int cam_ife_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 
 	/* Create Worker for ife_hw_mgr with 10 tasks */
 	rc = cam_req_mgr_workq_create("cam_ife_worker", 10,
-			&g_ife_hw_mgr.workq, CRM_WORKQ_USAGE_NON_IRQ, 0);
+			&g_ife_hw_mgr.workq, CRM_WORKQ_USAGE_NON_IRQ, 0,
+			cam_req_mgr_process_workq_cam_ife_worker);
 	if (rc < 0) {
 		CAM_ERR(CAM_ISP, "Unable to create worker");
 		goto end;

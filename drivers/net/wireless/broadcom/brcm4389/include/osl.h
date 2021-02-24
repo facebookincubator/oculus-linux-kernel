@@ -479,4 +479,8 @@ do { \
 	#define OSL_PHYS_TO_VIRT_ADDR(pa)	((void*)(uintptr)(pa))
 #endif
 
+#ifndef DBG_PKTLEAK
+#define PKTSETQCALLER(lb, queue, caller_addr)
+#define PKTSETQCALLER_LIST(head, npkts, queue, caller_addr)
+#endif /* DBG_PKTLEAK */
 #endif	/* _osl_h_ */

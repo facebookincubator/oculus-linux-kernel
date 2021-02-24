@@ -492,7 +492,7 @@ int snd_dmaengine_pcm_register(struct device *dev,
 	if (!pcm)
 		return -ENOMEM;
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_SND_SOC_DEBUG
 	pcm->component.debugfs_prefix = "dma";
 #endif
 	pcm->config = config;

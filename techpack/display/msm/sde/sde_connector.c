@@ -598,6 +598,9 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 
 	if (c_conn->unset_bl_level)
 		bl_config->bl_level = c_conn->unset_bl_level;
+	if (c_conn->unset_scanline_offset)
+		bl_config->jdi_scanline_max_offset =
+			c_conn->unset_scanline_offset;
 
 	bl_config->bl_scale = c_conn->bl_scale > MAX_BL_SCALE_LEVEL ?
 			MAX_BL_SCALE_LEVEL : c_conn->bl_scale;
@@ -610,6 +613,7 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 	rc = c_conn->ops.set_backlight(&c_conn->base,
 			dsi_display, bl_config->bl_level);
 	c_conn->unset_bl_level = 0;
+	c_conn->unset_scanline_offset = 0;
 
 	return rc;
 }
@@ -743,7 +747,8 @@ static int _sde_connector_update_dirty_properties(
 	 * Special handling for postproc properties and
 	 * for updating backlight if any unset backlight level is present
 	 */
-	if (c_conn->bl_scale_dirty || c_conn->unset_bl_level) {
+	if (c_conn->bl_scale_dirty || c_conn->unset_bl_level ||
+			c_conn->unset_scanline_offset) {
 		_sde_connector_update_bl_scale(c_conn);
 		c_conn->bl_scale_dirty = false;
 	}

@@ -765,21 +765,19 @@ extern uint32 gFWID;
 #endif
 
 #if defined(DONGLEBUILD) && !defined(__COVERITY__)
-#define MODULE_DETACH(var, detach_func)\
+#define MODULE_DETACH(var, detach_func) \
 	do { \
 		BCM_REFERENCE(detach_func); \
 		OSL_SYS_HALT(); \
 	} while (0);
-#define MODULE_DETACH_2(var1, var2, detach_func) MODULE_DETACH(var1, detach_func)
-#define MODULE_DETACH_TYPECASTED(var, detach_func)
+#define MODULE_DETACH_2(var1, var2, detach_func) \
+	do { \
+		BCM_REFERENCE(detach_func); \
+		OSL_SYS_HALT(); \
+	} while (0);
 #else
-#define MODULE_DETACH(var, detach_func)\
-	if (var) { \
-		detach_func(var); \
-		(var) = NULL; \
-	}
+#define MODULE_DETACH(var, detach_func) detach_func(var)
 #define MODULE_DETACH_2(var1, var2, detach_func) detach_func(var1, var2)
-#define MODULE_DETACH_TYPECASTED(var, detach_func) detach_func(var)
 #endif /* DONGLEBUILD */
 
 /* When building ROML image use runtime conditional to cause the compiler
@@ -797,15 +795,8 @@ extern uint32 gFWID;
 #endif
 
 /* For ROM builds, keep it in const section so that it gets ROMmed. If abandoned, move it to
- * RO section but before ro region start so that FATAL log buf doesn't use this.
+ * RO section but after the other ro data so that FATAL log buf doesn't use this.
  */
-// Temporary - leave old definition in place until all references are removed elsewhere
-#if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
-#define BCMRODATA_ONTRAP(_data)	_data
-#else
-#define BCMRODATA_ONTRAP(_data)	__attribute__ ((__section__ (".ro_ontrap." #_data))) _data
-#endif
-// Renamed for consistency with post trap function definition
 #if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
 #define BCMPOST_TRAP_RODATA(_data)	_data
 #else

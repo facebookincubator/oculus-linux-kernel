@@ -1663,10 +1663,13 @@ struct dp_pdev {
 
 	union dp_rx_desc_list_elem_t *free_list_head;
 	union dp_rx_desc_list_elem_t *free_list_tail;
+
+#ifndef REMOVE_PKT_LOG
 	/* Pdev level flag to check peer based pktlog enabled or
 	 * disabled
 	 */
 	uint8_t dp_peer_based_pktlog;
+#endif
 
 	/* Cached peer_id from htt_peer_details_tlv */
 	uint16_t fw_stats_peer_id;

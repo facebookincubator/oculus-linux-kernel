@@ -1677,7 +1677,7 @@ static QDF_STATUS policy_mgr_get_sbs_channels(uint8_t *channels,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	uint32_t conn_index = 0, num_channels = 0;
 	uint32_t num_5g_channels = 0, cur_5g_channel = 0;
-	uint8_t remaining_5g_Channels[QDF_MAX_NUM_CHAN] = {};
+	uint8_t remaining_5g_Channels[NUM_CHANNELS] = {};
 	uint32_t remaining_channel_index = 0;
 	uint32_t j = 0, i = 0, weight1, weight2;
 
@@ -1952,7 +1952,7 @@ void policy_mgr_set_weight_of_dfs_passive_channels_to_zero(
 		return;
 
 	if (len)
-		orig_channel_count = QDF_MIN(*len, QDF_MAX_NUM_CHAN);
+		orig_channel_count = QDF_MIN(*len, NUM_CHANNELS);
 	else {
 		policy_mgr_err("invalid number of channel length");
 		return;
@@ -2001,10 +2001,10 @@ QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 	uint32_t num_channels = 0;
 	uint32_t sbs_num_channels = 0;
 	uint32_t chan_index = 0, chan_index_24 = 0, chan_index_5 = 0;
-	uint8_t channel_list[QDF_MAX_NUM_CHAN] = {0};
-	uint8_t channel_list_24[QDF_MAX_NUM_CHAN] = {0};
-	uint8_t channel_list_5[QDF_MAX_NUM_CHAN] = {0};
-	uint8_t sbs_channel_list[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t channel_list[NUM_CHANNELS] = {0};
+	uint8_t channel_list_24[NUM_CHANNELS] = {0};
+	uint8_t channel_list_5[NUM_CHANNELS] = {0};
+	uint8_t sbs_channel_list[NUM_CHANNELS] = {0};
 	bool skip_dfs_channel = false;
 	bool is_etsi13_srd_chan_allowed_in_mas_mode = true;
 	uint32_t i = 0, j = 0;
@@ -2061,30 +2061,30 @@ QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 	}
 
 	/* Let's divide the list in 2.4 & 5 Ghz lists */
-	while ((chan_index < QDF_MAX_NUM_CHAN) &&
+	while ((chan_index < NUM_CHANNELS) &&
 		(channel_list[chan_index] <= 11) &&
-		(chan_index_24 < QDF_MAX_NUM_CHAN))
+		(chan_index_24 < NUM_CHANNELS))
 		channel_list_24[chan_index_24++] = channel_list[chan_index++];
-	if ((chan_index < QDF_MAX_NUM_CHAN) &&
+	if ((chan_index < NUM_CHANNELS) &&
 		(channel_list[chan_index] == 12) &&
-		(chan_index_24 < QDF_MAX_NUM_CHAN)) {
+		(chan_index_24 < NUM_CHANNELS)) {
 		channel_list_24[chan_index_24++] = channel_list[chan_index++];
-		if ((chan_index < QDF_MAX_NUM_CHAN) &&
+		if ((chan_index < NUM_CHANNELS) &&
 			(channel_list[chan_index] == 13) &&
-			(chan_index_24 < QDF_MAX_NUM_CHAN)) {
+			(chan_index_24 < NUM_CHANNELS)) {
 			channel_list_24[chan_index_24++] =
 				channel_list[chan_index++];
-			if ((chan_index < QDF_MAX_NUM_CHAN) &&
+			if ((chan_index < NUM_CHANNELS) &&
 				(channel_list[chan_index] == 14) &&
-				(chan_index_24 < QDF_MAX_NUM_CHAN))
+				(chan_index_24 < NUM_CHANNELS))
 				channel_list_24[chan_index_24++] =
 					channel_list[chan_index++];
 		}
 	}
 
 	while ((chan_index < num_channels) &&
-		(chan_index < QDF_MAX_NUM_CHAN) &&
-		(chan_index_5 < QDF_MAX_NUM_CHAN)) {
+		(chan_index < NUM_CHANNELS) &&
+		(chan_index_5 < NUM_CHANNELS)) {
 		if ((true == skip_dfs_channel) &&
 		    wlan_reg_is_dfs_ch(pm_ctx->pdev,
 				       channel_list[chan_index])) {
@@ -3169,7 +3169,7 @@ uint32_t policy_mgr_get_sap_mandatory_chan_list_len(
 
 void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
 {
-	uint8_t chan_list[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t chan_list[NUM_CHANNELS] = {0};
 	uint32_t len = 0;
 	int i;
 	QDF_STATUS status;
@@ -3188,7 +3188,7 @@ void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
 	}
 	pm_ctx->sap_mandatory_channels_len = 0;
 
-	for (i = 0; (i < len) && (i < QDF_MAX_NUM_CHAN); i++) {
+	for (i = 0; (i < len) && (i < NUM_CHANNELS); i++) {
 		if (WLAN_REG_IS_24GHZ_CH(chan_list[i])) {
 			policy_mgr_debug("Add chan %hu to mandatory list",
 					chan_list[i]);
@@ -3202,7 +3202,7 @@ void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
 void policy_mgr_remove_sap_mandatory_chan(struct wlan_objmgr_psoc *psoc,
 		uint8_t chan)
 {
-	uint8_t chan_list[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t chan_list[NUM_CHANNELS] = {0};
 	uint32_t num_chan = 0;
 	int i;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
@@ -3213,7 +3213,7 @@ void policy_mgr_remove_sap_mandatory_chan(struct wlan_objmgr_psoc *psoc,
 		return;
 	}
 
-	if (pm_ctx->sap_mandatory_channels_len >= QDF_MAX_NUM_CHAN) {
+	if (pm_ctx->sap_mandatory_channels_len >= NUM_CHANNELS) {
 		policy_mgr_err("Invalid channel len %d ",
 				pm_ctx->sap_mandatory_channels_len);
 		return;

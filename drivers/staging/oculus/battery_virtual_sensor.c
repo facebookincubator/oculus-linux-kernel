@@ -52,31 +52,46 @@ struct battery_virtual_sensor_data {
 
 	int intercept_constant_discharging;
 
+	int max_differential;
+
 	struct mutex lock;
 
 	bool was_connected;
 };
 
+static int get_pcm_temp(struct battery_virtual_sensor_data *vs)
+{
+	int tz_temp;
+	int ret;
+
+	ret = thermal_zone_get_temp(vs->pcm_tz, &tz_temp);
+	if (ret < 0) {
+		dev_warn(vs->dev,
+				"Error getting temperature: %s (%d)",
+				vs->pcm_tz->type, ret);
+		return ret;
+	}
+
+	return tz_temp * vs->pcm_tz_scaling_factor;
+}
+
 static int get_temp(void *data, int *temperature)
 {
-	int ret, tz_temp = 0, iio_temp = 0;
+	int ret, pcm_temp = 0, tz_temp = 0, iio_temp = 0;
 	struct battery_virtual_sensor_data *vs = data;
 
 	*temperature = 0;
+
+	pcm_temp = get_pcm_temp(vs);
+	if (pcm_temp < 0)
+		return pcm_temp;
 
 	/* Use PCM thermistor if charger is present */
 	if (is_charger_connected(vs->usb_psy)) {
 		vs->was_connected = true;
 
-		ret = thermal_zone_get_temp(vs->pcm_tz, &tz_temp);
-		if (ret) {
-			dev_warn(vs->dev,
-				"Error getting temperature: %s (%d)",
-				vs->pcm_tz->type, ret);
-			return ret;
-		}
-		tz_temp = tz_temp * vs->pcm_tz_scaling_factor;
-		*temperature = tz_temp;
+		*temperature = pcm_temp;
+
 		return 0;
 	}
 
@@ -112,6 +127,10 @@ static int get_temp(void *data, int *temperature)
 
 	/* Account for charging */
 	*temperature += vs->intercept_constant_discharging;
+
+	/* If virtual sensor temp greatly differs from PCM, use PCM */
+	if (abs(*temperature - pcm_temp) > vs->max_differential)
+		*temperature = pcm_temp;
 
 	ret = 0;
 
@@ -472,6 +491,14 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 			&vs->intercept_constant_discharging);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to parse intercept-discharging: %d",
+				ret);
+		return ret;
+	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "max-differential",
+			&vs->max_differential);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to parse max-differential: %d",
 				ret);
 		return ret;
 	}

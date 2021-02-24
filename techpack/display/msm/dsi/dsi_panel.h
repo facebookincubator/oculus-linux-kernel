@@ -125,6 +125,12 @@ struct dsi_backlight_config {
 	/* WLED params */
 	struct led_trigger *wled;
 	struct backlight_device *raw_bd;
+
+	/* JDI BLU params */
+	u32 jdi_blu_default_duty;
+	u32 jdi_scanline_max_offset;
+	u32 jdi_scanline_duration;
+	u32 jdi_scanline_offset[2];
 };
 
 struct dsi_reset_seq {

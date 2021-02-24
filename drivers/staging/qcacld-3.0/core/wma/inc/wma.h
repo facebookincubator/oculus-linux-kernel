@@ -906,7 +906,7 @@ struct wma_ini_config {
  */
 struct wma_valid_channels {
 	uint8_t num_channels;
-	uint8_t channel_list[MAX_NUM_CHAN];
+	uint8_t channel_list[NUM_CHANNELS];
 };
 
 #ifdef FEATURE_WLM_STATS

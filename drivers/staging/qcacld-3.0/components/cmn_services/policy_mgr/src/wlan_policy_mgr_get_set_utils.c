@@ -3612,13 +3612,13 @@ void policy_mgr_trim_acs_channel_list(uint8_t *pcl, uint8_t pcl_count,
 {
 	uint16_t i, j, ch_list_count = 0;
 
-	if (*org_ch_list_count >= QDF_MAX_NUM_CHAN) {
+	if (*org_ch_list_count >= NUM_CHANNELS) {
 		policy_mgr_err("org_ch_list_count too big %d",
 			*org_ch_list_count);
 		return;
 	}
 
-	if (pcl_count >= QDF_MAX_NUM_CHAN) {
+	if (pcl_count >= NUM_CHANNELS) {
 		policy_mgr_err("pcl_count is too big %d",
 			       pcl_count);
 		return;

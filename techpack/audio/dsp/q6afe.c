@@ -28,6 +28,20 @@
 
 #define SP_V4_NUM_MAX_SPKRS SP_V2_NUM_MAX_SPKRS
 
+struct afe_avcs_payload_port_mapping {
+	u16 port_id;
+	struct avcs_load_unload_modules_payload *payload;
+} __packed;
+
+enum {
+	ENCODER_CASE,
+	DECODER_CASE,
+	/* Add new use case here */
+	MAX_ALLOWED_USE_CASES
+};
+
+static struct afe_avcs_payload_port_mapping *pm[MAX_ALLOWED_USE_CASES];
+
 enum {
 	AFE_COMMON_RX_CAL = 0,
 	AFE_COMMON_TX_CAL,
@@ -232,6 +246,7 @@ struct afe_ctl {
 	/* FTM spk params */
 	uint32_t initial_cal;
 	uint32_t v_vali_flag;
+	uint32_t num_spkrs;
 };
 
 static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST - SLIMBUS_0_RX];
@@ -248,6 +263,124 @@ bool afe_close_done[2] = {true, true};
 
 #define SIZEOF_CFG_CMD(y) \
 		(sizeof(struct apr_hdr) + sizeof(u16) + (sizeof(struct y)))
+
+static void q6afe_unload_avcs_modules(u16 port_id, int index)
+{
+	int ret = 0;
+
+	ret = q6core_avcs_load_unload_modules(pm[index]->payload,
+			AVCS_UNLOAD_MODULES);
+
+	if (ret < 0)
+		pr_err("%s: avcs module unload failed %d\n", __func__, ret);
+
+	kfree(pm[index]->payload);
+	pm[index]->payload = NULL;
+	kfree(pm[index]);
+	pm[index] = NULL;
+}
+
+static int q6afe_load_avcs_modules(int num_modules, u16 port_id,
+		 uint32_t use_case, u32 format_id)
+{
+	int i = 0;
+	int32_t ret = 0;
+	size_t payload_size = 0, port_struct_size = 0;
+	struct afe_avcs_payload_port_mapping payload_map;
+	struct avcs_load_unload_modules_sec_payload sec_payload;
+
+	if (num_modules <= 0) {
+		pr_err("%s: Invalid number of modules to load\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < MAX_ALLOWED_USE_CASES; i++) {
+		if (pm[i] == NULL) {
+			port_struct_size = sizeof(payload_map);
+			pm[i] = kzalloc(port_struct_size, GFP_KERNEL);
+			if (!pm[i])
+				return -ENOMEM;
+
+			pm[i]->port_id = port_id;
+			payload_size = sizeof(uint32_t) + (sizeof(sec_payload)
+					* num_modules);
+			pm[i]->payload = kzalloc(payload_size, GFP_KERNEL);
+			if (!pm[i]->payload) {
+				kfree(pm[i]);
+				pm[i] = NULL;
+				return -ENOMEM;
+			}
+
+			/*
+			 * index 0 : packetizer/de-packetizer
+			 * index 1 : encoder/decoder
+			 */
+
+			pm[i]->payload->num_modules = num_modules;
+
+			/*
+			 * Remaining fields of payload
+			 * are initialized to zero
+			 */
+
+			if (use_case == ENCODER_CASE) {
+				pm[i]->payload->load_unload_info[0].module_type =
+						AMDB_MODULE_TYPE_PACKETIZER;
+				pm[i]->payload->load_unload_info[0].id1 =
+						AVS_MODULE_ID_PACKETIZER_COP;
+				pm[i]->payload->load_unload_info[1].module_type =
+						AMDB_MODULE_TYPE_ENCODER;
+				pm[i]->payload->load_unload_info[1].id1 =
+						format_id;
+			} else if (use_case == DECODER_CASE) {
+				pm[i]->payload->load_unload_info[0].module_type =
+						AMDB_MODULE_TYPE_DEPACKETIZER;
+				pm[i]->payload->load_unload_info[0].id1 =
+					AVS_MODULE_ID_DEPACKETIZER_COP_V1;
+
+				if (format_id == ENC_CODEC_TYPE_LDAC) {
+					pm[i]->payload->load_unload_info[0].id1 =
+						AVS_MODULE_ID_DEPACKETIZER_COP;
+					goto load_unload;
+				}
+
+				pm[i]->payload->load_unload_info[1].module_type =
+						AMDB_MODULE_TYPE_DECODER;
+				pm[i]->payload->load_unload_info[1].id1 =
+						format_id;
+
+			} else {
+				pr_err("%s:load usecase %d not supported\n",
+					 __func__, use_case);
+				ret = -EINVAL;
+				goto fail;
+			}
+
+load_unload:
+			ret = q6core_avcs_load_unload_modules(pm[i]->payload,
+						 AVCS_LOAD_MODULES);
+
+			if (ret < 0) {
+				pr_err("%s: load failed %d\n", __func__, ret);
+				goto fail;
+			}
+			return 0;
+		}
+
+	}
+
+	ret = -EINVAL;
+	if (i == MAX_ALLOWED_USE_CASES) {
+		pr_err("%s: Not enough ports available\n", __func__);
+		return ret;
+	}
+fail:
+	kfree(pm[i]->payload);
+	pm[i]->payload = NULL;
+	kfree(pm[i]);
+	pm[i] = NULL;
+	return ret;
+}
 
 static int afe_get_cal_hw_delay(int32_t path,
 				struct audio_cal_hw_delay_entry *entry);
@@ -2140,6 +2273,7 @@ static void afe_send_cal_spv4_tx(int port_id)
 	struct afe_sp_v4_channel_v_vali_cfg *ch_v_vali_cfg;
 	struct afe_sp_v4_param_ex_vi_ftm_cfg *ex_vi_ftm_cfg;
 	struct afe_sp_v4_channel_ex_vi_ftm *ch_ex_vi_ftm_cfg;
+	uint32_t i = 0;
 
 	pr_debug("%s: Entry.. port_id %d\n", __func__, port_id);
 
@@ -2200,7 +2334,7 @@ static void afe_send_cal_spv4_tx(int port_id)
 			v4_vi_op_mode->th_r0t0_selection_flag[SP_V2_SPKR_2] =
 							    USE_SAFE_R0TO;
 		}
-		afe_spk_config.v4_vi_op_mode.num_speakers = SP_V2_NUM_MAX_SPKRS;
+		afe_spk_config.v4_vi_op_mode.num_speakers = this_afe.num_spkrs;
 		if (afe_spk_prot_prepare(port_id, 0,
 			AFE_PARAM_ID_SP_V4_VI_OP_MODE_CFG,
 			&afe_spk_config,
@@ -2209,7 +2343,7 @@ static void afe_send_cal_spv4_tx(int port_id)
 				__func__);
 
 		size = sizeof(struct afe_sp_v4_param_th_vi_r0t0_cfg) +
-		(SP_V2_NUM_MAX_SPKRS * sizeof(struct afe_sp_v4_channel_r0t0));
+		(this_afe.num_spkrs * sizeof(struct afe_sp_v4_channel_r0t0));
 		tmp_ptr = kzalloc(size, GFP_KERNEL);
 		if (!tmp_ptr) {
 			mutex_unlock(
@@ -2223,15 +2357,13 @@ static void afe_send_cal_spv4_tx(int port_id)
 		ch_r0t0_cfg =
 			(struct afe_sp_v4_channel_r0t0 *)(th_vi_r0t0_cfg + 1);
 
-		th_vi_r0t0_cfg->num_speakers = SP_V2_NUM_MAX_SPKRS;
-		ch_r0t0_cfg[SP_V2_SPKR_1].r0_cali_q24 =
-			(uint32_t) this_afe.prot_cfg.r0[SP_V2_SPKR_1];
-		ch_r0t0_cfg[SP_V2_SPKR_2].r0_cali_q24 =
-			(uint32_t) this_afe.prot_cfg.r0[SP_V2_SPKR_2];
-		ch_r0t0_cfg[SP_V2_SPKR_1].t0_cali_q6 =
-			(uint32_t) this_afe.prot_cfg.t0[SP_V2_SPKR_1];
-		ch_r0t0_cfg[SP_V2_SPKR_2].t0_cali_q6 =
-			(uint32_t) this_afe.prot_cfg.t0[SP_V2_SPKR_2];
+		th_vi_r0t0_cfg->num_speakers = this_afe.num_spkrs;
+		for (i = 0; i < this_afe.num_spkrs; i++) {
+			ch_r0t0_cfg[i].r0_cali_q24 =
+				(uint32_t) this_afe.prot_cfg.r0[i];
+			ch_r0t0_cfg[i].t0_cali_q6 =
+				(uint32_t) this_afe.prot_cfg.t0[i];
+		}
 		if (afe_spk_prot_prepare(port_id, 0,
 			AFE_PARAM_ID_SP_V4_VI_R0T0_CFG,
 			(union afe_spkr_prot_config *)tmp_ptr, size))
@@ -2246,7 +2378,7 @@ static void afe_send_cal_spv4_tx(int port_id)
 	    (this_afe.vi_tx_port == port_id) &&
 	    (this_afe.prot_cfg.sp_version >= AFE_API_VERSION_V9)) {
 		size = sizeof(struct afe_sp_v4_param_th_vi_ftm_cfg) +
-		(SP_V2_NUM_MAX_SPKRS*sizeof(struct afe_sp_v4_channel_ftm_cfg));
+		(this_afe.num_spkrs * sizeof(struct afe_sp_v4_channel_ftm_cfg));
 		tmp_ptr = kzalloc(size, GFP_KERNEL);
 		if (!tmp_ptr) {
 			mutex_unlock(
@@ -2259,16 +2391,13 @@ static void afe_send_cal_spv4_tx(int port_id)
 		ch_ftm_cfg =
 			 (struct afe_sp_v4_channel_ftm_cfg *)(th_vi_ftm_cfg+1);
 
-		th_vi_ftm_cfg->num_ch = SP_V2_NUM_MAX_SPKRS;
-		ch_ftm_cfg[SP_V2_SPKR_1].wait_time_ms =
-			this_afe.th_ftm_cfg.wait_time[SP_V2_SPKR_1];
-		ch_ftm_cfg[SP_V2_SPKR_2].wait_time_ms =
-			this_afe.th_ftm_cfg.wait_time[SP_V2_SPKR_2];
-		ch_ftm_cfg[SP_V2_SPKR_1].ftm_time_ms =
-			this_afe.th_ftm_cfg.ftm_time[SP_V2_SPKR_1];
-		ch_ftm_cfg[SP_V2_SPKR_2].ftm_time_ms =
-			this_afe.th_ftm_cfg.ftm_time[SP_V2_SPKR_2];
-
+		th_vi_ftm_cfg->num_ch = this_afe.num_spkrs;
+		for (i = 0; i < this_afe.num_spkrs; i++) {
+			ch_ftm_cfg[i].wait_time_ms =
+				this_afe.th_ftm_cfg.wait_time[i];
+			ch_ftm_cfg[i].ftm_time_ms =
+				this_afe.th_ftm_cfg.ftm_time[i];
+		}
 		if (afe_spk_prot_prepare(port_id, 0,
 				AFE_PARAM_ID_SP_V4_TH_VI_FTM_CFG,
 				(union afe_spkr_prot_config *)tmp_ptr, size))
@@ -2280,8 +2409,8 @@ static void afe_send_cal_spv4_tx(int port_id)
 			MSM_SPKR_PROT_IN_V_VALI_MODE) &&
 		   (this_afe.vi_tx_port == port_id)) {
 		size = sizeof(struct afe_sp_v4_param_th_vi_v_vali_cfg) +
-			(SP_V2_NUM_MAX_SPKRS *
-			 sizeof(struct afe_sp_v4_channel_v_vali_cfg));
+			(this_afe.num_spkrs *
+			sizeof(struct afe_sp_v4_channel_v_vali_cfg));
 		tmp_ptr = kzalloc(size, GFP_KERNEL);
 		if (!tmp_ptr) {
 			mutex_unlock(
@@ -2295,16 +2424,13 @@ static void afe_send_cal_spv4_tx(int port_id)
 		ch_v_vali_cfg =
 		 (struct afe_sp_v4_channel_v_vali_cfg *)(th_vi_v_vali_cfg + 1);
 
-		th_vi_v_vali_cfg->num_ch = SP_V2_NUM_MAX_SPKRS;
-		ch_v_vali_cfg[SP_V2_SPKR_1].wait_time_ms =
-			this_afe.v_vali_cfg.wait_time[SP_V2_SPKR_1];
-		ch_v_vali_cfg[SP_V2_SPKR_2].wait_time_ms =
-			this_afe.v_vali_cfg.wait_time[SP_V2_SPKR_2];
-		ch_v_vali_cfg[SP_V2_SPKR_1].vali_time_ms =
-			this_afe.v_vali_cfg.vali_time[SP_V2_SPKR_1];
-		ch_v_vali_cfg[SP_V2_SPKR_2].vali_time_ms =
-			this_afe.v_vali_cfg.vali_time[SP_V2_SPKR_2];
-
+		th_vi_v_vali_cfg->num_ch = this_afe.num_spkrs;
+		for (i = 0; i < this_afe.num_spkrs; i++) {
+			ch_v_vali_cfg[i].wait_time_ms =
+				this_afe.v_vali_cfg.wait_time[i];
+			ch_v_vali_cfg[i].vali_time_ms =
+				this_afe.v_vali_cfg.vali_time[i];
+		}
 		if (afe_spk_prot_prepare(port_id, 0,
 				AFE_PARAM_ID_SP_V4_TH_VI_V_VALI_CFG,
 				(union afe_spkr_prot_config *)tmp_ptr, size))
@@ -2320,7 +2446,7 @@ static void afe_send_cal_spv4_tx(int port_id)
 	    (this_afe.vi_tx_port == port_id) &&
 	    (this_afe.prot_cfg.sp_version >= AFE_API_VERSION_V9)) {
 		size = sizeof(struct afe_sp_v4_param_ex_vi_ftm_cfg) +
-		(SP_V2_NUM_MAX_SPKRS *
+		(this_afe.num_spkrs *
 		 sizeof(struct afe_sp_v4_channel_ex_vi_ftm));
 		tmp_ptr = kzalloc(size, GFP_KERNEL);
 		if (!tmp_ptr) {
@@ -2342,17 +2468,14 @@ static void afe_send_cal_spv4_tx(int port_id)
 				 sizeof(struct afe_sp_v4_param_ex_vi_mode_cfg)))
 			pr_info("%s: ex vi mode cfg failed\n", __func__);
 
-		ex_vi_ftm_cfg->num_ch = SP_V2_NUM_MAX_SPKRS;
+		ex_vi_ftm_cfg->num_ch = this_afe.num_spkrs;
 
-		ch_ex_vi_ftm_cfg[SP_V2_SPKR_1].wait_time_ms =
-			this_afe.ex_ftm_cfg.wait_time[SP_V2_SPKR_1];
-		ch_ex_vi_ftm_cfg[SP_V2_SPKR_2].wait_time_ms =
-			this_afe.ex_ftm_cfg.wait_time[SP_V2_SPKR_2];
-		ch_ex_vi_ftm_cfg[SP_V2_SPKR_1].ftm_time_ms =
-			this_afe.ex_ftm_cfg.ftm_time[SP_V2_SPKR_1];
-		ch_ex_vi_ftm_cfg[SP_V2_SPKR_2].ftm_time_ms =
-			this_afe.ex_ftm_cfg.ftm_time[SP_V2_SPKR_2];
-
+		for (i = 0; i < this_afe.num_spkrs; i++) {
+			ch_ex_vi_ftm_cfg[i].wait_time_ms =
+				this_afe.ex_ftm_cfg.wait_time[i];
+			ch_ex_vi_ftm_cfg[i].ftm_time_ms =
+				this_afe.ex_ftm_cfg.ftm_time[i];
+		}
 		if (afe_spk_prot_prepare(port_id, 0,
 				 AFE_PARAM_ID_SP_V4_EX_VI_FTM_CFG,
 				 (union afe_spkr_prot_config *)tmp_ptr, size))
@@ -5239,8 +5362,21 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	if ((codec_format != ASM_MEDIA_FMT_NONE) &&
 	    (cfg_type == AFE_PARAM_ID_SLIMBUS_CONFIG)) {
 		if (enc_cfg != NULL) {
-			pr_debug("%s: Found AFE encoder support for SLIMBUS format = %d\n",
+			pr_debug("%s: Found AFE encoder support  for SLIMBUS format = %d\n",
 						__func__, codec_format);
+
+			if ((q6core_get_avcs_api_version_per_service(
+				APRV2_IDS_SERVICE_ID_ADSP_CORE_V) >=
+						AVCS_API_VERSION_V5)) {
+				ret = q6afe_load_avcs_modules(2, port_id,
+					ENCODER_CASE, codec_format);
+				if (ret < 0) {
+					pr_err("%s:encoder load for port 0x%x failed %d\n",
+						__func__, port_id, ret);
+					goto fail_cmd;
+				}
+			}
+
 			ret = q6afe_send_enc_config(port_id, enc_cfg,
 						    codec_format, *afe_config,
 						    afe_in_channels,
@@ -5254,7 +5390,24 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		}
 		if (dec_cfg != NULL) {
 			pr_debug("%s: Found AFE decoder support for SLIMBUS format = %d\n",
-				  __func__, codec_format);
+				__func__, codec_format);
+
+			if ((q6core_get_avcs_api_version_per_service(
+				APRV2_IDS_SERVICE_ID_ADSP_CORE_V) >=
+				AVCS_API_VERSION_V5)) {
+				/* LDAC doesn't require decoder */
+				if (codec_format == ENC_CODEC_TYPE_LDAC)
+					ret = q6afe_load_avcs_modules(1, port_id,
+						DECODER_CASE, codec_format);
+				else
+					ret = q6afe_load_avcs_modules(2, port_id,
+						DECODER_CASE, codec_format);
+				if (ret < 0) {
+					pr_err("%s:decoder load for port 0x%x failed %d\n",
+						__func__, port_id, ret);
+					goto fail_cmd;
+				}
+			}
 			ret = q6afe_send_dec_config(port_id, *afe_config,
 						    dec_cfg, codec_format,
 						    afe_in_channels,
@@ -8001,6 +8154,7 @@ int afe_close(int port_id)
 	struct afe_port_cmd_device_stop stop;
 	enum afe_mad_type mad_type;
 	int ret = 0;
+	u16 i;
 	int index = 0;
 	uint16_t port_index;
 
@@ -8099,8 +8253,11 @@ int afe_close(int port_id)
 	 * even if ramp down configuration failed it is not serious enough to
 	 * warrant bailaing out.
 	 */
-	if (afe_spk_ramp_dn_cfg(port_id) < 0)
-		pr_err("%s: ramp down configuration failed\n", __func__);
+	if (q6core_get_avcs_api_version_per_service(
+		APRV2_IDS_SERVICE_ID_ADSP_AFE_V) < AFE_API_VERSION_V9) {
+		if (afe_spk_ramp_dn_cfg(port_id) < 0)
+			pr_err("%s: ramp down config failed\n", __func__);
+	}
 
 	stop.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
 				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
@@ -8117,6 +8274,15 @@ int afe_close(int port_id)
 		pr_err("%s: AFE close failed %d\n", __func__, ret);
 
 fail_cmd:
+	if ((q6core_get_avcs_api_version_per_service(
+		APRV2_IDS_SERVICE_ID_ADSP_CORE_V) >= AVCS_API_VERSION_V5)) {
+		for (i = 0; i < MAX_ALLOWED_USE_CASES; i++) {
+			if (pm[i] && pm[i]->port_id == port_id) {
+				q6afe_unload_avcs_modules(port_id, i);
+				break;
+			}
+		}
+	}
 	mutex_unlock(&this_afe.afe_cmd_lock);
 	return ret;
 }
@@ -9078,6 +9244,7 @@ int afe_spk_prot_feed_back_cfg(int src_port, int dst_port,
 			this_afe.v4_ch_map_cfg.chan_info[index++] = 4;
 		}
 		this_afe.v4_ch_map_cfg.num_channels = index;
+		this_afe.num_spkrs = index / 2;
 		pr_debug("%s no of channels: %d\n", __func__, index);
 		this_afe.vi_tx_port = src_port;
 		this_afe.vi_rx_port = dst_port;

@@ -13,7 +13,7 @@
 / {
 	model = "Seacliff (P2)";
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 63>;
+	qcom,board-id = <8 64>;
 };
 
 &cam_cci0 {
@@ -67,6 +67,12 @@
 
 &pm8150a_l6 {
 	status = "disabled";
+};
+
+&pm8150a_l9 {
+	regulator-max-microvolt = <3000000>;
+	qcom,init-voltage = <3000000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150a_l11 {

@@ -1,0 +1,69 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-kona.h>
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "seacliff.dtsi"
+#include "seacliff-qca6390.dtsi"
+
+/ {
+	model = "Seacliff (P1.5) DD";
+	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
+	qcom,board-id = <8 97>;
+};
+
+&cam_cci0 {
+	/* No RGB */
+	qcom,cam-sensor4 {
+		status = "disabled";
+	};
+
+/* Instead, we have an extra FPGA with Esker Cameras */
+	qcom,cam-sensor6 {
+		/* CAMERA ID = 6
+		 * name: Esker GT (doubledouble)
+		 * QCOM CSI PHY = 0
+		 * QCOM MCLK = 0
+		 */
+		cell-index = <6>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <0>;
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 1050000 0>;
+		rgltr-max-voltage = <2960000 1800000 1050000 0>;
+		rgltr-load-current = <80000 120000 1050000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_active>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend>;
+		gpios = <&tlmm 94 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK0";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+};
+
+&qupv3_se19_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss_DOUBLE_DOUBLE_P0.bin";
+		};
+	};
+};

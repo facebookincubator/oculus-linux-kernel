@@ -745,8 +745,8 @@ void utils_dfs_get_nol_history_chan_list(struct wlan_objmgr_pdev *pdev,
 void utils_dfs_get_chan_list(struct wlan_objmgr_pdev *pdev,
 			     void *clist, uint32_t *num_chan)
 {
-	uint8_t pcl_ch[QDF_MAX_NUM_CHAN] = {0};
-	uint8_t weight_list[QDF_MAX_NUM_CHAN] = {0};
+	uint8_t pcl_ch[NUM_CHANNELS] = {0};
+	uint8_t weight_list[NUM_CHANNELS] = {0};
 	uint32_t len;
 	uint32_t weight_len;
 	int i;

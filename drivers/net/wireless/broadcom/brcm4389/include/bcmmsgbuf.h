@@ -502,6 +502,7 @@ typedef struct pcie_dma_xfer_params {
 #define BCMPCIE_FLOW_RING_INTF_HP2P		0x01u /* bit0 */
 #define BCMPCIE_FLOW_RING_OPT_EXT_TXSTATUS	0x02u /* bit1 */
 #define BCMPCIE_FLOW_RING_INTF_MESH		0x04u /* bit2, identifies the mesh flow ring */
+#define BCMPCIE_FLOW_RING_INTF_LLW		0x08u /* bit3, identifies the llw flow ring */
 
 /** Complete msgbuf hdr for flow ring update from host to dongle */
 typedef struct tx_flowring_create_request {
@@ -1477,76 +1478,6 @@ typedef struct tx_idle_flowring_resume_response {
 	uint32			rsvd[2];
 	dma_done_t		marker;
 } tx_idle_flowring_resume_response_t;
-
-/* timesync related additions */
-
-/* defined similar to bcm_xtlv_t */
-typedef struct _bcm_xtlv {
-	uint16		id; /* TLV idenitifier */
-	uint16		len; /* TLV length in bytes */
-} _bcm_xtlv_t;
-
-#define BCMMSGBUF_FW_CLOCK_INFO_TAG		0
-#define BCMMSGBUF_HOST_CLOCK_INFO_TAG		1
-#define BCMMSGBUF_HOST_CLOCK_SELECT_TAG		2
-#define BCMMSGBUF_D2H_CLOCK_CORRECTION_TAG	3
-#define BCMMSGBUF_HOST_TIMESTAMPING_CONFIG_TAG	4
-#define BCMMSGBUF_MAX_TSYNC_TAG			5
-
-/* Flags in fw clock info TLV */
-#define CAP_DEVICE_TS		(1 << 0)
-#define CAP_CORRECTED_TS	(1 << 1)
-#define TS_CLK_ACTIVE		(1 << 2)
-
-typedef struct ts_fw_clock_info {
-	_bcm_xtlv_t  xtlv; /* BCMMSGBUF_FW_CLOCK_INFO_TAG */
-	ts_timestamp_srcid_t  ts; /* tick count */
-	uchar		clk_src[4]; /* clock source acronym ILP/AVB/TSF */
-	uint32		nominal_clock_freq;
-	uint32		reset_cnt;
-	uint8		flags;
-	uint8		rsvd[3];
-} ts_fw_clock_info_t;
-
-typedef struct ts_host_clock_info {
-	_bcm_xtlv_t  xtlv; /* BCMMSGBUF_HOST_CLOCK_INFO_TAG */
-	tick_count_64_t ticks; /* 64 bit host tick counter */
-	ts_timestamp_ns_64_t ns; /* 64 bit host time in nano seconds */
-} ts_host_clock_info_t;
-
-typedef struct ts_host_clock_sel {
-	_bcm_xtlv_t	xtlv; /* BCMMSGBUF_HOST_CLOCK_SELECT_TAG */
-	uint32		seqnum; /* number of times GPIO time sync toggled */
-	uint8		min_clk_idx; /* clock idenitifer configured for packet tiem stamping */
-	uint8		max_clk_idx; /* clock idenitifer configured for packet tiem stamping */
-	uint16		rsvd[1];
-} ts_host_clock_sel_t;
-
-typedef struct ts_d2h_clock_correction {
-	_bcm_xtlv_t		xtlv; /* BCMMSGBUF_HOST_CLOCK_INFO_TAG */
-	uint8			clk_id; /* clock source in the device */
-	uint8			rsvd[3];
-	ts_correction_m_t	m;	/* y  = 'm' x + b */
-	ts_correction_b_t	b;	/* y  = 'm' x + 'c' */
-} ts_d2h_clock_correction_t;
-
-typedef struct ts_host_timestamping_config {
-	_bcm_xtlv_t		xtlv; /* BCMMSGBUF_HOST_TIMESTAMPING_CONFIG_TAG */
-	/* time period to capture the device time stamp and toggle WLAN_TIME_SYNC_GPIO */
-	uint16			period_ms;
-	uint8			flags;
-	uint8			post_delay;
-	uint32			reset_cnt;
-} ts_host_timestamping_config_t;
-
-/* Flags in host timestamping config TLV */
-#define FLAG_HOST_RESET		(1 << 0)
-#define IS_HOST_RESET(x)	((x) & FLAG_HOST_RESET)
-#define CLEAR_HOST_RESET(x)	((x) & ~FLAG_HOST_RESET)
-
-#define FLAG_CONFIG_NODROP	(1 << 1)
-#define IS_CONFIG_NODROP(x)	((x) & FLAG_CONFIG_NODROP)
-#define CLEAR_CONFIG_NODROP(x)	((x) & ~FLAG_CONFIG_NODROP)
 
 /* HP2P RLLW Extended TxStatus info when host enables the same */
 #define D2H_TXSTATUS_EXT_PKT_WITH_OVRRD	0x8000 /**< set when pkt had override bit on */
