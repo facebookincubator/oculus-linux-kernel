@@ -25,15 +25,10 @@
 
 #define MAX_CSIPHY 3
 #define CSIPHY_NUM_CLK_MAX  16
-#define MAX_CSIPHY_SETTINGS 120
 
 struct csiphy_reg_t {
 	uint32_t addr;
 	uint32_t data;
-};
-
-struct csiphy_settings_t {
-	struct csiphy_reg_t settings[MAX_CSIPHY_SETTINGS];
 };
 
 struct csiphy_reg_parms_t {
@@ -132,24 +127,11 @@ struct csiphy_reg_3ph_parms_t {
 	struct csiphy_reg_t mipi_csiphy_2ph_lnn_test_force;
 	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl5;
 	struct csiphy_reg_t mipi_csiphy_3ph_lnck_cfg1;
-	struct csiphy_reg_t mipi_csiphy_3ph_lnn_ctrl20;
-	struct csiphy_reg_t mipi_csiphy_3ph_lnn_ctrl55;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl11;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl13;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl10;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl0;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl3;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl14;
-	struct csiphy_reg_t mipi_csiphy_3ph_cmn_ctrl7_cphy;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl0;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl9;
-	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl9;
 };
 
 struct csiphy_ctrl_t {
 	struct csiphy_reg_parms_t csiphy_reg;
 	struct csiphy_reg_3ph_parms_t csiphy_3ph_reg;
-	struct csiphy_settings_t csiphy_combo_mode_settings;
 };
 
 enum msm_csiphy_state_t {

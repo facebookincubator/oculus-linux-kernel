@@ -37,7 +37,7 @@ static const struct xt_table packet_mangler = {
 };
 
 static unsigned int
-ipt_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
+ipt_mangle_out(struct sk_buff *skb, const struct net_device *out)
 {
 	unsigned int ret;
 	const struct iphdr *iph;
@@ -58,7 +58,8 @@ ipt_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
 	daddr = iph->daddr;
 	tos = iph->tos;
 
-	ret = ipt_do_table(skb, state, state->net->ipv4.iptable_mangle);
+	ret = ipt_do_table(skb, NF_INET_LOCAL_OUT, NULL, out,
+			   dev_net(out)->ipv4.iptable_mangle);
 	/* Reroute for ANY change. */
 	if (ret != NF_DROP && ret != NF_STOLEN) {
 		iph = ip_hdr(skb);
@@ -67,7 +68,7 @@ ipt_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
 		    iph->daddr != daddr ||
 		    skb->mark != mark ||
 		    iph->tos != tos) {
-			err = ip_route_me_harder(state->net, skb, RTN_UNSPEC);
+			err = ip_route_me_harder(skb, RTN_UNSPEC);
 			if (err < 0)
 				ret = NF_DROP_ERR(err);
 		}
@@ -78,17 +79,20 @@ ipt_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
 
 /* The work comes in here from netfilter.c. */
 static unsigned int
-iptable_mangle_hook(void *priv,
+iptable_mangle_hook(const struct nf_hook_ops *ops,
 		     struct sk_buff *skb,
-		     const struct nf_hook_state *state)
+		     const struct net_device *in,
+		     const struct net_device *out,
+		     int (*okfn)(struct sk_buff *))
 {
-	if (state->hook == NF_INET_LOCAL_OUT)
-		return ipt_mangle_out(skb, state);
-	if (state->hook == NF_INET_POST_ROUTING)
-		return ipt_do_table(skb, state,
-				    state->net->ipv4.iptable_mangle);
+	if (ops->hooknum == NF_INET_LOCAL_OUT)
+		return ipt_mangle_out(skb, out);
+	if (ops->hooknum == NF_INET_POST_ROUTING)
+		return ipt_do_table(skb, ops->hooknum, in, out,
+				    dev_net(out)->ipv4.iptable_mangle);
 	/* PREROUTING/INPUT/FORWARD: */
-	return ipt_do_table(skb, state, state->net->ipv4.iptable_mangle);
+	return ipt_do_table(skb, ops->hooknum, in, out,
+			    dev_net(in)->ipv4.iptable_mangle);
 }
 
 static struct nf_hook_ops *mangle_ops __read_mostly;

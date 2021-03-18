@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -59,9 +59,6 @@ Rotation request flag
 /* use client provided dma buf instead of ion fd */
 #define SDE_ROTATION_EXT_DMA_BUF	0x20000
 
-/* secure camera operation*/
-#define SDE_ROTATION_SECURE_CAMERA	0x40000
-
 /**********************************************************************
 configuration structures
 **********************************************************************/
@@ -93,15 +90,6 @@ enum sde_rotator_ts {
 	SDE_ROTATOR_TS_SRCDQB,		/* dequeue source buffer */
 	SDE_ROTATOR_TS_DSTDQB,		/* dequeue destination buffer */
 	SDE_ROTATOR_TS_MAX
-};
-
-enum sde_rotator_clk_type {
-	SDE_ROTATOR_CLK_MDSS_AHB,
-	SDE_ROTATOR_CLK_MDSS_AXI,
-	SDE_ROTATOR_CLK_ROT_CORE,
-	SDE_ROTATOR_CLK_MDSS_ROT,
-	SDE_ROTATOR_CLK_MNOC_AHB,
-	SDE_ROTATOR_CLK_MAX
 };
 
 struct sde_rotation_item {
@@ -287,13 +275,12 @@ struct sde_rot_mgr {
 	int rot_enable_clk_cnt;
 	struct sde_rot_clk *rot_clk;
 	int num_rot_clk;
+	int core_clk_idx;
 	u32 rdot_limit;
 	u32 wrot_limit;
 
 	u32 hwacquire_timeout;
 	struct sde_mult_factor pixel_per_clk;
-	struct sde_mult_factor fudge_factor;
-	struct sde_mult_factor overhead;
 
 	int (*ops_config_hw)(struct sde_rot_hw_resource *hw,
 			struct sde_rot_entry *entry);
@@ -306,8 +293,6 @@ struct sde_rot_mgr {
 	void (*ops_hw_free)(struct sde_rot_mgr *mgr,
 			struct sde_rot_hw_resource *hw);
 	int (*ops_hw_init)(struct sde_rot_mgr *mgr);
-	void (*ops_hw_pre_pmevent)(struct sde_rot_mgr *mgr, bool pmon);
-	void (*ops_hw_post_pmevent)(struct sde_rot_mgr *mgr, bool pmon);
 	void (*ops_hw_destroy)(struct sde_rot_mgr *mgr);
 	ssize_t (*ops_hw_show_caps)(struct sde_rot_mgr *mgr,
 			struct device_attribute *attr, char *buf, ssize_t len);
@@ -317,31 +302,9 @@ struct sde_rot_mgr {
 			struct dentry *debugfs_root);
 	int (*ops_hw_validate_entry)(struct sde_rot_mgr *mgr,
 			struct sde_rot_entry *entry);
-	u32 (*ops_hw_get_pixfmt)(struct sde_rot_mgr *mgr, int index,
-			bool input);
-	int (*ops_hw_is_valid_pixfmt)(struct sde_rot_mgr *mgr, u32 pixfmt,
-			bool input);
 
 	void *hw_data;
 };
-
-static inline int sde_rotator_is_valid_pixfmt(struct sde_rot_mgr *mgr,
-		u32 pixfmt, bool input)
-{
-	if (mgr && mgr->ops_hw_is_valid_pixfmt)
-		return mgr->ops_hw_is_valid_pixfmt(mgr, pixfmt, input);
-
-	return false;
-}
-
-static inline u32 sde_rotator_get_pixfmt(struct sde_rot_mgr *mgr,
-		int index, bool input)
-{
-	if (mgr && mgr->ops_hw_get_pixfmt)
-		return mgr->ops_hw_get_pixfmt(mgr, index, input);
-
-	return 0;
-}
 
 static inline int __compare_session_item_rect(
 	struct sde_rotation_buf_info *s_rect,
@@ -413,23 +376,12 @@ void sde_rotator_remove_request(struct sde_rot_mgr *mgr,
 	struct sde_rot_file_private *private,
 	struct sde_rot_entry_container *req);
 
-int sde_rotator_verify_config_all(struct sde_rot_mgr *rot_dev,
-	struct sde_rotation_config *config);
-
-int sde_rotator_verify_config_input(struct sde_rot_mgr *rot_dev,
-	struct sde_rotation_config *config);
-
-int sde_rotator_verify_config_output(struct sde_rot_mgr *rot_dev,
+int sde_rotator_verify_config(struct sde_rot_mgr *rot_dev,
 	struct sde_rotation_config *config);
 
 int sde_rotator_validate_request(struct sde_rot_mgr *rot_dev,
 	struct sde_rot_file_private *ctx,
 	struct sde_rot_entry_container *req);
-
-int sde_rotator_clk_ctrl(struct sde_rot_mgr *mgr, int enable);
-
-void sde_rotator_cancel_all_requests(struct sde_rot_mgr *mgr,
-	struct sde_rot_file_private *private);
 
 static inline void sde_rot_mgr_lock(struct sde_rot_mgr *mgr)
 {
@@ -441,7 +393,7 @@ static inline void sde_rot_mgr_unlock(struct sde_rot_mgr *mgr)
 	mutex_unlock(&mgr->lock);
 }
 
-#if defined(CONFIG_PM)
+#if defined(CONFIG_PM_RUNTIME)
 int sde_rotator_runtime_resume(struct device *dev);
 int sde_rotator_runtime_suspend(struct device *dev);
 int sde_rotator_runtime_idle(struct device *dev);

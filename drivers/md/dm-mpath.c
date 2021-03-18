@@ -11,7 +11,6 @@
 #include "dm-path-selector.h"
 #include "dm-uevent.h"
 
-#include <linux/blkdev.h>
 #include <linux/ctype.h>
 #include <linux/init.h>
 #include <linux/mempool.h>
@@ -159,9 +158,12 @@ static struct priority_group *alloc_priority_group(void)
 static void free_pgpaths(struct list_head *pgpaths, struct dm_target *ti)
 {
 	struct pgpath *pgpath, *tmp;
+	struct multipath *m = ti->private;
 
 	list_for_each_entry_safe(pgpath, tmp, pgpaths, list) {
 		list_del(&pgpath->list);
+		if (m->hw_handler_name)
+			scsi_dh_detach(bdev_get_queue(pgpath->path.dev->bdev));
 		dm_put_device(ti, pgpath->path.dev);
 		free_pgpath(pgpath);
 	}
@@ -376,18 +378,18 @@ static int __must_push_back(struct multipath *m)
 /*
  * Map cloned requests
  */
-static int __multipath_map(struct dm_target *ti, struct request *clone,
-			   union map_info *map_context,
-			   struct request *rq, struct request **__clone)
+static int multipath_map(struct dm_target *ti, struct request *clone,
+			 union map_info *map_context)
 {
 	struct multipath *m = (struct multipath *) ti->private;
 	int r = DM_MAPIO_REQUEUE;
-	size_t nr_bytes = clone ? blk_rq_bytes(clone) : blk_rq_bytes(rq);
+	size_t nr_bytes = blk_rq_bytes(clone);
+	unsigned long flags;
 	struct pgpath *pgpath;
 	struct block_device *bdev;
 	struct dm_mpath_io *mpio;
 
-	spin_lock_irq(&m->lock);
+	spin_lock_irqsave(&m->lock, flags);
 
 	/* Do we need to select a new pgpath? */
 	if (!m->current_pgpath ||
@@ -409,61 +411,23 @@ static int __multipath_map(struct dm_target *ti, struct request *clone,
 		/* ENOMEM, requeue */
 		goto out_unlock;
 
+	bdev = pgpath->path.dev->bdev;
+	clone->q = bdev_get_queue(bdev);
+	clone->rq_disk = bdev->bd_disk;
+	clone->cmd_flags |= REQ_FAILFAST_TRANSPORT;
 	mpio = map_context->ptr;
 	mpio->pgpath = pgpath;
 	mpio->nr_bytes = nr_bytes;
-
-	bdev = pgpath->path.dev->bdev;
-
-	spin_unlock_irq(&m->lock);
-
-	if (clone) {
-		/* Old request-based interface: allocated clone is passed in */
-		clone->q = bdev_get_queue(bdev);
-		clone->rq_disk = bdev->bd_disk;
-		clone->cmd_flags |= REQ_FAILFAST_TRANSPORT;
-	} else {
-		/* blk-mq request-based interface */
-		*__clone = blk_get_request(bdev_get_queue(bdev),
-					   rq_data_dir(rq), GFP_ATOMIC);
-		if (IS_ERR(*__clone)) {
-			/* ENOMEM, requeue */
-			clear_mapinfo(m, map_context);
-			return r;
-		}
-		(*__clone)->bio = (*__clone)->biotail = NULL;
-		(*__clone)->rq_disk = bdev->bd_disk;
-		(*__clone)->cmd_flags |= REQ_FAILFAST_TRANSPORT;
-	}
-
 	if (pgpath->pg->ps.type->start_io)
 		pgpath->pg->ps.type->start_io(&pgpath->pg->ps,
 					      &pgpath->path,
 					      nr_bytes);
-	return DM_MAPIO_REMAPPED;
+	r = DM_MAPIO_REMAPPED;
 
 out_unlock:
-	spin_unlock_irq(&m->lock);
+	spin_unlock_irqrestore(&m->lock, flags);
 
 	return r;
-}
-
-static int multipath_map(struct dm_target *ti, struct request *clone,
-			 union map_info *map_context)
-{
-	return __multipath_map(ti, clone, map_context, NULL, NULL);
-}
-
-static int multipath_clone_and_map(struct dm_target *ti, struct request *rq,
-				   union map_info *map_context,
-				   struct request **clone)
-{
-	return __multipath_map(ti, NULL, map_context, rq, clone);
-}
-
-static void multipath_release_clone(struct request *clone)
-{
-	blk_put_request(clone);
 }
 
 /*
@@ -577,7 +541,6 @@ static struct pgpath *parse_path(struct dm_arg_set *as, struct path_selector *ps
 		q = bdev_get_queue(p->path.dev->bdev);
 
 	if (m->retain_attached_hw_handler) {
-retain:
 		attached_handler_name = scsi_dh_attached_handler_name(q, GFP_KERNEL);
 		if (attached_handler_name) {
 			/*
@@ -597,14 +560,20 @@ retain:
 	}
 
 	if (m->hw_handler_name) {
+		/*
+		 * Increments scsi_dh reference, even when using an
+		 * already-attached handler.
+		 */
 		r = scsi_dh_attach(q, m->hw_handler_name);
 		if (r == -EBUSY) {
-			char b[BDEVNAME_SIZE];
-
-			printk(KERN_INFO "dm-mpath: retaining handler on device %s\n",
-				bdevname(p->path.dev->bdev, b));
-			goto retain;
+			/*
+			 * Already attached to different hw_handler:
+			 * try to reattach with correct one.
+			 */
+			scsi_dh_detach(q);
+			r = scsi_dh_attach(q, m->hw_handler_name);
 		}
+
 		if (r < 0) {
 			ti->error = "error attaching hardware handler";
 			dm_put_device(ti, p->path.dev);
@@ -616,6 +585,7 @@ retain:
 			if (r < 0) {
 				ti->error = "unable to set hardware "
 							"handler parameters";
+				scsi_dh_detach(q);
 				dm_put_device(ti, p->path.dev);
 				goto bad;
 			}
@@ -725,6 +695,12 @@ static int parse_hw_handler(struct dm_arg_set *as, struct multipath *m)
 		return 0;
 
 	m->hw_handler_name = kstrdup(dm_shift_arg(as), GFP_KERNEL);
+	if (!try_then_request_module(scsi_dh_handler_exist(m->hw_handler_name),
+				     "scsi_dh_%s", m->hw_handler_name)) {
+		ti->error = "unknown hardware handler type";
+		ret = -EINVAL;
+		goto fail;
+	}
 
 	if (hw_argc > 1) {
 		char *p;
@@ -1533,38 +1509,49 @@ out:
 	return r;
 }
 
-static int multipath_prepare_ioctl(struct dm_target *ti,
-		struct block_device **bdev, fmode_t *mode)
+static int multipath_ioctl(struct dm_target *ti, unsigned int cmd,
+			   unsigned long arg)
 {
 	struct multipath *m = ti->private;
+	struct pgpath *pgpath;
+	struct block_device *bdev;
+	fmode_t mode;
 	unsigned long flags;
 	int r;
+
+	bdev = NULL;
+	mode = 0;
+	r = 0;
 
 	spin_lock_irqsave(&m->lock, flags);
 
 	if (!m->current_pgpath)
 		__choose_pgpath(m, 0);
 
-	if (m->current_pgpath) {
-		if (!m->queue_io) {
-			*bdev = m->current_pgpath->path.dev->bdev;
-			*mode = m->current_pgpath->path.dev->mode;
-			r = 0;
-		} else {
-			/* pg_init has not started or completed */
-			r = -ENOTCONN;
-		}
-	} else {
-		/* No path is available */
-		if (m->queue_if_no_path)
-			r = -ENOTCONN;
-		else
-			r = -EIO;
+	pgpath = m->current_pgpath;
+
+	if (pgpath) {
+		bdev = pgpath->path.dev->bdev;
+		mode = pgpath->path.dev->mode;
 	}
+
+	if ((pgpath && m->queue_io) || (!pgpath && m->queue_if_no_path))
+		r = -ENOTCONN;
+	else if (!bdev)
+		r = -EIO;
 
 	spin_unlock_irqrestore(&m->lock, flags);
 
-	if (r == -ENOTCONN) {
+	/*
+	 * Only pass ioctls through if the device sizes match exactly.
+	 */
+	if (!bdev || ti->len != i_size_read(bdev->bd_inode) >> SECTOR_SHIFT) {
+		int err = scsi_verify_blk_ioctl(NULL, cmd);
+		if (err)
+			r = err;
+	}
+
+	if (r == -ENOTCONN && !fatal_signal_pending(current)) {
 		spin_lock_irqsave(&m->lock, flags);
 		if (!m->current_pg) {
 			/* Path status changed, redo selection */
@@ -1576,12 +1563,7 @@ static int multipath_prepare_ioctl(struct dm_target *ti,
 		dm_table_run_md_queue_async(m->ti->table);
 	}
 
-	/*
-	 * Only pass ioctls through if the device sizes match exactly.
-	 */
-	if (!r && ti->len != i_size_read((*bdev)->bd_inode) >> SECTOR_SHIFT)
-		return 1;
-	return r;
+	return r ? : __blkdev_driver_ioctl(bdev, mode, cmd, arg);
 }
 
 static int multipath_iterate_devices(struct dm_target *ti,
@@ -1608,7 +1590,7 @@ static int __pgpath_busy(struct pgpath *pgpath)
 {
 	struct request_queue *q = bdev_get_queue(pgpath->path.dev->bdev);
 
-	return blk_lld_busy(q);
+	return dm_underlying_device_busy(q);
 }
 
 /*
@@ -1684,20 +1666,18 @@ out:
  *---------------------------------------------------------------*/
 static struct target_type multipath_target = {
 	.name = "multipath",
-	.version = {1, 10, 0},
+	.version = {1, 7, 0},
 	.module = THIS_MODULE,
 	.ctr = multipath_ctr,
 	.dtr = multipath_dtr,
 	.map_rq = multipath_map,
-	.clone_and_map_rq = multipath_clone_and_map,
-	.release_clone_rq = multipath_release_clone,
 	.rq_end_io = multipath_end_io,
 	.presuspend = multipath_presuspend,
 	.postsuspend = multipath_postsuspend,
 	.resume = multipath_resume,
 	.status = multipath_status,
 	.message = multipath_message,
-	.prepare_ioctl = multipath_prepare_ioctl,
+	.ioctl  = multipath_ioctl,
 	.iterate_devices = multipath_iterate_devices,
 	.busy = multipath_busy,
 };
@@ -1714,15 +1694,16 @@ static int __init dm_multipath_init(void)
 	r = dm_register_target(&multipath_target);
 	if (r < 0) {
 		DMERR("register failed %d", r);
-		r = -EINVAL;
-		goto bad_register_target;
+		kmem_cache_destroy(_mpio_cache);
+		return -EINVAL;
 	}
 
 	kmultipathd = alloc_workqueue("kmpathd", WQ_MEM_RECLAIM, 0);
 	if (!kmultipathd) {
 		DMERR("failed to create workqueue kmpathd");
-		r = -ENOMEM;
-		goto bad_alloc_kmultipathd;
+		dm_unregister_target(&multipath_target);
+		kmem_cache_destroy(_mpio_cache);
+		return -ENOMEM;
 	}
 
 	/*
@@ -1735,22 +1716,15 @@ static int __init dm_multipath_init(void)
 						  WQ_MEM_RECLAIM);
 	if (!kmpath_handlerd) {
 		DMERR("failed to create workqueue kmpath_handlerd");
-		r = -ENOMEM;
-		goto bad_alloc_kmpath_handlerd;
+		destroy_workqueue(kmultipathd);
+		dm_unregister_target(&multipath_target);
+		kmem_cache_destroy(_mpio_cache);
+		return -ENOMEM;
 	}
 
 	DMINFO("version %u.%u.%u loaded",
 	       multipath_target.version[0], multipath_target.version[1],
 	       multipath_target.version[2]);
-
-	return 0;
-
-bad_alloc_kmpath_handlerd:
-	destroy_workqueue(kmultipathd);
-bad_alloc_kmultipathd:
-	dm_unregister_target(&multipath_target);
-bad_register_target:
-	kmem_cache_destroy(_mpio_cache);
 
 	return r;
 }

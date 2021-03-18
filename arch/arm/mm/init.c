@@ -22,7 +22,6 @@
 #include <linux/memblock.h>
 #include <linux/dma-contiguous.h>
 #include <linux/sizes.h>
-#include <linux/stop_machine.h>
 
 #include <asm/cp15.h>
 #include <asm/mach-types.h>
@@ -69,7 +68,7 @@ early_param("initrd", early_initrd);
 
 static int __init parse_tag_initrd(const struct tag *tag)
 {
-	pr_warn("ATAG_INITRD is deprecated; "
+	printk(KERN_WARNING "ATAG_INITRD is deprecated; "
 		"please update your bootloader.\n");
 	phys_initrd_start = __virt_to_phys(tag->u.initrd.start);
 	phys_initrd_size = tag->u.initrd.size;
@@ -86,6 +85,55 @@ static int __init parse_tag_initrd2(const struct tag *tag)
 }
 
 __tagtable(ATAG_INITRD2, parse_tag_initrd2);
+
+/*
+ * This keeps memory configuration data used by a couple memory
+ * initialization functions, as well as show_mem() for the skipping
+ * of holes in the memory map.  It is populated by arm_add_memory().
+ */
+void show_mem(unsigned int filter)
+{
+	int free = 0, total = 0, reserved = 0;
+	int shared = 0, cached = 0, slab = 0;
+	struct memblock_region *reg;
+
+	printk("Mem-info:\n");
+	show_free_areas(filter);
+
+	for_each_memblock (memory, reg) {
+		unsigned int pfn1, pfn2;
+		struct page *page, *end;
+
+		pfn1 = memblock_region_memory_base_pfn(reg);
+		pfn2 = memblock_region_memory_end_pfn(reg);
+
+		page = pfn_to_page(pfn1);
+		end  = pfn_to_page(pfn2 - 1) + 1;
+
+		do {
+			total++;
+			if (PageReserved(page))
+				reserved++;
+			else if (PageSwapCache(page))
+				cached++;
+			else if (PageSlab(page))
+				slab++;
+			else if (!page_count(page))
+				free++;
+			else
+				shared += page_count(page) - 1;
+			pfn1++;
+			page = pfn_to_page(pfn1);
+		} while (pfn1 < pfn2);
+	}
+
+	printk("%d pages of RAM\n", total);
+	printk("%d free pages\n", free);
+	printk("%d reserved pages\n", reserved);
+	printk("%d slab pages\n", slab);
+	printk("%d pages shared\n", shared);
+	printk("%d pages swap cached\n", cached);
+}
 
 static void __init find_limits(unsigned long *min, unsigned long *max_low,
 			       unsigned long *max_high)
@@ -269,10 +317,12 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 	if (mdesc->reserve)
 		mdesc->reserve();
 
-	early_init_fdt_reserve_self();
 	early_init_fdt_scan_reserved_mem();
 
-	/* reserve memory for DMA contiguous allocations */
+	/*
+	 * reserve memory for DMA contigouos allocations,
+	 * must come from DMA area inside low memory
+	 */
 	dma_contiguous_reserve(arm_dma_limit);
 
 	arm_memblock_steal_permitted = false;
@@ -542,7 +592,7 @@ void __init mem_init(void)
 
 	mem_init_print_info(NULL);
 
-	pr_notice("Virtual kernel memory layout:\n"
+	printk(KERN_NOTICE "Virtual kernel memory layout:\n"
 			"    vector  : 0x%08lx - 0x%08lx   (%4ld kB)\n"
 #ifdef CONFIG_HAVE_TCM
 			"    DTCM    : 0x%08lx - 0x%08lx   (%4ld kB)\n"
@@ -669,8 +719,8 @@ static struct section_perm ro_perms[] = {
 		.start  = (unsigned long)_stext,
 		.end    = (unsigned long)__init_begin,
 #ifdef CONFIG_ARM_LPAE
-		.mask   = ~L_PMD_SECT_RDONLY,
-		.prot   = L_PMD_SECT_RDONLY,
+		.mask   = ~PMD_SECT_RDONLY,
+		.prot   = PMD_SECT_RDONLY,
 #else
 		.mask   = ~(PMD_SECT_APX | PMD_SECT_AP_WRITE),
 		.prot   = PMD_SECT_APX | PMD_SECT_AP_WRITE,
@@ -705,22 +755,26 @@ static int __pte_update(pte_t *ptep, pgtable_t token, unsigned long addr,
 }
 
 static inline void pte_update(unsigned long addr, pteval_t mask,
-				  pteval_t prot, struct mm_struct *mm)
+				  pteval_t prot)
 {
 	struct pte_data data;
+	struct mm_struct *mm;
 
 	data.mask = mask;
 	data.val = prot;
+	mm = current->active_mm;
 
 	apply_to_page_range(mm, addr, SECTION_SIZE, __pte_update, &data);
 	flush_tlb_kernel_range(addr, addr + SECTION_SIZE);
 }
 
 static inline void section_update(unsigned long addr, pmdval_t mask,
-				  pmdval_t prot, struct mm_struct *mm)
+				  pmdval_t prot)
 {
+	struct mm_struct *mm;
 	pmd_t *pmd;
 
+	mm = current->active_mm;
 	pmd = pmd_offset(pud_offset(pgd_offset(mm, addr), addr), addr);
 
 #ifdef CONFIG_ARM_LPAE
@@ -744,92 +798,60 @@ static inline bool arch_has_strict_perms(void)
 	return !!(get_cr() & CR_XP);
 }
 
-void set_section_perms(struct section_perm *perms, int n, bool set,
-			struct mm_struct *mm)
-{
-	size_t i;
-	unsigned long addr;
-
-	if (!arch_has_strict_perms())
-		return;
-
-	for (i = 0; i < n; i++) {
-		if (!IS_ALIGNED(perms[i].start, SECTION_SIZE) ||
-		    !IS_ALIGNED(perms[i].end, SECTION_SIZE)) {
-			pr_err("BUG: section %lx-%lx not aligned to %lx\n",
-				perms[i].start, perms[i].end,
-				SECTION_SIZE);
-			continue;
-		}
-
-		for (addr = perms[i].start;
-		     addr < perms[i].end;
-		     addr += SECTION_SIZE) {
-			pmd_t *pmd;
-
-			pmd = pmd_offset(pud_offset(pgd_offset(mm, addr),
-						addr), addr);
-			if (pmd_bad(*pmd))
-				section_update(addr, perms[i].mask,
-					       set ? perms[i].prot : perms[i].clear,
-					       mm);
-			else
-				pte_update(addr, perms[i].ptemask,
-					       set ? perms[i].pteprot : perms[i].pteclear,
-					       mm);
-		}
-	}
+#define set_section_perms(perms, field)	{				\
+	size_t i;							\
+	unsigned long addr;						\
+									\
+	if (!arch_has_strict_perms())					\
+		return;							\
+									\
+	for (i = 0; i < ARRAY_SIZE(perms); i++) {			\
+		if (!IS_ALIGNED(perms[i].start, SECTION_SIZE) ||	\
+		    !IS_ALIGNED(perms[i].end, SECTION_SIZE)) {		\
+			pr_err("BUG: section %lx-%lx not aligned to %lx\n", \
+				perms[i].start, perms[i].end,		\
+				SECTION_SIZE);				\
+			continue;					\
+		}							\
+									\
+		for (addr = perms[i].start;				\
+		     addr < perms[i].end;				\
+		     addr += SECTION_SIZE) {				\
+			pmd_t *pmd;					\
+			struct mm_struct *mm;				\
+									\
+			mm = current->active_mm;			\
+			pmd = pmd_offset(pud_offset(pgd_offset(mm, addr), \
+						addr), addr);		\
+			if (pmd_bad(*pmd))				\
+				section_update(addr, perms[i].mask,	\
+					       perms[i].field);		\
+			else						\
+				pte_update(addr, perms[i].ptemask,	\
+					       perms[i].pte##field);	\
+		}							\
+	}								\
 }
 
-static void update_sections_early(struct section_perm perms[], int n)
+static inline void fix_kernmem_perms(void)
 {
-	struct task_struct *t, *s;
-
-	read_lock(&tasklist_lock);
-	for_each_process(t) {
-		if (t->flags & PF_KTHREAD)
-			continue;
-		for_each_thread(t, s)
-			set_section_perms(perms, n, true, s->mm);
-	}
-	read_unlock(&tasklist_lock);
-	set_section_perms(perms, n, true, current->active_mm);
-	set_section_perms(perms, n, true, &init_mm);
-}
-
-int __fix_kernmem_perms(void *unused)
-{
-	update_sections_early(nx_perms, ARRAY_SIZE(nx_perms));
-	return 0;
-}
-
-void fix_kernmem_perms(void)
-{
-	stop_machine(__fix_kernmem_perms, NULL, NULL);
+	set_section_perms(nx_perms, prot);
 }
 
 #ifdef CONFIG_DEBUG_RODATA
-int __mark_rodata_ro(void *unused)
-{
-	update_sections_early(ro_perms, ARRAY_SIZE(ro_perms));
-	return 0;
-}
-
 void mark_rodata_ro(void)
 {
-	stop_machine(__mark_rodata_ro, NULL, NULL);
+	set_section_perms(ro_perms, prot);
 }
 
 void set_kernel_text_rw(void)
 {
-	set_section_perms(ro_perms, ARRAY_SIZE(ro_perms), false,
-				current->active_mm);
+	set_section_perms(ro_perms, clear);
 }
 
 void set_kernel_text_ro(void)
 {
-	set_section_perms(ro_perms, ARRAY_SIZE(ro_perms), true,
-				current->active_mm);
+	set_section_perms(ro_perms, prot);
 }
 #endif /* CONFIG_DEBUG_RODATA */
 

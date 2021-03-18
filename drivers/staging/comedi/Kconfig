@@ -2,7 +2,7 @@ config COMEDI
 	tristate "Data acquisition support (comedi)"
 	depends on m
 	---help---
-	  Enable support for a wide range of data acquisition devices
+	  Enable support a wide range of data acquisition devices
 	  for Linux.
 
 if COMEDI
@@ -108,7 +108,6 @@ if COMEDI_ISA_DRIVERS
 
 config COMEDI_PCL711
 	tristate "Advantech PCL-711/711b and ADlink ACL-8112 ISA card support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Advantech PCL-711 and 711b, ADlink ACL-8112
 
@@ -169,8 +168,7 @@ config COMEDI_PCL730
 
 config COMEDI_PCL812
 	tristate "Advantech PCL-812/813 and ADlink ACL-8112/8113/8113/8216"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for Advantech PCL-812/PG, PCL-813/B, ADLink
 	  ACL-8112DG/HG/PG, ACL-8113, ACL-8216, ICP DAS A-821PGH/PGL/PGL-NDA,
@@ -181,8 +179,7 @@ config COMEDI_PCL812
 
 config COMEDI_PCL816
 	tristate "Advantech PCL-814 and PCL-816 ISA card support"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for Advantech PCL-814 and PCL-816 ISA cards
 
@@ -191,8 +188,7 @@ config COMEDI_PCL816
 
 config COMEDI_PCL818
 	tristate "Advantech PCL-718 and PCL-818 ISA card support"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for Advantech PCL-818 ISA cards
 	  PCL-818L, PCL-818H, PCL-818HD, PCL-818HG, PCL-818 and PCL-718
@@ -263,7 +259,6 @@ config COMEDI_DAC02
 
 config COMEDI_DAS16M1
 	tristate "MeasurementComputing CIO-DAS16/M1DAS-16 ISA card support"
-	select COMEDI_8254
 	select COMEDI_8255
 	---help---
 	  Enable support for Measurement Computing CIO-DAS16/M1 ISA cards.
@@ -286,8 +281,7 @@ config COMEDI_DAS08_ISA
 
 config COMEDI_DAS16
 	tristate "DAS-16 compatible ISA and PC/104 card support"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on ISA_DMA_API
 	select COMEDI_8255
 	---help---
 	  Enable support for Keithley Metrabyte/ComputerBoards DAS16
@@ -304,7 +298,6 @@ config COMEDI_DAS16
 
 config COMEDI_DAS800
 	tristate "DAS800 and compatible ISA card support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Keithley Metrabyte DAS800 and compatible ISA cards
 	  Keithley Metrabyte DAS-800, DAS-801, DAS-802
@@ -316,8 +309,7 @@ config COMEDI_DAS800
 
 config COMEDI_DAS1800
 	tristate "DAS1800 and compatible ISA card support"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for DAS1800 and compatible ISA cards
 	  Keithley Metrabyte DAS-1701ST, DAS-1701ST-DA, DAS-1701/AO,
@@ -331,7 +323,6 @@ config COMEDI_DAS1800
 
 config COMEDI_DAS6402
 	tristate "DAS6402 and compatible ISA card support"
-	select COMEDI_8254
 	---help---
 	  Enable support for DAS6402 and compatible ISA cards
 	  Computerboards, Keithley Metrabyte DAS6402 and compatibles
@@ -381,7 +372,7 @@ config COMEDI_DT2817
 
 config COMEDI_DT282X
 	tristate "Data Translation DT2821 series and DT-EZ ISA card support"
-	select COMEDI_ISADMA if ISA_DMA_API
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for Data Translation DT2821 series including DT-EZ
 	  DT2821, DT2821-F-16SE, DT2821-F-8DI, DT2821-G-16SE, DT2821-G-8DI,
@@ -393,12 +384,19 @@ config COMEDI_DT282X
 
 config COMEDI_DMM32AT
 	tristate "Diamond Systems MM-32-AT PC/104 board support"
-	select COMEDI_8255
 	---help---
 	  Enable support for Diamond Systems MM-32-AT PC/104 boards
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called dmm32at.
+
+config COMEDI_UNIOXX5
+	tristate "Fastwel UNIOxx-5 analog and digital io board support"
+	---help---
+	  Enable support for Fastwel UNIOxx-5 (analog and digital i/o) boards
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called unioxx5.
 
 config COMEDI_FL512
 	tristate "FL512 ISA card support"
@@ -410,7 +408,6 @@ config COMEDI_FL512
 
 config COMEDI_AIO_AIO12_8
 	tristate "I/O Products PC/104 AIO12-8 Analog I/O Board support"
-	select COMEDI_8254
 	select COMEDI_8255
 	---help---
 	  Enable support for I/O Products PC/104 AIO12-8 Analog I/O Board
@@ -464,8 +461,7 @@ config COMEDI_ADQ12B
 
 config COMEDI_NI_AT_A2150
 	tristate "NI AT-A2150 ISA card support"
-	select COMEDI_ISADMA if ISA_DMA_API
-	select COMEDI_8254
+	depends on VIRT_TO_BUS && ISA_DMA_API
 	---help---
 	  Enable support for National Instruments AT-A2150 cards
 
@@ -474,7 +470,6 @@ config COMEDI_NI_AT_A2150
 
 config COMEDI_NI_AT_AO
 	tristate "NI AT-AO-6/10 EISA card support"
-	select COMEDI_8254
 	---help---
 	  Enable support for National Instruments AT-AO-6/10 cards
 
@@ -506,7 +501,7 @@ config COMEDI_NI_ATMIO16D
 config COMEDI_NI_LABPC_ISA
 	tristate "NI Lab-PC and compatibles ISA support"
 	select COMEDI_NI_LABPC
-	select COMEDI_NI_LABPC_ISADMA if ISA_DMA_API
+	select COMEDI_NI_LABPC_ISADMA if ISA_DMA_API && VIRT_TO_BUS
 	---help---
 	  Enable support for National Instruments Lab-PC and compatibles
 	  Lab-PC-1200, Lab-PC-1200AI, Lab-PC+.
@@ -569,13 +564,10 @@ config COMEDI_S526
 endif # COMEDI_ISA_DRIVERS
 
 menuconfig COMEDI_PCI_DRIVERS
-	tristate "Comedi PCI drivers"
+	bool "Comedi PCI drivers"
 	depends on PCI
 	---help---
 	  Enable support for comedi PCI drivers.
-
-	  To compile this support as a module, choose M here: the module will
-	  be called comedi_pci.
 
 if COMEDI_PCI_DRIVERS
 
@@ -602,6 +594,14 @@ config COMEDI_ADDI_WATCHDOG
 	  Provides support for the watchdog subdevice found on many ADDI-DATA
 	  boards. This module will be automatically selected when needed. The
 	  module will be called addi_watchdog.
+
+config COMEDI_ADDI_APCI_035
+	tristate "ADDI-DATA APCI_035 support"
+	---help---
+	  Enable support for ADDI-DATA APCI_035 cards
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called addi_apci_035.
 
 config COMEDI_ADDI_APCI_1032
 	tristate "ADDI-DATA APCI_1032 support"
@@ -719,7 +719,6 @@ config COMEDI_ADL_PCI8164
 
 config COMEDI_ADL_PCI9111
 	tristate "ADLink PCI-9111HR support"
-	select COMEDI_8254
 	---help---
 	  Enable support for ADlink PCI9111 cards
 
@@ -729,7 +728,7 @@ config COMEDI_ADL_PCI9111
 config COMEDI_ADL_PCI9118
 	tristate "ADLink PCI-9118DG, PCI-9118HG, PCI-9118HR support"
 	depends on HAS_DMA
-	select COMEDI_8254
+	depends on VIRT_TO_BUS
 	---help---
 	  Enable support for ADlink PCI-9118DG, PCI-9118HG, PCI-9118HR cards
 
@@ -738,7 +737,6 @@ config COMEDI_ADL_PCI9118
 
 config COMEDI_ADV_PCI1710
 	tristate "Advantech PCI-171x, PCI-1720 and PCI-1731 support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Advantech PCI-1710, PCI-1710HG, PCI-1711,
 	  PCI-1713, PCI-1720 and PCI-1731
@@ -766,7 +764,6 @@ config COMEDI_ADV_PCI1724
 
 config COMEDI_ADV_PCI_DIO
 	tristate "Advantech PCI DIO card support"
-	select COMEDI_8254
 	select COMEDI_8255
 	---help---
 	  Enable support for Advantech PCI DIO cards
@@ -807,7 +804,6 @@ config COMEDI_AMPLC_PC263_PCI
 
 config COMEDI_AMPLC_PCI224
 	tristate "Amplicon PCI224 and PCI234 support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Amplicon PCI224 and PCI234 AO boards
 
@@ -816,7 +812,6 @@ config COMEDI_AMPLC_PCI224
 
 config COMEDI_AMPLC_PCI230
 	tristate "Amplicon PCI230 and PCI260 support"
-	select COMEDI_8254
 	select COMEDI_8255
 	---help---
 	  Enable support for Amplicon PCI230 and PCI260 Multifunction I/O
@@ -922,7 +917,6 @@ config COMEDI_CB_PCIDAS64
 
 config COMEDI_CB_PCIDAS
 	tristate "MeasurementComputing PCI-DAS support"
-	select COMEDI_8254
 	select COMEDI_8255
 	---help---
 	  Enable support for ComputerBoards/MeasurementComputing PCI-DAS with
@@ -945,12 +939,11 @@ config COMEDI_CB_PCIDDA
 	  called cb_pcidda.
 
 config COMEDI_CB_PCIMDAS
-	tristate "MeasurementComputing PCIM-DAS1602/16, PCIe-DAS1602/16 support"
-	select COMEDI_8254
+	tristate "MeasurementComputing PCIM-DAS1602/16 support"
 	select COMEDI_8255
 	---help---
 	  Enable support for ComputerBoards/MeasurementComputing PCI Migration
-	  series PCIM-DAS1602/16 and PCIe-DAS1602/16.
+	  series PCIM-DAS1602/16
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called cb_pcimdas.
@@ -966,7 +959,6 @@ config COMEDI_CB_PCIMDDA
 
 config COMEDI_ME4000
 	tristate "Meilhaus ME-4000 support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Meilhaus PCI data acquisition cards
 	  ME-4650, ME-4670i, ME-4680, ME-4680i and ME-4680is
@@ -1065,7 +1057,6 @@ config COMEDI_NI_PCIMIO
 
 config COMEDI_RTD520
 	tristate "Real Time Devices PCI4520/DM7520 support"
-	select COMEDI_8254
 	---help---
 	  Enable support for Real Time Devices PCI4520/DM7520
 
@@ -1093,19 +1084,15 @@ config COMEDI_NI_TIOCMD
 endif # COMEDI_PCI_DRIVERS
 
 menuconfig COMEDI_PCMCIA_DRIVERS
-	tristate "Comedi PCMCIA drivers"
+	bool "Comedi PCMCIA drivers"
 	depends on PCMCIA
 	---help---
 	  Enable support for comedi PCMCIA drivers.
-
-	  To compile this support as a module, choose M here: the module will
-	  be called comedi_pcmcia.
 
 if COMEDI_PCMCIA_DRIVERS
 
 config COMEDI_CB_DAS16_CS
 	tristate "CB DAS16 series PCMCIA support"
-	select COMEDI_8254
 	---help---
 	  Enable support for the ComputerBoards/MeasurementComputing PCMCIA
 	  cards DAS16/16, PCM-DAS16D/12 and PCM-DAS16s/16
@@ -1173,13 +1160,10 @@ config COMEDI_QUATECH_DAQP_CS
 endif # COMEDI_PCMCIA_DRIVERS
 
 menuconfig COMEDI_USB_DRIVERS
-	tristate "Comedi USB drivers"
+	bool "Comedi USB drivers"
 	depends on USB
 	---help---
 	  Enable support for comedi USB drivers.
-
-	  To compile this support as a module, choose M here: the module will
-	  be called comedi_usb.
 
 if COMEDI_USB_DRIVERS
 
@@ -1237,26 +1221,17 @@ config COMEDI_VMK80XX
 
 endif # COMEDI_USB_DRIVERS
 
-config COMEDI_8254
-	tristate
-
 config COMEDI_8255
-	tristate
-
-config COMEDI_8255_SA
-	tristate "Standalone 8255 support"
-	select COMEDI_8255
+	tristate "Generic 8255 support"
 	---help---
-	  Enable support for 8255 digital I/O as a standalone driver.
+	  Enable generic 8255 support.
 
 	  You should enable compilation this driver if you plan to use a board
-	  that has an 8255 chip at a known I/O base address and there are no
-	  other Comedi drivers for the board.
+	  that has an 8255 chip. For multifunction boards, the main driver will
+	  configure the 8255 subdevice automatically.
 
-	  Note that Comedi drivers for most multi-function boards incorporating
-	  an 8255 chip use the 'comedi_8255' module.  Most PCI-based 8255
-	  boards use the 8255_pci driver as a wrapper around the 'comedi_8255'
-	  module.
+	  Note that most PCI based 8255 boards use the 8255_pci driver as a
+	  wrapper around this driver.
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called 8255.
@@ -1276,7 +1251,6 @@ config COMEDI_KCOMEDILIB
 	  called kcomedilib.
 
 config COMEDI_AMPLC_DIO200
-	select COMEDI_8254
 	tristate
 
 config COMEDI_AMPLC_PC236
@@ -1285,20 +1259,14 @@ config COMEDI_AMPLC_PC236
 
 config COMEDI_DAS08
 	tristate
-	select COMEDI_8254
 	select COMEDI_8255
-
-config COMEDI_ISADMA
-	tristate
 
 config COMEDI_NI_LABPC
 	tristate
-	select COMEDI_8254
 	select COMEDI_8255
 
 config COMEDI_NI_LABPC_ISADMA
 	tristate
-	select COMEDI_ISADMA
 
 config COMEDI_NI_TIO
 	tristate

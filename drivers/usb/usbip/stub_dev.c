@@ -311,6 +311,7 @@ static int stub_probe(struct usb_device *udev)
 {
 	struct stub_device *sdev = NULL;
 	const char *udev_busid = dev_name(&udev->dev);
+	int err = 0;
 	struct bus_id_priv *busid_priv;
 	int rc;
 
@@ -371,28 +372,23 @@ static int stub_probe(struct usb_device *udev)
 			(struct usb_dev_state *) udev);
 	if (rc) {
 		dev_dbg(&udev->dev, "unable to claim port\n");
-		goto err_port;
+		return rc;
 	}
 
-	rc = stub_add_files(&udev->dev);
-	if (rc) {
+	err = stub_add_files(&udev->dev);
+	if (err) {
 		dev_err(&udev->dev, "stub_add_files for %s\n", udev_busid);
-		goto err_files;
+		dev_set_drvdata(&udev->dev, NULL);
+		usb_put_dev(udev);
+		kthread_stop_put(sdev->ud.eh);
+
+		busid_priv->sdev = NULL;
+		stub_device_free(sdev);
+		return err;
 	}
 	busid_priv->status = STUB_BUSID_ALLOC;
 
 	return 0;
-err_files:
-	usb_hub_release_port(udev->parent, udev->portnum,
-			     (struct usb_dev_state *) udev);
-err_port:
-	dev_set_drvdata(&udev->dev, NULL);
-	usb_put_dev(udev);
-	kthread_stop_put(sdev->ud.eh);
-
-	busid_priv->sdev = NULL;
-	stub_device_free(sdev);
-	return rc;
 }
 
 static void shutdown_busid(struct bus_id_priv *busid_priv)

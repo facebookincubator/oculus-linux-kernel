@@ -54,12 +54,16 @@ extern char etext[], _stext[];
 #ifdef HAVE_BATS
 extern phys_addr_t v_mapped_by_bats(unsigned long va);
 extern unsigned long p_mapped_by_bats(phys_addr_t pa);
+void setbat(int index, unsigned long virt, phys_addr_t phys,
+	    unsigned int size, int flags);
+
 #else /* !HAVE_BATS */
 #define v_mapped_by_bats(x)	(0UL)
 #define p_mapped_by_bats(x)	(0UL)
 #endif /* HAVE_BATS */
 
 #ifdef HAVE_TLBCAM
+extern unsigned int tlbcam_index;
 extern phys_addr_t v_mapped_by_tlbcam(unsigned long va);
 extern unsigned long p_mapped_by_tlbcam(phys_addr_t pa);
 #else /* !HAVE_TLBCAM */
@@ -69,25 +73,13 @@ extern unsigned long p_mapped_by_tlbcam(phys_addr_t pa);
 
 #define PGDIR_ORDER	(32 + PGD_T_LOG2 - PGDIR_SHIFT)
 
-#ifndef CONFIG_PPC_4K_PAGES
-static struct kmem_cache *pgtable_cache;
-
-void pgtable_cache_init(void)
-{
-	pgtable_cache = kmem_cache_create("PGDIR cache", 1 << PGDIR_ORDER,
-					  1 << PGDIR_ORDER, 0, NULL);
-	if (pgtable_cache == NULL)
-		panic("Couldn't allocate pgtable caches");
-}
-#endif
-
 pgd_t *pgd_alloc(struct mm_struct *mm)
 {
 	pgd_t *ret;
 
 	/* pgdir take page or two with 4K pages and a page fraction otherwise */
 #ifndef CONFIG_PPC_4K_PAGES
-	ret = kmem_cache_alloc(pgtable_cache, GFP_KERNEL | __GFP_ZERO);
+	ret = kzalloc(1 << PGDIR_ORDER, GFP_KERNEL);
 #else
 	ret = (pgd_t *)__get_free_pages(GFP_KERNEL|__GFP_ZERO,
 			PGDIR_ORDER - PAGE_SHIFT);
@@ -98,7 +90,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 {
 #ifndef CONFIG_PPC_4K_PAGES
-	kmem_cache_free(pgtable_cache, (void *)pgd);
+	kfree((void *)pgd);
 #else
 	free_pages((unsigned long)pgd, PGDIR_ORDER - PAGE_SHIFT);
 #endif
@@ -107,11 +99,13 @@ void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 __init_refok pte_t *pte_alloc_one_kernel(struct mm_struct *mm, unsigned long address)
 {
 	pte_t *pte;
+	extern int mem_init_done;
+	extern void *early_get_page(void);
 
-	if (slab_is_available()) {
+	if (mem_init_done) {
 		pte = (pte_t *)__get_free_page(GFP_KERNEL|__GFP_REPEAT|__GFP_ZERO);
 	} else {
-		pte = __va(memblock_alloc(PAGE_SIZE, PAGE_SIZE));
+		pte = (pte_t *)early_get_page();
 		if (pte)
 			clear_page(pte);
 	}
@@ -154,7 +148,7 @@ void __iomem *
 ioremap_prot(phys_addr_t addr, unsigned long size, unsigned long flags)
 {
 	/* writeable implies dirty for kernel addresses */
-	if ((flags & (_PAGE_RW | _PAGE_RO)) != _PAGE_RO)
+	if (flags & _PAGE_RW)
 		flags |= _PAGE_DIRTY | _PAGE_HWWRITE;
 
 	/* we don't want to let _PAGE_USER and _PAGE_EXEC leak out */
@@ -188,7 +182,7 @@ __ioremap_caller(phys_addr_t addr, unsigned long size, unsigned long flags,
 
 	/* Make sure we have the base flags */
 	if ((flags & _PAGE_PRESENT) == 0)
-		flags |= pgprot_val(PAGE_KERNEL);
+		flags |= PAGE_KERNEL;
 
 	/* Non-cacheable page cannot be coherent */
 	if (flags & _PAGE_NO_CACHE)
@@ -215,9 +209,9 @@ __ioremap_caller(phys_addr_t addr, unsigned long size, unsigned long flags,
 	 * Don't allow anybody to remap normal RAM that we're using.
 	 * mem_init() sets high_memory so only do the check after that.
 	 */
-	if (slab_is_available() && (p < virt_to_phys(high_memory)) &&
+	if (mem_init_done && (p < virt_to_phys(high_memory)) &&
 	    !(__allow_ioremap_reserved && memblock_is_region_reserved(p, size))) {
-		printk("__ioremap(): phys addr 0x%llx is RAM lr %ps\n",
+		printk("__ioremap(): phys addr 0x%llx is RAM lr %pf\n",
 		       (unsigned long long)p, __builtin_return_address(0));
 		return NULL;
 	}
@@ -243,7 +237,7 @@ __ioremap_caller(phys_addr_t addr, unsigned long size, unsigned long flags,
 	if ((v = p_mapped_by_tlbcam(p)))
 		goto out;
 
-	if (slab_is_available()) {
+	if (mem_init_done) {
 		struct vm_struct *area;
 		area = get_vm_area_caller(size, VM_IOREMAP, caller);
 		if (area == 0)
@@ -262,7 +256,7 @@ __ioremap_caller(phys_addr_t addr, unsigned long size, unsigned long flags,
 	for (i = 0; i < size && err == 0; i += PAGE_SIZE)
 		err = map_page(v+i, p+i, flags);
 	if (err) {
-		if (slab_is_available())
+		if (mem_init_done)
 			vunmap((void *)v);
 		return NULL;
 	}
@@ -323,7 +317,7 @@ void __init __mapin_ram_chunk(unsigned long offset, unsigned long top)
 	p = memstart_addr + s;
 	for (; s < top; s += PAGE_SIZE) {
 		ktext = ((char *) v >= _stext && (char *) v < etext);
-		f = ktext ? pgprot_val(PAGE_KERNEL_TEXT) : pgprot_val(PAGE_KERNEL);
+		f = ktext ? PAGE_KERNEL_TEXT : PAGE_KERNEL;
 		map_page(v, p, f);
 #ifdef CONFIG_PPC_STD_MMU_32
 		if (ktext)
@@ -436,7 +430,7 @@ static int change_page_attr(struct page *page, int numpages, pgprot_t prot)
 }
 
 
-void __kernel_map_pages(struct page *page, int numpages, int enable)
+void kernel_map_pages(struct page *page, int numpages, int enable)
 {
 	if (PageHighMem(page))
 		return;

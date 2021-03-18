@@ -17,7 +17,6 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/blkdev.h>
-#include <linux/backing-dev.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
 
@@ -103,8 +102,8 @@ static long madvise_behavior(struct vm_area_struct *vma,
 
 	pgoff = vma->vm_pgoff + ((start - vma->vm_start) >> PAGE_SHIFT);
 	*prev = vma_merge(mm, *prev, start, end, new_flags, vma->anon_vma,
-			  vma->vm_file, pgoff, vma_policy(vma),
-			  vma->vm_userfaultfd_ctx, vma_get_anon_name(vma));
+				vma->vm_file, pgoff, vma_policy(vma),
+				vma_get_anon_name(vma));
 	if (*prev) {
 		vma = *prev;
 		goto success;
@@ -157,7 +156,7 @@ static int swapin_walk_pmd_entry(pmd_t *pmd, unsigned long start,
 		pte = *(orig_pte + ((index - start) / PAGE_SIZE));
 		pte_unmap_unlock(orig_pte, ptl);
 
-		if (pte_present(pte) || pte_none(pte))
+		if (pte_present(pte) || pte_none(pte) || pte_file(pte))
 			continue;
 		entry = pte_to_swp_entry(pte);
 		if (unlikely(non_swap_entry(entry)))
@@ -224,24 +223,21 @@ static long madvise_willneed(struct vm_area_struct *vma,
 	struct file *file = vma->vm_file;
 
 #ifdef CONFIG_SWAP
-	if (!file) {
+	if (!file || mapping_cap_swap_backed(file->f_mapping)) {
 		*prev = vma;
-		force_swapin_readahead(vma, start, end);
+		if (!file)
+			force_swapin_readahead(vma, start, end);
+		else
+			force_shm_swapin_readahead(vma, start, end,
+						file->f_mapping);
 		return 0;
 	}
-
-	if (shmem_mapping(file->f_mapping)) {
-		*prev = vma;
-		force_shm_swapin_readahead(vma, start, end,
-					file->f_mapping);
-		return 0;
-	}
-#else
-	if (!file)
-		return -EBADF;
 #endif
 
-	if (IS_DAX(file_inode(file))) {
+	if (!file)
+		return -EBADF;
+
+	if (file->f_mapping->a_ops->get_xip_mem) {
 		/* no bad return value, but ignore advice */
 		return 0;
 	}
@@ -283,7 +279,14 @@ static long madvise_dontneed(struct vm_area_struct *vma,
 	if (vma->vm_flags & (VM_LOCKED|VM_HUGETLB|VM_PFNMAP))
 		return -EINVAL;
 
-	zap_page_range(vma, start, end - start, NULL);
+	if (unlikely(vma->vm_flags & VM_NONLINEAR)) {
+		struct zap_details details = {
+			.nonlinear_vma = vma,
+			.last_index = ULONG_MAX,
+		};
+		zap_page_range(vma, start, end - start, &details);
+	} else
+		zap_page_range(vma, start, end - start, NULL);
 	return 0;
 }
 
@@ -301,7 +304,7 @@ static long madvise_remove(struct vm_area_struct *vma,
 
 	*prev = NULL;	/* tell sys_madvise we drop mmap_sem */
 
-	if (vma->vm_flags & VM_LOCKED)
+	if (vma->vm_flags & (VM_LOCKED|VM_NONLINEAR|VM_HUGETLB))
 		return -EINVAL;
 
 	f = vma->vm_file;
@@ -324,7 +327,7 @@ static long madvise_remove(struct vm_area_struct *vma,
 	 */
 	get_file(f);
 	up_read(&current->mm->mmap_sem);
-	error = vfs_fallocate(f,
+	error = do_fallocate(f,
 				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 				offset, end - start);
 	fput(f);
@@ -386,7 +389,7 @@ madvise_vma(struct vm_area_struct *vma, struct vm_area_struct **prev,
 	}
 }
 
-static bool
+static int
 madvise_behavior_valid(int behavior)
 {
 	switch (behavior) {
@@ -408,10 +411,10 @@ madvise_behavior_valid(int behavior)
 #endif
 	case MADV_DONTDUMP:
 	case MADV_DODUMP:
-		return true;
+		return 1;
 
 	default:
-		return false;
+		return 0;
 	}
 }
 

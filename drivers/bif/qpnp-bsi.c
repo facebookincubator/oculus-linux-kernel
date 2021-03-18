@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,14 +17,12 @@
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
-#include <linux/regmap.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/spmi.h>
-#include <linux/platform_device.h>
 #include <linux/workqueue.h>
 #include <linux/bif/driver.h>
 #include <linux/qpnp/qpnp-adc.h>
@@ -43,8 +41,7 @@ enum qpnp_bsi_com_mode {
 
 struct qpnp_bsi_chip {
 	struct bif_ctrl_desc	bdesc;
-	struct platform_device	*pdev;
-	struct regmap		*regmap;
+	struct spmi_device	*spmi_dev;
 	struct bif_ctrl_dev	*bdev;
 	struct work_struct	slave_irq_work;
 	u16			base_addr;
@@ -205,13 +202,11 @@ static inline int qpnp_bsi_read(struct qpnp_bsi_chip *chip, u16 addr, u8 *buf,
 {
 	int rc;
 
-	rc = regmap_bulk_read(chip->regmap, chip->base_addr + addr, buf, len);
+	rc = spmi_ext_register_readl(chip->spmi_dev->ctrl,
+			chip->spmi_dev->sid, chip->base_addr + addr, buf, len);
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: regmap_bulk_readl failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
-			__func__,
-			to_spmi_device(chip->pdev->dev.parent)->usid,
-			chip->base_addr + addr,
+		dev_err(&chip->spmi_dev->dev, "%s: spmi_ext_register_readl() failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
+			__func__, chip->spmi_dev->sid, chip->base_addr + addr,
 			len, rc);
 
 	return rc;
@@ -222,14 +217,12 @@ static inline int qpnp_bsi_write(struct qpnp_bsi_chip *chip, u16 addr, u8 *buf,
 {
 	int rc;
 
-	rc = regmap_bulk_write(chip->regmap, chip->base_addr + addr, buf, len);
+	rc = spmi_ext_register_writel(chip->spmi_dev->ctrl,
+			chip->spmi_dev->sid, chip->base_addr + addr, buf, len);
 
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: regmap_bulk_write failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
-			__func__,
-			to_spmi_device(chip->pdev->dev.parent)->usid,
-			chip->base_addr + addr,
+		dev_err(&chip->spmi_dev->dev, "%s: spmi_ext_register_writel() failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
+			__func__, chip->spmi_dev->sid, chip->base_addr + addr,
 			len, rc);
 
 	return rc;
@@ -285,15 +278,14 @@ static int qpnp_bsi_rx_tx_config(struct qpnp_bsi_chip *chip,
 		buf[1] = QPNP_BSI_TX_DISABLE | QPNP_BSI_RX_DISABLE;
 		break;
 	default:
-		dev_err(&chip->pdev->dev, "%s: invalid state=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: invalid state=%d\n",
 			__func__, state);
 		return -EINVAL;
 	}
 
 	rc = qpnp_bsi_write(chip, QPNP_BSI_REG_MODE, buf, 2);
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_write() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 			__func__, rc);
 
 	return rc;
@@ -411,8 +403,7 @@ static int qpnp_bsi_clear_bsi_error(struct qpnp_bsi_chip *chip)
 
 	rc = qpnp_bsi_read(chip, QPNP_BSI_REG_BSI_ERROR, &reg, 1);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_read() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_read() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -431,8 +422,7 @@ static int qpnp_bsi_clear_bsi_error(struct qpnp_bsi_chip *chip)
 		reg = QPNP_BSI_BSI_ERROR_CLEAR;
 		rc = qpnp_bsi_write(chip, QPNP_BSI_REG_CLEAR_ERROR, &reg, 1);
 		if (rc)
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 	}
 
@@ -446,8 +436,7 @@ static int qpnp_bsi_get_bsi_error(struct qpnp_bsi_chip *chip)
 
 	rc = qpnp_bsi_read(chip, QPNP_BSI_REG_BSI_ERROR, &reg, 1);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_read() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_read() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -462,8 +451,7 @@ static int qpnp_bsi_wait_for_tx(struct qpnp_bsi_chip *chip, int timeout)
 	/* Wait for TX or ERR IRQ. */
 	while (timeout > 0) {
 		if (qpnp_bsi_check_irq(chip, QPNP_BSI_IRQ_ERR)) {
-			dev_err(&chip->pdev->dev,
-				"%s: transaction error occurred, BSI error=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: transaction error occurred, BSI error=%d\n",
 				__func__, qpnp_bsi_get_bsi_error(chip));
 			return -EIO;
 		}
@@ -477,8 +465,7 @@ static int qpnp_bsi_wait_for_tx(struct qpnp_bsi_chip *chip, int timeout)
 
 	if (timeout == 0) {
 		rc = -ETIMEDOUT;
-		dev_err(&chip->pdev->dev,
-			"%s: transaction timed out, no interrupts received, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: transaction timed out, no interrupts received, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -504,8 +491,7 @@ static int qpnp_bsi_issue_transaction(struct qpnp_bsi_chip *chip,
 	/* Write the TX_DATA bytes and initiate the transaction. */
 	rc = qpnp_bsi_write(chip, QPNP_BSI_REG_TX_DATA_LOW, buf, 4);
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_write() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 			__func__, rc);
 	return rc;
 }
@@ -534,8 +520,7 @@ static int qpnp_bsi_wait_for_rx(struct qpnp_bsi_chip *chip, int timeout)
 	/* Wait for RX IRQ to indicate that data is ready to read. */
 	while (timeout > 0) {
 		if (qpnp_bsi_check_irq(chip, QPNP_BSI_IRQ_ERR)) {
-			dev_err(&chip->pdev->dev,
-				"%s: transaction error occurred, BSI error=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: transaction error occurred, BSI error=%d\n",
 				__func__, qpnp_bsi_get_bsi_error(chip));
 			return -EIO;
 		}
@@ -563,8 +548,7 @@ static int qpnp_bsi_bus_transaction(struct bif_ctrl_dev *bdev, int transaction,
 
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -598,8 +582,7 @@ static int qpnp_bsi_bus_transaction_query(struct bif_ctrl_dev *bdev,
 
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -645,8 +628,7 @@ static int qpnp_bsi_bus_transaction_read(struct bif_ctrl_dev *bdev,
 
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -676,8 +658,7 @@ static int qpnp_bsi_bus_transaction_read(struct bif_ctrl_dev *bdev,
 			 * to provide silent operation when checking if a slave
 			 * is selected using the transaction query bus command.
 			 */
-			dev_dbg(&chip->pdev->dev,
-				"%s: transaction timed out, no interrupts received, rc=%d\n",
+			dev_dbg(&chip->spmi_dev->dev, "%s: transaction timed out, no interrupts received, rc=%d\n",
 					__func__, rc);
 		}
 		return rc;
@@ -686,16 +667,14 @@ static int qpnp_bsi_bus_transaction_read(struct bif_ctrl_dev *bdev,
 	/* Read the RX_DATA bytes. */
 	rc = qpnp_bsi_read(chip, QPNP_BSI_REG_RX_DATA_LOW, buf, 3);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_read() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_read() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
 
 	if (buf[2] & QPNP_BSI_RX_SRC_LOOPBACK_FLAG) {
 		rc = -EIO;
-		dev_err(&chip->pdev->dev,
-			"%s: unexpected loopback data read, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: unexpected loopback data read, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -723,15 +702,13 @@ static int qpnp_bsi_wait_for_rx_data(struct qpnp_bsi_chip *chip)
 	while (timeout > 0) {
 		rc = qpnp_bsi_read(chip, QPNP_BSI_REG_STATUS, &reg, 1);
 		if (rc) {
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 			return rc;
 		}
 
 		if (reg & QPNP_BSI_STATUS_ERROR) {
-			dev_err(&chip->pdev->dev,
-				"%s: transaction error occurred, BSI error=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: transaction error occurred, BSI error=%d\n",
 				__func__, qpnp_bsi_get_bsi_error(chip));
 			return -EIO;
 		}
@@ -746,8 +723,7 @@ static int qpnp_bsi_wait_for_rx_data(struct qpnp_bsi_chip *chip)
 	}
 
 	rc = -ETIMEDOUT;
-	dev_err(&chip->pdev->dev,
-		"%s: transaction timed out, RX_FLOW_STATUS never set to 1, rc=%d\n",
+	dev_err(&chip->spmi_dev->dev, "%s: transaction timed out, RX_FLOW_STATUS never set to 1, rc=%d\n",
 		__func__, rc);
 
 	return rc;
@@ -769,15 +745,13 @@ static int qpnp_bsi_wait_for_tx_go(struct qpnp_bsi_chip *chip)
 	while (timeout > 0) {
 		rc = qpnp_bsi_read(chip, QPNP_BSI_REG_STATUS, &reg, 1);
 		if (rc) {
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 			return rc;
 		}
 
 		if (reg & QPNP_BSI_STATUS_ERROR) {
-			dev_err(&chip->pdev->dev,
-				"%s: transaction error occurred, BSI error=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: transaction error occurred, BSI error=%d\n",
 				__func__, qpnp_bsi_get_bsi_error(chip));
 			return -EIO;
 		}
@@ -792,8 +766,7 @@ static int qpnp_bsi_wait_for_tx_go(struct qpnp_bsi_chip *chip)
 	}
 
 	rc = -ETIMEDOUT;
-	dev_err(&chip->pdev->dev,
-		"%s: transaction timed out, TX_GO_STATUS never set to 0, rc=%d\n",
+	dev_err(&chip->spmi_dev->dev, "%s: transaction timed out, TX_GO_STATUS never set to 0, rc=%d\n",
 		__func__, rc);
 
 	return rc;
@@ -815,15 +788,13 @@ static int qpnp_bsi_wait_for_tx_idle(struct qpnp_bsi_chip *chip)
 	while (timeout > 0) {
 		rc = qpnp_bsi_read(chip, QPNP_BSI_REG_STATUS, &reg, 1);
 		if (rc) {
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 			return rc;
 		}
 
 		if (reg & QPNP_BSI_STATUS_ERROR) {
-			dev_err(&chip->pdev->dev,
-				"%s: transaction error occurred, BSI error=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: transaction error occurred, BSI error=%d\n",
 				__func__, qpnp_bsi_get_bsi_error(chip));
 			return -EIO;
 		}
@@ -838,8 +809,7 @@ static int qpnp_bsi_wait_for_tx_idle(struct qpnp_bsi_chip *chip)
 	}
 
 	rc = -ETIMEDOUT;
-	dev_err(&chip->pdev->dev,
-		"%s: transaction timed out, TX_BUSY never set to 0, rc=%d\n",
+	dev_err(&chip->spmi_dev->dev, "%s: transaction timed out, TX_BUSY never set to 0, rc=%d\n",
 		__func__, rc);
 
 	return rc;
@@ -902,27 +872,23 @@ static int qpnp_bsi_validate_rx_data(struct qpnp_bsi_chip *chip, int response,
 	int err = -EIO;
 
 	if (rx2_data & QPNP_BSI_RX_SRC_LOOPBACK_FLAG) {
-		dev_err(&chip->pdev->dev,
-			"%s: unexpected loopback data read, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: unexpected loopback data read, rc=%d\n",
 			__func__, err);
 		return err;
 	}
 
 	if (!(response & BIF_SLAVE_RD_ACK)) {
-		dev_err(&chip->pdev->dev,
-			"%s: BIF register read error=0x%02X\n",
+		dev_err(&chip->spmi_dev->dev, "%s: BIF register read error=0x%02X\n",
 			__func__, response & BIF_SLAVE_RD_ERR);
 		return err;
 	}
 
 	if (last_word && !(response & BIF_SLAVE_RD_EOT)) {
-		dev_err(&chip->pdev->dev,
-			"%s: BIF register read error, last RD packet has EOT=0\n",
+		dev_err(&chip->spmi_dev->dev, "%s: BIF register read error, last RD packet has EOT=0\n",
 			__func__);
 		return err;
 	} else if (!last_word && (response & BIF_SLAVE_RD_EOT)) {
-		dev_err(&chip->pdev->dev,
-			"%s: BIF register read error, RD packet other than last has EOT=1\n",
+		dev_err(&chip->spmi_dev->dev, "%s: BIF register read error, RD packet other than last has EOT=1\n",
 			__func__);
 		return err;
 	}
@@ -944,8 +910,7 @@ static int qpnp_bsi_read_slave_registers(struct bif_ctrl_dev *bdev, u16 addr,
 
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -992,8 +957,7 @@ static int qpnp_bsi_read_slave_registers(struct bif_ctrl_dev *bdev, u16 addr,
 			rc = qpnp_bsi_read(chip, QPNP_BSI_REG_RX_DATA_LOW, buf,
 					   3);
 			if (rc) {
-				dev_err(&chip->pdev->dev,
-					"%s: qpnp_bsi_read() failed, rc=%d\n",
+				dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_read() failed, rc=%d\n",
 					__func__, rc);
 				goto burst_err;
 			}
@@ -1041,8 +1005,7 @@ static int qpnp_bsi_write_slave_registers(struct bif_ctrl_dev *bdev, u16 addr,
 
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -1120,8 +1083,7 @@ static int qpnp_bsi_bus_set_interrupt_mode(struct bif_ctrl_dev *bdev)
 	 */
 	rc = qpnp_bsi_set_bus_state(bdev, BIF_BUS_STATE_ACTIVE);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: failed to set bus state, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: failed to set bus state, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -1176,8 +1138,7 @@ static int qpnp_bsi_bus_set_active_mode(struct bif_ctrl_dev *bdev,
 
 	rc = qpnp_bsi_write(chip, QPNP_BSI_REG_MODE, buf, 2);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_write() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -1186,8 +1147,7 @@ static int qpnp_bsi_bus_set_active_mode(struct bif_ctrl_dev *bdev,
 	/* Initiate BCL low pulse. */
 	rc = qpnp_bsi_write(chip, QPNP_BSI_REG_TX_CTRL, buf, 1);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_write() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -1235,8 +1195,7 @@ static int qpnp_bsi_set_bus_state(struct bif_ctrl_dev *bdev, int state)
 		reg = QPNP_BSI_ENABLE;
 		rc = qpnp_bsi_write(chip, QPNP_BSI_REG_ENABLE, &reg, 1);
 		if (rc) {
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 			return rc;
 		}
@@ -1248,29 +1207,25 @@ static int qpnp_bsi_set_bus_state(struct bif_ctrl_dev *bdev, int state)
 		reg = QPNP_BSI_DISABLE;
 		rc = qpnp_bsi_write(chip, QPNP_BSI_REG_ENABLE, &reg, 1);
 		if (rc)
-			dev_err(&chip->pdev->dev,
-				"%s: qpnp_bsi_write() failed, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 				__func__, rc);
 		break;
 	case BIF_BUS_STATE_POWER_DOWN:
 		rc = qpnp_bsi_bus_transaction(bdev, BIF_TRANS_BC, BIF_CMD_PDWN);
 		if (rc)
-			dev_err(&chip->pdev->dev,
-				"%s: failed to enable power down mode, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: failed to enable power down mode, rc=%d\n",
 				__func__, rc);
 		break;
 	case BIF_BUS_STATE_STANDBY:
 		rc = qpnp_bsi_bus_transaction(bdev, BIF_TRANS_BC, BIF_CMD_STBY);
 		if (rc)
-			dev_err(&chip->pdev->dev,
-				"%s: failed to enable standby mode, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: failed to enable standby mode, rc=%d\n",
 				__func__, rc);
 		break;
 	case BIF_BUS_STATE_ACTIVE:
 		rc = qpnp_bsi_bus_set_active_mode(bdev, chip->state);
 		if (rc)
-			dev_err(&chip->pdev->dev,
-				"%s: failed to enable active mode, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: failed to enable active mode, rc=%d\n",
 				__func__, rc);
 		break;
 	case BIF_BUS_STATE_INTERRUPT:
@@ -1281,8 +1236,7 @@ static int qpnp_bsi_set_bus_state(struct bif_ctrl_dev *bdev, int state)
 		 */
 		rc = qpnp_bsi_bus_set_interrupt_mode(bdev);
 		if (rc) {
-			dev_err(&chip->pdev->dev,
-				"%s: failed to enable interrupt mode, rc=%d\n",
+			dev_err(&chip->spmi_dev->dev, "%s: failed to enable interrupt mode, rc=%d\n",
 				__func__, rc);
 		} else if (chip->state == BIF_BUS_STATE_ACTIVE) {
 			/*
@@ -1295,7 +1249,7 @@ static int qpnp_bsi_set_bus_state(struct bif_ctrl_dev *bdev, int state)
 		break;
 	default:
 		rc = -EINVAL;
-		dev_err(&chip->pdev->dev, "%s: invalid state=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: invalid state=%d\n",
 			__func__, state);
 	}
 
@@ -1375,8 +1329,7 @@ static int qpnp_bsi_set_tau_bif(struct qpnp_bsi_chip *chip, int period_ns)
 	reg = chip->tau_sampling_mask | idx;
 	rc = qpnp_bsi_write(chip, QPNP_BSI_REG_TAU_CONFIG, &reg, 1);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_bsi_write() failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_bsi_write() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -1408,8 +1361,7 @@ static int qpnp_bsi_get_battery_rid(struct bif_ctrl_dev *bdev)
 	s64 temp;
 
 	if (chip->batt_id_adc_channel >= ADC_MAX_NUM) {
-		dev_err(&chip->pdev->dev,
-			"%s: no ADC channel specified for Rid measurement\n",
+		dev_err(&chip->spmi_dev->dev, "%s: no ADC channel specified for Rid measurement\n",
 			__func__);
 		return -ENXIO;
 	}
@@ -1430,8 +1382,7 @@ static int qpnp_bsi_get_battery_rid(struct bif_ctrl_dev *bdev)
 				rid_ohm = temp;
 		}
 	} else {
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_vadc_read(%d) failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_vadc_read(%d) failed, rc=%d\n",
 			__func__, chip->batt_id_adc_channel, rc);
 		rid_ohm = rc;
 	}
@@ -1448,18 +1399,18 @@ static int qpnp_bsi_get_battery_rid(struct bif_ctrl_dev *bdev)
 static int qpnp_bsi_get_battery_presence(struct bif_ctrl_dev *bdev)
 {
 	struct qpnp_bsi_chip *chip = bdev_get_drvdata(bdev);
+	u8 reg = 0x00;
 	int rc;
-	uint val;
 
-	rc = regmap_read(chip->regmap, chip->batt_id_stat_addr, &val);
+	rc = spmi_ext_register_readl(chip->spmi_dev->ctrl, chip->spmi_dev->sid,
+		chip->batt_id_stat_addr, &reg, 1);
 	if (rc) {
-		dev_err(&chip->pdev->dev,
-			"%s: regmap_bulk_readl failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: spmi_ext_register_readl() failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
 
-	return !!(val & QPNP_SMBB_BAT_IF_BATT_PRES_MASK);
+	return !!(reg & QPNP_SMBB_BAT_IF_BATT_PRES_MASK);
 }
 
 static struct bif_ctrl_ops qpnp_bsi_ops = {
@@ -1478,11 +1429,11 @@ static struct bif_ctrl_ops qpnp_bsi_ops = {
 
 /* Load all BSI properties from device tree. */
 static int qpnp_bsi_parse_dt(struct qpnp_bsi_chip *chip,
-			struct platform_device *pdev)
+			struct spmi_device *spmi)
 {
-	struct device *dev = &pdev->dev;
-	struct device_node *node = pdev->dev.of_node;
-	unsigned int base;
+	struct device *dev = &spmi->dev;
+	struct device_node *node = spmi->dev.of_node;
+	struct resource *res;
 	int rc, temp;
 
 	chip->batt_id_adc_channel = ADC_MAX_NUM;
@@ -1515,28 +1466,27 @@ static int qpnp_bsi_parse_dt(struct qpnp_bsi_chip *chip,
 		return -EINVAL;
 	}
 
-	rc = of_property_read_u32(pdev->dev.of_node, "bsi-base", &base);
-	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't find bsi-base in node = %s rc = %d\n",
-			pdev->dev.of_node->full_name, rc);
-		return rc;
+	res = spmi_get_resource_byname(spmi, NULL, IORESOURCE_MEM, "bsi-base");
+	if (!res) {
+		dev_err(dev, "%s: node is missing BSI base address\n",
+			__func__);
+		return -EINVAL;
 	}
-	chip->base_addr = base;
+	chip->base_addr = res->start;
 
-	rc = of_property_read_u32(pdev->dev.of_node, "batt-id-status", &base);
-	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't find batt-if-status in node = %s rc = %d\n",
-			pdev->dev.of_node->full_name, rc);
-		return rc;
+	res = spmi_get_resource_byname(spmi, NULL, IORESOURCE_MEM,
+		"batt-id-status");
+	if (!res) {
+		dev_err(dev, "%s: node is missing BATT_ID status address\n",
+			__func__);
+		return -EINVAL;
 	}
-	chip->batt_id_stat_addr = base;
+	chip->batt_id_stat_addr = res->start;
 
-	chip->bdesc.name = dev_name(&pdev->dev);
+	chip->bdesc.name = spmi_get_primary_dev_name(spmi);
 	if (!chip->bdesc.name) {
 		dev_err(dev, "%s: label binding undefined for node %s\n",
-			__func__, pdev->dev.of_node->full_name);
+			__func__, spmi->dev.of_node->full_name);
 		return -EINVAL;
 	}
 
@@ -1574,25 +1524,26 @@ static int qpnp_bsi_parse_dt(struct qpnp_bsi_chip *chip,
 		return -EINVAL;
 	}
 
-	chip->irq[QPNP_BSI_IRQ_ERR] = platform_get_irq_byname(pdev, "err");
+	chip->irq[QPNP_BSI_IRQ_ERR] = spmi_get_irq_byname(spmi, NULL, "err");
 	if (chip->irq[QPNP_BSI_IRQ_ERR] < 0) {
 		dev_err(dev, "%s: node is missing err irq\n", __func__);
 		return chip->irq[QPNP_BSI_IRQ_ERR];
 	}
 
-	chip->irq[QPNP_BSI_IRQ_RX] = platform_get_irq_byname(pdev, "rx");
+	chip->irq[QPNP_BSI_IRQ_RX] = spmi_get_irq_byname(spmi, NULL, "rx");
 	if (chip->irq[QPNP_BSI_IRQ_RX] < 0) {
 		dev_err(dev, "%s: node is missing rx irq\n", __func__);
 		return chip->irq[QPNP_BSI_IRQ_RX];
 	}
 
-	chip->irq[QPNP_BSI_IRQ_TX] = platform_get_irq_byname(pdev, "tx");
+	chip->irq[QPNP_BSI_IRQ_TX] = spmi_get_irq_byname(spmi, NULL, "tx");
 	if (chip->irq[QPNP_BSI_IRQ_TX] < 0) {
 		dev_err(dev, "%s: node is missing tx irq\n", __func__);
 		return chip->irq[QPNP_BSI_IRQ_TX];
 	}
 
-	chip->batt_present_irq = platform_get_irq_byname(pdev, "batt-present");
+	chip->batt_present_irq = spmi_get_irq_byname(spmi, NULL,
+		"batt-present");
 	if (chip->batt_present_irq < 0) {
 		dev_err(dev, "%s: node is missing batt-present irq\n",
 			__func__);
@@ -1690,14 +1641,14 @@ static void qpnp_bsi_cleanup_irqs(struct qpnp_bsi_chip *chip)
 	irq_set_irq_wake(chip->batt_present_irq, 0);
 }
 
-static int qpnp_bsi_probe(struct platform_device *pdev)
+static int qpnp_bsi_probe(struct spmi_device *spmi)
 {
-	struct device *dev = &pdev->dev;
+	struct device *dev = &spmi->dev;
 	struct qpnp_bsi_chip *chip;
 	int rc;
 	u8 type[2];
 
-	if (!pdev->dev.of_node) {
+	if (!spmi->dev.of_node) {
 		dev_err(dev, "%s: device node missing\n", __func__);
 		return -ENODEV;
 	}
@@ -1707,13 +1658,8 @@ static int qpnp_bsi_probe(struct platform_device *pdev)
 		dev_err(dev, "%s: Can't allocate qpnp_bsi\n", __func__);
 		return -ENOMEM;
 	}
-	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
-	if (!chip->regmap) {
-		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
-		return -EINVAL;
-	}
 
-	rc = qpnp_bsi_parse_dt(chip, pdev);
+	rc = qpnp_bsi_parse_dt(chip, spmi);
 	if (rc) {
 		dev_err(dev, "%s: device tree parsing failed, rc=%d\n",
 			__func__, rc);
@@ -1729,7 +1675,7 @@ static int qpnp_bsi_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	chip->pdev		= pdev;
+	chip->spmi_dev		= spmi;
 	chip->bdesc.ops		= &qpnp_bsi_ops;
 	chip->state		= BIF_BUS_STATE_MASTER_DISABLED;
 	chip->com_mode		= QPNP_BSI_COM_MODE_IRQ;
@@ -1768,7 +1714,7 @@ static int qpnp_bsi_probe(struct platform_device *pdev)
 	}
 
 	chip->bdev = bif_ctrl_register(&chip->bdesc, dev, chip,
-					pdev->dev.of_node);
+					spmi->dev.of_node);
 	if (IS_ERR(chip->bdev)) {
 		rc = PTR_ERR(chip->bdev);
 		dev_err(dev, "%s: bif_ctrl_register failed, rc=%d\n",
@@ -1785,11 +1731,10 @@ cleanup_irqs:
 	return rc;
 }
 
-static int qpnp_bsi_remove(struct platform_device *pdev)
+static int qpnp_bsi_remove(struct spmi_device *spmi)
 {
-	struct qpnp_bsi_chip *chip = dev_get_drvdata(&pdev->dev);
-
-	dev_set_drvdata(&pdev->dev, NULL);
+	struct qpnp_bsi_chip *chip = dev_get_drvdata(&spmi->dev);
+	dev_set_drvdata(&spmi->dev, NULL);
 
 	if (chip) {
 		bif_ctrl_unregister(chip->bdev);
@@ -1804,13 +1749,13 @@ static struct of_device_id spmi_match_table[] = {
 	{}
 };
 
-static const struct platform_device_id qpnp_bsi_id[] = {
+static const struct spmi_device_id qpnp_bsi_id[] = {
 	{ QPNP_BSI_DRIVER_NAME, 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(spmi, qpnp_bsi_id);
 
-static struct platform_driver qpnp_bsi_driver = {
+static struct spmi_driver qpnp_bsi_driver = {
 	.driver = {
 		.name		= QPNP_BSI_DRIVER_NAME,
 		.of_match_table	= spmi_match_table,
@@ -1823,12 +1768,12 @@ static struct platform_driver qpnp_bsi_driver = {
 
 static int __init qpnp_bsi_init(void)
 {
-	return platform_driver_register(&qpnp_bsi_driver);
+	return spmi_driver_register(&qpnp_bsi_driver);
 }
 
 static void __exit qpnp_bsi_exit(void)
 {
-	platform_driver_unregister(&qpnp_bsi_driver);
+	spmi_driver_unregister(&qpnp_bsi_driver);
 }
 
 MODULE_DESCRIPTION("QPNP PMIC BSI driver");

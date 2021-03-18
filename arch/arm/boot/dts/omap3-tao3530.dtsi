@@ -8,16 +8,7 @@
  */
 /dts-v1/;
 
-#include "omap34xx.dtsi"
-
-/* Secure omaps have some devices inaccessible depending on the firmware */
-&aes {
-	status = "disabled";
-};
-
-&sham {
-	status = "disabled";
-};
+#include "omap34xx-hs.dtsi"
 
 / {
 	cpus {
@@ -37,7 +28,7 @@
 		regulator-name = "hsusb2_vbus";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		gpio = <&twl_gpio 18 GPIO_ACTIVE_HIGH>;	/* GPIO LEDA */
+		gpio = <&twl_gpio 18 0>;	/* GPIO LEDA */
 		startup-delay-us = <70000>;
 	};
 
@@ -54,6 +45,7 @@
 
 		/* McBSP2 is used for onboard sound, same as on beagle */
 		ti,mcbsp = <&mcbsp2>;
+		ti,codec = <&twl_audio>;
 	};
 
 	/* Regulator to enable/switch the vcc of the Wifi module */
@@ -225,7 +217,7 @@
 	pinctrl-0 = <&mmc1_pins>;
 	vmmc-supply = <&vmmc1>;
 	vmmc_aux-supply = <&vsim>;
-	cd-gpios = <&twl_gpio 0 GPIO_ACTIVE_HIGH>;
+	cd-gpios = <&twl_gpio 0 0>;
 	bus-width = <8>;
 };
 
@@ -278,7 +270,7 @@
 	ranges = <0 0 0x00000000 0x01000000>;
 
 	nand@0,0 {
-		reg = <0 0 4>; /* CS0, offset 0, IO size 4 */
+		reg = <0 0 0>; /* CS0, offset 0 */
 		nand-bus-width = <16>;
 		gpmc,device-width = <2>;	/* GPMC_DEVWIDTH_16BIT */
 		ti,nand-ecc-opt = "sw";

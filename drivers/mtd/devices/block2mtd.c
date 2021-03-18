@@ -9,18 +9,9 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-/*
- * When the first attempt at device initialization fails, we may need to
- * wait a little bit and retry. This timeout, by default 3 seconds, gives
- * device time to start up. Required on BCM2708 and a few other chipsets.
- */
-#define MTD_DEFAULT_TIMEOUT	3
-
 #include <linux/module.h>
-#include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/blkdev.h>
-#include <linux/backing-dev.h>
 #include <linux/bio.h>
 #include <linux/pagemap.h>
 #include <linux/list.h>
@@ -218,14 +209,10 @@ static void block2mtd_free_device(struct block2mtd_dev *dev)
 }
 
 
-static struct block2mtd_dev *add_device(char *devname, int erase_size,
-		int timeout)
+static struct block2mtd_dev *add_device(char *devname, int erase_size)
 {
-#ifndef MODULE
-	int i;
-#endif
 	const fmode_t mode = FMODE_READ | FMODE_WRITE | FMODE_EXCL;
-	struct block_device *bdev = ERR_PTR(-ENODEV);
+	struct block_device *bdev;
 	struct block2mtd_dev *dev;
 	char *name;
 
@@ -238,28 +225,15 @@ static struct block2mtd_dev *add_device(char *devname, int erase_size,
 
 	/* Get a handle on the device */
 	bdev = blkdev_get_by_path(devname, mode, dev);
-
 #ifndef MODULE
-	/*
-	 * We might not have the root device mounted at this point.
-	 * Try to resolve the device name by other means.
-	 */
-	for (i = 0; IS_ERR(bdev) && i <= timeout; i++) {
-		dev_t devt;
+	if (IS_ERR(bdev)) {
 
-		if (i)
-			/*
-			 * Calling wait_for_device_probe in the first loop
-			 * was not enough, sleep for a bit in subsequent
-			 * go-arounds.
-			 */
-			msleep(1000);
-		wait_for_device_probe();
+		/* We might not have rootfs mounted at this point. Try
+		   to resolve the device name by other means. */
 
-		devt = name_to_dev_t(devname);
-		if (!devt)
-			continue;
-		bdev = blkdev_get_by_dev(devt, mode, dev);
+		dev_t devt = name_to_dev_t(devname);
+		if (devt)
+			bdev = blkdev_get_by_dev(devt, mode, dev);
 	}
 #endif
 
@@ -306,7 +280,6 @@ static struct block2mtd_dev *add_device(char *devname, int erase_size,
 		/* Device didn't get added, so free the entry */
 		goto err_destroy_mutex;
 	}
-
 	list_add(&dev->list, &blkmtd_device_list);
 	pr_info("mtd%d: [%s] erase_size = %dKiB [%d]\n",
 		dev->mtd.index,
@@ -375,19 +348,16 @@ static inline void kill_final_newline(char *str)
 
 #ifndef MODULE
 static int block2mtd_init_called = 0;
-/* 80 for device, 12 for erase size */
-static char block2mtd_paramline[80 + 12];
+static char block2mtd_paramline[80 + 12]; /* 80 for device, 12 for erase size */
 #endif
 
 static int block2mtd_setup2(const char *val)
 {
-	/* 80 for device, 12 for erase size, 80 for name, 8 for timeout */
-	char buf[80 + 12 + 80 + 8];
+	char buf[80 + 12]; /* 80 for device, 12 for erase size */
 	char *str = buf;
 	char *token[2];
 	char *name;
 	size_t erase_size = PAGE_SIZE;
-	unsigned long timeout = MTD_DEFAULT_TIMEOUT;
 	int i, ret;
 
 	if (strnlen(val, sizeof(buf)) >= sizeof(buf)) {
@@ -425,7 +395,7 @@ static int block2mtd_setup2(const char *val)
 		}
 	}
 
-	add_device(name, erase_size, timeout);
+	add_device(name, erase_size);
 
 	return 0;
 }
@@ -493,7 +463,8 @@ static void block2mtd_exit(void)
 	}
 }
 
-late_initcall(block2mtd_init);
+
+module_init(block2mtd_init);
 module_exit(block2mtd_exit);
 
 MODULE_LICENSE("GPL");

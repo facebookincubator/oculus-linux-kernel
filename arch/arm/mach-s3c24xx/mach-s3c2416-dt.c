@@ -39,7 +39,7 @@ static void __init s3c2416_dt_machine_init(void)
 	s3c_pm_init();
 }
 
-static const char *const s3c2416_dt_compat[] __initconst = {
+static char const *s3c2416_dt_compat[] __initdata = {
 	"samsung,s3c2416",
 	"samsung,s3c2450",
 	NULL

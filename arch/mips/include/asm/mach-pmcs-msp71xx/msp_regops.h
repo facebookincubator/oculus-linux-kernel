@@ -49,7 +49,6 @@
 
 #include <linux/types.h>
 
-#include <asm/compiler.h>
 #include <asm/war.h>
 
 #ifndef R10000_LLSC_WAR
@@ -85,8 +84,8 @@ static inline void set_value_reg32(volatile u32 *const addr,
 	"	"__beqz"%0, 1b				\n"
 	"	nop					\n"
 	"	.set	pop				\n"
-	: "=&r" (temp), "=" GCC_OFF_SMALL_ASM() (*addr)
-	: "ir" (~mask), "ir" (value), GCC_OFF_SMALL_ASM() (*addr));
+	: "=&r" (temp), "=m" (*addr)
+	: "ir" (~mask), "ir" (value), "m" (*addr));
 }
 
 /*
@@ -106,8 +105,8 @@ static inline void set_reg32(volatile u32 *const addr,
 	"	"__beqz"%0, 1b				\n"
 	"	nop					\n"
 	"	.set	pop				\n"
-	: "=&r" (temp), "=" GCC_OFF_SMALL_ASM() (*addr)
-	: "ir" (mask), GCC_OFF_SMALL_ASM() (*addr));
+	: "=&r" (temp), "=m" (*addr)
+	: "ir" (mask), "m" (*addr));
 }
 
 /*
@@ -127,8 +126,8 @@ static inline void clear_reg32(volatile u32 *const addr,
 	"	"__beqz"%0, 1b				\n"
 	"	nop					\n"
 	"	.set	pop				\n"
-	: "=&r" (temp), "=" GCC_OFF_SMALL_ASM() (*addr)
-	: "ir" (~mask), GCC_OFF_SMALL_ASM() (*addr));
+	: "=&r" (temp), "=m" (*addr)
+	: "ir" (~mask), "m" (*addr));
 }
 
 /*
@@ -148,8 +147,8 @@ static inline void toggle_reg32(volatile u32 *const addr,
 	"	"__beqz"%0, 1b				\n"
 	"	nop					\n"
 	"	.set	pop				\n"
-	: "=&r" (temp), "=" GCC_OFF_SMALL_ASM() (*addr)
-	: "ir" (mask), GCC_OFF_SMALL_ASM() (*addr));
+	: "=&r" (temp), "=m" (*addr)
+	: "ir" (mask), "m" (*addr));
 }
 
 /*
@@ -220,8 +219,8 @@ static inline u32 blocking_read_reg32(volatile u32 *const addr)
 	"	.set	arch=r4000			\n"	\
 	"1:	ll	%0, %1	#custom_read_reg32	\n"	\
 	"	.set	pop				\n"	\
-	: "=r" (tmp), "=" GCC_OFF_SMALL_ASM() (*address)		\
-	: GCC_OFF_SMALL_ASM() (*address))
+	: "=r" (tmp), "=m" (*address)				\
+	: "m" (*address))
 
 #define custom_write_reg32(address, tmp)			\
 	__asm__ __volatile__(					\
@@ -231,7 +230,7 @@ static inline u32 blocking_read_reg32(volatile u32 *const addr)
 	"	"__beqz"%0, 1b				\n"	\
 	"	nop					\n"	\
 	"	.set	pop				\n"	\
-	: "=&r" (tmp), "=" GCC_OFF_SMALL_ASM() (*address)		\
-	: "0" (tmp), GCC_OFF_SMALL_ASM() (*address))
+	: "=&r" (tmp), "=m" (*address)				\
+	: "0" (tmp), "m" (*address))
 
 #endif	/* __ASM_REGOPS_H__ */

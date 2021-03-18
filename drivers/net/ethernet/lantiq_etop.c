@@ -789,6 +789,7 @@ static struct platform_driver ltq_mii_driver = {
 	.remove = ltq_etop_remove,
 	.driver = {
 		.name = "ltq_etop",
+		.owner = THIS_MODULE,
 	},
 };
 

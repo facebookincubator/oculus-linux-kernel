@@ -116,7 +116,7 @@ static int ade7759_spi_read_reg_40(struct device *dev,
 
 	mutex_lock(&st->buf_lock);
 	st->tx[0] = ADE7759_READ_REG(reg_address);
-	memset(&st->tx[1], 0, 5);
+	memset(&st->tx[1], 0 , 5);
 
 	ret = spi_sync_transfer(st->us, xfers, ARRAY_SIZE(xfers));
 	if (ret) {
@@ -218,16 +218,15 @@ static int ade7759_reset(struct device *dev)
 	int ret;
 	u16 val;
 
-	ret = ade7759_spi_read_reg_16(dev,
+	ade7759_spi_read_reg_16(dev,
 			ADE7759_MODE,
 			&val);
-	if (ret < 0)
-		return ret;
-
-	val |= BIT(6); /* Software Chip Reset */
-	return ade7759_spi_write_reg_16(dev,
+	val |= 1 << 6; /* Software Chip Reset */
+	ret = ade7759_spi_write_reg_16(dev,
 			ADE7759_MODE,
 			val);
+
+	return ret;
 }
 
 static IIO_DEV_ATTR_AENERGY(ade7759_read_40bit, ADE7759_AENERGY);
@@ -288,10 +287,10 @@ static int ade7759_set_irq(struct device *dev, bool enable)
 		goto error_ret;
 
 	if (enable)
-		irqen |= BIT(3); /* Enables an interrupt when a data is
+		irqen |= 1 << 3; /* Enables an interrupt when a data is
 				    present in the waveform register */
 	else
-		irqen &= ~BIT(3);
+		irqen &= ~(1 << 3);
 
 	ret = ade7759_spi_write_reg_8(dev, ADE7759_IRQEN, irqen);
 
@@ -302,19 +301,12 @@ error_ret:
 /* Power down the device */
 static int ade7759_stop_device(struct device *dev)
 {
-	int ret;
 	u16 val;
 
-	ret = ade7759_spi_read_reg_16(dev,
+	ade7759_spi_read_reg_16(dev,
 			ADE7759_MODE,
 			&val);
-	if (ret < 0) {
-		dev_err(dev, "unable to power down the device, error: %d\n",
-			ret);
-		return ret;
-	}
-
-	val |= BIT(4);  /* AD converters can be turned off */
+	val |= 1 << 4;  /* AD converters can be turned off */
 
 	return ade7759_spi_write_reg_16(dev, ADE7759_MODE, val);
 }
@@ -377,12 +369,12 @@ static ssize_t ade7759_write_frequency(struct device *dev,
 	ret = kstrtou16(buf, 10, &val);
 	if (ret)
 		return ret;
-	if (!val)
+	if (val == 0)
 		return -EINVAL;
 
 	mutex_lock(&indio_dev->mlock);
 
-	t = 27900 / val;
+	t = (27900 / val);
 	if (t > 0)
 		t--;
 
@@ -473,7 +465,11 @@ static int ade7759_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	return iio_device_register(indio_dev);
+	ret = iio_device_register(indio_dev);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 /* fixme, confirm ordering in this function */
@@ -490,6 +486,7 @@ static int ade7759_remove(struct spi_device *spi)
 static struct spi_driver ade7759_driver = {
 	.driver = {
 		.name = "ade7759",
+		.owner = THIS_MODULE,
 	},
 	.probe = ade7759_probe,
 	.remove = ade7759_remove,

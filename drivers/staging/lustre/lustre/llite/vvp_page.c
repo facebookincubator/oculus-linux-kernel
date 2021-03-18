@@ -41,6 +41,7 @@
 
 #define DEBUG_SUBSYSTEM S_LLITE
 
+
 #include "../include/obd.h"
 #include "../include/lustre_lite.h"
 
@@ -226,16 +227,11 @@ static int vvp_page_prep_write(const struct lu_env *env,
 			       struct cl_io *unused)
 {
 	struct page *vmpage = cl2vm_page(slice);
-	struct cl_page *pg = slice->cpl_page;
 
 	LASSERT(PageLocked(vmpage));
 	LASSERT(!PageDirty(vmpage));
 
-	/* ll_writepage path is not a sync write, so need to set page writeback
-	 * flag */
-	if (!pg->cp_sync_io)
-		set_page_writeback(vmpage);
-
+	set_page_writeback(vmpage);
 	vvp_write_pending(cl2ccc(slice->cpl_obj), cl2ccc_page(slice));
 
 	return 0;
@@ -302,6 +298,9 @@ static void vvp_page_completion_write(const struct lu_env *env,
 	struct cl_page  *pg     = slice->cpl_page;
 	struct page      *vmpage = cp->cpg_page;
 
+	LASSERT(ergo(pg->cp_sync_io != NULL, PageLocked(vmpage)));
+	LASSERT(PageWriteback(vmpage));
+
 	CL_PAGE_HEADER(D_PAGE, env, pg, "completing WRITE with %d\n", ioret);
 
 	/*
@@ -317,19 +316,14 @@ static void vvp_page_completion_write(const struct lu_env *env,
 	cp->cpg_write_queued = 0;
 	vvp_write_complete(cl2ccc(slice->cpl_obj), cp);
 
-	if (pg->cp_sync_io != NULL) {
-		LASSERT(PageLocked(vmpage));
-		LASSERT(!PageWriteback(vmpage));
-	} else {
-		LASSERT(PageWriteback(vmpage));
-		/*
-		 * Only mark the page error only when it's an async write
-		 * because applications won't wait for IO to finish.
-		 */
+	/*
+	 * Only mark the page error only when it's an async write because
+	 * applications won't wait for IO to finish.
+	 */
+	if (pg->cp_sync_io == NULL)
 		vvp_vmpage_error(ccc_object_inode(pg->cp_obj), vmpage, ioret);
 
-		end_page_writeback(vmpage);
-	}
+	end_page_writeback(vmpage);
 }
 
 /**
@@ -382,7 +376,8 @@ static int vvp_page_print(const struct lu_env *env,
 	struct ccc_page *vp = cl2ccc_page(slice);
 	struct page      *vmpage = vp->cpg_page;
 
-	(*printer)(env, cookie, LUSTRE_VVP_NAME "-page@%p(%d:%d:%d) vm@%p ",
+	(*printer)(env, cookie, LUSTRE_VVP_NAME"-page@%p(%d:%d:%d) "
+		   "vm@%p ",
 		   vp, vp->cpg_defer_uptodate, vp->cpg_ra_used,
 		   vp->cpg_write_queued, vmpage);
 	if (vmpage != NULL) {

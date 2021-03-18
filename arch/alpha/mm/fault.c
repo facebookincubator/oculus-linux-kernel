@@ -23,7 +23,8 @@
 #include <linux/smp.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
-#include <linux/uaccess.h>
+
+#include <asm/uaccess.h>
 
 extern void die_if_kernel(char *,struct pt_regs *,long, unsigned long *);
 
@@ -106,7 +107,7 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
 
 	/* If we're in an interrupt context, or have no user context,
 	   we must not take the fault.  */
-	if (!mm || faulthandler_disabled())
+	if (!mm || in_atomic())
 		goto no_context;
 
 #ifdef CONFIG_ALPHA_LARGE_VMALLOC

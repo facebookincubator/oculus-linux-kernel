@@ -338,7 +338,7 @@ static const struct snd_soc_dai_ops ep93xx_ac97_dai_ops = {
 static struct snd_soc_dai_driver ep93xx_ac97_dai = {
 	.name		= "ep93xx-ac97",
 	.id		= 0,
-	.bus_control	= true,
+	.ac97_control	= 1,
 	.probe		= ep93xx_ac97_dai_probe,
 	.playback	= {
 		.stream_name	= "AC97 Playback",
@@ -439,6 +439,7 @@ static struct platform_driver ep93xx_ac97_driver = {
 	.remove	= ep93xx_ac97_remove,
 	.driver = {
 		.name = "ep93xx-ac97",
+		.owner = THIS_MODULE,
 	},
 };
 

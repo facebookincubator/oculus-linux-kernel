@@ -32,7 +32,6 @@ accoring||according
 accout||account
 accquire||acquire
 accquired||acquired
-accross||across
 acessable||accessible
 acess||access
 achitecture||architecture
@@ -101,10 +100,8 @@ appropiate||appropriate
 appropriatly||appropriately
 approriate||appropriate
 approriately||appropriately
-apropriate||appropriate
 aquainted||acquainted
 aquired||acquired
-aquisition||acquisition
 arbitary||arbitrary
 architechture||architecture
 arguement||argument
@@ -114,8 +111,6 @@ arne't||aren't
 arraival||arrival
 artifical||artificial
 artillary||artillery
-asign||assign
-assertation||assertion
 assiged||assigned
 assigment||assignment
 assigments||assignments
@@ -141,7 +136,6 @@ automatize||automate
 automatized||automated
 automatizes||automates
 autonymous||autonomous
-auxillary||auxiliary
 auxilliary||auxiliary
 avaiable||available
 avaible||available
@@ -193,7 +187,6 @@ capatibilities||capabilities
 carefuly||carefully
 cariage||carriage
 catagory||category
-cehck||check
 challange||challenge
 challanges||challenges
 chanell||channel
@@ -206,8 +199,6 @@ charactor||character
 charater||character
 charaters||characters
 charcter||character
-chcek||check
-chck||check
 checksuming||checksumming
 childern||children
 childs||children
@@ -240,8 +231,6 @@ compatability||compatibility
 compatable||compatible
 compatibiliy||compatibility
 compatibilty||compatibility
-compatiblity||compatibility
-competion||completion
 compilant||compliant
 compleatly||completely
 completly||completely
@@ -302,7 +291,6 @@ defferred||deferred
 definate||definite
 definately||definitely
 defintion||definition
-defintions||definitions
 defualt||default
 defult||default
 deivce||device
@@ -318,7 +306,6 @@ depreacted||deprecated
 depreacte||deprecate
 desactivate||deactivate
 desciptors||descriptors
-descripton||description
 descrition||description
 descritptor||descriptor
 desctiptor||descriptor
@@ -340,7 +327,6 @@ devided||divided
 deviece||device
 diable||disable
 dictionnary||dictionary
-didnt||didn't
 diferent||different
 differrence||difference
 difinition||definition
@@ -358,7 +344,6 @@ docuentation||documentation
 documantation||documentation
 documentaion||documentation
 documment||document
-doesnt||doesn't
 dorp||drop
 dosen||doesn
 downlad||download
@@ -465,13 +450,11 @@ grahical||graphical
 grahpical||graphical
 grapic||graphic
 guage||gauge
-guarenteed||guaranteed
 guarentee||guarantee
 halfs||halves
 hander||handler
 handfull||handful
 hanled||handled
-happend||happened
 harware||hardware
 heirarchically||hierarchically
 helpfull||helpful
@@ -529,7 +512,6 @@ initialzed||initialized
 initilization||initialization
 initilize||initialize
 inofficial||unofficial
-insititute||institute
 instal||install
 inteface||interface
 integreated||integrated
@@ -564,7 +546,6 @@ invididual||individual
 invokation||invocation
 invokations||invocations
 irrelevent||irrelevant
-isnt||isn't
 isssue||issue
 itslef||itself
 jave||java
@@ -577,7 +558,6 @@ langauage||language
 langauge||language
 langugage||language
 lauch||launch
-layed||laid
 leightweight||lightweight
 lengh||length
 lenght||length
@@ -734,7 +714,6 @@ preceeding||preceding
 preceed||precede
 precendence||precedence
 precission||precision
-preemptable||preemptible
 prefered||preferred
 prefferably||preferably
 premption||preemption
@@ -765,7 +744,6 @@ programers||programmers
 programm||program
 programms||programs
 progresss||progress
-promiscous||promiscuous
 promps||prompts
 pronnounced||pronounced
 prononciation||pronunciation
@@ -839,7 +817,6 @@ reseting||resetting
 resizeable||resizable
 resouces||resources
 resoures||resources
-responce||response
 ressizes||resizes
 ressource||resource
 ressources||resources
@@ -848,7 +825,6 @@ retreived||retrieved
 retreive||retrieve
 retrive||retrieve
 retuned||returned
-reudce||reduce
 reuest||request
 reuqest||request
 reutnred||returned
@@ -892,7 +868,6 @@ setts||sets
 settting||setting
 shotdown||shutdown
 shoud||should
-shouldnt||shouldn't
 shoule||should
 shrinked||shrunk
 siginificantly||significantly
@@ -937,11 +912,9 @@ straming||streaming
 struc||struct
 structres||structures
 stuct||struct
-stucture||structure
 sturcture||structure
 subdirectoires||subdirectories
 suble||subtle
-substract||subtract
 succesfully||successfully
 succesful||successful
 successfull||successful
@@ -1013,7 +986,6 @@ unexpectd||unexpected
 unexpeted||unexpected
 unfortunatelly||unfortunately
 unifiy||unify
-unintialized||uninitialized
 unknonw||unknown
 unknow||unknown
 unkown||unknown
@@ -1054,9 +1026,7 @@ virtiual||virtual
 visiters||visitors
 vitual||virtual
 wating||waiting
-wether||whether
 whataver||whatever
-whcih||which
 whenver||whenever
 wheter||whether
 whe||when

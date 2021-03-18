@@ -22,17 +22,13 @@
  * NOTE: PM support is not currently available.
  *
  */
-#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/ahci_platform.h>
 #include <linux/of_address.h>
-#include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/phy/phy.h>
 #include "ahci.h"
-
-#define DRV_NAME "xgene-ahci"
 
 /* Max # of disk per a controller */
 #define MAX_AHCI_CHN_PERCTR		2
@@ -85,16 +81,10 @@
 /* Max retry for link down */
 #define MAX_LINK_DOWN_RETRY 3
 
-enum xgene_ahci_version {
-	XGENE_AHCI_V1 = 1,
-	XGENE_AHCI_V2,
-};
-
 struct xgene_ahci_context {
 	struct ahci_host_priv *hpriv;
 	struct device *dev;
 	u8 last_cmd[MAX_AHCI_CHN_PERCTR]; /* tracking the last command issued*/
-	u32 class[MAX_AHCI_CHN_PERCTR]; /* tracking the class of device */
 	void __iomem *csr_core;		/* Core CSR address of IP */
 	void __iomem *csr_diag;		/* Diag CSR address of IP */
 	void __iomem *csr_axi;		/* AXI CSR address of IP */
@@ -115,69 +105,17 @@ static int xgene_ahci_init_memram(struct xgene_ahci_context *ctx)
 }
 
 /**
- * xgene_ahci_poll_reg_val- Poll a register on a specific value.
- * @ap : ATA port of interest.
- * @reg : Register of interest.
- * @val : Value to be attained.
- * @interval : waiting interval for polling.
- * @timeout : timeout for achieving the value.
- */
-static int xgene_ahci_poll_reg_val(struct ata_port *ap,
-				   void __iomem *reg, unsigned
-				   int val, unsigned long interval,
-				   unsigned long timeout)
-{
-	unsigned long deadline;
-	unsigned int tmp;
-
-	tmp = ioread32(reg);
-	deadline = ata_deadline(jiffies, timeout);
-
-	while (tmp != val && time_before(jiffies, deadline)) {
-		ata_msleep(ap, interval);
-		tmp = ioread32(reg);
-	}
-
-	return tmp;
-}
-
-/**
  * xgene_ahci_restart_engine - Restart the dma engine.
  * @ap : ATA port of interest
  *
- * Waits for completion of multiple commands and restarts
- * the DMA engine inside the controller.
+ * Restarts the dma engine inside the controller.
  */
 static int xgene_ahci_restart_engine(struct ata_port *ap)
 {
 	struct ahci_host_priv *hpriv = ap->host->private_data;
-	struct ahci_port_priv *pp = ap->private_data;
-	void __iomem *port_mmio = ahci_port_base(ap);
-	u32 fbs;
-
-	/*
-	 * In case of PMP multiple IDENTIFY DEVICE commands can be
-	 * issued inside PxCI. So need to poll PxCI for the
-	 * completion of outstanding IDENTIFY DEVICE commands before
-	 * we restart the DMA engine.
-	 */
-	if (xgene_ahci_poll_reg_val(ap, port_mmio +
-				    PORT_CMD_ISSUE, 0x0, 1, 100))
-		  return -EBUSY;
 
 	ahci_stop_engine(ap);
 	ahci_start_fis_rx(ap);
-
-	/*
-	 * Enable the PxFBS.FBS_EN bit as it
-	 * gets cleared due to stopping the engine.
-	 */
-	if (pp->fbs_supported) {
-		fbs = readl(port_mmio + PORT_FBS);
-		writel(fbs | PORT_FBS_EN, port_mmio + PORT_FBS);
-		fbs = readl(port_mmio + PORT_FBS);
-	}
-
 	hpriv->start_engine(ap);
 
 	return 0;
@@ -191,13 +129,6 @@ static int xgene_ahci_restart_engine(struct ata_port *ap)
  * clear the BSY bit after receiving the PIO setup FIS. This results in the dma
  * state machine goes into the CMFatalErrorUpdate state and locks up. By
  * restarting the dma engine, it removes the controller out of lock up state.
- *
- * Due to H/W errata, the controller is unable to save the PMP
- * field fetched from command header before sending the H2D FIS.
- * When the device returns the PMP port field in the D2H FIS, there is
- * a mismatch and results in command completion failure. The
- * workaround is to write the pmp value to PxFBS.DEV field before issuing
- * any command to PMP.
  */
 static unsigned int xgene_ahci_qc_issue(struct ata_queued_cmd *qc)
 {
@@ -205,23 +136,8 @@ static unsigned int xgene_ahci_qc_issue(struct ata_queued_cmd *qc)
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	struct xgene_ahci_context *ctx = hpriv->plat_data;
 	int rc = 0;
-	u32 port_fbs;
-	void *port_mmio = ahci_port_base(ap);
 
-	/*
-	 * Write the pmp value to PxFBS.DEV
-	 * for case of Port Mulitplier.
-	 */
-	if (ctx->class[ap->port_no] == ATA_DEV_PMP) {
-		port_fbs = readl(port_mmio + PORT_FBS);
-		port_fbs &= ~PORT_FBS_DEV_MASK;
-		port_fbs |= qc->dev->link->pmp << PORT_FBS_DEV_OFFSET;
-		writel(port_fbs, port_mmio + PORT_FBS);
-	}
-
-	if (unlikely((ctx->last_cmd[ap->port_no] == ATA_CMD_ID_ATA) ||
-	    (ctx->last_cmd[ap->port_no] == ATA_CMD_PACKET) ||
-	    (ctx->last_cmd[ap->port_no] == ATA_CMD_SMART)))
+	if (unlikely(ctx->last_cmd[ap->port_no] == ATA_CMD_ID_ATA))
 		xgene_ahci_restart_engine(ap);
 
 	rc = ahci_qc_issue(qc);
@@ -447,136 +363,19 @@ static void xgene_ahci_host_stop(struct ata_host *host)
 	ahci_platform_disable_resources(hpriv);
 }
 
-/**
- * xgene_ahci_pmp_softreset - Issue the softreset to the drives connected
- *                            to Port Multiplier.
- * @link: link to reset
- * @class: Return value to indicate class of device
- * @deadline: deadline jiffies for the operation
- *
- * Due to H/W errata, the controller is unable to save the PMP
- * field fetched from command header before sending the H2D FIS.
- * When the device returns the PMP port field in the D2H FIS, there is
- * a mismatch and results in command completion failure. The workaround
- * is to write the pmp value to PxFBS.DEV field before issuing any command
- * to PMP.
- */
-static int xgene_ahci_pmp_softreset(struct ata_link *link, unsigned int *class,
-			  unsigned long deadline)
-{
-	int pmp = sata_srst_pmp(link);
-	struct ata_port *ap = link->ap;
-	u32 rc;
-	void *port_mmio = ahci_port_base(ap);
-	u32 port_fbs;
-
-	/*
-	 * Set PxFBS.DEV field with pmp
-	 * value.
-	 */
-	port_fbs = readl(port_mmio + PORT_FBS);
-	port_fbs &= ~PORT_FBS_DEV_MASK;
-	port_fbs |= pmp << PORT_FBS_DEV_OFFSET;
-	writel(port_fbs, port_mmio + PORT_FBS);
-
-	rc = ahci_do_softreset(link, class, pmp, deadline, ahci_check_ready);
-
-	return rc;
-}
-
-/**
- * xgene_ahci_softreset - Issue the softreset to the drive.
- * @link: link to reset
- * @class: Return value to indicate class of device
- * @deadline: deadline jiffies for the operation
- *
- * Due to H/W errata, the controller is unable to save the PMP
- * field fetched from command header before sending the H2D FIS.
- * When the device returns the PMP port field in the D2H FIS, there is
- * a mismatch and results in command completion failure. The workaround
- * is to write the pmp value to PxFBS.DEV field before issuing any command
- * to PMP. Here is the algorithm to detect PMP :
- *
- * 1. Save the PxFBS value
- * 2. Program PxFBS.DEV with pmp value send by framework. Framework sends
- *    0xF for both PMP/NON-PMP initially
- * 3. Issue softreset
- * 4. If signature class is PMP goto 6
- * 5. restore the original PxFBS and goto 3
- * 6. return
- */
-static int xgene_ahci_softreset(struct ata_link *link, unsigned int *class,
-			  unsigned long deadline)
-{
-	int pmp = sata_srst_pmp(link);
-	struct ata_port *ap = link->ap;
-	struct ahci_host_priv *hpriv = ap->host->private_data;
-	struct xgene_ahci_context *ctx = hpriv->plat_data;
-	void *port_mmio = ahci_port_base(ap);
-	u32 port_fbs;
-	u32 port_fbs_save;
-	u32 retry = 1;
-	u32 rc;
-
-	port_fbs_save = readl(port_mmio + PORT_FBS);
-
-	/*
-	 * Set PxFBS.DEV field with pmp
-	 * value.
-	 */
-	port_fbs = readl(port_mmio + PORT_FBS);
-	port_fbs &= ~PORT_FBS_DEV_MASK;
-	port_fbs |= pmp << PORT_FBS_DEV_OFFSET;
-	writel(port_fbs, port_mmio + PORT_FBS);
-
-softreset_retry:
-	rc = ahci_do_softreset(link, class, pmp,
-			       deadline, ahci_check_ready);
-
-	ctx->class[ap->port_no] = *class;
-	if (*class != ATA_DEV_PMP) {
-		/*
-		 * Retry for normal drives without
-		 * setting PxFBS.DEV field with pmp value.
-		 */
-		if (retry--) {
-			writel(port_fbs_save, port_mmio + PORT_FBS);
-			goto softreset_retry;
-		}
-	}
-
-	return rc;
-}
-
-static struct ata_port_operations xgene_ahci_v1_ops = {
+static struct ata_port_operations xgene_ahci_ops = {
 	.inherits = &ahci_ops,
 	.host_stop = xgene_ahci_host_stop,
 	.hardreset = xgene_ahci_hardreset,
 	.read_id = xgene_ahci_read_id,
 	.qc_issue = xgene_ahci_qc_issue,
-	.softreset = xgene_ahci_softreset,
-	.pmp_softreset = xgene_ahci_pmp_softreset
 };
 
-static const struct ata_port_info xgene_ahci_v1_port_info = {
-	.flags = AHCI_FLAG_COMMON | ATA_FLAG_PMP,
+static const struct ata_port_info xgene_ahci_port_info = {
+	.flags = AHCI_FLAG_COMMON,
 	.pio_mask = ATA_PIO4,
 	.udma_mask = ATA_UDMA6,
-	.port_ops = &xgene_ahci_v1_ops,
-};
-
-static struct ata_port_operations xgene_ahci_v2_ops = {
-	.inherits = &ahci_ops,
-	.host_stop = xgene_ahci_host_stop,
-	.hardreset = xgene_ahci_hardreset,
-	.read_id = xgene_ahci_read_id,
-};
-
-static const struct ata_port_info xgene_ahci_v2_port_info = {
-	.flags = AHCI_FLAG_COMMON | ATA_FLAG_PMP,
-	.pio_mask = ATA_PIO4,
-	.udma_mask = ATA_UDMA6,
-	.port_ops = &xgene_ahci_v2_ops,
+	.port_ops = &xgene_ahci_ops,
 };
 
 static int xgene_ahci_hw_init(struct ahci_host_priv *hpriv)
@@ -645,36 +444,12 @@ static int xgene_ahci_mux_select(struct xgene_ahci_context *ctx)
 	return val & CFG_SATA_ENET_SELECT_MASK ? -1 : 0;
 }
 
-static struct scsi_host_template ahci_platform_sht = {
-	AHCI_SHT(DRV_NAME),
-};
-
-#ifdef CONFIG_ACPI
-static const struct acpi_device_id xgene_ahci_acpi_match[] = {
-	{ "APMC0D0D", XGENE_AHCI_V1},
-	{ "APMC0D32", XGENE_AHCI_V2},
-	{},
-};
-MODULE_DEVICE_TABLE(acpi, xgene_ahci_acpi_match);
-#endif
-
-static const struct of_device_id xgene_ahci_of_match[] = {
-	{.compatible = "apm,xgene-ahci", .data = (void *) XGENE_AHCI_V1},
-	{.compatible = "apm,xgene-ahci-v2", .data = (void *) XGENE_AHCI_V2},
-	{},
-};
-MODULE_DEVICE_TABLE(of, xgene_ahci_of_match);
-
 static int xgene_ahci_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct ahci_host_priv *hpriv;
 	struct xgene_ahci_context *ctx;
 	struct resource *res;
-	const struct of_device_id *of_devid;
-	enum xgene_ahci_version version = XGENE_AHCI_V1;
-	const struct ata_port_info *ppi[] = { &xgene_ahci_v1_port_info,
-					      &xgene_ahci_v2_port_info };
 	int rc;
 
 	hpriv = ahci_platform_get_resources(pdev);
@@ -717,35 +492,6 @@ static int xgene_ahci_probe(struct platform_device *pdev)
 		ctx->csr_mux = csr;
 	}
 
-	of_devid = of_match_device(xgene_ahci_of_match, dev);
-	if (of_devid) {
-		if (of_devid->data)
-			version = (enum xgene_ahci_version) of_devid->data;
-	}
-#ifdef CONFIG_ACPI
-	else {
-		const struct acpi_device_id *acpi_id;
-		struct acpi_device_info *info;
-		acpi_status status;
-
-		acpi_id = acpi_match_device(xgene_ahci_acpi_match, &pdev->dev);
-		if (!acpi_id) {
-			dev_warn(&pdev->dev, "No node entry in ACPI table. Assume version1\n");
-			version = XGENE_AHCI_V1;
-		} else if (acpi_id->driver_data) {
-			version = (enum xgene_ahci_version) acpi_id->driver_data;
-			status = acpi_get_object_info(ACPI_HANDLE(&pdev->dev), &info);
-			if (ACPI_FAILURE(status)) {
-				dev_warn(&pdev->dev, "%s: Error reading device info. Assume version1\n",
-					__func__);
-				version = XGENE_AHCI_V1;
-			} else if (info->valid & ACPI_VALID_CID) {
-				version = XGENE_AHCI_V2;
-			}
-		}
-	}
-#endif
-
 	dev_dbg(dev, "VAddr 0x%p Mmio VAddr 0x%p\n", ctx->csr_core,
 		hpriv->mmio);
 
@@ -773,20 +519,9 @@ static int xgene_ahci_probe(struct platform_device *pdev)
 	/* Configure the host controller */
 	xgene_ahci_hw_init(hpriv);
 skip_clk_phy:
+	hpriv->flags = AHCI_HFLAG_NO_PMP | AHCI_HFLAG_NO_NCQ;
 
-	switch (version) {
-	case XGENE_AHCI_V1:
-		hpriv->flags = AHCI_HFLAG_NO_NCQ;
-		break;
-	case XGENE_AHCI_V2:
-		hpriv->flags |= AHCI_HFLAG_YES_FBS | AHCI_HFLAG_EDGE_IRQ;
-		break;
-	default:
-		break;
-	}
-
-	rc = ahci_platform_init_host(pdev, hpriv, ppi[version - 1],
-				     &ahci_platform_sht);
+	rc = ahci_platform_init_host(pdev, hpriv, &xgene_ahci_port_info);
 	if (rc)
 		goto disable_resources;
 
@@ -798,13 +533,19 @@ disable_resources:
 	return rc;
 }
 
+static const struct of_device_id xgene_ahci_of_match[] = {
+	{.compatible = "apm,xgene-ahci"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, xgene_ahci_of_match);
+
 static struct platform_driver xgene_ahci_driver = {
 	.probe = xgene_ahci_probe,
 	.remove = ata_platform_remove_one,
 	.driver = {
-		.name = DRV_NAME,
+		.name = "xgene-ahci",
+		.owner = THIS_MODULE,
 		.of_match_table = xgene_ahci_of_match,
-		.acpi_match_table = ACPI_PTR(xgene_ahci_acpi_match),
 	},
 };
 

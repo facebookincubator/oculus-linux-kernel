@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,32 +15,13 @@
 #ifndef UFS_QCOM_PHY_I_H_
 #define UFS_QCOM_PHY_I_H_
 
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/phy/phy-qcom-ufs.h>
 #include <linux/platform_device.h>
-#include <linux/io.h>
-#include <linux/delay.h>
-
-#define readl_poll_timeout(addr, val, cond, sleep_us, timeout_us) \
-({ \
-	ktime_t timeout = ktime_add_us(ktime_get(), timeout_us); \
-	might_sleep_if(timeout_us); \
-	for (;;) { \
-		(val) = readl(addr); \
-		if (cond) \
-			break; \
-		if (timeout_us && ktime_compare(ktime_get(), timeout) > 0) { \
-			(val) = readl(addr); \
-			break; \
-		} \
-		if (sleep_us) \
-			usleep_range(DIV_ROUND_UP(sleep_us, 4), sleep_us); \
-	} \
-	(cond) ? 0 : -ETIMEDOUT; \
-})
 
 #define UFS_QCOM_PHY_CAL_ENTRY(reg, val)	\
 	{				\
@@ -91,7 +72,6 @@ struct ufs_qcom_phy {
 	struct clk *ref_clk_src;
 	struct clk *ref_clk_parent;
 	struct clk *ref_clk;
-	struct clk *ref_aux_clk;
 	bool is_ref_clk_enabled;
 	bool is_dev_ref_clk_enabled;
 	struct ufs_qcom_phy_vreg vdda_pll;
@@ -150,9 +130,6 @@ struct ufs_qcom_phy {
  * state.
  * @power_control: pointer to a function that controls analog rail of phy
  * and writes to QSERDES_RX_SIGDET_CNTRL attribute
- * @configure_lpm: pointer to a function that configures the phy
- * for low power mode.
- * @dbg_register_dump: pointer to a function that dumps phy registers for debug.
  */
 struct ufs_qcom_phy_specific_ops {
 	int (*calibrate_phy)(struct ufs_qcom_phy *phy, bool is_rate_B);
@@ -161,8 +138,6 @@ struct ufs_qcom_phy_specific_ops {
 	void (*set_tx_lane_enable)(struct ufs_qcom_phy *phy, u32 val);
 	void (*ctrl_rx_linecfg)(struct ufs_qcom_phy *phy, bool ctrl);
 	void (*power_control)(struct ufs_qcom_phy *phy, bool val);
-	int (*configure_lpm)(struct ufs_qcom_phy *phy, bool enable);
-	void (*dbg_register_dump)(struct ufs_qcom_phy *phy);
 };
 
 struct ufs_qcom_phy *get_ufs_qcom_phy(struct phy *generic_phy);
@@ -177,15 +152,10 @@ int ufs_qcom_phy_remove(struct phy *generic_phy,
 		       struct ufs_qcom_phy *ufs_qcom_phy);
 struct phy *ufs_qcom_phy_generic_probe(struct platform_device *pdev,
 			struct ufs_qcom_phy *common_cfg,
-			const struct phy_ops *ufs_qcom_phy_gen_ops,
+			struct phy_ops *ufs_qcom_phy_gen_ops,
 			struct ufs_qcom_phy_specific_ops *phy_spec_ops);
 int ufs_qcom_phy_calibrate(struct ufs_qcom_phy *ufs_qcom_phy,
 			struct ufs_qcom_phy_calibration *tbl_A, int tbl_size_A,
 			struct ufs_qcom_phy_calibration *tbl_B, int tbl_size_B,
 			bool is_rate_B);
-void ufs_qcom_phy_write_tbl(struct ufs_qcom_phy *ufs_qcom_phy,
-				struct ufs_qcom_phy_calibration *tbl,
-				int tbl_size);
-void ufs_qcom_phy_dump_regs(struct ufs_qcom_phy *phy,
-			    int offset, int len, char *prefix);
 #endif

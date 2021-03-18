@@ -1,10 +1,8 @@
 #ifndef __FS_CEPH_PAGELIST_H
 #define __FS_CEPH_PAGELIST_H
 
-#include <asm/byteorder.h>
-#include <linux/atomic.h>
 #include <linux/list.h>
-#include <linux/types.h>
+#include <linux/atomic.h>
 
 struct ceph_pagelist {
 	struct list_head head;

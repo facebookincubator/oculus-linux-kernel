@@ -216,7 +216,7 @@ static int __init tegra_host1x_init(void)
 {
 	int err;
 
-	err = bus_register(&host1x_bus_type);
+	err = host1x_bus_init();
 	if (err < 0)
 		return err;
 
@@ -233,7 +233,7 @@ static int __init tegra_host1x_init(void)
 unregister_host1x:
 	platform_driver_unregister(&tegra_host1x_driver);
 unregister_bus:
-	bus_unregister(&host1x_bus_type);
+	host1x_bus_exit();
 	return err;
 }
 module_init(tegra_host1x_init);
@@ -242,7 +242,7 @@ static void __exit tegra_host1x_exit(void)
 {
 	platform_driver_unregister(&tegra_mipi_driver);
 	platform_driver_unregister(&tegra_host1x_driver);
-	bus_unregister(&host1x_bus_type);
+	host1x_bus_exit();
 }
 module_exit(tegra_host1x_exit);
 

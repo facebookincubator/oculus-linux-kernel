@@ -17,7 +17,7 @@
 #include <linux/spi/spi.h>
 #include <linux/usb/atmel_usba_udc.h>
 
-#include <linux/platform_data/mmc-atmel-mci.h>
+#include <mach/atmel-mci.h>
 #include <linux/atmel-mci.h>
 
 #include <asm/io.h>
@@ -603,11 +603,18 @@ static void __init genclk_init_parent(struct clk *clk)
 	clk->parent = parent;
 }
 
+static struct dw_dma_platform_data dw_dmac0_data = {
+	.nr_channels	= 3,
+	.block_size	= 4095U,
+	.nr_masters	= 2,
+	.data_width	= { 2, 2, 0, 0 },
+};
+
 static struct resource dw_dmac0_resource[] = {
 	PBMEM(0xff200000),
 	IRQ(2),
 };
-DEFINE_DEV(dw_dmac, 0);
+DEFINE_DEV_DATA(dw_dmac, 0);
 DEV_CLK(hclk, dw_dmac0, hsb, 10);
 
 /* --------------------------------------------------------------------

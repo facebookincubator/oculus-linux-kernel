@@ -17,19 +17,13 @@ struct ratelimit_state {
 	unsigned long	begin;
 };
 
-#define RATELIMIT_STATE_INIT(name, interval_init, burst_init) {		\
+#define DEFINE_RATELIMIT_STATE(name, interval_init, burst_init)		\
+									\
+	struct ratelimit_state name = {					\
 		.lock		= __RAW_SPIN_LOCK_UNLOCKED(name.lock),	\
 		.interval	= interval_init,			\
 		.burst		= burst_init,				\
 	}
-
-#define RATELIMIT_STATE_INIT_DISABLED					\
-	RATELIMIT_STATE_INIT(ratelimit_state, 0, DEFAULT_RATELIMIT_BURST)
-
-#define DEFINE_RATELIMIT_STATE(name, interval_init, burst_init)		\
-									\
-	struct ratelimit_state name =					\
-		RATELIMIT_STATE_INIT(name, interval_init, burst_init)	\
 
 static inline void ratelimit_state_init(struct ratelimit_state *rs,
 					int interval, int burst)

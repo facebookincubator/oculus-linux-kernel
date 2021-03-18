@@ -8,6 +8,15 @@
  * Public License ("GPL") version 2 as distributed in the 'COPYING'
  * file from the main directory of the linux kernel source.
  *
+ *
+ * Your platform definition file should specify something like:
+ *
+ * static struct at91_can_data ek_can_data = {
+ *	transceiver_switch = sam9263ek_transceiver_switch,
+ * };
+ *
+ * at91_add_device_can(&ek_can_data);
+ *
  */
 
 #include <linux/clk.h>
@@ -24,6 +33,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/platform_data/atmel.h>
 
 #include <linux/can/dev.h>
 #include <linux/can/error.h>
@@ -128,6 +138,7 @@ struct at91_devtype_data {
 
 struct at91_priv {
 	struct can_priv can;		/* must be the first member! */
+	struct net_device *dev;
 	struct napi_struct napi;
 
 	void __iomem *reg_base;
@@ -281,13 +292,13 @@ static inline unsigned int get_tx_echo_mb(const struct at91_priv *priv)
 
 static inline u32 at91_read(const struct at91_priv *priv, enum at91_reg reg)
 {
-	return readl_relaxed(priv->reg_base + reg);
+	return __raw_readl(priv->reg_base + reg);
 }
 
 static inline void at91_write(const struct at91_priv *priv, enum at91_reg reg,
 		u32 value)
 {
-	writel_relaxed(value, priv->reg_base + reg);
+	__raw_writel(value, priv->reg_base + reg);
 }
 
 static inline void set_mb_mode_prio(const struct at91_priv *priv,
@@ -312,6 +323,15 @@ static inline u32 at91_can_id_to_reg_mid(canid_t can_id)
 		reg_mid = (can_id & CAN_SFF_MASK) << 18;
 
 	return reg_mid;
+}
+
+/*
+ * Swtich transceiver on or off
+ */
+static void at91_transceiver_switch(const struct at91_priv *priv, int on)
+{
+	if (priv->pdata && priv->pdata->transceiver_switch)
+		priv->pdata->transceiver_switch(on);
 }
 
 static void at91_setup_mailboxes(struct net_device *dev)
@@ -397,6 +417,7 @@ static void at91_chip_start(struct net_device *dev)
 
 	at91_set_bittiming(dev);
 	at91_setup_mailboxes(dev);
+	at91_transceiver_switch(priv, 1);
 
 	/* enable chip */
 	if (priv->can.ctrlmode & CAN_CTRLMODE_LISTENONLY)
@@ -424,6 +445,7 @@ static void at91_chip_stop(struct net_device *dev, enum can_state state)
 	reg_mr = at91_read(priv, AT91_MR);
 	at91_write(priv, AT91_MR, reg_mr & ~AT91_MR_CANEN);
 
+	at91_transceiver_switch(priv, 0);
 	priv->can.state = state;
 }
 
@@ -556,10 +578,10 @@ static void at91_rx_overflow_err(struct net_device *dev)
 
 	cf->can_id |= CAN_ERR_CRTL;
 	cf->data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+	netif_receive_skb(skb);
 
 	stats->rx_packets++;
 	stats->rx_bytes += cf->can_dlc;
-	netif_receive_skb(skb);
 }
 
 /**
@@ -621,10 +643,10 @@ static void at91_read_msg(struct net_device *dev, unsigned int mb)
 	}
 
 	at91_read_mb(dev, mb, cf);
+	netif_receive_skb(skb);
 
 	stats->rx_packets++;
 	stats->rx_bytes += cf->can_dlc;
-	netif_receive_skb(skb);
 
 	can_led_event(dev, CAN_LED_EVENT_RX);
 }
@@ -712,10 +734,9 @@ static int at91_poll_rx(struct net_device *dev, int quota)
 
 	/* upper group completed, look again in lower */
 	if (priv->rx_next > get_mb_rx_low_last(priv) &&
-	    mb > get_mb_rx_last(priv)) {
+	    quota > 0 && mb > get_mb_rx_last(priv)) {
 		priv->rx_next = get_mb_rx_first(priv);
-		if (quota > 0)
-			goto again;
+		goto again;
 	}
 
 	return received;
@@ -782,10 +803,10 @@ static int at91_poll_err(struct net_device *dev, int quota, u32 reg_sr)
 		return 0;
 
 	at91_poll_err_frame(dev, cf, reg_sr);
+	netif_receive_skb(skb);
 
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += cf->can_dlc;
-	netif_receive_skb(skb);
 
 	return 1;
 }
@@ -1047,10 +1068,10 @@ static void at91_irq_err(struct net_device *dev)
 		return;
 
 	at91_irq_err_state(dev, cf, new_state);
+	netif_rx(skb);
 
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += cf->can_dlc;
-	netif_rx(skb);
 
 	priv->can.state = new_state;
 }
@@ -1329,6 +1350,7 @@ static int at91_can_probe(struct platform_device *pdev)
 	priv->can.do_get_berr_counter = at91_get_berr_counter;
 	priv->can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
 		CAN_CTRLMODE_LISTENONLY;
+	priv->dev = dev;
 	priv->reg_base = addr;
 	priv->devtype_data = *devtype_data;
 	priv->clk = clk;
@@ -1406,6 +1428,7 @@ static struct platform_driver at91_can_driver = {
 	.remove = at91_can_remove,
 	.driver = {
 		.name = KBUILD_MODNAME,
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(at91_can_dt_ids),
 	},
 	.id_table = at91_can_id_table,

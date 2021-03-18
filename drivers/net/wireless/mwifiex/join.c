@@ -53,9 +53,9 @@ mwifiex_cmd_append_generic_ie(struct mwifiex_private *priv, u8 **buffer)
 	 *   parameter buffer pointer.
 	 */
 	if (priv->gen_ie_buf_len) {
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: %s: append generic ie len %d to %p\n",
-			    __func__, priv->gen_ie_buf_len, *buffer);
+		dev_dbg(priv->adapter->dev,
+			"info: %s: append generic ie len %d to %p\n",
+			__func__, priv->gen_ie_buf_len, *buffer);
 
 		/* Wrap the generic IE buffer with a pass through TLV type */
 		ie_header.type = cpu_to_le16(TLV_TYPE_PASSTHROUGH);
@@ -125,9 +125,9 @@ mwifiex_cmd_append_tsf_tlv(struct mwifiex_private *priv, u8 **buffer,
 
 	tsf_val = cpu_to_le64(bss_desc->timestamp);
 
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: %s: TSF offset calc: %016llx - %016llx\n",
-		    __func__, bss_desc->timestamp, bss_desc->fw_tsf);
+	dev_dbg(priv->adapter->dev,
+		"info: %s: TSF offset calc: %016llx - %016llx\n",
+		__func__, bss_desc->timestamp, bss_desc->fw_tsf);
 
 	memcpy(*buffer, &tsf_val, sizeof(tsf_val));
 	*buffer += sizeof(tsf_val);
@@ -152,7 +152,7 @@ static int mwifiex_get_common_rates(struct mwifiex_private *priv, u8 *rate1,
 
 	tmp = kmemdup(rate1, rate1_size, GFP_KERNEL);
 	if (!tmp) {
-		mwifiex_dbg(priv->adapter, ERROR, "failed to alloc tmp buf\n");
+		dev_err(priv->adapter->dev, "failed to alloc tmp buf\n");
 		return -ENOMEM;
 	}
 
@@ -169,8 +169,8 @@ static int mwifiex_get_common_rates(struct mwifiex_private *priv, u8 *rate1,
 		}
 	}
 
-	mwifiex_dbg(priv->adapter, INFO, "info: Tx data rate set to %#x\n",
-		    priv->data_rate);
+	dev_dbg(priv->adapter->dev, "info: Tx data rate set to %#x\n",
+		priv->data_rate);
 
 	if (!priv->is_data_rate_auto) {
 		while (*ptr) {
@@ -180,10 +180,9 @@ static int mwifiex_get_common_rates(struct mwifiex_private *priv, u8 *rate1,
 			}
 			ptr++;
 		}
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "previously set fixed data rate %#x\t"
-			    "is not compatible with the network\n",
-			    priv->data_rate);
+		dev_err(priv->adapter->dev, "previously set fixed data rate %#x"
+			" is not compatible with the network\n",
+			priv->data_rate);
 
 		ret = -1;
 		goto done;
@@ -215,9 +214,8 @@ mwifiex_setup_rates_from_bssdesc(struct mwifiex_private *priv,
 	if (mwifiex_get_common_rates(priv, out_rates, MWIFIEX_SUPPORTED_RATES,
 				     card_rates, card_rates_size)) {
 		*out_rates_size = 0;
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "%s: cannot get common rates\n",
-			    __func__);
+		dev_err(priv->adapter->dev, "%s: cannot get common rates\n",
+			__func__);
 		return -1;
 	}
 
@@ -248,9 +246,8 @@ mwifiex_cmd_append_wps_ie(struct mwifiex_private *priv, u8 **buffer)
 	 * parameter buffer pointer.
 	 */
 	if (priv->wps_ie_len) {
-		mwifiex_dbg(priv->adapter, CMD,
-			    "cmd: append wps ie %d to %p\n",
-			    priv->wps_ie_len, *buffer);
+		dev_dbg(priv->adapter->dev, "cmd: append wps ie %d to %p\n",
+			priv->wps_ie_len, *buffer);
 
 		/* Wrap the generic IE buffer with a pass through TLV type */
 		ie_header.type = cpu_to_le16(TLV_TYPE_MGMT_IE);
@@ -295,9 +292,8 @@ mwifiex_cmd_append_wapi_ie(struct mwifiex_private *priv, u8 **buffer)
 	 *   parameter buffer pointer.
 	 */
 	if (priv->wapi_ie_len) {
-		mwifiex_dbg(priv->adapter, CMD,
-			    "cmd: append wapi ie %d to %p\n",
-			    priv->wapi_ie_len, *buffer);
+		dev_dbg(priv->adapter->dev, "cmd: append wapi ie %d to %p\n",
+			priv->wapi_ie_len, *buffer);
 
 		/* Wrap the generic IE buffer with a pass through TLV type */
 		ie_header.type = cpu_to_le16(TLV_TYPE_WAPI_IE);
@@ -457,8 +453,8 @@ int mwifiex_cmd_802_11_associate(struct mwifiex_private *priv,
 	rates_tlv->header.len = cpu_to_le16((u16) rates_size);
 	memcpy(rates_tlv->rates, rates, rates_size);
 	pos += sizeof(rates_tlv->header) + rates_size;
-	mwifiex_dbg(priv->adapter, INFO, "info: ASSOC_CMD: rates size = %d\n",
-		    rates_size);
+	dev_dbg(priv->adapter->dev, "info: ASSOC_CMD: rates size = %d\n",
+		rates_size);
 
 	/* Add the Authentication type to be used for Auth frames */
 	auth_tlv = (struct mwifiex_ie_types_auth_type *) pos;
@@ -491,14 +487,14 @@ int mwifiex_cmd_802_11_associate(struct mwifiex_private *priv,
 		       sizeof(struct mwifiex_chan_scan_param_set));
 		chan_tlv->chan_scan_param[0].chan_number =
 			(bss_desc->phy_param_set.ds_param_set.current_chan);
-		mwifiex_dbg(priv->adapter, INFO, "info: Assoc: TLV Chan = %d\n",
-			    chan_tlv->chan_scan_param[0].chan_number);
+		dev_dbg(priv->adapter->dev, "info: Assoc: TLV Chan = %d\n",
+			chan_tlv->chan_scan_param[0].chan_number);
 
 		chan_tlv->chan_scan_param[0].radio_type =
 			mwifiex_band_to_radio_type((u8) bss_desc->bss_band);
 
-		mwifiex_dbg(priv->adapter, INFO, "info: Assoc: TLV Band = %d\n",
-			    chan_tlv->chan_scan_param[0].radio_type);
+		dev_dbg(priv->adapter->dev, "info: Assoc: TLV Band = %d\n",
+			chan_tlv->chan_scan_param[0].radio_type);
 		pos += sizeof(chan_tlv->header) +
 			sizeof(struct mwifiex_chan_scan_param_set);
 	}
@@ -548,31 +544,13 @@ int mwifiex_cmd_802_11_associate(struct mwifiex_private *priv,
 		tmp_cap &= ~WLAN_CAPABILITY_SHORT_SLOT_TIME;
 
 	tmp_cap &= CAPINFO_MASK;
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: ASSOC_CMD: tmp_cap=%4X CAPINFO_MASK=%4lX\n",
-		    tmp_cap, CAPINFO_MASK);
+	dev_dbg(priv->adapter->dev, "info: ASSOC_CMD: tmp_cap=%4X CAPINFO_MASK=%4lX\n",
+		tmp_cap, CAPINFO_MASK);
 	assoc->cap_info_bitmap = cpu_to_le16(tmp_cap);
 
 	return 0;
 }
 
-static const char *assoc_failure_reason_to_str(u16 cap_info)
-{
-	switch (cap_info) {
-	case CONNECT_ERR_AUTH_ERR_STA_FAILURE:
-		return "CONNECT_ERR_AUTH_ERR_STA_FAILURE";
-	case CONNECT_ERR_AUTH_MSG_UNHANDLED:
-		return "CONNECT_ERR_AUTH_MSG_UNHANDLED";
-	case CONNECT_ERR_ASSOC_ERR_TIMEOUT:
-		return "CONNECT_ERR_ASSOC_ERR_TIMEOUT";
-	case CONNECT_ERR_ASSOC_ERR_AUTH_REFUSED:
-		return "CONNECT_ERR_ASSOC_ERR_AUTH_REFUSED";
-	case CONNECT_ERR_STA_FAILURE:
-		return "CONNECT_ERR_STA_FAILURE";
-	}
-
-	return "Unknown connect failure";
-}
 /*
  * Association firmware command response handler
  *
@@ -643,48 +621,29 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 	struct ieee_types_assoc_rsp *assoc_rsp;
 	struct mwifiex_bssdescriptor *bss_desc;
 	bool enable_data = true;
-	u16 cap_info, status_code, aid;
+	u16 cap_info, status_code;
 
 	assoc_rsp = (struct ieee_types_assoc_rsp *) &resp->params;
 
 	cap_info = le16_to_cpu(assoc_rsp->cap_info_bitmap);
 	status_code = le16_to_cpu(assoc_rsp->status_code);
-	aid = le16_to_cpu(assoc_rsp->a_id);
-
-	if ((aid & (BIT(15) | BIT(14))) != (BIT(15) | BIT(14)))
-		dev_err(priv->adapter->dev,
-			"invalid AID value 0x%x; bits 15:14 not set\n",
-			aid);
-
-	aid &= ~(BIT(15) | BIT(14));
 
 	priv->assoc_rsp_size = min(le16_to_cpu(resp->size) - S_DS_GEN,
 				   sizeof(priv->assoc_rsp_buf));
 
 	memcpy(priv->assoc_rsp_buf, &resp->params, priv->assoc_rsp_size);
 
-	assoc_rsp->a_id = cpu_to_le16(aid);
-
 	if (status_code) {
 		priv->adapter->dbg.num_cmd_assoc_failure++;
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "ASSOC_RESP: failed,\t"
-			    "status code=%d err=%#x a_id=%#x\n",
-			    status_code, cap_info,
-			    le16_to_cpu(assoc_rsp->a_id));
+		dev_err(priv->adapter->dev,
+			"ASSOC_RESP: failed, status code=%d err=%#x a_id=%#x\n",
+			status_code, cap_info, le16_to_cpu(assoc_rsp->a_id));
 
-		mwifiex_dbg(priv->adapter, ERROR, "assoc failure: reason %s\n",
-			    assoc_failure_reason_to_str(cap_info));
-		if (cap_info == CONNECT_ERR_ASSOC_ERR_TIMEOUT) {
-			if (status_code == MWIFIEX_ASSOC_CMD_FAILURE_AUTH) {
+		if (cap_info == MWIFIEX_TIMEOUT_FOR_AP_RESP) {
+			if (status_code == MWIFIEX_STATUS_CODE_AUTH_TIMEOUT)
 				ret = WLAN_STATUS_AUTH_TIMEOUT;
-				mwifiex_dbg(priv->adapter, ERROR,
-					    "ASSOC_RESP: AUTH timeout\n");
-			} else {
+			else
 				ret = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				mwifiex_dbg(priv->adapter, ERROR,
-					    "ASSOC_RESP: UNSPECIFIED failure\n");
-			}
 		} else {
 			ret = status_code;
 		}
@@ -702,8 +661,8 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 	/* Set the attempted BSSID Index to current */
 	bss_desc = priv->attempted_bss_desc;
 
-	mwifiex_dbg(priv->adapter, INFO, "info: ASSOC_RESP: %s\n",
-		    bss_desc->ssid.ssid);
+	dev_dbg(priv->adapter->dev, "info: ASSOC_RESP: %s\n",
+		bss_desc->ssid.ssid);
 
 	/* Make a copy of current BSSID descriptor */
 	memcpy(&priv->curr_bss_params.bss_descriptor,
@@ -733,9 +692,8 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 			= ((bss_desc->wmm_ie.qos_info_bitmap &
 				IEEE80211_WMM_IE_AP_QOSINFO_UAPSD) ? 1 : 0);
 
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: ASSOC_RESP: curr_pkt_filter is %#x\n",
-		    priv->curr_pkt_filter);
+	dev_dbg(priv->adapter->dev, "info: ASSOC_RESP: curr_pkt_filter is %#x\n",
+		priv->curr_pkt_filter);
 	if (priv->sec_info.wpa_enabled || priv->sec_info.wpa2_enabled)
 		priv->wpa_is_gtk_set = false;
 
@@ -751,8 +709,8 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 	}
 
 	if (enable_data)
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: post association, re-enabling data flow\n");
+		dev_dbg(priv->adapter->dev,
+			"info: post association, re-enabling data flow\n");
 
 	/* Reset SNR/NF/RSSI values */
 	priv->data_rssi_last = 0;
@@ -770,7 +728,7 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 
 	priv->adapter->dbg.num_cmd_assoc_success++;
 
-	mwifiex_dbg(priv->adapter, INFO, "info: ASSOC_RESP: associated\n");
+	dev_dbg(priv->adapter->dev, "info: ASSOC_RESP: associated\n");
 
 	/* Add the ra_list here for infra mode as there will be only 1 ra
 	   always */
@@ -783,8 +741,6 @@ int mwifiex_ret_802_11_associate(struct mwifiex_private *priv,
 
 	if (priv->sec_info.wpa_enabled || priv->sec_info.wpa2_enabled)
 		priv->scan_block = true;
-	else
-		priv->port_open = true;
 
 done:
 	/* Need to indicate IOCTL complete */
@@ -859,8 +815,8 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 
 	memcpy(adhoc_start->ssid, req_ssid->ssid, req_ssid->ssid_len);
 
-	mwifiex_dbg(adapter, INFO, "info: ADHOC_S_CMD: SSID = %s\n",
-		    adhoc_start->ssid);
+	dev_dbg(adapter->dev, "info: ADHOC_S_CMD: SSID = %s\n",
+		adhoc_start->ssid);
 
 	memset(bss_desc->ssid.ssid, 0, IEEE80211_MAX_SSID_LEN);
 	memcpy(bss_desc->ssid.ssid, req_ssid->ssid, req_ssid->ssid_len);
@@ -892,14 +848,12 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 	}
 
 	if (!priv->adhoc_channel) {
-		mwifiex_dbg(adapter, ERROR,
-			    "ADHOC_S_CMD: adhoc_channel cannot be 0\n");
+		dev_err(adapter->dev, "ADHOC_S_CMD: adhoc_channel cannot be 0\n");
 		return -1;
 	}
 
-	mwifiex_dbg(adapter, INFO,
-		    "info: ADHOC_S_CMD: creating ADHOC on channel %d\n",
-		    priv->adhoc_channel);
+	dev_dbg(adapter->dev, "info: ADHOC_S_CMD: creating ADHOC on channel %d\n",
+		priv->adhoc_channel);
 
 	priv->curr_bss_params.bss_descriptor.channel = priv->adhoc_channel;
 	priv->curr_bss_params.band = adapter->adhoc_start_band;
@@ -926,19 +880,20 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 
 	/* Set Capability info */
 	bss_desc->cap_info_bitmap |= WLAN_CAPABILITY_IBSS;
-	tmp_cap = WLAN_CAPABILITY_IBSS;
+	tmp_cap = le16_to_cpu(adhoc_start->cap_info_bitmap);
+	tmp_cap &= ~WLAN_CAPABILITY_ESS;
+	tmp_cap |= WLAN_CAPABILITY_IBSS;
 
 	/* Set up privacy in bss_desc */
 	if (priv->sec_info.encryption_mode) {
 		/* Ad-Hoc capability privacy on */
-		mwifiex_dbg(adapter, INFO,
-			    "info: ADHOC_S_CMD: wep_status set privacy to WEP\n");
+		dev_dbg(adapter->dev,
+			"info: ADHOC_S_CMD: wep_status set privacy to WEP\n");
 		bss_desc->privacy = MWIFIEX_802_11_PRIV_FILTER_8021X_WEP;
 		tmp_cap |= WLAN_CAPABILITY_PRIVACY;
 	} else {
-		mwifiex_dbg(adapter, INFO,
-			    "info: ADHOC_S_CMD: wep_status NOT set,\t"
-			    "setting privacy to ACCEPT ALL\n");
+		dev_dbg(adapter->dev, "info: ADHOC_S_CMD: wep_status NOT set,"
+				" setting privacy to ACCEPT ALL\n");
 		bss_desc->privacy = MWIFIEX_802_11_PRIV_FILTER_ACCEPT_ALL;
 	}
 
@@ -949,8 +904,8 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 		if (mwifiex_send_cmd(priv, HostCmd_CMD_MAC_CONTROL,
 				     HostCmd_ACT_GEN_SET, 0,
 				     &priv->curr_pkt_filter, false)) {
-			mwifiex_dbg(adapter, ERROR,
-				    "ADHOC_S_CMD: G Protection config failed\n");
+			dev_err(adapter->dev,
+				"ADHOC_S_CMD: G Protection config failed\n");
 			return -1;
 		}
 	}
@@ -965,10 +920,10 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 	memcpy(&priv->curr_bss_params.data_rates,
 	       &adhoc_start->data_rate, priv->curr_bss_params.num_of_rates);
 
-	mwifiex_dbg(adapter, INFO, "info: ADHOC_S_CMD: rates=%4ph\n",
-		    adhoc_start->data_rate);
+	dev_dbg(adapter->dev, "info: ADHOC_S_CMD: rates=%4ph\n",
+		adhoc_start->data_rate);
 
-	mwifiex_dbg(adapter, INFO, "info: ADHOC_S_CMD: AD-HOC Start command is ready\n");
+	dev_dbg(adapter->dev, "info: ADHOC_S_CMD: AD-HOC Start command is ready\n");
 
 	if (IS_SUPPORT_MULTI_BANDS(adapter)) {
 		/* Append a channel TLV */
@@ -982,8 +937,8 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 		chan_tlv->chan_scan_param[0].chan_number =
 			(u8) priv->curr_bss_params.bss_descriptor.channel;
 
-		mwifiex_dbg(adapter, INFO, "info: ADHOC_S_CMD: TLV Chan = %d\n",
-			    chan_tlv->chan_scan_param[0].chan_number);
+		dev_dbg(adapter->dev, "info: ADHOC_S_CMD: TLV Chan = %d\n",
+			chan_tlv->chan_scan_param[0].chan_number);
 
 		chan_tlv->chan_scan_param[0].radio_type
 		       = mwifiex_band_to_radio_type(priv->curr_bss_params.band);
@@ -998,8 +953,8 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 				chan_tlv->chan_scan_param[0].radio_type |=
 					(IEEE80211_HT_PARAM_CHA_SEC_BELOW << 4);
 		}
-		mwifiex_dbg(adapter, INFO, "info: ADHOC_S_CMD: TLV Band = %d\n",
-			    chan_tlv->chan_scan_param[0].radio_type);
+		dev_dbg(adapter->dev, "info: ADHOC_S_CMD: TLV Band = %d\n",
+			chan_tlv->chan_scan_param[0].radio_type);
 		pos += sizeof(chan_tlv->header) +
 			sizeof(struct mwifiex_chan_scan_param_set);
 		cmd_append_size +=
@@ -1121,8 +1076,8 @@ mwifiex_cmd_802_11_ad_hoc_join(struct mwifiex_private *priv,
 		if (mwifiex_send_cmd(priv, HostCmd_CMD_MAC_CONTROL,
 				     HostCmd_ACT_GEN_SET, 0,
 				     &curr_pkt_filter, false)) {
-			mwifiex_dbg(priv->adapter, ERROR,
-				    "ADHOC_J_CMD: G Protection config failed\n");
+			dev_err(priv->adapter->dev,
+				"ADHOC_J_CMD: G Protection config failed\n");
 			return -1;
 		}
 	}
@@ -1153,15 +1108,14 @@ mwifiex_cmd_802_11_ad_hoc_join(struct mwifiex_private *priv,
 
 	tmp_cap &= CAPINFO_MASK;
 
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: ADHOC_J_CMD: tmp_cap=%4X CAPINFO_MASK=%4lX\n",
-		    tmp_cap, CAPINFO_MASK);
+	dev_dbg(priv->adapter->dev,
+		"info: ADHOC_J_CMD: tmp_cap=%4X CAPINFO_MASK=%4lX\n",
+		tmp_cap, CAPINFO_MASK);
 
 	/* Information on BSSID descriptor passed to FW */
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: ADHOC_J_CMD: BSSID=%pM, SSID='%s'\n",
-		    adhoc_join->bss_descriptor.bssid,
-		    adhoc_join->bss_descriptor.ssid);
+	dev_dbg(priv->adapter->dev, "info: ADHOC_J_CMD: BSSID=%pM, SSID='%s'\n",
+		adhoc_join->bss_descriptor.bssid,
+		adhoc_join->bss_descriptor.ssid);
 
 	for (i = 0; i < MWIFIEX_SUPPORTED_RATES &&
 		    bss_desc->supported_rates[i]; i++)
@@ -1197,14 +1151,14 @@ mwifiex_cmd_802_11_ad_hoc_join(struct mwifiex_private *priv,
 		       sizeof(struct mwifiex_chan_scan_param_set));
 		chan_tlv->chan_scan_param[0].chan_number =
 			(bss_desc->phy_param_set.ds_param_set.current_chan);
-		mwifiex_dbg(priv->adapter, INFO, "info: ADHOC_J_CMD: TLV Chan=%d\n",
-			    chan_tlv->chan_scan_param[0].chan_number);
+		dev_dbg(priv->adapter->dev, "info: ADHOC_J_CMD: TLV Chan=%d\n",
+			chan_tlv->chan_scan_param[0].chan_number);
 
 		chan_tlv->chan_scan_param[0].radio_type =
 			mwifiex_band_to_radio_type((u8) bss_desc->bss_band);
 
-		mwifiex_dbg(priv->adapter, INFO, "info: ADHOC_J_CMD: TLV Band=%d\n",
-			    chan_tlv->chan_scan_param[0].radio_type);
+		dev_dbg(priv->adapter->dev, "info: ADHOC_J_CMD: TLV Band=%d\n",
+			chan_tlv->chan_scan_param[0].radio_type);
 		pos += sizeof(chan_tlv->header) +
 				sizeof(struct mwifiex_chan_scan_param_set);
 		cmd_append_size += sizeof(chan_tlv->header) +
@@ -1258,7 +1212,7 @@ int mwifiex_ret_802_11_ad_hoc(struct mwifiex_private *priv,
 	/* Join result code 0 --> SUCCESS */
 	reason_code = le16_to_cpu(resp->result);
 	if (reason_code) {
-		mwifiex_dbg(priv->adapter, ERROR, "ADHOC_RESP: failed\n");
+		dev_err(priv->adapter->dev, "ADHOC_RESP: failed\n");
 		if (priv->media_connected)
 			mwifiex_reset_connect_state(priv, reason_code);
 
@@ -1273,8 +1227,8 @@ int mwifiex_ret_802_11_ad_hoc(struct mwifiex_private *priv,
 	priv->media_connected = true;
 
 	if (le16_to_cpu(resp->command) == HostCmd_CMD_802_11_AD_HOC_START) {
-		mwifiex_dbg(priv->adapter, INFO, "info: ADHOC_S_RESP %s\n",
-			    bss_desc->ssid.ssid);
+		dev_dbg(priv->adapter->dev, "info: ADHOC_S_RESP %s\n",
+			bss_desc->ssid.ssid);
 
 		/* Update the created network descriptor with the new BSSID */
 		memcpy(bss_desc->mac_address,
@@ -1286,9 +1240,8 @@ int mwifiex_ret_802_11_ad_hoc(struct mwifiex_private *priv,
 		 * Now the join cmd should be successful.
 		 * If BSSID has changed use SSID to compare instead of BSSID
 		 */
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: ADHOC_J_RESP %s\n",
-			    bss_desc->ssid.ssid);
+		dev_dbg(priv->adapter->dev, "info: ADHOC_J_RESP %s\n",
+			bss_desc->ssid.ssid);
 
 		/*
 		 * Make a copy of current BSSID descriptor, only needed for
@@ -1301,10 +1254,10 @@ int mwifiex_ret_802_11_ad_hoc(struct mwifiex_private *priv,
 		priv->adhoc_state = ADHOC_JOINED;
 	}
 
-	mwifiex_dbg(priv->adapter, INFO, "info: ADHOC_RESP: channel = %d\n",
-		    priv->adhoc_channel);
-	mwifiex_dbg(priv->adapter, INFO, "info: ADHOC_RESP: BSSID = %pM\n",
-		    priv->curr_bss_params.bss_descriptor.mac_address);
+	dev_dbg(priv->adapter->dev, "info: ADHOC_RESP: channel = %d\n",
+		priv->adhoc_channel);
+	dev_dbg(priv->adapter->dev, "info: ADHOC_RESP: BSSID = %pM\n",
+		priv->curr_bss_params.bss_descriptor.mac_address);
 
 	if (!netif_carrier_ok(priv->netdev))
 		netif_carrier_on(priv->netdev);
@@ -1366,12 +1319,12 @@ int
 mwifiex_adhoc_start(struct mwifiex_private *priv,
 		    struct cfg80211_ssid *adhoc_ssid)
 {
-	mwifiex_dbg(priv->adapter, INFO, "info: Adhoc Channel = %d\n",
-		    priv->adhoc_channel);
-	mwifiex_dbg(priv->adapter, INFO, "info: curr_bss_params.channel = %d\n",
-		    priv->curr_bss_params.bss_descriptor.channel);
-	mwifiex_dbg(priv->adapter, INFO, "info: curr_bss_params.band = %d\n",
-		    priv->curr_bss_params.band);
+	dev_dbg(priv->adapter->dev, "info: Adhoc Channel = %d\n",
+		priv->adhoc_channel);
+	dev_dbg(priv->adapter->dev, "info: curr_bss_params.channel = %d\n",
+		priv->curr_bss_params.bss_descriptor.channel);
+	dev_dbg(priv->adapter->dev, "info: curr_bss_params.band = %d\n",
+		priv->curr_bss_params.band);
 
 	if (ISSUPP_11ACENABLED(priv->adapter->fw_cap_info) &&
 	    priv->adapter->config_bands & BAND_AAC)
@@ -1392,16 +1345,14 @@ mwifiex_adhoc_start(struct mwifiex_private *priv,
 int mwifiex_adhoc_join(struct mwifiex_private *priv,
 		       struct mwifiex_bssdescriptor *bss_desc)
 {
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: adhoc join: curr_bss ssid =%s\n",
-		    priv->curr_bss_params.bss_descriptor.ssid.ssid);
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: adhoc join: curr_bss ssid_len =%u\n",
-		    priv->curr_bss_params.bss_descriptor.ssid.ssid_len);
-	mwifiex_dbg(priv->adapter, INFO, "info: adhoc join: ssid =%s\n",
-		    bss_desc->ssid.ssid);
-	mwifiex_dbg(priv->adapter, INFO, "info: adhoc join: ssid_len =%u\n",
-		    bss_desc->ssid.ssid_len);
+	dev_dbg(priv->adapter->dev, "info: adhoc join: curr_bss ssid =%s\n",
+		priv->curr_bss_params.bss_descriptor.ssid.ssid);
+	dev_dbg(priv->adapter->dev, "info: adhoc join: curr_bss ssid_len =%u\n",
+		priv->curr_bss_params.bss_descriptor.ssid.ssid_len);
+	dev_dbg(priv->adapter->dev, "info: adhoc join: ssid =%s\n",
+		bss_desc->ssid.ssid);
+	dev_dbg(priv->adapter->dev, "info: adhoc join: ssid_len =%u\n",
+		bss_desc->ssid.ssid_len);
 
 	/* Check if the requested SSID is already joined */
 	if (priv->curr_bss_params.bss_descriptor.ssid.ssid_len &&
@@ -1409,9 +1360,8 @@ int mwifiex_adhoc_join(struct mwifiex_private *priv,
 			      &priv->curr_bss_params.bss_descriptor.ssid) &&
 	    (priv->curr_bss_params.bss_descriptor.bss_mode ==
 							NL80211_IFTYPE_ADHOC)) {
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: ADHOC_J_CMD: new ad-hoc SSID\t"
-			    "is the same as current; not attempting to re-join\n");
+		dev_dbg(priv->adapter->dev, "info: ADHOC_J_CMD: new ad-hoc SSID"
+			" is the same as current; not attempting to re-join\n");
 		return -1;
 	}
 
@@ -1422,12 +1372,10 @@ int mwifiex_adhoc_join(struct mwifiex_private *priv,
 	else
 		mwifiex_set_ba_params(priv);
 
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: curr_bss_params.channel = %d\n",
-		    priv->curr_bss_params.bss_descriptor.channel);
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: curr_bss_params.band = %c\n",
-		    priv->curr_bss_params.band);
+	dev_dbg(priv->adapter->dev, "info: curr_bss_params.channel = %d\n",
+		priv->curr_bss_params.bss_descriptor.channel);
+	dev_dbg(priv->adapter->dev, "info: curr_bss_params.band = %c\n",
+		priv->curr_bss_params.band);
 
 	return mwifiex_send_cmd(priv, HostCmd_CMD_802_11_AD_HOC_JOIN,
 				HostCmd_ACT_GEN_SET, 0, bss_desc, true);

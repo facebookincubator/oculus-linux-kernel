@@ -2,7 +2,6 @@
 #define _UTIL_H
 
 #include <stdarg.h>
-#include <stdbool.h>
 #include <getopt.h>
 
 /*
@@ -34,7 +33,6 @@ static inline void __attribute__((noreturn)) die(const char *str, ...)
 	va_start(ap, str);
 	fprintf(stderr, "FATAL ERROR: ");
 	vfprintf(stderr, str, ap);
-	va_end(ap);
 	exit(1);
 }
 
@@ -70,7 +68,7 @@ extern char *join_path(const char *path, const char *name);
  * @param len	The string length including terminator
  * @return 1 if a valid printable string, 0 if not
  */
-bool util_is_printable_string(const void *data, int len);
+int util_is_printable_string(const void *data, int len);
 
 /*
  * Parse an escaped character starting at index i in string s.  The resulting

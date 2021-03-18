@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -64,8 +64,7 @@
 uint8_t ice_key[ICE_KEY_SIZE];
 uint8_t ice_salt[ICE_KEY_SIZE];
 
-int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt,
-			char *storage_type)
+int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt)
 {
 	struct scm_desc desc = {0};
 	int ret;
@@ -84,9 +83,6 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt,
 
 	if (!tzbuf_key || !tzbuf_salt)
 		return -ENOMEM;
-
-	if (storage_type == NULL)
-		return -EINVAL;
 
 	memset(tzbuf_key, 0, tzbuflen_key);
 	memset(tzbuf_salt, 0, tzbuflen_salt);
@@ -107,8 +103,7 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt,
 	desc.args[3] = virt_to_phys(tzbuf_salt);
 	desc.args[4] = tzbuflen_salt;
 
-	ret = qcom_ice_setup_ice_hw((const char *)storage_type, true);
-
+	ret = qcom_ice_setup_ice_hw("ufs", true);
 	if (ret) {
 		pr_err("%s: could not enable clocks: 0x%x\n", __func__, ret);
 		return ret;
@@ -116,7 +111,7 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt,
 
 	ret = scm_call2(smc_id, &desc);
 
-	ret = qcom_ice_setup_ice_hw((const char *)storage_type, false);
+	qcom_ice_setup_ice_hw("ufs", false);
 
 	pr_debug(" %s , ret = %d\n", __func__, ret);
 	if (ret) {
@@ -132,7 +127,7 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt,
 }
 
 
-int qti_pfk_ice_invalidate_key(uint32_t index, char *storage_type)
+int qti_pfk_ice_invalidate_key(uint32_t index)
 {
 	struct scm_desc desc = {0};
 	int ret;
@@ -142,17 +137,13 @@ int qti_pfk_ice_invalidate_key(uint32_t index, char *storage_type)
 	if (index < MIN_ICE_KEY_INDEX || index > MAX_ICE_KEY_INDEX)
 		return -EINVAL;
 
-	if (storage_type == NULL)
-		return -EINVAL;
-
 	smc_id = TZ_ES_INVALIDATE_ICE_KEY_ID;
 	pr_debug(" %s , smc_id = 0x%x\n", __func__, smc_id);
 
 	desc.arginfo = TZ_ES_INVALIDATE_ICE_KEY_PARAM_ID;
 	desc.args[0] = index;
 
-	ret = qcom_ice_setup_ice_hw((const char *)storage_type, true);
-
+	ret = qcom_ice_setup_ice_hw("ufs", true);
 	if (ret) {
 		pr_err("%s: could not enable clocks: 0x%x\n", __func__, ret);
 		return ret;
@@ -160,7 +151,7 @@ int qti_pfk_ice_invalidate_key(uint32_t index, char *storage_type)
 
 	ret = scm_call2(smc_id, &desc);
 
-	ret = qcom_ice_setup_ice_hw((const char *)storage_type, false);
+	qcom_ice_setup_ice_hw("ufs", false);
 
 	pr_debug(" %s , ret = %d\n", __func__, ret);
 	if (ret)

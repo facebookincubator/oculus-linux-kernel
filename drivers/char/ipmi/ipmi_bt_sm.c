@@ -694,7 +694,7 @@ static int bt_size(void)
 	return sizeof(struct si_sm_data);
 }
 
-const struct si_sm_handlers bt_smi_handlers = {
+struct si_sm_handlers bt_smi_handlers = {
 	.init_data		= bt_init_data,
 	.start_transaction	= bt_start_transaction,
 	.get_result		= bt_get_result,

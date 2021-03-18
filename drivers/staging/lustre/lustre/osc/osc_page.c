@@ -166,7 +166,6 @@ static void osc_page_fini(const struct lu_env *env,
 			  struct cl_page_slice *slice)
 {
 	struct osc_page *opg = cl2osc_page(slice);
-
 	CDEBUG(D_TRACE, "%p\n", opg);
 	LASSERT(opg->ops_lock == NULL);
 }
@@ -217,7 +216,7 @@ static int osc_page_cache_add(const struct lu_env *env,
 			      const struct cl_page_slice *slice,
 			      struct cl_io *io)
 {
-	struct osc_io *oio = osc_env_io(env);
+	struct osc_io   *oio = osc_env_io(env);
 	struct osc_page *opg = cl2osc_page(slice);
 	int result;
 
@@ -248,7 +247,7 @@ void osc_index2policy(ldlm_policy_data_t *policy, const struct cl_object *obj,
 {
 	memset(policy, 0, sizeof(*policy));
 	policy->l_extent.start = cl_offset(obj, start);
-	policy->l_extent.end = cl_offset(obj, end + 1) - 1;
+	policy->l_extent.end   = cl_offset(obj, end + 1) - 1;
 }
 
 static int osc_page_addref_lock(const struct lu_env *env,
@@ -256,7 +255,7 @@ static int osc_page_addref_lock(const struct lu_env *env,
 				struct cl_lock *lock)
 {
 	struct osc_lock *olock;
-	int rc;
+	int	      rc;
 
 	LASSERT(opg->ops_lock == NULL);
 
@@ -275,7 +274,7 @@ static int osc_page_addref_lock(const struct lu_env *env,
 static void osc_page_putref_lock(const struct lu_env *env,
 				 struct osc_page *opg)
 {
-	struct cl_lock *lock = opg->ops_lock;
+	struct cl_lock  *lock = opg->ops_lock;
 	struct osc_lock *olock;
 
 	LASSERT(lock != NULL);
@@ -292,7 +291,7 @@ static int osc_page_is_under_lock(const struct lu_env *env,
 				  struct cl_io *unused)
 {
 	struct cl_lock *lock;
-	int result = -ENODATA;
+	int	     result = -ENODATA;
 
 	lock = cl_lock_at_page(env, slice->cpl_obj, slice->cpl_page,
 			       NULL, 1, 0);
@@ -318,7 +317,7 @@ static void osc_page_completion_read(const struct lu_env *env,
 				     const struct cl_page_slice *slice,
 				     int ioret)
 {
-	struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page   *opg = cl2osc_page(slice);
 	struct osc_object *obj = cl2osc(opg->ops_cl.cpl_obj);
 
 	if (likely(opg->ops_lock))
@@ -330,7 +329,7 @@ static void osc_page_completion_write(const struct lu_env *env,
 				      const struct cl_page_slice *slice,
 				      int ioret)
 {
-	struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page   *opg = cl2osc_page(slice);
 	struct osc_object *obj = cl2osc(slice->cpl_obj);
 
 	osc_lru_add(osc_cli(obj), opg);
@@ -346,6 +345,7 @@ static int osc_page_fail(const struct lu_env *env,
 	LBUG();
 	return 0;
 }
+
 
 static const char *osc_list(struct list_head *head)
 {
@@ -364,12 +364,17 @@ static int osc_page_print(const struct lu_env *env,
 			  const struct cl_page_slice *slice,
 			  void *cookie, lu_printer_t printer)
 {
-	struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page       *opg = cl2osc_page(slice);
 	struct osc_async_page *oap = &opg->ops_oap;
-	struct osc_object *obj = cl2osc(slice->cpl_obj);
-	struct client_obd *cli = &osc_export(obj)->exp_obd->u.cli;
+	struct osc_object     *obj = cl2osc(slice->cpl_obj);
+	struct client_obd     *cli = &osc_export(obj)->exp_obd->u.cli;
 
-	return (*printer)(env, cookie, LUSTRE_OSC_NAME "-page@%p: 1< %#x %d %u %s %s > 2< %llu %u %u %#x %#x | %p %p %p > 3< %s %p %d %lu %d > 4< %d %d %d %lu %s | %s %s %s %s > 5< %s %s %s %s | %d %s | %d %s %s>\n",
+	return (*printer)(env, cookie, LUSTRE_OSC_NAME"-page@%p: "
+			  "1< %#x %d %u %s %s > "
+			  "2< %llu %u %u %#x %#x | %p %p %p > "
+			  "3< %s %p %d %lu %d > "
+			  "4< %d %d %d %lu %s | %s %s %s %s > "
+			  "5< %s %s %s %s | %d %s | %d %s %s>\n",
 			  opg,
 			  /* 1 */
 			  oap->oap_magic, oap->oap_cmd,
@@ -408,7 +413,7 @@ static int osc_page_print(const struct lu_env *env,
 static void osc_page_delete(const struct lu_env *env,
 			    const struct cl_page_slice *slice)
 {
-	struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page   *opg = cl2osc_page(slice);
 	struct osc_object *obj = cl2osc(opg->ops_cl.cpl_obj);
 	int rc;
 
@@ -437,13 +442,13 @@ static void osc_page_delete(const struct lu_env *env,
 void osc_page_clip(const struct lu_env *env, const struct cl_page_slice *slice,
 		   int from, int to)
 {
-	struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page       *opg = cl2osc_page(slice);
 	struct osc_async_page *oap = &opg->ops_oap;
 
 	LINVRNT(osc_page_protected(env, opg, CLM_READ, 0));
 
 	opg->ops_from = from;
-	opg->ops_to = to;
+	opg->ops_to   = to;
 	spin_lock(&oap->oap_lock);
 	oap->oap_async_flags |= ASYNC_COUNT_STABLE;
 	spin_unlock(&oap->oap_lock);
@@ -471,7 +476,7 @@ static int osc_page_flush(const struct lu_env *env,
 			  struct cl_io *io)
 {
 	struct osc_page *opg = cl2osc_page(slice);
-	int rc;
+	int rc = 0;
 
 	rc = osc_flush_async_page(env, io, opg);
 	return rc;
@@ -502,17 +507,16 @@ int osc_page_init(const struct lu_env *env, struct cl_object *obj,
 		struct cl_page *page, struct page *vmpage)
 {
 	struct osc_object *osc = cl2osc(obj);
-	struct osc_page *opg = cl_object_page_slice(obj, page);
+	struct osc_page   *opg = cl_object_page_slice(obj, page);
 	int result;
 
 	opg->ops_from = 0;
-	opg->ops_to = PAGE_CACHE_SIZE;
+	opg->ops_to   = PAGE_CACHE_SIZE;
 
 	result = osc_prep_async_page(osc, opg, vmpage,
 					cl_offset(obj, page->cp_index));
 	if (result == 0) {
 		struct osc_io *oio = osc_env_io(env);
-
 		opg->ops_srvlock = osc_io_srvlock(oio);
 		cl_page_slice_add(page, &opg->ops_cl, obj,
 				&osc_page_ops);
@@ -541,20 +545,20 @@ void osc_page_submit(const struct lu_env *env, struct osc_page *opg,
 		     enum cl_req_type crt, int brw_flags)
 {
 	struct osc_async_page *oap = &opg->ops_oap;
-	struct osc_object *obj = oap->oap_obj;
+	struct osc_object     *obj = oap->oap_obj;
 
 	LINVRNT(osc_page_protected(env, opg,
 				   crt == CRT_WRITE ? CLM_WRITE : CLM_READ, 1));
 
-	LASSERTF(oap->oap_magic == OAP_MAGIC, "Bad oap magic: oap %p, magic 0x%x\n",
-		 oap, oap->oap_magic);
+	LASSERTF(oap->oap_magic == OAP_MAGIC, "Bad oap magic: oap %p, "
+		 "magic 0x%x\n", oap, oap->oap_magic);
 	LASSERT(oap->oap_async_flags & ASYNC_READY);
 	LASSERT(oap->oap_async_flags & ASYNC_COUNT_STABLE);
 
-	oap->oap_cmd = crt == CRT_WRITE ? OBD_BRW_WRITE : OBD_BRW_READ;
-	oap->oap_page_off = opg->ops_from;
-	oap->oap_count = opg->ops_to - opg->ops_from;
-	oap->oap_brw_flags = brw_flags | OBD_BRW_SYNC;
+	oap->oap_cmd       = crt == CRT_WRITE ? OBD_BRW_WRITE : OBD_BRW_READ;
+	oap->oap_page_off  = opg->ops_from;
+	oap->oap_count     = opg->ops_to - opg->ops_from;
+	oap->oap_brw_flags = OBD_BRW_SYNC | brw_flags;
 
 	if (!client_is_remote(osc_export(obj)) &&
 			capable(CFS_CAP_SYS_RESOURCE)) {
@@ -625,7 +629,6 @@ static int discard_pagevec(const struct lu_env *env, struct cl_io *io,
 
 	for (count = 0, i = 0; i < max_index; i++) {
 		struct cl_page *page = pvec[i];
-
 		if (cl_page_own_try(env, io, page) == 0) {
 			/* free LRU page only if nobody is using it.
 			 * This check is necessary to avoid freeing the pages
@@ -820,6 +823,7 @@ static int osc_lru_reclaim(struct client_obd *cli)
 	int rc;
 
 	LASSERT(cache != NULL);
+	LASSERT(!list_empty(&cache->ccc_lru));
 
 	rc = osc_lru_shrink(cli, lru_shrink_min);
 	if (rc != 0) {
@@ -836,8 +840,6 @@ static int osc_lru_reclaim(struct client_obd *cli)
 	/* Reclaim LRU slots from other client_obd as it can't free enough
 	 * from its own. This should rarely happen. */
 	spin_lock(&cache->ccc_lru_lock);
-	LASSERT(!list_empty(&cache->ccc_lru));
-
 	cache->ccc_lru_shrinkers++;
 	list_move_tail(&cli->cl_lru_osc, &cache->ccc_lru);
 

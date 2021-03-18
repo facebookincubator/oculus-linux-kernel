@@ -30,13 +30,10 @@
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#define _GNU_SOURCE
-
 #include <arpa/inet.h>
 #include <asm/types.h>
 #include <error.h>
 #include <errno.h>
-#include <inttypes.h>
 #include <linux/errqueue.h>
 #include <linux/if_ether.h>
 #include <linux/net_tstamp.h>
@@ -49,7 +46,7 @@
 #include <netpacket/packet.h>
 #include <poll.h>
 #include <stdarg.h>
-#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,9 +65,6 @@ static int cfg_num_pkts = 4;
 static int do_ipv4 = 1;
 static int do_ipv6 = 1;
 static int cfg_payload_len = 10;
-static bool cfg_show_payload;
-static bool cfg_do_pktinfo;
-static bool cfg_loop_nodata;
 static uint16_t dest_port = 9000;
 
 static struct sockaddr_in daddr;
@@ -96,7 +90,7 @@ static void __print_timestamp(const char *name, struct timespec *cur,
 		prev_ms = (long) ts_prev.tv_sec * 1000 * 1000;
 		prev_ms += ts_prev.tv_nsec / 1000;
 
-		fprintf(stderr, "  (%+" PRId64 " us)", cur_ms - prev_ms);
+		fprintf(stderr, "  (%+ld us)", cur_ms - prev_ms);
 	}
 
 	ts_prev = *cur;
@@ -137,33 +131,6 @@ static void print_timestamp(struct scm_timestamping *tss, int tstype,
 	__print_timestamp(tsname, &tss->ts[0], tskey, payload_len);
 }
 
-/* TODO: convert to check_and_print payload once API is stable */
-static void print_payload(char *data, int len)
-{
-	int i;
-
-	if (!len)
-		return;
-
-	if (len > 70)
-		len = 70;
-
-	fprintf(stderr, "payload: ");
-	for (i = 0; i < len; i++)
-		fprintf(stderr, "%02hhx ", data[i]);
-	fprintf(stderr, "\n");
-}
-
-static void print_pktinfo(int family, int ifindex, void *saddr, void *daddr)
-{
-	char sa[INET6_ADDRSTRLEN], da[INET6_ADDRSTRLEN];
-
-	fprintf(stderr, "         pktinfo: ifindex=%u src=%s dst=%s\n",
-		ifindex,
-		saddr ? inet_ntop(family, saddr, sa, sizeof(sa)) : "unknown",
-		daddr ? inet_ntop(family, daddr, da, sizeof(da)) : "unknown");
-}
-
 static void __poll(int fd)
 {
 	struct pollfd pollfd;
@@ -181,7 +148,6 @@ static void __recv_errmsg_cmsg(struct msghdr *msg, int payload_len)
 	struct sock_extended_err *serr = NULL;
 	struct scm_timestamping *tss = NULL;
 	struct cmsghdr *cm;
-	int batch = 0;
 
 	for (cm = CMSG_FIRSTHDR(msg);
 	     cm && cm->cmsg_len;
@@ -190,9 +156,10 @@ static void __recv_errmsg_cmsg(struct msghdr *msg, int payload_len)
 		    cm->cmsg_type == SCM_TIMESTAMPING) {
 			tss = (void *) CMSG_DATA(cm);
 		} else if ((cm->cmsg_level == SOL_IP &&
-			    cm->cmsg_type == IP_RECVERR) ||
-			   (cm->cmsg_level == SOL_IPV6 &&
-			    cm->cmsg_type == IPV6_RECVERR)) {
+		     cm->cmsg_type == IP_RECVERR) ||
+		    (cm->cmsg_level == SOL_IPV6 &&
+		     cm->cmsg_type == IPV6_RECVERR)) {
+
 			serr = (void *) CMSG_DATA(cm);
 			if (serr->ee_errno != ENOMSG ||
 			    serr->ee_origin != SO_EE_ORIGIN_TIMESTAMPING) {
@@ -201,31 +168,13 @@ static void __recv_errmsg_cmsg(struct msghdr *msg, int payload_len)
 						serr->ee_origin);
 				serr = NULL;
 			}
-		} else if (cm->cmsg_level == SOL_IP &&
-			   cm->cmsg_type == IP_PKTINFO) {
-			struct in_pktinfo *info = (void *) CMSG_DATA(cm);
-			print_pktinfo(AF_INET, info->ipi_ifindex,
-				      &info->ipi_spec_dst, &info->ipi_addr);
-		} else if (cm->cmsg_level == SOL_IPV6 &&
-			   cm->cmsg_type == IPV6_PKTINFO) {
-			struct in6_pktinfo *info6 = (void *) CMSG_DATA(cm);
-			print_pktinfo(AF_INET6, info6->ipi6_ifindex,
-				      NULL, &info6->ipi6_addr);
 		} else
 			fprintf(stderr, "unknown cmsg %d,%d\n",
 					cm->cmsg_level, cm->cmsg_type);
-
-		if (serr && tss) {
-			print_timestamp(tss, serr->ee_info, serr->ee_data,
-					payload_len);
-			serr = NULL;
-			tss = NULL;
-			batch++;
-		}
 	}
 
-	if (batch > 1)
-		fprintf(stderr, "batched %d timestamps\n", batch);
+	if (serr && tss)
+		print_timestamp(tss, serr->ee_info, serr->ee_data, payload_len);
 }
 
 static int recv_errmsg(int fd)
@@ -257,11 +206,7 @@ static int recv_errmsg(int fd)
 	if (ret == -1 && errno != EAGAIN)
 		error(1, errno, "recvmsg");
 
-	if (ret >= 0) {
-		__recv_errmsg_cmsg(&msg, ret);
-		if (cfg_show_payload)
-			print_payload(data, cfg_payload_len);
-	}
+	__recv_errmsg_cmsg(&msg, ret);
 
 	free(data);
 	return ret == -1;
@@ -270,9 +215,9 @@ static int recv_errmsg(int fd)
 static void do_test(int family, unsigned int opt)
 {
 	char *buf;
-	int fd, i, val = 1, total_len;
+	int fd, i, val, total_len;
 
-	if (family == AF_INET6 && cfg_proto != SOCK_STREAM) {
+	if (family == IPPROTO_IPV6 && cfg_proto != SOCK_STREAM) {
 		/* due to lack of checksum generation code */
 		fprintf(stderr, "test: skipping datagram over IPv6\n");
 		return;
@@ -294,6 +239,7 @@ static void do_test(int family, unsigned int opt)
 		error(1, errno, "socket");
 
 	if (cfg_proto == SOCK_STREAM) {
+		val = 1;
 		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
 			       (char*) &val, sizeof(val)))
 			error(1, 0, "setsockopt no nagle");
@@ -307,24 +253,8 @@ static void do_test(int family, unsigned int opt)
 		}
 	}
 
-	if (cfg_do_pktinfo) {
-		if (family == AF_INET6) {
-			if (setsockopt(fd, SOL_IPV6, IPV6_RECVPKTINFO,
-				       &val, sizeof(val)))
-				error(1, errno, "setsockopt pktinfo ipv6");
-		} else {
-			if (setsockopt(fd, SOL_IP, IP_PKTINFO,
-				       &val, sizeof(val)))
-				error(1, errno, "setsockopt pktinfo ipv4");
-		}
-	}
-
 	opt |= SOF_TIMESTAMPING_SOFTWARE |
-	       SOF_TIMESTAMPING_OPT_CMSG |
 	       SOF_TIMESTAMPING_OPT_ID;
-	if (cfg_loop_nodata)
-		opt |= SOF_TIMESTAMPING_OPT_TSONLY;
-
 	if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING,
 		       (char *) &opt, sizeof(opt)))
 		error(1, 0, "setsockopt timestamping");
@@ -332,6 +262,8 @@ static void do_test(int family, unsigned int opt)
 	for (i = 0; i < cfg_num_pkts; i++) {
 		memset(&ts_prev, 0, sizeof(ts_prev));
 		memset(buf, 'a' + i, total_len);
+		buf[total_len - 2] = '\n';
+		buf[total_len - 1] = '\0';
 
 		if (cfg_proto == SOCK_RAW) {
 			struct udphdr *udph;
@@ -392,14 +324,11 @@ static void __attribute__((noreturn)) usage(const char *filepath)
 			"  -4:   only IPv4\n"
 			"  -6:   only IPv6\n"
 			"  -h:   show this message\n"
-			"  -I:   request PKTINFO\n"
 			"  -l N: send N bytes at a time\n"
-			"  -n:   set no-payload option\n"
 			"  -r:   use raw\n"
 			"  -R:   use raw (IP_HDRINCL)\n"
 			"  -p N: connect to port N\n"
-			"  -u:   use udp\n"
-			"  -x:   show payload (up to 70 bytes)\n",
+			"  -u:   use udp\n",
 			filepath);
 	exit(1);
 }
@@ -409,19 +338,13 @@ static void parse_opt(int argc, char **argv)
 	int proto_count = 0;
 	char c;
 
-	while ((c = getopt(argc, argv, "46hIl:np:rRux")) != -1) {
+	while ((c = getopt(argc, argv, "46hl:p:rRu")) != -1) {
 		switch (c) {
 		case '4':
 			do_ipv6 = 0;
 			break;
 		case '6':
 			do_ipv4 = 0;
-			break;
-		case 'I':
-			cfg_do_pktinfo = true;
-			break;
-		case 'n':
-			cfg_loop_nodata = true;
 			break;
 		case 'r':
 			proto_count++;
@@ -443,9 +366,6 @@ static void parse_opt(int argc, char **argv)
 			break;
 		case 'p':
 			dest_port = strtoul(optarg, NULL, 10);
-			break;
-		case 'x':
-			cfg_show_payload = true;
 			break;
 		case 'h':
 		default:

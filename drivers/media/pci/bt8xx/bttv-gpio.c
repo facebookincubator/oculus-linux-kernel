@@ -181,3 +181,9 @@ void bttv_gpio_bits(struct bttv_core *core, u32 mask, u32 bits)
 	btwrite(data,BT848_GPIO_DATA);
 	spin_unlock_irqrestore(&btv->gpio_lock,flags);
 }
+
+/*
+ * Local variables:
+ * c-basic-offset: 8
+ * End:
+ */

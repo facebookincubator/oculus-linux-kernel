@@ -16,8 +16,10 @@
 
 #include "scsi_priv.h"
 
+#ifdef CONFIG_PM_RUNTIME
 static int do_scsi_runtime_resume(struct device *dev,
 				   const struct dev_pm_ops *pm);
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -228,6 +230,8 @@ static int scsi_bus_restore(struct device *dev)
 
 #endif /* CONFIG_PM_SLEEP */
 
+#ifdef CONFIG_PM_RUNTIME
+
 static int do_scsi_runtime_suspend(struct device *dev,
 				   const struct dev_pm_ops *pm)
 {
@@ -254,13 +258,13 @@ static int sdev_runtime_suspend(struct device *dev)
 		return err;
 	}
 
-	err = blk_pre_runtime_suspend(sdev->request_queue);
-	if (err)
-		return err;
-	if (pm && pm->runtime_suspend)
+	if (pm && pm->runtime_suspend) {
+		err = blk_pre_runtime_suspend(sdev->request_queue);
+		if (err)
+			return err;
 		err = pm->runtime_suspend(dev);
-	blk_post_runtime_suspend(sdev->request_queue, err);
-
+		blk_post_runtime_suspend(sdev->request_queue, err);
+	}
 	return err;
 }
 
@@ -286,11 +290,11 @@ static int sdev_runtime_resume(struct device *dev)
 	if (!sdev->request_queue->dev)
 		return scsi_dev_type_resume(dev, do_scsi_runtime_resume);
 
-	blk_pre_runtime_resume(sdev->request_queue);
-	if (pm && pm->runtime_resume)
+	if (pm && pm->runtime_resume) {
+		blk_pre_runtime_resume(sdev->request_queue);
 		err = pm->runtime_resume(dev);
-	blk_post_runtime_resume(sdev->request_queue, err);
-
+		blk_post_runtime_resume(sdev->request_queue, err);
+	}
 	return err;
 }
 
@@ -367,6 +371,14 @@ void scsi_autopm_put_host(struct Scsi_Host *shost)
 {
 	pm_runtime_put_sync(&shost->shost_gendev);
 }
+
+#else
+
+#define scsi_runtime_suspend	NULL
+#define scsi_runtime_resume	NULL
+#define scsi_runtime_idle	NULL
+
+#endif /* CONFIG_PM_RUNTIME */
 
 const struct dev_pm_ops scsi_bus_pm_ops = {
 	.prepare =		scsi_bus_prepare,

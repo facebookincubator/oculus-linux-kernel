@@ -954,6 +954,7 @@ static struct platform_driver siu_device_driver = {
 	.resume		= siu_resume,
 	.driver		= {
 		.name	= "SIU",
+		.owner	= THIS_MODULE,
 	},
 };
 

@@ -82,7 +82,7 @@ int acpi_parse_trt(acpi_handle handle, int *trt_count, struct trt **trtp,
 	struct acpi_buffer trt_format = { sizeof("RRNNNNNN"), "RRNNNNNN" };
 
 	if (!acpi_has_method(handle, "_TRT"))
-		return -ENODEV;
+		return 0;
 
 	status = acpi_evaluate_object(handle, "_TRT", NULL, &buffer);
 	if (ACPI_FAILURE(status))
@@ -119,15 +119,17 @@ int acpi_parse_trt(acpi_handle handle, int *trt_count, struct trt **trtp,
 			continue;
 
 		result = acpi_bus_get_device(trt->source, &adev);
-		if (result)
+		if (!result)
+			acpi_create_platform_device(adev);
+		else
 			pr_warn("Failed to get source ACPI device\n");
 
 		result = acpi_bus_get_device(trt->target, &adev);
-		if (result)
+		if (!result)
+			acpi_create_platform_device(adev);
+		else
 			pr_warn("Failed to get target ACPI device\n");
 	}
-
-	result = 0;
 
 	*trtp = trts;
 	/* don't count bad entries */
@@ -163,7 +165,7 @@ int acpi_parse_art(acpi_handle handle, int *art_count, struct art **artp,
 		sizeof("RRNNNNNNNNNNN"), "RRNNNNNNNNNNN" };
 
 	if (!acpi_has_method(handle, "_ART"))
-		return -ENODEV;
+		return 0;
 
 	status = acpi_evaluate_object(handle, "_ART", NULL, &buffer);
 	if (ACPI_FAILURE(status))
@@ -202,12 +204,16 @@ int acpi_parse_art(acpi_handle handle, int *art_count, struct art **artp,
 
 		if (art->source) {
 			result = acpi_bus_get_device(art->source, &adev);
-			if (result)
+			if (!result)
+				acpi_create_platform_device(adev);
+			else
 				pr_warn("Failed to get source ACPI device\n");
 		}
 		if (art->target) {
 			result = acpi_bus_get_device(art->target, &adev);
-			if (result)
+			if (!result)
+				acpi_create_platform_device(adev);
+			else
 				pr_warn("Failed to get source ACPI device\n");
 		}
 	}
@@ -311,21 +317,21 @@ static long acpi_thermal_rel_ioctl(struct file *f, unsigned int cmd,
 {
 	int ret = 0;
 	unsigned long length = 0;
-	int count = 0;
+	unsigned long count = 0;
 	char __user *arg = (void __user *)__arg;
-	struct trt *trts = NULL;
-	struct art *arts = NULL;
+	struct trt *trts;
+	struct art *arts;
 
 	switch (cmd) {
 	case ACPI_THERMAL_GET_TRT_COUNT:
-		ret = acpi_parse_trt(acpi_thermal_rel_handle, &count,
+		ret = acpi_parse_trt(acpi_thermal_rel_handle, (int *)&count,
 				&trts, false);
 		kfree(trts);
 		if (!ret)
 			return put_user(count, (unsigned long __user *)__arg);
 		return ret;
 	case ACPI_THERMAL_GET_TRT_LEN:
-		ret = acpi_parse_trt(acpi_thermal_rel_handle, &count,
+		ret = acpi_parse_trt(acpi_thermal_rel_handle, (int *)&count,
 				&trts, false);
 		kfree(trts);
 		length = count * sizeof(union trt_object);
@@ -335,14 +341,14 @@ static long acpi_thermal_rel_ioctl(struct file *f, unsigned int cmd,
 	case ACPI_THERMAL_GET_TRT:
 		return fill_trt(arg);
 	case ACPI_THERMAL_GET_ART_COUNT:
-		ret = acpi_parse_art(acpi_thermal_rel_handle, &count,
+		ret = acpi_parse_art(acpi_thermal_rel_handle, (int *)&count,
 				&arts, false);
 		kfree(arts);
 		if (!ret)
 			return put_user(count, (unsigned long __user *)__arg);
 		return ret;
 	case ACPI_THERMAL_GET_ART_LEN:
-		ret = acpi_parse_art(acpi_thermal_rel_handle, &count,
+		ret = acpi_parse_art(acpi_thermal_rel_handle, (int *)&count,
 				&arts, false);
 		kfree(arts);
 		length = count * sizeof(union art_object);

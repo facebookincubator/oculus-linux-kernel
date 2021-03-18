@@ -277,6 +277,7 @@ MODULE_DEVICE_TABLE(i2c, qt1070_id);
 static struct i2c_driver qt1070_driver = {
 	.driver	= {
 		.name	= "qt1070",
+		.owner	= THIS_MODULE,
 		.pm	= &qt1070_pm_ops,
 	},
 	.id_table	= qt1070_id,

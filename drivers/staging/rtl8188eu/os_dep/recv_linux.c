@@ -17,6 +17,8 @@
  *
  *
  ******************************************************************************/
+#define _RECV_OSDEP_C_
+
 #include <osdep_service.h>
 #include <drv_types.h>
 
@@ -27,22 +29,26 @@
 #include <usb_ops_linux.h>
 
 /* alloc os related resource in struct recv_frame */
-void rtw_os_recv_resource_alloc(struct recv_frame *precvframe)
+int rtw_os_recv_resource_alloc(struct adapter *padapter,
+			       struct recv_frame *precvframe)
 {
 	precvframe->pkt_newalloc = NULL;
 	precvframe->pkt = NULL;
+	return _SUCCESS;
 }
 
 /* alloc os related resource in struct recv_buf */
 int rtw_os_recvbuf_resource_alloc(struct adapter *padapter,
 				  struct recv_buf *precvbuf)
 {
+	int res = _SUCCESS;
+
+	precvbuf->purb = usb_alloc_urb(0, GFP_KERNEL);
+	if (precvbuf->purb == NULL)
+		res = _FAIL;
 	precvbuf->pskb = NULL;
 	precvbuf->reuse = false;
-	precvbuf->purb = usb_alloc_urb(0, GFP_KERNEL);
-	if (!precvbuf->purb)
-		return _FAIL;
-	return _SUCCESS;
+	return res;
 }
 
 void rtw_handle_tkip_mic_err(struct adapter *padapter, u8 bgroup)
@@ -94,7 +100,7 @@ int rtw_recv_indicatepkt(struct adapter *padapter,
 	pfree_recv_queue = &(precvpriv->free_recv_queue);
 
 	skb = precv_frame->pkt;
-	if (!skb) {
+	if (skb == NULL) {
 		RT_TRACE(_module_recv_osdep_c_, _drv_err_,
 			 ("rtw_recv_indicatepkt():skb == NULL something wrong!!!!\n"));
 		goto _recv_indicatepkt_drop;
@@ -187,8 +193,7 @@ _recv_indicatepkt_drop:
 
 void rtw_init_recv_timer(struct recv_reorder_ctrl *preorder_ctrl)
 {
+	struct adapter *padapter = preorder_ctrl->padapter;
 
-	setup_timer(&preorder_ctrl->reordering_ctrl_timer,
-		    rtw_reordering_ctrl_timeout_handler,
-		    (unsigned long)preorder_ctrl);
+	_init_timer(&(preorder_ctrl->reordering_ctrl_timer), padapter->pnetdev, rtw_reordering_ctrl_timeout_handler, preorder_ctrl);
 }

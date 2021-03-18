@@ -61,7 +61,6 @@
 #include <linux/freezer.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
-#include <linux/backing-dev.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_ioctl.h>
 #include <scsi/scsi.h>
@@ -704,14 +703,14 @@ static int pkt_generic_packet(struct pktcdvd_device *pd, struct packet_command *
 	int ret = 0;
 
 	rq = blk_get_request(q, (cgc->data_direction == CGC_DATA_WRITE) ?
-			     WRITE : READ, __GFP_RECLAIM);
+			     WRITE : READ, __GFP_WAIT);
 	if (IS_ERR(rq))
 		return PTR_ERR(rq);
 	blk_rq_set_block_pc(rq);
 
 	if (cgc->buflen) {
 		ret = blk_rq_map_kern(q, rq, cgc->buffer, cgc->buflen,
-				      __GFP_RECLAIM);
+				      __GFP_WAIT);
 		if (ret)
 			goto out;
 	}
@@ -977,7 +976,7 @@ static void pkt_make_local_copy(struct packet_data *pkt, struct bio_vec *bvec)
 	}
 }
 
-static void pkt_end_io_read(struct bio *bio)
+static void pkt_end_io_read(struct bio *bio, int err)
 {
 	struct packet_data *pkt = bio->bi_private;
 	struct pktcdvd_device *pd = pkt->pd;
@@ -985,9 +984,9 @@ static void pkt_end_io_read(struct bio *bio)
 
 	pkt_dbg(2, pd, "bio=%p sec0=%llx sec=%llx err=%d\n",
 		bio, (unsigned long long)pkt->sector,
-		(unsigned long long)bio->bi_iter.bi_sector, bio->bi_error);
+		(unsigned long long)bio->bi_iter.bi_sector, err);
 
-	if (bio->bi_error)
+	if (err)
 		atomic_inc(&pkt->io_errors);
 	if (atomic_dec_and_test(&pkt->io_wait)) {
 		atomic_inc(&pkt->run_sm);
@@ -996,13 +995,13 @@ static void pkt_end_io_read(struct bio *bio)
 	pkt_bio_finished(pd);
 }
 
-static void pkt_end_io_packet_write(struct bio *bio)
+static void pkt_end_io_packet_write(struct bio *bio, int err)
 {
 	struct packet_data *pkt = bio->bi_private;
 	struct pktcdvd_device *pd = pkt->pd;
 	BUG_ON(!pd);
 
-	pkt_dbg(2, pd, "id=%d, err=%d\n", pkt->id, bio->bi_error);
+	pkt_dbg(2, pd, "id=%d, err=%d\n", pkt->id, err);
 
 	pd->stats.pkt_ended++;
 
@@ -1276,7 +1275,7 @@ try_next_bio:
 	 		&& pd->bio_queue_size <= pd->write_congestion_off);
 	spin_unlock(&pd->lock);
 	if (wakeup) {
-		clear_bdi_congested(pd->disk->queue->backing_dev_info,
+		clear_bdi_congested(&pd->disk->queue->backing_dev_info,
 					BLK_RW_ASYNC);
 	}
 
@@ -1340,22 +1339,22 @@ static void pkt_start_write(struct pktcdvd_device *pd, struct packet_data *pkt)
 	pkt_queue_bio(pd, pkt->w_bio);
 }
 
-static void pkt_finish_packet(struct packet_data *pkt, int error)
+static void pkt_finish_packet(struct packet_data *pkt, int uptodate)
 {
 	struct bio *bio;
 
-	if (error)
+	if (!uptodate)
 		pkt->cache_valid = 0;
 
 	/* Finish all bios corresponding to this packet */
-	while ((bio = bio_list_pop(&pkt->orig_bios))) {
-		bio->bi_error = error;
-		bio_endio(bio);
-	}
+	while ((bio = bio_list_pop(&pkt->orig_bios)))
+		bio_endio(bio, uptodate ? 0 : -EIO);
 }
 
 static void pkt_run_state_machine(struct pktcdvd_device *pd, struct packet_data *pkt)
 {
+	int uptodate;
+
 	pkt_dbg(2, pd, "pkt %d\n", pkt->id);
 
 	for (;;) {
@@ -1384,7 +1383,7 @@ static void pkt_run_state_machine(struct pktcdvd_device *pd, struct packet_data 
 			if (atomic_read(&pkt->io_wait) > 0)
 				return;
 
-			if (!pkt->w_bio->bi_error) {
+			if (test_bit(BIO_UPTODATE, &pkt->w_bio->bi_flags)) {
 				pkt_set_state(pkt, PACKET_FINISHED_STATE);
 			} else {
 				pkt_set_state(pkt, PACKET_RECOVERY_STATE);
@@ -1401,7 +1400,8 @@ static void pkt_run_state_machine(struct pktcdvd_device *pd, struct packet_data 
 			break;
 
 		case PACKET_FINISHED_STATE:
-			pkt_finish_packet(pkt, pkt->w_bio->bi_error);
+			uptodate = test_bit(BIO_UPTODATE, &pkt->w_bio->bi_flags);
+			pkt_finish_packet(pkt, uptodate);
 			return;
 
 		default:
@@ -2331,14 +2331,13 @@ static void pkt_close(struct gendisk *disk, fmode_t mode)
 }
 
 
-static void pkt_end_io_read_cloned(struct bio *bio)
+static void pkt_end_io_read_cloned(struct bio *bio, int err)
 {
 	struct packet_stacked_data *psd = bio->bi_private;
 	struct pktcdvd_device *pd = psd->pd;
 
-	psd->bio->bi_error = bio->bi_error;
 	bio_put(bio);
-	bio_endio(psd->bio);
+	bio_endio(psd->bio, err);
 	mempool_free(psd, psd_pool);
 	pkt_bio_finished(pd);
 }
@@ -2405,7 +2404,7 @@ static void pkt_make_request_write(struct request_queue *q, struct bio *bio)
 	spin_lock(&pd->lock);
 	if (pd->write_congestion_on > 0
 	    && pd->bio_queue_size >= pd->write_congestion_on) {
-		set_bdi_congested(q->backing_dev_info, BLK_RW_ASYNC);
+		set_bdi_congested(&q->backing_dev_info, BLK_RW_ASYNC);
 		do {
 			spin_unlock(&pd->lock);
 			congestion_wait(BLK_RW_ASYNC, HZ);
@@ -2441,15 +2440,11 @@ static void pkt_make_request_write(struct request_queue *q, struct bio *bio)
 	}
 }
 
-static blk_qc_t pkt_make_request(struct request_queue *q, struct bio *bio)
+static void pkt_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct pktcdvd_device *pd;
 	char b[BDEVNAME_SIZE];
 	struct bio *split;
-
-	blk_queue_bounce(q, &bio);
-
-	blk_queue_split(q, &bio, q->bio_split);
 
 	pd = q->queuedata;
 	if (!pd) {
@@ -2467,7 +2462,7 @@ static blk_qc_t pkt_make_request(struct request_queue *q, struct bio *bio)
 	 */
 	if (bio_data_dir(bio) == READ) {
 		pkt_make_request_read(pd, bio);
-		return BLK_QC_T_NONE;
+		return;
 	}
 
 	if (!test_bit(PACKET_WRITABLE, &pd->flags)) {
@@ -2480,6 +2475,8 @@ static blk_qc_t pkt_make_request(struct request_queue *q, struct bio *bio)
 		pkt_err(pd, "wrong bio size\n");
 		goto end_io;
 	}
+
+	blk_queue_bounce(q, &bio);
 
 	do {
 		sector_t zone = get_zone(bio->bi_iter.bi_sector, pd);
@@ -2499,10 +2496,31 @@ static blk_qc_t pkt_make_request(struct request_queue *q, struct bio *bio)
 		pkt_make_request_write(q, split);
 	} while (split != bio);
 
-	return BLK_QC_T_NONE;
+	return;
 end_io:
 	bio_io_error(bio);
-	return BLK_QC_T_NONE;
+}
+
+
+
+static int pkt_merge_bvec(struct request_queue *q, struct bvec_merge_data *bmd,
+			  struct bio_vec *bvec)
+{
+	struct pktcdvd_device *pd = q->queuedata;
+	sector_t zone = get_zone(bmd->bi_sector, pd);
+	int used = ((bmd->bi_sector - zone) << 9) + bmd->bi_size;
+	int remaining = (pd->settings.size << 9) - used;
+	int remaining2;
+
+	/*
+	 * A bio <= PAGE_SIZE must be allowed. If it crosses a packet
+	 * boundary, pkt_make_request() will split the bio.
+	 */
+	remaining2 = PAGE_SIZE - bmd->bi_size;
+	remaining = max(remaining, remaining2);
+
+	BUG_ON(remaining < 0);
+	return remaining;
 }
 
 static void pkt_init_queue(struct pktcdvd_device *pd)
@@ -2512,6 +2530,7 @@ static void pkt_init_queue(struct pktcdvd_device *pd)
 	blk_queue_make_request(q, pkt_make_request);
 	blk_queue_logical_block_size(q, CD_FRAMESIZE);
 	blk_queue_max_hw_sectors(q, PACKET_MAX_SECTORS);
+	blk_queue_merge_bvec(q, pkt_merge_bvec);
 	q->queuedata = pd;
 }
 
@@ -2802,7 +2821,8 @@ out_new_dev:
 out_mem2:
 	put_disk(disk);
 out_mem:
-	mempool_destroy(pd->rb_pool);
+	if (pd->rb_pool)
+		mempool_destroy(pd->rb_pool);
 	kfree(pd);
 out_mutex:
 	mutex_unlock(&ctl_mutex);

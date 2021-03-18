@@ -318,6 +318,7 @@ static struct platform_driver cc770_isa_driver = {
 	.remove = cc770_isa_remove,
 	.driver = {
 		.name = KBUILD_MODNAME,
+		.owner = THIS_MODULE,
 	},
 };
 

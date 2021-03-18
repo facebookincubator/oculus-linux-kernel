@@ -31,13 +31,13 @@
 #include "sys_regs.h"
 
 static bool access_actlr(struct kvm_vcpu *vcpu,
-			 struct sys_reg_params *p,
+			 const struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
 {
 	if (p->is_write)
 		return ignore_write(vcpu, p);
 
-	p->regval = vcpu_sys_reg(vcpu, ACTLR_EL1);
+	*vcpu_reg(vcpu, p->Rt) = vcpu_sys_reg(vcpu, ACTLR_EL1);
 	return true;
 }
 
@@ -93,8 +93,6 @@ static int __init sys_reg_genericv8_init(void)
 	kvm_register_target_sys_reg_table(KVM_ARM_TARGET_CORTEX_A57,
 					  &genericv8_target_table);
 	kvm_register_target_sys_reg_table(KVM_ARM_TARGET_XGENE_POTENZA,
-					  &genericv8_target_table);
-	kvm_register_target_sys_reg_table(KVM_ARM_TARGET_GENERIC_V8,
 					  &genericv8_target_table);
 
 	return 0;

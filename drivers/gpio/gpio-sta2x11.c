@@ -346,7 +346,7 @@ static void gsta_alloc_irq_chip(struct gsta_gpio *chip)
 			i = chip->irq_base + j;
 			irq_set_chip_and_handler(i, &ct->chip, ct->handler);
 			irq_set_chip_data(i, gc);
-			irq_clear_status_flags(i, IRQ_NOREQUEST | IRQ_NOPROBE);
+			irq_modify_status(i, IRQ_NOREQUEST | IRQ_NOPROBE, 0);
 		}
 		gc->irq_cnt = i - gc->irq_base;
 	}
@@ -429,6 +429,7 @@ err_free_descs:
 static struct platform_driver sta2x11_gpio_platform_driver = {
 	.driver = {
 		.name	= "sta2x11-gpio",
+		.owner	= THIS_MODULE,
 	},
 	.probe = gsta_probe,
 };

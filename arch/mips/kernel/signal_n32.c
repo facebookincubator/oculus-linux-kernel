@@ -38,6 +38,7 @@
 #include <asm/fpu.h>
 #include <asm/cpu-features.h>
 #include <asm/war.h>
+#include <asm/vdso.h>
 
 #include "signal-common.h"
 
@@ -150,11 +151,7 @@ static int setup_rt_frame_n32(void *sig_return, struct ksignal *ksig,
 
 struct mips_abi mips_abi_n32 = {
 	.setup_rt_frame = setup_rt_frame_n32,
-	.restart	= __NR_N32_restart_syscall,
-
-	.off_sc_fpregs = offsetof(struct sigcontext, sc_fpregs),
-	.off_sc_fpc_csr = offsetof(struct sigcontext, sc_fpc_csr),
-	.off_sc_used_math = offsetof(struct sigcontext, sc_used_math),
-
-	.vdso		= &vdso_image_n32,
+	.rt_signal_return_offset =
+		offsetof(struct mips_vdso, n32_rt_signal_trampoline),
+	.restart	= __NR_N32_restart_syscall
 };

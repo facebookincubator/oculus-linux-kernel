@@ -6,8 +6,8 @@
  */
 
 #include <linux/mm.h>
+#include <linux/nmi.h>
 #include <linux/quicklist.h>
-#include <linux/cma.h>
 
 void show_mem(unsigned int filter)
 {
@@ -39,9 +39,6 @@ void show_mem(unsigned int filter)
 	printk("%lu pages RAM\n", total);
 	printk("%lu pages HighMem/MovableOnly\n", highmem);
 	printk("%lu pages reserved\n", reserved);
-#ifdef CONFIG_CMA
-	printk("%lu pages cma reserved\n", totalcma_pages);
-#endif
 #ifdef CONFIG_QUICKLIST
 	printk("%lu pages in pagetable cache\n",
 		quicklist_total_size());

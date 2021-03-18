@@ -14,6 +14,12 @@
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
+ *
  */
 
 #include <linux/delay.h>
@@ -214,11 +220,9 @@ static int jt8ev1_post_streamoff(struct smiapp_sensor *sensor)
 	return smiapp_write_8(sensor, 0x3328, 0x80);
 }
 
-static int jt8ev1_init(struct smiapp_sensor *sensor)
+static unsigned long jt8ev1_pll_flags(struct smiapp_sensor *sensor)
 {
-	sensor->pll.flags |= SMIAPP_PLL_FLAG_OP_PIX_CLOCK_PER_LANE;
-
-	return 0;
+	return SMIAPP_PLL_FLAG_OP_PIX_CLOCK_PER_LANE;
 }
 
 const struct smiapp_quirk smiapp_jt8ev1_quirk = {
@@ -226,7 +230,7 @@ const struct smiapp_quirk smiapp_jt8ev1_quirk = {
 	.post_poweron = jt8ev1_post_poweron,
 	.pre_streamon = jt8ev1_pre_streamon,
 	.post_streamoff = jt8ev1_post_streamoff,
-	.init = jt8ev1_init,
+	.pll_flags = jt8ev1_pll_flags,
 };
 
 static int tcm8500md_limits(struct smiapp_sensor *sensor)

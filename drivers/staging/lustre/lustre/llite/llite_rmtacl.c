@@ -94,7 +94,7 @@ static void rce_free(struct rmtacl_ctl_entry *rce)
 	if (!list_empty(&rce->rce_list))
 		list_del(&rce->rce_list);
 
-	kfree(rce);
+	OBD_FREE_PTR(rce);
 }
 
 static struct rmtacl_ctl_entry *__rct_search(struct rmtacl_ctl_table *rct,
@@ -131,8 +131,8 @@ int rct_add(struct rmtacl_ctl_table *rct, pid_t key, int ops)
 	spin_lock(&rct->rct_lock);
 	e = __rct_search(rct, key);
 	if (unlikely(e != NULL)) {
-		CWARN("Unexpected stale rmtacl_entry found: [key: %d] [ops: %d]\n",
-		      (int)key, ops);
+		CWARN("Unexpected stale rmtacl_entry found: "
+		      "[key: %d] [ops: %d]\n", (int)key, ops);
 		rce_free(e);
 	}
 	list_add_tail(&rce->rce_list, &rct->rct_entries[rce_hashfunc(key)]);
@@ -178,6 +178,7 @@ void rct_fini(struct rmtacl_ctl_table *rct)
 	spin_unlock(&rct->rct_lock);
 }
 
+
 static struct eacl_entry *ee_alloc(pid_t key, struct lu_fid *fid, int type,
 				   ext_acl_xattr_header *header)
 {
@@ -204,7 +205,7 @@ void ee_free(struct eacl_entry *ee)
 	if (ee->ee_acl)
 		lustre_ext_acl_xattr_free(ee->ee_acl);
 
-	kfree(ee);
+	OBD_FREE_PTR(ee);
 }
 
 static struct eacl_entry *__et_search_del(struct eacl_table *et, pid_t key,
@@ -262,7 +263,8 @@ int ee_add(struct eacl_table *et, pid_t key, struct lu_fid *fid, int type,
 	spin_lock(&et->et_lock);
 	e = __et_search_del(et, key, fid, type);
 	if (unlikely(e != NULL)) {
-		CWARN("Unexpected stale eacl_entry found: [key: %d] [fid: " DFID "] [type: %d]\n",
+		CWARN("Unexpected stale eacl_entry found: "
+		      "[key: %d] [fid: "DFID"] [type: %d]\n",
 		      (int)key, PFID(fid), type);
 		ee_free(e);
 	}

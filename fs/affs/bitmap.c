@@ -99,6 +99,7 @@ err_bh_read:
 
 err_range:
 	affs_error(sb, "affs_free_block","Block %u outside partition", block);
+	return;
 }
 
 /*

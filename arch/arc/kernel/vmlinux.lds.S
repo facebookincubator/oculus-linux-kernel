@@ -12,7 +12,7 @@
 #include <asm/thread_info.h>
 
 OUTPUT_ARCH(arc)
-ENTRY(res_service)
+ENTRY(_stext)
 
 #ifdef CONFIG_CPU_BIG_ENDIAN
 jiffies = jiffies_64 + 4;

@@ -45,6 +45,7 @@ MODULE_LICENSE("GPL");
 
 #define ACPI_WMI_CLASS "wmi"
 
+static DEFINE_MUTEX(wmi_data_lock);
 static LIST_HEAD(wmi_block_list);
 
 struct guid_block {
@@ -194,6 +195,34 @@ static bool wmi_parse_guid(const u8 *src, u8 *dest)
 	return true;
 }
 
+/*
+ * Convert a raw GUID to the ACII string representation
+ */
+static int wmi_gtoa(const char *in, char *out)
+{
+	int i;
+
+	for (i = 3; i >= 0; i--)
+		out += sprintf(out, "%02X", in[i] & 0xFF);
+
+	out += sprintf(out, "-");
+	out += sprintf(out, "%02X", in[5] & 0xFF);
+	out += sprintf(out, "%02X", in[4] & 0xFF);
+	out += sprintf(out, "-");
+	out += sprintf(out, "%02X", in[7] & 0xFF);
+	out += sprintf(out, "%02X", in[6] & 0xFF);
+	out += sprintf(out, "-");
+	out += sprintf(out, "%02X", in[8] & 0xFF);
+	out += sprintf(out, "%02X", in[9] & 0xFF);
+	out += sprintf(out, "-");
+
+	for (i = 10; i <= 15; i++)
+		out += sprintf(out, "%02X", in[i] & 0xFF);
+
+	*out = '\0';
+	return 0;
+}
+
 static bool find_guid(const char *guid_string, struct wmi_block **out)
 {
 	char tmp[16], guid_input[16];
@@ -211,10 +240,10 @@ static bool find_guid(const char *guid_string, struct wmi_block **out)
 		if (memcmp(block->guid, guid_input, 16) == 0) {
 			if (out)
 				*out = wblock;
-			return true;
+			return 1;
 		}
 	}
-	return false;
+	return 0;
 }
 
 static acpi_status wmi_method_enable(struct wmi_block *wblock, int enable)
@@ -429,7 +458,11 @@ EXPORT_SYMBOL_GPL(wmi_set_block);
 
 static void wmi_dump_wdg(const struct guid_block *g)
 {
-	pr_info("%pUL:\n", g->guid);
+	char guid_string[37];
+
+	wmi_gtoa(g->guid, guid_string);
+
+	pr_info("%s:\n", guid_string);
 	pr_info("\tobject_id: %c%c\n", g->object_id[0], g->object_id[1]);
 	pr_info("\tnotify_id: %02X\n", g->notify_id);
 	pr_info("\treserved: %02X\n", g->reserved);
@@ -629,6 +662,7 @@ EXPORT_SYMBOL_GPL(wmi_has_guid);
 static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
+	char guid_string[37];
 	struct wmi_block *wblock;
 
 	wblock = dev_get_drvdata(dev);
@@ -637,7 +671,9 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
 		return strlen(buf);
 	}
 
-	return sprintf(buf, "wmi:%pUL\n", wblock->gblock.guid);
+	wmi_gtoa(wblock->gblock.guid, guid_string);
+
+	return sprintf(buf, "wmi:%s\n", guid_string);
 }
 static DEVICE_ATTR_RO(modalias);
 
@@ -660,7 +696,7 @@ static int wmi_dev_uevent(struct device *dev, struct kobj_uevent_env *env)
 	if (!wblock)
 		return -ENOMEM;
 
-	sprintf(guid_string, "%pUL", wblock->gblock.guid);
+	wmi_gtoa(wblock->gblock.guid, guid_string);
 
 	strcpy(&env->buf[env->buflen - 1], "wmi:");
 	memcpy(&env->buf[env->buflen - 1 + 4], guid_string, 36);
@@ -686,9 +722,12 @@ static struct class wmi_class = {
 static int wmi_create_device(const struct guid_block *gblock,
 			     struct wmi_block *wblock, acpi_handle handle)
 {
+	char guid_string[37];
+
 	wblock->dev.class = &wmi_class;
 
-	dev_set_name(&wblock->dev, "%pUL", gblock->guid);
+	wmi_gtoa(gblock->guid, guid_string);
+	dev_set_name(&wblock->dev, "%s", guid_string);
 
 	dev_set_drvdata(&wblock->dev, wblock);
 
@@ -839,6 +878,7 @@ static void acpi_wmi_notify(struct acpi_device *device, u32 event)
 	struct guid_block *block;
 	struct wmi_block *wblock;
 	struct list_head *p;
+	char guid_string[37];
 
 	list_for_each(p, &wmi_block_list) {
 		wblock = list_entry(p, struct wmi_block, list);
@@ -849,8 +889,8 @@ static void acpi_wmi_notify(struct acpi_device *device, u32 event)
 			if (wblock->handler)
 				wblock->handler(event, wblock->handler_data);
 			if (debug_event) {
-				pr_info("DEBUG Event GUID: %pUL\n",
-					wblock->gblock.guid);
+				wmi_gtoa(wblock->gblock.guid, guid_string);
+				pr_info("DEBUG Event GUID: %s\n", guid_string);
 			}
 
 			acpi_bus_generate_netlink_event(

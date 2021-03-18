@@ -286,6 +286,7 @@ static struct platform_driver da9055_hwmon_driver = {
 	.probe = da9055_hwmon_probe,
 	.driver = {
 		.name = "da9055-hwmon",
+		.owner = THIS_MODULE,
 	},
 };
 

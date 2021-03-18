@@ -164,6 +164,7 @@ static void pch_gbe_get_drvinfo(struct net_device *netdev,
 	strlcpy(drvinfo->version, pch_driver_version, sizeof(drvinfo->version));
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
+	drvinfo->regdump_len = pch_gbe_get_regs_len(netdev);
 }
 
 /**
@@ -393,7 +394,7 @@ static void pch_gbe_get_pauseparam(struct net_device *netdev,
 }
 
 /**
- * pch_gbe_set_pauseparam - Set pause parameters
+ * pch_gbe_set_pauseparam - Set pause paramters
  * @netdev:  Network interface device structure
  * @pause:   Pause parameters structure
  * Returns:

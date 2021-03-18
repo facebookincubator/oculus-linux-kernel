@@ -36,7 +36,6 @@
 #include <linux/semaphore.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
-#include <linux/component.h>
 
 #include <video/omapdss.h>
 #include "dss.h"
@@ -870,7 +869,7 @@ static void rfbi_config_lcd_manager(struct omap_dss_device *dssdev)
 	rfbi.timings.vsync_level = OMAPDSS_SIG_ACTIVE_HIGH;
 	rfbi.timings.data_pclk_edge = OMAPDSS_DRIVE_SIG_RISING_EDGE;
 	rfbi.timings.de_level = OMAPDSS_SIG_ACTIVE_HIGH;
-	rfbi.timings.sync_pclk_edge = OMAPDSS_DRIVE_SIG_FALLING_EDGE;
+	rfbi.timings.sync_pclk_edge = OMAPDSS_DRIVE_SIG_OPPOSITE_EDGES;
 
 	dss_mgr_set_timings(mgr, &rfbi.timings);
 }
@@ -939,7 +938,7 @@ static void rfbi_init_output(struct platform_device *pdev)
 	omapdss_register_output(out);
 }
 
-static void rfbi_uninit_output(struct platform_device *pdev)
+static void __exit rfbi_uninit_output(struct platform_device *pdev)
 {
 	struct omap_dss_device *out = &rfbi.output;
 
@@ -947,9 +946,8 @@ static void rfbi_uninit_output(struct platform_device *pdev)
 }
 
 /* RFBI HW IP initialisation */
-static int rfbi_bind(struct device *dev, struct device *master, void *data)
+static int omap_rfbihw_probe(struct platform_device *pdev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
 	u32 rev;
 	struct resource *rfbi_mem;
 	struct clk *clk;
@@ -1007,30 +1005,12 @@ err_runtime_get:
 	return r;
 }
 
-static void rfbi_unbind(struct device *dev, struct device *master, void *data)
+static int __exit omap_rfbihw_remove(struct platform_device *pdev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-
 	rfbi_uninit_output(pdev);
 
 	pm_runtime_disable(&pdev->dev);
 
-	return 0;
-}
-
-static const struct component_ops rfbi_component_ops = {
-	.bind	= rfbi_bind,
-	.unbind	= rfbi_unbind,
-};
-
-static int rfbi_probe(struct platform_device *pdev)
-{
-	return component_add(&pdev->dev, &rfbi_component_ops);
-}
-
-static int rfbi_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &rfbi_component_ops);
 	return 0;
 }
 
@@ -1058,10 +1038,11 @@ static const struct dev_pm_ops rfbi_pm_ops = {
 };
 
 static struct platform_driver omap_rfbihw_driver = {
-	.probe		= rfbi_probe,
-	.remove         = rfbi_remove,
+	.probe		= omap_rfbihw_probe,
+	.remove         = __exit_p(omap_rfbihw_remove),
 	.driver         = {
 		.name   = "omapdss_rfbi",
+		.owner  = THIS_MODULE,
 		.pm	= &rfbi_pm_ops,
 		.suppress_bind_attrs = true,
 	},
@@ -1072,7 +1053,7 @@ int __init rfbi_init_platform_driver(void)
 	return platform_driver_register(&omap_rfbihw_driver);
 }
 
-void rfbi_uninit_platform_driver(void)
+void __exit rfbi_uninit_platform_driver(void)
 {
 	platform_driver_unregister(&omap_rfbihw_driver);
 }

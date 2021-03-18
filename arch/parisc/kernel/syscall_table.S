@@ -55,8 +55,8 @@
 #define ENTRY_COMP(_name_) .word sys_##_name_
 #endif
 
-90:	ENTRY_SAME(restart_syscall)	/* 0 */
-91:	ENTRY_SAME(exit)
+	ENTRY_SAME(restart_syscall)	/* 0 */
+	ENTRY_SAME(exit)
 	ENTRY_SAME(fork_wrapper)
 	ENTRY_SAME(read)
 	ENTRY_SAME(write)
@@ -437,15 +437,8 @@
 	ENTRY_SAME(getrandom)
 	ENTRY_SAME(memfd_create)	/* 340 */
 	ENTRY_SAME(bpf)
-	ENTRY_COMP(execveat)
-	ENTRY_SAME(membarrier)
-	ENTRY_SAME(userfaultfd)
-	ENTRY_SAME(mlock2)		/* 345 */
 
-
-.ifne (. - 90b) - (__NR_Linux_syscalls * (91b - 90b))
-.error "size of syscall table does not fit value of __NR_Linux_syscalls"
-.endif
+	/* Nothing yet */
 
 #undef ENTRY_SAME
 #undef ENTRY_DIFF

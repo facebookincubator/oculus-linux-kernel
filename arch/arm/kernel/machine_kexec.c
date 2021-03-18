@@ -46,8 +46,7 @@ int machine_kexec_prepare(struct kimage *image)
 	 * and implements CPU hotplug for the current HW. If not, we won't be
 	 * able to kexec reliably, so fail the prepare operation.
 	 */
-	if (num_possible_cpus() > 1 && platform_can_secondary_boot() &&
-	    !platform_can_cpu_hotplug())
+	if (num_possible_cpus() > 1 && !platform_can_cpu_hotplug())
 		return -EINVAL;
 
 	/*
@@ -128,12 +127,12 @@ void machine_crash_shutdown(struct pt_regs *regs)
 		msecs--;
 	}
 	if (atomic_read(&waiting_for_crash_ipi) > 0)
-		pr_warn("Non-crashing CPUs did not react to IPI\n");
+		printk(KERN_WARNING "Non-crashing CPUs did not react to IPI\n");
 
 	crash_save_cpu(regs, smp_processor_id());
 	machine_kexec_mask_interrupts();
 
-	pr_info("Loading crashdump kernel...\n");
+	printk(KERN_INFO "Loading crashdump kernel...\n");
 }
 
 /*
@@ -179,7 +178,7 @@ void machine_kexec(struct kimage *image)
 	reboot_entry_phys = (unsigned long)reboot_entry +
 		(reboot_code_buffer_phys - (unsigned long)reboot_code_buffer);
 
-	pr_info("Bye!\n");
+	printk(KERN_INFO "Bye!\n");
 
 	if (kexec_reinit)
 		kexec_reinit();

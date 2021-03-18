@@ -31,17 +31,13 @@
 #include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/seq_file.h>
-#include <linux/ratelimit.h>
 #include <linux/errno.h>
 #include <linux/list.h>
 #include <linux/kallsyms.h>
 #include <linux/proc_fs.h>
 #include <linux/export.h>
-#include <linux/cpumask.h>
 
 #include <asm/hardware/cache-l2x0.h>
-#include <asm/hardware/cache-uniphier.h>
-#include <asm/outercache.h>
 #include <asm/exception.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/irq.h>
@@ -81,6 +77,26 @@ asm_do_IRQ(unsigned int irq, struct pt_regs *regs)
 	handle_IRQ(irq, regs);
 }
 
+void set_irq_flags(unsigned int irq, unsigned int iflags)
+{
+	unsigned long clr = 0, set = IRQ_NOREQUEST | IRQ_NOPROBE | IRQ_NOAUTOEN;
+
+	if (irq >= nr_irqs) {
+		printk(KERN_ERR "Trying to set irq flags for IRQ%d\n", irq);
+		return;
+	}
+
+	if (iflags & IRQF_VALID)
+		clr |= IRQ_NOREQUEST;
+	if (iflags & IRQF_PROBE)
+		clr |= IRQ_NOPROBE;
+	if (!(iflags & IRQF_NOAUTOEN))
+		clr |= IRQ_NOAUTOEN;
+	/* Order is clear bits in "clr" then set bits in "set" */
+	irq_modify_status(irq, clr, set & ~clr);
+}
+EXPORT_SYMBOL_GPL(set_irq_flags);
+
 void __init init_IRQ(void)
 {
 	int ret;
@@ -92,15 +108,12 @@ void __init init_IRQ(void)
 
 	if (IS_ENABLED(CONFIG_OF) && IS_ENABLED(CONFIG_CACHE_L2X0) &&
 	    (machine_desc->l2c_aux_mask || machine_desc->l2c_aux_val)) {
-		if (!outer_cache.write_sec)
-			outer_cache.write_sec = machine_desc->l2c_write_sec;
+		outer_cache.write_sec = machine_desc->l2c_write_sec;
 		ret = l2x0_of_init(machine_desc->l2c_aux_val,
 				   machine_desc->l2c_aux_mask);
 		if (ret)
 			pr_err("L2C: failed to init: %d\n", ret);
 	}
-
-	uniphier_cache_init();
 }
 
 #ifdef CONFIG_MULTI_IRQ_HANDLER
@@ -122,13 +135,11 @@ int __init arch_probe_nr_irqs(void)
 #endif
 
 #ifdef CONFIG_HOTPLUG_CPU
+
 static bool migrate_one_irq(struct irq_desc *desc)
 {
 	struct irq_data *d = irq_desc_get_irq_data(desc);
-	const struct cpumask *affinity = irq_data_get_affinity_mask(d);
-	struct irq_chip *c;
-	bool ret = false;
-	struct cpumask available_cpus;
+	const struct cpumask *affinity = d->affinity;
 
 	/*
 	 * If this is a per-CPU interrupt, or the affinity does not
@@ -137,25 +148,10 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	if (irqd_is_per_cpu(d) || !cpumask_test_cpu(smp_processor_id(), affinity))
 		return false;
 
-	cpumask_copy(&available_cpus, affinity);
-	cpumask_andnot(&available_cpus, &available_cpus, cpu_isolated_mask);
-	affinity = &available_cpus;
+	if (cpumask_any_and(affinity, cpu_online_mask) >= nr_cpu_ids)
+		affinity = cpu_online_mask;
 
-	if (cpumask_any_and(affinity, cpu_online_mask) >= nr_cpu_ids) {
-		cpumask_andnot(&available_cpus, cpu_online_mask,
-			       cpu_isolated_mask);
-		if (cpumask_empty(affinity))
-			affinity = cpu_online_mask;
-		ret = true;
-	}
-
-	c = irq_data_get_irq_chip(d);
-	if (!c->irq_set_affinity)
-		pr_debug("IRQ%u: unable to set affinity\n", d->irq);
-	else if (c->irq_set_affinity(d, affinity, false) == IRQ_SET_MASK_OK && ret)
-		cpumask_copy(irq_data_get_affinity_mask(d), affinity);
-
-	return ret;
+	return irq_set_affinity_locked(d, affinity, false) != 0;
 }
 
 /*
@@ -181,8 +177,8 @@ void migrate_irqs(void)
 		affinity_broken = migrate_one_irq(desc);
 		raw_spin_unlock(&desc->lock);
 
-		if (affinity_broken)
-			pr_warn_ratelimited("IRQ%u no longer affine to CPU%u\n",
+		if (affinity_broken && printk_ratelimit())
+			pr_warn("IRQ%u no longer affine to CPU%u\n",
 				i, smp_processor_id());
 	}
 

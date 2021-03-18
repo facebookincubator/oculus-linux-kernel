@@ -47,7 +47,7 @@ static void _add_clkdev(struct omap_device *od, const char *clk_alias,
 		       const char *clk_name)
 {
 	struct clk *r;
-	int rc;
+	struct clk_lookup *l;
 
 	if (!clk_alias || !clk_name)
 		return;
@@ -62,15 +62,21 @@ static void _add_clkdev(struct omap_device *od, const char *clk_alias,
 		return;
 	}
 
-	rc = clk_add_alias(clk_alias, dev_name(&od->pdev->dev), clk_name, NULL);
-	if (rc) {
-		if (rc == -ENODEV || rc == -ENOMEM)
-			dev_err(&od->pdev->dev,
-				"clkdev_alloc for %s failed\n", clk_alias);
-		else
-			dev_err(&od->pdev->dev,
-				"clk_get for %s failed\n", clk_name);
+	r = clk_get(NULL, clk_name);
+	if (IS_ERR(r)) {
+		dev_err(&od->pdev->dev,
+			"clk_get for %s failed\n", clk_name);
+		return;
 	}
+
+	l = clkdev_alloc(r, clk_alias, dev_name(&od->pdev->dev));
+	if (!l) {
+		dev_err(&od->pdev->dev,
+			"clkdev_alloc for %s failed\n", clk_alias);
+		return;
+	}
+
+	clkdev_add(l);
 }
 
 /**
@@ -218,13 +224,13 @@ static int _omap_device_notifier_call(struct notifier_block *nb,
  */
 static int _omap_device_enable_hwmods(struct omap_device *od)
 {
-	int ret = 0;
 	int i;
 
 	for (i = 0; i < od->hwmods_cnt; i++)
-		ret |= omap_hwmod_enable(od->hwmods[i]);
+		omap_hwmod_enable(od->hwmods[i]);
 
-	return ret;
+	/* XXX pass along return value here? */
+	return 0;
 }
 
 /**
@@ -235,13 +241,13 @@ static int _omap_device_enable_hwmods(struct omap_device *od)
  */
 static int _omap_device_idle_hwmods(struct omap_device *od)
 {
-	int ret = 0;
 	int i;
 
 	for (i = 0; i < od->hwmods_cnt; i++)
-		ret |= omap_hwmod_idle(od->hwmods[i]);
+		omap_hwmod_idle(od->hwmods[i]);
 
-	return ret;
+	/* XXX pass along return value here? */
+	return 0;
 }
 
 /* Public functions for use by core code */
@@ -582,27 +588,25 @@ odbs_exit:
 	return ERR_PTR(ret);
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static int _od_runtime_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret;
 
 	ret = pm_generic_runtime_suspend(dev);
-	if (ret)
-		return ret;
 
-	return omap_device_idle(pdev);
+	if (!ret)
+		omap_device_idle(pdev);
+
+	return ret;
 }
 
 static int _od_runtime_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
-	int ret;
 
-	ret = omap_device_enable(pdev);
-	if (ret)
-		return ret;
+	omap_device_enable(pdev);
 
 	return pm_generic_runtime_resume(dev);
 }
@@ -684,8 +688,8 @@ struct dev_pm_domain omap_device_pm_domain = {
 		SET_RUNTIME_PM_OPS(_od_runtime_suspend, _od_runtime_resume,
 				   NULL)
 		USE_PLATFORM_PM_SLEEP_OPS
-		SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(_od_suspend_noirq,
-					      _od_resume_noirq)
+		.suspend_noirq = _od_suspend_noirq,
+		.resume_noirq = _od_resume_noirq,
 	}
 };
 
@@ -736,8 +740,7 @@ int omap_device_enable(struct platform_device *pdev)
 
 	ret = _omap_device_enable_hwmods(od);
 
-	if (ret == 0)
-		od->_state = OMAP_DEVICE_STATE_ENABLED;
+	od->_state = OMAP_DEVICE_STATE_ENABLED;
 
 	return ret;
 }
@@ -767,8 +770,7 @@ int omap_device_idle(struct platform_device *pdev)
 
 	ret = _omap_device_idle_hwmods(od);
 
-	if (ret == 0)
-		od->_state = OMAP_DEVICE_STATE_IDLE;
+	od->_state = OMAP_DEVICE_STATE_IDLE;
 
 	return ret;
 }
@@ -901,8 +903,7 @@ static int __init omap_device_late_idle(struct device *dev, void *data)
 		if (od->hwmods[i]->flags & HWMOD_INIT_NO_IDLE)
 			return 0;
 
-	if (od->_driver_status != BUS_NOTIFY_BOUND_DRIVER &&
-	    od->_driver_status != BUS_NOTIFY_BIND_DRIVER) {
+	if (od->_driver_status != BUS_NOTIFY_BOUND_DRIVER) {
 		if (od->_state == OMAP_DEVICE_STATE_ENABLED) {
 			dev_warn(dev, "%s: enabled but no driver.  Idling\n",
 				 __func__);

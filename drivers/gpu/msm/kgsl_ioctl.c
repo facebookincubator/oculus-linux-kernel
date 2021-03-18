@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -90,22 +90,6 @@ static const struct kgsl_ioctl kgsl_ioctl_funcs[] = {
 			kgsl_ioctl_gpu_command),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUOBJ_SET_INFO,
 			kgsl_ioctl_gpuobj_set_info),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_ALLOC,
-			kgsl_ioctl_sparse_phys_alloc),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_FREE,
-			kgsl_ioctl_sparse_phys_free),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_ALLOC,
-			kgsl_ioctl_sparse_virt_alloc),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_FREE,
-			kgsl_ioctl_sparse_virt_free),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_BIND,
-			kgsl_ioctl_sparse_bind),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPU_SPARSE_COMMAND,
-			kgsl_ioctl_gpu_sparse_command),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_ALLOW_UID_HIGH_PRIORITY,
-			kgsl_ioctl_allow_uid_high_priority),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_ALLOW_TID_MAXIMUM_PRIORITY,
-			kgsl_ioctl_allow_tid_maximum_priority),
 };
 
 long kgsl_ioctl_copy_in(unsigned int kernel_cmd, unsigned int user_cmd,

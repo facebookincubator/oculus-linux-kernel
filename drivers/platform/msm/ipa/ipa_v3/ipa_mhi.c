@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -136,7 +136,7 @@ int ipa3_mhi_reset_channel_internal(enum ipa_client_type client)
 	res = ipa3_mhi_reset_gsi_channel(client);
 	if (res) {
 		IPAERR("ipa3_mhi_reset_gsi_channel failed\n");
-		ipa_assert();
+		BUG();
 		return res;
 	}
 
@@ -153,16 +153,10 @@ int ipa3_mhi_reset_channel_internal(enum ipa_client_type client)
 int ipa3_mhi_start_channel_internal(enum ipa_client_type client)
 {
 	int res;
-	int ipa_ep_idx;
 
 	IPA_MHI_FUNC_ENTRY();
 
-	ipa_ep_idx = ipa3_get_ep_mapping(client);
-	if (ipa_ep_idx < 0) {
-		IPA_MHI_ERR("Invalid client %d\n", client);
-		return -EINVAL;
-	}
-	res = ipa3_enable_data_path(ipa_ep_idx);
+	res = ipa3_enable_data_path(ipa3_get_ep_mapping(client));
 	if (res) {
 		IPA_MHI_ERR("ipa3_enable_data_path failed %d\n", res);
 		return res;
@@ -346,7 +340,7 @@ int ipa3_mhi_init_engine(struct ipa_mhi_init_engine *params)
 		ipa_get_ep_mapping(IPA_CLIENT_MHI_PROD));
 	if (!gsi_ep_info) {
 		IPAERR("MHI PROD has no ep allocated\n");
-		ipa_assert();
+		BUG();
 	}
 	memset(&gsi_scratch, 0, sizeof(gsi_scratch));
 	gsi_scratch.mhi_base_chan_idx_valid = true;
@@ -527,10 +521,6 @@ int ipa3_mhi_resume_channels_internal(enum ipa_client_type client,
 	IPA_MHI_FUNC_ENTRY();
 
 	ipa_ep_idx = ipa3_get_ep_mapping(client);
-	if (ipa_ep_idx < 0) {
-		IPA_MHI_ERR("Invalid client %d\n", client);
-		return -EINVAL;
-	}
 	ep = &ipa3_ctx->ep[ipa_ep_idx];
 
 	if (brstmode_enabled && !LPTransitionRejected) {
@@ -567,14 +557,11 @@ int ipa3_mhi_query_ch_info(enum ipa_client_type client,
 	IPA_MHI_FUNC_ENTRY();
 
 	ipa_ep_idx = ipa3_get_ep_mapping(client);
-	if (ipa_ep_idx < 0) {
-		IPA_MHI_ERR("Invalid client %d\n", client);
-		return -EINVAL;
-	}
+
 	ep = &ipa3_ctx->ep[ipa_ep_idx];
 	res = gsi_query_channel_info(ep->gsi_chan_hdl, ch_info);
 	if (res) {
-		IPA_MHI_ERR("gsi_query_channel_info failed\n");
+		IPAERR("gsi_query_channel_info failed\n");
 		return res;
 	}
 
@@ -592,7 +579,7 @@ bool ipa3_has_open_aggr_frame(enum ipa_client_type client)
 
 	ipa_ep_idx = ipa_get_ep_mapping(client);
 	if (ipa_ep_idx == -1) {
-		ipa_assert();
+		BUG();
 		return false;
 	}
 
@@ -609,10 +596,7 @@ int ipa3_mhi_destroy_channel(enum ipa_client_type client)
 	struct ipa3_ep_context *ep;
 
 	ipa_ep_idx = ipa3_get_ep_mapping(client);
-	if (ipa_ep_idx < 0) {
-		IPA_MHI_ERR("Invalid client %d\n", client);
-		return -EINVAL;
-	}
+
 	ep = &ipa3_ctx->ep[ipa_ep_idx];
 
 	IPA_MHI_DBG("reset event ring (hdl: %lu, ep: %d)\n",

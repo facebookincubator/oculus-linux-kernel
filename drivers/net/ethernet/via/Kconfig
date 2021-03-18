@@ -6,7 +6,9 @@ config NET_VENDOR_VIA
 	bool "VIA devices"
 	default y
 	---help---
-	  If you have a network (Ethernet) card belonging to this class, say Y.
+	  If you have a network (Ethernet) card belonging to this class, say Y
+	  and read the Ethernet-HOWTO, available from
+	  <http://www.tldp.org/docs.html#howto>.
 
 	  Note that the answer to this question doesn't directly affect the
 	  kernel: saying N will just cause the configurator to skip all
@@ -17,8 +19,7 @@ if NET_VENDOR_VIA
 
 config VIA_RHINE
 	tristate "VIA Rhine support"
-	depends on PCI || (OF_IRQ && GENERIC_PCI_IOMAP)
-	depends on HAS_DMA
+	depends on (PCI || USE_OF)
 	select CRC32
 	select MII
 	---help---
@@ -42,8 +43,7 @@ config VIA_RHINE_MMIO
 
 config VIA_VELOCITY
 	tristate "VIA Velocity support"
-	depends on (PCI || (OF_ADDRESS && OF_IRQ))
-	depends on HAS_DMA
+	depends on (PCI || USE_OF)
 	select CRC32
 	select CRC_CCITT
 	select MII

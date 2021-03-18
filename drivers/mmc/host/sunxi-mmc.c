@@ -21,6 +21,9 @@
 #include <linux/err.h>
 
 #include <linux/clk.h>
+#include <linux/clk-private.h>
+#include <linux/clk/sunxi.h>
+
 #include <linux/gpio.h>
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
@@ -210,16 +213,6 @@
 #define SDXC_IDMAC_DES0_CES	BIT(30) /* card error summary */
 #define SDXC_IDMAC_DES0_OWN	BIT(31) /* 1-idma owns it, 0-host owns it */
 
-#define SDXC_CLK_400K		0
-#define SDXC_CLK_25M		1
-#define SDXC_CLK_50M		2
-#define SDXC_CLK_50M_DDR	3
-
-struct sunxi_mmc_clk_delay {
-	u32 output;
-	u32 sample;
-};
-
 struct sunxi_idma_des {
 	u32	config;
 	u32	buf_size;
@@ -237,9 +230,6 @@ struct sunxi_mmc_host {
 	/* clock management */
 	struct clk	*clk_ahb;
 	struct clk	*clk_mmc;
-	struct clk	*clk_sample;
-	struct clk	*clk_output;
-	const struct sunxi_mmc_clk_delay *clk_delays;
 
 	/* irq */
 	spinlock_t	lock;
@@ -263,7 +253,7 @@ static int sunxi_mmc_reset_host(struct sunxi_mmc_host *host)
 	unsigned long expire = jiffies + msecs_to_jiffies(250);
 	u32 rval;
 
-	mmc_writel(host, REG_GCTRL, SDXC_HARDWARE_RESET);
+	mmc_writel(host, REG_CMDR, SDXC_HARDWARE_RESET);
 	do {
 		rval = mmc_readl(host, REG_GCTRL);
 	} while (time_before(jiffies, expire) && (rval & SDXC_HARDWARE_RESET));
@@ -304,7 +294,7 @@ static void sunxi_mmc_init_idma_des(struct sunxi_mmc_host *host,
 				    struct mmc_data *data)
 {
 	struct sunxi_idma_des *pdes = (struct sunxi_idma_des *)host->sg_cpu;
-	dma_addr_t next_desc = host->sg_dma;
+	struct sunxi_idma_des *pdes_pa = (struct sunxi_idma_des *)host->sg_dma;
 	int i, max_len = (1 << host->idma_des_size_bits);
 
 	for (i = 0; i < data->sg_len; i++) {
@@ -316,15 +306,12 @@ static void sunxi_mmc_init_idma_des(struct sunxi_mmc_host *host,
 		else
 			pdes[i].buf_size = data->sg[i].length;
 
-		next_desc += sizeof(struct sunxi_idma_des);
 		pdes[i].buf_addr_ptr1 = sg_dma_address(&data->sg[i]);
-		pdes[i].buf_addr_ptr2 = (u32)next_desc;
+		pdes[i].buf_addr_ptr2 = (u32)&pdes_pa[i + 1];
 	}
 
 	pdes[0].config |= SDXC_IDMAC_DES0_FD;
-	pdes[i - 1].config |= SDXC_IDMAC_DES0_LD | SDXC_IDMAC_DES0_ER;
-	pdes[i - 1].config &= ~SDXC_IDMAC_DES0_DIC;
-	pdes[i - 1].buf_addr_ptr2 = 0;
+	pdes[i - 1].config = SDXC_IDMAC_DES0_OWN | SDXC_IDMAC_DES0_LD;
 
 	/*
 	 * Avoid the io-store starting the idmac hitting io-mem before the
@@ -584,15 +571,6 @@ static irqreturn_t sunxi_mmc_handle_manual_stop(int irq, void *dev_id)
 	}
 
 	dev_err(mmc_dev(host->mmc), "data error, sending stop command\n");
-
-	/*
-	 * We will never have more than one outstanding request,
-	 * and we do not complete the request until after
-	 * we've cleared host->manual_stop_mrq so we do not need to
-	 * spin lock this function.
-	 * Additionally we have wait states within this function
-	 * so having it in a lock is a very bad idea.
-	 */
 	sunxi_mmc_send_manual_stop(host, mrq);
 
 	spin_lock_irqsave(&host->lock, iflags);
@@ -606,7 +584,7 @@ static irqreturn_t sunxi_mmc_handle_manual_stop(int irq, void *dev_id)
 
 static int sunxi_mmc_oclk_onoff(struct sunxi_mmc_host *host, u32 oclk_en)
 {
-	unsigned long expire = jiffies + msecs_to_jiffies(750);
+	unsigned long expire = jiffies + msecs_to_jiffies(250);
 	u32 rval;
 
 	rval = mmc_readl(host, REG_CLKCR);
@@ -639,7 +617,7 @@ static int sunxi_mmc_oclk_onoff(struct sunxi_mmc_host *host, u32 oclk_en)
 static int sunxi_mmc_clk_set_rate(struct sunxi_mmc_host *host,
 				  struct mmc_ios *ios)
 {
-	u32 rate, oclk_dly, rval, sclk_dly;
+	u32 rate, oclk_dly, rval, sclk_dly, src_clk;
 	int ret;
 
 	rate = clk_round_rate(host->clk_mmc, ios->clock);
@@ -665,25 +643,34 @@ static int sunxi_mmc_clk_set_rate(struct sunxi_mmc_host *host,
 
 	/* determine delays */
 	if (rate <= 400000) {
-		oclk_dly = host->clk_delays[SDXC_CLK_400K].output;
-		sclk_dly = host->clk_delays[SDXC_CLK_400K].sample;
+		oclk_dly = 0;
+		sclk_dly = 7;
 	} else if (rate <= 25000000) {
-		oclk_dly = host->clk_delays[SDXC_CLK_25M].output;
-		sclk_dly = host->clk_delays[SDXC_CLK_25M].sample;
+		oclk_dly = 0;
+		sclk_dly = 5;
 	} else if (rate <= 50000000) {
 		if (ios->timing == MMC_TIMING_UHS_DDR50) {
-			oclk_dly = host->clk_delays[SDXC_CLK_50M_DDR].output;
-			sclk_dly = host->clk_delays[SDXC_CLK_50M_DDR].sample;
+			oclk_dly = 2;
+			sclk_dly = 4;
 		} else {
-			oclk_dly = host->clk_delays[SDXC_CLK_50M].output;
-			sclk_dly = host->clk_delays[SDXC_CLK_50M].sample;
+			oclk_dly = 3;
+			sclk_dly = 5;
 		}
 	} else {
-		return -EINVAL;
+		/* rate > 50000000 */
+		oclk_dly = 2;
+		sclk_dly = 4;
 	}
 
-	clk_set_phase(host->clk_sample, sclk_dly);
-	clk_set_phase(host->clk_output, oclk_dly);
+	src_clk = clk_get_rate(clk_get_parent(host->clk_mmc));
+	if (src_clk >= 300000000 && src_clk <= 400000000) {
+		if (oclk_dly)
+			oclk_dly--;
+		if (sclk_dly)
+			sclk_dly--;
+	}
+
+	clk_sunxi_mmc_phase_control(host->clk_mmc, sclk_dly, oclk_dly);
 
 	return sunxi_mmc_oclk_onoff(host, 1);
 }
@@ -780,7 +767,6 @@ static void sunxi_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	unsigned long iflags;
 	u32 imask = SDXC_INTERRUPT_ERROR_BIT;
 	u32 cmd_val = SDXC_START | (cmd->opcode & 0x3f);
-	bool wait_dma = host->wait_dma;
 	int ret;
 
 	/* Check for set_ios errors (should never happen) */
@@ -831,7 +817,7 @@ static void sunxi_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 			if (cmd->data->flags & MMC_DATA_WRITE)
 				cmd_val |= SDXC_WRITE;
 			else
-				wait_dma = true;
+				host->wait_dma = true;
 		} else {
 			imask |= SDXC_COMMAND_DONE;
 		}
@@ -865,7 +851,6 @@ static void sunxi_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	}
 
 	host->mrq = mrq;
-	host->wait_dma = wait_dma;
 	mmc_writel(host, REG_IMASK, host->sdio_imask | imask);
 	mmc_writel(host, REG_CARG, cmd->arg);
 	mmc_writel(host, REG_CMDR, cmd_val);
@@ -873,17 +858,9 @@ static void sunxi_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	spin_unlock_irqrestore(&host->lock, iflags);
 }
 
-static int sunxi_mmc_card_busy(struct mmc_host *mmc)
-{
-	struct sunxi_mmc_host *host = mmc_priv(mmc);
-
-	return !!(mmc_readl(host, REG_STAS) & SDXC_CARD_DATA_BUSY);
-}
-
 static const struct of_device_id sunxi_mmc_of_match[] = {
 	{ .compatible = "allwinner,sun4i-a10-mmc", },
 	{ .compatible = "allwinner,sun5i-a13-mmc", },
-	{ .compatible = "allwinner,sun9i-a80-mmc", },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, sunxi_mmc_of_match);
@@ -895,21 +872,6 @@ static struct mmc_host_ops sunxi_mmc_ops = {
 	.get_cd		 = mmc_gpio_get_cd,
 	.enable_sdio_irq = sunxi_mmc_enable_sdio_irq,
 	.hw_reset	 = sunxi_mmc_hw_reset,
-	.card_busy	 = sunxi_mmc_card_busy,
-};
-
-static const struct sunxi_mmc_clk_delay sunxi_mmc_clk_delays[] = {
-	[SDXC_CLK_400K]		= { .output = 180, .sample = 180 },
-	[SDXC_CLK_25M]		= { .output = 180, .sample =  75 },
-	[SDXC_CLK_50M]		= { .output =  90, .sample = 120 },
-	[SDXC_CLK_50M_DDR]	= { .output =  60, .sample = 120 },
-};
-
-static const struct sunxi_mmc_clk_delay sun9i_mmc_clk_delays[] = {
-	[SDXC_CLK_400K]		= { .output = 180, .sample = 180 },
-	[SDXC_CLK_25M]		= { .output = 180, .sample =  75 },
-	[SDXC_CLK_50M]		= { .output = 150, .sample = 120 },
-	[SDXC_CLK_50M_DDR]	= { .output =  90, .sample = 120 },
 };
 
 static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
@@ -922,11 +884,6 @@ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
 		host->idma_des_size_bits = 13;
 	else
 		host->idma_des_size_bits = 16;
-
-	if (of_device_is_compatible(np, "allwinner,sun9i-a80-mmc"))
-		host->clk_delays = sun9i_mmc_clk_delays;
-	else
-		host->clk_delays = sunxi_mmc_clk_delays;
 
 	ret = mmc_regulator_get_supply(host->mmc);
 	if (ret) {
@@ -952,18 +909,6 @@ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
 		return PTR_ERR(host->clk_mmc);
 	}
 
-	host->clk_output = devm_clk_get(&pdev->dev, "output");
-	if (IS_ERR(host->clk_output)) {
-		dev_err(&pdev->dev, "Could not get output clock\n");
-		return PTR_ERR(host->clk_output);
-	}
-
-	host->clk_sample = devm_clk_get(&pdev->dev, "sample");
-	if (IS_ERR(host->clk_sample)) {
-		dev_err(&pdev->dev, "Could not get sample clock\n");
-		return PTR_ERR(host->clk_sample);
-	}
-
 	host->reset = devm_reset_control_get_optional(&pdev->dev, "ahb");
 	if (PTR_ERR(host->reset) == -EPROBE_DEFER)
 		return PTR_ERR(host->reset);
@@ -980,23 +925,11 @@ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
 		goto error_disable_clk_ahb;
 	}
 
-	ret = clk_prepare_enable(host->clk_output);
-	if (ret) {
-		dev_err(&pdev->dev, "Enable output clk err %d\n", ret);
-		goto error_disable_clk_mmc;
-	}
-
-	ret = clk_prepare_enable(host->clk_sample);
-	if (ret) {
-		dev_err(&pdev->dev, "Enable sample clk err %d\n", ret);
-		goto error_disable_clk_output;
-	}
-
 	if (!IS_ERR(host->reset)) {
 		ret = reset_control_deassert(host->reset);
 		if (ret) {
 			dev_err(&pdev->dev, "reset err %d\n", ret);
-			goto error_disable_clk_sample;
+			goto error_disable_clk_mmc;
 		}
 	}
 
@@ -1015,10 +948,6 @@ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
 error_assert_reset:
 	if (!IS_ERR(host->reset))
 		reset_control_assert(host->reset);
-error_disable_clk_sample:
-	clk_disable_unprepare(host->clk_sample);
-error_disable_clk_output:
-	clk_disable_unprepare(host->clk_output);
 error_disable_clk_mmc:
 	clk_disable_unprepare(host->clk_mmc);
 error_disable_clk_ahb:
@@ -1064,7 +993,7 @@ static int sunxi_mmc_probe(struct platform_device *pdev)
 	mmc->f_min		=   400000;
 	mmc->f_max		= 50000000;
 	mmc->caps	       |= MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED |
-				  MMC_CAP_ERASE | MMC_CAP_SDIO_IRQ;
+				  MMC_CAP_ERASE;
 
 	ret = mmc_of_parse(mmc);
 	if (ret)

@@ -58,14 +58,7 @@ static void *rvmalloc(unsigned long size)
 	if (!mem)
 		return NULL;
 
-	/*
-	 * VFB must clear memory to prevent kernel info
-	 * leakage into userspace
-	 * VGA-based drivers MUST NOT clear memory if
-	 * they want to be able to take over vgacon
-	 */
-
-	memset(mem, 0, size);
+	memset(mem, 0, size); /* Clear the ram out, no junk to the user */
 	adr = (unsigned long) mem;
 	while (size > 0) {
 		SetPageReserved(vmalloc_to_page((void *)adr));
@@ -511,6 +504,14 @@ static int vfb_probe(struct platform_device *dev)
 	 */
 	if (!(videomemory = rvmalloc(videomemorysize)))
 		return retval;
+
+	/*
+	 * VFB must clear memory to prevent kernel info
+	 * leakage into userspace
+	 * VGA-based drivers MUST NOT clear memory if
+	 * they want to be able to take over vgacon
+	 */
+	memset(videomemory, 0, videomemorysize);
 
 	info = framebuffer_alloc(sizeof(u32) * 256, &dev->dev);
 	if (!info)

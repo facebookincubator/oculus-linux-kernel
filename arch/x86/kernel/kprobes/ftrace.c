@@ -27,7 +27,7 @@
 
 static nokprobe_inline
 int __skip_singlestep(struct kprobe *p, struct pt_regs *regs,
-		      struct kprobe_ctlblk *kcb, unsigned long orig_ip)
+		      struct kprobe_ctlblk *kcb)
 {
 	/*
 	 * Emulate singlestep (and also recover regs->ip)
@@ -39,8 +39,6 @@ int __skip_singlestep(struct kprobe *p, struct pt_regs *regs,
 		p->post_handler(p, regs, 0);
 	}
 	__this_cpu_write(current_kprobe, NULL);
-	if (orig_ip)
-		regs->ip = orig_ip;
 	return 1;
 }
 
@@ -48,7 +46,7 @@ int skip_singlestep(struct kprobe *p, struct pt_regs *regs,
 		    struct kprobe_ctlblk *kcb)
 {
 	if (kprobe_ftrace(p))
-		return __skip_singlestep(p, regs, kcb, 0);
+		return __skip_singlestep(p, regs, kcb);
 	else
 		return 0;
 }
@@ -73,14 +71,13 @@ void kprobe_ftrace_handler(unsigned long ip, unsigned long parent_ip,
 	if (kprobe_running()) {
 		kprobes_inc_nmissed_count(p);
 	} else {
-		unsigned long orig_ip = regs->ip;
 		/* Kprobe handler expects regs->ip = ip + 1 as breakpoint hit */
 		regs->ip = ip + sizeof(kprobe_opcode_t);
 
 		__this_cpu_write(current_kprobe, p);
 		kcb->kprobe_status = KPROBE_HIT_ACTIVE;
 		if (!p->pre_handler || !p->pre_handler(p, regs))
-			__skip_singlestep(p, regs, kcb, orig_ip);
+			__skip_singlestep(p, regs, kcb);
 		/*
 		 * If pre_handler returns !0, it sets regs->ip and
 		 * resets current kprobe.

@@ -187,6 +187,7 @@ struct ks959_cb {
 	__u8 *rx_buf;
 	__u8 rx_variable_xormask;
 	iobuff_t rx_unwrap_buff;
+	struct timeval rx_time;
 
 	struct usb_ctrlrequest *speed_setuprequest;
 	struct urb *speed_urb;
@@ -475,6 +476,7 @@ static void ks959_rcv_irq(struct urb *urb)
 						  bytes[i]);
 			}
 		}
+		do_gettimeofday(&kingsun->rx_time);
 		kingsun->receiving =
 		    (kingsun->rx_unwrap_buff.state != OUTSIDE_FRAME) ? 1 : 0;
 	}
@@ -512,6 +514,7 @@ static int ks959_net_open(struct net_device *netdev)
 
 	skb_reserve(kingsun->rx_unwrap_buff.skb, 1);
 	kingsun->rx_unwrap_buff.head = kingsun->rx_unwrap_buff.skb->data;
+	do_gettimeofday(&kingsun->rx_time);
 
 	kingsun->rx_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!kingsun->rx_urb)

@@ -158,13 +158,11 @@ void blk_abort_request(struct request *req)
 {
 	if (blk_mark_rq_complete(req))
 		return;
-
-	if (req->q->mq_ops) {
+	blk_delete_timer(req);
+	if (req->q->mq_ops)
 		blk_mq_rq_timed_out(req, false);
-	} else {
-		blk_delete_timer(req);
+	else
 		blk_rq_timed_out(req);
-	}
 }
 EXPORT_SYMBOL_GPL(blk_abort_request);
 
@@ -191,9 +189,6 @@ void blk_add_timer(struct request *req)
 {
 	struct request_queue *q = req->q;
 	unsigned long expiry;
-
-	if (req->cmd_flags & REQ_NO_TIMEOUT)
-		return;
 
 	/* blk-mq has its own handler, so we don't need ->rq_timed_out_fn */
 	if (!q->mq_ops && !q->rq_timed_out_fn)

@@ -46,7 +46,7 @@ static const struct regmap_range_cfg rt5651_ranges[] = {
 	  .window_len = 0x1, },
 };
 
-static const struct reg_sequence init_list[] = {
+static struct reg_default init_list[] = {
 	{RT5651_PR_BASE + 0x3d,	0x3e00},
 };
 
@@ -292,15 +292,16 @@ static const DECLARE_TLV_DB_SCALE(adc_vol_tlv, -17625, 375, 0);
 static const DECLARE_TLV_DB_SCALE(adc_bst_tlv, 0, 1200, 0);
 
 /* {0, +20, +24, +30, +35, +40, +44, +50, +52} dB */
-static const DECLARE_TLV_DB_RANGE(bst_tlv,
+static unsigned int bst_tlv[] = {
+	TLV_DB_RANGE_HEAD(7),
 	0, 0, TLV_DB_SCALE_ITEM(0, 0, 0),
 	1, 1, TLV_DB_SCALE_ITEM(2000, 0, 0),
 	2, 2, TLV_DB_SCALE_ITEM(2400, 0, 0),
 	3, 5, TLV_DB_SCALE_ITEM(3000, 500, 0),
 	6, 6, TLV_DB_SCALE_ITEM(4400, 0, 0),
 	7, 7, TLV_DB_SCALE_ITEM(5000, 0, 0),
-	8, 8, TLV_DB_SCALE_ITEM(5200, 0, 0)
-);
+	8, 8, TLV_DB_SCALE_ITEM(5200, 0, 0),
+};
 
 /* Interface data select */
 static const char * const rt5651_data_select[] = {
@@ -375,13 +376,12 @@ static const struct snd_kcontrol_new rt5651_snd_controls[] = {
 static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct rt5651_priv *rt5651 = snd_soc_codec_get_drvdata(codec);
-	int idx, rate;
+	int idx = -EINVAL;
 
-	rate = rt5651->sysclk / rl6231_get_pre_div(rt5651->regmap,
-		RT5651_ADDA_CLK1, RT5651_I2S_PD1_SFT);
-	idx = rl6231_calc_dmic_clk(rate);
+	idx = rl6231_calc_dmic_clk(rt5651->sysclk);
+
 	if (idx < 0)
 		dev_err(codec->dev, "Failed to set DMIC clock\n");
 	else
@@ -394,10 +394,9 @@ static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 static int is_sysclk_from_pll(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
 	unsigned int val;
 
-	val = snd_soc_read(codec, RT5651_GLB_CLK);
+	val = snd_soc_read(source->codec, RT5651_GLB_CLK);
 	val &= RT5651_SCLK_SRC_MASK;
 	if (val == RT5651_SCLK_SRC_PLL1)
 		return 1;
@@ -732,7 +731,7 @@ static const struct snd_kcontrol_new rt5651_pdm_r_mux =
 static int rt5651_amp_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct rt5651_priv *rt5651 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
@@ -770,7 +769,7 @@ static int rt5651_amp_power_event(struct snd_soc_dapm_widget *w,
 static int rt5651_hp_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct rt5651_priv *rt5651 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
@@ -814,8 +813,7 @@ static int rt5651_hp_event(struct snd_soc_dapm_widget *w,
 static int rt5651_hp_post_event(struct snd_soc_dapm_widget *w,
 			   struct snd_kcontrol *kcontrol, int event)
 {
-
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct rt5651_priv *rt5651 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
@@ -835,7 +833,7 @@ static int rt5651_hp_post_event(struct snd_soc_dapm_widget *w,
 static int rt5651_bst1_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -858,7 +856,7 @@ static int rt5651_bst1_event(struct snd_soc_dapm_widget *w,
 static int rt5651_bst2_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -881,7 +879,7 @@ static int rt5651_bst2_event(struct snd_soc_dapm_widget *w,
 static int rt5651_bst3_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -1571,7 +1569,7 @@ static int rt5651_set_bias_level(struct snd_soc_codec *codec,
 {
 	switch (level) {
 	case SND_SOC_BIAS_PREPARE:
-		if (SND_SOC_BIAS_STANDBY == snd_soc_codec_get_bias_level(codec)) {
+		if (SND_SOC_BIAS_STANDBY == codec->dapm.bias_level) {
 			snd_soc_update_bits(codec, RT5651_PWR_ANLG1,
 				RT5651_PWR_VREF1 | RT5651_PWR_MB |
 				RT5651_PWR_BG | RT5651_PWR_VREF2,
@@ -1604,6 +1602,7 @@ static int rt5651_set_bias_level(struct snd_soc_codec *codec,
 	default:
 		break;
 	}
+	codec->dapm.bias_level = level;
 
 	return 0;
 }
@@ -1624,7 +1623,7 @@ static int rt5651_probe(struct snd_soc_codec *codec)
 		RT5651_PWR_FV1 | RT5651_PWR_FV2,
 		RT5651_PWR_FV1 | RT5651_PWR_FV2);
 
-	snd_soc_codec_force_bias_level(codec, SND_SOC_BIAS_OFF);
+	rt5651_set_bias_level(codec, SND_SOC_BIAS_OFF);
 
 	return 0;
 }
@@ -1769,7 +1768,7 @@ static int rt5651_i2c_probe(struct i2c_client *i2c,
 	regmap_read(rt5651->regmap, RT5651_DEVICE_ID, &ret);
 	if (ret != RT5651_DEVICE_ID_VALUE) {
 		dev_err(&i2c->dev,
-			"Device with ID register %#x is not rt5651\n", ret);
+			"Device with ID register %x is not rt5651\n", ret);
 		return -ENODEV;
 	}
 
@@ -1806,6 +1805,7 @@ static int rt5651_i2c_remove(struct i2c_client *i2c)
 static struct i2c_driver rt5651_i2c_driver = {
 	.driver = {
 		.name = "rt5651",
+		.owner = THIS_MODULE,
 	},
 	.probe = rt5651_i2c_probe,
 	.remove   = rt5651_i2c_remove,

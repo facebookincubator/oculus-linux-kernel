@@ -10,7 +10,6 @@
 #include <linux/proc_fs.h>
 #include <linux/skbuff.h>
 #include <linux/netfilter.h>
-#include <linux/netfilter_bridge.h>
 #include <linux/seq_file.h>
 #include <linux/rcupdate.h>
 #include <net/protocol.h>
@@ -48,65 +47,69 @@ EXPORT_SYMBOL(nf_unregister_queue_handler);
 
 void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 {
-	struct nf_hook_state *state = &entry->state;
-
 	/* Release those devices we held, or Alexey will kill me. */
-	if (state->in)
-		dev_put(state->in);
-	if (state->out)
-		dev_put(state->out);
-	if (state->sk)
-		sock_put(state->sk);
+	if (entry->indev)
+		dev_put(entry->indev);
+	if (entry->outdev)
+		dev_put(entry->outdev);
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	if (entry->skb->nf_bridge) {
-		struct net_device *physdev;
+		struct nf_bridge_info *nf_bridge = entry->skb->nf_bridge;
 
-		physdev = nf_bridge_get_physindev(entry->skb);
-		if (physdev)
-			dev_put(physdev);
-		physdev = nf_bridge_get_physoutdev(entry->skb);
-		if (physdev)
-			dev_put(physdev);
+		if (nf_bridge->physindev)
+			dev_put(nf_bridge->physindev);
+		if (nf_bridge->physoutdev)
+			dev_put(nf_bridge->physoutdev);
 	}
 #endif
+	/* Drop reference to owner of hook which queued us. */
+	module_put(entry->elem->owner);
 }
 EXPORT_SYMBOL_GPL(nf_queue_entry_release_refs);
 
 /* Bump dev refs so they don't vanish while packet is out */
-void nf_queue_entry_get_refs(struct nf_queue_entry *entry)
+bool nf_queue_entry_get_refs(struct nf_queue_entry *entry)
 {
-	struct nf_hook_state *state = &entry->state;
+	if (!try_module_get(entry->elem->owner))
+		return false;
 
-	if (state->in)
-		dev_hold(state->in);
-	if (state->out)
-		dev_hold(state->out);
-	if (state->sk)
-		sock_hold(state->sk);
+	if (entry->indev)
+		dev_hold(entry->indev);
+	if (entry->outdev)
+		dev_hold(entry->outdev);
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	if (entry->skb->nf_bridge) {
+		struct nf_bridge_info *nf_bridge = entry->skb->nf_bridge;
 		struct net_device *physdev;
 
-		physdev = nf_bridge_get_physindev(entry->skb);
+		physdev = nf_bridge->physindev;
 		if (physdev)
 			dev_hold(physdev);
-		physdev = nf_bridge_get_physoutdev(entry->skb);
+		physdev = nf_bridge->physoutdev;
 		if (physdev)
 			dev_hold(physdev);
 	}
 #endif
+
+	return true;
 }
 EXPORT_SYMBOL_GPL(nf_queue_entry_get_refs);
 
-void nf_queue_nf_hook_drop(struct net *net, struct nf_hook_ops *ops)
+void nf_queue_nf_hook_drop(struct nf_hook_ops *ops)
 {
 	const struct nf_queue_handler *qh;
+	struct net *net;
 
+	rtnl_lock();
 	rcu_read_lock();
 	qh = rcu_dereference(queue_handler);
-	if (qh)
-		qh->nf_hook_drop(net, ops);
+	if (qh) {
+		for_each_net(net) {
+			qh->nf_hook_drop(net, ops);
+		}
+	}
 	rcu_read_unlock();
+	rtnl_unlock();
 }
 
 /*
@@ -114,9 +117,12 @@ void nf_queue_nf_hook_drop(struct net *net, struct nf_hook_ops *ops)
  * through nf_reinject().
  */
 int nf_queue(struct sk_buff *skb,
-	     struct nf_hook_ops *elem,
-	     struct nf_hook_state *state,
-	     unsigned int queuenum)
+		      struct nf_hook_ops *elem,
+		      u_int8_t pf, unsigned int hook,
+		      struct net_device *indev,
+		      struct net_device *outdev,
+		      int (*okfn)(struct sk_buff *),
+		      unsigned int queuenum)
 {
 	int status = -ENOENT;
 	struct nf_queue_entry *entry = NULL;
@@ -124,33 +130,44 @@ int nf_queue(struct sk_buff *skb,
 	const struct nf_queue_handler *qh;
 
 	/* QUEUE == DROP if no one is waiting, to be safe. */
+	rcu_read_lock();
+
 	qh = rcu_dereference(queue_handler);
 	if (!qh) {
 		status = -ESRCH;
-		goto err;
+		goto err_unlock;
 	}
 
-	afinfo = nf_get_afinfo(state->pf);
+	afinfo = nf_get_afinfo(pf);
 	if (!afinfo)
-		goto err;
+		goto err_unlock;
 
 	entry = kmalloc(sizeof(*entry) + afinfo->route_key_size, GFP_ATOMIC);
 	if (!entry) {
 		status = -ENOMEM;
-		goto err;
+		goto err_unlock;
 	}
 
 	*entry = (struct nf_queue_entry) {
 		.skb	= skb,
 		.elem	= elem,
-		.state	= *state,
+		.pf	= pf,
+		.hook	= hook,
+		.indev	= indev,
+		.outdev	= outdev,
+		.okfn	= okfn,
 		.size	= sizeof(*entry) + afinfo->route_key_size,
 	};
 
-	nf_queue_entry_get_refs(entry);
+	if (!nf_queue_entry_get_refs(entry)) {
+		status = -ECANCELED;
+		goto err_unlock;
+	}
 	skb_dst_force(skb);
 	afinfo->saveroute(skb, entry);
 	status = qh->outfn(entry, queuenum);
+
+	rcu_read_unlock();
 
 	if (status < 0) {
 		nf_queue_entry_release_refs(entry);
@@ -159,6 +176,8 @@ int nf_queue(struct sk_buff *skb,
 
 	return 0;
 
+err_unlock:
+	rcu_read_unlock();
 err:
 	kfree(entry);
 	return status;
@@ -171,37 +190,44 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
 	const struct nf_afinfo *afinfo;
 	int err;
 
+	rcu_read_lock();
+
 	nf_queue_entry_release_refs(entry);
 
 	/* Continue traversal iff userspace said ok... */
-	if (verdict == NF_REPEAT)
-		verdict = elem->hook(elem->priv, skb, &entry->state);
+	if (verdict == NF_REPEAT) {
+		elem = list_entry(elem->list.prev, struct nf_hook_ops, list);
+		verdict = NF_ACCEPT;
+	}
 
 	if (verdict == NF_ACCEPT) {
-		afinfo = nf_get_afinfo(entry->state.pf);
-		if (!afinfo || afinfo->reroute(entry->state.net, skb, entry) < 0)
+		afinfo = nf_get_afinfo(entry->pf);
+		if (!afinfo || afinfo->reroute(skb, entry) < 0)
 			verdict = NF_DROP;
 	}
 
-	entry->state.thresh = INT_MIN;
-
 	if (verdict == NF_ACCEPT) {
 	next_hook:
-		verdict = nf_iterate(entry->state.hook_list,
-				     skb, &entry->state, &elem);
+		verdict = nf_iterate(&nf_hooks[entry->pf][entry->hook],
+				     skb, entry->hook,
+				     entry->indev, entry->outdev, &elem,
+				     entry->okfn, INT_MIN);
 	}
 
 	switch (verdict & NF_VERDICT_MASK) {
 	case NF_ACCEPT:
 	case NF_STOP:
 		local_bh_disable();
-		entry->state.okfn(entry->state.net, entry->state.sk, skb);
+		entry->okfn(skb);
 		local_bh_enable();
 		break;
 	case NF_QUEUE:
-		err = nf_queue(skb, elem, &entry->state,
-			       verdict >> NF_VERDICT_QBITS);
+		err = nf_queue(skb, elem, entry->pf, entry->hook,
+				entry->indev, entry->outdev, entry->okfn,
+				verdict >> NF_VERDICT_QBITS);
 		if (err < 0) {
+			if (err == -ECANCELED)
+				goto next_hook;
 			if (err == -ESRCH &&
 			   (verdict & NF_VERDICT_FLAG_QUEUE_BYPASS))
 				goto next_hook;
@@ -213,7 +239,7 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
 	default:
 		kfree_skb(skb);
 	}
-
+	rcu_read_unlock();
 	kfree(entry);
 }
 EXPORT_SYMBOL(nf_reinject);

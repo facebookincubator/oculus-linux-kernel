@@ -23,18 +23,11 @@
 #include <asm/assembler.h>
 #include <asm/asm-offsets.h>
 #include <asm/hwcap.h>
-#include <asm/pgtable-hwdef.h>
 #include <asm/pgtable.h>
-#include <asm/cpufeature.h>
-#include <asm/alternative.h>
-
-#include "proc-macros.S"
 
 #ifdef CONFIG_ARM64_64K_PAGES
 #define TCR_TG_FLAGS	TCR_TG0_64K | TCR_TG1_64K
-#elif defined(CONFIG_ARM64_16K_PAGES)
-#define TCR_TG_FLAGS	TCR_TG0_16K | TCR_TG1_16K
-#else /* CONFIG_ARM64_4K_PAGES */
+#else
 #define TCR_TG_FLAGS	TCR_TG0_4K | TCR_TG1_4K
 #endif
 
@@ -102,7 +95,7 @@ ENTRY(cpu_do_idle)
 	ret
 ENDPROC(cpu_do_idle)
 
-#ifdef CONFIG_CPU_PM
+#ifdef CONFIG_ARM64_CPU_SUSPEND
 /**
  * cpu_do_suspend - save CPU registers context
  *
@@ -165,7 +158,6 @@ ENTRY(cpu_do_resume)
 	 */
 	ubfx	x11, x11, #1, #1
 	msr	oslar_el1, x11
-	reset_pmuserenr_el0 x0			// Disable PMU access from EL0
 	mov	x0, x12
 	dsb	nsh		// Make sure local tlb invalidation completed
 	isb
@@ -181,40 +173,20 @@ ENDPROC(cpu_do_resume)
  *	- pgd_phys - physical address of new TTB
  */
 ENTRY(cpu_do_switch_mm)
+	mrs	x2, ttbr1_el1
 	mmid	x1, x1				// get mm->context.id
-	bfi	x0, x1, #48, #16		// set the ASID
-	msr	ttbr0_el1, x0			// set TTBR0
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	bfi	x0, x1, #48, #16		// set the ASID field in TTBR0
+#endif
+	bfi	x2, x1, #48, #16		// set the ASID
+	msr	ttbr1_el1, x2			// in TTBR1 (since TCR.A1 is set)
+	isb
+	msr	ttbr0_el1, x0			// now update TTBR0
 	isb
 	b	post_ttbr_update_workaround	// Back to C code...
 ENDPROC(cpu_do_switch_mm)
 
-	.pushsection ".idmap.text", "ax"
-/*
- * void idmap_cpu_replace_ttbr1(phys_addr_t new_pgd)
- *
- * This is the low-level counterpart to cpu_replace_ttbr1, and should not be
- * called by anything else. It can only be executed from a TTBR0 mapping.
- */
-ENTRY(idmap_cpu_replace_ttbr1)
-	mrs	x2, daif
-	msr	daifset, #0xf
-
-	adrp	x1, empty_zero_page
-	msr	ttbr1_el1, x1
-	isb
-
-	tlbi	vmalle1
-	dsb	nsh
-	isb
-
-	msr	ttbr1_el1, x0
-	isb
-
-	msr	daif, x2
-
-	ret
-ENDPROC(idmap_cpu_replace_ttbr1)
-	.popsection
+	.section ".text.init", #alloc, #execinstr
 
 /*
  *	__cpu_setup
@@ -232,7 +204,6 @@ ENTRY(__cpu_setup)
 	msr	mdscr_el1, x0			// access to the DCC from EL0
 	isb					// Unmask debug exceptions now,
 	enable_dbg				// since this is per-cpu
-	reset_pmuserenr_el0 x0			// Disable PMU access from EL0
 	/*
 	 * Memory region attributes for LPAE:
 	 *
@@ -243,14 +214,12 @@ ENTRY(__cpu_setup)
 	 *   DEVICE_GRE		010	00001100
 	 *   NORMAL_NC		011	01000100
 	 *   NORMAL		100	11111111
-	 *   NORMAL_WT		101	10111011
 	 */
 	ldr	x5, =MAIR(0x00, MT_DEVICE_nGnRnE) | \
 		     MAIR(0x04, MT_DEVICE_nGnRE) | \
 		     MAIR(0x0c, MT_DEVICE_GRE) | \
 		     MAIR(0x44, MT_NORMAL_NC) | \
-		     MAIR(0xff, MT_NORMAL) | \
-		     MAIR(0xbb, MT_NORMAL_WT)
+		     MAIR(0xff, MT_NORMAL)
 	msr	mair_el1, x5
 	/*
 	 * Prepare SCTLR
@@ -265,7 +234,7 @@ ENTRY(__cpu_setup)
 	 * both user and kernel.
 	 */
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
-			TCR_TG_FLAGS | TCR_ASID16 | TCR_TBI0
+			TCR_TG_FLAGS | TCR_ASID16 | TCR_TBI0 | TCR_A1
 	tcr_set_idmap_t0sz	x10, x9
 
 	/*
@@ -274,37 +243,21 @@ ENTRY(__cpu_setup)
 	 */
 	mrs	x9, ID_AA64MMFR0_EL1
 	bfi	x10, x9, #32, #3
-#ifdef CONFIG_ARM64_HW_AFDBM
-	/*
-	 * Hardware update of the Access and Dirty bits.
-	 */
-	mrs	x9, ID_AA64MMFR1_EL1
-	and	x9, x9, #0xf
-	cbz	x9, 2f
-	cmp	x9, #2
-	b.lt	1f
-	orr	x10, x10, #TCR_HD		// hardware Dirty flag update
-1:	orr	x10, x10, #TCR_HA		// hardware Access flag update
-2:
-#endif	/* CONFIG_ARM64_HW_AFDBM */
 	msr	tcr_el1, x10
 	ret					// return to head.S
 ENDPROC(__cpu_setup)
 
 	/*
-	 * We set the desired value explicitly, including those of the
-	 * reserved bits. The values of bits EE & E0E were set early in
-	 * el2_setup, which are left untouched below.
-	 *
 	 *                 n n            T
 	 *       U E      WT T UD     US IHBS
 	 *       CE0      XWHW CZ     ME TEEA S
 	 * .... .IEE .... NEAI TE.I ..AD DEN0 ACAM
-	 * 0011 0... 1101 ..0. ..0. 10.. .0.. .... < hardware reserved
-	 * .... .1.. .... 01.1 11.1 ..01 0.01 1101 < software settings
+	 * 0011 0... 1101 ..0. ..0. 10.. .... .... < hardware reserved
+	 * .... .1.. .... 01.1 11.1 ..01 0001 1101 < software settings
 	 */
 	.type	crval, #object
 crval:
+
 #ifdef CONFIG_ARM64_ICACHE_DISABLE
 #define CR_IBIT		0
 #else
@@ -316,5 +269,6 @@ crval:
 #else
 #define CR_CBIT		0x4
 #endif
-	.word	0xfcffffff			// clear
-	.word	0x34d5d91d | CR_IBIT | CR_CBIT	// set
+
+	.word	0x000802c2	// clear
+	.word	0x0405c039 | CR_IBIT | CR_CBIT	// set

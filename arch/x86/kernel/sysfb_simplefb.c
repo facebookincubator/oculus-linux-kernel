@@ -88,5 +88,8 @@ __init int create_simplefb(const struct screen_info *si,
 
 	pd = platform_device_register_resndata(NULL, "simple-framebuffer", 0,
 					       &res, 1, mode, sizeof(*mode));
-	return PTR_ERR_OR_ZERO(pd);
+	if (IS_ERR(pd))
+		return PTR_ERR(pd);
+
+	return 0;
 }

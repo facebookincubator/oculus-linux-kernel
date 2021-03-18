@@ -100,6 +100,7 @@ static void fl_free(struct ip6_flowlabel *fl)
 	if (fl) {
 		if (fl->share == IPV6_FL_S_PROCESS)
 			put_pid(fl->owner.pid);
+		release_net(fl->fl_net);
 		kfree(fl->opt);
 		kfree_rcu(fl, rcu);
 	}
@@ -171,7 +172,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 {
 	int i;
 
-	spin_lock_bh(&ip6_fl_lock);
+	spin_lock(&ip6_fl_lock);
 	for (i = 0; i <= FL_HASH_MASK; i++) {
 		struct ip6_flowlabel *fl;
 		struct ip6_flowlabel __rcu **flp;
@@ -189,7 +190,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 			flp = &fl->next;
 		}
 	}
-	spin_unlock_bh(&ip6_fl_lock);
+	spin_unlock(&ip6_fl_lock);
 }
 
 static struct ip6_flowlabel *fl_intern(struct net *net,
@@ -205,7 +206,7 @@ static struct ip6_flowlabel *fl_intern(struct net *net,
 			fl->label = htonl(prandom_u32())&IPV6_FLOWLABEL_MASK;
 			if (fl->label) {
 				lfl = __fl_lookup(net, fl->label);
-				if (!lfl)
+				if (lfl == NULL)
 					break;
 			}
 		}
@@ -219,7 +220,7 @@ static struct ip6_flowlabel *fl_intern(struct net *net,
 		 * with the same label can only appear on another sock
 		 */
 		lfl = __fl_lookup(net, fl->label);
-		if (lfl) {
+		if (lfl != NULL) {
 			atomic_inc(&lfl->users);
 			spin_unlock_bh(&ip6_fl_lock);
 			return lfl;
@@ -297,10 +298,10 @@ struct ipv6_txoptions *fl6_merge_options(struct ipv6_txoptions *opt_space,
 {
 	struct ipv6_txoptions *fl_opt = fl->opt;
 
-	if (!fopt || fopt->opt_flen == 0)
+	if (fopt == NULL || fopt->opt_flen == 0)
 		return fl_opt;
 
-	if (fl_opt) {
+	if (fl_opt != NULL) {
 		opt_space->hopopt = fl_opt->hopopt;
 		opt_space->dst0opt = fl_opt->dst0opt;
 		opt_space->srcrt = fl_opt->srcrt;
@@ -366,7 +367,7 @@ fl_create(struct net *net, struct sock *sk, struct in6_flowlabel_req *freq,
 
 	err = -ENOMEM;
 	fl = kzalloc(sizeof(*fl), GFP_KERNEL);
-	if (!fl)
+	if (fl == NULL)
 		goto done;
 
 	if (olen > 0) {
@@ -376,7 +377,7 @@ fl_create(struct net *net, struct sock *sk, struct in6_flowlabel_req *freq,
 
 		err = -ENOMEM;
 		fl->opt = kmalloc(sizeof(*fl->opt) + olen, GFP_KERNEL);
-		if (!fl->opt)
+		if (fl->opt == NULL)
 			goto done;
 
 		memset(fl->opt, 0, sizeof(*fl->opt));
@@ -402,7 +403,7 @@ fl_create(struct net *net, struct sock *sk, struct in6_flowlabel_req *freq,
 		}
 	}
 
-	fl->fl_net = net;
+	fl->fl_net = hold_net(net);
 	fl->expires = jiffies;
 	err = fl6_renew(fl, freq->flr_linger, freq->flr_expires);
 	if (err)
@@ -540,13 +541,12 @@ int ipv6_flowlabel_opt(struct sock *sk, char __user *optval, int optlen)
 		}
 		spin_lock_bh(&ip6_sk_fl_lock);
 		for (sflp = &np->ipv6_fl_list;
-		     (sfl = rcu_dereference_protected(*sflp,
-						      lockdep_is_held(&ip6_sk_fl_lock))) != NULL;
+		     (sfl = rcu_dereference(*sflp)) != NULL;
 		     sflp = &sfl->next) {
 			if (sfl->fl->label == freq.flr_label) {
 				if (freq.flr_label == (np->flow_label&IPV6_FLOWLABEL_MASK))
 					np->flow_label &= ~IPV6_FLOWLABEL_MASK;
-				*sflp = sfl->next;
+				*sflp = rcu_dereference(sfl->next);
 				spin_unlock_bh(&ip6_sk_fl_lock);
 				fl_release(sfl->fl);
 				kfree_rcu(sfl, rcu);
@@ -596,12 +596,8 @@ int ipv6_flowlabel_opt(struct sock *sk, char __user *optval, int optlen)
 		if (freq.flr_label & ~IPV6_FLOWLABEL_MASK)
 			return -EINVAL;
 
-		if (net->ipv6.sysctl.flowlabel_state_ranges &&
-		    (freq.flr_label & IPV6_FLOWLABEL_STATELESS_FLAG))
-			return -ERANGE;
-
 		fl = fl_create(net, sk, &freq, optval, optlen, &err);
-		if (!fl)
+		if (fl == NULL)
 			return err;
 		sfl1 = kmalloc(sizeof(*sfl1), GFP_KERNEL);
 
@@ -621,7 +617,7 @@ int ipv6_flowlabel_opt(struct sock *sk, char __user *optval, int optlen)
 			}
 			rcu_read_unlock_bh();
 
-			if (!fl1)
+			if (fl1 == NULL)
 				fl1 = fl_lookup(net, freq.flr_label);
 			if (fl1) {
 recheck:
@@ -638,7 +634,7 @@ recheck:
 					goto release;
 
 				err = -ENOMEM;
-				if (!sfl1)
+				if (sfl1 == NULL)
 					goto release;
 				if (fl->linger > fl1->linger)
 					fl1->linger = fl->linger;
@@ -658,15 +654,11 @@ release:
 			goto done;
 
 		err = -ENOMEM;
-		if (!sfl1)
-			goto done;
-
-		err = mem_check(sk);
-		if (err != 0)
+		if (sfl1 == NULL || (err = mem_check(sk)) != 0)
 			goto done;
 
 		fl1 = fl_intern(net, fl, freq.flr_label);
-		if (fl1)
+		if (fl1 != NULL)
 			goto recheck;
 
 		if (!freq.flr_label) {
@@ -777,9 +769,10 @@ static void ip6fl_seq_stop(struct seq_file *seq, void *v)
 static int ip6fl_seq_show(struct seq_file *seq, void *v)
 {
 	struct ip6fl_iter_state *state = ip6fl_seq_private(seq);
-	if (v == SEQ_START_TOKEN) {
-		seq_puts(seq, "Label S Owner  Users  Linger Expires  Dst                              Opt\n");
-	} else {
+	if (v == SEQ_START_TOKEN)
+		seq_printf(seq, "%-5s %-1s %-6s %-6s %-6s %-8s %-32s %s\n",
+			   "Label", "S", "Owner", "Users", "Linger", "Expires", "Dst", "Opt");
+	else {
 		struct ip6_flowlabel *fl = v;
 		seq_printf(seq,
 			   "%05X %-1d %-6d %-6d %-6ld %-8ld %pi6 %-4d\n",

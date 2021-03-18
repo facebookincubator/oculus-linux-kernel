@@ -223,7 +223,7 @@ static int lp55xx_request_firmware(struct lp55xx_chip *chip)
 	const char *name = chip->cl->name;
 	struct device *dev = &chip->cl->dev;
 
-	return request_firmware_nowait(THIS_MODULE, false, name, dev,
+	return request_firmware_nowait(THIS_MODULE, true, name, dev,
 				GFP_KERNEL, chip, lp55xx_firmware_loaded);
 }
 
@@ -543,8 +543,7 @@ void lp55xx_unregister_sysfs(struct lp55xx_chip *chip)
 }
 EXPORT_SYMBOL_GPL(lp55xx_unregister_sysfs);
 
-struct lp55xx_platform_data *lp55xx_of_populate_pdata(struct device *dev,
-						      struct device_node *np)
+int lp55xx_of_populate_pdata(struct device *dev, struct device_node *np)
 {
 	struct device_node *child;
 	struct lp55xx_platform_data *pdata;
@@ -554,17 +553,17 @@ struct lp55xx_platform_data *lp55xx_of_populate_pdata(struct device *dev,
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	num_channels = of_get_child_count(np);
 	if (num_channels == 0) {
 		dev_err(dev, "no LED channels\n");
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
 	cfg = devm_kzalloc(dev, sizeof(*cfg) * num_channels, GFP_KERNEL);
 	if (!cfg)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	pdata->led_config = &cfg[0];
 	pdata->num_channels = num_channels;
@@ -589,7 +588,9 @@ struct lp55xx_platform_data *lp55xx_of_populate_pdata(struct device *dev,
 	/* LP8501 specific */
 	of_property_read_u8(np, "pwr-sel", (u8 *)&pdata->pwr_sel);
 
-	return pdata;
+	dev->platform_data = pdata;
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(lp55xx_of_populate_pdata);
 

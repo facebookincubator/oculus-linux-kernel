@@ -99,9 +99,11 @@ static int __ocfs2_move_extent(handle_t *handle,
 
 	index = ocfs2_search_extent_list(el, cpos);
 	if (index == -1) {
-		ret = ocfs2_error(inode->i_sb,
-				  "Inode %llu has an extent at cpos %u which can no longer be found\n",
-				  (unsigned long long)ino, cpos);
+		ocfs2_error(inode->i_sb,
+			    "Inode %llu has an extent at cpos %u which can no "
+			    "longer be found.\n",
+			    (unsigned long long)ino, cpos);
+		ret = -EROFS;
 		goto out;
 	}
 
@@ -901,6 +903,9 @@ static int ocfs2_move_extents(struct ocfs2_move_extents_context *context)
 	struct ocfs2_dinode *di;
 	struct buffer_head *di_bh = NULL;
 	struct ocfs2_super *osb = OCFS2_SB(inode->i_sb);
+
+	if (!inode)
+		return -ENOENT;
 
 	if (ocfs2_is_hard_readonly(osb) || ocfs2_is_soft_readonly(osb))
 		return -EROFS;

@@ -44,7 +44,7 @@ prio_classify(struct sk_buff *skb, struct Qdisc *sch, int *qerr)
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
 	if (TC_H_MAJ(skb->priority) != sch->handle) {
 		fl = rcu_dereference_bh(q->filter_list);
-		err = tc_classify(skb, fl, &res, false);
+		err = tc_classify(skb, fl, &res);
 #ifdef CONFIG_NET_CLS_ACT
 		switch (err) {
 		case TC_ACT_STOLEN:
@@ -205,7 +205,7 @@ static int prio_tune(struct Qdisc *sch, struct nlattr *opt)
 		struct Qdisc *child = q->queues[i];
 		q->queues[i] = &noop_qdisc;
 		if (child != &noop_qdisc) {
-			qdisc_tree_reduce_backlog(child, child->q.qlen, child->qstats.backlog);
+			qdisc_tree_decrease_qlen(child, child->q.qlen);
 			qdisc_destroy(child);
 		}
 	}
@@ -224,9 +224,8 @@ static int prio_tune(struct Qdisc *sch, struct nlattr *opt)
 				q->queues[i] = child;
 
 				if (old != &noop_qdisc) {
-					qdisc_tree_reduce_backlog(old,
-								  old->q.qlen,
-								  old->qstats.backlog);
+					qdisc_tree_decrease_qlen(old,
+								 old->q.qlen);
 					qdisc_destroy(old);
 				}
 				sch_tree_unlock(sch);
@@ -291,7 +290,13 @@ static int prio_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 	if (new == NULL)
 		new = &noop_qdisc;
 
-	*old = qdisc_replace(sch, new, &q->queues[band]);
+	sch_tree_lock(sch);
+	*old = q->queues[band];
+	q->queues[band] = new;
+	qdisc_tree_decrease_qlen(*old, (*old)->q.qlen);
+	qdisc_reset(*old);
+	sch_tree_unlock(sch);
+
 	return 0;
 }
 

@@ -5,7 +5,6 @@
 #include <asm/vmx.h>
 #include <asm/svm.h>
 #include <asm/clocksource.h>
-#include <asm/pvclock-abi.h>
 
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kvm
@@ -126,24 +125,6 @@ TRACE_EVENT(kvm_pio,
 		  __entry->rw ? "write" : "read",
 		  __entry->port, __entry->size, __entry->count, __entry->val,
 		  __entry->count > 1 ? "(...)" : "")
-);
-
-/*
- * Tracepoint for fast mmio.
- */
-TRACE_EVENT(kvm_fast_mmio,
-	TP_PROTO(u64 gpa),
-	TP_ARGS(gpa),
-
-	TP_STRUCT__entry(
-		__field(u64,	gpa)
-	),
-
-	TP_fast_assign(
-		__entry->gpa		= gpa;
-	),
-
-	TP_printk("fast mmio at gpa 0x%llx", __entry->gpa)
 );
 
 /*
@@ -268,7 +249,7 @@ TRACE_EVENT(kvm_inj_virq,
 #define kvm_trace_sym_exc						\
 	EXS(DE), EXS(DB), EXS(BP), EXS(OF), EXS(BR), EXS(UD), EXS(NM),	\
 	EXS(DF), EXS(TS), EXS(NP), EXS(SS), EXS(GP), EXS(PF),		\
-	EXS(MF), EXS(AC), EXS(MC)
+	EXS(MF), EXS(MC)
 
 /*
  * Tracepoint for kvm interrupt injection:
@@ -866,24 +847,6 @@ TRACE_EVENT(kvm_track_tsc,
 
 #endif /* CONFIG_X86_64 */
 
-/*
- * Tracepoint for PML full VMEXIT.
- */
-TRACE_EVENT(kvm_pml_full,
-	TP_PROTO(unsigned int vcpu_id),
-	TP_ARGS(vcpu_id),
-
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vcpu_id			)
-	),
-
-	TP_fast_assign(
-		__entry->vcpu_id		= vcpu_id;
-	),
-
-	TP_printk("vcpu %d: PML full", __entry->vcpu_id)
-);
-
 TRACE_EVENT(kvm_ple_window,
 	TP_PROTO(bool grow, unsigned int vcpu_id, int new, int old),
 	TP_ARGS(grow, vcpu_id, new, old),
@@ -913,117 +876,6 @@ TRACE_EVENT(kvm_ple_window,
 	trace_kvm_ple_window(true, vcpu_id, new, old)
 #define trace_kvm_ple_window_shrink(vcpu_id, new, old) \
 	trace_kvm_ple_window(false, vcpu_id, new, old)
-
-TRACE_EVENT(kvm_pvclock_update,
-	TP_PROTO(unsigned int vcpu_id, struct pvclock_vcpu_time_info *pvclock),
-	TP_ARGS(vcpu_id, pvclock),
-
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vcpu_id			)
-		__field(	__u32,		version			)
-		__field(	__u64,		tsc_timestamp		)
-		__field(	__u64,		system_time		)
-		__field(	__u32,		tsc_to_system_mul	)
-		__field(	__s8,		tsc_shift		)
-		__field(	__u8,		flags			)
-	),
-
-	TP_fast_assign(
-		__entry->vcpu_id	   = vcpu_id;
-		__entry->version	   = pvclock->version;
-		__entry->tsc_timestamp	   = pvclock->tsc_timestamp;
-		__entry->system_time	   = pvclock->system_time;
-		__entry->tsc_to_system_mul = pvclock->tsc_to_system_mul;
-		__entry->tsc_shift	   = pvclock->tsc_shift;
-		__entry->flags		   = pvclock->flags;
-	),
-
-	TP_printk("vcpu_id %u, pvclock { version %u, tsc_timestamp 0x%llx, "
-		  "system_time 0x%llx, tsc_to_system_mul 0x%x, tsc_shift %d, "
-		  "flags 0x%x }",
-		  __entry->vcpu_id,
-		  __entry->version,
-		  __entry->tsc_timestamp,
-		  __entry->system_time,
-		  __entry->tsc_to_system_mul,
-		  __entry->tsc_shift,
-		  __entry->flags)
-);
-
-TRACE_EVENT(kvm_wait_lapic_expire,
-	TP_PROTO(unsigned int vcpu_id, s64 delta),
-	TP_ARGS(vcpu_id, delta),
-
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vcpu_id		)
-		__field(	s64,		delta		)
-	),
-
-	TP_fast_assign(
-		__entry->vcpu_id	   = vcpu_id;
-		__entry->delta             = delta;
-	),
-
-	TP_printk("vcpu %u: delta %lld (%s)",
-		  __entry->vcpu_id,
-		  __entry->delta,
-		  __entry->delta < 0 ? "early" : "late")
-);
-
-TRACE_EVENT(kvm_enter_smm,
-	TP_PROTO(unsigned int vcpu_id, u64 smbase, bool entering),
-	TP_ARGS(vcpu_id, smbase, entering),
-
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vcpu_id		)
-		__field(	u64,		smbase		)
-		__field(	bool,		entering	)
-	),
-
-	TP_fast_assign(
-		__entry->vcpu_id	= vcpu_id;
-		__entry->smbase		= smbase;
-		__entry->entering	= entering;
-	),
-
-	TP_printk("vcpu %u: %s SMM, smbase 0x%llx",
-		  __entry->vcpu_id,
-		  __entry->entering ? "entering" : "leaving",
-		  __entry->smbase)
-);
-
-/*
- * Tracepoint for VT-d posted-interrupts.
- */
-TRACE_EVENT(kvm_pi_irte_update,
-	TP_PROTO(unsigned int vcpu_id, unsigned int gsi,
-		 unsigned int gvec, u64 pi_desc_addr, bool set),
-	TP_ARGS(vcpu_id, gsi, gvec, pi_desc_addr, set),
-
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vcpu_id		)
-		__field(	unsigned int,	gsi		)
-		__field(	unsigned int,	gvec		)
-		__field(	u64,		pi_desc_addr	)
-		__field(	bool,		set		)
-	),
-
-	TP_fast_assign(
-		__entry->vcpu_id	= vcpu_id;
-		__entry->gsi		= gsi;
-		__entry->gvec		= gvec;
-		__entry->pi_desc_addr	= pi_desc_addr;
-		__entry->set		= set;
-	),
-
-	TP_printk("VT-d PI is %s for this irq, vcpu %u, gsi: 0x%x, "
-		  "gvec: 0x%x, pi_desc_addr: 0x%llx",
-		  __entry->set ? "enabled and being updated" : "disabled",
-		  __entry->vcpu_id,
-		  __entry->gsi,
-		  __entry->gvec,
-		  __entry->pi_desc_addr)
-);
 
 #endif /* _TRACE_KVM_H */
 

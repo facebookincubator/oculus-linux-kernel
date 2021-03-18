@@ -181,10 +181,8 @@ void hsr_del_port(struct hsr_port *port)
 	list_del_rcu(&port->port_list);
 
 	if (port != master) {
-		if (master != NULL) {
-			netdev_update_features(master->dev);
-			dev_set_mtu(master->dev, hsr_get_max_mtu(hsr));
-		}
+		netdev_update_features(master->dev);
+		dev_set_mtu(master->dev, hsr_get_max_mtu(hsr));
 		netdev_rx_handler_unregister(port->dev);
 		dev_set_promiscuity(port->dev, -1);
 	}
@@ -194,7 +192,5 @@ void hsr_del_port(struct hsr_port *port)
 	 */
 
 	synchronize_rcu();
-
-	if (port != master)
-		dev_put(port->dev);
+	dev_put(port->dev);
 }

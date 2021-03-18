@@ -122,7 +122,8 @@ static int micro_ts_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int __maybe_unused micro_ts_suspend(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int micro_ts_suspend(struct device *dev)
 {
 	struct touchscreen_data *ts = dev_get_drvdata(dev);
 
@@ -131,7 +132,7 @@ static int __maybe_unused micro_ts_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused micro_ts_resume(struct device *dev)
+static int micro_ts_resume(struct device *dev)
 {
 	struct touchscreen_data *ts = dev_get_drvdata(dev);
 	struct input_dev *input = ts->input;
@@ -145,6 +146,7 @@ static int __maybe_unused micro_ts_resume(struct device *dev)
 
 	return 0;
 }
+#endif
 
 static const struct dev_pm_ops micro_ts_dev_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(micro_ts_suspend, micro_ts_resume)

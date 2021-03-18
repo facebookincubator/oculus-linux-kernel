@@ -326,6 +326,7 @@ static struct platform_driver w90x900ts_driver = {
 	.remove		= w90x900ts_remove,
 	.driver		= {
 		.name	= "nuc900-ts",
+		.owner	= THIS_MODULE,
 	},
 };
 module_platform_driver(w90x900ts_driver);

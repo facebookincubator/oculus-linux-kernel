@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -480,8 +480,8 @@ acpi_ds_eval_table_region_operands(struct acpi_walk_state *walk_state,
 	union acpi_operand_object **operand;
 	struct acpi_namespace_node *node;
 	union acpi_parse_object *next_op;
-	struct acpi_table_header *table;
 	u32 table_index;
+	struct acpi_table_header *table;
 
 	ACPI_FUNCTION_TRACE_PTR(ds_eval_table_region_operands, op);
 
@@ -504,8 +504,6 @@ acpi_ds_eval_table_region_operands(struct acpi_walk_state *walk_state,
 		return_ACPI_STATUS(status);
 	}
 
-	operand = &walk_state->operands[0];
-
 	/*
 	 * Resolve the Signature string, oem_id string,
 	 * and oem_table_id string operands
@@ -513,8 +511,10 @@ acpi_ds_eval_table_region_operands(struct acpi_walk_state *walk_state,
 	status = acpi_ex_resolve_operands(op->common.aml_opcode,
 					  ACPI_WALK_OPERANDS, walk_state);
 	if (ACPI_FAILURE(status)) {
-		goto cleanup;
+		return_ACPI_STATUS(status);
 	}
+
+	operand = &walk_state->operands[0];
 
 	/* Find the ACPI table */
 
@@ -522,25 +522,21 @@ acpi_ds_eval_table_region_operands(struct acpi_walk_state *walk_state,
 				    operand[1]->string.pointer,
 				    operand[2]->string.pointer, &table_index);
 	if (ACPI_FAILURE(status)) {
-		if (status == AE_NOT_FOUND) {
-			ACPI_ERROR((AE_INFO,
-				    "ACPI Table [%4.4s] OEM:(%s, %s) not found in RSDT/XSDT",
-				    operand[0]->string.pointer,
-				    operand[1]->string.pointer,
-				    operand[2]->string.pointer));
-		}
-		goto cleanup;
+		return_ACPI_STATUS(status);
 	}
+
+	acpi_ut_remove_reference(operand[0]);
+	acpi_ut_remove_reference(operand[1]);
+	acpi_ut_remove_reference(operand[2]);
 
 	status = acpi_get_table_by_index(table_index, &table);
 	if (ACPI_FAILURE(status)) {
-		goto cleanup;
+		return_ACPI_STATUS(status);
 	}
 
 	obj_desc = acpi_ns_get_attached_object(node);
 	if (!obj_desc) {
-		status = AE_NOT_EXIST;
-		goto cleanup;
+		return_ACPI_STATUS(AE_NOT_EXIST);
 	}
 
 	obj_desc->region.address = ACPI_PTR_TO_PHYSADDR(table);
@@ -554,11 +550,6 @@ acpi_ds_eval_table_region_operands(struct acpi_walk_state *walk_state,
 	/* Now the address and length are valid for this opregion */
 
 	obj_desc->region.flags |= AOPOBJ_DATA_VALID;
-
-cleanup:
-	acpi_ut_remove_reference(operand[0]);
-	acpi_ut_remove_reference(operand[1]);
-	acpi_ut_remove_reference(operand[2]);
 
 	return_ACPI_STATUS(status);
 }

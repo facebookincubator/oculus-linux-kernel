@@ -707,9 +707,11 @@ static int pd6729_pci_probe(struct pci_dev *dev,
 		}
 	} else {
 		/* poll Card status change */
-		setup_timer(&socket->poll_timer, pd6729_interrupt_wrapper,
-			    (unsigned long)socket);
-		mod_timer(&socket->poll_timer, jiffies + HZ);
+		init_timer(&socket->poll_timer);
+		socket->poll_timer.function = pd6729_interrupt_wrapper;
+		socket->poll_timer.data = (unsigned long)socket;
+		socket->poll_timer.expires = jiffies + HZ;
+		add_timer(&socket->poll_timer);
 	}
 
 	for (i = 0; i < MAX_SOCKETS; i++) {

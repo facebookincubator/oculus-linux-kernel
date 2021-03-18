@@ -6217,9 +6217,10 @@ static int tg3_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	return 0;
 }
 
-static int tg3_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
+static int tg3_ptp_gettime(struct ptp_clock_info *ptp, struct timespec *ts)
 {
 	u64 ns;
+	u32 remainder;
 	struct tg3 *tp = container_of(ptp, struct tg3, ptp_info);
 
 	tg3_full_lock(tp, 0);
@@ -6227,18 +6228,19 @@ static int tg3_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
 	ns += tp->ptp_adjust;
 	tg3_full_unlock(tp);
 
-	*ts = ns_to_timespec64(ns);
+	ts->tv_sec = div_u64_rem(ns, 1000000000, &remainder);
+	ts->tv_nsec = remainder;
 
 	return 0;
 }
 
 static int tg3_ptp_settime(struct ptp_clock_info *ptp,
-			   const struct timespec64 *ts)
+			   const struct timespec *ts)
 {
 	u64 ns;
 	struct tg3 *tp = container_of(ptp, struct tg3, ptp_info);
 
-	ns = timespec64_to_ns(ts);
+	ns = timespec_to_ns(ts);
 
 	tg3_full_lock(tp, 0);
 	tg3_refclk_write(tp, ns);
@@ -6318,8 +6320,8 @@ static const struct ptp_clock_info tg3_ptp_caps = {
 	.pps		= 0,
 	.adjfreq	= tg3_ptp_adjfreq,
 	.adjtime	= tg3_ptp_adjtime,
-	.gettime64	= tg3_ptp_gettime,
-	.settime64	= tg3_ptp_settime,
+	.gettime	= tg3_ptp_gettime,
+	.settime	= tg3_ptp_settime,
 	.enable		= tg3_ptp_enable,
 };
 
@@ -6618,7 +6620,7 @@ static void tg3_tx(struct tg3_napi *tnapi)
 static void tg3_frag_free(bool is_frag, void *data)
 {
 	if (is_frag)
-		skb_free_frag(data);
+		put_page(virt_to_head_page(data));
 	else
 		kfree(data);
 }
@@ -7242,7 +7244,7 @@ static int tg3_poll_msix(struct napi_struct *napi, int budget)
 			if (tnapi == &tp->napi[1] && tp->rx_refill)
 				continue;
 
-			napi_complete_done(napi, work_done);
+			napi_complete(napi);
 			/* Reenable interrupts. */
 			tw32_mailbox(tnapi->int_mbox, tnapi->last_tag << 24);
 
@@ -7335,7 +7337,7 @@ static int tg3_poll(struct napi_struct *napi, int budget)
 			sblk->status &= ~SD_STATUS_UPDATED;
 
 		if (likely(!tg3_has_work(tnapi))) {
-			napi_complete_done(napi, work_done);
+			napi_complete(napi);
 			tg3_int_reenable(tnapi);
 			break;
 		}
@@ -7411,8 +7413,6 @@ static inline void tg3_netif_start(struct tg3 *tp)
 }
 
 static void tg3_irq_quiesce(struct tg3 *tp)
-	__releases(tp->lock)
-	__acquires(tp->lock)
 {
 	int i;
 
@@ -7421,12 +7421,8 @@ static void tg3_irq_quiesce(struct tg3 *tp)
 	tp->irq_sync = 1;
 	smp_mb();
 
-	spin_unlock_bh(&tp->lock);
-
 	for (i = 0; i < tp->irq_cnt; i++)
 		synchronize_irq(tp->napi[i].irq_vec);
-
-	spin_lock_bh(&tp->lock);
 }
 
 /* Fully shutdown all tg3 driver activity elsewhere in the system.
@@ -7833,14 +7829,6 @@ static int tigon3_dma_hwbug_workaround(struct tg3_napi *tnapi,
 	return ret;
 }
 
-static bool tg3_tso_bug_gso_check(struct tg3_napi *tnapi, struct sk_buff *skb)
-{
-	/* Check if we will never have enough descriptors,
-	 * as gso_segs can be more than current ring size
-	 */
-	return skb_shinfo(skb)->gso_segs < tnapi->tx_pending / 3;
-}
-
 static netdev_tx_t tg3_start_xmit(struct sk_buff *, struct net_device *);
 
 /* Use GSO to workaround all TSO packets that meet HW bug conditions
@@ -7944,19 +7932,14 @@ static netdev_tx_t tg3_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		 * vlan encapsulated.
 		 */
 		if (skb->protocol == htons(ETH_P_8021Q) ||
-		    skb->protocol == htons(ETH_P_8021AD)) {
-			if (tg3_tso_bug_gso_check(tnapi, skb))
-				return tg3_tso_bug(tp, tnapi, txq, skb);
-			goto drop;
-		}
+		    skb->protocol == htons(ETH_P_8021AD))
+			return tg3_tso_bug(tp, tnapi, txq, skb);
 
 		if (!skb_is_gso_v6(skb)) {
 			if (unlikely((ETH_HLEN + hdr_len) > 80) &&
-			    tg3_flag(tp, TSO_BUG)) {
-				if (tg3_tso_bug_gso_check(tnapi, skb))
-					return tg3_tso_bug(tp, tnapi, txq, skb);
-				goto drop;
-			}
+			    tg3_flag(tp, TSO_BUG))
+				return tg3_tso_bug(tp, tnapi, txq, skb);
+
 			ip_csum = iph->check;
 			ip_tot_len = iph->tot_len;
 			iph->check = 0;
@@ -8019,9 +8002,9 @@ static netdev_tx_t tg3_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	    !mss && skb->len > VLAN_ETH_FRAME_LEN)
 		base_flags |= TXD_FLAG_JMB_PKT;
 
-	if (skb_vlan_tag_present(skb)) {
+	if (vlan_tx_tag_present(skb)) {
 		base_flags |= TXD_FLAG_VLAN;
-		vlan = skb_vlan_tag_get(skb);
+		vlan = vlan_tx_tag_get(skb);
 	}
 
 	if ((unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) &&
@@ -8088,7 +8071,7 @@ static netdev_tx_t tg3_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (would_hit_hwbug) {
 		tg3_tx_skb_unmap(tnapi, tnapi->tx_prod, i);
 
-		if (mss && tg3_tso_bug_gso_check(tnapi, skb)) {
+		if (mss) {
 			/* If it's a TSO packet, do GSO instead of
 			 * allocating and copying to a large linear SKB
 			 */
@@ -9035,8 +9018,6 @@ static void tg3_restore_clk(struct tg3 *tp)
 
 /* tp->lock is held. */
 static int tg3_chip_reset(struct tg3 *tp)
-	__releases(tp->lock)
-	__acquires(tp->lock)
 {
 	u32 val;
 	void (*write_op)(struct tg3 *, u32, u32);
@@ -9092,12 +9073,8 @@ static int tg3_chip_reset(struct tg3 *tp)
 	}
 	smp_mb();
 
-	tg3_full_unlock(tp);
-
 	for (i = 0; i < tp->irq_cnt; i++)
 		synchronize_irq(tp->napi[i].irq_vec);
-
-	tg3_full_lock(tp, 0);
 
 	if (tg3_asic_rev(tp) == ASIC_REV_57780) {
 		val = tr32(TG3_PCIE_LNKCTL) & ~TG3_PCIE_LNKCTL_L1_PLL_PD_EN;
@@ -10564,14 +10541,19 @@ static int tg3_reset_hw(struct tg3 *tp, bool reset_phy)
 	udelay(100);
 
 	if (tg3_flag(tp, ENABLE_RSS)) {
-		u32 rss_key[10];
-
 		tg3_rss_write_indir_tbl(tp);
 
-		netdev_rss_key_fill(rss_key, 10 * sizeof(u32));
-
-		for (i = 0; i < 10 ; i++)
-			tw32(MAC_RSS_HASH_KEY_0 + i*4, rss_key[i]);
+		/* Setup the "secret" hash key. */
+		tw32(MAC_RSS_HASH_KEY_0, 0x5f865437);
+		tw32(MAC_RSS_HASH_KEY_1, 0xe4ac62cc);
+		tw32(MAC_RSS_HASH_KEY_2, 0x50103a45);
+		tw32(MAC_RSS_HASH_KEY_3, 0x36621985);
+		tw32(MAC_RSS_HASH_KEY_4, 0xbf14c0e8);
+		tw32(MAC_RSS_HASH_KEY_5, 0x1bc27a1e);
+		tw32(MAC_RSS_HASH_KEY_6, 0x84f4b556);
+		tw32(MAC_RSS_HASH_KEY_7, 0x094ea6fe);
+		tw32(MAC_RSS_HASH_KEY_8, 0x7dda01e7);
+		tw32(MAC_RSS_HASH_KEY_9, 0xc04d7481);
 	}
 
 	tp->rx_mode = RX_MODE_ENABLE;
@@ -10926,12 +10908,10 @@ static void tg3_timer(unsigned long __opaque)
 {
 	struct tg3 *tp = (struct tg3 *) __opaque;
 
-	spin_lock(&tp->lock);
-
-	if (tp->irq_sync || tg3_flag(tp, RESET_TASK_PENDING)) {
-		spin_unlock(&tp->lock);
+	if (tp->irq_sync || tg3_flag(tp, RESET_TASK_PENDING))
 		goto restart_timer;
-	}
+
+	spin_lock(&tp->lock);
 
 	if (tg3_asic_rev(tp) == ASIC_REV_5717 ||
 	    tg3_flag(tp, 57765_CLASS))
@@ -11126,13 +11106,11 @@ static void tg3_reset_task(struct work_struct *work)
 	struct tg3 *tp = container_of(work, struct tg3, reset_task);
 	int err;
 
-	rtnl_lock();
 	tg3_full_lock(tp, 0);
 
 	if (!netif_running(tp->dev)) {
 		tg3_flag_clear(tp, RESET_TASK_PENDING);
 		tg3_full_unlock(tp);
-		rtnl_unlock();
 		return;
 	}
 
@@ -11165,7 +11143,6 @@ out:
 		tg3_phy_start(tp);
 
 	tg3_flag_clear(tp, RESET_TASK_PENDING);
-	rtnl_unlock();
 }
 
 static int tg3_request_irq(struct tg3 *tp, int irq_num)
@@ -11584,7 +11561,11 @@ static int tg3_start(struct tg3 *tp, bool reset_phy, bool test_irq,
 	tg3_flag_set(tp, INIT_COMPLETE);
 	tg3_enable_ints(tp);
 
-	tg3_ptp_resume(tp);
+	if (init)
+		tg3_ptp_init(tp);
+	else
+		tg3_ptp_resume(tp);
+
 
 	tg3_full_unlock(tp);
 
@@ -11705,6 +11686,13 @@ static int tg3_open(struct net_device *dev)
 		pci_set_power_state(tp->pdev, PCI_D3hot);
 	}
 
+	if (tg3_flag(tp, PTP_CAPABLE)) {
+		tp->ptp_clock = ptp_clock_register(&tp->ptp_info,
+						   &tp->pdev->dev);
+		if (IS_ERR(tp->ptp_clock))
+			tp->ptp_clock = NULL;
+	}
+
 	return err;
 }
 
@@ -11717,6 +11705,8 @@ static int tg3_close(struct net_device *dev)
 			   "in progress\n");
 		return -EAGAIN;
 	}
+
+	tg3_ptp_fini(tp);
 
 	tg3_stop(tp);
 
@@ -12576,15 +12566,10 @@ static u32 tg3_get_rxfh_indir_size(struct net_device *dev)
 	return size;
 }
 
-static int tg3_get_rxfh(struct net_device *dev, u32 *indir, u8 *key, u8 *hfunc)
+static int tg3_get_rxfh(struct net_device *dev, u32 *indir, u8 *key)
 {
 	struct tg3 *tp = netdev_priv(dev);
 	int i;
-
-	if (hfunc)
-		*hfunc = ETH_RSS_HASH_TOP;
-	if (!indir)
-		return 0;
 
 	for (i = 0; i < TG3_RSS_INDIR_TBL_SIZE; i++)
 		indir[i] = tp->rss_ind_tbl[i];
@@ -12592,21 +12577,10 @@ static int tg3_get_rxfh(struct net_device *dev, u32 *indir, u8 *key, u8 *hfunc)
 	return 0;
 }
 
-static int tg3_set_rxfh(struct net_device *dev, const u32 *indir, const u8 *key,
-			const u8 hfunc)
+static int tg3_set_rxfh(struct net_device *dev, const u32 *indir, const u8 *key)
 {
 	struct tg3 *tp = netdev_priv(dev);
 	size_t i;
-
-	/* We require at least one supported parameter to be changed and no
-	 * change in any of the unsupported parameters
-	 */
-	if (key ||
-	    (hfunc != ETH_RSS_HASH_NO_CHANGE && hfunc != ETH_RSS_HASH_TOP))
-		return -EOPNOTSUPP;
-
-	if (!indir)
-		return 0;
 
 	for (i = 0; i < TG3_RSS_INDIR_TBL_SIZE; i++)
 		tp->rss_ind_tbl[i] = indir[i];
@@ -17897,14 +17871,6 @@ static int tg3_init_one(struct pci_dev *pdev,
 		goto err_out_apeunmap;
 	}
 
-	if (tg3_flag(tp, PTP_CAPABLE)) {
-		tg3_ptp_init(tp);
-		tp->ptp_clock = ptp_clock_register(&tp->ptp_info,
-						   &tp->pdev->dev);
-		if (IS_ERR(tp->ptp_clock))
-			tp->ptp_clock = NULL;
-	}
-
 	netdev_info(dev, "Tigon3 [partno(%s) rev %04x] (%s) MAC address %pM\n",
 		    tp->board_part_number,
 		    tg3_chip_rev_id(tp),
@@ -17979,8 +17945,6 @@ static void tg3_remove_one(struct pci_dev *pdev)
 
 	if (dev) {
 		struct tg3 *tp = netdev_priv(dev);
-
-		tg3_ptp_fini(tp);
 
 		release_firmware(tp->fw);
 
@@ -18142,9 +18106,7 @@ static pci_ers_result_t tg3_io_error_detected(struct pci_dev *pdev,
 
 	rtnl_lock();
 
-	/* We needn't recover from permanent error */
-	if (state == pci_channel_io_frozen)
-		tp->pcierr_recovery = true;
+	tp->pcierr_recovery = true;
 
 	/* We probably don't have netdev yet */
 	if (!netdev || !netif_running(netdev))

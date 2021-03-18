@@ -242,7 +242,8 @@ static int wacom_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
-static int __maybe_unused wacom_i2c_suspend(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int wacom_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -251,7 +252,7 @@ static int __maybe_unused wacom_i2c_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused wacom_i2c_resume(struct device *dev)
+static int wacom_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -259,6 +260,7 @@ static int __maybe_unused wacom_i2c_resume(struct device *dev)
 
 	return 0;
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(wacom_i2c_pm, wacom_i2c_suspend, wacom_i2c_resume);
 
@@ -271,6 +273,7 @@ MODULE_DEVICE_TABLE(i2c, wacom_i2c_id);
 static struct i2c_driver wacom_i2c_driver = {
 	.driver	= {
 		.name	= "wacom_i2c",
+		.owner	= THIS_MODULE,
 		.pm	= &wacom_i2c_pm,
 	},
 

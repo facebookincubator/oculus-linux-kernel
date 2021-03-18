@@ -13,9 +13,6 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _DT_BINDINGS_CLK_ROCKCHIP_RK3188_H
-#define _DT_BINDINGS_CLK_ROCKCHIP_RK3188_H
-
 #include <dt-bindings/clock/rk3188-cru-common.h>
 
 /* soft-reset indices */
@@ -52,5 +49,3 @@
 #define SRST_GPU_BRIDGE		121
 #define SRST_CTI3		123
 #define SRST_CTI3_APB		124
-
-#endif

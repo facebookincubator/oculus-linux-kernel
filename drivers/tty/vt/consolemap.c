@@ -261,22 +261,19 @@ u16 inverse_translate(struct vc_data *conp, int glyph, int use_unicode)
 	int m;
 	if (glyph < 0 || glyph >= MAX_GLYPH)
 		return 0;
-	else {
-		p = *conp->vc_uni_pagedir_loc;
-		if (!p)
+	else if (!(p = *conp->vc_uni_pagedir_loc))
+		return glyph;
+	else if (use_unicode) {
+		if (!p->inverse_trans_unicode)
 			return glyph;
-		else if (use_unicode) {
-			if (!p->inverse_trans_unicode)
-				return glyph;
-			else
-				return p->inverse_trans_unicode[glyph];
-			} else {
-			m = inv_translate[conp->vc_num];
-			if (!p->inverse_translations[m])
-				return glyph;
-			else
-				return p->inverse_translations[m][glyph];
-			}
+		else
+			return p->inverse_trans_unicode[glyph];
+	} else {
+		m = inv_translate[conp->vc_num];
+		if (!p->inverse_translations[m])
+			return glyph;
+		else
+			return p->inverse_translations[m][glyph];
 	}
 }
 EXPORT_SYMBOL_GPL(inverse_translate);
@@ -400,8 +397,7 @@ static void con_release_unimap(struct uni_pagedir *p)
 
 	if (p == dflt) dflt = NULL;  
 	for (i = 0; i < 32; i++) {
-		p1 = p->uni_pgdir[i];
-		if (p1 != NULL) {
+		if ((p1 = p->uni_pgdir[i]) != NULL) {
 			for (j = 0; j < 32; j++)
 				kfree(p1[j]);
 			kfree(p1);
@@ -477,16 +473,14 @@ con_insert_unipair(struct uni_pagedir *p, u_short unicode, u_short fontpos)
 	int i, n;
 	u16 **p1, *p2;
 
-	p1 = p->uni_pgdir[n = unicode >> 11];
-	if (!p1) {
+	if (!(p1 = p->uni_pgdir[n = unicode >> 11])) {
 		p1 = p->uni_pgdir[n] = kmalloc(32*sizeof(u16 *), GFP_KERNEL);
 		if (!p1) return -ENOMEM;
 		for (i = 0; i < 32; i++)
 			p1[i] = NULL;
 	}
 
-	p2 = p1[n = (unicode >> 6) & 0x1f];
-	if (!p2) {
+	if (!(p2 = p1[n = (unicode >> 6) & 0x1f])) {
 		p2 = p1[n] = kmalloc(64*sizeof(u16), GFP_KERNEL);
 		if (!p2) return -ENOMEM;
 		memset(p2, 0xff, 64*sizeof(u16)); /* No glyphs for the characters (yet) */
@@ -575,12 +569,10 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 		 * entries from "p" (old) to "q" (new).
 		 */
 		l = 0;		/* unicode value */
-		for (i = 0; i < 32; i++) {
-		p1 = p->uni_pgdir[i];
-		if (p1)
-			for (j = 0; j < 32; j++) {
-			p2 = p1[j];
-			if (p2) {
+		for (i = 0; i < 32; i++)
+		if ((p1 = p->uni_pgdir[i]))
+			for (j = 0; j < 32; j++)
+			if ((p2 = p1[j])) {
 				for (k = 0; k < 64; k++, l++)
 				if (p2[k] != 0xffff) {
 					/*
@@ -601,11 +593,9 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 				/* Account for row of 64 empty entries */
 				l += 64;
 			}
-		}
 		else
 			/* Account for empty table */
 			l += 32 * 64;
-		}
 
 		/*
 		 * Finished copying font table, set vc_uni_pagedir to new table
@@ -745,12 +735,10 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 	ect = 0;
 	if (*vc->vc_uni_pagedir_loc) {
 		p = *vc->vc_uni_pagedir_loc;
-		for (i = 0; i < 32; i++) {
-		p1 = p->uni_pgdir[i];
-		if (p1)
-			for (j = 0; j < 32; j++) {
-			p2 = *(p1++);
-			if (p2)
+		for (i = 0; i < 32; i++)
+		if ((p1 = p->uni_pgdir[i]))
+			for (j = 0; j < 32; j++)
+			if ((p2 = *(p1++)))
 				for (k = 0; k < 64; k++) {
 					if (*p2 < MAX_GLYPH && ect++ < ct) {
 						__put_user((u_short)((i<<11)+(j<<6)+k),
@@ -761,8 +749,6 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 					}
 					p2++;
 				}
-			}
-		}
 	}
 	__put_user(ect, uct);
 	console_unlock();

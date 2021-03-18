@@ -63,6 +63,7 @@ static unsigned int		longest_chain;
 static unsigned int		longest_chain_cachesize;
 
 static int	nfsd_cache_append(struct svc_rqst *rqstp, struct kvec *vec);
+static void	cache_cleaner_func(struct work_struct *unused);
 static unsigned long nfsd_reply_cache_count(struct shrinker *shrink,
 					    struct shrink_control *sc);
 static unsigned long nfsd_reply_cache_scan(struct shrinker *shrink,
@@ -73,6 +74,13 @@ static struct shrinker nfsd_reply_cache_shrinker = {
 	.count_objects = nfsd_reply_cache_count,
 	.seeks	= 1,
 };
+
+/*
+ * locking for the reply cache:
+ * A cache entry is "single use" if c_state == RC_INPROG
+ * Otherwise, it when accessing _prev or _next, the lock must be held.
+ */
+static DECLARE_DELAYED_WORK(cache_cleaner, cache_cleaner_func);
 
 /*
  * Put a cap on the size of the DRC based on the amount of available
@@ -157,17 +165,13 @@ int nfsd_reply_cache_init(void)
 {
 	unsigned int hashsize;
 	unsigned int i;
-	int status = 0;
 
 	max_drc_entries = nfsd_cache_size_limit();
 	atomic_set(&num_drc_entries, 0);
 	hashsize = nfsd_hashsize(max_drc_entries);
 	maskbits = ilog2(hashsize);
 
-	status = register_shrinker(&nfsd_reply_cache_shrinker);
-	if (status)
-		return status;
-
+	register_shrinker(&nfsd_reply_cache_shrinker);
 	drc_slab = kmem_cache_create("nfsd_drc", sizeof(struct svc_cacherep),
 					0, 0, NULL);
 	if (!drc_slab)
@@ -195,6 +199,7 @@ void nfsd_reply_cache_shutdown(void)
 	unsigned int i;
 
 	unregister_shrinker(&nfsd_reply_cache_shrinker);
+	cancel_delayed_work_sync(&cache_cleaner);
 
 	for (i = 0; i < drc_hashsize; i++) {
 		struct list_head *head = &drc_hashtbl[i].lru_head;
@@ -208,8 +213,10 @@ void nfsd_reply_cache_shutdown(void)
 	drc_hashtbl = NULL;
 	drc_hashsize = 0;
 
-	kmem_cache_destroy(drc_slab);
-	drc_slab = NULL;
+	if (drc_slab) {
+		kmem_cache_destroy(drc_slab);
+		drc_slab = NULL;
+	}
 }
 
 /*
@@ -221,6 +228,7 @@ lru_put_end(struct nfsd_drc_bucket *b, struct svc_cacherep *rp)
 {
 	rp->c_timestamp = jiffies;
 	list_move_tail(&rp->c_lru, &b->lru_head);
+	schedule_delayed_work(&cache_cleaner, RC_EXPIRE);
 }
 
 static long
@@ -254,6 +262,7 @@ prune_cache_entries(void)
 {
 	unsigned int i;
 	long freed = 0;
+	bool cancel = true;
 
 	for (i = 0; i < drc_hashsize; i++) {
 		struct nfsd_drc_bucket *b = &drc_hashtbl[i];
@@ -262,9 +271,24 @@ prune_cache_entries(void)
 			continue;
 		spin_lock(&b->cache_lock);
 		freed += prune_bucket(b);
+		if (!list_empty(&b->lru_head))
+			cancel = false;
 		spin_unlock(&b->cache_lock);
 	}
+
+	/*
+	 * Conditionally rearm the job to run in RC_EXPIRE since we just
+	 * ran the pruner.
+	 */
+	if (!cancel)
+		mod_delayed_work(system_wq, &cache_cleaner, RC_EXPIRE);
 	return freed;
+}
+
+static void
+cache_cleaner_func(struct work_struct *unused)
+{
+	prune_cache_entries();
 }
 
 static unsigned long
@@ -466,7 +490,7 @@ found_entry:
 	/* From the hall of fame of impractical attacks:
 	 * Is this a user who tries to snoop on the cache? */
 	rtn = RC_DOIT;
-	if (!test_bit(RQ_SECURE, &rqstp->rq_flags) && rp->c_secure)
+	if (!rqstp->rq_secure && rp->c_secure)
 		goto out;
 
 	/* Compose RPC reply header */
@@ -555,7 +579,7 @@ nfsd_cache_update(struct svc_rqst *rqstp, int cachetype, __be32 *statp)
 	spin_lock(&b->cache_lock);
 	drc_mem_usage += bufsize;
 	lru_put_end(b, rp);
-	rp->c_secure = test_bit(RQ_SECURE, &rqstp->rq_flags);
+	rp->c_secure = rqstp->rq_secure;
 	rp->c_type = cachetype;
 	rp->c_state = RC_DONE;
 	spin_unlock(&b->cache_lock);

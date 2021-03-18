@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,7 +24,6 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/msm-bus.h>
-#include <linux/clk/msm-clk.h>
 #include "cam_soc_api.h"
 
 struct msm_cam_bus_pscale_data {
@@ -376,17 +375,18 @@ int msm_camera_clk_enable(struct device *dev,
 				if (clk_rate == 0) {
 					clk_rate =
 						  clk_round_rate(clk_ptr[i], 0);
-					if (clk_rate <= 0) {
+					if (clk_rate < 0) {
 						pr_err("%s round rate failed\n",
 							  clk_info[i].clk_name);
 						goto cam_clk_set_err;
 					}
-				}
-				rc = clk_set_rate(clk_ptr[i], clk_rate);
-				if (rc < 0) {
-					pr_err("%s set rate failed\n",
-						clk_info[i].clk_name);
-					goto cam_clk_set_err;
+					rc = clk_set_rate(clk_ptr[i],
+								clk_rate);
+					if (rc < 0) {
+						pr_err("%s set rate failed\n",
+							  clk_info[i].clk_name);
+						goto cam_clk_set_err;
+					}
 				}
 			}
 			rc = clk_prepare_enable(clk_ptr[i]);
@@ -453,17 +453,6 @@ long msm_camera_clk_set_rate(struct device *dev,
 	return rate;
 }
 EXPORT_SYMBOL(msm_camera_clk_set_rate);
-
-int msm_camera_set_clk_flags(struct clk *clk, unsigned long flags)
-{
-	if (!clk)
-		return -EINVAL;
-
-	CDBG("clk : %pK, flags : %ld\n", clk, flags);
-
-	return clk_set_flags(clk, flags);
-}
-EXPORT_SYMBOL(msm_camera_set_clk_flags);
 
 /* release memory allocated for clocks */
 static int msm_camera_put_clk_info_internal(struct device *dev,
@@ -540,28 +529,6 @@ int msm_camera_put_clk_info_and_rates(struct platform_device *pdev,
 	return 0;
 }
 EXPORT_SYMBOL(msm_camera_put_clk_info_and_rates);
-
-/* Get reset info from DT */
-int msm_camera_get_reset_info(struct platform_device *pdev,
-		struct reset_control **micro_iface_reset)
-{
-	if (!pdev || !micro_iface_reset)
-		return -EINVAL;
-
-	if (of_property_match_string(pdev->dev.of_node, "reset-names",
-				"micro_iface_reset")) {
-		pr_err("err: Reset property not found\n");
-		return -EINVAL;
-	}
-
-	*micro_iface_reset = devm_reset_control_get
-				(&pdev->dev, "micro_iface_reset");
-	if (IS_ERR(*micro_iface_reset))
-		return PTR_ERR(*micro_iface_reset);
-
-	return 0;
-}
-EXPORT_SYMBOL(msm_camera_get_reset_info);
 
 /* Get regulators from DT */
 int msm_camera_get_regulator_info(struct platform_device *pdev,
@@ -684,50 +651,6 @@ error:
 	return rc;
 }
 EXPORT_SYMBOL(msm_camera_regulator_enable);
-
-/* set regulator mode */
-int msm_camera_regulator_set_mode(struct msm_cam_regulator *vdd_info,
-				int cnt, bool mode)
-{
-	int i;
-	int rc;
-	struct msm_cam_regulator *tmp = vdd_info;
-
-	if (!tmp) {
-		pr_err("Invalid params");
-		return -EINVAL;
-	}
-	CDBG("cnt : %d\n", cnt);
-
-	for (i = 0; i < cnt; i++) {
-		if (tmp && !IS_ERR_OR_NULL(tmp->vdd)) {
-			CDBG("name : %s, enable : %d\n", tmp->name, mode);
-			if (mode) {
-				rc = regulator_set_mode(tmp->vdd,
-					REGULATOR_MODE_FAST);
-				if (rc < 0) {
-					pr_err("regulator enable failed %d\n",
-						i);
-					goto error;
-				}
-			} else {
-				rc = regulator_set_mode(tmp->vdd,
-					REGULATOR_MODE_NORMAL);
-				if (rc < 0)
-					pr_err("regulator disable failed %d\n",
-						i);
-					goto error;
-			}
-		}
-		tmp++;
-	}
-
-	return 0;
-error:
-	return rc;
-}
-EXPORT_SYMBOL(msm_camera_regulator_set_mode);
-
 
 /* Put regulators regulators */
 void msm_camera_put_regulators(struct platform_device *pdev,
@@ -1083,11 +1006,8 @@ uint32_t msm_camera_unregister_bus_client(enum cam_bus_client id)
 
 	mutex_destroy(&g_cv[id].lock);
 	msm_bus_scale_unregister_client(g_cv[id].bus_client);
-	g_cv[id].bus_client = 0;
-	g_cv[id].num_usecases = 0;
-	g_cv[id].num_paths = 0;
-	g_cv[id].vector_index = 0;
-	g_cv[id].dyn_vote = 0;
+	msm_bus_cl_clear_pdata(g_cv[id].pdata);
+	memset(&g_cv[id], 0, sizeof(struct msm_cam_bus_pscale_data));
 
 	return 0;
 }

@@ -28,7 +28,7 @@
 #include <sound/cpe_err.h>
 #include <soc/qcom/pm.h>
 #include <linux/mfd/wcd9xxx/core.h>
-#include <linux/mfd/wcd9xxx/wcd9xxx-irq.h>
+#include <linux/mfd/wcd9xxx/core-resource.h>
 #include <sound/audio_cal_utils.h>
 #include "wcd_cpe_core.h"
 #include "wcd_cpe_services.h"
@@ -2052,7 +2052,6 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 		goto schedule_dload_work;
 	}
 
-	arch_setup_dma_ops(core->dev, 0, 0, NULL, 0);
 	core->cpe_dump_v_addr = dma_alloc_coherent(core->dev,
 						   core->hw_info.dram_size,
 						   &core->cpe_dump_addr,
@@ -3038,7 +3037,7 @@ err_ret:
 
 static int wcd_cpe_set_one_param(void *core_handle,
 	struct cpe_lsm_session *session, struct lsm_params_info *p_info,
-	void *data, uint32_t param_type)
+	void *data, enum LSM_PARAM_TYPE param_type)
 {
 	struct wcd_cpe_core *core = core_handle;
 	int rc = 0;
@@ -3053,9 +3052,25 @@ static int wcd_cpe_set_one_param(void *core_handle,
 		rc = wcd_cpe_send_param_epd_thres(core, session,
 						data, &ids);
 		break;
-	case LSM_OPERATION_MODE:
-		rc = wcd_cpe_send_param_opmode(core, session, data, &ids);
+	case LSM_OPERATION_MODE: {
+		struct cpe_lsm_ids connectport_ids;
+
+		rc = wcd_cpe_send_param_opmode(core, session,
+					data, &ids);
+		if (rc)
+			break;
+
+		connectport_ids.module_id = LSM_MODULE_ID_FRAMEWORK;
+		connectport_ids.param_id = LSM_PARAM_ID_CONNECT_TO_PORT;
+
+		rc = wcd_cpe_send_param_connectport(core, session, NULL,
+				       &connectport_ids, CPE_AFE_PORT_1_TX);
+		if (rc)
+			dev_err(core->dev,
+				"%s: send_param_connectport failed, err %d\n",
+				__func__, rc);
 		break;
+	}
 	case LSM_GAIN:
 		rc = wcd_cpe_send_param_gain(core, session, data, &ids);
 		break;
@@ -3074,13 +3089,13 @@ static int wcd_cpe_set_one_param(void *core_handle,
 		break;
 	default:
 		pr_err("%s: wrong param_type 0x%x\n",
-			__func__, param_type);
+			__func__, p_info->param_type);
 	}
 
 	if (rc)
 		dev_err(core->dev,
 			"%s: send_param(%d) failed, err %d\n",
-			 __func__, param_type, rc);
+			 __func__, p_info->param_type, rc);
 	return rc;
 }
 
@@ -3568,6 +3583,7 @@ static int wcd_cpe_lsm_lab_control(
 	struct cpe_param_data *param_d = &lab_enable->param;
 	struct cpe_lsm_ids ids;
 
+	memset(&cpe_lab_enable, 0, sizeof (cpe_lab_enable));
 	pr_debug("%s: enter payload_size = %d Enable %d\n",
 		 __func__, pld_size, enable);
 

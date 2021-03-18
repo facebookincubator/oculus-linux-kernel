@@ -4,9 +4,7 @@
 
 #ifndef _NF_CONNTRACK_EXPECT_H
 #define _NF_CONNTRACK_EXPECT_H
-
 #include <net/netfilter/nf_conntrack.h>
-#include <net/netfilter/nf_conntrack_zones.h>
 
 extern unsigned int nf_ct_expect_hsize;
 extern unsigned int nf_ct_expect_max;
@@ -78,18 +76,15 @@ int nf_conntrack_expect_init(void);
 void nf_conntrack_expect_fini(void);
 
 struct nf_conntrack_expect *
-__nf_ct_expect_find(struct net *net,
-		    const struct nf_conntrack_zone *zone,
+__nf_ct_expect_find(struct net *net, u16 zone,
 		    const struct nf_conntrack_tuple *tuple);
 
 struct nf_conntrack_expect *
-nf_ct_expect_find_get(struct net *net,
-		      const struct nf_conntrack_zone *zone,
+nf_ct_expect_find_get(struct net *net, u16 zone,
 		      const struct nf_conntrack_tuple *tuple);
 
 struct nf_conntrack_expect *
-nf_ct_find_expectation(struct net *net,
-		       const struct nf_conntrack_zone *zone,
+nf_ct_find_expectation(struct net *net, u16 zone,
 		       const struct nf_conntrack_tuple *tuple);
 
 void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,

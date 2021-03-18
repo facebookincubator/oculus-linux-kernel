@@ -68,7 +68,7 @@ static int syscon_reboot_probe(struct platform_device *pdev)
 		return -EINVAL;
 
 	ctx->restart_handler.notifier_call = syscon_restart_handle;
-	ctx->restart_handler.priority = 192;
+	ctx->restart_handler.priority = 128;
 	err = register_restart_handler(&ctx->restart_handler);
 	if (err)
 		dev_err(dev, "can't register restart notifier (err=%d)\n", err);
@@ -76,7 +76,7 @@ static int syscon_reboot_probe(struct platform_device *pdev)
 	return err;
 }
 
-static const struct of_device_id syscon_reboot_of_match[] = {
+static struct of_device_id syscon_reboot_of_match[] = {
 	{ .compatible = "syscon-reboot" },
 	{}
 };
@@ -88,4 +88,4 @@ static struct platform_driver syscon_reboot_driver = {
 		.of_match_table = syscon_reboot_of_match,
 	},
 };
-builtin_platform_driver(syscon_reboot_driver);
+module_platform_driver(syscon_reboot_driver);

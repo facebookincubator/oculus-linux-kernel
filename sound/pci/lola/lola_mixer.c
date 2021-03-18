@@ -108,7 +108,8 @@ int lola_init_pins(struct lola *chip, int dir, int *nidp)
 
 void lola_free_mixer(struct lola *chip)
 {
-	vfree(chip->mixer.array_saved);
+	if (chip->mixer.array_saved)
+		vfree(chip->mixer.array_saved);
 }
 
 int lola_init_mixer_widget(struct lola *chip, int nid)

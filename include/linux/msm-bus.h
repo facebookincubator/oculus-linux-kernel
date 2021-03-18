@@ -87,7 +87,7 @@ struct msm_bus_client_handle {
  * The function returns 0 if bus driver is unable to register a client
  */
 
-#if (defined(CONFIG_QCOM_BUS_SCALING) || defined(CONFIG_QCOM_BUS_TOPOLOGY_ADHOC))
+#if (defined(CONFIG_MSM_BUS_SCALING) || defined(CONFIG_BUS_TOPOLOGY_ADHOC))
 int __init msm_bus_fabric_init_driver(void);
 uint32_t msm_bus_scale_register_client(struct msm_bus_scale_pdata *pdata);
 int msm_bus_scale_client_update_request(uint32_t cl, unsigned int index);
@@ -171,7 +171,7 @@ msm_bus_scale_update_bw_context(struct msm_bus_client_handle *cl, u64 act_ab,
 
 #endif
 
-#if defined(CONFIG_OF) && defined(CONFIG_QCOM_BUS_SCALING)
+#if defined(CONFIG_OF) && defined(CONFIG_MSM_BUS_SCALING)
 struct msm_bus_scale_pdata *msm_bus_pdata_from_node(
 		struct platform_device *pdev, struct device_node *of_node);
 struct msm_bus_scale_pdata *msm_bus_cl_get_pdata(struct platform_device *pdev);

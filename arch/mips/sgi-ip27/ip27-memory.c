@@ -42,7 +42,8 @@ static int fine_mode;
 
 static int is_fine_dirmode(void)
 {
-	return ((LOCAL_HUB_L(NI_STATUS_REV_ID) & NSRI_REGIONSIZE_MASK) >> NSRI_REGIONSIZE_SHFT) & REGIONSIZE_FINE;
+	return (((LOCAL_HUB_L(NI_STATUS_REV_ID) & NSRI_REGIONSIZE_MASK)
+		>> NSRI_REGIONSIZE_SHFT) & REGIONSIZE_FINE);
 }
 
 static hubreg_t get_region(cnodeid_t cnode)
@@ -287,7 +288,7 @@ static unsigned long __init slot_psize_compute(cnodeid_t node, int slot)
 	if (size <= 128) {
 		if (slot % 4 == 0) {
 			size <<= 20;		/* size in bytes */
-			return size >> PAGE_SHIFT;
+			return(size >> PAGE_SHIFT);
 		} else
 			return 0;
 	} else {
@@ -404,7 +405,7 @@ static void __init node_mem_init(cnodeid_t node)
 	NODE_DATA(node)->node_start_pfn = start_pfn;
 	NODE_DATA(node)->node_spanned_pages = end_pfn - start_pfn;
 
-	cpumask_clear(&hub_data(node)->h_cpus);
+	cpus_clear(hub_data(node)->h_cpus);
 
 	slot_freepfn += PFN_UP(sizeof(struct pglist_data) +
 			       sizeof(struct hub_data));

@@ -34,7 +34,7 @@ struct search_path {
 static struct search_path *search_path_head, **search_path_tail;
 
 
-static char *get_dirname(const char *path)
+static char *dirname(const char *path)
 {
 	const char *slash = strrchr(path, '/');
 
@@ -77,7 +77,7 @@ static char *try_open(const char *dirname, const char *fname, FILE **fp)
 	else
 		fullname = join_path(dirname, fname);
 
-	*fp = fopen(fullname, "rb");
+	*fp = fopen(fullname, "r");
 	if (!*fp) {
 		free(fullname);
 		fullname = NULL;
@@ -150,7 +150,7 @@ void srcfile_push(const char *fname)
 	srcfile = xmalloc(sizeof(*srcfile));
 
 	srcfile->f = srcfile_relative_open(fname, &srcfile->name);
-	srcfile->dir = get_dirname(srcfile->name);
+	srcfile->dir = dirname(srcfile->name);
 	srcfile->prev = current_srcfile;
 
 	srcfile->lineno = 1;
@@ -159,7 +159,7 @@ void srcfile_push(const char *fname)
 	current_srcfile = srcfile;
 }
 
-bool srcfile_pop(void)
+int srcfile_pop(void)
 {
 	struct srcfile_state *srcfile = current_srcfile;
 
@@ -177,7 +177,7 @@ bool srcfile_pop(void)
 	 * fix this we could either allocate all the files from a
 	 * table, or use a pool allocator. */
 
-	return current_srcfile ? true : false;
+	return current_srcfile ? 1 : 0;
 }
 
 void srcfile_add_search_path(const char *dirname)
@@ -290,27 +290,42 @@ srcpos_string(struct srcpos *pos)
 	return pos_str;
 }
 
-void srcpos_verror(struct srcpos *pos, const char *prefix,
-		   const char *fmt, va_list va)
+void
+srcpos_verror(struct srcpos *pos, char const *fmt, va_list va)
 {
-	char *srcstr;
+       const char *srcstr;
 
-	srcstr = srcpos_string(pos);
+       srcstr = srcpos_string(pos);
 
-	fprintf(stderr, "%s: %s ", prefix, srcstr);
-	vfprintf(stderr, fmt, va);
-	fprintf(stderr, "\n");
-
-	free(srcstr);
+       fprintf(stderr, "Error: %s ", srcstr);
+       vfprintf(stderr, fmt, va);
+       fprintf(stderr, "\n");
 }
 
-void srcpos_error(struct srcpos *pos, const char *prefix,
-		  const char *fmt, ...)
+void
+srcpos_error(struct srcpos *pos, char const *fmt, ...)
 {
 	va_list va;
 
 	va_start(va, fmt);
-	srcpos_verror(pos, prefix, fmt, va);
+	srcpos_verror(pos, fmt, va);
+	va_end(va);
+}
+
+
+void
+srcpos_warn(struct srcpos *pos, char const *fmt, ...)
+{
+	const char *srcstr;
+	va_list va;
+	va_start(va, fmt);
+
+	srcstr = srcpos_string(pos);
+
+	fprintf(stderr, "Warning: %s ", srcstr);
+	vfprintf(stderr, fmt, va);
+	fprintf(stderr, "\n");
+
 	va_end(va);
 }
 

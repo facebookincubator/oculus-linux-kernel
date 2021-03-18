@@ -38,10 +38,12 @@ static inline pud_t *vmem_pud_alloc(void)
 {
 	pud_t *pud = NULL;
 
+#ifdef CONFIG_64BIT
 	pud = vmem_alloc_pages(2);
 	if (!pud)
 		return NULL;
 	clear_table((unsigned long *) pud, _REGION3_ENTRY_EMPTY, PAGE_SIZE * 4);
+#endif
 	return pud;
 }
 
@@ -49,10 +51,12 @@ static inline pmd_t *vmem_pmd_alloc(void)
 {
 	pmd_t *pmd = NULL;
 
+#ifdef CONFIG_64BIT
 	pmd = vmem_alloc_pages(2);
 	if (!pmd)
 		return NULL;
 	clear_table((unsigned long *) pmd, _SEGMENT_ENTRY_EMPTY, PAGE_SIZE * 4);
+#endif
 	return pmd;
 }
 
@@ -94,7 +98,7 @@ static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 			pgd_populate(&init_mm, pg_dir, pu_dir);
 		}
 		pu_dir = pud_offset(pg_dir, address);
-#ifndef CONFIG_DEBUG_PAGEALLOC
+#if defined(CONFIG_64BIT) && !defined(CONFIG_DEBUG_PAGEALLOC)
 		if (MACHINE_HAS_EDAT2 && pud_none(*pu_dir) && address &&
 		    !(address & ~PUD_MASK) && (address + PUD_SIZE <= end)) {
 			pud_val(*pu_dir) = __pa(address) |
@@ -111,7 +115,7 @@ static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 			pud_populate(&init_mm, pu_dir, pm_dir);
 		}
 		pm_dir = pmd_offset(pu_dir, address);
-#ifndef CONFIG_DEBUG_PAGEALLOC
+#if defined(CONFIG_64BIT) && !defined(CONFIG_DEBUG_PAGEALLOC)
 		if (MACHINE_HAS_EDAT1 && pmd_none(*pm_dir) && address &&
 		    !(address & ~PMD_MASK) && (address + PMD_SIZE <= end)) {
 			pmd_val(*pm_dir) = __pa(address) |
@@ -218,6 +222,7 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 
 		pm_dir = pmd_offset(pu_dir, address);
 		if (pmd_none(*pm_dir)) {
+#ifdef CONFIG_64BIT
 			/* Use 1MB frames for vmemmap if available. We always
 			 * use large frames even if they are only partially
 			 * used.
@@ -235,6 +240,7 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 				address = (address + PMD_SIZE) & PMD_MASK;
 				continue;
 			}
+#endif
 			pt_dir = vmem_pte_alloc(address);
 			if (!pt_dir)
 				goto out;

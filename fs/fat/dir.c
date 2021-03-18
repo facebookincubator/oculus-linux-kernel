@@ -13,9 +13,13 @@
  *  Short name translation 1999, 2001 by Wolfram Pienkoss <wp@bszh.de>
  */
 
+#include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/time.h>
+#include <linux/buffer_head.h>
 #include <linux/compat.h>
 #include <linux/uaccess.h>
+#include <linux/kernel.h>
 #include "fat.h"
 
 /*
@@ -610,9 +614,9 @@ parse_record:
 		int status = fat_parse_long(inode, &cpos, &bh, &de,
 					    &unicode, &nr_slots);
 		if (status < 0) {
-			bh = NULL;
+			ctx->pos = cpos;
 			ret = status;
-			goto end_of_dir;
+			goto out;
 		} else if (status == PARSE_INVALID)
 			goto record_end;
 		else if (status == PARSE_NOT_LONGNAME)
@@ -654,9 +658,8 @@ parse_record:
 	fill_len = short_len;
 
 start_filldir:
-	ctx->pos = cpos - (nr_slots + 1) * sizeof(struct msdos_dir_entry);
-	if (fake_offset && ctx->pos < 2)
-		ctx->pos = 2;
+	if (!fake_offset)
+		ctx->pos = cpos - (nr_slots + 1) * sizeof(struct msdos_dir_entry);
 
 	if (!memcmp(de->name, MSDOS_DOT, MSDOS_NAME)) {
 		if (!dir_emit_dot(file, ctx))
@@ -682,19 +685,14 @@ record_end:
 	fake_offset = 0;
 	ctx->pos = cpos;
 	goto get_new;
-
 end_of_dir:
-	if (fake_offset && cpos < 2)
-		ctx->pos = 2;
-	else
-		ctx->pos = cpos;
+	ctx->pos = cpos;
 fill_failed:
 	brelse(bh);
 	if (unicode)
 		__putname(unicode);
 out:
 	mutex_unlock(&sbi->s_lock);
-
 	return ret;
 }
 
@@ -704,11 +702,10 @@ static int fat_readdir(struct file *file, struct dir_context *ctx)
 }
 
 #define FAT_IOCTL_FILLDIR_FUNC(func, dirent_type)			   \
-static int func(struct dir_context *ctx, const char *name, int name_len,   \
+static int func(void *__buf, const char *name, int name_len,		   \
 			     loff_t offset, u64 ino, unsigned int d_type)  \
 {									   \
-	struct fat_ioctl_filldir_callback *buf =			   \
-		container_of(ctx, struct fat_ioctl_filldir_callback, ctx); \
+	struct fat_ioctl_filldir_callback *buf = __buf;			   \
 	struct dirent_type __user *d1 = buf->dirent;			   \
 	struct dirent_type __user *d2 = d1 + 1;				   \
 									   \

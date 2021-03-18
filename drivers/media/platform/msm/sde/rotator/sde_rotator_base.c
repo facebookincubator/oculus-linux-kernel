@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,7 +30,6 @@
 #include "sde_rotator_base.h"
 #include "sde_rotator_util.h"
 #include "sde_rotator_trace.h"
-#include "sde_rotator_debug.h"
 
 static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
 {
@@ -77,7 +76,6 @@ u32 sde_apply_comp_ratio_factor(u32 quota,
 
 #define RES_1080p		(1088*1920)
 #define RES_UHD		(3840*2160)
-#define RES_WQXGA		(2560*1600)
 #define XIN_HALT_TIMEOUT_US	0x4000
 
 static int sde_mdp_wait_for_xin_halt(u32 xin_id)
@@ -176,32 +174,15 @@ u32 sde_mdp_get_ot_limit(u32 width, u32 height, u32 pixfmt, u32 fps, u32 is_rd)
 	SDEROT_DBG("w:%d h:%d fps:%d pixfmt:%8.8x yuv:%d res:%d rd:%d\n",
 		width, height, fps, pixfmt, is_yuv, res, is_rd);
 
-	switch (mdata->mdss_version) {
-	case MDSS_MDP_HW_REV_320:
-	case MDSS_MDP_HW_REV_330:
-		if ((res <= RES_1080p) && (fps <= 30) && is_yuv)
-			ot_lim = 2;
-		else if ((res <= RES_1080p) && (fps <= 60) && is_yuv)
-			ot_lim = 4;
-		else if ((res <= RES_UHD) && (fps <= 30) && is_yuv)
-			ot_lim = 8;
-		else if ((res <= RES_WQXGA) && (fps <= 60) && is_yuv)
-			ot_lim = 4;
-		else if ((res <= RES_WQXGA) && (fps <= 60))
-			ot_lim = 16;
-		break;
-	default:
-		if (is_yuv) {
-			if ((res <= RES_1080p) && (fps <= 30))
-				ot_lim = 2;
-			else if ((res <= RES_1080p) && (fps <= 60))
-				ot_lim = 4;
-			else if ((res <= RES_UHD) && (fps <= 30))
-				ot_lim = 8;
-		}
-		break;
-	}
+	if (!is_yuv)
+		goto exit;
 
+	if ((res <= RES_1080p) && (fps <= 30))
+		ot_lim = 2;
+	else if ((res <= RES_1080p) && (fps <= 60))
+		ot_lim = 4;
+	else if ((res <= RES_UHD) && (fps <= 30))
+		ot_lim = 8;
 
 exit:
 	SDEROT_DBG("ot_lim=%d\n", ot_lim);
@@ -236,8 +217,6 @@ static u32 get_ot_limit(u32 reg_off, u32 bit_off,
 
 exit:
 	SDEROT_DBG("ot_lim=%d\n", ot_lim);
-	SDEROT_EVTLOG(params->width, params->height, params->fmt, params->fps,
-			ot_lim);
 	return ot_lim;
 }
 
@@ -249,7 +228,6 @@ void sde_mdp_set_ot_limit(struct sde_mdp_set_ot_params *params)
 		params->reg_off_vbif_lim_conf;
 	u32 bit_off_vbif_lim_conf = (params->xin_id % 4) * 8;
 	u32 reg_val;
-	u32 sts;
 	bool forced_on;
 
 	ot_lim = get_ot_limit(
@@ -259,16 +237,6 @@ void sde_mdp_set_ot_limit(struct sde_mdp_set_ot_params *params)
 
 	if (ot_lim == 0)
 		goto exit;
-
-	if (params->rotsts_base && params->rotsts_busy_mask) {
-		sts = readl_relaxed(params->rotsts_base);
-		if (sts & params->rotsts_busy_mask) {
-			SDEROT_ERR(
-				"Rotator still busy, should not modify VBIF\n");
-			SDEROT_EVTLOG_TOUT_HANDLER(
-				"rot", "vbif_dbg_bus", "panic");
-		}
-	}
 
 	trace_rot_perf_set_ot(params->num, params->xin_id, ot_lim);
 
@@ -295,7 +263,6 @@ void sde_mdp_set_ot_limit(struct sde_mdp_set_ot_params *params)
 		force_on_xin_clk(params->bit_off_mdp_clk_ctrl,
 			params->reg_off_mdp_clk_ctrl, false);
 
-	SDEROT_EVTLOG(params->num, params->xin_id, ot_lim);
 exit:
 	return;
 }
@@ -438,46 +405,11 @@ static void sde_mdp_parse_vbif_qos(struct platform_device *pdev,
 	}
 }
 
-static int sde_mdp_parse_vbif_xin_id(struct platform_device *pdev,
-		struct sde_rot_data_type *mdata)
-{
-	int rc = 0;
-	bool default_xin_id = false;
-
-	mdata->nxid = sde_mdp_parse_dt_prop_len(pdev,
-			"qcom,mdss-rot-xin-id");
-	if (!mdata->nxid) {
-		mdata->nxid = 2;
-		default_xin_id = true;
-	}
-	mdata->vbif_xin_id = kzalloc(sizeof(u32) *
-			mdata->nxid, GFP_KERNEL);
-	if (!mdata->vbif_xin_id) {
-		SDEROT_ERR("xin alloc failure\n");
-		return -ENOMEM;
-	}
-	if (default_xin_id) {
-		mdata->vbif_xin_id[XIN_SSPP] = XIN_SSPP;
-		mdata->vbif_xin_id[XIN_WRITEBACK] = XIN_WRITEBACK;
-	} else {
-		rc = sde_mdp_parse_dt_handler(pdev,
-			"qcom,mdss-rot-xin-id", mdata->vbif_xin_id,
-				mdata->nxid);
-		if (rc) {
-			SDEROT_ERR("vbif xin id setting not found\n");
-			return rc;
-		}
-	}
-
-	return 0;
-}
-
 static int sde_mdp_parse_dt_misc(struct platform_device *pdev,
 		struct sde_rot_data_type *mdata)
 {
 	int rc;
 	u32 data;
-	struct device_node *node;
 
 	rc = of_property_read_u32(pdev->dev.of_node, "qcom,mdss-rot-block-size",
 		&data);
@@ -498,26 +430,8 @@ static int sde_mdp_parse_dt_misc(struct platform_device *pdev,
 			"Could not read optional property: highest bank bit\n");
 
 	sde_mdp_parse_vbif_qos(pdev, mdata);
-	rc = sde_mdp_parse_vbif_xin_id(pdev, mdata);
-	if (rc) {
-		SDEROT_DBG("vbif xin id dt parse failure\n");
-		return rc;
-	}
 
 	mdata->mdp_base = mdata->sde_io.base + SDE_MDP_OFFSET;
-
-	node = of_get_child_by_name(pdev->dev.of_node,
-				"qcom,sde-reg-bus");
-	if (node) {
-		mdata->reg_bus_pdata = msm_bus_pdata_from_node(pdev, node);
-		if (IS_ERR_OR_NULL(mdata->reg_bus_pdata)) {
-			SDEROT_DBG("bus_pdata reg_bus failed\n");
-			mdata->reg_bus_pdata = NULL;
-		}
-	} else {
-		SDEROT_DBG("sde-reg-bus not found\n");
-		mdata->reg_bus_pdata = NULL;
-	}
 
 	return 0;
 }
@@ -567,10 +481,9 @@ static int sde_mdp_bus_scale_register(struct sde_rot_data_type *mdata)
 		if (!mdata->reg_bus_hdl) {
 			/* Continue without reg_bus scaling */
 			SDEROT_WARN("reg_bus_client register failed\n");
-		} else {
+		} else
 			SDEROT_DBG("register reg_bus_hdl=%x\n",
 					mdata->reg_bus_hdl);
-		}
 	}
 
 	return 0;
@@ -644,15 +557,6 @@ int sde_rotator_base_init(struct sde_rot_data_type **pmdata,
 	rc = sde_smmu_init(&pdev->dev);
 	if (rc) {
 		SDEROT_ERR("sde smmu init failed %d\n", rc);
-		goto probe_done;
-	}
-
-	mdata->iclient = msm_ion_client_create(mdata->pdev->name);
-	if (IS_ERR_OR_NULL(mdata->iclient)) {
-		SDEROT_ERR("msm_ion_client_create() return error (%pK)\n",
-				mdata->iclient);
-		mdata->iclient = NULL;
-		rc = -EFAULT;
 		goto probe_done;
 	}
 

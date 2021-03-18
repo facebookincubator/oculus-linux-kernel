@@ -47,7 +47,8 @@
 #define RECV		1
 
 #define STATE_NONE	0
-#define STATE_READY	1
+#define STATE_PENDING	1
+#define STATE_READY	2
 
 struct posix_msg_tree_node {
 	struct rb_node		rb_node;
@@ -462,7 +463,7 @@ out_unlock:
 
 static int mqueue_unlink(struct inode *dir, struct dentry *dentry)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 
 	dir->i_ctime = dir->i_mtime = dir->i_atime = CURRENT_TIME;
 	dir->i_size -= DIRENT_SIZE;
@@ -567,11 +568,14 @@ static int wq_sleep(struct mqueue_inode_info *info, int sr,
 	wq_add(info, sr, ewp);
 
 	for (;;) {
-		__set_current_state(TASK_INTERRUPTIBLE);
+		set_current_state(TASK_INTERRUPTIBLE);
 
 		spin_unlock(&info->lock);
 		time = schedule_hrtimeout_range_clock(timeout, 0,
 			HRTIMER_MODE_ABS, CLOCK_REALTIME);
+
+		while (ewp->state == STATE_PENDING)
+			cpu_relax();
 
 		if (ewp->state == STATE_READY) {
 			retval = 0;
@@ -763,7 +767,7 @@ static struct file *do_open(struct path *path, int oflag)
 	if ((oflag & O_ACCMODE) == (O_RDWR | O_WRONLY))
 		return ERR_PTR(-EINVAL);
 	acc = oflag2acc[oflag & O_ACCMODE];
-	if (inode_permission2(path->mnt, d_inode(path->dentry), acc))
+	if (inode_permission2(path->mnt, path->dentry->d_inode, acc))
 		return ERR_PTR(-EACCES);
 	return dentry_open(path, oflag, current_cred());
 }
@@ -795,7 +799,7 @@ SYSCALL_DEFINE4(mq_open, const char __user *, u_name, int, oflag, umode_t, mode,
 
 	ro = mnt_want_write(mnt);	/* we'll drop it in any case */
 	error = 0;
-	mutex_lock(&d_inode(root)->i_mutex);
+	mutex_lock(&root->d_inode->i_mutex);
 	path.dentry = lookup_one_len2(name->name, mnt, root, strlen(name->name));
 	if (IS_ERR(path.dentry)) {
 		error = PTR_ERR(path.dentry);
@@ -804,7 +808,7 @@ SYSCALL_DEFINE4(mq_open, const char __user *, u_name, int, oflag, umode_t, mode,
 	path.mnt = mntget(mnt);
 
 	if (oflag & O_CREAT) {
-		if (d_really_is_positive(path.dentry)) {	/* entry already exists */
+		if (path.dentry->d_inode) {	/* entry already exists */
 			audit_inode(name, path.dentry, 0);
 			if (oflag & O_EXCL) {
 				error = -EEXIST;
@@ -817,12 +821,12 @@ SYSCALL_DEFINE4(mq_open, const char __user *, u_name, int, oflag, umode_t, mode,
 				goto out;
 			}
 			audit_inode_parent_hidden(name, root);
-			filp = do_create(ipc_ns, d_inode(root),
+			filp = do_create(ipc_ns, root->d_inode,
 						&path, oflag, mode,
 						u_attr ? &attr : NULL);
 		}
 	} else {
-		if (d_really_is_negative(path.dentry)) {
+		if (!path.dentry->d_inode) {
 			error = -ENOENT;
 			goto out;
 		}
@@ -841,7 +845,7 @@ out_putfd:
 		put_unused_fd(fd);
 		fd = error;
 	}
-	mutex_unlock(&d_inode(root)->i_mutex);
+	mutex_unlock(&root->d_inode->i_mutex);
 	if (!ro)
 		mnt_drop_write(mnt);
 out_putname:
@@ -866,7 +870,7 @@ SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
 	err = mnt_want_write(mnt);
 	if (err)
 		goto out_name;
-	mutex_lock_nested(&d_inode(mnt->mnt_root)->i_mutex, I_MUTEX_PARENT);
+	mutex_lock_nested(&mnt->mnt_root->d_inode->i_mutex, I_MUTEX_PARENT);
 	dentry = lookup_one_len2(name->name, mnt, mnt->mnt_root,
 				strlen(name->name));
 	if (IS_ERR(dentry)) {
@@ -874,17 +878,17 @@ SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
 		goto out_unlock;
 	}
 
-	inode = d_inode(dentry);
+	inode = dentry->d_inode;
 	if (!inode) {
 		err = -ENOENT;
 	} else {
 		ihold(inode);
-		err = vfs_unlink2(mnt, d_inode(dentry->d_parent), dentry, NULL);
+		err = vfs_unlink2(mnt, dentry->d_parent->d_inode, dentry, NULL);
 	}
 	dput(dentry);
 
 out_unlock:
-	mutex_unlock(&d_inode(mnt->mnt_root)->i_mutex);
+	mutex_unlock(&mnt->mnt_root->d_inode->i_mutex);
 	if (inode)
 		iput(inode);
 	mnt_drop_write(mnt);
@@ -900,15 +904,11 @@ out_name:
  * list of waiting receivers. A sender checks that list before adding the new
  * message into the message array. If there is a waiting receiver, then it
  * bypasses the message array and directly hands the message over to the
- * receiver. The receiver accepts the message and returns without grabbing the
- * queue spinlock:
- *
- * - Set pointer to message.
- * - Queue the receiver task for later wakeup (without the info->lock).
- * - Update its state to STATE_READY. Now the receiver can continue.
- * - Wake up the process after the lock is dropped. Should the process wake up
- *   before this wakeup (due to a timeout or a signal) it will either see
- *   STATE_READY and continue or acquire the lock to check the state again.
+ * receiver.
+ * The receiver accepts the message and returns without grabbing the queue
+ * spinlock. Therefore an intermediate STATE_PENDING state and memory barriers
+ * are necessary. The same algorithm is used for sysv semaphores, see
+ * ipc/sem.c for more details.
  *
  * The same algorithm is used for senders.
  */
@@ -916,29 +916,21 @@ out_name:
 /* pipelined_send() - send a message directly to the task waiting in
  * sys_mq_timedreceive() (without inserting message into a queue).
  */
-static inline void pipelined_send(struct wake_q_head *wake_q,
-				  struct mqueue_inode_info *info,
+static inline void pipelined_send(struct mqueue_inode_info *info,
 				  struct msg_msg *message,
 				  struct ext_wait_queue *receiver)
 {
 	receiver->msg = message;
 	list_del(&receiver->list);
-	wake_q_add(wake_q, receiver->task);
-	/*
-	 * Rely on the implicit cmpxchg barrier from wake_q_add such
-	 * that we can ensure that updating receiver->state is the last
-	 * write operation: As once set, the receiver can continue,
-	 * and if we don't have the reference count from the wake_q,
-	 * yet, at that point we can later have a use-after-free
-	 * condition and bogus wakeup.
-	 */
+	receiver->state = STATE_PENDING;
+	wake_up_process(receiver->task);
+	smp_wmb();
 	receiver->state = STATE_READY;
 }
 
 /* pipelined_receive() - if there is task waiting in sys_mq_timedsend()
  * gets its message and put to the queue (we have one free place for sure). */
-static inline void pipelined_receive(struct wake_q_head *wake_q,
-				     struct mqueue_inode_info *info)
+static inline void pipelined_receive(struct mqueue_inode_info *info)
 {
 	struct ext_wait_queue *sender = wq_get_first_waiter(info, SEND);
 
@@ -949,9 +941,10 @@ static inline void pipelined_receive(struct wake_q_head *wake_q,
 	}
 	if (msg_insert(sender->msg, info))
 		return;
-
 	list_del(&sender->list);
-	wake_q_add(wake_q, sender->task);
+	sender->state = STATE_PENDING;
+	wake_up_process(sender->task);
+	smp_wmb();
 	sender->state = STATE_READY;
 }
 
@@ -969,7 +962,6 @@ SYSCALL_DEFINE5(mq_timedsend, mqd_t, mqdes, const char __user *, u_msg_ptr,
 	struct timespec ts;
 	struct posix_msg_tree_node *new_leaf = NULL;
 	int ret = 0;
-	WAKE_Q(wake_q);
 
 	if (u_abs_timeout) {
 		int res = prepare_timeout(u_abs_timeout, &expires, &ts);
@@ -995,7 +987,7 @@ SYSCALL_DEFINE5(mq_timedsend, mqd_t, mqdes, const char __user *, u_msg_ptr,
 		goto out_fput;
 	}
 	info = MQUEUE_I(inode);
-	audit_file(f.file);
+	audit_inode(NULL, f.file->f_path.dentry, 0);
 
 	if (unlikely(!(f.file->f_mode & FMODE_WRITE))) {
 		ret = -EBADF;
@@ -1053,7 +1045,7 @@ SYSCALL_DEFINE5(mq_timedsend, mqd_t, mqdes, const char __user *, u_msg_ptr,
 	} else {
 		receiver = wq_get_first_waiter(info, RECV);
 		if (receiver) {
-			pipelined_send(&wake_q, info, msg_ptr, receiver);
+			pipelined_send(info, msg_ptr, receiver);
 		} else {
 			/* adds message to the queue */
 			ret = msg_insert(msg_ptr, info);
@@ -1066,7 +1058,6 @@ SYSCALL_DEFINE5(mq_timedsend, mqd_t, mqdes, const char __user *, u_msg_ptr,
 	}
 out_unlock:
 	spin_unlock(&info->lock);
-	wake_up_q(&wake_q);
 out_free:
 	if (ret)
 		free_msg(msg_ptr);
@@ -1111,7 +1102,7 @@ SYSCALL_DEFINE5(mq_timedreceive, mqd_t, mqdes, char __user *, u_msg_ptr,
 		goto out_fput;
 	}
 	info = MQUEUE_I(inode);
-	audit_file(f.file);
+	audit_inode(NULL, f.file->f_path.dentry, 0);
 
 	if (unlikely(!(f.file->f_mode & FMODE_READ))) {
 		ret = -EBADF;
@@ -1153,17 +1144,14 @@ SYSCALL_DEFINE5(mq_timedreceive, mqd_t, mqdes, char __user *, u_msg_ptr,
 			msg_ptr = wait.msg;
 		}
 	} else {
-		WAKE_Q(wake_q);
-
 		msg_ptr = msg_get(info);
 
 		inode->i_atime = inode->i_mtime = inode->i_ctime =
 				CURRENT_TIME;
 
 		/* There is now free space in queue. */
-		pipelined_receive(&wake_q, info);
+		pipelined_receive(info);
 		spin_unlock(&info->lock);
-		wake_up_q(&wake_q);
 		ret = 0;
 	}
 	if (ret == 0) {

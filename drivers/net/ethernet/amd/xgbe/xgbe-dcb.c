@@ -150,12 +150,9 @@ static int xgbe_dcb_ieee_setets(struct net_device *netdev,
 	tc_ets = 0;
 	tc_ets_weight = 0;
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
-		netif_dbg(pdata, drv, netdev,
-			  "TC%u: tx_bw=%hhu, rx_bw=%hhu, tsa=%hhu\n", i,
-			  ets->tc_tx_bw[i], ets->tc_rx_bw[i],
-			  ets->tc_tsa[i]);
-		netif_dbg(pdata, drv, netdev, "PRIO%u: TC=%hhu\n", i,
-			  ets->prio_tc[i]);
+		DBGPR("  TC%u: tx_bw=%hhu, rx_bw=%hhu, tsa=%hhu\n", i,
+		      ets->tc_tx_bw[i], ets->tc_rx_bw[i], ets->tc_tsa[i]);
+		DBGPR("  PRIO%u: TC=%hhu\n", i, ets->prio_tc[i]);
 
 		if ((ets->tc_tx_bw[i] || ets->tc_tsa[i]) &&
 		    (i >= pdata->hw_feat.tc_cnt))
@@ -217,9 +214,8 @@ static int xgbe_dcb_ieee_setpfc(struct net_device *netdev,
 {
 	struct xgbe_prv_data *pdata = netdev_priv(netdev);
 
-	netif_dbg(pdata, drv, netdev,
-		  "cap=%hhu, en=%#hhx, mbc=%hhu, delay=%hhu\n",
-		  pfc->pfc_cap, pfc->pfc_en, pfc->mbc, pfc->delay);
+	DBGPR("  cap=%hhu, en=%hhx, mbc=%hhu, delay=%hhu\n",
+	      pfc->pfc_cap, pfc->pfc_en, pfc->mbc, pfc->delay);
 
 	if (!pdata->pfc) {
 		pdata->pfc = devm_kzalloc(pdata->dev, sizeof(*pdata->pfc),
@@ -242,10 +238,9 @@ static u8 xgbe_dcb_getdcbx(struct net_device *netdev)
 
 static u8 xgbe_dcb_setdcbx(struct net_device *netdev, u8 dcbx)
 {
-	struct xgbe_prv_data *pdata = netdev_priv(netdev);
 	u8 support = xgbe_dcb_getdcbx(netdev);
 
-	netif_dbg(pdata, drv, netdev, "DCBX=%#hhx\n", dcbx);
+	DBGPR("  DCBX=%#hhx\n", dcbx);
 
 	if (dcbx & ~support)
 		return 1;

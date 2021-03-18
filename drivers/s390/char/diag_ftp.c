@@ -15,7 +15,6 @@
 #include <linux/wait.h>
 #include <linux/string.h>
 #include <asm/ctl_reg.h>
-#include <asm/diag.h>
 
 #include "hmcdrv_ftp.h"
 #include "diag_ftp.h"
@@ -103,7 +102,6 @@ static int diag_ftp_2c4(struct diag_ftp_ldfpl *fpl,
 {
 	int rc;
 
-	diag_stat_inc(DIAG_STAT_X2C4);
 	asm volatile(
 		"	diag	%[addr],%[cmd],0x2c4\n"
 		"0:	j	2f\n"
@@ -225,7 +223,7 @@ int diag_ftp_startup(void)
 	if (rc)
 		return rc;
 
-	irq_subclass_register(IRQ_SUBCLASS_SERVICE_SIGNAL);
+	ctl_set_bit(0, 63 - 22);
 	return 0;
 }
 
@@ -234,6 +232,6 @@ int diag_ftp_startup(void)
  */
 void diag_ftp_shutdown(void)
 {
-	irq_subclass_unregister(IRQ_SUBCLASS_SERVICE_SIGNAL);
+	ctl_clear_bit(0, 63 - 22);
 	unregister_external_irq(EXT_IRQ_CP_SERVICE, diag_ftp_handler);
 }

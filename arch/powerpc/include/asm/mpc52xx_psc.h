@@ -150,10 +150,7 @@
 
 /* Structure of the hardware registers */
 struct mpc52xx_psc {
-	union {
-		u8	mode;		/* PSC + 0x00 */
-		u8	mr2;
-	};
+	u8		mode;		/* PSC + 0x00 */
 	u8		reserved0[3];
 	union {				/* PSC + 0x04 */
 		u16	status;
@@ -261,6 +258,8 @@ struct mpc52xx_psc_fifo {
 #define MPC512x_PSC_FIFO_FULL		0x2
 #define MPC512x_PSC_FIFO_ALARM		0x4
 #define MPC512x_PSC_FIFO_URERR		0x8
+#define MPC512x_PSC_FIFO_ORERR		0x01
+#define MPC512x_PSC_FIFO_MEMERROR	0x02
 
 struct mpc512x_psc_fifo {
 	u32		reserved1[10];

@@ -430,7 +430,7 @@ static void asc_break_ctl(struct uart_port *port, int break_state)
  */
 static int asc_startup(struct uart_port *port)
 {
-	if (request_irq(port->irq, asc_interrupt, 0,
+	if (request_irq(port->irq, asc_interrupt, IRQF_NO_SUSPEND,
 			asc_port_name(port), port)) {
 		dev_err(port->dev, "cannot allocate irq.\n");
 		return -ENODEV;
@@ -720,7 +720,7 @@ static struct asc_port *asc_of_get_asc_port(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_OF
-static const struct of_device_id asc_match[] = {
+static struct of_device_id asc_match[] = {
 	{ .compatible = "st,asc", },
 	{},
 };
@@ -895,6 +895,7 @@ static struct platform_driver asc_serial_driver = {
 	.driver	= {
 		.name	= DRIVER_NAME,
 		.pm	= &asc_serial_pm_ops,
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(asc_match),
 	},
 };

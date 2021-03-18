@@ -313,7 +313,8 @@ error_wusbhc_create:
 	uwb_rc_put(wusbhc->uwb_rc);
 error:
 	whc_clean_up(whc);
-	usb_put_hcd(usb_hcd);
+	if (usb_hcd)
+		usb_put_hcd(usb_hcd);
 	return ret;
 }
 

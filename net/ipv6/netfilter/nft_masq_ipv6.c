@@ -18,16 +18,19 @@
 #include <net/netfilter/ipv6/nf_nat_masquerade.h>
 
 static void nft_masq_ipv6_eval(const struct nft_expr *expr,
-			       struct nft_regs *regs,
+			       struct nft_data data[NFT_REG_MAX + 1],
 			       const struct nft_pktinfo *pkt)
 {
 	struct nft_masq *priv = nft_expr_priv(expr);
 	struct nf_nat_range range;
+	unsigned int verdict;
 
 	memset(&range, 0, sizeof(range));
 	range.flags = priv->flags;
 
-	regs->verdict.code = nf_nat_masquerade_ipv6(pkt->skb, &range, pkt->out);
+	verdict = nf_nat_masquerade_ipv6(pkt->skb, &range, pkt->out);
+
+	data[NFT_REG_VERDICT].verdict = verdict;
 }
 
 static struct nft_expr_type nft_masq_ipv6_type;

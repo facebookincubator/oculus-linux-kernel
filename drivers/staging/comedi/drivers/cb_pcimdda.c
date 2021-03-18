@@ -75,8 +75,9 @@ Configuration Options: not applicable, uses PCI auto config
  */
 
 #include <linux/module.h>
+#include <linux/pci.h>
 
-#include "../comedi_pci.h"
+#include "../comedidev.h"
 
 #include "8255.h"
 
@@ -133,7 +134,7 @@ static int cb_pcimdda_ao_insn_read(struct comedi_device *dev,
 }
 
 static int cb_pcimdda_auto_attach(struct comedi_device *dev,
-				  unsigned long context_unused)
+					    unsigned long context_unused)
 {
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 	struct comedi_subdevice *s;
@@ -164,7 +165,11 @@ static int cb_pcimdda_auto_attach(struct comedi_device *dev,
 
 	s = &dev->subdevices[1];
 	/* digital i/o subdevice */
-	return subdev_8255_init(dev, s, NULL, PCIMDDA_8255_BASE_REG);
+	ret = subdev_8255_init(dev, s, NULL, PCIMDDA_8255_BASE_REG);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static struct comedi_driver cb_pcimdda_driver = {

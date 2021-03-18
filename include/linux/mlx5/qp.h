@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015, Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2013, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -49,9 +49,6 @@
 #define MLX5_BSF_REPEAT_BLOCK	(1 << 7)
 #define MLX5_BSF_APPTAG_ESCAPE	0x1
 #define MLX5_BSF_APPREF_ESCAPE	0x2
-
-#define MLX5_QPN_BITS		24
-#define MLX5_QPN_MASK		((1 << MLX5_QPN_BITS) - 1)
 
 enum mlx5_qp_optpar {
 	MLX5_QP_OPTPAR_ALT_ADDR_PATH		= 1 << 0,
@@ -134,19 +131,11 @@ enum {
 
 enum {
 	MLX5_WQE_CTRL_CQ_UPDATE		= 2 << 2,
-	MLX5_WQE_CTRL_CQ_UPDATE_AND_EQE	= 3 << 2,
 	MLX5_WQE_CTRL_SOLICITED		= 1 << 1,
 };
 
 enum {
-	MLX5_SEND_WQE_DS	= 16,
 	MLX5_SEND_WQE_BB	= 64,
-};
-
-#define MLX5_SEND_WQEBB_NUM_DS	(MLX5_SEND_WQE_BB / MLX5_SEND_WQE_DS)
-
-enum {
-	MLX5_SEND_WQE_MAX_WQEBBS	= 16,
 };
 
 enum {
@@ -160,7 +149,6 @@ enum {
 enum {
 	MLX5_FENCE_MODE_NONE			= 0 << 5,
 	MLX5_FENCE_MODE_INITIATOR_SMALL		= 1 << 5,
-	MLX5_FENCE_MODE_FENCE			= 2 << 5,
 	MLX5_FENCE_MODE_STRONG_ORDERING		= 3 << 5,
 	MLX5_FENCE_MODE_SMALL_AND_FENCE		= 4 << 5,
 };
@@ -199,31 +187,6 @@ struct mlx5_wqe_ctrl_seg {
 	u8			rsvd[2];
 	u8			fm_ce_se;
 	__be32			imm;
-};
-
-#define MLX5_WQE_CTRL_DS_MASK 0x3f
-#define MLX5_WQE_CTRL_QPN_MASK 0xffffff00
-#define MLX5_WQE_CTRL_QPN_SHIFT 8
-#define MLX5_WQE_DS_UNITS 16
-#define MLX5_WQE_CTRL_OPCODE_MASK 0xff
-#define MLX5_WQE_CTRL_WQE_INDEX_MASK 0x00ffff00
-#define MLX5_WQE_CTRL_WQE_INDEX_SHIFT 8
-
-enum {
-	MLX5_ETH_WQE_L3_INNER_CSUM      = 1 << 4,
-	MLX5_ETH_WQE_L4_INNER_CSUM      = 1 << 5,
-	MLX5_ETH_WQE_L3_CSUM            = 1 << 6,
-	MLX5_ETH_WQE_L4_CSUM            = 1 << 7,
-};
-
-struct mlx5_wqe_eth_seg {
-	u8              rsvd0[4];
-	u8              cs_flags;
-	u8              rsvd1;
-	__be16          mss;
-	__be32          rsvd2;
-	__be16          inline_hdr_sz;
-	u8              inline_hdr_start[2];
 };
 
 struct mlx5_wqe_xrc_seg {
@@ -329,8 +292,6 @@ struct mlx5_wqe_signature_seg {
 	u8	rsvd1[11];
 };
 
-#define MLX5_WQE_INLINE_SEG_BYTE_COUNT_MASK 0x3ff
-
 struct mlx5_wqe_inline_seg {
 	__be32	byte_count;
 };
@@ -399,46 +360,9 @@ struct mlx5_stride_block_ctrl_seg {
 	__be16		num_entries;
 };
 
-enum mlx5_pagefault_flags {
-	MLX5_PFAULT_REQUESTOR = 1 << 0,
-	MLX5_PFAULT_WRITE     = 1 << 1,
-	MLX5_PFAULT_RDMA      = 1 << 2,
-};
-
-/* Contains the details of a pagefault. */
-struct mlx5_pagefault {
-	u32			bytes_committed;
-	u8			event_subtype;
-	enum mlx5_pagefault_flags flags;
-	union {
-		/* Initiator or send message responder pagefault details. */
-		struct {
-			/* Received packet size, only valid for responders. */
-			u32	packet_size;
-			/*
-			 * WQE index. Refers to either the send queue or
-			 * receive queue, according to event_subtype.
-			 */
-			u16	wqe_index;
-		} wqe;
-		/* RDMA responder pagefault details */
-		struct {
-			u32	r_key;
-			/*
-			 * Received packet size, minimal size page fault
-			 * resolution required for forward progress.
-			 */
-			u32	packet_size;
-			u32	rdma_op_len;
-			u64	rdma_va;
-		} rdma;
-	};
-};
-
 struct mlx5_core_qp {
 	struct mlx5_core_rsc_common	common; /* must be first */
 	void (*event)		(struct mlx5_core_qp *, int);
-	void (*pfault_handler)(struct mlx5_core_qp *, struct mlx5_pagefault *);
 	int			qpn;
 	struct mlx5_rsc_debug	*dbg;
 	int			pid;
@@ -535,9 +459,9 @@ struct mlx5_destroy_qp_mbox_out {
 struct mlx5_modify_qp_mbox_in {
 	struct mlx5_inbox_hdr	hdr;
 	__be32			qpn;
-	u8			rsvd0[4];
-	__be32			optparam;
 	u8			rsvd1[4];
+	__be32			optparam;
+	u8			rsvd0[4];
 	struct mlx5_qp_context	ctx;
 };
 
@@ -606,17 +530,6 @@ static inline struct mlx5_core_mr *__mlx5_mr_lookup(struct mlx5_core_dev *dev, u
 	return radix_tree_lookup(&dev->priv.mr_table.tree, key);
 }
 
-struct mlx5_page_fault_resume_mbox_in {
-	struct mlx5_inbox_hdr	hdr;
-	__be32			flags_qpn;
-	u8			reserved[4];
-};
-
-struct mlx5_page_fault_resume_mbox_out {
-	struct mlx5_outbox_hdr	hdr;
-	u8			rsvd[8];
-};
-
 int mlx5_core_create_qp(struct mlx5_core_dev *dev,
 			struct mlx5_core_qp *qp,
 			struct mlx5_create_qp_mbox_in *in,
@@ -636,10 +549,6 @@ void mlx5_init_qp_table(struct mlx5_core_dev *dev);
 void mlx5_cleanup_qp_table(struct mlx5_core_dev *dev);
 int mlx5_debug_qp_add(struct mlx5_core_dev *dev, struct mlx5_core_qp *qp);
 void mlx5_debug_qp_remove(struct mlx5_core_dev *dev, struct mlx5_core_qp *qp);
-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
-int mlx5_core_page_fault_resume(struct mlx5_core_dev *dev, u32 qpn,
-				u8 context, int error);
-#endif
 
 static inline const char *mlx5_qp_type_str(int type)
 {

@@ -18,13 +18,6 @@
 	model = "Calao Systems Snowball platform with device tree";
 	compatible = "calaosystems,snowball-a9500", "st-ericsson,u9500";
 
-	/* This stablilizes the serial port enumeration */
-	aliases {
-		serial0 = &ux500_serial0;
-		serial1 = &ux500_serial1;
-		serial2 = &ux500_serial2;
-	};
-
 	memory {
 		reg = <0x00000000 0x20000000>;
 	};
@@ -47,35 +40,35 @@
 
 		button@1 {
 			debounce_interval = <50>;
-			wakeup-source;
+			wakeup = <1>;
 			linux,code = <2>;
 			label = "userpb";
 			gpios = <&gpio1 0 0x4>;
 		};
 		button@2 {
 			debounce_interval = <50>;
-			wakeup-source;
+			wakeup = <1>;
 			linux,code = <3>;
 			label = "extkb1";
 			gpios = <&gpio4 23 0x4>;
 		};
 		button@3 {
 			debounce_interval = <50>;
-			wakeup-source;
+			wakeup = <1>;
 			linux,code = <4>;
 			label = "extkb2";
 			gpios = <&gpio4 24 0x4>;
 		};
 		button@4 {
 			debounce_interval = <50>;
-			wakeup-source;
+			wakeup = <1>;
 			linux,code = <5>;
 			label = "extkb3";
 			gpios = <&gpio5 1 0x4>;
 		};
 		button@5 {
 			debounce_interval = <50>;
-			wakeup-source;
+			wakeup = <1>;
 			linux,code = <6>;
 			label = "extkb4";
 			gpios = <&gpio5 2 0x4>;
@@ -230,11 +223,11 @@
 			status = "okay";
 		};
 
-		/* This UART is unused and thus left disabled */
 		uart@80121000 {
 			pinctrl-names = "default", "sleep";
 			pinctrl-0 = <&uart1_default_mode>;
 			pinctrl-1 = <&uart1_sleep_mode>;
+			status = "okay";
 		};
 
 		uart@80007000 {
@@ -269,19 +262,15 @@
 				vddio-supply = <&db8500_vsmps2_reg>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&accel_snowball_mode>;
-				interrupt-parent = <&gpio5>;
-				interrupts = <3 IRQ_TYPE_EDGE_RISING>, /* INT1 */
-					     <4 IRQ_TYPE_EDGE_RISING>; /* INT2 */
 			};
-			lsm303dlh@1e {
+			lsm303dlm@1e {
 				/* Magnetometer */
-				compatible = "st,lsm303dlh-magn";
+				compatible = "st,lsm303dlm-magn";
 				reg = <0x1e>;
 				vdd-supply = <&ab8500_ldo_aux1_reg>;
 				vddio-supply = <&db8500_vsmps2_reg>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&magneto_snowball_mode>;
-				gpios = <&gpio5 5 0x4>; /* DRDY line */
 			};
 			l3g4200d@68 {
 				/* Gyroscope */
@@ -290,11 +279,6 @@
 				reg = <0x68>;
 				vdd-supply = <&ab8500_ldo_aux1_reg>;
 				vddio-supply = <&db8500_vsmps2_reg>;
-				pinctrl-names = "default";
-				pinctrl-0 = <&gyro_snowball_mode>;
-				gpios = <&gpio5 6 0x4>; /* DRDY line */
-				interrupt-parent = <&gpio5>;
-				interrupts = <9 IRQ_TYPE_EDGE_RISING>; /* INT1 */
 			};
 			lsp001wm@5c {
 				/* Barometer/pressure sensor */
@@ -433,17 +417,17 @@
 				 */
 				eth_snowball_mode: eth_snowball {
 					snowball_mux {
-						function = "sm";
-						groups = "sm_b_1";
+						ste,function = "sm";
+						ste,pins = "sm_b_1";
 					};
 					/* LAN IRQ pin */
 					snowball_cfg1 {
-						pins = "GPIO140_B11";
+						ste,pins = "GPIO140_B11";
 						ste,config = <&in_nopull>;
 					};
 					/* LAN reset pin */
 					snowball_cfg2 {
-						pins = "GPIO141_C12";
+						ste,pins = "GPIO141_C12";
 						ste,config = <&gpio_out_hi>;
 					};
 
@@ -452,46 +436,32 @@
 			sdi0 {
 				sdi0_default_mode: sdi0_default {
 					snowball_mux {
-						function = "mc0";
-						groups = "mc0dat31dir_a_1";
+						ste,function = "mc0";
+						ste,pins = "mc0dat31dir_a_1";
 					};
 					snowball_cfg1 {
-						pins = "GPIO21_AB3"; /* DAT31DIR */
+						ste,pins = "GPIO21_AB3"; /* DAT31DIR */
 						ste,config = <&out_hi>;
 					};
-					/* SD card detect GPIO pin, extend default state */
-					snowball_cfg2 {
-						pins = "GPIO218_AH11";
-						ste,config = <&gpio_in_pu>;
-					};
-					/* VMMCI level-shifter enable */
-					snowball_cfg3 {
-						pins = "GPIO217_AH12";
-						ste,config = <&gpio_out_lo>;
-					};
-					/* VMMCI level-shifter voltage select */
-					snowball_cfg4 {
-						pins = "GPIO228_AJ6";
-						ste,config = <&gpio_out_hi>;
-					};
+
 				};
 			};
 			ssp0 {
 				ssp0_snowball_mode: ssp0_snowball_default {
 					snowball_mux {
-						function = "ssp0";
-						groups = "ssp0_a_1";
+						ste,function = "ssp0";
+						ste,pins = "ssp0_a_1";
 					};
 					snowball_cfg1 {
-						pins = "GPIO144_B13"; /* FRM */
+						ste,pins = "GPIO144_B13"; /* FRM */
 						ste,config = <&gpio_out_hi>;
 					};
 					snowball_cfg2 {
-						pins = "GPIO145_C13"; /* RXD */
+						ste,pins = "GPIO145_C13"; /* RXD */
 						ste,config = <&in_pd>;
 					};
 					snowball_cfg3 {
-						pins =
+						ste,pins =
 						"GPIO146_D13", /* TXD */
 						"GPIO143_D12"; /* CLK */
 						ste,config = <&out_lo>;
@@ -502,7 +472,7 @@
 			gpio_led {
 				gpioled_snowball_mode: gpioled_default {
 					snowball_cfg1 {
-						pins = "GPIO142_C11";
+						ste,pins = "GPIO142_C11";
 						ste,config = <&gpio_out_hi>;
 					};
 
@@ -512,19 +482,9 @@
 				accel_snowball_mode: accel_snowball {
 					/* Accelerometer lines */
 					snowball_cfg1 {
-						pins =
+						ste,pins =
 						"GPIO163_C20", /* ACCEL_IRQ1 */
 						"GPIO164_B21"; /* ACCEL_IRQ2 */
-						ste,config = <&gpio_in_pu>;
-					};
-				};
-			};
-			gyro {
-				gyro_snowball_mode: gyro_snowball {
-					snowball_cfg1 {
-						pins =
-						"GPIO166_A22", /* DRDY */
-						"GPIO169_D22"; /* INT */
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -532,7 +492,7 @@
 			magnetometer {
 				magneto_snowball_mode: magneto_snowball {
 					snowball_cfg1 {
-						pins = "GPIO165_C21"; /* MAG_DRDY */
+						ste,pins = "GPIO165_C21"; /* MAG_DRDY */
 						ste,config = <&gpio_in_pu>;
 					};
 				};
@@ -544,7 +504,7 @@
 					 * pull low to reset state
 					 */
 					snowball_cfg1 {
-						pins = "GPIO171_D23"; /* GBF_ENA_RESET */
+						ste,pins = "GPIO171_D23"; /* GBF_ENA_RESET */
 						ste,config = <&gpio_out_lo>;
 					};
 				 };
@@ -556,13 +516,13 @@
 					 * These are plain GPIO pins used by WLAN
 					 */
 					snowball_cfg1 {
-						pins =
+						ste,pins =
 						"GPIO161_D21", /* WLAN_PMU_EN */
 						"GPIO215_AH13"; /* WLAN_ENA */
 						ste,config = <&gpio_out_lo>;
 					};
 					snowball_cfg2 {
-						pins = "GPIO216_AG12"; /* WLAN_IRQ */
+						ste,pins = "GPIO216_AG12"; /* WLAN_IRQ */
 						ste,config = <&gpio_in_pu>;
 					};
 				};

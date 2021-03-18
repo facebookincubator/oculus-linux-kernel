@@ -54,10 +54,18 @@ NI manuals:
 */
 
 #include <linux/module.h>
+#include "../comedidev.h"
 
-#include "../comedi_pcmcia.h"
+#include <linux/delay.h>
 
+#include "8253.h"
+#include "8255.h"
+#include "comedi_fc.h"
 #include "ni_labpc.h"
+
+#include <pcmcia/cistpl.h>
+#include <pcmcia/cisreg.h>
+#include <pcmcia/ds.h>
 
 static const struct labpc_boardinfo labpc_cs_boards[] = {
 	{
@@ -68,10 +76,11 @@ static const struct labpc_boardinfo labpc_cs_boards[] = {
 	},
 };
 
-static int labpc_cs_auto_attach(struct comedi_device *dev,
-				unsigned long context)
+static int labpc_auto_attach(struct comedi_device *dev,
+			     unsigned long context)
 {
 	struct pcmcia_device *link = comedi_to_pcmcia_dev(dev);
+	struct labpc_private *devpriv;
 	int ret;
 
 	/* The ni_labpc driver needs the board_ptr */
@@ -87,20 +96,18 @@ static int labpc_cs_auto_attach(struct comedi_device *dev,
 	if (!link->irq)
 		return -EINVAL;
 
-	return labpc_common_attach(dev, link->irq, IRQF_SHARED);
-}
+	devpriv = comedi_alloc_devpriv(dev, sizeof(*devpriv));
+	if (!devpriv)
+		return -ENOMEM;
 
-static void labpc_cs_detach(struct comedi_device *dev)
-{
-	labpc_common_detach(dev);
-	comedi_pcmcia_disable(dev);
+	return labpc_common_attach(dev, link->irq, IRQF_SHARED);
 }
 
 static struct comedi_driver driver_labpc_cs = {
 	.driver_name	= "ni_labpc_cs",
 	.module		= THIS_MODULE,
-	.auto_attach	= labpc_cs_auto_attach,
-	.detach		= labpc_cs_detach,
+	.auto_attach	= labpc_auto_attach,
+	.detach		= comedi_pcmcia_disable,
 };
 
 static int labpc_cs_attach(struct pcmcia_device *link)

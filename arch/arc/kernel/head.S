@@ -49,38 +49,31 @@
 1:
 .endm
 
+	.cpu A7
+
 	.section .init.text, "ax",@progbits
-
-;----------------------------------------------------------------
-; Default Reset Handler (jumped into from Reset vector)
-; - Don't clobber r0,r1,r2 as they might have u-boot provided args
-; - Platforms can override this weak version if needed
-;----------------------------------------------------------------
-WEAK(res_service)
-	j	stext
-END(res_service)
-
-;----------------------------------------------------------------
-; Kernel Entry point
-;----------------------------------------------------------------
-ENTRY(stext)
+	.type stext, @function
+	.globl stext
+stext:
+	;-------------------------------------------------------------------
+	; Don't clobber r0-r2 yet. It might have bootloader provided info
+	;-------------------------------------------------------------------
 
 	CPU_EARLY_SETUP
 
 #ifdef CONFIG_SMP
+	; Ensure Boot (Master) proceeds. Others wait in platform dependent way
+	;	IDENTITY Reg [ 3  2  1  0 ]
+	;	(cpu-id)             ^^^	=> Zero for UP ARC700
+	;					=> #Core-ID if SMP (Master 0)
+	; Note that non-boot CPUs might not land here if halt-on-reset and
+	; instead breath life from @first_lines_of_secondary, but we still
+	; need to make sure only boot cpu takes this path.
 	GET_CPU_ID  r5
 	cmp	r5, 0
-	mov.nz	r0, r5
-#ifdef CONFIG_ARC_SMP_HALT_ON_RESET
-	; Non-Master can proceed as system would be booted sufficiently
-	jnz	first_lines_of_secondary
-#else
-	; Non-Masters wait for Master to boot enough and bring them up
-	jnz	arc_platform_smp_wait_to_boot
+	mov.ne	r0, r5
+	jne	arc_platform_smp_wait_to_boot
 #endif
-	; Master falls thru
-#endif
-
 	; Clear BSS before updating any globals
 	; XXX: use ZOL here
 	mov	r5, __bss_start
@@ -90,7 +83,6 @@ ENTRY(stext)
 	st.ab   0, [r5, 4]
 1:
 
-#ifdef CONFIG_ARC_UBOOT_SUPPORT
 	; Uboot - kernel ABI
 	;    r0 = [0] No uboot interaction, [1] cmdline in r2, [2] DTB in r2
 	;    r1 = magic number (board identity, unused as of now
@@ -98,7 +90,6 @@ ENTRY(stext)
 	; These are handled later in setup_arch()
 	st	r0, [@uboot_tag]
 	st	r2, [@uboot_arg]
-#endif
 
 	; setup "current" tsk and optionally cache it in dedicated r25
 	mov	r9, @init_task
@@ -111,14 +102,18 @@ ENTRY(stext)
 	GET_TSK_STACK_BASE r9, sp	; r9 = tsk, sp = stack base(output)
 
 	j	start_kernel	; "C" entry point
-END(stext)
 
 #ifdef CONFIG_SMP
 ;----------------------------------------------------------------
 ;     First lines of code run by secondary before jumping to 'C'
 ;----------------------------------------------------------------
 	.section .text, "ax",@progbits
-ENTRY(first_lines_of_secondary)
+	.type first_lines_of_secondary, @function
+	.globl first_lines_of_secondary
+
+first_lines_of_secondary:
+
+	CPU_EARLY_SETUP
 
 	; setup per-cpu idle task as "current" on this CPU
 	ld	r0, [@secondary_idle_tsk]
@@ -131,5 +126,5 @@ ENTRY(first_lines_of_secondary)
 	GET_TSK_STACK_BASE r0, sp
 
 	j	start_kernel_secondary
-END(first_lines_of_secondary)
+
 #endif

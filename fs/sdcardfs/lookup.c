@@ -182,7 +182,7 @@ struct dentry *sdcardfs_interpose(struct dentry *dentry,
 	struct super_block *lower_sb;
 	struct dentry *ret_dentry;
 
-	lower_inode = d_inode(lower_path->dentry);
+	lower_inode = lower_path->dentry->d_inode;
 	lower_sb = sdcardfs_lower_super(sb);
 
 	/* check that the lower file system didn't cross a mount point */
@@ -218,10 +218,10 @@ struct sdcardfs_name_data {
 	bool found;
 };
 
-static int sdcardfs_name_match(struct dir_context *ctx, const char *name,
-		int namelen, loff_t offset, u64 ino, unsigned int d_type)
+static int sdcardfs_name_match(void *__buf, const char *name, int namelen,
+		loff_t offset, u64 ino, unsigned int d_type)
 {
-	struct sdcardfs_name_data *buf = container_of(ctx, struct sdcardfs_name_data, ctx);
+	struct sdcardfs_name_data *buf = (struct sdcardfs_name_data *) __buf;
 	struct qstr candidate = QSTR_INIT(name, namelen);
 
 	if (qstr_case_eq(buf->to_find, &candidate)) {
@@ -411,7 +411,7 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	parent = dget_parent(dentry);
 
-	if (!check_caller_access_to_name(d_inode(parent), &dentry->d_name)) {
+	if (!check_caller_access_to_name(parent->d_inode, &dentry->d_name)) {
 		ret = ERR_PTR(-EACCES);
 		goto out_err;
 	}
@@ -439,17 +439,17 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 		goto out;
 	if (ret)
 		dentry = ret;
-	if (d_inode(dentry)) {
-		fsstack_copy_attr_times(d_inode(dentry),
-					sdcardfs_lower_inode(d_inode(dentry)));
+	if (dentry->d_inode) {
+		fsstack_copy_attr_times(dentry->d_inode,
+					sdcardfs_lower_inode(dentry->d_inode));
 		/* get derived permission */
 		get_derived_permission(parent, dentry);
-		fixup_tmp_permissions(d_inode(dentry));
+		fixup_tmp_permissions(dentry->d_inode);
 		fixup_lower_ownership(dentry, dentry->d_name.name);
 	}
 	/* update parent directory's atime */
-	fsstack_copy_attr_atime(d_inode(parent),
-				sdcardfs_lower_inode(d_inode(parent)));
+	fsstack_copy_attr_atime(parent->d_inode,
+				sdcardfs_lower_inode(parent->d_inode));
 
 out:
 	sdcardfs_put_lower_path(parent, &lower_parent_path);

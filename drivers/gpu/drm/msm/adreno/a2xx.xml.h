@@ -8,18 +8,16 @@ http://github.com/freedreno/envytools/
 git clone https://github.com/freedreno/envytools.git
 
 The rules-ng-ng source files this header was generated from are:
-- /home/robclark/src/freedreno/envytools/rnndb/adreno.xml               (    398 bytes, from 2015-09-24 17:25:31)
-- /home/robclark/src/freedreno/envytools/rnndb/freedreno_copyright.xml  (   1572 bytes, from 2016-02-10 17:07:21)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a2xx.xml          (  32901 bytes, from 2015-05-20 20:03:14)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_common.xml (  11518 bytes, from 2016-02-10 21:03:25)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  16166 bytes, from 2016-02-11 21:20:31)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  83967 bytes, from 2016-02-10 17:07:21)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          ( 109916 bytes, from 2016-02-20 18:44:48)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/ocmem.xml         (   1773 bytes, from 2015-09-24 17:30:00)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno.xml               (    364 bytes, from 2013-11-30 14:47:15)
+- /home/robclark/src/freedreno/envytools/rnndb/freedreno_copyright.xml  (   1453 bytes, from 2013-03-31 16:51:27)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a2xx.xml          (  32901 bytes, from 2014-06-02 15:21:30)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_common.xml (   9859 bytes, from 2014-06-02 15:21:30)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  14960 bytes, from 2014-07-27 17:22:13)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  58020 bytes, from 2014-08-01 12:22:48)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          (  41068 bytes, from 2014-08-01 12:22:48)
 
-Copyright (C) 2013-2015 by the following authors:
+Copyright (C) 2013-2014 by the following authors:
 - Rob Clark <robdclark@gmail.com> (robclark)
-- Ilia Mirkin <imirkin@alum.mit.edu> (imirkin)
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -928,11 +926,11 @@ static inline uint32_t A2XX_VGT_DRAW_INITIATOR_INDEX_SIZE(enum pc_di_index_size 
 #define A2XX_VGT_DRAW_INITIATOR_NOT_EOP				0x00001000
 #define A2XX_VGT_DRAW_INITIATOR_SMALL_INDEX			0x00002000
 #define A2XX_VGT_DRAW_INITIATOR_PRE_DRAW_INITIATOR_ENABLE	0x00004000
-#define A2XX_VGT_DRAW_INITIATOR_NUM_INSTANCES__MASK		0xff000000
-#define A2XX_VGT_DRAW_INITIATOR_NUM_INSTANCES__SHIFT		24
-static inline uint32_t A2XX_VGT_DRAW_INITIATOR_NUM_INSTANCES(uint32_t val)
+#define A2XX_VGT_DRAW_INITIATOR_NUM_INDICES__MASK		0xffff0000
+#define A2XX_VGT_DRAW_INITIATOR_NUM_INDICES__SHIFT		16
+static inline uint32_t A2XX_VGT_DRAW_INITIATOR_NUM_INDICES(uint32_t val)
 {
-	return ((val) << A2XX_VGT_DRAW_INITIATOR_NUM_INSTANCES__SHIFT) & A2XX_VGT_DRAW_INITIATOR_NUM_INSTANCES__MASK;
+	return ((val) << A2XX_VGT_DRAW_INITIATOR_NUM_INDICES__SHIFT) & A2XX_VGT_DRAW_INITIATOR_NUM_INDICES__MASK;
 }
 
 #define REG_A2XX_VGT_IMMED_DATA					0x000021fd
@@ -1245,13 +1243,13 @@ static inline uint32_t A2XX_CLEAR_COLOR_ALPHA(uint32_t val)
 #define A2XX_PA_SU_POINT_SIZE_HEIGHT__SHIFT			0
 static inline uint32_t A2XX_PA_SU_POINT_SIZE_HEIGHT(float val)
 {
-	return ((((uint32_t)(val * 16.0))) << A2XX_PA_SU_POINT_SIZE_HEIGHT__SHIFT) & A2XX_PA_SU_POINT_SIZE_HEIGHT__MASK;
+	return ((((uint32_t)(val * 8.0))) << A2XX_PA_SU_POINT_SIZE_HEIGHT__SHIFT) & A2XX_PA_SU_POINT_SIZE_HEIGHT__MASK;
 }
 #define A2XX_PA_SU_POINT_SIZE_WIDTH__MASK			0xffff0000
 #define A2XX_PA_SU_POINT_SIZE_WIDTH__SHIFT			16
 static inline uint32_t A2XX_PA_SU_POINT_SIZE_WIDTH(float val)
 {
-	return ((((uint32_t)(val * 16.0))) << A2XX_PA_SU_POINT_SIZE_WIDTH__SHIFT) & A2XX_PA_SU_POINT_SIZE_WIDTH__MASK;
+	return ((((uint32_t)(val * 8.0))) << A2XX_PA_SU_POINT_SIZE_WIDTH__SHIFT) & A2XX_PA_SU_POINT_SIZE_WIDTH__MASK;
 }
 
 #define REG_A2XX_PA_SU_POINT_MINMAX				0x00002281
@@ -1259,13 +1257,13 @@ static inline uint32_t A2XX_PA_SU_POINT_SIZE_WIDTH(float val)
 #define A2XX_PA_SU_POINT_MINMAX_MIN__SHIFT			0
 static inline uint32_t A2XX_PA_SU_POINT_MINMAX_MIN(float val)
 {
-	return ((((uint32_t)(val * 16.0))) << A2XX_PA_SU_POINT_MINMAX_MIN__SHIFT) & A2XX_PA_SU_POINT_MINMAX_MIN__MASK;
+	return ((((uint32_t)(val * 8.0))) << A2XX_PA_SU_POINT_MINMAX_MIN__SHIFT) & A2XX_PA_SU_POINT_MINMAX_MIN__MASK;
 }
 #define A2XX_PA_SU_POINT_MINMAX_MAX__MASK			0xffff0000
 #define A2XX_PA_SU_POINT_MINMAX_MAX__SHIFT			16
 static inline uint32_t A2XX_PA_SU_POINT_MINMAX_MAX(float val)
 {
-	return ((((uint32_t)(val * 16.0))) << A2XX_PA_SU_POINT_MINMAX_MAX__SHIFT) & A2XX_PA_SU_POINT_MINMAX_MAX__MASK;
+	return ((((uint32_t)(val * 8.0))) << A2XX_PA_SU_POINT_MINMAX_MAX__SHIFT) & A2XX_PA_SU_POINT_MINMAX_MAX__MASK;
 }
 
 #define REG_A2XX_PA_SU_LINE_CNTL				0x00002282
@@ -1273,7 +1271,7 @@ static inline uint32_t A2XX_PA_SU_POINT_MINMAX_MAX(float val)
 #define A2XX_PA_SU_LINE_CNTL_WIDTH__SHIFT			0
 static inline uint32_t A2XX_PA_SU_LINE_CNTL_WIDTH(float val)
 {
-	return ((((uint32_t)(val * 16.0))) << A2XX_PA_SU_LINE_CNTL_WIDTH__SHIFT) & A2XX_PA_SU_LINE_CNTL_WIDTH__MASK;
+	return ((((uint32_t)(val * 8.0))) << A2XX_PA_SU_LINE_CNTL_WIDTH__SHIFT) & A2XX_PA_SU_LINE_CNTL_WIDTH__MASK;
 }
 
 #define REG_A2XX_PA_SC_LINE_STIPPLE				0x00002283

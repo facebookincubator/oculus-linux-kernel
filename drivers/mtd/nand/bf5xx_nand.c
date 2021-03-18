@@ -566,8 +566,7 @@ static int bf5xx_nand_read_page_raw(struct mtd_info *mtd, struct nand_chip *chip
 }
 
 static int bf5xx_nand_write_page_raw(struct mtd_info *mtd,
-		struct nand_chip *chip,	const uint8_t *buf, int oob_required,
-		int page)
+		struct nand_chip *chip,	const uint8_t *buf, int oob_required)
 {
 	bf5xx_nand_write_buf(mtd, buf, mtd->writesize);
 	bf5xx_nand_write_buf(mtd, chip->oob_poi, mtd->oobsize);
@@ -783,7 +782,7 @@ static int bf5xx_nand_probe(struct platform_device *pdev)
 	/* initialise mtd info data struct */
 	mtd 		= &info->mtd;
 	mtd->priv	= chip;
-	mtd->dev.parent = &pdev->dev;
+	mtd->owner	= THIS_MODULE;
 
 	/* initialise the hardware */
 	err = bf5xx_nand_hw_init(info);
@@ -837,6 +836,7 @@ static struct platform_driver bf5xx_nand_driver = {
 	.remove		= bf5xx_nand_remove,
 	.driver		= {
 		.name	= DRV_NAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

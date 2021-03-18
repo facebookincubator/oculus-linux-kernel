@@ -24,12 +24,12 @@ struct nft_immediate_expr {
 };
 
 static void nft_immediate_eval(const struct nft_expr *expr,
-			       struct nft_regs *regs,
+			       struct nft_data data[NFT_REG_MAX + 1],
 			       const struct nft_pktinfo *pkt)
 {
 	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
 
-	nft_data_copy(&regs->data[priv->dreg], &priv->data, priv->dlen);
+	nft_data_copy(&data[priv->dreg], &priv->data);
 }
 
 static const struct nla_policy nft_immediate_policy[NFTA_IMMEDIATE_MAX + 1] = {
@@ -49,15 +49,17 @@ static int nft_immediate_init(const struct nft_ctx *ctx,
 	    tb[NFTA_IMMEDIATE_DATA] == NULL)
 		return -EINVAL;
 
-	err = nft_data_init(ctx, &priv->data, sizeof(priv->data), &desc,
-			    tb[NFTA_IMMEDIATE_DATA]);
+	priv->dreg = ntohl(nla_get_be32(tb[NFTA_IMMEDIATE_DREG]));
+	err = nft_validate_output_register(priv->dreg);
+	if (err < 0)
+		return err;
+
+	err = nft_data_init(ctx, &priv->data, &desc, tb[NFTA_IMMEDIATE_DATA]);
 	if (err < 0)
 		return err;
 	priv->dlen = desc.len;
 
-	priv->dreg = nft_parse_register(tb[NFTA_IMMEDIATE_DREG]);
-	err = nft_validate_register_store(ctx, priv->dreg, &priv->data,
-					  desc.type, desc.len);
+	err = nft_validate_data_load(ctx, priv->dreg, &priv->data, desc.type);
 	if (err < 0)
 		goto err1;
 
@@ -79,7 +81,7 @@ static int nft_immediate_dump(struct sk_buff *skb, const struct nft_expr *expr)
 {
 	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
 
-	if (nft_dump_register(skb, NFTA_IMMEDIATE_DREG, priv->dreg))
+	if (nla_put_be32(skb, NFTA_IMMEDIATE_DREG, htonl(priv->dreg)))
 		goto nla_put_failure;
 
 	return nft_data_dump(skb, NFTA_IMMEDIATE_DATA, &priv->data,

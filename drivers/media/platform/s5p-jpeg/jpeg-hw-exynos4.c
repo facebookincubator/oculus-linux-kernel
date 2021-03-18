@@ -45,20 +45,9 @@ void exynos4_jpeg_set_enc_dec_mode(void __iomem *base, unsigned int mode)
 	}
 }
 
-void __exynos4_jpeg_set_img_fmt(void __iomem *base, unsigned int img_fmt,
-				unsigned int version)
+void exynos4_jpeg_set_img_fmt(void __iomem *base, unsigned int img_fmt)
 {
 	unsigned int reg;
-	unsigned int exynos4_swap_chroma_cbcr;
-	unsigned int exynos4_swap_chroma_crcb;
-
-	if (version == SJPEG_EXYNOS4) {
-		exynos4_swap_chroma_cbcr = EXYNOS4_SWAP_CHROMA_CBCR;
-		exynos4_swap_chroma_crcb = EXYNOS4_SWAP_CHROMA_CRCB;
-	} else {
-		exynos4_swap_chroma_cbcr = EXYNOS5433_SWAP_CHROMA_CBCR;
-		exynos4_swap_chroma_crcb = EXYNOS5433_SWAP_CHROMA_CRCB;
-	}
 
 	reg = readl(base + EXYNOS4_IMG_FMT_REG) &
 			EXYNOS4_ENC_IN_FMT_MASK; /* clear except enc format */
@@ -78,48 +67,48 @@ void __exynos4_jpeg_set_img_fmt(void __iomem *base, unsigned int img_fmt,
 	case V4L2_PIX_FMT_NV24:
 		reg = reg | EXYNOS4_ENC_YUV_444_IMG |
 				EXYNOS4_YUV_444_IP_YUV_444_2P_IMG |
-				exynos4_swap_chroma_cbcr;
+				EXYNOS4_SWAP_CHROMA_CBCR;
 		break;
 	case V4L2_PIX_FMT_NV42:
 		reg = reg | EXYNOS4_ENC_YUV_444_IMG |
 				EXYNOS4_YUV_444_IP_YUV_444_2P_IMG |
-				exynos4_swap_chroma_crcb;
+				EXYNOS4_SWAP_CHROMA_CRCB;
 		break;
 	case V4L2_PIX_FMT_YUYV:
 		reg = reg | EXYNOS4_DEC_YUV_422_IMG |
 				EXYNOS4_YUV_422_IP_YUV_422_1P_IMG |
-				exynos4_swap_chroma_cbcr;
+				EXYNOS4_SWAP_CHROMA_CBCR;
 		break;
 
 	case V4L2_PIX_FMT_YVYU:
 		reg = reg | EXYNOS4_DEC_YUV_422_IMG |
 				EXYNOS4_YUV_422_IP_YUV_422_1P_IMG |
-				exynos4_swap_chroma_crcb;
+				EXYNOS4_SWAP_CHROMA_CRCB;
 		break;
 	case V4L2_PIX_FMT_NV16:
 		reg = reg | EXYNOS4_DEC_YUV_422_IMG |
 				EXYNOS4_YUV_422_IP_YUV_422_2P_IMG |
-				exynos4_swap_chroma_cbcr;
+				EXYNOS4_SWAP_CHROMA_CBCR;
 		break;
 	case V4L2_PIX_FMT_NV61:
 		reg = reg | EXYNOS4_DEC_YUV_422_IMG |
 				EXYNOS4_YUV_422_IP_YUV_422_2P_IMG |
-				exynos4_swap_chroma_crcb;
+				EXYNOS4_SWAP_CHROMA_CRCB;
 		break;
 	case V4L2_PIX_FMT_NV12:
 		reg = reg | EXYNOS4_DEC_YUV_420_IMG |
 				EXYNOS4_YUV_420_IP_YUV_420_2P_IMG |
-				exynos4_swap_chroma_cbcr;
+				EXYNOS4_SWAP_CHROMA_CBCR;
 		break;
 	case V4L2_PIX_FMT_NV21:
 		reg = reg | EXYNOS4_DEC_YUV_420_IMG |
 				EXYNOS4_YUV_420_IP_YUV_420_2P_IMG |
-				exynos4_swap_chroma_crcb;
+				EXYNOS4_SWAP_CHROMA_CRCB;
 		break;
 	case V4L2_PIX_FMT_YUV420:
 		reg = reg | EXYNOS4_DEC_YUV_420_IMG |
 				EXYNOS4_YUV_420_IP_YUV_420_3P_IMG |
-				exynos4_swap_chroma_cbcr;
+				EXYNOS4_SWAP_CHROMA_CBCR;
 		break;
 	default:
 		break;
@@ -129,14 +118,12 @@ void __exynos4_jpeg_set_img_fmt(void __iomem *base, unsigned int img_fmt,
 	writel(reg, base + EXYNOS4_IMG_FMT_REG);
 }
 
-void __exynos4_jpeg_set_enc_out_fmt(void __iomem *base, unsigned int out_fmt,
-				    unsigned int version)
+void exynos4_jpeg_set_enc_out_fmt(void __iomem *base, unsigned int out_fmt)
 {
 	unsigned int reg;
 
 	reg = readl(base + EXYNOS4_IMG_FMT_REG) &
-			~(version == SJPEG_EXYNOS4 ? EXYNOS4_ENC_FMT_MASK :
-			  EXYNOS5433_ENC_FMT_MASK); /* clear enc format */
+			~EXYNOS4_ENC_FMT_MASK; /* clear enc format */
 
 	switch (out_fmt) {
 	case V4L2_JPEG_CHROMA_SUBSAMPLING_GRAY:
@@ -162,18 +149,9 @@ void __exynos4_jpeg_set_enc_out_fmt(void __iomem *base, unsigned int out_fmt,
 	writel(reg, base + EXYNOS4_IMG_FMT_REG);
 }
 
-void exynos4_jpeg_set_interrupt(void __iomem *base, unsigned int version)
+void exynos4_jpeg_set_interrupt(void __iomem *base)
 {
-	unsigned int reg;
-
-	if (version == SJPEG_EXYNOS4) {
-		reg = readl(base + EXYNOS4_INT_EN_REG) & ~EXYNOS4_INT_EN_MASK;
-		writel(reg | EXYNOS4_INT_EN_ALL, base + EXYNOS4_INT_EN_REG);
-	} else {
-		reg = readl(base + EXYNOS4_INT_EN_REG) &
-							~EXYNOS5433_INT_EN_MASK;
-		writel(reg | EXYNOS5433_INT_EN_ALL, base + EXYNOS4_INT_EN_REG);
-	}
+	writel(EXYNOS4_INT_EN_ALL, base + EXYNOS4_INT_EN_REG);
 }
 
 unsigned int exynos4_jpeg_get_int_status(void __iomem *base)
@@ -253,36 +231,6 @@ void exynos4_jpeg_set_encode_tbl_select(void __iomem *base,
 		EXYNOS4_HUFF_TBL_COMP2_AC_0_DC_0 |
 		EXYNOS4_HUFF_TBL_COMP3_AC_1_DC_1;
 
-	writel(reg, base + EXYNOS4_TBL_SEL_REG);
-}
-
-void exynos4_jpeg_set_dec_components(void __iomem *base, int n)
-{
-	unsigned int	reg;
-
-	reg = readl(base + EXYNOS4_TBL_SEL_REG);
-
-	reg |= EXYNOS4_NF(n);
-	writel(reg, base + EXYNOS4_TBL_SEL_REG);
-}
-
-void exynos4_jpeg_select_dec_q_tbl(void __iomem *base, char c, char x)
-{
-	unsigned int	reg;
-
-	reg = readl(base + EXYNOS4_TBL_SEL_REG);
-
-	reg |= EXYNOS4_Q_TBL_COMP(c, x);
-	writel(reg, base + EXYNOS4_TBL_SEL_REG);
-}
-
-void exynos4_jpeg_select_dec_h_tbl(void __iomem *base, char c, char x)
-{
-	unsigned int	reg;
-
-	reg = readl(base + EXYNOS4_TBL_SEL_REG);
-
-	reg |= EXYNOS4_HUFF_TBL_COMP(c, x);
 	writel(reg, base + EXYNOS4_TBL_SEL_REG);
 }
 

@@ -16,7 +16,6 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
-#include <linux/of.h>
 #include <linux/pm_runtime.h>
 
 #include <linux/mmc/card.h>
@@ -156,38 +155,29 @@ static void mmc_bus_shutdown(struct device *dev)
 #ifdef CONFIG_PM_SLEEP
 static int mmc_bus_suspend(struct device *dev)
 {
+	struct mmc_driver *drv = to_mmc_driver(dev->driver);
 	struct mmc_card *card = mmc_dev_to_card(dev);
 	struct mmc_host *host = card->host;
 	int ret;
 
-	ret = pm_generic_suspend(dev);
-	if (ret)
-		return ret;
+	if (dev->driver && drv->suspend) {
+		ret = drv->suspend(card);
+		if (ret)
+			return ret;
+	}
 
 	if (mmc_bus_needs_resume(host))
 		return 0;
 	ret = host->bus_ops->suspend(host);
-
-	/*
-	 * bus_ops->suspend may fail due to some reason
-	 * In such cases if we return error to PM framework
-	 * from here without calling pm_generic_resume then mmc
-	 * request may get stuck since PM framework will assume
-	 * that mmc bus is not suspended (because of error) and
-	 * it won't call resume again.
-	 *
-	 * So in case of error call pm_generic_resume().
-	 */
-	if (ret)
-		pm_generic_resume(dev);
 	return ret;
 }
 
 static int mmc_bus_resume(struct device *dev)
 {
+	struct mmc_driver *drv = to_mmc_driver(dev->driver);
 	struct mmc_card *card = mmc_dev_to_card(dev);
 	struct mmc_host *host = card->host;
-	int ret;
+	int ret = 0;
 
 	if (mmc_bus_manual_resume(host)) {
 		host->bus_resume_flags |= MMC_BUSRESUME_NEEDS_RESUME;
@@ -200,12 +190,14 @@ static int mmc_bus_resume(struct device *dev)
 			mmc_hostname(host), ret);
 
 skip_full_resume:
-	ret = pm_generic_resume(dev);
+	if (dev->driver && drv->resume)
+		ret = drv->resume(card);
+
 	return ret;
 }
 #endif
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static int mmc_runtime_suspend(struct device *dev)
 {
 	struct mmc_card *card = mmc_dev_to_card(dev);
@@ -228,7 +220,7 @@ static int mmc_runtime_resume(struct device *dev)
 	return host->bus_ops->runtime_resume(host);
 }
 
-#endif /* !CONFIG_PM */
+#endif /* !CONFIG_PM_RUNTIME */
 
 static const struct dev_pm_ops mmc_bus_pm_ops = {
 	SET_RUNTIME_PM_OPS(mmc_runtime_suspend, mmc_runtime_resume, NULL)
@@ -388,8 +380,6 @@ int mmc_add_card(struct mmc_card *card)
 #endif
 	mmc_init_context_info(card->host);
 
-	card->dev.of_node = mmc_of_find_child_device(card->host, 0);
-
 	if (mmc_card_sdio(card)) {
 		ret = device_init_wakeup(&card->dev, true);
 		if (ret)
@@ -424,7 +414,6 @@ void mmc_remove_card(struct mmc_card *card)
 				mmc_hostname(card->host), card->rca);
 		}
 		device_del(&card->dev);
-		of_node_put(card->dev.of_node);
 	}
 
 	kfree(card->wr_pack_stats.packing_events);
@@ -432,4 +421,3 @@ void mmc_remove_card(struct mmc_card *card)
 
 	put_device(&card->dev);
 }
-

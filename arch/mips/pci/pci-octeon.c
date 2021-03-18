@@ -323,8 +323,8 @@ static int octeon_write_config(struct pci_bus *bus, unsigned int devfn,
 
 
 static struct pci_ops octeon_pci_ops = {
-	.read	= octeon_read_config,
-	.write	= octeon_write_config,
+	octeon_read_config,
+	octeon_write_config,
 };
 
 static struct resource octeon_pci_mem_resource = {
@@ -704,7 +704,7 @@ static int __init octeon_pci_setup(void)
 
 	if (IS_ERR(platform_device_register_simple("octeon_pci_edac",
 						   -1, NULL, 0)))
-		pr_err("Registration of co_pci_edac failed!\n");
+		pr_err("Registation of co_pci_edac failed!\n");
 
 	octeon_pci_dma_init();
 

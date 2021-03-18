@@ -8,7 +8,10 @@
 
 #include <linux/sizes.h>
 #include <linux/module.h>
-#include <linux/pci.h>
+
+#ifdef CONFIG_MTRR
+#include <asm/mtrr.h>
+#endif
 
 #include "XGI_main.h"
 #include "vb_init.h"
@@ -18,8 +21,8 @@
 #define Index_CR_GPIO_Reg1 0x48
 #define Index_CR_GPIO_Reg3 0x4a
 
-#define GPIOG_EN    BIT(6)
-#define GPIOG_READ  BIT(1)
+#define GPIOG_EN    (1<<6)
+#define GPIOG_READ  (1<<1)
 
 static char *forcecrt2type;
 static char *mode;
@@ -29,7 +32,7 @@ static unsigned int refresh_rate;
 /* -------------------- Macro definitions ---------------------------- */
 
 #ifdef DEBUG
-static void dumpVGAReg(struct xgifb_video_info *xgifb_info)
+static void dumpVGAReg(void)
 {
 	u8 i, reg;
 
@@ -48,7 +51,7 @@ static void dumpVGAReg(struct xgifb_video_info *xgifb_info)
 	}
 }
 #else
-static inline void dumpVGAReg(struct xgifb_video_info *xgifb_info)
+static inline void dumpVGAReg(void)
 {
 }
 #endif
@@ -103,7 +106,7 @@ static int XGIfb_mode_rate_to_ddata(struct vb_device_info *XGI_Pr,
 
 	sr_data = XGI_CRT1Table[index].CR[5];
 
-	HDE = XGI330_RefIndex[RefreshRateTableIndex].XRes >> 3;
+	HDE = (XGI330_RefIndex[RefreshRateTableIndex].XRes >> 3);
 
 	cr_data = XGI_CRT1Table[index].CR[3];
 
@@ -927,7 +930,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 			+ var->hsync_len;
 	unsigned int vtotal = var->upper_margin + var->yres + var->lower_margin
 			+ var->vsync_len;
-#if defined(__BIG_ENDIAN)
+#if defined(__powerpc__)
 	u8 cr_data;
 #endif
 	unsigned int drate = 0, hrate = 0;
@@ -949,7 +952,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 	} pr_debug("var->pixclock=%d, htotal=%d, vtotal=%d\n",
 			var->pixclock, htotal, vtotal);
 
-	if (var->pixclock) {
+	if (var->pixclock && htotal && vtotal) {
 		drate = 1000000000 / var->pixclock;
 		hrate = (drate * 1000) / htotal;
 		xgifb_info->refresh_rate = (unsigned int) (hrate * 2
@@ -1008,8 +1011,8 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 			       XGIbios_mode[xgifb_info->mode_idx].mode_no);
 			return -EINVAL;
 		}
-		info->fix.line_length = (info->var.xres_virtual
-				* info->var.bits_per_pixel) >> 6;
+		info->fix.line_length = ((info->var.xres_virtual
+				* info->var.bits_per_pixel) >> 6);
 
 		xgifb_reg_set(XGISR, IND_SIS_PASSWORD, SIS_PASSWORD);
 
@@ -1041,7 +1044,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 			xgifb_info->DstColor = 0x0000;
 			xgifb_info->XGI310_AccelDepth = 0x00000000;
 			xgifb_info->video_cmap_len = 256;
-#if defined(__BIG_ENDIAN)
+#if defined(__powerpc__)
 			cr_data = xgifb_reg_get(XGICR, 0x4D);
 			xgifb_reg_set(XGICR, 0x4D, (cr_data & 0xE0));
 #endif
@@ -1049,7 +1052,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 		case 16:
 			xgifb_info->DstColor = 0x8000;
 			xgifb_info->XGI310_AccelDepth = 0x00010000;
-#if defined(__BIG_ENDIAN)
+#if defined(__powerpc__)
 			cr_data = xgifb_reg_get(XGICR, 0x4D);
 			xgifb_reg_set(XGICR, 0x4D, ((cr_data & 0xE0) | 0x0B));
 #endif
@@ -1059,7 +1062,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 			xgifb_info->DstColor = 0xC000;
 			xgifb_info->XGI310_AccelDepth = 0x00020000;
 			xgifb_info->video_cmap_len = 16;
-#if defined(__BIG_ENDIAN)
+#if defined(__powerpc__)
 			cr_data = xgifb_reg_get(XGICR, 0x4D);
 			xgifb_reg_set(XGICR, 0x4D, ((cr_data & 0xE0) | 0x15));
 #endif
@@ -1073,7 +1076,7 @@ static int XGIfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 	}
 	XGIfb_bpp_to_var(xgifb_info, var); /*update ARGB info*/
 
-	dumpVGAReg(xgifb_info);
+	dumpVGAReg();
 	return 0;
 }
 
@@ -1548,7 +1551,7 @@ static void XGIfb_detect_VB(struct xgifb_video_info *xgifb_info)
 	}
 }
 
-static bool XGIfb_has_VB(struct xgifb_video_info *xgifb_info)
+static int XGIfb_has_VB(struct xgifb_video_info *xgifb_info)
 {
 	u8 vb_chipid;
 
@@ -1562,9 +1565,9 @@ static bool XGIfb_has_VB(struct xgifb_video_info *xgifb_info)
 		break;
 	default:
 		xgifb_info->hasVB = HASVB_NONE;
-		return false;
+		return 0;
 	}
-	return true;
+	return 1;
 }
 
 static void XGIfb_get_VB_type(struct xgifb_video_info *xgifb_info)
@@ -1767,7 +1770,7 @@ static int xgifb_probe(struct pci_dev *pdev,
 	}
 
 	xgifb_info->video_vbase = hw_info->pjVideoMemoryAddress =
-		ioremap_wc(xgifb_info->video_base, xgifb_info->video_size);
+	ioremap(xgifb_info->video_base, xgifb_info->video_size);
 	xgifb_info->mmio_vbase = ioremap(xgifb_info->mmio_base,
 					    xgifb_info->mmio_size);
 
@@ -2009,22 +2012,30 @@ static int xgifb_probe(struct pci_dev *pdev,
 	XGIfb_get_fix(&fb_info->fix, -1, fb_info);
 	fb_info->pseudo_palette = xgifb_info->pseudo_palette;
 
-	fb_alloc_cmap(&fb_info->cmap, 256, 0);
+	fb_alloc_cmap(&fb_info->cmap, 256 , 0);
 
-	xgifb_info->mtrr = arch_phys_wc_add(xgifb_info->video_base,
-					    xgifb_info->video_size);
+#ifdef CONFIG_MTRR
+	xgifb_info->mtrr = mtrr_add(xgifb_info->video_base,
+		xgifb_info->video_size, MTRR_TYPE_WRCOMB, 1);
+	if (xgifb_info->mtrr >= 0)
+		dev_info(&pdev->dev, "Added MTRR\n");
+#endif
 
 	if (register_framebuffer(fb_info) < 0) {
 		ret = -EINVAL;
 		goto error_mtrr;
 	}
 
-	dumpVGAReg(xgifb_info);
+	dumpVGAReg();
 
 	return 0;
 
 error_mtrr:
-	arch_phys_wc_del(xgifb_info->mtrr);
+#ifdef CONFIG_MTRR
+	if (xgifb_info->mtrr >= 0)
+		mtrr_del(xgifb_info->mtrr, xgifb_info->video_base,
+			xgifb_info->video_size);
+#endif /* CONFIG_MTRR */
 error_1:
 	iounmap(xgifb_info->mmio_vbase);
 	iounmap(xgifb_info->video_vbase);
@@ -2048,7 +2059,11 @@ static void xgifb_remove(struct pci_dev *pdev)
 	struct fb_info *fb_info = xgifb_info->fb_info;
 
 	unregister_framebuffer(fb_info);
-	arch_phys_wc_del(xgifb_info->mtrr);
+#ifdef CONFIG_MTRR
+	if (xgifb_info->mtrr >= 0)
+		mtrr_del(xgifb_info->mtrr, xgifb_info->video_base,
+			xgifb_info->video_size);
+#endif /* CONFIG_MTRR */
 	iounmap(xgifb_info->mmio_vbase);
 	iounmap(xgifb_info->video_vbase);
 	release_mem_region(xgifb_info->mmio_base, xgifb_info->mmio_size);

@@ -173,12 +173,12 @@ static int init_sdio(struct sdiowm_dev *sdev)
 	spin_lock_init(&tx->lock);
 
 	tx->sdu_buf = kmalloc(SDU_TX_BUF_SIZE, GFP_KERNEL);
-	if (!tx->sdu_buf)
+	if (tx->sdu_buf == NULL)
 		goto fail;
 
 	for (i = 0; i < MAX_NR_SDU_BUF; i++) {
 		t = alloc_tx_struct(tx);
-		if (!t) {
+		if (t == NULL) {
 			ret = -ENOMEM;
 			goto fail;
 		}
@@ -192,7 +192,7 @@ static int init_sdio(struct sdiowm_dev *sdev)
 
 	for (i = 0; i < MAX_NR_RX_BUF; i++) {
 		r = alloc_rx_struct(rx);
-		if (!r) {
+		if (r == NULL) {
 			ret = -ENOMEM;
 			goto fail;
 		}
@@ -200,7 +200,7 @@ static int init_sdio(struct sdiowm_dev *sdev)
 	}
 
 	rx->rx_buf = kmalloc(RX_BUF_SIZE, GFP_KERNEL);
-	if (!rx->rx_buf)
+	if (rx->rx_buf == NULL)
 		goto fail;
 
 	return 0;
@@ -223,7 +223,8 @@ static void send_sdio_pkt(struct sdio_func *func, u8 *data, int len)
 		if (ret < 0) {
 			if (ret != -ENOMEDIUM)
 				dev_err(&func->dev,
-					"gdmwms:  error: ret = %d\n", ret);
+					"gdmwms: %s error: ret = %d\n",
+					__func__, ret);
 			goto end_io;
 		}
 	}
@@ -236,7 +237,8 @@ static void send_sdio_pkt(struct sdio_func *func, u8 *data, int len)
 		if (ret < 0) {
 			if (ret != -ENOMEDIUM)
 				dev_err(&func->dev,
-					"gdmwms:  error: ret = %d\n", ret);
+					"gdmwms: %s error: ret = %d\n",
+					__func__, ret);
 			goto end_io;
 		}
 	}
@@ -359,7 +361,7 @@ static void do_tx(struct work_struct *work)
 		is_sdu = 1;
 	}
 
-	if (!is_sdu && !t) {
+	if (!is_sdu && t == NULL) {
 		spin_unlock_irqrestore(&tx->lock, flags);
 		return;
 	}
@@ -393,7 +395,7 @@ static int gdm_sdio_send(void *priv_dev, void *data, int len,
 	cmd_evt = (pkt[0] << 8) | pkt[1];
 	if (cmd_evt == WIMAX_TX_SDU) {
 		t = get_tx_struct(tx, &no_spc);
-		if (!t) {
+		if (t == NULL) {
 			/* This case must not happen. */
 			spin_unlock_irqrestore(&tx->lock, flags);
 			return -ENOSPC;
@@ -407,7 +409,7 @@ static int gdm_sdio_send(void *priv_dev, void *data, int len,
 		t->cb_data = cb_data;
 	} else {
 		t = alloc_tx_struct(tx);
-		if (!t) {
+		if (t == NULL) {
 			spin_unlock_irqrestore(&tx->lock, flags);
 			return -ENOMEM;
 		}
@@ -581,7 +583,7 @@ static int gdm_sdio_receive(void *priv_dev,
 
 	spin_lock_irqsave(&rx->lock, flags);
 	r = get_rx_struct(rx);
-	if (!r) {
+	if (r == NULL) {
 		spin_unlock_irqrestore(&rx->lock, flags);
 		return -ENOMEM;
 	}
@@ -615,12 +617,12 @@ static int sdio_wimax_probe(struct sdio_func *func,
 		return ret;
 
 	phy_dev = kzalloc(sizeof(*phy_dev), GFP_KERNEL);
-	if (!phy_dev) {
+	if (phy_dev == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}
 	sdev = kzalloc(sizeof(*sdev), GFP_KERNEL);
-	if (!sdev) {
+	if (sdev == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}

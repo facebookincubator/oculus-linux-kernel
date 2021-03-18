@@ -472,7 +472,7 @@ static int sel_mmap_policy_fault(struct vm_area_struct *vma,
 	return 0;
 }
 
-static const struct vm_operations_struct sel_mmap_policy_ops = {
+static struct vm_operations_struct sel_mmap_policy_ops = {
 	.fault = sel_mmap_policy_fault,
 	.page_mkwrite = sel_mmap_policy_fault,
 };
@@ -731,11 +731,13 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
 		goto out;
 
-	length = security_context_str_to_sid(scon, &ssid, GFP_KERNEL);
+	length = security_context_to_sid(scon, strlen(scon) + 1, &ssid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
-	length = security_context_str_to_sid(tcon, &tsid, GFP_KERNEL);
+	length = security_context_to_sid(tcon, strlen(tcon) + 1, &tsid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
@@ -817,11 +819,13 @@ static ssize_t sel_write_create(struct file *file, char *buf, size_t size)
 		objname = namebuf;
 	}
 
-	length = security_context_str_to_sid(scon, &ssid, GFP_KERNEL);
+	length = security_context_to_sid(scon, strlen(scon) + 1, &ssid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
-	length = security_context_str_to_sid(tcon, &tsid, GFP_KERNEL);
+	length = security_context_to_sid(tcon, strlen(tcon) + 1, &tsid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
@@ -878,11 +882,13 @@ static ssize_t sel_write_relabel(struct file *file, char *buf, size_t size)
 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
 		goto out;
 
-	length = security_context_str_to_sid(scon, &ssid, GFP_KERNEL);
+	length = security_context_to_sid(scon, strlen(scon) + 1, &ssid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
-	length = security_context_str_to_sid(tcon, &tsid, GFP_KERNEL);
+	length = security_context_to_sid(tcon, strlen(tcon) + 1, &tsid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
@@ -934,7 +940,7 @@ static ssize_t sel_write_user(struct file *file, char *buf, size_t size)
 	if (sscanf(buf, "%s %s", con, user) != 2)
 		goto out;
 
-	length = security_context_str_to_sid(con, &sid, GFP_KERNEL);
+	length = security_context_to_sid(con, strlen(con) + 1, &sid, GFP_KERNEL);
 	if (length)
 		goto out;
 
@@ -994,11 +1000,13 @@ static ssize_t sel_write_member(struct file *file, char *buf, size_t size)
 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
 		goto out;
 
-	length = security_context_str_to_sid(scon, &ssid, GFP_KERNEL);
+	length = security_context_to_sid(scon, strlen(scon) + 1, &ssid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
-	length = security_context_str_to_sid(tcon, &tsid, GFP_KERNEL);
+	length = security_context_to_sid(tcon, strlen(tcon) + 1, &tsid,
+					 GFP_KERNEL);
 	if (length)
 		goto out;
 
@@ -1187,8 +1195,30 @@ static const struct file_operations sel_commit_bools_ops = {
 
 static void sel_remove_entries(struct dentry *de)
 {
-	d_genocide(de);
-	shrink_dcache_parent(de);
+	struct list_head *node;
+
+	spin_lock(&de->d_lock);
+	node = de->d_subdirs.next;
+	while (node != &de->d_subdirs) {
+		struct dentry *d = list_entry(node, struct dentry, d_child);
+
+		spin_lock_nested(&d->d_lock, DENTRY_D_LOCK_NESTED);
+		list_del_init(node);
+
+		if (d->d_inode) {
+			dget_dlock(d);
+			spin_unlock(&de->d_lock);
+			spin_unlock(&d->d_lock);
+			d_delete(d);
+			simple_unlink(de->d_inode, d);
+			dput(d);
+			spin_lock(&de->d_lock);
+		} else
+			spin_unlock(&d->d_lock);
+		node = de->d_subdirs.next;
+	}
+
+	spin_unlock(&de->d_lock);
 }
 
 #define BOOL_DIR_NAME "booleans"
@@ -1638,13 +1668,37 @@ static int sel_make_class_dir_entries(char *classname, int index,
 	return rc;
 }
 
+static void sel_remove_classes(void)
+{
+	struct list_head *class_node;
+
+	list_for_each(class_node, &class_dir->d_subdirs) {
+		struct dentry *class_subdir = list_entry(class_node,
+					struct dentry, d_child);
+		struct list_head *class_subdir_node;
+
+		list_for_each(class_subdir_node, &class_subdir->d_subdirs) {
+			struct dentry *d = list_entry(class_subdir_node,
+						struct dentry, d_child);
+
+			if (d->d_inode)
+				if (d->d_inode->i_mode & S_IFDIR)
+					sel_remove_entries(d);
+		}
+
+		sel_remove_entries(class_subdir);
+	}
+
+	sel_remove_entries(class_dir);
+}
+
 static int sel_make_classes(void)
 {
 	int rc, nclasses, i;
 	char **classes;
 
 	/* delete any existing entries */
-	sel_remove_entries(class_dir);
+	sel_remove_classes();
 
 	rc = security_get_classes(&classes, &nclasses);
 	if (rc)
@@ -1729,7 +1783,7 @@ static struct dentry *sel_make_dir(struct dentry *dir, const char *name,
 	inc_nlink(inode);
 	d_add(dentry, inode);
 	/* bump link count on parent directory, too */
-	inc_nlink(d_inode(dir));
+	inc_nlink(dir->d_inode);
 
 	return dentry;
 }
@@ -1845,6 +1899,7 @@ static struct file_system_type sel_fs_type = {
 };
 
 struct vfsmount *selinuxfs_mount;
+static struct kobject *selinuxfs_kobj;
 
 static int __init init_sel_fs(void)
 {
@@ -1853,13 +1908,13 @@ static int __init init_sel_fs(void)
 	if (!selinux_enabled)
 		return 0;
 
-	err = sysfs_create_mount_point(fs_kobj, "selinux");
-	if (err)
-		return err;
+	selinuxfs_kobj = kobject_create_and_add("selinux", fs_kobj);
+	if (!selinuxfs_kobj)
+		return -ENOMEM;
 
 	err = register_filesystem(&sel_fs_type);
 	if (err) {
-		sysfs_remove_mount_point(fs_kobj, "selinux");
+		kobject_put(selinuxfs_kobj);
 		return err;
 	}
 
@@ -1878,7 +1933,7 @@ __initcall(init_sel_fs);
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
 void exit_sel_fs(void)
 {
-	sysfs_remove_mount_point(fs_kobj, "selinux");
+	kobject_put(selinuxfs_kobj);
 	kern_unmount(selinuxfs_mount);
 	unregister_filesystem(&sel_fs_type);
 }

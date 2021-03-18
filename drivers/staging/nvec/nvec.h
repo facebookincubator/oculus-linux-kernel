@@ -165,18 +165,19 @@ struct nvec_chip {
 	int state;
 };
 
-int nvec_write_async(struct nvec_chip *nvec, const unsigned char *data,
-		     short size);
+extern int nvec_write_async(struct nvec_chip *nvec, const unsigned char *data,
+			     short size);
 
-struct nvec_msg *nvec_write_sync(struct nvec_chip *nvec,
-				 const unsigned char *data, short size);
+extern struct nvec_msg *nvec_write_sync(struct nvec_chip *nvec,
+					const unsigned char *data, short size);
 
-int nvec_register_notifier(struct nvec_chip *nvec,
-			   struct notifier_block *nb,
-			   unsigned int events);
+extern int nvec_register_notifier(struct nvec_chip *nvec,
+				  struct notifier_block *nb,
+				  unsigned int events);
 
-int nvec_unregister_notifier(struct nvec_chip *dev, struct notifier_block *nb);
+extern int nvec_unregister_notifier(struct nvec_chip *dev,
+				    struct notifier_block *nb);
 
-void nvec_msg_free(struct nvec_chip *nvec, struct nvec_msg *msg);
+extern void nvec_msg_free(struct nvec_chip *nvec, struct nvec_msg *msg);
 
 #endif

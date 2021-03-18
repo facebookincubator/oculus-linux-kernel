@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM FD
+* Qualcomm MSM FD
 
 Face detection hardware block.
 The Face Detection Hardware Block will offload processing

@@ -112,23 +112,20 @@ static int __init edac_init(void)
 
 	err = edac_mc_sysfs_init();
 	if (err)
-		goto err_sysfs;
+		goto error;
 
 	edac_debugfs_init();
 
+	/* Setup/Initialize the workq for this core */
 	err = edac_workqueue_setup();
 	if (err) {
-		edac_printk(KERN_ERR, EDAC_MC, "Failure initializing workqueue\n");
-		goto err_wq;
+		edac_printk(KERN_ERR, EDAC_MC, "init WorkQueue failure\n");
+		goto error;
 	}
 
 	return 0;
 
-err_wq:
-	edac_debugfs_exit();
-	edac_mc_sysfs_exit();
-
-err_sysfs:
+error:
 	return err;
 }
 

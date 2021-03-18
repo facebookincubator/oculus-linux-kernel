@@ -68,32 +68,32 @@
 #define EINT_CON_MASK		0xF
 #define EINT_CON_LEN		4
 
-static const struct samsung_pin_bank_type bank_type_4bit_off = {
+static struct samsung_pin_bank_type bank_type_4bit_off = {
 	.fld_width = { 4, 1, 2, 0, 2, 2, },
 	.reg_offset = { 0x00, 0x04, 0x08, 0, 0x0c, 0x10, },
 };
 
-static const struct samsung_pin_bank_type bank_type_4bit_alive = {
+static struct samsung_pin_bank_type bank_type_4bit_alive = {
 	.fld_width = { 4, 1, 2, },
 	.reg_offset = { 0x00, 0x04, 0x08, },
 };
 
-static const struct samsung_pin_bank_type bank_type_4bit2_off = {
+static struct samsung_pin_bank_type bank_type_4bit2_off = {
 	.fld_width = { 4, 1, 2, 0, 2, 2, },
 	.reg_offset = { 0x00, 0x08, 0x0c, 0, 0x10, 0x14, },
 };
 
-static const struct samsung_pin_bank_type bank_type_4bit2_alive = {
+static struct samsung_pin_bank_type bank_type_4bit2_alive = {
 	.fld_width = { 4, 1, 2, },
 	.reg_offset = { 0x00, 0x08, 0x0c, },
 };
 
-static const struct samsung_pin_bank_type bank_type_2bit_off = {
+static struct samsung_pin_bank_type bank_type_2bit_off = {
 	.fld_width = { 2, 1, 2, 0, 2, 2, },
 	.reg_offset = { 0x00, 0x04, 0x08, 0, 0x0c, 0x10, },
 };
 
-static const struct samsung_pin_bank_type bank_type_2bit_alive = {
+static struct samsung_pin_bank_type bank_type_2bit_alive = {
 	.fld_width = { 2, 1, 2, },
 	.reg_offset = { 0x00, 0x04, 0x08, },
 };
@@ -260,19 +260,19 @@ static int s3c64xx_irq_get_trigger(unsigned int type)
 	return trigger;
 }
 
-static void s3c64xx_irq_set_handler(struct irq_data *d, unsigned int type)
+static void s3c64xx_irq_set_handler(unsigned int irq, unsigned int type)
 {
 	/* Edge- and level-triggered interrupts need different handlers */
 	if (type & IRQ_TYPE_EDGE_BOTH)
-		irq_set_handler_locked(d, handle_edge_irq);
+		__irq_set_handler_locked(irq, handle_edge_irq);
 	else
-		irq_set_handler_locked(d, handle_level_irq);
+		__irq_set_handler_locked(irq, handle_level_irq);
 }
 
 static void s3c64xx_irq_set_function(struct samsung_pinctrl_drv_data *d,
 					struct samsung_pin_bank *bank, int pin)
 {
-	const struct samsung_pin_bank_type *bank_type = bank->type;
+	struct samsung_pin_bank_type *bank_type = bank->type;
 	unsigned long flags;
 	void __iomem *reg;
 	u8 shift;
@@ -356,7 +356,7 @@ static int s3c64xx_gpio_irq_set_type(struct irq_data *irqd, unsigned int type)
 		return -EINVAL;
 	}
 
-	s3c64xx_irq_set_handler(irqd, type);
+	s3c64xx_irq_set_handler(irqd->irq, type);
 
 	/* Set up interrupt trigger */
 	reg = d->virt_base + EINTCON_REG(bank->eint_offset);
@@ -395,6 +395,7 @@ static int s3c64xx_gpio_irq_map(struct irq_domain *h, unsigned int virq,
 	irq_set_chip_and_handler(virq,
 				&s3c64xx_gpio_irq_chip, handle_level_irq);
 	irq_set_chip_data(virq, bank);
+	set_irq_flags(virq, IRQF_VALID);
 
 	return 0;
 }
@@ -407,10 +408,10 @@ static const struct irq_domain_ops s3c64xx_gpio_irqd_ops = {
 	.xlate	= irq_domain_xlate_twocell,
 };
 
-static void s3c64xx_eint_gpio_irq(struct irq_desc *desc)
+static void s3c64xx_eint_gpio_irq(unsigned int irq, struct irq_desc *desc)
 {
-	struct irq_chip *chip = irq_desc_get_chip(desc);
-	struct s3c64xx_eint_gpio_data *data = irq_desc_get_handler_data(desc);
+	struct irq_chip *chip = irq_get_chip(irq);
+	struct s3c64xx_eint_gpio_data *data = irq_get_handler_data(irq);
 	struct samsung_pinctrl_drv_data *drvdata = data->drvdata;
 
 	chained_irq_enter(chip, desc);
@@ -467,8 +468,8 @@ static int s3c64xx_eint_gpio_init(struct samsung_pinctrl_drv_data *d)
 	}
 
 	nr_domains = 0;
-	bank = d->pin_banks;
-	for (i = 0; i < d->nr_banks; ++i, ++bank) {
+	bank = d->ctrl->pin_banks;
+	for (i = 0; i < d->ctrl->nr_banks; ++i, ++bank) {
 		unsigned int nr_eints;
 		unsigned int mask;
 
@@ -496,16 +497,17 @@ static int s3c64xx_eint_gpio_init(struct samsung_pinctrl_drv_data *d)
 	}
 	data->drvdata = d;
 
-	bank = d->pin_banks;
+	bank = d->ctrl->pin_banks;
 	nr_domains = 0;
-	for (i = 0; i < d->nr_banks; ++i, ++bank) {
+	for (i = 0; i < d->ctrl->nr_banks; ++i, ++bank) {
 		if (bank->eint_type != EINT_TYPE_GPIO)
 			continue;
 
 		data->domains[nr_domains++] = bank->irq_domain;
 	}
 
-	irq_set_chained_handler_and_data(d->irq, s3c64xx_eint_gpio_irq, data);
+	irq_set_chained_handler(d->irq, s3c64xx_eint_gpio_irq);
+	irq_set_handler_data(d->irq, data);
 
 	return 0;
 }
@@ -566,7 +568,7 @@ static int s3c64xx_eint0_irq_set_type(struct irq_data *irqd, unsigned int type)
 		return -EINVAL;
 	}
 
-	s3c64xx_irq_set_handler(irqd, type);
+	s3c64xx_irq_set_handler(irqd->irq, type);
 
 	/* Set up interrupt trigger */
 	reg = d->virt_base + EINT0CON0_REG;
@@ -598,10 +600,11 @@ static struct irq_chip s3c64xx_eint0_irq_chip = {
 	.irq_set_type	= s3c64xx_eint0_irq_set_type,
 };
 
-static inline void s3c64xx_irq_demux_eint(struct irq_desc *desc, u32 range)
+static inline void s3c64xx_irq_demux_eint(unsigned int irq,
+					struct irq_desc *desc, u32 range)
 {
-	struct irq_chip *chip = irq_desc_get_chip(desc);
-	struct s3c64xx_eint0_data *data = irq_desc_get_handler_data(desc);
+	struct irq_chip *chip = irq_get_chip(irq);
+	struct s3c64xx_eint0_data *data = irq_get_handler_data(irq);
 	struct samsung_pinctrl_drv_data *drvdata = data->drvdata;
 	unsigned int pend, mask;
 
@@ -614,10 +617,11 @@ static inline void s3c64xx_irq_demux_eint(struct irq_desc *desc, u32 range)
 	pend &= range;
 
 	while (pend) {
-		unsigned int virq, irq;
+		unsigned int virq;
 
 		irq = fls(pend) - 1;
 		pend &= ~(1 << irq);
+
 		virq = irq_linear_revmap(data->domains[irq], data->pins[irq]);
 		/*
 		 * Something must be really wrong if an unmapped EINT
@@ -631,24 +635,24 @@ static inline void s3c64xx_irq_demux_eint(struct irq_desc *desc, u32 range)
 	chained_irq_exit(chip, desc);
 }
 
-static void s3c64xx_demux_eint0_3(struct irq_desc *desc)
+static void s3c64xx_demux_eint0_3(unsigned int irq, struct irq_desc *desc)
 {
-	s3c64xx_irq_demux_eint(desc, 0xf);
+	s3c64xx_irq_demux_eint(irq, desc, 0xf);
 }
 
-static void s3c64xx_demux_eint4_11(struct irq_desc *desc)
+static void s3c64xx_demux_eint4_11(unsigned int irq, struct irq_desc *desc)
 {
-	s3c64xx_irq_demux_eint(desc, 0xff0);
+	s3c64xx_irq_demux_eint(irq, desc, 0xff0);
 }
 
-static void s3c64xx_demux_eint12_19(struct irq_desc *desc)
+static void s3c64xx_demux_eint12_19(unsigned int irq, struct irq_desc *desc)
 {
-	s3c64xx_irq_demux_eint(desc, 0xff000);
+	s3c64xx_irq_demux_eint(irq, desc, 0xff000);
 }
 
-static void s3c64xx_demux_eint20_27(struct irq_desc *desc)
+static void s3c64xx_demux_eint20_27(unsigned int irq, struct irq_desc *desc)
 {
-	s3c64xx_irq_demux_eint(desc, 0xff00000);
+	s3c64xx_irq_demux_eint(irq, desc, 0xff00000);
 }
 
 static irq_flow_handler_t s3c64xx_eint0_handlers[NUM_EINT0_IRQ] = {
@@ -670,6 +674,7 @@ static int s3c64xx_eint0_irq_map(struct irq_domain *h, unsigned int virq,
 	irq_set_chip_and_handler(virq,
 				&s3c64xx_eint0_irq_chip, handle_level_irq);
 	irq_set_chip_data(virq, ddata);
+	set_irq_flags(virq, IRQF_VALID);
 
 	return 0;
 }
@@ -726,13 +731,12 @@ static int s3c64xx_eint_eint0_init(struct samsung_pinctrl_drv_data *d)
 			return -ENXIO;
 		}
 
-		irq_set_chained_handler_and_data(irq,
-						 s3c64xx_eint0_handlers[i],
-						 data);
+		irq_set_chained_handler(irq, s3c64xx_eint0_handlers[i]);
+		irq_set_handler_data(irq, data);
 	}
 
-	bank = d->pin_banks;
-	for (i = 0; i < d->nr_banks; ++i, ++bank) {
+	bank = d->ctrl->pin_banks;
+	for (i = 0; i < d->ctrl->nr_banks; ++i, ++bank) {
 		struct s3c64xx_eint0_domain_data *ddata;
 		unsigned int nr_eints;
 		unsigned int mask;
@@ -776,7 +780,7 @@ static int s3c64xx_eint_eint0_init(struct samsung_pinctrl_drv_data *d)
 }
 
 /* pin banks of s3c64xx pin-controller 0 */
-static const struct samsung_pin_bank_data s3c64xx_pin_banks0[] __initconst = {
+static struct samsung_pin_bank s3c64xx_pin_banks0[] = {
 	PIN_BANK_4BIT_EINTG(8, 0x000, "gpa", 0),
 	PIN_BANK_4BIT_EINTG(7, 0x020, "gpb", 8),
 	PIN_BANK_4BIT_EINTG(8, 0x040, "gpc", 16),
@@ -800,12 +804,13 @@ static const struct samsung_pin_bank_data s3c64xx_pin_banks0[] __initconst = {
  * Samsung pinctrl driver data for S3C64xx SoC. S3C64xx SoC includes
  * one gpio/pin-mux/pinconfig controller.
  */
-const struct samsung_pin_ctrl s3c64xx_pin_ctrl[] __initconst = {
+struct samsung_pin_ctrl s3c64xx_pin_ctrl[] = {
 	{
 		/* pin-controller instance 1 data */
 		.pin_banks	= s3c64xx_pin_banks0,
 		.nr_banks	= ARRAY_SIZE(s3c64xx_pin_banks0),
 		.eint_gpio_init = s3c64xx_eint_gpio_init,
 		.eint_wkup_init = s3c64xx_eint_eint0_init,
+		.label		= "S3C64xx-GPIO",
 	},
 };

@@ -62,12 +62,12 @@ static void r500_vbl_irq_set_state(struct drm_device *dev, u32 mask, int state)
 		RADEON_WRITE(R500_DxMODE_INT_MASK, dev_priv->r500_disp_irq_reg);
 }
 
-int radeon_enable_vblank(struct drm_device *dev, unsigned int pipe)
+int radeon_enable_vblank(struct drm_device *dev, int crtc)
 {
 	drm_radeon_private_t *dev_priv = dev->dev_private;
 
 	if ((dev_priv->flags & RADEON_FAMILY_MASK) >= CHIP_RS600) {
-		switch (pipe) {
+		switch (crtc) {
 		case 0:
 			r500_vbl_irq_set_state(dev, R500_D1MODE_INT_MASK, 1);
 			break;
@@ -75,12 +75,12 @@ int radeon_enable_vblank(struct drm_device *dev, unsigned int pipe)
 			r500_vbl_irq_set_state(dev, R500_D2MODE_INT_MASK, 1);
 			break;
 		default:
-			DRM_ERROR("tried to enable vblank on non-existent crtc %u\n",
-				  pipe);
+			DRM_ERROR("tried to enable vblank on non-existent crtc %d\n",
+				  crtc);
 			return -EINVAL;
 		}
 	} else {
-		switch (pipe) {
+		switch (crtc) {
 		case 0:
 			radeon_irq_set_state(dev, RADEON_CRTC_VBLANK_MASK, 1);
 			break;
@@ -88,8 +88,8 @@ int radeon_enable_vblank(struct drm_device *dev, unsigned int pipe)
 			radeon_irq_set_state(dev, RADEON_CRTC2_VBLANK_MASK, 1);
 			break;
 		default:
-			DRM_ERROR("tried to enable vblank on non-existent crtc %u\n",
-				  pipe);
+			DRM_ERROR("tried to enable vblank on non-existent crtc %d\n",
+				  crtc);
 			return -EINVAL;
 		}
 	}
@@ -97,12 +97,12 @@ int radeon_enable_vblank(struct drm_device *dev, unsigned int pipe)
 	return 0;
 }
 
-void radeon_disable_vblank(struct drm_device *dev, unsigned int pipe)
+void radeon_disable_vblank(struct drm_device *dev, int crtc)
 {
 	drm_radeon_private_t *dev_priv = dev->dev_private;
 
 	if ((dev_priv->flags & RADEON_FAMILY_MASK) >= CHIP_RS600) {
-		switch (pipe) {
+		switch (crtc) {
 		case 0:
 			r500_vbl_irq_set_state(dev, R500_D1MODE_INT_MASK, 0);
 			break;
@@ -110,12 +110,12 @@ void radeon_disable_vblank(struct drm_device *dev, unsigned int pipe)
 			r500_vbl_irq_set_state(dev, R500_D2MODE_INT_MASK, 0);
 			break;
 		default:
-			DRM_ERROR("tried to enable vblank on non-existent crtc %u\n",
-				  pipe);
+			DRM_ERROR("tried to enable vblank on non-existent crtc %d\n",
+				  crtc);
 			break;
 		}
 	} else {
-		switch (pipe) {
+		switch (crtc) {
 		case 0:
 			radeon_irq_set_state(dev, RADEON_CRTC_VBLANK_MASK, 0);
 			break;
@@ -123,8 +123,8 @@ void radeon_disable_vblank(struct drm_device *dev, unsigned int pipe)
 			radeon_irq_set_state(dev, RADEON_CRTC2_VBLANK_MASK, 0);
 			break;
 		default:
-			DRM_ERROR("tried to enable vblank on non-existent crtc %u\n",
-				  pipe);
+			DRM_ERROR("tried to enable vblank on non-existent crtc %d\n",
+				  crtc);
 			break;
 		}
 	}
@@ -255,7 +255,7 @@ static int radeon_wait_irq(struct drm_device * dev, int swi_nr)
 	return ret;
 }
 
-u32 radeon_get_vblank_counter(struct drm_device *dev, unsigned int pipe)
+u32 radeon_get_vblank_counter(struct drm_device *dev, int crtc)
 {
 	drm_radeon_private_t *dev_priv = dev->dev_private;
 
@@ -264,18 +264,18 @@ u32 radeon_get_vblank_counter(struct drm_device *dev, unsigned int pipe)
 		return -EINVAL;
 	}
 
-	if (pipe > 1) {
-		DRM_ERROR("Invalid crtc %u\n", pipe);
+	if (crtc < 0 || crtc > 1) {
+		DRM_ERROR("Invalid crtc %d\n", crtc);
 		return -EINVAL;
 	}
 
 	if ((dev_priv->flags & RADEON_FAMILY_MASK) >= CHIP_RS600) {
-		if (pipe == 0)
+		if (crtc == 0)
 			return RADEON_READ(R500_D1CRTC_FRAME_COUNT);
 		else
 			return RADEON_READ(R500_D2CRTC_FRAME_COUNT);
 	} else {
-		if (pipe == 0)
+		if (crtc == 0)
 			return RADEON_READ(RADEON_CRTC_CRNT_FRAME);
 		else
 			return RADEON_READ(RADEON_CRTC2_CRNT_FRAME);

@@ -223,6 +223,7 @@ static int xgene_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	irq_domain_set_info(domain, virq, msi_irq,
 			    &xgene_msi_bottom_irq_chip, domain->host_data,
 			    handle_simple_irq, NULL, NULL);
+	set_irq_flags(virq, IRQF_VALID);
 
 	return 0;
 }
@@ -256,7 +257,7 @@ static int xgene_allocate_domains(struct xgene_msi *msi)
 	if (!msi->inner_domain)
 		return -ENOMEM;
 
-	msi->msi_domain = pci_msi_create_irq_domain(of_node_to_fwnode(msi->node),
+	msi->msi_domain = pci_msi_create_irq_domain(msi->node,
 						    &xgene_msi_domain_info,
 						    msi->inner_domain);
 
@@ -295,7 +296,7 @@ static int xgene_msi_init_allocator(struct xgene_msi *xgene_msi)
 	return 0;
 }
 
-static void xgene_msi_isr(struct irq_desc *desc)
+static void xgene_msi_isr(unsigned int irq, struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct xgene_msi_group *msi_groups;
@@ -367,8 +368,10 @@ static int xgene_msi_remove(struct platform_device *pdev)
 
 	for (i = 0; i < NR_HW_IRQS; i++) {
 		virq = msi->msi_groups[i].gic_irq;
-		if (virq != 0)
-			irq_set_chained_handler_and_data(virq, NULL, NULL);
+		if (virq != 0) {
+			irq_set_chained_handler(virq, NULL);
+			irq_set_handler_data(virq, NULL);
+		}
 	}
 	kfree(msi->msi_groups);
 
@@ -418,8 +421,8 @@ static int xgene_msi_hwirq_alloc(unsigned int cpu)
 		}
 
 		if (err) {
-			irq_set_chained_handler_and_data(msi_group->gic_irq,
-							 NULL, NULL);
+			irq_set_chained_handler(msi_group->gic_irq, NULL);
+			irq_set_handler_data(msi_group->gic_irq, NULL);
 			return err;
 		}
 	}
@@ -438,8 +441,8 @@ static void xgene_msi_hwirq_free(unsigned int cpu)
 		if (!msi_group->gic_irq)
 			continue;
 
-		irq_set_chained_handler_and_data(msi_group->gic_irq, NULL,
-						 NULL);
+		irq_set_chained_handler(msi_group->gic_irq, NULL);
+		irq_set_handler_data(msi_group->gic_irq, NULL);
 	}
 }
 
@@ -570,6 +573,7 @@ error:
 static struct platform_driver xgene_msi_driver = {
 	.driver = {
 		.name = "xgene-msi",
+		.owner = THIS_MODULE,
 		.of_match_table = xgene_msi_match_table,
 	},
 	.probe = xgene_msi_probe,

@@ -289,7 +289,7 @@ static ssize_t show_port_gid(struct ib_port *p, struct port_attribute *attr,
 	union ib_gid gid;
 	ssize_t ret;
 
-	ret = ib_query_gid(p->ibdev, p->port_num, tab_attr->index, &gid, NULL);
+	ret = ib_query_gid(p->ibdev, p->port_num, tab_attr->index, &gid);
 	if (ret)
 		return ret;
 
@@ -326,8 +326,6 @@ static ssize_t show_pma_counter(struct ib_port *p, struct port_attribute *attr,
 	int width  = (tab_attr->index >> 16) & 0xff;
 	struct ib_mad *in_mad  = NULL;
 	struct ib_mad *out_mad = NULL;
-	size_t mad_size = sizeof(*out_mad);
-	u16 out_mad_pkey_index = 0;
 	ssize_t ret;
 
 	if (!p->ibdev->process_mad)
@@ -349,10 +347,7 @@ static ssize_t show_pma_counter(struct ib_port *p, struct port_attribute *attr,
 	in_mad->data[41] = p->port_num;	/* PortSelect field */
 
 	if ((p->ibdev->process_mad(p->ibdev, IB_MAD_IGNORE_MKEY,
-		 p->port_num, NULL, NULL,
-		 (const struct ib_mad_hdr *)in_mad, mad_size,
-		 (struct ib_mad_hdr *)out_mad, &mad_size,
-		 &out_mad_pkey_index) &
+		 p->port_num, NULL, NULL, in_mad, out_mad) &
 	     (IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY)) !=
 	    (IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY)) {
 		ret = -EINVAL;
@@ -456,6 +451,28 @@ static struct kobj_type port_type = {
 	.sysfs_ops     = &port_sysfs_ops,
 	.default_attrs = port_default_attrs
 };
+
+static void ib_device_release(struct device *device)
+{
+	struct ib_device *dev = container_of(device, struct ib_device, dev);
+
+	kfree(dev);
+}
+
+static int ib_device_uevent(struct device *device,
+			    struct kobj_uevent_env *env)
+{
+	struct ib_device *dev = container_of(device, struct ib_device, dev);
+
+	if (add_uevent_var(env, "NAME=%s", dev->name))
+		return -ENOMEM;
+
+	/*
+	 * It would be nice to pass the node GUID with the event...
+	 */
+
+	return 0;
+}
 
 static struct attribute **
 alloc_group_attrs(ssize_t (*show)(struct ib_port *,
@@ -679,6 +696,12 @@ static struct device_attribute *ib_class_attributes[] = {
 	&dev_attr_node_desc
 };
 
+static struct class ib_class = {
+	.name    = "infiniband",
+	.dev_release = ib_device_release,
+	.dev_uevent = ib_device_uevent,
+};
+
 /* Show a given an attribute in the statistics group */
 static ssize_t show_protocol_stat(const struct device *device,
 			    struct device_attribute *attr, char *buf,
@@ -817,12 +840,14 @@ int ib_device_register_sysfs(struct ib_device *device,
 	int ret;
 	int i;
 
-	device->dev.parent = device->dma_device;
-	ret = dev_set_name(class_dev, "%s", device->name);
-	if (ret)
-		return ret;
+	class_dev->class      = &ib_class;
+	class_dev->parent     = device->dma_device;
+	dev_set_name(class_dev, "%s", device->name);
+	dev_set_drvdata(class_dev, device);
 
-	ret = device_add(class_dev);
+	INIT_LIST_HEAD(&device->port_list);
+
+	ret = device_register(class_dev);
 	if (ret)
 		goto err;
 
@@ -839,7 +864,7 @@ int ib_device_register_sysfs(struct ib_device *device,
 		goto err_put;
 	}
 
-	if (rdma_cap_ib_switch(device)) {
+	if (device->node_type == RDMA_NODE_IB_SWITCH) {
 		ret = add_port(device, 0, port_callback);
 		if (ret)
 			goto err_put;
@@ -884,4 +909,14 @@ void ib_device_unregister_sysfs(struct ib_device *device)
 		device_remove_file(&device->dev, ib_class_attributes[i]);
 
 	device_unregister(&device->dev);
+}
+
+int ib_sysfs_setup(void)
+{
+	return class_register(&ib_class);
+}
+
+void ib_sysfs_cleanup(void)
+{
+	class_unregister(&ib_class);
 }

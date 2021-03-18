@@ -277,15 +277,13 @@ static int mrst_procfs(struct device *dev, struct seq_file *seq)
 	valid = vrtc_cmos_read(RTC_VALID);
 	spin_unlock_irq(&rtc_lock);
 
-	seq_printf(seq,
-		   "periodic_IRQ\t: %s\n"
-		   "alarm\t\t: %s\n"
-		   "BCD\t\t: no\n"
-		   "periodic_freq\t: daily (not adjustable)\n",
-		   (rtc_control & RTC_PIE) ? "on" : "off",
-		   (rtc_control & RTC_AIE) ? "on" : "off");
-
-	return 0;
+	return seq_printf(seq,
+			"periodic_IRQ\t: %s\n"
+			"alarm\t\t: %s\n"
+			"BCD\t\t: no\n"
+			"periodic_freq\t: daily (not adjustable)\n",
+			(rtc_control & RTC_PIE) ? "on" : "off",
+			(rtc_control & RTC_AIE) ? "on" : "off");
 }
 
 #else
@@ -415,8 +413,8 @@ static void rtc_mrst_do_remove(struct device *dev)
 	mrst->dev = NULL;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int mrst_suspend(struct device *dev)
+#ifdef	CONFIG_PM
+static int mrst_suspend(struct device *dev, pm_message_t mesg)
 {
 	struct mrst_rtc	*mrst = dev_get_drvdata(dev);
 	unsigned char	tmp;
@@ -455,7 +453,7 @@ static int mrst_suspend(struct device *dev)
  */
 static inline int mrst_poweroff(struct device *dev)
 {
-	return mrst_suspend(dev);
+	return mrst_suspend(dev, PMSG_HIBERNATE);
 }
 
 static int mrst_resume(struct device *dev)
@@ -492,11 +490,9 @@ static int mrst_resume(struct device *dev)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(mrst_pm_ops, mrst_suspend, mrst_resume);
-#define MRST_PM_OPS (&mrst_pm_ops)
-
 #else
-#define MRST_PM_OPS NULL
+#define	mrst_suspend	NULL
+#define	mrst_resume	NULL
 
 static inline int mrst_poweroff(struct device *dev)
 {
@@ -533,8 +529,9 @@ static struct platform_driver vrtc_mrst_platform_driver = {
 	.remove		= vrtc_mrst_platform_remove,
 	.shutdown	= vrtc_mrst_platform_shutdown,
 	.driver = {
-		.name	= driver_name,
-		.pm	= MRST_PM_OPS,
+		.name		= (char *) driver_name,
+		.suspend	= mrst_suspend,
+		.resume		= mrst_resume,
 	}
 };
 

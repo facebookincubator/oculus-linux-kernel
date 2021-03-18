@@ -13,6 +13,7 @@
  *
  */
 #include <linux/irq.h>
+#include <linux/bootmem.h>
 #include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -110,7 +111,7 @@ static int fsl_msi_init_allocator(struct fsl_msi *msi_data)
 	int rc, hwirq;
 
 	rc = msi_bitmap_alloc(&msi_data->bitmap, NR_MSI_IRQS_MAX,
-			      irq_domain_get_of_node(msi_data->irqhost));
+			      msi_data->irqhost->of_node);
 	if (rc)
 		return rc;
 
@@ -130,7 +131,7 @@ static void fsl_teardown_msi_irqs(struct pci_dev *pdev)
 	struct fsl_msi *msi_data;
 	irq_hw_number_t hwirq;
 
-	for_each_pci_msi_entry(entry, pdev) {
+	list_for_each_entry(entry, &pdev->msi_list, list) {
 		if (entry->irq == NO_IRQ)
 			continue;
 		hwirq = virq_to_hw(entry->irq);
@@ -163,17 +164,7 @@ static void fsl_compose_msi_msg(struct pci_dev *pdev, int hwirq,
 	msg->address_lo = lower_32_bits(address);
 	msg->address_hi = upper_32_bits(address);
 
-	/*
-	 * MPIC version 2.0 has erratum PIC1. It causes
-	 * that neither MSI nor MSI-X can work fine.
-	 * This is a workaround to allow MSI-X to function
-	 * properly. It only works for MSI-X, we prevent
-	 * MSI on buggy chips in fsl_setup_msi_irqs().
-	 */
-	if (msi_data->feature & MSI_HW_ERRATA_ENDIAN)
-		msg->data = __swab32(hwirq);
-	else
-		msg->data = hwirq;
+	msg->data = hwirq;
 
 	pr_debug("%s: allocated srs: %d, ibs: %d\n", __func__,
 		 (hwirq >> msi_data->srs_shift) & MSI_SRS_MASK,
@@ -191,16 +182,8 @@ static int fsl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 	struct msi_msg msg;
 	struct fsl_msi *msi_data;
 
-	if (type == PCI_CAP_ID_MSI) {
-		/*
-		 * MPIC version 2.0 has erratum PIC1. For now MSI
-		 * could not work. So check to prevent MSI from
-		 * being used on the board with this erratum.
-		 */
-		list_for_each_entry(msi_data, &msi_head, list)
-			if (msi_data->feature & MSI_HW_ERRATA_ENDIAN)
-				return -EINVAL;
-	}
+	if (type == PCI_CAP_ID_MSIX)
+		pr_debug("fslmsi: MSI-X untested, trying anyway.\n");
 
 	/*
 	 * If the PCI node has an fsl,msi property, then we need to use it
@@ -220,7 +203,7 @@ static int fsl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 		}
 	}
 
-	for_each_pci_msi_entry(entry, pdev) {
+	list_for_each_entry(entry, &pdev->msi_list, list) {
 		/*
 		 * Loop over all the MSI devices until we find one that has an
 		 * available interrupt.
@@ -406,7 +389,6 @@ static int fsl_of_msi_probe(struct platform_device *dev)
 	const struct fsl_msi_feature *features;
 	int len;
 	u32 offset;
-	struct pci_controller *phb;
 
 	match = of_match_device(fsl_of_msi_ids, &dev->dev);
 	if (!match)
@@ -465,11 +447,6 @@ static int fsl_of_msi_probe(struct platform_device *dev)
 	}
 
 	msi->feature = features->fsl_pic_ip;
-
-	/* For erratum PIC1 on MPIC version 2.0*/
-	if ((features->fsl_pic_ip & FSL_PIC_IP_MASK) == FSL_PIC_IP_MPIC
-			&& (fsl_mpic_primary_get_version() == 0x0200))
-		msi->feature |= MSI_HW_ERRATA_ENDIAN;
 
 	/*
 	 * Remember the phandle, so that we can match with any PCI nodes
@@ -543,20 +520,14 @@ static int fsl_of_msi_probe(struct platform_device *dev)
 
 	list_add_tail(&msi->list, &msi_head);
 
-	/*
-	 * Apply the MSI ops to all the controllers.
-	 * It doesn't hurt to reassign the same ops,
-	 * but bail out if we find another MSI driver.
-	 */
-	list_for_each_entry(phb, &hose_list, list_node) {
-		if (!phb->controller_ops.setup_msi_irqs) {
-			phb->controller_ops.setup_msi_irqs = fsl_setup_msi_irqs;
-			phb->controller_ops.teardown_msi_irqs = fsl_teardown_msi_irqs;
-		} else if (phb->controller_ops.setup_msi_irqs != fsl_setup_msi_irqs) {
-			dev_err(&dev->dev, "Different MSI driver already installed!\n");
-			err = -ENODEV;
-			goto error_out;
-		}
+	/* The multiple setting ppc_md.setup_msi_irqs will not harm things */
+	if (!ppc_md.setup_msi_irqs) {
+		ppc_md.setup_msi_irqs = fsl_setup_msi_irqs;
+		ppc_md.teardown_msi_irqs = fsl_teardown_msi_irqs;
+	} else if (ppc_md.setup_msi_irqs != fsl_setup_msi_irqs) {
+		dev_err(&dev->dev, "Different MSI driver already installed!\n");
+		err = -ENODEV;
+		goto error_out;
 	}
 	return 0;
 error_out:
@@ -608,6 +579,7 @@ static const struct of_device_id fsl_of_msi_ids[] = {
 static struct platform_driver fsl_of_msi_driver = {
 	.driver = {
 		.name = "fsl-msi",
+		.owner = THIS_MODULE,
 		.of_match_table = fsl_of_msi_ids,
 	},
 	.probe = fsl_of_msi_probe,

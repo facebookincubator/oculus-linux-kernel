@@ -32,7 +32,8 @@
 #include <linux/spinlock_types.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#include <linux/io.h>
+
+#include <asm/io.h>
 
 #include <video/s1d13xxxfb.h>
 

@@ -620,7 +620,7 @@ static int wm2000_anc_mode_put(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm2000_priv *wm2000 = dev_get_drvdata(codec->dev);
-	unsigned int anc_active = ucontrol->value.integer.value[0];
+	int anc_active = ucontrol->value.integer.value[0];
 	int ret;
 
 	if (anc_active > 1)
@@ -653,7 +653,7 @@ static int wm2000_speaker_put(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm2000_priv *wm2000 = dev_get_drvdata(codec->dev);
-	unsigned int val = ucontrol->value.integer.value[0];
+	int val = ucontrol->value.integer.value[0];
 	int ret;
 
 	if (val > 1)
@@ -683,7 +683,7 @@ static const struct snd_kcontrol_new wm2000_controls[] = {
 static int wm2000_anc_power_event(struct snd_soc_dapm_widget *w,
 				  struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct wm2000_priv *wm2000 = dev_get_drvdata(codec->dev);
 	int ret;
 
@@ -942,6 +942,7 @@ MODULE_DEVICE_TABLE(i2c, wm2000_i2c_id);
 static struct i2c_driver wm2000_i2c_driver = {
 	.driver = {
 		.name = "wm2000",
+		.owner = THIS_MODULE,
 	},
 	.probe = wm2000_i2c_probe,
 	.remove = wm2000_i2c_remove,

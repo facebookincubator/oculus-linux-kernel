@@ -39,7 +39,6 @@ static void set_cred_user_ns(struct cred *cred, struct user_namespace *user_ns)
 	cred->cap_inheritable = CAP_EMPTY_SET;
 	cred->cap_permitted = CAP_FULL_SET;
 	cred->cap_effective = CAP_FULL_SET;
-	cred->cap_ambient = CAP_EMPTY_SET;
 	cred->cap_bset = CAP_FULL_SET;
 #ifdef CONFIG_KEYS
 	key_put(cred->request_key_auth);
@@ -88,12 +87,11 @@ int create_user_ns(struct cred *new)
 	if (!ns)
 		return -ENOMEM;
 
-	ret = ns_alloc_inum(&ns->ns);
+	ret = proc_alloc_inum(&ns->proc_inum);
 	if (ret) {
 		kmem_cache_free(user_ns_cachep, ns);
 		return ret;
 	}
-	ns->ns.ops = &userns_operations;
 
 	atomic_set(&ns->count, 1);
 	/* Leave the new->user_ns reference with the new user namespace. */
@@ -144,7 +142,7 @@ void free_user_ns(struct user_namespace *ns)
 #ifdef CONFIG_PERSISTENT_KEYRINGS
 		key_put(ns->persistent_keyring_register);
 #endif
-		ns_free_inum(&ns->ns);
+		proc_free_inum(ns->proc_inum);
 		kmem_cache_free(user_ns_cachep, ns);
 		ns = parent;
 	} while (atomic_dec_and_test(&parent->count));
@@ -645,7 +643,7 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 	if (!page)
 		goto out;
 
-	/* Only allow < page size writes at the beginning of the file */
+	/* Only allow <= page size writes at the beginning of the file */
 	ret = -EINVAL;
 	if ((*ppos != 0) || (count >= PAGE_SIZE))
 		goto out;
@@ -945,12 +943,7 @@ bool userns_may_setgroups(const struct user_namespace *ns)
 	return allowed;
 }
 
-static inline struct user_namespace *to_user_ns(struct ns_common *ns)
-{
-	return container_of(ns, struct user_namespace, ns);
-}
-
-static struct ns_common *userns_get(struct task_struct *task)
+static void *userns_get(struct task_struct *task)
 {
 	struct user_namespace *user_ns;
 
@@ -958,17 +951,17 @@ static struct ns_common *userns_get(struct task_struct *task)
 	user_ns = get_user_ns(__task_cred(task)->user_ns);
 	rcu_read_unlock();
 
-	return user_ns ? &user_ns->ns : NULL;
+	return user_ns;
 }
 
-static void userns_put(struct ns_common *ns)
+static void userns_put(void *ns)
 {
-	put_user_ns(to_user_ns(ns));
+	put_user_ns(ns);
 }
 
-static int userns_install(struct nsproxy *nsproxy, struct ns_common *ns)
+static int userns_install(struct nsproxy *nsproxy, void *ns)
 {
-	struct user_namespace *user_ns = to_user_ns(ns);
+	struct user_namespace *user_ns = ns;
 	struct cred *cred;
 
 	/* Don't allow gaining capabilities by reentering
@@ -977,8 +970,8 @@ static int userns_install(struct nsproxy *nsproxy, struct ns_common *ns)
 	if (user_ns == current_user_ns())
 		return -EINVAL;
 
-	/* Tasks that share a thread group must share a user namespace */
-	if (!thread_group_empty(current))
+	/* Threaded processes may not enter a different user namespace */
+	if (atomic_read(&current->mm->mm_users) > 1)
 		return -EINVAL;
 
 	if (current->fs->users != 1)
@@ -997,12 +990,19 @@ static int userns_install(struct nsproxy *nsproxy, struct ns_common *ns)
 	return commit_creds(cred);
 }
 
+static unsigned int userns_inum(void *ns)
+{
+	struct user_namespace *user_ns = ns;
+	return user_ns->proc_inum;
+}
+
 const struct proc_ns_operations userns_operations = {
 	.name		= "user",
 	.type		= CLONE_NEWUSER,
 	.get		= userns_get,
 	.put		= userns_put,
 	.install	= userns_install,
+	.inum		= userns_inum,
 };
 
 static __init int user_namespaces_init(void)

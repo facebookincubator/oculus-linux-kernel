@@ -16,6 +16,13 @@
 #define HAVE_ARCH_SIGINFO_T
 
 /*
+ * We duplicate the generic versions - <asm-generic/siginfo.h> is just borked
+ * by design ...
+ */
+#define HAVE_ARCH_COPY_SIGINFO
+struct siginfo;
+
+/*
  * Careful to keep union _sifields from shifting ...
  */
 #if _MIPS_SZLONG == 32
@@ -30,7 +37,6 @@
 
 #include <asm-generic/siginfo.h>
 
-/* We can't use generic siginfo_t, because our si_code and si_errno are swapped */
 typedef struct siginfo {
 	int si_signo;
 	int si_code;
@@ -42,13 +48,13 @@ typedef struct siginfo {
 
 		/* kill() */
 		struct {
-			__kernel_pid_t _pid;	/* sender's pid */
+			pid_t _pid;		/* sender's pid */
 			__ARCH_SI_UID_T _uid;	/* sender's uid */
 		} _kill;
 
 		/* POSIX.1b timers */
 		struct {
-			__kernel_timer_t _tid;	/* timer id */
+			timer_t _tid;		/* timer id */
 			int _overrun;		/* overrun count */
 			char _pad[sizeof( __ARCH_SI_UID_T) - sizeof(int)];
 			sigval_t _sigval;	/* same as below */
@@ -57,26 +63,26 @@ typedef struct siginfo {
 
 		/* POSIX.1b signals */
 		struct {
-			__kernel_pid_t _pid;	/* sender's pid */
+			pid_t _pid;		/* sender's pid */
 			__ARCH_SI_UID_T _uid;	/* sender's uid */
 			sigval_t _sigval;
 		} _rt;
 
 		/* SIGCHLD */
 		struct {
-			__kernel_pid_t _pid;	/* which child */
+			pid_t _pid;		/* which child */
 			__ARCH_SI_UID_T _uid;	/* sender's uid */
 			int _status;		/* exit code */
-			__kernel_clock_t _utime;
-			__kernel_clock_t _stime;
+			clock_t _utime;
+			clock_t _stime;
 		} _sigchld;
 
 		/* IRIX SIGCHLD */
 		struct {
-			__kernel_pid_t _pid;	/* which child */
-			__kernel_clock_t _utime;
+			pid_t _pid;		/* which child */
+			clock_t _utime;
 			int _status;		/* exit code */
-			__kernel_clock_t _stime;
+			clock_t _stime;
 		} _irix_sigchld;
 
 		/* SIGILL, SIGFPE, SIGSEGV, SIGBUS */
@@ -86,10 +92,6 @@ typedef struct siginfo {
 			int _trapno;	/* TRAP # which caused the signal */
 #endif
 			short _addr_lsb;
-			struct {
-				void __user *_lower;
-				void __user *_upper;
-			} _addr_bnd;
 		} _sigfault;
 
 		/* SIGPOLL, SIGXFSZ (To do ...)	 */
@@ -117,5 +119,6 @@ typedef struct siginfo {
 #define SI_ASYNCIO	-2	/* sent by AIO completion */
 #define SI_TIMER __SI_CODE(__SI_TIMER, -3) /* sent by timer expiration */
 #define SI_MESGQ __SI_CODE(__SI_MESGQ, -4) /* sent by real time mesq state change */
+
 
 #endif /* _UAPI_ASM_SIGINFO_H */

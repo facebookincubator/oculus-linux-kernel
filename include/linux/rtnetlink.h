@@ -17,11 +17,6 @@ extern int rtnl_put_cacheinfo(struct sk_buff *skb, struct dst_entry *dst,
 			      u32 id, long expires, u32 error);
 
 void rtmsg_ifinfo(int type, struct net_device *dev, unsigned change, gfp_t flags);
-struct sk_buff *rtmsg_ifinfo_build_skb(int type, struct net_device *dev,
-				       unsigned change, gfp_t flags);
-void rtmsg_ifinfo_send(struct sk_buff *skb, struct net_device *dev,
-		       gfp_t flags);
-
 
 /* RTNL is used as a global lock for all changes to network configuration  */
 extern void rtnl_lock(void);
@@ -33,11 +28,11 @@ extern wait_queue_head_t netdev_unregistering_wq;
 extern struct mutex net_mutex;
 
 #ifdef CONFIG_PROVE_LOCKING
-extern bool lockdep_rtnl_is_held(void);
+extern int lockdep_rtnl_is_held(void);
 #else
-static inline bool lockdep_rtnl_is_held(void)
+static inline int lockdep_rtnl_is_held(void)
 {
-	return true;
+	return 1;
 }
 #endif /* #ifdef CONFIG_PROVE_LOCKING */
 
@@ -77,12 +72,7 @@ static inline struct netdev_queue *dev_ingress_queue(struct net_device *dev)
 	return rtnl_dereference(dev->ingress_queue);
 }
 
-struct netdev_queue *dev_ingress_queue_create(struct net_device *dev);
-
-#ifdef CONFIG_NET_INGRESS
-void net_inc_ingress_queue(void);
-void net_dec_ingress_queue(void);
-#endif
+extern struct netdev_queue *dev_ingress_queue_create(struct net_device *dev);
 
 extern void rtnetlink_init(void);
 extern void __rtnl_unlock(void);
@@ -104,19 +94,12 @@ extern int ndo_dflt_fdb_add(struct ndmsg *ndm,
 			    struct nlattr *tb[],
 			    struct net_device *dev,
 			    const unsigned char *addr,
-			    u16 vid,
-			    u16 flags);
+			     u16 flags);
 extern int ndo_dflt_fdb_del(struct ndmsg *ndm,
 			    struct nlattr *tb[],
 			    struct net_device *dev,
-			    const unsigned char *addr,
-			    u16 vid);
+			    const unsigned char *addr);
 
 extern int ndo_dflt_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
-				   struct net_device *dev, u16 mode,
-				   u32 flags, u32 mask, int nlflags,
-				   u32 filter_mask,
-				   int (*vlan_fill)(struct sk_buff *skb,
-						    struct net_device *dev,
-						    u32 filter_mask));
+				   struct net_device *dev, u16 mode);
 #endif	/* __LINUX_RTNETLINK_H */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,6 @@
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/kernel.h>
-#include <linux/regmap.h>
 #include <linux/of.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -25,7 +24,6 @@
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/spmi.h>
-#include <linux/platform_device.h>
 #include <linux/of_irq.h>
 #ifdef CONFIG_WAKELOCK
 #include <linux/wakelock.h>
@@ -186,14 +184,13 @@ static int32_t qpnp_iadc_read_reg(struct qpnp_iadc_chip *iadc,
 						uint32_t reg, u8 *data)
 {
 	int rc;
-	uint val;
 
-	rc = regmap_read(iadc->adc->regmap, (iadc->adc->offset + reg), &val);
+	rc = spmi_ext_register_readl(iadc->adc->spmi->ctrl, iadc->adc->slave,
+		(iadc->adc->offset + reg), data, 1);
 	if (rc < 0) {
 		pr_err("qpnp iadc read reg %d failed with %d\n", reg, rc);
 		return rc;
 	}
-	*data = (u8)val;
 
 	return 0;
 }
@@ -205,7 +202,8 @@ static int32_t qpnp_iadc_write_reg(struct qpnp_iadc_chip *iadc,
 	u8 *buf;
 
 	buf = &data;
-	rc = regmap_write(iadc->adc->regmap, (iadc->adc->offset + reg), *buf);
+	rc = spmi_ext_register_writel(iadc->adc->spmi->ctrl, iadc->adc->slave,
+		(iadc->adc->offset + reg), buf, 1);
 	if (rc < 0) {
 		pr_err("qpnp iadc write reg %d failed with %d\n", reg, rc);
 		return rc;
@@ -651,8 +649,7 @@ EXPORT_SYMBOL(qpnp_iadc_comp_result);
 static int qpnp_iadc_rds_trim_update_check(struct qpnp_iadc_chip *iadc)
 {
 	int rc = 0;
-	u8 trim2_val = 0;
-	uint smbb_batt_trm_data = 0;
+	u8 trim2_val = 0, smbb_batt_trm_data = 0;
 	u8 smbb_batt_trm_cnst_rds = 0;
 
 	if (!iadc->rds_trim_default_check) {
@@ -666,17 +663,17 @@ static int qpnp_iadc_rds_trim_update_check(struct qpnp_iadc_chip *iadc)
 		return rc;
 	}
 
-	rc = regmap_read(iadc->adc->regmap, iadc->batt_id_trim_cnst_rds,
-			 &smbb_batt_trm_data);
+	rc = spmi_ext_register_readl(iadc->adc->spmi->ctrl, iadc->adc->slave,
+		iadc->batt_id_trim_cnst_rds, &smbb_batt_trm_data, 1);
 	if (rc < 0) {
 		pr_err("batt_id trim_cnst rds reg read failed %d\n", rc);
 		return rc;
 	}
 
-	smbb_batt_trm_cnst_rds = (u8)smbb_batt_trm_data &
+	smbb_batt_trm_cnst_rds = smbb_batt_trm_data &
 				SMBB_BAT_IF_TRIM_CNST_RDS_MASK;
 
-	pr_debug("n_trim:0x%x smb_trm:0x%02x\n", trim2_val, smbb_batt_trm_data);
+	pr_debug("n_trim:0x%x smb_trm:0x%x\n", trim2_val, smbb_batt_trm_data);
 
 	if (iadc->rds_trim_default_type == QPNP_IADC_RDS_DEFAULT_TYPEA) {
 
@@ -1087,7 +1084,7 @@ struct qpnp_iadc_chip *qpnp_get_iadc(struct device *dev, const char *name)
 		return ERR_PTR(-ENODEV);
 
 	list_for_each_entry(iadc, &qpnp_iadc_device_list, list)
-		if (iadc->adc->pdev->dev.of_node == node)
+		if (iadc->adc->spmi->dev.of_node == node)
 			return iadc;
 	return ERR_PTR(-EPROBE_DEFER);
 }
@@ -1433,10 +1430,10 @@ static struct sensor_device_attribute qpnp_adc_attr =
 	SENSOR_ATTR(NULL, S_IRUGO, qpnp_iadc_show, NULL, 0);
 
 static int32_t qpnp_iadc_init_hwmon(struct qpnp_iadc_chip *iadc,
-						struct platform_device *pdev)
+						struct spmi_device *spmi)
 {
 	struct device_node *child;
-	struct device_node *node = pdev->dev.of_node;
+	struct device_node *node = spmi->dev.of_node;
 	int rc = 0, i = 0, channel;
 
 	for_each_child_of_node(node, child) {
@@ -1447,10 +1444,10 @@ static int32_t qpnp_iadc_init_hwmon(struct qpnp_iadc_chip *iadc,
 		memcpy(&iadc->sens_attr[i], &qpnp_adc_attr,
 						sizeof(qpnp_adc_attr));
 		sysfs_attr_init(&iadc->sens_attr[i].dev_attr.attr);
-		rc = device_create_file(&pdev->dev,
+		rc = device_create_file(&spmi->dev,
 				&iadc->sens_attr[i].dev_attr);
 		if (rc) {
-			dev_err(&pdev->dev,
+			dev_err(&spmi->dev,
 				"device_create_file failed for dev %s\n",
 				iadc->adc->adc_channels[i].name);
 			goto hwmon_err_sens;
@@ -1464,13 +1461,13 @@ hwmon_err_sens:
 	return rc;
 }
 
-static int qpnp_iadc_probe(struct platform_device *pdev)
+static int qpnp_iadc_probe(struct spmi_device *spmi)
 {
 	struct qpnp_iadc_chip *iadc;
 	struct qpnp_adc_drv *adc_qpnp;
-	struct device_node *node = pdev->dev.of_node;
+	struct device_node *node = spmi->dev.of_node;
 	struct device_node *child;
-	unsigned int base;
+	struct resource *res;
 	int rc, count_adc_channel_list = 0, i = 0;
 
 	for_each_child_of_node(node, child)
@@ -1481,45 +1478,37 @@ static int qpnp_iadc_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	iadc = devm_kzalloc(&pdev->dev, sizeof(struct qpnp_iadc_chip) +
+	iadc = devm_kzalloc(&spmi->dev, sizeof(struct qpnp_iadc_chip) +
 		(sizeof(struct sensor_device_attribute) *
 				count_adc_channel_list), GFP_KERNEL);
 	if (!iadc) {
-		dev_err(&pdev->dev, "Unable to allocate memory\n");
+		dev_err(&spmi->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
 
-	adc_qpnp = devm_kzalloc(&pdev->dev, sizeof(struct qpnp_adc_drv),
+	adc_qpnp = devm_kzalloc(&spmi->dev, sizeof(struct qpnp_adc_drv),
 			GFP_KERNEL);
 	if (!adc_qpnp) {
-		dev_err(&pdev->dev, "Unable to allocate memory\n");
+		dev_err(&spmi->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
 
-	adc_qpnp->regmap = dev_get_regmap(pdev->dev.parent, NULL);
-	if (!adc_qpnp->regmap) {
-		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
-		return -EINVAL;
-	}
-
-	iadc->dev = &(pdev->dev);
+	iadc->dev = &(spmi->dev);
 	iadc->adc = adc_qpnp;
 
-	rc = qpnp_adc_get_devicetree_data(pdev, iadc->adc);
+	rc = qpnp_adc_get_devicetree_data(spmi, iadc->adc);
 	if (rc) {
-		dev_err(&pdev->dev, "failed to read device tree\n");
+		dev_err(&spmi->dev, "failed to read device tree\n");
 		return rc;
 	}
 
-	rc = of_property_read_u32(pdev->dev.of_node, "batt-id-trim-cnst-rds",
-				  &base);
-	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't find batt-id-trim-cnst-rds in node = %s rc = %d\n",
-			pdev->dev.of_node->full_name, rc);
-		return rc;
+	res = spmi_get_resource_byname(spmi, NULL, IORESOURCE_MEM,
+		"batt-id-trim-cnst-rds");
+	if (!res) {
+		dev_err(&spmi->dev, "failed to read batt_id trim register\n");
+		return -EINVAL;
 	}
-	iadc->batt_id_trim_cnst_rds = base;
+	iadc->batt_id_trim_cnst_rds = res->start;
 	rc = of_property_read_u32(node, "qcom,use-default-rds-trim",
 			&iadc->rds_trim_default_type);
 	if (rc)
@@ -1529,7 +1518,7 @@ static int qpnp_iadc_probe(struct platform_device *pdev)
 		iadc->rds_trim_default_check = true;
 	}
 
-	iadc->vadc_dev = qpnp_get_vadc(&pdev->dev, "iadc");
+	iadc->vadc_dev = qpnp_get_vadc(&spmi->dev, "iadc");
 	if (IS_ERR(iadc->vadc_dev)) {
 		rc = PTR_ERR(iadc->vadc_dev);
 		if (rc != -EPROBE_DEFER)
@@ -1551,27 +1540,26 @@ static int qpnp_iadc_probe(struct platform_device *pdev)
 	iadc->iadc_poll_eoc = of_property_read_bool(node,
 						"qcom,iadc-poll-eoc");
 	if (!iadc->iadc_poll_eoc) {
-		rc = devm_request_irq(&pdev->dev, iadc->adc->adc_irq_eoc,
+		rc = devm_request_irq(&spmi->dev, iadc->adc->adc_irq_eoc,
 				qpnp_iadc_isr, IRQF_TRIGGER_RISING,
 				"qpnp_iadc_interrupt", iadc);
 		if (rc) {
-			dev_err(&pdev->dev, "failed to request adc irq\n");
+			dev_err(&spmi->dev, "failed to request adc irq\n");
 			return rc;
-		} else {
+		} else
 			enable_irq_wake(iadc->adc->adc_irq_eoc);
-		}
 	}
 
-	rc = qpnp_iadc_init_hwmon(iadc, pdev);
+	rc = qpnp_iadc_init_hwmon(iadc, spmi);
 	if (rc) {
-		dev_err(&pdev->dev, "failed to initialize qpnp hwmon adc\n");
+		dev_err(&spmi->dev, "failed to initialize qpnp hwmon adc\n");
 		return rc;
 	}
-	iadc->iadc_hwmon = hwmon_device_register(&iadc->adc->pdev->dev);
+	iadc->iadc_hwmon = hwmon_device_register(&iadc->adc->spmi->dev);
 
 	rc = qpnp_iadc_version_check(iadc);
 	if (rc) {
-		dev_err(&pdev->dev, "IADC version not supported\n");
+		dev_err(&spmi->dev, "IADC version not supported\n");
 		goto fail;
 	}
 
@@ -1580,21 +1568,21 @@ static int qpnp_iadc_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&iadc->iadc_work, qpnp_iadc_work);
 	rc = qpnp_iadc_comp_info(iadc);
 	if (rc) {
-		dev_err(&pdev->dev, "abstracting IADC comp info failed!\n");
+		dev_err(&spmi->dev, "abstracting IADC comp info failed!\n");
 		goto fail;
 	}
 
 	rc = qpnp_iadc_rds_trim_update_check(iadc);
 	if (rc) {
-		dev_err(&pdev->dev, "Rds trim update failed!\n");
+		dev_err(&spmi->dev, "Rds trim update failed!\n");
 		goto fail;
 	}
 
-	dev_set_drvdata(&pdev->dev, iadc);
+	dev_set_drvdata(&spmi->dev, iadc);
 	list_add(&iadc->list, &qpnp_iadc_device_list);
 	rc = qpnp_iadc_calibrate_for_trim(iadc, true);
 	if (rc)
-		dev_err(&pdev->dev, "failed to calibrate for USR trim\n");
+		dev_err(&spmi->dev, "failed to calibrate for USR trim\n");
 
 	if (iadc->iadc_poll_eoc)
 		device_init_wakeup(iadc->dev, 1);
@@ -1605,7 +1593,8 @@ static int qpnp_iadc_probe(struct platform_device *pdev)
 	return 0;
 fail:
 	for_each_child_of_node(node, child) {
-		device_remove_file(&pdev->dev, &iadc->sens_attr[i].dev_attr);
+		device_remove_file(&spmi->dev,
+			&iadc->sens_attr[i].dev_attr);
 		i++;
 	}
 	hwmon_device_unregister(iadc->iadc_hwmon);
@@ -1613,22 +1602,23 @@ fail:
 	return rc;
 }
 
-static int qpnp_iadc_remove(struct platform_device *pdev)
+static int qpnp_iadc_remove(struct spmi_device *spmi)
 {
-	struct qpnp_iadc_chip *iadc = dev_get_drvdata(&pdev->dev);
-	struct device_node *node = pdev->dev.of_node;
+	struct qpnp_iadc_chip *iadc = dev_get_drvdata(&spmi->dev);
+	struct device_node *node = spmi->dev.of_node;
 	struct device_node *child;
 	int i = 0;
 
 	cancel_delayed_work(&iadc->iadc_work);
 	for_each_child_of_node(node, child) {
-		device_remove_file(&pdev->dev, &iadc->sens_attr[i].dev_attr);
+		device_remove_file(&spmi->dev,
+			&iadc->sens_attr[i].dev_attr);
 		i++;
 	}
 	hwmon_device_unregister(iadc->iadc_hwmon);
 	if (iadc->iadc_poll_eoc)
 		pm_relax(iadc->dev);
-	dev_set_drvdata(&pdev->dev, NULL);
+	dev_set_drvdata(&spmi->dev, NULL);
 
 	return 0;
 }
@@ -1639,9 +1629,9 @@ static const struct of_device_id qpnp_iadc_match_table[] = {
 	{}
 };
 
-static struct platform_driver qpnp_iadc_driver = {
+static struct spmi_driver qpnp_iadc_driver = {
 	.driver		= {
-		.name		= "qcom,qpnp-iadc",
+		.name	= "qcom,qpnp-iadc",
 		.of_match_table = qpnp_iadc_match_table,
 	},
 	.probe		= qpnp_iadc_probe,
@@ -1650,13 +1640,13 @@ static struct platform_driver qpnp_iadc_driver = {
 
 static int __init qpnp_iadc_init(void)
 {
-	return platform_driver_register(&qpnp_iadc_driver);
+	return spmi_driver_register(&qpnp_iadc_driver);
 }
 module_init(qpnp_iadc_init);
 
 static void __exit qpnp_iadc_exit(void)
 {
-	platform_driver_unregister(&qpnp_iadc_driver);
+	spmi_driver_unregister(&qpnp_iadc_driver);
 }
 module_exit(qpnp_iadc_exit);
 

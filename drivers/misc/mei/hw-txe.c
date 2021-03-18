@@ -424,7 +424,7 @@ static void mei_txe_intr_disable(struct mei_device *dev)
 	mei_txe_br_reg_write(hw, HIER_REG, 0);
 }
 /**
- * mei_txe_intr_enable - enable all interrupts
+ * mei_txe_intr_disable - enable all interrupts
  *
  * @dev: the device structure
  */
@@ -712,10 +712,11 @@ static int mei_txe_write(struct mei_device *dev,
 	mei_txe_input_ready_interrupt_enable(dev);
 
 	if (!mei_txe_is_input_ready(dev)) {
-		char fw_sts_str[MEI_FW_STATUS_STR_SZ];
+		struct mei_fw_status fw_status;
 
-		mei_fw_status_str(dev, fw_sts_str, MEI_FW_STATUS_STR_SZ);
-		dev_err(dev->dev, "Input is not ready %s\n", fw_sts_str);
+		mei_fw_status(dev, &fw_status);
+		dev_err(dev->dev, "Input is not ready " FW_STS_FMT "\n",
+			FW_STS_PRM(fw_status));
 		return -EAGAIN;
 	}
 

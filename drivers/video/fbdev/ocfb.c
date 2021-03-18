@@ -61,7 +61,7 @@ struct ocfb_dev {
 	/* flag indicating whether the regs are little endian accessed */
 	int little_endian;
 	/* Physical and virtual addresses of framebuffer */
-	dma_addr_t fb_phys;
+	phys_addr_t fb_phys;
 	void __iomem *fb_virt;
 	u32 pseudo_palette[PALETTE_SIZE];
 };
@@ -325,6 +325,7 @@ static int ocfb_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "I/O resource request failed\n");
 		return -ENXIO;
 	}
+	res->flags &= ~IORESOURCE_CACHEABLE;
 	fbdev->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(fbdev->regs))
 		return PTR_ERR(fbdev->regs);

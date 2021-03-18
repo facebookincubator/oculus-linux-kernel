@@ -31,8 +31,6 @@
 
 #include "ahci.h"
 
-#define DRV_NAME "tegra-ahci"
-
 #define SATA_CONFIGURATION_0				0x180
 #define SATA_CONFIGURATION_EN_FPCI			BIT(0)
 
@@ -291,10 +289,6 @@ static const struct of_device_id tegra_ahci_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, tegra_ahci_of_match);
 
-static struct scsi_host_template ahci_platform_sht = {
-	AHCI_SHT(DRV_NAME),
-};
-
 static int tegra_ahci_probe(struct platform_device *pdev)
 {
 	struct ahci_host_priv *hpriv;
@@ -360,8 +354,7 @@ static int tegra_ahci_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = ahci_platform_init_host(pdev, hpriv, &ahci_tegra_port_info,
-				      &ahci_platform_sht);
+	ret = ahci_platform_init_host(pdev, hpriv, &ahci_tegra_port_info);
 	if (ret)
 		goto deinit_controller;
 
@@ -377,7 +370,7 @@ static struct platform_driver tegra_ahci_driver = {
 	.probe = tegra_ahci_probe,
 	.remove = ata_platform_remove_one,
 	.driver = {
-		.name = DRV_NAME,
+		.name = "tegra-ahci",
 		.of_match_table = tegra_ahci_of_match,
 	},
 	/* LP0 suspend support not implemented */

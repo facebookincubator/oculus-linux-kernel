@@ -99,8 +99,7 @@ static int tcf_skbedit_init(struct net *net, struct nlattr *nla,
 	parm = nla_data(tb[TCA_SKBEDIT_PARMS]);
 
 	if (!tcf_hash_check(parm->index, a, bind)) {
-		ret = tcf_hash_create(parm->index, est, a, sizeof(*d),
-				      bind, false);
+		ret = tcf_hash_create(parm->index, est, a, sizeof(*d), bind);
 		if (ret)
 			return ret;
 

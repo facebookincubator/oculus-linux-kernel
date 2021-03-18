@@ -24,7 +24,6 @@
 #include <linux/delay.h>
 #include <linux/seq_file.h>
 #include <linux/of.h>
-#include <linux/fsl/guts.h>
 
 #include <asm/time.h>
 #include <asm/machdep.h>
@@ -39,6 +38,7 @@
 #include <sysdev/fsl_pci.h>
 #include <sysdev/fsl_soc.h>
 #include <sysdev/simple_gpio.h>
+#include <asm/fsl_guts.h>
 
 #include "mpc86xx.h"
 

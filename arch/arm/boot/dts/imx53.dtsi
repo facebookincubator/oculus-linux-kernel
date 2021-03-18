@@ -15,7 +15,6 @@
 #include <dt-bindings/clock/imx5-clock.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
-#include <dt-bindings/interrupt-controller/irq.h>
 
 / {
 	aliases {
@@ -47,21 +46,10 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-		cpu0: cpu@0 {
+		cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a8";
 			reg = <0x0>;
-			clocks = <&clks IMX5_CLK_ARM>;
-			clock-latency = <61036>;
-			voltage-tolerance = <5>;
-			operating-points = <
-				/* kHz */
-				 166666  850000
-				 400000  900000
-				 800000 1050000
-				1000000 1200000
-				1200000 1300000
-			>;
 		};
 	};
 
@@ -239,9 +227,7 @@
 							"fsl,imx21-ssi";
 					reg = <0x50014000 0x4000>;
 					interrupts = <30>;
-					clocks = <&clks IMX5_CLK_SSI2_IPG_GATE>,
-						 <&clks IMX5_CLK_SSI2_ROOT_GATE>;
-					clock-names = "ipg", "baud";
+					clocks = <&clks IMX5_CLK_SSI2_IPG_GATE>;
 					dmas = <&sdma 24 1 0>,
 					       <&sdma 25 1 0>;
 					dma-names = "rx", "tx";
@@ -310,7 +296,6 @@
 				clocks = <&clks IMX5_CLK_USBOH3_GATE>;
 				fsl,usbmisc = <&usbmisc 1>;
 				fsl,usbphy = <&usbphy1>;
-				dr_mode = "host";
 				status = "disabled";
 			};
 
@@ -320,7 +305,6 @@
 				interrupts = <16>;
 				clocks = <&clks IMX5_CLK_USBOH3_GATE>;
 				fsl,usbmisc = <&usbmisc 2>;
-				dr_mode = "host";
 				status = "disabled";
 			};
 
@@ -330,7 +314,6 @@
 				interrupts = <17>;
 				clocks = <&clks IMX5_CLK_USBOH3_GATE>;
 				fsl,usbmisc = <&usbmisc 3>;
-				dr_mode = "host";
 				status = "disabled";
 			};
 
@@ -692,9 +675,7 @@
 						"fsl,imx21-ssi";
 				reg = <0x63fcc000 0x4000>;
 				interrupts = <29>;
-				clocks = <&clks IMX5_CLK_SSI1_IPG_GATE>,
-					 <&clks IMX5_CLK_SSI1_ROOT_GATE>;
-				clock-names = "ipg", "baud";
+				clocks = <&clks IMX5_CLK_SSI1_IPG_GATE>;
 				dmas = <&sdma 28 0 0>,
 				       <&sdma 29 0 0>;
 				dma-names = "rx", "tx";
@@ -722,9 +703,7 @@
 						"fsl,imx21-ssi";
 				reg = <0x63fe8000 0x4000>;
 				interrupts = <96>;
-				clocks = <&clks IMX5_CLK_SSI3_IPG_GATE>,
-					 <&clks IMX5_CLK_SSI3_ROOT_GATE>;
-				clock-names = "ipg", "baud";
+				clocks = <&clks IMX5_CLK_SSI3_IPG_GATE>;
 				dmas = <&sdma 46 0 0>,
 				       <&sdma 47 0 0>;
 				dma-names = "rx", "tx";
@@ -760,7 +739,7 @@
 			};
 
 			vpu: vpu@63ff4000 {
-				compatible = "fsl,imx53-vpu", "cnm,coda7541";
+				compatible = "fsl,imx53-vpu";
 				reg = <0x63ff4000 0x1000>;
 				interrupts = <9>;
 				clocks = <&clks IMX5_CLK_VPU_REFERENCE_GATE>,
@@ -768,15 +747,6 @@
 				clock-names = "per", "ahb";
 				resets = <&src 1>;
 				iram = <&ocram>;
-			};
-
-			sahara: crypto@63ff8000 {
-				compatible = "fsl,imx53-sahara";
-				reg = <0x63ff8000 0x4000>;
-				interrupts = <19 20>;
-				clocks = <&clks IMX5_CLK_SAHARA_IPG_GATE>,
-				         <&clks IMX5_CLK_SAHARA_IPG_GATE>;
-				clock-names = "ipg", "ahb";
 			};
 		};
 

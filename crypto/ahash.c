@@ -55,7 +55,6 @@ static int hash_walk_next(struct crypto_hash_walk *walk)
 
 	if (offset & alignmask) {
 		unsigned int unaligned = alignmask + 1 - (offset & alignmask);
-
 		if (nbytes > unaligned)
 			nbytes = unaligned;
 	}
@@ -69,9 +68,8 @@ static int hash_walk_new_entry(struct crypto_hash_walk *walk)
 	struct scatterlist *sg;
 
 	sg = walk->sg;
+	walk->pg = sg_page(sg);
 	walk->offset = sg->offset;
-	walk->pg = sg_page(walk->sg) + (walk->offset >> PAGE_SHIFT);
-	walk->offset = offset_in_page(walk->offset);
 	walk->entrylen = sg->length;
 
 	if (walk->entrylen > walk->total)
@@ -122,7 +120,7 @@ int crypto_hash_walk_done(struct crypto_hash_walk *walk, int err)
 	if (!walk->total)
 		return 0;
 
-	walk->sg = sg_next(walk->sg);
+	walk->sg = scatterwalk_sg_next(walk->sg);
 
 	return hash_walk_new_entry(walk);
 }

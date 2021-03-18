@@ -250,7 +250,7 @@ static int nuc900_nand_probe(struct platform_device *pdev)
 	chip = &(nuc900_nand->chip);
 
 	nuc900_nand->mtd.priv	= chip;
-	nuc900_nand->mtd.dev.parent = &pdev->dev;
+	nuc900_nand->mtd.owner	= THIS_MODULE;
 	spin_lock_init(&nuc900_nand->lock);
 
 	nuc900_nand->clk = devm_clk_get(&pdev->dev, NULL);
@@ -300,6 +300,7 @@ static struct platform_driver nuc900_nand_driver = {
 	.remove		= nuc900_nand_remove,
 	.driver		= {
 		.name	= "nuc900-fmi",
+		.owner	= THIS_MODULE,
 	},
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,7 +21,6 @@
 #include <linux/io.h>
 #include <linux/spinlock.h>
 #include <linux/delay.h>
-#include <linux/rational.h>
 #include <linux/clk.h>
 #include <linux/clk/msm-clk-provider.h>
 #include <linux/clk/msm-clk.h>
@@ -347,6 +346,48 @@ static void disable_unprepare_rcg_srcs(struct clk *c, struct clk *curr,
 		clk_unprepare(curr);
 }
 
+static int rcg_clk_set_duty_cycle(struct clk *c, u32 numerator,
+				u32 denominator)
+{
+	struct rcg_clk *rcg = to_rcg_clk(c);
+	u32 notn_m_val, n_val, m_val, d_val, not2d_val;
+	u32 max_n_value;
+
+	if (!numerator || numerator == denominator)
+		return -EINVAL;
+
+	if (!rcg->mnd_reg_width)
+		rcg->mnd_reg_width = 8;
+
+	max_n_value = 1 << (rcg->mnd_reg_width - 1);
+
+	notn_m_val = readl_relaxed(N_REG(rcg));
+	m_val = readl_relaxed(M_REG(rcg));
+	n_val = ((~notn_m_val) + m_val) & BM((rcg->mnd_reg_width - 1), 0);
+
+	if (n_val > max_n_value) {
+		pr_warn("%s duty-cycle cannot be set for required frequency %ld\n",
+				c->dbg_name, clk_get_rate(c));
+		return -EINVAL;
+	}
+
+	/* Calculate the 2d value */
+	d_val = DIV_ROUND_CLOSEST((numerator * n_val * 2),  denominator);
+
+	/* Check BIT WIDTHS OF 2d.  If D is too big reduce Duty cycle. */
+	if (d_val > (BIT(rcg->mnd_reg_width) - 1)) {
+		d_val = (BIT(rcg->mnd_reg_width) - 1) / 2;
+		d_val *= 2;
+	}
+
+	not2d_val = (~d_val) & BM((rcg->mnd_reg_width - 1), 0);
+
+	writel_relaxed(not2d_val, D_REG(rcg));
+	rcg_update_config(rcg);
+
+	return 0;
+}
+
 static int rcg_clk_set_rate(struct clk *c, unsigned long rate)
 {
 	struct clk_freq_tbl *cf, *nf;
@@ -632,7 +673,7 @@ static void __iomem *rcg_mnd_clk_list_registers(struct clk *c, int n,
 /*
  * Branch clock functions
  */
-static int branch_clk_halt_check(struct clk *c, u32 halt_check,
+static void branch_clk_halt_check(struct clk *c, u32 halt_check,
 			void __iomem *cbcr_reg, enum branch_state br_status)
 {
 	char *status_str = (br_status == BRANCH_ON) ? "off" : "on";
@@ -657,25 +698,18 @@ static int branch_clk_halt_check(struct clk *c, u32 halt_check,
 			case BRANCH_ON:
 				if (val == BRANCH_ON_VAL
 					|| val == BRANCH_NOC_FSM_ON_VAL)
-					return 0;
+					return;
 				break;
 
 			case BRANCH_OFF:
 				if (val == BRANCH_OFF_VAL)
-					return 0;
+					return;
 				break;
 			};
 			udelay(1);
 		}
 		CLK_WARN(c, count == 0, "status stuck %s", status_str);
-		if (!count)
-			return -ETIMEDOUT;
-	} else {
-		pr_err("Invalid halt_check flag - %u\n", halt_check);
-		return -EINVAL;
 	}
-
-	return 0;
 }
 
 static unsigned long branch_clk_aggregate_rate(const struct clk *parent)
@@ -742,23 +776,6 @@ static int branch_clk_set_flags(struct clk *c, unsigned flags)
 
 static DEFINE_MUTEX(branch_clk_lock);
 
-static void branch_clk_unprepare(struct clk *c)
-{
-	struct branch_clk *branch = to_branch_clk(c);
-	unsigned long curr_rate, new_rate;
-
-	if (!branch->aggr_sibling_rates)
-		return;
-
-	mutex_lock(&branch_clk_lock);
-	branch->is_prepared = false;
-	new_rate = branch_clk_aggregate_rate(c->parent);
-	curr_rate = max(new_rate, c->rate);
-	if (new_rate < curr_rate)
-		clk_set_rate(c->parent, new_rate);
-	mutex_unlock(&branch_clk_lock);
-}
-
 static int branch_clk_prepare(struct clk *c)
 {
 	struct branch_clk *branch = to_branch_clk(c);
@@ -782,38 +799,11 @@ exit:
 	return ret;
 }
 
-static void branch_clk_disable(struct clk *c)
-{
-	unsigned long flags;
-	struct branch_clk *branch = to_branch_clk(c);
-	u32 reg_val;
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	reg_val = readl_relaxed(CBCR_REG(branch));
-	reg_val &= ~CBCR_BRANCH_ENABLE_BIT;
-	writel_relaxed(reg_val, CBCR_REG(branch));
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-
-	/*
-	 * Wait for clock to disable before continuing. If disable times out,
-	 * it is not handled explicitly since it is considered as non-fatal.
-	 */
-	if (!branch->no_halt_check_on_disable)
-		branch_clk_halt_check(c, branch->halt_check, CBCR_REG(branch),
-					BRANCH_OFF);
-
-	if (branch->toggle_memory) {
-		branch_clk_set_flags(c, CLKFLAG_NORETAIN_MEM);
-		branch_clk_set_flags(c, CLKFLAG_NORETAIN_PERIPH);
-	}
-}
-
 static int branch_clk_enable(struct clk *c)
 {
 	unsigned long flags;
 	u32 cbcr_val;
 	struct branch_clk *branch = to_branch_clk(c);
-	int ret = 0;
 
 	if (branch->toggle_memory) {
 		branch_clk_set_flags(c, CLKFLAG_RETAIN_MEM);
@@ -834,12 +824,50 @@ static int branch_clk_enable(struct clk *c)
 		udelay(5);
 
 	/* Wait for clock to enable before continuing. */
-	ret = branch_clk_halt_check(c, branch->halt_check, CBCR_REG(branch),
+	branch_clk_halt_check(c, branch->halt_check, CBCR_REG(branch),
 				BRANCH_ON);
-	if (ret)
-		branch_clk_disable(c);
 
-	return ret;
+	return 0;
+}
+
+static void branch_clk_unprepare(struct clk *c)
+{
+	struct branch_clk *branch = to_branch_clk(c);
+	unsigned long curr_rate, new_rate;
+
+	if (!branch->aggr_sibling_rates)
+		return;
+
+	mutex_lock(&branch_clk_lock);
+	branch->is_prepared = false;
+	new_rate = branch_clk_aggregate_rate(c->parent);
+	curr_rate = max(new_rate, c->rate);
+	if (new_rate < curr_rate)
+		clk_set_rate(c->parent, new_rate);
+	mutex_unlock(&branch_clk_lock);
+}
+
+static void branch_clk_disable(struct clk *c)
+{
+	unsigned long flags;
+	struct branch_clk *branch = to_branch_clk(c);
+	u32 reg_val;
+
+	spin_lock_irqsave(&local_clock_reg_lock, flags);
+	reg_val = readl_relaxed(CBCR_REG(branch));
+	reg_val &= ~CBCR_BRANCH_ENABLE_BIT;
+	writel_relaxed(reg_val, CBCR_REG(branch));
+	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
+
+	/* Wait for clock to disable before continuing. */
+	if (!branch->no_halt_check_on_disable)
+		branch_clk_halt_check(c, branch->halt_check, CBCR_REG(branch),
+					BRANCH_OFF);
+
+	if (branch->toggle_memory) {
+		branch_clk_set_flags(c, CLKFLAG_NORETAIN_MEM);
+		branch_clk_set_flags(c, CLKFLAG_NORETAIN_PERIPH);
+	}
 }
 
 static int branch_cdiv_set_rate(struct branch_clk *branch, unsigned long rate)
@@ -864,17 +892,8 @@ static int branch_clk_set_rate(struct clk *c, unsigned long rate)
 {
 	struct branch_clk *clkh, *branch = to_branch_clk(c);
 	struct clk *clkp, *parent = c->parent;
-	unsigned long flags, curr_rate, new_rate, other_rate = 0;
+	unsigned long curr_rate, new_rate, other_rate = 0;
 	int ret = 0;
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	if (readl_relaxed(CBCR_REG(branch)) & CBCR_HW_CTL_BIT) {
-		pr_err("Cannot scale %s clock while HW gating is enabled. Use corresponding hw_ctl_clk to scale it\n",
-				c->dbg_name);
-		spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-		return -EINVAL;
-	}
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 
 	if (branch->max_div)
 		return branch_cdiv_set_rate(branch, rate);
@@ -928,8 +947,7 @@ static unsigned long branch_clk_get_rate(struct clk *c)
 {
 	struct branch_clk *branch = to_branch_clk(c);
 
-	if (branch->max_div ||
-			(branch->aggr_sibling_rates && !branch->is_prepared))
+	if (branch->max_div)
 		return branch->c.rate;
 
 	return clk_get_rate(c->parent);
@@ -982,8 +1000,8 @@ static enum handoff branch_clk_handoff(struct clk *c)
 		return HANDOFF_DISABLED_CLK;
 
 	if (!(cbcr_regval & CBCR_BRANCH_ENABLE_BIT)) {
-		if (!branch->check_enable_bit)
-			pr_warn("%s clock is enabled in HW even though ENABLE_BIT is not set\n",
+		WARN(!branch->check_enable_bit,
+			"%s clock is enabled in HW even though ENABLE_BIT is not set\n",
 			c->dbg_name);
 		return HANDOFF_DISABLED_CLK;
 	}
@@ -1051,85 +1069,6 @@ static void __iomem *branch_clk_list_registers(struct clk *c, int n,
 	return CBCR_REG(branch);
 }
 
-static void _hw_ctl_clk_enable(struct hw_ctl_clk *hwctl_clk)
-{
-	unsigned long flags;
-	u32 cbcr_val;
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	cbcr_val = readl_relaxed(CBCR_REG(hwctl_clk));
-	cbcr_val |= CBCR_HW_CTL_BIT;
-	writel_relaxed(cbcr_val, CBCR_REG(hwctl_clk));
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-}
-
-static int hw_ctl_clk_enable(struct clk *c)
-{
-	struct hw_ctl_clk *hwctl_clk = to_hw_ctl_clk(c);
-	struct clk *parent = c->parent;
-
-	/* The parent branch clock should have been prepared prior to this. */
-	if (!parent || (parent && !parent->prepare_count))
-		return -EINVAL;
-
-	_hw_ctl_clk_enable(hwctl_clk);
-	return 0;
-}
-
-static void _hw_ctl_clk_disable(struct hw_ctl_clk *hwctl_clk)
-{
-	unsigned long flags;
-	u32 cbcr_val;
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	cbcr_val = readl_relaxed(CBCR_REG(hwctl_clk));
-	cbcr_val &= ~CBCR_HW_CTL_BIT;
-	writel_relaxed(cbcr_val, CBCR_REG(hwctl_clk));
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-}
-
-static void hw_ctl_clk_disable(struct clk *c)
-{
-	struct hw_ctl_clk *hwctl_clk = to_hw_ctl_clk(c);
-
-	if (!c->parent)
-		return;
-
-	_hw_ctl_clk_disable(hwctl_clk);
-}
-
-static int hw_ctl_clk_set_rate(struct clk *c, unsigned long rate)
-{
-	struct hw_ctl_clk *hwctl_clk = to_hw_ctl_clk(c);
-	struct clk *parent = c->parent;
-	int ret = 0;
-
-	if (!parent)
-		return -EINVAL;
-	/*
-	 * Switch back to SW control while doing a frequency change to avoid
-	 * having the downstream clock being gated at the same time that the
-	 * RCG rate switch happens.
-	 */
-	_hw_ctl_clk_disable(hwctl_clk);
-	ret = clk_set_rate(parent, rate);
-	if (ret)
-		return ret;
-	_hw_ctl_clk_enable(hwctl_clk);
-
-	return 0;
-}
-
-static long hw_ctl_clk_round_rate(struct clk *c, unsigned long rate)
-{
-	return clk_round_rate(c->parent, rate);
-}
-
-static unsigned long hw_ctl_clk_get_rate(struct clk *c)
-{
-	return clk_get_rate(c->parent);
-}
-
 /*
  * Voteable clock functions
  */
@@ -1145,6 +1084,23 @@ static int local_vote_clk_reset(struct clk *c, enum clk_reset_action action)
 	return __branch_clk_reset(BCR_REG(vclk), action);
 }
 
+static int local_vote_clk_enable(struct clk *c)
+{
+	unsigned long flags;
+	u32 ena;
+	struct local_vote_clk *vclk = to_local_vote_clk(c);
+
+	spin_lock_irqsave(&local_clock_reg_lock, flags);
+	ena = readl_relaxed(VOTE_REG(vclk));
+	ena |= vclk->en_mask;
+	writel_relaxed(ena, VOTE_REG(vclk));
+	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
+
+	branch_clk_halt_check(c, vclk->halt_check, CBCR_REG(vclk), BRANCH_ON);
+
+	return 0;
+}
+
 static void local_vote_clk_disable(struct clk *c)
 {
 	unsigned long flags;
@@ -1156,27 +1112,6 @@ static void local_vote_clk_disable(struct clk *c)
 	ena &= ~vclk->en_mask;
 	writel_relaxed(ena, VOTE_REG(vclk));
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-}
-
-static int local_vote_clk_enable(struct clk *c)
-{
-	unsigned long flags;
-	u32 ena;
-	struct local_vote_clk *vclk = to_local_vote_clk(c);
-	int ret = 0;
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	ena = readl_relaxed(VOTE_REG(vclk));
-	ena |= vclk->en_mask;
-	writel_relaxed(ena, VOTE_REG(vclk));
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-
-	ret = branch_clk_halt_check(c, vclk->halt_check, CBCR_REG(vclk),
-						BRANCH_ON);
-	if (ret)
-		local_vote_clk_disable(c);
-
-	return ret;
 }
 
 static enum handoff local_vote_clk_handoff(struct clk *c)
@@ -1339,6 +1274,34 @@ static struct frac_entry frac_table_810m[] = { /* Link rate of 162M */
 	{0, 0},
 };
 
+static bool is_same_rcg_config(struct rcg_clk *rcg, struct clk_freq_tbl *freq,
+			       bool has_mnd)
+{
+	u32 cfg;
+
+	/* RCG update pending */
+	if (readl_relaxed(CMD_RCGR_REG(rcg)) & CMD_RCGR_CONFIG_DIRTY_MASK)
+		return false;
+	if (has_mnd)
+		if (readl_relaxed(M_REG(rcg)) != freq->m_val ||
+		    readl_relaxed(N_REG(rcg)) != freq->n_val ||
+		    readl_relaxed(D_REG(rcg)) != freq->d_val)
+			return false;
+	/*
+	 * Both 0 and 1 represent same divider value in HW.
+	 * Always use 0 to simplify comparison.
+	 */
+	if ((freq->div_src_val & CFG_RCGR_DIV_MASK) == 1)
+		freq->div_src_val &= ~CFG_RCGR_DIV_MASK;
+	cfg = readl_relaxed(CFG_RCGR_REG(rcg));
+	if ((cfg & CFG_RCGR_DIV_MASK) == 1)
+		cfg &= ~CFG_RCGR_DIV_MASK;
+	if (cfg != freq->div_src_val)
+		return false;
+
+	return true;
+}
+
 static int set_rate_edp_pixel(struct clk *clk, unsigned long rate)
 {
 	struct rcg_clk *rcg = to_rcg_clk(clk);
@@ -1376,7 +1339,8 @@ static int set_rate_edp_pixel(struct clk *clk, unsigned long rate)
 			pixel_freq->d_val = ~frac->den;
 		}
 		spin_lock_irqsave(&local_clock_reg_lock, flags);
-		__set_rate_mnd(rcg, pixel_freq);
+		if (!is_same_rcg_config(rcg, pixel_freq, true))
+			__set_rate_mnd(rcg, pixel_freq);
 		spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 		return 0;
 	}
@@ -1437,7 +1401,8 @@ static int set_rate_byte(struct clk *clk, unsigned long rate)
 	byte_freq->div_src_val |= BVAL(4, 0, div);
 
 	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	__set_rate_hid(rcg, byte_freq);
+	if (!is_same_rcg_config(rcg, byte_freq, false))
+		__set_rate_hid(rcg, byte_freq);
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 
 	return 0;
@@ -1517,8 +1482,8 @@ static int set_rate_pixel(struct clk *clk, unsigned long rate)
 {
 	struct rcg_clk *rcg = to_rcg_clk(clk);
 	struct clk_freq_tbl *pixel_freq = rcg->current_freq;
-	int frac_num[] = {1, 2, 4, 3, 2};
-	int frac_den[] = {1, 3, 9, 8, 9};
+	int frac_num[] = {3, 2, 4, 1};
+	int frac_den[] = {8, 9, 9, 1};
 	int delta = 100000;
 	int i, rc;
 
@@ -1722,45 +1687,6 @@ static struct clk *edp_clk_get_parent(struct clk *c)
 
 	rcg->current_freq = freq;
 	return freq->src_clk;
-}
-
-static int rcg_clk_set_rate_dp(struct clk *clk, unsigned long rate)
-{
-	struct rcg_clk *rcg = to_rcg_clk(clk);
-	struct clk_freq_tbl *freq_tbl = rcg->current_freq;
-	unsigned long src_rate;
-	unsigned long num, den, flags;
-
-	src_rate = clk_get_rate(clk->parent);
-	if (src_rate <= 0) {
-		pr_err("Invalid RCG parent rate\n");
-		return -EINVAL;
-	}
-
-	rational_best_approximation(src_rate, rate,
-			(unsigned long)(1 << 16) - 1,
-			(unsigned long)(1 << 16) - 1, &den, &num);
-
-	if (!num || !den) {
-		pr_err("Invalid MN values derived for requested rate %lu\n",
-							rate);
-		return -EINVAL;
-	}
-
-	freq_tbl->div_src_val &= ~BM(4, 0);
-	if (num == den) {
-		freq_tbl->m_val = 0;
-		freq_tbl->n_val = 0;
-	} else {
-		freq_tbl->m_val = num;
-		freq_tbl->n_val = ~(den - num);
-		freq_tbl->d_val = ~den;
-	}
-
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
-	__set_rate_mnd(rcg, freq_tbl);
-	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
-	return 0;
 }
 
 static int gate_clk_enable(struct clk *c)
@@ -2235,6 +2161,7 @@ struct clk_ops clk_ops_rcg_mnd = {
 	.enable = rcg_clk_enable,
 	.disable = rcg_clk_disable,
 	.set_rate = rcg_clk_set_rate,
+	.set_duty_cycle = rcg_clk_set_duty_cycle,
 	.list_rate = rcg_clk_list_rate,
 	.round_rate = rcg_clk_round_rate,
 	.handoff = rcg_mnd_clk_handoff,
@@ -2319,15 +2246,6 @@ struct clk_ops clk_ops_rcg_edp = {
 	.list_registers = rcg_hid_clk_list_registers,
 };
 
-struct clk_ops clk_ops_rcg_dp = {
-	.enable = rcg_clk_enable,
-	.disable = rcg_clk_disable,
-	.set_rate = rcg_clk_set_rate_dp,
-	.list_rate = rcg_clk_list_rate,
-	.handoff = pixel_rcg_handoff,
-	.list_registers = rcg_mnd_clk_list_registers,
-};
-
 struct clk_ops clk_ops_branch = {
 	.enable = branch_clk_enable,
 	.prepare = branch_clk_prepare,
@@ -2341,14 +2259,6 @@ struct clk_ops clk_ops_branch = {
 	.set_flags = branch_clk_set_flags,
 	.handoff = branch_clk_handoff,
 	.list_registers = branch_clk_list_registers,
-};
-
-struct clk_ops clk_ops_branch_hw_ctl = {
-	.enable = hw_ctl_clk_enable,
-	.disable = hw_ctl_clk_disable,
-	.set_rate = hw_ctl_clk_set_rate,
-	.get_rate = hw_ctl_clk_get_rate,
-	.round_rate = hw_ctl_clk_round_rate,
 };
 
 struct clk_ops clk_ops_vote = {

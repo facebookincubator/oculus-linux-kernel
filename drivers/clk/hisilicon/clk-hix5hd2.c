@@ -46,15 +46,15 @@ static struct hisi_fixed_rate_clock hix5hd2_fixed_rate_clks[] __initdata = {
 	{ HIX5HD2_FIXED_83M, "83m", NULL, CLK_IS_ROOT, 83333333, },
 };
 
-static const char *const sfc_mux_p[] __initconst = {
+static const char *sfc_mux_p[] __initconst = {
 		"24m", "150m", "200m", "100m", "75m", };
 static u32 sfc_mux_table[] = {0, 4, 5, 6, 7};
 
-static const char *const sdio_mux_p[] __initconst = {
+static const char *sdio_mux_p[] __initconst = {
 		"75m", "100m", "50m", "15m", };
 static u32 sdio_mux_table[] = {0, 1, 2, 3};
 
-static const char *const fephy_mux_p[] __initconst = { "25m", "125m"};
+static const char *fephy_mux_p[] __initconst = { "25m", "125m"};
 static u32 fephy_mux_table[] = {0, 1};
 
 
@@ -252,9 +252,8 @@ static struct clk_ops clk_complex_ops = {
 	.disable = clk_complex_disable,
 };
 
-static void __init
-hix5hd2_clk_register_complex(struct hix5hd2_complex_clock *clks, int nums,
-			     struct hisi_clock_data *data)
+void __init hix5hd2_clk_register_complex(struct hix5hd2_complex_clock *clks,
+					 int nums, struct hisi_clock_data *data)
 {
 	void __iomem *base = data->base;
 	int i;

@@ -28,8 +28,8 @@
 #include <linux/reboot.h>
 #include <linux/amba/bus.h>
 #include <linux/platform_device.h>
-#include <linux/psci.h>
 
+#include <asm/psci.h>
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -169,7 +169,7 @@ static void __init highbank_init(void)
 		platform_device_register(&highbank_cpuidle_device);
 }
 
-static const char *const highbank_match[] __initconst = {
+static const char *highbank_match[] __initconst = {
 	"calxeda,highbank",
 	"calxeda,ecx-2000",
 	NULL,

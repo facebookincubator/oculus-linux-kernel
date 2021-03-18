@@ -12,6 +12,7 @@
 
 #include <linux/module.h>
 #include <linux/fs.h>
+#include <linux/version.h>
 #include <linux/timer.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -23,7 +24,7 @@
 #include <media/v4l2-mem2mem.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
-#include <media/videobuf2-v4l2.h>
+#include <media/videobuf2-core.h>
 #include <media/videobuf2-dma-contig.h>
 
 #include "g2d.h"
@@ -101,7 +102,7 @@ static struct g2d_frame *get_frame(struct g2d_ctx *ctx,
 	}
 }
 
-static int g2d_queue_setup(struct vb2_queue *vq, const void *parg,
+static int g2d_queue_setup(struct vb2_queue *vq, const struct v4l2_format *fmt,
 			   unsigned int *nbuffers, unsigned int *nplanes,
 			   unsigned int sizes[], void *alloc_ctxs[])
 {
@@ -134,9 +135,8 @@ static int g2d_buf_prepare(struct vb2_buffer *vb)
 
 static void g2d_buf_queue(struct vb2_buffer *vb)
 {
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct g2d_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
-	v4l2_m2m_buf_queue(ctx->fh.m2m_ctx, vbuf);
+	v4l2_m2m_buf_queue(ctx->fh.m2m_ctx, vb);
 }
 
 static struct vb2_ops g2d_qops = {
@@ -297,8 +297,14 @@ static int vidioc_querycap(struct file *file, void *priv,
 	strncpy(cap->driver, G2D_NAME, sizeof(cap->driver) - 1);
 	strncpy(cap->card, G2D_NAME, sizeof(cap->card) - 1);
 	cap->bus_info[0] = 0;
-	cap->device_caps = V4L2_CAP_VIDEO_M2M | V4L2_CAP_STREAMING;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+	cap->version = KERNEL_VERSION(1, 0, 0);
+	/*
+	 * This is only a mem-to-mem video device. The capture and output
+	 * device capability flags are left only for backward compatibility
+	 * and are scheduled for removal.
+	 */
+	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_OUTPUT |
+			    V4L2_CAP_VIDEO_M2M | V4L2_CAP_STREAMING;
 	return 0;
 }
 
@@ -538,7 +544,7 @@ static irqreturn_t g2d_isr(int irq, void *prv)
 {
 	struct g2d_dev *dev = prv;
 	struct g2d_ctx *ctx = dev->curr;
-	struct vb2_v4l2_buffer *src, *dst;
+	struct vb2_buffer *src, *dst;
 
 	g2d_clear_int(dev);
 	clk_disable(dev->gate);
@@ -551,11 +557,11 @@ static irqreturn_t g2d_isr(int irq, void *prv)
 	BUG_ON(src == NULL);
 	BUG_ON(dst == NULL);
 
-	dst->timecode = src->timecode;
-	dst->timestamp = src->timestamp;
-	dst->flags &= ~V4L2_BUF_FLAG_TSTAMP_SRC_MASK;
-	dst->flags |=
-		src->flags & V4L2_BUF_FLAG_TSTAMP_SRC_MASK;
+	dst->v4l2_buf.timecode = src->v4l2_buf.timecode;
+	dst->v4l2_buf.timestamp = src->v4l2_buf.timestamp;
+	dst->v4l2_buf.flags &= ~V4L2_BUF_FLAG_TSTAMP_SRC_MASK;
+	dst->v4l2_buf.flags |=
+		src->v4l2_buf.flags & V4L2_BUF_FLAG_TSTAMP_SRC_MASK;
 
 	v4l2_m2m_buf_done(src, VB2_BUF_STATE_DONE);
 	v4l2_m2m_buf_done(dst, VB2_BUF_STATE_DONE);
@@ -788,7 +794,7 @@ static const struct of_device_id exynos_g2d_match[] = {
 };
 MODULE_DEVICE_TABLE(of, exynos_g2d_match);
 
-static const struct platform_device_id g2d_driver_ids[] = {
+static struct platform_device_id g2d_driver_ids[] = {
 	{
 		.name = "s5p-g2d",
 		.driver_data = (unsigned long)&g2d_drvdata_v3x,
@@ -806,6 +812,7 @@ static struct platform_driver g2d_pdrv = {
 	.id_table	= g2d_driver_ids,
 	.driver		= {
 		.name = G2D_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = exynos_g2d_match,
 	},
 };

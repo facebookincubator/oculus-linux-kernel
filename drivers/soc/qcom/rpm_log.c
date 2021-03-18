@@ -378,8 +378,7 @@ static int msm_rpm_log_probe(struct platform_device *pdev)
 		 * offset-log-len-mask: At this offset header contains
 		 * the log length mask for the buffer.
 		 * offset-page-indices: At this offset header contains
-		 * the index for writer.
-		 */
+		 * the index for writer. */
 
 		key = "qcom,offset-version";
 		ret = of_property_read_u32(node, key, &val);
@@ -516,7 +515,7 @@ static int msm_rpm_log_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id rpm_log_table[] = {
+static struct of_device_id rpm_log_table[] = {
 	       {.compatible = "qcom,rpm-log"},
 	       {},
 };
@@ -546,4 +545,5 @@ module_exit(msm_rpm_log_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MSM RPM Log driver");
+MODULE_VERSION("1.0");
 MODULE_ALIAS("platform:msm_rpm_log");

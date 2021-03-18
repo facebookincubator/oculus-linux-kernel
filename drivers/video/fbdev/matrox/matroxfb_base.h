@@ -44,6 +44,9 @@
 
 #include <asm/io.h>
 #include <asm/unaligned.h>
+#ifdef CONFIG_MTRR
+#include <asm/mtrr.h>
+#endif
 
 #if defined(CONFIG_PPC_PMAC)
 #include <asm/prom.h>
@@ -182,6 +185,23 @@ static inline void vaddr_add(vaddr_t* va, unsigned long offs) {
 
 static inline void __iomem* vaddr_va(vaddr_t va) {
 	return va.vaddr;
+}
+
+#define MGA_IOREMAP_NORMAL	0
+#define MGA_IOREMAP_NOCACHE	1
+
+#define MGA_IOREMAP_FB		MGA_IOREMAP_NOCACHE
+#define MGA_IOREMAP_MMIO	MGA_IOREMAP_NOCACHE
+static inline int mga_ioremap(unsigned long phys, unsigned long size, int flags, vaddr_t* virt) {
+	if (flags & MGA_IOREMAP_NOCACHE)
+		virt->vaddr = ioremap_nocache(phys, size);
+	else
+		virt->vaddr = ioremap(phys, size);
+	return (virt->vaddr == NULL); /* 0, !0... 0, error_code in future */
+}
+
+static inline void mga_iounmap(vaddr_t va) {
+	iounmap(va.vaddr);
 }
 
 struct my_timming {
@@ -429,7 +449,12 @@ struct matrox_fb_info {
 		int		plnwt;
 		int		srcorg;
 			      } capable;
-	int			wc_cookie;
+#ifdef CONFIG_MTRR
+	struct {
+		int		vram;
+		int		vram_valid;
+			      } mtrr;
+#endif
 	struct {
 		int		precise_width;
 		int		mga_24bpp_fix;

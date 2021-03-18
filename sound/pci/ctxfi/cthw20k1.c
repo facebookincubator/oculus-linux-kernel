@@ -1910,8 +1910,8 @@ static int hw_card_start(struct hw *hw)
 		return err;
 
 	/* Set DMA transfer mask */
-	if (dma_set_mask(&pci->dev, CT_XFI_DMA_MASK) < 0 ||
-	    dma_set_coherent_mask(&pci->dev, CT_XFI_DMA_MASK) < 0) {
+	if (pci_set_dma_mask(pci, CT_XFI_DMA_MASK) < 0 ||
+	    pci_set_consistent_dma_mask(pci, CT_XFI_DMA_MASK) < 0) {
 		dev_err(hw->card->dev,
 			"architecture does not support PCI busmaster DMA with mask 0x%llx\n",
 			CT_XFI_DMA_MASK);
@@ -1985,7 +1985,10 @@ static int hw_card_shutdown(struct hw *hw)
 		free_irq(hw->irq, hw);
 
 	hw->irq	= -1;
-	iounmap(hw->mem_base);
+
+	if (hw->mem_base)
+		iounmap(hw->mem_base);
+
 	hw->mem_base = NULL;
 
 	if (hw->io_base)
@@ -2096,11 +2099,20 @@ static int hw_suspend(struct hw *hw)
 		pci_write_config_dword(pci, UAA_CFG_SPACE_FLAG, 0x0);
 	}
 
+	pci_disable_device(pci);
+	pci_save_state(pci);
+	pci_set_power_state(pci, PCI_D3hot);
+
 	return 0;
 }
 
 static int hw_resume(struct hw *hw, struct card_conf *info)
 {
+	struct pci_dev *pci = hw->pci;
+
+	pci_set_power_state(pci, PCI_D0);
+	pci_restore_state(pci);
+
 	/* Re-initialize card hardware. */
 	return hw_card_init(hw, info);
 }

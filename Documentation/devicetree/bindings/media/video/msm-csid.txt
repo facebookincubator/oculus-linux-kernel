@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM CSID
+* Qualcomm MSM CSID
 
 Required properties:
 - cell-index: csid hardware core index
@@ -14,7 +14,6 @@ Required properties:
     - "qcom,csid-v3.4.2"
     - "qcom,csid-v3.5.1"
     - "qcom,csid-v3.4.3"
-    - "qcom,csid-v5.0"
 - reg : offset and length of the register set for the device
     for the csid operating in compatible mode.
 - reg-names : should specify relevant names to each reg property defined.

@@ -65,8 +65,7 @@
 #define DEFAULT_DATA_OFFSET 2
 #define DEFAULT_DATA_SIZE 249
 /* Power levels are 0-7, but SOC will expect values from 0-255
- * So the each level step size will be 255/7 = 36
- */
+ * So the each level step size will be 255/7 = 36 */
 #define FM_TX_PWR_LVL_STEP_SIZE 36
 #define FM_TX_PWR_LVL_0         0 /* Lowest power lvl that can be set for Tx */
 #define FM_TX_PWR_LVL_MAX       7 /* Max power lvl for Tx */
@@ -101,9 +100,8 @@
 #define ENTRIES_EACH_CMD 15
 #define SPUR_DATA_INDEX 2
 #define FM_AF_LIST_MAX_SIZE   200
-/* Each AF frequency consist of sizeof(int) bytes */
-#define AF_LIST_MAX     (FM_AF_LIST_MAX_SIZE / 4)
-
+#define AF_LIST_MAX     (FM_AF_LIST_MAX_SIZE / 4) /* Each AF frequency consist
+							of sizeof(int) bytes */
 #define MAX_BLEND_INDEX 49
 
 #define TUNE_PARAM 16

@@ -1,5 +1,5 @@
 /*
- * net/sched/act_gact.c		Generic actions
+ * net/sched/gact.c	Generic actions
  *
  *		This program is free software; you can redistribute it and/or
  *		modify it under the terms of the GNU General Public License
@@ -28,18 +28,14 @@
 #ifdef CONFIG_GACT_PROB
 static int gact_net_rand(struct tcf_gact *gact)
 {
-	smp_rmb(); /* coupled with smp_wmb() in tcf_gact_init() */
-	if (prandom_u32() % gact->tcfg_pval)
+	if (!gact->tcfg_pval || prandom_u32() % gact->tcfg_pval)
 		return gact->tcf_action;
 	return gact->tcfg_paction;
 }
 
 static int gact_determ(struct tcf_gact *gact)
 {
-	u32 pack = atomic_inc_return(&gact->packets);
-
-	smp_rmb(); /* coupled with smp_wmb() in tcf_gact_init() */
-	if (pack % gact->tcfg_pval)
+	if (!gact->tcfg_pval || gact->tcf_bstats.packets % gact->tcfg_pval)
 		return gact->tcf_action;
 	return gact->tcfg_paction;
 }
@@ -89,8 +85,7 @@ static int tcf_gact_init(struct net *net, struct nlattr *nla,
 #endif
 
 	if (!tcf_hash_check(parm->index, a, bind)) {
-		ret = tcf_hash_create(parm->index, est, a, sizeof(*gact),
-				      bind, true);
+		ret = tcf_hash_create(parm->index, est, a, sizeof(*gact), bind);
 		if (ret)
 			return ret;
 		ret = ACT_P_CREATED;
@@ -104,19 +99,16 @@ static int tcf_gact_init(struct net *net, struct nlattr *nla,
 
 	gact = to_gact(a);
 
-	ASSERT_RTNL();
+	spin_lock_bh(&gact->tcf_lock);
 	gact->tcf_action = parm->action;
 #ifdef CONFIG_GACT_PROB
 	if (p_parm) {
 		gact->tcfg_paction = p_parm->paction;
-		gact->tcfg_pval    = max_t(u16, 1, p_parm->pval);
-		/* Make sure tcfg_pval is written before tcfg_ptype
-		 * coupled with smp_rmb() in gact_net_rand() & gact_determ()
-		 */
-		smp_wmb();
+		gact->tcfg_pval    = p_parm->pval;
 		gact->tcfg_ptype   = p_parm->ptype;
 	}
 #endif
+	spin_unlock_bh(&gact->tcf_lock);
 	if (ret == ACT_P_CREATED)
 		tcf_hash_insert(a);
 	return ret;
@@ -126,21 +118,23 @@ static int tcf_gact(struct sk_buff *skb, const struct tc_action *a,
 		    struct tcf_result *res)
 {
 	struct tcf_gact *gact = a->priv;
-	int action = READ_ONCE(gact->tcf_action);
+	int action = TC_ACT_SHOT;
 
+	spin_lock(&gact->tcf_lock);
 #ifdef CONFIG_GACT_PROB
-	{
-	u32 ptype = READ_ONCE(gact->tcfg_ptype);
-
-	if (ptype)
-		action = gact_rand[ptype](gact);
-	}
+	if (gact->tcfg_ptype)
+		action = gact_rand[gact->tcfg_ptype](gact);
+	else
+		action = gact->tcf_action;
+#else
+	action = gact->tcf_action;
 #endif
-	bstats_cpu_update(this_cpu_ptr(gact->common.cpu_bstats), skb);
+	gact->tcf_bstats.bytes += qdisc_pkt_len(skb);
+	gact->tcf_bstats.packets++;
 	if (action == TC_ACT_SHOT)
-		qstats_drop_inc(this_cpu_ptr(gact->common.cpu_qstats));
-
-	tcf_lastuse_update(&gact->tcf_tm);
+		gact->tcf_qstats.drops++;
+	gact->tcf_tm.lastuse = jiffies;
+	spin_unlock(&gact->tcf_lock);
 
 	return action;
 }

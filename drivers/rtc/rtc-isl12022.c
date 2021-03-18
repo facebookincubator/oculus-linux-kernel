@@ -151,7 +151,12 @@ static int isl12022_get_datetime(struct i2c_client *client, struct rtc_time *tm)
 		tm->tm_sec, tm->tm_min, tm->tm_hour,
 		tm->tm_mday, tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	return rtc_valid_tm(tm);
+	/* The clock can give out invalid datetime, but we cannot return
+	 * -EINVAL otherwise hwclock will refuse to set the time on bootup. */
+	if (rtc_valid_tm(tm) < 0)
+		dev_err(&client->dev, "retrieved date and time is invalid.\n");
+
+	return 0;
 }
 
 static int isl12022_set_datetime(struct i2c_client *client, struct rtc_time *tm)
@@ -270,11 +275,9 @@ static int isl12022_probe(struct i2c_client *client,
 
 #ifdef CONFIG_OF
 static const struct of_device_id isl12022_dt_match[] = {
-	{ .compatible = "isl,isl12022" }, /* for backward compat., don't use */
-	{ .compatible = "isil,isl12022" },
+	{ .compatible = "isl,isl12022" },
 	{ },
 };
-MODULE_DEVICE_TABLE(of, isl12022_dt_match);
 #endif
 
 static const struct i2c_device_id isl12022_id[] = {

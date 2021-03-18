@@ -404,8 +404,7 @@ static int ds3000_load_firmware(struct dvb_frontend *fe,
 	return ret;
 }
 
-static int ds3000_set_voltage(struct dvb_frontend *fe,
-			      enum fe_sec_voltage voltage)
+static int ds3000_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t voltage)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	u8 data;
@@ -432,7 +431,7 @@ static int ds3000_set_voltage(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int ds3000_read_status(struct dvb_frontend *fe, enum fe_status *status)
+static int ds3000_read_status(struct dvb_frontend *fe, fe_status_t* status)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
@@ -667,7 +666,7 @@ static int ds3000_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 	return 0;
 }
 
-static int ds3000_set_tone(struct dvb_frontend *fe, enum fe_sec_tone_mode tone)
+static int ds3000_set_tone(struct dvb_frontend *fe, fe_sec_tone_mode_t tone)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	u8 data;
@@ -767,7 +766,7 @@ static int ds3000_send_diseqc_msg(struct dvb_frontend *fe,
 
 /* Send DiSEqC burst */
 static int ds3000_diseqc_send_burst(struct dvb_frontend *fe,
-				    enum fe_sec_mini_cmd burst)
+					fe_sec_mini_cmd_t burst)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	int i;
@@ -906,7 +905,7 @@ static int ds3000_set_frontend(struct dvb_frontend *fe)
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 
 	int i;
-	enum fe_status status;
+	fe_status_t status;
 	s32 offset_khz;
 	u32 frequency;
 	u16 value;
@@ -1046,7 +1045,7 @@ static int ds3000_tune(struct dvb_frontend *fe,
 			bool re_tune,
 			unsigned int mode_flags,
 			unsigned int *delay,
-			enum fe_status *status)
+			fe_status_t *status)
 {
 	if (re_tune) {
 		int ret = ds3000_set_frontend(fe);

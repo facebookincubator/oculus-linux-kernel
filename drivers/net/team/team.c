@@ -28,7 +28,6 @@
 #include <net/genetlink.h>
 #include <net/netlink.h>
 #include <net/sch_generic.h>
-#include <net/switchdev.h>
 #include <generated/utsrelease.h>
 #include <linux/if_team.h>
 
@@ -175,10 +174,17 @@ static int __team_option_inst_add(struct team *team, struct team_option *option,
 static int __team_option_inst_add_option(struct team *team,
 					 struct team_option *option)
 {
+	struct team_port *port;
 	int err;
 
 	if (!option->per_port) {
 		err = __team_option_inst_add(team, option, NULL);
+		if (err)
+			goto inst_del_option;
+	}
+
+	list_for_each_entry(port, &team->port_list, list) {
+		err = __team_option_inst_add(team, option, port);
 		if (err)
 			goto inst_del_option;
 	}
@@ -969,7 +975,7 @@ static void team_port_disable(struct team *team,
 			    NETIF_F_FRAGLIST | NETIF_F_ALL_TSO | \
 			    NETIF_F_HIGHDMA | NETIF_F_LRO)
 
-static void ___team_compute_features(struct team *team)
+static void __team_compute_features(struct team *team)
 {
 	struct team_port *port;
 	u32 vlan_features = TEAM_VLAN_FEATURES & NETIF_F_ALL_FOR_ALL;
@@ -993,20 +999,15 @@ static void ___team_compute_features(struct team *team)
 	team->dev->priv_flags &= ~IFF_XMIT_DST_RELEASE;
 	if (dst_release_flag == (IFF_XMIT_DST_RELEASE | IFF_XMIT_DST_RELEASE_PERM))
 		team->dev->priv_flags |= IFF_XMIT_DST_RELEASE;
-}
 
-static void __team_compute_features(struct team *team)
-{
-	___team_compute_features(team);
 	netdev_change_features(team->dev);
 }
 
 static void team_compute_features(struct team *team)
 {
 	mutex_lock(&team->lock);
-	___team_compute_features(team);
+	__team_compute_features(team);
 	mutex_unlock(&team->lock);
-	netdev_change_features(team->dev);
 }
 
 static int team_port_enter(struct team *team, struct team_port *port)
@@ -1187,9 +1188,6 @@ static int team_port_add(struct team *team, struct net_device *port_dev)
 			   portname);
 		goto err_enable_netpoll;
 	}
-
-	if (!(dev->features & NETIF_F_LRO))
-		dev_disable_lro(port_dev);
 
 	err = netdev_rx_handler_register(port_dev, team_handle_frame,
 					 port);
@@ -1940,9 +1938,6 @@ static netdev_features_t team_fix_features(struct net_device *dev,
 						     mask);
 	}
 	rcu_read_unlock();
-
-	features = netdev_add_tso_features(features, mask);
-
 	return features;
 }
 
@@ -1982,13 +1977,6 @@ static const struct net_device_ops team_netdev_ops = {
 	.ndo_del_slave		= team_del_slave,
 	.ndo_fix_features	= team_fix_features,
 	.ndo_change_carrier     = team_change_carrier,
-	.ndo_bridge_setlink	= switchdev_port_bridge_setlink,
-	.ndo_bridge_getlink	= switchdev_port_bridge_getlink,
-	.ndo_bridge_dellink	= switchdev_port_bridge_dellink,
-	.ndo_fdb_add		= switchdev_port_fdb_add,
-	.ndo_fdb_del		= switchdev_port_fdb_del,
-	.ndo_fdb_dump		= switchdev_port_fdb_dump,
-	.ndo_features_check	= passthru_features_check,
 };
 
 /***********************
@@ -2056,9 +2044,9 @@ static void team_setup(struct net_device *dev)
 	dev->netdev_ops = &team_netdev_ops;
 	dev->ethtool_ops = &team_ethtool_ops;
 	dev->destructor	= team_destructor;
+	dev->tx_queue_len = 0;
 	dev->flags |= IFF_MULTICAST;
 	dev->priv_flags &= ~(IFF_XMIT_DST_RELEASE | IFF_TX_SKB_SHARING);
-	dev->priv_flags |= IFF_NO_QUEUE;
 
 	/*
 	 * Indicate we support unicast address filtering. That way core won't

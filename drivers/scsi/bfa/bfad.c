@@ -1079,18 +1079,22 @@ bfad_start_ops(struct bfad_s *bfad) {
 int
 bfad_worker(void *ptr)
 {
-	struct bfad_s *bfad = ptr;
-	unsigned long flags;
+	struct bfad_s *bfad;
+	unsigned long   flags;
 
-	if (kthread_should_stop())
-		return 0;
+	bfad = (struct bfad_s *)ptr;
 
-	/* Send event BFAD_E_INIT_SUCCESS */
-	bfa_sm_send_event(bfad, BFAD_E_INIT_SUCCESS);
+	while (!kthread_should_stop()) {
 
-	spin_lock_irqsave(&bfad->bfad_lock, flags);
-	bfad->bfad_tsk = NULL;
-	spin_unlock_irqrestore(&bfad->bfad_lock, flags);
+		/* Send event BFAD_E_INIT_SUCCESS */
+		bfa_sm_send_event(bfad, BFAD_E_INIT_SUCCESS);
+
+		spin_lock_irqsave(&bfad->bfad_lock, flags);
+		bfad->bfad_tsk = NULL;
+		spin_unlock_irqrestore(&bfad->bfad_lock, flags);
+
+		break;
+	}
 
 	return 0;
 }

@@ -25,8 +25,8 @@
      */
 
 static void
-bitcpy(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
-	const unsigned long *src, unsigned src_idx, int bits, unsigned n)
+bitcpy(struct fb_info *p, unsigned long *dst, int dst_idx,
+		const unsigned long *src, int src_idx, int bits, unsigned n)
 {
 	unsigned long first, last;
 	int const shift = dst_idx-src_idx;
@@ -86,15 +86,15 @@ bitcpy(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 				first &= last;
 			if (shift > 0) {
 				/* Single source word */
-				*dst = comp(*src << left, *dst, first);
+				*dst = comp(*src >> right, *dst, first);
 			} else if (src_idx+n <= bits) {
 				/* Single source word */
-				*dst = comp(*src >> right, *dst, first);
+				*dst = comp(*src << left, *dst, first);
 			} else {
 				/* 2 source words */
 				d0 = *src++;
 				d1 = *src;
-				*dst = comp(d0 >> right | d1 << left, *dst,
+				*dst = comp(d0 << left | d1 >> right, *dst,
 					    first);
 			}
 		} else {
@@ -109,14 +109,13 @@ bitcpy(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 			/* Leading bits */
 			if (shift > 0) {
 				/* Single source word */
-				*dst = comp(d0 << left, *dst, first);
+				*dst = comp(d0 >> right, *dst, first);
 				dst++;
 				n -= bits - dst_idx;
 			} else {
 				/* 2 source words */
 				d1 = *src++;
-				*dst = comp(d0 >> right | d1 << left, *dst,
-					    first);
+				*dst = comp(d0 << left | *dst >> right, *dst, first);
 				d0 = d1;
 				dst++;
 				n -= bits - dst_idx;
@@ -127,36 +126,36 @@ bitcpy(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 			n /= bits;
 			while (n >= 4) {
 				d1 = *src++;
-				*dst++ = d0 >> right | d1 << left;
+				*dst++ = d0 << left | d1 >> right;
 				d0 = d1;
 				d1 = *src++;
-				*dst++ = d0 >> right | d1 << left;
+				*dst++ = d0 << left | d1 >> right;
 				d0 = d1;
 				d1 = *src++;
-				*dst++ = d0 >> right | d1 << left;
+				*dst++ = d0 << left | d1 >> right;
 				d0 = d1;
 				d1 = *src++;
-				*dst++ = d0 >> right | d1 << left;
+				*dst++ = d0 << left | d1 >> right;
 				d0 = d1;
 				n -= 4;
 			}
 			while (n--) {
 				d1 = *src++;
-				*dst++ = d0 >> right | d1 << left;
+				*dst++ = d0 << left | d1 >> right;
 				d0 = d1;
 			}
 
 			/* Trailing bits */
-			if (m) {
-				if (m <= bits - right) {
+			if (last) {
+				if (m <= right) {
 					/* Single source word */
-					d0 >>= right;
+					*dst = comp(d0 << left, *dst, last);
 				} else {
 					/* 2 source words */
  					d1 = *src;
-					d0 = d0 >> right | d1 << left;
+					*dst = comp(d0 << left | d1 >> right,
+						    *dst, last);
 				}
-				*dst = comp(d0, *dst, last);
 			}
 		}
 	}
@@ -167,35 +166,40 @@ bitcpy(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
      */
 
 static void
-bitcpy_rev(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
-	   const unsigned long *src, unsigned src_idx, unsigned bits,
-	   unsigned n)
+bitcpy_rev(struct fb_info *p, unsigned long *dst, int dst_idx,
+		const unsigned long *src, int src_idx, int bits, unsigned n)
 {
 	unsigned long first, last;
 	int shift;
 
-	dst += (dst_idx + n - 1) / bits;
-	src += (src_idx + n - 1) / bits;
-	dst_idx = (dst_idx + n - 1) % bits;
-	src_idx = (src_idx + n - 1) % bits;
+	dst += (n-1)/bits;
+	src += (n-1)/bits;
+	if ((n-1) % bits) {
+		dst_idx += (n-1) % bits;
+		dst += dst_idx >> (ffs(bits) - 1);
+		dst_idx &= bits - 1;
+		src_idx += (n-1) % bits;
+		src += src_idx >> (ffs(bits) - 1);
+		src_idx &= bits - 1;
+	}
 
 	shift = dst_idx-src_idx;
 
-	first = ~FB_SHIFT_HIGH(p, ~0UL, (dst_idx + 1) % bits);
-	last = FB_SHIFT_HIGH(p, ~0UL, (bits + dst_idx + 1 - n) % bits);
+	first = FB_SHIFT_LOW(p, ~0UL, bits - 1 - dst_idx);
+	last = ~(FB_SHIFT_LOW(p, ~0UL, bits - 1 - ((dst_idx-n) % bits)));
 
 	if (!shift) {
 		/* Same alignment for source and dest */
 		if ((unsigned long)dst_idx+1 >= n) {
 			/* Single word */
-			if (first)
-				last &= first;
-			*dst = comp(*src, *dst, last);
+			if (last)
+				first &= last;
+			*dst = comp(*src, *dst, first);
 		} else {
 			/* Multiple destination words */
 
 			/* Leading bits */
-			if (first) {
+			if (first != ~0UL) {
 				*dst = comp(*src, *dst, first);
 				dst--;
 				src--;
@@ -218,29 +222,29 @@ bitcpy_rev(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 			while (n--)
 				*dst-- = *src--;
 			/* Trailing bits */
-			if (last != -1UL)
+			if (last)
 				*dst = comp(*src, *dst, last);
 		}
 	} else {
 		/* Different alignment for source and dest */
 
-		int const left = shift & (bits-1);
-		int const right = -shift & (bits-1);
+		int const left = -shift & (bits-1);
+		int const right = shift & (bits-1);
 
 		if ((unsigned long)dst_idx+1 >= n) {
 			/* Single destination word */
-			if (first)
-				last &= first;
+			if (last)
+				first &= last;
 			if (shift < 0) {
 				/* Single source word */
-				*dst = comp(*src >> right, *dst, last);
+				*dst = comp(*src << left, *dst, first);
 			} else if (1+(unsigned long)src_idx >= n) {
 				/* Single source word */
-				*dst = comp(*src << left, *dst, last);
+				*dst = comp(*src >> right, *dst, first);
 			} else {
 				/* 2 source words */
-				*dst = comp(*src << left | *(src-1) >> right,
-					    *dst, last);
+				*dst = comp(*src >> right | *(src-1) << left,
+					    *dst, first);
 			}
 		} else {
 			/* Multiple destination words */
@@ -257,18 +261,14 @@ bitcpy_rev(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 			/* Leading bits */
 			if (shift < 0) {
 				/* Single source word */
-				d1 = d0;
-				d0 >>= right;
+				*dst = comp(d0 << left, *dst, first);
 			} else {
 				/* 2 source words */
 				d1 = *src--;
-				d0 = d0 << left | d1 >> right;
+				*dst = comp(d0 >> right | d1 << left, *dst,
+					    first);
+				d0 = d1;
 			}
-			if (!first)
-				*dst = d0;
-			else
-				*dst = comp(d0, *dst, first);
-			d0 = d1;
 			dst--;
 			n -= dst_idx+1;
 
@@ -277,36 +277,36 @@ bitcpy_rev(struct fb_info *p, unsigned long *dst, unsigned dst_idx,
 			n /= bits;
 			while (n >= 4) {
 				d1 = *src--;
-				*dst-- = d0 << left | d1 >> right;
+				*dst-- = d0 >> right | d1 << left;
 				d0 = d1;
 				d1 = *src--;
-				*dst-- = d0 << left | d1 >> right;
+				*dst-- = d0 >> right | d1 << left;
 				d0 = d1;
 				d1 = *src--;
-				*dst-- = d0 << left | d1 >> right;
+				*dst-- = d0 >> right | d1 << left;
 				d0 = d1;
 				d1 = *src--;
-				*dst-- = d0 << left | d1 >> right;
+				*dst-- = d0 >> right | d1 << left;
 				d0 = d1;
 				n -= 4;
 			}
 			while (n--) {
 				d1 = *src--;
-				*dst-- = d0 << left | d1 >> right;
+				*dst-- = d0 >> right | d1 << left;
 				d0 = d1;
 			}
 
 			/* Trailing bits */
-			if (m) {
-				if (m <= bits - left) {
+			if (last) {
+				if (m <= left) {
 					/* Single source word */
-					d0 <<= left;
+					*dst = comp(d0 >> right, *dst, last);
 				} else {
 					/* 2 source words */
 					d1 = *src;
-					d0 = d0 << left | d1 >> right;
+					*dst = comp(d0 >> right | d1 << left,
+						    *dst, last);
 				}
-				*dst = comp(d0, *dst, last);
 			}
 		}
 	}
@@ -317,9 +317,9 @@ void sys_copyarea(struct fb_info *p, const struct fb_copyarea *area)
 	u32 dx = area->dx, dy = area->dy, sx = area->sx, sy = area->sy;
 	u32 height = area->height, width = area->width;
 	unsigned long const bits_per_line = p->fix.line_length*8u;
-	unsigned long *base = NULL;
+	unsigned long *dst = NULL, *src = NULL;
 	int bits = BITS_PER_LONG, bytes = bits >> 3;
-	unsigned dst_idx = 0, src_idx = 0, rev_copy = 0;
+	int dst_idx = 0, src_idx = 0, rev_copy = 0;
 
 	if (p->state != FBINFO_STATE_RUNNING)
 		return;
@@ -334,7 +334,8 @@ void sys_copyarea(struct fb_info *p, const struct fb_copyarea *area)
 
 	/* split the base of the framebuffer into a long-aligned address and
 	   the index of the first bit */
-	base = (unsigned long *)((unsigned long)p->screen_base & ~(bytes-1));
+	dst = src = (unsigned long *)((unsigned long)p->screen_base &
+				      ~(bytes-1));
 	dst_idx = src_idx = 8*((unsigned long)p->screen_base & (bytes-1));
 	/* add offset of source and target area */
 	dst_idx += dy*bits_per_line + dx*p->var.bits_per_pixel;
@@ -347,14 +348,20 @@ void sys_copyarea(struct fb_info *p, const struct fb_copyarea *area)
 		while (height--) {
 			dst_idx -= bits_per_line;
 			src_idx -= bits_per_line;
-			bitcpy_rev(p, base + (dst_idx / bits), dst_idx % bits,
-				base + (src_idx / bits), src_idx % bits, bits,
+			dst += dst_idx >> (ffs(bits) - 1);
+			dst_idx &= (bytes - 1);
+			src += src_idx >> (ffs(bits) - 1);
+			src_idx &= (bytes - 1);
+			bitcpy_rev(p, dst, dst_idx, src, src_idx, bits,
 				width*p->var.bits_per_pixel);
 		}
 	} else {
 		while (height--) {
-			bitcpy(p, base + (dst_idx / bits), dst_idx % bits,
-				base + (src_idx / bits), src_idx % bits, bits,
+			dst += dst_idx >> (ffs(bits) - 1);
+			dst_idx &= (bytes - 1);
+			src += src_idx >> (ffs(bits) - 1);
+			src_idx &= (bytes - 1);
+			bitcpy(p, dst, dst_idx, src, src_idx, bits,
 				width*p->var.bits_per_pixel);
 			dst_idx += bits_per_line;
 			src_idx += bits_per_line;

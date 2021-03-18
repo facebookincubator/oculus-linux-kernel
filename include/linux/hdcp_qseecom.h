@@ -14,8 +14,6 @@
 #define __HDCP_QSEECOM_H
 #include <linux/types.h>
 
-#define HDCP_MAX_MESSAGE_PARTS 4
-
 enum hdcp_lib_wakeup_cmd {
 	HDCP_LIB_WKUP_CMD_INVALID,
 	HDCP_LIB_WKUP_CMD_START,
@@ -26,7 +24,6 @@ enum hdcp_lib_wakeup_cmd {
 	HDCP_LIB_WKUP_CMD_MSG_RECV_FAILED,
 	HDCP_LIB_WKUP_CMD_MSG_RECV_TIMEOUT,
 	HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE,
-	HDCP_LIB_WKUP_CMD_LINK_FAILED,
 };
 
 enum hdmi_hdcp_wakeup_cmd {
@@ -47,26 +44,12 @@ struct hdcp_lib_wakeup_data {
 	uint32_t timeout;
 };
 
-struct hdcp_msg_part {
-	char *name;
-	uint32_t offset;
-	uint32_t length;
-};
-
-struct hdcp_msg_data {
-	uint32_t num_messages;
-	struct hdcp_msg_part messages[HDCP_MAX_MESSAGE_PARTS];
-	uint8_t rx_status;
-};
-
 struct hdmi_hdcp_wakeup_data {
 	enum hdmi_hdcp_wakeup_cmd cmd;
 	void *context;
 	char *send_msg_buf;
 	uint32_t send_msg_len;
 	uint32_t timeout;
-	uint8_t abort_mask;
-	const struct hdcp_msg_data *message_data;
 };
 
 static inline char *hdmi_hdcp_cmd_to_str(uint32_t cmd)
@@ -108,8 +91,6 @@ static inline char *hdcp_lib_cmd_to_str(uint32_t cmd)
 		return "HDCP_LIB_WKUP_CMD_MSG_RECV_TIMEOUT";
 	case HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE:
 		return "HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE";
-	case HDCP_LIB_WKUP_CMD_LINK_FAILED:
-		return "HDCP_LIB_WKUP_CMD_LINK_FAILED";
 	default:
 		return "???";
 	}
@@ -127,15 +108,9 @@ struct hdcp_client_ops {
 	int (*wakeup)(struct hdmi_hdcp_wakeup_data *data);
 };
 
-enum hdcp_device_type {
-	HDCP_TXMTR_HDMI = 0x8001,
-	HDCP_TXMTR_DP = 0x8002
-};
-
 struct hdcp_register_data {
 	struct hdcp_client_ops *client_ops;
 	struct hdcp_txmtr_ops *txmtr_ops;
-	enum hdcp_device_type device_type;
 	void *client_ctx;
 	void **hdcp_ctx;
 	bool tethered;

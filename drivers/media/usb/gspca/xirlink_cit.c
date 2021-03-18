@@ -1772,8 +1772,7 @@ static int cit_start_model2(struct gspca_dev *gspca_dev)
 		cit_write_reg(gspca_dev, 0x0070, 0x0119);	/* All except 176x144 */
 		sd->sof_len = 2;
 		break;
-#if 0
-	case VIDEOSIZE_352x240:
+	/* case VIDEOSIZE_352x240: */
 		cit_write_reg(gspca_dev, 0x002c, 0x0103);	/* All except 320x240 */
 		cit_write_reg(gspca_dev, 0x0000, 0x0104);	/* Same */
 		cit_write_reg(gspca_dev, 0x001e, 0x0105);	/* 320x240, 352x240 */
@@ -1781,7 +1780,6 @@ static int cit_start_model2(struct gspca_dev *gspca_dev)
 		cit_write_reg(gspca_dev, 0x0070, 0x0119);	/* All except 176x144 */
 		sd->sof_len = 2;
 		break;
-#endif
 	case 352: /* 352x288 */
 		cit_write_reg(gspca_dev, 0x002c, 0x0103);	/* All except 320x240 */
 		cit_write_reg(gspca_dev, 0x0000, 0x0104);	/* Same */
@@ -1855,15 +1853,13 @@ static int cit_start_model2(struct gspca_dev *gspca_dev)
 		cit_model2_Packet1(gspca_dev, 0x0018, 0x0044); /* Another hardware setting */
 		clock_div = 8;
 		break;
-#if 0
-	case VIDEOSIZE_352x240:
+	/* case VIDEOSIZE_352x240: */
 		/* This mode doesn't work as Windows programs it; changed to work */
 		cit_model2_Packet1(gspca_dev, 0x0014, 0x0009); /* Windows sets this to 8 */
 		cit_model2_Packet1(gspca_dev, 0x0016, 0x0003); /* Horizontal shift */
 		cit_model2_Packet1(gspca_dev, 0x0018, 0x0044); /* Windows sets this to 0x0045 */
 		clock_div = 10;
 		break;
-#endif
 	case 352: /* 352x288 */
 		cit_model2_Packet1(gspca_dev, 0x0014, 0x0003);
 		cit_model2_Packet1(gspca_dev, 0x0016, 0x0002); /* Horizontal shift */
@@ -1910,11 +1906,9 @@ static int cit_start_model2(struct gspca_dev *gspca_dev)
 	case 320: /* 320x240 */
 		cit_model2_Packet1(gspca_dev, 0x0026, 0x0044);
 		break;
-#if 0
-	case VIDEOSIZE_352x240:
+	/* case VIDEOSIZE_352x240: */
 		cit_model2_Packet1(gspca_dev, 0x0026, 0x0046);
 		break;
-#endif
 	case 352: /* 352x288 */
 		cit_model2_Packet1(gspca_dev, 0x0026, 0x0048);
 		break;

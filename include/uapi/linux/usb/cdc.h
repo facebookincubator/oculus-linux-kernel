@@ -6,8 +6,8 @@
  * firmware based USB peripherals.
  */
 
-#ifndef __UAPI_LINUX_USB_CDC_H
-#define __UAPI_LINUX_USB_CDC_H
+#ifndef __LINUX_USB_CDC_H
+#define __LINUX_USB_CDC_H
 
 #include <linux/types.h>
 
@@ -445,4 +445,4 @@ struct usb_cdc_ncm_ndp_input_size {
 #define USB_CDC_NCM_CRC_NOT_APPENDED			0x00
 #define USB_CDC_NCM_CRC_APPENDED			0x01
 
-#endif /* __UAPI_LINUX_USB_CDC_H */
+#endif /* __LINUX_USB_CDC_H */

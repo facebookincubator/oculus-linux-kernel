@@ -53,8 +53,8 @@ static long g711_in_ioctl_shared(struct file *file,
 		}
 		rc = audio_in_buf_alloc(audio);
 		if (rc < 0) {
-			pr_err("%s:session id %d: buffer allocation failed rc=%d\n",
-				__func__, audio->ac->session, rc);
+			pr_err("%s:session id %d: buffer allocation failed\n",
+				__func__, audio->ac->session);
 			break;
 		}
 		pr_debug("%s: sample rate %d", __func__, enc_cfg->sample_rate);
@@ -63,8 +63,8 @@ static long g711_in_ioctl_shared(struct file *file,
 			enc_cfg->sample_rate);
 
 		if (rc < 0) {
-			pr_err("%s:session id %d: cmd g711 media format block failed rc=%d\n",
-					__func__, audio->ac->session, rc);
+			pr_err("%s:session id %d: cmd g711 media format block failed\n",
+					__func__, audio->ac->session);
 			break;
 		}
 		if (audio->feedback == NON_TUNNEL_MODE) {
@@ -73,8 +73,8 @@ static long g711_in_ioctl_shared(struct file *file,
 				audio->pcm_cfg.channel_count);
 
 			if (rc < 0) {
-				pr_err("%s:session id %d: media format block failed rc=%d\n",
-					__func__, audio->ac->session, rc);
+				pr_err("%s:session id %d: media format block failed\n",
+					__func__, audio->ac->session);
 				break;
 			}
 		}
@@ -365,7 +365,6 @@ static const struct file_operations audio_in_fops = {
 	.release	= audio_in_release,
 	.read		= audio_in_read,
 	.write		= audio_in_write,
-	.unlocked_ioctl = audio_in_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl   = audio_in_compat_ioctl,
 #endif

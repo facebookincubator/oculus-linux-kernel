@@ -43,7 +43,6 @@ void sd_dif_config_host(struct scsi_disk *sdkp)
 	struct scsi_device *sdp = sdkp->device;
 	struct gendisk *disk = sdkp->disk;
 	u8 type = sdkp->protection_type;
-	struct blk_integrity bi;
 	int dif, dix;
 
 	dif = scsi_host_dif_capable(sdp->host, type);
@@ -56,43 +55,39 @@ void sd_dif_config_host(struct scsi_disk *sdkp)
 	if (!dix)
 		return;
 
-	memset(&bi, 0, sizeof(bi));
-
 	/* Enable DMA of protection information */
 	if (scsi_host_get_guard(sdkp->device->host) & SHOST_DIX_GUARD_IP) {
 		if (type == SD_DIF_TYPE3_PROTECTION)
-			bi.profile = &t10_pi_type3_ip;
+			blk_integrity_register(disk, &t10_pi_type3_ip);
 		else
-			bi.profile = &t10_pi_type1_ip;
+			blk_integrity_register(disk, &t10_pi_type1_ip);
 
-		bi.flags |= BLK_INTEGRITY_IP_CHECKSUM;
+		disk->integrity->flags |= BLK_INTEGRITY_IP_CHECKSUM;
 	} else
 		if (type == SD_DIF_TYPE3_PROTECTION)
-			bi.profile = &t10_pi_type3_crc;
+			blk_integrity_register(disk, &t10_pi_type3_crc);
 		else
-			bi.profile = &t10_pi_type1_crc;
+			blk_integrity_register(disk, &t10_pi_type1_crc);
 
-	bi.tuple_size = sizeof(struct t10_pi_tuple);
 	sd_printk(KERN_NOTICE, sdkp,
-		  "Enabling DIX %s protection\n", bi.profile->name);
+		  "Enabling DIX %s protection\n", disk->integrity->name);
 
+	/* Signal to block layer that we support sector tagging */
 	if (dif && type) {
-		bi.flags |= BLK_INTEGRITY_DEVICE_CAPABLE;
+
+		disk->integrity->flags |= BLK_INTEGRITY_DEVICE_CAPABLE;
 
 		if (!sdkp->ATO)
-			goto out;
+			return;
 
 		if (type == SD_DIF_TYPE3_PROTECTION)
-			bi.tag_size = sizeof(u16) + sizeof(u32);
+			disk->integrity->tag_size = sizeof(u16) + sizeof(u32);
 		else
-			bi.tag_size = sizeof(u16);
+			disk->integrity->tag_size = sizeof(u16);
 
 		sd_printk(KERN_NOTICE, sdkp, "DIF application tag size %u\n",
-			  bi.tag_size);
+			  disk->integrity->tag_size);
 	}
-
-out:
-	blk_integrity_register(disk, &bi);
 }
 
 /*

@@ -83,7 +83,6 @@ int rds_tcp_xmit(struct rds_connection *conn, struct rds_message *rm,
 	struct rds_tcp_connection *tc = conn->c_transport_data;
 	int done = 0;
 	int ret = 0;
-	int more;
 
 	if (hdr_off == 0) {
 		/*
@@ -117,15 +116,12 @@ int rds_tcp_xmit(struct rds_connection *conn, struct rds_message *rm,
 			goto out;
 	}
 
-	more = rm->data.op_nents > 1 ? (MSG_MORE | MSG_SENDPAGE_NOTLAST) : 0;
 	while (sg < rm->data.op_nents) {
-		int flags = MSG_DONTWAIT | MSG_NOSIGNAL | more;
-
 		ret = tc->t_sock->ops->sendpage(tc->t_sock,
 						sg_page(&rm->data.op_sg[sg]),
 						rm->data.op_sg[sg].offset + off,
 						rm->data.op_sg[sg].length - off,
-						flags);
+						MSG_DONTWAIT|MSG_NOSIGNAL);
 		rdsdebug("tcp sendpage %p:%u:%u ret %d\n", (void *)sg_page(&rm->data.op_sg[sg]),
 			 rm->data.op_sg[sg].offset + off, rm->data.op_sg[sg].length - off,
 			 ret);
@@ -138,8 +134,6 @@ int rds_tcp_xmit(struct rds_connection *conn, struct rds_message *rm,
 			off = 0;
 			sg++;
 		}
-		if (sg == rm->data.op_nents - 1)
-			more = 0;
 	}
 
 out:

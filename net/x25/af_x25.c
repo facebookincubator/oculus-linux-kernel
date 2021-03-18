@@ -515,10 +515,10 @@ static struct proto x25_proto = {
 	.obj_size = sizeof(struct x25_sock),
 };
 
-static struct sock *x25_alloc_socket(struct net *net, int kern)
+static struct sock *x25_alloc_socket(struct net *net)
 {
 	struct x25_sock *x25;
-	struct sock *sk = sk_alloc(net, AF_X25, GFP_ATOMIC, &x25_proto, kern);
+	struct sock *sk = sk_alloc(net, AF_X25, GFP_ATOMIC, &x25_proto);
 
 	if (!sk)
 		goto out;
@@ -553,7 +553,7 @@ static int x25_create(struct net *net, struct socket *sock, int protocol,
 		goto out;
 
 	rc = -ENOBUFS;
-	if ((sk = x25_alloc_socket(net, kern)) == NULL)
+	if ((sk = x25_alloc_socket(net)) == NULL)
 		goto out;
 
 	x25 = x25_sk(sk);
@@ -602,7 +602,7 @@ static struct sock *x25_make_new(struct sock *osk)
 	if (osk->sk_type != SOCK_SEQPACKET)
 		goto out;
 
-	if ((sk = x25_alloc_socket(sock_net(osk), 0)) == NULL)
+	if ((sk = x25_alloc_socket(sock_net(osk))) == NULL)
 		goto out;
 
 	x25 = x25_sk(sk);
@@ -1077,7 +1077,8 @@ out_clear_request:
 	goto out;
 }
 
-static int x25_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
+static int x25_sendmsg(struct kiocb *iocb, struct socket *sock,
+		       struct msghdr *msg, size_t len)
 {
 	struct sock *sk = sock->sk;
 	struct x25_sock *x25 = x25_sk(sk);
@@ -1169,7 +1170,7 @@ static int x25_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	skb_reset_transport_header(skb);
 	skb_put(skb, len);
 
-	rc = memcpy_from_msg(skb_transport_header(skb), msg, len);
+	rc = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
 	if (rc)
 		goto out_kfree_skb;
 
@@ -1251,7 +1252,8 @@ out_kfree_skb:
 }
 
 
-static int x25_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
+static int x25_recvmsg(struct kiocb *iocb, struct socket *sock,
+		       struct msghdr *msg, size_t size,
 		       int flags)
 {
 	struct sock *sk = sock->sk;
@@ -1333,7 +1335,7 @@ static int x25_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 	/* Currently, each datagram always contains a complete record */
 	msg->msg_flags |= MSG_EOR;
 
-	rc = skb_copy_datagram_msg(skb, 0, msg, copied);
+	rc = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
 	if (rc)
 		goto out_free_dgram;
 

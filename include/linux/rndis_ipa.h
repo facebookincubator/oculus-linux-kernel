@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -73,24 +73,24 @@ void rndis_ipa_cleanup(void *private);
 
 #else /* CONFIG_RNDIS_IPA*/
 
-static inline int rndis_ipa_init(struct ipa_usb_init_params *params)
+int rndis_ipa_init(struct ipa_usb_init_params *params)
 {
-	return -ENOMEM;
+	return 0;
 }
 
-static inline int rndis_ipa_pipe_connect_notify(u32 usb_to_ipa_hdl,
+int rndis_ipa_pipe_connect_notify(u32 usb_to_ipa_hdl,
 			u32 ipa_to_usb_hdl,
 			u32 max_xfer_size_bytes_to_dev,
 			u32 max_packet_number_to_dev,
 			u32 max_xfer_size_bytes_to_host,
 			void *private)
 {
-	return -ENOMEM;
+	return 0;
 }
 
 static inline int rndis_ipa_pipe_disconnect_notify(void *private)
 {
-	return -ENOMEM;
+	return 0;
 }
 
 static inline void rndis_ipa_cleanup(void *private)

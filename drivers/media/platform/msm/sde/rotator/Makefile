@@ -1,4 +1,4 @@
-ccflags-y += -I$(src) -Idrivers/staging/android
+ccflags-y += -I$(src)
 
 obj-y := \
 		sde_rotator_dev.o \

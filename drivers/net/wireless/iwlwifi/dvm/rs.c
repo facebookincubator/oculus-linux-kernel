@@ -1416,11 +1416,11 @@ static int rs_switch_to_siso(struct iwl_priv *priv,
 /*
  * Try to switch to new modulation mode from legacy
  */
-static void rs_move_legacy_other(struct iwl_priv *priv,
-				 struct iwl_lq_sta *lq_sta,
-				 struct ieee80211_conf *conf,
-				 struct ieee80211_sta *sta,
-				 int index)
+static int rs_move_legacy_other(struct iwl_priv *priv,
+				struct iwl_lq_sta *lq_sta,
+				struct ieee80211_conf *conf,
+				struct ieee80211_sta *sta,
+				int index)
 {
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
 	struct iwl_scale_tbl_info *search_tbl =
@@ -1575,7 +1575,7 @@ static void rs_move_legacy_other(struct iwl_priv *priv,
 
 	}
 	search_tbl->lq_type = LQ_NONE;
-	return;
+	return 0;
 
 out:
 	lq_sta->search_better_tbl = 1;
@@ -1584,15 +1584,17 @@ out:
 		tbl->action = IWL_LEGACY_SWITCH_ANTENNA1;
 	if (update_search_tbl_counter)
 		search_tbl->action = tbl->action;
+	return 0;
+
 }
 
 /*
  * Try to switch to new modulation mode from SISO
  */
-static void rs_move_siso_to_other(struct iwl_priv *priv,
-				  struct iwl_lq_sta *lq_sta,
-				  struct ieee80211_conf *conf,
-				  struct ieee80211_sta *sta, int index)
+static int rs_move_siso_to_other(struct iwl_priv *priv,
+				 struct iwl_lq_sta *lq_sta,
+				 struct ieee80211_conf *conf,
+				 struct ieee80211_sta *sta, int index)
 {
 	u8 is_green = lq_sta->is_green;
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -1745,7 +1747,7 @@ static void rs_move_siso_to_other(struct iwl_priv *priv,
 			break;
 	}
 	search_tbl->lq_type = LQ_NONE;
-	return;
+	return 0;
 
  out:
 	lq_sta->search_better_tbl = 1;
@@ -1754,15 +1756,17 @@ static void rs_move_siso_to_other(struct iwl_priv *priv,
 		tbl->action = IWL_SISO_SWITCH_ANTENNA1;
 	if (update_search_tbl_counter)
 		search_tbl->action = tbl->action;
+
+	return 0;
 }
 
 /*
  * Try to switch to new modulation mode from MIMO2
  */
-static void rs_move_mimo2_to_other(struct iwl_priv *priv,
-				   struct iwl_lq_sta *lq_sta,
-				   struct ieee80211_conf *conf,
-				   struct ieee80211_sta *sta, int index)
+static int rs_move_mimo2_to_other(struct iwl_priv *priv,
+				 struct iwl_lq_sta *lq_sta,
+				 struct ieee80211_conf *conf,
+				 struct ieee80211_sta *sta, int index)
 {
 	s8 is_green = lq_sta->is_green;
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -1913,7 +1917,7 @@ static void rs_move_mimo2_to_other(struct iwl_priv *priv,
 			break;
 	}
 	search_tbl->lq_type = LQ_NONE;
-	return;
+	return 0;
  out:
 	lq_sta->search_better_tbl = 1;
 	tbl->action++;
@@ -1922,15 +1926,17 @@ static void rs_move_mimo2_to_other(struct iwl_priv *priv,
 	if (update_search_tbl_counter)
 		search_tbl->action = tbl->action;
 
+	return 0;
+
 }
 
 /*
  * Try to switch to new modulation mode from MIMO3
  */
-static void rs_move_mimo3_to_other(struct iwl_priv *priv,
-				   struct iwl_lq_sta *lq_sta,
-				   struct ieee80211_conf *conf,
-				   struct ieee80211_sta *sta, int index)
+static int rs_move_mimo3_to_other(struct iwl_priv *priv,
+				 struct iwl_lq_sta *lq_sta,
+				 struct ieee80211_conf *conf,
+				 struct ieee80211_sta *sta, int index)
 {
 	s8 is_green = lq_sta->is_green;
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -2087,7 +2093,7 @@ static void rs_move_mimo3_to_other(struct iwl_priv *priv,
 			break;
 	}
 	search_tbl->lq_type = LQ_NONE;
-	return;
+	return 0;
  out:
 	lq_sta->search_better_tbl = 1;
 	tbl->action++;
@@ -2095,6 +2101,9 @@ static void rs_move_mimo3_to_other(struct iwl_priv *priv,
 		tbl->action = IWL_MIMO3_SWITCH_ANTENNA1;
 	if (update_search_tbl_counter)
 		search_tbl->action = tbl->action;
+
+	return 0;
+
 }
 
 /*
@@ -3144,13 +3153,12 @@ static ssize_t rs_sta_dbgfs_scale_table_read(struct file *file,
 	desc += sprintf(buff+desc, "lq type %s\n",
 	   (is_legacy(tbl->lq_type)) ? "legacy" : "HT");
 	if (is_Ht(tbl->lq_type)) {
-		desc += sprintf(buff + desc, " %s",
+		desc += sprintf(buff+desc, " %s",
 		   (is_siso(tbl->lq_type)) ? "SISO" :
 		   ((is_mimo2(tbl->lq_type)) ? "MIMO2" : "MIMO3"));
-		desc += sprintf(buff + desc, " %s",
+		   desc += sprintf(buff+desc, " %s",
 		   (tbl->is_ht40) ? "40MHz" : "20MHz");
-		desc += sprintf(buff + desc, " %s %s %s\n",
-		   (tbl->is_SGI) ? "SGI" : "",
+		   desc += sprintf(buff+desc, " %s %s %s\n", (tbl->is_SGI) ? "SGI" : "",
 		   (lq_sta->is_green) ? "GF enabled" : "",
 		   (lq_sta->is_agg) ? "AGG on" : "");
 	}

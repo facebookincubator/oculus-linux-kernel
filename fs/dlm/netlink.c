@@ -56,8 +56,13 @@ static int send_data(struct sk_buff *skb)
 {
 	struct genlmsghdr *genlhdr = nlmsg_data((struct nlmsghdr *)skb->data);
 	void *data = genlmsg_data(genlhdr);
+	int rv;
 
-	genlmsg_end(skb, data);
+	rv = genlmsg_end(skb, data);
+	if (rv < 0) {
+		nlmsg_free(skb);
+		return rv;
+	}
 
 	return genlmsg_unicast(&init_net, skb, listener_nlportid);
 }

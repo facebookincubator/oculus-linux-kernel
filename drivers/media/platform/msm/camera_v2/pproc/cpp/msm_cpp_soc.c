@@ -53,11 +53,6 @@ void msm_cpp_fetch_dt_params(struct cpp_device *cpp_dev)
 			&cpp_dev->bus_master_flag);
 	if (rc)
 		cpp_dev->bus_master_flag = 0;
-
-	if (of_property_read_bool(of_node, "qcom,micro-reset"))
-		cpp_dev->micro_reset = 1;
-	else
-		cpp_dev->micro_reset = 0;
 }
 
 int msm_cpp_get_clock_index(struct cpp_device *cpp_dev, const char *clk_name)
@@ -71,93 +66,57 @@ int msm_cpp_get_clock_index(struct cpp_device *cpp_dev, const char *clk_name)
 	return -EINVAL;
 }
 
-int msm_cpp_get_regulator_index(struct cpp_device *cpp_dev,
-	const char *regulator_name)
+static int cpp_get_clk_freq_tbl(struct clk *clk, struct cpp_hw_info *hw_info,
+	uint32_t min_clk_rate)
 {
-	uint32_t i = 0;
-
-	for (i = 0; i < cpp_dev->num_reg; i++) {
-		if (!strcmp(regulator_name, cpp_dev->cpp_vdd[i].name))
-			return i;
-	}
-	return -EINVAL;
-}
-
-static int cpp_get_clk_freq_tbl_dt(struct cpp_device *cpp_dev)
-{
-	uint32_t i, count, min_clk_rate;
+	uint32_t i;
 	uint32_t idx = 0;
-	struct device_node *of_node;
-	uint32_t *rates;
-	int32_t rc = 0;
-	struct cpp_hw_info *hw_info;
+	signed long freq_tbl_entry = 0;
 
-	if (cpp_dev == NULL) {
+	if ((clk == NULL) || (hw_info == NULL) || (clk->ops == NULL) ||
+		(clk->ops->list_rate == NULL)) {
 		pr_err("Bad parameter\n");
-		rc = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
-	of_node = cpp_dev->pdev->dev.of_node;
-	min_clk_rate = cpp_dev->min_clk_rate;
-	hw_info = &cpp_dev->hw_info;
-
-	if ((hw_info == NULL) || (of_node == NULL)) {
-		pr_err("Invalid hw_info %pK or ofnode %pK\n", hw_info, of_node);
-		rc = -EINVAL;
-		goto err;
-
-	}
-	count = of_property_count_u32_elems(of_node, "qcom,src-clock-rates");
-	if ((count == 0) || (count > MAX_FREQ_TBL)) {
-		pr_err("Clock count is invalid\n");
-		rc = -EINVAL;
-		goto err;
-	}
-
-	rates = devm_kcalloc(&cpp_dev->pdev->dev, count, sizeof(uint32_t),
-		GFP_KERNEL);
-	if (!rates) {
-		rc = -ENOMEM;
-		goto err;
-	}
-
-	rc = of_property_read_u32_array(of_node, "qcom,src-clock-rates",
-		rates, count);
-	if (rc) {
-		rc = -EINVAL;
-		goto mem_free;
-	}
-
-	for (i = 0; i < count; i++) {
-		pr_debug("entry=%d\n", rates[i]);
-		if (rates[i] >= 0) {
-			if (rates[i] >= min_clk_rate) {
-				hw_info->freq_tbl[idx++] = rates[i];
-				pr_debug("tbl[%d]=%d\n", idx-1, rates[i]);
+	for (i = 0; i < MAX_FREQ_TBL; i++) {
+		freq_tbl_entry = clk->ops->list_rate(clk, i);
+		pr_debug("entry=%ld\n", freq_tbl_entry);
+		if (freq_tbl_entry >= 0) {
+			if (freq_tbl_entry >= min_clk_rate) {
+				hw_info->freq_tbl[idx++] = freq_tbl_entry;
+				pr_debug("tbl[%d]=%ld\n", idx-1,
+					freq_tbl_entry);
 			}
 		} else {
-			pr_debug("rate is invalid entry/end %d\n", rates[i]);
+			pr_debug("freq table returned invalid entry/end %ld\n",
+				freq_tbl_entry);
 			break;
 		}
 	}
 
-	pr_debug("%s: idx %d\n", __func__, idx);
+	pr_debug("%s: idx %d", __func__, idx);
 	hw_info->freq_tbl_count = idx;
 
-mem_free:
-	devm_kfree(&cpp_dev->pdev->dev, rates);
-err:
-	return rc;
+	return 0;
 }
 
 int msm_cpp_set_micro_clk(struct cpp_device *cpp_dev)
 {
+	uint32_t msm_micro_iface_idx;
 	int rc;
 
-	rc = reset_control_assert(cpp_dev->micro_iface_reset);
+	msm_micro_iface_idx = msm_cpp_get_clock_index(cpp_dev,
+		"micro_iface_clk");
+	if (msm_micro_iface_idx < 0)  {
+		pr_err("Fail to get clock index\n");
+		return -EINVAL;
+	}
+
+	rc = clk_reset(cpp_dev->cpp_clk[msm_micro_iface_idx],
+		CLK_RESET_ASSERT);
 	if (rc) {
-		pr_err("%s:micro_iface_reset assert failed\n",
+		pr_err("%s:micro_iface_clk assert failed\n",
 		__func__);
 		return -EINVAL;
 	}
@@ -170,9 +129,10 @@ int msm_cpp_set_micro_clk(struct cpp_device *cpp_dev)
 	 */
 	usleep_range(1000, 1200);
 
-	rc = reset_control_deassert(cpp_dev->micro_iface_reset);
+	rc = clk_reset(cpp_dev->cpp_clk[msm_micro_iface_idx],
+		CLK_RESET_DEASSERT);
 	if (rc) {
-		pr_err("%s:micro_iface_reset de-assert failed\n", __func__);
+		pr_err("%s:micro_iface_clk de-assert failed\n", __func__);
 		return -EINVAL;
 	}
 
@@ -197,7 +157,8 @@ int msm_update_freq_tbl(struct cpp_device *cpp_dev)
 		rc = msm_cpp_core_clk_idx;
 		return rc;
 	}
-	rc = cpp_get_clk_freq_tbl_dt(cpp_dev);
+	rc = cpp_get_clk_freq_tbl(cpp_dev->cpp_clk[msm_cpp_core_clk_idx],
+		&cpp_dev->hw_info, cpp_dev->min_clk_rate);
 	if (rc < 0)  {
 		pr_err("%s: fail to get frequency table\n", __func__);
 		return rc;

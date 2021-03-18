@@ -16,7 +16,7 @@
 #include <linux/export.h>
 #include <linux/time.h>
 
-#include <asm/cpuidle.h>
+#include <asm/proc-fns.h>
 
 #include <mach/map.h>
 
@@ -48,6 +48,7 @@ static struct cpuidle_driver s3c64xx_cpuidle_driver = {
 			.enter            = s3c64xx_enter_idle,
 			.exit_latency     = 1,
 			.target_residency = 1,
+			.flags            = CPUIDLE_FLAG_TIME_VALID,
 			.name             = "IDLE",
 			.desc             = "System active, ARM gated",
 		},

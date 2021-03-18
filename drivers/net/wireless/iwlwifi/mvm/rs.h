@@ -1,7 +1,6 @@
 /******************************************************************************
  *
  * Copyright(c) 2003 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2015 Intel Mobile Communications GmbH
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -138,9 +137,41 @@ enum {
 
 #define IWL_INVALID_VALUE    -1
 
+#define IWL_MIN_RSSI_VAL                 -100
+#define IWL_MAX_RSSI_VAL                    0
+
+/* These values specify how many Tx frame attempts before
+ * searching for a new modulation mode */
+#define IWL_LEGACY_FAILURE_LIMIT	160
+#define IWL_LEGACY_SUCCESS_LIMIT	480
+#define IWL_LEGACY_TABLE_COUNT		160
+
+#define IWL_NONE_LEGACY_FAILURE_LIMIT	400
+#define IWL_NONE_LEGACY_SUCCESS_LIMIT	4500
+#define IWL_NONE_LEGACY_TABLE_COUNT	1500
+
+/* Success ratio (ACKed / attempted tx frames) values (perfect is 128 * 100) */
+#define IWL_RS_GOOD_RATIO		12800	/* 100% */
+#define IWL_RATE_SCALE_SWITCH		10880	/*  85% */
+#define IWL_RATE_HIGH_TH		10880	/*  85% */
+#define IWL_RATE_INCREASE_TH		6400	/*  50% */
+#define RS_SR_FORCE_DECREASE		1920	/*  15% */
+#define RS_SR_NO_DECREASE		10880	/*  85% */
+
+#define TPC_SR_FORCE_INCREASE		9600	/* 75% */
+#define TPC_SR_NO_INCREASE		10880	/* 85% */
+#define TPC_TX_POWER_STEP		3
 #define TPC_MAX_REDUCTION		15
 #define TPC_NO_REDUCTION		0
 #define TPC_INVALID			0xff
+
+#define LINK_QUAL_AGG_TIME_LIMIT_DEF	(4000) /* 4 milliseconds */
+#define LINK_QUAL_AGG_TIME_LIMIT_MAX	(8000)
+#define LINK_QUAL_AGG_TIME_LIMIT_MIN	(100)
+
+#define LINK_QUAL_AGG_DISABLE_START_DEF	(3)
+#define LINK_QUAL_AGG_DISABLE_START_MAX	(255)
+#define LINK_QUAL_AGG_DISABLE_START_MIN	(0)
 
 #define LINK_QUAL_AGG_FRAME_LIMIT_DEF	(63)
 #define LINK_QUAL_AGG_FRAME_LIMIT_MAX	(63)
@@ -150,7 +181,14 @@ enum {
 
 /* load per tid defines for A-MPDU activation */
 #define IWL_AGG_TPT_THREHOLD	0
+#define IWL_AGG_LOAD_THRESHOLD	10
 #define IWL_AGG_ALL_TID		0xff
+#define TID_QUEUE_CELL_SPACING	50	/*mS */
+#define TID_QUEUE_MAX_SIZE	20
+#define TID_ROUND_VALUE		5	/* mS */
+
+#define TID_MAX_TIME_DIFF ((TID_QUEUE_MAX_SIZE - 1) * TID_QUEUE_CELL_SPACING)
+#define TIME_WRAP_AROUND(x, y) (((y) > (x)) ? (y) - (x) : (0-(x)) + (y))
 
 enum iwl_table_type {
 	LQ_NONE,
@@ -170,8 +208,6 @@ struct rs_rate {
 	u32 bw;
 	bool sgi;
 	bool ldpc;
-	bool stbc;
-	bool bfer;
 };
 
 
@@ -242,13 +278,6 @@ enum rs_column {
 	RS_COLUMN_INVALID,
 };
 
-enum rs_ss_force_opt {
-	RS_SS_FORCE_NONE = 0,
-	RS_SS_FORCE_STBC,
-	RS_SS_FORCE_BFER,
-	RS_SS_FORCE_SISO,
-};
-
 /* Packet stats per rate */
 struct rs_rate_stats {
 	u64 success;
@@ -302,9 +331,6 @@ struct iwl_lq_sta {
 	u64 last_tx;
 	bool is_vht;
 	bool ldpc;              /* LDPC Rx is supported by the STA */
-	bool stbc_capable;      /* Tx STBC is supported by chip and Rx by STA */
-	bool bfer_capable;      /* Remote supports beamformee and we BFer */
-
 	enum ieee80211_band band;
 
 	/* The following are bitmaps of rates; IWL_RATE_6M_MASK, etc. */
@@ -317,20 +343,14 @@ struct iwl_lq_sta {
 	u8 max_siso_rate_idx;
 	u8 max_mimo2_rate_idx;
 
-	/* Optimal rate based on RSSI and STA caps.
-	 * Used only to reflect link speed to userspace.
-	 */
-	struct rs_rate optimal_rate;
-	unsigned long optimal_rate_mask;
-	const struct rs_init_rate_info *optimal_rates;
-	int optimal_nentries;
-
 	u8 missed_rate_counter;
 
 	struct iwl_lq_cmd lq;
 	struct iwl_scale_tbl_info lq_info[LQ_SIZE]; /* "active", "search" */
 	u8 tx_agg_tid_en;
 
+	/* used to be in sta_info */
+	int last_txrate_idx;
 	/* last tx rate_n_flags */
 	u32 last_rate_n_flags;
 	/* packets destined for this STA are aggregated */
@@ -344,13 +364,9 @@ struct iwl_lq_sta {
 #ifdef CONFIG_MAC80211_DEBUGFS
 		u32 dbg_fixed_rate;
 		u8 dbg_fixed_txp_reduction;
-
-		/* force STBC/BFER/SISO for testing */
-		enum rs_ss_force_opt ss_force;
 #endif
 		u8 chains;
 		s8 chain_signal[IEEE80211_MAX_CHAINS];
-		s8 last_rssi;
 		struct rs_rate_stats tx_stats[RS_COLUMN_COUNT][IWL_RATE_COUNT];
 		struct iwl_mvm *drv;
 	} pers;

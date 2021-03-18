@@ -95,9 +95,14 @@ void ux500_regulator_resume_debug(void)
 
 static int ux500_regulator_power_state_cnt_print(struct seq_file *s, void *p)
 {
+	struct device *dev = s->private;
+	int err;
+
 	/* print power state count */
-	seq_printf(s, "ux500-regulator power state count: %i\n",
-		   power_state_active_get());
+	err = seq_printf(s, "ux500-regulator power state count: %i\n",
+		power_state_active_get());
+	if (err < 0)
+		dev_err(dev, "seq_printf overflow\n");
 
 	return 0;
 }
@@ -119,11 +124,19 @@ static const struct file_operations ux500_regulator_power_state_cnt_fops = {
 
 static int ux500_regulator_status_print(struct seq_file *s, void *p)
 {
+	struct device *dev = s->private;
+	int err;
 	int i;
 
 	/* print dump header */
-	seq_puts(s, "ux500-regulator status:\n");
-	seq_printf(s, "%31s : %8s : %8s\n", "current", "before", "after");
+	err = seq_puts(s, "ux500-regulator status:\n");
+	if (err < 0)
+		dev_err(dev, "seq_puts overflow\n");
+
+	err = seq_printf(s, "%31s : %8s : %8s\n", "current",
+		"before", "after");
+	if (err < 0)
+		dev_err(dev, "seq_printf overflow\n");
 
 	for (i = 0; i < rdebug.num_regulators; i++) {
 		struct dbx500_regulator_info *info;
@@ -131,11 +144,12 @@ static int ux500_regulator_status_print(struct seq_file *s, void *p)
 		info = &rdebug.regulator_array[i];
 
 		/* print status */
-		seq_printf(s, "%20s : %8s : %8s : %8s\n",
-			   info->desc.name,
-			   info->is_enabled ? "enabled" : "disabled",
-			   rdebug.state_before_suspend[i] ? "enabled" : "disabled",
-			   rdebug.state_after_suspend[i] ? "enabled" : "disabled");
+		err = seq_printf(s, "%20s : %8s : %8s : %8s\n", info->desc.name,
+			info->is_enabled ? "enabled" : "disabled",
+			rdebug.state_before_suspend[i] ? "enabled" : "disabled",
+			rdebug.state_after_suspend[i] ? "enabled" : "disabled");
+		if (err < 0)
+			dev_err(dev, "seq_printf overflow\n");
 	}
 
 	return 0;

@@ -54,47 +54,44 @@ static unsigned long clk_programmable_recalc_rate(struct clk_hw *hw,
 	return parent_rate >> pres;
 }
 
-static int clk_programmable_determine_rate(struct clk_hw *hw,
-					   struct clk_rate_request *req)
+static long clk_programmable_determine_rate(struct clk_hw *hw,
+					    unsigned long rate,
+					    unsigned long *best_parent_rate,
+					    struct clk **best_parent_clk)
 {
-	struct clk_hw *parent;
+	struct clk *parent = NULL;
 	long best_rate = -EINVAL;
 	unsigned long parent_rate;
 	unsigned long tmp_rate;
 	int shift;
 	int i;
 
-	for (i = 0; i < clk_hw_get_num_parents(hw); i++) {
-		parent = clk_hw_get_parent_by_index(hw, i);
+	for (i = 0; i < __clk_get_num_parents(hw->clk); i++) {
+		parent = clk_get_parent_by_index(hw->clk, i);
 		if (!parent)
 			continue;
 
-		parent_rate = clk_hw_get_rate(parent);
+		parent_rate = __clk_get_rate(parent);
 		for (shift = 0; shift < PROG_PRES_MASK; shift++) {
 			tmp_rate = parent_rate >> shift;
-			if (tmp_rate <= req->rate)
+			if (tmp_rate <= rate)
 				break;
 		}
 
-		if (tmp_rate > req->rate)
+		if (tmp_rate > rate)
 			continue;
 
-		if (best_rate < 0 ||
-		    (req->rate - tmp_rate) < (req->rate - best_rate)) {
+		if (best_rate < 0 || (rate - tmp_rate) < (rate - best_rate)) {
 			best_rate = tmp_rate;
-			req->best_parent_rate = parent_rate;
-			req->best_parent_hw = parent;
+			*best_parent_rate = parent_rate;
+			*best_parent_clk = parent;
 		}
 
 		if (!best_rate)
 			break;
 	}
 
-	if (best_rate < 0)
-		return best_rate;
-
-	req->rate = best_rate;
-	return 0;
+	return best_rate;
 }
 
 static int clk_programmable_set_parent(struct clk_hw *hw, u8 index)
@@ -231,17 +228,22 @@ of_at91_clk_prog_setup(struct device_node *np, struct at91_pmc *pmc,
 {
 	int num;
 	u32 id;
+	int i;
 	struct clk *clk;
 	int num_parents;
 	const char *parent_names[PROG_SOURCE_MAX];
 	const char *name;
 	struct device_node *progclknp;
 
-	num_parents = of_clk_get_parent_count(np);
+	num_parents = of_count_phandle_with_args(np, "clocks", "#clock-cells");
 	if (num_parents <= 0 || num_parents > PROG_SOURCE_MAX)
 		return;
 
-	of_clk_parent_fill(np, parent_names, num_parents);
+	for (i = 0; i < num_parents; ++i) {
+		parent_names[i] = of_clk_get_parent_name(np, i);
+		if (!parent_names[i])
+			return;
+	}
 
 	num = of_get_child_count(np);
 	if (!num || num > (PROG_ID_MAX + 1))

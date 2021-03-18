@@ -38,7 +38,6 @@ static inline struct nf_udp_net *udp_pernet(struct net *net)
 
 static bool udp_pkt_to_tuple(const struct sk_buff *skb,
 			     unsigned int dataoff,
-			     struct net *net,
 			     struct nf_conntrack_tuple *tuple)
 {
 	const struct udphdr *hp;
@@ -64,12 +63,12 @@ static bool udp_invert_tuple(struct nf_conntrack_tuple *tuple,
 }
 
 /* Print out the per-protocol part of the tuple. */
-static void udp_print_tuple(struct seq_file *s,
-			    const struct nf_conntrack_tuple *tuple)
+static int udp_print_tuple(struct seq_file *s,
+			   const struct nf_conntrack_tuple *tuple)
 {
-	seq_printf(s, "sport=%hu dport=%hu ",
-		   ntohs(tuple->src.u.udp.port),
-		   ntohs(tuple->dst.u.udp.port));
+	return seq_printf(s, "sport=%hu dport=%hu ",
+			  ntohs(tuple->src.u.udp.port),
+			  ntohs(tuple->dst.u.udp.port));
 }
 
 static unsigned int *udp_get_timeouts(struct net *net)

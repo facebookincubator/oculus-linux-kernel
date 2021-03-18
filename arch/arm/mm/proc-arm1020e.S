@@ -22,6 +22,8 @@
  *
  * These are the low level assembler for performing cache and TLB
  * functions on the arm1020e.
+ *
+ *  CONFIG_CPU_ARM1020_CPU_IDLE -> nohlt
  */
 #include <linux/linkage.h>
 #include <linux/init.h>
@@ -463,7 +465,7 @@ arm1020e_crval:
 
 	.align
 
-	.section ".proc.info.init", #alloc
+	.section ".proc.info.init", #alloc, #execinstr
 
 	.type	__arm1020e_proc_info,#object
 __arm1020e_proc_info:
@@ -477,7 +479,7 @@ __arm1020e_proc_info:
 		PMD_BIT4 | \
 		PMD_SECT_AP_WRITE | \
 		PMD_SECT_AP_READ
-	initfn	__arm1020e_setup, __arm1020e_proc_info
+	b	__arm1020e_setup
 	.long	cpu_arch_name
 	.long	cpu_elf_name
 	.long	HWCAP_SWP | HWCAP_HALF | HWCAP_THUMB | HWCAP_EDSP

@@ -302,6 +302,10 @@ static unsigned long u32_get(struct tcf_proto *tp, u32 handle)
 	return (unsigned long)u32_lookup_key(ht, handle);
 }
 
+static void u32_put(struct tcf_proto *tp, unsigned long f)
+{
+}
+
 static u32 gen_new_htid(struct tc_u_common *tp_c)
 {
 	int i = 0x800;
@@ -463,47 +467,12 @@ static int u32_destroy_hnode(struct tcf_proto *tp, struct tc_u_hnode *ht)
 	return -ENOENT;
 }
 
-static bool ht_empty(struct tc_u_hnode *ht)
-{
-	unsigned int h;
-
-	for (h = 0; h <= ht->divisor; h++)
-		if (rcu_access_pointer(ht->ht[h]))
-			return false;
-
-	return true;
-}
-
-static bool u32_destroy(struct tcf_proto *tp, bool force)
+static void u32_destroy(struct tcf_proto *tp)
 {
 	struct tc_u_common *tp_c = tp->data;
 	struct tc_u_hnode *root_ht = rtnl_dereference(tp->root);
 
 	WARN_ON(root_ht == NULL);
-
-	if (!force) {
-		if (root_ht) {
-			if (root_ht->refcnt > 1)
-				return false;
-			if (root_ht->refcnt == 1) {
-				if (!ht_empty(root_ht))
-					return false;
-			}
-		}
-
-		if (tp_c->refcnt > 1)
-			return false;
-
-		if (tp_c->refcnt == 1) {
-			struct tc_u_hnode *ht;
-
-			for (ht = rtnl_dereference(tp_c->hlist);
-			     ht;
-			     ht = rtnl_dereference(ht->next))
-				if (!ht_empty(ht))
-					return false;
-		}
-	}
 
 	if (root_ht && --root_ht->refcnt == 0)
 		u32_destroy_hnode(tp, root_ht);
@@ -529,7 +498,6 @@ static bool u32_destroy(struct tcf_proto *tp, bool force)
 	}
 
 	tp->data = NULL;
-	return true;
 }
 
 static int u32_delete(struct tcf_proto *tp, unsigned long arg)
@@ -1056,6 +1024,7 @@ static struct tcf_proto_ops cls_u32_ops __read_mostly = {
 	.init		=	u32_init,
 	.destroy	=	u32_destroy,
 	.get		=	u32_get,
+	.put		=	u32_put,
 	.change		=	u32_change,
 	.delete		=	u32_delete,
 	.walk		=	u32_walk,

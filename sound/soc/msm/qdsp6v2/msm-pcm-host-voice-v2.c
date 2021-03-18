@@ -974,16 +974,16 @@ done:
 
 static struct snd_kcontrol_new msm_hpcm_controls[] = {
 	SOC_SINGLE_MULTI_EXT("HPCM_Voice tappoint direction samplerate",
-			     SND_SOC_NOPM, 0, 16000, 0, 3,
+			     SND_SOC_NOPM, 0, 16000 , 0, 3,
 			     NULL, msm_hpcm_configure_voice_put),
 	SOC_SINGLE_MULTI_EXT("HPCM_VoLTE tappoint direction samplerate",
-			     SND_SOC_NOPM, 0, 16000, 0, 3,
+			     SND_SOC_NOPM, 0, 16000 , 0, 3,
 			     NULL, msm_hpcm_configure_volte_put),
 	SOC_SINGLE_MULTI_EXT("HPCM_VMMode1 tappoint direction samplerate",
-			     SND_SOC_NOPM, 0, 16000, 0, 3,
+			     SND_SOC_NOPM, 0, 16000 , 0, 3,
 			     NULL, msm_hpcm_configure_vmmode1_put),
 	SOC_SINGLE_MULTI_EXT("HPCM_VMMode2 tappoint direction samplerate",
-			     SND_SOC_NOPM, 0, 16000, 0, 3,
+			     SND_SOC_NOPM, 0, 16000 , 0, 3,
 			     NULL, msm_hpcm_configure_vmmode2_put),
 };
 

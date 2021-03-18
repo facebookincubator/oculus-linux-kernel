@@ -13,7 +13,6 @@ b43-$(CONFIG_B43_PHY_HT)	+= phy_ht.o
 b43-$(CONFIG_B43_PHY_HT)	+= tables_phy_ht.o
 b43-$(CONFIG_B43_PHY_HT)	+= radio_2059.o
 b43-$(CONFIG_B43_PHY_LCN)	+= phy_lcn.o tables_phy_lcn.o
-b43-$(CONFIG_B43_PHY_AC)	+= phy_ac.o
 b43-y				+= sysfs.o
 b43-y				+= xmit.o
 b43-y				+= dma.o
@@ -21,6 +20,7 @@ b43-y				+= pio.o
 b43-y				+= rfkill.o
 b43-y				+= ppr.o
 b43-$(CONFIG_B43_LEDS)		+= leds.o
+b43-$(CONFIG_B43_PCMCIA)	+= pcmcia.o
 b43-$(CONFIG_B43_SDIO)		+= sdio.o
 b43-$(CONFIG_B43_DEBUG)		+= debugfs.o
 

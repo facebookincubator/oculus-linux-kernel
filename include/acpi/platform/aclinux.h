@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -63,14 +63,10 @@
 
 #define ACPI_USE_SYSTEM_INTTYPES
 
-/* Kernel specific ACPICA configuration */
+/* Compile for reduced hardware mode only with this kernel config */
 
 #ifdef CONFIG_ACPI_REDUCED_HARDWARE_ONLY
 #define ACPI_REDUCED_HARDWARE 1
-#endif
-
-#ifdef CONFIG_ACPI_DEBUGGER
-#define ACPI_DEBUGGER
 #endif
 
 #include <linux/string.h>
@@ -155,6 +151,7 @@
  * OSL interfaces used by utilities
  */
 #define ACPI_USE_ALTERNATE_PROTOTYPE_acpi_os_redirect_output
+#define ACPI_USE_ALTERNATE_PROTOTYPE_acpi_os_get_line
 #define ACPI_USE_ALTERNATE_PROTOTYPE_acpi_os_get_table_by_name
 #define ACPI_USE_ALTERNATE_PROTOTYPE_acpi_os_get_table_by_index
 #define ACPI_USE_ALTERNATE_PROTOTYPE_acpi_os_get_table_by_address

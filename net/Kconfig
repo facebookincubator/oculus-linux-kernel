@@ -45,9 +45,6 @@ config COMPAT_NETLINK_MESSAGES
 	  Newly written code should NEVER need this option but do
 	  compat-independent messages instead!
 
-config NET_INGRESS
-	bool
-
 config DISABLE_NET_SKB_FRAG_CACHE
 	bool "Disable skb fragment cache"
 	help
@@ -98,9 +95,17 @@ endif # if INET
 
 config ANDROID_PARANOID_NETWORK
 	bool "Only allow certain groups to create sockets"
-	default y
+	default ANDROID
 	help
 		none
+
+config NET_ACTIVITY_STATS
+	bool "Network activity statistics tracking"
+	default y
+	help
+	 Network activity statistics are useful for tracking wireless
+	 modem activity on 2G, 3G, 4G wireless networks. Counts number of
+	 transmissions and groups them in specified time buckets.
 
 config NETWORK_SECMARK
 	bool "Security Marking"
@@ -247,23 +252,21 @@ source "net/vmw_vsock/Kconfig"
 source "net/netlink/Kconfig"
 source "net/mpls/Kconfig"
 source "net/hsr/Kconfig"
-source "net/switchdev/Kconfig"
-source "net/l3mdev/Kconfig"
 source "net/rmnet_data/Kconfig"
 
 config RPS
-	bool
+	boolean "RPS"
 	depends on SMP && SYSFS
 	default y
 
 config RFS_ACCEL
-	bool
+	boolean
 	depends on RPS
 	select CPU_RMAP
 	default y
 
 config XPS
-	bool
+	boolean
 	depends on SMP
 	default y
 
@@ -275,18 +278,18 @@ config CGROUP_NET_PRIO
 	  a per-interface basis.
 
 config CGROUP_NET_CLASSID
-	bool "Network classid cgroup"
+	boolean "Network classid cgroup"
 	depends on CGROUPS
 	---help---
 	  Cgroup subsystem for use as general purpose socket classid marker that is
 	  being used in cls_cgroup and for netfilter matching.
 
 config NET_RX_BUSY_POLL
-	bool
+	boolean
 	default y
 
 config BQL
-	bool
+	boolean
 	depends on SYSFS
 	select DQL
 	default y
@@ -303,7 +306,7 @@ config BPF_JIT
 	  this feature changing /proc/sys/net/core/bpf_jit_enable
 
 config NET_FLOW_LIMIT
-	bool
+	boolean
 	depends on RPS
 	default y
 	---help---
@@ -400,15 +403,6 @@ source "net/9p/Kconfig"
 source "net/caif/Kconfig"
 source "net/ceph/Kconfig"
 source "net/nfc/Kconfig"
-
-config LWTUNNEL
-	bool "Network light weight tunnels"
-	---help---
-	  This feature provides an infrastructure to support light weight
-	  tunnels like mpls. There is no netdevice associated with a light
-	  weight tunnel endpoint. Tunnel encapsulation parameters are stored
-	  with light weight tunnel state associated with fib routes.
-
 source "net/ipc_router/Kconfig"
 
 endif   # if NET

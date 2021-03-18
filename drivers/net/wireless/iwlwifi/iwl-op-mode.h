@@ -7,7 +7,6 @@
  *
  * Copyright(c) 2007 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright(c) 2015        Intel Deutschland GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -34,7 +33,6 @@
  *
  * Copyright(c) 2005 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright(c) 2015        Intel Deutschland GmbH
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -96,7 +94,7 @@ struct iwl_cfg;
  * The operational mode has a very simple life cycle.
  *
  *	1) The driver layer (iwl-drv.c) chooses the op_mode based on the
- *	   capabilities advertised by the fw file (in TLV format).
+ *	   capabilities advertized by the fw file (in TLV format).
  *	2) The driver layer starts the op_mode (ops->start)
  *	3) The op_mode registers mac80211
  *	4) The op_mode is governed by mac80211
@@ -110,8 +108,7 @@ struct iwl_cfg;
  * interact with it. The driver layer typically calls the start and stop
  * handlers, the transport layer calls the others.
  *
- * All the handlers MUST be implemented, except @rx_rss which can be left
- * out *iff* the opmode will never run on hardware with multi-queue capability.
+ * All the handlers MUST be implemented
  *
  * @start: start the op_mode. The transport layer is already allocated.
  *	May sleep
@@ -119,10 +116,10 @@ struct iwl_cfg;
  *	May sleep
  * @rx: Rx notification to the op_mode. rxb is the Rx buffer itself. Cmd is the
  *	HCMD this Rx responds to. Can't sleep.
- * @rx_rss: data queue RX notification to the op_mode, for (data) notifications
- *	received on the RSS queue(s). The queue parameter indicates which of the
- *	RSS queues received this frame; it will always be non-zero.
- *	This method must not sleep.
+ * @napi_add: NAPI initialisation. The transport is fully responsible for NAPI,
+ *	but the higher layers need to know about it (in particular mac80211 to
+ *	to able to call the right NAPI RX functions); this function is needed
+ *	to eventually call netif_napi_add() with higher layer involvement.
  * @queue_full: notifies that a HW queue is full.
  *	Must be atomic and called with BH disabled.
  * @queue_not_full: notifies that a HW queue is not full any more.
@@ -141,8 +138,7 @@ struct iwl_cfg;
  * @nic_config: configure NIC, called before firmware is started.
  *	May sleep
  * @wimax_active: invoked when WiMax becomes active. May sleep
- * @enter_d0i3: configure the fw to enter d0i3. return 1 to indicate d0i3
- *	entrance is aborted (e.g. due to held reference). May sleep.
+ * @enter_d0i3: configure the fw to enter d0i3. May sleep.
  * @exit_d0i3: configure the fw to exit d0i3. May sleep.
  */
 struct iwl_op_mode_ops {
@@ -151,10 +147,13 @@ struct iwl_op_mode_ops {
 				     const struct iwl_fw *fw,
 				     struct dentry *dbgfs_dir);
 	void (*stop)(struct iwl_op_mode *op_mode);
-	void (*rx)(struct iwl_op_mode *op_mode, struct napi_struct *napi,
-		   struct iwl_rx_cmd_buffer *rxb);
-	void (*rx_rss)(struct iwl_op_mode *op_mode, struct napi_struct *napi,
-		       struct iwl_rx_cmd_buffer *rxb, unsigned int queue);
+	int (*rx)(struct iwl_op_mode *op_mode, struct iwl_rx_cmd_buffer *rxb,
+		  struct iwl_device_cmd *cmd);
+	void (*napi_add)(struct iwl_op_mode *op_mode,
+			 struct napi_struct *napi,
+			 struct net_device *napi_dev,
+			 int (*poll)(struct napi_struct *, int),
+			 int weight);
 	void (*queue_full)(struct iwl_op_mode *op_mode, int queue);
 	void (*queue_not_full)(struct iwl_op_mode *op_mode, int queue);
 	bool (*hw_rf_kill)(struct iwl_op_mode *op_mode, bool state);
@@ -188,19 +187,11 @@ static inline void iwl_op_mode_stop(struct iwl_op_mode *op_mode)
 	op_mode->ops->stop(op_mode);
 }
 
-static inline void iwl_op_mode_rx(struct iwl_op_mode *op_mode,
-				  struct napi_struct *napi,
-				  struct iwl_rx_cmd_buffer *rxb)
+static inline int iwl_op_mode_rx(struct iwl_op_mode *op_mode,
+				  struct iwl_rx_cmd_buffer *rxb,
+				  struct iwl_device_cmd *cmd)
 {
-	return op_mode->ops->rx(op_mode, napi, rxb);
-}
-
-static inline void iwl_op_mode_rx_rss(struct iwl_op_mode *op_mode,
-				      struct napi_struct *napi,
-				      struct iwl_rx_cmd_buffer *rxb,
-				      unsigned int queue)
-{
-	op_mode->ops->rx_rss(op_mode, napi, rxb, queue);
+	return op_mode->ops->rx(op_mode, rxb, cmd);
 }
 
 static inline void iwl_op_mode_queue_full(struct iwl_op_mode *op_mode,
@@ -266,6 +257,17 @@ static inline int iwl_op_mode_exit_d0i3(struct iwl_op_mode *op_mode)
 	if (!op_mode->ops->exit_d0i3)
 		return 0;
 	return op_mode->ops->exit_d0i3(op_mode);
+}
+
+static inline void iwl_op_mode_napi_add(struct iwl_op_mode *op_mode,
+					struct napi_struct *napi,
+					struct net_device *napi_dev,
+					int (*poll)(struct napi_struct *, int),
+					int weight)
+{
+	if (!op_mode->ops->napi_add)
+		return;
+	op_mode->ops->napi_add(op_mode, napi, napi_dev, poll, weight);
 }
 
 #endif /* __iwl_op_mode_h__ */

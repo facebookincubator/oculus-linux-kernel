@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -53,7 +53,6 @@
 #define FABIA_TEST_CTL_LO_REG(pll)	(*pll->base + pll->offset + 0x1c)
 #define FABIA_TEST_CTL_HI_REG(pll)	(*pll->base + pll->offset + 0x20)
 #define FABIA_L_REG(pll)		(*pll->base + pll->offset + 0x4)
-#define FABIA_CAL_L_VAL(pll)		(*pll->base + pll->offset + 0x8)
 #define FABIA_FRAC_REG(pll)		(*pll->base + pll->offset + 0x38)
 #define FABIA_PLL_OPMODE(pll)		(*pll->base + pll->offset + 0x2c)
 
@@ -595,7 +594,7 @@ static int alpha_pll_set_rate(struct clk *c, unsigned long rate)
 {
 	struct alpha_pll_clk *pll = to_alpha_pll_clk(c);
 	struct alpha_pll_masks *masks = pll->masks;
-	unsigned long flags, freq_hz;
+	unsigned long flags = 0, freq_hz;
 	u32 regval, l_val;
 	int vco_val;
 	u64 a_val;
@@ -612,13 +611,17 @@ static int alpha_pll_set_rate(struct clk *c, unsigned long rate)
 		return -EINVAL;
 	}
 
+	if (pll->no_irq_dis)
+		spin_lock(&c->lock);
+	else
+		spin_lock_irqsave(&c->lock, flags);
+
 	/*
 	 * For PLLs that do not support dynamic programming (dynamic_update
 	 * is not set), ensure PLL is off before changing rate. For
 	 * optimization reasons, assume no downstream clock is actively
 	 * using it.
 	 */
-	spin_lock_irqsave(&c->lock, flags);
 	if (c->count && !pll->dynamic_update)
 		c->ops->disable(c);
 
@@ -644,7 +647,10 @@ static int alpha_pll_set_rate(struct clk *c, unsigned long rate)
 	if (c->count && !pll->dynamic_update)
 		c->ops->enable(c);
 
-	spin_unlock_irqrestore(&c->lock, flags);
+	if (pll->no_irq_dis)
+		spin_unlock(&c->lock);
+	else
+		spin_unlock_irqrestore(&c->lock, flags);
 	return 0;
 }
 
@@ -799,8 +805,15 @@ static enum handoff alpha_pll_handoff(struct clk *c)
 	update_vco_tbl(pll);
 
 	if (!is_locked(pll)) {
-		if (c->rate && alpha_pll_set_rate(c, c->rate))
-			WARN(1, "%s: Failed to configure rate\n", c->dbg_name);
+		if (pll->slew) {
+			if (c->rate && dyna_alpha_pll_set_rate(c, c->rate))
+				WARN(1, "%s: Failed to configure rate\n",
+					c->dbg_name);
+		} else {
+			if (c->rate && alpha_pll_set_rate(c, c->rate))
+				WARN(1, "%s: Failed to configure rate\n",
+					c->dbg_name);
+		}
 		__init_alpha_pll(c);
 		return HANDOFF_DISABLED_CLK;
 	} else if (pll->fsm_en_mask && !is_fsm_mode(MODE_REG(pll))) {
@@ -925,6 +938,11 @@ static void __fabia_alpha_pll_disable(struct alpha_pll_clk *pll)
 	mode &= ~FABIA_PLL_OUT_MAIN;
 	writel_relaxed(mode, FABIA_USER_CTL_LO_REG(pll));
 
+	/* Place PLL is the OFF state */
+	mode  = readl_relaxed(MODE_REG(pll));
+	mode &= ~PLL_RESET_N;
+	writel_relaxed(mode, MODE_REG(pll));
+
 	/* Place the PLL mode in STANDBY */
 	writel_relaxed(FABIA_PLL_STANDBY, FABIA_PLL_OPMODE(pll));
 }
@@ -959,12 +977,6 @@ static int fabia_alpha_pll_set_rate(struct clk *c, unsigned long rate)
 	spin_lock_irqsave(&c->lock, flags);
 	/* Set the new L value */
 	writel_relaxed(l_val, FABIA_L_REG(pll));
-	/*
-	 * pll_cal_l_val is set to pll_l_val on MOST targets. Set it
-	 * explicitly here for PLL out-of-reset calibration to work
-	 * without a glitch on all of them.
-	 */
-	writel_relaxed(l_val, FABIA_CAL_L_VAL(pll));
 	writel_relaxed(a_val, FABIA_FRAC_REG(pll));
 
 	alpha_pll_dynamic_update(pll);
@@ -1033,14 +1045,10 @@ static enum handoff fabia_alpha_pll_handoff(struct clk *c)
 	regval |= ALPHA_PLL_HW_UPDATE_LOGIC_BYPASS;
 	writel_relaxed(regval, MODE_REG(pll));
 
-	/* Set the PLL_RESET_N bit to place the PLL in STANDBY from OFF */
-	regval |= PLL_RESET_N;
-	writel_relaxed(regval, MODE_REG(pll));
-
 	if (!is_locked(pll)) {
 		if (c->rate && fabia_alpha_pll_set_rate(c, c->rate))
 			WARN(1, "%s: Failed to configure rate\n", c->dbg_name);
-		__init_fabia_alpha_pll(c);
+		__init_alpha_pll(c);
 		return HANDOFF_DISABLED_CLK;
 	} else if (pll->fsm_en_mask && !is_fsm_mode(MODE_REG(pll))) {
 		WARN(1, "%s should be in FSM mode but is not\n", c->dbg_name);

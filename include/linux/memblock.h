@@ -21,11 +21,7 @@
 #define INIT_PHYSMEM_REGIONS	4
 
 /* Definition of memblock flags. */
-enum {
-	MEMBLOCK_NONE		= 0x0,	/* No special request */
-	MEMBLOCK_HOTPLUG	= 0x1,	/* hotpluggable region */
-	MEMBLOCK_MIRROR		= 0x2,	/* mirrored region */
-};
+#define MEMBLOCK_HOTPLUG	0x1	/* hotpluggable region */
 
 struct memblock_region {
 	phys_addr_t base;
@@ -65,7 +61,7 @@ extern bool movable_node_enabled;
 
 phys_addr_t memblock_find_in_range_node(phys_addr_t size, phys_addr_t align,
 					    phys_addr_t start, phys_addr_t end,
-					    int nid, ulong flags);
+					    int nid);
 phys_addr_t memblock_find_in_range(phys_addr_t start, phys_addr_t end,
 				   phys_addr_t size, phys_addr_t align);
 phys_addr_t get_allocated_memblock_reserved_regions_info(phys_addr_t *addr);
@@ -77,12 +73,8 @@ int memblock_remove(phys_addr_t base, phys_addr_t size);
 int memblock_free(phys_addr_t base, phys_addr_t size);
 int memblock_reserve(phys_addr_t base, phys_addr_t size);
 void memblock_trim_memory(phys_addr_t align);
-bool memblock_overlaps_region(struct memblock_type *type,
-			      phys_addr_t base, phys_addr_t size);
 int memblock_mark_hotplug(phys_addr_t base, phys_addr_t size);
 int memblock_clear_hotplug(phys_addr_t base, phys_addr_t size);
-int memblock_mark_mirror(phys_addr_t base, phys_addr_t size);
-ulong choose_memblock_flags(void);
 unsigned long memblock_region_resize_late_begin(void);
 void memblock_region_resize_late_end(unsigned long);
 
@@ -91,18 +83,17 @@ int memblock_add_range(struct memblock_type *type,
 		       phys_addr_t base, phys_addr_t size,
 		       int nid, unsigned long flags);
 
-void __next_mem_range(u64 *idx, int nid, ulong flags,
-		      struct memblock_type *type_a,
+int memblock_remove_range(struct memblock_type *type,
+			  phys_addr_t base,
+			  phys_addr_t size);
+
+void __next_mem_range(u64 *idx, int nid, struct memblock_type *type_a,
 		      struct memblock_type *type_b, phys_addr_t *out_start,
 		      phys_addr_t *out_end, int *out_nid);
 
-void __next_mem_range_rev(u64 *idx, int nid, ulong flags,
-			  struct memblock_type *type_a,
+void __next_mem_range_rev(u64 *idx, int nid, struct memblock_type *type_a,
 			  struct memblock_type *type_b, phys_addr_t *out_start,
 			  phys_addr_t *out_end, int *out_nid);
-
-void __next_reserved_mem_region(u64 *idx, phys_addr_t *out_start,
-			       phys_addr_t *out_end);
 
 /**
  * for_each_mem_range - iterate through memblock areas from type_a and not
@@ -111,17 +102,16 @@ void __next_reserved_mem_region(u64 *idx, phys_addr_t *out_start,
  * @type_a: ptr to memblock_type to iterate
  * @type_b: ptr to memblock_type which excludes from the iteration
  * @nid: node selector, %NUMA_NO_NODE for all nodes
- * @flags: pick from blocks based on memory attributes
  * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
  * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
  * @p_nid: ptr to int for nid of the range, can be %NULL
  */
-#define for_each_mem_range(i, type_a, type_b, nid, flags,		\
+#define for_each_mem_range(i, type_a, type_b, nid,			\
 			   p_start, p_end, p_nid)			\
-	for (i = 0, __next_mem_range(&i, nid, flags, type_a, type_b,	\
+	for (i = 0, __next_mem_range(&i, nid, type_a, type_b,		\
 				     p_start, p_end, p_nid);		\
 	     i != (u64)ULLONG_MAX;					\
-	     __next_mem_range(&i, nid, flags, type_a, type_b,		\
+	     __next_mem_range(&i, nid, type_a, type_b,			\
 			      p_start, p_end, p_nid))
 
 /**
@@ -131,34 +121,18 @@ void __next_reserved_mem_region(u64 *idx, phys_addr_t *out_start,
  * @type_a: ptr to memblock_type to iterate
  * @type_b: ptr to memblock_type which excludes from the iteration
  * @nid: node selector, %NUMA_NO_NODE for all nodes
- * @flags: pick from blocks based on memory attributes
  * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
  * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
  * @p_nid: ptr to int for nid of the range, can be %NULL
  */
-#define for_each_mem_range_rev(i, type_a, type_b, nid, flags,		\
+#define for_each_mem_range_rev(i, type_a, type_b, nid,			\
 			       p_start, p_end, p_nid)			\
 	for (i = (u64)ULLONG_MAX,					\
-		     __next_mem_range_rev(&i, nid, flags, type_a, type_b,\
+		     __next_mem_range_rev(&i, nid, type_a, type_b,	\
 					 p_start, p_end, p_nid);	\
 	     i != (u64)ULLONG_MAX;					\
-	     __next_mem_range_rev(&i, nid, flags, type_a, type_b,	\
+	     __next_mem_range_rev(&i, nid, type_a, type_b,		\
 				  p_start, p_end, p_nid))
-
-/**
- * for_each_reserved_mem_region - iterate over all reserved memblock areas
- * @i: u64 used as loop variable
- * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
- * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
- *
- * Walks over reserved areas of memblock. Available as soon as memblock
- * is initialized.
- */
-#define for_each_reserved_mem_region(i, p_start, p_end)			\
-	for (i = 0UL,							\
-	     __next_reserved_mem_region(&i, p_start, p_end);		\
-	     i != (u64)ULLONG_MAX;					\
-	     __next_reserved_mem_region(&i, p_start, p_end))
 
 #ifdef CONFIG_MOVABLE_NODE
 static inline bool memblock_is_hotpluggable(struct memblock_region *m)
@@ -180,11 +154,6 @@ static inline bool movable_node_is_enabled(void)
 	return false;
 }
 #endif
-
-static inline bool memblock_is_mirror(struct memblock_region *m)
-{
-	return m->flags & MEMBLOCK_MIRROR;
-}
 
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 int memblock_search_pfn_nid(unsigned long pfn, unsigned long *start_pfn,
@@ -214,14 +183,13 @@ void __next_mem_pfn_range(int *idx, int nid, unsigned long *out_start_pfn,
  * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
  * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
  * @p_nid: ptr to int for nid of the range, can be %NULL
- * @flags: pick from blocks based on memory attributes
  *
  * Walks over free (memory && !reserved) areas of memblock.  Available as
  * soon as memblock is initialized.
  */
-#define for_each_free_mem_range(i, nid, flags, p_start, p_end, p_nid)	\
+#define for_each_free_mem_range(i, nid, p_start, p_end, p_nid)		\
 	for_each_mem_range(i, &memblock.memory, &memblock.reserved,	\
-			   nid, flags, p_start, p_end, p_nid)
+			   nid, p_start, p_end, p_nid)
 
 /**
  * for_each_free_mem_range_reverse - rev-iterate through free memblock areas
@@ -230,15 +198,13 @@ void __next_mem_pfn_range(int *idx, int nid, unsigned long *out_start_pfn,
  * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
  * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
  * @p_nid: ptr to int for nid of the range, can be %NULL
- * @flags: pick from blocks based on memory attributes
  *
  * Walks over free (memory && !reserved) areas of memblock in reverse
  * order.  Available as soon as memblock is initialized.
  */
-#define for_each_free_mem_range_reverse(i, nid, flags, p_start, p_end,	\
-					p_nid)				\
+#define for_each_free_mem_range_reverse(i, nid, p_start, p_end, p_nid)	\
 	for_each_mem_range_rev(i, &memblock.memory, &memblock.reserved,	\
-			       nid, flags, p_start, p_end, p_nid)
+			       nid, p_start, p_end, p_nid)
 
 static inline void memblock_set_region_flags(struct memblock_region *r,
 					     unsigned long flags)
@@ -309,8 +275,7 @@ static inline bool memblock_bottom_up(void) { return false; }
 #define MEMBLOCK_ALLOC_ACCESSIBLE	0
 
 phys_addr_t __init memblock_alloc_range(phys_addr_t size, phys_addr_t align,
-					phys_addr_t start, phys_addr_t end,
-					ulong flags);
+					phys_addr_t start, phys_addr_t end);
 phys_addr_t memblock_alloc_base(phys_addr_t size, phys_addr_t align,
 				phys_addr_t max_addr);
 phys_addr_t __memblock_alloc_base(phys_addr_t size, phys_addr_t align,
@@ -324,7 +289,7 @@ int memblock_is_memory(phys_addr_t addr);
 int memblock_is_region_memory(phys_addr_t base, phys_addr_t size);
 int memblock_overlaps_memory(phys_addr_t base, phys_addr_t size);
 int memblock_is_reserved(phys_addr_t addr);
-bool memblock_is_region_reserved(phys_addr_t base, phys_addr_t size);
+int memblock_is_region_reserved(phys_addr_t base, phys_addr_t size);
 
 extern void __memblock_dump_all(void);
 

@@ -105,6 +105,8 @@ static inline void clear_user_page(void *addr, unsigned long vaddr,
 		flush_data_cache_page((unsigned long)addr);
 }
 
+extern void copy_user_page(void *vto, void *vfrom, unsigned long vaddr,
+	struct page *to);
 struct vm_area_struct;
 extern void copy_user_highpage(struct page *to, struct page *from,
 	unsigned long vaddr, struct vm_area_struct *vma);
@@ -114,7 +116,7 @@ extern void copy_user_highpage(struct page *to, struct page *from,
 /*
  * These are used to make use of C type-checking..
  */
-#ifdef CONFIG_PHYS_ADDR_T_64BIT
+#ifdef CONFIG_64BIT_PHYS_ADDR
   #ifdef CONFIG_CPU_MIPS32
     typedef struct { unsigned long pte_low, pte_high; } pte_t;
     #define pte_val(x)	  ((x).pte_low | ((unsigned long long)(x).pte_high << 32))
@@ -200,9 +202,8 @@ static inline int pfn_valid(unsigned long pfn)
 {
 	/* avoid <linux/mm.h> include hell */
 	extern unsigned long max_mapnr;
-	unsigned long pfn_offset = ARCH_PFN_OFFSET;
 
-	return pfn >= pfn_offset && pfn < max_mapnr;
+	return pfn >= ARCH_PFN_OFFSET && pfn < max_mapnr;
 }
 
 #elif defined(CONFIG_SPARSEMEM)

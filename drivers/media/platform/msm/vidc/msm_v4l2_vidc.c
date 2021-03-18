@@ -37,7 +37,7 @@
 
 struct msm_vidc_drv *vidc_driver;
 
-uint32_t msm_vidc_pwr_collapse_delay = 3000;
+uint32_t msm_vidc_pwr_collapse_delay = 2000;
 
 static inline struct msm_vidc_inst *get_vidc_inst(struct file *filp, void *fh)
 {
@@ -138,6 +138,12 @@ int msm_v4l2_reqbufs(struct file *file, void *fh,
 				struct v4l2_requestbuffers *b)
 {
 	struct msm_vidc_inst *vidc_inst = get_vidc_inst(file, fh);
+	int rc = 0;
+	if (!b->count)
+		rc = msm_vidc_release_buffers(vidc_inst, b->type);
+	if (rc)
+		dprintk(VIDC_WARN,
+			"Failed in %s for release output buffers\n", __func__);
 	return msm_vidc_reqbufs((void *)vidc_inst, b);
 }
 
@@ -263,7 +269,7 @@ static const struct v4l2_file_operations msm_v4l2_vidc_fops = {
 	.owner = THIS_MODULE,
 	.open = msm_v4l2_open,
 	.release = msm_v4l2_close,
-	.unlocked_ioctl = video_ioctl2,
+	.ioctl = video_ioctl2,
 	.poll = msm_v4l2_poll,
 };
 
@@ -411,16 +417,36 @@ static ssize_t store_platform_version(struct device *dev,
 static DEVICE_ATTR(platform_version, S_IRUGO, show_platform_version,
 		store_platform_version);
 
+static ssize_t show_capability_version(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d",
+			vidc_driver->capability_version);
+}
+
+static ssize_t store_capability_version(struct device *dev,
+		struct device_attribute *attr, const char *buf,
+		size_t count)
+{
+	dprintk(VIDC_WARN, "store capability version is not allowed\n");
+	return count;
+}
+
+static DEVICE_ATTR(capability_version, S_IRUGO, show_capability_version,
+		store_capability_version);
+
 static DEVICE_ATTR(decoder_active_time, 0444,
 	vidc_profile_decoder_active_time_show, NULL);
 
 static DEVICE_ATTR(encoder_active_time, 0444,
 	vidc_profile_encoder_active_time_show, NULL);
 
+
 static struct attribute *msm_vidc_core_attrs[] = {
 		&dev_attr_pwr_collapse_delay.attr,
 		&dev_attr_thermal_level.attr,
 		&dev_attr_platform_version.attr,
+		&dev_attr_capability_version.attr,
 		&dev_attr_decoder_active_time.attr,
 		&dev_attr_encoder_active_time.attr,
 		NULL
@@ -437,11 +463,38 @@ static const struct of_device_id msm_vidc_dt_match[] = {
 	{}
 };
 
+static u32 msm_vidc_read_efuse_version(struct platform_device *pdev,
+	struct version_table *table, const char *fuse_name)
+{
+	void __iomem *base;
+	struct resource *res;
+	u32 ret = 0;
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, fuse_name);
+	if (!res) {
+		dprintk(VIDC_DBG, "Failed to get resource %s\n", fuse_name);
+		goto exit;
+	}
+	base = devm_ioremap(&pdev->dev, res->start, resource_size(res));
+	if (!base) {
+		dprintk(VIDC_ERR,
+			"failed ioremap: res->start %#x, size %d\n",
+			(u32)res->start, (u32)resource_size(res));
+		goto exit;
+	} else {
+		ret = readl_relaxed(base);
+		ret = (ret & table->version_mask) >>
+			table->version_shift;
+
+		devm_iounmap(&pdev->dev, base);
+	}
+exit:
+	return ret;
+}
+
 static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 {
 	int rc = 0;
-	void __iomem *base;
-	struct resource *res;
 	struct msm_vidc_core *core;
 	struct device *dev;
 	int nr = BASE_DEVICE_NUMBER;
@@ -452,8 +505,11 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 	}
 
 	core = kzalloc(sizeof(*core), GFP_KERNEL);
-	if (!core)
+	if (!core) {
+		dprintk(VIDC_ERR,
+			"Failed to allocate memory for device core\n");
 		return -ENOMEM;
+	}
 
 	dev_set_drvdata(&pdev->dev, core);
 	rc = msm_vidc_initialize_core(pdev, core);
@@ -560,32 +616,13 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 	core->debugfs_root = msm_vidc_debugfs_init_core(
 		core, vidc_driver->debugfs_root);
 
-	vidc_driver->platform_version = 0;
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "efuse");
-	if (!res) {
-		dprintk(VIDC_DBG, "failed to get efuse resource\n");
-	} else {
-		base = devm_ioremap(&pdev->dev, res->start, resource_size(res));
-		if (!base) {
-			dprintk(VIDC_ERR,
-				"failed efuse ioremap: res->start %#x, size %d\n",
-				(u32)res->start, (u32)resource_size(res));
-		} else {
-			u32 efuse = 0;
-			struct platform_version_table *pf_ver_tbl =
-				core->resources.pf_ver_tbl;
+	vidc_driver->platform_version =
+		msm_vidc_read_efuse_version(pdev,
+			core->resources.pf_ver_tbl, "efuse");
 
-			efuse = readl_relaxed(base);
-			vidc_driver->platform_version =
-				(efuse & pf_ver_tbl->version_mask) >>
-				pf_ver_tbl->version_shift;
-			dprintk(VIDC_DBG,
-				"efuse 0x%x, platform version 0x%x\n",
-				efuse, vidc_driver->platform_version);
-
-			devm_iounmap(&pdev->dev, base);
-		}
-	}
+	vidc_driver->capability_version =
+		msm_vidc_read_efuse_version(
+			pdev, core->resources.pf_cap_tbl, "efuse2");
 
 	dprintk(VIDC_DBG, "populating sub devices\n");
 	/*
@@ -688,7 +725,6 @@ static int msm_vidc_remove(struct platform_device *pdev)
 	msm_vidc_free_platform_resources(&core->resources);
 	sysfs_remove_group(&pdev->dev.kobj, &msm_vidc_core_attr_group);
 	dev_set_drvdata(&pdev->dev, NULL);
-	mutex_destroy(&core->lock);
 	kfree(core);
 	return rc;
 }
@@ -774,56 +810,16 @@ static int __init msm_vidc_init(void)
 		vidc_driver = NULL;
 	}
 
-	vidc_driver->class = class_create(THIS_MODULE, "vidc");
-
-	if (IS_ERR(vidc_driver->class)) {
-		rc = PTR_ERR(vidc_driver->class);
-		dprintk(VIDC_ERR,
-			"failed to create class for vidc\n");
-		vidc_driver->class = NULL;
-		goto err;
-	}
-
-	/* Make a virtual device for managing core related things
-	 * in sysfs
-	 */
-	vidc_driver->virtdev.class = vidc_driver->class;
-	dev_set_name(&vidc_driver->virtdev, "vidc");
-	rc = device_register(&vidc_driver->virtdev);
-	if (rc) {
-		dprintk(VIDC_ERR,
-			"driver_register failed\n");
-		vidc_driver->virtdev.class = NULL;
-		goto err;
-	}
-
-	INIT_LIST_HEAD(&vidc_driver->thread_list);
-	mutex_init(&vidc_driver->thread_mutex);
-	vidc_driver->threadkobj = kobject_create_and_add(
-		"thread", &vidc_driver->virtdev.kobj);
-
-err:
 	return rc;
 }
 
 static void __exit msm_vidc_exit(void)
 {
-	if (vidc_driver->virtdev.class)
-		device_unregister(&vidc_driver->virtdev);
-
-	if (vidc_driver->class) {
-		class_destroy(vidc_driver->class);
-		vidc_driver->class = NULL;
-	}
-
 	platform_driver_unregister(&msm_vidc_driver);
 	debugfs_remove_recursive(vidc_driver->debugfs_root);
-	mutex_destroy(&vidc_driver->lock);
 	kfree(vidc_driver);
 	vidc_driver = NULL;
 }
 
 module_init(msm_vidc_init);
 module_exit(msm_vidc_exit);
-
-MODULE_LICENSE("GPL v2");

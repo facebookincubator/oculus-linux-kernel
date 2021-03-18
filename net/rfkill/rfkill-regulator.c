@@ -142,6 +142,7 @@ static struct platform_driver rfkill_regulator_driver = {
 	.remove = rfkill_regulator_remove,
 	.driver = {
 		.name = "rfkill-regulator",
+		.owner = THIS_MODULE,
 	},
 };
 

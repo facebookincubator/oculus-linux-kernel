@@ -175,12 +175,13 @@ static inline int ceph_decode_pgid(void **p, void *end, struct ceph_pg *pgid)
 	__u8 version;
 
 	if (!ceph_has_room(p, end, 1 + 8 + 4 + 4)) {
-		pr_warn("incomplete pg encoding\n");
+		pr_warning("incomplete pg encoding");
+
 		return -EINVAL;
 	}
 	version = ceph_decode_8(p);
 	if (version > 1) {
-		pr_warn("do not understand pg encoding %d > 1\n",
+		pr_warning("do not understand pg encoding %d > 1",
 			(int)version);
 		return -EINVAL;
 	}

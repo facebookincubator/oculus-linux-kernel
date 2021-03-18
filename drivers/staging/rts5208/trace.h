@@ -24,17 +24,64 @@
 #ifndef __REALTEK_RTSX_TRACE_H
 #define __REALTEK_RTSX_TRACE_H
 
-struct rtsx_chip;
+#define _MSG_TRACE
 
 #ifdef _MSG_TRACE
-void _rtsx_trace(struct rtsx_chip *chip, const char *file, const char *func,
-		 int line);
-#define rtsx_trace(chip)						\
-	_rtsx_trace(chip, __FILE__, __func__, __LINE__)
-#else
-static inline void rtsx_trace(struct rtsx_chip *chip)
+static inline char *filename(char *path)
 {
+	char *ptr;
+
+	if (path == NULL)
+		return NULL;
+
+	ptr = path;
+
+	while (*ptr != '\0') {
+		if ((*ptr == '\\') || (*ptr == '/'))
+			path = ptr + 1;
+
+		ptr++;
+	}
+
+	return path;
 }
+
+#define TRACE_RET(chip, ret)						\
+	do {								\
+		char *_file = filename(__FILE__);			\
+		dev_dbg(rtsx_dev(chip), "[%s][%s]:[%d]\n", _file,	\
+			__func__, __LINE__);				\
+		(chip)->trace_msg[(chip)->msg_idx].line = (u16)(__LINE__); \
+		strncpy((chip)->trace_msg[(chip)->msg_idx].func, __func__, MSG_FUNC_LEN-1); \
+		strncpy((chip)->trace_msg[(chip)->msg_idx].file, _file, MSG_FILE_LEN-1); \
+		get_current_time((chip)->trace_msg[(chip)->msg_idx].timeval_buf, TIME_VAL_LEN);	\
+		(chip)->trace_msg[(chip)->msg_idx].valid = 1;		\
+		(chip)->msg_idx++;					\
+		if ((chip)->msg_idx >= TRACE_ITEM_CNT) {		\
+			(chip)->msg_idx = 0;				\
+		}							\
+		return ret;						\
+	} while (0)
+
+#define TRACE_GOTO(chip, label)						\
+	do {								\
+		char *_file = filename(__FILE__);			\
+		dev_dbg(rtsx_dev(chip), "[%s][%s]:[%d]\n", _file,	\
+			__func__, __LINE__);				\
+		(chip)->trace_msg[(chip)->msg_idx].line = (u16)(__LINE__); \
+		strncpy((chip)->trace_msg[(chip)->msg_idx].func, __func__, MSG_FUNC_LEN-1); \
+		strncpy((chip)->trace_msg[(chip)->msg_idx].file, _file, MSG_FILE_LEN-1); \
+		get_current_time((chip)->trace_msg[(chip)->msg_idx].timeval_buf, TIME_VAL_LEN);	\
+		(chip)->trace_msg[(chip)->msg_idx].valid = 1;		\
+		(chip)->msg_idx++;					\
+		if ((chip)->msg_idx >= TRACE_ITEM_CNT) {		\
+			(chip)->msg_idx = 0;				\
+		}							\
+		goto label;						\
+	} while (0)
+#else
+#define TRACE_RET(chip, ret)	return ret
+#define TRACE_GOTO(chip, label)	goto label
 #endif
 
 #endif  /* __REALTEK_RTSX_TRACE_H */

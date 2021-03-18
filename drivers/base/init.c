@@ -8,7 +8,6 @@
 #include <linux/device.h>
 #include <linux/init.h>
 #include <linux/memory.h>
-#include <linux/of.h>
 
 #include "base.h"
 
@@ -35,5 +34,4 @@ void __init driver_init(void)
 	cpu_dev_init();
 	memory_dev_init();
 	container_dev_init();
-	of_core_init();
 }

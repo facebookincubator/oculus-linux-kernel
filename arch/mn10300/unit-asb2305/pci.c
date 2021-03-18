@@ -228,8 +228,8 @@ static int pci_ampci_write_config(struct pci_bus *bus, unsigned int devfn,
 }
 
 static struct pci_ops pci_direct_ampci = {
-	.read = pci_ampci_read_config,
-	.write = pci_ampci_write_config,
+	pci_ampci_read_config,
+	pci_ampci_write_config,
 };
 
 /*
@@ -281,37 +281,42 @@ static int __init pci_check_direct(void)
 	return -ENODEV;
 }
 
-static void pcibios_fixup_device_resources(struct pci_dev *dev)
+static int is_valid_resource(struct pci_dev *dev, int idx)
 {
-	int idx;
+	unsigned int i, type_mask = IORESOURCE_IO | IORESOURCE_MEM;
+	struct resource *devr = &dev->resource[idx], *busr;
 
-	if (!dev->bus)
-		return;
+	if (dev->bus) {
+		pci_bus_for_each_resource(dev->bus, busr, i) {
+			if (!busr || (busr->flags ^ devr->flags) & type_mask)
+				continue;
 
-	for (idx = 0; idx < PCI_BRIDGE_RESOURCES; idx++) {
-		struct resource *r = &dev->resource[idx];
-
-		if (!r->flags || r->parent || !r->start)
-			continue;
-
-		pci_claim_resource(dev, idx);
+			if (devr->start &&
+			    devr->start >= busr->start &&
+			    devr->end <= busr->end)
+				return 1;
+		}
 	}
+
+	return 0;
 }
 
-static void pcibios_fixup_bridge_resources(struct pci_dev *dev)
+static void pcibios_fixup_device_resources(struct pci_dev *dev)
 {
-	int idx;
+	int limit, i;
 
-	if (!dev->bus)
+	if (dev->bus->number != 0)
 		return;
 
-	for (idx = PCI_BRIDGE_RESOURCES; idx < PCI_NUM_RESOURCES; idx++) {
-		struct resource *r = &dev->resource[idx];
+	limit = (dev->hdr_type == PCI_HEADER_TYPE_NORMAL) ?
+		PCI_BRIDGE_RESOURCES : PCI_NUM_RESOURCES;
 
-		if (!r->flags || r->parent || !r->start)
+	for (i = 0; i < limit; i++) {
+		if (!dev->resource[i].flags)
 			continue;
 
-		pci_claim_bridge_resource(dev, idx);
+		if (is_valid_resource(dev, i))
+			pci_claim_resource(dev, i);
 	}
 }
 
@@ -325,7 +330,7 @@ void pcibios_fixup_bus(struct pci_bus *bus)
 
 	if (bus->self) {
 		pci_read_bridge_bases(bus);
-		pcibios_fixup_bridge_resources(bus->self);
+		pcibios_fixup_device_resources(bus->self);
 	}
 
 	list_for_each_entry(dev, &bus->devices, bus_list)

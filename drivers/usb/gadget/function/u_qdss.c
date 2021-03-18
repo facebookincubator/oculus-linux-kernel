@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,11 +15,22 @@
 #include <linux/usb/msm_hsusb.h>
 #include <linux/usb_bam.h>
 
-#include "f_qdss.h"
-static int alloc_sps_req(struct usb_ep *data_ep)
+#include "gadget_chips.h"
+
+struct  usb_qdss_bam_connect_info {
+	u32 usb_bam_pipe_idx;
+	u32 peer_pipe_idx;
+	unsigned long usb_bam_handle;
+	struct sps_mem_buffer *data_fifo;
+};
+
+static struct usb_qdss_bam_connect_info bam_info;
+
+int alloc_sps_req(struct usb_ep *data_ep)
 {
 	struct usb_request *req = NULL;
 	struct f_qdss *qdss = data_ep->driver_data;
+	struct usb_gadget *gadget = qdss->cdev->gadget;
 	u32 sps_params = 0;
 
 	pr_debug("send_sps_req\n");
@@ -30,9 +41,16 @@ static int alloc_sps_req(struct usb_ep *data_ep)
 		return -ENOMEM;
 	}
 
-	req->length = 32*1024;
-	sps_params = MSM_SPS_MODE | MSM_DISABLE_WB |
-			qdss->bam_info.usb_bam_pipe_idx;
+	if (gadget_is_dwc3(gadget)) {
+		req->length = 32*1024;
+		sps_params = MSM_SPS_MODE | MSM_DISABLE_WB |
+			bam_info.usb_bam_pipe_idx;
+	} else {
+		/* non DWC3 BAM requires req->length to be 0 */
+		req->length = 0;
+		sps_params = (MSM_SPS_MODE | bam_info.usb_bam_pipe_idx |
+				MSM_VENDOR_ID) & ~MSM_IS_FINITE_TRANSFER;
+	}
 	req->udc_priv = sps_params;
 	qdss->endless_req = req;
 
@@ -40,25 +58,18 @@ static int alloc_sps_req(struct usb_ep *data_ep)
 }
 
 static int init_data(struct usb_ep *ep);
-int set_qdss_data_connection(struct f_qdss *qdss, int enable)
+static int set_qdss_data_connection(struct usb_gadget *gadget,
+	struct usb_ep *data_ep, u8 data_addr, int enable)
 {
 	enum usb_ctrl		usb_bam_type;
 	int			res = 0;
 	int			idx;
-	struct usb_qdss_bam_connect_info bam_info;
-	struct usb_gadget *gadget;
+	struct f_qdss *qdss = data_ep->driver_data;
 
 	pr_debug("set_qdss_data_connection\n");
 
-	if (!qdss) {
-		pr_err("%s: qdss ptr is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	gadget = qdss->gadget;
 	usb_bam_type = usb_bam_get_bam_type(gadget->name);
 
-	bam_info = qdss->bam_info;
 	/* There is only one qdss pipe, so the pipe number can be set to 0 */
 	idx = usb_bam_get_connection_idx(usb_bam_type, QDSS_P_BAM,
 		PEER_PERIPHERAL_TO_USB, USB_BAM_DEVICE, 0);
@@ -73,18 +84,18 @@ int set_qdss_data_connection(struct f_qdss *qdss, int enable)
 			kzalloc(sizeof(struct sps_mem_buffer), GFP_KERNEL);
 		if (!bam_info.data_fifo) {
 			pr_err("qdss_data_connection: memory alloc failed\n");
-			usb_bam_free_fifos(usb_bam_type, idx);
 			return -ENOMEM;
 		}
 		get_bam2bam_connection_info(usb_bam_type, idx,
 				&bam_info.usb_bam_pipe_idx,
 				NULL, bam_info.data_fifo, NULL);
 
-		alloc_sps_req(qdss->port.data);
-		msm_data_fifo_config(qdss->port.data,
-					bam_info.data_fifo->phys_base,
-					bam_info.data_fifo->size,
-					bam_info.usb_bam_pipe_idx);
+		alloc_sps_req(data_ep);
+		if (gadget_is_dwc3(gadget))
+			msm_data_fifo_config(data_ep,
+					     bam_info.data_fifo->phys_base,
+					     bam_info.data_fifo->size,
+					     bam_info.usb_bam_pipe_idx);
 		init_data(qdss->port.data);
 
 		res = usb_bam_connect(usb_bam_type, idx,
@@ -103,26 +114,35 @@ int set_qdss_data_connection(struct f_qdss *qdss, int enable)
 static int init_data(struct usb_ep *ep)
 {
 	struct f_qdss *qdss = ep->driver_data;
+	struct usb_gadget *gadget = qdss->cdev->gadget;
 	int res = 0;
 
 	pr_debug("init_data\n");
 
-	res = msm_ep_config(ep, qdss->endless_req);
-	if (res)
-		pr_err("msm_ep_config failed\n");
+	if (gadget_is_dwc3(gadget)) {
+		res = msm_ep_config(ep, qdss->endless_req);
+		if (res)
+			pr_err("msm_ep_config failed\n");
+	} else {
+		pr_debug("QDSS is used with non DWC3 core\n");
+	}
 
 	return res;
 }
 
 int uninit_data(struct usb_ep *ep)
 {
+	struct f_qdss *qdss = ep->driver_data;
+	struct usb_gadget *gadget = qdss->cdev->gadget;
 	int res = 0;
 
 	pr_err("uninit_data\n");
 
-	res = msm_ep_unconfig(ep);
-	if (res)
-		pr_err("msm_ep_unconfig failed\n");
+	if (gadget_is_dwc3(gadget)) {
+		res = msm_ep_unconfig(ep);
+		if (res)
+			pr_err("msm_ep_unconfig failed\n");
+	}
 
 	return res;
 }

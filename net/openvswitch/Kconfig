@@ -4,12 +4,7 @@
 
 config OPENVSWITCH
 	tristate "Open vSwitch"
-	depends on INET
-	depends on !NF_CONNTRACK || \
-		   (NF_CONNTRACK && (!NF_DEFRAG_IPV6 || NF_DEFRAG_IPV6))
 	select LIBCRC32C
-	select MPLS
-	select NET_MPLS_GSO
 	---help---
 	  Open vSwitch is a multilayer Ethernet switch targeted at virtualized
 	  environments.  In addition to supporting a variety of features
@@ -34,10 +29,11 @@ config OPENVSWITCH
 	  If unsure, say N.
 
 config OPENVSWITCH_GRE
-	tristate "Open vSwitch GRE tunneling support"
+	bool "Open vSwitch GRE tunneling support"
+	depends on INET
 	depends on OPENVSWITCH
-	depends on NET_IPGRE
-	default OPENVSWITCH
+	depends on NET_IPGRE_DEMUX && !(OPENVSWITCH=y && NET_IPGRE_DEMUX=m)
+	default y
 	---help---
 	  If you say Y here, then the Open vSwitch will be able create GRE
 	  vport.
@@ -47,10 +43,11 @@ config OPENVSWITCH_GRE
 	  If unsure, say Y.
 
 config OPENVSWITCH_VXLAN
-	tristate "Open vSwitch VXLAN tunneling support"
+	bool "Open vSwitch VXLAN tunneling support"
+	depends on INET
 	depends on OPENVSWITCH
-	depends on VXLAN
-	default OPENVSWITCH
+	depends on VXLAN && !(OPENVSWITCH=y && VXLAN=m)
+	default y
 	---help---
 	  If you say Y here, then the Open vSwitch will be able create vxlan vport.
 
@@ -59,10 +56,11 @@ config OPENVSWITCH_VXLAN
 	  If unsure, say Y.
 
 config OPENVSWITCH_GENEVE
-	tristate "Open vSwitch Geneve tunneling support"
+	bool "Open vSwitch Geneve tunneling support"
+	depends on INET
 	depends on OPENVSWITCH
-	depends on GENEVE
-	default OPENVSWITCH
+	depends on GENEVE && !(OPENVSWITCH=y && GENEVE=m)
+	default y
 	---help---
 	  If you say Y here, then the Open vSwitch will be able create geneve vport.
 

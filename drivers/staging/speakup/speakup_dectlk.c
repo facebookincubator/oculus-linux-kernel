@@ -291,9 +291,10 @@ static void do_catch_up(struct spk_synth *synth)
 
 static void synth_flush(struct spk_synth *synth)
 {
-	if (in_escape)
+	if (in_escape) {
 		/* if in command output ']' so we don't get an error */
 		spk_serial_out(']');
+	}
 	in_escape = 0;
 	is_flushing = 1;
 	spk_serial_out(SYNTH_CLEAR);
@@ -305,8 +306,18 @@ module_param_named(start, synth_dectlk.startup, short, S_IRUGO);
 MODULE_PARM_DESC(ser, "Set the serial port for the synthesizer (0-based).");
 MODULE_PARM_DESC(start, "Start the synthesizer once it is loaded.");
 
-module_spk_synth(synth_dectlk);
+static int __init dectlk_init(void)
+{
+	return synth_add(&synth_dectlk);
+}
 
+static void __exit dectlk_exit(void)
+{
+	synth_remove(&synth_dectlk);
+}
+
+module_init(dectlk_init);
+module_exit(dectlk_exit);
 MODULE_AUTHOR("Kirk Reiser <kirk@braille.uwo.ca>");
 MODULE_AUTHOR("David Borowski");
 MODULE_DESCRIPTION("Speakup support for DECtalk Express synthesizers");

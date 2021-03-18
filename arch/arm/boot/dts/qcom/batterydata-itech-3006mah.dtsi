@@ -1,0 +1,63 @@
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+qcom,itech-3006mah {
+	/* #Itech_B00761LF_3006mAh_averaged_MasterSlave_Feb27th2015*/
+	qcom,max-voltage-uv = <4160000>;
+	qcom,v-cutoff-uv = <3100000>;
+	qcom,chg-term-ua = <100000>;
+	qcom,nom-batt-capacity-mah = <3350>;
+	qcom,batt-id-kohm = <510>;
+	qcom,battery-beta = <3500>;
+	qcom,thermal-coefficients = [bd 86 b6 50 cb 37];//3450, 86bd 50b6 37cb
+	qcom,battery-type = "itech_3006mah";
+	qcom,chg-rslow-comp-c1 = <2837971>;
+	qcom,chg-rslow-comp-c2 = <2947735>;
+	qcom,chg-rs-to-rslow = <1019179>;
+	qcom,chg-rslow-comp-thr = <0x99>;
+	qcom,checksum = <0x30F2>;
+	qcom,gui-version = "PMI8996GUI - 1.1.0.4";
+	qcom,fg-profile-data = [
+		 DC 7A 8F 8A
+		 A9 8E 1A 81
+		 21 82 AC 82
+		 61 8F 76 8A
+		 FB 81 05 8A
+		 BA A5 67 B8
+		 95 0D 2B 82
+		 7E 79 8E 5E
+		 42 66 65 82
+		 08 81 30 8D
+		 57 88 06 82
+		 1C 92 E3 B4
+		 C8 C1 77 14
+		 95 0C 47 5B
+		 FB 6A 71 FD
+		 1F 40 EF 37
+		 1D 46 00 00
+		 03 18 66 39
+		 06 3D 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 0B 70 ED 6A
+		 7C 75 71 5F
+		 69 75 68 63
+		 4A 6D 68 5A
+		 01 6F B2 51
+		 6F 60 C4 A9
+		 2A 16 78 0F
+		 76 A0 71 0C
+		 28 00 FF 36
+		 F0 11 30 03
+		 00 00 00 0C
+	];
+};

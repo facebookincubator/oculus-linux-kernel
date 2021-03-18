@@ -22,6 +22,9 @@
 #include <linux/pci.h>
 #include <asm/io.h>
 #include <linux/uaccess.h>
+#ifdef CONFIG_MTRR
+#include <asm/mtrr.h>
+#endif
 
 #include <video/kyro.h>
 
@@ -81,7 +84,9 @@ static device_info_t deviceInfo;
 static char *mode_option = NULL;
 static int nopan = 0;
 static int nowrap = 1;
+#ifdef CONFIG_MTRR
 static int nomtrr = 0;
+#endif
 
 /* PCI driver prototypes */
 static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent);
@@ -565,8 +570,10 @@ static int __init kyrofb_setup(char *options)
 			nopan = 1;
 		} else if (strcmp(this_opt, "nowrap") == 0) {
 			nowrap = 1;
+#ifdef CONFIG_MTRR
 		} else if (strcmp(this_opt, "nomtrr") == 0) {
 			nomtrr = 1;
+#endif
 		} else {
 			mode_option = this_opt;
 		}
@@ -684,16 +691,17 @@ static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	currentpar->regbase = deviceInfo.pSTGReg =
 		ioremap_nocache(kyro_fix.mmio_start, kyro_fix.mmio_len);
-	if (!currentpar->regbase)
-		goto out_free_fb;
 
-	info->screen_base = pci_ioremap_wc_bar(pdev, 0);
-	if (!info->screen_base)
-		goto out_unmap_regs;
+	info->screen_base = ioremap_nocache(kyro_fix.smem_start,
+					    kyro_fix.smem_len);
 
+#ifdef CONFIG_MTRR
 	if (!nomtrr)
-		currentpar->wc_cookie = arch_phys_wc_add(kyro_fix.smem_start,
-							 kyro_fix.smem_len);
+		currentpar->mtrr_handle =
+			mtrr_add(kyro_fix.smem_start,
+				 kyro_fix.smem_len,
+				 MTRR_TYPE_WRCOMB, 1);
+#endif
 
 	kyro_fix.ypanstep	= nopan ? 0 : 1;
 	kyro_fix.ywrapstep	= nowrap ? 0 : 1;
@@ -737,10 +745,8 @@ static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 
 out_unmap:
-	iounmap(info->screen_base);
-out_unmap_regs:
 	iounmap(currentpar->regbase);
-out_free_fb:
+	iounmap(info->screen_base);
 	framebuffer_release(info);
 
 	return -EINVAL;
@@ -764,7 +770,12 @@ static void kyrofb_remove(struct pci_dev *pdev)
 	iounmap(info->screen_base);
 	iounmap(par->regbase);
 
-	arch_phys_wc_del(par->wc_cookie);
+#ifdef CONFIG_MTRR
+	if (par->mtrr_handle)
+		mtrr_del(par->mtrr_handle,
+			 info->fix.smem_start,
+			 info->fix.smem_len);
+#endif
 
 	unregister_framebuffer(info);
 	framebuffer_release(info);

@@ -11,6 +11,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -190,11 +191,11 @@ int pio2_gpio_init(struct pio2_card *card)
 	int retval = 0;
 	char *label;
 
-	label = kasprintf(GFP_KERNEL,
-			  "%s@%s", driver_name, dev_name(&card->vdev->dev));
+	label = kmalloc(PIO2_NUM_CHANNELS, GFP_KERNEL);
 	if (label == NULL)
 		return -ENOMEM;
 
+	sprintf(label, "%s@%s", driver_name, dev_name(&card->vdev->dev));
 	card->gc.label = label;
 
 	card->gc.ngpio = PIO2_NUM_CHANNELS;

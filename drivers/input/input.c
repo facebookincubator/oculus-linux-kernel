@@ -100,24 +100,23 @@ static unsigned int input_to_handler(struct input_handle *handle,
 	struct input_value *end = vals;
 	struct input_value *v;
 
-	if (handler->filter) {
-		for (v = vals; v != vals + count; v++) {
-			if (handler->filter(handle, v->type, v->code, v->value))
-				continue;
-			if (end != v)
-				*end = *v;
-			end++;
-		}
-		count = end - vals;
+	for (v = vals; v != vals + count; v++) {
+		if (handler->filter &&
+		    handler->filter(handle, v->type, v->code, v->value))
+			continue;
+		if (end != v)
+			*end = *v;
+		end++;
 	}
 
+	count = end - vals;
 	if (!count)
 		return 0;
 
 	if (handler->events)
 		handler->events(handle, vals, count);
 	else if (handler->event)
-		for (v = vals; v != vals + count; v++)
+		for (v = vals; v != end; v++)
 			handler->event(handle, v->type, v->code, v->value);
 
 	return count;
@@ -144,11 +143,8 @@ static void input_pass_values(struct input_dev *dev,
 		count = input_to_handler(handle, vals, count);
 	} else {
 		list_for_each_entry_rcu(handle, &dev->h_list, d_node)
-			if (handle->open) {
+			if (handle->open)
 				count = input_to_handler(handle, vals, count);
-				if (!count)
-					break;
-			}
 	}
 
 	rcu_read_unlock();
@@ -156,14 +152,12 @@ static void input_pass_values(struct input_dev *dev,
 	add_input_randomness(vals->type, vals->code, vals->value);
 
 	/* trigger auto repeat for key events */
-	if (test_bit(EV_REP, dev->evbit) && test_bit(EV_KEY, dev->evbit)) {
-		for (v = vals; v != vals + count; v++) {
-			if (v->type == EV_KEY && v->value != 2) {
-				if (v->value)
-					input_start_autorepeat(dev, v->code);
-				else
-					input_stop_autorepeat(dev);
-			}
+	for (v = vals; v != vals + count; v++) {
+		if (v->type == EV_KEY && v->value != 2) {
+			if (v->value)
+				input_start_autorepeat(dev, v->code);
+			else
+				input_stop_autorepeat(dev);
 		}
 	}
 }
@@ -851,16 +845,18 @@ static int input_default_setkeycode(struct input_dev *dev,
 		}
 	}
 
-	__clear_bit(*old_keycode, dev->keybit);
-	__set_bit(ke->keycode, dev->keybit);
-
-	for (i = 0; i < dev->keycodemax; i++) {
-		if (input_fetch_keycode(dev, i) == *old_keycode) {
-			__set_bit(*old_keycode, dev->keybit);
-			break; /* Setting the bit twice is useless, so break */
+	if (*old_keycode <= KEY_MAX) {
+		__clear_bit(*old_keycode, dev->keybit);
+		for (i = 0; i < dev->keycodemax; i++) {
+			if (input_fetch_keycode(dev, i) == *old_keycode) {
+				__set_bit(*old_keycode, dev->keybit);
+				/* Setting the bit twice is useless, so break */
+				break;
+			}
 		}
 	}
 
+	__set_bit(ke->keycode, dev->keybit);
 	return 0;
 }
 
@@ -916,9 +912,13 @@ int input_set_keycode(struct input_dev *dev,
 	 * Simulate keyup event if keycode is not present
 	 * in the keymap anymore
 	 */
-	if (test_bit(EV_KEY, dev->evbit) &&
-	    !is_event_supported(old_keycode, dev->keybit, KEY_MAX) &&
-	    __test_and_clear_bit(old_keycode, dev->key)) {
+	if (old_keycode > KEY_MAX) {
+		dev_warn(dev->dev.parent ?: &dev->dev,
+			 "%s: got too big old keycode %#x\n",
+			 __func__, old_keycode);
+	} else if (test_bit(EV_KEY, dev->evbit) &&
+		   !is_event_supported(old_keycode, dev->keybit, KEY_MAX) &&
+		   __test_and_clear_bit(old_keycode, dev->key)) {
 		struct input_value vals[] =  {
 			{ EV_KEY, old_keycode, 0 },
 			input_value_sync
@@ -1787,7 +1787,7 @@ EXPORT_SYMBOL_GPL(input_class);
  */
 struct input_dev *input_allocate_device(void)
 {
-	static atomic_t input_no = ATOMIC_INIT(-1);
+	static atomic_t input_no = ATOMIC_INIT(0);
 	struct input_dev *dev;
 
 	dev = kzalloc(sizeof(struct input_dev), GFP_KERNEL);
@@ -1802,7 +1802,7 @@ struct input_dev *input_allocate_device(void)
 		INIT_LIST_HEAD(&dev->node);
 
 		dev_set_name(&dev->dev, "input%lu",
-			     (unsigned long)atomic_inc_return(&input_no));
+			     (unsigned long) atomic_inc_return(&input_no) - 1);
 
 		__module_get(THIS_MODULE);
 	}
@@ -2051,23 +2051,6 @@ static void devm_input_device_unregister(struct device *dev, void *res)
 }
 
 /**
- * input_enable_softrepeat - enable software autorepeat
- * @dev: input device
- * @delay: repeat delay
- * @period: repeat period
- *
- * Enable software autorepeat on the input device.
- */
-void input_enable_softrepeat(struct input_dev *dev, int delay, int period)
-{
-	dev->timer.data = (unsigned long) dev;
-	dev->timer.function = input_repeat_key;
-	dev->rep[REP_DELAY] = delay;
-	dev->rep[REP_PERIOD] = period;
-}
-EXPORT_SYMBOL(input_enable_softrepeat);
-
-/**
  * input_register_device - register device with input core
  * @dev: device to be registered
  *
@@ -2131,8 +2114,12 @@ int input_register_device(struct input_dev *dev)
 	 * If delay and period are pre-set by the driver, then autorepeating
 	 * is handled by the driver itself and we don't do it in input.c.
 	 */
-	if (!dev->rep[REP_DELAY] && !dev->rep[REP_PERIOD])
-		input_enable_softrepeat(dev, 250, 33);
+	if (!dev->rep[REP_DELAY] && !dev->rep[REP_PERIOD]) {
+		dev->timer.data = (long) dev;
+		dev->timer.function = input_repeat_key;
+		dev->rep[REP_DELAY] = 250;
+		dev->rep[REP_PERIOD] = 33;
+	}
 
 	if (!dev->getkeycode)
 		dev->getkeycode = input_default_getkeycode;
@@ -2271,7 +2258,7 @@ EXPORT_SYMBOL(input_unregister_handler);
  *
  * Iterate over @bus's list of devices, and call @fn for each, passing
  * it @data and stop when @fn returns a non-zero value. The function is
- * using RCU to traverse the list and therefore may be using in atomic
+ * using RCU to traverse the list and therefore may be usind in atonic
  * contexts. The @fn callback is invoked from RCU critical section and
  * thus must not sleep.
  */

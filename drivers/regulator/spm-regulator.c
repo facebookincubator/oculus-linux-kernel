@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,13 +16,11 @@
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/regmap.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/spmi.h>
-#include <linux/platform_device.h>
 #include <linux/string.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
@@ -118,14 +116,19 @@ static const struct voltage_range hf_range1 = {1550000, 1550000, 3125000,
 #define QPNP_FTS2_STEP_MARGIN_NUM	4
 #define QPNP_FTS2_STEP_MARGIN_DEN	5
 
+/*
+ * Settling delay for FTS2.5
+ * Warm-up=20uS, 0-10% & 90-100% non-linear V-ramp delay = 50uS
+ */
+#define FTS2P5_SETTLING_DELAY_US	70
+
 /* VSET value to decide the range of ULT SMPS */
 #define ULT_SMPS_RANGE_SPLIT 0x60
 
 struct spm_vreg {
 	struct regulator_desc		rdesc;
 	struct regulator_dev		*rdev;
-	struct platform_device		*pdev;
-	struct regmap			*regmap;
+	struct spmi_device		*spmi_dev;
 	const struct voltage_range	*range;
 	int				uV;
 	int				last_set_uV;
@@ -199,18 +202,14 @@ static int qpnp_smps_read_voltage(struct spm_vreg *vreg)
 {
 	int rc;
 	u8 reg = 0;
-	uint val;
 
-	rc = regmap_read(vreg->regmap,
-			 vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT,
-			 &val);
+	rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT, &reg, 1);
 	if (rc) {
-		dev_err(&vreg->pdev->dev,
-			"%s: could not read voltage setpoint register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not read voltage setpoint register, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
-	reg = (u8)val;
 
 	vreg->last_set_vlevel = reg;
 	vreg->last_set_uV = spm_regulator_vlevel_to_uv(vreg, reg);
@@ -222,11 +221,10 @@ static int qpnp_smps_set_mode(struct spm_vreg *vreg, u8 mode)
 {
 	int rc;
 
-	rc = regmap_write(vreg->regmap,
-			  vreg->spmi_base_addr + QPNP_SMPS_REG_MODE, mode);
+	rc = spmi_ext_register_writel(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_MODE, &mode, 1);
 	if (rc)
-		dev_err(&vreg->pdev->dev,
-			"%s: could not write to mode register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not write to mode register, rc=%d\n",
 			__func__, rc);
 
 	return rc;
@@ -268,6 +266,7 @@ static int spm_regulator_write_voltage(struct spm_vreg *vreg, int uV)
 	unsigned vlevel = spm_regulator_uv_to_vlevel(vreg, uV);
 	bool spm_failed = false;
 	int rc = 0;
+	u32 slew_delay;
 	u8 reg;
 
 	if (likely(!vreg->bypass_spm)) {
@@ -283,11 +282,12 @@ static int spm_regulator_write_voltage(struct spm_vreg *vreg, int uV)
 	if (unlikely(vreg->bypass_spm || spm_failed)) {
 		/* Set voltage control register via SPMI. */
 		reg = vlevel;
-		rc = regmap_write(vreg->regmap,
-			  vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT,
-			  reg);
+		rc = spmi_ext_register_writel(vreg->spmi_dev->ctrl,
+			vreg->spmi_dev->sid,
+			vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT,
+			&reg, 1);
 		if (rc) {
-			pr_err("%s: regmap_write failed, rc=%d\n",
+			pr_err("%s: spmi_ext_register_writel failed, rc=%d\n",
 				vreg->rdesc.name, rc);
 			return rc;
 		}
@@ -295,7 +295,16 @@ static int spm_regulator_write_voltage(struct spm_vreg *vreg, int uV)
 
 	if (uV > vreg->last_set_uV) {
 		/* Wait for voltage stepping to complete. */
-		udelay(DIV_ROUND_UP(uV - vreg->last_set_uV, vreg->step_rate));
+		slew_delay = DIV_ROUND_UP(uV - vreg->last_set_uV,
+					vreg->step_rate);
+		if (vreg->regulator_type == QPNP_TYPE_FTS2p5)
+			slew_delay += FTS2P5_SETTLING_DELAY_US;
+		udelay(slew_delay);
+	} else if (vreg->regulator_type == QPNP_TYPE_FTS2p5) {
+		/* add the ramp-down delay */
+		slew_delay = DIV_ROUND_UP(vreg->last_set_uV - uV,
+				vreg->step_rate) + FTS2P5_SETTLING_DELAY_US;
+		udelay(slew_delay);
 	}
 
 	vreg->last_set_uV = uV;
@@ -614,13 +623,10 @@ static int qpnp_smps_check_type(struct spm_vreg *vreg)
 	int rc;
 	u8 type[2];
 
-	rc = regmap_bulk_read(vreg->regmap,
-			      vreg->spmi_base_addr + QPNP_SMPS_REG_TYPE,
-			      type,
-			      2);
+	rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_TYPE, type, 2);
 	if (rc) {
-		dev_err(&vreg->pdev->dev,
-			"%s: could not read type register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not read type register, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
@@ -637,8 +643,7 @@ static int qpnp_smps_check_type(struct spm_vreg *vreg)
 					&& type[1] == QPNP_HF_SUBTYPE) {
 		vreg->regulator_type = QPNP_TYPE_HF;
 	} else {
-		dev_err(&vreg->pdev->dev,
-			"%s: invalid type=0x%02X, subtype=0x%02X register pair\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: invalid type=0x%02X, subtype=0x%02X register pair\n",
 			 __func__, type[0], type[1]);
 		return -ENODEV;
 	};
@@ -651,25 +656,21 @@ static int qpnp_smps_init_range(struct spm_vreg *vreg,
 {
 	int rc;
 	u8 reg = 0;
-	uint val;
 
-	rc = regmap_read(vreg->regmap,
-			 vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_RANGE,
-			 &val);
+	rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_RANGE, &reg, 1);
 	if (rc) {
-		dev_err(&vreg->pdev->dev,
-			"%s: could not read voltage range register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not read voltage range register, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
-	reg = (u8)val;
 
 	if (reg == 0x00) {
 		vreg->range = range0;
 	} else if (reg == 0x01) {
 		vreg->range = range1;
 	} else {
-		dev_err(&vreg->pdev->dev, "%s: voltage range=%d is invalid\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: voltage range=%d is invalid\n",
 			__func__, reg);
 		rc = -EINVAL;
 	}
@@ -681,18 +682,14 @@ static int qpnp_ult_hf_init_range(struct spm_vreg *vreg)
 {
 	int rc;
 	u8 reg = 0;
-	uint val;
 
-	rc = regmap_read(vreg->regmap,
-			 vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT,
-			 &val);
+	rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_VOLTAGE_SETPOINT, &reg, 1);
 	if (rc) {
-		dev_err(&vreg->pdev->dev,
-			"%s: could not read voltage range register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not read voltage range register, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
-	reg = (u8)val;
 
 	vreg->range = (reg < ULT_SMPS_RANGE_SPLIT) ? &ult_hf_range0 :
 							&ult_hf_range1;
@@ -728,9 +725,8 @@ static int qpnp_smps_init_mode(struct spm_vreg *vreg)
 {
 	const char *mode_name;
 	int rc;
-	uint val;
 
-	rc = of_property_read_string(vreg->pdev->dev.of_node, "qcom,mode",
+	rc = of_property_read_string(vreg->spmi_dev->dev.of_node, "qcom,mode",
 					&mode_name);
 	if (!rc) {
 		if (strcmp("pwm", mode_name) == 0) {
@@ -739,28 +735,26 @@ static int qpnp_smps_init_mode(struct spm_vreg *vreg)
 				(vreg->regulator_type != QPNP_TYPE_ULT_HF)) {
 			vreg->init_mode = QPNP_SMPS_MODE_AUTO;
 		} else {
-			dev_err(&vreg->pdev->dev,
-				"%s: unknown regulator mode: %s\n",
+			dev_err(&vreg->spmi_dev->dev, "%s: unknown regulator mode: %s\n",
 				__func__, mode_name);
 			return -EINVAL;
 		}
 
-		rc = regmap_write(vreg->regmap,
-				  vreg->spmi_base_addr + QPNP_SMPS_REG_MODE,
-				  *&vreg->init_mode);
+		rc = spmi_ext_register_writel(vreg->spmi_dev->ctrl,
+			vreg->spmi_dev->sid,
+			vreg->spmi_base_addr + QPNP_SMPS_REG_MODE,
+			&vreg->init_mode, 1);
 		if (rc)
-			dev_err(&vreg->pdev->dev,
-				"%s: could not write mode register, rc=%d\n",
+			dev_err(&vreg->spmi_dev->dev, "%s: could not write mode register, rc=%d\n",
 				__func__, rc);
 	} else {
-		rc = regmap_read(vreg->regmap,
-				 vreg->spmi_base_addr + QPNP_SMPS_REG_MODE,
-				 &val);
+		rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl,
+			vreg->spmi_dev->sid,
+			vreg->spmi_base_addr + QPNP_SMPS_REG_MODE,
+			&vreg->init_mode, 1);
 		if (rc)
-			dev_err(&vreg->pdev->dev,
-				"%s: could not read mode register, rc=%d\n",
+			dev_err(&vreg->spmi_dev->dev, "%s: could not read mode register, rc=%d\n",
 				__func__, rc);
-		 vreg->init_mode = (u8)val;
 	}
 
 	vreg->mode = vreg->init_mode;
@@ -773,17 +767,14 @@ static int qpnp_smps_init_step_rate(struct spm_vreg *vreg)
 	int rc;
 	u8 reg = 0;
 	int step = 0, delay;
-	uint val;
 
-	rc = regmap_read(vreg->regmap,
-			 vreg->spmi_base_addr + QPNP_SMPS_REG_STEP_CTRL, &val);
+	rc = spmi_ext_register_readl(vreg->spmi_dev->ctrl, vreg->spmi_dev->sid,
+		vreg->spmi_base_addr + QPNP_SMPS_REG_STEP_CTRL, &reg, 1);
 	if (rc) {
-		dev_err(&vreg->pdev->dev,
-			"%s: could not read stepping control register, rc=%d\n",
+		dev_err(&vreg->spmi_dev->dev, "%s: could not read stepping control register, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
-	reg = (u8)val;
 
 	/* ULT buck does not support steps */
 	if (vreg->regulator_type != QPNP_TYPE_ULT_HF)
@@ -840,7 +831,7 @@ static int spm_regulator_avs_register(struct spm_vreg *vreg,
 	if (!avs_node)
 		return 0;
 
-	init_data = of_get_regulator_init_data(dev, avs_node, &vreg->avs_rdesc);
+	init_data = of_get_regulator_init_data(dev, avs_node);
 	if (!init_data) {
 		dev_err(dev, "%s: unable to allocate memory\n", __func__);
 		return -ENOMEM;
@@ -883,18 +874,18 @@ static int spm_regulator_avs_register(struct spm_vreg *vreg,
 	return 0;
 }
 
-static int spm_regulator_probe(struct platform_device *pdev)
+static int spm_regulator_probe(struct spmi_device *spmi)
 {
 	struct regulator_config reg_config = {};
-	struct device_node *node = pdev->dev.of_node;
+	struct device_node *node = spmi->dev.of_node;
 	struct regulator_init_data *init_data;
 	struct spm_vreg *vreg;
-	unsigned int base;
+	struct resource *res;
 	bool bypass_spm;
 	int rc;
 
 	if (!node) {
-		dev_err(&pdev->dev, "%s: device node missing\n", __func__);
+		dev_err(&spmi->dev, "%s: device node missing\n", __func__);
 		return -ENODEV;
 	}
 
@@ -903,34 +894,27 @@ static int spm_regulator_probe(struct platform_device *pdev)
 		rc = msm_spm_probe_done();
 		if (rc) {
 			if (rc != -EPROBE_DEFER)
-				dev_err(&pdev->dev,
-					"%s: spm unavailable, rc=%d\n",
+				dev_err(&spmi->dev, "%s: spm unavailable, rc=%d\n",
 					__func__, rc);
 			return rc;
 		}
 	}
 
-	vreg = devm_kzalloc(&pdev->dev, sizeof(*vreg), GFP_KERNEL);
+	vreg = devm_kzalloc(&spmi->dev, sizeof(*vreg), GFP_KERNEL);
 	if (!vreg) {
 		pr_err("allocation failed.\n");
 		return -ENOMEM;
 	}
-	vreg->regmap = dev_get_regmap(pdev->dev.parent, NULL);
-	if (!vreg->regmap) {
-		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
-		return -EINVAL;
-	}
-	vreg->pdev = pdev;
+	vreg->spmi_dev = spmi;
 	vreg->bypass_spm = bypass_spm;
 
-	rc = of_property_read_u32(pdev->dev.of_node, "reg", &base);
-	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't find reg in node = %s rc = %d\n",
-			pdev->dev.of_node->full_name, rc);
-		return rc;
+	res = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&spmi->dev, "%s: node is missing base address\n",
+			__func__);
+		return -EINVAL;
 	}
-	vreg->spmi_base_addr = base;
+	vreg->spmi_base_addr = res->start;
 
 	rc = qpnp_smps_check_type(vreg);
 	if (rc)
@@ -938,10 +922,10 @@ static int spm_regulator_probe(struct platform_device *pdev)
 
 	/* Specify CPU 0 as default in order to handle shared regulator case. */
 	vreg->cpu_num = 0;
-	of_property_read_u32(vreg->pdev->dev.of_node, "qcom,cpu-num",
+	of_property_read_u32(vreg->spmi_dev->dev.of_node, "qcom,cpu-num",
 						&vreg->cpu_num);
 
-	of_property_read_u32(vreg->pdev->dev.of_node, "qcom,recal-mask",
+	of_property_read_u32(vreg->spmi_dev->dev.of_node, "qcom,recal-mask",
 						&vreg->recal_cluster_mask);
 
 	/*
@@ -972,9 +956,9 @@ static int spm_regulator_probe(struct platform_device *pdev)
 	if (rc)
 		return rc;
 
-	init_data = of_get_regulator_init_data(&pdev->dev, node, &vreg->rdesc);
+	init_data = of_get_regulator_init_data(&spmi->dev, node);
 	if (!init_data) {
-		dev_err(&pdev->dev, "%s: unable to allocate memory\n",
+		dev_err(&spmi->dev, "%s: unable to allocate memory\n",
 				__func__);
 		return -ENOMEM;
 	}
@@ -985,7 +969,7 @@ static int spm_regulator_probe(struct platform_device *pdev)
 				= REGULATOR_MODE_NORMAL | REGULATOR_MODE_IDLE;
 
 	if (!init_data->constraints.name) {
-		dev_err(&pdev->dev, "%s: node is missing regulator name\n",
+		dev_err(&spmi->dev, "%s: node is missing regulator name\n",
 			__func__);
 		return -EINVAL;
 	}
@@ -999,7 +983,7 @@ static int spm_regulator_probe(struct platform_device *pdev)
 			/ vreg->range->step_uV + 1;
 
 	vreg->max_step_uV = SPM_REGULATOR_MAX_STEP_UV;
-	of_property_read_u32(vreg->pdev->dev.of_node,
+	of_property_read_u32(vreg->spmi_dev->dev.of_node,
 				"qcom,max-voltage-step", &vreg->max_step_uV);
 
 	if (vreg->max_step_uV > SPM_REGULATOR_MAX_STEP_UV)
@@ -1009,7 +993,7 @@ static int spm_regulator_probe(struct platform_device *pdev)
 	pr_debug("%s: max single voltage step size=%u uV\n",
 		vreg->rdesc.name, vreg->max_step_uV);
 
-	reg_config.dev = &pdev->dev;
+	reg_config.dev = &spmi->dev;
 	reg_config.init_data = init_data;
 	reg_config.driver_data = vreg;
 	reg_config.of_node = node;
@@ -1017,18 +1001,18 @@ static int spm_regulator_probe(struct platform_device *pdev)
 
 	if (IS_ERR(vreg->rdev)) {
 		rc = PTR_ERR(vreg->rdev);
-		dev_err(&pdev->dev, "%s: regulator_register failed, rc=%d\n",
+		dev_err(&spmi->dev, "%s: regulator_register failed, rc=%d\n",
 			__func__, rc);
 		return rc;
 	}
 
-	rc = spm_regulator_avs_register(vreg, &pdev->dev, node);
+	rc = spm_regulator_avs_register(vreg, &spmi->dev, node);
 	if (rc) {
 		regulator_unregister(vreg->rdev);
 		return rc;
 	}
 
-	dev_set_drvdata(&pdev->dev, vreg);
+	dev_set_drvdata(&spmi->dev, vreg);
 
 	pr_info("name=%s, range=%s, voltage=%d uV, mode=%s, step rate=%d uV/us\n",
 		vreg->rdesc.name,
@@ -1041,9 +1025,9 @@ static int spm_regulator_probe(struct platform_device *pdev)
 	return rc;
 }
 
-static int spm_regulator_remove(struct platform_device *pdev)
+static int spm_regulator_remove(struct spmi_device *spmi)
 {
-	struct spm_vreg *vreg = dev_get_drvdata(&pdev->dev);
+	struct spm_vreg *vreg = dev_get_drvdata(&spmi->dev);
 
 	if (vreg->avs_rdev)
 		regulator_unregister(vreg->avs_rdev);
@@ -1057,13 +1041,13 @@ static struct of_device_id spm_regulator_match_table[] = {
 	{}
 };
 
-static const struct platform_device_id spm_regulator_id[] = {
+static const struct spmi_device_id spm_regulator_id[] = {
 	{ SPM_REGULATOR_DRIVER_NAME, 0 },
 	{}
 };
 MODULE_DEVICE_TABLE(spmi, spm_regulator_id);
 
-static struct platform_driver spm_regulator_driver = {
+static struct spmi_driver spm_regulator_driver = {
 	.driver = {
 		.name		= SPM_REGULATOR_DRIVER_NAME,
 		.of_match_table = spm_regulator_match_table,
@@ -1091,13 +1075,13 @@ int __init spm_regulator_init(void)
 	else
 		has_registered = true;
 
-	return platform_driver_register(&spm_regulator_driver);
+	return spmi_driver_register(&spm_regulator_driver);
 }
 EXPORT_SYMBOL(spm_regulator_init);
 
 static void __exit spm_regulator_exit(void)
 {
-	platform_driver_unregister(&spm_regulator_driver);
+	spmi_driver_unregister(&spm_regulator_driver);
 }
 
 arch_initcall(spm_regulator_init);

@@ -1,9 +1,9 @@
-ccflags-y := -Idrivers/staging/android
+ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm
 
 msm_kgsl_core-y = \
 	kgsl.o \
 	kgsl_trace.o \
-	kgsl_drawobj.o \
+	kgsl_cmdbatch.o \
 	kgsl_ioctl.o \
 	kgsl_sharedmem.o \
 	kgsl_pwrctrl.o \
@@ -14,9 +14,9 @@ msm_kgsl_core-y = \
 	kgsl_pool.o \
 	kgsl_threadstats.o
 
-msm_kgsl_core-$(CONFIG_QCOM_KGSL_IOMMU) += kgsl_iommu.o
+msm_kgsl_core-$(CONFIG_MSM_KGSL_IOMMU) += kgsl_iommu.o
 msm_kgsl_core-$(CONFIG_DEBUG_FS) += kgsl_debugfs.o
-msm_kgsl_core-$(CONFIG_QCOM_KGSL_CFF_DUMP) += kgsl_cffdump.o
+msm_kgsl_core-$(CONFIG_MSM_KGSL_CFF_DUMP) += kgsl_cffdump.o
 msm_kgsl_core-$(CONFIG_SYNC) += kgsl_sync.o
 msm_kgsl_core-$(CONFIG_COMPAT) += kgsl_compat.o
 
@@ -41,12 +41,12 @@ msm_adreno-y += \
 	adreno_cp_parser.o \
 	adreno_perfcounter.o
 
-msm_adreno-$(CONFIG_QCOM_KGSL_IOMMU) += adreno_iommu.o
+msm_adreno-$(CONFIG_MSM_KGSL_IOMMU) += adreno_iommu.o
 msm_adreno-$(CONFIG_DEBUG_FS) += adreno_debugfs.o adreno_profile.o
 msm_adreno-$(CONFIG_COMPAT) += adreno_compat.o
 
 msm_kgsl_core-objs = $(msm_kgsl_core-y)
 msm_adreno-objs = $(msm_adreno-y)
 
-obj-$(CONFIG_QCOM_KGSL) += msm_kgsl_core.o
-obj-$(CONFIG_QCOM_KGSL) += msm_adreno.o
+obj-$(CONFIG_MSM_KGSL) += msm_kgsl_core.o
+obj-$(CONFIG_MSM_KGSL) += msm_adreno.o

@@ -25,7 +25,7 @@
 		#size-cells = <0>;
 
 		cpu {
-			compatible = "arm,arm1136jf-s";
+			compatible = "arm,arm1136";
 			device_type = "cpu";
 		};
 	};

@@ -33,11 +33,10 @@ enum wil_platform_event {
  */
 struct wil_platform_ops {
 	int (*bus_request)(void *handle, uint32_t kbps /* KBytes/Sec */);
-	int (*suspend)(void *handle, bool keep_device_power);
-	int (*resume)(void *handle, bool device_powered_on);
+	int (*suspend)(void *handle);
+	int (*resume)(void *handle);
 	void (*uninit)(void *handle);
 	int (*notify)(void *handle, enum wil_platform_event evt);
-	bool (*keep_radio_on_during_sleep)(void *handle);
 };
 
 /**

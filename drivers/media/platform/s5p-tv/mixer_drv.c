@@ -46,15 +46,11 @@ void mxr_get_mbus_fmt(struct mxr_device *mdev,
 	struct v4l2_mbus_framefmt *mbus_fmt)
 {
 	struct v4l2_subdev *sd;
-	struct v4l2_subdev_format fmt = {
-		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
-	};
 	int ret;
 
 	mutex_lock(&mdev->mutex);
 	sd = to_outsd(mdev);
-	ret = v4l2_subdev_call(sd, pad, get_fmt, NULL, &fmt);
-	*mbus_fmt = fmt.format;
+	ret = v4l2_subdev_call(sd, video, g_mbus_fmt, mbus_fmt);
 	WARN(ret, "failed to get mbus_fmt for output %s\n", sd->name);
 	mutex_unlock(&mdev->mutex);
 }
@@ -66,10 +62,7 @@ void mxr_streamer_get(struct mxr_device *mdev)
 	mxr_dbg(mdev, "%s(%d)\n", __func__, mdev->n_streamer);
 	if (mdev->n_streamer == 1) {
 		struct v4l2_subdev *sd = to_outsd(mdev);
-		struct v4l2_subdev_format fmt = {
-			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
-		};
-		struct v4l2_mbus_framefmt *mbus_fmt = &fmt.format;
+		struct v4l2_mbus_framefmt mbus_fmt;
 		struct mxr_resources *res = &mdev->res;
 		int ret;
 
@@ -79,12 +72,12 @@ void mxr_streamer_get(struct mxr_device *mdev)
 			clk_set_parent(res->sclk_mixer, res->sclk_hdmi);
 		mxr_reg_s_output(mdev, to_output(mdev)->cookie);
 
-		ret = v4l2_subdev_call(sd, pad, get_fmt, NULL, &fmt);
+		ret = v4l2_subdev_call(sd, video, g_mbus_fmt, &mbus_fmt);
 		WARN(ret, "failed to get mbus_fmt for output %s\n", sd->name);
 		ret = v4l2_subdev_call(sd, video, s_stream, 1);
 		WARN(ret, "starting stream failed for output %s\n", sd->name);
 
-		mxr_reg_set_mbus_fmt(mdev, mbus_fmt);
+		mxr_reg_set_mbus_fmt(mdev, &mbus_fmt);
 		mxr_reg_streamon(mdev);
 		ret = mxr_reg_wait4vsync(mdev);
 		WARN(ret, "failed to get vsync (%d) from output\n", ret);
@@ -494,6 +487,7 @@ static struct platform_driver mxr_driver __refdata = {
 	.remove = mxr_remove,
 	.driver = {
 		.name = MXR_DRIVER_NAME,
+		.owner = THIS_MODULE,
 		.pm = &mxr_pm_ops,
 	}
 };

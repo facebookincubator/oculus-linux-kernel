@@ -536,7 +536,7 @@ ohci_hub_descriptor (
 	u32		rh = roothub_a (ohci);
 	u16		temp;
 
-	desc->bDescriptorType = USB_DT_HUB;
+	desc->bDescriptorType = 0x29;
 	desc->bPwrOn2PwrGood = (rh & RH_A_POTPGT) >> 24;
 	desc->bHubContrCurrent = 0;
 
@@ -544,15 +544,15 @@ ohci_hub_descriptor (
 	temp = 1 + (ohci->num_ports / 8);
 	desc->bDescLength = 7 + 2 * temp;
 
-	temp = HUB_CHAR_COMMON_LPSM | HUB_CHAR_COMMON_OCPM;
+	temp = 0;
 	if (rh & RH_A_NPS)		/* no power switching? */
-		temp |= HUB_CHAR_NO_LPSM;
+	    temp |= 0x0002;
 	if (rh & RH_A_PSM)		/* per-port power switching? */
-		temp |= HUB_CHAR_INDV_PORT_LPSM;
+	    temp |= 0x0001;
 	if (rh & RH_A_NOCP)		/* no overcurrent reporting? */
-		temp |= HUB_CHAR_NO_OCPM;
+	    temp |= 0x0010;
 	else if (rh & RH_A_OCPM)	/* per-port overcurrent reporting? */
-		temp |= HUB_CHAR_INDV_PORT_OCPM;
+	    temp |= 0x0008;
 	desc->wHubCharacteristics = cpu_to_le16(temp);
 
 	/* ports removable, and usb 1.0 legacy PortPwrCtrlMask */

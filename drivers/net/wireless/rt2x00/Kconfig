@@ -240,16 +240,17 @@ config RT2X00_LIB_USB
 
 config RT2X00_LIB
 	tristate
+	select AVERAGE
 
 config RT2X00_LIB_FIRMWARE
-	bool
+	boolean
 	select FW_LOADER
 
 config RT2X00_LIB_CRYPTO
-	bool
+	boolean
 
 config RT2X00_LIB_LEDS
-	bool
+	boolean
 	default y if (RT2X00_LIB=y && LEDS_CLASS=y) || (RT2X00_LIB=m && LEDS_CLASS!=n)
 
 config RT2X00_LIB_DEBUGFS

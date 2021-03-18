@@ -74,44 +74,36 @@
 
 #include "iscsi_iser.h"
 
+static struct scsi_host_template iscsi_iser_sht;
+static struct iscsi_transport iscsi_iser_transport;
+static struct scsi_transport_template *iscsi_iser_scsi_transport;
+
+static unsigned int iscsi_max_lun = 512;
+module_param_named(max_lun, iscsi_max_lun, uint, S_IRUGO);
+
+int iser_debug_level = 0;
+bool iser_pi_enable = false;
+int iser_pi_guard = 1;
+
 MODULE_DESCRIPTION("iSER (iSCSI Extensions for RDMA) Datamover");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Alex Nezhinsky, Dan Bar Dov, Or Gerlitz");
 MODULE_VERSION(DRV_VER);
 
-static struct scsi_host_template iscsi_iser_sht;
-static struct iscsi_transport iscsi_iser_transport;
-static struct scsi_transport_template *iscsi_iser_scsi_transport;
+module_param_named(debug_level, iser_debug_level, int, 0644);
+MODULE_PARM_DESC(debug_level, "Enable debug tracing if > 0 (default:disabled)");
+
+module_param_named(pi_enable, iser_pi_enable, bool, 0644);
+MODULE_PARM_DESC(pi_enable, "Enable T10-PI offload support (default:disabled)");
+
+module_param_named(pi_guard, iser_pi_guard, int, 0644);
+MODULE_PARM_DESC(pi_guard, "T10-PI guard_type, 0:CRC|1:IP_CSUM (default:IP_CSUM)");
+
 static struct workqueue_struct *release_wq;
 struct iser_global ig;
 
-int iser_debug_level = 0;
-module_param_named(debug_level, iser_debug_level, int, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(debug_level, "Enable debug tracing if > 0 (default:disabled)");
-
-static unsigned int iscsi_max_lun = 512;
-module_param_named(max_lun, iscsi_max_lun, uint, S_IRUGO);
-MODULE_PARM_DESC(max_lun, "Max LUNs to allow per session (default:512");
-
-unsigned int iser_max_sectors = ISER_DEF_MAX_SECTORS;
-module_param_named(max_sectors, iser_max_sectors, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(max_sectors, "Max number of sectors in a single scsi command (default:1024");
-
-bool iser_always_reg = true;
-module_param_named(always_register, iser_always_reg, bool, S_IRUGO);
-MODULE_PARM_DESC(always_register,
-		 "Always register memory, even for continuous memory regions (default:true)");
-
-bool iser_pi_enable = false;
-module_param_named(pi_enable, iser_pi_enable, bool, S_IRUGO);
-MODULE_PARM_DESC(pi_enable, "Enable T10-PI offload support (default:disabled)");
-
-int iser_pi_guard;
-module_param_named(pi_guard, iser_pi_guard, int, S_IRUGO);
-MODULE_PARM_DESC(pi_guard, "T10-PI guard_type [deprecated]");
-
 /*
- * iscsi_iser_recv() - Process a successful recv completion
+ * iscsi_iser_recv() - Process a successfull recv completion
  * @conn:         iscsi connection
  * @hdr:          iscsi header
  * @rx_data:      buffer containing receive data payload
@@ -126,6 +118,7 @@ iscsi_iser_recv(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 {
 	int rc = 0;
 	int datalen;
+	int ahslen;
 
 	/* verify PDU length */
 	datalen = ntoh24(hdr->dlength);
@@ -139,6 +132,9 @@ iscsi_iser_recv(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 	if (datalen != rx_data_len)
 		iser_dbg("aligned datalen (%d) hdr, %d (IB)\n",
 			datalen, rx_data_len);
+
+	/* read AHS */
+	ahslen = hdr->hlength * 4;
 
 	rc = iscsi_complete_pdu(conn, hdr, rx_data, rx_data_len);
 	if (rc && rc != ISCSI_ERR_NO_SCSI_CMD)
@@ -168,56 +164,26 @@ iscsi_iser_pdu_alloc(struct iscsi_task *task, uint8_t opcode)
 	return 0;
 }
 
-/**
- * iser_initialize_task_headers() - Initialize task headers
- * @task:       iscsi task
- * @tx_desc:    iser tx descriptor
- *
- * Notes:
- * This routine may race with iser teardown flow for scsi
- * error handling TMFs. So for TMF we should acquire the
- * state mutex to avoid dereferencing the IB device which
- * may have already been terminated.
- */
-int
-iser_initialize_task_headers(struct iscsi_task *task,
-			     struct iser_tx_desc *tx_desc)
+int iser_initialize_task_headers(struct iscsi_task *task,
+						struct iser_tx_desc *tx_desc)
 {
-	struct iser_conn *iser_conn = task->conn->dd_data;
+	struct iser_conn       *iser_conn   = task->conn->dd_data;
 	struct iser_device *device = iser_conn->ib_conn.device;
 	struct iscsi_iser_task *iser_task = task->dd_data;
 	u64 dma_addr;
-	const bool mgmt_task = !task->sc && !in_interrupt();
-	int ret = 0;
-
-	if (unlikely(mgmt_task))
-		mutex_lock(&iser_conn->state_mutex);
-
-	if (unlikely(iser_conn->state != ISER_CONN_UP)) {
-		ret = -ENODEV;
-		goto out;
-	}
 
 	dma_addr = ib_dma_map_single(device->ib_device, (void *)tx_desc,
 				ISER_HEADERS_LEN, DMA_TO_DEVICE);
-	if (ib_dma_mapping_error(device->ib_device, dma_addr)) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (ib_dma_mapping_error(device->ib_device, dma_addr))
+		return -ENOMEM;
 
-	tx_desc->wr_idx = 0;
-	tx_desc->mapped = true;
 	tx_desc->dma_addr = dma_addr;
 	tx_desc->tx_sg[0].addr   = tx_desc->dma_addr;
 	tx_desc->tx_sg[0].length = ISER_HEADERS_LEN;
-	tx_desc->tx_sg[0].lkey   = device->pd->local_dma_lkey;
+	tx_desc->tx_sg[0].lkey   = device->mr->lkey;
 
 	iser_task->iser_conn = iser_conn;
-out:
-	if (unlikely(mgmt_task))
-		mutex_unlock(&iser_conn->state_mutex);
-
-	return ret;
+	return 0;
 }
 
 /**
@@ -233,14 +199,9 @@ static int
 iscsi_iser_task_init(struct iscsi_task *task)
 {
 	struct iscsi_iser_task *iser_task = task->dd_data;
-	int ret;
 
-	ret = iser_initialize_task_headers(task, &iser_task->desc);
-	if (ret) {
-		iser_err("Failed to init task %p, err = %d\n",
-			 iser_task, ret);
-		return ret;
-	}
+	if (iser_initialize_task_headers(task, &iser_task->desc))
+			return -ENOMEM;
 
 	/* mgmt task */
 	if (!task->sc)
@@ -366,19 +327,16 @@ iscsi_iser_task_xmit(struct iscsi_task *task)
 static void iscsi_iser_cleanup_task(struct iscsi_task *task)
 {
 	struct iscsi_iser_task *iser_task = task->dd_data;
-	struct iser_tx_desc *tx_desc = &iser_task->desc;
-	struct iser_conn *iser_conn = task->conn->dd_data;
+	struct iser_tx_desc    *tx_desc   = &iser_task->desc;
+	struct iser_conn       *iser_conn	  = task->conn->dd_data;
 	struct iser_device *device = iser_conn->ib_conn.device;
 
 	/* DEVICE_REMOVAL event might have already released the device */
 	if (!device)
 		return;
 
-	if (likely(tx_desc->mapped)) {
-		ib_dma_unmap_single(device->ib_device, tx_desc->dma_addr,
-				    ISER_HEADERS_LEN, DMA_TO_DEVICE);
-		tx_desc->mapped = false;
-	}
+	ib_dma_unmap_single(device->ib_device,
+		tx_desc->dma_addr, ISER_HEADERS_LEN, DMA_TO_DEVICE);
 
 	/* mgmt tasks do not need special cleanup */
 	if (!task->sc)
@@ -550,8 +508,8 @@ iscsi_iser_conn_stop(struct iscsi_cls_conn *cls_conn, int flag)
 	 */
 	if (iser_conn) {
 		mutex_lock(&iser_conn->state_mutex);
-		iser_conn_terminate(iser_conn);
 		iscsi_conn_stop(cls_conn, flag);
+		iser_conn_terminate(iser_conn);
 
 		/* unbind */
 		iser_conn->iscsi_conn = NULL;
@@ -583,13 +541,12 @@ iscsi_iser_session_destroy(struct iscsi_cls_session *cls_session)
 static inline unsigned int
 iser_dif_prot_caps(int prot_caps)
 {
-	return ((prot_caps & IB_PROT_T10DIF_TYPE_1) ?
-		SHOST_DIF_TYPE1_PROTECTION | SHOST_DIX_TYPE0_PROTECTION |
-		SHOST_DIX_TYPE1_PROTECTION : 0) |
-	       ((prot_caps & IB_PROT_T10DIF_TYPE_2) ?
-		SHOST_DIF_TYPE2_PROTECTION | SHOST_DIX_TYPE2_PROTECTION : 0) |
-	       ((prot_caps & IB_PROT_T10DIF_TYPE_3) ?
-		SHOST_DIF_TYPE3_PROTECTION | SHOST_DIX_TYPE3_PROTECTION : 0);
+	return ((prot_caps & IB_PROT_T10DIF_TYPE_1) ? SHOST_DIF_TYPE1_PROTECTION |
+						      SHOST_DIX_TYPE1_PROTECTION : 0) |
+	       ((prot_caps & IB_PROT_T10DIF_TYPE_2) ? SHOST_DIF_TYPE2_PROTECTION |
+						      SHOST_DIX_TYPE2_PROTECTION : 0) |
+	       ((prot_caps & IB_PROT_T10DIF_TYPE_3) ? SHOST_DIF_TYPE3_PROTECTION |
+						      SHOST_DIX_TYPE3_PROTECTION : 0);
 }
 
 /**
@@ -612,7 +569,6 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 	struct Scsi_Host *shost;
 	struct iser_conn *iser_conn = NULL;
 	struct ib_conn *ib_conn;
-	u16 max_cmds;
 
 	shost = iscsi_host_alloc(&iscsi_iser_sht, 0, 0);
 	if (!shost)
@@ -630,52 +586,26 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 	 */
 	if (ep) {
 		iser_conn = ep->dd_data;
-		max_cmds = iser_conn->max_cmds;
-		shost->sg_tablesize = iser_conn->scsi_sg_tablesize;
-		shost->max_sectors = iser_conn->scsi_max_sectors;
-
-		mutex_lock(&iser_conn->state_mutex);
-		if (iser_conn->state != ISER_CONN_UP) {
-			iser_err("iser conn %p already started teardown\n",
-				 iser_conn);
-			mutex_unlock(&iser_conn->state_mutex);
-			goto free_host;
-		}
-
 		ib_conn = &iser_conn->ib_conn;
 		if (ib_conn->pi_support) {
 			u32 sig_caps = ib_conn->device->dev_attr.sig_prot_cap;
 
 			scsi_host_set_prot(shost, iser_dif_prot_caps(sig_caps));
-			scsi_host_set_guard(shost, SHOST_DIX_GUARD_IP |
-						   SHOST_DIX_GUARD_CRC);
+			if (iser_pi_guard)
+				scsi_host_set_guard(shost, SHOST_DIX_GUARD_IP);
+			else
+				scsi_host_set_guard(shost, SHOST_DIX_GUARD_CRC);
 		}
-
-		/*
-		 * Limit the sg_tablesize and max_sectors based on the device
-		 * max fastreg page list length.
-		 */
-		shost->sg_tablesize = min_t(unsigned short, shost->sg_tablesize,
-			ib_conn->device->dev_attr.max_fast_reg_page_list_len);
-		shost->max_sectors = min_t(unsigned int,
-			1024, (shost->sg_tablesize * PAGE_SIZE) >> 9);
-
-		if (iscsi_host_add(shost,
-				   ib_conn->device->ib_device->dma_device)) {
-			mutex_unlock(&iser_conn->state_mutex);
-			goto free_host;
-		}
-		mutex_unlock(&iser_conn->state_mutex);
-	} else {
-		max_cmds = ISER_DEF_XMIT_CMDS_MAX;
-		if (iscsi_host_add(shost, NULL))
-			goto free_host;
 	}
 
-	if (cmds_max > max_cmds) {
+	if (iscsi_host_add(shost, ep ?
+			   ib_conn->device->ib_device->dma_device : NULL))
+		goto free_host;
+
+	if (cmds_max > ISER_DEF_XMIT_CMDS_MAX) {
 		iser_info("cmds_max changed from %u to %u\n",
-			  cmds_max, max_cmds);
-		cmds_max = max_cmds;
+			  cmds_max, ISER_DEF_XMIT_CMDS_MAX);
+		cmds_max = ISER_DEF_XMIT_CMDS_MAX;
 	}
 
 	cls_session = iscsi_session_setup(&iscsi_iser_transport, shost,
@@ -762,7 +692,15 @@ iscsi_iser_conn_get_stats(struct iscsi_cls_conn *cls_conn, struct iscsi_stats *s
 	stats->r2t_pdus = conn->r2t_pdus_cnt; /* always 0 */
 	stats->tmfcmd_pdus = conn->tmfcmd_pdus_cnt;
 	stats->tmfrsp_pdus = conn->tmfrsp_pdus_cnt;
-	stats->custom_length = 0;
+	stats->custom_length = 4;
+	strcpy(stats->custom[0].desc, "qp_tx_queue_full");
+	stats->custom[0].value = 0; /* TB iser_conn->qp_tx_queue_full; */
+	strcpy(stats->custom[1].desc, "fmr_map_not_avail");
+	stats->custom[1].value = 0; /* TB iser_conn->fmr_map_not_avail */;
+	strcpy(stats->custom[2].desc, "eh_abort_cnt");
+	stats->custom[2].value = conn->eh_abort_cnt;
+	strcpy(stats->custom[3].desc, "fmr_unalign_cnt");
+	stats->custom[3].value = conn->fmr_unalign_cnt;
 }
 
 static int iscsi_iser_get_ep_param(struct iscsi_endpoint *ep,
@@ -851,9 +789,10 @@ failure:
 static int
 iscsi_iser_ep_poll(struct iscsi_endpoint *ep, int timeout_ms)
 {
-	struct iser_conn *iser_conn = ep->dd_data;
+	struct iser_conn *iser_conn;
 	int rc;
 
+	iser_conn = ep->dd_data;
 	rc = wait_for_completion_interruptible_timeout(&iser_conn->up_completion,
 						       msecs_to_jiffies(timeout_ms));
 	/* if conn establishment failed, return error code to iscsi */
@@ -865,7 +804,7 @@ iscsi_iser_ep_poll(struct iscsi_endpoint *ep, int timeout_ms)
 		mutex_unlock(&iser_conn->state_mutex);
 	}
 
-	iser_info("iser conn %p rc = %d\n", iser_conn, rc);
+	iser_info("ib conn %p rc = %d\n", iser_conn, rc);
 
 	if (rc > 0)
 		return 1; /* success, this is the equivalent of POLLOUT */
@@ -887,9 +826,11 @@ iscsi_iser_ep_poll(struct iscsi_endpoint *ep, int timeout_ms)
 static void
 iscsi_iser_ep_disconnect(struct iscsi_endpoint *ep)
 {
-	struct iser_conn *iser_conn = ep->dd_data;
+	struct iser_conn *iser_conn;
 
-	iser_info("ep %p iser conn %p\n", ep, iser_conn);
+	iser_conn = ep->dd_data;
+	iser_info("ep %p iser conn %p state %d\n",
+		  ep, iser_conn, iser_conn->state);
 
 	mutex_lock(&iser_conn->state_mutex);
 	iser_conn_terminate(iser_conn);
@@ -909,7 +850,6 @@ iscsi_iser_ep_disconnect(struct iscsi_endpoint *ep)
 		mutex_unlock(&iser_conn->state_mutex);
 		iser_conn_release(iser_conn);
 	}
-
 	iscsi_destroy_endpoint(ep);
 }
 
@@ -967,30 +907,21 @@ static umode_t iser_attr_is_visible(int param_type, int param)
 	return 0;
 }
 
-static int iscsi_iser_slave_alloc(struct scsi_device *sdev)
-{
-	blk_queue_virt_boundary(sdev->request_queue, ~MASK_4K);
-
-	return 0;
-}
-
 static struct scsi_host_template iscsi_iser_sht = {
 	.module                 = THIS_MODULE,
 	.name                   = "iSCSI Initiator over iSER",
 	.queuecommand           = iscsi_queuecommand,
-	.change_queue_depth	= scsi_change_queue_depth,
-	.sg_tablesize           = ISCSI_ISER_DEF_SG_TABLESIZE,
-	.max_sectors            = ISER_DEF_MAX_SECTORS,
+	.change_queue_depth	= iscsi_change_queue_depth,
+	.sg_tablesize           = ISCSI_ISER_SG_TABLESIZE,
+	.max_sectors		= 1024,
 	.cmd_per_lun            = ISER_DEF_CMD_PER_LUN,
 	.eh_abort_handler       = iscsi_eh_abort,
 	.eh_device_reset_handler= iscsi_eh_device_reset,
 	.eh_target_reset_handler = iscsi_eh_recover_target,
 	.target_alloc		= iscsi_target_alloc,
-	.use_clustering         = ENABLE_CLUSTERING,
-	.slave_alloc            = iscsi_iser_slave_alloc,
+	.use_clustering         = DISABLE_CLUSTERING,
 	.proc_name              = "iscsi_iser",
 	.this_id                = -1,
-	.track_queue_depth	= 1,
 };
 
 static struct iscsi_transport iscsi_iser_transport = {
@@ -1092,7 +1023,7 @@ static void __exit iser_exit(void)
 
 	if (!connlist_empty) {
 		iser_err("Error cleanup stage completed but we still have iser "
-			 "connections, destroying them anyway\n");
+			 "connections, destroying them anyway.\n");
 		list_for_each_entry_safe(iser_conn, n, &ig.connlist,
 					 conn_list) {
 			iser_conn_release(iser_conn);

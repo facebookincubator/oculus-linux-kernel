@@ -86,6 +86,7 @@ static struct scsi_host_template nsp_driver_template = {
 	.can_queue		 = 1,
 	.this_id		 = NSP_INITIATOR_ID,
 	.sg_tablesize		 = SG_ALL,
+	.cmd_per_lun		 = 1,
 	.use_clustering		 = DISABLE_CLUSTERING,
 };
 
@@ -1363,6 +1364,9 @@ static const char *nsp_info(struct Scsi_Host *shpnt)
 	return data->nspinfo;
 }
 
+#undef SPRINTF
+#define SPRINTF(args...) seq_printf(m, ##args)
+
 static int nsp_show_info(struct seq_file *m, struct Scsi_Host *host)
 {
 	int id;
@@ -1374,74 +1378,75 @@ static int nsp_show_info(struct seq_file *m, struct Scsi_Host *host)
 	hostno = host->host_no;
 	data = (nsp_hw_data *)host->hostdata;
 
-	seq_puts(m, "NinjaSCSI status\n\n"
-		"Driver version:        $Revision: 1.23 $\n");
-	seq_printf(m, "SCSI host No.:         %d\n",          hostno);
-	seq_printf(m, "IRQ:                   %d\n",          host->irq);
-	seq_printf(m, "IO:                    0x%lx-0x%lx\n", host->io_port, host->io_port + host->n_io_port - 1);
-	seq_printf(m, "MMIO(virtual address): 0x%lx-0x%lx\n", host->base, host->base + data->MmioLength - 1);
-	seq_printf(m, "sg_tablesize:          %d\n",          host->sg_tablesize);
+	SPRINTF("NinjaSCSI status\n\n");
+	SPRINTF("Driver version:        $Revision: 1.23 $\n");
+	SPRINTF("SCSI host No.:         %d\n",          hostno);
+	SPRINTF("IRQ:                   %d\n",          host->irq);
+	SPRINTF("IO:                    0x%lx-0x%lx\n", host->io_port, host->io_port + host->n_io_port - 1);
+	SPRINTF("MMIO(virtual address): 0x%lx-0x%lx\n", host->base, host->base + data->MmioLength - 1);
+	SPRINTF("sg_tablesize:          %d\n",          host->sg_tablesize);
 
-	seq_puts(m, "burst transfer mode:   ");
+	SPRINTF("burst transfer mode:   ");
 	switch (nsp_burst_mode) {
 	case BURST_IO8:
-		seq_puts(m, "io8");
+		SPRINTF("io8");
 		break;
 	case BURST_IO32:
-		seq_puts(m, "io32");
+		SPRINTF("io32");
 		break;
 	case BURST_MEM32:
-		seq_puts(m, "mem32");
+		SPRINTF("mem32");
 		break;
 	default:
-		seq_puts(m, "???");
+		SPRINTF("???");
 		break;
 	}
-	seq_putc(m, '\n');
+	SPRINTF("\n");
 
 
 	spin_lock_irqsave(&(data->Lock), flags);
-	seq_printf(m, "CurrentSC:             0x%p\n\n",      data->CurrentSC);
+	SPRINTF("CurrentSC:             0x%p\n\n",      data->CurrentSC);
 	spin_unlock_irqrestore(&(data->Lock), flags);
 
-	seq_puts(m, "SDTR status\n");
+	SPRINTF("SDTR status\n");
 	for(id = 0; id < ARRAY_SIZE(data->Sync); id++) {
 
-		seq_printf(m, "id %d: ", id);
+		SPRINTF("id %d: ", id);
 
 		if (id == host->this_id) {
-			seq_puts(m, "----- NinjaSCSI-3 host adapter\n");
+			SPRINTF("----- NinjaSCSI-3 host adapter\n");
 			continue;
 		}
 
 		switch(data->Sync[id].SyncNegotiation) {
 		case SYNC_OK:
-			seq_puts(m, " sync");
+			SPRINTF(" sync");
 			break;
 		case SYNC_NG:
-			seq_puts(m, "async");
+			SPRINTF("async");
 			break;
 		case SYNC_NOT_YET:
-			seq_puts(m, " none");
+			SPRINTF(" none");
 			break;
 		default:
-			seq_puts(m, "?????");
+			SPRINTF("?????");
 			break;
 		}
 
 		if (data->Sync[id].SyncPeriod != 0) {
 			speed = 1000000 / (data->Sync[id].SyncPeriod * 4);
 
-			seq_printf(m, " transfer %d.%dMB/s, offset %d",
+			SPRINTF(" transfer %d.%dMB/s, offset %d",
 				speed / 1000,
 				speed % 1000,
 				data->Sync[id].SyncOffset
 				);
 		}
-		seq_putc(m, '\n');
+		SPRINTF("\n");
 	}
 	return 0;
 }
+#undef SPRINTF
 
 /*---------------------------------------------------------------*/
 /* error handler                                                 */

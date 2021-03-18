@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013,2015 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -156,13 +156,22 @@ static int msm_rng_probe(struct platform_device *pdev)
 	rng->hwrng.init = msm_rng_init,
 	rng->hwrng.cleanup = msm_rng_cleanup,
 	rng->hwrng.read = msm_rng_read,
+	rng->hwrng.quality = 700;
 
-	ret = devm_hwrng_register(&pdev->dev, &rng->hwrng);
+	ret = hwrng_register(&rng->hwrng);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to register hwrng\n");
 		return ret;
 	}
 
+	return 0;
+}
+
+static int msm_rng_remove(struct platform_device *pdev)
+{
+	struct msm_rng *rng = platform_get_drvdata(pdev);
+
+	hwrng_unregister(&rng->hwrng);
 	return 0;
 }
 
@@ -174,8 +183,10 @@ MODULE_DEVICE_TABLE(of, msm_rng_of_match);
 
 static struct platform_driver msm_rng_driver = {
 	.probe = msm_rng_probe,
+	.remove = msm_rng_remove,
 	.driver = {
 		.name = KBUILD_MODNAME,
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(msm_rng_of_match),
 	}
 };

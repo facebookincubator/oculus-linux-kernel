@@ -23,8 +23,12 @@ struct hdmi_bridge {
 };
 #define to_hdmi_bridge(x) container_of(x, struct hdmi_bridge, base)
 
-void hdmi_bridge_destroy(struct drm_bridge *bridge)
+static void hdmi_bridge_destroy(struct drm_bridge *bridge)
 {
+	struct hdmi_bridge *hdmi_bridge = to_hdmi_bridge(bridge);
+	hdmi_unreference(hdmi_bridge->hdmi);
+	drm_bridge_cleanup(bridge);
+	kfree(hdmi_bridge);
 }
 
 static void power_on(struct drm_bridge *bridge)
@@ -100,13 +104,8 @@ static void hdmi_bridge_pre_enable(struct drm_bridge *bridge)
 		hdmi_audio_update(hdmi);
 	}
 
-	if (phy)
-		phy->funcs->powerup(phy, hdmi->pixclock);
-
+	phy->funcs->powerup(phy, hdmi->pixclock);
 	hdmi_set_mode(hdmi, true);
-
-	if (hdmi->hdcp_ctrl)
-		hdmi_hdcp_ctrl_on(hdmi->hdcp_ctrl);
 }
 
 static void hdmi_bridge_enable(struct drm_bridge *bridge)
@@ -123,14 +122,9 @@ static void hdmi_bridge_post_disable(struct drm_bridge *bridge)
 	struct hdmi *hdmi = hdmi_bridge->hdmi;
 	struct hdmi_phy *phy = hdmi->phy;
 
-	if (hdmi->hdcp_ctrl)
-		hdmi_hdcp_ctrl_off(hdmi->hdcp_ctrl);
-
 	DBG("power down");
 	hdmi_set_mode(hdmi, false);
-
-	if (phy)
-		phy->funcs->powerdown(phy);
+	phy->funcs->powerdown(phy);
 
 	if (hdmi->power_on) {
 		power_off(bridge);
@@ -151,6 +145,8 @@ static void hdmi_bridge_mode_set(struct drm_bridge *bridge,
 	mode = adjusted_mode;
 
 	hdmi->pixclock = mode->clock * 1000;
+
+	hdmi->hdmi_mode = drm_match_cea_mode(mode) > 1;
 
 	hstart = mode->htotal - mode->hsync_start;
 	hend   = mode->htotal - mode->hsync_start + mode->hdisplay;
@@ -205,6 +201,7 @@ static const struct drm_bridge_funcs hdmi_bridge_funcs = {
 		.disable = hdmi_bridge_disable,
 		.post_disable = hdmi_bridge_post_disable,
 		.mode_set = hdmi_bridge_mode_set,
+		.destroy = hdmi_bridge_destroy,
 };
 
 
@@ -215,21 +212,17 @@ struct drm_bridge *hdmi_bridge_init(struct hdmi *hdmi)
 	struct hdmi_bridge *hdmi_bridge;
 	int ret;
 
-	hdmi_bridge = devm_kzalloc(hdmi->dev->dev,
-			sizeof(*hdmi_bridge), GFP_KERNEL);
+	hdmi_bridge = kzalloc(sizeof(*hdmi_bridge), GFP_KERNEL);
 	if (!hdmi_bridge) {
 		ret = -ENOMEM;
 		goto fail;
 	}
 
-	hdmi_bridge->hdmi = hdmi;
+	hdmi_bridge->hdmi = hdmi_reference(hdmi);
 
 	bridge = &hdmi_bridge->base;
-	bridge->funcs = &hdmi_bridge_funcs;
 
-	ret = drm_bridge_attach(hdmi->dev, bridge);
-	if (ret)
-		goto fail;
+	drm_bridge_init(hdmi->dev, bridge, &hdmi_bridge_funcs);
 
 	return bridge;
 

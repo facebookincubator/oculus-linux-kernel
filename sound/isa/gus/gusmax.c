@@ -309,7 +309,7 @@ static int snd_gusmax_probe(struct device *pdev, unsigned int dev)
 	if (err < 0)
 		goto _err;
 
-	err = snd_wss_pcm(wss, 0);
+	err = snd_wss_pcm(wss, 0, NULL);
 	if (err < 0)
 		goto _err;
 
@@ -317,19 +317,19 @@ static int snd_gusmax_probe(struct device *pdev, unsigned int dev)
 	if (err < 0)
 		goto _err;
 
-	err = snd_wss_timer(wss, 2);
+	err = snd_wss_timer(wss, 2, NULL);
 	if (err < 0)
 		goto _err;
 
 	if (pcm_channels[dev] > 0) {
-		if ((err = snd_gf1_pcm_new(gus, 1, 1)) < 0)
+		if ((err = snd_gf1_pcm_new(gus, 1, 1, NULL)) < 0)
 			goto _err;
 	}
 	err = snd_gusmax_mixer(wss);
 	if (err < 0)
 		goto _err;
 
-	err = snd_gf1_rawmidi_new(gus, 0);
+	err = snd_gf1_rawmidi_new(gus, 0, NULL);
 	if (err < 0)
 		goto _err;
 

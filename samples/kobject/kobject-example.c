@@ -36,12 +36,7 @@ static ssize_t foo_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t foo_store(struct kobject *kobj, struct kobj_attribute *attr,
 			 const char *buf, size_t count)
 {
-	int ret;
-
-	ret = kstrtoint(buf, 10, &foo);
-	if (ret < 0)
-		return ret;
-
+	sscanf(buf, "%du", &foo);
 	return count;
 }
 
@@ -68,12 +63,9 @@ static ssize_t b_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t b_store(struct kobject *kobj, struct kobj_attribute *attr,
 		       const char *buf, size_t count)
 {
-	int var, ret;
+	int var;
 
-	ret = kstrtoint(buf, 10, &var);
-	if (ret < 0)
-		return ret;
-
+	sscanf(buf, "%du", &var);
 	if (strcmp(attr->attr.name, "baz") == 0)
 		baz = var;
 	else
@@ -142,5 +134,5 @@ static void __exit example_exit(void)
 
 module_init(example_init);
 module_exit(example_exit);
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Greg Kroah-Hartman <greg@kroah.com>");

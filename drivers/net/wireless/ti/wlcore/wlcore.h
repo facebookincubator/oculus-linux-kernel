@@ -106,7 +106,8 @@ struct wlcore_ops {
 			      struct wl12xx_vif *wlvif,
 			      struct ieee80211_channel_switch *ch_switch);
 	u32 (*pre_pkt_send)(struct wl1271 *wl, u32 buf_offset, u32 last_len);
-	void (*sta_rc_update)(struct wl1271 *wl, struct wl12xx_vif *wlvif);
+	void (*sta_rc_update)(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			      struct ieee80211_sta *sta, u32 changed);
 	int (*set_peer_cap)(struct wl1271 *wl,
 			    struct ieee80211_sta_ht_cap *ht_cap,
 			    bool allow_ht_operation,
@@ -116,16 +117,10 @@ struct wlcore_ops {
 			      struct wl1271_link *lnk);
 	bool (*lnk_low_prio)(struct wl1271 *wl, u8 hlid,
 			     struct wl1271_link *lnk);
-	int (*interrupt_notify)(struct wl1271 *wl, bool action);
-	int (*rx_ba_filter)(struct wl1271 *wl, bool action);
-	int (*ap_sleep)(struct wl1271 *wl);
 	int (*smart_config_start)(struct wl1271 *wl, u32 group_bitmap);
 	int (*smart_config_stop)(struct wl1271 *wl);
 	int (*smart_config_set_group_key)(struct wl1271 *wl, u16 group_id,
 					  u8 key_len, u8 *key);
-	int (*set_cac)(struct wl1271 *wl, struct wl12xx_vif *wlvif,
-		       bool start);
-	int (*dfs_master_restart)(struct wl1271 *wl, struct wl12xx_vif *wlvif);
 };
 
 enum wlcore_partitions {
@@ -196,8 +191,6 @@ struct wl1271 {
 	struct wl1271_if_operations *if_ops;
 
 	int irq;
-
-	int irq_flags;
 
 	spinlock_t wl_lock;
 
@@ -318,7 +311,7 @@ struct wl1271 {
 	bool watchdog_recovery;
 
 	/* Reg domain last configuration */
-	u32 reg_ch_conf_last[2]  __aligned(8);
+	u32 reg_ch_conf_last[2];
 	/* Reg domain pending configuration */
 	u32 reg_ch_conf_pending[2];
 
@@ -406,6 +399,9 @@ struct wl1271 {
 	/* Quirks of specific hardware revisions */
 	unsigned int quirks;
 
+	/* Platform limitations */
+	unsigned int platform_quirks;
+
 	/* number of currently active RX BA sessions */
 	int ba_rx_session_count;
 
@@ -464,9 +460,6 @@ struct wl1271 {
 	/* HW HT (11n) capabilities */
 	struct ieee80211_sta_ht_cap ht_cap[WLCORE_NUM_BANDS];
 
-	/* the current dfs region */
-	enum nl80211_dfs_regions dfs_region;
-
 	/* size of the private FW status data */
 	size_t fw_status_len;
 	size_t fw_status_priv_len;
@@ -500,9 +493,6 @@ struct wl1271 {
 	/* interface combinations supported by the hw */
 	const struct ieee80211_iface_combination *iface_combinations;
 	u8 n_iface_combinations;
-
-	/* dynamic fw traces */
-	u32 dynamic_fw_traces;
 };
 
 int wlcore_probe(struct wl1271 *wl, struct platform_device *pdev);

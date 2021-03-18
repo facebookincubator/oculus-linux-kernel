@@ -208,6 +208,7 @@ out:
 	return rc;
 }
 
+
 static const struct cl_page_operations lov_empty_page_ops = {
 	.cpo_fini   = lov_empty_page_fini,
 	.cpo_print  = lov_page_print
@@ -226,5 +227,6 @@ int lov_page_init_empty(const struct lu_env *env, struct cl_object *obj,
 	cl_page_export(env, page, 1);
 	return 0;
 }
+
 
 /** @} lov */

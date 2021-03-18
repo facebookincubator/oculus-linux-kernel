@@ -21,16 +21,6 @@
 MODULE_LICENSE("GPL");
 
 /*
- * Layout of key payload words.
- */
-enum {
-	big_key_data,
-	big_key_path,
-	big_key_path_2nd_part,
-	big_key_len,
-};
-
-/*
  * If the data is under this limit, there's no point creating a shm file to
  * hold it as the permanently resident metadata for the shmem fs will be at
  * least as large as the data.
@@ -57,7 +47,7 @@ struct key_type key_type_big_key = {
  */
 int big_key_preparse(struct key_preparsed_payload *prep)
 {
-	struct path *path = (struct path *)&prep->payload.data[big_key_path];
+	struct path *path = (struct path *)&prep->payload;
 	struct file *file;
 	ssize_t written;
 	size_t datalen = prep->datalen;
@@ -70,7 +60,7 @@ int big_key_preparse(struct key_preparsed_payload *prep)
 	/* Set an arbitrary quota */
 	prep->quotalen = 16;
 
-	prep->payload.data[big_key_len] = (void *)(unsigned long)datalen;
+	prep->type_data[1] = (void *)(unsigned long)datalen;
 
 	if (datalen > BIG_KEY_FILE_THRESHOLD) {
 		/* Create a shmem file to store the data in.  This will permit the data
@@ -104,8 +94,7 @@ int big_key_preparse(struct key_preparsed_payload *prep)
 		if (!data)
 			return -ENOMEM;
 
-		prep->payload.data[big_key_data] = data;
-		memcpy(data, prep->data, prep->datalen);
+		prep->payload[0] = memcpy(data, prep->data, prep->datalen);
 	}
 	return 0;
 
@@ -121,10 +110,10 @@ error:
 void big_key_free_preparse(struct key_preparsed_payload *prep)
 {
 	if (prep->datalen > BIG_KEY_FILE_THRESHOLD) {
-		struct path *path = (struct path *)&prep->payload.data[big_key_path];
+		struct path *path = (struct path *)&prep->payload;
 		path_put(path);
 	} else {
-		kfree(prep->payload.data[big_key_data]);
+		kfree(prep->payload[0]);
 	}
 }
 
@@ -134,12 +123,11 @@ void big_key_free_preparse(struct key_preparsed_payload *prep)
  */
 void big_key_revoke(struct key *key)
 {
-	struct path *path = (struct path *)&key->payload.data[big_key_path];
+	struct path *path = (struct path *)&key->payload.data2;
 
 	/* clear the quota */
 	key_payload_reserve(key, 0);
-	if (key_is_instantiated(key) &&
-	    (size_t)key->payload.data[big_key_len] > BIG_KEY_FILE_THRESHOLD)
+	if (key_is_instantiated(key) && key->type_data.x[1] > BIG_KEY_FILE_THRESHOLD)
 		vfs_truncate(path, 0);
 }
 
@@ -148,16 +136,14 @@ void big_key_revoke(struct key *key)
  */
 void big_key_destroy(struct key *key)
 {
-	size_t datalen = (size_t)key->payload.data[big_key_len];
-
-	if (datalen) {
-		struct path *path = (struct path *)&key->payload.data[big_key_path];
+	if (key->type_data.x[1] > BIG_KEY_FILE_THRESHOLD) {
+		struct path *path = (struct path *)&key->payload.data2;
 		path_put(path);
 		path->mnt = NULL;
 		path->dentry = NULL;
 	} else {
-		kfree(key->payload.data[big_key_data]);
-		key->payload.data[big_key_data] = NULL;
+		kfree(key->payload.data);
+		key->payload.data = NULL;
 	}
 }
 
@@ -166,12 +152,12 @@ void big_key_destroy(struct key *key)
  */
 void big_key_describe(const struct key *key, struct seq_file *m)
 {
-	size_t datalen = (size_t)key->payload.data[big_key_len];
+	unsigned long datalen = key->type_data.x[1];
 
 	seq_puts(m, key->description);
 
 	if (key_is_instantiated(key))
-		seq_printf(m, ": %zu [%s]",
+		seq_printf(m, ": %lu [%s]",
 			   datalen,
 			   datalen > BIG_KEY_FILE_THRESHOLD ? "file" : "buff");
 }
@@ -182,14 +168,14 @@ void big_key_describe(const struct key *key, struct seq_file *m)
  */
 long big_key_read(const struct key *key, char __user *buffer, size_t buflen)
 {
-	size_t datalen = (size_t)key->payload.data[big_key_len];
+	unsigned long datalen = key->type_data.x[1];
 	long ret;
 
 	if (!buffer || buflen < datalen)
 		return datalen;
 
 	if (datalen > BIG_KEY_FILE_THRESHOLD) {
-		struct path *path = (struct path *)&key->payload.data[big_key_path];
+		struct path *path = (struct path *)&key->payload.data2;
 		struct file *file;
 		loff_t pos;
 
@@ -204,8 +190,7 @@ long big_key_read(const struct key *key, char __user *buffer, size_t buflen)
 			ret = -EIO;
 	} else {
 		ret = datalen;
-		if (copy_to_user(buffer, key->payload.data[big_key_data],
-				 datalen) != 0)
+		if (copy_to_user(buffer, key->payload.data, datalen) != 0)
 			ret = -EFAULT;
 	}
 

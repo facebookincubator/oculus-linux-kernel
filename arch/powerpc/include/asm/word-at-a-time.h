@@ -40,11 +40,6 @@ static inline bool has_zero(unsigned long val, unsigned long *data, const struct
 	return (val + c->high_bits) & ~rhs;
 }
 
-static inline unsigned long zero_bytemask(unsigned long mask)
-{
-	return ~1ul << __fls(mask);
-}
-
 #else
 
 #ifdef CONFIG_64BIT
@@ -82,7 +77,7 @@ static inline unsigned long create_zero_mask(unsigned long bits)
 	    "andc	%1,%1,%2\n\t"
 	    "popcntd	%0,%1"
 		: "=r" (leading_zero_bits), "=&r" (trailing_zero_bit_mask)
-		: "b" (bits));
+		: "r" (bits));
 
 	return leading_zero_bits;
 }

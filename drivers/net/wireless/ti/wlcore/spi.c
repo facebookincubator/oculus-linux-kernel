@@ -335,7 +335,11 @@ static int wl1271_probe(struct spi_device *spi)
 
 	memset(&pdev_data, 0x00, sizeof(pdev_data));
 
-	/* TODO: add DT parsing when needed */
+	pdev_data.pdata = dev_get_platdata(&spi->dev);
+	if (!pdev_data.pdata) {
+		dev_err(&spi->dev, "no platform data\n");
+		return -ENODEV;
+	}
 
 	pdev_data.if_ops = &spi_ops;
 
@@ -412,6 +416,7 @@ static int wl1271_remove(struct spi_device *spi)
 static struct spi_driver wl1271_spi_driver = {
 	.driver = {
 		.name		= "wl1271_spi",
+		.owner		= THIS_MODULE,
 	},
 
 	.probe		= wl1271_probe,

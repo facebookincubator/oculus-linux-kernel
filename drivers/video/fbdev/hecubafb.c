@@ -300,6 +300,7 @@ static struct platform_driver hecubafb_driver = {
 	.probe	= hecubafb_probe,
 	.remove = hecubafb_remove,
 	.driver	= {
+		.owner	= THIS_MODULE,
 		.name	= "hecubafb",
 	},
 };

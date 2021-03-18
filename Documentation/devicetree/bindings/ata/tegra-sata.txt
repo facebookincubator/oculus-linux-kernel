@@ -1,9 +1,7 @@
 Tegra124 SoC SATA AHCI controller
 
 Required properties :
-- compatible : For Tegra124, must contain "nvidia,tegra124-ahci".  Otherwise,
-  must contain '"nvidia,<chip>-ahci", "nvidia,tegra124-ahci"', where <chip>
-  is tegra132.
+- compatible : "nvidia,tegra124-ahci".
 - reg : Should contain 2 entries:
   - AHCI register set (SATA BAR5)
   - SATA register set

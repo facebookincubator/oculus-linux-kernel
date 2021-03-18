@@ -21,6 +21,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
 #include <linux/console.h>
@@ -496,10 +497,8 @@ lqasc_type(struct uart_port *port)
 static void
 lqasc_release_port(struct uart_port *port)
 {
-	struct platform_device *pdev = to_platform_device(port->dev);
-
 	if (port->flags & UPF_IOREMAP) {
-		devm_iounmap(&pdev->dev, port->membase);
+		iounmap(port->membase);
 		port->membase = NULL;
 	}
 }
@@ -739,10 +738,12 @@ static const struct of_device_id ltq_asc_match[] = {
 	{ .compatible = DRVNAME },
 	{},
 };
+MODULE_DEVICE_TABLE(of, ltq_asc_match);
 
 static struct platform_driver lqasc_driver = {
 	.driver		= {
 		.name	= DRVNAME,
+		.owner	= THIS_MODULE,
 		.of_match_table = ltq_asc_match,
 	},
 };
@@ -762,4 +763,8 @@ init_lqasc(void)
 
 	return ret;
 }
-device_initcall(init_lqasc);
+
+module_init(init_lqasc);
+
+MODULE_DESCRIPTION("Lantiq serial port driver");
+MODULE_LICENSE("GPL");

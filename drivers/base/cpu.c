@@ -16,7 +16,6 @@
 #include <linux/acpi.h>
 #include <linux/of.h>
 #include <linux/cpufeature.h>
-#include <linux/tick.h>
 
 #include "base.h"
 
@@ -41,7 +40,7 @@ static void change_cpu_under_node(struct cpu *cpu,
 	cpu->node_id = to_nid;
 }
 
-static int cpu_subsys_online(struct device *dev)
+static int __ref cpu_subsys_online(struct device *dev)
 {
 	struct cpu *cpu = container_of(dev, struct cpu, dev);
 	int cpuid = dev->id;
@@ -180,34 +179,6 @@ static struct attribute_group crash_note_cpu_attr_group = {
 };
 #endif
 
-#ifdef CONFIG_HOTPLUG_CPU
-
-static ssize_t isolate_show(struct device *dev,
-			    struct device_attribute *attr, char *buf)
-{
-	struct cpu *cpu = container_of(dev, struct cpu, dev);
-	ssize_t rc;
-	int cpuid = cpu->dev.id;
-	unsigned int isolated = cpu_isolated(cpuid);
-
-	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", isolated);
-
-	return rc;
-}
-
-static DEVICE_ATTR_RO(isolate);
-
-static struct attribute *cpu_isolated_attrs[] = {
-	&dev_attr_isolate.attr,
-	NULL
-};
-
-static struct attribute_group cpu_isolated_attr_group = {
-	.attrs = cpu_isolated_attrs,
-};
-
-#endif
-
 #ifdef CONFIG_SCHED_HMP
 
 static ssize_t show_sched_static_cpu_pwr_cost(struct device *dev,
@@ -282,56 +253,16 @@ static ssize_t __ref store_sched_static_cluster_pwr_cost(struct device *dev,
 	return err;
 }
 
-static ssize_t show_sched_cluser_wake_idle(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct cpu *cpu = container_of(dev, struct cpu, dev);
-	ssize_t rc;
-	int cpuid = cpu->dev.id;
-	unsigned int wake_up_idle;
-
-	wake_up_idle = sched_get_cluster_wake_idle(cpuid);
-
-	rc = scnprintf(buf, PAGE_SIZE-2, "%d\n", wake_up_idle);
-
-	return rc;
-}
-
-static ssize_t __ref store_sched_cluster_wake_idle(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
-{
-	struct cpu *cpu = container_of(dev, struct cpu, dev);
-	int err;
-	int cpuid = cpu->dev.id;
-	unsigned int wake_up_idle;
-
-	err = kstrtouint(strstrip((char *)buf), 0, &wake_up_idle);
-	if (err)
-		return err;
-
-	err = sched_set_cluster_wake_idle(cpuid, wake_up_idle);
-
-	if (err >= 0)
-		err = count;
-
-	return err;
-}
-
 static DEVICE_ATTR(sched_static_cpu_pwr_cost, 0644,
 					show_sched_static_cpu_pwr_cost,
 					store_sched_static_cpu_pwr_cost);
 static DEVICE_ATTR(sched_static_cluster_pwr_cost, 0644,
 					show_sched_static_cluster_pwr_cost,
 					store_sched_static_cluster_pwr_cost);
-static DEVICE_ATTR(sched_cluster_wake_up_idle, 0644,
-					show_sched_cluser_wake_idle,
-					store_sched_cluster_wake_idle);
 
 static struct attribute *hmp_sched_cpu_attrs[] = {
 	&dev_attr_sched_static_cpu_pwr_cost.attr,
 	&dev_attr_sched_static_cluster_pwr_cost.attr,
-	&dev_attr_sched_cluster_wake_up_idle.attr,
 	NULL
 };
 
@@ -341,6 +272,173 @@ static struct attribute_group sched_hmp_cpu_attr_group = {
 
 #endif /* CONFIG_SCHED_HMP */
 
+#ifdef CONFIG_SCHED_QHMP
+static ssize_t show_sched_mostly_idle_load(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	int cpunum;
+	int mostly_idle_pct;
+
+	cpunum = cpu->dev.id;
+
+	mostly_idle_pct = sched_get_cpu_mostly_idle_load(cpunum);
+
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", mostly_idle_pct);
+
+	return rc;
+}
+
+static ssize_t __ref store_sched_mostly_idle_load(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+	int mostly_idle_load, err;
+
+	err = kstrtoint(strstrip((char *)buf), 0, &mostly_idle_load);
+	if (err)
+		return err;
+
+	err = sched_set_cpu_mostly_idle_load(cpuid, mostly_idle_load);
+	if (err >= 0)
+		err = count;
+
+	return err;
+}
+
+static ssize_t show_sched_mostly_idle_freq(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	int cpunum;
+	unsigned int mostly_idle_freq;
+
+	cpunum = cpu->dev.id;
+
+	mostly_idle_freq = sched_get_cpu_mostly_idle_freq(cpunum);
+
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", mostly_idle_freq);
+
+	return rc;
+}
+
+static ssize_t __ref store_sched_mostly_idle_freq(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id, err;
+	unsigned int mostly_idle_freq;
+
+	err = kstrtoint(strstrip((char *)buf), 0, &mostly_idle_freq);
+	if (err)
+		return err;
+
+	err = sched_set_cpu_mostly_idle_freq(cpuid, mostly_idle_freq);
+	if (err >= 0)
+		err = count;
+
+	return err;
+}
+
+static ssize_t show_sched_mostly_idle_nr_run(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	int cpunum;
+	int mostly_idle_nr_run;
+
+	cpunum = cpu->dev.id;
+
+	mostly_idle_nr_run = sched_get_cpu_mostly_idle_nr_run(cpunum);
+
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", mostly_idle_nr_run);
+
+	return rc;
+}
+
+static ssize_t __ref store_sched_mostly_idle_nr_run(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+	int mostly_idle_nr_run, err;
+
+	err = kstrtoint(strstrip((char *)buf), 0, &mostly_idle_nr_run);
+	if (err)
+		return err;
+
+	err = sched_set_cpu_mostly_idle_nr_run(cpuid, mostly_idle_nr_run);
+	if (err >= 0)
+		err = count;
+
+	return err;
+}
+
+static ssize_t show_sched_prefer_idle(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	int cpunum;
+	int prefer_idle;
+
+	cpunum = cpu->dev.id;
+
+	prefer_idle = sched_get_cpu_prefer_idle(cpunum);
+
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", prefer_idle);
+
+	return rc;
+}
+
+static ssize_t __ref store_sched_prefer_idle(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+	int prefer_idle, err;
+
+	err = kstrtoint(strstrip((char *)buf), 0, &prefer_idle);
+	if (err)
+		return err;
+
+	err = sched_set_cpu_prefer_idle(cpuid, prefer_idle);
+	if (err >= 0)
+		err = count;
+
+	return err;
+}
+
+static DEVICE_ATTR(sched_mostly_idle_freq, 0664, show_sched_mostly_idle_freq,
+						store_sched_mostly_idle_freq);
+static DEVICE_ATTR(sched_mostly_idle_load, 0664, show_sched_mostly_idle_load,
+						store_sched_mostly_idle_load);
+static DEVICE_ATTR(sched_mostly_idle_nr_run, 0664,
+		show_sched_mostly_idle_nr_run, store_sched_mostly_idle_nr_run);
+static DEVICE_ATTR(sched_prefer_idle, 0664,
+		show_sched_prefer_idle, store_sched_prefer_idle);
+
+static struct attribute *qhmp_sched_cpu_attrs[] = {
+	&dev_attr_sched_mostly_idle_load.attr,
+	&dev_attr_sched_mostly_idle_nr_run.attr,
+	&dev_attr_sched_mostly_idle_freq.attr,
+	&dev_attr_sched_prefer_idle.attr,
+	NULL
+};
+
+static struct attribute_group sched_qhmp_cpu_attr_group = {
+	.attrs = qhmp_sched_cpu_attrs,
+};
+
+#endif	/* CONFIG_SCHED_QHMP */
 static const struct attribute_group *common_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
@@ -348,8 +446,8 @@ static const struct attribute_group *common_cpu_attr_groups[] = {
 #ifdef CONFIG_SCHED_HMP
 	&sched_hmp_cpu_attr_group,
 #endif
-#ifdef CONFIG_HOTPLUG_CPU
-	&cpu_isolated_attr_group,
+#ifdef CONFIG_SCHED_QHMP
+	&sched_qhmp_cpu_attr_group,
 #endif
 	NULL
 };
@@ -361,8 +459,8 @@ static const struct attribute_group *hotplugable_cpu_attr_groups[] = {
 #ifdef CONFIG_SCHED_HMP
 	&sched_hmp_cpu_attr_group,
 #endif
-#ifdef CONFIG_HOTPLUG_CPU
-	&cpu_isolated_attr_group,
+#ifdef CONFIG_SCHED_QHMP
+	&sched_qhmp_cpu_attr_group,
 #endif
 	NULL
 };
@@ -381,8 +479,11 @@ static ssize_t show_cpus_attr(struct device *dev,
 			      char *buf)
 {
 	struct cpu_attr *ca = container_of(attr, struct cpu_attr, attr);
+	int n = cpulist_scnprintf(buf, PAGE_SIZE-2, *(ca->map));
 
-	return cpumap_print_to_pagebuf(true, buf, *ca->map);
+	buf[n++] = '\n';
+	buf[n] = '\0';
+	return n;
 }
 
 #define _CPU_ATTR(name, map) \
@@ -419,7 +520,7 @@ static ssize_t print_cpus_offline(struct device *dev,
 	if (!alloc_cpumask_var(&offline, GFP_KERNEL))
 		return -ENOMEM;
 	cpumask_andnot(offline, cpu_possible_mask, cpu_online_mask);
-	n = scnprintf(buf, len, "%*pbl", cpumask_pr_args(offline));
+	n = cpulist_scnprintf(buf, len, offline);
 	free_cpumask_var(offline);
 
 	/* display offline cpus >= nr_cpu_ids */
@@ -438,30 +539,6 @@ static ssize_t print_cpus_offline(struct device *dev,
 	return n;
 }
 static DEVICE_ATTR(offline, 0444, print_cpus_offline, NULL);
-
-static ssize_t print_cpus_isolated(struct device *dev,
-				  struct device_attribute *attr, char *buf)
-{
-	int n = 0, len = PAGE_SIZE-2;
-
-	n = scnprintf(buf, len, "%*pbl\n", cpumask_pr_args(cpu_isolated_map));
-
-	return n;
-}
-static DEVICE_ATTR(isolated, 0444, print_cpus_isolated, NULL);
-
-#ifdef CONFIG_NO_HZ_FULL
-static ssize_t print_cpus_nohz_full(struct device *dev,
-				  struct device_attribute *attr, char *buf)
-{
-	int n = 0, len = PAGE_SIZE-2;
-
-	n = scnprintf(buf, len, "%*pbl\n", cpumask_pr_args(tick_nohz_full_mask));
-
-	return n;
-}
-static DEVICE_ATTR(nohz_full, 0444, print_cpus_nohz_full, NULL);
-#endif
 
 static void cpu_device_release(struct device *dev)
 {
@@ -482,6 +559,7 @@ static void cpu_device_release(struct device *dev)
 	 */
 }
 
+#ifdef CONFIG_HAVE_CPU_AUTOPROBE
 #ifdef CONFIG_GENERIC_CPU_AUTOPROBE
 static ssize_t print_cpu_modalias(struct device *dev,
 				  struct device_attribute *attr,
@@ -504,7 +582,11 @@ static ssize_t print_cpu_modalias(struct device *dev,
 	buf[n++] = '\n';
 	return n;
 }
+#else
+#define print_cpu_modalias	arch_print_cpu_modalias
+#endif
 
+#ifdef CONFIG_HAVE_CPU_AUTOPROBE
 static int cpu_uevent(struct device *dev, struct kobj_uevent_env *env)
 {
 	char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
@@ -515,6 +597,7 @@ static int cpu_uevent(struct device *dev, struct kobj_uevent_env *env)
 	}
 	return 0;
 }
+#endif /*CONFIG_HAVE_CPU_AUTOPROBE*/
 #endif
 
 /*
@@ -537,7 +620,7 @@ int register_cpu(struct cpu *cpu, int num)
 	cpu->dev.offline_disabled = !cpu->hotpluggable;
 	cpu->dev.offline = !cpu_online(num);
 	cpu->dev.of_node = of_get_cpu_node(num, NULL);
-#ifdef CONFIG_GENERIC_CPU_AUTOPROBE
+#ifdef CONFIG_HAVE_CPU_AUTOPROBE
 	cpu->dev.bus->uevent = cpu_uevent;
 #endif
 	cpu->dev.groups = common_cpu_attr_groups;
@@ -561,61 +644,7 @@ struct device *get_cpu_device(unsigned cpu)
 }
 EXPORT_SYMBOL_GPL(get_cpu_device);
 
-static void device_create_release(struct device *dev)
-{
-	kfree(dev);
-}
-
-static struct device *
-__cpu_device_create(struct device *parent, void *drvdata,
-		    const struct attribute_group **groups,
-		    const char *fmt, va_list args)
-{
-	struct device *dev = NULL;
-	int retval = -ENODEV;
-
-	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-	if (!dev) {
-		retval = -ENOMEM;
-		goto error;
-	}
-
-	device_initialize(dev);
-	dev->parent = parent;
-	dev->groups = groups;
-	dev->release = device_create_release;
-	dev_set_drvdata(dev, drvdata);
-
-	retval = kobject_set_name_vargs(&dev->kobj, fmt, args);
-	if (retval)
-		goto error;
-
-	retval = device_add(dev);
-	if (retval)
-		goto error;
-
-	return dev;
-
-error:
-	put_device(dev);
-	return ERR_PTR(retval);
-}
-
-struct device *cpu_device_create(struct device *parent, void *drvdata,
-				 const struct attribute_group **groups,
-				 const char *fmt, ...)
-{
-	va_list vargs;
-	struct device *dev;
-
-	va_start(vargs, fmt);
-	dev = __cpu_device_create(parent, drvdata, groups, fmt, vargs);
-	va_end(vargs);
-	return dev;
-}
-EXPORT_SYMBOL_GPL(cpu_device_create);
-
-#ifdef CONFIG_GENERIC_CPU_AUTOPROBE
+#ifdef CONFIG_HAVE_CPU_AUTOPROBE
 static DEVICE_ATTR(modalias, 0444, print_cpu_modalias, NULL);
 #endif
 
@@ -629,11 +658,7 @@ static struct attribute *cpu_root_attrs[] = {
 	&cpu_attrs[2].attr.attr,
 	&dev_attr_kernel_max.attr,
 	&dev_attr_offline.attr,
-	&dev_attr_isolated.attr,
-#ifdef CONFIG_NO_HZ_FULL
-	&dev_attr_nohz_full.attr,
-#endif
-#ifdef CONFIG_GENERIC_CPU_AUTOPROBE
+#ifdef CONFIG_HAVE_CPU_AUTOPROBE
 	&dev_attr_modalias.attr,
 #endif
 	NULL

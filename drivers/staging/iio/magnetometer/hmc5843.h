@@ -10,6 +10,7 @@
  *
  * */
 
+
 #ifndef HMC5843_CORE_H
 #define HMC5843_CORE_H
 
@@ -31,24 +32,16 @@ enum hmc5843_ids {
 	HMC5983_ID,
 };
 
-/**
- * struct hcm5843_data	- device specific data
- * @dev:		actual device
- * @lock:		update and read regmap data
- * @regmap:		hardware access register maps
- * @variant:		describe chip variants
- * @buffer:		3x 16-bit channels + padding + 64-bit timestamp
- **/
 struct hmc5843_data {
 	struct device *dev;
 	struct mutex lock;
 	struct regmap *regmap;
 	const struct hmc5843_chip_info *variant;
-	__be16 buffer[8];
+	__be16 buffer[8]; /* 3x 16-bit channels + padding + 64-bit timestamp */
 };
 
 int hmc5843_common_probe(struct device *dev, struct regmap *regmap,
-			 enum hmc5843_ids id, const char *name);
+		enum hmc5843_ids id);
 int hmc5843_common_remove(struct device *dev);
 
 int hmc5843_common_suspend(struct device *dev);

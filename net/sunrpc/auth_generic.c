@@ -14,7 +14,7 @@
 #include <linux/sunrpc/debug.h>
 #include <linux/sunrpc/sched.h>
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+#ifdef RPC_DEBUG
 # define RPCDBG_FACILITY	RPCDBG_AUTH
 #endif
 

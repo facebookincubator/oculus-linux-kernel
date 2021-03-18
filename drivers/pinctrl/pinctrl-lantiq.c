@@ -337,9 +337,9 @@ int ltq_pinctrl_register(struct platform_device *pdev,
 	info->dev = &pdev->dev;
 
 	info->pctrl = pinctrl_register(desc, &pdev->dev, info);
-	if (IS_ERR(info->pctrl)) {
+	if (!info->pctrl) {
 		dev_err(&pdev->dev, "failed to register LTQ pinmux driver\n");
-		return PTR_ERR(info->pctrl);
+		return -EINVAL;
 	}
 	platform_set_drvdata(pdev, info);
 	return 0;

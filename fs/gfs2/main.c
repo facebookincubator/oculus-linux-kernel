@@ -30,7 +30,6 @@
 #include "quota.h"
 #include "recovery.h"
 #include "dir.h"
-#include "glops.h"
 
 struct workqueue_struct *gfs2_control_wq;
 
@@ -50,7 +49,7 @@ static void gfs2_init_glock_once(void *foo)
 	struct gfs2_glock *gl = foo;
 
 	INIT_HLIST_BL_NODE(&gl->gl_list);
-	spin_lock_init(&gl->gl_lockref.lock);
+	spin_lock_init(&gl->gl_spin);
 	INIT_LIST_HEAD(&gl->gl_holders);
 	INIT_LIST_HEAD(&gl->gl_lru);
 	INIT_LIST_HEAD(&gl->gl_ail_list);
@@ -162,14 +161,9 @@ static int __init init_gfs2_fs(void)
 	if (!gfs2_control_wq)
 		goto fail_recovery;
 
-	gfs2_freeze_wq = alloc_workqueue("freeze_workqueue", 0, 0);
-
-	if (!gfs2_freeze_wq)
-		goto fail_control;
-
 	gfs2_page_pool = mempool_create_page_pool(64, 0);
 	if (!gfs2_page_pool)
-		goto fail_freeze;
+		goto fail_control;
 
 	gfs2_register_debugfs();
 
@@ -177,8 +171,6 @@ static int __init init_gfs2_fs(void)
 
 	return 0;
 
-fail_freeze:
-	destroy_workqueue(gfs2_freeze_wq);
 fail_control:
 	destroy_workqueue(gfs2_control_wq);
 fail_recovery:
@@ -232,7 +224,6 @@ static void __exit exit_gfs2_fs(void)
 	unregister_filesystem(&gfs2meta_fs_type);
 	destroy_workqueue(gfs_recovery_wq);
 	destroy_workqueue(gfs2_control_wq);
-	destroy_workqueue(gfs2_freeze_wq);
 	list_lru_destroy(&gfs2_qd_lru);
 
 	rcu_barrier();

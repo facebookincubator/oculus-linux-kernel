@@ -151,7 +151,7 @@ static int mc33880_remove(struct spi_device *spi)
 	struct mc33880 *mc;
 
 	mc = spi_get_drvdata(spi);
-	if (!mc)
+	if (mc == NULL)
 		return -ENODEV;
 
 	gpiochip_remove(&mc->chip);
@@ -163,6 +163,7 @@ static int mc33880_remove(struct spi_device *spi)
 static struct spi_driver mc33880_driver = {
 	.driver = {
 		.name		= DRIVER_NAME,
+		.owner		= THIS_MODULE,
 	},
 	.probe		= mc33880_probe,
 	.remove		= mc33880_remove,

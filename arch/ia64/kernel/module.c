@@ -305,12 +305,14 @@ plt_target (struct plt_entry *plt)
 #endif /* !USE_BRL */
 
 void
-module_arch_freeing_init (struct module *mod)
+module_free (struct module *mod, void *module_region)
 {
-	if (mod->arch.init_unw_table) {
+	if (mod && mod->arch.init_unw_table &&
+	    module_region == mod->module_init) {
 		unw_remove_unwind_table(mod->arch.init_unw_table);
 		mod->arch.init_unw_table = NULL;
 	}
+	vfree(module_region);
 }
 
 /* Have we already seen one of these relocations? */
@@ -439,6 +441,14 @@ module_frob_arch_sections (Elf_Ehdr *ehdr, Elf_Shdr *sechdrs, char *secstrings,
 			mod->arch.opd = s;
 		else if (strcmp(".IA_64.unwind", secstrings + s->sh_name) == 0)
 			mod->arch.unwind = s;
+#ifdef CONFIG_PARAVIRT
+		else if (strcmp(".paravirt_bundles",
+				secstrings + s->sh_name) == 0)
+			mod->arch.paravirt_bundles = s;
+		else if (strcmp(".paravirt_insts",
+				secstrings + s->sh_name) == 0)
+			mod->arch.paravirt_insts = s;
+#endif
 
 	if (!mod->arch.core_plt || !mod->arch.init_plt || !mod->arch.got || !mod->arch.opd) {
 		printk(KERN_ERR "%s: sections missing\n", mod->name);
@@ -906,6 +916,30 @@ module_finalize (const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs, struct module *mo
 	DEBUGP("%s: init: entry=%p\n", __func__, mod->init);
 	if (mod->arch.unwind)
 		register_unwind_table(mod);
+#ifdef CONFIG_PARAVIRT
+        if (mod->arch.paravirt_bundles) {
+                struct paravirt_patch_site_bundle *start =
+                        (struct paravirt_patch_site_bundle *)
+                        mod->arch.paravirt_bundles->sh_addr;
+                struct paravirt_patch_site_bundle *end =
+                        (struct paravirt_patch_site_bundle *)
+                        (mod->arch.paravirt_bundles->sh_addr +
+                         mod->arch.paravirt_bundles->sh_size);
+
+                paravirt_patch_apply_bundle(start, end);
+        }
+        if (mod->arch.paravirt_insts) {
+                struct paravirt_patch_site_inst *start =
+                        (struct paravirt_patch_site_inst *)
+                        mod->arch.paravirt_insts->sh_addr;
+                struct paravirt_patch_site_inst *end =
+                        (struct paravirt_patch_site_inst *)
+                        (mod->arch.paravirt_insts->sh_addr +
+                         mod->arch.paravirt_insts->sh_size);
+
+                paravirt_patch_apply_inst(start, end);
+        }
+#endif
 	return 0;
 }
 

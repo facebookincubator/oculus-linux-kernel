@@ -12,20 +12,13 @@
 struct ovl_entry;
 
 enum ovl_path_type {
-	__OVL_PATH_PURE		= (1 << 0),
-	__OVL_PATH_UPPER	= (1 << 1),
-	__OVL_PATH_MERGE	= (1 << 2),
+	OVL_PATH_PURE_UPPER,
+	OVL_PATH_UPPER,
+	OVL_PATH_MERGE,
+	OVL_PATH_LOWER,
 };
 
-#define OVL_TYPE_UPPER(type)	((type) & __OVL_PATH_UPPER)
-#define OVL_TYPE_MERGE(type)	((type) & __OVL_PATH_MERGE)
-#define OVL_TYPE_PURE_UPPER(type) ((type) & __OVL_PATH_PURE)
-#define OVL_TYPE_MERGE_OR_LOWER(type) \
-	(OVL_TYPE_MERGE(type) || !OVL_TYPE_UPPER(type))
-
-#define OVL_XATTR_PRE_NAME "trusted.overlay."
-#define OVL_XATTR_PRE_LEN  16
-#define OVL_XATTR_OPAQUE   OVL_XATTR_PRE_NAME"opaque"
+extern const char *ovl_opaque_xattr;
 
 static inline int ovl_do_rmdir(struct inode *dir, struct dentry *dentry)
 {
@@ -137,7 +130,6 @@ void ovl_dentry_version_inc(struct dentry *dentry);
 void ovl_path_upper(struct dentry *dentry, struct path *path);
 void ovl_path_lower(struct dentry *dentry, struct path *path);
 enum ovl_path_type ovl_path_real(struct dentry *dentry, struct path *path);
-int ovl_path_next(int idx, struct dentry *dentry, struct path *path);
 struct dentry *ovl_dentry_upper(struct dentry *dentry);
 struct dentry *ovl_dentry_lower(struct dentry *dentry);
 struct dentry *ovl_dentry_real(struct dentry *dentry);
@@ -174,7 +166,6 @@ ssize_t ovl_getxattr(struct dentry *dentry, const char *name,
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size);
 int ovl_removexattr(struct dentry *dentry, const char *name);
 struct inode *ovl_d_select_inode(struct dentry *dentry, unsigned file_flags);
-bool ovl_is_private_xattr(const char *name);
 
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode,
 			    struct ovl_entry *oe);
@@ -182,7 +173,6 @@ static inline void ovl_copyattr(struct inode *from, struct inode *to)
 {
 	to->i_uid = from->i_uid;
 	to->i_gid = from->i_gid;
-	to->i_mode = from->i_mode;
 }
 
 /* dir.c */
@@ -196,6 +186,7 @@ void ovl_cleanup(struct inode *dir, struct dentry *dentry);
 /* copy_up.c */
 int ovl_copy_up(struct dentry *dentry);
 int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
-		    struct path *lowerpath, struct kstat *stat);
+		    struct path *lowerpath, struct kstat *stat,
+		    struct iattr *attr);
 int ovl_copy_xattr(struct dentry *old, struct dentry *new);
 int ovl_set_attr(struct dentry *upper, struct kstat *stat);

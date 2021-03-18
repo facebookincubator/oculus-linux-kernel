@@ -132,7 +132,7 @@ struct iwl_proto_offload_cmd_common {
  * @solicited_node_ipv6_addr: broken -- solicited node address exists
  *	for each target address
  * @target_ipv6_addr: our target addresses
- * @ndp_mac_addr: neighbor solicitation response MAC address
+ * @ndp_mac_addr: neighbor soliciation response MAC address
  */
 struct iwl_proto_offload_cmd_v1 {
 	struct iwl_proto_offload_cmd_common common;
@@ -150,7 +150,7 @@ struct iwl_proto_offload_cmd_v1 {
  * @solicited_node_ipv6_addr: broken -- solicited node address exists
  *	for each target address
  * @target_ipv6_addr: our target addresses
- * @ndp_mac_addr: neighbor solicitation response MAC address
+ * @ndp_mac_addr: neighbor soliciation response MAC address
  */
 struct iwl_proto_offload_cmd_v2 {
 	struct iwl_proto_offload_cmd_common common;
@@ -241,12 +241,16 @@ enum iwl_wowlan_wakeup_filters {
 	IWL_WOWLAN_WAKEUP_BCN_FILTERING			= BIT(16),
 }; /* WOWLAN_WAKEUP_FILTER_API_E_VER_4 */
 
-struct iwl_wowlan_config_cmd {
+struct iwl_wowlan_config_cmd_v2 {
 	__le32 wakeup_filter;
 	__le16 non_qos_seq;
 	__le16 qos_seq[8];
 	u8 wowlan_ba_teardown_tids;
 	u8 is_11n_connection;
+} __packed; /* WOWLAN_CONFIG_API_S_VER_2 */
+
+struct iwl_wowlan_config_cmd_v3 {
+	struct iwl_wowlan_config_cmd_v2 common;
 	u8 offloading_tid;
 	u8 reserved[3];
 } __packed; /* WOWLAN_CONFIG_API_S_VER_3 */
@@ -339,13 +343,8 @@ enum iwl_wowlan_wakeup_reason {
 	IWL_WOWLAN_WAKEUP_BY_FOUR_WAY_HANDSHAKE			= BIT(8),
 	IWL_WOWLAN_WAKEUP_BY_REM_WAKE_LINK_LOSS			= BIT(9),
 	IWL_WOWLAN_WAKEUP_BY_REM_WAKE_SIGNATURE_TABLE		= BIT(10),
-	IWL_WOWLAN_WAKEUP_BY_REM_WAKE_TCP_EXTERNAL		= BIT(11),
+	/* BIT(11) reserved */
 	IWL_WOWLAN_WAKEUP_BY_REM_WAKE_WAKEUP_PACKET		= BIT(12),
-	IWL_WOWLAN_WAKEUP_BY_IOAC_MAGIC_PACKET			= BIT(13),
-	IWL_WOWLAN_WAKEUP_BY_D3_WAKEUP_HOST_TIMER		= BIT(14),
-	IWL_WOWLAN_WAKEUP_BY_RXFRAME_FILTERED_IN		= BIT(15),
-	IWL_WOWLAN_WAKEUP_BY_BEACON_FILTERED_IN			= BIT(16),
-
 }; /* WOWLAN_WAKE_UP_REASON_API_E_VER_2 */
 
 struct iwl_wowlan_gtk_status {

@@ -36,8 +36,7 @@
  * @addr: User space pointer to start of block to check
  * @size: Size of block to check
  *
- * Context: User context only. This function may sleep if pagefaults are
- *          enabled.
+ * Context: User context only.  This function may sleep.
  *
  * Checks if a pointer to a block of memory in user space is valid.
  *
@@ -62,8 +61,7 @@
  * @x:   Value to copy to user space.
  * @ptr: Destination address, in user space.
  *
- * Context: User context only. This function may sleep if pagefaults are
- *          enabled.
+ * Context: User context only.  This function may sleep.
  *
  * This macro copies a single simple value from kernel space to user
  * space.  It supports simple types like char and int, but not larger
@@ -81,8 +79,7 @@
  * @x:   Variable to store result.
  * @ptr: Source address, in user space.
  *
- * Context: User context only. This function may sleep if pagefaults are
- *          enabled.
+ * Context: User context only.  This function may sleep.
  *
  * This macro copies a single simple variable from user space to kernel
  * space.  It supports simple types like char and int, but not larger
@@ -101,8 +98,7 @@
  * @x:   Value to copy to user space.
  * @ptr: Destination address, in user space.
  *
- * Context: User context only. This function may sleep if pagefaults are
- *          enabled.
+ * Context: User context only.  This function may sleep.
  *
  * This macro copies a single simple value from kernel space to user
  * space.  It supports simple types like char and int, but not larger
@@ -123,8 +119,7 @@
  * @x:   Variable to store result.
  * @ptr: Source address, in user space.
  *
- * Context: User context only. This function may sleep if pagefaults are
- *          enabled.
+ * Context: User context only.  This function may sleep.
  *
  * This macro copies a single simple variable from user space to kernel
  * space.  It supports simple types like char and int, but not larger

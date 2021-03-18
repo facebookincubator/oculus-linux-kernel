@@ -5,14 +5,13 @@
  * See LICENSE.qlcnic for copyright and licensing details.
  */
 
+#include "qlcnic.h"
+#include "qlcnic_sriov.h"
 #include <linux/if_vlan.h>
 #include <linux/ipv6.h>
 #include <linux/ethtool.h>
 #include <linux/interrupt.h>
 #include <linux/aer.h>
-
-#include "qlcnic.h"
-#include "qlcnic_sriov.h"
 
 static void __qlcnic_83xx_process_aen(struct qlcnic_adapter *);
 static int qlcnic_83xx_clear_lb_mode(struct qlcnic_adapter *, u8);
@@ -119,7 +118,6 @@ static const struct qlcnic_mailbox_metadata qlcnic_83xx_mbx_tbl[] = {
 	{QLCNIC_CMD_DCB_QUERY_CAP, 1, 2},
 	{QLCNIC_CMD_DCB_QUERY_PARAM, 1, 50},
 	{QLCNIC_CMD_SET_INGRESS_ENCAP, 2, 1},
-	{QLCNIC_CMD_83XX_EXTEND_ISCSI_DUMP_CAP, 4, 1},
 };
 
 const u32 qlcnic_83xx_ext_reg_tbl[] = {
@@ -491,7 +489,7 @@ irqreturn_t qlcnic_83xx_clear_legacy_intr(struct qlcnic_adapter *adapter)
 
 static inline void qlcnic_83xx_notify_mbx_response(struct qlcnic_mailbox *mbx)
 {
-	mbx->rsp_status = QLC_83XX_MBX_RESPONSE_ARRIVED;
+	atomic_set(&mbx->rsp_status, QLC_83XX_MBX_RESPONSE_ARRIVED);
 	complete(&mbx->completion);
 }
 
@@ -510,7 +508,7 @@ static void qlcnic_83xx_poll_process_aen(struct qlcnic_adapter *adapter)
 	if (event &  QLCNIC_MBX_ASYNC_EVENT) {
 		__qlcnic_83xx_process_aen(adapter);
 	} else {
-		if (mbx->rsp_status != rsp_status)
+		if (atomic_read(&mbx->rsp_status) != rsp_status)
 			qlcnic_83xx_notify_mbx_response(mbx);
 	}
 out:
@@ -918,6 +916,8 @@ int qlcnic_83xx_alloc_mbx_args(struct qlcnic_cmd_args *mbx,
 				mbx->req.arg = NULL;
 				return -ENOMEM;
 			}
+			memset(mbx->req.arg, 0, sizeof(u32) * mbx->req.num);
+			memset(mbx->rsp.arg, 0, sizeof(u32) * mbx->rsp.num);
 			temp = adapter->ahw->fw_hal_version << 29;
 			mbx->req.arg[0] = (type | (mbx->req.num << 16) | temp);
 			mbx->cmd_op = type;
@@ -1023,7 +1023,7 @@ static void qlcnic_83xx_process_aen(struct qlcnic_adapter *adapter)
 		if (event &  QLCNIC_MBX_ASYNC_EVENT) {
 			__qlcnic_83xx_process_aen(adapter);
 		} else {
-			if (mbx->rsp_status != rsp_status)
+			if (atomic_read(&mbx->rsp_status) != rsp_status)
 				qlcnic_83xx_notify_mbx_response(mbx);
 		}
 	}
@@ -2338,9 +2338,9 @@ static void qlcnic_83xx_handle_link_aen(struct qlcnic_adapter *adapter,
 
 static irqreturn_t qlcnic_83xx_handle_aen(int irq, void *data)
 {
-	u32 mask, resp, event, rsp_status = QLC_83XX_MBX_RESPONSE_ARRIVED;
 	struct qlcnic_adapter *adapter = data;
 	struct qlcnic_mailbox *mbx;
+	u32 mask, resp, event;
 	unsigned long flags;
 
 	mbx = adapter->ahw->mailbox;
@@ -2350,14 +2350,10 @@ static irqreturn_t qlcnic_83xx_handle_aen(int irq, void *data)
 		goto out;
 
 	event = readl(QLCNIC_MBX_FW(adapter->ahw, 0));
-	if (event &  QLCNIC_MBX_ASYNC_EVENT) {
+	if (event &  QLCNIC_MBX_ASYNC_EVENT)
 		__qlcnic_83xx_process_aen(adapter);
-	} else {
-		if (mbx->rsp_status != rsp_status)
-			qlcnic_83xx_notify_mbx_response(mbx);
-		else
-			adapter->stats.mbx_spurious_intr++;
-	}
+	else
+		qlcnic_83xx_notify_mbx_response(mbx);
 
 out:
 	mask = QLCRDX(adapter->ahw, QLCNIC_DEF_INT_MASK);
@@ -3517,31 +3513,6 @@ out:
 	qlcnic_free_mbx_args(&cmd);
 }
 
-#define QLCNIC_83XX_ADD_PORT0		BIT_0
-#define QLCNIC_83XX_ADD_PORT1		BIT_1
-#define QLCNIC_83XX_EXTENDED_MEM_SIZE	13 /* In MB */
-int qlcnic_83xx_extend_md_capab(struct qlcnic_adapter *adapter)
-{
-	struct qlcnic_cmd_args cmd;
-	int err;
-
-	err = qlcnic_alloc_mbx_args(&cmd, adapter,
-				    QLCNIC_CMD_83XX_EXTEND_ISCSI_DUMP_CAP);
-	if (err)
-		return err;
-
-	cmd.req.arg[1] = (QLCNIC_83XX_ADD_PORT0 | QLCNIC_83XX_ADD_PORT1);
-	cmd.req.arg[2] = QLCNIC_83XX_EXTENDED_MEM_SIZE;
-	cmd.req.arg[3] = QLCNIC_83XX_EXTENDED_MEM_SIZE;
-
-	err = qlcnic_issue_cmd(adapter, &cmd);
-	if (err)
-		dev_err(&adapter->pdev->dev,
-			"failed to issue extend iSCSI minidump capability\n");
-
-	return err;
-}
-
 int qlcnic_83xx_reg_test(struct qlcnic_adapter *adapter)
 {
 	u32 major, minor, sub;
@@ -4052,12 +4023,12 @@ static void qlcnic_83xx_mailbox_worker(struct work_struct *work)
 	struct qlcnic_mailbox *mbx = container_of(work, struct qlcnic_mailbox,
 						  work);
 	struct qlcnic_adapter *adapter = mbx->adapter;
-	const struct qlcnic_mbx_ops *mbx_ops = mbx->ops;
+	struct qlcnic_mbx_ops *mbx_ops = mbx->ops;
 	struct device *dev = &adapter->pdev->dev;
+	atomic_t *rsp_status = &mbx->rsp_status;
 	struct list_head *head = &mbx->cmd_q;
 	struct qlcnic_hardware_context *ahw;
 	struct qlcnic_cmd_args *cmd = NULL;
-	unsigned long flags;
 
 	ahw = adapter->ahw;
 
@@ -4067,9 +4038,7 @@ static void qlcnic_83xx_mailbox_worker(struct work_struct *work)
 			return;
 		}
 
-		spin_lock_irqsave(&mbx->aen_lock, flags);
-		mbx->rsp_status = QLC_83XX_MBX_RESPONSE_WAIT;
-		spin_unlock_irqrestore(&mbx->aen_lock, flags);
+		atomic_set(rsp_status, QLC_83XX_MBX_RESPONSE_WAIT);
 
 		spin_lock(&mbx->queue_lock);
 
@@ -4104,7 +4073,7 @@ static void qlcnic_83xx_mailbox_worker(struct work_struct *work)
 	}
 }
 
-static const struct qlcnic_mbx_ops qlcnic_83xx_mbx_ops = {
+static struct qlcnic_mbx_ops qlcnic_83xx_mbx_ops = {
 	.enqueue_cmd    = qlcnic_83xx_enqueue_mbx_cmd,
 	.dequeue_cmd    = qlcnic_83xx_dequeue_mbx_cmd,
 	.decode_resp    = qlcnic_83xx_decode_mbx_rsp,

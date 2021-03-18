@@ -26,7 +26,6 @@ struct fdtable {
 	struct file __rcu **fd;      /* current fd array */
 	unsigned long *close_on_exec;
 	unsigned long *open_fds;
-	unsigned long *full_fds_bits;
 	struct rcu_head rcu;
 };
 
@@ -48,9 +47,6 @@ struct files_struct {
    * read mostly part
    */
 	atomic_t count;
-	bool resize_in_progress;
-	wait_queue_head_t resize_wait;
-
 	struct fdtable __rcu *fdt;
 	struct fdtable fdtab;
   /*
@@ -60,7 +56,6 @@ struct files_struct {
 	int next_fd;
 	unsigned long close_on_exec_init[1];
 	unsigned long open_fds_init[1];
-	unsigned long full_fds_bits_init[1];
 	struct file __rcu * fd_array[NR_OPEN_DEFAULT];
 };
 
@@ -88,8 +83,8 @@ static inline struct file *__fcheck_files(struct files_struct *files, unsigned i
 
 static inline struct file *fcheck_files(struct files_struct *files, unsigned int fd)
 {
-	RCU_LOCKDEP_WARN(!rcu_read_lock_held() &&
-			   !lockdep_is_held(&files->file_lock),
+	rcu_lockdep_assert(rcu_read_lock_held() ||
+			   lockdep_is_held(&files->file_lock),
 			   "suspicious rcu_dereference_check() usage");
 	return __fcheck_files(files, fd);
 }

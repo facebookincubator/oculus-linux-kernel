@@ -405,7 +405,8 @@ void hvsilib_close(struct hvsi_priv *pv, struct hvc_struct *hp)
 		hvsi_send_close(pv);
 	}
 
-	tty_kref_put(pv->tty);
+	if (pv->tty)
+		tty_kref_put(pv->tty);
 	pv->tty = NULL;
 }
 

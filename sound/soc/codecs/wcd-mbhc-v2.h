@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,6 @@
 
 #include <linux/wait.h>
 #include <linux/stringify.h>
-#include <linux/power_supply.h>
 #include "wcdcal-hwdep.h"
 
 #define TOMBAK_MBHC_NC	0
@@ -63,14 +62,11 @@ enum wcd_mbhc_register_function {
 	WCD_MBHC_HPHL_PA_EN,
 	WCD_MBHC_HPH_PA_EN,
 	WCD_MBHC_SWCH_LEVEL_REMOVE,
+	WCD_MBHC_MOISTURE_VREF,
 	WCD_MBHC_PULLDOWN_CTRL,
 	WCD_MBHC_ANC_DET_EN,
 	WCD_MBHC_FSM_STATUS,
 	WCD_MBHC_MUX_CTL,
-	WCD_MBHC_HPHL_OCP_DET_EN,
-	WCD_MBHC_HPHR_OCP_DET_EN,
-	WCD_MBHC_HPHL_OCP_STATUS,
-	WCD_MBHC_HPHR_OCP_STATUS,
 	WCD_MBHC_REG_FUNC_MAX,
 };
 
@@ -132,8 +128,6 @@ enum wcd_notify_event {
 	WCD_EVENT_POST_HPHR_PA_OFF,
 	WCD_EVENT_PRE_HPHL_PA_OFF,
 	WCD_EVENT_PRE_HPHR_PA_OFF,
-	WCD_EVENT_OCP_OFF,
-	WCD_EVENT_OCP_ON,
 	WCD_EVENT_LAST,
 };
 
@@ -243,20 +237,9 @@ enum mbhc_hs_pullup_iref {
 	I_3P0_UA,
 };
 
-enum mbhc_moisture_rref {
-	R_OFF,
-	R_24_KOHM,
-	R_84_KOHM,
-	R_184_KOHM,
-};
-
-struct usbc_ana_audio_config {
-	int usbc_en1_gpio;
-	int usbc_en2n_gpio;
-	int usbc_force_gpio;
-	struct device_node *usbc_en1_gpio_p; /* used by pinctrl API */
-	struct device_node *usbc_en2n_gpio_p; /* used by pinctrl API */
-	struct device_node *usbc_force_gpio_p; /* used by pinctrl API */
+struct wcd_mbhc_moisture_cfg {
+	enum mbhc_moisture_vref m_vref_ctl;
+	enum mbhc_hs_pullup_iref m_iref_ctl;
 };
 
 struct wcd_mbhc_config {
@@ -269,12 +252,10 @@ struct wcd_mbhc_config {
 	bool gnd_det_en;
 	int key_code[WCD_MBHC_KEYCODE_NUM];
 	uint32_t linein_th;
-	bool moisture_en;
+	struct wcd_mbhc_moisture_cfg moist_cfg;
 	int mbhc_micbias;
 	int anc_micbias;
 	bool enable_anc_mic_detect;
-	u32 enable_usbc_analog;
-	struct usbc_ana_audio_config usbc_analog_cfg;
 };
 
 struct wcd_mbhc_intr {
@@ -340,21 +321,19 @@ do {                                                    \
 		mbhc->wcd_mbhc_regs[function].reg)) &	\
 		(mbhc->wcd_mbhc_regs[function].mask)) >> \
 		(mbhc->wcd_mbhc_regs[function].offset)); \
-	} else {                                         \
-		val = -EINVAL;                           \
-	}                                                \
+	}                                               \
 } while (0)
 
 struct wcd_mbhc_cb {
-	int (*enable_mb_source)(struct wcd_mbhc *, bool);
+	int (*enable_mb_source)(struct snd_soc_codec *, bool);
 	void (*trim_btn_reg)(struct snd_soc_codec *);
 	void (*compute_impedance)(struct wcd_mbhc *, uint32_t *, uint32_t *);
 	void (*set_micbias_value)(struct snd_soc_codec *);
 	void (*set_auto_zeroing)(struct snd_soc_codec *, bool);
-	struct firmware_cal * (*get_hwdep_fw_cal)(struct wcd_mbhc *,
+	struct firmware_cal * (*get_hwdep_fw_cal)(struct snd_soc_codec *,
 			enum wcd_cal_type);
 	void (*set_cap_mode)(struct snd_soc_codec *, bool, bool);
-	int (*register_notifier)(struct wcd_mbhc *,
+	int (*register_notifier)(struct snd_soc_codec *,
 				 struct notifier_block *nblock,
 				 bool enable);
 	int (*request_irq)(struct snd_soc_codec *,
@@ -384,8 +363,6 @@ struct wcd_mbhc_cb {
 	int (*mbhc_micb_ctrl_thr_mic)(struct snd_soc_codec *, int, bool);
 	void (*mbhc_gnd_det_ctrl)(struct snd_soc_codec *, bool);
 	void (*hph_pull_down_ctrl)(struct snd_soc_codec *, bool);
-	void (*mbhc_moisture_config)(struct wcd_mbhc *);
-	bool (*hph_register_recovery)(struct wcd_mbhc *);
 };
 
 struct wcd_mbhc {
@@ -405,9 +382,6 @@ struct wcd_mbhc {
 	bool in_swch_irq_handler;
 	bool hphl_swh; /*track HPHL switch NC / NO */
 	bool gnd_swh; /*track GND switch NC / NO */
-	u32 moist_vref;
-	u32 moist_iref;
-	u32 moist_rref;
 	u8 micbias1_cap_mode; /* track ext cap setting */
 	u8 micbias2_cap_mode; /* track ext cap setting */
 	bool hs_detect_work_stop;
@@ -454,13 +428,6 @@ struct wcd_mbhc {
 	struct mutex hphr_pa_lock;
 
 	unsigned long intr_status;
-	bool is_hph_ocp_pending;
-
-	bool usbc_force_pr_mode;
-	int usbc_mode;
-	struct notifier_block psy_nb;
-	struct power_supply *usb_psy;
-	struct work_struct usbc_analog_work;
 };
 #define WCD_MBHC_CAL_SIZE(buttons, rload) ( \
 	sizeof(struct wcd_mbhc_general_cfg) + \

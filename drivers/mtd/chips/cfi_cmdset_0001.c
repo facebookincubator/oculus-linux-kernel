@@ -2654,7 +2654,8 @@ static void cfi_intelext_destroy(struct mtd_info *mtd)
 	kfree(cfi);
 	for (i = 0; i < mtd->numeraseregions; i++) {
 		region = &mtd->eraseregions[i];
-		kfree(region->lockmap);
+		if (region->lockmap)
+			kfree(region->lockmap);
 	}
 	kfree(mtd->eraseregions);
 }

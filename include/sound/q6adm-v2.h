@@ -57,9 +57,9 @@ enum {
 struct route_payload {
 	unsigned int copp_idx[MAX_COPPS_PER_PORT];
 	unsigned int port_id[MAX_COPPS_PER_PORT];
-	int app_type[MAX_COPPS_PER_PORT];
-	int acdb_dev_id[MAX_COPPS_PER_PORT];
-	int sample_rate[MAX_COPPS_PER_PORT];
+	int app_type;
+	int acdb_dev_id;
+	int sample_rate;
 	unsigned short num_copps;
 	unsigned int session_id;
 };
@@ -95,7 +95,7 @@ int adm_unmap_rtac_block(uint32_t *mem_map_handle);
 int adm_close(int port, int topology, int perf_mode);
 
 int adm_matrix_map(int path, struct route_payload payload_map,
-		   int perf_mode, uint32_t passthr_mode);
+		   int perf_mode);
 
 int adm_connect_afe_port(int mode, int session_id, int port_id);
 
@@ -136,9 +136,6 @@ int adm_set_softvolume(int port_id, int copp_idx,
 		       struct audproc_softvolume_params *softvol_param);
 
 int adm_set_mic_gain(int port_id, int copp_idx, int volume);
-
-int adm_send_set_multichannel_ec_primary_mic_ch(int port_id, int copp_idx,
-				int primary_mic_ch);
 
 int adm_param_enable(int port_id, int copp_idx, int module_id,  int enable);
 

@@ -130,7 +130,7 @@ void extract_meta_out_info(struct q6audio_aio *audio,
 		else
 			memset(&buf_node->meta_info.meta_in,
 			0, sizeof(struct dec_meta_in));
-		pr_debug("%s[%pK]:i/p: msw_ts %d lsw_ts %d nflags 0x%8x\n",
+		pr_debug("%s[%pK]:i/p: msw_ts 0x%d lsw_ts 0x%d nflags 0x%8x\n",
 			__func__, audio,
 			buf_node->meta_info.meta_in.ntimestamp.highpart,
 			buf_node->meta_info.meta_in.ntimestamp.lowpart,
@@ -145,7 +145,7 @@ void extract_meta_out_info(struct q6audio_aio *audio,
 				meta_data->meta_out_dsp[0].lsw_ts;
 		meta_data->meta_out_dsp[0].lsw_ts = temp;
 
-		pr_debug("%s[%pK]:o/p: msw_ts %d lsw_ts %d nflags 0x%8x, num_frames = %d\n",
+		pr_debug("%s[%pK]:o/p: msw_ts 0x%d lsw_ts 0x%d nflags 0x%8x, num_frames = %d\n",
 		__func__, audio,
 		((struct dec_meta_out *)buf_node->kvaddr)->\
 			meta_out_dsp[0].msw_ts,

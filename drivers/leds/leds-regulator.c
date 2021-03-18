@@ -153,21 +153,24 @@ static int regulator_led_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	vcc = devm_regulator_get_exclusive(&pdev->dev, "vled");
+	vcc = regulator_get_exclusive(&pdev->dev, "vled");
 	if (IS_ERR(vcc)) {
 		dev_err(&pdev->dev, "Cannot get vcc for %s\n", pdata->name);
 		return PTR_ERR(vcc);
 	}
 
 	led = devm_kzalloc(&pdev->dev, sizeof(*led), GFP_KERNEL);
-	if (led == NULL)
-		return -ENOMEM;
+	if (led == NULL) {
+		ret = -ENOMEM;
+		goto err_vcc;
+	}
 
 	led->cdev.max_brightness = led_regulator_get_max_brightness(vcc);
 	if (pdata->brightness > led->cdev.max_brightness) {
 		dev_err(&pdev->dev, "Invalid default brightness %d\n",
 				pdata->brightness);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_vcc;
 	}
 	led->value = pdata->brightness;
 
@@ -188,7 +191,7 @@ static int regulator_led_probe(struct platform_device *pdev)
 	ret = led_classdev_register(&pdev->dev, &led->cdev);
 	if (ret < 0) {
 		cancel_work_sync(&led->work);
-		return ret;
+		goto err_vcc;
 	}
 
 	/* to expose the default value to userspace */
@@ -198,6 +201,10 @@ static int regulator_led_probe(struct platform_device *pdev)
 	regulator_led_set_value(led);
 
 	return 0;
+
+err_vcc:
+	regulator_put(vcc);
+	return ret;
 }
 
 static int regulator_led_remove(struct platform_device *pdev)
@@ -207,12 +214,14 @@ static int regulator_led_remove(struct platform_device *pdev)
 	led_classdev_unregister(&led->cdev);
 	cancel_work_sync(&led->work);
 	regulator_led_disable(led);
+	regulator_put(led->vcc);
 	return 0;
 }
 
 static struct platform_driver regulator_led_driver = {
 	.driver = {
 		   .name  = "leds-regulator",
+		   .owner = THIS_MODULE,
 		   },
 	.probe  = regulator_led_probe,
 	.remove = regulator_led_remove,

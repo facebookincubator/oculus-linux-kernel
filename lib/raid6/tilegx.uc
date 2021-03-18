@@ -80,7 +80,6 @@ void raid6_tilegx$#_gen_syndrome(int disks, size_t bytes, void **ptrs)
 
 const struct raid6_calls raid6_tilegx$# = {
 	raid6_tilegx$#_gen_syndrome,
-	NULL,			/* XOR not yet implemented */
 	NULL,
 	"tilegx$#",
 	0

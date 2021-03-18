@@ -712,9 +712,10 @@ static int yenta_allocate_res(struct yenta_socket *socket, int nr, unsigned type
 		pcibios_bus_to_resource(dev->bus, res, &region);
 		if (pci_claim_resource(dev, PCI_BRIDGE_RESOURCES + nr) == 0)
 			return 0;
-		dev_info(&dev->dev,
-			 "Preassigned resource %d busy or not available, reconfiguring...\n",
-			 nr);
+		dev_printk(KERN_INFO, &dev->dev,
+			   "Preassigned resource %d busy or not available, "
+			   "reconfiguring...\n",
+			   nr);
 	}
 
 	if (type & IORESOURCE_IO) {
@@ -737,9 +738,9 @@ static int yenta_allocate_res(struct yenta_socket *socket, int nr, unsigned type
 			return 1;
 	}
 
-	dev_info(&dev->dev,
-		 "no resource of type %x available, trying to continue...\n",
-		 type);
+	dev_printk(KERN_INFO, &dev->dev,
+		   "no resource of type %x available, trying to continue...\n",
+		   type);
 	res->start = res->end = res->flags = 0;
 	return 0;
 }
@@ -801,13 +802,13 @@ static void yenta_close(struct pci_dev *dev)
 	else
 		del_timer_sync(&sock->poll_timer);
 
-	iounmap(sock->base);
+	if (sock->base)
+		iounmap(sock->base);
 	yenta_free_resources(sock);
 
 	pci_release_regions(dev);
 	pci_disable_device(dev);
 	pci_set_drvdata(dev, NULL);
-	kfree(sock);
 }
 
 
@@ -978,8 +979,8 @@ static int yenta_probe_cb_irq(struct yenta_socket *socket)
 	socket->probe_status = 0;
 
 	if (request_irq(socket->cb_irq, yenta_probe_handler, IRQF_SHARED, "yenta", socket)) {
-		dev_warn(&socket->dev->dev,
-			 "request_irq() in yenta_probe_cb_irq() failed!\n");
+		dev_printk(KERN_WARNING, &socket->dev->dev,
+			   "request_irq() in yenta_probe_cb_irq() failed!\n");
 		return -1;
 	}
 
@@ -1018,8 +1019,9 @@ static void yenta_get_socket_capabilities(struct yenta_socket *socket, u32 isa_i
 	else
 		socket->socket.irq_mask = 0;
 
-	dev_info(&socket->dev->dev, "ISA IRQ mask 0x%04x, PCI irq %d\n",
-		 socket->socket.irq_mask, socket->cb_irq);
+	dev_printk(KERN_INFO, &socket->dev->dev,
+		   "ISA IRQ mask 0x%04x, PCI irq %d\n",
+		   socket->socket.irq_mask, socket->cb_irq);
 }
 
 /*
@@ -1109,9 +1111,9 @@ static void yenta_fixup_parent_bridge(struct pci_bus *cardbus_bridge)
 
 	/* Show that the wanted subordinate number is not possible: */
 	if (cardbus_bridge->busn_res.end > upper_limit)
-		dev_warn(&cardbus_bridge->dev,
-			 "Upper limit for fixing this bridge's parent bridge: #%02x\n",
-			 upper_limit);
+		dev_printk(KERN_WARNING, &cardbus_bridge->dev,
+			   "Upper limit for fixing this "
+			   "bridge's parent bridge: #%02x\n", upper_limit);
 
 	/* If we have room to increase the bridge's subordinate number, */
 	if (bridge_to_fix->busn_res.end < upper_limit) {
@@ -1120,11 +1122,11 @@ static void yenta_fixup_parent_bridge(struct pci_bus *cardbus_bridge)
 		unsigned char subordinate_to_assign =
 			min_t(int, cardbus_bridge->busn_res.end, upper_limit);
 
-		dev_info(&bridge_to_fix->dev,
-			 "Raising subordinate bus# of parent bus (#%02x) from #%02x to #%02x\n",
-			 bridge_to_fix->number,
-			 (int)bridge_to_fix->busn_res.end,
-			 subordinate_to_assign);
+		dev_printk(KERN_INFO, &bridge_to_fix->dev,
+			   "Raising subordinate bus# of parent "
+			   "bus (#%02x) from #%02x to #%02x\n",
+			   bridge_to_fix->number,
+			   (int)bridge_to_fix->busn_res.end, subordinate_to_assign);
 
 		/* Save the new subordinate in the bus struct of the bridge */
 		bridge_to_fix->busn_res.end = subordinate_to_assign;
@@ -1151,7 +1153,8 @@ static int yenta_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	 * Bail out if so.
 	 */
 	if (!dev->subordinate) {
-		dev_err(&dev->dev, "no bus associated! (try 'pci=assign-busses')\n");
+		dev_printk(KERN_ERR, &dev->dev, "no bus associated! "
+			   "(try 'pci=assign-busses')\n");
 		return -ENODEV;
 	}
 
@@ -1186,7 +1189,7 @@ static int yenta_probe(struct pci_dev *dev, const struct pci_device_id *id)
 		goto disable;
 
 	if (!pci_resource_start(dev, 0)) {
-		dev_err(&dev->dev, "No cardbus resource!\n");
+		dev_printk(KERN_ERR, &dev->dev, "No cardbus resource!\n");
 		ret = -ENODEV;
 		goto release;
 	}
@@ -1205,8 +1208,8 @@ static int yenta_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	 * report the subsystem vendor and device for help debugging
 	 * the irq stuff...
 	 */
-	dev_info(&dev->dev, "CardBus bridge found [%04x:%04x]\n",
-		 dev->subsystem_vendor, dev->subsystem_device);
+	dev_printk(KERN_INFO, &dev->dev, "CardBus bridge found [%04x:%04x]\n",
+		   dev->subsystem_vendor, dev->subsystem_device);
 
 	yenta_config_init(socket);
 
@@ -1233,13 +1236,17 @@ static int yenta_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	if (!socket->cb_irq || request_irq(socket->cb_irq, yenta_interrupt, IRQF_SHARED, "yenta", socket)) {
 		/* No IRQ or request_irq failed. Poll */
 		socket->cb_irq = 0; /* But zero is a valid IRQ number. */
-		setup_timer(&socket->poll_timer, yenta_interrupt_wrapper,
-			    (unsigned long)socket);
-		mod_timer(&socket->poll_timer, jiffies + HZ);
-		dev_info(&dev->dev,
-			 "no PCI IRQ, CardBus support disabled for this socket.\n");
-		dev_info(&dev->dev,
-			 "check your BIOS CardBus, BIOS IRQ or ACPI settings.\n");
+		init_timer(&socket->poll_timer);
+		socket->poll_timer.function = yenta_interrupt_wrapper;
+		socket->poll_timer.data = (unsigned long)socket;
+		socket->poll_timer.expires = jiffies + HZ;
+		add_timer(&socket->poll_timer);
+		dev_printk(KERN_INFO, &dev->dev,
+			   "no PCI IRQ, CardBus support disabled for this "
+			   "socket.\n");
+		dev_printk(KERN_INFO, &dev->dev,
+			   "check your BIOS CardBus, BIOS IRQ or ACPI "
+			   "settings.\n");
 	} else {
 		socket->socket.features |= SS_CAP_CARDBUS;
 	}
@@ -1247,41 +1254,32 @@ static int yenta_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	/* Figure out what the dang thing can do for the PCMCIA layer... */
 	yenta_interrogate(socket);
 	yenta_get_socket_capabilities(socket, isa_interrupts);
-	dev_info(&dev->dev, "Socket status: %08x\n",
-		 cb_readl(socket, CB_SOCKET_STATE));
+	dev_printk(KERN_INFO, &dev->dev,
+		   "Socket status: %08x\n", cb_readl(socket, CB_SOCKET_STATE));
 
 	yenta_fixup_parent_bridge(dev->subordinate);
 
 	/* Register it with the pcmcia layer.. */
 	ret = pcmcia_register_socket(&socket->socket);
-	if (ret)
-		goto free_irq;
+	if (ret == 0) {
+		/* Add the yenta register attributes */
+		ret = device_create_file(&dev->dev, &dev_attr_yenta_registers);
+		if (ret == 0)
+			goto out;
 
-	/* Add the yenta register attributes */
-	ret = device_create_file(&dev->dev, &dev_attr_yenta_registers);
-	if (ret)
-		goto unregister_socket;
+		/* error path... */
+		pcmcia_unregister_socket(&socket->socket);
+	}
 
-	return ret;
-
-	/* error path... */
- unregister_socket:
-	pcmcia_unregister_socket(&socket->socket);
- free_irq:
-	if (socket->cb_irq)
-		free_irq(socket->cb_irq, socket);
-	else
-		del_timer_sync(&socket->poll_timer);
  unmap:
 	iounmap(socket->base);
-	yenta_free_resources(socket);
  release:
 	pci_release_regions(dev);
  disable:
 	pci_disable_device(dev);
  free:
-	pci_set_drvdata(dev, NULL);
 	kfree(socket);
+ out:
 	return ret;
 }
 

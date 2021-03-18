@@ -12,7 +12,7 @@
  *
  */
 
-#include <linux/lsm_hooks.h>
+#include <linux/security.h>
 #include <linux/sysctl.h>
 #include <linux/ptrace.h>
 #include <linux/prctl.h>
@@ -154,8 +154,12 @@ void yama_task_free(struct task_struct *task)
 int yama_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 			   unsigned long arg4, unsigned long arg5)
 {
-	int rc = -ENOSYS;
+	int rc;
 	struct task_struct *myself = current;
+
+	rc = cap_task_prctl(option, arg2, arg3, arg4, arg5);
+	if (rc != -ENOSYS)
+		return rc;
 
 	switch (option) {
 	case PR_SET_PTRACER:
@@ -275,10 +279,17 @@ static int ptracer_exception_found(struct task_struct *tracer,
  *
  * Returns 0 if following the ptrace is allowed, -ve on error.
  */
-static int yama_ptrace_access_check(struct task_struct *child,
+int yama_ptrace_access_check(struct task_struct *child,
 				    unsigned int mode)
 {
-	int rc = 0;
+	int rc;
+
+	/* If standard caps disallows it, so does Yama.  We should
+	 * only tighten restrictions further.
+	 */
+	rc = cap_ptrace_access_check(child, mode);
+	if (rc)
+		return rc;
 
 	/* require ptrace target be a child of ptracer on attach */
 	if (mode & PTRACE_MODE_ATTACH) {
@@ -324,7 +335,14 @@ static int yama_ptrace_access_check(struct task_struct *child,
  */
 int yama_ptrace_traceme(struct task_struct *parent)
 {
-	int rc = 0;
+	int rc;
+
+	/* If standard caps disallows it, so does Yama.  We should
+	 * only tighten restrictions further.
+	 */
+	rc = cap_ptrace_traceme(parent);
+	if (rc)
+		return rc;
 
 	/* Only disallow PTRACE_TRACEME on more aggressive settings. */
 	switch (ptrace_scope) {
@@ -346,28 +364,35 @@ int yama_ptrace_traceme(struct task_struct *parent)
 	return rc;
 }
 
-static struct security_hook_list yama_hooks[] = {
-	LSM_HOOK_INIT(ptrace_access_check, yama_ptrace_access_check),
-	LSM_HOOK_INIT(ptrace_traceme, yama_ptrace_traceme),
-	LSM_HOOK_INIT(task_prctl, yama_task_prctl),
-	LSM_HOOK_INIT(task_free, yama_task_free),
+#ifndef CONFIG_SECURITY_YAMA_STACKED
+static struct security_operations yama_ops = {
+	.name =			"yama",
+
+	.ptrace_access_check =	yama_ptrace_access_check,
+	.ptrace_traceme =	yama_ptrace_traceme,
+	.task_prctl =		yama_task_prctl,
+	.task_free =		yama_task_free,
 };
+#endif
 
 #ifdef CONFIG_SYSCTL
 static int yama_dointvec_minmax(struct ctl_table *table, int write,
 				void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	struct ctl_table table_copy;
+	int rc;
 
 	if (write && !capable(CAP_SYS_PTRACE))
 		return -EPERM;
 
-	/* Lock the max value if it ever gets set. */
-	table_copy = *table;
-	if (*(int *)table_copy.data == *(int *)table_copy.extra2)
-		table_copy.extra1 = table_copy.extra2;
+	rc = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (rc)
+		return rc;
 
-	return proc_dointvec_minmax(&table_copy, write, buffer, lenp, ppos);
+	/* Lock the max value if it ever gets set. */
+	if (write && *(int *)table->data == *(int *)table->extra2)
+		table->extra1 = table->extra2;
+
+	return rc;
 }
 
 static int zero;
@@ -391,18 +416,28 @@ static struct ctl_table yama_sysctl_table[] = {
 	},
 	{ }
 };
-static void __init yama_init_sysctl(void)
-{
-	if (!register_sysctl_paths(yama_sysctl_path, yama_sysctl_table))
-		panic("Yama: sysctl registration failed.\n");
-}
-#else
-static inline void yama_init_sysctl(void) { }
 #endif /* CONFIG_SYSCTL */
 
-void __init yama_add_hooks(void)
+static __init int yama_init(void)
 {
-	pr_info("Yama: becoming mindful.\n");
-	security_add_hooks(yama_hooks, ARRAY_SIZE(yama_hooks));
-	yama_init_sysctl();
+#ifndef CONFIG_SECURITY_YAMA_STACKED
+	if (!security_module_enable(&yama_ops))
+		return 0;
+#endif
+
+	printk(KERN_INFO "Yama: becoming mindful.\n");
+
+#ifndef CONFIG_SECURITY_YAMA_STACKED
+	if (register_security(&yama_ops))
+		panic("Yama: kernel registration failed.\n");
+#endif
+
+#ifdef CONFIG_SYSCTL
+	if (!register_sysctl_paths(yama_sysctl_path, yama_sysctl_table))
+		panic("Yama: sysctl registration failed.\n");
+#endif
+
+	return 0;
 }
+
+security_initcall(yama_init);

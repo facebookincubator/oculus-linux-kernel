@@ -436,7 +436,7 @@ void gspca_frame_add(struct gspca_dev *gspca_dev,
 		}
 		j = gspca_dev->fr_queue[i];
 		frame = &gspca_dev->frame[j];
-		v4l2_get_timestamp(&frame->v4l2_buf.timestamp);
+		frame->v4l2_buf.timestamp = ktime_to_timeval(ktime_get());
 		frame->v4l2_buf.sequence = gspca_dev->sequence++;
 		gspca_dev->image = frame->data;
 		gspca_dev->image_len = 0;
@@ -1562,7 +1562,7 @@ static int vidioc_s_parm(struct file *filp, void *priv,
 			struct v4l2_streamparm *parm)
 {
 	struct gspca_dev *gspca_dev = video_drvdata(filp);
-	unsigned int n;
+	int n;
 
 	n = parm->parm.capture.readbuffers;
 	if (n == 0 || n >= GSPCA_MAX_FRAMES)
@@ -1909,7 +1909,7 @@ static ssize_t dev_read(struct file *file, char __user *data,
 	}
 
 	/* get a frame */
-	v4l2_get_timestamp(&timestamp);
+	timestamp = ktime_to_timeval(ktime_get());
 	timestamp.tv_sec--;
 	n = 2;
 	for (;;) {

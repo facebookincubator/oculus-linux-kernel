@@ -67,7 +67,8 @@ static int write_modem(struct cardstate *cs)
 	struct sk_buff *skb = bcs->tx_skb;
 	int sent = -EOPNOTSUPP;
 
-	WARN_ON(!tty || !tty->ops || !skb);
+	if (!tty || !tty->driver || !skb)
+		return -EINVAL;
 
 	if (!skb->len) {
 		dev_kfree_skb_any(skb);
@@ -108,7 +109,8 @@ static int send_cb(struct cardstate *cs)
 	unsigned long flags;
 	int sent = 0;
 
-	WARN_ON(!tty || !tty->ops);
+	if (!tty || !tty->driver)
+		return -EFAULT;
 
 	cb = cs->cmdbuf;
 	if (!cb)
@@ -368,18 +370,19 @@ static void gigaset_freecshw(struct cardstate *cs)
 	tasklet_kill(&cs->write_tasklet);
 	if (!cs->hw.ser)
 		return;
+	dev_set_drvdata(&cs->hw.ser->dev.dev, NULL);
 	platform_device_unregister(&cs->hw.ser->dev);
+	kfree(cs->hw.ser);
+	cs->hw.ser = NULL;
 }
 
 static void gigaset_device_release(struct device *dev)
 {
-	struct cardstate *cs = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
 
-	if (!cs)
-		return;
-	dev_set_drvdata(dev, NULL);
-	kfree(cs->hw.ser);
-	cs->hw.ser = NULL;
+	/* adapted from platform_device_release() in drivers/base/platform.c */
+	kfree(dev->platform_data);
+	kfree(pdev->resource);
 }
 
 /*
@@ -429,9 +432,7 @@ static int gigaset_set_modem_ctrl(struct cardstate *cs, unsigned old_state,
 	struct tty_struct *tty = cs->hw.ser->tty;
 	unsigned int set, clear;
 
-	WARN_ON(!tty || !tty->ops);
-	/* tiocmset is an optional tty driver method */
-	if (!tty->ops->tiocmset)
+	if (!tty || !tty->driver || !tty->ops->tiocmset)
 		return -EINVAL;
 	set = new_state & ~old_state;
 	clear = old_state & ~new_state;
@@ -606,6 +607,28 @@ static int gigaset_tty_hangup(struct tty_struct *tty)
 }
 
 /*
+ * Read on the tty.
+ * Unused, received data goes only to the Gigaset driver.
+ */
+static ssize_t
+gigaset_tty_read(struct tty_struct *tty, struct file *file,
+		 unsigned char __user *buf, size_t count)
+{
+	return -EAGAIN;
+}
+
+/*
+ * Write on the tty.
+ * Unused, transmit data comes only from the Gigaset driver.
+ */
+static ssize_t
+gigaset_tty_write(struct tty_struct *tty, struct file *file,
+		  const unsigned char *buf, size_t count)
+{
+	return -EAGAIN;
+}
+
+/*
  * Ioctl on the tty.
  * Called in process context only.
  * May be re-entered by multiple ioctl calling threads.
@@ -738,6 +761,8 @@ static struct tty_ldisc_ops gigaset_ldisc = {
 	.open		= gigaset_tty_open,
 	.close		= gigaset_tty_close,
 	.hangup		= gigaset_tty_hangup,
+	.read		= gigaset_tty_read,
+	.write		= gigaset_tty_write,
 	.ioctl		= gigaset_tty_ioctl,
 	.receive_buf	= gigaset_tty_receive,
 	.write_wakeup	= gigaset_tty_wakeup,

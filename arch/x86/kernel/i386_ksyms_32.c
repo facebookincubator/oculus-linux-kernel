@@ -40,5 +40,7 @@ EXPORT_SYMBOL(empty_zero_page);
 
 #ifdef CONFIG_PREEMPT
 EXPORT_SYMBOL(___preempt_schedule);
-EXPORT_SYMBOL(___preempt_schedule_notrace);
+#ifdef CONFIG_CONTEXT_TRACKING
+EXPORT_SYMBOL(___preempt_schedule_context);
+#endif
 #endif

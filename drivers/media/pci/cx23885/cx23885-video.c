@@ -104,12 +104,12 @@ void cx23885_video_wakeup(struct cx23885_dev *dev,
 	buf = list_entry(q->active.next,
 			struct cx23885_buffer, queue);
 
-	buf->vb.sequence = q->count++;
-	v4l2_get_timestamp(&buf->vb.timestamp);
-	dprintk(2, "[%p/%d] wakeup reg=%d buf=%d\n", buf,
-			buf->vb.vb2_buf.index, count, q->count);
+	buf->vb.v4l2_buf.sequence = q->count++;
+	v4l2_get_timestamp(&buf->vb.v4l2_buf.timestamp);
+	dprintk(2, "[%p/%d] wakeup reg=%d buf=%d\n", buf, buf->vb.v4l2_buf.index,
+			count, q->count);
 	list_del(&buf->queue);
-	vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_DONE);
+	vb2_buffer_done(&buf->vb, VB2_BUF_STATE_DONE);
 }
 
 int cx23885_set_tvnorm(struct cx23885_dev *dev, v4l2_std_id norm)
@@ -315,7 +315,7 @@ static int cx23885_start_video_dma(struct cx23885_dev *dev,
 	return 0;
 }
 
-static int queue_setup(struct vb2_queue *q, const void *parg,
+static int queue_setup(struct vb2_queue *q, const struct v4l2_format *fmt,
 			   unsigned int *num_buffers, unsigned int *num_planes,
 			   unsigned int sizes[], void *alloc_ctxs[])
 {
@@ -323,25 +323,28 @@ static int queue_setup(struct vb2_queue *q, const void *parg,
 
 	*num_planes = 1;
 	sizes[0] = (dev->fmt->depth * dev->width * dev->height) >> 3;
-	alloc_ctxs[0] = dev->alloc_ctx;
 	return 0;
 }
 
 static int buffer_prepare(struct vb2_buffer *vb)
 {
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
 	struct cx23885_buffer *buf =
-		container_of(vbuf, struct cx23885_buffer, vb);
+		container_of(vb, struct cx23885_buffer, vb);
 	u32 line0_offset, line1_offset;
 	struct sg_table *sgt = vb2_dma_sg_plane_desc(vb, 0);
 	int field_tff;
+	int ret;
 
 	buf->bpl = (dev->width * dev->fmt->depth) >> 3;
 
 	if (vb2_plane_size(vb, 0) < dev->height * buf->bpl)
 		return -EINVAL;
 	vb2_set_plane_payload(vb, 0, dev->height * buf->bpl);
+
+	ret = dma_map_sg(&dev->pci->dev, sgt->sgl, sgt->nents, DMA_FROM_DEVICE);
+	if (!ret)
+		return -EIO;
 
 	switch (dev->field) {
 	case V4L2_FIELD_TOP:
@@ -402,7 +405,7 @@ static int buffer_prepare(struct vb2_buffer *vb)
 		BUG();
 	}
 	dprintk(2, "[%p/%d] buffer_init - %dx%d %dbpp \"%s\" - dma=0x%08lx\n",
-		buf, buf->vb.vb2_buf.index,
+		buf, buf->vb.v4l2_buf.index,
 		dev->width, dev->height, dev->fmt->depth, dev->fmt->name,
 		(unsigned long)buf->risc.dma);
 	return 0;
@@ -410,11 +413,14 @@ static int buffer_prepare(struct vb2_buffer *vb)
 
 static void buffer_finish(struct vb2_buffer *vb)
 {
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-	struct cx23885_buffer *buf = container_of(vbuf,
+	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
+	struct cx23885_buffer *buf = container_of(vb,
 		struct cx23885_buffer, vb);
+	struct sg_table *sgt = vb2_dma_sg_plane_desc(vb, 0);
 
 	cx23885_free_buffer(vb->vb2_queue->drv_priv, buf);
+
+	dma_unmap_sg(&dev->pci->dev, sgt->sgl, sgt->nents, DMA_FROM_DEVICE);
 }
 
 /*
@@ -440,9 +446,8 @@ static void buffer_finish(struct vb2_buffer *vb)
  */
 static void buffer_queue(struct vb2_buffer *vb)
 {
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
-	struct cx23885_buffer   *buf = container_of(vbuf,
+	struct cx23885_buffer   *buf = container_of(vb,
 		struct cx23885_buffer, vb);
 	struct cx23885_buffer   *prev;
 	struct cx23885_dmaqueue *q    = &dev->vidq;
@@ -458,7 +463,7 @@ static void buffer_queue(struct vb2_buffer *vb)
 	if (list_empty(&q->active)) {
 		list_add_tail(&buf->queue, &q->active);
 		dprintk(2, "[%p/%d] buffer_queue - first active\n",
-			buf, buf->vb.vb2_buf.index);
+			buf, buf->vb.v4l2_buf.index);
 	} else {
 		buf->risc.cpu[0] |= cpu_to_le32(RISC_IRQ1);
 		prev = list_entry(q->active.prev, struct cx23885_buffer,
@@ -466,7 +471,7 @@ static void buffer_queue(struct vb2_buffer *vb)
 		list_add_tail(&buf->queue, &q->active);
 		prev->risc.jmp[1] = cpu_to_le32(buf->risc.dma);
 		dprintk(2, "[%p/%d] buffer_queue - append to active\n",
-				buf, buf->vb.vb2_buf.index);
+				buf, buf->vb.v4l2_buf.index);
 	}
 	spin_unlock_irqrestore(&dev->slock, flags);
 }
@@ -495,7 +500,7 @@ static void cx23885_stop_streaming(struct vb2_queue *q)
 			struct cx23885_buffer, queue);
 
 		list_del(&buf->queue);
-		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
+		vb2_buffer_done(&buf->vb, VB2_BUF_STATE_ERROR);
 	}
 	spin_unlock_irqrestore(&dev->slock, flags);
 }
@@ -584,9 +589,7 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	struct v4l2_format *f)
 {
 	struct cx23885_dev *dev = video_drvdata(file);
-	struct v4l2_subdev_format format = {
-		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
-	};
+	struct v4l2_mbus_framefmt mbus_fmt;
 	int err;
 
 	dprintk(2, "%s()\n", __func__);
@@ -605,10 +608,10 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	dev->field	= f->fmt.pix.field;
 	dprintk(2, "%s() width=%d height=%d field=%d\n", __func__,
 		dev->width, dev->height, dev->field);
-	v4l2_fill_mbus_format(&format.format, &f->fmt.pix, MEDIA_BUS_FMT_FIXED);
-	call_all(dev, pad, set_fmt, NULL, &format);
-	v4l2_fill_pix_format(&f->fmt.pix, &format.format);
-	/* set_fmt overwrites f->fmt.pix.field, restore it */
+	v4l2_fill_mbus_format(&mbus_fmt, &f->fmt.pix, V4L2_MBUS_FMT_FIXED);
+	call_all(dev, video, s_mbus_fmt, &mbus_fmt);
+	v4l2_fill_pix_format(&f->fmt.pix, &mbus_fmt);
+	/* s_mbus_fmt overwrites f->fmt.pix.field, restore it */
 	f->fmt.pix.field = dev->field;
 	return 0;
 }
@@ -1142,6 +1145,7 @@ int cx23885_video_register(struct cx23885_dev *dev)
 	int err;
 
 	dprintk(1, "%s()\n", __func__);
+	spin_lock_init(&dev->slock);
 
 	/* Initialize VBI template */
 	cx23885_vbi_template = cx23885_video_template;

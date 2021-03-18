@@ -33,7 +33,7 @@
 
 #include <linux/mfd/davinci_voicecodec.h>
 
-static const struct regmap_config davinci_vc_regmap = {
+static struct regmap_config davinci_vc_regmap = {
 	.reg_bits = 32,
 	.val_bits = 32,
 };
@@ -143,6 +143,7 @@ static int davinci_vc_remove(struct platform_device *pdev)
 static struct platform_driver davinci_vc_driver = {
 	.driver	= {
 		.name = "davinci_voicecodec",
+		.owner = THIS_MODULE,
 	},
 	.remove	= davinci_vc_remove,
 };

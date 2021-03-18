@@ -971,6 +971,7 @@ static struct platform_driver swim_driver = {
 	.remove = swim_remove,
 	.driver   = {
 		.name	= CARDNAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

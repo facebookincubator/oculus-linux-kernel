@@ -156,6 +156,7 @@ static inline cksum_type_t cksum_types_supported_server(void)
 	return ret;
 }
 
+
 /* Select the best checksum algorithm among those supplied in the cksum_types
  * input.
  *

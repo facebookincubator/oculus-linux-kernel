@@ -1,4 +1,5 @@
-/// The address of a variable or field is likely always to be non-zero.
+/// the address of a variable or field is non-zero is likely always to bo
+/// non-zero
 ///
 // Confidence: High
 // Copyright: (C) 2012 Julia Lawall, INRIA/LIP6.  GPLv2.

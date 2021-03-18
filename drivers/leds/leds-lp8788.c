@@ -183,6 +183,7 @@ static struct platform_driver lp8788_led_driver = {
 	.remove = lp8788_led_remove,
 	.driver = {
 		.name = LP8788_DEV_KEYLED,
+		.owner = THIS_MODULE,
 	},
 };
 module_platform_driver(lp8788_led_driver);

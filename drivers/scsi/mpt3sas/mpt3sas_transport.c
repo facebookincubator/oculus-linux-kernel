@@ -3,8 +3,7 @@
  *
  * This code is based on drivers/scsi/mpt3sas/mpt3sas_transport.c
  * Copyright (C) 2012-2014  LSI Corporation
- * Copyright (C) 2013-2014 Avago Technologies
- *  (mailto: MPT-FusionLinux.pdl@avagotech.com)
+ *  (mailto:DL-MPTFusionLinux@lsi.com)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -649,7 +648,6 @@ mpt3sas_transport_port_add(struct MPT3SAS_ADAPTER *ioc, u16 handle,
 	unsigned long flags;
 	struct _sas_node *sas_node;
 	struct sas_rphy *rphy;
-	struct _sas_device *sas_device = NULL;
 	int i;
 	struct sas_port *port;
 
@@ -732,29 +730,10 @@ mpt3sas_transport_port_add(struct MPT3SAS_ADAPTER *ioc, u16 handle,
 		    mpt3sas_port->remote_identify.device_type);
 
 	rphy->identify = mpt3sas_port->remote_identify;
-
-	if (mpt3sas_port->remote_identify.device_type == SAS_END_DEVICE) {
-		sas_device = mpt3sas_get_sdev_by_addr(ioc,
-				    mpt3sas_port->remote_identify.sas_address);
-		if (!sas_device) {
-			dfailprintk(ioc, printk(MPT3SAS_FMT
-				"failure at %s:%d/%s()!\n",
-				ioc->name, __FILE__, __LINE__, __func__));
-			goto out_fail;
-		}
-		sas_device->pend_sas_rphy_add = 1;
-	}
-
 	if ((sas_rphy_add(rphy))) {
 		pr_err(MPT3SAS_FMT "failure at %s:%d/%s()!\n",
 		    ioc->name, __FILE__, __LINE__, __func__);
 	}
-
-	if (mpt3sas_port->remote_identify.device_type == SAS_END_DEVICE) {
-		sas_device->pend_sas_rphy_add = 0;
-		sas_device_put(sas_device);
-	}
-
 	if ((ioc->logging_level & MPT_DEBUG_TRANSPORT))
 		dev_printk(KERN_INFO, &rphy->dev,
 			"add: handle(0x%04x), sas_addr(0x%016llx)\n",
@@ -1326,17 +1305,15 @@ _transport_get_enclosure_identifier(struct sas_rphy *rphy, u64 *identifier)
 	int rc;
 
 	spin_lock_irqsave(&ioc->sas_device_lock, flags);
-	sas_device = __mpt3sas_get_sdev_by_addr(ioc,
+	sas_device = mpt3sas_scsih_sas_device_find_by_sas_address(ioc,
 	    rphy->identify.sas_address);
 	if (sas_device) {
 		*identifier = sas_device->enclosure_logical_id;
 		rc = 0;
-		sas_device_put(sas_device);
 	} else {
 		*identifier = 0;
 		rc = -ENXIO;
 	}
-
 	spin_unlock_irqrestore(&ioc->sas_device_lock, flags);
 	return rc;
 }
@@ -1356,14 +1333,12 @@ _transport_get_bay_identifier(struct sas_rphy *rphy)
 	int rc;
 
 	spin_lock_irqsave(&ioc->sas_device_lock, flags);
-	sas_device = __mpt3sas_get_sdev_by_addr(ioc,
+	sas_device = mpt3sas_scsih_sas_device_find_by_sas_address(ioc,
 	    rphy->identify.sas_address);
-	if (sas_device) {
+	if (sas_device)
 		rc = sas_device->slot;
-		sas_device_put(sas_device);
-	} else {
+	else
 		rc = -ENXIO;
-	}
 	spin_unlock_irqrestore(&ioc->sas_device_lock, flags);
 	return rc;
 }
@@ -1970,7 +1945,7 @@ _transport_smp_handler(struct Scsi_Host *shost, struct sas_rphy *rphy,
 	} else {
 		dma_addr_out = pci_map_single(ioc->pdev, bio_data(req->bio),
 		    blk_rq_bytes(req), PCI_DMA_BIDIRECTIONAL);
-		if (pci_dma_mapping_error(ioc->pdev, dma_addr_out)) {
+		if (!dma_addr_out) {
 			pr_info(MPT3SAS_FMT "%s(): DMA Addr out = NULL\n",
 			    ioc->name, __func__);
 			rc = -ENOMEM;
@@ -1992,7 +1967,7 @@ _transport_smp_handler(struct Scsi_Host *shost, struct sas_rphy *rphy,
 	} else {
 		dma_addr_in =  pci_map_single(ioc->pdev, bio_data(rsp->bio),
 		    blk_rq_bytes(rsp), PCI_DMA_BIDIRECTIONAL);
-		if (pci_dma_mapping_error(ioc->pdev, dma_addr_in)) {
+		if (!dma_addr_in) {
 			pr_info(MPT3SAS_FMT "%s(): DMA Addr in = NULL\n",
 			    ioc->name, __func__);
 			rc = -ENOMEM;

@@ -123,7 +123,7 @@ identity_mapped:
 	 * Set cr4 to a known state:
 	 *  - physical address extension enabled
 	 */
-	movl	$X86_CR4_PAE, %eax
+	movq	$X86_CR4_PAE, %rax
 	movq	%rax, %cr4
 
 	jmp 1f
@@ -221,23 +221,23 @@ swap_pages:
 	movq	(%rbx), %rcx
 	addq	$8,	%rbx
 1:
-	testb	$0x1,	%cl   /* is it a destination page? */
+	testq	$0x1,	%rcx  /* is it a destination page? */
 	jz	2f
 	movq	%rcx,	%rdi
 	andq	$0xfffffffffffff000, %rdi
 	jmp	0b
 2:
-	testb	$0x2,	%cl   /* is it an indirection page? */
+	testq	$0x2,	%rcx  /* is it an indirection page? */
 	jz	2f
 	movq	%rcx,   %rbx
 	andq	$0xfffffffffffff000, %rbx
 	jmp	0b
 2:
-	testb	$0x4,	%cl   /* is it the done indicator? */
+	testq	$0x4,	%rcx  /* is it the done indicator? */
 	jz	2f
 	jmp	3f
 2:
-	testb	$0x8,	%cl   /* is it the source indicator? */
+	testq	$0x8,	%rcx  /* is it the source indicator? */
 	jz	0b	      /* Ignore it otherwise */
 	movq	%rcx,   %rsi  /* For ever source page do a copy */
 	andq	$0xfffffffffffff000, %rsi
@@ -246,17 +246,17 @@ swap_pages:
 	movq	%rsi, %rax
 
 	movq	%r10, %rdi
-	movl	$512, %ecx
+	movq	$512,   %rcx
 	rep ; movsq
 
 	movq	%rax, %rdi
 	movq	%rdx, %rsi
-	movl	$512, %ecx
+	movq	$512,   %rcx
 	rep ; movsq
 
 	movq	%rdx, %rdi
 	movq	%r10, %rsi
-	movl	$512, %ecx
+	movq	$512,   %rcx
 	rep ; movsq
 
 	lea	PAGE_SIZE(%rax), %rsi

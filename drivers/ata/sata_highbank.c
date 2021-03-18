@@ -499,7 +499,6 @@ static int ahci_highbank_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	hpriv->irq = irq;
 	hpriv->flags |= (unsigned long)pi.private_data;
 
 	hpriv->mmio = devm_ioremap(dev, mem->start, resource_size(mem));
@@ -569,7 +568,7 @@ static int ahci_highbank_probe(struct platform_device *pdev)
 	ahci_init_controller(host);
 	ahci_print_info(host, "platform");
 
-	rc = ahci_host_activate(host, &ahci_highbank_platform_sht);
+	rc = ahci_host_activate(host, irq, &ahci_highbank_platform_sht);
 	if (rc)
 		goto err0;
 
@@ -635,6 +634,7 @@ static struct platform_driver ahci_highbank_driver = {
 	.remove = ata_platform_remove_one,
         .driver = {
                 .name = "highbank-ahci",
+                .owner = THIS_MODULE,
                 .of_match_table = ahci_of_match,
                 .pm = &ahci_highbank_pm_ops,
         },

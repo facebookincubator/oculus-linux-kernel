@@ -23,6 +23,14 @@
 #define ___config_enabled(__ignored, val, ...) val
 
 /*
+ * IS_ENABLED(CONFIG_FOO) evaluates to 1 if CONFIG_FOO is set to 'y' or 'm',
+ * 0 otherwise.
+ *
+ */
+#define IS_ENABLED(option) \
+	(config_enabled(option) || config_enabled(option##_MODULE))
+
+/*
  * IS_BUILTIN(CONFIG_FOO) evaluates to 1 if CONFIG_FOO is set to 'y', 0
  * otherwise. For boolean options, this is equivalent to
  * IS_ENABLED(CONFIG_FOO).
@@ -43,12 +51,5 @@
  */
 #define IS_REACHABLE(option) (config_enabled(option) || \
 		 (config_enabled(option##_MODULE) && config_enabled(MODULE)))
-
-/*
- * IS_ENABLED(CONFIG_FOO) evaluates to 1 if CONFIG_FOO is set to 'y' or 'm',
- * 0 otherwise.
- */
-#define IS_ENABLED(option) \
-	(IS_BUILTIN(option) || IS_MODULE(option))
 
 #endif /* __LINUX_KCONFIG_H */

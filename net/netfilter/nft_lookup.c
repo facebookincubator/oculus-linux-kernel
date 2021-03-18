@@ -26,25 +26,19 @@ struct nft_lookup {
 };
 
 static void nft_lookup_eval(const struct nft_expr *expr,
-			    struct nft_regs *regs,
+			    struct nft_data data[NFT_REG_MAX + 1],
 			    const struct nft_pktinfo *pkt)
 {
 	const struct nft_lookup *priv = nft_expr_priv(expr);
 	const struct nft_set *set = priv->set;
-	const struct nft_set_ext *ext;
 
-	if (set->ops->lookup(set, &regs->data[priv->sreg], &ext)) {
-		if (set->flags & NFT_SET_MAP)
-			nft_data_copy(&regs->data[priv->dreg],
-				      nft_set_ext_data(ext), set->dlen);
+	if (set->ops->lookup(set, &data[priv->sreg], &data[priv->dreg]))
 		return;
-	}
-	regs->verdict.code = NFT_BREAK;
+	data[NFT_REG_VERDICT].verdict = NFT_BREAK;
 }
 
 static const struct nla_policy nft_lookup_policy[NFTA_LOOKUP_MAX + 1] = {
 	[NFTA_LOOKUP_SET]	= { .type = NLA_STRING },
-	[NFTA_LOOKUP_SET_ID]	= { .type = NLA_U32 },
 	[NFTA_LOOKUP_SREG]	= { .type = NLA_U32 },
 	[NFTA_LOOKUP_DREG]	= { .type = NLA_U32 },
 };
@@ -71,11 +65,8 @@ static int nft_lookup_init(const struct nft_ctx *ctx,
 			return PTR_ERR(set);
 	}
 
-	if (set->flags & NFT_SET_EVAL)
-		return -EOPNOTSUPP;
-
-	priv->sreg = nft_parse_register(tb[NFTA_LOOKUP_SREG]);
-	err = nft_validate_register_load(priv->sreg, set->klen);
+	priv->sreg = ntohl(nla_get_be32(tb[NFTA_LOOKUP_SREG]));
+	err = nft_validate_input_register(priv->sreg);
 	if (err < 0)
 		return err;
 
@@ -83,15 +74,18 @@ static int nft_lookup_init(const struct nft_ctx *ctx,
 		if (!(set->flags & NFT_SET_MAP))
 			return -EINVAL;
 
-		priv->dreg = nft_parse_register(tb[NFTA_LOOKUP_DREG]);
-		err = nft_validate_register_store(ctx, priv->dreg, NULL,
-						  set->dtype, set->dlen);
+		priv->dreg = ntohl(nla_get_be32(tb[NFTA_LOOKUP_DREG]));
+		err = nft_validate_output_register(priv->dreg);
 		if (err < 0)
 			return err;
+
+		if (priv->dreg == NFT_REG_VERDICT) {
+			if (set->dtype != NFT_DATA_VERDICT)
+				return -EINVAL;
+		} else if (set->dtype == NFT_DATA_VERDICT)
+			return -EINVAL;
 	} else if (set->flags & NFT_SET_MAP)
 		return -EINVAL;
-
-	priv->binding.flags = set->flags & NFT_SET_MAP;
 
 	err = nf_tables_bind_set(ctx, set, &priv->binding);
 	if (err < 0)
@@ -115,10 +109,10 @@ static int nft_lookup_dump(struct sk_buff *skb, const struct nft_expr *expr)
 
 	if (nla_put_string(skb, NFTA_LOOKUP_SET, priv->set->name))
 		goto nla_put_failure;
-	if (nft_dump_register(skb, NFTA_LOOKUP_SREG, priv->sreg))
+	if (nla_put_be32(skb, NFTA_LOOKUP_SREG, htonl(priv->sreg)))
 		goto nla_put_failure;
 	if (priv->set->flags & NFT_SET_MAP)
-		if (nft_dump_register(skb, NFTA_LOOKUP_DREG, priv->dreg))
+		if (nla_put_be32(skb, NFTA_LOOKUP_DREG, htonl(priv->dreg)))
 			goto nla_put_failure;
 	return 0;
 

@@ -12,7 +12,6 @@
 #include <linux/compiler.h>
 
 #include <asm/barrier.h>
-#include <asm/compiler.h>
 #include <asm/war.h>
 
 /*
@@ -40,11 +39,6 @@ static inline int arch_spin_is_locked(arch_spinlock_t *lock)
 	u32 counters = ACCESS_ONCE(lock->lock);
 
 	return ((counters >> 16) ^ counters) & 0xffff;
-}
-
-static inline int arch_spin_value_unlocked(arch_spinlock_t lock)
-{
-	return lock.h.serving_now == lock.h.ticket;
 }
 
 #define arch_spin_lock_flags(lock, flags) arch_spin_lock(lock)
@@ -94,7 +88,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 		"	 subu	%[ticket], %[ticket], 1			\n"
 		"	.previous					\n"
 		"	.set pop					\n"
-		: [ticket_ptr] "+" GCC_OFF_SMALL_ASM() (lock->lock),
+		: [ticket_ptr] "+m" (lock->lock),
 		  [serving_now_ptr] "+m" (lock->h.serving_now),
 		  [ticket] "=&r" (tmp),
 		  [my_ticket] "=&r" (my_ticket)
@@ -114,7 +108,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 		"	 subu	%[ticket], %[my_ticket], %[ticket]	\n"
 		"2:							\n"
 		"	.subsection 2					\n"
-		"4:	andi	%[ticket], %[ticket], 0xffff		\n"
+		"4:	andi	%[ticket], %[ticket], 0x1fff		\n"
 		"	sll	%[ticket], 5				\n"
 		"							\n"
 		"6:	bnez	%[ticket], 6b				\n"
@@ -127,7 +121,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 		"	 subu	%[ticket], %[ticket], 1			\n"
 		"	.previous					\n"
 		"	.set pop					\n"
-		: [ticket_ptr] "+" GCC_OFF_SMALL_ASM() (lock->lock),
+		: [ticket_ptr] "+m" (lock->lock),
 		  [serving_now_ptr] "+m" (lock->h.serving_now),
 		  [ticket] "=&r" (tmp),
 		  [my_ticket] "=&r" (my_ticket)
@@ -169,7 +163,7 @@ static inline unsigned int arch_spin_trylock(arch_spinlock_t *lock)
 		"	 li	%[ticket], 0				\n"
 		"	.previous					\n"
 		"	.set pop					\n"
-		: [ticket_ptr] "+" GCC_OFF_SMALL_ASM() (lock->lock),
+		: [ticket_ptr] "+m" (lock->lock),
 		  [ticket] "=&r" (tmp),
 		  [my_ticket] "=&r" (tmp2),
 		  [now_serving] "=&r" (tmp3)
@@ -193,7 +187,7 @@ static inline unsigned int arch_spin_trylock(arch_spinlock_t *lock)
 		"	 li	%[ticket], 0				\n"
 		"	.previous					\n"
 		"	.set pop					\n"
-		: [ticket_ptr] "+" GCC_OFF_SMALL_ASM() (lock->lock),
+		: [ticket_ptr] "+m" (lock->lock),
 		  [ticket] "=&r" (tmp),
 		  [my_ticket] "=&r" (tmp2),
 		  [now_serving] "=&r" (tmp3)
@@ -240,8 +234,8 @@ static inline void arch_read_lock(arch_rwlock_t *rw)
 		"	beqzl	%1, 1b					\n"
 		"	 nop						\n"
 		"	.set	reorder					\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp)
+		: "m" (rw->lock)
 		: "memory");
 	} else {
 		do {
@@ -250,8 +244,8 @@ static inline void arch_read_lock(arch_rwlock_t *rw)
 			"	bltz	%1, 1b				\n"
 			"	 addu	%1, 1				\n"
 			"2:	sc	%1, %0				\n"
-			: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-			: GCC_OFF_SMALL_ASM() (rw->lock)
+			: "=m" (rw->lock), "=&r" (tmp)
+			: "m" (rw->lock)
 			: "memory");
 		} while (unlikely(!tmp));
 	}
@@ -259,6 +253,9 @@ static inline void arch_read_lock(arch_rwlock_t *rw)
 	smp_llsc_mb();
 }
 
+/* Note the use of sub, not subu which will make the kernel die with an
+   overflow exception if we ever try to unlock an rwlock that is already
+   unlocked or is being held by a writer.  */
 static inline void arch_read_unlock(arch_rwlock_t *rw)
 {
 	unsigned int tmp;
@@ -268,20 +265,20 @@ static inline void arch_read_unlock(arch_rwlock_t *rw)
 	if (R10000_LLSC_WAR) {
 		__asm__ __volatile__(
 		"1:	ll	%1, %2		# arch_read_unlock	\n"
-		"	addiu	%1, -1					\n"
+		"	sub	%1, 1					\n"
 		"	sc	%1, %0					\n"
 		"	beqzl	%1, 1b					\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp)
+		: "m" (rw->lock)
 		: "memory");
 	} else {
 		do {
 			__asm__ __volatile__(
 			"1:	ll	%1, %2	# arch_read_unlock	\n"
-			"	addiu	%1, -1				\n"
+			"	sub	%1, 1				\n"
 			"	sc	%1, %0				\n"
-			: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-			: GCC_OFF_SMALL_ASM() (rw->lock)
+			: "=m" (rw->lock), "=&r" (tmp)
+			: "m" (rw->lock)
 			: "memory");
 		} while (unlikely(!tmp));
 	}
@@ -301,8 +298,8 @@ static inline void arch_write_lock(arch_rwlock_t *rw)
 		"	beqzl	%1, 1b					\n"
 		"	 nop						\n"
 		"	.set	reorder					\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp)
+		: "m" (rw->lock)
 		: "memory");
 	} else {
 		do {
@@ -311,8 +308,8 @@ static inline void arch_write_lock(arch_rwlock_t *rw)
 			"	bnez	%1, 1b				\n"
 			"	 lui	%1, 0x8000			\n"
 			"2:	sc	%1, %0				\n"
-			: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp)
-			: GCC_OFF_SMALL_ASM() (rw->lock)
+			: "=m" (rw->lock), "=&r" (tmp)
+			: "m" (rw->lock)
 			: "memory");
 		} while (unlikely(!tmp));
 	}
@@ -322,7 +319,7 @@ static inline void arch_write_lock(arch_rwlock_t *rw)
 
 static inline void arch_write_unlock(arch_rwlock_t *rw)
 {
-	smp_mb__before_llsc();
+	smp_mb();
 
 	__asm__ __volatile__(
 	"				# arch_write_unlock	\n"
@@ -351,8 +348,8 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 		__WEAK_LLSC_MB
 		"	li	%2, 1					\n"
 		"2:							\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp), "=&r" (ret)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp), "=&r" (ret)
+		: "m" (rw->lock)
 		: "memory");
 	} else {
 		__asm__ __volatile__(
@@ -368,8 +365,8 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 		__WEAK_LLSC_MB
 		"	li	%2, 1					\n"
 		"2:							\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp), "=&r" (ret)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp), "=&r" (ret)
+		: "m" (rw->lock)
 		: "memory");
 	}
 
@@ -395,8 +392,8 @@ static inline int arch_write_trylock(arch_rwlock_t *rw)
 		"	li	%2, 1					\n"
 		"	.set	reorder					\n"
 		"2:							\n"
-		: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp), "=&r" (ret)
-		: GCC_OFF_SMALL_ASM() (rw->lock)
+		: "=m" (rw->lock), "=&r" (tmp), "=&r" (ret)
+		: "m" (rw->lock)
 		: "memory");
 	} else {
 		do {
@@ -408,9 +405,8 @@ static inline int arch_write_trylock(arch_rwlock_t *rw)
 			"	sc	%1, %0				\n"
 			"	li	%2, 1				\n"
 			"2:						\n"
-			: "=" GCC_OFF_SMALL_ASM() (rw->lock), "=&r" (tmp),
-			  "=&r" (ret)
-			: GCC_OFF_SMALL_ASM() (rw->lock)
+			: "=m" (rw->lock), "=&r" (tmp), "=&r" (ret)
+			: "m" (rw->lock)
 			: "memory");
 		} while (unlikely(!tmp));
 

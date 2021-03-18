@@ -233,7 +233,6 @@ static int rt2800usb_autorun_detect(struct rt2x00_dev *rt2x00dev)
 {
 	__le32 *reg;
 	u32 fw_mode;
-	int ret;
 
 	reg = kmalloc(sizeof(*reg), GFP_KERNEL);
 	if (reg == NULL)
@@ -243,14 +242,11 @@ static int rt2800usb_autorun_detect(struct rt2x00_dev *rt2x00dev)
 	 * magic value USB_MODE_AUTORUN (0x11) to the device, thus the
 	 * returned value would be invalid.
 	 */
-	ret = rt2x00usb_vendor_request(rt2x00dev, USB_DEVICE_MODE,
-				       USB_VENDOR_REQUEST_IN, 0,
-				       USB_MODE_AUTORUN, reg, sizeof(*reg),
-				       REGISTER_TIMEOUT_FIRMWARE);
+	rt2x00usb_vendor_request(rt2x00dev, USB_DEVICE_MODE,
+				 USB_VENDOR_REQUEST_IN, 0, USB_MODE_AUTORUN,
+				 reg, sizeof(*reg), REGISTER_TIMEOUT_FIRMWARE);
 	fw_mode = le32_to_cpu(*reg);
 	kfree(reg);
-	if (ret < 0)
-		return ret;
 
 	if ((fw_mode & 0x00000003) == 2)
 		return 1;
@@ -293,7 +289,6 @@ static int rt2800usb_write_firmware(struct rt2x00_dev *rt2x00dev,
 	if (retval) {
 		rt2x00_info(rt2x00dev,
 			    "Firmware loading not required - NIC in AutoRun mode\n");
-		__clear_bit(REQUIRE_FIRMWARE, &rt2x00dev->cap_flags);
 	} else {
 		rt2x00usb_register_multiwrite(rt2x00dev, FIRMWARE_IMAGE_BASE,
 					      data + offset, length);
@@ -379,6 +374,7 @@ static int rt2800usb_enable_radio(struct rt2x00_dev *rt2x00dev)
 static void rt2800usb_disable_radio(struct rt2x00_dev *rt2x00dev)
 {
 	rt2800_disable_radio(rt2x00dev);
+	rt2x00usb_disable_radio(rt2x00dev);
 }
 
 static int rt2800usb_set_state(struct rt2x00_dev *rt2x00dev,
@@ -835,7 +831,7 @@ static const struct ieee80211_ops rt2800usb_mac80211_ops = {
 	.sw_scan_start		= rt2x00mac_sw_scan_start,
 	.sw_scan_complete	= rt2x00mac_sw_scan_complete,
 	.get_stats		= rt2x00mac_get_stats,
-	.get_key_seq		= rt2800_get_key_seq,
+	.get_tkip_seq		= rt2800_get_tkip_seq,
 	.set_rts_threshold	= rt2800_set_rts_threshold,
 	.sta_add		= rt2x00mac_sta_add,
 	.sta_remove		= rt2x00mac_sta_remove,
@@ -1114,7 +1110,6 @@ static struct usb_device_id rt2800usb_device_table[] = {
 	{ USB_DEVICE(0x0db0, 0x871c) },
 	{ USB_DEVICE(0x0db0, 0x899a) },
 	/* Ovislink */
-	{ USB_DEVICE(0x1b75, 0x3070) },
 	{ USB_DEVICE(0x1b75, 0x3071) },
 	{ USB_DEVICE(0x1b75, 0x3072) },
 	{ USB_DEVICE(0x1b75, 0xa200) },

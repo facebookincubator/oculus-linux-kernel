@@ -101,13 +101,6 @@ mwifiex_11n_form_amsdu_txpd(struct mwifiex_private *priv,
 {
 	struct txpd *local_tx_pd;
 	struct mwifiex_txinfo *tx_info = MWIFIEX_SKB_TXCB(skb);
-	unsigned int pad;
-	int headroom = (priv->adapter->iface_type ==
-			MWIFIEX_USB) ? 0 : INTF_HEADER_LEN;
-
-	pad = ((void *)skb->data - sizeof(*local_tx_pd) -
-		headroom - NULL) & (MWIFIEX_DMA_ALIGN_SZ - 1);
-	skb_push(skb, pad);
 
 	skb_push(skb, sizeof(*local_tx_pd));
 
@@ -121,12 +114,10 @@ mwifiex_11n_form_amsdu_txpd(struct mwifiex_private *priv,
 	local_tx_pd->bss_num = priv->bss_num;
 	local_tx_pd->bss_type = priv->bss_type;
 	/* Always zero as the data is followed by struct txpd */
-	local_tx_pd->tx_pkt_offset = cpu_to_le16(sizeof(struct txpd) +
-						 pad);
+	local_tx_pd->tx_pkt_offset = cpu_to_le16(sizeof(struct txpd));
 	local_tx_pd->tx_pkt_type = cpu_to_le16(PKT_TYPE_AMSDU);
 	local_tx_pd->tx_pkt_length = cpu_to_le16(skb->len -
-						 sizeof(*local_tx_pd) -
-						 pad);
+						 sizeof(*local_tx_pd));
 
 	if (tx_info->flags & MWIFIEX_BUF_FLAG_TDLS_PKT)
 		local_tx_pd->flags |= MWIFIEX_TXPD_FLAGS_TDLS_PACKET;
@@ -170,9 +161,10 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 	struct mwifiex_adapter *adapter = priv->adapter;
 	struct sk_buff *skb_aggr, *skb_src;
 	struct mwifiex_txinfo *tx_info_aggr, *tx_info_src;
-	int pad = 0, aggr_num = 0, ret;
+	int pad = 0, ret;
 	struct mwifiex_tx_param tx_param;
 	struct txpd *ptx_pd = NULL;
+	struct timeval tv;
 	int headroom = adapter->iface_type == MWIFIEX_USB ? 0 : INTF_HEADER_LEN;
 
 	skb_src = skb_peek(&pra_list->skb_head);
@@ -183,14 +175,14 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 	}
 
 	tx_info_src = MWIFIEX_SKB_TXCB(skb_src);
-	skb_aggr = mwifiex_alloc_dma_align_buf(adapter->tx_buf_size,
-					       GFP_ATOMIC | GFP_DMA);
+	skb_aggr = dev_alloc_skb(adapter->tx_buf_size);
 	if (!skb_aggr) {
+		dev_err(adapter->dev, "%s: alloc skb_aggr\n", __func__);
 		spin_unlock_irqrestore(&priv->wmm.ra_list_spinlock,
 				       ra_list_flags);
 		return -1;
 	}
-	skb_reserve(skb_aggr, MWIFIEX_MIN_DATA_HEADER_LEN);
+	skb_reserve(skb_aggr, headroom + sizeof(struct txpd));
 	tx_info_aggr =  MWIFIEX_SKB_TXCB(skb_aggr);
 
 	memset(tx_info_aggr, 0, sizeof(*tx_info_aggr));
@@ -199,11 +191,10 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 
 	if (tx_info_src->flags & MWIFIEX_BUF_FLAG_TDLS_PKT)
 		tx_info_aggr->flags |= MWIFIEX_BUF_FLAG_TDLS_PKT;
-	tx_info_aggr->flags |= MWIFIEX_BUF_FLAG_AGGR_PKT;
 	skb_aggr->priority = skb_src->priority;
-	skb_aggr->tstamp = skb_src->tstamp;
 
-	skb_aggr->tstamp = ktime_get_real();
+	do_gettimeofday(&tv);
+	skb_aggr->tstamp = timeval_to_ktime(tv);
 
 	do {
 		/* Check if AMSDU can accommodate this MSDU */
@@ -211,9 +202,11 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 			break;
 
 		skb_src = skb_dequeue(&pra_list->skb_head);
+
 		pra_list->total_pkt_count--;
+
 		atomic_dec(&priv->wmm.tx_pkts_queued);
-		aggr_num++;
+
 		spin_unlock_irqrestore(&priv->wmm.ra_list_spinlock,
 				       ra_list_flags);
 		mwifiex_11n_form_amsdu_pkt(skb_aggr, skb_src, &pad);
@@ -249,15 +242,10 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 		ptx_pd = (struct txpd *)skb_aggr->data;
 
 	skb_push(skb_aggr, headroom);
-	tx_info_aggr->aggr_num = aggr_num * 2;
-	if (adapter->data_sent || adapter->tx_lock_flag) {
-		atomic_add(aggr_num * 2, &adapter->tx_queued);
-		skb_queue_tail(&adapter->tx_data_q, skb_aggr);
-		return 0;
-	}
 
 	if (adapter->iface_type == MWIFIEX_USB) {
-		ret = adapter->if_ops.host_to_card(adapter, priv->usb_port,
+		adapter->data_sent = true;
+		ret = adapter->if_ops.host_to_card(adapter, MWIFIEX_USB_EP_DATA,
 						   skb_aggr, NULL);
 	} else {
 		if (skb_src)
@@ -294,15 +282,19 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 		tx_info_aggr->flags |= MWIFIEX_BUF_FLAG_REQUEUED_PKT;
 		spin_unlock_irqrestore(&priv->wmm.ra_list_spinlock,
 				       ra_list_flags);
-		mwifiex_dbg(adapter, ERROR, "data: -EBUSY is returned\n");
+		dev_dbg(adapter->dev, "data: -EBUSY is returned\n");
 		break;
 	case -1:
-		mwifiex_dbg(adapter, ERROR, "%s: host_to_card failed: %#x\n",
-			    __func__, ret);
+		if (adapter->iface_type != MWIFIEX_PCIE)
+			adapter->data_sent = false;
+		dev_err(adapter->dev, "%s: host_to_card failed: %#x\n",
+			__func__, ret);
 		adapter->dbg.num_tx_host_to_card_failure++;
 		mwifiex_write_data_complete(adapter, skb_aggr, 1, ret);
 		return 0;
 	case -EINPROGRESS:
+		if (adapter->iface_type != MWIFIEX_PCIE)
+			adapter->data_sent = false;
 		break;
 	case 0:
 		mwifiex_write_data_complete(adapter, skb_aggr, 1, ret);

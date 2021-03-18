@@ -33,7 +33,8 @@
 #include <linux/capability.h>
 #include <linux/errno.h>
 #include <linux/pagemap.h>
-#include <linux/uio.h>
+#include <linux/buffer_head.h>
+#include <linux/aio.h>
 
 #include "udf_i.h"
 #include "udf_sb.h"
@@ -99,7 +100,8 @@ static int udf_adinicb_write_begin(struct file *file,
 	return 0;
 }
 
-static ssize_t udf_adinicb_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
+static ssize_t udf_adinicb_direct_IO(int rw, struct kiocb *iocb,
+				     struct iov_iter *iter,
 				     loff_t offset)
 {
 	/* Fallback to buffered I/O. */
@@ -119,21 +121,21 @@ static ssize_t udf_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	ssize_t retval;
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
+	int err, pos;
+	size_t count = iocb->ki_nbytes;
 	struct udf_inode_info *iinfo = UDF_I(inode);
-	int err;
 
 	mutex_lock(&inode->i_mutex);
-
-	retval = generic_write_checks(iocb, from);
-	if (retval <= 0)
-		goto out;
-
 	down_write(&iinfo->i_data_sem);
 	if (iinfo->i_alloc_type == ICBTAG_FLAG_AD_IN_ICB) {
-		loff_t end = iocb->ki_pos + iov_iter_count(from);
+		if (file->f_flags & O_APPEND)
+			pos = inode->i_size;
+		else
+			pos = iocb->ki_pos;
 
 		if (inode->i_sb->s_blocksize <
-				(udf_file_entry_alloc_offset(inode) + end)) {
+				(udf_file_entry_alloc_offset(inode) +
+						pos + count)) {
 			err = udf_expand_file_adinicb(inode);
 			if (err) {
 				mutex_unlock(&inode->i_mutex);
@@ -141,17 +143,21 @@ static ssize_t udf_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 				return err;
 			}
 		} else {
-			iinfo->i_lenAlloc = max(end, inode->i_size);
+			if (pos + count > inode->i_size)
+				iinfo->i_lenAlloc = pos + count;
+			else
+				iinfo->i_lenAlloc = inode->i_size;
 			up_write(&iinfo->i_data_sem);
 		}
 	} else
 		up_write(&iinfo->i_data_sem);
 
 	retval = __generic_file_write_iter(iocb, from);
-out:
 	mutex_unlock(&inode->i_mutex);
 
 	if (retval > 0) {
+		ssize_t err;
+
 		mark_inode_dirty(inode);
 		err = generic_write_sync(file, iocb->ki_pos - retval, retval);
 		if (err < 0)
@@ -234,10 +240,12 @@ static int udf_release_file(struct inode *inode, struct file *filp)
 }
 
 const struct file_operations udf_file_operations = {
+	.read			= new_sync_read,
 	.read_iter		= generic_file_read_iter,
 	.unlocked_ioctl		= udf_ioctl,
 	.open			= generic_file_open,
 	.mmap			= generic_file_mmap,
+	.write			= new_sync_write,
 	.write_iter		= udf_file_write_iter,
 	.release		= udf_release_file,
 	.fsync			= generic_file_fsync,
@@ -247,7 +255,7 @@ const struct file_operations udf_file_operations = {
 
 static int udf_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	int error;
 
 	error = inode_change_ok(inode, attr);

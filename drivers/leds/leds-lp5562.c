@@ -515,19 +515,20 @@ static int lp5562_probe(struct i2c_client *client,
 	int ret;
 	struct lp55xx_chip *chip;
 	struct lp55xx_led *led;
-	struct lp55xx_platform_data *pdata = dev_get_platdata(&client->dev);
+	struct lp55xx_platform_data *pdata;
 	struct device_node *np = client->dev.of_node;
 
-	if (!pdata) {
+	if (!dev_get_platdata(&client->dev)) {
 		if (np) {
-			pdata = lp55xx_of_populate_pdata(&client->dev, np);
-			if (IS_ERR(pdata))
-				return PTR_ERR(pdata);
+			ret = lp55xx_of_populate_pdata(&client->dev, np);
+			if (ret < 0)
+				return ret;
 		} else {
 			dev_err(&client->dev, "no platform data\n");
 			return -EINVAL;
 		}
 	}
+	pdata = dev_get_platdata(&client->dev);
 
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)

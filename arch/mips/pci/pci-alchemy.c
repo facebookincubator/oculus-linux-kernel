@@ -505,6 +505,7 @@ static struct platform_driver alchemy_pcictl_driver = {
 	.probe		= alchemy_pci_probe,
 	.driver = {
 		.name	= "alchemy-pci",
+		.owner	= THIS_MODULE,
 	},
 };
 

@@ -149,11 +149,12 @@ static struct device_driver netiucv_driver = {
 	.pm = &netiucv_pm_ops,
 };
 
-static int netiucv_callback_connreq(struct iucv_path *, u8 *, u8 *);
-static void netiucv_callback_connack(struct iucv_path *, u8 *);
-static void netiucv_callback_connrej(struct iucv_path *, u8 *);
-static void netiucv_callback_connsusp(struct iucv_path *, u8 *);
-static void netiucv_callback_connres(struct iucv_path *, u8 *);
+static int netiucv_callback_connreq(struct iucv_path *,
+				    u8 ipvmid[8], u8 ipuser[16]);
+static void netiucv_callback_connack(struct iucv_path *, u8 ipuser[16]);
+static void netiucv_callback_connrej(struct iucv_path *, u8 ipuser[16]);
+static void netiucv_callback_connsusp(struct iucv_path *, u8 ipuser[16]);
+static void netiucv_callback_connres(struct iucv_path *, u8 ipuser[16]);
 static void netiucv_callback_rx(struct iucv_path *, struct iucv_message *);
 static void netiucv_callback_txdone(struct iucv_path *, struct iucv_message *);
 
@@ -177,7 +178,7 @@ struct connection_profile {
 	unsigned long doios_multi;
 	unsigned long txlen;
 	unsigned long tx_time;
-	unsigned long send_stamp;
+	struct timespec send_stamp;
 	unsigned long tx_pending;
 	unsigned long tx_max_pending;
 };
@@ -486,9 +487,12 @@ DEFINE_PER_CPU(char[256], iucv_dbf_txt_buf);
 
 static void iucv_unregister_dbf_views(void)
 {
-	debug_unregister(iucv_dbf_setup);
-	debug_unregister(iucv_dbf_data);
-	debug_unregister(iucv_dbf_trace);
+	if (iucv_dbf_setup)
+		debug_unregister(iucv_dbf_setup);
+	if (iucv_dbf_data)
+		debug_unregister(iucv_dbf_data);
+	if (iucv_dbf_trace)
+		debug_unregister(iucv_dbf_trace);
 }
 static int iucv_register_dbf_views(void)
 {
@@ -555,8 +559,8 @@ static void netiucv_callback_connack(struct iucv_path *path, u8 ipuser[16])
 	fsm_event(conn->fsm, CONN_EVENT_CONN_ACK, conn);
 }
 
-static int netiucv_callback_connreq(struct iucv_path *path, u8 *ipvmid,
-				    u8 *ipuser)
+static int netiucv_callback_connreq(struct iucv_path *path,
+				    u8 ipvmid[8], u8 ipuser[16])
 {
 	struct iucv_connection *conn = path->private;
 	struct iucv_event ev;
@@ -586,21 +590,21 @@ static int netiucv_callback_connreq(struct iucv_path *path, u8 *ipvmid,
 	return rc;
 }
 
-static void netiucv_callback_connrej(struct iucv_path *path, u8 *ipuser)
+static void netiucv_callback_connrej(struct iucv_path *path, u8 ipuser[16])
 {
 	struct iucv_connection *conn = path->private;
 
 	fsm_event(conn->fsm, CONN_EVENT_CONN_REJ, conn);
 }
 
-static void netiucv_callback_connsusp(struct iucv_path *path, u8 *ipuser)
+static void netiucv_callback_connsusp(struct iucv_path *path, u8 ipuser[16])
 {
 	struct iucv_connection *conn = path->private;
 
 	fsm_event(conn->fsm, CONN_EVENT_CONN_SUS, conn);
 }
 
-static void netiucv_callback_connres(struct iucv_path *path, u8 *ipuser)
+static void netiucv_callback_connres(struct iucv_path *path, u8 ipuser[16])
 {
 	struct iucv_connection *conn = path->private;
 
@@ -782,7 +786,7 @@ static void conn_action_txdone(fsm_instance *fi, int event, void *arg)
 
 	header.next = 0;
 	memcpy(skb_put(conn->tx_buff, NETIUCV_HDRLEN), &header, NETIUCV_HDRLEN);
-	conn->prof.send_stamp = jiffies;
+	conn->prof.send_stamp = current_kernel_time();
 	txmsg.class = 0;
 	txmsg.tag = 0;
 	rc = iucv_message_send(conn->path, &txmsg, 0, 0,
@@ -1216,7 +1220,7 @@ static int netiucv_transmit_skb(struct iucv_connection *conn,
 		memcpy(skb_put(nskb, NETIUCV_HDRLEN), &header,  NETIUCV_HDRLEN);
 
 		fsm_newstate(conn->fsm, CONN_STATE_TX);
-		conn->prof.send_stamp = jiffies;
+		conn->prof.send_stamp = current_kernel_time();
 
 		msg.tag = 1;
 		msg.class = 0;

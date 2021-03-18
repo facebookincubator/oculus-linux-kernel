@@ -427,7 +427,7 @@ mohawk_crval:
 
 	.align
 
-	.section ".proc.info.init", #alloc
+	.section ".proc.info.init", #alloc, #execinstr
 
 	.type	__88sv331x_proc_info,#object
 __88sv331x_proc_info:
@@ -443,7 +443,7 @@ __88sv331x_proc_info:
 		PMD_BIT4 | \
 		PMD_SECT_AP_WRITE | \
 		PMD_SECT_AP_READ
-	initfn	__mohawk_setup, __88sv331x_proc_info
+	b	__mohawk_setup
 	.long	cpu_arch_name
 	.long	cpu_elf_name
 	.long	HWCAP_SWP|HWCAP_HALF|HWCAP_THUMB|HWCAP_FAST_MULT|HWCAP_EDSP

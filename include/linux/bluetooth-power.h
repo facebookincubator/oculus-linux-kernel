@@ -44,22 +44,12 @@ struct bt_power_vreg_data {
 	bool is_enabled;
 };
 
-struct bt_power_clk_data {
-	/* clock regulator handle */
-	struct clk *clk;
-	/* clock name */
-	const char *name;
-	/* is this clock enabled? */
-	bool is_enabled;
-};
-
 /*
  * Platform data for the bluetooth power driver.
  */
 struct bluetooth_power_platform_data {
 	/* Bluetooth reset gpio */
 	int bt_gpio_sys_rst;
-	struct device *slim_dev;
 	/* VDDIO voltage regulator */
 	struct bt_power_vreg_data *bt_vdd_io;
 	/* VDD_PA voltage regulator */
@@ -76,14 +66,8 @@ struct bluetooth_power_platform_data {
 	 * shares a common gpio to bring chip out of reset.
 	 */
 	struct bt_power_vreg_data *bt_chip_pwd;
-	/* bluetooth reference clock */
-	struct bt_power_clk_data *bt_chip_clk;
 	/* Optional: Bluetooth power setup function */
-	int (*bt_power_setup)(int);
+	int (*bt_power_setup) (int);
 };
 
-int bt_register_slimdev(struct device *dev);
-
-#define BT_CMD_SLIM_TEST		0xbfac
-#define BT_CMD_PWR_CTRL			0xbfad
 #endif /* __LINUX_BLUETOOTH_POWER_H */

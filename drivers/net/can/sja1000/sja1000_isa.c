@@ -259,6 +259,7 @@ static struct platform_driver sja1000_isa_driver = {
 	.remove = sja1000_isa_remove,
 	.driver = {
 		.name = DRV_NAME,
+		.owner = THIS_MODULE,
 	},
 };
 

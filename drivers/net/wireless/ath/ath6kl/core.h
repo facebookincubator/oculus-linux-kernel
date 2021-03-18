@@ -782,8 +782,6 @@ struct ath6kl {
 		u32 refclk_hz;
 		u32 uarttx_pin;
 		u32 testscript_addr;
-		u8 tx_ant;
-		u8 rx_ant;
 		enum wmi_phy_cap cap;
 
 		u32 flags;

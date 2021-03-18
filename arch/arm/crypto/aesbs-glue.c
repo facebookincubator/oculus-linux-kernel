@@ -301,8 +301,7 @@ static struct crypto_alg aesbs_algs[] = { {
 	.cra_name		= "__cbc-aes-neonbs",
 	.cra_driver_name	= "__driver-cbc-aes-neonbs",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
-				  CRYPTO_ALG_INTERNAL,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= AES_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct aesbs_cbc_ctx),
 	.cra_alignmask		= 7,
@@ -320,8 +319,7 @@ static struct crypto_alg aesbs_algs[] = { {
 	.cra_name		= "__ctr-aes-neonbs",
 	.cra_driver_name	= "__driver-ctr-aes-neonbs",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
-				  CRYPTO_ALG_INTERNAL,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= 1,
 	.cra_ctxsize		= sizeof(struct aesbs_ctr_ctx),
 	.cra_alignmask		= 7,
@@ -339,8 +337,7 @@ static struct crypto_alg aesbs_algs[] = { {
 	.cra_name		= "__xts-aes-neonbs",
 	.cra_driver_name	= "__driver-xts-aes-neonbs",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
-				  CRYPTO_ALG_INTERNAL,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= AES_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct aesbs_xts_ctx),
 	.cra_alignmask		= 7,

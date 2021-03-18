@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -93,12 +93,10 @@ enum ipa_aggr_mode {
 enum ipa_dp_evt_type {
 	IPA_RECEIVE,
 	IPA_WRITE_DONE,
-	IPA_CLIENT_START_POLL,
-	IPA_CLIENT_COMP_NAPI,
 };
 
 /**
- * enum hdr_total_len_or_pad_type - type of value held by TOTAL_LEN_OR_PAD
+ * enum hdr_total_len_or_pad_type - type vof alue held by TOTAL_LEN_OR_PAD
  * field in header configuration register.
  * @IPA_HDR_PAD: field is used as padding length
  * @IPA_HDR_TOTAL_LEN: field is used as total length
@@ -433,55 +431,6 @@ typedef void (*ipa_notify_cb)(void *priv, enum ipa_dp_evt_type evt,
 		       unsigned long data);
 
 /**
- * enum ipa_wdi_meter_evt_type - type of event client callback is
- * for AP+STA mode metering
- * @IPA_GET_WDI_SAP_STATS: get IPA_stats betwen SAP and STA -
- *			use ipa_get_wdi_sap_stats structure
- * @IPA_SET_WIFI_QUOTA: set quota limit on STA -
- *			use ipa_set_wifi_quota structure
- */
-enum ipa_wdi_meter_evt_type {
-	IPA_GET_WDI_SAP_STATS,
-	IPA_SET_WIFI_QUOTA,
-};
-
-struct ipa_get_wdi_sap_stats {
-	/* indicate to reset stats after query */
-	uint8_t reset_stats;
-	/* indicate valid stats from wlan-fw */
-	uint8_t stats_valid;
-	/* Tx: SAP->STA */
-	uint64_t ipv4_tx_packets;
-	uint64_t ipv4_tx_bytes;
-	/* Rx: STA->SAP */
-	uint64_t ipv4_rx_packets;
-	uint64_t ipv4_rx_bytes;
-	uint64_t ipv6_tx_packets;
-	uint64_t ipv6_tx_bytes;
-	uint64_t ipv6_rx_packets;
-	uint64_t ipv6_rx_bytes;
-};
-
-/**
- * struct ipa_set_wifi_quota - structure used for
- *                                   IPA_SET_WIFI_QUOTA.
- *
- * @quota_bytes:    Quota (in bytes) for the STA interface.
- * @set_quota:       Indicate whether to set the quota (use 1) or
- *                   unset the quota.
- *
- */
-struct ipa_set_wifi_quota {
-	uint64_t quota_bytes;
-	uint8_t  set_quota;
-	/* indicate valid quota set from wlan-fw */
-	uint8_t set_valid;
-};
-
-typedef void (*ipa_wdi_meter_notifier_cb)(enum ipa_wdi_meter_evt_type evt,
-		       void *data);
-
-/**
  * struct ipa_connect_params - low-level client connect input parameters. Either
  * client allocates the data and desc FIFO and specifies that in data+desc OR
  * specifies sizes and pipe_mem pref and IPA does the allocation.
@@ -589,7 +538,6 @@ struct ipa_ext_intf {
  * @skip_ep_cfg: boolean field that determines if EP should be configured
  *  by IPA driver
  * @keep_ipa_awake: when true, IPA will not be clock gated
- * @napi_enabled: when true, IPA call client callback to start polling
  */
 struct ipa_sys_connect_params {
 	struct ipa_ep_cfg ipa_ep_cfg;
@@ -599,8 +547,6 @@ struct ipa_sys_connect_params {
 	ipa_notify_cb notify;
 	bool skip_ep_cfg;
 	bool keep_ipa_awake;
-	bool napi_enabled;
-	bool recycle_enabled;
 };
 
 /**
@@ -814,7 +760,6 @@ enum ipa_irq_type {
 	IPA_TX_SUSPEND_IRQ,
 	IPA_TX_HOLB_DROP_IRQ,
 	IPA_BAM_IDLE_IRQ,
-	IPA_BAM_GSI_IDLE_IRQ = IPA_BAM_IDLE_IRQ,
 	IPA_IRQ_MAX
 };
 
@@ -901,7 +846,6 @@ struct IpaHwRingStats_t {
  *		injected due to vdev_id change
  * @num_ic_inj_fw_desc_change : Number of times the Imm Cmd is
  *		injected due to fw_desc change
- * @num_qmb_int_handled : Number of QMB interrupts handled
 */
 struct IpaHwStatsWDIRxInfoData_t {
 	u32 max_outstanding_pkts;
@@ -915,7 +859,6 @@ struct IpaHwStatsWDIRxInfoData_t {
 	u32 num_pkts_in_dis_uninit_state;
 	u32 num_ic_inj_vdev_change;
 	u32 num_ic_inj_fw_desc_change;
-	u32 num_qmb_int_handled;
 	u32 reserved1;
 	u32 reserved2;
 } __packed;
@@ -1001,8 +944,6 @@ struct ipa_wdi_ul_params_smmu {
 	struct sg_table rdy_comp_ring;
 	phys_addr_t rdy_comp_ring_wp_pa;
 	u32 rdy_comp_ring_size;
-	u32 *rdy_ring_rp_va;
-	u32 *rdy_comp_ring_wp_va;
 };
 
 /**
@@ -1052,7 +993,6 @@ struct ipa_wdi_dl_params_smmu {
  * @ul_smmu: WDI_RX configuration info when WLAN uses SMMU
  * @dl_smmu: WDI_TX configuration info when WLAN uses SMMU
  * @smmu_enabled: true if WLAN uses SMMU
- * @ipa_wdi_meter_notifier_cb: Get WDI stats and quato info
  */
 struct ipa_wdi_in_params {
 	struct ipa_sys_connect_params sys;
@@ -1063,15 +1003,6 @@ struct ipa_wdi_in_params {
 		struct ipa_wdi_dl_params_smmu dl_smmu;
 	} u;
 	bool smmu_enabled;
-#ifdef IPA_WAN_MSG_IPv6_ADDR_GW_LEN
-	ipa_wdi_meter_notifier_cb wdi_notify;
-#endif
-};
-
-enum ipa_upstream_type {
-	IPA_UPSTEAM_MODEM = 1,
-	IPA_UPSTEAM_WLAN,
-	IPA_UPSTEAM_MAX
 };
 
 /**
@@ -1307,8 +1238,6 @@ int ipa_tx_dp_mul(enum ipa_client_type dst,
 			struct ipa_tx_data_desc *data_desc);
 
 void ipa_free_skb(struct ipa_rx_data *);
-int ipa_rx_poll(u32 clnt_hdl, int budget);
-void ipa_recycle_wan_skb(struct sk_buff *skb);
 
 /*
  * System pipes
@@ -1326,9 +1255,6 @@ int ipa_resume_wdi_pipe(u32 clnt_hdl);
 int ipa_suspend_wdi_pipe(u32 clnt_hdl);
 int ipa_get_wdi_stats(struct IpaHwStatsWDIInfoData_t *stats);
 u16 ipa_get_smem_restr_bytes(void);
-int ipa_broadcast_wdi_quota_reach_ind(uint32_t fid,
-		uint64_t num_bytes);
-
 /*
  * To retrieve doorbell physical address of
  * wlan pipes
@@ -1850,15 +1776,6 @@ static inline void ipa_free_skb(struct ipa_rx_data *rx_in)
 	return;
 }
 
-static inline int ipa_rx_poll(u32 clnt_hdl, int budget)
-{
-	return -EPERM;
-}
-
-static inline void ipa_recycle_wan_skb(struct sk_buff *skb)
-{
-}
-
 /*
  * System pipes
  */
@@ -1905,12 +1822,6 @@ static inline int ipa_resume_wdi_pipe(u32 clnt_hdl)
 }
 
 static inline int ipa_suspend_wdi_pipe(u32 clnt_hdl)
-{
-	return -EPERM;
-}
-
-static inline int ipa_broadcast_wdi_quota_reach_ind(uint32_t fid,
-		uint64_t num_bytes)
 {
 	return -EPERM;
 }

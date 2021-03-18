@@ -163,7 +163,7 @@ static const struct snd_kcontrol_new ak4671_snd_controls[] = {
 static int ak4671_out2_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -577,6 +577,7 @@ static int ak4671_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, AK4671_AD_DA_POWER_MANAGEMENT, 0x00);
 		break;
 	}
+	codec->dapm.bias_level = level;
 	return 0;
 }
 
@@ -610,7 +611,20 @@ static struct snd_soc_dai_driver ak4671_dai = {
 	.ops = &ak4671_dai_ops,
 };
 
+static int ak4671_probe(struct snd_soc_codec *codec)
+{
+	return ak4671_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+}
+
+static int ak4671_remove(struct snd_soc_codec *codec)
+{
+	ak4671_set_bias_level(codec, SND_SOC_BIAS_OFF);
+	return 0;
+}
+
 static struct snd_soc_codec_driver soc_codec_dev_ak4671 = {
+	.probe = ak4671_probe,
+	.remove = ak4671_remove,
 	.set_bias_level = ak4671_set_bias_level,
 	.controls = ak4671_snd_controls,
 	.num_controls = ARRAY_SIZE(ak4671_snd_controls),
@@ -663,6 +677,7 @@ MODULE_DEVICE_TABLE(i2c, ak4671_i2c_id);
 static struct i2c_driver ak4671_i2c_driver = {
 	.driver = {
 		.name = "ak4671-codec",
+		.owner = THIS_MODULE,
 	},
 	.probe = ak4671_i2c_probe,
 	.remove = ak4671_i2c_remove,

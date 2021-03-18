@@ -20,7 +20,7 @@
 
 #define DA8XX_NUM_UARTS	3
 
-static const struct of_device_id const da8xx_irq_match[] __initconst = {
+static struct of_device_id da8xx_irq_match[] __initdata = {
 	{ .compatible = "ti,cp-intc", .data = cp_intc_of_init, },
 	{ }
 };
@@ -59,7 +59,7 @@ static void __init da850_init_machine(void)
 
 }
 
-static const char *const da850_boards_compat[] __initconst = {
+static const char *da850_boards_compat[] __initdata = {
 	"enbw,cmc",
 	"ti,da850-evm",
 	"ti,da850",

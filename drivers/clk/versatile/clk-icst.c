@@ -13,9 +13,8 @@
  * ICST clock code from the ARM tree should probably be merged into this
  * file.
  */
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/export.h>
+#include <linux/clk.h>
+#include <linux/clkdev.h>
 #include <linux/err.h>
 #include <linux/clk-provider.h>
 #include <linux/io.h>
@@ -157,10 +156,8 @@ struct clk *icst_clk_register(struct device *dev,
 	icst->lockreg = base + desc->lock_offset;
 
 	clk = clk_register(dev, &icst->hw);
-	if (IS_ERR(clk)) {
-		kfree(pclone);
+	if (IS_ERR(clk))
 		kfree(icst);
-	}
 
 	return clk;
 }

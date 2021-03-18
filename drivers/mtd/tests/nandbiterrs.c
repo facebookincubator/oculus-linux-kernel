@@ -320,10 +320,6 @@ static int overwrite_test(void)
 			break;
 		}
 
-		err = mtdtest_relax();
-		if (err)
-			break;
-
 		opno++;
 	}
 

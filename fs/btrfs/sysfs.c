@@ -33,7 +33,6 @@
 #include "volumes.h"
 
 static inline struct btrfs_fs_info *to_fs_info(struct kobject *kobj);
-static inline struct btrfs_fs_devices *to_fs_devs(struct kobject *kobj);
 
 static u64 get_features(struct btrfs_fs_info *fs_info,
 			enum btrfs_feature_set set)
@@ -112,6 +111,7 @@ static ssize_t btrfs_feature_attr_store(struct kobject *kobj,
 {
 	struct btrfs_fs_info *fs_info;
 	struct btrfs_feature_attr *fa = to_btrfs_feature_attr(a);
+	struct btrfs_trans_handle *trans;
 	u64 features, set, clear;
 	unsigned long val;
 	int ret;
@@ -153,6 +153,10 @@ static ssize_t btrfs_feature_attr_store(struct kobject *kobj,
 	btrfs_info(fs_info, "%s %s feature flag",
 		   val ? "Setting" : "Clearing", fa->kobj_attr.attr.name);
 
+	trans = btrfs_start_transaction(fs_info->fs_root, 0);
+	if (IS_ERR(trans))
+		return PTR_ERR(trans);
+
 	spin_lock(&fs_info->super_lock);
 	features = get_features(fs_info, fa->feature_set);
 	if (val)
@@ -162,11 +166,9 @@ static ssize_t btrfs_feature_attr_store(struct kobject *kobj,
 	set_features(fs_info, fa->feature_set, features);
 	spin_unlock(&fs_info->super_lock);
 
-	/*
-	 * We don't want to do full transaction commit from inside sysfs
-	 */
-	btrfs_set_pending(fs_info, COMMIT);
-	wake_up_process(fs_info->transaction_kthread);
+	ret = btrfs_commit_transaction(trans, fs_info->fs_root);
+	if (ret)
+		return ret;
 
 	return count;
 }
@@ -370,6 +372,9 @@ static ssize_t btrfs_label_store(struct kobject *kobj,
 				 const char *buf, size_t len)
 {
 	struct btrfs_fs_info *fs_info = to_fs_info(kobj);
+	struct btrfs_trans_handle *trans;
+	struct btrfs_root *root = fs_info->fs_root;
+	int ret;
 	size_t p_len;
 
 	if (fs_info->sb->s_flags & MS_RDONLY)
@@ -384,18 +389,20 @@ static ssize_t btrfs_label_store(struct kobject *kobj,
 	if (p_len >= BTRFS_LABEL_SIZE)
 		return -EINVAL;
 
-	spin_lock(&fs_info->super_lock);
+	trans = btrfs_start_transaction(root, 0);
+	if (IS_ERR(trans))
+		return PTR_ERR(trans);
+
+	spin_lock(&root->fs_info->super_lock);
 	memset(fs_info->super_copy->label, 0, BTRFS_LABEL_SIZE);
 	memcpy(fs_info->super_copy->label, buf, p_len);
-	spin_unlock(&fs_info->super_lock);
+	spin_unlock(&root->fs_info->super_lock);
+	ret = btrfs_commit_transaction(trans, root);
 
-	/*
-	 * We don't want to do full transaction commit from inside sysfs
-	 */
-	btrfs_set_pending(fs_info, COMMIT);
-	wake_up_process(fs_info->transaction_kthread);
+	if (!ret)
+		return len;
 
-	return len;
+	return ret;
 }
 BTRFS_ATTR_RW(label, btrfs_label_show, btrfs_label_store);
 
@@ -429,7 +436,7 @@ static ssize_t btrfs_clone_alignment_show(struct kobject *kobj,
 
 BTRFS_ATTR(clone_alignment, btrfs_clone_alignment_show);
 
-static const struct attribute *btrfs_attrs[] = {
+static struct attribute *btrfs_attrs[] = {
 	BTRFS_ATTR_PTR(label),
 	BTRFS_ATTR_PTR(nodesize),
 	BTRFS_ATTR_PTR(sectorsize),
@@ -437,38 +444,30 @@ static const struct attribute *btrfs_attrs[] = {
 	NULL,
 };
 
-static void btrfs_release_fsid_kobj(struct kobject *kobj)
+static void btrfs_release_super_kobj(struct kobject *kobj)
 {
-	struct btrfs_fs_devices *fs_devs = to_fs_devs(kobj);
-
-	memset(&fs_devs->fsid_kobj, 0, sizeof(struct kobject));
-	complete(&fs_devs->kobj_unregister);
+	struct btrfs_fs_info *fs_info = to_fs_info(kobj);
+	complete(&fs_info->kobj_unregister);
 }
 
 static struct kobj_type btrfs_ktype = {
 	.sysfs_ops	= &kobj_sysfs_ops,
-	.release	= btrfs_release_fsid_kobj,
+	.release	= btrfs_release_super_kobj,
+	.default_attrs	= btrfs_attrs,
 };
-
-static inline struct btrfs_fs_devices *to_fs_devs(struct kobject *kobj)
-{
-	if (kobj->ktype != &btrfs_ktype)
-		return NULL;
-	return container_of(kobj, struct btrfs_fs_devices, fsid_kobj);
-}
 
 static inline struct btrfs_fs_info *to_fs_info(struct kobject *kobj)
 {
 	if (kobj->ktype != &btrfs_ktype)
 		return NULL;
-	return to_fs_devs(kobj)->fs_info;
+	return container_of(kobj, struct btrfs_fs_info, super_kobj);
 }
 
 #define NUM_FEATURE_BITS 64
 static char btrfs_unknown_feature_names[3][NUM_FEATURE_BITS][13];
 static struct btrfs_feature_attr btrfs_feature_attrs[3][NUM_FEATURE_BITS];
 
-static const u64 supported_feature_masks[3] = {
+static u64 supported_feature_masks[3] = {
 	[FEAT_COMPAT]    = BTRFS_FEATURE_COMPAT_SUPP,
 	[FEAT_COMPAT_RO] = BTRFS_FEATURE_COMPAT_RO_SUPP,
 	[FEAT_INCOMPAT]  = BTRFS_FEATURE_INCOMPAT_SUPP,
@@ -502,12 +501,12 @@ static int addrm_unknown_feature_attrs(struct btrfs_fs_info *fs_info, bool add)
 			attrs[0] = &fa->kobj_attr.attr;
 			if (add) {
 				int ret;
-				ret = sysfs_merge_group(&fs_info->fs_devices->fsid_kobj,
+				ret = sysfs_merge_group(&fs_info->super_kobj,
 							&agroup);
 				if (ret)
 					return ret;
 			} else
-				sysfs_unmerge_group(&fs_info->fs_devices->fsid_kobj,
+				sysfs_unmerge_group(&fs_info->super_kobj,
 						    &agroup);
 		}
 
@@ -515,49 +514,25 @@ static int addrm_unknown_feature_attrs(struct btrfs_fs_info *fs_info, bool add)
 	return 0;
 }
 
-static void __btrfs_sysfs_remove_fsid(struct btrfs_fs_devices *fs_devs)
+static void __btrfs_sysfs_remove_one(struct btrfs_fs_info *fs_info)
 {
-	if (fs_devs->device_dir_kobj) {
-		kobject_del(fs_devs->device_dir_kobj);
-		kobject_put(fs_devs->device_dir_kobj);
-		fs_devs->device_dir_kobj = NULL;
-	}
-
-	if (fs_devs->fsid_kobj.state_initialized) {
-		kobject_del(&fs_devs->fsid_kobj);
-		kobject_put(&fs_devs->fsid_kobj);
-		wait_for_completion(&fs_devs->kobj_unregister);
-	}
+	kobject_del(&fs_info->super_kobj);
+	kobject_put(&fs_info->super_kobj);
+	wait_for_completion(&fs_info->kobj_unregister);
 }
 
-/* when fs_devs is NULL it will remove all fsid kobject */
-void btrfs_sysfs_remove_fsid(struct btrfs_fs_devices *fs_devs)
+void btrfs_sysfs_remove_one(struct btrfs_fs_info *fs_info)
 {
-	struct list_head *fs_uuids = btrfs_get_fs_uuids();
-
-	if (fs_devs) {
-		__btrfs_sysfs_remove_fsid(fs_devs);
-		return;
-	}
-
-	list_for_each_entry(fs_devs, fs_uuids, list) {
-		__btrfs_sysfs_remove_fsid(fs_devs);
-	}
-}
-
-void btrfs_sysfs_remove_mounted(struct btrfs_fs_info *fs_info)
-{
-	btrfs_reset_fs_info_ptr(fs_info);
-
 	if (fs_info->space_info_kobj) {
 		sysfs_remove_files(fs_info->space_info_kobj, allocation_attrs);
 		kobject_del(fs_info->space_info_kobj);
 		kobject_put(fs_info->space_info_kobj);
 	}
+	kobject_del(fs_info->device_dir_kobj);
+	kobject_put(fs_info->device_dir_kobj);
 	addrm_unknown_feature_attrs(fs_info, false);
-	sysfs_remove_group(&fs_info->fs_devices->fsid_kobj, &btrfs_feature_attr_group);
-	sysfs_remove_files(&fs_info->fs_devices->fsid_kobj, btrfs_attrs);
-	btrfs_sysfs_rm_device_link(fs_info->fs_devices, NULL);
+	sysfs_remove_group(&fs_info->super_kobj, &btrfs_feature_attr_group);
+	__btrfs_sysfs_remove_one(fs_info);
 }
 
 const char * const btrfs_feature_set_names[3] = {
@@ -635,59 +610,39 @@ static void init_feature_attrs(void)
 	}
 }
 
-/* when one_device is NULL, it removes all device links */
-
-int btrfs_sysfs_rm_device_link(struct btrfs_fs_devices *fs_devices,
+int btrfs_kobj_rm_device(struct btrfs_fs_info *fs_info,
 		struct btrfs_device *one_device)
 {
 	struct hd_struct *disk;
 	struct kobject *disk_kobj;
 
-	if (!fs_devices->device_dir_kobj)
+	if (!fs_info->device_dir_kobj)
 		return -EINVAL;
 
 	if (one_device && one_device->bdev) {
 		disk = one_device->bdev->bd_part;
 		disk_kobj = &part_to_dev(disk)->kobj;
 
-		sysfs_remove_link(fs_devices->device_dir_kobj,
-						disk_kobj->name);
-	}
-
-	if (one_device)
-		return 0;
-
-	list_for_each_entry(one_device,
-			&fs_devices->devices, dev_list) {
-		if (!one_device->bdev)
-			continue;
-		disk = one_device->bdev->bd_part;
-		disk_kobj = &part_to_dev(disk)->kobj;
-
-		sysfs_remove_link(fs_devices->device_dir_kobj,
+		sysfs_remove_link(fs_info->device_dir_kobj,
 						disk_kobj->name);
 	}
 
 	return 0;
 }
 
-int btrfs_sysfs_add_device(struct btrfs_fs_devices *fs_devs)
-{
-	if (!fs_devs->device_dir_kobj)
-		fs_devs->device_dir_kobj = kobject_create_and_add("devices",
-						&fs_devs->fsid_kobj);
-
-	if (!fs_devs->device_dir_kobj)
-		return -ENOMEM;
-
-	return 0;
-}
-
-int btrfs_sysfs_add_device_link(struct btrfs_fs_devices *fs_devices,
-				struct btrfs_device *one_device)
+int btrfs_kobj_add_device(struct btrfs_fs_info *fs_info,
+		struct btrfs_device *one_device)
 {
 	int error = 0;
+	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
 	struct btrfs_device *dev;
+
+	if (!fs_info->device_dir_kobj)
+		fs_info->device_dir_kobj = kobject_create_and_add("devices",
+						&fs_info->super_kobj);
+
+	if (!fs_info->device_dir_kobj)
+		return -ENOMEM;
 
 	list_for_each_entry(dev, &fs_devices->devices, dev_list) {
 		struct hd_struct *disk;
@@ -702,7 +657,7 @@ int btrfs_sysfs_add_device_link(struct btrfs_fs_devices *fs_devices,
 		disk = dev->bdev->bd_part;
 		disk_kobj = &part_to_dev(disk)->kobj;
 
-		error = sysfs_create_link(fs_devices->device_dir_kobj,
+		error = sysfs_create_link(fs_info->device_dir_kobj,
 					  disk_kobj, disk_kobj->name);
 		if (error)
 			break;
@@ -720,51 +675,34 @@ static struct dentry *btrfs_debugfs_root_dentry;
 /* Debugging tunables and exported data */
 u64 btrfs_debugfs_test;
 
-/*
- * Can be called by the device discovery thread.
- * And parent can be specified for seed device
- */
-int btrfs_sysfs_add_fsid(struct btrfs_fs_devices *fs_devs,
-				struct kobject *parent)
+int btrfs_sysfs_add_one(struct btrfs_fs_info *fs_info)
 {
 	int error;
 
-	init_completion(&fs_devs->kobj_unregister);
-	fs_devs->fsid_kobj.kset = btrfs_kset;
-	error = kobject_init_and_add(&fs_devs->fsid_kobj,
-				&btrfs_ktype, parent, "%pU", fs_devs->fsid);
-	return error;
-}
-
-int btrfs_sysfs_add_mounted(struct btrfs_fs_info *fs_info)
-{
-	int error;
-	struct btrfs_fs_devices *fs_devs = fs_info->fs_devices;
-	struct kobject *fsid_kobj = &fs_devs->fsid_kobj;
-
-	btrfs_set_fs_info_ptr(fs_info);
-
-	error = btrfs_sysfs_add_device_link(fs_devs, NULL);
+	init_completion(&fs_info->kobj_unregister);
+	fs_info->super_kobj.kset = btrfs_kset;
+	error = kobject_init_and_add(&fs_info->super_kobj, &btrfs_ktype, NULL,
+				     "%pU", fs_info->fsid);
 	if (error)
 		return error;
 
-	error = sysfs_create_files(fsid_kobj, btrfs_attrs);
+	error = sysfs_create_group(&fs_info->super_kobj,
+				   &btrfs_feature_attr_group);
 	if (error) {
-		btrfs_sysfs_rm_device_link(fs_devs, NULL);
+		__btrfs_sysfs_remove_one(fs_info);
 		return error;
 	}
-
-	error = sysfs_create_group(fsid_kobj,
-				   &btrfs_feature_attr_group);
-	if (error)
-		goto failure;
 
 	error = addrm_unknown_feature_attrs(fs_info, true);
 	if (error)
 		goto failure;
 
+	error = btrfs_kobj_add_device(fs_info, NULL);
+	if (error)
+		goto failure;
+
 	fs_info->space_info_kobj = kobject_create_and_add("allocation",
-						  fsid_kobj);
+						  &fs_info->super_kobj);
 	if (!fs_info->space_info_kobj) {
 		error = -ENOMEM;
 		goto failure;
@@ -776,7 +714,7 @@ int btrfs_sysfs_add_mounted(struct btrfs_fs_info *fs_info)
 
 	return 0;
 failure:
-	btrfs_sysfs_remove_mounted(fs_info);
+	btrfs_sysfs_remove_one(fs_info);
 	return error;
 }
 
@@ -803,18 +741,10 @@ int btrfs_init_sysfs(void)
 
 	ret = btrfs_init_debugfs();
 	if (ret)
-		goto out1;
+		return ret;
 
 	init_feature_attrs();
 	ret = sysfs_create_group(&btrfs_kset->kobj, &btrfs_feature_attr_group);
-	if (ret)
-		goto out2;
-
-	return 0;
-out2:
-	debugfs_remove_recursive(btrfs_debugfs_root_dentry);
-out1:
-	kset_unregister(btrfs_kset);
 
 	return ret;
 }

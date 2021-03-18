@@ -1,33 +1,14 @@
 #ifndef __API_FS__
 #define __API_FS__
 
-#include <stdbool.h>
-
-/*
- * On most systems <limits.h> would have given us this, but  not on some systems
- * (e.g. GNU/Hurd).
- */
-#ifndef PATH_MAX
-#define PATH_MAX 4096
+#ifndef SYSFS_MAGIC
+#define SYSFS_MAGIC            0x62656572
 #endif
 
-#define FS(name)				\
-	const char *name##__mountpoint(void);	\
-	const char *name##__mount(void);	\
-	bool name##__configured(void);		\
+#ifndef PROC_SUPER_MAGIC
+#define PROC_SUPER_MAGIC       0x9fa0
+#endif
 
-FS(sysfs)
-FS(procfs)
-FS(debugfs)
-FS(tracefs)
-
-#undef FS
-
-
-int filename__read_int(const char *filename, int *value);
-int filename__read_ull(const char *filename, unsigned long long *value);
-
-int sysctl__read_int(const char *sysctl, int *value);
-int sysfs__read_int(const char *entry, int *value);
-int sysfs__read_ull(const char *entry, unsigned long long *value);
+const char *sysfs__mountpoint(void);
+const char *procfs__mountpoint(void);
 #endif /* __API_FS__ */

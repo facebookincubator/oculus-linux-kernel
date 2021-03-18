@@ -8,6 +8,7 @@
  * of the License.
  */
 #include <linux/linkage.h>
+#include <asm/dwarf2.h>
 
 /*
  * Calling convention :

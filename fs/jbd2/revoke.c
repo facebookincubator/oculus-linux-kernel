@@ -141,13 +141,11 @@ static int insert_revoke_hash(journal_t *journal, unsigned long long blocknr,
 {
 	struct list_head *hash_list;
 	struct jbd2_revoke_record_s *record;
-	gfp_t gfp_mask = GFP_NOFS;
 
-	if (journal_oom_retry)
-		gfp_mask |= __GFP_NOFAIL;
-	record = kmem_cache_alloc(jbd2_revoke_record_cache, gfp_mask);
+repeat:
+	record = kmem_cache_alloc(jbd2_revoke_record_cache, GFP_NOFS);
 	if (!record)
-		return -ENOMEM;
+		goto oom;
 
 	record->sequence = seq;
 	record->blocknr = blocknr;
@@ -156,6 +154,13 @@ static int insert_revoke_hash(journal_t *journal, unsigned long long blocknr,
 	list_add(&record->hash, hash_list);
 	spin_unlock(&journal->j_revoke_lock);
 	return 0;
+
+oom:
+	if (!journal_oom_retry)
+		return -ENOMEM;
+	jbd_debug(1, "ENOMEM in %s, retrying\n", __func__);
+	yield();
+	goto repeat;
 }
 
 /* Find a revoke record in the journal's hash table. */
@@ -589,7 +594,7 @@ static void write_one_revoke_record(journal_t *journal,
 	if (jbd2_journal_has_csum_v2or3(journal))
 		csum_size = sizeof(struct jbd2_journal_revoke_tail);
 
-	if (jbd2_has_feature_64bit(journal))
+	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_64BIT))
 		sz = 8;
 	else
 		sz = 4;
@@ -619,7 +624,7 @@ static void write_one_revoke_record(journal_t *journal,
 		*descriptorp = descriptor;
 	}
 
-	if (jbd2_has_feature_64bit(journal))
+	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_64BIT))
 		* ((__be64 *)(&descriptor->b_data[offset])) =
 			cpu_to_be64(record->blocknr);
 	else

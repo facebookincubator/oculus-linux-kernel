@@ -176,7 +176,9 @@ netxen_alloc_sds_rings(struct netxen_recv_context *recv_ctx, int count)
 static void
 netxen_free_sds_rings(struct netxen_recv_context *recv_ctx)
 {
-	kfree(recv_ctx->sds_rings);
+	if (recv_ctx->sds_rings != NULL)
+		kfree(recv_ctx->sds_rings);
+
 	recv_ctx->sds_rings = NULL;
 }
 
@@ -1891,9 +1893,9 @@ netxen_tso_check(struct net_device *netdev,
 		protocol = vh->h_vlan_encapsulated_proto;
 		flags = FLAGS_VLAN_TAGGED;
 
-	} else if (skb_vlan_tag_present(skb)) {
+	} else if (vlan_tx_tag_present(skb)) {
 		flags = FLAGS_VLAN_OOB;
-		vid = skb_vlan_tag_get(skb);
+		vid = vlan_tx_tag_get(skb);
 		netxen_set_tx_vlan_tci(first_desc, vid);
 		vlan_oob = 1;
 	}
@@ -3025,9 +3027,9 @@ netxen_sysfs_read_dimm(struct file *filp, struct kobject *kobj,
 	u8 dw, rows, cols, banks, ranks;
 	u32 val;
 
-	if (size < attr->size) {
+	if (size != sizeof(struct netxen_dimm_cfg)) {
 		netdev_err(netdev, "Invalid size\n");
-		return -EINVAL;
+		return -1;
 	}
 
 	memset(&dimm, 0, sizeof(struct netxen_dimm_cfg));
@@ -3137,7 +3139,7 @@ out:
 
 static struct bin_attribute bin_attr_dimm = {
 	.attr = { .name = "dimm", .mode = (S_IRUGO | S_IWUSR) },
-	.size = sizeof(struct netxen_dimm_cfg),
+	.size = 0,
 	.read = netxen_sysfs_read_dimm,
 };
 

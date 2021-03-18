@@ -97,7 +97,7 @@ __copy_to_user_memcpy(void __user *to, const void *from, unsigned long n)
 	}
 
 	/* the mmap semaphore is taken only if not in an atomic context */
-	atomic = faulthandler_disabled();
+	atomic = in_atomic();
 
 	if (!atomic)
 		down_read(&current->mm->mmap_sem);

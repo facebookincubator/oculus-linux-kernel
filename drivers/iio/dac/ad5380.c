@@ -519,6 +519,7 @@ MODULE_DEVICE_TABLE(spi, ad5380_spi_ids);
 static struct spi_driver ad5380_spi_driver = {
 	.driver = {
 		   .name = "ad5380",
+		   .owner = THIS_MODULE,
 	},
 	.probe = ad5380_spi_probe,
 	.remove = ad5380_spi_remove,
@@ -592,6 +593,7 @@ MODULE_DEVICE_TABLE(i2c, ad5380_i2c_ids);
 static struct i2c_driver ad5380_i2c_driver = {
 	.driver = {
 		   .name = "ad5380",
+		   .owner = THIS_MODULE,
 	},
 	.probe = ad5380_i2c_probe,
 	.remove = ad5380_i2c_remove,

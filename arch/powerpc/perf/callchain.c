@@ -111,45 +111,41 @@ perf_callchain_kernel(struct perf_callchain_entry *entry, struct pt_regs *regs)
  * interrupt context, so if the access faults, we read the page tables
  * to find which page (if any) is mapped and access it directly.
  */
-static int read_user_stack_slow(void __user *ptr, void *buf, int nb)
+static int read_user_stack_slow(void __user *ptr, void *ret, int nb)
 {
-	int ret = -EFAULT;
 	pgd_t *pgdir;
 	pte_t *ptep, pte;
 	unsigned shift;
 	unsigned long addr = (unsigned long) ptr;
 	unsigned long offset;
-	unsigned long pfn, flags;
+	unsigned long pfn;
 	void *kaddr;
 
 	pgdir = current->mm->pgd;
 	if (!pgdir)
 		return -EFAULT;
 
-	local_irq_save(flags);
-	ptep = find_linux_pte_or_hugepte(pgdir, addr, NULL, &shift);
-	if (!ptep)
-		goto err_out;
+	ptep = find_linux_pte_or_hugepte(pgdir, addr, &shift);
 	if (!shift)
 		shift = PAGE_SHIFT;
 
 	/* align address to page boundary */
 	offset = addr & ((1UL << shift) - 1);
+	addr -= offset;
 
-	pte = READ_ONCE(*ptep);
+	if (ptep == NULL)
+		return -EFAULT;
+	pte = *ptep;
 	if (!pte_present(pte) || !(pte_val(pte) & _PAGE_USER))
-		goto err_out;
+		return -EFAULT;
 	pfn = pte_pfn(pte);
 	if (!page_is_ram(pfn))
-		goto err_out;
+		return -EFAULT;
 
 	/* no highmem to worry about here */
 	kaddr = pfn_to_kaddr(pfn);
-	memcpy(buf, kaddr + offset, nb);
-	ret = 0;
-err_out:
-	local_irq_restore(flags);
-	return ret;
+	memcpy(ret, kaddr + offset, nb);
+	return 0;
 }
 
 static int read_user_stack_64(unsigned long __user *ptr, unsigned long *ret)

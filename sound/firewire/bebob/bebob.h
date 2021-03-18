@@ -31,7 +31,7 @@
 #include "../fcp.h"
 #include "../packets-buffer.h"
 #include "../iso-resources.h"
-#include "../amdtp-am824.h"
+#include "../amdtp.h"
 #include "../cmp.h"
 
 /* basic register addresses on DM1000/DM1100/DM1500 */
@@ -49,15 +49,10 @@ struct snd_bebob_stream_formation {
 extern const unsigned int snd_bebob_rate_table[SND_BEBOB_STRM_FMT_ENTRIES];
 
 /* device specific operations */
-enum snd_bebob_clock_type {
-	SND_BEBOB_CLOCK_TYPE_INTERNAL = 0,
-	SND_BEBOB_CLOCK_TYPE_EXTERNAL,
-	SND_BEBOB_CLOCK_TYPE_SYT,
-};
+#define SND_BEBOB_CLOCK_INTERNAL	"Internal"
 struct snd_bebob_clock_spec {
 	unsigned int num;
-	const char *const *labels;
-	enum snd_bebob_clock_type *types;
+	char *const *labels;
 	int (*get)(struct snd_bebob *bebob, unsigned int *id);
 };
 struct snd_bebob_rate_spec {
@@ -66,13 +61,13 @@ struct snd_bebob_rate_spec {
 };
 struct snd_bebob_meter_spec {
 	unsigned int num;
-	const char *const *labels;
+	char *const *labels;
 	int (*get)(struct snd_bebob *bebob, u32 *target, unsigned int size);
 };
 struct snd_bebob_spec {
-	const struct snd_bebob_clock_spec *clock;
-	const struct snd_bebob_rate_spec *rate;
-	const struct snd_bebob_meter_spec *meter;
+	struct snd_bebob_clock_spec *clock;
+	struct snd_bebob_rate_spec *rate;
+	struct snd_bebob_meter_spec *meter;
 };
 
 struct snd_bebob {
@@ -97,7 +92,8 @@ struct snd_bebob {
 	struct amdtp_stream rx_stream;
 	struct cmp_connection out_conn;
 	struct cmp_connection in_conn;
-	atomic_t substreams_counter;
+	atomic_t capture_substreams;
+	atomic_t playback_substreams;
 
 	struct snd_bebob_stream_formation
 		tx_stream_formations[SND_BEBOB_STRM_FMT_ENTRIES];
@@ -114,9 +110,6 @@ struct snd_bebob {
 	/* for M-Audio special devices */
 	void *maudio_special_quirk;
 	bool deferred_registration;
-
-	/* For BeBoB version quirk. */
-	unsigned int version;
 };
 
 static inline int
@@ -166,8 +159,7 @@ enum avc_bridgeco_plug_type {
 	AVC_BRIDGECO_PLUG_TYPE_MIDI	= 0x02,
 	AVC_BRIDGECO_PLUG_TYPE_SYNC	= 0x03,
 	AVC_BRIDGECO_PLUG_TYPE_ANA	= 0x04,
-	AVC_BRIDGECO_PLUG_TYPE_DIG	= 0x05,
-	AVC_BRIDGECO_PLUG_TYPE_ADDITION	= 0x06
+	AVC_BRIDGECO_PLUG_TYPE_DIG	= 0x05
 };
 static inline void
 avc_bridgeco_fill_unit_addr(u8 buf[AVC_BRIDGECO_ADDR_BYTES],
@@ -213,8 +205,8 @@ int avc_bridgeco_get_plug_strm_fmt(struct fw_unit *unit,
 /* for AMDTP streaming */
 int snd_bebob_stream_get_rate(struct snd_bebob *bebob, unsigned int *rate);
 int snd_bebob_stream_set_rate(struct snd_bebob *bebob, unsigned int rate);
-int snd_bebob_stream_get_clock_src(struct snd_bebob *bebob,
-				   enum snd_bebob_clock_type *src);
+int snd_bebob_stream_check_internal_clock(struct snd_bebob *bebob,
+					  bool *internal);
 int snd_bebob_stream_discover(struct snd_bebob *bebob);
 int snd_bebob_stream_init_duplex(struct snd_bebob *bebob);
 int snd_bebob_stream_start_duplex(struct snd_bebob *bebob, unsigned int rate);
@@ -235,19 +227,19 @@ int snd_bebob_create_pcm_devices(struct snd_bebob *bebob);
 int snd_bebob_create_hwdep_device(struct snd_bebob *bebob);
 
 /* model specific operations */
-extern const struct snd_bebob_spec phase88_rack_spec;
-extern const struct snd_bebob_spec phase24_series_spec;
-extern const struct snd_bebob_spec yamaha_go_spec;
-extern const struct snd_bebob_spec saffirepro_26_spec;
-extern const struct snd_bebob_spec saffirepro_10_spec;
-extern const struct snd_bebob_spec saffire_le_spec;
-extern const struct snd_bebob_spec saffire_spec;
-extern const struct snd_bebob_spec maudio_fw410_spec;
-extern const struct snd_bebob_spec maudio_audiophile_spec;
-extern const struct snd_bebob_spec maudio_solo_spec;
-extern const struct snd_bebob_spec maudio_ozonic_spec;
-extern const struct snd_bebob_spec maudio_nrv10_spec;
-extern const struct snd_bebob_spec maudio_special_spec;
+extern struct snd_bebob_spec phase88_rack_spec;
+extern struct snd_bebob_spec phase24_series_spec;
+extern struct snd_bebob_spec yamaha_go_spec;
+extern struct snd_bebob_spec saffirepro_26_spec;
+extern struct snd_bebob_spec saffirepro_10_spec;
+extern struct snd_bebob_spec saffire_le_spec;
+extern struct snd_bebob_spec saffire_spec;
+extern struct snd_bebob_spec maudio_fw410_spec;
+extern struct snd_bebob_spec maudio_audiophile_spec;
+extern struct snd_bebob_spec maudio_solo_spec;
+extern struct snd_bebob_spec maudio_ozonic_spec;
+extern struct snd_bebob_spec maudio_nrv10_spec;
+extern struct snd_bebob_spec maudio_special_spec;
 int snd_bebob_maudio_special_discover(struct snd_bebob *bebob, bool is1814);
 int snd_bebob_maudio_load_firmware(struct fw_unit *unit);
 

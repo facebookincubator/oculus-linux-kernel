@@ -16,7 +16,9 @@
 #include <linux/nfs_fs.h>
 #include "internal.h"
 
-#define NFSDBG_FACILITY	NFSDBG_MOUNT
+#ifdef NFS_DEBUG
+# define NFSDBG_FACILITY	NFSDBG_MOUNT
+#endif
 
 /*
  * Defined by RFC 1094, section A.3; and RFC 1813, section 5.1.4

@@ -272,7 +272,7 @@ static int pseries_add_processor(struct device_node *np)
 		 */
 		printk(KERN_ERR "Cannot add cpu %s; this system configuration"
 		       " supports %d logical cpus.\n", np->full_name,
-		       num_possible_cpus());
+		       cpumask_weight(cpu_possible_mask));
 		goto out_unlock;
 	}
 

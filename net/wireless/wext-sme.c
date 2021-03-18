@@ -322,7 +322,7 @@ int cfg80211_mgd_wext_giwap(struct net_device *dev,
 	if (wdev->current_bss)
 		memcpy(ap_addr->sa_data, wdev->current_bss->pub.bssid, ETH_ALEN);
 	else
-		eth_zero_addr(ap_addr->sa_data);
+		memset(ap_addr->sa_data, 0, ETH_ALEN);
 	wdev_unlock(wdev);
 
 	return 0;

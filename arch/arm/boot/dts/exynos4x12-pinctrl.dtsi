@@ -12,24 +12,8 @@
  * published by the Free Software Foundation.
 */
 
-#define PIN_PULL_NONE		0
-#define PIN_PULL_DOWN		1
-#define PIN_PULL_UP		3
-
-#define PIN_PDN_OUT0		0
-#define PIN_PDN_OUT1		1
-#define PIN_PDN_INPUT		2
-#define PIN_PDN_PREV		3
-
-#define PIN_SLP(_pin, _mode, _pull)				\
-	_pin {							\
-		samsung,pins = #_pin;				\
-		samsung,pin-con-pdn = <PIN_PDN_ ##_mode>;	\
-		samsung,pin-pud-pdn = <PIN_PULL_ ##_pull>;	\
-	}
-
 / {
-	pinctrl_0: pinctrl@11400000 {
+	pinctrl@11400000 {
 		gpa0: gpa0 {
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -441,7 +425,7 @@
 		};
 	};
 
-	pinctrl_1: pinctrl@11000000 {
+	pinctrl@11000000 {
 		gpk0: gpk0 {
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -887,7 +871,7 @@
 		};
 	};
 
-	pinctrl_2: pinctrl@03860000 {
+	pinctrl@03860000 {
 		gpz: gpz {
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -913,7 +897,7 @@
 		};
 	};
 
-	pinctrl_3: pinctrl@106E0000 {
+	pinctrl@106E0000 {
 		gpv0: gpv0 {
 			gpio-controller;
 			#gpio-cells = <2>;

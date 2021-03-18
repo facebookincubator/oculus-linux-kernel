@@ -109,7 +109,7 @@ Bugs:
 #include <linux/module.h>
 #include <linux/delay.h>
 
-#include "../comedi_pci.h"
+#include "../comedidev.h"
 
 #include <asm/byteorder.h>
 
@@ -1041,6 +1041,7 @@ static int pcimio_dio_change(struct comedi_device *dev,
 	return 0;
 }
 
+
 static void m_series_init_eeprom_buffer(struct comedi_device *dev)
 {
 	struct ni_private *devpriv = dev->private;
@@ -1085,25 +1086,26 @@ static void init_6143(struct comedi_device *dev)
 	struct ni_private *devpriv = dev->private;
 
 	/*  Disable interrupts */
-	ni_stc_writew(dev, 0, NISTC_INT_CTRL_REG);
+	ni_stc_writew(dev, 0, Interrupt_Control_Register);
 
 	/*  Initialise 6143 AI specific bits */
 
 	/* Set G0,G1 DMA mode to E series version */
-	ni_writeb(dev, 0x00, NI6143_MAGIC_REG);
+	ni_writeb(dev, 0x00, Magic_6143);
 	/* Set EOCMode, ADCMode and pipelinedelay */
-	ni_writeb(dev, 0x80, NI6143_PIPELINE_DELAY_REG);
+	ni_writeb(dev, 0x80, PipelineDelay_6143);
 	/* Set EOC Delay */
-	ni_writeb(dev, 0x00, NI6143_EOC_SET_REG);
+	ni_writeb(dev, 0x00, EOC_Set_6143);
 
 	/* Set the FIFO half full level */
-	ni_writel(dev, board->ai_fifo_depth / 2, NI6143_AI_FIFO_FLAG_REG);
+	ni_writel(dev, board->ai_fifo_depth / 2, AIFIFO_Flag_6143);
 
 	/*  Strobe Relay disable bit */
 	devpriv->ai_calib_source_enabled = 0;
-	ni_writew(dev, devpriv->ai_calib_source | NI6143_CALIB_CHAN_RELAY_OFF,
-		  NI6143_CALIB_CHAN_REG);
-	ni_writew(dev, devpriv->ai_calib_source, NI6143_CALIB_CHAN_REG);
+	ni_writew(dev, devpriv->ai_calib_source |
+		       Calibration_Channel_6143_RelayOff,
+		  Calibration_Channel_6143);
+	ni_writew(dev, devpriv->ai_calib_source, Calibration_Channel_6143);
 }
 
 static void pcimio_detach(struct comedi_device *dev)
@@ -1181,19 +1183,19 @@ static int pcimio_auto_attach(struct comedi_device *dev,
 		return ret;
 
 	devpriv->ai_mite_ring = mite_alloc_ring(devpriv->mite);
-	if (!devpriv->ai_mite_ring)
+	if (devpriv->ai_mite_ring == NULL)
 		return -ENOMEM;
 	devpriv->ao_mite_ring = mite_alloc_ring(devpriv->mite);
-	if (!devpriv->ao_mite_ring)
+	if (devpriv->ao_mite_ring == NULL)
 		return -ENOMEM;
 	devpriv->cdo_mite_ring = mite_alloc_ring(devpriv->mite);
-	if (!devpriv->cdo_mite_ring)
+	if (devpriv->cdo_mite_ring == NULL)
 		return -ENOMEM;
 	devpriv->gpct_mite_ring[0] = mite_alloc_ring(devpriv->mite);
-	if (!devpriv->gpct_mite_ring[0])
+	if (devpriv->gpct_mite_ring[0] == NULL)
 		return -ENOMEM;
 	devpriv->gpct_mite_ring[1] = mite_alloc_ring(devpriv->mite);
-	if (!devpriv->gpct_mite_ring[1])
+	if (devpriv->gpct_mite_ring[1] == NULL)
 		return -ENOMEM;
 
 	if (devpriv->is_m_series)

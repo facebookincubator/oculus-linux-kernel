@@ -437,8 +437,8 @@ void odm_CommonInfoSelfInit(struct odm_dm_struct *pDM_Odm)
 {
 	struct adapter *adapter = pDM_Odm->Adapter;
 
-	pDM_Odm->bCckHighPower = (bool)phy_query_bb_reg(adapter, 0x824, BIT(9));
-	pDM_Odm->RFPathRxEnable = (u8)phy_query_bb_reg(adapter, 0xc04, 0x0F);
+	pDM_Odm->bCckHighPower = (bool) phy_query_bb_reg(adapter, 0x824, BIT9);
+	pDM_Odm->RFPathRxEnable = (u8) phy_query_bb_reg(adapter, 0xc04, 0x0F);
 
 	ODM_InitDebugSetting(pDM_Odm);
 }
@@ -529,13 +529,18 @@ void odm_DIGInit(struct odm_dm_struct *pDM_Odm)
 	struct adapter *adapter = pDM_Odm->Adapter;
 	struct rtw_dig *pDM_DigTable = &pDM_Odm->DM_DigTable;
 
-	pDM_DigTable->CurIGValue = (u8)phy_query_bb_reg(adapter, ODM_REG_IGI_A_11N, ODM_BIT_IGI_11N);
+	pDM_DigTable->CurIGValue = (u8) phy_query_bb_reg(adapter, ODM_REG_IGI_A_11N, ODM_BIT_IGI_11N);
 	pDM_DigTable->RssiLowThresh	= DM_DIG_THRESH_LOW;
 	pDM_DigTable->RssiHighThresh	= DM_DIG_THRESH_HIGH;
 	pDM_DigTable->FALowThresh	= DM_false_ALARM_THRESH_LOW;
 	pDM_DigTable->FAHighThresh	= DM_false_ALARM_THRESH_HIGH;
-	pDM_DigTable->rx_gain_range_max = DM_DIG_MAX_NIC;
-	pDM_DigTable->rx_gain_range_min = DM_DIG_MIN_NIC;
+	if (pDM_Odm->BoardType == ODM_BOARD_HIGHPWR) {
+		pDM_DigTable->rx_gain_range_max = DM_DIG_MAX_NIC;
+		pDM_DigTable->rx_gain_range_min = DM_DIG_MIN_NIC;
+	} else {
+		pDM_DigTable->rx_gain_range_max = DM_DIG_MAX_NIC;
+		pDM_DigTable->rx_gain_range_min = DM_DIG_MIN_NIC;
+	}
 	pDM_DigTable->BackoffVal = DM_DIG_BACKOFF_DEFAULT;
 	pDM_DigTable->BackoffVal_range_max = DM_DIG_BACKOFF_MAX;
 	pDM_DigTable->BackoffVal_range_min = DM_DIG_BACKOFF_MIN;
@@ -615,7 +620,7 @@ void odm_DIG(struct odm_dm_struct *pDM_Odm)
 		} else if (pDM_Odm->SupportAbility & ODM_BB_ANT_DIV) {
 			/* 1 Lower Bound for 88E AntDiv */
 			if (pDM_Odm->AntDivType == CG_TRX_HW_ANTDIV) {
-				DIG_Dynamic_MIN = (u8)pDM_DigTable->AntDiv_RSSI_max;
+				DIG_Dynamic_MIN = (u8) pDM_DigTable->AntDiv_RSSI_max;
 				ODM_RT_TRACE(pDM_Odm, ODM_COMP_ANT_DIV, ODM_DBG_LOUD,
 					     ("odm_DIG(): pDM_DigTable->AntDiv_RSSI_max=%d\n",
 					     pDM_DigTable->AntDiv_RSSI_max));
@@ -736,18 +741,18 @@ void odm_FalseAlarmCounterStatistics(struct odm_dm_struct *pDM_Odm)
 		return;
 
 	/* hold ofdm counter */
-	phy_set_bb_reg(adapter, ODM_REG_OFDM_FA_HOLDC_11N, BIT(31), 1); /* hold page C counter */
-	phy_set_bb_reg(adapter, ODM_REG_OFDM_FA_RSTD_11N, BIT(31), 1); /* hold page D counter */
+	phy_set_bb_reg(adapter, ODM_REG_OFDM_FA_HOLDC_11N, BIT31, 1); /* hold page C counter */
+	phy_set_bb_reg(adapter, ODM_REG_OFDM_FA_RSTD_11N, BIT31, 1); /* hold page D counter */
 
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_OFDM_FA_TYPE1_11N, bMaskDWord);
 	FalseAlmCnt->Cnt_Fast_Fsync = (ret_value&0xffff);
-	FalseAlmCnt->Cnt_SB_Search_fail = (ret_value & 0xffff0000)>>16;
+	FalseAlmCnt->Cnt_SB_Search_fail = ((ret_value&0xffff0000)>>16);
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_OFDM_FA_TYPE2_11N, bMaskDWord);
 	FalseAlmCnt->Cnt_OFDM_CCA = (ret_value&0xffff);
-	FalseAlmCnt->Cnt_Parity_Fail = (ret_value & 0xffff0000)>>16;
+	FalseAlmCnt->Cnt_Parity_Fail = ((ret_value&0xffff0000)>>16);
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_OFDM_FA_TYPE3_11N, bMaskDWord);
 	FalseAlmCnt->Cnt_Rate_Illegal = (ret_value&0xffff);
-	FalseAlmCnt->Cnt_Crc8_fail = (ret_value & 0xffff0000)>>16;
+	FalseAlmCnt->Cnt_Crc8_fail = ((ret_value&0xffff0000)>>16);
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_OFDM_FA_TYPE4_11N, bMaskDWord);
 	FalseAlmCnt->Cnt_Mcs_fail = (ret_value&0xffff);
 
@@ -757,11 +762,11 @@ void odm_FalseAlarmCounterStatistics(struct odm_dm_struct *pDM_Odm)
 
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_SC_CNT_11N, bMaskDWord);
 	FalseAlmCnt->Cnt_BW_LSC = (ret_value&0xffff);
-	FalseAlmCnt->Cnt_BW_USC = (ret_value & 0xffff0000)>>16;
+	FalseAlmCnt->Cnt_BW_USC = ((ret_value&0xffff0000)>>16);
 
 	/* hold cck counter */
-	phy_set_bb_reg(adapter, ODM_REG_CCK_FA_RST_11N, BIT(12), 1);
-	phy_set_bb_reg(adapter, ODM_REG_CCK_FA_RST_11N, BIT(14), 1);
+	phy_set_bb_reg(adapter, ODM_REG_CCK_FA_RST_11N, BIT12, 1);
+	phy_set_bb_reg(adapter, ODM_REG_CCK_FA_RST_11N, BIT14, 1);
 
 	ret_value = phy_query_bb_reg(adapter, ODM_REG_CCK_FA_LSB_11N, bMaskByte0);
 	FalseAlmCnt->Cnt_Cck_fail = ret_value;
@@ -853,7 +858,7 @@ void ODM_RF_Saving(struct odm_dm_struct *pDM_Odm, u8 bForceInNormal)
 	}
 	if (pDM_PSTable->initialize == 0) {
 		pDM_PSTable->Reg874 = (phy_query_bb_reg(adapter, 0x874, bMaskDWord)&0x1CC000)>>14;
-		pDM_PSTable->RegC70 = (phy_query_bb_reg(adapter, 0xc70, bMaskDWord) & BIT(3))>>3;
+		pDM_PSTable->RegC70 = (phy_query_bb_reg(adapter, 0xc70, bMaskDWord)&BIT3)>>3;
 		pDM_PSTable->Reg85C = (phy_query_bb_reg(adapter, 0x85c, bMaskDWord)&0xFF000000)>>24;
 		pDM_PSTable->RegA74 = (phy_query_bb_reg(adapter, 0xa74, bMaskDWord)&0xF000)>>12;
 		pDM_PSTable->initialize = 1;
@@ -881,19 +886,19 @@ void ODM_RF_Saving(struct odm_dm_struct *pDM_Odm, u8 bForceInNormal)
 
 	if (pDM_PSTable->PreRFState != pDM_PSTable->CurRFState) {
 		if (pDM_PSTable->CurRFState == RF_Save) {
-			phy_set_bb_reg(adapter, 0x874, 0x1C0000, 0x2); /* Reg874[20:18]=3'b010 */
-			phy_set_bb_reg(adapter, 0xc70, BIT(3), 0); /* RegC70[3]=1'b0 */
+			phy_set_bb_reg(adapter, 0x874  , 0x1C0000, 0x2); /* Reg874[20:18]=3'b010 */
+			phy_set_bb_reg(adapter, 0xc70, BIT3, 0); /* RegC70[3]=1'b0 */
 			phy_set_bb_reg(adapter, 0x85c, 0xFF000000, 0x63); /* Reg85C[31:24]=0x63 */
 			phy_set_bb_reg(adapter, 0x874, 0xC000, 0x2); /* Reg874[15:14]=2'b10 */
 			phy_set_bb_reg(adapter, 0xa74, 0xF000, 0x3); /* RegA75[7:4]=0x3 */
-			phy_set_bb_reg(adapter, 0x818, BIT(28), 0x0); /* Reg818[28]=1'b0 */
-			phy_set_bb_reg(adapter, 0x818, BIT(28), 0x1); /* Reg818[28]=1'b1 */
+			phy_set_bb_reg(adapter, 0x818, BIT28, 0x0); /* Reg818[28]=1'b0 */
+			phy_set_bb_reg(adapter, 0x818, BIT28, 0x1); /* Reg818[28]=1'b1 */
 		} else {
-			phy_set_bb_reg(adapter, 0x874, 0x1CC000, pDM_PSTable->Reg874);
-			phy_set_bb_reg(adapter, 0xc70, BIT(3), pDM_PSTable->RegC70);
+			phy_set_bb_reg(adapter, 0x874  , 0x1CC000, pDM_PSTable->Reg874);
+			phy_set_bb_reg(adapter, 0xc70, BIT3, pDM_PSTable->RegC70);
 			phy_set_bb_reg(adapter, 0x85c, 0xFF000000, pDM_PSTable->Reg85C);
 			phy_set_bb_reg(adapter, 0xa74, 0xF000, pDM_PSTable->RegA74);
-			phy_set_bb_reg(adapter, 0x818, BIT(28), 0x0);
+			phy_set_bb_reg(adapter, 0x818, BIT28, 0x0);
 		}
 		pDM_PSTable->PreRFState = pDM_PSTable->CurRFState;
 	}
@@ -1043,7 +1048,7 @@ void odm_RefreshRateAdaptiveMaskCE(struct odm_dm_struct *pDM_Odm)
 	for (i = 0; i < ODM_ASSOCIATE_ENTRY_NUM; i++) {
 		struct sta_info *pstat = pDM_Odm->pODM_StaInfo[i];
 		if (IS_STA_VALID(pstat)) {
-			if (ODM_RAStateCheck(pDM_Odm, pstat->rssi_stat.UndecoratedSmoothedPWDB, false, &pstat->rssi_level)) {
+			if (ODM_RAStateCheck(pDM_Odm, pstat->rssi_stat.UndecoratedSmoothedPWDB, false , &pstat->rssi_level)) {
 				ODM_RT_TRACE(pDM_Odm, ODM_COMP_RA_MASK, ODM_DBG_LOUD,
 					     ("RSSI:%d, RSSI_LEVEL:%d\n",
 					     pstat->rssi_stat.UndecoratedSmoothedPWDB, pstat->rssi_level));
@@ -1133,9 +1138,16 @@ static void FindMinimumRSSI(struct adapter *pAdapter)
 {
 	struct hal_data_8188e	*pHalData = GET_HAL_DATA(pAdapter);
 	struct dm_priv	*pdmpriv = &pHalData->dmpriv;
+	struct mlme_priv	*pmlmepriv = &pAdapter->mlmepriv;
 
-	/* 1 1.Unconditionally set RSSI */
-	pdmpriv->MinUndecoratedPWDBForDM = pdmpriv->EntryMinUndecoratedSmoothedPWDB;
+	/* 1 1.Determine the minimum RSSI */
+	if ((check_fwstate(pmlmepriv, _FW_LINKED) == false) &&
+	    (pdmpriv->EntryMinUndecoratedSmoothedPWDB == 0))
+		pdmpriv->MinUndecoratedPWDBForDM = 0;
+	if (check_fwstate(pmlmepriv, _FW_LINKED) == true)	/*  Default port */
+		pdmpriv->MinUndecoratedPWDBForDM = pdmpriv->EntryMinUndecoratedSmoothedPWDB;
+	else /*  associated entry pwdb */
+		pdmpriv->MinUndecoratedPWDBForDM = pdmpriv->EntryMinUndecoratedSmoothedPWDB;
 }
 
 void odm_RSSIMonitorCheckCE(struct odm_dm_struct *pDM_Odm)
@@ -1170,10 +1182,13 @@ void odm_RSSIMonitorCheckCE(struct odm_dm_struct *pDM_Odm)
 	}
 
 	for (i = 0; i < sta_cnt; i++) {
-		if (PWDB_rssi[i] != 0) {
-			ODM_RA_SetRSSI_8188E(&pHalData->odmpriv,
-					     PWDB_rssi[i] & 0xFF,
-					     (PWDB_rssi[i] >> 16) & 0xFF);
+		if (PWDB_rssi[i] != (0)) {
+			if (pHalData->fw_ractrl) {
+				/*  Report every sta's RSSI to FW */
+			} else {
+				ODM_RA_SetRSSI_8188E(
+				&(pHalData->odmpriv), (PWDB_rssi[i]&0xFF), (u8)((PWDB_rssi[i]>>16) & 0xFF));
+			}
 		}
 	}
 
@@ -1188,8 +1203,7 @@ void odm_RSSIMonitorCheckCE(struct odm_dm_struct *pDM_Odm)
 		pdmpriv->EntryMinUndecoratedSmoothedPWDB = 0;
 
 	FindMinimumRSSI(Adapter);
-	ODM_CmnInfoUpdate(&pHalData->odmpriv, ODM_CMNINFO_RSSI_MIN,
-			  pdmpriv->MinUndecoratedPWDBForDM);
+	ODM_CmnInfoUpdate(&pHalData->odmpriv , ODM_CMNINFO_RSSI_MIN, pdmpriv->MinUndecoratedPWDBForDM);
 }
 
 /* 3============================================================ */
@@ -1229,7 +1243,7 @@ void odm_TXPowerTrackingCheckCE(struct odm_dm_struct *pDM_Odm)
 		return;
 
 	if (!pDM_Odm->RFCalibrateInfo.TM_Trigger) {		/* at least delay 1 sec */
-		phy_set_rf_reg(Adapter, RF_PATH_A, RF_T_METER_88E, BIT(17) | BIT(16), 0x03);
+		phy_set_rf_reg(Adapter, RF_PATH_A, RF_T_METER_88E, BIT17 | BIT16, 0x03);
 
 		pDM_Odm->RFCalibrateInfo.TM_Trigger = 1;
 		return;

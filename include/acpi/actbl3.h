@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,8 +51,7 @@
  * These tables are not consumed directly by the ACPICA subsystem, but are
  * included here to support device drivers and the AML disassembler.
  *
- * In general, the tables in this file are fully defined within the ACPI
- * specification.
+ * The tables in this file are fully defined within the ACPI specification.
  *
  ******************************************************************************/
 
@@ -69,9 +68,7 @@
 #define ACPI_SIG_PCCT           "PCCT"	/* Platform Communications Channel Table */
 #define ACPI_SIG_PMTT           "PMTT"	/* Platform Memory Topology Table */
 #define ACPI_SIG_RASF           "RASF"	/* RAS Feature table */
-#define ACPI_SIG_STAO           "STAO"	/* Status Override table */
-#define ACPI_SIG_WPBT           "WPBT"	/* Windows Platform Binary Table */
-#define ACPI_SIG_XENV           "XENV"	/* Xen Environment table */
+#define ACPI_SIG_TPM2           "TPM2"	/* Trusted Platform Module 2.0 H/W interface table */
 
 #define ACPI_SIG_S3PT           "S3PT"	/* S3 Performance (sub)Table */
 #define ACPI_SIG_PCCS           "PCC"	/* PCC Shared Memory Region */
@@ -80,6 +77,7 @@
 
 #define ACPI_SIG_MATR           "MATR"	/* Memory Address Translation Table */
 #define ACPI_SIG_MSDM           "MSDM"	/* Microsoft Data Management Table */
+#define ACPI_SIG_WPBT           "WPBT"	/* Windows Platform Binary Table */
 
 /*
  * All tables must be byte-packed to match the ACPI specification, since
@@ -119,8 +117,6 @@ struct acpi_table_bgrt {
 /*******************************************************************************
  *
  * DRTM - Dynamic Root of Trust for Measurement table
- * Conforms to "TCG D-RTM Architecture" June 17 2013, Version 1.0.0
- * Table version 1
  *
  ******************************************************************************/
 
@@ -137,40 +133,22 @@ struct acpi_table_drtm {
 	u32 flags;
 };
 
-/* Flag Definitions for above */
+/* 1) Validated Tables List */
 
-#define ACPI_DRTM_ACCESS_ALLOWED            (1)
-#define ACPI_DRTM_ENABLE_GAP_CODE           (1<<1)
-#define ACPI_DRTM_INCOMPLETE_MEASUREMENTS   (1<<2)
-#define ACPI_DRTM_AUTHORITY_ORDER           (1<<3)
-
-/* 1) Validated Tables List (64-bit addresses) */
-
-struct acpi_drtm_vtable_list {
-	u32 validated_table_count;
-	u64 validated_tables[1];
+struct acpi_drtm_vtl_list {
+	u32 validated_table_list_count;
 };
 
-/* 2) Resources List (of Resource Descriptors) */
-
-/* Resource Descriptor */
-
-struct acpi_drtm_resource {
-	u8 size[7];
-	u8 type;
-	u64 address;
-};
+/* 2) Resources List */
 
 struct acpi_drtm_resource_list {
-	u32 resource_count;
-	struct acpi_drtm_resource resources[1];
+	u32 resource_list_count;
 };
 
 /* 3) Platform-specific Identifiers List */
 
-struct acpi_drtm_dps_id {
-	u32 dps_id_length;
-	u8 dps_id[16];
+struct acpi_drtm_id_list {
+	u32 id_list_count;
 };
 
 /*******************************************************************************
@@ -707,52 +685,32 @@ enum acpi_rasf_status {
 
 /*******************************************************************************
  *
- * STAO - Status Override Table (_STA override) - ACPI 6.0
- *        Version 1
+ * TPM2 - Trusted Platform Module (TPM) 2.0 Hardware Interface Table
+ *        Version 3
  *
- * Conforms to "ACPI Specification for Status Override Table"
- * 6 January 2015
+ * Conforms to "TPM 2.0 Hardware Interface Table (TPM2)" 29 November 2011
  *
  ******************************************************************************/
 
-struct acpi_table_stao {
+struct acpi_table_tpm2 {
 	struct acpi_table_header header;	/* Common ACPI table header */
-	u8 ignore_uart;
+	u32 flags;
+	u64 control_address;
+	u32 start_method;
 };
 
-/*******************************************************************************
- *
- * WPBT - Windows Platform Environment Table (ACPI 6.0)
- *        Version 1
- *
- * Conforms to "Windows Platform Binary Table (WPBT)" 29 November 2011
- *
- ******************************************************************************/
+/* Control area structure (not part of table, pointed to by control_address) */
 
-struct acpi_table_wpbt {
-	struct acpi_table_header header;	/* Common ACPI table header */
-	u32 handoff_size;
-	u64 handoff_address;
-	u8 layout;
-	u8 type;
-	u16 arguments_length;
-};
-
-/*******************************************************************************
- *
- * XENV - Xen Environment Table (ACPI 6.0)
- *        Version 1
- *
- * Conforms to "ACPI Specification for Xen Environment Table" 4 January 2015
- *
- ******************************************************************************/
-
-struct acpi_table_xenv {
-	struct acpi_table_header header;	/* Common ACPI table header */
-	u64 grant_table_address;
-	u64 grant_table_size;
-	u32 event_interrupt;
-	u8 event_flags;
+struct acpi_tpm2_control {
+	u32 reserved;
+	u32 error;
+	u32 cancel;
+	u32 start;
+	u64 interrupt_control;
+	u32 command_size;
+	u64 command_address;
+	u32 response_size;
+	u64 response_address;
 };
 
 /* Reset to default packing */

@@ -91,11 +91,6 @@ static const char version[] =
 
 #include "smc91x.h"
 
-#if defined(CONFIG_ASSABET_NEPONSET)
-#include <mach/assabet.h>
-#include <mach/neponset.h>
-#endif
-
 #ifndef SMC_NOWAIT
 # define SMC_NOWAIT		0
 #endif
@@ -2018,18 +2013,10 @@ static int smc_probe(struct net_device *dev, void __iomem *ioaddr,
 	lp->cfg.flags |= SMC91X_USE_DMA;
 #  endif
 	if (lp->cfg.flags & SMC91X_USE_DMA) {
-		dma_cap_mask_t mask;
-		struct pxad_param param;
-
-		dma_cap_zero(mask);
-		dma_cap_set(DMA_SLAVE, mask);
-		param.prio = PXAD_PRIO_LOWEST;
-		param.drcmr = -1UL;
-
-		lp->dma_chan =
-			dma_request_slave_channel_compat(mask, pxad_filter_fn,
-							 &param, &dev->dev,
-							 "data");
+		int dma = pxa_request_dma(dev->name, DMA_PRIO_LOW,
+					  smc_pxa_dma_irq, NULL);
+		if (dma >= 0)
+			dev->dma = dma;
 	}
 #endif
 
@@ -2040,8 +2027,8 @@ static int smc_probe(struct net_device *dev, void __iomem *ioaddr,
 			    version_string, revision_register & 0x0f,
 			    lp->base, dev->irq);
 
-		if (lp->dma_chan)
-			pr_cont(" DMA %p", lp->dma_chan);
+		if (dev->dma != (unsigned char)-1)
+			pr_cont(" DMA %d", dev->dma);
 
 		pr_cont("%s%s\n",
 			lp->cfg.flags & SMC91X_NOWAIT ? " [nowait]" : "",
@@ -2066,8 +2053,8 @@ static int smc_probe(struct net_device *dev, void __iomem *ioaddr,
 
 err_out:
 #ifdef CONFIG_ARCH_PXA
-	if (retval && lp->dma_chan)
-		dma_release_channel(lp->dma_chan);
+	if (retval && dev->dma != (unsigned char)-1)
+		pxa_free_dma(dev->dma);
 #endif
 	return retval;
 }
@@ -2212,17 +2199,27 @@ static int try_toggle_control_gpio(struct device *dev,
 				   int value, unsigned int nsdelay)
 {
 	struct gpio_desc *gpio = *desc;
-	enum gpiod_flags flags = value ? GPIOD_OUT_LOW : GPIOD_OUT_HIGH;
+	int res;
 
-	gpio = devm_gpiod_get_index_optional(dev, name, index, flags);
-	if (IS_ERR(gpio))
+	gpio = devm_gpiod_get_index(dev, name, index);
+	if (IS_ERR(gpio)) {
+		if (PTR_ERR(gpio) == -ENOENT) {
+			*desc = NULL;
+			return 0;
+		}
+
 		return PTR_ERR(gpio);
-
-	if (gpio) {
-		if (nsdelay)
-			usleep_range(nsdelay, 2 * nsdelay);
-		gpiod_set_value_cansleep(gpio, value);
 	}
+	res = gpiod_direction_output(gpio, !value);
+	if (res) {
+		dev_err(dev, "unable to toggle gpio %s: %i\n", name, res);
+		devm_gpiod_put(dev, gpio);
+		gpio = NULL;
+		return res;
+	}
+	if (nsdelay)
+		usleep_range(nsdelay, 2 * nsdelay);
+	gpiod_set_value_cansleep(gpio, value);
 	*desc = gpio;
 
 	return 0;
@@ -2358,9 +2355,8 @@ static int smc_drv_probe(struct platform_device *pdev)
 	ret = smc_request_attrib(pdev, ndev);
 	if (ret)
 		goto out_release_io;
-#if defined(CONFIG_ASSABET_NEPONSET)
-	if (machine_is_assabet() && machine_has_neponset())
-		neponset_ncr_set(NCR_ENET_OSC_EN);
+#if defined(CONFIG_SA1100_ASSABET)
+	neponset_ncr_set(NCR_ENET_OSC_EN);
 #endif
 	platform_set_drvdata(pdev, ndev);
 	ret = smc_enable_device(pdev);
@@ -2378,7 +2374,6 @@ static int smc_drv_probe(struct platform_device *pdev)
 		struct smc_local *lp = netdev_priv(ndev);
 		lp->device = &pdev->dev;
 		lp->physaddr = res->start;
-
 	}
 #endif
 
@@ -2415,8 +2410,8 @@ static int smc_drv_remove(struct platform_device *pdev)
 	free_irq(ndev->irq, ndev);
 
 #ifdef CONFIG_ARCH_PXA
-	if (lp->dma_chan)
-		dma_release_channel(lp->dma_chan);
+	if (ndev->dma != (unsigned char)-1)
+		pxa_free_dma(ndev->dma);
 #endif
 	iounmap(lp->base);
 
@@ -2477,6 +2472,7 @@ static struct platform_driver smc_driver = {
 	.remove		= smc_drv_remove,
 	.driver		= {
 		.name	= CARDNAME,
+		.owner	= THIS_MODULE,
 		.pm	= &smc_drv_pm_ops,
 		.of_match_table = of_match_ptr(smc91x_match),
 	},

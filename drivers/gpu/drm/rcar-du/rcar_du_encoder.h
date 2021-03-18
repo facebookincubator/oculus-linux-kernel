@@ -14,32 +14,21 @@
 #ifndef __RCAR_DU_ENCODER_H__
 #define __RCAR_DU_ENCODER_H__
 
+#include <linux/platform_data/rcar-du.h>
+
 #include <drm/drm_crtc.h>
-#include <drm/drm_encoder_slave.h>
 
 struct rcar_du_device;
-struct rcar_du_hdmienc;
 struct rcar_du_lvdsenc;
 
-enum rcar_du_encoder_type {
-	RCAR_DU_ENCODER_UNUSED = 0,
-	RCAR_DU_ENCODER_NONE,
-	RCAR_DU_ENCODER_VGA,
-	RCAR_DU_ENCODER_LVDS,
-	RCAR_DU_ENCODER_HDMI,
-};
-
 struct rcar_du_encoder {
-	struct drm_encoder_slave slave;
+	struct drm_encoder encoder;
 	enum rcar_du_output output;
-	struct rcar_du_hdmienc *hdmi;
 	struct rcar_du_lvdsenc *lvds;
 };
 
 #define to_rcar_encoder(e) \
-	container_of(e, struct rcar_du_encoder, slave.base)
-
-#define rcar_encoder_to_drm_encoder(e)	(&(e)->slave.base)
+	container_of(e, struct rcar_du_encoder, encoder)
 
 struct rcar_du_connector {
 	struct drm_connector connector;
@@ -55,7 +44,7 @@ rcar_du_connector_best_encoder(struct drm_connector *connector);
 int rcar_du_encoder_init(struct rcar_du_device *rcdu,
 			 enum rcar_du_encoder_type type,
 			 enum rcar_du_output output,
-			 struct device_node *enc_node,
-			 struct device_node *con_node);
+			 const struct rcar_du_encoder_data *data,
+			 struct device_node *np);
 
 #endif /* __RCAR_DU_ENCODER_H__ */

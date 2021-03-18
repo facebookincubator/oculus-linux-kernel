@@ -149,10 +149,6 @@ static void __init e820_print_type(u32 type)
 	case E820_UNUSABLE:
 		printk(KERN_CONT "unusable");
 		break;
-	case E820_PMEM:
-	case E820_PRAM:
-		printk(KERN_CONT "persistent (type %u)", type);
-		break;
 	default:
 		printk(KERN_CONT "type %u", type);
 		break;
@@ -188,9 +184,9 @@ void __init e820_print_map(char *who)
  * overwritten in the same location, starting at biosmap.
  *
  * The integer pointed to by pnr_map must be valid on entry (the
- * current number of valid entries located at biosmap). If the
- * sanitizing succeeds the *pnr_map will be updated with the new
- * number of valid entries (something no more than max_nr_map).
+ * current number of valid entries located at biosmap) and will
+ * be updated on return, with the new number of valid entries
+ * (something no more than max_nr_map.)
  *
  * The return value from sanitize_e820_map() is zero if it
  * successfully 'sanitized' the map entries passed in, and is -1
@@ -347,7 +343,7 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 		 * continue building up new bios map based on this
 		 * information
 		 */
-		if (current_type != last_type || current_type == E820_PRAM) {
+		if (current_type != last_type)	{
 			if (last_type != 0)	 {
 				new_bios[new_bios_entry].size =
 					change_point[chgidx]->addr - last_addr;
@@ -565,15 +561,23 @@ u64 __init e820_remove_range(u64 start, u64 size, unsigned old_type,
 
 void __init update_e820(void)
 {
-	if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map))
+	u32 nr_map;
+
+	nr_map = e820.nr_map;
+	if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &nr_map))
 		return;
+	e820.nr_map = nr_map;
 	printk(KERN_INFO "e820: modified physical RAM map:\n");
 	e820_print_map("modified");
 }
 static void __init update_e820_saved(void)
 {
-	sanitize_e820_map(e820_saved.map, ARRAY_SIZE(e820_saved.map),
-				&e820_saved.nr_map);
+	u32 nr_map;
+
+	nr_map = e820_saved.nr_map;
+	if (sanitize_e820_map(e820_saved.map, ARRAY_SIZE(e820_saved.map), &nr_map))
+		return;
+	e820_saved.nr_map = nr_map;
 }
 #define MAX_GAP_END 0x100000000ull
 /*
@@ -665,7 +669,7 @@ void __init parse_e820_ext(u64 phys_addr, u32 data_len)
 	extmap = (struct e820entry *)(sdata->data);
 	__append_e820_map(extmap, entries);
 	sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map);
-	early_memunmap(sdata, data_len);
+	early_iounmap(sdata, data_len);
 	printk(KERN_INFO "e820: extended physical RAM map:\n");
 	e820_print_map("extended");
 }
@@ -692,7 +696,6 @@ void __init e820_mark_nosave_regions(unsigned long limit_pfn)
 			register_nosave_region(pfn, PFN_UP(ei->addr));
 
 		pfn = PFN_DOWN(ei->addr + ei->size);
-
 		if (ei->type != E820_RAM && ei->type != E820_RESERVED_KERN)
 			register_nosave_region(PFN_UP(ei->addr), pfn);
 
@@ -753,7 +756,7 @@ u64 __init early_reserve_e820(u64 size, u64 align)
 /*
  * Find the highest page frame number we have available
  */
-static unsigned long __init e820_end_pfn(unsigned long limit_pfn)
+static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 {
 	int i;
 	unsigned long last_pfn = 0;
@@ -764,11 +767,7 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn)
 		unsigned long start_pfn;
 		unsigned long end_pfn;
 
-		/*
-		 * Persistent memory is accounted as ram for purposes of
-		 * establishing max_pfn and mem_map.
-		 */
-		if (ei->type != E820_RAM && ei->type != E820_PRAM)
+		if (ei->type != type)
 			continue;
 
 		start_pfn = ei->addr >> PAGE_SHIFT;
@@ -793,12 +792,12 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn)
 }
 unsigned long __init e820_end_of_ram_pfn(void)
 {
-	return e820_end_pfn(MAX_ARCH_PFN);
+	return e820_end_pfn(MAX_ARCH_PFN, E820_RAM);
 }
 
 unsigned long __init e820_end_of_low_ram_pfn(void)
 {
-	return e820_end_pfn(1UL << (32-PAGE_SHIFT));
+	return e820_end_pfn(1UL<<(32 - PAGE_SHIFT), E820_RAM);
 }
 
 static void early_panic(char *msg)
@@ -875,9 +874,6 @@ static int __init parse_memmap_one(char *p)
 	} else if (*p == '$') {
 		start_at = memparse(p+1, &p);
 		e820_add_region(start_at, mem_size, E820_RESERVED);
-	} else if (*p == '!') {
-		start_at = memparse(p+1, &p);
-		e820_add_region(start_at, mem_size, E820_PRAM);
 	} else
 		e820_remove_range(mem_size, ULLONG_MAX - mem_size, E820_RAM, 1);
 
@@ -902,16 +898,18 @@ early_param("memmap", parse_memmap_opt);
 void __init finish_e820_parsing(void)
 {
 	if (userdef) {
-		if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map),
-					&e820.nr_map) < 0)
+		u32 nr = e820.nr_map;
+
+		if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &nr) < 0)
 			early_panic("Invalid user supplied memory map");
+		e820.nr_map = nr;
 
 		printk(KERN_INFO "e820: user-defined physical RAM map:\n");
 		e820_print_map("user");
 	}
 }
 
-static const char *e820_type_to_string(int e820_type)
+static inline const char *e820_type_to_string(int e820_type)
 {
 	switch (e820_type) {
 	case E820_RESERVED_KERN:
@@ -919,29 +917,7 @@ static const char *e820_type_to_string(int e820_type)
 	case E820_ACPI:	return "ACPI Tables";
 	case E820_NVS:	return "ACPI Non-volatile Storage";
 	case E820_UNUSABLE:	return "Unusable memory";
-	case E820_PRAM: return "Persistent Memory (legacy)";
-	case E820_PMEM: return "Persistent Memory";
 	default:	return "reserved";
-	}
-}
-
-static bool do_mark_busy(u32 type, struct resource *res)
-{
-	/* this is the legacy bios/dos rom-shadow + mmio region */
-	if (res->start < (1ULL<<20))
-		return true;
-
-	/*
-	 * Treat persistent memory like device memory, i.e. reserve it
-	 * for exclusive use of a driver
-	 */
-	switch (type) {
-	case E820_RESERVED:
-	case E820_PRAM:
-	case E820_PMEM:
-		return false;
-	default:
-		return true;
 	}
 }
 
@@ -974,7 +950,7 @@ void __init e820_reserve_resources(void)
 		 * pci device BAR resource and insert them later in
 		 * pcibios_resource_survey()
 		 */
-		if (do_mark_busy(e820.map[i].type, res)) {
+		if (e820.map[i].type != E820_RESERVED || res->start < (1ULL<<20)) {
 			res->flags |= IORESOURCE_BUSY;
 			insert_resource(&iomem_resource, res);
 		}
@@ -1138,13 +1114,12 @@ void __init memblock_find_dma_reserve(void)
 	 * at first, and assume boot_mem will not take below MAX_DMA_PFN
 	 */
 	for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, NULL) {
-		start_pfn = min(start_pfn, MAX_DMA_PFN);
-		end_pfn = min(end_pfn, MAX_DMA_PFN);
+		start_pfn = min_t(unsigned long, start_pfn, MAX_DMA_PFN);
+		end_pfn = min_t(unsigned long, end_pfn, MAX_DMA_PFN);
 		nr_pages += end_pfn - start_pfn;
 	}
 
-	for_each_free_mem_range(u, NUMA_NO_NODE, MEMBLOCK_NONE, &start, &end,
-				NULL) {
+	for_each_free_mem_range(u, NUMA_NO_NODE, &start, &end, NULL) {
 		start_pfn = min_t(unsigned long, PFN_UP(start), MAX_DMA_PFN);
 		end_pfn = min_t(unsigned long, PFN_DOWN(end), MAX_DMA_PFN);
 		if (start_pfn < end_pfn)

@@ -21,16 +21,9 @@ static DEFINE_PER_CPU_ALIGNED(spinlock_t, cpc_core_lock);
 
 static DEFINE_PER_CPU_ALIGNED(unsigned long, cpc_core_lock_flags);
 
-/**
- * mips_cpc_phys_base - retrieve the physical base address of the CPC
- *
- * This function returns the physical base address of the Cluster Power
- * Controller memory mapped registers, or 0 if no Cluster Power Controller
- * is present.
- */
-static phys_addr_t mips_cpc_phys_base(void)
+phys_t __weak mips_cpc_phys_base(void)
 {
-	unsigned long cpc_base;
+	u32 cpc_base;
 
 	if (!mips_cm_present())
 		return 0;
@@ -51,7 +44,7 @@ static phys_addr_t mips_cpc_phys_base(void)
 
 int mips_cpc_probe(void)
 {
-	phys_addr_t addr;
+	phys_t addr;
 	unsigned cpu;
 
 	for_each_possible_cpu(cpu)
@@ -76,12 +69,6 @@ void mips_cpc_lock_other(unsigned int core)
 	spin_lock_irqsave(&per_cpu(cpc_core_lock, curr_core),
 			  per_cpu(cpc_core_lock_flags, curr_core));
 	write_cpc_cl_other(core << CPC_Cx_OTHER_CORENUM_SHF);
-
-	/*
-	 * Ensure the core-other region reflects the appropriate core &
-	 * VP before any accesses to it occur.
-	 */
-	mb();
 }
 
 void mips_cpc_unlock_other(void)

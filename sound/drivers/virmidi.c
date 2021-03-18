@@ -99,33 +99,30 @@ static int snd_virmidi_probe(struct platform_device *devptr)
 
 	if (midi_devs[dev] > MAX_MIDI_DEVICES) {
 		snd_printk(KERN_WARNING
-			   "too much midi devices for virmidi %d: force to use %d\n",
-			   dev, MAX_MIDI_DEVICES);
+			   "too much midi devices for virmidi %d: "
+			   "force to use %d\n", dev, MAX_MIDI_DEVICES);
 		midi_devs[dev] = MAX_MIDI_DEVICES;
 	}
 	for (idx = 0; idx < midi_devs[dev]; idx++) {
 		struct snd_rawmidi *rmidi;
 		struct snd_virmidi_dev *rdev;
-
-		err = snd_virmidi_new(card, idx, &rmidi);
-		if (err < 0)
+		if ((err = snd_virmidi_new(card, idx, &rmidi)) < 0)
 			goto __nodev;
 		rdev = rmidi->private_data;
 		vmidi->midi[idx] = rmidi;
 		strcpy(rmidi->name, "Virtual Raw MIDI");
 		rdev->seq_mode = SNDRV_VIRMIDI_SEQ_DISPATCH;
 	}
-
+	
 	strcpy(card->driver, "VirMIDI");
 	strcpy(card->shortname, "VirMIDI");
 	sprintf(card->longname, "Virtual MIDI Card %i", dev + 1);
 
-	err = snd_card_register(card);
-	if (!err) {
+	if ((err = snd_card_register(card)) == 0) {
 		platform_set_drvdata(devptr, card);
 		return 0;
 	}
-__nodev:
+      __nodev:
 	snd_card_free(card);
 	return err;
 }
@@ -143,6 +140,7 @@ static struct platform_driver snd_virmidi_driver = {
 	.remove		= snd_virmidi_remove,
 	.driver		= {
 		.name	= SND_VIRMIDI_DRIVER,
+		.owner	= THIS_MODULE,
 	},
 };
 
@@ -159,15 +157,13 @@ static int __init alsa_card_virmidi_init(void)
 {
 	int i, cards, err;
 
-	err = platform_driver_register(&snd_virmidi_driver);
-	if (err < 0)
+	if ((err = platform_driver_register(&snd_virmidi_driver)) < 0)
 		return err;
 
 	cards = 0;
 	for (i = 0; i < SNDRV_CARDS; i++) {
 		struct platform_device *device;
-
-		if (!enable[i])
+		if (! enable[i])
 			continue;
 		device = platform_device_register_simple(SND_VIRMIDI_DRIVER,
 							 i, NULL, 0);

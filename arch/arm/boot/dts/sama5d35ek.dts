@@ -44,12 +44,14 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
 
 		pb_user1 {
 			label = "pb_user1";
 			gpios = <&pioE 27 GPIO_ACTIVE_HIGH>;
 			linux,code = <0x100>;
-			wakeup-source;
+			gpio-key,wakeup;
 		};
 	};
 };

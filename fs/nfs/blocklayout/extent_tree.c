@@ -462,12 +462,6 @@ out:
 	return err;
 }
 
-static size_t ext_tree_layoutupdate_size(size_t count)
-{
-	return sizeof(__be32) /* number of entries */ +
-		PNFS_BLOCK_EXTENT_SIZE * count;
-}
-
 static void ext_tree_free_commitdata(struct nfs4_layoutcommit_args *arg,
 		size_t buffer_size)
 {
@@ -495,7 +489,7 @@ static int ext_tree_encode_commit(struct pnfs_block_layout *bl, __be32 *p,
 			continue;
 
 		(*count)++;
-		if (ext_tree_layoutupdate_size(*count) > buffer_size) {
+		if (*count * BL_EXTENT_SIZE > buffer_size) {
 			/* keep counting.. */
 			ret = -ENOSPC;
 			continue;
@@ -536,7 +530,7 @@ retry:
 	if (unlikely(ret)) {
 		ext_tree_free_commitdata(arg, buffer_size);
 
-		buffer_size = ext_tree_layoutupdate_size(count);
+		buffer_size = sizeof(__be32) + BL_EXTENT_SIZE * count;
 		count = 0;
 
 		arg->layoutupdate_pages =
@@ -555,14 +549,17 @@ retry:
 	}
 
 	*start_p = cpu_to_be32(count);
-	arg->layoutupdate_len = ext_tree_layoutupdate_size(count);
+	arg->layoutupdate_len = sizeof(__be32) + BL_EXTENT_SIZE * count;
 
 	if (unlikely(arg->layoutupdate_pages != &arg->layoutupdate_page)) {
-		void *p = start_p, *end = p + arg->layoutupdate_len;
+		__be32 *p = start_p;
 		int i = 0;
 
-		for ( ; p < end; p += PAGE_SIZE)
+		for (p = start_p;
+		     p < start_p + arg->layoutupdate_len;
+		     p += PAGE_SIZE) {
 			arg->layoutupdate_pages[i++] = vmalloc_to_page(p);
+		}
 	}
 
 	dprintk("%s found %zu ranges\n", __func__, count);

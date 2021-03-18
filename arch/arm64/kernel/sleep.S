@@ -128,7 +128,6 @@ ENDPROC(__cpu_suspend_enter)
 /*
  * x0 must contain the sctlr value retrieved from restored context
  */
-	.pushsection	".idmap.text", "ax"
 ENTRY(cpu_resume_mmu)
 	ldr	x3, =cpu_resume_after_mmu
 	msr	sctlr_el1, x0		// restore sctlr_el1
@@ -143,12 +142,7 @@ ENTRY(cpu_resume_mmu)
 	isb
 	br	x3			// global jump to virtual address
 ENDPROC(cpu_resume_mmu)
-	.popsection
 cpu_resume_after_mmu:
-#ifdef CONFIG_KASAN
-	mov	x0, sp
-	bl	kasan_unpoison_remaining_stack
-#endif
 	mov	x0, #0			// return zero on success
 	ldp	x19, x20, [sp, #16]
 	ldp	x21, x22, [sp, #32]
@@ -170,12 +164,15 @@ ENTRY(cpu_resume)
 	ldp	w5, w6, [x8, #(MPIDR_HASH_SHIFTS + 8)]
 	compute_mpidr_hash x7, x3, x4, x5, x6, x1, x2
         /* x7 contains hash index, let's use it to grab context pointer */
-	ldr_l	x0, sleep_save_sp + SLEEP_SAVE_SP_PHYS
+	adrp	x0, sleep_save_sp
+	add	x0, x0, #:lo12:sleep_save_sp
+	ldr	x0, [x0, #SLEEP_SAVE_SP_PHYS]
 	ldr	x0, [x0, x7, lsl #3]
 	/* load sp from context */
 	ldr	x2, [x0, #CPU_CTX_SP]
+	adrp	x1, sleep_idmap_phys
 	/* load physical address of identity map page table in x1 */
-	adrp	x1, idmap_pg_dir
+	ldr	x1, [x1, #:lo12:sleep_idmap_phys]
 	mov	sp, x2
 	/* save thread_info */
 	and	x2, x2, #~(THREAD_SIZE - 1)

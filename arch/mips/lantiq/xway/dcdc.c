@@ -46,6 +46,7 @@ static struct platform_driver dcdc_driver = {
 	.probe = dcdc_probe,
 	.driver = {
 		.name = "dcdc-xrx200",
+		.owner = THIS_MODULE,
 		.of_match_table = dcdc_match,
 	},
 };

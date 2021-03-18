@@ -215,6 +215,7 @@ static struct platform_driver meson_wdt_driver = {
 	.remove		= meson_wdt_remove,
 	.shutdown	= meson_wdt_shutdown,
 	.driver		= {
+		.owner		= THIS_MODULE,
 		.name		= DRV_NAME,
 		.of_match_table	= meson_wdt_dt_ids,
 	},

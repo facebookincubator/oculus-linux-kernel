@@ -766,6 +766,7 @@ static void lm3533_led_shutdown(struct platform_device *pdev)
 static struct platform_driver lm3533_led_driver = {
 	.driver = {
 		.name = "lm3533-leds",
+		.owner = THIS_MODULE,
 	},
 	.probe		= lm3533_led_probe,
 	.remove		= lm3533_led_remove,

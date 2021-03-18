@@ -34,7 +34,7 @@ static int bcm47xxnflash_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	b47n->nand_chip.priv = b47n;
-	b47n->mtd.dev.parent = &pdev->dev;
+	b47n->mtd.owner = THIS_MODULE;
 	b47n->mtd.priv = &b47n->nand_chip; /* Required */
 	b47n->cc = container_of(nflash, struct bcma_drv_cc, nflash);
 
@@ -73,6 +73,7 @@ static struct platform_driver bcm47xxnflash_driver = {
 	.remove = bcm47xxnflash_remove,
 	.driver = {
 		.name = "bcma_nflash",
+		.owner = THIS_MODULE,
 	},
 };
 

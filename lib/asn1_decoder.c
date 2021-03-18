@@ -24,20 +24,15 @@ static const unsigned char asn1_op_lengths[ASN1_OP__NR] = {
 	[ASN1_OP_MATCH_JUMP]			= 1 + 1 + 1,
 	[ASN1_OP_MATCH_JUMP_OR_SKIP]		= 1 + 1 + 1,
 	[ASN1_OP_MATCH_ANY]			= 1,
-	[ASN1_OP_MATCH_ANY_OR_SKIP]		= 1,
 	[ASN1_OP_MATCH_ANY_ACT]			= 1         + 1,
-	[ASN1_OP_MATCH_ANY_ACT_OR_SKIP]		= 1         + 1,
 	[ASN1_OP_COND_MATCH_OR_SKIP]		= 1 + 1,
 	[ASN1_OP_COND_MATCH_ACT_OR_SKIP]	= 1 + 1     + 1,
 	[ASN1_OP_COND_MATCH_JUMP_OR_SKIP]	= 1 + 1 + 1,
 	[ASN1_OP_COND_MATCH_ANY]		= 1,
-	[ASN1_OP_COND_MATCH_ANY_OR_SKIP]	= 1,
 	[ASN1_OP_COND_MATCH_ANY_ACT]		= 1         + 1,
-	[ASN1_OP_COND_MATCH_ANY_ACT_OR_SKIP]	= 1         + 1,
 	[ASN1_OP_COND_FAIL]			= 1,
 	[ASN1_OP_COMPLETE]			= 1,
 	[ASN1_OP_ACT]				= 1         + 1,
-	[ASN1_OP_MAYBE_ACT]			= 1         + 1,
 	[ASN1_OP_RETURN]			= 1,
 	[ASN1_OP_END_SEQ]			= 1,
 	[ASN1_OP_END_SEQ_OF]			= 1     + 1,
@@ -184,7 +179,6 @@ int asn1_ber_decoder(const struct asn1_decoder *decoder,
 	unsigned char flags = 0;
 #define FLAG_INDEFINITE_LENGTH	0x01
 #define FLAG_MATCHED		0x02
-#define FLAG_LAST_MATCHED	0x04 /* Last tag matched */
 #define FLAG_CONS		0x20 /* Corresponds to CONS bit in the opcode tag
 				      * - ie. whether or not we are going to parse
 				      *   a compound type.
@@ -218,7 +212,6 @@ next_op:
 		/* Skip conditional matches if possible */
 		if ((op & ASN1_OP_MATCH__COND && flags & FLAG_MATCHED) ||
 		    (op & ASN1_OP_MATCH__SKIP && dp == datalen)) {
-			flags &= ~FLAG_LAST_MATCHED;
 			pc += asn1_op_lengths[op];
 			goto next_op;
 		}
@@ -312,47 +305,38 @@ next_op:
 
 	/* Decide how to handle the operation */
 	switch (op) {
-	case ASN1_OP_MATCH:
-	case ASN1_OP_MATCH_OR_SKIP:
+	case ASN1_OP_MATCH_ANY_ACT:
+	case ASN1_OP_COND_MATCH_ANY_ACT:
+		ret = actions[machine[pc + 1]](context, hdr, tag, data + dp, len);
+		if (ret < 0)
+			return ret;
+		goto skip_data;
+
 	case ASN1_OP_MATCH_ACT:
 	case ASN1_OP_MATCH_ACT_OR_SKIP:
-	case ASN1_OP_MATCH_ANY:
-	case ASN1_OP_MATCH_ANY_OR_SKIP:
-	case ASN1_OP_MATCH_ANY_ACT:
-	case ASN1_OP_MATCH_ANY_ACT_OR_SKIP:
-	case ASN1_OP_COND_MATCH_OR_SKIP:
 	case ASN1_OP_COND_MATCH_ACT_OR_SKIP:
-	case ASN1_OP_COND_MATCH_ANY:
-	case ASN1_OP_COND_MATCH_ANY_OR_SKIP:
-	case ASN1_OP_COND_MATCH_ANY_ACT:
-	case ASN1_OP_COND_MATCH_ANY_ACT_OR_SKIP:
+		ret = actions[machine[pc + 2]](context, hdr, tag, data + dp, len);
+		if (ret < 0)
+			return ret;
+		goto skip_data;
 
+	case ASN1_OP_MATCH:
+	case ASN1_OP_MATCH_OR_SKIP:
+	case ASN1_OP_MATCH_ANY:
+	case ASN1_OP_COND_MATCH_OR_SKIP:
+	case ASN1_OP_COND_MATCH_ANY:
+	skip_data:
 		if (!(flags & FLAG_CONS)) {
 			if (flags & FLAG_INDEFINITE_LENGTH) {
-				size_t tmp = dp;
-
 				ret = asn1_find_indefinite_length(
-					data, datalen, &tmp, &len, &errmsg);
+					data, datalen, &dp, &len, &errmsg);
 				if (ret < 0)
 					goto error;
+			} else {
+				dp += len;
 			}
 			pr_debug("- LEAF: %zu\n", len);
 		}
-
-		if (op & ASN1_OP_MATCH__ACT) {
-			unsigned char act;
-
-			if (op & ASN1_OP_MATCH__ANY)
-				act = machine[pc + 1];
-			else
-				act = machine[pc + 2];
-			ret = actions[act](context, hdr, tag, data + dp, len);
-			if (ret < 0)
-				return ret;
-		}
-
-		if (!(flags & FLAG_CONS))
-			dp += len;
 		pc += asn1_op_lengths[op];
 		goto next_op;
 
@@ -442,15 +426,8 @@ next_op:
 		pc += asn1_op_lengths[op];
 		goto next_op;
 
-	case ASN1_OP_MAYBE_ACT:
-		if (!(flags & FLAG_LAST_MATCHED)) {
-			pc += asn1_op_lengths[op];
-			goto next_op;
-		}
 	case ASN1_OP_ACT:
 		ret = actions[machine[pc + 1]](context, hdr, tag, data + tdp, len);
-		if (ret < 0)
-			return ret;
 		pc += asn1_op_lengths[op];
 		goto next_op;
 
@@ -458,7 +435,6 @@ next_op:
 		if (unlikely(jsp <= 0))
 			goto jump_stack_underflow;
 		pc = jump_stack[--jsp];
-		flags |= FLAG_MATCHED | FLAG_LAST_MATCHED;
 		goto next_op;
 
 	default:
@@ -466,8 +442,7 @@ next_op:
 	}
 
 	/* Shouldn't reach here */
-	pr_err("ASN.1 decoder error: Found reserved opcode (%u) pc=%zu\n",
-	       op, pc);
+	pr_err("ASN.1 decoder error: Found reserved opcode (%u)\n", op);
 	return -EBADMSG;
 
 data_overrun_error:

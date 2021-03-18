@@ -299,6 +299,7 @@ static struct platform_driver jz4740_rtc_driver = {
 	.probe	 = jz4740_rtc_probe,
 	.driver	 = {
 		.name  = "jz4740-rtc",
+		.owner = THIS_MODULE,
 		.pm    = JZ4740_RTC_PM_OPS,
 	},
 };

@@ -308,6 +308,7 @@ struct inode *fuse_iget(struct super_block *sb, u64 nodeid,
 		if (!fc->writeback_cache || !S_ISREG(attr->mode))
 			inode->i_flags |= S_NOCMTIME;
 		inode->i_generation = generation;
+		inode->i_data.backing_dev_info = &fc->bdi;
 		fuse_init_inode(inode, attr);
 		unlock_new_inode(inode);
 	} else if ((inode->i_mode ^ attr->mode) & S_IFMT) {
@@ -362,8 +363,8 @@ static void fuse_send_destroy(struct fuse_conn *fc)
 	if (req && fc->conn_init) {
 		fc->destroy_req = NULL;
 		req->in.h.opcode = FUSE_DESTROY;
-		__set_bit(FR_FORCE, &req->flags);
-		__clear_bit(FR_BACKGROUND, &req->flags);
+		req->force = 1;
+		req->background = 0;
 		fuse_request_send(fc, req);
 		fuse_put_request(fc, req);
 	}
@@ -375,13 +376,28 @@ static void fuse_bdi_destroy(struct fuse_conn *fc)
 		bdi_destroy(&fc->bdi);
 }
 
+void fuse_conn_kill(struct fuse_conn *fc)
+{
+	spin_lock(&fc->lock);
+	fc->connected = 0;
+	fc->blocked = 0;
+	fc->initialized = 1;
+	spin_unlock(&fc->lock);
+	/* Flush all readers on this fs */
+	kill_fasync(&fc->fasync, SIGIO, POLL_IN);
+	wake_up_all(&fc->waitq);
+	wake_up_all(&fc->blocked_waitq);
+	wake_up_all(&fc->reserved_req_waitq);
+}
+EXPORT_SYMBOL_GPL(fuse_conn_kill);
+
 static void fuse_put_super(struct super_block *sb)
 {
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
 
 	fuse_send_destroy(fc);
 
-	fuse_abort_conn(fc);
+	fuse_conn_kill(fc);
 	mutex_lock(&fuse_mutex);
 	list_del(&fc->entry);
 	fuse_ctl_remove_conn(fc);
@@ -409,7 +425,7 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
-	FUSE_ARGS(args);
+	struct fuse_req *req;
 	struct fuse_statfs_out outarg;
 	int err;
 
@@ -418,16 +434,23 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 		return 0;
 	}
 
+	req = fuse_get_req_nopages(fc);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
 	memset(&outarg, 0, sizeof(outarg));
-	args.in.numargs = 0;
-	args.in.h.opcode = FUSE_STATFS;
-	args.in.h.nodeid = get_node_id(d_inode(dentry));
-	args.out.numargs = 1;
-	args.out.args[0].size = sizeof(outarg);
-	args.out.args[0].value = &outarg;
-	err = fuse_simple_request(fc, &args);
+	req->in.numargs = 0;
+	req->in.h.opcode = FUSE_STATFS;
+	req->in.h.nodeid = get_node_id(dentry->d_inode);
+	req->out.numargs = 1;
+	req->out.args[0].size =
+		fc->minor < 4 ? FUSE_COMPAT_STATFS_SIZE : sizeof(outarg);
+	req->out.args[0].value = &outarg;
+	fuse_request_send(fc, req);
+	err = req->out.h.error;
 	if (!err)
 		convert_fuse_statfs(buf, &outarg.st);
+	fuse_put_request(fc, req);
 	return err;
 }
 
@@ -567,46 +590,30 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
-static void fuse_iqueue_init(struct fuse_iqueue *fiq)
-{
-	memset(fiq, 0, sizeof(struct fuse_iqueue));
-	init_waitqueue_head(&fiq->waitq);
-	INIT_LIST_HEAD(&fiq->pending);
-	INIT_LIST_HEAD(&fiq->interrupts);
-	fiq->forget_list_tail = &fiq->forget_list_head;
-	fiq->connected = 1;
-}
-
-static void fuse_pqueue_init(struct fuse_pqueue *fpq)
-{
-	memset(fpq, 0, sizeof(struct fuse_pqueue));
-	spin_lock_init(&fpq->lock);
-	INIT_LIST_HEAD(&fpq->processing);
-	INIT_LIST_HEAD(&fpq->io);
-	fpq->connected = 1;
-}
-
 void fuse_conn_init(struct fuse_conn *fc)
 {
 	memset(fc, 0, sizeof(*fc));
 	spin_lock_init(&fc->lock);
 	init_rwsem(&fc->killsb);
 	atomic_set(&fc->count, 1);
-	atomic_set(&fc->dev_count, 1);
+	init_waitqueue_head(&fc->waitq);
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
-	fuse_iqueue_init(&fc->iq);
+	INIT_LIST_HEAD(&fc->pending);
+	INIT_LIST_HEAD(&fc->processing);
+	INIT_LIST_HEAD(&fc->io);
+	INIT_LIST_HEAD(&fc->interrupts);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
-	INIT_LIST_HEAD(&fc->devices);
+	fc->forget_list_tail = &fc->forget_list_head;
 	atomic_set(&fc->num_waiting, 0);
 	fc->max_background = FUSE_DEFAULT_MAX_BACKGROUND;
 	fc->congestion_threshold = FUSE_DEFAULT_CONGESTION_THRESHOLD;
 	fc->khctr = 0;
 	fc->polled_files = RB_ROOT;
+	fc->reqctr = 0;
 	fc->blocked = 0;
 	fc->initialized = 0;
-	fc->connected = 1;
 	fc->attr_version = 1;
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
 }
@@ -756,7 +763,7 @@ static struct dentry *fuse_fh_to_parent(struct super_block *sb,
 
 static struct dentry *fuse_get_parent(struct dentry *child)
 {
-	struct inode *child_inode = d_inode(child);
+	struct inode *child_inode = child->d_inode;
 	struct fuse_conn *fc = get_fuse_conn(child_inode);
 	struct inode *inode;
 	struct dentry *parent;
@@ -860,7 +867,6 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		fc->conn_error = 1;
 	else {
 		unsigned long ra_pages;
-		struct super_block *sb = fc->sb;
 
 		process_init_limits(fc, arg);
 
@@ -899,11 +905,10 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 				fc->async_dio = 1;
 			if (arg->flags & FUSE_WRITEBACK_CACHE)
 				fc->writeback_cache = 1;
-			if (arg->flags & FUSE_PASSTHROUGH) {
-				fc->passthrough = 1;
-				/* Prevent further stacking */
-				sb->s_stack_depth = FILESYSTEM_MAX_STACK_DEPTH;
-				pr_info("FUSE: Pass through is enabled [%s : %d]!\n",
+			if (arg->flags & FUSE_SHORTCIRCUIT) {
+				fc->writeback_cache = 0;
+				fc->shortcircuit_io = 1;
+				pr_info("FUSE: SHORTCIRCUIT enabled [%s : %d]!\n",
 					current->comm, current->pid);
 			}
 			if (arg->time_gran && arg->time_gran <= 1000000000)
@@ -920,7 +925,7 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		fc->max_write = max_t(unsigned, 4096, fc->max_write);
 		fc->conn_init = 1;
 	}
-	fuse_set_initialized(fc);
+	fc->initialized = 1;
 	wake_up_all(&fc->blocked_waitq);
 }
 
@@ -934,7 +939,7 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 	arg->flags |= FUSE_ASYNC_READ | FUSE_POSIX_LOCKS | FUSE_ATOMIC_O_TRUNC |
 		FUSE_EXPORT_SUPPORT | FUSE_BIG_WRITES | FUSE_DONT_MASK |
 		FUSE_SPLICE_WRITE | FUSE_SPLICE_MOVE | FUSE_SPLICE_READ |
-		FUSE_FLOCK_LOCKS | FUSE_HAS_IOCTL_DIR | FUSE_AUTO_INVAL_DATA |
+		FUSE_FLOCK_LOCKS | FUSE_IOCTL_DIR | FUSE_AUTO_INVAL_DATA |
 		FUSE_DO_READDIRPLUS | FUSE_READDIRPLUS_AUTO | FUSE_ASYNC_DIO |
 		FUSE_WRITEBACK_CACHE | FUSE_NO_OPEN_SUPPORT;
 	req->in.h.opcode = FUSE_INIT;
@@ -954,7 +959,6 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 
 static void fuse_free_conn(struct fuse_conn *fc)
 {
-	WARN_ON(!list_empty(&fc->devices));
 	kfree_rcu(fc, rcu);
 }
 
@@ -1000,42 +1004,8 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	return 0;
 }
 
-struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc)
-{
-	struct fuse_dev *fud;
-
-	fud = kzalloc(sizeof(struct fuse_dev), GFP_KERNEL);
-	if (fud) {
-		fud->fc = fuse_conn_get(fc);
-		fuse_pqueue_init(&fud->pq);
-
-		spin_lock(&fc->lock);
-		list_add_tail(&fud->entry, &fc->devices);
-		spin_unlock(&fc->lock);
-	}
-
-	return fud;
-}
-EXPORT_SYMBOL_GPL(fuse_dev_alloc);
-
-void fuse_dev_free(struct fuse_dev *fud)
-{
-	struct fuse_conn *fc = fud->fc;
-
-	if (fc) {
-		spin_lock(&fc->lock);
-		list_del(&fud->entry);
-		spin_unlock(&fc->lock);
-
-		fuse_conn_put(fc);
-	}
-	kfree(fud);
-}
-EXPORT_SYMBOL_GPL(fuse_dev_free);
-
 static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct fuse_dev *fud;
 	struct fuse_conn *fc;
 	struct inode *root;
 	struct fuse_mount_data d;
@@ -1087,15 +1057,11 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	fuse_conn_init(fc);
 	fc->release = fuse_free_conn;
 
-	fud = fuse_dev_alloc(fc);
-	if (!fud)
-		goto err_put_conn;
-
 	fc->dev = sb->s_dev;
 	fc->sb = sb;
 	err = fuse_bdi_init(fc, sb);
 	if (err)
-		goto err_dev_free;
+		goto err_put_conn;
 
 	sb->s_bdi = &fc->bdi;
 
@@ -1116,14 +1082,14 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	root = fuse_get_root_inode(sb, d.rootmode);
 	root_dentry = d_make_root(root);
 	if (!root_dentry)
-		goto err_dev_free;
+		goto err_put_conn;
 	/* only now - we want root dentry with NULL ->d_op */
 	sb->s_d_op = &fuse_dentry_operations;
 
 	init_req = fuse_request_alloc(0);
 	if (!init_req)
 		goto err_put_root;
-	__set_bit(FR_BACKGROUND, &init_req->flags);
+	init_req->background = 1;
 
 	if (is_bdev) {
 		fc->destroy_req = fuse_request_alloc(0);
@@ -1142,7 +1108,8 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 
 	list_add_tail(&fc->entry, &fuse_conn_list);
 	sb->s_root = root_dentry;
-	file->private_data = fud;
+	fc->connected = 1;
+	file->private_data = fuse_conn_get(fc);
 	mutex_unlock(&fuse_mutex);
 	/*
 	 * atomic_dec_and_test() in fput() provides the necessary
@@ -1161,8 +1128,6 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	fuse_request_free(init_req);
  err_put_root:
 	dput(root_dentry);
- err_dev_free:
-	fuse_dev_free(fud);
  err_put_conn:
 	fuse_bdi_destroy(fc);
 	fuse_conn_put(fc);
@@ -1302,6 +1267,7 @@ static void fuse_fs_cleanup(void)
 }
 
 static struct kobject *fuse_kobj;
+static struct kobject *connections_kobj;
 
 static int fuse_sysfs_init(void)
 {
@@ -1313,9 +1279,11 @@ static int fuse_sysfs_init(void)
 		goto out_err;
 	}
 
-	err = sysfs_create_mount_point(fuse_kobj, "connections");
-	if (err)
+	connections_kobj = kobject_create_and_add("connections", fuse_kobj);
+	if (!connections_kobj) {
+		err = -ENOMEM;
 		goto out_fuse_unregister;
+	}
 
 	return 0;
 
@@ -1327,7 +1295,7 @@ static int fuse_sysfs_init(void)
 
 static void fuse_sysfs_cleanup(void)
 {
-	sysfs_remove_mount_point(fuse_kobj, "connections");
+	kobject_put(connections_kobj);
 	kobject_put(fuse_kobj);
 }
 

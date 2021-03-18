@@ -12,8 +12,7 @@
 #ifndef __MXS_CLK_H
 #define __MXS_CLK_H
 
-struct clk;
-
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/spinlock.h>
 
@@ -50,7 +49,7 @@ static inline struct clk *mxs_clk_gate(const char *name,
 }
 
 static inline struct clk *mxs_clk_mux(const char *name, void __iomem *reg,
-		u8 shift, u8 width, const char *const *parent_names, int num_parents)
+		u8 shift, u8 width, const char **parent_names, int num_parents)
 {
 	return clk_register_mux(NULL, name, parent_names, num_parents,
 				CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,

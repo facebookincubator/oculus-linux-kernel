@@ -101,6 +101,7 @@
 #define PINCTRL_STATE_RELEASE   "pmx_ts_release"
 
 #define SYNA_FW_NAME_MAX_LEN	50
+#define I2C_WRITE_BUF_MAX_LEN	32
 
 enum exp_fn {
 	RMI_DEV = 0,
@@ -219,12 +220,6 @@ struct synaptics_rmi4_device_info {
  * @rmi4_mod_info: device information
  * @regulator_vdd: pointer to associated vdd regulator
  * @regulator_add: pointer to associated avdd regulator
- * @regulator_vdd_vmin: minimum vdd regulator voltage
- * @regulator_vdd_vmax: maximum vdd regulator voltage
- * @regulator_vdd_current: vdd regulator current load
- * @regulator_avdd_vmin: minimum avdd regulator voltage
- * @regulator_avdd_vmax: maximum avdd regulator voltage
- * @regulator_avdd_current: avdd regulator current load
  * @rmi4_io_ctrl_mutex: mutex for i2c i/o control
  * @early_suspend: instance to support early suspend power management
  * @current_page: current page in sensor to acess
@@ -251,12 +246,6 @@ struct synaptics_rmi4_data {
 	struct synaptics_rmi4_device_info rmi4_mod_info;
 	struct regulator *regulator_vdd;
 	struct regulator *regulator_avdd;
-	int regulator_vdd_vmin;
-	int regulator_vdd_vmax;
-	int regulator_vdd_current;
-	int regulator_avdd_vmin;
-	int regulator_avdd_vmax;
-	int regulator_avdd_current;
 	struct mutex rmi4_reset_mutex;
 	struct mutex rmi4_io_ctrl_mutex;
 #if defined(CONFIG_FB)
@@ -277,6 +266,8 @@ struct synaptics_rmi4_data {
 	unsigned char no_sleep_setting;
 	unsigned char intr_mask[MAX_INTR_REGISTERS];
 	unsigned char *button_txrx_mapping;
+	unsigned char *write_buf;
+	unsigned short write_buf_len;
 	unsigned short num_of_intr_regs;
 	unsigned short f01_query_base_addr;
 	unsigned short f01_cmd_base_addr;

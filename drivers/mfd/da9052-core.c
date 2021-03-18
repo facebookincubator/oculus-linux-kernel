@@ -51,9 +51,6 @@ static bool da9052_reg_readable(struct device *dev, unsigned int reg)
 	case DA9052_GPIO_2_3_REG:
 	case DA9052_GPIO_4_5_REG:
 	case DA9052_GPIO_6_7_REG:
-	case DA9052_GPIO_8_9_REG:
-	case DA9052_GPIO_10_11_REG:
-	case DA9052_GPIO_12_13_REG:
 	case DA9052_GPIO_14_15_REG:
 	case DA9052_ID_0_1_REG:
 	case DA9052_ID_2_3_REG:
@@ -181,9 +178,6 @@ static bool da9052_reg_writeable(struct device *dev, unsigned int reg)
 	case DA9052_GPIO_2_3_REG:
 	case DA9052_GPIO_4_5_REG:
 	case DA9052_GPIO_6_7_REG:
-	case DA9052_GPIO_8_9_REG:
-	case DA9052_GPIO_10_11_REG:
-	case DA9052_GPIO_12_13_REG:
 	case DA9052_GPIO_14_15_REG:
 	case DA9052_ID_0_1_REG:
 	case DA9052_ID_2_3_REG:
@@ -439,10 +433,6 @@ EXPORT_SYMBOL_GPL(da9052_adc_read_temp);
 static const struct mfd_cell da9052_subdev_info[] = {
 	{
 		.name = "da9052-regulator",
-		.id = 0,
-	},
-	{
-		.name = "da9052-regulator",
 		.id = 1,
 	},
 	{
@@ -492,6 +482,10 @@ static const struct mfd_cell da9052_subdev_info[] = {
 	{
 		.name = "da9052-regulator",
 		.id = 13,
+	},
+	{
+		.name = "da9052-regulator",
+		.id = 14,
 	},
 	{
 		.name = "da9052-onkey",
@@ -560,8 +554,7 @@ int da9052_device_init(struct da9052 *da9052, u8 chip_id)
 		return ret;
 	}
 
-	ret = mfd_add_devices(da9052->dev, PLATFORM_DEVID_AUTO,
-			      da9052_subdev_info,
+	ret = mfd_add_devices(da9052->dev, -1, da9052_subdev_info,
 			      ARRAY_SIZE(da9052_subdev_info), NULL, 0, NULL);
 	if (ret) {
 		dev_err(da9052->dev, "mfd_add_devices failed: %d\n", ret);

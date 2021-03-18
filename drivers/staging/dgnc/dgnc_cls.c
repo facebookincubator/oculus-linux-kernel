@@ -11,6 +11,22 @@
  * but WITHOUT ANY WARRANTY, EXPRESS OR IMPLIED; without even the
  * implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
  * PURPOSE.  See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ *
+ *	NOTE TO LINUX KERNEL HACKERS:  DO NOT REFORMAT THIS CODE!
+ *
+ *	This is shared code between Digi's CVS archive and the
+ *	Linux Kernel sources.
+ *	Changing the source just for reformatting needlessly breaks
+ *	our CVS diff history.
+ *
+ *	Send any bug fixes/changes to:  Eng.Linux at digi dot com.
+ *	Thank you.
+ *
  */
 
 #include <linux/kernel.h>
@@ -76,11 +92,13 @@ struct board_ops dgnc_cls_ops = {
 	.send_immediate_char =		cls_send_immediate_char
 };
 
+
 static inline void cls_set_cts_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -115,13 +133,16 @@ static inline void cls_set_cts_flow_control(struct channel_t *ch)
 		&ch->ch_cls_uart->isr_fcr);
 
 	ch->ch_t_tlevel = 16;
+
 }
+
 
 static inline void cls_set_ixon_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -160,13 +181,16 @@ static inline void cls_set_ixon_flow_control(struct channel_t *ch)
 	writeb((UART_FCR_ENABLE_FIFO | UART_16654_FCR_RXTRIGGER_16 |
 		UART_16654_FCR_TXTRIGGER_16 | UART_FCR_CLEAR_RCVR),
 		&ch->ch_cls_uart->isr_fcr);
+
 }
+
 
 static inline void cls_set_no_output_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -203,13 +227,16 @@ static inline void cls_set_no_output_flow_control(struct channel_t *ch)
 	ch->ch_r_watermark = 0;
 	ch->ch_t_tlevel = 16;
 	ch->ch_r_tlevel = 16;
+
 }
+
 
 static inline void cls_set_rts_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -239,15 +266,19 @@ static inline void cls_set_rts_flow_control(struct channel_t *ch)
 		UART_16654_FCR_TXTRIGGER_16 | UART_FCR_CLEAR_RCVR),
 		&ch->ch_cls_uart->isr_fcr);
 
+
 	ch->ch_r_watermark = 4;
 	ch->ch_r_tlevel = 8;
+
 }
+
 
 static inline void cls_set_ixoff_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -282,13 +313,16 @@ static inline void cls_set_ixoff_flow_control(struct channel_t *ch)
 	writeb((UART_FCR_ENABLE_FIFO | UART_16654_FCR_RXTRIGGER_16 |
 		UART_16654_FCR_TXTRIGGER_16 | UART_FCR_CLEAR_RCVR),
 		&ch->ch_cls_uart->isr_fcr);
+
 }
+
 
 static inline void cls_set_no_input_flow_control(struct channel_t *ch)
 {
 	unsigned char lcrb = readb(&ch->ch_cls_uart->lcr);
 	unsigned char ier = readb(&ch->ch_cls_uart->ier);
 	unsigned char isr_fcr = 0;
+
 
 	/*
 	 * The Enhanced Register Set may only be accessed when
@@ -320,7 +354,9 @@ static inline void cls_set_no_input_flow_control(struct channel_t *ch)
 
 	ch->ch_t_tlevel = 16;
 	ch->ch_r_tlevel = 16;
+
 }
+
 
 /*
  * cls_clear_break.
@@ -357,6 +393,7 @@ static inline void cls_clear_break(struct channel_t *ch, int force)
 	spin_unlock_irqrestore(&ch->ch_lock, flags);
 }
 
+
 /* Parse the ISR register for the specific port */
 static inline void cls_parse_isr(struct dgnc_board *brd, uint port)
 {
@@ -369,15 +406,16 @@ static inline void cls_parse_isr(struct dgnc_board *brd, uint port)
 	 * verified in the interrupt routine.
 	 */
 
-	if (port >= brd->nasync)
+	if (port > brd->nasync)
 		return;
 
 	ch = brd->channels[port];
-	if (ch->magic != DGNC_CHANNEL_MAGIC)
+	if (!ch || ch->magic != DGNC_CHANNEL_MAGIC)
 		return;
 
 	/* Here we try to figure out what caused the interrupt to happen */
 	while (1) {
+
 		isr = readb(&ch->ch_cls_uart->isr_fcr);
 
 		/* Bail if no pending interrupt on port */
@@ -419,6 +457,7 @@ static inline void cls_parse_isr(struct dgnc_board *brd, uint port)
 	}
 }
 
+
 /*
  * cls_param()
  * Send any/all changes to the line to the UART.
@@ -438,7 +477,7 @@ static void cls_param(struct tty_struct *tty)
 	if (!tty || tty->magic != TTY_MAGIC)
 		return;
 
-	un = (struct un_t *)tty->driver_data;
+	un = (struct un_t *) tty->driver_data;
 	if (!un || un->magic != DGNC_UNIT_MAGIC)
 		return;
 
@@ -471,6 +510,7 @@ static void cls_param(struct tty_struct *tty)
 		ch->ch_old_baud = 0;
 		return;
 	} else if (ch->ch_custom_speed) {
+
 		baud = ch->ch_custom_speed;
 		/* Handle transition from B0 */
 		if (ch->ch_flags & CH_BAUD0) {
@@ -518,7 +558,7 @@ static void cls_param(struct tty_struct *tty)
 		 * unit is NOT open
 		 */
 		if (!(ch->ch_tun.un_flags & UN_ISOPEN) &&
-		    (un->un_type == DGNC_PRINT))
+					 (un->un_type == DGNC_PRINT))
 			baud = C_BAUD(ch->ch_pun.un_tty) & 0xff;
 		else
 			baud = C_BAUD(ch->ch_tun.un_tty) & 0xff;
@@ -532,7 +572,7 @@ static void cls_param(struct tty_struct *tty)
 		jindex = baud;
 
 		if ((iindex >= 0) && (iindex < 4) && (jindex >= 0) &&
-		    (jindex < 16)) {
+								(jindex < 16)) {
 			baud = bauds[iindex][jindex];
 		} else {
 			baud = 0;
@@ -620,13 +660,13 @@ static void cls_param(struct tty_struct *tty)
 	 * we are in hardware flow control mode, or CLOCAL/FORCEDCD is not set.
 	 */
 	if ((ch->ch_digi.digi_flags & CTSPACE) ||
-	    (ch->ch_digi.digi_flags & RTSPACE) ||
-	    (ch->ch_c_cflag & CRTSCTS) ||
-	    !(ch->ch_digi.digi_flags & DIGI_FORCEDCD) ||
-	    !(ch->ch_c_cflag & CLOCAL))
-		ier |= UART_IER_MSI;
+		(ch->ch_digi.digi_flags & RTSPACE) ||
+		(ch->ch_c_cflag & CRTSCTS) ||
+		!(ch->ch_digi.digi_flags & DIGI_FORCEDCD) ||
+		!(ch->ch_c_cflag & CLOCAL))
+			ier |= UART_IER_MSI;
 	else
-		ier &= ~UART_IER_MSI;
+			ier &= ~UART_IER_MSI;
 
 	ier |= UART_IER_THRI;
 
@@ -641,7 +681,7 @@ static void cls_param(struct tty_struct *tty)
 		 * disable flow control
 		 */
 		if ((ch->ch_startc == _POSIX_VDISABLE) ||
-		    (ch->ch_stopc == _POSIX_VDISABLE))
+					 (ch->ch_stopc == _POSIX_VDISABLE))
 			cls_set_no_output_flow_control(ch);
 		else
 			cls_set_ixon_flow_control(ch);
@@ -657,7 +697,7 @@ static void cls_param(struct tty_struct *tty)
 		 * flow control
 		 */
 		if ((ch->ch_startc == _POSIX_VDISABLE) ||
-		    (ch->ch_stopc == _POSIX_VDISABLE))
+				(ch->ch_stopc == _POSIX_VDISABLE))
 			cls_set_no_input_flow_control(ch);
 		else
 			cls_set_ixoff_flow_control(ch);
@@ -671,20 +711,23 @@ static void cls_param(struct tty_struct *tty)
 	cls_parse_modem(ch, readb(&ch->ch_cls_uart->msr));
 }
 
+
 /*
  * Our board poller function.
  */
 static void cls_tasklet(unsigned long data)
 {
-	struct dgnc_board *bd = (struct dgnc_board *)data;
+	struct dgnc_board *bd = (struct dgnc_board *) data;
 	struct channel_t *ch;
 	unsigned long flags;
 	int i;
 	int state = 0;
 	int ports = 0;
 
-	if (!bd || bd->magic != DGNC_BOARD_MAGIC)
+	if (!bd || bd->magic != DGNC_BOARD_MAGIC) {
+		APR(("poll_tasklet() - NULL or bad bd.\n"));
 		return;
+	}
 
 	/* Cache a couple board values */
 	spin_lock_irqsave(&bd->bd_lock, flags);
@@ -702,9 +745,12 @@ static void cls_tasklet(unsigned long data)
 	 * If board is ready, parse deeper to see if there is anything to do.
 	 */
 	if ((state == BOARD_READY) && (ports > 0)) {
+
 		/* Loop on each port */
 		for (i = 0; i < ports; i++) {
 			ch = bd->channels[i];
+			if (!ch)
+				continue;
 
 			/*
 			 * NOTE: Remember you CANNOT hold any channel
@@ -737,7 +783,9 @@ static void cls_tasklet(unsigned long data)
 	}
 
 	spin_unlock_irqrestore(&bd->bd_intr_lock, flags);
+
 }
+
 
 /*
  * cls_intr()
@@ -746,17 +794,25 @@ static void cls_tasklet(unsigned long data)
  */
 static irqreturn_t cls_intr(int irq, void *voidbrd)
 {
-	struct dgnc_board *brd = voidbrd;
+	struct dgnc_board *brd = (struct dgnc_board *) voidbrd;
 	uint i = 0;
 	unsigned char poll_reg;
 	unsigned long flags;
 
-	/*
-	 * Check to make sure it didn't receive interrupt with a null board
-	 * associated or a board pointer that wasn't ours.
-	 */
-	if (!brd || brd->magic != DGNC_BOARD_MAGIC)
+	if (!brd) {
+		APR(("Received interrupt (%d) with null board associated\n",
+									 irq));
 		return IRQ_NONE;
+	}
+
+	/*
+	 * Check to make sure its for us.
+	 */
+	if (brd->magic != DGNC_BOARD_MAGIC) {
+		APR(("Received interrupt (%d) with a board pointer that wasn't ours!\n",
+			  irq));
+		return IRQ_NONE;
+	}
 
 	spin_lock_irqsave(&brd->bd_intr_lock, flags);
 
@@ -788,6 +844,7 @@ static irqreturn_t cls_intr(int irq, void *voidbrd)
 	return IRQ_HANDLED;
 }
 
+
 static void cls_disable_receiver(struct channel_t *ch)
 {
 	unsigned char tmp = readb(&ch->ch_cls_uart->ier);
@@ -796,6 +853,7 @@ static void cls_disable_receiver(struct channel_t *ch)
 	writeb(tmp, &ch->ch_cls_uart->ier);
 }
 
+
 static void cls_enable_receiver(struct channel_t *ch)
 {
 	unsigned char tmp = readb(&ch->ch_cls_uart->ier);
@@ -803,6 +861,7 @@ static void cls_enable_receiver(struct channel_t *ch)
 	tmp |= (UART_IER_RDI);
 	writeb(tmp, &ch->ch_cls_uart->ier);
 }
+
 
 static void cls_copy_data_from_uart_to_queue(struct channel_t *ch)
 {
@@ -844,8 +903,10 @@ static void cls_copy_data_from_uart_to_queue(struct channel_t *ch)
 		 * Discard character if we are ignoring the error mask.
 		*/
 		if (linestatus & error_mask)  {
+			unsigned char discard;
+
 			linestatus = 0;
-			readb(&ch->ch_cls_uart->txrx);
+			discard = readb(&ch->ch_cls_uart->txrx);
 			continue;
 		}
 
@@ -867,6 +928,8 @@ static void cls_copy_data_from_uart_to_queue(struct channel_t *ch)
 		ch->ch_equeue[head] = linestatus & (UART_LSR_BI | UART_LSR_PE
 								 | UART_LSR_FE);
 		ch->ch_rqueue[head] = readb(&ch->ch_cls_uart->txrx);
+		dgnc_sniff_nowait_nolock(ch, "UART READ",
+						 ch->ch_rqueue + head, 1);
 
 		qleft--;
 
@@ -891,6 +954,7 @@ static void cls_copy_data_from_uart_to_queue(struct channel_t *ch)
 	spin_unlock_irqrestore(&ch->ch_lock, flags);
 }
 
+
 /*
  * This function basically goes to sleep for secs, or until
  * it gets signalled that the port has fully drained.
@@ -900,11 +964,12 @@ static int cls_drain(struct tty_struct *tty, uint seconds)
 	unsigned long flags;
 	struct channel_t *ch;
 	struct un_t *un;
+	int rc = 0;
 
 	if (!tty || tty->magic != TTY_MAGIC)
 		return -ENXIO;
 
-	un = (struct un_t *)tty->driver_data;
+	un = (struct un_t *) tty->driver_data;
 	if (!un || un->magic != DGNC_UNIT_MAGIC)
 		return -ENXIO;
 
@@ -919,12 +984,14 @@ static int cls_drain(struct tty_struct *tty, uint seconds)
 	/*
 	 * NOTE: Do something with time passed in.
 	 */
+	rc = wait_event_interruptible(un->un_flags_wait,
+					 ((un->un_flags & UN_EMPTY) == 0));
 
 	/* If ret is non-zero, user ctrl-c'ed us */
 
-	return wait_event_interruptible(un->un_flags_wait,
-					 ((un->un_flags & UN_EMPTY) == 0));
+	return rc;
 }
+
 
 /* Channel lock MUST be held before calling this function! */
 static void cls_flush_uart_write(struct channel_t *ch)
@@ -933,11 +1000,12 @@ static void cls_flush_uart_write(struct channel_t *ch)
 		return;
 
 	writeb((UART_FCR_ENABLE_FIFO | UART_FCR_CLEAR_XMIT),
-	       &ch->ch_cls_uart->isr_fcr);
+						&ch->ch_cls_uart->isr_fcr);
 	udelay(10);
 
 	ch->ch_flags |= (CH_TX_FIFO_EMPTY | CH_TX_FIFO_LWM);
 }
+
 
 /* Channel lock MUST be held before calling this function! */
 static void cls_flush_uart_read(struct channel_t *ch)
@@ -959,6 +1027,7 @@ static void cls_flush_uart_read(struct channel_t *ch)
 	udelay(10);
 }
 
+
 static void cls_copy_data_from_queue_to_uart(struct channel_t *ch)
 {
 	ushort head;
@@ -974,16 +1043,22 @@ static void cls_copy_data_from_queue_to_uart(struct channel_t *ch)
 	spin_lock_irqsave(&ch->ch_lock, flags);
 
 	/* No data to write to the UART */
-	if (ch->ch_w_tail == ch->ch_w_head)
-		goto exit_unlock;
+	if (ch->ch_w_tail == ch->ch_w_head) {
+		spin_unlock_irqrestore(&ch->ch_lock, flags);
+		return;
+	}
 
 	/* If port is "stopped", don't send any data to the UART */
 	if ((ch->ch_flags & CH_FORCED_STOP) ||
-	    (ch->ch_flags & CH_BREAK_SENDING))
-		goto exit_unlock;
+				 (ch->ch_flags & CH_BREAK_SENDING)) {
+		spin_unlock_irqrestore(&ch->ch_lock, flags);
+		return;
+	}
 
-	if (!(ch->ch_flags & (CH_TX_FIFO_EMPTY | CH_TX_FIFO_LWM)))
-		goto exit_unlock;
+	if (!(ch->ch_flags & (CH_TX_FIFO_EMPTY | CH_TX_FIFO_LWM))) {
+		spin_unlock_irqrestore(&ch->ch_lock, flags);
+		return;
+	}
 
 	n = 32;
 
@@ -996,6 +1071,7 @@ static void cls_copy_data_from_queue_to_uart(struct channel_t *ch)
 	n = min(n, qlen);
 
 	while (n > 0) {
+
 		/*
 		 * If RTS Toggle mode is on, turn on RTS now if not already set,
 		 * and make sure we get an event when the data transfer has
@@ -1022,6 +1098,8 @@ static void cls_copy_data_from_queue_to_uart(struct channel_t *ch)
 			ch->ch_tun.un_flags |= (UN_EMPTY);
 		}
 		writeb(ch->ch_wqueue[ch->ch_w_tail], &ch->ch_cls_uart->txrx);
+		dgnc_sniff_nowait_nolock(ch, "UART WRITE",
+					    ch->ch_wqueue + ch->ch_w_tail, 1);
 		ch->ch_w_tail++;
 		ch->ch_w_tail &= WQUEUEMASK;
 		ch->ch_txcount++;
@@ -1032,9 +1110,9 @@ static void cls_copy_data_from_queue_to_uart(struct channel_t *ch)
 	if (len_written > 0)
 		ch->ch_flags &= ~(CH_TX_FIFO_EMPTY | CH_TX_FIFO_LWM);
 
-exit_unlock:
 	spin_unlock_irqrestore(&ch->ch_lock, flags);
 }
+
 
 static void cls_parse_modem(struct channel_t *ch, unsigned char signals)
 {
@@ -1100,6 +1178,7 @@ static void cls_parse_modem(struct channel_t *ch, unsigned char signals)
 	spin_unlock_irqrestore(&ch->ch_lock, flags);
 }
 
+
 /* Make the UART raise any of the output signals we want up */
 static void cls_assert_modem_signals(struct channel_t *ch)
 {
@@ -1119,6 +1198,7 @@ static void cls_assert_modem_signals(struct channel_t *ch)
 	udelay(10);
 }
 
+
 static void cls_send_start_character(struct channel_t *ch)
 {
 	if (!ch || ch->magic != DGNC_CHANNEL_MAGIC)
@@ -1130,6 +1210,7 @@ static void cls_send_start_character(struct channel_t *ch)
 	}
 }
 
+
 static void cls_send_stop_character(struct channel_t *ch)
 {
 	if (!ch || ch->magic != DGNC_CHANNEL_MAGIC)
@@ -1140,6 +1221,7 @@ static void cls_send_stop_character(struct channel_t *ch)
 		writeb(ch->ch_stopc, &ch->ch_cls_uart->txrx);
 	}
 }
+
 
 /* Inits UART */
 static void cls_uart_init(struct channel_t *ch)
@@ -1169,7 +1251,7 @@ static void cls_uart_init(struct channel_t *ch)
 	readb(&ch->ch_cls_uart->txrx);
 
 	writeb((UART_FCR_ENABLE_FIFO|UART_FCR_CLEAR_RCVR|UART_FCR_CLEAR_XMIT),
-	       &ch->ch_cls_uart->isr_fcr);
+						 &ch->ch_cls_uart->isr_fcr);
 	udelay(10);
 
 	ch->ch_flags |= (CH_FIFO_ENABLED | CH_TX_FIFO_EMPTY | CH_TX_FIFO_LWM);
@@ -1178,6 +1260,7 @@ static void cls_uart_init(struct channel_t *ch)
 	readb(&ch->ch_cls_uart->msr);
 }
 
+
 /*
  * Turns off UART.
  */
@@ -1185,6 +1268,7 @@ static void cls_uart_off(struct channel_t *ch)
 {
 	writeb(0, &ch->ch_cls_uart->ier);
 }
+
 
 /*
  * cls_get_uarts_bytes_left.
@@ -1214,6 +1298,7 @@ static uint cls_get_uart_bytes_left(struct channel_t *ch)
 
 	return left;
 }
+
 
 /*
  * cls_send_break.
@@ -1257,6 +1342,7 @@ static void cls_send_break(struct channel_t *ch, int msecs)
 	}
 }
 
+
 /*
  * cls_send_immediate_char.
  * Sends a specific character as soon as possible to the UART,
@@ -1278,6 +1364,7 @@ static void cls_vpd(struct dgnc_board *brd)
 	u8 __iomem           *re_map_vpdbase;/* Remapped memory of the card */
 	int i = 0;
 
+
 	vpdbase = pci_resource_start(brd->pdev, 3);
 
 	/* No VPD */
@@ -1296,5 +1383,7 @@ static void cls_vpd(struct dgnc_board *brd)
 	}
 	pr_info("\n");
 
-	iounmap(re_map_vpdbase);
+	if (re_map_vpdbase)
+		iounmap(re_map_vpdbase);
 }
+

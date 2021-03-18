@@ -661,7 +661,6 @@ void lance_poll(struct net_device *dev)
 	spin_unlock(&lp->devlock);
 	lance_interrupt(dev->irq, dev);
 }
-EXPORT_SYMBOL_GPL(lance_poll);
 #endif
 
 MODULE_LICENSE("GPL");

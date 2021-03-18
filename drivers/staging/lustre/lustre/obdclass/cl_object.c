@@ -98,6 +98,16 @@ int cl_object_header_init(struct cl_object_header *h)
 EXPORT_SYMBOL(cl_object_header_init);
 
 /**
+ * Finalize cl_object_header.
+ */
+void cl_object_header_fini(struct cl_object_header *h)
+{
+	LASSERT(list_empty(&h->coh_locks));
+	lu_object_header_fini(&h->coh_lu);
+}
+EXPORT_SYMBOL(cl_object_header_fini);
+
+/**
  * Returns a cl_object with a given \a fid.
  *
  * Returns either cached or newly created object. Additional reference on the
@@ -183,7 +193,6 @@ static spinlock_t *cl_object_attr_guard(struct cl_object *o)
  * cl_object_attr_get(), cl_object_attr_set().
  */
 void cl_object_attr_lock(struct cl_object *o)
-	__acquires(cl_object_attr_guard(o))
 {
 	spin_lock(cl_object_attr_guard(o));
 }
@@ -193,7 +202,6 @@ EXPORT_SYMBOL(cl_object_attr_lock);
  * Releases data-attributes lock, acquired by cl_object_attr_lock().
  */
 void cl_object_attr_unlock(struct cl_object *o)
-	__releases(cl_object_attr_guard(o))
 {
 	spin_unlock(cl_object_attr_guard(o));
 }
@@ -352,6 +360,22 @@ void cl_object_prune(const struct lu_env *env, struct cl_object *obj)
 	cl_locks_prune(env, obj, 1);
 }
 EXPORT_SYMBOL(cl_object_prune);
+
+/**
+ * Check if the object has locks.
+ */
+int cl_object_has_locks(struct cl_object *obj)
+{
+	struct cl_object_header *head = cl_object_header(obj);
+	int has;
+
+	spin_lock(&head->coh_lock_guard);
+	has = list_empty(&head->coh_locks);
+	spin_unlock(&head->coh_lock_guard);
+
+	return (has == 0);
+}
+EXPORT_SYMBOL(cl_object_has_locks);
 
 void cache_stats_init(struct cache_stats *cs, const char *name)
 {
@@ -547,6 +571,7 @@ static void cl_env_init0(struct cl_env *cle, void *debug)
 	CL_ENV_INC(busy);
 }
 
+
 /*
  * The implementation of using hash table to connect cl_env and thread
  */
@@ -566,7 +591,6 @@ static unsigned cl_env_hops_hash(struct cfs_hash *lh,
 static void *cl_env_hops_obj(struct hlist_node *hn)
 {
 	struct cl_env *cle = hlist_entry(hn, struct cl_env, ce_node);
-
 	LASSERT(cle->ce_magic == &cl_env_init0);
 	return (void *)cle;
 }
@@ -582,16 +606,15 @@ static int cl_env_hops_keycmp(const void *key, struct hlist_node *hn)
 static void cl_env_hops_noop(struct cfs_hash *hs, struct hlist_node *hn)
 {
 	struct cl_env *cle = hlist_entry(hn, struct cl_env, ce_node);
-
 	LASSERT(cle->ce_magic == &cl_env_init0);
 }
 
-static struct cfs_hash_ops cl_env_hops = {
+static cfs_hash_ops_t cl_env_hops = {
 	.hs_hash	= cl_env_hops_hash,
-	.hs_key		= cl_env_hops_obj,
+	.hs_key	 = cl_env_hops_obj,
 	.hs_keycmp      = cl_env_hops_keycmp,
 	.hs_object      = cl_env_hops_obj,
-	.hs_get		= cl_env_hops_noop,
+	.hs_get	 = cl_env_hops_noop,
 	.hs_put_locked  = cl_env_hops_noop,
 };
 
@@ -628,8 +651,7 @@ static inline void cl_env_do_detach(struct cl_env *cle)
 	cle->ce_owner = NULL;
 }
 
-static int cl_env_store_init(void)
-{
+static int cl_env_store_init(void) {
 	cl_env_hash = cfs_hash_create("cl_env",
 				      HASH_CL_ENV_BITS, HASH_CL_ENV_BITS,
 				      HASH_CL_ENV_BKT_BITS, 0,
@@ -637,13 +659,13 @@ static int cl_env_store_init(void)
 				      CFS_HASH_MAX_THETA,
 				      &cl_env_hops,
 				      CFS_HASH_RW_BKTLOCK);
-	return cl_env_hash != NULL ? 0 : -ENOMEM;
+	return cl_env_hash != NULL ? 0 :-ENOMEM;
 }
 
-static void cl_env_store_fini(void)
-{
+static void cl_env_store_fini(void) {
 	cfs_hash_putref(cl_env_hash);
 }
+
 
 static inline struct cl_env *cl_env_detach(struct cl_env *cle)
 {
@@ -661,17 +683,17 @@ static struct lu_env *cl_env_new(__u32 ctx_tags, __u32 ses_tags, void *debug)
 	struct lu_env *env;
 	struct cl_env *cle;
 
-	cle = kmem_cache_alloc(cl_env_kmem, GFP_NOFS | __GFP_ZERO);
+	OBD_SLAB_ALLOC_PTR_GFP(cle, cl_env_kmem, GFP_NOFS);
 	if (cle != NULL) {
 		int rc;
 
 		INIT_LIST_HEAD(&cle->ce_linkage);
 		cle->ce_magic = &cl_env_init0;
 		env = &cle->ce_lu;
-		rc = lu_env_init(env, ctx_tags | LCT_CL_THREAD);
+		rc = lu_env_init(env, LCT_CL_THREAD|ctx_tags);
 		if (rc == 0) {
 			rc = lu_context_init(&cle->ce_ses,
-					     ses_tags | LCT_SESSION);
+					     LCT_SESSION | ses_tags);
 			if (rc == 0) {
 				lu_context_enter(&cle->ce_ses);
 				env->le_ses = &cle->ce_ses;
@@ -680,7 +702,7 @@ static struct lu_env *cl_env_new(__u32 ctx_tags, __u32 ses_tags, void *debug)
 				lu_env_fini(env);
 		}
 		if (rc != 0) {
-			kmem_cache_free(cl_env_kmem, cle);
+			OBD_SLAB_FREE_PTR(cle, cl_env_kmem);
 			env = ERR_PTR(rc);
 		} else {
 			CL_ENV_INC(create);
@@ -696,7 +718,7 @@ static void cl_env_fini(struct cl_env *cle)
 	CL_ENV_DEC(total);
 	lu_context_fini(&cle->ce_lu.le_ctx);
 	lu_context_fini(&cle->ce_ses);
-	kmem_cache_free(cl_env_kmem, cle);
+	OBD_SLAB_FREE_PTR(cle, cl_env_kmem);
 }
 
 static inline struct cl_env *cl_env_container(struct lu_env *env)
@@ -881,8 +903,10 @@ struct lu_env *cl_env_nested_get(struct cl_env_nest *nest)
 	if (env != NULL) {
 		if (!cl_io_is_going(env))
 			return env;
-		cl_env_put(env, &nest->cen_refcheck);
-		nest->cen_cookie = cl_env_reenter();
+		else {
+			cl_env_put(env, &nest->cen_refcheck);
+			nest->cen_cookie = cl_env_reenter();
+		}
 	}
 	env = cl_env_get(&nest->cen_refcheck);
 	if (IS_ERR(env)) {
@@ -901,6 +925,21 @@ void cl_env_nested_put(struct cl_env_nest *nest, struct lu_env *env)
 	cl_env_reexit(nest->cen_cookie);
 }
 EXPORT_SYMBOL(cl_env_nested_put);
+
+/**
+ * Converts struct cl_attr to struct ost_lvb.
+ *
+ * \see cl_lvb2attr
+ */
+void cl_attr2lvb(struct ost_lvb *lvb, const struct cl_attr *attr)
+{
+	lvb->lvb_size   = attr->cat_size;
+	lvb->lvb_mtime  = attr->cat_mtime;
+	lvb->lvb_atime  = attr->cat_atime;
+	lvb->lvb_ctime  = attr->cat_ctime;
+	lvb->lvb_blocks = attr->cat_blocks;
+}
+EXPORT_SYMBOL(cl_attr2lvb);
 
 /**
  * Converts struct ost_lvb to struct cl_attr.
@@ -1034,7 +1073,7 @@ static struct lu_kmem_descr cl_object_caches[] = {
 	{
 		.ckd_cache = &cl_env_kmem,
 		.ckd_name  = "cl_env_kmem",
-		.ckd_size  = sizeof(struct cl_env)
+		.ckd_size  = sizeof (struct cl_env)
 	},
 	{
 		.ckd_cache = NULL

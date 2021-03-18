@@ -44,10 +44,10 @@ static ssize_t power_supply_show_property(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf) {
 	static char *type_text[] = {
-		"Unknown", "Battery", "UPS", "Mains", "USB", "USB_DCP",
-		"USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
-		"Wireless", "USB_FLOAT", "BMS", "Parallel", "Main", "Wipower",
-		"TYPEC", "TYPEC_UFP", "TYPEC_DFP"
+		"Unknown", "Battery", "UPS", "Mains", "USB",
+		"USB_DCP", "USB_CDP", "USB_ACA",
+		"USB_HVDCP", "USB_HVDCP_3", "Wireless", "BMS", "USB_Parallel",
+		"Wipower", "TYPEC", "TYPEC_UFP", "TYPEC_DFP"
 	};
 	static char *status_text[] = {
 		"Unknown", "Charging", "Discharging", "Not charging", "Full"
@@ -60,7 +60,7 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "Good", "Overheat", "Dead", "Over voltage",
 		"Unspecified failure", "Cold", "Watchdog timer expire",
 		"Safety timer expire",
-		"Warm", "Cool", "Hot"
+		"Warm", "Cool"
 	};
 	static char *technology_text[] = {
 		"Unknown", "NiMH", "Li-ion", "Li-poly", "LiFe", "NiCd",
@@ -72,26 +72,15 @@ static ssize_t power_supply_show_property(struct device *dev,
 	static char *scope_text[] = {
 		"Unknown", "System", "Device"
 	};
-	static char *typec_text[] = {
-		"Nothing attached", "Sink attached", "Powered cable w/ sink",
-		"Debug Accessory", "Audio Adapter", "Powered cable w/o sink",
-		"Source attached (default current)",
-		"Source attached (medium current)",
-		"Source attached (high current)",
-		"Non compliant",
-	};
-	static char *typec_pr_text[] = {
-		"none", "dual power role", "sink", "source"
-	};
 	ssize_t ret = 0;
 	struct power_supply *psy = dev_get_drvdata(dev);
 	const ptrdiff_t off = attr - power_supply_attrs;
 	union power_supply_propval value;
 
 	if (off == POWER_SUPPLY_PROP_TYPE) {
-		value.intval = psy->desc->type;
+		value.intval = psy->type;
 	} else {
-		ret = power_supply_get_property(psy, off, &value);
+		ret = psy->get_property(psy, off, &value);
 
 		if (ret < 0) {
 			if (ret == -ENODATA)
@@ -114,19 +103,10 @@ static ssize_t power_supply_show_property(struct device *dev,
 		return sprintf(buf, "%s\n", technology_text[value.intval]);
 	else if (off == POWER_SUPPLY_PROP_CAPACITY_LEVEL)
 		return sprintf(buf, "%s\n", capacity_level_text[value.intval]);
-	else if (off == POWER_SUPPLY_PROP_TYPE ||
-			off == POWER_SUPPLY_PROP_REAL_TYPE)
+	else if (off == POWER_SUPPLY_PROP_TYPE)
 		return sprintf(buf, "%s\n", type_text[value.intval]);
 	else if (off == POWER_SUPPLY_PROP_SCOPE)
 		return sprintf(buf, "%s\n", scope_text[value.intval]);
-	else if (off == POWER_SUPPLY_PROP_TYPEC_MODE)
-		return sprintf(buf, "%s\n", typec_text[value.intval]);
-	else if (off == POWER_SUPPLY_PROP_TYPEC_POWER_ROLE)
-		return sprintf(buf, "%s\n", typec_pr_text[value.intval]);
-	else if (off == POWER_SUPPLY_PROP_DIE_HEALTH)
-		return sprintf(buf, "%s\n", health_text[value.intval]);
-	else if (off == POWER_SUPPLY_PROP_CONNECTOR_HEALTH)
-		return sprintf(buf, "%s\n", health_text[value.intval]);
 	else if (off >= POWER_SUPPLY_PROP_MODEL_NAME)
 		return sprintf(buf, "%s\n", value.strval);
 
@@ -152,7 +132,7 @@ static ssize_t power_supply_store_property(struct device *dev,
 
 	value.intval = long_val;
 
-	ret = power_supply_set_property(psy, off, &value);
+	ret = psy->set_property(psy, off, &value);
 	if (ret < 0)
 		return ret;
 
@@ -229,21 +209,17 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(scope),
 	POWER_SUPPLY_ATTR(charge_term_current),
 	POWER_SUPPLY_ATTR(calibrate),
-	POWER_SUPPLY_ATTR(charge_profile),
 	/* Local extensions */
 	POWER_SUPPLY_ATTR(usb_hc),
 	POWER_SUPPLY_ATTR(usb_otg),
+	POWER_SUPPLY_ATTR(charge_enabled),
 	POWER_SUPPLY_ATTR(battery_charging_enabled),
 	POWER_SUPPLY_ATTR(charging_enabled),
-	POWER_SUPPLY_ATTR(step_charging_enabled),
-	POWER_SUPPLY_ATTR(step_charging_step),
-	POWER_SUPPLY_ATTR(pin_enabled),
 	POWER_SUPPLY_ATTR(input_suspend),
 	POWER_SUPPLY_ATTR(input_voltage_regulation),
 	POWER_SUPPLY_ATTR(input_current_max),
 	POWER_SUPPLY_ATTR(input_current_trim),
 	POWER_SUPPLY_ATTR(input_current_settled),
-	POWER_SUPPLY_ATTR(input_voltage_settled),
 	POWER_SUPPLY_ATTR(bypass_vchg_loop_debouncer),
 	POWER_SUPPLY_ATTR(charge_counter_shadow),
 	POWER_SUPPLY_ATTR(hi_power),
@@ -258,8 +234,6 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(flash_current_max),
 	POWER_SUPPLY_ATTR(update_now),
 	POWER_SUPPLY_ATTR(esr_count),
-	POWER_SUPPLY_ATTR(buck_freq),
-	POWER_SUPPLY_ATTR(boost_current),
 	POWER_SUPPLY_ATTR(safety_timer_enabled),
 	POWER_SUPPLY_ATTR(charge_done),
 	POWER_SUPPLY_ATTR(flash_active),
@@ -268,39 +242,19 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(dp_dm),
 	POWER_SUPPLY_ATTR(input_current_limited),
 	POWER_SUPPLY_ATTR(input_current_now),
-	POWER_SUPPLY_ATTR(charge_qnovo_enable),
-	POWER_SUPPLY_ATTR(current_qnovo),
-	POWER_SUPPLY_ATTR(voltage_qnovo),
 	POWER_SUPPLY_ATTR(rerun_aicl),
 	POWER_SUPPLY_ATTR(cycle_count_id),
 	POWER_SUPPLY_ATTR(safety_timer_expired),
 	POWER_SUPPLY_ATTR(restricted_charging),
 	POWER_SUPPLY_ATTR(current_capability),
 	POWER_SUPPLY_ATTR(typec_mode),
-	POWER_SUPPLY_ATTR(typec_cc_orientation),
-	POWER_SUPPLY_ATTR(typec_power_role),
-	POWER_SUPPLY_ATTR(pd_allowed),
-	POWER_SUPPLY_ATTR(pd_active),
-	POWER_SUPPLY_ATTR(pd_in_hard_reset),
-	POWER_SUPPLY_ATTR(pd_current_max),
-	POWER_SUPPLY_ATTR(pd_usb_suspend_supported),
-	POWER_SUPPLY_ATTR(charger_temp),
-	POWER_SUPPLY_ATTR(charger_temp_max),
-	POWER_SUPPLY_ATTR(parallel_disable),
-	POWER_SUPPLY_ATTR(pe_start),
-	POWER_SUPPLY_ATTR(set_ship_mode),
+	POWER_SUPPLY_ATTR(allow_hvdcp3),
+	POWER_SUPPLY_ATTR(max_pulse_allowed),
 	POWER_SUPPLY_ATTR(soc_reporting_ready),
-	POWER_SUPPLY_ATTR(debug_battery),
-	POWER_SUPPLY_ATTR(fcc_delta),
-	POWER_SUPPLY_ATTR(icl_reduction),
-	POWER_SUPPLY_ATTR(parallel_mode),
-	POWER_SUPPLY_ATTR(die_health),
-	POWER_SUPPLY_ATTR(connector_health),
-	POWER_SUPPLY_ATTR(ctm_current_max),
-	POWER_SUPPLY_ATTR(hw_current_max),
-	POWER_SUPPLY_ATTR(real_type),
-	POWER_SUPPLY_ATTR(pr_swap),
-	POWER_SUPPLY_ATTR(sw_jeita_enabled),
+	POWER_SUPPLY_ATTR(ignore_false_negative_isense),
+	POWER_SUPPLY_ATTR(enable_jeita_detection),
+	POWER_SUPPLY_ATTR(battery_info),
+	POWER_SUPPLY_ATTR(battery_info_id),
 	POWER_SUPPLY_ATTR(charge_battery),
 	POWER_SUPPLY_ATTR(charge_cutoff),
 	POWER_SUPPLY_ATTR(charge_monotonic),
@@ -331,12 +285,12 @@ static umode_t power_supply_attr_is_visible(struct kobject *kobj,
 	if (attrno == POWER_SUPPLY_PROP_TYPE)
 		return mode;
 
-	for (i = 0; i < psy->desc->num_properties; i++) {
-		int property = psy->desc->properties[i];
+	for (i = 0; i < psy->num_properties; i++) {
+		int property = psy->properties[i];
 
 		if (property == attrno) {
-			if (psy->desc->property_is_writeable &&
-			    psy->desc->property_is_writeable(psy, property) > 0)
+			if (psy->property_is_writeable &&
+			    psy->property_is_writeable(psy, property) > 0)
 				mode |= S_IWUSR;
 
 			return mode;
@@ -392,14 +346,14 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 
 	dev_dbg(dev, "uevent\n");
 
-	if (!psy || !psy->desc) {
+	if (!psy || !psy->dev) {
 		dev_dbg(dev, "No power supply yet\n");
 		return ret;
 	}
 
-	dev_dbg(dev, "POWER_SUPPLY_NAME=%s\n", psy->desc->name);
+	dev_dbg(dev, "POWER_SUPPLY_NAME=%s\n", psy->name);
 
-	ret = add_uevent_var(env, "POWER_SUPPLY_NAME=%s", psy->desc->name);
+	ret = add_uevent_var(env, "POWER_SUPPLY_NAME=%s", psy->name);
 	if (ret)
 		return ret;
 
@@ -407,11 +361,11 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 	if (!prop_buf)
 		return -ENOMEM;
 
-	for (j = 0; j < psy->desc->num_properties; j++) {
+	for (j = 0; j < psy->num_properties; j++) {
 		struct device_attribute *attr;
 		char *line;
 
-		attr = &power_supply_attrs[psy->desc->properties[j]];
+		attr = &power_supply_attrs[psy->properties[j]];
 
 		ret = power_supply_show_property(dev, attr, prop_buf);
 		if (ret == -ENODEV || ret == -ENODATA) {

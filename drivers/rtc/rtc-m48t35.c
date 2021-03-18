@@ -181,6 +181,7 @@ static int m48t35_probe(struct platform_device *pdev)
 static struct platform_driver m48t35_platform_driver = {
 	.driver		= {
 		.name	= "rtc-m48t35",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= m48t35_probe,
 };

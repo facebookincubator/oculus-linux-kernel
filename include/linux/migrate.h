@@ -33,11 +33,12 @@ extern int migrate_page(struct address_space *,
 			struct page *, struct page *, enum migrate_mode);
 extern int migrate_pages(struct list_head *l, new_page_t new, free_page_t free,
 		unsigned long private, enum migrate_mode mode, int reason);
-extern bool isolate_movable_page(struct page *page, isolate_mode_t mode);
-extern void putback_movable_page(struct page *page);
 
 extern int migrate_prep(void);
 extern int migrate_prep_local(void);
+extern int migrate_vmas(struct mm_struct *mm,
+		const nodemask_t *from, const nodemask_t *to,
+		unsigned long flags);
 extern void migrate_page_copy(struct page *newpage, struct page *page);
 extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
@@ -56,6 +57,13 @@ static inline int migrate_pages(struct list_head *l, new_page_t new,
 static inline int migrate_prep(void) { return -ENOSYS; }
 static inline int migrate_prep_local(void) { return -ENOSYS; }
 
+static inline int migrate_vmas(struct mm_struct *mm,
+		const nodemask_t *from, const nodemask_t *to,
+		unsigned long flags)
+{
+	return -ENOSYS;
+}
+
 static inline void migrate_page_copy(struct page *newpage,
 				     struct page *page) {}
 
@@ -67,34 +75,28 @@ static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
 
 #endif /* CONFIG_MIGRATION */
 
-#ifdef CONFIG_COMPACTION
-extern int PageMovable(struct page *page);
-extern void __SetPageMovable(struct page *page, struct address_space *mapping);
-extern void __ClearPageMovable(struct page *page);
-#else
-static inline int PageMovable(struct page *page) { return 0; };
-static inline void __SetPageMovable(struct page *page,
-				struct address_space *mapping)
-{
-}
-static inline void __ClearPageMovable(struct page *page)
-{
-}
-#endif
-
 #ifdef CONFIG_NUMA_BALANCING
 extern bool pmd_trans_migrating(pmd_t pmd);
+extern void wait_migrate_huge_page(struct anon_vma *anon_vma, pmd_t *pmd);
 extern int migrate_misplaced_page(struct page *page,
 				  struct vm_area_struct *vma, int node);
+extern bool migrate_ratelimited(int node);
 #else
 static inline bool pmd_trans_migrating(pmd_t pmd)
 {
 	return false;
 }
+static inline void wait_migrate_huge_page(struct anon_vma *anon_vma, pmd_t *pmd)
+{
+}
 static inline int migrate_misplaced_page(struct page *page,
 					 struct vm_area_struct *vma, int node)
 {
 	return -EAGAIN; /* can't migrate now */
+}
+static inline bool migrate_ratelimited(int node)
+{
+	return false;
 }
 #endif /* CONFIG_NUMA_BALANCING */
 

@@ -23,6 +23,7 @@
 #include <linux/mm.h>
 #include <linux/interrupt.h>
 #include <linux/time.h>
+#include <linux/rtc.h>
 #include <linux/rtc/m48t59.h>
 #include <linux/timex.h>
 #include <linux/clocksource.h>
@@ -64,6 +65,8 @@ DEFINE_PER_CPU(struct clock_event_device, sparc32_clockevent);
 DEFINE_SPINLOCK(rtc_lock);
 EXPORT_SYMBOL(rtc_lock);
 
+static int set_rtc_mmss(unsigned long);
+
 unsigned long profile_pc(struct pt_regs *regs)
 {
 	extern char __copy_user_begin[], __copy_user_end[];
@@ -84,6 +87,11 @@ EXPORT_SYMBOL(profile_pc);
 
 volatile u32 __iomem *master_l10_counter;
 
+int update_persistent_clock(struct timespec now)
+{
+	return set_rtc_mmss(now.tv_sec);
+}
+
 irqreturn_t notrace timer_interrupt(int dummy, void *dev_id)
 {
 	if (timer_cs_enabled) {
@@ -101,18 +109,21 @@ irqreturn_t notrace timer_interrupt(int dummy, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int timer_ce_shutdown(struct clock_event_device *evt)
+static void timer_ce_set_mode(enum clock_event_mode mode,
+			      struct clock_event_device *evt)
 {
-	timer_ce_enabled = 0;
+	switch (mode) {
+		case CLOCK_EVT_MODE_PERIODIC:
+		case CLOCK_EVT_MODE_RESUME:
+			timer_ce_enabled = 1;
+			break;
+		case CLOCK_EVT_MODE_SHUTDOWN:
+			timer_ce_enabled = 0;
+			break;
+		default:
+			break;
+	}
 	smp_mb();
-	return 0;
-}
-
-static int timer_ce_set_periodic(struct clock_event_device *evt)
-{
-	timer_ce_enabled = 1;
-	smp_mb();
-	return 0;
 }
 
 static __init void setup_timer_ce(void)
@@ -124,9 +135,7 @@ static __init void setup_timer_ce(void)
 	ce->name     = "timer_ce";
 	ce->rating   = 100;
 	ce->features = CLOCK_EVT_FEAT_PERIODIC;
-	ce->set_state_shutdown = timer_ce_shutdown;
-	ce->set_state_periodic = timer_ce_set_periodic;
-	ce->tick_resume = timer_ce_set_periodic;
+	ce->set_mode = timer_ce_set_mode;
 	ce->cpumask  = cpu_possible_mask;
 	ce->shift    = 32;
 	ce->mult     = div_sc(sparc_config.clock_rate, NSEC_PER_SEC,
@@ -172,36 +181,44 @@ static struct clocksource timer_cs = {
 	.rating	= 100,
 	.read	= timer_cs_read,
 	.mask	= CLOCKSOURCE_MASK(64),
+	.shift	= 2,
 	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
 static __init int setup_timer_cs(void)
 {
 	timer_cs_enabled = 1;
-	return clocksource_register_hz(&timer_cs, sparc_config.clock_rate);
+	timer_cs.mult = clocksource_hz2mult(sparc_config.clock_rate,
+	                                    timer_cs.shift);
+
+	return clocksource_register(&timer_cs);
 }
 
 #ifdef CONFIG_SMP
-static int percpu_ce_shutdown(struct clock_event_device *evt)
+static void percpu_ce_setup(enum clock_event_mode mode,
+			struct clock_event_device *evt)
 {
-	int cpu = cpumask_first(evt->cpumask);
+	int cpu = __first_cpu(evt->cpumask);
 
-	sparc_config.load_profile_irq(cpu, 0);
-	return 0;
-}
-
-static int percpu_ce_set_periodic(struct clock_event_device *evt)
-{
-	int cpu = cpumask_first(evt->cpumask);
-
-	sparc_config.load_profile_irq(cpu, SBUS_CLOCK_RATE / HZ);
-	return 0;
+	switch (mode) {
+		case CLOCK_EVT_MODE_PERIODIC:
+			sparc_config.load_profile_irq(cpu,
+						      SBUS_CLOCK_RATE / HZ);
+			break;
+		case CLOCK_EVT_MODE_ONESHOT:
+		case CLOCK_EVT_MODE_SHUTDOWN:
+		case CLOCK_EVT_MODE_UNUSED:
+			sparc_config.load_profile_irq(cpu, 0);
+			break;
+		default:
+			break;
+	}
 }
 
 static int percpu_ce_set_next_event(unsigned long delta,
 				    struct clock_event_device *evt)
 {
-	int cpu = cpumask_first(evt->cpumask);
+	int cpu = __first_cpu(evt->cpumask);
 	unsigned int next = (unsigned int)delta;
 
 	sparc_config.load_profile_irq(cpu, next);
@@ -219,9 +236,7 @@ void register_percpu_ce(int cpu)
 	ce->name           = "percpu_ce";
 	ce->rating         = 200;
 	ce->features       = features;
-	ce->set_state_shutdown = percpu_ce_shutdown;
-	ce->set_state_periodic = percpu_ce_set_periodic;
-	ce->set_state_oneshot = percpu_ce_shutdown;
+	ce->set_mode       = percpu_ce_setup;
 	ce->set_next_event = percpu_ce_set_next_event;
 	ce->cpumask        = cpumask_of(cpu);
 	ce->shift          = 32;
@@ -307,6 +322,7 @@ static struct platform_driver clock_driver = {
 	.probe		= clock_probe,
 	.driver = {
 		.name = "rtc",
+		.owner = THIS_MODULE,
 		.of_match_table = clock_match,
 	},
 };
@@ -351,3 +367,16 @@ void __init time_init(void)
 		sbus_time_init();
 }
 
+
+static int set_rtc_mmss(unsigned long secs)
+{
+	struct rtc_device *rtc = rtc_class_open("rtc0");
+	int err = -1;
+
+	if (rtc) {
+		err = rtc_set_mmss(rtc, secs);
+		rtc_class_close(rtc);
+	}
+
+	return err;
+}

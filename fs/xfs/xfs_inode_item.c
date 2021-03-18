@@ -20,6 +20,8 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
+#include "xfs_sb.h"
+#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
@@ -27,6 +29,7 @@
 #include "xfs_error.h"
 #include "xfs_trace.h"
 #include "xfs_trans_priv.h"
+#include "xfs_dinode.h"
 #include "xfs_log.h"
 
 
@@ -703,10 +706,17 @@ xfs_iflush_abort(
 	xfs_inode_log_item_t	*iip = ip->i_itemp;
 
 	if (iip) {
+		struct xfs_ail	*ailp = iip->ili_item.li_ailp;
 		if (iip->ili_item.li_flags & XFS_LI_IN_AIL) {
-			xfs_trans_ail_remove(&iip->ili_item,
-					     stale ? SHUTDOWN_LOG_IO_ERROR :
+			spin_lock(&ailp->xa_lock);
+			if (iip->ili_item.li_flags & XFS_LI_IN_AIL) {
+				/* xfs_trans_ail_delete() drops the AIL lock. */
+				xfs_trans_ail_delete(ailp, &iip->ili_item,
+						stale ?
+						     SHUTDOWN_LOG_IO_ERROR :
 						     SHUTDOWN_CORRUPT_INCORE);
+			} else
+				spin_unlock(&ailp->xa_lock);
 		}
 		iip->ili_logged = 0;
 		/*
@@ -719,7 +729,6 @@ xfs_iflush_abort(
 		 * attempted.
 		 */
 		iip->ili_fields = 0;
-		iip->ili_fsync_fields = 0;
 	}
 	/*
 	 * Release the inode's flush lock since we're done with it.

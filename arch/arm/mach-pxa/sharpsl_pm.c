@@ -841,9 +841,11 @@ static int sharpsl_pm_probe(struct platform_device *pdev)
 	sharpsl_pm.charge_mode = CHRG_OFF;
 	sharpsl_pm.flags = 0;
 
-	setup_timer(&sharpsl_pm.ac_timer, sharpsl_ac_timer, 0UL);
+	init_timer(&sharpsl_pm.ac_timer);
+	sharpsl_pm.ac_timer.function = sharpsl_ac_timer;
 
-	setup_timer(&sharpsl_pm.chrg_full_timer, sharpsl_chrg_full_timer, 0UL);
+	init_timer(&sharpsl_pm.chrg_full_timer);
+	sharpsl_pm.chrg_full_timer.function = sharpsl_chrg_full_timer;
 
 	led_trigger_register_simple("sharpsl-charge", &sharpsl_charge_led_trigger);
 

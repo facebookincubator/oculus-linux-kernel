@@ -132,14 +132,14 @@ __arm740_setup:
 
 	.align
 
-	.section ".proc.info.init", #alloc
+	.section ".proc.info.init", #alloc, #execinstr
 	.type	__arm740_proc_info,#object
 __arm740_proc_info:
 	.long	0x41807400
 	.long	0xfffffff0
 	.long	0
 	.long	0
-	initfn	__arm740_setup, __arm740_proc_info
+	b	__arm740_setup
 	.long	cpu_arch_name
 	.long	cpu_elf_name
 	.long	HWCAP_SWP | HWCAP_HALF | HWCAP_THUMB | HWCAP_26BIT

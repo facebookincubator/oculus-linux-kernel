@@ -379,7 +379,7 @@ int afs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 {
 	struct inode *inode;
 
-	inode = d_inode(dentry);
+	inode = dentry->d_inode;
 
 	_enter("{ ino=%lu v=%u }", inode->i_ino, inode->i_generation);
 
@@ -458,12 +458,12 @@ void afs_evict_inode(struct inode *inode)
  */
 int afs_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct afs_vnode *vnode = AFS_FS_I(d_inode(dentry));
+	struct afs_vnode *vnode = AFS_FS_I(dentry->d_inode);
 	struct key *key;
 	int ret;
 
-	_enter("{%x:%u},{n=%pd},%x",
-	       vnode->fid.vid, vnode->fid.vnode, dentry,
+	_enter("{%x:%u},{n=%s},%x",
+	       vnode->fid.vid, vnode->fid.vnode, dentry->d_name.name,
 	       attr->ia_valid);
 
 	if (!(attr->ia_valid & (ATTR_SIZE | ATTR_MODE | ATTR_UID | ATTR_GID |

@@ -30,11 +30,7 @@
 #define TIMER_ENTRY_STATIC	((void *) 0x74737461)
 
 /********** mm/debug-pagealloc.c **********/
-#ifdef CONFIG_PAGE_POISONING_ZERO
-#define PAGE_POISON 0x00
-#else
 #define PAGE_POISON 0xaa
-#endif
 
 /********** mm/slab.c **********/
 /*
@@ -73,6 +69,10 @@
 #define ATM_POISON_FREE		0x12
 #define ATM_POISON		0xdeadbeef
 
+/********** net/ **********/
+#define NEIGHBOR_DEAD		0xdeadbeef
+#define NETFILTER_LINK_POISON	0xdead57ac
+
 /********** kernel/mutexes **********/
 #define MUTEX_DEBUG_INIT	0x11
 #define MUTEX_DEBUG_FREE	0x22
@@ -82,5 +82,8 @@
 
 /********** security/ **********/
 #define KEY_DESTROY		0xbd
+
+/********** sound/oss/ **********/
+#define OSS_POISON_FREE		0xAB
 
 #endif

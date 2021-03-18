@@ -382,7 +382,7 @@ done:
 *
 * Arguments:
 *	hw		device struct
-*	tx_urb		URB of data for transmission
+*	tx_urb		URB of data for tranmission
 *	memflags	memory allocation flags
 *
 * Returns:
@@ -557,13 +557,17 @@ void hfa384x_create(hfa384x_t *hw, struct usb_device *usb)
 	INIT_WORK(&hw->link_bh, prism2sta_processing_defer);
 	INIT_WORK(&hw->usb_work, hfa384x_usb_defer);
 
-	setup_timer(&hw->throttle, hfa384x_usb_throttlefn, (unsigned long)hw);
+	init_timer(&hw->throttle);
+	hw->throttle.function = hfa384x_usb_throttlefn;
+	hw->throttle.data = (unsigned long)hw;
 
-	setup_timer(&hw->resptimer, hfa384x_usbctlx_resptimerfn,
-		    (unsigned long)hw);
+	init_timer(&hw->resptimer);
+	hw->resptimer.function = hfa384x_usbctlx_resptimerfn;
+	hw->resptimer.data = (unsigned long)hw;
 
-	setup_timer(&hw->reqtimer, hfa384x_usbctlx_reqtimerfn,
-		    (unsigned long)hw);
+	init_timer(&hw->reqtimer);
+	hw->reqtimer.function = hfa384x_usbctlx_reqtimerfn;
+	hw->reqtimer.data = (unsigned long)hw;
 
 	usb_init_urb(&hw->rx_urb);
 	usb_init_urb(&hw->tx_urb);
@@ -573,8 +577,9 @@ void hfa384x_create(hfa384x_t *hw, struct usb_device *usb)
 	hw->state = HFA384x_STATE_INIT;
 
 	INIT_WORK(&hw->commsqual_bh, prism2sta_commsqual_defer);
-	setup_timer(&hw->commsqual_timer, prism2sta_commsqual_timer,
-		    (unsigned long)hw);
+	init_timer(&hw->commsqual_timer);
+	hw->commsqual_timer.data = (unsigned long)hw;
+	hw->commsqual_timer.function = prism2sta_commsqual_timer;
 }
 
 /*----------------------------------------------------------------
@@ -619,10 +624,11 @@ static hfa384x_usbctlx_t *usbctlx_alloc(void)
 {
 	hfa384x_usbctlx_t *ctlx;
 
-	ctlx = kzalloc(sizeof(*ctlx),
-		       in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
-	if (ctlx != NULL)
+	ctlx = kmalloc(sizeof(*ctlx), in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+	if (ctlx != NULL) {
+		memset(ctlx, 0, sizeof(*ctlx));
 		init_completion(&ctlx->done);
+	}
 
 	return ctlx;
 }
@@ -1194,7 +1200,7 @@ int hfa384x_cmd_download(hfa384x_t *hw, u16 mode, u16 lowaddr,
 ----------------------------------------------------------------*/
 int hfa384x_corereset(hfa384x_t *hw, int holdtime, int settletime, int genesis)
 {
-	int result;
+	int result = 0;
 
 	result = usb_reset_device(hw->usb);
 	if (result < 0) {
@@ -2385,7 +2391,7 @@ int hfa384x_drvr_ramdl_write(hfa384x_t *hw, u32 daddr, void *buf, u32 len)
 *	0		success
 *	>0		f/w reported error - f/w status code
 *	<0		driver reported error
-*	-ETIMEDOUT	timeout waiting for the cmd regs to become
+*	-ETIMEDOUT	timout waiting for the cmd regs to become
 *			available, or waiting for the control reg
 *			to indicate the Aux port is enabled.
 *	-ENODATA	the buffer does NOT contain a valid PDA.
@@ -3340,7 +3346,7 @@ retry:
 		if (unlocked_usbctlx_cancel_async(hw, ctlx) == 0)
 			run_queue = 1;
 	} else {
-		const __le16 intype = (usbin->type & ~cpu_to_le16(0x8000));
+		const u16 intype = (usbin->type & ~cpu_to_le16(0x8000));
 
 		/*
 		 * Check that our message is what we're expecting ...
@@ -3577,8 +3583,12 @@ static void hfa384x_int_rxmonitor(wlandevice_t *wlandev,
 	}
 
 	skb = dev_alloc_skb(skblen);
-	if (skb == NULL)
+	if (skb == NULL) {
+		netdev_err(hw->wlandev->netdev,
+			   "alloc_skb failed trying to allocate %d bytes\n",
+			   skblen);
 		return;
+	}
 
 	/* only prepend the prism header if in the right mode */
 	if ((wlandev->netdev->type == ARPHRD_IEEE80211_PRISM) &&
@@ -4117,11 +4127,12 @@ static int hfa384x_isgood_pdrcode(u16 pdrcode)
 			pr_debug("Encountered unknown PDR#=0x%04x, assuming it's ok.\n",
 				 pdrcode);
 			return 1;
+		} else {
+			/* bad code */
+			pr_debug("Encountered unknown PDR#=0x%04x, (>=0x1000), assuming it's bad.\n",
+				 pdrcode);
+			return 0;
 		}
-		break;
 	}
-	/* bad code */
-	pr_debug("Encountered unknown PDR#=0x%04x, (>=0x1000), assuming it's bad.\n",
-		 pdrcode);
-	return 0;
+	return 0;		/* avoid compiler warnings */
 }

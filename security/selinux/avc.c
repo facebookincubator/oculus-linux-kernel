@@ -116,7 +116,6 @@ static void avc_dump_av(struct audit_buffer *ab, u16 tclass, u32 av)
 		return;
 	}
 
-	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
 	perms = secclass_map[tclass-1].perms;
 
 	audit_log_format(ab, " {");
@@ -165,7 +164,7 @@ static void avc_dump_query(struct audit_buffer *ab, u32 ssid, u32 tsid, u16 tcla
 		kfree(scontext);
 	}
 
-	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
+	BUG_ON(tclass >= ARRAY_SIZE(secclass_map));
 	audit_log_format(ab, " tclass=%s", secclass_map[tclass-1].name);
 }
 
@@ -804,6 +803,11 @@ out:
 	return rc;
 }
 
+static inline int avc_sidcmp(u32 x, u32 y)
+{
+	return (x == y || x == SECSID_WILD || y == SECSID_WILD);
+}
+
 /**
  * avc_update_node Update an AVC entry
  * @event : Updating event
@@ -1147,23 +1151,7 @@ int avc_has_perm(u32 ssid, u32 tsid, u16 tclass,
 
 	rc = avc_has_perm_noaudit(ssid, tsid, tclass, requested, 0, &avd);
 
-	rc2 = avc_audit(ssid, tsid, tclass, requested, &avd, rc, auditdata, 0);
-	if (rc2)
-		return rc2;
-	return rc;
-}
-
-int avc_has_perm_flags(u32 ssid, u32 tsid, u16 tclass,
-		       u32 requested, struct common_audit_data *auditdata,
-		       int flags)
-{
-	struct av_decision avd;
-	int rc, rc2;
-
-	rc = avc_has_perm_noaudit(ssid, tsid, tclass, requested, 0, &avd);
-
-	rc2 = avc_audit(ssid, tsid, tclass, requested, &avd, rc,
-			auditdata, flags);
+	rc2 = avc_audit(ssid, tsid, tclass, requested, &avd, rc, auditdata);
 	if (rc2)
 		return rc2;
 	return rc;

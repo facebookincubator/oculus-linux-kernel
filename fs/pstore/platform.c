@@ -237,14 +237,6 @@ static void allocate_buf_for_compression(void)
 
 }
 
-static void free_buf_for_compression(void)
-{
-	kfree(stream.workspace);
-	stream.workspace = NULL;
-	kfree(big_oops_buf);
-	big_oops_buf = NULL;
-}
-
 /*
  * Called when compression fails, since the printk buffer
  * would be fetched for compression calling it again when
@@ -307,9 +299,9 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		bool compressed;
 		size_t total_len;
 
-		if (big_oops_buf && is_locked) {
+		if (big_oops_buf) {
 			dst = big_oops_buf;
-			hsize = sprintf(dst, "%s#%d Part%u\n", why,
+			hsize = sprintf(dst, "%s#%d Part%d\n", why,
 							oopscount, part);
 			size = big_oops_buf_sz - hsize;
 
@@ -329,7 +321,7 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 			}
 		} else {
 			dst = psinfo->buf;
-			hsize = sprintf(dst, "%s#%d Part%u\n", why, oopscount,
+			hsize = sprintf(dst, "%s#%d Part%d\n", why, oopscount,
 									part);
 			size = psinfo->bufsize - hsize;
 			dst += hsize;
@@ -360,19 +352,6 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 static struct kmsg_dumper pstore_dumper = {
 	.dump = pstore_dump,
 };
-
-/*
- * Register with kmsg_dump to save last part of console log on panic.
- */
-static void pstore_register_kmsg(void)
-{
-	kmsg_dump_register(&pstore_dumper);
-}
-
-static void pstore_unregister_kmsg(void)
-{
-	kmsg_dump_unregister(&pstore_dumper);
-}
 
 #ifdef CONFIG_PSTORE_CONSOLE
 static void pstore_console_write(struct console *con, const char *s, unsigned c)
@@ -411,14 +390,8 @@ static void pstore_register_console(void)
 {
 	register_console(&pstore_console);
 }
-
-static void pstore_unregister_console(void)
-{
-	unregister_console(&pstore_console);
-}
 #else
 static void pstore_register_console(void) {}
-static void pstore_unregister_console(void) {}
 #endif
 
 static int pstore_write_compat(enum pstore_type_id type,
@@ -431,46 +404,14 @@ static int pstore_write_compat(enum pstore_type_id type,
 			     size, psi);
 }
 
-static int pstore_write_buf_user_compat(enum pstore_type_id type,
-			       enum kmsg_dump_reason reason,
-			       u64 *id, unsigned int part,
-			       const char __user *buf,
-			       bool compressed, size_t size,
-			       struct pstore_info *psi)
-{
-	unsigned long flags = 0;
-	size_t i, bufsize = size;
-	long ret = 0;
-
-	if (unlikely(!access_ok(VERIFY_READ, buf, size)))
-		return -EFAULT;
-	if (bufsize > psinfo->bufsize)
-		bufsize = psinfo->bufsize;
-	spin_lock_irqsave(&psinfo->buf_lock, flags);
-	for (i = 0; i < size; ) {
-		size_t c = min(size - i, bufsize);
-
-		ret = __copy_from_user(psinfo->buf, buf + i, c);
-		if (unlikely(ret != 0)) {
-			ret = -EFAULT;
-			break;
-		}
-		ret = psi->write_buf(type, reason, id, part, psinfo->buf,
-				     compressed, c, psi);
-		if (unlikely(ret < 0))
-			break;
-		i += c;
-	}
-	spin_unlock_irqrestore(&psinfo->buf_lock, flags);
-	return unlikely(ret < 0) ? ret : size;
-}
-
 /*
  * platform specific persistent storage driver registers with
  * us here. If pstore is already mounted, call the platform
  * read function right away to populate the file system. If not
  * then the pstore mount code will call us later to fill out
  * the file system.
+ *
+ * Register with kmsg_dump to save last part of console log on panic.
  */
 int pstore_register(struct pstore_info *psi)
 {
@@ -487,8 +428,6 @@ int pstore_register(struct pstore_info *psi)
 
 	if (!psi->write)
 		psi->write = pstore_write_compat;
-	if (!psi->write_buf_user)
-		psi->write_buf_user = pstore_write_buf_user_compat;
 	psinfo = psi;
 	mutex_init(&psinfo->read_mutex);
 	spin_unlock(&pstore_lock);
@@ -503,7 +442,7 @@ int pstore_register(struct pstore_info *psi)
 	if (pstore_is_mounted())
 		pstore_get_records(0);
 
-	pstore_register_kmsg();
+	kmsg_dump_register(&pstore_dumper);
 
 	if ((psi->flags & PSTORE_FLAGS_FRAGILE) == 0) {
 		pstore_register_console();
@@ -517,33 +456,11 @@ int pstore_register(struct pstore_info *psi)
 		add_timer(&pstore_timer);
 	}
 
-	/*
-	 * Update the module parameter backend, so it is visible
-	 * through /sys/module/pstore/parameters/backend
-	 */
-	backend = psi->name;
-
-	module_put(owner);
-
 	pr_info("Registered %s as persistent store backend\n", psi->name);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(pstore_register);
-
-void pstore_unregister(struct pstore_info *psi)
-{
-	pstore_unregister_pmsg();
-	pstore_unregister_ftrace();
-	pstore_unregister_console();
-	pstore_unregister_kmsg();
-
-	free_buf_for_compression();
-
-	psinfo = NULL;
-	backend = NULL;
-}
-EXPORT_SYMBOL_GPL(pstore_unregister);
 
 /*
  * Read all the records from the persistent store. Create

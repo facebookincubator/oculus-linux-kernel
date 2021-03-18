@@ -25,12 +25,6 @@
 #define XICS_MFRR		0xc
 #define XICS_IPI		2	/* interrupt source # for IPIs */
 
-/* Maximum number of threads per physical core */
-#define MAX_SMT_THREADS		8
-
-/* Maximum number of subcores per physical core */
-#define MAX_SUBCORES		4
-
 #ifdef __ASSEMBLY__
 
 #ifdef CONFIG_KVM_BOOK3S_HANDLER
@@ -71,19 +65,6 @@ kvmppc_resume_\intno:
 
 #else  /*__ASSEMBLY__ */
 
-struct kvmppc_vcore;
-
-/* Struct used for coordinating micro-threading (split-core) mode changes */
-struct kvm_split_mode {
-	unsigned long	rpr;
-	unsigned long	pmmar;
-	unsigned long	ldbar;
-	u8		subcore_size;
-	u8		do_nap;
-	u8		napped[MAX_SMT_THREADS];
-	struct kvmppc_vcore *master_vcs[MAX_SUBCORES];
-};
-
 /*
  * This struct goes in the PACA on 64-bit processors.  It is used
  * to store host state that needs to be saved when we enter a guest
@@ -119,7 +100,6 @@ struct kvmppc_host_state {
 	u64 host_spurr;
 	u64 host_dscr;
 	u64 dec_expires;
-	struct kvm_split_mode *kvm_split_mode;
 #endif
 #ifdef CONFIG_PPC_BOOK3S_64
 	u64 cfar;
@@ -132,7 +112,7 @@ struct kvmppc_book3s_shadow_vcpu {
 	bool in_use;
 	ulong gpr[14];
 	u32 cr;
-	ulong xer;
+	u32 xer;
 	ulong ctr;
 	ulong lr;
 	ulong pc;

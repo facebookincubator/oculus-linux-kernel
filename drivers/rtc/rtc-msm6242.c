@@ -7,8 +7,6 @@
  *  Copyright (C) 1993 Hamish Macdonald
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
@@ -113,7 +111,7 @@ static void msm6242_lock(struct msm6242_priv *priv)
 	}
 
 	if (!cnt)
-		pr_warn("timed out waiting for RTC (0x%x)\n",
+		pr_warn("msm6242: timed out waiting for RTC (0x%x)\n",
 			msm6242_read(priv, MSM6242_CD));
 }
 
@@ -227,6 +225,7 @@ static int __init msm6242_rtc_probe(struct platform_device *pdev)
 static struct platform_driver msm6242_rtc_driver = {
 	.driver	= {
 		.name	= "rtc-msm6242",
+		.owner	= THIS_MODULE,
 	},
 };
 

@@ -29,7 +29,7 @@
 	 * we want to be. The kernel image wants to be placed at TEXT_OFFSET
 	 * from start of RAM.
 	 */
-ENTRY(entry)
+ENTRY(efi_stub_entry)
 	/*
 	 * Create a stack frame to save FP/LR with extra space
 	 * for image_addr variable passed to efi_entry().
@@ -61,7 +61,7 @@ ENTRY(entry)
 	 */
 	mov	x20, x0		// DTB address
 	ldr	x0, [sp, #16]	// relocated _text address
-	ldr	w21, =stext_offset
+	ldr	x21, =stext_offset
 	add	x21, x0, x21
 
 	/*
@@ -86,8 +86,8 @@ ENTRY(entry)
 	 * entries for the VA range of the current image, so no maintenance is
 	 * necessary.
 	 */
-	adr	x0, entry
-	adr	x1, entry_end
+	adr	x0, efi_stub_entry
+	adr	x1, efi_stub_entry_end
 	sub	x1, x1, x0
 	bl	__flush_dcache_area
 
@@ -120,5 +120,5 @@ efi_load_fail:
 	ldp	x29, x30, [sp], #32
 	ret
 
-entry_end:
-ENDPROC(entry)
+efi_stub_entry_end:
+ENDPROC(efi_stub_entry)

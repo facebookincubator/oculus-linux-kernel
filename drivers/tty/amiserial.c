@@ -931,7 +931,7 @@ static void rs_send_xchar(struct tty_struct *tty, char ch)
 	struct serial_state *info = tty->driver_data;
         unsigned long flags;
 
-	if (serial_paranoia_check(info, tty->name, "rs_send_xchar"))
+	if (serial_paranoia_check(info, tty->name, "rs_send_char"))
 		return;
 
 	info->x_char = ch;
@@ -966,7 +966,9 @@ static void rs_throttle(struct tty_struct * tty)
 	struct serial_state *info = tty->driver_data;
 	unsigned long flags;
 #ifdef SERIAL_DEBUG_THROTTLE
-	printk("throttle %s: %d....\n", tty_name(tty),
+	char	buf[64];
+
+	printk("throttle %s: %d....\n", tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
 
@@ -989,7 +991,9 @@ static void rs_unthrottle(struct tty_struct * tty)
 	struct serial_state *info = tty->driver_data;
 	unsigned long flags;
 #ifdef SERIAL_DEBUG_THROTTLE
-	printk("unthrottle %s: %d....\n", tty_name(tty),
+	char	buf[64];
+
+	printk("unthrottle %s: %d....\n", tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
 
@@ -1782,8 +1786,7 @@ static int __exit amiga_serial_remove(struct platform_device *pdev)
 	struct serial_state *state = platform_get_drvdata(pdev);
 
 	/* printk("Unloading %s: version %s\n", serial_name, serial_version); */
-	error = tty_unregister_driver(serial_driver);
-	if (error)
+	if ((error = tty_unregister_driver(serial_driver)))
 		printk("SERIAL: failed to unregister serial driver (%d)\n",
 		       error);
 	put_tty_driver(serial_driver);
@@ -1799,6 +1802,7 @@ static struct platform_driver amiga_serial_driver = {
 	.remove = __exit_p(amiga_serial_remove),
 	.driver   = {
 		.name	= "amiga-serial",
+		.owner	= THIS_MODULE,
 	},
 };
 

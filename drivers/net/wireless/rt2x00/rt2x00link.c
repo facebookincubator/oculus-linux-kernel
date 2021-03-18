@@ -33,11 +33,15 @@
  */
 #define DEFAULT_RSSI		-128
 
-static inline int rt2x00link_get_avg_rssi(struct ewma_rssi *ewma)
+/* Constants for EWMA calculations. */
+#define RT2X00_EWMA_FACTOR	1024
+#define RT2X00_EWMA_WEIGHT	8
+
+static inline int rt2x00link_get_avg_rssi(struct ewma *ewma)
 {
 	unsigned long avg;
 
-	avg = ewma_rssi_read(ewma);
+	avg = ewma_read(ewma);
 	if (avg)
 		return -avg;
 
@@ -72,7 +76,8 @@ static void rt2x00link_antenna_update_rssi_history(struct rt2x00_dev *rt2x00dev,
 
 static void rt2x00link_antenna_reset(struct rt2x00_dev *rt2x00dev)
 {
-	ewma_rssi_init(&rt2x00dev->link.ant.rssi_ant);
+	ewma_init(&rt2x00dev->link.ant.rssi_ant, RT2X00_EWMA_FACTOR,
+		  RT2X00_EWMA_WEIGHT);
 }
 
 static void rt2x00lib_antenna_diversity_sample(struct rt2x00_dev *rt2x00dev)
@@ -220,12 +225,12 @@ void rt2x00link_update_stats(struct rt2x00_dev *rt2x00dev,
 	/*
 	 * Update global RSSI
 	 */
-	ewma_rssi_add(&link->avg_rssi, -rxdesc->rssi);
+	ewma_add(&link->avg_rssi, -rxdesc->rssi);
 
 	/*
 	 * Update antenna RSSI
 	 */
-	ewma_rssi_add(&ant->rssi_ant, -rxdesc->rssi);
+	ewma_add(&ant->rssi_ant, -rxdesc->rssi);
 }
 
 void rt2x00link_start_tuner(struct rt2x00_dev *rt2x00dev)
@@ -280,7 +285,8 @@ void rt2x00link_reset_tuner(struct rt2x00_dev *rt2x00dev, bool antenna)
 	 */
 	rt2x00dev->link.count = 0;
 	memset(qual, 0, sizeof(*qual));
-	ewma_rssi_init(&rt2x00dev->link.avg_rssi);
+	ewma_init(&rt2x00dev->link.avg_rssi, RT2X00_EWMA_FACTOR,
+		  RT2X00_EWMA_WEIGHT);
 
 	/*
 	 * Restore the VGC level as stored in the registers,

@@ -46,13 +46,13 @@ void _rtw_open_pktfile(struct sk_buff *pktptr, struct pkt_file *pfile)
 
 }
 
-uint _rtw_pktfile_read(struct pkt_file *pfile, u8 *rmem, uint rlen)
+uint _rtw_pktfile_read (struct pkt_file *pfile, u8 *rmem, uint rlen)
 {
 	uint	len = 0;
 
 
 	len =  rtw_remainder_len(pfile);
-	len = min(rlen, len);
+	len = (rlen > len) ? len : rlen;
 
 	if (rmem)
 		skb_copy_bits(pfile->pkt, pfile->buf_len-pfile->pkt_len, rmem, len);
@@ -66,7 +66,13 @@ uint _rtw_pktfile_read(struct pkt_file *pfile, u8 *rmem, uint rlen)
 
 int rtw_endofpktfile(struct pkt_file *pfile)
 {
-	return pfile->pkt_len == 0;
+
+	if (pfile->pkt_len == 0) {
+		return true;
+	}
+
+
+	return false;
 }
 
 int rtw_os_xmit_resource_alloc(struct adapter *padapter, struct xmit_buf *pxmitbuf, u32 alloc_sz)

@@ -389,49 +389,22 @@ zsau_resp[] =
 	{NULL,				ZSAU_UNKNOWN}
 };
 
-/* check for and remove fixed string prefix
- * If s starts with prefix terminated by a non-alphanumeric character,
- * return pointer to the first character after that, otherwise return NULL.
+/* retrieve CID from parsed response
+ * returns 0 if no CID, -1 if invalid CID, or CID value 1..65535
  */
-static char *skip_prefix(char *s, const char *prefix)
+static int cid_of_response(char *s)
 {
-	while (*prefix)
-		if (*s++ != *prefix++)
-			return NULL;
-	if (isalnum(*s))
-		return NULL;
-	return s;
-}
+	int cid;
+	int rc;
 
-/* queue event with CID */
-static void add_cid_event(struct cardstate *cs, int cid, int type,
-			  void *ptr, int parameter)
-{
-	unsigned long flags;
-	unsigned next, tail;
-	struct event_t *event;
-
-	gig_dbg(DEBUG_EVENT, "queueing event %d for cid %d", type, cid);
-
-	spin_lock_irqsave(&cs->ev_lock, flags);
-
-	tail = cs->ev_tail;
-	next = (tail + 1) % MAX_EVENTS;
-	if (unlikely(next == cs->ev_head)) {
-		dev_err(cs->dev, "event queue full\n");
-		kfree(ptr);
-	} else {
-		event = cs->events + tail;
-		event->type = type;
-		event->cid = cid;
-		event->ptr = ptr;
-		event->arg = NULL;
-		event->parameter = parameter;
-		event->at_state = NULL;
-		cs->ev_tail = next;
-	}
-
-	spin_unlock_irqrestore(&cs->ev_lock, flags);
+	if (s[-1] != ';')
+		return 0;	/* no CID separator */
+	rc = kstrtoint(s, 10, &cid);
+	if (rc)
+		return 0;	/* CID not numeric */
+	if (cid < 1 || cid > 65535)
+		return -1;	/* CID out of range */
+	return cid;
 }
 
 /**
@@ -444,188 +417,190 @@ static void add_cid_event(struct cardstate *cs, int cid, int type,
  */
 void gigaset_handle_modem_response(struct cardstate *cs)
 {
-	char *eoc, *psep, *ptr;
+	unsigned char *argv[MAX_REC_PARAMS + 1];
+	int params;
+	int i, j;
 	const struct resp_type_t *rt;
 	const struct zsau_resp_t *zr;
-	int cid, parameter;
-	u8 type, value;
+	int curarg;
+	unsigned long flags;
+	unsigned next, tail, head;
+	struct event_t *event;
+	int resp_code;
+	int param_type;
+	int abort;
+	size_t len;
+	int cid;
+	int rawstring;
 
-	if (!cs->cbytes) {
+	len = cs->cbytes;
+	if (!len) {
 		/* ignore additional LFs/CRs (M10x config mode or cx100) */
 		gig_dbg(DEBUG_MCMD, "skipped EOL [%02X]", cs->respdata[0]);
 		return;
 	}
-	cs->respdata[cs->cbytes] = 0;
-
+	cs->respdata[len] = 0;
+	argv[0] = cs->respdata;
+	params = 1;
 	if (cs->at_state.getstring) {
-		/* state machine wants next line verbatim */
+		/* getstring only allowed without cid at the moment */
 		cs->at_state.getstring = 0;
-		ptr = kstrdup(cs->respdata, GFP_ATOMIC);
-		gig_dbg(DEBUG_EVENT, "string==%s", ptr ? ptr : "NULL");
-		add_cid_event(cs, 0, RSP_STRING, ptr, 0);
-		return;
-	}
-
-	/* look up response type */
-	for (rt = resp_type; rt->response; ++rt) {
-		eoc = skip_prefix(cs->respdata, rt->response);
-		if (eoc)
-			break;
-	}
-	if (!rt->response) {
-		add_cid_event(cs, 0, RSP_NONE, NULL, 0);
-		gig_dbg(DEBUG_EVENT, "unknown modem response: '%s'\n",
-			cs->respdata);
-		return;
-	}
-
-	/* check for CID */
-	psep = strrchr(cs->respdata, ';');
-	if (psep &&
-	    !kstrtoint(psep + 1, 10, &cid) &&
-	    cid >= 1 && cid <= 65535) {
-		/* valid CID: chop it off */
-		*psep = 0;
-	} else {
-		/* no valid CID: leave unchanged */
+		rawstring = 1;
 		cid = 0;
+	} else {
+		/* parse line */
+		for (i = 0; i < len; i++)
+			switch (cs->respdata[i]) {
+			case ';':
+			case ',':
+			case '=':
+				if (params > MAX_REC_PARAMS) {
+					dev_warn(cs->dev,
+						 "too many parameters in response\n");
+					/* need last parameter (might be CID) */
+					params--;
+				}
+				argv[params++] = cs->respdata + i + 1;
+			}
+
+		rawstring = 0;
+		cid = params > 1 ? cid_of_response(argv[params - 1]) : 0;
+		if (cid < 0) {
+			gigaset_add_event(cs, &cs->at_state, RSP_INVAL,
+					  NULL, 0, NULL);
+			return;
+		}
+
+		for (j = 1; j < params; ++j)
+			argv[j][-1] = 0;
+
+		gig_dbg(DEBUG_EVENT, "CMD received: %s", argv[0]);
+		if (cid) {
+			--params;
+			gig_dbg(DEBUG_EVENT, "CID: %s", argv[params]);
+		}
+		gig_dbg(DEBUG_EVENT, "available params: %d", params - 1);
+		for (j = 1; j < params; j++)
+			gig_dbg(DEBUG_EVENT, "param %d: %s", j, argv[j]);
 	}
 
-	gig_dbg(DEBUG_EVENT, "CMD received: %s", cs->respdata);
-	if (cid)
-		gig_dbg(DEBUG_EVENT, "CID: %d", cid);
+	spin_lock_irqsave(&cs->ev_lock, flags);
+	head = cs->ev_head;
+	tail = cs->ev_tail;
 
-	switch (rt->type) {
-	case RT_NOTHING:
-		/* check parameter separator */
-		if (*eoc)
-			goto bad_param;	/* extra parameter */
-
-		add_cid_event(cs, cid, rt->resp_code, NULL, 0);
-		break;
-
-	case RT_RING:
-		/* check parameter separator */
-		if (!*eoc)
-			eoc = NULL;	/* no parameter */
-		else if (*eoc++ != ',')
-			goto bad_param;
-
-		add_cid_event(cs, 0, rt->resp_code, NULL, cid);
-
-		/* process parameters as individual responses */
-		while (eoc) {
-			/* look up parameter type */
-			psep = NULL;
-			for (rt = resp_type; rt->response; ++rt) {
-				psep = skip_prefix(eoc, rt->response);
-				if (psep)
-					break;
-			}
-
-			/* all legal parameters are of type RT_STRING */
-			if (!psep || rt->type != RT_STRING) {
-				dev_warn(cs->dev,
-					 "illegal RING parameter: '%s'\n",
-					 eoc);
-				return;
-			}
-
-			/* skip parameter value separator */
-			if (*psep++ != '=')
-				goto bad_param;
-
-			/* look up end of parameter */
-			eoc = strchr(psep, ',');
-			if (eoc)
-				*eoc++ = 0;
-
-			/* retrieve parameter value */
-			ptr = kstrdup(psep, GFP_ATOMIC);
-
-			/* queue event */
-			add_cid_event(cs, cid, rt->resp_code, ptr, 0);
-		}
-		break;
-
-	case RT_ZSAU:
-		/* check parameter separator */
-		if (!*eoc) {
-			/* no parameter */
-			add_cid_event(cs, cid, rt->resp_code, NULL, ZSAU_NONE);
+	abort = 1;
+	curarg = 0;
+	while (curarg < params) {
+		next = (tail + 1) % MAX_EVENTS;
+		if (unlikely(next == head)) {
+			dev_err(cs->dev, "event queue full\n");
 			break;
 		}
-		if (*eoc++ != '=')
-			goto bad_param;
 
-		/* look up parameter value */
-		for (zr = zsau_resp; zr->str; ++zr)
-			if (!strcmp(eoc, zr->str))
+		event = cs->events + tail;
+		event->at_state = NULL;
+		event->cid = cid;
+		event->ptr = NULL;
+		event->arg = NULL;
+		tail = next;
+
+		if (rawstring) {
+			resp_code = RSP_STRING;
+			param_type = RT_STRING;
+		} else {
+			for (rt = resp_type; rt->response; ++rt)
+				if (!strcmp(argv[curarg], rt->response))
+					break;
+
+			if (!rt->response) {
+				event->type = RSP_NONE;
+				gig_dbg(DEBUG_EVENT,
+					"unknown modem response: '%s'\n",
+					argv[curarg]);
 				break;
-		if (!zr->str)
-			goto bad_param;
+			}
 
-		add_cid_event(cs, cid, rt->resp_code, NULL, zr->code);
-		break;
-
-	case RT_STRING:
-		/* check parameter separator */
-		if (*eoc++ != '=')
-			goto bad_param;
-
-		/* retrieve parameter value */
-		ptr = kstrdup(eoc, GFP_ATOMIC);
-
-		/* queue event */
-		add_cid_event(cs, cid, rt->resp_code, ptr, 0);
-		break;
-
-	case RT_ZCAU:
-		/* check parameter separators */
-		if (*eoc++ != '=')
-			goto bad_param;
-		psep = strchr(eoc, ',');
-		if (!psep)
-			goto bad_param;
-		*psep++ = 0;
-
-		/* decode parameter values */
-		if (kstrtou8(eoc, 16, &type) || kstrtou8(psep, 16, &value)) {
-			*--psep = ',';
-			goto bad_param;
+			resp_code = rt->resp_code;
+			param_type = rt->type;
+			++curarg;
 		}
-		parameter = (type << 8) | value;
 
-		add_cid_event(cs, cid, rt->resp_code, NULL, parameter);
-		break;
+		event->type = resp_code;
 
-	case RT_NUMBER:
-		/* check parameter separator */
-		if (*eoc++ != '=')
-			goto bad_param;
+		switch (param_type) {
+		case RT_NOTHING:
+			break;
+		case RT_RING:
+			if (!cid) {
+				dev_err(cs->dev,
+					"received RING without CID!\n");
+				event->type = RSP_INVAL;
+				abort = 1;
+			} else {
+				event->cid = 0;
+				event->parameter = cid;
+				abort = 0;
+			}
+			break;
+		case RT_ZSAU:
+			if (curarg >= params) {
+				event->parameter = ZSAU_NONE;
+				break;
+			}
+			for (zr = zsau_resp; zr->str; ++zr)
+				if (!strcmp(argv[curarg], zr->str))
+					break;
+			event->parameter = zr->code;
+			if (!zr->str)
+				dev_warn(cs->dev,
+					 "%s: unknown parameter %s after ZSAU\n",
+					 __func__, argv[curarg]);
+			++curarg;
+			break;
+		case RT_STRING:
+			if (curarg < params) {
+				event->ptr = kstrdup(argv[curarg], GFP_ATOMIC);
+				if (!event->ptr)
+					dev_err(cs->dev, "out of memory\n");
+				++curarg;
+			}
+			gig_dbg(DEBUG_EVENT, "string==%s",
+				event->ptr ? (char *) event->ptr : "NULL");
+			break;
+		case RT_ZCAU:
+			event->parameter = -1;
+			if (curarg + 1 < params) {
+				u8 type, value;
 
-		/* decode parameter value */
-		if (kstrtoint(eoc, 10, &parameter))
-			goto bad_param;
+				i = kstrtou8(argv[curarg++], 16, &type);
+				j = kstrtou8(argv[curarg++], 16, &value);
+				if (i == 0 && j == 0)
+					event->parameter = (type << 8) | value;
+			} else
+				curarg = params - 1;
+			break;
+		case RT_NUMBER:
+			if (curarg >= params ||
+			    kstrtoint(argv[curarg++], 10, &event->parameter))
+				event->parameter = -1;
+			gig_dbg(DEBUG_EVENT, "parameter==%d", event->parameter);
+			break;
+		}
 
-		/* special case ZDLE: set flag before queueing event */
-		if (rt->resp_code == RSP_ZDLE)
-			cs->dle = parameter;
+		if (resp_code == RSP_ZDLE)
+			cs->dle = event->parameter;
 
-		add_cid_event(cs, cid, rt->resp_code, NULL, parameter);
-		break;
-
-bad_param:
-		/* parameter unexpected, incomplete or malformed */
-		dev_warn(cs->dev, "bad parameter in response '%s'\n",
-			 cs->respdata);
-		add_cid_event(cs, cid, rt->resp_code, NULL, -1);
-		break;
-
-	default:
-		dev_err(cs->dev, "%s: internal error on '%s'\n",
-			__func__, cs->respdata);
+		if (abort)
+			break;
 	}
+
+	cs->ev_tail = tail;
+	spin_unlock_irqrestore(&cs->ev_lock, flags);
+
+	if (curarg != params)
+		gig_dbg(DEBUG_EVENT,
+			"invalid number of processed parameters: %d/%d",
+			curarg, params);
 }
 EXPORT_SYMBOL_GPL(gigaset_handle_modem_response);
 

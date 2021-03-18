@@ -16,6 +16,7 @@
 #include <linux/irq.h>
 #include <linux/kthread.h>
 #include <soc/qcom/msm_qmi_interface.h>
+#include <soc/qcom/subsystem_notif.h>
 #include <linux/ipc_logging.h>
 
 /* Per spec.max 40 bytes per received message */
@@ -228,20 +229,14 @@ struct msm_slim_qmi {
 	struct kthread_worker		kworker;
 	struct completion		qmi_comp;
 	struct notifier_block		nb;
-};
-
-enum msm_slim_dom {
-	MSM_SLIM_DOM_NONE,
-	MSM_SLIM_DOM_PD,
-	MSM_SLIM_DOM_SS,
+	struct work_struct		ssr_down;
+	struct work_struct		ssr_up;
 };
 
 struct msm_slim_ss {
 	struct notifier_block nb;
-	void *domr;
+	void *ssr;
 	enum msm_ctrl_state state;
-	struct work_struct dom_up;
-	enum msm_slim_dom dom_t;
 };
 
 struct msm_slim_pdata {

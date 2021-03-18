@@ -25,9 +25,6 @@
 #include <linux/mfd/da9063/pdata.h>
 #include <linux/mfd/da9063/registers.h>
 
-#include <linux/of.h>
-#include <linux/regulator/of_regulator.h>
-
 static const struct regmap_range da9063_ad_readable_ranges[] = {
 	{
 		.range_min = DA9063_REG_PAGE_CON,
@@ -206,11 +203,6 @@ static struct regmap_config da9063_regmap_config = {
 	.cache_type = REGCACHE_RBTREE,
 };
 
-static const struct of_device_id da9063_dt_ids[] = {
-	{ .compatible = "dlg,da9063", },
-	{ }
-};
-MODULE_DEVICE_TABLE(of, da9063_dt_ids);
 static int da9063_i2c_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *id)
 {
@@ -264,7 +256,7 @@ MODULE_DEVICE_TABLE(i2c, da9063_i2c_id);
 static struct i2c_driver da9063_i2c_driver = {
 	.driver = {
 		.name = "da9063",
-		.of_match_table = of_match_ptr(da9063_dt_ids),
+		.owner = THIS_MODULE,
 	},
 	.probe    = da9063_i2c_probe,
 	.remove   = da9063_i2c_remove,

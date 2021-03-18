@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -35,6 +35,10 @@
 #else
 #include <asm/hardware/debugv8.h>
 #endif
+
+#define CORESIGHT_LAR		(0xFB0)
+
+#define CORESIGHT_UNLOCK	(0xC5ACCE55)
 
 #define TIMEOUT_US		(100)
 
@@ -995,9 +999,9 @@ static int __init msm_jtag_dbg_init(void)
 
 	/* Allocate dbg state save space */
 #ifdef CONFIG_ARM64
-	dbg.state = kcalloc(MAX_DBG_STATE_SIZE, sizeof(uint64_t), GFP_KERNEL);
+	dbg.state = kzalloc(MAX_DBG_STATE_SIZE * sizeof(uint64_t), GFP_KERNEL);
 #else
-	dbg.state = kcalloc(MAX_DBG_STATE_SIZE, sizeof(uint32_t), GFP_KERNEL);
+	dbg.state = kzalloc(MAX_DBG_STATE_SIZE * sizeof(uint32_t), GFP_KERNEL);
 #endif
 	if (!dbg.state) {
 		ret = -ENOMEM;

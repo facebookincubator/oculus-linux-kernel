@@ -151,7 +151,7 @@ int ad2s1210_update_frequency_control_word(struct ad2s1210_state *st)
 
 	fcw = (unsigned char)(st->fexcit * (1 << 15) / st->fclkin);
 	if (fcw < AD2S1210_MIN_FCW || fcw > AD2S1210_MAX_FCW) {
-		dev_err(&st->sdev->dev, "ad2s1210: FCW out of range\n");
+		pr_err("ad2s1210: FCW out of range\n");
 		return -ERANGE;
 	}
 
@@ -198,7 +198,7 @@ static ssize_t ad2s1210_show_fclkin(struct device *dev,
 {
 	struct ad2s1210_state *st = iio_priv(dev_to_iio_dev(dev));
 
-	return sprintf(buf, "%u\n", st->fclkin);
+	return sprintf(buf, "%d\n", st->fclkin);
 }
 
 static ssize_t ad2s1210_store_fclkin(struct device *dev,
@@ -214,7 +214,7 @@ static ssize_t ad2s1210_store_fclkin(struct device *dev,
 	if (ret)
 		return ret;
 	if (fclkin < AD2S1210_MIN_CLKIN || fclkin > AD2S1210_MAX_CLKIN) {
-		dev_err(dev, "ad2s1210: fclkin out of range\n");
+		pr_err("ad2s1210: fclkin out of range\n");
 		return -EINVAL;
 	}
 
@@ -237,7 +237,7 @@ static ssize_t ad2s1210_show_fexcit(struct device *dev,
 {
 	struct ad2s1210_state *st = iio_priv(dev_to_iio_dev(dev));
 
-	return sprintf(buf, "%u\n", st->fexcit);
+	return sprintf(buf, "%d\n", st->fexcit);
 }
 
 static ssize_t ad2s1210_store_fexcit(struct device *dev,
@@ -252,8 +252,7 @@ static ssize_t ad2s1210_store_fexcit(struct device *dev,
 	if (ret < 0)
 		return ret;
 	if (fexcit < AD2S1210_MIN_EXCIT || fexcit > AD2S1210_MAX_EXCIT) {
-		dev_err(dev,
-			"ad2s1210: excitation frequency out of range\n");
+		pr_err("ad2s1210: excitation frequency out of range\n");
 		return -EINVAL;
 	}
 	mutex_lock(&st->lock);
@@ -308,8 +307,7 @@ static ssize_t ad2s1210_store_control(struct device *dev,
 		goto error_ret;
 	if (ret & AD2S1210_MSB_IS_HIGH) {
 		ret = -EIO;
-		dev_err(dev,
-			"ad2s1210: write control register fail\n");
+		pr_err("ad2s1210: write control register fail\n");
 		goto error_ret;
 	}
 	st->resolution
@@ -317,7 +315,7 @@ static ssize_t ad2s1210_store_control(struct device *dev,
 	if (st->pdata->gpioin) {
 		data = ad2s1210_read_resolution_pin(st);
 		if (data != st->resolution)
-			dev_warn(dev, "ad2s1210: resolution settings not match\n");
+			pr_warn("ad2s1210: resolution settings not match\n");
 	} else
 		ad2s1210_set_resolution_pin(st);
 
@@ -348,7 +346,7 @@ static ssize_t ad2s1210_store_resolution(struct device *dev,
 
 	ret = kstrtou8(buf, 10, &udata);
 	if (ret || udata < 10 || udata > 16) {
-		dev_err(dev, "ad2s1210: resolution out of range\n");
+		pr_err("ad2s1210: resolution out of range\n");
 		return -EINVAL;
 	}
 	mutex_lock(&st->lock);
@@ -370,7 +368,7 @@ static ssize_t ad2s1210_store_resolution(struct device *dev,
 	data = ret;
 	if (data & AD2S1210_MSB_IS_HIGH) {
 		ret = -EIO;
-		dev_err(dev, "ad2s1210: setting resolution fail\n");
+		pr_err("ad2s1210: setting resolution fail\n");
 		goto error_ret;
 	}
 	st->resolution
@@ -378,7 +376,7 @@ static ssize_t ad2s1210_store_resolution(struct device *dev,
 	if (st->pdata->gpioin) {
 		data = ad2s1210_read_resolution_pin(st);
 		if (data != st->resolution)
-			dev_warn(dev, "ad2s1210: resolution settings not match\n");
+			pr_warn("ad2s1210: resolution settings not match\n");
 	} else
 		ad2s1210_set_resolution_pin(st);
 	ret = len;
@@ -633,7 +631,7 @@ error_ret:
 }
 
 static const struct iio_info ad2s1210_info = {
-	.read_raw = ad2s1210_read_raw,
+	.read_raw = &ad2s1210_read_raw,
 	.attrs = &ad2s1210_attribute_group,
 	.driver_module = THIS_MODULE,
 };
@@ -735,6 +733,7 @@ MODULE_DEVICE_TABLE(spi, ad2s1210_id);
 static struct spi_driver ad2s1210_driver = {
 	.driver = {
 		.name = DRV_NAME,
+		.owner = THIS_MODULE,
 	},
 	.probe = ad2s1210_probe,
 	.remove = ad2s1210_remove,

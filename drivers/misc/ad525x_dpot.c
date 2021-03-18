@@ -176,7 +176,6 @@ static s32 dpot_read_i2c(struct dpot_data *dpot, u8 reg)
 {
 	int value;
 	unsigned ctrl = 0;
-
 	switch (dpot->uid) {
 	case DPOT_UID(AD5246_ID):
 	case DPOT_UID(AD5247_ID):
@@ -216,7 +215,7 @@ static s32 dpot_read_i2c(struct dpot_data *dpot, u8 reg)
 			 */
 			value = swab16(value);
 
-			if (dpot->uid == DPOT_UID(AD5274_ID))
+			if (dpot->uid == DPOT_UID(AD5271_ID))
 				value = value >> 2;
 		return value;
 	default:
@@ -334,6 +333,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 	case DPOT_UID(AD5246_ID):
 	case DPOT_UID(AD5247_ID):
 		return dpot_write_d8(dpot, value);
+		break;
 
 	case DPOT_UID(AD5245_ID):
 	case DPOT_UID(AD5241_ID):
@@ -345,6 +345,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 		ctrl = ((reg & DPOT_RDAC_MASK) == DPOT_RDAC0) ?
 			0 : DPOT_AD5282_RDAC_AB;
 		return dpot_write_r8d8(dpot, ctrl, value);
+		break;
 	case DPOT_UID(AD5171_ID):
 	case DPOT_UID(AD5273_ID):
 		if (reg & DPOT_ADDR_OTP) {
@@ -354,6 +355,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 			ctrl = DPOT_AD5273_FUSE;
 		}
 		return dpot_write_r8d8(dpot, ctrl, value);
+		break;
 	case DPOT_UID(AD5172_ID):
 	case DPOT_UID(AD5173_ID):
 		ctrl = ((reg & DPOT_RDAC_MASK) == DPOT_RDAC0) ?
@@ -365,6 +367,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 			ctrl |= DPOT_AD5170_2_3_FUSE;
 		}
 		return dpot_write_r8d8(dpot, ctrl, value);
+		break;
 	case DPOT_UID(AD5170_ID):
 		if (reg & DPOT_ADDR_OTP) {
 			tmp = dpot_read_r8d16(dpot, tmp);
@@ -373,6 +376,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 			ctrl = DPOT_AD5170_2_3_FUSE;
 		}
 		return dpot_write_r8d8(dpot, ctrl, value);
+		break;
 	case DPOT_UID(AD5272_ID):
 	case DPOT_UID(AD5274_ID):
 		dpot_write_r8d8(dpot, DPOT_AD5270_1_2_4_CTRLREG << 2,
@@ -387,6 +391,7 @@ static s32 dpot_write_i2c(struct dpot_data *dpot, u8 reg, u16 value)
 
 		return dpot_write_r8d8(dpot, (DPOT_AD5270_1_2_4_RDAC << 2) |
 				       (value >> 8), value & 0xFF);
+		break;
 	default:
 		if (reg & DPOT_ADDR_CMD)
 			return dpot_write_d8(dpot, reg);

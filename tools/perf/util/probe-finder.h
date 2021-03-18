@@ -10,9 +10,6 @@
 #define MAX_PROBES		 128
 #define MAX_PROBE_ARGS		 128
 
-#define PROBE_ARG_VARS		"$vars"
-#define PROBE_ARG_PARAMS	"$params"
-
 static inline int is_c_varname(const char *name)
 {
 	/* TODO */
@@ -40,7 +37,8 @@ extern void debuginfo__delete(struct debuginfo *dbg);
 /* Find probe_trace_events specified by perf_probe_event from debuginfo */
 extern int debuginfo__find_trace_events(struct debuginfo *dbg,
 					struct perf_probe_event *pev,
-					struct probe_trace_event **tevs);
+					struct probe_trace_event **tevs,
+					int max_tevs);
 
 /* Find a perf_probe_point from debuginfo */
 extern int debuginfo__find_probe_point(struct debuginfo *dbg,
@@ -54,11 +52,8 @@ extern int debuginfo__find_line_range(struct debuginfo *dbg,
 /* Find available variables */
 extern int debuginfo__find_available_vars_at(struct debuginfo *dbg,
 					     struct perf_probe_event *pev,
-					     struct variable_list **vls);
-
-/* Find a src file from a DWARF tag path */
-int get_real_path(const char *raw_path, const char *comp_dir,
-			 char **new_path);
+					     struct variable_list **vls,
+					     int max_points, bool externs);
 
 struct probe_finder {
 	struct perf_probe_event	*pev;		/* Target probe event */
@@ -97,6 +92,7 @@ struct available_var_finder {
 	struct variable_list	*vls;		/* Found variable lists */
 	int			nvls;		/* Number of variable lists */
 	int			max_vls;	/* Max no. of variable lists */
+	bool			externs;	/* Find external vars too */
 	bool			child;		/* Search child scopes */
 };
 

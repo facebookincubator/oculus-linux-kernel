@@ -12,7 +12,6 @@ struct mmc_blk_request {
 	struct mmc_command	cmd;
 	struct mmc_command	stop;
 	struct mmc_data		data;
-	int			retune_retry_done;
 };
 
 enum mmc_packed_type {
@@ -77,14 +76,6 @@ struct mmc_queue {
 	int (*err_check_fn) (struct mmc_card *, struct mmc_async_req *);
 	void (*packed_test_fn) (struct request_queue *, struct mmc_queue_req *);
 	void (*cmdq_shutdown)(struct mmc_queue *);
-#ifdef CONFIG_MMC_SIMULATE_MAX_SPEED
-	atomic_t max_write_speed;
-	atomic_t max_read_speed;
-	atomic_t cache_size;
-	/* i/o tracking */
-	atomic_long_t cache_used;
-	unsigned long cache_jiffies;
-#endif
 };
 
 extern int mmc_init_queue(struct mmc_queue *, struct mmc_card *, spinlock_t *,

@@ -60,7 +60,7 @@ EXPORT_SYMBOL_GPL(omap_usb2_set_comparator);
 
 static int omap_usb_set_vbus(struct usb_otg *otg, bool enabled)
 {
-	struct omap_usb *phy = phy_to_omapusb(otg->usb_phy);
+	struct omap_usb *phy = phy_to_omapusb(otg->phy);
 
 	if (!phy->comparator)
 		return -ENODEV;
@@ -70,7 +70,7 @@ static int omap_usb_set_vbus(struct usb_otg *otg, bool enabled)
 
 static int omap_usb_start_srp(struct usb_otg *otg)
 {
-	struct omap_usb *phy = phy_to_omapusb(otg->usb_phy);
+	struct omap_usb *phy = phy_to_omapusb(otg->phy);
 
 	if (!phy->comparator)
 		return -ENODEV;
@@ -80,9 +80,11 @@ static int omap_usb_start_srp(struct usb_otg *otg)
 
 static int omap_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 {
+	struct usb_phy	*phy = otg->phy;
+
 	otg->host = host;
 	if (!host)
-		otg->state = OTG_STATE_UNDEFINED;
+		phy->state = OTG_STATE_UNDEFINED;
 
 	return 0;
 }
@@ -90,9 +92,11 @@ static int omap_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 static int omap_usb_set_peripheral(struct usb_otg *otg,
 		struct usb_gadget *gadget)
 {
+	struct usb_phy	*phy = otg->phy;
+
 	otg->gadget = gadget;
 	if (!gadget)
-		otg->state = OTG_STATE_UNDEFINED;
+		phy->state = OTG_STATE_UNDEFINED;
 
 	return 0;
 }
@@ -137,13 +141,14 @@ static int omap_usb_init(struct phy *x)
 	return 0;
 }
 
-static const struct phy_ops ops = {
+static struct phy_ops ops = {
 	.init		= omap_usb_init,
 	.power_on	= omap_usb_power_on,
 	.power_off	= omap_usb_power_off,
 	.owner		= THIS_MODULE,
 };
 
+#ifdef CONFIG_OF
 static const struct usb_phy_data omap_usb2_data = {
 	.label = "omap_usb2",
 	.flags = OMAP_USB2_HAS_START_SRP | OMAP_USB2_HAS_SET_VBUS,
@@ -184,6 +189,7 @@ static const struct of_device_id omap_usb2_id_table[] = {
 	{},
 };
 MODULE_DEVICE_TABLE(of, omap_usb2_id_table);
+#endif
 
 static int omap_usb2_probe(struct platform_device *pdev)
 {
@@ -198,7 +204,7 @@ static int omap_usb2_probe(struct platform_device *pdev)
 	const struct of_device_id *of_id;
 	struct usb_phy_data *phy_data;
 
-	of_id = of_match_device(omap_usb2_id_table, &pdev->dev);
+	of_id = of_match_device(of_match_ptr(omap_usb2_id_table), &pdev->dev);
 
 	if (!of_id)
 		return -EINVAL;
@@ -249,12 +255,12 @@ static int omap_usb2_probe(struct platform_device *pdev)
 		otg->set_vbus		= omap_usb_set_vbus;
 	if (phy_data->flags & OMAP_USB2_HAS_START_SRP)
 		otg->start_srp		= omap_usb_start_srp;
-	otg->usb_phy		= &phy->phy;
+	otg->phy		= &phy->phy;
 
 	platform_set_drvdata(pdev, phy);
 	pm_runtime_enable(phy->dev);
 
-	generic_phy = devm_phy_create(phy->dev, NULL, &ops);
+	generic_phy = devm_phy_create(phy->dev, NULL, &ops, NULL);
 	if (IS_ERR(generic_phy)) {
 		pm_runtime_disable(phy->dev);
 		return PTR_ERR(generic_phy);
@@ -275,7 +281,6 @@ static int omap_usb2_probe(struct platform_device *pdev)
 		phy->wkupclk = devm_clk_get(phy->dev, "usb_phy_cm_clk32k");
 		if (IS_ERR(phy->wkupclk)) {
 			dev_err(&pdev->dev, "unable to get usb_phy_cm_clk32k\n");
-			pm_runtime_disable(phy->dev);
 			return PTR_ERR(phy->wkupclk);
 		} else {
 			dev_warn(&pdev->dev,
@@ -295,10 +300,9 @@ static int omap_usb2_probe(struct platform_device *pdev)
 			dev_warn(&pdev->dev,
 				 "found usb_otg_ss_refclk960m, please fix DTS\n");
 		}
-	}
-
-	if (!IS_ERR(phy->optclk))
+	} else {
 		clk_prepare(phy->optclk);
+	}
 
 	usb_add_phy_dev(&phy->phy);
 
@@ -318,7 +322,7 @@ static int omap_usb2_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 
 static int omap_usb2_runtime_suspend(struct device *dev)
 {
@@ -377,13 +381,13 @@ static struct platform_driver omap_usb2_driver = {
 	.driver		= {
 		.name	= "omap-usb2",
 		.pm	= DEV_PM_OPS,
-		.of_match_table = omap_usb2_id_table,
+		.of_match_table = of_match_ptr(omap_usb2_id_table),
 	},
 };
 
 module_platform_driver(omap_usb2_driver);
 
-MODULE_ALIAS("platform:omap_usb2");
+MODULE_ALIAS("platform: omap_usb2");
 MODULE_AUTHOR("Texas Instruments Inc.");
 MODULE_DESCRIPTION("OMAP USB2 phy driver");
 MODULE_LICENSE("GPL v2");

@@ -33,16 +33,17 @@
 #include <linux/ratelimit.h>
 #include <linux/context_tracking.h>
 #include <linux/hugetlb.h>
-#include <linux/uaccess.h>
 
 #include <asm/firmware.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/mmu.h>
 #include <asm/mmu_context.h>
+#include <asm/uaccess.h>
 #include <asm/tlbflush.h>
 #include <asm/siginfo.h>
 #include <asm/debug.h>
+#include <mm/mmu_decl.h>
 
 #include "icswx.h"
 
@@ -272,16 +273,15 @@ int __kprobes do_page_fault(struct pt_regs *regs, unsigned long address,
 	if (!arch_irq_disabled_regs(regs))
 		local_irq_enable();
 
-	if (faulthandler_disabled() || mm == NULL) {
+	if (in_atomic() || mm == NULL) {
 		if (!user_mode(regs)) {
 			rc = SIGSEGV;
 			goto bail;
 		}
-		/* faulthandler_disabled() in user mode is really bad,
+		/* in_atomic() in user mode is really bad,
 		   as is current->mm == NULL. */
 		printk(KERN_EMERG "Page fault in user mode with "
-		       "faulthandler_disabled() = %d mm = %p\n",
-		       faulthandler_disabled(), mm);
+		       "in_atomic() = %d mm = %p\n", in_atomic(), mm);
 		printk(KERN_EMERG "NIP = %lx  MSR = %lx\n",
 		       regs->nip, regs->msr);
 		die("Weird page fault", regs, SIGSEGV);
@@ -380,6 +380,12 @@ good_area:
 		goto bad_area;
 #endif /* CONFIG_6xx */
 #if defined(CONFIG_8xx)
+	/* 8xx sometimes need to load a invalid/non-present TLBs.
+	 * These must be invalidated separately as linux mm don't.
+	 */
+	if (error_code & 0x40000000) /* no translation? */
+		_tlbil_va(address, 0, 0, 0);
+
         /* The MPC8xx seems to always set 0x80000000, which is
          * "undefined".  Of those that can be set, this is the only
          * one which seems bad.
@@ -390,6 +396,19 @@ good_area:
 #endif /* CONFIG_8xx */
 
 	if (is_exec) {
+#ifdef CONFIG_PPC_STD_MMU
+		/* Protection fault on exec go straight to failure on
+		 * Hash based MMUs as they either don't support per-page
+		 * execute permission, or if they do, it's handled already
+		 * at the hash level. This test would probably have to
+		 * be removed if we change the way this works to make hash
+		 * processors use the same I/D cache coherency mechanism
+		 * as embedded.
+		 */
+		if (error_code & DSISR_PROTFAULT)
+			goto bad_area;
+#endif /* CONFIG_PPC_STD_MMU */
+
 		/*
 		 * Allow execution from readable areas if the MMU does not
 		 * provide separate controls over reading and executing.
@@ -404,14 +423,6 @@ good_area:
 		    (cpu_has_feature(CPU_FTR_NOEXECUTE) ||
 		     !(vma->vm_flags & (VM_READ | VM_WRITE))))
 			goto bad_area;
-#ifdef CONFIG_PPC_STD_MMU
-		/*
-		 * protfault should only happen due to us
-		 * mapping a region readonly temporarily. PROT_NONE
-		 * is also covered by the VMA check above.
-		 */
-		WARN_ON_ONCE(error_code & DSISR_PROTFAULT);
-#endif /* CONFIG_PPC_STD_MMU */
 	/* a write */
 	} else if (is_write) {
 		if (!(vma->vm_flags & VM_WRITE))
@@ -419,9 +430,11 @@ good_area:
 		flags |= FAULT_FLAG_WRITE;
 	/* a read */
 	} else {
+		/* protection fault */
+		if (error_code & 0x08000000)
+			goto bad_area;
 		if (!(vma->vm_flags & (VM_READ | VM_EXEC | VM_WRITE)))
 			goto bad_area;
-		WARN_ON_ONCE(error_code & DSISR_PROTFAULT);
 	}
 
 	/*
@@ -528,10 +541,6 @@ void bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 	case 0x480:
 		printk(KERN_ALERT "Unable to handle kernel paging request for "
 			"instruction fetch\n");
-		break;
-	case 0x600:
-		printk(KERN_ALERT "Unable to handle kernel paging request for "
-			"unaligned access at address 0x%08lx\n", regs->dar);
 		break;
 	default:
 		printk(KERN_ALERT "Unable to handle kernel paging request for "

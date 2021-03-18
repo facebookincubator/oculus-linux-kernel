@@ -1021,6 +1021,7 @@ static int ep93xx_pata_remove(struct platform_device *pdev)
 static struct platform_driver ep93xx_pata_platform_driver = {
 	.driver = {
 		.name = DRV_NAME,
+		.owner = THIS_MODULE,
 	},
 	.probe = ep93xx_pata_probe,
 	.remove = ep93xx_pata_remove,

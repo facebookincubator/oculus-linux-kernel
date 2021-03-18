@@ -384,30 +384,20 @@ static u32 s3c24xx_dma_getbytes_chan(struct s3c24xx_dma_chan *s3cchan)
 	return tc * txd->width;
 }
 
-static int s3c24xx_dma_set_runtime_config(struct dma_chan *chan,
+static int s3c24xx_dma_set_runtime_config(struct s3c24xx_dma_chan *s3cchan,
 				  struct dma_slave_config *config)
 {
-	struct s3c24xx_dma_chan *s3cchan = to_s3c24xx_dma_chan(chan);
-	unsigned long flags;
-	int ret = 0;
+	if (!s3cchan->slave)
+		return -EINVAL;
 
 	/* Reject definitely invalid configurations */
 	if (config->src_addr_width == DMA_SLAVE_BUSWIDTH_8_BYTES ||
 	    config->dst_addr_width == DMA_SLAVE_BUSWIDTH_8_BYTES)
 		return -EINVAL;
 
-	spin_lock_irqsave(&s3cchan->vc.lock, flags);
-
-	if (!s3cchan->slave) {
-		ret = -EINVAL;
-		goto out;
-	}
-
 	s3cchan->cfg = *config;
 
-out:
-	spin_unlock_irqrestore(&s3cchan->vc.lock, flags);
-	return ret;
+	return 0;
 }
 
 /*
@@ -713,7 +703,8 @@ static irqreturn_t s3c24xx_dma_irq(int irq, void *data)
  * The DMA ENGINE API
  */
 
-static int s3c24xx_dma_terminate_all(struct dma_chan *chan)
+static int s3c24xx_dma_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
+			 unsigned long arg)
 {
 	struct s3c24xx_dma_chan *s3cchan = to_s3c24xx_dma_chan(chan);
 	struct s3c24xx_dma_engine *s3cdma = s3cchan->host;
@@ -722,31 +713,48 @@ static int s3c24xx_dma_terminate_all(struct dma_chan *chan)
 
 	spin_lock_irqsave(&s3cchan->vc.lock, flags);
 
-	if (!s3cchan->phy && !s3cchan->at) {
-		dev_err(&s3cdma->pdev->dev, "trying to terminate already stopped channel %d\n",
-			s3cchan->id);
-		ret = -EINVAL;
-		goto unlock;
+	switch (cmd) {
+	case DMA_SLAVE_CONFIG:
+		ret = s3c24xx_dma_set_runtime_config(s3cchan,
+					      (struct dma_slave_config *)arg);
+		break;
+	case DMA_TERMINATE_ALL:
+		if (!s3cchan->phy && !s3cchan->at) {
+			dev_err(&s3cdma->pdev->dev, "trying to terminate already stopped channel %d\n",
+				s3cchan->id);
+			ret = -EINVAL;
+			break;
+		}
+
+		s3cchan->state = S3C24XX_DMA_CHAN_IDLE;
+
+		 /* Mark physical channel as free */
+		if (s3cchan->phy)
+			s3c24xx_dma_phy_free(s3cchan);
+
+		/* Dequeue current job */
+		if (s3cchan->at) {
+			s3c24xx_dma_desc_free(&s3cchan->at->vd);
+			s3cchan->at = NULL;
+		}
+
+		/* Dequeue jobs not yet fired as well */
+		s3c24xx_dma_free_txd_list(s3cdma, s3cchan);
+		break;
+	default:
+		/* Unknown command */
+		ret = -ENXIO;
+		break;
 	}
 
-	s3cchan->state = S3C24XX_DMA_CHAN_IDLE;
-
-	/* Mark physical channel as free */
-	if (s3cchan->phy)
-		s3c24xx_dma_phy_free(s3cchan);
-
-	/* Dequeue current job */
-	if (s3cchan->at) {
-		s3c24xx_dma_desc_free(&s3cchan->at->vd);
-		s3cchan->at = NULL;
-	}
-
-	/* Dequeue jobs not yet fired as well */
-	s3c24xx_dma_free_txd_list(s3cdma, s3cchan);
-unlock:
 	spin_unlock_irqrestore(&s3cchan->vc.lock, flags);
 
 	return ret;
+}
+
+static int s3c24xx_dma_alloc_chan_resources(struct dma_chan *chan)
+{
+	return 0;
 }
 
 static void s3c24xx_dma_free_chan_resources(struct dma_chan *chan)
@@ -1168,7 +1176,7 @@ static struct soc_data soc_s3c2443 = {
 	.has_clocks = true,
 };
 
-static const struct platform_device_id s3c24xx_dma_driver_ids[] = {
+static struct platform_device_id s3c24xx_dma_driver_ids[] = {
 	{
 		.name		= "s3c2410-dma",
 		.driver_data	= (kernel_ulong_t)&soc_s3c2410,
@@ -1233,7 +1241,7 @@ static int s3c24xx_dma_probe(struct platform_device *pdev)
 	if (!s3cdma->phy_chans)
 		return -ENOMEM;
 
-	/* acquire irqs and clocks for all physical channels */
+	/* aquire irqs and clocks for all physical channels */
 	for (i = 0; i < pdata->num_phy_channels; i++) {
 		struct s3c24xx_dma_phy *phy = &s3cdma->phy_chans[i];
 		char clk_name[6];
@@ -1261,7 +1269,7 @@ static int s3c24xx_dma_probe(struct platform_device *pdev)
 			sprintf(clk_name, "dma.%d", i);
 			phy->clk = devm_clk_get(&pdev->dev, clk_name);
 			if (IS_ERR(phy->clk) && sdata->has_clocks) {
-				dev_err(&pdev->dev, "unable to acquire clock for channel %d, error %lu\n",
+				dev_err(&pdev->dev, "unable to aquire clock for channel %d, error %lu",
 					i, PTR_ERR(phy->clk));
 				continue;
 			}
@@ -1285,27 +1293,29 @@ static int s3c24xx_dma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_MEMCPY, s3cdma->memcpy.cap_mask);
 	dma_cap_set(DMA_PRIVATE, s3cdma->memcpy.cap_mask);
 	s3cdma->memcpy.dev = &pdev->dev;
+	s3cdma->memcpy.device_alloc_chan_resources =
+					s3c24xx_dma_alloc_chan_resources;
 	s3cdma->memcpy.device_free_chan_resources =
 					s3c24xx_dma_free_chan_resources;
 	s3cdma->memcpy.device_prep_dma_memcpy = s3c24xx_dma_prep_memcpy;
 	s3cdma->memcpy.device_tx_status = s3c24xx_dma_tx_status;
 	s3cdma->memcpy.device_issue_pending = s3c24xx_dma_issue_pending;
-	s3cdma->memcpy.device_config = s3c24xx_dma_set_runtime_config;
-	s3cdma->memcpy.device_terminate_all = s3c24xx_dma_terminate_all;
+	s3cdma->memcpy.device_control = s3c24xx_dma_control;
 
 	/* Initialize slave engine for SoC internal dedicated peripherals */
 	dma_cap_set(DMA_SLAVE, s3cdma->slave.cap_mask);
 	dma_cap_set(DMA_CYCLIC, s3cdma->slave.cap_mask);
 	dma_cap_set(DMA_PRIVATE, s3cdma->slave.cap_mask);
 	s3cdma->slave.dev = &pdev->dev;
+	s3cdma->slave.device_alloc_chan_resources =
+					s3c24xx_dma_alloc_chan_resources;
 	s3cdma->slave.device_free_chan_resources =
 					s3c24xx_dma_free_chan_resources;
 	s3cdma->slave.device_tx_status = s3c24xx_dma_tx_status;
 	s3cdma->slave.device_issue_pending = s3c24xx_dma_issue_pending;
 	s3cdma->slave.device_prep_slave_sg = s3c24xx_dma_prep_slave_sg;
 	s3cdma->slave.device_prep_dma_cyclic = s3c24xx_dma_prep_dma_cyclic;
-	s3cdma->slave.device_config = s3c24xx_dma_set_runtime_config;
-	s3cdma->slave.device_terminate_all = s3c24xx_dma_terminate_all;
+	s3cdma->slave.device_control = s3c24xx_dma_control;
 
 	/* Register as many memcpy channels as there are physical channels */
 	ret = s3c24xx_dma_init_virtual_channels(s3cdma, &s3cdma->memcpy,
@@ -1392,6 +1402,7 @@ static int s3c24xx_dma_remove(struct platform_device *pdev)
 static struct platform_driver s3c24xx_dma_driver = {
 	.driver		= {
 		.name	= "s3c24xx-dma",
+		.owner	= THIS_MODULE,
 	},
 	.id_table	= s3c24xx_dma_driver_ids,
 	.probe		= s3c24xx_dma_probe,

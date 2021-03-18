@@ -1005,21 +1005,6 @@ static void s3c_hsudc_initep(struct s3c_hsudc *hsudc,
 	hsep->stopped = 0;
 	hsep->wedge = 0;
 
-	if (epnum == 0) {
-		hsep->ep.caps.type_control = true;
-		hsep->ep.caps.dir_in = true;
-		hsep->ep.caps.dir_out = true;
-	} else {
-		hsep->ep.caps.type_iso = true;
-		hsep->ep.caps.type_bulk = true;
-		hsep->ep.caps.type_int = true;
-	}
-
-	if (epnum & 1)
-		hsep->ep.caps.dir_in = true;
-	else
-		hsep->ep.caps.dir_out = true;
-
 	set_index(hsudc, epnum);
 	writel(hsep->ep.maxpacket, hsudc->regs + S3C_MPR);
 }
@@ -1187,6 +1172,8 @@ static int s3c_hsudc_start(struct usb_gadget *gadget,
 	}
 
 	enable_irq(hsudc->irq);
+	dev_info(hsudc->dev, "bound driver %s\n", driver->driver.name);
+
 	s3c_hsudc_reconfig(hsudc);
 
 	pm_runtime_get_sync(hsudc->dev);
@@ -1203,7 +1190,8 @@ err_supplies:
 	return ret;
 }
 
-static int s3c_hsudc_stop(struct usb_gadget *gadget)
+static int s3c_hsudc_stop(struct usb_gadget *gadget,
+		struct usb_gadget_driver *driver)
 {
 	struct s3c_hsudc *hsudc = to_hsudc(gadget);
 	unsigned long flags;
@@ -1211,7 +1199,11 @@ static int s3c_hsudc_stop(struct usb_gadget *gadget)
 	if (!hsudc)
 		return -ENODEV;
 
+	if (!driver || driver != hsudc->driver)
+		return -EINVAL;
+
 	spin_lock_irqsave(&hsudc->lock, flags);
+	hsudc->driver = NULL;
 	hsudc->gadget.speed = USB_SPEED_UNKNOWN;
 	s3c_hsudc_uninit_phy();
 
@@ -1228,8 +1220,9 @@ static int s3c_hsudc_stop(struct usb_gadget *gadget)
 	disable_irq(hsudc->irq);
 
 	regulator_bulk_disable(ARRAY_SIZE(hsudc->supplies), hsudc->supplies);
-	hsudc->driver = NULL;
 
+	dev_info(hsudc->dev, "unregistered gadget driver '%s'\n",
+			driver->driver.name);
 	return 0;
 }
 
@@ -1274,8 +1267,10 @@ static int s3c_hsudc_probe(struct platform_device *pdev)
 	hsudc = devm_kzalloc(&pdev->dev, sizeof(struct s3c_hsudc) +
 			sizeof(struct s3c_hsudc_ep) * pd->epnum,
 			GFP_KERNEL);
-	if (!hsudc)
+	if (!hsudc) {
+		dev_err(dev, "cannot allocate memory\n");
 		return -ENOMEM;
+	}
 
 	platform_set_drvdata(pdev, dev);
 	hsudc->dev = dev;
@@ -1359,6 +1354,7 @@ err_supplies:
 
 static struct platform_driver s3c_hsudc_driver = {
 	.driver		= {
+		.owner	= THIS_MODULE,
 		.name	= "s3c-hsudc",
 	},
 	.probe		= s3c_hsudc_probe,

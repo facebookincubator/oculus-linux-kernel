@@ -17,7 +17,7 @@
 #ifndef _MEDIA_V4L2_MEM2MEM_H
 #define _MEDIA_V4L2_MEM2MEM_H
 
-#include <media/videobuf2-v4l2.h>
+#include <media/videobuf2-core.h>
 
 /**
  * struct v4l2_m2m_ops - mem-to-mem device driver callbacks
@@ -40,10 +40,6 @@
  *		v4l2_m2m_job_finish() (as if the transaction ended normally).
  *		This function does not have to (and will usually not) wait
  *		until the device enters a state when it can be stopped.
- * @lock:	optional. Define a driver's own lock callback, instead of using
- *		m2m_ctx->q_lock.
- * @unlock:	optional. Define a driver's own unlock callback, instead of
- *		using m2m_ctx->q_lock.
  */
 struct v4l2_m2m_ops {
 	void (*device_run)(void *priv);
@@ -90,7 +86,7 @@ struct v4l2_m2m_ctx {
 };
 
 struct v4l2_m2m_buffer {
-	struct vb2_v4l2_buffer	vb;
+	struct vb2_buffer	vb;
 	struct list_head	list;
 };
 
@@ -105,9 +101,9 @@ void v4l2_m2m_job_finish(struct v4l2_m2m_dev *m2m_dev,
 			 struct v4l2_m2m_ctx *m2m_ctx);
 
 static inline void
-v4l2_m2m_buf_done(struct vb2_v4l2_buffer *buf, enum vb2_buffer_state state)
+v4l2_m2m_buf_done(struct vb2_buffer *buf, enum vb2_buffer_state state)
 {
-	vb2_buffer_done(&buf->vb2_buf, state);
+	vb2_buffer_done(buf, state);
 }
 
 int v4l2_m2m_reqbufs(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
@@ -120,8 +116,6 @@ int v4l2_m2m_qbuf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 		  struct v4l2_buffer *buf);
 int v4l2_m2m_dqbuf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 		   struct v4l2_buffer *buf);
-int v4l2_m2m_prepare_buf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
-			 struct v4l2_buffer *buf);
 int v4l2_m2m_create_bufs(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 			 struct v4l2_create_buffers *create);
 
@@ -160,14 +154,11 @@ static inline void v4l2_m2m_set_dst_buffered(struct v4l2_m2m_ctx *m2m_ctx,
 
 void v4l2_m2m_ctx_release(struct v4l2_m2m_ctx *m2m_ctx);
 
-void v4l2_m2m_buf_queue(struct v4l2_m2m_ctx *m2m_ctx,
-			struct vb2_v4l2_buffer *vbuf);
+void v4l2_m2m_buf_queue(struct v4l2_m2m_ctx *m2m_ctx, struct vb2_buffer *vb);
 
 /**
  * v4l2_m2m_num_src_bufs_ready() - return the number of source buffers ready for
  * use
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline
 unsigned int v4l2_m2m_num_src_bufs_ready(struct v4l2_m2m_ctx *m2m_ctx)
@@ -178,8 +169,6 @@ unsigned int v4l2_m2m_num_src_bufs_ready(struct v4l2_m2m_ctx *m2m_ctx)
 /**
  * v4l2_m2m_num_src_bufs_ready() - return the number of destination buffers
  * ready for use
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline
 unsigned int v4l2_m2m_num_dst_bufs_ready(struct v4l2_m2m_ctx *m2m_ctx)
@@ -192,8 +181,6 @@ void *v4l2_m2m_next_buf(struct v4l2_m2m_queue_ctx *q_ctx);
 /**
  * v4l2_m2m_next_src_buf() - return next source buffer from the list of ready
  * buffers
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline void *v4l2_m2m_next_src_buf(struct v4l2_m2m_ctx *m2m_ctx)
 {
@@ -203,8 +190,6 @@ static inline void *v4l2_m2m_next_src_buf(struct v4l2_m2m_ctx *m2m_ctx)
 /**
  * v4l2_m2m_next_dst_buf() - return next destination buffer from the list of
  * ready buffers
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline void *v4l2_m2m_next_dst_buf(struct v4l2_m2m_ctx *m2m_ctx)
 {
@@ -213,8 +198,6 @@ static inline void *v4l2_m2m_next_dst_buf(struct v4l2_m2m_ctx *m2m_ctx)
 
 /**
  * v4l2_m2m_get_src_vq() - return vb2_queue for source buffers
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline
 struct vb2_queue *v4l2_m2m_get_src_vq(struct v4l2_m2m_ctx *m2m_ctx)
@@ -224,8 +207,6 @@ struct vb2_queue *v4l2_m2m_get_src_vq(struct v4l2_m2m_ctx *m2m_ctx)
 
 /**
  * v4l2_m2m_get_dst_vq() - return vb2_queue for destination buffers
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline
 struct vb2_queue *v4l2_m2m_get_dst_vq(struct v4l2_m2m_ctx *m2m_ctx)
@@ -238,8 +219,6 @@ void *v4l2_m2m_buf_remove(struct v4l2_m2m_queue_ctx *q_ctx);
 /**
  * v4l2_m2m_src_buf_remove() - take off a source buffer from the list of ready
  * buffers and return it
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline void *v4l2_m2m_src_buf_remove(struct v4l2_m2m_ctx *m2m_ctx)
 {
@@ -249,8 +228,6 @@ static inline void *v4l2_m2m_src_buf_remove(struct v4l2_m2m_ctx *m2m_ctx)
 /**
  * v4l2_m2m_dst_buf_remove() - take off a destination buffer from the list of
  * ready buffers and return it
- *
- * @m2m_ctx: pointer to struct v4l2_m2m_ctx
  */
 static inline void *v4l2_m2m_dst_buf_remove(struct v4l2_m2m_ctx *m2m_ctx)
 {
@@ -271,8 +248,6 @@ int v4l2_m2m_ioctl_qbuf(struct file *file, void *fh,
 				struct v4l2_buffer *buf);
 int v4l2_m2m_ioctl_dqbuf(struct file *file, void *fh,
 				struct v4l2_buffer *buf);
-int v4l2_m2m_ioctl_prepare_buf(struct file *file, void *fh,
-			       struct v4l2_buffer *buf);
 int v4l2_m2m_ioctl_streamon(struct file *file, void *fh,
 				enum v4l2_buf_type type);
 int v4l2_m2m_ioctl_streamoff(struct file *file, void *fh,

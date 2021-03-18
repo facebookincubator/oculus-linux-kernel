@@ -76,8 +76,6 @@
 #include "uas-detect.h"
 #endif
 
-#define DRV_NAME "usb-storage"
-
 /* Some informational data */
 MODULE_AUTHOR("Matthew Dharm <mdharm-usb@one-eyed-alien.net>");
 MODULE_DESCRIPTION("USB Mass Storage driver for Linux");
@@ -482,7 +480,7 @@ void usb_stor_adjust_quirks(struct usb_device *udev, unsigned long *fflags)
 			US_FL_NO_READ_DISC_INFO | US_FL_NO_READ_CAPACITY_16 |
 			US_FL_INITIAL_READ10 | US_FL_WRITE_CACHE |
 			US_FL_NO_ATA_1X | US_FL_NO_REPORT_OPCODES |
-			US_FL_MAX_SECTORS_240 | US_FL_NO_REPORT_LUNS);
+			US_FL_MAX_SECTORS_240);
 
 	p = quirks;
 	while (*p) {
@@ -531,9 +529,6 @@ void usb_stor_adjust_quirks(struct usb_device *udev, unsigned long *fflags)
 			break;
 		case 'i':
 			f |= US_FL_IGNORE_DEVICE;
-			break;
-		case 'j':
-			f |= US_FL_NO_REPORT_LUNS;
 			break;
 		case 'l':
 			f |= US_FL_NOT_LOCKABLE;
@@ -893,17 +888,9 @@ static void usb_stor_scan_dwork(struct work_struct *work)
 	dev_dbg(dev, "starting scan\n");
 
 	/* For bulk-only devices, determine the max LUN value */
-	if (us->protocol == USB_PR_BULK &&
-	    !(us->fflags & US_FL_SINGLE_LUN) &&
-	    !(us->fflags & US_FL_SCM_MULT_TARG)) {
+	if (us->protocol == USB_PR_BULK && !(us->fflags & US_FL_SINGLE_LUN)) {
 		mutex_lock(&us->dev_mutex);
 		us->max_lun = usb_stor_Bulk_max_lun(us);
-		/*
-		 * Allow proper scanning of devices that present more than 8 LUNs
-		 * While not affecting other devices that may need the previous behavior
-		 */
-		if (us->max_lun >= 8)
-			us_to_host(us)->max_lun = us->max_lun+1;
 		mutex_unlock(&us->dev_mutex);
 	}
 	scsi_scan_host(us_to_host(us));
@@ -929,8 +916,7 @@ static unsigned int usb_stor_sg_tablesize(struct usb_interface *intf)
 int usb_stor_probe1(struct us_data **pus,
 		struct usb_interface *intf,
 		const struct usb_device_id *id,
-		struct us_unusual_dev *unusual_dev,
-		struct scsi_host_template *sht)
+		struct us_unusual_dev *unusual_dev)
 {
 	struct Scsi_Host *host;
 	struct us_data *us;
@@ -942,7 +928,7 @@ int usb_stor_probe1(struct us_data **pus,
 	 * Ask the SCSI layer to allocate a host structure, with extra
 	 * space at the end for our private us_data structure.
 	 */
-	host = scsi_host_alloc(sht, sizeof(*us));
+	host = scsi_host_alloc(&usb_stor_host_template, sizeof(*us));
 	if (!host) {
 		dev_warn(&intf->dev, "Unable to allocate the scsi host\n");
 		return -ENOMEM;
@@ -1001,30 +987,20 @@ int usb_stor_probe2(struct us_data *us)
 	usb_stor_dbg(us, "Transport: %s\n", us->transport_name);
 	usb_stor_dbg(us, "Protocol: %s\n", us->protocol_name);
 
-	if (us->fflags & US_FL_SCM_MULT_TARG) {
-		/*
-		 * SCM eUSCSI bridge devices can have different numbers
-		 * of LUNs on different targets; allow all to be probed.
-		 */
-		us->max_lun = 7;
-		/* The eUSCSI itself has ID 7, so avoid scanning that */
-		us_to_host(us)->this_id = 7;
-		/* max_id is 8 initially, so no need to set it here */
-	} else {
-		/* In the normal case there is only a single target */
-		us_to_host(us)->max_id = 1;
-		/*
-		 * Like Windows, we won't store the LUN bits in CDB[1] for
-		 * SCSI-2 devices using the Bulk-Only transport (even though
-		 * this violates the SCSI spec).
-		 */
-		if (us->transport == usb_stor_Bulk_transport)
-			us_to_host(us)->no_scsi2_lun_in_cdb = 1;
-	}
-
 	/* fix for single-lun devices */
 	if (us->fflags & US_FL_SINGLE_LUN)
 		us->max_lun = 0;
+
+	if (!(us->fflags & US_FL_SCM_MULT_TARG))
+		us_to_host(us)->max_id = 1;
+
+	/*
+	 * Like Windows, we won't store the LUN bits in CDB[1] for SCSI-2
+	 * devices using the Bulk-Only transport (even though this violates
+	 * the SCSI spec).
+	 */
+	if (us->transport == usb_stor_Bulk_transport)
+		us_to_host(us)->no_scsi2_lun_in_cdb = 1;
 
 	/* Find the endpoints and calculate pipe values */
 	result = get_pipes(us);
@@ -1079,8 +1055,6 @@ void usb_stor_disconnect(struct usb_interface *intf)
 }
 EXPORT_SYMBOL_GPL(usb_stor_disconnect);
 
-static struct scsi_host_template usb_stor_host_template;
-
 /* The main probe routine for standard devices */
 static int storage_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
@@ -1121,8 +1095,7 @@ static int storage_probe(struct usb_interface *intf,
 			id->idVendor, id->idProduct);
 	}
 
-	result = usb_stor_probe1(&us, intf, id, unusual_dev,
-				 &usb_stor_host_template);
+	result = usb_stor_probe1(&us, intf, id, unusual_dev);
 	if (result)
 		return result;
 
@@ -1133,7 +1106,7 @@ static int storage_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver usb_storage_driver = {
-	.name =		DRV_NAME,
+	.name =		"usb-storage",
 	.probe =	storage_probe,
 	.disconnect =	usb_stor_disconnect,
 	.suspend =	usb_stor_suspend,
@@ -1146,4 +1119,4 @@ static struct usb_driver usb_storage_driver = {
 	.soft_unbind =	1,
 };
 
-module_usb_stor_driver(usb_storage_driver, usb_stor_host_template, DRV_NAME);
+module_usb_driver(usb_storage_driver);

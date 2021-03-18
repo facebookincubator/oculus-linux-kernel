@@ -1,5 +1,5 @@
 
-#include <asm/fpu/api.h>
+#include <asm/i387.h>
 
 /*
  * may_use_simd - whether it is allowable at this time to issue SIMD

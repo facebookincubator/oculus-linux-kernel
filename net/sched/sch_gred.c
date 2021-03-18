@@ -165,8 +165,7 @@ static int gred_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 			 * if no default DP has been configured. This
 			 * allows for DP flows to be left untouched.
 			 */
-			if (likely(sch->qstats.backlog + qdisc_pkt_len(skb) <=
-					sch->limit))
+			if (skb_queue_len(&sch->q) < qdisc_dev(sch)->tx_queue_len)
 				return qdisc_enqueue_tail(skb, sch);
 			else
 				goto drop;
@@ -230,7 +229,7 @@ static int gred_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		break;
 	}
 
-	if (gred_backlog(t, q, sch) + qdisc_pkt_len(skb) <= q->limit) {
+	if (q->backlog + qdisc_pkt_len(skb) <= q->limit) {
 		q->backlog += qdisc_pkt_len(skb);
 		return qdisc_enqueue_tail(skb, sch);
 	}
@@ -398,10 +397,7 @@ static inline int gred_change_vq(struct Qdisc *sch, int dp,
 
 	q->DP = dp;
 	q->prio = prio;
-	if (ctl->limit > sch->limit)
-		q->limit = sch->limit;
-	else
-		q->limit = ctl->limit;
+	q->limit = ctl->limit;
 
 	if (q->backlog == 0)
 		red_end_of_idle_period(&q->vars);
@@ -418,7 +414,6 @@ static const struct nla_policy gred_policy[TCA_GRED_MAX + 1] = {
 	[TCA_GRED_STAB]		= { .len = 256 },
 	[TCA_GRED_DPS]		= { .len = sizeof(struct tc_gred_sopt) },
 	[TCA_GRED_MAX_P]	= { .type = NLA_U32 },
-	[TCA_GRED_LIMIT]	= { .type = NLA_U32 },
 };
 
 static int gred_change(struct Qdisc *sch, struct nlattr *opt)
@@ -438,15 +433,11 @@ static int gred_change(struct Qdisc *sch, struct nlattr *opt)
 	if (err < 0)
 		return err;
 
-	if (tb[TCA_GRED_PARMS] == NULL && tb[TCA_GRED_STAB] == NULL) {
-		if (tb[TCA_GRED_LIMIT] != NULL)
-			sch->limit = nla_get_u32(tb[TCA_GRED_LIMIT]);
+	if (tb[TCA_GRED_PARMS] == NULL && tb[TCA_GRED_STAB] == NULL)
 		return gred_change_table_def(sch, opt);
-	}
 
 	if (tb[TCA_GRED_PARMS] == NULL ||
-	    tb[TCA_GRED_STAB] == NULL ||
-	    tb[TCA_GRED_LIMIT] != NULL)
+	    tb[TCA_GRED_STAB] == NULL)
 		return -EINVAL;
 
 	max_P = tb[TCA_GRED_MAX_P] ? nla_get_u32(tb[TCA_GRED_MAX_P]) : 0;
@@ -510,12 +501,6 @@ static int gred_init(struct Qdisc *sch, struct nlattr *opt)
 	if (tb[TCA_GRED_PARMS] || tb[TCA_GRED_STAB])
 		return -EINVAL;
 
-	if (tb[TCA_GRED_LIMIT])
-		sch->limit = nla_get_u32(tb[TCA_GRED_LIMIT]);
-	else
-		sch->limit = qdisc_dev(sch)->tx_queue_len
-		             * psched_mtu(qdisc_dev(sch));
-
 	return gred_change_table_def(sch, tb[TCA_GRED_DPS]);
 }
 
@@ -546,9 +531,6 @@ static int gred_dump(struct Qdisc *sch, struct sk_buff *skb)
 	if (nla_put(skb, TCA_GRED_MAX_P, sizeof(max_p), max_p))
 		goto nla_put_failure;
 
-	if (nla_put_u32(skb, TCA_GRED_LIMIT, sch->limit))
-		goto nla_put_failure;
-
 	parms = nla_nest_start(skb, TCA_GRED_PARMS);
 	if (parms == NULL)
 		goto nla_put_failure;
@@ -571,7 +553,7 @@ static int gred_dump(struct Qdisc *sch, struct sk_buff *skb)
 
 		opt.limit	= q->limit;
 		opt.DP		= q->DP;
-		opt.backlog	= gred_backlog(table, q, sch);
+		opt.backlog	= q->backlog;
 		opt.prio	= q->prio;
 		opt.qth_min	= q->parms.qth_min >> q->parms.Wlog;
 		opt.qth_max	= q->parms.qth_max >> q->parms.Wlog;

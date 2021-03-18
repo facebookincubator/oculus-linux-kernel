@@ -48,6 +48,7 @@
 #define ADF_TRANSPORT_INTRN_H
 
 #include <linux/interrupt.h>
+#include <linux/atomic.h>
 #include <linux/spinlock_types.h>
 #include "adf_transport.h"
 

@@ -26,6 +26,7 @@
 #include <linux/fs.h>
 #include <linux/sched.h>
 #include <linux/writeback.h>
+#include <linux/jbd2.h>
 #include <linux/blkdev.h>
 
 #include "ext4.h"
@@ -55,7 +56,7 @@ static int ext4_sync_parent(struct inode *inode)
 		dentry = d_find_any_alias(inode);
 		if (!dentry)
 			break;
-		next = igrab(d_inode(dentry->d_parent));
+		next = igrab(dentry->d_parent->d_inode);
 		dput(dentry);
 		if (!next)
 			break;

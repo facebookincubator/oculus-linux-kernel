@@ -74,11 +74,7 @@ static unsigned long ftrace_gen_branch(unsigned long pc, unsigned long addr,
 			create_JumpOff_X1(pcrel_by_instr);
 	}
 
-	/*
-	 * Also put { move r10, lr; jal ftrace_stub } in a bundle, which
-	 * is used to replace the instruction in address ftrace_call.
-	 */
-	if (addr == FTRACE_ADDR || addr == (unsigned long)ftrace_stub) {
+	if (addr == FTRACE_ADDR) {
 		/* opcode: or r10, lr, zero */
 		opcode_x0 =
 			create_Dest_X0(10) |

@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM CAMERA FLASH
+* Qualcomm MSM CAMERA FLASH
 
 Required properties:
 - cell-index : Should contain flash source index to diffentiate

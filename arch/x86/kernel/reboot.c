@@ -12,7 +12,6 @@
 #include <acpi/reboot.h>
 #include <asm/io.h>
 #include <asm/apic.h>
-#include <asm/io_apic.h>
 #include <asm/desc.h>
 #include <asm/hpet.h>
 #include <asm/pgtable.h>
@@ -180,14 +179,6 @@ static struct dmi_system_id __initdata reboot_dmi_table[] = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
 			DMI_MATCH(DMI_PRODUCT_NAME, "iMac9,1"),
-		},
-	},
-	{	/* Handle problems with rebooting on the iMac10,1. */
-		.callback = set_pci_reboot,
-		.ident = "Apple iMac10,1",
-		.matches = {
-		    DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
-		    DMI_MATCH(DMI_PRODUCT_NAME, "iMac10,1"),
 		},
 	},
 
@@ -681,7 +672,7 @@ struct machine_ops machine_ops = {
 	.emergency_restart = native_machine_emergency_restart,
 	.restart = native_machine_restart,
 	.halt = native_machine_halt,
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 	.crash_shutdown = native_machine_crash_shutdown,
 #endif
 };
@@ -711,7 +702,7 @@ void machine_halt(void)
 	machine_ops.halt();
 }
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 void machine_crash_shutdown(struct pt_regs *regs)
 {
 	machine_ops.crash_shutdown(regs);

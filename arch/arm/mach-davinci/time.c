@@ -303,42 +303,36 @@ static int davinci_set_next_event(unsigned long cycles,
 	return 0;
 }
 
-static int davinci_shutdown(struct clock_event_device *evt)
+static void davinci_set_mode(enum clock_event_mode mode,
+			     struct clock_event_device *evt)
 {
 	struct timer_s *t = &timers[TID_CLOCKEVENT];
 
-	t->opts &= ~TIMER_OPTS_STATE_MASK;
-	t->opts |= TIMER_OPTS_DISABLED;
-	return 0;
-}
-
-static int davinci_set_oneshot(struct clock_event_device *evt)
-{
-	struct timer_s *t = &timers[TID_CLOCKEVENT];
-
-	t->opts &= ~TIMER_OPTS_STATE_MASK;
-	t->opts |= TIMER_OPTS_ONESHOT;
-	return 0;
-}
-
-static int davinci_set_periodic(struct clock_event_device *evt)
-{
-	struct timer_s *t = &timers[TID_CLOCKEVENT];
-
-	t->period = davinci_clock_tick_rate / (HZ);
-	t->opts &= ~TIMER_OPTS_STATE_MASK;
-	t->opts |= TIMER_OPTS_PERIODIC;
-	timer32_config(t);
-	return 0;
+	switch (mode) {
+	case CLOCK_EVT_MODE_PERIODIC:
+		t->period = davinci_clock_tick_rate / (HZ);
+		t->opts &= ~TIMER_OPTS_STATE_MASK;
+		t->opts |= TIMER_OPTS_PERIODIC;
+		timer32_config(t);
+		break;
+	case CLOCK_EVT_MODE_ONESHOT:
+		t->opts &= ~TIMER_OPTS_STATE_MASK;
+		t->opts |= TIMER_OPTS_ONESHOT;
+		break;
+	case CLOCK_EVT_MODE_UNUSED:
+	case CLOCK_EVT_MODE_SHUTDOWN:
+		t->opts &= ~TIMER_OPTS_STATE_MASK;
+		t->opts |= TIMER_OPTS_DISABLED;
+		break;
+	case CLOCK_EVT_MODE_RESUME:
+		break;
+	}
 }
 
 static struct clock_event_device clockevent_davinci = {
-	.features		= CLOCK_EVT_FEAT_PERIODIC |
-				  CLOCK_EVT_FEAT_ONESHOT,
-	.set_next_event		= davinci_set_next_event,
-	.set_state_shutdown	= davinci_shutdown,
-	.set_state_periodic	= davinci_set_periodic,
-	.set_state_oneshot	= davinci_set_oneshot,
+	.features       = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT,
+	.set_next_event	= davinci_set_next_event,
+	.set_mode	= davinci_set_mode,
 };
 
 
@@ -348,6 +342,8 @@ void __init davinci_timer_init(void)
 	struct davinci_soc_info *soc_info = &davinci_soc_info;
 	unsigned int clockevent_id;
 	unsigned int clocksource_id;
+	static char err[] __initdata = KERN_ERR
+		"%s: can't register clocksource!\n";
 	int i;
 
 	clockevent_id = soc_info->timer_info->clockevent_id;
@@ -368,12 +364,12 @@ void __init davinci_timer_init(void)
 
 		/* Only bottom timers can use compare regs */
 		if (IS_TIMER_TOP(clockevent_id))
-			pr_warn("%s: Invalid use of system timers.  Results unpredictable.\n",
-				__func__);
+			pr_warning("davinci_timer_init: Invalid use"
+				" of system timers.  Results unpredictable.\n");
 		else if ((dtip[event_timer].cmp_off == 0)
 				|| (dtip[event_timer].cmp_irq == 0))
-			pr_warn("%s: Invalid timer instance setup.  Results unpredictable.\n",
-				__func__);
+			pr_warning("davinci_timer_init:  Invalid timer instance"
+				" setup.  Results unpredictable.\n");
 		else {
 			timers[TID_CLOCKEVENT].opts |= TIMER_OPTS_USE_COMPARE;
 			clockevent_davinci.features = CLOCK_EVT_FEAT_ONESHOT;
@@ -393,8 +389,7 @@ void __init davinci_timer_init(void)
 	clocksource_davinci.name = id_to_name[clocksource_id];
 	if (clocksource_register_hz(&clocksource_davinci,
 				    davinci_clock_tick_rate))
-		pr_err("%s: can't register clocksource!\n",
-		       clocksource_davinci.name);
+		printk(err, clocksource_davinci.name);
 
 	sched_clock_register(davinci_read_sched_clock, 32,
 			  davinci_clock_tick_rate);

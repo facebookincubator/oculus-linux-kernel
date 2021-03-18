@@ -538,6 +538,7 @@ static struct platform_driver sp5100_tco_driver = {
 	.remove		= sp5100_tco_remove,
 	.shutdown	= sp5100_tco_shutdown,
 	.driver		= {
+		.owner	= THIS_MODULE,
 		.name	= TCO_MODULE_NAME,
 	},
 };

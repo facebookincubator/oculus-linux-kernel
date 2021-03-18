@@ -147,12 +147,6 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 	case MMC_TIMING_SD_HS:
 		str = "sd high-speed";
 		break;
-	case MMC_TIMING_UHS_SDR12:
-		str = "sd uhs SDR12";
-		break;
-	case MMC_TIMING_UHS_SDR25:
-		str = "sd uhs SDR25";
-		break;
 	case MMC_TIMING_UHS_SDR50:
 		str = "sd uhs SDR50";
 		break;
@@ -192,25 +186,6 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 		break;
 	}
 	seq_printf(s, "signal voltage:\t%u (%s)\n", ios->chip_select, str);
-
-	switch (ios->drv_type) {
-	case MMC_SET_DRIVER_TYPE_A:
-		str = "driver type A";
-		break;
-	case MMC_SET_DRIVER_TYPE_B:
-		str = "driver type B";
-		break;
-	case MMC_SET_DRIVER_TYPE_C:
-		str = "driver type C";
-		break;
-	case MMC_SET_DRIVER_TYPE_D:
-		str = "driver type D";
-		break;
-	default:
-		str = "invalid";
-		break;
-	}
-	seq_printf(s, "driver type:\t%u (%s)\n", ios->drv_type, str);
 
 	return 0;
 }
@@ -415,14 +390,15 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 		&host->cmdq_thist_enabled))
 		goto err_node;
 
+	if (!debugfs_create_file("err_state", S_IRUSR | S_IWUSR, root, host,
+		&mmc_err_state))
+		goto err_node;
+
 #ifdef CONFIG_MMC_RING_BUFFER
 	if (!debugfs_create_file("ring_buffer", S_IRUSR,
 				root, host, &mmc_ring_buffer_fops))
 		goto err_node;
 #endif
-	if (!debugfs_create_file("err_state", S_IRUSR | S_IWUSR, root, host,
-		&mmc_err_state))
-		goto err_node;
 
 #ifdef CONFIG_MMC_CLKGATE
 	if (!debugfs_create_u32("clk_delay", (S_IRUSR | S_IWUSR),
@@ -504,6 +480,12 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 	if (!buf)
 		return -ENOMEM;
 
+	ext_csd = kmalloc(512, GFP_KERNEL);
+	if (!ext_csd) {
+		err = -ENOMEM;
+		goto out_free_halt;
+	}
+
 	mmc_get_card(card);
 	if (mmc_card_cmdq(card)) {
 		err = mmc_cmdq_halt_on_empty_queue(card->host);
@@ -515,8 +497,7 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 			goto out_free_halt;
 		}
 	}
-
-	err = mmc_get_ext_csd(card, &ext_csd);
+	err = mmc_send_ext_csd(card, ext_csd);
 	if (err)
 		goto out_free;
 
@@ -546,6 +527,7 @@ out_free:
 	mmc_put_card(card);
 out_free_halt:
 	kfree(buf);
+	kfree(ext_csd);
 	return err;
 }
 

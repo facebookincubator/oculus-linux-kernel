@@ -29,8 +29,14 @@
 #ifndef __DPC_H__
 #define __DPC_H__
 
+#include "ttype.h"
 #include "device.h"
+#include "wcmd.h"
 
-bool vnt_receive_frame(struct vnt_private *priv, struct vnt_rx_desc *curr_rd);
+bool
+device_receive_frame(
+	struct vnt_private *,
+	PSRxDesc pCurrRD
+);
 
-#endif /* __RXTX_H__ */
+#endif // __RXTX_H__

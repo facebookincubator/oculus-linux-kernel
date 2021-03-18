@@ -16,7 +16,6 @@
 #include <linux/err.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
-#include <linux/bitops.h>
 
 /*
  * AD7314 temperature masks
@@ -68,7 +67,7 @@ static ssize_t ad7314_show_temperature(struct device *dev,
 	switch (spi_get_device_id(chip->spi_dev)->driver_data) {
 	case ad7314:
 		data = (ret & AD7314_TEMP_MASK) >> AD7314_TEMP_SHIFT;
-		data = sign_extend32(data, 9);
+		data = (data << 6) >> 6;
 
 		return sprintf(buf, "%d\n", 250 * data);
 	case adt7301:
@@ -79,7 +78,7 @@ static ssize_t ad7314_show_temperature(struct device *dev,
 		 * register.  1lsb - 31.25 milli degrees centigrade
 		 */
 		data = ret & ADT7301_TEMP_MASK;
-		data = sign_extend32(data, 13);
+		data = (data << 2) >> 2;
 
 		return sprintf(buf, "%d\n",
 			       DIV_ROUND_CLOSEST(data * 3125, 100));
@@ -157,6 +156,7 @@ MODULE_DEVICE_TABLE(spi, ad7314_id);
 static struct spi_driver ad7314_driver = {
 	.driver = {
 		.name = "ad7314",
+		.owner = THIS_MODULE,
 	},
 	.probe = ad7314_probe,
 	.remove = ad7314_remove,

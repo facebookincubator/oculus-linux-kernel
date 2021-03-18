@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,7 +38,7 @@ struct msm_client_dump {
 	unsigned long end_addr;
 };
 
-#ifdef CONFIG_QCOM_MEMORY_DUMP
+#ifdef CONFIG_MSM_MEMORY_DUMP
 extern int msm_dump_tbl_register(struct msm_client_dump *client_entry);
 #else
 static inline int msm_dump_tbl_register(struct msm_client_dump *entry)
@@ -48,7 +48,7 @@ static inline int msm_dump_tbl_register(struct msm_client_dump *entry)
 #endif
 
 
-#if defined(CONFIG_QCOM_MEMORY_DUMP) || defined(CONFIG_QCOM_MEMORY_DUMP_V2)
+#if defined(CONFIG_MSM_MEMORY_DUMP) || defined(CONFIG_MSM_MEMORY_DUMP_V2)
 extern uint32_t msm_dump_table_version(void);
 #else
 static inline uint32_t msm_dump_table_version(void)
@@ -62,10 +62,12 @@ static inline uint32_t msm_dump_table_version(void)
 #define MSM_DUMP_MINOR(val)		(val & 0xFFFFF)
 
 
-#define MAX_NUM_ENTRIES		0x120
+#define MAX_NUM_ENTRIES		0x130
 
 enum msm_dump_data_ids {
 	MSM_DUMP_DATA_CPU_CTX = 0x00,
+	MSM_DUMP_DATA_L1_INST_TLB = 0x20,
+	MSM_DUMP_DATA_L1_DATA_TLB = 0x40,
 	MSM_DUMP_DATA_L1_INST_CACHE = 0x60,
 	MSM_DUMP_DATA_L1_DATA_CACHE = 0x80,
 	MSM_DUMP_DATA_ETM_REG = 0xA0,
@@ -81,11 +83,11 @@ enum msm_dump_data_ids {
 	MSM_DUMP_DATA_MISC = 0xE8,
 	MSM_DUMP_DATA_VSENSE = 0xE9,
 	MSM_DUMP_DATA_RPM = 0xEA,
-	MSM_DUMP_DATA_SCANDUMP = 0xEB,
 	MSM_DUMP_DATA_TMC_ETF = 0xF0,
 	MSM_DUMP_DATA_TMC_REG = 0x100,
 	MSM_DUMP_DATA_LOG_BUF = 0x110,
 	MSM_DUMP_DATA_LOG_BUF_FIRST_IDX = 0x111,
+	MSM_DUMP_DATA_L2_TLB = 0x120,
 	MSM_DUMP_DATA_MAX = MAX_NUM_ENTRIES,
 };
 
@@ -115,7 +117,7 @@ struct msm_dump_entry {
 	uint64_t addr;
 };
 
-#ifdef CONFIG_QCOM_MEMORY_DUMP_V2
+#ifdef CONFIG_MSM_MEMORY_DUMP_V2
 extern int msm_dump_data_register(enum msm_dump_table_ids id,
 				  struct msm_dump_entry *entry);
 #else

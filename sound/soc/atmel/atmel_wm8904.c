@@ -176,12 +176,12 @@ static const struct of_device_id atmel_asoc_wm8904_dt_ids[] = {
 	{ .compatible = "atmel,asoc-wm8904", },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, atmel_asoc_wm8904_dt_ids);
 #endif
 
 static struct platform_driver atmel_asoc_wm8904_driver = {
 	.driver = {
 		.name = "atmel-wm8904-audio",
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(atmel_asoc_wm8904_dt_ids),
 	},
 	.probe = atmel_asoc_wm8904_probe,

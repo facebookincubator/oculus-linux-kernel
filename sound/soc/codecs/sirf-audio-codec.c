@@ -120,8 +120,7 @@ static int atlas6_codec_enable_and_reset_event(struct snd_soc_dapm_widget *w,
 {
 #define ATLAS6_CODEC_ENABLE_BITS (1 << 29)
 #define ATLAS6_CODEC_RESET_BITS (1 << 28)
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct sirf_audio_codec *sirf_audio_codec = snd_soc_codec_get_drvdata(codec);
+	struct sirf_audio_codec *sirf_audio_codec = dev_get_drvdata(w->codec->dev);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		enable_and_reset_codec(sirf_audio_codec->regmap,
@@ -143,8 +142,7 @@ static int prima2_codec_enable_and_reset_event(struct snd_soc_dapm_widget *w,
 {
 #define PRIMA2_CODEC_ENABLE_BITS (1 << 27)
 #define PRIMA2_CODEC_RESET_BITS (1 << 26)
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct sirf_audio_codec *sirf_audio_codec = snd_soc_codec_get_drvdata(codec);
+	struct sirf_audio_codec *sirf_audio_codec = dev_get_drvdata(w->codec->dev);
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		enable_and_reset_codec(sirf_audio_codec->regmap,
@@ -370,11 +368,11 @@ static int sirf_audio_codec_trigger(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static const struct snd_soc_dai_ops sirf_audio_codec_dai_ops = {
+struct snd_soc_dai_ops sirf_audio_codec_dai_ops = {
 	.trigger = sirf_audio_codec_trigger,
 };
 
-static struct snd_soc_dai_driver sirf_audio_codec_dai = {
+struct snd_soc_dai_driver sirf_audio_codec_dai = {
 	.name = "sirf-audio-codec",
 	.playback = {
 		.stream_name = "Playback",
@@ -395,7 +393,7 @@ static struct snd_soc_dai_driver sirf_audio_codec_dai = {
 
 static int sirf_audio_codec_probe(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct snd_soc_dapm_context *dapm = &codec->dapm;
 
 	pm_runtime_enable(codec->dev);
 
@@ -567,6 +565,7 @@ static const struct dev_pm_ops sirf_audio_codec_pm_ops = {
 static struct platform_driver sirf_audio_codec_driver = {
 	.driver = {
 		.name = "sirf-audio-codec",
+		.owner = THIS_MODULE,
 		.of_match_table = sirf_audio_codec_of_match,
 		.pm = &sirf_audio_codec_pm_ops,
 	},

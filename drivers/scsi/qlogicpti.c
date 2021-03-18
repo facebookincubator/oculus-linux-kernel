@@ -1287,6 +1287,7 @@ static struct scsi_host_template qpti_template = {
 	.can_queue		= QLOGICPTI_REQ_QUEUE_LEN,
 	.this_id		= 7,
 	.sg_tablesize		= QLOGICPTI_MAX_SG(QLOGICPTI_REQ_QUEUE_LEN),
+	.cmd_per_lun		= 1,
 	.use_clustering		= ENABLE_CLUSTERING,
 };
 
@@ -1454,6 +1455,7 @@ MODULE_DEVICE_TABLE(of, qpti_match);
 static struct platform_driver qpti_sbus_driver = {
 	.driver = {
 		.name = "qpti",
+		.owner = THIS_MODULE,
 		.of_match_table = qpti_match,
 	},
 	.probe		= qpti_sbus_probe,

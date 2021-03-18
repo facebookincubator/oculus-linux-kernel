@@ -16,7 +16,6 @@
  */
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_plane_helper.h>
 
 #include <video/cirrus.h>
 
@@ -501,13 +500,8 @@ static int cirrus_vga_get_modes(struct drm_connector *connector)
 	int count;
 
 	/* Just add a static list of modes */
-	if (cirrus_bpp <= 24) {
-		count = drm_add_modes_noedid(connector, 1280, 1024);
-		drm_set_preferred_mode(connector, 1024, 768);
-	} else {
-		count = drm_add_modes_noedid(connector, 800, 600);
-		drm_set_preferred_mode(connector, 800, 600);
-	}
+	count = drm_add_modes_noedid(connector, 1280, 1024);
+	drm_set_preferred_mode(connector, 1024, 768);
 	return count;
 }
 

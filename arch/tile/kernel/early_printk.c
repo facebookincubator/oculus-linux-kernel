@@ -43,20 +43,13 @@ static struct console early_hv_console = {
 
 void early_panic(const char *fmt, ...)
 {
-	struct va_format vaf;
-	va_list args;
-
+	va_list ap;
 	arch_local_irq_disable_all();
-
-	va_start(args, fmt);
-
-	vaf.fmt = fmt;
-	vaf.va = &args;
-
-	early_printk("Kernel panic - not syncing: %pV", &vaf);
-
-	va_end(args);
-
+	va_start(ap, fmt);
+	early_printk("Kernel panic - not syncing: ");
+	early_vprintk(fmt, ap);
+	early_printk("\n");
+	va_end(ap);
 	dump_stack();
 	hv_halt();
 }

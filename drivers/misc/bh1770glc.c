@@ -1358,7 +1358,7 @@ static int bh1770_resume(struct device *dev)
 }
 #endif
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static int bh1770_runtime_suspend(struct device *dev)
 {
 	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
@@ -1396,6 +1396,7 @@ static const struct dev_pm_ops bh1770_pm_ops = {
 static struct i2c_driver bh1770_driver = {
 	.driver	 = {
 		.name	= "bh1770glc",
+		.owner	= THIS_MODULE,
 		.pm	= &bh1770_pm_ops,
 	},
 	.probe	  = bh1770_probe,

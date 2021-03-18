@@ -35,7 +35,6 @@
 #include <linux/list.h>
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
-#include <linux/pinctrl/consumer.h>
 
 #include <linux/can.h>
 #include <linux/can/dev.h>
@@ -332,23 +331,9 @@ static void c_can_setup_tx_object(struct net_device *dev, int iface,
 
 	priv->write_reg(priv, C_CAN_IFACE(MSGCTRL_REG, iface), ctrl);
 
-	if (priv->type == BOSCH_D_CAN) {
-		u32 data = 0, dreg = C_CAN_IFACE(DATA1_REG, iface);
-
-		for (i = 0; i < frame->can_dlc; i += 4, dreg += 2) {
-			data = (u32)frame->data[i];
-			data |= (u32)frame->data[i + 1] << 8;
-			data |= (u32)frame->data[i + 2] << 16;
-			data |= (u32)frame->data[i + 3] << 24;
-			priv->write_reg32(priv, dreg, data);
-		}
-	} else {
-		for (i = 0; i < frame->can_dlc; i += 2) {
-			priv->write_reg(priv,
-					C_CAN_IFACE(DATA1_REG, iface) + i / 2,
-					frame->data[i] |
-					(frame->data[i + 1] << 8));
-		}
+	for (i = 0; i < frame->can_dlc; i += 2) {
+		priv->write_reg(priv, C_CAN_IFACE(DATA1_REG, iface) + i / 2,
+				frame->data[i] | (frame->data[i + 1] << 8));
 	}
 }
 
@@ -416,20 +401,10 @@ static int c_can_read_msg_object(struct net_device *dev, int iface, u32 ctrl)
 	} else {
 		int i, dreg = C_CAN_IFACE(DATA1_REG, iface);
 
-		if (priv->type == BOSCH_D_CAN) {
-			for (i = 0; i < frame->can_dlc; i += 4, dreg += 2) {
-				data = priv->read_reg32(priv, dreg);
-				frame->data[i] = data;
-				frame->data[i + 1] = data >> 8;
-				frame->data[i + 2] = data >> 16;
-				frame->data[i + 3] = data >> 24;
-			}
-		} else {
-			for (i = 0; i < frame->can_dlc; i += 2, dreg++) {
-				data = priv->read_reg(priv, dreg);
-				frame->data[i] = data;
-				frame->data[i + 1] = data >> 8;
-			}
+		for (i = 0; i < frame->can_dlc; i += 2, dreg ++) {
+			data = priv->read_reg(priv, dreg);
+			frame->data[i] = data;
+			frame->data[i + 1] = data >> 8;
 		}
 	}
 
@@ -616,7 +591,6 @@ static int c_can_start(struct net_device *dev)
 {
 	struct c_can_priv *priv = netdev_priv(dev);
 	int err;
-	struct pinctrl *p;
 
 	/* basic c_can configuration */
 	err = c_can_chip_config(dev);
@@ -628,13 +602,6 @@ static int c_can_start(struct net_device *dev)
 		IF_COMM_RCV_LOW : IF_COMM_RCV_HIGH;
 
 	priv->can.state = CAN_STATE_ERROR_ACTIVE;
-
-	/* Attempt to use "active" if available else use "default" */
-	p = pinctrl_get_select(priv->device, "active");
-	if (!IS_ERR(p))
-		pinctrl_put(p);
-	else
-		pinctrl_pm_select_default_state(priv->device);
 
 	return 0;
 }
@@ -648,8 +615,6 @@ static void c_can_stop(struct net_device *dev)
 	/* put ctrl to init on stop to end ongoing transmission */
 	priv->write_reg(priv, C_CAN_CTRL_REG, CONTROL_INIT);
 
-	/* deactivate pins */
-	pinctrl_pm_select_sleep_state(dev->dev.parent);
 	priv->can.state = CAN_STATE_STOPPED;
 }
 
@@ -899,7 +864,7 @@ static int c_can_handle_state_change(struct net_device *dev,
 	case C_CAN_BUS_OFF:
 		/* bus-off state */
 		priv->can.state = CAN_STATE_BUS_OFF;
-		priv->can.can_stats.bus_off++;
+		can_bus_off(dev);
 		break;
 	default:
 		break;
@@ -986,6 +951,7 @@ static int c_can_handle_bus_err(struct net_device *dev,
 	 * type of the last error to occur on the CAN bus
 	 */
 	cf->can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+	cf->data[2] |= CAN_ERR_PROT_UNSPEC;
 
 	switch (lec_type) {
 	case LEC_STUFF_ERROR:
@@ -998,7 +964,8 @@ static int c_can_handle_bus_err(struct net_device *dev,
 		break;
 	case LEC_ACK_ERROR:
 		netdev_dbg(dev, "ack error\n");
-		cf->data[3] = CAN_ERR_PROT_LOC_ACK;
+		cf->data[3] |= (CAN_ERR_PROT_LOC_ACK |
+				CAN_ERR_PROT_LOC_ACK_DEL);
 		break;
 	case LEC_BIT1_ERROR:
 		netdev_dbg(dev, "bit1 error\n");
@@ -1010,7 +977,8 @@ static int c_can_handle_bus_err(struct net_device *dev,
 		break;
 	case LEC_CRC_ERROR:
 		netdev_dbg(dev, "CRC error\n");
-		cf->data[3] = CAN_ERR_PROT_LOC_CRC_SEQ;
+		cf->data[3] |= (CAN_ERR_PROT_LOC_CRC_SEQ |
+				CAN_ERR_PROT_LOC_CRC_DEL);
 		break;
 	default:
 		break;
@@ -1279,13 +1247,6 @@ int register_c_can_dev(struct net_device *dev)
 {
 	struct c_can_priv *priv = netdev_priv(dev);
 	int err;
-
-	/* Deactivate pins to prevent DRA7 DCAN IP from being
-	 * stuck in transition when module is disabled.
-	 * Pins are activated in c_can_start() and deactivated
-	 * in c_can_stop()
-	 */
-	pinctrl_pm_select_sleep_state(dev->dev.parent);
 
 	c_can_pm_runtime_enable(priv);
 

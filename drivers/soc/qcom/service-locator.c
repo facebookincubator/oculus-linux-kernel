@@ -31,22 +31,26 @@
 
 #define SERVREG_LOC_SERVICE_INSTANCE_ID			1
 
+#define QMI_RESP_BIT_SHIFT(x)				(x << 16)
 #define QMI_SERVREG_LOC_SERVER_INITIAL_TIMEOUT		2000
 #define QMI_SERVREG_LOC_SERVER_TIMEOUT			2000
 #define INITIAL_TIMEOUT					100000
 
 #define LOCATOR_NOT_PRESENT	0
 #define LOCATOR_PRESENT		1
+#define LOCATOR_UNKNOWN		-1
 
-static u32 locator_status = LOCATOR_NOT_PRESENT;
+static u32 locator_status = LOCATOR_UNKNOWN;
 static bool service_inited;
 
-module_param_named(enable, locator_status, uint, S_IRUGO | S_IWUSR);
+int enable = 0;
+module_param(enable, int, 0);
+
+DECLARE_COMPLETION(locator_status_known);
 
 static void service_locator_svc_arrive(struct work_struct *work);
 static void service_locator_svc_exit(struct work_struct *work);
 static void service_locator_recv_msg(struct work_struct *work);
-static void pd_locator_work(struct work_struct *work);
 
 struct workqueue_struct *servloc_wq;
 
@@ -60,15 +64,9 @@ struct pd_qmi_data {
 	struct qmi_handle *clnt_handle;
 };
 
-struct pd_qmi_work {
-	struct work_struct pd_loc_work;
-	struct pd_qmi_client_data *pdc;
-	struct notifier_block *notifier;
-};
 DEFINE_MUTEX(service_init_mutex);
 struct pd_qmi_data service_locator;
 
-/* Please refer soc/qcom/service-locator.h for use about APIs defined here */
 
 static int service_locator_svc_event_notify(struct notifier_block *this,
 				      unsigned long code,
@@ -109,7 +107,6 @@ static void service_locator_svc_arrive(struct work_struct *work)
 			qmi_handle_create(service_locator_clnt_notify, NULL);
 	if (!service_locator.clnt_handle) {
 		service_locator.clnt_handle = NULL;
-		complete_all(&service_locator.service_available);
 		mutex_unlock(&service_locator.service_mutex);
 		pr_err("Service locator QMI client handle alloc failed!\n");
 		return;
@@ -122,9 +119,8 @@ static void service_locator_svc_arrive(struct work_struct *work)
 	if (rc) {
 		qmi_handle_destroy(service_locator.clnt_handle);
 		service_locator.clnt_handle = NULL;
-		complete_all(&service_locator.service_available);
 		mutex_unlock(&service_locator.service_mutex);
-		pr_err("Unable to connnect to service rc:%d\n", rc);
+		pr_err("Unable to connnect to service\n");
 		return;
 	}
 	if (!service_inited)
@@ -138,7 +134,6 @@ static void service_locator_svc_exit(struct work_struct *work)
 	mutex_lock(&service_locator.service_mutex);
 	qmi_handle_destroy(service_locator.clnt_handle);
 	service_locator.clnt_handle = NULL;
-	complete_all(&service_locator.service_available);
 	mutex_unlock(&service_locator.service_mutex);
 	pr_info("Connection with service locator lost\n");
 }
@@ -149,12 +144,10 @@ static void service_locator_recv_msg(struct work_struct *work)
 
 	do {
 		pr_debug("Notified about a Receive event\n");
-		ret = qmi_recv_msg(service_locator.clnt_handle);
-		if (ret < 0)
-			pr_err("Error receiving message rc:%d. Retrying...\n",
-								ret);
-	} while (ret == 0);
+	} while ((ret = qmi_recv_msg(service_locator.clnt_handle)) == 0);
 
+	if (ret != -ENOMSG)
+		pr_err("Error receiving message\n");
 }
 
 static void store_get_domain_list_response(struct pd_qmi_client_data *pd,
@@ -198,9 +191,9 @@ static int servreg_loc_send_msg(struct msg_desc *req_desc,
 	}
 
 	/* Check the response */
-	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+	if (QMI_RESP_BIT_SHIFT(resp->resp.result) != QMI_RESULT_SUCCESS_V01) {
 		pr_err("QMI request for client %s failed 0x%x\n",
-			pd->client_name, resp->resp.error);
+			pd->client_name, QMI_RESP_BIT_SHIFT(resp->resp.error));
 		return -EREMOTEIO;
 	}
 	return rc;
@@ -219,7 +212,7 @@ static int service_locator_send_msg(struct pd_qmi_client_data *pd)
 		return -EAGAIN;
 	}
 
-	req = kzalloc(sizeof(
+	req = kmalloc(sizeof(
 		struct qmi_servreg_loc_get_domain_list_req_msg_v01),
 		GFP_KERNEL);
 	if (!req) {
@@ -227,7 +220,7 @@ static int service_locator_send_msg(struct pd_qmi_client_data *pd)
 		rc = -ENOMEM;
 		goto out;
 	}
-	resp = kzalloc(sizeof(
+	resp = kmalloc(sizeof(
 		struct qmi_servreg_loc_get_domain_list_resp_msg_v01),
 		GFP_KERNEL);
 	if (!resp) {
@@ -258,7 +251,7 @@ static int service_locator_send_msg(struct pd_qmi_client_data *pd)
 		rc = servreg_loc_send_msg(&req_desc, &resp_desc, req, resp,
 					pd);
 		if (rc < 0) {
-			pr_err("send msg failed rc:%d\n", rc);
+			pr_err("send msg failed! 0x%x\n", rc);
 			goto out;
 		}
 		if (!domains_read) {
@@ -302,16 +295,34 @@ out:
 
 static int init_service_locator(void)
 {
+	static bool service_inited;
 	int rc = 0;
 
 	mutex_lock(&service_init_mutex);
 	if (locator_status == LOCATOR_NOT_PRESENT) {
-		pr_err("Service Locator not enabled\n");
+		pr_err("Service Locator not present\n");
 		rc = -ENODEV;
 		goto inited;
 	}
 	if (service_inited)
 		goto inited;
+
+	if (locator_status !=  LOCATOR_PRESENT) {
+		mutex_unlock(&service_init_mutex);
+		rc = wait_for_completion_timeout(&locator_status_known,
+			msecs_to_jiffies(INITIAL_TIMEOUT));
+		if (!rc) {
+			locator_status =  LOCATOR_NOT_PRESENT;
+			pr_err("Timed out waiting for Service Locator\n");
+			return -ENODEV;
+		}
+		mutex_lock(&service_init_mutex);
+		if (locator_status ==  LOCATOR_NOT_PRESENT) {
+			pr_err("Service Locator not present\n");
+			rc = -ENODEV;
+			goto inited;
+		}
+	}
 
 	service_locator.notifier.notifier_call =
 					service_locator_svc_event_notify;
@@ -333,91 +344,54 @@ static int init_service_locator(void)
 		SERVREG_LOC_SERVICE_VERS_V01, SERVREG_LOC_SERVICE_INSTANCE_ID,
 		&service_locator.notifier);
 	if (rc < 0) {
-		pr_err("Notifier register failed rc:%d\n", rc);
+		pr_err("Notifier register failed!\n");
 		goto inited;
 	}
 
-	wait_for_completion(&service_locator.service_available);
+	rc = wait_for_completion_timeout(&service_locator.service_available,
+		msecs_to_jiffies(QMI_SERVREG_LOC_SERVER_INITIAL_TIMEOUT));
+	if (!rc) {
+		rc = -ENODEV;
+		mutex_unlock(&service_init_mutex);
+		pr_err("Process domain service locator response timeout!\n");
+		goto error;
+	}
 	service_inited = true;
 	mutex_unlock(&service_init_mutex);
 	pr_info("Service locator initialized\n");
 	return 0;
-
+error:
+	qmi_svc_event_notifier_unregister(SERVREG_LOC_SERVICE_ID_V01,
+		SERVREG_LOC_SERVICE_VERS_V01, SERVREG_LOC_SERVICE_INSTANCE_ID,
+		&service_locator.notifier);
+	destroy_workqueue(servloc_wq);
 inited:
 	mutex_unlock(&service_init_mutex);
 	return rc;
 }
 
-int get_service_location(char *client_name, char *service_name,
-				struct notifier_block *locator_nb)
+int get_service_location(struct pd_qmi_client_data *data)
 {
-	struct pd_qmi_client_data *pqcd;
-	struct pd_qmi_work *pqw;
 	int rc = 0;
 
-	if (!locator_nb || !client_name || !service_name) {
+	if (!data || !data->client_name || !data->service_name) {
 		rc = -EINVAL;
 		pr_err("Invalid input!\n");
 		goto err;
 	}
-
-	pqcd = kmalloc(sizeof(struct pd_qmi_client_data), GFP_KERNEL);
-	if (!pqcd) {
-		rc = -ENOMEM;
-		pr_err("Allocation failed\n");
+	rc = init_service_locator();
+	if (rc) {
+		pr_err("Unable to connect to service locator!, rc = %d\n", rc);
 		goto err;
 	}
-	strlcpy(pqcd->client_name, client_name, ARRAY_SIZE(pqcd->client_name));
-	strlcpy(pqcd->service_name, service_name,
-		ARRAY_SIZE(pqcd->service_name));
-
-	pqw = kmalloc(sizeof(struct pd_qmi_work), GFP_KERNEL);
-	if (!pqw) {
-		rc = -ENOMEM;
-		pr_err("Allocation failed\n");
-		kfree(pqcd);
-		goto err;
-	}
-	pqw->notifier = locator_nb;
-	pqw->pdc = pqcd;
-
-	INIT_WORK(&pqw->pd_loc_work, pd_locator_work);
-	schedule_work(&pqw->pd_loc_work);
-
+	rc = service_locator_send_msg(data);
+	if (rc)
+		pr_err("Failed to get process domains for %s for client %s\n",
+			data->service_name, data->client_name);
 err:
 	return rc;
 }
 EXPORT_SYMBOL(get_service_location);
-
-static void pd_locator_work(struct work_struct *work)
-{
-	int rc = 0;
-	struct pd_qmi_client_data *data;
-	struct pd_qmi_work *pdqw = container_of(work, struct pd_qmi_work,
-								pd_loc_work);
-
-	data = pdqw->pdc;
-	rc = init_service_locator();
-	if (rc) {
-		pr_err("Unable to connect to service locator!, rc = %d\n", rc);
-		pdqw->notifier->notifier_call(pdqw->notifier,
-			LOCATOR_DOWN, NULL);
-		goto err;
-	}
-	rc = service_locator_send_msg(data);
-	if (rc) {
-		pr_err("Failed to get process domains for %s for client %s rc:%d\n",
-			data->service_name, data->client_name, rc);
-		pdqw->notifier->notifier_call(pdqw->notifier,
-			LOCATOR_DOWN, NULL);
-		goto err;
-	}
-	pdqw->notifier->notifier_call(pdqw->notifier, LOCATOR_UP, data);
-
-err:
-	kfree(data);
-	kfree(pdqw);
-}
 
 int find_subsys(const char *pd_path, char *subsys)
 {

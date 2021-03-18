@@ -25,6 +25,7 @@
 #include <asm/machdep.h>
 #include <asm/cputable.h>
 #include <asm/firmware.h>
+#include <asm/rtas.h>
 #include <asm/vdso_datapage.h>
 #include <asm/cputhreads.h>
 #include <asm/xics.h>
@@ -32,8 +33,6 @@
 #include <asm/runlatch.h>
 #include <asm/code-patching.h>
 #include <asm/dbell.h>
-#include <asm/kvm_ppc.h>
-#include <asm/ppc-opcode.h>
 
 #include "powernv.h"
 
@@ -150,8 +149,6 @@ static int pnv_smp_cpu_disable(void)
 static void pnv_smp_cpu_kill_self(void)
 {
 	unsigned int cpu;
-	unsigned long srr1, wmask;
-	u32 idle_states;
 
 	/* Standard hot unplug procedure */
 	local_irq_disable();
@@ -162,73 +159,24 @@ static void pnv_smp_cpu_kill_self(void)
 	generic_set_cpu_dead(cpu);
 	smp_wmb();
 
-	wmask = SRR1_WAKEMASK;
-	if (cpu_has_feature(CPU_FTR_ARCH_207S))
-		wmask = SRR1_WAKEMASK_P8;
-
-	idle_states = pnv_get_supported_cpuidle_states();
 	/* We don't want to take decrementer interrupts while we are offline,
 	 * so clear LPCR:PECE1. We keep PECE2 enabled.
 	 */
 	mtspr(SPRN_LPCR, mfspr(SPRN_LPCR) & ~(u64)LPCR_PECE1);
-
-	/*
-	 * Hard-disable interrupts, and then clear irq_happened flags
-	 * that we can safely ignore while off-line, since they
-	 * are for things for which we do no processing when off-line
-	 * (or in the case of HMI, all the processing we need to do
-	 * is done in lower-level real-mode code).
-	 */
-	hard_irq_disable();
-	local_paca->irq_happened &= ~(PACA_IRQ_DEC | PACA_IRQ_HMI);
-
 	while (!generic_check_cpu_restart(cpu)) {
-		/*
-		 * Clear IPI flag, since we don't handle IPIs while
-		 * offline, except for those when changing micro-threading
-		 * mode, which are handled explicitly below, and those
-		 * for coming online, which are handled via
-		 * generic_check_cpu_restart() calls.
-		 */
-		kvmppc_set_host_ipi(cpu, 0);
-
 		ppc64_runlatch_off();
-
-		if (idle_states & OPAL_PM_WINKLE_ENABLED)
-			srr1 = power7_winkle();
-		else if ((idle_states & OPAL_PM_SLEEP_ENABLED) ||
-				(idle_states & OPAL_PM_SLEEP_ENABLED_ER1))
-			srr1 = power7_sleep();
-		else
-			srr1 = power7_nap(1);
-
+		power7_nap(1);
 		ppc64_runlatch_on();
 
-		/*
-		 * If the SRR1 value indicates that we woke up due to
-		 * an external interrupt, then clear the interrupt.
-		 * We clear the interrupt before checking for the
-		 * reason, so as to avoid a race where we wake up for
-		 * some other reason, find nothing and clear the interrupt
-		 * just as some other cpu is sending us an interrupt.
-		 * If we returned from power7_nap as a result of
-		 * having finished executing in a KVM guest, then srr1
-		 * contains 0.
-		 */
-		if (((srr1 & wmask) == SRR1_WAKEEE) ||
-		    (local_paca->irq_happened & PACA_IRQ_EE)) {
-			icp_native_flush_interrupt();
-		} else if ((srr1 & wmask) == SRR1_WAKEHDBELL) {
-			unsigned long msg = PPC_DBELL_TYPE(PPC_DBELL_SERVER);
-			asm volatile(PPC_MSGCLR(%0) : : "r" (msg));
-		}
-		local_paca->irq_happened &= ~(PACA_IRQ_EE | PACA_IRQ_DBELL);
-		smp_mb();
+		/* Clear the IPI that woke us up */
+		icp_native_flush_interrupt();
+		local_paca->irq_happened &= PACA_IRQ_HARD_DIS;
+		mb();
 
 		if (cpu_core_split_required())
 			continue;
 
-		if (srr1 && !generic_check_cpu_restart(cpu))
+		if (!generic_check_cpu_restart(cpu))
 			DBG("CPU%d Unexpected exit while offline !\n", cpu);
 	}
 	mtspr(SPRN_LPCR, mfspr(SPRN_LPCR) | LPCR_PECE1);
@@ -237,27 +185,13 @@ static void pnv_smp_cpu_kill_self(void)
 
 #endif /* CONFIG_HOTPLUG_CPU */
 
-static int pnv_cpu_bootable(unsigned int nr)
-{
-	/*
-	 * Starting with POWER8, the subcore logic relies on all threads of a
-	 * core being booted so that they can participate in split mode
-	 * switches. So on those machines we ignore the smt_enabled_at_boot
-	 * setting (smt-enabled on the kernel command line).
-	 */
-	if (cpu_has_feature(CPU_FTR_ARCH_207S))
-		return 1;
-
-	return smp_generic_cpu_bootable(nr);
-}
-
 static struct smp_ops_t pnv_smp_ops = {
 	.message_pass	= smp_muxed_ipi_message_pass,
 	.cause_ipi	= NULL,	/* Filled at runtime by xics_smp_probe() */
 	.probe		= xics_smp_probe,
 	.kick_cpu	= pnv_smp_kick_cpu,
 	.setup_cpu	= pnv_smp_setup_cpu,
-	.cpu_bootable	= pnv_cpu_bootable,
+	.cpu_bootable	= smp_generic_cpu_bootable,
 #ifdef CONFIG_HOTPLUG_CPU
 	.cpu_disable	= pnv_smp_cpu_disable,
 	.cpu_die	= generic_cpu_die,
@@ -268,6 +202,18 @@ static struct smp_ops_t pnv_smp_ops = {
 void __init pnv_smp_init(void)
 {
 	smp_ops = &pnv_smp_ops;
+
+	/* XXX We don't yet have a proper entry point from HAL, for
+	 * now we rely on kexec-style entry from BML
+	 */
+
+#ifdef CONFIG_PPC_RTAS
+	/* Non-lpar has additional take/give timebase */
+	if (rtas_token("freeze-time-base") != RTAS_UNKNOWN_SERVICE) {
+		smp_ops->give_timebase = rtas_give_timebase;
+		smp_ops->take_timebase = rtas_take_timebase;
+	}
+#endif /* CONFIG_PPC_RTAS */
 
 #ifdef CONFIG_HOTPLUG_CPU
 	ppc_md.cpu_die	= pnv_smp_cpu_kill_self;

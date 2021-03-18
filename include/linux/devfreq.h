@@ -69,10 +69,7 @@ struct devfreq_dev_status {
  *			The "flags" parameter's possible values are
  *			explained above with "DEVFREQ_FLAG_*" macros.
  * @get_dev_status:	The device should provide the current performance
- *			status to devfreq. Governors are recommended not to
- *			use this directly. Instead, governors are recommended
- *			to use devfreq_update_stats() along with
- *			devfreq.last_status.
+ *			status to devfreq, which is used by governors.
  * @get_cur_freq:	The device should provide the current frequency
  *			at which it is operating.
  * @exit:		An optional callback that is called when devfreq
@@ -169,7 +166,6 @@ struct devfreq {
 	struct delayed_work work;
 
 	unsigned long previous_freq;
-	struct devfreq_dev_status last_status;
 
 	void *data; /* private data for governors */
 
@@ -197,17 +193,9 @@ extern struct devfreq *devm_devfreq_add_device(struct device *dev,
 extern void devm_devfreq_remove_device(struct device *dev,
 				  struct devfreq *devfreq);
 
-/* Supposed to be called by PM callbacks */
+/* Supposed to be called by PM_SLEEP/PM_RUNTIME callbacks */
 extern int devfreq_suspend_device(struct devfreq *devfreq);
 extern int devfreq_resume_device(struct devfreq *devfreq);
-
-/**
- * update_devfreq() - Reevaluate the device and configure frequency
- * @devfreq:	the devfreq device
- *
- * Note: devfreq->lock must be held
- */
-extern int update_devfreq(struct devfreq *devfreq);
 
 /* Helper functions for devfreq user device driver with OPP. */
 extern struct dev_pm_opp *devfreq_recommended_opp(struct device *dev,
@@ -220,19 +208,6 @@ extern int devm_devfreq_register_opp_notifier(struct device *dev,
 					      struct devfreq *devfreq);
 extern void devm_devfreq_unregister_opp_notifier(struct device *dev,
 						struct devfreq *devfreq);
-
-/**
- * devfreq_update_stats() - update the last_status pointer in struct devfreq
- * @df:		the devfreq instance whose status needs updating
- *
- *  Governors are recommended to use this function along with last_status,
- * which allows other entities to reuse the last_status without affecting
- * the values fetched later by governors.
- */
-static inline int devfreq_update_stats(struct devfreq *df)
-{
-	return df->profile->get_dev_status(df->dev.parent, &df->last_status);
-}
 
 #if IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND)
 /**
@@ -322,11 +297,6 @@ static inline int devm_devfreq_register_opp_notifier(struct device *dev,
 static inline void devm_devfreq_unregister_opp_notifier(struct device *dev,
 							struct devfreq *devfreq)
 {
-}
-
-static inline int devfreq_update_stats(struct devfreq *df)
-{
-	return -EINVAL;
 }
 #endif /* CONFIG_PM_DEVFREQ */
 

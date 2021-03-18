@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -127,7 +127,7 @@ int acpi_getopt(int argc, char **argv, char *opts)
 		    argv[acpi_gbl_optind][0] != '-' ||
 		    argv[acpi_gbl_optind][1] == '\0') {
 			return (ACPI_OPT_END);
-		} else if (strcmp(argv[acpi_gbl_optind], "--") == 0) {
+		} else if (ACPI_STRCMP(argv[acpi_gbl_optind], "--") == 0) {
 			acpi_gbl_optind++;
 			return (ACPI_OPT_END);
 		}
@@ -140,7 +140,7 @@ int acpi_getopt(int argc, char **argv, char *opts)
 	/* Make sure that the option is legal */
 
 	if (current_char == ':' ||
-	    (opts_ptr = strchr(opts, current_char)) == NULL) {
+	    (opts_ptr = ACPI_STRCHR(opts, current_char)) == NULL) {
 		ACPI_OPTION_ERROR("Illegal option: -", current_char);
 
 		if (argv[acpi_gbl_optind][++current_char_ptr] == '\0') {

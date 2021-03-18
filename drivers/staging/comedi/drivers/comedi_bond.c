@@ -61,7 +61,8 @@ struct bonded_device {
 };
 
 struct comedi_bond_private {
-	char name[256];
+# define MAX_BOARD_NAME 256
+	char name[MAX_BOARD_NAME];
 	struct bonded_device **devs;
 	unsigned ndevs;
 	unsigned nchans;
@@ -101,8 +102,7 @@ static int bonding_dio_insn_bits(struct comedi_device *dev,
 			b_chans = bdev->nchans - base_chan;
 			if (b_chans > n_left)
 				b_chans = n_left;
-			b_mask = (b_chans < 32) ? ((1 << b_chans) - 1)
-						: 0xffffffff;
+			b_mask = (1U << b_chans) - 1;
 			b_write_mask = (write_mask >> n_done) & b_mask;
 			b_data_bits = (data_bits >> n_done) & b_mask;
 			/* Read/Write the new digital lines. */
@@ -262,12 +262,14 @@ static int do_dev_config(struct comedi_device *dev, struct comedi_devconfig *it)
 			{
 				/* Append dev:subdev to devpriv->name */
 				char buf[20];
-
+				int left =
+				    MAX_BOARD_NAME - strlen(devpriv->name) - 1;
 				snprintf(buf, sizeof(buf), "%u:%u ",
 					 bdev->minor, bdev->subdev);
-				strlcat(devpriv->name, buf,
-					sizeof(devpriv->name));
+				buf[sizeof(buf) - 1] = 0;
+				strncat(devpriv->name, buf, left);
 			}
+
 		}
 	}
 
@@ -313,9 +315,9 @@ static int bonding_attach(struct comedi_device *dev,
 	s->insn_config = bonding_dio_insn_config;
 
 	dev_info(dev->class_dev,
-		 "%s: %s attached, %u channels from %u devices\n",
-		 dev->driver->driver_name, dev->board_name,
-		 devpriv->nchans, devpriv->ndevs);
+		"%s: %s attached, %u channels from %u devices\n",
+		dev->driver->driver_name, dev->board_name,
+		devpriv->nchans, devpriv->ndevs);
 
 	return 0;
 }

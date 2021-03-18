@@ -452,7 +452,7 @@ int mhi_dev_send_event(struct mhi_dev *mhi, int evnt_ring,
 		return -EINVAL;
 	}
 
-	if (mhi_ring_get_state(ring) == RING_STATE_UINT) {
+	if (RING_STATE_UINT == mhi_ring_get_state(ring)) {
 		ctx = (union mhi_dev_ring_ctx *)&mhi->ev_ctx_cache[evnt_ring];
 		rc = mhi_ring_start(ring, ctx, mhi);
 		if (rc) {
@@ -501,7 +501,13 @@ int mhi_dev_send_event(struct mhi_dev *mhi, int evnt_ring,
 	mhi_log(MHI_MSG_ERROR, "Sending MSI %d to 0x%llx as data = 0x%x\n",
 			mhi_ctx->mhi_ep_msi_num, msi_addr.host_pa, msi);
 	mhi_dev_write_to_host(&msi_addr, &msi, 4, mhi);
-
+	/*
+	rc = ep_pcie_trigger_msi(mhi_ctx->phandle, mhi_ctx->mhi_ep_msi_num);
+	if (rc) {
+		pr_err("%s: error sending msi\n", __func__);
+		return rc;
+	}
+	*/
 	return rc;
 }
 
@@ -1621,6 +1627,11 @@ static void mhi_dev_enable(struct work_struct *work)
 	rc = ep_pcie_get_msi_config(mhi->phandle, &msi_cfg);
 	if (rc)
 		pr_warn("MHI: error geting msi configs\n");
+	else {
+		rc = ep_pcie_trigger_msi(mhi->phandle, mhi->mhi_ep_msi_num);
+		if (rc)
+			return;
+	}
 
 	rc = mhi_dev_mmio_get_mhi_state(mhi, &state);
 	if (rc) {
@@ -1930,7 +1941,7 @@ static struct platform_driver mhi_dev_driver = {
 	.remove		= mhi_dev_remove,
 };
 
-module_param(mhi_msg_lvl, uint, S_IRUGO | S_IWUSR);
+module_param(mhi_msg_lvl , uint, S_IRUGO | S_IWUSR);
 module_param(mhi_ipc_msg_lvl, uint, S_IRUGO | S_IWUSR);
 
 MODULE_PARM_DESC(mhi_msg_lvl, "mhi msg lvl");

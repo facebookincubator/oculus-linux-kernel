@@ -24,8 +24,12 @@ void sc_dump_regs(struct sc_data *sc)
 {
 	struct device *dev = &sc->pdev->dev;
 
-#define DUMPREG(r) dev_dbg(dev, "%-35s %08x\n", #r, \
-	ioread32(sc->base + CFG_##r))
+	u32 read_reg(struct sc_data *sc, int offset)
+	{
+		return ioread32(sc->base + offset);
+	}
+
+#define DUMPREG(r) dev_dbg(dev, "%-35s %08x\n", #r, read_reg(sc, CFG_##r))
 
 	DUMPREG(SC0);
 	DUMPREG(SC1);
@@ -300,7 +304,7 @@ struct sc_data *sc_create(struct platform_device *pdev)
 	sc->base = devm_ioremap_resource(&pdev->dev, sc->res);
 	if (IS_ERR(sc->base)) {
 		dev_err(&pdev->dev, "failed to ioremap\n");
-		return ERR_CAST(sc->base);
+		return sc->base;
 	}
 
 	return sc;

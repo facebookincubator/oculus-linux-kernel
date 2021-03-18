@@ -17,7 +17,7 @@
 
 static inline pte_t gup_get_pte(pte_t *ptep)
 {
-#if defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_CPU_MIPS32)
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
 	pte_t pte;
 
 retry:
@@ -30,7 +30,7 @@ retry:
 
 	return pte;
 #else
-	return READ_ONCE(*ptep);
+	return ACCESS_ONCE(*ptep);
 #endif
 }
 
@@ -301,9 +301,11 @@ slow_irqon:
 	start += nr << PAGE_SHIFT;
 	pages += nr;
 
-	ret = get_user_pages_unlocked(current, mm, start,
-				      (end - start) >> PAGE_SHIFT,
-				      write, 0, pages);
+	down_read(&mm->mmap_sem);
+	ret = get_user_pages(current, mm, start,
+				(end - start) >> PAGE_SHIFT,
+				write, 0, pages, NULL);
+	up_read(&mm->mmap_sem);
 
 	/* Have to be a bit careful with return values */
 	if (nr > 0) {

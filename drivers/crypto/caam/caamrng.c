@@ -52,7 +52,7 @@
 
 /* length of descriptors */
 #define DESC_JOB_O_LEN			(CAAM_CMD_SZ * 2 + CAAM_PTR_SZ * 2)
-#define DESC_RNG_LEN			(4 * CAAM_CMD_SZ)
+#define DESC_RNG_LEN			(10 * CAAM_CMD_SZ)
 
 /* Buffer, its dma address and lock */
 struct buf_data {
@@ -90,8 +90,8 @@ static inline void rng_unmap_ctx(struct caam_rng_ctx *ctx)
 	struct device *jrdev = ctx->jrdev;
 
 	if (ctx->sh_desc_dma)
-		dma_unmap_single(jrdev, ctx->sh_desc_dma,
-				 desc_bytes(ctx->sh_desc), DMA_TO_DEVICE);
+		dma_unmap_single(jrdev, ctx->sh_desc_dma, DESC_RNG_LEN,
+				 DMA_TO_DEVICE);
 	rng_unmap_buf(jrdev, &ctx->bufs[0]);
 	rng_unmap_buf(jrdev, &ctx->bufs[1]);
 }
@@ -108,10 +108,6 @@ static void rng_done(struct device *jrdev, u32 *desc, u32 err, void *context)
 
 	atomic_set(&bd->empty, BUF_NOT_EMPTY);
 	complete(&bd->filled);
-
-	/* Buffer refilled, invalidate cache */
-	dma_sync_single_for_cpu(jrdev, bd->addr, RN_BUF_SIZE, DMA_FROM_DEVICE);
-
 #ifdef DEBUG
 	print_hex_dump(KERN_ERR, "rng refreshed buf@: ",
 		       DUMP_PREFIX_ADDRESS, 16, 4, bd->buf, RN_BUF_SIZE, 1);
@@ -315,7 +311,7 @@ static int __init caam_rng_init(void)
 	struct device_node *dev_node;
 	struct platform_device *pdev;
 	struct device *ctrldev;
-	struct caam_drv_private *priv;
+	void *priv;
 	int err;
 
 	dev_node = of_find_compatible_node(NULL, NULL, "fsl,sec-v4.0");
@@ -342,32 +338,20 @@ static int __init caam_rng_init(void)
 	if (!priv)
 		return -ENODEV;
 
-	/* Check for an instantiated RNG before registration */
-	if (!(rd_reg32(&priv->ctrl->perfmon.cha_num_ls) & CHA_ID_LS_RNG_MASK))
-		return -ENODEV;
-
 	dev = caam_jr_alloc();
 	if (IS_ERR(dev)) {
 		pr_err("Job Ring Device allocation for transform failed\n");
 		return PTR_ERR(dev);
 	}
-	rng_ctx = kmalloc(sizeof(*rng_ctx), GFP_DMA);
-	if (!rng_ctx) {
-		err = -ENOMEM;
-		goto free_caam_alloc;
-	}
+	rng_ctx = kmalloc(sizeof(struct caam_rng_ctx), GFP_DMA);
+	if (!rng_ctx)
+		return -ENOMEM;
 	err = caam_init_rng(rng_ctx, dev);
 	if (err)
-		goto free_rng_ctx;
+		return err;
 
 	dev_info(dev, "registering rng-caam\n");
 	return hwrng_register(&caam_rng);
-
-free_rng_ctx:
-	kfree(rng_ctx);
-free_caam_alloc:
-	caam_jr_free(dev);
-	return err;
 }
 
 module_init(caam_rng_init);

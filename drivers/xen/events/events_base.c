@@ -39,13 +39,12 @@
 #include <asm/irq.h>
 #include <asm/idle.h>
 #include <asm/io_apic.h>
-#include <asm/i8259.h>
+#include <asm/xen/page.h>
 #include <asm/xen/pci.h>
 #endif
 #include <asm/sync_bitops.h>
 #include <asm/xen/hypercall.h>
 #include <asm/xen/hypervisor.h>
-#include <xen/page.h>
 
 #include <xen/xen.h>
 #include <xen/hvm.h>
@@ -337,7 +336,7 @@ static void bind_evtchn_to_cpu(unsigned int chn, unsigned int cpu)
 
 	BUG_ON(irq == -1);
 #ifdef CONFIG_SMP
-	cpumask_copy(irq_get_affinity_mask(irq), cpumask_of(cpu));
+	cpumask_copy(irq_get_irq_data(irq)->affinity, cpumask_of(cpu));
 #endif
 	xen_evtchn_port_bind_to_cpu(info, cpu);
 
@@ -374,7 +373,7 @@ static void xen_irq_init(unsigned irq)
 	struct irq_info *info;
 #ifdef CONFIG_SMP
 	/* By default all event channels notify CPU#0. */
-	cpumask_copy(irq_get_affinity_mask(irq), cpumask_of(0));
+	cpumask_copy(irq_get_irq_data(irq)->affinity, cpumask_of(0));
 #endif
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
@@ -421,7 +420,7 @@ static int __must_check xen_allocate_irq_gsi(unsigned gsi)
 		return xen_allocate_irq_dynamic();
 
 	/* Legacy IRQ descriptors are already allocated by the arch. */
-	if (gsi < nr_legacy_irqs())
+	if (gsi < NR_IRQS_LEGACY)
 		irq = gsi;
 	else
 		irq = irq_alloc_desc_at(gsi, -1);
@@ -447,7 +446,7 @@ static void xen_free_irq(unsigned irq)
 	kfree(info);
 
 	/* Legacy IRQ descriptors are managed by the arch. */
-	if (irq < nr_legacy_irqs())
+	if (irq < NR_IRQS_LEGACY)
 		return;
 
 	irq_free_desc(irq);
@@ -484,20 +483,9 @@ static void eoi_pirq(struct irq_data *data)
 	struct physdev_eoi eoi = { .irq = pirq_from_irq(data->irq) };
 	int rc = 0;
 
-	if (!VALID_EVTCHN(evtchn))
-		return;
+	irq_move_irq(data);
 
-	if (unlikely(irqd_is_setaffinity_pending(data)) &&
-	    likely(!irqd_irq_disabled(data))) {
-		int masked = test_and_set_mask(evtchn);
-
-		clear_evtchn(evtchn);
-
-		irq_move_masked_irq(data);
-
-		if (!masked)
-			unmask_evtchn(evtchn);
-	} else
+	if (VALID_EVTCHN(evtchn))
 		clear_evtchn(evtchn);
 
 	if (pirq_needs_eoi(data->irq)) {
@@ -1313,7 +1301,11 @@ static int rebind_irq_to_cpu(unsigned irq, unsigned tcpu)
 	if (!VALID_EVTCHN(evtchn))
 		return -1;
 
-	if (!xen_support_evtchn_rebind())
+	/*
+	 * Events delivered via platform PCI interrupts are always
+	 * routed to vcpu 0 and hence cannot be rebound.
+	 */
+	if (xen_hvm_domain() && !xen_have_vector_callback)
 		return -1;
 
 	/* Send future instances of this interrupt to other vcpu. */
@@ -1368,20 +1360,9 @@ static void ack_dynirq(struct irq_data *data)
 {
 	int evtchn = evtchn_from_irq(data->irq);
 
-	if (!VALID_EVTCHN(evtchn))
-		return;
+	irq_move_irq(data);
 
-	if (unlikely(irqd_is_setaffinity_pending(data)) &&
-	    likely(!irqd_irq_disabled(data))) {
-		int masked = test_and_set_mask(evtchn);
-
-		clear_evtchn(evtchn);
-
-		irq_move_masked_irq(data);
-
-		if (!masked)
-			unmask_evtchn(evtchn);
-	} else
+	if (VALID_EVTCHN(evtchn))
 		clear_evtchn(evtchn);
 }
 
@@ -1711,7 +1692,7 @@ void __init xen_init_IRQ(void)
 		struct physdev_pirq_eoi_gmfn eoi_gmfn;
 
 		pirq_eoi_map = (void *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
-		eoi_gmfn.gmfn = virt_to_gfn(pirq_eoi_map);
+		eoi_gmfn.gmfn = virt_to_mfn(pirq_eoi_map);
 		rc = HYPERVISOR_physdev_op(PHYSDEVOP_pirq_eoi_gmfn_v2, &eoi_gmfn);
 		/* TODO: No PVH support for PIRQ EOI */
 		if (rc != 0) {

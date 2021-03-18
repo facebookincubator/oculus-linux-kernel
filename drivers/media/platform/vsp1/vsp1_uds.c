@@ -169,14 +169,13 @@ static int uds_s_stream(struct v4l2_subdev *subdev, int enable)
  */
 
 static int uds_enum_mbus_code(struct v4l2_subdev *subdev,
-			      struct v4l2_subdev_pad_config *cfg,
+			      struct v4l2_subdev_fh *fh,
 			      struct v4l2_subdev_mbus_code_enum *code)
 {
 	static const unsigned int codes[] = {
-		MEDIA_BUS_FMT_ARGB8888_1X32,
-		MEDIA_BUS_FMT_AYUV8_1X32,
+		V4L2_MBUS_FMT_ARGB8888_1X32,
+		V4L2_MBUS_FMT_AYUV8_1X32,
 	};
-	struct vsp1_uds *uds = to_uds(subdev);
 
 	if (code->pad == UDS_PAD_SINK) {
 		if (code->index >= ARRAY_SIZE(codes))
@@ -192,8 +191,7 @@ static int uds_enum_mbus_code(struct v4l2_subdev *subdev,
 		if (code->index)
 			return -EINVAL;
 
-		format = vsp1_entity_get_pad_format(&uds->entity, cfg,
-						    UDS_PAD_SINK, code->which);
+		format = v4l2_subdev_get_try_format(fh, UDS_PAD_SINK);
 		code->code = format->code;
 	}
 
@@ -201,14 +199,12 @@ static int uds_enum_mbus_code(struct v4l2_subdev *subdev,
 }
 
 static int uds_enum_frame_size(struct v4l2_subdev *subdev,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_fh *fh,
 			       struct v4l2_subdev_frame_size_enum *fse)
 {
-	struct vsp1_uds *uds = to_uds(subdev);
 	struct v4l2_mbus_framefmt *format;
 
-	format = vsp1_entity_get_pad_format(&uds->entity, cfg,
-					    UDS_PAD_SINK, fse->which);
+	format = v4l2_subdev_get_try_format(fh, UDS_PAD_SINK);
 
 	if (fse->index || fse->code != format->code)
 		return -EINVAL;
@@ -228,18 +224,18 @@ static int uds_enum_frame_size(struct v4l2_subdev *subdev,
 	return 0;
 }
 
-static int uds_get_format(struct v4l2_subdev *subdev, struct v4l2_subdev_pad_config *cfg,
+static int uds_get_format(struct v4l2_subdev *subdev, struct v4l2_subdev_fh *fh,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct vsp1_uds *uds = to_uds(subdev);
 
-	fmt->format = *vsp1_entity_get_pad_format(&uds->entity, cfg, fmt->pad,
+	fmt->format = *vsp1_entity_get_pad_format(&uds->entity, fh, fmt->pad,
 						  fmt->which);
 
 	return 0;
 }
 
-static void uds_try_format(struct vsp1_uds *uds, struct v4l2_subdev_pad_config *cfg,
+static void uds_try_format(struct vsp1_uds *uds, struct v4l2_subdev_fh *fh,
 			   unsigned int pad, struct v4l2_mbus_framefmt *fmt,
 			   enum v4l2_subdev_format_whence which)
 {
@@ -250,9 +246,9 @@ static void uds_try_format(struct vsp1_uds *uds, struct v4l2_subdev_pad_config *
 	switch (pad) {
 	case UDS_PAD_SINK:
 		/* Default to YUV if the requested format is not supported. */
-		if (fmt->code != MEDIA_BUS_FMT_ARGB8888_1X32 &&
-		    fmt->code != MEDIA_BUS_FMT_AYUV8_1X32)
-			fmt->code = MEDIA_BUS_FMT_AYUV8_1X32;
+		if (fmt->code != V4L2_MBUS_FMT_ARGB8888_1X32 &&
+		    fmt->code != V4L2_MBUS_FMT_AYUV8_1X32)
+			fmt->code = V4L2_MBUS_FMT_AYUV8_1X32;
 
 		fmt->width = clamp(fmt->width, UDS_MIN_SIZE, UDS_MAX_SIZE);
 		fmt->height = clamp(fmt->height, UDS_MIN_SIZE, UDS_MAX_SIZE);
@@ -260,7 +256,7 @@ static void uds_try_format(struct vsp1_uds *uds, struct v4l2_subdev_pad_config *
 
 	case UDS_PAD_SOURCE:
 		/* The UDS scales but can't perform format conversion. */
-		format = vsp1_entity_get_pad_format(&uds->entity, cfg,
+		format = vsp1_entity_get_pad_format(&uds->entity, fh,
 						    UDS_PAD_SINK, which);
 		fmt->code = format->code;
 
@@ -275,25 +271,25 @@ static void uds_try_format(struct vsp1_uds *uds, struct v4l2_subdev_pad_config *
 	fmt->colorspace = V4L2_COLORSPACE_SRGB;
 }
 
-static int uds_set_format(struct v4l2_subdev *subdev, struct v4l2_subdev_pad_config *cfg,
+static int uds_set_format(struct v4l2_subdev *subdev, struct v4l2_subdev_fh *fh,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct vsp1_uds *uds = to_uds(subdev);
 	struct v4l2_mbus_framefmt *format;
 
-	uds_try_format(uds, cfg, fmt->pad, &fmt->format, fmt->which);
+	uds_try_format(uds, fh, fmt->pad, &fmt->format, fmt->which);
 
-	format = vsp1_entity_get_pad_format(&uds->entity, cfg, fmt->pad,
+	format = vsp1_entity_get_pad_format(&uds->entity, fh, fmt->pad,
 					    fmt->which);
 	*format = fmt->format;
 
 	if (fmt->pad == UDS_PAD_SINK) {
 		/* Propagate the format to the source pad. */
-		format = vsp1_entity_get_pad_format(&uds->entity, cfg,
+		format = vsp1_entity_get_pad_format(&uds->entity, fh,
 						    UDS_PAD_SOURCE, fmt->which);
 		*format = fmt->format;
 
-		uds_try_format(uds, cfg, UDS_PAD_SOURCE, format, fmt->which);
+		uds_try_format(uds, fh, UDS_PAD_SOURCE, format, fmt->which);
 	}
 
 	return 0;

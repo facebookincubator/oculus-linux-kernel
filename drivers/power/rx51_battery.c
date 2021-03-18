@@ -29,8 +29,7 @@
 
 struct rx51_device_info {
 	struct device *dev;
-	struct power_supply *bat;
-	struct power_supply_desc bat_desc;
+	struct power_supply bat;
 	struct iio_channel *channel_temp;
 	struct iio_channel *channel_bsi;
 	struct iio_channel *channel_vbat;
@@ -162,7 +161,8 @@ static int rx51_battery_get_property(struct power_supply *psy,
 					enum power_supply_property psp,
 					union power_supply_propval *val)
 {
-	struct rx51_device_info *di = power_supply_get_drvdata(psy);
+	struct rx51_device_info *di = container_of((psy),
+				struct rx51_device_info, bat);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
@@ -204,7 +204,6 @@ static enum power_supply_property rx51_battery_props[] = {
 
 static int rx51_battery_probe(struct platform_device *pdev)
 {
-	struct power_supply_config psy_cfg = {};
 	struct rx51_device_info *di;
 	int ret;
 
@@ -215,13 +214,11 @@ static int rx51_battery_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, di);
 
 	di->dev = &pdev->dev;
-	di->bat_desc.name = "rx51-battery";
-	di->bat_desc.type = POWER_SUPPLY_TYPE_BATTERY;
-	di->bat_desc.properties = rx51_battery_props;
-	di->bat_desc.num_properties = ARRAY_SIZE(rx51_battery_props);
-	di->bat_desc.get_property = rx51_battery_get_property;
-
-	psy_cfg.drv_data = di;
+	di->bat.name = dev_name(&pdev->dev);
+	di->bat.type = POWER_SUPPLY_TYPE_BATTERY;
+	di->bat.properties = rx51_battery_props;
+	di->bat.num_properties = ARRAY_SIZE(rx51_battery_props);
+	di->bat.get_property = rx51_battery_get_property;
 
 	di->channel_temp = iio_channel_get(di->dev, "temp");
 	if (IS_ERR(di->channel_temp)) {
@@ -241,11 +238,9 @@ static int rx51_battery_probe(struct platform_device *pdev)
 		goto error_channel_bsi;
 	}
 
-	di->bat = power_supply_register(di->dev, &di->bat_desc, &psy_cfg);
-	if (IS_ERR(di->bat)) {
-		ret = PTR_ERR(di->bat);
+	ret = power_supply_register(di->dev, &di->bat);
+	if (ret)
 		goto error_channel_vbat;
-	}
 
 	return 0;
 
@@ -264,7 +259,7 @@ static int rx51_battery_remove(struct platform_device *pdev)
 {
 	struct rx51_device_info *di = platform_get_drvdata(pdev);
 
-	power_supply_unregister(di->bat);
+	power_supply_unregister(&di->bat);
 
 	iio_channel_release(di->channel_vbat);
 	iio_channel_release(di->channel_bsi);
@@ -286,6 +281,7 @@ static struct platform_driver rx51_battery_driver = {
 	.remove = rx51_battery_remove,
 	.driver = {
 		.name = "rx51-battery",
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(n900_battery_of_match),
 	},
 };

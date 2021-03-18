@@ -10,10 +10,8 @@
  *
  */
 
-#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
-#include <linux/slab.h>
 #include <linux/clk/at91_pmc.h>
 #include <linux/delay.h>
 #include <linux/of.h>
@@ -373,12 +371,17 @@ void __init of_at91sam9x5_clk_slow_setup(struct device_node *np,
 	const char *parent_names[2];
 	int num_parents;
 	const char *name = np->name;
+	int i;
 
-	num_parents = of_clk_get_parent_count(np);
+	num_parents = of_count_phandle_with_args(np, "clocks", "#clock-cells");
 	if (num_parents <= 0 || num_parents > 2)
 		return;
 
-	of_clk_parent_fill(np, parent_names, num_parents);
+	for (i = 0; i < num_parents; ++i) {
+		parent_names[i] = of_clk_get_parent_name(np, i);
+		if (!parent_names[i])
+			return;
+	}
 
 	of_property_read_string(np, "clock-output-names", &name);
 
@@ -446,12 +449,17 @@ void __init of_at91sam9260_clk_slow_setup(struct device_node *np,
 	const char *parent_names[2];
 	int num_parents;
 	const char *name = np->name;
+	int i;
 
-	num_parents = of_clk_get_parent_count(np);
+	num_parents = of_count_phandle_with_args(np, "clocks", "#clock-cells");
 	if (num_parents != 2)
 		return;
 
-	of_clk_parent_fill(np, parent_names, num_parents);
+	for (i = 0; i < num_parents; ++i) {
+		parent_names[i] = of_clk_get_parent_name(np, i);
+		if (!parent_names[i])
+			return;
+	}
 
 	of_property_read_string(np, "clock-output-names", &name);
 

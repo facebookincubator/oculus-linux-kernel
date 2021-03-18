@@ -13,7 +13,6 @@
 #ifndef _DA7213_H
 #define _DA7213_H
 
-#include <linux/clk.h>
 #include <linux/regmap.h>
 #include <sound/da7213.h>
 
@@ -505,17 +504,14 @@
 #define DA7213_PLL_INDIV_20_40_MHZ_VAL	8
 #define DA7213_PLL_INDIV_40_54_MHZ_VAL	16
 
-enum da7213_clk_src {
-	DA7213_CLKSRC_MCLK = 0,
-	DA7213_CLKSRC_MCLK_SQR,
+enum clk_src {
+	DA7213_CLKSRC_MCLK
 };
 
 /* Codec private data */
 struct da7213_priv {
 	struct regmap *regmap;
-	struct clk *mclk;
 	unsigned int mclk_rate;
-	int clk_src;
 	bool master;
 	bool mclk_squarer_en;
 	bool srm_en;

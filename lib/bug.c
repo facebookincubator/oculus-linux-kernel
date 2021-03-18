@@ -64,22 +64,16 @@ static LIST_HEAD(module_bug_list);
 static const struct bug_entry *module_find_bug(unsigned long bugaddr)
 {
 	struct module *mod;
-	const struct bug_entry *bug = NULL;
 
-	rcu_read_lock_sched();
-	list_for_each_entry_rcu(mod, &module_bug_list, bug_list) {
+	list_for_each_entry(mod, &module_bug_list, bug_list) {
+		const struct bug_entry *bug = mod->bug_table;
 		unsigned i;
 
-		bug = mod->bug_table;
 		for (i = 0; i < mod->num_bugs; ++i, ++bug)
 			if (bugaddr == bug_addr(bug))
-				goto out;
+				return bug;
 	}
-	bug = NULL;
-out:
-	rcu_read_unlock_sched();
-
-	return bug;
+	return NULL;
 }
 
 void module_bug_finalize(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
@@ -87,8 +81,6 @@ void module_bug_finalize(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
 {
 	char *secstrings;
 	unsigned int i;
-
-	lockdep_assert_held(&module_mutex);
 
 	mod->bug_table = NULL;
 	mod->num_bugs = 0;
@@ -107,16 +99,13 @@ void module_bug_finalize(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
 	 * Strictly speaking this should have a spinlock to protect against
 	 * traversals, but since we only traverse on BUG()s, a spinlock
 	 * could potentially lead to deadlock and thus be counter-productive.
-	 * Thus, this uses RCU to safely manipulate the bug list, since BUG
-	 * must run in non-interruptive state.
 	 */
-	list_add_rcu(&mod->bug_list, &module_bug_list);
+	list_add(&mod->bug_list, &module_bug_list);
 }
 
 void module_bug_cleanup(struct module *mod)
 {
-	lockdep_assert_held(&module_mutex);
-	list_del_rcu(&mod->bug_list);
+	list_del(&mod->bug_list);
 }
 
 #else

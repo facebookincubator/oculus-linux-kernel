@@ -23,9 +23,9 @@ struct unx_cred {
 };
 #define uc_uid			uc_base.cr_uid
 
-#define UNX_WRITESLACK		(21 + XDR_QUADLEN(UNX_MAXNODENAME))
+#define UNX_WRITESLACK		(21 + (UNX_MAXNODENAME >> 2))
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+#ifdef RPC_DEBUG
 # define RPCDBG_FACILITY	RPCDBG_AUTH
 #endif
 

@@ -1,5 +1,4 @@
-/* Copyright (c) 2011-2014, 2019 The Linux Foundataion. All rights reserved.
- * All rights reserved.
+/* Copyright (c) 2011-2014, 2017-2019,The Linux Foundataion. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -176,45 +175,35 @@ int32_t msm_camera_io_poll_value_wmask(void __iomem *addr, u32 wait_data,
 
 void msm_camera_io_dump(void __iomem *addr, int size, int enable)
 {
-	char line_str[128];
+	char line_str[128], *p_str;
 	int i;
-	ptrdiff_t p = 0;
-	size_t offset = 0, used = 0;
+	u32 *p = (u32 *) addr;
 	u32 data;
 
 	CDBG("%s: addr=%pK size=%d\n", __func__, addr, size);
 
-	if (!addr || (size <= 0) || !enable)
+	if (!p || (size <= 0) || !enable)
 		return;
 
 	line_str[0] = '\0';
+	p_str = line_str;
 	for (i = 0; i < size/4; i++) {
 		if (i % 4 == 0) {
-			used = snprintf(line_str + offset,
-				sizeof(line_str) - offset, "0x%04tX: ", p);
-			if (offset + used >= sizeof(line_str)) {
-				pr_err("%s\n", line_str);
-				offset = 0;
-				line_str[0] = '\0';
-			} else {
-				offset += used;
-			}
+#ifdef CONFIG_COMPAT
+			snprintf(p_str, 20, "%016lx: ", (unsigned long) p);
+			p_str += 18;
+#else
+			snprintf(p_str, 12, "%08lx: ", (unsigned long) p);
+			p_str += 10;
+#endif
 		}
-		data = readl_relaxed(addr + p);
-		p = p + 4;
-		used = snprintf(line_str + offset,
-			sizeof(line_str) - offset, "%08x ", data);
-		if (offset + used >= sizeof(line_str)) {
-			pr_err("%s\n", line_str);
-			offset = 0;
-			line_str[0] = '\0';
-		} else {
-			offset += used;
-		}
+		data = readl_relaxed(p++);
+		snprintf(p_str, 12, "%08x ", data);
+		p_str += 9;
 		if ((i + 1) % 4 == 0) {
 			pr_err("%s\n", line_str);
 			line_str[0] = '\0';
-			offset = 0;
+			p_str = line_str;
 		}
 	}
 	if (line_str[0] != '\0')
@@ -408,13 +397,13 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 		return -EINVAL;
 	}
 
-	if (cam_vreg == NULL) {
-		pr_err("%s:%d cam_vreg sequence invalid\n", __func__, __LINE__);
-		return -EINVAL;
-	}
-
 	if (!num_vreg_seq)
 		num_vreg_seq = num_vreg;
+
+	if ((cam_vreg == NULL) && num_vreg_seq) {
+		pr_err("%s:%d cam_vreg NULL\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	if (config) {
 		for (i = 0; i < num_vreg_seq; i++) {
@@ -446,10 +435,9 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					goto vreg_set_voltage_fail;
 				}
 				if (curr_vreg->op_mode >= 0) {
-					rc = regulator_set_load(
+					rc = regulator_set_optimum_mode(
 						reg_ptr[j],
 						curr_vreg->op_mode);
-					rc = 0;
 					if (rc < 0) {
 						pr_err(
 						"%s:%s set optimum mode fail\n",
@@ -472,7 +460,7 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 			if (reg_ptr[j]) {
 				if (regulator_count_voltages(reg_ptr[j]) > 0) {
 					if (curr_vreg->op_mode >= 0) {
-						regulator_set_load(
+						regulator_set_optimum_mode(
 							reg_ptr[j], 0);
 					}
 					regulator_set_voltage(
@@ -488,7 +476,7 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 
 vreg_unconfig:
 if (regulator_count_voltages(reg_ptr[j]) > 0)
-	regulator_set_load(reg_ptr[j], 0);
+	regulator_set_optimum_mode(reg_ptr[j], 0);
 
 vreg_set_opt_mode_fail:
 if (regulator_count_voltages(reg_ptr[j]) > 0)
@@ -595,6 +583,7 @@ void msm_camera_bus_scale_cfg(uint32_t bus_perf_client,
 		pr_err("%s: Bus Client NOT Registered!!!\n", __func__);
 		return;
 	}
+
 	switch (perf_setting) {
 	case S_EXIT:
 		rc = msm_bus_scale_client_update_request(bus_perf_client, 1);
@@ -690,7 +679,7 @@ int msm_camera_config_single_vreg(struct device *dev,
 				goto vreg_set_voltage_fail;
 			}
 			if (cam_vreg->op_mode >= 0) {
-				rc = regulator_set_load(*reg_ptr,
+				rc = regulator_set_optimum_mode(*reg_ptr,
 					cam_vreg->op_mode);
 				if (rc < 0) {
 					pr_err(
@@ -713,7 +702,7 @@ int msm_camera_config_single_vreg(struct device *dev,
 			regulator_disable(*reg_ptr);
 			if (regulator_count_voltages(*reg_ptr) > 0) {
 				if (cam_vreg->op_mode >= 0)
-					regulator_set_load(*reg_ptr, 0);
+					regulator_set_optimum_mode(*reg_ptr, 0);
 				regulator_set_voltage(
 					*reg_ptr, 0, cam_vreg->max_voltage);
 			}
@@ -727,7 +716,7 @@ int msm_camera_config_single_vreg(struct device *dev,
 
 vreg_unconfig:
 if (regulator_count_voltages(*reg_ptr) > 0)
-	regulator_set_load(*reg_ptr, 0);
+	regulator_set_optimum_mode(*reg_ptr, 0);
 
 vreg_set_opt_mode_fail:
 if (regulator_count_voltages(*reg_ptr) > 0)

@@ -287,6 +287,7 @@ static struct platform_driver rdc321x_wdt_driver = {
 	.probe = rdc321x_wdt_probe,
 	.remove = rdc321x_wdt_remove,
 	.driver = {
+		.owner = THIS_MODULE,
 		.name = "rdc321x-wdt",
 	},
 };

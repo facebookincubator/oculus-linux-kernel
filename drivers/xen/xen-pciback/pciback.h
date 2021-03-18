@@ -100,8 +100,7 @@ struct xen_pcibk_backend {
 		    unsigned int *domain, unsigned int *bus,
 		    unsigned int *devfn);
 	int (*publish)(struct xen_pcibk_device *pdev, publish_pci_root_cb cb);
-	void (*release)(struct xen_pcibk_device *pdev, struct pci_dev *dev,
-                        bool lock);
+	void (*release)(struct xen_pcibk_device *pdev, struct pci_dev *dev);
 	int (*add)(struct xen_pcibk_device *pdev, struct pci_dev *dev,
 		   int devid, publish_pci_dev_cb publish_cb);
 	struct pci_dev *(*get)(struct xen_pcibk_device *pdev,
@@ -124,10 +123,10 @@ static inline int xen_pcibk_add_pci_dev(struct xen_pcibk_device *pdev,
 }
 
 static inline void xen_pcibk_release_pci_dev(struct xen_pcibk_device *pdev,
-					     struct pci_dev *dev, bool lock)
+					     struct pci_dev *dev)
 {
 	if (xen_pcibk_backend && xen_pcibk_backend->release)
-		return xen_pcibk_backend->release(pdev, dev, lock);
+		return xen_pcibk_backend->release(pdev, dev);
 }
 
 static inline struct pci_dev *

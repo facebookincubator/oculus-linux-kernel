@@ -22,14 +22,12 @@
 #include <linux/elfcore.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/vmalloc.h>
 
 #include <asm/processor.h>
 #include <asm/hardirq.h>
 #include <asm/nmi.h>
 #include <asm/hw_irq.h>
 #include <asm/apic.h>
-#include <asm/io_apic.h>
 #include <asm/hpet.h>
 #include <linux/kdebug.h>
 #include <asm/cpu.h>
@@ -75,6 +73,8 @@ struct crash_memmap_data {
 	unsigned int type;
 };
 
+int in_crash_kexec;
+
 /*
  * This is used to VMCLEAR all VMCSs loaded on the
  * processor. And when loading kvm_intel module, the
@@ -104,7 +104,7 @@ static void kdump_nmi_callback(int cpu, struct pt_regs *regs)
 #ifdef CONFIG_X86_32
 	struct pt_regs fixed_regs;
 
-	if (!user_mode(regs)) {
+	if (!user_mode_vm(regs)) {
 		crash_fixup_ss_esp(&fixed_regs, regs);
 		regs = &fixed_regs;
 	}
@@ -130,6 +130,7 @@ static void kdump_nmi_callback(int cpu, struct pt_regs *regs)
 
 static void kdump_nmi_shootdown_cpus(void)
 {
+	in_crash_kexec = 1;
 	nmi_shootdown_cpus(kdump_nmi_callback);
 
 	disable_local_APIC();

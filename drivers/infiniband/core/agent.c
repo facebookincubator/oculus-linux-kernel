@@ -54,7 +54,7 @@ static DEFINE_SPINLOCK(ib_agent_port_list_lock);
 static LIST_HEAD(ib_agent_port_list);
 
 static struct ib_agent_port_private *
-__ib_get_agent_port(const struct ib_device *device, int port_num)
+__ib_get_agent_port(struct ib_device *device, int port_num)
 {
 	struct ib_agent_port_private *entry;
 
@@ -67,7 +67,7 @@ __ib_get_agent_port(const struct ib_device *device, int port_num)
 }
 
 static struct ib_agent_port_private *
-ib_get_agent_port(const struct ib_device *device, int port_num)
+ib_get_agent_port(struct ib_device *device, int port_num)
 {
 	struct ib_agent_port_private *entry;
 	unsigned long flags;
@@ -78,9 +78,9 @@ ib_get_agent_port(const struct ib_device *device, int port_num)
 	return entry;
 }
 
-void agent_send_response(const struct ib_mad_hdr *mad_hdr, const struct ib_grh *grh,
-			 const struct ib_wc *wc, const struct ib_device *device,
-			 int port_num, int qpn, size_t resp_mad_len, bool opa)
+void agent_send_response(struct ib_mad *mad, struct ib_grh *grh,
+			 struct ib_wc *wc, struct ib_device *device,
+			 int port_num, int qpn)
 {
 	struct ib_agent_port_private *port_priv;
 	struct ib_mad_agent *agent;
@@ -88,7 +88,7 @@ void agent_send_response(const struct ib_mad_hdr *mad_hdr, const struct ib_grh *
 	struct ib_ah *ah;
 	struct ib_mad_send_wr_private *mad_send_wr;
 
-	if (rdma_cap_ib_switch(device))
+	if (device->node_type == RDMA_NODE_IB_SWITCH)
 		port_priv = ib_get_agent_port(device, 0);
 	else
 		port_priv = ib_get_agent_port(device, port_num);
@@ -106,27 +106,22 @@ void agent_send_response(const struct ib_mad_hdr *mad_hdr, const struct ib_grh *
 		return;
 	}
 
-	if (opa && mad_hdr->base_version != OPA_MGMT_BASE_VERSION)
-		resp_mad_len = IB_MGMT_MAD_SIZE;
-
 	send_buf = ib_create_send_mad(agent, wc->src_qp, wc->pkey_index, 0,
-				      IB_MGMT_MAD_HDR,
-				      resp_mad_len - IB_MGMT_MAD_HDR,
-				      GFP_KERNEL,
-				      mad_hdr->base_version);
+				      IB_MGMT_MAD_HDR, IB_MGMT_MAD_DATA,
+				      GFP_KERNEL);
 	if (IS_ERR(send_buf)) {
 		dev_err(&device->dev, "ib_create_send_mad error\n");
 		goto err1;
 	}
 
-	memcpy(send_buf->mad, mad_hdr, resp_mad_len);
+	memcpy(send_buf->mad, mad, sizeof *mad);
 	send_buf->ah = ah;
 
-	if (rdma_cap_ib_switch(device)) {
+	if (device->node_type == RDMA_NODE_IB_SWITCH) {
 		mad_send_wr = container_of(send_buf,
 					   struct ib_mad_send_wr_private,
 					   send_buf);
-		mad_send_wr->send_wr.port_num = port_num;
+		mad_send_wr->send_wr.wr.ud.port_num = port_num;
 	}
 
 	if (ib_post_send_mad(send_buf, NULL)) {
@@ -161,7 +156,7 @@ int ib_agent_port_open(struct ib_device *device, int port_num)
 		goto error1;
 	}
 
-	if (rdma_cap_ib_smi(device, port_num)) {
+	if (rdma_port_get_link_layer(device, port_num) == IB_LINK_LAYER_INFINIBAND) {
 		/* Obtain send only MAD agent for SMI QP */
 		port_priv->agent[0] = ib_register_mad_agent(device, port_num,
 							    IB_QPT_SMI, NULL, 0,

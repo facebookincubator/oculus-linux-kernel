@@ -383,9 +383,9 @@ static void __sis_map_silence(struct sis7019 *sis)
 {
 	/* Helper function: must hold sis->voice_lock on entry */
 	if (!sis->silence_users)
-		sis->silence_dma_addr = dma_map_single(&sis->pci->dev,
+		sis->silence_dma_addr = pci_map_single(sis->pci,
 						sis->suspend_state[0],
-						4096, DMA_TO_DEVICE);
+						4096, PCI_DMA_TODEVICE);
 	sis->silence_users++;
 }
 
@@ -394,8 +394,8 @@ static void __sis_unmap_silence(struct sis7019 *sis)
 	/* Helper function: must hold sis->voice_lock on entry */
 	sis->silence_users--;
 	if (!sis->silence_users)
-		dma_unmap_single(&sis->pci->dev, sis->silence_dma_addr, 4096,
-					DMA_TO_DEVICE);
+		pci_unmap_single(sis->pci, sis->silence_dma_addr, 4096,
+					PCI_DMA_TODEVICE);
 }
 
 static void sis_free_voice(struct sis7019 *sis, struct voice *voice)
@@ -1064,9 +1064,12 @@ static int sis_chip_free(struct sis7019 *sis)
 	if (sis->irq >= 0)
 		free_irq(sis->irq, sis);
 
-	iounmap(sis->ioaddr);
+	if (sis->ioaddr)
+		iounmap(sis->ioaddr);
+
 	pci_release_regions(sis->pci);
 	pci_disable_device(sis->pci);
+
 	sis_free_suspend(sis);
 	return 0;
 }
@@ -1208,6 +1211,7 @@ static int sis_chip_init(struct sis7019 *sis)
 #ifdef CONFIG_PM_SLEEP
 static int sis_suspend(struct device *dev)
 {
+	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct sis7019 *sis = card->private_data;
 	void __iomem *ioaddr = sis->ioaddr;
@@ -1236,6 +1240,9 @@ static int sis_suspend(struct device *dev)
 		ioaddr += 4096;
 	}
 
+	pci_disable_device(pci);
+	pci_save_state(pci);
+	pci_set_power_state(pci, PCI_D3hot);
 	return 0;
 }
 
@@ -1246,6 +1253,14 @@ static int sis_resume(struct device *dev)
 	struct sis7019 *sis = card->private_data;
 	void __iomem *ioaddr = sis->ioaddr;
 	int i;
+
+	pci_set_power_state(pci, PCI_D0);
+	pci_restore_state(pci);
+
+	if (pci_enable_device(pci) < 0) {
+		dev_err(&pci->dev, "unable to re-enable device\n");
+		goto error;
+	}
 
 	if (sis_chip_init(sis)) {
 		dev_err(&pci->dev, "unable to re-init controller\n");
@@ -1269,6 +1284,7 @@ static int sis_resume(struct device *dev)
 	memset(sis->suspend_state[0], 0, 4096);
 
 	sis->irq = pci->irq;
+	pci_set_master(pci);
 
 	if (sis->codecs_present & SIS_PRIMARY_CODEC_PRESENT)
 		snd_ac97_resume(sis->ac97[0]);
@@ -1325,7 +1341,7 @@ static int sis_chip_create(struct snd_card *card,
 	if (rc)
 		goto error_out;
 
-	rc = dma_set_mask(&pci->dev, DMA_BIT_MASK(30));
+	rc = pci_set_dma_mask(pci, DMA_BIT_MASK(30));
 	if (rc < 0) {
 		dev_err(&pci->dev, "architecture does not support 30-bit PCI busmaster DMA");
 		goto error_out_enabled;

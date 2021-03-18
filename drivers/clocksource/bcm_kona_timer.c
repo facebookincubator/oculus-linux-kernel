@@ -68,8 +68,9 @@ static void kona_timer_disable_and_clear(void __iomem *base)
 }
 
 static void
-kona_timer_get_counter(void __iomem *timer_base, uint32_t *msw, uint32_t *lsw)
+kona_timer_get_counter(void *timer_base, uint32_t *msw, uint32_t *lsw)
 {
+	void __iomem *base = IOMEM(timer_base);
 	int loop_limit = 4;
 
 	/*
@@ -85,9 +86,9 @@ kona_timer_get_counter(void __iomem *timer_base, uint32_t *msw, uint32_t *lsw)
 	 */
 
 	while (--loop_limit) {
-		*msw = readl(timer_base + KONA_GPTIMER_STCHI_OFFSET);
-		*lsw = readl(timer_base + KONA_GPTIMER_STCLO_OFFSET);
-		if (*msw == readl(timer_base + KONA_GPTIMER_STCHI_OFFSET))
+		*msw = readl(base + KONA_GPTIMER_STCHI_OFFSET);
+		*lsw = readl(base + KONA_GPTIMER_STCLO_OFFSET);
+		if (*msw == readl(base + KONA_GPTIMER_STCHI_OFFSET))
 			break;
 	}
 	if (!loop_limit) {
@@ -127,18 +128,25 @@ static int kona_timer_set_next_event(unsigned long clc,
 	return 0;
 }
 
-static int kona_timer_shutdown(struct clock_event_device *evt)
+static void kona_timer_set_mode(enum clock_event_mode mode,
+			     struct clock_event_device *unused)
 {
-	kona_timer_disable_and_clear(timers.tmr_regs);
-	return 0;
+	switch (mode) {
+	case CLOCK_EVT_MODE_ONESHOT:
+		/* by default mode is one shot don't do any thing */
+		break;
+	case CLOCK_EVT_MODE_UNUSED:
+	case CLOCK_EVT_MODE_SHUTDOWN:
+	default:
+		kona_timer_disable_and_clear(timers.tmr_regs);
+	}
 }
 
 static struct clock_event_device kona_clockevent_timer = {
 	.name = "timer 1",
 	.features = CLOCK_EVT_FEAT_ONESHOT,
 	.set_next_event = kona_timer_set_next_event,
-	.set_state_shutdown = kona_timer_shutdown,
-	.tick_resume = kona_timer_shutdown,
+	.set_mode = kona_timer_set_mode
 };
 
 static void __init kona_timer_clockevents_init(void)

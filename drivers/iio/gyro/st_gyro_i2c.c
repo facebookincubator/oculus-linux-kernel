@@ -67,11 +67,13 @@ static int st_gyro_i2c_probe(struct i2c_client *client,
 		return -ENOMEM;
 
 	gdata = iio_priv(indio_dev);
+	gdata->dev = &client->dev;
 	st_sensors_of_i2c_probe(client, st_gyro_of_match);
 
 	st_sensors_i2c_configure(indio_dev, client, gdata);
 
-	err = st_gyro_common_probe(indio_dev);
+	err = st_gyro_common_probe(indio_dev,
+				(struct st_sensors_platform_data *)&gyro_pdata);
 	if (err < 0)
 		return err;
 
@@ -99,6 +101,7 @@ MODULE_DEVICE_TABLE(i2c, st_gyro_id_table);
 
 static struct i2c_driver st_gyro_driver = {
 	.driver = {
+		.owner = THIS_MODULE,
 		.name = "st-gyro-i2c",
 		.of_match_table = of_match_ptr(st_gyro_of_match),
 	},

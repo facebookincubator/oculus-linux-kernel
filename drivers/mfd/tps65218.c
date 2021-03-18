@@ -135,7 +135,7 @@ static const struct regmap_access_table tps65218_volatile_table = {
 	.n_yes_ranges = ARRAY_SIZE(tps65218_yes_ranges),
 };
 
-static const struct regmap_config tps65218_regmap_config = {
+static struct regmap_config tps65218_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 	.cache_type = REGCACHE_RBTREE,
@@ -211,7 +211,6 @@ static const struct of_device_id of_tps65218_match_table[] = {
 	{ .compatible = "ti,tps65218", },
 	{}
 };
-MODULE_DEVICE_TABLE(of, of_tps65218_match_table);
 
 static int tps65218_probe(struct i2c_client *client,
 				const struct i2c_device_id *ids)
@@ -281,6 +280,7 @@ MODULE_DEVICE_TABLE(i2c, tps65218_id_table);
 static struct i2c_driver tps65218_driver = {
 	.driver		= {
 		.name	= "tps65218",
+		.owner	= THIS_MODULE,
 		.of_match_table = of_tps65218_match_table,
 	},
 	.probe		= tps65218_probe,

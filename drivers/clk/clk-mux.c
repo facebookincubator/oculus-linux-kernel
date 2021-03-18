@@ -10,6 +10,7 @@
  * Simple multiplexer clock implementation
  */
 
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -31,7 +32,7 @@
 static u8 clk_mux_get_parent(struct clk_hw *hw)
 {
 	struct clk_mux *mux = to_clk_mux(hw);
-	int num_parents = clk_hw_get_num_parents(hw);
+	int num_parents = __clk_get_num_parents(hw->clk);
 	u32 val;
 
 	/*
@@ -76,7 +77,7 @@ static int clk_mux_set_parent(struct clk_hw *hw, u8 index)
 
 	else {
 		if (mux->flags & CLK_MUX_INDEX_BIT)
-			index = 1 << index;
+			index = (1 << ffs(index));
 
 		if (mux->flags & CLK_MUX_INDEX_ONE)
 			index++;
@@ -84,8 +85,6 @@ static int clk_mux_set_parent(struct clk_hw *hw, u8 index)
 
 	if (mux->lock)
 		spin_lock_irqsave(mux->lock, flags);
-	else
-		__acquire(mux->lock);
 
 	if (mux->flags & CLK_MUX_HIWORD_MASK) {
 		val = mux->mask << (mux->shift + 16);
@@ -98,8 +97,6 @@ static int clk_mux_set_parent(struct clk_hw *hw, u8 index)
 
 	if (mux->lock)
 		spin_unlock_irqrestore(mux->lock, flags);
-	else
-		__release(mux->lock);
 
 	return 0;
 }
@@ -117,14 +114,13 @@ const struct clk_ops clk_mux_ro_ops = {
 EXPORT_SYMBOL_GPL(clk_mux_ro_ops);
 
 struct clk *clk_register_mux_table(struct device *dev, const char *name,
-		const char * const *parent_names, u8 num_parents,
-		unsigned long flags,
+		const char **parent_names, u8 num_parents, unsigned long flags,
 		void __iomem *reg, u8 shift, u32 mask,
 		u8 clk_mux_flags, u32 *table, spinlock_t *lock)
 {
 	struct clk_mux *mux;
 	struct clk *clk;
-	struct clk_init_data init = {};
+	struct clk_init_data init;
 	u8 width = 0;
 
 	if (clk_mux_flags & CLK_MUX_HIWORD_MASK) {
@@ -170,8 +166,7 @@ struct clk *clk_register_mux_table(struct device *dev, const char *name,
 EXPORT_SYMBOL_GPL(clk_register_mux_table);
 
 struct clk *clk_register_mux(struct device *dev, const char *name,
-		const char * const *parent_names, u8 num_parents,
-		unsigned long flags,
+		const char **parent_names, u8 num_parents, unsigned long flags,
 		void __iomem *reg, u8 shift, u8 width,
 		u8 clk_mux_flags, spinlock_t *lock)
 {
@@ -182,19 +177,3 @@ struct clk *clk_register_mux(struct device *dev, const char *name,
 				      NULL, lock);
 }
 EXPORT_SYMBOL_GPL(clk_register_mux);
-
-void clk_unregister_mux(struct clk *clk)
-{
-	struct clk_mux *mux;
-	struct clk_hw *hw;
-
-	hw = __clk_get_hw(clk);
-	if (!hw)
-		return;
-
-	mux = to_clk_mux(hw);
-
-	clk_unregister(clk);
-	kfree(mux);
-}
-EXPORT_SYMBOL_GPL(clk_unregister_mux);

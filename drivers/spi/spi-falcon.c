@@ -353,6 +353,16 @@ static int falcon_sflash_setup(struct spi_device *spi)
 	return 0;
 }
 
+static int falcon_sflash_prepare_xfer(struct spi_master *master)
+{
+	return 0;
+}
+
+static int falcon_sflash_unprepare_xfer(struct spi_master *master)
+{
+	return 0;
+}
+
 static int falcon_sflash_xfer_one(struct spi_master *master,
 					struct spi_message *m)
 {
@@ -410,7 +420,9 @@ static int falcon_sflash_probe(struct platform_device *pdev)
 	master->mode_bits = SPI_MODE_3;
 	master->flags = SPI_MASTER_HALF_DUPLEX;
 	master->setup = falcon_sflash_setup;
+	master->prepare_transfer_hardware = falcon_sflash_prepare_xfer;
 	master->transfer_one_message = falcon_sflash_xfer_one;
+	master->unprepare_transfer_hardware = falcon_sflash_unprepare_xfer;
 	master->dev.of_node = pdev->dev.of_node;
 
 	ret = devm_spi_register_master(&pdev->dev, master);
@@ -429,6 +441,7 @@ static struct platform_driver falcon_sflash_driver = {
 	.probe	= falcon_sflash_probe,
 	.driver = {
 		.name	= DRV_NAME,
+		.owner	= THIS_MODULE,
 		.of_match_table = falcon_sflash_match,
 	}
 };

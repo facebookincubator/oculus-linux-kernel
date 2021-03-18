@@ -179,6 +179,7 @@ static struct platform_driver amiga_gayle_ide_driver = {
 	.remove = __exit_p(amiga_gayle_ide_remove),
 	.driver   = {
 		.name	= "amiga-gayle-ide",
+		.owner	= THIS_MODULE,
 	},
 };
 

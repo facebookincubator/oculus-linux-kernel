@@ -56,7 +56,6 @@ static int snow_late_probe(struct snd_soc_card *card)
 
 static struct snd_soc_card snow_snd = {
 	.name = "Snow-I2S",
-	.owner = THIS_MODULE,
 	.dai_link = snow_dai,
 	.num_links = ARRAY_SIZE(snow_dai),
 
@@ -116,6 +115,7 @@ MODULE_DEVICE_TABLE(of, snow_of_match);
 static struct platform_driver snow_driver = {
 	.driver = {
 		.name = "snow-audio",
+		.owner = THIS_MODULE,
 		.pm = &snd_soc_pm_ops,
 		.of_match_table = snow_of_match,
 	},

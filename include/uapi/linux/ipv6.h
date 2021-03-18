@@ -1,7 +1,6 @@
 #ifndef _UAPI_IPV6_H
 #define _UAPI_IPV6_H
 
-#include <linux/libc-compat.h>
 #include <linux/types.h>
 #include <linux/in6.h>
 #include <asm/byteorder.h>
@@ -16,24 +15,21 @@
  *	*under construction*
  */
 
-#if __UAPI_DEF_IN6_PKTINFO
+
 struct in6_pktinfo {
 	struct in6_addr	ipi6_addr;
 	int		ipi6_ifindex;
 };
-#endif
 
-#if __UAPI_DEF_IP6_MTUINFO
 struct ip6_mtuinfo {
 	struct sockaddr_in6	ip6m_addr;
 	__u32			ip6m_mtu;
 };
-#endif
 
 struct in6_ifreq {
 	struct in6_addr	ifr6_addr;
 	__u32		ifr6_prefixlen;
-	int		ifr6_ifindex; 
+	int		ifr6_ifindex;
 };
 
 #define IPV6_SRCRT_STRICT	0x01	/* Deprecated; will be removed */
@@ -59,7 +55,7 @@ struct ipv6_rt_hdr {
 struct ipv6_opt_hdr {
 	__u8 		nexthdr;
 	__u8 		hdrlen;
-	/* 
+	/*
 	 * TLV encoded option data follows.
 	 */
 } __attribute__((packed));	/* required for some archs */
@@ -170,12 +166,8 @@ enum {
 	DEVCONF_SUPPRESS_FRAG_NDISC,
 	DEVCONF_ACCEPT_RA_FROM_LOCAL,
 	DEVCONF_USE_OPTIMISTIC,
-	DEVCONF_ACCEPT_RA_MTU,
-	DEVCONF_STABLE_SECRET,
-	DEVCONF_USE_OIF_ADDRS_ONLY,
-	DEVCONF_ACCEPT_RA_MIN_HOP_LIMIT,
-	DEVCONF_IGNORE_ROUTES_WITH_LINKDOWN,
 	DEVCONF_ACCEPT_RA_PREFIX_ROUTE,
+	DEVCONF_USE_OIF_ADDRS_ONLY,
 	DEVCONF_MAX
 };
 

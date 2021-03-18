@@ -29,12 +29,6 @@
 #include "prm-regbits-34xx.h"
 #include "cm3xxx.h"
 #include "cm-regbits-34xx.h"
-#include "clock.h"
-
-static void omap3xxx_prm_read_pending_irqs(unsigned long *events);
-static void omap3xxx_prm_ocp_barrier(void);
-static void omap3xxx_prm_save_and_clear_irqen(u32 *saved_mask);
-static void omap3xxx_prm_restore_irqen(u32 *saved_mask);
 
 static const struct omap_prcm_irq omap3_prcm_irqs[] = {
 	OMAP_PRCM_IRQ("wkup",	0,	0),
@@ -97,7 +91,7 @@ static struct omap3_vp omap3_vp[] = {
 
 #define MAX_VP_ID ARRAY_SIZE(omap3_vp);
 
-static u32 omap3_prm_vp_check_txdone(u8 vp_id)
+u32 omap3_prm_vp_check_txdone(u8 vp_id)
 {
 	struct omap3_vp *vp = &omap3_vp[vp_id];
 	u32 irqstatus;
@@ -107,7 +101,7 @@ static u32 omap3_prm_vp_check_txdone(u8 vp_id)
 	return irqstatus & vp->tranxdone_status;
 }
 
-static void omap3_prm_vp_clear_txdone(u8 vp_id)
+void omap3_prm_vp_clear_txdone(u8 vp_id)
 {
 	struct omap3_vp *vp = &omap3_vp[vp_id];
 
@@ -137,7 +131,7 @@ u32 omap3_prm_vcvp_rmw(u32 mask, u32 bits, u8 offset)
  * recommended way to restart the SoC, considering Errata i520.  No
  * return value.
  */
-static void omap3xxx_prm_dpll3_reset(void)
+void omap3xxx_prm_dpll3_reset(void)
 {
 	omap2_prm_set_mod_reg_bits(OMAP_RST_DPLL3_MASK, OMAP3430_GR_MOD,
 				   OMAP2_RM_RSTCTRL);
@@ -153,7 +147,7 @@ static void omap3xxx_prm_dpll3_reset(void)
  * MPU IRQs, and store the result into the u32 pointed to by @events.
  * No return value.
  */
-static void omap3xxx_prm_read_pending_irqs(unsigned long *events)
+void omap3xxx_prm_read_pending_irqs(unsigned long *events)
 {
 	u32 mask, st;
 
@@ -172,7 +166,7 @@ static void omap3xxx_prm_read_pending_irqs(unsigned long *events)
  * block, to avoid race conditions after acknowledging or clearing IRQ
  * bits.  No return value.
  */
-static void omap3xxx_prm_ocp_barrier(void)
+void omap3xxx_prm_ocp_barrier(void)
 {
 	omap2_prm_read_mod_reg(OCP_MOD, OMAP3_PRM_REVISION_OFFSET);
 }
@@ -188,7 +182,7 @@ static void omap3xxx_prm_ocp_barrier(void)
  * returning; otherwise, spurious interrupts might occur.  No return
  * value.
  */
-static void omap3xxx_prm_save_and_clear_irqen(u32 *saved_mask)
+void omap3xxx_prm_save_and_clear_irqen(u32 *saved_mask)
 {
 	saved_mask[0] = omap2_prm_read_mod_reg(OCP_MOD,
 					       OMAP3_PRM_IRQENABLE_MPU_OFFSET);
@@ -208,7 +202,7 @@ static void omap3xxx_prm_save_and_clear_irqen(u32 *saved_mask)
  * barrier should be needed here; any pending PRM interrupts will fire
  * once the writes reach the PRM.  No return value.
  */
-static void omap3xxx_prm_restore_irqen(u32 *saved_mask)
+void omap3xxx_prm_restore_irqen(u32 *saved_mask)
 {
 	omap2_prm_write_mod_reg(saved_mask[0], OCP_MOD,
 				OMAP3_PRM_IRQENABLE_MPU_OFFSET);
@@ -218,7 +212,7 @@ static void omap3xxx_prm_restore_irqen(u32 *saved_mask)
  * omap3xxx_prm_clear_mod_irqs - clear wake-up events from PRCM interrupt
  * @module: PRM module to clear wakeups from
  * @regs: register set to clear, 1 or 3
- * @wkst_mask: wkst bits to clear
+ * @ignore_bits: wakeup status bits to ignore
  *
  * The purpose of this function is to clear any wake-up events latched
  * in the PRCM PM_WKST_x registers. It is possible that a wake-up event
@@ -227,7 +221,7 @@ static void omap3xxx_prm_restore_irqen(u32 *saved_mask)
  * that any peripheral wake-up events occurring while attempting to
  * clear the PM_WKST_x are detected and cleared.
  */
-static int omap3xxx_prm_clear_mod_irqs(s16 module, u8 regs, u32 wkst_mask)
+int omap3xxx_prm_clear_mod_irqs(s16 module, u8 regs, u32 ignore_bits)
 {
 	u32 wkst, fclk, iclk, clken;
 	u16 wkst_off = (regs == 3) ? OMAP3430ES2_PM_WKST3 : PM_WKST1;
@@ -239,7 +233,7 @@ static int omap3xxx_prm_clear_mod_irqs(s16 module, u8 regs, u32 wkst_mask)
 
 	wkst = omap2_prm_read_mod_reg(module, wkst_off);
 	wkst &= omap2_prm_read_mod_reg(module, grpsel_off);
-	wkst &= wkst_mask;
+	wkst &= ~ignore_bits;
 	if (wkst) {
 		iclk = omap2_cm_read_mod_reg(module, iclk_off);
 		fclk = omap2_cm_read_mod_reg(module, fclk_off);
@@ -255,7 +249,7 @@ static int omap3xxx_prm_clear_mod_irqs(s16 module, u8 regs, u32 wkst_mask)
 			omap2_cm_set_mod_reg_bits(clken, module, fclk_off);
 			omap2_prm_write_mod_reg(wkst, module, wkst_off);
 			wkst = omap2_prm_read_mod_reg(module, wkst_off);
-			wkst &= wkst_mask;
+			wkst &= ~ignore_bits;
 			c++;
 		}
 		omap2_cm_write_mod_reg(iclk, module, iclk_off);
@@ -381,7 +375,7 @@ void __init omap3_prm_init_pm(bool has_uart4, bool has_iva)
  * The ST_IO_CHAIN bit does not exist in 3430 before es3.1. The only
  * thing we can do is toggle EN_IO bit for earlier omaps.
  */
-static void omap3430_pre_es3_1_reconfigure_io_chain(void)
+void omap3430_pre_es3_1_reconfigure_io_chain(void)
 {
 	omap2_prm_clear_mod_reg_bits(OMAP3430_EN_IO_MASK, WKUP_MOD,
 				     PM_WKEN);
@@ -399,7 +393,7 @@ static void omap3430_pre_es3_1_reconfigure_io_chain(void)
  * deasserting WUCLKIN and clearing the ST_IO_CHAIN WKST bit.  No
  * return value. These registers are only available in 3430 es3.1 and later.
  */
-static void omap3_prm_reconfigure_io_chain(void)
+void omap3_prm_reconfigure_io_chain(void)
 {
 	int i = 0;
 
@@ -419,6 +413,15 @@ static void omap3_prm_reconfigure_io_chain(void)
 				   PM_WKST);
 
 	omap2_prm_read_mod_reg(WKUP_MOD, PM_WKST);
+}
+
+/**
+ * omap3xxx_prm_reconfigure_io_chain - reconfigure I/O chain
+ */
+void omap3xxx_prm_reconfigure_io_chain(void)
+{
+	if (omap3_prcm_irq_setup.reconfigure_io_chain)
+		omap3_prcm_irq_setup.reconfigure_io_chain();
 }
 
 /**
@@ -661,26 +664,17 @@ static int omap3xxx_prm_late_init(void);
 static struct prm_ll_data omap3xxx_prm_ll_data = {
 	.read_reset_sources = &omap3xxx_prm_read_reset_sources,
 	.late_init = &omap3xxx_prm_late_init,
-	.assert_hardreset = &omap2_prm_assert_hardreset,
-	.deassert_hardreset = &omap2_prm_deassert_hardreset,
-	.is_hardreset_asserted = &omap2_prm_is_hardreset_asserted,
-	.reset_system = &omap3xxx_prm_dpll3_reset,
-	.clear_mod_irqs = &omap3xxx_prm_clear_mod_irqs,
-	.vp_check_txdone = &omap3_prm_vp_check_txdone,
-	.vp_clear_txdone = &omap3_prm_vp_clear_txdone,
 };
 
-int __init omap3xxx_prm_init(const struct omap_prcm_init_data *data)
+int __init omap3xxx_prm_init(void)
 {
-	omap2_clk_legacy_provider_init(TI_CLKM_PRM,
-				       prm_base + OMAP3430_IVA2_MOD);
 	if (omap3_has_io_wakeup())
 		prm_features |= PRM_HAS_IO_WAKEUP;
 
 	return prm_register(&omap3xxx_prm_ll_data);
 }
 
-static const struct of_device_id omap3_prm_dt_match_table[] = {
+static struct of_device_id omap3_prm_dt_match_table[] = {
 	{ .compatible = "ti,omap3-prm" },
 	{ }
 };

@@ -31,7 +31,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 64,
 		}
 	},
@@ -50,7 +49,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 96,
 		}
 	},
@@ -69,7 +67,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 128,
 		}
 	},
@@ -88,7 +85,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 64,
 		}
 	},
@@ -107,7 +103,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 96,
 		}
 	},
@@ -126,7 +121,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 128,
 		}
 	},
@@ -145,7 +139,6 @@ static struct xfrm_algo_desc aead_list[] = {
 
 	.uinfo = {
 		.aead = {
-			.geniv = "seqiv",
 			.icv_truncbits = 128,
 		}
 	},
@@ -158,18 +151,6 @@ static struct xfrm_algo_desc aead_list[] = {
 		.sadb_alg_minbits = 128,
 		.sadb_alg_maxbits = 256
 	}
-},
-{
-	.name = "rfc7539esp(chacha20,poly1305)",
-
-	.uinfo = {
-		.aead = {
-			.geniv = "seqiv",
-			.icv_truncbits = 128,
-		}
-	},
-
-	.pfkey_supported = 0,
 },
 };
 
@@ -372,7 +353,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 64,
 			.defkeybits = 64,
 		}
@@ -393,7 +373,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 64,
 			.defkeybits = 192,
 		}
@@ -414,7 +393,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 64,
 			.defkeybits = 128,
 		}
@@ -435,7 +413,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 64,
 			.defkeybits = 128,
 		}
@@ -456,7 +433,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 128,
 			.defkeybits = 128,
 		}
@@ -477,7 +453,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 128,
 			.defkeybits = 128,
 		}
@@ -498,7 +473,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 128,
 			.defkeybits = 128,
 		}
@@ -519,7 +493,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "echainiv",
 			.blockbits = 128,
 			.defkeybits = 128,
 		}
@@ -539,7 +512,6 @@ static struct xfrm_algo_desc ealg_list[] = {
 
 	.uinfo = {
 		.encr = {
-			.geniv = "seqiv",
 			.blockbits = 128,
 			.defkeybits = 160, /* 128-bit key + 32-bit nonce */
 		}
@@ -588,6 +560,11 @@ static struct xfrm_algo_desc calg_list[] = {
 	.desc = { .sadb_alg_id = SADB_X_CALG_LZJH }
 },
 };
+
+static inline int aead_entries(void)
+{
+	return ARRAY_SIZE(aead_list);
+}
 
 static inline int aalg_entries(void)
 {

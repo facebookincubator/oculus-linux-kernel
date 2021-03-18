@@ -21,6 +21,9 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
+#include "xfs_inum.h"
+#include "xfs_sb.h"
+#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_inode.h"
 #include "xfs_btree.h"
@@ -30,6 +33,7 @@
 #include "xfs_error.h"
 #include "xfs_trace.h"
 #include "xfs_icache.h"
+#include "xfs_dinode.h"
 
 STATIC int
 xfs_internal_inum(
@@ -229,7 +233,7 @@ xfs_bulkstat_grab_ichunk(
 	error = xfs_inobt_get_rec(cur, irec, &stat);
 	if (error)
 		return error;
-	XFS_WANT_CORRUPTED_RETURN(cur->bc_mp, stat == 1);
+	XFS_WANT_CORRUPTED_RETURN(stat == 1);
 
 	/* Check if the record contains the inode in request */
 	if (irec->ir_startino + XFS_INODES_PER_CHUNK <= agino) {
@@ -252,7 +256,7 @@ xfs_bulkstat_grab_ichunk(
 		}
 
 		irec->ir_free |= xfs_inobt_maskn(0, idx);
-		*icount = irec->ir_count - irec->ir_freecount;
+		*icount = XFS_INODES_PER_CHUNK - irec->ir_freecount;
 	}
 
 	return 0;
@@ -348,6 +352,7 @@ xfs_bulkstat(
 	int			*done)	/* 1 if there are more stats to get */
 {
 	xfs_buf_t		*agbp;	/* agi header buffer */
+	xfs_agi_t		*agi;	/* agi header data */
 	xfs_agino_t		agino;	/* inode # in allocation group */
 	xfs_agnumber_t		agno;	/* allocation group number */
 	xfs_btree_cur_t		*cur;	/* btree cursor for ialloc btree */
@@ -398,6 +403,7 @@ xfs_bulkstat(
 		error = xfs_ialloc_read_agi(mp, NULL, agno, &agbp);
 		if (error)
 			break;
+		agi = XFS_BUF_TO_AGI(agbp);
 		/*
 		 * Allocate and initialize a btree cursor for ialloc btree.
 		 */
@@ -415,8 +421,6 @@ xfs_bulkstat(
 				goto del_cursor;
 			if (icount) {
 				irbp->ir_startino = r.ir_startino;
-				irbp->ir_holemask = r.ir_holemask;
-				irbp->ir_count = r.ir_count;
 				irbp->ir_freecount = r.ir_freecount;
 				irbp->ir_free = r.ir_free;
 				irbp++;
@@ -449,15 +453,13 @@ xfs_bulkstat(
 			 * If this chunk has any allocated inodes, save it.
 			 * Also start read-ahead now for this chunk.
 			 */
-			if (r.ir_freecount < r.ir_count) {
+			if (r.ir_freecount < XFS_INODES_PER_CHUNK) {
 				xfs_bulkstat_ichunk_ra(mp, agno, &r);
 				irbp->ir_startino = r.ir_startino;
-				irbp->ir_holemask = r.ir_holemask;
-				irbp->ir_count = r.ir_count;
 				irbp->ir_freecount = r.ir_freecount;
 				irbp->ir_free = r.ir_free;
 				irbp++;
-				icount += r.ir_count - r.ir_freecount;
+				icount += XFS_INODES_PER_CHUNK - r.ir_freecount;
 			}
 			error = xfs_btree_increment(cur, 0, &stat);
 			if (error || stat == 0) {
@@ -473,8 +475,7 @@ xfs_bulkstat(
 		 * pending error, then we are done.
 		 */
 del_cursor:
-		xfs_btree_del_cursor(cur, error ?
-					  XFS_BTREE_ERROR : XFS_BTREE_NOERROR);
+		xfs_btree_del_cursor(cur, XFS_BTREE_NOERROR);
 		xfs_buf_relse(agbp);
 		if (error)
 			break;
@@ -604,7 +605,8 @@ xfs_inumbers(
 		agino = r.ir_startino + XFS_INODES_PER_CHUNK - 1;
 		buffer[bufidx].xi_startino =
 			XFS_AGINO_TO_INO(mp, agno, r.ir_startino);
-		buffer[bufidx].xi_alloccount = r.ir_count - r.ir_freecount;
+		buffer[bufidx].xi_alloccount =
+			XFS_INODES_PER_CHUNK - r.ir_freecount;
 		buffer[bufidx].xi_allocmask = ~r.ir_free;
 		if (++bufidx == bcount) {
 			long	written;

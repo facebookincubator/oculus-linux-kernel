@@ -1,7 +1,7 @@
 /*
  * Floating proportions
  *
- *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra
+ *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
  *
  * Description:
  *

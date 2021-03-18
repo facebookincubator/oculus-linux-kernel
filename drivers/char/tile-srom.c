@@ -27,6 +27,7 @@
 #include <linux/types.h>	/* size_t */
 #include <linux/proc_fs.h>
 #include <linux/fcntl.h>	/* O_ACCMODE */
+#include <linux/aio.h>
 #include <linux/pagemap.h>
 #include <linux/hugetlb.h>
 #include <linux/uaccess.h>

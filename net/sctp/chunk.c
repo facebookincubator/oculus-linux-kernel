@@ -164,7 +164,7 @@ static void sctp_datamsg_assign(struct sctp_datamsg *msg, struct sctp_chunk *chu
  */
 struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 					    struct sctp_sndrcvinfo *sinfo,
-					    struct iov_iter *from)
+					    struct msghdr *msgh, int msg_len)
 {
 	int max, whole, i, offset, over, err;
 	int len, first_len;
@@ -172,7 +172,6 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 	struct sctp_chunk *chunk;
 	struct sctp_datamsg *msg;
 	struct list_head *pos, *temp;
-	size_t msg_len = iov_iter_count(from);
 	__u8 frag;
 
 	msg = sctp_datamsg_new(GFP_KERNEL);
@@ -280,9 +279,11 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 			goto errout;
 		}
 
-		err = sctp_user_addto_chunk(chunk, len, from);
+		err = sctp_user_addto_chunk(chunk, offset, len, msgh->msg_iov);
 		if (err < 0)
 			goto errout_chunk_free;
+
+		offset += len;
 
 		/* Put the chunk->skb back into the form expected by send.  */
 		__skb_pull(chunk->skb, (__u8 *)chunk->chunk_hdr
@@ -316,7 +317,7 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 			goto errout;
 		}
 
-		err = sctp_user_addto_chunk(chunk, over, from);
+		err = sctp_user_addto_chunk(chunk, offset, over, msgh->msg_iov);
 
 		/* Put the chunk->skb back into the form expected by send.  */
 		__skb_pull(chunk->skb, (__u8 *)chunk->chunk_hdr

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,9 +43,7 @@
 		qcom,mdss-dsi-t-clk-pre = <0x24>;
 		qcom,mdss-dsi-dma-trigger = "trigger_sw";
 		qcom,mdss-dsi-mdp-trigger = "none";
-		qcom,mdss-dsi-reset-sequence = <1 10>, <0 10>, <1 10>;
-		qcom,mdss-pan-physical-width-dimension = <74>;
-		qcom,mdss-pan-physical-height-dimension = <131>;
+		qcom,mdss-dsi-reset-sequence = <1 20>, <0 20>, <1 50>;
 		qcom,mdss-dsi-te-pin-select = <1>;
 		qcom,mdss-dsi-wr-mem-start = <0x2c>;
 		qcom,mdss-dsi-wr-mem-continue = <0x3c>;
@@ -53,47 +51,43 @@
 		qcom,mdss-dsi-te-check-enable;
 		qcom,mdss-dsi-te-using-te-pin;
 		qcom,ulps-enabled;
-		qcom,mdss-dsi-panel-hdr-enabled;
-		qcom,mdss-dsi-panel-hdr-color-primaries = <14500 15500 32000
-			17000 15500 30000 8000 3000>;
-		qcom,mdss-dsi-panel-peak-brightness = <4200000>;
-		qcom,mdss-dsi-panel-blackness-level = <3230>;
+
 		qcom,adjust-timer-wakeup-ms = <1>;
-		qcom,mdss-dsi-on-command = [15 01 00 00 00 00 02 ff 10
-			15 01 00 00 00 00 02 fb 01
-			15 01 00 00 00 00 02 ba 03
-			15 01 00 00 00 00 02 e5 01
-			15 01 00 00 00 00 02 b0 03
-			15 01 00 00 00 00 02 ff 28
-			15 01 00 00 00 00 02 7a 02
-			15 01 00 00 00 00 02 fb 01
-			15 01 00 00 00 00 02 ff 10
-			15 01 00 00 00 00 02 fb 01
-			15 01 00 00 00 00 02 c0 03
-			15 01 00 00 00 00 02 bb 10
-			15 01 00 00 00 00 02 ff e0
-			15 01 00 00 00 00 02 fb 01
-			15 01 00 00 00 00 02 6b 3d
-			15 01 00 00 00 00 02 6c 3d
-			15 01 00 00 00 00 02 6d 3d
-			15 01 00 00 00 00 02 6e 3d
-			15 01 00 00 00 00 02 6f 3d
-			15 01 00 00 00 00 02 35 02
-			15 01 00 00 00 00 02 36 72
-			15 01 00 00 00 00 02 37 10
-			15 01 00 00 00 00 02 08 c0
-			15 01 00 00 00 00 02 ff 24
-			15 01 00 00 00 00 02 fb 01
-			15 01 00 00 00 00 02 c6 06
-			15 01 00 00 00 00 02 ff 10
-			05 01 00 00 a0 00 01 11
-			05 01 00 00 00 00 01 29
+		qcom,mdss-dsi-on-command = [15 01 00 00 0a 00 02 ff 10
+			15 01 00 00 0a 00 02 fb 01
+			15 01 00 00 0a 00 02 ba 03
+			15 01 00 00 0a 00 02 e5 01
+			15 01 00 00 0a 00 02 b0 03
+			15 01 00 00 0a 00 02 ff 28
+			15 01 00 00 0a 00 02 7a 02
+			15 01 00 00 0a 00 02 fb 01
+			15 01 00 00 0a 00 02 ff 10
+			15 01 00 00 0a 00 02 fb 01
+			15 01 00 00 0a 00 02 c0 03
+			15 01 00 00 0a 00 02 bb 10
+			15 01 00 00 0a 00 02 ff e0
+			15 01 00 00 0a 00 02 fb 01
+			15 01 00 00 0a 00 02 6b 3d
+			15 01 00 00 0a 00 02 6c 3d
+			15 01 00 00 0a 00 02 6d 3d
+			15 01 00 00 0a 00 02 6e 3d
+			15 01 00 00 0a 00 02 6f 3d
+			15 01 00 00 0a 00 02 35 02
+			15 01 00 00 0a 00 02 36 72
+			15 01 00 00 0a 00 02 37 10
+			15 01 00 00 0a 00 02 08 c0
+			15 01 00 00 0a 00 02 ff 24
+			15 01 00 00 0a 00 02 fb 01
+			15 01 00 00 0a 00 02 c6 06
+			15 01 00 00 0a 00 02 ff 10
+			05 01 00 00 f0 00 01 11
+			05 01 00 00 f0 00 01 29
 			07 01 00 00 0a 00 02 01 00];
 
 		qcom,mdss-dsi-post-panel-on-command = [05 01 00 00 a0 00 01 29];
 
-		qcom,mdss-dsi-off-command = [05 01 00 00 0a 00 02 28 00
-				 05 01 00 00 0a 00 02 10 00];
+		qcom,mdss-dsi-off-command = [05 01 00 00 78 00 02 28 00
+				 05 01 00 00 78 00 02 10 00];
 
 		qcom,compression-mode = "dsc";
 		qcom,config-select = <&dsi_nt35597_dsc_cmd_config2>;

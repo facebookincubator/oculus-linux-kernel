@@ -101,7 +101,7 @@ static irqreturn_t mid_wdt_irq(int irq, void *dev_id)
 
 static const struct watchdog_info mid_wdt_info = {
 	.identity = "Intel MID SCU watchdog",
-	.options = WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
+	.options = WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
 };
 
 static const struct watchdog_ops mid_wdt_ops = {
@@ -137,7 +137,6 @@ static int mid_wdt_probe(struct platform_device *pdev)
 	wdt_dev->min_timeout = MID_WDT_TIMEOUT_MIN;
 	wdt_dev->max_timeout = MID_WDT_TIMEOUT_MAX;
 	wdt_dev->timeout = MID_WDT_DEFAULT_TIMEOUT;
-	wdt_dev->parent = &pdev->dev;
 
 	watchdog_set_drvdata(wdt_dev, &pdev->dev);
 	platform_set_drvdata(pdev, wdt_dev);
@@ -173,6 +172,7 @@ static struct platform_driver mid_wdt_driver = {
 	.probe		= mid_wdt_probe,
 	.remove		= mid_wdt_remove,
 	.driver		= {
+		.owner	= THIS_MODULE,
 		.name	= "intel_mid_wdt",
 	},
 };

@@ -39,7 +39,6 @@
 #include "t4vf_defs.h"
 
 #include "../cxgb4/t4_regs.h"
-#include "../cxgb4/t4_values.h"
 #include "../cxgb4/t4fw_api.h"
 
 /*
@@ -138,9 +137,9 @@ int t4vf_wr_mbox_core(struct adapter *adapter, const void *cmd, int size,
 	 * Loop trying to get ownership of the mailbox.  Return an error
 	 * if we can't gain ownership.
 	 */
-	v = MBOWNER_G(t4_read_reg(adapter, mbox_ctl));
+	v = MBOWNER_GET(t4_read_reg(adapter, mbox_ctl));
 	for (i = 0; v == MBOX_OWNER_NONE && i < 3; i++)
-		v = MBOWNER_G(t4_read_reg(adapter, mbox_ctl));
+		v = MBOWNER_GET(t4_read_reg(adapter, mbox_ctl));
 	if (v != MBOX_OWNER_DRV)
 		return v == MBOX_OWNER_FW ? -EBUSY : -ETIMEDOUT;
 
@@ -162,7 +161,7 @@ int t4vf_wr_mbox_core(struct adapter *adapter, const void *cmd, int size,
 	t4_read_reg(adapter, mbox_data);         /* flush write */
 
 	t4_write_reg(adapter, mbox_ctl,
-		     MBMSGVALID_F | MBOWNER_V(MBOX_OWNER_FW));
+		     MBMSGVALID | MBOWNER(MBOX_OWNER_FW));
 	t4_read_reg(adapter, mbox_ctl);          /* flush write */
 
 	/*
@@ -184,14 +183,14 @@ int t4vf_wr_mbox_core(struct adapter *adapter, const void *cmd, int size,
 		 * If we're the owner, see if this is the reply we wanted.
 		 */
 		v = t4_read_reg(adapter, mbox_ctl);
-		if (MBOWNER_G(v) == MBOX_OWNER_DRV) {
+		if (MBOWNER_GET(v) == MBOX_OWNER_DRV) {
 			/*
 			 * If the Message Valid bit isn't on, revoke ownership
 			 * of the mailbox and continue waiting for our reply.
 			 */
-			if ((v & MBMSGVALID_F) == 0) {
+			if ((v & MBMSGVALID) == 0) {
 				t4_write_reg(adapter, mbox_ctl,
-					     MBOWNER_V(MBOX_OWNER_NONE));
+					     MBOWNER(MBOX_OWNER_NONE));
 				continue;
 			}
 
@@ -205,20 +204,20 @@ int t4vf_wr_mbox_core(struct adapter *adapter, const void *cmd, int size,
 
 			/* return value in low-order little-endian word */
 			v = t4_read_reg(adapter, mbox_data);
-			if (FW_CMD_RETVAL_G(v))
+			if (FW_CMD_RETVAL_GET(v))
 				dump_mbox(adapter, "FW Error", mbox_data);
 
 			if (rpl) {
 				/* request bit in high-order BE word */
-				WARN_ON((be32_to_cpu(*(const __be32 *)cmd)
-					 & FW_CMD_REQUEST_F) == 0);
+				WARN_ON((be32_to_cpu(*(const u32 *)cmd)
+					 & FW_CMD_REQUEST) == 0);
 				get_mbox_rpl(adapter, rpl, size, mbox_data);
-				WARN_ON((be32_to_cpu(*(__be32 *)rpl)
-					 & FW_CMD_REQUEST_F) != 0);
+				WARN_ON((be32_to_cpu(*(u32 *)rpl)
+					 & FW_CMD_REQUEST) != 0);
 			}
 			t4_write_reg(adapter, mbox_ctl,
-				     MBOWNER_V(MBOX_OWNER_NONE));
-			return -FW_CMD_RETVAL_G(v);
+				     MBOWNER(MBOX_OWNER_NONE));
+			return -FW_CMD_RETVAL_GET(v);
 		}
 	}
 
@@ -246,10 +245,6 @@ static int hash_mac_addr(const u8 *addr)
 	return a & 0x3f;
 }
 
-#define ADVERT_MASK (FW_PORT_CAP_SPEED_100M | FW_PORT_CAP_SPEED_1G |\
-		     FW_PORT_CAP_SPEED_10G | FW_PORT_CAP_SPEED_40G | \
-		     FW_PORT_CAP_SPEED_100G | FW_PORT_CAP_ANEG)
-
 /**
  *	init_link_config - initialize a link's SW state
  *	@lc: structure holding the link state
@@ -264,8 +259,8 @@ static void init_link_config(struct link_config *lc, unsigned int caps)
 	lc->requested_speed = 0;
 	lc->speed = 0;
 	lc->requested_fc = lc->fc = PAUSE_RX | PAUSE_TX;
-	if (lc->supported & FW_PORT_CAP_ANEG) {
-		lc->advertising = lc->supported & ADVERT_MASK;
+	if (lc->supported & SUPPORTED_Autoneg) {
+		lc->advertising = lc->supported;
 		lc->autoneg = AUTONEG_ENABLE;
 		lc->requested_fc |= PAUSE_AUTONEG;
 	} else {
@@ -285,23 +280,24 @@ int t4vf_port_init(struct adapter *adapter, int pidx)
 	struct fw_vi_cmd vi_cmd, vi_rpl;
 	struct fw_port_cmd port_cmd, port_rpl;
 	int v;
+	u32 word;
 
 	/*
 	 * Execute a VI Read command to get our Virtual Interface information
 	 * like MAC address, etc.
 	 */
 	memset(&vi_cmd, 0, sizeof(vi_cmd));
-	vi_cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_VI_CMD) |
-				       FW_CMD_REQUEST_F |
-				       FW_CMD_READ_F);
+	vi_cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_VI_CMD) |
+				       FW_CMD_REQUEST |
+				       FW_CMD_READ);
 	vi_cmd.alloc_to_len16 = cpu_to_be32(FW_LEN16(vi_cmd));
-	vi_cmd.type_viid = cpu_to_be16(FW_VI_CMD_VIID_V(pi->viid));
+	vi_cmd.type_viid = cpu_to_be16(FW_VI_CMD_VIID(pi->viid));
 	v = t4vf_wr_mbox(adapter, &vi_cmd, sizeof(vi_cmd), &vi_rpl);
 	if (v)
 		return v;
 
-	BUG_ON(pi->port_id != FW_VI_CMD_PORTID_G(vi_rpl.portid_pkd));
-	pi->rss_size = FW_VI_CMD_RSSSIZE_G(be16_to_cpu(vi_rpl.rsssize_pkd));
+	BUG_ON(pi->port_id != FW_VI_CMD_PORTID_GET(vi_rpl.portid_pkd));
+	pi->rss_size = FW_VI_CMD_RSSSIZE_GET(be16_to_cpu(vi_rpl.rsssize_pkd));
 	t4_os_set_hw_addr(adapter, pidx, vi_rpl.mac);
 
 	/*
@@ -312,24 +308,30 @@ int t4vf_port_init(struct adapter *adapter, int pidx)
 		return 0;
 
 	memset(&port_cmd, 0, sizeof(port_cmd));
-	port_cmd.op_to_portid = cpu_to_be32(FW_CMD_OP_V(FW_PORT_CMD) |
-					    FW_CMD_REQUEST_F |
-					    FW_CMD_READ_F |
-					    FW_PORT_CMD_PORTID_V(pi->port_id));
+	port_cmd.op_to_portid = cpu_to_be32(FW_CMD_OP(FW_PORT_CMD) |
+					    FW_CMD_REQUEST |
+					    FW_CMD_READ |
+					    FW_PORT_CMD_PORTID(pi->port_id));
 	port_cmd.action_to_len16 =
-		cpu_to_be32(FW_PORT_CMD_ACTION_V(FW_PORT_ACTION_GET_PORT_INFO) |
+		cpu_to_be32(FW_PORT_CMD_ACTION(FW_PORT_ACTION_GET_PORT_INFO) |
 			    FW_LEN16(port_cmd));
 	v = t4vf_wr_mbox(adapter, &port_cmd, sizeof(port_cmd), &port_rpl);
 	if (v)
 		return v;
 
-	v = be32_to_cpu(port_rpl.u.info.lstatus_to_modtype);
-	pi->mdio_addr = (v & FW_PORT_CMD_MDIOCAP_F) ?
-			FW_PORT_CMD_MDIOADDR_G(v) : -1;
-	pi->port_type = FW_PORT_CMD_PTYPE_G(v);
-	pi->mod_type = FW_PORT_MOD_TYPE_NA;
-
-	init_link_config(&pi->link_cfg, be16_to_cpu(port_rpl.u.info.pcap));
+	v = 0;
+	word = be16_to_cpu(port_rpl.u.info.pcap);
+	if (word & FW_PORT_CAP_SPEED_100M)
+		v |= SUPPORTED_100baseT_Full;
+	if (word & FW_PORT_CAP_SPEED_1G)
+		v |= SUPPORTED_1000baseT_Full;
+	if (word & FW_PORT_CAP_SPEED_10G)
+		v |= SUPPORTED_10000baseT_Full;
+	if (word & FW_PORT_CAP_SPEED_40G)
+		v |= SUPPORTED_40000baseSR4_Full;
+	if (word & FW_PORT_CAP_ANEG)
+		v |= SUPPORTED_Autoneg;
+	init_link_config(&pi->link_cfg, v);
 
 	return 0;
 }
@@ -339,7 +341,7 @@ int t4vf_port_init(struct adapter *adapter, int pidx)
  *      @adapter: the adapter
  *
  *	Issues a reset command to FW.  For a Physical Function this would
- *	result in the Firmware resetting all of its state.  For a Virtual
+ *	result in the Firmware reseting all of its state.  For a Virtual
  *	Function this just resets the state associated with the VF.
  */
 int t4vf_fw_reset(struct adapter *adapter)
@@ -347,8 +349,8 @@ int t4vf_fw_reset(struct adapter *adapter)
 	struct fw_reset_cmd cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_write = cpu_to_be32(FW_CMD_OP_V(FW_RESET_CMD) |
-				      FW_CMD_WRITE_F);
+	cmd.op_to_write = cpu_to_be32(FW_CMD_OP(FW_RESET_CMD) |
+				      FW_CMD_WRITE);
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
 }
@@ -375,12 +377,12 @@ static int t4vf_query_params(struct adapter *adapter, unsigned int nparams,
 		return -EINVAL;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_PARAMS_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_READ_F);
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_PARAMS_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_READ);
 	len16 = DIV_ROUND_UP(offsetof(struct fw_params_cmd,
 				      param[nparams].mnem), 16);
-	cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16_V(len16));
+	cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16(len16));
 	for (i = 0, p = &cmd.param[0]; i < nparams; i++, p++)
 		p->mnem = htonl(*params++);
 
@@ -413,107 +415,18 @@ int t4vf_set_params(struct adapter *adapter, unsigned int nparams,
 		return -EINVAL;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_PARAMS_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_WRITE_F);
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_PARAMS_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_WRITE);
 	len16 = DIV_ROUND_UP(offsetof(struct fw_params_cmd,
 				      param[nparams]), 16);
-	cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16_V(len16));
+	cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16(len16));
 	for (i = 0, p = &cmd.param[0]; i < nparams; i++, p++) {
 		p->mnem = cpu_to_be32(*params++);
 		p->val = cpu_to_be32(*vals++);
 	}
 
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
-}
-
-/**
- *	t4vf_bar2_sge_qregs - return BAR2 SGE Queue register information
- *	@adapter: the adapter
- *	@qid: the Queue ID
- *	@qtype: the Ingress or Egress type for @qid
- *	@pbar2_qoffset: BAR2 Queue Offset
- *	@pbar2_qid: BAR2 Queue ID or 0 for Queue ID inferred SGE Queues
- *
- *	Returns the BAR2 SGE Queue Registers information associated with the
- *	indicated Absolute Queue ID.  These are passed back in return value
- *	pointers.  @qtype should be T4_BAR2_QTYPE_EGRESS for Egress Queue
- *	and T4_BAR2_QTYPE_INGRESS for Ingress Queues.
- *
- *	This may return an error which indicates that BAR2 SGE Queue
- *	registers aren't available.  If an error is not returned, then the
- *	following values are returned:
- *
- *	  *@pbar2_qoffset: the BAR2 Offset of the @qid Registers
- *	  *@pbar2_qid: the BAR2 SGE Queue ID or 0 of @qid
- *
- *	If the returned BAR2 Queue ID is 0, then BAR2 SGE registers which
- *	require the "Inferred Queue ID" ability may be used.  E.g. the
- *	Write Combining Doorbell Buffer. If the BAR2 Queue ID is not 0,
- *	then these "Inferred Queue ID" register may not be used.
- */
-int t4vf_bar2_sge_qregs(struct adapter *adapter,
-			unsigned int qid,
-			enum t4_bar2_qtype qtype,
-			u64 *pbar2_qoffset,
-			unsigned int *pbar2_qid)
-{
-	unsigned int page_shift, page_size, qpp_shift, qpp_mask;
-	u64 bar2_page_offset, bar2_qoffset;
-	unsigned int bar2_qid, bar2_qid_offset, bar2_qinferred;
-
-	/* T4 doesn't support BAR2 SGE Queue registers.
-	 */
-	if (is_t4(adapter->params.chip))
-		return -EINVAL;
-
-	/* Get our SGE Page Size parameters.
-	 */
-	page_shift = adapter->params.sge.sge_vf_hps + 10;
-	page_size = 1 << page_shift;
-
-	/* Get the right Queues per Page parameters for our Queue.
-	 */
-	qpp_shift = (qtype == T4_BAR2_QTYPE_EGRESS
-		     ? adapter->params.sge.sge_vf_eq_qpp
-		     : adapter->params.sge.sge_vf_iq_qpp);
-	qpp_mask = (1 << qpp_shift) - 1;
-
-	/* Calculate the basics of the BAR2 SGE Queue register area:
-	 *  o The BAR2 page the Queue registers will be in.
-	 *  o The BAR2 Queue ID.
-	 *  o The BAR2 Queue ID Offset into the BAR2 page.
-	 */
-	bar2_page_offset = ((u64)(qid >> qpp_shift) << page_shift);
-	bar2_qid = qid & qpp_mask;
-	bar2_qid_offset = bar2_qid * SGE_UDB_SIZE;
-
-	/* If the BAR2 Queue ID Offset is less than the Page Size, then the
-	 * hardware will infer the Absolute Queue ID simply from the writes to
-	 * the BAR2 Queue ID Offset within the BAR2 Page (and we need to use a
-	 * BAR2 Queue ID of 0 for those writes).  Otherwise, we'll simply
-	 * write to the first BAR2 SGE Queue Area within the BAR2 Page with
-	 * the BAR2 Queue ID and the hardware will infer the Absolute Queue ID
-	 * from the BAR2 Page and BAR2 Queue ID.
-	 *
-	 * One important censequence of this is that some BAR2 SGE registers
-	 * have a "Queue ID" field and we can write the BAR2 SGE Queue ID
-	 * there.  But other registers synthesize the SGE Queue ID purely
-	 * from the writes to the registers -- the Write Combined Doorbell
-	 * Buffer is a good example.  These BAR2 SGE Registers are only
-	 * available for those BAR2 SGE Register areas where the SGE Absolute
-	 * Queue ID can be inferred from simple writes.
-	 */
-	bar2_qoffset = bar2_page_offset;
-	bar2_qinferred = (bar2_qid_offset < page_size);
-	if (bar2_qinferred) {
-		bar2_qoffset += bar2_qid_offset;
-		bar2_qid = 0;
-	}
-
-	*pbar2_qoffset = bar2_qoffset;
-	*pbar2_qid = bar2_qid;
-	return 0;
 }
 
 /**
@@ -530,20 +443,20 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	u32 params[7], vals[7];
 	int v;
 
-	params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_CONTROL_A));
-	params[1] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_HOST_PAGE_SIZE_A));
-	params[2] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_FL_BUFFER_SIZE0_A));
-	params[3] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_FL_BUFFER_SIZE1_A));
-	params[4] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_TIMER_VALUE_0_AND_1_A));
-	params[5] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_TIMER_VALUE_2_AND_3_A));
-	params[6] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_TIMER_VALUE_4_AND_5_A));
+	params[0] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_CONTROL));
+	params[1] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_HOST_PAGE_SIZE));
+	params[2] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_FL_BUFFER_SIZE0));
+	params[3] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_FL_BUFFER_SIZE1));
+	params[4] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_TIMER_VALUE_0_AND_1));
+	params[5] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_TIMER_VALUE_2_AND_3));
+	params[6] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_TIMER_VALUE_4_AND_5));
 	v = t4vf_query_params(adapter, 7, params, vals);
 	if (v)
 		return v;
@@ -566,8 +479,8 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	 * right value.
 	 */
 	if (!is_t4(adapter->params.chip)) {
-		params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-			     FW_PARAMS_PARAM_XYZ_V(SGE_CONTROL2_A));
+		params[0] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+			     FW_PARAMS_PARAM_XYZ(SGE_CONTROL2_A));
 		v = t4vf_query_params(adapter, 1, params, vals);
 		if (v != FW_SUCCESS) {
 			dev_err(adapter->pdev_dev,
@@ -578,65 +491,15 @@ int t4vf_get_sge_params(struct adapter *adapter)
 		sge_params->sge_control2 = vals[0];
 	}
 
-	params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_INGRESS_RX_THRESHOLD_A));
-	params[1] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-		     FW_PARAMS_PARAM_XYZ_V(SGE_CONM_CTRL_A));
+	params[0] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_INGRESS_RX_THRESHOLD));
+	params[1] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     FW_PARAMS_PARAM_XYZ(SGE_CONM_CTRL));
 	v = t4vf_query_params(adapter, 2, params, vals);
 	if (v)
 		return v;
 	sge_params->sge_ingress_rx_threshold = vals[0];
 	sge_params->sge_congestion_control = vals[1];
-
-	/* For T5 and later we want to use the new BAR2 Doorbells.
-	 * Unfortunately, older firmware didn't allow the this register to be
-	 * read.
-	 */
-	if (!is_t4(adapter->params.chip)) {
-		u32 whoami;
-		unsigned int pf, s_hps, s_qpp;
-
-		params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-			     FW_PARAMS_PARAM_XYZ_V(
-				     SGE_EGRESS_QUEUES_PER_PAGE_VF_A));
-		params[1] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_REG) |
-			     FW_PARAMS_PARAM_XYZ_V(
-				     SGE_INGRESS_QUEUES_PER_PAGE_VF_A));
-		v = t4vf_query_params(adapter, 2, params, vals);
-		if (v != FW_SUCCESS) {
-			dev_warn(adapter->pdev_dev,
-				 "Unable to get VF SGE Queues/Page; "
-				 "probably old firmware.\n");
-			return v;
-		}
-		sge_params->sge_egress_queues_per_page = vals[0];
-		sge_params->sge_ingress_queues_per_page = vals[1];
-
-		/* We need the Queues/Page for our VF.  This is based on the
-		 * PF from which we're instantiated and is indexed in the
-		 * register we just read. Do it once here so other code in
-		 * the driver can just use it.
-		 */
-		whoami = t4_read_reg(adapter,
-				     T4VF_PL_BASE_ADDR + PL_VF_WHOAMI_A);
-		pf = CHELSIO_CHIP_VERSION(adapter->params.chip) <= CHELSIO_T5 ?
-			SOURCEPF_G(whoami) : T6_SOURCEPF_G(whoami);
-
-		s_hps = (HOSTPAGESIZEPF0_S +
-			 (HOSTPAGESIZEPF1_S - HOSTPAGESIZEPF0_S) * pf);
-		sge_params->sge_vf_hps =
-			((sge_params->sge_host_page_size >> s_hps)
-			 & HOSTPAGESIZEPF0_M);
-
-		s_qpp = (QUEUESPERPAGEPF0_S +
-			 (QUEUESPERPAGEPF1_S - QUEUESPERPAGEPF0_S) * pf);
-		sge_params->sge_vf_eq_qpp =
-			((sge_params->sge_egress_queues_per_page >> s_qpp)
-			 & QUEUESPERPAGEPF0_M);
-		sge_params->sge_vf_iq_qpp =
-			((sge_params->sge_ingress_queues_per_page >> s_qpp)
-			 & QUEUESPERPAGEPF0_M);
-	}
 
 	return 0;
 }
@@ -654,8 +517,8 @@ int t4vf_get_vpd_params(struct adapter *adapter)
 	u32 params[7], vals[7];
 	int v;
 
-	params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_DEV) |
-		     FW_PARAMS_PARAM_X_V(FW_PARAMS_PARAM_DEV_CCLK));
+	params[0] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
+		     FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DEV_CCLK));
 	v = t4vf_query_params(adapter, 1, params, vals);
 	if (v)
 		return v;
@@ -677,10 +540,10 @@ int t4vf_get_dev_params(struct adapter *adapter)
 	u32 params[7], vals[7];
 	int v;
 
-	params[0] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_DEV) |
-		     FW_PARAMS_PARAM_X_V(FW_PARAMS_PARAM_DEV_FWREV));
-	params[1] = (FW_PARAMS_MNEM_V(FW_PARAMS_MNEM_DEV) |
-		     FW_PARAMS_PARAM_X_V(FW_PARAMS_PARAM_DEV_TPREV));
+	params[0] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
+		     FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DEV_FWREV));
+	params[1] = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
+		     FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DEV_TPREV));
 	v = t4vf_query_params(adapter, 2, params, vals);
 	if (v)
 		return v;
@@ -708,9 +571,9 @@ int t4vf_get_rss_glb_config(struct adapter *adapter)
 	 * our RSS configuration.
 	 */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_write = cpu_to_be32(FW_CMD_OP_V(FW_RSS_GLB_CONFIG_CMD) |
-				      FW_CMD_REQUEST_F |
-				      FW_CMD_READ_F);
+	cmd.op_to_write = cpu_to_be32(FW_CMD_OP(FW_RSS_GLB_CONFIG_CMD) |
+				      FW_CMD_REQUEST |
+				      FW_CMD_READ);
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	v = t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), &rpl);
 	if (v)
@@ -722,7 +585,7 @@ int t4vf_get_rss_glb_config(struct adapter *adapter)
 	 * filtering at this point to weed out modes which don't support
 	 * VF Drivers ...
 	 */
-	rss->mode = FW_RSS_GLB_CONFIG_CMD_MODE_G(
+	rss->mode = FW_RSS_GLB_CONFIG_CMD_MODE_GET(
 			be32_to_cpu(rpl.u.manual.mode_pkd));
 	switch (rss->mode) {
 	case FW_RSS_GLB_CONFIG_CMD_MODE_BASICVIRTUAL: {
@@ -730,26 +593,26 @@ int t4vf_get_rss_glb_config(struct adapter *adapter)
 				rpl.u.basicvirtual.synmapen_to_hashtoeplitz);
 
 		rss->u.basicvirtual.synmapen =
-			((word & FW_RSS_GLB_CONFIG_CMD_SYNMAPEN_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_SYNMAPEN) != 0);
 		rss->u.basicvirtual.syn4tupenipv6 =
-			((word & FW_RSS_GLB_CONFIG_CMD_SYN4TUPENIPV6_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_SYN4TUPENIPV6) != 0);
 		rss->u.basicvirtual.syn2tupenipv6 =
-			((word & FW_RSS_GLB_CONFIG_CMD_SYN2TUPENIPV6_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_SYN2TUPENIPV6) != 0);
 		rss->u.basicvirtual.syn4tupenipv4 =
-			((word & FW_RSS_GLB_CONFIG_CMD_SYN4TUPENIPV4_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_SYN4TUPENIPV4) != 0);
 		rss->u.basicvirtual.syn2tupenipv4 =
-			((word & FW_RSS_GLB_CONFIG_CMD_SYN2TUPENIPV4_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_SYN2TUPENIPV4) != 0);
 
 		rss->u.basicvirtual.ofdmapen =
-			((word & FW_RSS_GLB_CONFIG_CMD_OFDMAPEN_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_OFDMAPEN) != 0);
 
 		rss->u.basicvirtual.tnlmapen =
-			((word & FW_RSS_GLB_CONFIG_CMD_TNLMAPEN_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_TNLMAPEN) != 0);
 		rss->u.basicvirtual.tnlalllookup =
-			((word  & FW_RSS_GLB_CONFIG_CMD_TNLALLLKP_F) != 0);
+			((word  & FW_RSS_GLB_CONFIG_CMD_TNLALLLKP) != 0);
 
 		rss->u.basicvirtual.hashtoeplitz =
-			((word & FW_RSS_GLB_CONFIG_CMD_HASHTOEPLITZ_F) != 0);
+			((word & FW_RSS_GLB_CONFIG_CMD_HASHTOEPLITZ) != 0);
 
 		/* we need at least Tunnel Map Enable to be set */
 		if (!rss->u.basicvirtual.tnlmapen)
@@ -784,9 +647,9 @@ int t4vf_get_vfres(struct adapter *adapter)
 	 * with error on command failure.
 	 */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_PFVF_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_READ_F);
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_PFVF_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_READ);
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	v = t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), &rpl);
 	if (v)
@@ -796,22 +659,22 @@ int t4vf_get_vfres(struct adapter *adapter)
 	 * Extract VF resource limits and return success.
 	 */
 	word = be32_to_cpu(rpl.niqflint_niq);
-	vfres->niqflint = FW_PFVF_CMD_NIQFLINT_G(word);
-	vfres->niq = FW_PFVF_CMD_NIQ_G(word);
+	vfres->niqflint = FW_PFVF_CMD_NIQFLINT_GET(word);
+	vfres->niq = FW_PFVF_CMD_NIQ_GET(word);
 
 	word = be32_to_cpu(rpl.type_to_neq);
-	vfres->neq = FW_PFVF_CMD_NEQ_G(word);
-	vfres->pmask = FW_PFVF_CMD_PMASK_G(word);
+	vfres->neq = FW_PFVF_CMD_NEQ_GET(word);
+	vfres->pmask = FW_PFVF_CMD_PMASK_GET(word);
 
 	word = be32_to_cpu(rpl.tc_to_nexactf);
-	vfres->tc = FW_PFVF_CMD_TC_G(word);
-	vfres->nvi = FW_PFVF_CMD_NVI_G(word);
-	vfres->nexactf = FW_PFVF_CMD_NEXACTF_G(word);
+	vfres->tc = FW_PFVF_CMD_TC_GET(word);
+	vfres->nvi = FW_PFVF_CMD_NVI_GET(word);
+	vfres->nexactf = FW_PFVF_CMD_NEXACTF_GET(word);
 
 	word = be32_to_cpu(rpl.r_caps_to_nethctrl);
-	vfres->r_caps = FW_PFVF_CMD_R_CAPS_G(word);
-	vfres->wx_caps = FW_PFVF_CMD_WX_CAPS_G(word);
-	vfres->nethctrl = FW_PFVF_CMD_NETHCTRL_G(word);
+	vfres->r_caps = FW_PFVF_CMD_R_CAPS_GET(word);
+	vfres->wx_caps = FW_PFVF_CMD_WX_CAPS_GET(word);
+	vfres->nethctrl = FW_PFVF_CMD_NETHCTRL_GET(word);
 
 	return 0;
 }
@@ -832,9 +695,9 @@ int t4vf_read_rss_vi_config(struct adapter *adapter, unsigned int viid,
 	int v;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_RSS_VI_CONFIG_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_READ_F |
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_RSS_VI_CONFIG_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_READ |
 				     FW_RSS_VI_CONFIG_CMD_VIID(viid));
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	v = t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), &rpl);
@@ -846,17 +709,17 @@ int t4vf_read_rss_vi_config(struct adapter *adapter, unsigned int viid,
 		u32 word = be32_to_cpu(rpl.u.basicvirtual.defaultq_to_udpen);
 
 		config->basicvirtual.ip6fourtupen =
-			((word & FW_RSS_VI_CONFIG_CMD_IP6FOURTUPEN_F) != 0);
+			((word & FW_RSS_VI_CONFIG_CMD_IP6FOURTUPEN) != 0);
 		config->basicvirtual.ip6twotupen =
-			((word & FW_RSS_VI_CONFIG_CMD_IP6TWOTUPEN_F) != 0);
+			((word & FW_RSS_VI_CONFIG_CMD_IP6TWOTUPEN) != 0);
 		config->basicvirtual.ip4fourtupen =
-			((word & FW_RSS_VI_CONFIG_CMD_IP4FOURTUPEN_F) != 0);
+			((word & FW_RSS_VI_CONFIG_CMD_IP4FOURTUPEN) != 0);
 		config->basicvirtual.ip4twotupen =
-			((word & FW_RSS_VI_CONFIG_CMD_IP4TWOTUPEN_F) != 0);
+			((word & FW_RSS_VI_CONFIG_CMD_IP4TWOTUPEN) != 0);
 		config->basicvirtual.udpen =
-			((word & FW_RSS_VI_CONFIG_CMD_UDPEN_F) != 0);
+			((word & FW_RSS_VI_CONFIG_CMD_UDPEN) != 0);
 		config->basicvirtual.defaultq =
-			FW_RSS_VI_CONFIG_CMD_DEFAULTQ_G(word);
+			FW_RSS_VI_CONFIG_CMD_DEFAULTQ_GET(word);
 		break;
 	}
 
@@ -882,9 +745,9 @@ int t4vf_write_rss_vi_config(struct adapter *adapter, unsigned int viid,
 	struct fw_rss_vi_config_cmd cmd, rpl;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_RSS_VI_CONFIG_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_WRITE_F |
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_RSS_VI_CONFIG_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_WRITE |
 				     FW_RSS_VI_CONFIG_CMD_VIID(viid));
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	switch (adapter->params.rss.mode) {
@@ -892,16 +755,16 @@ int t4vf_write_rss_vi_config(struct adapter *adapter, unsigned int viid,
 		u32 word = 0;
 
 		if (config->basicvirtual.ip6fourtupen)
-			word |= FW_RSS_VI_CONFIG_CMD_IP6FOURTUPEN_F;
+			word |= FW_RSS_VI_CONFIG_CMD_IP6FOURTUPEN;
 		if (config->basicvirtual.ip6twotupen)
-			word |= FW_RSS_VI_CONFIG_CMD_IP6TWOTUPEN_F;
+			word |= FW_RSS_VI_CONFIG_CMD_IP6TWOTUPEN;
 		if (config->basicvirtual.ip4fourtupen)
-			word |= FW_RSS_VI_CONFIG_CMD_IP4FOURTUPEN_F;
+			word |= FW_RSS_VI_CONFIG_CMD_IP4FOURTUPEN;
 		if (config->basicvirtual.ip4twotupen)
-			word |= FW_RSS_VI_CONFIG_CMD_IP4TWOTUPEN_F;
+			word |= FW_RSS_VI_CONFIG_CMD_IP4TWOTUPEN;
 		if (config->basicvirtual.udpen)
-			word |= FW_RSS_VI_CONFIG_CMD_UDPEN_F;
-		word |= FW_RSS_VI_CONFIG_CMD_DEFAULTQ_V(
+			word |= FW_RSS_VI_CONFIG_CMD_UDPEN;
+		word |= FW_RSS_VI_CONFIG_CMD_DEFAULTQ(
 				config->basicvirtual.defaultq);
 		cmd.u.basicvirtual.defaultq_to_udpen = cpu_to_be32(word);
 		break;
@@ -940,10 +803,10 @@ int t4vf_config_rss_range(struct adapter *adapter, unsigned int viid,
 	 * Initialize firmware command template to write the RSS table.
 	 */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_RSS_IND_TBL_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_WRITE_F |
-				     FW_RSS_IND_TBL_CMD_VIID_V(viid));
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_RSS_IND_TBL_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_WRITE |
+				     FW_RSS_IND_TBL_CMD_VIID(viid));
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 
 	/*
@@ -994,9 +857,9 @@ int t4vf_config_rss_range(struct adapter *adapter, unsigned int viid,
 				if (rsp >= rsp_end)
 					rsp = rspq;
 			}
-			*qp++ = cpu_to_be32(FW_RSS_IND_TBL_CMD_IQ0_V(qbuf[0]) |
-					    FW_RSS_IND_TBL_CMD_IQ1_V(qbuf[1]) |
-					    FW_RSS_IND_TBL_CMD_IQ2_V(qbuf[2]));
+			*qp++ = cpu_to_be32(FW_RSS_IND_TBL_CMD_IQ0(qbuf[0]) |
+					    FW_RSS_IND_TBL_CMD_IQ1(qbuf[1]) |
+					    FW_RSS_IND_TBL_CMD_IQ2(qbuf[2]));
 		}
 
 		/*
@@ -1029,18 +892,18 @@ int t4vf_alloc_vi(struct adapter *adapter, int port_id)
 	 * VIID.
 	 */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_VI_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_WRITE_F |
-				    FW_CMD_EXEC_F);
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_VI_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_WRITE |
+				    FW_CMD_EXEC);
 	cmd.alloc_to_len16 = cpu_to_be32(FW_LEN16(cmd) |
-					 FW_VI_CMD_ALLOC_F);
-	cmd.portid_pkd = FW_VI_CMD_PORTID_V(port_id);
+					 FW_VI_CMD_ALLOC);
+	cmd.portid_pkd = FW_VI_CMD_PORTID(port_id);
 	v = t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), &rpl);
 	if (v)
 		return v;
 
-	return FW_VI_CMD_VIID_G(be16_to_cpu(rpl.type_viid));
+	return FW_VI_CMD_VIID_GET(be16_to_cpu(rpl.type_viid));
 }
 
 /**
@@ -1059,12 +922,12 @@ int t4vf_free_vi(struct adapter *adapter, int viid)
 	 * Execute a VI command to free the Virtual Interface.
 	 */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_VI_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_EXEC_F);
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_VI_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_EXEC);
 	cmd.alloc_to_len16 = cpu_to_be32(FW_LEN16(cmd) |
-					 FW_VI_CMD_FREE_F);
-	cmd.type_viid = cpu_to_be16(FW_VI_CMD_VIID_V(viid));
+					 FW_VI_CMD_FREE);
+	cmd.type_viid = cpu_to_be16(FW_VI_CMD_VIID(viid));
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
 }
 
@@ -1083,12 +946,12 @@ int t4vf_enable_vi(struct adapter *adapter, unsigned int viid,
 	struct fw_vi_enable_cmd cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_ENABLE_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_EXEC_F |
-				     FW_VI_ENABLE_CMD_VIID_V(viid));
-	cmd.ien_to_len16 = cpu_to_be32(FW_VI_ENABLE_CMD_IEN_V(rx_en) |
-				       FW_VI_ENABLE_CMD_EEN_V(tx_en) |
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_ENABLE_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_EXEC |
+				     FW_VI_ENABLE_CMD_VIID(viid));
+	cmd.ien_to_len16 = cpu_to_be32(FW_VI_ENABLE_CMD_IEN(rx_en) |
+				       FW_VI_ENABLE_CMD_EEN(tx_en) |
 				       FW_LEN16(cmd));
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
 }
@@ -1107,11 +970,11 @@ int t4vf_identify_port(struct adapter *adapter, unsigned int viid,
 	struct fw_vi_enable_cmd cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_ENABLE_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_EXEC_F |
-				     FW_VI_ENABLE_CMD_VIID_V(viid));
-	cmd.ien_to_len16 = cpu_to_be32(FW_VI_ENABLE_CMD_LED_F |
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_ENABLE_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_EXEC |
+				     FW_VI_ENABLE_CMD_VIID(viid));
+	cmd.ien_to_len16 = cpu_to_be32(FW_VI_ENABLE_CMD_LED |
 				       FW_LEN16(cmd));
 	cmd.blinkdur = cpu_to_be16(nblinks);
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
@@ -1138,28 +1001,28 @@ int t4vf_set_rxmode(struct adapter *adapter, unsigned int viid,
 
 	/* convert to FW values */
 	if (mtu < 0)
-		mtu = FW_VI_RXMODE_CMD_MTU_M;
+		mtu = FW_VI_RXMODE_CMD_MTU_MASK;
 	if (promisc < 0)
-		promisc = FW_VI_RXMODE_CMD_PROMISCEN_M;
+		promisc = FW_VI_RXMODE_CMD_PROMISCEN_MASK;
 	if (all_multi < 0)
-		all_multi = FW_VI_RXMODE_CMD_ALLMULTIEN_M;
+		all_multi = FW_VI_RXMODE_CMD_ALLMULTIEN_MASK;
 	if (bcast < 0)
-		bcast = FW_VI_RXMODE_CMD_BROADCASTEN_M;
+		bcast = FW_VI_RXMODE_CMD_BROADCASTEN_MASK;
 	if (vlanex < 0)
-		vlanex = FW_VI_RXMODE_CMD_VLANEXEN_M;
+		vlanex = FW_VI_RXMODE_CMD_VLANEXEN_MASK;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_RXMODE_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_WRITE_F |
-				     FW_VI_RXMODE_CMD_VIID_V(viid));
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_RXMODE_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_WRITE |
+				     FW_VI_RXMODE_CMD_VIID(viid));
 	cmd.retval_len16 = cpu_to_be32(FW_LEN16(cmd));
 	cmd.mtu_to_vlanexen =
-		cpu_to_be32(FW_VI_RXMODE_CMD_MTU_V(mtu) |
-			    FW_VI_RXMODE_CMD_PROMISCEN_V(promisc) |
-			    FW_VI_RXMODE_CMD_ALLMULTIEN_V(all_multi) |
-			    FW_VI_RXMODE_CMD_BROADCASTEN_V(bcast) |
-			    FW_VI_RXMODE_CMD_VLANEXEN_V(vlanex));
+		cpu_to_be32(FW_VI_RXMODE_CMD_MTU(mtu) |
+			    FW_VI_RXMODE_CMD_PROMISCEN(promisc) |
+			    FW_VI_RXMODE_CMD_ALLMULTIEN(all_multi) |
+			    FW_VI_RXMODE_CMD_BROADCASTEN(bcast) |
+			    FW_VI_RXMODE_CMD_VLANEXEN(vlanex));
 	return t4vf_wr_mbox_core(adapter, &cmd, sizeof(cmd), NULL, sleep_ok);
 }
 
@@ -1192,7 +1055,9 @@ int t4vf_alloc_mac_filt(struct adapter *adapter, unsigned int viid, bool free,
 	unsigned nfilters = 0;
 	unsigned int rem = naddr;
 	struct fw_vi_mac_cmd cmd, rpl;
-	unsigned int max_naddr = adapter->params.arch.mps_tcam_size;
+	unsigned int max_naddr = is_t4(adapter->params.chip) ?
+				 NUM_MPS_CLS_SRAM_L_INSTANCES :
+				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
 
 	if (naddr > max_naddr)
 		return -EINVAL;
@@ -1207,19 +1072,19 @@ int t4vf_alloc_mac_filt(struct adapter *adapter, unsigned int viid, bool free,
 		int i;
 
 		memset(&cmd, 0, sizeof(cmd));
-		cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_MAC_CMD) |
-					     FW_CMD_REQUEST_F |
-					     FW_CMD_WRITE_F |
-					     (free ? FW_CMD_EXEC_F : 0) |
-					     FW_VI_MAC_CMD_VIID_V(viid));
+		cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_MAC_CMD) |
+					     FW_CMD_REQUEST |
+					     FW_CMD_WRITE |
+					     (free ? FW_CMD_EXEC : 0) |
+					     FW_VI_MAC_CMD_VIID(viid));
 		cmd.freemacs_to_len16 =
-			cpu_to_be32(FW_VI_MAC_CMD_FREEMACS_V(free) |
-				    FW_CMD_LEN16_V(len16));
+			cpu_to_be32(FW_VI_MAC_CMD_FREEMACS(free) |
+				    FW_CMD_LEN16(len16));
 
 		for (i = 0, p = cmd.u.exact; i < fw_naddr; i++, p++) {
 			p->valid_to_idx = cpu_to_be16(
-				FW_VI_MAC_CMD_VALID_F |
-				FW_VI_MAC_CMD_IDX_V(FW_VI_MAC_ADD_MAC));
+				FW_VI_MAC_CMD_VALID |
+				FW_VI_MAC_CMD_IDX(FW_VI_MAC_ADD_MAC));
 			memcpy(p->macaddr, addr[offset+i], sizeof(p->macaddr));
 		}
 
@@ -1230,7 +1095,7 @@ int t4vf_alloc_mac_filt(struct adapter *adapter, unsigned int viid, bool free,
 			break;
 
 		for (i = 0, p = rpl.u.exact; i < fw_naddr; i++, p++) {
-			u16 index = FW_VI_MAC_CMD_IDX_G(
+			u16 index = FW_VI_MAC_CMD_IDX_GET(
 				be16_to_cpu(p->valid_to_idx));
 
 			if (idx)
@@ -1284,7 +1149,9 @@ int t4vf_change_mac(struct adapter *adapter, unsigned int viid,
 	struct fw_vi_mac_exact *p = &cmd.u.exact[0];
 	size_t len16 = DIV_ROUND_UP(offsetof(struct fw_vi_mac_cmd,
 					     u.exact[1]), 16);
-	unsigned int max_mac_addr = adapter->params.arch.mps_tcam_size;
+	unsigned int max_naddr = is_t4(adapter->params.chip) ?
+				 NUM_MPS_CLS_SRAM_L_INSTANCES :
+				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
 
 	/*
 	 * If this is a new allocation, determine whether it should be
@@ -1294,20 +1161,20 @@ int t4vf_change_mac(struct adapter *adapter, unsigned int viid,
 		idx = persist ? FW_VI_MAC_ADD_PERSIST_MAC : FW_VI_MAC_ADD_MAC;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_MAC_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_WRITE_F |
-				     FW_VI_MAC_CMD_VIID_V(viid));
-	cmd.freemacs_to_len16 = cpu_to_be32(FW_CMD_LEN16_V(len16));
-	p->valid_to_idx = cpu_to_be16(FW_VI_MAC_CMD_VALID_F |
-				      FW_VI_MAC_CMD_IDX_V(idx));
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_MAC_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_WRITE |
+				     FW_VI_MAC_CMD_VIID(viid));
+	cmd.freemacs_to_len16 = cpu_to_be32(FW_CMD_LEN16(len16));
+	p->valid_to_idx = cpu_to_be16(FW_VI_MAC_CMD_VALID |
+				      FW_VI_MAC_CMD_IDX(idx));
 	memcpy(p->macaddr, addr, sizeof(p->macaddr));
 
 	ret = t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), &rpl);
 	if (ret == 0) {
 		p = &rpl.u.exact[0];
-		ret = FW_VI_MAC_CMD_IDX_G(be16_to_cpu(p->valid_to_idx));
-		if (ret >= max_mac_addr)
+		ret = FW_VI_MAC_CMD_IDX_GET(be16_to_cpu(p->valid_to_idx));
+		if (ret >= max_naddr)
 			ret = -ENOMEM;
 	}
 	return ret;
@@ -1331,13 +1198,13 @@ int t4vf_set_addr_hash(struct adapter *adapter, unsigned int viid,
 					     u.exact[0]), 16);
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_MAC_CMD) |
-				     FW_CMD_REQUEST_F |
-				     FW_CMD_WRITE_F |
-				     FW_VI_ENABLE_CMD_VIID_V(viid));
-	cmd.freemacs_to_len16 = cpu_to_be32(FW_VI_MAC_CMD_HASHVECEN_F |
-					    FW_VI_MAC_CMD_HASHUNIEN_V(ucast) |
-					    FW_CMD_LEN16_V(len16));
+	cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_MAC_CMD) |
+				     FW_CMD_REQUEST |
+				     FW_CMD_WRITE |
+				     FW_VI_ENABLE_CMD_VIID(viid));
+	cmd.freemacs_to_len16 = cpu_to_be32(FW_VI_MAC_CMD_HASHVECEN |
+					    FW_VI_MAC_CMD_HASHUNIEN(ucast) |
+					    FW_CMD_LEN16(len16));
 	cmd.u.hash.hashvec = cpu_to_be64(vec);
 	return t4vf_wr_mbox_core(adapter, &cmd, sizeof(cmd), NULL, sleep_ok);
 }
@@ -1373,14 +1240,14 @@ int t4vf_get_port_stats(struct adapter *adapter, int pidx,
 		int ret;
 
 		memset(&cmd, 0, sizeof(cmd));
-		cmd.op_to_viid = cpu_to_be32(FW_CMD_OP_V(FW_VI_STATS_CMD) |
-					     FW_VI_STATS_CMD_VIID_V(pi->viid) |
-					     FW_CMD_REQUEST_F |
-					     FW_CMD_READ_F);
-		cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16_V(len16));
+		cmd.op_to_viid = cpu_to_be32(FW_CMD_OP(FW_VI_STATS_CMD) |
+					     FW_VI_STATS_CMD_VIID(pi->viid) |
+					     FW_CMD_REQUEST |
+					     FW_CMD_READ);
+		cmd.retval_len16 = cpu_to_be32(FW_CMD_LEN16(len16));
 		cmd.u.ctl.nstats_ix =
-			cpu_to_be16(FW_VI_STATS_CMD_IX_V(ix) |
-				    FW_VI_STATS_CMD_NSTATS_V(nstats));
+			cpu_to_be16(FW_VI_STATS_CMD_IX(ix) |
+				    FW_VI_STATS_CMD_NSTATS(nstats));
 		ret = t4vf_wr_mbox_ns(adapter, &cmd, len, &rpl);
 		if (ret)
 			return ret;
@@ -1432,13 +1299,13 @@ int t4vf_iq_free(struct adapter *adapter, unsigned int iqtype,
 	struct fw_iq_cmd cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_IQ_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_EXEC_F);
-	cmd.alloc_to_len16 = cpu_to_be32(FW_IQ_CMD_FREE_F |
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_IQ_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_EXEC);
+	cmd.alloc_to_len16 = cpu_to_be32(FW_IQ_CMD_FREE |
 					 FW_LEN16(cmd));
 	cmd.type_to_iqandstindex =
-		cpu_to_be32(FW_IQ_CMD_TYPE_V(iqtype));
+		cpu_to_be32(FW_IQ_CMD_TYPE(iqtype));
 
 	cmd.iqid = cpu_to_be16(iqid);
 	cmd.fl0id = cpu_to_be16(fl0id);
@@ -1458,12 +1325,12 @@ int t4vf_eth_eq_free(struct adapter *adapter, unsigned int eqid)
 	struct fw_eq_eth_cmd cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP_V(FW_EQ_ETH_CMD) |
-				    FW_CMD_REQUEST_F |
-				    FW_CMD_EXEC_F);
-	cmd.alloc_to_len16 = cpu_to_be32(FW_EQ_ETH_CMD_FREE_F |
+	cmd.op_to_vfn = cpu_to_be32(FW_CMD_OP(FW_EQ_ETH_CMD) |
+				    FW_CMD_REQUEST |
+				    FW_CMD_EXEC);
+	cmd.alloc_to_len16 = cpu_to_be32(FW_EQ_ETH_CMD_FREE |
 					 FW_LEN16(cmd));
-	cmd.eqid_pkd = cpu_to_be32(FW_EQ_ETH_CMD_EQID_V(eqid));
+	cmd.eqid_pkd = cpu_to_be32(FW_EQ_ETH_CMD_EQID(eqid));
 	return t4vf_wr_mbox(adapter, &cmd, sizeof(cmd), NULL);
 }
 
@@ -1477,7 +1344,7 @@ int t4vf_eth_eq_free(struct adapter *adapter, unsigned int eqid)
 int t4vf_handle_fw_rpl(struct adapter *adapter, const __be64 *rpl)
 {
 	const struct fw_cmd_hdr *cmd_hdr = (const struct fw_cmd_hdr *)rpl;
-	u8 opcode = FW_CMD_OP_G(be32_to_cpu(cmd_hdr->hi));
+	u8 opcode = FW_CMD_OP_GET(be32_to_cpu(cmd_hdr->hi));
 
 	switch (opcode) {
 	case FW_PORT_CMD: {
@@ -1486,13 +1353,13 @@ int t4vf_handle_fw_rpl(struct adapter *adapter, const __be64 *rpl)
 		 */
 		const struct fw_port_cmd *port_cmd =
 			(const struct fw_port_cmd *)rpl;
-		u32 stat, mod;
+		u32 word;
 		int action, port_id, link_ok, speed, fc, pidx;
 
 		/*
 		 * Extract various fields from port status change message.
 		 */
-		action = FW_PORT_CMD_ACTION_G(
+		action = FW_PORT_CMD_ACTION_GET(
 			be32_to_cpu(port_cmd->action_to_len16));
 		if (action != FW_PORT_ACTION_GET_PORT_INFO) {
 			dev_err(adapter->pdev_dev,
@@ -1501,24 +1368,24 @@ int t4vf_handle_fw_rpl(struct adapter *adapter, const __be64 *rpl)
 			break;
 		}
 
-		port_id = FW_PORT_CMD_PORTID_G(
+		port_id = FW_PORT_CMD_PORTID_GET(
 			be32_to_cpu(port_cmd->op_to_portid));
 
-		stat = be32_to_cpu(port_cmd->u.info.lstatus_to_modtype);
-		link_ok = (stat & FW_PORT_CMD_LSTATUS_F) != 0;
+		word = be32_to_cpu(port_cmd->u.info.lstatus_to_modtype);
+		link_ok = (word & FW_PORT_CMD_LSTATUS) != 0;
 		speed = 0;
 		fc = 0;
-		if (stat & FW_PORT_CMD_RXPAUSE_F)
+		if (word & FW_PORT_CMD_RXPAUSE)
 			fc |= PAUSE_RX;
-		if (stat & FW_PORT_CMD_TXPAUSE_F)
+		if (word & FW_PORT_CMD_TXPAUSE)
 			fc |= PAUSE_TX;
-		if (stat & FW_PORT_CMD_LSPEED_V(FW_PORT_CAP_SPEED_100M))
+		if (word & FW_PORT_CMD_LSPEED(FW_PORT_CAP_SPEED_100M))
 			speed = 100;
-		else if (stat & FW_PORT_CMD_LSPEED_V(FW_PORT_CAP_SPEED_1G))
+		else if (word & FW_PORT_CMD_LSPEED(FW_PORT_CAP_SPEED_1G))
 			speed = 1000;
-		else if (stat & FW_PORT_CMD_LSPEED_V(FW_PORT_CAP_SPEED_10G))
+		else if (word & FW_PORT_CMD_LSPEED(FW_PORT_CAP_SPEED_10G))
 			speed = 10000;
-		else if (stat & FW_PORT_CMD_LSPEED_V(FW_PORT_CAP_SPEED_40G))
+		else if (word & FW_PORT_CMD_LSPEED(FW_PORT_CAP_SPEED_40G))
 			speed = 40000;
 
 		/*
@@ -1535,21 +1402,12 @@ int t4vf_handle_fw_rpl(struct adapter *adapter, const __be64 *rpl)
 				continue;
 
 			lc = &pi->link_cfg;
-
-			mod = FW_PORT_CMD_MODTYPE_G(stat);
-			if (mod != pi->mod_type) {
-				pi->mod_type = mod;
-				t4vf_os_portmod_changed(adapter, pidx);
-			}
-
 			if (link_ok != lc->link_ok || speed != lc->speed ||
 			    fc != lc->fc) {
 				/* something changed */
 				lc->link_ok = link_ok;
 				lc->speed = speed;
 				lc->fc = fc;
-				lc->supported =
-					be16_to_cpu(port_cmd->u.info.pcap);
 				t4vf_os_link_changed(adapter, pidx, link_ok);
 			}
 		}
@@ -1560,54 +1418,5 @@ int t4vf_handle_fw_rpl(struct adapter *adapter, const __be64 *rpl)
 		dev_err(adapter->pdev_dev, "Unknown firmware reply %X\n",
 			opcode);
 	}
-	return 0;
-}
-
-/**
- */
-int t4vf_prep_adapter(struct adapter *adapter)
-{
-	int err;
-	unsigned int chipid;
-
-	/* Wait for the device to become ready before proceeding ...
-	 */
-	err = t4vf_wait_dev_ready(adapter);
-	if (err)
-		return err;
-
-	/* Default port and clock for debugging in case we can't reach
-	 * firmware.
-	 */
-	adapter->params.nports = 1;
-	adapter->params.vfres.pmask = 1;
-	adapter->params.vpd.cclk = 50000;
-
-	adapter->params.chip = 0;
-	switch (CHELSIO_PCI_ID_VER(adapter->pdev->device)) {
-	case CHELSIO_T4:
-		adapter->params.chip |= CHELSIO_CHIP_CODE(CHELSIO_T4, 0);
-		adapter->params.arch.sge_fl_db = DBPRIO_F;
-		adapter->params.arch.mps_tcam_size =
-				NUM_MPS_CLS_SRAM_L_INSTANCES;
-		break;
-
-	case CHELSIO_T5:
-		chipid = REV_G(t4_read_reg(adapter, PL_VF_REV_A));
-		adapter->params.chip |= CHELSIO_CHIP_CODE(CHELSIO_T5, chipid);
-		adapter->params.arch.sge_fl_db = DBPRIO_F | DBTYPE_F;
-		adapter->params.arch.mps_tcam_size =
-				NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
-		break;
-
-	case CHELSIO_T6:
-		chipid = REV_G(t4_read_reg(adapter, PL_VF_REV_A));
-		adapter->params.chip |= CHELSIO_CHIP_CODE(CHELSIO_T6, chipid);
-		adapter->params.arch.sge_fl_db = 0;
-		adapter->params.arch.mps_tcam_size =
-				NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
-		break;
-	}
-
 	return 0;
 }

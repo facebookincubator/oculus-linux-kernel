@@ -19,7 +19,7 @@
 #include <asm/asmmacro-64.h>
 #endif
 
-#if defined(CONFIG_CPU_MIPSR2) || defined(CONFIG_CPU_MIPSR6)
+#ifdef CONFIG_CPU_MIPSR2
 	.macro	local_irq_enable reg=t0
 	ei
 	irq_enable_hazard
@@ -60,22 +60,22 @@
 	.set	push
 	SET_HARDFLOAT
 	cfc1	\tmp, fcr31
-	sdc1	$f0,  THREAD_FPR0(\thread)
-	sdc1	$f2,  THREAD_FPR2(\thread)
-	sdc1	$f4,  THREAD_FPR4(\thread)
-	sdc1	$f6,  THREAD_FPR6(\thread)
-	sdc1	$f8,  THREAD_FPR8(\thread)
-	sdc1	$f10, THREAD_FPR10(\thread)
-	sdc1	$f12, THREAD_FPR12(\thread)
-	sdc1	$f14, THREAD_FPR14(\thread)
-	sdc1	$f16, THREAD_FPR16(\thread)
-	sdc1	$f18, THREAD_FPR18(\thread)
-	sdc1	$f20, THREAD_FPR20(\thread)
-	sdc1	$f22, THREAD_FPR22(\thread)
-	sdc1	$f24, THREAD_FPR24(\thread)
-	sdc1	$f26, THREAD_FPR26(\thread)
-	sdc1	$f28, THREAD_FPR28(\thread)
-	sdc1	$f30, THREAD_FPR30(\thread)
+	sdc1	$f0,  THREAD_FPR0_LS64(\thread)
+	sdc1	$f2,  THREAD_FPR2_LS64(\thread)
+	sdc1	$f4,  THREAD_FPR4_LS64(\thread)
+	sdc1	$f6,  THREAD_FPR6_LS64(\thread)
+	sdc1	$f8,  THREAD_FPR8_LS64(\thread)
+	sdc1	$f10, THREAD_FPR10_LS64(\thread)
+	sdc1	$f12, THREAD_FPR12_LS64(\thread)
+	sdc1	$f14, THREAD_FPR14_LS64(\thread)
+	sdc1	$f16, THREAD_FPR16_LS64(\thread)
+	sdc1	$f18, THREAD_FPR18_LS64(\thread)
+	sdc1	$f20, THREAD_FPR20_LS64(\thread)
+	sdc1	$f22, THREAD_FPR22_LS64(\thread)
+	sdc1	$f24, THREAD_FPR24_LS64(\thread)
+	sdc1	$f26, THREAD_FPR26_LS64(\thread)
+	sdc1	$f28, THREAD_FPR28_LS64(\thread)
+	sdc1	$f30, THREAD_FPR30_LS64(\thread)
 	sw	\tmp, THREAD_FCR31(\thread)
 	.set	pop
 	.endm
@@ -84,28 +84,27 @@
 	.set	push
 	.set	mips64r2
 	SET_HARDFLOAT
-	sdc1	$f1,  THREAD_FPR1(\thread)
-	sdc1	$f3,  THREAD_FPR3(\thread)
-	sdc1	$f5,  THREAD_FPR5(\thread)
-	sdc1	$f7,  THREAD_FPR7(\thread)
-	sdc1	$f9,  THREAD_FPR9(\thread)
-	sdc1	$f11, THREAD_FPR11(\thread)
-	sdc1	$f13, THREAD_FPR13(\thread)
-	sdc1	$f15, THREAD_FPR15(\thread)
-	sdc1	$f17, THREAD_FPR17(\thread)
-	sdc1	$f19, THREAD_FPR19(\thread)
-	sdc1	$f21, THREAD_FPR21(\thread)
-	sdc1	$f23, THREAD_FPR23(\thread)
-	sdc1	$f25, THREAD_FPR25(\thread)
-	sdc1	$f27, THREAD_FPR27(\thread)
-	sdc1	$f29, THREAD_FPR29(\thread)
-	sdc1	$f31, THREAD_FPR31(\thread)
+	sdc1	$f1,  THREAD_FPR1_LS64(\thread)
+	sdc1	$f3,  THREAD_FPR3_LS64(\thread)
+	sdc1	$f5,  THREAD_FPR5_LS64(\thread)
+	sdc1	$f7,  THREAD_FPR7_LS64(\thread)
+	sdc1	$f9,  THREAD_FPR9_LS64(\thread)
+	sdc1	$f11, THREAD_FPR11_LS64(\thread)
+	sdc1	$f13, THREAD_FPR13_LS64(\thread)
+	sdc1	$f15, THREAD_FPR15_LS64(\thread)
+	sdc1	$f17, THREAD_FPR17_LS64(\thread)
+	sdc1	$f19, THREAD_FPR19_LS64(\thread)
+	sdc1	$f21, THREAD_FPR21_LS64(\thread)
+	sdc1	$f23, THREAD_FPR23_LS64(\thread)
+	sdc1	$f25, THREAD_FPR25_LS64(\thread)
+	sdc1	$f27, THREAD_FPR27_LS64(\thread)
+	sdc1	$f29, THREAD_FPR29_LS64(\thread)
+	sdc1	$f31, THREAD_FPR31_LS64(\thread)
 	.set	pop
 	.endm
 
 	.macro	fpu_save_double thread status tmp
-#if defined(CONFIG_64BIT) || defined(CONFIG_CPU_MIPS32_R2) || \
-		defined(CONFIG_CPU_MIPS32_R6)
+#if defined(CONFIG_64BIT) || defined(CONFIG_CPU_MIPS32_R2)
 	sll	\tmp, \status, 5
 	bgez	\tmp, 10f
 	fpu_save_16odd \thread
@@ -118,22 +117,22 @@
 	.set	push
 	SET_HARDFLOAT
 	lw	\tmp, THREAD_FCR31(\thread)
-	ldc1	$f0,  THREAD_FPR0(\thread)
-	ldc1	$f2,  THREAD_FPR2(\thread)
-	ldc1	$f4,  THREAD_FPR4(\thread)
-	ldc1	$f6,  THREAD_FPR6(\thread)
-	ldc1	$f8,  THREAD_FPR8(\thread)
-	ldc1	$f10, THREAD_FPR10(\thread)
-	ldc1	$f12, THREAD_FPR12(\thread)
-	ldc1	$f14, THREAD_FPR14(\thread)
-	ldc1	$f16, THREAD_FPR16(\thread)
-	ldc1	$f18, THREAD_FPR18(\thread)
-	ldc1	$f20, THREAD_FPR20(\thread)
-	ldc1	$f22, THREAD_FPR22(\thread)
-	ldc1	$f24, THREAD_FPR24(\thread)
-	ldc1	$f26, THREAD_FPR26(\thread)
-	ldc1	$f28, THREAD_FPR28(\thread)
-	ldc1	$f30, THREAD_FPR30(\thread)
+	ldc1	$f0,  THREAD_FPR0_LS64(\thread)
+	ldc1	$f2,  THREAD_FPR2_LS64(\thread)
+	ldc1	$f4,  THREAD_FPR4_LS64(\thread)
+	ldc1	$f6,  THREAD_FPR6_LS64(\thread)
+	ldc1	$f8,  THREAD_FPR8_LS64(\thread)
+	ldc1	$f10, THREAD_FPR10_LS64(\thread)
+	ldc1	$f12, THREAD_FPR12_LS64(\thread)
+	ldc1	$f14, THREAD_FPR14_LS64(\thread)
+	ldc1	$f16, THREAD_FPR16_LS64(\thread)
+	ldc1	$f18, THREAD_FPR18_LS64(\thread)
+	ldc1	$f20, THREAD_FPR20_LS64(\thread)
+	ldc1	$f22, THREAD_FPR22_LS64(\thread)
+	ldc1	$f24, THREAD_FPR24_LS64(\thread)
+	ldc1	$f26, THREAD_FPR26_LS64(\thread)
+	ldc1	$f28, THREAD_FPR28_LS64(\thread)
+	ldc1	$f30, THREAD_FPR30_LS64(\thread)
 	ctc1	\tmp, fcr31
 	.endm
 
@@ -141,28 +140,27 @@
 	.set	push
 	.set	mips64r2
 	SET_HARDFLOAT
-	ldc1	$f1,  THREAD_FPR1(\thread)
-	ldc1	$f3,  THREAD_FPR3(\thread)
-	ldc1	$f5,  THREAD_FPR5(\thread)
-	ldc1	$f7,  THREAD_FPR7(\thread)
-	ldc1	$f9,  THREAD_FPR9(\thread)
-	ldc1	$f11, THREAD_FPR11(\thread)
-	ldc1	$f13, THREAD_FPR13(\thread)
-	ldc1	$f15, THREAD_FPR15(\thread)
-	ldc1	$f17, THREAD_FPR17(\thread)
-	ldc1	$f19, THREAD_FPR19(\thread)
-	ldc1	$f21, THREAD_FPR21(\thread)
-	ldc1	$f23, THREAD_FPR23(\thread)
-	ldc1	$f25, THREAD_FPR25(\thread)
-	ldc1	$f27, THREAD_FPR27(\thread)
-	ldc1	$f29, THREAD_FPR29(\thread)
-	ldc1	$f31, THREAD_FPR31(\thread)
+	ldc1	$f1,  THREAD_FPR1_LS64(\thread)
+	ldc1	$f3,  THREAD_FPR3_LS64(\thread)
+	ldc1	$f5,  THREAD_FPR5_LS64(\thread)
+	ldc1	$f7,  THREAD_FPR7_LS64(\thread)
+	ldc1	$f9,  THREAD_FPR9_LS64(\thread)
+	ldc1	$f11, THREAD_FPR11_LS64(\thread)
+	ldc1	$f13, THREAD_FPR13_LS64(\thread)
+	ldc1	$f15, THREAD_FPR15_LS64(\thread)
+	ldc1	$f17, THREAD_FPR17_LS64(\thread)
+	ldc1	$f19, THREAD_FPR19_LS64(\thread)
+	ldc1	$f21, THREAD_FPR21_LS64(\thread)
+	ldc1	$f23, THREAD_FPR23_LS64(\thread)
+	ldc1	$f25, THREAD_FPR25_LS64(\thread)
+	ldc1	$f27, THREAD_FPR27_LS64(\thread)
+	ldc1	$f29, THREAD_FPR29_LS64(\thread)
+	ldc1	$f31, THREAD_FPR31_LS64(\thread)
 	.set	pop
 	.endm
 
 	.macro	fpu_restore_double thread status tmp
-#if defined(CONFIG_64BIT) || defined(CONFIG_CPU_MIPS32_R2) || \
-		defined(CONFIG_CPU_MIPS32_R6)
+#if defined(CONFIG_64BIT) || defined(CONFIG_CPU_MIPS32_R2)
 	sll	\tmp, \status, 5
 	bgez	\tmp, 10f				# 16 register mode?
 
@@ -172,16 +170,16 @@
 	fpu_restore_16even \thread \tmp
 	.endm
 
-#if defined(CONFIG_CPU_MIPSR2) || defined(CONFIG_CPU_MIPSR6)
+#ifdef CONFIG_CPU_MIPSR2
 	.macro	_EXT	rd, rs, p, s
 	ext	\rd, \rs, \p, \s
 	.endm
-#else /* !CONFIG_CPU_MIPSR2 || !CONFIG_CPU_MIPSR6 */
+#else /* !CONFIG_CPU_MIPSR2 */
 	.macro	_EXT	rd, rs, p, s
 	srl	\rd, \rs, \p
 	andi	\rd, \rd, (1 << \s) - 1
 	.endm
-#endif /* !CONFIG_CPU_MIPSR2 || !CONFIG_CPU_MIPSR6 */
+#endif /* !CONFIG_CPU_MIPSR2 */
 
 /*
  * Temporary until all gas have MT ASE support
@@ -211,126 +209,51 @@
 	.endm
 
 #ifdef TOOLCHAIN_SUPPORTS_MSA
-/* preprocessor replaces the fp in ".set fp=64" with $30 otherwise */
-#undef fp
-
-	.macro	_cfcmsa	rd, cs
-	.set	push
-	.set	mips32r2
-	.set	fp=64
-	.set	msa
-	cfcmsa	\rd, $\cs
-	.set	pop
-	.endm
-
-	.macro	_ctcmsa	cd, rs
-	.set	push
-	.set	mips32r2
-	.set	fp=64
-	.set	msa
-	ctcmsa	$\cd, \rs
-	.set	pop
-	.endm
-
-	.macro	ld_b	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	ld.b	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
-	.macro	ld_h	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	ld.h	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
-	.macro	ld_w	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	ld.w	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
 	.macro	ld_d	wd, off, base
 	.set	push
 	.set	mips32r2
-	.set	fp=64
 	.set	msa
 	ld.d	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
-	.macro	st_b	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	st.b	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
-	.macro	st_h	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	st.h	$w\wd, \off(\base)
-	.set	pop
-	.endm
-
-	.macro	st_w	wd, off, base
-	.set	push
-	.set	mips32r2
-	.set	msa
-	st.w	$w\wd, \off(\base)
 	.set	pop
 	.endm
 
 	.macro	st_d	wd, off, base
 	.set	push
 	.set	mips32r2
-	.set	fp=64
 	.set	msa
 	st.d	$w\wd, \off(\base)
 	.set	pop
 	.endm
 
-	.macro	copy_s_w	ws, n
+	.macro	copy_u_w	rd, ws, n
 	.set	push
 	.set	mips32r2
-	.set	fp=64
 	.set	msa
-	copy_s.w $1, $w\ws[\n]
+	copy_u.w \rd, $w\ws[\n]
 	.set	pop
 	.endm
 
-	.macro	copy_s_d	ws, n
+	.macro	copy_u_d	rd, ws, n
 	.set	push
 	.set	mips64r2
-	.set	fp=64
 	.set	msa
-	copy_s.d $1, $w\ws[\n]
+	copy_u.d \rd, $w\ws[\n]
 	.set	pop
 	.endm
 
-	.macro	insert_w	wd, n
+	.macro	insert_w	wd, n, rs
 	.set	push
 	.set	mips32r2
-	.set	fp=64
 	.set	msa
-	insert.w $w\wd[\n], $1
+	insert.w $w\wd[\n], \rs
 	.set	pop
 	.endm
 
-	.macro	insert_d	wd, n
+	.macro	insert_d	wd, n, rs
 	.set	push
 	.set	mips64r2
-	.set	fp=64
 	.set	msa
-	insert.d $w\wd[\n], $1
+	insert.d $w\wd[\n], \rs
 	.set	pop
 	.endm
 #else
@@ -338,31 +261,19 @@
 #ifdef CONFIG_CPU_MICROMIPS
 #define CFC_MSA_INSN		0x587e0056
 #define CTC_MSA_INSN		0x583e0816
-#define LDB_MSA_INSN		0x58000807
-#define LDH_MSA_INSN		0x58000817
-#define LDW_MSA_INSN		0x58000827
 #define LDD_MSA_INSN		0x58000837
-#define STB_MSA_INSN		0x5800080f
-#define STH_MSA_INSN		0x5800081f
-#define STW_MSA_INSN		0x5800082f
 #define STD_MSA_INSN		0x5800083f
-#define COPY_SW_MSA_INSN	0x58b00056
-#define COPY_SD_MSA_INSN	0x58b80056
+#define COPY_UW_MSA_INSN	0x58f00056
+#define COPY_UD_MSA_INSN	0x58f80056
 #define INSERT_W_MSA_INSN	0x59300816
 #define INSERT_D_MSA_INSN	0x59380816
 #else
 #define CFC_MSA_INSN		0x787e0059
 #define CTC_MSA_INSN		0x783e0819
-#define LDB_MSA_INSN		0x78000820
-#define LDH_MSA_INSN		0x78000821
-#define LDW_MSA_INSN		0x78000822
 #define LDD_MSA_INSN		0x78000823
-#define STB_MSA_INSN		0x78000824
-#define STH_MSA_INSN		0x78000825
-#define STW_MSA_INSN		0x78000826
 #define STD_MSA_INSN		0x78000827
-#define COPY_SW_MSA_INSN	0x78b00059
-#define COPY_SD_MSA_INSN	0x78b80059
+#define COPY_UW_MSA_INSN	0x78f00059
+#define COPY_UD_MSA_INSN	0x78f80059
 #define INSERT_W_MSA_INSN	0x79300819
 #define INSERT_D_MSA_INSN	0x79380819
 #endif
@@ -370,7 +281,7 @@
 	/*
 	 * Temporary until all toolchains in use include MSA support.
 	 */
-	.macro	_cfcmsa	rd, cs
+	.macro	cfcmsa	rd, cs
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
@@ -380,7 +291,7 @@
 	.set	pop
 	.endm
 
-	.macro	_ctcmsa	cd, rs
+	.macro	ctcmsa	cd, rs
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
@@ -389,66 +300,12 @@
 	.set	pop
 	.endm
 
-	.macro	ld_b	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	LDB_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
-	.macro	ld_h	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	LDH_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
-	.macro	ld_w	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	LDW_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
 	.macro	ld_d	wd, off, base
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
+	addu	$1, \base, \off
 	.word	LDD_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
-	.macro	st_b	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	STB_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
-	.macro	st_h	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	STH_MSA_INSN | (\wd << 6)
-	.set	pop
-	.endm
-
-	.macro	st_w	wd, off, base
-	.set	push
-	.set	noat
-	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
-	.word	STW_MSA_INSN | (\wd << 6)
 	.set	pop
 	.endm
 
@@ -456,41 +313,49 @@
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
-	PTR_ADDU $1, \base, \off
+	addu	$1, \base, \off
 	.word	STD_MSA_INSN | (\wd << 6)
 	.set	pop
 	.endm
 
-	.macro	copy_s_w	ws, n
+	.macro	copy_u_w	rd, ws, n
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
 	.insn
-	.word	COPY_SW_MSA_INSN | (\n << 16) | (\ws << 11)
+	.word	COPY_UW_MSA_INSN | (\n << 16) | (\ws << 11)
+	/* move triggers an assembler bug... */
+	or	\rd, $1, zero
 	.set	pop
 	.endm
 
-	.macro	copy_s_d	ws, n
+	.macro	copy_u_d	rd, ws, n
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
 	.insn
-	.word	COPY_SD_MSA_INSN | (\n << 16) | (\ws << 11)
+	.word	COPY_UD_MSA_INSN | (\n << 16) | (\ws << 11)
+	/* move triggers an assembler bug... */
+	or	\rd, $1, zero
 	.set	pop
 	.endm
 
-	.macro	insert_w	wd, n
+	.macro	insert_w	wd, n, rs
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
+	/* move triggers an assembler bug... */
+	or	$1, \rs, zero
 	.word	INSERT_W_MSA_INSN | (\n << 16) | (\wd << 6)
 	.set	pop
 	.endm
 
-	.macro	insert_d	wd, n
+	.macro	insert_d	wd, n, rs
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
+	/* move triggers an assembler bug... */
+	or	$1, \rs, zero
 	.word	INSERT_D_MSA_INSN | (\n << 16) | (\wd << 6)
 	.set	pop
 	.endm
@@ -532,7 +397,7 @@
 	.set	push
 	.set	noat
 	SET_HARDFLOAT
-	_cfcmsa	$1, MSA_CSR
+	cfcmsa	$1, MSA_CSR
 	sw	$1, THREAD_MSA_CSR(\thread)
 	.set	pop
 	.endm
@@ -542,7 +407,7 @@
 	.set	noat
 	SET_HARDFLOAT
 	lw	$1, THREAD_MSA_CSR(\thread)
-	_ctcmsa	MSA_CSR, $1
+	ctcmsa	MSA_CSR, $1
 	.set	pop
 	ld_d	0, THREAD_FPR0, \thread
 	ld_d	1, THREAD_FPR1, \thread
@@ -585,6 +450,9 @@
 	insert_w \wd, 2
 	insert_w \wd, 3
 #endif
+	.if	31-\wd
+	msa_init_upper	(\wd+1)
+	.endif
 	.endm
 
 	.macro	msa_init_all_upper
@@ -593,37 +461,6 @@
 	SET_HARDFLOAT
 	not	$1, zero
 	msa_init_upper	0
-	msa_init_upper	1
-	msa_init_upper	2
-	msa_init_upper	3
-	msa_init_upper	4
-	msa_init_upper	5
-	msa_init_upper	6
-	msa_init_upper	7
-	msa_init_upper	8
-	msa_init_upper	9
-	msa_init_upper	10
-	msa_init_upper	11
-	msa_init_upper	12
-	msa_init_upper	13
-	msa_init_upper	14
-	msa_init_upper	15
-	msa_init_upper	16
-	msa_init_upper	17
-	msa_init_upper	18
-	msa_init_upper	19
-	msa_init_upper	20
-	msa_init_upper	21
-	msa_init_upper	22
-	msa_init_upper	23
-	msa_init_upper	24
-	msa_init_upper	25
-	msa_init_upper	26
-	msa_init_upper	27
-	msa_init_upper	28
-	msa_init_upper	29
-	msa_init_upper	30
-	msa_init_upper	31
 	.set	pop
 	.endm
 

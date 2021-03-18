@@ -21,7 +21,6 @@
 #include <stdarg.h>
 
 #include <linux/compat.h>
-#include <linux/efi.h>
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -44,7 +43,6 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/personality.h>
 #include <linux/notifier.h>
-#include <trace/events/power.h>
 
 #include <asm/alternative.h>
 #include <asm/compat.h>
@@ -59,6 +57,14 @@
 unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
+
+void soft_restart(unsigned long addr)
+{
+	setup_mm_for_reboot();
+	cpu_soft_restart(virt_to_phys(cpu_reset), addr);
+	/* Should never get here */
+	BUG();
+}
 
 /*
  * Function pointers to optional machine specific functions
@@ -77,10 +83,8 @@ void arch_cpu_idle(void)
 	 * This should do all the clock switching and wait for interrupt
 	 * tricks
 	 */
-	trace_cpu_idle_rcuidle(1, smp_processor_id());
 	cpu_do_idle();
 	local_irq_enable();
-	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 }
 
 void arch_cpu_idle_enter(void)
@@ -142,7 +146,9 @@ void machine_power_off(void)
 
 /*
  * Restart requires that the secondary CPUs stop performing any activity
- * while the primary CPU resets the system. Systems with multiple CPUs must
+ * while the primary CPU resets the system. Systems with a single CPU can
+ * use soft_restart() as their machine descriptor's .restart hook, since that
+ * will cause the only available CPU to reset. Systems with multiple CPUs must
  * provide a HW restart implementation, to ensure that all CPUs reset at once.
  * This is required so that any code running after reset on the primary CPU
  * doesn't have to co-ordinate with other CPUs to ensure they aren't still
@@ -154,13 +160,6 @@ void machine_restart(char *cmd)
 	/* Disable interrupts first */
 	local_irq_disable();
 	smp_send_stop();
-
-	/*
-	 * UpdateCapsule() depends on the system being reset via
-	 * ResetSystem().
-	 */
-	if (efi_enabled(EFI_RUNTIME_SERVICES))
-		efi_reboot(reboot_mode, NULL);
 
 	/* Now call the architecture specific reboot code. */
 	if (arm_pm_restart)
@@ -188,7 +187,7 @@ static void show_data(unsigned long addr, int nbytes, const char *name)
 	 * don't attempt to dump non-kernel addresses or
 	 * values that are probably just small negative numbers
 	 */
-	if (addr < KIMAGE_VADDR || addr > -256UL)
+	if (addr < PAGE_OFFSET || addr > -256UL)
 		return;
 
 	printk("\n%s: %#lx:\n", name, addr);
@@ -213,11 +212,11 @@ static void show_data(unsigned long addr, int nbytes, const char *name)
 			if (probe_kernel_address(p, data)) {
 				printk(" ********");
 			} else {
-				pr_cont(" %08x", data);
+				printk(" %08x", data);
 			}
 			++p;
 		}
-		pr_cont("\n");
+		printk("\n");
 	}
 }
 
@@ -260,7 +259,7 @@ void __show_regs(struct pt_regs *regs)
 			printk("\n");
 	}
 	if (!user_mode(regs))
-		show_extra_register_data(regs, 64);
+		show_extra_register_data(regs, 256);
 	printk("\n");
 }
 
@@ -319,35 +318,44 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 		unsigned long stk_sz, struct task_struct *p)
 {
 	struct pt_regs *childregs = task_pt_regs(p);
+	unsigned long tls = p->thread.tp_value;
 
 	memset(&p->thread.cpu_context, 0, sizeof(struct cpu_context));
+
+	/*
+	 * In case p was allocated the same task_struct pointer as some
+	 * other recently-exited task, make sure p is disassociated from
+	 * any cpu that may have run that now-exited task recently.
+	 * Otherwise we could erroneously skip reloading the FPSIMD
+	 * registers for p.
+	 */
+	fpsimd_flush_task_state(p);
 
 	if (likely(!(p->flags & PF_KTHREAD))) {
 		*childregs = *current_pt_regs();
 		childregs->regs[0] = 0;
-
-		/*
-		 * Read the current TLS pointer from tpidr_el0 as it may be
-		 * out-of-sync with the saved value.
-		 */
-		asm("mrs %0, tpidr_el0" : "=r" (*task_user_tls(p)));
-
-		if (stack_start) {
-			if (is_compat_thread(task_thread_info(p)))
+		if (is_compat_thread(task_thread_info(p))) {
+			if (stack_start)
 				childregs->compat_sp = stack_start;
-			/* 16-byte aligned stack mandatory on AArch64 */
-			else if (stack_start & 15)
-				return -EINVAL;
-			else
+		} else {
+			/*
+			 * Read the current TLS pointer from tpidr_el0 as it may be
+			 * out-of-sync with the saved value.
+			 */
+			asm("mrs %0, tpidr_el0" : "=r" (tls));
+			if (stack_start) {
+				/* 16-byte aligned stack mandatory on AArch64 */
+				if (stack_start & 15)
+					return -EINVAL;
 				childregs->sp = stack_start;
+			}
 		}
-
 		/*
 		 * If a TLS pointer was passed to clone (4th argument), use it
 		 * for the new thread.
 		 */
 		if (clone_flags & CLONE_SETTLS)
-			p->thread.tp_value = childregs->regs[3];
+			tls = childregs->regs[3];
 	} else {
 		memset(childregs, 0, sizeof(struct pt_regs));
 		childregs->pstate = PSR_MODE_EL1h;
@@ -359,6 +367,7 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	}
 	p->thread.cpu_context.pc = (unsigned long)ret_from_fork;
 	p->thread.cpu_context.sp = (unsigned long)childregs;
+	p->thread.tp_value = tls;
 
 	ptrace_hw_copy_thread(p);
 
@@ -367,19 +376,18 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 
 static void tls_thread_switch(struct task_struct *next)
 {
-	unsigned long tpidr, tpidrro;
+	if (!is_compat_task()) {
+		unsigned long tpidr;
+		asm("mrs %0, tpidr_el0" : "=r" (tpidr));
+		current->thread.tp_value = tpidr;
+	}
 
-	asm("mrs %0, tpidr_el0" : "=r" (tpidr));
-	*task_user_tls(current) = tpidr;
+	if (is_compat_thread(task_thread_info(next)))
+		write_sysreg(next->thread.tp_value, tpidrro_el0);
+	else if (!arm64_kernel_unmapped_at_el0())
+		write_sysreg(0, tpidrro_el0);
 
-	tpidr = *task_user_tls(next);
-	tpidrro = is_compat_thread(task_thread_info(next)) ?
-		  next->thread.tp_value : 0;
-
-	asm(
-	"	msr	tpidr_el0, %0\n"
-	"	msr	tpidrro_el0, %1"
-	: : "r" (tpidr), "r" (tpidrro));
+	write_sysreg(next->thread.tp_value, tpidr_el0);
 }
 
 /* Restore the UAO state depending on next's addr_limit */
@@ -430,14 +438,11 @@ unsigned long get_wchan(struct task_struct *p)
 	frame.fp = thread_saved_fp(p);
 	frame.sp = thread_saved_sp(p);
 	frame.pc = thread_saved_pc(p);
-#ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	frame.graph = p->curr_ret_stack;
-#endif
 	stack_page = (unsigned long)task_stack_page(p);
 	do {
 		if (frame.sp < stack_page ||
 		    frame.sp >= stack_page + THREAD_SIZE ||
-		    unwind_frame(p, &frame))
+		    unwind_frame(&frame))
 			return 0;
 		if (!in_sched_functions(frame.pc))
 			return frame.pc;

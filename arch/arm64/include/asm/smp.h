@@ -35,8 +35,7 @@ extern void show_ipi_list(struct seq_file *p, int prec);
 extern void handle_IPI(int ipinr, struct pt_regs *regs);
 
 /*
- * Discover the set of possible CPUs and determine their
- * SMP operations.
+ * Setup the set of possible CPUs (via set_cpu_possible)
  */
 extern void smp_init_cpus(void);
 
@@ -63,15 +62,7 @@ extern void secondary_entry(void);
 
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
-
-#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
 extern void arch_send_wakeup_ipi_mask(const struct cpumask *mask);
-#else
-static inline void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
-{
-	BUILD_BUG();
-}
-#endif
 
 extern int __cpu_disable(void);
 

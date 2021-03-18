@@ -23,12 +23,8 @@
 };
 
 &sound {
-	simple-audio-card,name = "Odroid-X2";
-	simple-audio-card,widgets =
-		"Headphone", "Headphone Jack",
-		"Microphone", "Mic Jack",
-		"Microphone", "DMIC";
-	simple-audio-card,routing =
+	samsung,model = "Odroid-X2";
+	samsung,audio-routing =
 		"Headphone Jack", "HPL",
 		"Headphone Jack", "HPR",
 		"IN1", "Mic Jack",

@@ -243,7 +243,6 @@ struct wcn36xx_dxe_ctl {
 };
 
 struct wcn36xx_dxe_ch {
-	spinlock_t			lock;	/* protects head/tail ptrs */
 	enum wcn36xx_dxe_ch_type	ch_type;
 	void				*cpu_addr;
 	dma_addr_t			dma_addr;

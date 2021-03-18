@@ -184,6 +184,7 @@ static struct platform_driver lt3593_led_driver = {
 	.remove		= lt3593_led_remove,
 	.driver		= {
 		.name	= "leds-lt3593",
+		.owner	= THIS_MODULE,
 	},
 };
 

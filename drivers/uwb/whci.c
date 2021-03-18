@@ -133,7 +133,8 @@ static void whci_del_cap(struct whci_card *card, int n)
 {
 	struct umc_dev *umc = card->devs[n];
 
-	umc_device_unregister(umc);
+	if (umc != NULL)
+		umc_device_unregister(umc);
 }
 
 static int whci_n_caps(struct pci_dev *pci)

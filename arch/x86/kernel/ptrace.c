@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/ptrace.h>
+#include <linux/regset.h>
 #include <linux/tracehook.h>
 #include <linux/user.h>
 #include <linux/elf.h>
@@ -27,9 +28,8 @@
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
-#include <asm/fpu/internal.h>
-#include <asm/fpu/signal.h>
-#include <asm/fpu/regset.h>
+#include <asm/i387.h>
+#include <asm/fpu-internal.h>
 #include <asm/debugreg.h>
 #include <asm/ldt.h>
 #include <asm/desc.h>
@@ -37,9 +37,11 @@
 #include <asm/proto.h>
 #include <asm/hw_breakpoint.h>
 #include <asm/traps.h>
-#include <asm/syscall.h>
 
 #include "tls.h"
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/syscalls.h>
 
 enum x86_regset {
 	REGSET_GENERAL,
@@ -362,12 +364,18 @@ static int set_segment_reg(struct task_struct *task,
 	case offsetof(struct user_regs_struct,cs):
 		if (unlikely(value == 0))
 			return -EIO;
-		task_pt_regs(task)->cs = value;
+#ifdef CONFIG_IA32_EMULATION
+		if (test_tsk_thread_flag(task, TIF_IA32))
+			task_pt_regs(task)->cs = value;
+#endif
 		break;
 	case offsetof(struct user_regs_struct,ss):
 		if (unlikely(value == 0))
 			return -EIO;
-		task_pt_regs(task)->ss = value;
+#ifdef CONFIG_IA32_EMULATION
+		if (test_tsk_thread_flag(task, TIF_IA32))
+			task_pt_regs(task)->ss = value;
+#endif
 		break;
 	}
 
@@ -1121,73 +1129,6 @@ static int genregs32_set(struct task_struct *target,
 	return ret;
 }
 
-static long ia32_arch_ptrace(struct task_struct *child, compat_long_t request,
-			     compat_ulong_t caddr, compat_ulong_t cdata)
-{
-	unsigned long addr = caddr;
-	unsigned long data = cdata;
-	void __user *datap = compat_ptr(data);
-	int ret;
-	__u32 val;
-
-	switch (request) {
-	case PTRACE_PEEKUSR:
-		ret = getreg32(child, addr, &val);
-		if (ret == 0)
-			ret = put_user(val, (__u32 __user *)datap);
-		break;
-
-	case PTRACE_POKEUSR:
-		ret = putreg32(child, addr, data);
-		break;
-
-	case PTRACE_GETREGS:	/* Get all gp regs from the child. */
-		return copy_regset_to_user(child, &user_x86_32_view,
-					   REGSET_GENERAL,
-					   0, sizeof(struct user_regs_struct32),
-					   datap);
-
-	case PTRACE_SETREGS:	/* Set all gp regs in the child. */
-		return copy_regset_from_user(child, &user_x86_32_view,
-					     REGSET_GENERAL, 0,
-					     sizeof(struct user_regs_struct32),
-					     datap);
-
-	case PTRACE_GETFPREGS:	/* Get the child FPU state. */
-		return copy_regset_to_user(child, &user_x86_32_view,
-					   REGSET_FP, 0,
-					   sizeof(struct user_i387_ia32_struct),
-					   datap);
-
-	case PTRACE_SETFPREGS:	/* Set the child FPU state. */
-		return copy_regset_from_user(
-			child, &user_x86_32_view, REGSET_FP,
-			0, sizeof(struct user_i387_ia32_struct), datap);
-
-	case PTRACE_GETFPXREGS:	/* Get the child extended FPU state. */
-		return copy_regset_to_user(child, &user_x86_32_view,
-					   REGSET_XFP, 0,
-					   sizeof(struct user32_fxsr_struct),
-					   datap);
-
-	case PTRACE_SETFPXREGS:	/* Set the child extended FPU state. */
-		return copy_regset_from_user(child, &user_x86_32_view,
-					     REGSET_XFP, 0,
-					     sizeof(struct user32_fxsr_struct),
-					     datap);
-
-	case PTRACE_GET_THREAD_AREA:
-	case PTRACE_SET_THREAD_AREA:
-		return arch_ptrace(child, request, addr, data);
-
-	default:
-		return compat_ptrace_request(child, request, addr, data);
-	}
-
-	return ret;
-}
-#endif /* CONFIG_IA32_EMULATION */
-
 #ifdef CONFIG_X86_X32_ABI
 static long x32_arch_ptrace(struct task_struct *child,
 			    compat_long_t request, compat_ulong_t caddr,
@@ -1276,21 +1217,78 @@ static long x32_arch_ptrace(struct task_struct *child,
 }
 #endif
 
-#ifdef CONFIG_COMPAT
 long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 			compat_ulong_t caddr, compat_ulong_t cdata)
 {
+	unsigned long addr = caddr;
+	unsigned long data = cdata;
+	void __user *datap = compat_ptr(data);
+	int ret;
+	__u32 val;
+
 #ifdef CONFIG_X86_X32_ABI
 	if (!is_ia32_task())
 		return x32_arch_ptrace(child, request, caddr, cdata);
 #endif
-#ifdef CONFIG_IA32_EMULATION
-	return ia32_arch_ptrace(child, request, caddr, cdata);
-#else
-	return 0;
-#endif
+
+	switch (request) {
+	case PTRACE_PEEKUSR:
+		ret = getreg32(child, addr, &val);
+		if (ret == 0)
+			ret = put_user(val, (__u32 __user *)datap);
+		break;
+
+	case PTRACE_POKEUSR:
+		ret = putreg32(child, addr, data);
+		break;
+
+	case PTRACE_GETREGS:	/* Get all gp regs from the child. */
+		return copy_regset_to_user(child, &user_x86_32_view,
+					   REGSET_GENERAL,
+					   0, sizeof(struct user_regs_struct32),
+					   datap);
+
+	case PTRACE_SETREGS:	/* Set all gp regs in the child. */
+		return copy_regset_from_user(child, &user_x86_32_view,
+					     REGSET_GENERAL, 0,
+					     sizeof(struct user_regs_struct32),
+					     datap);
+
+	case PTRACE_GETFPREGS:	/* Get the child FPU state. */
+		return copy_regset_to_user(child, &user_x86_32_view,
+					   REGSET_FP, 0,
+					   sizeof(struct user_i387_ia32_struct),
+					   datap);
+
+	case PTRACE_SETFPREGS:	/* Set the child FPU state. */
+		return copy_regset_from_user(
+			child, &user_x86_32_view, REGSET_FP,
+			0, sizeof(struct user_i387_ia32_struct), datap);
+
+	case PTRACE_GETFPXREGS:	/* Get the child extended FPU state. */
+		return copy_regset_to_user(child, &user_x86_32_view,
+					   REGSET_XFP, 0,
+					   sizeof(struct user32_fxsr_struct),
+					   datap);
+
+	case PTRACE_SETFPXREGS:	/* Set the child extended FPU state. */
+		return copy_regset_from_user(child, &user_x86_32_view,
+					     REGSET_XFP, 0,
+					     sizeof(struct user32_fxsr_struct),
+					     datap);
+
+	case PTRACE_GET_THREAD_AREA:
+	case PTRACE_SET_THREAD_AREA:
+		return arch_ptrace(child, request, addr, data);
+
+	default:
+		return compat_ptrace_request(child, request, addr, data);
+	}
+
+	return ret;
 }
-#endif	/* CONFIG_COMPAT */
+
+#endif	/* CONFIG_IA32_EMULATION */
 
 #ifdef CONFIG_X86_64
 
@@ -1305,7 +1303,7 @@ static struct user_regset x86_64_regsets[] __read_mostly = {
 		.core_note_type = NT_PRFPREG,
 		.n = sizeof(struct user_i387_struct) / sizeof(long),
 		.size = sizeof(long), .align = sizeof(long),
-		.active = regset_xregset_fpregs_active, .get = xfpregs_get, .set = xfpregs_set
+		.active = xfpregs_active, .get = xfpregs_get, .set = xfpregs_set
 	},
 	[REGSET_XSTATE] = {
 		.core_note_type = NT_X86_XSTATE,
@@ -1346,13 +1344,13 @@ static struct user_regset x86_32_regsets[] __read_mostly = {
 		.core_note_type = NT_PRFPREG,
 		.n = sizeof(struct user_i387_ia32_struct) / sizeof(u32),
 		.size = sizeof(u32), .align = sizeof(u32),
-		.active = regset_fpregs_active, .get = fpregs_get, .set = fpregs_set
+		.active = fpregs_active, .get = fpregs_get, .set = fpregs_set
 	},
 	[REGSET_XFP] = {
 		.core_note_type = NT_PRXFPREG,
 		.n = sizeof(struct user32_fxsr_struct) / sizeof(u32),
 		.size = sizeof(u32), .align = sizeof(u32),
-		.active = regset_xregset_fpregs_active, .get = xfpregs_get, .set = xfpregs_set
+		.active = xfpregs_active, .get = xfpregs_get, .set = xfpregs_set
 	},
 	[REGSET_XSTATE] = {
 		.core_note_type = NT_X86_XSTATE,
@@ -1423,7 +1421,7 @@ static void fill_sigtrap_info(struct task_struct *tsk,
 	memset(info, 0, sizeof(*info));
 	info->si_signo = SIGTRAP;
 	info->si_code = si_code;
-	info->si_addr = user_mode(regs) ? (void __user *)regs->ip : NULL;
+	info->si_addr = user_mode_vm(regs) ? (void __user *)regs->ip : NULL;
 }
 
 void user_single_step_siginfo(struct task_struct *tsk,
@@ -1441,4 +1439,136 @@ void send_sigtrap(struct task_struct *tsk, struct pt_regs *regs,
 	fill_sigtrap_info(tsk, regs, error_code, si_code, &info);
 	/* Send us the fake SIGTRAP */
 	force_sig_info(SIGTRAP, &info, tsk);
+}
+
+static void do_audit_syscall_entry(struct pt_regs *regs, u32 arch)
+{
+#ifdef CONFIG_X86_64
+	if (arch == AUDIT_ARCH_X86_64) {
+		audit_syscall_entry(regs->orig_ax, regs->di,
+				    regs->si, regs->dx, regs->r10);
+	} else
+#endif
+	{
+		audit_syscall_entry(regs->orig_ax, regs->bx,
+				    regs->cx, regs->dx, regs->si);
+	}
+}
+
+/*
+ * Returns the syscall nr to run (which should match regs->orig_ax) or -1
+ * to skip the syscall.
+ */
+long syscall_trace_enter(struct pt_regs *regs)
+{
+	u32 arch = is_ia32_task() ? AUDIT_ARCH_I386 : AUDIT_ARCH_X86_64;
+
+	unsigned long ret = 0;
+	bool emulated = false;
+	u32 work;
+
+	BUG_ON(regs != task_pt_regs(current));
+
+	work = ACCESS_ONCE(current_thread_info()->flags) &
+		_TIF_WORK_SYSCALL_ENTRY;
+
+	/*
+	 * If TIF_NOHZ is set, we are required to call user_exit() before
+	 * doing anything that could touch RCU.
+	 */
+	if (work & _TIF_NOHZ) {
+		user_exit();
+		work &= ~_TIF_NOHZ;
+	}
+
+	/*
+	 * If we stepped into a sysenter/syscall insn, it trapped in
+	 * kernel mode; do_debug() cleared TF and set TIF_SINGLESTEP.
+	 * If user-mode had set TF itself, then it's still clear from
+	 * do_debug() and we need to set it again to restore the user
+	 * state.  If we entered on the slow path, TF was already set.
+	 */
+	if (work & _TIF_SINGLESTEP)
+		regs->flags |= X86_EFLAGS_TF;
+
+	if (unlikely(work & _TIF_SYSCALL_EMU))
+		emulated = true;
+
+	if ((emulated || (work & _TIF_SYSCALL_TRACE)) &&
+	    tracehook_report_syscall_entry(regs))
+		return -1L;
+
+	if (emulated)
+		return -1L;
+
+#ifdef CONFIG_SECCOMP
+	/*
+	 * Do seccomp after ptrace, to catch any tracer changes.
+	 */
+	if (work & _TIF_SECCOMP) {
+		struct seccomp_data sd;
+
+		sd.arch = arch;
+		sd.nr = regs->orig_ax;
+		sd.instruction_pointer = regs->ip;
+#ifdef CONFIG_X86_64
+		if (arch == AUDIT_ARCH_X86_64) {
+			sd.args[0] = regs->di;
+			sd.args[1] = regs->si;
+			sd.args[2] = regs->dx;
+			sd.args[3] = regs->r10;
+			sd.args[4] = regs->r8;
+			sd.args[5] = regs->r9;
+		} else
+#endif
+		{
+			sd.args[0] = regs->bx;
+			sd.args[1] = regs->cx;
+			sd.args[2] = regs->dx;
+			sd.args[3] = regs->si;
+			sd.args[4] = regs->di;
+			sd.args[5] = regs->bp;
+		}
+		ret = __secure_computing(&sd);
+		if (ret == -1)
+			return ret;
+	}
+#endif
+
+	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
+		trace_sys_enter(regs, regs->orig_ax);
+
+	do_audit_syscall_entry(regs, arch);
+
+	return ret ?: regs->orig_ax;
+}
+
+void syscall_trace_leave(struct pt_regs *regs)
+{
+	bool step;
+
+	/*
+	 * We may come here right after calling schedule_user()
+	 * or do_notify_resume(), in which case we can be in RCU
+	 * user mode.
+	 */
+	user_exit();
+
+	audit_syscall_exit(regs);
+
+	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
+		trace_sys_exit(regs, regs->ax);
+
+	/*
+	 * If TIF_SYSCALL_EMU is set, we only get here because of
+	 * TIF_SINGLESTEP (i.e. this is PTRACE_SYSEMU_SINGLESTEP).
+	 * We already reported this syscall instruction in
+	 * syscall_trace_enter().
+	 */
+	step = unlikely(test_thread_flag(TIF_SINGLESTEP)) &&
+			!test_thread_flag(TIF_SYSCALL_EMU);
+	if (step || test_thread_flag(TIF_SYSCALL_TRACE))
+		tracehook_report_syscall_exit(regs, step);
+
+	user_enter();
 }

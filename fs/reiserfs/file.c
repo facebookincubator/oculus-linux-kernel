@@ -243,6 +243,8 @@ drop_write_lock:
 }
 
 const struct file_operations reiserfs_file_operations = {
+	.read = new_sync_read,
+	.write = new_sync_write,
 	.unlocked_ioctl = reiserfs_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = reiserfs_compat_ioctl,

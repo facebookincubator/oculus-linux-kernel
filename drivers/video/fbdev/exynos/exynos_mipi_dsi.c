@@ -562,6 +562,7 @@ static struct platform_driver exynos_mipi_dsi_driver = {
 	.remove = exynos_mipi_dsi_remove,
 	.driver = {
 		   .name = "exynos-mipi-dsim",
+		   .owner = THIS_MODULE,
 		   .pm = &exynos_mipi_dsi_pm_ops,
 	},
 };
@@ -569,5 +570,5 @@ static struct platform_driver exynos_mipi_dsi_driver = {
 module_platform_driver(exynos_mipi_dsi_driver);
 
 MODULE_AUTHOR("InKi Dae <inki.dae@samsung.com>");
-MODULE_DESCRIPTION("Samsung SoC MIPI-DSI driver");
+MODULE_DESCRIPTION("Samusung SoC MIPI-DSI driver");
 MODULE_LICENSE("GPL");

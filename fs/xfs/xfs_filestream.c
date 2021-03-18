@@ -20,13 +20,16 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
+#include "xfs_ag.h"
 #include "xfs_sb.h"
 #include "xfs_mount.h"
+#include "xfs_inum.h"
 #include "xfs_inode.h"
 #include "xfs_bmap.h"
 #include "xfs_bmap_util.h"
 #include "xfs_alloc.h"
 #include "xfs_mru_cache.h"
+#include "xfs_dinode.h"
 #include "xfs_filestream.h"
 #include "xfs_trace.h"
 
@@ -196,8 +199,7 @@ xfs_filestream_pick_ag(
 			goto next_ag;
 		}
 
-		longest = xfs_alloc_longest_free_extent(mp, pag,
-					xfs_alloc_min_freelist(mp, pag));
+		longest = xfs_alloc_longest_free_extent(mp, pag);
 		if (((minlen && longest >= minlen) ||
 		     (!minlen && pag->pagf_freeblks >= minfree)) &&
 		    (!pag->pagf_metadata || !(flags & XFS_PICK_USERDATA) ||
@@ -295,7 +297,7 @@ xfs_filestream_get_parent(
 	if (!parent)
 		goto out_dput;
 
-	dir = igrab(d_inode(parent));
+	dir = igrab(parent->d_inode);
 	dput(parent);
 
 out_dput:
@@ -323,7 +325,7 @@ xfs_filestream_lookup_ag(
 
 	pip = xfs_filestream_get_parent(ip);
 	if (!pip)
-		return NULLAGNUMBER;
+		goto out;
 
 	mru = xfs_mru_cache_lookup(mp->m_filestream, pip->i_ino);
 	if (mru) {

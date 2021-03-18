@@ -26,7 +26,6 @@ ENTRY(v4t_late_abort)
 #endif
 	bne	.data_thumb_abort
 	ldr	r8, [r4]			@ read arm instruction
-	uaccess_disable ip			@ disable userspace access
 	tst	r8, #1 << 20			@ L = 1 -> write?
 	orreq	r1, r1, #1 << 11		@ yes.
 	and	r7, r8, #15 << 24
@@ -156,7 +155,6 @@ ENTRY(v4t_late_abort)
 
 .data_thumb_abort:
 	ldrh	r8, [r4]			@ read instruction
-	uaccess_disable ip			@ disable userspace access
 	tst	r8, #1 << 11			@ L = 1 -> write?
 	orreq	r1, r1, #1 << 8			@ yes
 	and	r7, r8, #15 << 12

@@ -129,13 +129,12 @@ static const signed short ff3_joystick_ac[] = {
 
 int lg3ff_init(struct hid_device *hid)
 {
-	struct hid_input *hidinput;
-	struct input_dev *dev;
-	const signed short *ff_bits = ff3_joystick_ac;
-	int error;
-	int i;
+struct hid_input *hidinput;
+struct input_dev *dev;
+const signed short *ff_bits = ff3_joystick_ac;
+int error, i;
 
-	if (list_empty(&hid->inputs)) {
+if (list_empty(&hid->inputs)) {
 		hid_err(hid, "no inputs found\n");
 		return -ENODEV;
 	}

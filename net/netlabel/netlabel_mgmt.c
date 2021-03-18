@@ -93,20 +93,23 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 				  struct netlbl_audit *audit_info)
 {
 	int ret_val = -EINVAL;
+	struct netlbl_dom_map *entry = NULL;
 	struct netlbl_domaddr_map *addrmap = NULL;
 	struct cipso_v4_doi *cipsov4 = NULL;
 	u32 tmp_val;
-	struct netlbl_dom_map *entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 
-	if (!entry)
-		return -ENOMEM;
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (entry == NULL) {
+		ret_val = -ENOMEM;
+		goto add_failure;
+	}
 	entry->def.type = nla_get_u32(info->attrs[NLBL_MGMT_A_PROTOCOL]);
 	if (info->attrs[NLBL_MGMT_A_DOMAIN]) {
 		size_t tmp_size = nla_len(info->attrs[NLBL_MGMT_A_DOMAIN]);
 		entry->domain = kmalloc(tmp_size, GFP_KERNEL);
 		if (entry->domain == NULL) {
 			ret_val = -ENOMEM;
-			goto add_free_entry;
+			goto add_failure;
 		}
 		nla_strlcpy(entry->domain,
 			    info->attrs[NLBL_MGMT_A_DOMAIN], tmp_size);
@@ -122,16 +125,16 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		break;
 	case NETLBL_NLTYPE_CIPSOV4:
 		if (!info->attrs[NLBL_MGMT_A_CV4DOI])
-			goto add_free_domain;
+			goto add_failure;
 
 		tmp_val = nla_get_u32(info->attrs[NLBL_MGMT_A_CV4DOI]);
 		cipsov4 = cipso_v4_doi_getdef(tmp_val);
 		if (cipsov4 == NULL)
-			goto add_free_domain;
+			goto add_failure;
 		entry->def.cipso = cipsov4;
 		break;
 	default:
-		goto add_free_domain;
+		goto add_failure;
 	}
 
 	if (info->attrs[NLBL_MGMT_A_IPV4ADDR]) {
@@ -142,7 +145,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		addrmap = kzalloc(sizeof(*addrmap), GFP_KERNEL);
 		if (addrmap == NULL) {
 			ret_val = -ENOMEM;
-			goto add_doi_put_def;
+			goto add_failure;
 		}
 		INIT_LIST_HEAD(&addrmap->list4);
 		INIT_LIST_HEAD(&addrmap->list6);
@@ -150,12 +153,12 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		if (nla_len(info->attrs[NLBL_MGMT_A_IPV4ADDR]) !=
 		    sizeof(struct in_addr)) {
 			ret_val = -EINVAL;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		if (nla_len(info->attrs[NLBL_MGMT_A_IPV4MASK]) !=
 		    sizeof(struct in_addr)) {
 			ret_val = -EINVAL;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		addr = nla_data(info->attrs[NLBL_MGMT_A_IPV4ADDR]);
 		mask = nla_data(info->attrs[NLBL_MGMT_A_IPV4MASK]);
@@ -163,7 +166,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		map = kzalloc(sizeof(*map), GFP_KERNEL);
 		if (map == NULL) {
 			ret_val = -ENOMEM;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		map->list.addr = addr->s_addr & mask->s_addr;
 		map->list.mask = mask->s_addr;
@@ -175,7 +178,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		ret_val = netlbl_af4list_add(&map->list, &addrmap->list4);
 		if (ret_val != 0) {
 			kfree(map);
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 
 		entry->def.type = NETLBL_NLTYPE_ADDRSELECT;
@@ -189,7 +192,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		addrmap = kzalloc(sizeof(*addrmap), GFP_KERNEL);
 		if (addrmap == NULL) {
 			ret_val = -ENOMEM;
-			goto add_doi_put_def;
+			goto add_failure;
 		}
 		INIT_LIST_HEAD(&addrmap->list4);
 		INIT_LIST_HEAD(&addrmap->list6);
@@ -197,12 +200,12 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		if (nla_len(info->attrs[NLBL_MGMT_A_IPV6ADDR]) !=
 		    sizeof(struct in6_addr)) {
 			ret_val = -EINVAL;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		if (nla_len(info->attrs[NLBL_MGMT_A_IPV6MASK]) !=
 		    sizeof(struct in6_addr)) {
 			ret_val = -EINVAL;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		addr = nla_data(info->attrs[NLBL_MGMT_A_IPV6ADDR]);
 		mask = nla_data(info->attrs[NLBL_MGMT_A_IPV6MASK]);
@@ -210,7 +213,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		map = kzalloc(sizeof(*map), GFP_KERNEL);
 		if (map == NULL) {
 			ret_val = -ENOMEM;
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 		map->list.addr = *addr;
 		map->list.addr.s6_addr32[0] &= mask->s6_addr32[0];
@@ -224,7 +227,7 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 		ret_val = netlbl_af6list_add(&map->list, &addrmap->list6);
 		if (ret_val != 0) {
 			kfree(map);
-			goto add_free_addrmap;
+			goto add_failure;
 		}
 
 		entry->def.type = NETLBL_NLTYPE_ADDRSELECT;
@@ -234,17 +237,16 @@ static int netlbl_mgmt_add_common(struct genl_info *info,
 
 	ret_val = netlbl_domhsh_add(entry, audit_info);
 	if (ret_val != 0)
-		goto add_free_addrmap;
+		goto add_failure;
 
 	return 0;
 
-add_free_addrmap:
+add_failure:
+	if (cipsov4)
+		cipso_v4_doi_putdef(cipsov4);
+	if (entry)
+		kfree(entry->domain);
 	kfree(addrmap);
-add_doi_put_def:
-	cipso_v4_doi_putdef(cipsov4);
-add_free_domain:
-	kfree(entry->domain);
-add_free_entry:
 	kfree(entry);
 	return ret_val;
 }
@@ -293,13 +295,15 @@ static int netlbl_mgmt_listentry(struct sk_buff *skb,
 				return -ENOMEM;
 
 			addr_struct.s_addr = iter4->addr;
-			ret_val = nla_put_in_addr(skb, NLBL_MGMT_A_IPV4ADDR,
-						  addr_struct.s_addr);
+			ret_val = nla_put(skb, NLBL_MGMT_A_IPV4ADDR,
+					  sizeof(struct in_addr),
+					  &addr_struct);
 			if (ret_val != 0)
 				return ret_val;
 			addr_struct.s_addr = iter4->mask;
-			ret_val = nla_put_in_addr(skb, NLBL_MGMT_A_IPV4MASK,
-						  addr_struct.s_addr);
+			ret_val = nla_put(skb, NLBL_MGMT_A_IPV4MASK,
+					  sizeof(struct in_addr),
+					  &addr_struct);
 			if (ret_val != 0)
 				return ret_val;
 			map4 = netlbl_domhsh_addr4_entry(iter4);
@@ -326,12 +330,14 @@ static int netlbl_mgmt_listentry(struct sk_buff *skb,
 			if (nla_b == NULL)
 				return -ENOMEM;
 
-			ret_val = nla_put_in6_addr(skb, NLBL_MGMT_A_IPV6ADDR,
-						   &iter6->addr);
+			ret_val = nla_put(skb, NLBL_MGMT_A_IPV6ADDR,
+					  sizeof(struct in6_addr),
+					  &iter6->addr);
 			if (ret_val != 0)
 				return ret_val;
-			ret_val = nla_put_in6_addr(skb, NLBL_MGMT_A_IPV6MASK,
-						   &iter6->mask);
+			ret_val = nla_put(skb, NLBL_MGMT_A_IPV6MASK,
+					  sizeof(struct in6_addr),
+					  &iter6->mask);
 			if (ret_val != 0)
 				return ret_val;
 			map6 = netlbl_domhsh_addr6_entry(iter6);
@@ -450,8 +456,7 @@ static int netlbl_mgmt_listall_cb(struct netlbl_dom_map *entry, void *arg)
 		goto listall_cb_failure;
 
 	cb_arg->seq++;
-	genlmsg_end(cb_arg->skb, data);
-	return 0;
+	return genlmsg_end(cb_arg->skb, data);
 
 listall_cb_failure:
 	genlmsg_cancel(cb_arg->skb, data);
@@ -615,8 +620,7 @@ static int netlbl_mgmt_protocols_cb(struct sk_buff *skb,
 	if (ret_val != 0)
 		goto protocols_cb_failure;
 
-	genlmsg_end(skb, data);
-	return 0;
+	return genlmsg_end(skb, data);
 
 protocols_cb_failure:
 	genlmsg_cancel(skb, data);

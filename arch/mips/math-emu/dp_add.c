@@ -37,20 +37,19 @@ union ieee754dp ieee754dp_add(union ieee754dp x, union ieee754dp y)
 	FLUSHYDP;
 
 	switch (CLPAIR(xc, yc)) {
+	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_QNAN, IEEE754_CLASS_SNAN):
+	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_ZERO, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_NORM, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_DNORM, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_INF, IEEE754_CLASS_SNAN):
-		return ieee754dp_nanxcpt(y);
-
-	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_SNAN):
-	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_ZERO):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_NORM):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_DNORM):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_INF):
-		return ieee754dp_nanxcpt(x);
+		ieee754_setcx(IEEE754_INVALID_OPERATION);
+		return ieee754dp_nanxcpt(ieee754dp_indef());
 
 	case CLPAIR(IEEE754_CLASS_ZERO, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_NORM, IEEE754_CLASS_QNAN):
@@ -151,6 +150,8 @@ union ieee754dp ieee754dp_add(union ieee754dp x, union ieee754dp y)
 		 * leaving result in xm, xs and xe.
 		 */
 		xm = xm + ym;
+		xe = xe;
+		xs = xs;
 
 		if (xm >> (DP_FBITS + 1 + 3)) { /* carry out */
 			xm = XDPSRS1(xm);
@@ -159,8 +160,11 @@ union ieee754dp ieee754dp_add(union ieee754dp x, union ieee754dp y)
 	} else {
 		if (xm >= ym) {
 			xm = xm - ym;
+			xe = xe;
+			xs = xs;
 		} else {
 			xm = ym - xm;
+			xe = xe;
 			xs = ys;
 		}
 		if (xm == 0)

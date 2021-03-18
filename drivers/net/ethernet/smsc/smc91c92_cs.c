@@ -1070,8 +1070,11 @@ static int smc_open(struct net_device *dev)
     smc->packets_waiting = 0;
 
     smc_reset(dev);
-    setup_timer(&smc->media, media_check, (u_long)dev);
-    mod_timer(&smc->media, jiffies + HZ);
+    init_timer(&smc->media);
+    smc->media.function = media_check;
+    smc->media.data = (u_long) dev;
+    smc->media.expires = jiffies + HZ;
+    add_timer(&smc->media);
 
     return 0;
 } /* smc_open */

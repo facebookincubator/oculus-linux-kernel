@@ -17,7 +17,7 @@
  *
  ***********************************************************************/
 
-#include "smscoreapi.h"
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -30,6 +30,8 @@
 #include "dvbdev.h"
 #include "dvb_demux.h"
 #include "dvb_frontend.h"
+
+#include "smscoreapi.h"
 
 #include "smsdvb.h"
 
@@ -534,7 +536,7 @@ int smsdvb_debugfs_register(void)
 	 */
 	d = debugfs_create_dir("smsdvb", usb_debug_root);
 	if (IS_ERR_OR_NULL(d)) {
-		pr_err("Couldn't create sysfs node for smsdvb\n");
+		sms_err("Couldn't create sysfs node for smsdvb");
 		return PTR_ERR(d);
 	} else {
 		smsdvb_debugfs_usb_root = d;

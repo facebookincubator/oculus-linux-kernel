@@ -61,7 +61,7 @@
 #include <linux/sunrpc/xdr.h>
 #include <linux/lcm.h>
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+#ifdef RPC_DEBUG
 # define RPCDBG_FACILITY        RPCDBG_AUTH
 #endif
 

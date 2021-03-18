@@ -30,30 +30,43 @@
 #define __UPC_H__
 
 #include "device.h"
+#include "ttype.h"
 
 /*---------------------  Export Definitions -------------------------*/
 
+//
+//  For memory mapped IO
+//
 
-/* For memory mapped IO */
+#define VNSvInPortB(dwIOAddress, pbyData)				\
+do {									\
+	*(pbyData) = ioread8(dwIOAddress);				\
+} while (0)
 
+#define VNSvInPortW(dwIOAddress, pwData)				\
+do {									\
+	*(pwData) = ioread16(dwIOAddress);				\
+} while (0)
 
-#define VNSvInPortB(dwIOAddress, pbyData) \
-	(*(pbyData) = ioread8(dwIOAddress))
+#define VNSvInPortD(dwIOAddress, pdwData)				\
+do {									\
+	*(pdwData) = ioread32(dwIOAddress);				\
+} while (0)
 
-#define VNSvInPortW(dwIOAddress, pwData) \
-	(*(pwData) = ioread16(dwIOAddress))
+#define VNSvOutPortB(dwIOAddress, byData)				\
+do {									\
+	iowrite8((u8)byData, dwIOAddress);				\
+} while (0)
 
-#define VNSvInPortD(dwIOAddress, pdwData) \
-	(*(pdwData) = ioread32(dwIOAddress))
+#define VNSvOutPortW(dwIOAddress, wData)				\
+do {									\
+	iowrite16((u16)wData, dwIOAddress);				\
+} while (0)
 
-#define VNSvOutPortB(dwIOAddress, byData) \
-	iowrite8((u8)(byData), dwIOAddress)
-
-#define VNSvOutPortW(dwIOAddress, wData) \
-	iowrite16((u16)(wData), dwIOAddress)
-
-#define VNSvOutPortD(dwIOAddress, dwData) \
-	iowrite32((u32)(dwData), dwIOAddress)
+#define VNSvOutPortD(dwIOAddress, dwData)				\
+do {									\
+	iowrite32((u32)dwData, dwIOAddress);				\
+} while (0)
 
 #define PCAvDelayByIO(uDelayUnit)				\
 do {								\
@@ -74,4 +87,4 @@ do {								\
 
 /*---------------------  Export Functions  --------------------------*/
 
-#endif /* __UPC_H__ */
+#endif // __UPC_H__

@@ -14,6 +14,8 @@
  *
  */
 
+#include <asm/dma.h>
+#include <linux/dma-mapping.h>
 #include <linux/device.h>
 #include <linux/usb/audio.h>
 #include <linux/wait.h>
@@ -268,6 +270,7 @@ struct audio_dev {
 	/* number of frames sent since start_time */
 	s64				frames_sent;
 	struct audio_source_config	*config;
+	bool				audio_ep_enabled;
 };
 
 static inline struct audio_dev *func_to_audio(struct usb_function *f)
@@ -365,15 +368,22 @@ static void audio_send(struct audio_dev *audio)
 	s64 msecs;
 	s64 frames;
 	ktime_t now;
+	unsigned long flags;
 
+	spin_lock_irqsave(&audio->lock, flags);
 	/* audio->substream will be null if we have been closed */
-	if (!audio->substream)
+	if (!audio->substream) {
+		spin_unlock_irqrestore(&audio->lock, flags);
 		return;
+	}
 	/* audio->buffer_pos will be null if we have been stopped */
-	if (!audio->buffer_pos)
+	if (!audio->buffer_pos) {
+		spin_unlock_irqrestore(&audio->lock, flags);
 		return;
+	}
 
 	runtime = audio->substream->runtime;
+	spin_unlock_irqrestore(&audio->lock, flags);
 
 	/* compute number of frames to send */
 	now = ktime_get();
@@ -397,8 +407,21 @@ static void audio_send(struct audio_dev *audio)
 
 	while (frames > 0) {
 		req = audio_req_get(audio);
-		if (!req)
+		spin_lock_irqsave(&audio->lock, flags);
+		/* audio->substream will be null if we have been closed */
+		if (!audio->substream) {
+			spin_unlock_irqrestore(&audio->lock, flags);
+			return;
+		}
+		/* audio->buffer_pos will be null if we have been stopped */
+		if (!audio->buffer_pos) {
+			spin_unlock_irqrestore(&audio->lock, flags);
+			return;
+		}
+		if (!req) {
+			spin_unlock_irqrestore(&audio->lock, flags);
 			break;
+		}
 
 		length = frames_to_bytes(runtime, frames);
 		if (length > IN_EP_MAX_PACKET_SIZE)
@@ -424,6 +447,7 @@ static void audio_send(struct audio_dev *audio)
 		}
 
 		req->length = length;
+		spin_unlock_irqrestore(&audio->lock, flags);
 		ret = usb_ep_queue(audio->in_ep, req, GFP_ATOMIC);
 		if (ret < 0) {
 			pr_err("usb_ep_queue failed ret: %d\n", ret);
@@ -567,11 +591,27 @@ static int audio_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 
 	pr_debug("audio_set_alt intf %d, alt %d\n", intf, alt);
 
-	ret = config_ep_by_speed(cdev->gadget, f, audio->in_ep);
-	if (ret)
-		return ret;
-
-	usb_ep_enable(audio->in_ep);
+	if (intf == as_interface_alt_1_desc.bInterfaceNumber) {
+		if (alt && !audio->audio_ep_enabled) {
+			ret = config_ep_by_speed(cdev->gadget, f, audio->in_ep);
+			if (ret) {
+				audio->in_ep->desc = NULL;
+				ERROR(cdev, "config_ep fail ep %s, result %d\n",
+						audio->in_ep->name, ret);
+				return ret;
+			}
+			ret = usb_ep_enable(audio->in_ep);
+			if (ret) {
+				ERROR(cdev, "failedto enable ep%s, result %d\n",
+					audio->in_ep->name, ret);
+				return ret;
+			}
+			audio->audio_ep_enabled = true;
+		} else if (!alt && audio->audio_ep_enabled) {
+			usb_ep_disable(audio->in_ep);
+			audio->audio_ep_enabled = false;
+		}
+	}
 	return 0;
 }
 
@@ -580,12 +620,10 @@ static void audio_disable(struct usb_function *f)
 	struct audio_dev	*audio = func_to_audio(f);
 
 	pr_debug("audio_disable\n");
-	usb_ep_disable(audio->in_ep);
-}
-
-static void audio_free_func(struct usb_function *f)
-{
-	/* no-op */
+	if (audio->audio_ep_enabled) {
+		usb_ep_disable(audio->in_ep);
+		audio->audio_ep_enabled = false;
+	}
 }
 
 /*-------------------------------------------------------------------------*/
@@ -621,18 +659,15 @@ audio_bind(struct usb_configuration *c, struct usb_function *f)
 	int status;
 	struct usb_ep *ep;
 	struct usb_request *req;
+	struct audio_source_instance *fi_audio = to_fi_audio_source(f->fi);
+	struct audio_source_config *config = fi_audio->config;
 	int i;
 	int err;
 
-	if (IS_ENABLED(CONFIG_USB_CONFIGFS)) {
-		struct audio_source_instance *fi_audio =
-				to_fi_audio_source(f->fi);
-		struct audio_source_config *config =
-				fi_audio->config;
-
-		err = snd_card_setup(c, config);
-		if (err)
-			return err;
+	err = snd_card_setup(c, config);
+	if (err) {
+		pr_err("snd_card_setup failed with %d\n", err);
+		return err;
 	}
 
 	audio_build_desc(audio);
@@ -690,6 +725,8 @@ audio_unbind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct audio_dev *audio = func_to_audio(f);
 	struct usb_request *req;
+	struct audio_source_instance *fi_audio = to_fi_audio_source(f->fi);
+	struct audio_source_config *config = fi_audio->config;
 
 	while ((req = audio_req_get(audio)))
 		audio_request_free(req, audio->in_ep);
@@ -699,16 +736,8 @@ audio_unbind(struct usb_configuration *c, struct usb_function *f)
 	audio->pcm = NULL;
 	audio->substream = NULL;
 	audio->in_ep = NULL;
-
-	if (IS_ENABLED(CONFIG_USB_CONFIGFS)) {
-		struct audio_source_instance *fi_audio =
-				to_fi_audio_source(f->fi);
-		struct audio_source_config *config =
-				fi_audio->config;
-
-		config->card = -1;
-		config->device = -1;
-	}
+	config->card = -1;
+	config->device = -1;
 }
 
 static void audio_pcm_playback_start(struct audio_dev *audio)
@@ -758,6 +787,7 @@ static int audio_pcm_close(struct snd_pcm_substream *substream)
 static int audio_pcm_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
 	unsigned int channels = params_channels(params);
 	unsigned int rate = params_rate(params);
 
@@ -766,13 +796,31 @@ static int audio_pcm_hw_params(struct snd_pcm_substream *substream,
 	if (channels != 2)
 		return -EINVAL;
 
-	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
-		params_buffer_bytes(params));
+	if (!substream->pcm->card->dev->coherent_dma_mask)
+		substream->pcm->card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
+
+	buf->dev.type = SNDRV_DMA_TYPE_DEV;
+	buf->dev.dev = substream->pcm->card->dev;
+	buf->private_data = NULL;
+	buf->area = dma_alloc_coherent(substream->pcm->card->dev,
+			params_buffer_bytes(params),
+			&buf->addr, GFP_KERNEL);
+	if (!buf->area)
+		return -ENOMEM;
+	buf->bytes = params_buffer_bytes(params);
+	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
+	return 0;
 }
 
 static int audio_pcm_hw_free(struct snd_pcm_substream *substream)
 {
-	return snd_pcm_lib_free_vmalloc_buffer(substream);
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
+
+	if (buf->area != NULL)
+		dma_free_coherent(substream->pcm->card->dev, buf->bytes,
+					buf->area, buf->addr);
+	buf->area = NULL;
+	return 0;
 }
 
 static int audio_pcm_prepare(struct snd_pcm_substream *substream)
@@ -824,6 +872,22 @@ static int audio_pcm_playback_trigger(struct snd_pcm_substream *substream,
 	return ret;
 }
 
+static int audio_pcm_mmap(struct snd_pcm_substream *substream,
+				struct vm_area_struct *vma)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+
+	if (runtime->dma_addr && runtime->dma_bytes) {
+		return dma_mmap_coherent(substream->pcm->card->dev, vma,
+					runtime->dma_area,
+					runtime->dma_addr,
+					runtime->dma_bytes);
+	} else {
+		pr_err("Physical address or size of buf is NULL");
+		return -EINVAL;
+	}
+}
+
 static struct audio_dev _audio_dev = {
 	.func = {
 		.name = "audio_source",
@@ -832,7 +896,6 @@ static struct audio_dev _audio_dev = {
 		.set_alt = audio_set_alt,
 		.setup = audio_setup,
 		.disable = audio_disable,
-		.free_func = audio_free_func,
 	},
 	.lock = __SPIN_LOCK_UNLOCKED(_audio_dev.lock),
 	.idle_reqs = LIST_HEAD_INIT(_audio_dev.idle_reqs),
@@ -847,33 +910,8 @@ static struct snd_pcm_ops audio_playback_ops = {
 	.prepare	= audio_pcm_prepare,
 	.trigger	= audio_pcm_playback_trigger,
 	.pointer	= audio_pcm_pointer,
+	.mmap		= audio_pcm_mmap,
 };
-
-int audio_source_bind_config(struct usb_configuration *c,
-		struct audio_source_config *config)
-{
-	struct audio_dev *audio;
-	int err;
-
-	config->card = -1;
-	config->device = -1;
-
-	audio = &_audio_dev;
-
-	err = snd_card_setup(c, config);
-	if (err)
-		return err;
-
-	err = usb_add_function(c, &audio->func);
-	if (err)
-		goto add_fail;
-
-	return 0;
-
-add_fail:
-	snd_card_free(audio->card);
-	return err;
-}
 
 static int snd_card_setup(struct usb_configuration *c,
 		struct audio_source_config *config)
@@ -989,7 +1027,6 @@ static ssize_t audio_source_pcm_show(struct device *dev,
 
 struct device *create_function_device(char *name);
 
-#define AUDIO_SOURCE_DEV_NAME_LENGTH 20
 static struct usb_function_instance *audio_source_alloc_inst(void)
 {
 	struct audio_source_instance *fi_audio;
@@ -998,8 +1035,6 @@ static struct usb_function_instance *audio_source_alloc_inst(void)
 	struct device *dev;
 	void *err_ptr;
 	int err = 0;
-	char device_name[AUDIO_SOURCE_DEV_NAME_LENGTH];
-	static u8 count;
 
 	fi_audio = kzalloc(sizeof(*fi_audio), GFP_KERNEL);
 	if (!fi_audio)
@@ -1017,17 +1052,7 @@ static struct usb_function_instance *audio_source_alloc_inst(void)
 
 	config_group_init_type_name(&fi_audio->func_inst.group, "",
 						&audio_source_func_type);
-
-	if (!count) {
-		snprintf(device_name, AUDIO_SOURCE_DEV_NAME_LENGTH,
-					"f_audio_source");
-		count++;
-	} else {
-		snprintf(device_name, AUDIO_SOURCE_DEV_NAME_LENGTH,
-					"f_audio_source%d", count++);
-	}
-
-	dev = create_function_device(device_name);
+	dev = create_function_device("f_audio_source");
 
 	if (IS_ERR(dev)) {
 		err_ptr = dev;

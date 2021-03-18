@@ -192,17 +192,16 @@ static int at803x_probe(struct phy_device *phydev)
 {
 	struct device *dev = &phydev->dev;
 	struct at803x_priv *priv;
-	struct gpio_desc *gpiod_reset;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
-	gpiod_reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(gpiod_reset))
-		return PTR_ERR(gpiod_reset);
-
-	priv->gpiod_reset = gpiod_reset;
+	priv->gpiod_reset = devm_gpiod_get(dev, "reset");
+	if (IS_ERR(priv->gpiod_reset))
+		priv->gpiod_reset = NULL;
+	else
+		gpiod_direction_output(priv->gpiod_reset, 1);
 
 	phydev->priv = priv;
 
@@ -308,8 +307,6 @@ static struct phy_driver at803x_driver[] = {
 	.flags			= PHY_HAS_INTERRUPT,
 	.config_aneg		= genphy_config_aneg,
 	.read_status		= genphy_read_status,
-	.ack_interrupt		= at803x_ack_interrupt,
-	.config_intr		= at803x_config_intr,
 	.driver			= {
 		.owner = THIS_MODULE,
 	},
@@ -329,8 +326,6 @@ static struct phy_driver at803x_driver[] = {
 	.flags			= PHY_HAS_INTERRUPT,
 	.config_aneg		= genphy_config_aneg,
 	.read_status		= genphy_read_status,
-	.ack_interrupt		= at803x_ack_interrupt,
-	.config_intr		= at803x_config_intr,
 	.driver			= {
 		.owner = THIS_MODULE,
 	},
@@ -357,7 +352,19 @@ static struct phy_driver at803x_driver[] = {
 	},
 } };
 
-module_phy_driver(at803x_driver);
+static int __init atheros_init(void)
+{
+	return phy_drivers_register(at803x_driver,
+				    ARRAY_SIZE(at803x_driver));
+}
+
+static void __exit atheros_exit(void)
+{
+	phy_drivers_unregister(at803x_driver, ARRAY_SIZE(at803x_driver));
+}
+
+module_init(atheros_init);
+module_exit(atheros_exit);
 
 static struct mdio_device_id __maybe_unused atheros_tbl[] = {
 	{ ATH8030_PHY_ID, 0xffffffef },

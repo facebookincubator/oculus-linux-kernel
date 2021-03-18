@@ -69,7 +69,6 @@
 #include <linux/miscdevice.h>
 #endif
 #include <asm/uaccess.h>
-#include <acpi/video.h>
 
 #define dprintk(fmt, ...)			\
 do {						\
@@ -582,6 +581,7 @@ static atomic_t sony_pf_users = ATOMIC_INIT(0);
 static struct platform_driver sony_pf_driver = {
 	.driver = {
 		   .name = "sony-laptop",
+		   .owner = THIS_MODULE,
 		   }
 };
 static struct platform_device *sony_pf_device;
@@ -1033,7 +1033,7 @@ struct sony_backlight_props {
 	u8			offset;
 	u8			maxlvl;
 };
-static struct sony_backlight_props sony_bl_props;
+struct sony_backlight_props sony_bl_props;
 
 static int sony_backlight_update_status(struct backlight_device *bd)
 {
@@ -1204,8 +1204,6 @@ static void sony_nc_notify(struct acpi_device *device, u32 event)
 {
 	u32 real_ev = event;
 	u8 ev_type = 0;
-	int ret;
-
 	dprintk("sony_nc_notify, event: 0x%.2x\n", event);
 
 	if (event >= 0x90) {
@@ -1227,12 +1225,13 @@ static void sony_nc_notify(struct acpi_device *device, u32 event)
 		case 0x0100:
 		case 0x0127:
 			ev_type = HOTKEY;
-			ret = sony_nc_hotkeys_decode(event, handle);
+			real_ev = sony_nc_hotkeys_decode(event, handle);
 
-			if (ret > 0) {
-				sony_laptop_report_input_event(ret);
-				real_ev = ret;
-			}
+			if (real_ev > 0)
+				sony_laptop_report_input_event(real_ev);
+			else
+				/* restore the original event for reporting */
+				real_ev = event;
 
 			break;
 
@@ -3142,7 +3141,8 @@ static void sony_nc_backlight_setup(void)
 
 static void sony_nc_backlight_cleanup(void)
 {
-	backlight_device_unregister(sony_bl_props.dev);
+	if (sony_bl_props.dev)
+		backlight_device_unregister(sony_bl_props.dev);
 }
 
 static int sony_nc_add(struct acpi_device *device)
@@ -3200,8 +3200,12 @@ static int sony_nc_add(struct acpi_device *device)
 			sony_nc_function_setup(device, sony_pf_device);
 	}
 
-	if (acpi_video_get_backlight_type() == acpi_backlight_vendor)
+	/* setup input devices and helper fifo */
+	if (acpi_video_backlight_support()) {
+		pr_info("brightness ignored, must be controlled by ACPI video driver\n");
+	} else {
 		sony_nc_backlight_setup();
+	}
 
 	/* create sony_pf sysfs attributes related to the SNC device */
 	for (item = sony_nc_values; item->name; ++item) {
@@ -3713,7 +3717,8 @@ static void sony_pic_detect_device_type(struct sony_pic_dev *dev)
 	dev->event_types = type2_events;
 
 out:
-	pci_dev_put(pcidev);
+	if (pcidev)
+		pci_dev_put(pcidev);
 
 	pr_info("detected Type%d model\n",
 		dev->model == SONYPI_DEVICE_TYPE1 ? 1 :

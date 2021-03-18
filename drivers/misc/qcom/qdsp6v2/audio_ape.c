@@ -23,8 +23,7 @@ static const struct file_operations audio_ape_debug_fops = {
 	.read = audio_aio_debug_read,
 	.open = audio_aio_debug_open,
 };
-static __maybe_unused struct dentry *config_debugfs_create_file(
-	const char *name, void *data)
+static struct dentry *config_debugfs_create_file(const char *name, void *data)
 {
 	return debugfs_create_file(name, S_IFREG | S_IRUGO,
 			NULL, (void *)data, &audio_ape_debug_fops);
@@ -251,7 +250,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	int rc = 0;
 
 	/* 4 bytes represents decoder number, 1 byte for terminate string */
-	__maybe_unused char name[sizeof "msm_ape_" + 5];
+	char name[sizeof "msm_ape_" + 5];
 	audio = kzalloc(sizeof(struct q6audio_aio), GFP_KERNEL);
 
 	if (!audio) {
@@ -271,6 +270,8 @@ static int audio_open(struct inode *inode, struct file *file)
 	audio->miscdevice = &audio_ape_misc;
 	audio->wakelock_voted = false;
 	audio->audio_ws_mgr = &audio_ape_ws_mgr;
+
+	init_waitqueue_head(&audio->event_wait);
 
 	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_cb,
 					     (void *)audio);
@@ -316,7 +317,6 @@ static int audio_open(struct inode *inode, struct file *file)
 		goto fail;
 	}
 
-#ifdef CONFIG_DEBUG_FS
 	snprintf(name, sizeof(name), "msm_ape_%04x", audio->ac->session);
 	audio->dentry = config_debugfs_create_file(name, (void *)audio);
 
@@ -325,8 +325,6 @@ static int audio_open(struct inode *inode, struct file *file)
 	pr_debug("%s:apedec success mode[%d]session[%d]\n", __func__,
 						audio->feedback,
 						audio->ac->session);
-#endif
-
 	return rc;
 fail:
 	q6asm_audio_client_free(audio->ac);

@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2015 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2013-2014 B.A.T.M.A.N. contributors:
  *
  * Martin Hundebøll <martin@hundeboll.net>
  *
@@ -17,15 +17,6 @@
 
 #ifndef _NET_BATMAN_ADV_FRAGMENTATION_H_
 #define _NET_BATMAN_ADV_FRAGMENTATION_H_
-
-#include "main.h"
-
-#include <linux/compiler.h>
-#include <linux/list.h>
-#include <linux/stddef.h>
-#include <linux/types.h>
-
-struct sk_buff;
 
 void batadv_frag_purge_orig(struct batadv_orig_node *orig,
 			    bool (*check_cb)(struct batadv_frag_table_entry *));
@@ -50,7 +41,8 @@ batadv_frag_check_entry(struct batadv_frag_table_entry *frags_entry)
 	if (!hlist_empty(&frags_entry->head) &&
 	    batadv_has_timed_out(frags_entry->timestamp, BATADV_FRAG_TIMEOUT))
 		return true;
-	return false;
+	else
+		return false;
 }
 
 #endif /* _NET_BATMAN_ADV_FRAGMENTATION_H_ */

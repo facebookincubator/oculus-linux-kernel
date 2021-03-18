@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM VFE
+* Qualcomm MSM VFE
 
 Required properties for parent node:
 - compatible :
@@ -55,7 +55,7 @@ vfe0: qcom,vfe0@fda10000 {
 	compatible = "qcom,vfe44";
 	reg = <0xfda10000 0x1000>,
 		<0xfda40000 0x200>,
-		<0x7801a4 0x8>;
+		<0xa4174 0x8>;
 	reg-names = "vfe", "vfe_vbif", "vfe_fuse";
 	interrupts = <0 57 0>;
 	interrupt-names = "vfe";
@@ -109,7 +109,7 @@ vfe1: qcom,vfe1@fda14000 {
 	compatible = "qcom,vfe44";
 	reg = <0xfda14000 0x1000>,
 		<0xfda40000 0x200>,
-		<0x7801a4 0x8>;
+		<0xa4174 0x8>;
 	reg-names = "vfe", "vfe_vbif", "vfe_fuse";
 	interrupts = <0 58 0>;
 	interrupt-names = "vfe";

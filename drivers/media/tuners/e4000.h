@@ -21,6 +21,7 @@
 #ifndef E4000_H
 #define E4000_H
 
+#include <linux/kconfig.h>
 #include "dvb_frontend.h"
 
 /*

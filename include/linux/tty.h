@@ -14,29 +14,6 @@
 #include <linux/llist.h>
 
 
-/*
- * Lock subclasses for tty locks
- *
- * TTY_LOCK_NORMAL is for normal ttys and master ptys.
- * TTY_LOCK_SLAVE is for slave ptys only.
- *
- * Lock subclasses are necessary for handling nested locking with pty pairs.
- * tty locks which use nested locking:
- *
- * legacy_mutex - Nested tty locks are necessary for releasing pty pairs.
- *		  The stable lock order is master pty first, then slave pty.
- * termios_rwsem - The stable lock order is tty_buffer lock->termios_rwsem.
- *		   Subclassing this lock enables the slave pty to hold its
- *		   termios_rwsem when claiming the master tty_buffer lock.
- * tty_buffer lock - slave ptys can claim nested buffer lock when handling
- *		     signal chars. The stable lock order is slave pty, then
- *		     master.
- */
-
-enum {
-	TTY_LOCK_NORMAL = 0,
-	TTY_LOCK_SLAVE,
-};
 
 /*
  * (Note: the *_driver.minor_start values 1, 64, 128, 192 are
@@ -227,6 +204,7 @@ struct tty_port {
 	int			blocked_open;	/* Waiting to open */
 	int			count;		/* Usage count */
 	wait_queue_head_t	open_wait;	/* Open waiters */
+	wait_queue_head_t	close_wait;	/* Close waiters */
 	wait_queue_head_t	delta_msr_wait;	/* Modem status change */
 	unsigned long		flags;		/* TTY flags ASY_*/
 	unsigned char		console:1,	/* port is a console */
@@ -306,7 +284,7 @@ struct tty_struct {
 
 #define N_TTY_BUF_SIZE 4096
 
-	int closing;
+	unsigned char closing:1;
 	unsigned char *write_buf;
 	int write_cnt;
 	/* If the tty has a pending do_SAK, queue it here - akpm */
@@ -338,10 +316,12 @@ struct tty_file_private {
 #define TTY_EXCLUSIVE 		3	/* Exclusive open mode */
 #define TTY_DEBUG 		4	/* Debugging */
 #define TTY_DO_WRITE_WAKEUP 	5	/* Call write_wakeup after queuing new */
+#define TTY_CLOSING 		7	/* ->close() in progress */
 #define TTY_LDISC_OPEN	 	11	/* Line discipline is open */
 #define TTY_PTY_LOCK 		16	/* pty private */
 #define TTY_NO_WRITE_SPLIT 	17	/* Preserve write boundaries to driver */
 #define TTY_HUPPED 		18	/* Post driver->hangup() */
+#define TTY_HUPPING 		21	/* ->hangup() in progress */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
 
 #define TTY_WRITE_FLUSH(tty) tty_write_flush((tty))
@@ -420,9 +400,8 @@ static inline struct tty_struct *tty_kref_get(struct tty_struct *tty)
 
 extern int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
 			      const char *routine);
-extern const char *tty_name(const struct tty_struct *tty);
+extern char *tty_name(struct tty_struct *tty, char *buf);
 extern void tty_wait_until_sent(struct tty_struct *tty, long timeout);
-extern int __tty_check_change(struct tty_struct *tty, int sig);
 extern int tty_check_change(struct tty_struct *tty);
 extern void __stop_tty(struct tty_struct *tty);
 extern void stop_tty(struct tty_struct *tty);
@@ -458,17 +437,15 @@ extern int is_ignored(int sig);
 extern int tty_signal(int sig, struct tty_struct *tty);
 extern void tty_hangup(struct tty_struct *tty);
 extern void tty_vhangup(struct tty_struct *tty);
+extern void tty_unhangup(struct file *filp);
 extern int tty_hung_up_p(struct file *filp);
 extern void do_SAK(struct tty_struct *tty);
 extern void __do_SAK(struct tty_struct *tty);
 extern void no_tty(void);
+extern void tty_flush_to_ldisc(struct tty_struct *tty);
 extern void tty_buffer_free_all(struct tty_port *port);
-extern void tty_buffer_flush(struct tty_struct *tty, struct tty_ldisc *ld);
+extern void tty_buffer_flush(struct tty_struct *tty);
 extern void tty_buffer_init(struct tty_port *port);
-extern void tty_buffer_set_lock_subclass(struct tty_port *port);
-extern bool tty_buffer_restart_work(struct tty_port *port);
-extern bool tty_buffer_cancel_work(struct tty_port *port);
-extern void tty_buffer_flush_work(struct tty_port *port);
 extern speed_t tty_termios_baud_rate(struct ktermios *termios);
 extern speed_t tty_termios_input_baud_rate(struct ktermios *termios);
 extern void tty_termios_encode_baud_rate(struct ktermios *termios,
@@ -520,6 +497,9 @@ extern int tty_release(struct inode *inode, struct file *filp);
 extern int tty_init_termios(struct tty_struct *tty);
 extern int tty_standard_install(struct tty_driver *driver,
 		struct tty_struct *tty);
+
+extern struct tty_struct *tty_pair_get_tty(struct tty_struct *tty);
+extern struct tty_struct *tty_pair_get_pty(struct tty_struct *tty);
 
 extern struct mutex tty_mutex;
 extern spinlock_t tty_files_lock;
@@ -582,7 +562,7 @@ extern int tty_register_ldisc(int disc, struct tty_ldisc_ops *new_ldisc);
 extern int tty_unregister_ldisc(int disc);
 extern int tty_set_ldisc(struct tty_struct *tty, int ldisc);
 extern int tty_ldisc_setup(struct tty_struct *tty, struct tty_struct *o_tty);
-extern void tty_ldisc_release(struct tty_struct *tty);
+extern void tty_ldisc_release(struct tty_struct *tty, struct tty_struct *o_tty);
 extern void tty_ldisc_init(struct tty_struct *tty);
 extern void tty_ldisc_deinit(struct tty_struct *tty);
 extern void tty_ldisc_begin(void);
@@ -607,7 +587,7 @@ extern void n_tty_inherit_ops(struct tty_ldisc_ops *ops);
 
 /* tty_audit.c */
 #ifdef CONFIG_AUDIT
-extern void tty_audit_add_data(struct tty_struct *tty, const void *data,
+extern void tty_audit_add_data(struct tty_struct *tty, unsigned char *data,
 			       size_t size, unsigned icanon);
 extern void tty_audit_exit(void);
 extern void tty_audit_fork(struct signal_struct *sig);
@@ -615,8 +595,8 @@ extern void tty_audit_tiocsti(struct tty_struct *tty, char ch);
 extern void tty_audit_push(struct tty_struct *tty);
 extern int tty_audit_push_current(void);
 #else
-static inline void tty_audit_add_data(struct tty_struct *tty, const void *data,
-				      size_t size, unsigned icanon)
+static inline void tty_audit_add_data(struct tty_struct *tty,
+		unsigned char *data, size_t size, unsigned icanon)
 {
 }
 static inline void tty_audit_tiocsti(struct tty_struct *tty, char ch)
@@ -643,6 +623,14 @@ extern int n_tty_ioctl_helper(struct tty_struct *tty, struct file *file,
 extern long n_tty_compat_ioctl_helper(struct tty_struct *tty, struct file *file,
 		       unsigned int cmd, unsigned long arg);
 
+/* serial.c */
+
+extern void serial_console_init(void);
+
+/* pcxx.c */
+
+extern int pcxe_open(struct tty_struct *tty, struct file *filp);
+
 /* vt.c */
 
 extern int vt_ioctl(struct tty_struct *tty,
@@ -654,11 +642,56 @@ extern long vt_compat_ioctl(struct tty_struct *tty,
 /* tty_mutex.c */
 /* functions for preparation of BKL removal */
 extern void __lockfunc tty_lock(struct tty_struct *tty);
-extern int  tty_lock_interruptible(struct tty_struct *tty);
 extern void __lockfunc tty_unlock(struct tty_struct *tty);
-extern void __lockfunc tty_lock_slave(struct tty_struct *tty);
-extern void __lockfunc tty_unlock_slave(struct tty_struct *tty);
-extern void tty_set_lock_subclass(struct tty_struct *tty);
+extern void __lockfunc tty_lock_pair(struct tty_struct *tty,
+				struct tty_struct *tty2);
+extern void __lockfunc tty_unlock_pair(struct tty_struct *tty,
+				struct tty_struct *tty2);
+
+/*
+ * this shall be called only from where BTM is held (like close)
+ *
+ * We need this to ensure nobody waits for us to finish while we are waiting.
+ * Without this we were encountering system stalls.
+ *
+ * This should be indeed removed with BTM removal later.
+ *
+ * Locking: BTM required. Nobody is allowed to hold port->mutex.
+ */
+static inline void tty_wait_until_sent_from_close(struct tty_struct *tty,
+		long timeout)
+{
+	tty_unlock(tty); /* tty->ops->close holds the BTM, drop it while waiting */
+	tty_wait_until_sent(tty, timeout);
+	tty_lock(tty);
+}
+
+/*
+ * wait_event_interruptible_tty -- wait for a condition with the tty lock held
+ *
+ * The condition we are waiting for might take a long time to
+ * become true, or might depend on another thread taking the
+ * BTM. In either case, we need to drop the BTM to guarantee
+ * forward progress. This is a leftover from the conversion
+ * from the BKL and should eventually get removed as the BTM
+ * falls out of use.
+ *
+ * Do not use in new code.
+ */
+#define wait_event_interruptible_tty(tty, wq, condition)		\
+({									\
+	int __ret = 0;							\
+	if (!(condition))						\
+		__ret = __wait_event_interruptible_tty(tty, wq,		\
+						       condition);	\
+	__ret;								\
+})
+
+#define __wait_event_interruptible_tty(tty, wq, condition)		\
+	___wait_event(wq, condition, TASK_INTERRUPTIBLE, 0, 0,		\
+			tty_unlock(tty);				\
+			schedule();					\
+			tty_lock(tty))
 
 #ifdef CONFIG_PROC_FS
 extern void proc_tty_register_driver(struct tty_driver *);
@@ -667,11 +700,5 @@ extern void proc_tty_unregister_driver(struct tty_driver *);
 static inline void proc_tty_register_driver(struct tty_driver *d) {}
 static inline void proc_tty_unregister_driver(struct tty_driver *d) {}
 #endif
-
-#define tty_debug(tty, f, args...)					\
-	do {								\
-		printk(KERN_DEBUG "%s: %s: " f, __func__,		\
-		       tty_name(tty), ##args);				\
-	} while (0)
 
 #endif

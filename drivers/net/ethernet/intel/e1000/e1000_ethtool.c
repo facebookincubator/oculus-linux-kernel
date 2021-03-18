@@ -24,7 +24,6 @@
 /* ethtool support for e1000 */
 
 #include "e1000.h"
-#include <linux/jiffies.h>
 #include <linux/uaccess.h>
 
 enum {NETDEV_STATS, E1000_STATS};
@@ -559,6 +558,8 @@ static void e1000_get_drvinfo(struct net_device *netdev,
 
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
+	drvinfo->regdump_len = e1000_get_regs_len(netdev);
+	drvinfo->eedump_len = e1000_get_eeprom_len(netdev);
 }
 
 static void e1000_get_ringparam(struct net_device *netdev,
@@ -1459,7 +1460,7 @@ static int e1000_run_loopback_test(struct e1000_adapter *adapter)
 			ret_val = 13; /* ret_val is the same as mis-compare */
 			break;
 		}
-		if (time_after_eq(jiffies, time + 2)) {
+		if (jiffies >= (time + 2)) {
 			ret_val = 14; /* error code for time out error */
 			break;
 		}

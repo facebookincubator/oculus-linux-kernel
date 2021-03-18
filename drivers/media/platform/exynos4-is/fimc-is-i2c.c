@@ -81,7 +81,7 @@ static int fimc_is_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#if defined(CONFIG_PM_RUNTIME) || defined(CONFIG_PM_SLEEP)
 static int fimc_is_i2c_runtime_suspend(struct device *dev)
 {
 	struct fimc_is_i2c *isp_i2c = dev_get_drvdata(dev);
@@ -133,6 +133,7 @@ static struct platform_driver fimc_is_i2c_driver = {
 	.driver = {
 		.of_match_table = fimc_is_i2c_of_match,
 		.name		= "fimc-isp-i2c",
+		.owner		= THIS_MODULE,
 		.pm		= &fimc_is_i2c_pm_ops,
 	}
 };

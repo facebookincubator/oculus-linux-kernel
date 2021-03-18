@@ -15,6 +15,7 @@
 #include <linux/module.h>
 #include <linux/usb/composite.h>
 
+#include "gadget_chips.h"
 #define DRIVER_DESC		"Linux USB Audio Gadget"
 #define DRIVER_VERSION		"Feb 2, 2012"
 
@@ -123,7 +124,7 @@ static struct usb_device_descriptor device_desc = {
 	.bLength =		sizeof device_desc,
 	.bDescriptorType =	USB_DT_DEVICE,
 
-	.bcdUSB =		cpu_to_le16(0x200),
+	.bcdUSB =		__constant_cpu_to_le16(0x200),
 
 #ifdef CONFIG_GADGET_UAC1
 	.bDeviceClass =		USB_CLASS_PER_INTERFACE,
@@ -140,8 +141,8 @@ static struct usb_device_descriptor device_desc = {
 	 * we support.  (As does bNumConfigurations.)  These values can
 	 * also be overridden by module parameters.
 	 */
-	.idVendor =		cpu_to_le16(AUDIO_VENDOR_NUM),
-	.idProduct =		cpu_to_le16(AUDIO_PRODUCT_NUM),
+	.idVendor =		__constant_cpu_to_le16(AUDIO_VENDOR_NUM),
+	.idProduct =		__constant_cpu_to_le16(AUDIO_PRODUCT_NUM),
 	/* .bcdDevice = f(hardware) */
 	/* .iManufacturer = DYNAMIC */
 	/* .iProduct = DYNAMIC */
@@ -149,11 +150,24 @@ static struct usb_device_descriptor device_desc = {
 	.bNumConfigurations =	1,
 };
 
-static const struct usb_descriptor_header *otg_desc[2];
+static struct usb_otg_descriptor otg_descriptor = {
+	.bLength =		sizeof otg_descriptor,
+	.bDescriptorType =	USB_DT_OTG,
+
+	/* REVISIT SRP-only hardware is possible, although
+	 * it would not be called "OTG" ...
+	 */
+	.bmAttributes =		USB_OTG_SRP | USB_OTG_HNP,
+};
+
+static const struct usb_descriptor_header *otg_desc[] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
+	NULL,
+};
 
 /*-------------------------------------------------------------------------*/
 
-static int audio_do_config(struct usb_configuration *c)
+static int __init audio_do_config(struct usb_configuration *c)
 {
 	int status;
 
@@ -202,7 +216,7 @@ static struct usb_configuration audio_config_driver = {
 
 /*-------------------------------------------------------------------------*/
 
-static int audio_bind(struct usb_composite_dev *cdev)
+static int __init audio_bind(struct usb_composite_dev *cdev)
 {
 #ifndef CONFIG_GADGET_UAC1
 	struct f_uac2_opts	*uac2_opts;
@@ -245,28 +259,14 @@ static int audio_bind(struct usb_composite_dev *cdev)
 	device_desc.iManufacturer = strings_dev[USB_GADGET_MANUFACTURER_IDX].id;
 	device_desc.iProduct = strings_dev[USB_GADGET_PRODUCT_IDX].id;
 
-	if (gadget_is_otg(cdev->gadget) && !otg_desc[0]) {
-		struct usb_descriptor_header *usb_desc;
-
-		usb_desc = usb_otg_descriptor_alloc(cdev->gadget);
-		if (!usb_desc)
-			goto fail;
-		usb_otg_descriptor_init(cdev->gadget, usb_desc);
-		otg_desc[0] = usb_desc;
-		otg_desc[1] = NULL;
-	}
-
 	status = usb_add_config(cdev, &audio_config_driver, audio_do_config);
 	if (status < 0)
-		goto fail_otg_desc;
+		goto fail;
 	usb_composite_overwrite_options(cdev, &coverwrite);
 
 	INFO(cdev, "%s, version: %s\n", DRIVER_DESC, DRIVER_VERSION);
 	return 0;
 
-fail_otg_desc:
-	kfree(otg_desc[0]);
-	otg_desc[0] = NULL;
 fail:
 #ifndef CONFIG_GADGET_UAC1
 	usb_put_function_instance(fi_uac2);
@@ -276,7 +276,7 @@ fail:
 	return status;
 }
 
-static int audio_unbind(struct usb_composite_dev *cdev)
+static int __exit audio_unbind(struct usb_composite_dev *cdev)
 {
 #ifdef CONFIG_GADGET_UAC1
 	if (!IS_ERR_OR_NULL(f_uac1))
@@ -289,19 +289,16 @@ static int audio_unbind(struct usb_composite_dev *cdev)
 	if (!IS_ERR_OR_NULL(fi_uac2))
 		usb_put_function_instance(fi_uac2);
 #endif
-	kfree(otg_desc[0]);
-	otg_desc[0] = NULL;
-
 	return 0;
 }
 
-static struct usb_composite_driver audio_driver = {
+static __refdata struct usb_composite_driver audio_driver = {
 	.name		= "g_audio",
 	.dev		= &device_desc,
 	.strings	= audio_strings,
 	.max_speed	= USB_SPEED_HIGH,
 	.bind		= audio_bind,
-	.unbind		= audio_unbind,
+	.unbind		= __exit_p(audio_unbind),
 };
 
 module_usb_composite_driver(audio_driver);

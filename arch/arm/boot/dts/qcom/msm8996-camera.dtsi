@@ -280,6 +280,7 @@
 			0 0 0 0
 			0 0 0
 			0 0 0>;
+		qcom,clock-cntl-support;
 		qcom,clock-control = "NO_SET_RATE", "NO_SET_RATE",
 			"NO_SET_RATE", "NO_SET_RATE",
 			"INIT_RATE",
@@ -641,10 +642,6 @@
 			"camss_cpp_axi_clk", "camss_cpp_clk",
 			"micro_iface_clk", "camss_ahb_clk",
 			"smmu_cpp_axi_clk", "cpp_vbif_ahb_clk";
-
-		resets = <&clock_mmss CAMSS_MICRO_BCR>;
-		reset-names = "micro_iface_reset";
-
 		qcom,clock-rates = <0 0 0 480000000 0 0 480000000 0 0 0 0>;
 		qcom,min-clock-rate = <200000000>;
 		qcom,bus-master = <1>;
@@ -660,9 +657,6 @@
 			<106 512 0 0>,
 			<106 512 0 0>;
 		qcom,msm-bus-vector-dyn-vote;
-		qcom,src-clock-rates = <100000000 200000000 320000000
-			480000000 640000000>;
-		qcom,micro-reset;
 		qcom,cpp-fw-payload-info {
 			qcom,stripe-base = <553>;
 			qcom,plane-base = <481>;
@@ -717,9 +711,9 @@
 			"smmu_cpp_ahb_clk";
 		qcom,clock-rates =
 			<0 0 0 400000000 400000000 0 0 0 0 0 0 0>,
-			<0 0 0 400000000 400000000 0 0 0 0 0 0 0>,
+			<0 0 0 100000000 100000000 0 0 0 0 0 0 0>,
 			<0 0 0 200000000 200000000 0 0 0 0 0 0 0>,
-			<0 0 0 100000000 100000000 0 0 0 0 0 0 0>;
+			<0 0 0 400000000 400000000 0 0 0 0 0 0 0>;
 		qcom,msm-bus,name = "msm_camera_fd";
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;

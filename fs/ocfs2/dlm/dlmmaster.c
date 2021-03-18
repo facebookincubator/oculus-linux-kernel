@@ -498,6 +498,16 @@ static void dlm_lockres_release(struct kref *kref)
 	mlog(0, "destroying lockres %.*s\n", res->lockname.len,
 	     res->lockname.name);
 
+	spin_lock(&dlm->track_lock);
+	if (!list_empty(&res->tracking))
+		list_del_init(&res->tracking);
+	else {
+		mlog(ML_ERROR, "Resource %.*s not on the Tracking list\n",
+		     res->lockname.len, res->lockname.name);
+		dlm_print_one_lock_resource(res);
+	}
+	spin_unlock(&dlm->track_lock);
+
 	atomic_dec(&dlm->res_cur_count);
 
 	if (!hlist_unhashed(&res->hash_node) ||
@@ -685,6 +695,14 @@ void __dlm_lockres_grab_inflight_worker(struct dlm_ctxt *dlm,
 			res->inflight_assert_workers);
 }
 
+static void dlm_lockres_grab_inflight_worker(struct dlm_ctxt *dlm,
+		struct dlm_lock_resource *res)
+{
+	spin_lock(&res->spinlock);
+	__dlm_lockres_grab_inflight_worker(dlm, res);
+	spin_unlock(&res->spinlock);
+}
+
 static void __dlm_lockres_drop_inflight_worker(struct dlm_ctxt *dlm,
 		struct dlm_lock_resource *res)
 {
@@ -785,18 +803,8 @@ lookup:
 		dlm_lockres_grab_inflight_ref(dlm, tmpres);
 
 		spin_unlock(&tmpres->spinlock);
-		if (res) {
-			spin_lock(&dlm->track_lock);
-			if (!list_empty(&res->tracking))
-				list_del_init(&res->tracking);
-			else
-				mlog(ML_ERROR, "Resource %.*s not "
-						"on the Tracking list\n",
-						res->lockname.len,
-						res->lockname.name);
-			spin_unlock(&dlm->track_lock);
+		if (res)
 			dlm_lockres_put(res);
-		}
 		res = tmpres;
 		goto leave;
 	}
@@ -1466,18 +1474,6 @@ way_up_top:
 
 		/* take care of the easy cases up front */
 		spin_lock(&res->spinlock);
-
-		/*
-		 * Right after dlm spinlock was released, dlm_thread could have
-		 * purged the lockres. Check if lockres got unhashed. If so
-		 * start over.
-		 */
-		if (hlist_unhashed(&res->hash_node)) {
-			spin_unlock(&res->spinlock);
-			dlm_lockres_put(res);
-			goto way_up_top;
-		}
-
 		if (res->state & (DLM_LOCK_RES_RECOVERING|
 				  DLM_LOCK_RES_MIGRATING)) {
 			spin_unlock(&res->spinlock);
@@ -1652,18 +1648,15 @@ send_response:
 		}
 		mlog(0, "%u is the owner of %.*s, cleaning everyone else\n",
 			     dlm->node_num, res->lockname.len, res->lockname.name);
-		spin_lock(&res->spinlock);
 		ret = dlm_dispatch_assert_master(dlm, res, 0, request->node_idx,
 						 DLM_ASSERT_MASTER_MLE_CLEANUP);
 		if (ret < 0) {
 			mlog(ML_ERROR, "failed to dispatch assert master work\n");
 			response = DLM_MASTER_RESP_ERROR;
-			spin_unlock(&res->spinlock);
 			dlm_lockres_put(res);
 		} else {
 			dispatched = 1;
-			__dlm_lockres_grab_inflight_worker(dlm, res);
-			spin_unlock(&res->spinlock);
+			dlm_lockres_grab_inflight_worker(dlm, res);
 		}
 	} else {
 		if (res)
@@ -2838,8 +2831,6 @@ again:
 	res->state &= ~DLM_LOCK_RES_BLOCK_DIRTY;
 	if (!ret)
 		BUG_ON(!(res->state & DLM_LOCK_RES_MIGRATING));
-	else
-		res->migration_pending = 0;
 	spin_unlock(&res->spinlock);
 
 	/*

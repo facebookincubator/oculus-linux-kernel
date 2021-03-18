@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,7 +15,6 @@
 #define __QCOM_CLK_REGMAP_H__
 
 #include <linux/clk-provider.h>
-#include <linux/debugfs.h>
 
 struct regmap;
 
@@ -42,10 +41,5 @@ int clk_enable_regmap(struct clk_hw *hw);
 void clk_disable_regmap(struct clk_hw *hw);
 struct clk *
 devm_clk_register_regmap(struct device *dev, struct clk_regmap *rclk);
-
-struct clk_register_data {
-	char *name;
-	u32 offset;
-};
 
 #endif

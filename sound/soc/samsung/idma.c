@@ -418,6 +418,7 @@ static int asoc_idma_platform_probe(struct platform_device *pdev)
 static struct platform_driver asoc_idma_driver = {
 	.driver = {
 		.name = "samsung-idma",
+		.owner = THIS_MODULE,
 	},
 
 	.probe = asoc_idma_platform_probe,

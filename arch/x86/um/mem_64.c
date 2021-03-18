@@ -1,5 +1,6 @@
 #include <linux/mm.h>
-#include <asm/elf.h>
+#include <asm/page.h>
+#include <asm/mman.h>
 
 const char *arch_vma_name(struct vm_area_struct *vma)
 {

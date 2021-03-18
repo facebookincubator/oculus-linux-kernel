@@ -729,6 +729,7 @@ static struct platform_driver amiga_audio_driver = {
 	.remove = __exit_p(amiga_audio_remove),
 	.driver   = {
 		.name	= "amiga-audio",
+		.owner	= THIS_MODULE,
 	},
 };
 

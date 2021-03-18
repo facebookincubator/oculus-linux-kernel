@@ -106,6 +106,7 @@ static struct platform_driver innovator1510_panel_driver = {
 	.resume		= innovator1510_panel_resume,
 	.driver		= {
 		.name	= "lcd_inn1510",
+		.owner	= THIS_MODULE,
 	},
 };
 

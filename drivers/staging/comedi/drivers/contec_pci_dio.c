@@ -26,8 +26,9 @@ Configuration Options: not applicable, uses comedi PCI auto config
 */
 
 #include <linux/module.h>
+#include <linux/pci.h>
 
-#include "../comedi_pci.h"
+#include "../comedidev.h"
 
 /*
  * Register map
@@ -58,7 +59,7 @@ static int contec_di_insn_bits(struct comedi_device *dev,
 }
 
 static int contec_auto_attach(struct comedi_device *dev,
-			      unsigned long context_unused)
+					unsigned long context_unused)
 {
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 	struct comedi_subdevice *s;

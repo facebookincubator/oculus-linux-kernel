@@ -40,7 +40,7 @@
 #include <linux/stat.h>
 #include <linux/errno.h>
 #include <linux/unistd.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include <linux/fs.h>
 #include <linux/pagemap.h>
@@ -100,7 +100,7 @@ ll_fault_io_init(struct vm_area_struct *vma, struct lu_env **env_ret,
 		 unsigned long *ra_flags)
 {
 	struct file	       *file = vma->vm_file;
-	struct inode	       *inode = file_inode(file);
+	struct inode	       *inode = file->f_dentry->d_inode;
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
 	struct lu_env	       *env;
@@ -213,7 +213,7 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 	cfs_restore_sigs(set);
 
 	if (result == 0) {
-		struct inode *inode = file_inode(vma->vm_file);
+		struct inode *inode = vma->vm_file->f_dentry->d_inode;
 		struct ll_inode_info *lli = ll_i2info(inode);
 
 		lock_page(vmpage);
@@ -234,7 +234,8 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 			 */
 			unlock_page(vmpage);
 
-			CDEBUG(D_MMAP, "Race on page_mkwrite %p/%lu, page has been written out, retry.\n",
+			CDEBUG(D_MMAP, "Race on page_mkwrite %p/%lu, page has "
+			       "been written out, retry.\n",
 			       vmpage, vmpage->index);
 
 			*retry = true;
@@ -257,6 +258,8 @@ out:
 
 	return result;
 }
+
+
 
 static inline int to_fault_error(int result)
 {
@@ -310,7 +313,7 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		vio->u.fault.ft_vmpage    = NULL;
 		vio->u.fault.fault.ft_vmf = vmf;
 		vio->u.fault.fault.ft_flags = 0;
-		vio->u.fault.fault.ft_flags_valid = false;
+		vio->u.fault.fault.ft_flags_valid = 0;
 
 		result = cl_io_loop(env, io);
 
@@ -363,7 +366,8 @@ restart:
 			vmf->page = NULL;
 
 			if (!printed && ++count > 16) {
-				CWARN("the page is under heavy contention, maybe your app(%s) needs revising :-)\n",
+				CWARN("the page is under heavy contention,"
+				      "maybe your app(%s) needs revising :-)\n",
 				      current->comm);
 				printed = true;
 			}
@@ -389,9 +393,10 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 		result = ll_page_mkwrite0(vma, vmf->page, &retry);
 
 		if (!printed && ++count > 16) {
-			CWARN("app(%s): the page %lu of file %lu is under heavy contention.\n",
+			CWARN("app(%s): the page %lu of file %lu is under heavy"
+			      " contention.\n",
 			      current->comm, vmf->pgoff,
-			      file_inode(vma->vm_file)->i_ino);
+			      vma->vm_file->f_dentry->d_inode->i_ino);
 			printed = true;
 		}
 	} while (retry);
@@ -425,7 +430,7 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
  */
 static void ll_vm_open(struct vm_area_struct *vma)
 {
-	struct inode *inode    = file_inode(vma->vm_file);
+	struct inode *inode    = vma->vm_file->f_dentry->d_inode;
 	struct ccc_object *vob = cl_inode2ccc(inode);
 
 	LASSERT(vma->vm_file);
@@ -438,7 +443,7 @@ static void ll_vm_open(struct vm_area_struct *vma)
  */
 static void ll_vm_close(struct vm_area_struct *vma)
 {
-	struct inode      *inode = file_inode(vma->vm_file);
+	struct inode      *inode = vma->vm_file->f_dentry->d_inode;
 	struct ccc_object *vob   = cl_inode2ccc(inode);
 
 	LASSERT(vma->vm_file);
@@ -471,7 +476,7 @@ static const struct vm_operations_struct ll_file_vm_ops = {
 
 int ll_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct inode *inode = file_inode(file);
+	struct inode *inode = file->f_dentry->d_inode;
 	int rc;
 
 	if (ll_file_nolock(file))

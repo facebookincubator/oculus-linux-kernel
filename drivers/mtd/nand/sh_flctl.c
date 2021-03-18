@@ -159,6 +159,7 @@ static void flctl_setup_dma(struct sh_flctl *flctl)
 		return;
 
 	memset(&cfg, 0, sizeof(cfg));
+	cfg.slave_id = pdata->slave_id_fifo0_tx;
 	cfg.direction = DMA_MEM_TO_DEV;
 	cfg.dst_addr = (dma_addr_t)FLDTFIFO(flctl);
 	cfg.src_addr = 0;
@@ -174,6 +175,7 @@ static void flctl_setup_dma(struct sh_flctl *flctl)
 	if (!flctl->chan_fifo0_rx)
 		goto err;
 
+	cfg.slave_id = pdata->slave_id_fifo0_rx;
 	cfg.direction = DMA_DEV_TO_MEM;
 	cfg.dst_addr = 0;
 	cfg.src_addr = (dma_addr_t)FLDTFIFO(flctl);
@@ -569,8 +571,7 @@ static int flctl_read_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 }
 
 static int flctl_write_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
-				  const uint8_t *buf, int oob_required,
-				  int page)
+				   const uint8_t *buf, int oob_required)
 {
 	chip->write_buf(mtd, buf, mtd->writesize);
 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
@@ -1124,7 +1125,6 @@ static int flctl_probe(struct platform_device *pdev)
 	flctl_mtd = &flctl->mtd;
 	nand = &flctl->chip;
 	flctl_mtd->priv = nand;
-	flctl_mtd->dev.parent = &pdev->dev;
 	flctl->pdev = pdev;
 	flctl->hwecc = pdata->has_hwecc;
 	flctl->holden = pdata->use_holden;
@@ -1190,6 +1190,7 @@ static struct platform_driver flctl_driver = {
 	.remove		= flctl_remove,
 	.driver = {
 		.name	= "sh_flctl",
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(of_flctl_match),
 	},
 };

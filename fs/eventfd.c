@@ -118,18 +118,18 @@ static unsigned int eventfd_poll(struct file *file, poll_table *wait)
 {
 	struct eventfd_ctx *ctx = file->private_data;
 	unsigned int events = 0;
-	u64 count;
+	unsigned long flags;
 
 	poll_wait(file, &ctx->wqh, wait);
-	smp_rmb();
-	count = ctx->count;
 
-	if (count > 0)
+	spin_lock_irqsave(&ctx->wqh.lock, flags);
+	if (ctx->count > 0)
 		events |= POLLIN;
-	if (count == ULLONG_MAX)
+	if (ctx->count == ULLONG_MAX)
 		events |= POLLERR;
-	if (ULLONG_MAX - 1 > count)
+	if (ULLONG_MAX - 1 > ctx->count)
 		events |= POLLOUT;
+	spin_unlock_irqrestore(&ctx->wqh.lock, flags);
 
 	return events;
 }
@@ -287,14 +287,17 @@ static ssize_t eventfd_write(struct file *file, const char __user *buf, size_t c
 }
 
 #ifdef CONFIG_PROC_FS
-static void eventfd_show_fdinfo(struct seq_file *m, struct file *f)
+static int eventfd_show_fdinfo(struct seq_file *m, struct file *f)
 {
 	struct eventfd_ctx *ctx = f->private_data;
+	int ret;
 
 	spin_lock_irq(&ctx->wqh.lock);
-	seq_printf(m, "eventfd-count: %16llx\n",
-		   (unsigned long long)ctx->count);
+	ret = seq_printf(m, "eventfd-count: %16llx\n",
+			 (unsigned long long)ctx->count);
 	spin_unlock_irq(&ctx->wqh.lock);
+
+	return ret;
 }
 #endif
 

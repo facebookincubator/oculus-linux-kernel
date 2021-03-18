@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -207,5 +207,6 @@ EXPORT_SYMBOL(mpq_adapter_notify_stream_if);
 module_init(mpq_adapter_init);
 module_exit(mpq_adapter_exit);
 
-MODULE_DESCRIPTION("Qualcomm Technologies Inc. MPQ adapter");
+MODULE_DESCRIPTION("Qualcomm MPQ adapter");
 MODULE_LICENSE("GPL v2");
+

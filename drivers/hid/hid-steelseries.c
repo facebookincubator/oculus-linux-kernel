@@ -12,6 +12,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/usb.h>
 #include <linux/hid.h>
 #include <linux/module.h>
 
@@ -245,6 +246,11 @@ static int steelseries_srws1_probe(struct hid_device *hdev,
 	ret = hid_parse(hdev);
 	if (ret) {
 		hid_err(hdev, "parse failed\n");
+		goto err_free;
+	}
+
+	if (!hid_validate_values(hdev, HID_OUTPUT_REPORT, 0, 0, 16)) {
+		ret = -ENODEV;
 		goto err_free;
 	}
 

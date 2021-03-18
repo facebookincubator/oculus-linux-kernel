@@ -86,14 +86,9 @@ static int alx_refill_rx_ring(struct alx_priv *alx, gfp_t gfp)
 	while (!cur_buf->skb && next != rxq->read_idx) {
 		struct alx_rfd *rfd = &rxq->rfd[cur];
 
-		skb = __netdev_alloc_skb(alx->dev, alx->rxbuf_size + 64, gfp);
+		skb = __netdev_alloc_skb(alx->dev, alx->rxbuf_size, gfp);
 		if (!skb)
 			break;
-
-		/* Workround for the HW RX DMA overflow issue */
-		if (((unsigned long)skb->data & 0xfff) == 0xfc0)
-			skb_reserve(skb, 64);
-
 		dma = dma_map_single(&alx->hw.pdev->dev,
 				     skb->data, alx->rxbuf_size,
 				     DMA_FROM_DEVICE);
@@ -1538,8 +1533,6 @@ static const struct pci_device_id alx_pci_tbl[] = {
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_AR8161),
 	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_E2200),
-	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },
-	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_E2400),
 	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_AR8162),
 	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },

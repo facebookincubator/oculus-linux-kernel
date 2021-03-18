@@ -169,11 +169,10 @@ do {									\
 	(err) = ia64_getreg(_IA64_REG_R8);				\
 	(val) = ia64_getreg(_IA64_REG_R9);				\
 } while (0)
-# define __put_user_size(val, addr, n, err)				\
-do {									\
-	__st_user("__ex_table", (unsigned long) addr, n, RELOC_TYPE,	\
-		  (__force unsigned long) (val));			\
-	(err) = ia64_getreg(_IA64_REG_R8);				\
+# define __put_user_size(val, addr, n, err)							\
+do {												\
+	__st_user("__ex_table", (unsigned long) addr, n, RELOC_TYPE, (unsigned long) (val));	\
+	(err) = ia64_getreg(_IA64_REG_R8);							\
 } while (0)
 #endif /* !ASM_SUPPORTED */
 
@@ -198,7 +197,7 @@ extern void __get_user_unknown (void);
 		      case 8: __get_user_size(__gu_val, __gu_ptr, 8, __gu_err); break;	\
 		      default: __get_user_unknown(); break;				\
 		}									\
-	(x) = (__force __typeof__(*(__gu_ptr))) __gu_val;				\
+	(x) = (__typeof__(*(__gu_ptr))) __gu_val;					\
 	__gu_err;									\
 })
 
@@ -241,18 +240,12 @@ extern unsigned long __must_check __copy_user (void __user *to, const void __use
 static inline unsigned long
 __copy_to_user (void __user *to, const void *from, unsigned long count)
 {
-	if (!__builtin_constant_p(count))
-		check_object_size(from, count, true);
-
 	return __copy_user(to, (__force void __user *) from, count);
 }
 
 static inline unsigned long
 __copy_from_user (void *to, const void __user *from, unsigned long count)
 {
-	if (!__builtin_constant_p(count))
-		check_object_size(to, count, false);
-
 	return __copy_user((__force void __user *) to, from, count);
 }
 
@@ -264,11 +257,8 @@ __copy_from_user (void *to, const void __user *from, unsigned long count)
 	const void *__cu_from = (from);							\
 	long __cu_len = (n);								\
 											\
-	if (__access_ok(__cu_to, __cu_len, get_fs())) {					\
-		if (!__builtin_constant_p(n))						\
-			check_object_size(__cu_from, __cu_len, true);			\
-		__cu_len = __copy_user(__cu_to, (__force void __user *)  __cu_from, __cu_len);	\
-	}										\
+	if (__access_ok(__cu_to, __cu_len, get_fs()))					\
+		__cu_len = __copy_user(__cu_to, (__force void __user *) __cu_from, __cu_len);	\
 	__cu_len;									\
 })
 
@@ -279,11 +269,8 @@ __copy_from_user (void *to, const void __user *from, unsigned long count)
 	long __cu_len = (n);								\
 											\
 	__chk_user_ptr(__cu_from);							\
-	if (__access_ok(__cu_from, __cu_len, get_fs())) {				\
-		if (!__builtin_constant_p(n))						\
-			check_object_size(__cu_to, __cu_len, false);			\
+	if (__access_ok(__cu_from, __cu_len, get_fs()))					\
 		__cu_len = __copy_user((__force void __user *) __cu_to, __cu_from, __cu_len);	\
-	}										\
 	__cu_len;									\
 })
 
@@ -378,15 +365,15 @@ ia64_done_with_exception (struct pt_regs *regs)
 }
 
 #define ARCH_HAS_TRANSLATE_MEM_PTR	1
-static __inline__ void *
-xlate_dev_mem_ptr(phys_addr_t p)
+static __inline__ char *
+xlate_dev_mem_ptr (unsigned long p)
 {
 	struct page *page;
-	void *ptr;
+	char * ptr;
 
 	page = pfn_to_page(p >> PAGE_SHIFT);
 	if (PageUncached(page))
-		ptr = (void *)p + __IA64_UNCACHED_OFFSET;
+		ptr = (char *)p + __IA64_UNCACHED_OFFSET;
 	else
 		ptr = __va(p);
 
@@ -396,15 +383,15 @@ xlate_dev_mem_ptr(phys_addr_t p)
 /*
  * Convert a virtual cached kernel memory pointer to an uncached pointer
  */
-static __inline__ void *
-xlate_dev_kmem_ptr(void *p)
+static __inline__ char *
+xlate_dev_kmem_ptr (char * p)
 {
 	struct page *page;
-	void *ptr;
+	char * ptr;
 
 	page = virt_to_page((unsigned long)p);
 	if (PageUncached(page))
-		ptr = (void *)__pa(p) + __IA64_UNCACHED_OFFSET;
+		ptr = (char *)__pa(p) + __IA64_UNCACHED_OFFSET;
 	else
 		ptr = p;
 

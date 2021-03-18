@@ -46,7 +46,13 @@ static int xen_acpi_processor_enable(struct acpi_device *device)
 	unsigned long long value;
 	union acpi_object object = { 0 };
 	struct acpi_buffer buffer = { sizeof(union acpi_object), &object };
-	struct acpi_processor *pr = acpi_driver_data(device);
+	struct acpi_processor *pr;
+
+	pr = acpi_driver_data(device);
+	if (!pr) {
+		pr_err(PREFIX "Cannot find driver data\n");
+		return -EINVAL;
+	}
 
 	if (!strcmp(acpi_device_hid(device), ACPI_PROCESSOR_OBJECT_HID)) {
 		/* Declared with "Processor" statement; match ProcessorID */
@@ -71,7 +77,7 @@ static int xen_acpi_processor_enable(struct acpi_device *device)
 
 	pr->id = xen_pcpu_id(pr->acpi_id);
 
-	if (invalid_logical_cpuid(pr->id))
+	if ((int)pr->id < 0)
 		/* This cpu is not presented at hypervisor, try to hotadd it */
 		if (ACPI_FAILURE(xen_acpi_cpu_hotadd(pr))) {
 			pr_err(PREFIX "Hotadd CPU (acpi_id = %d) failed.\n",
@@ -220,7 +226,7 @@ static acpi_status xen_acpi_cpu_hotadd(struct acpi_processor *pr)
 		return AE_ERROR;
 
 	pr->id = xen_hotadd_cpu(pr);
-	if (invalid_logical_cpuid(pr->id))
+	if ((int)pr->id < 0)
 		return AE_ERROR;
 
 	/*

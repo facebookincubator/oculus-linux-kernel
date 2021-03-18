@@ -329,6 +329,7 @@ struct osc_lock {
 	struct osc_io	   *ols_owner;
 };
 
+
 /**
  * Page state private for osc layer.
  */
@@ -453,7 +454,7 @@ int osc_cache_writeback_range(const struct lu_env *env, struct osc_object *obj,
 int osc_cache_wait_range(const struct lu_env *env, struct osc_object *obj,
 			 pgoff_t start, pgoff_t end);
 void osc_io_unplug(const struct lu_env *env, struct client_obd *cli,
-		   struct osc_object *osc);
+		   struct osc_object *osc, pdl_policy_t pol);
 
 void osc_object_set_contended  (struct osc_object *obj);
 void osc_object_clear_contended(struct osc_object *obj);
@@ -677,7 +678,7 @@ struct osc_extent {
 
 int osc_extent_finish(const struct lu_env *env, struct osc_extent *ext,
 		      int sent, int rc);
-void osc_extent_release(const struct lu_env *env, struct osc_extent *ext);
+int osc_extent_release(const struct lu_env *env, struct osc_extent *ext);
 
 /** @} osc */
 

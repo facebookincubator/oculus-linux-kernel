@@ -51,10 +51,6 @@
 	pr_warn("%s-%d: %16s (port %d): WARNING: " format, __func__, __LINE__,\
 	(group)->name, group->demux->port, ## arg)
 
-#define mcg_debug_group(group, format, arg...) \
-	pr_debug("%s-%d: %16s (port %d): WARNING: " format, __func__, __LINE__,\
-		 (group)->name, (group)->demux->port, ## arg)
-
 #define mcg_error_group(group, format, arg...) \
 	pr_err("  %16s: " format, (group)->name, ## arg)
 
@@ -210,19 +206,18 @@ static int send_mad_to_wire(struct mlx4_ib_demux_ctx *ctx, struct ib_mad *mad)
 {
 	struct mlx4_ib_dev *dev = ctx->dev;
 	struct ib_ah_attr	ah_attr;
-	unsigned long flags;
 
-	spin_lock_irqsave(&dev->sm_lock, flags);
+	spin_lock(&dev->sm_lock);
 	if (!dev->sm_ah[ctx->port - 1]) {
 		/* port is not yet Active, sm_ah not ready */
-		spin_unlock_irqrestore(&dev->sm_lock, flags);
+		spin_unlock(&dev->sm_lock);
 		return -EAGAIN;
 	}
 	mlx4_ib_query_ah(dev->sm_ah[ctx->port - 1], &ah_attr);
-	spin_unlock_irqrestore(&dev->sm_lock, flags);
+	spin_unlock(&dev->sm_lock);
 	return mlx4_ib_send_to_wire(dev, mlx4_master_func_num(dev->dev),
 				    ctx->port, IB_QPT_GSI, 0, 1, IB_QP1_QKEY,
-				    &ah_attr, NULL, 0xffff, mad);
+				    &ah_attr, NULL, mad);
 }
 
 static int send_mad_to_slave(int slave, struct mlx4_ib_demux_ctx *ctx,
@@ -966,8 +961,8 @@ int mlx4_ib_mcg_multiplex_handler(struct ib_device *ibdev, int port,
 		mutex_lock(&group->lock);
 		if (group->func[slave].num_pend_reqs > MAX_PEND_REQS_PER_FUNC) {
 			mutex_unlock(&group->lock);
-			mcg_debug_group(group, "Port %d, Func %d has too many pending requests (%d), dropping\n",
-					port, slave, MAX_PEND_REQS_PER_FUNC);
+			mcg_warn_group(group, "Port %d, Func %d has too many pending requests (%d), dropping\n",
+				       port, slave, MAX_PEND_REQS_PER_FUNC);
 			release_group(group, 0);
 			kfree(req);
 			return -ENOMEM;

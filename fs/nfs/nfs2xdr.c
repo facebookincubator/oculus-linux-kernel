@@ -481,8 +481,7 @@ out_overflow:
  *		void;
  *	};
  */
-static int decode_attrstat(struct xdr_stream *xdr, struct nfs_fattr *result,
-			   __u32 *op_status)
+static int decode_attrstat(struct xdr_stream *xdr, struct nfs_fattr *result)
 {
 	enum nfs_stat status;
 	int error;
@@ -490,8 +489,6 @@ static int decode_attrstat(struct xdr_stream *xdr, struct nfs_fattr *result,
 	error = decode_stat(xdr, &status);
 	if (unlikely(error))
 		goto out;
-	if (op_status)
-		*op_status = status;
 	if (status != NFS_OK)
 		goto out_default;
 	error = decode_fattr(xdr, result);
@@ -811,7 +808,7 @@ out_default:
 static int nfs2_xdr_dec_attrstat(struct rpc_rqst *req, struct xdr_stream *xdr,
 				 struct nfs_fattr *result)
 {
-	return decode_attrstat(xdr, result, NULL);
+	return decode_attrstat(xdr, result);
 }
 
 static int nfs2_xdr_dec_diropres(struct rpc_rqst *req, struct xdr_stream *xdr,
@@ -868,7 +865,6 @@ static int nfs2_xdr_dec_readres(struct rpc_rqst *req, struct xdr_stream *xdr,
 	error = decode_stat(xdr, &status);
 	if (unlikely(error))
 		goto out;
-	result->op_status = status;
 	if (status != NFS_OK)
 		goto out_default;
 	error = decode_fattr(xdr, result->fattr);
@@ -886,7 +882,7 @@ static int nfs2_xdr_dec_writeres(struct rpc_rqst *req, struct xdr_stream *xdr,
 {
 	/* All NFSv2 writes are "file sync" writes */
 	result->verf->committed = NFS_FILE_SYNC;
-	return decode_attrstat(xdr, result->fattr, &result->op_status);
+	return decode_attrstat(xdr, result->fattr);
 }
 
 /**

@@ -15,10 +15,13 @@
 
 #define DSA_HLEN	4
 
-static struct sk_buff *dsa_xmit(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t dsa_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct dsa_slave_priv *p = netdev_priv(dev);
 	u8 *dsa_header;
+
+	dev->stats.tx_packets++;
+	dev->stats.tx_bytes += skb->len;
 
 	/*
 	 * Convert the outermost 802.1q tag to a DSA tag for tagged
@@ -60,11 +63,16 @@ static struct sk_buff *dsa_xmit(struct sk_buff *skb, struct net_device *dev)
 		dsa_header[3] = 0x00;
 	}
 
-	return skb;
+	skb->protocol = htons(ETH_P_DSA);
+
+	skb->dev = p->parent->dst->master_netdev;
+	dev_queue_xmit(skb);
+
+	return NETDEV_TX_OK;
 
 out_free:
 	kfree_skb(skb);
-	return NULL;
+	return NETDEV_TX_OK;
 }
 
 static int dsa_rcv(struct sk_buff *skb, struct net_device *dev,

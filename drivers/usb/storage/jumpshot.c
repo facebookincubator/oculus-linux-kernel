@@ -56,9 +56,7 @@
 #include "transport.h"
 #include "protocol.h"
 #include "debug.h"
-#include "scsiglue.h"
 
-#define DRV_NAME "ums-jumpshot"
 
 MODULE_DESCRIPTION("Driver for Lexar \"Jumpshot\" Compact Flash reader");
 MODULE_AUTHOR("Jimmie Mayfield <mayfield+usb@sackheads.org>");
@@ -649,8 +647,6 @@ static int jumpshot_transport(struct scsi_cmnd *srb, struct us_data *us)
 	return USB_STOR_TRANSPORT_FAILED;
 }
 
-static struct scsi_host_template jumpshot_host_template;
-
 static int jumpshot_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
@@ -658,8 +654,7 @@ static int jumpshot_probe(struct usb_interface *intf,
 	int result;
 
 	result = usb_stor_probe1(&us, intf, id,
-			(id - jumpshot_usb_ids) + jumpshot_unusual_dev_list,
-			&jumpshot_host_template);
+			(id - jumpshot_usb_ids) + jumpshot_unusual_dev_list);
 	if (result)
 		return result;
 
@@ -673,7 +668,7 @@ static int jumpshot_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver jumpshot_driver = {
-	.name =		DRV_NAME,
+	.name =		"ums-jumpshot",
 	.probe =	jumpshot_probe,
 	.disconnect =	usb_stor_disconnect,
 	.suspend =	usb_stor_suspend,
@@ -686,4 +681,4 @@ static struct usb_driver jumpshot_driver = {
 	.no_dynamic_id = 1,
 };
 
-module_usb_stor_driver(jumpshot_driver, jumpshot_host_template, DRV_NAME);
+module_usb_driver(jumpshot_driver);

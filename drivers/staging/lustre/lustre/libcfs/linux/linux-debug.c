@@ -50,7 +50,7 @@
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/fs.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/miscdevice.h>
 
 # define DEBUG_SUBSYSTEM S_LNET
@@ -87,7 +87,8 @@ void libcfs_run_debug_log_upcall(char *file)
 
 	rc = call_usermodehelper(argv[0], argv, envp, 1);
 	if (rc < 0 && rc != -ENOENT) {
-		CERROR("Error %d invoking LNET debug log upcall %s %s; check /proc/sys/lnet/debug_log_upcall\n",
+		CERROR("Error %d invoking LNET debug log upcall %s %s; "
+		       "check /proc/sys/lnet/debug_log_upcall\n",
 		       rc, argv[0], argv[1]);
 	} else {
 		CDEBUG(D_HA, "Invoked LNET debug log upcall %s %s\n",
@@ -113,7 +114,8 @@ void libcfs_run_upcall(char **argv)
 
 	rc = call_usermodehelper(argv[0], argv, envp, 1);
 	if (rc < 0 && rc != -ENOENT) {
-		CERROR("Error %d invoking LNET upcall %s %s%s%s%s%s%s%s%s; check /proc/sys/lnet/upcall\n",
+		CERROR("Error %d invoking LNET upcall %s %s%s%s%s%s%s%s%s; "
+		       "check /proc/sys/lnet/upcall\n",
 		       rc, argv[0], argv[1],
 		       argc < 3 ? "" : ",", argc < 3 ? "" : argv[2],
 		       argc < 4 ? "" : ",", argc < 4 ? "" : argv[3],
@@ -146,7 +148,7 @@ void libcfs_run_lbug_upcall(struct libcfs_debug_msg_data *msgdata)
 }
 
 /* coverity[+kill] */
-void __noreturn lbug_with_loc(struct libcfs_debug_msg_data *msgdata)
+void lbug_with_loc(struct libcfs_debug_msg_data *msgdata)
 {
 	libcfs_catastrophe = 1;
 	libcfs_debug_msg(msgdata, "LBUG\n");

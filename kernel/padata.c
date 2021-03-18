@@ -917,10 +917,15 @@ static ssize_t show_cpumask(struct padata_instance *pinst,
 	else
 		cpumask = pinst->cpumask.pcpu;
 
-	len = snprintf(buf, PAGE_SIZE, "%*pb\n",
-		       nr_cpu_ids, cpumask_bits(cpumask));
+	len = bitmap_scnprintf(buf, PAGE_SIZE, cpumask_bits(cpumask),
+			       nr_cpu_ids);
+	if (PAGE_SIZE - len < 2)
+		len = -EINVAL;
+	else
+		len += sprintf(buf + len, "\n");
+
 	mutex_unlock(&pinst->lock);
-	return len < PAGE_SIZE ? len : -EINVAL;
+	return len;
 }
 
 static ssize_t store_cpumask(struct padata_instance *pinst,

@@ -9,7 +9,6 @@
  */
 
 #include <linux/atomic.h>
-#include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/errno.h>
 #include <linux/list.h>
@@ -24,13 +23,17 @@
 static DEFINE_MUTEX(clk_lock);
 static LIST_HEAD(clk_list);
 
-static struct v4l2_clk *v4l2_clk_find(const char *dev_id)
+static struct v4l2_clk *v4l2_clk_find(const char *dev_id, const char *id)
 {
 	struct v4l2_clk *clk;
 
-	list_for_each_entry(clk, &clk_list, list)
-		if (!strcmp(dev_id, clk->dev_id))
+	list_for_each_entry(clk, &clk_list, list) {
+		if (strcmp(dev_id, clk->dev_id))
+			continue;
+
+		if (!id || !clk->id || !strcmp(clk->id, id))
 			return clk;
+	}
 
 	return ERR_PTR(-ENODEV);
 }
@@ -38,24 +41,9 @@ static struct v4l2_clk *v4l2_clk_find(const char *dev_id)
 struct v4l2_clk *v4l2_clk_get(struct device *dev, const char *id)
 {
 	struct v4l2_clk *clk;
-	struct clk *ccf_clk = clk_get(dev, id);
-
-	if (PTR_ERR(ccf_clk) == -EPROBE_DEFER)
-		return ERR_PTR(-EPROBE_DEFER);
-
-	if (!IS_ERR_OR_NULL(ccf_clk)) {
-		clk = kzalloc(sizeof(*clk), GFP_KERNEL);
-		if (!clk) {
-			clk_put(ccf_clk);
-			return ERR_PTR(-ENOMEM);
-		}
-		clk->clk = ccf_clk;
-
-		return clk;
-	}
 
 	mutex_lock(&clk_lock);
-	clk = v4l2_clk_find(dev_name(dev));
+	clk = v4l2_clk_find(dev_name(dev), id);
 
 	if (!IS_ERR(clk))
 		atomic_inc(&clk->use_count);
@@ -71,12 +59,6 @@ void v4l2_clk_put(struct v4l2_clk *clk)
 
 	if (IS_ERR(clk))
 		return;
-
-	if (clk->clk) {
-		clk_put(clk->clk);
-		kfree(clk);
-		return;
-	}
 
 	mutex_lock(&clk_lock);
 
@@ -115,12 +97,8 @@ static void v4l2_clk_unlock_driver(struct v4l2_clk *clk)
 
 int v4l2_clk_enable(struct v4l2_clk *clk)
 {
-	int ret;
+	int ret = v4l2_clk_lock_driver(clk);
 
-	if (clk->clk)
-		return clk_prepare_enable(clk->clk);
-
-	ret = v4l2_clk_lock_driver(clk);
 	if (ret < 0)
 		return ret;
 
@@ -146,14 +124,11 @@ void v4l2_clk_disable(struct v4l2_clk *clk)
 {
 	int enable;
 
-	if (clk->clk)
-		return clk_disable_unprepare(clk->clk);
-
 	mutex_lock(&clk->lock);
 
 	enable = --clk->enable;
-	if (WARN(enable < 0, "Unbalanced %s() on %s!\n", __func__,
-		 clk->dev_id))
+	if (WARN(enable < 0, "Unbalanced %s() on %s:%s!\n", __func__,
+		 clk->dev_id, clk->id))
 		clk->enable++;
 	else if (!enable && clk->ops->disable)
 		clk->ops->disable(clk);
@@ -166,12 +141,8 @@ EXPORT_SYMBOL(v4l2_clk_disable);
 
 unsigned long v4l2_clk_get_rate(struct v4l2_clk *clk)
 {
-	int ret;
+	int ret = v4l2_clk_lock_driver(clk);
 
-	if (clk->clk)
-		return clk_get_rate(clk->clk);
-
-	ret = v4l2_clk_lock_driver(clk);
 	if (ret < 0)
 		return ret;
 
@@ -190,16 +161,7 @@ EXPORT_SYMBOL(v4l2_clk_get_rate);
 
 int v4l2_clk_set_rate(struct v4l2_clk *clk, unsigned long rate)
 {
-	int ret;
-
-	if (clk->clk) {
-		long r = clk_round_rate(clk->clk, rate);
-		if (r < 0)
-			return r;
-		return clk_set_rate(clk->clk, r);
-	}
-
-	ret = v4l2_clk_lock_driver(clk);
+	int ret = v4l2_clk_lock_driver(clk);
 
 	if (ret < 0)
 		return ret;
@@ -219,7 +181,7 @@ EXPORT_SYMBOL(v4l2_clk_set_rate);
 
 struct v4l2_clk *v4l2_clk_register(const struct v4l2_clk_ops *ops,
 				   const char *dev_id,
-				   void *priv)
+				   const char *id, void *priv)
 {
 	struct v4l2_clk *clk;
 	int ret;
@@ -231,8 +193,9 @@ struct v4l2_clk *v4l2_clk_register(const struct v4l2_clk_ops *ops,
 	if (!clk)
 		return ERR_PTR(-ENOMEM);
 
+	clk->id = kstrdup(id, GFP_KERNEL);
 	clk->dev_id = kstrdup(dev_id, GFP_KERNEL);
-	if (!clk->dev_id) {
+	if ((id && !clk->id) || !clk->dev_id) {
 		ret = -ENOMEM;
 		goto ealloc;
 	}
@@ -242,7 +205,7 @@ struct v4l2_clk *v4l2_clk_register(const struct v4l2_clk_ops *ops,
 	mutex_init(&clk->lock);
 
 	mutex_lock(&clk_lock);
-	if (!IS_ERR(v4l2_clk_find(dev_id))) {
+	if (!IS_ERR(v4l2_clk_find(dev_id, id))) {
 		mutex_unlock(&clk_lock);
 		ret = -EEXIST;
 		goto eexist;
@@ -254,6 +217,7 @@ struct v4l2_clk *v4l2_clk_register(const struct v4l2_clk_ops *ops,
 
 eexist:
 ealloc:
+	kfree(clk->id);
 	kfree(clk->dev_id);
 	kfree(clk);
 	return ERR_PTR(ret);
@@ -263,14 +227,15 @@ EXPORT_SYMBOL(v4l2_clk_register);
 void v4l2_clk_unregister(struct v4l2_clk *clk)
 {
 	if (WARN(atomic_read(&clk->use_count),
-		 "%s(): Refusing to unregister ref-counted %s clock!\n",
-		 __func__, clk->dev_id))
+		 "%s(): Refusing to unregister ref-counted %s:%s clock!\n",
+		 __func__, clk->dev_id, clk->id))
 		return;
 
 	mutex_lock(&clk_lock);
 	list_del(&clk->list);
 	mutex_unlock(&clk_lock);
 
+	kfree(clk->id);
 	kfree(clk->dev_id);
 	kfree(clk);
 }
@@ -288,7 +253,7 @@ static unsigned long fixed_get_rate(struct v4l2_clk *clk)
 }
 
 struct v4l2_clk *__v4l2_clk_register_fixed(const char *dev_id,
-				unsigned long rate, struct module *owner)
+		const char *id, unsigned long rate, struct module *owner)
 {
 	struct v4l2_clk *clk;
 	struct v4l2_clk_fixed *priv = kzalloc(sizeof(*priv), GFP_KERNEL);
@@ -300,7 +265,7 @@ struct v4l2_clk *__v4l2_clk_register_fixed(const char *dev_id,
 	priv->ops.get_rate = fixed_get_rate;
 	priv->ops.owner = owner;
 
-	clk = v4l2_clk_register(&priv->ops, dev_id, priv);
+	clk = v4l2_clk_register(&priv->ops, dev_id, id, priv);
 	if (IS_ERR(clk))
 		kfree(priv);
 

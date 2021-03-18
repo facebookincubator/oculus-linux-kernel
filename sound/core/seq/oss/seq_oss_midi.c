@@ -173,9 +173,10 @@ snd_seq_oss_midi_check_new_port(struct snd_seq_port_info *pinfo)
 	/*
 	 * allocate midi info record
 	 */
-	mdev = kzalloc(sizeof(*mdev), GFP_KERNEL);
-	if (!mdev)
+	if ((mdev = kzalloc(sizeof(*mdev), GFP_KERNEL)) == NULL) {
+		pr_err("ALSA: seq_oss: can't malloc midi info\n");
 		return -ENOMEM;
+	}
 
 	/* copy the port information */
 	mdev->client = pinfo->addr.client;
@@ -236,7 +237,8 @@ snd_seq_oss_midi_check_exit_port(int client, int port)
 		spin_unlock_irqrestore(&register_lock, flags);
 		snd_use_lock_free(&mdev->use_lock);
 		snd_use_lock_sync(&mdev->use_lock);
-		snd_midi_event_free(mdev->coder);
+		if (mdev->coder)
+			snd_midi_event_free(mdev->coder);
 		kfree(mdev);
 	}
 	spin_lock_irqsave(&register_lock, flags);
@@ -263,7 +265,8 @@ snd_seq_oss_midi_clear_all(void)
 	spin_lock_irqsave(&register_lock, flags);
 	for (i = 0; i < max_midi_devs; i++) {
 		if ((mdev = midi_devs[i]) != NULL) {
-			snd_midi_event_free(mdev->coder);
+			if (mdev->coder)
+				snd_midi_event_free(mdev->coder);
 			kfree(mdev);
 			midi_devs[i] = NULL;
 		}
@@ -665,7 +668,7 @@ snd_seq_oss_midi_make_info(struct seq_oss_devinfo *dp, int dev, struct midi_info
 }
 
 
-#ifdef CONFIG_SND_PROC_FS
+#ifdef CONFIG_PROC_FS
 /*
  * proc interface
  */
@@ -705,4 +708,4 @@ snd_seq_oss_midi_info_read(struct snd_info_buffer *buf)
 		snd_use_lock_free(&mdev->use_lock);
 	}
 }
-#endif /* CONFIG_SND_PROC_FS */
+#endif /* CONFIG_PROC_FS */

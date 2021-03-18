@@ -30,7 +30,6 @@
 #include <linux/atomic.h>
 #include <linux/kthread.h>
 #include <linux/crc32.h>
-#include <linux/ktime.h>
 
 #include "power.h"
 
@@ -212,80 +211,7 @@ int swsusp_swap_in_use(void)
  */
 
 static unsigned short root_swap = 0xffff;
-static struct block_device *hib_resume_bdev;
-
-struct hib_bio_batch {
-	atomic_t		count;
-	wait_queue_head_t	wait;
-	int			error;
-};
-
-static void hib_init_batch(struct hib_bio_batch *hb)
-{
-	atomic_set(&hb->count, 0);
-	init_waitqueue_head(&hb->wait);
-	hb->error = 0;
-}
-
-static void hib_end_io(struct bio *bio)
-{
-	struct hib_bio_batch *hb = bio->bi_private;
-	struct page *page = bio->bi_io_vec[0].bv_page;
-
-	if (bio->bi_error) {
-		printk(KERN_ALERT "Read-error on swap-device (%u:%u:%Lu)\n",
-				imajor(bio->bi_bdev->bd_inode),
-				iminor(bio->bi_bdev->bd_inode),
-				(unsigned long long)bio->bi_iter.bi_sector);
-	}
-
-	if (bio_data_dir(bio) == WRITE)
-		put_page(page);
-
-	if (bio->bi_error && !hb->error)
-		hb->error = bio->bi_error;
-	if (atomic_dec_and_test(&hb->count))
-		wake_up(&hb->wait);
-
-	bio_put(bio);
-}
-
-static int hib_submit_io(int rw, pgoff_t page_off, void *addr,
-		struct hib_bio_batch *hb)
-{
-	struct page *page = virt_to_page(addr);
-	struct bio *bio;
-	int error = 0;
-
-	bio = bio_alloc(__GFP_RECLAIM | __GFP_HIGH, 1);
-	bio->bi_iter.bi_sector = page_off * (PAGE_SIZE >> 9);
-	bio->bi_bdev = hib_resume_bdev;
-
-	if (bio_add_page(bio, page, PAGE_SIZE, 0) < PAGE_SIZE) {
-		printk(KERN_ERR "PM: Adding page to bio failed at %llu\n",
-			(unsigned long long)bio->bi_iter.bi_sector);
-		bio_put(bio);
-		return -EFAULT;
-	}
-
-	if (hb) {
-		bio->bi_end_io = hib_end_io;
-		bio->bi_private = hb;
-		atomic_inc(&hb->count);
-		submit_bio(rw, bio);
-	} else {
-		error = submit_bio_wait(rw, bio);
-		bio_put(bio);
-	}
-
-	return error;
-}
-
-static int hib_wait_io(struct hib_bio_batch *hb)
-{
-	wait_event(hb->wait, atomic_read(&hb->count) == 0);
-	return hb->error;
-}
+struct block_device *hib_resume_bdev;
 
 /*
  * Saving part
@@ -295,7 +221,7 @@ static int mark_swapfiles(struct swap_map_handle *handle, unsigned int flags)
 {
 	int error;
 
-	hib_submit_io(READ_SYNC, swsusp_resume_block, swsusp_header, NULL);
+	hib_bio_read_page(swsusp_resume_block, swsusp_header, NULL);
 	if (!memcmp("SWAP-SPACE",swsusp_header->sig, 10) ||
 	    !memcmp("SWAPSPACE2",swsusp_header->sig, 10)) {
 		memcpy(swsusp_header->orig_sig,swsusp_header->sig, 10);
@@ -304,7 +230,7 @@ static int mark_swapfiles(struct swap_map_handle *handle, unsigned int flags)
 		swsusp_header->flags = flags;
 		if (flags & SF_CRC32_MODE)
 			swsusp_header->crc32 = handle->crc32;
-		error = hib_submit_io(WRITE_SYNC, swsusp_resume_block,
+		error = hib_bio_write_page(swsusp_resume_block,
 					swsusp_header, NULL);
 	} else {
 		printk(KERN_ERR "PM: Swap header not found!\n");
@@ -344,10 +270,10 @@ static int swsusp_swap_check(void)
  *	write_page - Write one page to given swap location.
  *	@buf:		Address we're writing.
  *	@offset:	Offset of the swap page we're writing to.
- *	@hb:		bio completion batch
+ *	@bio_chain:	Link the next write BIO here
  */
 
-static int write_page(void *buf, sector_t offset, struct hib_bio_batch *hb)
+static int write_page(void *buf, sector_t offset, struct bio **bio_chain)
 {
 	void *src;
 	int ret;
@@ -355,30 +281,30 @@ static int write_page(void *buf, sector_t offset, struct hib_bio_batch *hb)
 	if (!offset)
 		return -ENOSPC;
 
-	if (hb) {
-		src = (void *)__get_free_page(__GFP_RECLAIM | __GFP_NOWARN |
+	if (bio_chain) {
+		src = (void *)__get_free_page(__GFP_WAIT | __GFP_NOWARN |
 		                              __GFP_NORETRY);
 		if (src) {
 			copy_page(src, buf);
 		} else {
-			ret = hib_wait_io(hb); /* Free pages */
+			ret = hib_wait_on_bio_chain(bio_chain); /* Free pages */
 			if (ret)
 				return ret;
-			src = (void *)__get_free_page(__GFP_RECLAIM |
+			src = (void *)__get_free_page(__GFP_WAIT |
 			                              __GFP_NOWARN |
 			                              __GFP_NORETRY);
 			if (src) {
 				copy_page(src, buf);
 			} else {
 				WARN_ON_ONCE(1);
-				hb = NULL;	/* Go synchronous */
+				bio_chain = NULL;	/* Go synchronous */
 				src = buf;
 			}
 		}
 	} else {
 		src = buf;
 	}
-	return hib_submit_io(WRITE_SYNC, offset, src, hb);
+	return hib_bio_write_page(offset, src, bio_chain);
 }
 
 static void release_swap_writer(struct swap_map_handle *handle)
@@ -421,7 +347,7 @@ err_close:
 }
 
 static int swap_write_page(struct swap_map_handle *handle, void *buf,
-		struct hib_bio_batch *hb)
+				struct bio **bio_chain)
 {
 	int error = 0;
 	sector_t offset;
@@ -429,7 +355,7 @@ static int swap_write_page(struct swap_map_handle *handle, void *buf,
 	if (!handle->cur)
 		return -EINVAL;
 	offset = alloc_swapdev_block(root_swap);
-	error = write_page(buf, offset, hb);
+	error = write_page(buf, offset, bio_chain);
 	if (error)
 		return error;
 	handle->cur->entries[handle->k++] = offset;
@@ -438,15 +364,15 @@ static int swap_write_page(struct swap_map_handle *handle, void *buf,
 		if (!offset)
 			return -ENOSPC;
 		handle->cur->next_swap = offset;
-		error = write_page(handle->cur, handle->cur_swap, hb);
+		error = write_page(handle->cur, handle->cur_swap, bio_chain);
 		if (error)
 			goto out;
 		clear_page(handle->cur);
 		handle->cur_swap = offset;
 		handle->k = 0;
 
-		if (hb && low_free_pages() <= handle->reqd_free_pages) {
-			error = hib_wait_io(hb);
+		if (bio_chain && low_free_pages() <= handle->reqd_free_pages) {
+			error = hib_wait_on_bio_chain(bio_chain);
 			if (error)
 				goto out;
 			/*
@@ -518,11 +444,9 @@ static int save_image(struct swap_map_handle *handle,
 	int ret;
 	int nr_pages;
 	int err2;
-	struct hib_bio_batch hb;
-	ktime_t start;
-	ktime_t stop;
-
-	hib_init_batch(&hb);
+	struct bio *bio;
+	struct timeval start;
+	struct timeval stop;
 
 	printk(KERN_INFO "PM: Saving image data pages (%u pages)...\n",
 		nr_to_write);
@@ -530,12 +454,13 @@ static int save_image(struct swap_map_handle *handle,
 	if (!m)
 		m = 1;
 	nr_pages = 0;
-	start = ktime_get();
+	bio = NULL;
+	do_gettimeofday(&start);
 	while (1) {
 		ret = snapshot_read_next(snapshot);
 		if (ret <= 0)
 			break;
-		ret = swap_write_page(handle, data_of(*snapshot), &hb);
+		ret = swap_write_page(handle, data_of(*snapshot), &bio);
 		if (ret)
 			break;
 		if (!(nr_pages % m))
@@ -543,13 +468,13 @@ static int save_image(struct swap_map_handle *handle,
 			       nr_pages / m * 10);
 		nr_pages++;
 	}
-	err2 = hib_wait_io(&hb);
-	stop = ktime_get();
+	err2 = hib_wait_on_bio_chain(&bio);
+	do_gettimeofday(&stop);
 	if (!ret)
 		ret = err2;
 	if (!ret)
 		printk(KERN_INFO "PM: Image saving done.\n");
-	swsusp_show_speed(start, stop, nr_to_write, "Wrote");
+	swsusp_show_speed(&start, &stop, nr_to_write, "Wrote");
 	return ret;
 }
 
@@ -654,16 +579,14 @@ static int save_image_lzo(struct swap_map_handle *handle,
 	int ret = 0;
 	int nr_pages;
 	int err2;
-	struct hib_bio_batch hb;
-	ktime_t start;
-	ktime_t stop;
+	struct bio *bio;
+	struct timeval start;
+	struct timeval stop;
 	size_t off;
 	unsigned thr, run_threads, nr_threads;
 	unsigned char *page = NULL;
 	struct cmp_data *data = NULL;
 	struct crc_data *crc = NULL;
-
-	hib_init_batch(&hb);
 
 	/*
 	 * We'll limit the number of threads for compression to limit memory
@@ -672,7 +595,7 @@ static int save_image_lzo(struct swap_map_handle *handle,
 	nr_threads = num_online_cpus() - 1;
 	nr_threads = clamp_val(nr_threads, 1, LZO_THREADS);
 
-	page = (void *)__get_free_page(__GFP_RECLAIM | __GFP_HIGH);
+	page = (void *)__get_free_page(__GFP_WAIT | __GFP_HIGH);
 	if (!page) {
 		printk(KERN_ERR "PM: Failed to allocate LZO page\n");
 		ret = -ENOMEM;
@@ -750,7 +673,8 @@ static int save_image_lzo(struct swap_map_handle *handle,
 	if (!m)
 		m = 1;
 	nr_pages = 0;
-	start = ktime_get();
+	bio = NULL;
+	do_gettimeofday(&start);
 	for (;;) {
 		for (thr = 0; thr < nr_threads; thr++) {
 			for (off = 0; off < LZO_UNC_SIZE; off += PAGE_SIZE) {
@@ -823,7 +747,7 @@ static int save_image_lzo(struct swap_map_handle *handle,
 			     off += PAGE_SIZE) {
 				memcpy(page, data[thr].cmp + off, PAGE_SIZE);
 
-				ret = swap_write_page(handle, page, &hb);
+				ret = swap_write_page(handle, page, &bio);
 				if (ret)
 					goto out_finish;
 			}
@@ -834,13 +758,13 @@ static int save_image_lzo(struct swap_map_handle *handle,
 	}
 
 out_finish:
-	err2 = hib_wait_io(&hb);
-	stop = ktime_get();
+	err2 = hib_wait_on_bio_chain(&bio);
+	do_gettimeofday(&stop);
 	if (!ret)
 		ret = err2;
 	if (!ret)
 		printk(KERN_INFO "PM: Image saving done.\n");
-	swsusp_show_speed(start, stop, nr_to_write, "Wrote");
+	swsusp_show_speed(&start, &stop, nr_to_write, "Wrote");
 out_clean:
 	if (crc) {
 		if (crc->thr)
@@ -975,13 +899,13 @@ static int get_swap_reader(struct swap_map_handle *handle,
 		last = tmp;
 
 		tmp->map = (struct swap_map_page *)
-			   __get_free_page(__GFP_RECLAIM | __GFP_HIGH);
+		           __get_free_page(__GFP_WAIT | __GFP_HIGH);
 		if (!tmp->map) {
 			release_swap_reader(handle);
 			return -ENOMEM;
 		}
 
-		error = hib_submit_io(READ_SYNC, offset, tmp->map, NULL);
+		error = hib_bio_read_page(offset, tmp->map, NULL);
 		if (error) {
 			release_swap_reader(handle);
 			return error;
@@ -994,7 +918,7 @@ static int get_swap_reader(struct swap_map_handle *handle,
 }
 
 static int swap_read_page(struct swap_map_handle *handle, void *buf,
-		struct hib_bio_batch *hb)
+				struct bio **bio_chain)
 {
 	sector_t offset;
 	int error;
@@ -1005,7 +929,7 @@ static int swap_read_page(struct swap_map_handle *handle, void *buf,
 	offset = handle->cur->entries[handle->k];
 	if (!offset)
 		return -EFAULT;
-	error = hib_submit_io(READ_SYNC, offset, buf, hb);
+	error = hib_bio_read_page(offset, buf, bio_chain);
 	if (error)
 		return error;
 	if (++handle->k >= MAP_PAGE_ENTRIES) {
@@ -1041,13 +965,11 @@ static int load_image(struct swap_map_handle *handle,
 {
 	unsigned int m;
 	int ret = 0;
-	ktime_t start;
-	ktime_t stop;
-	struct hib_bio_batch hb;
+	struct timeval start;
+	struct timeval stop;
+	struct bio *bio;
 	int err2;
 	unsigned nr_pages;
-
-	hib_init_batch(&hb);
 
 	printk(KERN_INFO "PM: Loading image data pages (%u pages)...\n",
 		nr_to_read);
@@ -1055,16 +977,17 @@ static int load_image(struct swap_map_handle *handle,
 	if (!m)
 		m = 1;
 	nr_pages = 0;
-	start = ktime_get();
+	bio = NULL;
+	do_gettimeofday(&start);
 	for ( ; ; ) {
 		ret = snapshot_write_next(snapshot);
 		if (ret <= 0)
 			break;
-		ret = swap_read_page(handle, data_of(*snapshot), &hb);
+		ret = swap_read_page(handle, data_of(*snapshot), &bio);
 		if (ret)
 			break;
 		if (snapshot->sync_read)
-			ret = hib_wait_io(&hb);
+			ret = hib_wait_on_bio_chain(&bio);
 		if (ret)
 			break;
 		if (!(nr_pages % m))
@@ -1072,8 +995,8 @@ static int load_image(struct swap_map_handle *handle,
 			       nr_pages / m * 10);
 		nr_pages++;
 	}
-	err2 = hib_wait_io(&hb);
-	stop = ktime_get();
+	err2 = hib_wait_on_bio_chain(&bio);
+	do_gettimeofday(&stop);
 	if (!ret)
 		ret = err2;
 	if (!ret) {
@@ -1082,7 +1005,7 @@ static int load_image(struct swap_map_handle *handle,
 		if (!snapshot_image_loaded(snapshot))
 			ret = -ENODATA;
 	}
-	swsusp_show_speed(start, stop, nr_to_read, "Read");
+	swsusp_show_speed(&start, &stop, nr_to_read, "Read");
 	return ret;
 }
 
@@ -1143,9 +1066,9 @@ static int load_image_lzo(struct swap_map_handle *handle,
 	unsigned int m;
 	int ret = 0;
 	int eof = 0;
-	struct hib_bio_batch hb;
-	ktime_t start;
-	ktime_t stop;
+	struct bio *bio;
+	struct timeval start;
+	struct timeval stop;
 	unsigned nr_pages;
 	size_t off;
 	unsigned i, thr, run_threads, nr_threads;
@@ -1155,8 +1078,6 @@ static int load_image_lzo(struct swap_map_handle *handle,
 	unsigned char **page = NULL;
 	struct dec_data *data = NULL;
 	struct crc_data *crc = NULL;
-
-	hib_init_batch(&hb);
 
 	/*
 	 * We'll limit the number of threads for decompression to limit memory
@@ -1242,9 +1163,9 @@ static int load_image_lzo(struct swap_map_handle *handle,
 
 	for (i = 0; i < read_pages; i++) {
 		page[i] = (void *)__get_free_page(i < LZO_CMP_PAGES ?
-						  __GFP_RECLAIM | __GFP_HIGH :
-						  __GFP_RECLAIM | __GFP_NOWARN |
-						  __GFP_NORETRY);
+		                                  __GFP_WAIT | __GFP_HIGH :
+		                                  __GFP_WAIT | __GFP_NOWARN |
+		                                  __GFP_NORETRY);
 
 		if (!page[i]) {
 			if (i < LZO_CMP_PAGES) {
@@ -1268,7 +1189,8 @@ static int load_image_lzo(struct swap_map_handle *handle,
 	if (!m)
 		m = 1;
 	nr_pages = 0;
-	start = ktime_get();
+	bio = NULL;
+	do_gettimeofday(&start);
 
 	ret = snapshot_write_next(snapshot);
 	if (ret <= 0)
@@ -1276,7 +1198,7 @@ static int load_image_lzo(struct swap_map_handle *handle,
 
 	for(;;) {
 		for (i = 0; !eof && i < want; i++) {
-			ret = swap_read_page(handle, page[ring], &hb);
+			ret = swap_read_page(handle, page[ring], &bio);
 			if (ret) {
 				/*
 				 * On real read error, finish. On end of data,
@@ -1303,7 +1225,7 @@ static int load_image_lzo(struct swap_map_handle *handle,
 			if (!asked)
 				break;
 
-			ret = hib_wait_io(&hb);
+			ret = hib_wait_on_bio_chain(&bio);
 			if (ret)
 				goto out_finish;
 			have += asked;
@@ -1358,7 +1280,7 @@ static int load_image_lzo(struct swap_map_handle *handle,
 		 * Wait for more data while we are decompressing.
 		 */
 		if (have < LZO_CMP_PAGES && asked) {
-			ret = hib_wait_io(&hb);
+			ret = hib_wait_on_bio_chain(&bio);
 			if (ret)
 				goto out_finish;
 			have += asked;
@@ -1421,7 +1343,7 @@ out_finish:
 		wait_event(crc->done, atomic_read(&crc->stop));
 		atomic_set(&crc->stop, 0);
 	}
-	stop = ktime_get();
+	do_gettimeofday(&stop);
 	if (!ret) {
 		printk(KERN_INFO "PM: Image loading done.\n");
 		snapshot_write_finalize(snapshot);
@@ -1437,7 +1359,7 @@ out_finish:
 			}
 		}
 	}
-	swsusp_show_speed(start, stop, nr_to_read, "Read");
+	swsusp_show_speed(&start, &stop, nr_to_read, "Read");
 out_clean:
 	for (i = 0; i < ring_size; i++)
 		free_page((unsigned long)page[i]);
@@ -1452,7 +1374,7 @@ out_clean:
 				kthread_stop(data[thr].thr);
 		vfree(data);
 	}
-	vfree(page);
+	if (page) vfree(page);
 
 	return ret;
 }
@@ -1507,7 +1429,7 @@ int swsusp_check(void)
 	if (!IS_ERR(hib_resume_bdev)) {
 		set_blocksize(hib_resume_bdev, PAGE_SIZE);
 		clear_page(swsusp_header);
-		error = hib_submit_io(READ_SYNC, swsusp_resume_block,
+		error = hib_bio_read_page(swsusp_resume_block,
 					swsusp_header, NULL);
 		if (error)
 			goto put;
@@ -1515,7 +1437,7 @@ int swsusp_check(void)
 		if (!memcmp(HIBERNATE_SIG, swsusp_header->sig, 10)) {
 			memcpy(swsusp_header->sig, swsusp_header->orig_sig, 10);
 			/* Reset swap signature now */
-			error = hib_submit_io(WRITE_SYNC, swsusp_resume_block,
+			error = hib_bio_write_page(swsusp_resume_block,
 						swsusp_header, NULL);
 		} else {
 			error = -EINVAL;
@@ -1559,10 +1481,10 @@ int swsusp_unmark(void)
 {
 	int error;
 
-	hib_submit_io(READ_SYNC, swsusp_resume_block, swsusp_header, NULL);
+	hib_bio_read_page(swsusp_resume_block, swsusp_header, NULL);
 	if (!memcmp(HIBERNATE_SIG,swsusp_header->sig, 10)) {
 		memcpy(swsusp_header->sig,swsusp_header->orig_sig, 10);
-		error = hib_submit_io(WRITE_SYNC, swsusp_resume_block,
+		error = hib_bio_write_page(swsusp_resume_block,
 					swsusp_header, NULL);
 	} else {
 		printk(KERN_ERR "PM: Cannot find swsusp signature!\n");

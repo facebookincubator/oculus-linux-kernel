@@ -895,10 +895,9 @@ static void
 hfsc_purge_queue(struct Qdisc *sch, struct hfsc_class *cl)
 {
 	unsigned int len = cl->qdisc->q.qlen;
-	unsigned int backlog = cl->qdisc->qstats.backlog;
 
 	qdisc_reset(cl->qdisc);
-	qdisc_tree_reduce_backlog(cl->qdisc, len, backlog);
+	qdisc_tree_decrease_qlen(cl->qdisc, len);
 }
 
 static void
@@ -1166,7 +1165,7 @@ hfsc_classify(struct sk_buff *skb, struct Qdisc *sch, int *qerr)
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
 	head = &q->root;
 	tcf = rcu_dereference_bh(q->root.filter_list);
-	while (tcf && (result = tc_classify(skb, tcf, &res, false)) >= 0) {
+	while (tcf && (result = tc_classify(skb, tcf, &res)) >= 0) {
 #ifdef CONFIG_NET_CLS_ACT
 		switch (result) {
 		case TC_ACT_QUEUED:
@@ -1216,7 +1215,11 @@ hfsc_graft_class(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 			new = &noop_qdisc;
 	}
 
-	*old = qdisc_replace(sch, new, &cl->qdisc);
+	sch_tree_lock(sch);
+	hfsc_purge_queue(sch, cl);
+	*old = cl->qdisc;
+	cl->qdisc = new;
+	sch_tree_unlock(sch);
 	return 0;
 }
 

@@ -167,9 +167,7 @@ static int of_mdio_bus_match(struct device *dev, const void *mdio_bus_np)
  * of_mdio_find_bus - Given an mii_bus node, find the mii_bus.
  * @mdio_bus_np: Pointer to the mii_bus.
  *
- * Returns a reference to the mii_bus, or NULL if none found.  The
- * embedded struct device will have its reference count incremented,
- * and this must be put once the bus is finished with.
+ * Returns a pointer to the mii_bus, or NULL if none found.
  *
  * Because the association of a device_node and mii_bus is made via
  * of_mdiobus_register(), the mii_bus cannot be found before it is
@@ -236,18 +234,15 @@ static inline void of_mdiobus_link_phydev(struct mii_bus *mdio,
 #endif
 
 /**
- * __mdiobus_register - bring up all the PHYs on a given bus and attach them to bus
+ * mdiobus_register - bring up all the PHYs on a given bus and attach them to bus
  * @bus: target mii_bus
- * @owner: module containing bus accessor functions
  *
  * Description: Called by a bus driver to bring up all the PHYs
- *   on a given bus, and attach them to the bus. Drivers should use
- *   mdiobus_register() rather than __mdiobus_register() unless they
- *   need to pass a specific owner module.
+ *   on a given bus, and attach them to the bus.
  *
  * Returns 0 on success or < 0 on error.
  */
-int __mdiobus_register(struct mii_bus *bus, struct module *owner)
+int mdiobus_register(struct mii_bus *bus)
 {
 	int i, err;
 
@@ -258,7 +253,6 @@ int __mdiobus_register(struct mii_bus *bus, struct module *owner)
 	BUG_ON(bus->state != MDIOBUS_ALLOCATED &&
 	       bus->state != MDIOBUS_UNREGISTERED);
 
-	bus->owner = owner;
 	bus->dev.parent = bus->parent;
 	bus->dev.class = &mdio_bus_class;
 	bus->dev.groups = NULL;
@@ -294,16 +288,13 @@ int __mdiobus_register(struct mii_bus *bus, struct module *owner)
 
 error:
 	while (--i >= 0) {
-		struct phy_device *phydev = bus->phy_map[i];
-		if (phydev) {
-			phy_device_remove(phydev);
-			phy_device_free(phydev);
-		}
+		if (bus->phy_map[i])
+			device_unregister(&bus->phy_map[i]->dev);
 	}
 	device_del(&bus->dev);
 	return err;
 }
-EXPORT_SYMBOL(__mdiobus_register);
+EXPORT_SYMBOL(mdiobus_register);
 
 void mdiobus_unregister(struct mii_bus *bus)
 {
@@ -312,14 +303,12 @@ void mdiobus_unregister(struct mii_bus *bus)
 	BUG_ON(bus->state != MDIOBUS_REGISTERED);
 	bus->state = MDIOBUS_UNREGISTERED;
 
-	for (i = 0; i < PHY_MAX_ADDR; i++) {
-		struct phy_device *phydev = bus->phy_map[i];
-		if (phydev) {
-			phy_device_remove(phydev);
-			phy_device_free(phydev);
-		}
-	}
 	device_del(&bus->dev);
+	for (i = 0; i < PHY_MAX_ADDR; i++) {
+		if (bus->phy_map[i])
+			device_unregister(&bus->phy_map[i]->dev);
+		bus->phy_map[i] = NULL;
+	}
 }
 EXPORT_SYMBOL(mdiobus_unregister);
 
@@ -372,33 +361,6 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 EXPORT_SYMBOL(mdiobus_scan);
 
 /**
- * mdiobus_read_nested - Nested version of the mdiobus_read function
- * @bus: the mii_bus struct
- * @addr: the phy address
- * @regnum: register number to read
- *
- * In case of nested MDIO bus access avoid lockdep false positives by
- * using mutex_lock_nested().
- *
- * NOTE: MUST NOT be called from interrupt context,
- * because the bus read/write functions may wait for an interrupt
- * to conclude the operation.
- */
-int mdiobus_read_nested(struct mii_bus *bus, int addr, u32 regnum)
-{
-	int retval;
-
-	BUG_ON(in_interrupt());
-
-	mutex_lock_nested(&bus->mdio_lock, SINGLE_DEPTH_NESTING);
-	retval = bus->read(bus, addr, regnum);
-	mutex_unlock(&bus->mdio_lock);
-
-	return retval;
-}
-EXPORT_SYMBOL(mdiobus_read_nested);
-
-/**
  * mdiobus_read - Convenience function for reading a given MII mgmt register
  * @bus: the mii_bus struct
  * @addr: the phy address
@@ -421,34 +383,6 @@ int mdiobus_read(struct mii_bus *bus, int addr, u32 regnum)
 	return retval;
 }
 EXPORT_SYMBOL(mdiobus_read);
-
-/**
- * mdiobus_write_nested - Nested version of the mdiobus_write function
- * @bus: the mii_bus struct
- * @addr: the phy address
- * @regnum: register number to write
- * @val: value to write to @regnum
- *
- * In case of nested MDIO bus access avoid lockdep false positives by
- * using mutex_lock_nested().
- *
- * NOTE: MUST NOT be called from interrupt context,
- * because the bus read/write functions may wait for an interrupt
- * to conclude the operation.
- */
-int mdiobus_write_nested(struct mii_bus *bus, int addr, u32 regnum, u16 val)
-{
-	int err;
-
-	BUG_ON(in_interrupt());
-
-	mutex_lock_nested(&bus->mdio_lock, SINGLE_DEPTH_NESTING);
-	err = bus->write(bus, addr, regnum, val);
-	mutex_unlock(&bus->mdio_lock);
-
-	return err;
-}
-EXPORT_SYMBOL(mdiobus_write_nested);
 
 /**
  * mdiobus_write - Convenience function for writing a given MII mgmt register
@@ -487,8 +421,6 @@ static int mdio_bus_match(struct device *dev, struct device_driver *drv)
 {
 	struct phy_device *phydev = to_phy_device(dev);
 	struct phy_driver *phydrv = to_phy_driver(drv);
-	const int num_ids = ARRAY_SIZE(phydev->c45_ids.device_ids);
-	int i;
 
 	if (of_driver_match_device(dev, drv))
 		return 1;
@@ -496,21 +428,8 @@ static int mdio_bus_match(struct device *dev, struct device_driver *drv)
 	if (phydrv->match_phy_device)
 		return phydrv->match_phy_device(phydev);
 
-	if (phydev->is_c45) {
-		for (i = 1; i < num_ids; i++) {
-			if (!(phydev->c45_ids.devices_in_package & (1 << i)))
-				continue;
-
-			if ((phydrv->phy_id & phydrv->phy_id_mask) ==
-			    (phydev->c45_ids.device_ids[i] &
-			     phydrv->phy_id_mask))
-				return 1;
-		}
-		return 0;
-	} else {
-		return (phydrv->phy_id & phydrv->phy_id_mask) ==
-			(phydev->phy_id & phydrv->phy_id_mask);
-	}
+	return (phydrv->phy_id & phydrv->phy_id_mask) ==
+		(phydev->phy_id & phydrv->phy_id_mask);
 }
 
 #ifdef CONFIG_PM
@@ -524,13 +443,9 @@ static bool mdio_bus_phy_may_suspend(struct phy_device *phydev)
 	if (!drv || !phydrv->suspend)
 		return false;
 
-	/* PHY not attached? May suspend if the PHY has not already been
-	 * suspended as part of a prior call to phy_disconnect() ->
-	 * phy_detach() -> phy_suspend() because the parent netdev might be the
-	 * MDIO bus driver and clock gated at this point.
-	 */
+	/* PHY not attached? May suspend. */
 	if (!netdev)
-		return !phydev->suspended;
+		return true;
 
 	/* Don't suspend PHY if the attched netdev parent may wakeup.
 	 * The parent may point to a PCI device, as in tg3 driver.
@@ -550,6 +465,7 @@ static bool mdio_bus_phy_may_suspend(struct phy_device *phydev)
 
 static int mdio_bus_suspend(struct device *dev)
 {
+	struct phy_driver *phydrv = to_phy_driver(dev->driver);
 	struct phy_device *phydev = to_phy_device(dev);
 
 	/* We must stop the state machine manually, otherwise it stops out of
@@ -563,18 +479,19 @@ static int mdio_bus_suspend(struct device *dev)
 	if (!mdio_bus_phy_may_suspend(phydev))
 		return 0;
 
-	return phy_suspend(phydev);
+	return phydrv->suspend(phydev);
 }
 
 static int mdio_bus_resume(struct device *dev)
 {
+	struct phy_driver *phydrv = to_phy_driver(dev->driver);
 	struct phy_device *phydev = to_phy_device(dev);
 	int ret;
 
 	if (!mdio_bus_phy_may_suspend(phydev))
 		goto no_resume;
 
-	ret = phy_resume(phydev);
+	ret = phydrv->resume(phydev);
 	if (ret < 0)
 		return ret;
 

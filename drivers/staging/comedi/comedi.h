@@ -217,7 +217,7 @@
 #define SDF_RUNNING	0x08000000	/* subdevice is acquiring data */
 #define SDF_LSAMPL	0x10000000	/* subdevice uses 32-bit samples */
 #define SDF_PACKED	0x20000000	/* subdevice can do packed DIO */
-/* re recycle these flags for PWM */
+/* re recyle these flags for PWM */
 #define SDF_PWM_COUNTER SDF_MODE0	/* PWM can automatically switch off */
 #define SDF_PWM_HBRIDGE SDF_MODE1	/* PWM is signed (H-bridge) */
 
@@ -367,8 +367,6 @@ enum comedi_support_level {
 #define COMEDI_BUFCONFIG _IOR(CIO, 13, struct comedi_bufconfig)
 #define COMEDI_BUFINFO _IOWR(CIO, 14, struct comedi_bufinfo)
 #define COMEDI_POLL _IO(CIO, 15)
-#define COMEDI_SETRSUBD _IO(CIO, 16)
-#define COMEDI_SETWSUBD _IO(CIO, 17)
 
 /* structures */
 
@@ -515,6 +513,17 @@ struct comedi_bufinfo {
 #define UNIT_none		2
 
 #define COMEDI_MIN_SPEED	((unsigned int)0xffffffff)
+
+/* callback stuff */
+/* only relevant to kernel modules. */
+
+#define COMEDI_CB_EOS		1	/* end of scan */
+#define COMEDI_CB_EOA		2	/* end of acquisition/output */
+#define COMEDI_CB_BLOCK		4	/* data has arrived:
+					 * wakes up read() / write() */
+#define COMEDI_CB_EOBUF		8	/* DEPRECATED: end of buffer */
+#define COMEDI_CB_ERROR		16	/* card error during acquisition */
+#define COMEDI_CB_OVERFLOW	32	/* buffer overflow/underflow */
 
 /**********************************************************/
 /* everything after this line is ALPHA */

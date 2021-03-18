@@ -195,6 +195,7 @@ MODULE_DEVICE_TABLE(i2c, tef6862_id);
 
 static struct i2c_driver tef6862_driver = {
 	.driver = {
+		.owner	= THIS_MODULE,
 		.name	= DRIVER_NAME,
 	},
 	.probe		= tef6862_probe,

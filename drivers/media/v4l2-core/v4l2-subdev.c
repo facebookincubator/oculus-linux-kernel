@@ -93,7 +93,8 @@ static int subdev_open(struct file *file)
 
 err:
 #if defined(CONFIG_MEDIA_CONTROLLER)
-	media_entity_put(entity);
+	if (entity)
+		media_entity_put(entity);
 #endif
 	v4l2_fh_del(&subdev_fh->vfh);
 	v4l2_fh_exit(&subdev_fh->vfh);
@@ -261,7 +262,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		if (rval)
 			return rval;
 
-		return v4l2_subdev_call(sd, pad, get_fmt, subdev_fh->pad, format);
+		return v4l2_subdev_call(sd, pad, get_fmt, subdev_fh, format);
 	}
 
 	case VIDIOC_SUBDEV_S_FMT: {
@@ -271,7 +272,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		if (rval)
 			return rval;
 
-		return v4l2_subdev_call(sd, pad, set_fmt, subdev_fh->pad, format);
+		return v4l2_subdev_call(sd, pad, set_fmt, subdev_fh, format);
 	}
 
 	case VIDIOC_SUBDEV_G_CROP: {
@@ -282,13 +283,17 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		if (rval)
 			return rval;
 
+		rval = v4l2_subdev_call(sd, pad, get_crop, subdev_fh, crop);
+		if (rval != -ENOIOCTLCMD)
+			return rval;
+
 		memset(&sel, 0, sizeof(sel));
 		sel.which = crop->which;
 		sel.pad = crop->pad;
 		sel.target = V4L2_SEL_TGT_CROP;
 
 		rval = v4l2_subdev_call(
-			sd, pad, get_selection, subdev_fh->pad, &sel);
+			sd, pad, get_selection, subdev_fh, &sel);
 
 		crop->rect = sel.r;
 
@@ -303,6 +308,10 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		if (rval)
 			return rval;
 
+		rval = v4l2_subdev_call(sd, pad, set_crop, subdev_fh, crop);
+		if (rval != -ENOIOCTLCMD)
+			return rval;
+
 		memset(&sel, 0, sizeof(sel));
 		sel.which = crop->which;
 		sel.pad = crop->pad;
@@ -310,7 +319,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		sel.r = crop->rect;
 
 		rval = v4l2_subdev_call(
-			sd, pad, set_selection, subdev_fh->pad, &sel);
+			sd, pad, set_selection, subdev_fh, &sel);
 
 		crop->rect = sel.r;
 
@@ -320,28 +329,20 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 	case VIDIOC_SUBDEV_ENUM_MBUS_CODE: {
 		struct v4l2_subdev_mbus_code_enum *code = arg;
 
-		if (code->which != V4L2_SUBDEV_FORMAT_TRY &&
-		    code->which != V4L2_SUBDEV_FORMAT_ACTIVE)
-			return -EINVAL;
-
 		if (code->pad >= sd->entity.num_pads)
 			return -EINVAL;
 
-		return v4l2_subdev_call(sd, pad, enum_mbus_code, subdev_fh->pad,
+		return v4l2_subdev_call(sd, pad, enum_mbus_code, subdev_fh,
 					code);
 	}
 
 	case VIDIOC_SUBDEV_ENUM_FRAME_SIZE: {
 		struct v4l2_subdev_frame_size_enum *fse = arg;
 
-		if (fse->which != V4L2_SUBDEV_FORMAT_TRY &&
-		    fse->which != V4L2_SUBDEV_FORMAT_ACTIVE)
-			return -EINVAL;
-
 		if (fse->pad >= sd->entity.num_pads)
 			return -EINVAL;
 
-		return v4l2_subdev_call(sd, pad, enum_frame_size, subdev_fh->pad,
+		return v4l2_subdev_call(sd, pad, enum_frame_size, subdev_fh,
 					fse);
 	}
 
@@ -366,14 +367,10 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 	case VIDIOC_SUBDEV_ENUM_FRAME_INTERVAL: {
 		struct v4l2_subdev_frame_interval_enum *fie = arg;
 
-		if (fie->which != V4L2_SUBDEV_FORMAT_TRY &&
-		    fie->which != V4L2_SUBDEV_FORMAT_ACTIVE)
-			return -EINVAL;
-
 		if (fie->pad >= sd->entity.num_pads)
 			return -EINVAL;
 
-		return v4l2_subdev_call(sd, pad, enum_frame_interval, subdev_fh->pad,
+		return v4l2_subdev_call(sd, pad, enum_frame_interval, subdev_fh,
 					fie);
 	}
 
@@ -385,7 +382,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 			return rval;
 
 		return v4l2_subdev_call(
-			sd, pad, get_selection, subdev_fh->pad, sel);
+			sd, pad, get_selection, subdev_fh, sel);
 	}
 
 	case VIDIOC_SUBDEV_S_SELECTION: {
@@ -396,7 +393,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 			return rval;
 
 		return v4l2_subdev_call(
-			sd, pad, set_selection, subdev_fh->pad, sel);
+			sd, pad, set_selection, subdev_fh, sel);
 	}
 
 	case VIDIOC_G_EDID: {
@@ -588,21 +585,3 @@ void v4l2_subdev_init(struct v4l2_subdev *sd, const struct v4l2_subdev_ops *ops)
 #endif
 }
 EXPORT_SYMBOL(v4l2_subdev_init);
-
-/**
- * v4l2_subdev_notify_event() - Delivers event notification for subdevice
- * @sd: The subdev for which to deliver the event
- * @ev: The event to deliver
- *
- * Will deliver the specified event to all userspace event listeners which are
- * subscribed to the v42l subdev event queue as well as to the bridge driver
- * using the notify callback. The notification type for the notify callback
- * will be V4L2_DEVICE_NOTIFY_EVENT.
- */
-void v4l2_subdev_notify_event(struct v4l2_subdev *sd,
-			      const struct v4l2_event *ev)
-{
-	v4l2_event_queue(sd->devnode, ev);
-	v4l2_subdev_notify(sd, V4L2_DEVICE_NOTIFY_EVENT, (void *)ev);
-}
-EXPORT_SYMBOL_GPL(v4l2_subdev_notify_event);

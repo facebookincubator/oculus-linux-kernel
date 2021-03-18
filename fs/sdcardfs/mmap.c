@@ -66,7 +66,7 @@ out:
 	return err;
 }
 
-static ssize_t sdcardfs_direct_IO(struct kiocb *iocb,
+static ssize_t sdcardfs_direct_IO(int rw, struct kiocb *iocb,
 		struct iov_iter *iter, loff_t pos)
 {
 	/*

@@ -9,15 +9,13 @@
 #define KSYM_NAME_LEN 256
 #endif
 
-static inline u8 kallsyms2elf_binding(char type)
+static inline u8 kallsyms2elf_type(char type)
 {
 	if (type == 'W')
 		return STB_WEAK;
 
 	return isupper(type) ? STB_GLOBAL : STB_LOCAL;
 }
-
-u8 kallsyms2elf_type(char type);
 
 int kallsyms__parse(const char *filename, void *arg,
 		    int (*process_symbol)(void *arg, const char *name,

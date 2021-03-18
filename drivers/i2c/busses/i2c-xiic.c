@@ -46,11 +46,6 @@ enum xilinx_i2c_state {
 	STATE_START
 };
 
-enum xiic_endian {
-	LITTLE,
-	BIG
-};
-
 /**
  * struct xiic_i2c - Internal representation of the XIIC I2C bus
  * @base:	Memory base of the HW registers
@@ -63,7 +58,6 @@ enum xiic_endian {
  * @state:	See STATE_
  * @rx_msg:	Current RX message
  * @rx_pos:	Position within current RX message
- * @endianness: big/little-endian byte order
  */
 struct xiic_i2c {
 	void __iomem		*base;
@@ -76,7 +70,6 @@ struct xiic_i2c {
 	enum xilinx_i2c_state	state;
 	struct i2c_msg		*rx_msg;
 	int			rx_pos;
-	enum xiic_endian	endianness;
 };
 
 
@@ -177,58 +170,29 @@ struct xiic_i2c {
 static void xiic_start_xfer(struct xiic_i2c *i2c);
 static void __xiic_start_xfer(struct xiic_i2c *i2c);
 
-/*
- * For the register read and write functions, a little-endian and big-endian
- * version are necessary. Endianness is detected during the probe function.
- * Only the least significant byte [doublet] of the register are ever
- * accessed. This requires an offset of 3 [2] from the base address for
- * big-endian systems.
- */
-
 static inline void xiic_setreg8(struct xiic_i2c *i2c, int reg, u8 value)
 {
-	if (i2c->endianness == LITTLE)
-		iowrite8(value, i2c->base + reg);
-	else
-		iowrite8(value, i2c->base + reg + 3);
+	iowrite8(value, i2c->base + reg);
 }
 
 static inline u8 xiic_getreg8(struct xiic_i2c *i2c, int reg)
 {
-	u8 ret;
-
-	if (i2c->endianness == LITTLE)
-		ret = ioread8(i2c->base + reg);
-	else
-		ret = ioread8(i2c->base + reg + 3);
-	return ret;
+	return ioread8(i2c->base + reg);
 }
 
 static inline void xiic_setreg16(struct xiic_i2c *i2c, int reg, u16 value)
 {
-	if (i2c->endianness == LITTLE)
-		iowrite16(value, i2c->base + reg);
-	else
-		iowrite16be(value, i2c->base + reg + 2);
+	iowrite16(value, i2c->base + reg);
 }
 
 static inline void xiic_setreg32(struct xiic_i2c *i2c, int reg, int value)
 {
-	if (i2c->endianness == LITTLE)
-		iowrite32(value, i2c->base + reg);
-	else
-		iowrite32be(value, i2c->base + reg);
+	iowrite32(value, i2c->base + reg);
 }
 
 static inline int xiic_getreg32(struct xiic_i2c *i2c, int reg)
 {
-	u32 ret;
-
-	if (i2c->endianness == LITTLE)
-		ret = ioread32(i2c->base + reg);
-	else
-		ret = ioread32be(i2c->base + reg);
-	return ret;
+	return ioread32(i2c->base + reg);
 }
 
 static inline void xiic_irq_dis(struct xiic_i2c *i2c, u32 mask)
@@ -283,7 +247,7 @@ static void xiic_reinit(struct xiic_i2c *i2c)
 	/* Enable interrupts */
 	xiic_setreg32(i2c, XIIC_DGIER_OFFSET, XIIC_GINTR_ENABLE_MASK);
 
-	xiic_irq_clr_en(i2c, XIIC_INTR_ARB_LOST_MASK);
+	xiic_irq_clr_en(i2c, XIIC_INTR_AAS_MASK | XIIC_INTR_ARB_LOST_MASK);
 }
 
 static void xiic_deinit(struct xiic_i2c *i2c)
@@ -358,9 +322,8 @@ static void xiic_wakeup(struct xiic_i2c *i2c, int code)
 	wake_up(&i2c->wait);
 }
 
-static irqreturn_t xiic_process(int irq, void *dev_id)
+static void xiic_process(struct xiic_i2c *i2c)
 {
-	struct xiic_i2c *i2c = dev_id;
 	u32 pend, isr, ier;
 	u32 clr = 0;
 
@@ -369,7 +332,6 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 	 * To find which interrupts are pending; AND interrupts pending with
 	 * interrupts masked.
 	 */
-	spin_lock(&i2c->lock);
 	isr = xiic_getreg32(i2c, XIIC_IISR_OFFSET);
 	ier = xiic_getreg32(i2c, XIIC_IIER_OFFSET);
 	pend = isr & ier;
@@ -380,6 +342,11 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 		__func__, xiic_getreg8(i2c, XIIC_SR_REG_OFFSET),
 		i2c->tx_msg, i2c->nmsgs);
 
+	/* Do not processes a devices interrupts if the device has no
+	 * interrupts pending
+	 */
+	if (!pend)
+		return;
 
 	/* Service requesting interrupt */
 	if ((pend & XIIC_INTR_ARB_LOST_MASK) ||
@@ -399,15 +366,13 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 		 */
 		xiic_reinit(i2c);
 
-		if (i2c->rx_msg)
-			xiic_wakeup(i2c, STATE_ERROR);
 		if (i2c->tx_msg)
 			xiic_wakeup(i2c, STATE_ERROR);
-	}
-	if (pend & XIIC_INTR_RX_FULL_MASK) {
+
+	} else if (pend & XIIC_INTR_RX_FULL_MASK) {
 		/* Receive register/FIFO is full */
 
-		clr |= XIIC_INTR_RX_FULL_MASK;
+		clr = XIIC_INTR_RX_FULL_MASK;
 		if (!i2c->rx_msg) {
 			dev_dbg(i2c->adap.dev.parent,
 				"%s unexpexted RX IRQ\n", __func__);
@@ -440,10 +405,9 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 				__xiic_start_xfer(i2c);
 			}
 		}
-	}
-	if (pend & XIIC_INTR_BNB_MASK) {
+	} else if (pend & XIIC_INTR_BNB_MASK) {
 		/* IIC bus has transitioned to not busy */
-		clr |= XIIC_INTR_BNB_MASK;
+		clr = XIIC_INTR_BNB_MASK;
 
 		/* The bus is not busy, disable BusNotBusy interrupt */
 		xiic_irq_dis(i2c, XIIC_INTR_BNB_MASK);
@@ -456,12 +420,12 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 			xiic_wakeup(i2c, STATE_DONE);
 		else
 			xiic_wakeup(i2c, STATE_ERROR);
-	}
-	if (pend & (XIIC_INTR_TX_EMPTY_MASK | XIIC_INTR_TX_HALF_MASK)) {
+
+	} else if (pend & (XIIC_INTR_TX_EMPTY_MASK | XIIC_INTR_TX_HALF_MASK)) {
 		/* Transmit register/FIFO is empty or ½ empty */
 
-		clr |= (pend &
-			(XIIC_INTR_TX_EMPTY_MASK | XIIC_INTR_TX_HALF_MASK));
+		clr = pend &
+			(XIIC_INTR_TX_EMPTY_MASK | XIIC_INTR_TX_HALF_MASK);
 
 		if (!i2c->tx_msg) {
 			dev_dbg(i2c->adap.dev.parent,
@@ -492,13 +456,16 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 			 * make sure to disable tx half
 			 */
 			xiic_irq_dis(i2c, XIIC_INTR_TX_HALF_MASK);
+	} else {
+		/* got IRQ which is not acked */
+		dev_err(i2c->adap.dev.parent, "%s Got unexpected IRQ\n",
+			__func__);
+		clr = pend;
 	}
 out:
 	dev_dbg(i2c->adap.dev.parent, "%s clr: 0x%x\n", __func__, clr);
 
 	xiic_setreg32(i2c, XIIC_IISR_OFFSET, clr);
-	spin_unlock(&i2c->lock);
-	return IRQ_HANDLED;
 }
 
 static int xiic_bus_busy(struct xiic_i2c *i2c)
@@ -522,7 +489,7 @@ static int xiic_busy(struct xiic_i2c *i2c)
 	 */
 	err = xiic_bus_busy(i2c);
 	while (err && tries--) {
-		msleep(1);
+		mdelay(1);
 		err = xiic_bus_busy(i2c);
 	}
 
@@ -599,21 +566,19 @@ static void xiic_start_send(struct xiic_i2c *i2c)
 static irqreturn_t xiic_isr(int irq, void *dev_id)
 {
 	struct xiic_i2c *i2c = dev_id;
-	u32 pend, isr, ier;
-	irqreturn_t ret = IRQ_NONE;
-	/* Do not processes a devices interrupts if the device has no
-	 * interrupts pending
-	 */
+
+	spin_lock(&i2c->lock);
+	/* disable interrupts globally */
+	xiic_setreg32(i2c, XIIC_DGIER_OFFSET, 0);
 
 	dev_dbg(i2c->adap.dev.parent, "%s entry\n", __func__);
 
-	isr = xiic_getreg32(i2c, XIIC_IISR_OFFSET);
-	ier = xiic_getreg32(i2c, XIIC_IIER_OFFSET);
-	pend = isr & ier;
-	if (pend)
-		ret = IRQ_WAKE_THREAD;
+	xiic_process(i2c);
 
-	return ret;
+	xiic_setreg32(i2c, XIIC_DGIER_OFFSET, XIIC_GINTR_ENABLE_MASK);
+	spin_unlock(&i2c->lock);
+
+	return IRQ_HANDLED;
 }
 
 static void __xiic_start_xfer(struct xiic_i2c *i2c)
@@ -662,10 +627,16 @@ static void __xiic_start_xfer(struct xiic_i2c *i2c)
 
 static void xiic_start_xfer(struct xiic_i2c *i2c)
 {
-	spin_lock(&i2c->lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&i2c->lock, flags);
 	xiic_reinit(i2c);
+	/* disable interrupts globally */
+	xiic_setreg32(i2c, XIIC_DGIER_OFFSET, 0);
+	spin_unlock_irqrestore(&i2c->lock, flags);
+
 	__xiic_start_xfer(i2c);
-	spin_unlock(&i2c->lock);
+	xiic_setreg32(i2c, XIIC_DGIER_OFFSET, XIIC_GINTR_ENABLE_MASK);
 }
 
 static int xiic_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
@@ -721,7 +692,6 @@ static int xiic_i2c_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret, irq;
 	u8 i;
-	u32 sr;
 
 	i2c = devm_kzalloc(&pdev->dev, sizeof(*i2c), GFP_KERNEL);
 	if (!i2c)
@@ -748,26 +718,11 @@ static int xiic_i2c_probe(struct platform_device *pdev)
 	spin_lock_init(&i2c->lock);
 	init_waitqueue_head(&i2c->wait);
 
-	ret = devm_request_threaded_irq(&pdev->dev, irq, xiic_isr,
-					xiic_process, IRQF_ONESHOT,
-					pdev->name, i2c);
-
+	ret = devm_request_irq(&pdev->dev, irq, xiic_isr, 0, pdev->name, i2c);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Cannot claim IRQ\n");
 		return ret;
 	}
-
-	/*
-	 * Detect endianness
-	 * Try to reset the TX FIFO. Then check the EMPTY flag. If it is not
-	 * set, assume that the endianness was wrong and swap.
-	 */
-	i2c->endianness = LITTLE;
-	xiic_setreg32(i2c, XIIC_CR_REG_OFFSET, XIIC_CR_TX_FIFO_RESET_MASK);
-	/* Reset is cleared in xiic_reinit */
-	sr = xiic_getreg32(i2c, XIIC_SR_REG_OFFSET);
-	if (!(sr & XIIC_SR_TX_FIFO_EMPTY_MASK))
-		i2c->endianness = BIG;
 
 	xiic_reinit(i2c);
 
@@ -812,6 +767,7 @@ static struct platform_driver xiic_i2c_driver = {
 	.probe   = xiic_i2c_probe,
 	.remove  = xiic_i2c_remove,
 	.driver  = {
+		.owner = THIS_MODULE,
 		.name = DRIVER_NAME,
 		.of_match_table = of_match_ptr(xiic_of_match),
 	},

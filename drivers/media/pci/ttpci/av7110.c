@@ -303,6 +303,7 @@ static int arm_thread(void *data)
 static int DvbDmxFilterCallback(u8 *buffer1, size_t buffer1_len,
 				u8 *buffer2, size_t buffer2_len,
 				struct dvb_demux_filter *dvbdmxfilter,
+				enum dmx_success success,
 				struct av7110 *av7110)
 {
 	if (!dvbdmxfilter->feed->demux->dmx.frontend)
@@ -328,14 +329,16 @@ static int DvbDmxFilterCallback(u8 *buffer1, size_t buffer1_len,
 		}
 		return dvbdmxfilter->feed->cb.sec(buffer1, buffer1_len,
 						  buffer2, buffer2_len,
-						  &dvbdmxfilter->filter);
+						  &dvbdmxfilter->filter,
+						  DMX_OK);
 	case DMX_TYPE_TS:
 		if (!(dvbdmxfilter->feed->ts_type & TS_PACKET))
 			return 0;
 		if (dvbdmxfilter->feed->ts_type & TS_PAYLOAD_ONLY)
 			return dvbdmxfilter->feed->cb.ts(buffer1, buffer1_len,
 							 buffer2, buffer2_len,
-							 &dvbdmxfilter->feed->feed.ts);
+							 &dvbdmxfilter->feed->feed.ts,
+							 DMX_OK);
 		else
 			av7110_p2t_write(buffer1, buffer1_len,
 					 dvbdmxfilter->feed->pid,
@@ -419,7 +422,7 @@ static void debiirq(unsigned long cookie)
 			DvbDmxFilterCallback((u8 *)av7110->debi_virt,
 					     av7110->debilen, NULL, 0,
 					     av7110->handle2filter[handle],
-					     av7110);
+					     DMX_OK, av7110);
 		xfer = RX_BUFF;
 		break;
 
@@ -1169,7 +1172,7 @@ static int dvb_get_stc(struct dmx_demux *demux, unsigned int num,
  ******************************************************************************/
 
 
-static int av7110_set_tone(struct dvb_frontend *fe, enum fe_sec_tone_mode tone)
+static int av7110_set_tone(struct dvb_frontend* fe, fe_sec_tone_mode_t tone)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 
@@ -1194,7 +1197,7 @@ static int av7110_diseqc_send_master_cmd(struct dvb_frontend* fe,
 }
 
 static int av7110_diseqc_send_burst(struct dvb_frontend* fe,
-				    enum fe_sec_mini_cmd minicmd)
+				    fe_sec_mini_cmd_t minicmd)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 
@@ -1216,14 +1219,11 @@ static int stop_ts_capture(struct av7110 *budget)
 
 static int start_ts_capture(struct av7110 *budget)
 {
-	unsigned y;
-
 	dprintk(2, "budget: %p\n", budget);
 
 	if (budget->feeding1)
 		return ++budget->feeding1;
-	for (y = 0; y < TS_HEIGHT; y++)
-		memset(budget->grabbing + y * TS_WIDTH, 0x00, TS_WIDTH);
+	memset(budget->grabbing, 0x00, TS_BUFLEN);
 	budget->ttbp = 0;
 	SAA7146_ISR_CLEAR(budget->dev, MASK_10);  /* VPE */
 	SAA7146_IER_ENABLE(budget->dev, MASK_10); /* VPE */
@@ -1943,7 +1943,7 @@ static struct l64781_config grundig_29504_401_config = {
 
 
 
-static int av7110_fe_lock_fix(struct av7110 *av7110, enum fe_status status)
+static int av7110_fe_lock_fix(struct av7110* av7110, fe_status_t status)
 {
 	int ret = 0;
 	int synced = (status & FE_HAS_LOCK) ? 1 : 0;
@@ -2005,8 +2005,7 @@ static int av7110_fe_init(struct dvb_frontend* fe)
 	return ret;
 }
 
-static int av7110_fe_read_status(struct dvb_frontend *fe,
-				 enum fe_status *status)
+static int av7110_fe_read_status(struct dvb_frontend* fe, fe_status_t* status)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 
@@ -2041,8 +2040,7 @@ static int av7110_fe_diseqc_send_master_cmd(struct dvb_frontend* fe,
 	return ret;
 }
 
-static int av7110_fe_diseqc_send_burst(struct dvb_frontend *fe,
-				       enum fe_sec_mini_cmd minicmd)
+static int av7110_fe_diseqc_send_burst(struct dvb_frontend* fe, fe_sec_mini_cmd_t minicmd)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 
@@ -2054,8 +2052,7 @@ static int av7110_fe_diseqc_send_burst(struct dvb_frontend *fe,
 	return ret;
 }
 
-static int av7110_fe_set_tone(struct dvb_frontend *fe,
-			      enum fe_sec_tone_mode tone)
+static int av7110_fe_set_tone(struct dvb_frontend* fe, fe_sec_tone_mode_t tone)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 
@@ -2067,8 +2064,7 @@ static int av7110_fe_set_tone(struct dvb_frontend *fe,
 	return ret;
 }
 
-static int av7110_fe_set_voltage(struct dvb_frontend *fe,
-				 enum fe_sec_voltage voltage)
+static int av7110_fe_set_voltage(struct dvb_frontend* fe, fe_sec_voltage_t voltage)
 {
 	struct av7110* av7110 = fe->dvb->priv;
 

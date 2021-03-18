@@ -195,13 +195,17 @@ static int rcar_usb_phy_probe(struct platform_device *pdev)
 		return PTR_ERR(reg0);
 
 	res1 = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	reg1 = devm_ioremap_resource(dev, res1);
-	if (IS_ERR(reg1))
-		return PTR_ERR(reg1);
+	if (res1) {
+		reg1 = devm_ioremap_resource(dev, res1);
+		if (IS_ERR(reg1))
+			return PTR_ERR(reg1);
+	}
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
+	if (!priv) {
+		dev_err(dev, "priv data allocation error\n");
 		return -ENOMEM;
+	}
 
 	priv->reg0		= reg0;
 	priv->reg1		= reg1;

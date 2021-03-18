@@ -23,7 +23,7 @@
  *
  */
 
-#include <linux/io.h>
+#include <asm/io.h>
 #include <linux/pci.h>
 #include <linux/time.h>
 #include <linux/mutex.h>

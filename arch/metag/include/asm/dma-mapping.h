@@ -134,24 +134,20 @@ dma_sync_single_range_for_device(struct device *dev, dma_addr_t dma_handle,
 }
 
 static inline void
-dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sglist, int nelems,
+dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg, int nelems,
 		    enum dma_data_direction direction)
 {
 	int i;
-	struct scatterlist *sg;
-
-	for_each_sg(sglist, sg, nelems, i)
+	for (i = 0; i < nelems; i++, sg++)
 		dma_sync_for_cpu(sg_virt(sg), sg->length, direction);
 }
 
 static inline void
-dma_sync_sg_for_device(struct device *dev, struct scatterlist *sglist,
-		       int nelems, enum dma_data_direction direction)
+dma_sync_sg_for_device(struct device *dev, struct scatterlist *sg, int nelems,
+		       enum dma_data_direction direction)
 {
 	int i;
-	struct scatterlist *sg;
-
-	for_each_sg(sglist, sg, nelems, i)
+	for (i = 0; i < nelems; i++, sg++)
 		dma_sync_for_device(sg_virt(sg), sg->length, direction);
 }
 

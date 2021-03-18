@@ -66,8 +66,8 @@ struct xt_set_info_target_v2 {
 
 struct xt_set_info_match_v3 {
 	struct xt_set_info match_set;
-	struct ip_set_counter_match0 packets;
-	struct ip_set_counter_match0 bytes;
+	struct ip_set_counter_match packets;
+	struct ip_set_counter_match bytes;
 	__u32 flags;
 };
 
@@ -79,15 +79,6 @@ struct xt_set_info_target_v3 {
 	struct xt_set_info map_set;
 	__u32 flags;
 	__u32 timeout;
-};
-
-/* Revision 4 match */
-
-struct xt_set_info_match_v4 {
-	struct xt_set_info match_set;
-	struct ip_set_counter_match packets;
-	struct ip_set_counter_match bytes;
-	__u32 flags;
 };
 
 #endif /*_XT_SET_H*/

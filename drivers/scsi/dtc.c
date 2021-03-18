@@ -1,4 +1,5 @@
 
+#define AUTOSENSE
 #define PSEUDO_DMA
 #define DONT_USE_INTR
 #define UNSAFE			/* Leave interrupts enabled during pseudo-dma I/O */
@@ -17,9 +18,29 @@
  *	(Unix and Linux consulting and custom programming)
  *	drew@colorado.edu
  *      +1 (303) 440-4894
- */
+ *
+ * DISTRIBUTION RELEASE 1.
+ *
+ * For more information, please consult 
+ *
+ * NCR 5380 Family
+ * SCSI Protocol Controller
+ * Databook
+*/
 
 /*
+ * Options : 
+ * AUTOSENSE - if defined, REQUEST SENSE will be performed automatically
+ *      for commands that return with a CHECK CONDITION status. 
+ *
+ * PSEUDO_DMA - enables PSEUDO-DMA hardware, should give a 3-4X performance
+ * increase compared to polled I/O.
+ *
+ * PARITY - enable parity checking.  Not supported.
+ *
+ * UNSAFE - leave interrupts enabled during pseudo-DMA transfers. 
+ *		You probably want this.
+ *
  * The card is detected and initialized in one of several ways : 
  * 1.  Autoprobe (default) - since the board is memory mapped, 
  *     a BIOS signature is scanned for to locate the registers.
@@ -58,10 +79,14 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include "scsi.h"
 #include <scsi/scsi_host.h>
 #include "dtc.h"
 #define AUTOPROBE_IRQ
 #include "NCR5380.h"
+
+
+#define DTC_PUBLIC_RELEASE 2
 
 /*
  * The DTC3180 & 3280 boards are memory mapped.
@@ -148,13 +173,10 @@ static const struct signature {
  *
  */
 
-static int __init dtc_setup(char *str)
+static void __init dtc_setup(char *str, int *ints)
 {
 	static int commandline_current = 0;
 	int i;
-	int ints[10];
-
-	get_options(str, ARRAY_SIZE(ints), ints);
 	if (ints[0] != 2)
 		printk("dtc_setup: usage dtc=address,irq\n");
 	else if (commandline_current < NO_OVERRIDES) {
@@ -167,10 +189,7 @@ static int __init dtc_setup(char *str)
 			}
 		++commandline_current;
 	}
-	return 1;
 }
-
-__setup("dtc=", dtc_setup);
 #endif
 
 /* 
@@ -193,6 +212,10 @@ static int __init dtc_detect(struct scsi_host_template * tpnt)
 	unsigned int addr;
 	void __iomem *base;
 	int sig, count;
+
+	tpnt->proc_name = "dtc3x80";
+	tpnt->show_info = dtc_show_info;
+	tpnt->write_info = dtc_write_info;
 
 	for (count = 0; current_override < NO_OVERRIDES; ++current_override) {
 		addr = 0;
@@ -248,32 +271,37 @@ found:
 		else
 			instance->irq = NCR5380_probe_irq(instance, DTC_IRQS);
 
-		/* Compatibility with documented NCR5380 kernel parameters */
-		if (instance->irq == 255)
-			instance->irq = NO_IRQ;
-
 #ifndef DONT_USE_INTR
 		/* With interrupts enabled, it will sometimes hang when doing heavy
 		 * reads. So better not enable them until I finger it out. */
-		if (instance->irq != NO_IRQ)
+		if (instance->irq != SCSI_IRQ_NONE)
 			if (request_irq(instance->irq, dtc_intr, 0,
 					"dtc", instance)) {
 				printk(KERN_ERR "scsi%d : IRQ%d not free, interrupts disabled\n", instance->host_no, instance->irq);
-				instance->irq = NO_IRQ;
+				instance->irq = SCSI_IRQ_NONE;
 			}
 
-		if (instance->irq == NO_IRQ) {
+		if (instance->irq == SCSI_IRQ_NONE) {
 			printk(KERN_WARNING "scsi%d : interrupts not enabled. for better interactive performance,\n", instance->host_no);
 			printk(KERN_WARNING "scsi%d : please jumper the board for a free IRQ.\n", instance->host_no);
 		}
 #else
-		if (instance->irq != NO_IRQ)
+		if (instance->irq != SCSI_IRQ_NONE)
 			printk(KERN_WARNING "scsi%d : interrupts not used. Might as well not jumper it.\n", instance->host_no);
-		instance->irq = NO_IRQ;
+		instance->irq = SCSI_IRQ_NONE;
 #endif
 #if defined(DTCDEBUG) && (DTCDEBUG & DTCDEBUG_INIT)
 		printk("scsi%d : irq = %d\n", instance->host_no, instance->irq);
 #endif
+
+		printk(KERN_INFO "scsi%d : at 0x%05X", instance->host_no, (int) instance->base);
+		if (instance->irq == SCSI_IRQ_NONE)
+			printk(" interrupts disabled");
+		else
+			printk(" irq %d", instance->irq);
+		printk(" options CAN_QUEUE=%d  CMD_PER_LUN=%d release=%d", CAN_QUEUE, CMD_PER_LUN, DTC_PUBLIC_RELEASE);
+		NCR5380_print_options(instance);
+		printk("\n");
 
 		++current_override;
 		++count;
@@ -326,18 +354,20 @@ static int dtc_biosparam(struct scsi_device *sdev, struct block_device *dev,
  * 	timeout.
 */
 
+static int dtc_maxi = 0;
+static int dtc_wmaxi = 0;
+
 static inline int NCR5380_pread(struct Scsi_Host *instance, unsigned char *dst, int len)
 {
 	unsigned char *d = dst;
 	int i;			/* For counting time spent in the poll-loop */
-	struct NCR5380_hostdata *hostdata = shost_priv(instance);
 	NCR5380_local_declare();
 	NCR5380_setup(instance);
 
 	i = 0;
 	NCR5380_read(RESET_PARITY_INTERRUPT_REG);
 	NCR5380_write(MODE_REG, MR_ENABLE_EOP_INTR | MR_DMA_MODE);
-	if (instance->irq == NO_IRQ)
+	if (instance->irq == SCSI_IRQ_NONE)
 		NCR5380_write(DTC_CONTROL_REG, CSR_DIR_READ);
 	else
 		NCR5380_write(DTC_CONTROL_REG, CSR_DIR_READ | CSR_INT_BASE);
@@ -361,8 +391,8 @@ static inline int NCR5380_pread(struct Scsi_Host *instance, unsigned char *dst, 
 	NCR5380_write(MODE_REG, 0);	/* Clear the operating mode */
 	rtrc(0);
 	NCR5380_read(RESET_PARITY_INTERRUPT_REG);
-	if (i > hostdata->spin_max_r)
-		hostdata->spin_max_r = i;
+	if (i > dtc_maxi)
+		dtc_maxi = i;
 	return (0);
 }
 
@@ -382,14 +412,13 @@ static inline int NCR5380_pread(struct Scsi_Host *instance, unsigned char *dst, 
 static inline int NCR5380_pwrite(struct Scsi_Host *instance, unsigned char *src, int len)
 {
 	int i;
-	struct NCR5380_hostdata *hostdata = shost_priv(instance);
 	NCR5380_local_declare();
 	NCR5380_setup(instance);
 
 	NCR5380_read(RESET_PARITY_INTERRUPT_REG);
 	NCR5380_write(MODE_REG, MR_ENABLE_EOP_INTR | MR_DMA_MODE);
 	/* set direction (write) */
-	if (instance->irq == NO_IRQ)
+	if (instance->irq == SCSI_IRQ_NONE)
 		NCR5380_write(DTC_CONTROL_REG, 0);
 	else
 		NCR5380_write(DTC_CONTROL_REG, CSR_5380_INTR);
@@ -415,8 +444,8 @@ static inline int NCR5380_pwrite(struct Scsi_Host *instance, unsigned char *src,
 	/* Check for parity error here. fixme. */
 	NCR5380_write(MODE_REG, 0);	/* Clear the operating mode */
 	rtrc(0);
-	if (i > hostdata->spin_max_w)
-		hostdata->spin_max_w = i;
+	if (i > dtc_wmaxi)
+		dtc_wmaxi = i;
 	return (0);
 }
 
@@ -428,7 +457,7 @@ static int dtc_release(struct Scsi_Host *shost)
 {
 	NCR5380_local_declare();
 	NCR5380_setup(shost);
-	if (shost->irq != NO_IRQ)
+	if (shost->irq)
 		free_irq(shost->irq, shost);
 	NCR5380_exit(shost);
 	if (shost->io_port && shost->n_io_port)
@@ -442,10 +471,6 @@ static struct scsi_host_template driver_template = {
 	.name				= "DTC 3180/3280 ",
 	.detect				= dtc_detect,
 	.release			= dtc_release,
-	.proc_name			= "dtc3x80",
-	.show_info			= dtc_show_info,
-	.write_info			= dtc_write_info,
-	.info				= dtc_info,
 	.queuecommand			= dtc_queue_command,
 	.eh_abort_handler		= dtc_abort,
 	.eh_bus_reset_handler		= dtc_bus_reset,

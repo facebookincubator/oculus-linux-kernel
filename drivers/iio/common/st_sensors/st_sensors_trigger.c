@@ -37,10 +37,8 @@ int st_sensors_allocate_trigger(struct iio_dev *indio_dev,
 			IRQF_TRIGGER_RISING,
 			sdata->trig->name,
 			sdata->trig);
-	if (err) {
-		dev_err(&indio_dev->dev, "failed to request trigger IRQ.\n");
+	if (err)
 		goto request_irq_error;
-	}
 
 	iio_trigger_set_drvdata(sdata->trig, indio_dev);
 	sdata->trig->ops = trigger_ops;

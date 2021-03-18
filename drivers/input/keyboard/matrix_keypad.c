@@ -425,10 +425,8 @@ matrix_keypad_parse_dt(struct device *dev)
 
 	if (of_get_property(np, "linux,no-autorepeat", NULL))
 		pdata->no_autorepeat = true;
-
-	pdata->wakeup = of_property_read_bool(np, "wakeup-source") ||
-			of_property_read_bool(np, "linux,wakeup"); /* legacy */
-
+	if (of_get_property(np, "linux,wakeup", NULL))
+		pdata->wakeup = true;
 	if (of_get_property(np, "gpio-activelow", NULL))
 		pdata->active_low = true;
 
@@ -567,6 +565,7 @@ static struct platform_driver matrix_keypad_driver = {
 	.remove		= matrix_keypad_remove,
 	.driver		= {
 		.name	= "matrix-keypad",
+		.owner	= THIS_MODULE,
 		.pm	= &matrix_keypad_pm_ops,
 		.of_match_table = of_match_ptr(matrix_keypad_dt_match),
 	},

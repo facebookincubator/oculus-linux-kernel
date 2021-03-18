@@ -61,12 +61,6 @@ void xenvif_skb_zerocopy_prepare(struct xenvif_queue *queue,
 void xenvif_skb_zerocopy_complete(struct xenvif_queue *queue)
 {
 	atomic_dec(&queue->inflight_packets);
-
-	/* Wake the dealloc thread _after_ decrementing inflight_packets so
-	 * that if kthread_stop() has already been called, the dealloc thread
-	 * does not wait forever with nothing to wake it.
-	 */
-	wake_up(&queue->dealloc_wq);
 }
 
 int xenvif_schedulable(struct xenvif *vif)
@@ -86,7 +80,7 @@ static irqreturn_t xenvif_tx_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int xenvif_poll(struct napi_struct *napi, int budget)
+int xenvif_poll(struct napi_struct *napi, int budget)
 {
 	struct xenvif_queue *queue =
 		container_of(napi, struct xenvif_queue, napi);
@@ -171,13 +165,6 @@ static int xenvif_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	    !xenvif_schedulable(vif))
 		goto drop;
 
-	if (vif->multicast_control && skb->pkt_type == PACKET_MULTICAST) {
-		struct ethhdr *eth = (struct ethhdr *)skb->data;
-
-		if (!xenvif_mcast_match(vif, eth->h_dest))
-			goto drop;
-	}
-
 	cb = XENVIF_RX_CB(skb);
 	cb->expires = jiffies + vif->drain_timeout;
 
@@ -248,10 +235,10 @@ static void xenvif_down(struct xenvif *vif)
 
 	for (queue_index = 0; queue_index < num_queues; ++queue_index) {
 		queue = &vif->queues[queue_index];
+		napi_disable(&queue->napi);
 		disable_irq(queue->tx_irq);
 		if (queue->tx_irq != queue->rx_irq)
 			disable_irq(queue->rx_irq);
-		napi_disable(&queue->napi);
 		del_timer_sync(&queue->credit_timeout);
 	}
 }
@@ -353,11 +340,12 @@ static void xenvif_get_ethtool_stats(struct net_device *dev,
 	unsigned int num_queues = vif->num_queues;
 	int i;
 	unsigned int queue_index;
+	struct xenvif_stats *vif_stats;
 
 	for (i = 0; i < ARRAY_SIZE(xenvif_stats); i++) {
 		unsigned long accum = 0;
 		for (queue_index = 0; queue_index < num_queues; ++queue_index) {
-			void *vif_stats = &vif->queues[queue_index].stats;
+			vif_stats = &vif->queues[queue_index].stats;
 			accum += *(unsigned long *)(vif_stats + xenvif_stats[i].offset);
 		}
 		data[i] = accum;
@@ -434,7 +422,6 @@ struct xenvif *xenvif_alloc(struct device *parent, domid_t domid,
 	vif->num_queues = 0;
 
 	spin_lock_init(&vif->lock);
-	INIT_LIST_HEAD(&vif->fe_mcast_addr);
 
 	dev->netdev_ops	= &xenvif_netdev_ops;
 	dev->hw_features = NETIF_F_SG |
@@ -451,7 +438,7 @@ struct xenvif *xenvif_alloc(struct device *parent, domid_t domid,
 	 * stolen by an Ethernet bridge for STP purposes.
 	 * (FE:FF:FF:FF:FF:FF)
 	 */
-	eth_broadcast_addr(dev->dev_addr);
+	memset(dev->dev_addr, 0xFF, ETH_ALEN);
 	dev->dev_addr[0] &= ~0x01;
 
 	netif_carrier_off(dev);
@@ -477,7 +464,6 @@ int xenvif_init_queue(struct xenvif_queue *queue)
 	queue->credit_bytes = queue->remaining_credit = ~0UL;
 	queue->credit_usec  = 0UL;
 	init_timer(&queue->credit_timeout);
-	queue->credit_timeout.function = xenvif_tx_credit_callback;
 	queue->credit_window_start = get_jiffies_64();
 
 	queue->rx_queue_max = XENVIF_RX_QUEUE_BYTES;
@@ -497,8 +483,9 @@ int xenvif_init_queue(struct xenvif_queue *queue)
 	 * better enable it. The long term solution would be to use just a
 	 * bunch of valid page descriptors, without dependency on ballooning
 	 */
-	err = gnttab_alloc_pages(MAX_PENDING_REQS,
-				 queue->mmap_pages);
+	err = alloc_xenballooned_pages(MAX_PENDING_REQS,
+				       queue->mmap_pages,
+				       false);
 	if (err) {
 		netdev_err(queue->vif->dev, "Could not reserve mmap_pages\n");
 		return -ENOMEM;
@@ -591,7 +578,6 @@ int xenvif_connect(struct xenvif_queue *queue, unsigned long tx_ring_ref,
 		goto err_rx_unbind;
 	}
 	queue->task = task;
-	get_task_struct(task);
 
 	task = kthread_create(xenvif_dealloc_kthread,
 			      (void *)queue, "%s-dealloc", queue->name);
@@ -648,7 +634,6 @@ void xenvif_disconnect(struct xenvif *vif)
 
 		if (queue->task) {
 			kthread_stop(queue->task);
-			put_task_struct(queue->task);
 			queue->task = NULL;
 		}
 
@@ -669,8 +654,6 @@ void xenvif_disconnect(struct xenvif *vif)
 
 		xenvif_unmap_frontend_rings(queue);
 	}
-
-	xenvif_mcast_addr_list_free(vif);
 }
 
 /* Reverse the relevant parts of xenvif_init_queue().
@@ -679,7 +662,7 @@ void xenvif_disconnect(struct xenvif *vif)
  */
 void xenvif_deinit_queue(struct xenvif_queue *queue)
 {
-	gnttab_free_pages(MAX_PENDING_REQS, queue->mmap_pages);
+	free_xenballooned_pages(MAX_PENDING_REQS, queue->mmap_pages);
 }
 
 void xenvif_free(struct xenvif *vif)

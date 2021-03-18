@@ -17,22 +17,21 @@
 static int cpu_to_queue_index(unsigned int nr_cpus, unsigned int nr_queues,
 			      const int cpu)
 {
-	return cpu * nr_queues / nr_cpus;
+	return cpu / ((nr_cpus + nr_queues - 1) / nr_queues);
 }
 
 static int get_first_sibling(unsigned int cpu)
 {
 	unsigned int ret;
 
-	ret = cpumask_first(topology_sibling_cpumask(cpu));
+	ret = cpumask_first(topology_thread_cpumask(cpu));
 	if (ret < nr_cpu_ids)
 		return ret;
 
 	return cpu;
 }
 
-static int blk_mq_update_queue_map(unsigned int *map,
-		unsigned int nr_queues, const struct cpumask *online_mask)
+int blk_mq_update_queue_map(unsigned int *map, unsigned int nr_queues)
 {
 	unsigned int i, nr_cpus, nr_uniq_cpus, queue, first_sibling;
 	cpumask_var_t cpus;
@@ -42,7 +41,7 @@ static int blk_mq_update_queue_map(unsigned int *map,
 
 	cpumask_clear(cpus);
 	nr_cpus = nr_uniq_cpus = 0;
-	for_each_cpu(i, online_mask) {
+	for_each_online_cpu(i) {
 		nr_cpus++;
 		first_sibling = get_first_sibling(i);
 		if (!cpumask_test_cpu(first_sibling, cpus))
@@ -52,14 +51,18 @@ static int blk_mq_update_queue_map(unsigned int *map,
 
 	queue = 0;
 	for_each_possible_cpu(i) {
+		if (!cpu_online(i)) {
+			map[i] = 0;
+			continue;
+		}
+
 		/*
 		 * Easy case - we have equal or more hardware queues. Or
 		 * there are no thread siblings to take into account. Do
 		 * 1:1 if enough, or sequential mapping if less.
 		 */
-		if (nr_queues >= nr_cpu_ids) {
-			map[i] = cpu_to_queue_index(nr_cpu_ids, nr_queues,
-					queue);
+		if (nr_queues >= nr_cpus || nr_cpus == nr_uniq_cpus) {
+			map[i] = cpu_to_queue_index(nr_cpus, nr_queues, queue);
 			queue++;
 			continue;
 		}
@@ -71,7 +74,7 @@ static int blk_mq_update_queue_map(unsigned int *map,
 		 */
 		first_sibling = get_first_sibling(i);
 		if (first_sibling == i) {
-			map[i] = cpu_to_queue_index(nr_cpu_ids, nr_queues,
+			map[i] = cpu_to_queue_index(nr_uniq_cpus, nr_queues,
 							queue);
 			queue++;
 		} else
@@ -92,7 +95,7 @@ unsigned int *blk_mq_make_queue_map(struct blk_mq_tag_set *set)
 	if (!map)
 		return NULL;
 
-	if (!blk_mq_update_queue_map(map, set->nr_hw_queues, cpu_online_mask))
+	if (!blk_mq_update_queue_map(map, set->nr_hw_queues))
 		return map;
 
 	kfree(map);

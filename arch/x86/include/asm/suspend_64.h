@@ -7,7 +7,7 @@
 #define _ASM_X86_SUSPEND_64_H
 
 #include <asm/desc.h>
-#include <asm/fpu/api.h>
+#include <asm/i387.h>
 
 /*
  * Image of the saved processor state, used by the low level ACPI suspend to

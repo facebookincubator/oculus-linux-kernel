@@ -37,7 +37,6 @@
 #include <linux/mod_devicetable.h>
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
-#include <linux/of_device.h>
 
 
 #define DRVNAME		"lm70"
@@ -131,41 +130,11 @@ ATTRIBUTE_GROUPS(lm70);
 
 /*----------------------------------------------------------------------*/
 
-#ifdef CONFIG_OF
-static const struct of_device_id lm70_of_ids[] = {
-	{
-		.compatible = "ti,lm70",
-		.data = (void *) LM70_CHIP_LM70,
-	},
-	{
-		.compatible = "ti,tmp121",
-		.data = (void *) LM70_CHIP_TMP121,
-	},
-	{
-		.compatible = "ti,lm71",
-		.data = (void *) LM70_CHIP_LM71,
-	},
-	{
-		.compatible = "ti,lm74",
-		.data = (void *) LM70_CHIP_LM74,
-	},
-	{},
-};
-MODULE_DEVICE_TABLE(of, lm70_of_ids);
-#endif
-
 static int lm70_probe(struct spi_device *spi)
 {
-	const struct of_device_id *match;
+	int chip = spi_get_device_id(spi)->driver_data;
 	struct device *hwmon_dev;
 	struct lm70 *p_lm70;
-	int chip;
-
-	match = of_match_device(lm70_of_ids, &spi->dev);
-	if (match)
-		chip = (int)(uintptr_t)match->data;
-	else
-		chip = spi_get_device_id(spi)->driver_data;
 
 	/* signaling is SPI_MODE_0 */
 	if (spi->mode & (SPI_CPOL | SPI_CPHA))
@@ -199,7 +168,7 @@ MODULE_DEVICE_TABLE(spi, lm70_ids);
 static struct spi_driver lm70_driver = {
 	.driver = {
 		.name	= "lm70",
-		.of_match_table	= of_match_ptr(lm70_of_ids),
+		.owner	= THIS_MODULE,
 	},
 	.id_table = lm70_ids,
 	.probe	= lm70_probe,

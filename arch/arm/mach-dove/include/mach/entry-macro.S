@@ -18,13 +18,13 @@
 	@ check low interrupts
 	ldr	\irqstat, [\base, #IRQ_CAUSE_LOW_OFF]
 	ldr	\tmp, [\base, #IRQ_MASK_LOW_OFF]
-	mov	\irqnr, #32
+	mov	\irqnr, #31
 	ands	\irqstat, \irqstat, \tmp
 
 	@ if no low interrupts set, check high interrupts
 	ldreq	\irqstat, [\base, #IRQ_CAUSE_HIGH_OFF]
 	ldreq	\tmp, [\base, #IRQ_MASK_HIGH_OFF]
-	moveq	\irqnr, #64
+	moveq	\irqnr, #63
 	andeqs	\irqstat, \irqstat, \tmp
 
 	@ find first active interrupt source

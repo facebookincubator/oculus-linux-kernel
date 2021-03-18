@@ -45,6 +45,8 @@ struct mtdblk_dev {
 	enum { STATE_EMPTY, STATE_CLEAN, STATE_DIRTY } cache_state;
 };
 
+static DEFINE_MUTEX(mtdblks_lock);
+
 /*
  * Cache stuff...
  *
@@ -284,8 +286,10 @@ static int mtdblock_open(struct mtd_blktrans_dev *mbd)
 
 	pr_debug("mtdblock_open\n");
 
+	mutex_lock(&mtdblks_lock);
 	if (mtdblk->count) {
 		mtdblk->count++;
+		mutex_unlock(&mtdblks_lock);
 		return 0;
 	}
 
@@ -298,6 +302,8 @@ static int mtdblock_open(struct mtd_blktrans_dev *mbd)
 		mtdblk->cache_data = NULL;
 	}
 
+	mutex_unlock(&mtdblks_lock);
+
 	pr_debug("ok\n");
 
 	return 0;
@@ -308,6 +314,8 @@ static void mtdblock_release(struct mtd_blktrans_dev *mbd)
 	struct mtdblk_dev *mtdblk = container_of(mbd, struct mtdblk_dev, mbd);
 
 	pr_debug("mtdblock_release\n");
+
+	mutex_lock(&mtdblks_lock);
 
 	mutex_lock(&mtdblk->cache_mutex);
 	write_cached_data(mtdblk);
@@ -322,6 +330,8 @@ static void mtdblock_release(struct mtd_blktrans_dev *mbd)
 			mtd_sync(mbd->mtd);
 		vfree(mtdblk->cache_data);
 	}
+
+	mutex_unlock(&mtdblks_lock);
 
 	pr_debug("ok\n");
 }

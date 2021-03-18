@@ -16,10 +16,10 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/usb/phy.h>
+#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/usb/xhci_pdriver.h>
-#include <linux/acpi.h>
+#include <linux/dma-mapping.h>
 
 #include "xhci.h"
 #include "xhci-mvebu.h"
@@ -27,30 +27,14 @@
 
 static struct hc_driver __read_mostly xhci_plat_hc_driver;
 
-static int xhci_plat_setup(struct usb_hcd *hcd);
-static int xhci_plat_start(struct usb_hcd *hcd);
-
-static const struct xhci_driver_overrides xhci_plat_overrides __initconst = {
-	.extra_priv_size = sizeof(struct xhci_hcd),
-	.reset = xhci_plat_setup,
-	.start = xhci_plat_start,
-};
-
 static void xhci_plat_quirks(struct device *dev, struct xhci_hcd *xhci)
 {
-	struct device_node *node = dev->of_node;
-	struct usb_xhci_pdata *pdata = dev_get_platdata(dev);
-
 	/*
 	 * As of now platform drivers don't provide MSI support so we ensure
 	 * here that the generic code does not try to make a pci_dev from our
 	 * dev struct in order to setup MSI
 	 */
 	xhci->quirks |= XHCI_PLAT;
-
-	if ((node && of_property_read_bool(node, "usb3-lpm-capable")) ||
-			(pdata && pdata->usb3_lpm_capable))
-		xhci->quirks |= XHCI_LPM_SUPPORT;
 }
 
 /* called during probe() after chip reset completes */
@@ -136,6 +120,7 @@ static DEVICE_ATTR(config_imod, S_IRUGO | S_IWUSR,
 
 static int xhci_plat_probe(struct platform_device *pdev)
 {
+	struct device_node	*node = pdev->dev.of_node;
 	struct usb_xhci_pdata	*pdata = dev_get_platdata(&pdev->dev);
 	const struct hc_driver	*driver;
 	struct xhci_hcd		*xhci;
@@ -156,36 +141,32 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	if (irq < 0)
 		return -ENODEV;
 
-	/* Try to set 64-bit DMA first */
-	if (WARN_ON(!pdev->dev.dma_mask))
-		/* Platform did not initialize dma_mask */
-		ret = dma_coerce_mask_and_coherent(&pdev->dev,
-						   DMA_BIT_MASK(64));
-	else
-		ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res)
+		return -ENODEV;
 
-	/* If seting 64-bit DMA mask fails, fall back to 32-bit DMA mask */
-	if (ret) {
-		ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
-		if (ret)
-			return ret;
-	}
+	/* Initialize dma_mask and coherent_dma_mask to 32-bits */
+	ret = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+	if (!pdev->dev.dma_mask)
+		pdev->dev.dma_mask = &pdev->dev.coherent_dma_mask;
+	else
+		dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 
 	hcd = usb_create_hcd(driver, &pdev->dev, dev_name(&pdev->dev));
 	if (!hcd)
 		return -ENOMEM;
 
 	hcd_to_bus(hcd)->skip_resume = true;
+	hcd->rsrc_start = res->start;
+	hcd->rsrc_len = resource_size(res);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(hcd->regs)) {
 		ret = PTR_ERR(hcd->regs);
 		goto put_hcd;
 	}
-
-	hcd->rsrc_start = res->start;
-	hcd->rsrc_len = resource_size(res);
 
 	/*
 	 * Not all platforms have a clk so it is not an error if the
@@ -196,9 +177,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		ret = clk_prepare_enable(clk);
 		if (ret)
 			goto put_hcd;
-	} else if (PTR_ERR(clk) == -EPROBE_DEFER) {
-		ret = -EPROBE_DEFER;
-		goto put_hcd;
 	}
 
 	if (pdev->dev.parent)
@@ -219,8 +197,14 @@ static int xhci_plat_probe(struct platform_device *pdev)
 			goto disable_clk;
 	}
 
+	ret = usb_add_hcd(hcd, irq, IRQF_SHARED);
+	if (ret)
+		goto disable_clk;
+
 	device_wakeup_enable(hcd->self.controller);
 
+	/* USB 2.0 roothub is stored in the platform_device now. */
+	hcd = platform_get_drvdata(pdev);
 	xhci = hcd_to_xhci(hcd);
 	xhci->clk = clk;
 	xhci->main_hcd = hcd;
@@ -228,37 +212,26 @@ static int xhci_plat_probe(struct platform_device *pdev)
 			dev_name(&pdev->dev), hcd);
 	if (!xhci->shared_hcd) {
 		ret = -ENOMEM;
-		goto disable_clk;
+		goto dealloc_usb2_hcd;
 	}
 
+	if ((node && of_property_read_bool(node, "usb3-lpm-capable")) ||
+			(pdata && pdata->usb3_lpm_capable))
+		xhci->quirks |= XHCI_LPM_SUPPORT;
+
 	hcd_to_bus(xhci->shared_hcd)->skip_resume = true;
+	/*
+	 * Set the xHCI pointer before xhci_plat_setup() (aka hcd_driver.reset)
+	 * is called by usb_add_hcd().
+	 */
+	*((struct xhci_hcd **) xhci->shared_hcd->hcd_priv) = xhci;
 
 	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
 		xhci->shared_hcd->can_do_streams = 1;
 
-	hcd->usb_phy = devm_usb_get_phy_by_phandle(&pdev->dev, "usb-phy", 0);
-	if (IS_ERR(hcd->usb_phy)) {
-		ret = PTR_ERR(hcd->usb_phy);
-		if (ret == -EPROBE_DEFER)
-			goto put_usb3_hcd;
-		hcd->usb_phy = NULL;
-	} else {
-		ret = usb_phy_init(hcd->usb_phy);
-		if (ret)
-			goto put_usb3_hcd;
-	}
-
-	ret = usb_add_hcd(hcd, irq, IRQF_SHARED);
-	if (ret)
-		goto disable_usb_phy;
-
-	device_wakeup_enable(&hcd->self.root_hub->dev);
-
 	ret = usb_add_hcd(xhci->shared_hcd, irq, IRQF_SHARED);
 	if (ret)
-		goto dealloc_usb2_hcd;
-
-	device_wakeup_enable(&xhci->shared_hcd->self.root_hub->dev);
+		goto put_usb3_hcd;
 
 	/* override imod interval if specified */
 	if (pdata && pdata->imod_interval) {
@@ -276,21 +249,17 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(&pdev->dev, "%s: unable to create imod sysfs entry\n",
 					__func__);
-	
+
 	pm_runtime_mark_last_busy(&pdev->dev);
 	pm_runtime_put_autosuspend(&pdev->dev);
 
 	return 0;
 
+put_usb3_hcd:
+	usb_put_hcd(xhci->shared_hcd);
 
 dealloc_usb2_hcd:
 	usb_remove_hcd(hcd);
-
-disable_usb_phy:
-	usb_phy_shutdown(hcd->usb_phy);
-
-put_usb3_hcd:
-	usb_put_hcd(xhci->shared_hcd);
 
 disable_clk:
 	if (!IS_ERR(clk))
@@ -313,19 +282,19 @@ static int xhci_plat_remove(struct platform_device *dev)
 	device_remove_file(&dev->dev, &dev_attr_config_imod);
 	xhci->xhc_state |= XHCI_STATE_REMOVING;
 	usb_remove_hcd(xhci->shared_hcd);
-	usb_phy_shutdown(hcd->usb_phy);
-
-	usb_remove_hcd(hcd);
 	usb_put_hcd(xhci->shared_hcd);
 
+	usb_remove_hcd(hcd);
 	if (!IS_ERR(clk))
 		clk_disable_unprepare(clk);
 	usb_put_hcd(hcd);
+	kfree(xhci);
 
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM_RUNTIME
 static int xhci_plat_runtime_idle(struct device *dev)
 {
 	/*
@@ -346,13 +315,19 @@ static int xhci_plat_runtime_suspend(struct device *dev)
 {
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	int ret;
 
 	if (!xhci)
 		return 0;
 
 	dev_dbg(dev, "xhci-plat runtime suspend\n");
 
-	return xhci_suspend(xhci, true);
+	disable_irq(hcd->irq);
+	ret = xhci_suspend(xhci, true);
+	if (ret)
+		enable_irq(hcd->irq);
+
+	return ret;
 }
 
 static int xhci_plat_runtime_resume(struct device *dev)
@@ -367,10 +342,12 @@ static int xhci_plat_runtime_resume(struct device *dev)
 	dev_dbg(dev, "xhci-plat runtime resume\n");
 
 	ret = xhci_resume(xhci, false);
+	enable_irq(hcd->irq);
 	pm_runtime_mark_last_busy(dev);
 
 	return ret;
 }
+#endif
 
 static const struct dev_pm_ops xhci_plat_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(NULL, NULL)
@@ -395,13 +372,6 @@ static const struct of_device_id usb_xhci_of_match[] = {
 MODULE_DEVICE_TABLE(of, usb_xhci_of_match);
 #endif
 
-static const struct acpi_device_id usb_xhci_acpi_match[] = {
-	/* XHCI-compliant USB Controller */
-	{ "PNP0D10", },
-	{ }
-};
-MODULE_DEVICE_TABLE(acpi, usb_xhci_acpi_match);
-
 static struct platform_driver usb_xhci_driver = {
 	.probe	= xhci_plat_probe,
 	.remove	= xhci_plat_remove,
@@ -409,14 +379,14 @@ static struct platform_driver usb_xhci_driver = {
 		.name = "xhci-hcd",
 		.pm = DEV_PM_OPS,
 		.of_match_table = of_match_ptr(usb_xhci_of_match),
-		.acpi_match_table = ACPI_PTR(usb_xhci_acpi_match),
 	},
 };
 MODULE_ALIAS("platform:xhci-hcd");
 
 static int __init xhci_plat_init(void)
 {
-	xhci_init_driver(&xhci_plat_hc_driver, &xhci_plat_overrides);
+	xhci_init_driver(&xhci_plat_hc_driver, xhci_plat_setup);
+	xhci_plat_hc_driver.start = xhci_plat_start;
 	return platform_driver_register(&usb_xhci_driver);
 }
 module_init(xhci_plat_init);

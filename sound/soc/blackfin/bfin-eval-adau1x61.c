@@ -108,7 +108,6 @@ static struct snd_soc_dai_link bfin_eval_adau1x61_dai = {
 
 static struct snd_soc_card bfin_eval_adau1x61 = {
 	.name = "bfin-eval-adau1x61",
-	.owner = THIS_MODULE,
 	.driver_name = "eval-adau1x61",
 	.dai_link = &bfin_eval_adau1x61_dai,
 	.num_links = 1,
@@ -130,6 +129,7 @@ static int bfin_eval_adau1x61_probe(struct platform_device *pdev)
 static struct platform_driver bfin_eval_adau1x61_driver = {
 	.driver = {
 		.name = "bfin-eval-adau1x61",
+		.owner = THIS_MODULE,
 		.pm = &snd_soc_pm_ops,
 	},
 	.probe = bfin_eval_adau1x61_probe,

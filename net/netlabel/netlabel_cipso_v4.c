@@ -324,7 +324,8 @@ static int netlbl_cipsov4_add_std(struct genl_info *info,
 	return 0;
 
 add_std_failure:
-	cipso_v4_doi_free(doi_def);
+	if (doi_def)
+		cipso_v4_doi_free(doi_def);
 	return ret_val;
 }
 
@@ -640,8 +641,7 @@ static int netlbl_cipsov4_listall_cb(struct cipso_v4_doi *doi_def, void *arg)
 	if (ret_val != 0)
 		goto listall_cb_failure;
 
-	genlmsg_end(cb_arg->skb, data);
-	return 0;
+	return genlmsg_end(cb_arg->skb, data);
 
 listall_cb_failure:
 	genlmsg_cancel(cb_arg->skb, data);

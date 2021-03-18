@@ -518,7 +518,8 @@ int lirc_dev_fop_close(struct inode *inode, struct file *file)
 
 	WARN_ON(mutex_lock_killable(&lirc_dev_lock));
 
-	rc_close(ir->d.rdev);
+	if (ir->d.rdev)
+		rc_close(ir->d.rdev);
 
 	ir->open--;
 	if (ir->attached) {
@@ -553,14 +554,14 @@ unsigned int lirc_dev_fop_poll(struct file *file, poll_table *wait)
 	if (!ir->attached)
 		return POLLERR;
 
-	if (ir->buf) {
-		poll_wait(file, &ir->buf->wait_poll, wait);
+	poll_wait(file, &ir->buf->wait_poll, wait);
 
+	if (ir->buf)
 		if (lirc_buffer_empty(ir->buf))
 			ret = 0;
 		else
 			ret = POLLIN | POLLRDNORM;
-	} else
+	else
 		ret = POLLERR;
 
 	dev_dbg(ir->d.dev, LOGHEAD "poll result = %d\n",

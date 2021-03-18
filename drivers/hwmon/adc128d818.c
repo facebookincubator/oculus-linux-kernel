@@ -27,7 +27,6 @@
 #include <linux/err.h>
 #include <linux/regulator/consumer.h>
 #include <linux/mutex.h>
-#include <linux/bitops.h>
 
 /* Addresses to scan
  * The chip also supports addresses 0x35..0x37. Don't scan those addresses
@@ -190,7 +189,7 @@ static ssize_t adc128_show_temp(struct device *dev,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	temp = sign_extend32(data->temp[index], 8);
+	temp = (data->temp[index] << 7) >> 7;	/* sign extend */
 	return sprintf(buf, "%d\n", temp * 500);/* 0.5 degrees C resolution */
 }
 

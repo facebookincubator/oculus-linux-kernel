@@ -5,7 +5,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/mutex.h>
 #include <linux/ctype.h>
 #include <linux/slab.h>
 #include <linux/pnp.h>
@@ -245,10 +244,10 @@ int pnp_add_card(struct pnp_card *card)
 	}
 
 	pnp_interface_attach_card(card);
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	list_add_tail(&card->global_list, &pnp_cards);
 	list_add_tail(&card->protocol_list, &card->protocol->cards);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 
 	/* we wait until now to add devices in order to ensure the drivers
 	 * will be able to use all of the related devices on the card
@@ -277,10 +276,10 @@ void pnp_remove_card(struct pnp_card *card)
 	struct list_head *pos, *temp;
 
 	device_unregister(&card->dev);
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	list_del(&card->global_list);
 	list_del(&card->protocol_list);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 	list_for_each_safe(pos, temp, &card->devices) {
 		struct pnp_dev *dev = card_to_pnp_dev(pos);
 		pnp_remove_card_device(dev);
@@ -298,10 +297,10 @@ int pnp_add_card_device(struct pnp_card *card, struct pnp_dev *dev)
 	dev->card_link = NULL;
 	dev_set_name(&dev->dev, "%02x:%02x.%02x",
 		     dev->protocol->number, card->number, dev->number);
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	dev->card = card;
 	list_add_tail(&dev->card_list, &card->devices);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 	return 0;
 }
 
@@ -311,10 +310,10 @@ int pnp_add_card_device(struct pnp_card *card, struct pnp_dev *dev)
  */
 void pnp_remove_card_device(struct pnp_dev *dev)
 {
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	dev->card = NULL;
 	list_del(&dev->card_list);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 	__pnp_remove_device(dev);
 }
 
@@ -427,9 +426,9 @@ int pnp_register_card_driver(struct pnp_card_driver *drv)
 	if (error < 0)
 		return error;
 
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	list_add_tail(&drv->global_list, &pnp_card_drivers);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 
 	list_for_each_safe(pos, temp, &pnp_cards) {
 		struct pnp_card *card =
@@ -445,9 +444,9 @@ int pnp_register_card_driver(struct pnp_card_driver *drv)
  */
 void pnp_unregister_card_driver(struct pnp_card_driver *drv)
 {
-	mutex_lock(&pnp_lock);
+	spin_lock(&pnp_lock);
 	list_del(&drv->global_list);
-	mutex_unlock(&pnp_lock);
+	spin_unlock(&pnp_lock);
 	pnp_unregister_driver(&drv->link);
 }
 

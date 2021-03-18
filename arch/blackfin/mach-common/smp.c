@@ -195,7 +195,7 @@ void send_ipi(const struct cpumask *cpumask, enum ipi_message_type msg)
 	local_irq_save(flags);
 	for_each_cpu(cpu, cpumask) {
 		bfin_ipi_data = &per_cpu(bfin_ipi, cpu);
-		atomic_or((1 << msg), &bfin_ipi_data->bits);
+		atomic_set_mask((1 << msg), &bfin_ipi_data->bits);
 		atomic_inc(&bfin_ipi_data->count);
 	}
 	local_irq_restore(flags);
@@ -413,14 +413,16 @@ int __cpu_disable(void)
 	return 0;
 }
 
+static DECLARE_COMPLETION(cpu_killed);
+
 int __cpu_die(unsigned int cpu)
 {
-	return cpu_wait_death(cpu, 5);
+	return wait_for_completion_timeout(&cpu_killed, 5000);
 }
 
 void cpu_die(void)
 {
-	(void)cpu_report_death();
+	complete(&cpu_killed);
 
 	atomic_dec(&init_mm.mm_users);
 	atomic_dec(&init_mm.mm_count);

@@ -125,11 +125,12 @@ free_attr:
 	kfree(dev_attr);
 }
 
-static void rds_iw_remove_one(struct ib_device *device, void *client_data)
+static void rds_iw_remove_one(struct ib_device *device)
 {
-	struct rds_iw_device *rds_iwdev = client_data;
+	struct rds_iw_device *rds_iwdev;
 	struct rds_iw_cm_id *i_cm_id, *next;
 
+	rds_iwdev = ib_get_client_data(device, &rds_iw_client);
 	if (!rds_iwdev)
 		return;
 
@@ -148,7 +149,10 @@ static void rds_iw_remove_one(struct ib_device *device, void *client_data)
 	if (rds_iwdev->mr)
 		ib_dereg_mr(rds_iwdev->mr);
 
-	ib_dealloc_pd(rds_iwdev->pd);
+	while (ib_dealloc_pd(rds_iwdev->pd)) {
+		rdsdebug("Failed to dealloc pd %p\n", rds_iwdev->pd);
+		msleep(1);
+	}
 
 	list_del(&rds_iwdev->list);
 	kfree(rds_iwdev);
@@ -214,7 +218,7 @@ static void rds_iw_ic_info(struct socket *sock, unsigned int len,
  * allowed to influence which paths have priority.  We could call userspace
  * asserting this policy "routing".
  */
-static int rds_iw_laddr_check(struct net *net, __be32 addr)
+static int rds_iw_laddr_check(__be32 addr)
 {
 	int ret;
 	struct rdma_cm_id *cm_id;
@@ -223,7 +227,7 @@ static int rds_iw_laddr_check(struct net *net, __be32 addr)
 	/* Create a CMA ID and try to bind it. This catches both
 	 * IB and iWARP capable NICs.
 	 */
-	cm_id = rdma_create_id(&init_net, NULL, NULL, RDMA_PS_TCP, IB_QPT_RC);
+	cm_id = rdma_create_id(NULL, NULL, RDMA_PS_TCP, IB_QPT_RC);
 	if (IS_ERR(cm_id))
 		return PTR_ERR(cm_id);
 

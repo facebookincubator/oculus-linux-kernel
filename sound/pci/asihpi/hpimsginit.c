@@ -1,7 +1,7 @@
 /******************************************************************************
 
     AudioScience HPI driver
-    Copyright (C) 1997-2014  AudioScience Inc. <support@audioscience.com>
+    Copyright (C) 1997-2011  AudioScience Inc. <support@audioscience.com>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of version 2 of the GNU General Public License as
@@ -37,15 +37,11 @@ static u16 gwSSX2_bypass;
 static void hpi_init_message(struct hpi_message *phm, u16 object,
 	u16 function)
 {
-	u16 size;
-
+	memset(phm, 0, sizeof(*phm));
 	if ((object > 0) && (object <= HPI_OBJ_MAXINDEX))
-		size = msg_size[object];
+		phm->size = msg_size[object];
 	else
-		size = sizeof(*phm);
-
-	memset(phm, 0, size);
-	phm->size = size;
+		phm->size = sizeof(*phm);
 
 	if (gwSSX2_bypass)
 		phm->type = HPI_TYPE_SSX2BYPASS_MESSAGE;
@@ -64,16 +60,12 @@ static void hpi_init_message(struct hpi_message *phm, u16 object,
 void hpi_init_response(struct hpi_response *phr, u16 object, u16 function,
 	u16 error)
 {
-	u16 size;
-
-	if ((object > 0) && (object <= HPI_OBJ_MAXINDEX))
-		size = res_size[object];
-	else
-		size = sizeof(*phr);
-
 	memset(phr, 0, sizeof(*phr));
-	phr->size = size;
 	phr->type = HPI_TYPE_RESPONSE;
+	if ((object > 0) && (object <= HPI_OBJ_MAXINDEX))
+		phr->size = res_size[object];
+	else
+		phr->size = sizeof(*phr);
 	phr->object = object;
 	phr->function = function;
 	phr->error = error;
@@ -94,7 +86,7 @@ void hpi_init_message_response(struct hpi_message *phm,
 static void hpi_init_messageV1(struct hpi_message_header *phm, u16 size,
 	u16 object, u16 function)
 {
-	memset(phm, 0, size);
+	memset(phm, 0, sizeof(*phm));
 	if ((object > 0) && (object <= HPI_OBJ_MAXINDEX)) {
 		phm->size = size;
 		phm->type = HPI_TYPE_REQUEST;
@@ -108,9 +100,7 @@ static void hpi_init_messageV1(struct hpi_message_header *phm, u16 size,
 void hpi_init_responseV1(struct hpi_response_header *phr, u16 size,
 	u16 object, u16 function)
 {
-	(void)object;
-	(void)function;
-	memset(phr, 0, size);
+	memset(phr, 0, sizeof(*phr));
 	phr->size = size;
 	phr->version = 1;
 	phr->type = HPI_TYPE_RESPONSE;

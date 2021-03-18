@@ -60,7 +60,7 @@ static void per_hub_init(cnodeid_t cnode)
 	nasid_t nasid = COMPACT_TO_NASID_NODEID(cnode);
 	int i;
 
-	cpumask_set_cpu(smp_processor_id(), &hub->h_cpus);
+	cpu_set(smp_processor_id(), hub->h_cpus);
 
 	if (test_and_set_bit(cnode, hub_init_mask))
 		return;

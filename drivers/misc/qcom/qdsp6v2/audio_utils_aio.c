@@ -31,7 +31,7 @@
 #ifdef CONFIG_USE_DEV_CTRL_VOLUME
 #include <linux/qdsp6v2/audio_dev_ctl.h>
 #endif /*CONFIG_USE_DEV_CTRL_VOLUME*/
-static DEFINE_MUTEX(lock);
+DEFINE_MUTEX(lock);
 #ifdef CONFIG_DEBUG_FS
 
 int audio_aio_debug_open(struct inode *inode, struct file *file)
@@ -1098,7 +1098,7 @@ static int audio_aio_async_write(struct q6audio_aio *audio,
 		param.flags |= AUDIO_DEC_EOF_SET;
 
 	param.uid = ac->session;
-	/* Read command will populate session id as token */
+	/* Read command will populate paddr as token */
 	buf_node->token = ac->session;
 	rc = q6asm_async_write(ac, &param);
 	if (rc < 0)
@@ -1150,9 +1150,9 @@ static int audio_aio_async_read(struct q6audio_aio *audio,
 		sizeof(struct dec_meta_out);
 	param.len = buf_node->buf.buf_len -
 		sizeof(struct dec_meta_out);
-	param.uid = ac->session;
-	/* Write command will populate session_id as token */
-	buf_node->token = ac->session;
+	param.uid = param.paddr;
+	/* Write command will populate paddr as token */
+	buf_node->token = param.paddr;
 	rc = q6asm_async_read(ac, &param);
 	if (rc < 0)
 		pr_err("%s[%pK]:failed\n", __func__, audio);
@@ -1353,7 +1353,6 @@ int audio_aio_open(struct q6audio_aio *audio, struct file *file)
 	spin_lock_init(&audio->event_queue_lock);
 	init_waitqueue_head(&audio->cmd_wait);
 	init_waitqueue_head(&audio->write_wait);
-	init_waitqueue_head(&audio->event_wait);
 	INIT_LIST_HEAD(&audio->out_queue);
 	INIT_LIST_HEAD(&audio->in_queue);
 	INIT_LIST_HEAD(&audio->ion_region_queue);

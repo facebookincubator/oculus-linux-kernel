@@ -467,6 +467,7 @@ static const struct dev_pm_ops vpif_pm = {
 static struct platform_driver vpif_driver = {
 	.driver = {
 		.name	= "vpif",
+		.owner = THIS_MODULE,
 		.pm	= vpif_pm_ops,
 	},
 	.remove = vpif_remove,

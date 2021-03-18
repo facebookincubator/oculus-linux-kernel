@@ -389,6 +389,7 @@ static struct platform_driver pata_at32_driver = {
 	.remove	       = __exit_p(pata_at32_remove),
 	.driver	       = {
 		.name  = "at32_ide",
+		.owner = THIS_MODULE,
 	},
 };
 

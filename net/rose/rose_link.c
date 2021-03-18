@@ -25,6 +25,7 @@
 #include <linux/fcntl.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
+#include <linux/netfilter.h>
 #include <net/rose.h>
 
 static void rose_ftimer_expiry(unsigned long);

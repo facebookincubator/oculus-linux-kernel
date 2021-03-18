@@ -74,7 +74,7 @@ int user_preparse(struct key_preparsed_payload *prep)
 
 	/* attach the data */
 	prep->quotalen = datalen;
-	prep->payload.data[0] = upayload;
+	prep->payload[0] = upayload;
 	upayload->datalen = datalen;
 	memcpy(upayload->data, prep->data, datalen);
 	return 0;
@@ -86,7 +86,7 @@ EXPORT_SYMBOL_GPL(user_preparse);
  */
 void user_free_preparse(struct key_preparsed_payload *prep)
 {
-	kfree(prep->payload.data[0]);
+	kfree(prep->payload[0]);
 }
 EXPORT_SYMBOL_GPL(user_free_preparse);
 
@@ -121,7 +121,7 @@ int user_update(struct key *key, struct key_preparsed_payload *prep)
 	if (ret == 0) {
 		/* attach the new data, displacing the old */
 		if (!test_bit(KEY_FLAG_NEGATIVE, &key->flags))
-			zap = key->payload.data[0];
+			zap = key->payload.data;
 		else
 			zap = NULL;
 		rcu_assign_keypointer(key, upayload);
@@ -143,7 +143,7 @@ EXPORT_SYMBOL_GPL(user_update);
  */
 void user_revoke(struct key *key)
 {
-	struct user_key_payload *upayload = key->payload.data[0];
+	struct user_key_payload *upayload = key->payload.data;
 
 	/* clear the quota */
 	key_payload_reserve(key, 0);
@@ -161,7 +161,7 @@ EXPORT_SYMBOL(user_revoke);
  */
 void user_destroy(struct key *key)
 {
-	struct user_key_payload *upayload = key->payload.data[0];
+	struct user_key_payload *upayload = key->payload.data;
 
 	kfree(upayload);
 }
@@ -186,10 +186,10 @@ EXPORT_SYMBOL_GPL(user_describe);
  */
 long user_read(const struct key *key, char __user *buffer, size_t buflen)
 {
-	const struct user_key_payload *upayload;
+	struct user_key_payload *upayload;
 	long ret;
 
-	upayload = user_key_payload(key);
+	upayload = rcu_dereference_key(key);
 	ret = upayload->datalen;
 
 	/* we can return the data as is */

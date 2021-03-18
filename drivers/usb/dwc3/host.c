@@ -30,10 +30,10 @@ int dwc3_host_init(struct dwc3 *dwc)
 	xhci = platform_device_alloc("xhci-hcd", PLATFORM_DEVID_AUTO);
 	if (!xhci) {
 		dev_err(dwc->dev, "couldn't allocate xHCI device\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err0;
 	}
 
-	arch_setup_dma_ops(&xhci->dev, 0, 0, NULL, 0);
 	dma_set_coherent_mask(&xhci->dev, dwc->dev->coherent_dma_mask);
 
 	xhci->dev.parent	= dwc->dev;
@@ -51,8 +51,9 @@ int dwc3_host_init(struct dwc3 *dwc)
 
 	memset(&pdata, 0, sizeof(pdata));
 
-	pdata.usb3_lpm_capable = dwc->usb3_lpm_capable;
-
+#ifdef CONFIG_DWC3_HOST_USB3_LPM_ENABLE
+	pdata.usb3_lpm_capable = 1;
+#endif
 	ret = of_property_read_u32(node, "xhci-imod-value",
 					   &pdata.imod_interval);
 	if (ret)
@@ -64,25 +65,18 @@ int dwc3_host_init(struct dwc3 *dwc)
 		goto err1;
 	}
 
-	phy_create_lookup(dwc->usb2_generic_phy, "usb2-phy",
-			  dev_name(&xhci->dev));
-	phy_create_lookup(dwc->usb3_generic_phy, "usb3-phy",
-			  dev_name(&xhci->dev));
-
 	/* Platform device gets added as part of state machine */
 	return 0;
 
 err1:
 	platform_device_put(xhci);
+
+err0:
 	return ret;
 }
 
 void dwc3_host_exit(struct dwc3 *dwc)
 {
-	phy_remove_lookup(dwc->usb2_generic_phy, "usb2-phy",
-			  dev_name(&dwc->xhci->dev));
-	phy_remove_lookup(dwc->usb3_generic_phy, "usb3-phy",
-			  dev_name(&dwc->xhci->dev));
 	if (!dwc->is_drd)
 		platform_device_unregister(dwc->xhci);
 }

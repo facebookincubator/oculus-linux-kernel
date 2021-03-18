@@ -33,7 +33,7 @@
 #define SDE_ROTATOR_DRV_NAME		"sde_rotator"
 
 /* Event logging constants */
-#define SDE_ROTATOR_NUM_EVENTS		4096
+#define SDE_ROTATOR_NUM_EVENTS		256
 #define SDE_ROTATOR_NUM_TIMESTAMPS	SDE_ROTATOR_TS_MAX
 
 struct sde_rotator_device;
@@ -48,7 +48,6 @@ struct sde_rotator_ctx;
  * @addr: Address of rotator mmu mapped buffer.
  * @secure: Non-secure/secure buffer.
  * @buffer: Pointer to dma buf associated with this fd.
- * @ihandle: ion handle associated with this fd
  */
 struct sde_rotator_buf_handle {
 	int fd;
@@ -58,7 +57,6 @@ struct sde_rotator_buf_handle {
 	ion_phys_addr_t addr;
 	int secure;
 	struct dma_buf *buffer;
-	struct ion_handle *handle;
 };
 
 /*
@@ -68,7 +66,6 @@ struct sde_rotator_buf_handle {
  * @fence_ts: completion timestamp associated with fd
  * @qbuf_ts: timestamp associated with buffer queue event
  * @dqbuf_ts: Pointer to timestamp associated with buffer dequeue event
- * @comp_ratio: compression ratio of this buffer
  */
 struct sde_rotator_vbinfo {
 	int fd;
@@ -76,7 +73,6 @@ struct sde_rotator_vbinfo {
 	u32 fence_ts;
 	ktime_t qbuf_ts;
 	ktime_t *dqbuf_ts;
-	struct sde_mult_factor comp_ratio;
 };
 
 /*
@@ -84,6 +80,7 @@ struct sde_rotator_vbinfo {
  * @kobj: kernel object of this context
  * @rot_dev: Pointer to rotator device.
  * @fh: V4l2 file handle.
+ * @m2m_ctx: Memory to memory context.
  * @ctrl_handler: control handler
  * @format_cap: Current capture format.
  * @format_out: Current output format.
@@ -94,6 +91,7 @@ struct sde_rotator_vbinfo {
  * @hflip: horizontal flip (1-flip)
  * @vflip: vertical flip (1-flip)
  * @rotate: rotation angle (0,90,180,270)
+ * @priority: Priority of this context
  * @secure: Non-secure (0) / Secure processing
  * @command_pending: Number of pending transaction in h/w
  * @abort_pending: True if abort is requested for async handling.
@@ -112,6 +110,7 @@ struct sde_rotator_ctx {
 	struct kobject kobj;
 	struct sde_rotator_device *rot_dev;
 	struct v4l2_fh fh;
+	struct v4l2_m2m_ctx *m2m_ctx;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_format format_cap;
 	struct v4l2_format format_out;
@@ -122,8 +121,8 @@ struct sde_rotator_ctx {
 	s32 hflip;
 	s32 vflip;
 	s32 rotate;
+	enum v4l2_priority priority;
 	s32 secure;
-	s32 secure_camera;
 	atomic_t command_pending;
 	int abort_pending;
 	int nbuf_cap;
@@ -165,9 +164,6 @@ struct sde_rotator_statistics {
  * @session_id: Next context session identifier
  * @fence_timeout: Timeout value in msec for fence wait
  * @streamoff_timeout: Timeout value in msec for stream off
- * @min_rot_clk: Override the minimum rotator clock from perf calculation
- * @min_bw: Override the minimum bandwidth from perf calculation
- * @min_overhead_us: Override the minimum overhead in us from perf calculation
  * @debugfs_root: Pointer to debugfs directory entry.
  * @stats: placeholder for rotator statistics
  */
@@ -185,12 +181,8 @@ struct sde_rotator_device {
 	u32 session_id;
 	u32 fence_timeout;
 	u32 streamoff_timeout;
-	u32 min_rot_clk;
-	u32 min_bw;
-	u32 min_overhead_us;
 	struct sde_rotator_statistics stats;
 	struct dentry *debugfs_root;
-	struct dentry *perf_root;
 };
 
 static inline

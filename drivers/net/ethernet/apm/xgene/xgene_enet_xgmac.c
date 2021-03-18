@@ -122,6 +122,7 @@ static bool xgene_enet_rd_indirect(void __iomem *addr, void __iomem *rd,
 
 	return true;
 }
+
 static void xgene_enet_rd_mac(struct xgene_enet_pdata *pdata,
 			      u32 rd_addr, u32 *rd_data)
 {
@@ -184,11 +185,6 @@ static void xgene_xgmac_set_mac_addr(struct xgene_enet_pdata *pdata)
 	xgene_enet_wr_mac(pdata, HSTMACADR_MSW_ADDR, addr1);
 }
 
-static void xgene_xgmac_set_mss(struct xgene_enet_pdata *pdata)
-{
-	xgene_enet_wr_csr(pdata, XG_TSIF_MSS_REG0_ADDR, pdata->mss);
-}
-
 static u32 xgene_enet_link_status(struct xgene_enet_pdata *pdata)
 {
 	u32 data;
@@ -209,8 +205,8 @@ static void xgene_xgmac_init(struct xgene_enet_pdata *pdata)
 	data &= ~HSTLENCHK;
 	xgene_enet_wr_mac(pdata, AXGMAC_CONFIG_1, data);
 
+	xgene_enet_wr_mac(pdata, HSTMAXFRAME_LENGTH_ADDR, 0x06000600);
 	xgene_xgmac_set_mac_addr(pdata);
-	xgene_xgmac_set_mss(pdata);
 
 	xgene_enet_rd_csr(pdata, XG_RSIF_CONFIG_REG_ADDR, &data);
 	data |= CFG_RSIF_FPBUFF_TIMEOUT_EN;
@@ -261,11 +257,9 @@ static int xgene_enet_reset(struct xgene_enet_pdata *pdata)
 	if (!xgene_ring_mgr_init(pdata))
 		return -ENODEV;
 
-	if (!IS_ERR(pdata->clk)) {
-		clk_prepare_enable(pdata->clk);
-		clk_disable_unprepare(pdata->clk);
-		clk_prepare_enable(pdata->clk);
-	}
+	clk_prepare_enable(pdata->clk);
+	clk_disable_unprepare(pdata->clk);
+	clk_prepare_enable(pdata->clk);
 
 	xgene_enet_ecc_init(pdata);
 	xgene_enet_config_ring_if_assoc(pdata);
@@ -292,8 +286,7 @@ static void xgene_enet_xgcle_bypass(struct xgene_enet_pdata *pdata,
 
 static void xgene_enet_shutdown(struct xgene_enet_pdata *pdata)
 {
-	if (!IS_ERR(pdata->clk))
-		clk_disable_unprepare(pdata->clk);
+	clk_disable_unprepare(pdata->clk);
 }
 
 static void xgene_enet_link_state(struct work_struct *work)
@@ -334,7 +327,6 @@ struct xgene_mac_ops xgene_xgmac_ops = {
 	.rx_disable = xgene_xgmac_rx_disable,
 	.tx_disable = xgene_xgmac_tx_disable,
 	.set_mac_addr = xgene_xgmac_set_mac_addr,
-	.set_mss = xgene_xgmac_set_mss,
 	.link_state = xgene_enet_link_state
 };
 

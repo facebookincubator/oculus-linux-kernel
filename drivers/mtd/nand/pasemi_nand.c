@@ -124,7 +124,7 @@ static int pasemi_nand_probe(struct platform_device *ofdev)
 
 	/* Link the private data with the MTD structure */
 	pasemi_nand_mtd->priv = chip;
-	pasemi_nand_mtd->dev.parent = &ofdev->dev;
+	pasemi_nand_mtd->owner = THIS_MODULE;
 
 	chip->IO_ADDR_R = of_iomap(np, 0);
 	chip->IO_ADDR_W = chip->IO_ADDR_R;
@@ -223,6 +223,7 @@ static struct platform_driver pasemi_nand_driver =
 {
 	.driver = {
 		.name = driver_name,
+		.owner = THIS_MODULE,
 		.of_match_table = pasemi_nand_match,
 	},
 	.probe		= pasemi_nand_probe,

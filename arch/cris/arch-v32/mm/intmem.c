@@ -145,5 +145,6 @@ unsigned long crisv32_intmem_virt_to_phys(void* addr)
 		(unsigned long)intmem_virtual + MEM_INTMEM_START +
 		RESERVED_SIZE);
 }
-device_initcall(crisv32_intmem_init);
+
+module_init(crisv32_intmem_init);
 

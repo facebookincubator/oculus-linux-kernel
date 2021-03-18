@@ -358,7 +358,6 @@ static int __init coh901327_probe(struct platform_device *pdev)
 	if (ret < 0)
 		coh901327_wdt.timeout = 60;
 
-	coh901327_wdt.parent = &pdev->dev;
 	ret = watchdog_register_device(&coh901327_wdt);
 	if (ret == 0)
 		dev_info(&pdev->dev,
@@ -449,6 +448,7 @@ static const struct of_device_id coh901327_dt_match[] = {
 
 static struct platform_driver coh901327_driver = {
 	.driver = {
+		.owner	= THIS_MODULE,
 		.name	= "coh901327_wdog",
 		.of_match_table = coh901327_dt_match,
 	},

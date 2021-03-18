@@ -536,6 +536,9 @@ static int omap_des_crypt_dma_stop(struct omap_des_dev *dd)
 	dmaengine_terminate_all(dd->dma_lch_in);
 	dmaengine_terminate_all(dd->dma_lch_out);
 
+	dma_unmap_sg(dd->dev, dd->in_sg, dd->in_sg_len, DMA_TO_DEVICE);
+	dma_unmap_sg(dd->dev, dd->out_sg, dd->out_sg_len, DMA_FROM_DEVICE);
+
 	return err;
 }
 
@@ -918,7 +921,7 @@ static irqreturn_t omap_des_irq(int irq, void *dev_id)
 
 			scatterwalk_advance(&dd->in_walk, 4);
 			if (dd->in_sg->length == _calc_walked(in)) {
-				dd->in_sg = sg_next(dd->in_sg);
+				dd->in_sg = scatterwalk_sg_next(dd->in_sg);
 				if (dd->in_sg) {
 					scatterwalk_start(&dd->in_walk,
 							  dd->in_sg);
@@ -950,7 +953,7 @@ static irqreturn_t omap_des_irq(int irq, void *dev_id)
 			*dst = omap_des_read(dd, DES_REG_DATA_N(dd, i));
 			scatterwalk_advance(&dd->out_walk, 4);
 			if (dd->out_sg->length == _calc_walked(out)) {
-				dd->out_sg = sg_next(dd->out_sg);
+				dd->out_sg = scatterwalk_sg_next(dd->out_sg);
 				if (dd->out_sg) {
 					scatterwalk_start(&dd->out_walk,
 							  dd->out_sg);
@@ -962,9 +965,9 @@ static irqreturn_t omap_des_irq(int irq, void *dev_id)
 			}
 		}
 
-		BUG_ON(dd->total < DES_BLOCK_SIZE);
-
 		dd->total -= DES_BLOCK_SIZE;
+
+		BUG_ON(dd->total < 0);
 
 		/* Clear IRQ status */
 		status &= ~DES_REG_IRQ_DATA_OUT;
@@ -1219,6 +1222,7 @@ static struct platform_driver omap_des_driver = {
 	.remove	= omap_des_remove,
 	.driver	= {
 		.name	= "omap-des",
+		.owner	= THIS_MODULE,
 		.pm	= &omap_des_pm_ops,
 		.of_match_table	= of_match_ptr(omap_des_of_match),
 	},

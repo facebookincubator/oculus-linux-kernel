@@ -168,6 +168,7 @@ static struct platform_driver snd_pmac_driver = {
 	.remove		= snd_pmac_remove,
 	.driver		= {
 		.name	= SND_PMAC_DRIVER,
+		.owner	= THIS_MODULE,
 		.pm	= SND_PMAC_PM_OPS,
 	},
 };

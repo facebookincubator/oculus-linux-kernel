@@ -23,11 +23,6 @@
 #include <linux/clk.h>
 
 #define MODULE_NAME "gladiator-v2_error_reporting"
-#ifdef CONFIG_MSM_GLADIATOR_ERROR_V2_MAIN_LOGGER_ONLY
-#define OBSERVER_ERROR_ENABLE	0
-#else
-#define OBSERVER_ERROR_ENABLE	1
-#endif
 
 /* Register Offsets */
 #define GLADIATOR_ID_COREID	0x0
@@ -45,7 +40,6 @@
 #define GLADIATOR_ERRLOG7	0x1038
 #define GLADIATOR_ERRLOG8	0x103C
 #define OBSERVER_0_ID_COREID	0x8000
-#define OBSERVER_0_ID_REVISIONID	0x8004
 #define OBSERVER_0_FAULTEN	0x8008
 #define OBSERVER_0_ERRVLD	0x800C
 #define OBSERVER_0_ERRCLR	0x8010
@@ -59,40 +53,42 @@
 #define OBSERVER_0_ERRLOG7	0x8030
 #define OBSERVER_0_ERRLOG8	0x8034
 #define OBSERVER_0_STALLEN	0x8038
+#define OBSERVER_0_REVISIONID	0x8004
 
-#define GLD_TRANS_OPCODE_MASK			0xE
-#define GLD_TRANS_OPCODE_SHIFT			1
-#define GLD_ERROR_TYPE_MASK				0x700
-#define GLD_ERROR_TYPE_SHIFT			8
-#define GLD_LEN1_MASK					0xFFF0000
-#define GLD_LEN1_SHIFT					16
-#define	GLD_TRANS_SOURCEID_MASK			0x7
-#define	GLD_TRANS_SOURCEID_SHIFT		0
-#define	GLD_TRANS_TARGETID_MASK			0x7
-#define	GLD_TRANS_TARGETID_SHIFT		0
-#define	GLD_ERRLOG_ERROR				0x7
-#define GLD_ERRLOG5_ERROR_TYPE_MASK		0xFF000000
-#define GLD_ERRLOG5_ERROR_TYPE_SHIFT	24
-#define GLD_ACE_PORT_PARITY_MASK		0xc000
-#define GLD_ACE_PORT_PARITY_SHIFT		14
-#define GLD_ACE_PORT_DISCONNECT_MASK	0xf0000
-#define GLD_ACE_PORT_DISCONNECT_SHIFT	16
-#define GLD_ACE_PORT_DIRECTORY_MASK		0xf00000
-#define GLD_ACE_PORT_DIRECTORY_SHIFT	20
-#define GLD_INDEX_PARITY_MASK			0x1FFF
-#define GLD_INDEX_PARITY_SHIFT			0
-#define OBS_TRANS_OPCODE_MASK			0x1E
-#define OBS_TRANS_OPCODE_SHIFT			1
-#define OBS_ERROR_TYPE_MASK				0x700
-#define OBS_ERROR_TYPE_SHIFT			8
-#define OBS_LEN1_MASK					0x7F0000
-#define OBS_LEN1_SHIFT					16
+#define GLD_TRANS_OPCODE_MASK		0xE
+#define GLD_TRANS_OPCODE_SHIFT		1
+#define GLD_ERROR_TYPE_MASK		0x700
+#define GLD_ERROR_TYPE_SHIFT		8
+#define GLD_LEN1_MASK			0xFFF0000
+#define GLD_LEN1_SHIFT			16
+#define	GLD_TRANS_SOURCEID_MASK		0x7
+#define	GLD_TRANS_SOURCEID_SHIFT	0
+#define	GLD_TRANS_TARGETID_MASK		0x7
+#define	GLD_TRANS_TARGETID_SHIFT	0
+#define	GLD_ERRLOG_ERROR		0x7
+#define GLD_ERRLOG5_ERROR_TYPE_MASK 0xFF000000
+#define GLD_ERRLOG5_ERROR_TYPE_SHIFT 24
+#define GLD_ACE_PORT_PARITY_MASK 0xc000
+#define GLD_ACE_PORT_PARITY_SHIFT 14
+#define GLD_ACE_PORT_DISCONNECT_MASK 0xf0000
+#define GLD_ACE_PORT_DISCONNECT_SHIFT 16
+#define GLD_ACE_PORT_DIRECTORY_MASK 0xf00000
+#define GLD_ACE_PORT_DIRECTORY_SHIFT 20
+#define GLD_INDEX_PARITY_MASK 0x1FFF
+#define GLD_INDEX_PARITY_SHIFT 0
+#define OBS_TRANS_OPCODE_MASK		0x1E
+#define OBS_TRANS_OPCODE_SHIFT		1
+#define OBS_ERROR_TYPE_MASK		0x700
+#define OBS_ERROR_TYPE_SHIFT		8
+#define OBS_LEN1_MASK			0x7F0000
+#define OBS_LEN1_SHIFT			16
 
 struct msm_gladiator_data {
 	void __iomem *gladiator_virt_base;
 	int erp_irq;
 	struct notifier_block pm_notifier_block;
 	struct clk *qdss_clk;
+	bool atb_clock_on;
 };
 
 static int enable_panic_on_error;
@@ -133,11 +129,6 @@ enum obs_err_code {
 };
 
 enum err_log {
-	ID_COREID,
-	ID_REVISIONID,
-	FAULTEN,
-	ERRVLD,
-	ERRCLR,
 	ERR_LOG0,
 	ERR_LOG1,
 	ERR_LOG2,
@@ -148,7 +139,6 @@ enum err_log {
 	ERR_LOG7,
 	ERR_LOG8,
 	STALLEN,
-	MAX_NUM,
 };
 
 enum type_logger_error {
@@ -161,10 +151,13 @@ enum type_logger_error {
 	PARITY_ERROR,
 };
 
-static void clear_gladiator_error(void __iomem *gladiator_virt_base)
+static void clear_gladiator_error(struct msm_gladiator_data *data)
 {
+	void __iomem *gladiator_virt_base = data->gladiator_virt_base;
+
 	writel_relaxed(1, gladiator_virt_base + GLADIATOR_ERRCLR);
-	writel_relaxed(1, gladiator_virt_base + OBSERVER_0_ERRCLR);
+	if (data->atb_clock_on)
+		writel_relaxed(1, gladiator_virt_base + OBSERVER_0_ERRCLR);
 }
 
 static inline void print_gld_transaction(unsigned int opc)
@@ -486,15 +479,6 @@ static u32 get_gld_offset(unsigned int err_log)
 	u32 offset = 0;
 
 	switch (err_log) {
-	case FAULTEN:
-		offset = GLADIATOR_FAULTEN;
-		break;
-	case ERRVLD:
-		offset = GLADIATOR_ERRVLD;
-		break;
-	case ERRCLR:
-		offset = GLADIATOR_ERRCLR;
-		break;
 	case ERR_LOG0:
 		offset = GLADIATOR_ERRLOG0;
 		break;
@@ -534,21 +518,6 @@ static u32 get_obs_offset(unsigned int err_log)
 	u32 offset = 0;
 
 	switch (err_log) {
-	case ID_COREID:
-		offset = OBSERVER_0_ID_COREID;
-		break;
-	case ID_REVISIONID:
-		offset = OBSERVER_0_ID_REVISIONID;
-		break;
-	case FAULTEN:
-		offset = OBSERVER_0_FAULTEN;
-		break;
-	case ERRVLD:
-		offset = OBSERVER_0_ERRVLD;
-		break;
-	case ERRCLR:
-		offset = OBSERVER_0_ERRCLR;
-		break;
 	case ERR_LOG0:
 		offset = OBSERVER_0_ERRLOG0;
 		break;
@@ -608,7 +577,8 @@ static void decode_gld_errlog5(struct msm_gladiator_data *msm_gld_data)
 static irqreturn_t msm_gladiator_isr(int irq, void *dev_id)
 {
 	u32 err_reg;
-	unsigned int err_log, err_buf[MAX_NUM];
+	unsigned int err_log;
+	bool obsrv_err_valid;
 
 	struct msm_gladiator_data *msm_gld_data = dev_id;
 
@@ -616,8 +586,11 @@ static irqreturn_t msm_gladiator_isr(int irq, void *dev_id)
 	bool gld_err_valid = readl_relaxed(msm_gld_data->gladiator_virt_base +
 			GLADIATOR_ERRVLD);
 
-	bool obsrv_err_valid = readl_relaxed(
+	if (msm_gld_data->atb_clock_on)
+		obsrv_err_valid = readl_relaxed(
 			msm_gld_data->gladiator_virt_base + OBSERVER_0_ERRVLD);
+	else
+		obsrv_err_valid = 0;
 
 	if (!gld_err_valid && !obsrv_err_valid) {
 		pr_err("%s Invalid Gladiator error reported, clear it\n",
@@ -626,33 +599,9 @@ static irqreturn_t msm_gladiator_isr(int irq, void *dev_id)
 		clear_gladiator_error(msm_gld_data->gladiator_virt_base);
 		return IRQ_HANDLED;
 	}
-	pr_alert("Gladiator Error Detected:\n");
+	pr_alert("GLADIATOR ERROR DETECTED\n");
 	if (gld_err_valid) {
-		for (err_log = FAULTEN; err_log <= ERR_LOG8; err_log++) {
-			err_buf[err_log] = readl_relaxed(
-					msm_gld_data->gladiator_virt_base +
-					get_gld_offset(err_log));
-		}
-		pr_alert("Main log register data:\n%08x %08x %08x %08x\n"
-				"%08x %08x %08x %08x\n%08x %08x %08x %08x\n",
-			err_buf[2], err_buf[3], err_buf[4], err_buf[5],
-			err_buf[6], err_buf[7], err_buf[8], err_buf[9],
-			err_buf[10], err_buf[11], err_buf[12], err_buf[13]);
-	}
-
-	if (obsrv_err_valid) {
-		for (err_log = ID_COREID; err_log <= STALLEN; err_log++) {
-			err_buf[err_log] = readl_relaxed(
-					msm_gld_data->gladiator_virt_base +
-					get_obs_offset(err_log));
-		}
-		pr_alert("Observer log register data:\n%08x %08x %08x %08x\n%08x %08x %08x %08x\n%08x %08x %08x %08x\n%08x\n",
-			err_buf[0], err_buf[1], err_buf[2], err_buf[3], err_buf[4], err_buf[5], err_buf[6], err_buf[7],
-			err_buf[8], err_buf[9], err_buf[10], err_buf[11], err_buf[12]);
-	}
-
-	if (gld_err_valid) {
-		pr_alert("Main error log register data:\n");
+		pr_alert("GLADIATOR error log register data:\n");
 		for (err_log = ERR_LOG0; err_log <= ERR_LOG8; err_log++) {
 			/* skip log register 7 as its reserved */
 			if (err_log == ERR_LOG7)
@@ -683,7 +632,7 @@ static irqreturn_t msm_gladiator_isr(int irq, void *dev_id)
 	/* Clear IRQ */
 	clear_gladiator_error(msm_gld_data->gladiator_virt_base);
 	if (enable_panic_on_error)
-		panic("Gladiator Cache Interconnect Error Detected!\n");
+		BUG_ON(1);
 	else
 		WARN(1, "Gladiator Cache Interconnect Error Detected\n");
 
@@ -735,11 +684,14 @@ static int parse_dt_node(struct platform_device *pdev,
 	return ret;
 }
 
-static inline void gladiator_irq_init(void __iomem *gladiator_virt_base)
+static inline void gladiator_irq_init(struct msm_gladiator_data *data)
 {
+	void __iomem *gladiator_virt_base = data->gladiator_virt_base;
+
 	writel_relaxed(1, gladiator_virt_base + GLADIATOR_FAULTEN);
-	writel_relaxed(OBSERVER_ERROR_ENABLE,
-			gladiator_virt_base + OBSERVER_0_FAULTEN);
+
+	if (data->atb_clock_on)
+		writel_relaxed(1, gladiator_virt_base + OBSERVER_0_FAULTEN);
 }
 
 #define CCI_LEVEL 2
@@ -766,7 +718,7 @@ static int gladiator_erp_pm_callback(struct notifier_block *nb,
 
 static int gladiator_erp_v2_probe(struct platform_device *pdev)
 {
-	int ret = -1;
+	int ret;
 	struct msm_gladiator_data *msm_gld_data;
 
 	msm_gld_data = devm_kzalloc(&pdev->dev,
@@ -776,12 +728,19 @@ static int gladiator_erp_v2_probe(struct platform_device *pdev)
 		goto bail;
 	}
 
+	ret = parse_dt_node(pdev, msm_gld_data);
+	if (ret)
+		goto bail;
+	msm_gld_data->pm_notifier_block.notifier_call =
+		gladiator_erp_pm_callback;
+
 	if (of_property_match_string(pdev->dev.of_node,
 				"clock-names", "atb_clk") >= 0) {
 		msm_gld_data->qdss_clk = devm_clk_get(&pdev->dev, "atb_clk");
 		if (IS_ERR(msm_gld_data->qdss_clk)) {
 			dev_err(&pdev->dev, "Failed to get QDSS ATB clock\n");
-			goto bail;
+			msm_gld_data->atb_clock_on = false;
+			goto clk_finish;
 		}
 	} else {
 		dev_err(&pdev->dev, "No matching string of QDSS ATB clock\n");
@@ -789,15 +748,14 @@ static int gladiator_erp_v2_probe(struct platform_device *pdev)
 	}
 
 	ret = clk_prepare_enable(msm_gld_data->qdss_clk);
-	if (ret)
-		goto err_atb_clk;
 
-	ret = parse_dt_node(pdev, msm_gld_data);
-	if (ret)
-		goto bail;
-	msm_gld_data->pm_notifier_block.notifier_call =
-		gladiator_erp_pm_callback;
+	if (ret) {
+		clk_disable_unprepare(msm_gld_data->qdss_clk);
+		msm_gld_data->atb_clock_on = false;
+	} else
+		msm_gld_data->atb_clock_on = true;
 
+clk_finish:
 	gladiator_irq_init(msm_gld_data->gladiator_virt_base);
 	platform_set_drvdata(pdev, msm_gld_data);
 	cpu_pm_register_notifier(&msm_gld_data->pm_notifier_block);
@@ -805,10 +763,7 @@ static int gladiator_erp_v2_probe(struct platform_device *pdev)
 	enable_panic_on_error = 1;
 #endif
 	dev_info(&pdev->dev, "MSM Gladiator Error Reporting V2 Initialized\n");
-	return ret;
-
-err_atb_clk:
-	clk_disable_unprepare(msm_gld_data->qdss_clk);
+	return 0;
 
 bail:
 	dev_err(&pdev->dev, "Probe failed bailing out\n");
@@ -840,7 +795,7 @@ static int __init init_gladiator_erp_v2(void)
 	int ret;
 
 	ret = scm_is_secure_device();
-	if (ret == 0) {
+	if (ret != 0) {
 		pr_info("Gladiator Error Reporting not available\n");
 		return -ENODEV;
 	}

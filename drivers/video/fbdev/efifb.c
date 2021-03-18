@@ -114,20 +114,6 @@ static int efifb_setup(char *options)
 	return 0;
 }
 
-static inline bool fb_base_is_valid(void)
-{
-	if (screen_info.lfb_base)
-		return true;
-
-	if (!(screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE))
-		return false;
-
-	if (screen_info.ext_lfb_base)
-		return true;
-
-	return false;
-}
-
 static int efifb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
@@ -155,7 +141,7 @@ static int efifb_probe(struct platform_device *dev)
 		screen_info.lfb_depth = 32;
 	if (!screen_info.pages)
 		screen_info.pages = 1;
-	if (!fb_base_is_valid()) {
+	if (!screen_info.lfb_base) {
 		printk(KERN_DEBUG "efifb: invalid framebuffer address\n");
 		return -ENODEV;
 	}
@@ -174,14 +160,6 @@ static int efifb_probe(struct platform_device *dev)
 	}
 
 	efifb_fix.smem_start = screen_info.lfb_base;
-
-	if (screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE) {
-		u64 ext_lfb_base;
-
-		ext_lfb_base = (u64)(unsigned long)screen_info.ext_lfb_base << 32;
-		efifb_fix.smem_start |= ext_lfb_base;
-	}
-
 	efifb_defined.bits_per_pixel = screen_info.lfb_depth;
 	efifb_defined.xres = screen_info.lfb_width;
 	efifb_defined.yres = screen_info.lfb_height;
@@ -333,6 +311,7 @@ static int efifb_remove(struct platform_device *pdev)
 static struct platform_driver efifb_driver = {
 	.driver = {
 		.name = "efi-framebuffer",
+		.owner = THIS_MODULE,
 	},
 	.probe = efifb_probe,
 	.remove = efifb_remove,

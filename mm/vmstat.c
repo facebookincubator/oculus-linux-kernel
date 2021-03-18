@@ -17,16 +17,11 @@
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <linux/vmstat.h>
-#include <linux/proc_fs.h>
-#include <linux/seq_file.h>
-#include <linux/debugfs.h>
 #include <linux/sched.h>
 #include <linux/math64.h>
 #include <linux/writeback.h>
 #include <linux/compaction.h>
 #include <linux/mm_inline.h>
-#include <linux/page_ext.h>
-#include <linux/page_owner.h>
 
 #include "internal.h"
 
@@ -219,7 +214,7 @@ void set_pgdat_percpu_threshold(pg_data_t *pgdat,
  * particular counter cannot be updated from interrupt context.
  */
 void __mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
-			   long delta)
+				int delta)
 {
 	struct per_cpu_pageset __percpu *pcp = zone->pageset;
 	s8 __percpu *p = pcp->vm_stat_diff + item;
@@ -318,8 +313,8 @@ EXPORT_SYMBOL(__dec_zone_page_state);
  *     1       Overstepping half of threshold
  *     -1      Overstepping minus half of threshold
 */
-static inline void mod_state(struct zone *zone, enum zone_stat_item item,
-			     long delta, int overstep_mode)
+static inline void mod_state(struct zone *zone,
+       enum zone_stat_item item, int delta, int overstep_mode)
 {
 	struct per_cpu_pageset __percpu *pcp = zone->pageset;
 	s8 __percpu *p = pcp->vm_stat_diff + item;
@@ -357,7 +352,7 @@ static inline void mod_state(struct zone *zone, enum zone_stat_item item,
 }
 
 void mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
-			 long delta)
+					int delta)
 {
 	mod_state(zone, item, delta, 0);
 }
@@ -384,7 +379,7 @@ EXPORT_SYMBOL(dec_zone_page_state);
  * Use interrupt disable to serialize counter updates
  */
 void mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
-			 long delta)
+					int delta)
 {
 	unsigned long flags;
 
@@ -593,28 +588,6 @@ void zone_statistics(struct zone *preferred_zone, struct zone *z, gfp_t flags)
 	else
 		__inc_zone_state(z, NUMA_OTHER);
 }
-
-/*
- * Determine the per node value of a stat item.
- */
-unsigned long node_page_state(int node, enum zone_stat_item item)
-{
-	struct zone *zones = NODE_DATA(node)->node_zones;
-
-	return
-#ifdef CONFIG_ZONE_DMA
-		zone_page_state(&zones[ZONE_DMA], item) +
-#endif
-#ifdef CONFIG_ZONE_DMA32
-		zone_page_state(&zones[ZONE_DMA32], item) +
-#endif
-#ifdef CONFIG_HIGHMEM
-		zone_page_state(&zones[ZONE_HIGHMEM], item) +
-#endif
-		zone_page_state(&zones[ZONE_NORMAL], item) +
-		zone_page_state(&zones[ZONE_MOVABLE], item);
-}
-
 #endif
 
 #ifdef CONFIG_COMPACTION
@@ -697,6 +670,66 @@ int fragmentation_index(struct zone *zone, unsigned int order)
 }
 #endif
 
+#if defined(CONFIG_PROC_FS) || defined(CONFIG_COMPACTION)
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
+static char * const migratetype_names[MIGRATE_TYPES] = {
+	"Unmovable",
+	"Reclaimable",
+	"Movable",
+#ifdef CONFIG_CMA
+	"CMA",
+#endif
+	"Reserve",
+#ifdef CONFIG_MEMORY_ISOLATION
+	"Isolate",
+#endif
+};
+
+static void *frag_start(struct seq_file *m, loff_t *pos)
+{
+	pg_data_t *pgdat;
+	loff_t node = *pos;
+	for (pgdat = first_online_pgdat();
+	     pgdat && node;
+	     pgdat = next_online_pgdat(pgdat))
+		--node;
+
+	return pgdat;
+}
+
+static void *frag_next(struct seq_file *m, void *arg, loff_t *pos)
+{
+	pg_data_t *pgdat = (pg_data_t *)arg;
+
+	(*pos)++;
+	return next_online_pgdat(pgdat);
+}
+
+static void frag_stop(struct seq_file *m, void *arg)
+{
+}
+
+/* Walk all the zones in a node and print using a callback */
+static void walk_zones_in_node(struct seq_file *m, pg_data_t *pgdat,
+		void (*print)(struct seq_file *m, pg_data_t *, struct zone *))
+{
+	struct zone *zone;
+	struct zone *node_zones = pgdat->node_zones;
+	unsigned long flags;
+
+	for (zone = node_zones; zone - node_zones < MAX_NR_ZONES; ++zone) {
+		if (!populated_zone(zone))
+			continue;
+
+		spin_lock_irqsave(&zone->lock, flags);
+		print(m, pgdat, zone);
+		spin_unlock_irqrestore(&zone->lock, flags);
+	}
+}
+#endif
+
 #if defined(CONFIG_PROC_FS) || defined(CONFIG_SYSFS) || defined(CONFIG_NUMA)
 #ifdef CONFIG_ZONE_DMA
 #define TEXT_FOR_DMA(xx) xx "_dma",
@@ -748,8 +781,6 @@ const char * const vmstat_text[] = {
 	"nr_shmem",
 	"nr_dirtied",
 	"nr_written",
-	"nr_ion_heap",
-	"nr_gpu_heap",
 	"nr_pages_scanned",
 
 #ifdef CONFIG_NUMA
@@ -829,7 +860,6 @@ const char * const vmstat_text[] = {
 	"compact_stall",
 	"compact_fail",
 	"compact_success",
-	"compact_daemon_wake",
 #endif
 
 #ifdef CONFIG_HUGETLB_PAGE
@@ -872,73 +902,13 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_DEBUG_VM_VMACACHE
 	"vmacache_find_calls",
 	"vmacache_find_hits",
-	"vmacache_full_flushes",
 #endif
 #endif /* CONFIG_VM_EVENTS_COUNTERS */
 };
 #endif /* CONFIG_PROC_FS || CONFIG_SYSFS || CONFIG_NUMA */
 
 
-#if (defined(CONFIG_DEBUG_FS) && defined(CONFIG_COMPACTION)) || \
-     defined(CONFIG_PROC_FS)
-static void *frag_start(struct seq_file *m, loff_t *pos)
-{
-	pg_data_t *pgdat;
-	loff_t node = *pos;
-
-	for (pgdat = first_online_pgdat();
-	     pgdat && node;
-	     pgdat = next_online_pgdat(pgdat))
-		--node;
-
-	return pgdat;
-}
-
-static void *frag_next(struct seq_file *m, void *arg, loff_t *pos)
-{
-	pg_data_t *pgdat = (pg_data_t *)arg;
-
-	(*pos)++;
-	return next_online_pgdat(pgdat);
-}
-
-static void frag_stop(struct seq_file *m, void *arg)
-{
-}
-
-/* Walk all the zones in a node and print using a callback */
-static void walk_zones_in_node(struct seq_file *m, pg_data_t *pgdat,
-		void (*print)(struct seq_file *m, pg_data_t *, struct zone *))
-{
-	struct zone *zone;
-	struct zone *node_zones = pgdat->node_zones;
-	unsigned long flags;
-
-	for (zone = node_zones; zone - node_zones < MAX_NR_ZONES; ++zone) {
-		if (!populated_zone(zone))
-			continue;
-
-		spin_lock_irqsave(&zone->lock, flags);
-		print(m, pgdat, zone);
-		spin_unlock_irqrestore(&zone->lock, flags);
-	}
-}
-#endif
-
 #ifdef CONFIG_PROC_FS
-static char * const migratetype_names[MIGRATE_TYPES] = {
-	"Unmovable",
-	"Movable",
-	"Reclaimable",
-#ifdef CONFIG_CMA
-	"CMA",
-#endif
-	"HighAtomic",
-#ifdef CONFIG_MEMORY_ISOLATION
-	"Isolate",
-#endif
-};
-
 static void frag_show_print(struct seq_file *m, pg_data_t *pgdat,
 						struct zone *zone)
 {
@@ -1056,70 +1026,71 @@ static void pagetypeinfo_showmixedcount_print(struct seq_file *m,
 							pg_data_t *pgdat,
 							struct zone *zone)
 {
-	struct page *page;
-	struct page_ext *page_ext;
-	unsigned long pfn = zone->zone_start_pfn, block_end_pfn;
-	unsigned long end_pfn = pfn + zone->spanned_pages;
+	int mtype, pagetype;
+	unsigned long pfn;
+	unsigned long start_pfn = zone->zone_start_pfn;
+	unsigned long end_pfn = start_pfn + zone->spanned_pages;
 	unsigned long count[MIGRATE_TYPES] = { 0, };
-	int pageblock_mt, page_mt;
-	int i;
 
-	/* Scan block by block. First and last block may be incomplete */
-	pfn = zone->zone_start_pfn;
+	/* Align PFNs to pageblock_nr_pages boundary */
+	pfn = start_pfn & ~(pageblock_nr_pages-1);
 
 	/*
 	 * Walk the zone in pageblock_nr_pages steps. If a page block spans
 	 * a zone boundary, it will be double counted between zones. This does
 	 * not matter as the mixed block count will still be correct
 	 */
-	for (; pfn < end_pfn; ) {
-		if (!pfn_valid(pfn)) {
-			pfn = ALIGN(pfn + 1, MAX_ORDER_NR_PAGES);
+	for (; pfn < end_pfn; pfn += pageblock_nr_pages) {
+		struct page *page;
+		unsigned long offset = 0;
+
+		/* Do not read before the zone start, use a valid page */
+		if (pfn < start_pfn)
+			offset = start_pfn - pfn;
+
+		if (!pfn_valid(pfn + offset))
 			continue;
-		}
 
-		block_end_pfn = ALIGN(pfn + 1, pageblock_nr_pages);
-		block_end_pfn = min(block_end_pfn, end_pfn);
+		page = pfn_to_page(pfn + offset);
+		mtype = get_pageblock_migratetype(page);
 
-		page = pfn_to_page(pfn);
-		pageblock_mt = get_pfnblock_migratetype(page, pfn);
+		/* Check the block for bad migrate types */
+		for (; offset < pageblock_nr_pages; offset++) {
+			/* Do not past the end of the zone */
+			if (pfn + offset >= end_pfn)
+				break;
 
-		for (; pfn < block_end_pfn; pfn++) {
-			if (!pfn_valid_within(pfn))
+			if (!pfn_valid_within(pfn + offset))
 				continue;
 
-			page = pfn_to_page(pfn);
+			page = pfn_to_page(pfn + offset);
+
+			/* Skip free pages */
 			if (PageBuddy(page)) {
-				pfn += (1UL << page_order(page)) - 1;
+				offset += (1UL << page_order(page)) - 1UL;
 				continue;
 			}
-
-			if (PageReserved(page))
+			if (page->order < 0)
 				continue;
 
-			page_ext = lookup_page_ext(page);
-
-			if (!test_bit(PAGE_EXT_OWNER, &page_ext->flags))
-				continue;
-
-			page_mt = gfpflags_to_migratetype(page_ext->gfp_mask);
-			if (pageblock_mt != page_mt) {
-				if (is_migrate_cma(pageblock_mt))
+			pagetype = gfpflags_to_migratetype(page->gfp_mask);
+			if (pagetype != mtype) {
+				if (is_migrate_cma(pagetype))
 					count[MIGRATE_MOVABLE]++;
 				else
-					count[pageblock_mt]++;
-
-				pfn = block_end_pfn;
+					count[mtype]++;
 				break;
 			}
-			pfn += (1UL << page_ext->order) - 1;
+
+			/* Move to end of this allocation */
+			offset += (1 << page->order) - 1;
 		}
 	}
 
 	/* Print counts */
 	seq_printf(m, "Node %d, zone %8s ", pgdat->node_id, zone->name);
-	for (i = 0; i < MIGRATE_TYPES; i++)
-		seq_printf(m, "%12lu ", count[i]);
+	for (mtype = 0; mtype < MIGRATE_TYPES; mtype++)
+		seq_printf(m, "%12lu ", count[mtype]);
 	seq_putc(m, '\n');
 }
 #endif /* CONFIG_PAGE_OWNER */
@@ -1134,11 +1105,6 @@ static void pagetypeinfo_showmixedcount(struct seq_file *m, pg_data_t *pgdat)
 {
 #ifdef CONFIG_PAGE_OWNER
 	int mtype;
-
-	if (!page_owner_inited)
-		return;
-
-	drain_all_pages(NULL);
 
 	seq_printf(m, "\n%-23s", "Number of mixed blocks ");
 	for (mtype = 0; mtype < MIGRATE_TYPES; mtype++)
@@ -1386,27 +1352,25 @@ static const struct file_operations proc_vmstat_file_operations = {
 #endif /* CONFIG_PROC_FS */
 
 #ifdef CONFIG_SMP
-static struct workqueue_struct *vmstat_wq;
 static DEFINE_PER_CPU(struct delayed_work, vmstat_work);
 int sysctl_stat_interval __read_mostly = HZ;
 static cpumask_var_t cpu_stat_off;
 
 static void vmstat_update(struct work_struct *w)
 {
-	if (refresh_cpu_vm_stats(true) && !cpu_isolated(smp_processor_id())) {
+	if (refresh_cpu_vm_stats(true)) {
 		/*
 		 * Counters were updated so we expect more updates
 		 * to occur in the future. Keep on running the
 		 * update worker thread.
 		 */
-		queue_delayed_work_on(smp_processor_id(), vmstat_wq,
-			this_cpu_ptr(&vmstat_work),
+		schedule_delayed_work_on(smp_processor_id(),
+				this_cpu_ptr(&vmstat_work),
 			round_jiffies_relative(sysctl_stat_interval));
 	} else {
 		/*
 		 * We did not update any counters so the app may be in
-		 * a mode where it does not cause counter updates or the cpu
-		 * was isolated.
+		 * a mode where it does not cause counter updates.
 		 * We may be uselessly running vmstat_update.
 		 * Defer the checking for differentials to the
 		 * shepherd thread on a different processor.
@@ -1473,11 +1437,11 @@ static void vmstat_shepherd(struct work_struct *w)
 	get_online_cpus();
 	/* Check processors whose vmstat worker threads have been disabled */
 	for_each_cpu(cpu, cpu_stat_off)
-		if (!cpu_isolated(cpu) && need_update(cpu) &&
+		if (need_update(cpu) &&
 			cpumask_test_and_clear_cpu(cpu, cpu_stat_off))
 
-			queue_delayed_work_on(cpu, vmstat_wq,
-				&per_cpu(vmstat_work, cpu), 0);
+			schedule_delayed_work_on(cpu, &per_cpu(vmstat_work, cpu),
+				__round_jiffies_relative(sysctl_stat_interval, cpu));
 
 	put_online_cpus();
 
@@ -1498,7 +1462,6 @@ static void __init start_shepherd_timer(void)
 		BUG();
 	cpumask_copy(cpu_stat_off, cpu_online_mask);
 
-	vmstat_wq = alloc_workqueue("vmstat", WQ_FREEZABLE|WQ_MEM_RECLAIM, 0);
 	schedule_delayed_work(&shepherd,
 		round_jiffies_relative(sysctl_stat_interval));
 }
@@ -1578,6 +1541,8 @@ static int __init setup_vmstat(void)
 module_init(setup_vmstat)
 
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_COMPACTION)
+#include <linux/debugfs.h>
+
 
 /*
  * Return an index indicating how much of the available free memory is

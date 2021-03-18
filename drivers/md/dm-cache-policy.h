@@ -70,18 +70,6 @@ enum policy_operation {
 };
 
 /*
- * When issuing a POLICY_REPLACE the policy needs to make a callback to
- * lock the block being demoted.  This doesn't need to occur during a
- * writeback operation since the block remains in the cache.
- */
-struct policy_locker;
-typedef int (*policy_lock_fn)(struct policy_locker *l, dm_oblock_t oblock);
-
-struct policy_locker {
-	policy_lock_fn fn;
-};
-
-/*
  * This is the instruction passed back to the core target.
  */
 struct policy_result {
@@ -134,8 +122,7 @@ struct dm_cache_policy {
 	 */
 	int (*map)(struct dm_cache_policy *p, dm_oblock_t oblock,
 		   bool can_block, bool can_migrate, bool discarded_oblock,
-		   struct bio *bio, struct policy_locker *locker,
-		   struct policy_result *result);
+		   struct bio *bio, struct policy_result *result);
 
 	/*
 	 * Sometimes we want to see if a block is in the cache, without
@@ -178,9 +165,7 @@ struct dm_cache_policy {
 	int (*remove_cblock)(struct dm_cache_policy *p, dm_cblock_t cblock);
 
 	/*
-	 * Provide a dirty block to be written back by the core target.  If
-	 * critical_only is set then the policy should only provide work if
-	 * it urgently needs it.
+	 * Provide a dirty block to be written back by the core target.
 	 *
 	 * Returns:
 	 *
@@ -188,8 +173,7 @@ struct dm_cache_policy {
 	 *
 	 * -ENODATA: no dirty blocks available
 	 */
-	int (*writeback_work)(struct dm_cache_policy *p, dm_oblock_t *oblock, dm_cblock_t *cblock,
-			      bool critical_only);
+	int (*writeback_work)(struct dm_cache_policy *p, dm_oblock_t *oblock, dm_cblock_t *cblock);
 
 	/*
 	 * How full is the cache?
@@ -200,16 +184,16 @@ struct dm_cache_policy {
 	 * Because of where we sit in the block layer, we can be asked to
 	 * map a lot of little bios that are all in the same block (no
 	 * queue merging has occurred).  To stop the policy being fooled by
-	 * these, the core target sends regular tick() calls to the policy.
+	 * these the core target sends regular tick() calls to the policy.
 	 * The policy should only count an entry as hit once per tick.
 	 */
-	void (*tick)(struct dm_cache_policy *p, bool can_block);
+	void (*tick)(struct dm_cache_policy *p);
 
 	/*
 	 * Configuration.
 	 */
-	int (*emit_config_values)(struct dm_cache_policy *p, char *result,
-				  unsigned maxlen, ssize_t *sz_ptr);
+	int (*emit_config_values)(struct dm_cache_policy *p,
+				  char *result, unsigned maxlen);
 	int (*set_config_value)(struct dm_cache_policy *p,
 				const char *key, const char *value);
 

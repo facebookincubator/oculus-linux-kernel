@@ -31,7 +31,6 @@
 #include <asm/msr.h>
 #include <asm/processor-flags.h>
 #include <asm/asm-offsets.h>
-#include <asm/bootparam.h>
 
 	__HEAD
 	.code32
@@ -47,7 +46,7 @@ ENTRY(startup_32)
 	 * Test KEEP_SEGMENTS flag to see if the bootloader is asking
 	 * us to not reload segments
 	 */
-	testb $KEEP_SEGMENTS, BP_loadflags(%esi)
+	testb $(1<<6), BP_loadflags(%esi)
 	jnz 1f
 
 	cli
@@ -165,7 +164,7 @@ ENTRY(startup_32)
 	/* After gdt is loaded */
 	xorl	%eax, %eax
 	lldt	%ax
-	movl    $__BOOT_TSS, %eax
+	movl    $0x20, %eax
 	ltr	%ax
 
 	/*

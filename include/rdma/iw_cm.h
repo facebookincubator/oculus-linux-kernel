@@ -91,7 +91,6 @@ struct iw_cm_id {
 	/* Used by provider to add and remove refs on IW cm_id */
 	void (*add_ref)(struct iw_cm_id *);
 	void (*rem_ref)(struct iw_cm_id *);
-	u8  tos;
 };
 
 struct iw_cm_conn_param {

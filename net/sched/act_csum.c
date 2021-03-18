@@ -62,8 +62,7 @@ static int tcf_csum_init(struct net *n, struct nlattr *nla, struct nlattr *est,
 	parm = nla_data(tb[TCA_CSUM_PARMS]);
 
 	if (!tcf_hash_check(parm->index, a, bind)) {
-		ret = tcf_hash_create(parm->index, est, a, sizeof(*p),
-				      bind, false);
+		ret = tcf_hash_create(parm->index, est, a, sizeof(*p), bind);
 		if (ret)
 			return ret;
 		ret = ACT_P_CREATED;
@@ -105,7 +104,9 @@ static void *tcf_csum_skb_nextlayer(struct sk_buff *skb,
 	int hl = ihl + jhl;
 
 	if (!pskb_may_pull(skb, ipl + ntkoff) || (ipl < hl) ||
-	    skb_try_make_writable(skb, hl + ntkoff))
+	    (skb_cloned(skb) &&
+	     !skb_clone_writable(skb, hl + ntkoff) &&
+	     pskb_expand_head(skb, 0, 0, GFP_ATOMIC)))
 		return NULL;
 	else
 		return (void *)(skb_network_header(skb) + ihl);
@@ -363,7 +364,9 @@ static int tcf_csum_ipv4(struct sk_buff *skb, u32 update_flags)
 	}
 
 	if (update_flags & TCA_CSUM_UPDATE_FLAG_IPV4HDR) {
-		if (skb_try_make_writable(skb, sizeof(*iph) + ntkoff))
+		if (skb_cloned(skb) &&
+		    !skb_clone_writable(skb, sizeof(*iph) + ntkoff) &&
+		    pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
 			goto fail;
 
 		ip_send_check(ip_hdr(skb));
@@ -506,7 +509,7 @@ static int tcf_csum(struct sk_buff *skb,
 	if (unlikely(action == TC_ACT_SHOT))
 		goto drop;
 
-	switch (tc_skb_protocol(skb)) {
+	switch (skb->protocol) {
 	case cpu_to_be16(ETH_P_IP):
 		if (!tcf_csum_ipv4(skb, update_flags))
 			goto drop;

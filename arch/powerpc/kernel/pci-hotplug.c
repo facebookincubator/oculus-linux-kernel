@@ -29,12 +29,7 @@
  */
 void pcibios_release_device(struct pci_dev *dev)
 {
-	struct pci_controller *phb = pci_bus_to_host(dev->bus);
-
 	eeh_remove_device(dev);
-
-	if (phb->controller_ops.release_device)
-		phb->controller_ops.release_device(dev);
 }
 
 /**
@@ -78,16 +73,13 @@ void pcibios_add_pci_devices(struct pci_bus * bus)
 {
 	int slotno, mode, pass, max;
 	struct pci_dev *dev;
-	struct pci_controller *phb;
 	struct device_node *dn = pci_bus_to_OF_node(bus);
 
-	eeh_add_device_tree_early(PCI_DN(dn));
-
-	phb = pci_bus_to_host(bus);
+	eeh_add_device_tree_early(dn);
 
 	mode = PCI_PROBE_NORMAL;
-	if (phb->controller_ops.probe_mode)
-		mode = phb->controller_ops.probe_mode(bus);
+	if (ppc_md.pci_probe_mode)
+		mode = ppc_md.pci_probe_mode(bus);
 
 	if (mode == PCI_PROBE_DEVTREE) {
 		/* use ofdt-based probe */

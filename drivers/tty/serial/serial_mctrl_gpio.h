@@ -22,8 +22,6 @@
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
 
-struct uart_port;
-
 enum mctrl_gpio_idx {
 	UART_GPIO_CTS,
 	UART_GPIO_DSR,
@@ -62,22 +60,12 @@ struct gpio_desc *mctrl_gpio_to_gpiod(struct mctrl_gpios *gpios,
 				      enum mctrl_gpio_idx gidx);
 
 /*
- * Request and set direction of modem control lines GPIOs and sets up irq
- * handling.
- * devm_* functions are used, so there's no need to call mctrl_gpio_free().
- * Returns a pointer to the allocated mctrl structure if ok, -ENOMEM on
- * allocation error.
- */
-struct mctrl_gpios *mctrl_gpio_init(struct uart_port *port, unsigned int idx);
-
-/*
  * Request and set direction of modem control lines GPIOs.
  * devm_* functions are used, so there's no need to call mctrl_gpio_free().
  * Returns a pointer to the allocated mctrl structure if ok, -ENOMEM on
  * allocation error.
  */
-struct mctrl_gpios *mctrl_gpio_init_noauto(struct device *dev,
-					   unsigned int idx);
+struct mctrl_gpios *mctrl_gpio_init(struct device *dev, unsigned int idx);
 
 /*
  * Free the mctrl_gpios structure.
@@ -85,16 +73,6 @@ struct mctrl_gpios *mctrl_gpio_init_noauto(struct device *dev,
  * be disposed of by the resource management code.
  */
 void mctrl_gpio_free(struct device *dev, struct mctrl_gpios *gpios);
-
-/*
- * Enable gpio interrupts to report status line changes.
- */
-void mctrl_gpio_enable_ms(struct mctrl_gpios *gpios);
-
-/*
- * Disable gpio interrupts to report status line changes.
- */
-void mctrl_gpio_disable_ms(struct mctrl_gpios *gpios);
 
 #else /* GPIOLIB */
 
@@ -117,27 +95,13 @@ struct gpio_desc *mctrl_gpio_to_gpiod(struct mctrl_gpios *gpios,
 }
 
 static inline
-struct mctrl_gpios *mctrl_gpio_init(struct uart_port *port, unsigned int idx)
-{
-	return ERR_PTR(-ENOSYS);
-}
-
-static inline
-struct mctrl_gpios *mctrl_gpio_init_noauto(struct device *dev, unsigned int idx)
+struct mctrl_gpios *mctrl_gpio_init(struct device *dev, unsigned int idx)
 {
 	return ERR_PTR(-ENOSYS);
 }
 
 static inline
 void mctrl_gpio_free(struct device *dev, struct mctrl_gpios *gpios)
-{
-}
-
-static inline void mctrl_gpio_enable_ms(struct mctrl_gpios *gpios)
-{
-}
-
-static inline void mctrl_gpio_disable_ms(struct mctrl_gpios *gpios)
 {
 }
 

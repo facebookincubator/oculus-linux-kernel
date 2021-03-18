@@ -715,7 +715,6 @@ static bool check_device_tree(struct ath6kl *ar)
 				   board_filename, ret);
 			continue;
 		}
-		of_node_put(node);
 		return true;
 	}
 	return false;
@@ -995,7 +994,7 @@ static int ath6kl_fetch_fw_apin(struct ath6kl *ar, const char *name)
 		switch (ie_id) {
 		case ATH6KL_FW_IE_FW_VERSION:
 			strlcpy(ar->wiphy->fw_version, data,
-				min(sizeof(ar->wiphy->fw_version), ie_len+1));
+				sizeof(ar->wiphy->fw_version));
 
 			ath6kl_dbg(ATH6KL_DBG_BOOT,
 				   "found fw version %s\n",

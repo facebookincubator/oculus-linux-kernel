@@ -706,9 +706,9 @@ int mvebu_pinctrl_probe(struct platform_device *pdev)
 	}
 
 	pctl->pctldev = pinctrl_register(&pctl->desc, &pdev->dev, pctl);
-	if (IS_ERR(pctl->pctldev)) {
+	if (!pctl->pctldev) {
 		dev_err(&pdev->dev, "unable to register pinctrl driver\n");
-		return PTR_ERR(pctl->pctldev);
+		return -EINVAL;
 	}
 
 	dev_info(&pdev->dev, "registered pinctrl driver\n");

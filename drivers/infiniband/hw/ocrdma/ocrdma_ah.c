@@ -1,36 +1,21 @@
-/* This file is part of the Emulex RoCE Device Driver for
- * RoCE (RDMA over Converged Ethernet) adapters.
- * Copyright (C) 2012-2015 Emulex. All rights reserved.
- * EMULEX and SLI are trademarks of Emulex.
- * www.emulex.com
- *
- * This software is available to you under a choice of one of two licenses.
- * You may choose to be licensed under the terms of the GNU General Public
- * License (GPL) Version 2, available from the file COPYING in the main
- * directory of this source tree, or the BSD license below:
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- *   this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- *   notice, this list of conditions and the following disclaimer in
- *   the documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*******************************************************************
+ * This file is part of the Emulex RoCE Device Driver for          *
+ * RoCE (RDMA over Converged Ethernet) adapters.                   *
+ * Copyright (C) 2008-2012 Emulex. All rights reserved.            *
+ * EMULEX and SLI are trademarks of Emulex.                        *
+ * www.emulex.com                                                  *
+ *                                                                 *
+ * This program is free software; you can redistribute it and/or   *
+ * modify it under the terms of version 2 of the GNU General       *
+ * Public License as published by the Free Software Foundation.    *
+ * This program is distributed in the hope that it will be useful. *
+ * ALL EXPRESS OR IMPLIED CONDITIONS, REPRESENTATIONS AND          *
+ * WARRANTIES, INCLUDING ANY IMPLIED WARRANTY OF MERCHANTABILITY,  *
+ * FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT, ARE      *
+ * DISCLAIMED, EXCEPT TO THE EXTENT THAT SUCH DISCLAIMERS ARE HELD *
+ * TO BE LEGALLY INVALID.  See the GNU General Public License for  *
+ * more details, a copy of which can be found in the file COPYING  *
+ * included with this package.                                     *
  *
  * Contact Information:
  * linux-drivers@emulex.com
@@ -38,28 +23,25 @@
  * Emulex
  * 3333 Susan Street
  * Costa Mesa, CA 92626
- */
+ *******************************************************************/
 
 #include <net/neighbour.h>
 #include <net/netevent.h>
 
 #include <rdma/ib_addr.h>
-#include <rdma/ib_mad.h>
-#include <rdma/ib_cache.h>
 
 #include "ocrdma.h"
 #include "ocrdma_verbs.h"
 #include "ocrdma_ah.h"
 #include "ocrdma_hw.h"
-#include "ocrdma_stats.h"
 
 #define OCRDMA_VID_PCP_SHIFT	0xD
 
 static inline int set_av_attr(struct ocrdma_dev *dev, struct ocrdma_ah *ah,
-			struct ib_ah_attr *attr, union ib_gid *sgid,
-			int pdid, bool *isvlan, u16 vlan_tag)
+			struct ib_ah_attr *attr, union ib_gid *sgid, int pdid)
 {
 	int status = 0;
+	u16 vlan_tag; bool vlan_enabled = false;
 	struct ocrdma_eth_vlan eth;
 	struct ocrdma_grh grh;
 	int eth_sz;
@@ -68,21 +50,16 @@ static inline int set_av_attr(struct ocrdma_dev *dev, struct ocrdma_ah *ah,
 	memset(&grh, 0, sizeof(grh));
 
 	/* VLAN */
+	vlan_tag = attr->vlan_id;
 	if (!vlan_tag || (vlan_tag > 0xFFF))
 		vlan_tag = dev->pvid;
-	if (vlan_tag || dev->pfc_state) {
-		if (!vlan_tag) {
-			pr_err("ocrdma%d:Using VLAN with PFC is recommended\n",
-				dev->id);
-			pr_err("ocrdma%d:Using VLAN 0 for this connection\n",
-				dev->id);
-		}
+	if (vlan_tag && (vlan_tag < 0x1000)) {
 		eth.eth_type = cpu_to_be16(0x8100);
 		eth.roce_eth_type = cpu_to_be16(OCRDMA_ROCE_ETH_TYPE);
 		vlan_tag |= (dev->sl & 0x07) << OCRDMA_VID_PCP_SHIFT;
 		eth.vlan_tag = cpu_to_be16(vlan_tag);
 		eth_sz = sizeof(struct ocrdma_eth_vlan);
-		*isvlan = true;
+		vlan_enabled = true;
 	} else {
 		eth.eth_type = cpu_to_be16(OCRDMA_ROCE_ETH_TYPE);
 		eth_sz = sizeof(struct ocrdma_eth_basic);
@@ -105,7 +82,7 @@ static inline int set_av_attr(struct ocrdma_dev *dev, struct ocrdma_ah *ah,
 	/* Eth HDR */
 	memcpy(&ah->av->eth_hdr, &eth, eth_sz);
 	memcpy((u8 *)ah->av + eth_sz, &grh, sizeof(struct ocrdma_grh));
-	if (*isvlan)
+	if (vlan_enabled)
 		ah->av->valid |= OCRDMA_AV_VLAN_VALID;
 	ah->av->valid = cpu_to_le32(ah->av->valid);
 	return status;
@@ -116,12 +93,10 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 	u32 *ahid_addr;
 	int status;
 	struct ocrdma_ah *ah;
-	bool isvlan = false;
-	u16 vlan_tag = 0xffff;
-	struct ib_gid_attr sgid_attr;
 	struct ocrdma_pd *pd = get_ocrdma_pd(ibpd);
 	struct ocrdma_dev *dev = get_ocrdma_dev(ibpd->device);
 	union ib_gid sgid;
+	u8 zmac[ETH_ALEN];
 
 	if (!(attr->ah_flags & IB_AH_GRH))
 		return ERR_PTR(-EINVAL);
@@ -136,25 +111,18 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 	if (status)
 		goto av_err;
 
-	status = ib_get_cached_gid(&dev->ibdev, 1, attr->grh.sgid_index, &sgid,
-				   &sgid_attr);
+	status = ocrdma_query_gid(&dev->ibdev, 1, attr->grh.sgid_index, &sgid);
 	if (status) {
 		pr_err("%s(): Failed to query sgid, status = %d\n",
 		      __func__, status);
 		goto av_conf_err;
 	}
-	if (sgid_attr.ndev) {
-		if (is_vlan_dev(sgid_attr.ndev))
-			vlan_tag = vlan_dev_vlan_id(sgid_attr.ndev);
-		dev_put(sgid_attr.ndev);
-	}
 
-	if ((pd->uctx) &&
-	    (!rdma_is_multicast_addr((struct in6_addr *)attr->grh.dgid.raw)) &&
-	    (!rdma_link_local_addr((struct in6_addr *)attr->grh.dgid.raw))) {
+	memset(&zmac, 0, ETH_ALEN);
+	if (pd->uctx &&
+	    memcmp(attr->dmac, &zmac, ETH_ALEN)) {
 		status = rdma_addr_find_dmac_by_grh(&sgid, &attr->grh.dgid,
-						    attr->dmac, &vlan_tag,
-						    sgid_attr.ndev->ifindex);
+                                        attr->dmac, &attr->vlan_id);
 		if (status) {
 			pr_err("%s(): Failed to resolve dmac from gid." 
 				"status = %d\n", __func__, status);
@@ -162,20 +130,15 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 		}
 	}
 
-	status = set_av_attr(dev, ah, attr, &sgid, pd->id, &isvlan, vlan_tag);
+	status = set_av_attr(dev, ah, attr, &sgid, pd->id);
 	if (status)
 		goto av_conf_err;
 
 	/* if pd is for the user process, pass the ah_id to user space */
 	if ((pd->uctx) && (pd->uctx->ah_tbl.va)) {
 		ahid_addr = pd->uctx->ah_tbl.va + attr->dlid;
-		*ahid_addr = 0;
-		*ahid_addr |= ah->id & OCRDMA_AH_ID_MASK;
-		if (isvlan)
-			*ahid_addr |= (OCRDMA_AH_VLAN_VALID_MASK <<
-				       OCRDMA_AH_VLAN_VALID_SHIFT);
+		*ahid_addr = ah->id;
 	}
-
 	return &ah->ibah;
 
 av_conf_err:
@@ -227,32 +190,9 @@ int ocrdma_modify_ah(struct ib_ah *ibah, struct ib_ah_attr *attr)
 int ocrdma_process_mad(struct ib_device *ibdev,
 		       int process_mad_flags,
 		       u8 port_num,
-		       const struct ib_wc *in_wc,
-		       const struct ib_grh *in_grh,
-		       const struct ib_mad_hdr *in, size_t in_mad_size,
-		       struct ib_mad_hdr *out, size_t *out_mad_size,
-		       u16 *out_mad_pkey_index)
+		       struct ib_wc *in_wc,
+		       struct ib_grh *in_grh,
+		       struct ib_mad *in_mad, struct ib_mad *out_mad)
 {
-	int status;
-	struct ocrdma_dev *dev;
-	const struct ib_mad *in_mad = (const struct ib_mad *)in;
-	struct ib_mad *out_mad = (struct ib_mad *)out;
-
-	if (WARN_ON_ONCE(in_mad_size != sizeof(*in_mad) ||
-			 *out_mad_size != sizeof(*out_mad)))
-		return IB_MAD_RESULT_FAILURE;
-
-	switch (in_mad->mad_hdr.mgmt_class) {
-	case IB_MGMT_CLASS_PERF_MGMT:
-		dev = get_ocrdma_dev(ibdev);
-		if (!ocrdma_pma_counters(dev, out_mad))
-			status = IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY;
-		else
-			status = IB_MAD_RESULT_SUCCESS;
-		break;
-	default:
-		status = IB_MAD_RESULT_SUCCESS;
-		break;
-	}
-	return status;
+	return IB_MAD_RESULT_SUCCESS;
 }

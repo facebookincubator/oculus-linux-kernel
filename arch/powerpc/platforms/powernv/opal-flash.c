@@ -120,11 +120,7 @@ static struct image_header_t	image_header;
 static struct image_data_t	image_data;
 static struct validate_flash_t	validate_flash_data;
 static struct manage_flash_t	manage_flash_data;
-
-/* Initialize update_flash_data status to No Operation */
-static struct update_flash_t	update_flash_data = {
-	.status = FLASH_NO_OP,
-};
+static struct update_flash_t	update_flash_data;
 
 static DEFINE_MUTEX(image_data_mutex);
 
@@ -546,7 +542,7 @@ static struct attribute_group image_op_attr_group = {
 	.attrs = image_op_attrs,
 };
 
-void __init opal_flash_update_init(void)
+void __init opal_flash_init(void)
 {
 	int ret;
 

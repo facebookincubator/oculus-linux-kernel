@@ -36,7 +36,6 @@ struct xc5000_config {
 	u32  if_khz;
 	u8   radio_input;
 	u16  xtal_khz;
-	u16  output_amp;
 
 	int chip_id;
 };

@@ -177,7 +177,7 @@ static int transmit(struct cflayer *layer, struct cfpkt *pkt)
 	skb->protocol = htons(ETH_P_CAIF);
 
 	/* Check if we need to handle xoff */
-	if (likely(caifd->netdev->priv_flags & IFF_NO_QUEUE))
+	if (likely(caifd->netdev->tx_queue_len == 0))
 		goto noxoff;
 
 	if (unlikely(caifd->xoff))

@@ -92,6 +92,7 @@ static int snd_cs4231_probe(struct device *dev, unsigned int n)
 {
 	struct snd_card *card;
 	struct snd_wss *chip;
+	struct snd_pcm *pcm;
 	int error;
 
 	error = snd_card_new(dev, index[n], id[n], THIS_MODULE, 0, &card);
@@ -105,15 +106,15 @@ static int snd_cs4231_probe(struct device *dev, unsigned int n)
 
 	card->private_data = chip;
 
-	error = snd_wss_pcm(chip, 0);
+	error = snd_wss_pcm(chip, 0, &pcm);
 	if (error < 0)
 		goto out;
 
 	strcpy(card->driver, "CS4231");
-	strcpy(card->shortname, chip->pcm->name);
+	strcpy(card->shortname, pcm->name);
 
 	sprintf(card->longname, "%s at 0x%lx, irq %d, dma %d",
-		chip->pcm->name, chip->port, irq[n], dma1[n]);
+		pcm->name, chip->port, irq[n], dma1[n]);
 	if (dma2[n] >= 0)
 		sprintf(card->longname + strlen(card->longname), "&%d", dma2[n]);
 
@@ -121,7 +122,7 @@ static int snd_cs4231_probe(struct device *dev, unsigned int n)
 	if (error < 0)
 		goto out;
 
-	error = snd_wss_timer(chip, 0);
+	error = snd_wss_timer(chip, 0, NULL);
 	if (error < 0)
 		goto out;
 

@@ -742,7 +742,8 @@ void lbs_debugfs_init(void)
 
 void lbs_debugfs_remove(void)
 {
-	debugfs_remove(lbs_dir);
+	if (lbs_dir)
+		 debugfs_remove(lbs_dir);
 }
 
 void lbs_debugfs_init_one(struct lbs_private *priv, struct net_device *dev)

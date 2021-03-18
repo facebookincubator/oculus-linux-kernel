@@ -78,10 +78,11 @@ struct jz4740_codec {
 	struct regmap *regmap;
 };
 
-static const DECLARE_TLV_DB_RANGE(jz4740_mic_tlv,
+static const unsigned int jz4740_mic_tlv[] = {
+	TLV_DB_RANGE_HEAD(2),
 	0, 2, TLV_DB_SCALE_ITEM(0, 600, 0),
-	3, 3, TLV_DB_SCALE_ITEM(2000, 0, 0)
-);
+	3, 3, TLV_DB_SCALE_ITEM(2000, 0, 0),
+};
 
 static const DECLARE_TLV_DB_SCALE(jz4740_out_tlv, 0, 200, 0);
 static const DECLARE_TLV_DB_SCALE(jz4740_in_tlv, -3450, 150, 0);
@@ -257,7 +258,7 @@ static int jz4740_codec_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	case SND_SOC_BIAS_STANDBY:
 		/* The only way to clear the suspend flag is to reset the codec */
-		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF)
+		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
 			jz4740_codec_wakeup(regmap);
 
 		mask = JZ4740_CODEC_1_VREF_DISABLE |
@@ -279,6 +280,8 @@ static int jz4740_codec_set_bias_level(struct snd_soc_codec *codec,
 	default:
 		break;
 	}
+
+	codec->dapm.bias_level = level;
 
 	return 0;
 }
@@ -361,6 +364,7 @@ static struct platform_driver jz4740_codec_driver = {
 	.remove = jz4740_codec_remove,
 	.driver = {
 		.name = "jz4740-codec",
+		.owner = THIS_MODULE,
 	},
 };
 

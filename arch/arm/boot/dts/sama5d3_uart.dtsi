@@ -1,5 +1,5 @@
 /*
- * sama5d3_uart.dtsi - Device Tree Include file for SAMA5D3 SoC with
+ * at91sama5d3_uart.dtsi - Device Tree Include file for AT91SAM9x5 SoC with
  * UART support
  *
  * Copyright (C) 2013 Boris BREZILLON <b.brezillon@overkiz.com>

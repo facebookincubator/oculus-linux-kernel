@@ -3771,14 +3771,13 @@ struct rb0_cbdata {
 	struct completion complete;
 };
 
-static void floppy_rb0_cb(struct bio *bio)
+static void floppy_rb0_cb(struct bio *bio, int err)
 {
 	struct rb0_cbdata *cbdata = (struct rb0_cbdata *)bio->bi_private;
 	int drive = cbdata->drive;
 
-	if (bio->bi_error) {
-		pr_info("floppy: error %d while reading block 0\n",
-			bio->bi_error);
+	if (err) {
+		pr_info("floppy: error %d while reading block 0\n", err);
 		set_bit(FD_OPEN_SHOULD_FAIL_BIT, &UDRS->flags);
 	}
 	complete(&cbdata->complete);
@@ -4113,13 +4112,6 @@ static ssize_t floppy_cmos_show(struct device *dev,
 
 static DEVICE_ATTR(cmos, S_IRUGO, floppy_cmos_show, NULL);
 
-static struct attribute *floppy_dev_attrs[] = {
-	&dev_attr_cmos.attr,
-	NULL
-};
-
-ATTRIBUTE_GROUPS(floppy_dev);
-
 static void floppy_device_release(struct device *dev)
 {
 }
@@ -4332,11 +4324,15 @@ static int __init do_floppy_init(void)
 		floppy_device[drive].name = floppy_device_name;
 		floppy_device[drive].id = drive;
 		floppy_device[drive].dev.release = floppy_device_release;
-		floppy_device[drive].dev.groups = floppy_dev_groups;
 
 		err = platform_device_register(&floppy_device[drive]);
 		if (err)
 			goto out_remove_drives;
+
+		err = device_create_file(&floppy_device[drive].dev,
+					 &dev_attr_cmos);
+		if (err)
+			goto out_unreg_platform_dev;
 
 		/* to be cleaned up... */
 		disks[drive]->private_data = (void *)(long)drive;
@@ -4347,10 +4343,13 @@ static int __init do_floppy_init(void)
 
 	return 0;
 
+out_unreg_platform_dev:
+	platform_device_unregister(&floppy_device[drive]);
 out_remove_drives:
 	while (drive--) {
 		if (floppy_available(drive)) {
 			del_gendisk(disks[drive]);
+			device_remove_file(&floppy_device[drive].dev, &dev_attr_cmos);
 			platform_device_unregister(&floppy_device[drive]);
 		}
 	}
@@ -4595,6 +4594,7 @@ static void __exit floppy_module_exit(void)
 
 		if (floppy_available(drive)) {
 			del_gendisk(disks[drive]);
+			device_remove_file(&floppy_device[drive].dev, &dev_attr_cmos);
 			platform_device_unregister(&floppy_device[drive]);
 		}
 		blk_cleanup_queue(disks[drive]->queue);

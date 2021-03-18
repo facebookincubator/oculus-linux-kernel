@@ -11,8 +11,6 @@
 #ifndef __LINUX_PUBLIC_GNTALLOC_H__
 #define __LINUX_PUBLIC_GNTALLOC_H__
 
-#include <linux/types.h>
-
 /*
  * Allocates a new page and creates a new grant reference.
  */
@@ -21,17 +19,17 @@ _IOC(_IOC_NONE, 'G', 5, sizeof(struct ioctl_gntalloc_alloc_gref))
 struct ioctl_gntalloc_alloc_gref {
 	/* IN parameters */
 	/* The ID of the domain to be given access to the grants. */
-	__u16 domid;
+	uint16_t domid;
 	/* Flags for this mapping */
-	__u16 flags;
+	uint16_t flags;
 	/* Number of pages to map */
-	__u32 count;
+	uint32_t count;
 	/* OUT parameters */
 	/* The offset to be used on a subsequent call to mmap(). */
-	__u64 index;
+	uint64_t index;
 	/* The grant references of the newly created grant, one per page */
 	/* Variable size, depending on count */
-	__u32 gref_ids[1];
+	uint32_t gref_ids[1];
 };
 
 #define GNTALLOC_FLAG_WRITABLE 1
@@ -45,9 +43,9 @@ _IOC(_IOC_NONE, 'G', 6, sizeof(struct ioctl_gntalloc_dealloc_gref))
 struct ioctl_gntalloc_dealloc_gref {
 	/* IN parameters */
 	/* The offset returned in the map operation */
-	__u64 index;
+	uint64_t index;
 	/* Number of references to unmap */
-	__u32 count;
+	uint32_t count;
 };
 
 /*
@@ -69,11 +67,11 @@ struct ioctl_gntalloc_unmap_notify {
 	 * be cleared. Otherwise, it can be any byte in the page whose
 	 * notification we are adjusting.
 	 */
-	__u64 index;
+	uint64_t index;
 	/* Action(s) to take on unmap */
-	__u32 action;
+	uint32_t action;
 	/* Event channel to notify */
-	__u32 event_channel_port;
+	uint32_t event_channel_port;
 };
 
 /* Clear (set to zero) the byte specified by index */

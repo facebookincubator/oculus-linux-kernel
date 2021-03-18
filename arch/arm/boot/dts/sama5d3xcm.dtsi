@@ -11,8 +11,7 @@
 	compatible = "atmel,sama5d3xcm", "atmel,sama5d3", "atmel,sama5";
 
 	chosen {
-		bootargs = "rootfstype=ubifs ubi.mtd=5 root=ubi0:rootfs";
-		stdout-path = "serial0:115200n8";
+		bootargs = "console=ttyS0,115200 rootfstype=ubifs ubi.mtd=5 root=ubi0:rootfs";
 	};
 
 	memory {
@@ -68,6 +67,12 @@
 					rxd3-skew-ps = <400>;
 				};
 			};
+
+			pmc: pmc@fffffc00 {
+				main: mainck {
+					clock-frequency = <12000000>;
+				};
+			};
 		};
 
 		nand0: nand@60000000 {
@@ -117,7 +122,6 @@
 		d2 {
 			label = "d2";
 			gpios = <&pioE 25 GPIO_ACTIVE_LOW>;	/* PE25, conflicts with A25, RXD2 */
-			linux,default-trigger = "heartbeat";
 		};
 	};
 };

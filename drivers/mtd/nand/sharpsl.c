@@ -144,7 +144,7 @@ static int sharpsl_nand_probe(struct platform_device *pdev)
 
 	/* Link the private data with the MTD structure */
 	sharpsl->mtd.priv = this;
-	sharpsl->mtd.dev.parent = &pdev->dev;
+	sharpsl->mtd.owner = THIS_MODULE;
 
 	platform_set_drvdata(pdev, sharpsl);
 
@@ -220,6 +220,7 @@ static int sharpsl_nand_remove(struct platform_device *pdev)
 static struct platform_driver sharpsl_nand_driver = {
 	.driver = {
 		.name	= "sharpsl-nand",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= sharpsl_nand_probe,
 	.remove		= sharpsl_nand_remove,

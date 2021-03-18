@@ -43,14 +43,8 @@ if (ipc_router_glink_xprt_debug_mask) \
 #define MIN_FRAG_SZ (IPC_ROUTER_HDR_SIZE + sizeof(union rr_control_msg))
 #define IPC_RTR_XPRT_NAME_LEN (2 * GLINK_NAME_SIZE)
 #define PIL_SUBSYSTEM_NAME_LEN 32
-
-#define MAX_NUM_LO_INTENTS 5
-#define MAX_NUM_MD_INTENTS 3
-#define MAX_NUM_HI_INTENTS 2
-#define LO_RX_INTENT_SIZE 2048
-#define MD_RX_INTENT_SIZE 8192
-#define HI_RX_INTENT_SIZE (17 * 1024)
-
+#define DEFAULT_NUM_INTENTS 5
+#define DEFAULT_RX_INTENT_SIZE 2048
 /**
  * ipc_router_glink_xprt - IPC Router's GLINK XPRT structure
  * @list: IPC router's GLINK XPRT list.
@@ -88,9 +82,6 @@ struct ipc_router_glink_xprt {
 	unsigned xprt_version;
 	unsigned xprt_option;
 	bool disable_pil_loading;
-	uint32_t cur_lo_intents_cnt;
-	uint32_t cur_md_intents_cnt;
-	uint32_t cur_hi_intents_cnt;
 };
 
 struct ipc_router_glink_xprt_work {
@@ -349,7 +340,7 @@ static void glink_xprt_read_data(struct work_struct *work)
 	}
 
 	D("%s %zu bytes @ %p\n", __func__, rx_work->iovec_size, rx_work->iovec);
-	if (rx_work->iovec_size <= HI_RX_INTENT_SIZE)
+	if (rx_work->iovec_size <= DEFAULT_RX_INTENT_SIZE)
 		reuse_intent = true;
 
 	pkt = glink_xprt_copy_data(rx_work);
@@ -378,14 +369,9 @@ static void glink_xprt_open_event(struct work_struct *work)
 				IPC_ROUTER_XPRT_EVENT_OPEN, NULL);
 	D("%s: Notified IPC Router of %s OPEN\n",
 	  __func__, glink_xprtp->xprt.name);
-	glink_xprtp->cur_lo_intents_cnt = 0;
-	glink_xprtp->cur_md_intents_cnt = 0;
-	glink_xprtp->cur_hi_intents_cnt = 0;
-	for (i = 0; i < MAX_NUM_LO_INTENTS; i++) {
+	for (i = 0; i < DEFAULT_NUM_INTENTS; i++)
 		glink_queue_rx_intent(glink_xprtp->ch_hndl, (void *)glink_xprtp,
-				      LO_RX_INTENT_SIZE);
-		glink_xprtp->cur_lo_intents_cnt++;
-	}
+				      DEFAULT_RX_INTENT_SIZE);
 	kfree(xprt_work);
 }
 
@@ -406,32 +392,13 @@ static void glink_xprt_close_event(struct work_struct *work)
 
 static void glink_xprt_qrx_intent_worker(struct work_struct *work)
 {
-	size_t sz;
 	struct queue_rx_intent_work *qrx_intent_work =
 		container_of(work, struct queue_rx_intent_work, work);
 	struct ipc_router_glink_xprt *glink_xprtp =
 					qrx_intent_work->glink_xprtp;
-	uint32_t *cnt = NULL;
-	int ret;
 
-	sz = qrx_intent_work->intent_size;
-	if (sz <= MD_RX_INTENT_SIZE) {
-		if (glink_xprtp->cur_md_intents_cnt >= MAX_NUM_MD_INTENTS)
-			goto qrx_intent_worker_out;
-		sz = MD_RX_INTENT_SIZE;
-		cnt = &glink_xprtp->cur_md_intents_cnt;
-	} else if (sz <= HI_RX_INTENT_SIZE) {
-		if (glink_xprtp->cur_hi_intents_cnt >= MAX_NUM_HI_INTENTS)
-			goto qrx_intent_worker_out;
-		sz = HI_RX_INTENT_SIZE;
-		cnt = &glink_xprtp->cur_hi_intents_cnt;
-	}
-
-	ret = glink_queue_rx_intent(glink_xprtp->ch_hndl, (void *)glink_xprtp,
-					sz);
-	if (!ret && cnt)
-		(*cnt)++;
-qrx_intent_worker_out:
+	glink_queue_rx_intent(glink_xprtp->ch_hndl, (void *)glink_xprtp,
+			      qrx_intent_work->intent_size);
 	kfree(qrx_intent_work);
 }
 
@@ -501,7 +468,7 @@ static bool glink_xprt_notify_rx_intent_req(void *handle, const void *priv,
 	struct ipc_router_glink_xprt *glink_xprtp =
 		(struct ipc_router_glink_xprt *)priv;
 
-	if (sz <= LO_RX_INTENT_SIZE)
+	if (sz <= DEFAULT_RX_INTENT_SIZE)
 		return true;
 
 	qrx_intent_work = kmalloc(sizeof(struct queue_rx_intent_work),

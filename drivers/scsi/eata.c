@@ -946,18 +946,20 @@ static int eata2x_slave_configure(struct scsi_device *dev)
 
 	if (TLDEV(dev->type) && dev->tagged_supported) {
 		if (tag_mode == TAG_SIMPLE) {
+			scsi_adjust_queue_depth(dev, MSG_SIMPLE_TAG, tqd);
 			tag_suffix = ", simple tags";
 		} else if (tag_mode == TAG_ORDERED) {
+			scsi_adjust_queue_depth(dev, MSG_ORDERED_TAG, tqd);
 			tag_suffix = ", ordered tags";
 		} else {
+			scsi_adjust_queue_depth(dev, 0, tqd);
 			tag_suffix = ", no tags";
 		}
-		scsi_change_queue_depth(dev, tqd);
 	} else if (TLDEV(dev->type) && linked_comm) {
-		scsi_change_queue_depth(dev, tqd);
+		scsi_adjust_queue_depth(dev, 0, tqd);
 		tag_suffix = ", untagged";
 	} else {
-		scsi_change_queue_depth(dev, utqd);
+		scsi_adjust_queue_depth(dev, 0, utqd);
 		tag_suffix = "";
 	}
 

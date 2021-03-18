@@ -156,7 +156,7 @@ int ncp_symlink(struct inode *dir, struct dentry *dentry, const char *symname) {
 		goto failfree;
 	}
 
-	inode=d_inode(dentry);
+	inode=dentry->d_inode;
 
 	if (ncp_make_open(inode, O_WRONLY))
 		goto failfree;

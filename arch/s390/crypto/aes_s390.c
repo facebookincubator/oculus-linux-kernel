@@ -24,7 +24,6 @@
 #include <crypto/algapi.h>
 #include <linux/err.h>
 #include <linux/module.h>
-#include <linux/cpufeature.h>
 #include <linux/init.h>
 #include <linux/spinlock.h>
 #include "crypt_s390.h"
@@ -135,7 +134,7 @@ static int aes_set_key(struct crypto_tfm *tfm, const u8 *in_key,
 
 static void aes_encrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 {
-	struct s390_aes_ctx *sctx = crypto_tfm_ctx(tfm);
+	const struct s390_aes_ctx *sctx = crypto_tfm_ctx(tfm);
 
 	if (unlikely(need_fallback(sctx->key_len))) {
 		crypto_cipher_encrypt_one(sctx->fallback.cip, out, in);
@@ -160,7 +159,7 @@ static void aes_encrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 
 static void aes_decrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 {
-	struct s390_aes_ctx *sctx = crypto_tfm_ctx(tfm);
+	const struct s390_aes_ctx *sctx = crypto_tfm_ctx(tfm);
 
 	if (unlikely(need_fallback(sctx->key_len))) {
 		crypto_cipher_decrypt_one(sctx->fallback.cip, out, in);
@@ -977,7 +976,7 @@ static void __exit aes_s390_fini(void)
 	crypto_unregister_alg(&aes_alg);
 }
 
-module_cpu_feature_match(MSA, aes_s390_init);
+module_init(aes_s390_init);
 module_exit(aes_s390_fini);
 
 MODULE_ALIAS_CRYPTO("aes-all");

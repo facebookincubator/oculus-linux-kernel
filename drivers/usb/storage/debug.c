@@ -164,10 +164,10 @@ void usb_stor_show_sense(const struct us_data *us,
 			 unsigned char asc,
 			 unsigned char ascq)
 {
-	const char *what, *keystr, *fmt;
+	const char *what, *keystr;
 
 	keystr = scsi_sense_key_string(key);
-	what = scsi_extd_sense_format(asc, ascq, &fmt);
+	what = scsi_extd_sense_format(asc, ascq);
 
 	if (keystr == NULL)
 		keystr = "(Unknown Key)";
@@ -175,20 +175,21 @@ void usb_stor_show_sense(const struct us_data *us,
 		what = "(unknown ASC/ASCQ)";
 
 	usb_stor_dbg(us, "%s: ", keystr);
-	if (fmt)
-		US_DEBUGPX("%s (%s%x)\n", what, fmt, ascq);
-	else
-		US_DEBUGPX("%s\n", what);
+	US_DEBUGPX(what, ascq);
+	US_DEBUGPX("\n");
 }
 
-void usb_stor_dbg(const struct us_data *us, const char *fmt, ...)
+int usb_stor_dbg(const struct us_data *us, const char *fmt, ...)
 {
 	va_list args;
+	int r;
 
 	va_start(args, fmt);
 
-	dev_vprintk_emit(LOGLEVEL_DEBUG, &us->pusb_dev->dev, fmt, args);
+	r = dev_vprintk_emit(7, &us->pusb_dev->dev, fmt, args);
 
 	va_end(args);
+
+	return r;
 }
 EXPORT_SYMBOL_GPL(usb_stor_dbg);

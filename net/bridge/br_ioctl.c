@@ -21,19 +21,18 @@
 #include <asm/uaccess.h>
 #include "br_private.h"
 
+/* called with RTNL */
 static int get_bridge_ifindices(struct net *net, int *indices, int num)
 {
 	struct net_device *dev;
 	int i = 0;
 
-	rcu_read_lock();
-	for_each_netdev_rcu(net, dev) {
+	for_each_netdev(net, dev) {
 		if (i >= num)
 			break;
 		if (dev->priv_flags & IFF_EBRIDGE)
 			indices[i++] = dev->ifindex;
 	}
-	rcu_read_unlock();
 
 	return i;
 }
@@ -201,7 +200,8 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 
-		return br_set_ageing_time(br, args[1]);
+		br->ageing_time = clock_t_to_jiffies(args[1]);
+		return 0;
 
 	case BRCTL_GET_PORT_INFO:
 	{

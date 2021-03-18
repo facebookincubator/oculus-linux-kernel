@@ -54,6 +54,16 @@ config REGULATOR_USERSPACE_CONSUMER
 
 	  If unsure, say no.
 
+config REGULATOR_PROXY_CONSUMER
+	bool "Boot time regulator proxy consumer support"
+	help
+	  This driver provides support for boot time regulator proxy requests.
+	  It can enforce a specified voltage range, set a minimum current,
+	  and/or keep a regulator enabled.  It is needed in circumstances where
+	  reducing one or more of these three quantities will cause hardware to
+	  stop working if performed before the driver managing the hardware has
+	  probed.
+
 config REGULATOR_88PM800
 	tristate "Marvell 88PM800 Power regulators"
 	depends on MFD_88PM800
@@ -131,6 +141,17 @@ config REGULATOR_AS3711
 	  This driver provides support for the voltage regulators on the
 	  AS3711 PMIC
 
+config REGULATOR_STUB
+	tristate "Stub Regulator"
+	help
+	  This driver adds stub regulator support. The driver is absent of any
+	  real hardware based implementation. It allows for clients to register
+	  their regulator device constraints and use all of the standard
+	  regulator interfaces. This is useful for bringing up new platforms
+	  when the real hardware based implementation may not be yet available.
+	  Clients can use the real regulator device names with proper
+	  constraint checking while the real driver is being developed.
+
 config REGULATOR_AS3722
 	tristate "AMS AS3722 PMIC Regulators"
 	depends on MFD_AS3722
@@ -178,16 +199,6 @@ config REGULATOR_DA9055
 	  This driver can also be built as a module. If so, the module
 	  will be called da9055-regulator.
 
-config REGULATOR_DA9062
-	tristate "Dialog Semiconductor DA9062 regulators"
-	depends on MFD_DA9062
-	help
-	  Say y here to support the BUCKs and LDOs regulators found on
-	  DA9062 PMICs.
-
-	  This driver can also be built as a module. If so, the module
-	  will be called da9062-regulator.
-
 config REGULATOR_DA9063
 	tristate "Dialog Semiconductor DA9063 regulators"
 	depends on MFD_DA9063
@@ -209,13 +220,13 @@ config REGULATOR_DA9210
 	  interface.
 
 config REGULATOR_DA9211
-	tristate "Dialog Semiconductor DA9211/DA9212/DA9213/DA9214/DA9215 regulator"
+	tristate "Dialog Semiconductor DA9211/DA9212/DA9213/DA9214 regulator"
 	depends on I2C
 	select REGMAP_I2C
 	help
 	  Say y here to support for the Dialog Semiconductor DA9211/DA9212
-	  /DA9213/DA9214/DA9215.
-	  The DA9211/DA9212/DA9213/DA9214/DA9215 is a multi-phase synchronous
+	  /DA9213/DA9214.
+	  The DA9211/DA9212/DA9213/DA9214 is a multi-phase synchronous
 	  step down converter 12A or 16A DC-DC Buck controlled through an I2C
 	  interface.
 
@@ -253,7 +264,7 @@ config REGULATOR_MSM_GFX_LDO
 
 config REGULATOR_GPIO
 	tristate "GPIO regulator support"
-	depends on GPIOLIB || COMPILE_TEST
+	depends on GPIOLIB
 	help
 	  This driver provides support for regulators that can be
 	  controlled via gpios.
@@ -277,6 +288,15 @@ config REGULATOR_ISL9305
 	select REGMAP_I2C
 	help
 	  This driver supports ISL9305 voltage regulator chip.
+
+config REGULATOR_MEM_ACC
+        tristate "QTI Memory accelerator regulator driver"
+        help
+         Say y here to enable the memory accelerator driver for Qualcomm
+         Technologies (QTI) chips. The accelerator controls delays applied
+         for memory accesses.
+         This driver configures the power-mode (corner) for the memory
+         accelerator.
 
 config REGULATOR_ISL6271A
 	tristate "Intersil ISL6271A Power regulator"
@@ -417,13 +437,13 @@ config REGULATOR_MAX77686
 	  Exynos-4 chips to control VARM and VINT voltages.
 
 config REGULATOR_MAX77693
-	tristate "Maxim 77693/77843 regulator"
-	depends on (MFD_MAX77693 || MFD_MAX77843)
+	tristate "Maxim MAX77693 regulator"
+	depends on MFD_MAX77693
 	help
-	  This driver controls a Maxim 77693/77843 regulators via I2C bus.
+	  This driver controls a Maxim 77693 regulator via I2C bus.
 	  The regulators include two LDOs, 'SAFEOUT1', 'SAFEOUT2'
 	  and one current regulator 'CHARGER'. This is suitable for
-	  Exynos-4x12 (MAX77693) or Exynos5433 (MAX77843) SoC chips.
+	  Exynos-4x12 chips.
 
 config REGULATOR_MAX77802
 	tristate "Maxim 77802 regulator"
@@ -452,32 +472,6 @@ config REGULATOR_MC13892
 	help
 	  Say y here to support the regulators found on the Freescale MC13892
 	  PMIC.
-
-config REGULATOR_MT6311
-	tristate "MediaTek MT6311 PMIC"
-	depends on I2C
-	select REGMAP_I2C
-	help
-	  Say y here to select this option to enable the power regulator of
-	  MediaTek MT6311 PMIC.
-	  This driver supports the control of different power rails of device
-	  through regulator interface.
-
-config REGULATOR_MT6397
-	tristate "MediaTek MT6397 PMIC"
-	depends on MFD_MT6397
-	help
-	  Say y here to select this option to enable the power regulator of
-	  MediaTek MT6397 PMIC.
-	  This driver supports the control of different power rails of device
-	  through regulator interface.
-
-config REGULATOR_OVR_OLED_AVDD
-	tristate "Oculus OLED AVDD regulator driver"
-	help
-	  Say y here to select this option to enable the power regulator of
-	  Oculus OLED AVDD.
-	  This driver controls the AVDD power rail of Oculus OLED displays.
 
 config REGULATOR_PALMAS
 	tristate "TI Palmas PMIC Regulators"
@@ -541,29 +535,6 @@ config REGULATOR_QCOM_RPM
 	  Qualcomm RPM as a module. The module will be named
 	  "qcom_rpm-regulator".
 
-config REGULATOR_QCOM_SMD_RPM
-	tristate "Qualcomm SMD based RPM regulator driver"
-	depends on QCOM_SMD_RPM
-	help
-	  If you say yes to this option, support will be included for the
-	  regulators exposed by the Resource Power Manager found in Qualcomm
-	  8974 based devices.
-
-	  Say M here if you want to include support for the regulators on the
-	  Qualcomm RPM as a module. The module will be named
-	  "qcom_smd-regulator".
-
-config REGULATOR_QCOM_SPMI
-	tristate "Qualcomm SPMI regulator driver"
-	depends on SPMI || COMPILE_TEST
-	help
-	  If you say yes to this option, support will be included for the
-	  regulators found in Qualcomm SPMI PMICs.
-
-	  Say M here if you want to include support for the regulators on the
-	  Qualcomm SPMI PMICs as a module. The module will be named
-	  "qcom_spmi-regulator".
-
 config REGULATOR_RC5T583
 	tristate "RICOH RC5T583 Power regulators"
 	depends on MFD_RC5T583
@@ -590,14 +561,6 @@ config REGULATOR_RN5T618
 	help
 	  Say y here to support the regulators found on Ricoh RN5T618 PMIC.
 
-config REGULATOR_RT5033
-	tristate "Richtek RT5033 Regulators"
-	depends on MFD_RT5033
-	help
-	  This adds support for voltage and current regulators in Richtek
-	  RT5033 PMIC. The device supports multiple regulators like
-	  current source, LDO and Buck.
-
 config REGULATOR_S2MPA01
 	tristate "Samsung S2MPA01 voltage regulator"
 	depends on MFD_SEC_CORE
@@ -606,13 +569,13 @@ config REGULATOR_S2MPA01
 	 via I2C bus. S2MPA01 has 10 Bucks and 26 LDO outputs.
 
 config REGULATOR_S2MPS11
-	tristate "Samsung S2MPS11/S2MPS13/S2MPS14/S2MPU02 voltage regulator"
+	tristate "Samsung S2MPS11/S2MPS14/S2MPU02 voltage regulator"
 	depends on MFD_SEC_CORE
 	help
-	 This driver supports a Samsung S2MPS11/S2MPS13/S2MPS14/S2MPU02 voltage
-	 output regulator via I2C bus. The chip is comprised of high efficient
-	 Buck converters including Dual-Phase Buck converter, Buck-Boost
-	 converter, various LDOs.
+	 This driver supports a Samsung S2MPS11/S2MPS14/S2MPU02 voltage output
+	 regulator via I2C bus. The chip is comprised of high efficient Buck
+	 converters including Dual-Phase Buck converter, Buck-Boost converter,
+	 various LDOs.
 
 config REGULATOR_S5M8767
 	tristate "Samsung S5M8767A voltage regulator"
@@ -624,7 +587,7 @@ config REGULATOR_S5M8767
 
 config REGULATOR_SKY81452
 	tristate "Skyworks Solutions SKY81452 voltage regulator"
-	depends on MFD_SKY81452
+	depends on SKY81452
 	help
 	  This driver supports Skyworks SKY81452 voltage output regulator
 	  via I2C bus. SKY81452 has one voltage linear regulator can be
@@ -645,7 +608,7 @@ config REGULATOR_TI_ABB
 
 config REGULATOR_STW481X_VMMC
 	bool "ST Microelectronics STW481X VMMC regulator"
-	depends on MFD_STW481X || COMPILE_TEST
+	depends on MFD_STW481X
 	default y if MFD_STW481X
 	help
 	  This driver supports the internal VMMC regulator in the STw481x
@@ -814,47 +777,30 @@ config REGULATOR_RPM_SMD
 	  application processor over SMD.
 
 config REGULATOR_QPNP
-	tristate "Qualcomm Technologies, Inc. QPNP regulator support"
-	depends on SPMI
+	depends on SPMI || MSM_SPMI
+	depends on OF_SPMI
+	tristate "Qualcomm QPNP regulator support"
 	help
-	  This driver supports voltage regulators in Qualcomm Technologies, Inc.
-	  PMIC chips which comply with QPNP.  QPNP is a SPMI based PMIC
-	  implementation.  These chips provide several different varieties of
-	  LDO and switching regulators.  They also provide voltage switches and
-	  boost regulators.
+	  This driver supports voltage regulators in Qualcomm PMIC chips which
+	  comply with QPNP.  QPNP is a SPMI based PMIC implementation.  These
+	  chips provide several different varieties of LDO and switching
+	  regulators.  They also provide voltage switches and boost regulators.
 
 config REGULATOR_QPNP_LABIBB
-	tristate "Qualcomm Technologies, Inc. QPNP LAB/IBB regulator support"
-	depends on SPMI
+	depends on SPMI || MSM_SPMI
+	depends on OF_SPMI
+	tristate "Qualcomm Technologies, Inc QPNP LAB/IBB regulator support"
 	help
-	  This driver supports voltage regulators in Qualcomm Technologies, Inc.
+	  This driver supports voltage regulators in Qualcomm Technologies, Inc
 	  PMIC chips which comply with QPNP LAB/IBB regulators. QPNP LAB and IBB
-	  are SPMI based PMIC implementations. LAB regulator can be used as a
+	  are SPMI based PMIC implementation. LAB regulator can be used as a
 	  regular positive boost regulator. IBB can be used as a regular
 	  negative boost regulator. LAB/IBB regulators can also be used
 	  together for LCD or AMOLED.
 
-config REGULATOR_QPNP_LCDB
-	tristate "Qualcomm Technologies, Inc. QPNP LCDB support"
-	depends on SPMI
-	help
-	  Supports the LCDB module in the Qualcomm Technologies, Inc.
-	  QPNP PMICs. Exposes regulators to control the positive and
-	  negative voltage bias for the LCD display panel. It also
-	  allows configurability for the various bias-voltage parameters.
-
-config REGULATOR_QPNP_OLEDB
-	tristate "Qualcomm Technologies, Inc. QPNP OLEDB regulator support"
-	depends on SPMI
-	help
-	  This driver supports the OLEDB (AVDD bias) signal for AMOLED panel in
-	  Qualcomm Technologies, Inc. QPNP PMICs. It exposes the OLED voltage
-	  configuration via the regulator framework. The configurable range of
-	  this bias is 5 V to 8.1 V.
-
 config REGULATOR_SPM
 	bool "SPM regulator driver"
-	depends on SPMI
+	depends on (SPMI || MSM_SPMI) && OF_SPMI
 	help
 	  Enable support for the SPM regulator driver which is used for
 	  setting voltages of processor supply regulators via the SPM module
@@ -942,55 +888,15 @@ config REGULATOR_CPRH_KBSS
 	  independent voltage supplies. This driver reads both initial voltage
 	  and CPR target quotient values out of hardware fuses.
 
-config REGULATOR_CPR4_MMSS_LDO
-	bool "RBCPR3 regulator for MMSS LDO"
-	depends on OF
-	select REGULATOR_CPR3
-	help
-	  This driver supports Qualcomm Technologies, Inc. MMSS graphics
-	  processor specific features.  The MMSS CPR3 controller only uses one
-	  thread to monitor the MMSS LDO voltage requirements. This driver reads
-	  initial voltage values out of hardware fuses and CPR target quotient
-	  values out of device tree.
-
 config REGULATOR_KRYO
 	bool "Kryo regulator driver"
 	depends on OF
 	help
 	  Some MSM designs have CPUs that can be directly powered from a common
-	  voltage rail via a Block Head Switch (BHS) or an LDO whose output
-	  voltage can be configured for use when certain power constraints are
-	  met.  Say yes to support management of LDO and BHS modes for the
-	  clusters in the CPU subsystem.
-
-config REGULATOR_MEM_ACC
-	tristate "QTI Memory accelerator regulator driver"
-	help
-	  Say y here to enable the memory accelerator driver for Qualcomm
-	  Technologies, Inc. (QTI) chips. The accelerator controls delays
-	  applied for memory accesses.  This driver configures the power-mode
-	  (corner) for the memory accelerator.
-
-config REGULATOR_PROXY_CONSUMER
-	bool "Boot time regulator proxy consumer support"
-	help
-	  This driver provides support for boot time regulator proxy requests.
-	  It can enforce a specified voltage range, set a minimum current,
-	  and/or keep a regulator enabled.  It is needed in circumstances where
-	  reducing one or more of these three quantities will cause hardware to
-	  stop working if performed before the driver managing the hardware has
-	  probed.
-
-config REGULATOR_STUB
-	tristate "Stub Regulator"
-	help
-	  This driver adds stub regulator support. The driver is absent of any
-	  real hardware based implementation. It allows for clients to register
-	  their regulator device constraints and use all of the standard
-	  regulator interfaces. This is useful for bringing up new platforms
-	  when the real hardware based implementation may not be yet available.
-	  Clients can use the real regulator device names with proper
-	  constraint checking while the real driver is being developed.
+	  voltage rail via a Block Head Switch (BHS) or an LDO whose output voltage
+	  can be configured for use when certain power constraints are met.
+	  Say yes to support management of LDO and BHS modes for the clusters in the
+	  CPU subsystem.
 
 endif
 

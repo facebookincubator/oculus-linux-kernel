@@ -1,4 +1,5 @@
 #include <linux/sched.h>
+#include <linux/namei.h>
 #include <linux/slab.h>
 #include <linux/pid_namespace.h>
 #include "internal.h"
@@ -18,20 +19,21 @@ static int proc_self_readlink(struct dentry *dentry, char __user *buffer,
 	return readlink_copy(buffer, buflen, tmp);
 }
 
-static const char *proc_self_follow_link(struct dentry *dentry, void **cookie)
+static void *proc_self_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	struct pid_namespace *ns = dentry->d_sb->s_fs_info;
 	pid_t tgid = task_tgid_nr_ns(current, ns);
-	char *name;
-
-	if (!tgid)
-		return ERR_PTR(-ENOENT);
-	/* 11 for max length of signed int in decimal + NULL term */
-	name = kmalloc(12, GFP_KERNEL);
-	if (!name)
-		return ERR_PTR(-ENOMEM);
-	sprintf(name, "%d", tgid);
-	return *cookie = name;
+	char *name = ERR_PTR(-ENOENT);
+	if (tgid) {
+		/* 11 for max length of signed int in decimal + NULL term */
+		name = kmalloc(12, GFP_KERNEL);
+		if (!name)
+			name = ERR_PTR(-ENOMEM);
+		else
+			sprintf(name, "%d", tgid);
+	}
+	nd_set_link(nd, name);
+	return NULL;
 }
 
 static const struct inode_operations proc_self_inode_operations = {
@@ -44,7 +46,7 @@ static unsigned self_inum;
 
 int proc_setup_self(struct super_block *s)
 {
-	struct inode *root_inode = d_inode(s->s_root);
+	struct inode *root_inode = s->s_root->d_inode;
 	struct pid_namespace *ns = s->s_fs_info;
 	struct dentry *self;
 	

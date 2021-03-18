@@ -99,7 +99,6 @@ struct perf_kvm_stat {
 	int timerfd;
 	unsigned int display_time;
 	bool live;
-	bool force;
 };
 
 struct kvm_reg_events_ops {

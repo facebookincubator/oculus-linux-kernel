@@ -291,15 +291,26 @@ static ssize_t read_file_slot(struct file *file, char __user *user_buf,
 {
 	struct ath9k_htc_priv *priv = file->private_data;
 	char buf[512];
-	unsigned int len;
+	unsigned int len = 0;
 
 	spin_lock_bh(&priv->tx.tx_lock);
-	len = scnprintf(buf, sizeof(buf),
-			"TX slot bitmap : %*pb\n"
-			"Used slots     : %d\n",
-			MAX_TX_BUF_NUM, priv->tx.tx_slot,
-			bitmap_weight(priv->tx.tx_slot, MAX_TX_BUF_NUM));
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "TX slot bitmap : ");
+
+	len += bitmap_scnprintf(buf + len, sizeof(buf) - len,
+			       priv->tx.tx_slot, MAX_TX_BUF_NUM);
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "\n");
+
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "Used slots     : %d\n",
+			 bitmap_weight(priv->tx.tx_slot, MAX_TX_BUF_NUM));
+
 	spin_unlock_bh(&priv->tx.tx_lock);
+
+	if (len > sizeof(buf))
+		len = sizeof(buf);
+
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
@@ -479,10 +490,6 @@ void ath9k_htc_get_et_stats(struct ieee80211_hw *hw,
 	WARN_ON(i != ATH9K_HTC_SSTATS_LEN);
 }
 
-void ath9k_htc_deinit_debug(struct ath9k_htc_priv *priv)
-{
-	ath9k_cmn_spectral_deinit_debug(&priv->spec_priv);
-}
 
 int ath9k_htc_init_debug(struct ath_hw *ah)
 {
@@ -493,8 +500,6 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 					     priv->hw->wiphy->debugfsdir);
 	if (!priv->debug.debugfs_phy)
 		return -ENOMEM;
-
-	ath9k_cmn_spectral_init_debug(&priv->spec_priv, priv->debug.debugfs_phy);
 
 	debugfs_create_file("tgt_int_stats", S_IRUSR, priv->debug.debugfs_phy,
 			    priv, &fops_tgt_int_stats);

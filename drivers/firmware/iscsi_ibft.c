@@ -186,19 +186,7 @@ struct ibft_kobject {
 
 static struct iscsi_boot_kset *boot_kset;
 
-/* fully null address */
 static const char nulls[16];
-
-/* IPv4-mapped IPv6 ::ffff:0.0.0.0 */
-static const char mapped_nulls[16] = { 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0xff, 0xff,
-                                       0x00, 0x00, 0x00, 0x00 };
-
-static int address_not_null(u8 *ip)
-{
-	return (memcmp(ip, nulls, 16) && memcmp(ip, mapped_nulls, 16));
-}
 
 /*
  * Helper functions to parse data properly.
@@ -457,7 +445,7 @@ static umode_t ibft_check_nic_for(void *data, int type)
 		rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_IP_ADDR:
-		if (address_not_null(nic->ip_addr))
+		if (memcmp(nic->ip_addr, nulls, sizeof(nic->ip_addr)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_SUBNET_MASK:
@@ -468,19 +456,21 @@ static umode_t ibft_check_nic_for(void *data, int type)
 		rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_GATEWAY:
-		if (address_not_null(nic->gateway))
+		if (memcmp(nic->gateway, nulls, sizeof(nic->gateway)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_PRIMARY_DNS:
-		if (address_not_null(nic->primary_dns))
+		if (memcmp(nic->primary_dns, nulls,
+			   sizeof(nic->primary_dns)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_SECONDARY_DNS:
-		if (address_not_null(nic->secondary_dns))
+		if (memcmp(nic->secondary_dns, nulls,
+			   sizeof(nic->secondary_dns)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_DHCP:
-		if (address_not_null(nic->dhcp))
+		if (memcmp(nic->dhcp, nulls, sizeof(nic->dhcp)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_ETH_VLAN:
@@ -546,19 +536,23 @@ static umode_t __init ibft_check_initiator_for(void *data, int type)
 		rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_INI_ISNS_SERVER:
-		if (address_not_null(init->isns_server))
+		if (memcmp(init->isns_server, nulls,
+			   sizeof(init->isns_server)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_INI_SLP_SERVER:
-		if (address_not_null(init->slp_server))
+		if (memcmp(init->slp_server, nulls,
+			   sizeof(init->slp_server)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_INI_PRI_RADIUS_SERVER:
-		if (address_not_null(init->pri_radius_server))
+		if (memcmp(init->pri_radius_server, nulls,
+			   sizeof(init->pri_radius_server)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_INI_SEC_RADIUS_SERVER:
-		if (address_not_null(init->sec_radius_server))
+		if (memcmp(init->sec_radius_server, nulls,
+			   sizeof(init->sec_radius_server)))
 			rc = S_IRUGO;
 		break;
 	case ISCSI_BOOT_INI_INITIATOR_NAME:

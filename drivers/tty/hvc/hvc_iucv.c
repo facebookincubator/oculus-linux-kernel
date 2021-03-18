@@ -1,10 +1,10 @@
 /*
- * z/VM IUCV hypervisor console (HVC) device driver
+ * hvc_iucv.c - z/VM IUCV hypervisor console (HVC) device driver
  *
  * This HVC device driver provides terminal access using
  * z/VM IUCV communication paths.
  *
- * Copyright IBM Corp. 2008, 2013
+ * Copyright IBM Corp. 2008, 2009
  *
  * Author(s):	Hendrik Brueckner <brueckner@linux.vnet.ibm.com>
  */
@@ -88,8 +88,8 @@ struct iucv_tty_buffer {
 };
 
 /* IUCV callback handler */
-static	int hvc_iucv_path_pending(struct iucv_path *, u8 *, u8 *);
-static void hvc_iucv_path_severed(struct iucv_path *, u8 *);
+static	int hvc_iucv_path_pending(struct iucv_path *, u8[8], u8[16]);
+static void hvc_iucv_path_severed(struct iucv_path *, u8[16]);
 static void hvc_iucv_msg_pending(struct iucv_path *, struct iucv_message *);
 static void hvc_iucv_msg_complete(struct iucv_path *, struct iucv_message *);
 
@@ -102,7 +102,6 @@ static struct hvc_iucv_private *hvc_iucv_table[MAX_HVC_IUCV_LINES];
 #define IUCV_HVC_CON_IDX	(0)
 /* List of z/VM user ID filter entries (struct iucv_vmid_filter) */
 #define MAX_VMID_FILTER		(500)
-#define FILTER_WILDCARD_CHAR	'*'
 static size_t hvc_iucv_filter_size;
 static void *hvc_iucv_filter;
 static const char *hvc_iucv_filter_string;
@@ -735,31 +734,20 @@ static void hvc_iucv_notifier_del(struct hvc_struct *hp, int id)
  * hvc_iucv_filter_connreq() - Filter connection request based on z/VM user ID
  * @ipvmid:	Originating z/VM user ID (right padded with blanks)
  *
- * Returns 0 if the z/VM user ID that is specified with @ipvmid is permitted to
- * connect, otherwise non-zero.
+ * Returns 0 if the z/VM user ID @ipvmid is allowed to connection, otherwise
+ * non-zero.
  */
 static int hvc_iucv_filter_connreq(u8 ipvmid[8])
 {
-	const char *wildcard, *filter_entry;
-	size_t i, len;
+	size_t i;
 
 	/* Note: default policy is ACCEPT if no filter is set */
 	if (!hvc_iucv_filter_size)
 		return 0;
 
-	for (i = 0; i < hvc_iucv_filter_size; i++) {
-		filter_entry = hvc_iucv_filter + (8 * i);
-
-		/* If a filter entry contains the filter wildcard character,
-		 * reduce the length to match the leading portion of the user
-		 * ID only (wildcard match).  Characters following the wildcard
-		 * are ignored.
-		 */
-		wildcard = strnchr(filter_entry, 8, FILTER_WILDCARD_CHAR);
-		len = (wildcard) ? wildcard - filter_entry : 8;
-		if (0 == memcmp(ipvmid, filter_entry, len))
+	for (i = 0; i < hvc_iucv_filter_size; i++)
+		if (0 == memcmp(ipvmid, hvc_iucv_filter + (8 * i), 8))
 			return 0;
-	}
 	return 1;
 }
 
@@ -782,8 +770,8 @@ static int hvc_iucv_filter_connreq(u8 ipvmid[8])
  *
  * Locking:	struct hvc_iucv_private->lock
  */
-static	int hvc_iucv_path_pending(struct iucv_path *path, u8 *ipvmid,
-				  u8 *ipuser)
+static	int hvc_iucv_path_pending(struct iucv_path *path,
+				  u8 ipvmid[8], u8 ipuser[16])
 {
 	struct hvc_iucv_private *priv, *tmp;
 	u8 wildcard[9] = "lnxhvc  ";
@@ -881,7 +869,7 @@ out_path_handled:
  *
  * Locking:	struct hvc_iucv_private->lock
  */
-static void hvc_iucv_path_severed(struct iucv_path *path, u8 *ipuser)
+static void hvc_iucv_path_severed(struct iucv_path *path, u8 ipuser[16])
 {
 	struct hvc_iucv_private *priv = path->private;
 
@@ -1178,7 +1166,6 @@ static void __init hvc_iucv_destroy(struct hvc_iucv_private *priv)
 /**
  * hvc_iucv_parse_filter() - Parse filter for a single z/VM user ID
  * @filter:	String containing a comma-separated list of z/VM user IDs
- * @dest:	Location where to store the parsed z/VM user ID
  */
 static const char *hvc_iucv_parse_filter(const char *filter, char *dest)
 {
@@ -1200,10 +1187,6 @@ static const char *hvc_iucv_parse_filter(const char *filter, char *dest)
 	/* check for '\n' (if called from sysfs) */
 	if (filter[len - 1] == '\n')
 		len--;
-
-	/* prohibit filter entries containing the wildcard character only */
-	if (len == 1 && *filter == FILTER_WILDCARD_CHAR)
-		return ERR_PTR(-EINVAL);
 
 	if (len > 8)
 		return ERR_PTR(-EINVAL);
@@ -1345,7 +1328,7 @@ static int param_get_vmidfilter(char *buffer, const struct kernel_param *kp)
 
 #define param_check_vmidfilter(name, p) __param_check(name, p, void)
 
-static const struct kernel_param_ops param_ops_vmidfilter = {
+static struct kernel_param_ops param_ops_vmidfilter = {
 	.set = param_set_vmidfilter,
 	.get = param_get_vmidfilter,
 };

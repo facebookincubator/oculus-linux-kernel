@@ -16,6 +16,7 @@
 #define _LINUX_HUGETLB_CGROUP_H
 
 #include <linux/mmdebug.h>
+#include <linux/res_counter.h>
 
 struct hugetlb_cgroup;
 /*
@@ -32,7 +33,7 @@ static inline struct hugetlb_cgroup *hugetlb_cgroup_from_page(struct page *page)
 
 	if (compound_order(page) < HUGETLB_CGROUP_MIN_ORDER)
 		return NULL;
-	return (struct hugetlb_cgroup *)page[2].private;
+	return (struct hugetlb_cgroup *)page[2].lru.next;
 }
 
 static inline
@@ -42,13 +43,15 @@ int set_hugetlb_cgroup(struct page *page, struct hugetlb_cgroup *h_cg)
 
 	if (compound_order(page) < HUGETLB_CGROUP_MIN_ORDER)
 		return -1;
-	page[2].private	= (unsigned long)h_cg;
+	page[2].lru.next = (void *)h_cg;
 	return 0;
 }
 
 static inline bool hugetlb_cgroup_disabled(void)
 {
-	return !cgroup_subsys_enabled(hugetlb_cgrp_subsys);
+	if (hugetlb_cgrp_subsys.disabled)
+		return true;
+	return false;
 }
 
 extern int hugetlb_cgroup_charge_cgroup(int idx, unsigned long nr_pages,

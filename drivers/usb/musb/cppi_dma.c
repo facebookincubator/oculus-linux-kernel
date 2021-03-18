@@ -1297,8 +1297,7 @@ irqreturn_t cppi_interrupt(int irq, void *dev_id)
 EXPORT_SYMBOL_GPL(cppi_interrupt);
 
 /* Instantiate a software object representing a DMA controller. */
-struct dma_controller *
-cppi_dma_controller_create(struct musb *musb, void __iomem *mregs)
+struct dma_controller *dma_controller_create(struct musb *musb, void __iomem *mregs)
 {
 	struct cppi		*controller;
 	struct device		*dev = musb->controller;
@@ -1335,7 +1334,7 @@ cppi_dma_controller_create(struct musb *musb, void __iomem *mregs)
 	if (irq > 0) {
 		if (request_irq(irq, cppi_interrupt, 0, "cppi-dma", musb)) {
 			dev_err(dev, "request_irq %d failed!\n", irq);
-			musb_dma_controller_destroy(&controller->controller);
+			dma_controller_destroy(&controller->controller);
 			return NULL;
 		}
 		controller->irq = irq;
@@ -1344,12 +1343,11 @@ cppi_dma_controller_create(struct musb *musb, void __iomem *mregs)
 	cppi_controller_start(controller);
 	return &controller->controller;
 }
-EXPORT_SYMBOL_GPL(cppi_dma_controller_create);
 
 /*
  *  Destroy a previously-instantiated DMA controller.
  */
-void cppi_dma_controller_destroy(struct dma_controller *c)
+void dma_controller_destroy(struct dma_controller *c)
 {
 	struct cppi	*cppi;
 
@@ -1365,7 +1363,6 @@ void cppi_dma_controller_destroy(struct dma_controller *c)
 
 	kfree(cppi);
 }
-EXPORT_SYMBOL_GPL(cppi_dma_controller_destroy);
 
 /*
  * Context: controller irqlocked, endpoint selected

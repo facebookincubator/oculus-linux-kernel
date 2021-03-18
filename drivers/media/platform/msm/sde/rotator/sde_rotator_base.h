@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,13 +24,6 @@
 #include "sde_rotator_smmu.h"
 #include "sde_rotator_formats.h"
 
-#define MDSS_MDP_HW_REV_320	0x30020000  /* sdm660 */
-#define MDSS_MDP_HW_REV_330	0x30030000  /* sdm630 */
-
-/* XIN mapping */
-#define XIN_SSPP	0
-#define XIN_WRITEBACK	1
-
 struct sde_mult_factor {
 	uint32_t numer;
 	uint32_t denom;
@@ -46,8 +39,6 @@ struct sde_mdp_set_ot_params {
 	u32 reg_off_vbif_lim_conf;
 	u32 reg_off_mdp_clk_ctrl;
 	u32 bit_off_mdp_clk_ctrl;
-	char __iomem *rotsts_base;
-	u32 rotsts_busy_mask;
 };
 
 enum sde_bus_vote_type {
@@ -71,28 +62,9 @@ enum sde_qos_settings {
 	SDE_QOS_MAX,
 };
 
-/**
- * enum sde_rot_type: SDE rotator HW version
- * @SDE_ROT_TYPE_V1_0: V1.0 HW version
- * @SDE_ROT_TYPE_V1_1: V1.1 HW version
- */
-enum sde_rot_type {
-	SDE_ROT_TYPE_V1_0 = 0x10000000,
-	SDE_ROT_TYPE_V1_1 = 0x10010000,
-	SDE_ROT_TYPE_MAX,
-};
-
-/**
- * enum sde_caps_settings: SDE rotator capability definition
- * @SDE_CAPS_R1_WB: MDSS V1.x WB block
- * @SDE_CAPS_R3_WB: MDSS V3.x WB block
- * @SDE_CAPS_R3_1P5_DOWNSCALE: 1.5x downscale rotator support
- */
 enum sde_caps_settings {
 	SDE_CAPS_R1_WB,
 	SDE_CAPS_R3_WB,
-	SDE_CAPS_R3_1P5_DOWNSCALE,
-	SDE_CAPS_SEC_ATTACH_DETACH_SMMU,
 	SDE_CAPS_MAX,
 };
 
@@ -100,13 +72,6 @@ enum sde_bus_clients {
 	SDE_ROT_RT,
 	SDE_ROT_NRT,
 	SDE_MAX_BUS_CLIENTS
-};
-
-enum sde_rot_regdump_access {
-	SDE_ROT_REGDUMP_READ,
-	SDE_ROT_REGDUMP_WRITE,
-	SDE_ROT_REGDUMP_VBIF,
-	SDE_ROT_REGDUMP_MAX
 };
 
 struct reg_bus_client {
@@ -122,23 +87,6 @@ struct sde_smmu_client {
 	struct sde_module_power mp;
 	struct reg_bus_client *reg_bus_clt;
 	bool domain_attached;
-	bool domain_reattach;
-	int domain;
-};
-
-struct sde_rot_vbif_debug_bus {
-	u32 disable_bus_addr;
-	u32 block_bus_addr;
-	u32 bit_offset;
-	u32 block_cnt;
-	u32 test_pnt_cnt;
-};
-
-struct sde_rot_regdump {
-	char *name;
-	u32 offset;
-	u32 len;
-	enum sde_rot_regdump_access access;
 };
 
 struct sde_rot_data_type {
@@ -172,30 +120,8 @@ struct sde_rot_data_type {
 	u32 *vbif_nrt_qos;
 	u32 npriority_lvl;
 
-	u32 *vbif_xin_id;
-	u32 nxid;
-
 	int iommu_attached;
 	int iommu_ref_cnt;
-	int (*iommu_ctrl)(int enable);
-	int (*secure_session_ctrl)(int enable);
-	int (*wait_for_transition)(int state, int request);
-	void (*vbif_reg_lock)(void);
-	void (*vbif_reg_unlock)(void);
-	bool (*handoff_pending)(void);
-	struct sde_rot_vbif_debug_bus *nrt_vbif_dbg_bus;
-	u32 nrt_vbif_dbg_bus_size;
-
-	struct sde_rot_regdump *regdump;
-	u32 regdump_size;
-
-	void *sde_rot_hw;
-	int sec_cam_en;
-	bool callback_request;
-	struct ion_client *iclient;
-
-	bool handoff_done;
-	struct msm_bus_scale_pdata *reg_bus_pdata;
 };
 
 int sde_rotator_base_init(struct sde_rot_data_type **pmdata,

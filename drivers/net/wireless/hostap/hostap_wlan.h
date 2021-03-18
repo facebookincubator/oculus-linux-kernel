@@ -4,7 +4,6 @@
 #include <linux/interrupt.h>
 #include <linux/wireless.h>
 #include <linux/netdevice.h>
-#include <linux/etherdevice.h>
 #include <linux/mutex.h>
 #include <net/iw_handler.h>
 #include <net/ieee80211_radiotap.h>
@@ -86,16 +85,16 @@ struct hfa384x_rx_frame {
 	/* 802.11 */
 	__le16 frame_control;
 	__le16 duration_id;
-	u8 addr1[ETH_ALEN];
-	u8 addr2[ETH_ALEN];
-	u8 addr3[ETH_ALEN];
+	u8 addr1[6];
+	u8 addr2[6];
+	u8 addr3[6];
 	__le16 seq_ctrl;
-	u8 addr4[ETH_ALEN];
+	u8 addr4[6];
 	__le16 data_len;
 
 	/* 802.3 */
-	u8 dst_addr[ETH_ALEN];
-	u8 src_addr[ETH_ALEN];
+	u8 dst_addr[6];
+	u8 src_addr[6];
 	__be16 len;
 
 	/* followed by frame data; max 2304 bytes */
@@ -115,16 +114,16 @@ struct hfa384x_tx_frame {
 	/* 802.11 */
 	__le16 frame_control; /* parts not used */
 	__le16 duration_id;
-	u8 addr1[ETH_ALEN];
-	u8 addr2[ETH_ALEN]; /* filled by firmware */
-	u8 addr3[ETH_ALEN];
+	u8 addr1[6];
+	u8 addr2[6]; /* filled by firmware */
+	u8 addr3[6];
 	__le16 seq_ctrl; /* filled by firmware */
-	u8 addr4[ETH_ALEN];
+	u8 addr4[6];
 	__le16 data_len;
 
 	/* 802.3 */
-	u8 dst_addr[ETH_ALEN];
-	u8 src_addr[ETH_ALEN];
+	u8 dst_addr[6];
+	u8 src_addr[6];
 	__be16 len;
 
 	/* followed by frame data; max 2304 bytes */
@@ -157,7 +156,7 @@ struct hfa384x_hostscan_request {
 } __packed;
 
 struct hfa384x_join_request {
-	u8 bssid[ETH_ALEN];
+	u8 bssid[6];
 	__le16 channel;
 } __packed;
 
@@ -229,7 +228,7 @@ struct hfa384x_scan_result {
 	__le16 chid;
 	__le16 anl;
 	__le16 sl;
-	u8 bssid[ETH_ALEN];
+	u8 bssid[6];
 	__le16 beacon_interval;
 	__le16 capability;
 	__le16 ssid_len;
@@ -242,7 +241,7 @@ struct hfa384x_hostscan_result {
 	__le16 chid;
 	__le16 anl;
 	__le16 sl;
-	u8 bssid[ETH_ALEN];
+	u8 bssid[6];
 	__le16 beacon_interval;
 	__le16 capability;
 	__le16 ssid_len;
@@ -825,7 +824,7 @@ struct local_info {
 #define PRISM2_INFO_PENDING_SCANRESULTS 1
 	int prev_link_status; /* previous received LinkStatus info */
 	int prev_linkstatus_connected;
-	u8 preferred_ap[ETH_ALEN]; /* use this AP if possible */
+	u8 preferred_ap[6]; /* use this AP if possible */
 
 #ifdef PRISM2_CALLBACK
 	void *callback_data; /* Can be used in callbacks; e.g., allocate

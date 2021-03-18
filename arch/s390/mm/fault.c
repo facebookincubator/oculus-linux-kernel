@@ -30,16 +30,21 @@
 #include <linux/uaccess.h>
 #include <linux/hugetlb.h>
 #include <asm/asm-offsets.h>
-#include <asm/diag.h>
 #include <asm/pgtable.h>
 #include <asm/irq.h>
 #include <asm/mmu_context.h>
 #include <asm/facility.h>
 #include "../kernel/entry.h"
 
+#ifndef CONFIG_64BIT
+#define __FAIL_ADDR_MASK 0x7ffff000
+#define __SUBCODE_MASK 0x0200
+#define __PF_RES_FIELD 0ULL
+#else /* CONFIG_64BIT */
 #define __FAIL_ADDR_MASK -4096L
 #define __SUBCODE_MASK 0x0600
 #define __PF_RES_FIELD 0x8000000000000000ULL
+#endif /* CONFIG_64BIT */
 
 #define VM_FAULT_BADCONTEXT	0x010000
 #define VM_FAULT_BADMAP		0x020000
@@ -49,6 +54,7 @@
 
 static unsigned long store_indication __read_mostly;
 
+#ifdef CONFIG_64BIT
 static int __init fault_init(void)
 {
 	if (test_facility(75))
@@ -56,6 +62,7 @@ static int __init fault_init(void)
 	return 0;
 }
 early_initcall(fault_init);
+#endif
 
 static inline int notify_page_fault(struct pt_regs *regs)
 {
@@ -126,6 +133,7 @@ static int bad_address(void *p)
 	return probe_kernel_address((unsigned long *)p, dummy);
 }
 
+#ifdef CONFIG_64BIT
 static void dump_pagetable(unsigned long asce, unsigned long address)
 {
 	unsigned long *table = __va(asce & PAGE_MASK);
@@ -163,7 +171,7 @@ static void dump_pagetable(unsigned long asce, unsigned long address)
 		table = table + ((address >> 20) & 0x7ff);
 		if (bad_address(table))
 			goto bad;
-		pr_cont("S:%016lx ", *table);
+		pr_cont(KERN_CONT "S:%016lx ", *table);
 		if (*table & (_SEGMENT_ENTRY_INVALID | _SEGMENT_ENTRY_LARGE))
 			goto out;
 		table = (unsigned long *)(*table & _SEGMENT_ENTRY_ORIGIN);
@@ -178,6 +186,33 @@ out:
 bad:
 	pr_cont("BAD\n");
 }
+
+#else /* CONFIG_64BIT */
+
+static void dump_pagetable(unsigned long asce, unsigned long address)
+{
+	unsigned long *table = __va(asce & PAGE_MASK);
+
+	pr_alert("AS:%08lx ", asce);
+	table = table + ((address >> 20) & 0x7ff);
+	if (bad_address(table))
+		goto bad;
+	pr_cont("S:%08lx ", *table);
+	if (*table & _SEGMENT_ENTRY_INVALID)
+		goto out;
+	table = (unsigned long *)(*table & _SEGMENT_ENTRY_ORIGIN);
+	table = table + ((address >> 12) & 0xff);
+	if (bad_address(table))
+		goto bad;
+	pr_cont("P:%08lx ", *table);
+out:
+	pr_cont("\n");
+	return;
+bad:
+	pr_cont("BAD\n");
+}
+
+#endif /* CONFIG_64BIT */
 
 static void dump_fault_info(struct pt_regs *regs)
 {
@@ -226,8 +261,8 @@ static inline void report_user_fault(struct pt_regs *regs, long signr)
 		return;
 	if (!printk_ratelimit())
 		return;
-	printk(KERN_ALERT "User process fault: interruption code %04x ilc:%d ",
-	       regs->int_code & 0xffff, regs->int_code >> 17);
+	printk(KERN_ALERT "User process fault: interruption code 0x%X ",
+	       regs->int_code);
 	print_vma_addr(KERN_CONT "in ", regs->psw.addr & PSW_ADDR_INSN);
 	printk(KERN_CONT "\n");
 	printk(KERN_ALERT "failing address: %016lx TEID: %016lx\n",
@@ -400,7 +435,7 @@ static inline int do_exception(struct pt_regs *regs, int access)
 	 * user context.
 	 */
 	fault = VM_FAULT_BADCONTEXT;
-	if (unlikely(!user_space_fault(regs) || faulthandler_disabled() || !mm))
+	if (unlikely(!user_space_fault(regs) || in_atomic() || !mm))
 		goto out;
 
 	address = trans_exc_code & __FAIL_ADDR_MASK;
@@ -519,7 +554,7 @@ out:
 	return fault;
 }
 
-void do_protection_exception(struct pt_regs *regs)
+void __kprobes do_protection_exception(struct pt_regs *regs)
 {
 	unsigned long trans_exc_code;
 	int fault;
@@ -545,9 +580,8 @@ void do_protection_exception(struct pt_regs *regs)
 	if (unlikely(fault))
 		do_fault_error(regs, fault);
 }
-NOKPROBE_SYMBOL(do_protection_exception);
 
-void do_dat_exception(struct pt_regs *regs)
+void __kprobes do_dat_exception(struct pt_regs *regs)
 {
 	int access, fault;
 
@@ -556,7 +590,6 @@ void do_dat_exception(struct pt_regs *regs)
 	if (unlikely(fault))
 		do_fault_error(regs, fault);
 }
-NOKPROBE_SYMBOL(do_dat_exception);
 
 #ifdef CONFIG_PFAULT 
 /*
@@ -590,7 +623,7 @@ int pfault_init(void)
 		.reffcode = 0,
 		.refdwlen = 5,
 		.refversn = 2,
-		.refgaddr = __LC_LPP,
+		.refgaddr = __LC_CURRENT_PID,
 		.refselmk = 1ULL << 48,
 		.refcmpmk = 1ULL << 48,
 		.reserved = __PF_RES_FIELD };
@@ -598,7 +631,6 @@ int pfault_init(void)
 
 	if (pfault_disable)
 		return -1;
-	diag_stat_inc(DIAG_STAT_X258);
 	asm volatile(
 		"	diag	%1,%0,0x258\n"
 		"0:	j	2f\n"
@@ -620,7 +652,6 @@ void pfault_fini(void)
 
 	if (pfault_disable)
 		return;
-	diag_stat_inc(DIAG_STAT_X258);
 	asm volatile(
 		"	diag	%0,0,0x258\n"
 		"0:\n"
@@ -649,7 +680,7 @@ static void pfault_interrupt(struct ext_code ext_code,
 		return;
 	inc_irq_stat(IRQEXT_PFL);
 	/* Get the token (= pid of the affected task). */
-	pid = param64 & LPP_PFAULT_PID_MASK;
+	pid = sizeof(void *) == 4 ? param32 : param64;
 	rcu_read_lock();
 	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
 	if (tsk)

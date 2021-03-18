@@ -282,7 +282,6 @@ static void kmem_cache_node_init(struct kmem_cache_node *parent)
 
 #define CFLGS_OFF_SLAB		(0x80000000UL)
 #define	OFF_SLAB(x)	((x)->flags & CFLGS_OFF_SLAB)
-#define OFF_SLAB_MIN_SIZE (max_t(size_t, PAGE_SIZE >> 5, KMALLOC_MIN_SIZE + 1))
 
 #define BATCHREFILL_LIMIT	16
 /*
@@ -858,11 +857,6 @@ static inline void *____cache_alloc_node(struct kmem_cache *cachep,
 	return NULL;
 }
 
-static inline gfp_t gfp_exact_node(gfp_t flags)
-{
-	return flags;
-}
-
 #else	/* CONFIG_NUMA */
 
 static void *____cache_alloc_node(struct kmem_cache *, gfp_t, int);
@@ -1028,15 +1022,6 @@ static inline int cache_free_alien(struct kmem_cache *cachep, void *objp)
 		return 0;
 
 	return __cache_free_alien(cachep, objp, node, page_node);
-}
-
-/*
- * Construct gfp mask to allocate from a specific node but do not direct reclaim
- * or warn about failures. kswapd may still wake to reclaim in the background.
- */
-static inline gfp_t gfp_exact_node(gfp_t flags)
-{
-	return (flags | __GFP_THISNODE | __GFP_NOWARN) & ~__GFP_DIRECT_RECLAIM;
 }
 #endif
 
@@ -1455,7 +1440,6 @@ void __init kmem_cache_init(void)
 	kmalloc_caches[INDEX_NODE] = create_kmalloc_cache("kmalloc-node",
 				kmalloc_size(INDEX_NODE), ARCH_KMALLOC_FLAGS);
 	slab_state = PARTIAL_NODE;
-	setup_kmalloc_cache_index_table();
 
 	slab_early_init = 0;
 
@@ -1593,19 +1577,18 @@ static struct page *kmem_getpages(struct kmem_cache *cachep, gfp_t flags,
 	if (cachep->flags & SLAB_RECLAIM_ACCOUNT)
 		flags |= __GFP_RECLAIMABLE;
 
-	page = __alloc_pages_node(nodeid, flags | __GFP_NOTRACK, cachep->gfporder);
+	if (memcg_charge_slab(cachep, flags, cachep->gfporder))
+		return NULL;
+
+	page = alloc_pages_exact_node(nodeid, flags | __GFP_NOTRACK, cachep->gfporder);
 	if (!page) {
+		memcg_uncharge_slab(cachep, cachep->gfporder);
 		slab_out_of_memory(cachep, flags, nodeid);
 		return NULL;
 	}
 
-	if (memcg_charge_slab(page, flags, cachep->gfporder, cachep)) {
-		__free_pages(page, cachep->gfporder);
-		return NULL;
-	}
-
 	/* Record if ALLOC_NO_WATERMARKS was set when allocating the slab */
-	if (page_is_pfmemalloc(page))
+	if (unlikely(page->pfmemalloc))
 		pfmemalloc_active = true;
 
 	nr_pages = (1 << cachep->gfporder);
@@ -1616,7 +1599,7 @@ static struct page *kmem_getpages(struct kmem_cache *cachep, gfp_t flags,
 		add_zone_page_state(page_zone(page),
 			NR_SLAB_UNRECLAIMABLE, nr_pages);
 	__SetPageSlab(page);
-	if (page_is_pfmemalloc(page))
+	if (page->pfmemalloc)
 		SetPageSlabPfmemalloc(page);
 
 	if (kmemcheck_enabled && !(cachep->flags & SLAB_NOTRACK)) {
@@ -1655,7 +1638,8 @@ static void kmem_freepages(struct kmem_cache *cachep, struct page *page)
 
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += nr_freed;
-	__free_kmem_pages(page, cachep->gfporder);
+	__free_pages(page, cachep->gfporder);
+	memcg_uncharge_slab(cachep, cachep->gfporder);
 }
 
 static void kmem_rcu_free(struct rcu_head *head)
@@ -1889,10 +1873,21 @@ static void slab_destroy(struct kmem_cache *cachep, struct page *page)
 
 	freelist = page->freelist;
 	slab_destroy_debugcheck(cachep, page);
-	if (unlikely(cachep->flags & SLAB_DESTROY_BY_RCU))
-		call_rcu(&page->rcu_head, kmem_rcu_free);
-	else
+	if (unlikely(cachep->flags & SLAB_DESTROY_BY_RCU)) {
+		struct rcu_head *head;
+
+		/*
+		 * RCU free overloads the RCU head over the LRU.
+		 * slab_page has been overloeaded over the LRU,
+		 * however it is not used from now on so that
+		 * we can use it safely.
+		 */
+		head = (void *)&page->rcu_head;
+		call_rcu(head, kmem_rcu_free);
+
+	} else {
 		kmem_freepages(cachep, page);
+	}
 
 	/*
 	 * From now on, we don't use freelist
@@ -2202,7 +2197,7 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 	 * it too early on. Always use on-slab management when
 	 * SLAB_NOLEAKTRACE to avoid recursive calls into kmemleak)
 	 */
-	if (size >= OFF_SLAB_MIN_SIZE && !slab_early_init &&
+	if ((size >= (PAGE_SIZE >> 5)) && !slab_early_init &&
 	    !(flags & SLAB_NOLEAKTRACE))
 		/*
 		 * Size is large, assume best to place the slab management obj
@@ -2266,7 +2261,7 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 		/*
 		 * This is a possibility for one of the kmalloc_{dma,}_caches.
 		 * But since we go off slab only for object size greater than
-		 * OFF_SLAB_MIN_SIZE, and kmalloc_{dma,}_caches get created
+		 * PAGE_SIZE/8, and kmalloc_{dma,}_caches get created
 		 * in ascending order,this should not happen at all.
 		 * But leave a BUG_ON for some lucky dude.
 		 */
@@ -2394,7 +2389,7 @@ out:
 	return nr_freed;
 }
 
-int __kmem_cache_shrink(struct kmem_cache *cachep, bool deactivate)
+int __kmem_cache_shrink(struct kmem_cache *cachep)
 {
 	int ret = 0;
 	int node;
@@ -2416,7 +2411,7 @@ int __kmem_cache_shutdown(struct kmem_cache *cachep)
 {
 	int i;
 	struct kmem_cache_node *n;
-	int rc = __kmem_cache_shrink(cachep, false);
+	int rc = __kmem_cache_shrink(cachep);
 
 	if (rc)
 		return rc;
@@ -2602,10 +2597,7 @@ static int cache_grow(struct kmem_cache *cachep,
 	 * Be lazy and only check for valid flags here,  keeping it out of the
 	 * critical path in kmem_cache_alloc().
 	 */
-	if (unlikely(flags & GFP_SLAB_BUG_MASK)) {
-		pr_emerg("gfp: %u\n", flags & GFP_SLAB_BUG_MASK);
-		BUG();
-	}
+	BUG_ON(flags & GFP_SLAB_BUG_MASK);
 	local_flags = flags & (GFP_CONSTRAINT_MASK|GFP_RECLAIM_MASK);
 
 	/* Take the node list lock to change the colour_next on this node */
@@ -2622,7 +2614,7 @@ static int cache_grow(struct kmem_cache *cachep,
 
 	offset *= cachep->colour_off;
 
-	if (gfpflags_allow_blocking(local_flags))
+	if (local_flags & __GFP_WAIT)
 		local_irq_enable();
 
 	/*
@@ -2652,7 +2644,7 @@ static int cache_grow(struct kmem_cache *cachep,
 
 	cache_init_objs(cachep, page);
 
-	if (gfpflags_allow_blocking(local_flags))
+	if (local_flags & __GFP_WAIT)
 		local_irq_disable();
 	check_irq_off();
 	spin_lock(&n->list_lock);
@@ -2666,7 +2658,7 @@ static int cache_grow(struct kmem_cache *cachep,
 opps1:
 	kmem_freepages(cachep, page);
 failed:
-	if (gfpflags_allow_blocking(local_flags))
+	if (local_flags & __GFP_WAIT)
 		local_irq_disable();
 	return 0;
 }
@@ -2837,7 +2829,7 @@ alloc_done:
 	if (unlikely(!ac->avail)) {
 		int x;
 force_grow:
-		x = cache_grow(cachep, gfp_exact_node(flags), node, NULL);
+		x = cache_grow(cachep, flags | GFP_THISNODE, node, NULL);
 
 		/* cache_grow can reenable interrupts, then ac could change. */
 		ac = cpu_cache_get(cachep);
@@ -2858,7 +2850,7 @@ force_grow:
 static inline void cache_alloc_debugcheck_before(struct kmem_cache *cachep,
 						gfp_t flags)
 {
-	might_sleep_if(gfpflags_allow_blocking(flags));
+	might_sleep_if(flags & __GFP_WAIT);
 #if DEBUG
 	kmem_flagcheck(cachep, flags);
 #endif
@@ -3027,11 +3019,11 @@ retry:
 	for_each_zone_zonelist(zone, z, zonelist, high_zoneidx) {
 		nid = zone_to_nid(zone);
 
-		if (cpuset_zone_allowed(zone, flags) &&
+		if (cpuset_zone_allowed_hardwall(zone, flags) &&
 			get_node(cache, nid) &&
 			get_node(cache, nid)->free_objects) {
 				obj = ____cache_alloc_node(cache,
-					gfp_exact_node(flags), nid);
+					flags | GFP_THISNODE, nid);
 				if (obj)
 					break;
 		}
@@ -3046,11 +3038,11 @@ retry:
 		 */
 		struct page *page;
 
-		if (gfpflags_allow_blocking(local_flags))
+		if (local_flags & __GFP_WAIT)
 			local_irq_enable();
 		kmem_flagcheck(cache, flags);
 		page = kmem_getpages(cache, local_flags, numa_mem_id());
-		if (gfpflags_allow_blocking(local_flags))
+		if (local_flags & __GFP_WAIT)
 			local_irq_disable();
 		if (page) {
 			/*
@@ -3059,7 +3051,7 @@ retry:
 			nid = page_to_nid(page);
 			if (cache_grow(cache, flags, nid, page)) {
 				obj = ____cache_alloc_node(cache,
-					gfp_exact_node(flags), nid);
+					flags | GFP_THISNODE, nid);
 				if (!obj)
 					/*
 					 * Another processor may allocate the
@@ -3130,7 +3122,7 @@ retry:
 
 must_grow:
 	spin_unlock(&n->list_lock);
-	x = cache_grow(cachep, gfp_exact_node(flags), nodeid, NULL);
+	x = cache_grow(cachep, flags | GFP_THISNODE, nodeid, NULL);
 	if (x)
 		goto retry;
 
@@ -3194,7 +3186,6 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 			memset(ptr, 0, cachep->object_size);
 	}
 
-	memcg_kmem_put_cache(cachep);
 	return ptr;
 }
 
@@ -3260,7 +3251,6 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 			memset(objp, 0, cachep->object_size);
 	}
 
-	memcg_kmem_put_cache(cachep);
 	return objp;
 }
 
@@ -3412,19 +3402,6 @@ void *kmem_cache_alloc(struct kmem_cache *cachep, gfp_t flags)
 	return ret;
 }
 EXPORT_SYMBOL(kmem_cache_alloc);
-
-void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
-{
-	__kmem_cache_free_bulk(s, size, p);
-}
-EXPORT_SYMBOL(kmem_cache_free_bulk);
-
-int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
-								void **p)
-{
-	return __kmem_cache_alloc_bulk(s, flags, size, p);
-}
-EXPORT_SYMBOL(kmem_cache_alloc_bulk);
 
 #ifdef CONFIG_TRACING
 void *
@@ -3610,11 +3587,11 @@ static int alloc_kmem_cache_node(struct kmem_cache *cachep, gfp_t gfp)
 
 	for_each_online_node(node) {
 
-		if (use_alien_caches) {
-			new_alien = alloc_alien_cache(node, cachep->limit, gfp);
-			if (!new_alien)
-				goto fail;
-		}
+                if (use_alien_caches) {
+                        new_alien = alloc_alien_cache(node, cachep->limit, gfp);
+                        if (!new_alien)
+                                goto fail;
+                }
 
 		new_shared = NULL;
 		if (cachep->shared) {
@@ -3733,7 +3710,8 @@ static int do_tune_cpucache(struct kmem_cache *cachep, int limit,
 				int batchcount, int shared, gfp_t gfp)
 {
 	int ret;
-	struct kmem_cache *c;
+	struct kmem_cache *c = NULL;
+	int i = 0;
 
 	ret = __do_tune_cpucache(cachep, limit, batchcount, shared, gfp);
 
@@ -3743,10 +3721,12 @@ static int do_tune_cpucache(struct kmem_cache *cachep, int limit,
 	if ((ret < 0) || !is_root_cache(cachep))
 		return ret;
 
-	lockdep_assert_held(&slab_mutex);
-	for_each_memcg_cache(c, cachep) {
-		/* return value determined by the root cache only */
-		__do_tune_cpucache(c, limit, batchcount, shared, gfp);
+	VM_BUG_ON(!mutex_is_locked(&slab_mutex));
+	for_each_memcg_cache_index(i) {
+		c = cache_from_memcg_idx(cachep, i);
+		if (c)
+			/* return value determined by the parent cache only */
+			__do_tune_cpucache(c, limit, batchcount, shared, gfp);
 	}
 
 	return ret;
@@ -4070,6 +4050,12 @@ ssize_t slabinfo_write(struct file *file, const char __user *buffer,
 
 #ifdef CONFIG_DEBUG_SLAB_LEAK
 
+static void *leaks_start(struct seq_file *m, loff_t *pos)
+{
+	mutex_lock(&slab_mutex);
+	return seq_list_start(&slab_caches, *pos);
+}
+
 static inline int add_caller(unsigned long *n, unsigned long v)
 {
 	unsigned long *p;
@@ -4191,7 +4177,7 @@ static int leaks_show(struct seq_file *m, void *p)
 }
 
 static const struct seq_operations slabstats_op = {
-	.start = slab_start,
+	.start = leaks_start,
 	.next = slab_next,
 	.stop = slab_stop,
 	.show = leaks_show,

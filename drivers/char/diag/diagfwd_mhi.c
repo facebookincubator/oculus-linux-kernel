@@ -49,7 +49,6 @@ struct diag_mhi_info diag_mhi[NUM_MHI_DEV] = {
 		.enabled = 0,
 		.num_read = 0,
 		.mempool = POOL_TYPE_MDM,
-		.mempool_init = 0,
 		.mhi_wq = NULL,
 		.read_ch = {
 			.chan = MHI_CLIENT_DIAG_IN,
@@ -69,7 +68,6 @@ struct diag_mhi_info diag_mhi[NUM_MHI_DEV] = {
 		.enabled = 0,
 		.num_read = 0,
 		.mempool = POOL_TYPE_MDM_DCI,
-		.mempool_init = 0,
 		.mhi_wq = NULL,
 		.read_ch = {
 			.chan = MHI_CLIENT_DCI_IN,
@@ -406,11 +404,8 @@ static void mhi_read_done_work_fn(struct work_struct *work)
 		 * buffers here and do not forward them to the mux layer.
 		 */
 		if ((atomic_read(&(mhi_info->read_ch.opened)))) {
-			err = diag_remote_dev_read_done(mhi_info->dev_id, buf,
+			diag_remote_dev_read_done(mhi_info->dev_id, buf,
 						  result.bytes_xferd);
-			if (err)
-				mhi_buf_tbl_remove(mhi_info, TYPE_MHI_READ_CH,
-					buf, result.bytes_xferd);
 		} else {
 			mhi_buf_tbl_remove(mhi_info, TYPE_MHI_READ_CH, buf,
 					   result.bytes_xferd);
@@ -686,7 +681,6 @@ int diag_mhi_init()
 		strlcpy(wq_name, "diag_mhi_", DIAG_MHI_STRING_SZ);
 		strlcat(wq_name, mhi_info->name, sizeof(mhi_info->name));
 		diagmem_init(driver, mhi_info->mempool);
-		mhi_info->mempool_init = 1;
 		mhi_info->mhi_wq = create_singlethread_workqueue(wq_name);
 		if (!mhi_info->mhi_wq)
 			goto fail;
@@ -728,8 +722,7 @@ void diag_mhi_exit()
 		if (mhi_info->mhi_wq)
 			destroy_workqueue(mhi_info->mhi_wq);
 		mhi_close(mhi_info->id);
-		if (mhi_info->mempool_init)
-			diagmem_exit(driver, mhi_info->mempool);
+		diagmem_exit(driver, mhi_info->mempool);
 	}
 }
 

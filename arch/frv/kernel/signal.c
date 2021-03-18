@@ -62,7 +62,7 @@ static int restore_sigcontext(struct sigcontext __user *sc, int *_gr8)
 	unsigned long tbr, psr;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current->restart_block.fn = do_no_restart_syscall;
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
 
 	tbr = user->i.tbr;
 	psr = user->i.psr;
@@ -174,14 +174,22 @@ static inline void __user *get_sigframe(struct ksignal *ksig,
 static int setup_frame(struct ksignal *ksig, sigset_t *set)
 {
 	struct sigframe __user *frame;
-	int sig = ksig->sig;
+	int rsig, sig = ksig->sig;
+
+	set_fs(USER_DS);
 
 	frame = get_sigframe(ksig, sizeof(*frame));
 
 	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
 		return -EFAULT;
 
-	if (__put_user(sig, &frame->sig) < 0)
+	rsig = sig;
+	if (sig < 32 &&
+	    __current_thread_info->exec_domain &&
+	    __current_thread_info->exec_domain->signal_invmap)
+		rsig = __current_thread_info->exec_domain->signal_invmap[sig];
+
+	if (__put_user(rsig, &frame->sig) < 0)
 		return -EFAULT;
 
 	if (setup_sigcontext(&frame->sc, set->sig[0]))
@@ -247,14 +255,22 @@ static int setup_frame(struct ksignal *ksig, sigset_t *set)
 static int setup_rt_frame(struct ksignal *ksig, sigset_t *set)
 {
 	struct rt_sigframe __user *frame;
-	int sig = ksig->sig;
+	int rsig, sig = ksig->sig;
+
+	set_fs(USER_DS);
 
 	frame = get_sigframe(ksig, sizeof(*frame));
 
 	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
 		return -EFAULT;
 
-	if (__put_user(sig,		&frame->sig) ||
+	rsig = sig;
+	if (sig < 32 &&
+	    __current_thread_info->exec_domain &&
+	    __current_thread_info->exec_domain->signal_invmap)
+		rsig = __current_thread_info->exec_domain->signal_invmap[sig];
+
+	if (__put_user(rsig,		&frame->sig) ||
 	    __put_user(&frame->info,	&frame->pinfo) ||
 	    __put_user(&frame->uc,	&frame->puc))
 		return -EFAULT;

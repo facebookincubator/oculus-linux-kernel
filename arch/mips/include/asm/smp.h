@@ -23,7 +23,6 @@
 extern int smp_num_siblings;
 extern cpumask_t cpu_sibling_map[];
 extern cpumask_t cpu_core_map[];
-extern cpumask_t cpu_foreign_map;
 
 #define raw_smp_processor_id() (current_thread_info()->cpu)
 
@@ -46,7 +45,7 @@ extern int __cpu_logical_map[NR_CPUS];
 #define SMP_DUMP		0x8
 #define SMP_ASK_C0COUNT		0x10
 
-extern cpumask_t cpu_callin_map;
+extern volatile cpumask_t cpu_callin_map;
 
 /* Mask of CPUs which are currently definitely operating coherently */
 extern cpumask_t cpu_coherent_mask;
@@ -83,11 +82,13 @@ static inline void __cpu_die(unsigned int cpu)
 extern void play_dead(void);
 #endif
 
+extern asmlinkage void smp_call_function_interrupt(void);
+
 static inline void arch_send_call_function_single_ipi(int cpu)
 {
 	extern struct plat_smp_ops *mp_ops;	/* private */
 
-	mp_ops->send_ipi_mask(cpumask_of(cpu), SMP_CALL_FUNCTION);
+	mp_ops->send_ipi_mask(&cpumask_of_cpu(cpu), SMP_CALL_FUNCTION);
 }
 
 static inline void arch_send_call_function_ipi_mask(const struct cpumask *mask)

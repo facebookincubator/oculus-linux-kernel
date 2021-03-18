@@ -90,10 +90,8 @@ extern void yyerror(const char *str);
 "#"?("hatype")	{ return K_HATYPE; }
 "#"?("rxhash")	{ return K_RXHASH; }
 "#"?("cpu")	{ return K_CPU; }
-"#"?("vlan_tci")	{ return K_VLAN_TCI; }
-"#"?("vlan_pr")		{ return K_VLAN_AVAIL; }
-"#"?("vlan_avail")	{ return K_VLAN_AVAIL; }
-"#"?("vlan_tpid")	{ return K_VLAN_TPID; }
+"#"?("vlan_tci") { return K_VLANT; }
+"#"?("vlan_pr")	{ return K_VLANP; }
 "#"?("rand")	{ return K_RAND; }
 
 ":"		{ return ':'; }

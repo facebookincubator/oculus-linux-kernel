@@ -244,7 +244,7 @@ static inline void check_daddi(void)
 	panic(bug64hit, !DADDI_WAR ? daddiwar : nowar);
 }
 
-int daddiu_bug	= config_enabled(CONFIG_CPU_MIPSR6) ? 0 : -1;
+int daddiu_bug	= -1;
 
 static inline void check_daddiu(void)
 {
@@ -314,14 +314,11 @@ static inline void check_daddiu(void)
 
 void __init check_bugs64_early(void)
 {
-	if (!config_enabled(CONFIG_CPU_MIPSR6)) {
-		check_mult_sh();
-		check_daddiu();
-	}
+	check_mult_sh();
+	check_daddiu();
 }
 
 void __init check_bugs64(void)
 {
-	if (!config_enabled(CONFIG_CPU_MIPSR6))
-		check_daddi();
+	check_daddi();
 }

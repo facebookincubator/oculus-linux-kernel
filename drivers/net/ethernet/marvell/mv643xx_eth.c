@@ -192,10 +192,6 @@ static char mv643xx_eth_driver_version[] = "1.4";
 #define IS_TSO_HEADER(txq, addr) \
 	((addr >= txq->tso_hdrs_dma) && \
 	 (addr < txq->tso_hdrs_dma + txq->tx_ring_size * TSO_HEADER_SIZE))
-
-#define DESC_DMA_MAP_SINGLE 0
-#define DESC_DMA_MAP_PAGE 1
-
 /*
  * RX/TX descriptors.
  */
@@ -366,7 +362,6 @@ struct tx_queue {
 	dma_addr_t tso_hdrs_dma;
 
 	struct tx_desc *tx_desc_area;
-	char *tx_desc_mapping; /* array to track the type of the dma mapping */
 	dma_addr_t tx_desc_dma;
 	int tx_desc_area_size;
 
@@ -755,27 +750,14 @@ txq_put_data_tso(struct net_device *dev, struct tx_queue *txq,
 	if (txq->tx_curr_desc == txq->tx_ring_size)
 		txq->tx_curr_desc = 0;
 	desc = &txq->tx_desc_area[tx_index];
-	txq->tx_desc_mapping[tx_index] = DESC_DMA_MAP_SINGLE;
 
 	desc->l4i_chk = 0;
 	desc->byte_cnt = length;
-
-	if (length <= 8 && (uintptr_t)data & 0x7) {
-		/* Copy unaligned small data fragment to TSO header data area */
-		memcpy(txq->tso_hdrs + txq->tx_curr_desc * TSO_HEADER_SIZE,
-		       data, length);
-		desc->buf_ptr = txq->tso_hdrs_dma
-			+ txq->tx_curr_desc * TSO_HEADER_SIZE;
-	} else {
-		/* Alignment is okay, map buffer and hand off to hardware */
-		txq->tx_desc_mapping[tx_index] = DESC_DMA_MAP_SINGLE;
-		desc->buf_ptr = dma_map_single(dev->dev.parent, data,
-			length, DMA_TO_DEVICE);
-		if (unlikely(dma_mapping_error(dev->dev.parent,
-					       desc->buf_ptr))) {
-			WARN(1, "dma_map_single failed!\n");
-			return -ENOMEM;
-		}
+	desc->buf_ptr = dma_map_single(dev->dev.parent, data,
+				       length, DMA_TO_DEVICE);
+	if (unlikely(dma_mapping_error(dev->dev.parent, desc->buf_ptr))) {
+		WARN(1, "dma_map_single failed!\n");
+		return -ENOMEM;
 	}
 
 	cmd_sts = BUFFER_OWNED_BY_DMA;
@@ -791,8 +773,7 @@ txq_put_data_tso(struct net_device *dev, struct tx_queue *txq,
 }
 
 static inline void
-txq_put_hdr_tso(struct sk_buff *skb, struct tx_queue *txq, int length,
-		u32 *first_cmd_sts, bool first_desc)
+txq_put_hdr_tso(struct sk_buff *skb, struct tx_queue *txq, int length)
 {
 	struct mv643xx_eth_private *mp = txq_to_mp(txq);
 	int hdr_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
@@ -801,7 +782,6 @@ txq_put_hdr_tso(struct sk_buff *skb, struct tx_queue *txq, int length,
 	int ret;
 	u32 cmd_csum = 0;
 	u16 l4i_chk = 0;
-	u32 cmd_sts;
 
 	tx_index = txq->tx_curr_desc;
 	desc = &txq->tx_desc_area[tx_index];
@@ -817,16 +797,8 @@ txq_put_hdr_tso(struct sk_buff *skb, struct tx_queue *txq, int length,
 	desc->byte_cnt = hdr_len;
 	desc->buf_ptr = txq->tso_hdrs_dma +
 			txq->tx_curr_desc * TSO_HEADER_SIZE;
-	cmd_sts = cmd_csum | BUFFER_OWNED_BY_DMA  | TX_FIRST_DESC |
+	desc->cmd_sts = cmd_csum | BUFFER_OWNED_BY_DMA  | TX_FIRST_DESC |
 				   GEN_CRC;
-
-	/* Defer updating the first command descriptor until all
-	 * following descriptors have been written.
-	 */
-	if (first_desc)
-		*first_cmd_sts = cmd_sts;
-	else
-		desc->cmd_sts = cmd_sts;
 
 	txq->tx_curr_desc++;
 	if (txq->tx_curr_desc == txq->tx_ring_size)
@@ -841,8 +813,6 @@ static int txq_submit_tso(struct tx_queue *txq, struct sk_buff *skb,
 	int desc_count = 0;
 	struct tso_t tso;
 	int hdr_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
-	struct tx_desc *first_tx_desc;
-	u32 first_cmd_sts = 0;
 
 	/* Count needed descriptors */
 	if ((txq->tx_desc_count + tso_count_descs(skb)) >= txq->tx_ring_size) {
@@ -850,14 +820,11 @@ static int txq_submit_tso(struct tx_queue *txq, struct sk_buff *skb,
 		return -EBUSY;
 	}
 
-	first_tx_desc = &txq->tx_desc_area[txq->tx_curr_desc];
-
 	/* Initialize the TSO handler, and prepare the first payload */
 	tso_start(skb, &tso);
 
 	total_len = skb->len - hdr_len;
 	while (total_len > 0) {
-		bool first_desc = (desc_count == 0);
 		char *hdr;
 
 		data_left = min_t(int, skb_shinfo(skb)->gso_size, total_len);
@@ -867,8 +834,7 @@ static int txq_submit_tso(struct tx_queue *txq, struct sk_buff *skb,
 		/* prepare packet headers: MAC + IP + TCP */
 		hdr = txq->tso_hdrs + txq->tx_curr_desc * TSO_HEADER_SIZE;
 		tso_build_hdr(skb, hdr, &tso, data_left, total_len == 0);
-		txq_put_hdr_tso(skb, txq, data_left, &first_cmd_sts,
-				first_desc);
+		txq_put_hdr_tso(skb, txq, data_left);
 
 		while (data_left > 0) {
 			int size;
@@ -887,10 +853,6 @@ static int txq_submit_tso(struct tx_queue *txq, struct sk_buff *skb,
 
 	__skb_queue_tail(&txq->tx_skb, skb);
 	skb_tx_timestamp(skb);
-
-	/* ensure all other descriptors are written before first cmd_sts */
-	wmb();
-	first_tx_desc->cmd_sts = first_cmd_sts;
 
 	/* clear TX_END status */
 	mp->work_tx_end &= ~(1 << txq->index);
@@ -917,13 +879,14 @@ static void txq_submit_frag_skb(struct tx_queue *txq, struct sk_buff *skb)
 		skb_frag_t *this_frag;
 		int tx_index;
 		struct tx_desc *desc;
+		void *addr;
 
 		this_frag = &skb_shinfo(skb)->frags[frag];
+		addr = page_address(this_frag->page.p) + this_frag->page_offset;
 		tx_index = txq->tx_curr_desc++;
 		if (txq->tx_curr_desc == txq->tx_ring_size)
 			txq->tx_curr_desc = 0;
 		desc = &txq->tx_desc_area[tx_index];
-		txq->tx_desc_mapping[tx_index] = DESC_DMA_MAP_PAGE;
 
 		/*
 		 * The last fragment will generate an interrupt
@@ -939,9 +902,8 @@ static void txq_submit_frag_skb(struct tx_queue *txq, struct sk_buff *skb)
 
 		desc->l4i_chk = 0;
 		desc->byte_cnt = skb_frag_size(this_frag);
-		desc->buf_ptr = skb_frag_dma_map(mp->dev->dev.parent,
-						 this_frag, 0, desc->byte_cnt,
-						 DMA_TO_DEVICE);
+		desc->buf_ptr = dma_map_single(mp->dev->dev.parent, addr,
+					       desc->byte_cnt, DMA_TO_DEVICE);
 	}
 }
 
@@ -974,7 +936,6 @@ static int txq_submit_skb(struct tx_queue *txq, struct sk_buff *skb,
 	if (txq->tx_curr_desc == txq->tx_ring_size)
 		txq->tx_curr_desc = 0;
 	desc = &txq->tx_desc_area[tx_index];
-	txq->tx_desc_mapping[tx_index] = DESC_DMA_MAP_SINGLE;
 
 	if (nr_frags) {
 		txq_submit_frag_skb(txq, skb);
@@ -1086,12 +1047,9 @@ static int txq_reclaim(struct tx_queue *txq, int budget, int force)
 		int tx_index;
 		struct tx_desc *desc;
 		u32 cmd_sts;
-		char desc_dma_map;
 
 		tx_index = txq->tx_used_desc;
 		desc = &txq->tx_desc_area[tx_index];
-		desc_dma_map = txq->tx_desc_mapping[tx_index];
-
 		cmd_sts = desc->cmd_sts;
 
 		if (cmd_sts & BUFFER_OWNED_BY_DMA) {
@@ -1107,19 +1065,9 @@ static int txq_reclaim(struct tx_queue *txq, int budget, int force)
 		reclaimed++;
 		txq->tx_desc_count--;
 
-		if (!IS_TSO_HEADER(txq, desc->buf_ptr)) {
-
-			if (desc_dma_map == DESC_DMA_MAP_PAGE)
-				dma_unmap_page(mp->dev->dev.parent,
-					       desc->buf_ptr,
-					       desc->byte_cnt,
-					       DMA_TO_DEVICE);
-			else
-				dma_unmap_single(mp->dev->dev.parent,
-						 desc->buf_ptr,
-						 desc->byte_cnt,
-						 DMA_TO_DEVICE);
-		}
+		if (!IS_TSO_HEADER(txq, desc->buf_ptr))
+			dma_unmap_single(mp->dev->dev.parent, desc->buf_ptr,
+					 desc->byte_cnt, DMA_TO_DEVICE);
 
 		if (cmd_sts & TX_ENABLE_INTERRUPT) {
 			struct sk_buff *skb = __skb_dequeue(&txq->tx_skb);
@@ -1618,6 +1566,7 @@ static void mv643xx_eth_get_drvinfo(struct net_device *dev,
 		sizeof(drvinfo->version));
 	strlcpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
 	strlcpy(drvinfo->bus_info, "platform", sizeof(drvinfo->bus_info));
+	drvinfo->n_stats = ARRAY_SIZE(mv643xx_eth_stats);
 }
 
 static int mv643xx_eth_nway_reset(struct net_device *dev)
@@ -1876,19 +1825,32 @@ static void mv643xx_eth_program_multicast_filter(struct net_device *dev)
 	struct netdev_hw_addr *ha;
 	int i;
 
-	if (dev->flags & (IFF_PROMISC | IFF_ALLMULTI))
-		goto promiscuous;
+	if (dev->flags & (IFF_PROMISC | IFF_ALLMULTI)) {
+		int port_num;
+		u32 accept;
 
-	/* Allocate both mc_spec and mc_other tables */
-	mc_spec = kcalloc(128, sizeof(u32), GFP_ATOMIC);
-	if (!mc_spec)
-		goto promiscuous;
-	mc_other = &mc_spec[64];
+oom:
+		port_num = mp->port_num;
+		accept = 0x01010101;
+		for (i = 0; i < 0x100; i += 4) {
+			wrl(mp, SPECIAL_MCAST_TABLE(port_num) + i, accept);
+			wrl(mp, OTHER_MCAST_TABLE(port_num) + i, accept);
+		}
+		return;
+	}
+
+	mc_spec = kmalloc(0x200, GFP_ATOMIC);
+	if (mc_spec == NULL)
+		goto oom;
+	mc_other = mc_spec + (0x100 >> 2);
+
+	memset(mc_spec, 0, 0x100);
+	memset(mc_other, 0, 0x100);
 
 	netdev_for_each_mc_addr(ha, dev) {
 		u8 *a = ha->addr;
 		u32 *table;
-		u8 entry;
+		int entry;
 
 		if (memcmp(a, "\x01\x00\x5e\x00\x00", 5) == 0) {
 			table = mc_spec;
@@ -1901,23 +1863,12 @@ static void mv643xx_eth_program_multicast_filter(struct net_device *dev)
 		table[entry >> 2] |= 1 << (8 * (entry & 3));
 	}
 
-	for (i = 0; i < 64; i++) {
-		wrl(mp, SPECIAL_MCAST_TABLE(mp->port_num) + i * sizeof(u32),
-		    mc_spec[i]);
-		wrl(mp, OTHER_MCAST_TABLE(mp->port_num) + i * sizeof(u32),
-		    mc_other[i]);
+	for (i = 0; i < 0x100; i += 4) {
+		wrl(mp, SPECIAL_MCAST_TABLE(mp->port_num) + i, mc_spec[i >> 2]);
+		wrl(mp, OTHER_MCAST_TABLE(mp->port_num) + i, mc_other[i >> 2]);
 	}
 
 	kfree(mc_spec);
-	return;
-
-promiscuous:
-	for (i = 0; i < 64; i++) {
-		wrl(mp, SPECIAL_MCAST_TABLE(mp->port_num) + i * sizeof(u32),
-		    0x01010101u);
-		wrl(mp, OTHER_MCAST_TABLE(mp->port_num) + i * sizeof(u32),
-		    0x01010101u);
-	}
 }
 
 static void mv643xx_eth_set_rx_mode(struct net_device *dev)
@@ -2045,7 +1996,6 @@ static int txq_init(struct mv643xx_eth_private *mp, int index)
 	struct tx_queue *txq = mp->txq + index;
 	struct tx_desc *tx_desc;
 	int size;
-	int ret;
 	int i;
 
 	txq->index = index;
@@ -2098,34 +2048,18 @@ static int txq_init(struct mv643xx_eth_private *mp, int index)
 					nexti * sizeof(struct tx_desc);
 	}
 
-	txq->tx_desc_mapping = kcalloc(txq->tx_ring_size, sizeof(char),
-				       GFP_KERNEL);
-	if (!txq->tx_desc_mapping) {
-		ret = -ENOMEM;
-		goto err_free_desc_area;
-	}
-
 	/* Allocate DMA buffers for TSO MAC/IP/TCP headers */
 	txq->tso_hdrs = dma_alloc_coherent(mp->dev->dev.parent,
 					   txq->tx_ring_size * TSO_HEADER_SIZE,
 					   &txq->tso_hdrs_dma, GFP_KERNEL);
 	if (txq->tso_hdrs == NULL) {
-		ret = -ENOMEM;
-		goto err_free_desc_mapping;
+		dma_free_coherent(mp->dev->dev.parent, txq->tx_desc_area_size,
+				  txq->tx_desc_area, txq->tx_desc_dma);
+		return -ENOMEM;
 	}
 	skb_queue_head_init(&txq->tx_skb);
 
 	return 0;
-
-err_free_desc_mapping:
-	kfree(txq->tx_desc_mapping);
-err_free_desc_area:
-	if (index == 0 && size <= mp->tx_desc_sram_size)
-		iounmap(txq->tx_desc_area);
-	else
-		dma_free_coherent(mp->dev->dev.parent, txq->tx_desc_area_size,
-				  txq->tx_desc_area, txq->tx_desc_dma);
-	return ret;
 }
 
 static void txq_deinit(struct tx_queue *txq)
@@ -2143,8 +2077,6 @@ static void txq_deinit(struct tx_queue *txq)
 	else
 		dma_free_coherent(mp->dev->dev.parent, txq->tx_desc_area_size,
 				  txq->tx_desc_area, txq->tx_desc_dma);
-	kfree(txq->tx_desc_mapping);
-
 	if (txq->tso_hdrs)
 		dma_free_coherent(mp->dev->dev.parent,
 				  txq->tx_ring_size * TSO_HEADER_SIZE,
@@ -2817,10 +2749,8 @@ static int mv643xx_eth_shared_of_probe(struct platform_device *pdev)
 
 	for_each_available_child_of_node(np, pnp) {
 		ret = mv643xx_eth_shared_of_add_port(pdev, pnp);
-		if (ret) {
-			of_node_put(pnp);
+		if (ret)
 			return ret;
-		}
 	}
 	return 0;
 }
@@ -2909,6 +2839,7 @@ static struct platform_driver mv643xx_eth_shared_driver = {
 	.remove		= mv643xx_eth_shared_remove,
 	.driver = {
 		.name	= MV643XX_ETH_SHARED_NAME,
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(mv643xx_eth_shared_ids),
 	},
 };
@@ -3156,8 +3087,9 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 
 	mib_counters_clear(mp);
 
-	setup_timer(&mp->mib_counters_timer, mib_counters_timer_wrapper,
-		    (unsigned long)mp);
+	init_timer(&mp->mib_counters_timer);
+	mp->mib_counters_timer.data = (unsigned long)mp;
+	mp->mib_counters_timer.function = mib_counters_timer_wrapper;
 	mp->mib_counters_timer.expires = jiffies + 30 * HZ;
 
 	spin_lock_init(&mp->mib_counters_lock);
@@ -3166,7 +3098,9 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 
 	netif_napi_add(dev, &mp->napi, mv643xx_eth_poll, NAPI_POLL_WEIGHT);
 
-	setup_timer(&mp->rx_oom, oom_timer_wrapper, (unsigned long)mp);
+	init_timer(&mp->rx_oom);
+	mp->rx_oom.data = (unsigned long)mp;
+	mp->rx_oom.function = oom_timer_wrapper;
 
 
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
@@ -3254,6 +3188,7 @@ static struct platform_driver mv643xx_eth_driver = {
 	.shutdown	= mv643xx_eth_shutdown,
 	.driver = {
 		.name	= MV643XX_ETH_NAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

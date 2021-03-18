@@ -729,9 +729,9 @@ void gfs2_clear_rgrpd(struct gfs2_sbd *sdp)
 		rb_erase(n, &sdp->sd_rindex_tree);
 
 		if (gl) {
-			spin_lock(&gl->gl_lockref.lock);
+			spin_lock(&gl->gl_spin);
 			gl->gl_object = NULL;
-			spin_unlock(&gl->gl_lockref.lock);
+			spin_unlock(&gl->gl_spin);
 			gfs2_glock_add_to_lru(gl);
 			gfs2_glock_put(gl);
 		}
@@ -933,11 +933,10 @@ static int read_rindex_entry(struct gfs2_inode *ip)
 		goto fail;
 
 	rgd->rd_gl->gl_object = rgd;
-	rgd->rd_gl->gl_vm.start = (rgd->rd_addr * bsize) & PAGE_CACHE_MASK;
-	rgd->rd_gl->gl_vm.end = PAGE_CACHE_ALIGN((rgd->rd_addr +
-						  rgd->rd_length) * bsize) - 1;
+	rgd->rd_gl->gl_vm.start = rgd->rd_addr * bsize;
+	rgd->rd_gl->gl_vm.end = rgd->rd_gl->gl_vm.start + (rgd->rd_length * bsize) - 1;
 	rgd->rd_rgl = (struct gfs2_rgrp_lvb *)rgd->rd_gl->gl_lksb.sb_lvbptr;
-	rgd->rd_flags &= ~(GFS2_RDF_UPTODATE | GFS2_RDF_PREFERRED);
+	rgd->rd_flags &= ~GFS2_RDF_UPTODATE;
 	if (rgd->rd_data > sdp->sd_max_rg_data)
 		sdp->sd_max_rg_data = rgd->rd_data;
 	spin_lock(&sdp->sd_rindex_spin);
@@ -953,36 +952,6 @@ fail:
 	kfree(rgd->rd_bits);
 	kmem_cache_free(gfs2_rgrpd_cachep, rgd);
 	return error;
-}
-
-/**
- * set_rgrp_preferences - Run all the rgrps, selecting some we prefer to use
- * @sdp: the GFS2 superblock
- *
- * The purpose of this function is to select a subset of the resource groups
- * and mark them as PREFERRED. We do it in such a way that each node prefers
- * to use a unique set of rgrps to minimize glock contention.
- */
-static void set_rgrp_preferences(struct gfs2_sbd *sdp)
-{
-	struct gfs2_rgrpd *rgd, *first;
-	int i;
-
-	/* Skip an initial number of rgrps, based on this node's journal ID.
-	   That should start each node out on its own set. */
-	rgd = gfs2_rgrpd_get_first(sdp);
-	for (i = 0; i < sdp->sd_lockstruct.ls_jid; i++)
-		rgd = gfs2_rgrpd_get_next(rgd);
-	first = rgd;
-
-	do {
-		rgd->rd_flags |= GFS2_RDF_PREFERRED;
-		for (i = 0; i < sdp->sd_journals; i++) {
-			rgd = gfs2_rgrpd_get_next(rgd);
-			if (!rgd || rgd == first)
-				break;
-		}
-	} while (rgd && rgd != first);
 }
 
 /**
@@ -1003,8 +972,6 @@ static int gfs2_ri_update(struct gfs2_inode *ip)
 
 	if (error < 0)
 		return error;
-
-	set_rgrp_preferences(sdp);
 
 	sdp->sd_rindex_uptodate = 1;
 	return 0;
@@ -1245,13 +1212,14 @@ int gfs2_rgrp_go_lock(struct gfs2_holder *gh)
 }
 
 /**
- * gfs2_rgrp_brelse - Release RG bitmaps read in with gfs2_rgrp_bh_get()
- * @rgd: The resource group
+ * gfs2_rgrp_go_unlock - Release RG bitmaps read in with gfs2_rgrp_bh_get()
+ * @gh: The glock holder for the resource group
  *
  */
 
-void gfs2_rgrp_brelse(struct gfs2_rgrpd *rgd)
+void gfs2_rgrp_go_unlock(struct gfs2_holder *gh)
 {
+	struct gfs2_rgrpd *rgd = gh->gh_gl->gl_object;
 	int x, length = rgd->rd_length;
 
 	for (x = 0; x < length; x++) {
@@ -1262,22 +1230,6 @@ void gfs2_rgrp_brelse(struct gfs2_rgrpd *rgd)
 		}
 	}
 
-}
-
-/**
- * gfs2_rgrp_go_unlock - Unlock a rgrp glock
- * @gh: The glock holder for the resource group
- *
- */
-
-void gfs2_rgrp_go_unlock(struct gfs2_holder *gh)
-{
-	struct gfs2_rgrpd *rgd = gh->gh_gl->gl_object;
-	int demote_requested = test_bit(GLF_DEMOTE, &gh->gh_gl->gl_flags) |
-		test_bit(GLF_PENDING_DEMOTE, &gh->gh_gl->gl_flags);
-
-	if (rgd && demote_requested)
-		gfs2_rgrp_brelse(rgd);
 }
 
 int gfs2_rgrp_send_discards(struct gfs2_sbd *sdp, u64 offset,
@@ -1727,8 +1679,10 @@ static int gfs2_rbm_find(struct gfs2_rbm *rbm, u8 state, u32 *minext,
 		return ret;
 
 bitmap_full:	/* Mark bitmap as full and fall through */
-		if ((state == GFS2_BLKST_FREE) && initial_offset == 0)
+		if ((state == GFS2_BLKST_FREE) && initial_offset == 0) {
+			struct gfs2_bitmap *bi = rbm_bi(rbm);
 			set_bit(GBF_FULL, &bi->bi_flags);
+		}
 
 next_bitmap:	/* Find next bitmap in the rgrp */
 		rbm->offset = 0;
@@ -1861,26 +1815,17 @@ static void try_rgrp_unlink(struct gfs2_rgrpd *rgd, u64 *last_unlinked, u64 skip
 static bool gfs2_rgrp_congested(const struct gfs2_rgrpd *rgd, int loops)
 {
 	const struct gfs2_glock *gl = rgd->rd_gl;
-	const struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
+	const struct gfs2_sbd *sdp = gl->gl_sbd;
 	struct gfs2_lkstats *st;
-	u64 r_dcount, l_dcount;
-	u64 l_srttb, a_srttb = 0;
+	s64 r_dcount, l_dcount;
+	s64 r_srttb, l_srttb;
 	s64 srttb_diff;
-	u64 sqr_diff;
-	u64 var;
-	int cpu, nonzero = 0;
+	s64 sqr_diff;
+	s64 var;
 
 	preempt_disable();
-	for_each_present_cpu(cpu) {
-		st = &per_cpu_ptr(sdp->sd_lkstats, cpu)->lkstats[LM_TYPE_RGRP];
-		if (st->stats[GFS2_LKS_SRTTB]) {
-			a_srttb += st->stats[GFS2_LKS_SRTTB];
-			nonzero++;
-		}
-	}
 	st = &this_cpu_ptr(sdp->sd_lkstats)->lkstats[LM_TYPE_RGRP];
-	if (nonzero)
-		do_div(a_srttb, nonzero);
+	r_srttb = st->stats[GFS2_LKS_SRTTB];
 	r_dcount = st->stats[GFS2_LKS_DCOUNT];
 	var = st->stats[GFS2_LKS_SRTTVARB] +
 	      gl->gl_stats.stats[GFS2_LKS_SRTTVARB];
@@ -1889,10 +1834,10 @@ static bool gfs2_rgrp_congested(const struct gfs2_rgrpd *rgd, int loops)
 	l_srttb = gl->gl_stats.stats[GFS2_LKS_SRTTB];
 	l_dcount = gl->gl_stats.stats[GFS2_LKS_DCOUNT];
 
-	if ((l_dcount < 1) || (r_dcount < 1) || (a_srttb == 0))
+	if ((l_dcount < 1) || (r_dcount < 1) || (r_srttb == 0))
 		return false;
 
-	srttb_diff = a_srttb - l_srttb;
+	srttb_diff = r_srttb - l_srttb;
 	sqr_diff = srttb_diff * srttb_diff;
 
 	var *= 2;
@@ -1946,41 +1891,14 @@ static bool gfs2_select_rgrp(struct gfs2_rgrpd **pos, const struct gfs2_rgrpd *b
 }
 
 /**
- * fast_to_acquire - determine if a resource group will be fast to acquire
- *
- * If this is one of our preferred rgrps, it should be quicker to acquire,
- * because we tried to set ourselves up as dlm lock master.
- */
-static inline int fast_to_acquire(struct gfs2_rgrpd *rgd)
-{
-	struct gfs2_glock *gl = rgd->rd_gl;
-
-	if (gl->gl_state != LM_ST_UNLOCKED && list_empty(&gl->gl_holders) &&
-	    !test_bit(GLF_DEMOTE_IN_PROGRESS, &gl->gl_flags) &&
-	    !test_bit(GLF_DEMOTE, &gl->gl_flags))
-		return 1;
-	if (rgd->rd_flags & GFS2_RDF_PREFERRED)
-		return 1;
-	return 0;
-}
-
-/**
  * gfs2_inplace_reserve - Reserve space in the filesystem
  * @ip: the inode to reserve space for
  * @ap: the allocation parameters
  *
- * We try our best to find an rgrp that has at least ap->target blocks
- * available. After a couple of passes (loops == 2), the prospects of finding
- * such an rgrp diminish. At this stage, we return the first rgrp that has
- * atleast ap->min_target blocks available. Either way, we set ap->allowed to
- * the number of blocks available in the chosen rgrp.
- *
- * Returns: 0 on success,
- *          -ENOMEM if a suitable rgrp can't be found
- *          errno otherwise
+ * Returns: errno
  */
 
-int gfs2_inplace_reserve(struct gfs2_inode *ip, struct gfs2_alloc_parms *ap)
+int gfs2_inplace_reserve(struct gfs2_inode *ip, const struct gfs2_alloc_parms *ap)
 {
 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
 	struct gfs2_rgrpd *begin = NULL;
@@ -2014,15 +1932,10 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, struct gfs2_alloc_parms *ap)
 			rg_locked = 0;
 			if (skip && skip--)
 				goto next_rgrp;
-			if (!gfs2_rs_active(rs)) {
-				if (loops == 0 &&
-				    !fast_to_acquire(rs->rs_rbm.rgd))
-					goto next_rgrp;
-				if ((loops < 2) &&
-				    gfs2_rgrp_used_recently(rs, 1000) &&
-				    gfs2_rgrp_congested(rs->rs_rbm.rgd, loops))
-					goto next_rgrp;
-			}
+			if (!gfs2_rs_active(rs) && (loops < 2) &&
+			     gfs2_rgrp_used_recently(rs, 1000) &&
+			     gfs2_rgrp_congested(rs->rs_rbm.rgd, loops))
+				goto next_rgrp;
 			error = gfs2_glock_nq_init(rs->rs_rbm.rgd->rd_gl,
 						   LM_ST_EXCLUSIVE, flags,
 						   &rs->rs_rgd_gh);
@@ -2043,7 +1956,7 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, struct gfs2_alloc_parms *ap)
 		/* Skip unuseable resource groups */
 		if ((rs->rs_rbm.rgd->rd_flags & (GFS2_RGF_NOALLOC |
 						 GFS2_RDF_ERROR)) ||
-		    (loops == 0 && ap->target > rs->rs_rbm.rgd->rd_extfail_pt))
+		    (ap->target > rs->rs_rbm.rgd->rd_extfail_pt))
 			goto skip_rgrp;
 
 		if (sdp->sd_args.ar_rgrplvb)
@@ -2058,13 +1971,11 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, struct gfs2_alloc_parms *ap)
 			goto check_rgrp;
 
 		/* If rgrp has enough free space, use it */
-		if (rs->rs_rbm.rgd->rd_free_clone >= ap->target ||
-		    (loops == 2 && ap->min_target &&
-		     rs->rs_rbm.rgd->rd_free_clone >= ap->min_target)) {
+		if (rs->rs_rbm.rgd->rd_free_clone >= ap->target) {
 			ip->i_rgd = rs->rs_rbm.rgd;
-			ap->allowed = ip->i_rgd->rd_free_clone;
 			return 0;
 		}
+
 check_rgrp:
 		/* Check for unlinked inodes which can be reclaimed */
 		if (rs->rs_rbm.rgd->rd_flags & GFS2_RDF_CHECK)
@@ -2284,9 +2195,6 @@ static void gfs2_adjust_reservation(struct gfs2_inode *ip,
 			trace_gfs2_rs(rs, TRACE_RS_CLAIM);
 			if (rs->rs_free && !ret)
 				goto out;
-			/* We used up our block reservation, so we should
-			   reserve more blocks next time. */
-			atomic_add(RGRP_RSRV_ADDBLKS, &rs->rs_sizehint);
 		}
 		__rs_deltree(rs);
 	}

@@ -69,10 +69,16 @@ static LIST_HEAD(cm_list);
 static DEFINE_MUTEX(cm_list_mtx);
 
 /* About in-suspend (suspend-again) monitoring */
-static struct alarm *cm_timer;
-
+static struct rtc_device *rtc_dev;
+/*
+ * Backup RTC alarm
+ * Save the wakeup alarm before entering suspend-to-RAM
+ */
+static struct rtc_wkalrm rtc_wkalarm_save;
+/* Backup RTC alarm time in terms of seconds since 01-01-1970 00:00:00 */
+static unsigned long rtc_wkalarm_save_time;
 static bool cm_suspended;
-static bool cm_timer_set;
+static bool cm_rtc_set;
 static unsigned long cm_suspend_duration_ms;
 
 /* About normal (not suspended) monitoring */
@@ -80,6 +86,9 @@ static unsigned long polling_jiffy = ULONG_MAX; /* ULONG_MAX: no polling */
 static unsigned long next_polling; /* Next appointed polling time */
 static struct workqueue_struct *cm_wq; /* init at driver add */
 static struct delayed_work cm_monitor_work; /* init at driver add */
+
+/* Global charger-manager description */
+static struct charger_global_desc *g_desc; /* init with setup_charger_manager */
 
 /**
  * is_batt_present - See if the battery presents in place.
@@ -103,11 +112,10 @@ static bool is_batt_present(struct charger_manager *cm)
 		if (!psy)
 			break;
 
-		ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_PRESENT,
-				&val);
+		ret = psy->get_property(psy,
+				POWER_SUPPLY_PROP_PRESENT, &val);
 		if (ret == 0 && val.intval)
 			present = true;
-		power_supply_put(psy);
 		break;
 	case CM_CHARGER_STAT:
 		for (i = 0; cm->desc->psy_charger_stat[i]; i++) {
@@ -119,9 +127,8 @@ static bool is_batt_present(struct charger_manager *cm)
 				continue;
 			}
 
-			ret = power_supply_get_property(psy,
-				POWER_SUPPLY_PROP_PRESENT, &val);
-			power_supply_put(psy);
+			ret = psy->get_property(psy, POWER_SUPPLY_PROP_PRESENT,
+					&val);
 			if (ret == 0 && val.intval) {
 				present = true;
 				break;
@@ -157,9 +164,7 @@ static bool is_ext_pwr_online(struct charger_manager *cm)
 			continue;
 		}
 
-		ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE,
-				&val);
-		power_supply_put(psy);
+		ret = psy->get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val);
 		if (ret == 0 && val.intval) {
 			online = true;
 			break;
@@ -187,9 +192,8 @@ static int get_batt_uV(struct charger_manager *cm, int *uV)
 	if (!fuel_gauge)
 		return -ENODEV;
 
-	ret = power_supply_get_property(fuel_gauge,
+	ret = fuel_gauge->get_property(fuel_gauge,
 				POWER_SUPPLY_PROP_VOLTAGE_NOW, &val);
-	power_supply_put(fuel_gauge);
 	if (ret)
 		return ret;
 
@@ -228,26 +232,20 @@ static bool is_charging(struct charger_manager *cm)
 		}
 
 		/* 2. The charger should be online (ext-power) */
-		ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE,
-				&val);
+		ret = psy->get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val);
 		if (ret) {
 			dev_warn(cm->dev, "Cannot read ONLINE value from %s\n",
 				 cm->desc->psy_charger_stat[i]);
-			power_supply_put(psy);
 			continue;
 		}
-		if (val.intval == 0) {
-			power_supply_put(psy);
+		if (val.intval == 0)
 			continue;
-		}
 
 		/*
 		 * 3. The charger should not be FULL, DISCHARGING,
 		 * or NOT_CHARGING.
 		 */
-		ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_STATUS,
-				&val);
-		power_supply_put(psy);
+		ret = psy->get_property(psy, POWER_SUPPLY_PROP_STATUS, &val);
 		if (ret) {
 			dev_warn(cm->dev, "Cannot read STATUS value from %s\n",
 				 cm->desc->psy_charger_stat[i]);
@@ -275,7 +273,6 @@ static bool is_full_charged(struct charger_manager *cm)
 	struct charger_desc *desc = cm->desc;
 	union power_supply_propval val;
 	struct power_supply *fuel_gauge;
-	bool is_full = false;
 	int ret = 0;
 	int uV;
 
@@ -291,38 +288,30 @@ static bool is_full_charged(struct charger_manager *cm)
 		val.intval = 0;
 
 		/* Not full if capacity of fuel gauge isn't full */
-		ret = power_supply_get_property(fuel_gauge,
+		ret = fuel_gauge->get_property(fuel_gauge,
 				POWER_SUPPLY_PROP_CHARGE_FULL, &val);
-		if (!ret && val.intval > desc->fullbatt_full_capacity) {
-			is_full = true;
-			goto out;
-		}
+		if (!ret && val.intval > desc->fullbatt_full_capacity)
+			return true;
 	}
 
 	/* Full, if it's over the fullbatt voltage */
 	if (desc->fullbatt_uV > 0) {
 		ret = get_batt_uV(cm, &uV);
-		if (!ret && uV >= desc->fullbatt_uV) {
-			is_full = true;
-			goto out;
-		}
+		if (!ret && uV >= desc->fullbatt_uV)
+			return true;
 	}
 
 	/* Full, if the capacity is more than fullbatt_soc */
 	if (desc->fullbatt_soc > 0) {
 		val.intval = 0;
 
-		ret = power_supply_get_property(fuel_gauge,
+		ret = fuel_gauge->get_property(fuel_gauge,
 				POWER_SUPPLY_PROP_CAPACITY, &val);
-		if (!ret && val.intval >= desc->fullbatt_soc) {
-			is_full = true;
-			goto out;
-		}
+		if (!ret && val.intval >= desc->fullbatt_soc)
+			return true;
 	}
 
-out:
-	power_supply_put(fuel_gauge);
-	return is_full;
+	return false;
 }
 
 /**
@@ -595,18 +584,14 @@ static int cm_get_battery_temperature_by_psy(struct charger_manager *cm,
 					int *temp)
 {
 	struct power_supply *fuel_gauge;
-	int ret;
 
 	fuel_gauge = power_supply_get_by_name(cm->desc->psy_fuel_gauge);
 	if (!fuel_gauge)
 		return -ENODEV;
 
-	ret = power_supply_get_property(fuel_gauge,
+	return fuel_gauge->get_property(fuel_gauge,
 				POWER_SUPPLY_PROP_TEMP,
 				(union power_supply_propval *)temp);
-	power_supply_put(fuel_gauge);
-
-	return ret;
 }
 
 static int cm_get_battery_temperature(struct charger_manager *cm,
@@ -619,7 +604,7 @@ static int cm_get_battery_temperature(struct charger_manager *cm,
 
 #ifdef CONFIG_THERMAL
 	if (cm->tzd_batt) {
-		ret = thermal_zone_get_temp(cm->tzd_batt, temp);
+		ret = thermal_zone_get_temp(cm->tzd_batt, (unsigned long *)temp);
 		if (!ret)
 			/* Calibrate temperature unit */
 			*temp /= 100;
@@ -885,9 +870,10 @@ static int charger_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
 {
-	struct charger_manager *cm = power_supply_get_drvdata(psy);
+	struct charger_manager *cm = container_of(psy,
+			struct charger_manager, charger_psy);
 	struct charger_desc *desc = cm->desc;
-	struct power_supply *fuel_gauge = NULL;
+	struct power_supply *fuel_gauge;
 	int ret = 0;
 	int uV;
 
@@ -923,26 +909,26 @@ static int charger_get_property(struct power_supply *psy,
 			ret = -ENODEV;
 			break;
 		}
-		ret = power_supply_get_property(fuel_gauge,
+		ret = fuel_gauge->get_property(fuel_gauge,
 				POWER_SUPPLY_PROP_CURRENT_NOW, val);
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
 		return cm_get_battery_temperature(cm, &val->intval);
 	case POWER_SUPPLY_PROP_CAPACITY:
-		if (!is_batt_present(cm)) {
-			/* There is no battery. Assume 100% */
-			val->intval = 100;
-			break;
-		}
-
 		fuel_gauge = power_supply_get_by_name(cm->desc->psy_fuel_gauge);
 		if (!fuel_gauge) {
 			ret = -ENODEV;
 			break;
 		}
 
-		ret = power_supply_get_property(fuel_gauge,
+		if (!is_batt_present(cm)) {
+			/* There is no battery. Assume 100% */
+			val->intval = 100;
+			break;
+		}
+
+		ret = fuel_gauge->get_property(fuel_gauge,
 					POWER_SUPPLY_PROP_CAPACITY, val);
 		if (ret)
 			break;
@@ -998,7 +984,7 @@ static int charger_get_property(struct power_supply *psy,
 				break;
 			}
 
-			ret = power_supply_get_property(fuel_gauge,
+			ret = fuel_gauge->get_property(fuel_gauge,
 						POWER_SUPPLY_PROP_CHARGE_NOW,
 						val);
 			if (ret) {
@@ -1016,8 +1002,6 @@ static int charger_get_property(struct power_supply *psy,
 	default:
 		return -EINVAL;
 	}
-	if (fuel_gauge)
-		power_supply_put(fuel_gauge);
 	return ret;
 }
 
@@ -1040,7 +1024,7 @@ static enum power_supply_property default_charger_props[] = {
 	 */
 };
 
-static const struct power_supply_desc psy_default = {
+static struct power_supply psy_default = {
 	.name = "battery",
 	.type = POWER_SUPPLY_TYPE_BATTERY,
 	.properties = default_charger_props,
@@ -1063,13 +1047,10 @@ static bool cm_setup_timer(void)
 {
 	struct charger_manager *cm;
 	unsigned int wakeup_ms = UINT_MAX;
-	int timer_req = 0;
-
-	if (time_after(next_polling, jiffies))
-		CM_MIN_VALID(wakeup_ms,
-			jiffies_to_msecs(next_polling - jiffies));
+	bool ret = false;
 
 	mutex_lock(&cm_list_mtx);
+
 	list_for_each_entry(cm, &cm_list, entry) {
 		unsigned int fbchk_ms = 0;
 
@@ -1089,37 +1070,161 @@ static bool cm_setup_timer(void)
 		/* Skip if polling is not required for this CM */
 		if (!is_polling_required(cm) && !cm->emergency_stop)
 			continue;
-		timer_req++;
 		if (cm->desc->polling_interval_ms == 0)
 			continue;
 		CM_MIN_VALID(wakeup_ms, cm->desc->polling_interval_ms);
 	}
+
 	mutex_unlock(&cm_list_mtx);
 
-	if (timer_req && cm_timer) {
-		ktime_t now, add;
-
-		/*
-		 * Set alarm with the polling interval (wakeup_ms)
-		 * The alarm time should be NOW + CM_RTC_SMALL or later.
-		 */
-		if (wakeup_ms == UINT_MAX ||
-			wakeup_ms < CM_RTC_SMALL * MSEC_PER_SEC)
-			wakeup_ms = 2 * CM_RTC_SMALL * MSEC_PER_SEC;
-
+	if (wakeup_ms < UINT_MAX && wakeup_ms > 0) {
 		pr_info("Charger Manager wakeup timer: %u ms\n", wakeup_ms);
+		if (rtc_dev) {
+			struct rtc_wkalrm tmp;
+			unsigned long time, now;
+			unsigned long add = DIV_ROUND_UP(wakeup_ms, 1000);
 
-		now = ktime_get_boottime();
-		add = ktime_set(wakeup_ms / MSEC_PER_SEC,
-				(wakeup_ms % MSEC_PER_SEC) * NSEC_PER_MSEC);
-		alarm_start(cm_timer, ktime_add(now, add));
+			/*
+			 * Set alarm with the polling interval (wakeup_ms)
+			 * except when rtc_wkalarm_save comes first.
+			 * However, the alarm time should be NOW +
+			 * CM_RTC_SMALL or later.
+			 */
+			tmp.enabled = 1;
+			rtc_read_time(rtc_dev, &tmp.time);
+			rtc_tm_to_time(&tmp.time, &now);
+			if (add < CM_RTC_SMALL)
+				add = CM_RTC_SMALL;
+			time = now + add;
 
-		cm_suspend_duration_ms = wakeup_ms;
+			ret = true;
 
-		return true;
+			if (rtc_wkalarm_save.enabled &&
+			    rtc_wkalarm_save_time &&
+			    rtc_wkalarm_save_time < time) {
+				if (rtc_wkalarm_save_time < now + CM_RTC_SMALL)
+					time = now + CM_RTC_SMALL;
+				else
+					time = rtc_wkalarm_save_time;
+
+				/* The timer is not appointed by CM */
+				ret = false;
+			}
+
+			pr_info("Waking up after %lu secs\n", time - now);
+
+			rtc_time_to_tm(time, &tmp.time);
+			rtc_set_alarm(rtc_dev, &tmp);
+			cm_suspend_duration_ms += wakeup_ms;
+			return ret;
+		}
 	}
+
+	if (rtc_dev)
+		rtc_set_alarm(rtc_dev, &rtc_wkalarm_save);
 	return false;
 }
+
+static void _cm_fbchk_in_suspend(struct charger_manager *cm)
+{
+	unsigned long jiffy_now = jiffies;
+
+	if (!cm->fullbatt_vchk_jiffies_at)
+		return;
+
+	if (g_desc && g_desc->assume_timer_stops_in_suspend)
+		jiffy_now += msecs_to_jiffies(cm_suspend_duration_ms);
+
+	/* Execute now if it's going to be executed not too long after */
+	jiffy_now += CM_JIFFIES_SMALL;
+
+	if (time_after_eq(jiffy_now, cm->fullbatt_vchk_jiffies_at))
+		fullbatt_vchk(&cm->fullbatt_vchk_work.work);
+}
+
+/**
+ * cm_suspend_again - Determine whether suspend again or not
+ *
+ * Returns true if the system should be suspended again
+ * Returns false if the system should be woken up
+ */
+bool cm_suspend_again(void)
+{
+	struct charger_manager *cm;
+	bool ret = false;
+
+	if (!g_desc || !g_desc->rtc_only_wakeup || !g_desc->rtc_only_wakeup() ||
+	    !cm_rtc_set)
+		return false;
+
+	if (cm_monitor())
+		goto out;
+
+	ret = true;
+	mutex_lock(&cm_list_mtx);
+	list_for_each_entry(cm, &cm_list, entry) {
+		_cm_fbchk_in_suspend(cm);
+
+		if (cm->status_save_ext_pwr_inserted != is_ext_pwr_online(cm) ||
+		    cm->status_save_batt != is_batt_present(cm)) {
+			ret = false;
+			break;
+		}
+	}
+	mutex_unlock(&cm_list_mtx);
+
+	cm_rtc_set = cm_setup_timer();
+out:
+	/* It's about the time when the non-CM appointed timer goes off */
+	if (rtc_wkalarm_save.enabled) {
+		unsigned long now;
+		struct rtc_time tmp;
+
+		rtc_read_time(rtc_dev, &tmp);
+		rtc_tm_to_time(&tmp, &now);
+
+		if (rtc_wkalarm_save_time &&
+		    now + CM_RTC_SMALL >= rtc_wkalarm_save_time)
+			return false;
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cm_suspend_again);
+
+/**
+ * setup_charger_manager - initialize charger_global_desc data
+ * @gd: pointer to instance of charger_global_desc
+ */
+int setup_charger_manager(struct charger_global_desc *gd)
+{
+	if (!gd)
+		return -EINVAL;
+
+	if (rtc_dev)
+		rtc_class_close(rtc_dev);
+	rtc_dev = NULL;
+	g_desc = NULL;
+
+	if (!gd->rtc_only_wakeup) {
+		pr_err("The callback rtc_only_wakeup is not given\n");
+		return -EINVAL;
+	}
+
+	if (gd->rtc_name) {
+		rtc_dev = rtc_class_open(gd->rtc_name);
+		if (IS_ERR_OR_NULL(rtc_dev)) {
+			rtc_dev = NULL;
+			/* Retry at probe. RTC may be not registered yet */
+		}
+	} else {
+		pr_warn("No wakeup timer is given for charger manager.  "
+			"In-suspend monitoring won't work.\n");
+	}
+
+	g_desc = gd;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(setup_charger_manager);
 
 /**
  * charger_extcon_work - enable/diable charger according to the state
@@ -1421,7 +1526,7 @@ static int charger_manager_register_sysfs(struct charger_manager *cm)
 		dev_info(cm->dev, "'%s' regulator's externally_control is %d\n",
 			 charger->regulator_name, charger->externally_control);
 
-		ret = sysfs_create_group(&cm->charger_psy->dev.kobj,
+		ret = sysfs_create_group(&cm->charger_psy.dev->kobj,
 					&charger->attr_g);
 		if (ret < 0) {
 			dev_err(cm->dev, "Cannot create sysfs entry of %s regulator\n",
@@ -1449,13 +1554,13 @@ static int cm_init_thermal_data(struct charger_manager *cm,
 	int ret;
 
 	/* Verify whether fuel gauge provides battery temperature */
-	ret = power_supply_get_property(fuel_gauge,
+	ret = fuel_gauge->get_property(fuel_gauge,
 					POWER_SUPPLY_PROP_TEMP, &val);
 
 	if (!ret) {
-		cm->charger_psy_desc.properties[cm->charger_psy_desc.num_properties] =
+		cm->charger_psy.properties[cm->charger_psy.num_properties] =
 				POWER_SUPPLY_PROP_TEMP;
-		cm->charger_psy_desc.num_properties++;
+		cm->charger_psy.num_properties++;
 		cm->desc->measure_battery_temp = true;
 	}
 #ifdef CONFIG_THERMAL
@@ -1466,9 +1571,9 @@ static int cm_init_thermal_data(struct charger_manager *cm,
 			return PTR_ERR(cm->tzd_batt);
 
 		/* Use external thermometer */
-		cm->charger_psy_desc.properties[cm->charger_psy_desc.num_properties] =
+		cm->charger_psy.properties[cm->charger_psy.num_properties] =
 				POWER_SUPPLY_PROP_TEMP_AMBIENT;
-		cm->charger_psy_desc.num_properties++;
+		cm->charger_psy.num_properties++;
 		cm->desc->measure_battery_temp = true;
 		ret = 0;
 	}
@@ -1484,7 +1589,7 @@ static int cm_init_thermal_data(struct charger_manager *cm,
 	return ret;
 }
 
-static const struct of_device_id charger_manager_match[] = {
+static struct of_device_id charger_manager_match[] = {
 	{
 		.compatible = "charger-manager",
 	},
@@ -1581,10 +1686,8 @@ static struct charger_desc *of_cm_parse_desc(struct device *dev)
 				cables = devm_kzalloc(dev, sizeof(*cables)
 						* chg_regs->num_cables,
 						GFP_KERNEL);
-				if (!cables) {
-					of_node_put(child);
+				if (!cables)
 					return ERR_PTR(-ENOMEM);
-				}
 
 				chg_regs->cables = cables;
 
@@ -1616,12 +1719,6 @@ static inline struct charger_desc *cm_get_drv_data(struct platform_device *pdev)
 	return dev_get_platdata(&pdev->dev);
 }
 
-static enum alarmtimer_restart cm_timer_func(struct alarm *alarm, ktime_t now)
-{
-	cm_timer_set = false;
-	return ALARMTIMER_NORESTART;
-}
-
 static int charger_manager_probe(struct platform_device *pdev)
 {
 	struct charger_desc *desc = cm_get_drv_data(pdev);
@@ -1630,7 +1727,16 @@ static int charger_manager_probe(struct platform_device *pdev)
 	int j = 0;
 	union power_supply_propval val;
 	struct power_supply *fuel_gauge;
-	struct power_supply_config psy_cfg = {};
+
+	if (g_desc && !rtc_dev && g_desc->rtc_name) {
+		rtc_dev = rtc_class_open(g_desc->rtc_name);
+		if (IS_ERR_OR_NULL(rtc_dev)) {
+			rtc_dev = NULL;
+			dev_err(&pdev->dev, "Cannot get RTC %s\n",
+				g_desc->rtc_name);
+			return -ENODEV;
+		}
+	}
 
 	if (IS_ERR(desc)) {
 		dev_err(&pdev->dev, "No platform data (desc) found\n");
@@ -1645,13 +1751,6 @@ static int charger_manager_probe(struct platform_device *pdev)
 	/* Basic Values. Unspecified are Null or 0 */
 	cm->dev = &pdev->dev;
 	cm->desc = desc;
-	psy_cfg.drv_data = cm;
-
-	/* Initialize alarm timer */
-	if (alarmtimer_get_rtcdev()) {
-		cm_timer = devm_kzalloc(cm->dev, sizeof(*cm_timer), GFP_KERNEL);
-		alarm_init(cm_timer, ALARM_BOOTTIME, cm_timer_func);
-	}
 
 	/*
 	 * The following two do not need to be errors.
@@ -1701,7 +1800,13 @@ static int charger_manager_probe(struct platform_device *pdev)
 				desc->psy_charger_stat[i]);
 			return -ENODEV;
 		}
-		power_supply_put(psy);
+	}
+
+	fuel_gauge = power_supply_get_by_name(desc->psy_fuel_gauge);
+	if (!fuel_gauge) {
+		dev_err(&pdev->dev, "Cannot find power supply \"%s\"\n",
+			desc->psy_fuel_gauge);
+		return -ENODEV;
 	}
 
 	if (desc->polling_interval_ms == 0 ||
@@ -1719,46 +1824,40 @@ static int charger_manager_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, cm);
 
-	memcpy(&cm->charger_psy_desc, &psy_default, sizeof(psy_default));
+	memcpy(&cm->charger_psy, &psy_default, sizeof(psy_default));
 
 	if (!desc->psy_name)
 		strncpy(cm->psy_name_buf, psy_default.name, PSY_NAME_MAX);
 	else
 		strncpy(cm->psy_name_buf, desc->psy_name, PSY_NAME_MAX);
-	cm->charger_psy_desc.name = cm->psy_name_buf;
+	cm->charger_psy.name = cm->psy_name_buf;
 
 	/* Allocate for psy properties because they may vary */
-	cm->charger_psy_desc.properties = devm_kzalloc(&pdev->dev,
+	cm->charger_psy.properties = devm_kzalloc(&pdev->dev,
 				sizeof(enum power_supply_property)
 				* (ARRAY_SIZE(default_charger_props) +
 				NUM_CHARGER_PSY_OPTIONAL), GFP_KERNEL);
-	if (!cm->charger_psy_desc.properties)
+	if (!cm->charger_psy.properties)
 		return -ENOMEM;
 
-	memcpy(cm->charger_psy_desc.properties, default_charger_props,
+	memcpy(cm->charger_psy.properties, default_charger_props,
 		sizeof(enum power_supply_property) *
 		ARRAY_SIZE(default_charger_props));
-	cm->charger_psy_desc.num_properties = psy_default.num_properties;
+	cm->charger_psy.num_properties = psy_default.num_properties;
 
 	/* Find which optional psy-properties are available */
-	fuel_gauge = power_supply_get_by_name(desc->psy_fuel_gauge);
-	if (!fuel_gauge) {
-		dev_err(&pdev->dev, "Cannot find power supply \"%s\"\n",
-			desc->psy_fuel_gauge);
-		return -ENODEV;
-	}
-	if (!power_supply_get_property(fuel_gauge,
+	if (!fuel_gauge->get_property(fuel_gauge,
 					  POWER_SUPPLY_PROP_CHARGE_NOW, &val)) {
-		cm->charger_psy_desc.properties[cm->charger_psy_desc.num_properties] =
+		cm->charger_psy.properties[cm->charger_psy.num_properties] =
 				POWER_SUPPLY_PROP_CHARGE_NOW;
-		cm->charger_psy_desc.num_properties++;
+		cm->charger_psy.num_properties++;
 	}
-	if (!power_supply_get_property(fuel_gauge,
+	if (!fuel_gauge->get_property(fuel_gauge,
 					  POWER_SUPPLY_PROP_CURRENT_NOW,
 					  &val)) {
-		cm->charger_psy_desc.properties[cm->charger_psy_desc.num_properties] =
+		cm->charger_psy.properties[cm->charger_psy.num_properties] =
 				POWER_SUPPLY_PROP_CURRENT_NOW;
-		cm->charger_psy_desc.num_properties++;
+		cm->charger_psy.num_properties++;
 	}
 
 	ret = cm_init_thermal_data(cm, fuel_gauge);
@@ -1766,17 +1865,14 @@ static int charger_manager_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to initialize thermal data\n");
 		cm->desc->measure_battery_temp = false;
 	}
-	power_supply_put(fuel_gauge);
 
 	INIT_DELAYED_WORK(&cm->fullbatt_vchk_work, fullbatt_vchk);
 
-	cm->charger_psy = power_supply_register(&pdev->dev,
-						&cm->charger_psy_desc,
-						&psy_cfg);
-	if (IS_ERR(cm->charger_psy)) {
+	ret = power_supply_register(NULL, &cm->charger_psy);
+	if (ret) {
 		dev_err(&pdev->dev, "Cannot register charger-manager with name \"%s\"\n",
-			cm->charger_psy_desc.name);
-		return PTR_ERR(cm->charger_psy);
+			cm->charger_psy.name);
+		return ret;
 	}
 
 	/* Register extcon device for charger cable */
@@ -1822,7 +1918,7 @@ err_reg_sysfs:
 		struct charger_regulator *charger;
 
 		charger = &desc->charger_regulators[i];
-		sysfs_remove_group(&cm->charger_psy->dev.kobj,
+		sysfs_remove_group(&cm->charger_psy.dev->kobj,
 				&charger->attr_g);
 	}
 err_reg_extcon:
@@ -1840,7 +1936,7 @@ err_reg_extcon:
 		regulator_put(desc->charger_regulators[i].consumer);
 	}
 
-	power_supply_unregister(cm->charger_psy);
+	power_supply_unregister(&cm->charger_psy);
 
 	return ret;
 }
@@ -1872,7 +1968,7 @@ static int charger_manager_remove(struct platform_device *pdev)
 	for (i = 0 ; i < desc->num_charger_regulators ; i++)
 		regulator_put(desc->charger_regulators[i].consumer);
 
-	power_supply_unregister(cm->charger_psy);
+	power_supply_unregister(&cm->charger_psy);
 
 	try_charger_enable(cm, false);
 
@@ -1897,41 +1993,38 @@ static int cm_suspend_noirq(struct device *dev)
 	return ret;
 }
 
-static bool cm_need_to_awake(void)
-{
-	struct charger_manager *cm;
-
-	if (cm_timer)
-		return false;
-
-	mutex_lock(&cm_list_mtx);
-	list_for_each_entry(cm, &cm_list, entry) {
-		if (is_charging(cm)) {
-			mutex_unlock(&cm_list_mtx);
-			return true;
-		}
-	}
-	mutex_unlock(&cm_list_mtx);
-
-	return false;
-}
-
 static int cm_suspend_prepare(struct device *dev)
 {
 	struct charger_manager *cm = dev_get_drvdata(dev);
 
-	if (cm_need_to_awake())
-		return -EBUSY;
+	if (!cm_suspended) {
+		if (rtc_dev) {
+			struct rtc_time tmp;
+			unsigned long now;
 
-	if (!cm_suspended)
+			rtc_read_alarm(rtc_dev, &rtc_wkalarm_save);
+			rtc_read_time(rtc_dev, &tmp);
+
+			if (rtc_wkalarm_save.enabled) {
+				rtc_tm_to_time(&rtc_wkalarm_save.time,
+					       &rtc_wkalarm_save_time);
+				rtc_tm_to_time(&tmp, &now);
+				if (now > rtc_wkalarm_save_time)
+					rtc_wkalarm_save_time = 0;
+			} else {
+				rtc_wkalarm_save_time = 0;
+			}
+		}
 		cm_suspended = true;
+	}
 
-	cm_timer_set = cm_setup_timer();
+	cancel_delayed_work(&cm->fullbatt_vchk_work);
+	cm->status_save_ext_pwr_inserted = is_ext_pwr_online(cm);
+	cm->status_save_batt = is_batt_present(cm);
 
-	if (cm_timer_set) {
-		cancel_work_sync(&setup_polling);
-		cancel_delayed_work_sync(&cm_monitor_work);
-		cancel_delayed_work(&cm->fullbatt_vchk_work);
+	if (!cm_rtc_set) {
+		cm_suspend_duration_ms = 0;
+		cm_rtc_set = cm_setup_timer();
 	}
 
 	return 0;
@@ -1941,20 +2034,17 @@ static void cm_suspend_complete(struct device *dev)
 {
 	struct charger_manager *cm = dev_get_drvdata(dev);
 
-	if (cm_suspended)
+	if (cm_suspended) {
+		if (rtc_dev) {
+			struct rtc_wkalrm tmp;
+
+			rtc_read_alarm(rtc_dev, &tmp);
+			rtc_wkalarm_save.pending = tmp.pending;
+			rtc_set_alarm(rtc_dev, &rtc_wkalarm_save);
+		}
 		cm_suspended = false;
-
-	if (cm_timer_set) {
-		ktime_t remain;
-
-		alarm_cancel(cm_timer);
-		cm_timer_set = false;
-		remain = alarm_expires_remaining(cm_timer);
-		cm_suspend_duration_ms -= ktime_to_ms(remain);
-		schedule_work(&setup_polling);
+		cm_rtc_set = false;
 	}
-
-	_cm_monitor(cm);
 
 	/* Re-enqueue delayed work (fullbatt_vchk_work) */
 	if (cm->fullbatt_vchk_jiffies_at) {
@@ -1970,18 +2060,21 @@ static void cm_suspend_complete(struct device *dev)
 		}
 
 		/*
-		 * Account for cm_suspend_duration_ms with assuming that
-		 * timer stops in suspend.
+		 * Account for cm_suspend_duration_ms if
+		 * assume_timer_stops_in_suspend is active
 		 */
-		if (delay > cm_suspend_duration_ms)
-			delay -= cm_suspend_duration_ms;
-		else
-			delay = 0;
+		if (g_desc && g_desc->assume_timer_stops_in_suspend) {
+			if (delay > cm_suspend_duration_ms)
+				delay -= cm_suspend_duration_ms;
+			else
+				delay = 0;
+		}
 
 		queue_delayed_work(cm_wq, &cm->fullbatt_vchk_work,
 				   msecs_to_jiffies(delay));
 	}
 	device_set_wakeup_capable(cm->dev, false);
+	uevent_notify(cm, NULL);
 }
 
 static const struct dev_pm_ops charger_manager_pm = {
@@ -1993,6 +2086,7 @@ static const struct dev_pm_ops charger_manager_pm = {
 static struct platform_driver charger_manager_driver = {
 	.driver = {
 		.name = "charger-manager",
+		.owner = THIS_MODULE,
 		.pm = &charger_manager_pm,
 		.of_match_table = charger_manager_match,
 	},
@@ -2031,7 +2125,7 @@ static bool find_power_supply(struct charger_manager *cm,
 	bool found = false;
 
 	for (i = 0; cm->desc->psy_charger_stat[i]; i++) {
-		if (!strcmp(psy->desc->name, cm->desc->psy_charger_stat[i])) {
+		if (!strcmp(psy->name, cm->desc->psy_charger_stat[i])) {
 			found = true;
 			break;
 		}

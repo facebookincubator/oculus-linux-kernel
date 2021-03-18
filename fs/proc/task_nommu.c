@@ -123,26 +123,23 @@ unsigned long task_statm(struct mm_struct *mm,
 	return size;
 }
 
-static int is_stack(struct proc_maps_private *priv,
-		    struct vm_area_struct *vma, int is_pid)
+static pid_t pid_of_stack(struct proc_maps_private *priv,
+				struct vm_area_struct *vma, bool is_pid)
 {
-	struct mm_struct *mm = vma->vm_mm;
-	int stack = 0;
+	struct inode *inode = priv->inode;
+	struct task_struct *task;
+	pid_t ret = 0;
 
-	if (is_pid) {
-		stack = vma->vm_start <= mm->start_stack &&
-			vma->vm_end >= mm->start_stack;
-	} else {
-		struct inode *inode = priv->inode;
-		struct task_struct *task;
-
-		rcu_read_lock();
-		task = pid_task(proc_pid(inode), PIDTYPE_PID);
+	rcu_read_lock();
+	task = pid_task(proc_pid(inode), PIDTYPE_PID);
+	if (task) {
+		task = task_of_stack(task, vma, is_pid);
 		if (task)
-			stack = vma_is_stack_for_task(vma, task);
-		rcu_read_unlock();
+			ret = task_pid_nr_ns(task, inode->i_sb->s_fs_info);
 	}
-	return stack;
+	rcu_read_unlock();
+
+	return ret;
 }
 
 /*
@@ -183,10 +180,22 @@ static int nommu_vma_show(struct seq_file *m, struct vm_area_struct *vma,
 
 	if (file) {
 		seq_pad(m, ' ');
-		seq_file_path(m, file, "");
-	} else if (mm && is_stack(priv, vma, is_pid)) {
-		seq_pad(m, ' ');
-		seq_printf(m, "[stack]");
+		seq_path(m, &file->f_path, "");
+	} else if (mm) {
+		pid_t tid = pid_of_stack(priv, vma, is_pid);
+
+		if (tid != 0) {
+			seq_pad(m, ' ');
+			/*
+			 * Thread stack in /proc/PID/task/TID/maps or
+			 * the main process stack.
+			 */
+			if (!is_pid || (vma->vm_start <= mm->start_stack &&
+			    vma->vm_end >= mm->start_stack))
+				seq_printf(m, "[stack]");
+			else
+				seq_printf(m, "[stack:%d]", tid);
+		}
 	}
 
 	seq_putc(m, '\n');

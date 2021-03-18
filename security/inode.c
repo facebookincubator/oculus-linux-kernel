@@ -25,6 +25,11 @@
 static struct vfsmount *mount;
 static int mount_count;
 
+static inline int positive(struct dentry *dentry)
+{
+	return dentry->d_inode && !d_unhashed(dentry);
+}
+
 static int fill_super(struct super_block *sb, void *data, int silent)
 {
 	static struct tree_descr files[] = {{""}};
@@ -97,14 +102,14 @@ struct dentry *securityfs_create_file(const char *name, umode_t mode,
 	if (!parent)
 		parent = mount->mnt_root;
 
-	dir = d_inode(parent);
+	dir = parent->d_inode;
 
 	mutex_lock(&dir->i_mutex);
 	dentry = lookup_one_len2(name, mount, parent, strlen(name));
 	if (IS_ERR(dentry))
 		goto out;
 
-	if (d_really_is_positive(dentry)) {
+	if (dentry->d_inode) {
 		error = -EEXIST;
 		goto out1;
 	}
@@ -192,33 +197,37 @@ void securityfs_remove(struct dentry *dentry)
 		return;
 
 	parent = dentry->d_parent;
-	if (!parent || d_really_is_negative(parent))
+	if (!parent || !parent->d_inode)
 		return;
 
-	mutex_lock(&d_inode(parent)->i_mutex);
-	if (simple_positive(dentry)) {
-		if (d_is_dir(dentry))
-			simple_rmdir(d_inode(parent), dentry);
-		else
-			simple_unlink(d_inode(parent), dentry);
-		dput(dentry);
+	mutex_lock(&parent->d_inode->i_mutex);
+	if (positive(dentry)) {
+		if (dentry->d_inode) {
+			if (S_ISDIR(dentry->d_inode->i_mode))
+				simple_rmdir(parent->d_inode, dentry);
+			else
+				simple_unlink(parent->d_inode, dentry);
+			dput(dentry);
+		}
 	}
-	mutex_unlock(&d_inode(parent)->i_mutex);
+	mutex_unlock(&parent->d_inode->i_mutex);
 	simple_release_fs(&mount, &mount_count);
 }
 EXPORT_SYMBOL_GPL(securityfs_remove);
+
+static struct kobject *security_kobj;
 
 static int __init securityfs_init(void)
 {
 	int retval;
 
-	retval = sysfs_create_mount_point(kernel_kobj, "security");
-	if (retval)
-		return retval;
+	security_kobj = kobject_create_and_add("security", kernel_kobj);
+	if (!security_kobj)
+		return -EINVAL;
 
 	retval = register_filesystem(&fs_type);
 	if (retval)
-		sysfs_remove_mount_point(kernel_kobj, "security");
+		kobject_put(security_kobj);
 	return retval;
 }
 

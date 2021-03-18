@@ -541,21 +541,24 @@ static int ecm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		if (alt != 0)
 			goto fail;
 
-		VDBG(cdev, "reset ecm control %d\n", intf);
-		usb_ep_disable(ecm->notify);
+		if (ecm->notify->driver_data) {
+			VDBG(cdev, "reset ecm control %d\n", intf);
+			usb_ep_disable(ecm->notify);
+		}
 		if (!(ecm->notify->desc)) {
 			VDBG(cdev, "init ecm ctrl %d\n", intf);
 			if (config_ep_by_speed(cdev->gadget, f, ecm->notify))
 				goto fail;
 		}
 		usb_ep_enable(ecm->notify);
+		ecm->notify->driver_data = ecm;
 
 	/* Data interface has two altsettings, 0 and 1 */
 	} else if (intf == ecm->data_id) {
 		if (alt > 1)
 			goto fail;
 
-		if (ecm->port.in_ep->enabled) {
+		if (ecm->port.in_ep->driver_data) {
 			DBG(cdev, "reset ecm\n");
 			gether_disconnect(&ecm->port);
 		}
@@ -582,8 +585,8 @@ static int ecm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			/* Enable zlps by default for ECM conformance;
 			 * override for musb_hdrc (avoids txdma ovhead).
 			 */
-			ecm->port.is_zlp_ok =
-				gadget_is_zlp_supported(cdev->gadget);
+			ecm->port.is_zlp_ok = !(gadget_is_musbhdrc(cdev->gadget)
+				);
 			ecm->port.cdc_filter = DEFAULT_FILTER;
 			DBG(cdev, "activate ecm\n");
 			net = gether_connect(&ecm->port);
@@ -615,7 +618,7 @@ static int ecm_get_alt(struct usb_function *f, unsigned intf)
 
 	if (intf == ecm->ctrl_id)
 		return 0;
-	return ecm->port.in_ep->enabled ? 1 : 0;
+	return ecm->port.in_ep->driver_data ? 1 : 0;
 }
 
 static void ecm_disable(struct usb_function *f)
@@ -625,11 +628,14 @@ static void ecm_disable(struct usb_function *f)
 
 	DBG(cdev, "ecm deactivated\n");
 
-	if (ecm->port.in_ep->enabled)
+	if (ecm->port.in_ep->driver_data)
 		gether_disconnect(&ecm->port);
 
-	usb_ep_disable(ecm->notify);
-	ecm->notify->desc = NULL;
+	if (ecm->notify->driver_data) {
+		usb_ep_disable(ecm->notify);
+		ecm->notify->driver_data = NULL;
+		ecm->notify->desc = NULL;
+	}
 }
 
 /*-------------------------------------------------------------------------*/
@@ -744,11 +750,13 @@ ecm_bind(struct usb_configuration *c, struct usb_function *f)
 	if (!ep)
 		goto fail;
 	ecm->port.in_ep = ep;
+	ep->driver_data = cdev;	/* claim */
 
 	ep = usb_ep_autoconfig(cdev->gadget, &fs_ecm_out_desc);
 	if (!ep)
 		goto fail;
 	ecm->port.out_ep = ep;
+	ep->driver_data = cdev;	/* claim */
 
 	/* NOTE:  a status/notification endpoint is *OPTIONAL* but we
 	 * don't treat it that way.  It's simpler, and some newer CDC
@@ -758,6 +766,7 @@ ecm_bind(struct usb_configuration *c, struct usb_function *f)
 	if (!ep)
 		goto fail;
 	ecm->notify = ep;
+	ep->driver_data = cdev;	/* claim */
 
 	status = -ENOMEM;
 
@@ -765,7 +774,8 @@ ecm_bind(struct usb_configuration *c, struct usb_function *f)
 	ecm->notify_req = usb_ep_alloc_request(ep, GFP_KERNEL);
 	if (!ecm->notify_req)
 		goto fail;
-	ecm->notify_req->buf = kmalloc(ECM_STATUS_BYTECOUNT, GFP_KERNEL);
+	ecm->notify_req->buf = kmalloc(ECM_STATUS_BYTECOUNT +
+			cdev->gadget->extra_buf_alloc, GFP_KERNEL);
 	if (!ecm->notify_req->buf)
 		goto fail;
 	ecm->notify_req->context = ecm;
@@ -811,6 +821,14 @@ fail:
 		usb_ep_free_request(ecm->notify, ecm->notify_req);
 	}
 
+	/* we might as well release our claims on endpoints */
+	if (ecm->notify)
+		ecm->notify->driver_data = NULL;
+	if (ecm->port.out_ep)
+		ecm->port.out_ep->driver_data = NULL;
+	if (ecm->port.in_ep)
+		ecm->port.in_ep->driver_data = NULL;
+
 	ERROR(cdev, "%s: can't bind, err %d\n", f->name, status);
 
 	return status;
@@ -838,10 +856,10 @@ USB_ETHERNET_CONFIGFS_ITEM_ATTR_QMULT(ecm);
 USB_ETHERNET_CONFIGFS_ITEM_ATTR_IFNAME(ecm);
 
 static struct configfs_attribute *ecm_attrs[] = {
-	&ecm_opts_attr_dev_addr,
-	&ecm_opts_attr_host_addr,
-	&ecm_opts_attr_qmult,
-	&ecm_opts_attr_ifname,
+	&f_ecm_opts_dev_addr.attr,
+	&f_ecm_opts_host_addr.attr,
+	&f_ecm_opts_qmult.attr,
+	&f_ecm_opts_ifname.attr,
 	NULL,
 };
 

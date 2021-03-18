@@ -39,6 +39,7 @@ static int adav80x_spi_remove(struct spi_device *spi)
 static struct spi_driver adav80x_spi_driver = {
 	.driver = {
 		.name	= "adav801",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= adav80x_spi_probe,
 	.remove		= adav80x_spi_remove,

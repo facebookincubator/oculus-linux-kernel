@@ -48,8 +48,7 @@ struct lnbp22 {
 	struct i2c_adapter *i2c;
 };
 
-static int lnbp22_set_voltage(struct dvb_frontend *fe,
-			      enum fe_sec_voltage voltage)
+static int lnbp22_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t voltage)
 {
 	struct lnbp22 *lnbp22 = (struct lnbp22 *)fe->sec_priv;
 	struct i2c_msg msg = {

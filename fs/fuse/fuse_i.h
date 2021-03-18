@@ -22,7 +22,6 @@
 #include <linux/rbtree.h>
 #include <linux/poll.h>
 #include <linux/workqueue.h>
-#include <linux/kref.h>
 
 /** Max number of pages that can be used in a single read request */
 #define FUSE_MAX_PAGES_PER_REQ 32
@@ -160,8 +159,8 @@ struct fuse_file {
 	bool flock:1;
 
 	/* the read write file */
-	struct file *passthrough_filp;
-	bool passthrough_enabled;
+	struct file *rw_lower_file;
+	bool shortcircuit_enabled;
 };
 
 /** One input argument of a request */
@@ -218,7 +217,7 @@ struct fuse_out {
 	unsigned numargs;
 
 	/** Array of arguments */
-	struct fuse_arg args[2];
+	struct fuse_arg args[3];
 };
 
 /** FUSE page descriptor */
@@ -227,29 +226,18 @@ struct fuse_page_desc {
 	unsigned int offset;
 };
 
-struct fuse_args {
-	struct {
-		struct {
-			uint32_t opcode;
-			uint64_t nodeid;
-		} h;
-		unsigned numargs;
-		struct fuse_in_arg args[3];
-
-	} in;
-	struct {
-		unsigned argvar:1;
-		unsigned numargs;
-		struct fuse_arg args[2];
-		struct file *passthrough_filp;
-	} out;
+/** The request state */
+enum fuse_req_state {
+	FUSE_REQ_INIT = 0,
+	FUSE_REQ_PENDING,
+	FUSE_REQ_READING,
+	FUSE_REQ_SENT,
+	FUSE_REQ_WRITING,
+	FUSE_REQ_FINISHED
 };
-
-#define FUSE_ARGS(args) struct fuse_args args = {}
 
 /** The request IO state (for asynchronous processing) */
 struct fuse_io_priv {
-	struct kref refcnt;
 	int async;
 	spinlock_t lock;
 	unsigned reqs;
@@ -260,51 +248,10 @@ struct fuse_io_priv {
 	int err;
 	struct kiocb *iocb;
 	struct file *file;
-	struct completion *done;
-};
-
-#define FUSE_IO_PRIV_SYNC(f) \
-{					\
-	.refcnt = { ATOMIC_INIT(1) },	\
-	.async = 0,			\
-	.file = f,			\
-}
-
-/**
- * Request flags
- *
- * FR_ISREPLY:		set if the request has reply
- * FR_FORCE:		force sending of the request even if interrupted
- * FR_BACKGROUND:	request is sent in the background
- * FR_WAITING:		request is counted as "waiting"
- * FR_ABORTED:		the request was aborted
- * FR_INTERRUPTED:	the request has been interrupted
- * FR_LOCKED:		data is being copied to/from the request
- * FR_PENDING:		request is not yet in userspace
- * FR_SENT:		request is in userspace, waiting for an answer
- * FR_FINISHED:		request is finished
- * FR_PRIVATE:		request is on private list
- */
-enum fuse_req_flag {
-	FR_ISREPLY,
-	FR_FORCE,
-	FR_BACKGROUND,
-	FR_WAITING,
-	FR_ABORTED,
-	FR_INTERRUPTED,
-	FR_LOCKED,
-	FR_PENDING,
-	FR_SENT,
-	FR_FINISHED,
-	FR_PRIVATE,
 };
 
 /**
  * A request to the client
- *
- * .waitq.lock protects the following fields:
- *   - FR_ABORTED
- *   - FR_LOCKED (may also be modified under fc->lock, tested under both)
  */
 struct fuse_req {
 	/** This can be on either pending processing or io lists in
@@ -320,8 +267,35 @@ struct fuse_req {
 	/** Unique ID for the interrupt request */
 	u64 intr_unique;
 
-	/* Request flags, updated with test/set/clear_bit() */
-	unsigned long flags;
+	/*
+	 * The following bitfields are either set once before the
+	 * request is queued or setting/clearing them is protected by
+	 * fuse_conn->lock
+	 */
+
+	/** True if the request has reply */
+	unsigned isreply:1;
+
+	/** Force sending of the request even if interrupted */
+	unsigned force:1;
+
+	/** The request was aborted */
+	unsigned aborted:1;
+
+	/** Request is sent in the background */
+	unsigned background:1;
+
+	/** The request has been interrupted */
+	unsigned interrupted:1;
+
+	/** Data is being copied to/from the request */
+	unsigned locked:1;
+
+	/** Request is counted as "waiting" */
+	unsigned waiting:1;
+
+	/** State of the request */
+	enum fuse_req_state state;
 
 	/** The request input */
 	struct fuse_in in;
@@ -335,8 +309,11 @@ struct fuse_req {
 	/** Data for asynchronous requests */
 	union {
 		struct {
-			struct fuse_release_in in;
-			struct inode *inode;
+			union {
+				struct fuse_release_in in;
+				struct work_struct work;
+			};
+			struct path path;
 		} release;
 		struct fuse_init_in init_in;
 		struct fuse_init_out init_out;
@@ -351,6 +328,7 @@ struct fuse_req {
 			struct fuse_req *next;
 		} write;
 		struct fuse_notify_retrieve_in retrieve_in;
+		struct fuse_lk_in lk_in;
 	} misc;
 
 	/** page vector */
@@ -392,63 +370,8 @@ struct fuse_req {
 	/** Request is stolen from fuse_file->reserved_req */
 	struct file *stolen_file;
 
-	/** fuse passthrough file  */
-	struct file *passthrough_filp;
-};
-
-struct fuse_iqueue {
-	/** Connection established */
-	unsigned connected;
-
-	/** Readers of the connection are waiting on this */
-	wait_queue_head_t waitq;
-
-	/** The next unique request id */
-	u64 reqctr;
-
-	/** The list of pending requests */
-	struct list_head pending;
-
-	/** Pending interrupts */
-	struct list_head interrupts;
-
-	/** Queue of pending forgets */
-	struct fuse_forget_link forget_list_head;
-	struct fuse_forget_link *forget_list_tail;
-
-	/** Batching of FORGET requests (positive indicates FORGET batch) */
-	int forget_batch;
-
-	/** O_ASYNC requests */
-	struct fasync_struct *fasync;
-};
-
-struct fuse_pqueue {
-	/** Connection established */
-	unsigned connected;
-
-	/** Lock protecting accessess to  members of this structure */
-	spinlock_t lock;
-
-	/** The list of requests being processed */
-	struct list_head processing;
-
-	/** The list of requests under I/O */
-	struct list_head io;
-};
-
-/**
- * Fuse device instance
- */
-struct fuse_dev {
-	/** Fuse connection for this device */
-	struct fuse_conn *fc;
-
-	/** Processing queue */
-	struct fuse_pqueue pq;
-
-	/** list entry on fc->devices */
-	struct list_head entry;
+	/** fuse shortcircuit file  */
+	struct file *private_lower_rw_file;
 };
 
 /**
@@ -464,9 +387,6 @@ struct fuse_conn {
 
 	/** Refcount */
 	atomic_t count;
-
-	/** Number of fuse_dev's */
-	atomic_t dev_count;
 
 	struct rcu_head rcu;
 
@@ -485,8 +405,17 @@ struct fuse_conn {
 	/** Maximum write size */
 	unsigned max_write;
 
-	/** Input queue */
-	struct fuse_iqueue iq;
+	/** Readers of the connection are waiting on this */
+	wait_queue_head_t waitq;
+
+	/** The list of pending requests */
+	struct list_head pending;
+
+	/** The list of requests being processed */
+	struct list_head processing;
+
+	/** The list of requests under I/O */
+	struct list_head io;
 
 	/** The next unique kernel file handle */
 	u64 khctr;
@@ -509,6 +438,16 @@ struct fuse_conn {
 	/** The list of background requests set aside for later queuing */
 	struct list_head bg_queue;
 
+	/** Pending interrupts */
+	struct list_head interrupts;
+
+	/** Queue of pending forgets */
+	struct fuse_forget_link forget_list_head;
+	struct fuse_forget_link *forget_list_tail;
+
+	/** Batching of FORGET requests (positive indicates FORGET batch) */
+	int forget_batch;
+
 	/** Flag indicating that INIT reply has been received. Allocating
 	 * any fuse request will be suspended until the flag is set */
 	int initialized;
@@ -523,6 +462,9 @@ struct fuse_conn {
 
 	/** waitq for reserved requests */
 	wait_queue_head_t reserved_req_waitq;
+
+	/** The next unique request id */
+	u64 reqctr;
 
 	/** Connection established, cleared on umount, connection
 	    abort and device release */
@@ -551,8 +493,8 @@ struct fuse_conn {
 	/** write-back cache policy (default is write-through) */
 	unsigned writeback_cache:1;
 
-	/** passthrough IO. */
-	unsigned passthrough:1;
+	/** Shortcircuited IO. */
+	unsigned shortcircuit_io:1;
 
 	/*
 	 * The following bitfields are only for optimization purposes
@@ -649,6 +591,9 @@ struct fuse_conn {
 	/** number of dentries used in the above array */
 	int ctl_ndents;
 
+	/** O_ASYNC requests */
+	struct fasync_struct *fasync;
+
 	/** Key for lock owner ID scrambling */
 	u32 scramble_key[4];
 
@@ -666,9 +611,6 @@ struct fuse_conn {
 
 	/** Read/write semaphore to hold when accessing sb. */
 	struct rw_semaphore killsb;
-
-	/** List of device instances belonging to this connection */
-	struct list_head devices;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -825,6 +767,15 @@ struct fuse_req *fuse_get_req_for_background(struct fuse_conn *fc,
 void __fuse_get_request(struct fuse_req *req);
 
 /**
+ * Get a request, may fail with -ENOMEM,
+ * useful for callers who doesn't use req->pages[]
+ */
+static inline struct fuse_req *fuse_get_req_nopages(struct fuse_conn *fc)
+{
+	return fuse_get_req(fc, 0);
+}
+
+/**
  * Gets a requests for a file operation, always succeeds
  */
 struct fuse_req *fuse_get_req_nofail_nopages(struct fuse_conn *fc,
@@ -840,11 +791,6 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req);
  * Send a request (synchronous)
  */
 void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req);
-
-/**
- * Simple request sending that does request allocation and freeing
- */
-ssize_t fuse_simple_request(struct fuse_conn *fc, struct fuse_args *args);
 
 /**
  * Send a request in the background
@@ -871,6 +817,8 @@ void fuse_invalidate_atime(struct inode *inode);
  */
 struct fuse_conn *fuse_conn_get(struct fuse_conn *fc);
 
+void fuse_conn_kill(struct fuse_conn *fc);
+
 /**
  * Initialize fuse_conn
  */
@@ -880,9 +828,6 @@ void fuse_conn_init(struct fuse_conn *fc);
  * Release reference to fuse_conn
  */
 void fuse_conn_put(struct fuse_conn *fc);
-
-struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc);
-void fuse_dev_free(struct fuse_dev *fud);
 
 /**
  * Add connection to control filesystem
@@ -964,7 +909,5 @@ int fuse_write_inode(struct inode *inode, struct writeback_control *wbc);
 
 int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);
-
-void fuse_set_initialized(struct fuse_conn *fc);
 
 #endif /* _FS_FUSE_I_H */

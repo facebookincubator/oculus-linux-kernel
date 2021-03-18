@@ -222,7 +222,7 @@ static struct regmap_bus retu_bus = {
 	.val_format_endian_default = REGMAP_ENDIAN_NATIVE,
 };
 
-static const struct regmap_config retu_config = {
+static struct regmap_config retu_config = {
 	.reg_bits = 8,
 	.val_bits = 16,
 };
@@ -311,6 +311,7 @@ MODULE_DEVICE_TABLE(i2c, retu_id);
 static struct i2c_driver retu_driver = {
 	.driver		= {
 		.name = "retu-mfd",
+		.owner = THIS_MODULE,
 	},
 	.probe		= retu_probe,
 	.remove		= retu_remove,

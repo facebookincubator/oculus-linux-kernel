@@ -50,7 +50,7 @@
 #include <net/netlabel.h>
 #include <net/cipso_ipv4.h>
 #include <linux/atomic.h>
-#include <linux/bug.h>
+#include <asm/bug.h>
 #include <asm/unaligned.h>
 
 /* List of available DOI definitions */
@@ -72,7 +72,6 @@ struct cipso_v4_map_cache_bkt {
 	u32 size;
 	struct list_head list;
 };
-
 struct cipso_v4_map_cache_entry {
 	u32 hash;
 	unsigned char *key;
@@ -83,8 +82,7 @@ struct cipso_v4_map_cache_entry {
 	u32 activity;
 	struct list_head list;
 };
-
-static struct cipso_v4_map_cache_bkt *cipso_v4_cache;
+static struct cipso_v4_map_cache_bkt *cipso_v4_cache = NULL;
 
 /* Restricted bitmap (tag #1) flags */
 int cipso_v4_rbm_optfmt = 0;
@@ -255,7 +253,7 @@ static int __init cipso_v4_cache_init(void)
 	cipso_v4_cache = kcalloc(CIPSO_V4_CACHE_BUCKETS,
 				 sizeof(struct cipso_v4_map_cache_bkt),
 				 GFP_KERNEL);
-	if (!cipso_v4_cache)
+	if (cipso_v4_cache == NULL)
 		return -ENOMEM;
 
 	for (iter = 0; iter < CIPSO_V4_CACHE_BUCKETS; iter++) {
@@ -339,7 +337,7 @@ static int cipso_v4_cache_check(const unsigned char *key,
 			secattr->cache = entry->lsm_data;
 			secattr->flags |= NETLBL_SECATTR_CACHE;
 			secattr->type = NETLBL_NLTYPE_CIPSOV4;
-			if (!prev_entry) {
+			if (prev_entry == NULL) {
 				spin_unlock_bh(&cipso_v4_cache[bkt].lock);
 				return 0;
 			}
@@ -393,10 +391,10 @@ int cipso_v4_cache_add(const unsigned char *cipso_ptr,
 	cipso_ptr_len = cipso_ptr[1];
 
 	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
-	if (!entry)
+	if (entry == NULL)
 		return -ENOMEM;
 	entry->key = kmemdup(cipso_ptr, cipso_ptr_len, GFP_ATOMIC);
-	if (!entry->key) {
+	if (entry->key == NULL) {
 		ret_val = -ENOMEM;
 		goto cache_add_failure;
 	}
@@ -502,7 +500,7 @@ int cipso_v4_doi_add(struct cipso_v4_doi *doi_def,
 	atomic_set(&doi_def->refcount, 1);
 
 	spin_lock(&cipso_v4_doi_list_lock);
-	if (cipso_v4_doi_search(doi_def->doi)) {
+	if (cipso_v4_doi_search(doi_def->doi) != NULL) {
 		spin_unlock(&cipso_v4_doi_list_lock);
 		ret_val = -EEXIST;
 		goto doi_add_return;
@@ -513,7 +511,7 @@ int cipso_v4_doi_add(struct cipso_v4_doi *doi_def,
 
 doi_add_return:
 	audit_buf = netlbl_audit_start(AUDIT_MAC_CIPSOV4_ADD, audit_info);
-	if (audit_buf) {
+	if (audit_buf != NULL) {
 		const char *type_str;
 		switch (doi_type) {
 		case CIPSO_V4_MAP_TRANS:
@@ -539,7 +537,7 @@ doi_add_return:
 
 /**
  * cipso_v4_doi_free - Frees a DOI definition
- * @doi_def: the DOI definition
+ * @entry: the entry's RCU field
  *
  * Description:
  * This function frees all of the memory associated with a DOI definition.
@@ -547,7 +545,7 @@ doi_add_return:
  */
 void cipso_v4_doi_free(struct cipso_v4_doi *doi_def)
 {
-	if (!doi_def)
+	if (doi_def == NULL)
 		return;
 
 	switch (doi_def->type) {
@@ -598,7 +596,7 @@ int cipso_v4_doi_remove(u32 doi, struct netlbl_audit *audit_info)
 
 	spin_lock(&cipso_v4_doi_list_lock);
 	doi_def = cipso_v4_doi_search(doi);
-	if (!doi_def) {
+	if (doi_def == NULL) {
 		spin_unlock(&cipso_v4_doi_list_lock);
 		ret_val = -ENOENT;
 		goto doi_remove_return;
@@ -617,7 +615,7 @@ int cipso_v4_doi_remove(u32 doi, struct netlbl_audit *audit_info)
 
 doi_remove_return:
 	audit_buf = netlbl_audit_start(AUDIT_MAC_CIPSOV4_DEL, audit_info);
-	if (audit_buf) {
+	if (audit_buf != NULL) {
 		audit_log_format(audit_buf,
 				 " cipso_doi=%u res=%u",
 				 doi, ret_val == 0 ? 1 : 0);
@@ -644,7 +642,7 @@ struct cipso_v4_doi *cipso_v4_doi_getdef(u32 doi)
 
 	rcu_read_lock();
 	doi_def = cipso_v4_doi_search(doi);
-	if (!doi_def)
+	if (doi_def == NULL)
 		goto doi_getdef_return;
 	if (!atomic_inc_not_zero(&doi_def->refcount))
 		doi_def = NULL;
@@ -664,7 +662,7 @@ doi_getdef_return:
  */
 void cipso_v4_doi_putdef(struct cipso_v4_doi *doi_def)
 {
-	if (!doi_def)
+	if (doi_def == NULL)
 		return;
 
 	if (!atomic_dec_and_test(&doi_def->refcount))
@@ -1642,7 +1640,7 @@ int cipso_v4_validate(const struct sk_buff *skb, unsigned char **option)
 
 	rcu_read_lock();
 	doi_def = cipso_v4_doi_search(get_unaligned_be32(&opt[2]));
-	if (!doi_def) {
+	if (doi_def == NULL) {
 		err_offset = 2;
 		goto validate_return_locked;
 	}
@@ -1736,7 +1734,7 @@ int cipso_v4_validate(const struct sk_buff *skb, unsigned char **option)
 			 * not the loopback device drop the packet. Further,
 			 * there is no legitimate reason for setting this from
 			 * userspace so reject it if skb is NULL. */
-			if (!skb || !(skb->dev->flags & IFF_LOOPBACK)) {
+			if (skb == NULL || !(skb->dev->flags & IFF_LOOPBACK)) {
 				err_offset = opt_iter;
 				goto validate_return_locked;
 			}
@@ -1897,7 +1895,7 @@ int cipso_v4_sock_setattr(struct sock *sk,
 	 * defined yet but it is not a problem as the only users of these
 	 * "lite" PF_INET sockets are functions which do an accept() call
 	 * afterwards so we will label the socket as part of the accept(). */
-	if (!sk)
+	if (sk == NULL)
 		return 0;
 
 	/* We allocate the maximum CIPSO option size here so we are probably
@@ -1905,7 +1903,7 @@ int cipso_v4_sock_setattr(struct sock *sk,
 	 * on and after all we are only talking about 40 bytes. */
 	buf_len = CIPSO_V4_OPT_LEN_MAX;
 	buf = kmalloc(buf_len, GFP_ATOMIC);
-	if (!buf) {
+	if (buf == NULL) {
 		ret_val = -ENOMEM;
 		goto socket_setattr_failure;
 	}
@@ -1921,7 +1919,7 @@ int cipso_v4_sock_setattr(struct sock *sk,
 	 * set the IPOPT_CIPSO option. */
 	opt_len = (buf_len + 3) & ~3;
 	opt = kzalloc(sizeof(*opt) + opt_len, GFP_ATOMIC);
-	if (!opt) {
+	if (opt == NULL) {
 		ret_val = -ENOMEM;
 		goto socket_setattr_failure;
 	}
@@ -1981,7 +1979,7 @@ int cipso_v4_req_setattr(struct request_sock *req,
 	 * on and after all we are only talking about 40 bytes. */
 	buf_len = CIPSO_V4_OPT_LEN_MAX;
 	buf = kmalloc(buf_len, GFP_ATOMIC);
-	if (!buf) {
+	if (buf == NULL) {
 		ret_val = -ENOMEM;
 		goto req_setattr_failure;
 	}
@@ -1997,7 +1995,7 @@ int cipso_v4_req_setattr(struct request_sock *req,
 	 * set the IPOPT_CIPSO option. */
 	opt_len = (buf_len + 3) & ~3;
 	opt = kzalloc(sizeof(*opt) + opt_len, GFP_ATOMIC);
-	if (!opt) {
+	if (opt == NULL) {
 		ret_val = -ENOMEM;
 		goto req_setattr_failure;
 	}
@@ -2102,7 +2100,7 @@ void cipso_v4_sock_delattr(struct sock *sk)
 
 	sk_inet = inet_sk(sk);
 	opt = rcu_dereference_protected(sk_inet->inet_opt, 1);
-	if (!opt || opt->opt.cipso == 0)
+	if (opt == NULL || opt->opt.cipso == 0)
 		return;
 
 	hdr_delta = cipso_v4_delopt(&sk_inet->inet_opt);
@@ -2128,7 +2126,7 @@ void cipso_v4_req_delattr(struct request_sock *req)
 
 	req_inet = inet_rsk(req);
 	opt = req_inet->opt;
-	if (!opt || opt->opt.cipso == 0)
+	if (opt == NULL || opt->opt.cipso == 0)
 		return;
 
 	cipso_v4_delopt(&req_inet->opt);
@@ -2157,7 +2155,7 @@ int cipso_v4_getattr(const unsigned char *cipso,
 	doi = get_unaligned_be32(&cipso[2]);
 	rcu_read_lock();
 	doi_def = cipso_v4_doi_search(doi);
-	if (!doi_def)
+	if (doi_def == NULL)
 		goto getattr_return;
 	/* XXX - This code assumes only one tag per CIPSO option which isn't
 	 * really a good assumption to make but since we only support the MAC

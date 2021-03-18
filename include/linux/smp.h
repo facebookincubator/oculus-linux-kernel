@@ -18,7 +18,7 @@ struct call_single_data {
 	struct llist_node llist;
 	smp_call_func_t func;
 	void *info;
-	unsigned int flags;
+	u16 flags;
 };
 
 /* total number of cpus in this system (may exceed NR_CPUS) */
@@ -150,13 +150,6 @@ smp_call_function_any(const struct cpumask *mask, smp_call_func_t func,
 
 static inline void kick_all_cpus_sync(void) {  }
 static inline void wake_up_all_idle_cpus(void) {  }
-
-#ifdef CONFIG_UP_LATE_INIT
-extern void __init up_late_init(void);
-static inline void smp_init(void) { up_late_init(); }
-#else
-static inline void smp_init(void) { }
-#endif
 
 #endif /* !SMP */
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2011,2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2011,2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,7 @@ static inline bool kgsl_cffdump_flags_no_memzero(void) { return true; }
 
 struct kgsl_device_private;
 
-#ifdef CONFIG_QCOM_KGSL_CFF_DUMP
+#ifdef CONFIG_MSM_KGSL_CFF_DUMP
 
 #define CFF_OP_WRITE_MEM        0x0000000b
 
@@ -58,7 +58,7 @@ int kgsl_cff_dump_enable_set(void *data, u64 val);
 int kgsl_cff_dump_enable_get(void *data, u64 *val);
 int kgsl_cffdump_capture_ib_desc(struct kgsl_device *device,
 				struct kgsl_context *context,
-				struct kgsl_drawobj_cmd *cmdobj);
+				struct kgsl_cmdbatch *cmdbatch);
 
 void kgsl_cffdump_printline(int id, uint opcode, uint op1, uint op2,
 	uint op3, uint op4, uint op5);
@@ -164,7 +164,7 @@ static inline void kgsl_cffdump_user_event(struct kgsl_device *device,
 
 static inline int kgsl_cffdump_capture_ib_desc(struct kgsl_device *device,
 				struct kgsl_context *context,
-				struct kgsl_drawobj_cmd *cmdobj)
+				struct kgsl_cmdbatch *cmdbatch)
 {
 	return 0;
 }
@@ -179,5 +179,5 @@ static inline int kgsl_cff_dump_enable_get(void *data, u64 *val)
 	return -ENODEV;
 }
 
-#endif /* CONFIG_QCOM_KGSL_CFF_DUMP */
+#endif /* CONFIG_MSM_KGSL_CFF_DUMP */
 #endif /* __KGSL_CFFDUMP_H */

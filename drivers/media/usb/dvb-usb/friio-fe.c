@@ -210,8 +210,7 @@ error:
 	return -EREMOTEIO;
 }
 
-static int jdvbt90502_read_status(struct dvb_frontend *fe,
-				  enum fe_status *state)
+static int jdvbt90502_read_status(struct dvb_frontend *fe, fe_status_t *state)
 {
 	u8 result;
 	int ret;

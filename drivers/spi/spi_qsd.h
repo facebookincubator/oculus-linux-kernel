@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -167,13 +167,6 @@ enum msm_spi_state {
 /* Data Mover commands should be aligned to 64 bit(8 bytes) */
 #define DM_BYTE_ALIGN                 8
 
-#if defined(CONFIG_ARM64) || defined(CONFIG_LPAE)
-#define spi_dma_mask(dev)   (dma_set_mask((dev), DMA_BIT_MASK(36)))
-#else
-#define spi_dma_mask(dev)   (dma_set_mask((dev), DMA_BIT_MASK(32)))
-#endif
-
-
 enum msm_spi_qup_version {
 	SPI_QUP_VERSION_NONE    = 0x0,
 	SPI_QUP_VERSION_BFAM    = 0x2,
@@ -251,7 +244,7 @@ static struct msm_spi_regs{
 	{"input_debug",           S_IRUGO,           SPI_INPUT_DEBUG },
 	{"test_ctrl",             S_IRUGO | S_IWUSR, SPI_TEST_CTRL },
 	{"output_fifo",                     S_IWUSR, SPI_OUTPUT_FIFO },
-	{"input_fifo",		  S_IRUSR,           SPI_INPUT_FIFO },
+	{"input_fifo" ,           S_IRUSR,           SPI_INPUT_FIFO },
 	{"spi_state",             S_IRUGO | S_IWUSR, SPI_STATE },
 #if defined(CONFIG_SPI_QSD) || defined(CONFIG_SPI_QSD_MODULE)
 	{"fifo_word_cnt",         S_IRUGO,           SPI_FIFO_WORD_CNT },

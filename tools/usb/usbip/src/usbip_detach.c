@@ -47,9 +47,7 @@ static int detach_port(char *port)
 	uint8_t portnum;
 	char path[PATH_MAX+1];
 
-	unsigned int port_len = strlen(port);
-
-	for (unsigned int i = 0; i < port_len; i++)
+	for (unsigned int i = 0; i < strlen(port); i++)
 		if (!isdigit(port[i])) {
 			err("invalid port %s", port);
 			return -1;

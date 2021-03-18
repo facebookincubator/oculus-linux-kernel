@@ -33,10 +33,6 @@ ENTRY(_start)
 jiffies = jiffies_64;
 #endif
 
-#ifdef CONFIG_SPARC64
-ASSERT((swapper_tsb == 0x0000000000408000), "Error: sparc64 early assembler too large")
-#endif
-
 SECTIONS
 {
 #ifdef CONFIG_SPARC64
@@ -141,11 +137,6 @@ SECTIONS
 		__pause_3insn_patch = .;
 		*(.pause_3insn_patch)
 		__pause_3insn_patch_end = .;
-	}
-	.sun_m7_2insn_patch : {
-		__sun_m7_2insn_patch = .;
-		*(.sun_m7_2insn_patch)
-		__sun_m7_2insn_patch_end = .;
 	}
 	PERCPU_SECTION(SMP_CACHE_BYTES)
 

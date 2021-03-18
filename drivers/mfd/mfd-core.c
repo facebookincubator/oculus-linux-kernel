@@ -82,49 +82,29 @@ static int mfd_platform_add_cell(struct platform_device *pdev,
 static void mfd_acpi_add_device(const struct mfd_cell *cell,
 				struct platform_device *pdev)
 {
-	const struct mfd_cell_acpi_match *match = cell->acpi_match;
-	struct acpi_device *parent, *child;
+	struct acpi_device *parent_adev;
 	struct acpi_device *adev;
 
-	parent = ACPI_COMPANION(pdev->dev.parent);
-	if (!parent)
+	parent_adev = ACPI_COMPANION(pdev->dev.parent);
+	if (!parent_adev)
 		return;
 
 	/*
-	 * MFD child device gets its ACPI handle either from the ACPI device
-	 * directly under the parent that matches the either _HID or _CID, or
-	 * _ADR or it will use the parent handle if is no ID is given.
-	 *
-	 * Note that use of _ADR is a grey area in the ACPI specification,
-	 * though Intel Galileo Gen2 is using it to distinguish the children
-	 * devices.
+	 * MFD child device gets its ACPI handle either from the ACPI
+	 * device directly under the parent that matches the acpi_pnpid or
+	 * it will use the parent handle if is no acpi_pnpid is given.
 	 */
-	adev = parent;
-	if (match) {
-		if (match->pnpid) {
-			struct acpi_device_id ids[2] = {};
+	adev = parent_adev;
+	if (cell->acpi_pnpid) {
+		struct acpi_device_id ids[2] = {};
+		struct acpi_device *child_adev;
 
-			strlcpy(ids[0].id, match->pnpid, sizeof(ids[0].id));
-			list_for_each_entry(child, &parent->children, node) {
-				if (acpi_match_device_ids(child, ids)) {
-					adev = child;
-					break;
-				}
+		strlcpy(ids[0].id, cell->acpi_pnpid, sizeof(ids[0].id));
+		list_for_each_entry(child_adev, &parent_adev->children, node)
+			if (acpi_match_device_ids(child_adev, ids)) {
+				adev = child_adev;
+				break;
 			}
-		} else {
-			unsigned long long adr;
-			acpi_status status;
-
-			list_for_each_entry(child, &parent->children, node) {
-				status = acpi_evaluate_integer(child->handle,
-							       "_ADR", NULL,
-							       &adr);
-				if (ACPI_SUCCESS(status) && match->adr == adr) {
-					adev = child;
-					break;
-				}
-			}
-		}
 	}
 
 	ACPI_COMPANION_SET(&pdev->dev, adev);
@@ -145,15 +125,9 @@ static int mfd_add_device(struct device *parent, int id,
 	struct platform_device *pdev;
 	struct device_node *np = NULL;
 	int ret = -ENOMEM;
-	int platform_id;
 	int r;
 
-	if (id == PLATFORM_DEVID_AUTO)
-		platform_id = id;
-	else
-		platform_id = id + cell->id;
-
-	pdev = platform_device_alloc(cell->name, platform_id);
+	pdev = platform_device_alloc(cell->name, id + cell->id);
 	if (!pdev)
 		goto fail_alloc;
 
@@ -227,11 +201,9 @@ static int mfd_add_device(struct device *parent, int id,
 		}
 
 		if (!cell->ignore_resource_conflicts) {
-			if (has_acpi_companion(&pdev->dev)) {
-				ret = acpi_check_resource_conflict(&res[r]);
-				if (ret)
-					goto fail_alias;
-			}
+			ret = acpi_check_resource_conflict(&res[r]);
+			if (ret)
+				goto fail_alias;
 		}
 	}
 
@@ -322,7 +294,7 @@ void mfd_remove_devices(struct device *parent)
 {
 	atomic_t *cnts = NULL;
 
-	device_for_each_child_reverse(parent, &cnts, mfd_remove_devices_fn);
+	device_for_each_child(parent, &cnts, mfd_remove_devices_fn);
 	kfree(cnts);
 }
 EXPORT_SYMBOL(mfd_remove_devices);

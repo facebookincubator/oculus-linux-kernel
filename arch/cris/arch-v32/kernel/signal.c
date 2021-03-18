@@ -19,6 +19,7 @@
 #include <asm/processor.h>
 #include <asm/ucontext.h>
 #include <asm/uaccess.h>
+#include <arch/ptrace.h>
 #include <arch/hwregs/cpu_vect.h>
 
 extern unsigned long cris_signal_return_page;
@@ -58,7 +59,7 @@ restore_sigcontext(struct pt_regs *regs, struct sigcontext __user *sc)
 	unsigned long old_usp;
 
         /* Always make any pending restarted system calls return -EINTR */
-	current->restart_block.fn = do_no_restart_syscall;
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
 
 	/*
 	 * Restore the registers from &sc->regs. sc is already checked
@@ -70,9 +71,6 @@ restore_sigcontext(struct pt_regs *regs, struct sigcontext __user *sc)
 
 	/* Make that the user-mode flag is set. */
 	regs->ccs |= (1 << (U_CCS_BITNR + CCS_SHIFT));
-
-	/* Don't perform syscall restarting */
-	regs->exs = -1;
 
 	/* Restore the old USP. */
 	err |= __get_user(old_usp, &sc->usp);
@@ -289,6 +287,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
 		return -EFAULT;
 
+	/* TODO: what is the current->exec_domain stuff and invmap ? */
+
 	err |= __put_user(&frame->info, &frame->pinfo);
 	err |= __put_user(&frame->uc, &frame->puc);
 	err |= copy_siginfo_to_user(&frame->info, &ksig->info);
@@ -426,8 +426,6 @@ void
 do_signal(int canrestart, struct pt_regs *regs)
 {
 	struct ksignal ksig;
-
-	canrestart = canrestart && ((int)regs->exs >= 0);
 
 	/*
 	 * The common case should go fast, which is why this point is

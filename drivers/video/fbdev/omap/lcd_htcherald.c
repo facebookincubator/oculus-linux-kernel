@@ -111,6 +111,7 @@ static struct platform_driver htcherald_panel_driver = {
 	.resume		= htcherald_panel_resume,
 	.driver		= {
 		.name	= "lcd_htcherald",
+		.owner	= THIS_MODULE,
 	},
 };
 

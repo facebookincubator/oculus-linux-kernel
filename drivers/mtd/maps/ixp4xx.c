@@ -226,7 +226,7 @@ static int ixp4xx_flash_probe(struct platform_device *dev)
 		err = -ENXIO;
 		goto Error;
 	}
-	info->mtd->dev.parent = &dev->dev;
+	info->mtd->owner = THIS_MODULE;
 
 	/* Use the fast version */
 	info->map.write = ixp4xx_write16;
@@ -250,6 +250,7 @@ static struct platform_driver ixp4xx_flash_driver = {
 	.remove		= ixp4xx_flash_remove,
 	.driver		= {
 		.name	= "IXP4XX-Flash",
+		.owner	= THIS_MODULE,
 	},
 };
 

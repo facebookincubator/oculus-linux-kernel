@@ -20,6 +20,7 @@
 
 %option noyywrap nounput noinput never-interactive
 
+%x INCLUDE
 %x BYTESTRING
 %x PROPNODENAME
 %s V1
@@ -39,7 +40,6 @@ LINECOMMENT	"//".*\n
 #include "dtc-parser.tab.h"
 
 YYLTYPE yylloc;
-extern bool treesource_error;
 
 /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
 #define	YY_USER_ACTION \
@@ -61,8 +61,7 @@ static int dts_version = 1;
 				BEGIN(V1); \
 
 static void push_input_file(const char *filename);
-static bool pop_input_file(void);
-static void lexical_error(const char *fmt, ...);
+static int pop_input_file(void);
 %}
 
 %%
@@ -76,11 +75,11 @@ static void lexical_error(const char *fmt, ...);
 			char *line, *tmp, *fn;
 			/* skip text before line # */
 			line = yytext;
-			while (!isdigit((unsigned char)*line))
+			while (!isdigit(*line))
 				line++;
 			/* skip digits in line # */
 			tmp = line;
-			while (!isspace((unsigned char)*tmp))
+			while (!isspace(*tmp))
 				tmp++;
 			/* "NULL"-terminate line # */
 			*tmp = '\0';
@@ -147,42 +146,15 @@ static void lexical_error(const char *fmt, ...);
 		}
 
 <V1>([0-9]+|0[xX][0-9a-fA-F]+)(U|L|UL|LL|ULL)? {
-			char *e;
-			DPRINT("Integer Literal: '%s'\n", yytext);
-
-			errno = 0;
-			yylval.integer = strtoull(yytext, &e, 0);
-
-			assert(!(*e) || !e[strspn(e, "UL")]);
-
-			if (errno == ERANGE)
-				lexical_error("Integer literal '%s' out of range",
-					      yytext);
-			else
-				/* ERANGE is the only strtoull error triggerable
-				 *  by strings matching the pattern */
-				assert(errno == 0);
+			yylval.literal = xstrdup(yytext);
+			DPRINT("Literal: '%s'\n", yylval.literal);
 			return DT_LITERAL;
 		}
 
 <*>{CHAR_LITERAL}	{
-			struct data d;
-			DPRINT("Character literal: %s\n", yytext);
-
-			d = data_copy_escape_string(yytext+1, yyleng-2);
-			if (d.len == 1) {
-				lexical_error("Empty character literal");
-				yylval.integer = 0;
-				return DT_CHAR_LITERAL;
-			}
-
-			yylval.integer = (unsigned char)d.val[0];
-
-			if (d.len > 2)
-				lexical_error("Character literal has %d"
-					      " characters instead of 1",
-					      d.len - 1);
-
+			yytext[yyleng-1] = '\0';
+			yylval.literal = xstrdup(yytext+1);
+			DPRINT("Character literal: %s\n", yylval.literal);
 			return DT_CHAR_LITERAL;
 		}
 
@@ -192,7 +164,7 @@ static void lexical_error(const char *fmt, ...);
 			return DT_REF;
 		}
 
-<*>"&{/"{PATHCHAR}*\}	{	/* new-style path reference */
+<*>"&{/"{PATHCHAR}+\}	{	/* new-style path reference */
 			yytext[yyleng-1] = '\0';
 			DPRINT("Ref: %s\n", yytext+2);
 			yylval.labelref = xstrdup(yytext+2);
@@ -266,24 +238,13 @@ static void push_input_file(const char *filename)
 }
 
 
-static bool pop_input_file(void)
+static int pop_input_file(void)
 {
 	if (srcfile_pop() == 0)
-		return false;
+		return 0;
 
 	yypop_buffer_state();
 	yyin = current_srcfile->f;
 
-	return true;
-}
-
-static void lexical_error(const char *fmt, ...)
-{
-	va_list ap;
-
-	va_start(ap, fmt);
-	srcpos_verror(&yylloc, "Lexical error", fmt, ap);
-	va_end(ap);
-
-	treesource_error = true;
+	return 1;
 }

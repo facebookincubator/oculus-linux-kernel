@@ -1,6 +1,4 @@
 /*
- * Copyright (C) 2015 Anton Ivanov (aivanov@{brocade.com,kot-begemot.co.uk})
- * Copyright (C) 2015 Thomas Meyer (thomas@m3y3r.de)
  * Copyright (C) 2000 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
  * Copyright 2003 PathScale, Inc.
  * Licensed under the GPL
@@ -29,7 +27,6 @@
 #include <kern_util.h>
 #include <os.h>
 #include <skas.h>
-#include <timer-internal.h>
 
 /*
  * This is a per-cpu array.  A processor only modifies its entry and it only
@@ -93,14 +90,12 @@ void *__switch_to(struct task_struct *from, struct task_struct *to)
 
 void interrupt_end(void)
 {
-	struct pt_regs *regs = &current->thread.regs;
-
 	if (need_resched())
 		schedule();
 	if (test_thread_flag(TIF_SIGPENDING))
-		do_signal(regs);
+		do_signal();
 	if (test_and_clear_thread_flag(TIF_NOTIFY_RESUME))
-		tracehook_notify_resume(regs);
+		tracehook_notify_resume(&current->thread.regs);
 }
 
 void exit_thread(void)
@@ -206,8 +201,11 @@ void initial_thread_cb(void (*proc)(void *), void *arg)
 
 void arch_cpu_idle(void)
 {
+	unsigned long long nsecs;
+
 	cpu_tasks[current_thread_info()->cpu].pid = os_getpid();
-	os_idle_sleep(UM_NSEC_PER_SEC);
+	nsecs = disable_timer();
+	idle_sleep(nsecs);
 	local_irq_enable();
 }
 
@@ -259,6 +257,17 @@ int clear_user_proc(void __user *buf, int size)
 int strlen_user_proc(char __user *str)
 {
 	return strlen_user(str);
+}
+
+int smp_sigio_handler(void)
+{
+#ifdef CONFIG_SMP
+	int cpu = current_thread_info()->cpu;
+	IPI_handler(cpu);
+	if (cpu != 0)
+		return 1;
+#endif
+	return 0;
 }
 
 int cpu(void)

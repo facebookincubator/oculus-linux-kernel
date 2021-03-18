@@ -29,13 +29,14 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/smp.h>
 #include <linux/cpu_pm.h>
-#include <linux/coresight.h>
 
 #include <asm/cacheflush.h>
 #include <asm/cputype.h>
 #include <asm/current.h>
 #include <asm/hw_breakpoint.h>
+#include <asm/kdebug.h>
 #include <asm/traps.h>
+#include <asm/hardware/coresight.h>
 
 /* Breakpoint currently in use for each BRP. */
 static DEFINE_PER_CPU(struct perf_event *, bp_on_reg[ARM_MAX_BRP]);
@@ -224,6 +225,17 @@ static int get_num_brps(void)
 {
 	int brps = get_num_brp_resources();
 	return core_has_mismatch_brps() ? brps - 1 : brps;
+}
+
+/* Determine if halting mode is enabled */
+static int halting_mode_enabled(void)
+{
+	u32 dscr;
+	ARM_DBG_READ(c0, c1, 0, dscr);
+	WARN_ONCE(dscr & ARM_DSCR_HDBGEN,
+		  "halting debug mode enabled. "
+		  "Unable to access hardware resources.\n");
+	return !!(dscr & ARM_DSCR_HDBGEN);
 }
 
 /*
@@ -647,7 +659,7 @@ int arch_validate_hwbkpt_settings(struct perf_event *bp)
 		 * Per-cpu breakpoints are not supported by our stepping
 		 * mechanism.
 		 */
-		if (!bp->hw.target)
+		if (!bp->hw.bp_target)
 			return -EINVAL;
 
 		/*
@@ -931,6 +943,17 @@ static void reset_ctrl_regs(void *unused)
 	u32 val;
 
 	/*
+	 * Bail out without clearing the breakpoint registers if halting
+	 * debug mode or monitor debug mode is enabled. Checking for monitor
+	 * debug mode here ensures we don't clear the breakpoint registers
+	 * across power collapse if save and restore code has already
+	 * preserved the debug register values or they weren't lost and
+	 * monitor mode was already enabled earlier.
+	 */
+	if (halting_mode_enabled() || monitor_mode_enabled())
+		return;
+
+	/*
 	 * v7 debug contains save and restore registers so that debug state
 	 * can be maintained across low-power modes without leaving the debug
 	 * logic powered up. It is IMPLEMENTATION DEFINED whether we can access
@@ -975,7 +998,7 @@ static void reset_ctrl_regs(void *unused)
 	 * Unconditionally clear the OS lock by writing a value
 	 * other than CS_LAR_KEY to the access register.
 	 */
-	ARM_DBG_WRITE(c1, c0, 4, ~CORESIGHT_UNLOCK);
+	ARM_DBG_WRITE(c1, c0, 4, ~CS_LAR_KEY);
 	isb();
 
 	/*

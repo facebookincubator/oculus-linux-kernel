@@ -144,13 +144,11 @@ inline int nfc_llc_start(struct nfc_llc *llc)
 {
 	return llc->ops->start(llc);
 }
-EXPORT_SYMBOL(nfc_llc_start);
 
 inline int nfc_llc_stop(struct nfc_llc *llc)
 {
 	return llc->ops->stop(llc);
 }
-EXPORT_SYMBOL(nfc_llc_stop);
 
 inline void nfc_llc_rcv_from_drv(struct nfc_llc *llc, struct sk_buff *skb)
 {

@@ -543,7 +543,6 @@ static int __init perf_init(void)
 
 	return 0;
 }
-device_initcall(perf_init);
 
 /*
  * perf_start_counters(void)
@@ -848,3 +847,5 @@ printk("perf_rdr_write\n");
 	}
 printk("perf_rdr_write done\n");
 }
+
+module_init(perf_init);

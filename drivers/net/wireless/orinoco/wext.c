@@ -168,7 +168,7 @@ static int orinoco_ioctl_setwap(struct net_device *dev,
 	if (is_zero_ether_addr(ap_addr->sa_data) ||
 	    is_broadcast_ether_addr(ap_addr->sa_data)) {
 		priv->bssid_fixed = 0;
-		eth_zero_addr(priv->desired_bssid);
+		memset(priv->desired_bssid, 0, ETH_ALEN);
 
 		/* "off" means keep existing connection */
 		if (ap_addr->sa_data[0] == 0) {

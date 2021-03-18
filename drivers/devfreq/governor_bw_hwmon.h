@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -48,8 +48,6 @@ struct bw_hwmon {
 	int (*suspend_hwmon)(struct bw_hwmon *hw);
 	int (*resume_hwmon)(struct bw_hwmon *hw);
 	unsigned long (*set_thres)(struct bw_hwmon *hw, unsigned long bytes);
-	unsigned long (*set_hw_events)(struct bw_hwmon *hw,
-					unsigned int sample_ms);
 	unsigned long (*get_bytes_and_clear)(struct bw_hwmon *hw);
 	int (*set_throttle_adj)(struct bw_hwmon *hw, uint adj);
 	u32 (*get_throttle_adj)(struct bw_hwmon *hw);
@@ -57,15 +55,10 @@ struct bw_hwmon {
 	struct device_node *of_node;
 	struct devfreq_governor *gov;
 
-	unsigned long up_wake_mbps;
-	unsigned long undo_over_req_mbps;
-	unsigned long down_wake_mbps;
-	unsigned int down_cnt;
-
 	struct devfreq *df;
 };
 
-#ifdef CONFIG_DEVFREQ_GOV_QCOM_BW_HWMON
+#ifdef CONFIG_DEVFREQ_GOV_MSM_BW_HWMON
 int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon);
 int update_bw_hwmon(struct bw_hwmon *hwmon);
 int bw_hwmon_sample_end(struct bw_hwmon *hwmon);

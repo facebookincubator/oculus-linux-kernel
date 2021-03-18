@@ -20,9 +20,7 @@
 #include <linux/debugfs.h>
 #include <linux/wait.h>
 #include <linux/bitops.h>
-#include <linux/regmap.h>
 #include <linux/mfd/wcd9xxx/core.h>
-#include <linux/mfd/wcd9xxx/wcd9xxx-irq.h>
 #include <linux/mfd/wcd9xxx/wcd9xxx_registers.h>
 #include <linux/mfd/wcd9xxx/wcd9330_registers.h>
 #include <linux/mfd/wcd9xxx/pdata.h>
@@ -523,45 +521,6 @@ static const u32 vport_i2s_check_table[NUM_CODEC_DAIS] = {
 	0,	/* AIF2_CAP */
 };
 
-/*
- * Interrupt table for v3 corresponds to newer version
- * codecs (wcd9330)
- */
-static const struct intr_data wcd9330_intr_tbl[] = {
-	{WCD9XXX_IRQ_SLIMBUS, false},
-	{WCD9XXX_IRQ_MBHC_INSERTION, true},
-	{WCD9XXX_IRQ_MBHC_POTENTIAL, true},
-	{WCD9XXX_IRQ_MBHC_RELEASE, true},
-	{WCD9XXX_IRQ_MBHC_PRESS, true},
-	{WCD9XXX_IRQ_MBHC_SHORT_TERM, true},
-	{WCD9XXX_IRQ_MBHC_REMOVAL, true},
-	{WCD9330_IRQ_MBHC_JACK_SWITCH, true},
-	{WCD9XXX_IRQ_BG_PRECHARGE, false},
-	{WCD9XXX_IRQ_PA1_STARTUP, false},
-	{WCD9XXX_IRQ_PA2_STARTUP, false},
-	{WCD9XXX_IRQ_PA3_STARTUP, false},
-	{WCD9XXX_IRQ_PA4_STARTUP, false},
-	{WCD9XXX_IRQ_PA5_STARTUP, false},
-	{WCD9XXX_IRQ_MICBIAS1_PRECHARGE, false},
-	{WCD9XXX_IRQ_MICBIAS2_PRECHARGE, false},
-	{WCD9XXX_IRQ_MICBIAS3_PRECHARGE, false},
-	{WCD9XXX_IRQ_HPH_PA_OCPL_FAULT, false},
-	{WCD9XXX_IRQ_HPH_PA_OCPR_FAULT, false},
-	{WCD9XXX_IRQ_EAR_PA_OCPL_FAULT, false},
-	{WCD9XXX_IRQ_HPH_L_PA_STARTUP, false},
-	{WCD9XXX_IRQ_HPH_R_PA_STARTUP, false},
-	{WCD9320_IRQ_EAR_PA_STARTUP, false},
-	{WCD9330_IRQ_SVASS_ERR_EXCEPTION, false},
-	{WCD9330_IRQ_SVASS_ENGINE, true},
-	{WCD9330_IRQ_MAD_AUDIO, false},
-	{WCD9330_IRQ_MAD_BEACON, false},
-	{WCD9330_IRQ_MAD_ULTRASOUND, false},
-	{WCD9330_IRQ_SPEAKER1_CLIPPING, false},
-	{WCD9330_IRQ_SPEAKER2_CLIPPING, false},
-	{WCD9330_IRQ_VBAT_MONITOR_ATTACK, false},
-	{WCD9330_IRQ_VBAT_MONITOR_RELEASE, false},
-};
-
 struct tomtom_priv {
 	struct snd_soc_codec *codec;
 	u32 adc_count;
@@ -638,8 +597,6 @@ struct tomtom_priv {
 	/* Port values for Rx and Tx codec_dai */
 	unsigned int rx_port_value;
 	unsigned int tx_port_value;
-
-	struct mutex codec_mutex;
 };
 
 static const u32 comp_shift[] = {
@@ -723,121 +680,6 @@ static unsigned short tx_digital_gain_reg[] = {
 	TOMTOM_A_CDC_TX9_VOL_CTL_GAIN,
 	TOMTOM_A_CDC_TX10_VOL_CTL_GAIN,
 };
-
-/*
- * wcd9330_get_codec_info: Get codec specific information
- *
- * @wcd9xxx: pointer to wcd9xxx structure
- * @wcd_type: pointer to wcd9xxx_codec_type structure
- *
- * Returns 0 for success or negative error code for failure
- */
-int wcd9330_get_codec_info(struct wcd9xxx *wcd9xxx,
-			   struct wcd9xxx_codec_type *wcd_type)
-{
-	u16 id_minor, id_major;
-	struct regmap *wcd_regmap;
-	int rc, val, version = 0;
-
-	if (!wcd9xxx || !wcd_type)
-		return -EINVAL;
-
-	if (!wcd9xxx->regmap) {
-		dev_err(wcd9xxx->dev, "%s: wcd9xxx regmap is null!\n",
-			__func__);
-		return -EINVAL;
-	}
-	wcd_regmap = wcd9xxx->regmap;
-	rc = regmap_bulk_read(wcd_regmap, TOMTOM_A_CHIP_ID_BYTE_0,
-			      (u8 *)&id_minor, sizeof(u16));
-	if (rc)
-		return -EINVAL;
-
-	rc = regmap_bulk_read(wcd_regmap, TOMTOM_A_CHIP_ID_BYTE_2,
-			      (u8 *)&id_major, sizeof(u16));
-	if (rc)
-		return -EINVAL;
-
-	dev_info(wcd9xxx->dev, "%s: wcd9xxx chip id major 0x%x, minor 0x%x\n",
-		 __func__, id_major, id_minor);
-
-	if (id_minor == cpu_to_le16(0x1))
-		version = 2;
-	else if (id_minor == cpu_to_le16(0x0))
-		version = 1;
-	else
-		dev_err(wcd9xxx->dev, "%s: wcd9330 version unknown (major 0x%x, minor 0x%x)\n",
-			__func__, id_major, id_minor);
-
-	/* Fill codec type info */
-	wcd_type->id_major = id_major;
-	wcd_type->id_minor = id_minor;
-	wcd_type->num_irqs = WCD9330_NUM_IRQS;
-	wcd_type->version = version;
-	wcd_type->slim_slave_type = WCD9XXX_SLIM_SLAVE_ADDR_TYPE_1;
-	wcd_type->i2c_chip_status = 0x01;
-	wcd_type->intr_tbl = wcd9330_intr_tbl;
-	wcd_type->intr_tbl_size = ARRAY_SIZE(wcd9330_intr_tbl);
-
-	wcd_type->intr_reg[WCD9XXX_INTR_STATUS_BASE] =
-						TOMTOM_A_INTR1_STATUS0;
-	wcd_type->intr_reg[WCD9XXX_INTR_CLEAR_BASE] =
-						TOMTOM_A_INTR1_CLEAR0;
-	wcd_type->intr_reg[WCD9XXX_INTR_MASK_BASE] =
-						TOMTOM_A_INTR1_MASK0;
-	wcd_type->intr_reg[WCD9XXX_INTR_LEVEL_BASE] =
-						TOMTOM_A_INTR1_LEVEL0;
-	wcd_type->intr_reg[WCD9XXX_INTR_CLR_COMMIT] =
-						TOMTOM_A_INTR_MODE;
-
-	return rc;
-}
-EXPORT_SYMBOL(wcd9330_get_codec_info);
-
-/*
- * wcd9330_bringdown: Bringdown WCD Codec
- *
- * @wcd9xxx: Pointer to wcd9xxx structure
- *
- * Returns 0 for success or negative error code for failure
- */
-int wcd9330_bringdown(struct wcd9xxx *wcd9xxx)
-{
-	if (!wcd9xxx || !wcd9xxx->regmap)
-		return -EINVAL;
-
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0x7);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0x6);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0xe);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0x8);
-
-	return 0;
-}
-EXPORT_SYMBOL(wcd9330_bringdown);
-
-/*
- * wcd9330_bringup: Bring up WCD Codec
- *
- * @wcd9xxx: Pointer to wcd9xxx structure
- *
- * Returns 0 for success or negative error code for failure
- */
-int wcd9330_bringup(struct wcd9xxx *wcd9xxx)
-{
-	if (!wcd9xxx || !wcd9xxx->regmap)
-		return -EINVAL;
-
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0x4);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_CDC_CTL, 0x0);
-	/* wait for 5ms after codec reset for it to complete */
-	usleep_range(5000, 5100);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_CDC_CTL, 0x1);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_LEAKAGE_CTL, 0x3);
-	regmap_write(wcd9xxx->regmap, TOMTOM_A_CDC_CTL, 0x3);
-
-	return 0;
-}
-EXPORT_SYMBOL(wcd9330_bringup);
 
 int tomtom_enable_qfuse_sensing(struct snd_soc_codec *codec)
 {
@@ -935,10 +777,9 @@ static int tomtom_put_anc_func(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
-	struct snd_soc_dapm_context *dapm =
-				snd_soc_codec_get_dapm(codec);
+	struct snd_soc_dapm_context *dapm = &codec->dapm;
 
-	mutex_lock(&tomtom->codec_mutex);
+	mutex_lock(&codec->mutex);
 	tomtom->anc_func = (!ucontrol->value.integer.value[0] ? false : true);
 
 	dev_dbg(codec->dev, "%s: anc_func %x", __func__, tomtom->anc_func);
@@ -966,7 +807,7 @@ static int tomtom_put_anc_func(struct snd_kcontrol *kcontrol,
 		snd_soc_dapm_enable_pin(dapm, "EAR PA");
 		snd_soc_dapm_enable_pin(dapm, "EAR");
 	}
-	mutex_unlock(&tomtom->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
 	return 0;
 }
@@ -1293,7 +1134,7 @@ static int tomtom_config_compander(struct snd_soc_dapm_widget *w,
 				  struct snd_kcontrol *kcontrol, int event)
 {
 	int mask, enable_mask;
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	const int comp = w->shift;
 	const u32 rate = tomtom->comp_fs[comp];
@@ -2437,7 +2278,7 @@ static int wcd9330_put_dec_enum(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget_list *wlist =
 					dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *w = wlist->widgets[0];
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	unsigned int dec_mux, decimator;
 	char *dec_name = NULL;
@@ -2651,7 +2492,7 @@ static int slim_tx_mixer_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget_list *wlist =
 					dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(widget->dapm);
+	struct snd_soc_codec *codec = widget->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.integer.value[0] = tomtom_p->tx_port_value;
@@ -2664,7 +2505,7 @@ static int slim_tx_mixer_put(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget_list *wlist =
 					dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(widget->dapm);
+	struct snd_soc_codec *codec = widget->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 	struct wcd9xxx *core = dev_get_drvdata(codec->dev->parent);
 	struct snd_soc_dapm_update *update = NULL;
@@ -2680,13 +2521,13 @@ static int slim_tx_mixer_put(struct snd_kcontrol *kcontrol,
 		widget->name, ucontrol->id.name, tomtom_p->tx_port_value,
 		widget->shift, ucontrol->value.integer.value[0]);
 
-	mutex_lock(&tomtom_p->codec_mutex);
+	mutex_lock(&codec->mutex);
 
 	if (tomtom_p->intf_type != WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
 		if (dai_id != AIF1_CAP) {
 			dev_err(codec->dev, "%s: invalid AIF for I2C mode\n",
 				__func__);
-			mutex_unlock(&tomtom_p->codec_mutex);
+			mutex_unlock(&codec->mutex);
 			return -EINVAL;
 		}
 	}
@@ -2711,7 +2552,7 @@ static int slim_tx_mixer_put(struct snd_kcontrol *kcontrol,
 					tomtom_p->dai, NUM_CODEC_DAIS)) {
 				dev_dbg(codec->dev, "%s: TX%u is used by other virtual port\n",
 					__func__, port_id + 1);
-				mutex_unlock(&tomtom_p->codec_mutex);
+				mutex_unlock(&codec->mutex);
 				return 0;
 			}
 			tomtom_p->tx_port_value |= 1 << port_id;
@@ -2732,20 +2573,20 @@ static int slim_tx_mixer_put(struct snd_kcontrol *kcontrol,
 					"this virtual port\n",
 					__func__, port_id + 1);
 			/* avoid update power function */
-			mutex_unlock(&tomtom_p->codec_mutex);
+			mutex_unlock(&codec->mutex);
 			return 0;
 		}
 		break;
 	default:
 		pr_err("Unknown AIF %d\n", dai_id);
-		mutex_unlock(&tomtom_p->codec_mutex);
+		mutex_unlock(&codec->mutex);
 		return -EINVAL;
 	}
 	pr_debug("%s: name %s sname %s updated value %u shift %d\n", __func__,
 		widget->name, widget->sname, tomtom_p->tx_port_value,
 		widget->shift);
 
-	mutex_unlock(&tomtom_p->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol, enable, update);
 
 	return 0;
@@ -2757,7 +2598,7 @@ static int slim_rx_mux_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget_list *wlist =
 					dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(widget->dapm);
+	struct snd_soc_codec *codec = widget->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.enumerated.item[0] = tomtom_p->rx_port_value;
@@ -2774,7 +2615,7 @@ static int slim_rx_mux_put(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget_list *wlist =
 					dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(widget->dapm);
+	struct snd_soc_codec *codec = widget->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 	struct wcd9xxx *core = dev_get_drvdata(codec->dev->parent);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
@@ -2787,7 +2628,7 @@ static int slim_rx_mux_put(struct snd_kcontrol *kcontrol,
 
 	tomtom_p->rx_port_value = ucontrol->value.enumerated.item[0];
 
-	mutex_lock(&tomtom_p->codec_mutex);
+	mutex_lock(&codec->mutex);
 
 	if (tomtom_p->intf_type != WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
 		if (tomtom_p->rx_port_value > 2) {
@@ -2840,13 +2681,13 @@ static int slim_rx_mux_put(struct snd_kcontrol *kcontrol,
 		goto err;
 	}
 rtn:
-	mutex_unlock(&tomtom_p->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_mux_update_power(widget->dapm, kcontrol,
 					tomtom_p->rx_port_value, e, update);
 
 	return 0;
 err:
-	mutex_unlock(&tomtom_p->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	return -EINVAL;
 }
 
@@ -2963,7 +2804,7 @@ static void tomtom_codec_enable_adc_block(struct snd_soc_codec *codec,
 static int tomtom_codec_enable_adc(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *priv = snd_soc_codec_get_drvdata(codec);
 	u16 adc_reg;
 	u16 tx_fe_clkdiv_reg;
@@ -3163,7 +3004,7 @@ static int tomtom_codec_internal_rco_ctrl(struct snd_soc_codec *codec,
 static int tomtom_codec_enable_aux_pga(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: %d\n", __func__, event);
@@ -3198,7 +3039,7 @@ static int tomtom_codec_enable_aux_pga(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_lineout(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	u16 lineout_gain_reg;
 
@@ -3251,7 +3092,7 @@ static int tomtom_codec_enable_lineout(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_spk_pa(struct snd_soc_dapm_widget *w,
 				     struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	u16 spk_drv_reg;
 
@@ -3328,7 +3169,7 @@ done:
 static int tomtom_codec_enable_dmic(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	struct wcd9xxx_pdata *pdata = tomtom->resmgr.pdata;
 	u8  dmic_clk_en;
@@ -3553,7 +3394,7 @@ err:
 static int tomtom_codec_enable_mad(struct snd_soc_dapm_widget *w,
 				  struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 	u8 mad_micb, mad_cfilt;
@@ -3632,7 +3473,7 @@ static int tomtom_codec_enable_mad(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	u16 micb_int_reg = 0, micb_ctl_reg = 0;
 	u8 cfilt_sel_val = 0;
@@ -3777,14 +3618,13 @@ static int tomtom_enable_mbhc_micbias(struct snd_soc_codec *codec, bool enable,
 	}
 
 	if (enable)
-		rc = snd_soc_dapm_force_enable_pin(
-					     snd_soc_codec_get_dapm(codec),
+		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,
 					     DAPM_MICBIAS2_EXTERNAL_STANDALONE);
 	else
-		rc = snd_soc_dapm_disable_pin(snd_soc_codec_get_dapm(codec),
+		rc = snd_soc_dapm_disable_pin(&codec->dapm,
 					     DAPM_MICBIAS2_EXTERNAL_STANDALONE);
 	if (!rc)
-		snd_soc_dapm_sync(snd_soc_codec_get_dapm(codec));
+		snd_soc_dapm_sync(&codec->dapm);
 	pr_debug("%s: leave ret %d\n", __func__, rc);
 	return rc;
 }
@@ -3865,7 +3705,7 @@ static void tx_hpf_corner_freq_callback(struct work_struct *work)
 static int tomtom_codec_enable_dec(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	unsigned int decimator;
 	char *dec_name = NULL;
 	char *widget_name = NULL;
@@ -4004,7 +3844,7 @@ static int tomtom_codec_enable_vdd_spkr(struct snd_soc_dapm_widget *w,
 				       struct snd_kcontrol *kcontrol, int event)
 {
 	int ret = 0;
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *priv = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: %d %s\n", __func__, event, w->name);
@@ -4037,7 +3877,7 @@ static int tomtom_codec_enable_vdd_spkr2(struct snd_soc_dapm_widget *w,
 				       struct snd_kcontrol *kcontrol, int event)
 {
 	int ret = 0;
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *priv = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: %d %s\n", __func__, event, w->name);
@@ -4084,7 +3924,7 @@ static int tomtom_codec_enable_vdd_spkr2(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	pr_debug("%s %d %s\n", __func__, event, w->name);
 
@@ -4116,14 +3956,14 @@ static int tomtom_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 static int __tomtom_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
 				      struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *priv = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: enter\n", __func__);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		/*
-		 * ldo_h_users is protected by tomtom->codec_mutex, don't need
+		 * ldo_h_users is protected by codec->mutex, don't need
 		 * additional mutex
 		 */
 		if (++priv->ldo_h_users == 1) {
@@ -4173,7 +4013,7 @@ static int tomtom_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_rx_bias(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s %d\n", __func__, event);
@@ -4192,7 +4032,7 @@ static int tomtom_codec_enable_rx_bias(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_anc(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	const char *filename;
 	const struct firmware *fw;
 	int i;
@@ -4352,7 +4192,7 @@ err:
 static int tomtom_hphl_dac_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 	uint32_t impedl, impedr;
 	int ret = 0;
@@ -4413,7 +4253,7 @@ static int tomtom_hphl_dac_event(struct snd_soc_dapm_widget *w,
 static int tomtom_hphr_dac_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s %s %d\n", __func__, w->name, event);
@@ -4467,7 +4307,7 @@ static int tomtom_hphr_dac_event(struct snd_soc_dapm_widget *w,
 static int tomtom_hph_pa_event(struct snd_soc_dapm_widget *w,
 			      struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 	enum wcd9xxx_notify_event e_pre_on, e_post_off;
 	u8 req_clsh_state;
@@ -4542,7 +4382,7 @@ static int tomtom_hph_pa_event(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_anc_hph(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	int ret = 0;
 
 	switch (event) {
@@ -4586,7 +4426,7 @@ static const struct snd_soc_dapm_widget tomtom_dapm_i2s_widgets[] = {
 static int tomtom_lineout_dac_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s %s %d\n", __func__, w->name, event);
@@ -4614,7 +4454,7 @@ static int tomtom_lineout_dac_event(struct snd_soc_dapm_widget *w,
 static int tomtom_spk_dac_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	pr_debug("%s %s %d\n", __func__, w->name, event);
 
@@ -6261,7 +6101,7 @@ static int tomtom_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 				     int event)
 {
 	struct wcd9xxx *core;
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 	struct wcd9xxx_codec_dai_data *dai;
@@ -6270,8 +6110,8 @@ static int tomtom_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 
 	pr_debug("%s: event called! codec name %s num_dai %d\n"
 		"stream name %s event %d\n",
-		__func__, codec->component.name,
-		codec->component.num_dai, w->sname, event);
+		__func__, w->codec->component.name,
+		w->codec->component.num_dai, w->sname, event);
 
 	/* Execute the callback only if interface type is slimbus */
 	if (tomtom_p->intf_type != WCD9XXX_INTERFACE_TYPE_SLIMBUS)
@@ -6320,17 +6160,17 @@ static int tomtom_codec_enable_slimvi_feedback(struct snd_soc_dapm_widget *w,
 	u32 ret = 0;
 	struct wcd9xxx_codec_dai_data *dai = NULL;
 
-	if (!w) {
+	if (!w || !w->codec) {
 		pr_err("%s invalid params\n", __func__);
 		return -EINVAL;
 	}
-	codec = snd_soc_dapm_to_codec(w->dapm);
+	codec = w->codec;
 	tomtom_p = snd_soc_codec_get_drvdata(codec);
 	core = dev_get_drvdata(codec->dev->parent);
 
 	pr_debug("%s: event called! codec name %s num_dai %d stream name %s\n",
-		__func__, codec->component.name,
-		codec->component.num_dai, w->sname);
+		__func__, w->codec->component.name,
+		w->codec->component.num_dai, w->sname);
 
 	/* Execute the callback only if interface type is slimbus */
 	if (tomtom_p->intf_type != WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
@@ -6466,13 +6306,13 @@ static int tomtom_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 				     struct snd_kcontrol *kcontrol,
 				     int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 	struct wcd9xxx_codec_dai_data *dai;
 
 	dev_dbg(codec->dev, "%s: event called! codec name %s num_dai %d stream name %s\n",
-		__func__, codec->component.name,
-		codec->component.num_dai, w->sname);
+		__func__, w->codec->component.name,
+		w->codec->component.num_dai, w->sname);
 
 	/* Execute the callback only if interface type is slimbus */
 	if (tomtom_p->intf_type != WCD9XXX_INTERFACE_TYPE_SLIMBUS)
@@ -6489,7 +6329,7 @@ static int tomtom_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s %s %d\n", __func__, w->name, event);
@@ -6510,7 +6350,7 @@ static int tomtom_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_ear_dac_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	struct tomtom_priv *tomtom_p = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s %s %d\n", __func__, w->name, event);
@@ -6538,7 +6378,7 @@ static int tomtom_codec_ear_dac_event(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_set_iir_gain(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 
 	pr_debug("%s: event = %d\n", __func__, event);
 
@@ -6580,7 +6420,7 @@ static int tomtom_codec_set_iir_gain(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_dsm_mux_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	u8 reg_val, zoh_mux_val = 0x00;
 
 	pr_debug("%s: event = %d\n", __func__, event);
@@ -6611,7 +6451,7 @@ static int tomtom_codec_dsm_mux_event(struct snd_soc_dapm_widget *w,
 static int tomtom_codec_enable_anc_ear(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_codec *codec = w->codec;
 	int ret = 0;
 
 	switch (event) {
@@ -8455,7 +8295,7 @@ static int tomtom_post_reset_cb(struct wcd9xxx *wcd9xxx)
 	snd_soc_card_change_online_state(codec->component.card, 1);
 	clear_bit(BUS_DOWN, &tomtom->status_mask);
 
-	mutex_lock(&tomtom->codec_mutex);
+	mutex_lock(&codec->mutex);
 
 	tomtom_update_reg_defaults(codec);
 	if (wcd9xxx->mclk_rate == TOMTOM_MCLK_CLK_12P288MHZ)
@@ -8464,7 +8304,9 @@ static int tomtom_post_reset_cb(struct wcd9xxx *wcd9xxx)
 		snd_soc_update_bits(codec, TOMTOM_A_CHIP_CTL, 0x06, 0x2);
 	tomtom_codec_init_reg(codec);
 
+	codec->cache_sync = true;
 	snd_soc_cache_sync(codec);
+	codec->cache_sync = false;
 
 	ret = tomtom_handle_pdata(tomtom);
 	if (IS_ERR_VALUE(ret))
@@ -8509,7 +8351,7 @@ static int tomtom_post_reset_cb(struct wcd9xxx *wcd9xxx)
 	 * handling is finished.
 	 */
 	tomtom_enable_qfuse_sensing(codec);
-	mutex_unlock(&tomtom->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	return ret;
 }
 
@@ -8771,7 +8613,7 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 	struct tomtom_priv *tomtom;
 	struct wcd9xxx_pdata *pdata;
 	struct wcd9xxx *wcd9xxx;
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	int ret = 0;
 	int i, rco_clk_rate;
 	void *ptr = NULL;
@@ -8941,13 +8783,13 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 	}
 
 	atomic_set(&kp_tomtom_priv, (unsigned long)tomtom);
-	mutex_lock(&tomtom->codec_mutex);
+	mutex_lock(&codec->mutex);
 	snd_soc_dapm_disable_pin(dapm, "ANC HPHL");
 	snd_soc_dapm_disable_pin(dapm, "ANC HPHR");
 	snd_soc_dapm_disable_pin(dapm, "ANC HEADPHONE");
 	snd_soc_dapm_disable_pin(dapm, "ANC EAR PA");
 	snd_soc_dapm_disable_pin(dapm, "ANC EAR");
-	mutex_unlock(&tomtom->codec_mutex);
+	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
 
 	codec->component.ignore_pmdown_time = 1;
@@ -8963,11 +8805,8 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 
 err_pdata:
 	kfree(ptr);
-	control->rx_chs = NULL;
-	control->tx_chs = NULL;
 err_hwdep:
 	kfree(tomtom->fw_data);
-	tomtom->fw_data = NULL;
 err_nomem_slimch:
 	devm_kfree(codec->dev, tomtom);
 	return ret;
@@ -8975,16 +8814,11 @@ err_nomem_slimch:
 static int tomtom_codec_remove(struct snd_soc_codec *codec)
 {
 	struct tomtom_priv *tomtom = snd_soc_codec_get_drvdata(codec);
-	struct wcd9xxx *control;
 
 	WCD9XXX_BG_CLK_LOCK(&tomtom->resmgr);
 	atomic_set(&kp_tomtom_priv, 0);
 
 	WCD9XXX_BG_CLK_UNLOCK(&tomtom->resmgr);
-
-	control = dev_get_drvdata(codec->dev->parent);
-	control->rx_chs = NULL;
-	control->tx_chs = NULL;
 
 	if (tomtom->wcd_ext_clk)
 		clk_put(tomtom->wcd_ext_clk);
@@ -9071,14 +8905,10 @@ static int tomtom_probe(struct platform_device *pdev)
 	else if (wcd9xxx_get_intf_type() == WCD9XXX_INTERFACE_TYPE_I2C)
 		ret = snd_soc_register_codec(&pdev->dev, &soc_codec_dev_tomtom,
 			tomtom_i2s_dai, ARRAY_SIZE(tomtom_i2s_dai));
-	mutex_init(&tomtom->codec_mutex);
 	return ret;
 }
 static int tomtom_remove(struct platform_device *pdev)
 {
-	struct tomtom_priv *tomtom = platform_get_drvdata(pdev);
-
-	mutex_destroy(&tomtom->codec_mutex);
 	snd_soc_unregister_codec(&pdev->dev);
 	return 0;
 }

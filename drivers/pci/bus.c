@@ -20,16 +20,17 @@
 void pci_add_resource_offset(struct list_head *resources, struct resource *res,
 			     resource_size_t offset)
 {
-	struct resource_entry *entry;
+	struct pci_host_bridge_window *window;
 
-	entry = resource_list_create_entry(res, 0);
-	if (!entry) {
+	window = kzalloc(sizeof(struct pci_host_bridge_window), GFP_KERNEL);
+	if (!window) {
 		printk(KERN_ERR "PCI: can't add host bridge window %pR\n", res);
 		return;
 	}
 
-	entry->offset = offset;
-	resource_list_add_tail(entry, resources);
+	window->res = res;
+	window->offset = offset;
+	list_add_tail(&window->list, resources);
 }
 EXPORT_SYMBOL(pci_add_resource_offset);
 
@@ -41,7 +42,12 @@ EXPORT_SYMBOL(pci_add_resource);
 
 void pci_free_resource_list(struct list_head *resources)
 {
-	resource_list_free(resources);
+	struct pci_host_bridge_window *window, *tmp;
+
+	list_for_each_entry_safe(window, tmp, resources, list) {
+		list_del(&window->list);
+		kfree(window);
+	}
 }
 EXPORT_SYMBOL(pci_free_resource_list);
 
@@ -92,11 +98,11 @@ void pci_bus_remove_resources(struct pci_bus *bus)
 }
 
 static struct pci_bus_region pci_32_bit = {0, 0xffffffffULL};
-#ifdef CONFIG_PCI_BUS_ADDR_T_64BIT
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 static struct pci_bus_region pci_64_bit = {0,
-				(pci_bus_addr_t) 0xffffffffffffffffULL};
-static struct pci_bus_region pci_high = {(pci_bus_addr_t) 0x100000000ULL,
-				(pci_bus_addr_t) 0xffffffffffffffffULL};
+				(dma_addr_t) 0xffffffffffffffffULL};
+static struct pci_bus_region pci_high = {(dma_addr_t) 0x100000000ULL,
+				(dma_addr_t) 0xffffffffffffffffULL};
 #endif
 
 /*
@@ -202,7 +208,7 @@ int pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res,
 					  resource_size_t),
 		void *alignf_data)
 {
-#ifdef CONFIG_PCI_BUS_ADDR_T_64BIT
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 	int rc;
 
 	if (res->flags & IORESOURCE_MEM_64) {
@@ -258,8 +264,6 @@ bool pci_bus_clip_resource(struct pci_dev *dev, int idx)
 
 		res->start = start;
 		res->end = end;
-		res->flags &= ~IORESOURCE_UNSET;
-		orig_res.flags &= ~IORESOURCE_UNSET;
 		dev_printk(KERN_DEBUG, &dev->dev, "%pR clipped to %pR\n",
 				 &orig_res, res);
 

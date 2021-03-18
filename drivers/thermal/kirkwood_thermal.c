@@ -33,7 +33,7 @@ struct kirkwood_thermal_priv {
 };
 
 static int kirkwood_get_temp(struct thermal_zone_device *thermal,
-			  int *temp)
+			  unsigned long *temp)
 {
 	unsigned long reg;
 	struct kirkwood_thermal_priv *priv = thermal->devdata;
@@ -114,6 +114,7 @@ static struct platform_driver kirkwood_thermal_driver = {
 	.remove = kirkwood_thermal_exit,
 	.driver = {
 		.name = "kirkwood_thermal",
+		.owner = THIS_MODULE,
 		.of_match_table = kirkwood_thermal_id_table,
 	},
 };

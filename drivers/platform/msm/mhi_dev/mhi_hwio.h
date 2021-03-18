@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,7 @@
 #ifndef _MHI_HWIO_
 #define _MHI_HWIO_
 
-/* MHI register definition */
+/* MHI register defintion */
 #define MHI_CTRL_INT_STATUS_A7				(0x0004)
 #define MHI_CTRL_INT_STATUS_A7_STATUS_MASK		0xffffffff
 #define MHI_CTRL_INT_STATUS_A7_STATUS_SHIFT		0x0

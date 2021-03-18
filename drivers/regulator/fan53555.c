@@ -152,7 +152,7 @@ static unsigned int fan53555_get_mode(struct regulator_dev *rdev)
 		return REGULATOR_MODE_NORMAL;
 }
 
-static const int slew_rates[] = {
+static int slew_rates[] = {
 	64000,
 	32000,
 	16000,
@@ -187,7 +187,6 @@ static int fan53555_set_ramp(struct regulator_dev *rdev, int ramp)
 static struct regulator_ops fan53555_regulator_ops = {
 	.set_voltage_sel = regulator_set_voltage_sel_regmap,
 	.get_voltage_sel = regulator_get_voltage_sel_regmap,
-	.set_voltage_time_sel = regulator_set_voltage_time_sel,
 	.map_voltage = regulator_map_voltage_linear,
 	.list_voltage = regulator_list_voltage_linear,
 	.set_suspend_voltage = fan53555_set_suspend_voltage,
@@ -305,21 +304,20 @@ static int fan53555_regulator_register(struct fan53555_device_info *di,
 	return PTR_ERR_OR_ZERO(di->rdev);
 }
 
-static const struct regmap_config fan53555_regmap_config = {
+static struct regmap_config fan53555_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 };
 
 static int fan53555_parse_dt(struct fan53555_device_info *di,
-				struct fan53555_platform_data *pdata,
-				const struct regulator_desc *desc)
+				struct fan53555_platform_data *pdata)
 {
 	struct device *dev = di->dev;
 	struct device_node *np = dev->of_node;
 	int ret;
 	u32 tmp;
 
-	pdata->regulator = of_get_regulator_init_data(dev, np, desc);
+	pdata->regulator = of_get_regulator_init_data(dev, np);
 	if (!pdata->regulator) {
 		dev_err(dev, "regulator init data is missing\n");
 		return -ENODEV;
@@ -362,11 +360,6 @@ static int fan53555_regulator_probe(struct i2c_client *client,
 	unsigned int val;
 	int ret;
 
-	di = devm_kzalloc(&client->dev, sizeof(struct fan53555_device_info),
-					GFP_KERNEL);
-	if (!di)
-		return -ENOMEM;
-
 	pdata = dev_get_platdata(&client->dev);
 	if (!pdata) {
 		pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
@@ -374,8 +367,13 @@ static int fan53555_regulator_probe(struct i2c_client *client,
 			return -ENOMEM;
 	}
 
+	di = devm_kzalloc(&client->dev, sizeof(struct fan53555_device_info),
+					GFP_KERNEL);
+	if (!di)
+		return -ENOMEM;
+
 	di->dev = &client->dev;
-	ret = fan53555_parse_dt(di, pdata, &di->desc);
+	ret = fan53555_parse_dt(di, pdata);
 	if (ret)
 		return ret;
 
@@ -457,7 +455,6 @@ static const struct i2c_device_id fan53555_id[] = {
 	},
 	{ },
 };
-MODULE_DEVICE_TABLE(i2c, fan53555_id);
 
 static struct i2c_driver fan53555_regulator_driver = {
 	.driver = {
@@ -468,7 +465,17 @@ static struct i2c_driver fan53555_regulator_driver = {
 	.id_table = fan53555_id,
 };
 
-module_i2c_driver(fan53555_regulator_driver);
+static int __init fan53555_init(void)
+{
+	return i2c_add_driver(&fan53555_regulator_driver);
+}
+subsys_initcall(fan53555_init);
+
+static void __exit fan53555_exit(void)
+{
+	i2c_del_driver(&fan53555_regulator_driver);
+}
+module_exit(fan53555_exit);
 
 MODULE_AUTHOR("Yunfan Zhang <yfzhang@marvell.com>");
 MODULE_DESCRIPTION("FAN53555 regulator driver");

@@ -78,7 +78,7 @@ typedef struct user_fxsr_struct elf_fpxregset_t;
 #ifdef CONFIG_X86_64
 extern unsigned int vdso64_enabled;
 #endif
-#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
+#if defined(CONFIG_X86_32) || defined(CONFIG_COMPAT)
 extern unsigned int vdso32_enabled;
 #endif
 
@@ -171,8 +171,7 @@ do {						\
 static inline void elf_common_init(struct thread_struct *t,
 				   struct pt_regs *regs, const u16 ds)
 {
-	/* ax gets execve's return value. */
-	/*regs->ax = */ regs->bx = regs->cx = regs->dx = 0;
+	regs->ax = regs->bx = regs->cx = regs->dx = 0;
 	regs->si = regs->di = regs->bp = 0;
 	regs->r8 = regs->r9 = regs->r10 = regs->r11 = 0;
 	regs->r12 = regs->r13 = regs->r14 = regs->r15 = 0;
@@ -187,8 +186,8 @@ static inline void elf_common_init(struct thread_struct *t,
 #define	COMPAT_ELF_PLAT_INIT(regs, load_addr)		\
 	elf_common_init(&current->thread, regs, __USER_DS)
 
-void compat_start_thread(struct pt_regs *regs, u32 new_ip, u32 new_sp);
-#define compat_start_thread compat_start_thread
+void start_thread_ia32(struct pt_regs *regs, u32 new_ip, u32 new_sp);
+#define compat_start_thread start_thread_ia32
 
 void set_personality_ia32(bool);
 #define COMPAT_SET_PERSONALITY(ex)			\
@@ -328,7 +327,7 @@ else									\
 
 #define VDSO_ENTRY							\
 	((unsigned long)current->mm->context.vdso +			\
-	 vdso_image_32.sym___kernel_vsyscall)
+	 selected_vdso32->sym___kernel_vsyscall)
 
 struct linux_binprm;
 
@@ -339,14 +338,22 @@ extern int compat_arch_setup_additional_pages(struct linux_binprm *bprm,
 					      int uses_interp);
 #define compat_arch_setup_additional_pages compat_arch_setup_additional_pages
 
+extern unsigned long arch_randomize_brk(struct mm_struct *mm);
+#define arch_randomize_brk arch_randomize_brk
+
 /*
  * True on X86_32 or when emulating IA32 on X86_64
  */
 static inline int mmap_is_ia32(void)
 {
-	return config_enabled(CONFIG_X86_32) ||
-	       (config_enabled(CONFIG_COMPAT) &&
-		test_thread_flag(TIF_ADDR32));
+#ifdef CONFIG_X86_32
+	return 1;
+#endif
+#ifdef CONFIG_IA32_EMULATION
+	if (test_thread_flag(TIF_ADDR32))
+		return 1;
+#endif
+	return 0;
 }
 
 /* Do not change the values. See get_align_mask() */
@@ -358,7 +365,6 @@ enum align_flags {
 struct va_alignment {
 	int flags;
 	unsigned long mask;
-	unsigned long bits;
 } ____cacheline_aligned;
 
 extern struct va_alignment va_align;

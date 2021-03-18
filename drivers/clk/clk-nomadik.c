@@ -8,7 +8,8 @@
 #define pr_fmt(fmt) "Nomadik SRC clocks: " fmt
 
 #include <linux/bitops.h>
-#include <linux/slab.h>
+#include <linux/clk.h>
+#include <linux/clkdev.h>
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/clk-provider.h>
@@ -502,7 +503,8 @@ static int __init nomadik_src_clk_init_debugfs(void)
 			    NULL, NULL, &nomadik_src_clk_debugfs_ops);
 	return 0;
 }
-device_initcall(nomadik_src_clk_init_debugfs);
+
+module_init(nomadik_src_clk_init_debugfs);
 
 #endif
 

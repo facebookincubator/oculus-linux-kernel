@@ -15,10 +15,11 @@
 #include <asm/system_misc.h>
 
 #include <plat/cpu.h>
+#include <plat/watchdog-reset.h>
+
 #include <mach/map.h>
 
 #include "common.h"
-#include "watchdog-reset.h"
 
 /*
  * IO mapping for shared system controller IP.
@@ -60,7 +61,7 @@ static void s3c64xx_dt_restart(enum reboot_mode mode, const char *cmd)
 	soft_restart(0);
 }
 
-static const char *const s3c64xx_dt_compat[] __initconst = {
+static char const *s3c64xx_dt_compat[] __initdata = {
 	"samsung,s3c6400",
 	"samsung,s3c6410",
 	NULL

@@ -1,0 +1,25 @@
+STMicroelectronics IIO sensors drivers package v1.0.6
+
+The package contains those drivers:
+- LIS2DG, LIS2DS12, LSM6DS3, LSM303AGR, LSM6DSM, LSM6DS33, LSM6DS3H, LPS22HB,
+	LSM303AGR, LIS2HH12, HTS221, LSM303AH, LIS2DH, LIS3DH.
+
+Revision history:
+v1.0.0		Initial version.
+v1.0.1		Added support for LSM6DS33 & LSM6DS3H, LSM6DS3 driver rework
+		in order to support 13Hz and more devices on I2C master.
+v1.0.2		LSM6DS3, LSM6DS33, LSM6DS3H, LIS2DS12 bugfix.
+v1.0.3		Added support for LPS22HB & LSM303AGR.
+		Added SPI support for LIS2DS12.
+		Added self-test functions to LSM6DS3, LSM6DS33 and LSM6DS3H.
+		Bugfix LSM6DS3, LSM6DS33, LSM6DS3H on async read_raw funcs.
+v1.0.4		Added support for LIS2HH12.
+		Bugfix LSM6DS3 & LSM6DS3H CTS timestamp issues.
+v1.0.5		Added support for HTS221 & LSM303AH.
+		Bugfix LSM303AGR configuration registers, LPS22HB timestamp bugfix,
+		Bugfix LSM6DS3 & LSM6DS3H decimator when magn is not used,
+		do not report data at the beginning when sensor is enabled.
+v1.0.6		Added support for LIS2DH and LIS3DH.
+		Bugfix kernel panic on LSM6DS3/LSM6DS3H/LSM6DSM.
+		Bugfix accel no data inb some conditions on LSM6DS3/LSM6DS3H/LSM6DSM.
+		Few bugfix other drivers.

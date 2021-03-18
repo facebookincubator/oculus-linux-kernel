@@ -1169,7 +1169,10 @@ void *cxgb_alloc_mem(unsigned long size)
  */
 void cxgb_free_mem(void *addr)
 {
-	kvfree(addr);
+	if (is_vmalloc_addr(addr))
+		vfree(addr);
+	else
+		kfree(addr);
 }
 
 /*

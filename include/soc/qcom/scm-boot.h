@@ -32,7 +32,7 @@
 #define SCM_FLAG_HLOS			0x0
 #endif
 
-#ifdef CONFIG_QCOM_SCM
+#ifdef CONFIG_MSM_SCM
 int scm_set_boot_addr(phys_addr_t addr, unsigned int flags);
 int scm_set_boot_addr_mc(phys_addr_t addr, u32 aff0,
 		u32 aff1, u32 aff2, u32 flags);
@@ -41,23 +41,23 @@ int scm_is_mc_boot_available(void);
 #else
 static inline int scm_set_boot_addr(phys_addr_t addr, unsigned int flags)
 {
-	WARN_ONCE(1, "CONFIG_QCOM_SCM disabled, SCM call will fail silently\n");
+	WARN_ONCE(1, "CONFIG_MSM_SCM disabled, SCM call will fail silently\n");
 	return 0;
 }
 static inline int scm_set_boot_addr_mc(phys_addr_t addr, u32 aff0,
 		u32 aff1, u32 aff2, u32 flags)
 {
-	WARN_ONCE(1, "CONFIG_QCOM_SCM disabled, SCM call will fail silently\n");
+	WARN_ONCE(1, "CONFIG_MSM_SCM disabled, SCM call will fail silently\n");
 	return 0;
 }
 static inline int scm_set_warm_boot_addr_mc_for_all(phys_addr_t addr)
 {
-	WARN_ONCE(1, "CONFIG_QCOM_SCM disabled, SCM call will fail silently\n");
+	WARN_ONCE(1, "CONFIG_MSM_SCM disabled, SCM call will fail silently\n");
 	return 0;
 }
 static inline int scm_is_mc_boot_available(void)
 {
-	WARN_ONCE(1, "CONFIG_QCOM_SCM disabled, SCM call will fail silently\n");
+	WARN_ONCE(1, "CONFIG_MSM_SCM disabled, SCM call will fail silently\n");
 	return 0;
 }
 #endif

@@ -33,6 +33,11 @@ static inline void dir_put_page(struct page *page)
 	page_cache_release(page);
 }
 
+static inline unsigned long dir_pages(struct inode *inode)
+{
+	return (inode->i_size+PAGE_CACHE_SIZE-1)>>PAGE_CACHE_SHIFT;
+}
+
 static int dir_commit_chunk(struct page *page, loff_t pos, unsigned len)
 {
 	struct address_space *mapping = page->mapping;
@@ -127,7 +132,7 @@ struct sysv_dir_entry *sysv_find_entry(struct dentry *dentry, struct page **res_
 {
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
-	struct inode * dir = d_inode(dentry->d_parent);
+	struct inode * dir = dentry->d_parent->d_inode;
 	unsigned long start, n;
 	unsigned long npages = dir_pages(dir);
 	struct page *page = NULL;
@@ -171,7 +176,7 @@ found:
 
 int sysv_add_link(struct dentry *dentry, struct inode *inode)
 {
-	struct inode *dir = d_inode(dentry->d_parent);
+	struct inode *dir = dentry->d_parent->d_inode;
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct page *page = NULL;

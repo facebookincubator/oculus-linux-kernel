@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013, 2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,10 +19,8 @@
 #include <linux/string.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
-#include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/spmi.h>
-#include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/thermal.h>
@@ -90,13 +88,12 @@ enum qpnp_tm_adc_type {
 
 struct qpnp_tm_chip {
 	struct delayed_work		irq_work;
-	struct platform_device		*pdev;
-	struct regmap			*regmap;
+	struct spmi_device		*spmi_dev;
 	struct thermal_zone_device	*tz_dev;
 	const char			*tm_name;
 	unsigned int			subtype;
 	enum qpnp_tm_adc_type		adc_type;
-	int				temperature;
+	unsigned long			temperature;
 	enum thermal_device_mode	mode;
 	unsigned int			thresh;
 	unsigned int			clock_rate;
@@ -125,14 +122,12 @@ static inline int qpnp_tm_read(struct qpnp_tm_chip *chip, u16 addr, u8 *buf,
 {
 	int rc;
 
-	rc = regmap_bulk_read(chip->regmap, chip->base_addr + addr, buf, len);
+	rc = spmi_ext_register_readl(chip->spmi_dev->ctrl,
+			chip->spmi_dev->sid, chip->base_addr + addr, buf, len);
 
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: regmap_bulk_readl failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
-			__func__,
-			to_spmi_device(chip->pdev->dev.parent)->usid,
-			chip->base_addr + addr,
+		dev_err(&chip->spmi_dev->dev, "%s: spmi_ext_register_readl() failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
+			__func__, chip->spmi_dev->sid, chip->base_addr + addr,
 			len, rc);
 
 	return rc;
@@ -143,14 +138,12 @@ static inline int qpnp_tm_write(struct qpnp_tm_chip *chip, u16 addr, u8 *buf,
 {
 	int rc;
 
-	rc = regmap_bulk_write(chip->regmap, chip->base_addr + addr, buf, len);
+	rc = spmi_ext_register_writel(chip->spmi_dev->ctrl,
+			chip->spmi_dev->sid, chip->base_addr + addr, buf, len);
 
 	if (rc)
-		dev_err(&chip->pdev->dev,
-			"%s: regmap_bulk_write failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
-			__func__,
-			to_spmi_device(chip->pdev->dev.parent)->usid,
-			chip->base_addr + addr,
+		dev_err(&chip->spmi_dev->dev, "%s: spmi_ext_register_writel() failed. sid=%d, addr=%04X, len=%d, rc=%d\n",
+			__func__, chip->spmi_dev->sid, chip->base_addr + addr,
 			len, rc);
 
 	return rc;
@@ -187,8 +180,7 @@ static int qpnp_tm_update_temp(struct qpnp_tm_chip *chip)
 	if (!rc)
 		chip->temperature = adc_result.physical;
 	else
-		dev_err(&chip->pdev->dev,
-			"%s: qpnp_vadc_read(%d) failed, rc=%d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: qpnp_vadc_read(%d) failed, rc=%d\n",
 			__func__, chip->adc_channel, rc);
 
 	return rc;
@@ -275,7 +267,7 @@ static int qpnp_tm_update_temp_no_adc(struct qpnp_tm_chip *chip)
 }
 
 static int qpnp_tz_get_temp_no_adc(struct thermal_zone_device *thermal,
-				     int *temperature)
+				     unsigned long *temperature)
 {
 	struct qpnp_tm_chip *chip = thermal->devdata;
 	int rc;
@@ -293,7 +285,7 @@ static int qpnp_tz_get_temp_no_adc(struct thermal_zone_device *thermal,
 }
 
 static int qpnp_tz_get_temp_qpnp_adc(struct thermal_zone_device *thermal,
-				      int *temperature)
+				      unsigned long *temperature)
 {
 	struct qpnp_tm_chip *chip = thermal->devdata;
 	int rc;
@@ -303,8 +295,7 @@ static int qpnp_tz_get_temp_qpnp_adc(struct thermal_zone_device *thermal,
 
 	rc = qpnp_tm_update_temp(chip);
 	if (rc < 0) {
-		dev_err(&chip->pdev->dev,
-			"%s: %s: adc read failed, rc = %d\n",
+		dev_err(&chip->spmi_dev->dev, "%s: %s: adc read failed, rc = %d\n",
 			__func__, chip->tm_name, rc);
 		return rc;
 	}
@@ -371,7 +362,7 @@ static int qpnp_tz_get_trip_type(struct thermal_zone_device *thermal,
 }
 
 static int qpnp_tz_get_trip_temp(struct thermal_zone_device *thermal,
-				   int trip, int *temperature)
+				   int trip, unsigned long *temperature)
 {
 	struct qpnp_tm_chip *chip = thermal->devdata;
 	int thresh_temperature;
@@ -400,7 +391,7 @@ static int qpnp_tz_get_trip_temp(struct thermal_zone_device *thermal,
 }
 
 static int qpnp_tz_get_crit_temp(struct thermal_zone_device *thermal,
-				   int *temperature)
+				   unsigned long *temperature)
 {
 	struct qpnp_tm_chip *chip = thermal->devdata;
 
@@ -466,11 +457,11 @@ static void qpnp_tm_work(struct work_struct *work)
 
 	if (stage_new != stage_old) {
 		if (chip->subtype == QPNP_TM_SUBTYPE_GEN1)
-			pr_crit("%s: PMIC Temp Alarm - stage=%u, threshold=%u, temperature=%d mC\n",
+			pr_crit("%s: PMIC Temp Alarm - stage=%u, threshold=%u, temperature=%lu mC\n",
 				chip->tm_name, chip->stage, chip->thresh,
 				chip->temperature);
 		else
-			pr_crit("%s: PMIC Temp Alarm - stage=%u, state=%u, threshold=%u, temperature=%d mC\n",
+			pr_crit("%s: PMIC Temp Alarm - stage=%u, state=%u, threshold=%u, temperature=%lu mC\n",
 				chip->tm_name, stage_new, chip->stage,
 				chip->thresh, chip->temperature);
 
@@ -533,10 +524,10 @@ static int qpnp_tm_init_reg(struct qpnp_tm_chip *chip)
 	return rc;
 }
 
-static int qpnp_tm_probe(struct platform_device *pdev)
+static int qpnp_tm_probe(struct spmi_device *spmi)
 {
 	struct device_node *node;
-	unsigned int base;
+	struct resource *res;
 	struct qpnp_tm_chip *chip;
 	struct thermal_zone_device_ops *tz_ops;
 	char *tm_name;
@@ -544,53 +535,53 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	int rc = 0;
 	u8 raw_type[2], type, subtype;
 
-	if (!pdev || !(&pdev->dev) || !pdev->dev.of_node) {
-		dev_err(&pdev->dev, "%s: device tree node not found\n",
+	if (!spmi || !(&spmi->dev) || !spmi->dev.of_node) {
+		dev_err(&spmi->dev, "%s: device tree node not found\n",
 			__func__);
 		return -EINVAL;
 	}
 
-	node = pdev->dev.of_node;
+	node = spmi->dev.of_node;
 
 	chip = kzalloc(sizeof(struct qpnp_tm_chip), GFP_KERNEL);
-	if (!chip)
+	if (!chip) {
+		dev_err(&spmi->dev, "%s: Can't allocate qpnp_tm_chip\n",
+			__func__);
 		return -ENOMEM;
-
-	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
-	if (!chip->regmap) {
-		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
-		return -EINVAL;
 	}
 
-	dev_set_drvdata(&pdev->dev, chip);
+	dev_set_drvdata(&spmi->dev, chip);
 
-	rc = of_property_read_u32(pdev->dev.of_node, "reg", &base);
-	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't find reg in node = %s rc = %d\n",
-			pdev->dev.of_node->full_name, rc);
+	res = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&spmi->dev, "%s: node is missing base address\n",
+			__func__);
+		rc = -EINVAL;
 		goto free_chip;
 	}
-	chip->base_addr	= base;
-	chip->pdev	= pdev;
+	chip->base_addr	= res->start;
+	chip->spmi_dev	= spmi;
 
-	chip->irq = platform_get_irq(pdev, 0);
+	chip->irq = spmi_get_irq(spmi, NULL, 0);
 	if (chip->irq < 0) {
 		rc = chip->irq;
-		dev_err(&pdev->dev, "%s: node is missing irq, rc=%d\n",
+		dev_err(&spmi->dev, "%s: node is missing irq, rc=%d\n",
 			__func__, rc);
 		goto free_chip;
 	}
 
 	chip->tm_name = of_get_property(node, "label", NULL);
 	if (chip->tm_name == NULL) {
-		dev_err(&pdev->dev, "%s: node is missing label\n", __func__);
+		dev_err(&spmi->dev, "%s: node is missing label\n",
+			__func__);
 		rc = -EINVAL;
 		goto free_chip;
 	}
 
 	tm_name = kstrdup(chip->tm_name, GFP_KERNEL);
 	if (tm_name == NULL) {
+		dev_err(&spmi->dev, "%s: could not allocate memory for label\n",
+			__func__);
 		rc = -ENOMEM;
 		goto free_chip;
 	}
@@ -602,15 +593,14 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	chip->thresh = THRESH_MAX + 1;
 	rc = of_property_read_u32(node, "qcom,threshold-set", &chip->thresh);
 	if (!rc && (chip->thresh < THRESH_MIN || chip->thresh > THRESH_MAX))
-		dev_err(&pdev->dev,
-			"%s: invalid qcom,threshold-set=%u specified\n",
+		dev_err(&spmi->dev, "%s: invalid qcom,threshold-set=%u specified\n",
 			__func__, chip->thresh);
 
 	chip->clock_rate = CLOCK_RATE_MAX + 1;
 	rc = of_property_read_u32(node, "qcom,clock-rate", &chip->clock_rate);
 	if (!rc && (chip->clock_rate < CLOCK_RATE_MIN
 		    || chip->clock_rate > CLOCK_RATE_MAX))
-		dev_err(&pdev->dev,
+		dev_err(&spmi->dev,
 			"%s: invalid qcom,clock-rate=%u specified\n", __func__,
 			chip->clock_rate);
 
@@ -618,12 +608,11 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	rc = of_property_read_u32(node, "qcom,channel-num", &chip->adc_channel);
 	if (!rc) {
 		if (chip->adc_channel < 0 || chip->adc_channel >= ADC_MAX_NUM) {
-			dev_err(&pdev->dev,
-				"%s: invalid qcom,channel-num=%d specified\n",
+			dev_err(&spmi->dev, "%s: invalid qcom,channel-num=%d specified\n",
 				__func__, chip->adc_channel);
 		} else {
 			chip->adc_type = QPNP_TM_ADC_QPNP_ADC;
-			chip->vadc_dev = qpnp_get_vadc(&pdev->dev,
+			chip->vadc_dev = qpnp_get_vadc(&spmi->dev,
 							"temp_alarm");
 			if (IS_ERR(chip->vadc_dev)) {
 				rc = PTR_ERR(chip->vadc_dev);
@@ -649,8 +638,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 
 	rc = qpnp_tm_read(chip, QPNP_TM_REG_TYPE, raw_type, 2);
 	if (rc) {
-		dev_err(&pdev->dev,
-			"%s: could not read type register, rc=%d\n",
+		dev_err(&spmi->dev, "%s: could not read type register, rc=%d\n",
 			__func__, rc);
 		goto err_cancel_work;
 	}
@@ -659,8 +647,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 
 	if (type != QPNP_TM_TYPE || (subtype != QPNP_TM_SUBTYPE_GEN1
 				     && subtype != QPNP_TM_SUBTYPE_GEN2)) {
-		dev_err(&pdev->dev,
-			"%s: invalid type=%02X or subtype=%02X register value\n",
+		dev_err(&spmi->dev, "%s: invalid type=%02X or subtype=%02X register value\n",
 			__func__, type, subtype);
 		rc = -ENODEV;
 		goto err_cancel_work;
@@ -670,7 +657,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 
 	rc = qpnp_tm_init_reg(chip);
 	if (rc) {
-		dev_err(&pdev->dev, "%s: qpnp_tm_init_reg() failed, rc=%d\n",
+		dev_err(&spmi->dev, "%s: qpnp_tm_init_reg() failed, rc=%d\n",
 			__func__, rc);
 		goto err_cancel_work;
 	}
@@ -678,8 +665,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	if (chip->adc_type == QPNP_TM_ADC_NONE) {
 		rc = qpnp_tm_init_temp_no_adc(chip);
 		if (rc) {
-			dev_err(&pdev->dev,
-				"%s: qpnp_tm_init_temp_no_adc() failed, rc=%d\n",
+			dev_err(&spmi->dev, "%s: qpnp_tm_init_temp_no_adc() failed, rc=%d\n",
 				__func__, rc);
 			goto err_cancel_work;
 		}
@@ -689,8 +675,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	chip->mode = THERMAL_DEVICE_DISABLED;
 	rc = qpnp_tm_shutdown_override(chip, SOFTWARE_OVERRIDE_DISABLED);
 	if (rc) {
-		dev_err(&pdev->dev,
-			"%s: qpnp_tm_shutdown_override() failed, rc=%d\n",
+		dev_err(&spmi->dev, "%s: qpnp_tm_shutdown_override() failed, rc=%d\n",
 			__func__, rc);
 		goto err_cancel_work;
 	}
@@ -698,8 +683,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	chip->tz_dev = thermal_zone_device_register(tm_name, TRIP_NUM, 0, chip,
 			tz_ops, NULL, 0, 0);
 	if (chip->tz_dev == NULL) {
-		dev_err(&pdev->dev,
-			"%s: thermal_zone_device_register() failed.\n",
+		dev_err(&spmi->dev, "%s: thermal_zone_device_register() failed.\n",
 			__func__);
 		rc = -ENODEV;
 		goto err_cancel_work;
@@ -708,7 +692,7 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 	rc = request_irq(chip->irq, qpnp_tm_isr, IRQF_TRIGGER_RISING, tm_name,
 			chip);
 	if (rc < 0) {
-		dev_err(&pdev->dev, "%s: request_irq(%d) failed: %d\n",
+		dev_err(&spmi->dev, "%s: request_irq(%d) failed: %d\n",
 			__func__, chip->irq, rc);
 		goto err_free_tz;
 	}
@@ -721,16 +705,16 @@ err_cancel_work:
 	cancel_delayed_work_sync(&chip->irq_work);
 	kfree(chip->tm_name);
 free_chip:
-	dev_set_drvdata(&pdev->dev, NULL);
+	dev_set_drvdata(&spmi->dev, NULL);
 	kfree(chip);
 	return rc;
 }
 
-static int qpnp_tm_remove(struct platform_device *pdev)
+static int qpnp_tm_remove(struct spmi_device *spmi)
 {
-	struct qpnp_tm_chip *chip = dev_get_drvdata(&pdev->dev);
+	struct qpnp_tm_chip *chip = dev_get_drvdata(&spmi->dev);
 
-	dev_set_drvdata(&pdev->dev, NULL);
+	dev_set_drvdata(&spmi->dev, NULL);
 	thermal_zone_device_unregister(chip->tz_dev);
 	kfree(chip->tm_name);
 	qpnp_tm_shutdown_override(chip, SOFTWARE_OVERRIDE_DISABLED);
@@ -739,6 +723,19 @@ static int qpnp_tm_remove(struct platform_device *pdev)
 	kfree(chip);
 
 	return 0;
+}
+
+static void qpnp_tm_shutdown(struct spmi_device *spmi)
+{
+	struct qpnp_tm_chip *chip = dev_get_drvdata(&spmi->dev);
+	int rc;
+	u8 reg;
+
+	/* configure TEMP_ALARM to follow HW_EN */
+	reg = ALARM_CTRL_FOLLOW_HW_ENABLE;
+	rc = qpnp_tm_write(chip, QPNP_TM_REG_ALARM_CTRL, &reg, 1);
+	if (rc)
+		pr_err("Failed to cfg. TEMP_ALARM to follow HW_EN rc=%d\n", rc);
 }
 
 #ifdef CONFIG_PM
@@ -773,17 +770,17 @@ static const struct dev_pm_ops qpnp_tm_pm_ops = {
 #define QPNP_TM_PM_OPS	NULL
 #endif
 
-static const struct of_device_id qpnp_tm_match_table[] = {
+static struct of_device_id qpnp_tm_match_table[] = {
 	{ .compatible = QPNP_TM_DRIVER_NAME, },
 	{}
 };
 
-static const struct platform_device_id qpnp_tm_id[] = {
+static const struct spmi_device_id qpnp_tm_id[] = {
 	{ QPNP_TM_DRIVER_NAME, 0 },
 	{}
 };
 
-static struct platform_driver qpnp_tm_driver = {
+static struct spmi_driver qpnp_tm_driver = {
 	.driver = {
 		.name		= QPNP_TM_DRIVER_NAME,
 		.of_match_table	= qpnp_tm_match_table,
@@ -792,17 +789,18 @@ static struct platform_driver qpnp_tm_driver = {
 	},
 	.probe	  = qpnp_tm_probe,
 	.remove	  = qpnp_tm_remove,
+	.shutdown = qpnp_tm_shutdown,
 	.id_table = qpnp_tm_id,
 };
 
 int __init qpnp_tm_init(void)
 {
-	return platform_driver_register(&qpnp_tm_driver);
+	return spmi_driver_register(&qpnp_tm_driver);
 }
 
 static void __exit qpnp_tm_exit(void)
 {
-	platform_driver_unregister(&qpnp_tm_driver);
+	spmi_driver_unregister(&qpnp_tm_driver);
 }
 
 module_init(qpnp_tm_init);

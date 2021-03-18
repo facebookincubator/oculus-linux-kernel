@@ -80,9 +80,7 @@ static int nrs_fifo_start(struct ptlrpc_nrs_policy *policy)
 {
 	struct nrs_fifo_head *head;
 
-	head = kzalloc_node(sizeof(*head), GFP_NOFS,
-			    cfs_cpt_spread_node(nrs_pol2cptab(policy),
-						nrs_pol2cptid(policy)));
+	OBD_CPT_ALLOC_PTR(head, nrs_pol2cptab(policy), nrs_pol2cptid(policy));
 	if (head == NULL)
 		return -ENOMEM;
 
@@ -107,7 +105,7 @@ static void nrs_fifo_stop(struct ptlrpc_nrs_policy *policy)
 	LASSERT(head != NULL);
 	LASSERT(list_empty(&head->fh_list));
 
-	kfree(head);
+	OBD_FREE_PTR(head);
 }
 
 /**
@@ -160,9 +158,9 @@ static int nrs_fifo_res_get(struct ptlrpc_nrs_policy *policy,
  */
 static
 struct ptlrpc_nrs_request *nrs_fifo_req_get(struct ptlrpc_nrs_policy *policy,
-					    bool peek, bool force)
+					     bool peek, bool force)
 {
-	struct nrs_fifo_head *head = policy->pol_private;
+	struct nrs_fifo_head	  *head = policy->pol_private;
 	struct ptlrpc_nrs_request *nrq;
 
 	nrq = unlikely(list_empty(&head->fh_list)) ? NULL :

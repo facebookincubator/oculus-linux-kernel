@@ -12,9 +12,9 @@
 
 #include <linux/io.h>
 #include <linux/module.h>
-#include <linux/notifier.h>
 #include <linux/reboot.h>
 #include <linux/regmap.h>
+#include <asm/system_misc.h>
 #include <linux/mfd/syscon.h>
 #include <linux/of_platform.h>
 
@@ -52,8 +52,7 @@ static inline int rsctrl_enable_rspll_write(void)
 				  RSCTRL_KEY_MASK, RSCTRL_KEY);
 }
 
-static int rsctrl_restart_handler(struct notifier_block *this,
-				  unsigned long mode, void *cmd)
+static void rsctrl_restart(enum reboot_mode mode, const char *cmd)
 {
 	/* enable write access to RSTCTRL */
 	rsctrl_enable_rspll_write();
@@ -61,16 +60,9 @@ static int rsctrl_restart_handler(struct notifier_block *this,
 	/* reset the SOC */
 	regmap_update_bits(pllctrl_regs, rspll_offset + RSCTRL_RG,
 			   RSCTRL_RESET_MASK, 0);
-
-	return NOTIFY_DONE;
 }
 
-static struct notifier_block rsctrl_restart_nb = {
-	.notifier_call = rsctrl_restart_handler,
-	.priority = 128,
-};
-
-static const struct of_device_id rsctrl_of_match[] = {
+static struct of_device_id rsctrl_of_match[] = {
 	{.compatible = "ti,keystone-reset", },
 	{},
 };
@@ -122,6 +114,8 @@ static int rsctrl_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	arm_pm_restart = rsctrl_restart;
+
 	/* disable a reset isolation for all module clocks */
 	ret = regmap_write(pllctrl_regs, rspll_offset + RSISO_RG, 0);
 	if (ret)
@@ -153,16 +147,13 @@ static int rsctrl_probe(struct platform_device *pdev)
 			return ret;
 	}
 
-	ret = register_restart_handler(&rsctrl_restart_nb);
-	if (ret)
-		dev_err(dev, "cannot register restart handler (err=%d)\n", ret);
-
-	return ret;
+	return 0;
 }
 
 static struct platform_driver rsctrl_driver = {
 	.probe = rsctrl_probe,
 	.driver = {
+		.owner = THIS_MODULE,
 		.name = KBUILD_MODNAME,
 		.of_match_table = rsctrl_of_match,
 	},

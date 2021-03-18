@@ -41,7 +41,10 @@ Command support does not exist, but could be added for this board.
 
 #include <linux/module.h>
 
-#include "../comedi_pcmcia.h"
+#include "../comedidev.h"
+
+#include <pcmcia/cistpl.h>
+#include <pcmcia/ds.h>
 
 #include "das08.h"
 
@@ -108,7 +111,7 @@ static struct pcmcia_driver das08_cs_driver = {
 };
 module_comedi_pcmcia_driver(driver_das08_cs, das08_cs_driver);
 
-MODULE_AUTHOR("David A. Schleef <ds@schleef.org>");
-MODULE_AUTHOR("Frank Mori Hess <fmhess@users.sourceforge.net>");
+MODULE_AUTHOR("David A. Schleef <ds@schleef.org>, "
+	      "Frank Mori Hess <fmhess@users.sourceforge.net>");
 MODULE_DESCRIPTION("Comedi driver for ComputerBoards DAS-08 PCMCIA boards");
 MODULE_LICENSE("GPL");

@@ -36,15 +36,29 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	generic_start_io_acct(bio_data_dir(req->master_bio), req->i.size >> 9,
-			      &device->vdisk->part0);
+	const int rw = bio_data_dir(req->master_bio);
+	int cpu;
+	cpu = part_stat_lock();
+	part_round_stats(cpu, &device->vdisk->part0);
+	part_stat_inc(cpu, &device->vdisk->part0, ios[rw]);
+	part_stat_add(cpu, &device->vdisk->part0, sectors[rw], req->i.size >> 9);
+	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
+		       the compiler warning about cpu only assigned but never used... */
+	part_inc_in_flight(&device->vdisk->part0, rw);
+	part_stat_unlock();
 }
 
 /* Update disk stats when completing request upwards */
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	generic_end_io_acct(bio_data_dir(req->master_bio),
-			    &device->vdisk->part0, req->start_jif);
+	int rw = bio_data_dir(req->master_bio);
+	unsigned long duration = jiffies - req->start_jif;
+	int cpu;
+	cpu = part_stat_lock();
+	part_stat_add(cpu, &device->vdisk->part0, ticks[rw], duration);
+	part_round_stats(cpu, &device->vdisk->part0);
+	part_dec_in_flight(&device->vdisk->part0, rw);
+	part_stat_unlock();
 }
 
 static struct drbd_request *drbd_req_new(struct drbd_device *device,
@@ -52,10 +66,9 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 {
 	struct drbd_request *req;
 
-	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
+	req = mempool_alloc(drbd_request_mempool, GFP_NOIO | __GFP_ZERO);
 	if (!req)
 		return NULL;
-	memset(req, 0, sizeof(*req));
 
 	drbd_req_make_private_bio(req, bio_src);
 	req->rq_state    = bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0;
@@ -201,8 +214,7 @@ void start_new_tl_epoch(struct drbd_connection *connection)
 void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
-	m->bio->bi_error = m->error;
-	bio_endio(m->bio);
+	bio_endio(m->bio, m->error);
 	dec_ap_bio(device);
 }
 
@@ -937,7 +949,7 @@ static bool remote_due_to_read_balancing(struct drbd_device *device, sector_t se
 
 	switch (rbm) {
 	case RB_CONGESTED_REMOTE:
-		bdi = device->ldev->backing_bdev->bd_disk->queue->backing_dev_info;
+		bdi = &device->ldev->backing_bdev->bd_disk->queue->backing_dev_info;
 		return bdi_read_congested(bdi);
 	case RB_LEAST_PENDING:
 		return atomic_read(&device->local_cnt) >
@@ -1154,12 +1166,12 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 				      rw == WRITE ? DRBD_FAULT_DT_WR
 				    : rw == READ  ? DRBD_FAULT_DT_RD
 				    :               DRBD_FAULT_DT_RA))
-			bio_io_error(bio);
+			bio_endio(bio, -EIO);
 		else
 			generic_make_request(bio);
 		put_ldev(device);
 	} else
-		bio_io_error(bio);
+		bio_endio(bio, -EIO);
 }
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
@@ -1192,8 +1204,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
-		bio->bi_error = -ENOMEM;
-		bio_endio(bio);
+		bio_endio(bio, -ENOMEM);
 		return ERR_PTR(-ENOMEM);
 	}
 	req->start_jif = start_jif;
@@ -1494,12 +1505,10 @@ void do_submit(struct work_struct *ws)
 	}
 }
 
-blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
+void drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	unsigned long start_jif;
-
-	blk_queue_split(q, &bio, q->bio_split);
 
 	start_jif = jiffies;
 
@@ -1510,7 +1519,41 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_jif);
-	return BLK_QC_T_NONE;
+}
+
+/* This is called by bio_add_page().
+ *
+ * q->max_hw_sectors and other global limits are already enforced there.
+ *
+ * We need to call down to our lower level device,
+ * in case it has special restrictions.
+ *
+ * We also may need to enforce configured max-bio-bvecs limits.
+ *
+ * As long as the BIO is empty we have to allow at least one bvec,
+ * regardless of size and offset, so no need to ask lower levels.
+ */
+int drbd_merge_bvec(struct request_queue *q, struct bvec_merge_data *bvm, struct bio_vec *bvec)
+{
+	struct drbd_device *device = (struct drbd_device *) q->queuedata;
+	unsigned int bio_size = bvm->bi_size;
+	int limit = DRBD_MAX_BIO_SIZE;
+	int backing_limit;
+
+	if (bio_size && get_ldev(device)) {
+		unsigned int max_hw_sectors = queue_max_hw_sectors(q);
+		struct request_queue * const b =
+			device->ldev->backing_bdev->bd_disk->queue;
+		if (b->merge_bvec_fn) {
+			bvm->bi_bdev = device->ldev->backing_bdev;
+			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
+			limit = min(limit, backing_limit);
+		}
+		put_ldev(device);
+		if ((limit >> 9) > max_hw_sectors)
+			limit = max_hw_sectors << 9;
+	}
+	return limit;
 }
 
 void request_timer_fn(unsigned long data)

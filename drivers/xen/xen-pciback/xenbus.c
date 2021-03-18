@@ -44,6 +44,7 @@ static struct xen_pcibk_device *alloc_pdev(struct xenbus_device *xdev)
 	dev_dbg(&xdev->dev, "allocated pdev @ 0x%p\n", pdev);
 
 	pdev->xdev = xdev;
+	dev_set_drvdata(&xdev->dev, pdev);
 
 	mutex_init(&pdev->dev_lock);
 
@@ -57,9 +58,6 @@ static struct xen_pcibk_device *alloc_pdev(struct xenbus_device *xdev)
 		kfree(pdev);
 		pdev = NULL;
 	}
-
-	dev_set_drvdata(&xdev->dev, pdev);
-
 out:
 	return pdev;
 }
@@ -115,7 +113,7 @@ static int xen_pcibk_do_attach(struct xen_pcibk_device *pdev, int gnt_ref,
 		"Attaching to frontend resources - gnt_ref=%d evtchn=%d\n",
 		gnt_ref, remote_evtchn);
 
-	err = xenbus_map_ring_valloc(pdev->xdev, &gnt_ref, 1, &vaddr);
+	err = xenbus_map_ring_valloc(pdev->xdev, gnt_ref, &vaddr);
 	if (err < 0) {
 		xenbus_dev_fatal(pdev->xdev, err,
 				"Error mapping other domain page in ours.");
@@ -249,7 +247,7 @@ static int xen_pcibk_export_device(struct xen_pcibk_device *pdev,
 	if (err)
 		goto out;
 
-	dev_info(&dev->dev, "registering for %d\n", pdev->xdev->otherend_id);
+	dev_dbg(&dev->dev, "registering for %d\n", pdev->xdev->otherend_id);
 	if (xen_register_device_domain_owner(dev,
 					     pdev->xdev->otherend_id) != 0) {
 		dev_err(&dev->dev, "Stealing ownership from dom%d.\n",
@@ -293,7 +291,7 @@ static int xen_pcibk_remove_device(struct xen_pcibk_device *pdev,
 
 	/* N.B. This ends up calling pcistub_put_pci_dev which ends up
 	 * doing the FLR. */
-	xen_pcibk_release_pci_dev(pdev, dev, true /* use the lock. */);
+	xen_pcibk_release_pci_dev(pdev, dev);
 
 out:
 	return err;

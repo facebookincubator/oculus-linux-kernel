@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,8 +87,8 @@ acpi_tb_compare_tables(struct acpi_table_desc *table_desc, u32 table_index)
 	 * not just the header.
 	 */
 	is_identical = (u8)((table_desc->length != table_length ||
-			     memcmp(table_desc->pointer, table, table_length)) ?
-			    FALSE : TRUE);
+			     ACPI_MEMCMP(table_desc->pointer, table,
+					 table_length)) ? FALSE : TRUE);
 
 	/* Release the acquired table */
 
@@ -100,9 +100,9 @@ acpi_tb_compare_tables(struct acpi_table_desc *table_desc, u32 table_index)
  *
  * FUNCTION:    acpi_tb_install_table_with_override
  *
- * PARAMETERS:  new_table_desc          - New table descriptor to install
+ * PARAMETERS:  table_index             - Index into root table array
+ *              new_table_desc          - New table descriptor to install
  *              override                - Whether override should be performed
- *              table_index             - Where the table index is returned
  *
  * RETURN:      None
  *
@@ -114,14 +114,12 @@ acpi_tb_compare_tables(struct acpi_table_desc *table_desc, u32 table_index)
  ******************************************************************************/
 
 void
-acpi_tb_install_table_with_override(struct acpi_table_desc *new_table_desc,
-				    u8 override, u32 *table_index)
+acpi_tb_install_table_with_override(u32 table_index,
+				    struct acpi_table_desc *new_table_desc,
+				    u8 override)
 {
-	u32 i;
-	acpi_status status;
 
-	status = acpi_tb_get_next_table_descriptor(&i, NULL);
-	if (ACPI_FAILURE(status)) {
+	if (table_index >= acpi_gbl_root_table_list.current_table_count) {
 		return;
 	}
 
@@ -136,7 +134,8 @@ acpi_tb_install_table_with_override(struct acpi_table_desc *new_table_desc,
 		acpi_tb_override_table(new_table_desc);
 	}
 
-	acpi_tb_init_table_descriptor(&acpi_gbl_root_table_list.tables[i],
+	acpi_tb_init_table_descriptor(&acpi_gbl_root_table_list.
+				      tables[table_index],
 				      new_table_desc->address,
 				      new_table_desc->flags,
 				      new_table_desc->pointer);
@@ -144,13 +143,9 @@ acpi_tb_install_table_with_override(struct acpi_table_desc *new_table_desc,
 	acpi_tb_print_table_header(new_table_desc->address,
 				   new_table_desc->pointer);
 
-	/* This synchronizes acpi_gbl_dsdt_index */
-
-	*table_index = i;
-
 	/* Set the global integer width (based upon revision of the DSDT) */
 
-	if (i == acpi_gbl_dsdt_index) {
+	if (table_index == ACPI_TABLE_INDEX_DSDT) {
 		acpi_ut_set_integer_width(new_table_desc->pointer->revision);
 	}
 }
@@ -162,7 +157,7 @@ acpi_tb_install_table_with_override(struct acpi_table_desc *new_table_desc,
  * PARAMETERS:  address                 - Physical address of DSDT or FACS
  *              signature               - Table signature, NULL if no need to
  *                                        match
- *              table_index             - Where the table index is returned
+ *              table_index             - Index into root table array
  *
  * RETURN:      Status
  *
@@ -173,7 +168,7 @@ acpi_tb_install_table_with_override(struct acpi_table_desc *new_table_desc,
 
 acpi_status
 acpi_tb_install_fixed_table(acpi_physical_address address,
-			    char *signature, u32 *table_index)
+			    char *signature, u32 table_index)
 {
 	struct acpi_table_desc new_table_desc;
 	acpi_status status;
@@ -205,9 +200,7 @@ acpi_tb_install_fixed_table(acpi_physical_address address,
 		goto release_and_exit;
 	}
 
-	/* Add the table to the global root table list */
-
-	acpi_tb_install_table_with_override(&new_table_desc, TRUE, table_index);
+	acpi_tb_install_table_with_override(table_index, &new_table_desc, TRUE);
 
 release_and_exit:
 
@@ -296,7 +289,8 @@ acpi_tb_install_standard_table(acpi_physical_address address,
 		if ((new_table_desc.signature.ascii[0] != 0x00) &&
 		    (!ACPI_COMPARE_NAME
 		     (&new_table_desc.signature, ACPI_SIG_SSDT))
-		    && (strncmp(new_table_desc.signature.ascii, "OEM", 3))) {
+		    && (ACPI_STRNCMP(new_table_desc.signature.ascii, "OEM", 3)))
+		{
 			ACPI_BIOS_ERROR((AE_INFO,
 					 "Table has invalid signature [%4.4s] (0x%8.8X), "
 					 "must be SSDT or OEMx",
@@ -362,8 +356,13 @@ acpi_tb_install_standard_table(acpi_physical_address address,
 
 	/* Add the table to the global root table list */
 
-	acpi_tb_install_table_with_override(&new_table_desc, override,
-					    table_index);
+	status = acpi_tb_get_next_root_index(&i);
+	if (ACPI_FAILURE(status)) {
+		goto release_and_exit;
+	}
+
+	*table_index = i;
+	acpi_tb_install_table_with_override(i, &new_table_desc, override);
 
 release_and_exit:
 
@@ -454,6 +453,43 @@ finish_override:
 	/* Release the temporary table descriptor */
 
 	acpi_tb_release_temp_table(&new_table_desc);
+}
+
+/*******************************************************************************
+ *
+ * FUNCTION:    acpi_tb_store_table
+ *
+ * PARAMETERS:  address             - Table address
+ *              table               - Table header
+ *              length              - Table length
+ *              flags               - Install flags
+ *              table_index         - Where the table index is returned
+ *
+ * RETURN:      Status and table index.
+ *
+ * DESCRIPTION: Add an ACPI table to the global table list
+ *
+ ******************************************************************************/
+
+acpi_status
+acpi_tb_store_table(acpi_physical_address address,
+		    struct acpi_table_header * table,
+		    u32 length, u8 flags, u32 *table_index)
+{
+	acpi_status status;
+	struct acpi_table_desc *table_desc;
+
+	status = acpi_tb_get_next_root_index(table_index);
+	if (ACPI_FAILURE(status)) {
+		return (status);
+	}
+
+	/* Initialize added table */
+
+	table_desc = &acpi_gbl_root_table_list.tables[*table_index];
+	acpi_tb_init_table_descriptor(table_desc, address, flags, table);
+	table_desc->pointer = table;
+	return (AE_OK);
 }
 
 /*******************************************************************************

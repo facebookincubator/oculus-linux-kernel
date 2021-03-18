@@ -96,6 +96,3 @@ EXPORT_SYMBOL(ia64_ivt);
 /* mcount is defined in assembly */
 EXPORT_SYMBOL(_mcount);
 #endif
-
-#include <asm/cacheflush.h>
-EXPORT_SYMBOL_GPL(flush_icache_range);

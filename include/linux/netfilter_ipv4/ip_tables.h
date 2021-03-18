@@ -64,7 +64,9 @@ struct ipt_error {
 
 extern void *ipt_alloc_initial_table(const struct xt_table *);
 extern unsigned int ipt_do_table(struct sk_buff *skb,
-				 const struct nf_hook_state *state,
+				 unsigned int hook,
+				 const struct net_device *in,
+				 const struct net_device *out,
 				 struct xt_table *table);
 
 #ifdef CONFIG_COMPAT

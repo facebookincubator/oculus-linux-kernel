@@ -93,8 +93,6 @@ static int msm_route_sec_auxpcm_lb_vol_ctrl;
 static const DECLARE_TLV_DB_LINEAR(sec_auxpcm_lb_vol_gain, 0,
 				INT_RX_VOL_MAX_STEPS);
 
-static int msm_multichannel_ec_primary_mic_ch;
-
 static void msm_qti_pp_send_eq_values_(int eq_idx)
 {
 	int result;
@@ -247,7 +245,6 @@ static int msm_qti_pp_put_eq_band_audio_mixer(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-#ifdef CONFIG_QTI_PP
 void msm_qti_pp_send_eq_values(int fedai_id)
 {
 	if (eq_data[fedai_id].enable)
@@ -332,7 +329,6 @@ skip_send_cmd:
 		kfree(params_value);
 		return -ENOMEM;
 }
-#endif /* CONFIG_QTI_PP */
 
 /* RMS */
 static int msm_qti_pp_get_rms_value_control(struct snd_kcontrol *kcontrol,
@@ -403,8 +399,6 @@ static int msm_afe_lb_vol_ctrl;
 static int msm_afe_sec_mi2s_lb_vol_ctrl;
 static int msm_afe_tert_mi2s_lb_vol_ctrl;
 static int msm_afe_quat_mi2s_lb_vol_ctrl;
-static int msm_afe_slimbus_7_lb_vol_ctrl;
-static int msm_afe_slimbus_8_lb_vol_ctrl;
 static const DECLARE_TLV_DB_LINEAR(fm_rx_vol_gain, 0, INT_RX_VOL_MAX_STEPS);
 static const DECLARE_TLV_DB_LINEAR(afe_lb_vol_gain, 0, INT_RX_VOL_MAX_STEPS);
 
@@ -474,53 +468,6 @@ static int msm_qti_pp_set_tert_mi2s_lb_vol_mixer(struct snd_kcontrol *kcontrol,
 			  ucontrol->value.integer.value[0]);
 	msm_afe_tert_mi2s_lb_vol_ctrl = ucontrol->value.integer.value[0];
 	return 0;
-}
-
-static int msm_qti_pp_get_slimbus_7_lb_vol_mixer(struct snd_kcontrol *kcontrol,
-				       struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = msm_afe_slimbus_7_lb_vol_ctrl;
-	return 0;
-}
-
-static int msm_qti_pp_set_slimbus_7_lb_vol_mixer(struct snd_kcontrol *kcontrol,
-			    struct snd_ctl_elem_value *ucontrol)
-{
-	int ret = afe_loopback_gain(SLIMBUS_7_TX,
-				ucontrol->value.integer.value[0]);
-
-	if (ret)
-		pr_err("%s: failed to set LB vol for SLIMBUS_7_TX, err %d\n",
-			__func__, ret);
-	else
-		msm_afe_slimbus_7_lb_vol_ctrl =
-				ucontrol->value.integer.value[0];
-
-	return ret;
-}
-
-static int msm_qti_pp_get_slimbus_8_lb_vol_mixer(struct snd_kcontrol *kcontrol,
-				       struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = msm_afe_slimbus_8_lb_vol_ctrl;
-	return 0;
-}
-
-static int msm_qti_pp_set_slimbus_8_lb_vol_mixer(struct snd_kcontrol *kcontrol,
-			    struct snd_ctl_elem_value *ucontrol)
-{
-	int ret = 0;
-
-	ret = afe_loopback_gain(SLIMBUS_8_TX,
-				ucontrol->value.integer.value[0]);
-
-	if (ret)
-		pr_err("%s: failed to set LB vol for SLIMBUS_8_TX", __func__);
-	else
-		msm_afe_slimbus_8_lb_vol_ctrl =
-				ucontrol->value.integer.value[0];
-
-	return ret;
 }
 
 static int msm_qti_pp_get_icc_vol_mixer(struct snd_kcontrol *kcontrol,
@@ -731,7 +678,6 @@ static int msm_qti_pp_asphere_send_params(int port_id, int copp_idx, bool force)
 	return 0;
 }
 
-#if defined(CONFIG_QTI_PP) && defined(CONFIG_QTI_PP_AUDIOSPHERE)
 int msm_qti_pp_asphere_init(int port_id, int copp_idx)
 {
 	int index = adm_validate_and_get_port_index(port_id);
@@ -769,7 +715,6 @@ void msm_qti_pp_asphere_deinit(int port_id)
 		asphere_state.copp_idx[index] = -1;
 	}
 }
-#endif
 
 static int msm_qti_pp_asphere_get(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
@@ -817,43 +762,6 @@ static int msm_qti_pp_asphere_set(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static int msm_multichannel_ec_primary_mic_ch_put(struct snd_kcontrol *kcontrol,
-			struct snd_ctl_elem_value *ucontrol)
-{
-	int ret = 0;
-	int copp_idx = 0;
-	int port_id = AFE_PORT_ID_QUATERNARY_TDM_TX;
-
-	msm_multichannel_ec_primary_mic_ch = ucontrol->value.integer.value[0];
-	pr_debug("%s: msm_multichannel_ec_primary_mic_ch = %u\n",
-		__func__, msm_multichannel_ec_primary_mic_ch);
-	copp_idx = adm_get_default_copp_idx(port_id);
-	if ((copp_idx < 0) || (copp_idx > MAX_COPPS_PER_PORT)) {
-		pr_err("%s : no active copp to query multichannel ec copp_idx: %u\n",
-			__func__, copp_idx);
-		return -EINVAL;
-	}
-	adm_send_set_multichannel_ec_primary_mic_ch(port_id, copp_idx,
-		msm_multichannel_ec_primary_mic_ch);
-
-	return ret;
-}
-
-static int msm_multichannel_ec_primary_mic_ch_get(struct snd_kcontrol *kcontrol,
-			struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = msm_multichannel_ec_primary_mic_ch;
-	pr_debug("%s: msm_multichannel_ec_primary_mic_ch = %lu\n",
-		__func__, ucontrol->value.integer.value[0]);
-	return 0;
-}
-
-static const struct  snd_kcontrol_new msm_multichannel_ec_controls[] = {
-	SOC_SINGLE_EXT("Multichannel EC Primary Mic Ch", SND_SOC_NOPM, 0,
-		0xFFFFFFFF, 0, msm_multichannel_ec_primary_mic_ch_get,
-		msm_multichannel_ec_primary_mic_ch_put),
-};
-
 static const struct snd_kcontrol_new int_fm_vol_mixer_controls[] = {
 	SOC_SINGLE_EXT_TLV("Internal FM RX Volume", SND_SOC_NOPM, 0,
 	INT_RX_VOL_GAIN, 0, msm_qti_pp_get_fm_vol_mixer,
@@ -879,20 +787,6 @@ static const struct snd_kcontrol_new tert_mi2s_lb_vol_mixer_controls[] = {
 	SOC_SINGLE_EXT_TLV("Tert MI2S LOOPBACK Volume", SND_SOC_NOPM, 0,
 	INT_RX_VOL_GAIN, 0, msm_qti_pp_get_tert_mi2s_lb_vol_mixer,
 	msm_qti_pp_set_tert_mi2s_lb_vol_mixer, afe_lb_vol_gain),
-};
-
-static const struct snd_kcontrol_new slimbus_7_lb_vol_mixer_controls[] = {
-	SOC_SINGLE_EXT_TLV("SLIMBUS_7 LOOPBACK Volume", SND_SOC_NOPM, 0,
-				INT_RX_VOL_GAIN, 0,
-				msm_qti_pp_get_slimbus_7_lb_vol_mixer,
-				msm_qti_pp_set_slimbus_7_lb_vol_mixer,
-				afe_lb_vol_gain),
-};
-
-static const struct snd_kcontrol_new slimbus_8_lb_vol_mixer_controls[] = {
-	SOC_SINGLE_EXT_TLV("SLIMBUS_8 LOOPBACK Volume", SND_SOC_NOPM, 0,
-	INT_RX_VOL_GAIN, 0, msm_qti_pp_get_slimbus_8_lb_vol_mixer,
-	msm_qti_pp_set_slimbus_8_lb_vol_mixer, afe_lb_vol_gain),
 };
 
 static const struct snd_kcontrol_new int_hfp_vol_mixer_controls[] = {
@@ -1078,7 +972,6 @@ static const struct snd_kcontrol_new asphere_mixer_controls[] = {
 	0xFFFFFFFF, 0, 2, msm_qti_pp_asphere_get, msm_qti_pp_asphere_set),
 };
 
-#ifdef CONFIG_QTI_PP
 void msm_qti_pp_add_controls(struct snd_soc_platform *platform)
 {
 	snd_soc_add_platform_controls(platform, int_fm_vol_mixer_controls,
@@ -1092,12 +985,6 @@ void msm_qti_pp_add_controls(struct snd_soc_platform *platform)
 
 	snd_soc_add_platform_controls(platform, tert_mi2s_lb_vol_mixer_controls,
 			ARRAY_SIZE(tert_mi2s_lb_vol_mixer_controls));
-
-	snd_soc_add_platform_controls(platform, slimbus_7_lb_vol_mixer_controls,
-			ARRAY_SIZE(slimbus_7_lb_vol_mixer_controls));
-
-	snd_soc_add_platform_controls(platform, slimbus_8_lb_vol_mixer_controls,
-			ARRAY_SIZE(slimbus_8_lb_vol_mixer_controls));
 
 	snd_soc_add_platform_controls(platform, int_hfp_vol_mixer_controls,
 			ARRAY_SIZE(int_hfp_vol_mixer_controls));
@@ -1131,8 +1018,4 @@ void msm_qti_pp_add_controls(struct snd_soc_platform *platform)
 
 	snd_soc_add_platform_controls(platform, asphere_mixer_controls,
 			ARRAY_SIZE(asphere_mixer_controls));
-
-	snd_soc_add_platform_controls(platform, msm_multichannel_ec_controls,
-			ARRAY_SIZE(msm_multichannel_ec_controls));
 }
-#endif /* CONFIG_QTI_PP */

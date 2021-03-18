@@ -1708,10 +1708,21 @@ static struct pnp_driver ite_driver = {
 	.shutdown	= ite_shutdown,
 };
 
+static int __init ite_init(void)
+{
+	return pnp_register_driver(&ite_driver);
+}
+
+static void __exit ite_exit(void)
+{
+	pnp_unregister_driver(&ite_driver);
+}
+
 MODULE_DEVICE_TABLE(pnp, ite_ids);
 MODULE_DESCRIPTION("ITE Tech Inc. IT8712F/ITE8512F CIR driver");
 
 MODULE_AUTHOR("Juan J. Garcia de Soria <skandalfo@gmail.com>");
 MODULE_LICENSE("GPL");
 
-module_pnp_driver(ite_driver);
+module_init(ite_init);
+module_exit(ite_exit);

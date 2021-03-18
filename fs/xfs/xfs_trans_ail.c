@@ -18,9 +18,10 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
+#include "xfs_sb.h"
+#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_trans.h"
 #include "xfs_trans_priv.h"
@@ -159,7 +160,7 @@ xfs_trans_ail_cursor_next(
 {
 	struct xfs_log_item	*lip = cur->item;
 
-	if ((uintptr_t)lip & 1)
+	if ((__psint_t)lip & 1)
 		lip = xfs_ail_min(ailp);
 	if (lip)
 		cur->item = xfs_ail_next(ailp, lip);
@@ -196,7 +197,7 @@ xfs_trans_ail_cursor_clear(
 	list_for_each_entry(cur, &ailp->xa_cursors, list) {
 		if (cur->item == lip)
 			cur->item = (struct xfs_log_item *)
-					((uintptr_t)cur->item | 1);
+					((__psint_t)cur->item | 1);
 	}
 }
 
@@ -287,7 +288,7 @@ xfs_ail_splice(
 	 * find the place in the AIL where the items belong.
 	 */
 	lip = cur ? cur->item : NULL;
-	if (!lip || (uintptr_t)lip & 1)
+	if (!lip || (__psint_t) lip & 1)
 		lip = __xfs_trans_ail_cursor_last(ailp, lsn);
 
 	/*
@@ -349,7 +350,7 @@ xfsaild_push(
 	     xfs_ail_min_lsn(ailp))) {
 		ailp->xa_log_flush = 0;
 
-		XFS_STATS_INC(mp, xs_push_ail_flush);
+		XFS_STATS_INC(xs_push_ail_flush);
 		xfs_log_force(mp, XFS_LOG_SYNC);
 	}
 
@@ -371,7 +372,7 @@ xfsaild_push(
 		goto out_done;
 	}
 
-	XFS_STATS_INC(mp, xs_push_ail);
+	XFS_STATS_INC(xs_push_ail);
 
 	lsn = lip->li_lsn;
 	while ((XFS_LSN_CMP(lip->li_lsn, target) <= 0)) {
@@ -385,7 +386,7 @@ xfsaild_push(
 		lock_result = lip->li_ops->iop_push(lip, &ailp->xa_buf_list);
 		switch (lock_result) {
 		case XFS_ITEM_SUCCESS:
-			XFS_STATS_INC(mp, xs_push_ail_success);
+			XFS_STATS_INC(xs_push_ail_success);
 			trace_xfs_ail_push(lip);
 
 			ailp->xa_last_pushed_lsn = lsn;
@@ -403,7 +404,7 @@ xfsaild_push(
 			 * re-try the flushing relatively soon if most of the
 			 * AIL is beeing flushed.
 			 */
-			XFS_STATS_INC(mp, xs_push_ail_flushing);
+			XFS_STATS_INC(xs_push_ail_flushing);
 			trace_xfs_ail_flushing(lip);
 
 			flushing++;
@@ -411,14 +412,14 @@ xfsaild_push(
 			break;
 
 		case XFS_ITEM_PINNED:
-			XFS_STATS_INC(mp, xs_push_ail_pinned);
+			XFS_STATS_INC(xs_push_ail_pinned);
 			trace_xfs_ail_pinned(lip);
 
 			stuck++;
 			ailp->xa_log_flush++;
 			break;
 		case XFS_ITEM_LOCKED:
-			XFS_STATS_INC(mp, xs_push_ail_locked);
+			XFS_STATS_INC(xs_push_ail_locked);
 			trace_xfs_ail_locked(lip);
 
 			stuck++;

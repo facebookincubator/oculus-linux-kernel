@@ -35,13 +35,11 @@
   */
 
 #define ARCH_HAS_IOREMAP_WC
-#define ARCH_HAS_IOREMAP_WT
 
 #include <linux/string.h>
 #include <linux/compiler.h>
 #include <asm/page.h>
 #include <asm/early_ioremap.h>
-#include <asm/pgtable_types.h>
 
 #define build_mmio_read(name, size, type, reg, barrier) \
 static inline type name(const volatile void __iomem *addr) \
@@ -76,9 +74,6 @@ build_mmio_write(__writel, "l", unsigned int, "r", )
 #define __raw_readw __readw
 #define __raw_readl __readl
 
-#define writeb_relaxed(v, a) __writeb(v, a)
-#define writew_relaxed(v, a) __writew(v, a)
-#define writel_relaxed(v, a) __writel(v, a)
 #define __raw_writeb __writeb
 #define __raw_writew __writew
 #define __raw_writel __writel
@@ -91,7 +86,6 @@ build_mmio_read(readq, "q", unsigned long, "=r", :"memory")
 build_mmio_write(writeq, "q", unsigned long, "r", :"memory")
 
 #define readq_relaxed(a)	readq(a)
-#define writeq_relaxed(v, a)	writeq(v, a)
 
 #define __raw_readq(a)		readq(a)
 #define __raw_writeq(val, addr)	writeq(val, addr)
@@ -179,9 +173,6 @@ static inline unsigned int isa_virt_to_bus(volatile void *address)
  * look at pci_iomap().
  */
 extern void __iomem *ioremap_nocache(resource_size_t offset, unsigned long size);
-extern void __iomem *ioremap_uc(resource_size_t offset, unsigned long size);
-#define ioremap_uc ioremap_uc
-
 extern void __iomem *ioremap_cache(resource_size_t offset, unsigned long size);
 extern void __iomem *ioremap_prot(resource_size_t offset, unsigned long size,
 				unsigned long prot_val);
@@ -201,6 +192,8 @@ extern void set_iounmap_nonlazy(void);
 #ifdef __KERNEL__
 
 #include <asm-generic/iomap.h>
+
+#include <linux/vmalloc.h>
 
 /*
  * Convert a virtual cached pointer to an uncached pointer
@@ -317,13 +310,12 @@ BUILDIO(b, b, char)
 BUILDIO(w, w, short)
 BUILDIO(l, , int)
 
-extern void *xlate_dev_mem_ptr(phys_addr_t phys);
-extern void unxlate_dev_mem_ptr(phys_addr_t phys, void *addr);
+extern void *xlate_dev_mem_ptr(unsigned long phys);
+extern void unxlate_dev_mem_ptr(unsigned long phys, void *addr);
 
 extern int ioremap_change_attr(unsigned long vaddr, unsigned long size,
-				enum page_cache_mode pcm);
+				unsigned long prot_val);
 extern void __iomem *ioremap_wc(resource_size_t offset, unsigned long size);
-extern void __iomem *ioremap_wt(resource_size_t offset, unsigned long size);
 
 extern bool is_early_ioremap_ptep(pte_t *ptep);
 

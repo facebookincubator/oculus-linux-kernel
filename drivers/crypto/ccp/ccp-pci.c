@@ -174,10 +174,11 @@ static int ccp_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!ccp)
 		goto e_err;
 
-	ccp_pci = devm_kzalloc(dev, sizeof(*ccp_pci), GFP_KERNEL);
-	if (!ccp_pci)
-		goto e_err;
-
+	ccp_pci = kzalloc(sizeof(*ccp_pci), GFP_KERNEL);
+	if (!ccp_pci) {
+		ret = -ENOMEM;
+		goto e_free1;
+	}
 	ccp->dev_specific = ccp_pci;
 	ccp->get_irq = ccp_get_irqs;
 	ccp->free_irq = ccp_free_irqs;
@@ -185,7 +186,7 @@ static int ccp_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = pci_request_regions(pdev, "ccp");
 	if (ret) {
 		dev_err(dev, "pci_request_regions failed (%d)\n", ret);
-		goto e_err;
+		goto e_free2;
 	}
 
 	ret = pci_enable_device(pdev);
@@ -203,7 +204,7 @@ static int ccp_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	ret = -EIO;
 	ccp->io_map = pci_iomap(pdev, bar, 0);
-	if (!ccp->io_map) {
+	if (ccp->io_map == NULL) {
 		dev_err(dev, "pci_iomap failed\n");
 		goto e_device;
 	}
@@ -238,6 +239,12 @@ e_device:
 e_regions:
 	pci_release_regions(pdev);
 
+e_free2:
+	kfree(ccp_pci);
+
+e_free1:
+	kfree(ccp);
+
 e_err:
 	dev_notice(dev, "initialization failed\n");
 	return ret;
@@ -258,6 +265,8 @@ static void ccp_pci_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 
 	pci_release_regions(pdev);
+
+	kfree(ccp);
 
 	dev_notice(dev, "disabled\n");
 }
@@ -319,7 +328,7 @@ static const struct pci_device_id ccp_pci_table[] = {
 MODULE_DEVICE_TABLE(pci, ccp_pci_table);
 
 static struct pci_driver ccp_pci_driver = {
-	.name = "ccp",
+	.name = "AMD Cryptographic Coprocessor",
 	.id_table = ccp_pci_table,
 	.probe = ccp_pci_probe,
 	.remove = ccp_pci_remove,

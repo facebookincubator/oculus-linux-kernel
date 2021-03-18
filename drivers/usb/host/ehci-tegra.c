@@ -89,7 +89,7 @@ static int tegra_reset_usb_controller(struct platform_device *pdev)
 	if (!usb1_reset_attempted) {
 		struct reset_control *usb1_reset;
 
-		usb1_reset = of_reset_control_get(phy_np, "utmi-pads");
+		usb1_reset = of_reset_control_get(phy_np, "usb");
 		if (IS_ERR(usb1_reset)) {
 			dev_warn(&pdev->dev,
 				 "can't get utmi-pads reset from the PHY\n");
@@ -304,7 +304,6 @@ struct dma_aligned_buffer {
 static void free_dma_aligned_buffer(struct urb *urb)
 {
 	struct dma_aligned_buffer *temp;
-	size_t length;
 
 	if (!(urb->transfer_flags & URB_ALIGNED_TEMP_BUFFER))
 		return;
@@ -312,14 +311,9 @@ static void free_dma_aligned_buffer(struct urb *urb)
 	temp = container_of(urb->transfer_buffer,
 		struct dma_aligned_buffer, data);
 
-	if (usb_urb_dir_in(urb)) {
-		if (usb_pipeisoc(urb->pipe))
-			length = urb->transfer_buffer_length;
-		else
-			length = urb->actual_length;
-
-		memcpy(temp->old_xfer_buffer, temp->data, length);
-	}
+	if (usb_urb_dir_in(urb))
+		memcpy(temp->old_xfer_buffer, temp->data,
+		       urb->transfer_buffer_length);
 	urb->transfer_buffer = temp->old_xfer_buffer;
 	kfree(temp->kmalloc_ptr);
 
@@ -457,7 +451,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 
 	u_phy = devm_usb_get_phy_by_phandle(&pdev->dev, "nvidia,phy", 0);
 	if (IS_ERR(u_phy)) {
-		err = -EPROBE_DEFER;
+		err = PTR_ERR(u_phy);
 		goto cleanup_clk_en;
 	}
 	hcd->usb_phy = u_phy;
@@ -466,14 +460,18 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 		"nvidia,needs-double-reset");
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "Failed to get I/O memory\n");
+		err = -ENXIO;
+		goto cleanup_clk_en;
+	}
+	hcd->rsrc_start = res->start;
+	hcd->rsrc_len = resource_size(res);
 	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(hcd->regs)) {
 		err = PTR_ERR(hcd->regs);
 		goto cleanup_clk_en;
 	}
-	hcd->rsrc_start = res->start;
-	hcd->rsrc_len = resource_size(res);
-
 	ehci->caps = hcd->regs + 0x100;
 	ehci->has_hostpc = soc_config->has_hostpc;
 
@@ -486,6 +484,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 	u_phy->otg = devm_kzalloc(&pdev->dev, sizeof(struct usb_otg),
 			     GFP_KERNEL);
 	if (!u_phy->otg) {
+		dev_err(&pdev->dev, "Failed to alloc memory for otg\n");
 		err = -ENOMEM;
 		goto cleanup_phy;
 	}

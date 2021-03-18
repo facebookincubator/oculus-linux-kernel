@@ -370,15 +370,22 @@ isl1208_i2c_set_alarm(struct i2c_client *client, struct rtc_wkalrm *alarm)
 	struct rtc_time *alarm_tm = &alarm->time;
 	u8 regs[ISL1208_ALARM_SECTION_LEN] = { 0, };
 	const int offs = ISL1208_REG_SCA;
+	unsigned long rtc_secs, alarm_secs;
 	struct rtc_time rtc_tm;
 	int err, enable;
 
 	err = isl1208_i2c_read_time(client, &rtc_tm);
 	if (err)
 		return err;
+	err = rtc_tm_to_time(&rtc_tm, &rtc_secs);
+	if (err)
+		return err;
+	err = rtc_tm_to_time(alarm_tm, &alarm_secs);
+	if (err)
+		return err;
 
 	/* If the alarm time is before the current time disable the alarm */
-	if (!alarm->enabled || rtc_tm_sub(alarm_tm, &rtc_tm) <= 0)
+	if (!alarm->enabled || alarm_secs <= rtc_secs)
 		enable = 0x00;
 	else
 		enable = 0x80;
@@ -638,7 +645,7 @@ isl1208_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	if (client->irq > 0) {
 		rc = devm_request_threaded_irq(&client->dev, client->irq, NULL,
 					       isl1208_rtc_interrupt,
-					       IRQF_SHARED | IRQF_ONESHOT,
+					       IRQF_SHARED,
 					       isl1208_driver.driver.name,
 					       client);
 		if (!rc) {

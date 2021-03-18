@@ -1657,6 +1657,7 @@ static struct platform_driver bfin_atapi_driver = {
 	.resume			= bfin_atapi_resume,
 	.driver = {
 		.name		= DRV_NAME,
+		.owner		= THIS_MODULE,
 	},
 };
 

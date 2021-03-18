@@ -141,12 +141,10 @@ struct iommu_ops *of_iommu_configure(struct device *dev,
 	struct iommu_ops *ops = NULL;
 	int idx = 0;
 
-	/*
-	 * We can't do much for PCI devices without knowing how
-	 * device IDs are wired up from the PCI bus to the IOMMU.
-	 */
-	if (dev_is_pci(dev))
+	if (dev_is_pci(dev)) {
+		dev_err(dev, "IOMMU is currently not supported for PCI\n");
 		return NULL;
+	}
 
 	/*
 	 * We don't currently walk up the tree looking for a parent IOMMU.

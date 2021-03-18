@@ -24,9 +24,10 @@ struct mempolicy;
  * tree) of these proc_dir_entries, so that we can dynamically
  * add new files to /proc.
  *
- * parent/subdir are used for the directory structure (every /proc file has a
- * parent, but "subdir" is empty for all non-directory entries).
- * subdir_node is used to build the rb tree "subdir" of the parent.
+ * The "next" pointer creates a linked list of one /proc directory,
+ * while parent/subdir create the directory structure (every
+ * /proc file has a parent, but "subdir" is NULL for all
+ * non-directory entries).
  */
 struct proc_dir_entry {
 	unsigned int low_ino;
@@ -37,9 +38,7 @@ struct proc_dir_entry {
 	loff_t size;
 	const struct inode_operations *proc_iops;
 	const struct file_operations *proc_fops;
-	struct proc_dir_entry *parent;
-	struct rb_root subdir;
-	struct rb_node subdir_node;
+	struct proc_dir_entry *next, *parent, *subdir;
 	void *data;
 	atomic_t count;		/* use count */
 	atomic_t in_use;	/* number of callers into module in progress; */
@@ -65,7 +64,7 @@ struct proc_inode {
 	struct proc_dir_entry *pde;
 	struct ctl_table_header *sysctl;
 	struct ctl_table *sysctl_entry;
-	const struct proc_ns_operations *ns_ops;
+	struct proc_ns ns;
 	struct inode vfs_inode;
 };
 
@@ -190,12 +189,6 @@ static inline struct proc_dir_entry *pde_get(struct proc_dir_entry *pde)
 	return pde;
 }
 extern void pde_put(struct proc_dir_entry *);
-
-static inline bool is_empty_pde(const struct proc_dir_entry *pde)
-{
-	return S_ISDIR(pde->mode) && !pde->proc_iops;
-}
-struct proc_dir_entry *proc_create_mount_point(const char *name);
 
 /*
  * inode.c

@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/console.h>
 #include <linux/init.h>
 
 #include <asm/dcc.h>
@@ -70,27 +71,20 @@ static const struct hv_ops hvc_dcc_get_put_ops = {
 
 static int __init hvc_dcc_console_init(void)
 {
-	int ret;
-
 	if (!hvc_dcc_check())
 		return -ENODEV;
 
-	/* Returns -1 if error */
-	ret = hvc_instantiate(0, 0, &hvc_dcc_get_put_ops);
-
-	return ret < 0 ? -ENODEV : 0;
+	hvc_instantiate(0, 0, &hvc_dcc_get_put_ops);
+	return 0;
 }
 console_initcall(hvc_dcc_console_init);
 
 static int __init hvc_dcc_init(void)
 {
-	struct hvc_struct *p;
-
 	if (!hvc_dcc_check())
 		return -ENODEV;
 
-	p = hvc_alloc(0, 0, &hvc_dcc_get_put_ops, 128);
-
-	return PTR_ERR_OR_ZERO(p);
+	hvc_alloc(0, 0, &hvc_dcc_get_put_ops, 128);
+	return 0;
 }
 device_initcall(hvc_dcc_init);

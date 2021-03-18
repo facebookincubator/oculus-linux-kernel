@@ -60,8 +60,8 @@ TRACE_EVENT(print_skb_gso,
 		__field(void *,	skbaddr)
 		__field(int   ,	len)
 		__field(int   ,	data_len)
-		__field(__be16, src)
-		__field(__be16, dest)
+		__field(__be16 , src)
+		__field(__be16 , dest)
 	),
 
 	TP_fast_assign(
@@ -72,7 +72,7 @@ TRACE_EVENT(print_skb_gso,
 		__entry->dest = dest;
 	),
 
-	TP_printk("GSO: skbaddr=%pK, len=%d, data_len=%d, src=%u, dest=%u",
+	TP_printk("GSO: skbaddr=%p, len=%d, data_len=%d, src=%u, dest=%u",
 		__entry->skbaddr, __entry->len, __entry->data_len,
 		be16_to_cpu(__entry->src), be16_to_cpu(__entry->dest))
 );

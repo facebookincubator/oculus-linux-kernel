@@ -113,7 +113,6 @@ struct mwifiex_uap_bss_param {
 	u32 sta_ao_timer;
 	u32 ps_sta_ao_timer;
 	u8 qos_info;
-	u8 power_constraint;
 	struct mwifiex_types_wmm_info wmm_info;
 };
 
@@ -138,8 +137,6 @@ struct mwifiex_ds_get_stats {
 	u32 fcs_error;
 	u32 tx_frame;
 	u32 wep_icv_error[4];
-	u32 bcn_rcv_cnt;
-	u32 bcn_miss_cnt;
 };
 
 #define MWIFIEX_MAX_VER_STR_LEN    128
@@ -183,14 +180,9 @@ struct mwifiex_ds_tx_ba_stream_tbl {
 	u8 amsdu;
 };
 
-#define DBG_CMD_NUM    5
-
-struct tdls_peer_info {
-	u8 peer_addr[ETH_ALEN];
-};
+#define DBG_CMD_NUM	5
 
 struct mwifiex_debug_info {
-	unsigned int debug_mask;
 	u32 int_counter;
 	u32 packets_out[MAX_NUM_TID];
 	u32 tx_buf_size;
@@ -201,9 +193,6 @@ struct mwifiex_debug_info {
 	u32 rx_tbl_num;
 	struct mwifiex_ds_rx_reorder_tbl rx_tbl
 		[MWIFIEX_MAX_RX_BASTREAM_SUPPORTED];
-	u32 tdls_peer_num;
-	struct tdls_peer_info tdls_list
-		[MWIFIEX_MAX_TDLS_PEER_SUPPORTED];
 	u16 ps_mode;
 	u32 ps_state;
 	u8 is_deep_sleep;
@@ -342,11 +331,6 @@ struct mwifiex_ds_read_eeprom {
 	__le16 offset;
 	__le16 byte_count;
 	u8 value[MAX_EEPROM_DATA];
-};
-
-struct mwifiex_ds_mem_rw {
-	u32 addr;
-	u32 value;
 };
 
 #define IEEE_MAX_IE_SIZE		256

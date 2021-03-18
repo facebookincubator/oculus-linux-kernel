@@ -331,7 +331,6 @@ static int aa_fs_seq_hash_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "%.2x", profile->hash[i]);
 		seq_puts(seq, "\n");
 	}
-	aa_put_profile(profile);
 
 	return 0;
 }
@@ -366,7 +365,7 @@ void __aa_fs_profile_rmdir(struct aa_profile *profile)
 		if (!profile->dents[i])
 			continue;
 
-		r = d_inode(profile->dents[i])->i_private;
+		r = profile->dents[i]->d_inode->i_private;
 		securityfs_remove(profile->dents[i]);
 		aa_put_replacedby(r);
 		profile->dents[i] = NULL;

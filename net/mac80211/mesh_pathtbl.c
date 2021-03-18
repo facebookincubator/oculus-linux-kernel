@@ -44,7 +44,6 @@ static struct mesh_table __rcu *mesh_paths;
 static struct mesh_table __rcu *mpp_paths; /* Store paths for MPP&MAP */
 
 int mesh_paths_generation;
-int mpp_paths_generation;
 
 /* This lock will have the grow table function as writer and add / delete nodes
  * as readers. RCU provides sufficient protection only when reading the table
@@ -411,33 +410,6 @@ mesh_path_lookup_by_idx(struct ieee80211_sub_if_data *sdata, int idx)
 }
 
 /**
- * mpp_path_lookup_by_idx - look up a path in the proxy path table by its index
- * @idx: index
- * @sdata: local subif, or NULL for all entries
- *
- * Returns: pointer to the proxy path structure, or NULL if not found.
- *
- * Locking: must be called within a read rcu section.
- */
-struct mesh_path *
-mpp_path_lookup_by_idx(struct ieee80211_sub_if_data *sdata, int idx)
-{
-	struct mesh_table *tbl = rcu_dereference(mpp_paths);
-	struct mpath_node *node;
-	int i;
-	int j = 0;
-
-	for_each_mesh_entry(tbl, node, i) {
-		if (sdata && node->mpath->sdata != sdata)
-			continue;
-		if (j++ == idx)
-			return node->mpath;
-	}
-
-	return NULL;
-}
-
-/**
  * mesh_path_add_gate - add the given mpath to a mesh gate to our path table
  * @mpath: gate path to add to table
  */
@@ -719,9 +691,6 @@ int mpp_path_add(struct ieee80211_sub_if_data *sdata,
 
 	spin_unlock(&tbl->hashwlock[hash_idx]);
 	read_unlock_bh(&pathtbl_resize_lock);
-
-	mpp_paths_generation++;
-
 	if (grow) {
 		set_bit(MESH_WORK_GROW_MPP_TABLE,  &ifmsh->wrkq_flags);
 		ieee80211_queue_work(&local->hw, &sdata->work);
@@ -779,8 +748,10 @@ void mesh_plink_broken(struct sta_info *sta)
 static void mesh_path_node_reclaim(struct rcu_head *rp)
 {
 	struct mpath_node *node = container_of(rp, struct mpath_node, rcu);
+	struct ieee80211_sub_if_data *sdata = node->mpath->sdata;
 
 	del_timer_sync(&node->mpath->timer);
+	atomic_dec(&sdata->u.mesh.mpaths);
 	kfree(node->mpath);
 	kfree(node);
 }
@@ -788,9 +759,8 @@ static void mesh_path_node_reclaim(struct rcu_head *rp)
 /* needs to be called with the corresponding hashwlock taken */
 static void __mesh_path_del(struct mesh_table *tbl, struct mpath_node *node)
 {
-	struct mesh_path *mpath = node->mpath;
-	struct ieee80211_sub_if_data *sdata = node->mpath->sdata;
-
+	struct mesh_path *mpath;
+	mpath = node->mpath;
 	spin_lock(&mpath->state_lock);
 	mpath->flags |= MESH_PATH_RESOLVING;
 	if (mpath->is_gate)
@@ -798,7 +768,6 @@ static void __mesh_path_del(struct mesh_table *tbl, struct mpath_node *node)
 	hlist_del_rcu(&node->list);
 	call_rcu(&node->rcu, mesh_path_node_reclaim);
 	spin_unlock(&mpath->state_lock);
-	atomic_dec(&sdata->u.mesh.mpaths);
 	atomic_dec(&tbl->entries);
 }
 

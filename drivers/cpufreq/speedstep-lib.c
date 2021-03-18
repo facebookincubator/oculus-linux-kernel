@@ -386,7 +386,7 @@ unsigned int speedstep_get_freqs(enum speedstep_processor processor,
 	unsigned int prev_speed;
 	unsigned int ret = 0;
 	unsigned long flags;
-	ktime_t tv1, tv2;
+	struct timeval tv1, tv2;
 
 	if ((!processor) || (!low_speed) || (!high_speed) || (!set_state))
 		return -EINVAL;
@@ -415,14 +415,14 @@ unsigned int speedstep_get_freqs(enum speedstep_processor processor,
 
 	/* start latency measurement */
 	if (transition_latency)
-		tv1 = ktime_get();
+		do_gettimeofday(&tv1);
 
 	/* switch to high state */
 	set_state(SPEEDSTEP_HIGH);
 
 	/* end latency measurement */
 	if (transition_latency)
-		tv2 = ktime_get();
+		do_gettimeofday(&tv2);
 
 	*high_speed = speedstep_get_frequency(processor);
 	if (!*high_speed) {
@@ -442,7 +442,8 @@ unsigned int speedstep_get_freqs(enum speedstep_processor processor,
 		set_state(SPEEDSTEP_LOW);
 
 	if (transition_latency) {
-		*transition_latency = ktime_to_us(ktime_sub(tv2, tv1));
+		*transition_latency = (tv2.tv_sec - tv1.tv_sec) * USEC_PER_SEC +
+			tv2.tv_usec - tv1.tv_usec;
 		pr_debug("transition latency is %u uSec\n", *transition_latency);
 
 		/* convert uSec to nSec and add 20% for safety reasons */

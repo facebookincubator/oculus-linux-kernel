@@ -644,6 +644,11 @@ int kvmppc_handle_pagefault(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	return r;
 }
 
+static inline int get_fpr_index(int i)
+{
+	return i * TS_FPRWIDTH;
+}
+
 /* Give up external provider (FPU, Altivec, VSX) */
 void kvmppc_giveup_ext(struct kvm_vcpu *vcpu, ulong msr)
 {
@@ -1530,7 +1535,6 @@ out:
 static int kvm_vm_ioctl_get_dirty_log_pr(struct kvm *kvm,
 					 struct kvm_dirty_log *log)
 {
-	struct kvm_memslots *slots;
 	struct kvm_memory_slot *memslot;
 	struct kvm_vcpu *vcpu;
 	ulong ga, ga_end;
@@ -1546,8 +1550,7 @@ static int kvm_vm_ioctl_get_dirty_log_pr(struct kvm *kvm,
 
 	/* If nothing is dirty, don't bother messing with page tables. */
 	if (is_dirty) {
-		slots = kvm_memslots(kvm);
-		memslot = id_to_memslot(slots, log->slot);
+		memslot = id_to_memslot(kvm->memslots, log->slot);
 
 		ga = memslot->base_gfn << PAGE_SHIFT;
 		ga_end = ga + (memslot->npages << PAGE_SHIFT);
@@ -1573,15 +1576,14 @@ static void kvmppc_core_flush_memslot_pr(struct kvm *kvm,
 
 static int kvmppc_core_prepare_memory_region_pr(struct kvm *kvm,
 					struct kvm_memory_slot *memslot,
-					const struct kvm_userspace_memory_region *mem)
+					struct kvm_userspace_memory_region *mem)
 {
 	return 0;
 }
 
 static void kvmppc_core_commit_memory_region_pr(struct kvm *kvm,
-				const struct kvm_userspace_memory_region *mem,
-				const struct kvm_memory_slot *old,
-				const struct kvm_memory_slot *new)
+				struct kvm_userspace_memory_region *mem,
+				const struct kvm_memory_slot *old)
 {
 	return;
 }

@@ -325,7 +325,7 @@
 	};
 };
 
-#include "msm8996-sde-display.dtsi"
+#include "msm8996-mdss-panels.dtsi"
 
 &dsi_hx8379a_fwvga_truly_vid {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
@@ -341,6 +341,9 @@
 	qcom,mdss-pref-prim-intf = "dsi";
 };
 
+&mdss_dsi {
+	hw-config = "single_dsi";
+};
 
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_hx8379a_fwvga_truly_vid>;
@@ -358,7 +361,7 @@
 
 &labibb {
 	status = "ok";
-	qcom,qpnp-labibb-mode = "lcd";
+	qpnp,qpnp-labibb-mode = "lcd";
 };
 
 &rpm_bus {
@@ -633,7 +636,9 @@
 
 	usb_detect {
 		compatible = "qcom,gpio-usbdetect";
-		gpio,vbus-det-gpio = <&pm8994_gpios 22 0>;
+		interrupt-parent = <&spmi_bus>;
+		interrupts = <0x0 0xd5 0x0>;  /* PM8994 GPIO22 */
+		interrupt-names = "vbus_det_irq";
 		vin-supply = <&vph_pwr_vreg>;
 	};
 

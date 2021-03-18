@@ -180,7 +180,6 @@ static netdev_tx_t rmnet_vnd_start_xmit(struct sk_buff *skb,
 			rmnet_vnd_add_qos_header(skb,
 						 dev,
 						 dev_conf->qos_version);
-		skb_orphan(skb);
 		rmnet_egress_handler(skb, &dev_conf->local_ep);
 	} else {
 		dev->stats.tx_dropped++;
@@ -504,18 +503,6 @@ static void rmnet_vnd_setup(struct net_device *dev)
 	INIT_LIST_HEAD(&dev_conf->flow_head);
 }
 
-/**
- * rmnet_vnd_setup() - net_device initialization helper function
- * @dev:      Virtual network device
- *
- * Called during device initialization. Disables GRO.
- */
-static void rmnet_vnd_disable_offload(struct net_device *dev)
-{
-	dev->wanted_features &= ~NETIF_F_GRO;
-	__netdev_update_features(dev);
-}
-
 /* ***************** Exposed API ******************************************** */
 
 /**
@@ -606,7 +593,8 @@ int rmnet_vnd_create_dev(int id, struct net_device **new_device,
 		/* Configuring DL checksum offload on rmnet_data interfaces */
 		dev->hw_features = NETIF_F_RXCSUM;
 		/* Configuring UL checksum offload on rmnet_data interfaces */
-		dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
+		dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+			NETIF_F_IPV6_UDP_CSUM;
 		/* Configuring GRO on rmnet_data interfaces */
 		dev->hw_features |= NETIF_F_GRO;
 		/* Configuring Scatter-Gather on rmnet_data interfaces */
@@ -627,8 +615,6 @@ int rmnet_vnd_create_dev(int id, struct net_device **new_device,
 		rmnet_devices[id] = dev;
 		*new_device = dev;
 	}
-
-	rmnet_vnd_disable_offload(dev);
 
 	LOGM("Registered device %s", dev->name);
 	return rc;

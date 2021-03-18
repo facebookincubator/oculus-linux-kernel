@@ -134,8 +134,7 @@ information.</para>
 	  <row>
 	    <entry>__u32</entry>
 	    <entry><structfield>reserved</structfield>[8]</entry>
-	    <entry>A place holder for future extensions. Drivers and applications
-must set the array to zero.</entry>
+	    <entry>A place holder for future extensions.</entry>
 	  </row>
 	</tbody>
       </tgroup>

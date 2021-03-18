@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -502,7 +502,7 @@ acpi_ds_create_field(union acpi_parse_object *op,
 		}
 	}
 
-	memset(&info, 0, sizeof(struct acpi_create_field_info));
+	ACPI_MEMSET(&info, 0, sizeof(struct acpi_create_field_info));
 
 	/* Second arg is the field flags */
 

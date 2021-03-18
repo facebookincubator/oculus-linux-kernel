@@ -74,6 +74,7 @@ MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 static struct i2c_driver cyttsp_i2c_driver = {
 	.driver = {
 		.name	= CY_I2C_NAME,
+		.owner	= THIS_MODULE,
 		.pm	= &cyttsp_pm_ops,
 	},
 	.probe		= cyttsp_i2c_probe,
@@ -86,3 +87,4 @@ module_i2c_driver(cyttsp_i2c_driver);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 MODULE_AUTHOR("Cypress");
+MODULE_ALIAS("i2c:cyttsp");

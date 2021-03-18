@@ -1320,7 +1320,8 @@ static int fusb300_udc_start(struct usb_gadget *g,
 	return 0;
 }
 
-static int fusb300_udc_stop(struct usb_gadget *g)
+static int fusb300_udc_stop(struct usb_gadget *g,
+		struct usb_gadget_driver *driver)
 {
 	struct fusb300 *fusb300 = to_fusb300(g);
 
@@ -1342,7 +1343,7 @@ static const struct usb_gadget_ops fusb300_gadget_ops = {
 	.udc_stop	= fusb300_udc_stop,
 };
 
-static int fusb300_remove(struct platform_device *pdev)
+static int __exit fusb300_remove(struct platform_device *pdev)
 {
 	struct fusb300 *fusb300 = platform_get_drvdata(pdev);
 
@@ -1450,17 +1451,6 @@ static int fusb300_probe(struct platform_device *pdev)
 		ep->ep.name = fusb300_ep_name[i];
 		ep->ep.ops = &fusb300_ep_ops;
 		usb_ep_set_maxpacket_limit(&ep->ep, HS_BULK_MAX_PACKET_SIZE);
-
-		if (i == 0) {
-			ep->ep.caps.type_control = true;
-		} else {
-			ep->ep.caps.type_iso = true;
-			ep->ep.caps.type_bulk = true;
-			ep->ep.caps.type_int = true;
-		}
-
-		ep->ep.caps.dir_in = true;
-		ep->ep.caps.dir_out = true;
 	}
 	usb_ep_set_maxpacket_limit(&fusb300->ep[0]->ep, HS_CTL_MAX_PACKET_SIZE);
 	fusb300->ep[0]->epnum = 0;
@@ -1503,9 +1493,10 @@ clean_up:
 }
 
 static struct platform_driver fusb300_driver = {
-	.remove =	fusb300_remove,
+	.remove =	__exit_p(fusb300_remove),
 	.driver		= {
 		.name =	(char *) udc_name,
+		.owner	= THIS_MODULE,
 	},
 };
 

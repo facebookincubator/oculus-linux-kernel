@@ -92,4 +92,5 @@ static int __init ps3_rtc_init(void)
 
 	return PTR_ERR_OR_ZERO(pdev);
 }
-device_initcall(ps3_rtc_init);
+
+module_init(ps3_rtc_init);

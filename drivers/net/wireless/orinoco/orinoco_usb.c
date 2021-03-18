@@ -364,7 +364,9 @@ static struct request_context *ezusb_alloc_ctx(struct ezusb_priv *upriv,
 	atomic_set(&ctx->refcount, 1);
 	init_completion(&ctx->done);
 
-	setup_timer(&ctx->timer, ezusb_request_timerfn, (u_long)ctx);
+	init_timer(&ctx->timer);
+	ctx->timer.function = ezusb_request_timerfn;
+	ctx->timer.data = (u_long) ctx;
 	return ctx;
 }
 
@@ -1502,7 +1504,6 @@ static inline void ezusb_delete(struct ezusb_priv *upriv)
 	if (upriv->dev) {
 		struct orinoco_private *priv = ndev_priv(upriv->dev);
 		orinoco_if_del(priv);
-		wiphy_unregister(priv_to_wiphy(upriv));
 		free_orinocodev(priv);
 	}
 }
@@ -1576,7 +1577,6 @@ static int ezusb_probe(struct usb_interface *interface,
 				ezusb_hard_reset, NULL);
 	if (!priv) {
 		err("Couldn't allocate orinocodev");
-		retval = -ENOMEM;
 		goto exit;
 	}
 
@@ -1697,7 +1697,6 @@ static int ezusb_probe(struct usb_interface *interface,
 	if (orinoco_if_add(priv, 0, 0, &ezusb_netdev_ops) != 0) {
 		upriv->dev = NULL;
 		err("%s: orinoco_if_add() failed", __func__);
-		wiphy_unregister(priv_to_wiphy(priv));
 		goto error;
 	}
 	upriv->dev = priv->ndev;

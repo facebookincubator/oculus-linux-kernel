@@ -388,7 +388,7 @@ int vt_ioctl(struct tty_struct *tty,
 		 * Generate the tone for the appropriate number of ticks.
 		 * If the time is zero, turn off sound ourselves.
 		 */
-		ticks = msecs_to_jiffies((arg >> 16) & 0xffff);
+		ticks = HZ * ((arg >> 16) & 0xffff) / 1000;
 		count = ticks ? (arg & 0xffff) : 0;
 		if (count)
 			count = PIT_TICK_RATE / count;

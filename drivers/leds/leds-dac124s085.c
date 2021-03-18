@@ -122,6 +122,7 @@ static struct spi_driver dac124s085_driver = {
 	.remove		= dac124s085_remove,
 	.driver = {
 		.name	= "dac124s085",
+		.owner	= THIS_MODULE,
 	},
 };
 

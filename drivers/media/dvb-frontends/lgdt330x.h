@@ -65,3 +65,9 @@ static inline struct dvb_frontend* lgdt330x_attach(const struct lgdt330x_config*
 #endif // CONFIG_DVB_LGDT330X
 
 #endif /* LGDT330X_H */
+
+/*
+ * Local variables:
+ * c-basic-offset: 8
+ * End:
+ */

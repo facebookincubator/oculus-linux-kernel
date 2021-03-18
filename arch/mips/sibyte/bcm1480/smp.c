@@ -29,6 +29,8 @@
 #include <asm/sibyte/bcm1480_regs.h>
 #include <asm/sibyte/bcm1480_int.h>
 
+extern void smp_call_function_interrupt(void);
+
 /*
  * These are routines for dealing with the bcm1480 smp capabilities
  * independent of board/firmware
@@ -182,9 +184,6 @@ void bcm1480_mailbox_interrupt(void)
 	if (action & SMP_RESCHEDULE_YOURSELF)
 		scheduler_ipi();
 
-	if (action & SMP_CALL_FUNCTION) {
-		irq_enter();
-		generic_smp_call_function_interrupt();
-		irq_exit();
-	}
+	if (action & SMP_CALL_FUNCTION)
+		smp_call_function_interrupt();
 }

@@ -7,7 +7,6 @@
 #include <linux/input-polldev.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/gpio.h>
 
 #include <asm/mach-rc32434/gpio.h>
 #include <asm/mach-rc32434/rb.h>
@@ -97,6 +96,7 @@ static struct platform_driver rb532_button_driver = {
 	.remove = rb532_button_remove,
 	.driver = {
 		.name = DRV_NAME,
+		.owner = THIS_MODULE,
 	},
 };
 module_platform_driver(rb532_button_driver);

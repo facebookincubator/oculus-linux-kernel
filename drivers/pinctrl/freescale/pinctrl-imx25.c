@@ -26,8 +26,7 @@
 #include "pinctrl-imx.h"
 
 enum imx25_pads {
-	MX25_PAD_RESERVE0 = 0,
-	MX25_PAD_RESERVE1 = 1,
+	MX25_PAD_RESERVE0 = 1,
 	MX25_PAD_A10 = 2,
 	MX25_PAD_A13 = 3,
 	MX25_PAD_A14 = 4,
@@ -170,7 +169,6 @@ enum imx25_pads {
 /* Pad names for the pinmux subsystem */
 static const struct pinctrl_pin_desc imx25_pinctrl_pads[] = {
 	IMX_PINCTRL_PIN(MX25_PAD_RESERVE0),
-	IMX_PINCTRL_PIN(MX25_PAD_RESERVE1),
 	IMX_PINCTRL_PIN(MX25_PAD_A10),
 	IMX_PINCTRL_PIN(MX25_PAD_A13),
 	IMX_PINCTRL_PIN(MX25_PAD_A14),
@@ -328,6 +326,7 @@ static int imx25_pinctrl_probe(struct platform_device *pdev)
 static struct platform_driver imx25_pinctrl_driver = {
 	.driver = {
 		.name = "imx25-pinctrl",
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(imx25_pinctrl_of_match),
 	},
 	.probe = imx25_pinctrl_probe,

@@ -91,7 +91,7 @@ struct cnss_wlan_pinctrl_info {
 
 struct cnss_sdio_bus_bandwidth {
 	struct msm_bus_scale_pdata *bus_scale_table;
-	u32 bus_client;
+	uint32_t bus_client;
 	int current_bandwidth_vote;
 };
 
@@ -171,7 +171,7 @@ int cnss_sdio_request_bus_bandwidth(int bandwidth)
 
 	bus_bandwidth = &cnss_pdata->bus_bandwidth;
 	if (!bus_bandwidth->bus_client)
-		return -ENODEV;
+		return -ENOSYS;
 
 	switch (bandwidth) {
 	case CNSS_BUS_WIDTH_NONE:
@@ -238,7 +238,7 @@ static int cnss_put_hw_resources(struct device *dev)
 
 	if (!host) {
 		pr_err("%s: MMC host is invalid\n", __func__);
-		return 0;
+		return ret;
 	}
 
 	ret = mmc_power_save_host(host);
@@ -275,6 +275,12 @@ static int cnss_get_hw_resources(struct device *dev)
 	}
 
 	host = info->host;
+
+	if (!host) {
+		pr_err("%s: MMC Host is Invalid; Enumeration Failed\n",
+		       __func__);
+		return ret;
+	}
 
 	ret = regulator_enable(cnss_pdata->regulator.wlan_vreg);
 	if (ret) {
@@ -605,8 +611,7 @@ void cnss_sdio_device_crashed(void)
 		return;
 	ssr_info = &cnss_pdata->ssr_info;
 	if (ssr_info->subsys) {
-		subsys_set_crash_status(ssr_info->subsys,
-					CRASH_STATUS_ERR_FATAL);
+		subsys_set_crash_status(ssr_info->subsys, true);
 		subsystem_restart_dev(ssr_info->subsys);
 	}
 }
@@ -974,7 +979,7 @@ static void cnss_sdio_deinit_bus_bandwidth(void)
 
 	bus_bandwidth = &cnss_pdata->bus_bandwidth;
 	if (bus_bandwidth->bus_client) {
-		msm_bus_scale_client_update_request(
+			msm_bus_scale_client_update_request(
 			bus_bandwidth->bus_client, CNSS_BUS_WIDTH_NONE);
 		msm_bus_scale_unregister_client(bus_bandwidth->bus_client);
 	}

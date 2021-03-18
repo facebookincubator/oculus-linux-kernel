@@ -832,6 +832,7 @@ static void s3c2410_nand_init_chip(struct s3c2410_nand_info *info,
 
 	nmtd->info	   = info;
 	nmtd->mtd.priv	   = chip;
+	nmtd->mtd.owner    = THIS_MODULE;
 	nmtd->set	   = set;
 
 #ifdef CONFIG_MTD_NAND_S3C2410_HWECC
@@ -947,6 +948,8 @@ static int s3c24xx_nand_probe(struct platform_device *pdev)
 
 	cpu_type = platform_get_device_id(pdev)->driver_data;
 
+	pr_debug("s3c2410_nand_probe(%p)\n", pdev);
+
 	info = devm_kzalloc(&pdev->dev, sizeof(*info), GFP_KERNEL);
 	if (info == NULL) {
 		err = -ENOMEM;
@@ -1015,7 +1018,6 @@ static int s3c24xx_nand_probe(struct platform_device *pdev)
 		pr_debug("initialising set %d (%p, info %p)\n",
 			 setno, nmtd, info);
 
-		nmtd->mtd.dev.parent = &pdev->dev;
 		s3c2410_nand_init_chip(info, nmtd, sets);
 
 		nmtd->scan_res = nand_scan_ident(&nmtd->mtd,
@@ -1043,6 +1045,7 @@ static int s3c24xx_nand_probe(struct platform_device *pdev)
 		s3c2410_nand_clk_set_state(info, CLOCK_SUSPEND);
 	}
 
+	pr_debug("initialised ok\n");
 	return 0;
 
  exit_error:
@@ -1105,7 +1108,7 @@ static int s3c24xx_nand_resume(struct platform_device *dev)
 
 /* driver device registration */
 
-static const struct platform_device_id s3c24xx_driver_ids[] = {
+static struct platform_device_id s3c24xx_driver_ids[] = {
 	{
 		.name		= "s3c2410-nand",
 		.driver_data	= TYPE_S3C2410,
@@ -1132,6 +1135,7 @@ static struct platform_driver s3c24xx_nand_driver = {
 	.id_table	= s3c24xx_driver_ids,
 	.driver		= {
 		.name	= "s3c24xx-nand",
+		.owner	= THIS_MODULE,
 	},
 };
 

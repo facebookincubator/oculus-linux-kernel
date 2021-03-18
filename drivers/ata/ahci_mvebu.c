@@ -19,8 +19,6 @@
 #include <linux/platform_device.h>
 #include "ahci.h"
 
-#define DRV_NAME "ahci-mvebu"
-
 #define AHCI_VENDOR_SPECIFIC_0_ADDR  0xa0
 #define AHCI_VENDOR_SPECIFIC_0_DATA  0xa4
 
@@ -62,40 +60,11 @@ static void ahci_mvebu_regret_option(struct ahci_host_priv *hpriv)
 	writel(0x80, hpriv->mmio + AHCI_VENDOR_SPECIFIC_0_DATA);
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int ahci_mvebu_suspend(struct platform_device *pdev, pm_message_t state)
-{
-	return ahci_platform_suspend_host(&pdev->dev);
-}
-
-static int ahci_mvebu_resume(struct platform_device *pdev)
-{
-	struct ata_host *host = platform_get_drvdata(pdev);
-	struct ahci_host_priv *hpriv = host->private_data;
-	const struct mbus_dram_target_info *dram;
-
-	dram = mv_mbus_dram_info();
-	if (dram)
-		ahci_mvebu_mbus_config(hpriv, dram);
-
-	ahci_mvebu_regret_option(hpriv);
-
-	return ahci_platform_resume_host(&pdev->dev);
-}
-#else
-#define ahci_mvebu_suspend NULL
-#define ahci_mvebu_resume NULL
-#endif
-
 static const struct ata_port_info ahci_mvebu_port_info = {
 	.flags	   = AHCI_FLAG_COMMON,
 	.pio_mask  = ATA_PIO4,
 	.udma_mask = ATA_UDMA6,
 	.port_ops  = &ahci_platform_ops,
-};
-
-static struct scsi_host_template ahci_platform_sht = {
-	AHCI_SHT(DRV_NAME),
 };
 
 static int ahci_mvebu_probe(struct platform_device *pdev)
@@ -119,8 +88,7 @@ static int ahci_mvebu_probe(struct platform_device *pdev)
 	ahci_mvebu_mbus_config(hpriv, dram);
 	ahci_mvebu_regret_option(hpriv);
 
-	rc = ahci_platform_init_host(pdev, hpriv, &ahci_mvebu_port_info,
-				     &ahci_platform_sht);
+	rc = ahci_platform_init_host(pdev, hpriv, &ahci_mvebu_port_info);
 	if (rc)
 		goto disable_resources;
 
@@ -145,10 +113,9 @@ MODULE_DEVICE_TABLE(of, ahci_mvebu_of_match);
 static struct platform_driver ahci_mvebu_driver = {
 	.probe = ahci_mvebu_probe,
 	.remove = ata_platform_remove_one,
-	.suspend = ahci_mvebu_suspend,
-	.resume = ahci_mvebu_resume,
 	.driver = {
-		.name = DRV_NAME,
+		.name = "ahci-mvebu",
+		.owner = THIS_MODULE,
 		.of_match_table = ahci_mvebu_of_match,
 	},
 };

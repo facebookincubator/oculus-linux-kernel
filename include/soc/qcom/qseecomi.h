@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -336,7 +336,7 @@ __packed struct qseecom_client_send_fsm_key_req {
 
 __packed struct qseecom_continue_blocked_request_ireq {
 	uint32_t qsee_cmd_id;
-	uint32_t app_or_session_id; /*legacy: app_id; smcinvoke: session_id*/
+	uint32_t app_id;
 };
 
 
@@ -511,9 +511,6 @@ __packed struct qseecom_continue_blocked_request_ireq {
 #define TZ_OS_REGISTER_LISTENER_ID \
 	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_QSEE_OS, TZ_SVC_LISTENER, 0x01)
 
-#define TZ_OS_REGISTER_LISTENER_SMCINVOKE_ID \
-	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_QSEE_OS, TZ_SVC_LISTENER, 0x06)
-
 #define TZ_OS_REGISTER_LISTENER_ID_PARAM_ID \
 	TZ_SYSCALL_CREATE_PARAM_ID_3( \
 	TZ_SYSCALL_PARAM_TYPE_VAL, TZ_SYSCALL_PARAM_TYPE_BUF_RW, \
@@ -680,9 +677,6 @@ __packed struct qseecom_continue_blocked_request_ireq {
 
 #define TZ_OS_CONTINUE_BLOCKED_REQUEST_ID \
 	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_QSEE_OS, TZ_SVC_LISTENER, 0x04)
-
-#define TZ_OS_CONTINUE_BLOCKED_REQUEST_SMCINVOKE_ID \
-	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_QSEE_OS, TZ_SVC_LISTENER, 0x07)
 
 #define TZ_OS_CONTINUE_BLOCKED_REQUEST_ID_PARAM_ID \
 	TZ_SYSCALL_CREATE_PARAM_ID_1(TZ_SYSCALL_PARAM_TYPE_VAL)

@@ -8,6 +8,7 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/types.h>
+#include <asm/pci.h>
 #include <asm/ip32/mace.h>
 
 #if 0

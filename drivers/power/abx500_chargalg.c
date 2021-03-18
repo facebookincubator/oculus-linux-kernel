@@ -50,6 +50,9 @@
 #define CHARGALG_CURR_STEP_LOW		0
 #define CHARGALG_CURR_STEP_HIGH	100
 
+#define to_abx500_chargalg_device_info(x) container_of((x), \
+	struct abx500_chargalg, chargalg_psy);
+
 enum abx500_chargers {
 	NO_CHG,
 	AC_CHG,
@@ -253,7 +256,7 @@ struct abx500_chargalg {
 	struct ab8500 *parent;
 	struct abx500_chargalg_current_step_status curr_status;
 	struct abx500_bm_data *bm;
-	struct power_supply *chargalg_psy;
+	struct power_supply chargalg_psy;
 	struct ux500_charger *ac_chg;
 	struct ux500_charger *usb_chg;
 	struct abx500_chargalg_events events;
@@ -692,7 +695,7 @@ static void abx500_chargalg_stop_charging(struct abx500_chargalg *di)
 	di->charge_status = POWER_SUPPLY_STATUS_NOT_CHARGING;
 	di->maintenance_chg = false;
 	cancel_delayed_work(&di->chargalg_wd_work);
-	power_supply_changed(di->chargalg_psy);
+	power_supply_changed(&di->chargalg_psy);
 }
 
 /**
@@ -712,7 +715,7 @@ static void abx500_chargalg_hold_charging(struct abx500_chargalg *di)
 	di->charge_status = POWER_SUPPLY_STATUS_CHARGING;
 	di->maintenance_chg = false;
 	cancel_delayed_work(&di->chargalg_wd_work);
-	power_supply_changed(di->chargalg_psy);
+	power_supply_changed(&di->chargalg_psy);
 }
 
 /**
@@ -839,7 +842,7 @@ static void abx500_chargalg_end_of_charge(struct abx500_chargalg *di)
 			di->charge_status = POWER_SUPPLY_STATUS_FULL;
 			di->maintenance_chg = true;
 			dev_dbg(di->dev, "EOC reached!\n");
-			power_supply_changed(di->chargalg_psy);
+			power_supply_changed(&di->chargalg_psy);
 		} else {
 			dev_dbg(di->dev,
 				" EOC limit reached for the %d"
@@ -984,10 +987,10 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 
 	psy = (struct power_supply *)data;
 	ext = dev_get_drvdata(dev);
-	di = power_supply_get_drvdata(psy);
+	di = to_abx500_chargalg_device_info(psy);
 	/* For all psy where the driver name appears in any supplied_to */
 	for (i = 0; i < ext->num_supplicants; i++) {
-		if (!strcmp(ext->supplied_to[i], psy->desc->name))
+		if (!strcmp(ext->supplied_to[i], psy->name))
 			psy_found = true;
 	}
 	if (!psy_found)
@@ -998,31 +1001,29 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 	 * property because of handling that sysfs entry on its own, this is
 	 * the place to get the battery capacity.
 	 */
-	if (!power_supply_get_property(ext, POWER_SUPPLY_PROP_CAPACITY, &ret)) {
+	if (!ext->get_property(ext, POWER_SUPPLY_PROP_CAPACITY, &ret)) {
 		di->batt_data.percent = ret.intval;
 		capacity_updated = true;
 	}
 
 	/* Go through all properties for the psy */
-	for (j = 0; j < ext->desc->num_properties; j++) {
+	for (j = 0; j < ext->num_properties; j++) {
 		enum power_supply_property prop;
-		prop = ext->desc->properties[j];
+		prop = ext->properties[j];
 
-		/*
-		 * Initialize chargers if not already done.
-		 * The ab8500_charger*/
+		/* Initialize chargers if not already done */
 		if (!di->ac_chg &&
-			ext->desc->type == POWER_SUPPLY_TYPE_MAINS)
+			ext->type == POWER_SUPPLY_TYPE_MAINS)
 			di->ac_chg = psy_to_ux500_charger(ext);
 		else if (!di->usb_chg &&
-			ext->desc->type == POWER_SUPPLY_TYPE_USB)
+			ext->type == POWER_SUPPLY_TYPE_USB)
 			di->usb_chg = psy_to_ux500_charger(ext);
 
-		if (power_supply_get_property(ext, prop, &ret))
+		if (ext->get_property(ext, prop, &ret))
 			continue;
 		switch (prop) {
 		case POWER_SUPPLY_PROP_PRESENT:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				/* Battery present */
 				if (ret.intval)
@@ -1069,7 +1070,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_ONLINE:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				break;
 			case POWER_SUPPLY_TYPE_MAINS:
@@ -1114,7 +1115,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_HEALTH:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				break;
 			case POWER_SUPPLY_TYPE_MAINS:
@@ -1197,7 +1198,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				di->batt_data.volt = ret.intval / 1000;
 				break;
@@ -1213,7 +1214,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_VOLTAGE_AVG:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_MAINS:
 				/* AVG is used to indicate when we are
 				 * in CV mode */
@@ -1238,7 +1239,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_TECHNOLOGY:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				if (ret.intval)
 					di->events.batt_unknown = false;
@@ -1256,7 +1257,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_CURRENT_NOW:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_MAINS:
 					di->chg_info.ac_curr =
 						ret.intval / 1000;
@@ -1274,7 +1275,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
 			break;
 
 		case POWER_SUPPLY_PROP_CURRENT_AVG:
-			switch (ext->desc->type) {
+			switch (ext->type) {
 			case POWER_SUPPLY_TYPE_BATTERY:
 				di->batt_data.avg_curr = ret.intval / 1000;
 				break;
@@ -1310,7 +1311,7 @@ static int abx500_chargalg_get_ext_psy_data(struct device *dev, void *data)
  */
 static void abx500_chargalg_external_power_changed(struct power_supply *psy)
 {
-	struct abx500_chargalg *di = power_supply_get_drvdata(psy);
+	struct abx500_chargalg *di = to_abx500_chargalg_device_info(psy);
 
 	/*
 	 * Trigger execution of the algorithm instantly and read
@@ -1335,7 +1336,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 
 	/* Collect data from all power_supply class devices */
 	class_for_each_device(power_supply_class, NULL,
-		di->chargalg_psy, abx500_chargalg_get_ext_psy_data);
+		&di->chargalg_psy, abx500_chargalg_get_ext_psy_data);
 
 	abx500_chargalg_end_of_charge(di);
 	abx500_chargalg_check_temp(di);
@@ -1477,7 +1478,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 		di->charge_status = POWER_SUPPLY_STATUS_NOT_CHARGING;
 		di->maintenance_chg = false;
 		abx500_chargalg_state_to(di, STATE_SUSPENDED);
-		power_supply_changed(di->chargalg_psy);
+		power_supply_changed(&di->chargalg_psy);
 		/* Intentional fallthrough */
 
 	case STATE_SUSPENDED:
@@ -1575,7 +1576,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 		di->charge_status = POWER_SUPPLY_STATUS_CHARGING;
 		di->eoc_cnt = 0;
 		di->maintenance_chg = false;
-		power_supply_changed(di->chargalg_psy);
+		power_supply_changed(&di->chargalg_psy);
 
 		break;
 
@@ -1623,7 +1624,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 			di->bm->bat_type[
 				di->bm->batt_id].maint_a_cur_lvl);
 		abx500_chargalg_state_to(di, STATE_MAINTENANCE_A);
-		power_supply_changed(di->chargalg_psy);
+		power_supply_changed(&di->chargalg_psy);
 		/* Intentional fallthrough*/
 
 	case STATE_MAINTENANCE_A:
@@ -1643,7 +1644,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 			di->bm->bat_type[
 				di->bm->batt_id].maint_b_cur_lvl);
 		abx500_chargalg_state_to(di, STATE_MAINTENANCE_B);
-		power_supply_changed(di->chargalg_psy);
+		power_supply_changed(&di->chargalg_psy);
 		/* Intentional fallthrough*/
 
 	case STATE_MAINTENANCE_B:
@@ -1662,7 +1663,7 @@ static void abx500_chargalg_algorithm(struct abx500_chargalg *di)
 		abx500_chargalg_stop_maintenance_timer(di);
 		di->charge_status = POWER_SUPPLY_STATUS_CHARGING;
 		abx500_chargalg_state_to(di, STATE_TEMP_LOWHIGH);
-		power_supply_changed(di->chargalg_psy);
+		power_supply_changed(&di->chargalg_psy);
 		/* Intentional fallthrough */
 
 	case STATE_TEMP_LOWHIGH:
@@ -1778,7 +1779,9 @@ static int abx500_chargalg_get_property(struct power_supply *psy,
 	enum power_supply_property psp,
 	union power_supply_propval *val)
 {
-	struct abx500_chargalg *di = power_supply_get_drvdata(psy);
+	struct abx500_chargalg *di;
+
+	di = to_abx500_chargalg_device_info(psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -2031,7 +2034,7 @@ static int abx500_chargalg_remove(struct platform_device *pdev)
 	/* Delete the work queue */
 	destroy_workqueue(di->chargalg_wq);
 
-	power_supply_unregister(di->chargalg_psy);
+	power_supply_unregister(&di->chargalg_psy);
 
 	return 0;
 }
@@ -2040,20 +2043,10 @@ static char *supply_interface[] = {
 	"ab8500_fg",
 };
 
-static const struct power_supply_desc abx500_chargalg_desc = {
-	.name			= "abx500_chargalg",
-	.type			= POWER_SUPPLY_TYPE_BATTERY,
-	.properties		= abx500_chargalg_props,
-	.num_properties		= ARRAY_SIZE(abx500_chargalg_props),
-	.get_property		= abx500_chargalg_get_property,
-	.external_power_changed	= abx500_chargalg_external_power_changed,
-};
-
 static int abx500_chargalg_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct abx500_bm_data *plat = pdev->dev.platform_data;
-	struct power_supply_config psy_cfg = {};
 	struct abx500_chargalg *di;
 	int ret = 0;
 
@@ -2081,9 +2074,16 @@ static int abx500_chargalg_probe(struct platform_device *pdev)
 	di->dev = &pdev->dev;
 	di->parent = dev_get_drvdata(pdev->dev.parent);
 
-	psy_cfg.supplied_to = supply_interface;
-	psy_cfg.num_supplicants = ARRAY_SIZE(supply_interface);
-	psy_cfg.drv_data = di;
+	/* chargalg supply */
+	di->chargalg_psy.name = "abx500_chargalg";
+	di->chargalg_psy.type = POWER_SUPPLY_TYPE_BATTERY;
+	di->chargalg_psy.properties = abx500_chargalg_props;
+	di->chargalg_psy.num_properties = ARRAY_SIZE(abx500_chargalg_props);
+	di->chargalg_psy.get_property = abx500_chargalg_get_property;
+	di->chargalg_psy.supplied_to = supply_interface;
+	di->chargalg_psy.num_supplicants = ARRAY_SIZE(supply_interface),
+	di->chargalg_psy.external_power_changed =
+		abx500_chargalg_external_power_changed;
 
 	/* Initilialize safety timer */
 	hrtimer_init(&di->safety_timer, CLOCK_REALTIME, HRTIMER_MODE_ABS);
@@ -2115,11 +2115,9 @@ static int abx500_chargalg_probe(struct platform_device *pdev)
 	di->chg_info.prev_conn_chg = -1;
 
 	/* Register chargalg power supply class */
-	di->chargalg_psy = power_supply_register(di->dev, &abx500_chargalg_desc,
-						 &psy_cfg);
-	if (IS_ERR(di->chargalg_psy)) {
+	ret = power_supply_register(di->dev, &di->chargalg_psy);
+	if (ret) {
 		dev_err(di->dev, "failed to register chargalg psy\n");
-		ret = PTR_ERR(di->chargalg_psy);
 		goto free_chargalg_wq;
 	}
 
@@ -2140,7 +2138,7 @@ static int abx500_chargalg_probe(struct platform_device *pdev)
 	return ret;
 
 free_psy:
-	power_supply_unregister(di->chargalg_psy);
+	power_supply_unregister(&di->chargalg_psy);
 free_chargalg_wq:
 	destroy_workqueue(di->chargalg_wq);
 	return ret;
@@ -2158,6 +2156,7 @@ static struct platform_driver abx500_chargalg_driver = {
 	.resume = abx500_chargalg_resume,
 	.driver = {
 		.name = "ab8500-chargalg",
+		.owner = THIS_MODULE,
 		.of_match_table = ab8500_chargalg_match,
 	},
 };

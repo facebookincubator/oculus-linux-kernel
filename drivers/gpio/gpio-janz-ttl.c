@@ -203,6 +203,7 @@ static int ttl_remove(struct platform_device *pdev)
 static struct platform_driver ttl_driver = {
 	.driver		= {
 		.name	= DRV_NAME,
+		.owner	= THIS_MODULE,
 	},
 	.probe		= ttl_probe,
 	.remove		= ttl_remove,

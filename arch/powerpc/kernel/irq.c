@@ -50,6 +50,7 @@
 #include <linux/list.h>
 #include <linux/radix-tree.h>
 #include <linux/mutex.h>
+#include <linux/bootmem.h>
 #include <linux/pci.h>
 #include <linux/debugfs.h>
 #include <linux/of.h>
@@ -113,7 +114,7 @@ static inline notrace void set_soft_enabled(unsigned long enable)
 static inline notrace int decrementer_check_overflow(void)
 {
  	u64 now = get_tb_or_rtc();
-	u64 *next_tb = this_cpu_ptr(&decrementers_next_tb);
+ 	u64 *next_tb = &__get_cpu_var(decrementers_next_tb);
  
 	return now >= *next_tb;
 }
@@ -441,7 +442,7 @@ void migrate_irqs(void)
 
 		chip = irq_data_get_irq_chip(data);
 
-		cpumask_and(mask, irq_data_get_affinity_mask(data), map);
+		cpumask_and(mask, data->affinity, map);
 		if (cpumask_any(mask) >= nr_cpu_ids) {
 			pr_warn("Breaking affinity for irq %i\n", irq);
 			cpumask_copy(mask, map);
@@ -498,7 +499,7 @@ void __do_irq(struct pt_regs *regs)
 
 	/* And finally process it */
 	if (unlikely(irq == NO_IRQ))
-		__this_cpu_inc(irq_stat.spurious_irqs);
+		__get_cpu_var(irq_stat).spurious_irqs++;
 	else
 		generic_handle_irq(irq);
 

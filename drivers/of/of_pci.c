@@ -5,7 +5,6 @@
 #include <linux/of_device.h>
 #include <linux/of_pci.h>
 #include <linux/slab.h>
-#include <asm-generic/pci-bridge.h>
 
 static inline int __of_pci_pci_compare(struct device_node *node,
 				       unsigned int data)
@@ -119,29 +118,24 @@ int of_get_pci_domain_nr(struct device_node *node)
 EXPORT_SYMBOL_GPL(of_get_pci_domain_nr);
 
 /**
- * of_pci_check_probe_only - Setup probe only mode if linux,pci-probe-only
- *                           is present and valid
+ * of_pci_dma_configure - Setup DMA configuration
+ * @dev: ptr to pci_dev struct of the PCI device
+ *
+ * Function to update PCI devices's DMA configuration using the same
+ * info from the OF node of host bridge's parent (if any).
  */
-void of_pci_check_probe_only(void)
+void of_pci_dma_configure(struct pci_dev *pci_dev)
 {
-	u32 val;
-	int ret;
+	struct device *dev = &pci_dev->dev;
+	struct device *bridge = pci_get_host_bridge_device(pci_dev);
 
-	ret = of_property_read_u32(of_chosen, "linux,pci-probe-only", &val);
-	if (ret) {
-		if (ret == -ENODATA || ret == -EOVERFLOW)
-			pr_warn("linux,pci-probe-only without valid value, ignoring\n");
+	if (!bridge->parent)
 		return;
-	}
 
-	if (val)
-		pci_add_flags(PCI_PROBE_ONLY);
-	else
-		pci_clear_flags(PCI_PROBE_ONLY);
-
-	pr_info("PCI: PROBE_ONLY %sabled\n", val ? "en" : "dis");
+	of_dma_configure(dev, bridge->parent->of_node);
+	pci_put_host_bridge_device(bridge);
 }
-EXPORT_SYMBOL_GPL(of_pci_check_probe_only);
+EXPORT_SYMBOL_GPL(of_pci_dma_configure);
 
 #if defined(CONFIG_OF_ADDRESS)
 /**
@@ -167,7 +161,7 @@ int of_pci_get_host_bridge_resources(struct device_node *dev,
 			unsigned char busno, unsigned char bus_max,
 			struct list_head *resources, resource_size_t *io_base)
 {
-	struct resource_entry *window;
+	struct pci_host_bridge_window *window;
 	struct resource *res;
 	struct resource *bus_range;
 	struct of_pci_range range;
@@ -229,10 +223,8 @@ int of_pci_get_host_bridge_resources(struct device_node *dev,
 		}
 
 		err = of_pci_range_to_resource(&range, dev, res);
-		if (err) {
-			kfree(res);
-			continue;
-		}
+		if (err)
+			goto conversion_failed;
 
 		if (resource_type(res) == IORESOURCE_IO) {
 			if (!io_base) {
@@ -255,7 +247,7 @@ int of_pci_get_host_bridge_resources(struct device_node *dev,
 conversion_failed:
 	kfree(res);
 parse_failed:
-	resource_list_for_each_entry(window, resources)
+	list_for_each_entry(window, resources, list)
 		kfree(window->res);
 	pci_free_resource_list(resources);
 	return err;

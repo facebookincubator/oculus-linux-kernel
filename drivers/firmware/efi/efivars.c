@@ -39,7 +39,7 @@
  *   fix locking per Peter Chubb's findings
  *
  *  25 Mar 2002 - Matt Domsch <Matt_Domsch@dell.com>
- *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_to_str()
+ *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_unparse()
  *
  *  12 Feb 2002 - Matt Domsch <Matt_Domsch@dell.com>
  *   use list_for_each_safe when deleting vars.
@@ -128,7 +128,7 @@ efivar_guid_read(struct efivar_entry *entry, char *buf)
 	if (!entry || !buf)
 		return 0;
 
-	efi_guid_to_str(&var->VendorGuid, str);
+	efi_guid_unparse(&var->VendorGuid, str);
 	str += strlen(str);
 	str += sprintf(str, "\n");
 
@@ -562,8 +562,9 @@ efivar_create_sysfs_entry(struct efivar_entry *new_var)
 
 	/* This is ugly, but necessary to separate one vendor's
 	   private variables from another's.         */
+
 	short_name[utf8_name_size] = '-';
-	efi_guid_to_str(&new_var->var.VendorGuid,
+	efi_guid_unparse(&new_var->var.VendorGuid,
 			 short_name + utf8_name_size + 1);
 
 	new_var->kobj.kset = efivars_kset;

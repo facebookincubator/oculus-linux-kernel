@@ -28,8 +28,6 @@
 #include <linux/libata.h>
 #include "ahci.h"
 
-#define DRV_NAME "ahci-imx"
-
 enum {
 	/* Timer 1-ms Register */
 	IMX_TIMER1MS				= 0x00e0,
@@ -223,9 +221,11 @@ static int imx_sata_enable(struct ahci_host_priv *hpriv)
 	if (imxpriv->no_device)
 		return 0;
 
-	ret = ahci_platform_enable_regulators(hpriv);
-	if (ret)
-		return ret;
+	if (hpriv->target_pwr) {
+		ret = regulator_enable(hpriv->target_pwr);
+		if (ret)
+			return ret;
+	}
 
 	ret = clk_prepare_enable(imxpriv->sata_ref_clk);
 	if (ret < 0)
@@ -270,7 +270,8 @@ static int imx_sata_enable(struct ahci_host_priv *hpriv)
 disable_clk:
 	clk_disable_unprepare(imxpriv->sata_ref_clk);
 disable_regulator:
-	ahci_platform_disable_regulators(hpriv);
+	if (hpriv->target_pwr)
+		regulator_disable(hpriv->target_pwr);
 
 	return ret;
 }
@@ -290,7 +291,8 @@ static void imx_sata_disable(struct ahci_host_priv *hpriv)
 
 	clk_disable_unprepare(imxpriv->sata_ref_clk);
 
-	ahci_platform_disable_regulators(hpriv);
+	if (hpriv->target_pwr)
+		regulator_disable(hpriv->target_pwr);
 }
 
 static void ahci_imx_error_handler(struct ata_port *ap)
@@ -522,10 +524,6 @@ static u32 imx_ahci_parse_props(struct device *dev,
 	return reg_value;
 }
 
-static struct scsi_host_template ahci_platform_sht = {
-	AHCI_SHT(DRV_NAME),
-};
-
 static int imx_ahci_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -622,8 +620,7 @@ static int imx_ahci_probe(struct platform_device *pdev)
 	reg_val = clk_get_rate(imxpriv->ahb_clk) / 1000;
 	writel(reg_val, hpriv->mmio + IMX_TIMER1MS);
 
-	ret = ahci_platform_init_host(pdev, hpriv, &ahci_imx_port_info,
-				      &ahci_platform_sht);
+	ret = ahci_platform_init_host(pdev, hpriv, &ahci_imx_port_info);
 	if (ret)
 		goto disable_sata;
 
@@ -681,7 +678,8 @@ static struct platform_driver imx_ahci_driver = {
 	.probe = imx_ahci_probe,
 	.remove = ata_platform_remove_one,
 	.driver = {
-		.name = DRV_NAME,
+		.name = "ahci-imx",
+		.owner = THIS_MODULE,
 		.of_match_table = imx_ahci_of_match,
 		.pm = &ahci_imx_pm_ops,
 	},

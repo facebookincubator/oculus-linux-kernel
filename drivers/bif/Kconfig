@@ -13,7 +13,8 @@ menuconfig BIF
 
 if BIF
 config BIF_QPNP
-	depends on SPMI
+	depends on SPMI || MSM_SPMI
+	depends on OF_SPMI
 	tristate "Qualcomm QPNP BIF support"
 	help
 	  This driver supports the QPNP BSI peripheral found inside of Qualcomm

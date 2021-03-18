@@ -383,6 +383,7 @@ static struct platform_driver omap_kp_driver = {
 	.resume		= omap_kp_resume,
 	.driver		= {
 		.name	= "omap-keypad",
+		.owner	= THIS_MODULE,
 	},
 };
 module_platform_driver(omap_kp_driver);

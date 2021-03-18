@@ -18,7 +18,6 @@
 #include <linux/pci.h>
 #include <linux/semaphore.h>
 #include <asm/msi_bitmap.h>
-#include <asm/ppc-pci.h>
 
 struct ppc4xx_hsta_msi {
 	struct device *dev;
@@ -51,7 +50,7 @@ static int hsta_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 		return -EINVAL;
 	}
 
-	for_each_pci_msi_entry(entry, dev) {
+	list_for_each_entry(entry, &dev->msi_list, list) {
 		irq = msi_bitmap_alloc_hwirqs(&ppc4xx_hsta_msi.bmp, 1);
 		if (irq < 0) {
 			pr_debug("%s: Failed to allocate msi interrupt\n",
@@ -109,7 +108,7 @@ static void hsta_teardown_msi_irqs(struct pci_dev *dev)
 	struct msi_desc *entry;
 	int irq;
 
-	for_each_pci_msi_entry(entry, dev) {
+	list_for_each_entry(entry, &dev->msi_list, list) {
 		if (entry->irq == NO_IRQ)
 			continue;
 
@@ -129,10 +128,9 @@ static int hsta_msi_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct resource *mem;
 	int irq, ret, irq_count;
-	struct pci_controller *phb;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
+	if (IS_ERR(mem)) {
 		dev_err(dev, "Unable to get mmio space\n");
 		return -EINVAL;
 	}
@@ -147,7 +145,7 @@ static int hsta_msi_probe(struct platform_device *pdev)
 	ppc4xx_hsta_msi.address = mem->start;
 	ppc4xx_hsta_msi.data = ioremap(mem->start, resource_size(mem));
 	ppc4xx_hsta_msi.irq_count = irq_count;
-	if (!ppc4xx_hsta_msi.data) {
+	if (IS_ERR(ppc4xx_hsta_msi.data)) {
 		dev_err(dev, "Unable to map memory\n");
 		return -ENOMEM;
 	}
@@ -157,7 +155,7 @@ static int hsta_msi_probe(struct platform_device *pdev)
 		goto out;
 
 	ppc4xx_hsta_msi.irq_map = kmalloc(sizeof(int) * irq_count, GFP_KERNEL);
-	if (!ppc4xx_hsta_msi.irq_map) {
+	if (IS_ERR(ppc4xx_hsta_msi.irq_map)) {
 		ret = -ENOMEM;
 		goto out1;
 	}
@@ -173,10 +171,8 @@ static int hsta_msi_probe(struct platform_device *pdev)
 		}
 	}
 
-	list_for_each_entry(phb, &hose_list, list_node) {
-		phb->controller_ops.setup_msi_irqs = hsta_setup_msi_irqs;
-		phb->controller_ops.teardown_msi_irqs = hsta_teardown_msi_irqs;
-	}
+	ppc_md.setup_msi_irqs = hsta_setup_msi_irqs;
+	ppc_md.teardown_msi_irqs = hsta_teardown_msi_irqs;
 	return 0;
 
 out2:
@@ -201,6 +197,7 @@ static struct platform_driver hsta_msi_driver = {
 	.probe = hsta_msi_probe,
 	.driver = {
 		.name = "hsta-msi",
+		.owner = THIS_MODULE,
 		.of_match_table = hsta_msi_ids,
 	},
 };

@@ -1091,7 +1091,7 @@ static void mmap_user_close(struct vm_area_struct *vma)
 	omapfb_put_mem_region(rg);
 }
 
-static const struct vm_operations_struct mmap_user_ops = {
+static struct vm_operations_struct mmap_user_ops = {
 	.open = mmap_user_open,
 	.close = mmap_user_close,
 };
@@ -2073,7 +2073,7 @@ static int omapfb_mode_to_timings(const char *mode_str,
 	} else {
 		timings->data_pclk_edge = OMAPDSS_DRIVE_SIG_RISING_EDGE;
 		timings->de_level = OMAPDSS_SIG_ACTIVE_HIGH;
-		timings->sync_pclk_edge = OMAPDSS_DRIVE_SIG_FALLING_EDGE;
+		timings->sync_pclk_edge = OMAPDSS_DRIVE_SIG_OPPOSITE_EDGES;
 	}
 
 	timings->pixelclock = PICOS2KHZ(var->pixclock) * 1000;
@@ -2223,7 +2223,7 @@ static void fb_videomode_to_omap_timings(struct fb_videomode *m,
 	} else {
 		t->data_pclk_edge = OMAPDSS_DRIVE_SIG_RISING_EDGE;
 		t->de_level = OMAPDSS_SIG_ACTIVE_HIGH;
-		t->sync_pclk_edge = OMAPDSS_DRIVE_SIG_FALLING_EDGE;
+		t->sync_pclk_edge = OMAPDSS_DRIVE_SIG_OPPOSITE_EDGES;
 	}
 
 	t->x_res = m->xres;
@@ -2638,6 +2638,7 @@ static struct platform_driver omapfb_driver = {
 	.remove         = omapfb_remove,
 	.driver         = {
 		.name   = "omapfb",
+		.owner  = THIS_MODULE,
 	},
 };
 

@@ -10,16 +10,6 @@ Required properties :
 	"hs_phy_irq" : Interrupt from HS PHY for asynchronous events in LPM.
 	"pwr_event_irq" : Interrupt to controller for asynchronous events in LPM.
 	Used for SS-USB power events.
- - clocks: a list of phandles to the controller clocks. Use as per
-   Documentation/devicetree/bindings/clock/clock-bindings.txt
- - clock-names: Names of the clocks in 1-1 correspondence with the "clocks"
-   property. Required clocks are "xo", "iface_clk", "core_clk", "sleep_clk"
-   and "utmi_clk".
-- resets: reset specifier pair consists of phandle for the reset provider
-  and reset lines used by this controller.
-- reset-names: reset signal name strings sorted in the same order as the resets
-  property.
-- qcom,core-clk-rate: clock frequency to be set for USB master clock.
 
 Optional properties :
 - reg: Additional registers
@@ -37,10 +27,6 @@ Optional properties :
 - interrupt-names : Optional interrupt resource entries are:
     "pmic_id_irq" : Interrupt from PMIC for external ID pin notification.
     "ss_phy_irq"  : Interrupt from super speed phy for wake up notification.
- - clocks: a list of phandles to the controller clocks. Use as per
-   Documentation/devicetree/bindings/clock/clock-bindings.txt
- - clock-names: Names of the clocks in 1-1 correspondence with the "clocks"
-   property. Optional clocks are "bus_aggr_clk", "noc_aggr_clk" and "cfg_ahb_clk".
 - qcom,charging-disabled: If present then battery charging using USB
   is disabled.
 - vbus_dwc3-supply: phandle to the 5V VBUS supply regulator used for host mode.
@@ -55,15 +41,9 @@ Optional properties :
 - qcom,disable-dev-mode-pm: If present, it disables PM runtime functionality for device mode.
 - qcom,disable-host-mode-pm: If present, it disables XHCI PM runtime functionality when USB
   host mode is used.
-- qcom,core-clk-rate-hs: If present, indicates min core clock frequency required to support
-  hs speed.
-- extcon: phandles to external connector devices. First phandle should point to
-	  external connector, which provide "USB" cable events, the second
-	  should point to external connector device, which provide "USB-HOST"
-	  cable events. A single phandle may be specified if a single connector
-	  device provides both "USB" and "USB-HOST" events.
-- qcom,pm-qos-latency: This represents max tolerable CPU latency in microsecs,
-	which is used as a vote by driver to get max performance in perf mode.
+- qcom,core-clk-rate: If present, indicates clock frequency to be set for USB master clock.
+- qcom,detect-dpdm-floating: Indicates if SDP must be rechecked for floating data lines.
+  If datalines are floating then don't treat that as SDP.
 
 Sub nodes:
 - Sub node for "DWC3- USB3 controller".
@@ -88,7 +68,6 @@ Example MSM USB3.0 controller device node :
 		qcom,dwc-usb3-msm-tx-fifo-size = <29696>;
 		qcom,usb-dbm = <&dbm_1p4>;
 		qcom,lpm-to-suspend-delay-ms = <2>;
-		qcom,pm-qos-latency = <2>;
 
 		qcom,msm_bus,name = "usb3";
 		qcom,msm_bus,num_cases = <2>;
@@ -96,22 +75,6 @@ Example MSM USB3.0 controller device node :
 		qcom,msm_bus,vectors =
 				<61 512 0 0>,
 				<61 512 240000000 960000000>;
-
-		clocks = <&clock_gcc clk_gcc_usb30_master_clk>,
-			<&clock_gcc clk_gcc_cfg_noc_usb3_axi_clk>,
-			<&clock_gcc clk_gcc_aggre1_usb3_axi_clk>,
-			<&clock_rpmcc RPM_AGGR2_NOC_CLK>,
-			<&clock_gcc clk_gcc_usb30_mock_utmi_clk>,
-			<&clock_gcc clk_gcc_usb30_sleep_clk>,
-			<&clock_gcc clk_gcc_usb_phy_cfg_ahb2phy_clk>,
-			<&clock_gcc clk_cxo_dwc3_clk>;
-
-		clock-names = "core_clk", "iface_clk", "bus_aggr_clk", "noc_aggr_clk",
-				"utmi_clk", "sleep_clk", "cfg_ahb_clk", "xo";
-
-		resets = <&clock_gcc GCC_USB_30_BCR>;
-		reset-names = "core_reset";
-
 		dwc3@f9200000 {
 			compatible = "synopsys,dwc3";
 			reg = <0xf9200000 0xfc000>;

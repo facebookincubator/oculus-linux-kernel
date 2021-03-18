@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -9,8 +9,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
-#error Must fix CVE-2017-18306 before compiling this module
 
 #include <linux/vmalloc.h>
 #include <linux/kernel.h>
@@ -23,8 +21,7 @@
 #include <linux/msm_ion.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
-#include <media/videobuf2-v4l2.h>
-#include <linux/clk/msm-clk.h>
+#include <media/videobuf2-core.h>
 
 #include "msm_fd_dev.h"
 #include "msm_fd_hw.h"
@@ -176,12 +173,11 @@ static int msm_fd_fill_format_from_ctx(struct v4l2_format *f, struct fd_ctx *c)
  * @alloc_ctxs: Array of allocated contexts for each plane.
  */
 static int msm_fd_queue_setup(struct vb2_queue *q,
-	const void *parg,
+	const struct v4l2_format *fmt,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], void *alloc_ctxs[])
 {
 	struct fd_ctx *ctx = vb2_get_drv_priv(q);
-	const struct v4l2_format *fmt = parg;
 
 	*num_planes = 1;
 
@@ -291,8 +287,7 @@ static struct vb2_ops msm_fd_vb2_q_ops = {
  * @write: True if buffer will be used for writing the data.
  */
 static void *msm_fd_get_userptr(void *alloc_ctx,
-	unsigned long vaddr, unsigned long size,
-	enum dma_data_direction dma_dir)
+	unsigned long vaddr, unsigned long size, int write)
 {
 	struct msm_fd_mem_pool *pool = alloc_ctx;
 	struct msm_fd_buf_handle *buf;
@@ -340,13 +335,14 @@ static struct vb2_mem_ops msm_fd_vb2_mem_ops = {
 static int msm_fd_vbif_error_handler(void *handle, uint32_t error)
 {
 	struct fd_ctx *ctx;
-	struct msm_fd_device *fd;
+	struct msm_fd_device *fd = NULL;
 	struct msm_fd_buffer *active_buf;
 	int ret;
 
-	if (handle == NULL)
+	if (NULL == handle) {
+		pr_err("FD Ctx is null, Cannot recover\n");
 		return 0;
-
+	}
 	ctx = (struct fd_ctx *)handle;
 	fd = (struct msm_fd_device *)ctx->fd_device;
 
@@ -366,7 +362,7 @@ static int msm_fd_vbif_error_handler(void *handle, uint32_t error)
 		msm_fd_hw_get(fd, ctx->settings.speed);
 
 		/* Get active buffer */
-		active_buf = msm_fd_hw_get_active_buffer(fd, 1);
+		active_buf = msm_fd_hw_get_active_buffer(fd);
 
 		if (active_buf == NULL) {
 			dev_dbg(fd->dev, "no active buffer, return\n");
@@ -381,7 +377,7 @@ static int msm_fd_vbif_error_handler(void *handle, uint32_t error)
 		msm_fd_hw_add_buffer(fd, active_buf);
 
 		/* Schedule and restart */
-		ret = msm_fd_hw_schedule_next_buffer(fd, 1);
+		ret = msm_fd_hw_schedule_next_buffer(fd);
 		if (ret) {
 			dev_err(fd->dev, "Cannot reschedule buffer, recovery failed\n");
 			fd->recovery_mode = 0;
@@ -1249,15 +1245,14 @@ static void msm_fd_wq_handler(struct work_struct *work)
 	int i;
 
 	fd = container_of(work, struct msm_fd_device, work);
-	MSM_FD_SPIN_LOCK(fd->slock, 1);
-	active_buf = msm_fd_hw_get_active_buffer(fd, 0);
+
+	active_buf = msm_fd_hw_get_active_buffer(fd);
 	if (!active_buf) {
 		/* This should never happen, something completely wrong */
 		dev_err(fd->dev, "Oops no active buffer empty queue\n");
-		MSM_FD_SPIN_UNLOCK(fd->slock, 1);
 		return;
 	}
-	ctx = vb2_get_drv_priv(active_buf->vb_v4l2_buf.vb2_buf.vb2_queue);
+	ctx = vb2_get_drv_priv(active_buf->vb.vb2_queue);
 
 	/* Increment sequence number, 0 means sequence is not valid */
 	ctx->sequence++;
@@ -1283,28 +1278,24 @@ static void msm_fd_wq_handler(struct work_struct *work)
 		dev_dbg(fd->dev, "Got IRQ after Recovery\n");
 	}
 
-	if (fd->state == MSM_FD_DEVICE_RUNNING) {
-		/* We have the data from fd hw, we can start next processing */
-		msm_fd_hw_schedule_next_buffer(fd, 0);
-	}
+	/* We have the data from fd hw, we can start next processing */
+	msm_fd_hw_schedule_next_buffer(fd);
 
 	/* Return buffer to vb queue */
-	active_buf->vb_v4l2_buf.sequence = ctx->fh.sequence;
-	vb2_buffer_done(&active_buf->vb_v4l2_buf.vb2_buf, VB2_BUF_STATE_DONE);
+	active_buf->vb.v4l2_buf.sequence = ctx->fh.sequence;
+	vb2_buffer_done(&active_buf->vb, VB2_BUF_STATE_DONE);
 
 	/* Sent event */
 	memset(&event, 0x00, sizeof(event));
 	event.type = MSM_EVENT_FD;
 	fd_event = (struct msm_fd_event *)event.u.data;
 	fd_event->face_cnt = stats->face_cnt;
-	fd_event->buf_index = active_buf->vb_v4l2_buf.vb2_buf.index;
+	fd_event->buf_index = active_buf->vb.v4l2_buf.index;
 	fd_event->frame_id = ctx->sequence;
 	v4l2_event_queue_fh(&ctx->fh, &event);
 
 	/* Release buffer from the device */
-	msm_fd_hw_buffer_done(fd, active_buf, 0);
-
-	MSM_FD_SPIN_UNLOCK(fd->slock, 1);
+	msm_fd_hw_buffer_done(fd, active_buf);
 }
 
 /*
@@ -1315,7 +1306,6 @@ static int fd_probe(struct platform_device *pdev)
 {
 	struct msm_fd_device *fd;
 	int ret;
-	int i;
 
 	/* Face detection device struct */
 	fd = kzalloc(sizeof(struct msm_fd_device), GFP_KERNEL);
@@ -1349,19 +1339,6 @@ static int fd_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Fail to get clocks\n");
 		goto error_get_clocks;
-	}
-
-	/*set memcore and mem periphery logic flags to 0*/
-	for (i = 0; i < fd->clk_num; i++) {
-		if ((strcmp(fd->clk_info[i].clk_name,
-			"mmss_fd_core_clk") == 0) ||
-			(strcmp(fd->clk_info[i].clk_name,
-			"mmss_fd_core_uar_clk") == 0)) {
-			msm_camera_set_clk_flags(fd->clk[i],
-				CLKFLAG_NORETAIN_MEM);
-			msm_camera_set_clk_flags(fd->clk[i],
-				CLKFLAG_NORETAIN_PERIPH);
-		}
 	}
 
 	ret = msm_camera_register_bus_client(pdev, CAM_BUS_CLIENT_FD);

@@ -128,8 +128,8 @@ static int tmff_init(struct hid_device *hid, const signed short *ff_bits)
 	struct list_head *report_list;
 	struct hid_input *hidinput;
 	struct input_dev *input_dev;
-	int error;
-	int i;
+int error;
+int i;
 
 	if (list_empty(&hid->inputs)) {
 		hid_err(hid, "no inputs found\n");

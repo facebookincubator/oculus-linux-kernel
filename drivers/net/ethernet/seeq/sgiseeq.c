@@ -826,6 +826,7 @@ static struct platform_driver sgiseeq_driver = {
 	.remove	= __exit_p(sgiseeq_remove),
 	.driver = {
 		.name	= "sgiseeq",
+		.owner	= THIS_MODULE,
 	}
 };
 

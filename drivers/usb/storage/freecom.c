@@ -34,9 +34,6 @@
 #include "transport.h"
 #include "protocol.h"
 #include "debug.h"
-#include "scsiglue.h"
-
-#define DRV_NAME "ums-freecom"
 
 MODULE_DESCRIPTION("Driver for Freecom USB/IDE adaptor");
 MODULE_AUTHOR("David Brown <usb-storage@davidb.org>");
@@ -526,8 +523,6 @@ static void pdump(struct us_data *us, void *ibuffer, int length)
 }
 #endif
 
-static struct scsi_host_template freecom_host_template;
-
 static int freecom_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
@@ -535,8 +530,7 @@ static int freecom_probe(struct usb_interface *intf,
 	int result;
 
 	result = usb_stor_probe1(&us, intf, id,
-			(id - freecom_usb_ids) + freecom_unusual_dev_list,
-			&freecom_host_template);
+			(id - freecom_usb_ids) + freecom_unusual_dev_list);
 	if (result)
 		return result;
 
@@ -550,7 +544,7 @@ static int freecom_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver freecom_driver = {
-	.name =		DRV_NAME,
+	.name =		"ums-freecom",
 	.probe =	freecom_probe,
 	.disconnect =	usb_stor_disconnect,
 	.suspend =	usb_stor_suspend,
@@ -563,4 +557,4 @@ static struct usb_driver freecom_driver = {
 	.no_dynamic_id = 1,
 };
 
-module_usb_stor_driver(freecom_driver, freecom_host_template, DRV_NAME);
+module_usb_driver(freecom_driver);

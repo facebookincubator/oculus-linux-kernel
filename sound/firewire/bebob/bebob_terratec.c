@@ -8,10 +8,8 @@
 
 #include "./bebob.h"
 
-static enum snd_bebob_clock_type phase88_rack_clk_src_types[] = {
-	SND_BEBOB_CLOCK_TYPE_INTERNAL,
-	SND_BEBOB_CLOCK_TYPE_EXTERNAL,	/* S/PDIF */
-	SND_BEBOB_CLOCK_TYPE_EXTERNAL,	/* Word Clock */
+static char *const phase88_rack_clk_src_labels[] = {
+	SND_BEBOB_CLOCK_INTERNAL, "Digital In", "Word Clock"
 };
 static int
 phase88_rack_clk_src_get(struct snd_bebob *bebob, unsigned int *id)
@@ -36,49 +34,39 @@ end:
 	return err;
 }
 
-static enum snd_bebob_clock_type phase24_series_clk_src_types[] = {
-	SND_BEBOB_CLOCK_TYPE_INTERNAL,
-	SND_BEBOB_CLOCK_TYPE_EXTERNAL,	/* S/PDIF */
+static char *const phase24_series_clk_src_labels[] = {
+	SND_BEBOB_CLOCK_INTERNAL, "Digital In"
 };
 static int
 phase24_series_clk_src_get(struct snd_bebob *bebob, unsigned int *id)
 {
-	int err;
-
-	err = avc_audio_get_selector(bebob->unit, 0, 4, id);
-	if (err < 0)
-		return err;
-
-	if (*id >= ARRAY_SIZE(phase24_series_clk_src_types))
-		return -EIO;
-
-	return 0;
+	return avc_audio_get_selector(bebob->unit, 0, 4, id);
 }
 
-static const struct snd_bebob_rate_spec phase_series_rate_spec = {
+static struct snd_bebob_rate_spec phase_series_rate_spec = {
 	.get	= &snd_bebob_stream_get_rate,
 	.set	= &snd_bebob_stream_set_rate,
 };
 
 /* PHASE 88 Rack FW */
-static const struct snd_bebob_clock_spec phase88_rack_clk = {
-	.num	= ARRAY_SIZE(phase88_rack_clk_src_types),
-	.types	= phase88_rack_clk_src_types,
+static struct snd_bebob_clock_spec phase88_rack_clk = {
+	.num	= ARRAY_SIZE(phase88_rack_clk_src_labels),
+	.labels	= phase88_rack_clk_src_labels,
 	.get	= &phase88_rack_clk_src_get,
 };
-const struct snd_bebob_spec phase88_rack_spec = {
+struct snd_bebob_spec phase88_rack_spec = {
 	.clock	= &phase88_rack_clk,
 	.rate	= &phase_series_rate_spec,
 	.meter	= NULL
 };
 
 /* 'PHASE 24 FW' and 'PHASE X24 FW' */
-static const struct snd_bebob_clock_spec phase24_series_clk = {
-	.num	= ARRAY_SIZE(phase24_series_clk_src_types),
-	.types	= phase24_series_clk_src_types,
+static struct snd_bebob_clock_spec phase24_series_clk = {
+	.num	= ARRAY_SIZE(phase24_series_clk_src_labels),
+	.labels	= phase24_series_clk_src_labels,
 	.get	= &phase24_series_clk_src_get,
 };
-const struct snd_bebob_spec phase24_series_spec = {
+struct snd_bebob_spec phase24_series_spec = {
 	.clock	= &phase24_series_clk,
 	.rate	= &phase_series_rate_spec,
 	.meter	= NULL

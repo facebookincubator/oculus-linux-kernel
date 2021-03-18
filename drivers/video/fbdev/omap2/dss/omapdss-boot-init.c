@@ -164,15 +164,20 @@ static void __init omapdss_walk_device(struct device_node *node, bool root)
 
 		pn = of_graph_get_remote_port_parent(n);
 
-		if (!pn)
+		if (!pn) {
+			of_node_put(n);
 			continue;
+		}
 
 		if (!of_device_is_available(pn) || omapdss_list_contains(pn)) {
 			of_node_put(pn);
+			of_node_put(n);
 			continue;
 		}
 
 		omapdss_walk_device(pn, false);
+
+		of_node_put(n);
 	}
 }
 
@@ -181,7 +186,6 @@ static const struct of_device_id omapdss_of_match[] __initconst = {
 	{ .compatible = "ti,omap3-dss", },
 	{ .compatible = "ti,omap4-dss", },
 	{ .compatible = "ti,omap5-dss", },
-	{ .compatible = "ti,dra7-dss", },
 	{},
 };
 

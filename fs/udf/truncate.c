@@ -22,6 +22,7 @@
 #include "udfdecl.h"
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/buffer_head.h>
 
 #include "udf_i.h"
 #include "udf_sb.h"

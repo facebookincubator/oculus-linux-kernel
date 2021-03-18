@@ -21,7 +21,6 @@
 #include <linux/mei.h>
 
 #include "mei_dev.h"
-#include "client.h"
 #include "hw.h"
 
 static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
@@ -35,17 +34,17 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
 	int pos = 0;
 	int ret;
 
-#define HDR \
-"  |id|fix|         UUID                       |con|msg len|sb|refc|\n"
+#define HDR "  |id|addr|         UUID                       |con|msg len|sb|\n"
 
-	down_read(&dev->me_clients_rwsem);
+	mutex_lock(&dev->device_lock);
+
 	list_for_each_entry(me_cl, &dev->me_clients, list)
 		bufsz++;
 
 	bufsz *= sizeof(HDR) + 1;
 	buf = kzalloc(bufsz, GFP_KERNEL);
 	if (!buf) {
-		up_read(&dev->me_clients_rwsem);
+		mutex_unlock(&dev->device_lock);
 		return -ENOMEM;
 	}
 
@@ -57,23 +56,21 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
 
 	list_for_each_entry(me_cl, &dev->me_clients, list) {
 
-		if (mei_me_cl_get(me_cl)) {
-			pos += scnprintf(buf + pos, bufsz - pos,
-				"%2d|%2d|%3d|%pUl|%3d|%7d|%2d|%4d|\n",
-				i++, me_cl->client_id,
-				me_cl->props.fixed_address,
-				&me_cl->props.protocol_name,
-				me_cl->props.max_number_of_connections,
-				me_cl->props.max_msg_length,
-				me_cl->props.single_recv_buf,
-				atomic_read(&me_cl->refcnt.refcount));
+		/* skip me clients that cannot be connected */
+		if (me_cl->props.max_number_of_connections == 0)
+			continue;
 
-			mei_me_cl_put(me_cl);
-		}
+		pos += scnprintf(buf + pos, bufsz - pos,
+			"%2d|%2d|%4d|%pUl|%3d|%7d|%2d|\n",
+			i++, me_cl->client_id,
+			me_cl->props.fixed_address,
+			&me_cl->props.protocol_name,
+			me_cl->props.max_number_of_connections,
+			me_cl->props.max_msg_length,
+			me_cl->props.single_recv_buf);
 	}
-
 out:
-	up_read(&dev->me_clients_rwsem);
+	mutex_unlock(&dev->device_lock);
 	ret = simple_read_from_buffer(ubuf, cnt, ppos, buf, pos);
 	kfree(buf);
 	return ret;
@@ -116,8 +113,8 @@ static ssize_t mei_dbgfs_read_active(struct file *fp, char __user *ubuf,
 
 		pos += scnprintf(buf + pos, bufsz - pos,
 			"%2d|%2d|%4d|%5d|%2d|%2d|\n",
-			i, mei_cl_me_id(cl), cl->host_client_id, cl->state,
-			!list_empty(&cl->rd_completed), cl->writing_state);
+			i, cl->me_client_id, cl->host_client_id, cl->state,
+			cl->reading_state, cl->writing_state);
 		i++;
 	}
 out:
@@ -149,19 +146,6 @@ static ssize_t mei_dbgfs_read_devstate(struct file *fp, char __user *ubuf,
 			mei_dev_state_str(dev->dev_state));
 	pos += scnprintf(buf + pos, bufsz - pos, "hbm: %s\n",
 			mei_hbm_state_str(dev->hbm_state));
-
-	if (dev->hbm_state == MEI_HBM_STARTED) {
-		pos += scnprintf(buf + pos, bufsz - pos, "hbm features:\n");
-		pos += scnprintf(buf + pos, bufsz - pos, "\tPG: %01d\n",
-				 dev->hbm_f_pg_supported);
-		pos += scnprintf(buf + pos, bufsz - pos, "\tDC: %01d\n",
-				 dev->hbm_f_dc_supported);
-		pos += scnprintf(buf + pos, bufsz - pos, "\tDOT: %01d\n",
-				 dev->hbm_f_dot_supported);
-		pos += scnprintf(buf + pos, bufsz - pos, "\tEV: %01d\n",
-				 dev->hbm_f_ev_supported);
-	}
-
 	pos += scnprintf(buf + pos, bufsz - pos, "pg:  %s, %s\n",
 			mei_pg_is_enabled(dev) ? "ENABLED" : "DISABLED",
 			mei_pg_state_str(mei_pg_state(dev)));
@@ -204,8 +188,6 @@ int mei_dbgfs_register(struct mei_device *dev, const char *name)
 	if (!dir)
 		return -ENOMEM;
 
-	dev->dbgfs_dir = dir;
-
 	f = debugfs_create_file("meclients", S_IRUSR, dir,
 				dev, &mei_dbgfs_fops_meclients);
 	if (!f) {
@@ -215,7 +197,7 @@ int mei_dbgfs_register(struct mei_device *dev, const char *name)
 	f = debugfs_create_file("active", S_IRUSR, dir,
 				dev, &mei_dbgfs_fops_active);
 	if (!f) {
-		dev_err(dev->dev, "active: registration failed\n");
+		dev_err(dev->dev, "meclients: registration failed\n");
 		goto err;
 	}
 	f = debugfs_create_file("devstate", S_IRUSR, dir,
@@ -224,12 +206,7 @@ int mei_dbgfs_register(struct mei_device *dev, const char *name)
 		dev_err(dev->dev, "devstate: registration failed\n");
 		goto err;
 	}
-	f = debugfs_create_bool("allow_fixed_address", S_IRUSR | S_IWUSR, dir,
-				&dev->allow_fixed_address);
-	if (!f) {
-		dev_err(dev->dev, "allow_fixed_address: registration failed\n");
-		goto err;
-	}
+	dev->dbgfs_dir = dir;
 	return 0;
 err:
 	mei_dbgfs_deregister(dev);

@@ -52,7 +52,7 @@ enum {
 	/* Options that take integer arguments */
 	Opt_debug, Opt_dfltuid, Opt_dfltgid, Opt_afid,
 	/* String options */
-	Opt_uname, Opt_remotename, Opt_cache, Opt_cachetag,
+	Opt_uname, Opt_remotename, Opt_trans, Opt_cache, Opt_cachetag,
 	/* Options that take no arguments */
 	Opt_nodevmap,
 	/* Cache options */
@@ -320,21 +320,31 @@ fail_option_alloc:
 struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 		  const char *dev_name, char *data)
 {
+	int retval = -EINVAL;
 	struct p9_fid *fid;
-	int rc = -ENOMEM;
+	int rc;
 
 	v9ses->uname = kstrdup(V9FS_DEFUSER, GFP_KERNEL);
 	if (!v9ses->uname)
-		goto err_names;
+		return ERR_PTR(-ENOMEM);
 
 	v9ses->aname = kstrdup(V9FS_DEFANAME, GFP_KERNEL);
-	if (!v9ses->aname)
-		goto err_names;
+	if (!v9ses->aname) {
+		kfree(v9ses->uname);
+		return ERR_PTR(-ENOMEM);
+	}
 	init_rwsem(&v9ses->rename_sem);
 
-	rc = bdi_setup_and_register(&v9ses->bdi, "9p");
-	if (rc)
-		goto err_names;
+	rc = bdi_setup_and_register(&v9ses->bdi, "9p", BDI_CAP_MAP_COPY);
+	if (rc) {
+		kfree(v9ses->aname);
+		kfree(v9ses->uname);
+		return ERR_PTR(rc);
+	}
+
+	spin_lock(&v9fs_sessionlist_lock);
+	list_add(&v9ses->slist, &v9fs_sessionlist);
+	spin_unlock(&v9fs_sessionlist_lock);
 
 	v9ses->uid = INVALID_UID;
 	v9ses->dfltuid = V9FS_DEFUID;
@@ -342,9 +352,10 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 
 	v9ses->clnt = p9_client_create(dev_name, data);
 	if (IS_ERR(v9ses->clnt)) {
-		rc = PTR_ERR(v9ses->clnt);
+		retval = PTR_ERR(v9ses->clnt);
+		v9ses->clnt = NULL;
 		p9_debug(P9_DEBUG_ERROR, "problem initializing 9p client\n");
-		goto err_bdi;
+		goto error;
 	}
 
 	v9ses->flags = V9FS_ACCESS_USER;
@@ -357,8 +368,10 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 	}
 
 	rc = v9fs_parse_options(v9ses, data);
-	if (rc < 0)
-		goto err_clnt;
+	if (rc < 0) {
+		retval = rc;
+		goto error;
+	}
 
 	v9ses->maxdata = v9ses->clnt->msize - P9_IOHDRSZ;
 
@@ -392,9 +405,10 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 	fid = p9_client_attach(v9ses->clnt, NULL, v9ses->uname, INVALID_UID,
 							v9ses->aname);
 	if (IS_ERR(fid)) {
-		rc = PTR_ERR(fid);
+		retval = PTR_ERR(fid);
+		fid = NULL;
 		p9_debug(P9_DEBUG_ERROR, "cannot attach\n");
-		goto err_clnt;
+		goto error;
 	}
 
 	if ((v9ses->flags & V9FS_ACCESS_MASK) == V9FS_ACCESS_SINGLE)
@@ -406,20 +420,12 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 	/* register the session for caching */
 	v9fs_cache_session_get_cookie(v9ses);
 #endif
-	spin_lock(&v9fs_sessionlist_lock);
-	list_add(&v9ses->slist, &v9fs_sessionlist);
-	spin_unlock(&v9fs_sessionlist_lock);
 
 	return fid;
 
-err_clnt:
-	p9_client_destroy(v9ses->clnt);
-err_bdi:
+error:
 	bdi_destroy(&v9ses->bdi);
-err_names:
-	kfree(v9ses->uname);
-	kfree(v9ses->aname);
-	return ERR_PTR(rc);
+	return ERR_PTR(retval);
 }
 
 /**

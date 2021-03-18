@@ -125,7 +125,7 @@ LEAF(__r4k_wait)
 	nop
 	nop
 #endif
-	.set	MIPS_ISA_ARCH_LEVEL_RAW
+	.set	arch=r4000
 	wait
 	/* end of rollback region (the region size must be power of two) */
 1:
@@ -360,15 +360,12 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	.set	mips1
 	SET_HARDFLOAT
 	cfc1	a1, fcr31
+	li	a2, ~(0x3f << 12)
+	and	a2, a1
+	ctc1	a2, fcr31
 	.set	pop
-	CLI
-	TRACE_IRQS_OFF
-	.endm
-
-	.macro	__build_clear_msa_fpe
-	_cfcmsa	a1, MSA_CSR
-	CLI
-	TRACE_IRQS_OFF
+	TRACE_IRQS_ON
+	STI
 	.endm
 
 	.macro	__build_clear_ade
@@ -407,7 +404,7 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	.set	noat
 	SAVE_ALL
 	FEXPORT(handle_\exception\ext)
-	__build_clear_\clear
+	__BUILD_clear_\clear
 	.set	at
 	__BUILD_\verbose \exception
 	move	a0, sp
@@ -429,7 +426,7 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	BUILD_HANDLER cpu cpu sti silent		/* #11 */
 	BUILD_HANDLER ov ov sti silent			/* #12 */
 	BUILD_HANDLER tr tr sti silent			/* #13 */
-	BUILD_HANDLER msa_fpe msa_fpe msa_fpe silent	/* #14 */
+	BUILD_HANDLER msa_fpe msa_fpe sti silent	/* #14 */
 	BUILD_HANDLER fpe fpe fpe silent		/* #15 */
 	BUILD_HANDLER ftlb ftlb none silent		/* #16 */
 	BUILD_HANDLER msa msa sti silent		/* #21 */

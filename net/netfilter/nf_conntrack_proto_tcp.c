@@ -33,6 +33,10 @@
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 
+/* Do not check the TCP window for incoming packets  */
+int nf_ct_tcp_no_window_check __read_mostly = 1;
+EXPORT_SYMBOL(nf_ct_tcp_no_window_check);
+
 /* "Be conservative in what you do,
     be liberal in what you accept from others."
     If it's non-zero, we mark only out of window RST segments as INVALID. */
@@ -202,7 +206,7 @@ static const u8 tcp_conntracks[2][6][TCP_CONNTRACK_MAX] = {
  *	sES -> sES	:-)
  *	sFW -> sCW	Normal close request answered by ACK.
  *	sCW -> sCW
- *	sLA -> sTW	Last ACK detected (RFC5961 challenged)
+ *	sLA -> sTW	Last ACK detected.
  *	sTW -> sTW	Retransmitted last ACK. Remain in the same state.
  *	sCL -> sCL
  */
@@ -261,7 +265,7 @@ static const u8 tcp_conntracks[2][6][TCP_CONNTRACK_MAX] = {
  *	sES -> sES	:-)
  *	sFW -> sCW	Normal close request answered by ACK.
  *	sCW -> sCW
- *	sLA -> sTW	Last ACK detected (RFC5961 challenged)
+ *	sLA -> sTW	Last ACK detected.
  *	sTW -> sTW	Retransmitted last ACK.
  *	sCL -> sCL
  */
@@ -277,7 +281,7 @@ static inline struct nf_tcp_net *tcp_pernet(struct net *net)
 }
 
 static bool tcp_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
-			     struct net *net, struct nf_conntrack_tuple *tuple)
+			     struct nf_conntrack_tuple *tuple)
 {
 	const struct tcphdr *hp;
 	struct tcphdr _hdr;
@@ -302,16 +306,16 @@ static bool tcp_invert_tuple(struct nf_conntrack_tuple *tuple,
 }
 
 /* Print out the per-protocol part of the tuple. */
-static void tcp_print_tuple(struct seq_file *s,
-			    const struct nf_conntrack_tuple *tuple)
+static int tcp_print_tuple(struct seq_file *s,
+			   const struct nf_conntrack_tuple *tuple)
 {
-	seq_printf(s, "sport=%hu dport=%hu ",
-		   ntohs(tuple->src.u.tcp.port),
-		   ntohs(tuple->dst.u.tcp.port));
+	return seq_printf(s, "sport=%hu dport=%hu ",
+			  ntohs(tuple->src.u.tcp.port),
+			  ntohs(tuple->dst.u.tcp.port));
 }
 
 /* Print out the private part of the conntrack. */
-static void tcp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
+static int tcp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
 {
 	enum tcp_conntrack state;
 
@@ -319,7 +323,7 @@ static void tcp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
 	state = ct->proto.tcp.state;
 	spin_unlock_bh(&ct->lock);
 
-	seq_printf(s, "%s ", tcp_conntrack_names[state]);
+	return seq_printf(s, "%s ", tcp_conntrack_names[state]);
 }
 
 static unsigned int get_conntrack_index(const struct tcphdr *tcph)
@@ -906,7 +910,6 @@ static int tcp_packet(struct nf_conn *ct,
 					1 : ct->proto.tcp.last_win;
 			ct->proto.tcp.seen[ct->proto.tcp.last_dir].td_scale =
 				ct->proto.tcp.last_wscale;
-			ct->proto.tcp.last_flags &= ~IP_CT_EXP_CHALLENGE_ACK;
 			ct->proto.tcp.seen[ct->proto.tcp.last_dir].flags =
 				ct->proto.tcp.last_flags;
 			memset(&ct->proto.tcp.seen[dir], 0,
@@ -924,9 +927,7 @@ static int tcp_packet(struct nf_conn *ct,
 		 * may be in sync but we are not. In that case, we annotate
 		 * the TCP options and let the packet go through. If it is a
 		 * valid SYN packet, the server will reply with a SYN/ACK, and
-		 * then we'll get in sync. Otherwise, the server potentially
-		 * responds with a challenge ACK if implementing RFC5961.
-		 */
+		 * then we'll get in sync. Otherwise, the server ignores it. */
 		if (index == TCP_SYN_SET && dir == IP_CT_DIR_ORIGINAL) {
 			struct ip_ct_tcp_state seen = {};
 
@@ -942,13 +943,6 @@ static int tcp_packet(struct nf_conn *ct,
 				ct->proto.tcp.last_flags |=
 					IP_CT_TCP_FLAG_SACK_PERM;
 			}
-			/* Mark the potential for RFC5961 challenge ACK,
-			 * this pose a special problem for LAST_ACK state
-			 * as ACK is intrepretated as ACKing last FIN.
-			 */
-			if (old_state == TCP_CONNTRACK_LAST_ACK)
-				ct->proto.tcp.last_flags |=
-					IP_CT_EXP_CHALLENGE_ACK;
 		}
 		spin_unlock_bh(&ct->lock);
 		if (LOG_INVALID(net, IPPROTO_TCP))
@@ -980,25 +974,6 @@ static int tcp_packet(struct nf_conn *ct,
 			nf_log_packet(net, pf, 0, skb, NULL, NULL, NULL,
 				  "nf_ct_tcp: invalid state ");
 		return -NF_ACCEPT;
-	case TCP_CONNTRACK_TIME_WAIT:
-		/* RFC5961 compliance cause stack to send "challenge-ACK"
-		 * e.g. in response to spurious SYNs.  Conntrack MUST
-		 * not believe this ACK is acking last FIN.
-		 */
-		if (old_state == TCP_CONNTRACK_LAST_ACK &&
-		    index == TCP_ACK_SET &&
-		    ct->proto.tcp.last_dir != dir &&
-		    ct->proto.tcp.last_index == TCP_SYN_SET &&
-		    (ct->proto.tcp.last_flags & IP_CT_EXP_CHALLENGE_ACK)) {
-			/* Detected RFC5961 challenge ACK */
-			ct->proto.tcp.last_flags &= ~IP_CT_EXP_CHALLENGE_ACK;
-			spin_unlock_bh(&ct->lock);
-			if (LOG_INVALID(net, IPPROTO_TCP))
-				nf_log_packet(net, pf, 0, skb, NULL, NULL, NULL,
-				      "nf_ct_tcp: challenge-ACK ignored ");
-			return NF_ACCEPT; /* Don't change state */
-		}
-		break;
 	case TCP_CONNTRACK_CLOSE:
 		if (index == TCP_RST_SET
 		    && (ct->proto.tcp.seen[!dir].flags & IP_CT_TCP_FLAG_MAXACK_SET)

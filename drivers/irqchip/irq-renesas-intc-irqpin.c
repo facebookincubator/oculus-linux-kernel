@@ -30,7 +30,6 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/of_device.h>
 #include <linux/platform_data/irq-renesas-intc-irqpin.h>
 #include <linux/pm_runtime.h>
 
@@ -41,9 +40,7 @@
 #define INTC_IRQPIN_REG_SOURCE 2 /* INTREQnn */
 #define INTC_IRQPIN_REG_MASK 3 /* INTMSKnn */
 #define INTC_IRQPIN_REG_CLEAR 4 /* INTMSKCLRnn */
-#define INTC_IRQPIN_REG_NR_MANDATORY 5
-#define INTC_IRQPIN_REG_IRLM 5 /* ICR0 with IRLM bit (optional) */
-#define INTC_IRQPIN_REG_NR 6
+#define INTC_IRQPIN_REG_NR 5
 
 /* INTC external IRQ PIN hardware register access:
  *
@@ -83,10 +80,6 @@ struct intc_irqpin_priv {
 	struct clk *clk;
 	bool shared_irqs;
 	u8 shared_irq_mask;
-};
-
-struct intc_irqpin_irlm_config {
-	unsigned int irlm_bit;
 };
 
 static unsigned long intc_irqpin_read32(void __iomem *iomem)
@@ -283,9 +276,6 @@ static int intc_irqpin_irq_set_type(struct irq_data *d, unsigned int type)
 static int intc_irqpin_irq_set_wake(struct irq_data *d, unsigned int on)
 {
 	struct intc_irqpin_priv *p = irq_data_get_irq_chip_data(d);
-	int hw_irq = irqd_to_hwirq(d);
-
-	irq_set_irq_wake(p->irq[hw_irq].requested_irq, on);
 
 	if (!p->clk)
 		return 0;
@@ -335,12 +325,6 @@ static irqreturn_t intc_irqpin_shared_irq_handler(int irq, void *dev_id)
 	return status;
 }
 
-/*
- * This lock class tells lockdep that INTC External IRQ Pin irqs are in a
- * different category than their parents, so it won't report false recursion.
- */
-static struct lock_class_key intc_irqpin_irq_lock_class;
-
 static int intc_irqpin_irq_domain_map(struct irq_domain *h, unsigned int virq,
 				      irq_hw_number_t hw)
 {
@@ -351,35 +335,20 @@ static int intc_irqpin_irq_domain_map(struct irq_domain *h, unsigned int virq,
 
 	intc_irqpin_dbg(&p->irq[hw], "map");
 	irq_set_chip_data(virq, h->host_data);
-	irq_set_lockdep_class(virq, &intc_irqpin_irq_lock_class);
 	irq_set_chip_and_handler(virq, &p->irq_chip, handle_level_irq);
+	set_irq_flags(virq, IRQF_VALID); /* kill me now */
 	return 0;
 }
 
-static const struct irq_domain_ops intc_irqpin_irq_domain_ops = {
+static struct irq_domain_ops intc_irqpin_irq_domain_ops = {
 	.map	= intc_irqpin_irq_domain_map,
 	.xlate  = irq_domain_xlate_twocell,
 };
-
-static const struct intc_irqpin_irlm_config intc_irqpin_irlm_r8a777x = {
-	.irlm_bit = 23, /* ICR0.IRLM0 */
-};
-
-static const struct of_device_id intc_irqpin_dt_ids[] = {
-	{ .compatible = "renesas,intc-irqpin", },
-	{ .compatible = "renesas,intc-irqpin-r8a7778",
-	  .data = &intc_irqpin_irlm_r8a777x },
-	{ .compatible = "renesas,intc-irqpin-r8a7779",
-	  .data = &intc_irqpin_irlm_r8a777x },
-	{},
-};
-MODULE_DEVICE_TABLE(of, intc_irqpin_dt_ids);
 
 static int intc_irqpin_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct renesas_intc_irqpin_config *pdata = dev->platform_data;
-	const struct of_device_id *of_id;
 	struct intc_irqpin_priv *p;
 	struct intc_irqpin_iomem *i;
 	struct resource *io[INTC_IRQPIN_REG_NR];
@@ -422,11 +391,10 @@ static int intc_irqpin_probe(struct platform_device *pdev)
 	pm_runtime_enable(dev);
 	pm_runtime_get_sync(dev);
 
-	/* get hold of register banks */
-	memset(io, 0, sizeof(io));
+	/* get hold of manadatory IOMEM */
 	for (k = 0; k < INTC_IRQPIN_REG_NR; k++) {
 		io[k] = platform_get_resource(pdev, IORESOURCE_MEM, k);
-		if (!io[k] && k < INTC_IRQPIN_REG_NR_MANDATORY) {
+		if (!io[k]) {
 			dev_err(dev, "not enough IOMEM resources\n");
 			ret = -EINVAL;
 			goto err0;
@@ -454,10 +422,6 @@ static int intc_irqpin_probe(struct platform_device *pdev)
 	for (k = 0; k < INTC_IRQPIN_REG_NR; k++) {
 		i = &p->iomem[k];
 
-		/* handle optional registers */
-		if (!io[k])
-			continue;
-
 		switch (resource_size(io[k])) {
 		case 1:
 			i->width = 8;
@@ -482,19 +446,6 @@ static int intc_irqpin_probe(struct platform_device *pdev)
 			ret = -ENXIO;
 			goto err0;
 		}
-	}
-
-	/* configure "individual IRQ mode" where needed */
-	of_id = of_match_device(intc_irqpin_dt_ids, dev);
-	if (of_id && of_id->data) {
-		const struct intc_irqpin_irlm_config *irlm_config = of_id->data;
-
-		if (io[INTC_IRQPIN_REG_IRLM])
-			intc_irqpin_read_modify_write(p, INTC_IRQPIN_REG_IRLM,
-						      irlm_config->irlm_bit,
-						      1, 1);
-		else
-			dev_warn(dev, "unable to select IRLM mode\n");
 	}
 
 	/* mask all interrupts using priority */
@@ -599,12 +550,19 @@ static int intc_irqpin_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id intc_irqpin_dt_ids[] = {
+	{ .compatible = "renesas,intc-irqpin", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, intc_irqpin_dt_ids);
+
 static struct platform_driver intc_irqpin_device_driver = {
 	.probe		= intc_irqpin_probe,
 	.remove		= intc_irqpin_remove,
 	.driver		= {
 		.name	= "renesas_intc_irqpin",
 		.of_match_table = intc_irqpin_dt_ids,
+		.owner  = THIS_MODULE,
 	}
 };
 

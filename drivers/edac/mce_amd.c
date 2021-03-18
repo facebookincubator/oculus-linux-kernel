@@ -138,15 +138,6 @@ static const char * const mc5_mce_desc[] = {
 	"Retire status queue"
 };
 
-static const char * const mc6_mce_desc[] = {
-	"Hardware Assertion",
-	"Free List",
-	"Physical Register File",
-	"Retire Queue",
-	"Scheduler table",
-	"Status Register File",
-};
-
 static bool f12h_mc0_mce(u16 ec, u8 xec)
 {
 	bool ret = false;
@@ -441,8 +432,8 @@ static bool k8_mc2_mce(u16 ec, u8 xec)
 		pr_cont(": %s error in the L2 cache tags.\n", R4_MSG(ec));
 	else if (xec == 0x0) {
 		if (TLB_ERROR(ec))
-			pr_cont("%s error in a Page Descriptor Cache or Guest TLB.\n",
-				TT_MSG(ec));
+			pr_cont(": %s error in a Page Descriptor Cache or "
+				"Guest TLB.\n", TT_MSG(ec));
 		else if (BUS_ERROR(ec))
 			pr_cont(": %s/ECC error in data read from NB: %s.\n",
 				R4_MSG(ec), PP_MSG(ec));
@@ -681,10 +672,38 @@ static void decode_mc6_mce(struct mce *m)
 
 	pr_emerg(HW_ERR "MC6 Error: ");
 
-	if (xec > 0x5)
-		goto wrong_mc6_mce;
+	switch (xec) {
+	case 0x0:
+		pr_cont("Hardware Assertion");
+		break;
 
-	pr_cont("%s parity error.\n", mc6_mce_desc[xec]);
+	case 0x1:
+		pr_cont("Free List");
+		break;
+
+	case 0x2:
+		pr_cont("Physical Register File");
+		break;
+
+	case 0x3:
+		pr_cont("Retire Queue");
+		break;
+
+	case 0x4:
+		pr_cont("Scheduler table");
+		break;
+
+	case 0x5:
+		pr_cont("Status Register File");
+		break;
+
+	default:
+		goto wrong_mc6_mce;
+		break;
+	}
+
+	pr_cont(" parity error.\n");
+
 	return;
 
  wrong_mc6_mce:
@@ -763,8 +782,7 @@ int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 		c->x86, c->x86_model, c->x86_mask,
 		m->bank,
 		((m->status & MCI_STATUS_OVER)	? "Over"  : "-"),
-		((m->status & MCI_STATUS_UC)	? "UE"	  :
-		 (m->status & MCI_STATUS_DEFERRED) ? "-"  : "CE"),
+		((m->status & MCI_STATUS_UC)	? "UE"	  : "CE"),
 		((m->status & MCI_STATUS_MISCV)	? "MiscV" : "-"),
 		((m->status & MCI_STATUS_PCC)	? "PCC"	  : "-"),
 		((m->status & MCI_STATUS_ADDRV)	? "AddrV" : "-"));
@@ -782,7 +800,7 @@ int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 	pr_cont("]: 0x%016llx\n", m->status);
 
 	if (m->status & MCI_STATUS_ADDRV)
-		pr_emerg(HW_ERR "MC%d Error Address: 0x%016llx\n", m->bank, m->addr);
+		pr_emerg(HW_ERR "MC%d_ADDR: 0x%016llx\n", m->bank, m->addr);
 
 	if (!fam_ops)
 		goto err_code;

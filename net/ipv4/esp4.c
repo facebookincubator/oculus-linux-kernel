@@ -23,11 +23,6 @@ struct esp_skb_cb {
 	void *tmp;
 };
 
-struct esp_output_extra {
-	__be32 seqhi;
-	u32 esphoff;
-};
-
 #define ESP_SKB_CB(__skb) ((struct esp_skb_cb *)&((__skb)->cb[0]))
 
 static u32 esp4_get_mtu(struct xfrm_state *x, int mtu);
@@ -40,11 +35,11 @@ static u32 esp4_get_mtu(struct xfrm_state *x, int mtu);
  *
  * TODO: Use spare space in skb for this where possible.
  */
-static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int extralen)
+static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int seqhilen)
 {
 	unsigned int len;
 
-	len = extralen;
+	len = seqhilen;
 
 	len += crypto_aead_ivsize(aead);
 
@@ -54,7 +49,7 @@ static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int extralen)
 		len = ALIGN(len, crypto_tfm_ctx_alignment());
 	}
 
-	len += sizeof(struct aead_request) + crypto_aead_reqsize(aead);
+	len += sizeof(struct aead_givcrypt_request) + crypto_aead_reqsize(aead);
 	len = ALIGN(len, __alignof__(struct scatterlist));
 
 	len += sizeof(struct scatterlist) * nfrags;
@@ -62,16 +57,26 @@ static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int extralen)
 	return kmalloc(len, GFP_ATOMIC);
 }
 
-static inline void *esp_tmp_extra(void *tmp)
+static inline __be32 *esp_tmp_seqhi(void *tmp)
 {
-	return PTR_ALIGN(tmp, __alignof__(struct esp_output_extra));
+	return PTR_ALIGN((__be32 *)tmp, __alignof__(__be32));
 }
-
-static inline u8 *esp_tmp_iv(struct crypto_aead *aead, void *tmp, int extralen)
+static inline u8 *esp_tmp_iv(struct crypto_aead *aead, void *tmp, int seqhilen)
 {
 	return crypto_aead_ivsize(aead) ?
-	       PTR_ALIGN((u8 *)tmp + extralen,
-			 crypto_aead_alignmask(aead) + 1) : tmp + extralen;
+	       PTR_ALIGN((u8 *)tmp + seqhilen,
+			 crypto_aead_alignmask(aead) + 1) : tmp + seqhilen;
+}
+
+static inline struct aead_givcrypt_request *esp_tmp_givreq(
+	struct crypto_aead *aead, u8 *iv)
+{
+	struct aead_givcrypt_request *req;
+
+	req = (void *)PTR_ALIGN(iv + crypto_aead_ivsize(aead),
+				crypto_tfm_ctx_alignment());
+	aead_givcrypt_set_tfm(req, aead);
+	return req;
 }
 
 static inline struct aead_request *esp_tmp_req(struct crypto_aead *aead, u8 *iv)
@@ -92,6 +97,14 @@ static inline struct scatterlist *esp_req_sg(struct crypto_aead *aead,
 			     __alignof__(struct scatterlist));
 }
 
+static inline struct scatterlist *esp_givreq_sg(
+	struct crypto_aead *aead, struct aead_givcrypt_request *req)
+{
+	return (void *)ALIGN((unsigned long)(req + 1) +
+			     crypto_aead_reqsize(aead),
+			     __alignof__(struct scatterlist));
+}
+
 static void esp_output_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
@@ -100,42 +113,14 @@ static void esp_output_done(struct crypto_async_request *base, int err)
 	xfrm_output_resume(skb, err);
 }
 
-/* Move ESP header back into place. */
-static void esp_restore_header(struct sk_buff *skb, unsigned int offset)
-{
-	struct ip_esp_hdr *esph = (void *)(skb->data + offset);
-	void *tmp = ESP_SKB_CB(skb)->tmp;
-	__be32 *seqhi = esp_tmp_extra(tmp);
-
-	esph->seq_no = esph->spi;
-	esph->spi = *seqhi;
-}
-
-static void esp_output_restore_header(struct sk_buff *skb)
-{
-	void *tmp = ESP_SKB_CB(skb)->tmp;
-	struct esp_output_extra *extra = esp_tmp_extra(tmp);
-
-	esp_restore_header(skb, skb_transport_offset(skb) + extra->esphoff -
-				sizeof(__be32));
-}
-
-static void esp_output_done_esn(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-
-	esp_output_restore_header(skb);
-	esp_output_done(base, err);
-}
-
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
-	struct esp_output_extra *extra;
 	struct ip_esp_hdr *esph;
 	struct crypto_aead *aead;
-	struct aead_request *req;
+	struct aead_givcrypt_request *req;
 	struct scatterlist *sg;
+	struct scatterlist *asg;
 	struct sk_buff *trailer;
 	void *tmp;
 	u8 *iv;
@@ -144,18 +129,17 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int clen;
 	int alen;
 	int plen;
-	int ivlen;
 	int tfclen;
 	int nfrags;
 	int assoclen;
-	int extralen;
-	__be64 seqno;
+	int sglists;
+	int seqhilen;
+	__be32 *seqhi;
 
 	/* skb is pure payload to encrypt */
 
 	aead = x->data;
 	alen = crypto_aead_authsize(aead);
-	ivlen = crypto_aead_ivsize(aead);
 
 	tfclen = 0;
 	if (x->tfcpad) {
@@ -176,23 +160,26 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	nfrags = err;
 
 	assoclen = sizeof(*esph);
-	extralen = 0;
+	sglists = 1;
+	seqhilen = 0;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
-		extralen += sizeof(*extra);
-		assoclen += sizeof(__be32);
+		sglists += 2;
+		seqhilen += sizeof(__be32);
+		assoclen += seqhilen;
 	}
 
-	tmp = esp_alloc_tmp(aead, nfrags, extralen);
+	tmp = esp_alloc_tmp(aead, nfrags + sglists, seqhilen);
 	if (!tmp) {
 		err = -ENOMEM;
 		goto error;
 	}
 
-	extra = esp_tmp_extra(tmp);
-	iv = esp_tmp_iv(aead, tmp, extralen);
-	req = esp_tmp_req(aead, iv);
-	sg = esp_req_sg(aead, req);
+	seqhi = esp_tmp_seqhi(tmp);
+	iv = esp_tmp_iv(aead, tmp, seqhilen);
+	req = esp_tmp_givreq(aead, iv);
+	asg = esp_givreq_sg(aead, req);
+	sg = asg + sglists;
 
 	/* Fill padding... */
 	tail = skb_tail_pointer(trailer);
@@ -248,55 +235,36 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 		*skb_mac_header(skb) = IPPROTO_UDP;
 	}
 
-	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
-
-	aead_request_set_callback(req, 0, esp_output_done, skb);
-
-	/* For ESN we move the header forward by 4 bytes to
-	 * accomodate the high bits.  We will move it back after
-	 * encryption.
-	 */
-	if ((x->props.flags & XFRM_STATE_ESN)) {
-		extra->esphoff = (unsigned char *)esph -
-				 skb_transport_header(skb);
-		esph = (struct ip_esp_hdr *)((unsigned char *)esph - 4);
-		extra->seqhi = esph->spi;
-		esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.hi);
-		aead_request_set_callback(req, 0, esp_output_done_esn, skb);
-	}
-
 	esph->spi = x->id.spi;
+	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
 
 	sg_init_table(sg, nfrags);
 	skb_to_sgvec(skb, sg,
-		     (unsigned char *)esph - skb->data,
-		     assoclen + ivlen + clen + alen);
+		     esph->enc_data + crypto_aead_ivsize(aead) - skb->data,
+		     clen + alen);
 
-	aead_request_set_crypt(req, sg, sg, ivlen + clen, iv);
-	aead_request_set_ad(req, assoclen);
+	if ((x->props.flags & XFRM_STATE_ESN)) {
+		sg_init_table(asg, 3);
+		sg_set_buf(asg, &esph->spi, sizeof(__be32));
+		*seqhi = htonl(XFRM_SKB_CB(skb)->seq.output.hi);
+		sg_set_buf(asg + 1, seqhi, seqhilen);
+		sg_set_buf(asg + 2, &esph->seq_no, sizeof(__be32));
+	} else
+		sg_init_one(asg, esph, sizeof(*esph));
 
-	seqno = cpu_to_be64(XFRM_SKB_CB(skb)->seq.output.low +
-			    ((u64)XFRM_SKB_CB(skb)->seq.output.hi << 32));
-
-	memset(iv, 0, ivlen);
-	memcpy(iv + ivlen - min(ivlen, 8), (u8 *)&seqno + 8 - min(ivlen, 8),
-	       min(ivlen, 8));
+	aead_givcrypt_set_callback(req, 0, esp_output_done, skb);
+	aead_givcrypt_set_crypt(req, sg, sg, clen, iv);
+	aead_givcrypt_set_assoc(req, asg, assoclen);
+	aead_givcrypt_set_giv(req, esph->enc_data,
+			      XFRM_SKB_CB(skb)->seq.output.low);
 
 	ESP_SKB_CB(skb)->tmp = tmp;
-	err = crypto_aead_encrypt(req);
-
-	switch (err) {
-	case -EINPROGRESS:
+	err = crypto_aead_givencrypt(req);
+	if (err == -EINPROGRESS)
 		goto error;
 
-	case -EBUSY:
+	if (err == -EBUSY)
 		err = NET_XMIT_DROP;
-		break;
-
-	case 0:
-		if ((x->props.flags & XFRM_STATE_ESN))
-			esp_output_restore_header(skb);
-	}
 
 	kfree(tmp);
 
@@ -395,20 +363,6 @@ static void esp_input_done(struct crypto_async_request *base, int err)
 	xfrm_input_resume(skb, esp_input_done2(skb, err));
 }
 
-static void esp_input_restore_header(struct sk_buff *skb)
-{
-	esp_restore_header(skb, 0);
-	__skb_pull(skb, 4);
-}
-
-static void esp_input_done_esn(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-
-	esp_input_restore_header(skb);
-	esp_input_done(base, err);
-}
-
 /*
  * Note: detecting truncated vs. non-truncated authentication data is very
  * expensive, so we only support truncated data, which is the recommended
@@ -420,78 +374,76 @@ static int esp_input(struct xfrm_state *x, struct sk_buff *skb)
 	struct crypto_aead *aead = x->data;
 	struct aead_request *req;
 	struct sk_buff *trailer;
-	int ivlen = crypto_aead_ivsize(aead);
-	int elen = skb->len - sizeof(*esph) - ivlen;
+	int elen = skb->len - sizeof(*esph) - crypto_aead_ivsize(aead);
 	int nfrags;
 	int assoclen;
+	int sglists;
 	int seqhilen;
 	__be32 *seqhi;
 	void *tmp;
 	u8 *iv;
 	struct scatterlist *sg;
+	struct scatterlist *asg;
 	int err = -EINVAL;
 
-	if (!pskb_may_pull(skb, sizeof(*esph) + ivlen))
+	if (!pskb_may_pull(skb, sizeof(*esph) + crypto_aead_ivsize(aead)))
 		goto out;
 
 	if (elen <= 0)
 		goto out;
 
-	err = skb_cow_data(skb, 0, &trailer);
-	if (err < 0)
+	if ((err = skb_cow_data(skb, 0, &trailer)) < 0)
 		goto out;
-
 	nfrags = err;
 
 	assoclen = sizeof(*esph);
+	sglists = 1;
 	seqhilen = 0;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
+		sglists += 2;
 		seqhilen += sizeof(__be32);
 		assoclen += seqhilen;
 	}
 
 	err = -ENOMEM;
-	tmp = esp_alloc_tmp(aead, nfrags, seqhilen);
+	tmp = esp_alloc_tmp(aead, nfrags + sglists, seqhilen);
 	if (!tmp)
 		goto out;
 
 	ESP_SKB_CB(skb)->tmp = tmp;
-	seqhi = esp_tmp_extra(tmp);
+	seqhi = esp_tmp_seqhi(tmp);
 	iv = esp_tmp_iv(aead, tmp, seqhilen);
 	req = esp_tmp_req(aead, iv);
-	sg = esp_req_sg(aead, req);
+	asg = esp_req_sg(aead, req);
+	sg = asg + sglists;
 
 	skb->ip_summed = CHECKSUM_NONE;
 
 	esph = (struct ip_esp_hdr *)skb->data;
 
-	aead_request_set_callback(req, 0, esp_input_done, skb);
-
-	/* For ESN we move the header forward by 4 bytes to
-	 * accomodate the high bits.  We will move it back after
-	 * decryption.
-	 */
-	if ((x->props.flags & XFRM_STATE_ESN)) {
-		esph = (void *)skb_push(skb, 4);
-		*seqhi = esph->spi;
-		esph->spi = esph->seq_no;
-		esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.input.hi);
-		aead_request_set_callback(req, 0, esp_input_done_esn, skb);
-	}
+	/* Get ivec. This can be wrong, check against another impls. */
+	iv = esph->enc_data;
 
 	sg_init_table(sg, nfrags);
-	skb_to_sgvec(skb, sg, 0, skb->len);
+	skb_to_sgvec(skb, sg, sizeof(*esph) + crypto_aead_ivsize(aead), elen);
 
-	aead_request_set_crypt(req, sg, sg, elen + ivlen, iv);
-	aead_request_set_ad(req, assoclen);
+	if ((x->props.flags & XFRM_STATE_ESN)) {
+		sg_init_table(asg, 3);
+		sg_set_buf(asg, &esph->spi, sizeof(__be32));
+		*seqhi = XFRM_SKB_CB(skb)->seq.input.hi;
+		sg_set_buf(asg + 1, seqhi, seqhilen);
+		sg_set_buf(asg + 2, &esph->seq_no, sizeof(__be32));
+	} else
+		sg_init_one(asg, esph, sizeof(*esph));
+
+	aead_request_set_callback(req, 0, esp_input_done, skb);
+	aead_request_set_crypt(req, sg, sg, elen, iv);
+	aead_request_set_assoc(req, asg, assoclen);
 
 	err = crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS)
 		goto out;
-
-	if ((x->props.flags & XFRM_STATE_ESN))
-		esp_input_restore_header(skb);
 
 	err = esp_input_done2(skb, err);
 
@@ -564,16 +516,10 @@ static void esp_destroy(struct xfrm_state *x)
 
 static int esp_init_aead(struct xfrm_state *x)
 {
-	char aead_name[CRYPTO_MAX_ALG_NAME];
 	struct crypto_aead *aead;
 	int err;
 
-	err = -ENAMETOOLONG;
-	if (snprintf(aead_name, CRYPTO_MAX_ALG_NAME, "%s(%s)",
-		     x->geniv, x->aead->alg_name) >= CRYPTO_MAX_ALG_NAME)
-		goto error;
-
-	aead = crypto_alloc_aead(aead_name, 0, 0);
+	aead = crypto_alloc_aead(x->aead->alg_name, 0, 0);
 	err = PTR_ERR(aead);
 	if (IS_ERR(aead))
 		goto error;
@@ -605,26 +551,22 @@ static int esp_init_authenc(struct xfrm_state *x)
 	int err;
 
 	err = -EINVAL;
-	if (!x->ealg)
+	if (x->ealg == NULL)
 		goto error;
 
 	err = -ENAMETOOLONG;
 
 	if ((x->props.flags & XFRM_STATE_ESN)) {
 		if (snprintf(authenc_name, CRYPTO_MAX_ALG_NAME,
-			     "%s%sauthencesn(%s,%s)%s",
-			     x->geniv ?: "", x->geniv ? "(" : "",
+			     "authencesn(%s,%s)",
 			     x->aalg ? x->aalg->alg_name : "digest_null",
-			     x->ealg->alg_name,
-			     x->geniv ? ")" : "") >= CRYPTO_MAX_ALG_NAME)
+			     x->ealg->alg_name) >= CRYPTO_MAX_ALG_NAME)
 			goto error;
 	} else {
 		if (snprintf(authenc_name, CRYPTO_MAX_ALG_NAME,
-			     "%s%sauthenc(%s,%s)%s",
-			     x->geniv ?: "", x->geniv ? "(" : "",
+			     "authenc(%s,%s)",
 			     x->aalg ? x->aalg->alg_name : "digest_null",
-			     x->ealg->alg_name,
-			     x->geniv ? ")" : "") >= CRYPTO_MAX_ALG_NAME)
+			     x->ealg->alg_name) >= CRYPTO_MAX_ALG_NAME)
 			goto error;
 	}
 
@@ -659,12 +601,12 @@ static int esp_init_authenc(struct xfrm_state *x)
 		BUG_ON(!aalg_desc);
 
 		err = -EINVAL;
-		if (aalg_desc->uinfo.auth.icv_fullbits / 8 !=
+		if (aalg_desc->uinfo.auth.icv_fullbits/8 !=
 		    crypto_aead_authsize(aead)) {
-			pr_info("ESP: %s digestsize %u != %hu\n",
-				x->aalg->alg_name,
-				crypto_aead_authsize(aead),
-				aalg_desc->uinfo.auth.icv_fullbits / 8);
+			NETDEBUG(KERN_INFO "ESP: %s digestsize %u != %hu\n",
+				 x->aalg->alg_name,
+				 crypto_aead_authsize(aead),
+				 aalg_desc->uinfo.auth.icv_fullbits/8);
 			goto free_key;
 		}
 

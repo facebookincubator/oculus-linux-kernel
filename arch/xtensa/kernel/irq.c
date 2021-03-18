@@ -28,7 +28,7 @@
 #include <asm/uaccess.h>
 #include <asm/platform.h>
 
-DECLARE_PER_CPU(unsigned long, nmi_count);
+atomic_t irq_err_count;
 
 asmlinkage void do_IRQ(int hwirq, struct pt_regs *regs)
 {
@@ -57,16 +57,11 @@ asmlinkage void do_IRQ(int hwirq, struct pt_regs *regs)
 
 int arch_show_interrupts(struct seq_file *p, int prec)
 {
-	unsigned cpu __maybe_unused;
 #ifdef CONFIG_SMP
 	show_ipi_list(p, prec);
 #endif
-#if XTENSA_FAKE_NMI
-	seq_printf(p, "%*s:", prec, "NMI");
-	for_each_online_cpu(cpu)
-		seq_printf(p, " %10lu", per_cpu(nmi_count, cpu));
-	seq_puts(p, "   Non-maskable interrupts\n");
-#endif
+	seq_printf(p, "%*s: ", prec, "ERR");
+	seq_printf(p, "%10u\n", atomic_read(&irq_err_count));
 	return 0;
 }
 
@@ -111,12 +106,6 @@ int xtensa_irq_map(struct irq_domain *d, unsigned int irq,
 		irq_set_chip_and_handler_name(irq, irq_chip,
 				handle_percpu_irq, "timer");
 		irq_clear_status_flags(irq, IRQ_LEVEL);
-#ifdef XCHAL_INTTYPE_MASK_PROFILING
-	} else if (mask & XCHAL_INTTYPE_MASK_PROFILING) {
-		irq_set_chip_and_handler_name(irq, irq_chip,
-				handle_percpu_irq, "profiling");
-		irq_set_status_flags(irq, IRQ_LEVEL);
-#endif
 	} else {/* XCHAL_INTTYPE_MASK_WRITE_ERROR */
 		/* XCHAL_INTTYPE_MASK_NMI */
 		irq_set_chip_and_handler_name(irq, irq_chip,
@@ -177,25 +166,23 @@ void migrate_irqs(void)
 
 	for_each_active_irq(i) {
 		struct irq_data *data = irq_get_irq_data(i);
-		struct cpumask *mask;
 		unsigned int newcpu;
 
 		if (irqd_is_per_cpu(data))
 			continue;
 
-		mask = irq_data_get_affinity_mask(data);
-		if (!cpumask_test_cpu(cpu, mask))
+		if (!cpumask_test_cpu(cpu, data->affinity))
 			continue;
 
-		newcpu = cpumask_any_and(mask, cpu_online_mask);
+		newcpu = cpumask_any_and(data->affinity, cpu_online_mask);
 
 		if (newcpu >= nr_cpu_ids) {
 			pr_info_ratelimited("IRQ%u no longer affine to CPU%u\n",
 					    i, cpu);
 
-			cpumask_setall(mask);
+			cpumask_setall(data->affinity);
 		}
-		irq_set_affinity(i, mask);
+		irq_set_affinity(i, data->affinity);
 	}
 }
 #endif /* CONFIG_HOTPLUG_CPU */

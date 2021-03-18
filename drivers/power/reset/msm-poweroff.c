@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,17 +23,15 @@
 #include <linux/reboot.h>
 #include <linux/pm.h>
 #include <linux/delay.h>
-#include <linux/input/qpnp-power-on.h>
+#include <linux/qpnp/power-on.h>
 #include <linux/of_address.h>
 
 #include <asm/cacheflush.h>
 #include <asm/system_misc.h>
-#include <asm/memory.h>
 
 #include <soc/qcom/scm.h>
 #include <soc/qcom/restart.h>
 #include <soc/qcom/watchdog.h>
-#include <soc/qcom/minidump.h>
 
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
@@ -43,11 +41,10 @@
 #define SCM_IO_DISABLE_PMIC_ARBITER	1
 #define SCM_IO_DEASSERT_PS_HOLD		2
 #define SCM_WDOG_DEBUG_BOOT_PART	0x9
-#define SCM_DLOAD_FULLDUMP		0X10
+#define SCM_DLOAD_MODE			0X10
 #define SCM_EDLOAD_MODE			0X01
 #define SCM_DLOAD_CMD			0x10
-#define SCM_DLOAD_MINIDUMP		0X20
-#define SCM_DLOAD_BOTHDUMPS	(SCM_DLOAD_MINIDUMP | SCM_DLOAD_FULLDUMP)
+
 
 static int restart_mode;
 static void *restart_reason;
@@ -58,11 +55,11 @@ static void __iomem *msm_ps_hold;
 static phys_addr_t tcsr_boot_misc_detect;
 static void scm_disable_sdi(void);
 
+#ifdef CONFIG_MSM_DLOAD_MODE
 /* Runtime could be only changed value once.
- * There is no API from TZ to re-enable the registers.
- * So the SDI cannot be re-enabled when it already by-passed.
+* There is no API from TZ to re-enable the registers.
+* So the SDI cannot be re-enabled when it already by-passed.
 */
-#ifdef CONFIG_QCOM_DLOAD_MODE
 static int download_mode;
 #else
 static const int download_mode;
@@ -71,22 +68,16 @@ static const int download_mode;
 static int in_panic;
 static int is_warm_reset;
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"
-#ifdef CONFIG_RANDOMIZE_BASE
-#define KASLR_OFFSET_PROP "qcom,msm-imem-kaslr_offset"
-#endif
 
-static int dload_type = SCM_DLOAD_FULLDUMP;
-static struct kobject dload_kobj;
-static void *dload_mode_addr, *dload_type_addr;
+static void *dload_mode_addr;
 static bool dload_mode_enabled;
 static void *emergency_dload_mode_addr;
-#ifdef CONFIG_RANDOMIZE_BASE
-static void *kaslr_imem_addr;
-#endif
 static bool scm_dload_supported;
+static struct kobject dload_kobj;
+static void *dload_type_addr;
 
 static int dload_set(const char *val, struct kernel_param *kp);
 /* interface for exporting attributes */
@@ -118,7 +109,7 @@ static struct notifier_block panic_blk = {
 	.notifier_call	= panic_prep_restart,
 };
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 int scm_set_dload_mode(int arg1, int arg2)
 {
 	struct scm_desc desc = {
@@ -153,7 +144,7 @@ static void set_dload_mode(int on)
 		mb();
 	}
 
-	ret = scm_set_dload_mode(on ? dload_type : 0, 0);
+	ret = scm_set_dload_mode(on ? SCM_DLOAD_MODE : 0, 0);
 	if (ret)
 		pr_err("Failed to set secure DLOAD mode: %d\n", ret);
 
@@ -196,6 +187,7 @@ static int dload_set(const char *val, struct kernel_param *kp)
 	int old_val = download_mode;
 
 	ret = param_set_int(val, kp);
+
 	if (ret)
 		return ret;
 
@@ -276,37 +268,11 @@ static void halt_spmi_pmic_arbiter(void)
 	}
 }
 
-extern void write_boot_chime_volume(const char *cmd)
-{
-	char *volume_substr = NULL;
-	long chime_volume_level = 0;
-	int rc;
-	/* Find the chime volume substring location */
-	volume_substr = strnstr(cmd, ",", 128);
-	if (volume_substr == NULL) {
-		chime_volume_level = 0;
-	} else {
-		volume_substr++; /* skip the comma */
-		rc = kstrtol(volume_substr, 10, &chime_volume_level);
-		if (rc != 0) {
-			pr_err("%s: Unable to parse the chime volume level: %s",
-				__func__, volume_substr);
-			chime_volume_level = 0;
-		}
-	}
-	pr_debug("%s: Set chime volume level to %ld\n",
-			__func__, chime_volume_level);
-	/* Write the boot animation chime volume */
-	qpnp_pon_set_boot_chime_volume((uint8_t) chime_volume_level);
-
-	flush_cache_all();
-}
-
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 
 	/* Write download mode flags if we're panic'ing
 	 * Write download mode flags if restart_mode says so
@@ -327,8 +293,7 @@ static void msm_restart_prepare(const char *cmd)
 			!strcmp(cmd, "edl")))
 			need_warm_reset = true;
 	} else {
-		need_warm_reset = (get_dload_mode() || in_panic ||
-				(cmd != NULL && cmd[0] != '\0'));
+		need_warm_reset = (get_dload_mode() || in_panic);
 	}
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
@@ -340,7 +305,7 @@ static void msm_restart_prepare(const char *cmd)
 	}
 
 	if (in_panic) {
-		qpnp_pon_set_restart_reason(PON_RESTART_REASON_KERNEL_PANIC);
+		/*  leave it alone */
 	} else if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
 			qpnp_pon_set_restart_reason(
@@ -350,22 +315,34 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
 			__raw_writel(0x77665502, restart_reason);
-		} else if (!strncmp(cmd, "rtc", 3)) {
+		} else if (!strcmp(cmd, "rtc")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
-		} else if (!strncmp(cmd, "dm-verity device corrupted", 26)) {
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_CORRUPTED);
 			__raw_writel(0x77665508, restart_reason);
-		} else if (!strncmp(cmd, "dm-verity enforcing", 19)) {
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_ENFORCE);
 			__raw_writel(0x77665509, restart_reason);
-		} else if (!strncmp(cmd, "keys clear", 10)) {
+		} else if (!strcmp(cmd, "keys clear")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_KEYS_CLEAR);
 			__raw_writel(0x7766550a, restart_reason);
+		} else if (!strcmp(cmd, "oem unlock")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_OEM_UNLOCK);
+			__raw_writel(0x6f656d00, restart_reason);
+		} else if (!strcmp(cmd, "upgrade")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_UPGRADE);
+			__raw_writel(0x6f656d00, restart_reason);
+		} else if (!strcmp(cmd, "silent-boot")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_SILENT_BOOT);
+			__raw_writel(0x6f656d00, restart_reason);
 		} else if (!strncmp(cmd, "edl", 3) ||
 				!strncmp(cmd, "download", 8)) {
 			enable_emergency_dload_mode();
@@ -413,7 +390,7 @@ static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 
 	msm_restart_prepare(cmd);
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 	/*
 	 * Trigger a watchdog bite here and if this fails,
 	 * device will take the usual restart path.
@@ -446,7 +423,7 @@ static void do_msm_poweroff(void)
 	return;
 }
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 static ssize_t attr_show(struct kobject *kobj, struct attribute *attr,
 				char *buf)
 {
@@ -491,7 +468,7 @@ static ssize_t show_emmc_dload(struct kobject *kobj, struct attribute *attr,
 	else
 		show_val = 0;
 
-	return scnprintf(buf, sizeof(show_val), "%u\n", show_val);
+	return snprintf(buf, sizeof(show_val), "%u\n", show_val);
 }
 
 static size_t store_emmc_dload(struct kobject *kobj, struct attribute *attr,
@@ -514,59 +491,10 @@ static size_t store_emmc_dload(struct kobject *kobj, struct attribute *attr,
 
 	return count;
 }
-
-#ifdef CONFIG_QCOM_MINIDUMP
-
-static DEFINE_MUTEX(tcsr_lock);
-
-static ssize_t show_dload_mode(struct kobject *kobj, struct attribute *attr,
-				char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "DLOAD dump type: %s\n",
-		(dload_type == SCM_DLOAD_BOTHDUMPS) ? "both" :
-		((dload_type == SCM_DLOAD_MINIDUMP) ? "mini" : "full"));
-}
-
-static size_t store_dload_mode(struct kobject *kobj, struct attribute *attr,
-				const char *buf, size_t count)
-{
-	if (sysfs_streq(buf, "full")) {
-		dload_type = SCM_DLOAD_FULLDUMP;
-	} else if (sysfs_streq(buf, "mini")) {
-		if (!minidump_enabled) {
-			pr_err("Minidump is not enabled\n");
-			return -ENODEV;
-		}
-		dload_type = SCM_DLOAD_MINIDUMP;
-	} else if (sysfs_streq(buf, "both")) {
-		if (!minidump_enabled) {
-			pr_err("Minidump not enabled, setting fulldump only\n");
-			dload_type = SCM_DLOAD_FULLDUMP;
-			return count;
-		}
-		dload_type = SCM_DLOAD_BOTHDUMPS;
-	} else{
-		pr_err("Invalid Dump setup request..\n");
-		pr_err("Supported dumps:'full', 'mini', or 'both'\n");
-		return -EINVAL;
-	}
-
-	mutex_lock(&tcsr_lock);
-	/*Overwrite TCSR reg*/
-	set_dload_mode(dload_type);
-	mutex_unlock(&tcsr_lock);
-	return count;
-}
-RESET_ATTR(dload_mode, 0644, show_dload_mode, store_dload_mode);
-#endif
-
 RESET_ATTR(emmc_dload, 0644, show_emmc_dload, store_emmc_dload);
 
 static struct attribute *reset_attrs[] = {
 	&reset_attr_emmc_dload.attr,
-#ifdef CONFIG_QCOM_MINIDUMP
-	&reset_attr_dload_mode.attr,
-#endif
 	NULL
 };
 
@@ -584,7 +512,7 @@ static int msm_restart_probe(struct platform_device *pdev)
 
 	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 	if (scm_is_call_available(SCM_SVC_BOOT, SCM_DLOAD_CMD) > 0)
 		scm_dload_supported = true;
 
@@ -605,28 +533,6 @@ static int msm_restart_probe(struct platform_device *pdev)
 		if (!emergency_dload_mode_addr)
 			pr_err("unable to map imem EDLOAD mode offset\n");
 	}
-
-#ifdef CONFIG_RANDOMIZE_BASE
-#define KASLR_OFFSET_BIT_MASK	0x00000000FFFFFFFF
-	np = of_find_compatible_node(NULL, NULL, KASLR_OFFSET_PROP);
-	if (!np) {
-		pr_err("unable to find DT imem KASLR_OFFSET node\n");
-	} else {
-		kaslr_imem_addr = of_iomap(np, 0);
-		if (!kaslr_imem_addr)
-			pr_err("unable to map imem KASLR offset\n");
-	}
-
-	if (kaslr_imem_addr) {
-		__raw_writel(0xdead4ead, kaslr_imem_addr);
-		__raw_writel(KASLR_OFFSET_BIT_MASK &
-		(kimage_vaddr - KIMAGE_VADDR), kaslr_imem_addr + 4);
-		__raw_writel(KASLR_OFFSET_BIT_MASK &
-			((kimage_vaddr - KIMAGE_VADDR) >> 32),
-			kaslr_imem_addr + 8);
-		iounmap(kaslr_imem_addr);
-	}
-#endif
 
 	np = of_find_compatible_node(NULL, NULL,
 				"qcom,msm-imem-dload-type");
@@ -688,15 +594,14 @@ skip_sysfs_create:
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DEASSERT_PS_HOLD) > 0)
 		scm_deassert_ps_hold_supported = true;
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
 	set_dload_mode(download_mode);
 	if (!download_mode)
 		scm_disable_sdi();
-#endif
+
 	return 0;
 
 err_restart_reason:
-#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef CONFIG_MSM_DLOAD_MODE
 	iounmap(emergency_dload_mode_addr);
 	iounmap(dload_mode_addr);
 #endif
@@ -721,4 +626,4 @@ static int __init msm_restart_init(void)
 {
 	return platform_driver_register(&msm_restart_driver);
 }
-pure_initcall(msm_restart_init);
+device_initcall(msm_restart_init);

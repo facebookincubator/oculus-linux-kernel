@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM JPEG
+* Qualcomm MSM JPEG
 
 Required properties:
 - cell-index: jpeg hardware core index

@@ -42,7 +42,6 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/hardirq.h>
-#include <linux/workqueue.h>
 
 #include <xen/xen.h>
 #include <xen/interface/xen.h>
@@ -51,7 +50,6 @@
 #include <xen/interface/memory.h>
 #include <xen/hvc-console.h>
 #include <xen/swiotlb-xen.h>
-#include <xen/balloon.h>
 #include <asm/xen/hypercall.h>
 #include <asm/xen/interface.h>
 
@@ -123,11 +121,6 @@ struct gnttab_ops {
 	int (*query_foreign_access)(grant_ref_t ref);
 };
 
-struct unmap_refs_callback_data {
-	struct completion completion;
-	int result;
-};
-
 static struct gnttab_ops *gnttab_interface;
 
 static int grant_table_version;
@@ -138,6 +131,7 @@ static struct gnttab_free_callback *gnttab_free_callback_list;
 static int gnttab_expand(unsigned int req_entries);
 
 #define RPP (PAGE_SIZE / sizeof(grant_ref_t))
+#define SPP (PAGE_SIZE / sizeof(grant_status_t))
 
 static inline grant_ref_t *__gnttab_entry(grant_ref_t entry)
 {
@@ -642,7 +636,7 @@ int gnttab_setup_auto_xlat_frames(phys_addr_t addr)
 	if (xen_auto_xlat_grant_frames.count)
 		return -EINVAL;
 
-	vaddr = xen_remap(addr, XEN_PAGE_SIZE * max_nr_gframes);
+	vaddr = xen_remap(addr, PAGE_SIZE * max_nr_gframes);
 	if (vaddr == NULL) {
 		pr_warn("Failed to ioremap gnttab share frames (addr=%pa)!\n",
 			&addr);
@@ -654,7 +648,7 @@ int gnttab_setup_auto_xlat_frames(phys_addr_t addr)
 		return -ENOMEM;
 	}
 	for (i = 0; i < max_nr_gframes; i++)
-		pfn[i] = XEN_PFN_DOWN(addr) + i;
+		pfn[i] = PFN_DOWN(addr) + i;
 
 	xen_auto_xlat_grant_frames.vaddr = vaddr;
 	xen_auto_xlat_grant_frames.pfn = pfn;
@@ -676,59 +670,6 @@ void gnttab_free_auto_xlat_frames(void)
 	xen_auto_xlat_grant_frames.vaddr = NULL;
 }
 EXPORT_SYMBOL_GPL(gnttab_free_auto_xlat_frames);
-
-/**
- * gnttab_alloc_pages - alloc pages suitable for grant mapping into
- * @nr_pages: number of pages to alloc
- * @pages: returns the pages
- */
-int gnttab_alloc_pages(int nr_pages, struct page **pages)
-{
-	int i;
-	int ret;
-
-	ret = alloc_xenballooned_pages(nr_pages, pages);
-	if (ret < 0)
-		return ret;
-
-	for (i = 0; i < nr_pages; i++) {
-#if BITS_PER_LONG < 64
-		struct xen_page_foreign *foreign;
-
-		foreign = kzalloc(sizeof(*foreign), GFP_KERNEL);
-		if (!foreign) {
-			gnttab_free_pages(nr_pages, pages);
-			return -ENOMEM;
-		}
-		set_page_private(pages[i], (unsigned long)foreign);
-#endif
-		SetPagePrivate(pages[i]);
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(gnttab_alloc_pages);
-
-/**
- * gnttab_free_pages - free pages allocated by gnttab_alloc_pages()
- * @nr_pages; number of pages to free
- * @pages: the pages
- */
-void gnttab_free_pages(int nr_pages, struct page **pages)
-{
-	int i;
-
-	for (i = 0; i < nr_pages; i++) {
-		if (PagePrivate(pages[i])) {
-#if BITS_PER_LONG < 64
-			kfree((void *)page_private(pages[i]));
-#endif
-			ClearPagePrivate(pages[i]);
-		}
-	}
-	free_xenballooned_pages(nr_pages, pages);
-}
-EXPORT_SYMBOL(gnttab_free_pages);
 
 /* Handling of paged out grant targets (GNTST_eagain) */
 #define MAX_DELAY 256
@@ -776,54 +717,6 @@ void gnttab_batch_copy(struct gnttab_copy *batch, unsigned count)
 }
 EXPORT_SYMBOL_GPL(gnttab_batch_copy);
 
-void gnttab_foreach_grant_in_range(struct page *page,
-				   unsigned int offset,
-				   unsigned int len,
-				   xen_grant_fn_t fn,
-				   void *data)
-{
-	unsigned int goffset;
-	unsigned int glen;
-	unsigned long xen_pfn;
-
-	len = min_t(unsigned int, PAGE_SIZE - offset, len);
-	goffset = xen_offset_in_page(offset);
-
-	xen_pfn = page_to_xen_pfn(page) + XEN_PFN_DOWN(offset);
-
-	while (len) {
-		glen = min_t(unsigned int, XEN_PAGE_SIZE - goffset, len);
-		fn(pfn_to_gfn(xen_pfn), goffset, glen, data);
-
-		goffset = 0;
-		xen_pfn++;
-		len -= glen;
-	}
-}
-EXPORT_SYMBOL_GPL(gnttab_foreach_grant_in_range);
-
-void gnttab_foreach_grant(struct page **pages,
-			  unsigned int nr_grefs,
-			  xen_grant_fn_t fn,
-			  void *data)
-{
-	unsigned int goffset = 0;
-	unsigned long xen_pfn = 0;
-	unsigned int i;
-
-	for (i = 0; i < nr_grefs; i++) {
-		if ((i % XEN_PFN_PER_PAGE) == 0) {
-			xen_pfn = page_to_xen_pfn(pages[i / XEN_PFN_PER_PAGE]);
-			goffset = 0;
-		}
-
-		fn(pfn_to_gfn(xen_pfn), goffset, XEN_PAGE_SIZE, data);
-
-		goffset += XEN_PAGE_SIZE;
-		xen_pfn++;
-	}
-}
-
 int gnttab_map_refs(struct gnttab_map_grant_ref *map_ops,
 		    struct gnttab_map_grant_ref *kmap_ops,
 		    struct page **pages, unsigned int count)
@@ -834,109 +727,29 @@ int gnttab_map_refs(struct gnttab_map_grant_ref *map_ops,
 	if (ret)
 		return ret;
 
-	for (i = 0; i < count; i++) {
-		/* Retry eagain maps */
+	/* Retry eagain maps */
+	for (i = 0; i < count; i++)
 		if (map_ops[i].status == GNTST_eagain)
 			gnttab_retry_eagain_gop(GNTTABOP_map_grant_ref, map_ops + i,
 						&map_ops[i].status, __func__);
-
-		if (map_ops[i].status == GNTST_okay) {
-			struct xen_page_foreign *foreign;
-
-			SetPageForeign(pages[i]);
-			foreign = xen_page_foreign(pages[i]);
-			foreign->domid = map_ops[i].dom;
-			foreign->gref = map_ops[i].ref;
-		}
-	}
 
 	return set_foreign_p2m_mapping(map_ops, kmap_ops, pages, count);
 }
 EXPORT_SYMBOL_GPL(gnttab_map_refs);
 
 int gnttab_unmap_refs(struct gnttab_unmap_grant_ref *unmap_ops,
-		      struct gnttab_unmap_grant_ref *kunmap_ops,
+		      struct gnttab_map_grant_ref *kmap_ops,
 		      struct page **pages, unsigned int count)
 {
-	unsigned int i;
 	int ret;
 
 	ret = HYPERVISOR_grant_table_op(GNTTABOP_unmap_grant_ref, unmap_ops, count);
 	if (ret)
 		return ret;
 
-	for (i = 0; i < count; i++)
-		ClearPageForeign(pages[i]);
-
-	return clear_foreign_p2m_mapping(unmap_ops, kunmap_ops, pages, count);
+	return clear_foreign_p2m_mapping(unmap_ops, kmap_ops, pages, count);
 }
 EXPORT_SYMBOL_GPL(gnttab_unmap_refs);
-
-#define GNTTAB_UNMAP_REFS_DELAY 5
-
-static void __gnttab_unmap_refs_async(struct gntab_unmap_queue_data* item);
-
-static void gnttab_unmap_work(struct work_struct *work)
-{
-	struct gntab_unmap_queue_data
-		*unmap_data = container_of(work, 
-					   struct gntab_unmap_queue_data,
-					   gnttab_work.work);
-	if (unmap_data->age != UINT_MAX)
-		unmap_data->age++;
-	__gnttab_unmap_refs_async(unmap_data);
-}
-
-static void __gnttab_unmap_refs_async(struct gntab_unmap_queue_data* item)
-{
-	int ret;
-	int pc;
-
-	for (pc = 0; pc < item->count; pc++) {
-		if (page_count(item->pages[pc]) > 1) {
-			unsigned long delay = GNTTAB_UNMAP_REFS_DELAY * (item->age + 1);
-			schedule_delayed_work(&item->gnttab_work,
-					      msecs_to_jiffies(delay));
-			return;
-		}
-	}
-
-	ret = gnttab_unmap_refs(item->unmap_ops, item->kunmap_ops,
-				item->pages, item->count);
-	item->done(ret, item);
-}
-
-void gnttab_unmap_refs_async(struct gntab_unmap_queue_data* item)
-{
-	INIT_DELAYED_WORK(&item->gnttab_work, gnttab_unmap_work);
-	item->age = 0;
-
-	__gnttab_unmap_refs_async(item);
-}
-EXPORT_SYMBOL_GPL(gnttab_unmap_refs_async);
-
-static void unmap_refs_callback(int result,
-		struct gntab_unmap_queue_data *data)
-{
-	struct unmap_refs_callback_data *d = data->data;
-
-	d->result = result;
-	complete(&d->completion);
-}
-
-int gnttab_unmap_refs_sync(struct gntab_unmap_queue_data *item)
-{
-	struct unmap_refs_callback_data data;
-
-	init_completion(&data.completion);
-	item->data = &data;
-	item->done = &unmap_refs_callback;
-	gnttab_unmap_refs_async(item);
-	wait_for_completion(&data.completion);
-
-	return data.result;
-}
-EXPORT_SYMBOL_GPL(gnttab_unmap_refs_sync);
 
 static int gnttab_map_frames_v1(xen_pfn_t *frames, unsigned int nr_gframes)
 {
@@ -1026,7 +839,7 @@ static void gnttab_request_version(void)
 {
 	/* Only version 1 is used, which will always be available. */
 	grant_table_version = 1;
-	grefs_per_grant_frame = XEN_PAGE_SIZE / sizeof(struct grant_entry_v1);
+	grefs_per_grant_frame = PAGE_SIZE / sizeof(struct grant_entry_v1);
 	gnttab_interface = &gnttab_v1_ops;
 
 	pr_info("Grant tables using version %d layout\n", grant_table_version);

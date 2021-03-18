@@ -2,27 +2,24 @@
 #include "util.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <linux/atomic.h>
 
 struct comm_str {
 	char *str;
 	struct rb_node rb_node;
-	atomic_t refcnt;
+	int ref;
 };
 
 /* Should perhaps be moved to struct machine */
 static struct rb_root comm_str_root;
 
-static struct comm_str *comm_str__get(struct comm_str *cs)
+static void comm_str__get(struct comm_str *cs)
 {
-	if (cs)
-		atomic_inc(&cs->refcnt);
-	return cs;
+	cs->ref++;
 }
 
 static void comm_str__put(struct comm_str *cs)
 {
-	if (cs && atomic_dec_and_test(&cs->refcnt)) {
+	if (!--cs->ref) {
 		rb_erase(&cs->rb_node, &comm_str_root);
 		zfree(&cs->str);
 		free(cs);
@@ -42,8 +39,6 @@ static struct comm_str *comm_str__alloc(const char *str)
 		free(cs);
 		return NULL;
 	}
-
-	atomic_set(&cs->refcnt, 0);
 
 	return cs;
 }

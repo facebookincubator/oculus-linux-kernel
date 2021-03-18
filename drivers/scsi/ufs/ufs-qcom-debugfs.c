@@ -67,7 +67,6 @@ static int ufs_qcom_dbg_testbus_en_read(void *data, u64 *attr_val)
 static int ufs_qcom_dbg_testbus_en_set(void *data, u64 attr_id)
 {
 	struct ufs_qcom_host *host = data;
-	int ret = 0;
 
 	if (!host)
 		return -EINVAL;
@@ -77,13 +76,7 @@ static int ufs_qcom_dbg_testbus_en_set(void *data, u64 attr_id)
 	else
 		host->dbg_print_en &= ~UFS_QCOM_DBG_PRINT_TEST_BUS_EN;
 
-	pm_runtime_get_sync(host->hba->dev);
-	ufshcd_hold(host->hba, false);
-	ret = ufs_qcom_testbus_config(host);
-	ufshcd_release(host->hba, false);
-	pm_runtime_put_sync(host->hba->dev);
-
-	return ret;
+	return ufs_qcom_testbus_config(host);
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(ufs_qcom_dbg_testbus_en_ops,
@@ -161,11 +154,7 @@ static ssize_t ufs_qcom_dbg_testbus_cfg_write(struct file *file,
 	 * Sanity check of the {major, minor} tuple is done in the
 	 * config function
 	 */
-	pm_runtime_get_sync(host->hba->dev);
-	ufshcd_hold(host->hba, false);
 	ret = ufs_qcom_testbus_config(host);
-	ufshcd_release(host->hba, false);
-	pm_runtime_put_sync(host->hba->dev);
 	if (!ret)
 		dev_dbg(host->hba->dev,
 				"%s: New configuration: major=%d, minor=%d\n",

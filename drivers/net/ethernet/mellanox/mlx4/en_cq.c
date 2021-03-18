@@ -66,15 +66,14 @@ int mlx4_en_create_cq(struct mlx4_en_priv *priv,
 
 	cq->ring = ring;
 	cq->is_tx = mode;
-	cq->vector = mdev->dev->caps.num_comp_vectors;
 
 	/* Allocate HW buffers on provided NUMA node.
 	 * dev->numa_node is used in mtt range allocation flow.
 	 */
-	set_dev_node(&mdev->dev->persist->pdev->dev, node);
+	set_dev_node(&mdev->dev->pdev->dev, node);
 	err = mlx4_alloc_hwq_res(mdev->dev, &cq->wqres,
 				cq->buf_size, 2 * PAGE_SIZE);
-	set_dev_node(&mdev->dev->persist->pdev->dev, mdev->dev->numa_node);
+	set_dev_node(&mdev->dev->pdev->dev, mdev->dev->numa_node);
 	if (err)
 		goto err_cq;
 
@@ -100,8 +99,14 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 {
 	struct mlx4_en_dev *mdev = priv->mdev;
 	int err = 0;
+	char name[25];
 	int timestamp_en = 0;
-	bool assigned_eq = false;
+	struct cpu_rmap *rmap =
+#ifdef CONFIG_RFS_ACCEL
+		priv->dev->rx_cpu_rmap;
+#else
+		NULL;
+#endif
 
 	cq->dev = mdev->pndev[priv->port];
 	cq->mcq.set_ci_db  = cq->wqres.db.db;
@@ -111,19 +116,23 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 	memset(cq->buf, 0, cq->buf_size);
 
 	if (cq->is_tx == RX) {
-		if (!mlx4_is_eq_vector_valid(mdev->dev, priv->port,
-					     cq->vector)) {
-			cq->vector = cpumask_first(priv->rx_ring[cq->ring]->affinity_mask);
+		if (mdev->dev->caps.comp_pool) {
+			if (!cq->vector) {
+				sprintf(name, "%s-%d", priv->dev->name,
+					cq->ring);
+				/* Set IRQ for specific name (per ring) */
+				if (mlx4_assign_eq(mdev->dev, name, rmap,
+						   &cq->vector)) {
+					cq->vector = (cq->ring + 1 + priv->port)
+					    % mdev->dev->caps.num_comp_vectors;
+					mlx4_warn(mdev, "Failed assigning an EQ to %s, falling back to legacy EQ's\n",
+						  name);
+				}
 
-			err = mlx4_assign_eq(mdev->dev, priv->port,
-					     &cq->vector);
-			if (err) {
-				mlx4_err(mdev, "Failed assigning an EQ to CQ vector %d\n",
-					 cq->vector);
-				goto free_eq;
 			}
-
-			assigned_eq = true;
+		} else {
+			cq->vector = (cq->ring + 1 + priv->port) %
+				mdev->dev->caps.num_comp_vectors;
 		}
 
 		cq->irq_desc =
@@ -150,7 +159,7 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 			    &mdev->priv_uar, cq->wqres.db.dma, &cq->mcq,
 			    cq->vector, 0, timestamp_en);
 	if (err)
-		goto free_eq;
+		return err;
 
 	cq->mcq.comp  = cq->is_tx ? mlx4_en_tx_irq : mlx4_en_rx_irq;
 	cq->mcq.event = mlx4_en_cq_event;
@@ -159,6 +168,13 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 		netif_napi_add(cq->dev, &cq->napi, mlx4_en_poll_tx_cq,
 			       NAPI_POLL_WEIGHT);
 	} else {
+		struct mlx4_en_rx_ring *ring = priv->rx_ring[cq->ring];
+
+		err = irq_set_affinity_hint(cq->mcq.irq,
+					    ring->affinity_mask);
+		if (err)
+			mlx4_warn(mdev, "Failed setting affinity hint\n");
+
 		netif_napi_add(cq->dev, &cq->napi, mlx4_en_poll_rx_cq, 64);
 		napi_hash_add(&cq->napi);
 	}
@@ -166,12 +182,6 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 	napi_enable(&cq->napi);
 
 	return 0;
-
-free_eq:
-	if (assigned_eq)
-		mlx4_release_eq(mdev->dev, cq->vector);
-	cq->vector = mdev->dev->caps.num_comp_vectors;
-	return err;
 }
 
 void mlx4_en_destroy_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq **pcq)
@@ -181,9 +191,9 @@ void mlx4_en_destroy_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq **pcq)
 
 	mlx4_en_unmap_buffer(&cq->wqres.buf);
 	mlx4_free_hwq_res(mdev->dev, &cq->wqres, cq->buf_size);
-	if (mlx4_is_eq_vector_valid(mdev->dev, priv->port, cq->vector) &&
-	    cq->is_tx == RX)
+	if (priv->mdev->dev->caps.comp_pool && cq->vector) {
 		mlx4_release_eq(priv->mdev->dev, cq->vector);
+	}
 	cq->vector = 0;
 	cq->buf_size = 0;
 	cq->buf = NULL;
@@ -197,6 +207,7 @@ void mlx4_en_deactivate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq)
 	if (!cq->is_tx) {
 		napi_hash_del(&cq->napi);
 		synchronize_rcu();
+		irq_set_affinity_hint(cq->mcq.irq, NULL);
 	}
 	netif_napi_del(&cq->napi);
 

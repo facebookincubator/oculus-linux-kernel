@@ -37,9 +37,9 @@
 #include <linux/personality.h>
 #include <linux/random.h>
 #include <linux/hw_breakpoint.h>
-#include <linux/uaccess.h>
 
 #include <asm/pgtable.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/processor.h>
 #include <asm/mmu.h>
@@ -86,7 +86,7 @@ void giveup_fpu_maybe_transactional(struct task_struct *tsk)
 	if (tsk == current && tsk->thread.regs &&
 	    MSR_TM_ACTIVE(tsk->thread.regs->msr) &&
 	    !test_thread_flag(TIF_RESTORE_TM)) {
-		tsk->thread.ckpt_regs.msr = tsk->thread.regs->msr;
+		tsk->thread.tm_orig_msr = tsk->thread.regs->msr;
 		set_thread_flag(TIF_RESTORE_TM);
 	}
 
@@ -104,7 +104,7 @@ void giveup_altivec_maybe_transactional(struct task_struct *tsk)
 	if (tsk == current && tsk->thread.regs &&
 	    MSR_TM_ACTIVE(tsk->thread.regs->msr) &&
 	    !test_thread_flag(TIF_RESTORE_TM)) {
-		tsk->thread.ckpt_regs.msr = tsk->thread.regs->msr;
+		tsk->thread.tm_orig_msr = tsk->thread.regs->msr;
 		set_thread_flag(TIF_RESTORE_TM);
 	}
 
@@ -204,6 +204,8 @@ EXPORT_SYMBOL_GPL(flush_altivec_to_thread);
 #endif /* CONFIG_ALTIVEC */
 
 #ifdef CONFIG_VSX
+#if 0
+/* not currently used, but some crazy RAID module might want to later */
 void enable_kernel_vsx(void)
 {
 	WARN_ON(preemptible());
@@ -218,6 +220,7 @@ void enable_kernel_vsx(void)
 #endif /* CONFIG_SMP */
 }
 EXPORT_SYMBOL(enable_kernel_vsx);
+#endif
 
 void giveup_vsx(struct task_struct *tsk)
 {
@@ -496,7 +499,7 @@ static inline int set_dawr(struct arch_hw_breakpoint *brk)
 
 void __set_breakpoint(struct arch_hw_breakpoint *brk)
 {
-	memcpy(this_cpu_ptr(&current_brk), brk, sizeof(*brk));
+	__get_cpu_var(current_brk) = *brk;
 
 	if (cpu_has_feature(CPU_FTR_DAWR))
 		set_dawr(brk);
@@ -540,7 +543,7 @@ static void tm_reclaim_thread(struct thread_struct *thr,
 	 * the thread will no longer be transactional.
 	 */
 	if (test_ti_thread_flag(ti, TIF_RESTORE_TM)) {
-		msr_diff = thr->ckpt_regs.msr & ~thr->regs->msr;
+		msr_diff = thr->tm_orig_msr & ~thr->regs->msr;
 		if (msr_diff & MSR_FP)
 			memcpy(&thr->transact_fp, &thr->fp_state,
 			       sizeof(struct thread_fp_state));
@@ -550,24 +553,6 @@ static void tm_reclaim_thread(struct thread_struct *thr,
 		clear_ti_thread_flag(ti, TIF_RESTORE_TM);
 		msr_diff &= MSR_FP | MSR_VEC | MSR_VSX | MSR_FE0 | MSR_FE1;
 	}
-
-	/*
-	 * Use the current MSR TM suspended bit to track if we have
-	 * checkpointed state outstanding.
-	 * On signal delivery, we'd normally reclaim the checkpointed
-	 * state to obtain stack pointer (see:get_tm_stackpointer()).
-	 * This will then directly return to userspace without going
-	 * through __switch_to(). However, if the stack frame is bad,
-	 * we need to exit this thread which calls __switch_to() which
-	 * will again attempt to reclaim the already saved tm state.
-	 * Hence we need to check that we've not already reclaimed
-	 * this state.
-	 * We do this using the current MSR, rather tracking it in
-	 * some specific thread_struct bit, as it has the additional
-	 * benifit of checking for a potential TM bad thing exception.
-	 */
-	if (!MSR_TM_SUSPENDED(mfmsr()))
-		return;
 
 	tm_reclaim(thr, thr->regs->msr, cause);
 
@@ -609,10 +594,10 @@ static inline void tm_reclaim_task(struct task_struct *tsk)
 	/* Stash the original thread MSR, as giveup_fpu et al will
 	 * modify it.  We hold onto it to see whether the task used
 	 * FP & vector regs.  If the TIF_RESTORE_TM flag is set,
-	 * ckpt_regs.msr is already set.
+	 * tm_orig_msr is already set.
 	 */
 	if (!test_ti_thread_flag(task_thread_info(tsk), TIF_RESTORE_TM))
-		thr->ckpt_regs.msr = thr->regs->msr;
+		thr->tm_orig_msr = thr->regs->msr;
 
 	TM_DEBUG("--- tm_reclaim on pid %d (NIP=%lx, "
 		 "ccr=%lx, msr=%lx, trap=%lx)\n",
@@ -681,7 +666,7 @@ static inline void tm_recheckpoint_new_task(struct task_struct *new)
 		tm_restore_sprs(&new->thread);
 		return;
 	}
-	msr = new->thread.ckpt_regs.msr;
+	msr = new->thread.tm_orig_msr;
 	/* Recheckpoint to restore original checkpointed register state. */
 	TM_DEBUG("*** tm_recheckpoint of pid %d "
 		 "(new->msr 0x%lx, new->origmsr 0x%lx)\n",
@@ -741,7 +726,7 @@ void restore_tm_state(struct pt_regs *regs)
 	if (!MSR_TM_ACTIVE(regs->msr))
 		return;
 
-	msr_diff = current->thread.ckpt_regs.msr & ~regs->msr;
+	msr_diff = current->thread.tm_orig_msr & ~regs->msr;
 	msr_diff &= MSR_FP | MSR_VEC | MSR_VSX;
 	if (msr_diff & MSR_FP) {
 		fp_enable();
@@ -857,7 +842,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
  * schedule DABR
  */
 #ifndef CONFIG_HAVE_HW_BREAKPOINT
-	if (unlikely(!hw_brk_match(this_cpu_ptr(&current_brk), &new->thread.hw_brk)))
+	if (unlikely(!hw_brk_match(&__get_cpu_var(current_brk), &new->thread.hw_brk)))
 		__set_breakpoint(&new->thread.hw_brk);
 #endif /* CONFIG_HAVE_HW_BREAKPOINT */
 #endif
@@ -871,7 +856,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	 * Collect processor utilization data per process
 	 */
 	if (firmware_has_feature(FW_FEATURE_SPLPAR)) {
-		struct cpu_usage *cu = this_cpu_ptr(&cpu_usage_array);
+		struct cpu_usage *cu = &__get_cpu_var(cpu_usage_array);
 		long unsigned start_tb, current_tb;
 		start_tb = old_thread->start_tb;
 		cu->current_tb = current_tb = mfspr(SPRN_PURR);
@@ -881,7 +866,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 #endif /* CONFIG_PPC64 */
 
 #ifdef CONFIG_PPC_BOOK3S_64
-	batch = this_cpu_ptr(&ppc64_tlb_batch);
+	batch = &__get_cpu_var(ppc64_tlb_batch);
 	if (batch->active) {
 		current_thread_info()->local_flags |= _TLF_LAZY_MMU;
 		if (batch->index)
@@ -904,7 +889,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 #ifdef CONFIG_PPC_BOOK3S_64
 	if (current_thread_info()->local_flags & _TLF_LAZY_MMU) {
 		current_thread_info()->local_flags &= ~_TLF_LAZY_MMU;
-		batch = this_cpu_ptr(&ppc64_tlb_batch);
+		batch = &__get_cpu_var(ppc64_tlb_batch);
 		batch->active = 1;
 	}
 #endif /* CONFIG_PPC_BOOK3S_64 */
@@ -936,8 +921,12 @@ static void show_instructions(struct pt_regs *regs)
 			pc = (unsigned long)phys_to_virt(pc);
 #endif
 
+		/* We use __get_user here *only* to avoid an OOPS on a
+		 * bad address because the pc *should* only be a
+		 * kernel address.
+		 */
 		if (!__kernel_text_address(pc) ||
-		     probe_kernel_address((unsigned int __user *)pc, instr)) {
+		     __get_user(instr, (unsigned int __user *)pc)) {
 			printk(KERN_CONT "XXXXXXXX ");
 		} else {
 			if (regs->nip == pc)
@@ -1127,12 +1116,10 @@ static void setup_ksp_vsid(struct task_struct *p, unsigned long sp)
 /*
  * Copy a thread..
  */
+extern unsigned long dscr_default; /* defined in arch/powerpc/kernel/sysfs.c */
 
-/*
- * Copy architecture-specific thread state
- */
 int copy_thread(unsigned long clone_flags, unsigned long usp,
-		unsigned long kthread_arg, struct task_struct *p)
+		unsigned long arg, struct task_struct *p)
 {
 	struct pt_regs *childregs, *kregs;
 	extern void ret_from_fork(void);
@@ -1144,7 +1131,6 @@ int copy_thread(unsigned long clone_flags, unsigned long usp,
 	sp -= sizeof(struct pt_regs);
 	childregs = (struct pt_regs *) sp;
 	if (unlikely(p->flags & PF_KTHREAD)) {
-		/* kernel thread */
 		struct thread_info *ti = (void *)task_stack_page(p);
 		memset(childregs, 0, sizeof(struct pt_regs));
 		childregs->gpr[1] = sp + sizeof(struct pt_regs);
@@ -1155,12 +1141,11 @@ int copy_thread(unsigned long clone_flags, unsigned long usp,
 		clear_tsk_thread_flag(p, TIF_32BIT);
 		childregs->softe = 1;
 #endif
-		childregs->gpr[15] = kthread_arg;
+		childregs->gpr[15] = arg;
 		p->thread.regs = NULL;	/* no user register state */
 		ti->flags |= _TIF_RESTOREALL;
 		f = ret_from_kernel_thread;
 	} else {
-		/* user thread */
 		struct pt_regs *regs = current_pt_regs();
 		CHECK_FULL_REGS(regs);
 		*childregs = *regs;
@@ -1238,16 +1223,6 @@ void start_thread(struct pt_regs *regs, unsigned long start, unsigned long sp)
 		struct pt_regs *regs = task_stack_page(current) + THREAD_SIZE;
 		current->thread.regs = regs - 1;
 	}
-
-#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
-	/*
-	 * Clear any transactional state, we're exec()ing. The cause is
-	 * not important as there will never be a recheckpoint so it's not
-	 * user visible.
-	 */
-	if (MSR_TM_SUSPENDED(mfmsr()))
-		tm_reclaim_current(0);
-#endif
 
 	memset(regs->gpr, 0, sizeof(regs->gpr));
 	regs->ctr = 0;
@@ -1556,6 +1531,13 @@ void show_stack(struct task_struct *tsk, unsigned long *stack)
 	int curr_frame = current->curr_ret_stack;
 	extern void return_to_handler(void);
 	unsigned long rth = (unsigned long)return_to_handler;
+	unsigned long mrth = -1;
+#ifdef CONFIG_PPC64
+	extern void mod_return_to_handler(void);
+	rth = *(unsigned long *)rth;
+	mrth = (unsigned long)mod_return_to_handler;
+	mrth = *(unsigned long *)mrth;
+#endif
 #endif
 
 	sp = (unsigned long) stack;
@@ -1580,7 +1562,7 @@ void show_stack(struct task_struct *tsk, unsigned long *stack)
 		if (!firstframe || ip != lr) {
 			printk("["REG"] ["REG"] %pS", sp, ip, (void *)ip);
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-			if ((ip == rth) && curr_frame >= 0) {
+			if ((ip == rth || ip == mrth) && curr_frame >= 0) {
 				printk(" (%pS)",
 				       (void *)current->ret_stack[curr_frame].ret);
 				curr_frame--;
@@ -1683,3 +1665,12 @@ unsigned long arch_randomize_brk(struct mm_struct *mm)
 	return ret;
 }
 
+unsigned long randomize_et_dyn(unsigned long base)
+{
+	unsigned long ret = PAGE_ALIGN(base + brk_rnd());
+
+	if (ret < base)
+		return base;
+
+	return ret;
+}

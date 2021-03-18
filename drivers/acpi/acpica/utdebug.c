@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,6 @@
 
 #include <acpi/acpi.h>
 #include "accommon.h"
-#include "acinterp.h"
 
 #define _COMPONENT          ACPI_UTILITIES
 ACPI_MODULE_NAME("utdebug")
@@ -112,7 +111,7 @@ void acpi_ut_track_stack_ptr(void)
  * RETURN:      Updated pointer to the function name
  *
  * DESCRIPTION: Remove the "Acpi" prefix from the function name, if present.
- *              This allows compiler macros such as __func__ to be used
+ *              This allows compiler macros such as __FUNCTION__ to be used
  *              with no change to the debug output.
  *
  ******************************************************************************/
@@ -561,37 +560,8 @@ acpi_ut_ptr_exit(u32 line_number,
 	}
 }
 
-/*******************************************************************************
- *
- * FUNCTION:    acpi_trace_point
- *
- * PARAMETERS:  type                - Trace event type
- *              begin               - TRUE if before execution
- *              aml                 - Executed AML address
- *              pathname            - Object path
- *              pointer             - Pointer to the related object
- *
- * RETURN:      None
- *
- * DESCRIPTION: Interpreter execution trace.
- *
- ******************************************************************************/
-
-void
-acpi_trace_point(acpi_trace_event_type type, u8 begin, u8 *aml, char *pathname)
-{
-
-	ACPI_FUNCTION_ENTRY();
-
-	acpi_ex_trace_point(type, begin, aml, pathname);
-
-#ifdef ACPI_USE_SYSTEM_TRACER
-	acpi_os_trace_point(type, begin, aml, pathname);
 #endif
-}
 
-ACPI_EXPORT_SYMBOL(acpi_trace_point)
-#endif
 #ifdef ACPI_APPLICATION
 /*******************************************************************************
  *
@@ -605,6 +575,7 @@ ACPI_EXPORT_SYMBOL(acpi_trace_point)
  * DESCRIPTION: Print error message to the console, used by applications.
  *
  ******************************************************************************/
+
 void ACPI_INTERNAL_VAR_XFACE acpi_log_error(const char *format, ...)
 {
 	va_list args;

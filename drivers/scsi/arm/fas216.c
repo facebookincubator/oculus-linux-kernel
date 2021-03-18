@@ -308,7 +308,8 @@ static void fas216_log_command(FAS216_Info *info, int level,
 	fas216_do_log(info, '0' + SCpnt->device->id, fmt, args);
 	va_end(args);
 
-	scsi_print_command(SCpnt);
+	printk(" CDB: ");
+	__scsi_print_command(SCpnt->cmnd);
 }
 
 static void
@@ -2078,12 +2079,14 @@ fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned int result)
 			break;
 
 		default:
-			scmd_printk(KERN_ERR, SCpnt,
-				    "incomplete data transfer detected: res=%08X ptr=%p len=%X\n",
-				    SCpnt->result, info->scsi.SCp.ptr,
-				    info->scsi.SCp.this_residual);
-			scsi_print_command(SCpnt);
-			set_host_byte(SCpnt, DID_ERROR);
+			printk(KERN_ERR "scsi%d.%c: incomplete data transfer "
+				"detected: res=%08X ptr=%p len=%X CDB: ",
+				info->host->host_no, '0' + SCpnt->device->id,
+				SCpnt->result, info->scsi.SCp.ptr,
+				info->scsi.SCp.this_residual);
+			__scsi_print_command(SCpnt->cmnd);
+			SCpnt->result &= ~(255 << 16);
+			SCpnt->result |= DID_BAD_TARGET << 16;
 			goto request_sense;
 		}
 	}
@@ -2155,11 +2158,12 @@ static void fas216_done(FAS216_Info *info, unsigned int result)
 	 * to transfer, we should not have a valid pointer.
 	 */
 	if (info->scsi.SCp.ptr && info->scsi.SCp.this_residual == 0) {
-		scmd_printk(KERN_INFO, SCpnt,
-			    "zero bytes left to transfer, but buffer pointer still valid: ptr=%p len=%08x\n",
-			    info->scsi.SCp.ptr, info->scsi.SCp.this_residual);
+		printk("scsi%d.%c: zero bytes left to transfer, but "
+		       "buffer pointer still valid: ptr=%p len=%08x CDB: ",
+		       info->host->host_no, '0' + SCpnt->device->id,
+		       info->scsi.SCp.ptr, info->scsi.SCp.this_residual);
 		info->scsi.SCp.ptr = NULL;
-		scsi_print_command(SCpnt);
+		__scsi_print_command(SCpnt->cmnd);
 	}
 
 	/*
@@ -2423,10 +2427,13 @@ int fas216_eh_abort(struct scsi_cmnd *SCpnt)
 
 	info->stats.aborts += 1;
 
-	scmd_printk(KERN_WARNING, SCpnt, "abort command\n");
+	printk(KERN_WARNING "scsi%d: abort command ", info->host->host_no);
+	__scsi_print_command(SCpnt->cmnd);
 
 	print_debug_list();
 	fas216_dumpstate(info);
+
+	printk(KERN_WARNING "scsi%d: abort %p ", info->host->host_no, SCpnt);
 
 	switch (fas216_find_command(info, SCpnt)) {
 	/*
@@ -2435,7 +2442,7 @@ int fas216_eh_abort(struct scsi_cmnd *SCpnt)
 	 * target, or the busylun bit is not set.
 	 */
 	case res_success:
-		scmd_printk(KERN_WARNING, SCpnt, "abort %p success\n", SCpnt);
+		printk("success\n");
 		result = SUCCESS;
 		break;
 
@@ -2445,13 +2452,14 @@ int fas216_eh_abort(struct scsi_cmnd *SCpnt)
 	 * if the bus is free.
 	 */
 	case res_hw_abort:
+		
 
 	/*
 	 * We are unable to abort the command for some reason.
 	 */
 	default:
 	case res_failed:
-		scmd_printk(KERN_WARNING, SCpnt, "abort %p failed\n", SCpnt);
+		printk("failed\n");
 		break;
 	}
 
@@ -2656,7 +2664,8 @@ int fas216_eh_host_reset(struct scsi_cmnd *SCpnt)
 
 	fas216_checkmagic(info);
 
-	fas216_log(info, LOG_ERROR, "resetting host");
+	printk("scsi%d.%c: %s: resetting host\n",
+		info->host->host_no, '0' + SCpnt->device->id, __func__);
 
 	/*
 	 * Reset the SCSI chip.
@@ -2990,7 +2999,7 @@ void fas216_print_devices(FAS216_Info *info, struct seq_file *m)
 	struct fas216_device *dev;
 	struct scsi_device *scd;
 
-	seq_puts(m, "Device/Lun TaggedQ       Parity   Sync\n");
+	seq_printf(m, "Device/Lun TaggedQ       Parity   Sync\n");
 
 	shost_for_each_device(scd, info->host) {
 		dev = &info->device[scd->id];
@@ -3000,7 +3009,7 @@ void fas216_print_devices(FAS216_Info *info, struct seq_file *m)
 				     scd->simple_tags ? "en" : "dis",
 				     scd->current_tag);
 		else
-			seq_puts(m, "unsupported   ");
+			seq_printf(m, "unsupported   ");
 
 		seq_printf(m, "%3sabled ", dev->parity_enabled ? "en" : "dis");
 
@@ -3008,7 +3017,7 @@ void fas216_print_devices(FAS216_Info *info, struct seq_file *m)
 			seq_printf(m, "offset %d, %d ns\n",
 				     dev->sof, dev->period * 4);
 		else
-			seq_puts(m, "async\n");
+			seq_printf(m, "async\n");
 	}
 }
 

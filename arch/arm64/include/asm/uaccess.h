@@ -18,16 +18,22 @@
 #ifndef __ASM_UACCESS_H
 #define __ASM_UACCESS_H
 
+#include <asm/alternative.h>
+#include <asm/kernel-pgtable.h>
+#include <asm/mmu.h>
+#include <asm/sysreg.h>
+
+#ifndef __ASSEMBLY__
+
 /*
  * User space memory access functions
  */
+#include <linux/bitops.h>
 #include <linux/string.h>
 #include <linux/thread_info.h>
 
-#include <asm/alternative.h>
 #include <asm/cpufeature.h>
 #include <asm/ptrace.h>
-#include <asm/sysreg.h>
 #include <asm/errno.h>
 #include <asm/memory.h>
 #include <asm/compiler.h>
@@ -36,11 +42,11 @@
 #define VERIFY_WRITE 1
 
 /*
- * The exception table consists of pairs of relative offsets: the first
- * is the relative offset to an instruction that is allowed to fault,
- * and the second is the relative offset at which the program should
- * continue. No registers are modified, so it is entirely up to the
- * continuation code to figure out what to do.
+ * The exception table consists of pairs of addresses: the first is the
+ * address of an instruction that is allowed to fault, and the second is
+ * the address at which the program should continue.  No registers are
+ * modified, so it is entirely up to the continuation code to figure out
+ * what to do.
  *
  * All the routines below use bits of fixup code that are out of line
  * with the main instruction path.  This means when everything is well,
@@ -50,10 +56,8 @@
 
 struct exception_table_entry
 {
-	int insn, fixup;
+	unsigned long insn, fixup;
 };
-
-#define ARCH_HAS_RELATIVE_EXTABLE
 
 extern int fixup_exception(struct pt_regs *regs);
 
@@ -78,7 +82,7 @@ static inline void set_fs(mm_segment_t fs)
 				CONFIG_ARM64_UAO));
 }
 
-#define segment_eq(a, b)	((a) == (b))
+#define segment_eq(a,b)	((a) == (b))
 
 /*
  * Return 1 if addr < current->addr_limit, 0 otherwise.
@@ -104,24 +108,135 @@ static inline void set_fs(mm_segment_t fs)
  */
 #define __range_ok(addr, size)						\
 ({									\
+	unsigned long __addr = (unsigned long __force)(addr);		\
 	unsigned long flag, roksum;					\
 	__chk_user_ptr(addr);						\
 	asm("adds %1, %1, %3; ccmp %1, %4, #2, cc; cset %0, ls"		\
 		: "=&r" (flag), "=&r" (roksum)				\
-		: "1" (addr), "Ir" (size),				\
+		: "1" (__addr), "Ir" (size),				\
 		  "r" (current_thread_info()->addr_limit)		\
 		: "cc");						\
 	flag;								\
 })
 
+/*
+ * When dealing with data aborts, watchpoints, or instruction traps we may end
+ * up with a tagged userland pointer. Clear the tag to get a sane pointer to
+ * pass on to access_ok(), for instance.
+ */
+#define untagged_addr(addr)		sign_extend64(addr, 55)
+
 #define access_ok(type, addr, size)	__range_ok(addr, size)
 #define user_addr_max			get_fs
 
-#define _ASM_EXTABLE(from, to)						\
-	"	.pushsection	__ex_table, \"a\"\n"			\
-	"	.align		3\n"					\
-	"	.long		(" #from " - .), (" #to " - .)\n"	\
-	"	.popsection\n"
+/*
+ * User access enabling/disabling.
+ */
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+static inline void __uaccess_ttbr0_disable(void)
+{
+	unsigned long flags, ttbr;
+
+	local_irq_save(flags);
+	ttbr = read_sysreg(ttbr1_el1);
+	ttbr &= ~TTBR_ASID_MASK;
+	/* reserved_ttbr0 placed at the end of swapper_pg_dir */
+	write_sysreg(ttbr + SWAPPER_DIR_SIZE, ttbr0_el1);
+	isb();
+	/* Set reserved ASID */
+	write_sysreg(ttbr, ttbr1_el1);
+	isb();
+	local_irq_restore(flags);
+}
+
+static inline void __uaccess_ttbr0_enable(void)
+{
+	unsigned long flags, ttbr0, ttbr1;
+
+	/*
+	 * Disable interrupts to avoid preemption between reading the 'ttbr0'
+	 * variable and the MSR. A context switch could trigger an ASID
+	 * roll-over and an update of 'ttbr0'.
+	 */
+	local_irq_save(flags);
+	ttbr0 = READ_ONCE(current_thread_info()->ttbr0);
+
+	/* Restore active ASID */
+	ttbr1 = read_sysreg(ttbr1_el1);
+	ttbr1 &= ~TTBR_ASID_MASK;		/* safety measure */
+	ttbr1 |= ttbr0 & TTBR_ASID_MASK;
+	write_sysreg(ttbr1, ttbr1_el1);
+	isb();
+
+	/* Restore user page table */
+	write_sysreg(ttbr0, ttbr0_el1);
+	isb();
+	local_irq_restore(flags);
+}
+
+static inline bool uaccess_ttbr0_disable(void)
+{
+	if (!system_uses_ttbr0_pan())
+		return false;
+	__uaccess_ttbr0_disable();
+	return true;
+}
+
+static inline bool uaccess_ttbr0_enable(void)
+{
+	if (!system_uses_ttbr0_pan())
+		return false;
+	__uaccess_ttbr0_enable();
+	return true;
+}
+#else
+static inline bool uaccess_ttbr0_disable(void)
+{
+	return false;
+}
+
+static inline bool uaccess_ttbr0_enable(void)
+{
+	return false;
+}
+#endif
+
+#define __uaccess_disable(alt)						\
+do {									\
+	if (!uaccess_ttbr0_disable())					\
+		asm(ALTERNATIVE("nop", SET_PSTATE_PAN(1), alt,		\
+				CONFIG_ARM64_PAN));			\
+} while (0)
+
+#define __uaccess_enable(alt)						\
+do {									\
+	if (!uaccess_ttbr0_enable())					\
+		asm(ALTERNATIVE("nop", SET_PSTATE_PAN(0), alt,		\
+				CONFIG_ARM64_PAN));			\
+} while (0)
+
+static inline void uaccess_disable(void)
+{
+	__uaccess_disable(ARM64_HAS_PAN);
+}
+
+static inline void uaccess_enable(void)
+{
+	__uaccess_enable(ARM64_HAS_PAN);
+}
+
+/*
+ * These functions are no-ops when UAO is present.
+ */
+static inline void uaccess_disable_not_uao(void)
+{
+	__uaccess_disable(ARM64_ALT_PAN_NOT_UAO);
+}
+
+static inline void uaccess_enable_not_uao(void)
+{
+	__uaccess_enable(ARM64_ALT_PAN_NOT_UAO);
+}
 
 /*
  * The "__xxx" versions of the user access functions do not verify the address
@@ -142,7 +257,10 @@ static inline void set_fs(mm_segment_t fs)
 	"	mov	%1, #0\n"					\
 	"	b	2b\n"						\
 	"	.previous\n"						\
-	_ASM_EXTABLE(1b, 3b)						\
+	"	.section __ex_table,\"a\"\n"				\
+	"	.align	3\n"						\
+	"	.quad	1b, 3b\n"					\
+	"	.previous"						\
 	: "+r" (err), "=&r" (x)						\
 	: "r" (addr), "i" (-EFAULT))
 
@@ -150,8 +268,7 @@ static inline void set_fs(mm_segment_t fs)
 do {									\
 	unsigned long __gu_val;						\
 	__chk_user_ptr(ptr);						\
-	asm(ALTERNATIVE("nop", SET_PSTATE_PAN(0), ARM64_ALT_PAN_NOT_UAO,\
-			CONFIG_ARM64_PAN));				\
+	uaccess_enable_not_uao();					\
 	switch (sizeof(*(ptr))) {					\
 	case 1:								\
 		__get_user_asm("ldrb", "ldtrb", "%w", __gu_val, (ptr),  \
@@ -172,9 +289,8 @@ do {									\
 	default:							\
 		BUILD_BUG();						\
 	}								\
+	uaccess_disable_not_uao();					\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
-	asm(ALTERNATIVE("nop", SET_PSTATE_PAN(1), ARM64_ALT_PAN_NOT_UAO,\
-			CONFIG_ARM64_PAN));				\
 } while (0)
 
 #define __get_user(x, ptr)						\
@@ -211,7 +327,10 @@ do {									\
 	"3:	mov	%w0, %3\n"					\
 	"	b	2b\n"						\
 	"	.previous\n"						\
-	_ASM_EXTABLE(1b, 3b)						\
+	"	.section __ex_table,\"a\"\n"				\
+	"	.align	3\n"						\
+	"	.quad	1b, 3b\n"					\
+	"	.previous"						\
 	: "+r" (err)							\
 	: "r" (x), "r" (addr), "i" (-EFAULT))
 
@@ -219,8 +338,7 @@ do {									\
 do {									\
 	__typeof__(*(ptr)) __pu_val = (x);				\
 	__chk_user_ptr(ptr);						\
-	asm(ALTERNATIVE("nop", SET_PSTATE_PAN(0), ARM64_ALT_PAN_NOT_UAO,\
-			CONFIG_ARM64_PAN));				\
+	uaccess_enable_not_uao();					\
 	switch (sizeof(*(ptr))) {					\
 	case 1:								\
 		__put_user_asm("strb", "sttrb", "%w", __pu_val, (ptr),	\
@@ -241,8 +359,7 @@ do {									\
 	default:							\
 		BUILD_BUG();						\
 	}								\
-	asm(ALTERNATIVE("nop", SET_PSTATE_PAN(1), ARM64_ALT_PAN_NOT_UAO,\
-			CONFIG_ARM64_PAN));				\
+	uaccess_disable_not_uao();					\
 } while (0)
 
 #define __put_user(x, ptr)						\
@@ -326,5 +443,78 @@ extern long strncpy_from_user(char *dest, const char __user *src, long count);
 
 extern __must_check long strlen_user(const char __user *str);
 extern __must_check long strnlen_user(const char __user *str, long n);
+
+#else	/* __ASSEMBLY__ */
+
+#include <asm/assembler.h>
+
+/*
+ * User access enabling/disabling macros.
+ */
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	.macro	__uaccess_ttbr0_disable, tmp1
+	mrs	\tmp1, ttbr1_el1		// swapper_pg_dir
+	bic	\tmp1, \tmp1, #TTBR_ASID_MASK
+	add	\tmp1, \tmp1, #SWAPPER_DIR_SIZE	// reserved_ttbr0 at the end of swapper_pg_dir
+	msr	ttbr0_el1, \tmp1		// set reserved TTBR0_EL1
+	isb
+	sub	\tmp1, \tmp1, #SWAPPER_DIR_SIZE
+	msr	ttbr1_el1, \tmp1		// set reserved ASID
+	isb
+	.endm
+
+	.macro	__uaccess_ttbr0_enable, tmp1, tmp2
+	get_thread_info \tmp1
+	ldr	\tmp1, [\tmp1, #TSK_TI_TTBR0]	// load saved TTBR0_EL1
+	mrs	\tmp2, ttbr1_el1
+	extr    \tmp2, \tmp2, \tmp1, #48
+	ror     \tmp2, \tmp2, #16
+	msr	ttbr1_el1, \tmp2		// set the active ASID
+	isb
+	msr	ttbr0_el1, \tmp1		// set the non-PAN TTBR0_EL1
+	isb
+	.endm
+
+	.macro	uaccess_ttbr0_disable, tmp1, tmp2
+alternative_if_not ARM64_HAS_PAN
+	save_and_disable_irq \tmp2		// avoid preemption
+	__uaccess_ttbr0_disable \tmp1
+	restore_irq \tmp2
+alternative_else_nop_endif
+	.endm
+
+	.macro	uaccess_ttbr0_enable, tmp1, tmp2, tmp3
+alternative_if_not ARM64_HAS_PAN
+	save_and_disable_irq \tmp3		// avoid preemption
+	__uaccess_ttbr0_enable \tmp1, \tmp2
+	restore_irq \tmp3
+alternative_else_nop_endif
+	.endm
+#else
+	.macro	uaccess_ttbr0_disable, tmp1, tmp2
+	.endm
+
+	.macro	uaccess_ttbr0_enable, tmp1, tmp2, tmp3
+	.endm
+#endif
+
+/*
+ * These macros are no-ops when UAO is present.
+ */
+	.macro	uaccess_disable_not_uao, tmp1, tmp2
+	uaccess_ttbr0_disable \tmp1, \tmp2
+alternative_if ARM64_ALT_PAN_NOT_UAO
+	SET_PSTATE_PAN(1)
+alternative_else_nop_endif
+	.endm
+
+	.macro	uaccess_enable_not_uao, tmp1, tmp2, tmp3
+	uaccess_ttbr0_enable \tmp1, \tmp2, \tmp3
+alternative_if ARM64_ALT_PAN_NOT_UAO
+	SET_PSTATE_PAN(0)
+alternative_else_nop_endif
+	.endm
+
+#endif	/* __ASSEMBLY__ */
 
 #endif /* __ASM_UACCESS_H */

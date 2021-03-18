@@ -21,7 +21,9 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
+#include "xfs_inum.h"
 #include "xfs_sb.h"
+#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_da_format.h"
 #include "xfs_inode.h"
@@ -42,6 +44,7 @@
 #include "xfs_icache.h"
 #include "xfs_trace.h"
 #include "xfs_icreate_item.h"
+#include "xfs_dinode.h"
 #include "xfs_filestream.h"
 #include "xfs_quota.h"
 #include "xfs_sysfs.h"
@@ -109,10 +112,10 @@ static struct xfs_kobj xfs_dbg_kobj;	/* global debug sysfs attrs */
 #define MNTOPT_GQUOTANOENF "gqnoenforce"/* group quota limit enforcement */
 #define MNTOPT_PQUOTANOENF "pqnoenforce"/* project quota limit enforcement */
 #define MNTOPT_QUOTANOENF  "qnoenforce"	/* same as uqnoenforce */
+#define MNTOPT_DELAYLOG    "delaylog"	/* Delayed logging enabled */
+#define MNTOPT_NODELAYLOG  "nodelaylog"	/* Delayed logging disabled */
 #define MNTOPT_DISCARD	   "discard"	/* Discard unused blocks */
 #define MNTOPT_NODISCARD   "nodiscard"	/* Do not discard unused blocks */
-
-#define MNTOPT_DAX	"dax"		/* Enable direct access to bdev pages */
 
 /*
  * Table driven mount option parser.
@@ -261,8 +264,16 @@ xfs_parseargs(
 			mp->m_rtname = kstrndup(value, MAXNAMELEN, GFP_KERNEL);
 			if (!mp->m_rtname)
 				return -ENOMEM;
-		} else if (!strcmp(this_char, MNTOPT_ALLOCSIZE) ||
-			   !strcmp(this_char, MNTOPT_BIOSIZE)) {
+		} else if (!strcmp(this_char, MNTOPT_BIOSIZE)) {
+			if (!value || !*value) {
+				xfs_warn(mp, "%s option requires an argument",
+					this_char);
+				return -EINVAL;
+			}
+			if (kstrtoint(value, 10, &iosize))
+				return -EINVAL;
+			iosizelog = ffs(iosize) - 1;
+		} else if (!strcmp(this_char, MNTOPT_ALLOCSIZE)) {
 			if (!value || !*value) {
 				xfs_warn(mp, "%s option requires an argument",
 					this_char);
@@ -353,14 +364,28 @@ xfs_parseargs(
 		} else if (!strcmp(this_char, MNTOPT_GQUOTANOENF)) {
 			mp->m_qflags |= (XFS_GQUOTA_ACCT | XFS_GQUOTA_ACTIVE);
 			mp->m_qflags &= ~XFS_GQUOTA_ENFD;
+		} else if (!strcmp(this_char, MNTOPT_DELAYLOG)) {
+			xfs_warn(mp,
+	"delaylog is the default now, option is deprecated.");
+		} else if (!strcmp(this_char, MNTOPT_NODELAYLOG)) {
+			xfs_warn(mp,
+	"nodelaylog support has been removed, option is deprecated.");
 		} else if (!strcmp(this_char, MNTOPT_DISCARD)) {
 			mp->m_flags |= XFS_MOUNT_DISCARD;
 		} else if (!strcmp(this_char, MNTOPT_NODISCARD)) {
 			mp->m_flags &= ~XFS_MOUNT_DISCARD;
-#ifdef CONFIG_FS_DAX
-		} else if (!strcmp(this_char, MNTOPT_DAX)) {
-			mp->m_flags |= XFS_MOUNT_DAX;
-#endif
+		} else if (!strcmp(this_char, "ihashsize")) {
+			xfs_warn(mp,
+	"ihashsize no longer used, option is deprecated.");
+		} else if (!strcmp(this_char, "osyncisdsync")) {
+			xfs_warn(mp,
+	"osyncisdsync has no effect, option is deprecated.");
+		} else if (!strcmp(this_char, "osyncisosync")) {
+			xfs_warn(mp,
+	"osyncisosync has no effect, option is deprecated.");
+		} else if (!strcmp(this_char, "irixsgid")) {
+			xfs_warn(mp,
+	"irixsgid is now a sysctl(2) variable, option is deprecated.");
 		} else {
 			xfs_warn(mp, "unknown mount option [%s].", this_char);
 			return -EINVAL;
@@ -450,8 +475,8 @@ done:
 }
 
 struct proc_xfs_info {
-	uint64_t	flag;
-	char		*str;
+	int	flag;
+	char	*str;
 };
 
 STATIC int
@@ -472,7 +497,6 @@ xfs_showargs(
 		{ XFS_MOUNT_GRPID,		"," MNTOPT_GRPID },
 		{ XFS_MOUNT_DISCARD,		"," MNTOPT_DISCARD },
 		{ XFS_MOUNT_SMALL_INUMS,	"," MNTOPT_32BITINODE },
-		{ XFS_MOUNT_DAX,		"," MNTOPT_DAX },
 		{ 0, NULL }
 	};
 	static struct proc_xfs_info xfs_info_unset[] = {
@@ -503,9 +527,9 @@ xfs_showargs(
 		seq_printf(m, "," MNTOPT_LOGBSIZE "=%dk", mp->m_logbsize >> 10);
 
 	if (mp->m_logname)
-		seq_show_option(m, MNTOPT_LOGDEV, mp->m_logname);
+		seq_printf(m, "," MNTOPT_LOGDEV "=%s", mp->m_logname);
 	if (mp->m_rtname)
-		seq_show_option(m, MNTOPT_RTDEV, mp->m_rtname);
+		seq_printf(m, "," MNTOPT_RTDEV "=%s", mp->m_rtname);
 
 	if (mp->m_dalign > 0)
 		seq_printf(m, "," MNTOPT_SUNIT "=%d",
@@ -664,7 +688,7 @@ xfs_blkdev_get(
 				    mp);
 	if (IS_ERR(*bdevp)) {
 		error = PTR_ERR(*bdevp);
-		xfs_warn(mp, "Invalid device [%s], error=%d", name, error);
+		xfs_warn(mp, "Invalid device [%s], error=%d\n", name, error);
 	}
 
 	return error;
@@ -772,7 +796,8 @@ xfs_open_devices(
  out_free_ddev_targ:
 	xfs_free_buftarg(mp, mp->m_ddev_targp);
  out_close_rtdev:
-	xfs_blkdev_put(rtdev);
+	if (rtdev)
+		xfs_blkdev_put(rtdev);
  out_close_logdev:
 	if (logdev && logdev != ddev)
 		xfs_blkdev_put(logdev);
@@ -817,15 +842,10 @@ STATIC int
 xfs_init_mount_workqueues(
 	struct xfs_mount	*mp)
 {
-	mp->m_buf_workqueue = alloc_workqueue("xfs-buf/%s",
-			WQ_MEM_RECLAIM|WQ_FREEZABLE, 1, mp->m_fsname);
-	if (!mp->m_buf_workqueue)
-		goto out;
-
 	mp->m_data_workqueue = alloc_workqueue("xfs-data/%s",
 			WQ_MEM_RECLAIM|WQ_FREEZABLE, 0, mp->m_fsname);
 	if (!mp->m_data_workqueue)
-		goto out_destroy_buf;
+		goto out;
 
 	mp->m_unwritten_workqueue = alloc_workqueue("xfs-conv/%s",
 			WQ_MEM_RECLAIM|WQ_FREEZABLE, 0, mp->m_fsname);
@@ -838,18 +858,17 @@ xfs_init_mount_workqueues(
 		goto out_destroy_unwritten;
 
 	mp->m_reclaim_workqueue = alloc_workqueue("xfs-reclaim/%s",
-			WQ_MEM_RECLAIM|WQ_FREEZABLE, 0, mp->m_fsname);
+			WQ_FREEZABLE, 0, mp->m_fsname);
 	if (!mp->m_reclaim_workqueue)
 		goto out_destroy_cil;
 
 	mp->m_log_workqueue = alloc_workqueue("xfs-log/%s",
-			WQ_MEM_RECLAIM|WQ_FREEZABLE|WQ_HIGHPRI, 0,
-			mp->m_fsname);
+			WQ_FREEZABLE, 0, mp->m_fsname);
 	if (!mp->m_log_workqueue)
 		goto out_destroy_reclaim;
 
 	mp->m_eofblocks_workqueue = alloc_workqueue("xfs-eofblocks/%s",
-			WQ_MEM_RECLAIM|WQ_FREEZABLE, 0, mp->m_fsname);
+			WQ_FREEZABLE, 0, mp->m_fsname);
 	if (!mp->m_eofblocks_workqueue)
 		goto out_destroy_log;
 
@@ -865,8 +884,6 @@ out_destroy_unwritten:
 	destroy_workqueue(mp->m_unwritten_workqueue);
 out_destroy_data_iodone_queue:
 	destroy_workqueue(mp->m_data_workqueue);
-out_destroy_buf:
-	destroy_workqueue(mp->m_buf_workqueue);
 out:
 	return -ENOMEM;
 }
@@ -881,7 +898,6 @@ xfs_destroy_mount_workqueues(
 	destroy_workqueue(mp->m_cil_workqueue);
 	destroy_workqueue(mp->m_data_workqueue);
 	destroy_workqueue(mp->m_unwritten_workqueue);
-	destroy_workqueue(mp->m_buf_workqueue);
 }
 
 /*
@@ -923,7 +939,7 @@ xfs_fs_destroy_inode(
 
 	trace_xfs_destroy_inode(ip);
 
-	XFS_STATS_INC(ip->i_mount, vn_reclaim);
+	XFS_STATS_INC(vn_reclaim);
 
 	ASSERT(XFS_FORCED_SHUTDOWN(ip->i_mount) || ip->i_delayed_blks == 0);
 
@@ -966,8 +982,6 @@ xfs_fs_inode_init_once(
 	atomic_set(&ip->i_pincount, 0);
 	spin_lock_init(&ip->i_flags_lock);
 
-	mrlock_init(&ip->i_mmaplock, MRLOCK_ALLOW_EQUAL_PRI|MRLOCK_BARRIER,
-		     "xfsino", ip->i_ino);
 	mrlock_init(&ip->i_lock, MRLOCK_ALLOW_EQUAL_PRI|MRLOCK_BARRIER,
 		     "xfsino", ip->i_ino);
 }
@@ -984,8 +998,9 @@ xfs_fs_evict_inode(
 
 	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
-	XFS_STATS_INC(ip->i_mount, vn_rele);
-	XFS_STATS_INC(ip->i_mount, vn_remove);
+	XFS_STATS_INC(vn_rele);
+	XFS_STATS_INC(vn_remove);
+	XFS_STATS_DEC(vn_active);
 
 	xfs_inactive(ip);
 }
@@ -1013,6 +1028,23 @@ xfs_free_fsname(
 	kfree(mp->m_fsname);
 	kfree(mp->m_rtname);
 	kfree(mp->m_logname);
+}
+
+STATIC void
+xfs_fs_put_super(
+	struct super_block	*sb)
+{
+	struct xfs_mount	*mp = XFS_M(sb);
+
+	xfs_filestream_unmount(mp);
+	xfs_unmountfs(mp);
+
+	xfs_freesb(mp);
+	xfs_icsb_destroy_counters(mp);
+	xfs_destroy_mount_workqueues(mp);
+	xfs_close_devices(mp);
+	xfs_free_fsname(mp);
+	kfree(mp);
 }
 
 STATIC int
@@ -1048,11 +1080,8 @@ xfs_fs_statfs(
 {
 	struct xfs_mount	*mp = XFS_M(dentry->d_sb);
 	xfs_sb_t		*sbp = &mp->m_sb;
-	struct xfs_inode	*ip = XFS_I(d_inode(dentry));
+	struct xfs_inode	*ip = XFS_I(dentry->d_inode);
 	__uint64_t		fakeinos, id;
-	__uint64_t		icount;
-	__uint64_t		ifree;
-	__uint64_t		fdblocks;
 	xfs_extlen_t		lsize;
 	__int64_t		ffree;
 
@@ -1063,35 +1092,27 @@ xfs_fs_statfs(
 	statp->f_fsid.val[0] = (u32)id;
 	statp->f_fsid.val[1] = (u32)(id >> 32);
 
-	icount = percpu_counter_sum(&mp->m_icount);
-	ifree = percpu_counter_sum(&mp->m_ifree);
-	fdblocks = percpu_counter_sum(&mp->m_fdblocks);
+	xfs_icsb_sync_counters(mp, XFS_ICSB_LAZY_COUNT);
 
 	spin_lock(&mp->m_sb_lock);
 	statp->f_bsize = sbp->sb_blocksize;
 	lsize = sbp->sb_logstart ? sbp->sb_logblocks : 0;
 	statp->f_blocks = sbp->sb_dblocks - lsize;
-	spin_unlock(&mp->m_sb_lock);
-
-	statp->f_bfree = fdblocks - XFS_ALLOC_SET_ASIDE(mp);
-	statp->f_bavail = statp->f_bfree;
-
+	statp->f_bfree = statp->f_bavail =
+				sbp->sb_fdblocks - XFS_ALLOC_SET_ASIDE(mp);
 	fakeinos = statp->f_bfree << sbp->sb_inopblog;
-	statp->f_files = MIN(icount + fakeinos, (__uint64_t)XFS_MAXINUMBER);
+	statp->f_files =
+	    MIN(sbp->sb_icount + fakeinos, (__uint64_t)XFS_MAXINUMBER);
 	if (mp->m_maxicount)
 		statp->f_files = min_t(typeof(statp->f_files),
 					statp->f_files,
 					mp->m_maxicount);
 
-	/* If sb_icount overshot maxicount, report actual allocation */
-	statp->f_files = max_t(typeof(statp->f_files),
-					statp->f_files,
-					sbp->sb_icount);
-
 	/* make sure statp->f_ffree does not underflow */
-	ffree = statp->f_files - (icount - ifree);
+	ffree = statp->f_files - (sbp->sb_icount - sbp->sb_ifree);
 	statp->f_ffree = max_t(__int64_t, ffree, 0);
 
+	spin_unlock(&mp->m_sb_lock);
 
 	if ((ip->i_d.di_flags & XFS_DIFLAG_PROJINHERIT) &&
 	    ((mp->m_qflags & (XFS_PQUOTA_ACCT|XFS_PQUOTA_ENFD))) ==
@@ -1227,35 +1248,19 @@ xfs_fs_remount(
 
 	/* ro -> rw */
 	if ((mp->m_flags & XFS_MOUNT_RDONLY) && !(*flags & MS_RDONLY)) {
-		if (mp->m_flags & XFS_MOUNT_NORECOVERY) {
-			xfs_warn(mp,
-		"ro->rw transition prohibited on norecovery mount");
-			return -EINVAL;
-		}
-
-		if (XFS_SB_VERSION_NUM(sbp) == XFS_SB_VERSION_5 &&
-		    xfs_sb_has_ro_compat_feature(sbp,
-					XFS_SB_FEAT_RO_COMPAT_UNKNOWN)) {
-			xfs_warn(mp,
-"ro->rw transition prohibited on unknown (0x%x) ro-compat filesystem",
-				(sbp->sb_features_ro_compat &
-					XFS_SB_FEAT_RO_COMPAT_UNKNOWN));
-			return -EINVAL;
-		}
-
 		mp->m_flags &= ~XFS_MOUNT_RDONLY;
 
 		/*
 		 * If this is the first remount to writeable state we
 		 * might have some superblock changes to update.
 		 */
-		if (mp->m_update_sb) {
-			error = xfs_sync_sb(mp, false);
+		if (mp->m_update_flags) {
+			error = xfs_mount_log_sb(mp, mp->m_update_flags);
 			if (error) {
 				xfs_warn(mp, "failed to write sb changes");
 				return error;
 			}
-			mp->m_update_sb = false;
+			mp->m_update_flags = 0;
 		}
 
 		/*
@@ -1285,9 +1290,8 @@ xfs_fs_remount(
 
 /*
  * Second stage of a freeze. The data is already frozen so we only
- * need to take care of the metadata. Once that's done sync the superblock
- * to the log to dirty it in case of a crash while frozen. This ensures that we
- * will recover the unlinked inode lists on the next mount.
+ * need to take care of the metadata. Once that's done write a dummy
+ * record to dirty the log in case of a crash while frozen.
  */
 STATIC int
 xfs_fs_freeze(
@@ -1297,7 +1301,7 @@ xfs_fs_freeze(
 
 	xfs_save_resvblks(mp);
 	xfs_quiesce_attr(mp);
-	return xfs_sync_sb(mp, true);
+	return xfs_fs_log_dummy(mp);
 }
 
 STATIC int
@@ -1388,51 +1392,6 @@ xfs_finish_flags(
 	return 0;
 }
 
-static int
-xfs_init_percpu_counters(
-	struct xfs_mount	*mp)
-{
-	int		error;
-
-	error = percpu_counter_init(&mp->m_icount, 0, GFP_KERNEL);
-	if (error)
-		return -ENOMEM;
-
-	error = percpu_counter_init(&mp->m_ifree, 0, GFP_KERNEL);
-	if (error)
-		goto free_icount;
-
-	error = percpu_counter_init(&mp->m_fdblocks, 0, GFP_KERNEL);
-	if (error)
-		goto free_ifree;
-
-	return 0;
-
-free_ifree:
-	percpu_counter_destroy(&mp->m_ifree);
-free_icount:
-	percpu_counter_destroy(&mp->m_icount);
-	return -ENOMEM;
-}
-
-void
-xfs_reinit_percpu_counters(
-	struct xfs_mount	*mp)
-{
-	percpu_counter_set(&mp->m_icount, mp->m_sb.sb_icount);
-	percpu_counter_set(&mp->m_ifree, mp->m_sb.sb_ifree);
-	percpu_counter_set(&mp->m_fdblocks, mp->m_sb.sb_fdblocks);
-}
-
-static void
-xfs_destroy_percpu_counters(
-	struct xfs_mount	*mp)
-{
-	percpu_counter_destroy(&mp->m_icount);
-	percpu_counter_destroy(&mp->m_ifree);
-	percpu_counter_destroy(&mp->m_fdblocks);
-}
-
 STATIC int
 xfs_fs_fill_super(
 	struct super_block	*sb,
@@ -1466,7 +1425,6 @@ xfs_fs_fill_super(
 	sb->s_export_op = &xfs_export_operations;
 #ifdef CONFIG_XFS_QUOTA
 	sb->s_qcop = &xfs_quotactl_operations;
-	sb->s_quota_types = QTYPE_MASK_USR | QTYPE_MASK_GRP | QTYPE_MASK_PRJ;
 #endif
 	sb->s_op = &xfs_super_operations;
 
@@ -1481,20 +1439,13 @@ xfs_fs_fill_super(
 	if (error)
 		goto out_close_devices;
 
-	error = xfs_init_percpu_counters(mp);
+	error = xfs_icsb_init_counters(mp);
 	if (error)
 		goto out_destroy_workqueues;
 
-	/* Allocate stats memory before we do operations that might use it */
-	mp->m_stats.xs_stats = alloc_percpu(struct xfsstats);
-	if (!mp->m_stats.xs_stats) {
-		error = -ENOMEM;
-		goto out_destroy_counters;
-	}
-
 	error = xfs_readsb(mp, flags);
 	if (error)
-		goto out_free_stats;
+		goto out_destroy_counters;
 
 	error = xfs_finish_flags(mp);
 	if (error)
@@ -1524,24 +1475,6 @@ xfs_fs_fill_super(
 	if (XFS_SB_VERSION_NUM(&mp->m_sb) == XFS_SB_VERSION_5)
 		sb->s_flags |= MS_I_VERSION;
 
-	if (mp->m_flags & XFS_MOUNT_DAX) {
-		xfs_warn(mp,
-	"DAX enabled. Warning: EXPERIMENTAL, use at your own risk");
-		if (sb->s_blocksize != PAGE_SIZE) {
-			xfs_alert(mp,
-		"Filesystem block size invalid for DAX Turning DAX off.");
-			mp->m_flags &= ~XFS_MOUNT_DAX;
-		} else if (!sb->s_bdev->bd_disk->fops->direct_access) {
-			xfs_alert(mp,
-		"Block device does not support DAX Turning DAX off.");
-			mp->m_flags &= ~XFS_MOUNT_DAX;
-		}
-	}
-
-	if (xfs_sb_version_hassparseinodes(&mp->m_sb))
-		xfs_alert(mp,
-	"EXPERIMENTAL sparse inode feature enabled. Use at your own risk!");
-
 	error = xfs_mountfs(mp);
 	if (error)
 		goto out_filestream_unmount;
@@ -1563,11 +1496,9 @@ xfs_fs_fill_super(
 	xfs_filestream_unmount(mp);
  out_free_sb:
 	xfs_freesb(mp);
- out_free_stats:
-	free_percpu(mp->m_stats.xs_stats);
  out_destroy_counters:
-	xfs_destroy_percpu_counters(mp);
- out_destroy_workqueues:
+	xfs_icsb_destroy_counters(mp);
+out_destroy_workqueues:
 	xfs_destroy_mount_workqueues(mp);
  out_close_devices:
 	xfs_close_devices(mp);
@@ -1583,25 +1514,6 @@ xfs_fs_fill_super(
 	goto out_free_sb;
 }
 
-STATIC void
-xfs_fs_put_super(
-	struct super_block	*sb)
-{
-	struct xfs_mount	*mp = XFS_M(sb);
-
-	xfs_notice(mp, "Unmounting Filesystem");
-	xfs_filestream_unmount(mp);
-	xfs_unmountfs(mp);
-
-	xfs_freesb(mp);
-	free_percpu(mp->m_stats.xs_stats);
-	xfs_destroy_percpu_counters(mp);
-	xfs_destroy_mount_workqueues(mp);
-	xfs_close_devices(mp);
-	xfs_free_fsname(mp);
-	kfree(mp);
-}
-
 STATIC struct dentry *
 xfs_fs_mount(
 	struct file_system_type	*fs_type,
@@ -1615,7 +1527,7 @@ xfs_fs_mount(
 static long
 xfs_fs_nr_cached_objects(
 	struct super_block	*sb,
-	struct shrink_control	*sc)
+	int			nid)
 {
 	return xfs_reclaim_inodes_count(XFS_M(sb));
 }
@@ -1623,9 +1535,10 @@ xfs_fs_nr_cached_objects(
 static long
 xfs_fs_free_cached_objects(
 	struct super_block	*sb,
-	struct shrink_control	*sc)
+	long			nr_to_scan,
+	int			nid)
 {
-	return xfs_reclaim_inodes_nr(XFS_M(sb), sc->nr_to_scan);
+	return xfs_reclaim_inodes_nr(XFS_M(sb), nr_to_scan);
 }
 
 static const struct super_operations xfs_super_operations = {
@@ -1859,32 +1772,19 @@ init_xfs_fs(void)
 	xfs_kset = kset_create_and_add("xfs", NULL, fs_kobj);
 	if (!xfs_kset) {
 		error = -ENOMEM;
-		goto out_sysctl_unregister;
+		goto out_sysctl_unregister;;
 	}
-
-	xfsstats.xs_kobj.kobject.kset = xfs_kset;
-
-	xfsstats.xs_stats = alloc_percpu(struct xfsstats);
-	if (!xfsstats.xs_stats) {
-		error = -ENOMEM;
-		goto out_kset_unregister;
-	}
-
-	error = xfs_sysfs_init(&xfsstats.xs_kobj, &xfs_stats_ktype, NULL,
-			       "stats");
-	if (error)
-		goto out_free_stats;
 
 #ifdef DEBUG
 	xfs_dbg_kobj.kobject.kset = xfs_kset;
 	error = xfs_sysfs_init(&xfs_dbg_kobj, &xfs_dbg_ktype, NULL, "debug");
 	if (error)
-		goto out_remove_stats_kobj;
+		goto out_kset_unregister;
 #endif
 
 	error = xfs_qm_init();
 	if (error)
-		goto out_remove_dbg_kobj;
+		goto out_remove_kobj;
 
 	error = register_filesystem(&xfs_fs_type);
 	if (error)
@@ -1893,15 +1793,11 @@ init_xfs_fs(void)
 
  out_qm_exit:
 	xfs_qm_exit();
- out_remove_dbg_kobj:
+ out_remove_kobj:
 #ifdef DEBUG
 	xfs_sysfs_del(&xfs_dbg_kobj);
- out_remove_stats_kobj:
-#endif
-	xfs_sysfs_del(&xfsstats.xs_kobj);
- out_free_stats:
-	free_percpu(xfsstats.xs_stats);
  out_kset_unregister:
+#endif
 	kset_unregister(xfs_kset);
  out_sysctl_unregister:
 	xfs_sysctl_unregister();
@@ -1927,8 +1823,6 @@ exit_xfs_fs(void)
 #ifdef DEBUG
 	xfs_sysfs_del(&xfs_dbg_kobj);
 #endif
-	xfs_sysfs_del(&xfsstats.xs_kobj);
-	free_percpu(xfsstats.xs_stats);
 	kset_unregister(xfs_kset);
 	xfs_sysctl_unregister();
 	xfs_cleanup_procfs();
@@ -1936,7 +1830,6 @@ exit_xfs_fs(void)
 	xfs_mru_cache_uninit();
 	xfs_destroy_workqueues();
 	xfs_destroy_zones();
-	xfs_uuid_table_free();
 }
 
 module_init(init_xfs_fs);

@@ -77,5 +77,7 @@ int kvm_reset_vcpu(struct kvm_vcpu *vcpu)
 	kvm_reset_coprocs(vcpu);
 
 	/* Reset arch_timer context */
-	return kvm_timer_vcpu_reset(vcpu, cpu_vtimer_irq);
+	kvm_timer_vcpu_reset(vcpu, cpu_vtimer_irq);
+
+	return 0;
 }

@@ -12,6 +12,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -23,6 +27,7 @@
 #include <asm/cacheflush.h>
 #include <asm/smp_plat.h>
 #include <asm/smp_scu.h>
+#include <asm/smp_twd.h>
 
 #include "common.h"
 #include "pm-rcar.h"
@@ -31,33 +36,41 @@
 #define AVECR IOMEM(0xfe700040)
 #define R8A7779_SCU_BASE 0xf0000000
 
-static const struct rcar_sysc_ch r8a7779_ch_cpu1 = {
+static struct rcar_sysc_ch r8a7779_ch_cpu1 = {
 	.chan_offs = 0x40, /* PWRSR0 .. PWRER0 */
 	.chan_bit = 1, /* ARM1 */
 	.isr_bit = 1, /* ARM1 */
 };
 
-static const struct rcar_sysc_ch r8a7779_ch_cpu2 = {
+static struct rcar_sysc_ch r8a7779_ch_cpu2 = {
 	.chan_offs = 0x40, /* PWRSR0 .. PWRER0 */
 	.chan_bit = 2, /* ARM2 */
 	.isr_bit = 2, /* ARM2 */
 };
 
-static const struct rcar_sysc_ch r8a7779_ch_cpu3 = {
+static struct rcar_sysc_ch r8a7779_ch_cpu3 = {
 	.chan_offs = 0x40, /* PWRSR0 .. PWRER0 */
 	.chan_bit = 3, /* ARM3 */
 	.isr_bit = 3, /* ARM3 */
 };
 
-static const struct rcar_sysc_ch * const r8a7779_ch_cpu[4] = {
+static struct rcar_sysc_ch *r8a7779_ch_cpu[4] = {
 	[1] = &r8a7779_ch_cpu1,
 	[2] = &r8a7779_ch_cpu2,
 	[3] = &r8a7779_ch_cpu3,
 };
 
+#ifdef CONFIG_HAVE_ARM_TWD
+static DEFINE_TWD_LOCAL_TIMER(twd_local_timer, R8A7779_SCU_BASE + 0x600, 29);
+void __init r8a7779_register_twd(void)
+{
+	twd_local_timer_register(&twd_local_timer);
+}
+#endif
+
 static int r8a7779_platform_cpu_kill(unsigned int cpu)
 {
-	const struct rcar_sysc_ch *ch = NULL;
+	struct rcar_sysc_ch *ch = NULL;
 	int ret = -EIO;
 
 	cpu = cpu_logical_map(cpu);
@@ -73,7 +86,7 @@ static int r8a7779_platform_cpu_kill(unsigned int cpu)
 
 static int r8a7779_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	const struct rcar_sysc_ch *ch = NULL;
+	struct rcar_sysc_ch *ch = NULL;
 	unsigned int lcpu = cpu_logical_map(cpu);
 	int ret;
 
@@ -115,12 +128,19 @@ static int r8a7779_cpu_kill(unsigned int cpu)
 
 	return 0;
 }
+
+static int r8a7779_cpu_disable(unsigned int cpu)
+{
+	/* only CPU1->3 have power domains, do not allow hotplug of CPU0 */
+	return cpu == 0 ? -EPERM : 0;
+}
 #endif /* CONFIG_HOTPLUG_CPU */
 
 struct smp_operations r8a7779_smp_ops  __initdata = {
 	.smp_prepare_cpus	= r8a7779_smp_prepare_cpus,
 	.smp_boot_secondary	= r8a7779_boot_secondary,
 #ifdef CONFIG_HOTPLUG_CPU
+	.cpu_disable		= r8a7779_cpu_disable,
 	.cpu_die		= shmobile_smp_scu_cpu_die,
 	.cpu_kill		= r8a7779_cpu_kill,
 #endif

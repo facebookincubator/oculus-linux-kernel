@@ -61,12 +61,12 @@ static inline struct pit_data *clkevt_to_pit_data(struct clock_event_device *clk
 
 static inline unsigned int pit_read(void __iomem *base, unsigned int reg_offset)
 {
-	return readl_relaxed(base + reg_offset);
+	return __raw_readl(base + reg_offset);
 }
 
 static inline void pit_write(void __iomem *base, unsigned int reg_offset, unsigned long value)
 {
-	writel_relaxed(value, base + reg_offset);
+	__raw_writel(value, base + reg_offset);
 }
 
 /*
@@ -90,27 +90,33 @@ static cycle_t read_pit_clk(struct clocksource *cs)
 	return elapsed;
 }
 
-static int pit_clkevt_shutdown(struct clock_event_device *dev)
-{
-	struct pit_data *data = clkevt_to_pit_data(dev);
-
-	/* disable irq, leaving the clocksource active */
-	pit_write(data->base, AT91_PIT_MR, (data->cycle - 1) | AT91_PIT_PITEN);
-	return 0;
-}
-
 /*
  * Clockevent device:  interrupts every 1/HZ (== pit_cycles * MCK/16)
  */
-static int pit_clkevt_set_periodic(struct clock_event_device *dev)
+static void
+pit_clkevt_mode(enum clock_event_mode mode, struct clock_event_device *dev)
 {
 	struct pit_data *data = clkevt_to_pit_data(dev);
 
-	/* update clocksource counter */
-	data->cnt += data->cycle * PIT_PICNT(pit_read(data->base, AT91_PIT_PIVR));
-	pit_write(data->base, AT91_PIT_MR,
-		  (data->cycle - 1) | AT91_PIT_PITEN | AT91_PIT_PITIEN);
-	return 0;
+	switch (mode) {
+	case CLOCK_EVT_MODE_PERIODIC:
+		/* update clocksource counter */
+		data->cnt += data->cycle * PIT_PICNT(pit_read(data->base, AT91_PIT_PIVR));
+		pit_write(data->base, AT91_PIT_MR,
+			  (data->cycle - 1) | AT91_PIT_PITEN | AT91_PIT_PITIEN);
+		break;
+	case CLOCK_EVT_MODE_ONESHOT:
+		BUG();
+		/* FALLTHROUGH */
+	case CLOCK_EVT_MODE_SHUTDOWN:
+	case CLOCK_EVT_MODE_UNUSED:
+		/* disable irq, leaving the clocksource active */
+		pit_write(data->base, AT91_PIT_MR,
+			  (data->cycle - 1) | AT91_PIT_PITEN);
+		break;
+	case CLOCK_EVT_MODE_RESUME:
+		break;
+	}
 }
 
 static void at91sam926x_pit_suspend(struct clock_event_device *cedev)
@@ -156,7 +162,7 @@ static irqreturn_t at91sam926x_pit_interrupt(int irq, void *dev_id)
 	WARN_ON_ONCE(!irqs_disabled());
 
 	/* The PIT interrupt may be disabled, and is shared */
-	if (clockevent_state_periodic(&data->clkevt) &&
+	if ((data->clkevt.mode == CLOCK_EVT_MODE_PERIODIC) &&
 	    (pit_read(data->base, AT91_PIT_SR) & AT91_PIT_PITS)) {
 		unsigned nr_ticks;
 
@@ -202,8 +208,8 @@ static void __init at91sam926x_pit_common_init(struct pit_data *data)
 	data->clksrc.mask = CLOCKSOURCE_MASK(bits);
 	data->clksrc.name = "pit";
 	data->clksrc.rating = 175;
-	data->clksrc.read = read_pit_clk;
-	data->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
+	data->clksrc.read = read_pit_clk,
+	data->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS,
 	clocksource_register_hz(&data->clksrc, pit_rate);
 
 	/* Set up irq handler */
@@ -221,8 +227,7 @@ static void __init at91sam926x_pit_common_init(struct pit_data *data)
 	data->clkevt.rating = 100;
 	data->clkevt.cpumask = cpumask_of(0);
 
-	data->clkevt.set_state_shutdown = pit_clkevt_shutdown;
-	data->clkevt.set_state_periodic = pit_clkevt_set_periodic;
+	data->clkevt.set_mode = pit_clkevt_mode;
 	data->clkevt.resume = at91sam926x_pit_resume;
 	data->clkevt.suspend = at91sam926x_pit_suspend;
 	clockevents_register_device(&data->clkevt);
@@ -257,3 +262,35 @@ static void __init at91sam926x_pit_dt_init(struct device_node *node)
 }
 CLOCKSOURCE_OF_DECLARE(at91sam926x_pit, "atmel,at91sam9260-pit",
 		       at91sam926x_pit_dt_init);
+
+static void __iomem *pit_base_addr;
+
+void __init at91sam926x_pit_init(int irq)
+{
+	struct pit_data *data;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		panic(pr_fmt("Unable to allocate memory\n"));
+
+	data->base = pit_base_addr;
+
+	data->mck = clk_get(NULL, "mck");
+	if (IS_ERR(data->mck))
+		panic(pr_fmt("Unable to get mck clk\n"));
+
+	data->irq = irq;
+
+	at91sam926x_pit_common_init(data);
+}
+
+void __init at91sam926x_ioremap_pit(u32 addr)
+{
+	if (of_have_populated_dt())
+		return;
+
+	pit_base_addr = ioremap(addr, 16);
+
+	if (!pit_base_addr)
+		panic(pr_fmt("Impossible to ioremap PIT\n"));
+}

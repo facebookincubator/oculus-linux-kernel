@@ -1,13 +1,15 @@
-TEST_PROGS := tm-resched-dscr tm-syscall
+PROGS := tm-resched-dscr
 
-all: $(TEST_PROGS)
+all: $(PROGS)
 
-$(TEST_PROGS): ../harness.c
+$(PROGS): ../harness.c
 
-tm-syscall: tm-syscall-asm.S
-tm-syscall: CFLAGS += -mhtm -I../../../../../usr/include
-
-include ../../lib.mk
+run_tests: all
+	@-for PROG in $(PROGS); do \
+		./$$PROG; \
+	done;
 
 clean:
-	rm -f $(TEST_PROGS) *.o
+	rm -f $(PROGS) *.o
+
+.PHONY: all run_tests clean

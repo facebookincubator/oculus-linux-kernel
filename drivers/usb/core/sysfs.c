@@ -334,6 +334,14 @@ static void remove_persist_attributes(struct device *dev)
 			&dev_attr_persist.attr,
 			power_group_name);
 }
+#else
+
+#define add_persist_attributes(dev)	0
+#define remove_persist_attributes(dev)	do {} while (0)
+
+#endif	/* CONFIG_PM */
+
+#ifdef	CONFIG_PM_RUNTIME
 
 static ssize_t connected_duration_show(struct device *dev,
 				       struct device_attribute *attr, char *buf)
@@ -531,44 +539,6 @@ static ssize_t usb2_lpm_besl_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(usb2_lpm_besl);
 
-static ssize_t usb3_hardware_lpm_u1_show(struct device *dev,
-				      struct device_attribute *attr, char *buf)
-{
-	struct usb_device *udev = to_usb_device(dev);
-	const char *p;
-
-	usb_lock_device(udev);
-
-	if (udev->usb3_lpm_u1_enabled)
-		p = "enabled";
-	else
-		p = "disabled";
-
-	usb_unlock_device(udev);
-
-	return sprintf(buf, "%s\n", p);
-}
-static DEVICE_ATTR_RO(usb3_hardware_lpm_u1);
-
-static ssize_t usb3_hardware_lpm_u2_show(struct device *dev,
-				      struct device_attribute *attr, char *buf)
-{
-	struct usb_device *udev = to_usb_device(dev);
-	const char *p;
-
-	usb_lock_device(udev);
-
-	if (udev->usb3_lpm_u2_enabled)
-		p = "enabled";
-	else
-		p = "disabled";
-
-	usb_unlock_device(udev);
-
-	return sprintf(buf, "%s\n", p);
-}
-static DEVICE_ATTR_RO(usb3_hardware_lpm_u2);
-
 static struct attribute *usb2_hardware_lpm_attr[] = {
 	&dev_attr_usb2_hardware_lpm.attr,
 	&dev_attr_usb2_lpm_l1_timeout.attr,
@@ -578,16 +548,6 @@ static struct attribute *usb2_hardware_lpm_attr[] = {
 static struct attribute_group usb2_hardware_lpm_attr_group = {
 	.name	= power_group_name,
 	.attrs	= usb2_hardware_lpm_attr,
-};
-
-static struct attribute *usb3_hardware_lpm_attr[] = {
-	&dev_attr_usb3_hardware_lpm_u1.attr,
-	&dev_attr_usb3_hardware_lpm_u2.attr,
-	NULL,
-};
-static struct attribute_group usb3_hardware_lpm_attr_group = {
-	.name	= power_group_name,
-	.attrs	= usb3_hardware_lpm_attr,
 };
 
 static struct attribute *power_attrs[] = {
@@ -612,10 +572,6 @@ static int add_power_attributes(struct device *dev)
 		if (udev->usb2_hw_lpm_capable == 1)
 			rc = sysfs_merge_group(&dev->kobj,
 					&usb2_hardware_lpm_attr_group);
-		if (udev->speed == USB_SPEED_SUPER &&
-				udev->lpm_capable == 1)
-			rc = sysfs_merge_group(&dev->kobj,
-					&usb3_hardware_lpm_attr_group);
 	}
 
 	return rc;
@@ -629,13 +585,10 @@ static void remove_power_attributes(struct device *dev)
 
 #else
 
-#define add_persist_attributes(dev)	0
-#define remove_persist_attributes(dev)	do {} while (0)
-
 #define add_power_attributes(dev)	0
 #define remove_power_attributes(dev)	do {} while (0)
 
-#endif	/* CONFIG_PM */
+#endif	/* CONFIG_PM_RUNTIME */
 
 
 /* Descriptor fields */
@@ -978,41 +931,6 @@ static ssize_t supports_autosuspend_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(supports_autosuspend);
 
-/*
- * interface_authorized_show - show authorization status of an USB interface
- * 1 is authorized, 0 is deauthorized
- */
-static ssize_t interface_authorized_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct usb_interface *intf = to_usb_interface(dev);
-
-	return sprintf(buf, "%u\n", intf->authorized);
-}
-
-/*
- * interface_authorized_store - authorize or deauthorize an USB interface
- */
-static ssize_t interface_authorized_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct usb_interface *intf = to_usb_interface(dev);
-	bool val;
-
-	if (strtobool(buf, &val) != 0)
-		return -EINVAL;
-
-	if (val)
-		usb_authorize_interface(intf);
-	else
-		usb_deauthorize_interface(intf);
-
-	return count;
-}
-static struct device_attribute dev_attr_interface_authorized =
-		__ATTR(authorized, S_IRUGO | S_IWUSR,
-		interface_authorized_show, interface_authorized_store);
-
 static struct attribute *intf_attrs[] = {
 	&dev_attr_bInterfaceNumber.attr,
 	&dev_attr_bAlternateSetting.attr,
@@ -1022,7 +940,6 @@ static struct attribute *intf_attrs[] = {
 	&dev_attr_bInterfaceProtocol.attr,
 	&dev_attr_modalias.attr,
 	&dev_attr_supports_autosuspend.attr,
-	&dev_attr_interface_authorized.attr,
 	NULL,
 };
 static struct attribute_group intf_attr_grp = {

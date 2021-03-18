@@ -70,8 +70,7 @@ void ctrl_alt_del(void);
 #define POWEROFF_CMD_PATH_LEN	256
 extern char poweroff_cmd[POWEROFF_CMD_PATH_LEN];
 
-extern void orderly_poweroff(bool force);
-extern void orderly_reboot(void);
+extern int orderly_poweroff(bool force);
 
 /*
  * Emergency restart, callable from an interrupt handler.

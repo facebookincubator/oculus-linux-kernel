@@ -132,9 +132,6 @@ int bench_futex_requeue(int argc, const char **argv,
 	if (!fshared)
 		futex_flag = FUTEX_PRIVATE_FLAG;
 
-	if (nrequeue > nthreads)
-		nrequeue = nthreads;
-
 	printf("Run summary [PID %d]: Requeuing %d threads (from [%s] %p to %p), "
 	       "%d at a time.\n\n",  getpid(), nthreads,
 	       fshared ? "shared":"private", &futex1, &futex2, nrequeue);
@@ -164,17 +161,19 @@ int bench_futex_requeue(int argc, const char **argv,
 
 		/* Ok, all threads are patiently blocked, start requeueing */
 		gettimeofday(&start, NULL);
-		while (nrequeued < nthreads) {
+		for (nrequeued = 0; nrequeued < nthreads; nrequeued += nrequeue) {
 			/*
 			 * Do not wakeup any tasks blocked on futex1, allowing
 			 * us to really measure futex_wait functionality.
 			 */
-			nrequeued += futex_cmp_requeue(&futex1, 0, &futex2, 0,
-						       nrequeue, futex_flag);
+			futex_cmp_requeue(&futex1, 0, &futex2, 0,
+					  nrequeue, futex_flag);
 		}
-
 		gettimeofday(&end, NULL);
 		timersub(&end, &start, &runtime);
+
+		if (nrequeued > nthreads)
+			nrequeued = nthreads;
 
 		update_stats(&requeued_stats, nrequeued);
 		update_stats(&requeuetime_stats, runtime.tv_usec);
@@ -185,7 +184,7 @@ int bench_futex_requeue(int argc, const char **argv,
 		}
 
 		/* everybody should be blocked on futex2, wake'em up */
-		nrequeued = futex_wake(&futex2, nrequeued, futex_flag);
+		nrequeued = futex_wake(&futex2, nthreads, futex_flag);
 		if (nthreads != nrequeued)
 			warnx("couldn't wakeup all tasks (%d/%d)", nrequeued, nthreads);
 

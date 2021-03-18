@@ -64,7 +64,6 @@ enum ath_op_flags {
 	ATH_OP_HW_RESET,
 	ATH_OP_SCANNING,
 	ATH_OP_MULTI_CHANNEL,
-	ATH_OP_WOW_ENABLED,
 };
 
 enum ath_bus_type {
@@ -131,18 +130,10 @@ struct ath_ops {
 	void (*enable_write_buffer)(void *);
 	void (*write_flush) (void *);
 	u32 (*rmw)(void *, u32 reg_offset, u32 set, u32 clr);
-	void (*enable_rmw_buffer)(void *);
-	void (*rmw_flush) (void *);
-
 };
 
 struct ath_common;
 struct ath_bus_ops;
-
-struct ath_ps_ops {
-	void (*wakeup)(struct ath_common *common);
-	void (*restore)(struct ath_common *common);
-};
 
 struct ath_common {
 	void *ah;
@@ -157,7 +148,7 @@ struct ath_common {
 	u16 cachelsz;
 	u16 curaid;
 	u8 macaddr[ETH_ALEN];
-	u8 curbssid[ETH_ALEN] __aligned(2);
+	u8 curbssid[ETH_ALEN];
 	u8 bssidmask[ETH_ALEN];
 
 	u32 rx_bufsize;
@@ -178,7 +169,6 @@ struct ath_common {
 	struct ath_regulatory reg_world_copy;
 	const struct ath_ops *ops;
 	const struct ath_bus_ops *bus_ops;
-	const struct ath_ps_ops *ps_ops;
 
 	bool btcoex_enabled;
 	bool disable_ani;
@@ -187,11 +177,6 @@ struct ath_common {
 	int last_rssi;
 	struct ieee80211_supported_band sbands[IEEE80211_NUM_BANDS];
 };
-
-static inline const struct ath_ps_ops *ath_ps_ops(struct ath_common *common)
-{
-	return common->ps_ops;
-}
 
 struct sk_buff *ath_rxbuf_alloc(struct ath_common *common,
 				u32 len,
@@ -251,7 +236,6 @@ void ath_printk(const char *level, const struct ath_common *common,
  * @ATH_DBG_DFS: radar datection
  * @ATH_DBG_WOW: Wake on Wireless
  * @ATH_DBG_DYNACK: dynack handling
- * @ATH_DBG_SPECTRAL_SCAN: FFT spectral scan
  * @ATH_DBG_ANY: enable all debugging
  *
  * The debug level is used to control the amount and type of debugging output
@@ -281,7 +265,6 @@ enum ATH_DEBUG {
 	ATH_DBG_WOW		= 0x00020000,
 	ATH_DBG_CHAN_CTX	= 0x00040000,
 	ATH_DBG_DYNACK		= 0x00080000,
-	ATH_DBG_SPECTRAL_SCAN	= 0x00100000,
 	ATH_DBG_ANY		= 0xffffffff
 };
 

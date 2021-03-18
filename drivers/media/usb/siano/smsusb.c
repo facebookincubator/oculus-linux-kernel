@@ -19,8 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ****************************************************************/
 
-#include "smscoreapi.h"
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/usb.h>
@@ -28,8 +26,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <linux/slab.h>
 #include <linux/module.h>
 
+#include "smscoreapi.h"
 #include "sms-cards.h"
 #include "smsendian.h"
+
+static int sms_dbg;
+module_param_named(debug, sms_dbg, int, 0644);
+MODULE_PARM_DESC(debug, "set debug level (info=1, adv=2 (or-able))");
 
 #define USB1_BUFFER_SIZE		0x1000
 #define USB2_BUFFER_SIZE		0x2000
@@ -84,7 +87,7 @@ static void smsusb_onresponse(struct urb *urb)
 	struct smsusb_device_t *dev = surb->dev;
 
 	if (urb->status == -ESHUTDOWN) {
-		pr_err("error, urb status %d (-ESHUTDOWN), %d bytes\n",
+		sms_err("error, urb status %d (-ESHUTDOWN), %d bytes",
 			urb->status, urb->actual_length);
 		return;
 	}
@@ -106,7 +109,9 @@ static void smsusb_onresponse(struct urb *urb)
 				/* sanity check */
 				if (((int) phdr->msg_length +
 				     surb->cb->offset) > urb->actual_length) {
-					pr_err("invalid response msglen %d offset %d size %d\n",
+					sms_err("invalid response "
+						"msglen %d offset %d "
+						"size %d",
 						phdr->msg_length,
 						surb->cb->offset,
 						urb->actual_length);
@@ -120,7 +125,7 @@ static void smsusb_onresponse(struct urb *urb)
 			} else
 				surb->cb->offset = 0;
 
-			pr_debug("received %s(%d) size: %d\n",
+			sms_debug("received %s(%d) size: %d",
 				  smscore_translate_msg(phdr->msg_type),
 				  phdr->msg_type, phdr->msg_length);
 
@@ -129,11 +134,12 @@ static void smsusb_onresponse(struct urb *urb)
 			smscore_onresponse(dev->coredev, surb->cb);
 			surb->cb = NULL;
 		} else {
-			pr_err("invalid response msglen %d actual %d\n",
+			sms_err("invalid response "
+				"msglen %d actual %d",
 				phdr->msg_length, urb->actual_length);
 		}
 	} else
-		pr_err("error, urb status %d, %d bytes\n",
+		sms_err("error, urb status %d, %d bytes",
 			urb->status, urb->actual_length);
 
 
@@ -147,7 +153,7 @@ static int smsusb_submit_urb(struct smsusb_device_t *dev,
 	if (!surb->cb) {
 		surb->cb = smscore_getbuffer(dev->coredev);
 		if (!surb->cb) {
-			pr_err("smscore_getbuffer(...) returned NULL\n");
+			sms_err("smscore_getbuffer(...) returned NULL");
 			return -ENOMEM;
 		}
 	}
@@ -188,7 +194,7 @@ static int smsusb_start_streaming(struct smsusb_device_t *dev)
 	for (i = 0; i < MAX_URBS; i++) {
 		rc = smsusb_submit_urb(dev, &dev->surbs[i]);
 		if (rc < 0) {
-			pr_err("smsusb_submit_urb(...) failed\n");
+			sms_err("smsusb_submit_urb(...) failed");
 			smsusb_stop_streaming(dev);
 			break;
 		}
@@ -204,11 +210,11 @@ static int smsusb_sendrequest(void *context, void *buffer, size_t size)
 	int dummy;
 
 	if (dev->state != SMSUSB_ACTIVE) {
-		pr_debug("Device not active yet\n");
+		sms_debug("Device not active yet");
 		return -ENOENT;
 	}
 
-	pr_debug("sending %s(%d) size: %d\n",
+	sms_debug("sending %s(%d) size: %d",
 		  smscore_translate_msg(phdr->msg_type), phdr->msg_type,
 		  phdr->msg_length);
 
@@ -243,7 +249,7 @@ static int smsusb1_load_firmware(struct usb_device *udev, int id, int board_id)
 		id = sms_get_board(board_id)->default_mode;
 
 	if (id < DEVICE_MODE_DVBT || id > DEVICE_MODE_DVBT_BDA) {
-		pr_err("invalid firmware id specified %d\n", id);
+		sms_err("invalid firmware id specified %d", id);
 		return -EINVAL;
 	}
 
@@ -251,13 +257,13 @@ static int smsusb1_load_firmware(struct usb_device *udev, int id, int board_id)
 
 	rc = request_firmware(&fw, fw_filename, &udev->dev);
 	if (rc < 0) {
-		pr_warn("failed to open '%s' mode %d, trying again with default firmware\n",
-			fw_filename, id);
+		sms_warn("failed to open \"%s\" mode %d, "
+			 "trying again with default firmware", fw_filename, id);
 
 		fw_filename = smsusb1_fw_lkup[id];
 		rc = request_firmware(&fw, fw_filename, &udev->dev);
 		if (rc < 0) {
-			pr_warn("failed to open '%s' mode %d\n",
+			sms_warn("failed to open \"%s\" mode %d",
 				 fw_filename, id);
 
 			return rc;
@@ -271,14 +277,14 @@ static int smsusb1_load_firmware(struct usb_device *udev, int id, int board_id)
 		rc = usb_bulk_msg(udev, usb_sndbulkpipe(udev, 2),
 				  fw_buffer, fw->size, &dummy, 1000);
 
-		pr_debug("sent %zu(%d) bytes, rc %d\n", fw->size, dummy, rc);
+		sms_info("sent %zu(%d) bytes, rc %d", fw->size, dummy, rc);
 
 		kfree(fw_buffer);
 	} else {
-		pr_err("failed to allocate firmware buffer\n");
+		sms_err("failed to allocate firmware buffer");
 		rc = -ENOMEM;
 	}
-	pr_debug("read FW %s, size=%zu\n", fw_filename, fw->size);
+	sms_info("read FW %s, size=%zu", fw_filename, fw->size);
 
 	release_firmware(fw);
 
@@ -294,7 +300,7 @@ static void smsusb1_detectmode(void *context, int *mode)
 
 	if (!product_string) {
 		product_string = "none";
-		pr_err("product string not found\n");
+		sms_err("product string not found");
 	} else if (strstr(product_string, "DVBH"))
 		*mode = 1;
 	else if (strstr(product_string, "BDA"))
@@ -304,7 +310,7 @@ static void smsusb1_detectmode(void *context, int *mode)
 	else if (strstr(product_string, "TDMB"))
 		*mode = 2;
 
-	pr_debug("%d \"%s\"\n", *mode, product_string);
+	sms_info("%d \"%s\"", *mode, product_string);
 }
 
 static int smsusb1_setmode(void *context, int mode)
@@ -313,7 +319,7 @@ static int smsusb1_setmode(void *context, int mode)
 			     sizeof(struct sms_msg_hdr), 0 };
 
 	if (mode < DEVICE_MODE_DVBT || mode > DEVICE_MODE_DVBT_BDA) {
-		pr_err("invalid firmware id specified %d\n", mode);
+		sms_err("invalid firmware id specified %d", mode);
 		return -EINVAL;
 	}
 
@@ -333,61 +339,25 @@ static void smsusb_term_device(struct usb_interface *intf)
 		if (dev->coredev)
 			smscore_unregister_device(dev->coredev);
 
-		pr_debug("device 0x%p destroyed\n", dev);
+		sms_info("device 0x%p destroyed", dev);
 		kfree(dev);
 	}
 
 	usb_set_intfdata(intf, NULL);
 }
 
-static void *siano_media_device_register(struct smsusb_device_t *dev,
-					int board_id)
-{
-#ifdef CONFIG_MEDIA_CONTROLLER_DVB
-	struct media_device *mdev;
-	struct usb_device *udev = dev->udev;
-	struct sms_board *board = sms_get_board(board_id);
-	int ret;
-
-	mdev = kzalloc(sizeof(*mdev), GFP_KERNEL);
-	if (!mdev)
-		return NULL;
-
-	mdev->dev = &udev->dev;
-	strlcpy(mdev->model, board->name, sizeof(mdev->model));
-	if (udev->serial)
-		strlcpy(mdev->serial, udev->serial, sizeof(mdev->serial));
-	strcpy(mdev->bus_info, udev->devpath);
-	mdev->hw_revision = le16_to_cpu(udev->descriptor.bcdDevice);
-	mdev->driver_version = LINUX_VERSION_CODE;
-
-	ret = media_device_register(mdev);
-	if (ret) {
-		pr_err("Couldn't create a media device. Error: %d\n",
-			ret);
-		kfree(mdev);
-		return NULL;
-	}
-
-	pr_info("media controller created\n");
-
-	return mdev;
-#else
-	return NULL;
-#endif
-}
-
 static int smsusb_init_device(struct usb_interface *intf, int board_id)
 {
 	struct smsdevice_params_t params;
 	struct smsusb_device_t *dev;
-	void *mdev;
 	int i, rc;
 
 	/* create device object */
 	dev = kzalloc(sizeof(struct smsusb_device_t), GFP_KERNEL);
-	if (!dev)
+	if (!dev) {
+		sms_err("kzalloc(sizeof(struct smsusb_device_t) failed");
 		return -ENOMEM;
+	}
 
 	memset(&params, 0, sizeof(params));
 	usb_set_intfdata(intf, dev);
@@ -404,7 +374,7 @@ static int smsusb_init_device(struct usb_interface *intf, int board_id)
 		params.detectmode_handler = smsusb1_detectmode;
 		break;
 	case SMS_UNKNOWN_TYPE:
-		pr_err("Unspecified sms device type!\n");
+		sms_err("Unspecified sms device type!");
 		/* fall-thru */
 	default:
 		dev->buffer_size = USB2_BUFFER_SIZE;
@@ -423,7 +393,7 @@ static int smsusb_init_device(struct usb_interface *intf, int board_id)
 			dev->out_ep = intf->cur_altsetting->endpoint[i].desc.bEndpointAddress;
 	}
 
-	pr_debug("in_ep = %02x, out_ep = %02x\n",
+	sms_info("in_ep = %02x, out_ep = %02x",
 		dev->in_ep, dev->out_ep);
 
 	params.device = &dev->udev->dev;
@@ -433,17 +403,11 @@ static int smsusb_init_device(struct usb_interface *intf, int board_id)
 	params.context = dev;
 	usb_make_path(dev->udev, params.devpath, sizeof(params.devpath));
 
-	mdev = siano_media_device_register(dev, board_id);
-
 	/* register in smscore */
-	rc = smscore_register_device(&params, &dev->coredev, mdev);
+	rc = smscore_register_device(&params, &dev->coredev);
 	if (rc < 0) {
-		pr_err("smscore_register_device(...) failed, rc %d\n", rc);
+		sms_err("smscore_register_device(...) failed, rc %d", rc);
 		smsusb_term_device(intf);
-#ifdef CONFIG_MEDIA_CONTROLLER_DVB
-		media_device_unregister(mdev);
-#endif
-		kfree(mdev);
 		return rc;
 	}
 
@@ -457,10 +421,10 @@ static int smsusb_init_device(struct usb_interface *intf, int board_id)
 		usb_init_urb(&dev->surbs[i].urb);
 	}
 
-	pr_debug("smsusb_start_streaming(...).\n");
+	sms_info("smsusb_start_streaming(...).");
 	rc = smsusb_start_streaming(dev);
 	if (rc < 0) {
-		pr_err("smsusb_start_streaming(...) failed\n");
+		sms_err("smsusb_start_streaming(...) failed");
 		smsusb_term_device(intf);
 		return rc;
 	}
@@ -469,12 +433,12 @@ static int smsusb_init_device(struct usb_interface *intf, int board_id)
 
 	rc = smscore_start_device(dev->coredev);
 	if (rc < 0) {
-		pr_err("smscore_start_device(...) failed\n");
+		sms_err("smscore_start_device(...) failed");
 		smsusb_term_device(intf);
 		return rc;
 	}
 
-	pr_debug("device 0x%p created\n", dev);
+	sms_info("device 0x%p created", dev);
 
 	return rc;
 }
@@ -486,13 +450,13 @@ static int smsusb_probe(struct usb_interface *intf,
 	char devpath[32];
 	int i, rc;
 
-	pr_info("board id=%lu, interface number %d\n",
+	sms_info("board id=%lu, interface number %d",
 		 id->driver_info,
 		 intf->cur_altsetting->desc.bInterfaceNumber);
 
 	if (sms_get_board(id->driver_info)->intf_num !=
 	    intf->cur_altsetting->desc.bInterfaceNumber) {
-		pr_debug("interface %d won't be used. Expecting interface %d to popup\n",
+		sms_debug("interface %d won't be used. Expecting interface %d to popup",
 			intf->cur_altsetting->desc.bInterfaceNumber,
 			sms_get_board(id->driver_info)->intf_num);
 		return -ENODEV;
@@ -503,15 +467,15 @@ static int smsusb_probe(struct usb_interface *intf,
 				       intf->cur_altsetting->desc.bInterfaceNumber,
 				       0);
 		if (rc < 0) {
-			pr_err("usb_set_interface failed, rc %d\n", rc);
+			sms_err("usb_set_interface failed, rc %d", rc);
 			return rc;
 		}
 	}
 
-	pr_debug("smsusb_probe %d\n",
+	sms_info("smsusb_probe %d",
 	       intf->cur_altsetting->desc.bInterfaceNumber);
 	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
-		pr_debug("endpoint %d %02x %02x %d\n", i,
+		sms_info("endpoint %d %02x %02x %d", i,
 		       intf->cur_altsetting->endpoint[i].desc.bEndpointAddress,
 		       intf->cur_altsetting->endpoint[i].desc.bmAttributes,
 		       intf->cur_altsetting->endpoint[i].desc.wMaxPacketSize);
@@ -525,7 +489,7 @@ static int smsusb_probe(struct usb_interface *intf,
 	}
 	if ((udev->actconfig->desc.bNumInterfaces == 2) &&
 	    (intf->cur_altsetting->desc.bInterfaceNumber == 0)) {
-		pr_debug("rom interface 0 is not used\n");
+		sms_debug("rom interface 0 is not used");
 		return -ENODEV;
 	}
 
@@ -534,25 +498,23 @@ static int smsusb_probe(struct usb_interface *intf,
 
 		snprintf(devpath, sizeof(devpath), "usb\\%d-%s",
 			 udev->bus->busnum, udev->devpath);
-		pr_info("stellar device in cold state was found at %s.\n",
-			devpath);
+		sms_info("stellar device in cold state was found at %s.", devpath);
 		rc = smsusb1_load_firmware(
 				udev, smscore_registry_getmode(devpath),
 				id->driver_info);
 
 		/* This device will reset and gain another USB ID */
 		if (!rc)
-			pr_info("stellar device now in warm state\n");
+			sms_info("stellar device now in warm state");
 		else
-			pr_err("Failed to put stellar in warm state. Error: %d\n",
-			       rc);
+			sms_err("Failed to put stellar in warm state. Error: %d", rc);
 
 		return rc;
 	} else {
 		rc = smsusb_init_device(intf, id->driver_info);
 	}
 
-	pr_info("Device initialized with return code %d\n", rc);
+	sms_info("Device initialized with return code %d", rc);
 	sms_board_load_modules(id->driver_info);
 	return rc;
 }

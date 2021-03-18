@@ -194,7 +194,7 @@ void __init time_init(void)
 {
 	of_clk_init(NULL);
 	setup_cpuinfo_clk();
-	clocksource_probe();
+	clocksource_of_init();
 }
 
 #ifdef CONFIG_DEBUG_FS

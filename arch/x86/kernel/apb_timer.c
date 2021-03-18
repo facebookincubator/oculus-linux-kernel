@@ -135,6 +135,14 @@ static inline void apbt_clear_mapping(void)
 	apbt_virt_address = NULL;
 }
 
+/*
+ * APBT timer interrupt enable / disable
+ */
+static inline int is_apbt_capable(void)
+{
+	return apbt_virt_address ? 1 : 0;
+}
+
 static int __init apbt_clockevent_register(void)
 {
 	struct sfi_timer_table_entry *mtmr;
@@ -171,6 +179,10 @@ static int __init apbt_clockevent_register(void)
 
 static void apbt_setup_irq(struct apbt_dev *adev)
 {
+	/* timer0 irq has been setup early */
+	if (adev->irq == 0)
+		return;
+
 	irq_modify_status(adev->irq, 0, IRQ_MOVE_PCNTXT);
 	irq_set_affinity(adev->irq, cpumask_of(adev->cpu));
 }
@@ -263,7 +275,7 @@ static int apbt_clocksource_register(void)
 
 	/* Verify whether apbt counter works */
 	t1 = dw_apb_clocksource_read(clocksource_apbt);
-	start = rdtsc();
+	rdtscll(start);
 
 	/*
 	 * We don't know the TSC frequency yet, but waiting for
@@ -273,7 +285,7 @@ static int apbt_clocksource_register(void)
 	 */
 	do {
 		rep_nop();
-		now = rdtsc();
+		rdtscll(now);
 	} while ((now - start) < 200000UL);
 
 	/* APBT is the only always on clocksource, it has to work! */
@@ -390,13 +402,13 @@ unsigned long apbt_quick_calibrate(void)
 	old = dw_apb_clocksource_read(clocksource_apbt);
 	old += loop;
 
-	t1 = rdtsc();
+	t1 = __native_read_tsc();
 
 	do {
 		new = dw_apb_clocksource_read(clocksource_apbt);
 	} while (new < old);
 
-	t2 = rdtsc();
+	t2 = __native_read_tsc();
 
 	shift = 5;
 	if (unlikely(loop >> shift == 0)) {

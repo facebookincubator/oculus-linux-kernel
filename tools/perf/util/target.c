@@ -123,8 +123,11 @@ int target__strerror(struct target *target, int errnum,
 	if (errnum >= 0) {
 		const char *err = strerror_r(errnum, buf, buflen);
 
-		if (err != buf)
-			scnprintf(buf, buflen, "%s", err);
+		if (err != buf) {
+			size_t len = strlen(err);
+			memcpy(buf, err, min(buflen - 1, len));
+			*(buf + min(buflen - 1, len)) = '\0';
+		}
 
 		return 0;
 	}

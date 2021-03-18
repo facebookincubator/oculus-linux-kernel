@@ -427,7 +427,7 @@ struct htc_endpoint_credit_dist {
 };
 
 /*
- * credit distribution code that is passed into the distribution function,
+ * credit distibution code that is passed into the distrbution function,
  * there are mandatory and optional codes that must be handled
  */
 enum htc_credit_dist_reason {

@@ -51,7 +51,6 @@ extern void arch_setup_pdev_archdata(struct platform_device *);
 extern struct resource *platform_get_resource(struct platform_device *,
 					      unsigned int, unsigned int);
 extern int platform_get_irq(struct platform_device *, unsigned int);
-extern int platform_irq_count(struct platform_device *);
 extern struct resource *platform_get_resource_byname(struct platform_device *,
 						     unsigned int,
 						     const char *);
@@ -60,7 +59,7 @@ extern int platform_add_devices(struct platform_device **, int);
 
 struct platform_device_info {
 		struct device *parent;
-		struct fwnode_handle *fwnode;
+		struct acpi_dev_node acpi_node;
 
 		const char *name;
 		int id;
@@ -198,10 +197,8 @@ extern void platform_driver_unregister(struct platform_driver *);
 /* non-hotpluggable platform devices may use this so that probe() and
  * its support may live in __init sections, conserving runtime memory.
  */
-#define platform_driver_probe(drv, probe) \
-	__platform_driver_probe(drv, probe, THIS_MODULE)
-extern int __platform_driver_probe(struct platform_driver *driver,
-		int (*probe)(struct platform_device *), struct module *module);
+extern int platform_driver_probe(struct platform_driver *driver,
+		int (*probe)(struct platform_device *));
 
 static inline void *platform_get_drvdata(const struct platform_device *pdev)
 {
@@ -223,15 +220,6 @@ static inline void platform_set_drvdata(struct platform_device *pdev,
 	module_driver(__platform_driver, platform_driver_register, \
 			platform_driver_unregister)
 
-/* builtin_platform_driver() - Helper macro for builtin drivers that
- * don't do anything special in driver init.  This eliminates some
- * boilerplate.  Each driver may only use this macro once, and
- * calling it replaces device_initcall().  Note this is meant to be
- * a parallel of module_platform_driver() above, but w/o _exit stuff.
- */
-#define builtin_platform_driver(__platform_driver) \
-	builtin_driver(__platform_driver, platform_driver_register)
-
 /* module_platform_driver_probe() - Helper macro for drivers that don't do
  * anything special in module init/exit.  This eliminates a lot of
  * boilerplate.  Each module may only use this macro once, and
@@ -250,34 +238,10 @@ static void __exit __platform_driver##_exit(void) \
 } \
 module_exit(__platform_driver##_exit);
 
-/* builtin_platform_driver_probe() - Helper macro for drivers that don't do
- * anything special in device init.  This eliminates some boilerplate.  Each
- * driver may only use this macro once, and using it replaces device_initcall.
- * This is meant to be a parallel of module_platform_driver_probe above, but
- * without the __exit parts.
- */
-#define builtin_platform_driver_probe(__platform_driver, __platform_probe) \
-static int __init __platform_driver##_init(void) \
-{ \
-	return platform_driver_probe(&(__platform_driver), \
-				     __platform_probe);    \
-} \
-device_initcall(__platform_driver##_init); \
-
-#define platform_create_bundle(driver, probe, res, n_res, data, size) \
-	__platform_create_bundle(driver, probe, res, n_res, data, size, THIS_MODULE)
-extern struct platform_device *__platform_create_bundle(
+extern struct platform_device *platform_create_bundle(
 	struct platform_driver *driver, int (*probe)(struct platform_device *),
 	struct resource *res, unsigned int n_res,
-	const void *data, size_t size, struct module *module);
-
-int __platform_register_drivers(struct platform_driver * const *drivers,
-				unsigned int count, struct module *owner);
-void platform_unregister_drivers(struct platform_driver * const *drivers,
-				 unsigned int count);
-
-#define platform_register_drivers(drivers, count) \
-	__platform_register_drivers(drivers, count, THIS_MODULE)
+	const void *data, size_t size);
 
 /* early platform driver interface */
 struct early_platform_driver {

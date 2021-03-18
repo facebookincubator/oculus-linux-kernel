@@ -57,7 +57,7 @@ extern unsigned long __sw_hweight64(__u64 w);
 	     (bit) < (size);					\
 	     (bit) = find_next_zero_bit((addr), (size), (bit) + 1))
 
-static inline int get_bitmask_order(unsigned int count)
+static __inline__ int get_bitmask_order(unsigned int count)
 {
 	int order;
 
@@ -65,7 +65,7 @@ static inline int get_bitmask_order(unsigned int count)
 	return order;	/* We could be slightly more clever with -1 here... */
 }
 
-static inline int get_count_order(unsigned int count)
+static __inline__ int get_count_order(unsigned int count)
 {
 	int order;
 
@@ -75,7 +75,7 @@ static inline int get_count_order(unsigned int count)
 	return order;
 }
 
-static __always_inline unsigned long hweight_long(unsigned long w)
+static inline unsigned long hweight_long(unsigned long w)
 {
 	return sizeof(w) == 4 ? hweight32(w) : hweight64(w);
 }
@@ -107,7 +107,7 @@ static inline __u64 ror64(__u64 word, unsigned int shift)
  */
 static inline __u32 rol32(__u32 word, unsigned int shift)
 {
-	return (word << shift) | (word >> ((-shift) & 31));
+	return (word << shift) | (word >> (32 - shift));
 }
 
 /**
@@ -164,8 +164,6 @@ static inline __u8 ror8(__u8 word, unsigned int shift)
  * sign_extend32 - sign extend a 32-bit value using specified bit as sign-bit
  * @value: value to sign extend
  * @index: 0 based bit index (0<=index<32) to sign bit
- *
- * This is safe to use for 16- and 8-bit types as well.
  */
 static inline __s32 sign_extend32(__u32 value, int index)
 {
@@ -231,9 +229,9 @@ static inline unsigned long __ffs64(u64 word)
 /**
  * find_last_bit - find the last set bit in a memory region
  * @addr: The address to start the search at
- * @size: The number of bits to search
+ * @size: The maximum size to search
  *
- * Returns the bit number of the last set bit, or size.
+ * Returns the bit number of the first set bit, or size.
  */
 extern unsigned long find_last_bit(const unsigned long *addr,
 				   unsigned long size);

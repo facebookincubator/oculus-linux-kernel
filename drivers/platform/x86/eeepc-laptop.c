@@ -37,7 +37,6 @@
 #include <linux/pci_hotplug.h>
 #include <linux/leds.h>
 #include <linux/dmi.h>
-#include <acpi/video.h>
 
 #define EEEPC_LAPTOP_VERSION	"0.1"
 #define EEEPC_LAPTOP_NAME	"Eee PC Hotkey Driver"
@@ -418,7 +417,8 @@ static ssize_t cpufv_disabled_store(struct device *dev,
 	switch (value) {
 	case 0:
 		if (eeepc->cpufv_disabled)
-			pr_warn("cpufv enabled (not officially supported on this model)\n");
+			pr_warn("cpufv enabled (not officially supported "
+				"on this model)\n");
 		eeepc->cpufv_disabled = false;
 		return count;
 	case 1:
@@ -580,58 +580,59 @@ static void eeepc_rfkill_hotplug(struct eeepc_laptop *eeepc, acpi_handle handle)
 	mutex_lock(&eeepc->hotplug_lock);
 	pci_lock_rescan_remove();
 
-	if (!eeepc->hotplug_slot)
-		goto out_unlock;
+	if (eeepc->hotplug_slot) {
+		port = acpi_get_pci_dev(handle);
+		if (!port) {
+			pr_warning("Unable to find port\n");
+			goto out_unlock;
+		}
 
-	port = acpi_get_pci_dev(handle);
-	if (!port) {
-		pr_warning("Unable to find port\n");
-		goto out_unlock;
-	}
+		bus = port->subordinate;
 
-	bus = port->subordinate;
-
-	if (!bus) {
-		pr_warn("Unable to find PCI bus 1?\n");
-		goto out_put_dev;
-	}
-
-	if (pci_bus_read_config_dword(bus, 0, PCI_VENDOR_ID, &l)) {
-		pr_err("Unable to read PCI config space?\n");
-		goto out_put_dev;
-	}
-
-	absent = (l == 0xffffffff);
-
-	if (blocked != absent) {
-		pr_warn("BIOS says wireless lan is %s, but the pci device is %s\n",
-			blocked ? "blocked" : "unblocked",
-			absent ? "absent" : "present");
-		pr_warn("skipped wireless hotplug as probably inappropriate for this model\n");
-		goto out_put_dev;
-	}
-
-	if (!blocked) {
-		dev = pci_get_slot(bus, 0);
-		if (dev) {
-			/* Device already present */
-			pci_dev_put(dev);
+		if (!bus) {
+			pr_warn("Unable to find PCI bus 1?\n");
 			goto out_put_dev;
 		}
-		dev = pci_scan_single_device(bus, 0);
-		if (dev) {
-			pci_bus_assign_resources(bus);
-			pci_bus_add_device(dev);
+
+		if (pci_bus_read_config_dword(bus, 0, PCI_VENDOR_ID, &l)) {
+			pr_err("Unable to read PCI config space?\n");
+			goto out_put_dev;
 		}
-	} else {
-		dev = pci_get_slot(bus, 0);
-		if (dev) {
-			pci_stop_and_remove_bus_device(dev);
-			pci_dev_put(dev);
+
+		absent = (l == 0xffffffff);
+
+		if (blocked != absent) {
+			pr_warn("BIOS says wireless lan is %s, "
+				"but the pci device is %s\n",
+				blocked ? "blocked" : "unblocked",
+				absent ? "absent" : "present");
+			pr_warn("skipped wireless hotplug as probably "
+				"inappropriate for this model\n");
+			goto out_put_dev;
 		}
-	}
+
+		if (!blocked) {
+			dev = pci_get_slot(bus, 0);
+			if (dev) {
+				/* Device already present */
+				pci_dev_put(dev);
+				goto out_put_dev;
+			}
+			dev = pci_scan_single_device(bus, 0);
+			if (dev) {
+				pci_bus_assign_resources(bus);
+				pci_bus_add_device(dev);
+			}
+		} else {
+			dev = pci_get_slot(bus, 0);
+			if (dev) {
+				pci_stop_and_remove_bus_device(dev);
+				pci_dev_put(dev);
+			}
+		}
 out_put_dev:
-	pci_dev_put(port);
+		pci_dev_put(port);
+	}
 
 out_unlock:
 	pci_unlock_rescan_remove();
@@ -820,15 +821,11 @@ static int eeepc_new_rfkill(struct eeepc_laptop *eeepc,
 	return 0;
 }
 
-static char EEEPC_RFKILL_NODE_1[] = "\\_SB.PCI0.P0P5";
-static char EEEPC_RFKILL_NODE_2[] = "\\_SB.PCI0.P0P6";
-static char EEEPC_RFKILL_NODE_3[] = "\\_SB.PCI0.P0P7";
-
 static void eeepc_rfkill_exit(struct eeepc_laptop *eeepc)
 {
-	eeepc_unregister_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_1);
-	eeepc_unregister_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_2);
-	eeepc_unregister_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_3);
+	eeepc_unregister_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P5");
+	eeepc_unregister_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P6");
+	eeepc_unregister_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P7");
 	if (eeepc->wlan_rfkill) {
 		rfkill_unregister(eeepc->wlan_rfkill);
 		rfkill_destroy(eeepc->wlan_rfkill);
@@ -900,9 +897,9 @@ static int eeepc_rfkill_init(struct eeepc_laptop *eeepc)
 	if (result == -EBUSY)
 		result = 0;
 
-	eeepc_register_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_1);
-	eeepc_register_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_2);
-	eeepc_register_rfkill_notifier(eeepc, EEEPC_RFKILL_NODE_3);
+	eeepc_register_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P5");
+	eeepc_register_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P6");
+	eeepc_register_rfkill_notifier(eeepc, "\\_SB.PCI0.P0P7");
 
 exit:
 	if (result && result != -ENODEV)
@@ -918,7 +915,7 @@ static int eeepc_hotk_thaw(struct device *device)
 	struct eeepc_laptop *eeepc = dev_get_drvdata(device);
 
 	if (eeepc->wlan_rfkill) {
-		int wlan;
+		bool wlan;
 
 		/*
 		 * Work around bios bug - acpi _PTS turns off the wireless led
@@ -926,8 +923,7 @@ static int eeepc_hotk_thaw(struct device *device)
 		 * we should kick it ourselves in case hibernation is aborted.
 		 */
 		wlan = get_acpi(eeepc, CM_ASL_WLAN);
-		if (wlan >= 0)
-			set_acpi(eeepc, CM_ASL_WLAN, wlan);
+		set_acpi(eeepc, CM_ASL_WLAN, wlan);
 	}
 
 	return 0;
@@ -939,9 +935,9 @@ static int eeepc_hotk_restore(struct device *device)
 
 	/* Refresh both wlan rfkill state and pci hotplug */
 	if (eeepc->wlan_rfkill) {
-		eeepc_rfkill_hotplug_update(eeepc, EEEPC_RFKILL_NODE_1);
-		eeepc_rfkill_hotplug_update(eeepc, EEEPC_RFKILL_NODE_2);
-		eeepc_rfkill_hotplug_update(eeepc, EEEPC_RFKILL_NODE_3);
+		eeepc_rfkill_hotplug_update(eeepc, "\\_SB.PCI0.P0P5");
+		eeepc_rfkill_hotplug_update(eeepc, "\\_SB.PCI0.P0P6");
+		eeepc_rfkill_hotplug_update(eeepc, "\\_SB.PCI0.P0P7");
 	}
 
 	if (eeepc->bluetooth_rfkill)
@@ -965,6 +961,7 @@ static const struct dev_pm_ops eeepc_pm_ops = {
 static struct platform_driver platform_driver = {
 	.driver = {
 		.name = EEEPC_LAPTOP_FILE,
+		.owner = THIS_MODULE,
 		.pm = &eeepc_pm_ops,
 	}
 };
@@ -981,28 +978,18 @@ static struct platform_driver platform_driver = {
 #define EEEPC_EC_SFB0      0xD0
 #define EEEPC_EC_FAN_CTRL  (EEEPC_EC_SFB0 + 3) /* Byte containing SF25  */
 
-static inline int eeepc_pwm_to_lmsensors(int value)
-{
-	return value * 255 / 100;
-}
-
-static inline int eeepc_lmsensors_to_pwm(int value)
-{
-	value = clamp_val(value, 0, 255);
-	return value * 100 / 255;
-}
-
 static int eeepc_get_fan_pwm(void)
 {
 	u8 value = 0;
 
 	ec_read(EEEPC_EC_FAN_PWM, &value);
-	return eeepc_pwm_to_lmsensors(value);
+	return value * 255 / 100;
 }
 
 static void eeepc_set_fan_pwm(int value)
 {
-	value = eeepc_lmsensors_to_pwm(value);
+	value = clamp_val(value, 0, 255);
+	value = value * 100 / 255;
 	ec_write(EEEPC_EC_FAN_PWM, value);
 }
 
@@ -1016,19 +1003,15 @@ static int eeepc_get_fan_rpm(void)
 	return high << 8 | low;
 }
 
-#define EEEPC_EC_FAN_CTRL_BIT	0x02
-#define EEEPC_FAN_CTRL_MANUAL	1
-#define EEEPC_FAN_CTRL_AUTO	2
-
 static int eeepc_get_fan_ctrl(void)
 {
 	u8 value = 0;
 
 	ec_read(EEEPC_EC_FAN_CTRL, &value);
-	if (value & EEEPC_EC_FAN_CTRL_BIT)
-		return EEEPC_FAN_CTRL_MANUAL;
+	if (value & 0x02)
+		return 1; /* manual */
 	else
-		return EEEPC_FAN_CTRL_AUTO;
+		return 2; /* automatic */
 }
 
 static void eeepc_set_fan_ctrl(int manual)
@@ -1036,10 +1019,10 @@ static void eeepc_set_fan_ctrl(int manual)
 	u8 value = 0;
 
 	ec_read(EEEPC_EC_FAN_CTRL, &value);
-	if (manual == EEEPC_FAN_CTRL_MANUAL)
-		value |= EEEPC_EC_FAN_CTRL_BIT;
+	if (manual == 1)
+		value |= 0x02;
 	else
-		value &= ~EEEPC_EC_FAN_CTRL_BIT;
+		value &= ~0x02;
 	ec_write(EEEPC_EC_FAN_CTRL, value);
 }
 
@@ -1174,7 +1157,8 @@ static int eeepc_backlight_init(struct eeepc_laptop *eeepc)
 
 static void eeepc_backlight_exit(struct eeepc_laptop *eeepc)
 {
-	backlight_device_unregister(eeepc->backlight_device);
+	if (eeepc->backlight_device)
+		backlight_device_unregister(eeepc->backlight_device);
 	eeepc->backlight_device = NULL;
 }
 
@@ -1233,7 +1217,7 @@ static void eeepc_input_exit(struct eeepc_laptop *eeepc)
 static void eeepc_input_notify(struct eeepc_laptop *eeepc, int event)
 {
 	if (!eeepc->inputdev)
-		return;
+		return ;
 	if (!sparse_keymap_report_event(eeepc->inputdev, event, 1, true))
 		pr_info("Unknown key %x pressed\n", event);
 }
@@ -1241,7 +1225,6 @@ static void eeepc_input_notify(struct eeepc_laptop *eeepc, int event)
 static void eeepc_acpi_notify(struct acpi_device *device, u32 event)
 {
 	struct eeepc_laptop *eeepc = acpi_driver_data(device);
-	int old_brightness, new_brightness;
 	u16 count;
 
 	if (event > ACPI_MAX_SYS_NOTIFY)
@@ -1252,32 +1235,34 @@ static void eeepc_acpi_notify(struct acpi_device *device, u32 event)
 					count);
 
 	/* Brightness events are special */
-	if (event < NOTIFY_BRN_MIN || event > NOTIFY_BRN_MAX) {
-		eeepc_input_notify(eeepc, event);
-		return;
-	}
+	if (event >= NOTIFY_BRN_MIN && event <= NOTIFY_BRN_MAX) {
 
-	/* Ignore them completely if the acpi video driver is used */
-	if (!eeepc->backlight_device)
-		return;
+		/* Ignore them completely if the acpi video driver is used */
+		if (eeepc->backlight_device != NULL) {
+			int old_brightness, new_brightness;
 
-	/* Update the backlight device. */
-	old_brightness = eeepc_backlight_notify(eeepc);
+			/* Update the backlight device. */
+			old_brightness = eeepc_backlight_notify(eeepc);
 
-	/* Convert event to keypress (obsolescent hack) */
-	new_brightness = event - NOTIFY_BRN_MIN;
+			/* Convert event to keypress (obsolescent hack) */
+			new_brightness = event - NOTIFY_BRN_MIN;
 
-	if (new_brightness < old_brightness) {
-		event = NOTIFY_BRN_MIN; /* brightness down */
-	} else if (new_brightness > old_brightness) {
-		event = NOTIFY_BRN_MAX; /* brightness up */
+			if (new_brightness < old_brightness) {
+				event = NOTIFY_BRN_MIN; /* brightness down */
+			} else if (new_brightness > old_brightness) {
+				event = NOTIFY_BRN_MAX; /* brightness up */
+			} else {
+				/*
+				* no change in brightness - already at min/max,
+				* event will be desired value (or else ignored)
+				*/
+			}
+			eeepc_input_notify(eeepc, event);
+		}
 	} else {
-		/*
-		 * no change in brightness - already at min/max,
-		 * event will be desired value (or else ignored)
-		 */
+		/* Everything else is a bona-fide keypress event */
+		eeepc_input_notify(eeepc, event);
 	}
-	eeepc_input_notify(eeepc, event);
 }
 
 static void eeepc_dmi_check(struct eeepc_laptop *eeepc)
@@ -1309,8 +1294,8 @@ static void eeepc_dmi_check(struct eeepc_laptop *eeepc)
 	 */
 	if (strcmp(model, "701") == 0 || strcmp(model, "702") == 0) {
 		eeepc->cpufv_disabled = true;
-		pr_info("model %s does not officially support setting cpu speed\n",
-			model);
+		pr_info("model %s does not officially support setting cpu "
+			"speed\n", model);
 		pr_info("cpufv disabled to avoid instability\n");
 	}
 
@@ -1336,8 +1321,8 @@ static void cmsg_quirk(struct eeepc_laptop *eeepc, int cm, const char *name)
 	   Check if cm_getv[cm] works and, if yes, assume cm should be set. */
 	if (!(eeepc->cm_supported & (1 << cm))
 	    && !read_acpi_int(eeepc->handle, cm_getv[cm], &dummy)) {
-		pr_info("%s (%x) not reported by BIOS, enabling anyway\n",
-			name, 1 << cm);
+		pr_info("%s (%x) not reported by BIOS,"
+			" enabling anyway\n", name, 1 << cm);
 		eeepc->cm_supported |= 1 << cm;
 	}
 }
@@ -1434,10 +1419,12 @@ static int eeepc_acpi_add(struct acpi_device *device)
 	if (result)
 		goto fail_platform;
 
-	if (acpi_video_get_backlight_type() == acpi_backlight_vendor) {
+	if (!acpi_video_backlight_support()) {
 		result = eeepc_backlight_init(eeepc);
 		if (result)
 			goto fail_backlight;
+	} else {
+		pr_info("Backlight controlled by ACPI video driver\n");
 	}
 
 	result = eeepc_input_init(eeepc);

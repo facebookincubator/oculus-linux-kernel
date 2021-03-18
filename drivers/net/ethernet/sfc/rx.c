@@ -224,17 +224,12 @@ static void efx_unmap_rx_buffer(struct efx_nic *efx,
 	}
 }
 
-static void efx_free_rx_buffers(struct efx_rx_queue *rx_queue,
-				struct efx_rx_buffer *rx_buf,
-				unsigned int num_bufs)
+static void efx_free_rx_buffer(struct efx_rx_buffer *rx_buf)
 {
-	do {
-		if (rx_buf->page) {
-			put_page(rx_buf->page);
-			rx_buf->page = NULL;
-		}
-		rx_buf = efx_rx_buf_next(rx_queue, rx_buf);
-	} while (--num_bufs);
+	if (rx_buf->page) {
+		put_page(rx_buf->page);
+		rx_buf->page = NULL;
+	}
 }
 
 /* Attempt to recycle the page if there is an RX recycle ring; the page can
@@ -283,7 +278,7 @@ static void efx_fini_rx_buffer(struct efx_rx_queue *rx_queue,
 	/* If this is the last buffer in a page, unmap and free it. */
 	if (rx_buf->flags & EFX_RX_BUF_LAST_IN_PAGE) {
 		efx_unmap_rx_buffer(rx_queue->efx, rx_buf);
-		efx_free_rx_buffers(rx_queue, rx_buf, 1);
+		efx_free_rx_buffer(rx_buf);
 	}
 	rx_buf->page = NULL;
 }
@@ -309,7 +304,10 @@ static void efx_discard_rx_packet(struct efx_channel *channel,
 
 	efx_recycle_rx_pages(channel, rx_buf, n_frags);
 
-	efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
+	do {
+		efx_free_rx_buffer(rx_buf);
+		rx_buf = efx_rx_buf_next(rx_queue, rx_buf);
+	} while (--n_frags);
 }
 
 /**
@@ -433,10 +431,11 @@ efx_rx_packet_gro(struct efx_channel *channel, struct efx_rx_buffer *rx_buf,
 
 	skb = napi_get_frags(napi);
 	if (unlikely(!skb)) {
-		struct efx_rx_queue *rx_queue;
-
-		rx_queue = efx_channel_get_rx_queue(channel);
-		efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
+		while (n_frags--) {
+			put_page(rx_buf->page);
+			rx_buf->page = NULL;
+			rx_buf = efx_rx_buf_next(&channel->rx_queue, rx_buf);
+		}
 		return;
 	}
 
@@ -623,10 +622,7 @@ static void efx_rx_deliver(struct efx_channel *channel, u8 *eh,
 
 	skb = efx_rx_mk_skb(channel, rx_buf, n_frags, eh, hdr_len);
 	if (unlikely(skb == NULL)) {
-		struct efx_rx_queue *rx_queue;
-
-		rx_queue = efx_channel_get_rx_queue(channel);
-		efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
+		efx_free_rx_buffer(rx_buf);
 		return;
 	}
 	skb_record_rx_queue(skb, channel->rx_queue.core_index);
@@ -665,12 +661,8 @@ void __efx_rx_packet(struct efx_channel *channel)
 	 * loopback layer, and free the rx_buf here
 	 */
 	if (unlikely(efx->loopback_selftest)) {
-		struct efx_rx_queue *rx_queue;
-
 		efx_loopback_rx_packet(efx, eh, rx_buf->len);
-		rx_queue = efx_channel_get_rx_queue(channel);
-		efx_free_rx_buffers(rx_queue, rx_buf,
-				    channel->rx_pkt_n_frags);
+		efx_free_rx_buffer(rx_buf);
 		goto out;
 	}
 

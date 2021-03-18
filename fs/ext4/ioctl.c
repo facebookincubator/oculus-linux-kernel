@@ -8,6 +8,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/jbd2.h>
 #include <linux/capability.h>
 #include <linux/time.h>
 #include <linux/compat.h>
@@ -31,11 +32,14 @@
 static void memswap(void *a, void *b, size_t len)
 {
 	unsigned char *ap, *bp;
+	unsigned char tmp;
 
 	ap = (unsigned char *)a;
 	bp = (unsigned char *)b;
 	while (len-- > 0) {
-		swap(*ap, *bp);
+		tmp = *ap;
+		*ap = *bp;
+		*bp = tmp;
 		ap++;
 		bp++;
 	}
@@ -75,6 +79,8 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
 	memswap(&ei1->i_disksize, &ei2->i_disksize, sizeof(ei1->i_disksize));
 	ext4_es_remove_extent(inode1, 0, EXT_MAX_BLOCKS);
 	ext4_es_remove_extent(inode2, 0, EXT_MAX_BLOCKS);
+	ext4_es_lru_del(inode1);
+	ext4_es_lru_del(inode2);
 
 	isize = i_size_read(inode1);
 	i_size_write(inode1, i_size_read(inode2));
@@ -145,7 +151,8 @@ static long swap_inode_boot_loader(struct super_block *sb,
 		inode_bl->i_version = 1;
 		i_size_write(inode_bl, 0);
 		inode_bl->i_mode = S_IFREG;
-		if (ext4_has_feature_extents(sb)) {
+		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+					      EXT4_FEATURE_INCOMPAT_EXTENTS)) {
 			ext4_set_inode_flag(inode_bl, EXT4_INODE_EXTENTS);
 			ext4_ext_tree_init(handle, inode_bl);
 		} else
@@ -382,7 +389,8 @@ setversion_out:
 			goto group_extend_out;
 		}
 
-		if (ext4_has_feature_bigalloc(sb)) {
+		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 			ext4_msg(sb, KERN_ERR,
 				 "Online resizing not supported with bigalloc");
 			err = -EOPNOTSUPP;
@@ -430,7 +438,8 @@ group_extend_out:
 			goto mext_out;
 		}
 
-		if (ext4_has_feature_bigalloc(sb)) {
+		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 			ext4_msg(sb, KERN_ERR,
 				 "Online defrag not supported with bigalloc");
 			err = -EOPNOTSUPP;
@@ -467,7 +476,8 @@ mext_out:
 			goto group_add_out;
 		}
 
-		if (ext4_has_feature_bigalloc(sb)) {
+		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 			ext4_msg(sb, KERN_ERR,
 				 "Online resizing not supported with bigalloc");
 			err = -EOPNOTSUPP;
@@ -549,7 +559,8 @@ group_add_out:
 		int err = 0, err2 = 0;
 		ext4_group_t o_group = EXT4_SB(sb)->s_groups_count;
 
-		if (ext4_has_feature_bigalloc(sb)) {
+		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 			ext4_msg(sb, KERN_ERR,
 				 "Online resizing not (yet) supported with bigalloc");
 			return -EOPNOTSUPP;
@@ -633,7 +644,17 @@ resizefs_out:
 			goto encryption_policy_out;
 		}
 
+		err = mnt_want_write_file(filp);
+		if (err)
+			goto encryption_policy_out;
+
+		mutex_lock(&inode->i_mutex);
+
 		err = ext4_process_policy(&policy, inode);
+
+		mutex_unlock(&inode->i_mutex);
+
+		mnt_drop_write_file(filp);
 encryption_policy_out:
 		return err;
 #else
@@ -754,6 +775,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return err;
 	}
 	case EXT4_IOC_MOVE_EXT:
+	case FITRIM:
 	case EXT4_IOC_RESIZE_FS:
 	case EXT4_IOC_PRECACHE_EXTENTS:
 	case EXT4_IOC_SET_ENCRYPTION_POLICY:

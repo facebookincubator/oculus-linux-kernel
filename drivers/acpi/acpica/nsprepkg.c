@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -316,13 +316,6 @@ acpi_ns_check_package(struct acpi_evaluate_info *info,
 		    acpi_ns_check_package_list(info, package, elements, count);
 		break;
 
-	case ACPI_PTYPE2_VAR_VAR:
-		/*
-		 * Returns a variable list of packages, each with a variable list
-		 * of objects.
-		 */
-		break;
-
 	case ACPI_PTYPE2_UUID_PAIR:
 
 		/* The package must contain pairs of (UUID + type) */
@@ -492,12 +485,6 @@ acpi_ns_check_package_list(struct acpi_evaluate_info *info,
 			if (ACPI_FAILURE(status)) {
 				return (status);
 			}
-			break;
-
-		case ACPI_PTYPE2_VAR_VAR:
-			/*
-			 * Each subpackage has a fixed or variable number of elements
-			 */
 			break;
 
 		case ACPI_PTYPE2_FIXED:

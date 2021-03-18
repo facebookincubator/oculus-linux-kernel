@@ -219,7 +219,6 @@
 		interrupts = <0 58 0>;
 		clocks = <&clock CLK_B_125>;
 		clock-names = "tmu_apbif";
-		#include "exynos5440-tmu-sensor-conf.dtsi"
 	};
 
 	tmuctrl_1: tmuctrl@16011C {
@@ -228,7 +227,6 @@
 		interrupts = <0 58 0>;
 		clocks = <&clock CLK_B_125>;
 		clock-names = "tmu_apbif";
-		#include "exynos5440-tmu-sensor-conf.dtsi"
 	};
 
 	tmuctrl_2: tmuctrl@160120 {
@@ -237,22 +235,6 @@
 		interrupts = <0 58 0>;
 		clocks = <&clock CLK_B_125>;
 		clock-names = "tmu_apbif";
-		#include "exynos5440-tmu-sensor-conf.dtsi"
-	};
-
-	thermal-zones {
-		cpu0_thermal: cpu0-thermal {
-			thermal-sensors = <&tmuctrl_0>;
-			#include "exynos5440-trip-points.dtsi"
-		};
-		cpu1_thermal: cpu1-thermal {
-		       thermal-sensors = <&tmuctrl_1>;
-		       #include "exynos5440-trip-points.dtsi"
-		};
-		cpu2_thermal: cpu2-thermal {
-		       thermal-sensors = <&tmuctrl_2>;
-		       #include "exynos5440-trip-points.dtsi"
-		};
 	};
 
 	sata@210000 {
@@ -279,7 +261,7 @@
 		clock-names = "usbhost";
 	};
 
-	pcie_0: pcie@290000 {
+	pcie@290000 {
 		compatible = "samsung,exynos5440-pcie", "snps,dw-pcie";
 		reg = <0x290000 0x1000
 			0x270000 0x1000
@@ -300,7 +282,7 @@
 		status = "disabled";
 	};
 
-	pcie_1: pcie@2a0000 {
+	pcie@2a0000 {
 		compatible = "samsung,exynos5440-pcie", "snps,dw-pcie";
 		reg = <0x2a0000 0x1000
 			0x272000 0x1000

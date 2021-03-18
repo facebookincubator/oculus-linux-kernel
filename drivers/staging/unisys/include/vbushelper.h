@@ -18,25 +18,27 @@
 #ifndef __VBUSHELPER_H__
 #define __VBUSHELPER_H__
 
+#include "vbusdeviceinfo.h"
+
 /* TARGET_HOSTNAME specified as -DTARGET_HOSTNAME=\"thename\" on the
  * command line */
 
 #define TARGET_HOSTNAME "linuxguest"
 
 static inline void bus_device_info_init(
-		struct ultra_vbus_deviceinfo *bus_device_info_ptr,
+		ULTRA_VBUS_DEVICEINFO * bus_device_info_ptr,
 		const char *dev_type, const char *drv_name,
 		const char *ver, const char *ver_tag)
 {
-	memset(bus_device_info_ptr, 0, sizeof(struct ultra_vbus_deviceinfo));
-	snprintf(bus_device_info_ptr->devtype,
-		 sizeof(bus_device_info_ptr->devtype),
+	memset(bus_device_info_ptr, 0, sizeof(ULTRA_VBUS_DEVICEINFO));
+	snprintf(bus_device_info_ptr->devType,
+		 sizeof(bus_device_info_ptr->devType),
 		 "%s", (dev_type) ? dev_type : "unknownType");
-	snprintf(bus_device_info_ptr->drvname,
-		 sizeof(bus_device_info_ptr->drvname),
+	snprintf(bus_device_info_ptr->drvName,
+		 sizeof(bus_device_info_ptr->drvName),
 		 "%s", (drv_name) ? drv_name : "unknownDriver");
-	snprintf(bus_device_info_ptr->infostrs,
-		 sizeof(bus_device_info_ptr->infostrs), "%s\t%s\t%s",
+	snprintf(bus_device_info_ptr->infoStrings,
+		 sizeof(bus_device_info_ptr->infoStrings), "%s\t%s\t%s",
 		 (ver) ? ver : "unknownVer",
 		 (ver_tag) ? ver_tag : "unknownVerTag",
 		 TARGET_HOSTNAME);

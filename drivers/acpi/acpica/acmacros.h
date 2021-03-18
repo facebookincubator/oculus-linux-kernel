@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -219,15 +219,6 @@
 #define ACPI_DIV_32(a)                  _ACPI_DIV(a, 5)
 #define ACPI_MUL_32(a)                  _ACPI_MUL(a, 5)
 #define ACPI_MOD_32(a)                  _ACPI_MOD(a, 32)
-
-/* Test for ASCII character */
-
-#define ACPI_IS_ASCII(c)                ((c) < 0x80)
-
-/* Signed integers */
-
-#define ACPI_SIGN_POSITIVE              0
-#define ACPI_SIGN_NEGATIVE              1
 
 /*
  * Rounding macros (Power of two boundaries only)

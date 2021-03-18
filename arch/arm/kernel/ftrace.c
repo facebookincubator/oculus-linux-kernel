@@ -20,7 +20,8 @@
 #include <asm/cacheflush.h>
 #include <asm/opcodes.h>
 #include <asm/ftrace.h>
-#include <asm/insn.h>
+
+#include "insn.h"
 
 #ifdef CONFIG_THUMB2_KERNEL
 #define	NOP		0xf85deb04	/* pop.w {lr} */

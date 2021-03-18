@@ -185,7 +185,7 @@ static void enable_extra_feature(unsigned int features)
 		u &= ~0x01000000;
 	else
 		u |= 0x01000000;
-	pr_info("Tauros2: %s L2 prefetch.\n",
+	printk(KERN_INFO "Tauros2: %s L2 prefetch.\n",
 			(features & CACHE_TAUROS2_PREFETCH_ON)
 			? "Enabling" : "Disabling");
 
@@ -193,7 +193,7 @@ static void enable_extra_feature(unsigned int features)
 		u |= 0x00100000;
 	else
 		u &= ~0x00100000;
-	pr_info("Tauros2: %s line fill burt8.\n",
+	printk(KERN_INFO "Tauros2: %s line fill burt8.\n",
 			(features & CACHE_TAUROS2_LINEFILL_BURST8)
 			? "Enabling" : "Disabling");
 
@@ -216,7 +216,7 @@ static void __init tauros2_internal_init(unsigned int features)
 		 */
 		feat = read_extra_features();
 		if (!(feat & 0x00400000)) {
-			pr_info("Tauros2: Enabling L2 cache.\n");
+			printk(KERN_INFO "Tauros2: Enabling L2 cache.\n");
 			write_extra_features(feat | 0x00400000);
 		}
 
@@ -253,7 +253,7 @@ static void __init tauros2_internal_init(unsigned int features)
 		 */
 		actlr = read_actlr();
 		if (!(actlr & 0x00000002)) {
-			pr_info("Tauros2: Enabling L2 cache.\n");
+			printk(KERN_INFO "Tauros2: Enabling L2 cache.\n");
 			write_actlr(actlr | 0x00000002);
 		}
 
@@ -262,11 +262,11 @@ static void __init tauros2_internal_init(unsigned int features)
 #endif
 
 	if (mode == NULL) {
-		pr_crit("Tauros2: Unable to detect CPU mode.\n");
+		printk(KERN_CRIT "Tauros2: Unable to detect CPU mode.\n");
 		return;
 	}
 
-	pr_info("Tauros2: L2 cache support initialised "
+	printk(KERN_INFO "Tauros2: L2 cache support initialised "
 			 "in %s mode.\n", mode);
 }
 

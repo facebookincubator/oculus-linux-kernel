@@ -129,7 +129,7 @@ static int hix5hd2_sata_phy_init(struct phy *phy)
 	return 0;
 }
 
-static const struct phy_ops hix5hd2_sata_phy_ops = {
+static struct phy_ops hix5hd2_sata_phy_ops = {
 	.init		= hix5hd2_sata_phy_init,
 	.owner		= THIS_MODULE,
 };
@@ -147,9 +147,6 @@ static int hix5hd2_sata_phy_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
-		return -EINVAL;
-
 	priv->base = devm_ioremap(dev, res->start, resource_size(res));
 	if (!priv->base)
 		return -ENOMEM;
@@ -159,7 +156,7 @@ static int hix5hd2_sata_phy_probe(struct platform_device *pdev)
 	if (IS_ERR(priv->peri_ctrl))
 		priv->peri_ctrl = NULL;
 
-	phy = devm_phy_create(dev, NULL, &hix5hd2_sata_phy_ops);
+	phy = devm_phy_create(dev, NULL, &hix5hd2_sata_phy_ops, NULL);
 	if (IS_ERR(phy)) {
 		dev_err(dev, "failed to create PHY\n");
 		return PTR_ERR(phy);
@@ -167,7 +164,10 @@ static int hix5hd2_sata_phy_probe(struct platform_device *pdev)
 
 	phy_set_drvdata(phy, priv);
 	phy_provider = devm_of_phy_provider_register(dev, of_phy_simple_xlate);
-	return PTR_ERR_OR_ZERO(phy_provider);
+	if (IS_ERR(phy_provider))
+		return PTR_ERR(phy_provider);
+
+	return 0;
 }
 
 static const struct of_device_id hix5hd2_sata_phy_of_match[] = {

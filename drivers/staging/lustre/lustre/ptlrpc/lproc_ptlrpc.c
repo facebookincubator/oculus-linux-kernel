@@ -35,6 +35,7 @@
  */
 #define DEBUG_SUBSYSTEM S_CLASS
 
+
 #include "../include/obd_support.h"
 #include "../include/obd.h"
 #include "../include/lprocfs_status.h"
@@ -43,7 +44,8 @@
 #include "../include/obd_class.h"
 #include "ptlrpc_internal.h"
 
-static struct ll_rpc_opcode {
+
+struct ll_rpc_opcode {
 	__u32       opcode;
 	const char *opname;
 } ll_rpc_opcode_table[LUSTRE_MAX_OPCODES] = {
@@ -52,7 +54,7 @@ static struct ll_rpc_opcode {
 	{ OST_SETATTR,      "ost_setattr" },
 	{ OST_READ,	 "ost_read" },
 	{ OST_WRITE,	"ost_write" },
-	{ OST_CREATE,       "ost_create" },
+	{ OST_CREATE ,      "ost_create" },
 	{ OST_DESTROY,      "ost_destroy" },
 	{ OST_GET_INFO,     "ost_get_info" },
 	{ OST_CONNECT,      "ost_connect" },
@@ -134,7 +136,7 @@ static struct ll_rpc_opcode {
 	{ UPDATE_OBJ,	    "update_obj" },
 };
 
-static struct ll_eopcode {
+struct ll_eopcode {
 	__u32       opcode;
 	const char *opname;
 } ll_eopcode_table[EXTRA_LAST_OPC] = {
@@ -164,7 +166,6 @@ const char *ll_opcode2str(__u32 opcode)
 	 *	ptlrpc_internal.h needs to be modified.
 	 */
 	__u32 offset = opcode_offset(opcode);
-
 	LASSERTF(offset < LUSTRE_MAX_OPCODES,
 		 "offset %u >= LUSTRE_MAX_OPCODES %u\n",
 		 offset, LUSTRE_MAX_OPCODES);
@@ -174,25 +175,23 @@ const char *ll_opcode2str(__u32 opcode)
 	return ll_rpc_opcode_table[offset].opname;
 }
 
-static const char *ll_eopcode2str(__u32 opcode)
+const char* ll_eopcode2str(__u32 opcode)
 {
 	LASSERT(ll_eopcode_table[opcode].opcode == opcode);
 	return ll_eopcode_table[opcode].opname;
 }
-
-static void
-ptlrpc_ldebugfs_register(struct dentry *root, char *dir,
-			 char *name,
-			 struct dentry **debugfs_root_ret,
-			 struct lprocfs_stats **stats_ret)
+#if defined (CONFIG_PROC_FS)
+void ptlrpc_lprocfs_register(struct proc_dir_entry *root, char *dir,
+			     char *name, struct proc_dir_entry **procroot_ret,
+			     struct lprocfs_stats **stats_ret)
 {
-	struct dentry *svc_debugfs_entry;
+	struct proc_dir_entry *svc_procroot;
 	struct lprocfs_stats *svc_stats;
 	int i, rc;
 	unsigned int svc_counter_config = LPROCFS_CNTR_AVGMINMAX |
 					  LPROCFS_CNTR_STDDEV;
 
-	LASSERT(*debugfs_root_ret == NULL);
+	LASSERT(*procroot_ret == NULL);
 	LASSERT(*stats_ret == NULL);
 
 	svc_stats = lprocfs_alloc_stats(EXTRA_MAX_OPCODES+LUSTRE_MAX_OPCODES,
@@ -200,14 +199,14 @@ ptlrpc_ldebugfs_register(struct dentry *root, char *dir,
 	if (svc_stats == NULL)
 		return;
 
-	if (dir != NULL) {
-		svc_debugfs_entry = ldebugfs_register(dir, root, NULL, NULL);
-		if (IS_ERR(svc_debugfs_entry)) {
+	if (dir) {
+		svc_procroot = lprocfs_register(dir, root, NULL, NULL);
+		if (IS_ERR(svc_procroot)) {
 			lprocfs_free_stats(&svc_stats);
 			return;
 		}
 	} else {
-		svc_debugfs_entry = root;
+		svc_procroot = root;
 	}
 
 	lprocfs_counter_init(svc_stats, PTLRPC_REQWAIT_CNTR,
@@ -238,20 +237,19 @@ ptlrpc_ldebugfs_register(struct dentry *root, char *dir,
 	}
 	for (i = 0; i < LUSTRE_MAX_OPCODES; i++) {
 		__u32 opcode = ll_rpc_opcode_table[i].opcode;
-
 		lprocfs_counter_init(svc_stats,
 				     EXTRA_MAX_OPCODES + i, svc_counter_config,
 				     ll_opcode2str(opcode), "usec");
 	}
 
-	rc = ldebugfs_register_stats(svc_debugfs_entry, name, svc_stats);
+	rc = lprocfs_register_stats(svc_procroot, name, svc_stats);
 	if (rc < 0) {
-		if (dir != NULL)
-			ldebugfs_remove(&svc_debugfs_entry);
+		if (dir)
+			lprocfs_remove(&svc_procroot);
 		lprocfs_free_stats(&svc_stats);
 	} else {
-		if (dir != NULL)
-			*debugfs_root_ret = svc_debugfs_entry;
+		if (dir)
+			*procroot_ret = svc_procroot;
 		*stats_ret = svc_stats;
 	}
 }
@@ -261,16 +259,14 @@ ptlrpc_lprocfs_req_history_len_seq_show(struct seq_file *m, void *v)
 {
 	struct ptlrpc_service *svc = m->private;
 	struct ptlrpc_service_part *svcpt;
-	int total = 0;
-	int i;
+	int	total = 0;
+	int	i;
 
 	ptlrpc_service_for_each_part(svcpt, i, svc)
 		total += svcpt->scp_hist_nrqbds;
 
-	seq_printf(m, "%d\n", total);
-	return 0;
+	return seq_printf(m, "%d\n", total);
 }
-
 LPROC_SEQ_FOPS_RO(ptlrpc_lprocfs_req_history_len);
 
 static int
@@ -278,25 +274,23 @@ ptlrpc_lprocfs_req_history_max_seq_show(struct seq_file *m, void *n)
 {
 	struct ptlrpc_service *svc = m->private;
 	struct ptlrpc_service_part *svcpt;
-	int total = 0;
-	int i;
+	int	total = 0;
+	int	i;
 
 	ptlrpc_service_for_each_part(svcpt, i, svc)
 		total += svc->srv_hist_nrqbds_cpt_max;
 
-	seq_printf(m, "%d\n", total);
-	return 0;
+	return seq_printf(m, "%d\n", total);
 }
 
 static ssize_t
-ptlrpc_lprocfs_req_history_max_seq_write(struct file *file,
-					 const char __user *buffer,
+ptlrpc_lprocfs_req_history_max_seq_write(struct file *file, const char *buffer,
 					 size_t count, loff_t *off)
 {
 	struct ptlrpc_service *svc = ((struct seq_file *)file->private_data)->private;
-	int bufpages;
-	int val;
-	int rc;
+	int			    bufpages;
+	int			    val;
+	int			    rc;
 
 	rc = lprocfs_write_helper(buffer, count, &val);
 	if (rc < 0)
@@ -323,25 +317,24 @@ ptlrpc_lprocfs_req_history_max_seq_write(struct file *file,
 
 	return count;
 }
-
 LPROC_SEQ_FOPS(ptlrpc_lprocfs_req_history_max);
 
-static ssize_t threads_min_show(struct kobject *kobj, struct attribute *attr,
-				char *buf)
+static int
+ptlrpc_lprocfs_threads_min_seq_show(struct seq_file *m, void *n)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
+	struct ptlrpc_service *svc = m->private;
 
-	return sprintf(buf, "%d\n", svc->srv_nthrs_cpt_init * svc->srv_ncpts);
+	return seq_printf(m, "%d\n",
+			svc->srv_nthrs_cpt_init * svc->srv_ncpts);
 }
 
-static ssize_t threads_min_store(struct kobject *kobj, struct attribute *attr,
-				 const char *buffer, size_t count)
+static ssize_t
+ptlrpc_lprocfs_threads_min_seq_write(struct file *file, const char *buffer,
+				     size_t count, loff_t *off)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
-	unsigned long val;
-	int rc = kstrtoul(buffer, 10, &val);
+	struct ptlrpc_service *svc = ((struct seq_file *)file->private_data)->private;
+	int	val;
+	int	rc = lprocfs_write_helper(buffer, count, &val);
 
 	if (rc < 0)
 		return rc;
@@ -361,41 +354,39 @@ static ssize_t threads_min_store(struct kobject *kobj, struct attribute *attr,
 
 	return count;
 }
-LUSTRE_RW_ATTR(threads_min);
+LPROC_SEQ_FOPS(ptlrpc_lprocfs_threads_min);
 
-static ssize_t threads_started_show(struct kobject *kobj,
-				    struct attribute *attr,
-				    char *buf)
+static int
+ptlrpc_lprocfs_threads_started_seq_show(struct seq_file *m, void *n)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
+	struct ptlrpc_service *svc = m->private;
 	struct ptlrpc_service_part *svcpt;
-	int total = 0;
-	int i;
+	int	total = 0;
+	int	i;
 
 	ptlrpc_service_for_each_part(svcpt, i, svc)
 		total += svcpt->scp_nthrs_running;
 
-	return sprintf(buf, "%d\n", total);
+	return seq_printf(m, "%d\n", total);
 }
-LUSTRE_RO_ATTR(threads_started);
+LPROC_SEQ_FOPS_RO(ptlrpc_lprocfs_threads_started);
 
-static ssize_t threads_max_show(struct kobject *kobj, struct attribute *attr,
-				char *buf)
+static int
+ptlrpc_lprocfs_threads_max_seq_show(struct seq_file *m, void *n)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
+	struct ptlrpc_service *svc = m->private;
 
-	return sprintf(buf, "%d\n", svc->srv_nthrs_cpt_limit * svc->srv_ncpts);
+	return seq_printf(m, "%d\n",
+			svc->srv_nthrs_cpt_limit * svc->srv_ncpts);
 }
 
-static ssize_t threads_max_store(struct kobject *kobj, struct attribute *attr,
-				 const char *buffer, size_t count)
+static ssize_t
+ptlrpc_lprocfs_threads_max_seq_write(struct file *file, const char *buffer,
+				     size_t count, loff_t *off)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
-	unsigned long val;
-	int rc = kstrtoul(buffer, 10, &val);
+	struct ptlrpc_service *svc = ((struct seq_file *)file->private_data)->private;
+	int	val;
+	int	rc = lprocfs_write_helper(buffer, count, &val);
 
 	if (rc < 0)
 		return rc;
@@ -415,12 +406,13 @@ static ssize_t threads_max_store(struct kobject *kobj, struct attribute *attr,
 
 	return count;
 }
-LUSTRE_RW_ATTR(threads_max);
+LPROC_SEQ_FOPS(ptlrpc_lprocfs_threads_max);
 
 /**
  * \addtogoup nrs
  * @{
  */
+extern struct nrs_core nrs_core;
 
 /**
  * Translates \e ptlrpc_nrs_pol_state values to human-readable strings.
@@ -453,7 +445,7 @@ static const char *nrs_state2str(enum ptlrpc_nrs_pol_state state)
  * \param[in] policy The policy
  * \param[out] info  Holds returned status information
  */
-static void nrs_policy_get_info_locked(struct ptlrpc_nrs_policy *policy,
+void nrs_policy_get_info_locked(struct ptlrpc_nrs_policy *policy,
 				struct ptlrpc_nrs_pol_info *info)
 {
 	LASSERT(policy != NULL);
@@ -478,17 +470,17 @@ static void nrs_policy_get_info_locked(struct ptlrpc_nrs_policy *policy,
  */
 static int ptlrpc_lprocfs_nrs_seq_show(struct seq_file *m, void *n)
 {
-	struct ptlrpc_service *svc = m->private;
-	struct ptlrpc_service_part *svcpt;
-	struct ptlrpc_nrs *nrs;
-	struct ptlrpc_nrs_policy *policy;
-	struct ptlrpc_nrs_pol_info *infos;
-	struct ptlrpc_nrs_pol_info tmp;
-	unsigned num_pols;
-	unsigned pol_idx = 0;
-	bool hp = false;
-	int i;
-	int rc = 0;
+	struct ptlrpc_service	       *svc = m->private;
+	struct ptlrpc_service_part     *svcpt;
+	struct ptlrpc_nrs	       *nrs;
+	struct ptlrpc_nrs_policy       *policy;
+	struct ptlrpc_nrs_pol_info     *infos;
+	struct ptlrpc_nrs_pol_info	tmp;
+	unsigned			num_pols;
+	unsigned			pol_idx = 0;
+	bool				hp = false;
+	int				i;
+	int				rc = 0;
 
 	/**
 	 * Serialize NRS core lprocfs operations with policy registration/
@@ -507,10 +499,10 @@ static int ptlrpc_lprocfs_nrs_seq_show(struct seq_file *m, void *n)
 	num_pols = svc->srv_parts[0]->scp_nrs_reg.nrs_num_pols;
 	spin_unlock(&nrs->nrs_lock);
 
-	infos = kcalloc(num_pols, sizeof(*infos), GFP_NOFS);
+	OBD_ALLOC(infos, num_pols * sizeof(*infos));
 	if (infos == NULL) {
 		rc = -ENOMEM;
-		goto unlock;
+		goto out;
 	}
 again:
 
@@ -617,8 +609,10 @@ again:
 		goto again;
 	}
 
-	kfree(infos);
-unlock:
+out:
+	if (infos)
+		OBD_FREE(infos, num_pols * sizeof(*infos));
+
 	mutex_unlock(&nrs_core.nrs_mutex);
 
 	return rc;
@@ -638,22 +632,26 @@ unlock:
  * regular and high-priority (if the service has one) NRS head.
  */
 static ssize_t ptlrpc_lprocfs_nrs_seq_write(struct file *file,
-					    const char __user *buffer,
-					    size_t count, loff_t *off)
+					const char __user *buffer,
+					size_t count, loff_t *off)
 {
 	struct ptlrpc_service *svc = ((struct seq_file *)file->private_data)->private;
-	enum ptlrpc_nrs_queue_type queue = PTLRPC_NRS_QUEUE_BOTH;
-	char *cmd;
-	char *cmd_copy = NULL;
-	char *token;
-	int rc = 0;
+	enum ptlrpc_nrs_queue_type	queue = PTLRPC_NRS_QUEUE_BOTH;
+	char			       *cmd;
+	char			       *cmd_copy = NULL;
+	char			       *token;
+	int				rc = 0;
 
-	if (count >= LPROCFS_NRS_WR_MAX_CMD)
-		return -EINVAL;
+	if (count >= LPROCFS_NRS_WR_MAX_CMD) {
+		rc = -EINVAL;
+		goto out;
+	}
 
-	cmd = kzalloc(LPROCFS_NRS_WR_MAX_CMD, GFP_NOFS);
-	if (!cmd)
-		return -ENOMEM;
+	OBD_ALLOC(cmd, LPROCFS_NRS_WR_MAX_CMD);
+	if (cmd == NULL) {
+		rc = -ENOMEM;
+		goto out;
+	}
 	/**
 	 * strsep() modifies its argument, so keep a copy
 	 */
@@ -696,7 +694,8 @@ default_queue:
 	if (queue == PTLRPC_NRS_QUEUE_HP && !nrs_svc_has_hp(svc)) {
 		rc = -ENODEV;
 		goto out;
-	} else if (queue == PTLRPC_NRS_QUEUE_BOTH && !nrs_svc_has_hp(svc))
+	}
+	else if (queue == PTLRPC_NRS_QUEUE_BOTH && !nrs_svc_has_hp(svc))
 		queue = PTLRPC_NRS_QUEUE_REG;
 
 	/**
@@ -710,11 +709,11 @@ default_queue:
 
 	mutex_unlock(&nrs_core.nrs_mutex);
 out:
-	kfree(cmd_copy);
+	if (cmd_copy)
+		OBD_FREE(cmd_copy, LPROCFS_NRS_WR_MAX_CMD);
 
 	return rc < 0 ? rc : count;
 }
-
 LPROC_SEQ_FOPS(ptlrpc_lprocfs_nrs);
 
 /** @} nrs */
@@ -725,13 +724,13 @@ struct ptlrpc_srh_iterator {
 	struct ptlrpc_request	*srhi_req;
 };
 
-static int
+int
 ptlrpc_lprocfs_svc_req_history_seek(struct ptlrpc_service_part *svcpt,
 				    struct ptlrpc_srh_iterator *srhi,
 				    __u64 seq)
 {
-	struct list_head *e;
-	struct ptlrpc_request *req;
+	struct list_head		*e;
+	struct ptlrpc_request	*req;
 
 	if (srhi->srhi_req != NULL &&
 	    srhi->srhi_seq > svcpt->scp_hist_seq_culled &&
@@ -747,7 +746,8 @@ ptlrpc_lprocfs_svc_req_history_seek(struct ptlrpc_service_part *svcpt,
 			 svcpt->scp_service->srv_name, svcpt->scp_cpt,
 			 srhi->srhi_seq, srhi->srhi_req->rq_history_seq);
 		LASSERTF(!list_empty(&svcpt->scp_hist_reqs),
-			 "%s:%d: seek offset %llu, request seq %llu, last culled %llu\n",
+			 "%s:%d: seek offset %llu, request seq %llu, "
+			 "last culled %llu\n",
 			 svcpt->scp_service->srv_name, svcpt->scp_cpt,
 			 seq, srhi->srhi_seq, svcpt->scp_hist_seq_culled);
 		e = &srhi->srhi_req->rq_history_list;
@@ -814,13 +814,13 @@ ptlrpc_lprocfs_svc_req_history_start(struct seq_file *s, loff_t *pos)
 	int				i;
 
 	if (sizeof(loff_t) != sizeof(__u64)) { /* can't support */
-		CWARN("Failed to read request history because size of loff_t %d can't match size of u64\n",
-		      (int)sizeof(loff_t));
+		CWARN("Failed to read request history because size of loff_t "
+		      "%d can't match size of u64\n", (int)sizeof(loff_t));
 		return NULL;
 	}
 
-	srhi = kzalloc(sizeof(*srhi), GFP_NOFS);
-	if (!srhi)
+	OBD_ALLOC(srhi, sizeof(*srhi));
+	if (srhi == NULL)
 		return NULL;
 
 	srhi->srhi_seq = 0;
@@ -845,7 +845,7 @@ ptlrpc_lprocfs_svc_req_history_start(struct seq_file *s, loff_t *pos)
 		}
 	}
 
-	kfree(srhi);
+	OBD_FREE(srhi, sizeof(*srhi));
 	return NULL;
 }
 
@@ -854,19 +854,20 @@ ptlrpc_lprocfs_svc_req_history_stop(struct seq_file *s, void *iter)
 {
 	struct ptlrpc_srh_iterator *srhi = iter;
 
-	kfree(srhi);
+	if (srhi != NULL)
+		OBD_FREE(srhi, sizeof(*srhi));
 }
 
 static void *
 ptlrpc_lprocfs_svc_req_history_next(struct seq_file *s,
 				    void *iter, loff_t *pos)
 {
-	struct ptlrpc_service *svc = s->private;
-	struct ptlrpc_srh_iterator *srhi = iter;
-	struct ptlrpc_service_part *svcpt;
-	__u64 seq;
-	int rc;
-	int i;
+	struct ptlrpc_service		*svc = s->private;
+	struct ptlrpc_srh_iterator	*srhi = iter;
+	struct ptlrpc_service_part	*svcpt;
+	__u64				seq;
+	int				rc;
+	int				i;
 
 	for (i = srhi->srhi_idx; i < svc->srv_ncpts; i++) {
 		svcpt = svc->srv_parts[i];
@@ -888,17 +889,47 @@ ptlrpc_lprocfs_svc_req_history_next(struct seq_file *s,
 		}
 	}
 
-	kfree(srhi);
+	OBD_FREE(srhi, sizeof(*srhi));
 	return NULL;
 }
 
+/* common ost/mdt so_req_printer */
+void target_print_req(void *seq_file, struct ptlrpc_request *req)
+{
+	/* Called holding srv_lock with irqs disabled.
+	 * Print specific req contents and a newline.
+	 * CAVEAT EMPTOR: check request message length before printing!!!
+	 * You might have received any old crap so you must be just as
+	 * careful here as the service's request parser!!! */
+	struct seq_file *sf = seq_file;
+
+	switch (req->rq_phase) {
+	case RQ_PHASE_NEW:
+		/* still awaiting a service thread's attention, or rejected
+		 * because the generic request message didn't unpack */
+		seq_printf(sf, "<not swabbed>\n");
+		break;
+	case RQ_PHASE_INTERPRET:
+		/* being handled, so basic msg swabbed, and opc is valid
+		 * but racing with mds_handle() */
+	case RQ_PHASE_COMPLETE:
+		/* been handled by mds_handle() reply state possibly still
+		 * volatile */
+		seq_printf(sf, "opc %d\n", lustre_msg_get_opc(req->rq_reqmsg));
+		break;
+	default:
+		DEBUG_REQ(D_ERROR, req, "bad phase %d", req->rq_phase);
+	}
+}
+EXPORT_SYMBOL(target_print_req);
+
 static int ptlrpc_lprocfs_svc_req_history_show(struct seq_file *s, void *iter)
 {
-	struct ptlrpc_service *svc = s->private;
-	struct ptlrpc_srh_iterator *srhi = iter;
-	struct ptlrpc_service_part *svcpt;
-	struct ptlrpc_request *req;
-	int rc;
+	struct ptlrpc_service		*svc = s->private;
+	struct ptlrpc_srh_iterator	*srhi = iter;
+	struct ptlrpc_service_part	*svcpt;
+	struct ptlrpc_request		*req;
+	int				rc;
 
 	LASSERT(srhi->srhi_idx < svc->srv_ncpts);
 
@@ -909,26 +940,23 @@ static int ptlrpc_lprocfs_svc_req_history_show(struct seq_file *s, void *iter)
 	rc = ptlrpc_lprocfs_svc_req_history_seek(svcpt, srhi, srhi->srhi_seq);
 
 	if (rc == 0) {
-		char nidstr[LNET_NIDSTR_SIZE];
-
 		req = srhi->srhi_req;
 
-		libcfs_nid2str_r(req->rq_self, nidstr, sizeof(nidstr));
 		/* Print common req fields.
 		 * CAVEAT EMPTOR: we're racing with the service handler
 		 * here.  The request could contain any old crap, so you
 		 * must be just as careful as the service's request
 		 * parser. Currently I only print stuff here I know is OK
 		 * to look at coz it was set up in request_in_callback()!!! */
-		seq_printf(s, "%lld:%s:%s:x%llu:%d:%s:%lld:%lds(%+lds) ",
-			   req->rq_history_seq, nidstr,
+		seq_printf(s, "%lld:%s:%s:x%llu:%d:%s:%ld:%lds(%+lds) ",
+			   req->rq_history_seq, libcfs_nid2str(req->rq_self),
 			   libcfs_id2str(req->rq_peer), req->rq_xid,
 			   req->rq_reqlen, ptlrpc_rqphase2str(req),
-			   (s64)req->rq_arrival_time.tv_sec,
-			   (long)(req->rq_sent - req->rq_arrival_time.tv_sec),
-			   (long)(req->rq_sent - req->rq_deadline));
+			   req->rq_arrival_time.tv_sec,
+			   req->rq_sent - req->rq_arrival_time.tv_sec,
+			   req->rq_sent - req->rq_deadline);
 		if (svc->srv_ops.so_req_printer == NULL)
-			seq_putc(s, '\n');
+			seq_printf(s, "\n");
 		else
 			svc->srv_ops.so_req_printer(s, srhi->srhi_req);
 	}
@@ -946,28 +974,28 @@ ptlrpc_lprocfs_svc_req_history_open(struct inode *inode, struct file *file)
 		.next  = ptlrpc_lprocfs_svc_req_history_next,
 		.show  = ptlrpc_lprocfs_svc_req_history_show,
 	};
-	struct seq_file *seqf;
-	int rc;
+	struct seq_file       *seqf;
+	int		    rc;
 
 	rc = seq_open(file, &sops);
 	if (rc)
 		return rc;
 
 	seqf = file->private_data;
-	seqf->private = inode->i_private;
+	seqf->private = PDE_DATA(inode);
 	return 0;
 }
 
 /* See also lprocfs_rd_timeouts */
 static int ptlrpc_lprocfs_timeouts_seq_show(struct seq_file *m, void *n)
 {
-	struct ptlrpc_service *svc = m->private;
-	struct ptlrpc_service_part *svcpt;
-	struct dhms ts;
-	time64_t worstt;
-	unsigned int cur;
-	unsigned int worst;
-	int i;
+	struct ptlrpc_service		*svc = m->private;
+	struct ptlrpc_service_part	*svcpt;
+	struct dhms			ts;
+	time_t				worstt;
+	unsigned int			cur;
+	unsigned int			worst;
+	int				i;
 
 	if (AT_OFF) {
 		seq_printf(m, "adaptive timeouts off, using obd_timeout %u\n",
@@ -979,40 +1007,35 @@ static int ptlrpc_lprocfs_timeouts_seq_show(struct seq_file *m, void *n)
 		cur	= at_get(&svcpt->scp_at_estimate);
 		worst	= svcpt->scp_at_estimate.at_worst_ever;
 		worstt	= svcpt->scp_at_estimate.at_worst_time;
-		s2dhms(&ts, ktime_get_real_seconds() - worstt);
+		s2dhms(&ts, get_seconds() - worstt);
 
-		seq_printf(m, "%10s : cur %3u  worst %3u (at %lld, "
+		seq_printf(m, "%10s : cur %3u  worst %3u (at %ld, "
 			      DHMS_FMT" ago) ", "service",
-			      cur, worst, (s64)worstt, DHMS_VARS(&ts));
+			      cur, worst, worstt, DHMS_VARS(&ts));
 
 		lprocfs_at_hist_helper(m, &svcpt->scp_at_estimate);
 	}
 
 	return 0;
 }
-
 LPROC_SEQ_FOPS_RO(ptlrpc_lprocfs_timeouts);
 
-static ssize_t high_priority_ratio_show(struct kobject *kobj,
-					struct attribute *attr,
-					char *buf)
+static int ptlrpc_lprocfs_hp_ratio_seq_show(struct seq_file *m, void *v)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
-	return sprintf(buf, "%d\n", svc->srv_hpreq_ratio);
+	struct ptlrpc_service *svc = m->private;
+	return seq_printf(m, "%d", svc->srv_hpreq_ratio);
 }
 
-static ssize_t high_priority_ratio_store(struct kobject *kobj,
-					 struct attribute *attr,
-					 const char *buffer,
-					 size_t count)
+static ssize_t ptlrpc_lprocfs_hp_ratio_seq_write(struct file *file,
+					     const char *buffer,
+					     size_t count,
+					     loff_t *off)
 {
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
-	int rc;
-	int val;
+	struct ptlrpc_service *svc = ((struct seq_file *)file->private_data)->private;
+	int	rc;
+	int	val;
 
-	rc = kstrtoint(buffer, 10, &val);
+	rc = lprocfs_write_helper(buffer, count, &val);
 	if (rc < 0)
 		return rc;
 
@@ -1025,61 +1048,29 @@ static ssize_t high_priority_ratio_store(struct kobject *kobj,
 
 	return count;
 }
-LUSTRE_RW_ATTR(high_priority_ratio);
+LPROC_SEQ_FOPS(ptlrpc_lprocfs_hp_ratio);
 
-static struct attribute *ptlrpc_svc_attrs[] = {
-	&lustre_attr_threads_min.attr,
-	&lustre_attr_threads_started.attr,
-	&lustre_attr_threads_max.attr,
-	&lustre_attr_high_priority_ratio.attr,
-	NULL,
-};
-
-static void ptlrpc_sysfs_svc_release(struct kobject *kobj)
-{
-	struct ptlrpc_service *svc = container_of(kobj, struct ptlrpc_service,
-						  srv_kobj);
-
-	complete(&svc->srv_kobj_unregister);
-}
-
-static struct kobj_type ptlrpc_svc_ktype = {
-	.default_attrs	= ptlrpc_svc_attrs,
-	.sysfs_ops	= &lustre_sysfs_ops,
-	.release	= ptlrpc_sysfs_svc_release,
-};
-
-void ptlrpc_sysfs_unregister_service(struct ptlrpc_service *svc)
-{
-	/* Let's see if we had a chance at initialization first */
-	if (svc->srv_kobj.kset) {
-		kobject_put(&svc->srv_kobj);
-		wait_for_completion(&svc->srv_kobj_unregister);
-	}
-}
-
-int ptlrpc_sysfs_register_service(struct kset *parent,
-				  struct ptlrpc_service *svc)
-{
-	int rc;
-
-	svc->srv_kobj.kset = parent;
-	init_completion(&svc->srv_kobj_unregister);
-	rc = kobject_init_and_add(&svc->srv_kobj, &ptlrpc_svc_ktype, NULL,
-				  "%s", svc->srv_name);
-
-	return rc;
-}
-
-void ptlrpc_ldebugfs_register_service(struct dentry *entry,
-				      struct ptlrpc_service *svc)
+void ptlrpc_lprocfs_register_service(struct proc_dir_entry *entry,
+				     struct ptlrpc_service *svc)
 {
 	struct lprocfs_vars lproc_vars[] = {
+		{.name       = "high_priority_ratio",
+		 .fops	     = &ptlrpc_lprocfs_hp_ratio_fops,
+		 .data       = svc},
 		{.name       = "req_buffer_history_len",
 		 .fops	     = &ptlrpc_lprocfs_req_history_len_fops,
 		 .data       = svc},
 		{.name       = "req_buffer_history_max",
 		 .fops	     = &ptlrpc_lprocfs_req_history_max_fops,
+		 .data       = svc},
+		{.name       = "threads_min",
+		 .fops	     = &ptlrpc_lprocfs_threads_min_fops,
+		 .data       = svc},
+		{.name       = "threads_max",
+		 .fops	     = &ptlrpc_lprocfs_threads_max_fops,
+		 .data       = svc},
+		{.name       = "threads_started",
+		 .fops	     = &ptlrpc_lprocfs_threads_started_fops,
 		 .data       = svc},
 		{.name       = "timeouts",
 		 .fops	     = &ptlrpc_lprocfs_timeouts_fops,
@@ -1089,7 +1080,7 @@ void ptlrpc_ldebugfs_register_service(struct dentry *entry,
 		 .data	     = svc},
 		{NULL}
 	};
-	static const struct file_operations req_history_fops = {
+	static struct file_operations req_history_fops = {
 		.owner       = THIS_MODULE,
 		.open	= ptlrpc_lprocfs_svc_req_history_open,
 		.read	= seq_read,
@@ -1099,26 +1090,26 @@ void ptlrpc_ldebugfs_register_service(struct dentry *entry,
 
 	int rc;
 
-	ptlrpc_ldebugfs_register(entry, svc->srv_name,
-				 "stats", &svc->srv_debugfs_entry,
-				 &svc->srv_stats);
+	ptlrpc_lprocfs_register(entry, svc->srv_name,
+				"stats", &svc->srv_procroot,
+				&svc->srv_stats);
 
-	if (svc->srv_debugfs_entry == NULL)
+	if (svc->srv_procroot == NULL)
 		return;
 
-	ldebugfs_add_vars(svc->srv_debugfs_entry, lproc_vars, NULL);
+	lprocfs_add_vars(svc->srv_procroot, lproc_vars, NULL);
 
-	rc = ldebugfs_seq_create(svc->srv_debugfs_entry, "req_history",
-				 0400, &req_history_fops, svc);
+	rc = lprocfs_seq_create(svc->srv_procroot, "req_history",
+				0400, &req_history_fops, svc);
 	if (rc)
 		CWARN("Error adding the req_history file\n");
 }
 
 void ptlrpc_lprocfs_register_obd(struct obd_device *obddev)
 {
-	ptlrpc_ldebugfs_register(obddev->obd_debugfs_entry, NULL, "stats",
-				 &obddev->obd_svc_debugfs_entry,
-				 &obddev->obd_svc_stats);
+	ptlrpc_lprocfs_register(obddev->obd_proc_entry, NULL, "stats",
+				&obddev->obd_svc_procroot,
+				&obddev->obd_svc_stats);
 }
 EXPORT_SYMBOL(ptlrpc_lprocfs_register_obd);
 
@@ -1166,8 +1157,8 @@ EXPORT_SYMBOL(ptlrpc_lprocfs_brw);
 
 void ptlrpc_lprocfs_unregister_service(struct ptlrpc_service *svc)
 {
-	if (svc->srv_debugfs_entry != NULL)
-		ldebugfs_remove(&svc->srv_debugfs_entry);
+	if (svc->srv_procroot != NULL)
+		lprocfs_remove(&svc->srv_procroot);
 
 	if (svc->srv_stats)
 		lprocfs_free_stats(&svc->srv_stats);
@@ -1175,27 +1166,73 @@ void ptlrpc_lprocfs_unregister_service(struct ptlrpc_service *svc)
 
 void ptlrpc_lprocfs_unregister_obd(struct obd_device *obd)
 {
-	if (!IS_ERR_OR_NULL(obd->obd_svc_debugfs_entry))
-		ldebugfs_remove(&obd->obd_svc_debugfs_entry);
+	if (obd->obd_svc_procroot)
+		lprocfs_remove(&obd->obd_svc_procroot);
 
 	if (obd->obd_svc_stats)
 		lprocfs_free_stats(&obd->obd_svc_stats);
 }
 EXPORT_SYMBOL(ptlrpc_lprocfs_unregister_obd);
 
+
+#define BUFLEN (UUID_MAX + 5)
+
+int lprocfs_wr_evict_client(struct file *file, const char *buffer,
+			    size_t count, loff_t *off)
+{
+	struct obd_device *obd = ((struct seq_file *)file->private_data)->private;
+	char	      *kbuf;
+	char	      *tmpbuf;
+
+	OBD_ALLOC(kbuf, BUFLEN);
+	if (kbuf == NULL)
+		return -ENOMEM;
+
+	/*
+	 * OBD_ALLOC() will zero kbuf, but we only copy BUFLEN - 1
+	 * bytes into kbuf, to ensure that the string is NUL-terminated.
+	 * UUID_MAX should include a trailing NUL already.
+	 */
+	if (copy_from_user(kbuf, buffer,
+			       min_t(unsigned long, BUFLEN - 1, count))) {
+		count = -EFAULT;
+		goto out;
+	}
+	tmpbuf = cfs_firststr(kbuf, min_t(unsigned long, BUFLEN - 1, count));
+	/* Kludge code(deadlock situation): the lprocfs lock has been held
+	 * since the client is evicted by writing client's
+	 * uuid/nid to procfs "evict_client" entry. However,
+	 * obd_export_evict_by_uuid() will call lprocfs_remove() to destroy
+	 * the proc entries under the being destroyed export{}, so I have
+	 * to drop the lock at first here.
+	 * - jay, jxiong@clusterfs.com */
+	class_incref(obd, __func__, current);
+
+	if (strncmp(tmpbuf, "nid:", 4) == 0)
+		obd_export_evict_by_nid(obd, tmpbuf + 4);
+	else if (strncmp(tmpbuf, "uuid:", 5) == 0)
+		obd_export_evict_by_uuid(obd, tmpbuf + 5);
+	else
+		obd_export_evict_by_uuid(obd, tmpbuf);
+
+	class_decref(obd, __func__, current);
+
+out:
+	OBD_FREE(kbuf, BUFLEN);
+	return count;
+}
+EXPORT_SYMBOL(lprocfs_wr_evict_client);
+
 #undef BUFLEN
 
-int lprocfs_wr_ping(struct file *file, const char __user *buffer,
+int lprocfs_wr_ping(struct file *file, const char *buffer,
 		    size_t count, loff_t *off)
 {
 	struct obd_device *obd = ((struct seq_file *)file->private_data)->private;
 	struct ptlrpc_request *req;
-	int rc;
+	int		    rc;
 
-	rc = lprocfs_climp_check(obd);
-	if (rc)
-		return rc;
-
+	LPROCFS_CLIMP_CHECK(obd);
 	req = ptlrpc_prep_ping(obd->u.cli.cl_import);
 	LPROCFS_CLIMP_EXIT(obd);
 	if (req == NULL)
@@ -1216,7 +1253,7 @@ EXPORT_SYMBOL(lprocfs_wr_ping);
  * The connection UUID is a node's primary NID. For example,
  * "echo connection=192.168.0.1@tcp0::instance > .../import".
  */
-int lprocfs_wr_import(struct file *file, const char __user *buffer,
+int lprocfs_wr_import(struct file *file, const char *buffer,
 		      size_t count, loff_t *off)
 {
 	struct obd_device *obd = ((struct seq_file *)file->private_data)->private;
@@ -1231,8 +1268,8 @@ int lprocfs_wr_import(struct file *file, const char __user *buffer,
 	if (count > PAGE_CACHE_SIZE - 1 || count <= prefix_len)
 		return -EINVAL;
 
-	kbuf = kzalloc(count + 1, GFP_NOFS);
-	if (!kbuf)
+	OBD_ALLOC(kbuf, count + 1);
+	if (kbuf == NULL)
 		return -ENOMEM;
 
 	if (copy_from_user(kbuf, buffer, count)) {
@@ -1257,16 +1294,18 @@ int lprocfs_wr_import(struct file *file, const char __user *buffer,
 		*ptr = 0;
 		do_reconn = 0;
 		ptr += strlen("::");
-		inst = simple_strtoul(ptr, &endptr, 10);
+		inst = simple_strtol(ptr, &endptr, 10);
 		if (*endptr) {
 			CERROR("config: wrong instance # %s\n", ptr);
 		} else if (inst != imp->imp_connect_data.ocd_instance) {
-			CDEBUG(D_INFO, "IR: %s is connecting to an obsoleted target(%u/%u), reconnecting...\n",
+			CDEBUG(D_INFO, "IR: %s is connecting to an obsoleted "
+			       "target(%u/%u), reconnecting...\n",
 			       imp->imp_obd->obd_name,
 			       imp->imp_connect_data.ocd_instance, inst);
 			do_reconn = 1;
 		} else {
-			CDEBUG(D_INFO, "IR: %s has already been connecting to new target(%u)\n",
+			CDEBUG(D_INFO, "IR: %s has already been connecting to "
+			       "new target(%u)\n",
 			       imp->imp_obd->obd_name, inst);
 		}
 	}
@@ -1275,7 +1314,7 @@ int lprocfs_wr_import(struct file *file, const char __user *buffer,
 		ptlrpc_recover_import(imp, uuid, 1);
 
 out:
-	kfree(kbuf);
+	OBD_FREE(kbuf, count + 1);
 	return count;
 }
 EXPORT_SYMBOL(lprocfs_wr_import);
@@ -1286,18 +1325,15 @@ int lprocfs_rd_pinger_recov(struct seq_file *m, void *n)
 	struct obd_import *imp = obd->u.cli.cl_import;
 	int rc;
 
-	rc = lprocfs_climp_check(obd);
-	if (rc)
-		return rc;
-
-	seq_printf(m, "%d\n", !imp->imp_no_pinger_recover);
+	LPROCFS_CLIMP_CHECK(obd);
+	rc = seq_printf(m, "%d\n", !imp->imp_no_pinger_recover);
 	LPROCFS_CLIMP_EXIT(obd);
 
-	return 0;
+	return rc;
 }
 EXPORT_SYMBOL(lprocfs_rd_pinger_recov);
 
-int lprocfs_wr_pinger_recov(struct file *file, const char __user *buffer,
+int lprocfs_wr_pinger_recov(struct file *file, const char *buffer,
 		      size_t count, loff_t *off)
 {
 	struct obd_device *obd = ((struct seq_file *)file->private_data)->private;
@@ -1312,10 +1348,7 @@ int lprocfs_wr_pinger_recov(struct file *file, const char __user *buffer,
 	if (val != 0 && val != 1)
 		return -ERANGE;
 
-	rc = lprocfs_climp_check(obd);
-	if (rc)
-		return rc;
-
+	LPROCFS_CLIMP_CHECK(obd);
 	spin_lock(&imp->imp_lock);
 	imp->imp_no_pinger_recover = !val;
 	spin_unlock(&imp->imp_lock);
@@ -1325,3 +1358,5 @@ int lprocfs_wr_pinger_recov(struct file *file, const char __user *buffer,
 
 }
 EXPORT_SYMBOL(lprocfs_wr_pinger_recov);
+
+#endif /* CONFIG_PROC_FS */

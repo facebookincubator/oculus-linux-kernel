@@ -131,7 +131,8 @@ static int tile_irq_cpu(int irq)
 
 	count = cpumask_weight(&intr_cpus_map);
 	if (unlikely(count == 0)) {
-		pr_warn("intr_cpus_map empty, interrupts will be delievered to dataplane tiles\n");
+		pr_warning("intr_cpus_map empty, interrupts will be"
+			   " delievered to dataplane tiles\n");
 		return irq % (smp_height * smp_width);
 	}
 
@@ -196,16 +197,16 @@ static int tile_pcie_open(int trio_index)
 	/* Get the properties of the PCIe ports on this TRIO instance. */
 	ret = gxio_trio_get_port_property(context, &pcie_ports[trio_index]);
 	if (ret < 0) {
-		pr_err("PCI: PCIE_GET_PORT_PROPERTY failure, error %d, on TRIO %d\n",
-		       ret, trio_index);
+		pr_err("PCI: PCIE_GET_PORT_PROPERTY failure, error %d,"
+		       " on TRIO %d\n", ret, trio_index);
 		goto get_port_property_failure;
 	}
 
 	context->mmio_base_mac =
 		iorpc_ioremap(context->fd, 0, HV_TRIO_CONFIG_IOREMAP_SIZE);
 	if (context->mmio_base_mac == NULL) {
-		pr_err("PCI: TRIO config space mapping failure, error %d, on TRIO %d\n",
-		       ret, trio_index);
+		pr_err("PCI: TRIO config space mapping failure, error %d,"
+		       " on TRIO %d\n", ret, trio_index);
 		ret = -ENOMEM;
 
 		goto trio_mmio_mapping_failure;
@@ -304,7 +305,7 @@ static struct irq_chip tilegx_legacy_irq_chip = {
  * to Linux which just calls handle_level_irq() after clearing the
  * MAC INTx Assert status bit associated with this interrupt.
  */
-static void trio_handle_level_irq(struct irq_desc *desc)
+static void trio_handle_level_irq(unsigned int irq, struct irq_desc *desc)
 {
 	struct pci_controller *controller = irq_desc_get_handler_data(desc);
 	gxio_trio_context_t *trio_context = controller->trio;
@@ -313,7 +314,7 @@ static void trio_handle_level_irq(struct irq_desc *desc)
 	unsigned int reg_offset;
 	uint64_t level_mask;
 
-	handle_level_irq(desc);
+	handle_level_irq(irq, desc);
 
 	/*
 	 * Clear the INTx Level status, otherwise future interrupts are
@@ -621,8 +622,9 @@ static void fixup_read_and_payload_sizes(struct pci_controller *controller)
 				    dev_control.max_read_req_sz,
 				    mac);
 	if (err < 0) {
-		pr_err("PCI: PCIE_CONFIGURE_MAC_MPS_MRS failure, MAC %d on TRIO %d\n",
-		       mac, controller->trio_index);
+		pr_err("PCI: PCIE_CONFIGURE_MAC_MPS_MRS failure, "
+			"MAC %d on TRIO %d\n",
+			mac, controller->trio_index);
 	}
 }
 
@@ -718,24 +720,27 @@ int __init pcibios_init(void)
 					 reg_offset);
 		if (!port_status.dl_up) {
 			if (rc_delay[trio_index][mac]) {
-				pr_info("Delaying PCIe RC TRIO init %d sec on MAC %d on TRIO %d\n",
+				pr_info("Delaying PCIe RC TRIO init %d sec"
+					" on MAC %d on TRIO %d\n",
 					rc_delay[trio_index][mac], mac,
 					trio_index);
 				msleep(rc_delay[trio_index][mac] * 1000);
 			}
 			ret = gxio_trio_force_rc_link_up(trio_context, mac);
 			if (ret < 0)
-				pr_err("PCI: PCIE_FORCE_LINK_UP failure, MAC %d on TRIO %d\n",
-				       mac, trio_index);
+				pr_err("PCI: PCIE_FORCE_LINK_UP failure, "
+					"MAC %d on TRIO %d\n", mac, trio_index);
 		}
 
-		pr_info("PCI: Found PCI controller #%d on TRIO %d MAC %d\n",
-			i, trio_index, controller->mac);
+		pr_info("PCI: Found PCI controller #%d on TRIO %d MAC %d\n", i,
+			trio_index, controller->mac);
 
 		/* Delay the bus probe if needed. */
 		if (rc_delay[trio_index][mac]) {
-			pr_info("Delaying PCIe RC bus enumerating %d sec on MAC %d on TRIO %d\n",
-				rc_delay[trio_index][mac], mac, trio_index);
+			pr_info("Delaying PCIe RC bus enumerating %d sec"
+				" on MAC %d on TRIO %d\n",
+				rc_delay[trio_index][mac], mac,
+				trio_index);
 			msleep(rc_delay[trio_index][mac] * 1000);
 		} else {
 			/*
@@ -753,10 +758,11 @@ int __init pcibios_init(void)
 			if (pcie_ports[trio_index].ports[mac].removable) {
 				pr_info("PCI: link is down, MAC %d on TRIO %d\n",
 					mac, trio_index);
-				pr_info("This is expected if no PCIe card is connected to this link\n");
+				pr_info("This is expected if no PCIe card"
+					" is connected to this link\n");
 			} else
 				pr_err("PCI: link is down, MAC %d on TRIO %d\n",
-				       mac, trio_index);
+					mac, trio_index);
 			continue;
 		}
 
@@ -823,8 +829,8 @@ int __init pcibios_init(void)
 		/* Alloc a PIO region for PCI config access per MAC. */
 		ret = gxio_trio_alloc_pio_regions(trio_context, 1, 0, 0);
 		if (ret < 0) {
-			pr_err("PCI: PCI CFG PIO alloc failure for mac %d on TRIO %d, give up\n",
-			       mac, trio_index);
+			pr_err("PCI: PCI CFG PIO alloc failure for mac %d "
+				"on TRIO %d, give up\n", mac, trio_index);
 
 			continue;
 		}
@@ -836,8 +842,8 @@ int __init pcibios_init(void)
 			trio_context->pio_cfg_index[mac],
 			mac, 0, HV_TRIO_PIO_FLAG_CONFIG_SPACE);
 		if (ret < 0) {
-			pr_err("PCI: PCI CFG PIO init failure for mac %d on TRIO %d, give up\n",
-			       mac, trio_index);
+			pr_err("PCI: PCI CFG PIO init failure for mac %d "
+				"on TRIO %d, give up\n", mac, trio_index);
 
 			continue;
 		}
@@ -859,7 +865,7 @@ int __init pcibios_init(void)
 			(TRIO_TILE_PIO_REGION_SETUP_CFG_ADDR__MAC_SHIFT - 1)));
 		if (trio_context->mmio_base_pio_cfg[mac] == NULL) {
 			pr_err("PCI: PIO map failure for mac %d on TRIO %d\n",
-			       mac, trio_index);
+				mac, trio_index);
 
 			continue;
 		}
@@ -919,8 +925,9 @@ int __init pcibios_init(void)
 		/* Alloc a PIO region for PCI memory access for each RC port. */
 		ret = gxio_trio_alloc_pio_regions(trio_context, 1, 0, 0);
 		if (ret < 0) {
-			pr_err("PCI: MEM PIO alloc failure on TRIO %d mac %d, give up\n",
-			       controller->trio_index, controller->mac);
+			pr_err("PCI: MEM PIO alloc failure on TRIO %d mac %d, "
+			       "give up\n", controller->trio_index,
+			       controller->mac);
 
 			continue;
 		}
@@ -937,8 +944,9 @@ int __init pcibios_init(void)
 						    0,
 						    0);
 		if (ret < 0) {
-			pr_err("PCI: MEM PIO init failure on TRIO %d mac %d, give up\n",
-			       controller->trio_index, controller->mac);
+			pr_err("PCI: MEM PIO init failure on TRIO %d mac %d, "
+			       "give up\n", controller->trio_index,
+			       controller->mac);
 
 			continue;
 		}
@@ -949,8 +957,9 @@ int __init pcibios_init(void)
 		 */
 		ret = gxio_trio_alloc_pio_regions(trio_context, 1, 0, 0);
 		if (ret < 0) {
-			pr_err("PCI: I/O PIO alloc failure on TRIO %d mac %d, give up\n",
-			       controller->trio_index, controller->mac);
+			pr_err("PCI: I/O PIO alloc failure on TRIO %d mac %d, "
+			       "give up\n", controller->trio_index,
+			       controller->mac);
 
 			continue;
 		}
@@ -967,8 +976,9 @@ int __init pcibios_init(void)
 						    0,
 						    HV_TRIO_PIO_FLAG_IO_SPACE);
 		if (ret < 0) {
-			pr_err("PCI: I/O PIO init failure on TRIO %d mac %d, give up\n",
-			       controller->trio_index, controller->mac);
+			pr_err("PCI: I/O PIO init failure on TRIO %d mac %d, "
+			       "give up\n", controller->trio_index,
+			       controller->mac);
 
 			continue;
 		}
@@ -987,9 +997,10 @@ int __init pcibios_init(void)
 			ret = gxio_trio_alloc_memory_maps(trio_context, 1, 0,
 							  0);
 			if (ret < 0) {
-				pr_err("PCI: Mem-Map alloc failure on TRIO %d mac %d for MC %d, give up\n",
-				       controller->trio_index, controller->mac,
-				       j);
+				pr_err("PCI: Mem-Map alloc failure on TRIO %d "
+				       "mac %d for MC %d, give up\n",
+				       controller->trio_index,
+				       controller->mac, j);
 
 				goto alloc_mem_map_failed;
 			}
@@ -1019,9 +1030,10 @@ int __init pcibios_init(void)
 				j,
 				GXIO_TRIO_ORDER_MODE_UNORDERED);
 			if (ret < 0) {
-				pr_err("PCI: Mem-Map init failure on TRIO %d mac %d for MC %d, give up\n",
-				       controller->trio_index, controller->mac,
-				       j);
+				pr_err("PCI: Mem-Map init failure on TRIO %d "
+				       "mac %d for MC %d, give up\n",
+				       controller->trio_index,
+				       controller->mac, j);
 
 				goto alloc_mem_map_failed;
 			}
@@ -1442,7 +1454,7 @@ static struct pci_ops tile_cfg_ops = {
 /* MSI support starts here. */
 static unsigned int tilegx_msi_startup(struct irq_data *d)
 {
-	if (irq_data_get_msi_desc(d))
+	if (d->msi_desc)
 		pci_msi_unmask_irq(d);
 
 	return 0;
@@ -1500,7 +1512,9 @@ int arch_setup_msi_irq(struct pci_dev *pdev, struct msi_desc *desc)
 	 * Most PCIe endpoint devices do support 64-bit message addressing.
 	 */
 	if (desc->msi_attrib.is_64 == 0) {
-		dev_info(&pdev->dev, "64-bit MSI message address not supported, falling back to legacy interrupts\n");
+		dev_printk(KERN_INFO, &pdev->dev,
+			"64-bit MSI message address not supported, "
+			"falling back to legacy interrupts.\n");
 
 		ret = -ENOMEM;
 		goto is_64_failure;
@@ -1537,8 +1551,11 @@ int arch_setup_msi_irq(struct pci_dev *pdev, struct msi_desc *desc)
 		/* SQ regions are out, allocate from map mem regions. */
 		mem_map = gxio_trio_alloc_memory_maps(trio_context, 1, 0, 0);
 		if (mem_map < 0) {
-			dev_info(&pdev->dev, "%s Mem-Map alloc failure - failed to initialize MSI interrupts - falling back to legacy interrupts\n",
-				 desc->msi_attrib.is_msix ? "MSI-X" : "MSI");
+			dev_printk(KERN_INFO, &pdev->dev,
+				"%s Mem-Map alloc failure. "
+				"Failed to initialize MSI interrupts. "
+				"Falling back to legacy interrupts.\n",
+				desc->msi_attrib.is_msix ? "MSI-X" : "MSI");
 			ret = -ENOMEM;
 			goto msi_mem_map_alloc_failure;
 		}
@@ -1565,7 +1582,7 @@ int arch_setup_msi_irq(struct pci_dev *pdev, struct msi_desc *desc)
 					mem_map, mem_map_base, mem_map_limit,
 					trio_context->asid);
 	if (ret < 0) {
-		dev_info(&pdev->dev, "HV MSI config failed\n");
+		dev_printk(KERN_INFO, &pdev->dev, "HV MSI config failed.\n");
 
 		goto hv_msi_config_failure;
 	}

@@ -156,7 +156,7 @@ static int kempld_gpio_probe(struct platform_device *pdev)
 	}
 
 	gpio = devm_kzalloc(dev, sizeof(*gpio), GFP_KERNEL);
-	if (!gpio)
+	if (gpio == NULL)
 		return -ENOMEM;
 
 	gpio->pld = pld;
@@ -206,6 +206,7 @@ static int kempld_gpio_remove(struct platform_device *pdev)
 static struct platform_driver kempld_gpio_driver = {
 	.driver = {
 		.name = "kempld-gpio",
+		.owner = THIS_MODULE,
 	},
 	.probe		= kempld_gpio_probe,
 	.remove		= kempld_gpio_remove,

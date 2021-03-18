@@ -45,19 +45,19 @@ struct vs6624 {
 };
 
 static const struct vs6624_format {
-	u32 mbus_code;
+	enum v4l2_mbus_pixelcode mbus_code;
 	enum v4l2_colorspace colorspace;
 } vs6624_formats[] = {
 	{
-		.mbus_code      = MEDIA_BUS_FMT_UYVY8_2X8,
+		.mbus_code      = V4L2_MBUS_FMT_UYVY8_2X8,
 		.colorspace     = V4L2_COLORSPACE_JPEG,
 	},
 	{
-		.mbus_code      = MEDIA_BUS_FMT_YUYV8_2X8,
+		.mbus_code      = V4L2_MBUS_FMT_YUYV8_2X8,
 		.colorspace     = V4L2_COLORSPACE_JPEG,
 	},
 	{
-		.mbus_code      = MEDIA_BUS_FMT_RGB565_2X8_LE,
+		.mbus_code      = V4L2_MBUS_FMT_RGB565_2X8_LE,
 		.colorspace     = V4L2_COLORSPACE_SRGB,
 	},
 };
@@ -65,7 +65,7 @@ static const struct vs6624_format {
 static struct v4l2_mbus_framefmt vs6624_default_fmt = {
 	.width = VGA_WIDTH,
 	.height = VGA_HEIGHT,
-	.code = MEDIA_BUS_FMT_UYVY8_2X8,
+	.code = V4L2_MBUS_FMT_UYVY8_2X8,
 	.field = V4L2_FIELD_NONE,
 	.colorspace = V4L2_COLORSPACE_JPEG,
 };
@@ -557,27 +557,20 @@ static int vs6624_s_ctrl(struct v4l2_ctrl *ctrl)
 	return 0;
 }
 
-static int vs6624_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
-		struct v4l2_subdev_mbus_code_enum *code)
+static int vs6624_enum_mbus_fmt(struct v4l2_subdev *sd, unsigned index,
+				enum v4l2_mbus_pixelcode *code)
 {
-	if (code->pad || code->index >= ARRAY_SIZE(vs6624_formats))
+	if (index >= ARRAY_SIZE(vs6624_formats))
 		return -EINVAL;
 
-	code->code = vs6624_formats[code->index].mbus_code;
+	*code = vs6624_formats[index].mbus_code;
 	return 0;
 }
 
-static int vs6624_set_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
-		struct v4l2_subdev_format *format)
+static int vs6624_try_mbus_fmt(struct v4l2_subdev *sd,
+				struct v4l2_mbus_framefmt *fmt)
 {
-	struct v4l2_mbus_framefmt *fmt = &format->format;
-	struct vs6624 *sensor = to_vs6624(sd);
 	int index;
-
-	if (format->pad)
-		return -EINVAL;
 
 	for (index = 0; index < ARRAY_SIZE(vs6624_formats); index++)
 		if (vs6624_formats[index].mbus_code == fmt->code)
@@ -597,23 +590,30 @@ static int vs6624_set_fmt(struct v4l2_subdev *sd,
 	fmt->height = fmt->height & (~3);
 	fmt->field = V4L2_FIELD_NONE;
 	fmt->colorspace = vs6624_formats[index].colorspace;
+	return 0;
+}
 
-	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
-		cfg->try_fmt = *fmt;
-		return 0;
-	}
+static int vs6624_s_mbus_fmt(struct v4l2_subdev *sd,
+				struct v4l2_mbus_framefmt *fmt)
+{
+	struct vs6624 *sensor = to_vs6624(sd);
+	int ret;
+
+	ret = vs6624_try_mbus_fmt(sd, fmt);
+	if (ret)
+		return ret;
 
 	/* set image format */
 	switch (fmt->code) {
-	case MEDIA_BUS_FMT_UYVY8_2X8:
+	case V4L2_MBUS_FMT_UYVY8_2X8:
 		vs6624_write(sd, VS6624_IMG_FMT0, 0x0);
 		vs6624_write(sd, VS6624_YUV_SETUP, 0x1);
 		break;
-	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case V4L2_MBUS_FMT_YUYV8_2X8:
 		vs6624_write(sd, VS6624_IMG_FMT0, 0x0);
 		vs6624_write(sd, VS6624_YUV_SETUP, 0x3);
 		break;
-	case MEDIA_BUS_FMT_RGB565_2X8_LE:
+	case V4L2_MBUS_FMT_RGB565_2X8_LE:
 		vs6624_write(sd, VS6624_IMG_FMT0, 0x4);
 		vs6624_write(sd, VS6624_RGB_SETUP, 0x0);
 		break;
@@ -648,16 +648,12 @@ static int vs6624_set_fmt(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int vs6624_get_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
-		struct v4l2_subdev_format *format)
+static int vs6624_g_mbus_fmt(struct v4l2_subdev *sd,
+				struct v4l2_mbus_framefmt *fmt)
 {
 	struct vs6624 *sensor = to_vs6624(sd);
 
-	if (format->pad)
-		return -EINVAL;
-
-	format->format = sensor->fmt;
+	*fmt = sensor->fmt;
 	return 0;
 }
 
@@ -742,21 +738,18 @@ static const struct v4l2_subdev_core_ops vs6624_core_ops = {
 };
 
 static const struct v4l2_subdev_video_ops vs6624_video_ops = {
+	.enum_mbus_fmt = vs6624_enum_mbus_fmt,
+	.try_mbus_fmt = vs6624_try_mbus_fmt,
+	.s_mbus_fmt = vs6624_s_mbus_fmt,
+	.g_mbus_fmt = vs6624_g_mbus_fmt,
 	.s_parm = vs6624_s_parm,
 	.g_parm = vs6624_g_parm,
 	.s_stream = vs6624_s_stream,
 };
 
-static const struct v4l2_subdev_pad_ops vs6624_pad_ops = {
-	.enum_mbus_code = vs6624_enum_mbus_code,
-	.get_fmt = vs6624_get_fmt,
-	.set_fmt = vs6624_set_fmt,
-};
-
 static const struct v4l2_subdev_ops vs6624_ops = {
 	.core = &vs6624_core_ops,
 	.video = &vs6624_video_ops,
-	.pad = &vs6624_pad_ops,
 };
 
 static int vs6624_probe(struct i2c_client *client,

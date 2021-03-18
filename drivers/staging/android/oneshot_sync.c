@@ -22,9 +22,8 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
-
-#include "sync.h"
-#include "oneshot_sync.h"
+#include <linux/sync.h>
+#include <linux/oneshot_sync.h>
 
 /**
  * struct oneshot_sync_timeline - a userspace signaled, out of order, timeline
@@ -130,7 +129,7 @@ static struct sync_pt *oneshot_pt_dup(struct sync_pt *sync_pt)
 		return NULL;
 
 	out_pt = (struct oneshot_sync_pt *)
-		sync_pt_create(sync_pt_parent(sync_pt), sizeof(*out_pt));
+		sync_pt_create(sync_pt->parent, sizeof(*out_pt));
 
 	if (out_pt == NULL) {
 		oneshot_state_put(pt->state);
@@ -164,9 +163,9 @@ static int oneshot_pt_compare(struct sync_pt *a, struct sync_pt *b)
 static void oneshot_pt_free(struct sync_pt *sync_pt)
 {
 	struct oneshot_sync_pt *pt = to_oneshot_pt(sync_pt);
-	struct sync_timeline *parent = sync_pt_parent(sync_pt);
-	struct oneshot_sync_timeline *timeline = parent != NULL?
-		to_oneshot_timeline(parent) : NULL;
+
+	struct oneshot_sync_timeline *timeline = sync_pt->parent ?
+		to_oneshot_timeline(sync_pt->parent) : NULL;
 
 	if (timeline != NULL) {
 		spin_lock(&timeline->lock);
@@ -331,7 +330,7 @@ static long oneshot_ioctl_fence_create(struct oneshot_sync_timeline *timeline,
 	struct oneshot_sync_create_fence param;
 	int ret = -ENOMEM;
 	struct sync_fence *fence = NULL;
-	int fd = get_unused_fd_flags(0);
+	int fd = get_unused_fd();
 
 	if (fd < 0)
 		return fd;

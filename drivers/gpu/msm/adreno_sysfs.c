@@ -201,17 +201,6 @@ static unsigned int _hwcg_show(struct adreno_device *adreno_dev)
 	return test_bit(ADRENO_HWCG_CTRL, &adreno_dev->pwrctrl_flag);
 }
 
-static int _throttling_store(struct adreno_device *adreno_dev,
-	unsigned int val)
-{
-	 return _pwrctrl_store(adreno_dev, val, ADRENO_THROTTLING_CTRL);
-}
-
-static unsigned int _throttling_show(struct adreno_device *adreno_dev)
-{
-	return test_bit(ADRENO_THROTTLING_CTRL, &adreno_dev->pwrctrl_flag);
-}
-
 static int _sptp_pc_store(struct adreno_device *adreno_dev,
 		unsigned int val)
 {
@@ -326,8 +315,6 @@ static ADRENO_SYSFS_BOOL(sptp_pc);
 static ADRENO_SYSFS_BOOL(lm);
 static ADRENO_SYSFS_BOOL(preemption);
 static ADRENO_SYSFS_BOOL(hwcg);
-static ADRENO_SYSFS_BOOL(throttling);
-
 
 
 static const struct device_attribute *_attr_list[] = {
@@ -342,7 +329,6 @@ static const struct device_attribute *_attr_list[] = {
 	&adreno_attr_lm.attr,
 	&adreno_attr_preemption.attr,
 	&adreno_attr_hwcg.attr,
-	&adreno_attr_throttling.attr,
 	NULL,
 };
 

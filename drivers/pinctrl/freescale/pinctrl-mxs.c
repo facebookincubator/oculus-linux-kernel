@@ -445,36 +445,11 @@ static int mxs_pinctrl_probe_dt(struct platform_device *pdev,
 		if (of_property_read_u32(child, "reg", &val))
 			continue;
 		if (strcmp(fn, child->name)) {
-			struct device_node *child2;
-
-			/*
-			 * This reference is dropped by
-			 * of_get_next_child(np, * child)
-			 */
-			of_node_get(child);
-
-			/*
-			 * The logic parsing the functions from dt currently
-			 * doesn't handle if functions with the same name are
-			 * not grouped together. Only the first contiguous
-			 * cluster is usable for each function name. This is a
-			 * bug that is not trivial to fix, but at least warn
-			 * about it.
-			 */
-			for (child2 = of_get_next_child(np, child);
-			     child2 != NULL;
-			     child2 = of_get_next_child(np, child2)) {
-				if (!strcmp(child2->name, fn))
-					dev_warn(&pdev->dev,
-						 "function nodes must be grouped by name (failed for: %s)",
-						 fn);
-			}
-
 			f = &soc->functions[idxf++];
 			f->name = fn = child->name;
 		}
 		f->ngroups++;
-	}
+	};
 
 	/* Get groups for each function */
 	idxf = 0;
@@ -540,9 +515,9 @@ int mxs_pinctrl_probe(struct platform_device *pdev,
 	}
 
 	d->pctl = pinctrl_register(&mxs_pinctrl_desc, &pdev->dev, d);
-	if (IS_ERR(d->pctl)) {
+	if (!d->pctl) {
 		dev_err(&pdev->dev, "Couldn't register MXS pinctrl driver\n");
-		ret = PTR_ERR(d->pctl);
+		ret = -EINVAL;
 		goto err;
 	}
 

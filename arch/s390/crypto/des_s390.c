@@ -16,7 +16,6 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/cpufeature.h>
 #include <linux/crypto.h>
 #include <crypto/algapi.h>
 #include <crypto/des.h>
@@ -617,7 +616,7 @@ static void __exit des_s390_exit(void)
 	crypto_unregister_alg(&des_alg);
 }
 
-module_cpu_feature_match(MSA, des_s390_init);
+module_init(des_s390_init);
 module_exit(des_s390_exit);
 
 MODULE_ALIAS_CRYPTO("des");

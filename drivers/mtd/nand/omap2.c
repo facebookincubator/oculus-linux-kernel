@@ -144,13 +144,11 @@ static u_char bch8_vector[] = {0xf3, 0xdb, 0x14, 0x16, 0x8b, 0xd2, 0xbe, 0xcc,
 	0xac, 0x6b, 0xff, 0x99, 0x7b};
 static u_char bch4_vector[] = {0x00, 0x6b, 0x31, 0xdd, 0x41, 0xbc, 0x10};
 
-/* Shared among all NAND instances to synchronize access to the ECC Engine */
-static struct nand_hw_control omap_gpmc_controller = {
-	.lock = __SPIN_LOCK_UNLOCKED(omap_gpmc_controller.lock),
-	.wq = __WAIT_QUEUE_HEAD_INITIALIZER(omap_gpmc_controller.wq),
-};
+/* oob info generated runtime depending on ecc algorithm and layout selected */
+static struct nand_ecclayout omap_oobinfo;
 
 struct omap_nand_info {
+	struct nand_hw_control		controller;
 	struct omap_nand_platform_data	*pdata;
 	struct mtd_info			mtd;
 	struct nand_chip		nand;
@@ -170,8 +168,6 @@ struct omap_nand_info {
 	u_char				*buf;
 	int					buf_len;
 	struct gpmc_nand_regs		reg;
-	/* generated at runtime depending on ECC algorithm and layout selected */
-	struct nand_ecclayout		oobinfo;
 	/* fields specific for BCHx_HW ECC scheme */
 	struct device			*elm_dev;
 	struct device_node		*of_node;
@@ -1048,9 +1044,10 @@ static int omap_dev_ready(struct mtd_info *mtd)
  * @mtd: MTD device structure
  * @mode: Read/Write mode
  *
- * When using BCH with SW correction (i.e. no ELM), sector size is set
- * to 512 bytes and we use BCH_WRAPMODE_6 wrapping mode
- * for both reading and writing with:
+ * When using BCH, sector size is hardcoded to 512 bytes.
+ * Using wrapping mode 6 both for reading and writing if ELM module not uses
+ * for error correction.
+ * On writing,
  * eccsize0 = 0  (no additional protected byte in spare area)
  * eccsize1 = 32 (skip 32 nibbles = 16 bytes per sector in spare area)
  */
@@ -1070,9 +1067,15 @@ static void __maybe_unused omap_enable_hwecc_bch(struct mtd_info *mtd, int mode)
 	case OMAP_ECC_BCH4_CODE_HW_DETECTION_SW:
 		bch_type = 0;
 		nsectors = 1;
-		wr_mode	  = BCH_WRAPMODE_6;
-		ecc_size0 = BCH_ECC_SIZE0;
-		ecc_size1 = BCH_ECC_SIZE1;
+		if (mode == NAND_ECC_READ) {
+			wr_mode	  = BCH_WRAPMODE_6;
+			ecc_size0 = BCH_ECC_SIZE0;
+			ecc_size1 = BCH_ECC_SIZE1;
+		} else {
+			wr_mode   = BCH_WRAPMODE_6;
+			ecc_size0 = BCH_ECC_SIZE0;
+			ecc_size1 = BCH_ECC_SIZE1;
+		}
 		break;
 	case OMAP_ECC_BCH4_CODE_HW:
 		bch_type = 0;
@@ -1090,9 +1093,15 @@ static void __maybe_unused omap_enable_hwecc_bch(struct mtd_info *mtd, int mode)
 	case OMAP_ECC_BCH8_CODE_HW_DETECTION_SW:
 		bch_type = 1;
 		nsectors = 1;
-		wr_mode	  = BCH_WRAPMODE_6;
-		ecc_size0 = BCH_ECC_SIZE0;
-		ecc_size1 = BCH_ECC_SIZE1;
+		if (mode == NAND_ECC_READ) {
+			wr_mode	  = BCH_WRAPMODE_6;
+			ecc_size0 = BCH_ECC_SIZE0;
+			ecc_size1 = BCH_ECC_SIZE1;
+		} else {
+			wr_mode   = BCH_WRAPMODE_6;
+			ecc_size0 = BCH_ECC_SIZE0;
+			ecc_size1 = BCH_ECC_SIZE1;
+		}
 		break;
 	case OMAP_ECC_BCH8_CODE_HW:
 		bch_type = 1;
@@ -1500,12 +1509,11 @@ static int omap_elm_correct_data(struct mtd_info *mtd, u_char *data,
  * @chip:		nand chip info structure
  * @buf:		data buffer
  * @oob_required:	must write chip->oob_poi to OOB
- * @page:		page
  *
  * Custom write page method evolved to support multi sector writing in one shot
  */
 static int omap_write_page_bch(struct mtd_info *mtd, struct nand_chip *chip,
-			       const uint8_t *buf, int oob_required, int page)
+				  const uint8_t *buf, int oob_required)
 {
 	int i;
 	uint8_t *ecc_calc = chip->buffers->ecccalc;
@@ -1678,6 +1686,9 @@ static int omap_nand_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, info);
 
+	spin_lock_init(&info->controller.lock);
+	init_waitqueue_head(&info->controller.wq);
+
 	info->pdev		= pdev;
 	info->gpmc_cs		= pdata->cs;
 	info->reg		= pdata->reg;
@@ -1685,7 +1696,8 @@ static int omap_nand_probe(struct platform_device *pdev)
 	info->ecc_opt		= pdata->ecc_opt;
 	mtd			= &info->mtd;
 	mtd->priv		= &info->nand;
-	mtd->dev.parent		= &pdev->dev;
+	mtd->name		= dev_name(&pdev->dev);
+	mtd->owner		= THIS_MODULE;
 	nand_chip		= &info->nand;
 	nand_chip->ecc.priv	= NULL;
 
@@ -1696,7 +1708,7 @@ static int omap_nand_probe(struct platform_device *pdev)
 
 	info->phys_base = res->start;
 
-	nand_chip->controller = &omap_gpmc_controller;
+	nand_chip->controller = &info->controller;
 
 	nand_chip->IO_ADDR_W = nand_chip->IO_ADDR_R;
 	nand_chip->cmd_ctrl  = omap_hwcontrol;
@@ -1821,7 +1833,7 @@ static int omap_nand_probe(struct platform_device *pdev)
 	}
 
 	/* populate MTD interface based on ECC scheme */
-	ecclayout		= &info->oobinfo;
+	ecclayout		= &omap_oobinfo;
 	switch (info->ecc_opt) {
 	case OMAP_ECC_HAM1_CODE_SW:
 		nand_chip->ecc.mode = NAND_ECC_SOFT;
@@ -2076,6 +2088,7 @@ static struct platform_driver omap_nand_driver = {
 	.remove		= omap_nand_remove,
 	.driver		= {
 		.name	= DRIVER_NAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

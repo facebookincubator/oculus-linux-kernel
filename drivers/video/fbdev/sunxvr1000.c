@@ -202,6 +202,7 @@ static struct platform_driver gfb_driver = {
 	.remove		= gfb_remove,
 	.driver = {
 		.name		= "gfb",
+		.owner		= THIS_MODULE,
 		.of_match_table	= gfb_match,
 	},
 };

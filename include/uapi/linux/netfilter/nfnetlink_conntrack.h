@@ -61,7 +61,6 @@ enum ctattr_tuple {
 	CTA_TUPLE_UNSPEC,
 	CTA_TUPLE_IP,
 	CTA_TUPLE_PROTO,
-	CTA_TUPLE_ZONE,
 	__CTA_TUPLE_MAX
 };
 #define CTA_TUPLE_MAX (__CTA_TUPLE_MAX - 1)

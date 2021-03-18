@@ -261,6 +261,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
+static DECLARE_COMPLETION(cpu_killed);
 
 /*
  * __cpu_disable runs on the processor to be shutdown.
@@ -298,7 +299,7 @@ int __cpu_disable(void)
  */
 void __cpu_die(unsigned int cpu)
 {
-	if (!cpu_wait_death(cpu, 1))
+	if (!wait_for_completion_timeout(&cpu_killed, msecs_to_jiffies(1)))
 		pr_err("CPU%u: unable to kill\n", cpu);
 }
 
@@ -312,9 +313,8 @@ void cpu_die(void)
 {
 	local_irq_disable();
 	idle_task_exit();
-	irq_ctx_exit(smp_processor_id());
 
-	(void)cpu_report_death();
+	complete(&cpu_killed);
 
 	asm ("XOR	TXENABLE, D0Re0,D0Re0\n");
 }
@@ -367,7 +367,6 @@ asmlinkage void secondary_start_kernel(void)
 		panic("No TBI found!");
 
 	per_cpu_trap_init(cpu);
-	irq_ctx_init(cpu);
 
 	preempt_disable();
 

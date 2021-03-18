@@ -1,4 +1,4 @@
-Qualcomm Technologies, Inc. QPNP Regulators
+Qualcomm QPNP Regulators
 
 qpnp-regulator is a regulator driver which supports regulators inside of PMICs
 that utilize the MSM SPMI implementation.
@@ -7,12 +7,13 @@ Required properties:
 - compatible:      Must be "qcom,qpnp-regulator"
 - reg:             Specifies the SPMI address and size for this regulator device
 		   Note, this is the only property which can be used within a
-		   subnode.
+		   subnode of a node which has specified spmi-dev-container.
 - regulator-name:  A string used as a descriptive name for regulator outputs
 - parent-supply:   phandle to the parent supply/regulator node
 
 Required structure:
-- A qcom,qpnp-regulator node must be a child of an spmi_device node.
+- A qcom,qpnp-regulator node must be a child of an SPMI node that has specified
+	the spmi-slave-container property
 
 Optional properties:
 - interrupts:                  List of interrupts used by the regulator.
@@ -100,6 +101,10 @@ Optional properties:
 - qcom,force-type: 	       Override the type and subtype register values. Useful for some
 				regulators that have invalid types advertised by the hardware.
 				The format is two unsigned integers of the form <type subtype>.
+- spmi-dev-container:	       Specifies that all the device nodes specified
+				within this node should have their resources coalesced into a
+				single spmi_device.  This is used to specify all SPMI peripherals
+				that logically make up a single regulator device.
 
 Note, if a given optional qcom,* binding is not present, then the qpnp-regulator
 driver will leave that feature in the default hardware state.
@@ -115,12 +120,14 @@ Example:
 		#interrupt-cells = <3>;
 
 		qcom,pm8941@1 {
+			spmi-slave-container;
 			reg = <0x1>;
 			#address-cells = <1>;
 			#size-cells = <1>;
 
 			regulator@1400 {
 				regulator-name = "8941_s1";
+				spmi-dev-container;
 				#address-cells = <1>;
 				#size-cells = <1>;
 				compatible = "qcom,qpnp-regulator";

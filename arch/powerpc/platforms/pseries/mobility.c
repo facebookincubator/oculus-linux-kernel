@@ -318,6 +318,7 @@ void post_mobility_fixup(void)
 static ssize_t migrate_store(struct class *class, struct class_attribute *attr,
 			     const char *buf, size_t count)
 {
+	struct rtas_args args;
 	u64 streamid;
 	int rc;
 
@@ -325,29 +326,32 @@ static ssize_t migrate_store(struct class *class, struct class_attribute *attr,
 	if (rc)
 		return rc;
 
+	memset(&args, 0, sizeof(args));
+	args.token = rtas_token("ibm,suspend-me");
+	args.nargs = 2;
+	args.nret = 1;
+
+	args.args[0] = streamid >> 32 ;
+	args.args[1] = streamid & 0xffffffff;
+	args.rets = &args.args[args.nargs];
+
 	do {
-		rc = rtas_ibm_suspend_me(streamid);
-		if (rc == -EAGAIN)
+		args.rets[0] = 0;
+		rc = rtas_ibm_suspend_me(&args);
+		if (!rc && args.rets[0] == RTAS_NOT_SUSPENDABLE)
 			ssleep(1);
-	} while (rc == -EAGAIN);
+	} while (!rc && args.rets[0] == RTAS_NOT_SUSPENDABLE);
 
 	if (rc)
 		return rc;
+	else if (args.rets[0])
+		return args.rets[0];
 
 	post_mobility_fixup();
 	return count;
 }
 
-/*
- * Used by drmgr to determine the kernel behavior of the migration interface.
- *
- * Version 1: Performs all PAPR requirements for migration including
- *	firmware activation and device tree update.
- */
-#define MIGRATION_API_VERSION	1
-
 static CLASS_ATTR(migration, S_IWUSR, NULL, migrate_store);
-static CLASS_ATTR_STRING(api_version, S_IRUGO, __stringify(MIGRATION_API_VERSION));
 
 static int __init mobility_sysfs_init(void)
 {
@@ -358,13 +362,7 @@ static int __init mobility_sysfs_init(void)
 		return -ENOMEM;
 
 	rc = sysfs_create_file(mobility_kobj, &class_attr_migration.attr);
-	if (rc)
-		pr_err("mobility: unable to create migration sysfs file (%d)\n", rc);
 
-	rc = sysfs_create_file(mobility_kobj, &class_attr_api_version.attr.attr);
-	if (rc)
-		pr_err("mobility: unable to create api_version sysfs file (%d)\n", rc);
-
-	return 0;
+	return rc;
 }
 machine_device_initcall(pseries, mobility_sysfs_init);

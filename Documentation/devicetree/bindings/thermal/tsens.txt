@@ -24,33 +24,25 @@ Required properties:
 	       should be "qcom,msm8939-tsens" for 8939 TSENS driver.
 	       should be "qcom,msm8909-tsens" for 8909 TSENS driver.
 	       should be "qcom,msm8952-tsens" for 8952 TSENS driver.
-	       should be "qcom,msmzirc-tsens" for zirc TSENS driver.
+	       should be "qcom,mdm9640-tsens" for 9640 TSENS driver.
 	       should be "qcom,mdm9607-tsens" for 9607 TSENS driver.
-	       should be "qcom,msmtitanium-tsens" for titanium TSENS driver.
+	       should be "qcom,msm8953-tsens" for 8953 TSENS driver.
 	       should be "qcom,msm8937-tsens" for 8937 TSENS driver.
-	       should be "qcom,msmgold-tsens" for gold TSENS driver.
-	       should be "qcom,msm8998-tsens" for 8998 TSENS driver.
-	       should be "qcom,msmhamster-tsens" for hamster TSENS driver.
-	       should be "qcom,sdm660-tsens" for 660 TSENS driver.
-	       should be "qcom,sdm630-tsens" for 630 TSENS driver.
+	       should be "qcom,msm8917-tsens" for 8917 TSENS driver.
+	       should be "qcom,msmcobalt-tsens" for cobalt TSENS driver.
+	       should be "qcom,mdm9640v2-tsens" for 9640v2 TSENS driver.
 	       The compatible property is used to identify the respective fusemap to use
 	       for the corresponding SoC.
-- reg : offset and length of the TSENS registers with associated property in reg-names
-	as "tsens_physical" and QFPROM registers with associated property in reg-names
-	as "tsens_eeprom_physical". The efuse registers are used for storing
-	the calibration data for the individual sensors. If the gain and offset are
-	programmed by the TSENS control registers then adding the QFPROM register property
-	is optional.
+- reg : offset and length of the TSENS registers.
+- reg : offset and length of the QFPROM registers used for storing
+	the calibration data for the individual sensors.
 - reg-names : resource names used for the physical address of the TSENS
 	      registers, the QFPROM efuse primary calibration address region,
 	      Should be "tsens_physical" for physical address of the TSENS,
 	      "tsens_eeprom_physical" for physical address where primary
 	      calibration data is stored. This includes the backup
 	      calibration address region if TSENS calibration data is stored
-	      in the region. The reg-name "tsens_eeprom_physical" property is
-	      optional if the gain and offset are programmed by the TSENS
-	      control registers and the status registers directly reports the TSENS
-	      temperature readings.
+	      in the region.
 - interrupts : TSENS interrupt to notify Upper/Lower temperature threshold.
 - interrupt-names: Should be "tsens-upper-lower" for temperature threshold.
 		   Add "tsens-critical" for Critical temperature threshold notification
@@ -60,8 +52,7 @@ Required properties:
 - qcom,slope : One point calibration characterized slope data for each
 	       sensor used to compute the offset. Slope is represented
 	       as ADC code/DegC and the value is multipled by a factor
-	       of 1000. If gain and offset are programmed by the TSENS control
-	       registers then this property is optional.
+	       of 1000.
 
 Optional properties:
 - qcom,calibration-less-mode : If present the pre-characterized data for offsets
@@ -82,13 +73,10 @@ Optional properties:
 		total number of supported sensors with each controller instance.
 - qcom,valid-status-check: If property is present, check the VALID bit is set
 		before reporting the temperature data.
-- qcom,temp1-offset: If flag is present, Use these offset values
+- qcom,temp1-offset: If property is present, Use these offset values
 		to be added for 30 deg calib points.
-- qcom,temp2-offset: If flag is present, Use these offset values
+- qcom,temp2-offset: If property is present, Use these offset values
 		to be added for 120 deg calib points.
-- qcom,cycle-monitor: If flag is present, Use the value for cycle
-		completion monitoring.
-- qcom,wd-bark: If flag is present, Use the value for watchdog bark.
 
 Example:
 

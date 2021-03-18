@@ -535,7 +535,7 @@ struct sctp_datamsg {
 
 struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *,
 					    struct sctp_sndrcvinfo *,
-					    struct iov_iter *);
+					    struct msghdr *, int len);
 void sctp_datamsg_free(struct sctp_datamsg *);
 void sctp_datamsg_put(struct sctp_datamsg *);
 void sctp_chunk_fail(struct sctp_chunk *, int error);
@@ -651,8 +651,8 @@ struct sctp_chunk {
 
 void sctp_chunk_hold(struct sctp_chunk *);
 void sctp_chunk_put(struct sctp_chunk *);
-int sctp_user_addto_chunk(struct sctp_chunk *chunk, int len,
-			  struct iov_iter *from);
+int sctp_user_addto_chunk(struct sctp_chunk *chunk, int off, int len,
+			  struct iovec *data);
 void sctp_chunk_free(struct sctp_chunk *);
 void  *sctp_addto_chunk(struct sctp_chunk *, int len, const void *data);
 struct sctp_chunk *sctp_chunkify(struct sk_buff *,
@@ -775,10 +775,10 @@ struct sctp_transport {
 		hb_sent:1,
 
 		/* Is the Path MTU update pending on this tranport */
-		pmtu_pending:1,
+		pmtu_pending:1;
 
-		/* Has this transport moved the ctsn since we last sacked */
-		sack_generation:1;
+	/* Has this transport moved the ctsn since we last sacked */
+	__u32 sack_generation;
 	u32 dst_cookie;
 
 	struct flowi fl;
@@ -1120,6 +1120,7 @@ int sctp_raw_to_bind_addrs(struct sctp_bind_addr *bp, __u8 *raw, int len,
 sctp_scope_t sctp_scope(const union sctp_addr *);
 int sctp_in_scope(struct net *net, const union sctp_addr *addr, const sctp_scope_t scope);
 int sctp_is_any(struct sock *sk, const union sctp_addr *addr);
+int sctp_addr_is_valid(const union sctp_addr *addr);
 int sctp_is_ep_boundall(struct sock *sk);
 
 
@@ -1482,20 +1483,19 @@ struct sctp_association {
 			prsctp_capable:1,   /* Can peer do PR-SCTP? */
 			auth_capable:1;     /* Is peer doing SCTP-AUTH? */
 
-		/* sack_needed : This flag indicates if the next received
+		/* Ack State   : This flag indicates if the next received
 		 *             : packet is to be responded to with a
-		 *             : SACK. This is initialized to 0.  When a packet
-		 *             : is received sack_cnt is incremented. If this value
+		 *             : SACK. This is initializedto 0.  When a packet
+		 *             : is received it is incremented. If this value
 		 *             : reaches 2 or more, a SACK is sent and the
 		 *             : value is reset to 0. Note: This is used only
 		 *             : when no DATA chunks are received out of
 		 *             : order.  When DATA chunks are out of order,
 		 *             : SACK's are not delayed (see Section 6).
 		 */
-		__u8    sack_needed:1,     /* Do we need to sack the peer? */
-			sack_generation:1,
-			zero_window_announced:1;
+		__u8    sack_needed;     /* Do we need to sack the peer? */
 		__u32	sack_cnt;
+		__u32	sack_generation;
 
 		__u32   adaptation_ind;	 /* Adaptation Code point. */
 

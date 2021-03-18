@@ -34,7 +34,6 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/ptrace.h>
-#include <linux/uaccess.h>
 
 /*
  * This routine handles page faults.  It determines the address,
@@ -74,7 +73,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long write,
 	* If we're in an interrupt or have no user
 	* context, we must not take the fault..
 	*/
-	if (pagefault_disabled() || !mm)
+	if (in_atomic() || !mm)
 		goto bad_area_nosemaphore;
 
 	if (user_mode(regs))

@@ -45,6 +45,9 @@
 #define FUNC_SUSPEND_OPT_SUSP_MASK BIT(0)
 #define FUNC_SUSPEND_OPT_RW_EN_MASK BIT(1)
 
+#define FUNC_WAKEUP_CAPABLE_SHIFT  0
+#define FUNC_WAKEUP_ENABLE_SHIFT   1
+
 /*
  * USB function drivers should return USB_GADGET_DELAYED_STATUS if they
  * wish to delay the data/status stages of the control transfer till they
@@ -152,7 +155,6 @@ struct usb_os_desc_table {
  * @disable: (REQUIRED) Indicates the function should be disabled.  Reasons
  *	include host resetting or reconfiguring the gadget, and disconnection.
  * @setup: Used for interface-specific control requests.
- * @req_match: Tests if a given class request can be handled by this function.
  * @suspend: Notifies functions when the host stops sending USB traffic.
  * @resume: Notifies functions when the host restarts USB traffic.
  * @get_status: Returns function status as a reply to
@@ -226,8 +228,6 @@ struct usb_function {
 	void			(*disable)(struct usb_function *);
 	int			(*setup)(struct usb_function *,
 					const struct usb_ctrlrequest *);
-	bool			(*req_match)(struct usb_function *,
-					const struct usb_ctrlrequest *);
 	void			(*suspend)(struct usb_function *);
 	void			(*resume)(struct usb_function *);
 
@@ -243,8 +243,6 @@ struct usb_function {
 	struct list_head		list;
 	DECLARE_BITMAP(endpoints, 32);
 	const struct usb_function_instance *fi;
-
-	unsigned int		bind_deactivated:1;
 };
 
 int usb_add_function(struct usb_configuration *, struct usb_function *);
@@ -454,8 +452,6 @@ static inline struct usb_composite_driver *to_cdriver(
  * @b_vendor_code: bMS_VendorCode part of the OS string
  * @use_os_string: false by default, interested gadgets set it
  * @os_desc_config: the configuration to be used with OS descriptors
- * @setup_pending: true when setup request is queued but not completed
- * @os_desc_pending: true when os_desc request is queued but not completed
  *
  * One of these devices is allocated and initialized before the
  * associated device driver's bind() is called.
@@ -517,9 +513,6 @@ struct usb_composite_dev {
 
 	/* protects deactivations and delayed_status counts*/
 	spinlock_t			lock;
-
-	unsigned			setup_pending:1;
-	unsigned			os_desc_pending:1;
 };
 
 extern int usb_string_id(struct usb_composite_dev *c);
@@ -533,8 +526,6 @@ extern int usb_string_ids_n(struct usb_composite_dev *c, unsigned n);
 extern void composite_disconnect(struct usb_gadget *gadget);
 extern int composite_setup(struct usb_gadget *gadget,
 		const struct usb_ctrlrequest *ctrl);
-extern void composite_suspend(struct usb_gadget *gadget);
-extern void composite_resume(struct usb_gadget *gadget);
 
 /*
  * Some systems will need runtime overrides for the  product identifiers
@@ -648,14 +639,5 @@ void usb_remove_function(struct usb_configuration *c, struct usb_function *f);
 	dev_warn(&(d)->gadget->dev , fmt , ## args)
 #define INFO(d, fmt, args...) \
 	dev_info(&(d)->gadget->dev , fmt , ## args)
-
-/*
- * Based on enumerated USB speed, draw power with set_config and resume
- * HSUSB: 500mA, SSUSB: 900mA
- */
-#define SSUSB_GADGET_VBUS_DRAW 900 /* in mA */
-#define USB_VBUS_DRAW(speed)\
-	(speed == USB_SPEED_SUPER ?\
-	SSUSB_GADGET_VBUS_DRAW : CONFIG_USB_GADGET_VBUS_DRAW)
 
 #endif	/* __LINUX_USB_COMPOSITE_H */

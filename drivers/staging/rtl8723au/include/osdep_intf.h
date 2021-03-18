@@ -19,6 +19,9 @@
 #include <osdep_service.h>
 #include <drv_types.h>
 
+int rtw_hw_suspend23a(struct rtw_adapter *padapter);
+int rtw_hw_resume23a(struct rtw_adapter *padapter);
+
 int rtw_init_drv_sw23a(struct rtw_adapter *padapter);
 int rtw_free_drv_sw23a(struct rtw_adapter *padapter);
 int rtw_reset_drv_sw23a(struct rtw_adapter *padapter);

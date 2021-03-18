@@ -20,7 +20,7 @@
 #include <linux/debugfs.h>
 #include <linux/list.h>
 #include <linux/mfd/wcd9xxx/core.h>
-#include <linux/mfd/wcd9xxx/wcd9xxx-irq.h>
+#include <linux/mfd/wcd9xxx/core-resource.h>
 #include <linux/mfd/wcd9xxx/wcd9xxx_registers.h>
 #include <linux/mfd/wcd9xxx/wcd9320_registers.h>
 #include <linux/mfd/wcd9xxx/pdata.h>
@@ -28,7 +28,6 @@
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
-#include <sound/jack.h>
 #include <sound/tlv.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
@@ -36,6 +35,7 @@
 #include <linux/kernel.h>
 #include <linux/gpio.h>
 #include <linux/input.h>
+#include "wcd9320.h"
 #include "wcd9xxx-mbhc.h"
 #include "wcdcal-hwdep.h"
 #include "wcd9xxx-resmgr.h"
@@ -47,7 +47,8 @@
 			   SND_JACK_MECHANICAL)
 #define WCD9XXX_JACK_BUTTON_MASK (SND_JACK_BTN_0 | SND_JACK_BTN_1 | \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
-				  SND_JACK_BTN_4 | SND_JACK_BTN_5 )
+				  SND_JACK_BTN_4 | SND_JACK_BTN_5 | \
+				  SND_JACK_BTN_6 | SND_JACK_BTN_7)
 
 #define NUM_DCE_PLUG_DETECT 3
 #define NUM_DCE_PLUG_INS_DETECT 5
@@ -3560,6 +3561,12 @@ static int wcd9xxx_get_button_mask(const int btn)
 	case 5:
 		mask = SND_JACK_BTN_5;
 		break;
+	case 6:
+		mask = SND_JACK_BTN_6;
+		break;
+	case 7:
+		mask = SND_JACK_BTN_7;
+		break;
 	}
 	return mask;
 }
@@ -4270,7 +4277,8 @@ static int wcd9xxx_setup_jack_detect_irq(struct wcd9xxx_mbhc *mbhc)
 		ret = request_threaded_irq(mbhc->mbhc_cfg->gpio_irq, NULL,
 					   wcd9xxx_mech_plug_detect_irq,
 					   (IRQF_TRIGGER_RISING |
-					    IRQF_TRIGGER_FALLING),
+					    IRQF_TRIGGER_FALLING |
+					    IRQF_DISABLED),
 					   "headset detect", mbhc);
 		if (ret) {
 			pr_err("%s: Failed to request gpio irq %d\n", __func__,
@@ -4555,7 +4563,7 @@ static void wcd9xxx_cleanup_debugfs(struct wcd9xxx_mbhc *mbhc)
 
 int wcd9xxx_mbhc_set_keycode(struct wcd9xxx_mbhc *mbhc)
 {
-	enum snd_jack_types type = SND_JACK_BTN_0;
+	enum snd_jack_types type;
 	int i, ret, result = 0;
 	int *btn_key_code;
 
@@ -4581,6 +4589,12 @@ int wcd9xxx_mbhc_set_keycode(struct wcd9xxx_mbhc *mbhc)
 				break;
 			case 5:
 				type = SND_JACK_BTN_5;
+				break;
+			case 6:
+				type = SND_JACK_BTN_6;
+				break;
+			case 7:
+				type = SND_JACK_BTN_7;
 				break;
 			default:
 				WARN_ONCE(1, "Wrong button number:%d\n", i);
@@ -5237,6 +5251,8 @@ static int wcd9xxx_detect_impedance(struct wcd9xxx_mbhc *mbhc, uint32_t *zl,
 	 * enable PAs and etc.  Therefore codec drvier including ALSA
 	 * shouldn't read and write hardware registers during detection.
 	 */
+	mutex_lock(&codec->mutex);
+
 	wcd9xxx_onoff_ext_mclk(mbhc, true);
 
 	/*
@@ -5397,6 +5413,8 @@ static int wcd9xxx_detect_impedance(struct wcd9xxx_mbhc *mbhc, uint32_t *zl,
 	if (mbhc->mbhc_cb->zdet_error_approx)
 		mbhc->mbhc_cb->zdet_error_approx(mbhc, zl, zr);
 
+	mutex_unlock(&codec->mutex);
+
 	wcd9xxx_onoff_ext_mclk(mbhc, false);
 
 	if (!override_en)
@@ -5477,18 +5495,16 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 	}
 
 	if (mbhc->headset_jack.jack == NULL) {
-		ret = snd_soc_card_jack_new(codec->component.card,
-					    "Headset Jack", WCD9XXX_JACK_MASK,
-					    &mbhc->headset_jack, NULL, 0);
+		ret = snd_soc_jack_new(codec, "Headset Jack", WCD9XXX_JACK_MASK,
+				       &mbhc->headset_jack);
 		if (ret) {
 			pr_err("%s: Failed to create new jack\n", __func__);
 			return ret;
 		}
 
-		ret = snd_soc_card_jack_new(codec->component.card,
-					    "Button Jack",
-					    WCD9XXX_JACK_BUTTON_MASK,
-					    &mbhc->button_jack, NULL, 0);
+		ret = snd_soc_jack_new(codec, "Button Jack",
+				       WCD9XXX_JACK_BUTTON_MASK,
+				       &mbhc->button_jack);
 		if (ret) {
 			pr_err("Failed to create new jack\n");
 			return ret;

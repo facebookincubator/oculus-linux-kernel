@@ -26,7 +26,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/console.h>
 #include <linux/export.h>
-#include <linux/jump_label.h>
+#include <linux/static_key.h>
 #include <asm/processor.h>
 #include <asm/mmu.h>
 #include <asm/page.h>
@@ -43,7 +43,6 @@
 #include <asm/trace.h>
 #include <asm/firmware.h>
 #include <asm/plpar_wrappers.h>
-#include <asm/kexec.h>
 #include <asm/fadump.h>
 
 #include "pseries.h"
@@ -268,13 +267,8 @@ static void pSeries_lpar_hptab_clear(void)
 		 * out to the user, but at least this will stop us from
 		 * continuing on further and creating an even more
 		 * difficult to debug situation.
-		 *
-		 * There is a known problem when kdump'ing, if cpus are offline
-		 * the above call will fail. Rather than panicking again, keep
-		 * going and hope the kdump kernel is also little endian, which
-		 * it usually is.
 		 */
-		if (rc && !kdump_in_progress())
+		if (rc)
 			panic("Could not enable big endian exceptions");
 	}
 #endif
@@ -290,7 +284,7 @@ static long pSeries_lpar_hpte_updatepp(unsigned long slot,
 				       unsigned long newpp,
 				       unsigned long vpn,
 				       int psize, int apsize,
-				       int ssize, unsigned long inv_flags)
+				       int ssize, int local)
 {
 	unsigned long lpar_rc;
 	unsigned long flags = (newpp & 7) | H_AVPN;
@@ -448,7 +442,7 @@ static void __pSeries_lpar_hugepage_invalidate(unsigned long *slot,
 static void pSeries_lpar_hugepage_invalidate(unsigned long vsid,
 					     unsigned long addr,
 					     unsigned char *hpte_slot_array,
-					     int psize, int ssize, int local)
+					     int psize, int ssize)
 {
 	int i, index = 0;
 	unsigned long s_addr = addr;
@@ -521,7 +515,7 @@ static void pSeries_lpar_flush_hash_range(unsigned long number, int local)
 	unsigned long vpn;
 	unsigned long i, pix, rc;
 	unsigned long flags = 0;
-	struct ppc64_tlb_batch *batch = this_cpu_ptr(&ppc64_tlb_batch);
+	struct ppc64_tlb_batch *batch = &__get_cpu_var(ppc64_tlb_batch);
 	int lock_tlbie = !mmu_has_feature(MMU_FTR_LOCKLESS_TLBIE);
 	unsigned long param[9];
 	unsigned long hash, index, shift, hidx, slot;
@@ -711,7 +705,7 @@ void __trace_hcall_entry(unsigned long opcode, unsigned long *args)
 
 	local_irq_save(flags);
 
-	depth = this_cpu_ptr(&hcall_trace_depth);
+	depth = &__get_cpu_var(hcall_trace_depth);
 
 	if (*depth)
 		goto out;
@@ -736,7 +730,7 @@ void __trace_hcall_exit(long opcode, unsigned long retval,
 
 	local_irq_save(flags);
 
-	depth = this_cpu_ptr(&hcall_trace_depth);
+	depth = &__get_cpu_var(hcall_trace_depth);
 
 	if (*depth)
 		goto out;

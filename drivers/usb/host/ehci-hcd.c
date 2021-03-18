@@ -239,7 +239,7 @@ static void tdi_reset (struct ehci_hcd *ehci)
  * Reset a non-running (STS_HALT == 1) controller.
  * Must be called with interrupts enabled and the lock not held.
  */
-int ehci_reset(struct ehci_hcd *ehci)
+static int ehci_reset (struct ehci_hcd *ehci)
 {
 	int	retval;
 	u32	command = ehci_readl(ehci, &ehci->regs->command);
@@ -275,7 +275,6 @@ int ehci_reset(struct ehci_hcd *ehci)
 			ehci->resuming_ports = 0;
 	return retval;
 }
-EXPORT_SYMBOL_GPL(ehci_reset);
 
 /*
  * Idle the controller (turn off the schedules).
@@ -312,7 +311,6 @@ static void unlink_empty_async_suspended(struct ehci_hcd *ehci);
 static void ehci_work(struct ehci_hcd *ehci);
 static void start_unlink_intr(struct ehci_hcd *ehci, struct ehci_qh *qh);
 static void end_unlink_intr(struct ehci_hcd *ehci, struct ehci_qh *qh);
-static int ehci_port_power(struct ehci_hcd *ehci, int portnum, bool enable);
 
 #include "ehci-timer.c"
 #include "ehci-hub.c"
@@ -331,13 +329,9 @@ static void ehci_turn_off_all_ports(struct ehci_hcd *ehci)
 {
 	int	port = HCS_N_PORTS(ehci->hcs_params);
 
-	while (port--) {
-		spin_unlock_irq(&ehci->lock);
-		ehci_port_power(ehci, port, false);
-		spin_lock_irq(&ehci->lock);
+	while (port--)
 		ehci_writel(ehci, PORT_RWC_BITS,
 				&ehci->regs->port_status[port]);
-	}
 }
 
 /*
@@ -532,6 +526,8 @@ static int ehci_init(struct usb_hcd *hcd)
 	hw->hw_alt_next = QTD_NEXT(ehci, ehci->async->dummy->qtd_dma);
 
 	/* clear interrupt enables, set irq latency */
+	log2_irq_thresh = ehci->log2_irq_thresh;
+
 	if (log2_irq_thresh < 0 || log2_irq_thresh > 6)
 		log2_irq_thresh = 0;
 	temp = 1 << (16 + log2_irq_thresh);
@@ -589,7 +585,7 @@ static int ehci_run (struct usb_hcd *hcd)
 	 * streaming mappings for I/O buffers, like pci_map_single(),
 	 * can return segments above 4GB, if the device allows.
 	 *
-	 * NOTE:  the dma mask is visible through dev->dma_mask, so
+	 * NOTE:  the dma mask is visible through dma_supported(), so
 	 * drivers can pass this info along ... like NETIF_F_HIGHDMA,
 	 * Scsi_Host.highmem_io, and so forth.  It's readonly to all
 	 * host side drivers though.
@@ -784,6 +780,12 @@ static irqreturn_t ehci_irq (struct usb_hcd *hcd)
 			pstatus = ehci_readl(ehci,
 					 &ehci->regs->port_status[i]);
 
+			/*set RS bit in case of remote wakeup*/
+			if (ehci_is_TDI(ehci) && !(cmd & CMD_RUN) &&
+					(pstatus & PORT_SUSPEND))
+				ehci_writel(ehci, cmd | CMD_RUN,
+					&ehci->regs->command);
+
 			if (pstatus & PORT_OWNER)
 				continue;
 			if (!(test_bit(i, &ehci->suspended_ports) &&
@@ -809,6 +811,10 @@ static irqreturn_t ehci_irq (struct usb_hcd *hcd)
 	/* PCI errors [4.15.2.4] */
 	if (unlikely ((status & STS_FATAL) != 0)) {
 		ehci_err(ehci, "fatal error\n");
+		if (hcd->driver->dump_regs) {
+			hcd->driver->dump_regs(hcd);
+			panic("System error\n");
+		}
 		dbg_cmd(ehci, "fatal", cmd);
 		dbg_status(ehci, "fatal", status);
 dead:
@@ -1111,7 +1117,7 @@ int ehci_suspend(struct usb_hcd *hcd, bool do_wakeup)
 EXPORT_SYMBOL_GPL(ehci_suspend);
 
 /* Returns 0 if power was preserved, 1 if power was lost */
-int ehci_resume(struct usb_hcd *hcd, bool force_reset)
+int ehci_resume(struct usb_hcd *hcd, bool hibernated)
 {
 	struct ehci_hcd		*ehci = hcd_to_ehci(hcd);
 
@@ -1125,12 +1131,12 @@ int ehci_resume(struct usb_hcd *hcd, bool force_reset)
 		return 0;		/* Controller is dead */
 
 	/*
-	 * If CF is still set and reset isn't forced
+	 * If CF is still set and we aren't resuming from hibernation
 	 * then we maintained suspend power.
 	 * Just undo the effect of ehci_suspend().
 	 */
 	if (ehci_readl(ehci, &ehci->regs->configured_flag) == FLAG_CF &&
-			!force_reset) {
+			!hibernated) {
 		int	mask = INTR_MASK;
 
 		ehci_prepare_ports_for_controller_resume(ehci);
@@ -1237,10 +1243,14 @@ void ehci_init_driver(struct hc_driver *drv,
 
 	if (over) {
 		drv->hcd_priv_size += over->extra_priv_size;
+		if (over->flags)
+			drv->flags = over->flags;
 		if (over->reset)
 			drv->reset = over->reset;
-		if (over->port_power)
-			drv->port_power = over->port_power;
+		if (over->bus_suspend)
+			drv->bus_suspend = over->bus_suspend;
+		if (over->bus_resume)
+			drv->bus_resume = over->bus_resume;
 	}
 }
 EXPORT_SYMBOL_GPL(ehci_init_driver);
@@ -1250,6 +1260,11 @@ EXPORT_SYMBOL_GPL(ehci_init_driver);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_AUTHOR (DRIVER_AUTHOR);
 MODULE_LICENSE ("GPL");
+
+#ifdef CONFIG_USB_EHCI_FSL
+#include "ehci-fsl.c"
+#define	PLATFORM_DRIVER		ehci_fsl_driver
+#endif
 
 #ifdef CONFIG_USB_EHCI_SH
 #include "ehci-sh.c"
@@ -1269,6 +1284,11 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_XPS_USB_HCD_XILINX
 #include "ehci-xilinx-of.c"
 #define XILINX_OF_PLATFORM_DRIVER	ehci_hcd_xilinx_of_driver
+#endif
+
+#ifdef CONFIG_USB_OCTEON_EHCI
+#include "ehci-octeon.c"
+#define PLATFORM_DRIVER		ehci_octeon_driver
 #endif
 
 #ifdef CONFIG_TILE_USB
@@ -1294,6 +1314,11 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_MIPS_SEAD3
 #include "ehci-sead3.c"
 #define	PLATFORM_DRIVER		ehci_hcd_sead3_driver
+#endif
+
+#ifdef CONFIG_USB_EHCI_MSM_HSIC
+#include "ehci-msm-hsic.c"
+#define PLATFORM_DRIVER         ehci_msm_hsic_driver
 #endif
 
 static int __init ehci_hcd_init(void)

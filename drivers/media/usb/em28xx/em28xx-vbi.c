@@ -31,11 +31,10 @@
 
 /* ------------------------------------------------------------------ */
 
-static int vbi_queue_setup(struct vb2_queue *vq, const void *parg,
+static int vbi_queue_setup(struct vb2_queue *vq, const struct v4l2_format *fmt,
 			   unsigned int *nbuffers, unsigned int *nplanes,
 			   unsigned int sizes[], void *alloc_ctxs[])
 {
-	const struct v4l2_format *fmt = parg;
 	struct em28xx *dev = vb2_get_drv_priv(vq);
 	struct em28xx_v4l2 *v4l2 = dev->v4l2;
 	unsigned long size;
@@ -62,6 +61,7 @@ static int vbi_buffer_prepare(struct vb2_buffer *vb)
 {
 	struct em28xx        *dev  = vb2_get_drv_priv(vb->vb2_queue);
 	struct em28xx_v4l2   *v4l2 = dev->v4l2;
+	struct em28xx_buffer *buf  = container_of(vb, struct em28xx_buffer, vb);
 	unsigned long        size;
 
 	size = v4l2->vbi_width * v4l2->vbi_height * 2;
@@ -71,7 +71,7 @@ static int vbi_buffer_prepare(struct vb2_buffer *vb)
 		       __func__, vb2_plane_size(vb, 0), size);
 		return -EINVAL;
 	}
-	vb2_set_plane_payload(vb, 0, size);
+	vb2_set_plane_payload(&buf->vb, 0, size);
 
 	return 0;
 }
@@ -79,10 +79,8 @@ static int vbi_buffer_prepare(struct vb2_buffer *vb)
 static void
 vbi_buffer_queue(struct vb2_buffer *vb)
 {
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct em28xx *dev = vb2_get_drv_priv(vb->vb2_queue);
-	struct em28xx_buffer *buf =
-		container_of(vbuf, struct em28xx_buffer, vb);
+	struct em28xx_buffer *buf = container_of(vb, struct em28xx_buffer, vb);
 	struct em28xx_dmaqueue *vbiq = &dev->vbiq;
 	unsigned long flags = 0;
 
@@ -93,6 +91,7 @@ vbi_buffer_queue(struct vb2_buffer *vb)
 	list_add_tail(&buf->list, &vbiq->active);
 	spin_unlock_irqrestore(&dev->slock, flags);
 }
+
 
 struct vb2_ops em28xx_vbi_qops = {
 	.queue_setup    = vbi_queue_setup,

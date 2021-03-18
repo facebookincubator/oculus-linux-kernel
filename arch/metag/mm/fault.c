@@ -105,7 +105,7 @@ int do_page_fault(struct pt_regs *regs, unsigned long address,
 
 	mm = tsk->mm;
 
-	if (faulthandler_disabled() || !mm)
+	if (in_atomic() || !mm)
 		goto no_context;
 
 	if (user_mode(regs))

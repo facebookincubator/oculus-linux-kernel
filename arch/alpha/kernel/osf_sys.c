@@ -104,12 +104,11 @@ struct osf_dirent_callback {
 };
 
 static int
-osf_filldir(struct dir_context *ctx, const char *name, int namlen,
-	    loff_t offset, u64 ino, unsigned int d_type)
+osf_filldir(void *__buf, const char *name, int namlen, loff_t offset,
+	    u64 ino, unsigned int d_type)
 {
 	struct osf_dirent __user *dirent;
-	struct osf_dirent_callback *buf =
-		container_of(ctx, struct osf_dirent_callback, ctx);
+	struct osf_dirent_callback *buf = (struct osf_dirent_callback *) __buf;
 	unsigned int reclen = ALIGN(NAME_OFFSET + namlen + 1, sizeof(u32));
 	unsigned int d_ino;
 
@@ -1019,12 +1018,13 @@ SYSCALL_DEFINE2(osf_settimeofday, struct timeval32 __user *, tv,
  	if (tv) {
 		if (get_tv32((struct timeval *)&kts, tv))
 			return -EFAULT;
-		kts.tv_nsec *= 1000;
 	}
 	if (tz) {
 		if (copy_from_user(&ktz, tz, sizeof(*tz)))
 			return -EFAULT;
 	}
+
+	kts.tv_nsec *= 1000;
 
 	return do_sys_settimeofday(tv ? &kts : NULL, tz ? &ktz : NULL);
 }
@@ -1138,7 +1138,6 @@ SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 {
 	struct rusage32 r;
 	cputime_t utime, stime;
-	unsigned long utime_jiffies, stime_jiffies;
 
 	if (who != RUSAGE_SELF && who != RUSAGE_CHILDREN)
 		return -EINVAL;
@@ -1147,18 +1146,14 @@ SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 	switch (who) {
 	case RUSAGE_SELF:
 		task_cputime(current, &utime, &stime);
-		utime_jiffies = cputime_to_jiffies(utime);
-		stime_jiffies = cputime_to_jiffies(stime);
-		jiffies_to_timeval32(utime_jiffies, &r.ru_utime);
-		jiffies_to_timeval32(stime_jiffies, &r.ru_stime);
+		jiffies_to_timeval32(utime, &r.ru_utime);
+		jiffies_to_timeval32(stime, &r.ru_stime);
 		r.ru_minflt = current->min_flt;
 		r.ru_majflt = current->maj_flt;
 		break;
 	case RUSAGE_CHILDREN:
-		utime_jiffies = cputime_to_jiffies(current->signal->cutime);
-		stime_jiffies = cputime_to_jiffies(current->signal->cstime);
-		jiffies_to_timeval32(utime_jiffies, &r.ru_utime);
-		jiffies_to_timeval32(stime_jiffies, &r.ru_stime);
+		jiffies_to_timeval32(current->signal->cutime, &r.ru_utime);
+		jiffies_to_timeval32(current->signal->cstime, &r.ru_stime);
 		r.ru_minflt = current->signal->cmin_flt;
 		r.ru_majflt = current->signal->cmaj_flt;
 		break;

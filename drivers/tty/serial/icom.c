@@ -1504,8 +1504,7 @@ static int icom_probe(struct pci_dev *dev,
 		return retval;
 	}
 
-	retval = pci_request_regions(dev, "icom");
-	if (retval) {
+	if ( (retval = pci_request_regions(dev, "icom"))) {
 		 dev_err(&dev->dev, "pci_request_regions FAILED\n");
 		 pci_disable_device(dev);
 		 return retval;
@@ -1513,8 +1512,7 @@ static int icom_probe(struct pci_dev *dev,
 
 	pci_set_master(dev);
 
-	retval = pci_read_config_dword(dev, PCI_COMMAND, &command_reg);
-	if (retval) {
+	if ( (retval = pci_read_config_dword(dev, PCI_COMMAND, &command_reg))) {
 		dev_err(&dev->dev, "PCI Config read FAILED\n");
 		return retval;
 	}
@@ -1552,14 +1550,13 @@ static int icom_probe(struct pci_dev *dev,
 
 	icom_adapter->base_addr = pci_ioremap_bar(dev, 0);
 
-	if (!icom_adapter->base_addr) {
-		retval = -ENOMEM;
+	if (!icom_adapter->base_addr)
 		goto probe_exit1;
-	}
 
 	 /* save off irq and request irq line */
-	 retval = request_irq(dev->irq, icom_interrupt, IRQF_SHARED, ICOM_DRIVER_NAME, (void *)icom_adapter);
-	 if (retval) {
+	 if ( (retval = request_irq(dev->irq, icom_interrupt,
+				   IRQF_SHARED, ICOM_DRIVER_NAME,
+				   (void *) icom_adapter))) {
 		  goto probe_exit2;
 	 }
 

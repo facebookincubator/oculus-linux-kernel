@@ -115,14 +115,6 @@ static struct slb_shadow * __init init_slb_shadow(int cpu)
 {
 	struct slb_shadow *s = &slb_shadow[cpu];
 
-	/*
-	 * When we come through here to initialise boot_paca, the slb_shadow
-	 * buffers are not allocated yet. That's OK, we'll get one later in
-	 * boot, but make sure we don't corrupt memory at 0.
-	 */
-	if (!slb_shadow)
-		return NULL;
-
 	s->persistent = cpu_to_be32(SLB_NUM_BOLTED);
 	s->buffer_length = cpu_to_be32(sizeof(*s));
 
@@ -204,19 +196,14 @@ static int __initdata paca_size;
 
 void __init allocate_pacas(void)
 {
-	u64 limit;
-	int cpu;
+	int cpu, limit;
 
-	limit = ppc64_rma_size;
-
-#ifdef CONFIG_PPC_BOOK3S_64
 	/*
 	 * We can't take SLB misses on the paca, and we want to access them
 	 * in real mode, so allocate them within the RMA and also within
 	 * the first segment.
 	 */
-	limit = min(0x10000000ULL, limit);
-#endif
+	limit = min(0x10000000ULL, ppc64_rma_size);
 
 	paca_size = PAGE_ALIGN(sizeof(struct paca_struct) * nr_cpu_ids);
 

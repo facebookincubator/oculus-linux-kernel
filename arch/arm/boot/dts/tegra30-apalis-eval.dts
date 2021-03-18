@@ -126,10 +126,6 @@
 		};
 	};
 
-	hda@70030000 {
-		status = "okay";
-	};
-
 	sd1: sdhci@78000000 {
 		status = "okay";
 		bus-width = <4>;
@@ -153,7 +149,6 @@
 
 	usb-phy@7d000000 {
 		status = "okay";
-		dr_mode = "otg";
 		vbus-supply = <&usbo1_vbus_reg>;
 	};
 
@@ -180,7 +175,7 @@
 	backlight: backlight {
 		compatible = "pwm-backlight";
 
-		/* PWM_BKL1 */
+		/* PWM0 */
 		pwms = <&pwm 0 5000000>;
 		brightness-levels = <255 231 223 207 191 159 127 0>;
 		default-brightness-level = <6>;
@@ -191,10 +186,10 @@
 	gpio-keys {
 		compatible = "gpio-keys";
 
-		wakeup {
-			label = "WAKE1_MICO";
+		power {
+			label = "Power";
 			gpios = <&gpio TEGRA_GPIO(V, 1) GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_WAKEUP>;
+			linux,code = <KEY_POWER>;
 			debounce-interval = <10>;
 			gpio-key,wakeup;
 		};

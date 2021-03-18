@@ -79,8 +79,6 @@ struct sun4v_2insn_patch_entry {
 };
 extern struct sun4v_2insn_patch_entry __sun4v_2insn_patch,
 	__sun4v_2insn_patch_end;
-extern struct sun4v_2insn_patch_entry __sun_m7_2insn_patch,
-	__sun_m7_2insn_patch_end;
 
 
 #endif /* !(__ASSEMBLY__) */

@@ -16,57 +16,41 @@ ip_set_comment_uget(struct nlattr *tb)
 	return nla_data(tb);
 }
 
-/* Called from uadd only, protected by the set spinlock.
- * The kadt functions don't use the comment extensions in any way.
- */
 static inline void
 ip_set_init_comment(struct ip_set_comment *comment,
 		    const struct ip_set_ext *ext)
 {
-	struct ip_set_comment_rcu *c = rcu_dereference_protected(comment->c, 1);
 	size_t len = ext->comment ? strlen(ext->comment) : 0;
 
-	if (unlikely(c)) {
-		kfree_rcu(c, rcu);
-		rcu_assign_pointer(comment->c, NULL);
+	if (unlikely(comment->str)) {
+		kfree(comment->str);
+		comment->str = NULL;
 	}
 	if (!len)
 		return;
 	if (unlikely(len > IPSET_MAX_COMMENT_SIZE))
 		len = IPSET_MAX_COMMENT_SIZE;
-	c = kzalloc(sizeof(*c) + len + 1, GFP_ATOMIC);
-	if (unlikely(!c))
+	comment->str = kzalloc(len + 1, GFP_ATOMIC);
+	if (unlikely(!comment->str))
 		return;
-	strlcpy(c->str, ext->comment, len + 1);
-	rcu_assign_pointer(comment->c, c);
+	strlcpy(comment->str, ext->comment, len + 1);
 }
 
-/* Used only when dumping a set, protected by rcu_read_lock_bh() */
 static inline int
 ip_set_put_comment(struct sk_buff *skb, struct ip_set_comment *comment)
 {
-	struct ip_set_comment_rcu *c = rcu_dereference_bh(comment->c);
-
-	if (!c)
+	if (!comment->str)
 		return 0;
-	return nla_put_string(skb, IPSET_ATTR_COMMENT, c->str);
+	return nla_put_string(skb, IPSET_ATTR_COMMENT, comment->str);
 }
 
-/* Called from uadd/udel, flush or the garbage collectors protected
- * by the set spinlock.
- * Called when the set is destroyed and when there can't be any user
- * of the set data anymore.
- */
 static inline void
 ip_set_comment_free(struct ip_set_comment *comment)
 {
-	struct ip_set_comment_rcu *c;
-
-	c = rcu_dereference_protected(comment->c, 1);
-	if (unlikely(!c))
+	if (unlikely(!comment->str))
 		return;
-	kfree_rcu(c, rcu);
-	rcu_assign_pointer(comment->c, NULL);
+	kfree(comment->str);
+	comment->str = NULL;
 }
 
 #endif

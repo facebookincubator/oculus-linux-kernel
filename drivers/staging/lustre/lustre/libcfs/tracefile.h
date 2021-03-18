@@ -47,7 +47,7 @@
 extern char      cfs_tracefile[TRACEFILE_NAME_SIZE];
 extern long long cfs_tracefile_size;
 
-void libcfs_run_debug_log_upcall(char *file);
+extern void libcfs_run_debug_log_upcall(char *file);
 
 int  cfs_tracefile_init_arch(void);
 void cfs_tracefile_fini_arch(void);
@@ -65,6 +65,8 @@ void cfs_trace_stop_thread(void);
 int cfs_tracefile_init(int max_pages);
 void cfs_tracefile_exit(void);
 
+
+
 int cfs_trace_copyin_string(char *knl_buffer, int knl_buffer_nob,
 			    const char __user *usr_buffer, int usr_buffer_nob);
 int cfs_trace_copyout_string(char __user *usr_buffer, int usr_buffer_nob,
@@ -75,13 +77,14 @@ int cfs_trace_dump_debug_buffer_usrstr(void __user *usr_str, int usr_str_nob);
 int cfs_trace_daemon_command(char *str);
 int cfs_trace_daemon_command_usrstr(void __user *usr_str, int usr_str_nob);
 int cfs_trace_set_debug_mb(int mb);
+int cfs_trace_set_debug_mb_usrstr(void __user *usr_str, int usr_str_nob);
 int cfs_trace_get_debug_mb(void);
 
-void libcfs_debug_dumplog_internal(void *arg);
-void libcfs_register_panic_notifier(void);
-void libcfs_unregister_panic_notifier(void);
+extern void libcfs_debug_dumplog_internal(void *arg);
+extern void libcfs_register_panic_notifier(void);
+extern void libcfs_unregister_panic_notifier(void);
 extern int  libcfs_panic_in_progress;
-int cfs_trace_max_debug_mb(void);
+extern int  cfs_trace_max_debug_mb(void);
 
 #define TCD_MAX_PAGES (5 << (20 - PAGE_CACHE_SHIFT))
 #define TCD_STOCK_PAGES (TCD_MAX_PAGES)
@@ -250,15 +253,15 @@ struct cfs_trace_page {
 	unsigned short       type;
 };
 
-void cfs_set_ptldebug_header(struct ptldebug_header *header,
-			     struct libcfs_debug_msg_data *m,
-			     unsigned long stack);
-void cfs_print_to_console(struct ptldebug_header *hdr, int mask,
-			  const char *buf, int len, const char *file,
-			  const char *fn);
+extern void cfs_set_ptldebug_header(struct ptldebug_header *header,
+				    struct libcfs_debug_msg_data *m,
+				    unsigned long stack);
+extern void cfs_print_to_console(struct ptldebug_header *hdr, int mask,
+				 const char *buf, int len, const char *file,
+				 const char *fn);
 
-int cfs_trace_lock_tcd(struct cfs_trace_cpu_data *tcd, int walking);
-void cfs_trace_unlock_tcd(struct cfs_trace_cpu_data *tcd, int walking);
+extern int cfs_trace_lock_tcd(struct cfs_trace_cpu_data *tcd, int walking);
+extern void cfs_trace_unlock_tcd(struct cfs_trace_cpu_data *tcd, int walking);
 
 /**
  * trace_buf_type_t, trace_buf_idx_get() and trace_console_buffers[][]
@@ -268,7 +271,7 @@ void cfs_trace_unlock_tcd(struct cfs_trace_cpu_data *tcd, int walking);
  */
 
 extern char *cfs_trace_console_buffers[NR_CPUS][CFS_TCD_TYPE_MAX];
-cfs_trace_buf_type_t cfs_trace_buf_idx_get(void);
+extern cfs_trace_buf_type_t cfs_trace_buf_idx_get(void);
 
 static inline char *
 cfs_trace_get_console_buffer(void)
@@ -307,11 +310,12 @@ cfs_trace_put_tcd (struct cfs_trace_cpu_data *tcd)
 int cfs_trace_refill_stock(struct cfs_trace_cpu_data *tcd, gfp_t gfp,
 			   struct list_head *stock);
 
+
 int cfs_tcd_owns_tage(struct cfs_trace_cpu_data *tcd,
 		      struct cfs_trace_page *tage);
 
-void cfs_trace_assertion_failed(const char *str,
-				struct libcfs_debug_msg_data *m);
+extern void cfs_trace_assertion_failed(const char *str,
+				       struct libcfs_debug_msg_data *m);
 
 /* ASSERTION that is safe to use within the debug system */
 #define __LASSERT(cond)						 \

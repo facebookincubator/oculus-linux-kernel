@@ -188,8 +188,10 @@ snd_seq_oss_open(struct file *file, int level)
 	struct seq_oss_devinfo *dp;
 
 	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
-	if (!dp)
+	if (!dp) {
+		pr_err("ALSA: seq_oss: can't malloc device info\n");
 		return -ENOMEM;
+	}
 
 	dp->cseq = system_client;
 	dp->port = -1;
@@ -401,11 +403,14 @@ free_devinfo(void *private)
 {
 	struct seq_oss_devinfo *dp = (struct seq_oss_devinfo *)private;
 
-	snd_seq_oss_timer_delete(dp->timer);
+	if (dp->timer)
+		snd_seq_oss_timer_delete(dp->timer);
 		
-	snd_seq_oss_writeq_delete(dp->writeq);
+	if (dp->writeq)
+		snd_seq_oss_writeq_delete(dp->writeq);
 
-	snd_seq_oss_readq_delete(dp->readq);
+	if (dp->readq)
+		snd_seq_oss_readq_delete(dp->readq);
 	
 	kfree(dp);
 }
@@ -463,7 +468,8 @@ snd_seq_oss_reset(struct seq_oss_devinfo *dp)
 	snd_seq_oss_timer_stop(dp->timer);
 }
 
-#ifdef CONFIG_SND_PROC_FS
+
+#ifdef CONFIG_PROC_FS
 /*
  * misc. functions for proc interface
  */
@@ -514,4 +520,4 @@ snd_seq_oss_system_info_read(struct snd_info_buffer *buf)
 			snd_seq_oss_readq_info_read(dp->readq, buf);
 	}
 }
-#endif /* CONFIG_SND_PROC_FS */
+#endif /* CONFIG_PROC_FS */

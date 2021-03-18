@@ -14,7 +14,6 @@
 #include "ipahal.h"
 #include "ipahal_i.h"
 #include "ipahal_reg_i.h"
-#include "ipahal_fltrt_i.h"
 
 struct ipahal_context *ipahal_ctx;
 
@@ -1056,7 +1055,7 @@ static void ipahal_cp_hdr_to_hw_buff_v3(void *const base, u32 offset,
  * @hdr_base_addr: base address in table
  * @offset_entry: offset from hdr_base_addr in table
  */
-static int ipahal_cp_proc_ctx_to_hw_buff_v3(enum ipa_hdr_proc_type type,
+static void ipahal_cp_proc_ctx_to_hw_buff_v3(enum ipa_hdr_proc_type type,
 		void *const base, u32 offset,
 		u32 hdr_len, bool is_hdr_proc_ctx,
 		dma_addr_t phys_base, u32 hdr_base_addr,
@@ -1093,28 +1092,25 @@ static int ipahal_cp_proc_ctx_to_hw_buff_v3(enum ipa_hdr_proc_type type,
 		switch (type) {
 		case IPA_HDR_PROC_ETHII_TO_ETHII:
 			ctx->cmd.value = IPA_HDR_UCP_ETHII_TO_ETHII;
-			break;
+		break;
 		case IPA_HDR_PROC_ETHII_TO_802_3:
 			ctx->cmd.value = IPA_HDR_UCP_ETHII_TO_802_3;
-			break;
+		break;
 		case IPA_HDR_PROC_802_3_TO_ETHII:
 			ctx->cmd.value = IPA_HDR_UCP_802_3_TO_ETHII;
-			break;
+		break;
 		case IPA_HDR_PROC_802_3_TO_802_3:
 			ctx->cmd.value = IPA_HDR_UCP_802_3_TO_802_3;
-			break;
+		break;
 		default:
 			IPAHAL_ERR("unknown ipa_hdr_proc_type %d", type);
-			WARN_ON(1);
-			return -EINVAL;
+			BUG();
 		}
 		IPAHAL_DBG("command id %d\n", ctx->cmd.value);
 		ctx->end.type = IPA_PROC_CTX_TLV_TYPE_END;
 		ctx->end.length = 0;
 		ctx->end.value = 0;
 	}
-
-	return 0;
 }
 
 /*
@@ -1140,7 +1136,7 @@ struct ipahal_hdr_funcs {
 	void (*ipahal_cp_hdr_to_hw_buff)(void *const base, u32 offset,
 			u8 *const hdr, u32 hdr_len);
 
-	int (*ipahal_cp_proc_ctx_to_hw_buff)(enum ipa_hdr_proc_type type,
+	void (*ipahal_cp_proc_ctx_to_hw_buff)(enum ipa_hdr_proc_type type,
 			void *const base, u32 offset, u32 hdr_len,
 			bool is_hdr_proc_ctx, dma_addr_t phys_base,
 			u32 hdr_base_addr,
@@ -1188,10 +1184,7 @@ void ipahal_cp_hdr_to_hw_buff(void *base, u32 offset, u8 *const hdr,
 	IPAHAL_DBG_LOW("Entry\n");
 	IPAHAL_DBG("base %p, offset %d, hdr %p, hdr_len %d\n", base,
 			offset, hdr, hdr_len);
-	if (!base || !hdr_len || !hdr) {
-		IPAHAL_ERR("failed on validating params");
-		return;
-	}
+	BUG_ON(!base || !hdr_len || !hdr);
 
 	hdr_funcs.ipahal_cp_hdr_to_hw_buff(base, offset, hdr, hdr_len);
 
@@ -1210,11 +1203,12 @@ void ipahal_cp_hdr_to_hw_buff(void *base, u32 offset, u8 *const hdr,
  * @hdr_base_addr: base address in table
  * @offset_entry: offset from hdr_base_addr in table
  */
-int ipahal_cp_proc_ctx_to_hw_buff(enum ipa_hdr_proc_type type,
+void ipahal_cp_proc_ctx_to_hw_buff(enum ipa_hdr_proc_type type,
 		void *const base, u32 offset, u32 hdr_len,
 		bool is_hdr_proc_ctx, dma_addr_t phys_base,
 		u32 hdr_base_addr, struct ipa_hdr_offset_entry *offset_entry)
 {
+	IPAHAL_DBG_LOW("entry\n");
 	IPAHAL_DBG(
 		"type %d, base %p, offset %d, hdr_len %d, is_hdr_proc_ctx %d, hdr_base_addr %d, offset_entry %p\n"
 			, type, base, offset, hdr_len, is_hdr_proc_ctx,
@@ -1222,19 +1216,21 @@ int ipahal_cp_proc_ctx_to_hw_buff(enum ipa_hdr_proc_type type,
 
 	if (!base ||
 		!hdr_len ||
-		(is_hdr_proc_ctx && !phys_base) ||
-		(!is_hdr_proc_ctx && !offset_entry) ||
-		(!is_hdr_proc_ctx && !hdr_base_addr)) {
+		(!phys_base && !hdr_base_addr) ||
+		!hdr_base_addr ||
+		((is_hdr_proc_ctx == false) && !offset_entry)) {
 		IPAHAL_ERR(
 			"invalid input: hdr_len:%u phys_base:%pad hdr_base_addr:%u is_hdr_proc_ctx:%d offset_entry:%pK\n"
 			, hdr_len, &phys_base, hdr_base_addr
 			, is_hdr_proc_ctx, offset_entry);
-		return -EINVAL;
+		BUG();
 	}
 
-	return hdr_funcs.ipahal_cp_proc_ctx_to_hw_buff(type, base, offset,
+	hdr_funcs.ipahal_cp_proc_ctx_to_hw_buff(type, base, offset,
 			hdr_len, is_hdr_proc_ctx, phys_base,
 			hdr_base_addr, offset_entry);
+
+	IPAHAL_DBG_LOW("Exit\n");
 }
 
 /*
@@ -1273,13 +1269,12 @@ u32 ipahal_get_hps_img_mem_size(void)
 	return IPA_HW_HPS_IMG_MEM_SIZE_V3_0;
 }
 
-int ipahal_init(enum ipa_hw_type ipa_hw_type, void __iomem *base,
-	struct device *ipa_pdev)
+int ipahal_init(enum ipa_hw_type ipa_hw_type, void __iomem *base)
 {
 	int result;
 
-	IPAHAL_DBG("Entry - IPA HW TYPE=%d base=%p ipa_pdev=%p\n",
-		ipa_hw_type, base, ipa_pdev);
+	IPAHAL_DBG("Entry - IPA HW TYPE=%d base=%p\n",
+		ipa_hw_type, base);
 
 	ipahal_ctx = kzalloc(sizeof(*ipahal_ctx), GFP_KERNEL);
 	if (!ipahal_ctx) {
@@ -1306,15 +1301,8 @@ int ipahal_init(enum ipa_hw_type ipa_hw_type, void __iomem *base,
 		goto bail_free_ctx;
 	}
 
-	if (!ipa_pdev) {
-		IPAHAL_ERR("invalid IPA platform device\n");
-		result = -EINVAL;
-		goto bail_free_ctx;
-	}
-
 	ipahal_ctx->hw_type = ipa_hw_type;
 	ipahal_ctx->base = base;
-	ipahal_ctx->ipa_pdev = ipa_pdev;
 
 	if (ipahal_reg_init(ipa_hw_type)) {
 		IPAHAL_ERR("failed to init ipahal reg\n");
@@ -1336,12 +1324,6 @@ int ipahal_init(enum ipa_hw_type ipa_hw_type, void __iomem *base,
 
 	ipahal_hdr_init(ipa_hw_type);
 
-	if (ipahal_fltrt_init(ipa_hw_type)) {
-		IPAHAL_ERR("failed to init ipahal flt rt\n");
-		result = -EFAULT;
-		goto bail_free_ctx;
-	}
-
 	ipahal_debugfs_init();
 
 	return 0;
@@ -1356,19 +1338,7 @@ bail_err_exit:
 void ipahal_destroy(void)
 {
 	IPAHAL_DBG("Entry\n");
-	ipahal_fltrt_destroy();
 	ipahal_debugfs_remove();
 	kfree(ipahal_ctx);
 	ipahal_ctx = NULL;
-}
-
-void ipahal_free_dma_mem(struct ipa_mem_buffer *mem)
-{
-	if (likely(mem)) {
-		dma_free_coherent(ipahal_ctx->ipa_pdev, mem->size, mem->base,
-			mem->phys_base);
-		mem->size = 0;
-		mem->base = NULL;
-		mem->phys_base = 0;
-	}
 }

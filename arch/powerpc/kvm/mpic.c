@@ -34,7 +34,7 @@
 #include <asm/kvm_para.h>
 #include <asm/kvm_host.h>
 #include <asm/kvm_ppc.h>
-#include <kvm/iodev.h>
+#include "iodev.h"
 
 #define MAX_CPU     32
 #define MAX_SRC     256
@@ -287,6 +287,11 @@ static inline void IRQ_setbit(struct irq_queue *q, int n_IRQ)
 static inline void IRQ_resetbit(struct irq_queue *q, int n_IRQ)
 {
 	clear_bit(n_IRQ, q->queue);
+}
+
+static inline int IRQ_testbit(struct irq_queue *q, int n_IRQ)
+{
+	return test_bit(n_IRQ, q->queue);
 }
 
 static void IRQ_check(struct openpic *opp, struct irq_queue *q)
@@ -1369,9 +1374,8 @@ static int kvm_mpic_write_internal(struct openpic *opp, gpa_t addr, u32 val)
 	return -ENXIO;
 }
 
-static int kvm_mpic_read(struct kvm_vcpu *vcpu,
-			 struct kvm_io_device *this,
-			 gpa_t addr, int len, void *ptr)
+static int kvm_mpic_read(struct kvm_io_device *this, gpa_t addr,
+			 int len, void *ptr)
 {
 	struct openpic *opp = container_of(this, struct openpic, mmio);
 	int ret;
@@ -1411,9 +1415,8 @@ static int kvm_mpic_read(struct kvm_vcpu *vcpu,
 	return ret;
 }
 
-static int kvm_mpic_write(struct kvm_vcpu *vcpu,
-			  struct kvm_io_device *this,
-			  gpa_t addr, int len, const void *ptr)
+static int kvm_mpic_write(struct kvm_io_device *this, gpa_t addr,
+			  int len, const void *ptr)
 {
 	struct openpic *opp = container_of(this, struct openpic, mmio);
 	int ret;

@@ -9,7 +9,6 @@
 #include <crypto/aes.h>
 #include <crypto/algapi.h>
 #include <linux/crypto.h>
-#include <linux/genalloc.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/kthread.h>
@@ -29,8 +28,6 @@
 #define MV_CESA	"MV-CESA:"
 #define MAX_HW_HASH_SIZE	0xFFFF
 #define MV_CESA_EXPIRE		500 /* msec */
-
-#define MV_CESA_DEFAULT_SRAM_SIZE	2048
 
 /*
  * STM:
@@ -86,8 +83,6 @@ struct req_progress {
 struct crypto_priv {
 	void __iomem *reg;
 	void __iomem *sram;
-	struct gen_pool *sram_pool;
-	dma_addr_t sram_dma;
 	int irq;
 	struct clk *clk;
 	struct task_struct *queue_th;
@@ -600,7 +595,7 @@ static int queue_manag(void *data)
 	cpg->eng_st = ENGINE_IDLE;
 	do {
 		struct crypto_async_request *async_req = NULL;
-		struct crypto_async_request *backlog = NULL;
+		struct crypto_async_request *backlog;
 
 		__set_current_state(TASK_INTERRUPTIBLE);
 
@@ -1024,39 +1019,6 @@ static struct ahash_alg mv_hmac_sha1_alg = {
 		 }
 };
 
-static int mv_cesa_get_sram(struct platform_device *pdev,
-			    struct crypto_priv *cp)
-{
-	struct resource *res;
-	u32 sram_size = MV_CESA_DEFAULT_SRAM_SIZE;
-
-	of_property_read_u32(pdev->dev.of_node, "marvell,crypto-sram-size",
-			     &sram_size);
-
-	cp->sram_size = sram_size;
-	cp->sram_pool = of_gen_pool_get(pdev->dev.of_node,
-					"marvell,crypto-srams", 0);
-	if (cp->sram_pool) {
-		cp->sram = gen_pool_dma_alloc(cp->sram_pool, sram_size,
-					      &cp->sram_dma);
-		if (cp->sram)
-			return 0;
-
-		return -ENOMEM;
-	}
-
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-					   "sram");
-	if (!res || resource_size(res) < cp->sram_size)
-		return -EINVAL;
-
-	cp->sram = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(cp->sram))
-		return PTR_ERR(cp->sram);
-
-	return 0;
-}
-
 static int mv_probe(struct platform_device *pdev)
 {
 	struct crypto_priv *cp;
@@ -1079,17 +1041,24 @@ static int mv_probe(struct platform_device *pdev)
 
 	spin_lock_init(&cp->lock);
 	crypto_init_queue(&cp->queue, 50);
-	cp->reg = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(cp->reg)) {
-		ret = PTR_ERR(cp->reg);
+	cp->reg = ioremap(res->start, resource_size(res));
+	if (!cp->reg) {
+		ret = -ENOMEM;
 		goto err;
 	}
 
-	ret = mv_cesa_get_sram(pdev, cp);
-	if (ret)
-		goto err;
-
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sram");
+	if (!res) {
+		ret = -ENXIO;
+		goto err_unmap_reg;
+	}
+	cp->sram_size = resource_size(res);
 	cp->max_req_size = cp->sram_size - SRAM_CFG_SPACE;
+	cp->sram = ioremap(res->start, cp->sram_size);
+	if (!cp->sram) {
+		ret = -ENOMEM;
+		goto err_unmap_reg;
+	}
 
 	if (pdev->dev.of_node)
 		irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
@@ -1097,7 +1066,7 @@ static int mv_probe(struct platform_device *pdev)
 		irq = platform_get_irq(pdev, 0);
 	if (irq < 0 || irq == NO_IRQ) {
 		ret = irq;
-		goto err;
+		goto err_unmap_sram;
 	}
 	cp->irq = irq;
 
@@ -1107,7 +1076,7 @@ static int mv_probe(struct platform_device *pdev)
 	cp->queue_th = kthread_run(queue_manag, cp, "mv_crypto");
 	if (IS_ERR(cp->queue_th)) {
 		ret = PTR_ERR(cp->queue_th);
-		goto err;
+		goto err_unmap_sram;
 	}
 
 	ret = request_irq(irq, crypto_int, 0, dev_name(&pdev->dev),
@@ -1165,6 +1134,10 @@ err_irq:
 	}
 err_thread:
 	kthread_stop(cp->queue_th);
+err_unmap_sram:
+	iounmap(cp->sram);
+err_unmap_reg:
+	iounmap(cp->reg);
 err:
 	kfree(cp);
 	cpg = NULL;
@@ -1184,6 +1157,8 @@ static int mv_remove(struct platform_device *pdev)
 	kthread_stop(cp->queue_th);
 	free_irq(cp->irq, cp);
 	memset(cp->sram, 0, cp->sram_size);
+	iounmap(cp->sram);
+	iounmap(cp->reg);
 
 	if (!IS_ERR(cp->clk)) {
 		clk_disable_unprepare(cp->clk);
@@ -1197,8 +1172,6 @@ static int mv_remove(struct platform_device *pdev)
 
 static const struct of_device_id mv_cesa_of_match_table[] = {
 	{ .compatible = "marvell,orion-crypto", },
-	{ .compatible = "marvell,kirkwood-crypto", },
-	{ .compatible = "marvell,dove-crypto", },
 	{}
 };
 MODULE_DEVICE_TABLE(of, mv_cesa_of_match_table);
@@ -1207,6 +1180,7 @@ static struct platform_driver marvell_crypto = {
 	.probe		= mv_probe,
 	.remove		= mv_remove,
 	.driver		= {
+		.owner	= THIS_MODULE,
 		.name	= "mv_crypto",
 		.of_match_table = mv_cesa_of_match_table,
 	},

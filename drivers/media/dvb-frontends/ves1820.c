@@ -90,8 +90,7 @@ static u8 ves1820_readreg(struct ves1820_state *state, u8 reg)
 	return b1[0];
 }
 
-static int ves1820_setup_reg0(struct ves1820_state *state,
-			      u8 reg0, enum fe_spectral_inversion inversion)
+static int ves1820_setup_reg0(struct ves1820_state *state, u8 reg0, fe_spectral_inversion_t inversion)
 {
 	reg0 |= state->reg0 & 0x62;
 
@@ -238,8 +237,7 @@ static int ves1820_set_parameters(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int ves1820_read_status(struct dvb_frontend *fe,
-			       enum fe_status *status)
+static int ves1820_read_status(struct dvb_frontend* fe, fe_status_t* status)
 {
 	struct ves1820_state* state = fe->demodulator_priv;
 	int sync;

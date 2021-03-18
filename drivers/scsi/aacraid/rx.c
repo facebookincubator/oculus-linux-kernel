@@ -400,13 +400,16 @@ int aac_rx_deliver_producer(struct fib * fib)
 {
 	struct aac_dev *dev = fib->dev;
 	struct aac_queue *q = &dev->queues->queue[AdapNormCmdQueue];
+	unsigned long qflags;
 	u32 Index;
 	unsigned long nointr = 0;
 
+	spin_lock_irqsave(q->lock, qflags);
 	aac_queue_get( dev, &Index, AdapNormCmdQueue, fib->hw_fib_va, 1, fib, &nointr);
 
-	atomic_inc(&q->numpending);
+	q->numpending++;
 	*(q->headers.producer) = cpu_to_le32(Index + 1);
+	spin_unlock_irqrestore(q->lock, qflags);
 	if (!(nointr & aac_config.irq_mod))
 		aac_adapter_notify(dev, AdapNormCmdQueue);
 
@@ -423,12 +426,15 @@ static int aac_rx_deliver_message(struct fib * fib)
 {
 	struct aac_dev *dev = fib->dev;
 	struct aac_queue *q = &dev->queues->queue[AdapNormCmdQueue];
+	unsigned long qflags;
 	u32 Index;
 	u64 addr;
 	volatile void __iomem *device;
 
 	unsigned long count = 10000000L; /* 50 seconds */
-	atomic_inc(&q->numpending);
+	spin_lock_irqsave(q->lock, qflags);
+	q->numpending++;
+	spin_unlock_irqrestore(q->lock, qflags);
 	for(;;) {
 		Index = rx_readl(dev, MUnit.InboundQueue);
 		if (unlikely(Index == 0xFFFFFFFFL))
@@ -436,7 +442,9 @@ static int aac_rx_deliver_message(struct fib * fib)
 		if (likely(Index != 0xFFFFFFFFL))
 			break;
 		if (--count == 0) {
-			atomic_dec(&q->numpending);
+			spin_lock_irqsave(q->lock, qflags);
+			q->numpending--;
+			spin_unlock_irqrestore(q->lock, qflags);
 			return -ETIMEDOUT;
 		}
 		udelay(5);
@@ -623,7 +631,6 @@ int _aac_rx_init(struct aac_dev *dev)
 	dev->a_ops.adapter_sync_cmd = rx_sync_cmd;
 	dev->a_ops.adapter_check_health = aac_rx_check_health;
 	dev->a_ops.adapter_restart = aac_rx_restart_adapter;
-	dev->a_ops.adapter_start = aac_rx_start_adapter;
 
 	/*
 	 *	First clear out all interrupts.  Then enable the one's that we

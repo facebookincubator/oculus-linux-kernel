@@ -142,9 +142,6 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define WAKEUP_ACK			BIT(1)
 #define IDLE_FULL_ACK			BIT(0)
 
-/* A5XX_GPMU_GPMU_ISENSE_CTRL */
-#define	ISENSE_CGC_EN_DISABLE		BIT(0)
-
 /* A5XX_GPMU_TEMP_SENSOR_CONFIG */
 #define GPMU_BCL_ENABLED		BIT(4)
 #define GPMU_LLM_ENABLED		BIT(9)
@@ -177,9 +174,6 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 
 /* A5XX_GPMU_GPMU_PWR_THRESHOLD */
 #define PWR_THRESHOLD_VALID		0x80000000
-
-/* A5XX_GPMU_GPMU_SP_CLOCK_CONTROL */
-#define CNTL_IP_CLK_ENABLE		BIT(0)
 /* AGC */
 #define AGC_INIT_BASE			A5XX_GPMU_DATA_RAM_BASE
 #define AGC_INIT_MSG_MAGIC		(AGC_INIT_BASE + 5)
@@ -197,11 +191,8 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define AGC_LM_CONFIG_ENABLE_GPMU_ADAPTIVE (1)
 
 #define AGC_LM_CONFIG_ENABLE_ERROR	(3 << 4)
-#define AGC_LM_CONFIG_ISENSE_ENABLE     (1 << 4)
 
 #define AGC_THROTTLE_SEL_DCS		(1 << 8)
-#define AGC_THROTTLE_DISABLE            (2 << 8)
-
 
 #define AGC_LLM_ENABLED			(1 << 16)
 #define	AGC_GPU_VERSION_MASK		GENMASK(18, 17)
@@ -211,7 +202,7 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 
 #define AGC_LEVEL_CONFIG		(140/4)
 
-#define LM_DCVS_LIMIT			1
+#define LM_DCVS_LIMIT			2
 /* FW file tages */
 #define GPMU_FIRMWARE_ID		2
 #define GPMU_SEQUENCE_ID		3
@@ -228,7 +219,6 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define LM_SEQUENCE_ID			1
 #define MAX_SEQUENCE_ID			3
 
-#define GPMU_ISENSE_SAVE	(A5XX_GPMU_DATA_RAM_BASE + 200/4)
 /* LM defaults */
 #define LM_DEFAULT_LIMIT		6000
 #define A530_DEFAULT_LEAKAGE		0x004E001A

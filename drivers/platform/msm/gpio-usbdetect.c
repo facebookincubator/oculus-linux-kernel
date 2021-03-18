@@ -18,8 +18,6 @@
 #include <linux/slab.h>
 #include <linux/of_platform.h>
 #include <linux/interrupt.h>
-#include <linux/of_gpio.h>
-#include <linux/gpio.h>
 #include <linux/power_supply.h>
 #include <linux/regulator/consumer.h>
 
@@ -28,27 +26,22 @@ struct gpio_usbdetect {
 	struct regulator	*vin;
 	struct power_supply	*usb_psy;
 	int			vbus_det_irq;
-	int			gpio;
 };
 
 static irqreturn_t gpio_usbdetect_vbus_irq(int irq, void *data)
 {
 	struct gpio_usbdetect *usb = data;
 	int vbus;
-	union power_supply_propval pval = {0,};
 
-	vbus = gpio_get_value(usb->gpio);
+	vbus = !!irq_read_line(irq);
 	if (vbus)
-		pval.intval = POWER_SUPPLY_TYPE_USB;
+		power_supply_set_supply_type(usb->usb_psy,
+				POWER_SUPPLY_TYPE_USB);
 	else
-		pval.intval = POWER_SUPPLY_TYPE_UNKNOWN;
+		power_supply_set_supply_type(usb->usb_psy,
+				POWER_SUPPLY_TYPE_UNKNOWN);
 
-	power_supply_set_property(usb->usb_psy,
-			POWER_SUPPLY_PROP_TYPE, &pval);
-
-	pval.intval = vbus;
-	power_supply_set_property(usb->usb_psy, POWER_SUPPLY_PROP_PRESENT,
-			&pval);
+	power_supply_set_present(usb->usb_psy, vbus);
 	return IRQ_HANDLED;
 }
 
@@ -90,20 +83,7 @@ static int gpio_usbdetect_probe(struct platform_device *pdev)
 		}
 	}
 
-	usb->gpio = of_get_named_gpio(pdev->dev.of_node,
-				"qcom,vbus-det-gpio", 0);
-	if (usb->gpio < 0) {
-		dev_err(&pdev->dev, "Failed to get gpio: %d\n", usb->gpio);
-		return usb->gpio;
-	}
-
-	rc = gpio_request(usb->gpio, "vbus-det-gpio");
-	if (rc < 0) {
-		dev_err(&pdev->dev, "Failed to request gpio: %d\n", rc);
-		return rc;
-	}
-
-	usb->vbus_det_irq = gpio_to_irq(usb->gpio);
+	usb->vbus_det_irq = platform_get_irq_byname(pdev, "vbus_det_irq");
 	if (usb->vbus_det_irq < 0) {
 		if (usb->vin)
 			regulator_disable(usb->vin);

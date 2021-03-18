@@ -518,8 +518,11 @@ static int el3_open(struct net_device *dev)
 	netif_start_queue(dev);
 
 	tc589_reset(dev);
-	setup_timer(&lp->media, media_check, (unsigned long)dev);
-	mod_timer(&lp->media, jiffies + HZ);
+	init_timer(&lp->media);
+	lp->media.function = media_check;
+	lp->media.data = (unsigned long) dev;
+	lp->media.expires = jiffies + HZ;
+	add_timer(&lp->media);
 
 	dev_dbg(&link->dev, "%s: opened, status %4.4x.\n",
 	  dev->name, inw(dev->base_addr + EL3_STATUS));

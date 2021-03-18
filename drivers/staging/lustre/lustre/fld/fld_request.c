@@ -52,6 +52,7 @@
 #include "../include/obd_support.h"
 #include "../include/lprocfs_status.h"
 
+#include "../include/dt_object.h"
 #include "../include/lustre_req_layout.h"
 #include "../include/lustre_fld.h"
 #include "../include/lustre_mdc.h"
@@ -130,18 +131,9 @@ fld_rrb_scan(struct lu_client_fld *fld, u64 seq)
 	else
 		hash = 0;
 
-again:
 	list_for_each_entry(target, &fld->lcf_targets, ft_chain) {
 		if (target->ft_idx == hash)
 			return target;
-	}
-
-	if (hash != 0) {
-		/* It is possible the remote target(MDT) are not connected to
-		 * with client yet, so we will refer this to MDT0, which should
-		 * be connected during mount */
-		hash = 0;
-		goto again;
 	}
 
 	CERROR("%s: Can't find target by hash %d (seq %#llx). Targets (%d):\n",
@@ -216,19 +208,20 @@ int fld_client_add_target(struct lu_client_fld *fld,
 		CERROR("%s: Attempt to add target %s (idx %llu) on fly - skip it\n",
 			fld->lcf_name, name, tar->ft_idx);
 		return 0;
+	} else {
+		CDEBUG(D_INFO, "%s: Adding target %s (idx %llu)\n",
+		       fld->lcf_name, name, tar->ft_idx);
 	}
-	CDEBUG(D_INFO, "%s: Adding target %s (idx %llu)\n",
-			fld->lcf_name, name, tar->ft_idx);
 
-	target = kzalloc(sizeof(*target), GFP_NOFS);
-	if (!target)
+	OBD_ALLOC_PTR(target);
+	if (target == NULL)
 		return -ENOMEM;
 
 	spin_lock(&fld->lcf_lock);
 	list_for_each_entry(tmp, &fld->lcf_targets, ft_chain) {
 		if (tmp->ft_idx == tar->ft_idx) {
 			spin_unlock(&fld->lcf_lock);
-			kfree(target);
+			OBD_FREE_PTR(target);
 			CERROR("Target %s exists in FLD and known as %s:#%llu\n",
 			       name, fld_target_name(tmp), tmp->ft_idx);
 			return -EEXIST;
@@ -267,7 +260,7 @@ int fld_client_del_target(struct lu_client_fld *fld, __u64 idx)
 			if (target->ft_exp != NULL)
 				class_export_put(target->ft_exp);
 
-			kfree(target);
+			OBD_FREE_PTR(target);
 			return 0;
 		}
 	}
@@ -276,44 +269,59 @@ int fld_client_del_target(struct lu_client_fld *fld, __u64 idx)
 }
 EXPORT_SYMBOL(fld_client_del_target);
 
-static struct dentry *fld_debugfs_dir;
+struct proc_dir_entry *fld_type_proc_dir = NULL;
 
-static int fld_client_debugfs_init(struct lu_client_fld *fld)
+#if defined (CONFIG_PROC_FS)
+static int fld_client_proc_init(struct lu_client_fld *fld)
 {
 	int rc;
 
-	fld->lcf_debugfs_entry = ldebugfs_register(fld->lcf_name,
-						   fld_debugfs_dir,
-						   NULL, NULL);
+	fld->lcf_proc_dir = lprocfs_register(fld->lcf_name,
+					     fld_type_proc_dir,
+					     NULL, NULL);
 
-	if (IS_ERR_OR_NULL(fld->lcf_debugfs_entry)) {
-		CERROR("%s: LdebugFS failed in fld-init\n", fld->lcf_name);
-		rc = fld->lcf_debugfs_entry ? PTR_ERR(fld->lcf_debugfs_entry)
-					    : -ENOMEM;
-		fld->lcf_debugfs_entry = NULL;
+	if (IS_ERR(fld->lcf_proc_dir)) {
+		CERROR("%s: LProcFS failed in fld-init\n",
+		       fld->lcf_name);
+		rc = PTR_ERR(fld->lcf_proc_dir);
 		return rc;
 	}
 
-	rc = ldebugfs_add_vars(fld->lcf_debugfs_entry,
-			       fld_client_debugfs_list, fld);
+	rc = lprocfs_add_vars(fld->lcf_proc_dir,
+			      fld_client_proc_list, fld);
 	if (rc) {
-		CERROR("%s: Can't init FLD debufs, rc %d\n", fld->lcf_name, rc);
+		CERROR("%s: Can't init FLD proc, rc %d\n",
+		       fld->lcf_name, rc);
 		goto out_cleanup;
 	}
 
 	return 0;
 
 out_cleanup:
-	fld_client_debugfs_fini(fld);
+	fld_client_proc_fini(fld);
 	return rc;
 }
 
-void fld_client_debugfs_fini(struct lu_client_fld *fld)
+void fld_client_proc_fini(struct lu_client_fld *fld)
 {
-	if (!IS_ERR_OR_NULL(fld->lcf_debugfs_entry))
-		ldebugfs_remove(&fld->lcf_debugfs_entry);
+	if (fld->lcf_proc_dir) {
+		if (!IS_ERR(fld->lcf_proc_dir))
+			lprocfs_remove(&fld->lcf_proc_dir);
+		fld->lcf_proc_dir = NULL;
+	}
 }
-EXPORT_SYMBOL(fld_client_debugfs_fini);
+#else
+static int fld_client_proc_init(struct lu_client_fld *fld)
+{
+	return 0;
+}
+
+void fld_client_proc_fini(struct lu_client_fld *fld)
+{
+	return;
+}
+#endif
+EXPORT_SYMBOL(fld_client_proc_fini);
 
 static inline int hash_is_sane(int hash)
 {
@@ -357,7 +365,7 @@ int fld_client_init(struct lu_client_fld *fld,
 		goto out;
 	}
 
-	rc = fld_client_debugfs_init(fld);
+	rc = fld_client_proc_init(fld);
 	if (rc)
 		goto out;
 out:
@@ -381,7 +389,7 @@ void fld_client_fini(struct lu_client_fld *fld)
 		list_del(&target->ft_chain);
 		if (target->ft_exp != NULL)
 			class_export_put(target->ft_exp);
-		kfree(target);
+		OBD_FREE_PTR(target);
 	}
 	spin_unlock(&fld->lcf_lock);
 
@@ -489,16 +497,18 @@ EXPORT_SYMBOL(fld_client_flush);
 
 static int __init fld_mod_init(void)
 {
-	fld_debugfs_dir = ldebugfs_register(LUSTRE_FLD_NAME,
-					    debugfs_lustre_root,
-					    NULL, NULL);
-	return PTR_ERR_OR_ZERO(fld_debugfs_dir);
+	fld_type_proc_dir = lprocfs_register(LUSTRE_FLD_NAME,
+					     proc_lustre_root,
+					     NULL, NULL);
+	return PTR_ERR_OR_ZERO(fld_type_proc_dir);
 }
 
 static void __exit fld_mod_exit(void)
 {
-	if (!IS_ERR_OR_NULL(fld_debugfs_dir))
-		ldebugfs_remove(&fld_debugfs_dir);
+	if (fld_type_proc_dir != NULL && !IS_ERR(fld_type_proc_dir)) {
+		lprocfs_remove(&fld_type_proc_dir);
+		fld_type_proc_dir = NULL;
+	}
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");

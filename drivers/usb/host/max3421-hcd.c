@@ -55,7 +55,6 @@
  * single thread (max3421_spi_thread).
  */
 
-#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/spi/spi.h>
 #include <linux/usb.h>
@@ -1292,7 +1291,7 @@ max3421_handle_irqs(struct usb_hcd *hcd)
 		char sbuf[16 * 16], *dp, *end;
 		int i;
 
-		if (time_after(jiffies, last_time + 5*HZ)) {
+		if (jiffies - last_time > 5*HZ) {
 			dp = sbuf;
 			end = sbuf + sizeof(sbuf);
 			*dp = '\0';
@@ -1659,10 +1658,9 @@ hub_descriptor(struct usb_hub_descriptor *desc)
 	/*
 	 * See Table 11-13: Hub Descriptor in USB 2.0 spec.
 	 */
-	desc->bDescriptorType = USB_DT_HUB; /* hub descriptor */
+	desc->bDescriptorType = 0x29;	/* hub descriptor */
 	desc->bDescLength = 9;
-	desc->wHubCharacteristics = cpu_to_le16(HUB_CHAR_INDV_PORT_LPSM |
-						HUB_CHAR_COMMON_OCPM);
+	desc->wHubCharacteristics = cpu_to_le16(0x0001);
 	desc->bNbrPorts = 1;
 }
 
@@ -1944,6 +1942,7 @@ static struct spi_driver max3421_driver = {
 	.remove		= max3421_remove,
 	.driver		= {
 		.name	= "max3421-hcd",
+		.owner	= THIS_MODULE,
 	},
 };
 

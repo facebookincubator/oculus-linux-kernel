@@ -22,7 +22,7 @@
  * and usb-storage.
  *
  * TODO:
- * - usb suspend/resume triggered by sl811
+ * - usb suspend/resume triggered by sl811 (with PM_RUNTIME)
  * - various issues noted in the code
  * - performance work; use both register banks; ...
  * - use urb->iso_frame_desc[] with ISO transfers
@@ -1091,7 +1091,7 @@ sl811h_hub_descriptor (
 ) {
 	u16		temp = 0;
 
-	desc->bDescriptorType = USB_DT_HUB;
+	desc->bDescriptorType = 0x29;
 	desc->bHubContrCurrent = 0;
 
 	desc->bNbrPorts = 1;
@@ -1103,12 +1103,12 @@ sl811h_hub_descriptor (
 		desc->bPwrOn2PwrGood = sl811->board->potpg;
 		if (!desc->bPwrOn2PwrGood)
 			desc->bPwrOn2PwrGood = 10;
-		temp = HUB_CHAR_INDV_PORT_LPSM;
+		temp = 0x0001;
 	} else
-		temp = HUB_CHAR_NO_LPSM;
+		temp = 0x0002;
 
 	/* no overcurrent errors detection/handling */
-	temp |= HUB_CHAR_NO_OCPM;
+	temp |= 0x0010;
 
 	desc->wHubCharacteristics = cpu_to_le16(temp);
 
@@ -1691,7 +1691,9 @@ sl811h_probe(struct platform_device *dev)
 	spin_lock_init(&sl811->lock);
 	INIT_LIST_HEAD(&sl811->async);
 	sl811->board = dev_get_platdata(&dev->dev);
-	setup_timer(&sl811->timer, sl811h_timer, (unsigned long)sl811);
+	init_timer(&sl811->timer);
+	sl811->timer.function = sl811h_timer;
+	sl811->timer.data = (unsigned long) sl811;
 	sl811->addr_reg = addr_reg;
 	sl811->data_reg = data_reg;
 
@@ -1750,7 +1752,8 @@ sl811h_probe(struct platform_device *dev)
 #ifdef	CONFIG_PM
 
 /* for this device there's no useful distinction between the controller
- * and its root hub.
+ * and its root hub, except that the root hub only gets direct PM calls
+ * when CONFIG_PM_RUNTIME is enabled.
  */
 
 static int
@@ -1809,6 +1812,7 @@ struct platform_driver sl811h_driver = {
 	.resume =	sl811h_resume,
 	.driver = {
 		.name =	(char *) hcd_name,
+		.owner = THIS_MODULE,
 	},
 };
 EXPORT_SYMBOL(sl811h_driver);

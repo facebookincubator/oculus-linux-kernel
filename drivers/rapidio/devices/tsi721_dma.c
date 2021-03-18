@@ -815,7 +815,8 @@ struct dma_async_tx_descriptor *tsi721_prep_rio_sg(struct dma_chan *dchan,
 	return txd;
 }
 
-static int tsi721_terminate_all(struct dma_chan *dchan)
+static int tsi721_device_control(struct dma_chan *dchan, enum dma_ctrl_cmd cmd,
+			     unsigned long arg)
 {
 	struct tsi721_bdma_chan *bdma_chan = to_tsi721_chan(dchan);
 	struct tsi721_tx_desc *desc, *_d;
@@ -823,6 +824,9 @@ static int tsi721_terminate_all(struct dma_chan *dchan)
 	LIST_HEAD(list);
 
 	dev_dbg(dchan->device->dev, "%s: Entry\n", __func__);
+
+	if (cmd != DMA_TERMINATE_ALL)
+		return -ENOSYS;
 
 	spin_lock_bh(&bdma_chan->lock);
 
@@ -897,7 +901,7 @@ int tsi721_register_dma(struct tsi721_device *priv)
 	mport->dma.device_tx_status = tsi721_tx_status;
 	mport->dma.device_issue_pending = tsi721_issue_pending;
 	mport->dma.device_prep_slave_sg = tsi721_prep_rio_sg;
-	mport->dma.device_terminate_all = tsi721_terminate_all;
+	mport->dma.device_control = tsi721_device_control;
 
 	err = dma_async_device_register(&mport->dma);
 	if (err)

@@ -24,6 +24,11 @@
 #include "build-id.h"
 #include "data.h"
 
+static bool no_buildid_cache = false;
+
+static u32 header_argc;
+static const char **header_argv;
+
 /*
  * magic2 = "PERFILE2"
  * must be a numerical value to let the endianness
@@ -74,7 +79,10 @@ static int do_write(int fd, const void *buf, size_t size)
 	return 0;
 }
 
-int write_padded(int fd, const void *bf, size_t count, size_t count_aligned)
+#define NAME_ALIGN 64
+
+static int write_padded(int fd, const void *bf, size_t count,
+			size_t count_aligned)
 {
 	static const char zero_buf[NAME_ALIGN];
 	int err = do_write(fd, bf, count);
@@ -84,9 +92,6 @@ int write_padded(int fd, const void *bf, size_t count, size_t count_aligned)
 
 	return err;
 }
-
-#define string_size(str)						\
-	(PERF_ALIGN((strlen(str) + 1), NAME_ALIGN) + sizeof(u32))
 
 static int do_write_string(int fd, const char *str)
 {
@@ -135,6 +140,371 @@ static char *do_read_string(int fd, struct perf_header *ph)
 	return NULL;
 }
 
+int
+perf_header__set_cmdline(int argc, const char **argv)
+{
+	int i;
+
+	/*
+	 * If header_argv has already been set, do not override it.
+	 * This allows a command to set the cmdline, parse args and
+	 * then call another builtin function that implements a
+	 * command -- e.g, cmd_kvm calling cmd_record.
+	 */
+	if (header_argv)
+		return 0;
+
+	header_argc = (u32)argc;
+
+	/* do not include NULL termination */
+	header_argv = calloc(argc, sizeof(char *));
+	if (!header_argv)
+		return -ENOMEM;
+
+	/*
+	 * must copy argv contents because it gets moved
+	 * around during option parsing
+	 */
+	for (i = 0; i < argc ; i++)
+		header_argv[i] = argv[i];
+
+	return 0;
+}
+
+#define dsos__for_each_with_build_id(pos, head)	\
+	list_for_each_entry(pos, head, node)	\
+		if (!pos->has_build_id)		\
+			continue;		\
+		else
+
+static int write_buildid(const char *name, size_t name_len, u8 *build_id,
+			 pid_t pid, u16 misc, int fd)
+{
+	int err;
+	struct build_id_event b;
+	size_t len;
+
+	len = name_len + 1;
+	len = PERF_ALIGN(len, NAME_ALIGN);
+
+	memset(&b, 0, sizeof(b));
+	memcpy(&b.build_id, build_id, BUILD_ID_SIZE);
+	b.pid = pid;
+	b.header.misc = misc;
+	b.header.size = sizeof(b) + len;
+
+	err = do_write(fd, &b, sizeof(b));
+	if (err < 0)
+		return err;
+
+	return write_padded(fd, name, name_len + 1, len);
+}
+
+static int __dsos__hit_all(struct list_head *head)
+{
+	struct dso *pos;
+
+	list_for_each_entry(pos, head, node)
+		pos->hit = true;
+
+	return 0;
+}
+
+static int machine__hit_all_dsos(struct machine *machine)
+{
+	int err;
+
+	err = __dsos__hit_all(&machine->kernel_dsos.head);
+	if (err)
+		return err;
+
+	return __dsos__hit_all(&machine->user_dsos.head);
+}
+
+int dsos__hit_all(struct perf_session *session)
+{
+	struct rb_node *nd;
+	int err;
+
+	err = machine__hit_all_dsos(&session->machines.host);
+	if (err)
+		return err;
+
+	for (nd = rb_first(&session->machines.guests); nd; nd = rb_next(nd)) {
+		struct machine *pos = rb_entry(nd, struct machine, rb_node);
+
+		err = machine__hit_all_dsos(pos);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int __dsos__write_buildid_table(struct list_head *head,
+				       struct machine *machine,
+				       pid_t pid, u16 misc, int fd)
+{
+	char nm[PATH_MAX];
+	struct dso *pos;
+
+	dsos__for_each_with_build_id(pos, head) {
+		int err;
+		const char *name;
+		size_t name_len;
+
+		if (!pos->hit)
+			continue;
+
+		if (dso__is_vdso(pos)) {
+			name = pos->short_name;
+			name_len = pos->short_name_len + 1;
+		} else if (dso__is_kcore(pos)) {
+			machine__mmap_name(machine, nm, sizeof(nm));
+			name = nm;
+			name_len = strlen(nm) + 1;
+		} else {
+			name = pos->long_name;
+			name_len = pos->long_name_len + 1;
+		}
+
+		err = write_buildid(name, name_len, pos->build_id,
+				    pid, misc, fd);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int machine__write_buildid_table(struct machine *machine, int fd)
+{
+	int err;
+	u16 kmisc = PERF_RECORD_MISC_KERNEL,
+	    umisc = PERF_RECORD_MISC_USER;
+
+	if (!machine__is_host(machine)) {
+		kmisc = PERF_RECORD_MISC_GUEST_KERNEL;
+		umisc = PERF_RECORD_MISC_GUEST_USER;
+	}
+
+	err = __dsos__write_buildid_table(&machine->kernel_dsos.head, machine,
+					  machine->pid, kmisc, fd);
+	if (err == 0)
+		err = __dsos__write_buildid_table(&machine->user_dsos.head,
+						  machine, machine->pid, umisc,
+						  fd);
+	return err;
+}
+
+static int dsos__write_buildid_table(struct perf_header *header, int fd)
+{
+	struct perf_session *session = container_of(header,
+			struct perf_session, header);
+	struct rb_node *nd;
+	int err = machine__write_buildid_table(&session->machines.host, fd);
+
+	if (err)
+		return err;
+
+	for (nd = rb_first(&session->machines.guests); nd; nd = rb_next(nd)) {
+		struct machine *pos = rb_entry(nd, struct machine, rb_node);
+		err = machine__write_buildid_table(pos, fd);
+		if (err)
+			break;
+	}
+	return err;
+}
+
+int build_id_cache__add_s(const char *sbuild_id, const char *debugdir,
+			  const char *name, bool is_kallsyms, bool is_vdso)
+{
+	const size_t size = PATH_MAX;
+	char *realname, *filename = zalloc(size),
+	     *linkname = zalloc(size), *targetname;
+	int len, err = -1;
+	bool slash = is_kallsyms || is_vdso;
+
+	if (is_kallsyms) {
+		if (symbol_conf.kptr_restrict) {
+			pr_debug("Not caching a kptr_restrict'ed /proc/kallsyms\n");
+			err = 0;
+			goto out_free;
+		}
+		realname = (char *) name;
+	} else
+		realname = realpath(name, NULL);
+
+	if (realname == NULL || filename == NULL || linkname == NULL)
+		goto out_free;
+
+	len = scnprintf(filename, size, "%s%s%s",
+		       debugdir, slash ? "/" : "",
+		       is_vdso ? DSO__NAME_VDSO : realname);
+	if (mkdir_p(filename, 0755))
+		goto out_free;
+
+	snprintf(filename + len, size - len, "/%s", sbuild_id);
+
+	if (access(filename, F_OK)) {
+		if (is_kallsyms) {
+			 if (copyfile("/proc/kallsyms", filename))
+				goto out_free;
+		} else if (link(realname, filename) && copyfile(name, filename))
+			goto out_free;
+	}
+
+	len = scnprintf(linkname, size, "%s/.build-id/%.2s",
+		       debugdir, sbuild_id);
+
+	if (access(linkname, X_OK) && mkdir_p(linkname, 0755))
+		goto out_free;
+
+	snprintf(linkname + len, size - len, "/%s", sbuild_id + 2);
+	targetname = filename + strlen(debugdir) - 5;
+	memcpy(targetname, "../..", 5);
+
+	if (symlink(targetname, linkname) == 0)
+		err = 0;
+out_free:
+	if (!is_kallsyms)
+		free(realname);
+	free(filename);
+	free(linkname);
+	return err;
+}
+
+static int build_id_cache__add_b(const u8 *build_id, size_t build_id_size,
+				 const char *name, const char *debugdir,
+				 bool is_kallsyms, bool is_vdso)
+{
+	char sbuild_id[BUILD_ID_SIZE * 2 + 1];
+
+	build_id__sprintf(build_id, build_id_size, sbuild_id);
+
+	return build_id_cache__add_s(sbuild_id, debugdir, name,
+				     is_kallsyms, is_vdso);
+}
+
+int build_id_cache__remove_s(const char *sbuild_id, const char *debugdir)
+{
+	const size_t size = PATH_MAX;
+	char *filename = zalloc(size),
+	     *linkname = zalloc(size);
+	int err = -1;
+
+	if (filename == NULL || linkname == NULL)
+		goto out_free;
+
+	snprintf(linkname, size, "%s/.build-id/%.2s/%s",
+		 debugdir, sbuild_id, sbuild_id + 2);
+
+	if (access(linkname, F_OK))
+		goto out_free;
+
+	if (readlink(linkname, filename, size - 1) < 0)
+		goto out_free;
+
+	if (unlink(linkname))
+		goto out_free;
+
+	/*
+	 * Since the link is relative, we must make it absolute:
+	 */
+	snprintf(linkname, size, "%s/.build-id/%.2s/%s",
+		 debugdir, sbuild_id, filename);
+
+	if (unlink(linkname))
+		goto out_free;
+
+	err = 0;
+out_free:
+	free(filename);
+	free(linkname);
+	return err;
+}
+
+static int dso__cache_build_id(struct dso *dso, struct machine *machine,
+			       const char *debugdir)
+{
+	bool is_kallsyms = dso->kernel && dso->long_name[0] != '/';
+	bool is_vdso = dso__is_vdso(dso);
+	const char *name = dso->long_name;
+	char nm[PATH_MAX];
+
+	if (dso__is_kcore(dso)) {
+		is_kallsyms = true;
+		machine__mmap_name(machine, nm, sizeof(nm));
+		name = nm;
+	}
+	return build_id_cache__add_b(dso->build_id, sizeof(dso->build_id), name,
+				     debugdir, is_kallsyms, is_vdso);
+}
+
+static int __dsos__cache_build_ids(struct list_head *head,
+				   struct machine *machine, const char *debugdir)
+{
+	struct dso *pos;
+	int err = 0;
+
+	dsos__for_each_with_build_id(pos, head)
+		if (dso__cache_build_id(pos, machine, debugdir))
+			err = -1;
+
+	return err;
+}
+
+static int machine__cache_build_ids(struct machine *machine, const char *debugdir)
+{
+	int ret = __dsos__cache_build_ids(&machine->kernel_dsos.head, machine,
+					  debugdir);
+	ret |= __dsos__cache_build_ids(&machine->user_dsos.head, machine,
+				       debugdir);
+	return ret;
+}
+
+static int perf_session__cache_build_ids(struct perf_session *session)
+{
+	struct rb_node *nd;
+	int ret;
+	char debugdir[PATH_MAX];
+
+	snprintf(debugdir, sizeof(debugdir), "%s", buildid_dir);
+
+	if (mkdir(debugdir, 0755) != 0 && errno != EEXIST)
+		return -1;
+
+	ret = machine__cache_build_ids(&session->machines.host, debugdir);
+
+	for (nd = rb_first(&session->machines.guests); nd; nd = rb_next(nd)) {
+		struct machine *pos = rb_entry(nd, struct machine, rb_node);
+		ret |= machine__cache_build_ids(pos, debugdir);
+	}
+	return ret ? -1 : 0;
+}
+
+static bool machine__read_build_ids(struct machine *machine, bool with_hits)
+{
+	bool ret;
+
+	ret  = __dsos__read_build_ids(&machine->kernel_dsos.head, with_hits);
+	ret |= __dsos__read_build_ids(&machine->user_dsos.head, with_hits);
+	return ret;
+}
+
+static bool perf_session__read_build_ids(struct perf_session *session, bool with_hits)
+{
+	struct rb_node *nd;
+	bool ret = machine__read_build_ids(&session->machines.host, with_hits);
+
+	for (nd = rb_first(&session->machines.guests); nd; nd = rb_next(nd)) {
+		struct machine *pos = rb_entry(nd, struct machine, rb_node);
+		ret |= machine__read_build_ids(pos, with_hits);
+	}
+
+	return ret;
+}
+
 static int write_tracing_data(int fd, struct perf_header *h __maybe_unused,
 			    struct perf_evlist *evlist)
 {
@@ -153,12 +523,13 @@ static int write_build_id(int fd, struct perf_header *h,
 	if (!perf_session__read_build_ids(session, true))
 		return -1;
 
-	err = perf_session__write_buildid_table(session, fd);
+	err = dsos__write_buildid_table(h, fd);
 	if (err < 0) {
 		pr_debug("failed to write buildid table\n");
 		return err;
 	}
-	perf_session__cache_build_ids(session);
+	if (!no_buildid_cache)
+		perf_session__cache_build_ids(session);
 
 	return 0;
 }
@@ -230,10 +601,8 @@ static int __write_cpudesc(int fd, const char *cpuinfo_proc)
 			break;
 	}
 
-	if (ret) {
-		ret = -1;
+	if (ret)
 		goto done;
-	}
 
 	s = buf;
 
@@ -371,8 +740,8 @@ static int write_cmdline(int fd, struct perf_header *h __maybe_unused,
 {
 	char buf[MAXPATHLEN];
 	char proc[32];
-	u32 n;
-	int i, ret;
+	u32 i, n;
+	int ret;
 
 	/*
 	 * actual atual path to perf binary
@@ -386,7 +755,7 @@ static int write_cmdline(int fd, struct perf_header *h __maybe_unused,
 	buf[ret] = '\0';
 
 	/* account for binary path */
-	n = perf_env.nr_cmdline + 1;
+	n = header_argc + 1;
 
 	ret = do_write(fd, &n, sizeof(n));
 	if (ret < 0)
@@ -396,8 +765,8 @@ static int write_cmdline(int fd, struct perf_header *h __maybe_unused,
 	if (ret < 0)
 		return ret;
 
-	for (i = 0 ; i < perf_env.nr_cmdline; i++) {
-		ret = do_write_string(fd, perf_env.cmdline_argv[i]);
+	for (i = 0 ; i < header_argc; i++) {
+		ret = do_write_string(fd, header_argv[i]);
 		if (ret < 0)
 			return ret;
 	}
@@ -410,7 +779,6 @@ static int write_cmdline(int fd, struct perf_header *h __maybe_unused,
 	"/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list"
 
 struct cpu_topo {
-	u32 cpu_nr;
 	u32 core_sib;
 	u32 thread_sib;
 	char **core_siblings;
@@ -521,7 +889,7 @@ static struct cpu_topo *build_cpu_topology(void)
 		return NULL;
 
 	tp = addr;
-	tp->cpu_nr = nr;
+
 	addr += sizeof(*tp);
 	tp->core_siblings = addr;
 	addr += sz;
@@ -544,7 +912,7 @@ static int write_cpu_topology(int fd, struct perf_header *h __maybe_unused,
 {
 	struct cpu_topo *tp;
 	u32 i;
-	int ret, j;
+	int ret;
 
 	tp = build_cpu_topology();
 	if (!tp)
@@ -567,21 +935,6 @@ static int write_cpu_topology(int fd, struct perf_header *h __maybe_unused,
 		ret = do_write_string(fd, tp->thread_siblings[i]);
 		if (ret < 0)
 			break;
-	}
-
-	ret = perf_env__read_cpu_topology_map(&perf_env);
-	if (ret < 0)
-		goto done;
-
-	for (j = 0; j < perf_env.nr_cpus_avail; j++) {
-		ret = do_write(fd, &perf_env.cpu[j].core_id,
-			       sizeof(perf_env.cpu[j].core_id));
-		if (ret < 0)
-			return ret;
-		ret = do_write(fd, &perf_env.cpu[j].socket_id,
-			       sizeof(perf_env.cpu[j].socket_id));
-		if (ret < 0)
-			return ret;
 	}
 done:
 	free_cpu_topo(tp);
@@ -612,8 +965,7 @@ static int write_total_mem(int fd, struct perf_header *h __maybe_unused,
 		n = sscanf(buf, "%*s %"PRIu64, &mem);
 		if (n == 1)
 			ret = do_write(fd, &mem, sizeof(mem));
-	} else
-		ret = -1;
+	}
 	free(buf);
 	fclose(fp);
 	return ret;
@@ -854,20 +1206,6 @@ static int write_branch_stack(int fd __maybe_unused,
 	return 0;
 }
 
-static int write_auxtrace(int fd, struct perf_header *h,
-			  struct perf_evlist *evlist __maybe_unused)
-{
-	struct perf_session *session;
-	int err;
-
-	session = container_of(h, struct perf_session, header);
-
-	err = auxtrace_index__write(fd, &session->auxtrace_index);
-	if (err < 0)
-		pr_err("Failed to write auxtrace index\n");
-	return err;
-}
-
 static void print_hostname(struct perf_header *ph, int fd __maybe_unused,
 			   FILE *fp)
 {
@@ -908,13 +1246,17 @@ static void print_cmdline(struct perf_header *ph, int fd __maybe_unused,
 			  FILE *fp)
 {
 	int nr, i;
+	char *str;
 
 	nr = ph->env.nr_cmdline;
+	str = ph->env.cmdline;
 
 	fprintf(fp, "# cmdline : ");
 
-	for (i = 0; i < nr; i++)
-		fprintf(fp, "%s ", ph->env.cmdline_argv[i]);
+	for (i = 0; i < nr; i++) {
+		fprintf(fp, "%s ", str);
+		str += strlen(str) + 1;
+	}
 	fputc('\n', fp);
 }
 
@@ -923,7 +1265,6 @@ static void print_cpu_topology(struct perf_header *ph, int fd __maybe_unused,
 {
 	int nr, i;
 	char *str;
-	int cpu_nr = ph->env.nr_cpus_online;
 
 	nr = ph->env.nr_sibling_cores;
 	str = ph->env.sibling_cores;
@@ -940,13 +1281,6 @@ static void print_cpu_topology(struct perf_header *ph, int fd __maybe_unused,
 		fprintf(fp, "# sibling threads : %s\n", str);
 		str += strlen(str) + 1;
 	}
-
-	if (ph->env.cpu != NULL) {
-		for (i = 0; i < cpu_nr; i++)
-			fprintf(fp, "# CPU %d: Core ID %d, Socket ID %d\n", i,
-				ph->env.cpu[i].core_id, ph->env.cpu[i].socket_id);
-	} else
-		fprintf(fp, "# Core ID and Socket ID information is not available\n");
 }
 
 static void free_event_desc(struct perf_evsel *events)
@@ -1052,15 +1386,10 @@ out:
 	free(buf);
 	return events;
 error:
-	free_event_desc(events);
+	if (events)
+		free_event_desc(events);
 	events = NULL;
 	goto out;
-}
-
-static int __desc_attr__fprintf(FILE *fp, const char *name, const char *val,
-				void *priv __attribute__((unused)))
-{
-	return fprintf(fp, ", %s = %s", name, val);
 }
 
 static void print_event_desc(struct perf_header *ph, int fd, FILE *fp)
@@ -1077,6 +1406,26 @@ static void print_event_desc(struct perf_header *ph, int fd, FILE *fp)
 	for (evsel = events; evsel->attr.size; evsel++) {
 		fprintf(fp, "# event : name = %s, ", evsel->name);
 
+		fprintf(fp, "type = %d, config = 0x%"PRIx64
+			    ", config1 = 0x%"PRIx64", config2 = 0x%"PRIx64,
+				evsel->attr.type,
+				(u64)evsel->attr.config,
+				(u64)evsel->attr.config1,
+				(u64)evsel->attr.config2);
+
+		fprintf(fp, ", excl_usr = %d, excl_kern = %d",
+				evsel->attr.exclude_user,
+				evsel->attr.exclude_kernel);
+
+		fprintf(fp, ", excl_host = %d, excl_guest = %d",
+				evsel->attr.exclude_host,
+				evsel->attr.exclude_guest);
+
+		fprintf(fp, ", precise_ip = %d", evsel->attr.precise_ip);
+
+		fprintf(fp, ", attr_mmap2 = %d", evsel->attr.mmap2);
+		fprintf(fp, ", attr_mmap  = %d", evsel->attr.mmap);
+		fprintf(fp, ", attr_mmap_data = %d", evsel->attr.mmap_data);
 		if (evsel->ids) {
 			fprintf(fp, ", id = {");
 			for (j = 0, id = evsel->id; j < evsel->ids; j++, id++) {
@@ -1086,8 +1435,6 @@ static void print_event_desc(struct perf_header *ph, int fd, FILE *fp)
 			}
 			fprintf(fp, " }");
 		}
-
-		perf_event_attr__fprintf(fp, &evsel->attr, __desc_attr__fprintf, NULL);
 
 		fputc('\n', fp);
 	}
@@ -1151,12 +1498,6 @@ static void print_branch_stack(struct perf_header *ph __maybe_unused,
 			       int fd __maybe_unused, FILE *fp)
 {
 	fprintf(fp, "# contains samples with branch stack\n");
-}
-
-static void print_auxtrace(struct perf_header *ph __maybe_unused,
-			   int fd __maybe_unused, FILE *fp)
-{
-	fprintf(fp, "# contains AUX area data (e.g. instruction trace)\n");
 }
 
 static void print_pmu_mappings(struct perf_header *ph, int fd __maybe_unused,
@@ -1226,8 +1567,9 @@ static int __event_process_build_id(struct build_id_event *bev,
 				    struct perf_session *session)
 {
 	int err = -1;
+	struct dsos *dsos;
 	struct machine *machine;
-	u16 cpumode;
+	u16 misc;
 	struct dso *dso;
 	enum dso_kernel_type dso_type;
 
@@ -1235,37 +1577,39 @@ static int __event_process_build_id(struct build_id_event *bev,
 	if (!machine)
 		goto out;
 
-	cpumode = bev->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
+	misc = bev->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
 
-	switch (cpumode) {
+	switch (misc) {
 	case PERF_RECORD_MISC_KERNEL:
 		dso_type = DSO_TYPE_KERNEL;
+		dsos = &machine->kernel_dsos;
 		break;
 	case PERF_RECORD_MISC_GUEST_KERNEL:
 		dso_type = DSO_TYPE_GUEST_KERNEL;
+		dsos = &machine->kernel_dsos;
 		break;
 	case PERF_RECORD_MISC_USER:
 	case PERF_RECORD_MISC_GUEST_USER:
 		dso_type = DSO_TYPE_USER;
+		dsos = &machine->user_dsos;
 		break;
 	default:
 		goto out;
 	}
 
-	dso = machine__findnew_dso(machine, filename);
+	dso = __dsos__findnew(dsos, filename);
 	if (dso != NULL) {
 		char sbuild_id[BUILD_ID_SIZE * 2 + 1];
 
 		dso__set_build_id(dso, &bev->build_id);
 
-		if (!is_kernel_module(filename, cpumode))
+		if (filename[0] == '[')
 			dso->kernel = dso_type;
 
 		build_id__sprintf(dso->build_id, sizeof(dso->build_id),
 				  sbuild_id);
 		pr_debug("build id event received for %s: %s\n",
 			 dso->long_name, sbuild_id);
-		dso__put(dso);
 	}
 
 	err = 0;
@@ -1530,13 +1874,14 @@ process_event_desc(struct perf_file_section *section __maybe_unused,
 	return 0;
 }
 
-static int process_cmdline(struct perf_file_section *section,
+static int process_cmdline(struct perf_file_section *section __maybe_unused,
 			   struct perf_header *ph, int fd,
 			   void *data __maybe_unused)
 {
 	ssize_t ret;
-	char *str, *cmdline = NULL, **argv = NULL;
-	u32 nr, i, len = 0;
+	char *str;
+	u32 nr, i;
+	struct strbuf sb;
 
 	ret = readn(fd, &nr, sizeof(nr));
 	if (ret != sizeof(nr))
@@ -1546,59 +1891,6 @@ static int process_cmdline(struct perf_file_section *section,
 		nr = bswap_32(nr);
 
 	ph->env.nr_cmdline = nr;
-
-	cmdline = zalloc(section->size + nr + 1);
-	if (!cmdline)
-		return -1;
-
-	argv = zalloc(sizeof(char *) * (nr + 1));
-	if (!argv)
-		goto error;
-
-	for (i = 0; i < nr; i++) {
-		str = do_read_string(fd, ph);
-		if (!str)
-			goto error;
-
-		argv[i] = cmdline + len;
-		memcpy(argv[i], str, strlen(str) + 1);
-		len += strlen(str) + 1;
-		free(str);
-	}
-	ph->env.cmdline = cmdline;
-	ph->env.cmdline_argv = (const char **) argv;
-	return 0;
-
-error:
-	free(argv);
-	free(cmdline);
-	return -1;
-}
-
-static int process_cpu_topology(struct perf_file_section *section,
-				struct perf_header *ph, int fd,
-				void *data __maybe_unused)
-{
-	ssize_t ret;
-	u32 nr, i;
-	char *str;
-	struct strbuf sb;
-	int cpu_nr = ph->env.nr_cpus_online;
-	u64 size = 0;
-
-	ph->env.cpu = calloc(cpu_nr, sizeof(*ph->env.cpu));
-	if (!ph->env.cpu)
-		return -1;
-
-	ret = readn(fd, &nr, sizeof(nr));
-	if (ret != sizeof(nr))
-		goto free_cpu;
-
-	if (ph->needs_swap)
-		nr = bswap_32(nr);
-
-	ph->env.nr_sibling_cores = nr;
-	size += sizeof(u32);
 	strbuf_init(&sb, 128);
 
 	for (i = 0; i < nr; i++) {
@@ -1608,7 +1900,42 @@ static int process_cpu_topology(struct perf_file_section *section,
 
 		/* include a NULL character at the end */
 		strbuf_add(&sb, str, strlen(str) + 1);
-		size += string_size(str);
+		free(str);
+	}
+	ph->env.cmdline = strbuf_detach(&sb, NULL);
+	return 0;
+
+error:
+	strbuf_release(&sb);
+	return -1;
+}
+
+static int process_cpu_topology(struct perf_file_section *section __maybe_unused,
+				struct perf_header *ph, int fd,
+				void *data __maybe_unused)
+{
+	ssize_t ret;
+	u32 nr, i;
+	char *str;
+	struct strbuf sb;
+
+	ret = readn(fd, &nr, sizeof(nr));
+	if (ret != sizeof(nr))
+		return -1;
+
+	if (ph->needs_swap)
+		nr = bswap_32(nr);
+
+	ph->env.nr_sibling_cores = nr;
+	strbuf_init(&sb, 128);
+
+	for (i = 0; i < nr; i++) {
+		str = do_read_string(fd, ph);
+		if (!str)
+			goto error;
+
+		/* include a NULL character at the end */
+		strbuf_add(&sb, str, strlen(str) + 1);
 		free(str);
 	}
 	ph->env.sibling_cores = strbuf_detach(&sb, NULL);
@@ -1621,7 +1948,6 @@ static int process_cpu_topology(struct perf_file_section *section,
 		nr = bswap_32(nr);
 
 	ph->env.nr_sibling_threads = nr;
-	size += sizeof(u32);
 
 	for (i = 0; i < nr; i++) {
 		str = do_read_string(fd, ph);
@@ -1630,57 +1956,13 @@ static int process_cpu_topology(struct perf_file_section *section,
 
 		/* include a NULL character at the end */
 		strbuf_add(&sb, str, strlen(str) + 1);
-		size += string_size(str);
 		free(str);
 	}
 	ph->env.sibling_threads = strbuf_detach(&sb, NULL);
-
-	/*
-	 * The header may be from old perf,
-	 * which doesn't include core id and socket id information.
-	 */
-	if (section->size <= size) {
-		zfree(&ph->env.cpu);
-		return 0;
-	}
-
-	for (i = 0; i < (u32)cpu_nr; i++) {
-		ret = readn(fd, &nr, sizeof(nr));
-		if (ret != sizeof(nr))
-			goto free_cpu;
-
-		if (ph->needs_swap)
-			nr = bswap_32(nr);
-
-		if (nr > (u32)cpu_nr) {
-			pr_debug("core_id number is too big."
-				 "You may need to upgrade the perf tool.\n");
-			goto free_cpu;
-		}
-		ph->env.cpu[i].core_id = nr;
-
-		ret = readn(fd, &nr, sizeof(nr));
-		if (ret != sizeof(nr))
-			goto free_cpu;
-
-		if (ph->needs_swap)
-			nr = bswap_32(nr);
-
-		if (nr > (u32)cpu_nr) {
-			pr_debug("socket_id number is too big."
-				 "You may need to upgrade the perf tool.\n");
-			goto free_cpu;
-		}
-
-		ph->env.cpu[i].socket_id = nr;
-	}
-
 	return 0;
 
 error:
 	strbuf_release(&sb);
-free_cpu:
-	zfree(&ph->env.cpu);
 	return -1;
 }
 
@@ -1782,9 +2064,6 @@ static int process_pmu_mappings(struct perf_file_section *section __maybe_unused
 		strbuf_addf(&sb, "%u:%s", type, name);
 		/* include a NULL character at the end */
 		strbuf_add(&sb, "", 1);
-
-		if (!strcmp(name, "msr"))
-			ph->env.msr_pmu_type = type;
 
 		free(name);
 		pmu_num--;
@@ -1891,22 +2170,6 @@ out_free:
 	return ret;
 }
 
-static int process_auxtrace(struct perf_file_section *section,
-			    struct perf_header *ph, int fd,
-			    void *data __maybe_unused)
-{
-	struct perf_session *session;
-	int err;
-
-	session = container_of(ph, struct perf_session, header);
-
-	err = auxtrace_index__process(fd, section->size, session,
-				      ph->needs_swap);
-	if (err < 0)
-		pr_err("Failed to process auxtrace index\n");
-	return err;
-}
-
 struct feature_ops {
 	int (*write)(int fd, struct perf_header *h, struct perf_evlist *evlist);
 	void (*print)(struct perf_header *h, int fd, FILE *fp);
@@ -1947,7 +2210,6 @@ static const struct feature_ops feat_ops[HEADER_LAST_FEATURE] = {
 	FEAT_OPA(HEADER_BRANCH_STACK,	branch_stack),
 	FEAT_OPP(HEADER_PMU_MAPPINGS,	pmu_mappings),
 	FEAT_OPP(HEADER_GROUP_DESC,	group_desc),
-	FEAT_OPP(HEADER_AUXTRACE,	auxtrace),
 };
 
 struct header_print_data {
@@ -2215,7 +2477,6 @@ static const int attr_file_abi_sizes[] = {
 	[1] = PERF_ATTR_SIZE_VER1,
 	[2] = PERF_ATTR_SIZE_VER2,
 	[3] = PERF_ATTR_SIZE_VER3,
-	[4] = PERF_ATTR_SIZE_VER4,
 	0,
 };
 
@@ -2312,7 +2573,6 @@ static int check_magic_endian(u64 magic, uint64_t hdr_sz,
 	 * - unique number to identify actual perf.data files
 	 * - encode endianness of file
 	 */
-	ph->version = PERF_HEADER_VERSION_2;
 
 	/* check magic number with one endianness */
 	if (magic == __perf_magic2)
@@ -2323,6 +2583,7 @@ static int check_magic_endian(u64 magic, uint64_t hdr_sz,
 		return -1;
 
 	ph->needs_swap = true;
+	ph->version = PERF_HEADER_VERSION_2;
 
 	return 0;
 }
@@ -2563,8 +2824,6 @@ int perf_session__read_header(struct perf_session *session)
 	if (session->evlist == NULL)
 		return -ENOMEM;
 
-	session->evlist->env = &header->env;
-	session->machines.host.env = &header->env;
 	if (perf_data_file__is_pipe(file))
 		return perf_header__read_pipe(session);
 
@@ -2593,11 +2852,8 @@ int perf_session__read_header(struct perf_session *session)
 		if (read_attr(fd, header, &f_attr) < 0)
 			goto out_errno;
 
-		if (header->needs_swap) {
-			f_attr.ids.size   = bswap_64(f_attr.ids.size);
-			f_attr.ids.offset = bswap_64(f_attr.ids.offset);
+		if (header->needs_swap)
 			perf_event__attr_swap(&f_attr.attr);
-		}
 
 		tmp = lseek(fd, 0, SEEK_CUR);
 		evsel = perf_evsel__new(&f_attr.attr);
@@ -2867,4 +3123,9 @@ int perf_event__process_build_id(struct perf_tool *tool __maybe_unused,
 				 event->build_id.filename,
 				 session);
 	return 0;
+}
+
+void disable_buildid_cache(void)
+{
+	no_buildid_cache = true;
 }

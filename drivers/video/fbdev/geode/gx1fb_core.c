@@ -374,8 +374,10 @@ static int gx1fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		release_mem_region(gx1_gx_base() + 0x8300, 0x100);
 	}
 
-	fb_dealloc_cmap(&info->cmap);
-	framebuffer_release(info);
+	if (info) {
+		fb_dealloc_cmap(&info->cmap);
+		framebuffer_release(info);
+	}
 
 	return ret;
 }

@@ -146,7 +146,6 @@
 #include <net/xfrm.h>
 #include <linux/mroute.h>
 #include <linux/netlink.h>
-#include <net/dst_metadata.h>
 
 /*
  *	Process Router Attention IP option (RFC 2113)
@@ -157,7 +156,6 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 	u8 protocol = ip_hdr(skb)->protocol;
 	struct sock *last = NULL;
 	struct net_device *dev = skb->dev;
-	struct net *net = dev_net(dev);
 
 	for (ra = rcu_dereference(ip_ra_chain); ra; ra = rcu_dereference(ra->next)) {
 		struct sock *sk = ra->sk;
@@ -168,9 +166,9 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 		if (sk && inet_sk(sk)->inet_num == protocol &&
 		    (!sk->sk_bound_dev_if ||
 		     sk->sk_bound_dev_if == dev->ifindex) &&
-		    net_eq(sock_net(sk), net)) {
+		    net_eq(sock_net(sk), dev_net(dev))) {
 			if (ip_is_fragment(ip_hdr(skb))) {
-				if (ip_defrag(net, skb, IP_DEFRAG_CALL_RA_CHAIN))
+				if (ip_defrag(skb, IP_DEFRAG_CALL_RA_CHAIN))
 					return true;
 			}
 			if (last) {
@@ -189,8 +187,10 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 	return false;
 }
 
-static int ip_local_deliver_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
+static int ip_local_deliver_finish(struct sk_buff *skb)
 {
+	struct net *net = dev_net(skb->dev);
+
 	__skb_pull(skb, skb_network_header_len(skb));
 
 	rcu_read_lock();
@@ -203,7 +203,7 @@ static int ip_local_deliver_finish(struct net *net, struct sock *sk, struct sk_b
 		raw = raw_local_deliver(skb, protocol);
 
 		ipprot = rcu_dereference(inet_protos[protocol]);
-		if (ipprot) {
+		if (ipprot != NULL) {
 			int ret;
 
 			if (!ipprot->no_policy) {
@@ -247,15 +247,13 @@ int ip_local_deliver(struct sk_buff *skb)
 	/*
 	 *	Reassemble IP fragments.
 	 */
-	struct net *net = dev_net(skb->dev);
 
 	if (ip_is_fragment(ip_hdr(skb))) {
-		if (ip_defrag(net, skb, IP_DEFRAG_LOCAL_DELIVER))
+		if (ip_defrag(skb, IP_DEFRAG_LOCAL_DELIVER))
 			return 0;
 	}
 
-	return NF_HOOK(NFPROTO_IPV4, NF_INET_LOCAL_IN,
-		       net, NULL, skb, skb->dev, NULL,
+	return NF_HOOK(NFPROTO_IPV4, NF_INET_LOCAL_IN, skb, skb->dev, NULL,
 		       ip_local_deliver_finish);
 }
 
@@ -311,12 +309,12 @@ drop:
 int sysctl_ip_early_demux __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_ip_early_demux);
 
-static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
+static int ip_rcv_finish(struct sk_buff *skb)
 {
 	const struct iphdr *iph = ip_hdr(skb);
 	struct rtable *rt;
 
-	if (sysctl_ip_early_demux && !skb_dst(skb) && !skb->sk) {
+	if (sysctl_ip_early_demux && !skb_dst(skb) && skb->sk == NULL) {
 		const struct net_protocol *ipprot;
 		int protocol = iph->protocol;
 
@@ -332,12 +330,13 @@ static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 	 *	Initialise the virtual path cache for the packet. It describes
 	 *	how the packet travels inside Linux networking.
 	 */
-	if (!skb_valid_dst(skb)) {
+	if (!skb_dst(skb)) {
 		int err = ip_route_input_noref(skb, iph->daddr, iph->saddr,
 					       iph->tos, skb->dev);
 		if (unlikely(err)) {
 			if (err == -EXDEV)
-				NET_INC_STATS_BH(net, LINUX_MIB_IPRPFILTER);
+				NET_INC_STATS_BH(dev_net(skb->dev),
+						 LINUX_MIB_IPRPFILTER);
 			goto drop;
 		}
 	}
@@ -358,9 +357,11 @@ static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 
 	rt = skb_rtable(skb);
 	if (rt->rt_type == RTN_MULTICAST) {
-		IP_UPD_PO_STATS_BH(net, IPSTATS_MIB_INMCAST, skb->len);
+		IP_UPD_PO_STATS_BH(dev_net(rt->dst.dev), IPSTATS_MIB_INMCAST,
+				skb->len);
 	} else if (rt->rt_type == RTN_BROADCAST)
-		IP_UPD_PO_STATS_BH(net, IPSTATS_MIB_INBCAST, skb->len);
+		IP_UPD_PO_STATS_BH(dev_net(rt->dst.dev), IPSTATS_MIB_INBCAST,
+				skb->len);
 
 	return dst_input(skb);
 
@@ -375,7 +376,6 @@ drop:
 int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, struct net_device *orig_dev)
 {
 	const struct iphdr *iph;
-	struct net *net;
 	u32 len;
 
 	/* When the interface is in promisc. mode, drop all the crap
@@ -385,12 +385,10 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 		goto drop;
 
 
-	net = dev_net(dev);
-	IP_UPD_PO_STATS_BH(net, IPSTATS_MIB_IN, skb->len);
+	IP_UPD_PO_STATS_BH(dev_net(dev), IPSTATS_MIB_IN, skb->len);
 
-	skb = skb_share_check(skb, GFP_ATOMIC);
-	if (!skb) {
-		IP_INC_STATS_BH(net, IPSTATS_MIB_INDISCARDS);
+	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL) {
+		IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_INDISCARDS);
 		goto out;
 	}
 
@@ -416,7 +414,7 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	BUILD_BUG_ON(IPSTATS_MIB_ECT1PKTS != IPSTATS_MIB_NOECTPKTS + INET_ECN_ECT_1);
 	BUILD_BUG_ON(IPSTATS_MIB_ECT0PKTS != IPSTATS_MIB_NOECTPKTS + INET_ECN_ECT_0);
 	BUILD_BUG_ON(IPSTATS_MIB_CEPKTS != IPSTATS_MIB_NOECTPKTS + INET_ECN_CE);
-	IP_ADD_STATS_BH(net,
+	IP_ADD_STATS_BH(dev_net(dev),
 			IPSTATS_MIB_NOECTPKTS + (iph->tos & INET_ECN_MASK),
 			max_t(unsigned short, 1, skb_shinfo(skb)->gso_segs));
 
@@ -430,7 +428,7 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 
 	len = ntohs(iph->tot_len);
 	if (skb->len < len) {
-		IP_INC_STATS_BH(net, IPSTATS_MIB_INTRUNCATEDPKTS);
+		IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_INTRUNCATEDPKTS);
 		goto drop;
 	} else if (len < (iph->ihl*4))
 		goto inhdr_error;
@@ -440,7 +438,7 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	 * Note this now means skb->len holds ntohs(iph->tot_len).
 	 */
 	if (pskb_trim_rcsum(skb, len)) {
-		IP_INC_STATS_BH(net, IPSTATS_MIB_INDISCARDS);
+		IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_INDISCARDS);
 		goto drop;
 	}
 
@@ -452,14 +450,13 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	/* Must drop socket now because of tproxy. */
 	skb_orphan(skb);
 
-	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
-		       net, NULL, skb, dev, NULL,
+	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING, skb, dev, NULL,
 		       ip_rcv_finish);
 
 csum_error:
-	IP_INC_STATS_BH(net, IPSTATS_MIB_CSUMERRORS);
+	IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_CSUMERRORS);
 inhdr_error:
-	IP_INC_STATS_BH(net, IPSTATS_MIB_INHDRERRORS);
+	IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_INHDRERRORS);
 drop:
 	kfree_skb(skb);
 out:

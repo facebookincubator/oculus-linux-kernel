@@ -213,7 +213,7 @@ struct synthvid_msg {
 
 struct hvfb_par {
 	struct fb_info *info;
-	struct resource *mem;
+	struct resource mem;
 	bool fb_ready; /* fb device is ready */
 	struct completion wait;
 	u32 synthvid_version;
@@ -415,8 +415,7 @@ static int synthvid_negotiate_ver(struct hv_device *hdev, u32 ver)
 	struct fb_info *info = hv_get_drvdata(hdev);
 	struct hvfb_par *par = info->par;
 	struct synthvid_msg *msg = (struct synthvid_msg *)par->init_buf;
-	int ret = 0;
-	unsigned long t;
+	int t, ret = 0;
 
 	memset(msg, 0, sizeof(struct synthvid_msg));
 	msg->vid_hdr.type = SYNTHVID_VERSION_REQUEST;
@@ -489,8 +488,7 @@ static int synthvid_send_config(struct hv_device *hdev)
 	struct fb_info *info = hv_get_drvdata(hdev);
 	struct hvfb_par *par = info->par;
 	struct synthvid_msg *msg = (struct synthvid_msg *)par->init_buf;
-	int ret = 0;
-	unsigned long t;
+	int t, ret = 0;
 
 	/* Send VRAM location */
 	memset(msg, 0, sizeof(struct synthvid_msg));
@@ -677,18 +675,26 @@ static void hvfb_get_option(struct fb_info *info)
 
 
 /* Get framebuffer memory from Hyper-V video pci space */
-static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
+static int hvfb_getmem(struct fb_info *info)
 {
 	struct hvfb_par *par = info->par;
 	struct pci_dev *pdev  = NULL;
 	void __iomem *fb_virt;
 	int gen2vm = efi_enabled(EFI_BOOT);
-	resource_size_t pot_start, pot_end;
 	int ret;
 
+	par->mem.name = KBUILD_MODNAME;
+	par->mem.flags = IORESOURCE_MEM | IORESOURCE_BUSY;
 	if (gen2vm) {
-		pot_start = 0;
-		pot_end = -1;
+		ret = allocate_resource(&hyperv_mmio, &par->mem,
+					screen_fb_size,
+					0, -1,
+					screen_fb_size,
+					NULL, NULL);
+		if (ret != 0) {
+			pr_err("Unable to allocate framebuffer memory\n");
+			return -ENODEV;
+		}
 	} else {
 		pdev = pci_get_device(PCI_VENDOR_ID_MICROSOFT,
 			      PCI_DEVICE_ID_HYPERV_VIDEO, NULL);
@@ -701,18 +707,16 @@ static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 		    pci_resource_len(pdev, 0) < screen_fb_size)
 			goto err1;
 
-		pot_end = pci_resource_end(pdev, 0);
-		pot_start = pot_end - screen_fb_size + 1;
+		par->mem.end = pci_resource_end(pdev, 0);
+		par->mem.start = par->mem.end - screen_fb_size + 1;
+		ret = request_resource(&pdev->resource[0], &par->mem);
+		if (ret != 0) {
+			pr_err("Unable to request framebuffer memory\n");
+			goto err1;
+		}
 	}
 
-	ret = vmbus_allocate_mmio(&par->mem, hdev, pot_start, pot_end,
-				  screen_fb_size, 0x100000, true);
-	if (ret != 0) {
-		pr_err("Unable to allocate framebuffer memory\n");
-		goto err1;
-	}
-
-	fb_virt = ioremap(par->mem->start, screen_fb_size);
+	fb_virt = ioremap(par->mem.start, screen_fb_size);
 	if (!fb_virt)
 		goto err2;
 
@@ -730,7 +734,7 @@ static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 		info->apertures->ranges[0].size = pci_resource_len(pdev, 0);
 	}
 
-	info->fix.smem_start = par->mem->start;
+	info->fix.smem_start = par->mem.start;
 	info->fix.smem_len = screen_fb_size;
 	info->screen_base = fb_virt;
 	info->screen_size = screen_fb_size;
@@ -743,8 +747,7 @@ static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 err3:
 	iounmap(fb_virt);
 err2:
-	release_mem_region(par->mem->start, screen_fb_size);
-	par->mem = NULL;
+	release_resource(&par->mem);
 err1:
 	if (!gen2vm)
 		pci_dev_put(pdev);
@@ -758,8 +761,7 @@ static void hvfb_putmem(struct fb_info *info)
 	struct hvfb_par *par = info->par;
 
 	iounmap(info->screen_base);
-	release_mem_region(par->mem->start, screen_fb_size);
-	par->mem = NULL;
+	release_resource(&par->mem);
 }
 
 
@@ -790,7 +792,7 @@ static int hvfb_probe(struct hv_device *hdev,
 		goto error1;
 	}
 
-	ret = hvfb_getmem(hdev, info);
+	ret = hvfb_getmem(info);
 	if (ret) {
 		pr_err("No memory for framebuffer\n");
 		goto error2;

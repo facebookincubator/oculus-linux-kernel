@@ -343,9 +343,7 @@ static int superblock_all_zeroes(struct dm_block_manager *bm, bool *result)
 		}
 	}
 
-	dm_bm_unlock(b);
-
-	return 0;
+	return dm_bm_unlock(b);
 }
 
 /*----------------------------------------------------------------*/
@@ -584,9 +582,7 @@ static int open_metadata(struct era_metadata *md)
 	md->metadata_snap = le64_to_cpu(disk->metadata_snap);
 	md->archived_writesets = true;
 
-	dm_bm_unlock(sblock);
-
-	return 0;
+	return dm_bm_unlock(sblock);
 
 bad:
 	dm_bm_unlock(sblock);
@@ -1050,7 +1046,12 @@ static int metadata_take_snap(struct era_metadata *md)
 
 	md->metadata_snap = dm_block_location(clone);
 
-	dm_tm_unlock(md->tm, clone);
+	r = dm_tm_unlock(md->tm, clone);
+	if (r) {
+		DMERR("%s: couldn't unlock clone", __func__);
+		md->metadata_snap = SUPERBLOCK_LOCATION;
+		return r;
+	}
 
 	return 0;
 }
@@ -1379,7 +1380,7 @@ static void stop_worker(struct era *era)
 static int dev_is_congested(struct dm_dev *dev, int bdi_bits)
 {
 	struct request_queue *q = bdev_get_queue(dev->bdev);
-	return bdi_congested(q->backing_dev_info, bdi_bits);
+	return bdi_congested(&q->backing_dev_info, bdi_bits);
 }
 
 static int era_is_congested(struct dm_target_callbacks *cb, int bdi_bits)
@@ -1672,6 +1673,20 @@ static int era_iterate_devices(struct dm_target *ti,
 	return fn(ti, era->origin_dev, 0, get_dev_size(era->origin_dev), data);
 }
 
+static int era_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
+		     struct bio_vec *biovec, int max_size)
+{
+	struct era *era = ti->private;
+	struct request_queue *q = bdev_get_queue(era->origin_dev->bdev);
+
+	if (!q->merge_bvec_fn)
+		return max_size;
+
+	bvm->bi_bdev = era->origin_dev->bdev;
+
+	return min(max_size, q->merge_bvec_fn(q, bvm, biovec));
+}
+
 static void era_io_hints(struct dm_target *ti, struct queue_limits *limits)
 {
 	struct era *era = ti->private;
@@ -1702,6 +1717,7 @@ static struct target_type era_target = {
 	.status = era_status,
 	.message = era_message,
 	.iterate_devices = era_iterate_devices,
+	.merge = era_merge,
 	.io_hints = era_io_hints
 };
 

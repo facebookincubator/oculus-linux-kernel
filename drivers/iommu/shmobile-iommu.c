@@ -42,16 +42,10 @@ struct shmobile_iommu_domain {
 	spinlock_t map_lock;
 	spinlock_t attached_list_lock;
 	struct list_head attached_list;
-	struct iommu_domain domain;
 };
 
 static struct shmobile_iommu_archdata *ipmmu_archdata;
 static struct kmem_cache *l1cache, *l2cache;
-
-static struct shmobile_iommu_domain *to_sh_domain(struct iommu_domain *dom)
-{
-	return container_of(dom, struct shmobile_iommu_domain, domain);
-}
 
 static int pgtable_alloc(struct shmobile_iommu_domain_pgtable *pgtable,
 			 struct kmem_cache *cache, size_t size)
@@ -88,33 +82,31 @@ static void pgtable_write(struct shmobile_iommu_domain_pgtable *pgtable,
 				   sizeof(val) * count, DMA_TO_DEVICE);
 }
 
-static struct iommu_domain *shmobile_iommu_domain_alloc(unsigned type)
+static int shmobile_iommu_domain_init(struct iommu_domain *domain)
 {
 	struct shmobile_iommu_domain *sh_domain;
 	int i, ret;
 
-	if (type != IOMMU_DOMAIN_UNMANAGED)
-		return NULL;
-
-	sh_domain = kzalloc(sizeof(*sh_domain), GFP_KERNEL);
+	sh_domain = kmalloc(sizeof(*sh_domain), GFP_KERNEL);
 	if (!sh_domain)
-		return NULL;
+		return -ENOMEM;
 	ret = pgtable_alloc(&sh_domain->l1, l1cache, L1_SIZE);
 	if (ret < 0) {
 		kfree(sh_domain);
-		return NULL;
+		return ret;
 	}
 	for (i = 0; i < L1_LEN; i++)
 		sh_domain->l2[i].pgtable = NULL;
 	spin_lock_init(&sh_domain->map_lock);
 	spin_lock_init(&sh_domain->attached_list_lock);
 	INIT_LIST_HEAD(&sh_domain->attached_list);
-	return &sh_domain->domain;
+	domain->priv = sh_domain;
+	return 0;
 }
 
-static void shmobile_iommu_domain_free(struct iommu_domain *domain)
+static void shmobile_iommu_domain_destroy(struct iommu_domain *domain)
 {
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 	int i;
 
 	for (i = 0; i < L1_LEN; i++) {
@@ -123,13 +115,14 @@ static void shmobile_iommu_domain_free(struct iommu_domain *domain)
 	}
 	pgtable_free(&sh_domain->l1, l1cache, L1_SIZE);
 	kfree(sh_domain);
+	domain->priv = NULL;
 }
 
 static int shmobile_iommu_attach_device(struct iommu_domain *domain,
 					struct device *dev)
 {
 	struct shmobile_iommu_archdata *archdata = dev->archdata.iommu;
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 	int ret = -EBUSY;
 
 	if (!archdata)
@@ -158,7 +151,7 @@ static void shmobile_iommu_detach_device(struct iommu_domain *domain,
 					 struct device *dev)
 {
 	struct shmobile_iommu_archdata *archdata = dev->archdata.iommu;
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 
 	if (!archdata)
 		return;
@@ -221,7 +214,7 @@ static int shmobile_iommu_map(struct iommu_domain *domain, unsigned long iova,
 			      phys_addr_t paddr, size_t size, int prot)
 {
 	struct shmobile_iommu_domain_pgtable l2 = { .pgtable = NULL };
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 	unsigned int l1index, l2index;
 	int ret;
 
@@ -265,7 +258,7 @@ static size_t shmobile_iommu_unmap(struct iommu_domain *domain,
 				   unsigned long iova, size_t size)
 {
 	struct shmobile_iommu_domain_pgtable l2 = { .pgtable = NULL };
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 	unsigned int l1index, l2index;
 	uint32_t l2entry = 0;
 	size_t ret = 0;
@@ -305,7 +298,7 @@ done:
 static phys_addr_t shmobile_iommu_iova_to_phys(struct iommu_domain *domain,
 					       dma_addr_t iova)
 {
-	struct shmobile_iommu_domain *sh_domain = to_sh_domain(domain);
+	struct shmobile_iommu_domain *sh_domain = domain->priv;
 	uint32_t l1entry = 0, l2entry = 0;
 	unsigned int l1index, l2index;
 
@@ -362,8 +355,8 @@ static int shmobile_iommu_add_device(struct device *dev)
 }
 
 static const struct iommu_ops shmobile_iommu_ops = {
-	.domain_alloc = shmobile_iommu_domain_alloc,
-	.domain_free = shmobile_iommu_domain_free,
+	.domain_init = shmobile_iommu_domain_init,
+	.domain_destroy = shmobile_iommu_domain_destroy,
 	.attach_dev = shmobile_iommu_attach_device,
 	.detach_dev = shmobile_iommu_detach_device,
 	.map = shmobile_iommu_map,

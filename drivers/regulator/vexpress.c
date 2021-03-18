@@ -74,8 +74,7 @@ static int vexpress_regulator_probe(struct platform_device *pdev)
 	reg->desc.owner = THIS_MODULE;
 	reg->desc.continuous_voltage_range = true;
 
-	init_data = of_get_regulator_init_data(&pdev->dev, pdev->dev.of_node,
-					       &reg->desc);
+	init_data = of_get_regulator_init_data(&pdev->dev, pdev->dev.of_node);
 	if (!init_data)
 		return -EINVAL;
 
@@ -103,12 +102,12 @@ static const struct of_device_id vexpress_regulator_of_match[] = {
 	{ .compatible = "arm,vexpress-volt", },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, vexpress_regulator_of_match);
 
 static struct platform_driver vexpress_regulator_driver = {
 	.probe = vexpress_regulator_probe,
 	.driver	= {
 		.name = DRVNAME,
+		.owner = THIS_MODULE,
 		.of_match_table = vexpress_regulator_of_match,
 	},
 };

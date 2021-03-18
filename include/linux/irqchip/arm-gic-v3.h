@@ -18,6 +18,8 @@
 #ifndef __LINUX_IRQCHIP_ARM_GIC_V3_H
 #define __LINUX_IRQCHIP_ARM_GIC_V3_H
 
+#include <asm/sysreg.h>
+
 /*
  * Distributor registers. We assume we're running non-secure, with ARE
  * being set. Secure-only and non-ARE registers are not described.
@@ -31,7 +33,6 @@
 #define GICD_SETSPI_SR			0x0050
 #define GICD_CLRSPI_SR			0x0058
 #define GICD_SEIR			0x0068
-#define GICD_IGROUPR			0x0080
 #define GICD_ISENABLER			0x0100
 #define GICD_ICENABLER			0x0180
 #define GICD_ISPENDR			0x0200
@@ -40,36 +41,13 @@
 #define GICD_ICACTIVER			0x0380
 #define GICD_IPRIORITYR			0x0400
 #define GICD_ICFGR			0x0C00
-#define GICD_IGRPMODR			0x0D00
-#define GICD_NSACR			0x0E00
 #define GICD_IROUTER			0x6000
-#define GICD_IDREGS			0xFFD0
 #define GICD_PIDR2			0xFFE8
 
-/*
- * Those registers are actually from GICv2, but the spec demands that they
- * are implemented as RES0 if ARE is 1 (which we do in KVM's emulated GICv3).
- */
-#define GICD_ITARGETSR			0x0800
-#define GICD_SGIR			0x0F00
-#define GICD_CPENDSGIR			0x0F10
-#define GICD_SPENDSGIR			0x0F20
-
 #define GICD_CTLR_RWP			(1U << 31)
-#define GICD_CTLR_DS			(1U << 6)
 #define GICD_CTLR_ARE_NS		(1U << 4)
 #define GICD_CTLR_ENABLE_G1A		(1U << 1)
 #define GICD_CTLR_ENABLE_G1		(1U << 0)
-
-/*
- * In systems with a single security state (what we emulate in KVM)
- * the meaning of the interrupt group enable bits is slightly different
- */
-#define GICD_CTLR_ENABLE_SS_G1		(1U << 1)
-#define GICD_CTLR_ENABLE_SS_G0		(1U << 0)
-
-#define GICD_TYPER_LPIS			(1U << 17)
-#define GICD_TYPER_MBIS			(1U << 16)
 
 #define GICD_TYPER_ID_BITS(typer)	((((typer) >> 19) & 0x1f) + 1)
 #define GICD_TYPER_IRQS(typer)		((((typer) & 0x1f) + 1) * 32)
@@ -81,8 +59,6 @@
 #define GIC_PIDR2_ARCH_MASK		0xf0
 #define GIC_PIDR2_ARCH_GICv3		0x30
 #define GIC_PIDR2_ARCH_GICv4		0x40
-
-#define GIC_V3_DIST_SIZE		0x10000
 
 /*
  * Re-Distributor registers, offsets from RD_base
@@ -102,9 +78,6 @@
 #define GICR_SYNCR			0x00C0
 #define GICR_MOVLPIR			0x0100
 #define GICR_MOVALLR			0x0110
-#define GICR_ISACTIVER			GICD_ISACTIVER
-#define GICR_ICACTIVER			GICD_ICACTIVER
-#define GICR_IDREGS			GICD_IDREGS
 #define GICR_PIDR2			GICD_PIDR2
 
 #define GICR_CTLR_ENABLE_LPIS		(1UL << 0)
@@ -146,7 +119,6 @@
 /*
  * Re-Distributor registers, offsets from SGI_base
  */
-#define GICR_IGROUPR0			GICD_IGROUPR
 #define GICR_ISENABLER0			GICD_ISENABLER
 #define GICR_ICENABLER0			GICD_ICENABLER
 #define GICR_ISPENDR0			GICD_ISPENDR
@@ -155,14 +127,10 @@
 #define GICR_ICACTIVER0			GICD_ICACTIVER
 #define GICR_IPRIORITYR0		GICD_IPRIORITYR
 #define GICR_ICFGR0			GICD_ICFGR
-#define GICR_IGRPMODR0			GICD_IGRPMODR
-#define GICR_NSACR			GICD_NSACR
 
 #define GICR_TYPER_PLPIS		(1U << 0)
 #define GICR_TYPER_VLPIS		(1U << 1)
 #define GICR_TYPER_LAST			(1U << 4)
-
-#define GIC_V3_REDIST_SIZE		0x20000
 
 #define LPI_PROP_GROUP1			(1 << 1)
 #define LPI_PROP_ENABLED		(1 << 0)
@@ -229,7 +197,6 @@
 #define GITS_BASER_PAGE_SIZE_16K	(1UL << GITS_BASER_PAGE_SIZE_SHIFT)
 #define GITS_BASER_PAGE_SIZE_64K	(2UL << GITS_BASER_PAGE_SIZE_SHIFT)
 #define GITS_BASER_PAGE_SIZE_MASK	(3UL << GITS_BASER_PAGE_SIZE_SHIFT)
-#define GITS_BASER_PAGES_MAX		256
 
 #define GITS_BASER_TYPE_NONE		0
 #define GITS_BASER_TYPE_DEVICE		1
@@ -265,16 +232,13 @@
 /*
  * Hypervisor interface registers (SRE only)
  */
-#define ICH_LR_VIRTUAL_ID_MASK		((1ULL << 32) - 1)
+#define ICH_LR_VIRTUAL_ID_MASK		((1UL << 32) - 1)
 
-#define ICH_LR_EOI			(1ULL << 41)
-#define ICH_LR_GROUP			(1ULL << 60)
-#define ICH_LR_HW			(1ULL << 61)
-#define ICH_LR_STATE			(3ULL << 62)
-#define ICH_LR_PENDING_BIT		(1ULL << 62)
-#define ICH_LR_ACTIVE_BIT		(1ULL << 63)
-#define ICH_LR_PHYS_ID_SHIFT		32
-#define ICH_LR_PHYS_ID_MASK		(0x3ffULL << ICH_LR_PHYS_ID_SHIFT)
+#define ICH_LR_EOI			(1UL << 41)
+#define ICH_LR_GROUP			(1UL << 60)
+#define ICH_LR_STATE			(3UL << 62)
+#define ICH_LR_PENDING_BIT		(1UL << 62)
+#define ICH_LR_ACTIVE_BIT		(1UL << 63)
 
 #define ICH_MISR_EOI			(1 << 0)
 #define ICH_MISR_U			(1 << 1)
@@ -291,26 +255,68 @@
 #define ICH_VMCR_PMR_SHIFT		24
 #define ICH_VMCR_PMR_MASK		(0xffUL << ICH_VMCR_PMR_SHIFT)
 
+#define ICC_EOIR1_EL1			sys_reg(3, 0, 12, 12, 1)
+#define ICC_IAR1_EL1			sys_reg(3, 0, 12, 12, 0)
+#define ICC_SGI1R_EL1			sys_reg(3, 0, 12, 11, 5)
+#define ICC_PMR_EL1			sys_reg(3, 0, 4, 6, 0)
+#define ICC_CTLR_EL1			sys_reg(3, 0, 12, 12, 4)
+#define ICC_SRE_EL1			sys_reg(3, 0, 12, 12, 5)
+#define ICC_GRPEN1_EL1			sys_reg(3, 0, 12, 12, 7)
+
 #define ICC_IAR1_EL1_SPURIOUS		0x3ff
+
+#define ICC_SRE_EL2			sys_reg(3, 4, 12, 9, 5)
 
 #define ICC_SRE_EL2_SRE			(1 << 0)
 #define ICC_SRE_EL2_ENABLE		(1 << 3)
 
-#define ICC_SGI1R_TARGET_LIST_SHIFT	0
-#define ICC_SGI1R_TARGET_LIST_MASK	(0xffff << ICC_SGI1R_TARGET_LIST_SHIFT)
-#define ICC_SGI1R_AFFINITY_1_SHIFT	16
-#define ICC_SGI1R_AFFINITY_1_MASK	(0xff << ICC_SGI1R_AFFINITY_1_SHIFT)
-#define ICC_SGI1R_SGI_ID_SHIFT		24
-#define ICC_SGI1R_SGI_ID_MASK		(0xfULL << ICC_SGI1R_SGI_ID_SHIFT)
-#define ICC_SGI1R_AFFINITY_2_SHIFT	32
-#define ICC_SGI1R_AFFINITY_2_MASK	(0xffULL << ICC_SGI1R_AFFINITY_1_SHIFT)
-#define ICC_SGI1R_IRQ_ROUTING_MODE_BIT	40
-#define ICC_SGI1R_AFFINITY_3_SHIFT	48
-#define ICC_SGI1R_AFFINITY_3_MASK	(0xffULL << ICC_SGI1R_AFFINITY_1_SHIFT)
+/*
+ * System register definitions
+ */
+#define ICH_VSEIR_EL2			sys_reg(3, 4, 12, 9, 4)
+#define ICH_HCR_EL2			sys_reg(3, 4, 12, 11, 0)
+#define ICH_VTR_EL2			sys_reg(3, 4, 12, 11, 1)
+#define ICH_MISR_EL2			sys_reg(3, 4, 12, 11, 2)
+#define ICH_EISR_EL2			sys_reg(3, 4, 12, 11, 3)
+#define ICH_ELSR_EL2			sys_reg(3, 4, 12, 11, 5)
+#define ICH_VMCR_EL2			sys_reg(3, 4, 12, 11, 7)
 
-#include <asm/arch_gicv3.h>
+#define __LR0_EL2(x)			sys_reg(3, 4, 12, 12, x)
+#define __LR8_EL2(x)			sys_reg(3, 4, 12, 13, x)
+
+#define ICH_LR0_EL2			__LR0_EL2(0)
+#define ICH_LR1_EL2			__LR0_EL2(1)
+#define ICH_LR2_EL2			__LR0_EL2(2)
+#define ICH_LR3_EL2			__LR0_EL2(3)
+#define ICH_LR4_EL2			__LR0_EL2(4)
+#define ICH_LR5_EL2			__LR0_EL2(5)
+#define ICH_LR6_EL2			__LR0_EL2(6)
+#define ICH_LR7_EL2			__LR0_EL2(7)
+#define ICH_LR8_EL2			__LR8_EL2(0)
+#define ICH_LR9_EL2			__LR8_EL2(1)
+#define ICH_LR10_EL2			__LR8_EL2(2)
+#define ICH_LR11_EL2			__LR8_EL2(3)
+#define ICH_LR12_EL2			__LR8_EL2(4)
+#define ICH_LR13_EL2			__LR8_EL2(5)
+#define ICH_LR14_EL2			__LR8_EL2(6)
+#define ICH_LR15_EL2			__LR8_EL2(7)
+
+#define __AP0Rx_EL2(x)			sys_reg(3, 4, 12, 8, x)
+#define ICH_AP0R0_EL2			__AP0Rx_EL2(0)
+#define ICH_AP0R1_EL2			__AP0Rx_EL2(1)
+#define ICH_AP0R2_EL2			__AP0Rx_EL2(2)
+#define ICH_AP0R3_EL2			__AP0Rx_EL2(3)
+
+#define __AP1Rx_EL2(x)			sys_reg(3, 4, 12, 9, x)
+#define ICH_AP1R0_EL2			__AP1Rx_EL2(0)
+#define ICH_AP1R1_EL2			__AP1Rx_EL2(1)
+#define ICH_AP1R2_EL2			__AP1Rx_EL2(2)
+#define ICH_AP1R3_EL2			__AP1Rx_EL2(3)
 
 #ifndef __ASSEMBLY__
+
+#include <linux/stringify.h>
+#include <asm/msi.h>
 
 /*
  * We need a value to serve as a irq-type for LPIs. Choose one that will
@@ -329,26 +335,16 @@ struct rdists {
 	u64			flags;
 };
 
+static inline void gic_write_eoir(u64 irq)
+{
+	asm volatile("msr_s " __stringify(ICC_EOIR1_EL1) ", %0" : : "r" (irq));
+	isb();
+}
+
 struct irq_domain;
-struct device_node;
 int its_cpu_init(void);
 int its_init(struct device_node *node, struct rdists *rdists,
 	     struct irq_domain *domain);
-
-static inline bool gic_enable_sre(void)
-{
-	u32 val;
-
-	val = gic_read_sre();
-	if (val & ICC_SRE_EL1_SRE)
-		return true;
-
-	val |= ICC_SRE_EL1_SRE;
-	gic_write_sre(val);
-	val = gic_read_sre();
-
-	return !!(val & ICC_SRE_EL1_SRE);
-}
 
 #endif
 

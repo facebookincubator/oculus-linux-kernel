@@ -33,6 +33,7 @@ static int sg_version_num = 30536;	/* 2 digits for each component */
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/mm.h>
+#include <linux/aio.h>
 #include <linux/errno.h>
 #include <linux/mtio.h>
 #include <linux/ioctl.h>
@@ -50,7 +51,6 @@ static int sg_version_num = 30536;	/* 2 digits for each component */
 #include <linux/mutex.h>
 #include <linux/atomic.h>
 #include <linux/ratelimit.h>
-#include <linux/uio.h>
 
 #include "scsi.h"
 #include <scsi/scsi_dbg.h>
@@ -219,8 +219,8 @@ static void sg_device_destroy(struct kref *kref);
 #define SZ_SG_REQ_INFO sizeof(sg_req_info_t)
 
 #define sg_printk(prefix, sdp, fmt, a...) \
-	sdev_prefix_printk(prefix, (sdp)->device,		\
-			   (sdp)->disk->disk_name, fmt, ##a)
+	sdev_printk(prefix, (sdp)->device, "[%s] " fmt, \
+		    (sdp)->disk->disk_name, ##a)
 
 static int sg_allow_access(struct file *filp, unsigned char *cmd)
 {
@@ -764,7 +764,7 @@ static int
 sg_common_write(Sg_fd * sfp, Sg_request * srp,
 		unsigned char *cmnd, int timeout, int blocking)
 {
-	int k, at_head;
+	int k, data_dir, at_head;
 	Sg_device *sdp = sfp->parentdp;
 	sg_io_hdr_t *hp = &srp->header;
 
@@ -800,6 +800,21 @@ sg_common_write(Sg_fd * sfp, Sg_request * srp,
 		return -ENODEV;
 	}
 
+	switch (hp->dxfer_direction) {
+	case SG_DXFER_TO_FROM_DEV:
+	case SG_DXFER_FROM_DEV:
+		data_dir = DMA_FROM_DEVICE;
+		break;
+	case SG_DXFER_TO_DEV:
+		data_dir = DMA_TO_DEVICE;
+		break;
+	case SG_DXFER_UNKNOWN:
+		data_dir = DMA_BIDIRECTIONAL;
+		break;
+	default:
+		data_dir = DMA_NONE;
+		break;
+	}
 	hp->duration = jiffies_to_msecs(jiffies);
 	if (hp->interface_id != '\0' &&	/* v3 (or later) interface */
 	    (SG_FLAG_Q_AT_TAIL & hp->flags))
@@ -903,7 +918,6 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 			sfp->low_dma = 1;
 			if ((0 == sfp->low_dma) && (0 == sg_res_in_use(sfp))) {
 				val = (int) sfp->reserve.bufflen;
-				mutex_lock(&sfp->parentdp->open_rel_lock);
 				sg_remove_scat(sfp, &sfp->reserve);
 				sg_build_reserve(sfp, val);
 				mutex_unlock(&sfp->parentdp->open_rel_lock);
@@ -974,14 +988,13 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 		result = get_user(val, ip);
 		if (result)
 			return result;
-                if (val < 0)
-                        return -EINVAL;
+		if (val < 0)
+			return -EINVAL;
 		val = min_t(int, val,
 			    max_sectors_bytes(sdp->device->request_queue));
 		if (val != sfp->reserve.bufflen) {
 			if (sg_res_in_use(sfp) || sfp->mmap_called)
 				return -EBUSY;
-			mutex_lock(&sfp->parentdp->open_rel_lock);
 			sg_remove_scat(sfp, &sfp->reserve);
 			sg_build_reserve(sfp, val);
 			mutex_unlock(&sfp->parentdp->open_rel_lock);
@@ -1071,6 +1084,39 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 		if (atomic_read(&sdp->detaching))
 			return -ENODEV;
 		return put_user(sdp->device->host->hostt->emulated, ip);
+	case SG_SCSI_RESET:
+		if (atomic_read(&sdp->detaching))
+			return -ENODEV;
+		if (filp->f_flags & O_NONBLOCK) {
+			if (scsi_host_in_recovery(sdp->device->host))
+				return -EBUSY;
+		} else if (!scsi_block_when_processing_errors(sdp->device))
+			return -EBUSY;
+		result = get_user(val, ip);
+		if (result)
+			return result;
+		if (SG_SCSI_RESET_NOTHING == val)
+			return 0;
+		switch (val) {
+		case SG_SCSI_RESET_DEVICE:
+			val = SCSI_TRY_RESET_DEVICE;
+			break;
+		case SG_SCSI_RESET_TARGET:
+			val = SCSI_TRY_RESET_TARGET;
+			break;
+		case SG_SCSI_RESET_BUS:
+			val = SCSI_TRY_RESET_BUS;
+			break;
+		case SG_SCSI_RESET_HOST:
+			val = SCSI_TRY_RESET_HOST;
+			break;
+		default:
+			return -EINVAL;
+		}
+		if (!capable(CAP_SYS_ADMIN) || !capable(CAP_SYS_RAWIO))
+			return -EACCES;
+		return (scsi_reset_provider(sdp->device, val) ==
+			SUCCESS) ? 0 : -EIO;
 	case SCSI_IOCTL_SEND_COMMAND:
 		if (atomic_read(&sdp->detaching))
 			return -ENODEV;
@@ -1090,6 +1136,13 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 			return result;
 		sdp->sgdebug = (char) val;
 		return 0;
+	case SCSI_IOCTL_GET_IDLUN:
+	case SCSI_IOCTL_GET_BUS_NUMBER:
+	case SCSI_IOCTL_PROBE_HOST:
+	case SG_GET_TRANSFORM:
+		if (atomic_read(&sdp->detaching))
+			return -ENODEV;
+		return scsi_ioctl(sdp->device, cmd_in, p);
 	case BLKSECTGET:
 		return put_user(max_sectors_bytes(sdp->device->request_queue),
 				ip);
@@ -1105,25 +1158,11 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 		return blk_trace_startstop(sdp->device->request_queue, 0);
 	case BLKTRACETEARDOWN:
 		return blk_trace_remove(sdp->device->request_queue);
-	case SCSI_IOCTL_GET_IDLUN:
-	case SCSI_IOCTL_GET_BUS_NUMBER:
-	case SCSI_IOCTL_PROBE_HOST:
-	case SG_GET_TRANSFORM:
-	case SG_SCSI_RESET:
-		if (atomic_read(&sdp->detaching))
-			return -ENODEV;
-		break;
 	default:
 		if (read_only)
 			return -EPERM;	/* don't know so take safe approach */
-		break;
+		return scsi_ioctl(sdp->device, cmd_in, p);
 	}
-
-	result = scsi_ioctl_block_when_processing_errors(sdp->device,
-			cmd_in, filp->f_flags & O_NDELAY);
-	if (result)
-		return result;
-	return scsi_ioctl(sdp->device, cmd_in, p);
 }
 
 #ifdef CONFIG_COMPAT
@@ -1334,7 +1373,7 @@ sg_rq_end_io(struct request *rq, int uptodate)
 		if ((sdp->sgdebug > 0) &&
 		    ((CHECK_CONDITION == srp->header.masked_status) ||
 		     (COMMAND_TERMINATED == srp->header.masked_status)))
-			__scsi_print_sense(sdp->device, __func__, sense,
+			__scsi_print_sense(__func__, sense,
 					   SCSI_SENSE_BUFFERSIZE);
 
 		/* Following if statement is a patch supplied by Eric Youngdale */
@@ -1756,17 +1795,26 @@ sg_start_req(Sg_request *srp, unsigned char *cmd)
 			md->from_user = 0;
 	}
 
+	if (unlikely(iov_count > UIO_MAXIOV))
+		return -EINVAL;
+
 	if (iov_count) {
-		struct iovec *iov = NULL;
-		struct iov_iter i;
+		int len, size = sizeof(struct sg_iovec) * iov_count;
+		struct iovec *iov;
 
-		res = import_iovec(rw, hp->dxferp, iov_count, 0, &iov, &i);
-		if (res < 0)
-			return res;
+		iov = memdup_user(hp->dxferp, size);
+		if (IS_ERR(iov))
+			return PTR_ERR(iov);
 
-		iov_iter_truncate(&i, hp->dxfer_len);
+		len = iov_length(iov, iov_count);
+		if (hp->dxfer_len < len) {
+			iov_count = iov_shorten(iov, iov_count, hp->dxfer_len);
+			len = hp->dxfer_len;
+		}
 
-		res = blk_rq_map_user_iov(q, rq, md, &i, GFP_ATOMIC);
+		res = blk_rq_map_user_iov(q, rq, md, (struct sg_iovec *)iov,
+					  iov_count,
+					  len, GFP_ATOMIC);
 		kfree(iov);
 	} else
 		res = blk_rq_map_user(q, rq, md, hp->dxferp,
@@ -2643,6 +2691,9 @@ static void sg_proc_debug_helper(struct seq_file *s, Sg_device * sdp)
 			seq_puts(s, srp->done ?
 				 ((1 == srp->done) ?  "rcv:" : "fin:")
 				  : "act:");
+			seq_printf(s, srp->done ?
+				   ((1 == srp->done) ?  "rcv:" : "fin:")
+				   : "act:");
 			seq_printf(s, " id=%d blen=%d",
 				   srp->header.pack_id, blen);
 			if (srp->done)

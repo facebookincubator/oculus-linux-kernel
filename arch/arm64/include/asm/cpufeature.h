@@ -27,21 +27,16 @@
 #define ARM64_WORKAROUND_845719			2
 #define ARM64_HAS_SYSREG_GIC_CPUIF		3
 #define ARM64_HAS_PAN				4
-#define ARM64_HAS_LSE_ATOMICS			5
-#define ARM64_WORKAROUND_CAVIUM_23154		6
-#define ARM64_WORKAROUND_834220			7
-#define ARM64_HAS_NO_HW_PREFETCH		8
-#define ARM64_HAS_UAO				9
-#define ARM64_ALT_PAN_NOT_UAO			10
-#define ARM64_WORKAROUND_CAVIUM_27456		11
-#define ARM64_HARDEN_BRANCH_PREDICTOR		12
-#define ARM64_NCAPS				13
+#define ARM64_HAS_UAO				5
+#define ARM64_ALT_PAN_NOT_UAO			6
+#define ARM64_HARDEN_BRANCH_PREDICTOR		7
+#define ARM64_UNMAP_KERNEL_AT_EL0		23
+
+#define ARM64_NCAPS				24
 
 #ifndef __ASSEMBLY__
 
 #include <linux/kernel.h>
-
-extern const char *machine_name;
 
 /* CPU feature register tracking */
 enum ftr_type {
@@ -82,7 +77,7 @@ struct arm64_cpu_capabilities {
 	const char *desc;
 	u16 capability;
 	bool (*matches)(const struct arm64_cpu_capabilities *);
-	int (*enable)(void *);		/* Called on all active CPUs */
+	void (*enable)(void *);		/* Called on all active CPUs */
 	union {
 		struct {	/* To be used for erratum handling only */
 			u32 midr_model;
@@ -190,6 +185,12 @@ static inline bool cpu_supports_mixed_endian_el0(void)
 static inline bool system_supports_mixed_endian_el0(void)
 {
 	return id_aa64mmfr0_mixed_endian_el0(read_system_reg(SYS_ID_AA64MMFR0_EL1));
+}
+
+static inline bool system_uses_ttbr0_pan(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_SW_TTBR0_PAN) &&
+		!cpus_have_cap(ARM64_HAS_PAN);
 }
 
 #endif /* __ASSEMBLY__ */

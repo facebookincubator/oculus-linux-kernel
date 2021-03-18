@@ -199,6 +199,7 @@ static struct platform_driver gpio_tilt_polled_driver = {
 	.remove	= gpio_tilt_polled_remove,
 	.driver	= {
 		.name	= DRV_NAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

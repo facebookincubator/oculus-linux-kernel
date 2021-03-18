@@ -82,7 +82,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/power_supply.h>
 #include <linux/fb.h>
-#include <acpi/video.h>
+
 
 /* ======= */
 /* Defines */
@@ -151,8 +151,6 @@
 #define BAT_STATUS2			0xF1
 #define BAT_STOP_CHARGE1		0xF2
 #define BAT_STOP_CHARGE2		0xF3
-#define BAT_CHARGE_LIMIT		0x03
-#define BAT_CHARGE_LIMIT_MAX		100
 
 #define BAT_S0_DISCHARGE		(1 << 0)
 #define BAT_S0_DISCHRG_CRITICAL		(1 << 2)
@@ -179,7 +177,7 @@ struct compal_data{
 	unsigned char curr_pwm;
 
 	/* Power supply */
-	struct power_supply *psy;
+	struct power_supply psy;
 	struct power_supply_info psy_info;
 	char bat_model_name[BAT_MODEL_NAME_LEN + 1];
 	char bat_manufacturer_name[BAT_MANUFACTURER_NAME_LEN + 1];
@@ -567,7 +565,8 @@ static int bat_get_property(struct power_supply *psy,
 				enum power_supply_property psp,
 				union power_supply_propval *val)
 {
-	struct compal_data *data = power_supply_get_drvdata(psy);
+	struct compal_data *data;
+	data = container_of(psy, struct compal_data, psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -603,12 +602,6 @@ static int bat_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_NOW:
 		val->intval = ec_read_u16(BAT_CHARGE_NOW) * 1000;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
-		val->intval = ec_read_u8(BAT_CHARGE_LIMIT);
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX:
-		val->intval = BAT_CHARGE_LIMIT_MAX;
-		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = ec_read_u8(BAT_CAPACITY);
 		break;
@@ -642,36 +635,6 @@ static int bat_get_property(struct power_supply *psy,
 	return 0;
 }
 
-static int bat_set_property(struct power_supply *psy,
-				enum power_supply_property psp,
-				const union power_supply_propval *val)
-{
-	int level;
-
-	switch (psp) {
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
-		level = val->intval;
-		if (level < 0 || level > BAT_CHARGE_LIMIT_MAX)
-			return -EINVAL;
-		if (ec_write(BAT_CHARGE_LIMIT, level) < 0)
-			return -EIO;
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
-static int bat_writeable_property(struct power_supply *psy,
-				enum power_supply_property psp)
-{
-	switch (psp) {
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
-		return 1;
-	default:
-		return 0;
-	}
-}
 
 
 
@@ -747,6 +710,7 @@ static int compal_remove(struct platform_device *);
 static struct platform_driver compal_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
 	},
 	.probe	= compal_probe,
 	.remove	= compal_remove,
@@ -764,8 +728,6 @@ static enum power_supply_property compal_bat_properties[] = {
 	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
-	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
-	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TEMP,
@@ -914,18 +876,14 @@ static struct dmi_system_id __initdata compal_dmi_table[] = {
 };
 MODULE_DEVICE_TABLE(dmi, compal_dmi_table);
 
-static const struct power_supply_desc psy_bat_desc = {
-	.name		= DRIVER_NAME,
-	.type		= POWER_SUPPLY_TYPE_BATTERY,
-	.properties	= compal_bat_properties,
-	.num_properties	= ARRAY_SIZE(compal_bat_properties),
-	.get_property	= bat_get_property,
-	.set_property	= bat_set_property,
-	.property_is_writeable = bat_writeable_property,
-};
-
 static void initialize_power_supply_data(struct compal_data *data)
 {
+	data->psy.name = DRIVER_NAME;
+	data->psy.type = POWER_SUPPLY_TYPE_BATTERY;
+	data->psy.properties = compal_bat_properties;
+	data->psy.num_properties = ARRAY_SIZE(compal_bat_properties);
+	data->psy.get_property = bat_get_property;
+
 	ec_read_sequence(BAT_MANUFACTURER_NAME_ADDR,
 					data->bat_manufacturer_name,
 					BAT_MANUFACTURER_NAME_LEN);
@@ -1000,7 +958,7 @@ static int __init compal_init(void)
 		return -ENODEV;
 	}
 
-	if (acpi_video_get_backlight_type() == acpi_backlight_vendor) {
+	if (!acpi_video_backlight_support()) {
 		struct backlight_properties props;
 		memset(&props, 0, sizeof(struct backlight_properties));
 		props.type = BACKLIGHT_PLATFORM;
@@ -1054,7 +1012,6 @@ static int compal_probe(struct platform_device *pdev)
 	int err;
 	struct compal_data *data;
 	struct device *hwmon_dev;
-	struct power_supply_config psy_cfg = {};
 
 	if (!extra_features)
 		return 0;
@@ -1080,13 +1037,9 @@ static int compal_probe(struct platform_device *pdev)
 
 	/* Power supply */
 	initialize_power_supply_data(data);
-	psy_cfg.drv_data = data;
-	data->psy = power_supply_register(&compal_device->dev, &psy_bat_desc,
-					  &psy_cfg);
-	if (IS_ERR(data->psy)) {
-		err = PTR_ERR(data->psy);
+	err = power_supply_register(&compal_device->dev, &data->psy);
+	if (err < 0)
 		goto remove;
-	}
 
 	platform_set_drvdata(pdev, data);
 
@@ -1121,7 +1074,7 @@ static int compal_remove(struct platform_device *pdev)
 	pwm_disable_control();
 
 	data = platform_get_drvdata(pdev);
-	power_supply_unregister(data->psy);
+	power_supply_unregister(&data->psy);
 
 	sysfs_remove_group(&pdev->dev.kobj, &compal_platform_attr_group);
 

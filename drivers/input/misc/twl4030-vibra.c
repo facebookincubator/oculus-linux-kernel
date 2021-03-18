@@ -157,7 +157,8 @@ static void twl4030_vibra_close(struct input_dev *input)
 }
 
 /*** Module ***/
-static int __maybe_unused twl4030_vibra_suspend(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int twl4030_vibra_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct vibra_info *info = platform_get_drvdata(pdev);
@@ -168,11 +169,12 @@ static int __maybe_unused twl4030_vibra_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused twl4030_vibra_resume(struct device *dev)
+static int twl4030_vibra_resume(struct device *dev)
 {
 	vibra_disable_leds();
 	return 0;
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(twl4030_vibra_pm_ops,
 			 twl4030_vibra_suspend, twl4030_vibra_resume);
@@ -183,8 +185,7 @@ static bool twl4030_vibra_check_coexist(struct twl4030_vibra_data *pdata,
 	if (pdata && pdata->coexist)
 		return true;
 
-	node = of_find_node_by_name(node, "codec");
-	if (node) {
+	if (of_find_node_by_name(node, "codec")) {
 		of_node_put(node);
 		return true;
 	}
@@ -252,6 +253,7 @@ static struct platform_driver twl4030_vibra_driver = {
 	.probe		= twl4030_vibra_probe,
 	.driver		= {
 		.name	= "twl4030-vibra",
+		.owner	= THIS_MODULE,
 		.pm	= &twl4030_vibra_pm_ops,
 	},
 };

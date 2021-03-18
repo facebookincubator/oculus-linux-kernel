@@ -190,8 +190,9 @@ static bool gre_invert_tuple(struct nf_conntrack_tuple *tuple,
 
 /* gre hdr info to tuple */
 static bool gre_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
-			     struct net *net, struct nf_conntrack_tuple *tuple)
+			     struct nf_conntrack_tuple *tuple)
 {
+	struct net *net = dev_net(skb->dev ? skb->dev : skb_dst(skb)->dev);
 	const struct gre_hdr_pptp *pgrehdr;
 	struct gre_hdr_pptp _pgrehdr;
 	__be16 srckey;
@@ -225,20 +226,20 @@ static bool gre_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
 }
 
 /* print gre part of tuple */
-static void gre_print_tuple(struct seq_file *s,
-			    const struct nf_conntrack_tuple *tuple)
+static int gre_print_tuple(struct seq_file *s,
+			   const struct nf_conntrack_tuple *tuple)
 {
-	seq_printf(s, "srckey=0x%x dstkey=0x%x ",
-		   ntohs(tuple->src.u.gre.key),
-		   ntohs(tuple->dst.u.gre.key));
+	return seq_printf(s, "srckey=0x%x dstkey=0x%x ",
+			  ntohs(tuple->src.u.gre.key),
+			  ntohs(tuple->dst.u.gre.key));
 }
 
 /* print private data for conntrack */
-static void gre_print_conntrack(struct seq_file *s, struct nf_conn *ct)
+static int gre_print_conntrack(struct seq_file *s, struct nf_conn *ct)
 {
-	seq_printf(s, "timeout=%u, stream_timeout=%u ",
-		   (ct->proto.gre.timeout / HZ),
-		   (ct->proto.gre.stream_timeout / HZ));
+	return seq_printf(s, "timeout=%u, stream_timeout=%u ",
+			  (ct->proto.gre.timeout / HZ),
+			  (ct->proto.gre.stream_timeout / HZ));
 }
 
 static unsigned int *gre_get_timeouts(struct net *net)

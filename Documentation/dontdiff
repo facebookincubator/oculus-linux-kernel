@@ -165,6 +165,7 @@ mach-types.h
 machtypes.h
 map
 map_hugetlb
+media
 mconf
 miboot*
 mk_elfconfig

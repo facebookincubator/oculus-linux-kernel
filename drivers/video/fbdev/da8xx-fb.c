@@ -209,7 +209,8 @@ static struct fb_videomode known_lcd_panels[] = {
 		.lower_margin   = 2,
 		.hsync_len      = 0,
 		.vsync_len      = 0,
-		.sync           = FB_SYNC_CLK_INVERT,
+		.sync           = FB_SYNC_CLK_INVERT |
+			FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
 	},
 	/* Sharp LK043T1DG01 */
 	[1] = {
@@ -223,7 +224,7 @@ static struct fb_videomode known_lcd_panels[] = {
 		.lower_margin   = 2,
 		.hsync_len      = 41,
 		.vsync_len      = 10,
-		.sync           = 0,
+		.sync           = FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
 		.flag           = 0,
 	},
 	[2] = {
@@ -238,7 +239,7 @@ static struct fb_videomode known_lcd_panels[] = {
 		.lower_margin   = 10,
 		.hsync_len      = 10,
 		.vsync_len      = 10,
-		.sync           = 0,
+		.sync           = FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
 		.flag           = 0,
 	},
 	[3] = {
@@ -1658,6 +1659,7 @@ static struct platform_driver da8xx_fb_driver = {
 	.remove = fb_remove,
 	.driver = {
 		   .name = DRIVER_NAME,
+		   .owner = THIS_MODULE,
 		   .pm	= &fb_pm_ops,
 		   },
 };

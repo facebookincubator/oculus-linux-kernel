@@ -5,10 +5,6 @@
 #include <linux/exportfs.h>
 #include <linux/mm.h>
 
-#define CLEANCACHE_NO_POOL		-1
-#define CLEANCACHE_NO_BACKEND		-2
-#define CLEANCACHE_NO_BACKEND_SHARED	-3
-
 #define CLEANCACHE_KEY_MAX 6
 
 /*
@@ -37,9 +33,10 @@ struct cleancache_ops {
 	void (*invalidate_fs)(int);
 };
 
-extern int cleancache_register_ops(struct cleancache_ops *ops);
+extern struct cleancache_ops *
+	cleancache_register_ops(struct cleancache_ops *ops);
 extern void __cleancache_init_fs(struct super_block *);
-extern void __cleancache_init_shared_fs(struct super_block *);
+extern void __cleancache_init_shared_fs(char *, struct super_block *);
 extern int  __cleancache_get_page(struct page *);
 extern void __cleancache_put_page(struct page *);
 extern void __cleancache_invalidate_page(struct address_space *, struct page *);
@@ -81,10 +78,10 @@ static inline void cleancache_init_fs(struct super_block *sb)
 		__cleancache_init_fs(sb);
 }
 
-static inline void cleancache_init_shared_fs(struct super_block *sb)
+static inline void cleancache_init_shared_fs(char *uuid, struct super_block *sb)
 {
 	if (cleancache_enabled)
-		__cleancache_init_shared_fs(sb);
+		__cleancache_init_shared_fs(uuid, sb);
 }
 
 static inline int cleancache_get_page(struct page *page)

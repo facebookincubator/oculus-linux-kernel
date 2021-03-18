@@ -233,9 +233,9 @@ static int get_ablock(struct dm_array_info *info, dm_block_t b,
 /*
  * Unlocks an array block.
  */
-static void unlock_ablock(struct dm_array_info *info, struct dm_block *block)
+static int unlock_ablock(struct dm_array_info *info, struct dm_block *block)
 {
-	dm_tm_unlock(info->btree_info.tm, block);
+	return dm_tm_unlock(info->btree_info.tm, block);
 }
 
 /*----------------------------------------------------------------*/
@@ -645,10 +645,8 @@ static int array_resize(struct dm_array_info *info, dm_block_t root,
 	int r;
 	struct resize resize;
 
-	if (old_size == new_size) {
-		*new_root = root;
+	if (old_size == new_size)
 		return 0;
-	}
 
 	resize.info = info;
 	resize.root = root;

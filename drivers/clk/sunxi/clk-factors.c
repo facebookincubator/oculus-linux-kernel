@@ -79,42 +79,39 @@ static long clk_factors_round_rate(struct clk_hw *hw, unsigned long rate,
 	return rate;
 }
 
-static int clk_factors_determine_rate(struct clk_hw *hw,
-				      struct clk_rate_request *req)
+static long clk_factors_determine_rate(struct clk_hw *hw, unsigned long rate,
+				       unsigned long *best_parent_rate,
+				       struct clk **best_parent_p)
 {
-	struct clk_hw *parent, *best_parent = NULL;
+	struct clk *clk = hw->clk, *parent, *best_parent = NULL;
 	int i, num_parents;
 	unsigned long parent_rate, best = 0, child_rate, best_child_rate = 0;
 
 	/* find the parent that can help provide the fastest rate <= rate */
-	num_parents = clk_hw_get_num_parents(hw);
+	num_parents = __clk_get_num_parents(clk);
 	for (i = 0; i < num_parents; i++) {
-		parent = clk_hw_get_parent_by_index(hw, i);
+		parent = clk_get_parent_by_index(clk, i);
 		if (!parent)
 			continue;
-		if (clk_hw_get_flags(hw) & CLK_SET_RATE_PARENT)
-			parent_rate = clk_hw_round_rate(parent, req->rate);
+		if (__clk_get_flags(clk) & CLK_SET_RATE_PARENT)
+			parent_rate = __clk_round_rate(parent, rate);
 		else
-			parent_rate = clk_hw_get_rate(parent);
+			parent_rate = __clk_get_rate(parent);
 
-		child_rate = clk_factors_round_rate(hw, req->rate,
-						    &parent_rate);
+		child_rate = clk_factors_round_rate(hw, rate, &parent_rate);
 
-		if (child_rate <= req->rate && child_rate > best_child_rate) {
+		if (child_rate <= rate && child_rate > best_child_rate) {
 			best_parent = parent;
 			best = parent_rate;
 			best_child_rate = child_rate;
 		}
 	}
 
-	if (!best_parent)
-		return -EINVAL;
+	if (best_parent)
+		*best_parent_p = best_parent;
+	*best_parent_rate = best;
 
-	req->best_parent_hw = best_parent;
-	req->best_parent_rate = best;
-	req->rate = best_child_rate;
-
-	return 0;
+	return best_child_rate;
 }
 
 static int clk_factors_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -159,10 +156,9 @@ static const struct clk_ops clk_factors_ops = {
 	.set_rate = clk_factors_set_rate,
 };
 
-struct clk *sunxi_factors_register(struct device_node *node,
-				   const struct factors_data *data,
-				   spinlock_t *lock,
-				   void __iomem *reg)
+struct clk * __init sunxi_factors_register(struct device_node *node,
+					   const struct factors_data *data,
+					   spinlock_t *lock)
 {
 	struct clk *clk;
 	struct clk_factors *factors;
@@ -172,10 +168,15 @@ struct clk *sunxi_factors_register(struct device_node *node,
 	struct clk_hw *mux_hw = NULL;
 	const char *clk_name = node->name;
 	const char *parents[FACTORS_MAX_PARENTS];
+	void __iomem *reg;
 	int i = 0;
 
+	reg = of_iomap(node, 0);
+
 	/* if we have a mux, we will have >1 parents */
-	i = of_clk_parent_fill(node, parents, FACTORS_MAX_PARENTS);
+	while (i < FACTORS_MAX_PARENTS &&
+	       (parents[i] = of_clk_get_parent_name(node, i)) != NULL)
+		i++;
 
 	/*
 	 * some factor clocks, such as pll5 and pll6, may have multiple
@@ -223,7 +224,7 @@ struct clk *sunxi_factors_register(struct device_node *node,
 		/* set up gate properties */
 		mux->reg = reg;
 		mux->shift = data->mux;
-		mux->mask = data->muxmask;
+		mux->mask = SUNXI_FACTORS_MUX_MASK;
 		mux->lock = factors->lock;
 		mux_hw = &mux->hw;
 	}

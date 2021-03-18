@@ -18,7 +18,7 @@
 
 #include <asm-generic/pgtable-nopmd.h>
 
-extern int temp_tlb_entry;
+extern int temp_tlb_entry __cpuinitdata;
 
 /*
  * - add_temporary_entry() add a temporary TLB entry. We use TLB entries
@@ -57,7 +57,7 @@ extern int add_temporary_entry(unsigned long entrylo0, unsigned long entrylo1,
 #define PTRS_PER_PTE	((PAGE_SIZE << PTE_ORDER) / sizeof(pte_t))
 
 #define USER_PTRS_PER_PGD	(0x80000000UL/PGDIR_SIZE)
-#define FIRST_USER_ADDRESS	0UL
+#define FIRST_USER_ADDRESS	0
 
 #define VMALLOC_START	  MAP_BASE
 
@@ -69,7 +69,7 @@ extern int add_temporary_entry(unsigned long entrylo0, unsigned long entrylo1,
 # define VMALLOC_END	(FIXADDR_START-2*PAGE_SIZE)
 #endif
 
-#ifdef CONFIG_PHYS_ADDR_T_64BIT
+#ifdef CONFIG_64BIT_PHYS_ADDR
 #define pte_ERROR(e) \
 	printk("%s:%d: bad pte %016Lx.\n", __FILE__, __LINE__, pte_val(e))
 #else
@@ -103,18 +103,15 @@ static inline void pmd_clear(pmd_t *pmdp)
 	pmd_val(*pmdp) = ((unsigned long) invalid_pte_table);
 }
 
-#if defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_CPU_MIPS32)
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
 #define pte_page(x)		pfn_to_page(pte_pfn(x))
-#define pte_pfn(x)		(((unsigned long)((x).pte_high >> _PFN_SHIFT)) | (unsigned long)((x).pte_low << _PAGE_PRESENT_SHIFT))
+#define pte_pfn(x)		((unsigned long)((x).pte_high >> 6))
 static inline pte_t
 pfn_pte(unsigned long pfn, pgprot_t prot)
 {
 	pte_t pte;
-
-	pte.pte_low = (pfn >> _PAGE_PRESENT_SHIFT) |
-				(pgprot_val(prot) & ~_PFNX_MASK);
-	pte.pte_high = (pfn << _PFN_SHIFT) |
-				(pgprot_val(prot) & ~_PFN_MASK);
+	pte.pte_high = (pfn << 6) | (pgprot_val(prot) & 0x3f);
+	pte.pte_low = pgprot_val(prot);
 	return pte;
 }
 
@@ -129,7 +126,7 @@ pfn_pte(unsigned long pfn, pgprot_t prot)
 #define pte_pfn(x)		((unsigned long)((x).pte >> _PFN_SHIFT))
 #define pfn_pte(pfn, prot)	__pte(((unsigned long long)(pfn) << _PFN_SHIFT) | pgprot_val(prot))
 #endif
-#endif /* defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_CPU_MIPS32) */
+#endif /* defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32) */
 
 #define __pgd_offset(address)	pgd_index(address)
 #define __pud_offset(address)	(((address) >> PUD_SHIFT) & (PTRS_PER_PUD-1))
@@ -158,39 +155,73 @@ pfn_pte(unsigned long pfn, pgprot_t prot)
 #if defined(CONFIG_CPU_R3000) || defined(CONFIG_CPU_TX39XX)
 
 /* Swap entries must have VALID bit cleared. */
-#define __swp_type(x)			(((x).val >> 10) & 0x1f)
-#define __swp_offset(x)			((x).val >> 15)
-#define __swp_entry(type,offset)	((swp_entry_t) { ((type) << 10) | ((offset) << 15) })
-#define __pte_to_swp_entry(pte)		((swp_entry_t) { pte_val(pte) })
-#define __swp_entry_to_pte(x)		((pte_t) { (x).val })
+#define __swp_type(x)		(((x).val >> 10) & 0x1f)
+#define __swp_offset(x)		((x).val >> 15)
+#define __swp_entry(type,offset)	\
+	((swp_entry_t) { ((type) << 10) | ((offset) << 15) })
+
+/*
+ * Bits 0, 4, 8, and 9 are taken, split up 28 bits of offset into this range:
+ */
+#define PTE_FILE_MAX_BITS	28
+
+#define pte_to_pgoff(_pte)	((((_pte).pte >> 1 ) & 0x07) | \
+				 (((_pte).pte >> 2 ) & 0x38) | \
+				 (((_pte).pte >> 10) <<	 6 ))
+
+#define pgoff_to_pte(off)	((pte_t) { (((off) & 0x07) << 1 ) | \
+					   (((off) & 0x38) << 2 ) | \
+					   (((off) >>  6 ) << 10) | \
+					   _PAGE_FILE })
 
 #else
 
-#if defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_CPU_MIPS32)
-
 /* Swap entries must have VALID and GLOBAL bits cleared. */
-#define __swp_type(x)			(((x).val >> 4) & 0x1f)
-#define __swp_offset(x)			 ((x).val >> 9)
-#define __swp_entry(type,offset)	((swp_entry_t)  { ((type) << 4) | ((offset) << 9) })
-#define __pte_to_swp_entry(pte)		((swp_entry_t) { (pte).pte_high })
-#define __swp_entry_to_pte(x)		((pte_t) { 0, (x).val })
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
+#define __swp_type(x)		(((x).val >> 2) & 0x1f)
+#define __swp_offset(x)		 ((x).val >> 7)
+#define __swp_entry(type,offset)	\
+		((swp_entry_t)	{ ((type) << 2) | ((offset) << 7) })
+#else
+#define __swp_type(x)		(((x).val >> 8) & 0x1f)
+#define __swp_offset(x)		 ((x).val >> 13)
+#define __swp_entry(type,offset)	\
+		((swp_entry_t)	{ ((type) << 8) | ((offset) << 13) })
+#endif /* defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32) */
+
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
+/*
+ * Bits 0 and 1 of pte_high are taken, use the rest for the page offset...
+ */
+#define PTE_FILE_MAX_BITS	30
+
+#define pte_to_pgoff(_pte)	((_pte).pte_high >> 2)
+#define pgoff_to_pte(off)	((pte_t) { _PAGE_FILE, (off) << 2 })
 
 #else
 /*
- * Constraints:
- *      _PAGE_PRESENT at bit 0
- *      _PAGE_MODIFIED at bit 4
- *      _PAGE_GLOBAL at bit 6
- *      _PAGE_VALID at bit 7
+ * Bits 0, 4, 6, and 7 are taken, split up 28 bits of offset into this range:
  */
-#define __swp_type(x)			(((x).val >> 8) & 0x1f)
-#define __swp_offset(x)			 ((x).val >> 13)
-#define __swp_entry(type,offset)	((swp_entry_t)	{ ((type) << 8) | ((offset) << 13) })
-#define __pte_to_swp_entry(pte)		((swp_entry_t) { pte_val(pte) })
-#define __swp_entry_to_pte(x)		((pte_t) { (x).val })
+#define PTE_FILE_MAX_BITS	28
 
-#endif /* defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_CPU_MIPS32) */
+#define pte_to_pgoff(_pte)	((((_pte).pte >> 1) & 0x7) | \
+				 (((_pte).pte >> 2) & 0x8) | \
+				 (((_pte).pte >> 8) <<	4))
 
-#endif /* defined(CONFIG_CPU_R3000) || defined(CONFIG_CPU_TX39XX) */
+#define pgoff_to_pte(off)	((pte_t) { (((off) & 0x7) << 1) | \
+					   (((off) & 0x8) << 2) | \
+					   (((off) >>  4) << 8) | \
+					   _PAGE_FILE })
+#endif
+
+#endif
+
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
+#define __pte_to_swp_entry(pte) ((swp_entry_t) { (pte).pte_high })
+#define __swp_entry_to_pte(x)	((pte_t) { 0, (x).val })
+#else
+#define __pte_to_swp_entry(pte) ((swp_entry_t) { pte_val(pte) })
+#define __swp_entry_to_pte(x)	((pte_t) { (x).val })
+#endif
 
 #endif /* _ASM_PGTABLE_32_H */

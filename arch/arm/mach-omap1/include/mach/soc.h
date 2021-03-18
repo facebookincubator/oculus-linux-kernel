@@ -28,10 +28,6 @@
 #ifndef __ASM_ARCH_OMAP_CPU_H
 #define __ASM_ARCH_OMAP_CPU_H
 
-#include <asm/irq.h>
-#include <mach/hardware.h>
-#include <mach/irqs.h>
-
 #ifndef __ASSEMBLY__
 
 #include <linux/bitops.h>

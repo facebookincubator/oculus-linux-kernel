@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include <linux/clk.h>
 #include <linux/bitmap.h>
 #include <linux/of.h>
+#include <linux/of_coresight.h>
 #include <linux/coresight.h>
 
 #include "coresight-priv.h"
@@ -215,7 +216,6 @@ struct dsb_dataset {
 	uint32_t		patt_val[TPDM_DSB_MAX_PATT];
 	uint32_t		patt_mask[TPDM_DSB_MAX_PATT];
 	bool			patt_ts;
-	bool			patt_type;
 	uint32_t		trig_patt_val[TPDM_DSB_MAX_PATT];
 	uint32_t		trig_patt_mask[TPDM_DSB_MAX_PATT];
 	bool			trig_ts;
@@ -470,15 +470,10 @@ static void __tpdm_enable_dsb(struct tpdm_drvdata *drvdata)
 			    TPDM_DSB_CA_SELECT(i));
 
 	val = tpdm_readl(drvdata, TPDM_DSB_TIER);
-	if (drvdata->dsb->patt_ts == true) {
+	if (drvdata->dsb->patt_ts == true)
 		val = val | BIT(0);
-		if (drvdata->dsb->patt_type == true)
-			val = val | BIT(2);
-		else
-			val = val & ~BIT(2);
-	} else {
+	else
 		val = val & ~BIT(0);
-	}
 	if (drvdata->dsb->trig_ts == true)
 		val = val | BIT(1);
 	else
@@ -732,8 +727,8 @@ static ssize_t tpdm_show_enable_datasets(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	ssize_t size;
 
-	size = scnprintf(buf, PAGE_SIZE, "%*pb\n", TPDM_DATASETS,
-			 drvdata->enable_ds);
+	size = bitmap_scnprintf(buf, PAGE_SIZE, drvdata->enable_ds,
+				TPDM_DATASETS);
 
 	if (PAGE_SIZE - size < 2)
 		size = -EINVAL;
@@ -2798,41 +2793,6 @@ static ssize_t tpdm_store_dsb_patt_ts(struct device *dev,
 static DEVICE_ATTR(dsb_patt_ts, S_IRUGO | S_IWUSR,
 		   tpdm_show_dsb_patt_ts, tpdm_store_dsb_patt_ts);
 
-static ssize_t tpdm_show_dsb_patt_type(struct device *dev,
-				       struct device_attribute *attr, char *buf)
-{
-	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
-
-	if (!test_bit(TPDM_DS_DSB, drvdata->datasets))
-		return -EPERM;
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n",
-			 (unsigned)drvdata->dsb->patt_type);
-}
-
-static ssize_t tpdm_store_dsb_patt_type(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t size)
-{
-	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
-	unsigned long val;
-
-	if (kstrtoul(buf, 16, &val))
-		return -EINVAL;
-	if (!test_bit(TPDM_DS_DSB, drvdata->datasets))
-		return -EPERM;
-
-	mutex_lock(&drvdata->lock);
-	if (val)
-		drvdata->dsb->patt_type = true;
-	else
-		drvdata->dsb->patt_type = false;
-	mutex_unlock(&drvdata->lock);
-	return size;
-}
-static DEVICE_ATTR(dsb_patt_type, S_IRUGO | S_IWUSR,
-		   tpdm_show_dsb_patt_type, tpdm_store_dsb_patt_type);
-
 static ssize_t tpdm_show_dsb_trig_patt_val(struct device *dev,
 					   struct device_attribute *attr,
 					   char *buf)
@@ -3112,7 +3072,7 @@ static ssize_t tpdm_store_cmb_patt_val_lsb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3148,7 +3108,7 @@ static ssize_t tpdm_store_cmb_patt_mask_lsb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3183,7 +3143,7 @@ static ssize_t tpdm_store_cmb_patt_val_msb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3219,7 +3179,7 @@ static ssize_t tpdm_store_cmb_patt_mask_msb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3253,7 +3213,7 @@ static ssize_t tpdm_store_cmb_patt_ts(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3291,7 +3251,7 @@ static ssize_t tpdm_store_cmb_trig_patt_val_lsb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3327,7 +3287,7 @@ static ssize_t tpdm_store_cmb_trig_patt_mask_lsb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3363,7 +3323,7 @@ static ssize_t tpdm_store_cmb_trig_patt_val_msb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3399,7 +3359,7 @@ static ssize_t tpdm_store_cmb_trig_patt_mask_msb(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3434,7 +3394,7 @@ static ssize_t tpdm_store_cmb_trig_ts(struct device *dev,
 	struct tpdm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	unsigned long val;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 	if (!test_bit(TPDM_DS_CMB, drvdata->datasets))
 		return -EPERM;
@@ -3534,7 +3494,6 @@ static struct attribute *tpdm_dsb_attrs[] = {
 	&dev_attr_dsb_patt_val.attr,
 	&dev_attr_dsb_patt_mask.attr,
 	&dev_attr_dsb_patt_ts.attr,
-	&dev_attr_dsb_patt_type.attr,
 	&dev_attr_dsb_trig_patt_val.attr,
 	&dev_attr_dsb_trig_patt_mask.attr,
 	&dev_attr_dsb_trig_ts.attr,
@@ -3724,6 +3683,12 @@ static int tpdm_probe(struct platform_device *pdev)
 	drvdata->tc_counters_avail = BMVAL(devid, 4, 5) + 1;
 
 	clk_disable_unprepare(drvdata->clk);
+
+	ret = tpdm_datasets_alloc(drvdata);
+	if (ret)
+		return ret;
+
+	tpdm_init_default_data(drvdata);
 
 	drvdata->traceid = traceid++;
 

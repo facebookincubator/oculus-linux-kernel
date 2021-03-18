@@ -61,7 +61,7 @@ asmlinkage void secondary_start_kernel(void);
 struct secondary_data {
 	union {
 		unsigned long mpu_rgn_szr;
-		u64 pgdir;
+		unsigned long pgdir;
 	};
 	unsigned long swapper_pg_dir;
 	void *stack;
@@ -69,17 +69,19 @@ struct secondary_data {
 extern struct secondary_data secondary_data;
 extern volatile int pen_release;
 extern void secondary_startup(void);
-extern void secondary_startup_arm(void);
 
 extern int __cpu_disable(void);
 
 extern void __cpu_die(unsigned int cpu);
+extern void cpu_die(void);
 
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
 extern void arch_send_wakeup_ipi_mask(const struct cpumask *mask);
 
 extern int register_ipi_completion(struct completion *completion, int cpu);
+
+extern void smp_send_all_cpu_backtrace(void);
 
 struct smp_operations {
 #ifdef CONFIG_SMP
@@ -104,7 +106,6 @@ struct smp_operations {
 #ifdef CONFIG_HOTPLUG_CPU
 	int  (*cpu_kill)(unsigned int cpu);
 	void (*cpu_die)(unsigned int cpu);
-	bool  (*cpu_can_disable)(unsigned int cpu);
 	int  (*cpu_disable)(unsigned int cpu);
 #endif
 #endif
@@ -112,7 +113,7 @@ struct smp_operations {
 
 struct of_cpu_method {
 	const char *method;
-	const struct smp_operations *ops;
+	struct smp_operations *ops;
 };
 
 #define CPU_METHOD_OF_DECLARE(name, _method, _ops)			\
@@ -122,6 +123,6 @@ struct of_cpu_method {
 /*
  * set platform specific SMP operations
  */
-extern void smp_set_ops(const struct smp_operations *);
+extern void smp_set_ops(struct smp_operations *);
 
 #endif /* ifndef __ASM_ARM_SMP_H */

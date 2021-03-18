@@ -789,6 +789,7 @@ static void dl_seq_stop(struct seq_file *s, void *v)
 static int dl_seq_real_show(struct dsthash_ent *ent, u_int8_t family,
 				   struct seq_file *s)
 {
+	int res;
 	const struct xt_hashlimit_htable *ht = s->private;
 
 	spin_lock(&ent->lock);
@@ -797,32 +798,33 @@ static int dl_seq_real_show(struct dsthash_ent *ent, u_int8_t family,
 
 	switch (family) {
 	case NFPROTO_IPV4:
-		seq_printf(s, "%ld %pI4:%u->%pI4:%u %u %u %u\n",
-			   (long)(ent->expires - jiffies)/HZ,
-			   &ent->dst.ip.src,
-			   ntohs(ent->dst.src_port),
-			   &ent->dst.ip.dst,
-			   ntohs(ent->dst.dst_port),
-			   ent->rateinfo.credit, ent->rateinfo.credit_cap,
-			   ent->rateinfo.cost);
+		res = seq_printf(s, "%ld %pI4:%u->%pI4:%u %u %u %u\n",
+				 (long)(ent->expires - jiffies)/HZ,
+				 &ent->dst.ip.src,
+				 ntohs(ent->dst.src_port),
+				 &ent->dst.ip.dst,
+				 ntohs(ent->dst.dst_port),
+				 ent->rateinfo.credit, ent->rateinfo.credit_cap,
+				 ent->rateinfo.cost);
 		break;
 #if IS_ENABLED(CONFIG_IP6_NF_IPTABLES)
 	case NFPROTO_IPV6:
-		seq_printf(s, "%ld %pI6:%u->%pI6:%u %u %u %u\n",
-			   (long)(ent->expires - jiffies)/HZ,
-			   &ent->dst.ip6.src,
-			   ntohs(ent->dst.src_port),
-			   &ent->dst.ip6.dst,
-			   ntohs(ent->dst.dst_port),
-			   ent->rateinfo.credit, ent->rateinfo.credit_cap,
-			   ent->rateinfo.cost);
+		res = seq_printf(s, "%ld %pI6:%u->%pI6:%u %u %u %u\n",
+				 (long)(ent->expires - jiffies)/HZ,
+				 &ent->dst.ip6.src,
+				 ntohs(ent->dst.src_port),
+				 &ent->dst.ip6.dst,
+				 ntohs(ent->dst.dst_port),
+				 ent->rateinfo.credit, ent->rateinfo.credit_cap,
+				 ent->rateinfo.cost);
 		break;
 #endif
 	default:
 		BUG();
+		res = 0;
 	}
 	spin_unlock(&ent->lock);
-	return seq_has_overflowed(s);
+	return res;
 }
 
 static int dl_seq_show(struct seq_file *s, void *v)

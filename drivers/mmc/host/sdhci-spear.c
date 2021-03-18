@@ -4,7 +4,7 @@
  * Support of SDHCI platform devices for spear soc family
  *
  * Copyright (C) 2010 ST Microelectronics
- * Viresh Kumar <vireshk@kernel.org>
+ * Viresh Kumar <viresh.linux@gmail.com>
  *
  * Inspired by sdhci-pltfm.c
  *
@@ -26,13 +26,14 @@
 #include <linux/pm.h>
 #include <linux/slab.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/sdhci-spear.h>
 #include <linux/mmc/slot-gpio.h>
 #include <linux/io.h>
 #include "sdhci.h"
 
 struct spear_sdhci {
 	struct clk *clk;
-	int card_int_gpio;
+	struct sdhci_plat_data *data;
 };
 
 /* sdhci ops */
@@ -43,20 +44,38 @@ static const struct sdhci_ops sdhci_pltfm_ops = {
 	.set_uhs_signaling = sdhci_set_uhs_signaling,
 };
 
-static void sdhci_probe_config_dt(struct device_node *np,
-				struct spear_sdhci *host)
+#ifdef CONFIG_OF
+static struct sdhci_plat_data *sdhci_probe_config_dt(struct platform_device *pdev)
 {
+	struct device_node *np = pdev->dev.of_node;
+	struct sdhci_plat_data *pdata = NULL;
 	int cd_gpio;
 
 	cd_gpio = of_get_named_gpio(np, "cd-gpios", 0);
 	if (!gpio_is_valid(cd_gpio))
 		cd_gpio = -1;
 
-	host->card_int_gpio = cd_gpio;
+	/* If pdata is required */
+	if (cd_gpio != -1) {
+		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+		if (!pdata)
+			dev_err(&pdev->dev, "DT: kzalloc failed\n");
+		else
+			pdata->card_int_gpio = cd_gpio;
+	}
+
+	return pdata;
 }
+#else
+static struct sdhci_plat_data *sdhci_probe_config_dt(struct platform_device *pdev)
+{
+	return ERR_PTR(-ENOSYS);
+}
+#endif
 
 static int sdhci_probe(struct platform_device *pdev)
 {
+	struct device_node *np = pdev->dev.of_node;
 	struct sdhci_host *host;
 	struct resource *iomem;
 	struct spear_sdhci *sdhci;
@@ -105,18 +124,28 @@ static int sdhci_probe(struct platform_device *pdev)
 		dev_dbg(&pdev->dev, "Error setting desired clk, clk=%lu\n",
 				clk_get_rate(sdhci->clk));
 
-	sdhci_probe_config_dt(pdev->dev.of_node, sdhci);
+	if (np) {
+		sdhci->data = sdhci_probe_config_dt(pdev);
+		if (IS_ERR(sdhci->data)) {
+			dev_err(&pdev->dev, "DT: Failed to get pdata\n");
+			goto disable_clk;
+		}
+	} else {
+		sdhci->data = dev_get_platdata(&pdev->dev);
+	}
+
 	/*
 	 * It is optional to use GPIOs for sdhci card detection. If
-	 * sdhci->card_int_gpio < 0, then use original sdhci lines otherwise
+	 * sdhci->data is NULL, then use original sdhci lines otherwise
 	 * GPIO lines. We use the built-in GPIO support for this.
 	 */
-	if (sdhci->card_int_gpio >= 0) {
-		ret = mmc_gpio_request_cd(host->mmc, sdhci->card_int_gpio, 0);
+	if (sdhci->data && sdhci->data->card_int_gpio >= 0) {
+		ret = mmc_gpio_request_cd(host->mmc,
+					  sdhci->data->card_int_gpio, 0);
 		if (ret < 0) {
 			dev_dbg(&pdev->dev,
 				"failed to request card-detect gpio%d\n",
-				sdhci->card_int_gpio);
+				sdhci->data->card_int_gpio);
 			goto disable_clk;
 		}
 	}
@@ -211,5 +240,5 @@ static struct platform_driver sdhci_driver = {
 module_platform_driver(sdhci_driver);
 
 MODULE_DESCRIPTION("SPEAr Secure Digital Host Controller Interface driver");
-MODULE_AUTHOR("Viresh Kumar <vireshk@kernel.org>");
+MODULE_AUTHOR("Viresh Kumar <viresh.linux@gmail.com>");
 MODULE_LICENSE("GPL v2");

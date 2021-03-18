@@ -14,26 +14,6 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 
-/*
- * The set of flags that only affect watermark checking and reclaim
- * behaviour. This is used by the MM to obey the caller constraints
- * about IO, FS and watermark checking while ignoring placement
- * hints such as HIGHMEM usage.
- */
-#define GFP_RECLAIM_MASK (__GFP_RECLAIM|__GFP_HIGH|__GFP_IO|__GFP_FS|\
-			__GFP_NOWARN|__GFP_REPEAT|__GFP_NOFAIL|\
-			__GFP_NORETRY|__GFP_MEMALLOC|__GFP_NOMEMALLOC|\
-			__GFP_ATOMIC)
-
-/* The GFP flags allowed during early boot */
-#define GFP_BOOT_MASK (__GFP_BITS_MASK & ~(__GFP_RECLAIM|__GFP_IO|__GFP_FS))
-
-/* Control allocation cpuset and node placement constraints */
-#define GFP_CONSTRAINT_MASK (__GFP_HARDWALL|__GFP_THISNODE)
-
-/* Do not use these with a slab allocator */
-#define GFP_SLAB_BUG_MASK (__GFP_DMA32|__GFP_HIGHMEM|~__GFP_BITS_MASK)
-
 void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
 		unsigned long floor, unsigned long ceiling);
 
@@ -81,9 +61,9 @@ static inline void __get_page_tail_foll(struct page *page,
 	 * speculative page access (like in
 	 * page_cache_get_speculative()) on tail pages.
 	 */
-	VM_BUG_ON_PAGE(atomic_read(&compound_head(page)->_count) <= 0, page);
+	VM_BUG_ON_PAGE(atomic_read(&page->first_page->_count) <= 0, page);
 	if (get_page_head)
-		atomic_inc(&compound_head(page)->_count);
+		atomic_inc(&page->first_page->_count);
 	get_huge_page_tail(page);
 }
 
@@ -128,29 +108,6 @@ extern pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address);
 /*
  * in mm/page_alloc.c
  */
-
-/*
- * Structure for holding the mostly immutable allocation parameters passed
- * between functions involved in allocations, including the alloc_pages*
- * family of functions.
- *
- * nodemask, migratetype and high_zoneidx are initialized only once in
- * __alloc_pages_nodemask() and then never change.
- *
- * zonelist, preferred_zone and classzone_idx are set first in
- * __alloc_pages_nodemask() for the fast path, and might be later changed
- * in __alloc_pages_slowpath(). All other functions pass the whole strucure
- * by a const pointer.
- */
-struct alloc_context {
-	struct zonelist *zonelist;
-	nodemask_t *nodemask;
-	struct zone *preferred_zone;
-	int classzone_idx;
-	int migratetype;
-	enum zone_type high_zoneidx;
-	bool spread_dirty_pages;
-};
 
 /*
  * Locate the struct page for both the matching buddy in our
@@ -203,10 +160,13 @@ struct compact_control {
 	unsigned long nr_migratepages;	/* Number of pages to migrate */
 	unsigned long free_pfn;		/* isolate_freepages search base */
 	unsigned long migrate_pfn;	/* isolate_migratepages search base */
-	unsigned long last_migrated_pfn;/* Not yet flushed page being freed */
 	enum migrate_mode mode;		/* Async or sync migration mode */
 	bool ignore_skip_hint;		/* Scan blocks even if marked skip */
-	bool direct_compaction;		/* False from kcompactd or /proc/... */
+	bool finished_update_free;	/* True when the zone cached pfns are
+					 * no longer being updated
+					 */
+	bool finished_update_migrate;
+
 	int order;			/* order a direct compactor needs */
 	const gfp_t gfp_mask;		/* gfp mask of a direct compactor */
 	const int alloc_flags;		/* alloc flags of a direct compactor */
@@ -224,8 +184,6 @@ isolate_freepages_range(struct compact_control *cc,
 unsigned long
 isolate_migratepages_range(struct compact_control *cc,
 			   unsigned long low_pfn, unsigned long end_pfn);
-int find_suitable_fallback(struct free_area *area, unsigned int order,
-			int migratetype, bool only_stealable, bool *can_steal);
 
 #endif
 
@@ -248,13 +206,13 @@ static inline unsigned int page_order(struct page *page)
  * PageBuddy() should be checked first by the caller to minimize race window,
  * and invalid values must be handled gracefully.
  *
- * READ_ONCE is used so that if the caller assigns the result into a local
+ * ACCESS_ONCE is used so that if the caller assigns the result into a local
  * variable and e.g. tests it for valid range before using, the compiler cannot
  * decide to remove the variable and inline the page_private(page) multiple
  * times, potentially observing different values in the tests and the actual
  * use of the result.
  */
-#define page_order_unsafe(page)		READ_ONCE(page_private(page))
+#define page_order_unsafe(page)		ACCESS_ONCE(page_private(page))
 
 static inline bool is_cow_mapping(vm_flags_t flags)
 {
@@ -266,7 +224,7 @@ void __vma_link_list(struct mm_struct *mm, struct vm_area_struct *vma,
 		struct vm_area_struct *prev, struct rb_node *rb_parent);
 
 #ifdef CONFIG_MMU
-extern long populate_vma_page_range(struct vm_area_struct *vma,
+extern long __mlock_vma_pages_range(struct vm_area_struct *vma,
 		unsigned long start, unsigned long end, int *nonblocking);
 extern void munlock_vma_pages_range(struct vm_area_struct *vma,
 			unsigned long start, unsigned long end);
@@ -293,19 +251,20 @@ extern unsigned int munlock_vma_page(struct page *page);
 extern void clear_page_mlock(struct page *page);
 
 /*
- * mlock_migrate_page - called only from migrate_misplaced_transhuge_page()
- * (because that does not go through the full procedure of migration ptes):
- * to migrate the Mlocked page flag; update statistics.
+ * mlock_migrate_page - called only from migrate_page_copy() to
+ * migrate the Mlocked page flag; update statistics.
  */
 static inline void mlock_migrate_page(struct page *newpage, struct page *page)
 {
 	if (TestClearPageMlocked(page)) {
+		unsigned long flags;
 		int nr_pages = hpage_nr_pages(page);
 
-		/* Holding pmd lock, no change in irq context: __mod is safe */
+		local_irq_save(flags);
 		__mod_zone_page_state(page_zone(page), NR_MLOCK, -nr_pages);
 		SetPageMlocked(newpage);
 		__mod_zone_page_state(page_zone(newpage), NR_MLOCK, nr_pages);
+		local_irq_restore(flags);
 	}
 }
 
@@ -374,15 +333,16 @@ extern int mminit_loglevel;
 #define mminit_dprintk(level, prefix, fmt, arg...) \
 do { \
 	if (level < mminit_loglevel) { \
-		if (level <= MMINIT_WARNING) \
-			printk(KERN_WARNING "mminit::" prefix " " fmt, ##arg); \
-		else \
-			printk(KERN_DEBUG "mminit::" prefix " " fmt, ##arg); \
+		printk(level <= MMINIT_WARNING ? KERN_WARNING : KERN_DEBUG); \
+		printk(KERN_CONT "mminit::" prefix " " fmt, ##arg); \
 	} \
 } while (0)
 
 extern void mminit_verify_pageflags_layout(void);
+extern void mminit_verify_page_links(struct page *page,
+		enum zone_type zone, unsigned long nid, unsigned long pfn);
 extern void mminit_verify_zonelist(void);
+
 #else
 
 static inline void mminit_dprintk(enum mminit_level level,
@@ -391,6 +351,11 @@ static inline void mminit_dprintk(enum mminit_level level,
 }
 
 static inline void mminit_verify_pageflags_layout(void)
+{
+}
+
+static inline void mminit_verify_page_links(struct page *page,
+		enum zone_type zone, unsigned long nid, unsigned long pfn)
 {
 }
 
@@ -446,19 +411,4 @@ unsigned long reclaim_clean_pages_from_list(struct zone *zone,
 #define ALLOC_CMA		0x80 /* allow allocations from CMA areas */
 #define ALLOC_FAIR		0x100 /* fair zone allocation */
 
-enum ttu_flags;
-struct tlbflush_unmap_batch;
-
-#ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
-void try_to_unmap_flush(void);
-void try_to_unmap_flush_dirty(void);
-#else
-static inline void try_to_unmap_flush(void)
-{
-}
-static inline void try_to_unmap_flush_dirty(void)
-{
-}
-
-#endif /* CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH */
 #endif	/* __MM_INTERNAL_H */

@@ -49,6 +49,7 @@
 struct rfkill {
 	spinlock_t		lock;
 
+	const char		*name;
 	enum rfkill_type	type;
 
 	unsigned long		state;
@@ -72,7 +73,6 @@ struct rfkill {
 	struct delayed_work	poll_work;
 	struct work_struct	uevent_work;
 	struct work_struct	sync_work;
-	char			name[];
 };
 #define to_rfkill(d)	container_of(d, struct rfkill, dev)
 
@@ -341,15 +341,7 @@ static void __rfkill_switch_all(const enum rfkill_type type, bool blocked)
 {
 	struct rfkill *rfkill;
 
-	if (type == RFKILL_TYPE_ALL) {
-		int i;
-
-		for (i = 0; i < NUM_RFKILL_TYPES; i++)
-			rfkill_global_states[i].cur = blocked;
-	} else {
-		rfkill_global_states[type].cur = blocked;
-	}
-
+	rfkill_global_states[type].cur = blocked;
 	list_for_each_entry(rfkill, &rfkill_list, node) {
 		if (rfkill->type != type && type != RFKILL_TYPE_ALL)
 			continue;
@@ -790,6 +782,7 @@ void rfkill_pause_polling(struct rfkill *rfkill)
 }
 EXPORT_SYMBOL(rfkill_pause_polling);
 
+#ifdef CONFIG_RFKILL_PM
 void rfkill_resume_polling(struct rfkill *rfkill)
 {
 	BUG_ON(!rfkill);
@@ -802,8 +795,7 @@ void rfkill_resume_polling(struct rfkill *rfkill)
 }
 EXPORT_SYMBOL(rfkill_resume_polling);
 
-#ifdef CONFIG_RFKILL_PM
-static int rfkill_suspend(struct device *dev)
+static int rfkill_suspend(struct device *dev, pm_message_t state)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
 
@@ -826,11 +818,6 @@ static int rfkill_resume(struct device *dev)
 
 	return 0;
 }
-
-static SIMPLE_DEV_PM_OPS(rfkill_pm_ops, rfkill_suspend, rfkill_resume);
-#define RFKILL_PM_OPS (&rfkill_pm_ops)
-#else
-#define RFKILL_PM_OPS NULL
 #endif
 
 static struct class rfkill_class = {
@@ -839,7 +826,8 @@ static struct class rfkill_class = {
 	.dev_groups	= rfkill_dev_groups,
 	.dev_uevent	= rfkill_dev_uevent,
 #ifdef CONFIG_RFKILL_PM
-	.pm		= RFKILL_PM_OPS,
+	.suspend	= rfkill_suspend,
+	.resume		= rfkill_resume,
 #endif
 };
 
@@ -878,14 +866,14 @@ struct rfkill * __must_check rfkill_alloc(const char *name,
 	if (WARN_ON(type == RFKILL_TYPE_ALL || type >= NUM_RFKILL_TYPES))
 		return NULL;
 
-	rfkill = kzalloc(sizeof(*rfkill) + strlen(name) + 1, GFP_KERNEL);
+	rfkill = kzalloc(sizeof(*rfkill), GFP_KERNEL);
 	if (!rfkill)
 		return NULL;
 
 	spin_lock_init(&rfkill->lock);
 	INIT_LIST_HEAD(&rfkill->node);
 	rfkill->type = type;
-	strcpy(rfkill->name, name);
+	rfkill->name = name;
 	rfkill->ops = ops;
 	rfkill->data = ops_data;
 

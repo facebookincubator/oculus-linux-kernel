@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -392,7 +392,7 @@ static int msm_rpmrbcpr_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id rpmrbcpr_stats_table[] = {
+static struct of_device_id rpmrbcpr_stats_table[] = {
 	{.compatible = "qcom,rpmrbcpr-stats"},
 	{},
 };

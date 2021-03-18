@@ -785,8 +785,8 @@ static void solos_bh(unsigned long card_arg)
 				skb = card->rx_skb[port];
 				card->rx_skb[port] = NULL;
 
-				dma_unmap_single(&card->dev->dev, SKB_CB(skb)->dma_addr,
-						 RX_DMA_SIZE, DMA_FROM_DEVICE);
+				pci_unmap_single(card->dev, SKB_CB(skb)->dma_addr,
+						 RX_DMA_SIZE, PCI_DMA_FROMDEVICE);
 
 				header = (void *)skb->data;
 				size = le16_to_cpu(header->size);
@@ -805,12 +805,7 @@ static void solos_bh(unsigned long card_arg)
 					continue;
 				}
 
-				/* Use netdev_alloc_skb() because it adds NET_SKB_PAD of
-				 * headroom, and ensures we can route packets back out an
-				 * Ethernet interface (for example) without having to
-				 * reallocate. Adding NET_IP_ALIGN also ensures that both
-				 * PPPoATM and PPPoEoBR2684 packets end up aligned. */
-				skb = netdev_alloc_skb_ip_align(NULL, size + 1);
+				skb = alloc_skb(size + 1, GFP_ATOMIC);
 				if (!skb) {
 					if (net_ratelimit())
 						dev_warn(&card->dev->dev, "Failed to allocate sk_buff for RX\n");
@@ -874,14 +869,11 @@ static void solos_bh(unsigned long card_arg)
 		/* Allocate RX skbs for any ports which need them */
 		if (card->using_dma && card->atmdev[port] &&
 		    !card->rx_skb[port]) {
-			/* Unlike the MMIO case (qv) we can't add NET_IP_ALIGN
-			 * here; the FPGA can only DMA to addresses which are
-			 * aligned to 4 bytes. */
-			struct sk_buff *skb = dev_alloc_skb(RX_DMA_SIZE);
+			struct sk_buff *skb = alloc_skb(RX_DMA_SIZE, GFP_ATOMIC);
 			if (skb) {
 				SKB_CB(skb)->dma_addr =
-					dma_map_single(&card->dev->dev, skb->data,
-						       RX_DMA_SIZE, DMA_FROM_DEVICE);
+					pci_map_single(card->dev, skb->data,
+						       RX_DMA_SIZE, PCI_DMA_FROMDEVICE);
 				iowrite32(SKB_CB(skb)->dma_addr,
 					  card->config_regs + RX_DMA_ADDR(port));
 				card->rx_skb[port] = skb;
@@ -1077,8 +1069,8 @@ static uint32_t fpga_tx(struct solos_card *card)
 		if (tx_pending & 1) {
 			struct sk_buff *oldskb = card->tx_skb[port];
 			if (oldskb) {
-				dma_unmap_single(&card->dev->dev, SKB_CB(oldskb)->dma_addr,
-						 oldskb->len, DMA_TO_DEVICE);
+				pci_unmap_single(card->dev, SKB_CB(oldskb)->dma_addr,
+						 oldskb->len, PCI_DMA_TODEVICE);
 				card->tx_skb[port] = NULL;
 			}
 			spin_lock(&card->tx_queue_lock);
@@ -1097,8 +1089,8 @@ static uint32_t fpga_tx(struct solos_card *card)
 					data = card->dma_bounce + (BUF_SIZE * port);
 					memcpy(data, skb->data, skb->len);
 				}
-				SKB_CB(skb)->dma_addr = dma_map_single(&card->dev->dev, data,
-								       skb->len, DMA_TO_DEVICE);
+				SKB_CB(skb)->dma_addr = pci_map_single(card->dev, data,
+								       skb->len, PCI_DMA_TODEVICE);
 				card->tx_skb[port] = skb;
 				iowrite32(SKB_CB(skb)->dma_addr,
 					  card->config_regs + TX_DMA_ADDR(port));
@@ -1218,7 +1210,7 @@ static int fpga_probe(struct pci_dev *dev, const struct pci_device_id *id)
 		goto out;
 	}
 
-	err = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(32));
+	err = pci_set_dma_mask(dev, DMA_BIT_MASK(32));
 	if (err) {
 		dev_warn(&dev->dev, "Failed to set 32-bit DMA mask\n");
 		goto out;
@@ -1419,14 +1411,14 @@ static void atm_remove(struct solos_card *card)
 
 			skb = card->rx_skb[i];
 			if (skb) {
-				dma_unmap_single(&card->dev->dev, SKB_CB(skb)->dma_addr,
-						 RX_DMA_SIZE, DMA_FROM_DEVICE);
+				pci_unmap_single(card->dev, SKB_CB(skb)->dma_addr,
+						 RX_DMA_SIZE, PCI_DMA_FROMDEVICE);
 				dev_kfree_skb(skb);
 			}
 			skb = card->tx_skb[i];
 			if (skb) {
-				dma_unmap_single(&card->dev->dev, SKB_CB(skb)->dma_addr,
-						 skb->len, DMA_TO_DEVICE);
+				pci_unmap_single(card->dev, SKB_CB(skb)->dma_addr,
+						 skb->len, PCI_DMA_TODEVICE);
 				dev_kfree_skb(skb);
 			}
 			while ((skb = skb_dequeue(&card->tx_queue[i])))

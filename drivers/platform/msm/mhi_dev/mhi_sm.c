@@ -663,7 +663,7 @@ exit:
 			mhi_sm_mstate_str(MHI_DEV_SYSERR_STATE));
 
 	MHI_SM_ERR("/n/n/nASSERT ON DEVICE !!!!/n/n/n");
-	WARN_ON();
+	BUG();
 
 	MHI_SM_FUNC_EXIT();
 	return res;

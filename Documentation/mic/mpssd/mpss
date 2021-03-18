@@ -35,7 +35,6 @@
 
 exec=/usr/sbin/mpssd
 sysfs="/sys/class/mic"
-mic_modules="mic_host mic_x100_dma scif"
 
 start()
 {
@@ -49,15 +48,18 @@ start()
 	fi
 
 	echo -e $"Starting MPSS Stack"
-	echo -e $"Loading MIC drivers:" $mic_modules
+	echo -e $"Loading MIC_X100_DMA & MIC_HOST Modules"
 
-	modprobe -a $mic_modules
-	RETVAL=$?
-	if [ $RETVAL -ne 0 ]; then
-		failure
-		echo
-		return $RETVAL
-	fi
+	for f in "mic_host" "mic_x100_dma"
+	do
+		modprobe $f
+		RETVAL=$?
+		if [ $RETVAL -ne 0 ]; then
+			failure
+			echo
+			return $RETVAL
+		fi
+	done
 
 	# Start the daemon
 	echo -n $"Starting MPSSD "
@@ -119,10 +121,10 @@ stop()
 	# Wait for the cards to go offline
 	for f in $sysfs/*
 	do
-		while [ "`cat $f/state`" != "ready" ]
+		while [ "`cat $f/state`" != "offline" ]
 		do
 			sleep 1
-			echo -e "Waiting for "`basename $f`" to become ready"
+			echo -e "Waiting for "`basename $f`" to go offline"
 		done
 	done
 
@@ -168,8 +170,8 @@ unload()
 	stop
 
 	sleep 5
-	echo -n $"Removing MIC drivers:" $mic_modules
-	modprobe -r $mic_modules
+	echo -n $"Removing MIC_HOST & MIC_X100_DMA Modules: "
+	modprobe -r mic_host mic_x100_dma
 	RETVAL=$?
 	[ $RETVAL -ne 0 ] && failure || success
 	echo

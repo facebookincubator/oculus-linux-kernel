@@ -18,13 +18,6 @@
 
 #ifdef __KERNEL__
 
-#include <linux/errno.h>
-#include <linux/types.h>
-#include <asm/brk-imm.h>
-#include <asm/esr.h>
-#include <asm/insn.h>
-#include <asm/ptrace.h>
-
 /* Low-level stepping controls. */
 #define DBG_MDSCR_SS		(1 << 0)
 #define DBG_SPSR_SS		(1 << 21)
@@ -45,7 +38,23 @@
 /*
  * Break point instruction encoding
  */
-#define BREAK_INSTR_SIZE		AARCH64_INSN_SIZE
+#define BREAK_INSTR_SIZE		4
+
+/*
+ * ESR values expected for dynamic and compile time BRK instruction
+ */
+#define ESR_ELx_VAL_BRK64(imm)	(0xf2000000 | ((imm) & 0xfffff))
+
+/*
+ * #imm16 values used for BRK instruction generation
+ * Allowed values for kgbd are 0x400 - 0x7ff
+ * 0x100: for triggering a fault on purpose (reserved)
+ * 0x400: for dynamic BRK instruction
+ * 0x401: for compile time BRK instruction
+ */
+#define FAULT_BRK_IMM			0x100
+#define KGDB_DYN_DBG_BRK_IMM		0x400
+#define KGDB_COMPILED_DBG_BRK_IMM	0x401
 
 /*
  * BRK instruction encoding
@@ -103,13 +112,13 @@ void unregister_break_hook(struct break_hook *hook);
 
 u8 debug_monitors_arch(void);
 
-enum dbg_active_el {
+enum debug_el {
 	DBG_ACTIVE_EL0 = 0,
 	DBG_ACTIVE_EL1,
 };
 
-void enable_debug_monitors(enum dbg_active_el el);
-void disable_debug_monitors(enum dbg_active_el el);
+void enable_debug_monitors(enum debug_el el);
+void disable_debug_monitors(enum debug_el el);
 
 void user_rewind_single_step(struct task_struct *task);
 void user_fastforward_single_step(struct task_struct *task);

@@ -27,11 +27,11 @@
 #include <linux/mfd/samsung/irq.h>
 #include <linux/mfd/samsung/s2mpa01.h>
 #include <linux/mfd/samsung/s2mps11.h>
-#include <linux/mfd/samsung/s2mps13.h>
 #include <linux/mfd/samsung/s2mps14.h>
 #include <linux/mfd/samsung/s2mpu02.h>
 #include <linux/mfd/samsung/s5m8763.h>
 #include <linux/mfd/samsung/s5m8767.h>
+#include <linux/regulator/machine.h>
 #include <linux/regmap.h>
 
 static const struct mfd_cell s5m8751_devs[] = {
@@ -69,20 +69,9 @@ static const struct mfd_cell s2mps11_devs[] = {
 	{
 		.name = "s2mps11-pmic",
 	}, {
-		.name = "s2mps14-rtc",
-	}, {
 		.name = "s2mps11-clk",
 		.of_compatible = "samsung,s2mps11-clk",
 	}
-};
-
-static const struct mfd_cell s2mps13_devs[] = {
-	{ .name = "s2mps13-pmic", },
-	{ .name = "s2mps13-rtc", },
-	{
-		.name = "s2mps13-clk",
-		.of_compatible = "samsung,s2mps13-clk",
-	},
 };
 
 static const struct mfd_cell s2mps14_devs[] = {
@@ -103,9 +92,12 @@ static const struct mfd_cell s2mpa01_devs[] = {
 };
 
 static const struct mfd_cell s2mpu02_devs[] = {
+	{ .name = "s2mpu02-pmic", },
+	{ .name = "s2mpu02-rtc", },
 	{
-		.name = "s2mpu02-pmic",
-	},
+		.name = "s2mpu02-clk",
+		.of_compatible = "samsung,s2mpu02-clk",
+	}
 };
 
 #ifdef CONFIG_OF
@@ -115,9 +107,6 @@ static const struct of_device_id sec_dt_match[] = {
 	}, {
 		.compatible = "samsung,s2mps11-pmic",
 		.data = (void *)S2MPS11X,
-	}, {
-		.compatible = "samsung,s2mps13-pmic",
-		.data = (void *)S2MPS13X,
 	}, {
 		.compatible = "samsung,s2mps14-pmic",
 		.data = (void *)S2MPS14X,
@@ -205,15 +194,6 @@ static const struct regmap_config s2mps11_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct regmap_config s2mps13_regmap_config = {
-	.reg_bits = 8,
-	.val_bits = 8,
-
-	.max_register = S2MPS13_REG_LDODSCH5,
-	.volatile_reg = s2mps11_volatile,
-	.cache_type = REGCACHE_FLAT,
-};
-
 static const struct regmap_config s2mps14_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
@@ -250,38 +230,6 @@ static const struct regmap_config s5m8767_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static void sec_pmic_dump_rev(struct sec_pmic_dev *sec_pmic)
-{
-	unsigned int val;
-
-	/* For each device type, the REG_ID is always the first register */
-	if (!regmap_read(sec_pmic->regmap_pmic, S2MPS11_REG_ID, &val))
-		dev_dbg(sec_pmic->dev, "Revision: 0x%x\n", val);
-}
-
-static void sec_pmic_configure(struct sec_pmic_dev *sec_pmic)
-{
-	int err;
-
-	if (sec_pmic->device_type != S2MPS13X)
-		return;
-
-	if (sec_pmic->pdata->disable_wrstbi) {
-		/*
-		 * If WRSTBI pin is pulled down this feature must be disabled
-		 * because each Suspend to RAM will trigger buck voltage reset
-		 * to default values.
-		 */
-		err = regmap_update_bits(sec_pmic->regmap_pmic,
-					 S2MPS13_REG_WRSTBI,
-					 S2MPS13_REG_WRSTBI_MASK, 0x0);
-		if (err)
-			dev_warn(sec_pmic->dev,
-				 "Cannot initialize WRSTBI config: %d\n",
-				 err);
-	}
-}
-
 #ifdef CONFIG_OF
 /*
  * Only the common platform data elements for s5m8767 are parsed here from the
@@ -298,8 +246,10 @@ static struct sec_platform_data *sec_pmic_i2c_parse_dt_pdata(
 	struct sec_platform_data *pd;
 
 	pd = devm_kzalloc(dev, sizeof(*pd), GFP_KERNEL);
-	if (!pd)
+	if (!pd) {
+		dev_err(dev, "could not allocate memory for pdata\n");
 		return ERR_PTR(-ENOMEM);
+	}
 
 	/*
 	 * ToDo: the 'wakeup' member in the platform data is more of a linux
@@ -307,10 +257,6 @@ static struct sec_platform_data *sec_pmic_i2c_parse_dt_pdata(
 	 * not parsed here.
 	 */
 
-	pd->manual_poweroff = of_property_read_bool(dev->of_node,
-						"samsung,s2mps11-acokb-ground");
-	pd->disable_wrstbi = of_property_read_bool(dev->of_node,
-						"samsung,s2mps11-wrstbi-ground");
 	return pd;
 }
 #else
@@ -366,6 +312,7 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 	}
 	if (pdata) {
 		sec_pmic->device_type = pdata->device_type;
+		sec_pmic->ono = pdata->ono;
 		sec_pmic->irq_base = pdata->irq_base;
 		sec_pmic->wakeup = pdata->wakeup;
 		sec_pmic->pdata = pdata;
@@ -377,9 +324,6 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 		break;
 	case S2MPS11X:
 		regmap = &s2mps11_regmap_config;
-		break;
-	case S2MPS13X:
-		regmap = &s2mps13_regmap_config;
 		break;
 	case S2MPS14X:
 		regmap = &s2mps14_regmap_config;
@@ -434,10 +378,6 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 		sec_devs = s2mps11_devs;
 		num_sec_devs = ARRAY_SIZE(s2mps11_devs);
 		break;
-	case S2MPS13X:
-		sec_devs = s2mps13_devs;
-		num_sec_devs = ARRAY_SIZE(s2mps13_devs);
-		break;
 	case S2MPS14X:
 		sec_devs = s2mps14_devs;
 		num_sec_devs = ARRAY_SIZE(s2mps14_devs);
@@ -456,8 +396,6 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 		goto err_mfd;
 
 	device_init_wakeup(sec_pmic->dev, sec_pmic->wakeup);
-	sec_pmic_configure(sec_pmic);
-	sec_pmic_dump_rev(sec_pmic);
 
 	return ret;
 
@@ -473,33 +411,6 @@ static int sec_pmic_remove(struct i2c_client *i2c)
 	mfd_remove_devices(sec_pmic->dev);
 	sec_irq_exit(sec_pmic);
 	return 0;
-}
-
-static void sec_pmic_shutdown(struct i2c_client *i2c)
-{
-	struct sec_pmic_dev *sec_pmic = i2c_get_clientdata(i2c);
-	unsigned int reg, mask;
-
-	if (!sec_pmic->pdata->manual_poweroff)
-		return;
-
-	switch (sec_pmic->device_type) {
-	case S2MPS11X:
-		reg = S2MPS11_REG_CTRL1;
-		mask = S2MPS11_CTRL1_PWRHOLD_MASK;
-		break;
-	default:
-		/*
-		 * Currently only one board with S2MPS11 needs this, so just
-		 * ignore the rest.
-		 */
-		dev_warn(sec_pmic->dev,
-			"Unsupported device %lu for manual power off\n",
-			sec_pmic->device_type);
-		return;
-	}
-
-	regmap_update_bits(sec_pmic->regmap_pmic, reg, mask, 0);
 }
 
 #ifdef CONFIG_PM_SLEEP
@@ -520,6 +431,15 @@ static int sec_pmic_suspend(struct device *dev)
 	 * suspended) and RTC Alarm interrupt is disabled.
 	 */
 	disable_irq(sec_pmic->irq);
+
+	switch (sec_pmic->device_type) {
+	case S2MPS14X:
+	case S2MPU02:
+		regulator_suspend_prepare(PM_SUSPEND_MEM);
+		break;
+	default:
+		break;
+	}
 
 	return 0;
 }
@@ -548,12 +468,12 @@ MODULE_DEVICE_TABLE(i2c, sec_pmic_id);
 static struct i2c_driver sec_pmic_driver = {
 	.driver = {
 		   .name = "sec_pmic",
+		   .owner = THIS_MODULE,
 		   .pm = &sec_pmic_pm_ops,
 		   .of_match_table = of_match_ptr(sec_dt_match),
 	},
 	.probe = sec_pmic_probe,
 	.remove = sec_pmic_remove,
-	.shutdown = sec_pmic_shutdown,
 	.id_table = sec_pmic_id,
 };
 

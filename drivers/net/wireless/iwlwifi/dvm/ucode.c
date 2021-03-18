@@ -3,7 +3,6 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2008 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2015 Intel Deutschland GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -268,7 +267,7 @@ static int iwl_alive_notify(struct iwl_priv *priv)
 	for (i = 0; i < n_queues; i++)
 		if (queue_to_txf[i] != IWL_TX_FIFO_UNUSED)
 			iwl_trans_ac_txq_enable(priv->trans, i,
-						queue_to_txf[i], 0);
+						queue_to_txf[i]);
 
 	priv->passive_no_rx = false;
 	priv->transport_queue_stop = 0;
@@ -328,7 +327,7 @@ int iwl_load_ucode_wait_alive(struct iwl_priv *priv,
 	const struct fw_img *fw;
 	int ret;
 	enum iwl_ucode_type old_type;
-	static const u16 alive_cmd[] = { REPLY_ALIVE };
+	static const u8 alive_cmd[] = { REPLY_ALIVE };
 
 	fw = iwl_get_ucode_image(priv, ucode_type);
 	if (WARN_ON(!fw))
@@ -407,7 +406,7 @@ static bool iwlagn_wait_calib(struct iwl_notif_wait_data *notif_wait,
 int iwl_run_init_ucode(struct iwl_priv *priv)
 {
 	struct iwl_notification_wait calib_wait;
-	static const u16 calib_complete[] = {
+	static const u8 calib_complete[] = {
 		CALIBRATION_RES_NOTIFICATION,
 		CALIBRATION_COMPLETE_NOTIFICATION
 	};

@@ -96,8 +96,7 @@ static void mon_submit(struct usb_bus *ubus, struct urb *urb)
 {
 	struct mon_bus *mbus;
 
-	mbus = ubus->mon_bus;
-	if (mbus != NULL)
+	if ((mbus = ubus->mon_bus) != NULL)
 		mon_bus_submit(mbus, urb);
 	mon_bus_submit(&mon_bus0, urb);
 }
@@ -123,8 +122,7 @@ static void mon_submit_error(struct usb_bus *ubus, struct urb *urb, int error)
 {
 	struct mon_bus *mbus;
 
-	mbus = ubus->mon_bus;
-	if (mbus != NULL)
+	if ((mbus = ubus->mon_bus) != NULL)
 		mon_bus_submit_error(mbus, urb, error);
 	mon_bus_submit_error(&mon_bus0, urb, error);
 }
@@ -150,8 +148,7 @@ static void mon_complete(struct usb_bus *ubus, struct urb *urb, int status)
 {
 	struct mon_bus *mbus;
 
-	mbus = ubus->mon_bus;
-	if (mbus != NULL)
+	if ((mbus = ubus->mon_bus) != NULL)
 		mon_bus_complete(mbus, urb, status);
 	mon_bus_complete(&mon_bus0, urb, status);
 }
@@ -283,8 +280,7 @@ static void mon_bus_init(struct usb_bus *ubus)
 {
 	struct mon_bus *mbus;
 
-	mbus = kzalloc(sizeof(struct mon_bus), GFP_KERNEL);
-	if (mbus == NULL)
+	if ((mbus = kzalloc(sizeof(struct mon_bus), GFP_KERNEL)) == NULL)
 		goto err_alloc;
 	kref_init(&mbus->ref);
 	spin_lock_init(&mbus->lock);

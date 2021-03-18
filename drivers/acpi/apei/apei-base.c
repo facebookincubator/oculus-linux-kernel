@@ -24,6 +24,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/kernel.h>
@@ -445,7 +449,7 @@ int apei_resources_sub(struct apei_resources *resources1,
 }
 EXPORT_SYMBOL_GPL(apei_resources_sub);
 
-static int apei_get_res_callback(__u64 start, __u64 size, void *data)
+static int apei_get_nvs_callback(__u64 start, __u64 size, void *data)
 {
 	struct apei_resources *resources = data;
 	return apei_res_add(&resources->iomem, start, size);
@@ -453,15 +457,7 @@ static int apei_get_res_callback(__u64 start, __u64 size, void *data)
 
 static int apei_get_nvs_resources(struct apei_resources *resources)
 {
-	return acpi_nvs_for_each_region(apei_get_res_callback, resources);
-}
-
-int (*arch_apei_filter_addr)(int (*func)(__u64 start, __u64 size,
-				     void *data), void *data);
-static int apei_get_arch_resources(struct apei_resources *resources)
-
-{
-	return arch_apei_filter_addr(apei_get_res_callback, resources);
+	return acpi_nvs_for_each_region(apei_get_nvs_callback, resources);
 }
 
 /*
@@ -474,7 +470,7 @@ int apei_resources_request(struct apei_resources *resources,
 {
 	struct apei_res *res, *res_bak = NULL;
 	struct resource *r;
-	struct apei_resources nvs_resources, arch_res;
+	struct apei_resources nvs_resources;
 	int rc;
 
 	rc = apei_resources_sub(resources, &apei_resources_all);
@@ -489,20 +485,10 @@ int apei_resources_request(struct apei_resources *resources,
 	apei_resources_init(&nvs_resources);
 	rc = apei_get_nvs_resources(&nvs_resources);
 	if (rc)
-		goto nvs_res_fini;
+		goto res_fini;
 	rc = apei_resources_sub(resources, &nvs_resources);
 	if (rc)
-		goto nvs_res_fini;
-
-	if (arch_apei_filter_addr) {
-		apei_resources_init(&arch_res);
-		rc = apei_get_arch_resources(&arch_res);
-		if (rc)
-			goto arch_res_fini;
-		rc = apei_resources_sub(resources, &arch_res);
-		if (rc)
-			goto arch_res_fini;
-	}
+		goto res_fini;
 
 	rc = -EINVAL;
 	list_for_each_entry(res, &resources->iomem, list) {
@@ -550,9 +536,7 @@ err_unmap_iomem:
 			break;
 		release_mem_region(res->start, res->end - res->start);
 	}
-arch_res_fini:
-	apei_resources_fini(&arch_res);
-nvs_res_fini:
+res_fini:
 	apei_resources_fini(&nvs_resources);
 	return rc;
 }

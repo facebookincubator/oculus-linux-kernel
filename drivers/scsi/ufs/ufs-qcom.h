@@ -21,7 +21,6 @@
 #define MAX_UFS_QCOM_HOSTS	1
 #define MAX_U32                 (~(u32)0)
 #define MPHY_TX_FSM_STATE       0x41
-#define MPHY_RX_FSM_STATE       0xC1
 #define TX_FSM_HIBERN8          0x1
 #define HBRN8_POLL_TOUT_MS      100
 #define DEFAULT_CLK_RATE_HZ     1000000
@@ -101,7 +100,6 @@ enum {
 #define QUNIPRO_SEL	UFS_BIT(0)
 #define TEST_BUS_EN		BIT(18)
 #define TEST_BUS_SEL		0x780000
-#define UFS_REG_TEST_BUS_EN	BIT(30)
 
 /* bit definitions for REG_UFS_CFG2 register */
 #define UAWM_HW_CGC_EN		(1 << 0)
@@ -121,17 +119,6 @@ enum {
 				 DFC_HW_CGC_EN | TRLUT_HW_CGC_EN |\
 				 TMRLUT_HW_CGC_EN | OCSC_HW_CGC_EN)
 
-/* bit definitions for UFS_AH8_CFG register */
-#define CC_UFS_HCLK_REQ_EN		BIT(1)
-#define CC_UFS_SYS_CLK_REQ_EN		BIT(2)
-#define CC_UFS_ICE_CORE_CLK_REQ_EN	BIT(3)
-#define CC_UFS_UNIPRO_CORE_CLK_REQ_EN	BIT(4)
-#define CC_UFS_AUXCLK_REQ_EN		BIT(5)
-
-#define UFS_HW_CLK_CTRL_EN	(CC_UFS_SYS_CLK_REQ_EN |\
-				 CC_UFS_ICE_CORE_CLK_REQ_EN |\
-				 CC_UFS_UNIPRO_CORE_CLK_REQ_EN |\
-				 CC_UFS_AUXCLK_REQ_EN)
 /* bit offset */
 enum {
 	OFFSET_UFS_PHY_SOFT_RESET           = 1,
@@ -160,20 +147,11 @@ enum ufs_qcom_phy_init_type {
 	 UFS_QCOM_DBG_PRINT_TEST_BUS_EN)
 
 /* QUniPro Vendor specific attributes */
-#define PA_VS_CONFIG_REG1		0x9000
-#define SAVECONFIGTIME_MODE_MASK	0x6000
-
-#define PA_VS_CLK_CFG_REG	0x9004
-#define PA_VS_CLK_CFG_REG_MASK	0x1FF
-
-#define DL_VS_CLK_CFG		0xA00B
-#define DL_VS_CLK_CFG_MASK	0x3FF
-
+#define PA_VS_CONFIG_REG1	0x9000
 #define DME_VS_CORE_CLK_CTRL	0xD002
 /* bit and mask definitions for DME_VS_CORE_CLK_CTRL attribute */
-#define DME_VS_CORE_CLK_CTRL_MAX_CORE_CLK_1US_CYCLES_MASK	0xFF
 #define DME_VS_CORE_CLK_CTRL_CORE_CLK_DIV_EN_BIT		BIT(8)
-#define DME_VS_CORE_CLK_CTRL_DME_HW_CGC_EN			BIT(9)
+#define DME_VS_CORE_CLK_CTRL_MAX_CORE_CLK_1US_CYCLES_MASK	0xFF
 
 static inline void
 ufs_qcom_get_controller_revision(struct ufs_hba *hba,
@@ -192,8 +170,8 @@ static inline void ufs_qcom_assert_reset(struct ufs_hba *hba)
 			1 << OFFSET_UFS_PHY_SOFT_RESET, REG_UFS_CFG1);
 
 	/*
-	 * Make sure assertion of ufs phy reset is written to
-	 * register before returning
+	 * make sure that this configuration is applied before
+	 * we continue
 	 */
 	mb();
 }
@@ -204,8 +182,8 @@ static inline void ufs_qcom_deassert_reset(struct ufs_hba *hba)
 			0 << OFFSET_UFS_PHY_SOFT_RESET, REG_UFS_CFG1);
 
 	/*
-	 * Make sure de-assertion of ufs phy reset is written to
-	 * register before returning
+	 * make sure that this configuration is applied before
+	 * we continue
 	 */
 	mb();
 }
@@ -331,17 +309,6 @@ struct ufs_qcom_host {
 	 * configuration even after UFS controller core power collapse.
 	 */
 	#define UFS_QCOM_CAP_RETAIN_SEC_CFG_AFTER_PWR_COLLAPSE	UFS_BIT(1)
-
-	/*
-	 * Set this capability if host controller supports Qunipro internal
-	 * clock gating.
-	 */
-	#define UFS_QCOM_CAP_QUNIPRO_CLK_GATING		UFS_BIT(2)
-
-	/*
-	 * Set this capability if host controller supports SVS2 frequencies.
-	 */
-	#define UFS_QCOM_CAP_SVS2	UFS_BIT(3)
 	u32 caps;
 
 	struct phy *generic_phy;
@@ -371,10 +338,8 @@ struct ufs_qcom_host {
 	u32 dbg_print_en;
 	struct ufs_qcom_testbus testbus;
 
-	spinlock_t ice_work_lock;
 	struct work_struct ice_cfg_work;
 	struct request *req_pending;
-	struct ufs_vreg *vddp_ref_clk;
 };
 
 static inline u32
@@ -403,16 +368,6 @@ static inline bool ufs_qcom_cap_qunipro(struct ufs_qcom_host *host)
 		return true;
 	else
 		return false;
-}
-
-static inline bool ufs_qcom_cap_qunipro_clk_gating(struct ufs_qcom_host *host)
-{
-	return !!(host->caps & UFS_QCOM_CAP_QUNIPRO_CLK_GATING);
-}
-
-static inline bool ufs_qcom_cap_svs2(struct ufs_qcom_host *host)
-{
-	return !!(host->caps & UFS_QCOM_CAP_SVS2);
 }
 
 #endif /* UFS_QCOM_H_ */

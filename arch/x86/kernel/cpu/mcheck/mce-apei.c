@@ -57,6 +57,7 @@ void apei_mce_report_mem_error(int severity, struct cper_sec_mem_err *mem_err)
 
 	m.addr = mem_err->physical_addr;
 	mce_log(&m);
+	mce_notify_irq();
 }
 EXPORT_SYMBOL_GPL(apei_mce_report_mem_error);
 

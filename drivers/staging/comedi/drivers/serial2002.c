@@ -1,29 +1,30 @@
 /*
- * serial2002.c
- * Comedi driver for serial connected hardware
- *
- * COMEDI - Linux Control and Measurement Device Interface
- * Copyright (C) 2002 Anders Blomdell <anders.blomdell@control.lth.se>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- */
+    comedi/drivers/serial2002.c
+    Skeleton code for a Comedi driver
+
+    COMEDI - Linux Control and Measurement Device Interface
+    Copyright (C) 2002 Anders Blomdell <anders.blomdell@control.lth.se>
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+*/
 
 /*
- * Driver: serial2002
- * Description: Driver for serial connected hardware
- * Devices:
- * Author: Anders Blomdell
- * Updated: Fri,  7 Jun 2002 12:56:45 -0700
- * Status: in development
- */
+Driver: serial2002
+Description: Driver for serial connected hardware
+Devices:
+Author: Anders Blomdell
+Updated: Fri,  7 Jun 2002 12:56:45 -0700
+Status: in development
+
+*/
 
 #include <linux/module.h>
 #include "../comedidev.h"
@@ -31,7 +32,6 @@
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/ktime.h>
 
 #include <linux/termios.h>
 #include <asm/ioctls.h>
@@ -39,12 +39,14 @@
 #include <linux/poll.h>
 
 struct serial2002_range_table_t {
+
 	/*  HACK... */
 	int length;
 	struct comedi_krange range;
 };
 
 struct serial2002_private {
+
 	int port;		/*  /dev/ttyS<port> */
 	int speed;		/*  baudrate */
 	struct file *tty;
@@ -101,29 +103,37 @@ static long serial2002_tty_ioctl(struct file *f, unsigned op,
 	if (f->f_op->unlocked_ioctl)
 		return f->f_op->unlocked_ioctl(f, op, param);
 
-	return -ENOTTY;
+	return -ENOSYS;
 }
 
 static int serial2002_tty_write(struct file *f, unsigned char *buf, int count)
 {
 	const char __user *p = (__force const char __user *)buf;
 	int result;
-	loff_t offset = 0;
 	mm_segment_t oldfs;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-	result = __vfs_write(f, p, count, &offset);
+	f->f_pos = 0;
+	result = f->f_op->write(f, p, count, &f->f_pos);
 	set_fs(oldfs);
 	return result;
+}
+
+static int serial2002_tty_readb(struct file *f, unsigned char *buf)
+{
+	char __user *p = (__force char __user *)buf;
+
+	f->f_pos = 0;
+	return f->f_op->read(f, p, 1, &f->f_pos);
 }
 
 static void serial2002_tty_read_poll_wait(struct file *f, int timeout)
 {
 	struct poll_wqueues table;
-	ktime_t start, now;
+	struct timeval start, now;
 
-	start = ktime_get();
+	do_gettimeofday(&start);
 	poll_initwait(&table);
 	while (1) {
 		long elapsed;
@@ -134,8 +144,9 @@ static void serial2002_tty_read_poll_wait(struct file *f, int timeout)
 			    POLLHUP | POLLERR)) {
 			break;
 		}
-		now = ktime_get();
-		elapsed = ktime_us_delta(now, start);
+		do_gettimeofday(&now);
+		elapsed = (1000000 * (now.tv_sec - start.tv_sec) +
+			  now.tv_usec - start.tv_usec);
 		if (elapsed > timeout)
 			break;
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -152,15 +163,13 @@ static int serial2002_tty_read(struct file *f, int timeout)
 	result = -1;
 	if (!IS_ERR(f)) {
 		mm_segment_t oldfs;
-		char __user *p = (__force char __user *)&ch;
-		loff_t offset = 0;
 
 		oldfs = get_fs();
 		set_fs(KERNEL_DS);
 		if (f->f_op->poll) {
 			serial2002_tty_read_poll_wait(f, timeout);
 
-			if (__vfs_read(f, p, 1, &offset) == 1)
+			if (serial2002_tty_readb(f, &ch) == 1)
 				result = ch;
 		} else {
 			/* Device does not support poll, busy wait */
@@ -171,11 +180,11 @@ static int serial2002_tty_read(struct file *f, int timeout)
 				if (retries >= timeout)
 					break;
 
-				if (__vfs_read(f, p, 1, &offset) == 1) {
+				if (serial2002_tty_readb(f, &ch) == 1) {
 					result = ch;
 					break;
 				}
-				usleep_range(100, 1000);
+				udelay(100);
 			}
 		}
 		set_fs(oldfs);
@@ -291,6 +300,7 @@ static struct serial_data serial2002_read(struct file *f, int timeout)
 		}
 	}
 	return result;
+
 }
 
 static void serial2002_write(struct file *f, struct serial_data data)
@@ -372,7 +382,7 @@ static int serial2002_setup_subdevice(struct comedi_subdevice *s,
 		if (cfg[j].kind == kind) {
 			if (mapping)
 				mapping[chan] = j;
-			if (range && range_table_list) {
+			if (range) {
 				range[j].length = 1;
 				range[j].range.min = cfg[j].min;
 				range[j].range.max = cfg[j].max;
@@ -732,7 +742,7 @@ static int serial2002_attach(struct comedi_device *dev,
 	/* digital output subdevice */
 	s = &dev->subdevices[1];
 	s->type		= COMEDI_SUBD_DO;
-	s->subdev_flags	= SDF_WRITABLE;
+	s->subdev_flags	= SDF_WRITEABLE;
 	s->n_chan	= 0;
 	s->maxdata	= 1;
 	s->range_table	= &range_digital;
@@ -750,7 +760,7 @@ static int serial2002_attach(struct comedi_device *dev,
 	/* analog output subdevice */
 	s = &dev->subdevices[3];
 	s->type		= COMEDI_SUBD_AO;
-	s->subdev_flags	= SDF_WRITABLE;
+	s->subdev_flags	= SDF_WRITEABLE;
 	s->n_chan	= 0;
 	s->maxdata	= 1;
 	s->range_table	= NULL;

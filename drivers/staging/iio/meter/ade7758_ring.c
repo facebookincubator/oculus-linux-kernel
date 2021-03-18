@@ -118,9 +118,11 @@ int ade7758_configure_ring(struct iio_dev *indio_dev)
 	struct iio_buffer *buffer;
 	int ret = 0;
 
-	buffer = iio_kfifo_allocate();
-	if (!buffer)
-		return -ENOMEM;
+	buffer = iio_kfifo_allocate(indio_dev);
+	if (!buffer) {
+		ret = -ENOMEM;
+		return ret;
+	}
 
 	iio_device_attach_buffer(indio_dev, buffer);
 
@@ -132,7 +134,7 @@ int ade7758_configure_ring(struct iio_dev *indio_dev)
 						 indio_dev,
 						 "ade7759_consumer%d",
 						 indio_dev->id);
-	if (!indio_dev->pollfunc) {
+	if (indio_dev->pollfunc == NULL) {
 		ret = -ENOMEM;
 		goto error_iio_kfifo_free;
 	}
@@ -177,4 +179,9 @@ int ade7758_configure_ring(struct iio_dev *indio_dev)
 error_iio_kfifo_free:
 	iio_kfifo_free(indio_dev->buffer);
 	return ret;
+}
+
+void ade7758_uninitialize_ring(struct iio_dev *indio_dev)
+{
+	iio_buffer_unregister(indio_dev);
 }

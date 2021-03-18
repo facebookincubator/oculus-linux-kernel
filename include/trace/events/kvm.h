@@ -37,25 +37,6 @@ TRACE_EVENT(kvm_userspace_exit,
 		  __entry->errno < 0 ? -__entry->errno : __entry->reason)
 );
 
-TRACE_EVENT(kvm_vcpu_wakeup,
-	    TP_PROTO(__u64 ns, bool waited),
-	    TP_ARGS(ns, waited),
-
-	TP_STRUCT__entry(
-		__field(	__u64,		ns		)
-		__field(	bool,		waited		)
-	),
-
-	TP_fast_assign(
-		__entry->ns		= ns;
-		__entry->waited		= waited;
-	),
-
-	TP_printk("%s time %lld ns",
-		  __entry->waited ? "wait" : "poll",
-		  __entry->ns)
-);
-
 #if defined(CONFIG_HAVE_KVM_IRQFD)
 TRACE_EVENT(kvm_set_irq,
 	TP_PROTO(unsigned int gsi, int level, int irq_source_id),
@@ -165,14 +146,6 @@ TRACE_EVENT(kvm_msi_set_irq,
 
 #if defined(CONFIG_HAVE_KVM_IRQFD)
 
-#ifdef kvm_irqchips
-#define kvm_ack_irq_string "irqchip %s pin %u"
-#define kvm_ack_irq_parm  __print_symbolic(__entry->irqchip, kvm_irqchips), __entry->pin
-#else
-#define kvm_ack_irq_string "irqchip %d pin %u"
-#define kvm_ack_irq_parm  __entry->irqchip, __entry->pin
-#endif
-
 TRACE_EVENT(kvm_ack_irq,
 	TP_PROTO(unsigned int irqchip, unsigned int pin),
 	TP_ARGS(irqchip, pin),
@@ -187,7 +160,13 @@ TRACE_EVENT(kvm_ack_irq,
 		__entry->pin		= pin;
 	),
 
-	TP_printk(kvm_ack_irq_string, kvm_ack_irq_parm)
+#ifdef kvm_irqchips
+	TP_printk("irqchip %s pin %u",
+		  __print_symbolic(__entry->irqchip, kvm_irqchips),
+		 __entry->pin)
+#else
+	TP_printk("irqchip %d pin %u", __entry->irqchip, __entry->pin)
+#endif
 );
 
 #endif /* defined(CONFIG_HAVE_KVM_IRQFD) */
@@ -357,36 +336,6 @@ TRACE_EVENT(
 );
 
 #endif
-
-TRACE_EVENT(kvm_halt_poll_ns,
-	TP_PROTO(bool grow, unsigned int vcpu_id, int new, int old),
-	TP_ARGS(grow, vcpu_id, new, old),
-
-	TP_STRUCT__entry(
-		__field(bool, grow)
-		__field(unsigned int, vcpu_id)
-		__field(int, new)
-		__field(int, old)
-	),
-
-	TP_fast_assign(
-		__entry->grow           = grow;
-		__entry->vcpu_id        = vcpu_id;
-		__entry->new            = new;
-		__entry->old            = old;
-	),
-
-	TP_printk("vcpu %u: halt_poll_ns %d (%s %d)",
-			__entry->vcpu_id,
-			__entry->new,
-			__entry->grow ? "grow" : "shrink",
-			__entry->old)
-);
-
-#define trace_kvm_halt_poll_ns_grow(vcpu_id, new, old) \
-	trace_kvm_halt_poll_ns(true, vcpu_id, new, old)
-#define trace_kvm_halt_poll_ns_shrink(vcpu_id, new, old) \
-	trace_kvm_halt_poll_ns(false, vcpu_id, new, old)
 
 #endif /* _TRACE_KVM_MAIN_H */
 

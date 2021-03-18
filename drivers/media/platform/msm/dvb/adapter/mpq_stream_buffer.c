@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,8 +27,8 @@ int mpq_streambuffer_init(
 		void *packet_buff,
 		size_t packet_buff_size)
 {
-	if ((sbuff == NULL) || (data_buffers == NULL) ||
-		(packet_buff == NULL) || (data_buff_num == 0))
+	if ((NULL == sbuff) || (NULL == data_buffers) ||
+		(NULL == packet_buff) || (data_buff_num == 0))
 		return -EINVAL;
 
 	if (data_buff_num > 1) {
@@ -157,7 +157,7 @@ int mpq_streambuffer_pkt_dispose(
 	int ret;
 	struct mpq_streambuffer_packet_header packet;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->packet_data.lock);
@@ -179,7 +179,7 @@ int mpq_streambuffer_pkt_dispose(
 	if (ret != sizeof(struct mpq_streambuffer_packet_header))
 		return -EINVAL;
 
-	if ((sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR) ||
+	if ((MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR == sbuff->mode) ||
 		(dispose_data)) {
 		/* Advance the read pointer in the raw-data buffer first */
 		ret = mpq_streambuffer_data_read_dispose(sbuff,
@@ -200,7 +200,7 @@ int mpq_streambuffer_pkt_dispose(
 	}
 
 	/* Move read pointer to the next linear buffer for subsequent reads */
-	if ((sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR) &&
+	if ((MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR == sbuff->mode) &&
 		(packet.raw_data_len > 0)) {
 		struct mpq_streambuffer_buffer_desc *desc;
 
@@ -235,7 +235,7 @@ int mpq_streambuffer_pkt_write(
 	ssize_t idx;
 	size_t len;
 
-	if ((sbuff == NULL) || (packet == NULL))
+	if ((NULL == sbuff) || (NULL == packet))
 		return -EINVAL;
 
 	spin_lock(&sbuff->packet_data.lock);
@@ -280,7 +280,7 @@ int mpq_streambuffer_pkt_write(
 	dvb_ringbuffer_pkt_close(&sbuff->packet_data, idx);
 
 	/* Move write pointer to next linear buffer for subsequent writes */
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR &&
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR == sbuff->mode &&
 		packet->raw_data_len) {
 		DVB_RINGBUFFER_PUSH(&sbuff->raw_data,
 				sizeof(struct mpq_streambuffer_buffer_desc));
@@ -300,7 +300,7 @@ ssize_t mpq_streambuffer_data_write(
 {
 	int res;
 
-	if ((sbuff == NULL) || (buf == NULL))
+	if ((NULL == sbuff) || (NULL == buf))
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -311,7 +311,7 @@ ssize_t mpq_streambuffer_data_write(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		if (unlikely(dvb_ringbuffer_free(&sbuff->raw_data) < len)) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -ENOSPC;
@@ -320,7 +320,7 @@ ssize_t mpq_streambuffer_data_write(
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (sbuff->raw_data.data == NULL) {
+		if (NULL == sbuff->raw_data.data) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -EPERM;
 		}
@@ -337,7 +337,7 @@ ssize_t mpq_streambuffer_data_write(
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (desc->base == NULL) {
+		if (NULL == desc->base) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -EPERM;
 		}
@@ -369,7 +369,7 @@ int mpq_streambuffer_data_write_deposit(
 				struct mpq_streambuffer *sbuff,
 				size_t len)
 {
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -380,7 +380,7 @@ int mpq_streambuffer_data_write_deposit(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		if (unlikely(dvb_ringbuffer_free(&sbuff->raw_data) < len)) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -ENOSPC;
@@ -418,7 +418,7 @@ ssize_t mpq_streambuffer_data_read(
 	ssize_t actual_len = 0;
 	u32 offset;
 
-	if ((sbuff == NULL) || (buf == NULL))
+	if ((NULL == sbuff) || (NULL == buf))
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -429,12 +429,12 @@ ssize_t mpq_streambuffer_data_read(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		/*
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (sbuff->raw_data.data == NULL) {
+		if (NULL == sbuff->raw_data.data) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -EPERM;
 		}
@@ -458,7 +458,7 @@ ssize_t mpq_streambuffer_data_read(
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (desc->base == NULL) {
+		if (NULL == desc->base) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -EPERM;
 		}
@@ -488,19 +488,19 @@ ssize_t mpq_streambuffer_data_read_user(
 	ssize_t actual_len = 0;
 	u32 offset;
 
-	if ((sbuff == NULL) || (buf == NULL))
+	if ((NULL == sbuff) || (NULL == buf))
 		return -EINVAL;
 
 	/* check if buffer was released */
 	if (sbuff->raw_data.error == -ENODEV)
 		return -ENODEV;
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		/*
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (sbuff->raw_data.data == NULL)
+		if (NULL == sbuff->raw_data.data)
 			return -EPERM;
 
 		offset = sbuff->raw_data.pread;
@@ -521,7 +521,7 @@ ssize_t mpq_streambuffer_data_read_user(
 		 * Secure buffers are not permitted to be mapped into kernel
 		 * memory, and so buffer base address may be NULL
 		 */
-		if (desc->base == NULL)
+		if (NULL == desc->base)
 			return -EPERM;
 
 		actual_len = (desc->write_ptr - desc->read_ptr);
@@ -547,7 +547,7 @@ int mpq_streambuffer_data_read_dispose(
 {
 	u32 offset;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -558,7 +558,7 @@ int mpq_streambuffer_data_read_dispose(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		if (unlikely(dvb_ringbuffer_avail(&sbuff->raw_data) < len)) {
 			spin_unlock(&sbuff->raw_data.lock);
 			return -EINVAL;
@@ -597,7 +597,7 @@ int mpq_streambuffer_get_buffer_handle(
 {
 	struct mpq_streambuffer_buffer_desc *desc = NULL;
 
-	if ((sbuff == NULL) || (handle == NULL))
+	if ((NULL == sbuff) || (NULL == handle))
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -608,7 +608,7 @@ int mpq_streambuffer_get_buffer_handle(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		*handle = sbuff->buffers[0].handle;
 	} else {
 		if (read_buffer)
@@ -632,7 +632,7 @@ int mpq_streambuffer_register_data_dispose(
 	mpq_streambuffer_dispose_cb cb_func,
 	void *user_data)
 {
-	if ((sbuff == NULL) || (cb_func == NULL))
+	if ((NULL == sbuff) || (NULL == cb_func))
 		return -EINVAL;
 
 	sbuff->cb = cb_func;
@@ -648,7 +648,7 @@ ssize_t mpq_streambuffer_data_free(
 {
 	struct mpq_streambuffer_buffer_desc *desc;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -659,7 +659,7 @@ ssize_t mpq_streambuffer_data_free(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		spin_unlock(&sbuff->raw_data.lock);
 		return dvb_ringbuffer_free(&sbuff->raw_data);
 	}
@@ -684,7 +684,7 @@ ssize_t mpq_streambuffer_data_avail(
 {
 	struct mpq_streambuffer_buffer_desc *desc;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -695,7 +695,7 @@ ssize_t mpq_streambuffer_data_avail(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		ssize_t avail = dvb_ringbuffer_avail(&sbuff->raw_data);
 
 		spin_unlock(&sbuff->raw_data.lock);
@@ -716,7 +716,7 @@ int mpq_streambuffer_get_data_rw_offset(
 	u32 *read_offset,
 	u32 *write_offset)
 {
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->raw_data.lock);
@@ -727,7 +727,7 @@ int mpq_streambuffer_get_data_rw_offset(
 		return -ENODEV;
 	}
 
-	if (sbuff->mode == MPQ_STREAMBUFFER_BUFFER_MODE_RING) {
+	if (MPQ_STREAMBUFFER_BUFFER_MODE_RING == sbuff->mode) {
 		if (read_offset)
 			*read_offset = sbuff->raw_data.pread;
 		if (write_offset)
@@ -757,7 +757,7 @@ ssize_t mpq_streambuffer_metadata_free(struct mpq_streambuffer *sbuff)
 {
 	ssize_t free;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->packet_data.lock);
@@ -783,7 +783,7 @@ int mpq_streambuffer_flush(struct mpq_streambuffer *sbuff)
 	int idx;
 	int ret = 0;
 
-	if (sbuff == NULL)
+	if (NULL == sbuff)
 		return -EINVAL;
 
 	spin_lock(&sbuff->packet_data.lock);
@@ -825,3 +825,4 @@ end:
 	return ret;
 }
 EXPORT_SYMBOL(mpq_streambuffer_flush);
+

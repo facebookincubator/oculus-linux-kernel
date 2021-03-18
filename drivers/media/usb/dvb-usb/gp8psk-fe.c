@@ -51,8 +51,7 @@ static int gp8psk_fe_update_status(struct gp8psk_fe_state *st)
 	return 0;
 }
 
-static int gp8psk_fe_read_status(struct dvb_frontend *fe,
-				 enum fe_status *status)
+static int gp8psk_fe_read_status(struct dvb_frontend* fe, fe_status_t *status)
 {
 	struct gp8psk_fe_state *st = fe->demodulator_priv;
 	gp8psk_fe_update_status(st);
@@ -237,8 +236,8 @@ static int gp8psk_fe_send_diseqc_msg (struct dvb_frontend* fe,
 	return 0;
 }
 
-static int gp8psk_fe_send_diseqc_burst(struct dvb_frontend *fe,
-				       enum fe_sec_mini_cmd burst)
+static int gp8psk_fe_send_diseqc_burst (struct dvb_frontend* fe,
+				    fe_sec_mini_cmd_t burst)
 {
 	struct gp8psk_fe_state *st = fe->demodulator_priv;
 	u8 cmd;
@@ -255,8 +254,7 @@ static int gp8psk_fe_send_diseqc_burst(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int gp8psk_fe_set_tone(struct dvb_frontend *fe,
-			      enum fe_sec_tone_mode tone)
+static int gp8psk_fe_set_tone (struct dvb_frontend* fe, fe_sec_tone_mode_t tone)
 {
 	struct gp8psk_fe_state* state = fe->demodulator_priv;
 
@@ -267,8 +265,7 @@ static int gp8psk_fe_set_tone(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int gp8psk_fe_set_voltage(struct dvb_frontend *fe,
-				 enum fe_sec_voltage voltage)
+static int gp8psk_fe_set_voltage (struct dvb_frontend* fe, fe_sec_voltage_t voltage)
 {
 	struct gp8psk_fe_state* state = fe->demodulator_priv;
 

@@ -20,10 +20,9 @@
 #include <linux/idr.h>
 #include <linux/pci.h>
 #include <asm/cputable.h>
-#include <misc/cxl-base.h>
+#include <misc/cxl.h>
 
 #include "cxl.h"
-#include "trace.h"
 
 static DEFINE_SPINLOCK(adapter_idr_lock);
 static DEFINE_IDR(cxl_adapter_idr);
@@ -49,7 +48,6 @@ static inline void _cxl_slbia(struct cxl_context *ctx, struct mm_struct *mm)
 		 ctx->afu->adapter->adapter_num, ctx->afu->slice, ctx->pe);
 
 	spin_lock_irqsave(&ctx->sste_lock, flags);
-	trace_cxl_slbia(ctx);
 	memset(ctx->sstp, 0, ctx->sst_size);
 	spin_unlock_irqrestore(&ctx->sste_lock, flags);
 	mb();
@@ -73,7 +71,7 @@ static inline void cxl_slbia_core(struct mm_struct *mm)
 		spin_lock(&adapter->afu_list_lock);
 		for (slice = 0; slice < adapter->slices; slice++) {
 			afu = adapter->afu[slice];
-			if (!afu || !afu->enabled)
+			if (!afu->enabled)
 				continue;
 			rcu_read_lock();
 			idr_for_each_entry(&afu->contexts_idr, ctx, id)
@@ -222,7 +220,6 @@ static void exit_cxl(void)
 	cxl_debugfs_exit();
 	cxl_file_exit();
 	unregister_cxl_calls(&cxl_calls);
-	idr_destroy(&cxl_adapter_idr);
 }
 
 module_init(init_cxl);

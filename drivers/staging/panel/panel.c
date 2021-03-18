@@ -71,7 +71,7 @@
 #define KEYPAD_BUFFER		64
 
 /* poll the keyboard this every second */
-#define INPUT_POLL_TIME		(HZ / 50)
+#define INPUT_POLL_TIME		(HZ/50)
 /* a key starts to repeat after this times INPUT_POLL_TIME */
 #define KEYPAD_REP_START	(10)
 /* a key repeats this times INPUT_POLL_TIME */
@@ -130,34 +130,8 @@
 #define LCD_FLAG_N		0x0040	/* 2-rows mode */
 #define LCD_FLAG_L		0x0080	/* backlight enabled */
 
-/* LCD commands */
-#define LCD_CMD_DISPLAY_CLEAR	0x01	/* Clear entire display */
-
-#define LCD_CMD_ENTRY_MODE	0x04	/* Set entry mode */
-#define LCD_CMD_CURSOR_INC	0x02	/* Increment cursor */
-
-#define LCD_CMD_DISPLAY_CTRL	0x08	/* Display control */
-#define LCD_CMD_DISPLAY_ON	0x04	/* Set display on */
-#define LCD_CMD_CURSOR_ON	0x02	/* Set cursor on */
-#define LCD_CMD_BLINK_ON	0x01	/* Set blink on */
-
-#define LCD_CMD_SHIFT		0x10	/* Shift cursor/display */
-#define LCD_CMD_DISPLAY_SHIFT	0x08	/* Shift display instead of cursor */
-#define LCD_CMD_SHIFT_RIGHT	0x04	/* Shift display/cursor to the right */
-
-#define LCD_CMD_FUNCTION_SET	0x20	/* Set function */
-#define LCD_CMD_DATA_LEN_8BITS	0x10	/* Set data length to 8 bits */
-#define LCD_CMD_TWO_LINES	0x08	/* Set to two display lines */
-#define LCD_CMD_FONT_5X10_DOTS	0x04	/* Set char font to 5x10 dots */
-
-#define LCD_CMD_SET_CGRAM_ADDR	0x40	/* Set char generator RAM address */
-
-#define LCD_CMD_SET_DDRAM_ADDR	0x80	/* Set display data RAM address */
-
 #define LCD_ESCAPE_LEN		24	/* max chars for LCD escape command */
 #define LCD_ESCAPE_CHAR	27	/* use char 27 for escape command */
-
-#define NOT_SET			-1
 
 /* macros to simplify use of the parallel port */
 #define r_ctr(x)        (parport_read_control((x)->port))
@@ -236,10 +210,6 @@ static pmask_t phys_prev;
 static char inputs_stable;
 
 /* these variables are specific to the keypad */
-static struct {
-	bool enabled;
-} keypad;
-
 static char keypad_buffer[KEYPAD_BUFFER];
 static int keypad_buflen;
 static int keypad_start;
@@ -247,47 +217,17 @@ static char keypressed;
 static wait_queue_head_t keypad_read_wait;
 
 /* lcd-specific variables */
-static struct {
-	bool enabled;
-	bool initialized;
-	bool must_clear;
 
-	int height;
-	int width;
-	int bwidth;
-	int hwidth;
-	int charset;
-	int proto;
-	int light_tempo;
-
-	/* TODO: use union here? */
-	struct {
-		int e;
-		int rs;
-		int rw;
-		int cl;
-		int da;
-		int bl;
-	} pins;
-
-	/* contains the LCD config state */
-	unsigned long int flags;
-
-	/* Contains the LCD X and Y offset */
-	struct {
-		unsigned long int x;
-		unsigned long int y;
-	} addr;
-
-	/* Current escape sequence and it's length or -1 if outside */
-	struct {
-		char buf[LCD_ESCAPE_LEN + 1];
-		int len;
-	} esc_seq;
-} lcd;
-
-/* Needed only for init */
-static int selected_lcd_type = NOT_SET;
+/* contains the LCD config state */
+static unsigned long int lcd_flags;
+/* contains the LCD X offset */
+static unsigned long int lcd_addr_x;
+/* contains the LCD Y offset */
+static unsigned long int lcd_addr_y;
+/* current escape sequence, 0 terminated */
+static char lcd_escape[LCD_ESCAPE_LEN + 1];
+/* not in escape state. >=0 = escape cmd len */
+static int lcd_escape_len = -1;
 
 /*
  * Bit masks to convert LCD signals to parallel port outputs.
@@ -362,15 +302,14 @@ static unsigned char lcd_bits[LCD_PORTS][LCD_BITS][BIT_STATES];
 /*
  * Construct custom config from the kernel's configuration
  */
-#define DEFAULT_PARPORT         0
 #define DEFAULT_PROFILE         PANEL_PROFILE_LARGE
-#define DEFAULT_KEYPAD_TYPE     KEYPAD_TYPE_OLD
-#define DEFAULT_LCD_TYPE        LCD_TYPE_OLD
-#define DEFAULT_LCD_HEIGHT      2
+#define DEFAULT_PARPORT         0
+#define DEFAULT_LCD             LCD_TYPE_OLD
+#define DEFAULT_KEYPAD          KEYPAD_TYPE_OLD
 #define DEFAULT_LCD_WIDTH       40
 #define DEFAULT_LCD_BWIDTH      40
 #define DEFAULT_LCD_HWIDTH      64
-#define DEFAULT_LCD_CHARSET     LCD_CHARSET_NORMAL
+#define DEFAULT_LCD_HEIGHT      2
 #define DEFAULT_LCD_PROTO       LCD_PROTO_PARALLEL
 
 #define DEFAULT_LCD_PIN_E       PIN_AUTOLF
@@ -379,31 +318,27 @@ static unsigned char lcd_bits[LCD_PORTS][LCD_BITS][BIT_STATES];
 #define DEFAULT_LCD_PIN_SCL     PIN_STROBE
 #define DEFAULT_LCD_PIN_SDA     PIN_D0
 #define DEFAULT_LCD_PIN_BL      PIN_NOT_SET
-
-#ifdef CONFIG_PANEL_PARPORT
-#undef DEFAULT_PARPORT
-#define DEFAULT_PARPORT CONFIG_PANEL_PARPORT
-#endif
+#define DEFAULT_LCD_CHARSET     LCD_CHARSET_NORMAL
 
 #ifdef CONFIG_PANEL_PROFILE
 #undef DEFAULT_PROFILE
 #define DEFAULT_PROFILE CONFIG_PANEL_PROFILE
 #endif
 
+#ifdef CONFIG_PANEL_PARPORT
+#undef DEFAULT_PARPORT
+#define DEFAULT_PARPORT CONFIG_PANEL_PARPORT
+#endif
+
 #if DEFAULT_PROFILE == 0	/* custom */
 #ifdef CONFIG_PANEL_KEYPAD
-#undef DEFAULT_KEYPAD_TYPE
-#define DEFAULT_KEYPAD_TYPE CONFIG_PANEL_KEYPAD
+#undef DEFAULT_KEYPAD
+#define DEFAULT_KEYPAD CONFIG_PANEL_KEYPAD
 #endif
 
 #ifdef CONFIG_PANEL_LCD
-#undef DEFAULT_LCD_TYPE
-#define DEFAULT_LCD_TYPE CONFIG_PANEL_LCD
-#endif
-
-#ifdef CONFIG_PANEL_LCD_HEIGHT
-#undef DEFAULT_LCD_HEIGHT
-#define DEFAULT_LCD_HEIGHT CONFIG_PANEL_LCD_HEIGHT
+#undef DEFAULT_LCD
+#define DEFAULT_LCD CONFIG_PANEL_LCD
 #endif
 
 #ifdef CONFIG_PANEL_LCD_WIDTH
@@ -421,9 +356,9 @@ static unsigned char lcd_bits[LCD_PORTS][LCD_BITS][BIT_STATES];
 #define DEFAULT_LCD_HWIDTH CONFIG_PANEL_LCD_HWIDTH
 #endif
 
-#ifdef CONFIG_PANEL_LCD_CHARSET
-#undef DEFAULT_LCD_CHARSET
-#define DEFAULT_LCD_CHARSET CONFIG_PANEL_LCD_CHARSET
+#ifdef CONFIG_PANEL_LCD_HEIGHT
+#undef DEFAULT_LCD_HEIGHT
+#define DEFAULT_LCD_HEIGHT CONFIG_PANEL_LCD_HEIGHT
 #endif
 
 #ifdef CONFIG_PANEL_LCD_PROTO
@@ -461,17 +396,26 @@ static unsigned char lcd_bits[LCD_PORTS][LCD_BITS][BIT_STATES];
 #define DEFAULT_LCD_PIN_BL CONFIG_PANEL_LCD_PIN_BL
 #endif
 
+#ifdef CONFIG_PANEL_LCD_CHARSET
+#undef DEFAULT_LCD_CHARSET
+#define DEFAULT_LCD_CHARSET CONFIG_PANEL_LCD_CHARSET
+#endif
+
 #endif /* DEFAULT_PROFILE == 0 */
 
 /* global variables */
-
-/* Device single-open policy control */
-static atomic_t lcd_available = ATOMIC_INIT(1);
-static atomic_t keypad_available = ATOMIC_INIT(1);
-
+static int keypad_open_cnt;	/* #times opened */
+static int lcd_open_cnt;	/* #times opened */
 static struct pardevice *pprt;
 
+static int lcd_initialized;
 static int keypad_initialized;
+
+static int light_tempo;
+
+static char lcd_must_clear;
+static char lcd_left_shift;
+static char init_in_progress;
 
 static void (*lcd_write_cmd)(int);
 static void (*lcd_write_data)(int);
@@ -482,50 +426,58 @@ static struct timer_list scan_timer;
 
 MODULE_DESCRIPTION("Generic parallel port LCD/Keypad driver");
 
-static int parport = DEFAULT_PARPORT;
+static int parport = -1;
 module_param(parport, int, 0000);
 MODULE_PARM_DESC(parport, "Parallel port index (0=lpt1, 1=lpt2, ...)");
+
+static int lcd_height = -1;
+module_param(lcd_height, int, 0000);
+MODULE_PARM_DESC(lcd_height, "Number of lines on the LCD");
+
+static int lcd_width = -1;
+module_param(lcd_width, int, 0000);
+MODULE_PARM_DESC(lcd_width, "Number of columns on the LCD");
+
+static int lcd_bwidth = -1;	/* internal buffer width (usually 40) */
+module_param(lcd_bwidth, int, 0000);
+MODULE_PARM_DESC(lcd_bwidth, "Internal LCD line width (40)");
+
+static int lcd_hwidth = -1;	/* hardware buffer width (usually 64) */
+module_param(lcd_hwidth, int, 0000);
+MODULE_PARM_DESC(lcd_hwidth, "LCD line hardware address (64)");
+
+static int lcd_enabled = -1;
+module_param(lcd_enabled, int, 0000);
+MODULE_PARM_DESC(lcd_enabled, "Deprecated option, use lcd_type instead");
+
+static int keypad_enabled = -1;
+module_param(keypad_enabled, int, 0000);
+MODULE_PARM_DESC(keypad_enabled, "Deprecated option, use keypad_type instead");
+
+static int lcd_type = -1;
+module_param(lcd_type, int, 0000);
+MODULE_PARM_DESC(lcd_type,
+		 "LCD type: 0=none, 1=old //, 2=serial ks0074, 3=hantronix //, 4=nexcom //, 5=compiled-in");
+
+static int lcd_proto = -1;
+module_param(lcd_proto, int, 0000);
+MODULE_PARM_DESC(lcd_proto,
+		 "LCD communication: 0=parallel (//), 1=serial, 2=TI LCD Interface");
+
+static int lcd_charset = -1;
+module_param(lcd_charset, int, 0000);
+MODULE_PARM_DESC(lcd_charset, "LCD character set: 0=standard, 1=KS0074");
+
+static int keypad_type = -1;
+module_param(keypad_type, int, 0000);
+MODULE_PARM_DESC(keypad_type,
+		 "Keypad type: 0=none, 1=old 6 keys, 2=new 6+1 keys, 3=nexcom 4 keys");
 
 static int profile = DEFAULT_PROFILE;
 module_param(profile, int, 0000);
 MODULE_PARM_DESC(profile,
 		 "1=16x2 old kp; 2=serial 16x2, new kp; 3=16x2 hantronix; "
 		 "4=16x2 nexcom; default=40x2, old kp");
-
-static int keypad_type = NOT_SET;
-module_param(keypad_type, int, 0000);
-MODULE_PARM_DESC(keypad_type,
-		 "Keypad type: 0=none, 1=old 6 keys, 2=new 6+1 keys, 3=nexcom 4 keys");
-
-static int lcd_type = NOT_SET;
-module_param(lcd_type, int, 0000);
-MODULE_PARM_DESC(lcd_type,
-		 "LCD type: 0=none, 1=compiled-in, 2=old, 3=serial ks0074, 4=hantronix, 5=nexcom");
-
-static int lcd_height = NOT_SET;
-module_param(lcd_height, int, 0000);
-MODULE_PARM_DESC(lcd_height, "Number of lines on the LCD");
-
-static int lcd_width = NOT_SET;
-module_param(lcd_width, int, 0000);
-MODULE_PARM_DESC(lcd_width, "Number of columns on the LCD");
-
-static int lcd_bwidth = NOT_SET;	/* internal buffer width (usually 40) */
-module_param(lcd_bwidth, int, 0000);
-MODULE_PARM_DESC(lcd_bwidth, "Internal LCD line width (40)");
-
-static int lcd_hwidth = NOT_SET;	/* hardware buffer width (usually 64) */
-module_param(lcd_hwidth, int, 0000);
-MODULE_PARM_DESC(lcd_hwidth, "LCD line hardware address (64)");
-
-static int lcd_charset = NOT_SET;
-module_param(lcd_charset, int, 0000);
-MODULE_PARM_DESC(lcd_charset, "LCD character set: 0=standard, 1=KS0074");
-
-static int lcd_proto = NOT_SET;
-module_param(lcd_proto, int, 0000);
-MODULE_PARM_DESC(lcd_proto,
-		 "LCD communication: 0=parallel (//), 1=serial, 2=TI LCD Interface");
 
 /*
  * These are the parallel port pins the LCD control signals are connected to.
@@ -551,30 +503,20 @@ module_param(lcd_rw_pin, int, 0000);
 MODULE_PARM_DESC(lcd_rw_pin,
 		 "# of the // port pin connected to LCD 'RW' signal, with polarity (-17..17)");
 
-static int lcd_cl_pin = PIN_NOT_SET;
-module_param(lcd_cl_pin, int, 0000);
-MODULE_PARM_DESC(lcd_cl_pin,
-		 "# of the // port pin connected to serial LCD 'SCL' signal, with polarity (-17..17)");
+static int lcd_bl_pin = PIN_NOT_SET;
+module_param(lcd_bl_pin, int, 0000);
+MODULE_PARM_DESC(lcd_bl_pin,
+		 "# of the // port pin connected to LCD backlight, with polarity (-17..17)");
 
 static int lcd_da_pin = PIN_NOT_SET;
 module_param(lcd_da_pin, int, 0000);
 MODULE_PARM_DESC(lcd_da_pin,
 		 "# of the // port pin connected to serial LCD 'SDA' signal, with polarity (-17..17)");
 
-static int lcd_bl_pin = PIN_NOT_SET;
-module_param(lcd_bl_pin, int, 0000);
-MODULE_PARM_DESC(lcd_bl_pin,
-		 "# of the // port pin connected to LCD backlight, with polarity (-17..17)");
-
-/* Deprecated module parameters - consider not using them anymore */
-
-static int lcd_enabled = NOT_SET;
-module_param(lcd_enabled, int, 0000);
-MODULE_PARM_DESC(lcd_enabled, "Deprecated option, use lcd_type instead");
-
-static int keypad_enabled = NOT_SET;
-module_param(keypad_enabled, int, 0000);
-MODULE_PARM_DESC(keypad_enabled, "Deprecated option, use keypad_type instead");
+static int lcd_cl_pin = PIN_NOT_SET;
+module_param(lcd_cl_pin, int, 0000);
+MODULE_PARM_DESC(lcd_cl_pin,
+		 "# of the // port pin connected to serial LCD 'SCL' signal, with polarity (-17..17)");
 
 static const unsigned char *lcd_char_conv;
 
@@ -774,24 +716,22 @@ static void pin_to_bits(int pin, unsigned char *d_val, unsigned char *c_val)
 /* sleeps that many milliseconds with a reschedule */
 static void long_sleep(int ms)
 {
-	if (in_interrupt())
+	if (in_interrupt()) {
 		mdelay(ms);
-	else
-		schedule_timeout_interruptible(msecs_to_jiffies(ms));
+	} else {
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout((ms * HZ + 999) / 1000);
+	}
 }
 
-/*
- * send a serial byte to the LCD panel. The caller is responsible for locking
- * if needed.
- */
+/* send a serial byte to the LCD panel. The caller is responsible for locking
+   if needed. */
 static void lcd_send_serial(int byte)
 {
 	int bit;
 
-	/*
-	 * the data bit is set on D0, and the clock on STROBE.
-	 * LCD reads D0 on STROBE's rising edge.
-	 */
+	/* the data bit is set on D0, and the clock on STROBE.
+	 * LCD reads D0 on STROBE's rising edge. */
 	for (bit = 0; bit < 8; bit++) {
 		bits.cl = BIT_CLR;	/* CLK low */
 		panel_set_bits();
@@ -808,7 +748,7 @@ static void lcd_send_serial(int byte)
 /* turn the backlight on or off */
 static void lcd_backlight(int on)
 {
-	if (lcd.pins.bl == PIN_NONE)
+	if (lcd_bl_pin == PIN_NONE)
 		return;
 
 	/* The backlight is activated by setting the AUTOFEED line to +5V  */
@@ -906,26 +846,24 @@ static void lcd_write_data_tilcd(int data)
 
 static void lcd_gotoxy(void)
 {
-	lcd_write_cmd(LCD_CMD_SET_DDRAM_ADDR
-		      | (lcd.addr.y ? lcd.hwidth : 0)
-		      /*
-		       * we force the cursor to stay at the end of the
-		       * line if it wants to go farther
-		       */
-		      | ((lcd.addr.x < lcd.bwidth) ? lcd.addr.x &
-			 (lcd.hwidth - 1) : lcd.bwidth - 1));
+	lcd_write_cmd(0x80	/* set DDRAM address */
+		      | (lcd_addr_y ? lcd_hwidth : 0)
+		      /* we force the cursor to stay at the end of the
+			 line if it wants to go farther */
+		      | ((lcd_addr_x < lcd_bwidth) ? lcd_addr_x &
+			 (lcd_hwidth - 1) : lcd_bwidth - 1));
 }
 
 static void lcd_print(char c)
 {
-	if (lcd.addr.x < lcd.bwidth) {
-		if (lcd_char_conv)
+	if (lcd_addr_x < lcd_bwidth) {
+		if (lcd_char_conv != NULL)
 			c = lcd_char_conv[(unsigned char)c];
 		lcd_write_data(c);
-		lcd.addr.x++;
+		lcd_addr_x++;
 	}
 	/* prevents the cursor from wrapping onto the next line */
-	if (lcd.addr.x == lcd.bwidth)
+	if (lcd_addr_x == lcd_bwidth)
 		lcd_gotoxy();
 }
 
@@ -934,12 +872,12 @@ static void lcd_clear_fast_s(void)
 {
 	int pos;
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 
 	spin_lock_irq(&pprt_lock);
-	for (pos = 0; pos < lcd.height * lcd.hwidth; pos++) {
+	for (pos = 0; pos < lcd_height * lcd_hwidth; pos++) {
 		lcd_send_serial(0x5F);	/* R/W=W, RS=1 */
 		lcd_send_serial(' ' & 0x0F);
 		lcd_send_serial((' ' >> 4) & 0x0F);
@@ -947,8 +885,8 @@ static void lcd_clear_fast_s(void)
 	}
 	spin_unlock_irq(&pprt_lock);
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 }
 
@@ -957,12 +895,12 @@ static void lcd_clear_fast_p8(void)
 {
 	int pos;
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 
 	spin_lock_irq(&pprt_lock);
-	for (pos = 0; pos < lcd.height * lcd.hwidth; pos++) {
+	for (pos = 0; pos < lcd_height * lcd_hwidth; pos++) {
 		/* present the data to the data port */
 		w_dtr(pprt, ' ');
 
@@ -985,8 +923,8 @@ static void lcd_clear_fast_p8(void)
 	}
 	spin_unlock_irq(&pprt_lock);
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 }
 
@@ -995,12 +933,12 @@ static void lcd_clear_fast_tilcd(void)
 {
 	int pos;
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 
 	spin_lock_irq(&pprt_lock);
-	for (pos = 0; pos < lcd.height * lcd.hwidth; pos++) {
+	for (pos = 0; pos < lcd_height * lcd_hwidth; pos++) {
 		/* present the data to the data port */
 		w_dtr(pprt, ' ');
 		udelay(60);
@@ -1008,59 +946,56 @@ static void lcd_clear_fast_tilcd(void)
 
 	spin_unlock_irq(&pprt_lock);
 
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	lcd_gotoxy();
 }
 
 /* clears the display and resets X/Y */
 static void lcd_clear_display(void)
 {
-	lcd_write_cmd(LCD_CMD_DISPLAY_CLEAR);
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_write_cmd(0x01);	/* clear display */
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	/* we must wait a few milliseconds (15) */
 	long_sleep(15);
 }
 
 static void lcd_init_display(void)
 {
-	lcd.flags = ((lcd.height > 1) ? LCD_FLAG_N : 0)
+	lcd_flags = ((lcd_height > 1) ? LCD_FLAG_N : 0)
 	    | LCD_FLAG_D | LCD_FLAG_C | LCD_FLAG_B;
 
 	long_sleep(20);		/* wait 20 ms after power-up for the paranoid */
 
-	/* 8bits, 1 line, small fonts; let's do it 3 times */
-	lcd_write_cmd(LCD_CMD_FUNCTION_SET | LCD_CMD_DATA_LEN_8BITS);
+	lcd_write_cmd(0x30);	/* 8bits, 1 line, small fonts */
 	long_sleep(10);
-	lcd_write_cmd(LCD_CMD_FUNCTION_SET | LCD_CMD_DATA_LEN_8BITS);
+	lcd_write_cmd(0x30);	/* 8bits, 1 line, small fonts */
 	long_sleep(10);
-	lcd_write_cmd(LCD_CMD_FUNCTION_SET | LCD_CMD_DATA_LEN_8BITS);
+	lcd_write_cmd(0x30);	/* 8bits, 1 line, small fonts */
 	long_sleep(10);
 
-	/* set font height and lines number */
-	lcd_write_cmd(LCD_CMD_FUNCTION_SET | LCD_CMD_DATA_LEN_8BITS
-		      | ((lcd.flags & LCD_FLAG_F) ? LCD_CMD_FONT_5X10_DOTS : 0)
-		      | ((lcd.flags & LCD_FLAG_N) ? LCD_CMD_TWO_LINES : 0)
+	lcd_write_cmd(0x30	/* set font height and lines number */
+		      | ((lcd_flags & LCD_FLAG_F) ? 4 : 0)
+		      | ((lcd_flags & LCD_FLAG_N) ? 8 : 0)
 	    );
 	long_sleep(10);
 
-	/* display off, cursor off, blink off */
-	lcd_write_cmd(LCD_CMD_DISPLAY_CTRL);
+	lcd_write_cmd(0x08);	/* display off, cursor off, blink off */
 	long_sleep(10);
 
-	lcd_write_cmd(LCD_CMD_DISPLAY_CTRL	/* set display mode */
-		      | ((lcd.flags & LCD_FLAG_D) ? LCD_CMD_DISPLAY_ON : 0)
-		      | ((lcd.flags & LCD_FLAG_C) ? LCD_CMD_CURSOR_ON : 0)
-		      | ((lcd.flags & LCD_FLAG_B) ? LCD_CMD_BLINK_ON : 0)
+	lcd_write_cmd(0x08	/* set display mode */
+		      | ((lcd_flags & LCD_FLAG_D) ? 4 : 0)
+		      | ((lcd_flags & LCD_FLAG_C) ? 2 : 0)
+		      | ((lcd_flags & LCD_FLAG_B) ? 1 : 0)
 	    );
 
-	lcd_backlight((lcd.flags & LCD_FLAG_L) ? 1 : 0);
+	lcd_backlight((lcd_flags & LCD_FLAG_L) ? 1 : 0);
 
 	long_sleep(10);
 
 	/* entry mode set : increment, cursor shifting */
-	lcd_write_cmd(LCD_CMD_ENTRY_MODE | LCD_CMD_CURSOR_INC);
+	lcd_write_cmd(0x06);
 
 	lcd_clear_display();
 }
@@ -1078,100 +1013,100 @@ static inline int handle_lcd_special_code(void)
 
 	int processed = 0;
 
-	char *esc = lcd.esc_seq.buf + 2;
-	int oldflags = lcd.flags;
+	char *esc = lcd_escape + 2;
+	int oldflags = lcd_flags;
 
 	/* check for display mode flags */
 	switch (*esc) {
 	case 'D':	/* Display ON */
-		lcd.flags |= LCD_FLAG_D;
+		lcd_flags |= LCD_FLAG_D;
 		processed = 1;
 		break;
 	case 'd':	/* Display OFF */
-		lcd.flags &= ~LCD_FLAG_D;
+		lcd_flags &= ~LCD_FLAG_D;
 		processed = 1;
 		break;
 	case 'C':	/* Cursor ON */
-		lcd.flags |= LCD_FLAG_C;
+		lcd_flags |= LCD_FLAG_C;
 		processed = 1;
 		break;
 	case 'c':	/* Cursor OFF */
-		lcd.flags &= ~LCD_FLAG_C;
+		lcd_flags &= ~LCD_FLAG_C;
 		processed = 1;
 		break;
 	case 'B':	/* Blink ON */
-		lcd.flags |= LCD_FLAG_B;
+		lcd_flags |= LCD_FLAG_B;
 		processed = 1;
 		break;
 	case 'b':	/* Blink OFF */
-		lcd.flags &= ~LCD_FLAG_B;
+		lcd_flags &= ~LCD_FLAG_B;
 		processed = 1;
 		break;
 	case '+':	/* Back light ON */
-		lcd.flags |= LCD_FLAG_L;
+		lcd_flags |= LCD_FLAG_L;
 		processed = 1;
 		break;
 	case '-':	/* Back light OFF */
-		lcd.flags &= ~LCD_FLAG_L;
+		lcd_flags &= ~LCD_FLAG_L;
 		processed = 1;
 		break;
 	case '*':
 		/* flash back light using the keypad timer */
-		if (scan_timer.function) {
-			if (lcd.light_tempo == 0 &&
-			    ((lcd.flags & LCD_FLAG_L) == 0))
+		if (scan_timer.function != NULL) {
+			if (light_tempo == 0 && ((lcd_flags & LCD_FLAG_L) == 0))
 				lcd_backlight(1);
-			lcd.light_tempo = FLASH_LIGHT_TEMPO;
+			light_tempo = FLASH_LIGHT_TEMPO;
 		}
 		processed = 1;
 		break;
 	case 'f':	/* Small Font */
-		lcd.flags &= ~LCD_FLAG_F;
+		lcd_flags &= ~LCD_FLAG_F;
 		processed = 1;
 		break;
 	case 'F':	/* Large Font */
-		lcd.flags |= LCD_FLAG_F;
+		lcd_flags |= LCD_FLAG_F;
 		processed = 1;
 		break;
 	case 'n':	/* One Line */
-		lcd.flags &= ~LCD_FLAG_N;
+		lcd_flags &= ~LCD_FLAG_N;
 		processed = 1;
 		break;
 	case 'N':	/* Two Lines */
-		lcd.flags |= LCD_FLAG_N;
+		lcd_flags |= LCD_FLAG_N;
 		break;
 	case 'l':	/* Shift Cursor Left */
-		if (lcd.addr.x > 0) {
+		if (lcd_addr_x > 0) {
 			/* back one char if not at end of line */
-			if (lcd.addr.x < lcd.bwidth)
-				lcd_write_cmd(LCD_CMD_SHIFT);
-			lcd.addr.x--;
+			if (lcd_addr_x < lcd_bwidth)
+				lcd_write_cmd(0x10);
+			lcd_addr_x--;
 		}
 		processed = 1;
 		break;
 	case 'r':	/* shift cursor right */
-		if (lcd.addr.x < lcd.width) {
+		if (lcd_addr_x < lcd_width) {
 			/* allow the cursor to pass the end of the line */
-			if (lcd.addr.x < (lcd.bwidth - 1))
-				lcd_write_cmd(LCD_CMD_SHIFT |
-						LCD_CMD_SHIFT_RIGHT);
-			lcd.addr.x++;
+			if (lcd_addr_x <
+			    (lcd_bwidth - 1))
+				lcd_write_cmd(0x14);
+			lcd_addr_x++;
 		}
 		processed = 1;
 		break;
 	case 'L':	/* shift display left */
-		lcd_write_cmd(LCD_CMD_SHIFT | LCD_CMD_DISPLAY_SHIFT);
+		lcd_left_shift++;
+		lcd_write_cmd(0x18);
 		processed = 1;
 		break;
 	case 'R':	/* shift display right */
-		lcd_write_cmd(LCD_CMD_SHIFT | LCD_CMD_DISPLAY_SHIFT |
-				LCD_CMD_SHIFT_RIGHT);
+		lcd_left_shift--;
+		lcd_write_cmd(0x1C);
 		processed = 1;
 		break;
 	case 'k': {	/* kill end of line */
 		int x;
 
-		for (x = lcd.addr.x; x < lcd.bwidth; x++)
+		for (x = lcd_addr_x; x < lcd_bwidth; x++)
 			lcd_write_data(' ');
 
 		/* restore cursor position */
@@ -1181,6 +1116,7 @@ static inline int handle_lcd_special_code(void)
 	}
 	case 'I':	/* reinitialize display */
 		lcd_init_display();
+		lcd_left_shift = 0;
 		processed = 1;
 		break;
 	case 'G': {
@@ -1199,7 +1135,7 @@ static inline int handle_lcd_special_code(void)
 		char value;
 		int addr;
 
-		if (!strchr(esc, ';'))
+		if (strchr(esc, ';') == NULL)
 			break;
 
 		esc++;
@@ -1234,7 +1170,7 @@ static inline int handle_lcd_special_code(void)
 			esc++;
 		}
 
-		lcd_write_cmd(LCD_CMD_SET_CGRAM_ADDR | (cgaddr * 8));
+		lcd_write_cmd(0x40 | (cgaddr * 8));
 		for (addr = 0; addr < cgoffset; addr++)
 			lcd_write_data(cgbytes[addr]);
 
@@ -1245,17 +1181,17 @@ static inline int handle_lcd_special_code(void)
 	}
 	case 'x':	/* gotoxy : LxXXX[yYYY]; */
 	case 'y':	/* gotoxy : LyYYY[xXXX]; */
-		if (!strchr(esc, ';'))
+		if (strchr(esc, ';') == NULL)
 			break;
 
 		while (*esc) {
 			if (*esc == 'x') {
 				esc++;
-				if (kstrtoul(esc, 10, &lcd.addr.x) < 0)
+				if (kstrtoul(esc, 10, &lcd_addr_x) < 0)
 					break;
 			} else if (*esc == 'y') {
 				esc++;
-				if (kstrtoul(esc, 10, &lcd.addr.y) < 0)
+				if (kstrtoul(esc, 10, &lcd_addr_y) < 0)
 					break;
 			} else {
 				break;
@@ -1267,38 +1203,28 @@ static inline int handle_lcd_special_code(void)
 		break;
 	}
 
-	/* TODO: This indent party here got ugly, clean it! */
 	/* Check whether one flag was changed */
-	if (oldflags != lcd.flags) {
+	if (oldflags != lcd_flags) {
 		/* check whether one of B,C,D flags were changed */
-		if ((oldflags ^ lcd.flags) &
+		if ((oldflags ^ lcd_flags) &
 		    (LCD_FLAG_B | LCD_FLAG_C | LCD_FLAG_D))
 			/* set display mode */
-			lcd_write_cmd(LCD_CMD_DISPLAY_CTRL
-				      | ((lcd.flags & LCD_FLAG_D)
-						      ? LCD_CMD_DISPLAY_ON : 0)
-				      | ((lcd.flags & LCD_FLAG_C)
-						      ? LCD_CMD_CURSOR_ON : 0)
-				      | ((lcd.flags & LCD_FLAG_B)
-						      ? LCD_CMD_BLINK_ON : 0));
+			lcd_write_cmd(0x08
+				      | ((lcd_flags & LCD_FLAG_D) ? 4 : 0)
+				      | ((lcd_flags & LCD_FLAG_C) ? 2 : 0)
+				      | ((lcd_flags & LCD_FLAG_B) ? 1 : 0));
 		/* check whether one of F,N flags was changed */
-		else if ((oldflags ^ lcd.flags) & (LCD_FLAG_F | LCD_FLAG_N))
-			lcd_write_cmd(LCD_CMD_FUNCTION_SET
-				      | LCD_CMD_DATA_LEN_8BITS
-				      | ((lcd.flags & LCD_FLAG_F)
-						      ? LCD_CMD_TWO_LINES : 0)
-				      | ((lcd.flags & LCD_FLAG_N)
-						      ? LCD_CMD_FONT_5X10_DOTS
-								      : 0));
+		else if ((oldflags ^ lcd_flags) & (LCD_FLAG_F | LCD_FLAG_N))
+			lcd_write_cmd(0x30
+				      | ((lcd_flags & LCD_FLAG_F) ? 4 : 0)
+				      | ((lcd_flags & LCD_FLAG_N) ? 8 : 0));
 		/* check whether L flag was changed */
-		else if ((oldflags ^ lcd.flags) & (LCD_FLAG_L)) {
-			if (lcd.flags & (LCD_FLAG_L))
+		else if ((oldflags ^ lcd_flags) & (LCD_FLAG_L)) {
+			if (lcd_flags & (LCD_FLAG_L))
 				lcd_backlight(1);
-			else if (lcd.light_tempo == 0)
-				/*
-				 * switch off the light only when the tempo
-				 * lighting is gone
-				 */
+			else if (light_tempo == 0)
+				/* switch off the light only when the tempo
+				   lighting is gone */
 				lcd_backlight(0);
 		}
 	}
@@ -1309,55 +1235,51 @@ static inline int handle_lcd_special_code(void)
 static void lcd_write_char(char c)
 {
 	/* first, we'll test if we're in escape mode */
-	if ((c != '\n') && lcd.esc_seq.len >= 0) {
+	if ((c != '\n') && lcd_escape_len >= 0) {
 		/* yes, let's add this char to the buffer */
-		lcd.esc_seq.buf[lcd.esc_seq.len++] = c;
-		lcd.esc_seq.buf[lcd.esc_seq.len] = 0;
+		lcd_escape[lcd_escape_len++] = c;
+		lcd_escape[lcd_escape_len] = 0;
 	} else {
 		/* aborts any previous escape sequence */
-		lcd.esc_seq.len = -1;
+		lcd_escape_len = -1;
 
 		switch (c) {
 		case LCD_ESCAPE_CHAR:
 			/* start of an escape sequence */
-			lcd.esc_seq.len = 0;
-			lcd.esc_seq.buf[lcd.esc_seq.len] = 0;
+			lcd_escape_len = 0;
+			lcd_escape[lcd_escape_len] = 0;
 			break;
 		case '\b':
 			/* go back one char and clear it */
-			if (lcd.addr.x > 0) {
-				/*
-				 * check if we're not at the
-				 * end of the line
-				 */
-				if (lcd.addr.x < lcd.bwidth)
+			if (lcd_addr_x > 0) {
+				/* check if we're not at the
+				   end of the line */
+				if (lcd_addr_x < lcd_bwidth)
 					/* back one char */
-					lcd_write_cmd(LCD_CMD_SHIFT);
-				lcd.addr.x--;
+					lcd_write_cmd(0x10);
+				lcd_addr_x--;
 			}
 			/* replace with a space */
 			lcd_write_data(' ');
 			/* back one char again */
-			lcd_write_cmd(LCD_CMD_SHIFT);
+			lcd_write_cmd(0x10);
 			break;
 		case '\014':
 			/* quickly clear the display */
 			lcd_clear_fast();
 			break;
 		case '\n':
-			/*
-			 * flush the remainder of the current line and
-			 * go to the beginning of the next line
-			 */
-			for (; lcd.addr.x < lcd.bwidth; lcd.addr.x++)
+			/* flush the remainder of the current line and
+			   go to the beginning of the next line */
+			for (; lcd_addr_x < lcd_bwidth; lcd_addr_x++)
 				lcd_write_data(' ');
-			lcd.addr.x = 0;
-			lcd.addr.y = (lcd.addr.y + 1) % lcd.height;
+			lcd_addr_x = 0;
+			lcd_addr_y = (lcd_addr_y + 1) % lcd_height;
 			lcd_gotoxy();
 			break;
 		case '\r':
 			/* go to the beginning of the same line */
-			lcd.addr.x = 0;
+			lcd_addr_x = 0;
 			lcd_gotoxy();
 			break;
 		case '\t':
@@ -1371,38 +1293,34 @@ static void lcd_write_char(char c)
 		}
 	}
 
-	/*
-	 * now we'll see if we're in an escape mode and if the current
-	 * escape sequence can be understood.
-	 */
-	if (lcd.esc_seq.len >= 2) {
+	/* now we'll see if we're in an escape mode and if the current
+	   escape sequence can be understood. */
+	if (lcd_escape_len >= 2) {
 		int processed = 0;
 
-		if (!strcmp(lcd.esc_seq.buf, "[2J")) {
+		if (!strcmp(lcd_escape, "[2J")) {
 			/* clear the display */
 			lcd_clear_fast();
 			processed = 1;
-		} else if (!strcmp(lcd.esc_seq.buf, "[H")) {
+		} else if (!strcmp(lcd_escape, "[H")) {
 			/* cursor to home */
-			lcd.addr.x = 0;
-			lcd.addr.y = 0;
+			lcd_addr_x = 0;
+			lcd_addr_y = 0;
 			lcd_gotoxy();
 			processed = 1;
 		}
 		/* codes starting with ^[[L */
-		else if ((lcd.esc_seq.len >= 3) &&
-			 (lcd.esc_seq.buf[0] == '[') &&
-			 (lcd.esc_seq.buf[1] == 'L')) {
+		else if ((lcd_escape_len >= 3) &&
+			 (lcd_escape[0] == '[') &&
+			 (lcd_escape[1] == 'L')) {
 			processed = handle_lcd_special_code();
 		}
 
 		/* LCD special escape codes */
-		/*
-		 * flush the escape sequence if it's been processed
-		 * or if it is getting too long.
-		 */
-		if (processed || (lcd.esc_seq.len >= LCD_ESCAPE_LEN))
-			lcd.esc_seq.len = -1;
+		/* flush the escape sequence if it's been processed
+		   or if it is getting too long. */
+		if (processed || (lcd_escape_len >= LCD_ESCAPE_LEN))
+			lcd_escape_len = -1;
 	} /* escape codes */
 }
 
@@ -1414,10 +1332,8 @@ static ssize_t lcd_write(struct file *file,
 
 	for (; count-- > 0; (*ppos)++, tmp++) {
 		if (!in_interrupt() && (((count + 1) & 0x1f) == 0))
-			/*
-			 * let's be a little nice with other processes
-			 * that need some CPU
-			 */
+			/* let's be a little nice with other processes
+			   that need some CPU */
 			schedule();
 
 		if (get_user(c, tmp))
@@ -1431,22 +1347,23 @@ static ssize_t lcd_write(struct file *file,
 
 static int lcd_open(struct inode *inode, struct file *file)
 {
-	if (!atomic_dec_and_test(&lcd_available))
+	if (lcd_open_cnt)
 		return -EBUSY;	/* open only once at a time */
 
 	if (file->f_mode & FMODE_READ)	/* device is write-only */
 		return -EPERM;
 
-	if (lcd.must_clear) {
+	if (lcd_must_clear) {
 		lcd_clear_display();
-		lcd.must_clear = false;
+		lcd_must_clear = 0;
 	}
+	lcd_open_cnt++;
 	return nonseekable_open(inode, file);
 }
 
 static int lcd_release(struct inode *inode, struct file *file)
 {
-	atomic_inc(&lcd_available);
+	lcd_open_cnt--;
 	return 0;
 }
 
@@ -1458,9 +1375,9 @@ static const struct file_operations lcd_fops = {
 };
 
 static struct miscdevice lcd_dev = {
-	.minor	= LCD_MINOR,
-	.name	= "lcd",
-	.fops	= &lcd_fops,
+	LCD_MINOR,
+	"lcd",
+	&lcd_fops
 };
 
 /* public function usable from the kernel for any purpose */
@@ -1469,13 +1386,11 @@ static void panel_lcd_print(const char *s)
 	const char *tmp = s;
 	int count = strlen(s);
 
-	if (lcd.enabled && lcd.initialized) {
+	if (lcd_enabled && lcd_initialized) {
 		for (; count-- > 0; tmp++) {
 			if (!in_interrupt() && (((count + 1) & 0x1f) == 0))
-				/*
-				 * let's be a little nice with other processes
-				 * that need some CPU
-				 */
+				/* let's be a little nice with other processes
+				   that need some CPU */
 				schedule();
 
 			lcd_write_char(*tmp);
@@ -1486,175 +1401,183 @@ static void panel_lcd_print(const char *s)
 /* initialize the LCD driver */
 static void lcd_init(void)
 {
-	switch (selected_lcd_type) {
+	switch (lcd_type) {
 	case LCD_TYPE_OLD:
 		/* parallel mode, 8 bits */
-		lcd.proto = LCD_PROTO_PARALLEL;
-		lcd.charset = LCD_CHARSET_NORMAL;
-		lcd.pins.e = PIN_STROBE;
-		lcd.pins.rs = PIN_AUTOLF;
+		if (lcd_proto < 0)
+			lcd_proto = LCD_PROTO_PARALLEL;
+		if (lcd_charset < 0)
+			lcd_charset = LCD_CHARSET_NORMAL;
+		if (lcd_e_pin == PIN_NOT_SET)
+			lcd_e_pin = PIN_STROBE;
+		if (lcd_rs_pin == PIN_NOT_SET)
+			lcd_rs_pin = PIN_AUTOLF;
 
-		lcd.width = 40;
-		lcd.bwidth = 40;
-		lcd.hwidth = 64;
-		lcd.height = 2;
+		if (lcd_width < 0)
+			lcd_width = 40;
+		if (lcd_bwidth < 0)
+			lcd_bwidth = 40;
+		if (lcd_hwidth < 0)
+			lcd_hwidth = 64;
+		if (lcd_height < 0)
+			lcd_height = 2;
 		break;
 	case LCD_TYPE_KS0074:
 		/* serial mode, ks0074 */
-		lcd.proto = LCD_PROTO_SERIAL;
-		lcd.charset = LCD_CHARSET_KS0074;
-		lcd.pins.bl = PIN_AUTOLF;
-		lcd.pins.cl = PIN_STROBE;
-		lcd.pins.da = PIN_D0;
+		if (lcd_proto < 0)
+			lcd_proto = LCD_PROTO_SERIAL;
+		if (lcd_charset < 0)
+			lcd_charset = LCD_CHARSET_KS0074;
+		if (lcd_bl_pin == PIN_NOT_SET)
+			lcd_bl_pin = PIN_AUTOLF;
+		if (lcd_cl_pin == PIN_NOT_SET)
+			lcd_cl_pin = PIN_STROBE;
+		if (lcd_da_pin == PIN_NOT_SET)
+			lcd_da_pin = PIN_D0;
 
-		lcd.width = 16;
-		lcd.bwidth = 40;
-		lcd.hwidth = 16;
-		lcd.height = 2;
+		if (lcd_width < 0)
+			lcd_width = 16;
+		if (lcd_bwidth < 0)
+			lcd_bwidth = 40;
+		if (lcd_hwidth < 0)
+			lcd_hwidth = 16;
+		if (lcd_height < 0)
+			lcd_height = 2;
 		break;
 	case LCD_TYPE_NEXCOM:
 		/* parallel mode, 8 bits, generic */
-		lcd.proto = LCD_PROTO_PARALLEL;
-		lcd.charset = LCD_CHARSET_NORMAL;
-		lcd.pins.e = PIN_AUTOLF;
-		lcd.pins.rs = PIN_SELECP;
-		lcd.pins.rw = PIN_INITP;
+		if (lcd_proto < 0)
+			lcd_proto = LCD_PROTO_PARALLEL;
+		if (lcd_charset < 0)
+			lcd_charset = LCD_CHARSET_NORMAL;
+		if (lcd_e_pin == PIN_NOT_SET)
+			lcd_e_pin = PIN_AUTOLF;
+		if (lcd_rs_pin == PIN_NOT_SET)
+			lcd_rs_pin = PIN_SELECP;
+		if (lcd_rw_pin == PIN_NOT_SET)
+			lcd_rw_pin = PIN_INITP;
 
-		lcd.width = 16;
-		lcd.bwidth = 40;
-		lcd.hwidth = 64;
-		lcd.height = 2;
+		if (lcd_width < 0)
+			lcd_width = 16;
+		if (lcd_bwidth < 0)
+			lcd_bwidth = 40;
+		if (lcd_hwidth < 0)
+			lcd_hwidth = 64;
+		if (lcd_height < 0)
+			lcd_height = 2;
 		break;
 	case LCD_TYPE_CUSTOM:
 		/* customer-defined */
-		lcd.proto = DEFAULT_LCD_PROTO;
-		lcd.charset = DEFAULT_LCD_CHARSET;
+		if (lcd_proto < 0)
+			lcd_proto = DEFAULT_LCD_PROTO;
+		if (lcd_charset < 0)
+			lcd_charset = DEFAULT_LCD_CHARSET;
 		/* default geometry will be set later */
 		break;
 	case LCD_TYPE_HANTRONIX:
 		/* parallel mode, 8 bits, hantronix-like */
 	default:
-		lcd.proto = LCD_PROTO_PARALLEL;
-		lcd.charset = LCD_CHARSET_NORMAL;
-		lcd.pins.e = PIN_STROBE;
-		lcd.pins.rs = PIN_SELECP;
+		if (lcd_proto < 0)
+			lcd_proto = LCD_PROTO_PARALLEL;
+		if (lcd_charset < 0)
+			lcd_charset = LCD_CHARSET_NORMAL;
+		if (lcd_e_pin == PIN_NOT_SET)
+			lcd_e_pin = PIN_STROBE;
+		if (lcd_rs_pin == PIN_NOT_SET)
+			lcd_rs_pin = PIN_SELECP;
 
-		lcd.width = 16;
-		lcd.bwidth = 40;
-		lcd.hwidth = 64;
-		lcd.height = 2;
+		if (lcd_width < 0)
+			lcd_width = 16;
+		if (lcd_bwidth < 0)
+			lcd_bwidth = 40;
+		if (lcd_hwidth < 0)
+			lcd_hwidth = 64;
+		if (lcd_height < 0)
+			lcd_height = 2;
 		break;
 	}
 
-	/* Overwrite with module params set on loading */
-	if (lcd_height != NOT_SET)
-		lcd.height = lcd_height;
-	if (lcd_width != NOT_SET)
-		lcd.width = lcd_width;
-	if (lcd_bwidth != NOT_SET)
-		lcd.bwidth = lcd_bwidth;
-	if (lcd_hwidth != NOT_SET)
-		lcd.hwidth = lcd_hwidth;
-	if (lcd_charset != NOT_SET)
-		lcd.charset = lcd_charset;
-	if (lcd_proto != NOT_SET)
-		lcd.proto = lcd_proto;
-	if (lcd_e_pin != PIN_NOT_SET)
-		lcd.pins.e = lcd_e_pin;
-	if (lcd_rs_pin != PIN_NOT_SET)
-		lcd.pins.rs = lcd_rs_pin;
-	if (lcd_rw_pin != PIN_NOT_SET)
-		lcd.pins.rw = lcd_rw_pin;
-	if (lcd_cl_pin != PIN_NOT_SET)
-		lcd.pins.cl = lcd_cl_pin;
-	if (lcd_da_pin != PIN_NOT_SET)
-		lcd.pins.da = lcd_da_pin;
-	if (lcd_bl_pin != PIN_NOT_SET)
-		lcd.pins.bl = lcd_bl_pin;
-
 	/* this is used to catch wrong and default values */
-	if (lcd.width <= 0)
-		lcd.width = DEFAULT_LCD_WIDTH;
-	if (lcd.bwidth <= 0)
-		lcd.bwidth = DEFAULT_LCD_BWIDTH;
-	if (lcd.hwidth <= 0)
-		lcd.hwidth = DEFAULT_LCD_HWIDTH;
-	if (lcd.height <= 0)
-		lcd.height = DEFAULT_LCD_HEIGHT;
+	if (lcd_width <= 0)
+		lcd_width = DEFAULT_LCD_WIDTH;
+	if (lcd_bwidth <= 0)
+		lcd_bwidth = DEFAULT_LCD_BWIDTH;
+	if (lcd_hwidth <= 0)
+		lcd_hwidth = DEFAULT_LCD_HWIDTH;
+	if (lcd_height <= 0)
+		lcd_height = DEFAULT_LCD_HEIGHT;
 
-	if (lcd.proto == LCD_PROTO_SERIAL) {	/* SERIAL */
+	if (lcd_proto == LCD_PROTO_SERIAL) {	/* SERIAL */
 		lcd_write_cmd = lcd_write_cmd_s;
 		lcd_write_data = lcd_write_data_s;
 		lcd_clear_fast = lcd_clear_fast_s;
 
-		if (lcd.pins.cl == PIN_NOT_SET)
-			lcd.pins.cl = DEFAULT_LCD_PIN_SCL;
-		if (lcd.pins.da == PIN_NOT_SET)
-			lcd.pins.da = DEFAULT_LCD_PIN_SDA;
+		if (lcd_cl_pin == PIN_NOT_SET)
+			lcd_cl_pin = DEFAULT_LCD_PIN_SCL;
+		if (lcd_da_pin == PIN_NOT_SET)
+			lcd_da_pin = DEFAULT_LCD_PIN_SDA;
 
-	} else if (lcd.proto == LCD_PROTO_PARALLEL) {	/* PARALLEL */
+	} else if (lcd_proto == LCD_PROTO_PARALLEL) {	/* PARALLEL */
 		lcd_write_cmd = lcd_write_cmd_p8;
 		lcd_write_data = lcd_write_data_p8;
 		lcd_clear_fast = lcd_clear_fast_p8;
 
-		if (lcd.pins.e == PIN_NOT_SET)
-			lcd.pins.e = DEFAULT_LCD_PIN_E;
-		if (lcd.pins.rs == PIN_NOT_SET)
-			lcd.pins.rs = DEFAULT_LCD_PIN_RS;
-		if (lcd.pins.rw == PIN_NOT_SET)
-			lcd.pins.rw = DEFAULT_LCD_PIN_RW;
+		if (lcd_e_pin == PIN_NOT_SET)
+			lcd_e_pin = DEFAULT_LCD_PIN_E;
+		if (lcd_rs_pin == PIN_NOT_SET)
+			lcd_rs_pin = DEFAULT_LCD_PIN_RS;
+		if (lcd_rw_pin == PIN_NOT_SET)
+			lcd_rw_pin = DEFAULT_LCD_PIN_RW;
 	} else {
 		lcd_write_cmd = lcd_write_cmd_tilcd;
 		lcd_write_data = lcd_write_data_tilcd;
 		lcd_clear_fast = lcd_clear_fast_tilcd;
 	}
 
-	if (lcd.pins.bl == PIN_NOT_SET)
-		lcd.pins.bl = DEFAULT_LCD_PIN_BL;
+	if (lcd_bl_pin == PIN_NOT_SET)
+		lcd_bl_pin = DEFAULT_LCD_PIN_BL;
 
-	if (lcd.pins.e == PIN_NOT_SET)
-		lcd.pins.e = PIN_NONE;
-	if (lcd.pins.rs == PIN_NOT_SET)
-		lcd.pins.rs = PIN_NONE;
-	if (lcd.pins.rw == PIN_NOT_SET)
-		lcd.pins.rw = PIN_NONE;
-	if (lcd.pins.bl == PIN_NOT_SET)
-		lcd.pins.bl = PIN_NONE;
-	if (lcd.pins.cl == PIN_NOT_SET)
-		lcd.pins.cl = PIN_NONE;
-	if (lcd.pins.da == PIN_NOT_SET)
-		lcd.pins.da = PIN_NONE;
+	if (lcd_e_pin == PIN_NOT_SET)
+		lcd_e_pin = PIN_NONE;
+	if (lcd_rs_pin == PIN_NOT_SET)
+		lcd_rs_pin = PIN_NONE;
+	if (lcd_rw_pin == PIN_NOT_SET)
+		lcd_rw_pin = PIN_NONE;
+	if (lcd_bl_pin == PIN_NOT_SET)
+		lcd_bl_pin = PIN_NONE;
+	if (lcd_cl_pin == PIN_NOT_SET)
+		lcd_cl_pin = PIN_NONE;
+	if (lcd_da_pin == PIN_NOT_SET)
+		lcd_da_pin = PIN_NONE;
 
-	if (lcd.charset == NOT_SET)
-		lcd.charset = DEFAULT_LCD_CHARSET;
+	if (lcd_charset < 0)
+		lcd_charset = DEFAULT_LCD_CHARSET;
 
-	if (lcd.charset == LCD_CHARSET_KS0074)
+	if (lcd_charset == LCD_CHARSET_KS0074)
 		lcd_char_conv = lcd_char_conv_ks0074;
 	else
 		lcd_char_conv = NULL;
 
-	if (lcd.pins.bl != PIN_NONE)
+	if (lcd_bl_pin != PIN_NONE)
 		init_scan_timer();
 
-	pin_to_bits(lcd.pins.e, lcd_bits[LCD_PORT_D][LCD_BIT_E],
+	pin_to_bits(lcd_e_pin, lcd_bits[LCD_PORT_D][LCD_BIT_E],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_E]);
-	pin_to_bits(lcd.pins.rs, lcd_bits[LCD_PORT_D][LCD_BIT_RS],
+	pin_to_bits(lcd_rs_pin, lcd_bits[LCD_PORT_D][LCD_BIT_RS],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_RS]);
-	pin_to_bits(lcd.pins.rw, lcd_bits[LCD_PORT_D][LCD_BIT_RW],
+	pin_to_bits(lcd_rw_pin, lcd_bits[LCD_PORT_D][LCD_BIT_RW],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_RW]);
-	pin_to_bits(lcd.pins.bl, lcd_bits[LCD_PORT_D][LCD_BIT_BL],
+	pin_to_bits(lcd_bl_pin, lcd_bits[LCD_PORT_D][LCD_BIT_BL],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_BL]);
-	pin_to_bits(lcd.pins.cl, lcd_bits[LCD_PORT_D][LCD_BIT_CL],
+	pin_to_bits(lcd_cl_pin, lcd_bits[LCD_PORT_D][LCD_BIT_CL],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_CL]);
-	pin_to_bits(lcd.pins.da, lcd_bits[LCD_PORT_D][LCD_BIT_DA],
+	pin_to_bits(lcd_da_pin, lcd_bits[LCD_PORT_D][LCD_BIT_DA],
 		    lcd_bits[LCD_PORT_C][LCD_BIT_DA]);
 
-	/*
-	 * before this line, we must NOT send anything to the display.
+	/* before this line, we must NOT send anything to the display.
 	 * Since lcd_init_display() needs to write data, we have to
-	 * enable mark the LCD initialized just before.
-	 */
-	lcd.initialized = true;
+	 * enable mark the LCD initialized just before. */
+	lcd_initialized = 1;
 	lcd_init_display();
 
 	/* display a short message */
@@ -1666,10 +1589,10 @@ static void lcd_init(void)
 	panel_lcd_print("\x1b[Lc\x1b[Lb\x1b[L*Linux-" UTS_RELEASE "\nPanel-"
 			PANEL_VERSION);
 #endif
-	lcd.addr.x = 0;
-	lcd.addr.y = 0;
+	lcd_addr_x = 0;
+	lcd_addr_y = 0;
 	/* clear the display on the next device opening */
-	lcd.must_clear = true;
+	lcd_must_clear = 1;
 	lcd_gotoxy();
 }
 
@@ -1704,19 +1627,20 @@ static ssize_t keypad_read(struct file *file,
 
 static int keypad_open(struct inode *inode, struct file *file)
 {
-	if (!atomic_dec_and_test(&keypad_available))
+	if (keypad_open_cnt)
 		return -EBUSY;	/* open only once at a time */
 
 	if (file->f_mode & FMODE_WRITE)	/* device is read-only */
 		return -EPERM;
 
 	keypad_buflen = 0;	/* flush the buffer on opening */
+	keypad_open_cnt++;
 	return 0;
 }
 
 static int keypad_release(struct inode *inode, struct file *file)
 {
-	atomic_inc(&keypad_available);
+	keypad_open_cnt--;
 	return 0;
 }
 
@@ -1728,15 +1652,18 @@ static const struct file_operations keypad_fops = {
 };
 
 static struct miscdevice keypad_dev = {
-	.minor	= KEYPAD_MINOR,
-	.name	= "keypad",
-	.fops	= &keypad_fops,
+	KEYPAD_MINOR,
+	"keypad",
+	&keypad_fops
 };
 
 static void keypad_send_key(const char *string, int max_len)
 {
+	if (init_in_progress)
+		return;
+
 	/* send the key to the device only if a process is attached to it. */
-	if (!atomic_read(&keypad_available)) {
+	if (keypad_open_cnt > 0) {
 		while (max_len-- && keypad_buflen < KEYPAD_BUFFER && *string) {
 			keypad_buffer[(keypad_start + keypad_buflen++) %
 				      KEYPAD_BUFFER] = *string++;
@@ -1787,13 +1714,12 @@ static void phys_scan_contacts(void)
 	phys_read |= (pmask_t) gndmask << 40;
 
 	if (bitmask != gndmask) {
-		/*
-		 * since clearing the outputs changed some inputs, we know
+		/* since clearing the outputs changed some inputs, we know
 		 * that some input signals are currently tied to some outputs.
 		 * So we'll scan them.
 		 */
 		for (bit = 0; bit < 8; bit++) {
-			bitval = BIT(bit);
+			bitval = 1 << bit;
 
 			if (!(scan_mask_o & bitval))	/* skip unused bits */
 				continue;
@@ -1804,10 +1730,8 @@ static void phys_scan_contacts(void)
 		}
 		w_dtr(pprt, oldval);	/* disable all outputs */
 	}
-	/*
-	 * this is easy: use old bits when they are flapping,
-	 * use new ones when stable
-	 */
+	/* this is easy: use old bits when they are flapping,
+	 * use new ones when stable */
 	phys_curr = (phys_prev & (phys_read ^ phys_read_prev)) |
 		    (phys_read & ~(phys_read ^ phys_read_prev));
 }
@@ -1843,7 +1767,7 @@ static inline int input_state_high(struct logical_input *input)
 		if ((input->type == INPUT_TYPE_STD) &&
 		    (input->high_timer == 0)) {
 			input->high_timer++;
-			if (input->u.std.press_fct)
+			if (input->u.std.press_fct != NULL)
 				input->u.std.press_fct(input->u.std.press_data);
 		} else if (input->type == INPUT_TYPE_KBD) {
 			/* will turn on the light */
@@ -1923,7 +1847,7 @@ static inline void input_state_falling(struct logical_input *input)
 		if (input->type == INPUT_TYPE_STD) {
 			void (*release_fct)(int) = input->u.std.release_fct;
 
-			if (release_fct)
+			if (release_fct != NULL)
 				release_fct(input->u.std.release_data);
 		} else if (input->type == INPUT_TYPE_KBD) {
 			char *release_str = input->u.kbd.release_str;
@@ -1993,7 +1917,7 @@ static void panel_process_inputs(void)
 
 static void panel_scan_timer(void)
 {
-	if (keypad.enabled && keypad_initialized) {
+	if (keypad_enabled && keypad_initialized) {
 		if (spin_trylock_irq(&pprt_lock)) {
 			phys_scan_contacts();
 
@@ -2005,16 +1929,14 @@ static void panel_scan_timer(void)
 			panel_process_inputs();
 	}
 
-	if (lcd.enabled && lcd.initialized) {
+	if (lcd_enabled && lcd_initialized) {
 		if (keypressed) {
-			if (lcd.light_tempo == 0 &&
-			    ((lcd.flags & LCD_FLAG_L) == 0))
+			if (light_tempo == 0 && ((lcd_flags & LCD_FLAG_L) == 0))
 				lcd_backlight(1);
-			lcd.light_tempo = FLASH_LIGHT_TEMPO;
-		} else if (lcd.light_tempo > 0) {
-			lcd.light_tempo--;
-			if (lcd.light_tempo == 0 &&
-			    ((lcd.flags & LCD_FLAG_L) == 0))
+			light_tempo = FLASH_LIGHT_TEMPO;
+		} else if (light_tempo > 0) {
+			light_tempo--;
+			if (light_tempo == 0 && ((lcd_flags & LCD_FLAG_L) == 0))
 				lcd_backlight(0);
 		}
 	}
@@ -2024,11 +1946,13 @@ static void panel_scan_timer(void)
 
 static void init_scan_timer(void)
 {
-	if (scan_timer.function)
+	if (scan_timer.function != NULL)
 		return;		/* already started */
 
-	setup_timer(&scan_timer, (void *)&panel_scan_timer, 0);
+	init_timer(&scan_timer);
 	scan_timer.expires = jiffies + INPUT_POLL_TIME;
+	scan_timer.data = 0;
+	scan_timer.function = (void *)&panel_scan_timer;
 	add_timer(&scan_timer);
 }
 
@@ -2059,12 +1983,12 @@ static int input_name2mask(const char *name, pmask_t *mask, pmask_t *value,
 			return 0;	/* input name not found */
 		neg = (in & 1);	/* odd (lower) names are negated */
 		in >>= 1;
-		im |= BIT(in);
+		im |= (1 << in);
 
 		name++;
 		if (isdigit(*name)) {
 			out = *name - '0';
-			om |= BIT(out);
+			om |= (1 << out);
 		} else if (*name == '-') {
 			out = 8;
 		} else {
@@ -2184,7 +2108,7 @@ static void keypad_init(void)
 static int panel_notify_sys(struct notifier_block *this, unsigned long code,
 			    void *unused)
 {
-	if (lcd.enabled && lcd.initialized) {
+	if (lcd_enabled && lcd_initialized) {
 		switch (code) {
 		case SYS_DOWN:
 			panel_lcd_print
@@ -2212,8 +2136,6 @@ static struct notifier_block panel_notifier = {
 
 static void panel_attach(struct parport *port)
 {
-	struct pardev_cb panel_cb;
-
 	if (port->number != parport)
 		return;
 
@@ -2223,12 +2145,11 @@ static void panel_attach(struct parport *port)
 		return;
 	}
 
-	memset(&panel_cb, 0, sizeof(panel_cb));
-	panel_cb.private = &pprt;
-	/* panel_cb.flags = 0 should be PARPORT_DEV_EXCL? */
-
-	pprt = parport_register_dev_model(port, "panel", &panel_cb, 0);
-	if (!pprt) {
+	pprt = parport_register_device(port, "panel", NULL, NULL,  /* pf, kf */
+				       NULL,
+				       /*PARPORT_DEV_EXCL */
+				       0, (void *)&pprt);
+	if (pprt == NULL) {
 		pr_err("%s: port->number=%d parport=%d, parport_register_device() failed\n",
 		       __func__, port->number, parport);
 		return;
@@ -2243,22 +2164,21 @@ static void panel_attach(struct parport *port)
 	/* must init LCD first, just in case an IRQ from the keypad is
 	 * generated at keypad init
 	 */
-	if (lcd.enabled) {
+	if (lcd_enabled) {
 		lcd_init();
 		if (misc_register(&lcd_dev))
 			goto err_unreg_device;
 	}
 
-	if (keypad.enabled) {
+	if (keypad_enabled) {
 		keypad_init();
 		if (misc_register(&keypad_dev))
 			goto err_lcd_unreg;
 	}
-	register_reboot_notifier(&panel_notifier);
 	return;
 
 err_lcd_unreg:
-	if (lcd.enabled)
+	if (lcd_enabled)
 		misc_deregister(&lcd_dev);
 err_unreg_device:
 	parport_unregister_device(pprt);
@@ -2275,123 +2195,95 @@ static void panel_detach(struct parport *port)
 		       __func__, port->number, parport);
 		return;
 	}
-	if (scan_timer.function)
-		del_timer_sync(&scan_timer);
 
-	if (pprt) {
-		if (keypad.enabled) {
-			misc_deregister(&keypad_dev);
-			keypad_initialized = 0;
-		}
-
-		if (lcd.enabled) {
-			panel_lcd_print("\x0cLCD driver " PANEL_VERSION
-					"\nunloaded.\x1b[Lc\x1b[Lb\x1b[L-");
-			misc_deregister(&lcd_dev);
-			lcd.initialized = false;
-		}
-
-		/* TODO: free all input signals */
-		parport_release(pprt);
-		parport_unregister_device(pprt);
-		pprt = NULL;
-		unregister_reboot_notifier(&panel_notifier);
+	if (keypad_enabled && keypad_initialized) {
+		misc_deregister(&keypad_dev);
+		keypad_initialized = 0;
 	}
+
+	if (lcd_enabled && lcd_initialized) {
+		misc_deregister(&lcd_dev);
+		lcd_initialized = 0;
+	}
+
+	parport_release(pprt);
+	parport_unregister_device(pprt);
+	pprt = NULL;
 }
 
 static struct parport_driver panel_driver = {
 	.name = "panel",
-	.match_port = panel_attach,
+	.attach = panel_attach,
 	.detach = panel_detach,
-	.devmodel = true,
 };
 
 /* init function */
-static int __init panel_init_module(void)
+static int panel_init(void)
 {
-	int selected_keypad_type = NOT_SET, err;
+	/* for backwards compatibility */
+	if (keypad_type < 0)
+		keypad_type = keypad_enabled;
+
+	if (lcd_type < 0)
+		lcd_type = lcd_enabled;
+
+	if (parport < 0)
+		parport = DEFAULT_PARPORT;
 
 	/* take care of an eventual profile */
 	switch (profile) {
 	case PANEL_PROFILE_CUSTOM:
 		/* custom profile */
-		selected_keypad_type = DEFAULT_KEYPAD_TYPE;
-		selected_lcd_type = DEFAULT_LCD_TYPE;
+		if (keypad_type < 0)
+			keypad_type = DEFAULT_KEYPAD;
+		if (lcd_type < 0)
+			lcd_type = DEFAULT_LCD;
 		break;
 	case PANEL_PROFILE_OLD:
 		/* 8 bits, 2*16, old keypad */
-		selected_keypad_type = KEYPAD_TYPE_OLD;
-		selected_lcd_type = LCD_TYPE_OLD;
-
-		/* TODO: This two are a little hacky, sort it out later */
-		if (lcd_width == NOT_SET)
+		if (keypad_type < 0)
+			keypad_type = KEYPAD_TYPE_OLD;
+		if (lcd_type < 0)
+			lcd_type = LCD_TYPE_OLD;
+		if (lcd_width < 0)
 			lcd_width = 16;
-		if (lcd_hwidth == NOT_SET)
+		if (lcd_hwidth < 0)
 			lcd_hwidth = 16;
 		break;
 	case PANEL_PROFILE_NEW:
 		/* serial, 2*16, new keypad */
-		selected_keypad_type = KEYPAD_TYPE_NEW;
-		selected_lcd_type = LCD_TYPE_KS0074;
+		if (keypad_type < 0)
+			keypad_type = KEYPAD_TYPE_NEW;
+		if (lcd_type < 0)
+			lcd_type = LCD_TYPE_KS0074;
 		break;
 	case PANEL_PROFILE_HANTRONIX:
 		/* 8 bits, 2*16 hantronix-like, no keypad */
-		selected_keypad_type = KEYPAD_TYPE_NONE;
-		selected_lcd_type = LCD_TYPE_HANTRONIX;
+		if (keypad_type < 0)
+			keypad_type = KEYPAD_TYPE_NONE;
+		if (lcd_type < 0)
+			lcd_type = LCD_TYPE_HANTRONIX;
 		break;
 	case PANEL_PROFILE_NEXCOM:
 		/* generic 8 bits, 2*16, nexcom keypad, eg. Nexcom. */
-		selected_keypad_type = KEYPAD_TYPE_NEXCOM;
-		selected_lcd_type = LCD_TYPE_NEXCOM;
+		if (keypad_type < 0)
+			keypad_type = KEYPAD_TYPE_NEXCOM;
+		if (lcd_type < 0)
+			lcd_type = LCD_TYPE_NEXCOM;
 		break;
 	case PANEL_PROFILE_LARGE:
 		/* 8 bits, 2*40, old keypad */
-		selected_keypad_type = KEYPAD_TYPE_OLD;
-		selected_lcd_type = LCD_TYPE_OLD;
+		if (keypad_type < 0)
+			keypad_type = KEYPAD_TYPE_OLD;
+		if (lcd_type < 0)
+			lcd_type = LCD_TYPE_OLD;
 		break;
 	}
 
-	/*
-	 * Overwrite selection with module param values (both keypad and lcd),
-	 * where the deprecated params have lower prio.
-	 */
-	if (keypad_enabled != NOT_SET)
-		selected_keypad_type = keypad_enabled;
-	if (keypad_type != NOT_SET)
-		selected_keypad_type = keypad_type;
+	lcd_enabled = (lcd_type > 0);
+	keypad_enabled = (keypad_type > 0);
 
-	keypad.enabled = (selected_keypad_type > 0);
-
-	if (lcd_enabled != NOT_SET)
-		selected_lcd_type = lcd_enabled;
-	if (lcd_type != NOT_SET)
-		selected_lcd_type = lcd_type;
-
-	lcd.enabled = (selected_lcd_type > 0);
-
-	if (lcd.enabled) {
-		/*
-		 * Init lcd struct with load-time values to preserve exact
-		 * current functionality (at least for now).
-		 */
-		lcd.height = lcd_height;
-		lcd.width = lcd_width;
-		lcd.bwidth = lcd_bwidth;
-		lcd.hwidth = lcd_hwidth;
-		lcd.charset = lcd_charset;
-		lcd.proto = lcd_proto;
-		lcd.pins.e = lcd_e_pin;
-		lcd.pins.rs = lcd_rs_pin;
-		lcd.pins.rw = lcd_rw_pin;
-		lcd.pins.cl = lcd_cl_pin;
-		lcd.pins.da = lcd_da_pin;
-		lcd.pins.bl = lcd_bl_pin;
-
-		/* Leave it for now, just in case */
-		lcd.esc_seq.len = -1;
-	}
-
-	switch (selected_keypad_type) {
+	switch (keypad_type) {
 	case KEYPAD_TYPE_OLD:
 		keypad_profile = old_keypad_profile;
 		break;
@@ -2406,17 +2298,27 @@ static int __init panel_init_module(void)
 		break;
 	}
 
-	if (!lcd.enabled && !keypad.enabled) {
-		/* no device enabled, let's exit */
+	/* tells various subsystems about the fact that we are initializing */
+	init_in_progress = 1;
+
+	if (parport_register_driver(&panel_driver)) {
+		pr_err("could not register with parport. Aborting.\n");
+		return -EIO;
+	}
+
+	if (!lcd_enabled && !keypad_enabled) {
+		/* no device enabled, let's release the parport */
+		if (pprt) {
+			parport_release(pprt);
+			parport_unregister_device(pprt);
+			pprt = NULL;
+		}
+		parport_unregister_driver(&panel_driver);
 		pr_err("driver version " PANEL_VERSION " disabled.\n");
 		return -ENODEV;
 	}
 
-	err = parport_register_driver(&panel_driver);
-	if (err) {
-		pr_err("could not register with parport. Aborting.\n");
-		return err;
-	}
+	register_reboot_notifier(&panel_notifier);
 
 	if (pprt)
 		pr_info("driver version " PANEL_VERSION
@@ -2425,11 +2327,42 @@ static int __init panel_init_module(void)
 	else
 		pr_info("driver version " PANEL_VERSION
 			" not yet registered\n");
+	/* tells various subsystems about the fact that initialization
+	   is finished */
+	init_in_progress = 0;
 	return 0;
+}
+
+static int __init panel_init_module(void)
+{
+	return panel_init();
 }
 
 static void __exit panel_cleanup_module(void)
 {
+	unregister_reboot_notifier(&panel_notifier);
+
+	if (scan_timer.function != NULL)
+		del_timer_sync(&scan_timer);
+
+	if (pprt != NULL) {
+		if (keypad_enabled) {
+			misc_deregister(&keypad_dev);
+			keypad_initialized = 0;
+		}
+
+		if (lcd_enabled) {
+			panel_lcd_print("\x0cLCD driver " PANEL_VERSION
+					"\nunloaded.\x1b[Lc\x1b[Lb\x1b[L-");
+			misc_deregister(&lcd_dev);
+			lcd_initialized = 0;
+		}
+
+		/* TODO: free all input signals */
+		parport_release(pprt);
+		parport_unregister_device(pprt);
+		pprt = NULL;
+	}
 	parport_unregister_driver(&panel_driver);
 }
 

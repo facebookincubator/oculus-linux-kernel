@@ -481,6 +481,7 @@ static int ad5446_spi_remove(struct spi_device *spi)
 static struct spi_driver ad5446_spi_driver = {
 	.driver = {
 		.name	= "ad5446",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= ad5446_spi_probe,
 	.remove		= ad5446_spi_remove,
@@ -568,6 +569,7 @@ MODULE_DEVICE_TABLE(i2c, ad5446_i2c_ids);
 static struct i2c_driver ad5446_i2c_driver = {
 	.driver = {
 		   .name = "ad5446",
+		   .owner = THIS_MODULE,
 	},
 	.probe = ad5446_i2c_probe,
 	.remove = ad5446_i2c_remove,

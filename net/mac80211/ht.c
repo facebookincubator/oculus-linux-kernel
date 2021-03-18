@@ -252,6 +252,8 @@ bool ieee80211_ht_cap_ie_to_sta_ht_cap(struct ieee80211_sub_if_data *sdata,
 		break;
 	}
 
+	if (bw != sta->sta.bandwidth)
+		changed = true;
 	sta->sta.bandwidth = bw;
 
 	sta->cur_max_bandwidth =

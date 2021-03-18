@@ -129,14 +129,8 @@ static int xenkbd_probe(struct xenbus_device *dev,
 
 	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-abs-pointer", "%d", &abs) < 0)
 		abs = 0;
-	if (abs) {
-		ret = xenbus_printf(XBT_NIL, dev->nodename,
-				    "request-abs-pointer", "1");
-		if (ret) {
-			pr_warning("xenkbd: can't request abs-pointer");
-			abs = 0;
-		}
-	}
+	if (abs)
+		xenbus_printf(XBT_NIL, dev->nodename, "request-abs-pointer", "1");
 
 	/* keyboard */
 	kbd = input_allocate_device();
@@ -238,7 +232,7 @@ static int xenkbd_connect_backend(struct xenbus_device *dev,
 	struct xenbus_transaction xbt;
 
 	ret = gnttab_grant_foreign_access(dev->otherend_id,
-	                                  virt_to_gfn(info->page), 0);
+	                                  virt_to_mfn(info->page), 0);
 	if (ret < 0)
 		return ret;
 	info->gref = ret;
@@ -261,7 +255,7 @@ static int xenkbd_connect_backend(struct xenbus_device *dev,
 		goto error_irqh;
 	}
 	ret = xenbus_printf(xbt, dev->nodename, "page-ref", "%lu",
-			    virt_to_gfn(info->page));
+			    virt_to_mfn(info->page));
 	if (ret)
 		goto error_xenbus;
 	ret = xenbus_printf(xbt, dev->nodename, "page-gref", "%u", info->gref);

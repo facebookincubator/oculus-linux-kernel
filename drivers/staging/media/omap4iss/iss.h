@@ -29,8 +29,6 @@
 #include "iss_ipipe.h"
 #include "iss_resizer.h"
 
-struct regmap;
-
 #define to_iss_device(ptr_module)				\
 	container_of(ptr_module, struct iss_device, ptr_module)
 #define to_device(ptr_module)						\
@@ -81,7 +79,6 @@ struct iss_reg {
 
 /*
  * struct iss_device - ISS device structure.
- * @syscon: Regmap for the syscon register space
  * @crashed: Bitmask of crashed entities (indexed by entity ID)
  */
 struct iss_device {
@@ -96,7 +93,6 @@ struct iss_device {
 
 	struct resource *res[OMAP4_ISS_MEM_LAST];
 	void __iomem *regs[OMAP4_ISS_MEM_LAST];
-	struct regmap *syscon;
 
 	u64 raw_dmamask;
 

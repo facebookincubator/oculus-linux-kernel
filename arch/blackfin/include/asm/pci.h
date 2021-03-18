@@ -3,7 +3,7 @@
 #ifndef _ASM_BFIN_PCI_H
 #define _ASM_BFIN_PCI_H
 
-#include <linux/scatterlist.h>
+#include <asm/scatterlist.h>
 #include <asm-generic/pci-dma-compat.h>
 #include <asm-generic/pci.h>
 

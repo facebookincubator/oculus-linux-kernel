@@ -18,6 +18,5 @@
 #define AT91_PMC_MOSCSELS	16		/* Main Oscillator Selection */
 #define AT91_PMC_MOSCRCS	17		/* Main On-Chip RC */
 #define AT91_PMC_CFDEV		18		/* Clock Failure Detector Event */
-#define AT91_PMC_GCKRDY		24		/* Generated Clocks */
 
 #endif

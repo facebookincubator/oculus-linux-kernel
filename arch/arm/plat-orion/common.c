@@ -28,7 +28,11 @@
 void __init orion_clkdev_add(const char *con_id, const char *dev_id,
 			     struct clk *clk)
 {
-	clkdev_create(clk, con_id, "%s", dev_id);
+	struct clk_lookup *cl;
+
+	cl = clkdev_alloc(clk, con_id, dev_id);
+	if (cl)
+		clkdev_add(cl);
 }
 
 /* Create clkdev entries for all orion platforms except kirkwood.

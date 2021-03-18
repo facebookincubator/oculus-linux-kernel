@@ -550,10 +550,8 @@ static int omfs_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	sb->s_root = d_make_root(root);
-	if (!sb->s_root) {
-		ret = -ENOMEM;
+	if (!sb->s_root)
 		goto out_brelse_bh2;
-	}
 	printk(KERN_DEBUG "omfs: Mounted volume %s\n", omfs_rb->r_name);
 
 	ret = 0;

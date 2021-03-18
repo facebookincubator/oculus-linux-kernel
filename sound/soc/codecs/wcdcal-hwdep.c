@@ -11,8 +11,6 @@
  * GNU General Public License for more details.
  *
  */
-#include <linux/kernel.h>
-#include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/ioctl.h>
 #include <linux/bitops.h>

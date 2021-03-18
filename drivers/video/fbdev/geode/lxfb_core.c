@@ -577,8 +577,10 @@ err:
 		pci_release_region(pdev, 3);
 	}
 
-	fb_dealloc_cmap(&info->cmap);
-	framebuffer_release(info);
+	if (info) {
+		fb_dealloc_cmap(&info->cmap);
+		framebuffer_release(info);
+	}
 
 	return ret;
 }

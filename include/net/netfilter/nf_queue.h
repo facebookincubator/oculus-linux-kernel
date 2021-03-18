@@ -12,8 +12,12 @@ struct nf_queue_entry {
 	unsigned int		id;
 
 	struct nf_hook_ops	*elem;
-	struct nf_hook_state	state;
+	u_int8_t		pf;
 	u16			size; /* sizeof(entry) + saved route keys */
+	unsigned int		hook;
+	struct net_device	*indev;
+	struct net_device	*outdev;
+	int			(*okfn)(struct sk_buff *);
 
 	/* extra space to store route keys */
 };
@@ -32,7 +36,7 @@ void nf_register_queue_handler(const struct nf_queue_handler *qh);
 void nf_unregister_queue_handler(void);
 void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict);
 
-void nf_queue_entry_get_refs(struct nf_queue_entry *entry);
+bool nf_queue_entry_get_refs(struct nf_queue_entry *entry);
 void nf_queue_entry_release_refs(struct nf_queue_entry *entry);
 
 static inline void init_hashrandom(u32 *jhash_initval)

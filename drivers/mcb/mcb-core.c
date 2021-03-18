@@ -409,7 +409,6 @@ static int mcb_init(void)
 
 static void mcb_exit(void)
 {
-	ida_destroy(&mcb_ida);
 	bus_unregister(&mcb_bus_type);
 }
 

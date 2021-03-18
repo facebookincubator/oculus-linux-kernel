@@ -47,11 +47,6 @@
 #include <linux/types.h>
 #include <linux/can.h>
 
-struct bcm_timeval {
-	long tv_sec;
-	long tv_usec;
-};
-
 /**
  * struct bcm_msg_head - head of messages to/from the broadcast manager
  * @opcode:    opcode, see enum below.
@@ -67,7 +62,7 @@ struct bcm_msg_head {
 	__u32 opcode;
 	__u32 flags;
 	__u32 count;
-	struct bcm_timeval ival1, ival2;
+	struct timeval ival1, ival2;
 	canid_t can_id;
 	__u32 nframes;
 	struct can_frame frames[0];

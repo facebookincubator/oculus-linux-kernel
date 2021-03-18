@@ -65,37 +65,23 @@ __setup("ca_keys=", ca_keys_setup);
 /**
  * x509_request_asymmetric_key - Request a key by X.509 certificate params.
  * @keyring: The keys to search.
- * @id: The issuer & serialNumber to look for or NULL.
- * @skid: The subjectKeyIdentifier to look for or NULL.
+ * @kid: The key ID.
  * @partial: Use partial match if true, exact if false.
  *
- * Find a key in the given keyring by identifier.  The preferred identifier is
- * the issuer + serialNumber and the fallback identifier is the
- * subjectKeyIdentifier.  If both are given, the lookup is by the former, but
- * the latter must also match.
+ * Find a key in the given keyring by subject name and key ID.  These might,
+ * for instance, be the issuer name and the authority key ID of an X.509
+ * certificate that needs to be verified.
  */
 struct key *x509_request_asymmetric_key(struct key *keyring,
-					const struct asymmetric_key_id *id,
-					const struct asymmetric_key_id *skid,
+					const struct asymmetric_key_id *kid,
 					bool partial)
 {
-	struct key *key;
-	key_ref_t ref;
-	const char *lookup;
-	char *req, *p;
-	int len;
+	key_ref_t key;
+	char *id, *p;
 
-	if (id) {
-		lookup = id->data;
-		len = id->len;
-	} else {
-		lookup = skid->data;
-		len = skid->len;
-	}
-	
 	/* Construct an identifier "id:<keyid>". */
-	p = req = kmalloc(2 + 1 + len * 2 + 1, GFP_KERNEL);
-	if (!req)
+	p = id = kmalloc(2 + 1 + kid->len * 2 + 1, GFP_KERNEL);
+	if (!id)
 		return ERR_PTR(-ENOMEM);
 
 	if (partial) {
@@ -106,48 +92,32 @@ struct key *x509_request_asymmetric_key(struct key *keyring,
 		*p++ = 'x';
 	}
 	*p++ = ':';
-	p = bin2hex(p, lookup, len);
+	p = bin2hex(p, kid->data, kid->len);
 	*p = 0;
 
-	pr_debug("Look up: \"%s\"\n", req);
+	pr_debug("Look up: \"%s\"\n", id);
 
-	ref = keyring_search(make_key_ref(keyring, 1),
-			     &key_type_asymmetric, req);
-	if (IS_ERR(ref))
-		pr_debug("Request for key '%s' err %ld\n", req, PTR_ERR(ref));
-	kfree(req);
+	key = keyring_search(make_key_ref(keyring, 1),
+			     &key_type_asymmetric, id);
+	if (IS_ERR(key))
+		pr_debug("Request for key '%s' err %ld\n", id, PTR_ERR(key));
+	kfree(id);
 
-	if (IS_ERR(ref)) {
-		switch (PTR_ERR(ref)) {
+	if (IS_ERR(key)) {
+		switch (PTR_ERR(key)) {
 			/* Hide some search errors */
 		case -EACCES:
 		case -ENOTDIR:
 		case -EAGAIN:
 			return ERR_PTR(-ENOKEY);
 		default:
-			return ERR_CAST(ref);
+			return ERR_CAST(key);
 		}
 	}
 
-	key = key_ref_to_ptr(ref);
-	if (id && skid) {
-		const struct asymmetric_key_ids *kids = asymmetric_key_ids(key);
-		if (!kids->id[1]) {
-			pr_debug("issuer+serial match, but expected SKID missing\n");
-			goto reject;
-		}
-		if (!asymmetric_key_id_same(skid, kids->id[1])) {
-			pr_debug("issuer+serial match, but SKID does not\n");
-			goto reject;
-		}
-	}
-	
-	pr_devel("<==%s() = 0 [%x]\n", __func__, key_serial(key));
-	return key;
-
-reject:
-	key_put(key);
-	return ERR_PTR(-EKEYREJECTED);
+	pr_devel("<==%s() = 0 [%x]\n", __func__,
+		 key_serial(key_ref_to_ptr(key)));
+	return key_ref_to_ptr(key);
 }
 EXPORT_SYMBOL_GPL(x509_request_asymmetric_key);
 
@@ -194,15 +164,14 @@ int x509_get_sig_params(struct x509_certificate *cert)
 	 * digest storage space.
 	 */
 	ret = -ENOMEM;
-	digest = kzalloc(ALIGN(digest_size, __alignof__(*desc)) + desc_size,
-			 GFP_KERNEL);
+	digest = kzalloc(digest_size + desc_size, GFP_KERNEL);
 	if (!digest)
 		goto error;
 
 	cert->sig.digest = digest;
 	cert->sig.digest_size = digest_size;
 
-	desc = PTR_ALIGN(digest + digest_size, __alignof__(*desc));
+	desc = digest + digest_size;
 	desc->tfm = tfm;
 	desc->flags = CRYPTO_TFM_REQ_MAY_SLEEP;
 
@@ -258,17 +227,15 @@ static int x509_validate_trust(struct x509_certificate *cert,
 	if (!trust_keyring)
 		return -EOPNOTSUPP;
 
-	if (ca_keyid && !asymmetric_key_id_partial(cert->akid_skid, ca_keyid))
+	if (ca_keyid && !asymmetric_key_id_partial(cert->authority, ca_keyid))
 		return -EPERM;
 
-	key = x509_request_asymmetric_key(trust_keyring,
-					  cert->akid_id, cert->akid_skid,
+	key = x509_request_asymmetric_key(trust_keyring, cert->authority,
 					  false);
 	if (!IS_ERR(key))  {
 		if (!use_builtin_keys
 		    || test_bit(KEY_FLAG_BUILTIN, &key->flags))
-			ret = x509_check_signature(key->payload.data[asym_crypto],
-						   cert);
+			ret = x509_check_signature(key->payload.data, cert);
 		key_put(key);
 	}
 	return ret;
@@ -304,7 +271,14 @@ static int x509_key_preparse(struct key_preparsed_payload *prep)
 	}
 
 	pr_devel("Cert Key Algo: %s\n", pkey_algo_name[cert->pub->pkey_algo]);
-	pr_devel("Cert Valid period: %lld-%lld\n", cert->valid_from, cert->valid_to);
+	pr_devel("Cert Valid From: %04ld-%02d-%02d %02d:%02d:%02d\n",
+		 cert->valid_from.tm_year + 1900, cert->valid_from.tm_mon + 1,
+		 cert->valid_from.tm_mday, cert->valid_from.tm_hour,
+		 cert->valid_from.tm_min,  cert->valid_from.tm_sec);
+	pr_devel("Cert Valid To: %04ld-%02d-%02d %02d:%02d:%02d\n",
+		 cert->valid_to.tm_year + 1900, cert->valid_to.tm_mon + 1,
+		 cert->valid_to.tm_mday, cert->valid_to.tm_hour,
+		 cert->valid_to.tm_min,  cert->valid_to.tm_sec);
 	pr_devel("Cert Signature: %s + %s\n",
 		 pkey_algo_name[cert->sig.pkey_algo],
 		 hash_algo_name[cert->sig.pkey_hash_algo]);
@@ -313,9 +287,8 @@ static int x509_key_preparse(struct key_preparsed_payload *prep)
 	cert->pub->id_type = PKEY_ID_X509;
 
 	/* Check the signature on the key if it appears to be self-signed */
-	if ((!cert->akid_skid && !cert->akid_id) ||
-	    asymmetric_key_id_same(cert->skid, cert->akid_skid) ||
-	    asymmetric_key_id_same(cert->id, cert->akid_id)) {
+	if (!cert->authority ||
+	    asymmetric_key_id_same(cert->skid, cert->authority)) {
 		ret = x509_check_signature(cert->pub, cert); /* self-signed */
 		if (ret < 0)
 			goto error_free_cert;
@@ -354,9 +327,9 @@ static int x509_key_preparse(struct key_preparsed_payload *prep)
 
 	/* We're pinning the module by being linked against it */
 	__module_get(public_key_subtype.owner);
-	prep->payload.data[asym_subtype] = &public_key_subtype;
-	prep->payload.data[asym_key_ids] = kids;
-	prep->payload.data[asym_crypto] = cert->pub;
+	prep->type_data[0] = &public_key_subtype;
+	prep->type_data[1] = kids;
+	prep->payload[0] = cert->pub;
 	prep->description = desc;
 	prep->quotalen = 100;
 

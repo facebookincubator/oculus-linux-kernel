@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -64,22 +64,19 @@ enum ipa_hw_features {
  * SRAM.
  * @cmdOp : CPU->HW command opcode. See IPA_CPU_2_HW_COMMANDS
  * @cmdParams : CPU->HW command parameter. The parameter filed can hold 32 bits
- *		of parameters (immediate parameters) and point on structure in
- *		system memory (in such case the address must be accessible
- *		for HW)
+ * of parameters (immediate parameters) and point on structure in system memory
+ * (in such case the address must be accessible for HW)
  * @responseOp : HW->CPU response opcode. See IPA_HW_2_CPU_RESPONSES
- * @responseParams : HW->CPU response parameter. The parameter filed can hold
- *			32 bits of parameters (immediate parameters) and point
- *			on structure in system memory
+ * @responseParams : HW->CPU response parameter. The parameter filed can hold 32
+ * bits of parameters (immediate parameters) and point on structure in system
+ * memory
  * @eventOp : HW->CPU event opcode. See IPA_HW_2_CPU_EVENTS
- * @eventParams : HW->CPU event parameter. The parameter filed can hold 32 bits
- *			of parameters (immediate parameters) and point on
- *			structure in system memory
+ * @eventParams : HW->CPU event parameter. The parameter filed can hold 32 bits of
+ * parameters (immediate parameters) and point on structure in system memory
  * @firstErrorAddress : Contains the address of first error-source on SNOC
- * @hwState : State of HW. The state carries information regarding the error
- *				type.
- * @warningCounter : The warnings counter. The counter carries information
- *			regarding non fatal errors in HW
+ * @hwState : State of HW. The state carries information regarding the error type.
+ * @warningCounter : The warnings counter. The counter carries information regarding
+ * non fatal errors in HW
  * @interfaceVersionCommon : The Common interface version as reported by HW
  *
  * The shared memory is used for communication between IPA HW and CPU.
@@ -421,13 +418,10 @@ enum ipa_cpu_2_hw_offload_commands {
 /**
  * enum ipa_hw_offload_channel_states - Values that represent
  * offload channel state machine.
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_INITED_DISABLED : Channel is initialized
- *		but disabled
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_RUNNING : Channel is running. Entered after
- *		SET_UP_COMMAND is processed successfully
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_INITED_DISABLED : Channel is initialized but disabled
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_RUNNING : Channel is running. Entered after SET_UP_COMMAND is processed successfully
  * @IPA_HW_OFFLOAD_CHANNEL_STATE_ERROR : Channel is in error state
- * @IPA_HW_OFFLOAD_CHANNEL_STATE_INVALID : Invalid state. Shall not be in use
- *		in operational scenario
+ * @IPA_HW_OFFLOAD_CHANNEL_STATE_INVALID : Invalid state. Shall not be in use in operational scenario
  *
  * These states apply to both Tx and Rx paths. These do not
  * reflect the sub-state the state machine may be in
@@ -441,7 +435,7 @@ enum ipa_hw_offload_channel_states {
 
 
 /**
- * enum ipa_hw_2_cpu_offload_cmd_resp_status -  Values that represent
+ * enum ipa_hw_2_cpu_cmd_resp_status -  Values that represent
  * offload related command response status to be sent to CPU.
  */
 enum ipa_hw_2_cpu_offload_cmd_resp_status {
@@ -475,47 +469,6 @@ enum ipa_hw_2_cpu_offload_cmd_resp_status {
 		FEATURE_ENUM_VAL(IPA_HW_FEATURE_OFFLOAD, 13),
 	IPA_HW_2_CPU_OFFLOAD_RX_RING_OVERRUN_POSSIBILITY  =
 		FEATURE_ENUM_VAL(IPA_HW_FEATURE_OFFLOAD, 14),
-};
-
-/**
- * enum ipa_hw_2_cpu_cmd_resp_status -  Values that represent WDI related
- * command response status to be sent to CPU.
- */
-enum ipa_hw_2_cpu_cmd_resp_status {
-	IPA_HW_2_CPU_WDI_CMD_STATUS_SUCCESS            =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 0),
-	IPA_HW_2_CPU_MAX_WDI_TX_CHANNELS               =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 1),
-	IPA_HW_2_CPU_WDI_CE_RING_OVERRUN_POSSIBILITY   =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 2),
-	IPA_HW_2_CPU_WDI_CE_RING_SET_UP_FAILURE        =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 3),
-	IPA_HW_2_CPU_WDI_CE_RING_PARAMS_UNALIGNED      =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 4),
-	IPA_HW_2_CPU_WDI_COMP_RING_OVERRUN_POSSIBILITY =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 5),
-	IPA_HW_2_CPU_WDI_COMP_RING_SET_UP_FAILURE      =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 6),
-	IPA_HW_2_CPU_WDI_COMP_RING_PARAMS_UNALIGNED    =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 7),
-	IPA_HW_2_CPU_WDI_UNKNOWN_TX_CHANNEL            =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 8),
-	IPA_HW_2_CPU_WDI_TX_INVALID_FSM_TRANSITION     =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 9),
-	IPA_HW_2_CPU_WDI_TX_FSM_TRANSITION_ERROR       =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 10),
-	IPA_HW_2_CPU_MAX_WDI_RX_CHANNELS               =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 11),
-	IPA_HW_2_CPU_WDI_RX_RING_PARAMS_UNALIGNED      =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 12),
-	IPA_HW_2_CPU_WDI_RX_RING_SET_UP_FAILURE        =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 13),
-	IPA_HW_2_CPU_WDI_UNKNOWN_RX_CHANNEL            =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 14),
-	IPA_HW_2_CPU_WDI_RX_INVALID_FSM_TRANSITION     =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 15),
-	IPA_HW_2_CPU_WDI_RX_FSM_TRANSITION_ERROR       =
-		FEATURE_ENUM_VAL(IPA_HW_FEATURE_WDI, 16),
 };
 
 /**

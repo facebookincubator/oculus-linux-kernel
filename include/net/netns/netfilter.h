@@ -1,9 +1,9 @@
 #ifndef __NETNS_NETFILTER_H
 #define __NETNS_NETFILTER_H
 
-#include <linux/netfilter_defs.h>
+#include <linux/proc_fs.h>
+#include <linux/netfilter.h>
 
-struct proc_dir_entry;
 struct nf_logger;
 
 struct netns_nf {
@@ -14,6 +14,5 @@ struct netns_nf {
 #ifdef CONFIG_SYSCTL
 	struct ctl_table_header *nf_log_dir_header;
 #endif
-	struct list_head hooks[NFPROTO_NUMPROTO][NF_MAX_HOOKS];
 };
 #endif

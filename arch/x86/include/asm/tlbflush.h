@@ -86,14 +86,7 @@ static inline void cr4_set_bits_and_update_boot(unsigned long mask)
 
 static inline void __native_flush_tlb(void)
 {
-	/*
-	 * If current->mm == NULL then we borrow a mm which may change during a
-	 * task switch and therefore we must not be preempted while we write CR3
-	 * back:
-	 */
-	preempt_disable();
 	native_write_cr3(native_read_cr3());
-	preempt_enable();
 }
 
 static inline void __native_flush_tlb_global_irq_disabled(void)
@@ -267,12 +260,6 @@ static inline void reset_lazy_tlbstate(void)
 }
 
 #endif	/* SMP */
-
-/* Not inlined due to inc_irq_stat not being defined yet */
-#define flush_tlb_local() {		\
-	inc_irq_stat(irq_tlb_count);	\
-	local_flush_tlb();		\
-}
 
 #ifndef CONFIG_PARAVIRT
 #define flush_tlb_others(mask, mm, start, end)	\

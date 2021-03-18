@@ -73,7 +73,7 @@ static const struct regulator_linear_range dcdc4_ranges[] = {
 };
 
 static struct tps_info tps65218_pmic_regs[] = {
-	TPS65218_INFO(DCDC1, "DCDC1", 850000, 1675000),
+	TPS65218_INFO(DCDC1, "DCDC1", 850000, 167500),
 	TPS65218_INFO(DCDC2, "DCDC2", 850000, 1675000),
 	TPS65218_INFO(DCDC3, "DCDC3", 900000, 3400000),
 	TPS65218_INFO(DCDC4, "DCDC4", 1175000, 3400000),
@@ -231,8 +231,7 @@ static int tps65218_regulator_probe(struct platform_device *pdev)
 
 	template = match->data;
 	id = template->id;
-	init_data = of_get_regulator_init_data(&pdev->dev, pdev->dev.of_node,
-					       &regulators[id]);
+	init_data = of_get_regulator_init_data(&pdev->dev, pdev->dev.of_node);
 
 	platform_set_drvdata(pdev, tps);
 
@@ -256,6 +255,7 @@ static int tps65218_regulator_probe(struct platform_device *pdev)
 static struct platform_driver tps65218_regulator_driver = {
 	.driver = {
 		.name = "tps65218-pmic",
+		.owner = THIS_MODULE,
 		.of_match_table = tps65218_of_match,
 	},
 	.probe = tps65218_regulator_probe,

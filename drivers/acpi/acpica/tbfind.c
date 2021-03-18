@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,37 +68,24 @@ acpi_status
 acpi_tb_find_table(char *signature,
 		   char *oem_id, char *oem_table_id, u32 *table_index)
 {
+	u32 i;
 	acpi_status status;
 	struct acpi_table_header header;
-	u32 i;
 
 	ACPI_FUNCTION_TRACE(tb_find_table);
 
-	/* Validate the input table signature */
-
-	if (!acpi_is_valid_signature(signature)) {
-		return_ACPI_STATUS(AE_BAD_SIGNATURE);
-	}
-
-	/* Don't allow the OEM strings to be too long */
-
-	if ((strlen(oem_id) > ACPI_OEM_ID_SIZE) ||
-	    (strlen(oem_table_id) > ACPI_OEM_TABLE_ID_SIZE)) {
-		return_ACPI_STATUS(AE_AML_STRING_LIMIT);
-	}
-
 	/* Normalize the input strings */
 
-	memset(&header, 0, sizeof(struct acpi_table_header));
+	ACPI_MEMSET(&header, 0, sizeof(struct acpi_table_header));
 	ACPI_MOVE_NAME(header.signature, signature);
-	strncpy(header.oem_id, oem_id, ACPI_OEM_ID_SIZE);
-	strncpy(header.oem_table_id, oem_table_id, ACPI_OEM_TABLE_ID_SIZE);
+	ACPI_STRNCPY(header.oem_id, oem_id, ACPI_OEM_ID_SIZE);
+	ACPI_STRNCPY(header.oem_table_id, oem_table_id, ACPI_OEM_TABLE_ID_SIZE);
 
 	/* Search for the table */
 
 	for (i = 0; i < acpi_gbl_root_table_list.current_table_count; ++i) {
-		if (memcmp(&(acpi_gbl_root_table_list.tables[i].signature),
-			   header.signature, ACPI_NAME_SIZE)) {
+		if (ACPI_MEMCMP(&(acpi_gbl_root_table_list.tables[i].signature),
+				header.signature, ACPI_NAME_SIZE)) {
 
 			/* Not the requested table */
 
@@ -125,20 +112,21 @@ acpi_tb_find_table(char *signature,
 
 		/* Check for table match on all IDs */
 
-		if (!memcmp
+		if (!ACPI_MEMCMP
 		    (acpi_gbl_root_table_list.tables[i].pointer->signature,
 		     header.signature, ACPI_NAME_SIZE) && (!oem_id[0]
 							   ||
-							   !memcmp
+							   !ACPI_MEMCMP
 							   (acpi_gbl_root_table_list.
 							    tables[i].pointer->
 							    oem_id,
 							    header.oem_id,
 							    ACPI_OEM_ID_SIZE))
 		    && (!oem_table_id[0]
-			|| !memcmp(acpi_gbl_root_table_list.tables[i].pointer->
-				   oem_table_id, header.oem_table_id,
-				   ACPI_OEM_TABLE_ID_SIZE))) {
+			|| !ACPI_MEMCMP(acpi_gbl_root_table_list.tables[i].
+					pointer->oem_table_id,
+					header.oem_table_id,
+					ACPI_OEM_TABLE_ID_SIZE))) {
 			*table_index = i;
 
 			ACPI_DEBUG_PRINT((ACPI_DB_TABLES,

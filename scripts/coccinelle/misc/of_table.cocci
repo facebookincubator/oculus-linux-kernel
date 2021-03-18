@@ -1,6 +1,6 @@
-/// Make sure (of/i2c/platform)_device_id tables are NULL terminated
+/// Make sure of_device_id tables are NULL terminated
 //
-// Keywords: of_table i2c_table platform_table
+// Keywords: of_table
 // Confidence: Medium
 // Options: --include-headers
 
@@ -13,26 +13,18 @@ virtual report
 identifier var, arr;
 expression E;
 @@
-(
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
+struct of_device_id arr[] = {
 	...,
 	{
 	.var = E,
 *	}
 };
-|
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
-	...,
-*	{ ..., E, ... },
-};
-)
 
 @depends on patch@
 identifier var, arr;
 expression E;
 @@
-(
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
+struct of_device_id arr[] = {
 	...,
 	{
 	.var = E,
@@ -40,34 +32,19 @@ struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
 +	},
 +	{ }
 };
-|
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
-	...,
-	{ ..., E, ... },
-+	{ },
-};
-)
 
 @r depends on org || report@
 position p1;
 identifier var, arr;
 expression E;
 @@
-(
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
+struct of_device_id arr[] = {
 	...,
 	{
 	.var = E,
 	}
 	@p1
 };
-|
-struct \(of_device_id \| i2c_device_id \| platform_device_id\) arr[] = {
-	...,
-	{ ..., E, ... }
-	@p1
-};
-)
 
 @script:python depends on org@
 p1 << r.p1;

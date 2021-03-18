@@ -207,7 +207,7 @@ struct pnp_protocol pnpacpi_protocol = {
 };
 EXPORT_SYMBOL(pnpacpi_protocol);
 
-static const char *__init pnpacpi_get_id(struct acpi_device *device)
+static char *__init pnpacpi_get_id(struct acpi_device *device)
 {
 	struct acpi_hardware_id *id;
 
@@ -222,7 +222,7 @@ static const char *__init pnpacpi_get_id(struct acpi_device *device)
 static int __init pnpacpi_add_device(struct acpi_device *device)
 {
 	struct pnp_dev *dev;
-	const char *pnpid;
+	char *pnpid;
 	struct acpi_hardware_id *id;
 	int error;
 
@@ -248,7 +248,6 @@ static int __init pnpacpi_add_device(struct acpi_device *device)
 	if (!dev)
 		return -ENOMEM;
 
-	ACPI_COMPANION_SET(&dev->dev, device);
 	dev->data = device;
 	/* .enabled means the device can decode the resources */
 	dev->active = device->status.enabled;
@@ -291,9 +290,11 @@ static int __init pnpacpi_add_device(struct acpi_device *device)
 		return error;
 	}
 
+	error = acpi_bind_one(&dev->dev, device);
+
 	num++;
 
-	return 0;
+	return error;
 }
 
 static acpi_status __init pnpacpi_add_device_handler(acpi_handle handle,

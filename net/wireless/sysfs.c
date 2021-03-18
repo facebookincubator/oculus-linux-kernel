@@ -86,19 +86,20 @@ static int wiphy_uevent(struct device *dev, struct kobj_uevent_env *env)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int wiphy_suspend(struct device *dev)
+#ifdef CONFIG_PM
+static int wiphy_suspend(struct device *dev, pm_message_t state)
 {
 	struct cfg80211_registered_device *rdev = dev_to_rdev(dev);
 	int ret = 0;
 
 	rdev->suspend_at = get_seconds();
 
-	rtnl_lock();
-	if (rdev->wiphy.registered)
-		if (rdev->ops->suspend)
-			ret = rdev_suspend(rdev, NULL);
-	rtnl_unlock();
+	if (rdev->ops->suspend) {
+		rtnl_lock();
+		if (rdev->wiphy.registered)
+			ret = rdev_suspend(rdev);
+		rtnl_unlock();
+	}
 
 	return ret;
 }
@@ -120,11 +121,6 @@ static int wiphy_resume(struct device *dev)
 
 	return ret;
 }
-
-static SIMPLE_DEV_PM_OPS(wiphy_pm_ops, wiphy_suspend, wiphy_resume);
-#define WIPHY_PM_OPS (&wiphy_pm_ops)
-#else
-#define WIPHY_PM_OPS NULL
 #endif
 
 static const void *wiphy_namespace(struct device *d)
@@ -140,7 +136,10 @@ struct class ieee80211_class = {
 	.dev_release = wiphy_dev_release,
 	.dev_groups = ieee80211_groups,
 	.dev_uevent = wiphy_uevent,
-	.pm = WIPHY_PM_OPS,
+#ifdef CONFIG_PM
+	.suspend = wiphy_suspend,
+	.resume = wiphy_resume,
+#endif
 	.ns_type = &net_ns_type_operations,
 	.namespace = wiphy_namespace,
 };

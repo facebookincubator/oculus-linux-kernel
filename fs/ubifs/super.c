@@ -159,6 +159,9 @@ struct inode *ubifs_iget(struct super_block *sb, unsigned long inum)
 	if (err)
 		goto out_invalid;
 
+	/* Disable read-ahead */
+	inode->i_mapping->backing_dev_info = &c->bdi;
+
 	switch (inode->i_mode & S_IFMT) {
 	case S_IFREG:
 		inode->i_mapping->a_ops = &ubifs_file_address_operations;
@@ -198,7 +201,6 @@ struct inode *ubifs_iget(struct super_block *sb, unsigned long inum)
 		}
 		memcpy(ui->data, ino->data, ui->data_len);
 		((char *)ui->data)[ui->data_len] = '\0';
-		inode->i_link = ui->data;
 		break;
 	case S_IFBLK:
 	case S_IFCHR:
@@ -1984,7 +1986,9 @@ static struct ubifs_info *alloc_ubifs_info(struct ubi_volume_desc *ubi)
 		INIT_LIST_HEAD(&c->old_buds);
 		INIT_LIST_HEAD(&c->orph_list);
 		INIT_LIST_HEAD(&c->orph_new);
-		c->no_chk_data_crc = 1;
+
+		c->mount_opts.chk_data_crc = 2;
+		c->no_chk_data_crc = 0;
 
 		c->highest_inum = UBIFS_FIRST_INO;
 		c->lhead_lnum = c->ltail_lnum = UBIFS_LOG_LNUM;
@@ -2018,7 +2022,7 @@ static int ubifs_fill_super(struct super_block *sb, void *data, int silent)
 	 * Read-ahead will be disabled because @c->bdi.ra_pages is 0.
 	 */
 	c->bdi.name = "ubifs",
-	c->bdi.capabilities = 0;
+	c->bdi.capabilities = BDI_CAP_MAP_COPY;
 	err  = bdi_init(&c->bdi);
 	if (err)
 		goto out_close;

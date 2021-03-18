@@ -3,14 +3,11 @@
 # subsystems should select the appropriate symbols.
 
 config REGMAP
-	default y if (REGMAP_I2C || REGMAP_SPI || REGMAP_SPMI || REGMAP_AC97 || REGMAP_MMIO || REGMAP_IRQ || REGMAP_SWR)
+	default y if (REGMAP_I2C || REGMAP_SPI || REGMAP_SPMI || REGMAP_MMIO || REGMAP_IRQ || REGMAP_SWR)
 	select LZO_COMPRESS
 	select LZO_DECOMPRESS
 	select IRQ_DOMAIN if REGMAP_IRQ
 	bool
-
-config REGMAP_AC97
-	tristate
 
 config REGMAP_I2C
 	tristate
@@ -22,7 +19,7 @@ config REGMAP_SPI
 
 config REGMAP_SPMI
 	tristate
-	depends on SPMI
+	depends on SPMI || MSM_SPMI
 
 config REGMAP_MMIO
 	tristate
@@ -34,10 +31,11 @@ config REGMAP_SWR
 	tristate
 
 config REGMAP_ALLOW_WRITE_DEBUGFS
-	depends on REGMAP && DEBUG_FS
-	bool "Allow REGMAP debugfs write"
-	default n
+	bool "Allow register writes through debugfs"
+	depends on DEBUG_FS
+	depends on REGMAP
 	help
-	  Say 'y' here to allow the regmap debugfs write. Regmap debugfs write
-	  could be risky when accessing some essential hardwares, so it is not
-	  recommended to enable this option on any production device.
+	 Add support to allow register writes through
+	 debugfs. Client driver can enable this config
+	 option to write registers using debugfs from
+	 regmap registers file.

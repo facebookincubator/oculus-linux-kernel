@@ -36,13 +36,14 @@ TRACE_EVENT(kgsl_issueibcmds,
 
 	TP_PROTO(struct kgsl_device *device,
 			int drawctxt_id,
+			struct kgsl_cmdbatch *cmdbatch,
 			unsigned int numibs,
 			int timestamp,
 			int flags,
 			int result,
 			unsigned int type),
 
-	TP_ARGS(device, drawctxt_id, numibs, timestamp,
+	TP_ARGS(device, drawctxt_id, cmdbatch, numibs, timestamp,
 		flags, result, type),
 
 	TP_STRUCT__entry(
@@ -73,7 +74,7 @@ TRACE_EVENT(kgsl_issueibcmds,
 		__entry->numibs,
 		__entry->timestamp,
 		__entry->flags ? __print_flags(__entry->flags, "|",
-						KGSL_DRAWOBJ_FLAGS) : "None",
+						KGSL_CMDBATCH_FLAGS) : "None",
 		__entry->result,
 		__print_symbolic(__entry->drawctxt_type, KGSL_CONTEXT_TYPES)
 	)
@@ -216,6 +217,11 @@ DEFINE_EVENT(kgsl_pwr_template, kgsl_bus,
 );
 
 DEFINE_EVENT(kgsl_pwr_template, kgsl_rail,
+	TP_PROTO(struct kgsl_device *device, int on),
+	TP_ARGS(device, on)
+);
+
+DEFINE_EVENT(kgsl_pwr_template, kgsl_retention_clk,
 	TP_PROTO(struct kgsl_device *device, int on),
 	TP_ARGS(device, on)
 );
@@ -822,14 +828,14 @@ TRACE_EVENT(kgsl_constraint,
 
 TRACE_EVENT(kgsl_mmu_pagefault,
 
-	TP_PROTO(struct kgsl_device *device, unsigned long page,
+	TP_PROTO(struct kgsl_device *device, unsigned int page,
 		 unsigned int pt, const char *op),
 
 	TP_ARGS(device, page, pt, op),
 
 	TP_STRUCT__entry(
 		__string(device_name, device->name)
-		__field(unsigned long, page)
+		__field(unsigned int, page)
 		__field(unsigned int, pt)
 		__string(op, op)
 	),
@@ -842,7 +848,7 @@ TRACE_EVENT(kgsl_mmu_pagefault,
 	),
 
 	TP_printk(
-		"d_name=%s page=0x%08lx pt=%u op=%s",
+		"d_name=%s page=0x%08x pt=%u op=%s",
 		__get_str(device_name), __entry->page, __entry->pt,
 		__get_str(op)
 	)
@@ -1027,62 +1033,59 @@ TRACE_EVENT(kgsl_pagetable_destroy,
 );
 
 DECLARE_EVENT_CLASS(syncpoint_timestamp_template,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj,
-		struct kgsl_context *context,
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, struct kgsl_context *context,
 		unsigned int timestamp),
-	TP_ARGS(syncobj, context, timestamp),
+	TP_ARGS(cmdbatch, context, timestamp),
 	TP_STRUCT__entry(
-		__field(unsigned int, syncobj_context_id)
+		__field(unsigned int, cmdbatch_context_id)
 		__field(unsigned int, context_id)
 		__field(unsigned int, timestamp)
 	),
 	TP_fast_assign(
-		__entry->syncobj_context_id = syncobj->base.context->id;
+		__entry->cmdbatch_context_id = cmdbatch->context->id;
 		__entry->context_id = context->id;
 		__entry->timestamp = timestamp;
 	),
 	TP_printk("ctx=%d sync ctx=%d ts=%d",
-		__entry->syncobj_context_id, __entry->context_id,
+		__entry->cmdbatch_context_id, __entry->context_id,
 		__entry->timestamp)
 );
 
 DEFINE_EVENT(syncpoint_timestamp_template, syncpoint_timestamp,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj,
-		struct kgsl_context *context,
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, struct kgsl_context *context,
 		unsigned int timestamp),
-	TP_ARGS(syncobj, context, timestamp)
+	TP_ARGS(cmdbatch, context, timestamp)
 );
 
 DEFINE_EVENT(syncpoint_timestamp_template, syncpoint_timestamp_expire,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj,
-		struct kgsl_context *context,
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, struct kgsl_context *context,
 		unsigned int timestamp),
-	TP_ARGS(syncobj, context, timestamp)
+	TP_ARGS(cmdbatch, context, timestamp)
 );
 
 DECLARE_EVENT_CLASS(syncpoint_fence_template,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj, char *name),
-	TP_ARGS(syncobj, name),
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, char *name),
+	TP_ARGS(cmdbatch, name),
 	TP_STRUCT__entry(
 		__string(fence_name, name)
-		__field(unsigned int, syncobj_context_id)
+		__field(unsigned int, cmdbatch_context_id)
 	),
 	TP_fast_assign(
-		__entry->syncobj_context_id = syncobj->base.context->id;
+		__entry->cmdbatch_context_id = cmdbatch->context->id;
 		__assign_str(fence_name, name);
 	),
 	TP_printk("ctx=%d fence=%s",
-		__entry->syncobj_context_id, __get_str(fence_name))
+		__entry->cmdbatch_context_id, __get_str(fence_name))
 );
 
 DEFINE_EVENT(syncpoint_fence_template, syncpoint_fence,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj, char *name),
-	TP_ARGS(syncobj, name)
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, char *name),
+	TP_ARGS(cmdbatch, name)
 );
 
 DEFINE_EVENT(syncpoint_fence_template, syncpoint_fence_expire,
-	TP_PROTO(struct kgsl_drawobj_sync *syncobj, char *name),
-	TP_ARGS(syncobj, name)
+	TP_PROTO(struct kgsl_cmdbatch *cmdbatch, char *name),
+	TP_ARGS(cmdbatch, name)
 );
 
 TRACE_EVENT(kgsl_msg,
@@ -1099,135 +1102,6 @@ TRACE_EVENT(kgsl_msg,
 	)
 );
 
-DECLARE_EVENT_CLASS(sparse_alloc_template,
-	TP_PROTO(unsigned int id, uint64_t size, unsigned int pagesize),
-	TP_ARGS(id, size, pagesize),
-	TP_STRUCT__entry(
-		__field(unsigned int, id)
-		__field(uint64_t, size)
-		__field(unsigned int, pagesize)
-	),
-	TP_fast_assign(
-		__entry->id = id;
-		__entry->size = size;
-		__entry->pagesize = pagesize;
-	),
-	TP_printk("id=%d size=0x%llX pagesize=0x%X",
-		__entry->id, __entry->size, __entry->pagesize)
-);
-
-DEFINE_EVENT(sparse_alloc_template, sparse_phys_alloc,
-	TP_PROTO(unsigned int id, uint64_t size, unsigned int pagesize),
-	TP_ARGS(id, size, pagesize)
-);
-
-DEFINE_EVENT(sparse_alloc_template, sparse_virt_alloc,
-	TP_PROTO(unsigned int id, uint64_t size, unsigned int pagesize),
-	TP_ARGS(id, size, pagesize)
-);
-
-DECLARE_EVENT_CLASS(sparse_free_template,
-	TP_PROTO(unsigned int id),
-	TP_ARGS(id),
-	TP_STRUCT__entry(
-		__field(unsigned int, id)
-	),
-	TP_fast_assign(
-		__entry->id = id;
-	),
-	TP_printk("id=%d", __entry->id)
-);
-
-DEFINE_EVENT(sparse_free_template, sparse_phys_free,
-	TP_PROTO(unsigned int id),
-	TP_ARGS(id)
-);
-
-DEFINE_EVENT(sparse_free_template, sparse_virt_free,
-	TP_PROTO(unsigned int id),
-	TP_ARGS(id)
-);
-
-TRACE_EVENT(sparse_bind,
-	TP_PROTO(unsigned int v_id, uint64_t v_off,
-		unsigned int p_id, uint64_t p_off,
-		uint64_t size, uint64_t flags),
-	TP_ARGS(v_id, v_off, p_id, p_off, size, flags),
-	TP_STRUCT__entry(
-		__field(unsigned int, v_id)
-		__field(uint64_t, v_off)
-		__field(unsigned int, p_id)
-		__field(uint64_t, p_off)
-		__field(uint64_t, size)
-		__field(uint64_t, flags)
-	),
-	TP_fast_assign(
-		__entry->v_id = v_id;
-		__entry->v_off = v_off;
-		__entry->p_id = p_id;
-		__entry->p_off = p_off;
-		__entry->size = size;
-		__entry->flags = flags;
-	),
-	TP_printk(
-	"v_id=%d v_off=0x%llX p_id=%d p_off=0x%llX size=0x%llX flags=0x%llX",
-		__entry->v_id, __entry->v_off,
-		__entry->p_id, __entry->p_off,
-		__entry->size, __entry->flags)
-);
-
-TRACE_EVENT(sparse_unbind,
-	TP_PROTO(unsigned int v_id, uint64_t v_off, uint64_t size),
-	TP_ARGS(v_id, v_off, size),
-	TP_STRUCT__entry(
-		__field(unsigned int, v_id)
-		__field(uint64_t, v_off)
-		__field(uint64_t, size)
-	),
-	TP_fast_assign(
-		__entry->v_id = v_id;
-		__entry->v_off = v_off;
-		__entry->size = size;
-	),
-	TP_printk("v_id=%d v_off=0x%llX size=0x%llX",
-		__entry->v_id, __entry->v_off, __entry->size)
-);
-
-
-TRACE_EVENT(kgsl_clock_throttling,
-	TP_PROTO(
-		int idle_10pct,
-		int crc_50pct,
-		int crc_more50pct,
-		int crc_less50pct,
-		int adj
-	),
-	TP_ARGS(
-		idle_10pct,
-		crc_50pct,
-		crc_more50pct,
-		crc_less50pct,
-		adj
-	),
-	TP_STRUCT__entry(
-		__field(int, idle_10pct)
-		__field(int, crc_50pct)
-		__field(int, crc_more50pct)
-		__field(int, crc_less50pct)
-		__field(int, adj)
-	),
-	TP_fast_assign(
-		__entry->idle_10pct = idle_10pct;
-		__entry->crc_50pct = crc_50pct;
-		__entry->crc_more50pct = crc_more50pct;
-		__entry->crc_less50pct = crc_less50pct;
-		__entry->adj = adj;
-	),
-	TP_printk("idle_10=%d crc_50=%d crc_more50=%d crc_less50=%d adj=%d",
-		__entry->idle_10pct, __entry->crc_50pct, __entry->crc_more50pct,
-		__entry->crc_less50pct, __entry->adj
-	)
-);
 
 #endif /* _KGSL_TRACE_H */
 

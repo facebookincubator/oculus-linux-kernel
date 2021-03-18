@@ -71,7 +71,7 @@ static int fl512_ai_insn_read(struct comedi_device *dev,
 		outb(0, dev->iobase + FL512_AI_START_CONV_REG);
 
 		/* XXX should test "done" flag instead of delay */
-		usleep_range(30, 100);
+		udelay(30);
 
 		val = inb(dev->iobase + FL512_AI_LSB_REG);
 		val |= (inb(dev->iobase + FL512_AI_MSB_REG) << 8);
@@ -135,8 +135,13 @@ static int fl512_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->maxdata	= 0x0fff;
 	s->range_table	= &range_fl512;
 	s->insn_write	= fl512_ao_insn_write;
+	s->insn_read	= comedi_readback_insn_read;
 
-	return comedi_alloc_subdev_readback(s);
+	ret = comedi_alloc_subdev_readback(s);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static struct comedi_driver fl512_driver = {

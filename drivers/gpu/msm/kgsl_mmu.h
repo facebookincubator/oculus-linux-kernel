@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -106,9 +106,6 @@ struct kgsl_mmu_pt_ops {
 	int (*mmu_unmap_offset)(struct kgsl_pagetable *pt,
 			struct kgsl_memdesc *memdesc, uint64_t addr,
 			uint64_t offset, uint64_t size);
-	int (*mmu_sparse_dummy_map)(struct kgsl_pagetable *pt,
-			struct kgsl_memdesc *memdesc, uint64_t offset,
-			uint64_t size);
 };
 
 /*
@@ -130,6 +127,8 @@ struct kgsl_mmu_pt_ops {
 #define KGSL_MMU_FORCE_32BIT BIT(5)
 /* 64 bit address is live */
 #define KGSL_MMU_64BIT BIT(6)
+/* MMU can do coherent hardware table walks */
+#define KGSL_MMU_COHERENT_HTW BIT(7)
 /* The MMU supports non-contigious pages */
 #define KGSL_MMU_PAGED BIT(8)
 /* The device requires a guard page */
@@ -230,9 +229,6 @@ int kgsl_mmu_unmap_offset(struct kgsl_pagetable *pagetable,
 		uint64_t size);
 
 struct kgsl_memdesc *kgsl_mmu_get_qdss_global_entry(struct kgsl_device *device);
-
-int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc, uint64_t offset, uint64_t size);
 
 /*
  * Static inline functions of MMU that simply call the SMMU specific
@@ -384,7 +380,7 @@ kgsl_mmu_pagetable_get_contextidr(struct kgsl_pagetable *pagetable)
 	return 0;
 }
 
-#ifdef CONFIG_QCOM_IOMMU
+#ifdef CONFIG_MSM_IOMMU
 #include <linux/qcom_iommu.h>
 #ifndef CONFIG_ARM_SMMU
 static inline bool kgsl_mmu_bus_secured(struct device *dev)

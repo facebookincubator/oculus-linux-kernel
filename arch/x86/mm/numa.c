@@ -246,10 +246,8 @@ int __init numa_cleanup_meminfo(struct numa_meminfo *mi)
 		bi->start = max(bi->start, low);
 		bi->end = min(bi->end, high);
 
-		/* and there's no empty or non-exist block */
-		if (bi->start >= bi->end ||
-		    !memblock_overlaps_region(&memblock.memory,
-			bi->start, bi->end - bi->start))
+		/* and there's no empty block */
+		if (bi->start >= bi->end)
 			numa_remove_memblk_from(i--, mi);
 	}
 
@@ -484,16 +482,9 @@ static void __init numa_clear_kernel_node_hotplug(void)
 				  &memblock.reserved, mb->nid);
 	}
 
-	/*
-	 * Mark all kernel nodes.
-	 *
-	 * When booting with mem=nn[kMG] or in a kdump kernel, numa_meminfo
-	 * may not include all the memblock.reserved memory ranges because
-	 * trim_snb_memory() reserves specific pages for Sandy Bridge graphics.
-	 */
+	/* Mark all kernel nodes. */
 	for_each_memblock(reserved, r)
-		if (r->nid != MAX_NUMNODES)
-			node_set(r->nid, numa_kernel_nodes);
+		node_set(r->nid, numa_kernel_nodes);
 
 	/* Clear MEMBLOCK_HOTPLUG flag for memory in kernel nodes. */
 	for (i = 0; i < numa_meminfo.nr_blks; i++) {
@@ -803,6 +794,7 @@ int early_cpu_to_node(int cpu)
 void debug_cpumask_set_cpu(int cpu, int node, bool enable)
 {
 	struct cpumask *mask;
+	char buf[64];
 
 	if (node == NUMA_NO_NODE) {
 		/* early_cpu_to_node() already emits a warning and trace */
@@ -820,9 +812,10 @@ void debug_cpumask_set_cpu(int cpu, int node, bool enable)
 	else
 		cpumask_clear_cpu(cpu, mask);
 
-	printk(KERN_DEBUG "%s cpu %d node %d: mask now %*pbl\n",
+	cpulist_scnprintf(buf, sizeof(buf), mask);
+	printk(KERN_DEBUG "%s cpu %d node %d: mask now %s\n",
 		enable ? "numa_add_cpu" : "numa_remove_cpu",
-		cpu, node, cpumask_pr_args(mask));
+		cpu, node, buf);
 	return;
 }
 

@@ -114,10 +114,7 @@ static int efx_test_nvram(struct efx_nic *efx, struct efx_self_tests *tests)
 
 	if (efx->type->test_nvram) {
 		rc = efx->type->test_nvram(efx);
-		if (rc == -EPERM)
-			rc = 0;
-		else
-			tests->nvram = rc ? -1 : 1;
+		tests->nvram = rc ? -1 : 1;
 	}
 
 	return rc;
@@ -256,12 +253,6 @@ static int efx_test_phy(struct efx_nic *efx, struct efx_self_tests *tests,
 	mutex_lock(&efx->mac_lock);
 	rc = efx->phy_op->run_tests(efx, tests->phy_ext, flags);
 	mutex_unlock(&efx->mac_lock);
-	if (rc == -EPERM)
-		rc = 0;
-	else
-		netif_info(efx, drv, efx->net_dev,
-			   "%s phy selftest\n", rc ? "Failed" : "Passed");
-
 	return rc;
 }
 
@@ -669,9 +660,6 @@ static int efx_test_loopbacks(struct efx_nic *efx, struct efx_self_tests *tests,
 	efx->loopback_selftest = NULL;
 	wmb();
 	kfree(state);
-
-	if (rc == -EPERM)
-		rc = 0;
 
 	return rc;
 }

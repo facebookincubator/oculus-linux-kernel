@@ -82,16 +82,20 @@ int cfs_cap_raised(cfs_cap_t cap)
 	return cap_raised(current_cap(), cap);
 }
 
-static void cfs_kernel_cap_pack(kernel_cap_t kcap, cfs_cap_t *cap)
+void cfs_kernel_cap_pack(kernel_cap_t kcap, cfs_cap_t *cap)
 {
 	/* XXX lost high byte */
 	*cap = kcap.cap[0];
 }
 
+void cfs_kernel_cap_unpack(kernel_cap_t *kcap, cfs_cap_t cap)
+{
+	kcap->cap[0] = cap;
+}
+
 cfs_cap_t cfs_curproc_cap_pack(void)
 {
 	cfs_cap_t cap;
-
 	cfs_kernel_cap_pack(current_cap(), &cap);
 	return cap;
 }

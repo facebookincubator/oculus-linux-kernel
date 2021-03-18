@@ -110,11 +110,7 @@
 			interrupt-parent = <&vic>;
 			interrupts = <31>; /* Cascaded to vic */
 			clear-mask = <0xffffffff>;
-			/*
-			 * Valid interrupt lines mask according to
-			 * table 4-36 page 4-50 of ARM DUI 0225D
-			 */
-			valid-mask = <0x0760031b>;
+			valid-mask = <0xffc203f8>;
 		};
 
 		dma@10130000 {
@@ -256,11 +252,6 @@
 			#size-cells = <1>;
 			ranges = <0 0x10000000 0x10000>;
 
-			sysreg@0 {
-				compatible = "arm,versatile-sysreg", "syscon";
-				reg = <0x00000 0x1000>;
-			};
-
 			aaci@4000 {
 				compatible = "arm,primecell";
 				reg = <0x4000 0x1000>;
@@ -270,8 +261,8 @@
 			};
 			mmc@5000 {
 				compatible = "arm,pl180", "arm,primecell";
-				reg = <0x5000 0x1000>;
-				interrupts-extended = <&vic 22 &sic 1>;
+				reg = < 0x5000 0x1000>;
+				interrupts-extended = <&vic 22 &sic 2>;
 				clocks = <&xtal24mhz>, <&pclk>;
 				clock-names = "mclk", "apb_pclk";
 			};

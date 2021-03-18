@@ -79,8 +79,7 @@ static int iio_bfin_tmr_set_state(struct iio_trigger *trig, bool state)
 }
 
 static ssize_t iio_bfin_tmr_frequency_store(struct device *dev,
-					    struct device_attribute *attr,
-					    const char *buf, size_t count)
+		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct iio_trigger *trig = to_iio_trigger(dev);
 	struct bfin_tmr_state *st = iio_trigger_get_drvdata(trig);
@@ -100,7 +99,7 @@ static ssize_t iio_bfin_tmr_frequency_store(struct device *dev,
 	if (enabled)
 		disable_gptimers(st->t->bit);
 
-	if (!val)
+	if (val == 0)
 		return count;
 
 	val = get_sclk() / val;
@@ -117,15 +116,15 @@ static ssize_t iio_bfin_tmr_frequency_store(struct device *dev,
 }
 
 static ssize_t iio_bfin_tmr_frequency_show(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
+				 struct device_attribute *attr,
+				 char *buf)
 {
 	struct iio_trigger *trig = to_iio_trigger(dev);
 	struct bfin_tmr_state *st = iio_trigger_get_drvdata(trig);
 	unsigned int period = get_gptimer_period(st->t->id);
 	unsigned long val;
 
-	if (!period)
+	if (period == 0)
 		val = 0;
 	else
 		val = get_sclk() / get_gptimer_period(st->t->id);
@@ -184,7 +183,7 @@ static int iio_bfin_tmr_trigger_probe(struct platform_device *pdev)
 	int ret;
 
 	st = devm_kzalloc(&pdev->dev, sizeof(*st), GFP_KERNEL);
-	if (!st)
+	if (st == NULL)
 		return -ENOMEM;
 
 	st->irq = platform_get_irq(pdev, 0);
@@ -280,6 +279,7 @@ static int iio_bfin_tmr_trigger_remove(struct platform_device *pdev)
 static struct platform_driver iio_bfin_tmr_trigger_driver = {
 	.driver = {
 		.name = "iio_bfin_tmr_trigger",
+		.owner = THIS_MODULE,
 	},
 	.probe = iio_bfin_tmr_trigger_probe,
 	.remove = iio_bfin_tmr_trigger_remove,

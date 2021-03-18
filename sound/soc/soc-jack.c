@@ -22,42 +22,30 @@
 #include <trace/events/asoc.h>
 
 /**
- * snd_soc_card_jack_new - Create a new jack
- * @card:  ASoC card
+ * snd_soc_jack_new - Create a new jack
+ * @codec: ASoC codec
  * @id:    an identifying string for this jack
  * @type:  a bitmask of enum snd_jack_type values that can be detected by
  *         this jack
  * @jack:  structure to use for the jack
- * @pins:  Array of jack pins to be added to the jack or NULL
- * @num_pins: Number of elements in the @pins array
  *
  * Creates a new jack object.
  *
  * Returns zero if successful, or a negative error code on failure.
  * On success jack will be initialised.
  */
-int snd_soc_card_jack_new(struct snd_soc_card *card, const char *id, int type,
-	struct snd_soc_jack *jack, struct snd_soc_jack_pin *pins,
-	unsigned int num_pins)
+int snd_soc_jack_new(struct snd_soc_codec *codec, const char *id, int type,
+		     struct snd_soc_jack *jack)
 {
-	int ret;
-
 	mutex_init(&jack->mutex);
-	jack->card = card;
+	jack->codec = codec;
 	INIT_LIST_HEAD(&jack->pins);
 	INIT_LIST_HEAD(&jack->jack_zones);
 	BLOCKING_INIT_NOTIFIER_HEAD(&jack->notifier);
 
-	ret = snd_jack_new(card->snd_card, id, type, &jack->jack, false, false);
-	if (ret)
-		return ret;
-
-	if (num_pins)
-		return snd_soc_jack_add_pins(jack, num_pins, pins);
-
-	return 0;
+	return snd_jack_new(codec->component.card->snd_card, id, type, &jack->jack);
 }
-EXPORT_SYMBOL_GPL(snd_soc_card_jack_new);
+EXPORT_SYMBOL_GPL(snd_soc_jack_new);
 
 /**
  * snd_soc_jack_report - Report the current status for a jack
@@ -75,6 +63,7 @@ EXPORT_SYMBOL_GPL(snd_soc_card_jack_new);
  */
 void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 {
+	struct snd_soc_codec *codec;
 	struct snd_soc_dapm_context *dapm;
 	struct snd_soc_jack_pin *pin;
 	unsigned int sync = 0;
@@ -85,7 +74,8 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	if (!jack)
 		return;
 
-	dapm = &jack->card->dapm;
+	codec = jack->codec;
+	dapm =  &codec->dapm;
 
 	mutex_lock(&jack->mutex);
 
@@ -126,7 +116,7 @@ EXPORT_SYMBOL_GPL(snd_soc_jack_report);
  *
  * @jack:  ASoC jack
  * @count: Number of zones
- * @zones:  Array of zones
+ * @zone:  Array of zones
  *
  * After this function has been called the zones specified in the
  * array will be associated with the jack.
@@ -185,19 +175,18 @@ int snd_soc_jack_add_pins(struct snd_soc_jack *jack, int count,
 
 	for (i = 0; i < count; i++) {
 		if (!pins[i].pin) {
-			dev_err(jack->card->dev, "ASoC: No name for pin %d\n",
+			dev_err(jack->codec->dev, "ASoC: No name for pin %d\n",
 				i);
 			return -EINVAL;
 		}
 		if (!pins[i].mask) {
-			dev_err(jack->card->dev, "ASoC: No mask for pin %d"
+			dev_err(jack->codec->dev, "ASoC: No mask for pin %d"
 				" (%s)\n", i, pins[i].pin);
 			return -EINVAL;
 		}
 
 		INIT_LIST_HEAD(&pins[i].list);
 		list_add(&(pins[i].list), &jack->pins);
-		snd_jack_add_new_kctl(jack->jack, pins[i].pin, pins[i].mask);
 	}
 
 	/* Update to reflect the last reported status; canned jack
@@ -271,7 +260,7 @@ static void snd_soc_jack_gpio_detect(struct snd_soc_jack_gpio *gpio)
 static irqreturn_t gpio_handler(int irq, void *data)
 {
 	struct snd_soc_jack_gpio *gpio = data;
-	struct device *dev = gpio->jack->card->dev;
+	struct device *dev = gpio->jack->codec->component.card->dev;
 
 	trace_snd_soc_jack_irq(gpio->name);
 
@@ -310,20 +299,17 @@ int snd_soc_jack_add_gpios(struct snd_soc_jack *jack, int count,
 
 	for (i = 0; i < count; i++) {
 		if (!gpios[i].name) {
-			dev_err(jack->card->dev,
+			dev_err(jack->codec->dev,
 				"ASoC: No name for gpio at index %d\n", i);
 			ret = -EINVAL;
 			goto undo;
 		}
 
-		if (gpios[i].desc) {
-			/* Already have a GPIO descriptor. */
-			goto got_gpio;
-		} else if (gpios[i].gpiod_dev) {
-			/* Get a GPIO descriptor */
+		if (gpios[i].gpiod_dev) {
+			/* GPIO descriptor */
 			gpios[i].desc = gpiod_get_index(gpios[i].gpiod_dev,
 							gpios[i].name,
-							gpios[i].idx, GPIOD_IN);
+							gpios[i].idx);
 			if (IS_ERR(gpios[i].desc)) {
 				ret = PTR_ERR(gpios[i].desc);
 				dev_err(gpios[i].gpiod_dev,
@@ -334,21 +320,24 @@ int snd_soc_jack_add_gpios(struct snd_soc_jack *jack, int count,
 		} else {
 			/* legacy GPIO number */
 			if (!gpio_is_valid(gpios[i].gpio)) {
-				dev_err(jack->card->dev,
+				dev_err(jack->codec->dev,
 					"ASoC: Invalid gpio %d\n",
 					gpios[i].gpio);
 				ret = -EINVAL;
 				goto undo;
 			}
 
-			ret = gpio_request_one(gpios[i].gpio, GPIOF_IN,
-					       gpios[i].name);
+			ret = gpio_request(gpios[i].gpio, gpios[i].name);
 			if (ret)
 				goto undo;
 
 			gpios[i].desc = gpio_to_desc(gpios[i].gpio);
 		}
-got_gpio:
+
+		ret = gpiod_direction_input(gpios[i].desc);
+		if (ret)
+			goto err;
+
 		INIT_DELAYED_WORK(&gpios[i].work, gpio_work);
 		gpios[i].jack = jack;
 
@@ -364,7 +353,7 @@ got_gpio:
 		if (gpios[i].wake) {
 			ret = irq_set_irq_wake(gpiod_to_irq(gpios[i].desc), 1);
 			if (ret != 0)
-				dev_err(jack->card->dev,
+				dev_err(jack->codec->dev,
 					"ASoC: Failed to mark GPIO at index %d as wake source: %d\n",
 					i, ret);
 		}

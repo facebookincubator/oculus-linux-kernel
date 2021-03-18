@@ -23,15 +23,15 @@ ccflags-y += -D__CHECK_ENDIAN__
 
 obj-$(CONFIG_BRCMFMAC) += brcmfmac.o
 brcmfmac-objs += \
-		cfg80211.o \
+		wl_cfg80211.o \
 		chip.o \
 		fwil.o \
 		fweh.o \
 		fwsignal.o \
 		p2p.o \
 		proto.o \
-		common.o \
-		core.o \
+		dhd_common.o \
+		dhd_linux.o \
 		firmware.o \
 		feature.o \
 		btcoex.o \
@@ -43,14 +43,14 @@ brcmfmac-$(CONFIG_BRCMFMAC_PROTO_MSGBUF) += \
 		flowring.o \
 		msgbuf.o
 brcmfmac-$(CONFIG_BRCMFMAC_SDIO) += \
-		sdio.o \
+		dhd_sdio.o \
 		bcmsdh.o
 brcmfmac-$(CONFIG_BRCMFMAC_USB) += \
 		usb.o
 brcmfmac-$(CONFIG_BRCMFMAC_PCIE) += \
 		pcie.o
 brcmfmac-$(CONFIG_BRCMDBG) += \
-		debug.o
+		dhd_dbg.o
 brcmfmac-$(CONFIG_BRCM_TRACING) += \
 		tracepoint.o
 brcmfmac-$(CONFIG_OF) += \

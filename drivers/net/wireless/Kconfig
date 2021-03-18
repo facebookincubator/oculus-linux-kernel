@@ -214,6 +214,8 @@ config USB_NET_RNDIS_WLAN
 
 	  If you choose to build a module, it'll be called rndis_wlan.
 
+source "drivers/net/wireless/rtl818x/Kconfig"
+
 config ADM8211
 	tristate "ADMtek ADM8211 support"
 	depends on MAC80211 && PCI
@@ -240,8 +242,6 @@ config ADM8211
 	  the Ralink RT2400 (SMC2635W) without a model number change.
 
 	  Thanks to Infineon-ADMtek for their support of this driver.
-
-source "drivers/net/wireless/realtek/rtl818x/Kconfig"
 
 config MAC80211_HWSIM
 	tristate "Simulated radio testing tool for mac80211"
@@ -303,6 +303,20 @@ config WCNSS_MEM_PRE_ALLOC
 	  for it's internal usage and release it to back to pre allocated pool.
 	  This memory is allocated at the cold boot time.
 
+config WCNSS_SKB_PRE_ALLOC
+	tristate "CNSS pre-alloc memory support for skb"
+	depends on WCNSS_MEM_PRE_ALLOC
+	---help---
+	 The cnss wlan module which has interfaced with high latency
+	 bus(e.g. SDIO) needs physical contiguous memory more than one
+	 page for its socket buffer initialization. If the system memory
+	 has high fragmented it’s not possible to get this much huge
+	 physically contiguous memory through dynamic memory allocation.
+
+	 This feature enable socket buffer to use pre allocated memory
+	 for socket buffer initialization and release it to back to
+	 pre-allocated pool.
+
 config CNSS_CRYPTO
 	tristate "Enable CNSS crypto support"
 	---help---
@@ -323,9 +337,7 @@ source "drivers/net/wireless/libertas/Kconfig"
 source "drivers/net/wireless/orinoco/Kconfig"
 source "drivers/net/wireless/p54/Kconfig"
 source "drivers/net/wireless/rt2x00/Kconfig"
-source "drivers/net/wireless/mediatek/Kconfig"
-source "drivers/net/wireless/realtek/rtlwifi/Kconfig"
-source "drivers/net/wireless/realtek/rtl8xxxu/Kconfig"
+source "drivers/net/wireless/rtlwifi/Kconfig"
 source "drivers/net/wireless/ti/Kconfig"
 source "drivers/net/wireless/zd1211rw/Kconfig"
 source "drivers/net/wireless/mwifiex/Kconfig"

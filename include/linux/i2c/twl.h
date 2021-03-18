@@ -26,6 +26,7 @@
 #define __TWL_H_
 
 #include <linux/types.h>
+#include <linux/phy/phy.h>
 #include <linux/input/matrix_keypad.h>
 
 /*
@@ -633,6 +634,7 @@ enum twl4030_usb_mode {
 struct twl4030_usb_data {
 	enum twl4030_usb_mode	usb_mode;
 	unsigned long		features;
+	struct phy_init_data	*init_data;
 
 	int		(*phy_init)(struct device *dev);
 	int		(*phy_exit)(struct device *dev);
@@ -675,7 +677,6 @@ struct twl4030_power_data {
 	struct twl4030_resconfig *board_config;
 #define TWL4030_RESCONFIG_UNDEF	((u8)-1)
 	bool use_poweroff;	/* Board is wired for TWL poweroff */
-	bool ac_charger_quirk;	/* Disable AC charger on board */
 };
 
 extern int twl4030_remove_script(u8 flags);

@@ -1,4 +1,4 @@
-/* Copyright (C) 2007-2015 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2007-2014 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -15,37 +15,19 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "send.h"
 #include "main.h"
-
-#include <linux/atomic.h>
-#include <linux/byteorder/generic.h>
-#include <linux/etherdevice.h>
-#include <linux/fs.h>
-#include <linux/if_ether.h>
-#include <linux/if.h>
-#include <linux/jiffies.h>
-#include <linux/kernel.h>
-#include <linux/list.h>
-#include <linux/netdevice.h>
-#include <linux/printk.h>
-#include <linux/rculist.h>
-#include <linux/rcupdate.h>
-#include <linux/skbuff.h>
-#include <linux/slab.h>
-#include <linux/spinlock.h>
-#include <linux/stddef.h>
-#include <linux/workqueue.h>
-
 #include "distributed-arp-table.h"
-#include "fragmentation.h"
-#include "gateway_client.h"
-#include "hard-interface.h"
-#include "network-coding.h"
-#include "originator.h"
+#include "send.h"
 #include "routing.h"
-#include "soft-interface.h"
 #include "translation-table.h"
+#include "soft-interface.h"
+#include "hard-interface.h"
+#include "gateway_common.h"
+#include "gateway_client.h"
+#include "originator.h"
+#include "network-coding.h"
+#include "fragmentation.h"
+#include "multicast.h"
 
 static void batadv_send_outstanding_bcast_packet(struct work_struct *work);
 
@@ -54,7 +36,7 @@ static void batadv_send_outstanding_bcast_packet(struct work_struct *work);
  */
 int batadv_send_skb_packet(struct sk_buff *skb,
 			   struct batadv_hard_iface *hard_iface,
-			   const u8 *dst_addr)
+			   const uint8_t *dst_addr)
 {
 	struct batadv_priv *bat_priv = netdev_priv(hard_iface->soft_iface);
 	struct ethhdr *ethhdr;
@@ -172,7 +154,7 @@ batadv_send_skb_push_fill_unicast(struct sk_buff *skb, int hdr_size,
 				  struct batadv_orig_node *orig_node)
 {
 	struct batadv_unicast_packet *unicast_packet;
-	u8 ttvn = (u8)atomic_read(&orig_node->last_ttvn);
+	uint8_t ttvn = (uint8_t)atomic_read(&orig_node->last_ttvn);
 
 	if (batadv_skb_head_push(skb, hdr_size) < 0)
 		return false;
@@ -273,8 +255,8 @@ int batadv_send_skb_unicast(struct batadv_priv *bat_priv,
 			    struct batadv_orig_node *orig_node,
 			    unsigned short vid)
 {
-	struct batadv_unicast_packet *unicast_packet;
 	struct ethhdr *ethhdr;
+	struct batadv_unicast_packet *unicast_packet;
 	int ret = NET_XMIT_DROP;
 
 	if (!orig_node)
@@ -343,12 +325,12 @@ out:
  */
 int batadv_send_skb_via_tt_generic(struct batadv_priv *bat_priv,
 				   struct sk_buff *skb, int packet_type,
-				   int packet_subtype, u8 *dst_hint,
+				   int packet_subtype, uint8_t *dst_hint,
 				   unsigned short vid)
 {
 	struct ethhdr *ethhdr = (struct ethhdr *)skb->data;
 	struct batadv_orig_node *orig_node;
-	u8 *src, *dst;
+	uint8_t *src, *dst;
 
 	src = ethhdr->h_source;
 	dst = ethhdr->h_dest;
@@ -616,8 +598,7 @@ batadv_purge_outstanding_packets(struct batadv_priv *bat_priv,
 		 * we delete only packets belonging to the given interface
 		 */
 		if ((hard_iface) &&
-		    (forw_packet->if_incoming != hard_iface) &&
-		    (forw_packet->if_outgoing != hard_iface))
+		    (forw_packet->if_incoming != hard_iface))
 			continue;
 
 		spin_unlock_bh(&bat_priv->forw_bcast_list_lock);
@@ -630,9 +611,6 @@ batadv_purge_outstanding_packets(struct batadv_priv *bat_priv,
 
 		if (pending) {
 			hlist_del(&forw_packet->list);
-			if (!forw_packet->own)
-				atomic_inc(&bat_priv->bcast_queue_left);
-
 			batadv_forw_packet_free(forw_packet);
 		}
 	}
@@ -660,9 +638,6 @@ batadv_purge_outstanding_packets(struct batadv_priv *bat_priv,
 
 		if (pending) {
 			hlist_del(&forw_packet->list);
-			if (!forw_packet->own)
-				atomic_inc(&bat_priv->batman_queue_left);
-
 			batadv_forw_packet_free(forw_packet);
 		}
 	}

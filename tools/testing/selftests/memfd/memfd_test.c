@@ -15,11 +15,10 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #define MFD_DEF_SIZE 8192
-#define STACK_SIZE 65536
+#define STACK_SIZE 65535
 
 static int sys_memfd_create(const char *name,
 			    unsigned int flags)

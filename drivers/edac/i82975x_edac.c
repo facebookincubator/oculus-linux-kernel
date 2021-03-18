@@ -685,7 +685,9 @@ fail1:
 	pci_unregister_driver(&i82975x_driver);
 
 fail0:
-	pci_dev_put(mci_pdev);
+	if (mci_pdev != NULL)
+		pci_dev_put(mci_pdev);
+
 	return pci_rc;
 }
 

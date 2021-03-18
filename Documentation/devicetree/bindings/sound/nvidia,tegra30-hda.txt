@@ -1,17 +1,15 @@
 NVIDIA Tegra30 HDA controller
 
 Required properties:
-- compatible : For Tegra30, must contain "nvidia,tegra30-hda".  Otherwise,
-  must contain '"nvidia,<chip>-hda", "nvidia,tegra30-hda"', where <chip> is
-  tegra114, tegra124, or tegra132.
+- compatible : "nvidia,tegra30-hda"
 - reg : Should contain the HDA registers location and length.
 - interrupts : The interrupt from the HDA controller.
 - clocks : Must contain an entry for each required entry in clock-names.
   See ../clocks/clock-bindings.txt for details.
-- clock-names : Must include the following entries: hda, hda2hdmi, hda2codec_2x
+- clock-names : Must include the following entries: hda, hdacodec_2x, hda2hdmi
 - resets : Must contain an entry for each entry in reset-names.
   See ../reset/reset.txt for details.
-- reset-names : Must include the following entries: hda, hda2hdmi, hda2codec_2x
+- reset-names : Must include the following entries: hda, hdacodec_2x, hda2hdmi
 
 Example:
 
@@ -24,7 +22,7 @@ hda@0,70030000 {
 		 <&tegra_car TEGRA124_CLK_HDA2CODEC_2X>;
 	clock-names = "hda", "hda2hdmi", "hda2codec_2x";
 	resets = <&tegra_car 125>, /* hda */
-		 <&tegra_car 128>, /* hda2hdmi */
-		 <&tegra_car 111>; /* hda2codec_2x */
+		 <&tegra_car 128>; /* hda2hdmi */
+		 <&tegra_car 111>, /* hda2codec_2x */
 	reset-names = "hda", "hda2hdmi", "hda2codec_2x";
 };

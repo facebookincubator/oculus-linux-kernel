@@ -1,5 +1,5 @@
 config EVM
-	bool "EVM support"
+	boolean "EVM support"
 	select KEYS
 	select ENCRYPTED_KEYS
 	select CRYPTO_HMAC

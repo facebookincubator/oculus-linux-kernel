@@ -433,6 +433,7 @@ static struct platform_driver ab8500_ext_regulator_driver = {
 	.probe = ab8500_ext_regulator_probe,
 	.driver         = {
 		.name   = "ab8500-ext-regulator",
+		.owner  = THIS_MODULE,
 	},
 };
 

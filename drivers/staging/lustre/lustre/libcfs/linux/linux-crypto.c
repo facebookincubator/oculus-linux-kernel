@@ -36,6 +36,8 @@
  */
 static int cfs_crypto_hash_speeds[CFS_HASH_ALG_MAX];
 
+
+
 static int cfs_crypto_hash_alloc(unsigned char alg_id,
 				 const struct cfs_crypto_hash_type **type,
 				 struct hash_desc *desc, unsigned char *key,
@@ -69,12 +71,13 @@ static int cfs_crypto_hash_alloc(unsigned char alg_id,
 	 * Skip this function for digest, because we use shash logic at
 	 * cfs_crypto_hash_alloc.
 	 */
-	if (key != NULL)
+	if (key != NULL) {
 		err = crypto_hash_setkey(desc->tfm, key, key_len);
-	else if ((*type)->cht_key != 0)
+	} else if ((*type)->cht_key != 0) {
 		err = crypto_hash_setkey(desc->tfm,
 					 (unsigned char *)&((*type)->cht_key),
 					 (*type)->cht_size);
+	}
 
 	if (err != 0) {
 		crypto_free_hash(desc->tfm);
@@ -111,7 +114,7 @@ int cfs_crypto_hash_digest(unsigned char alg_id,
 		crypto_free_hash(hdesc.tfm);
 		return -ENOSPC;
 	}
-	sg_init_one(&sl, buf, buf_len);
+	sg_init_one(&sl, (void *)buf, buf_len);
 
 	hdesc.flags = 0;
 	err = crypto_hash_digest(&hdesc, &sl, sl.length, hash);
@@ -162,7 +165,7 @@ int cfs_crypto_hash_update(struct cfs_crypto_hash_desc *hdesc,
 {
 	struct scatterlist sl;
 
-	sg_init_one(&sl, buf, buf_len);
+	sg_init_one(&sl, (void *)buf, buf_len);
 
 	return crypto_hash_update((struct hash_desc *)hdesc, &sl, sl.length);
 }
@@ -222,7 +225,6 @@ static void cfs_crypto_performance_test(unsigned char alg_id,
 		       cfs_crypto_hash_name(alg_id), err);
 	} else {
 		unsigned long   tmp;
-
 		tmp = ((bcount * buf_len / jiffies_to_msecs(end - start)) *
 		       1000) / (1024 * 1024);
 		cfs_crypto_hash_speeds[alg_id] = (int)tmp;
@@ -280,7 +282,6 @@ int cfs_crypto_register(void)
 	cfs_crypto_test_hashes();
 	return 0;
 }
-
 void cfs_crypto_unregister(void)
 {
 	if (adler32 == 0)

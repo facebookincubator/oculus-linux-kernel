@@ -54,7 +54,11 @@ static const struct nla_policy taskstats_cmd_get_policy[TASKSTATS_CMD_ATTR_MAX+1
 	[TASKSTATS_CMD_ATTR_REGISTER_CPUMASK] = { .type = NLA_STRING },
 	[TASKSTATS_CMD_ATTR_DEREGISTER_CPUMASK] = { .type = NLA_STRING },};
 
-static const struct nla_policy cgroupstats_cmd_get_policy[CGROUPSTATS_CMD_ATTR_MAX+1] = {
+/*
+ * We have to use TASKSTATS_CMD_ATTR_MAX here, it is the maxattr in the family.
+ * Make sure they are always aligned.
+ */
+static const struct nla_policy cgroupstats_cmd_get_policy[TASKSTATS_CMD_ATTR_MAX+1] = {
 	[CGROUPSTATS_CMD_ATTR_FD] = { .type = NLA_U32 },
 };
 
@@ -111,8 +115,13 @@ static int send_reply(struct sk_buff *skb, struct genl_info *info)
 {
 	struct genlmsghdr *genlhdr = nlmsg_data(nlmsg_hdr(skb));
 	void *reply = genlmsg_data(genlhdr);
+	int rc;
 
-	genlmsg_end(skb, reply);
+	rc = genlmsg_end(skb, reply);
+	if (rc < 0) {
+		nlmsg_free(skb);
+		return rc;
+	}
 
 	return genlmsg_reply(skb, info);
 }
@@ -129,7 +138,11 @@ static void send_cpu_listeners(struct sk_buff *skb,
 	void *reply = genlmsg_data(genlhdr);
 	int rc, delcount = 0;
 
-	genlmsg_end(skb, reply);
+	rc = genlmsg_end(skb, reply);
+	if (rc < 0) {
+		nlmsg_free(skb);
+		return;
+	}
 
 	rc = 0;
 	down_read(&listeners->sem);
@@ -450,7 +463,7 @@ static int cgroupstats_user_cmd(struct sk_buff *skb, struct genl_info *info)
 	stats = nla_data(na);
 	memset(stats, 0, sizeof(*stats));
 
-	rc = cgroupstats_build(stats, f.file->f_path.dentry);
+	rc = cgroupstats_build(stats, f.file->f_dentry);
 	if (rc < 0) {
 		nlmsg_free(rep_skb);
 		goto err;

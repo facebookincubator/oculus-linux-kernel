@@ -4,7 +4,6 @@ config IOMMU_API
 
 menuconfig IOMMU_SUPPORT
 	bool "IOMMU Hardware Support"
-	depends on MMU
 	default y
 	---help---
 	  Say Y here if you want to compile device drivers for IO Memory
@@ -23,7 +22,6 @@ config IOMMU_IO_PGTABLE
 config IOMMU_IO_PGTABLE_LPAE
 	bool "ARMv7/v8 Long Descriptor Format"
 	select IOMMU_IO_PGTABLE
-	depends on HAS_DMA && (ARM || ARM64 || COMPILE_TEST)
 	help
 	  Enable support for the ARM long descriptor pagetable format.
 	  This allocator supports 4K/2M/1G, 16K/32M and 64K/512M page
@@ -77,30 +75,125 @@ config IOMMU_IO_PGTABLE_FAST_PROVE_TLB
 
 endmenu
 
-config IOMMU_IOVA
-	tristate
-
 config OF_IOMMU
        def_bool y
        depends on OF && IOMMU_API
 
-# IOMMU-agnostic DMA-mapping layer
-config IOMMU_DMA
-	bool
-	depends on NEED_SG_DMA_LENGTH
-	select IOMMU_API
-	select IOMMU_IOVA
-
 config FSL_PAMU
 	bool "Freescale IOMMU support"
-	depends on PPC32
-	depends on PPC_E500MC || COMPILE_TEST
+	depends on PPC_E500MC
 	select IOMMU_API
 	select GENERIC_ALLOCATOR
 	help
 	  Freescale PAMU support. PAMU is the IOMMU present on Freescale QorIQ platforms.
 	  PAMU can authorize memory access, remap the memory address, and remap I/O
 	  transaction types.
+
+# MSM IOMMU support
+config MSM_IOMMU
+	bool "MSM IOMMU Support"
+	select IOMMU_API
+	select ARM_DMA_USE_IOMMU if ARM
+	select ARM64_DMA_USE_IOMMU if ARM64
+	help
+	  Support for the IOMMUs found on certain Qualcomm SOCs.
+	  These IOMMUs allow virtualization of the address space used by most
+	  cores within the multimedia subsystem.
+
+	  If unsure, say N here.
+
+# MSM IOMMUv1 support
+config MSM_IOMMU_V1
+	bool "MSM IOMMUv1 Support"
+	depends on ARCH_MSM8974 || ARCH_MSM8226 || ARCH_APQ8084 || ARCH_MSM8916 || ARCH_MSM8994 || ARCH_MSM8992 || ARCH_MSM8909
+	select IOMMU_API
+	select MSM_IOMMU
+	help
+	  Support for the IOMMUs (v1) found on certain Qualcomm SOCs.
+	  These IOMMUs allow virtualization of the address space used by most
+	  cores within the multimedia subsystem.
+
+	  If unsure, say N here.
+
+config MSM_IOMMU_PMON
+	bool "MSM IOMMU Perfomance Monitoring Support"
+	depends on (ARCH_MSM8974 || ARCH_MSM8610 || ARCH_MSM8226 || ARCH_APQ8084) && MSM_IOMMU
+	help
+	  Support for monitoring IOMMUs performance on certain Qualcomm SOCs.
+	  It captures TLB statistics per context bank of the IOMMU as an
+	  indication of its performance metric.
+
+	  If unsure, say N here.
+
+config IOMMU_PGTABLES_L2
+	bool "Allow SMMU page tables in the L2 cache (Experimental)"
+	depends on MSM_IOMMU && MMU && SMP && CPU_DCACHE_DISABLE=n
+	help
+	  Improves TLB miss latency at the expense of potential L2 pollution.
+	  However, with large multimedia buffers, the TLB should mostly contain
+	  section mappings and TLB misses should be quite infrequent.
+
+	  If unsure, say N here.
+
+
+config IOMMU_LPAE
+	bool "Enable support for LPAE in IOMMU"
+	depends on MSM_IOMMU
+	help
+	  Enables Large Physical Address Extension (LPAE) for IOMMU. This allows
+	  clients of IOMMU to access physical addresses that are greater than
+	  32 bits.
+
+	  If unsure, say N here.
+
+config IOMMU_AARCH64
+	bool "Enable support for AARCH64 in IOMMU"
+	depends on (MSM_IOMMU && (!IOMMU_LPAE))
+	help
+	  Enables AARCH64 format page tables for IOMMU. This allows clients of
+	  IOMMUs to use Virtual and physical addresses up-to 48 bits. This will
+	  also support the clients who can't generate addresses of more than 32
+	  bits. Presently, this config assumes that if SMMU global space is
+	  programmed by some secure environment, they configure all the CBs of
+	  all the SMMUs as AARCH64 formatted.
+
+	  If unsure, say N here.
+
+config MSM_IOMMU_VBIF_CHECK
+	bool "Enable support for VBIF check when IOMMU gets stuck"
+	depends on MSM_IOMMU
+	help
+	  Enables an extra check in the IOMMU driver that logs debugging
+	  information when TLB sync or iommu halt issue occurs. This helps
+	  in debugging such issues.
+
+	  If unsure, say N here.
+
+config IOMMU_NON_SECURE
+	bool "Turns on programming of secure SMMU by kernel"
+	depends on MSM_IOMMU
+        help
+         Say Y here if you want the kernel to program all SMMUs regardless of
+         whether SMMUs are secure or not. A secure SMMU is an SMMU that has
+         its global address space programmed by the secure environment. In
+         addition some of the context banks might be owned/programmed by the
+         secure environment for a secure SMMU. Enabling this feature can be
+         used during testing when the secure environment is not available
+         and the kernel needs to program all the SMMUs.
+
+         If unsure, say N here.
+
+config IOMMU_FORCE_4K_MAPPINGS
+	bool "Turns off mapping optimization and map only 4K pages"
+	depends on MSM_IOMMU
+        help
+         Say Y here if you want the IOMMU driver to map buffers with
+         4KB mapping only. With this, we don't get performance gains
+         by optimizing mapping. This is a debug feature and should be
+         used only when we want to profile the performance in the
+         worst case scenario.
+
+         If unsure, say N here.
 
 # AMD IOMMU support
 config AMD_IOMMU
@@ -150,7 +243,6 @@ config INTEL_IOMMU
 	bool "Support for Intel IOMMU using DMA Remapping Devices"
 	depends on PCI_MSI && ACPI && (X86 || IA64_GENERIC)
 	select IOMMU_API
-	select IOMMU_IOVA
 	select DMAR_TABLE
 	help
 	  DMA remapping (DMAR) devices support enables independent address
@@ -158,16 +250,6 @@ config INTEL_IOMMU
 	  These DMA remapping devices are reported via ACPI tables
 	  and include PCI device scope covered by these DMA
 	  remapping devices.
-
-config INTEL_IOMMU_SVM
-	bool "Support for Shared Virtual Memory with Intel IOMMU"
-	depends on INTEL_IOMMU && X86
-	select PCI_PASID
-	select MMU_NOTIFIER
-	help
-	  Shared Virtual Memory (SVM) provides a facility for devices
-	  to access DMA resources through process address space by
-	  means of a Process Address Space ID (PASID).
 
 config INTEL_IOMMU_DEFAULT_ON
 	def_bool y
@@ -210,34 +292,17 @@ config IRQ_REMAP
 # OMAP IOMMU support
 config OMAP_IOMMU
 	bool "OMAP IOMMU Support"
-	depends on ARM && MMU
-	depends on ARCH_OMAP2PLUS || COMPILE_TEST
+	depends on ARCH_OMAP2PLUS
 	select IOMMU_API
-	---help---
-	  The OMAP3 media platform drivers depend on iommu support,
-	  if you need them say Y here.
 
 config OMAP_IOMMU_DEBUG
-	bool "Export OMAP IOMMU internals in DebugFS"
-	depends on OMAP_IOMMU && DEBUG_FS
-	---help---
-	  Select this to see extensive information about
-	  the internal state of OMAP IOMMU in debugfs.
+       tristate "Export OMAP IOMMU internals in DebugFS"
+       depends on OMAP_IOMMU && DEBUG_FS
+       help
+         Select this to see extensive information about
+         the internal state of OMAP IOMMU in debugfs.
 
-	  Say N unless you know you need this.
-
-config ROCKCHIP_IOMMU
-	bool "Rockchip IOMMU Support"
-	depends on ARM
-	depends on ARCH_ROCKCHIP || COMPILE_TEST
-	select IOMMU_API
-	select ARM_DMA_USE_IOMMU
-	help
-	  Support for IOMMUs found on Rockchip rk32xx SOCs.
-	  These IOMMUs allow virtualization of the address space used by most
-	  cores within the multimedia subsystem.
-	  Say Y here if you are using a Rockchip SoC that includes an IOMMU
-	  device.
+         Say N unless you know you need this.
 
 config TEGRA_IOMMU_GART
 	bool "Tegra GART IOMMU Support"
@@ -250,18 +315,18 @@ config TEGRA_IOMMU_GART
 	  hardware included on Tegra SoCs.
 
 config TEGRA_IOMMU_SMMU
-	bool "NVIDIA Tegra SMMU Support"
-	depends on ARCH_TEGRA
-	depends on TEGRA_AHB
-	depends on TEGRA_MC
+	bool "Tegra SMMU IOMMU Support"
+	depends on ARCH_TEGRA && TEGRA_AHB
 	select IOMMU_API
 	help
-	  This driver supports the IOMMU hardware (SMMU) found on NVIDIA Tegra
-	  SoCs (Tegra30 up to Tegra210).
+	  Enables support for remapping discontiguous physical memory
+	  shared with the operating system into contiguous I/O virtual
+	  space through the SMMU (System Memory Management Unit)
+	  hardware included on Tegra SoCs.
 
 config EXYNOS_IOMMU
 	bool "Exynos IOMMU Support"
-	depends on ARCH_EXYNOS && ARM && MMU
+	depends on ARCH_EXYNOS
 	select IOMMU_API
 	select ARM_DMA_USE_IOMMU
 	help
@@ -290,7 +355,7 @@ config SHMOBILE_IPMMU_TLB
 config SHMOBILE_IOMMU
 	bool "IOMMU for Renesas IPMMU/IPMMUI"
 	default n
-	depends on ARM && MMU
+	depends on ARM
 	depends on ARCH_SHMOBILE || COMPILE_TEST
 	select IOMMU_API
 	select ARM_DMA_USE_IOMMU
@@ -361,7 +426,6 @@ config IPMMU_VMSA
 	depends on ARM_LPAE
 	depends on ARCH_SHMOBILE || COMPILE_TEST
 	select IOMMU_API
-	select IOMMU_IO_PGTABLE_LPAE
 	select ARM_DMA_USE_IOMMU
 	help
 	  Support for the Renesas VMSA-compatible IPMMU Renesas found in the
@@ -377,10 +441,9 @@ config SPAPR_TCE_IOMMU
 	  Enables bits of IOMMU API required by VFIO. The iommu_ops
 	  is not implemented as it is not necessary for VFIO.
 
-# ARM IOMMU support
 config ARM_SMMU
 	bool "ARM Ltd. System MMU (SMMU) Support"
-	depends on (ARM64 || ARM) && MMU
+	depends on ARM64 || ARM
 	select IOMMU_API
 	select IOMMU_IO_PGTABLE_LPAE
 	select ARM_DMA_USE_IOMMU if ARM
@@ -391,26 +454,6 @@ config ARM_SMMU
 
 	  Say Y here if your SoC includes an IOMMU device implementing
 	  the ARM SMMU architecture.
-
-config ARM_SMMU_V3
-	bool "ARM Ltd. System MMU Version 3 (SMMUv3) Support"
-	depends on ARM64 && PCI
-	select IOMMU_API
-	select IOMMU_IO_PGTABLE_LPAE
-	select GENERIC_MSI_IRQ_DOMAIN
-	help
-	  Support for implementations of the ARM System MMU architecture
-	  version 3 providing translation support to a PCIe root complex.
-
-	  Say Y here if your system includes an IOMMU device implementing
-	  the ARM SMMUv3 architecture.
-
-config S390_IOMMU
-	def_bool y if S390 && PCI
-	depends on S390 && PCI
-	select IOMMU_API
-	help
-	  Support for the IOMMU API for s390 PCI devices.
 
 menuconfig IOMMU_DEBUG
 	bool "IOMMU Profiling and Debugging"

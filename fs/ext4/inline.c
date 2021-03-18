@@ -434,7 +434,8 @@ static int ext4_destroy_inline_data_nolock(handle_t *handle,
 	memset((void *)ext4_raw_inode(&is.iloc)->i_block,
 		0, EXT4_MIN_INLINE_DATA_SIZE);
 
-	if (ext4_has_feature_extents(inode->i_sb)) {
+	if (EXT4_HAS_INCOMPAT_FEATURE(inode->i_sb,
+				      EXT4_FEATURE_INCOMPAT_EXTENTS)) {
 		if (S_ISDIR(inode->i_mode) ||
 		    S_ISREG(inode->i_mode) || S_ISLNK(inode->i_mode)) {
 			ext4_set_inode_flag(inode, EXT4_INODE_EXTENTS);
@@ -812,11 +813,8 @@ static int ext4_da_convert_inline_data_to_extent(struct address_space *mapping,
 	ret = __block_write_begin(page, 0, inline_size,
 				  ext4_da_get_block_prep);
 	if (ret) {
-		up_read(&EXT4_I(inode)->xattr_sem);
-		unlock_page(page);
-		page_cache_release(page);
 		ext4_truncate_failed_write(inode);
-		return ret;
+		goto out;
 	}
 
 	SetPageDirty(page);
@@ -874,12 +872,6 @@ retry_journal:
 			goto out_journal;
 	}
 
-	/*
-	 * We cannot recurse into the filesystem as the transaction
-	 * is already started.
-	 */
-	flags |= AOP_FLAG_NOFS;
-
 	if (ret == -ENOSPC) {
 		ext4_journal_stop(handle);
 		ret = ext4_da_convert_inline_data_to_extent(mapping,
@@ -892,6 +884,11 @@ retry_journal:
 		goto out;
 	}
 
+	/*
+	 * We cannot recurse into the filesystem as the transaction
+	 * is already started.
+	 */
+	flags |= AOP_FLAG_NOFS;
 
 	page = grab_cache_page_write_begin(mapping, 0, flags);
 	if (!page) {
@@ -973,7 +970,7 @@ void ext4_show_inline_dir(struct inode *dir, struct buffer_head *bh,
 	offset = 0;
 	while ((void *)de < dlimit) {
 		de_len = ext4_rec_len_from_disk(de->rec_len, inline_size);
-		trace_printk("de: off %u rlen %u name %.*s nlen %u ino %u\n",
+		trace_printk("de: off %u rlen %u name %*.s nlen %u ino %u\n",
 			     offset, de_len, de->name_len, de->name,
 			     de->name_len, le32_to_cpu(de->inode));
 		if (ext4_check_dir_entry(dir, NULL, de, bh,
@@ -1813,12 +1810,11 @@ int ext4_destroy_inline_data(handle_t *handle, struct inode *inode)
 
 int ext4_inline_data_fiemap(struct inode *inode,
 			    struct fiemap_extent_info *fieinfo,
-			    int *has_inline, __u64 start, __u64 len)
+			    int *has_inline)
 {
 	__u64 physical = 0;
-	__u64 inline_len;
-	__u32 flags = FIEMAP_EXTENT_DATA_INLINE | FIEMAP_EXTENT_NOT_ALIGNED |
-		FIEMAP_EXTENT_LAST;
+	__u64 length;
+	__u32 flags = FIEMAP_EXTENT_DATA_INLINE | FIEMAP_EXTENT_LAST;
 	int error = 0;
 	struct ext4_iloc iloc;
 
@@ -1827,13 +1823,6 @@ int ext4_inline_data_fiemap(struct inode *inode,
 		*has_inline = 0;
 		goto out;
 	}
-	inline_len = min_t(size_t, ext4_get_inline_size(inode),
-			   i_size_read(inode));
-	if (start >= inline_len)
-		goto out;
-	if (start + len < inline_len)
-		inline_len = start + len;
-	inline_len -= start;
 
 	error = ext4_get_inode_loc(inode, &iloc);
 	if (error)
@@ -1842,10 +1831,11 @@ int ext4_inline_data_fiemap(struct inode *inode,
 	physical = (__u64)iloc.bh->b_blocknr << inode->i_sb->s_blocksize_bits;
 	physical += (char *)ext4_raw_inode(&iloc) - iloc.bh->b_data;
 	physical += offsetof(struct ext4_inode, i_block);
+	length = i_size_read(inode);
 
 	if (physical)
-		error = fiemap_fill_next_extent(fieinfo, start, physical,
-						inline_len, flags);
+		error = fiemap_fill_next_extent(fieinfo, 0, physical,
+						length, flags);
 	brelse(iloc.bh);
 out:
 	up_read(&EXT4_I(inode)->xattr_sem);

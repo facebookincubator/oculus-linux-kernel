@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2001 Deep Blue Solutions Ltd.
  * Copyright (C) 2012 ARM Ltd.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,14 +18,46 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/errno.h>
 #include <linux/linkage.h>
 #include <linux/init.h>
 #include <asm/assembler.h>
 #include <asm/cpufeature.h>
 #include <asm/alternative.h>
+#include <asm/uaccess.h>
 
-#include "proc-macros.S"
+ /*
+ *     flush_dcache_louis()
+ *
+ *     Flush the D-cache up to the Level of Unification Inner Shareable
+ *
+ *     Corrupted registers: x0-x7, x9-x11
+ */
+
+ENTRY(flush_dcache_louis)
+	dsb	sy		// ensure ordering with previous memory accesses
+	mrs	x0, clidr_el1	// read clidr
+	and	x3, x0, #(7 << 21)	// extract LoUIS from clidr
+	lsr	x3, x3, #20	// x3 = LoUIS * 2
+	cbz	x3, done	// if LoUIS is 0, then no need to clean
+	mov	x10, #0		// start clean at cache level 0
+	b	loop1		// start flushing cache levels
+done:
+	ret
+ENDPROC(flush_dcache_louis)
+
+ /*
+ *     flush_kern_cache_louis(void)
+ *
+ *     Flush the data cache up to Level of Unification Inner Shareable.
+ *     Invalidate the I-cache to the point of unification.
+ */
+ENTRY(flush_cache_louis)
+	mov	x12, lr
+	bl	flush_dcache_louis
+	mov	x0, #0
+	ic	ialluis				// I+BTB cache invalidate
+	ret x12
+ENDPROC(flush_cache_louis)
 
 /*
  *	__flush_dcache_all()
@@ -123,6 +156,7 @@ ENTRY(flush_icache_range)
  *	- end     - virtual end address of region
  */
 ENTRY(__flush_cache_user_range)
+	uaccess_ttbr0_enable x2, x3, x4
 	dcache_line_size x2, x3
 	sub	x3, x2, #1
 	bic	x4, x0, x3
@@ -141,12 +175,10 @@ USER(9f, ic	ivau, x4	)		// invalidate I line PoU
 	add	x4, x4, x2
 	cmp	x4, x1
 	b.lo	1b
+9:						// ignore any faulting cache operation
 	dsb	ish
 	isb
-	mov	x0, #0
-	ret
-9:
-	mov	x0, #-EFAULT
+	uaccess_ttbr0_disable x1, x2
 	ret
 ENDPROC(flush_icache_range)
 ENDPROC(__flush_cache_user_range)
@@ -154,30 +186,24 @@ ENDPROC(__flush_cache_user_range)
 /*
  *	__flush_dcache_area(kaddr, size)
  *
- *	Ensure that any D-cache lines for the interval [kaddr, kaddr+size)
- *	are cleaned and invalidated to the PoC.
+ *	Ensure that the data held in the page kaddr is written back to the
+ *	page in question.
  *
  *	- kaddr   - kernel address
  *	- size    - size in question
  */
 ENTRY(__flush_dcache_area)
-	dcache_by_line_op civac, sy, x0, x1, x2, x3
+	dcache_line_size x2, x3
+	add	x1, x0, x1
+	sub	x3, x2, #1
+	bic	x0, x0, x3
+1:	dc	civac, x0			// clean & invalidate D line / unified line
+	add	x0, x0, x2
+	cmp	x0, x1
+	b.lo	1b
+	dsb	sy
 	ret
 ENDPIPROC(__flush_dcache_area)
-
-/*
- *	__clean_dcache_area_pou(kaddr, size)
- *
- * 	Ensure that any D-cache lines for the interval [kaddr, kaddr+size)
- * 	are cleaned to the PoU.
- *
- *	- kaddr   - kernel address
- *	- size    - size in question
- */
-ENTRY(__clean_dcache_area_pou)
-	dcache_by_line_op cvau, ish, x0, x1, x2, x3
-	ret
-ENDPROC(__clean_dcache_area_pou)
 
 /*
  *	__inval_cache_range(start, end)

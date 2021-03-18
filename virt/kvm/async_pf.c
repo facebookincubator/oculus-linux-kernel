@@ -80,7 +80,7 @@ static void async_pf_execute(struct work_struct *work)
 
 	might_sleep();
 
-	get_user_pages_unlocked(NULL, mm, addr, 1, 1, 0, NULL);
+	kvm_get_user_page_io(NULL, mm, addr, 1, NULL);
 	kvm_async_page_present_sync(vcpu, apf);
 
 	spin_lock(&vcpu->async_pf.lock);
@@ -94,10 +94,6 @@ static void async_pf_execute(struct work_struct *work)
 
 	trace_kvm_async_pf_completed(addr, gva);
 
-	/*
-	 * This memory barrier pairs with prepare_to_wait's set_current_state()
-	 */
-	smp_mb();
 	if (waitqueue_active(&vcpu->wq))
 		wake_up_interruptible(&vcpu->wq);
 

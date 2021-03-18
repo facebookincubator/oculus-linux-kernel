@@ -95,6 +95,7 @@
 const char power_group_name[] = "power";
 EXPORT_SYMBOL_GPL(power_group_name);
 
+#ifdef CONFIG_PM_RUNTIME
 static const char ctrl_auto[] = "auto";
 static const char ctrl_on[] = "on";
 
@@ -329,6 +330,7 @@ static ssize_t pm_qos_remote_wakeup_store(struct device *dev,
 
 static DEVICE_ATTR(pm_qos_remote_wakeup, 0644,
 		   pm_qos_remote_wakeup_show, pm_qos_remote_wakeup_store);
+#endif /* CONFIG_PM_RUNTIME */
 
 #ifdef CONFIG_PM_SLEEP
 static const char _enabled[] = "enabled";
@@ -529,6 +531,8 @@ static DEVICE_ATTR(wakeup_prevent_sleep_time_ms, 0444,
 #endif /* CONFIG_PM_SLEEP */
 
 #ifdef CONFIG_PM_ADVANCED_DEBUG
+#ifdef CONFIG_PM_RUNTIME
+
 static ssize_t rtpm_usagecount_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
@@ -558,7 +562,10 @@ static DEVICE_ATTR(runtime_usage, 0444, rtpm_usagecount_show, NULL);
 static DEVICE_ATTR(runtime_active_kids, 0444, rtpm_children_show, NULL);
 static DEVICE_ATTR(runtime_enabled, 0444, rtpm_enabled_show, NULL);
 
+#endif
+
 #ifdef CONFIG_PM_SLEEP
+
 static ssize_t async_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
@@ -588,7 +595,7 @@ static ssize_t async_store(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR(async, 0644, async_show, async_store);
 
-#endif /* CONFIG_PM_SLEEP */
+#endif
 #endif /* CONFIG_PM_ADVANCED_DEBUG */
 
 static struct attribute *power_attrs[] = {
@@ -596,10 +603,12 @@ static struct attribute *power_attrs[] = {
 #ifdef CONFIG_PM_SLEEP
 	&dev_attr_async.attr,
 #endif
+#ifdef CONFIG_PM_RUNTIME
 	&dev_attr_runtime_status.attr,
 	&dev_attr_runtime_usage.attr,
 	&dev_attr_runtime_active_kids.attr,
 	&dev_attr_runtime_enabled.attr,
+#endif
 #endif /* CONFIG_PM_ADVANCED_DEBUG */
 	NULL,
 };
@@ -631,6 +640,7 @@ static struct attribute_group pm_wakeup_attr_group = {
 };
 
 static struct attribute *runtime_attrs[] = {
+#ifdef CONFIG_PM_RUNTIME
 #ifndef CONFIG_PM_ADVANCED_DEBUG
 	&dev_attr_runtime_status.attr,
 #endif
@@ -638,6 +648,7 @@ static struct attribute *runtime_attrs[] = {
 	&dev_attr_runtime_suspended_time.attr,
 	&dev_attr_runtime_active_time.attr,
 	&dev_attr_autosuspend_delay_ms.attr,
+#endif /* CONFIG_PM_RUNTIME */
 	NULL,
 };
 static struct attribute_group pm_runtime_attr_group = {
@@ -646,7 +657,9 @@ static struct attribute_group pm_runtime_attr_group = {
 };
 
 static struct attribute *pm_qos_resume_latency_attrs[] = {
+#ifdef CONFIG_PM_RUNTIME
 	&dev_attr_pm_qos_resume_latency_us.attr,
+#endif /* CONFIG_PM_RUNTIME */
 	NULL,
 };
 static struct attribute_group pm_qos_resume_latency_attr_group = {
@@ -655,7 +668,9 @@ static struct attribute_group pm_qos_resume_latency_attr_group = {
 };
 
 static struct attribute *pm_qos_latency_tolerance_attrs[] = {
+#ifdef CONFIG_PM_RUNTIME
 	&dev_attr_pm_qos_latency_tolerance_us.attr,
+#endif /* CONFIG_PM_RUNTIME */
 	NULL,
 };
 static struct attribute_group pm_qos_latency_tolerance_attr_group = {
@@ -664,8 +679,10 @@ static struct attribute_group pm_qos_latency_tolerance_attr_group = {
 };
 
 static struct attribute *pm_qos_flags_attrs[] = {
+#ifdef CONFIG_PM_RUNTIME
 	&dev_attr_pm_qos_no_power_off.attr,
 	&dev_attr_pm_qos_remote_wakeup.attr,
+#endif /* CONFIG_PM_RUNTIME */
 	NULL,
 };
 static struct attribute_group pm_qos_flags_attr_group = {
@@ -736,17 +753,6 @@ int pm_qos_sysfs_add_flags(struct device *dev)
 void pm_qos_sysfs_remove_flags(struct device *dev)
 {
 	sysfs_unmerge_group(&dev->kobj, &pm_qos_flags_attr_group);
-}
-
-int pm_qos_sysfs_add_latency_tolerance(struct device *dev)
-{
-	return sysfs_merge_group(&dev->kobj,
-				 &pm_qos_latency_tolerance_attr_group);
-}
-
-void pm_qos_sysfs_remove_latency_tolerance(struct device *dev)
-{
-	sysfs_unmerge_group(&dev->kobj, &pm_qos_latency_tolerance_attr_group);
 }
 
 void rpm_sysfs_remove(struct device *dev)

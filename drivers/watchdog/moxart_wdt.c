@@ -168,13 +168,13 @@ static const struct of_device_id moxart_watchdog_match[] = {
 	{ .compatible = "moxa,moxart-watchdog" },
 	{ },
 };
-MODULE_DEVICE_TABLE(of, moxart_watchdog_match);
 
 static struct platform_driver moxart_wdt_driver = {
 	.probe      = moxart_wdt_probe,
 	.remove     = moxart_wdt_remove,
 	.driver     = {
 		.name		= "moxart-watchdog",
+		.owner		= THIS_MODULE,
 		.of_match_table	= moxart_watchdog_match,
 	},
 };

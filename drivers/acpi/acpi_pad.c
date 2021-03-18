@@ -12,6 +12,10 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+ *
  */
 
 #include <linux/kernel.h>
@@ -22,7 +26,7 @@
 #include <linux/kthread.h>
 #include <linux/freezer.h>
 #include <linux/cpu.h>
-#include <linux/tick.h>
+#include <linux/clockchips.h>
 #include <linux/slab.h>
 #include <linux/acpi.h>
 #include <asm/mwait.h>
@@ -37,6 +41,8 @@ static unsigned long power_saving_mwait_eax;
 
 static unsigned char tsc_detected_unstable;
 static unsigned char tsc_marked_unstable;
+static unsigned char lapic_detected_unstable;
+static unsigned char lapic_marked_unstable;
 
 static void power_saving_mwait_init(void)
 {
@@ -76,10 +82,13 @@ static void power_saving_mwait_init(void)
 		 */
 		if (!boot_cpu_has(X86_FEATURE_NONSTOP_TSC))
 			tsc_detected_unstable = 1;
+		if (!boot_cpu_has(X86_FEATURE_ARAT))
+			lapic_detected_unstable = 1;
 		break;
 	default:
-		/* TSC could halt in idle */
+		/* TSC & LAPIC could halt in idle */
 		tsc_detected_unstable = 1;
+		lapic_detected_unstable = 1;
 	}
 #endif
 }
@@ -101,7 +110,7 @@ static void round_robin_cpu(unsigned int tsk_index)
 	mutex_lock(&round_robin_lock);
 	cpumask_clear(tmp);
 	for_each_cpu(cpu, pad_busy_cpus)
-		cpumask_or(tmp, tmp, topology_sibling_cpumask(cpu));
+		cpumask_or(tmp, tmp, topology_thread_cpumask(cpu));
 	cpumask_andnot(tmp, cpu_online_mask, tmp);
 	/* avoid HT sibilings if possible */
 	if (cpumask_empty(tmp))
@@ -146,7 +155,10 @@ static int power_saving_thread(void *data)
 	sched_setscheduler(current, SCHED_RR, &param);
 
 	while (!kthread_should_stop()) {
+		int cpu;
 		unsigned long expire_time;
+
+		try_to_freeze();
 
 		/* round robin to cpus */
 		expire_time = last_jiffies + round_robin_time * HZ;
@@ -165,15 +177,28 @@ static int power_saving_thread(void *data)
 				mark_tsc_unstable("TSC halts in idle");
 				tsc_marked_unstable = 1;
 			}
+			if (lapic_detected_unstable && !lapic_marked_unstable) {
+				int i;
+				/* LAPIC could halt in idle, so notify users */
+				for_each_online_cpu(i)
+					clockevents_notify(
+						CLOCK_EVT_NOTIFY_BROADCAST_ON,
+						&i);
+				lapic_marked_unstable = 1;
+			}
 			local_irq_disable();
-			tick_broadcast_enable();
-			tick_broadcast_enter();
+			cpu = smp_processor_id();
+			if (lapic_marked_unstable)
+				clockevents_notify(
+					CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &cpu);
 			stop_critical_timings();
 
 			mwait_idle_with_hints(power_saving_mwait_eax, 1);
 
 			start_critical_timings();
-			tick_broadcast_exit();
+			if (lapic_marked_unstable)
+				clockevents_notify(
+					CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
 			local_irq_enable();
 
 			if (time_before(expire_time, jiffies)) {
@@ -325,10 +350,12 @@ static ssize_t acpi_pad_idlecpus_store(struct device *dev,
 static ssize_t acpi_pad_idlecpus_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return cpumap_print_to_pagebuf(false, buf,
-				       to_cpumask(pad_busy_cpus_bits));
+	int n = 0;
+	n = cpumask_scnprintf(buf, PAGE_SIZE-2, to_cpumask(pad_busy_cpus_bits));
+	buf[n++] = '\n';
+	buf[n] = '\0';
+	return n;
 }
-
 static DEVICE_ATTR(idlecpus, S_IRUGO|S_IWUSR,
 	acpi_pad_idlecpus_show,
 	acpi_pad_idlecpus_store);

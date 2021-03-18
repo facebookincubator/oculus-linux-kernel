@@ -129,7 +129,20 @@ static struct phy_driver cis820x_driver[] = {
 	.driver		= { .owner = THIS_MODULE,},
 } };
 
-module_phy_driver(cis820x_driver);
+static int __init cicada_init(void)
+{
+	return phy_drivers_register(cis820x_driver,
+		ARRAY_SIZE(cis820x_driver));
+}
+
+static void __exit cicada_exit(void)
+{
+	phy_drivers_unregister(cis820x_driver,
+		ARRAY_SIZE(cis820x_driver));
+}
+
+module_init(cicada_init);
+module_exit(cicada_exit);
 
 static struct mdio_device_id __maybe_unused cicada_tbl[] = {
 	{ 0x000fc410, 0x000ffff0 },

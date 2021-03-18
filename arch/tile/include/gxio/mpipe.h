@@ -1830,7 +1830,7 @@ extern int gxio_mpipe_link_set_attr(gxio_mpipe_link_t *link, uint32_t attr,
  *  code.
  */
 extern int gxio_mpipe_get_timestamp(gxio_mpipe_context_t *context,
-				    struct timespec64 *ts);
+				    struct timespec *ts);
 
 /* Set the timestamp of mPIPE.
  *
@@ -1840,7 +1840,7 @@ extern int gxio_mpipe_get_timestamp(gxio_mpipe_context_t *context,
  *  code.
  */
 extern int gxio_mpipe_set_timestamp(gxio_mpipe_context_t *context,
-				    const struct timespec64 *ts);
+				    const struct timespec *ts);
 
 /* Adjust the timestamp of mPIPE.
  *

@@ -82,6 +82,7 @@ static void __init tegra_dt_init_irq(void)
 {
 	tegra_init_irq();
 	irqchip_init();
+	tegra_legacy_irq_syscore_init();
 }
 
 static void __init tegra_dt_init(void)
@@ -89,6 +90,8 @@ static void __init tegra_dt_init(void)
 	struct soc_device_attribute *soc_dev_attr;
 	struct soc_device *soc_dev;
 	struct device *parent = NULL;
+
+	tegra_clocks_apply_init_table();
 
 	soc_dev_attr = kzalloc(sizeof(*soc_dev_attr), GFP_KERNEL);
 	if (!soc_dev_attr)
@@ -163,5 +166,6 @@ DT_MACHINE_START(TEGRA_DT, "NVIDIA Tegra SoC (Flattened Device Tree)")
 	.init_irq	= tegra_dt_init_irq,
 	.init_machine	= tegra_dt_init,
 	.init_late	= tegra_dt_init_late,
+	.restart	= tegra_pmc_restart,
 	.dt_compat	= tegra_dt_board_compat,
 MACHINE_END

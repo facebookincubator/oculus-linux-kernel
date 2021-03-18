@@ -20,7 +20,7 @@
 #include <media/media-entity.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-fh.h>
-#include <media/videobuf2-v4l2.h>
+#include <media/videobuf2-core.h>
 
 #define ISP_VIDEO_DRIVER_NAME		"ispvideo"
 #define ISP_VIDEO_DRIVER_VERSION	"0.0.2"
@@ -44,10 +44,10 @@ struct v4l2_pix_format;
  * @bpp: Bytes per pixel (when stored in memory)
  */
 struct isp_format_info {
-	u32 code;
-	u32 truncated;
-	u32 uncompressed;
-	u32 flavor;
+	enum v4l2_mbus_pixelcode code;
+	enum v4l2_mbus_pixelcode truncated;
+	enum v4l2_mbus_pixelcode uncompressed;
+	enum v4l2_mbus_pixelcode flavor;
 	u32 pixelformat;
 	unsigned int width;
 	unsigned int bpp;
@@ -122,7 +122,7 @@ static inline int isp_pipeline_ready(struct isp_pipeline *pipe)
  * @dma: DMA address
  */
 struct isp_buffer {
-	struct vb2_v4l2_buffer vb;
+	struct vb2_buffer vb;
 	struct list_head irqlist;
 	dma_addr_t dma;
 };
@@ -206,6 +206,6 @@ void omap3isp_video_resume(struct isp_video *video, int continuous);
 struct media_pad *omap3isp_video_remote_pad(struct isp_video *video);
 
 const struct isp_format_info *
-omap3isp_video_format_info(u32 code);
+omap3isp_video_format_info(enum v4l2_mbus_pixelcode code);
 
 #endif /* OMAP3_ISP_VIDEO_H */

@@ -126,7 +126,7 @@
 */
 #include <linux/types.h>
 
-static int verbose = 0;
+static bool verbose = 0;
 static int major = PD_MAJOR;
 static char *name = PD_NAME;
 static int cluster = 64;
@@ -161,7 +161,7 @@ enum {D_PRT, D_PRO, D_UNI, D_MOD, D_GEO, D_SBY, D_DLY, D_SLV};
 static DEFINE_MUTEX(pd_mutex);
 static DEFINE_SPINLOCK(pd_lock);
 
-module_param(verbose, int, 0);
+module_param(verbose, bool, 0);
 module_param(major, int, 0);
 module_param(name, charp, 0);
 module_param(cluster, int, 0);
@@ -246,8 +246,6 @@ static char *pd_errs[17] = { "ERR", "INDEX", "ECC", "DRQ", "SEEK", "WRERR",
 	"READY", "BUSY", "AMNF", "TK0NF", "ABRT", "MCR",
 	"IDNF", "MC", "UNC", "???", "TMO"
 };
-
-static void *par_drv;		/* reference of parport driver */
 
 static inline int status_reg(struct pd_unit *disk)
 {
@@ -444,7 +442,7 @@ static char *pd_buf;		/* buffer for request in progress */
 
 static enum action do_pd_io_start(void)
 {
-	if (pd_req->cmd_type == REQ_TYPE_DRV_PRIV) {
+	if (pd_req->cmd_type == REQ_TYPE_SPECIAL) {
 		phase = pd_special;
 		return pd_special();
 	}
@@ -723,11 +721,11 @@ static int pd_special_command(struct pd_unit *disk,
 	struct request *rq;
 	int err = 0;
 
-	rq = blk_get_request(disk->gd->queue, READ, __GFP_RECLAIM);
+	rq = blk_get_request(disk->gd->queue, READ, __GFP_WAIT);
 	if (IS_ERR(rq))
 		return PTR_ERR(rq);
 
-	rq->cmd_type = REQ_TYPE_DRV_PRIV;
+	rq->cmd_type = REQ_TYPE_SPECIAL;
 	rq->special = func;
 
 	err = blk_execute_rq(disk->gd->queue, disk->gd, rq, 0);
@@ -874,12 +872,6 @@ static int pd_detect(void)
 			pd_drive_count++;
 	}
 
-	par_drv = pi_register_driver(name);
-	if (!par_drv) {
-		pr_err("failed to register %s driver\n", name);
-		return -1;
-	}
-
 	if (pd_drive_count == 0) { /* nothing spec'd - so autoprobe for 1 */
 		disk = pd;
 		if (pi_init(disk->pi, 1, -1, -1, -1, -1, -1, pd_scratch,
@@ -910,10 +902,8 @@ static int pd_detect(void)
 			found = 1;
 		}
 	}
-	if (!found) {
+	if (!found)
 		printk("%s: no valid drive found\n", name);
-		pi_unregister_driver(par_drv);
-	}
 	return found;
 }
 

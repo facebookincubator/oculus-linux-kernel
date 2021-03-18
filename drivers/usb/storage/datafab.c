@@ -59,9 +59,6 @@
 #include "transport.h"
 #include "protocol.h"
 #include "debug.h"
-#include "scsiglue.h"
-
-#define DRV_NAME "ums-datafab"
 
 MODULE_DESCRIPTION("Driver for Datafab USB Compact Flash reader");
 MODULE_AUTHOR("Jimmie Mayfield <mayfield+datafab@sackheads.org>");
@@ -724,8 +721,6 @@ static int datafab_transport(struct scsi_cmnd *srb, struct us_data *us)
 	return USB_STOR_TRANSPORT_FAILED;
 }
 
-static struct scsi_host_template datafab_host_template;
-
 static int datafab_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
@@ -733,8 +728,7 @@ static int datafab_probe(struct usb_interface *intf,
 	int result;
 
 	result = usb_stor_probe1(&us, intf, id,
-			(id - datafab_usb_ids) + datafab_unusual_dev_list,
-			&datafab_host_template);
+			(id - datafab_usb_ids) + datafab_unusual_dev_list);
 	if (result)
 		return result;
 
@@ -748,7 +742,7 @@ static int datafab_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver datafab_driver = {
-	.name =		DRV_NAME,
+	.name =		"ums-datafab",
 	.probe =	datafab_probe,
 	.disconnect =	usb_stor_disconnect,
 	.suspend =	usb_stor_suspend,
@@ -761,4 +755,4 @@ static struct usb_driver datafab_driver = {
 	.no_dynamic_id = 1,
 };
 
-module_usb_stor_driver(datafab_driver, datafab_host_template, DRV_NAME);
+module_usb_driver(datafab_driver);

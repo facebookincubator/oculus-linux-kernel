@@ -44,8 +44,6 @@ int fork_cleanup(void)
 {
 	pid_t pid;
 
-	SKIP_IF(!ebb_is_supported());
-
 	event_init_named(&event, 0x1001e, "cycles");
 	event_leader_ebb_init(&event);
 

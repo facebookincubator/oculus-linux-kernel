@@ -32,11 +32,7 @@
 #define	BRCMF_BSS_INFO_VERSION	109 /* curr ver of brcmf_bss_info_le struct */
 #define BRCMF_BSS_RSSI_ON_CHANNEL	0x0002
 
-#define BRCMF_STA_WME              0x00000002      /* WMM association */
-#define BRCMF_STA_AUTHE            0x00000008      /* Authenticated */
-#define BRCMF_STA_ASSOC            0x00000010      /* Associated */
-#define BRCMF_STA_AUTHO            0x00000020      /* Authorized */
-#define BRCMF_STA_SCBSTATS         0x00004000      /* Per STA debug stats */
+#define BRCMF_STA_ASSOC			0x10		/* Associated */
 
 /* size of brcmf_scan_params not including variable length array */
 #define BRCMF_SCAN_PARAMS_FIXED_SIZE	64
@@ -59,67 +55,59 @@
 
 /* WOWL bits */
 /* Wakeup on Magic packet: */
-#define BRCMF_WOWL_MAGIC		(1 << 0)
+#define WL_WOWL_MAGIC			(1 << 0)
 /* Wakeup on Netpattern */
-#define BRCMF_WOWL_NET			(1 << 1)
+#define WL_WOWL_NET			(1 << 1)
 /* Wakeup on loss-of-link due to Disassoc/Deauth: */
-#define BRCMF_WOWL_DIS			(1 << 2)
+#define WL_WOWL_DIS			(1 << 2)
 /* Wakeup on retrograde TSF: */
-#define BRCMF_WOWL_RETR			(1 << 3)
+#define WL_WOWL_RETR			(1 << 3)
 /* Wakeup on loss of beacon: */
-#define BRCMF_WOWL_BCN			(1 << 4)
+#define WL_WOWL_BCN			(1 << 4)
 /* Wakeup after test: */
-#define BRCMF_WOWL_TST			(1 << 5)
+#define WL_WOWL_TST			(1 << 5)
 /* Wakeup after PTK refresh: */
-#define BRCMF_WOWL_M1			(1 << 6)
+#define WL_WOWL_M1			(1 << 6)
 /* Wakeup after receipt of EAP-Identity Req: */
-#define BRCMF_WOWL_EAPID		(1 << 7)
+#define WL_WOWL_EAPID			(1 << 7)
 /* Wakeind via PME(0) or GPIO(1): */
-#define BRCMF_WOWL_PME_GPIO		(1 << 8)
+#define WL_WOWL_PME_GPIO		(1 << 8)
 /* need tkip phase 1 key to be updated by the driver: */
-#define BRCMF_WOWL_NEEDTKIP1		(1 << 9)
+#define WL_WOWL_NEEDTKIP1		(1 << 9)
 /* enable wakeup if GTK fails: */
-#define BRCMF_WOWL_GTK_FAILURE		(1 << 10)
+#define WL_WOWL_GTK_FAILURE		(1 << 10)
 /* support extended magic packets: */
-#define BRCMF_WOWL_EXTMAGPAT		(1 << 11)
+#define WL_WOWL_EXTMAGPAT		(1 << 11)
 /* support ARP/NS/keepalive offloading: */
-#define BRCMF_WOWL_ARPOFFLOAD		(1 << 12)
+#define WL_WOWL_ARPOFFLOAD		(1 << 12)
 /* read protocol version for EAPOL frames: */
-#define BRCMF_WOWL_WPA2			(1 << 13)
+#define WL_WOWL_WPA2			(1 << 13)
 /* If the bit is set, use key rotaton: */
-#define BRCMF_WOWL_KEYROT		(1 << 14)
+#define WL_WOWL_KEYROT			(1 << 14)
 /* If the bit is set, frm received was bcast frame: */
-#define BRCMF_WOWL_BCAST		(1 << 15)
+#define WL_WOWL_BCAST			(1 << 15)
 /* If the bit is set, scan offload is enabled: */
-#define BRCMF_WOWL_SCANOL		(1 << 16)
+#define WL_WOWL_SCANOL			(1 << 16)
 /* Wakeup on tcpkeep alive timeout: */
-#define BRCMF_WOWL_TCPKEEP_TIME		(1 << 17)
+#define WL_WOWL_TCPKEEP_TIME		(1 << 17)
 /* Wakeup on mDNS Conflict Resolution: */
-#define BRCMF_WOWL_MDNS_CONFLICT	(1 << 18)
+#define WL_WOWL_MDNS_CONFLICT		(1 << 18)
 /* Wakeup on mDNS Service Connect: */
-#define BRCMF_WOWL_MDNS_SERVICE		(1 << 19)
+#define WL_WOWL_MDNS_SERVICE		(1 << 19)
 /* tcp keepalive got data: */
-#define BRCMF_WOWL_TCPKEEP_DATA		(1 << 20)
+#define WL_WOWL_TCPKEEP_DATA		(1 << 20)
 /* Firmware died in wowl mode: */
-#define BRCMF_WOWL_FW_HALT		(1 << 21)
+#define WL_WOWL_FW_HALT			(1 << 21)
 /* Enable detection of radio button changes: */
-#define BRCMF_WOWL_ENAB_HWRADIO		(1 << 22)
+#define WL_WOWL_ENAB_HWRADIO		(1 << 22)
 /* Offloads detected MIC failure(s): */
-#define BRCMF_WOWL_MIC_FAIL		(1 << 23)
+#define WL_WOWL_MIC_FAIL		(1 << 23)
 /* Wakeup in Unassociated state (Net/Magic Pattern): */
-#define BRCMF_WOWL_UNASSOC		(1 << 24)
+#define WL_WOWL_UNASSOC			(1 << 24)
 /* Wakeup if received matched secured pattern: */
-#define BRCMF_WOWL_SECURE		(1 << 25)
+#define WL_WOWL_SECURE			(1 << 25)
 /* Link Down indication in WoWL mode: */
-#define BRCMF_WOWL_LINKDOWN		(1 << 31)
-
-#define BRCMF_WOWL_MAXPATTERNS		8
-#define BRCMF_WOWL_MAXPATTERNSIZE	128
-
-#define BRCMF_COUNTRY_BUF_SZ		4
-#define BRCMF_ANT_MAX			4
-
-#define BRCMF_MAX_ASSOCLIST		128
+#define WL_WOWL_LINKDOWN		(1 << 31)
 
 /* join preference types for join_pref iovar */
 enum brcmf_join_pref_types {
@@ -134,12 +122,6 @@ enum brcmf_fil_p2p_if_types {
 	BRCMF_FIL_P2P_IF_GO,
 	BRCMF_FIL_P2P_IF_DYNBCN_GO,
 	BRCMF_FIL_P2P_IF_DEV,
-};
-
-enum brcmf_wowl_pattern_type {
-	BRCMF_WOWL_PATTERN_TYPE_BITMAP = 0,
-	BRCMF_WOWL_PATTERN_TYPE_ARP,
-	BRCMF_WOWL_PATTERN_TYPE_NA
 };
 
 struct brcmf_fil_p2p_if_le {
@@ -463,61 +445,25 @@ struct brcmf_channel_info_le {
 };
 
 struct brcmf_sta_info_le {
-	__le16 ver;		/* version of this struct */
-	__le16 len;		/* length in bytes of this structure */
-	__le16 cap;		/* sta's advertised capabilities */
-	__le32 flags;		/* flags defined below */
-	__le32 idle;		/* time since data pkt rx'd from sta */
-	u8 ea[ETH_ALEN];		/* Station address */
-	__le32 count;			/* # rates in this set */
-	u8 rates[BRCMF_MAXRATES_IN_SET];	/* rates in 500kbps units */
+	__le16	ver;		/* version of this struct */
+	__le16	len;		/* length in bytes of this structure */
+	__le16	cap;		/* sta's advertised capabilities */
+	__le32	flags;		/* flags defined below */
+	__le32	idle;		/* time since data pkt rx'd from sta */
+	u8	ea[ETH_ALEN];		/* Station address */
+	__le32	count;			/* # rates in this set */
+	u8	rates[BRCMF_MAXRATES_IN_SET];	/* rates in 500kbps units */
 						/* w/hi bit set if basic */
-	__le32 in;		/* seconds elapsed since associated */
-	__le32 listen_interval_inms; /* Min Listen interval in ms for STA */
-	__le32 tx_pkts;	/* # of packets transmitted */
-	__le32 tx_failures;	/* # of packets failed */
-	__le32 rx_ucast_pkts;	/* # of unicast packets received */
-	__le32 rx_mcast_pkts;	/* # of multicast packets received */
-	__le32 tx_rate;	/* Rate of last successful tx frame */
-	__le32 rx_rate;	/* Rate of last successful rx frame */
-	__le32 rx_decrypt_succeeds;	/* # of packet decrypted successfully */
-	__le32 rx_decrypt_failures;	/* # of packet decrypted failed */
-	__le32 tx_tot_pkts;    /* # of tx pkts (ucast + mcast) */
-	__le32 rx_tot_pkts;    /* # of data packets recvd (uni + mcast) */
-	__le32 tx_mcast_pkts;  /* # of mcast pkts txed */
-	__le64 tx_tot_bytes;   /* data bytes txed (ucast + mcast) */
-	__le64 rx_tot_bytes;   /* data bytes recvd (ucast + mcast) */
-	__le64 tx_ucast_bytes; /* data bytes txed (ucast) */
-	__le64 tx_mcast_bytes; /* # data bytes txed (mcast) */
-	__le64 rx_ucast_bytes; /* data bytes recvd (ucast) */
-	__le64 rx_mcast_bytes; /* data bytes recvd (mcast) */
-	s8 rssi[BRCMF_ANT_MAX];   /* per antenna rssi */
-	s8 nf[BRCMF_ANT_MAX];     /* per antenna noise floor */
-	__le16 aid;                    /* association ID */
-	__le16 ht_capabilities;        /* advertised ht caps */
-	__le16 vht_flags;              /* converted vht flags */
-	__le32 tx_pkts_retry_cnt;      /* # of frames where a retry was
-					 * exhausted.
-					 */
-	__le32 tx_pkts_retry_exhausted; /* # of user frames where a retry
-					 * was exhausted
-					 */
-	s8 rx_lastpkt_rssi[BRCMF_ANT_MAX]; /* Per antenna RSSI of last
-					    * received data frame.
-					    */
-	/* TX WLAN retry/failure statistics:
-	 * Separated for host requested frames and locally generated frames.
-	 * Include unicast frame only where the retries/failures can be counted.
-	 */
-	__le32 tx_pkts_total;          /* # user frames sent successfully */
-	__le32 tx_pkts_retries;        /* # user frames retries */
-	__le32 tx_pkts_fw_total;       /* # FW generated sent successfully */
-	__le32 tx_pkts_fw_retries;     /* # retries for FW generated frames */
-	__le32 tx_pkts_fw_retry_exhausted;     /* # FW generated where a retry
-						* was exhausted
-						*/
-	__le32 rx_pkts_retried;        /* # rx with retry bit set */
-	__le32 tx_rate_fallback;       /* lowest fallback TX rate */
+	__le32	in;		/* seconds elapsed since associated */
+	__le32	listen_interval_inms; /* Min Listen interval in ms for STA */
+	__le32	tx_pkts;	/* # of packets transmitted */
+	__le32	tx_failures;	/* # of packets failed */
+	__le32	rx_ucast_pkts;	/* # of unicast packets received */
+	__le32	rx_mcast_pkts;	/* # of multicast packets received */
+	__le32	tx_rate;	/* Rate of last successful tx frame */
+	__le32	rx_rate;	/* Rate of last successful rx frame */
+	__le32	rx_decrypt_succeeds;	/* # of packet decrypted successfully */
+	__le32	rx_decrypt_failures;	/* # of packet decrypted failed */
 };
 
 struct brcmf_chanspec_list {
@@ -536,102 +482,6 @@ struct brcmf_rx_mgmt_data {
 	__be32	rssi;
 	__be32	mactime;
 	__be32	rate;
-};
-
-/**
- * struct brcmf_fil_wowl_pattern_le - wowl pattern configuration struct.
- *
- * @cmd: "add", "del" or "clr".
- * @masksize: Size of the mask in #of bytes
- * @offset: Pattern byte offset in packet
- * @patternoffset: Offset of start of pattern. Starting from field masksize.
- * @patternsize: Size of the pattern itself in #of bytes
- * @id: id
- * @reasonsize: Size of the wakeup reason code
- * @type: Type of pattern (enum brcmf_wowl_pattern_type)
- */
-struct brcmf_fil_wowl_pattern_le {
-	u8	cmd[4];
-	__le32	masksize;
-	__le32	offset;
-	__le32	patternoffset;
-	__le32	patternsize;
-	__le32	id;
-	__le32	reasonsize;
-	__le32	type;
-	/* u8 mask[] - Mask follows the structure above */
-	/* u8 pattern[] - Pattern follows the mask is at 'patternoffset' */
-};
-
-struct brcmf_mbss_ssid_le {
-	__le32	bsscfgidx;
-	__le32	SSID_len;
-	unsigned char SSID[32];
-};
-
-/**
- * struct brcmf_fil_country_le - country configuration structure.
- *
- * @country_abbrev: null-terminated country code used in the country IE.
- * @rev: revision specifier for ccode. on set, -1 indicates unspecified.
- * @ccode: null-terminated built-in country code.
- */
-struct brcmf_fil_country_le {
-	char country_abbrev[BRCMF_COUNTRY_BUF_SZ];
-	__le32 rev;
-	char ccode[BRCMF_COUNTRY_BUF_SZ];
-};
-
-/**
- * struct brcmf_rev_info_le - device revision info.
- *
- * @vendorid: PCI vendor id.
- * @deviceid: device id of chip.
- * @radiorev: radio revision.
- * @chiprev: chip revision.
- * @corerev: core revision.
- * @boardid: board identifier (usu. PCI sub-device id).
- * @boardvendor: board vendor (usu. PCI sub-vendor id).
- * @boardrev: board revision.
- * @driverrev: driver version.
- * @ucoderev: microcode version.
- * @bus: bus type.
- * @chipnum: chip number.
- * @phytype: phy type.
- * @phyrev: phy revision.
- * @anarev: anacore rev.
- * @chippkg: chip package info.
- * @nvramrev: nvram revision number.
- */
-struct brcmf_rev_info_le {
-	__le32 vendorid;
-	__le32 deviceid;
-	__le32 radiorev;
-	__le32 chiprev;
-	__le32 corerev;
-	__le32 boardid;
-	__le32 boardvendor;
-	__le32 boardrev;
-	__le32 driverrev;
-	__le32 ucoderev;
-	__le32 bus;
-	__le32 chipnum;
-	__le32 phytype;
-	__le32 phyrev;
-	__le32 anarev;
-	__le32 chippkg;
-	__le32 nvramrev;
-};
-
-/**
- * struct brcmf_assoclist_le - request assoc list.
- *
- * @count: indicates number of stations.
- * @mac: MAC addresses of stations.
- */
-struct brcmf_assoclist_le {
-	__le32 count;
-	u8 mac[BRCMF_MAX_ASSOCLIST][ETH_ALEN];
 };
 
 #endif /* FWIL_TYPES_H_ */

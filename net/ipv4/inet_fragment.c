@@ -131,22 +131,34 @@ inet_evict_bucket(struct inet_frags *f, struct inet_frag_bucket *hb)
 	unsigned int evicted = 0;
 	HLIST_HEAD(expired);
 
+evict_again:
 	spin_lock(&hb->chain_lock);
 
 	hlist_for_each_entry_safe(fq, n, &hb->chain, list) {
 		if (!inet_fragq_should_evict(fq))
 			continue;
 
-		if (!del_timer(&fq->timer))
-			continue;
+		if (!del_timer(&fq->timer)) {
+			/* q expiring right now thus increment its refcount so
+			 * it won't be freed under us and wait until the timer
+			 * has finished executing then destroy it
+			 */
+			atomic_inc(&fq->refcnt);
+			spin_unlock(&hb->chain_lock);
+			del_timer_sync(&fq->timer);
+			inet_frag_put(fq, f);
+			goto evict_again;
+		}
 
-		hlist_add_head(&fq->list_evictor, &expired);
+		fq->flags |= INET_FRAG_EVICTED;
+		hlist_del(&fq->list);
+		hlist_add_head(&fq->list, &expired);
 		++evicted;
 	}
 
 	spin_unlock(&hb->chain_lock);
 
-	hlist_for_each_entry_safe(fq, n, &expired, list_evictor)
+	hlist_for_each_entry_safe(fq, n, &expired, list)
 		f->frag_expire((unsigned long) fq);
 
 	return evicted;
@@ -209,6 +221,12 @@ int inet_frags_init(struct inet_frags *f)
 }
 EXPORT_SYMBOL(inet_frags_init);
 
+void inet_frags_init_net(struct netns_frags *nf)
+{
+	init_frag_mem_limit(nf);
+}
+EXPORT_SYMBOL(inet_frags_init_net);
+
 void inet_frags_fini(struct inet_frags *f)
 {
 	cancel_work_sync(&f->frags_work);
@@ -222,20 +240,18 @@ void inet_frags_exit_net(struct netns_frags *nf, struct inet_frags *f)
 	int i;
 
 	nf->low_thresh = 0;
+	local_bh_disable();
 
 evict_again:
-	local_bh_disable();
 	seq = read_seqbegin(&f->rnd_seqlock);
 
 	for (i = 0; i < INETFRAGS_HASHSZ ; i++)
 		inet_evict_bucket(f, &f->hash[i]);
 
-	local_bh_enable();
-	cond_resched();
-
-	if (read_seqretry(&f->rnd_seqlock, seq) ||
-	    percpu_counter_sum(&nf->mem))
+	if (read_seqretry(&f->rnd_seqlock, seq))
 		goto evict_again;
+
+	local_bh_enable();
 
 	percpu_counter_destroy(&nf->mem);
 }
@@ -268,8 +284,8 @@ static inline void fq_unlink(struct inet_frag_queue *fq, struct inet_frags *f)
 	struct inet_frag_bucket *hb;
 
 	hb = get_frag_bucket_locked(fq, f);
-	hlist_del(&fq->list);
-	fq->flags |= INET_FRAG_COMPLETE;
+	if (!(fq->flags & INET_FRAG_EVICTED))
+		hlist_del(&fq->list);
 	spin_unlock(&hb->chain_lock);
 }
 
@@ -281,6 +297,7 @@ void inet_frag_kill(struct inet_frag_queue *fq, struct inet_frags *f)
 	if (!(fq->flags & INET_FRAG_COMPLETE)) {
 		fq_unlink(fq, f);
 		atomic_dec(&fq->refcnt);
+		fq->flags |= INET_FRAG_COMPLETE;
 	}
 }
 EXPORT_SYMBOL(inet_frag_kill);
@@ -313,12 +330,11 @@ void inet_frag_destroy(struct inet_frag_queue *q, struct inet_frags *f)
 		fp = xp;
 	}
 	sum = sum_truesize + f->qsize;
+	sub_frag_mem_limit(q, sum);
 
 	if (f->destructor)
 		f->destructor(q);
 	kmem_cache_free(f->frags_cachep, q);
-
-	sub_frag_mem_limit(nf, sum);
 }
 EXPORT_SYMBOL(inet_frag_destroy);
 
@@ -369,12 +385,12 @@ static struct inet_frag_queue *inet_frag_alloc(struct netns_frags *nf,
 	}
 
 	q = kmem_cache_zalloc(f->frags_cachep, GFP_ATOMIC);
-	if (!q)
+	if (q == NULL)
 		return NULL;
 
 	q->net = nf;
 	f->constructor(q, arg);
-	add_frag_mem_limit(nf, f->qsize);
+	add_frag_mem_limit(q, f->qsize);
 
 	setup_timer(&q->timer, f->frag_expire, (unsigned long)q);
 	spin_lock_init(&q->lock);
@@ -390,7 +406,7 @@ static struct inet_frag_queue *inet_frag_create(struct netns_frags *nf,
 	struct inet_frag_queue *q;
 
 	q = inet_frag_alloc(nf, f, arg);
-	if (!q)
+	if (q == NULL)
 		return NULL;
 
 	return inet_frag_intern(nf, q, f, arg);
@@ -442,6 +458,6 @@ void inet_frag_maybe_warn_overflow(struct inet_frag_queue *q,
 		". Dropping fragment.\n";
 
 	if (PTR_ERR(q) == -ENOBUFS)
-		net_dbg_ratelimited("%s%s", prefix, msg);
+		LIMIT_NETDEBUG(KERN_WARNING "%s%s", prefix, msg);
 }
 EXPORT_SYMBOL(inet_frag_maybe_warn_overflow);

@@ -78,15 +78,15 @@ static void csi2_recv_config(struct isp_device *isp,
 }
 
 static const unsigned int csi2_input_fmts[] = {
-	MEDIA_BUS_FMT_SGRBG10_1X10,
-	MEDIA_BUS_FMT_SGRBG10_DPCM8_1X8,
-	MEDIA_BUS_FMT_SRGGB10_1X10,
-	MEDIA_BUS_FMT_SRGGB10_DPCM8_1X8,
-	MEDIA_BUS_FMT_SBGGR10_1X10,
-	MEDIA_BUS_FMT_SBGGR10_DPCM8_1X8,
-	MEDIA_BUS_FMT_SGBRG10_1X10,
-	MEDIA_BUS_FMT_SGBRG10_DPCM8_1X8,
-	MEDIA_BUS_FMT_YUYV8_2X8,
+	V4L2_MBUS_FMT_SGRBG10_1X10,
+	V4L2_MBUS_FMT_SGRBG10_DPCM8_1X8,
+	V4L2_MBUS_FMT_SRGGB10_1X10,
+	V4L2_MBUS_FMT_SRGGB10_DPCM8_1X8,
+	V4L2_MBUS_FMT_SBGGR10_1X10,
+	V4L2_MBUS_FMT_SBGGR10_DPCM8_1X8,
+	V4L2_MBUS_FMT_SGBRG10_1X10,
+	V4L2_MBUS_FMT_SGBRG10_DPCM8_1X8,
+	V4L2_MBUS_FMT_YUYV8_2X8,
 };
 
 /* To set the format on the CSI2 requires a mapping function that takes
@@ -171,19 +171,19 @@ static u16 csi2_ctx_map_format(struct isp_csi2_device *csi2)
 	int fmtidx, destidx, is_3630;
 
 	switch (fmt->code) {
-	case MEDIA_BUS_FMT_SGRBG10_1X10:
-	case MEDIA_BUS_FMT_SRGGB10_1X10:
-	case MEDIA_BUS_FMT_SBGGR10_1X10:
-	case MEDIA_BUS_FMT_SGBRG10_1X10:
+	case V4L2_MBUS_FMT_SGRBG10_1X10:
+	case V4L2_MBUS_FMT_SRGGB10_1X10:
+	case V4L2_MBUS_FMT_SBGGR10_1X10:
+	case V4L2_MBUS_FMT_SGBRG10_1X10:
 		fmtidx = 0;
 		break;
-	case MEDIA_BUS_FMT_SGRBG10_DPCM8_1X8:
-	case MEDIA_BUS_FMT_SRGGB10_DPCM8_1X8:
-	case MEDIA_BUS_FMT_SBGGR10_DPCM8_1X8:
-	case MEDIA_BUS_FMT_SGBRG10_DPCM8_1X8:
+	case V4L2_MBUS_FMT_SGRBG10_DPCM8_1X8:
+	case V4L2_MBUS_FMT_SRGGB10_DPCM8_1X8:
+	case V4L2_MBUS_FMT_SBGGR10_DPCM8_1X8:
+	case V4L2_MBUS_FMT_SGBRG10_DPCM8_1X8:
 		fmtidx = 1;
 		break;
-	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case V4L2_MBUS_FMT_YUYV8_2X8:
 		fmtidx = 2;
 		break;
 	default:
@@ -548,8 +548,7 @@ int omap3isp_csi2_reset(struct isp_csi2_device *csi2)
 
 static int csi2_configure(struct isp_csi2_device *csi2)
 {
-	struct isp_pipeline *pipe = to_isp_pipeline(&csi2->subdev.entity);
-	const struct isp_bus_cfg *buscfg;
+	const struct isp_v4l2_subdevs_group *pdata;
 	struct isp_device *isp = csi2->isp;
 	struct isp_csi2_timing_cfg *timing = &csi2->timing[0];
 	struct v4l2_subdev *sensor;
@@ -566,19 +565,14 @@ static int csi2_configure(struct isp_csi2_device *csi2)
 
 	pad = media_entity_remote_pad(&csi2->pads[CSI2_PAD_SINK]);
 	sensor = media_entity_to_v4l2_subdev(pad->entity);
-	buscfg = sensor->host_priv;
+	pdata = sensor->host_priv;
 
 	csi2->frame_skip = 0;
 	v4l2_subdev_call(sensor, sensor, g_skip_frames, &csi2->frame_skip);
 
-	csi2->ctrl.vp_out_ctrl =
-		clamp_t(unsigned int, pipe->l3_ick / pipe->external_rate - 1,
-			1, 3);
-	dev_dbg(isp->dev, "%s: l3_ick %lu, external_rate %u, vp_out_ctrl %u\n",
-		__func__, pipe->l3_ick,  pipe->external_rate,
-		csi2->ctrl.vp_out_ctrl);
+	csi2->ctrl.vp_out_ctrl = pdata->bus.csi2.vpclk_div;
 	csi2->ctrl.frame_mode = ISP_CSI2_FRAME_IMMEDIATE;
-	csi2->ctrl.ecc_enable = buscfg->bus.csi2.crc;
+	csi2->ctrl.ecc_enable = pdata->bus.csi2.crc;
 
 	timing->ionum = 1;
 	timing->force_rx_mode = 1;
@@ -835,21 +829,21 @@ static const struct isp_video_operations csi2_ispvideo_ops = {
  */
 
 static struct v4l2_mbus_framefmt *
-__csi2_get_format(struct isp_csi2_device *csi2, struct v4l2_subdev_pad_config *cfg,
+__csi2_get_format(struct isp_csi2_device *csi2, struct v4l2_subdev_fh *fh,
 		  unsigned int pad, enum v4l2_subdev_format_whence which)
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_format(&csi2->subdev, cfg, pad);
+		return v4l2_subdev_get_try_format(fh, pad);
 	else
 		return &csi2->formats[pad];
 }
 
 static void
-csi2_try_format(struct isp_csi2_device *csi2, struct v4l2_subdev_pad_config *cfg,
+csi2_try_format(struct isp_csi2_device *csi2, struct v4l2_subdev_fh *fh,
 		unsigned int pad, struct v4l2_mbus_framefmt *fmt,
 		enum v4l2_subdev_format_whence which)
 {
-	u32 pixelcode;
+	enum v4l2_mbus_pixelcode pixelcode;
 	struct v4l2_mbus_framefmt *format;
 	const struct isp_format_info *info;
 	unsigned int i;
@@ -864,7 +858,7 @@ csi2_try_format(struct isp_csi2_device *csi2, struct v4l2_subdev_pad_config *cfg
 
 		/* If not found, use SGRBG10 as default */
 		if (i >= ARRAY_SIZE(csi2_input_fmts))
-			fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+			fmt->code = V4L2_MBUS_FMT_SGRBG10_1X10;
 
 		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
 		fmt->height = clamp_t(u32, fmt->height, 1, 8191);
@@ -875,7 +869,7 @@ csi2_try_format(struct isp_csi2_device *csi2, struct v4l2_subdev_pad_config *cfg
 		 * compression.
 		 */
 		pixelcode = fmt->code;
-		format = __csi2_get_format(csi2, cfg, CSI2_PAD_SINK, which);
+		format = __csi2_get_format(csi2, fh, CSI2_PAD_SINK, which);
 		memcpy(fmt, format, sizeof(*fmt));
 
 		/*
@@ -896,12 +890,12 @@ csi2_try_format(struct isp_csi2_device *csi2, struct v4l2_subdev_pad_config *cfg
 /*
  * csi2_enum_mbus_code - Handle pixel format enumeration
  * @sd     : pointer to v4l2 subdev structure
- * @cfg: V4L2 subdev pad configuration
+ * @fh     : V4L2 subdev file handle
  * @code   : pointer to v4l2_subdev_mbus_code_enum structure
  * return -EINVAL or zero on success
  */
 static int csi2_enum_mbus_code(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_fh *fh,
 			       struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct isp_csi2_device *csi2 = v4l2_get_subdevdata(sd);
@@ -914,8 +908,8 @@ static int csi2_enum_mbus_code(struct v4l2_subdev *sd,
 
 		code->code = csi2_input_fmts[code->index];
 	} else {
-		format = __csi2_get_format(csi2, cfg, CSI2_PAD_SINK,
-					   code->which);
+		format = __csi2_get_format(csi2, fh, CSI2_PAD_SINK,
+					   V4L2_SUBDEV_FORMAT_TRY);
 		switch (code->index) {
 		case 0:
 			/* Passthrough sink pad code */
@@ -938,7 +932,7 @@ static int csi2_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int csi2_enum_frame_size(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_fh *fh,
 				struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct isp_csi2_device *csi2 = v4l2_get_subdevdata(sd);
@@ -950,7 +944,7 @@ static int csi2_enum_frame_size(struct v4l2_subdev *sd,
 	format.code = fse->code;
 	format.width = 1;
 	format.height = 1;
-	csi2_try_format(csi2, cfg, fse->pad, &format, fse->which);
+	csi2_try_format(csi2, fh, fse->pad, &format, V4L2_SUBDEV_FORMAT_TRY);
 	fse->min_width = format.width;
 	fse->min_height = format.height;
 
@@ -960,7 +954,7 @@ static int csi2_enum_frame_size(struct v4l2_subdev *sd,
 	format.code = fse->code;
 	format.width = -1;
 	format.height = -1;
-	csi2_try_format(csi2, cfg, fse->pad, &format, fse->which);
+	csi2_try_format(csi2, fh, fse->pad, &format, V4L2_SUBDEV_FORMAT_TRY);
 	fse->max_width = format.width;
 	fse->max_height = format.height;
 
@@ -970,17 +964,17 @@ static int csi2_enum_frame_size(struct v4l2_subdev *sd,
 /*
  * csi2_get_format - Handle get format by pads subdev method
  * @sd : pointer to v4l2 subdev structure
- * @cfg: V4L2 subdev pad configuration
+ * @fh : V4L2 subdev file handle
  * @fmt: pointer to v4l2 subdev format structure
  * return -EINVAL or zero on success
  */
-static int csi2_get_format(struct v4l2_subdev *sd, struct v4l2_subdev_pad_config *cfg,
+static int csi2_get_format(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct isp_csi2_device *csi2 = v4l2_get_subdevdata(sd);
 	struct v4l2_mbus_framefmt *format;
 
-	format = __csi2_get_format(csi2, cfg, fmt->pad, fmt->which);
+	format = __csi2_get_format(csi2, fh, fmt->pad, fmt->which);
 	if (format == NULL)
 		return -EINVAL;
 
@@ -991,29 +985,29 @@ static int csi2_get_format(struct v4l2_subdev *sd, struct v4l2_subdev_pad_config
 /*
  * csi2_set_format - Handle set format by pads subdev method
  * @sd : pointer to v4l2 subdev structure
- * @cfg: V4L2 subdev pad configuration
+ * @fh : V4L2 subdev file handle
  * @fmt: pointer to v4l2 subdev format structure
  * return -EINVAL or zero on success
  */
-static int csi2_set_format(struct v4l2_subdev *sd, struct v4l2_subdev_pad_config *cfg,
+static int csi2_set_format(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct isp_csi2_device *csi2 = v4l2_get_subdevdata(sd);
 	struct v4l2_mbus_framefmt *format;
 
-	format = __csi2_get_format(csi2, cfg, fmt->pad, fmt->which);
+	format = __csi2_get_format(csi2, fh, fmt->pad, fmt->which);
 	if (format == NULL)
 		return -EINVAL;
 
-	csi2_try_format(csi2, cfg, fmt->pad, &fmt->format, fmt->which);
+	csi2_try_format(csi2, fh, fmt->pad, &fmt->format, fmt->which);
 	*format = fmt->format;
 
 	/* Propagate the format from sink to source */
 	if (fmt->pad == CSI2_PAD_SINK) {
-		format = __csi2_get_format(csi2, cfg, CSI2_PAD_SOURCE,
+		format = __csi2_get_format(csi2, fh, CSI2_PAD_SOURCE,
 					   fmt->which);
 		*format = fmt->format;
-		csi2_try_format(csi2, cfg, CSI2_PAD_SOURCE, format, fmt->which);
+		csi2_try_format(csi2, fh, CSI2_PAD_SOURCE, format, fmt->which);
 	}
 
 	return 0;
@@ -1035,10 +1029,10 @@ static int csi2_init_formats(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	memset(&format, 0, sizeof(format));
 	format.pad = CSI2_PAD_SINK;
 	format.which = fh ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
-	format.format.code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	format.format.code = V4L2_MBUS_FMT_SGRBG10_1X10;
 	format.format.width = 4096;
 	format.format.height = 4096;
-	csi2_set_format(sd, fh ? fh->pad : NULL, &format);
+	csi2_set_format(sd, fh, &format);
 
 	return 0;
 }

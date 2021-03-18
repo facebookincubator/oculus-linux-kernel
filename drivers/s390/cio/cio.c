@@ -143,11 +143,13 @@ cio_start_key (struct subchannel *sch,	/* subchannel structure */
 	orb->cmd.spnd = priv->options.suspend;
 	orb->cmd.ssic = priv->options.suspend && priv->options.inter;
 	orb->cmd.lpm = (lpm != 0) ? lpm : sch->lpm;
+#ifdef CONFIG_64BIT
 	/*
 	 * for 64 bit we always support 64 bit IDAWs with 4k page size only
 	 */
 	orb->cmd.c64 = 1;
 	orb->cmd.i2k = 0;
+#endif
 	orb->cmd.key = key >> 4;
 	/* issue "Start Subchannel" */
 	orb->cmd.cpa = (__u32) __pa(cpa);
@@ -476,6 +478,26 @@ static int cio_check_devno_blacklisted(struct subchannel *sch)
 	return 0;
 }
 
+static int cio_validate_io_subchannel(struct subchannel *sch)
+{
+	/* Initialization for io subchannels. */
+	if (!css_sch_is_valid(&sch->schib))
+		return -ENODEV;
+
+	/* Devno is valid. */
+	return cio_check_devno_blacklisted(sch);
+}
+
+static int cio_validate_msg_subchannel(struct subchannel *sch)
+{
+	/* Initialization for message subchannels. */
+	if (!css_sch_is_valid(&sch->schib))
+		return -ENODEV;
+
+	/* Devno is valid. */
+	return cio_check_devno_blacklisted(sch);
+}
+
 /**
  * cio_validate_subchannel - basic validation of subchannel
  * @sch: subchannel structure to be filled out
@@ -513,11 +535,10 @@ int cio_validate_subchannel(struct subchannel *sch, struct subchannel_id schid)
 
 	switch (sch->st) {
 	case SUBCHANNEL_TYPE_IO:
+		err = cio_validate_io_subchannel(sch);
+		break;
 	case SUBCHANNEL_TYPE_MSG:
-		if (!css_sch_is_valid(&sch->schib))
-			err = -ENODEV;
-		else
-			err = cio_check_devno_blacklisted(sch);
+		err = cio_validate_msg_subchannel(sch);
 		break;
 	default:
 		err = 0;
@@ -807,11 +828,11 @@ static atomic_t chpid_reset_count;
 static void s390_reset_chpids_mcck_handler(void)
 {
 	struct crw crw;
-	union mci mci;
+	struct mci *mci;
 
 	/* Check for pending channel report word. */
-	mci.val = S390_lowcore.mcck_interruption_code;
-	if (!mci.cp)
+	mci = (struct mci *)&S390_lowcore.mcck_interruption_code;
+	if (!mci->cp)
 		return;
 	/* Process channel report words. */
 	while (stcrw(&crw) == 0) {
@@ -917,7 +938,7 @@ void reipl_ccw_dev(struct ccw_dev_id *devid)
 {
 	struct subchannel_id uninitialized_var(schid);
 
-	s390_reset_system(NULL, NULL, NULL);
+	s390_reset_system(NULL, NULL);
 	if (reipl_find_schid(devid, &schid) != 0)
 		panic("IPL Device not found\n");
 	do_reipl_asm(*((__u32*)&schid));
@@ -925,32 +946,18 @@ void reipl_ccw_dev(struct ccw_dev_id *devid)
 
 int __init cio_get_iplinfo(struct cio_iplinfo *iplinfo)
 {
-	static struct chsc_sda_area sda_area __initdata;
 	struct subchannel_id schid;
 	struct schib schib;
 
 	schid = *(struct subchannel_id *)&S390_lowcore.subchannel_id;
 	if (!schid.one)
 		return -ENODEV;
-
-	if (schid.ssid) {
-		/*
-		 * Firmware should have already enabled MSS but whoever started
-		 * the kernel might have initiated a channel subsystem reset.
-		 * Ensure that MSS is enabled.
-		 */
-		memset(&sda_area, 0, sizeof(sda_area));
-		if (__chsc_enable_facility(&sda_area, CHSC_SDA_OC_MSS))
-			return -ENODEV;
-	}
 	if (stsch_err(schid, &schib))
 		return -ENODEV;
 	if (schib.pmcw.st != SUBCHANNEL_TYPE_IO)
 		return -ENODEV;
 	if (!schib.pmcw.dnv)
 		return -ENODEV;
-
-	iplinfo->ssid = schid.ssid;
 	iplinfo->devno = schib.pmcw.dev;
 	iplinfo->is_qdio = schib.pmcw.qf;
 	return 0;

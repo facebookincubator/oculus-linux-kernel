@@ -16,9 +16,12 @@ void io_int_handler(void);
 void mcck_int_handler(void);
 void restart_int_handler(void);
 void restart_call_handler(void);
+void psw_idle(struct s390_idle_data *, unsigned long);
 
 asmlinkage long do_syscall_trace_enter(struct pt_regs *regs);
 asmlinkage void do_syscall_trace_exit(struct pt_regs *regs);
+
+int alloc_vector_registers(struct task_struct *tsk);
 
 void do_protection_exception(struct pt_regs *regs);
 void do_dat_exception(struct pt_regs *regs);
@@ -68,11 +71,7 @@ struct s390_mmap_arg_struct;
 struct fadvise64_64_args;
 struct old_sigaction;
 
-long sys_rt_sigreturn(void);
-long sys_sigreturn(void);
-
 long sys_s390_personality(unsigned int personality);
 long sys_s390_runtime_instr(int command, int signum);
-long sys_s390_pci_mmio_write(unsigned long, const void __user *, size_t);
-long sys_s390_pci_mmio_read(unsigned long, void __user *, size_t);
+
 #endif /* _ENTRY_H */

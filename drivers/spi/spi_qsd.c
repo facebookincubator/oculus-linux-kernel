@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1156,7 +1156,7 @@ static void msm_spi_bam_unmap_buffers(struct msm_spi *dd)
 	void *tx_buf, *rx_buf;
 	u32  tx_len, rx_len;
 
-	dev = dd->dev;
+	dev = &dd->spi->dev;
 	xfr = dd->cur_transfer;
 
 	tx_buf = (void *)xfr->tx_buf;
@@ -1257,15 +1257,11 @@ static void msm_spi_set_qup_io_modes(struct msm_spi *dd)
 	spi_iom &= ~(SPI_IO_M_INPUT_MODE | SPI_IO_M_OUTPUT_MODE);
 	spi_iom = (spi_iom | (dd->tx_mode << OUTPUT_MODE_SHIFT));
 	spi_iom = (spi_iom | (dd->rx_mode << INPUT_MODE_SHIFT));
-
-	/* Always enable packing for the BAM mode and for non BAM mode only
-	 * if bpw is % 8 and transfer length is % 4 Bytes.
-	 */
-	if (dd->tx_mode == SPI_BAM_MODE ||
-		((dd->cur_msg_len % SPI_MAX_BYTES_PER_WORD == 0) &&
-		(dd->cur_transfer->bits_per_word) &&
-		(dd->cur_transfer->bits_per_word <= 32) &&
-		(dd->cur_transfer->bits_per_word % 8 == 0))) {
+	/* Always enable packing for all % 8 bits_per_word */
+	if (dd->cur_transfer->bits_per_word &&
+		((dd->cur_transfer->bits_per_word == 8) ||
+		(dd->cur_transfer->bits_per_word == 16) ||
+		(dd->cur_transfer->bits_per_word == 32))) {
 		spi_iom |= SPI_IO_M_PACK_EN | SPI_IO_M_UNPACK_EN;
 		dd->pack_words = true;
 	} else {
@@ -1494,11 +1490,11 @@ static inline void msm_spi_set_cs(struct spi_device *spi, bool set_flag)
 	struct msm_spi *dd = spi_master_get_devdata(spi->master);
 	u32 spi_ioc;
 	u32 spi_ioc_orig;
-	int rc;
+	int rc = 0;
 
 	rc = pm_runtime_get_sync(dd->dev);
 	if (rc < 0) {
-		dev_err(dd->dev, "Failure during runtime get");
+		dev_err(dd->dev, "Failure during runtime get,rc=%d", rc);
 		return;
 	}
 
@@ -1513,6 +1509,15 @@ static inline void msm_spi_set_cs(struct spi_device *spi, bool set_flag)
 	if (!(spi->mode & SPI_CS_HIGH))
 		set_flag = !set_flag;
 
+	/* Serve only under mutex lock as RT suspend may cause a race */
+	mutex_lock(&dd->core_lock);
+	if (dd->suspended) {
+		dev_err(dd->dev, "%s: SPI operational state=%d Invalid\n",
+			__func__, dd->suspended);
+		mutex_unlock(&dd->core_lock);
+		return;
+	}
+
 	spi_ioc = readl_relaxed(dd->base + SPI_IO_CONTROL);
 	spi_ioc_orig = spi_ioc;
 	if (set_flag)
@@ -1524,6 +1529,8 @@ static inline void msm_spi_set_cs(struct spi_device *spi, bool set_flag)
 		writel_relaxed(spi_ioc, dd->base + SPI_IO_CONTROL);
 	if (dd->pdata->is_shared)
 		put_local_resources(dd);
+	mutex_unlock(&dd->core_lock);
+
 	pm_runtime_mark_last_busy(dd->dev);
 	pm_runtime_put_autosuspend(dd->dev);
 }
@@ -2539,7 +2546,6 @@ static int msm_spi_probe(struct platform_device *pdev)
 		dd->use_dma = 1;
 	}
 
-	spi_dma_mask(&pdev->dev);
 skip_dma_resources:
 
 	spin_lock_init(&dd->queue_lock);
@@ -2616,6 +2622,7 @@ static int msm_spi_pm_suspend_runtime(struct device *device)
 	wait_event_interruptible(dd->continue_suspend,
 		!dd->transfer_pending);
 
+	mutex_lock(&dd->core_lock);
 	if (dd->pdata && !dd->pdata->is_shared && dd->use_dma) {
 		msm_spi_bam_pipe_disconnect(dd, &dd->bam.prod);
 		msm_spi_bam_pipe_disconnect(dd, &dd->bam.cons);
@@ -2625,6 +2632,7 @@ static int msm_spi_pm_suspend_runtime(struct device *device)
 
 	if (dd->pdata)
 		msm_spi_clk_path_vote(dd, 0);
+	mutex_unlock(&dd->core_lock);
 
 suspend_exit:
 	return 0;

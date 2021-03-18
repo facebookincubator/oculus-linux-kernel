@@ -16,7 +16,7 @@
 #include <linux/rcupdate.h>
 #include <linux/ctype.h>
 #include <linux/inet.h>
-#include <net/bonding.h>
+#include "bonding.h"
 
 static int bond_option_active_slave_set(struct bonding *bond,
 					const struct bond_opt_value *newval);
@@ -70,12 +70,6 @@ static int bond_option_slaves_set(struct bonding *bond,
 				  const struct bond_opt_value *newval);
 static int bond_option_tlb_dynamic_lb_set(struct bonding *bond,
 				  const struct bond_opt_value *newval);
-static int bond_option_ad_actor_sys_prio_set(struct bonding *bond,
-					     const struct bond_opt_value *newval);
-static int bond_option_ad_actor_system_set(struct bonding *bond,
-					   const struct bond_opt_value *newval);
-static int bond_option_ad_user_port_key_set(struct bonding *bond,
-					    const struct bond_opt_value *newval);
 
 
 static const struct bond_opt_value bond_mode_tbl[] = {
@@ -192,19 +186,7 @@ static const struct bond_opt_value bond_tlb_dynamic_lb_tbl[] = {
 	{ NULL,  -1, 0}
 };
 
-static const struct bond_opt_value bond_ad_actor_sys_prio_tbl[] = {
-	{ "minval",  1,     BOND_VALFLAG_MIN},
-	{ "maxval",  65535, BOND_VALFLAG_MAX | BOND_VALFLAG_DEFAULT},
-	{ NULL,      -1,    0},
-};
-
-static const struct bond_opt_value bond_ad_user_port_key_tbl[] = {
-	{ "minval",  0,     BOND_VALFLAG_MIN | BOND_VALFLAG_DEFAULT},
-	{ "maxval",  1023,  BOND_VALFLAG_MAX},
-	{ NULL,      -1,    0},
-};
-
-static const struct bond_option bond_opts[BOND_OPT_LAST] = {
+static const struct bond_option bond_opts[] = {
 	[BOND_OPT_MODE] = {
 		.id = BOND_OPT_MODE,
 		.name = "mode",
@@ -398,36 +380,7 @@ static const struct bond_option bond_opts[BOND_OPT_LAST] = {
 		.flags = BOND_OPTFLAG_IFDOWN,
 		.set = bond_option_tlb_dynamic_lb_set,
 	},
-	[BOND_OPT_AD_ACTOR_SYS_PRIO] = {
-		.id = BOND_OPT_AD_ACTOR_SYS_PRIO,
-		.name = "ad_actor_sys_prio",
-		.unsuppmodes = BOND_MODE_ALL_EX(BIT(BOND_MODE_8023AD)),
-		.flags = BOND_OPTFLAG_IFDOWN,
-		.values = bond_ad_actor_sys_prio_tbl,
-		.set = bond_option_ad_actor_sys_prio_set,
-	},
-	[BOND_OPT_AD_ACTOR_SYSTEM] = {
-		.id = BOND_OPT_AD_ACTOR_SYSTEM,
-		.name = "ad_actor_system",
-		.unsuppmodes = BOND_MODE_ALL_EX(BIT(BOND_MODE_8023AD)),
-		.flags = BOND_OPTFLAG_RAWVAL | BOND_OPTFLAG_IFDOWN,
-		.set = bond_option_ad_actor_system_set,
-	},
-	[BOND_OPT_AD_USER_PORT_KEY] = {
-		.id = BOND_OPT_AD_USER_PORT_KEY,
-		.name = "ad_user_port_key",
-		.unsuppmodes = BOND_MODE_ALL_EX(BIT(BOND_MODE_8023AD)),
-		.flags = BOND_OPTFLAG_IFDOWN,
-		.values = bond_ad_user_port_key_tbl,
-		.set = bond_option_ad_user_port_key_set,
-	},
-	[BOND_OPT_NUM_PEER_NOTIF_ALIAS] = {
-		.id = BOND_OPT_NUM_PEER_NOTIF_ALIAS,
-		.name = "num_grat_arp",
-		.desc = "Number of peer notifications to send on failover event",
-		.values = bond_num_peer_notif_tbl,
-		.set = bond_option_num_peer_notif_set
-	}
+	{ }
 };
 
 /* Searches for an option by name */
@@ -735,6 +688,19 @@ static int bond_option_mode_set(struct bonding *bond,
 	bond->params.mode = newval->value;
 
 	return 0;
+}
+
+static struct net_device *__bond_option_active_slave_get(struct bonding *bond,
+							 struct slave *slave)
+{
+	return bond_uses_primary(bond) && slave ? slave->dev : NULL;
+}
+
+struct net_device *bond_option_active_slave_get_rcu(struct bonding *bond)
+{
+	struct slave *slave = rcu_dereference(bond->curr_active_slave);
+
+	return __bond_option_active_slave_get(bond, slave);
 }
 
 static int bond_option_active_slave_set(struct bonding *bond,
@@ -1216,7 +1182,6 @@ static int bond_option_min_links_set(struct bonding *bond,
 	netdev_info(bond->dev, "Setting min links value to %llu\n",
 		    newval->value);
 	bond->params.min_links = newval->value;
-	bond_set_carrier(bond);
 
 	return 0;
 }
@@ -1382,55 +1347,5 @@ static int bond_option_tlb_dynamic_lb_set(struct bonding *bond,
 		    newval->string, newval->value);
 	bond->params.tlb_dynamic_lb = newval->value;
 
-	return 0;
-}
-
-static int bond_option_ad_actor_sys_prio_set(struct bonding *bond,
-					     const struct bond_opt_value *newval)
-{
-	netdev_info(bond->dev, "Setting ad_actor_sys_prio to %llu\n",
-		    newval->value);
-
-	bond->params.ad_actor_sys_prio = newval->value;
-	return 0;
-}
-
-static int bond_option_ad_actor_system_set(struct bonding *bond,
-					   const struct bond_opt_value *newval)
-{
-	u8 macaddr[ETH_ALEN];
-	u8 *mac;
-	int i;
-
-	if (newval->string) {
-		i = sscanf(newval->string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-			   &macaddr[0], &macaddr[1], &macaddr[2],
-			   &macaddr[3], &macaddr[4], &macaddr[5]);
-		if (i != ETH_ALEN)
-			goto err;
-		mac = macaddr;
-	} else {
-		mac = (u8 *)&newval->value;
-	}
-
-	if (!is_valid_ether_addr(mac))
-		goto err;
-
-	netdev_info(bond->dev, "Setting ad_actor_system to %pM\n", mac);
-	ether_addr_copy(bond->params.ad_actor_system, mac);
-	return 0;
-
-err:
-	netdev_err(bond->dev, "Invalid MAC address.\n");
-	return -EINVAL;
-}
-
-static int bond_option_ad_user_port_key_set(struct bonding *bond,
-					    const struct bond_opt_value *newval)
-{
-	netdev_info(bond->dev, "Setting ad_user_port_key to %llu\n",
-		    newval->value);
-
-	bond->params.ad_user_port_key = newval->value;
 	return 0;
 }

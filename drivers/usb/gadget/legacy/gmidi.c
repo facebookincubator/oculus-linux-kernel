@@ -35,7 +35,9 @@
 #include <linux/usb/audio.h>
 #include <linux/usb/midi.h>
 
-#include "u_midi.h"
+#include "gadget_chips.h"
+
+#include "f_midi.c"
 
 /*-------------------------------------------------------------------------*/
 
@@ -86,10 +88,10 @@ MODULE_PARM_DESC(out_ports, "Number of MIDI output ports");
 static struct usb_device_descriptor device_desc = {
 	.bLength =		USB_DT_DEVICE_SIZE,
 	.bDescriptorType =	USB_DT_DEVICE,
-	.bcdUSB =		cpu_to_le16(0x0200),
+	.bcdUSB =		__constant_cpu_to_le16(0x0200),
 	.bDeviceClass =		USB_CLASS_PER_INTERFACE,
-	.idVendor =		cpu_to_le16(DRIVER_VENDOR_NUM),
-	.idProduct =		cpu_to_le16(DRIVER_PRODUCT_NUM),
+	.idVendor =		__constant_cpu_to_le16(DRIVER_VENDOR_NUM),
+	.idProduct =		__constant_cpu_to_le16(DRIVER_PRODUCT_NUM),
 	/* .iManufacturer =	DYNAMIC */
 	/* .iProduct =		DYNAMIC */
 	.bNumConfigurations =	1,
@@ -113,13 +115,8 @@ static struct usb_gadget_strings *dev_strings[] = {
 	NULL,
 };
 
-static struct usb_function_instance *fi_midi;
-static struct usb_function *f_midi;
-
-static int midi_unbind(struct usb_composite_dev *dev)
+static int __exit midi_unbind(struct usb_composite_dev *dev)
 {
-	usb_put_function(f_midi);
-	usb_put_function_instance(fi_midi);
 	return 0;
 }
 
@@ -131,65 +128,39 @@ static struct usb_configuration midi_config = {
 	.MaxPower	= CONFIG_USB_GADGET_VBUS_DRAW,
 };
 
-static int midi_bind_config(struct usb_configuration *c)
+static int __init midi_bind_config(struct usb_configuration *c)
 {
-	int status;
-
-	f_midi = usb_get_function(fi_midi);
-	if (IS_ERR(f_midi))
-		return PTR_ERR(f_midi);
-
-	status = usb_add_function(c, f_midi);
-	if (status < 0) {
-		usb_put_function(f_midi);
-		return status;
-	}
-
-	return 0;
+	return f_midi_bind_config(c, index, id,
+				  in_ports, out_ports,
+				  buflen, qlen);
 }
 
-static int midi_bind(struct usb_composite_dev *cdev)
+static int __init midi_bind(struct usb_composite_dev *cdev)
 {
-	struct f_midi_opts *midi_opts;
 	int status;
-
-	fi_midi = usb_get_function_instance("midi");
-	if (IS_ERR(fi_midi))
-		return PTR_ERR(fi_midi);
-
-	midi_opts = container_of(fi_midi, struct f_midi_opts, func_inst);
-	midi_opts->index = index;
-	midi_opts->id = id;
-	midi_opts->in_ports = in_ports;
-	midi_opts->out_ports = out_ports;
-	midi_opts->buflen = buflen;
-	midi_opts->qlen = qlen;
 
 	status = usb_string_ids_tab(cdev, strings_dev);
 	if (status < 0)
-		goto put;
+		return status;
 	device_desc.iManufacturer = strings_dev[USB_GADGET_MANUFACTURER_IDX].id;
 	device_desc.iProduct = strings_dev[USB_GADGET_PRODUCT_IDX].id;
 	midi_config.iConfiguration = strings_dev[STRING_DESCRIPTION_IDX].id;
 
 	status = usb_add_config(cdev, &midi_config, midi_bind_config);
 	if (status < 0)
-		goto put;
+		return status;
 	usb_composite_overwrite_options(cdev, &coverwrite);
 	pr_info("%s\n", longname);
 	return 0;
-put:
-	usb_put_function_instance(fi_midi);
-	return status;
 }
 
-static struct usb_composite_driver midi_driver = {
+static __refdata struct usb_composite_driver midi_driver = {
 	.name		= (char *) longname,
 	.dev		= &device_desc,
 	.strings	= dev_strings,
 	.max_speed	= USB_SPEED_HIGH,
 	.bind		= midi_bind,
-	.unbind		= midi_unbind,
+	.unbind		= __exit_p(midi_unbind),
 };
 
 module_usb_composite_driver(midi_driver);

@@ -496,9 +496,10 @@ void wa_rpipes_destroy(struct wahc *wa)
 	struct device *dev = &wa->usb_iface->dev;
 
 	if (!bitmap_empty(wa->rpipe_bm, wa->rpipes)) {
+		char buf[256];
 		WARN_ON(1);
-		dev_err(dev, "BUG: pipes not released on exit: %*pb\n",
-			wa->rpipes, wa->rpipe_bm);
+		bitmap_scnprintf(buf, sizeof(buf), wa->rpipe_bm, wa->rpipes);
+		dev_err(dev, "BUG: pipes not released on exit: %s\n", buf);
 	}
 	kfree(wa->rpipe_bm);
 }

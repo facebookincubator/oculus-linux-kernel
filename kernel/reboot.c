@@ -269,14 +269,6 @@ EXPORT_SYMBOL_GPL(kernel_power_off);
 
 static DEFINE_MUTEX(reboot_mutex);
 
-#ifdef CONFIG_VS1_BOARD
-/*
- * This function writes the boot chime volume to the PMIC DVDD_RB_SPARE register
- * Defined in msm-poweroff.c
- */
-extern void write_boot_chime_volume(const char *cmd);
-#endif
-
 /*
  * Reboot system call: for obvious reasons only root may call it,
  * and even root needs to set up some magic numbers in the registers
@@ -339,18 +331,6 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
-#ifdef CONFIG_VS1_BOARD
-		if (arg != NULL) {
-			ret = strncpy_from_user(
-				&buffer[0], arg, sizeof(buffer) - 1);
-			if (ret < 0) {
-				ret = -EFAULT;
-				break;
-			}
-			buffer[sizeof(buffer) - 1] = '\0';
-		}
-		write_boot_chime_volume(buffer);
-#endif
 		kernel_power_off();
 		do_exit(0);
 		break;
@@ -363,13 +343,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		}
 		buffer[sizeof(buffer) - 1] = '\0';
 
-#ifdef CONFIG_VS1_BOARD
-		write_boot_chime_volume(buffer);
-#endif
 		kernel_restart(buffer);
 		break;
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 	case LINUX_REBOOT_CMD_KEXEC:
 		ret = kernel_kexec();
 		break;
@@ -410,9 +387,8 @@ void ctrl_alt_del(void)
 }
 
 char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
-static const char reboot_cmd[] = "/sbin/reboot";
 
-static int run_cmd(const char *cmd)
+static int __orderly_poweroff(bool force)
 {
 	char **argv;
 	static char *envp[] = {
@@ -421,7 +397,8 @@ static int run_cmd(const char *cmd)
 		NULL
 	};
 	int ret;
-	argv = argv_split(GFP_KERNEL, cmd, NULL);
+
+	argv = argv_split(GFP_KERNEL, poweroff_cmd, NULL);
 	if (argv) {
 		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
 		argv_free(argv);
@@ -429,33 +406,8 @@ static int run_cmd(const char *cmd)
 		ret = -ENOMEM;
 	}
 
-	return ret;
-}
-
-static int __orderly_reboot(void)
-{
-	int ret;
-
-	ret = run_cmd(reboot_cmd);
-
-	if (ret) {
-		pr_warn("Failed to start orderly reboot: forcing the issue\n");
-		emergency_sync();
-		kernel_restart(NULL);
-	}
-
-	return ret;
-}
-
-static int __orderly_poweroff(bool force)
-{
-	int ret;
-
-	ret = run_cmd(poweroff_cmd);
-
 	if (ret && force) {
 		pr_warn("Failed to start orderly shutdown: forcing the issue\n");
-
 		/*
 		 * I guess this should try to kick off some daemon to sync and
 		 * poweroff asap.  Or not even bother syncing if we're doing an
@@ -484,32 +436,14 @@ static DECLARE_WORK(poweroff_work, poweroff_work_func);
  * This may be called from any context to trigger a system shutdown.
  * If the orderly shutdown fails, it will force an immediate shutdown.
  */
-void orderly_poweroff(bool force)
+int orderly_poweroff(bool force)
 {
 	if (force) /* do not override the pending "true" */
 		poweroff_force = true;
 	schedule_work(&poweroff_work);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(orderly_poweroff);
-
-static void reboot_work_func(struct work_struct *work)
-{
-	__orderly_reboot();
-}
-
-static DECLARE_WORK(reboot_work, reboot_work_func);
-
-/**
- * orderly_reboot - Trigger an orderly system reboot
- *
- * This may be called from any context to trigger a system reboot.
- * If the orderly reboot fails, it will force an immediate reboot.
- */
-void orderly_reboot(void)
-{
-	schedule_work(&reboot_work);
-}
-EXPORT_SYMBOL_GPL(orderly_reboot);
 
 static int __init reboot_setup(char *str)
 {

@@ -241,11 +241,10 @@ struct getdents_callback {
  * A rather strange filldir function to capture
  * the name matching the specified inode number.
  */
-static int filldir_one(struct dir_context *ctx, const char *name, int len,
+static int filldir_one(void * __buf, const char * name, int len,
 			loff_t pos, u64 ino, unsigned int d_type)
 {
-	struct getdents_callback *buf =
-		container_of(ctx, struct getdents_callback, ctx);
+	struct getdents_callback *buf = __buf;
 	int result = 0;
 
 	buf->sequence++;
@@ -429,7 +428,7 @@ struct dentry *exportfs_decode_fh(struct vfsmount *mnt, struct fid *fid,
 	if (IS_ERR(result))
 		return result;
 
-	if (d_is_dir(result)) {
+	if (S_ISDIR(result->d_inode->i_mode)) {
 		/*
 		 * This request is for a directory.
 		 *

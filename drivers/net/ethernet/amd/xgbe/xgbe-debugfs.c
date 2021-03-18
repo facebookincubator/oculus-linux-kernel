@@ -327,13 +327,9 @@ void xgbe_debugfs_init(struct xgbe_prv_data *pdata)
 	pdata->debugfs_xpcs_reg = 0;
 
 	buf = kasprintf(GFP_KERNEL, "amd-xgbe-%s", pdata->netdev->name);
-	if (!buf)
-		return;
-
 	pdata->xgbe_debugfs = debugfs_create_dir(buf, NULL);
-	if (!pdata->xgbe_debugfs) {
+	if (pdata->xgbe_debugfs == NULL) {
 		netdev_err(pdata->netdev, "debugfs_create_dir failed\n");
-		kfree(buf);
 		return;
 	}
 

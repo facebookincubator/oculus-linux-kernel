@@ -137,8 +137,8 @@ static int
 befs_bt_read_super(struct super_block *sb, befs_data_stream * ds,
 		   befs_btree_super * sup)
 {
-	struct buffer_head *bh;
-	befs_disk_btree_super *od_sup;
+	struct buffer_head *bh = NULL;
+	befs_disk_btree_super *od_sup = NULL;
 
 	befs_debug(sb, "---> %s", __func__);
 
@@ -250,7 +250,7 @@ int
 befs_btree_find(struct super_block *sb, befs_data_stream * ds,
 		const char *key, befs_off_t * value)
 {
-	struct befs_btree_node *this_node;
+	struct befs_btree_node *this_node = NULL;
 	befs_btree_super bt_super;
 	befs_off_t node_off;
 	int res;

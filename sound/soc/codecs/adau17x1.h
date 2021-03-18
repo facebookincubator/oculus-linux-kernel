@@ -4,8 +4,6 @@
 #include <linux/regmap.h>
 #include <linux/platform_data/adau17x1.h>
 
-#include "sigmadsp.h"
-
 enum adau17x1_type {
 	ADAU1361,
 	ADAU1761,
@@ -44,24 +42,22 @@ struct adau {
 	bool dsp_bypass[2];
 
 	struct regmap *regmap;
-	struct sigmadsp *sigmadsp;
 };
 
 int adau17x1_add_widgets(struct snd_soc_codec *codec);
 int adau17x1_add_routes(struct snd_soc_codec *codec);
 int adau17x1_probe(struct device *dev, struct regmap *regmap,
-	enum adau17x1_type type, void (*switch_mode)(struct device *dev),
-	const char *firmware_name);
+	enum adau17x1_type type, void (*switch_mode)(struct device *dev));
 int adau17x1_set_micbias_voltage(struct snd_soc_codec *codec,
 	enum adau17x1_micbias_voltage micbias);
 bool adau17x1_readable_register(struct device *dev, unsigned int reg);
 bool adau17x1_volatile_register(struct device *dev, unsigned int reg);
-bool adau17x1_precious_register(struct device *dev, unsigned int reg);
 int adau17x1_resume(struct snd_soc_codec *codec);
 
 extern const struct snd_soc_dai_ops adau17x1_dai_ops;
 
-int adau17x1_setup_firmware(struct adau *adau, unsigned int rate);
+int adau17x1_load_firmware(struct adau *adau, struct device *dev,
+	const char *firmware);
 bool adau17x1_has_dsp(struct adau *adau);
 
 #define ADAU17X1_CLOCK_CONTROL			0x4000

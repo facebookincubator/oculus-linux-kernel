@@ -22,7 +22,6 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
-#include <linux/pm_runtime.h>
 #include <linux/clk.h>
 #include <linux/bitmap.h>
 #include <linux/of.h>
@@ -136,12 +135,12 @@ struct stm_drvdata {
 	struct device		*dev;
 	struct coresight_device	*csdev;
 	struct miscdevice	miscdev;
+	struct clk		*clk;
 	spinlock_t		spinlock;
 	struct channel_space	chs;
 	bool			enable;
 	DECLARE_BITMAP(entities, OST_ENTITY_MAX);
 	bool			data_barrier;
-	uint32_t		ch_alloc_fail_count;
 };
 
 static struct stm_drvdata *stmdrvdata;
@@ -271,8 +270,8 @@ static int stm_enable(struct coresight_device *csdev)
 	int ret;
 	unsigned long flags;
 
-	ret = pm_runtime_get_sync(drvdata->dev);
-	if (ret < 0)
+	ret = clk_prepare_enable(drvdata->clk);
+	if (ret)
 		return ret;
 
 	spin_lock_irqsave(&drvdata->spinlock, flags);
@@ -350,7 +349,7 @@ static void stm_disable(struct coresight_device *csdev)
 	/* Wait for 100ms so that pending data has been written to HW */
 	msleep(100);
 
-	pm_runtime_put(drvdata->dev);
+	clk_disable_unprepare(drvdata->clk);
 
 	dev_info(drvdata->dev, "STM tracing disabled\n");
 }
@@ -361,7 +360,7 @@ static int stm_trace_id(struct coresight_device *csdev)
 	unsigned long flags;
 	int trace_id = -1;
 
-	if (pm_runtime_get_sync(drvdata->dev) < 0)
+	if (clk_prepare_enable(drvdata->clk))
 		goto out;
 
 	spin_lock_irqsave(&drvdata->spinlock, flags);
@@ -371,7 +370,7 @@ static int stm_trace_id(struct coresight_device *csdev)
 	CS_LOCK(drvdata->base);
 
 	spin_unlock_irqrestore(&drvdata->spinlock, flags);
-	pm_runtime_put(drvdata->dev);
+	clk_disable_unprepare(drvdata->clk);
 out:
 	return trace_id;
 }
@@ -386,26 +385,19 @@ static const struct coresight_ops stm_cs_ops = {
 	.source_ops	= &stm_source_ops,
 };
 
-static uint32_t stm_channel_alloc(void)
+static uint32_t stm_channel_alloc(uint32_t off)
 {
 	struct stm_drvdata *drvdata = stmdrvdata;
-	uint32_t off, ch, num_ch_per_cpu;
-	int cpu;
+	uint32_t ch;
+	unsigned long flags;
 
-	num_ch_per_cpu = NR_STM_CHANNEL/num_present_cpus();
-
-	cpu = get_cpu();
-
-	off = num_ch_per_cpu * cpu;
-	ch = find_next_zero_bit(drvdata->chs.bitmap,
-				NR_STM_CHANNEL, off);
-	if (ch > (off + num_ch_per_cpu)) {
-		put_cpu();
-		return NR_STM_CHANNEL;
-	}
-
-	set_bit(ch, drvdata->chs.bitmap);
-	put_cpu();
+	spin_lock_irqsave(&drvdata->spinlock, flags);
+	do {
+		ch = find_next_zero_bit(drvdata->chs.bitmap,
+					NR_STM_CHANNEL, off);
+	} while ((ch < NR_STM_CHANNEL) &&
+		 test_and_set_bit(ch, drvdata->chs.bitmap));
+	spin_unlock_irqrestore(&drvdata->spinlock, flags);
 
 	return ch;
 }
@@ -413,8 +405,11 @@ static uint32_t stm_channel_alloc(void)
 static void stm_channel_free(uint32_t ch)
 {
 	struct stm_drvdata *drvdata = stmdrvdata;
+	unsigned long flags;
 
+	spin_lock_irqsave(&drvdata->spinlock, flags);
 	clear_bit(ch, drvdata->chs.bitmap);
+	spin_unlock_irqrestore(&drvdata->spinlock, flags);
 }
 
 static int stm_send(void *addr, const void *data, uint32_t size)
@@ -527,14 +522,7 @@ static inline int __stm_trace(uint32_t options, uint8_t entity_id,
 	unsigned long ch_addr;
 
 	/* allocate channel and get the channel address */
-	ch = stm_channel_alloc();
-	if (ch >= NR_STM_CHANNEL) {
-		drvdata->ch_alloc_fail_count++;
-		dev_err_ratelimited(drvdata->dev,
-				    "Channel allocation failed %d",
-				    drvdata->ch_alloc_fail_count);
-		return 0;
-	}
+	ch = stm_channel_alloc(0);
 	ch_addr = (unsigned long)stm_channel_addr(drvdata, ch);
 
 	/* send the ost header */
@@ -665,7 +653,7 @@ static ssize_t stm_store_hwevent_enable(struct device *dev,
 	unsigned long val;
 	int ret = 0;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 
 	if (val)
@@ -697,7 +685,7 @@ static ssize_t stm_store_port_enable(struct device *dev,
 	unsigned long val;
 	int ret = 0;
 
-	if (kstrtoul(buf, 16, &val))
+	if (kstrtoul(buf, 16, &val) != 1)
 		return -EINVAL;
 
 	if (val)
@@ -718,8 +706,8 @@ static ssize_t stm_show_entities(struct device *dev,
 	struct stm_drvdata *drvdata = dev_get_drvdata(dev->parent);
 	ssize_t len;
 
-	len = scnprintf(buf, PAGE_SIZE, "%*pb\n",
-			OST_ENTITY_MAX, drvdata->entities);
+	len = bitmap_scnprintf(buf, PAGE_SIZE, drvdata->entities,
+			       OST_ENTITY_MAX);
 
 	if (PAGE_SIZE - len < 2)
 		len = -EINVAL;
@@ -801,32 +789,34 @@ static int stm_probe(struct amba_device *adev, const struct amba_id *id)
 	if (boot_nr_channel) {
 		res_size = min((resource_size_t)(boot_nr_channel *
 				  BYTES_PER_CHANNEL), resource_size(&res));
-		bitmap_size = (boot_nr_channel + sizeof(long) - 1) /
-			       sizeof(long);
+		bitmap_size = boot_nr_channel * sizeof(long);
 	} else {
 		res_size = min((resource_size_t)(NR_STM_CHANNEL *
 				 BYTES_PER_CHANNEL), resource_size(&res));
-		bitmap_size = (NR_STM_CHANNEL + sizeof(long) - 1) /
-			       sizeof(long);
+		bitmap_size = NR_STM_CHANNEL * sizeof(long);
 	}
 	drvdata->chs.base = devm_ioremap(dev, res.start, res_size);
 	if (!drvdata->chs.base)
 		return -ENOMEM;
-
 	drvdata->chs.bitmap = devm_kzalloc(dev, bitmap_size, GFP_KERNEL);
 	if (!drvdata->chs.bitmap)
 		return -ENOMEM;
 
 	spin_lock_init(&drvdata->spinlock);
 
-	ret = clk_set_rate(adev->pclk, CORESIGHT_CLK_RATE_TRACE);
+	drvdata->clk = adev->pclk;
+	ret = clk_set_rate(drvdata->clk, CORESIGHT_CLK_RATE_TRACE);
+	if (ret)
+		return ret;
+
+	ret = clk_prepare_enable(drvdata->clk);
 	if (ret)
 		return ret;
 
 	if (!coresight_authstatus_enabled(drvdata->base))
 		goto err1;
 
-	pm_runtime_put(&adev->dev);
+	clk_disable_unprepare(drvdata->clk);
 
 	bitmap_fill(drvdata->entities, OST_ENTITY_MAX);
 
@@ -866,7 +856,7 @@ err:
 	coresight_unregister(drvdata->csdev);
 	return ret;
 err1:
-	pm_runtime_put(&adev->dev);
+	clk_disable_unprepare(drvdata->clk);
 	return -EPERM;
 }
 

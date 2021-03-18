@@ -134,7 +134,6 @@ static bool add_hlist(struct hlist_head *head,
 static unsigned int check_hlist(struct net *net,
 				struct hlist_head *head,
 				const struct nf_conntrack_tuple *tuple,
-				const struct nf_conntrack_zone *zone,
 				bool *addit)
 {
 	const struct nf_conntrack_tuple_hash *found;
@@ -148,7 +147,8 @@ static unsigned int check_hlist(struct net *net,
 
 	/* check the saved connections */
 	hlist_for_each_entry_safe(conn, n, head, node) {
-		found = nf_conntrack_find_get(net, zone, &conn->tuple);
+		found    = nf_conntrack_find_get(net, NF_CT_DEFAULT_ZONE,
+						 &conn->tuple);
 		if (found == NULL) {
 			hlist_del(&conn->node);
 			kmem_cache_free(connlimit_conn_cachep, conn);
@@ -201,7 +201,7 @@ static unsigned int
 count_tree(struct net *net, struct rb_root *root,
 	   const struct nf_conntrack_tuple *tuple,
 	   const union nf_inet_addr *addr, const union nf_inet_addr *mask,
-	   u8 family, const struct nf_conntrack_zone *zone)
+	   u8 family)
 {
 	struct xt_connlimit_rb *gc_nodes[CONNLIMIT_GC_MAX_NODES];
 	struct rb_node **rbnode, *parent;
@@ -229,7 +229,7 @@ count_tree(struct net *net, struct rb_root *root,
 		} else {
 			/* same source network -> be counted! */
 			unsigned int count;
-			count = check_hlist(net, &rbconn->hhead, tuple, zone, &addit);
+			count = check_hlist(net, &rbconn->hhead, tuple, &addit);
 
 			tree_nodes_free(root, gc_nodes, gc_count);
 			if (!addit)
@@ -245,7 +245,7 @@ count_tree(struct net *net, struct rb_root *root,
 			continue;
 
 		/* only used for GC on hhead, retval and 'addit' ignored */
-		check_hlist(net, &rbconn->hhead, tuple, zone, &addit);
+		check_hlist(net, &rbconn->hhead, tuple, &addit);
 		if (hlist_empty(&rbconn->hhead))
 			gc_nodes[gc_count++] = rbconn;
 	}
@@ -290,8 +290,7 @@ static int count_them(struct net *net,
 		      const struct nf_conntrack_tuple *tuple,
 		      const union nf_inet_addr *addr,
 		      const union nf_inet_addr *mask,
-		      u_int8_t family,
-		      const struct nf_conntrack_zone *zone)
+		      u_int8_t family)
 {
 	struct rb_root *root;
 	int count;
@@ -307,7 +306,7 @@ static int count_them(struct net *net,
 
 	spin_lock_bh(&xt_connlimit_locks[hash % CONNLIMIT_LOCK_SLOTS]);
 
-	count = count_tree(net, root, tuple, addr, mask, family, zone);
+	count = count_tree(net, root, tuple, addr, mask, family);
 
 	spin_unlock_bh(&xt_connlimit_locks[hash % CONNLIMIT_LOCK_SLOTS]);
 
@@ -317,24 +316,21 @@ static int count_them(struct net *net,
 static bool
 connlimit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 {
-	struct net *net = par->net;
+	struct net *net = dev_net(par->in ? par->in : par->out);
 	const struct xt_connlimit_info *info = par->matchinfo;
 	union nf_inet_addr addr;
 	struct nf_conntrack_tuple tuple;
 	const struct nf_conntrack_tuple *tuple_ptr = &tuple;
-	const struct nf_conntrack_zone *zone = &nf_ct_zone_dflt;
 	enum ip_conntrack_info ctinfo;
 	const struct nf_conn *ct;
 	unsigned int connections;
 
 	ct = nf_ct_get(skb, &ctinfo);
-	if (ct != NULL) {
+	if (ct != NULL)
 		tuple_ptr = &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
-		zone = nf_ct_zone(ct);
-	} else if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
-				      par->family, net, &tuple)) {
+	else if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
+				    par->family, &tuple))
 		goto hotdrop;
-	}
 
 	if (par->family == NFPROTO_IPV6) {
 		const struct ipv6hdr *iph = ipv6_hdr(skb);
@@ -347,7 +343,7 @@ connlimit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	connections = count_them(net, info->data, tuple_ptr, &addr,
-	                         &info->mask, par->family, zone);
+	                         &info->mask, par->family);
 	if (connections == 0)
 		/* kmalloc failed, drop it entirely */
 		goto hotdrop;

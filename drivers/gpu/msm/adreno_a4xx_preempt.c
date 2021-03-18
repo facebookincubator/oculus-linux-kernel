@@ -146,8 +146,12 @@ static int a4xx_submit_preempt_token(struct adreno_ringbuffer *rb,
 			&ptname, PT_INFO_OFFSET(current_rb_ptname));
 		pt = kgsl_mmu_get_pt_from_ptname(&(device->mmu),
 			ptname);
-		if (IS_ERR_OR_NULL(pt))
-			return (pt == NULL) ? -ENOENT : PTR_ERR(pt);
+		/*
+		 * always expect a valid pt, else pt refcounting is
+		 * messed up or current pt tracking has a bug which
+		 * could lead to eventual disaster
+		 */
+		BUG_ON(!pt);
 		/* set the ringbuffer for incoming RB */
 		pt_switch_sizedwords =
 			adreno_iommu_set_pt_generate_cmds(incoming_rb,
@@ -185,8 +189,10 @@ static int a4xx_submit_preempt_token(struct adreno_ringbuffer *rb,
 				device->memstore.gpuaddr +
 				MEMSTORE_RB_OFFSET(rb, preempted));
 
-	if ((uint)(ringcmds - start) > total_sizedwords)
+	if ((uint)(ringcmds - start) > total_sizedwords) {
 		KGSL_DRV_ERR(device, "Insufficient rb size allocated\n");
+		BUG();
+	}
 
 	/*
 	 * If we have commands less than the space reserved in RB
@@ -284,16 +290,15 @@ static void a4xx_preempt_trig_state(struct adreno_device *adreno_dev)
 	/* Submit preempt token to make preemption happen */
 	ret = adreno_drawctxt_switch(adreno_dev, adreno_dev->cur_rb,
 		NULL, 0);
-	if (ret)
+	if (ret) {
 		KGSL_DRV_ERR(device,
 			"Unable to switch context to NULL: %d\n", ret);
+		BUG();
+	}
 
-	ret = a4xx_submit_preempt_token(adreno_dev->cur_rb,
-						adreno_dev->next_rb);
-	if (ret)
-		KGSL_DRV_ERR(device,
-			"Unable to submit preempt token: %d\n", ret);
-
+	if (a4xx_submit_preempt_token(adreno_dev->cur_rb,
+						adreno_dev->next_rb))
+		BUG();
 	adreno_dev->preempt.token_submit = true;
 	adreno_dev->cur_rb->wptr_preempt_end = adreno_dev->cur_rb->wptr;
 	trace_adreno_hw_preempt_token_submit(adreno_dev->cur_rb,
@@ -337,6 +342,7 @@ static struct adreno_ringbuffer *a4xx_next_ringbuffer(
 			}
 			break;
 		case ADRENO_DISPATCHER_RB_STARVE_TIMER_SCHEDULED:
+			BUG_ON(adreno_dev->cur_rb != rb);
 			/*
 			 * If the RB has not been running for the minimum
 			 * time slice then allow it to run
@@ -433,8 +439,11 @@ static void a4xx_preempt_clear_state(struct adreno_device *adreno_dev)
 	if (switch_low_to_high < 0) {
 		ret = a4xx_submit_preempt_token(
 			adreno_dev->cur_rb, adreno_dev->next_rb);
-		KGSL_DRV_ERR(device,
-			"Unable to submit preempt token: %d\n", ret);
+		/*
+		 * unexpected since we are submitting this when rptr = wptr,
+		 * this was checked above already
+		 */
+		BUG_ON(ret);
 		adreno_dev->preempt.token_submit = true;
 		adreno_dev->cur_rb->wptr_preempt_end = adreno_dev->cur_rb->wptr;
 	} else {
@@ -519,7 +528,8 @@ static void a4xx_preempt_complete_state(struct adreno_device *adreno_dev)
 				adreno_dev->cur_rb->id) < 0) {
 		if (adreno_dev->prev_rb->wptr_preempt_end != prevrptr)
 			adreno_dev->prev_rb->preempted_midway = 1;
-	}
+	} else if (adreno_dev->prev_rb->wptr_preempt_end != prevrptr)
+		BUG();
 
 	/* submit wptr if required for new rb */
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_RB_WPTR, &wptr);
@@ -558,7 +568,7 @@ void a4xx_preemption_schedule(struct adreno_device *adreno_dev)
 		a4xx_preempt_complete_state(adreno_dev);
 		break;
 	default:
-		break;
+		BUG();
 	}
 
 	mutex_unlock(&device->mutex);

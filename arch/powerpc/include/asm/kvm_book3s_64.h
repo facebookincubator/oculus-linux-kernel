@@ -37,6 +37,7 @@ static inline void svcpu_put(struct kvmppc_book3s_shadow_vcpu *svcpu)
 
 #ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
 #define KVM_DEFAULT_HPT_ORDER	24	/* 16MB HPT by default */
+extern unsigned long kvm_rma_pages;
 #endif
 
 #define VRMA_VSID	0x1ffffffUL	/* 1TB VSID reserved for VRMA */
@@ -83,20 +84,6 @@ static inline long try_lock_hpte(__be64 *hpte, unsigned long bits)
 		     : "r" (hpte), "r" (be_bits), "r" (be_lockbit)
 		     : "cc", "memory");
 	return old == 0;
-}
-
-static inline void unlock_hpte(__be64 *hpte, unsigned long hpte_v)
-{
-	hpte_v &= ~HPTE_V_HVLOCK;
-	asm volatile(PPC_RELEASE_BARRIER "" : : : "memory");
-	hpte[0] = cpu_to_be64(hpte_v);
-}
-
-/* Without barrier */
-static inline void __unlock_hpte(__be64 *hpte, unsigned long hpte_v)
-{
-	hpte_v &= ~HPTE_V_HVLOCK;
-	hpte[0] = cpu_to_be64(hpte_v);
 }
 
 static inline int __hpte_actual_psize(unsigned int lp, int psize)
@@ -161,7 +148,7 @@ static inline unsigned long compute_tlbie_rb(unsigned long v, unsigned long r,
 	/* This covers 14..54 bits of va*/
 	rb = (v & ~0x7fUL) << 16;		/* AVA field */
 
-	rb |= (v >> HPTE_V_SSIZE_SHIFT) << 8;	/*  B field */
+	rb |= v >> (62 - 8);			/*  B field */
 	/*
 	 * AVA in v had cleared lower 23 bits. We need to derive
 	 * that from pteg index
@@ -295,37 +282,40 @@ static inline int hpte_cache_flags_ok(unsigned long ptel, unsigned long io_type)
 
 /*
  * If it's present and writable, atomically set dirty and referenced bits and
- * return the PTE, otherwise return 0.
+ * return the PTE, otherwise return 0. If we find a transparent hugepage
+ * and if it is marked splitting we return 0;
  */
-static inline pte_t kvmppc_read_update_linux_pte(pte_t *ptep, int writing)
+static inline pte_t kvmppc_read_update_linux_pte(pte_t *ptep, int writing,
+						 unsigned int hugepage)
 {
 	pte_t old_pte, new_pte = __pte(0);
 
 	while (1) {
-		/*
-		 * Make sure we don't reload from ptep
-		 */
-		old_pte = READ_ONCE(*ptep);
+		old_pte = pte_val(*ptep);
 		/*
 		 * wait until _PAGE_BUSY is clear then set it atomically
 		 */
-		if (unlikely(pte_val(old_pte) & _PAGE_BUSY)) {
+		if (unlikely(old_pte & _PAGE_BUSY)) {
 			cpu_relax();
 			continue;
 		}
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+		/* If hugepage and is trans splitting return None */
+		if (unlikely(hugepage &&
+			     pmd_trans_splitting(pte_pmd(old_pte))))
+			return __pte(0);
+#endif
 		/* If pte is not present return None */
-		if (unlikely(!(pte_val(old_pte) & _PAGE_PRESENT)))
+		if (unlikely(!(old_pte & _PAGE_PRESENT)))
 			return __pte(0);
 
 		new_pte = pte_mkyoung(old_pte);
 		if (writing && pte_write(old_pte))
 			new_pte = pte_mkdirty(new_pte);
 
-		if (pte_val(old_pte) == __cmpxchg_u64((unsigned long *)ptep,
-						      pte_val(old_pte),
-						      pte_val(new_pte))) {
+		if (old_pte == __cmpxchg_u64((unsigned long *)ptep, old_pte,
+					     new_pte))
 			break;
-		}
 	}
 	return new_pte;
 }
@@ -346,7 +336,7 @@ static inline bool hpte_read_permission(unsigned long pp, unsigned long key)
 {
 	if (key)
 		return PP_RWRX <= pp && pp <= PP_RXRX;
-	return true;
+	return 1;
 }
 
 static inline bool hpte_write_permission(unsigned long pp, unsigned long key)
@@ -384,7 +374,7 @@ static inline bool slot_is_aligned(struct kvm_memory_slot *memslot,
 	unsigned long mask = (pagesize >> PAGE_SHIFT) - 1;
 
 	if (pagesize <= PAGE_SIZE)
-		return true;
+		return 1;
 	return !(memslot->base_gfn & mask) && !(memslot->npages & mask);
 }
 
@@ -430,12 +420,8 @@ static inline void note_hpte_modification(struct kvm *kvm,
  */
 static inline struct kvm_memslots *kvm_memslots_raw(struct kvm *kvm)
 {
-	return rcu_dereference_raw_notrace(kvm->memslots[0]);
+	return rcu_dereference_raw_notrace(kvm->memslots);
 }
-
-extern void kvmppc_mmu_debugfs_init(struct kvm *kvm);
-
-extern void kvmhv_rm_send_ipi(int cpu);
 
 #endif /* CONFIG_KVM_BOOK3S_HV_POSSIBLE */
 

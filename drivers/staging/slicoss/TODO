@@ -25,6 +25,7 @@ TODO:
 	- state variables for things that are
 	  easily available and shouldn't be kept in card structure, cardnum, ...
 	  slotnumber, events, ...
+	- get rid of slic_spinlock wrapper
 	- volatile == bad design => bad code
 	- locking too fine grained, not designed just throw more locks
 	  at problem

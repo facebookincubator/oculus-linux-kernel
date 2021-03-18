@@ -611,7 +611,7 @@ static int pctv452e_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 	return 0;
 
 failed:
-	eth_zero_addr(mac);
+	memset(mac, 0, 6);
 
 	return ret;
 }

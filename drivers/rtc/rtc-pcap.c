@@ -184,6 +184,7 @@ static struct platform_driver pcap_rtc_driver = {
 	.remove = __exit_p(pcap_rtc_remove),
 	.driver = {
 		.name  = "pcap-rtc",
+		.owner = THIS_MODULE,
 	},
 };
 

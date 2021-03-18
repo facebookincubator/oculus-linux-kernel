@@ -228,7 +228,7 @@ static int vmpressure_notifier(struct notifier_block *nb,
 	if (!current_is_kswapd())
 		return 0;
 
-	if (atomic_dec_if_positive(&skip_reclaim) >= 0)
+	if (0 <= atomic_dec_if_positive(&skip_reclaim))
 		return 0;
 
 	if ((pressure >= pressure_min) && (pressure < pressure_max))

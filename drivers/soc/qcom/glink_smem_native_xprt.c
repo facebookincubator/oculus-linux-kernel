@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, 2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,7 +51,7 @@
 #define RPM_MAX_TOC_ENTRIES 20
 #define RPM_FIFO_ADDR_ALIGN_BYTES 3
 #define TRACER_PKT_FEATURE BIT(2)
-#define DEFERRED_CMDS_THRESHOLD 25
+
 /**
  * enum command_types - definition of the types of commands sent/received
  * @VERSION_CMD:		Version and feature set supported
@@ -181,7 +181,6 @@ struct mailbox_config_info {
  *				processing.
  * @deferred_cmds:		List of deferred commands that need to be
  *				processed in process context.
- * @deferred_cmds_cnt:		Number of deferred commands in queue.
  * @num_pw_states:		Size of @ramp_time_us.
  * @ramp_time_us:		Array of ramp times in microseconds where array
  *				index position represents a power state.
@@ -213,14 +212,12 @@ struct edge_info {
 	bool tx_blocked_signal_sent;
 	struct kthread_work kwork;
 	struct kthread_worker kworker;
-	struct work_struct wakeup_work;
 	struct task_struct *task;
 	struct tasklet_struct tasklet;
 	struct srcu_struct use_ref;
 	bool in_ssr;
 	spinlock_t rx_lock;
 	struct list_head deferred_cmds;
-	uint32_t deferred_cmds_cnt;
 	uint32_t num_pw_states;
 	unsigned long *ramp_time_us;
 	struct mailbox_config_info *mailbox;
@@ -682,17 +679,11 @@ static void process_rx_data(struct edge_info *einfo, uint16_t cmd_id,
 		err = true;
 	} else if (intent->data == NULL) {
 		if (einfo->intentless) {
-			intent->data = kmalloc(cmd.frag_size,
-						__GFP_ATOMIC | __GFP_HIGH);
-			if (!intent->data) {
+			intent->data = kmalloc(cmd.frag_size, GFP_ATOMIC);
+			if (!intent->data)
 				err = true;
-				GLINK_ERR(
-				"%s: atomic alloc fail ch %d liid %d size %d\n",
-						__func__, rcid, intent_id,
-						cmd.frag_size);
-			} else {
+			else
 				intent->intent_size = cmd.frag_size;
-			}
 		} else {
 			GLINK_ERR(
 				"%s: intent for ch %d liid %d has no data buff\n",
@@ -781,7 +772,6 @@ static bool queue_cmd(struct edge_info *einfo, void *cmd, void *data)
 	d_cmd->param2 = _cmd->param2;
 	d_cmd->data = data;
 	list_add_tail(&d_cmd->list_node, &einfo->deferred_cmds);
-	einfo->deferred_cmds_cnt++;
 	queue_kthread_work(&einfo->kworker, &einfo->kwork);
 	return true;
 }
@@ -802,12 +792,6 @@ static bool get_rx_fifo(struct edge_info *einfo)
 							&einfo->rx_fifo_size,
 							einfo->remote_proc_id,
 							SMEM_ITEM_CACHED_FLAG);
-		if (!einfo->rx_fifo)
-			einfo->rx_fifo = smem_get_entry(
-						SMEM_GLINK_NATIVE_XPRT_FIFO_1,
-							&einfo->rx_fifo_size,
-							einfo->remote_proc_id,
-							0);
 		if (!einfo->rx_fifo)
 			return false;
 	}
@@ -838,6 +822,7 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 	int i;
 	bool granted;
 	unsigned long flags;
+	bool trigger_wakeup = false;
 	int rcu_id;
 	uint16_t rcid;
 	uint32_t name_len;
@@ -849,7 +834,7 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 
 	rcu_id = srcu_read_lock(&einfo->use_ref);
 
-	if (unlikely(!einfo->rx_fifo) && atomic_ctx) {
+	if (unlikely(!einfo->rx_fifo)) {
 		if (!get_rx_fifo(einfo)) {
 			srcu_read_unlock(&einfo->use_ref, rcu_id);
 			return;
@@ -862,10 +847,22 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 		srcu_read_unlock(&einfo->use_ref, rcu_id);
 		return;
 	}
+	if (!atomic_ctx) {
+		if (einfo->tx_resume_needed && fifo_write_avail(einfo)) {
+			einfo->tx_resume_needed = false;
+			einfo->xprt_if.glink_core_if_ptr->tx_resume(
+							&einfo->xprt_if);
+		}
+		spin_lock_irqsave(&einfo->write_lock, flags);
+		if (waitqueue_active(&einfo->tx_blocked_queue)) {
+			einfo->tx_blocked_signal_sent = false;
+			trigger_wakeup = true;
+		}
+		spin_unlock_irqrestore(&einfo->write_lock, flags);
+		if (trigger_wakeup)
+			wake_up_all(&einfo->tx_blocked_queue);
+	}
 
-	if ((atomic_ctx) && ((einfo->tx_resume_needed) ||
-		(waitqueue_active(&einfo->tx_blocked_queue)))) /* tx waiting ?*/
-		schedule_work(&einfo->wakeup_work);
 
 	/*
 	 * Access to the fifo needs to be synchronized, however only the calls
@@ -884,15 +881,10 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 		if (einfo->in_ssr)
 			break;
 
-		if (atomic_ctx && !einfo->intentless &&
-		    einfo->deferred_cmds_cnt >= DEFERRED_CMDS_THRESHOLD)
-			break;
-
 		if (!atomic_ctx && !list_empty(&einfo->deferred_cmds)) {
 			d_cmd = list_first_entry(&einfo->deferred_cmds,
 						struct deferred_cmd, list_node);
 			list_del(&d_cmd->list_node);
-			einfo->deferred_cmds_cnt--;
 			cmd.id = d_cmd->id;
 			cmd.param1 = d_cmd->param1;
 			cmd.param2 = d_cmd->param2;
@@ -1170,39 +1162,6 @@ static void rx_worker_atomic(unsigned long param)
 	struct edge_info *einfo = (struct edge_info *)param;
 
 	__rx_worker(einfo, true);
-}
-
-/**
- * tx_wakeup_worker() - worker function to wakeup tx blocked thread
- * @work:	kwork associated with the edge to process commands on.
- */
-static void tx_wakeup_worker(struct work_struct *work)
-{
-	struct edge_info *einfo;
-	bool trigger_wakeup = false;
-	unsigned long flags;
-	int rcu_id;
-
-	einfo = container_of(work, struct edge_info, wakeup_work);
-	rcu_id = srcu_read_lock(&einfo->use_ref);
-	if (einfo->in_ssr) {
-		srcu_read_unlock(&einfo->use_ref, rcu_id);
-		return;
-	}
-	if (einfo->tx_resume_needed && fifo_write_avail(einfo)) {
-		einfo->tx_resume_needed = false;
-		einfo->xprt_if.glink_core_if_ptr->tx_resume(
-						&einfo->xprt_if);
-	}
-	spin_lock_irqsave(&einfo->write_lock, flags);
-	if (waitqueue_active(&einfo->tx_blocked_queue)) { /* tx waiting ?*/
-		einfo->tx_blocked_signal_sent = false;
-		trigger_wakeup = true;
-	}
-	spin_unlock_irqrestore(&einfo->write_lock, flags);
-	if (trigger_wakeup)
-		wake_up_all(&einfo->tx_blocked_queue);
-	srcu_read_unlock(&einfo->use_ref, rcu_id);
 }
 
 /**
@@ -2236,8 +2195,6 @@ static int subsys_name_to_id(const char *name)
 		return SMEM_WCNSS;
 	if (!strcmp(name, "spss"))
 		return SMEM_SPSS;
-	if (!strcmp(name, "cdsp"))
-		return SMEM_CDSP;
 	return -ENODEV;
 }
 
@@ -2307,7 +2264,6 @@ static int glink_smem_native_probe(struct platform_device *pdev)
 	init_waitqueue_head(&einfo->tx_blocked_queue);
 	init_kthread_work(&einfo->kwork, rx_worker);
 	init_kthread_worker(&einfo->kworker);
-	INIT_WORK(&einfo->wakeup_work, tx_wakeup_worker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->read_from_fifo = read_from_fifo;
 	einfo->write_to_fifo = write_to_fifo;
@@ -2361,7 +2317,7 @@ static int glink_smem_native_probe(struct platform_device *pdev)
 	einfo->tx_fifo = smem_alloc(SMEM_GLINK_NATIVE_XPRT_FIFO_0,
 							einfo->tx_fifo_size,
 							einfo->remote_proc_id,
-							0);
+							SMEM_ITEM_CACHED_FLAG);
 	if (!einfo->tx_fifo) {
 		pr_err("%s: smem alloc of tx fifo failed\n", __func__);
 		rc = -ENOMEM;
@@ -2407,7 +2363,6 @@ request_irq_fail:
 reg_xprt_fail:
 smem_alloc_fail:
 	flush_kthread_worker(&einfo->kworker);
-	flush_work(&einfo->wakeup_work);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);
@@ -2496,7 +2451,6 @@ static int glink_rpm_native_probe(struct platform_device *pdev)
 	init_waitqueue_head(&einfo->tx_blocked_queue);
 	init_kthread_work(&einfo->kwork, rx_worker);
 	init_kthread_worker(&einfo->kworker);
-	INIT_WORK(&einfo->wakeup_work, tx_wakeup_worker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->intentless = true;
 	einfo->read_from_fifo = memcpy32_fromio;
@@ -2657,7 +2611,6 @@ request_irq_fail:
 reg_xprt_fail:
 toc_init_fail:
 	flush_kthread_worker(&einfo->kworker);
-	flush_work(&einfo->wakeup_work);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);
@@ -2789,7 +2742,6 @@ static int glink_mailbox_probe(struct platform_device *pdev)
 	init_waitqueue_head(&einfo->tx_blocked_queue);
 	init_kthread_work(&einfo->kwork, rx_worker);
 	init_kthread_worker(&einfo->kworker);
-	INIT_WORK(&einfo->wakeup_work, tx_wakeup_worker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->read_from_fifo = read_from_fifo;
 	einfo->write_to_fifo = write_to_fifo;
@@ -2910,7 +2862,6 @@ request_irq_fail:
 reg_xprt_fail:
 smem_alloc_fail:
 	flush_kthread_worker(&einfo->kworker);
-	flush_work(&einfo->wakeup_work);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);

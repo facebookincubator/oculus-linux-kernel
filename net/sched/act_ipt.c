@@ -1,5 +1,5 @@
 /*
- * net/sched/act_ipt.c		iptables target interface
+ * net/sched/ipt.c     iptables target interface
  *
  *TODO: Add other tables. For now we only support the ipv4 table targets
  *
@@ -114,7 +114,7 @@ static int tcf_ipt_init(struct net *net, struct nlattr *nla, struct nlattr *est,
 		index = nla_get_u32(tb[TCA_IPT_INDEX]);
 
 	if (!tcf_hash_check(index, a, bind) ) {
-		ret = tcf_hash_create(index, est, a, sizeof(*ipt), bind, false);
+		ret = tcf_hash_create(index, est, a, sizeof(*ipt), bind);
 		if (ret)
 			return ret;
 		ret = ACT_P_CREATED;
@@ -189,7 +189,6 @@ static int tcf_ipt(struct sk_buff *skb, const struct tc_action *a,
 	 * worry later - danger - this API seems to have changed
 	 * from earlier kernels
 	 */
-	par.net	     = dev_net(skb->dev);
 	par.in       = skb->dev;
 	par.out      = NULL;
 	par.hooknum  = ipt->tcfi_hook;

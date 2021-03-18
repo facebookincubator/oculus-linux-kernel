@@ -32,17 +32,19 @@
 #include <asm/vdso.h>
 #include <asm/facility.h>
 
-#ifdef CONFIG_COMPAT
+#if defined(CONFIG_32BIT) || defined(CONFIG_COMPAT)
 extern char vdso32_start, vdso32_end;
 static void *vdso32_kbase = &vdso32_start;
 static unsigned int vdso32_pages;
 static struct page **vdso32_pagelist;
 #endif
 
+#ifdef CONFIG_64BIT
 extern char vdso64_start, vdso64_end;
 static void *vdso64_kbase = &vdso64_start;
 static unsigned int vdso64_pages;
 static struct page **vdso64_pagelist;
+#endif /* CONFIG_64BIT */
 
 /*
  * Should the kernel map a VDSO page into processes and pass its
@@ -85,6 +87,7 @@ static void vdso_init_data(struct vdso_data *vd)
 	vd->ectg_available = test_facility(31);
 }
 
+#ifdef CONFIG_64BIT
 /*
  * Allocate/free per cpu vdso data.
  */
@@ -166,6 +169,7 @@ static void vdso_init_cr5(void)
 	cr5 = offsetof(struct _lowcore, paste);
 	__ctl_load(cr5, 5, 5);
 }
+#endif /* CONFIG_64BIT */
 
 /*
  * This is called from binfmt_elf, we create the special vma for the
@@ -187,6 +191,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	if (!uses_interp)
 		return 0;
 
+#ifdef CONFIG_64BIT
 	vdso_pagelist = vdso64_pagelist;
 	vdso_pages = vdso64_pages;
 #ifdef CONFIG_COMPAT
@@ -195,6 +200,11 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		vdso_pages = vdso32_pages;
 	}
 #endif
+#else
+	vdso_pagelist = vdso32_pagelist;
+	vdso_pages = vdso32_pages;
+#endif
+
 	/*
 	 * vDSO has a problem and was disabled, just don't "enable" it for
 	 * the process
@@ -258,7 +268,7 @@ static int __init vdso_init(void)
 	if (!vdso_enabled)
 		return 0;
 	vdso_init_data(vdso_data);
-#ifdef CONFIG_COMPAT
+#if defined(CONFIG_32BIT) || defined(CONFIG_COMPAT)
 	/* Calculate the size of the 32 bit vDSO */
 	vdso32_pages = ((&vdso32_end - &vdso32_start
 			 + PAGE_SIZE - 1) >> PAGE_SHIFT) + 1;
@@ -277,6 +287,7 @@ static int __init vdso_init(void)
 	vdso32_pagelist[vdso32_pages] = NULL;
 #endif
 
+#ifdef CONFIG_64BIT
 	/* Calculate the size of the 64 bit vDSO */
 	vdso64_pages = ((&vdso64_end - &vdso64_start
 			 + PAGE_SIZE - 1) >> PAGE_SHIFT) + 1;
@@ -296,10 +307,11 @@ static int __init vdso_init(void)
 	if (vdso_alloc_per_cpu(&S390_lowcore))
 		BUG();
 	vdso_init_cr5();
+#endif /* CONFIG_64BIT */
 
 	get_page(virt_to_page(vdso_data));
 
-	smp_mb();
+	smp_wmb();
 
 	return 0;
 }

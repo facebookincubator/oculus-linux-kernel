@@ -423,7 +423,6 @@ static int davinci_mdio_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
 static int davinci_mdio_suspend(struct device *dev)
 {
 	struct davinci_mdio_data *data = dev_get_drvdata(dev);
@@ -465,10 +464,10 @@ static int davinci_mdio_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static const struct dev_pm_ops davinci_mdio_pm_ops = {
-	SET_LATE_SYSTEM_SLEEP_PM_OPS(davinci_mdio_suspend, davinci_mdio_resume)
+	.suspend_late	= davinci_mdio_suspend,
+	.resume_early	= davinci_mdio_resume,
 };
 
 #if IS_ENABLED(CONFIG_OF)

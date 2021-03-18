@@ -376,7 +376,10 @@ int __init ibmphp_rsrc_init (void)
 		if (rc)
 			return rc;
 	}
-	return once_over ();	/* This is to align ranges (so no -1) */
+	rc = once_over ();  /* This is to align ranges (so no -1) */
+	if (rc)
+		return rc;
+	return 0;
 }
 
 /********************************************************************************

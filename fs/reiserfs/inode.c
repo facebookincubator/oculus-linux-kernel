@@ -18,7 +18,7 @@
 #include <linux/writeback.h>
 #include <linux/quotaops.h>
 #include <linux/swap.h>
-#include <linux/uio.h>
+#include <linux/aio.h>
 
 int reiserfs_commit_write(struct file *f, struct page *page,
 			  unsigned from, unsigned to);
@@ -2766,7 +2766,7 @@ static int reiserfs_write_begin(struct file *file,
 	int old_ref = 0;
 
  	inode = mapping->host;
-	*fsdata = NULL;
+	*fsdata = 0;
  	if (flags & AOP_FLAG_CONT_EXPAND &&
  	    (pos & (inode->i_sb->s_blocksize - 1)) == 0) {
  		pos ++;
@@ -3278,22 +3278,22 @@ static int reiserfs_releasepage(struct page *page, gfp_t unused_gfp_flags)
  * We thank Mingming Cao for helping us understand in great detail what
  * to do in this section of the code.
  */
-static ssize_t reiserfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
-				  loff_t offset)
+static ssize_t reiserfs_direct_IO(int rw, struct kiocb *iocb,
+				  struct iov_iter *iter, loff_t offset)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	size_t count = iov_iter_count(iter);
 	ssize_t ret;
 
-	ret = blockdev_direct_IO(iocb, inode, iter, offset,
+	ret = blockdev_direct_IO(rw, iocb, inode, iter, offset,
 				 reiserfs_get_blocks_direct_io);
 
 	/*
 	 * In case of error extending write may have instantiated a few
 	 * blocks outside i_size. Trim these off again.
 	 */
-	if (unlikely(iov_iter_rw(iter) == WRITE && ret < 0)) {
+	if (unlikely((rw & WRITE) && ret < 0)) {
 		loff_t isize = i_size_read(inode);
 		loff_t end = offset + count;
 
@@ -3308,7 +3308,7 @@ static ssize_t reiserfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 
 int reiserfs_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	unsigned int ia_valid;
 	int error;
 
@@ -3319,11 +3319,8 @@ int reiserfs_setattr(struct dentry *dentry, struct iattr *attr)
 	/* must be turned off for recursive notify_change calls */
 	ia_valid = attr->ia_valid &= ~(ATTR_KILL_SUID|ATTR_KILL_SGID);
 
-	if (is_quota_modification(inode, attr)) {
-		error = dquot_initialize(inode);
-		if (error)
-			return error;
-	}
+	if (is_quota_modification(inode, attr))
+		dquot_initialize(inode);
 	reiserfs_write_lock(inode->i_sb);
 	if (attr->ia_valid & ATTR_SIZE) {
 		/*

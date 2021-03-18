@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005 - 2015 Emulex
+ * Copyright (C) 2005 - 2014 Emulex
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -44,10 +44,10 @@ struct be_mcc_wrb {
 	} payload;
 };
 
-#define CQE_FLAGS_VALID_MASK		BIT(31)
-#define CQE_FLAGS_ASYNC_MASK		BIT(30)
-#define CQE_FLAGS_COMPLETED_MASK	BIT(28)
-#define CQE_FLAGS_CONSUMED_MASK		BIT(27)
+#define CQE_FLAGS_VALID_MASK 		(1 << 31)
+#define CQE_FLAGS_ASYNC_MASK 		(1 << 30)
+#define CQE_FLAGS_COMPLETED_MASK 	(1 << 28)
+#define CQE_FLAGS_CONSUMED_MASK 	(1 << 27)
 
 /* Completion Status */
 enum mcc_base_status {
@@ -65,8 +65,7 @@ enum mcc_base_status {
 enum mcc_addl_status {
 	MCC_ADDL_STATUS_INSUFFICIENT_RESOURCES = 0x16,
 	MCC_ADDL_STATUS_FLASH_IMAGE_CRC_MISMATCH = 0x4d,
-	MCC_ADDL_STATUS_TOO_MANY_INTERFACES = 0x4a,
-	MCC_ADDL_STATUS_INSUFFICIENT_VLANS = 0xab
+	MCC_ADDL_STATUS_TOO_MANY_INTERFACES = 0x4a
 };
 
 #define CQE_BASE_STATUS_MASK		0xFFFF
@@ -103,9 +102,6 @@ struct be_mcc_compl {
 #define ASYNC_EVENT_PVID_STATE		0x3
 #define ASYNC_EVENT_CODE_QNQ		0x6
 #define ASYNC_DEBUG_EVENT_TYPE_QNQ	1
-#define ASYNC_EVENT_CODE_SLIPORT	0x11
-#define ASYNC_EVENT_PORT_MISCONFIG	0x9
-#define ASYNC_EVENT_FW_CONTROL		0x5
 
 enum {
 	LINK_DOWN	= 0x0,
@@ -171,31 +167,6 @@ struct be_async_event_qnq {
 	u32 event_tag;
 	u8 rsvd1[4];
 	u32 flags;
-} __packed;
-
-#define INCOMPATIBLE_SFP		0x3
-/* async event indicating misconfigured port */
-struct be_async_event_misconfig_port {
-	u32 event_data_word1;
-	u32 event_data_word2;
-	u32 rsvd0;
-	u32 flags;
-} __packed;
-
-#define BMC_FILT_BROADCAST_ARP				BIT(0)
-#define BMC_FILT_BROADCAST_DHCP_CLIENT			BIT(1)
-#define BMC_FILT_BROADCAST_DHCP_SERVER			BIT(2)
-#define BMC_FILT_BROADCAST_NET_BIOS			BIT(3)
-#define BMC_FILT_BROADCAST				BIT(7)
-#define BMC_FILT_MULTICAST_IPV6_NEIGH_ADVER		BIT(8)
-#define BMC_FILT_MULTICAST_IPV6_RA			BIT(9)
-#define BMC_FILT_MULTICAST_IPV6_RAS			BIT(10)
-#define BMC_FILT_MULTICAST				BIT(15)
-struct be_async_fw_control {
-	u32 event_data_word1;
-	u32 event_data_word2;
-	u32 evt_tag;
-	u32 event_data_word4;
 } __packed;
 
 struct be_mcc_mailbox {
@@ -289,9 +260,7 @@ struct be_cmd_req_hdr {
 	u32 timeout;		/* dword 1 */
 	u32 request_length;	/* dword 2 */
 	u8 version;		/* dword 3 */
-	u8 rsvd1;		/* dword 3 */
-	u8 pf_num;		/* dword 3 */
-	u8 rsvd2;		/* dword 3 */
+	u8 rsvd[3];		/* dword 3 */
 };
 
 #define RESP_HDR_INFO_OPCODE_SHIFT	0	/* bits 0 - 7 */
@@ -608,24 +577,14 @@ enum be_if_flags {
 	BE_IF_FLAGS_MCAST_PROMISCUOUS = 0x200,
 	BE_IF_FLAGS_PASS_L2_ERRORS = 0x400,
 	BE_IF_FLAGS_PASS_L3L4_ERRORS = 0x800,
-	BE_IF_FLAGS_MULTICAST = 0x1000,
-	BE_IF_FLAGS_DEFQ_RSS = 0x1000000
+	BE_IF_FLAGS_MULTICAST = 0x1000
 };
 
 #define BE_IF_CAP_FLAGS_WANT (BE_IF_FLAGS_RSS | BE_IF_FLAGS_PROMISCUOUS |\
 			 BE_IF_FLAGS_BROADCAST | BE_IF_FLAGS_VLAN_PROMISCUOUS |\
 			 BE_IF_FLAGS_VLAN | BE_IF_FLAGS_MCAST_PROMISCUOUS |\
 			 BE_IF_FLAGS_PASS_L3L4_ERRORS | BE_IF_FLAGS_MULTICAST |\
-			 BE_IF_FLAGS_UNTAGGED | BE_IF_FLAGS_DEFQ_RSS)
-
-#define BE_IF_FLAGS_ALL_PROMISCUOUS	(BE_IF_FLAGS_PROMISCUOUS | \
-					 BE_IF_FLAGS_VLAN_PROMISCUOUS |\
-					 BE_IF_FLAGS_MCAST_PROMISCUOUS)
-
-#define BE_IF_EN_FLAGS	(BE_IF_FLAGS_BROADCAST | BE_IF_FLAGS_PASS_L3L4_ERRORS |\
-			BE_IF_FLAGS_MULTICAST | BE_IF_FLAGS_UNTAGGED)
-
-#define BE_IF_ALL_FILT_FLAGS	(BE_IF_EN_FLAGS | BE_IF_FLAGS_ALL_PROMISCUOUS)
+			 BE_IF_FLAGS_UNTAGGED)
 
 /* An RX interface is an object with one or more MAC addresses and
  * filtering capabilities. */
@@ -1065,8 +1024,6 @@ enum {
 #define	SFP_PLUS_SFF_8472_COMP		0x5E
 #define	SFP_PLUS_CABLE_TYPE_OFFSET	0x8
 #define	SFP_PLUS_COPPER_CABLE		0x4
-#define SFP_VENDOR_NAME_OFFSET		0x14
-#define SFP_VENDOR_PN_OFFSET		0x28
 
 #define PAGE_DATA_LEN   256
 struct be_cmd_resp_port_type {
@@ -1204,173 +1161,7 @@ struct be_cmd_resp_get_beacon_state {
 	u8 rsvd0[3];
 } __packed;
 
-/* Flashrom related descriptors */
-#define MAX_FLASH_COMP			32
-
-#define OPTYPE_ISCSI_ACTIVE		0
-#define OPTYPE_REDBOOT			1
-#define OPTYPE_BIOS			2
-#define OPTYPE_PXE_BIOS			3
-#define OPTYPE_OFFSET_SPECIFIED		7
-#define OPTYPE_FCOE_BIOS		8
-#define OPTYPE_ISCSI_BACKUP		9
-#define OPTYPE_FCOE_FW_ACTIVE		10
-#define OPTYPE_FCOE_FW_BACKUP		11
-#define OPTYPE_NCSI_FW			13
-#define OPTYPE_REDBOOT_DIR		18
-#define OPTYPE_REDBOOT_CONFIG		19
-#define OPTYPE_SH_PHY_FW		21
-#define OPTYPE_FLASHISM_JUMPVECTOR	22
-#define OPTYPE_UFI_DIR			23
-#define OPTYPE_PHY_FW			99
-
-#define FLASH_BIOS_IMAGE_MAX_SIZE_g2	262144  /* Max OPTION ROM image sz */
-#define FLASH_REDBOOT_IMAGE_MAX_SIZE_g2	262144  /* Max Redboot image sz    */
-#define FLASH_IMAGE_MAX_SIZE_g2		1310720 /* Max firmware image size */
-
-#define FLASH_NCSI_IMAGE_MAX_SIZE_g3	262144
-#define FLASH_PHY_FW_IMAGE_MAX_SIZE_g3	262144
-#define FLASH_BIOS_IMAGE_MAX_SIZE_g3	524288  /* Max OPTION ROM image sz */
-#define FLASH_REDBOOT_IMAGE_MAX_SIZE_g3	1048576 /* Max Redboot image sz    */
-#define FLASH_IMAGE_MAX_SIZE_g3		2097152 /* Max firmware image size */
-
-/* Offsets for components on Flash. */
-#define FLASH_REDBOOT_START_g2			0
-#define FLASH_FCoE_BIOS_START_g2		524288
-#define FLASH_iSCSI_PRIMARY_IMAGE_START_g2	1048576
-#define FLASH_iSCSI_BACKUP_IMAGE_START_g2	2359296
-#define FLASH_FCoE_PRIMARY_IMAGE_START_g2	3670016
-#define FLASH_FCoE_BACKUP_IMAGE_START_g2	4980736
-#define FLASH_iSCSI_BIOS_START_g2		7340032
-#define FLASH_PXE_BIOS_START_g2			7864320
-
-#define FLASH_REDBOOT_START_g3			262144
-#define FLASH_PHY_FW_START_g3			1310720
-#define FLASH_iSCSI_PRIMARY_IMAGE_START_g3	2097152
-#define FLASH_iSCSI_BACKUP_IMAGE_START_g3	4194304
-#define FLASH_FCoE_PRIMARY_IMAGE_START_g3	6291456
-#define FLASH_FCoE_BACKUP_IMAGE_START_g3	8388608
-#define FLASH_iSCSI_BIOS_START_g3		12582912
-#define FLASH_PXE_BIOS_START_g3			13107200
-#define FLASH_FCoE_BIOS_START_g3		13631488
-#define FLASH_NCSI_START_g3			15990784
-
-#define IMAGE_NCSI			16
-#define IMAGE_OPTION_ROM_PXE		32
-#define IMAGE_OPTION_ROM_FCoE		33
-#define IMAGE_OPTION_ROM_ISCSI		34
-#define IMAGE_FLASHISM_JUMPVECTOR	48
-#define IMAGE_FIRMWARE_iSCSI		160
-#define IMAGE_FIRMWARE_FCoE		162
-#define IMAGE_FIRMWARE_BACKUP_iSCSI	176
-#define IMAGE_FIRMWARE_BACKUP_FCoE	178
-#define IMAGE_FIRMWARE_PHY		192
-#define IMAGE_REDBOOT_DIR		208
-#define IMAGE_REDBOOT_CONFIG		209
-#define IMAGE_UFI_DIR			210
-#define IMAGE_BOOT_CODE			224
-
-struct controller_id {
-	u32 vendor;
-	u32 device;
-	u32 subvendor;
-	u32 subdevice;
-};
-
-struct flash_comp {
-	unsigned long offset;
-	int optype;
-	int size;
-	int img_type;
-};
-
-struct image_hdr {
-	u32 imageid;
-	u32 imageoffset;
-	u32 imagelength;
-	u32 image_checksum;
-	u8 image_version[32];
-};
-
-struct flash_file_hdr_g2 {
-	u8 sign[32];
-	u32 cksum;
-	u32 antidote;
-	struct controller_id cont_id;
-	u32 file_len;
-	u32 chunk_num;
-	u32 total_chunks;
-	u32 num_imgs;
-	u8 build[24];
-};
-
-/* First letter of the build version of the image */
-#define BLD_STR_UFI_TYPE_BE2	'2'
-#define BLD_STR_UFI_TYPE_BE3	'3'
-#define BLD_STR_UFI_TYPE_SH	'4'
-
-struct flash_file_hdr_g3 {
-	u8 sign[52];
-	u8 ufi_version[4];
-	u32 file_len;
-	u32 cksum;
-	u32 antidote;
-	u32 num_imgs;
-	u8 build[24];
-	u8 asic_type_rev;
-	u8 rsvd[31];
-};
-
-struct flash_section_hdr {
-	u32 format_rev;
-	u32 cksum;
-	u32 antidote;
-	u32 num_images;
-	u8 id_string[128];
-	u32 rsvd[4];
-} __packed;
-
-struct flash_section_hdr_g2 {
-	u32 format_rev;
-	u32 cksum;
-	u32 antidote;
-	u32 build_num;
-	u8 id_string[128];
-	u32 rsvd[8];
-} __packed;
-
-struct flash_section_entry {
-	u32 type;
-	u32 offset;
-	u32 pad_size;
-	u32 image_size;
-	u32 cksum;
-	u32 entry_point;
-	u16 optype;
-	u16 rsvd0;
-	u32 rsvd1;
-	u8 ver_data[32];
-} __packed;
-
-struct flash_section_info {
-	u8 cookie[32];
-	struct flash_section_hdr fsec_hdr;
-	struct flash_section_entry fsec_entry[32];
-} __packed;
-
-struct flash_section_info_g2 {
-	u8 cookie[32];
-	struct flash_section_hdr_g2 fsec_hdr;
-	struct flash_section_entry fsec_entry[32];
-} __packed;
-
 /****************** Firmware Flash ******************/
-#define FLASHROM_OPER_FLASH		1
-#define FLASHROM_OPER_SAVE		2
-#define FLASHROM_OPER_REPORT		4
-#define FLASHROM_OPER_PHY_FLASH		9
-#define FLASHROM_OPER_PHY_SAVE		10
-
 struct flashrom_params {
 	u32 op_code;
 	u32 op_type;
@@ -1502,8 +1293,6 @@ struct be_cmd_resp_acpi_wol_magic_config_v1 {
 #define BE_PME_D3COLD_CAP		0x80
 
 /********************** LoopBack test *********************/
-#define SET_LB_MODE_TIMEOUT		12000
-
 struct be_cmd_req_loopback_test {
 	struct be_cmd_req_hdr hdr;
 	u32 loopback_type;
@@ -1577,7 +1366,6 @@ enum {
 	PHY_TYPE_QSFP,
 	PHY_TYPE_KR4_40GB,
 	PHY_TYPE_KR2_20GB,
-	PHY_TYPE_TN_8022,
 	PHY_TYPE_DISABLED = 255
 };
 
@@ -1641,26 +1429,6 @@ struct be_cmd_req_set_qos {
 };
 
 /*********************** Controller Attributes ***********************/
-struct mgmt_hba_attribs {
-	u32 rsvd0[24];
-	u8 controller_model_number[32];
-	u32 rsvd1[16];
-	u32 controller_serial_number[8];
-	u32 rsvd2[55];
-	u8 rsvd3[3];
-	u8 phy_port;
-	u32 rsvd4[13];
-} __packed;
-
-struct mgmt_controller_attrib {
-	struct mgmt_hba_attribs hba_attribs;
-	u32 rsvd0[2];
-	u16 rsvd1;
-	u8 pci_func_num;
-	u8 rsvd2;
-	u32 rsvd3[7];
-} __packed;
-
 struct be_cmd_req_cntl_attribs {
 	struct be_cmd_req_hdr hdr;
 };
@@ -1773,26 +1541,19 @@ struct be_cmd_req_set_mac_list {
 /*********************** HSW Config ***********************/
 #define PORT_FWD_TYPE_VEPA		0x3
 #define PORT_FWD_TYPE_VEB		0x2
-#define PORT_FWD_TYPE_PASSTHRU		0x1
-
-#define ENABLE_MAC_SPOOFCHK		0x2
-#define DISABLE_MAC_SPOOFCHK		0x3
 
 struct amap_set_hsw_context {
 	u8 interface_id[16];
-	u8 rsvd0[8];
-	u8 mac_spoofchk[2];
-	u8 rsvd1[4];
+	u8 rsvd0[14];
 	u8 pvid_valid;
 	u8 pport;
-	u8 rsvd2[6];
+	u8 rsvd1[6];
 	u8 port_fwd_type[3];
-	u8 rsvd3[5];
-	u8 vlan_spoofchk[2];
+	u8 rsvd2[7];
 	u8 pvid[16];
+	u8 rsvd3[32];
 	u8 rsvd4[32];
 	u8 rsvd5[32];
-	u8 rsvd6[32];
 } __packed;
 
 struct be_cmd_req_set_hsw_config {
@@ -1810,13 +1571,11 @@ struct amap_get_hsw_req_context {
 struct amap_get_hsw_resp_context {
 	u8 rsvd0[6];
 	u8 port_fwd_type[3];
-	u8 rsvd1[5];
-	u8 spoofchk;
-	u8 rsvd2;
+	u8 rsvd1[7];
 	u8 pvid[16];
+	u8 rsvd2[32];
 	u8 rsvd3[32];
 	u8 rsvd4[32];
-	u8 rsvd5[32];
 } __packed;
 
 struct be_cmd_req_get_hsw_config {
@@ -2060,7 +1819,6 @@ struct be_cmd_req_set_ext_fat_caps {
 #define PORT_RESOURCE_DESC_TYPE_V1		0x55
 #define MAX_RESOURCE_DESC			264
 
-#define IF_CAPS_FLAGS_VALID_SHIFT		0	/* IF caps valid */
 #define VFT_SHIFT				3	/* VF template */
 #define IMM_SHIFT				6	/* Immediate */
 #define NOSV_SHIFT				7	/* No save */
@@ -2171,28 +1929,20 @@ struct be_cmd_resp_get_func_config {
 	u8 func_param[MAX_RESOURCE_DESC * RESOURCE_DESC_SIZE_V1];
 };
 
-enum {
-	RESOURCE_LIMITS,
-	RESOURCE_MODIFIABLE
-};
-
+#define ACTIVE_PROFILE_TYPE			0x2
 struct be_cmd_req_get_profile_config {
 	struct be_cmd_req_hdr hdr;
 	u8 rsvd;
-#define ACTIVE_PROFILE_TYPE			0x2
-#define QUERY_MODIFIABLE_FIELDS_TYPE		BIT(3)
 	u8 type;
 	u16 rsvd1;
 };
 
 struct be_cmd_resp_get_profile_config {
 	struct be_cmd_resp_hdr hdr;
-	__le16 desc_count;
-	u16 rsvd;
+	u32 desc_count;
 	u8 func_param[MAX_RESOURCE_DESC * RESOURCE_DESC_SIZE_V1];
 };
 
-#define FIELD_MODIFIABLE			0xFFFF
 struct be_cmd_req_set_profile_config {
 	struct be_cmd_req_hdr hdr;
 	u32 rsvd;
@@ -2304,7 +2054,7 @@ int lancer_cmd_get_pport_stats(struct be_adapter *adapter,
 int be_cmd_get_fw_ver(struct be_adapter *adapter);
 int be_cmd_modify_eqd(struct be_adapter *adapter, struct be_set_eqd *, int num);
 int be_cmd_vlan_config(struct be_adapter *adapter, u32 if_id, u16 *vtag_array,
-		       u32 num, u32 domain);
+		       u32 num);
 int be_cmd_rx_filter(struct be_adapter *adapter, u32 flags, u32 status);
 int be_cmd_set_flow_control(struct be_adapter *adapter, u32 tx_fc, u32 rx_fc);
 int be_cmd_get_flow_control(struct be_adapter *adapter, u32 *tx_fc, u32 *rx_fc);
@@ -2320,10 +2070,8 @@ int be_cmd_get_beacon_state(struct be_adapter *adapter, u8 port_num,
 int be_cmd_read_port_transceiver_data(struct be_adapter *adapter,
 				      u8 page_num, u8 *data);
 int be_cmd_query_cable_type(struct be_adapter *adapter);
-int be_cmd_query_sfp_info(struct be_adapter *adapter);
 int be_cmd_write_flashrom(struct be_adapter *adapter, struct be_dma_mem *cmd,
-			  u32 flash_oper, u32 flash_opcode, u32 img_offset,
-			  u32 buf_size);
+			  u32 flash_oper, u32 flash_opcode, u32 buf_size);
 int lancer_cmd_write_object(struct be_adapter *adapter, struct be_dma_mem *cmd,
 			    u32 data_size, u32 data_offset,
 			    const char *obj_name, u32 *data_written,
@@ -2333,7 +2081,7 @@ int lancer_cmd_read_object(struct be_adapter *adapter, struct be_dma_mem *cmd,
 			   u32 *data_read, u32 *eof, u8 *addn_status);
 int lancer_cmd_delete_object(struct be_adapter *adapter, const char *obj_name);
 int be_cmd_get_flash_crc(struct be_adapter *adapter, u8 *flashed_crc,
-			 u16 img_optype, u32 img_offset, u32 crc_offset);
+			  u16 optype, int offset);
 int be_cmd_enable_magic_wol(struct be_adapter *adapter, u8 *mac,
 			    struct be_dma_mem *nonemb_cmd);
 int be_cmd_fw_init(struct be_adapter *adapter);
@@ -2372,9 +2120,9 @@ int be_cmd_set_mac_list(struct be_adapter *adapter, u8 *mac_array, u8 mac_count,
 			u32 domain);
 int be_cmd_set_mac(struct be_adapter *adapter, u8 *mac, int if_id, u32 dom);
 int be_cmd_set_hsw_config(struct be_adapter *adapter, u16 pvid, u32 domain,
-			  u16 intf_id, u16 hsw_mode, u8 spoofchk);
+			  u16 intf_id, u16 hsw_mode);
 int be_cmd_get_hsw_config(struct be_adapter *adapter, u16 *pvid, u32 domain,
-			  u16 intf_id, u8 *mode, bool *spoofchk);
+			  u16 intf_id, u8 *mode);
 int be_cmd_get_acpi_wol_cap(struct be_adapter *adapter);
 int be_cmd_set_fw_log_level(struct be_adapter *adapter, u32 level);
 int be_cmd_get_fw_log_level(struct be_adapter *adapter);
@@ -2388,11 +2136,11 @@ int lancer_initiate_dump(struct be_adapter *adapter);
 int lancer_delete_dump(struct be_adapter *adapter);
 bool dump_present(struct be_adapter *adapter);
 int lancer_test_and_set_rdy_state(struct be_adapter *adapter);
-int be_cmd_query_port_name(struct be_adapter *adapter);
+int be_cmd_query_port_name(struct be_adapter *adapter, u8 *port_name);
 int be_cmd_get_func_config(struct be_adapter *adapter,
 			   struct be_resources *res);
 int be_cmd_get_profile_config(struct be_adapter *adapter,
-			      struct be_resources *res, u8 query, u8 domain);
+			      struct be_resources *res, u8 domain);
 int be_cmd_get_active_profile(struct be_adapter *adapter, u16 *profile);
 int be_cmd_get_if_id(struct be_adapter *adapter, struct be_vf_cfg *vf_cfg,
 		     int vf_num);
@@ -2403,5 +2151,4 @@ int be_cmd_set_logical_link_config(struct be_adapter *adapter,
 int be_cmd_set_vxlan_port(struct be_adapter *adapter, __be16 port);
 int be_cmd_manage_iface(struct be_adapter *adapter, u32 iface, u8 op);
 int be_cmd_set_sriov_config(struct be_adapter *adapter,
-			    struct be_resources res, u16 num_vfs,
-			    u16 num_vf_qs);
+			    struct be_resources res, u16 num_vfs);

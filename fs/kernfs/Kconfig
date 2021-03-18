@@ -5,14 +5,3 @@
 config KERNFS
 	bool
 	default n
-
-config KERNFS_NOTIFIER_CPU_AFFINITY_MASK
-	string "kernfs_notifier CPU affinity mask"
-	depends on SMP && KERNFS
-	help
-	  Set the CPU affinity for the kernfs_notifier task.
-	  The CPU affinity bitmask is represented by a hex string where commas
-	  group hex digits into chunks.  Each chunk defines exactly 32 bits of
-	  the resultant bitmask.
-	  For example to limit kswapd to the first 4 cores use the following:
-	  CONFIG_KERNFS_NOTIFIER_CPU_AFFINITY_MASK="f"

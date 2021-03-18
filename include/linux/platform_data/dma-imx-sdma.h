@@ -48,9 +48,6 @@ struct sdma_script_start_addrs {
 	s32 ssish_2_mcu_addr;
 	s32 hdmi_dma_addr;
 	/* End of v2 array */
-	s32 zcanfd_2_mcu_addr;
-	s32 zqspi_2_mcu_addr;
-	/* End of v3 array */
 };
 
 /**

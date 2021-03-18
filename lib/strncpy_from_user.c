@@ -1,5 +1,4 @@
-#include <linux/compiler.h>
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -56,8 +55,8 @@ static inline long do_strncpy_from_user(char *dst, const char __user *src, long 
 		unsigned long c, data;
 
 		/* Fall back to byte-at-a-time if we get a page fault */
-		unsafe_get_user(c, (unsigned long __user *)(src+res), byte_at_a_time);
-
+		if (unlikely(__get_user(c,(unsigned long __user *)(src+res))))
+			break;
 		*(unsigned long *)(dst+res) = c;
 		if (has_zero(c, &data, &constants)) {
 			data = prep_zero_mask(c, data, &constants);
@@ -72,7 +71,8 @@ byte_at_a_time:
 	while (max) {
 		char c;
 
-		unsafe_get_user(c,src+res, efault);
+		if (unlikely(__get_user(c,src+res)))
+			return -EFAULT;
 		dst[res] = c;
 		if (!c)
 			return res;
@@ -91,7 +91,6 @@ byte_at_a_time:
 	 * Nope: we hit the address space limit, and we still had more
 	 * characters the caller would have wanted. That's an EFAULT.
 	 */
-efault:
 	return -EFAULT;
 }
 
@@ -124,12 +123,7 @@ long strncpy_from_user(char *dst, const char __user *src, long count)
 	src_addr = (unsigned long)src;
 	if (likely(src_addr < max_addr)) {
 		unsigned long max = max_addr - src_addr;
-		long retval;
-
-		user_access_begin();
-		retval = do_strncpy_from_user(dst, src, count, max);
-		user_access_end();
-		return retval;
+		return do_strncpy_from_user(dst, src, count, max);
 	}
 	return -EFAULT;
 }

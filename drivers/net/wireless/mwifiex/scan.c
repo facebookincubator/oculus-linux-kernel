@@ -241,21 +241,20 @@ mwifiex_is_bss_wpa(struct mwifiex_private *priv,
 	    * LinkSys WRT54G && bss_desc->privacy
 	    */
 	 ) {
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: %s: WPA:\t"
-			    "wpa_ie=%#x wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s\t"
-			    "EncMode=%#x privacy=%#x\n", __func__,
-			    (bss_desc->bcn_wpa_ie) ?
-			    (*bss_desc->bcn_wpa_ie).
-			    vend_hdr.element_id : 0,
-			    (bss_desc->bcn_rsn_ie) ?
-			    (*bss_desc->bcn_rsn_ie).
-			    ieee_hdr.element_id : 0,
-			    (priv->sec_info.wep_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa2_enabled) ? "e" : "d",
-			    priv->sec_info.encryption_mode,
-			    bss_desc->privacy);
+		dev_dbg(priv->adapter->dev, "info: %s: WPA:"
+			" wpa_ie=%#x wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s "
+			"EncMode=%#x privacy=%#x\n", __func__,
+			(bss_desc->bcn_wpa_ie) ?
+			(*(bss_desc->bcn_wpa_ie)).
+			vend_hdr.element_id : 0,
+			(bss_desc->bcn_rsn_ie) ?
+			(*(bss_desc->bcn_rsn_ie)).
+			ieee_hdr.element_id : 0,
+			(priv->sec_info.wep_enabled) ? "e" : "d",
+			(priv->sec_info.wpa_enabled) ? "e" : "d",
+			(priv->sec_info.wpa2_enabled) ? "e" : "d",
+			priv->sec_info.encryption_mode,
+			bss_desc->privacy);
 		return true;
 	}
 	return false;
@@ -278,21 +277,20 @@ mwifiex_is_bss_wpa2(struct mwifiex_private *priv,
 		 * Privacy bit may NOT be set in some APs like
 		 * LinkSys WRT54G && bss_desc->privacy
 		 */
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: %s: WPA2:\t"
-			    "wpa_ie=%#x wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s\t"
-			    "EncMode=%#x privacy=%#x\n", __func__,
-			    (bss_desc->bcn_wpa_ie) ?
-			    (*bss_desc->bcn_wpa_ie).
-			    vend_hdr.element_id : 0,
-			    (bss_desc->bcn_rsn_ie) ?
-			    (*bss_desc->bcn_rsn_ie).
-			    ieee_hdr.element_id : 0,
-			    (priv->sec_info.wep_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa2_enabled) ? "e" : "d",
-			    priv->sec_info.encryption_mode,
-			    bss_desc->privacy);
+		dev_dbg(priv->adapter->dev, "info: %s: WPA2: "
+			" wpa_ie=%#x wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s "
+			"EncMode=%#x privacy=%#x\n", __func__,
+			(bss_desc->bcn_wpa_ie) ?
+			(*(bss_desc->bcn_wpa_ie)).
+			vend_hdr.element_id : 0,
+			(bss_desc->bcn_rsn_ie) ?
+			(*(bss_desc->bcn_rsn_ie)).
+			ieee_hdr.element_id : 0,
+			(priv->sec_info.wep_enabled) ? "e" : "d",
+			(priv->sec_info.wpa_enabled) ? "e" : "d",
+			(priv->sec_info.wpa2_enabled) ? "e" : "d",
+			priv->sec_info.encryption_mode,
+			bss_desc->privacy);
 		return true;
 	}
 	return false;
@@ -335,19 +333,18 @@ mwifiex_is_bss_dynamic_wep(struct mwifiex_private *priv,
 	    ((!bss_desc->bcn_rsn_ie) ||
 	     ((*(bss_desc->bcn_rsn_ie)).ieee_hdr.element_id != WLAN_EID_RSN)) &&
 	    priv->sec_info.encryption_mode && bss_desc->privacy) {
-		mwifiex_dbg(priv->adapter, INFO,
-			    "info: %s: dynamic\t"
-			    "WEP: wpa_ie=%#x wpa2_ie=%#x\t"
-			    "EncMode=%#x privacy=%#x\n",
-			    __func__,
-			    (bss_desc->bcn_wpa_ie) ?
-			    (*bss_desc->bcn_wpa_ie).
-			    vend_hdr.element_id : 0,
-			    (bss_desc->bcn_rsn_ie) ?
-			    (*bss_desc->bcn_rsn_ie).
-			    ieee_hdr.element_id : 0,
-			    priv->sec_info.encryption_mode,
-			    bss_desc->privacy);
+		dev_dbg(priv->adapter->dev, "info: %s: dynamic "
+			"WEP: wpa_ie=%#x wpa2_ie=%#x "
+			"EncMode=%#x privacy=%#x\n",
+			__func__,
+			(bss_desc->bcn_wpa_ie) ?
+			(*(bss_desc->bcn_wpa_ie)).
+			vend_hdr.element_id : 0,
+			(bss_desc->bcn_rsn_ie) ?
+			(*(bss_desc->bcn_rsn_ie)).
+			ieee_hdr.element_id : 0,
+			priv->sec_info.encryption_mode,
+			bss_desc->privacy);
 		return true;
 	}
 	return false;
@@ -386,20 +383,19 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 		return 0;
 
 	if (priv->wps.session_enable) {
-		mwifiex_dbg(adapter, IOCTL,
-			    "info: return success directly in WPS period\n");
+		dev_dbg(adapter->dev,
+			"info: return success directly in WPS period\n");
 		return 0;
 	}
 
 	if (bss_desc->chan_sw_ie_present) {
-		mwifiex_dbg(adapter, INFO,
-			    "Don't connect to AP with WLAN_EID_CHANNEL_SWITCH\n");
+		dev_err(adapter->dev,
+			"Don't connect to AP with WLAN_EID_CHANNEL_SWITCH\n");
 		return -1;
 	}
 
 	if (mwifiex_is_bss_wapi(priv, bss_desc)) {
-		mwifiex_dbg(adapter, INFO,
-			    "info: return success for WAPI AP\n");
+		dev_dbg(adapter->dev, "info: return success for WAPI AP\n");
 		return 0;
 	}
 
@@ -409,8 +405,7 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 			return 0;
 		} else if (mwifiex_is_bss_static_wep(priv, bss_desc)) {
 			/* Static WEP enabled */
-			mwifiex_dbg(adapter, INFO,
-				    "info: Disable 11n in WEP mode.\n");
+			dev_dbg(adapter->dev, "info: Disable 11n in WEP mode.\n");
 			bss_desc->disable_11n = true;
 			return 0;
 		} else if (mwifiex_is_bss_wpa(priv, bss_desc)) {
@@ -423,9 +418,9 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 
 				if (mwifiex_is_wpa_oui_present
 						(bss_desc, CIPHER_SUITE_TKIP)) {
-					mwifiex_dbg(adapter, INFO,
-						    "info: Disable 11n if AES\t"
-						    "is not supported by AP\n");
+					dev_dbg(adapter->dev,
+						"info: Disable 11n if AES "
+						"is not supported by AP\n");
 					bss_desc->disable_11n = true;
 				} else {
 					return -1;
@@ -442,9 +437,9 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 
 				if (mwifiex_is_rsn_oui_present
 						(bss_desc, CIPHER_SUITE_TKIP)) {
-					mwifiex_dbg(adapter, INFO,
-						    "info: Disable 11n if AES\t"
-						    "is not supported by AP\n");
+					dev_dbg(adapter->dev,
+						"info: Disable 11n if AES "
+						"is not supported by AP\n");
 					bss_desc->disable_11n = true;
 				} else {
 					return -1;
@@ -460,18 +455,17 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 		}
 
 		/* Security doesn't match */
-		mwifiex_dbg(adapter, ERROR,
-			    "info: %s: failed: wpa_ie=%#x wpa2_ie=%#x WEP=%s\t"
-			    "WPA=%s WPA2=%s EncMode=%#x privacy=%#x\n",
-			    __func__,
-			    (bss_desc->bcn_wpa_ie) ?
-			    (*bss_desc->bcn_wpa_ie).vend_hdr.element_id : 0,
-			    (bss_desc->bcn_rsn_ie) ?
-			    (*bss_desc->bcn_rsn_ie).ieee_hdr.element_id : 0,
-			    (priv->sec_info.wep_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa_enabled) ? "e" : "d",
-			    (priv->sec_info.wpa2_enabled) ? "e" : "d",
-			    priv->sec_info.encryption_mode, bss_desc->privacy);
+		dev_dbg(adapter->dev,
+			"info: %s: failed: wpa_ie=%#x wpa2_ie=%#x WEP=%s "
+			"WPA=%s WPA2=%s EncMode=%#x privacy=%#x\n", __func__,
+			(bss_desc->bcn_wpa_ie) ?
+			(*(bss_desc->bcn_wpa_ie)).vend_hdr.element_id : 0,
+			(bss_desc->bcn_rsn_ie) ?
+			(*(bss_desc->bcn_rsn_ie)).ieee_hdr.element_id : 0,
+			(priv->sec_info.wep_enabled) ? "e" : "d",
+			(priv->sec_info.wpa_enabled) ? "e" : "d",
+			(priv->sec_info.wpa2_enabled) ? "e" : "d",
+			priv->sec_info.encryption_mode, bss_desc->privacy);
 		return -1;
 	}
 
@@ -502,10 +496,10 @@ mwifiex_scan_create_channel_list(struct mwifiex_private *priv,
 
 	for (band = 0; (band < IEEE80211_NUM_BANDS) ; band++) {
 
-		if (!priv->wdev.wiphy->bands[band])
+		if (!priv->wdev->wiphy->bands[band])
 			continue;
 
-		sband = priv->wdev.wiphy->bands[band];
+		sband = priv->wdev->wiphy->bands[band];
 
 		for (i = 0; (i < sband->n_channels) ; i++) {
 			ch = &sband->channels[i];
@@ -527,8 +521,7 @@ mwifiex_scan_create_channel_list(struct mwifiex_private *priv,
 
 			if (ch->flags & IEEE80211_CHAN_NO_IR)
 				scan_chan_list[chan_idx].chan_scan_mode_bitmap
-					|= (MWIFIEX_PASSIVE_SCAN |
-					    MWIFIEX_HIDDEN_SSID_REPORT);
+					|= MWIFIEX_PASSIVE_SCAN;
 			else
 				scan_chan_list[chan_idx].chan_scan_mode_bitmap
 					&= ~MWIFIEX_PASSIVE_SCAN;
@@ -567,8 +560,7 @@ mwifiex_append_rate_tlv(struct mwifiex_private *priv,
 	else
 		rates_size = mwifiex_get_supported_rates(priv, rates);
 
-	mwifiex_dbg(priv->adapter, CMD,
-		    "info: SCAN_CMD: Rates size = %d\n",
+	dev_dbg(priv->adapter->dev, "info: SCAN_CMD: Rates size = %d\n",
 		rates_size);
 	rates_tlv = (struct mwifiex_ie_types_rates_param_set *)tlv_pos;
 	rates_tlv->header.type = cpu_to_le16(WLAN_EID_SUPP_RATES);
@@ -608,9 +600,9 @@ mwifiex_scan_channel_list(struct mwifiex_private *priv,
 	u8 radio_type;
 
 	if (!scan_cfg_out || !chan_tlv_out || !scan_chan_list) {
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "info: Scan: Null detect: %p, %p, %p\n",
-			    scan_cfg_out, chan_tlv_out, scan_chan_list);
+		dev_dbg(priv->adapter->dev,
+			"info: Scan: Null detect: %p, %p, %p\n",
+		       scan_cfg_out, chan_tlv_out, scan_chan_list);
 		return -1;
 	}
 
@@ -653,16 +645,16 @@ mwifiex_scan_channel_list(struct mwifiex_private *priv,
 			}
 
 			radio_type = tmp_chan_list->radio_type;
-			mwifiex_dbg(priv->adapter, INFO,
-				    "info: Scan: Chan(%3d), Radio(%d),\t"
-				    "Mode(%d, %d), Dur(%d)\n",
-				    tmp_chan_list->chan_number,
-				    tmp_chan_list->radio_type,
-				    tmp_chan_list->chan_scan_mode_bitmap
-				    & MWIFIEX_PASSIVE_SCAN,
-				    (tmp_chan_list->chan_scan_mode_bitmap
-				    & MWIFIEX_DISABLE_CHAN_FILT) >> 1,
-				    le16_to_cpu(tmp_chan_list->max_scan_time));
+			dev_dbg(priv->adapter->dev,
+				"info: Scan: Chan(%3d), Radio(%d),"
+				" Mode(%d, %d), Dur(%d)\n",
+				tmp_chan_list->chan_number,
+				tmp_chan_list->radio_type,
+				tmp_chan_list->chan_scan_mode_bitmap
+				& MWIFIEX_PASSIVE_SCAN,
+				(tmp_chan_list->chan_scan_mode_bitmap
+				 & MWIFIEX_DISABLE_CHAN_FILT) >> 1,
+				le16_to_cpu(tmp_chan_list->max_scan_time));
 
 			/* Copy the current channel TLV to the command being
 			   prepared */
@@ -726,11 +718,9 @@ mwifiex_scan_channel_list(struct mwifiex_private *priv,
 		/* The total scan time should be less than scan command timeout
 		   value */
 		if (total_scan_time > MWIFIEX_MAX_TOTAL_SCAN_TIME) {
-			mwifiex_dbg(priv->adapter, ERROR,
-				    "total scan time %dms\t"
-				    "is over limit (%dms), scan skipped\n",
-				    total_scan_time,
-				    MWIFIEX_MAX_TOTAL_SCAN_TIME);
+			dev_err(priv->adapter->dev, "total scan time %dms"
+				" is over limit (%dms), scan skipped\n",
+				total_scan_time, MWIFIEX_MAX_TOTAL_SCAN_TIME);
 			ret = -1;
 			break;
 		}
@@ -824,7 +814,6 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 	int i;
 	u8 ssid_filter;
 	struct mwifiex_ie_types_htcap *ht_cap;
-	struct mwifiex_ie_types_bss_mode *bss_mode;
 
 	/* The tlv_buf_len is calculated for each scan command.  The TLVs added
 	   in this routine will be preserved since the routine that sends the
@@ -910,20 +899,15 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 				wildcard_ssid_tlv->max_ssid_length =
 							IEEE80211_MAX_SSID_LEN;
 
-			if (!memcmp(user_scan_in->ssid_list[i].ssid,
-				    "DIRECT-", 7))
-				wildcard_ssid_tlv->max_ssid_length = 0xfe;
-
 			memcpy(wildcard_ssid_tlv->ssid,
 			       user_scan_in->ssid_list[i].ssid, ssid_len);
 
 			tlv_pos += (sizeof(wildcard_ssid_tlv->header)
 				+ le16_to_cpu(wildcard_ssid_tlv->header.len));
 
-			mwifiex_dbg(adapter, INFO,
-				    "info: scan: ssid[%d]: %s, %d\n",
-				    i, wildcard_ssid_tlv->ssid,
-				    wildcard_ssid_tlv->max_ssid_length);
+			dev_dbg(adapter->dev, "info: scan: ssid[%d]: %s, %d\n",
+				i, wildcard_ssid_tlv->ssid,
+				wildcard_ssid_tlv->max_ssid_length);
 
 			/* Empty wildcard ssid with a maxlen will match many or
 			   potentially all SSIDs (maxlen == 32), therefore do
@@ -944,9 +928,8 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 			*filtered_scan = true;
 
 		if (user_scan_in->scan_chan_gap) {
-			mwifiex_dbg(adapter, INFO,
-				    "info: scan: channel gap = %d\n",
-				    user_scan_in->scan_chan_gap);
+			dev_dbg(adapter->dev, "info: scan: channel gap = %d\n",
+				user_scan_in->scan_chan_gap);
 			*max_chan_per_scan =
 					MWIFIEX_MAX_CHANNELS_PER_SPECIFIC_SCAN;
 
@@ -974,22 +957,12 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 	else
 		*max_chan_per_scan = MWIFIEX_DEF_CHANNELS_PER_SCAN_CMD;
 
-	if (adapter->ext_scan) {
-		bss_mode = (struct mwifiex_ie_types_bss_mode *)tlv_pos;
-		bss_mode->header.type = cpu_to_le16(TLV_TYPE_BSS_MODE);
-		bss_mode->header.len = cpu_to_le16(sizeof(bss_mode->bss_mode));
-		bss_mode->bss_mode = scan_cfg_out->bss_mode;
-		tlv_pos += sizeof(bss_mode->header) +
-			   le16_to_cpu(bss_mode->header.len);
-	}
-
 	/* If the input config or adapter has the number of Probes set,
 	   add tlv */
 	if (num_probes) {
 
-		mwifiex_dbg(adapter, INFO,
-			    "info: scan: num_probes = %d\n",
-			    num_probes);
+		dev_dbg(adapter->dev, "info: scan: num_probes = %d\n",
+			num_probes);
 
 		num_probes_tlv = (struct mwifiex_ie_types_num_probes *) tlv_pos;
 		num_probes_tlv->header.type = cpu_to_le16(TLV_TYPE_NUMPROBES);
@@ -1030,8 +1003,7 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 
 	if (user_scan_in && user_scan_in->chan_list[0].chan_number) {
 
-		mwifiex_dbg(adapter, INFO,
-			    "info: Scan: Using supplied channel list\n");
+		dev_dbg(adapter->dev, "info: Scan: Using supplied channel list\n");
 
 		for (chan_idx = 0;
 		     chan_idx < MWIFIEX_USER_SCAN_CHAN_MAX &&
@@ -1050,8 +1022,7 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 			if (scan_type == MWIFIEX_SCAN_TYPE_PASSIVE)
 				(scan_chan_list +
 				 chan_idx)->chan_scan_mode_bitmap
-					|= (MWIFIEX_PASSIVE_SCAN |
-					    MWIFIEX_HIDDEN_SSID_REPORT);
+					|= MWIFIEX_PASSIVE_SCAN;
 			else
 				(scan_chan_list +
 				 chan_idx)->chan_scan_mode_bitmap
@@ -1085,13 +1056,13 @@ mwifiex_config_scan(struct mwifiex_private *priv,
 		    (user_scan_in->chan_list[0].chan_number ==
 		     priv->curr_bss_params.bss_descriptor.channel)) {
 			*scan_current_only = true;
-			mwifiex_dbg(adapter, INFO,
-				    "info: Scan: Scanning current channel only\n");
+			dev_dbg(adapter->dev,
+				"info: Scan: Scanning current channel only\n");
 		}
 		chan_num = chan_idx;
 	} else {
-		mwifiex_dbg(adapter, INFO,
-			    "info: Scan: Creating full region channel list\n");
+		dev_dbg(adapter->dev,
+			"info: Scan: Creating full region channel list\n");
 		chan_num = mwifiex_scan_create_channel_list(priv, user_scan_in,
 							    scan_chan_list,
 							    *filtered_scan);
@@ -1123,9 +1094,8 @@ mwifiex_ret_802_11_scan_get_tlv_ptrs(struct mwifiex_adapter *adapter,
 	tlv_buf_left = tlv_buf_size;
 	*tlv_data = NULL;
 
-	mwifiex_dbg(adapter, INFO,
-		    "info: SCAN_RESP: tlv_buf_size = %d\n",
-		    tlv_buf_size);
+	dev_dbg(adapter->dev, "info: SCAN_RESP: tlv_buf_size = %d\n",
+		tlv_buf_size);
 
 	while (tlv_buf_left >= sizeof(struct mwifiex_ie_types_header)) {
 
@@ -1133,31 +1103,26 @@ mwifiex_ret_802_11_scan_get_tlv_ptrs(struct mwifiex_adapter *adapter,
 		tlv_len = le16_to_cpu(current_tlv->header.len);
 
 		if (sizeof(tlv->header) + tlv_len > tlv_buf_left) {
-			mwifiex_dbg(adapter, ERROR,
-				    "SCAN_RESP: TLV buffer corrupt\n");
+			dev_err(adapter->dev, "SCAN_RESP: TLV buffer corrupt\n");
 			break;
 		}
 
 		if (req_tlv_type == tlv_type) {
 			switch (tlv_type) {
 			case TLV_TYPE_TSFTIMESTAMP:
-				mwifiex_dbg(adapter, INFO,
-					    "info: SCAN_RESP: TSF\t"
-					    "timestamp TLV, len = %d\n",
-					    tlv_len);
+				dev_dbg(adapter->dev, "info: SCAN_RESP: TSF "
+					"timestamp TLV, len = %d\n", tlv_len);
 				*tlv_data = current_tlv;
 				break;
 			case TLV_TYPE_CHANNELBANDLIST:
-				mwifiex_dbg(adapter, INFO,
-					    "info: SCAN_RESP: channel\t"
-					    "band list TLV, len = %d\n",
-					    tlv_len);
+				dev_dbg(adapter->dev, "info: SCAN_RESP: channel"
+					" band list TLV, len = %d\n", tlv_len);
 				*tlv_data = current_tlv;
 				break;
 			default:
-				mwifiex_dbg(adapter, ERROR,
-					    "SCAN_RESP: unhandled TLV = %d\n",
-					    tlv_type);
+				dev_err(adapter->dev,
+					"SCAN_RESP: unhandled TLV = %d\n",
+				       tlv_type);
 				/* Give up, this seems corrupted */
 				return;
 			}
@@ -1212,9 +1177,8 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 		total_ie_len = element_len + sizeof(struct ieee_types_header);
 
 		if (bytes_left < total_ie_len) {
-			mwifiex_dbg(adapter, ERROR,
-				    "err: InterpretIE: in processing\t"
-				    "IE, bytes left < IE length\n");
+			dev_err(adapter->dev, "err: InterpretIE: in processing"
+				" IE, bytes left < IE length\n");
 			return -1;
 		}
 		switch (element_id) {
@@ -1222,9 +1186,9 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 			bss_entry->ssid.ssid_len = element_len;
 			memcpy(bss_entry->ssid.ssid, (current_ptr + 2),
 			       element_len);
-			mwifiex_dbg(adapter, INFO,
-				    "info: InterpretIE: ssid: %-32s\n",
-				    bss_entry->ssid.ssid);
+			dev_dbg(adapter->dev,
+				"info: InterpretIE: ssid: %-32s\n",
+				bss_entry->ssid.ssid);
 			break;
 
 		case WLAN_EID_SUPP_RATES:
@@ -1455,21 +1419,14 @@ int mwifiex_scan_networks(struct mwifiex_private *priv,
 	unsigned long flags;
 
 	if (adapter->scan_processing) {
-		mwifiex_dbg(adapter, WARN,
-			    "cmd: Scan already in process...\n");
+		dev_err(adapter->dev, "cmd: Scan already in process...\n");
 		return -EBUSY;
 	}
 
 	if (priv->scan_block) {
-		mwifiex_dbg(adapter, WARN,
-			    "cmd: Scan is blocked during association...\n");
+		dev_err(adapter->dev,
+			"cmd: Scan is blocked during association...\n");
 		return -EBUSY;
-	}
-
-	if (adapter->surprise_removed || adapter->is_cmd_timedout) {
-		mwifiex_dbg(adapter, ERROR,
-			    "Ignore scan. Card removed or firmware in bad state\n");
-		return -EFAULT;
 	}
 
 	spin_lock_irqsave(&adapter->mwifiex_cmd_lock, flags);
@@ -1515,8 +1472,7 @@ int mwifiex_scan_networks(struct mwifiex_private *priv,
 
 			/* Perform internal scan synchronously */
 			if (!priv->scan_request) {
-				mwifiex_dbg(adapter, INFO,
-					    "wait internal scan\n");
+				dev_dbg(adapter->dev, "wait internal scan\n");
 				mwifiex_wait_queue_complete(adapter, cmd_node);
 			}
 		} else {
@@ -1591,8 +1547,8 @@ int mwifiex_check_network_compatibility(struct mwifiex_private *priv,
 			ret = mwifiex_is_network_compatible(priv, bss_desc,
 							    priv->bss_mode);
 			if (ret)
-				mwifiex_dbg(priv->adapter, ERROR,
-					    "Incompatible network settings\n");
+				dev_err(priv->adapter->dev,
+					"Incompatible network settings\n");
 			break;
 		default:
 			ret = 0;
@@ -1600,62 +1556,6 @@ int mwifiex_check_network_compatibility(struct mwifiex_private *priv,
 	}
 
 	return ret;
-}
-
-/* This function checks if SSID string contains all zeroes or length is zero */
-static bool mwifiex_is_hidden_ssid(struct cfg80211_ssid *ssid)
-{
-	int idx;
-
-	for (idx = 0; idx < ssid->ssid_len; idx++) {
-		if (ssid->ssid[idx])
-			return false;
-	}
-
-	return true;
-}
-
-/* This function checks if any hidden SSID found in passive scan channels
- * and save those channels for specific SSID active scan
- */
-static int mwifiex_save_hidden_ssid_channels(struct mwifiex_private *priv,
-					     struct cfg80211_bss *bss)
-{
-	struct mwifiex_bssdescriptor *bss_desc;
-	int ret;
-	int chid;
-
-	/* Allocate and fill new bss descriptor */
-	bss_desc = kzalloc(sizeof(*bss_desc), GFP_KERNEL);
-	if (!bss_desc)
-		return -ENOMEM;
-
-	ret = mwifiex_fill_new_bss_desc(priv, bss, bss_desc);
-	if (ret)
-		goto done;
-
-	if (mwifiex_is_hidden_ssid(&bss_desc->ssid)) {
-		mwifiex_dbg(priv->adapter, INFO, "found hidden SSID\n");
-		for (chid = 0 ; chid < MWIFIEX_USER_SCAN_CHAN_MAX; chid++) {
-			if (priv->hidden_chan[chid].chan_number ==
-			    bss->channel->hw_value)
-				break;
-
-			if (!priv->hidden_chan[chid].chan_number) {
-				priv->hidden_chan[chid].chan_number =
-					bss->channel->hw_value;
-				priv->hidden_chan[chid].radio_type =
-					bss->channel->band;
-				priv->hidden_chan[chid].scan_type =
-					MWIFIEX_SCAN_TYPE_ACTIVE;
-				break;
-			}
-		}
-	}
-
-done:
-	kfree(bss_desc);
-	return 0;
 }
 
 static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
@@ -1723,7 +1623,7 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 
 	if (*bytes_left >= sizeof(beacon_size)) {
 		/* Extract & convert beacon size from command buffer */
-		beacon_size = le16_to_cpu(*(__le16 *)(*bss_info));
+		memcpy(&beacon_size, *bss_info, sizeof(beacon_size));
 		*bytes_left -= sizeof(beacon_size);
 		*bss_info += sizeof(beacon_size);
 	}
@@ -1750,8 +1650,7 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 	 */
 	if (curr_bcn_bytes < ETH_ALEN + sizeof(u8) +
 	    sizeof(struct mwifiex_fixed_bcn_param)) {
-		mwifiex_dbg(adapter, ERROR,
-			    "InterpretIE: not enough bytes left\n");
+		dev_err(adapter->dev, "InterpretIE: not enough bytes left\n");
 		return -EFAULT;
 	}
 
@@ -1764,8 +1663,7 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 		rssi = (-rssi) * 100;		/* Convert dBm to mBm */
 		current_ptr += sizeof(u8);
 		curr_bcn_bytes -= sizeof(u8);
-		mwifiex_dbg(adapter, INFO,
-			    "info: InterpretIE: RSSI=%d\n", rssi);
+		dev_dbg(adapter->dev, "info: InterpretIE: RSSI=%d\n", rssi);
 	} else {
 		rssi = rssi_val;
 	}
@@ -1778,16 +1676,14 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 	beacon_period = le16_to_cpu(bcn_param->beacon_period);
 
 	cap_info_bitmap = le16_to_cpu(bcn_param->cap_info_bitmap);
-	mwifiex_dbg(adapter, INFO,
-		    "info: InterpretIE: capabilities=0x%X\n",
-		    cap_info_bitmap);
+	dev_dbg(adapter->dev, "info: InterpretIE: capabilities=0x%X\n",
+		cap_info_bitmap);
 
 	/* Rest of the current buffer are IE's */
 	ie_buf = current_ptr;
 	ie_len = curr_bcn_bytes;
-	mwifiex_dbg(adapter, INFO,
-		    "info: InterpretIE: IELength for this AP = %d\n",
-		    curr_bcn_bytes);
+	dev_dbg(adapter->dev, "info: InterpretIE: IELength for this AP = %d\n",
+		curr_bcn_bytes);
 
 	while (curr_bcn_bytes >= sizeof(struct ieee_types_header)) {
 		u8 element_id, element_len;
@@ -1796,8 +1692,8 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 		element_len = *(current_ptr + 1);
 		if (curr_bcn_bytes < element_len +
 				sizeof(struct ieee_types_header)) {
-			mwifiex_dbg(adapter, ERROR,
-				    "%s: bytes left < IE length\n", __func__);
+			dev_err(adapter->dev,
+				"%s: bytes left < IE length\n", __func__);
 			return -EFAULT;
 		}
 		if (element_id == WLAN_EID_DS_PARAMS) {
@@ -1817,8 +1713,8 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 
 		/* Skip entry if on csa closed channel */
 		if (channel == priv->csa_chan) {
-			mwifiex_dbg(adapter, WARN,
-				    "Dropping entry on csa closed channel\n");
+			dev_dbg(adapter->dev,
+				"Dropping entry on csa closed channel\n");
 			return 0;
 		}
 
@@ -1831,37 +1727,25 @@ mwifiex_parse_single_response_buf(struct mwifiex_private *priv, u8 **bss_info,
 
 		freq = cfp ? cfp->freq : 0;
 
-		chan = ieee80211_get_channel(priv->wdev.wiphy, freq);
+		chan = ieee80211_get_channel(priv->wdev->wiphy, freq);
 
 		if (chan && !(chan->flags & IEEE80211_CHAN_DISABLED)) {
-			bss = cfg80211_inform_bss(priv->wdev.wiphy,
+			bss = cfg80211_inform_bss(priv->wdev->wiphy,
 					    chan, CFG80211_BSS_FTYPE_UNKNOWN,
 					    bssid, timestamp,
 					    cap_info_bitmap, beacon_period,
 					    ie_buf, ie_len, rssi, GFP_KERNEL);
-			if (bss) {
-				bss_priv = (struct mwifiex_bss_priv *)bss->priv;
-				bss_priv->band = band;
-				bss_priv->fw_tsf = fw_tsf;
-				if (priv->media_connected &&
-				    !memcmp(bssid, priv->curr_bss_params.
-					    bss_descriptor.mac_address,
-					    ETH_ALEN))
-					mwifiex_update_curr_bss_params(priv,
-								       bss);
-				cfg80211_put_bss(priv->wdev.wiphy, bss);
-			}
-
-			if ((chan->flags & IEEE80211_CHAN_RADAR) ||
-			    (chan->flags & IEEE80211_CHAN_NO_IR)) {
-				mwifiex_dbg(adapter, INFO,
-					    "radar or passive channel %d\n",
-					    channel);
-				mwifiex_save_hidden_ssid_channels(priv, bss);
-			}
+			bss_priv = (struct mwifiex_bss_priv *)bss->priv;
+			bss_priv->band = band;
+			bss_priv->fw_tsf = fw_tsf;
+			if (priv->media_connected &&
+			    !memcmp(bssid, priv->curr_bss_params.bss_descriptor
+				    .mac_address, ETH_ALEN))
+				mwifiex_update_curr_bss_params(priv, bss);
+			cfg80211_put_bss(priv->wdev->wiphy, bss);
 		}
 	} else {
-		mwifiex_dbg(adapter, WARN, "missing BSS channel IE\n");
+		dev_dbg(adapter->dev, "missing BSS channel IE\n");
 	}
 
 	return 0;
@@ -1871,68 +1755,15 @@ static void mwifiex_complete_scan(struct mwifiex_private *priv)
 {
 	struct mwifiex_adapter *adapter = priv->adapter;
 
-	adapter->survey_idx = 0;
 	if (adapter->curr_cmd->wait_q_enabled) {
 		adapter->cmd_wait_q.status = 0;
 		if (!priv->scan_request) {
-			mwifiex_dbg(adapter, INFO,
-				    "complete internal scan\n");
+			dev_dbg(adapter->dev, "complete internal scan\n");
 			mwifiex_complete_cmd(adapter, adapter->curr_cmd);
 		}
 	}
 }
 
-/* This function checks if any hidden SSID found in passive scan channels
- * and do specific SSID active scan for those channels
- */
-static int
-mwifiex_active_scan_req_for_passive_chan(struct mwifiex_private *priv)
-{
-	int ret;
-	struct mwifiex_adapter *adapter = priv->adapter;
-	u8 id = 0;
-	struct mwifiex_user_scan_cfg  *user_scan_cfg;
-
-	if (adapter->active_scan_triggered || !priv->scan_request) {
-		adapter->active_scan_triggered = false;
-		return 0;
-	}
-
-	if (!priv->hidden_chan[0].chan_number) {
-		mwifiex_dbg(adapter, INFO, "No BSS with hidden SSID found on DFS channels\n");
-		return 0;
-	}
-	user_scan_cfg = kzalloc(sizeof(*user_scan_cfg), GFP_KERNEL);
-
-	if (!user_scan_cfg)
-		return -ENOMEM;
-
-	memset(user_scan_cfg, 0, sizeof(*user_scan_cfg));
-
-	for (id = 0; id < MWIFIEX_USER_SCAN_CHAN_MAX; id++) {
-		if (!priv->hidden_chan[id].chan_number)
-			break;
-		memcpy(&user_scan_cfg->chan_list[id],
-		       &priv->hidden_chan[id],
-		       sizeof(struct mwifiex_user_scan_chan));
-	}
-
-	adapter->active_scan_triggered = true;
-	user_scan_cfg->num_ssids = priv->scan_request->n_ssids;
-	user_scan_cfg->ssid_list = priv->scan_request->ssids;
-
-	ret = mwifiex_scan_networks(priv, user_scan_cfg);
-	kfree(user_scan_cfg);
-
-	memset(&priv->hidden_chan, 0, sizeof(priv->hidden_chan));
-
-	if (ret) {
-		dev_err(priv->adapter->dev, "scan failed: %d\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
 static void mwifiex_check_next_scan_command(struct mwifiex_private *priv)
 {
 	struct mwifiex_adapter *adapter = priv->adapter;
@@ -1946,20 +1777,16 @@ static void mwifiex_check_next_scan_command(struct mwifiex_private *priv)
 		adapter->scan_processing = false;
 		spin_unlock_irqrestore(&adapter->mwifiex_cmd_lock, flags);
 
-		mwifiex_active_scan_req_for_passive_chan(priv);
-
 		if (!adapter->ext_scan)
 			mwifiex_complete_scan(priv);
 
 		if (priv->scan_request) {
-			mwifiex_dbg(adapter, INFO,
-				    "info: notifying scan done\n");
+			dev_dbg(adapter->dev, "info: notifying scan done\n");
 			cfg80211_scan_done(priv->scan_request, 0);
 			priv->scan_request = NULL;
 		} else {
 			priv->scan_aborting = false;
-			mwifiex_dbg(adapter, INFO,
-				    "info: scan already aborted\n");
+			dev_dbg(adapter->dev, "info: scan already aborted\n");
 		}
 	} else if ((priv->scan_aborting && !priv->scan_request) ||
 		   priv->scan_block) {
@@ -1974,17 +1801,13 @@ static void mwifiex_check_next_scan_command(struct mwifiex_private *priv)
 		adapter->scan_processing = false;
 		spin_unlock_irqrestore(&adapter->mwifiex_cmd_lock, flags);
 
-		if (!adapter->active_scan_triggered) {
-			if (priv->scan_request) {
-				mwifiex_dbg(adapter, INFO,
-					    "info: aborting scan\n");
-				cfg80211_scan_done(priv->scan_request, 1);
-				priv->scan_request = NULL;
-			} else {
-				priv->scan_aborting = false;
-				mwifiex_dbg(adapter, INFO,
-					    "info: scan already aborted\n");
-			}
+		if (priv->scan_request) {
+			dev_dbg(adapter->dev, "info: aborting scan\n");
+			cfg80211_scan_done(priv->scan_request, 1);
+			priv->scan_request = NULL;
+		} else {
+			priv->scan_aborting = false;
+			dev_dbg(adapter->dev, "info: scan already aborted\n");
 		}
 	} else {
 		/* Get scan command from scan_pending_q and put to
@@ -2047,9 +1870,8 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 
 
 	if (scan_rsp->number_of_sets > MWIFIEX_MAX_AP) {
-		mwifiex_dbg(adapter, ERROR,
-			    "SCAN_RESP: too many AP returned (%d)\n",
-			    scan_rsp->number_of_sets);
+		dev_err(adapter->dev, "SCAN_RESP: too many AP returned (%d)\n",
+			scan_rsp->number_of_sets);
 		ret = -1;
 		goto check_next_scan;
 	}
@@ -2058,15 +1880,14 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 	mwifiex_11h_get_csa_closed_channel(priv);
 
 	bytes_left = le16_to_cpu(scan_rsp->bss_descript_size);
-	mwifiex_dbg(adapter, INFO,
-		    "info: SCAN_RESP: bss_descript_size %d\n",
-		    bytes_left);
+	dev_dbg(adapter->dev, "info: SCAN_RESP: bss_descript_size %d\n",
+		bytes_left);
 
 	scan_resp_size = le16_to_cpu(resp->size);
 
-	mwifiex_dbg(adapter, INFO,
-		    "info: SCAN_RESP: returned %d APs before parsing\n",
-		    scan_rsp->number_of_sets);
+	dev_dbg(adapter->dev,
+		"info: SCAN_RESP: returned %d APs before parsing\n",
+		scan_rsp->number_of_sets);
 
 	bss_info = scan_rsp->bss_desc_and_tlv_buffer;
 
@@ -2155,89 +1976,16 @@ int mwifiex_cmd_802_11_scan_ext(struct mwifiex_private *priv,
 	return 0;
 }
 
-static void
-mwifiex_update_chan_statistics(struct mwifiex_private *priv,
-			       struct mwifiex_ietypes_chanstats *tlv_stat)
-{
-	struct mwifiex_adapter *adapter = priv->adapter;
-	u8 i, num_chan;
-	struct mwifiex_fw_chan_stats *fw_chan_stats;
-	struct mwifiex_chan_stats chan_stats;
-
-	fw_chan_stats = (void *)((u8 *)tlv_stat +
-			      sizeof(struct mwifiex_ie_types_header));
-	num_chan = le16_to_cpu(tlv_stat->header.len) /
-					      sizeof(struct mwifiex_chan_stats);
-
-	for (i = 0 ; i < num_chan; i++) {
-		chan_stats.chan_num = fw_chan_stats->chan_num;
-		chan_stats.bandcfg = fw_chan_stats->bandcfg;
-		chan_stats.flags = fw_chan_stats->flags;
-		chan_stats.noise = fw_chan_stats->noise;
-		chan_stats.total_bss = le16_to_cpu(fw_chan_stats->total_bss);
-		chan_stats.cca_scan_dur =
-				       le16_to_cpu(fw_chan_stats->cca_scan_dur);
-		chan_stats.cca_busy_dur =
-				       le16_to_cpu(fw_chan_stats->cca_busy_dur);
-		mwifiex_dbg(adapter, INFO,
-			    "chan=%d, noise=%d, total_network=%d scan_duration=%d, busy_duration=%d\n",
-			    chan_stats.chan_num,
-			    chan_stats.noise,
-			    chan_stats.total_bss,
-			    chan_stats.cca_scan_dur,
-			    chan_stats.cca_busy_dur);
-		memcpy(&adapter->chan_stats[adapter->survey_idx++], &chan_stats,
-		       sizeof(struct mwifiex_chan_stats));
-		fw_chan_stats++;
-	}
-}
-
 /* This function handles the command response of extended scan */
-int mwifiex_ret_802_11_scan_ext(struct mwifiex_private *priv,
-				struct host_cmd_ds_command *resp)
+int mwifiex_ret_802_11_scan_ext(struct mwifiex_private *priv)
 {
 	struct mwifiex_adapter *adapter = priv->adapter;
-	struct host_cmd_ds_802_11_scan_ext *ext_scan_resp;
-	struct mwifiex_ie_types_header *tlv;
-	struct mwifiex_ietypes_chanstats *tlv_stat;
-	u16 buf_left, type, len;
-
 	struct host_cmd_ds_command *cmd_ptr;
 	struct cmd_ctrl_node *cmd_node;
 	unsigned long cmd_flags, scan_flags;
 	bool complete_scan = false;
 
-	mwifiex_dbg(adapter, INFO, "info: EXT scan returns successfully\n");
-
-	ext_scan_resp = &resp->params.ext_scan;
-
-	tlv = (void *)ext_scan_resp->tlv_buffer;
-	buf_left = le16_to_cpu(resp->size) - (sizeof(*ext_scan_resp) + S_DS_GEN
-					      - 1);
-
-	while (buf_left >= sizeof(struct mwifiex_ie_types_header)) {
-		type = le16_to_cpu(tlv->type);
-		len = le16_to_cpu(tlv->len);
-
-		if (buf_left < (sizeof(struct mwifiex_ie_types_header) + len)) {
-			mwifiex_dbg(adapter, ERROR,
-				    "error processing scan response TLVs");
-			break;
-		}
-
-		switch (type) {
-		case TLV_TYPE_CHANNEL_STATS:
-			tlv_stat = (void *)tlv;
-			mwifiex_update_chan_statistics(priv, tlv_stat);
-			break;
-		default:
-			break;
-		}
-
-		buf_left -= len + sizeof(struct mwifiex_ie_types_header);
-		tlv = (void *)((u8 *)tlv + len +
-			       sizeof(struct mwifiex_ie_types_header));
-	}
+	dev_dbg(priv->adapter->dev, "info: EXT scan returns successfully\n");
 
 	spin_lock_irqsave(&adapter->cmd_pending_q_lock, cmd_flags);
 	spin_lock_irqsave(&adapter->scan_pending_q_lock, scan_flags);
@@ -2247,8 +1995,8 @@ int mwifiex_ret_802_11_scan_ext(struct mwifiex_private *priv,
 			cmd_ptr = (void *)cmd_node->cmd_skb->data;
 			if (le16_to_cpu(cmd_ptr->command) ==
 			    HostCmd_CMD_802_11_SCAN_EXT) {
-				mwifiex_dbg(adapter, INFO,
-					    "Scan pending in command pending list");
+				dev_dbg(priv->adapter->dev,
+					"Scan pending in command pending list");
 				complete_scan = false;
 				break;
 			}
@@ -2286,20 +2034,17 @@ int mwifiex_handle_event_ext_scan_report(struct mwifiex_private *priv,
 	u16 scan_resp_size = le16_to_cpu(event_scan->buf_size);
 
 	if (num_of_set > MWIFIEX_MAX_AP) {
-		mwifiex_dbg(adapter, ERROR,
-			    "EXT_SCAN: Invalid number of AP returned (%d)!!\n",
-			    num_of_set);
+		dev_err(adapter->dev,
+			"EXT_SCAN: Invalid number of AP returned (%d)!!\n",
+			num_of_set);
 		ret = -1;
 		goto check_next_scan;
 	}
 
 	bytes_left = scan_resp_size;
-	mwifiex_dbg(adapter, INFO,
-		    "EXT_SCAN: size %d, returned %d APs...",
-		    scan_resp_size, num_of_set);
-	mwifiex_dbg_dump(adapter, CMD_D, "EXT_SCAN buffer:", buf,
-			 scan_resp_size +
-			 sizeof(struct mwifiex_event_scan_result));
+	dev_dbg(adapter->dev,
+		"EXT_SCAN: size %d, returned %d APs...",
+		scan_resp_size, num_of_set);
 
 	tlv = (struct mwifiex_ie_types_data *)scan_resp;
 
@@ -2307,8 +2052,7 @@ int mwifiex_handle_event_ext_scan_report(struct mwifiex_private *priv,
 		type = le16_to_cpu(tlv->header.type);
 		len = le16_to_cpu(tlv->header.len);
 		if (bytes_left < sizeof(struct mwifiex_ie_types_header) + len) {
-			mwifiex_dbg(adapter, ERROR,
-				    "EXT_SCAN: Error bytes left < TLV length\n");
+			dev_err(adapter->dev, "EXT_SCAN: Error bytes left < TLV length\n");
 			break;
 		}
 		scan_rsp_tlv = NULL;
@@ -2334,9 +2078,8 @@ int mwifiex_handle_event_ext_scan_report(struct mwifiex_private *priv,
 			len = le16_to_cpu(tlv->header.len);
 			if (bytes_left_for_tlv <
 			    sizeof(struct mwifiex_ie_types_header) + len) {
-				mwifiex_dbg(adapter, ERROR,
-					    "EXT_SCAN: Error in processing TLV,\t"
-					    "bytes left < TLV length\n");
+				dev_err(adapter->dev,
+					"EXT_SCAN: Error in processing TLV, bytes left < TLV length\n");
 				scan_rsp_tlv = NULL;
 				bytes_left_for_tlv = 0;
 				continue;
@@ -2376,8 +2119,8 @@ int mwifiex_handle_event_ext_scan_report(struct mwifiex_private *priv,
 		if (scan_info_tlv) {
 			rssi = (s32)(s16)(le16_to_cpu(scan_info_tlv->rssi));
 			rssi *= 100;           /* Convert dBm to mBm */
-			mwifiex_dbg(adapter, INFO,
-				    "info: InterpretIE: RSSI=%d\n", rssi);
+			dev_dbg(adapter->dev,
+				"info: InterpretIE: RSSI=%d\n", rssi);
 			fw_tsf = le64_to_cpu(scan_info_tlv->tsf);
 			radio_type = &scan_info_tlv->radio_type;
 		} else {
@@ -2448,14 +2191,13 @@ static int mwifiex_scan_specific_ssid(struct mwifiex_private *priv,
 	struct mwifiex_user_scan_cfg *scan_cfg;
 
 	if (adapter->scan_processing) {
-		mwifiex_dbg(adapter, WARN,
-			    "cmd: Scan already in process...\n");
+		dev_err(adapter->dev, "cmd: Scan already in process...\n");
 		return -EBUSY;
 	}
 
 	if (priv->scan_block) {
-		mwifiex_dbg(adapter, WARN,
-			    "cmd: Scan is blocked during association...\n");
+		dev_err(adapter->dev,
+			"cmd: Scan is blocked during association...\n");
 		return -EBUSY;
 	}
 
@@ -2487,9 +2229,8 @@ int mwifiex_request_scan(struct mwifiex_private *priv,
 	int ret;
 
 	if (down_interruptible(&priv->async_sem)) {
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "%s: acquire semaphore fail\n",
-			    __func__);
+		dev_err(priv->adapter->dev, "%s: acquire semaphore\n",
+			__func__);
 		return -1;
 	}
 
@@ -2579,9 +2320,8 @@ mwifiex_save_curr_bcn(struct mwifiex_private *priv)
 
 	memcpy(priv->curr_bcn_buf, curr_bss->beacon_buf,
 	       curr_bss->beacon_buf_size);
-	mwifiex_dbg(priv->adapter, INFO,
-		    "info: current beacon saved %d\n",
-		    priv->curr_bcn_size);
+	dev_dbg(priv->adapter->dev, "info: current beacon saved %d\n",
+		priv->curr_bcn_size);
 
 	curr_bss->beacon_buf = priv->curr_bcn_buf;
 

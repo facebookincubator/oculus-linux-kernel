@@ -21,18 +21,19 @@
 static int st_press_spi_probe(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev;
-	struct st_sensor_data *press_data;
+	struct st_sensor_data *pdata;
 	int err;
 
-	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*press_data));
+	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*pdata));
 	if (indio_dev == NULL)
 		return -ENOMEM;
 
-	press_data = iio_priv(indio_dev);
+	pdata = iio_priv(indio_dev);
+	pdata->dev = &spi->dev;
 
-	st_sensors_spi_configure(indio_dev, spi, press_data);
+	st_sensors_spi_configure(indio_dev, spi, pdata);
 
-	err = st_press_common_probe(indio_dev);
+	err = st_press_common_probe(indio_dev, spi->dev.platform_data);
 	if (err < 0)
 		return err;
 
@@ -56,6 +57,7 @@ MODULE_DEVICE_TABLE(spi, st_press_id_table);
 
 static struct spi_driver st_press_driver = {
 	.driver = {
+		.owner = THIS_MODULE,
 		.name = "st-press-spi",
 	},
 	.probe = st_press_spi_probe,

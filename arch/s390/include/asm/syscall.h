@@ -95,6 +95,6 @@ static inline int syscall_get_arch(void)
 	if (test_tsk_thread_flag(current, TIF_31BIT))
 		return AUDIT_ARCH_S390;
 #endif
-	return AUDIT_ARCH_S390X;
+	return sizeof(long) == 8 ? AUDIT_ARCH_S390X : AUDIT_ARCH_S390;
 }
 #endif	/* _ASM_SYSCALL_H */

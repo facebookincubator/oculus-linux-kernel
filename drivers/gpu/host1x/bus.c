@@ -72,14 +72,13 @@ static void host1x_subdev_del(struct host1x_subdev *subdev)
 /**
  * host1x_device_parse_dt() - scan device tree and add matching subdevices
  */
-static int host1x_device_parse_dt(struct host1x_device *device,
-				  struct host1x_driver *driver)
+static int host1x_device_parse_dt(struct host1x_device *device)
 {
 	struct device_node *np;
 	int err;
 
 	for_each_child_of_node(device->dev.parent->of_node, np) {
-		if (of_match_node(driver->subdevs, np) &&
+		if (of_match_node(device->driver->subdevs, np) &&
 		    of_device_is_available(np)) {
 			err = host1x_subdev_add(device, np);
 			if (err < 0)
@@ -110,12 +109,14 @@ static void host1x_subdev_register(struct host1x_device *device,
 	mutex_unlock(&device->clients_lock);
 	mutex_unlock(&device->subdevs_lock);
 
+	/*
+	 * When all subdevices have been registered, the composite device is
+	 * ready to be probed.
+	 */
 	if (list_empty(&device->subdevs)) {
-		err = device_add(&device->dev);
+		err = device->driver->probe(device);
 		if (err < 0)
-			dev_err(&device->dev, "failed to add: %d\n", err);
-		else
-			device->registered = true;
+			dev_err(&device->dev, "probe failed: %d\n", err);
 	}
 }
 
@@ -123,16 +124,16 @@ static void __host1x_subdev_unregister(struct host1x_device *device,
 				       struct host1x_subdev *subdev)
 {
 	struct host1x_client *client = subdev->client;
+	int err;
 
 	/*
 	 * If all subdevices have been activated, we're about to remove the
 	 * first active subdevice, so unload the driver first.
 	 */
 	if (list_empty(&device->subdevs)) {
-		if (device->registered) {
-			device->registered = false;
-			device_del(&device->dev);
-		}
+		err = device->driver->remove(device);
+		if (err < 0)
+			dev_err(&device->dev, "remove failed: %d\n", err);
 	}
 
 	/*
@@ -259,61 +260,92 @@ static int host1x_del_client(struct host1x *host1x,
 	return -ENODEV;
 }
 
-static int host1x_device_match(struct device *dev, struct device_driver *drv)
-{
-	return strcmp(dev_name(dev), drv->name) == 0;
-}
-
-static int host1x_device_probe(struct device *dev)
-{
-	struct host1x_driver *driver = to_host1x_driver(dev->driver);
-	struct host1x_device *device = to_host1x_device(dev);
-
-	if (driver->probe)
-		return driver->probe(device);
-
-	return 0;
-}
-
-static int host1x_device_remove(struct device *dev)
-{
-	struct host1x_driver *driver = to_host1x_driver(dev->driver);
-	struct host1x_device *device = to_host1x_device(dev);
-
-	if (driver->remove)
-		return driver->remove(device);
-
-	return 0;
-}
-
-static void host1x_device_shutdown(struct device *dev)
-{
-	struct host1x_driver *driver = to_host1x_driver(dev->driver);
-	struct host1x_device *device = to_host1x_device(dev);
-
-	if (driver->shutdown)
-		driver->shutdown(device);
-}
-
-static const struct dev_pm_ops host1x_device_pm_ops = {
-	.suspend = pm_generic_suspend,
-	.resume = pm_generic_resume,
-	.freeze = pm_generic_freeze,
-	.thaw = pm_generic_thaw,
-	.poweroff = pm_generic_poweroff,
-	.restore = pm_generic_restore,
-};
-
-struct bus_type host1x_bus_type = {
+static struct bus_type host1x_bus_type = {
 	.name = "host1x",
-	.match = host1x_device_match,
-	.probe = host1x_device_probe,
-	.remove = host1x_device_remove,
-	.shutdown = host1x_device_shutdown,
-	.pm = &host1x_device_pm_ops,
 };
 
-static void __host1x_device_del(struct host1x_device *device)
+int host1x_bus_init(void)
+{
+	return bus_register(&host1x_bus_type);
+}
+
+void host1x_bus_exit(void)
+{
+	bus_unregister(&host1x_bus_type);
+}
+
+static void host1x_device_release(struct device *dev)
+{
+	struct host1x_device *device = to_host1x_device(dev);
+
+	kfree(device);
+}
+
+static int host1x_device_add(struct host1x *host1x,
+			     struct host1x_driver *driver)
+{
+	struct host1x_client *client, *tmp;
+	struct host1x_subdev *subdev;
+	struct host1x_device *device;
+	int err;
+
+	device = kzalloc(sizeof(*device), GFP_KERNEL);
+	if (!device)
+		return -ENOMEM;
+
+	mutex_init(&device->subdevs_lock);
+	INIT_LIST_HEAD(&device->subdevs);
+	INIT_LIST_HEAD(&device->active);
+	mutex_init(&device->clients_lock);
+	INIT_LIST_HEAD(&device->clients);
+	INIT_LIST_HEAD(&device->list);
+	device->driver = driver;
+
+	device->dev.coherent_dma_mask = host1x->dev->coherent_dma_mask;
+	device->dev.dma_mask = &device->dev.coherent_dma_mask;
+	device->dev.release = host1x_device_release;
+	dev_set_name(&device->dev, "%s", driver->name);
+	device->dev.bus = &host1x_bus_type;
+	device->dev.parent = host1x->dev;
+
+	err = device_register(&device->dev);
+	if (err < 0)
+		return err;
+
+	err = host1x_device_parse_dt(device);
+	if (err < 0) {
+		device_unregister(&device->dev);
+		return err;
+	}
+
+	mutex_lock(&host1x->devices_lock);
+	list_add_tail(&device->list, &host1x->devices);
+	mutex_unlock(&host1x->devices_lock);
+
+	mutex_lock(&clients_lock);
+
+	list_for_each_entry_safe(client, tmp, &clients, list) {
+		list_for_each_entry(subdev, &device->subdevs, list) {
+			if (subdev->np == client->dev->of_node) {
+				host1x_subdev_register(device, subdev, client);
+				break;
+			}
+		}
+	}
+
+	mutex_unlock(&clients_lock);
+
+	return 0;
+}
+
+/*
+ * Removes a device by first unregistering any subdevices and then removing
+ * itself from the list of devices.
+ *
+ * This function must be called with the host1x->devices_lock held.
+ */
+static void host1x_device_del(struct host1x *host1x,
+			      struct host1x_device *device)
 {
 	struct host1x_subdev *subdev, *sd;
 	struct host1x_client *client, *cl;
@@ -359,84 +391,7 @@ static void __host1x_device_del(struct host1x_device *device)
 
 	/* finally remove the device */
 	list_del_init(&device->list);
-}
-
-static void host1x_device_release(struct device *dev)
-{
-	struct host1x_device *device = to_host1x_device(dev);
-
-	__host1x_device_del(device);
-	kfree(device);
-}
-
-static int host1x_device_add(struct host1x *host1x,
-			     struct host1x_driver *driver)
-{
-	struct host1x_client *client, *tmp;
-	struct host1x_subdev *subdev;
-	struct host1x_device *device;
-	int err;
-
-	device = kzalloc(sizeof(*device), GFP_KERNEL);
-	if (!device)
-		return -ENOMEM;
-
-	device_initialize(&device->dev);
-
-	mutex_init(&device->subdevs_lock);
-	INIT_LIST_HEAD(&device->subdevs);
-	INIT_LIST_HEAD(&device->active);
-	mutex_init(&device->clients_lock);
-	INIT_LIST_HEAD(&device->clients);
-	INIT_LIST_HEAD(&device->list);
-	device->driver = driver;
-
-	device->dev.coherent_dma_mask = host1x->dev->coherent_dma_mask;
-	device->dev.dma_mask = &device->dev.coherent_dma_mask;
-	dev_set_name(&device->dev, "%s", driver->driver.name);
-	device->dev.release = host1x_device_release;
-	device->dev.bus = &host1x_bus_type;
-	device->dev.parent = host1x->dev;
-
-	err = host1x_device_parse_dt(device, driver);
-	if (err < 0) {
-		kfree(device);
-		return err;
-	}
-
-	list_add_tail(&device->list, &host1x->devices);
-
-	mutex_lock(&clients_lock);
-
-	list_for_each_entry_safe(client, tmp, &clients, list) {
-		list_for_each_entry(subdev, &device->subdevs, list) {
-			if (subdev->np == client->dev->of_node) {
-				host1x_subdev_register(device, subdev, client);
-				break;
-			}
-		}
-	}
-
-	mutex_unlock(&clients_lock);
-
-	return 0;
-}
-
-/*
- * Removes a device by first unregistering any subdevices and then removing
- * itself from the list of devices.
- *
- * This function must be called with the host1x->devices_lock held.
- */
-static void host1x_device_del(struct host1x *host1x,
-			      struct host1x_device *device)
-{
-	if (device->registered) {
-		device->registered = false;
-		device_del(&device->dev);
-	}
-
-	put_device(&device->dev);
+	device_unregister(&device->dev);
 }
 
 static void host1x_attach_driver(struct host1x *host1x,
@@ -454,11 +409,11 @@ static void host1x_attach_driver(struct host1x *host1x,
 		}
 	}
 
+	mutex_unlock(&host1x->devices_lock);
+
 	err = host1x_device_add(host1x, driver);
 	if (err < 0)
 		dev_err(host1x->dev, "failed to allocate device: %d\n", err);
-
-	mutex_unlock(&host1x->devices_lock);
 }
 
 static void host1x_detach_driver(struct host1x *host1x,
@@ -511,8 +466,7 @@ int host1x_unregister(struct host1x *host1x)
 	return 0;
 }
 
-int host1x_driver_register_full(struct host1x_driver *driver,
-				struct module *owner)
+int host1x_driver_register(struct host1x_driver *driver)
 {
 	struct host1x *host1x;
 
@@ -529,12 +483,9 @@ int host1x_driver_register_full(struct host1x_driver *driver,
 
 	mutex_unlock(&devices_lock);
 
-	driver->driver.bus = &host1x_bus_type;
-	driver->driver.owner = owner;
-
-	return driver_register(&driver->driver);
+	return 0;
 }
-EXPORT_SYMBOL(host1x_driver_register_full);
+EXPORT_SYMBOL(host1x_driver_register);
 
 void host1x_driver_unregister(struct host1x_driver *driver)
 {

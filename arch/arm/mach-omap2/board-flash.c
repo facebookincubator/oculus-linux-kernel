@@ -13,7 +13,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/omap-gpmc.h>
 #include <linux/platform_device.h>
 #include <linux/mtd/physmap.h>
 #include <linux/io.h>
@@ -24,6 +23,8 @@
 #include "soc.h"
 #include "common.h"
 #include "board-flash.h"
+#include "gpmc-onenand.h"
+#include "gpmc-nand.h"
 
 #define REG_FPGA_REV			0x10
 #define REG_FPGA_DIP_SWITCH_INPUT2	0x60

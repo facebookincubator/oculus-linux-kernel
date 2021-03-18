@@ -91,6 +91,7 @@ int mode_defined(u16 mode);	/* video.c */
 #define ADAPTER_VGA	2
 
 extern int adapter;
+extern u16 video_segment;
 extern int force_x, force_y;	/* Don't query the BIOS for cols/rows */
 extern int do_restore;		/* Restore screen contents */
 extern int graphic_mode;	/* Graphics mode with linear frame buffer */

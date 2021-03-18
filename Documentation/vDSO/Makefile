@@ -1,4 +1,3 @@
-ifndef CROSS_COMPILE
 # vdso_test won't build for glibc < 2.16, so disable it
 # hostprogs-y := vdso_test
 hostprogs-$(CONFIG_X86) := vdso_standalone_test_x86
@@ -13,5 +12,4 @@ HOSTCFLAGS_vdso_standalone_test_x86.o := -fno-asynchronous-unwind-tables -fno-st
 HOSTLOADLIBES_vdso_standalone_test_x86 := -nostdlib
 ifeq ($(CONFIG_X86_32),y)
 HOSTLOADLIBES_vdso_standalone_test_x86 += -lgcc_s
-endif
 endif

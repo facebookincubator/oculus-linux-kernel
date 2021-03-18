@@ -21,6 +21,7 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/fcntl.h>
+#include <linux/aio.h>
 #include <linux/pci.h>
 #include <linux/poll.h>
 #include <linux/ioctl.h>
@@ -75,17 +76,12 @@ static const struct pci_device_id mei_me_pci_tbl[] = {
 	{MEI_PCI_DEVICE(MEI_DEV_ID_PPT_1, mei_me_pch_cfg)},
 	{MEI_PCI_DEVICE(MEI_DEV_ID_PPT_2, mei_me_pch_cfg)},
 	{MEI_PCI_DEVICE(MEI_DEV_ID_PPT_3, mei_me_pch_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_H, mei_me_pch8_sps_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_W, mei_me_pch8_sps_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_LP, mei_me_pch8_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_HR, mei_me_pch8_sps_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_WPT_LP, mei_me_pch8_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_WPT_LP_2, mei_me_pch8_cfg)},
-
-	{MEI_PCI_DEVICE(MEI_DEV_ID_SPT, mei_me_pch8_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_SPT_2, mei_me_pch8_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_SPT_H, mei_me_pch8_cfg)},
-	{MEI_PCI_DEVICE(MEI_DEV_ID_SPT_H_2, mei_me_pch8_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_H, mei_me_lpt_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_W, mei_me_lpt_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_LP, mei_me_pch_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_LPT_HR, mei_me_lpt_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_WPT_LP, mei_me_pch_cfg)},
+	{MEI_PCI_DEVICE(MEI_DEV_ID_WPT_LP_2, mei_me_pch_cfg)},
 
 	/* required last entry */
 	{0, }
@@ -93,13 +89,13 @@ static const struct pci_device_id mei_me_pci_tbl[] = {
 
 MODULE_DEVICE_TABLE(pci, mei_me_pci_tbl);
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static inline void mei_me_set_pm_domain(struct mei_device *dev);
 static inline void mei_me_unset_pm_domain(struct mei_device *dev);
 #else
 static inline void mei_me_set_pm_domain(struct mei_device *dev) {}
 static inline void mei_me_unset_pm_domain(struct mei_device *dev) {}
-#endif /* CONFIG_PM */
+#endif /* CONFIG_PM_RUNTIME */
 
 /**
  * mei_me_quirk_probe - probe for devices that doesn't valid ME interface
@@ -133,7 +129,6 @@ static int mei_me_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	const struct mei_cfg *cfg = (struct mei_cfg *)(ent->driver_data);
 	struct mei_device *dev;
 	struct mei_me_hw *hw;
-	unsigned int irqflags;
 	int err;
 
 
@@ -186,12 +181,17 @@ static int mei_me_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_enable_msi(pdev);
 
 	 /* request and enable interrupt */
-	irqflags = pci_dev_msi_enabled(pdev) ? IRQF_ONESHOT : IRQF_SHARED;
-
-	err = request_threaded_irq(pdev->irq,
+	if (pci_dev_msi_enabled(pdev))
+		err = request_threaded_irq(pdev->irq,
+			NULL,
+			mei_me_irq_thread_handler,
+			IRQF_ONESHOT, KBUILD_MODNAME, dev);
+	else
+		err = request_threaded_irq(pdev->irq,
 			mei_me_irq_quick_handler,
 			mei_me_irq_thread_handler,
-			irqflags, KBUILD_MODNAME, dev);
+			IRQF_SHARED, KBUILD_MODNAME, dev);
+
 	if (err) {
 		dev_err(&pdev->dev, "request_threaded_irq failure. irq = %d\n",
 		       pdev->irq);
@@ -320,7 +320,6 @@ static int mei_me_pci_resume(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
 	struct mei_device *dev;
-	unsigned int irqflags;
 	int err;
 
 	dev = pci_get_drvdata(pdev);
@@ -329,13 +328,17 @@ static int mei_me_pci_resume(struct device *device)
 
 	pci_enable_msi(pdev);
 
-	irqflags = pci_dev_msi_enabled(pdev) ? IRQF_ONESHOT : IRQF_SHARED;
-
 	/* request and enable interrupt */
-	err = request_threaded_irq(pdev->irq,
+	if (pci_dev_msi_enabled(pdev))
+		err = request_threaded_irq(pdev->irq,
+			NULL,
+			mei_me_irq_thread_handler,
+			IRQF_ONESHOT, KBUILD_MODNAME, dev);
+	else
+		err = request_threaded_irq(pdev->irq,
 			mei_me_irq_quick_handler,
 			mei_me_irq_thread_handler,
-			irqflags, KBUILD_MODNAME, dev);
+			IRQF_SHARED, KBUILD_MODNAME, dev);
 
 	if (err) {
 		dev_err(&pdev->dev, "request_threaded_irq failed: irq = %d.\n",
@@ -354,7 +357,7 @@ static int mei_me_pci_resume(struct device *device)
 }
 #endif /* CONFIG_PM_SLEEP */
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static int mei_me_pm_runtime_idle(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
@@ -386,7 +389,7 @@ static int mei_me_pm_runtime_suspend(struct device *device)
 	mutex_lock(&dev->device_lock);
 
 	if (mei_write_is_idle(dev))
-		ret = mei_me_pg_enter_sync(dev);
+		ret = mei_me_pg_set_sync(dev);
 	else
 		ret = -EAGAIN;
 
@@ -411,7 +414,7 @@ static int mei_me_pm_runtime_resume(struct device *device)
 
 	mutex_lock(&dev->device_lock);
 
-	ret = mei_me_pg_exit_sync(dev);
+	ret = mei_me_pg_unset_sync(dev);
 
 	mutex_unlock(&dev->device_lock);
 
@@ -450,7 +453,9 @@ static inline void mei_me_unset_pm_domain(struct mei_device *dev)
 	/* stop using pm callbacks if any */
 	dev->dev->pm_domain = NULL;
 }
+#endif /* CONFIG_PM_RUNTIME */
 
+#ifdef CONFIG_PM
 static const struct dev_pm_ops mei_me_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(mei_me_pci_suspend,
 				mei_me_pci_resume)

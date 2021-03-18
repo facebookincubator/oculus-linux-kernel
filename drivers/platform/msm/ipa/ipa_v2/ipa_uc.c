@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -590,7 +590,6 @@ int ipa_uc_send_cmd(u32 cmd, u32 opcode, u32 expected_status,
 {
 	int index;
 	union IpaHwCpuCmdCompletedResponseData_t uc_rsp;
-	int retries = 0;
 
 	mutex_lock(&ipa_ctx->uc_ctx.uc_lock);
 
@@ -600,7 +599,6 @@ int ipa_uc_send_cmd(u32 cmd, u32 opcode, u32 expected_status,
 		return -EBADF;
 	}
 
-send_cmd:
 	init_completion(&ipa_ctx->uc_ctx.uc_completion);
 
 	ipa_ctx->uc_ctx.uc_sram_mmio->cmdParams = cmd;
@@ -660,25 +658,6 @@ send_cmd:
 	}
 
 	if (ipa_ctx->uc_ctx.uc_status != expected_status) {
-		if (IPA_HW_2_CPU_WDI_RX_FSM_TRANSITION_ERROR ==
-			ipa_ctx->uc_ctx.uc_status) {
-			retries++;
-			if (retries == IPA_BAM_STOP_MAX_RETRY) {
-				IPAERR("Failed after %d tries\n", retries);
-				mutex_unlock(&ipa_ctx->uc_ctx.uc_lock);
-				/*
-				 * Max retry reached,
-				 * assert to check why cmd send failed.
-				 */
-				ipa_assert();
-			} else {
-				/* sleep for short period to flush IPA */
-				usleep_range(IPA_UC_WAIT_MIN_SLEEP,
-					IPA_UC_WAII_MAX_SLEEP);
-				goto send_cmd;
-			}
-		}
-
 		IPAERR("Recevied status %u, Expected status %u\n",
 			ipa_ctx->uc_ctx.uc_status, expected_status);
 		ipa_ctx->uc_ctx.pending_cmd = -1;
@@ -789,12 +768,8 @@ int ipa_uc_monitor_holb(enum ipa_client_type ipa_client, bool enable)
 	int ep_idx;
 	int ret;
 
-	/*
-	 * HOLB monitoring is applicable to 2.6L.
-	 * And also could be enabled from dtsi node.
-	 */
-	if (ipa_ctx->ipa_hw_type != IPA_HW_v2_6L ||
-		!ipa_ctx->ipa_uc_monitor_holb) {
+	/* HOLB monitoring is applicable only to 2.6L. */
+	if (ipa_ctx->ipa_hw_type != IPA_HW_v2_6L) {
 		IPADBG("Not applicable on this target\n");
 		return 0;
 	}

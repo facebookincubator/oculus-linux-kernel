@@ -18,23 +18,6 @@
 /* Temparory solution for building, will be removed later */
 #include <linux/pci.h>
 
-struct msi_desc *alloc_msi_entry(struct device *dev)
-{
-	struct msi_desc *desc = kzalloc(sizeof(*desc), GFP_KERNEL);
-	if (!desc)
-		return NULL;
-
-	INIT_LIST_HEAD(&desc->list);
-	desc->dev = dev;
-
-	return desc;
-}
-
-void free_msi_entry(struct msi_desc *entry)
-{
-	kfree(entry);
-}
-
 void __get_cached_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
 {
 	*msg = entry->msg;
@@ -141,7 +124,7 @@ static void msi_domain_free(struct irq_domain *domain, unsigned int virq,
 	irq_domain_free_irqs_top(domain, virq, nr_irqs);
 }
 
-static const struct irq_domain_ops msi_domain_ops = {
+static struct irq_domain_ops msi_domain_ops = {
 	.alloc		= msi_domain_alloc,
 	.free		= msi_domain_free,
 	.activate	= msi_domain_activate,
@@ -228,18 +211,22 @@ static void msi_domain_update_chip_ops(struct msi_domain_info *info)
 {
 	struct irq_chip *chip = info->chip;
 
-	BUG_ON(!chip || !chip->irq_mask || !chip->irq_unmask);
+	BUG_ON(!chip);
+	if (!chip->irq_mask)
+		chip->irq_mask = pci_msi_mask_irq;
+	if (!chip->irq_unmask)
+		chip->irq_unmask = pci_msi_unmask_irq;
 	if (!chip->irq_set_affinity)
 		chip->irq_set_affinity = msi_domain_set_affinity;
 }
 
 /**
  * msi_create_irq_domain - Create a MSI interrupt domain
- * @fwnode:	Optional fwnode of the interrupt controller
+ * @of_node:	Optional device-tree node of the interrupt controller
  * @info:	MSI domain info
  * @parent:	Parent irq domain
  */
-struct irq_domain *msi_create_irq_domain(struct fwnode_handle *fwnode,
+struct irq_domain *msi_create_irq_domain(struct device_node *node,
 					 struct msi_domain_info *info,
 					 struct irq_domain *parent)
 {
@@ -248,8 +235,8 @@ struct irq_domain *msi_create_irq_domain(struct fwnode_handle *fwnode,
 	if (info->flags & MSI_FLAG_USE_DEF_CHIP_OPS)
 		msi_domain_update_chip_ops(info);
 
-	return irq_domain_create_hierarchy(parent, 0, 0, fwnode,
-					   &msi_domain_ops, info);
+	return irq_domain_add_hierarchy(parent, 0, 0, node, &msi_domain_ops,
+					info);
 }
 
 /**
@@ -268,7 +255,7 @@ int msi_domain_alloc_irqs(struct irq_domain *domain, struct device *dev,
 	struct msi_domain_ops *ops = info->ops;
 	msi_alloc_info_t arg;
 	struct msi_desc *desc;
-	int i, ret, virq;
+	int i, ret, virq = -1;
 
 	ret = ops->msi_check(domain, info, dev);
 	if (ret == 0)
@@ -278,8 +265,12 @@ int msi_domain_alloc_irqs(struct irq_domain *domain, struct device *dev,
 
 	for_each_msi_entry(desc, dev) {
 		ops->set_desc(&arg, desc);
+		if (info->flags & MSI_FLAG_IDENTITY_MAP)
+			virq = (int)ops->get_hwirq(info, &arg);
+		else
+			virq = -1;
 
-		virq = __irq_domain_alloc_irqs(domain, -1, desc->nvec_used,
+		virq = __irq_domain_alloc_irqs(domain, virq, desc->nvec_used,
 					       dev_to_node(dev), &arg, false);
 		if (virq < 0) {
 			ret = -ENOSPC;
@@ -303,17 +294,6 @@ int msi_domain_alloc_irqs(struct irq_domain *domain, struct device *dev,
 		else
 			dev_dbg(dev, "irq [%d-%d] for MSI\n",
 				virq, virq + desc->nvec_used - 1);
-		/*
-		 * This flag is set by the PCI layer as we need to activate
-		 * the MSI entries before the PCI layer enables MSI in the
-		 * card. Otherwise the card latches a random msi message.
-		 */
-		if (info->flags & MSI_FLAG_ACTIVATE_EARLY) {
-			struct irq_data *irq_data;
-
-			irq_data = irq_domain_get_irq_data(domain, desc->irq);
-			irq_domain_activate_irq(irq_data);
-		}
 	}
 
 	return 0;
@@ -330,15 +310,8 @@ void msi_domain_free_irqs(struct irq_domain *domain, struct device *dev)
 	struct msi_desc *desc;
 
 	for_each_msi_entry(desc, dev) {
-		/*
-		 * We might have failed to allocate an MSI early
-		 * enough that there is no IRQ associated to this
-		 * entry. If that's the case, don't do anything.
-		 */
-		if (desc->irq) {
-			irq_domain_free_irqs(desc->irq, desc->nvec_used);
-			desc->irq = 0;
-		}
+		irq_domain_free_irqs(desc->irq, desc->nvec_used);
+		desc->irq = 0;
 	}
 }
 

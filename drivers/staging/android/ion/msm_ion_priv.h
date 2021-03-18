@@ -52,7 +52,6 @@ void ion_cp_heap_destroy(struct ion_heap *);
 struct ion_heap *ion_system_secure_heap_create(struct ion_platform_heap *);
 void ion_system_secure_heap_destroy(struct ion_heap *);
 int ion_system_secure_heap_prefetch(struct ion_heap *heap, void *data);
-int ion_system_secure_heap_drain(struct ion_heap *heap, void *data);
 
 struct ion_heap *ion_cma_secure_heap_create(struct ion_platform_heap *);
 void ion_cma_secure_heap_destroy(struct ion_heap *);
@@ -132,6 +131,7 @@ bool is_secure_vmid_valid(int vmid);
 
 int ion_system_secure_heap_unassign_sg(struct sg_table *sgt, int source_vmid);
 int ion_system_secure_heap_assign_sg(struct sg_table *sgt, int dest_vmid);
+
 
 /**
  * ion_create_chunked_sg_table - helper function to create sg table

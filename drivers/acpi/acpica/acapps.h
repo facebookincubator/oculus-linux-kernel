@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,7 +47,7 @@
 /* Common info for tool signons */
 
 #define ACPICA_NAME                 "Intel ACPI Component Architecture"
-#define ACPICA_COPYRIGHT            "Copyright (c) 2000 - 2015 Intel Corporation"
+#define ACPICA_COPYRIGHT            "Copyright (c) 2000 - 2014 Intel Corporation"
 
 #if ACPI_MACHINE_WIDTH == 64
 #define ACPI_WIDTH          "-64"
@@ -64,15 +64,15 @@
 /* Macros for signons and file headers */
 
 #define ACPI_COMMON_SIGNON(utility_name) \
-	"\n%s\n%s version %8.8X%s\n%s\n\n", \
+	"\n%s\n%s version %8.8X%s [%s]\n%s\n\n", \
 	ACPICA_NAME, \
-	utility_name, ((u32) ACPI_CA_VERSION), ACPI_WIDTH, \
+	utility_name, ((u32) ACPI_CA_VERSION), ACPI_WIDTH, __DATE__, \
 	ACPICA_COPYRIGHT
 
 #define ACPI_COMMON_HEADER(utility_name, prefix) \
-	"%s%s\n%s%s version %8.8X%s\n%s%s\n%s\n", \
+	"%s%s\n%s%s version %8.8X%s [%s]\n%s%s\n%s\n", \
 	prefix, ACPICA_NAME, \
-	prefix, utility_name, ((u32) ACPI_CA_VERSION), ACPI_WIDTH, \
+	prefix, utility_name, ((u32) ACPI_CA_VERSION), ACPI_WIDTH, __DATE__, \
 	prefix, ACPICA_COPYRIGHT, \
 	prefix
 
@@ -88,7 +88,7 @@
 	acpi_os_printf (" %-18s%s\n", name, description);
 
 #define FILE_SUFFIX_DISASSEMBLY     "dsl"
-#define FILE_SUFFIX_BINARY_TABLE    ".dat"	/* Needs the dot */
+#define ACPI_TABLE_FILE_SUFFIX      ".dat"
 
 /*
  * getopt

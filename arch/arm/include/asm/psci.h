@@ -14,12 +14,34 @@
 #ifndef __ASM_ARM_PSCI_H
 #define __ASM_ARM_PSCI_H
 
-extern struct cpuidle_ops psci_cpuidle_ops;
+#define PSCI_POWER_STATE_TYPE_STANDBY		0
+#define PSCI_POWER_STATE_TYPE_POWER_DOWN	1
+
+struct psci_power_state {
+	u16	id;
+	u8	type;
+	u8	affinity_level;
+};
+
+struct psci_operations {
+	int (*cpu_suspend)(unsigned long state,
+			   unsigned long entry_point);
+	int (*cpu_off)(struct psci_power_state state);
+	int (*cpu_on)(unsigned long cpuid, unsigned long entry_point);
+	int (*migrate)(unsigned long cpuid);
+	int (*affinity_info)(unsigned long target_affinity,
+			unsigned long lowest_affinity_level);
+	int (*migrate_info_type)(void);
+};
+int cpu_psci_cpu_suspend(unsigned long state_id);
+extern struct psci_operations psci_ops;
 extern struct smp_operations psci_smp_ops;
 
 #if defined(CONFIG_SMP) && defined(CONFIG_ARM_PSCI)
+int psci_init(void);
 bool psci_smp_available(void);
 #else
+static inline int psci_init(void) { return 0; }
 static inline bool psci_smp_available(void) { return false; }
 #endif
 

@@ -26,6 +26,8 @@
 struct clk;
 struct reset_control;
 
+void tegra_pmc_restart(enum reboot_mode mode, const char *cmd);
+
 #ifdef CONFIG_PM_SLEEP
 enum tegra_suspend_mode tegra_pmc_get_suspend_mode(void);
 void tegra_pmc_set_suspend_mode(enum tegra_suspend_mode mode);
@@ -67,11 +69,6 @@ int tegra_pmc_cpu_remove_clamping(int cpuid);
 #define TEGRA_POWERGATE_XUSBC	22
 #define TEGRA_POWERGATE_VIC	23
 #define TEGRA_POWERGATE_IRAM	24
-#define TEGRA_POWERGATE_NVDEC	25
-#define TEGRA_POWERGATE_NVJPG	26
-#define TEGRA_POWERGATE_AUD	27
-#define TEGRA_POWERGATE_DFD	28
-#define TEGRA_POWERGATE_VE2	29
 
 #define TEGRA_POWERGATE_3D0	TEGRA_POWERGATE_3D
 

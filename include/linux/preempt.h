@@ -10,6 +10,14 @@
 #include <linux/list.h>
 
 /*
+ * We use the MSB mostly because its available; see <linux/preempt_mask.h> for
+ * the other bits -- can't include that header due to inclusion hell.
+ */
+#define PREEMPT_NEED_RESCHED	0x80000000
+
+#include <asm/preempt.h>
+
+/*
  * We put the hardirq and softirq counter into the preemption
  * counter. The bitmask has the following meaning:
  *
@@ -22,11 +30,11 @@
  * there are a few palaeontologic drivers which reenable interrupts in
  * the handler, so we need more than one bit here.
  *
- *         PREEMPT_MASK:	0x000000ff
- *         SOFTIRQ_MASK:	0x0000ff00
- *         HARDIRQ_MASK:	0x000f0000
- *             NMI_MASK:	0x00100000
- * PREEMPT_NEED_RESCHED:	0x80000000
+ * PREEMPT_MASK:	0x000000ff
+ * SOFTIRQ_MASK:	0x0000ff00
+ * HARDIRQ_MASK:	0x000f0000
+ *     NMI_MASK:	0x00100000
+ * PREEMPT_ACTIVE:	0x00200000
  */
 #define PREEMPT_BITS	8
 #define SOFTIRQ_BITS	8
@@ -52,11 +60,9 @@
 
 #define SOFTIRQ_DISABLE_OFFSET	(2 * SOFTIRQ_OFFSET)
 
-/* We use the MSB mostly because its available */
-#define PREEMPT_NEED_RESCHED	0x80000000
-
-/* preempt_count() and related functions, depends on PREEMPT_NEED_RESCHED */
-#include <asm/preempt.h>
+#define PREEMPT_ACTIVE_BITS	1
+#define PREEMPT_ACTIVE_SHIFT	(NMI_SHIFT + NMI_BITS)
+#define PREEMPT_ACTIVE	(__IRQ_MASK(PREEMPT_ACTIVE_BITS) << PREEMPT_ACTIVE_SHIFT)
 
 #define hardirq_count()	(preempt_count() & HARDIRQ_MASK)
 #define softirq_count()	(preempt_count() & SOFTIRQ_MASK)
@@ -115,13 +121,20 @@
  * used in the general case to determine whether sleeping is possible.
  * Do not use in_atomic() in driver code.
  */
-#define in_atomic()	(preempt_count() != 0)
+#define in_atomic()	((preempt_count() & ~PREEMPT_ACTIVE) != 0)
 
 /*
  * Check whether we were atomic before we did preempt_disable():
- * (used by the scheduler)
+ * (used by the scheduler, *after* releasing the kernel lock)
  */
-#define in_atomic_preempt_off() (preempt_count() != PREEMPT_DISABLE_OFFSET)
+#define in_atomic_preempt_off() \
+		((preempt_count() & ~PREEMPT_ACTIVE) != PREEMPT_DISABLE_OFFSET)
+
+#ifdef CONFIG_PREEMPT_COUNT
+# define preemptible()	(preempt_count() == 0 && !irqs_disabled())
+#else
+# define preemptible()	0
+#endif
 
 #if defined(CONFIG_DEBUG_PREEMPT) || defined(CONFIG_PREEMPT_TRACER)
 extern void preempt_count_add(int val);
@@ -156,8 +169,6 @@ do { \
 
 #define preempt_enable_no_resched() sched_preempt_enable_no_resched()
 
-#define preemptible()	(preempt_count() == 0 && !irqs_disabled())
-
 #ifdef CONFIG_PREEMPT
 #define preempt_enable() \
 do { \
@@ -166,34 +177,20 @@ do { \
 		__preempt_schedule(); \
 } while (0)
 
-#define preempt_enable_notrace() \
-do { \
-	barrier(); \
-	if (unlikely(__preempt_count_dec_and_test())) \
-		__preempt_schedule_notrace(); \
-} while (0)
-
 #define preempt_check_resched() \
 do { \
 	if (should_resched(0)) \
 		__preempt_schedule(); \
 } while (0)
 
-#else /* !CONFIG_PREEMPT */
+#else
 #define preempt_enable() \
 do { \
 	barrier(); \
 	preempt_count_dec(); \
 } while (0)
-
-#define preempt_enable_notrace() \
-do { \
-	barrier(); \
-	__preempt_count_dec(); \
-} while (0)
-
 #define preempt_check_resched() do { } while (0)
-#endif /* CONFIG_PREEMPT */
+#endif
 
 #define preempt_disable_notrace() \
 do { \
@@ -206,6 +203,26 @@ do { \
 	barrier(); \
 	__preempt_count_dec(); \
 } while (0)
+
+#ifdef CONFIG_PREEMPT
+
+#ifndef CONFIG_CONTEXT_TRACKING
+#define __preempt_schedule_context() __preempt_schedule()
+#endif
+
+#define preempt_enable_notrace() \
+do { \
+	barrier(); \
+	if (unlikely(__preempt_count_dec_and_test())) \
+		__preempt_schedule_context(); \
+} while (0)
+#else
+#define preempt_enable_notrace() \
+do { \
+	barrier(); \
+	__preempt_count_dec(); \
+} while (0)
+#endif
 
 #else /* !CONFIG_PREEMPT_COUNT */
 
@@ -224,7 +241,6 @@ do { \
 #define preempt_disable_notrace()		barrier()
 #define preempt_enable_no_resched_notrace()	barrier()
 #define preempt_enable_notrace()		barrier()
-#define preemptible()				0
 
 #endif /* CONFIG_PREEMPT_COUNT */
 
@@ -284,8 +300,6 @@ struct preempt_notifier {
 	struct preempt_ops *ops;
 };
 
-void preempt_notifier_inc(void);
-void preempt_notifier_dec(void);
 void preempt_notifier_register(struct preempt_notifier *notifier);
 void preempt_notifier_unregister(struct preempt_notifier *notifier);
 

@@ -108,7 +108,8 @@ static int autofs4_dir_open(struct inode *inode, struct file *file)
 	struct dentry *dentry = file->f_path.dentry;
 	struct autofs_sb_info *sbi = autofs4_sbi(dentry->d_sb);
 
-	DPRINTK("file=%p dentry=%p %pd", file, dentry, dentry);
+	DPRINTK("file=%p dentry=%p %.*s",
+		file, dentry, dentry->d_name.len, dentry->d_name.name);
 
 	if (autofs4_oz_mode(sbi))
 		goto out;
@@ -240,7 +241,7 @@ static struct dentry *autofs4_lookup_expiring(struct dentry *dentry,
 		spin_lock(&expiring->d_lock);
 
 		/* We've already been dentry_iput or unlinked */
-		if (d_really_is_negative(expiring))
+		if (!expiring->d_inode)
 			goto next;
 
 		qstr = &expiring->d_name;
@@ -278,7 +279,8 @@ static int autofs4_mount_wait(struct dentry *dentry, bool rcu_walk)
 	if (ino->flags & AUTOFS_INF_PENDING) {
 		if (rcu_walk)
 			return -ECHILD;
-		DPRINTK("waiting for mount name=%pd", dentry);
+		DPRINTK("waiting for mount name=%.*s",
+			dentry->d_name.len, dentry->d_name.name);
 		status = autofs4_wait(sbi, dentry, NFY_MOUNT);
 		DPRINTK("mount wait done status=%d", status);
 	}
@@ -338,7 +340,8 @@ static struct vfsmount *autofs4_d_automount(struct path *path)
 	struct autofs_info *ino = autofs4_dentry_ino(dentry);
 	int status;
 
-	DPRINTK("dentry=%p %pd", dentry, dentry);
+	DPRINTK("dentry=%p %.*s",
+		dentry, dentry->d_name.len, dentry->d_name.name);
 
 	/* The daemon never triggers a mount. */
 	if (autofs4_oz_mode(sbi))
@@ -371,7 +374,7 @@ static struct vfsmount *autofs4_d_automount(struct path *path)
 	 * having d_mountpoint() true, so there's no need to call back
 	 * to the daemon.
 	 */
-	if (d_really_is_positive(dentry) && d_is_symlink(dentry)) {
+	if (dentry->d_inode && S_ISLNK(dentry->d_inode->i_mode)) {
 		spin_unlock(&sbi->fs_lock);
 		goto done;
 	}
@@ -425,7 +428,8 @@ static int autofs4_d_manage(struct dentry *dentry, bool rcu_walk)
 	struct autofs_info *ino = autofs4_dentry_ino(dentry);
 	int status;
 
-	DPRINTK("dentry=%p %pd", dentry, dentry);
+	DPRINTK("dentry=%p %.*s",
+		dentry, dentry->d_name.len, dentry->d_name.name);
 
 	/* The daemon never waits. */
 	if (autofs4_oz_mode(sbi)) {
@@ -459,7 +463,7 @@ static int autofs4_d_manage(struct dentry *dentry, bool rcu_walk)
 			return 0;
 		if (d_mountpoint(dentry))
 			return 0;
-		inode = d_inode_rcu(dentry);
+		inode = ACCESS_ONCE(dentry->d_inode);
 		if (inode && S_ISLNK(inode->i_mode))
 			return -EISDIR;
 		if (list_empty(&dentry->d_subdirs))
@@ -485,7 +489,7 @@ static int autofs4_d_manage(struct dentry *dentry, bool rcu_walk)
 		 * an incorrect ELOOP error return.
 		 */
 		if ((!d_mountpoint(dentry) && !simple_empty(dentry)) ||
-		    (d_really_is_positive(dentry) && d_is_symlink(dentry)))
+		    (dentry->d_inode && S_ISLNK(dentry->d_inode->i_mode)))
 			status = -EISDIR;
 	}
 	spin_unlock(&sbi->fs_lock);
@@ -500,7 +504,7 @@ static struct dentry *autofs4_lookup(struct inode *dir, struct dentry *dentry, u
 	struct autofs_info *ino;
 	struct dentry *active;
 
-	DPRINTK("name = %pd", dentry);
+	DPRINTK("name = %.*s", dentry->d_name.len, dentry->d_name.name);
 
 	/* File name too long to exist */
 	if (dentry->d_name.len > NAME_MAX)
@@ -554,7 +558,8 @@ static int autofs4_dir_symlink(struct inode *dir,
 	size_t size = strlen(symname);
 	char *cp;
 
-	DPRINTK("%s <- %pd", symname, dentry);
+	DPRINTK("%s <- %.*s", symname,
+		dentry->d_name.len, dentry->d_name.name);
 
 	if (!autofs4_oz_mode(sbi))
 		return -EACCES;
@@ -625,8 +630,8 @@ static int autofs4_dir_unlink(struct inode *dir, struct dentry *dentry)
 	}
 	dput(ino->dentry);
 
-	d_inode(dentry)->i_size = 0;
-	clear_nlink(d_inode(dentry));
+	dentry->d_inode->i_size = 0;
+	clear_nlink(dentry->d_inode);
 
 	dir->i_mtime = CURRENT_TIME;
 
@@ -696,7 +701,8 @@ static int autofs4_dir_rmdir(struct inode *dir, struct dentry *dentry)
 	struct autofs_info *ino = autofs4_dentry_ino(dentry);
 	struct autofs_info *p_ino;
 	
-	DPRINTK("dentry %p, removing %pd", dentry, dentry);
+	DPRINTK("dentry %p, removing %.*s",
+		dentry, dentry->d_name.len, dentry->d_name.name);
 
 	if (!autofs4_oz_mode(sbi))
 		return -EACCES;
@@ -719,8 +725,8 @@ static int autofs4_dir_rmdir(struct inode *dir, struct dentry *dentry)
 			atomic_dec(&p_ino->count);
 	}
 	dput(ino->dentry);
-	d_inode(dentry)->i_size = 0;
-	clear_nlink(d_inode(dentry));
+	dentry->d_inode->i_size = 0;
+	clear_nlink(dentry->d_inode);
 
 	if (dir->i_nlink)
 		drop_nlink(dir);
@@ -738,7 +744,8 @@ static int autofs4_dir_mkdir(struct inode *dir, struct dentry *dentry, umode_t m
 	if (!autofs4_oz_mode(sbi))
 		return -EACCES;
 
-	DPRINTK("dentry %p, creating %pd", dentry, dentry);
+	DPRINTK("dentry %p, creating %.*s",
+		dentry, dentry->d_name.len, dentry->d_name.name);
 
 	BUG_ON(!ino);
 
@@ -839,7 +846,7 @@ static inline int autofs4_ask_umount(struct vfsmount *mnt, int __user *p)
 */
 int is_autofs4_dentry(struct dentry *dentry)
 {
-	return dentry && d_really_is_positive(dentry) &&
+	return dentry && dentry->d_inode &&
 		dentry->d_op == &autofs4_dentry_operations &&
 		dentry->d_fsdata != NULL;
 }

@@ -31,7 +31,12 @@
  *                       ~(sizeof(unsigned int) - 1)) ....
  */
 
-#include <uapi/sound/tlv.h>
+#define SNDRV_CTL_TLVT_CONTAINER 0	/* one level down - group of TLVs */
+#define SNDRV_CTL_TLVT_DB_SCALE	1       /* dB scale */
+#define SNDRV_CTL_TLVT_DB_LINEAR 2	/* linear volume */
+#define SNDRV_CTL_TLVT_DB_RANGE 3	/* dB range container */
+#define SNDRV_CTL_TLVT_DB_MINMAX 4	/* dB scale with min/max */
+#define SNDRV_CTL_TLVT_DB_MINMAX_MUTE 5	/* dB scale with min/max with mute */
 
 #define TLV_ITEM(type, ...) \
 	(type), TLV_LENGTH(__VA_ARGS__), __VA_ARGS__
@@ -84,5 +89,13 @@
 	SNDRV_CTL_TLVT_DB_RANGE, 6 * (num) * sizeof(unsigned int)
 
 #define TLV_DB_GAIN_MUTE	-9999999
+
+/*
+ * channel-mapping TLV items
+ *  TLV length must match with num_channels
+ */
+#define SNDRV_CTL_TLVT_CHMAP_FIXED	0x101	/* fixed channel position */
+#define SNDRV_CTL_TLVT_CHMAP_VAR	0x102	/* channels freely swappable */
+#define SNDRV_CTL_TLVT_CHMAP_PAIRED	0x103	/* pair-wise swappable */
 
 #endif /* __SOUND_TLV_H */

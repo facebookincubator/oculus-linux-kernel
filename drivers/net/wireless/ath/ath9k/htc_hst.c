@@ -146,8 +146,7 @@ static int htc_config_pipe_credits(struct htc_target *target)
 {
 	struct sk_buff *skb;
 	struct htc_config_pipe_msg *cp_msg;
-	int ret;
-	unsigned long time_left;
+	int ret, time_left;
 
 	skb = alloc_skb(50 + sizeof(struct htc_frame_hdr), GFP_ATOMIC);
 	if (!skb) {
@@ -185,8 +184,7 @@ static int htc_setup_complete(struct htc_target *target)
 {
 	struct sk_buff *skb;
 	struct htc_comp_msg *comp_msg;
-	int ret = 0;
-	unsigned long time_left;
+	int ret = 0, time_left;
 
 	skb = alloc_skb(50 + sizeof(struct htc_frame_hdr), GFP_ATOMIC);
 	if (!skb) {
@@ -238,8 +236,7 @@ int htc_connect_service(struct htc_target *target,
 	struct sk_buff *skb;
 	struct htc_endpoint *endpoint;
 	struct htc_conn_svc_msg *conn_msg;
-	int ret;
-	unsigned long time_left;
+	int ret, time_left;
 
 	/* Find an available endpoint */
 	endpoint = get_next_avail_ep(target->endpoint);
@@ -354,7 +351,11 @@ void ath9k_htc_txcompletion_cb(struct htc_target *htc_handle,
 
 	return;
 ret:
-	kfree_skb(skb);
+	/* HTC-generated packets are freed here. */
+	if (htc_hdr && htc_hdr->endpoint_id != ENDPOINT0)
+		dev_kfree_skb_any(skb);
+	else
+		kfree_skb(skb);
 }
 
 static void ath9k_htc_fw_panic_report(struct htc_target *htc_handle,

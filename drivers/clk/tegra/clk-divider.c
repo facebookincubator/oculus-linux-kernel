@@ -19,6 +19,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/clk-provider.h>
+#include <linux/clk.h>
 
 #include "clk.h"
 
@@ -183,17 +184,4 @@ struct clk *tegra_clk_register_divider(const char *name,
 		kfree(divider);
 
 	return clk;
-}
-
-static const struct clk_div_table mc_div_table[] = {
-	{ .val = 0, .div = 2 },
-	{ .val = 1, .div = 1 },
-	{ .val = 0, .div = 0 },
-};
-
-struct clk *tegra_clk_register_mc(const char *name, const char *parent_name,
-				  void __iomem *reg, spinlock_t *lock)
-{
-	return clk_register_divider_table(NULL, name, parent_name, 0, reg,
-					  16, 1, 0, mc_div_table, lock);
 }

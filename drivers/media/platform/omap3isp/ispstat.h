@@ -20,6 +20,7 @@
 
 #include <linux/types.h>
 #include <linux/omap3isp.h>
+#include <linux/omap-dma.h>
 #include <media/v4l2-event.h>
 
 #include "isp.h"
@@ -32,14 +33,13 @@
 #define STAT_NO_BUF		1	/* An error has occurred */
 #define STAT_BUF_WAITING_DMA	2	/* Histogram only: DMA is running */
 
-struct dma_chan;
 struct ispstat;
 
 struct ispstat_buffer {
 	struct sg_table sgt;
 	void *virt_addr;
 	dma_addr_t dma_addr;
-	struct timeval ts;
+	struct timespec ts;
 	u32 buf_size;
 	u32 frame_number;
 	u16 config_counter;
@@ -96,6 +96,7 @@ struct ispstat {
 	u8 inc_config;
 	atomic_t buf_err;
 	enum ispstat_state_t state;	/* enabling/disabling state */
+	struct omap_dma_channel_params dma_config;
 	struct isp_device *isp;
 	void *priv;		/* pointer to priv config struct */
 	void *recover_priv;	/* pointer to recover priv configuration */
@@ -109,7 +110,7 @@ struct ispstat {
 	u32 frame_number;
 	u32 buf_size;
 	u32 buf_alloc_size;
-	struct dma_chan *dma_ch;
+	int dma_ch;
 	unsigned long event_type;
 	struct ispstat_buffer *buf;
 	struct ispstat_buffer *active_buf;

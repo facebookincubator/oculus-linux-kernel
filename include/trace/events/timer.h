@@ -43,18 +43,15 @@ DEFINE_EVENT(timer_class, timer_init,
  */
 TRACE_EVENT(timer_start,
 
-	TP_PROTO(struct timer_list *timer,
-		unsigned long expires,
-		unsigned int flags),
+	TP_PROTO(struct timer_list *timer, unsigned long expires),
 
-	TP_ARGS(timer, expires, flags),
+	TP_ARGS(timer, expires),
 
 	TP_STRUCT__entry(
 		__field( void *,	timer		)
 		__field( void *,	function	)
 		__field( unsigned long,	expires		)
 		__field( unsigned long,	now		)
-		__field( unsigned int,	flags		)
 	),
 
 	TP_fast_assign(
@@ -62,12 +59,11 @@ TRACE_EVENT(timer_start,
 		__entry->function	= timer->function;
 		__entry->expires	= expires;
 		__entry->now		= jiffies;
-		__entry->flags		= flags;
 	),
 
-	TP_printk("timer=%p function=%pf expires=%lu [timeout=%ld] flags=0x%08x",
+	TP_printk("timer=%p function=%pf expires=%lu [timeout=%ld]",
 		  __entry->timer, __entry->function, __entry->expires,
-		  (long)__entry->expires - __entry->now, __entry->flags)
+		  (long)__entry->expires - __entry->now)
 );
 
 /**

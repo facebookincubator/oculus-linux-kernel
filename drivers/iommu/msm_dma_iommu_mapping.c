@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,7 +17,6 @@
 #include <linux/rbtree.h>
 #include <linux/mutex.h>
 #include <linux/err.h>
-#include <asm/barrier.h>
 
 #include <linux/msm_dma_iommu_mapping.h>
 
@@ -217,13 +216,10 @@ static inline int __msm_dma_map_sg(struct device *dev, struct scatterlist *sg,
 		sg->dma_length = iommu_map->sgl.dma_length;
 
 		kref_get(&iommu_map->ref);
-		if (is_device_dma_coherent(dev))
-			/*
-			 * Ensure all outstanding changes for coherent
-			 * buffers are applied to the cache before any
-			 * DMA occurs.
-			 */
-			dmb(ish);
+		/*
+		 * Need to do cache operations here based on "dir" in the
+		 * future if we go with coherent mappings.
+		 */
 		ret = nents;
 	}
 	mutex_unlock(&iommu_meta->lock);
@@ -271,7 +267,6 @@ int msm_dma_map_sg_attrs(struct device *dev, struct scatterlist *sg, int nents,
 
 	return ret;
 }
-EXPORT_SYMBOL(msm_dma_map_sg_attrs);
 
 static void msm_iommu_meta_destroy(struct kref *kref)
 {
@@ -348,39 +343,6 @@ void msm_dma_unmap_sg(struct device *dev, struct scatterlist *sgl, int nents,
 out:
 	return;
 }
-EXPORT_SYMBOL(msm_dma_unmap_sg);
-
-int msm_dma_unmap_all_for_dev(struct device *dev)
-{
-	int ret = 0;
-	struct msm_iommu_meta *meta;
-	struct rb_root *root;
-	struct rb_node *meta_node;
-
-	mutex_lock(&msm_iommu_map_mutex);
-	root = &iommu_root;
-	meta_node = rb_first(root);
-	while (meta_node) {
-		struct msm_iommu_map *iommu_map;
-		struct msm_iommu_map *iommu_map_next;
-
-		meta = rb_entry(meta_node, struct msm_iommu_meta, node);
-		mutex_lock(&meta->lock);
-		list_for_each_entry_safe(iommu_map, iommu_map_next,
-						&meta->iommu_maps, lnode)
-			if (iommu_map->dev == dev)
-				if (!kref_put(&iommu_map->ref,
-						msm_iommu_map_release))
-					ret = -EINVAL;
-
-		mutex_unlock(&meta->lock);
-		meta_node = rb_next(meta_node);
-	}
-	mutex_unlock(&msm_iommu_map_mutex);
-
-	return ret;
-}
-EXPORT_SYMBOL(msm_dma_unmap_all_for_dev);
 
 /*
  * Only to be called by ION code when a buffer is freed

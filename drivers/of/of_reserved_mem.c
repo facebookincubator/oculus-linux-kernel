@@ -24,6 +24,7 @@
 
 #define MAX_RESERVED_REGIONS	16
 static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
+static struct reserved_mem sorted_reserved_mem[MAX_RESERVED_REGIONS] __initdata;
 static int reserved_mem_count;
 
 #if defined(CONFIG_HAVE_MEMBLOCK)
@@ -224,13 +225,14 @@ static void __init __rmem_check_for_overlap(void)
 	if (reserved_mem_count < 2)
 		return;
 
-	sort(reserved_mem, reserved_mem_count, sizeof(reserved_mem[0]),
-	     __rmem_cmp, NULL);
+	memcpy(sorted_reserved_mem, reserved_mem, sizeof(sorted_reserved_mem));
+	sort(sorted_reserved_mem, reserved_mem_count,
+	     sizeof(sorted_reserved_mem[0]), __rmem_cmp, NULL);
 	for (i = 0; i < reserved_mem_count - 1; i++) {
 		struct reserved_mem *this, *next;
 
-		this = &reserved_mem[i];
-		next = &reserved_mem[i + 1];
+		this = &sorted_reserved_mem[i];
+		next = &sorted_reserved_mem[i + 1];
 		if (!(this->base && next->base))
 			continue;
 		if (this->base + this->size > next->base) {
@@ -238,7 +240,8 @@ static void __init __rmem_check_for_overlap(void)
 
 			this_end = this->base + this->size;
 			next_end = next->base + next->size;
-			pr_err("Reserved memory: OVERLAP DETECTED!\n%s (%pa--%pa) overlaps with %s (%pa--%pa)\n",
+			WARN(1, "Reserved mem: OVERLAP DETECTED!\n");
+			pr_err("%s (%pa--%pa) overlaps with %s (%pa--%pa)\n",
 			       this->name, &this->base, &this_end,
 			       next->name, &next->base, &next_end);
 		}

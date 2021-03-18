@@ -218,8 +218,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 	struct rxrpc_header *hdr;
 	struct sk_buff *txb;
 	unsigned long *p_txb, resend_at;
-	bool stop;
-	int loop;
+	int loop, stop;
 	u8 resend;
 
 	_enter("{%d,%d,%d,%d},",
@@ -227,7 +226,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 	       atomic_read(&call->sequence),
 	       CIRC_CNT(call->acks_head, call->acks_tail, call->acks_winsz));
 
-	stop = false;
+	stop = 0;
 	resend = 0;
 	resend_at = 0;
 
@@ -256,11 +255,11 @@ static void rxrpc_resend(struct rxrpc_call *call)
 			_proto("Tx DATA %%%u { #%d }",
 			       ntohl(sp->hdr.serial), ntohl(sp->hdr.seq));
 			if (rxrpc_send_packet(call->conn->trans, txb) < 0) {
-				stop = true;
+				stop = 0;
 				sp->resend_at = jiffies + 3;
 			} else {
 				sp->resend_at =
-					jiffies + rxrpc_resend_timeout;
+					jiffies + rxrpc_resend_timeout * HZ;
 			}
 		}
 
@@ -723,10 +722,8 @@ process_further:
 
 			if ((call->state == RXRPC_CALL_CLIENT_AWAIT_REPLY ||
 			     call->state == RXRPC_CALL_SERVER_AWAIT_ACK) &&
-			    hard > tx) {
-				call->acks_hard = tx;
+			    hard > tx)
 				goto all_acked;
-			}
 
 			smp_rmb();
 			rxrpc_rotate_tx_window(call, hard - 1);

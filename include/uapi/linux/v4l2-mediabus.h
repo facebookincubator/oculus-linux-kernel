@@ -15,39 +15,6 @@
 #include <linux/types.h>
 #include <linux/videodev2.h>
 
-/**
- * struct v4l2_mbus_framefmt - frame format on the media bus
- * @width:	frame width
- * @height:	frame height
- * @code:	data format code (from enum v4l2_mbus_pixelcode)
- * @field:	used interlacing type (from enum v4l2_field)
- * @colorspace:	colorspace of the data (from enum v4l2_colorspace)
- * @ycbcr_enc:	YCbCr encoding of the data (from enum v4l2_ycbcr_encoding)
- * @quantization: quantization of the data (from enum v4l2_quantization)
- * @xfer_func:  transfer function of the data (from enum v4l2_xfer_func)
- */
-struct v4l2_mbus_framefmt {
-	__u32			width;
-	__u32			height;
-	__u32			code;
-	__u32			field;
-	__u32			colorspace;
-	__u16			ycbcr_enc;
-	__u16			quantization;
-	__u16			xfer_func;
-	__u16			reserved[11];
-};
-
-#ifndef __KERNEL__
-/*
- * enum v4l2_mbus_pixelcode and its definitions are now deprecated, and
- * MEDIA_BUS_FMT_ definitions (defined in media-bus-format.h) should be
- * used instead.
- *
- * New defines should only be added to media-bus-format.h. The
- * v4l2_mbus_pixelcode enum is frozen.
- */
-
 #define V4L2_MBUS_FROM_MEDIA_BUS_FMT(name)	\
 	V4L2_MBUS_FMT_ ## name = MEDIA_BUS_FMT_ ## name
 
@@ -135,6 +102,22 @@ enum v4l2_mbus_pixelcode {
 
 	V4L2_MBUS_FROM_MEDIA_BUS_FMT(AHSV8888_1X32),
 };
-#endif /* __KERNEL__ */
+
+/**
+ * struct v4l2_mbus_framefmt - frame format on the media bus
+ * @width:	frame width
+ * @height:	frame height
+ * @code:	data format code (from enum v4l2_mbus_pixelcode)
+ * @field:	used interlacing type (from enum v4l2_field)
+ * @colorspace:	colorspace of the data (from enum v4l2_colorspace)
+ */
+struct v4l2_mbus_framefmt {
+	__u32			width;
+	__u32			height;
+	__u32			code;
+	__u32			field;
+	__u32			colorspace;
+	__u32			reserved[7];
+};
 
 #endif

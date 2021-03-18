@@ -124,8 +124,7 @@ int ablk_init_common(struct crypto_tfm *tfm, const char *drv_name)
 	struct async_helper_ctx *ctx = crypto_tfm_ctx(tfm);
 	struct cryptd_ablkcipher *cryptd_tfm;
 
-	cryptd_tfm = cryptd_alloc_ablkcipher(drv_name, CRYPTO_ALG_INTERNAL,
-					     CRYPTO_ALG_INTERNAL);
+	cryptd_tfm = cryptd_alloc_ablkcipher(drv_name, 0, 0);
 	if (IS_ERR(cryptd_tfm))
 		return PTR_ERR(cryptd_tfm);
 

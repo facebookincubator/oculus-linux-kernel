@@ -5,6 +5,8 @@
  *                  & Ralph  Metzler <ralph@convergence.de>
  *                    for convergence integrated media GmbH
  *
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation; either version 2.1
@@ -37,7 +39,7 @@
 
 #define DMX_MAX_DECODER_BUFFER_NUM		(32)
 
-enum dmx_output
+typedef enum
 {
 	DMX_OUT_DECODER, /* Streaming directly to decoder. */
 	DMX_OUT_TAP,     /* Output going to a memory buffer */
@@ -46,11 +48,10 @@ enum dmx_output
 			 /* (to be retrieved by reading from the */
 			 /* logical DVR device).                 */
 	DMX_OUT_TSDEMUX_TAP /* Like TS_TAP but retrieved from the DMX device */
-};
+} dmx_output_t;
 
-typedef enum dmx_output dmx_output_t;
 
-typedef enum dmx_input
+typedef enum
 {
 	DMX_IN_FRONTEND, /* Input from a front-end device.  */
 	DMX_IN_DVR       /* Input from the logical DVR device.  */
@@ -148,9 +149,6 @@ enum dmx_video_codec {
 #define DMX_IDX_VC1_FRAME_END               0x02000000
 #define DMX_IDX_H264_ACCESS_UNIT_DEL        0x04000000
 #define DMX_IDX_H264_SEI                    0x08000000
-#define DMX_IDX_H264_IDR_ISLICE_START       0x10000000
-#define DMX_IDX_H264_NON_IDR_PSLICE_START   0x20000000
-#define DMX_IDX_H264_NON_IDR_BSLICE_START   0x40000000
 
 struct dmx_pes_filter_params
 {
@@ -612,7 +610,7 @@ typedef struct dmx_caps {
 	struct dmx_buffer_requirement playback_192_tsp;
 } dmx_caps_t;
 
-typedef enum dmx_source {
+typedef enum {
 	DMX_SOURCE_FRONT0 = 0,
 	DMX_SOURCE_FRONT1,
 	DMX_SOURCE_FRONT2,

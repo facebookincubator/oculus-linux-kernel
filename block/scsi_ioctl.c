@@ -142,7 +142,7 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
 	__set_bit(GPCMD_VERIFY_10, filter->read_ok);
 	__set_bit(VERIFY_16, filter->read_ok);
 	__set_bit(REPORT_LUNS, filter->read_ok);
-	__set_bit(SERVICE_ACTION_IN_16, filter->read_ok);
+	__set_bit(SERVICE_ACTION_IN, filter->read_ok);
 	__set_bit(RECEIVE_DIAGNOSTIC, filter->read_ok);
 	__set_bit(MAINTENANCE_IN, filter->read_ok);
 	__set_bit(GPCMD_READ_BUFFER_CAPACITY, filter->read_ok);
@@ -326,25 +326,36 @@ static int sg_io(struct request_queue *q, struct gendisk *bd_disk,
 			goto out_put_request;
 	}
 
-	ret = blk_fill_sghdr_rq(q, rq, hdr, mode);
-	if (ret < 0)
+	ret = -EFAULT;
+	if (blk_fill_sghdr_rq(q, rq, hdr, mode))
 		goto out_free_cdb;
 
 	ret = 0;
 	if (hdr->iovec_count) {
-		struct iov_iter i;
+		size_t iov_data_len;
 		struct iovec *iov = NULL;
 
-		ret = import_iovec(rq_data_dir(rq),
-				   hdr->dxferp, hdr->iovec_count,
-				   0, &iov, &i);
-		if (ret < 0)
+		ret = rw_copy_check_uvector(-1, hdr->dxferp, hdr->iovec_count,
+					    0, NULL, &iov);
+		if (ret < 0) {
+			kfree(iov);
 			goto out_free_cdb;
+		}
+
+		iov_data_len = ret;
+		ret = 0;
 
 		/* SG_IO howto says that the shorter of the two wins */
-		iov_iter_truncate(&i, hdr->dxfer_len);
+		if (hdr->dxfer_len < iov_data_len) {
+			hdr->iovec_count = iov_shorten(iov,
+						       hdr->iovec_count,
+						       hdr->dxfer_len);
+			iov_data_len = hdr->dxfer_len;
+		}
 
-		ret = blk_rq_map_user_iov(q, rq, NULL, &i, GFP_KERNEL);
+		ret = blk_rq_map_user_iov(q, rq, NULL, (struct sg_iovec *) iov,
+					  hdr->iovec_count,
+					  iov_data_len, GFP_KERNEL);
 		kfree(iov);
 	} else if (hdr->dxfer_len)
 		ret = blk_rq_map_user(q, rq, NULL, hdr->dxferp, hdr->dxfer_len,
@@ -444,7 +455,7 @@ int sg_scsi_ioctl(struct request_queue *q, struct gendisk *disk, fmode_t mode,
 
 	}
 
-	rq = blk_get_request(q, in_len ? WRITE : READ, __GFP_RECLAIM);
+	rq = blk_get_request(q, in_len ? WRITE : READ, __GFP_WAIT);
 	if (IS_ERR(rq)) {
 		err = PTR_ERR(rq);
 		goto error_free_buffer;
@@ -495,7 +506,7 @@ int sg_scsi_ioctl(struct request_queue *q, struct gendisk *disk, fmode_t mode,
 		break;
 	}
 
-	if (bytes && blk_rq_map_kern(q, rq, buffer, bytes, __GFP_RECLAIM)) {
+	if (bytes && blk_rq_map_kern(q, rq, buffer, bytes, __GFP_WAIT)) {
 		err = DRIVER_ERROR << 24;
 		goto error;
 	}
@@ -536,7 +547,7 @@ static int __blk_send_generic(struct request_queue *q, struct gendisk *bd_disk,
 	struct request *rq;
 	int err;
 
-	rq = blk_get_request(q, WRITE, __GFP_RECLAIM);
+	rq = blk_get_request(q, WRITE, __GFP_WAIT);
 	if (IS_ERR(rq))
 		return PTR_ERR(rq);
 	blk_rq_set_block_pc(rq);

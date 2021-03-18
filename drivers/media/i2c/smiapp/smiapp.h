@@ -14,6 +14,12 @@
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
+ *
  */
 
 #ifndef __SMIAPP_PRIV_H_
@@ -150,11 +156,6 @@ struct smiapp_csi_data_format {
 #define SMIAPP_PAD_SRC			1
 #define SMIAPP_PADS			2
 
-#define SMIAPP_COMPRESSED_BASE		8
-#define SMIAPP_COMPRESSED_MAX		12
-#define SMIAPP_NR_OF_COMPRESSED		(SMIAPP_COMPRESSED_MAX - \
-					 SMIAPP_COMPRESSED_BASE + 1)
-
 struct smiapp_binning_subtype {
 	u8 horizontal:4;
 	u8 vertical:4;
@@ -216,6 +217,7 @@ struct smiapp_sensor {
 	u8 scaling_mode;
 
 	u8 hvflip_inv_mask; /* H/VFLIP inversion due to sensor orientation */
+	u8 flash_capability;
 	u8 frame_skip;
 
 	int power_count;
@@ -229,9 +231,6 @@ struct smiapp_sensor {
 	struct smiapp_module_info minfo;
 
 	struct smiapp_pll pll;
-
-	/* Is a default format supported for a given BPP? */
-	unsigned long valid_link_freqs[SMIAPP_NR_OF_COMPRESSED];
 
 	/* Pixel array controls */
 	struct v4l2_ctrl *analog_gain;

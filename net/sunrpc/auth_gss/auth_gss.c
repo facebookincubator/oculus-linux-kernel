@@ -66,7 +66,7 @@ static unsigned int gss_expired_cred_retry_delay = GSS_RETRY_EXPIRED;
 #define GSS_KEY_EXPIRE_TIMEO 240
 static unsigned int gss_key_expire_timeo = GSS_KEY_EXPIRE_TIMEO;
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+#ifdef RPC_DEBUG
 # define RPCDBG_FACILITY	RPCDBG_AUTH
 #endif
 
@@ -340,13 +340,11 @@ gss_release_msg(struct gss_upcall_msg *gss_msg)
 }
 
 static struct gss_upcall_msg *
-__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid, const struct gss_auth *auth)
+__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid)
 {
 	struct gss_upcall_msg *pos;
 	list_for_each_entry(pos, &pipe->in_downcall, list) {
 		if (!uid_eq(pos->uid, uid))
-			continue;
-		if (auth && pos->auth->service != auth->service)
 			continue;
 		atomic_inc(&pos->count);
 		dprintk("RPC:       %s found msg %p\n", __func__, pos);
@@ -367,7 +365,7 @@ gss_add_msg(struct gss_upcall_msg *gss_msg)
 	struct gss_upcall_msg *old;
 
 	spin_lock(&pipe->lock);
-	old = __gss_find_upcall(pipe, gss_msg->uid, gss_msg->auth);
+	old = __gss_find_upcall(pipe, gss_msg->uid);
 	if (old == NULL) {
 		atomic_inc(&gss_msg->count);
 		list_add(&gss_msg->list, &pipe->in_downcall);
@@ -716,7 +714,7 @@ gss_pipe_downcall(struct file *filp, const char __user *src, size_t mlen)
 	err = -ENOENT;
 	/* Find a matching upcall */
 	spin_lock(&pipe->lock);
-	gss_msg = __gss_find_upcall(pipe, uid, NULL);
+	gss_msg = __gss_find_upcall(pipe, uid);
 	if (gss_msg == NULL) {
 		spin_unlock(&pipe->lock);
 		goto err_put_ctx;
@@ -1413,16 +1411,17 @@ gss_key_timeout(struct rpc_cred *rc)
 {
 	struct gss_cred *gss_cred = container_of(rc, struct gss_cred, gc_base);
 	struct gss_cl_ctx *ctx;
-	unsigned long timeout = jiffies + (gss_key_expire_timeo * HZ);
-	int ret = 0;
+	unsigned long now = jiffies;
+	unsigned long expire;
 
 	rcu_read_lock();
 	ctx = rcu_dereference(gss_cred->gc_ctx);
-	if (!ctx || time_after(timeout, ctx->gc_expiry))
-		ret = -EACCES;
+	if (ctx)
+		expire = ctx->gc_expiry - (gss_key_expire_timeo * HZ);
 	rcu_read_unlock();
-
-	return ret;
+	if (!ctx || time_after(now, expire))
+		return -EACCES;
+	return 0;
 }
 
 static int

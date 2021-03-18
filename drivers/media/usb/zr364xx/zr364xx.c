@@ -377,7 +377,8 @@ static void free_buffer(struct videobuf_queue *vq, struct zr364xx_buffer *buf)
 {
 	_DBG("%s\n", __func__);
 
-	BUG_ON(in_interrupt());
+	if (in_interrupt())
+		BUG();
 
 	videobuf_vmalloc_free(&buf->vb);
 	buf->vb.state = VIDEOBUF_NEEDS_INIT;
@@ -1453,6 +1454,8 @@ static int zr364xx_probe(struct usb_interface *intf,
 	cam->vdev.v4l2_dev = &cam->v4l2_dev;
 	cam->vdev.ctrl_handler = &cam->ctrl_handler;
 	video_set_drvdata(&cam->vdev, cam);
+	if (debug)
+		cam->vdev.debug = V4L2_DEBUG_IOCTL | V4L2_DEBUG_IOCTL_ARG;
 
 	cam->udev = udev;
 

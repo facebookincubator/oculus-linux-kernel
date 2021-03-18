@@ -37,8 +37,8 @@ struct pil_priv;
  * This defaults to iounmap if not specified.
  * @shutdown_fail: Set if PIL op for shutting down subsystem fails.
  * @modem_ssr: true if modem is restarting, false if booting for first time.
- * @clear_fw_region: Clear fw region on failure in loading.
  * @subsys_vmid: memprot id for the subsystem.
+ * @clear_fw_region: Clear fw region on failure in loading.
  */
 struct pil_desc {
 	const char *name;
@@ -57,8 +57,8 @@ struct pil_desc {
 	void *map_data;
 	bool shutdown_fail;
 	bool modem_ssr;
-	bool clear_fw_region;
 	u32 subsys_vmid;
+	bool clear_fw_region;
 };
 
 /**
@@ -87,7 +87,7 @@ struct pil_image_info {
  */
 struct pil_reset_ops {
 	int (*init_image)(struct pil_desc *pil, const u8 *metadata,
-			  size_t size);
+			  size_t size,  phys_addr_t addr, size_t sz);
 	int (*mem_setup)(struct pil_desc *pil, phys_addr_t addr, size_t size);
 	int (*verify_blob)(struct pil_desc *pil, phys_addr_t phy_addr,
 			   size_t size);

@@ -26,7 +26,8 @@
 static char *da8xx_fw_name;
 module_param(da8xx_fw_name, charp, S_IRUGO);
 MODULE_PARM_DESC(da8xx_fw_name,
-		 "Name of DSP firmware file in /lib/firmware (if not specified defaults to 'rproc-dsp-fw')");
+		 "\n\t\tName of DSP firmware file in /lib/firmware"
+		 " (if not specified defaults to 'rproc-dsp-fw')");
 
 /*
  * OMAP-L138 Technical References:
@@ -223,7 +224,6 @@ static int da8xx_rproc_probe(struct platform_device *pdev)
 
 	drproc = rproc->priv;
 	drproc->rproc = rproc;
-	rproc->has_iommu = false;
 
 	platform_set_drvdata(pdev, rproc);
 
@@ -300,6 +300,7 @@ static struct platform_driver da8xx_rproc_driver = {
 	.remove = da8xx_rproc_remove,
 	.driver = {
 		.name = "davinci-rproc",
+		.owner = THIS_MODULE,
 	},
 };
 

@@ -197,7 +197,8 @@ static int __init setup_rstcr(void)
 	if (!rstcr && ppc_md.restart == fsl_rstcr_restart)
 		printk(KERN_ERR "No RSTCR register, warm reboot won't work\n");
 
-	of_node_put(np);
+	if (np)
+		of_node_put(np);
 
 	return 0;
 }
@@ -237,7 +238,7 @@ void fsl_hv_restart(char *cmd)
 /*
  * Halt the current partition
  *
- * This function should be assigned to the pm_power_off and ppc_md.halt
+ * This function should be assigned to the ppc_md.power_off and ppc_md.halt
  * function pointers, to shut down the partition when we're running under
  * the Freescale hypervisor.
  */

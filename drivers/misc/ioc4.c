@@ -144,9 +144,9 @@ ioc4_clock_calibrate(struct ioc4_driver_data *idd)
 {
 	union ioc4_int_out int_out;
 	union ioc4_gpcr gpcr;
-	unsigned int state, last_state;
+	unsigned int state, last_state = 1;
 	uint64_t start, end, period;
-	unsigned int count;
+	unsigned int count = 0;
 
 	/* Enable output */
 	gpcr.raw = 0;
@@ -167,20 +167,19 @@ ioc4_clock_calibrate(struct ioc4_driver_data *idd)
 	mmiowb();
 
 	/* Check square wave period averaged over some number of cycles */
-	start = ktime_get_ns();
-	state = 1; /* make sure the first read isn't a rising edge */
-	for (count = 0; count <= IOC4_CALIBRATE_END; count++) {
-		do { /* wait for a rising edge */
-			last_state = state;
-			int_out.raw = readl(&idd->idd_misc_regs->int_out.raw);
-			state = int_out.fields.int_out;
-		} while (last_state || !state);
-
-		/* discard the first few cycles */
-		if (count == IOC4_CALIBRATE_DISCARD)
-			start = ktime_get_ns();
-	}
-	end = ktime_get_ns();
+	do {
+		int_out.raw = readl(&idd->idd_misc_regs->int_out.raw);
+		state = int_out.fields.int_out;
+		if (!last_state && state) {
+			count++;
+			if (count == IOC4_CALIBRATE_END) {
+				end = ktime_get_ns();
+				break;
+			} else if (count == IOC4_CALIBRATE_DISCARD)
+				start = ktime_get_ns();
+		}
+		last_state = state;
+	} while (1);
 
 	/* Calculation rearranged to preserve intermediate precision.
 	 * Logically:

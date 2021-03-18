@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -63,7 +63,6 @@
 #include <linux/fdtable.h>
 #include <linux/selinux.h>
 #include <linux/security.h>
-#include <linux/lsm_hooks.h>
 
 #include <linux/pft.h>
 #include <uapi/linux/msm_pft.h>
@@ -186,30 +185,43 @@ static void pft_inode_free_security(struct inode *inode)
 	kzfree(inode->i_security);
 }
 
-static struct security_hook_list pft_hooks[] = {
-	LSM_HOOK_INIT(inode_create, pft_inode_create),
-	LSM_HOOK_INIT(inode_post_create, pft_inode_post_create),
-	LSM_HOOK_INIT(inode_unlink, pft_inode_unlink),
-	LSM_HOOK_INIT(inode_mknod, pft_inode_mknod),
-	LSM_HOOK_INIT(inode_rename, pft_inode_rename),
-	LSM_HOOK_INIT(inode_setxattr, pft_inode_set_xattr),
-	LSM_HOOK_INIT(inode_alloc_security, pft_inode_alloc_security),
-	LSM_HOOK_INIT(inode_free_security, pft_inode_free_security),
+static struct security_operations pft_security_ops = {
+	.name			= "pft",
 
-	LSM_HOOK_INIT(file_open, pft_file_open),
-	LSM_HOOK_INIT(file_permission, pft_file_permission),
-	LSM_HOOK_INIT(file_close, pft_file_close),
+	.inode_create		= pft_inode_create,
+	.inode_post_create	= pft_inode_post_create,
+	.inode_unlink		= pft_inode_unlink,
+	.inode_mknod		= pft_inode_mknod,
+	.inode_rename		= pft_inode_rename,
+	.inode_setxattr		= pft_inode_set_xattr,
+	.inode_alloc_security	= pft_inode_alloc_security,
+	.inode_free_security	= pft_inode_free_security,
+
+	.file_open		= pft_file_open,
+	.file_permission	= pft_file_permission,
+	.file_close		= pft_file_close,
+
+	.allow_merge_bio	= pft_allow_merge_bio,
 };
 
 static int __init pft_lsm_init(struct pft_device *dev)
 {
+	int ret;
+
 	/* Check if PFT is the chosen lsm via security_module_enable() */
-	if (security_module_enable("pft")) {
-		security_add_hooks(pft_hooks, ARRAY_SIZE(pft_hooks));
+	if (security_module_enable(&pft_security_ops)) {
+		/* replace null callbacks with empty callbacks */
+		security_fixup_ops(&pft_security_ops);
+
+		ret = register_security(&pft_security_ops);
+		if (ret) {
+			pr_err("pft lsm registeration failed, ret=%d.\n", ret);
+			return ret;
+		}
 		dev->is_chosen_lsm = true;
 		pr_debug("pft is the chosen lsm, registered successfully !\n");
 	} else {
-		pr_err("pft is not the chosen lsm\n");
+		pr_err("pft is not the chosen lsm.\n");
 		return -ENODEV;
 	}
 
@@ -239,10 +251,10 @@ static char *file_to_filename(struct file *filp)
 	struct dentry *dentry = NULL;
 	char *filename = NULL;
 
-	if (!filp || !filp->f_path.dentry)
+	if (!filp || !filp->f_dentry)
 		return "unknown";
 
-	dentry = filp->f_path.dentry;
+	dentry = filp->f_dentry;
 	filename = dentry->d_iname;
 
 	return filename;
@@ -264,7 +276,7 @@ static char *inode_to_filename(struct inode *inode)
 	if (hlist_empty(&inode->i_dentry))
 		return "unknown";
 
-	dentry = hlist_entry(inode->i_dentry.first, struct dentry, d_u.d_alias);
+	dentry = hlist_entry(inode->i_dentry.first, struct dentry, d_alias);
 	filename = dentry->d_iname;
 
 	return filename;
@@ -745,7 +757,7 @@ EXPORT_SYMBOL(pft_get_key_index);
  * Return: true if the BIOs allowed to be merged, false
  * otherwise.
  */
-bool pft_allow_merge_bio(const struct bio *bio1, const struct bio *bio2)
+bool pft_allow_merge_bio(struct bio *bio1, struct bio *bio2)
 {
 	u32 key_index1 = 0, key_index2 = 0;
 	bool is_encrypted1 = false, is_encrypted2 = false;
@@ -1035,7 +1047,7 @@ int pft_file_open(struct file *filp, const struct cred *cred)
 		pr_debug("file %s using O_DIRECT.\n", file_to_filename(filp));
 
 	/* do nothing for non-encrypted files */
-	if (!pft_is_encrypted_file(filp->f_path.dentry))
+	if (!pft_is_encrypted_file(filp->f_dentry))
 		return 0;
 
 	/*
@@ -1096,7 +1108,7 @@ EXPORT_SYMBOL(pft_file_open);
  * Call path:
  * vfs_read()->security_file_permission()->selinux_file_permission()
  *
- * Return: 0 on success, negative value on failure.
+ * Return: 0 on successe, negative value on failure.
  */
 int pft_file_permission(struct file *filp, int mask)
 {
@@ -1107,7 +1119,7 @@ int pft_file_permission(struct file *filp, int mask)
 		return 0;
 
 	/* do nothing for non-encrypted files */
-	if (!pft_is_encrypted_file(filp->f_path.dentry))
+	if (!pft_is_encrypted_file(filp->f_dentry))
 		return 0;
 
 	/*
@@ -1121,7 +1133,7 @@ int pft_file_permission(struct file *filp, int mask)
 				 mask, file_to_filename(filp),
 				 __kuid_val(current_uid()), current_pid());
 			return 0;
-		}
+
 		pr_err("Access to file %s by (UID %d, PID %d) is blocked.\n",
 		       file_to_filename(filp),
 		       __kuid_val(current_uid()), current_pid());
@@ -1196,7 +1208,7 @@ int pft_file_close(struct file *filp)
 		return 0;
 
 	/* do nothing for non-encrypted files */
-	if (!pft_is_encrypted_file(filp->f_path.dentry))
+	if (!pft_is_encrypted_file(filp->f_dentry))
 		return 0;
 
 	if (pft_is_inplace_file(filp)) {
@@ -1274,7 +1286,7 @@ int pft_inode_unlink(struct inode *dir, struct dentry *dentry)
 			current_pid(),
 			inode_to_filename(inode));
 		return -EACCES;
-	}
+
 	pr_debug("delete file %s\n", inode_to_filename(inode));
 
 	return 0;
@@ -1488,7 +1500,7 @@ static int pft_set_inplace_file(struct pft_command *command, int size)
 	 * because PFM is not an enterprise application
 	 * it won't be able to open encrypted file.
 	 */
-	if (pft_is_encrypted_file(filp->f_path.dentry)) {
+	if (pft_is_encrypted_file(filp->f_dentry)) {
 		pr_err("file %s is already encrypted.\n",
 		       file_to_filename(filp));
 		pft_set_response(PFT_CMD_RESP_GENERAL_ERROR);
@@ -1506,7 +1518,7 @@ static int pft_set_inplace_file(struct pft_command *command, int size)
 	 */
 	pft_sync_file(filp);
 
-	rc = pft_tag_file(pft_dev->inplace_file->f_path.dentry,
+	rc = pft_tag_file(pft_dev->inplace_file->f_dentry,
 			  pft_get_app_key_index(current_uid()));
 
 	if (!rc) {

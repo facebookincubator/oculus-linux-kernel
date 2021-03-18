@@ -18,6 +18,7 @@
  */
 
 #include <linux/clk.h>
+#include <linux/clkdev.h>
 #include <linux/clk-provider.h>
 #include <linux/mfd/palmas.h>
 #include <linux/module.h>
@@ -160,7 +161,7 @@ static struct palmas_clks_of_match_data palmas_of_clk32kgaudio = {
 	},
 };
 
-static const struct of_device_id palmas_clks_of_match[] = {
+static struct of_device_id palmas_clks_of_match[] = {
 	{
 		.compatible = "ti,palmas-clk32kg",
 		.data = &palmas_of_clk32kg,

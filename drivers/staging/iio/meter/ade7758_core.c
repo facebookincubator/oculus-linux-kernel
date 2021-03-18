@@ -303,15 +303,14 @@ static int ade7758_reset(struct device *dev)
 	int ret;
 	u8 val;
 
-	ret = ade7758_spi_read_reg_8(dev, ADE7758_OPMODE, &val);
-	if (ret < 0) {
-		dev_err(dev, "Failed to read opmode reg\n");
-		return ret;
-	}
-	val |= BIT(6); /* Software Chip Reset */
-	ret = ade7758_spi_write_reg_8(dev, ADE7758_OPMODE, val);
-	if (ret < 0)
-		dev_err(dev, "Failed to write opmode reg\n");
+	ade7758_spi_read_reg_8(dev,
+			ADE7758_OPMODE,
+			&val);
+	val |= 1 << 6; /* Software Chip Reset */
+	ret = ade7758_spi_write_reg_8(dev,
+			ADE7758_OPMODE,
+			val);
+
 	return ret;
 }
 
@@ -426,10 +425,10 @@ int ade7758_set_irq(struct device *dev, bool enable)
 		goto error_ret;
 
 	if (enable)
-		irqen |= BIT(16); /* Enables an interrupt when a data is
+		irqen |= 1 << 16; /* Enables an interrupt when a data is
 				     present in the waveform register */
 	else
-		irqen &= ~BIT(16);
+		irqen &= ~(1 << 16);
 
 	ret = ade7758_spi_write_reg_24(dev, ADE7758_MASK, irqen);
 	if (ret)
@@ -445,15 +444,14 @@ static int ade7758_stop_device(struct device *dev)
 	int ret;
 	u8 val;
 
-	ret = ade7758_spi_read_reg_8(dev, ADE7758_OPMODE, &val);
-	if (ret < 0) {
-		dev_err(dev, "Failed to read opmode reg\n");
-		return ret;
-	}
+	ade7758_spi_read_reg_8(dev,
+			ADE7758_OPMODE,
+			&val);
 	val |= 7 << 3;  /* ADE7758 powered down */
-	ret = ade7758_spi_write_reg_8(dev, ADE7758_OPMODE, val);
-	if (ret < 0)
-		dev_err(dev, "Failed to write opmode reg\n");
+	ret = ade7758_spi_write_reg_8(dev,
+			ADE7758_OPMODE,
+			val);
+
 	return ret;
 }
 
@@ -485,7 +483,7 @@ static ssize_t ade7758_read_frequency(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
-	int ret;
+	int ret, len = 0;
 	u8 t;
 	int sps;
 
@@ -498,7 +496,8 @@ static ssize_t ade7758_read_frequency(struct device *dev,
 	t = (t >> 5) & 0x3;
 	sps = 26040 / (1 << t);
 
-	return sprintf(buf, "%d SPS\n", sps);
+	len = sprintf(buf, "%d SPS\n", sps);
+	return len;
 }
 
 static ssize_t ade7758_write_frequency(struct device *dev,
@@ -833,7 +832,7 @@ static int ade7758_probe(struct spi_device *spi)
 	if (!st->rx)
 		return -ENOMEM;
 	st->tx = kcalloc(ADE7758_MAX_TX, sizeof(*st->tx), GFP_KERNEL);
-	if (!st->tx) {
+	if (st->tx == NULL) {
 		ret = -ENOMEM;
 		goto error_free_rx;
 	}
@@ -851,15 +850,23 @@ static int ade7758_probe(struct spi_device *spi)
 	if (ret)
 		goto error_free_tx;
 
+	ret = iio_buffer_register(indio_dev,
+				  &ade7758_channels[0],
+				  ARRAY_SIZE(ade7758_channels));
+	if (ret) {
+		dev_err(&spi->dev, "failed to initialize the ring\n");
+		goto error_unreg_ring_funcs;
+	}
+
 	/* Get the device into a sane initial state */
 	ret = ade7758_initial_setup(indio_dev);
 	if (ret)
-		goto error_unreg_ring_funcs;
+		goto error_uninitialize_ring;
 
 	if (spi->irq) {
 		ret = ade7758_probe_trigger(indio_dev);
 		if (ret)
-			goto error_unreg_ring_funcs;
+			goto error_uninitialize_ring;
 	}
 
 	ret = iio_device_register(indio_dev);
@@ -871,6 +878,8 @@ static int ade7758_probe(struct spi_device *spi)
 error_remove_trigger:
 	if (spi->irq)
 		ade7758_remove_trigger(indio_dev);
+error_uninitialize_ring:
+	ade7758_uninitialize_ring(indio_dev);
 error_unreg_ring_funcs:
 	ade7758_unconfigure_ring(indio_dev);
 error_free_tx:
@@ -888,6 +897,7 @@ static int ade7758_remove(struct spi_device *spi)
 	iio_device_unregister(indio_dev);
 	ade7758_stop_device(&indio_dev->dev);
 	ade7758_remove_trigger(indio_dev);
+	ade7758_uninitialize_ring(indio_dev);
 	ade7758_unconfigure_ring(indio_dev);
 	kfree(st->tx);
 	kfree(st->rx);
@@ -904,6 +914,7 @@ MODULE_DEVICE_TABLE(spi, ade7758_id);
 static struct spi_driver ade7758_driver = {
 	.driver = {
 		.name = "ade7758",
+		.owner = THIS_MODULE,
 	},
 	.probe = ade7758_probe,
 	.remove = ade7758_remove,

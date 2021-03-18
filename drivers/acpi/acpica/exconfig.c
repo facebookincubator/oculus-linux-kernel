@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -161,6 +161,14 @@ acpi_ex_load_table_op(struct acpi_walk_state *walk_state,
 	u32 table_index;
 
 	ACPI_FUNCTION_TRACE(ex_load_table_op);
+
+	/* Validate lengths for the Signature, oem_id, and oem_table_id strings */
+
+	if ((operand[0]->string.length > ACPI_NAME_SIZE) ||
+	    (operand[1]->string.length > ACPI_OEM_ID_SIZE) ||
+	    (operand[2]->string.length > ACPI_OEM_TABLE_ID_SIZE)) {
+		return_ACPI_STATUS(AE_AML_STRING_LIMIT);
+	}
 
 	/* Find the ACPI table in the RSDT/XSDT */
 
@@ -462,7 +470,7 @@ acpi_ex_load_op(union acpi_operand_object *obj_desc,
 			return_ACPI_STATUS(AE_NO_MEMORY);
 		}
 
-		memcpy(table, table_header, length);
+		ACPI_MEMCPY(table, table_header, length);
 		break;
 
 	default:

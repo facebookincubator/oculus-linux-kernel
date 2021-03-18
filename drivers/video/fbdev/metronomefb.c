@@ -766,6 +766,7 @@ static struct platform_driver metronomefb_driver = {
 	.probe	= metronomefb_probe,
 	.remove = metronomefb_remove,
 	.driver	= {
+		.owner	= THIS_MODULE,
 		.name	= "metronomefb",
 	},
 };

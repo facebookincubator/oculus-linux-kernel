@@ -23,7 +23,6 @@
 #include <linux/io.h>
 #include <linux/bcd.h>
 #include <linux/delay.h>
-#include <linux/pm_wakeirq.h>
 #include <linux/slab.h>
 
 /*
@@ -306,8 +305,6 @@ static int pl031_remove(struct amba_device *adev)
 {
 	struct pl031_local *ldata = dev_get_drvdata(&adev->dev);
 
-	dev_pm_clear_wake_irq(&adev->dev);
-	device_init_wakeup(&adev->dev, false);
 	free_irq(adev->irq[0], ldata);
 	rtc_device_unregister(ldata->rtc);
 	iounmap(ldata->base);
@@ -373,7 +370,7 @@ static int pl031_probe(struct amba_device *adev, const struct amba_id *id)
 		}
 	}
 
-	device_init_wakeup(&adev->dev, true);
+	device_init_wakeup(&adev->dev, 1);
 	ldata->rtc = rtc_device_register("pl031", &adev->dev, ops,
 					THIS_MODULE);
 	if (IS_ERR(ldata->rtc)) {
@@ -386,7 +383,7 @@ static int pl031_probe(struct amba_device *adev, const struct amba_id *id)
 		ret = -EIO;
 		goto out_no_irq;
 	}
-	dev_pm_set_wake_irq(&adev->dev, adev->irq[0]);
+
 	return 0;
 
 out_no_irq:
@@ -411,6 +408,7 @@ static struct pl031_vendor_data arm_pl031 = {
 		.set_alarm = pl031_set_alarm,
 		.alarm_irq_enable = pl031_alarm_irq_enable,
 	},
+	.irqflags = IRQF_NO_SUSPEND,
 };
 
 /* The First ST derivative */
@@ -424,6 +422,7 @@ static struct pl031_vendor_data stv1_pl031 = {
 	},
 	.clockwatch = true,
 	.st_weekday = true,
+	.irqflags = IRQF_NO_SUSPEND,
 };
 
 /* And the second ST derivative */
@@ -440,10 +439,8 @@ static struct pl031_vendor_data stv2_pl031 = {
 	/*
 	 * This variant shares the IRQ with another block and must not
 	 * suspend that IRQ line.
-	 * TODO check if it shares with IRQF_NO_SUSPEND user, else we can
-	 * remove IRQF_COND_SUSPEND
 	 */
-	.irqflags = IRQF_SHARED | IRQF_COND_SUSPEND,
+	.irqflags = IRQF_SHARED | IRQF_NO_SUSPEND,
 };
 
 static struct amba_id pl031_ids[] = {
@@ -479,6 +476,6 @@ static struct amba_driver pl031_driver = {
 
 module_amba_driver(pl031_driver);
 
-MODULE_AUTHOR("Deepak Saxena <dsaxena@plexity.net>");
+MODULE_AUTHOR("Deepak Saxena <dsaxena@plexity.net");
 MODULE_DESCRIPTION("ARM AMBA PL031 RTC Driver");
 MODULE_LICENSE("GPL");

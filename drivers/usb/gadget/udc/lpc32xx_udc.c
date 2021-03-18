@@ -191,6 +191,7 @@ struct lpc32xx_udc {
 	bool			enabled;
 	bool			clocked;
 	bool			suspended;
+	bool			selfpowered;
 	int                     ep0state;
 	atomic_t                enabled_ep_cnt;
 	wait_queue_head_t       ep_disable_wait_queue;
@@ -546,7 +547,7 @@ static int proc_udc_show(struct seq_file *s, void *unused)
 		   udc->vbus ? "present" : "off",
 		   udc->enabled ? (udc->vbus ? "active" : "enabled") :
 		   "disabled",
-		   udc->gadget.is_selfpowered ? "self" : "VBUS",
+		   udc->selfpowered ? "self" : "VBUS",
 		   udc->suspended ? ", suspended" : "",
 		   udc->driver ? udc->driver->driver.name : "(none)");
 
@@ -581,7 +582,8 @@ static void create_debug_file(struct lpc32xx_udc *udc)
 
 static void remove_debug_file(struct lpc32xx_udc *udc)
 {
-	debugfs_remove(udc->pde);
+	if (udc->pde)
+		debugfs_remove(udc->pde);
 }
 
 #else
@@ -1803,14 +1805,23 @@ static int lpc32xx_ep_queue(struct usb_ep *_ep,
 	req = container_of(_req, struct lpc32xx_request, req);
 	ep = container_of(_ep, struct lpc32xx_ep, ep);
 
-	if (!_ep || !_req || !_req->complete || !_req->buf ||
+	if (!_req || !_req->complete || !_req->buf ||
 	    !list_empty(&req->queue))
 		return -EINVAL;
 
 	udc = ep->udc;
 
-	if (udc->gadget.speed == USB_SPEED_UNKNOWN)
-		return -EPIPE;
+	if (!_ep) {
+		dev_dbg(udc->dev, "invalid ep\n");
+		return -EINVAL;
+	}
+
+
+	if ((!udc) || (!udc->driver) ||
+	    (udc->gadget.speed == USB_SPEED_UNKNOWN)) {
+		dev_dbg(udc->dev, "invalid device\n");
+		return -EINVAL;
+	}
 
 	if (ep->lep) {
 		struct lpc32xx_usbd_dd_gad *dd;
@@ -2202,7 +2213,7 @@ static int udc_get_status(struct lpc32xx_udc *udc, u16 reqtype, u16 wIndex)
 		break; /* Not supported */
 
 	case USB_RECIP_DEVICE:
-		ep0buff = udc->gadget.is_selfpowered;
+		ep0buff = (udc->selfpowered << USB_DEVICE_SELF_POWERED);
 		if (udc->dev_status & (1 << USB_DEVICE_REMOTE_WAKEUP))
 			ep0buff |= (1 << USB_DEVICE_REMOTE_WAKEUP);
 		break;
@@ -2488,7 +2499,10 @@ static int lpc32xx_wakeup(struct usb_gadget *gadget)
 
 static int lpc32xx_set_selfpowered(struct usb_gadget *gadget, int is_on)
 {
-	gadget->is_selfpowered = (is_on != 0);
+	struct lpc32xx_udc *udc = to_udc(gadget);
+
+	/* Always self-powered */
+	udc->selfpowered = (is_on != 0);
 
 	return 0;
 }
@@ -2545,7 +2559,7 @@ static int lpc32xx_pullup(struct usb_gadget *gadget, int is_on)
 }
 
 static int lpc32xx_start(struct usb_gadget *, struct usb_gadget_driver *);
-static int lpc32xx_stop(struct usb_gadget *);
+static int lpc32xx_stop(struct usb_gadget *, struct usb_gadget_driver *);
 
 static const struct usb_gadget_ops lpc32xx_udc_ops = {
 	.get_frame		= lpc32xx_get_frame,
@@ -2575,8 +2589,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep0",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_CONTROL,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 0,
@@ -2588,8 +2600,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep1-int",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_INT,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 2,
@@ -2601,8 +2611,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep2-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 4,
@@ -2614,8 +2622,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep3-iso",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 1023,
 		.hwep_num_base	= 6,
@@ -2627,8 +2633,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep4-int",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_INT,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 8,
@@ -2640,8 +2644,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep5-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 10,
@@ -2653,8 +2655,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep6-iso",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 1023,
 		.hwep_num_base	= 12,
@@ -2666,8 +2666,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep7-int",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_INT,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 14,
@@ -2679,8 +2677,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep8-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 16,
@@ -2692,8 +2688,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep9-iso",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 1023,
 		.hwep_num_base	= 18,
@@ -2705,8 +2699,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep10-int",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_INT,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 20,
@@ -2718,8 +2710,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep11-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 22,
@@ -2731,8 +2721,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep12-iso",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_ISO,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 1023,
 		.hwep_num_base	= 24,
@@ -2744,8 +2732,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep13-int",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_INT,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 26,
@@ -2757,8 +2743,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep14-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 64,
 		.hwep_num_base	= 28,
@@ -2770,8 +2754,6 @@ static const struct lpc32xx_udc controller_template = {
 		.ep = {
 			.name	= "ep15-bulk",
 			.ops	= &lpc32xx_ep_ops,
-			.caps	= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
-					USB_EP_CAPS_DIR_ALL),
 		},
 		.maxpacket	= 1023,
 		.hwep_num_base	= 30,
@@ -2965,7 +2947,7 @@ static int lpc32xx_start(struct usb_gadget *gadget,
 	udc->driver = driver;
 	udc->gadget.dev.of_node = udc->dev->of_node;
 	udc->enabled = 1;
-	udc->gadget.is_selfpowered = 1;
+	udc->selfpowered = 1;
 	udc->vbus = 0;
 
 	/* Force VBUS process once to check for cable insertion */
@@ -2979,10 +2961,14 @@ static int lpc32xx_start(struct usb_gadget *gadget,
 	return 0;
 }
 
-static int lpc32xx_stop(struct usb_gadget *gadget)
+static int lpc32xx_stop(struct usb_gadget *gadget,
+			struct usb_gadget_driver *driver)
 {
 	int i;
 	struct lpc32xx_udc *udc = to_udc(gadget);
+
+	if (!driver || driver != udc->driver)
+		return -EINVAL;
 
 	for (i = IRQ_USB_LP; i <= IRQ_USB_ATX; i++)
 		disable_irq(udc->udp_irq[i]);
@@ -3424,6 +3410,7 @@ static struct platform_driver lpc32xx_udc_driver = {
 	.resume		= lpc32xx_udc_resume,
 	.driver		= {
 		.name	= (char *) driver_name,
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(lpc32xx_udc_of_match),
 	},
 };

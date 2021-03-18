@@ -530,19 +530,8 @@ static int omap_mcbsp_dai_set_dai_sysclk(struct snd_soc_dai *cpu_dai,
 
 	case OMAP_MCBSP_SYSCLK_CLKX_EXT:
 		regs->srgr2	|= CLKSM;
-		regs->pcr0	|= SCLKME;
-		/*
-		 * If McBSP is master but yet the CLKX/CLKR pin drives the SRG,
-		 * disable output on those pins. This enables to inject the
-		 * reference clock through CLKX/CLKR. For this to work
-		 * set_dai_sysclk() _needs_ to be called after set_dai_fmt().
-		 */
-		regs->pcr0	&= ~CLKXM;
-		break;
 	case OMAP_MCBSP_SYSCLK_CLKR_EXT:
 		regs->pcr0	|= SCLKME;
-		/* Disable ouput on CLKR pin in master mode */
-		regs->pcr0	&= ~CLKRM;
 		break;
 	default:
 		err = -ENODEV;
@@ -842,6 +831,7 @@ static int asoc_mcbsp_remove(struct platform_device *pdev)
 static struct platform_driver asoc_mcbsp_driver = {
 	.driver = {
 			.name = "omap-mcbsp",
+			.owner = THIS_MODULE,
 			.of_match_table = omap_mcbsp_of_match,
 	},
 

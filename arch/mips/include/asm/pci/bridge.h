@@ -835,7 +835,6 @@ struct bridge_controller {
 	struct pci_controller	pc;
 	struct resource		mem;
 	struct resource		io;
-	struct resource		busn;
 	bridge_t		*base;
 	nasid_t			nasid;
 	unsigned int		widget_id;

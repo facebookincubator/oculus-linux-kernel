@@ -116,6 +116,7 @@ static const struct of_device_id s365_board_match[] = {
 static struct platform_driver s365_board_driver = {
 	.driver		= {
 		.name   = "s365-board",
+		.owner  = THIS_MODULE,
 		.of_match_table = s365_board_match,
 	},
 };

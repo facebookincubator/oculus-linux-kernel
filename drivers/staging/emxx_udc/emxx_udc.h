@@ -11,10 +11,19 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software Foundation,
+ *  Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
  */
+
+
+
 
 #ifndef _LINUX_EMXX_H
 #define _LINUX_EMXX_H
+
+
 
 /*---------------------------------------------------------------------------*/
 /*----------------- Default undef */
@@ -23,14 +32,19 @@
 #define UDC_DEBUG_DUMP
 #endif
 
+/* #define USE_INT_COUNT_OVER */
+
 /*----------------- Default define */
 #define	USE_DMA	1
 #define USE_SUSPEND_WAIT	1
+
+
 
 #ifndef TRUE
 #define TRUE	1
 #define FALSE	0
 #endif
+
 
 /*------------ Board dependence(Resource) */
 #define	VBUS_VALUE		GPIO_VBUS
@@ -46,10 +60,14 @@
 /* DMA Abort wait time ms */
 #define DMA_DISABLE_TIME		10
 
+
+
 /*------------ Controller dependence */
 #define NUM_ENDPOINTS		14		/* Endpoint */
 #define REG_EP_NUM		15		/* Endpoint Register */
 #define DMA_MAX_COUNT		256		/* DMA Block */
+
+
 
 #define EPC_RST_DISABLE_TIME		1	/* 1 usec */
 #define EPC_DIRPD_DISABLE_TIME		1	/* 1 msec */
@@ -59,9 +77,11 @@
 #define CHATGER_TIME			700	/* 700msec */
 #define USB_SUSPEND_TIME		2000	/* 2 sec */
 
+
 /* U2F FLAG */
 #define U2F_ENABLE		1
 #define U2F_DISABLE		0
+
 
 /*------- BIT */
 #define BIT00		0x00000001
@@ -97,6 +117,14 @@
 #define BIT30		0x40000000
 #define BIT31		0x80000000
 
+#if 0
+/*------- (0x0000) USB Control Register */
+#define USBTESTMODE			(BIT18+BIT17+BIT16)
+#define TEST_J				BIT16
+#define TEST_K				BIT17
+#define TEST_SE0_NAK			(BIT17+BIT16)
+#define TEST_PACKET			BIT18
+#endif
 #define TEST_FORCE_ENABLE		(BIT18+BIT16)
 
 #define INT_SEL				BIT10
@@ -442,10 +470,12 @@
 /*------- (0x1118:) EPnTADR Register */
 #define EPn_TADR			0xFFFFFFFF	/* RW */
 
+
+
 /*===========================================================================*/
 /* Struct */
-/*------- ep_regs */
-struct ep_regs {
+/*------- T_EP_REGS */
+typedef struct _T_EP_REGS {
 	u32 EP_CONTROL;			/* EP Control */
 	u32 EP_STATUS;			/* EP Status */
 	u32 EP_INT_ENA;			/* EP Interrupt Enable */
@@ -454,18 +484,18 @@ struct ep_regs {
 	u32 EP_LEN_DCNT;		/* EP Length & DMA count */
 	u32 EP_READ;			/* EP Read */
 	u32 EP_WRITE;			/* EP Write */
-};
+} T_EP_REGS, *PT_EP_REGS;
 
-/*------- ep_dcr */
-struct ep_dcr {
+/*------- T_EP_DCR */
+typedef struct _T_EP_DCR {
 	u32 EP_DCR1;			/* EP_DCR1 */
 	u32 EP_DCR2;			/* EP_DCR2 */
 	u32 EP_TADR;			/* EP_TADR */
 	u32 Reserved;			/* Reserved */
-};
+} T_EP_DCR, *PT_EP_DCR;
 
 /*------- Function Registers */
-struct fc_regs {
+typedef struct _T_FC_REGS {
 	u32 USB_CONTROL;		/* (0x0000) USB Control */
 	u32 USB_STATUS;			/* (0x0004) USB Status */
 	u32 USB_ADDRESS;		/* (0x0008) USB Address */
@@ -483,7 +513,7 @@ struct fc_regs {
 	u32 EP0_READ;			/* (0x0038) EP0 Read */
 	u32 EP0_WRITE;			/* (0x003C) EP0 Write */
 
-	struct ep_regs EP_REGS[REG_EP_NUM];	/* Endpoint Register */
+	T_EP_REGS EP_REGS[REG_EP_NUM];	/* Endpoint Register */
 
 	u8 Reserved220[0x1000-0x220];	/* (0x0220:0x0FFF) Reserved */
 
@@ -501,10 +531,18 @@ struct fc_regs {
 
 	u8 Reserved1028[0x110-0x28];	/* (0x1028:0x110F) Reserved */
 
-	struct ep_dcr EP_DCR[REG_EP_NUM];	/* */
+	T_EP_DCR EP_DCR[REG_EP_NUM];	/* */
 
 	u8 Reserved1200[0x1000-0x200];	/* Reserved */
-} __aligned(32);
+
+} __attribute__ ((aligned(32))) T_FC_REGS, *PT_FC_REGS;
+
+
+
+
+
+
+
 
 #define EP0_PACKETSIZE			64
 #define EP_PACKETSIZE			1024
@@ -516,7 +554,9 @@ struct fc_regs {
 #define D_FS_RAM_SIZE_BULK		64
 #define D_HS_RAM_SIZE_BULK		512
 
+
 struct nbu2ss_udc;
+
 
 enum ep0_state {
 	EP0_IDLE,
@@ -562,6 +602,7 @@ struct nbu2ss_ep {
 	dma_addr_t	phys_buf;
 };
 
+
 struct nbu2ss_udc {
 	struct usb_gadget gadget;
 	struct usb_gadget_driver *driver;
@@ -583,6 +624,7 @@ struct nbu2ss_udc {
 	unsigned		linux_suspended:1;
 	unsigned		linux_resume:1;
 	unsigned		usb_suspended:1;
+	unsigned		self_powered:1;
 	unsigned		remote_wakeup:1;
 	unsigned		udc_enabled:1;
 
@@ -590,17 +632,18 @@ struct nbu2ss_udc {
 
 	u32		curr_config;	/* Current Configuration Number */
 
-	struct fc_regs		*p_regs;
+	PT_FC_REGS		p_regs;
 };
 
 /* USB register access structure */
-union usb_reg_access {
+typedef volatile union {
 	struct {
 		unsigned char	DATA[4];
 	} byte;
 	unsigned int		dw;
-};
+} USB_REG_ACCESS;
 
 /*-------------------------------------------------------------------------*/
+#define ERR(stuff...)		printk(KERN_ERR "udc: " stuff)
 
 #endif  /* _LINUX_EMXX_H */

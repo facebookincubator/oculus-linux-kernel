@@ -521,7 +521,7 @@ static int rose_create(struct net *net, struct socket *sock, int protocol,
 	if (sock->type != SOCK_SEQPACKET || protocol != 0)
 		return -ESOCKTNOSUPPORT;
 
-	sk = sk_alloc(net, PF_ROSE, GFP_ATOMIC, &rose_proto, kern);
+	sk = sk_alloc(net, PF_ROSE, GFP_ATOMIC, &rose_proto);
 	if (sk == NULL)
 		return -ENOMEM;
 
@@ -560,7 +560,7 @@ static struct sock *rose_make_new(struct sock *osk)
 	if (osk->sk_type != SOCK_SEQPACKET)
 		return NULL;
 
-	sk = sk_alloc(sock_net(osk), PF_ROSE, GFP_ATOMIC, &rose_proto, 0);
+	sk = sk_alloc(sock_net(osk), PF_ROSE, GFP_ATOMIC, &rose_proto);
 	if (sk == NULL)
 		return NULL;
 
@@ -1047,7 +1047,8 @@ int rose_rx_call_request(struct sk_buff *skb, struct net_device *dev, struct ros
 	return 1;
 }
 
-static int rose_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
+static int rose_sendmsg(struct kiocb *iocb, struct socket *sock,
+			struct msghdr *msg, size_t len)
 {
 	struct sock *sk = sock->sk;
 	struct rose_sock *rose = rose_sk(sk);
@@ -1121,7 +1122,7 @@ static int rose_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	skb_reset_transport_header(skb);
 	skb_put(skb, len);
 
-	err = memcpy_from_msg(skb_transport_header(skb), msg, len);
+	err = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
 	if (err) {
 		kfree_skb(skb);
 		return err;
@@ -1211,8 +1212,8 @@ static int rose_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 }
 
 
-static int rose_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
-			int flags)
+static int rose_recvmsg(struct kiocb *iocb, struct socket *sock,
+			struct msghdr *msg, size_t size, int flags)
 {
 	struct sock *sk = sock->sk;
 	struct rose_sock *rose = rose_sk(sk);
@@ -1249,7 +1250,7 @@ static int rose_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 		msg->msg_flags |= MSG_TRUNC;
 	}
 
-	skb_copy_datagram_msg(skb, 0, msg, copied);
+	skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
 
 	if (msg->msg_name) {
 		struct sockaddr_rose *srose;

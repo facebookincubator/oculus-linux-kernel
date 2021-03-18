@@ -317,101 +317,59 @@ done:
 	return ret;
 }
 
-/* This function parses  head and tail IEs, from cfg80211_beacon_data and sets
- * these IE to FW.
- */
-static int mwifiex_uap_parse_tail_ies(struct mwifiex_private *priv,
-				      struct cfg80211_beacon_data *info)
-{
-	struct mwifiex_ie *gen_ie;
-	struct ieee_types_header *hdr;
-	struct ieee80211_vendor_ie *vendorhdr;
-	u16 gen_idx = MWIFIEX_AUTO_IDX_MASK, ie_len = 0;
-	int left_len, parsed_len = 0;
-
-	if (!info->tail || !info->tail_len)
-		return 0;
-
-	gen_ie = kzalloc(sizeof(*gen_ie), GFP_KERNEL);
-	if (!gen_ie)
-		return -ENOMEM;
-
-	left_len = info->tail_len;
-
-	/* Many IEs are generated in FW by parsing bss configuration.
-	 * Let's not add them here; else we may end up duplicating these IEs
-	 */
-	while (left_len > sizeof(struct ieee_types_header)) {
-		hdr = (void *)(info->tail + parsed_len);
-		switch (hdr->element_id) {
-		case WLAN_EID_SSID:
-		case WLAN_EID_SUPP_RATES:
-		case WLAN_EID_COUNTRY:
-		case WLAN_EID_PWR_CONSTRAINT:
-		case WLAN_EID_EXT_SUPP_RATES:
-		case WLAN_EID_HT_CAPABILITY:
-		case WLAN_EID_HT_OPERATION:
-		case WLAN_EID_VHT_CAPABILITY:
-		case WLAN_EID_VHT_OPERATION:
-		case WLAN_EID_VENDOR_SPECIFIC:
-			break;
-		default:
-			memcpy(gen_ie->ie_buffer + ie_len, hdr,
-			       hdr->len + sizeof(struct ieee_types_header));
-			ie_len += hdr->len + sizeof(struct ieee_types_header);
-			break;
-		}
-		left_len -= hdr->len + sizeof(struct ieee_types_header);
-		parsed_len += hdr->len + sizeof(struct ieee_types_header);
-	}
-
-	/* parse only WPA vendor IE from tail, WMM IE is configured by
-	 * bss_config command
-	 */
-	vendorhdr = (void *)cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
-						    WLAN_OUI_TYPE_MICROSOFT_WPA,
-						    info->tail, info->tail_len);
-	if (vendorhdr) {
-		memcpy(gen_ie->ie_buffer + ie_len, vendorhdr,
-		       vendorhdr->len + sizeof(struct ieee_types_header));
-		ie_len += vendorhdr->len + sizeof(struct ieee_types_header);
-	}
-
-	if (!ie_len) {
-		kfree(gen_ie);
-		return 0;
-	}
-
-	gen_ie->ie_index = cpu_to_le16(gen_idx);
-	gen_ie->mgmt_subtype_mask = cpu_to_le16(MGMT_MASK_BEACON |
-						MGMT_MASK_PROBE_RESP |
-						MGMT_MASK_ASSOC_RESP);
-	gen_ie->ie_length = cpu_to_le16(ie_len);
-
-	if (mwifiex_update_uap_custom_ie(priv, gen_ie, &gen_idx, NULL, NULL,
-					 NULL, NULL)) {
-		kfree(gen_ie);
-		return -1;
-	}
-
-	priv->gen_idx = gen_idx;
-	kfree(gen_ie);
-	return 0;
-}
-
-/* This function parses different IEs-head & tail IEs, beacon IEs,
- * probe response IEs, association response IEs from cfg80211_ap_settings
- * function and sets these IE to FW.
+/* This function parses different IEs-tail IEs, beacon IEs, probe response IEs,
+ * association response IEs from cfg80211_ap_settings function and sets these IE
+ * to FW.
  */
 int mwifiex_set_mgmt_ies(struct mwifiex_private *priv,
 			 struct cfg80211_beacon_data *info)
 {
-	int ret;
+	struct mwifiex_ie *gen_ie;
+	struct ieee_types_header *rsn_ie, *wpa_ie = NULL;
+	u16 rsn_idx = MWIFIEX_AUTO_IDX_MASK, ie_len = 0;
+	const u8 *vendor_ie;
 
-	ret = mwifiex_uap_parse_tail_ies(priv, info);
+	if (info->tail && info->tail_len) {
+		gen_ie = kzalloc(sizeof(struct mwifiex_ie), GFP_KERNEL);
+		if (!gen_ie)
+			return -ENOMEM;
+		gen_ie->ie_index = cpu_to_le16(rsn_idx);
+		gen_ie->mgmt_subtype_mask = cpu_to_le16(MGMT_MASK_BEACON |
+							MGMT_MASK_PROBE_RESP |
+							MGMT_MASK_ASSOC_RESP);
 
-	if (ret)
-		return ret;
+		rsn_ie = (void *)cfg80211_find_ie(WLAN_EID_RSN,
+						  info->tail, info->tail_len);
+		if (rsn_ie) {
+			memcpy(gen_ie->ie_buffer, rsn_ie, rsn_ie->len + 2);
+			ie_len = rsn_ie->len + 2;
+			gen_ie->ie_length = cpu_to_le16(ie_len);
+		}
+
+		vendor_ie = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
+						    WLAN_OUI_TYPE_MICROSOFT_WPA,
+						    info->tail,
+						    info->tail_len);
+		if (vendor_ie) {
+			wpa_ie = (struct ieee_types_header *)vendor_ie;
+			memcpy(gen_ie->ie_buffer + ie_len,
+			       wpa_ie, wpa_ie->len + 2);
+			ie_len += wpa_ie->len + 2;
+			gen_ie->ie_length = cpu_to_le16(ie_len);
+		}
+
+		if (rsn_ie || wpa_ie) {
+			if (mwifiex_update_uap_custom_ie(priv, gen_ie, &rsn_idx,
+							 NULL, NULL,
+							 NULL, NULL)) {
+				kfree(gen_ie);
+				return -1;
+			}
+			priv->rsn_idx = rsn_idx;
+		}
+
+		kfree(gen_ie);
+	}
 
 	return mwifiex_set_mgmt_beacon_data_ies(priv, info);
 }
@@ -420,25 +378,25 @@ int mwifiex_set_mgmt_ies(struct mwifiex_private *priv,
 int mwifiex_del_mgmt_ies(struct mwifiex_private *priv)
 {
 	struct mwifiex_ie *beacon_ie = NULL, *pr_ie = NULL;
-	struct mwifiex_ie *ar_ie = NULL, *gen_ie = NULL;
+	struct mwifiex_ie *ar_ie = NULL, *rsn_ie = NULL;
 	int ret = 0;
 
-	if (priv->gen_idx != MWIFIEX_AUTO_IDX_MASK) {
-		gen_ie = kmalloc(sizeof(*gen_ie), GFP_KERNEL);
-		if (!gen_ie)
+	if (priv->rsn_idx != MWIFIEX_AUTO_IDX_MASK) {
+		rsn_ie = kmalloc(sizeof(struct mwifiex_ie), GFP_KERNEL);
+		if (!rsn_ie)
 			return -ENOMEM;
 
-		gen_ie->ie_index = cpu_to_le16(priv->gen_idx);
-		gen_ie->mgmt_subtype_mask = cpu_to_le16(MWIFIEX_DELETE_MASK);
-		gen_ie->ie_length = 0;
-		if (mwifiex_update_uap_custom_ie(priv, gen_ie, &priv->gen_idx,
+		rsn_ie->ie_index = cpu_to_le16(priv->rsn_idx);
+		rsn_ie->mgmt_subtype_mask = cpu_to_le16(MWIFIEX_DELETE_MASK);
+		rsn_ie->ie_length = 0;
+		if (mwifiex_update_uap_custom_ie(priv, rsn_ie, &priv->rsn_idx,
 						 NULL, &priv->proberesp_idx,
 						 NULL, &priv->assocresp_idx)) {
 			ret = -1;
 			goto done;
 		}
 
-		priv->gen_idx = MWIFIEX_AUTO_IDX_MASK;
+		priv->rsn_idx = MWIFIEX_AUTO_IDX_MASK;
 	}
 
 	if (priv->beacon_idx != MWIFIEX_AUTO_IDX_MASK) {
@@ -479,10 +437,10 @@ int mwifiex_del_mgmt_ies(struct mwifiex_private *priv)
 						   ar_ie, &priv->assocresp_idx);
 
 done:
-	kfree(gen_ie);
 	kfree(beacon_ie);
 	kfree(pr_ie);
 	kfree(ar_ie);
+	kfree(rsn_ie);
 
 	return ret;
 }

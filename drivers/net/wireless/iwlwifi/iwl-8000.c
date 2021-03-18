@@ -6,7 +6,7 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2014 - 2015 Intel Mobile Communications GmbH
+ * Copyright(c) 2014 Intel Mobile Communications GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -32,7 +32,7 @@
  * BSD LICENSE
  *
  * Copyright(c) 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2014 - 2015 Intel Mobile Communications GmbH
+ * Copyright(c) 2014 Intel Mobile Communications GmbH
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -69,45 +69,31 @@
 #include "iwl-agn-hw.h"
 
 /* Highest firmware API version supported */
-#define IWL8000_UCODE_API_MAX	19
+#define IWL8000_UCODE_API_MAX	12
 
 /* Oldest version we won't warn about */
-#define IWL8000_UCODE_API_OK	13
+#define IWL8000_UCODE_API_OK	8
 
 /* Lowest firmware API version supported */
-#define IWL8000_UCODE_API_MIN	13
+#define IWL8000_UCODE_API_MIN	8
 
 /* NVM versions */
 #define IWL8000_NVM_VERSION		0x0a1d
 #define IWL8000_TX_POWER_VERSION	0xffff /* meaningless */
-
-/* Memory offsets and lengths */
-#define IWL8260_DCCM_OFFSET		0x800000
-#define IWL8260_DCCM_LEN		0x18000
-#define IWL8260_DCCM2_OFFSET		0x880000
-#define IWL8260_DCCM2_LEN		0x8000
-#define IWL8260_SMEM_OFFSET		0x400000
-#define IWL8260_SMEM_LEN		0x68000
 
 #define IWL8000_FW_PRE "iwlwifi-8000"
 #define IWL8000_MODULE_FIRMWARE(api) \
 	IWL8000_FW_PRE "-" __stringify(api) ".ucode"
 
 #define NVM_HW_SECTION_NUM_FAMILY_8000		10
-#define DEFAULT_NVM_FILE_FAMILY_8000B		"nvmData-8000B"
-#define DEFAULT_NVM_FILE_FAMILY_8000C		"nvmData-8000C"
+#define DEFAULT_NVM_FILE_FAMILY_8000		"iwl_nvm_8000.bin"
 
-/* Max SDIO RX/TX aggregation sizes of the ADDBA request/response */
-#define MAX_RX_AGG_SIZE_8260_SDIO	21
-#define MAX_TX_AGG_SIZE_8260_SDIO	40
-
-/* Max A-MPDU exponent for HT and VHT */
-#define MAX_HT_AMPDU_EXPONENT_8260_SDIO	IEEE80211_HT_MAX_AMPDU_32K
-#define MAX_VHT_AMPDU_EXPONENT_8260_SDIO	IEEE80211_VHT_MAX_AMPDU_32K
+/* Max SDIO RX aggregation size of the ADDBA request/response */
+#define MAX_RX_AGG_SIZE_8260_SDIO	28
 
 static const struct iwl_base_params iwl8000_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE_FAMILY_8000,
-	.num_of_queues = 31,
+	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.pll_cfg_val = 0,
 	.shadow_ram_support = true,
 	.led_compensation = 57,
@@ -118,55 +104,21 @@ static const struct iwl_base_params iwl8000_base_params = {
 };
 
 static const struct iwl_ht_params iwl8000_ht_params = {
-	.stbc = true,
 	.ldpc = true,
 	.ht40_bands = BIT(IEEE80211_BAND_2GHZ) | BIT(IEEE80211_BAND_5GHZ),
 };
 
-static const struct iwl_tt_params iwl8000_tt_params = {
-	.ct_kill_entry = 115,
-	.ct_kill_exit = 93,
-	.ct_kill_duration = 5,
-	.dynamic_smps_entry = 111,
-	.dynamic_smps_exit = 107,
-	.tx_protection_entry = 112,
-	.tx_protection_exit = 105,
-	.tx_backoff = {
-		{.temperature = 110, .backoff = 200},
-		{.temperature = 111, .backoff = 600},
-		{.temperature = 112, .backoff = 1200},
-		{.temperature = 113, .backoff = 2000},
-		{.temperature = 114, .backoff = 4000},
-	},
-	.support_ct_kill = true,
-	.support_dynamic_smps = true,
-	.support_tx_protection = true,
-	.support_tx_backoff = true,
-};
-
-#define IWL_DEVICE_8000							\
-	.ucode_api_max = IWL8000_UCODE_API_MAX,				\
-	.ucode_api_ok = IWL8000_UCODE_API_OK,				\
-	.ucode_api_min = IWL8000_UCODE_API_MIN,				\
-	.device_family = IWL_DEVICE_FAMILY_8000,			\
-	.max_inst_size = IWL60_RTC_INST_SIZE,				\
-	.max_data_size = IWL60_RTC_DATA_SIZE,				\
-	.base_params = &iwl8000_base_params,				\
-	.led_mode = IWL_LED_RF_STATE,					\
-	.nvm_hw_section_num = NVM_HW_SECTION_NUM_FAMILY_8000,		\
-	.d0i3 = true,							\
-	.features = NETIF_F_RXCSUM,					\
-	.non_shared_ant = ANT_A,					\
-	.dccm_offset = IWL8260_DCCM_OFFSET,				\
-	.dccm_len = IWL8260_DCCM_LEN,					\
-	.dccm2_offset = IWL8260_DCCM2_OFFSET,				\
-	.dccm2_len = IWL8260_DCCM2_LEN,					\
-	.smem_offset = IWL8260_SMEM_OFFSET,				\
-	.smem_len = IWL8260_SMEM_LEN,					\
-	.default_nvm_file_B_step = DEFAULT_NVM_FILE_FAMILY_8000B,	\
-	.default_nvm_file_C_step = DEFAULT_NVM_FILE_FAMILY_8000C,	\
-	.thermal_params = &iwl8000_tt_params,				\
-	.apmg_not_supported = true
+#define IWL_DEVICE_8000						\
+	.ucode_api_max = IWL8000_UCODE_API_MAX,			\
+	.ucode_api_ok = IWL8000_UCODE_API_OK,			\
+	.ucode_api_min = IWL8000_UCODE_API_MIN,			\
+	.device_family = IWL_DEVICE_FAMILY_8000,		\
+	.max_inst_size = IWL60_RTC_INST_SIZE,			\
+	.max_data_size = IWL60_RTC_DATA_SIZE,			\
+	.base_params = &iwl8000_base_params,			\
+	.led_mode = IWL_LED_RF_STATE,				\
+	.nvm_hw_section_num = NVM_HW_SECTION_NUM_FAMILY_8000,	\
+	.non_shared_ant = ANT_A
 
 const struct iwl_cfg iwl8260_2n_cfg = {
 	.name = "Intel(R) Dual Band Wireless N 8260",
@@ -184,17 +136,6 @@ const struct iwl_cfg iwl8260_2ac_cfg = {
 	.ht_params = &iwl8000_ht_params,
 	.nvm_ver = IWL8000_NVM_VERSION,
 	.nvm_calib_ver = IWL8000_TX_POWER_VERSION,
-	.max_ht_ampdu_exponent = IEEE80211_HT_MAX_AMPDU_64K,
-};
-
-const struct iwl_cfg iwl4165_2ac_cfg = {
-	.name = "Intel(R) Dual Band Wireless AC 4165",
-	.fw_name_pre = IWL8000_FW_PRE,
-	IWL_DEVICE_8000,
-	.ht_params = &iwl8000_ht_params,
-	.nvm_ver = IWL8000_NVM_VERSION,
-	.nvm_calib_ver = IWL8000_TX_POWER_VERSION,
-	.max_ht_ampdu_exponent = IEEE80211_HT_MAX_AMPDU_64K,
 };
 
 const struct iwl_cfg iwl8260_2ac_sdio_cfg = {
@@ -204,26 +145,9 @@ const struct iwl_cfg iwl8260_2ac_sdio_cfg = {
 	.ht_params = &iwl8000_ht_params,
 	.nvm_ver = IWL8000_NVM_VERSION,
 	.nvm_calib_ver = IWL8000_TX_POWER_VERSION,
+	.default_nvm_file = DEFAULT_NVM_FILE_FAMILY_8000,
 	.max_rx_agg_size = MAX_RX_AGG_SIZE_8260_SDIO,
-	.max_tx_agg_size = MAX_TX_AGG_SIZE_8260_SDIO,
 	.disable_dummy_notification = true,
-	.max_ht_ampdu_exponent  = MAX_HT_AMPDU_EXPONENT_8260_SDIO,
-	.max_vht_ampdu_exponent = MAX_VHT_AMPDU_EXPONENT_8260_SDIO,
-};
-
-const struct iwl_cfg iwl4165_2ac_sdio_cfg = {
-	.name = "Intel(R) Dual Band Wireless-AC 4165",
-	.fw_name_pre = IWL8000_FW_PRE,
-	IWL_DEVICE_8000,
-	.ht_params = &iwl8000_ht_params,
-	.nvm_ver = IWL8000_NVM_VERSION,
-	.nvm_calib_ver = IWL8000_TX_POWER_VERSION,
-	.max_rx_agg_size = MAX_RX_AGG_SIZE_8260_SDIO,
-	.max_tx_agg_size = MAX_TX_AGG_SIZE_8260_SDIO,
-	.bt_shared_single_ant = true,
-	.disable_dummy_notification = true,
-	.max_ht_ampdu_exponent  = MAX_HT_AMPDU_EXPONENT_8260_SDIO,
-	.max_vht_ampdu_exponent = MAX_VHT_AMPDU_EXPONENT_8260_SDIO,
 };
 
 MODULE_FIRMWARE(IWL8000_MODULE_FIRMWARE(IWL8000_UCODE_API_OK));

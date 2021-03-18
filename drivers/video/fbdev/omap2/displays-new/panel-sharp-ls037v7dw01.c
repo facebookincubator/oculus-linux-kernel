@@ -54,7 +54,7 @@ static const struct omap_video_timings sharp_ls_timings = {
 	.hsync_level	= OMAPDSS_SIG_ACTIVE_LOW,
 	.data_pclk_edge	= OMAPDSS_DRIVE_SIG_RISING_EDGE,
 	.de_level	= OMAPDSS_SIG_ACTIVE_HIGH,
-	.sync_pclk_edge	= OMAPDSS_DRIVE_SIG_FALLING_EDGE,
+	.sync_pclk_edge	= OMAPDSS_DRIVE_SIG_OPPOSITE_EDGES,
 };
 
 #define to_panel_data(p) container_of(p, struct panel_drv_data, dssdev)
@@ -268,12 +268,17 @@ static  int sharp_ls_get_gpio_of(struct device *dev, int index, int val,
 	const char *desc, struct gpio_desc **gpiod)
 {
 	struct gpio_desc *gd;
+	int r;
 
 	*gpiod = NULL;
 
-	gd = devm_gpiod_get_index(dev, desc, index, GPIOD_OUT_LOW);
+	gd = devm_gpiod_get_index(dev, desc, index);
 	if (IS_ERR(gd))
-		return PTR_ERR(gd);
+		return PTR_ERR(gd) == -ENOENT ? 0 : PTR_ERR(gd);
+
+	r = gpiod_direction_output(gd, val);
+	if (r)
+		return r;
 
 	*gpiod = gd;
 	return 0;
@@ -403,6 +408,7 @@ static struct platform_driver sharp_ls_driver = {
 	.remove = __exit_p(sharp_ls_remove),
 	.driver = {
 		.name = "panel-sharp-ls037v7dw01",
+		.owner = THIS_MODULE,
 		.of_match_table = sharp_ls_of_match,
 		.suppress_bind_attrs = true,
 	},

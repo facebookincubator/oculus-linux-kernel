@@ -9,6 +9,7 @@
 
 #include <linux/init.h>
 #include <linux/of_platform.h>
+#include <asm/prom.h>
 
 /* Trigger specific functions */
 #ifdef CONFIG_GPIOLIB

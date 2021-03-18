@@ -99,11 +99,11 @@ static int alloc_region_table(struct dm_target *ti, unsigned nr_paths)
 	if (sector_div(nr_regions, sctx->region_size))
 		nr_regions++;
 
-	if (nr_regions >= ULONG_MAX) {
+	sctx->nr_regions = nr_regions;
+	if (sctx->nr_regions != nr_regions || sctx->nr_regions >= ULONG_MAX) {
 		ti->error = "Region table too large";
 		return -EINVAL;
 	}
-	sctx->nr_regions = nr_regions;
 
 	nr_slots = nr_regions;
 	if (sector_div(nr_slots, sctx->region_entries_per_slot))
@@ -511,24 +511,27 @@ static void switch_status(struct dm_target *ti, status_type_t type,
  *
  * Passthrough all ioctls to the path for sector 0
  */
-static int switch_prepare_ioctl(struct dm_target *ti,
-		struct block_device **bdev, fmode_t *mode)
+static int switch_ioctl(struct dm_target *ti, unsigned cmd,
+			unsigned long arg)
 {
 	struct switch_ctx *sctx = ti->private;
+	struct block_device *bdev;
+	fmode_t mode;
 	unsigned path_nr;
+	int r = 0;
 
 	path_nr = switch_get_path_nr(sctx, 0);
 
-	*bdev = sctx->path_list[path_nr].dmdev->bdev;
-	*mode = sctx->path_list[path_nr].dmdev->mode;
+	bdev = sctx->path_list[path_nr].dmdev->bdev;
+	mode = sctx->path_list[path_nr].dmdev->mode;
 
 	/*
 	 * Only pass ioctls through if the device sizes match exactly.
 	 */
-	if (ti->len + sctx->path_list[path_nr].start !=
-	    i_size_read((*bdev)->bd_inode) >> SECTOR_SHIFT)
-		return 1;
-	return 0;
+	if (ti->len + sctx->path_list[path_nr].start != i_size_read(bdev->bd_inode) >> SECTOR_SHIFT)
+		r = scsi_verify_blk_ioctl(NULL, cmd);
+
+	return r ? : __blkdev_driver_ioctl(bdev, mode, cmd, arg);
 }
 
 static int switch_iterate_devices(struct dm_target *ti,
@@ -557,7 +560,7 @@ static struct target_type switch_target = {
 	.map = switch_map,
 	.message = switch_message,
 	.status = switch_status,
-	.prepare_ioctl = switch_prepare_ioctl,
+	.ioctl = switch_ioctl,
 	.iterate_devices = switch_iterate_devices,
 };
 

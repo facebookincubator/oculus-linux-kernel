@@ -926,7 +926,6 @@ cifs_NTtimeToUnix(__le64 ntutc)
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
 	s64 t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
-	u64 abs_t;
 
 	/*
 	 * Unfortunately can not use normal 64 bit division on 32 bit arch, but
@@ -934,14 +933,13 @@ cifs_NTtimeToUnix(__le64 ntutc)
 	 * to special case them
 	 */
 	if (t < 0) {
-		abs_t = -t;
-		ts.tv_nsec = (long)(do_div(abs_t, 10000000) * 100);
+		t = -t;
+		ts.tv_nsec = (long)(do_div(t, 10000000) * 100);
 		ts.tv_nsec = -ts.tv_nsec;
-		ts.tv_sec = -abs_t;
+		ts.tv_sec = -t;
 	} else {
-		abs_t = t;
-		ts.tv_nsec = (long)do_div(abs_t, 10000000) * 100;
-		ts.tv_sec = abs_t;
+		ts.tv_nsec = (long)do_div(t, 10000000) * 100;
+		ts.tv_sec = t;
 	}
 
 	return ts;

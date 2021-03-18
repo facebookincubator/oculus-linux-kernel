@@ -1195,6 +1195,16 @@ static struct pnp_driver ene_driver = {
 	.shutdown = ene_shutdown,
 };
 
+static int __init ene_init(void)
+{
+	return pnp_register_driver(&ene_driver);
+}
+
+static void ene_exit(void)
+{
+	pnp_unregister_driver(&ene_driver);
+}
+
 module_param(sample_period, int, S_IRUGO);
 MODULE_PARM_DESC(sample_period, "Hardware sample period (50 us default)");
 
@@ -1216,4 +1226,5 @@ MODULE_DESCRIPTION
 MODULE_AUTHOR("Maxim Levitsky");
 MODULE_LICENSE("GPL");
 
-module_pnp_driver(ene_driver);
+module_init(ene_init);
+module_exit(ene_exit);

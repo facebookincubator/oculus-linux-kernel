@@ -23,7 +23,6 @@
 #include "wmi.h"
 #include "hif.h"
 #include "hw.h"
-#include "core.h"
 
 #include "testmode_i.h"
 
@@ -46,7 +45,7 @@ bool ath10k_tm_event_wmi(struct ath10k *ar, u32 cmd_id, struct sk_buff *skb)
 	int ret;
 
 	ath10k_dbg(ar, ATH10K_DBG_TESTMODE,
-		   "testmode event wmi cmd_id %d skb %pK skb->len %d\n",
+		   "testmode event wmi cmd_id %d skb %p skb->len %d\n",
 		   cmd_id, skb, skb->len);
 
 	ath10k_dbg_dump(ar, ATH10K_DBG_TESTMODE, NULL, "", skb->data, skb->len);
@@ -140,78 +139,9 @@ static int ath10k_tm_cmd_get_version(struct ath10k *ar, struct nlattr *tb[])
 	return cfg80211_testmode_reply(skb);
 }
 
-static int ath10k_tm_fetch_utf_firmware_api_1(struct ath10k *ar,
-					      struct ath10k_fw_file *fw_file)
-{
-	char filename[100];
-	int ret;
-
-	snprintf(filename, sizeof(filename), "%s/%s",
-		 ar->hw_params.fw.dir, ATH10K_FW_UTF_FILE);
-
-	/* load utf firmware image */
-	ret = request_firmware(&fw_file->firmware, filename, ar->dev);
-	if (ret) {
-		ath10k_warn(ar, "failed to retrieve utf firmware '%s': %d\n",
-			    filename, ret);
-		return ret;
-	}
-
-	/* We didn't find FW UTF API 1 ("utf.bin") does not advertise
-	 * firmware features. Do an ugly hack where we force the firmware
-	 * features to match with 10.1 branch so that wmi.c will use the
-	 * correct WMI interface.
-	 */
-
-	fw_file->wmi_op_version = ATH10K_FW_WMI_OP_VERSION_10_1;
-	fw_file->htt_op_version = ATH10K_FW_HTT_OP_VERSION_10_1;
-	fw_file->firmware_data = fw_file->firmware->data;
-	fw_file->firmware_len = fw_file->firmware->size;
-
-	return 0;
-}
-
-static int ath10k_tm_fetch_firmware(struct ath10k *ar)
-{
-	struct ath10k_fw_components *utf_mode_fw;
-	int ret;
-
-	ret = ath10k_core_fetch_firmware_api_n(ar, ATH10K_FW_UTF_API2_FILE,
-					       &ar->testmode.utf_mode_fw.fw_file);
-	if (ret == 0) {
-		ath10k_dbg(ar, ATH10K_DBG_TESTMODE, "testmode using fw utf api 2");
-		goto out;
-	}
-
-	ret = ath10k_tm_fetch_utf_firmware_api_1(ar, &ar->testmode.utf_mode_fw.fw_file);
-	if (ret) {
-		ath10k_err(ar, "failed to fetch utf firmware binary: %d", ret);
-		return ret;
-	}
-
-	ath10k_dbg(ar, ATH10K_DBG_TESTMODE, "testmode using utf api 1");
-
-out:
-	utf_mode_fw = &ar->testmode.utf_mode_fw;
-
-	/* Use the same board data file as the normal firmware uses (but
-	 * it's still "owned" by normal_mode_fw so we shouldn't free it.
-	 */
-	utf_mode_fw->board_data = ar->normal_mode_fw.board_data;
-	utf_mode_fw->board_len = ar->normal_mode_fw.board_len;
-
-	if (!utf_mode_fw->fw_file.otp_data) {
-		ath10k_info(ar, "utf.bin didn't contain otp binary, taking it from the normal mode firmware");
-		utf_mode_fw->fw_file.otp_data = ar->normal_mode_fw.fw_file.otp_data;
-		utf_mode_fw->fw_file.otp_len = ar->normal_mode_fw.fw_file.otp_len;
-	}
-
-	return 0;
-}
-
 static int ath10k_tm_cmd_utf_start(struct ath10k *ar, struct nlattr *tb[])
 {
-	const char *ver;
+	char filename[100];
 	int ret;
 
 	ath10k_dbg(ar, ATH10K_DBG_TESTMODE, "testmode cmd utf start\n");
@@ -229,46 +159,50 @@ static int ath10k_tm_cmd_utf_start(struct ath10k *ar, struct nlattr *tb[])
 		goto err;
 	}
 
-	if (WARN_ON(ar->testmode.utf_mode_fw.fw_file.firmware != NULL)) {
+	if (WARN_ON(ar->testmode.utf != NULL)) {
 		/* utf image is already downloaded, it shouldn't be */
 		ret = -EEXIST;
 		goto err;
 	}
 
-	ret = ath10k_tm_fetch_firmware(ar);
+	snprintf(filename, sizeof(filename), "%s/%s",
+		 ar->hw_params.fw.dir, ATH10K_FW_UTF_FILE);
+
+	/* load utf firmware image */
+	ret = request_firmware(&ar->testmode.utf, filename, ar->dev);
 	if (ret) {
-		ath10k_err(ar, "failed to fetch UTF firmware: %d", ret);
+		ath10k_warn(ar, "failed to retrieve utf firmware '%s': %d\n",
+			    filename, ret);
 		goto err;
 	}
 
-	if (ar->testmode.utf_mode_fw.fw_file.codeswap_data &&
-	    ar->testmode.utf_mode_fw.fw_file.codeswap_len) {
-		ret = ath10k_swap_code_seg_init(ar,
-						&ar->testmode.utf_mode_fw.fw_file);
-		if (ret) {
-			ath10k_warn(ar,
-				    "failed to init utf code swap segment: %d\n",
-				    ret);
-			goto err_release_utf_mode_fw;
-		}
-	}
-
 	spin_lock_bh(&ar->data_lock);
+
 	ar->testmode.utf_monitor = true;
+
 	spin_unlock_bh(&ar->data_lock);
 
-	ath10k_dbg(ar, ATH10K_DBG_TESTMODE, "testmode wmi version %d\n",
-		   ar->testmode.utf_mode_fw.fw_file.wmi_op_version);
+	BUILD_BUG_ON(sizeof(ar->fw_features) !=
+		     sizeof(ar->testmode.orig_fw_features));
+
+	memcpy(ar->testmode.orig_fw_features, ar->fw_features,
+	       sizeof(ar->fw_features));
+
+	/* utf.bin firmware image does not advertise firmware features. Do
+	 * an ugly hack where we force the firmware features so that wmi.c
+	 * will use the correct WMI interface.
+	 */
+	memset(ar->fw_features, 0, sizeof(ar->fw_features));
+	__set_bit(ATH10K_FW_FEATURE_WMI_10X, ar->fw_features);
 
 	ret = ath10k_hif_power_up(ar);
 	if (ret) {
 		ath10k_err(ar, "failed to power up hif (testmode): %d\n", ret);
 		ar->state = ATH10K_STATE_OFF;
-		goto err_release_utf_mode_fw;
+		goto err_fw_features;
 	}
 
-	ret = ath10k_core_start(ar, ATH10K_FIRMWARE_MODE_UTF,
-				&ar->testmode.utf_mode_fw);
+	ret = ath10k_core_start(ar, ATH10K_FIRMWARE_MODE_UTF);
 	if (ret) {
 		ath10k_err(ar, "failed to start core (testmode): %d\n", ret);
 		ar->state = ATH10K_STATE_OFF;
@@ -277,12 +211,7 @@ static int ath10k_tm_cmd_utf_start(struct ath10k *ar, struct nlattr *tb[])
 
 	ar->state = ATH10K_STATE_UTF;
 
-	if (strlen(ar->testmode.utf_mode_fw.fw_file.fw_version) > 0)
-		ver = ar->testmode.utf_mode_fw.fw_file.fw_version;
-	else
-		ver = "API 1";
-
-	ath10k_info(ar, "UTF firmware %s started\n", ver);
+	ath10k_info(ar, "UTF firmware started\n");
 
 	mutex_unlock(&ar->conf_mutex);
 
@@ -291,14 +220,13 @@ static int ath10k_tm_cmd_utf_start(struct ath10k *ar, struct nlattr *tb[])
 err_power_down:
 	ath10k_hif_power_down(ar);
 
-err_release_utf_mode_fw:
-	if (ar->testmode.utf_mode_fw.fw_file.codeswap_data &&
-	    ar->testmode.utf_mode_fw.fw_file.codeswap_len)
-		ath10k_swap_code_seg_release(ar,
-					     &ar->testmode.utf_mode_fw.fw_file);
+err_fw_features:
+	/* return the original firmware features */
+	memcpy(ar->fw_features, ar->testmode.orig_fw_features,
+	       sizeof(ar->fw_features));
 
-	release_firmware(ar->testmode.utf_mode_fw.fw_file.firmware);
-	ar->testmode.utf_mode_fw.fw_file.firmware = NULL;
+	release_firmware(ar->testmode.utf);
+	ar->testmode.utf = NULL;
 
 err:
 	mutex_unlock(&ar->conf_mutex);
@@ -319,13 +247,12 @@ static void __ath10k_tm_cmd_utf_stop(struct ath10k *ar)
 
 	spin_unlock_bh(&ar->data_lock);
 
-	if (ar->testmode.utf_mode_fw.fw_file.codeswap_data &&
-	    ar->testmode.utf_mode_fw.fw_file.codeswap_len)
-		ath10k_swap_code_seg_release(ar,
-					     &ar->testmode.utf_mode_fw.fw_file);
+	/* return the original firmware features */
+	memcpy(ar->fw_features, ar->testmode.orig_fw_features,
+	       sizeof(ar->fw_features));
 
-	release_firmware(ar->testmode.utf_mode_fw.fw_file.firmware);
-	ar->testmode.utf_mode_fw.fw_file.firmware = NULL;
+	release_firmware(ar->testmode.utf);
+	ar->testmode.utf = NULL;
 
 	ar->state = ATH10K_STATE_OFF;
 }
@@ -383,7 +310,7 @@ static int ath10k_tm_cmd_wmi(struct ath10k *ar, struct nlattr *tb[])
 	cmd_id = nla_get_u32(tb[ATH10K_TM_ATTR_WMI_CMDID]);
 
 	ath10k_dbg(ar, ATH10K_DBG_TESTMODE,
-		   "testmode cmd wmi cmd_id %d buf %pK buf_len %d\n",
+		   "testmode cmd wmi cmd_id %d buf %p buf_len %d\n",
 		   cmd_id, buf, buf_len);
 
 	ath10k_dbg_dump(ar, ATH10K_DBG_TESTMODE, NULL, "", buf, buf_len);

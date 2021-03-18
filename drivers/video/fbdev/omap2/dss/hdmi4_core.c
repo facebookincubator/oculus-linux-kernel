@@ -31,8 +31,10 @@
 #include <linux/platform_device.h>
 #include <linux/string.h>
 #include <linux/seq_file.h>
+#if defined(CONFIG_OMAP4_DSS_HDMI_AUDIO)
 #include <sound/asound.h>
 #include <sound/asoundef.h>
+#endif
 
 #include "hdmi4_core.h"
 #include "dss_features.h"
@@ -528,6 +530,7 @@ void hdmi4_core_dump(struct hdmi_core_data *core, struct seq_file *s)
 	DUMPCOREAV(HDMI_CORE_AV_CEC_ADDR_ID);
 }
 
+#if defined(CONFIG_OMAP4_DSS_HDMI_AUDIO)
 static void hdmi_core_audio_config(struct hdmi_core_data *core,
 					struct hdmi_core_audio_config *cfg)
 {
@@ -653,13 +656,6 @@ static void hdmi_core_audio_infoframe_cfg(struct hdmi_core_data *core,
 
 	hdmi_write_reg(av_base, HDMI_CORE_AV_AUD_DBYTE(2), info_aud->db3);
 	sum += info_aud->db3;
-
-	/*
-	 * The OMAP HDMI IP requires to use the 8-channel channel code when
-	 * transmitting more than two channels.
-	 */
-	if (info_aud->db4_ca != 0x00)
-		info_aud->db4_ca = 0x13;
 
 	hdmi_write_reg(av_base, HDMI_CORE_AV_AUD_DBYTE(3), info_aud->db4_ca);
 	sum += info_aud->db4_ca;
@@ -802,9 +798,7 @@ int hdmi4_audio_config(struct hdmi_core_data *core, struct hdmi_wp_data *wp,
 
 	/*
 	 * the HDMI IP needs to enable four stereo channels when transmitting
-	 * more than 2 audio channels.  Similarly, the channel count in the
-	 * Audio InfoFrame has to match the sample_present bits (some channels
-	 * are padded with zeroes)
+	 * more than 2 audio channels
 	 */
 	if (channel_count == 2) {
 		audio_format.stereo_channels = HDMI_AUDIO_STEREO_ONECHANNEL;
@@ -816,7 +810,6 @@ int hdmi4_audio_config(struct hdmi_core_data *core, struct hdmi_wp_data *wp,
 				HDMI_AUDIO_I2S_SD1_EN | HDMI_AUDIO_I2S_SD2_EN |
 				HDMI_AUDIO_I2S_SD3_EN;
 		acore.layout = HDMI_AUDIO_LAYOUT_8CH;
-		audio->cea->db1_ct_cc = 7;
 	}
 
 	acore.en_spdif = false;
@@ -883,6 +876,17 @@ void hdmi4_audio_stop(struct hdmi_core_data *core, struct hdmi_wp_data *wp)
 
 	hdmi_wp_audio_core_req_enable(wp, false);
 }
+
+int hdmi4_audio_get_dma_port(u32 *offset, u32 *size)
+{
+	if (!offset || !size)
+		return -EINVAL;
+	*offset = HDMI_WP_AUDIO_DATA;
+	*size = 4;
+	return 0;
+}
+
+#endif
 
 int hdmi4_core_init(struct platform_device *pdev, struct hdmi_core_data *core)
 {

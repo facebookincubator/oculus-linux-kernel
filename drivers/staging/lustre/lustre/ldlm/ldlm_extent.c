@@ -58,6 +58,7 @@
 #include "../include/lustre_lib.h"
 #include "ldlm_internal.h"
 
+
 /* When a lock is cancelled by a client, the KMS may undergo change if this
  * is the "highest lock".  This function returns the new KMS value.
  * Caller must hold lr_lock already.
@@ -96,23 +97,12 @@ __u64 ldlm_extent_shift_kms(struct ldlm_lock *lock, __u64 old_kms)
 EXPORT_SYMBOL(ldlm_extent_shift_kms);
 
 struct kmem_cache *ldlm_interval_slab;
-
-/* interval tree, for LDLM_EXTENT. */
-static void ldlm_interval_attach(struct ldlm_interval *n, struct ldlm_lock *l)
-{
-	LASSERT(!l->l_tree_node);
-	LASSERT(l->l_resource->lr_type == LDLM_EXTENT);
-
-	list_add_tail(&l->l_sl_policy, &n->li_group);
-	l->l_tree_node = n;
-}
-
 struct ldlm_interval *ldlm_interval_alloc(struct ldlm_lock *lock)
 {
 	struct ldlm_interval *node;
 
 	LASSERT(lock->l_resource->lr_type == LDLM_EXTENT);
-	node = kmem_cache_alloc(ldlm_interval_slab, GFP_NOFS | __GFP_ZERO);
+	OBD_SLAB_ALLOC_PTR_GFP(node, ldlm_interval_slab, GFP_NOFS);
 	if (node == NULL)
 		return NULL;
 
@@ -126,8 +116,19 @@ void ldlm_interval_free(struct ldlm_interval *node)
 	if (node) {
 		LASSERT(list_empty(&node->li_group));
 		LASSERT(!interval_is_intree(&node->li_node));
-		kmem_cache_free(ldlm_interval_slab, node);
+		OBD_SLAB_FREE(node, ldlm_interval_slab, sizeof(*node));
 	}
+}
+
+/* interval tree, for LDLM_EXTENT. */
+void ldlm_interval_attach(struct ldlm_interval *n,
+			  struct ldlm_lock *l)
+{
+	LASSERT(l->l_tree_node == NULL);
+	LASSERT(l->l_resource->lr_type == LDLM_EXTENT);
+
+	list_add_tail(&l->l_sl_policy, &n->li_group);
+	l->l_tree_node = n;
 }
 
 struct ldlm_interval *ldlm_interval_detach(struct ldlm_lock *l)
@@ -150,8 +151,7 @@ static inline int lock_mode_to_index(ldlm_mode_t mode)
 
 	LASSERT(mode != 0);
 	LASSERT(IS_PO2(mode));
-	for (index = -1; mode; index++)
-		mode >>= 1;
+	for (index = -1; mode; index++, mode >>= 1) ;
 	LASSERT(index < LCK_MODE_NUM);
 	return index;
 }
@@ -182,9 +182,7 @@ void ldlm_extent_add_lock(struct ldlm_resource *res,
 	root = &res->lr_itree[idx].lit_root;
 	found = interval_insert(&node->li_node, root);
 	if (found) { /* The policy group found. */
-		struct ldlm_interval *tmp;
-
-		tmp = ldlm_interval_detach(lock);
+		struct ldlm_interval *tmp = ldlm_interval_detach(lock);
 		LASSERT(tmp != NULL);
 		ldlm_interval_free(tmp);
 		ldlm_interval_attach(to_ldlm_interval(found), lock);

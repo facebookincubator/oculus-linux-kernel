@@ -14,6 +14,4 @@
 
 extern struct smp_operations	sti_smp_ops;
 
-void sti_secondary_startup(void);
-
 #endif

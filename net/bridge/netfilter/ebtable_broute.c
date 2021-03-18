@@ -50,14 +50,10 @@ static const struct ebt_table broute_table = {
 
 static int ebt_broute(struct sk_buff *skb)
 {
-	struct nf_hook_state state;
 	int ret;
 
-	nf_hook_state_init(&state, NULL, NF_BR_BROUTING, INT_MIN,
-			   NFPROTO_BRIDGE, skb->dev, NULL, NULL,
-			   dev_net(skb->dev), NULL);
-
-	ret = ebt_do_table(skb, &state, state.net->xt.broute_table);
+	ret = ebt_do_table(NF_BR_BROUTING, skb, skb->dev, NULL,
+			   dev_net(skb->dev)->xt.broute_table);
 	if (ret == NF_DROP)
 		return 1; /* route it */
 	return 0; /* bridge it */

@@ -617,10 +617,9 @@ void xdr_truncate_encode(struct xdr_stream *xdr, size_t len)
 	fraglen = min_t(int, buf->len - len, tail->iov_len);
 	tail->iov_len -= fraglen;
 	buf->len -= fraglen;
-	if (tail->iov_len) {
+	if (tail->iov_len && buf->len == len) {
 		xdr->p = tail->iov_base + tail->iov_len;
-		WARN_ON_ONCE(!xdr->end);
-		WARN_ON_ONCE(!xdr->iov);
+		/* xdr->end, xdr->iov should be set already */
 		return;
 	}
 	WARN_ON_ONCE(fraglen);
@@ -632,11 +631,11 @@ void xdr_truncate_encode(struct xdr_stream *xdr, size_t len)
 
 	xdr->page_ptr = buf->pages + (new >> PAGE_SHIFT);
 
-	if (buf->page_len) {
+	if (buf->page_len && buf->len == len) {
 		xdr->p = page_address(*xdr->page_ptr);
 		xdr->end = (void *)xdr->p + PAGE_SIZE;
 		xdr->p = (void *)xdr->p + (new % PAGE_SIZE);
-		WARN_ON_ONCE(xdr->iov);
+		/* xdr->iov should already be NULL */
 		return;
 	}
 	if (fraglen) {

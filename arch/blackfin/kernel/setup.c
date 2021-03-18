@@ -1464,5 +1464,5 @@ void __init cmdline_init(const char *r0)
 {
 	early_shadow_stamp();
 	if (r0)
-		strlcpy(command_line, r0, COMMAND_LINE_SIZE);
+		strncpy(command_line, r0, COMMAND_LINE_SIZE);
 }

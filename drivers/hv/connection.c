@@ -58,9 +58,6 @@ static __u32 vmbus_get_next_version(__u32 current_version)
 	case (VERSION_WIN8_1):
 		return VERSION_WIN8;
 
-	case (VERSION_WIN10):
-		return VERSION_WIN8_1;
-
 	case (VERSION_WS2008):
 	default:
 		return VERSION_INVAL;
@@ -83,10 +80,8 @@ static int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo,
 	msg->interrupt_page = virt_to_phys(vmbus_connection.int_page);
 	msg->monitor_page1 = virt_to_phys(vmbus_connection.monitor_pages[0]);
 	msg->monitor_page2 = virt_to_phys(vmbus_connection.monitor_pages[1]);
-	if (version >= VERSION_WIN8_1) {
-		msg->target_vcpu = hv_context.vp_index[get_cpu()];
-		put_cpu();
-	}
+	if (version == VERSION_WIN8_1)
+		msg->target_vcpu = hv_context.vp_index[smp_processor_id()];
 
 	/*
 	 * Add to list before we send the request since we may
@@ -219,26 +214,10 @@ int vmbus_connect(void)
 
 cleanup:
 	pr_err("Unable to connect to host\n");
-
 	vmbus_connection.conn_state = DISCONNECTED;
-	vmbus_disconnect();
 
-	kfree(msginfo);
-
-	return ret;
-}
-
-void vmbus_disconnect(void)
-{
-	/*
-	 * First send the unload request to the host.
-	 */
-	vmbus_initiate_unload();
-
-	if (vmbus_connection.work_queue) {
-		drain_workqueue(vmbus_connection.work_queue);
+	if (vmbus_connection.work_queue)
 		destroy_workqueue(vmbus_connection.work_queue);
-	}
 
 	if (vmbus_connection.int_page) {
 		free_pages((unsigned long)vmbus_connection.int_page, 0);
@@ -249,6 +228,10 @@ void vmbus_disconnect(void)
 	free_pages((unsigned long)vmbus_connection.monitor_pages[1], 0);
 	vmbus_connection.monitor_pages[0] = NULL;
 	vmbus_connection.monitor_pages[1] = NULL;
+
+	kfree(msginfo);
+
+	return ret;
 }
 
 /*
@@ -326,8 +309,10 @@ static void process_chn_event(u32 relid)
 	 */
 	channel = pcpu_relid2channel(relid);
 
-	if (!channel)
+	if (!channel) {
+		pr_err("channel not found for relid - %u\n", relid);
 		return;
+	}
 
 	/*
 	 * A channel once created is persistent even when there
@@ -362,7 +347,10 @@ static void process_chn_event(u32 relid)
 			else
 				bytes_to_read = 0;
 		} while (read_state && (bytes_to_read != 0));
+	} else {
+		pr_err("no channel callback for relid - %u\n", relid);
 	}
+
 }
 
 /*
@@ -379,7 +367,8 @@ void vmbus_on_event(unsigned long data)
 	int cpu = smp_processor_id();
 	union hv_synic_event_flags *event;
 
-	if (vmbus_proto_version < VERSION_WIN8) {
+	if ((vmbus_proto_version == VERSION_WS2008) ||
+		(vmbus_proto_version == VERSION_WIN7)) {
 		maxdword = MAX_NUM_CHANNELS_SUPPORTED >> 5;
 		recv_int_page = vmbus_connection.recv_int_page;
 	} else {
@@ -429,7 +418,6 @@ int vmbus_post_msg(void *buffer, size_t buflen)
 	union hv_connection_id conn_id;
 	int ret = 0;
 	int retries = 0;
-	u32 msec = 1;
 
 	conn_id.asu32 = 0;
 	conn_id.u.id = VMBUS_MESSAGE_CONNECTION_ID;
@@ -439,20 +427,13 @@ int vmbus_post_msg(void *buffer, size_t buflen)
 	 * insufficient resources. Retry the operation a couple of
 	 * times before giving up.
 	 */
-	while (retries < 20) {
+	while (retries < 10) {
 		ret = hv_post_message(conn_id, 1, buffer, buflen);
 
 		switch (ret) {
-		case HV_STATUS_INVALID_CONNECTION_ID:
-			/*
-			 * We could get this if we send messages too
-			 * frequently.
-			 */
-			ret = -EAGAIN;
-			break;
-		case HV_STATUS_INSUFFICIENT_MEMORY:
 		case HV_STATUS_INSUFFICIENT_BUFFERS:
 			ret = -ENOMEM;
+		case -ENOMEM:
 			break;
 		case HV_STATUS_SUCCESS:
 			return ret;
@@ -462,9 +443,7 @@ int vmbus_post_msg(void *buffer, size_t buflen)
 		}
 
 		retries++;
-		msleep(msec);
-		if (msec < 2048)
-			msec *= 2;
+		msleep(100);
 	}
 	return ret;
 }

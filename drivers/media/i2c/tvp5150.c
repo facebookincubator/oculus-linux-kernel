@@ -10,7 +10,6 @@
 #include <linux/videodev2.h>
 #include <linux/delay.h>
 #include <linux/module.h>
-#include <media/v4l2-async.h>
 #include <media/v4l2-device.h>
 #include <media/tvp5150.h>
 #include <media/v4l2-ctrls.h>
@@ -818,35 +817,30 @@ static v4l2_std_id tvp5150_read_std(struct v4l2_subdev *sd)
 	}
 }
 
-static int tvp5150_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
-		struct v4l2_subdev_mbus_code_enum *code)
+static int tvp5150_enum_mbus_fmt(struct v4l2_subdev *sd, unsigned index,
+						enum v4l2_mbus_pixelcode *code)
 {
-	if (code->pad || code->index)
+	if (index)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_UYVY8_2X8;
+	*code = V4L2_MBUS_FMT_UYVY8_2X8;
 	return 0;
 }
 
-static int tvp5150_fill_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
-		struct v4l2_subdev_format *format)
+static int tvp5150_mbus_fmt(struct v4l2_subdev *sd,
+			    struct v4l2_mbus_framefmt *f)
 {
-	struct v4l2_mbus_framefmt *f;
 	struct tvp5150 *decoder = to_tvp5150(sd);
 
-	if (!format || format->pad)
+	if (f == NULL)
 		return -EINVAL;
-
-	f = &format->format;
 
 	tvp5150_reset(sd, 0);
 
 	f->width = decoder->rect.width;
 	f->height = decoder->rect.height;
 
-	f->code = MEDIA_BUS_FMT_UYVY8_2X8;
+	f->code = V4L2_MBUS_FMT_UYVY8_2X8;
 	f->field = V4L2_FIELD_SEQ_TB;
 	f->colorspace = V4L2_COLORSPACE_SMPTE170M;
 
@@ -1074,6 +1068,10 @@ static const struct v4l2_subdev_tuner_ops tvp5150_tuner_ops = {
 static const struct v4l2_subdev_video_ops tvp5150_video_ops = {
 	.s_std = tvp5150_s_std,
 	.s_routing = tvp5150_s_routing,
+	.enum_mbus_fmt = tvp5150_enum_mbus_fmt,
+	.s_mbus_fmt = tvp5150_mbus_fmt,
+	.try_mbus_fmt = tvp5150_mbus_fmt,
+	.g_mbus_fmt = tvp5150_mbus_fmt,
 	.s_crop = tvp5150_s_crop,
 	.g_crop = tvp5150_g_crop,
 	.cropcap = tvp5150_cropcap,
@@ -1086,18 +1084,11 @@ static const struct v4l2_subdev_vbi_ops tvp5150_vbi_ops = {
 	.s_raw_fmt = tvp5150_s_raw_fmt,
 };
 
-static const struct v4l2_subdev_pad_ops tvp5150_pad_ops = {
-	.enum_mbus_code = tvp5150_enum_mbus_code,
-	.set_fmt = tvp5150_fill_fmt,
-	.get_fmt = tvp5150_fill_fmt,
-};
-
 static const struct v4l2_subdev_ops tvp5150_ops = {
 	.core = &tvp5150_core_ops,
 	.tuner = &tvp5150_tuner_ops,
 	.video = &tvp5150_video_ops,
 	.vbi = &tvp5150_vbi_ops,
-	.pad = &tvp5150_pad_ops,
 };
 
 
@@ -1173,7 +1164,8 @@ static int tvp5150_probe(struct i2c_client *c,
 	sd->ctrl_handler = &core->hdl;
 	if (core->hdl.error) {
 		res = core->hdl.error;
-		goto err;
+		v4l2_ctrl_handler_free(&core->hdl);
+		return res;
 	}
 	v4l2_ctrl_handler_setup(&core->hdl);
 
@@ -1186,17 +1178,9 @@ static int tvp5150_probe(struct i2c_client *c,
 	core->rect.left = 0;
 	core->rect.width = TVP5150_H_MAX;
 
-	res = v4l2_async_register_subdev(sd);
-	if (res < 0)
-		goto err;
-
 	if (debug > 1)
 		tvp5150_log_status(sd);
 	return 0;
-
-err:
-	v4l2_ctrl_handler_free(&core->hdl);
-	return res;
 }
 
 static int tvp5150_remove(struct i2c_client *c)
@@ -1208,7 +1192,7 @@ static int tvp5150_remove(struct i2c_client *c)
 		"tvp5150.c: removing tvp5150 adapter on address 0x%x\n",
 		c->addr << 1);
 
-	v4l2_async_unregister_subdev(sd);
+	v4l2_device_unregister_subdev(sd);
 	v4l2_ctrl_handler_free(&decoder->hdl);
 	return 0;
 }
@@ -1223,6 +1207,7 @@ MODULE_DEVICE_TABLE(i2c, tvp5150_id);
 
 static struct i2c_driver tvp5150_driver = {
 	.driver = {
+		.owner	= THIS_MODULE,
 		.name	= "tvp5150",
 	},
 	.probe		= tvp5150_probe,

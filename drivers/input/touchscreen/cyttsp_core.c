@@ -472,7 +472,8 @@ static int cyttsp_disable(struct cyttsp *ts)
 	return 0;
 }
 
-static int __maybe_unused cyttsp_suspend(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int cyttsp_suspend(struct device *dev)
 {
 	struct cyttsp *ts = dev_get_drvdata(dev);
 	int retval = 0;
@@ -490,7 +491,7 @@ static int __maybe_unused cyttsp_suspend(struct device *dev)
 	return retval;
 }
 
-static int __maybe_unused cyttsp_resume(struct device *dev)
+static int cyttsp_resume(struct device *dev)
 {
 	struct cyttsp *ts = dev_get_drvdata(dev);
 
@@ -505,6 +506,8 @@ static int __maybe_unused cyttsp_resume(struct device *dev)
 
 	return 0;
 }
+
+#endif
 
 SIMPLE_DEV_PM_OPS(cyttsp_pm_ops, cyttsp_suspend, cyttsp_resume);
 EXPORT_SYMBOL_GPL(cyttsp_pm_ops);

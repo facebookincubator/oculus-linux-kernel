@@ -49,8 +49,6 @@ static int __init ima_add_boot_aggregate(void)
 	const char *audit_cause = "ENOMEM";
 	struct ima_template_entry *entry;
 	struct integrity_iint_cache tmp_iint, *iint = &tmp_iint;
-	struct ima_event_data event_data = {iint, NULL, boot_aggregate_name,
-					    NULL, 0, NULL};
 	int result = -ENOMEM;
 	int violation = 0;
 	struct {
@@ -72,7 +70,8 @@ static int __init ima_add_boot_aggregate(void)
 		}
 	}
 
-	result = ima_alloc_init_template(&event_data, &entry);
+	result = ima_alloc_init_template(iint, NULL, boot_aggregate_name,
+					 NULL, 0, &entry);
 	if (result < 0) {
 		audit_cause = "alloc_entry";
 		goto err_out;
@@ -91,17 +90,6 @@ err_out:
 			    audit_cause, result, 0);
 	return result;
 }
-
-#ifdef CONFIG_IMA_LOAD_X509
-void __init ima_load_x509(void)
-{
-	int unset_flags = ima_policy_flag & IMA_APPRAISE;
-
-	ima_policy_flag &= ~unset_flags;
-	integrity_load_x509(INTEGRITY_KEYRING_IMA, CONFIG_IMA_X509_PATH);
-	ima_policy_flag |= unset_flags;
-}
-#endif
 
 int __init ima_init(void)
 {

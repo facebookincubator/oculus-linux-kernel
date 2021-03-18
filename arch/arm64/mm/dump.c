@@ -14,18 +14,13 @@
  * of the License.
  */
 #include <linux/debugfs.h>
-#include <linux/errno.h>
 #include <linux/fs.h>
-#include <linux/io.h>
-#include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 
 #include <asm/fixmap.h>
-#include <asm/memory.h>
 #include <asm/pgtable.h>
-#include <asm/pgtable-hwdef.h>
 
 #define LOWEST_ADDR	(UL(0xffffffffffffffff) << VA_BITS)
 
@@ -35,44 +30,38 @@ struct addr_marker {
 };
 
 enum address_markers_idx {
-	MODULES_START_NR = 0,
-	MODULES_END_NR,
-	VMALLOC_START_NR,
+	VMALLOC_START_NR = 0,
 	VMALLOC_END_NR,
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 	VMEMMAP_START_NR,
 	VMEMMAP_END_NR,
 #endif
-	FIXADDR_START_NR,
-	FIXADDR_END_NR,
 	PCI_START_NR,
 	PCI_END_NR,
+	FIXADDR_START_NR,
+	FIXADDR_END_NR,
+	MODULES_START_NR,
+	MODUELS_END_NR,
 	KERNEL_SPACE_NR,
 };
 
 static struct addr_marker address_markers[] = {
-	{ MODULES_VADDR,	"Modules start" },
-	{ MODULES_END,		"Modules end" },
 	{ VMALLOC_START,	"vmalloc() Area" },
 	{ VMALLOC_END,		"vmalloc() End" },
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 	{ 0,			"vmemmap start" },
 	{ 0,			"vmemmap end" },
 #endif
+	{ (unsigned long) PCI_IOBASE,		"PCI I/O start" },
+	{ (unsigned long) PCI_IOBASE + SZ_16M,	"PCI I/O end" },
 	{ FIXADDR_START,	"Fixmap start" },
 	{ FIXADDR_TOP,		"Fixmap end" },
-	{ PCI_IO_START,		"PCI I/O start" },
-	{ PCI_IO_END,		"PCI I/O end" },
-	{ PAGE_OFFSET,		"Linear Mapping" },
+	{ MODULES_VADDR,	"Modules start" },
+	{ MODULES_END,		"Modules end" },
+	{ PAGE_OFFSET,		"Kernel Mapping" },
 	{ -1,			NULL },
 };
 
-/*
- * The page dumper groups page table entries of the same type into a single
- * description. It uses pg_state to track the range information while
- * iterating over the pte entries. When the continuity is broken it then
- * dumps out a description of the range.
- */
 struct pg_state {
 	struct seq_file *seq;
 	const struct addr_marker *marker;
@@ -90,11 +79,6 @@ struct prot_bits {
 
 static const struct prot_bits pte_bits[] = {
 	{
-		.mask	= PTE_VALID,
-		.val	= PTE_VALID,
-		.set	= " ",
-		.clear	= "F",
-	}, {
 		.mask	= PTE_USER,
 		.val	= PTE_USER,
 		.set	= "USR",
@@ -124,16 +108,6 @@ static const struct prot_bits pte_bits[] = {
 		.val	= PTE_NG,
 		.set	= "NG",
 		.clear	= "  ",
-	}, {
-		.mask	= PTE_CONT,
-		.val	= PTE_CONT,
-		.set	= "CON",
-		.clear	= "   ",
-	}, {
-		.mask	= PTE_TABLE_BIT,
-		.val	= PTE_TABLE_BIT,
-		.set	= "   ",
-		.clear	= "BLK",
 	}, {
 		.mask	= PTE_UXN,
 		.val	= PTE_UXN,
@@ -208,6 +182,9 @@ static void note_page(struct pg_state *st, unsigned long addr, unsigned level,
 	static const char units[] = "KMGTPE";
 	u64 prot = val & pg_level[level].mask;
 
+	if (addr < LOWEST_ADDR)
+		return;
+
 	if (!st->level) {
 		st->level = level;
 		st->current_prot = prot;
@@ -219,7 +196,7 @@ static void note_page(struct pg_state *st, unsigned long addr, unsigned level,
 		unsigned long delta;
 
 		if (st->current_prot) {
-			seq_printf(st->seq, "0x%016lx-0x%016lx   ",
+			seq_printf(st->seq, "0x%16lx-0x%16lx   ",
 				   st->start_address, addr);
 
 			delta = (addr - st->start_address) >> 10;
@@ -271,12 +248,10 @@ static void walk_pmd(struct pg_state *st, pud_t *pud, unsigned long start)
 
 	for (i = 0; i < PTRS_PER_PMD; i++, pmd++) {
 		addr = start + i * PMD_SIZE;
-		if (pmd_none(*pmd) || pmd_sect(*pmd)) {
+		if (pmd_none(*pmd) || pmd_sect(*pmd) || pmd_bad(*pmd))
 			note_page(st, addr, 3, pmd_val(*pmd));
-		} else {
-			BUG_ON(pmd_bad(*pmd));
+		else
 			walk_pte(st, pmd, addr);
-		}
 	}
 }
 
@@ -288,29 +263,25 @@ static void walk_pud(struct pg_state *st, pgd_t *pgd, unsigned long start)
 
 	for (i = 0; i < PTRS_PER_PUD; i++, pud++) {
 		addr = start + i * PUD_SIZE;
-		if (pud_none(*pud) || pud_sect(*pud)) {
+		if (pud_none(*pud) || pud_sect(*pud) || pud_bad(*pud))
 			note_page(st, addr, 2, pud_val(*pud));
-		} else {
-			BUG_ON(pud_bad(*pud));
+		else
 			walk_pmd(st, pud, addr);
-		}
 	}
 }
 
 static void walk_pgd(struct pg_state *st, struct mm_struct *mm, unsigned long start)
 {
-	pgd_t *pgd = pgd_offset(mm, 0UL);
+	pgd_t *pgd = pgd_offset(mm, 0);
 	unsigned i;
 	unsigned long addr;
 
 	for (i = 0; i < PTRS_PER_PGD; i++, pgd++) {
 		addr = start + i * PGDIR_SIZE;
-		if (pgd_none(*pgd)) {
+		if (pgd_none(*pgd) || pgd_bad(*pgd))
 			note_page(st, addr, 1, pgd_val(*pgd));
-		} else {
-			BUG_ON(pgd_bad(*pgd));
+		else
 			walk_pud(st, pgd, addr);
-		}
 	}
 }
 
@@ -349,12 +320,10 @@ static int ptdump_init(void)
 			for (j = 0; j < pg_level[i].num; j++)
 				pg_level[i].mask |= pg_level[i].bits[j].mask;
 
-#ifdef CONFIG_SPARSEMEM_VMEMMAP
 	address_markers[VMEMMAP_START_NR].start_address =
 				(unsigned long)virt_to_page(PAGE_OFFSET);
 	address_markers[VMEMMAP_END_NR].start_address =
 				(unsigned long)virt_to_page(high_memory);
-#endif
 
 	pe = debugfs_create_file("kernel_page_tables", 0400, NULL, NULL,
 				 &ptdump_fops);

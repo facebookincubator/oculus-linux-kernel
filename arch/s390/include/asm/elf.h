@@ -107,7 +107,11 @@
 /*
  * These are used to set parameters in the core dumps.
  */
+#ifndef CONFIG_64BIT
+#define ELF_CLASS	ELFCLASS32
+#else /* CONFIG_64BIT */
 #define ELF_CLASS	ELFCLASS64
+#endif /* CONFIG_64BIT */
 #define ELF_DATA	ELFDATA2MSB
 #define ELF_ARCH	EM_S390
 
@@ -206,16 +210,9 @@ do {								\
 } while (0)
 #endif /* CONFIG_COMPAT */
 
-/*
- * Cache aliasing on the latest machines calls for a mapping granularity
- * of 512KB. For 64-bit processes use a 512KB alignment and a randomization
- * of up to 1GB. For 31-bit processes the virtual address space is limited,
- * use no alignment and limit the randomization to 8MB.
- */
-#define BRK_RND_MASK	(is_32bit_task() ? 0x7ffUL : 0x3ffffUL)
-#define MMAP_RND_MASK	(is_32bit_task() ? 0x7ffUL : 0x3ff80UL)
-#define MMAP_ALIGN_MASK	(is_32bit_task() ? 0 : 0x7fUL)
-#define STACK_RND_MASK	MMAP_RND_MASK
+extern unsigned long mmap_rnd_mask;
+
+#define STACK_RND_MASK	(mmap_rnd_mask)
 
 #define ARCH_DLINFO							    \
 do {									    \
@@ -228,6 +225,9 @@ struct linux_binprm;
 
 #define ARCH_HAS_SETUP_ADDITIONAL_PAGES 1
 int arch_setup_additional_pages(struct linux_binprm *, int);
+
+extern unsigned long arch_randomize_brk(struct mm_struct *mm);
+#define arch_randomize_brk arch_randomize_brk
 
 void *fill_cpu_elf_notes(void *ptr, struct save_area *sa, __vector128 *vxrs);
 

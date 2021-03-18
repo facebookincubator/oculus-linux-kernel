@@ -523,7 +523,7 @@ static struct device_attribute attrs[] = {
 		__ATTR(secure_touch_enable, (S_IRUGO | S_IWUSR | S_IWGRP),
 				ft5x06_secure_touch_enable_show,
 				ft5x06_secure_touch_enable_store),
-		__ATTR(secure_touch, S_IRUGO,
+		__ATTR(secure_touch, S_IRUGO ,
 				ft5x06_secure_touch_show, NULL),
 #endif
 };
@@ -636,7 +636,7 @@ static ssize_t ft5x06_gesture_enable_to_set_store(struct device *dev,
 		return ret;
 	}
 
-	if (value == 1)
+	if (1 == value)
 		data->gesture_pdata->gesture_enable_to_set = 1;
 	else
 		data->gesture_pdata->gesture_enable_to_set = 0;
@@ -692,10 +692,10 @@ static ssize_t gesture_in_pocket_mode_store(struct device *dev,
 		return ret;
 	}
 
-	if (value == 1 && data->gesture_pdata->in_pocket == 0) {
+	if (1 == value && data->gesture_pdata->in_pocket == 0) {
 		data->gesture_pdata->in_pocket = 1;
 		ft5x06_entry_pocket(dev);
-	} else if (value == 0 && data->gesture_pdata->in_pocket == 1) {
+	} else if (0 == value && data->gesture_pdata->in_pocket == 1) {
 		ft5x06_leave_pocket(dev);
 		data->gesture_pdata->in_pocket = 0;
 	}
@@ -747,7 +747,7 @@ static int ft5x06_report_gesture(struct i2c_client *i2c_client,
 	}
 
 	/* FW support doubleclick */
-	if (buf[0] == FT_GESTURE_DOUBLECLICK_ID) {
+	if (FT_GESTURE_DOUBLECLICK_ID == buf[0]) {
 		ft5x06_report_gesture_doubleclick(ip_dev);
 		return 0;
 	}
@@ -854,7 +854,7 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
-	if (ft5x06_filter_interrupt(data) == IRQ_HANDLED)
+	if (IRQ_HANDLED == ft5x06_filter_interrupt(data))
 		return IRQ_HANDLED;
 
 	ip_dev = data->input_dev;
@@ -1936,7 +1936,7 @@ static int ft5x06_debug_data_get(void *_data, u64 *val)
 {
 	struct ft5x06_ts_data *data = _data;
 	int rc;
-	u8 reg = 0;
+	u8 reg;
 
 	mutex_lock(&data->input_dev->mutex);
 
@@ -2255,7 +2255,7 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	struct ft5x06_ts_data *data;
 	struct input_dev *input_dev;
 	struct dentry *temp;
-	u8 reg_value = 0;
+	u8 reg_value;
 	u8 reg_addr;
 	int err, len, retval, attr_count;
 
@@ -2412,9 +2412,9 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	err = request_threaded_irq(client->irq, NULL,
 				ft5x06_ts_interrupt,
 	/*
-	 * the interrupt trigger mode will be set in Device Tree with property
-	 * "interrupts", so here we just need to set the flag IRQF_ONESHOT
-	 */
+	* the interrupt trigger mode will be set in Device Tree with property
+	* "interrupts", so here we just need to set the flag IRQF_ONESHOT
+	*/
 				IRQF_ONESHOT,
 				client->dev.driver->name, data);
 	if (err) {
@@ -2743,7 +2743,7 @@ static const struct i2c_device_id ft5x06_ts_id[] = {
 MODULE_DEVICE_TABLE(i2c, ft5x06_ts_id);
 
 #ifdef CONFIG_OF
-static const struct of_device_id ft5x06_match_table[] = {
+static struct of_device_id ft5x06_match_table[] = {
 	{ .compatible = "focaltech,5x06",},
 	{ },
 };

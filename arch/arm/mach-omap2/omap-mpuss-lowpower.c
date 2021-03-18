@@ -105,7 +105,7 @@ static void dummy_cpu_resume(void)
 static void dummy_scu_prepare(unsigned int cpu_id, unsigned int cpu_state)
 {}
 
-static struct cpu_pm_ops omap_pm_ops = {
+struct cpu_pm_ops omap_pm_ops = {
 	.finish_suspend		= default_finish_suspend,
 	.resume			= dummy_cpu_resume,
 	.scu_prepare		= dummy_scu_prepare,
@@ -227,7 +227,7 @@ static void __init save_l2x0_context(void)
 int omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 {
 	struct omap4_cpu_pm_info *pm_info = &per_cpu(omap4_pm_info, cpu);
-	unsigned int save_state = 0, cpu_logic_state = PWRDM_POWER_RET;
+	unsigned int save_state = 0;
 	unsigned int wakeup_cpu;
 
 	if (omap_rev() == OMAP4430_REV_ES1_0)
@@ -239,7 +239,6 @@ int omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 		save_state = 0;
 		break;
 	case PWRDM_POWER_OFF:
-		cpu_logic_state = PWRDM_POWER_OFF;
 		save_state = 1;
 		break;
 	case PWRDM_POWER_RET:
@@ -271,7 +270,6 @@ int omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 
 	cpu_clear_prev_logic_pwrst(cpu);
 	pwrdm_set_next_pwrst(pm_info->pwrdm, power_state);
-	pwrdm_set_logic_retst(pm_info->pwrdm, cpu_logic_state);
 	set_cpu_wakeup_addr(cpu, virt_to_phys(omap_pm_ops.resume));
 	omap_pm_ops.scu_prepare(cpu, power_state);
 	l2x0_pwrst_prepare(cpu, save_state);

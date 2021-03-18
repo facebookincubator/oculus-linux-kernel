@@ -39,9 +39,6 @@
 #include "transport.h"
 #include "protocol.h"
 #include "debug.h"
-#include "scsiglue.h"
-
-#define DRV_NAME "ums-realtek"
 
 MODULE_DESCRIPTION("Driver for Realtek USB Card Reader");
 MODULE_AUTHOR("wwang <wei_wang@realsil.com.cn>");
@@ -1037,8 +1034,6 @@ INIT_FAIL:
 	return -EIO;
 }
 
-static struct scsi_host_template realtek_cr_host_template;
-
 static int realtek_cr_probe(struct usb_interface *intf,
 			    const struct usb_device_id *id)
 {
@@ -1049,8 +1044,7 @@ static int realtek_cr_probe(struct usb_interface *intf,
 
 	result = usb_stor_probe1(&us, intf, id,
 				 (id - realtek_cr_ids) +
-				 realtek_cr_unusual_dev_list,
-				 &realtek_cr_host_template);
+				 realtek_cr_unusual_dev_list);
 	if (result)
 		return result;
 
@@ -1060,7 +1054,7 @@ static int realtek_cr_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver realtek_cr_driver = {
-	.name = DRV_NAME,
+	.name = "ums-realtek",
 	.probe = realtek_cr_probe,
 	.disconnect = usb_stor_disconnect,
 	/* .suspend =      usb_stor_suspend, */
@@ -1076,4 +1070,4 @@ static struct usb_driver realtek_cr_driver = {
 	.no_dynamic_id = 1,
 };
 
-module_usb_stor_driver(realtek_cr_driver, realtek_cr_host_template, DRV_NAME);
+module_usb_driver(realtek_cr_driver);

@@ -157,7 +157,6 @@ enum {
 	NWayAdvert	= 0x66, /* MII ADVERTISE */
 	NWayLPAR	= 0x68, /* MII LPA */
 	NWayExpansion	= 0x6A, /* MII Expansion */
-	TxDmaOkLowDesc  = 0x82, /* Low 16 bit address of a Tx descriptor. */
 	Config5		= 0xD8,	/* Config5 */
 	TxPoll		= 0xD9,	/* Tell chip to check Tx descriptors for work */
 	RxMaxSize	= 0xDA, /* Max size of an Rx packet (8169 only) */
@@ -175,7 +174,7 @@ enum {
 	LastFrag	= (1 << 28), /* Final segment of a packet */
 	LargeSend	= (1 << 27), /* TCP Large Send Offload (TSO) */
 	MSSShift	= 16,	     /* MSS value position */
-	MSSMask		= 0x7ff,     /* MSS value: 11 bits */
+	MSSMask		= 0xfff,     /* MSS value: 11 bits */
 	TxError		= (1 << 23), /* Tx error summary */
 	RxError		= (1 << 20), /* Rx error summary */
 	IPCS		= (1 << 18), /* Calculate IP checksum */
@@ -342,7 +341,6 @@ struct cp_private {
 	unsigned		tx_tail;
 	struct cp_desc		*tx_ring;
 	struct sk_buff		*tx_skb[CP_TX_RING_SIZE];
-	u32			tx_opts[CP_TX_RING_SIZE];
 
 	unsigned		rx_buf_sz;
 	unsigned		wol_enabled : 1; /* Is Wake-on-LAN enabled? */
@@ -509,7 +507,7 @@ rx_status_loop:
 		netif_dbg(cp, rx_status, dev, "rx slot %d status 0x%x len %d\n",
 			  rx_tail, status, len);
 
-		new_skb = napi_alloc_skb(napi, buflen);
+		new_skb = netdev_alloc_skb_ip_align(dev, buflen);
 		if (!new_skb) {
 			dev->stats.rx_dropped++;
 			goto rx_next;
@@ -667,7 +665,7 @@ static void cp_tx (struct cp_private *cp)
 		BUG_ON(!skb);
 
 		dma_unmap_single(&cp->pdev->dev, le64_to_cpu(txd->addr),
-				 cp->tx_opts[tx_tail] & 0xffff,
+				 le32_to_cpu(txd->opts1) & 0xffff,
 				 PCI_DMA_TODEVICE);
 
 		if (status & LastFrag) {
@@ -710,8 +708,8 @@ static void cp_tx (struct cp_private *cp)
 
 static inline u32 cp_tx_vlan_tag(struct sk_buff *skb)
 {
-	return skb_vlan_tag_present(skb) ?
-		TxVlanTag | swab16(skb_vlan_tag_get(skb)) : 0x00;
+	return vlan_tx_tag_present(skb) ?
+		TxVlanTag | swab16(vlan_tx_tag_get(skb)) : 0x00;
 }
 
 static void unwind_tx_frag_mapping(struct cp_private *cp, struct sk_buff *skb,
@@ -735,7 +733,7 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 {
 	struct cp_private *cp = netdev_priv(dev);
 	unsigned entry;
-	u32 eor, opts1;
+	u32 eor, flags;
 	unsigned long intr_flags;
 	__le32 opts2;
 	int mss = 0;
@@ -754,28 +752,7 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 	eor = (entry == (CP_TX_RING_SIZE - 1)) ? RingEnd : 0;
 	mss = skb_shinfo(skb)->gso_size;
 
-	if (mss > MSSMask) {
-		WARN_ONCE(1, "Net bug: GSO size %d too large for 8139CP\n",
-			  mss);
-		goto out_dma_error;
-	}
-
 	opts2 = cpu_to_le32(cp_tx_vlan_tag(skb));
-	opts1 = DescOwn;
-	if (mss)
-		opts1 |= LargeSend | (mss << MSSShift);
-	else if (skb->ip_summed == CHECKSUM_PARTIAL) {
-		const struct iphdr *ip = ip_hdr(skb);
-		if (ip->protocol == IPPROTO_TCP)
-			opts1 |= IPCS | TCPCS;
-		else if (ip->protocol == IPPROTO_UDP)
-			opts1 |= IPCS | UDPCS;
-		else {
-			WARN_ONCE(1,
-				  "Net bug: asked to checksum invalid Legacy IP packet\n");
-			goto out_dma_error;
-		}
-	}
 
 	if (skb_shinfo(skb)->nr_frags == 0) {
 		struct cp_desc *txd = &cp->tx_ring[entry];
@@ -791,20 +768,31 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 		txd->addr = cpu_to_le64(mapping);
 		wmb();
 
-		opts1 |= eor | len | FirstFrag | LastFrag;
+		flags = eor | len | DescOwn | FirstFrag | LastFrag;
 
-		txd->opts1 = cpu_to_le32(opts1);
+		if (mss)
+			flags |= LargeSend | ((mss & MSSMask) << MSSShift);
+		else if (skb->ip_summed == CHECKSUM_PARTIAL) {
+			const struct iphdr *ip = ip_hdr(skb);
+			if (ip->protocol == IPPROTO_TCP)
+				flags |= IPCS | TCPCS;
+			else if (ip->protocol == IPPROTO_UDP)
+				flags |= IPCS | UDPCS;
+			else
+				WARN_ON(1);	/* we need a WARN() */
+		}
+
+		txd->opts1 = cpu_to_le32(flags);
 		wmb();
 
 		cp->tx_skb[entry] = skb;
-		cp->tx_opts[entry] = opts1;
-		netif_dbg(cp, tx_queued, cp->dev, "tx queued, slot %d, skblen %d\n",
-			  entry, skb->len);
+		entry = NEXT_TX(entry);
 	} else {
 		struct cp_desc *txd;
-		u32 first_len, first_eor, ctrl;
+		u32 first_len, first_eor;
 		dma_addr_t first_mapping;
 		int frag, first_entry = entry;
+		const struct iphdr *ip = ip_hdr(skb);
 
 		/* We must give this initial chunk to the device last.
 		 * Otherwise we could race with the device.
@@ -817,13 +805,13 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 			goto out_dma_error;
 
 		cp->tx_skb[entry] = skb;
+		entry = NEXT_TX(entry);
 
 		for (frag = 0; frag < skb_shinfo(skb)->nr_frags; frag++) {
 			const skb_frag_t *this_frag = &skb_shinfo(skb)->frags[frag];
 			u32 len;
+			u32 ctrl;
 			dma_addr_t mapping;
-
-			entry = NEXT_TX(entry);
 
 			len = skb_frag_size(this_frag);
 			mapping = dma_map_single(&cp->pdev->dev,
@@ -836,7 +824,19 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 
 			eor = (entry == (CP_TX_RING_SIZE - 1)) ? RingEnd : 0;
 
-			ctrl = opts1 | eor | len;
+			ctrl = eor | len | DescOwn;
+
+			if (mss)
+				ctrl |= LargeSend |
+					((mss & MSSMask) << MSSShift);
+			else if (skb->ip_summed == CHECKSUM_PARTIAL) {
+				if (ip->protocol == IPPROTO_TCP)
+					ctrl |= IPCS | TCPCS;
+				else if (ip->protocol == IPPROTO_UDP)
+					ctrl |= IPCS | UDPCS;
+				else
+					BUG();
+			}
 
 			if (frag == skb_shinfo(skb)->nr_frags - 1)
 				ctrl |= LastFrag;
@@ -849,8 +849,8 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 			txd->opts1 = cpu_to_le32(ctrl);
 			wmb();
 
-			cp->tx_opts[entry] = ctrl;
 			cp->tx_skb[entry] = skb;
+			entry = NEXT_TX(entry);
 		}
 
 		txd = &cp->tx_ring[first_entry];
@@ -858,17 +858,27 @@ static netdev_tx_t cp_start_xmit (struct sk_buff *skb,
 		txd->addr = cpu_to_le64(first_mapping);
 		wmb();
 
-		ctrl = opts1 | first_eor | first_len | FirstFrag;
-		txd->opts1 = cpu_to_le32(ctrl);
+		if (skb->ip_summed == CHECKSUM_PARTIAL) {
+			if (ip->protocol == IPPROTO_TCP)
+				txd->opts1 = cpu_to_le32(first_eor | first_len |
+							 FirstFrag | DescOwn |
+							 IPCS | TCPCS);
+			else if (ip->protocol == IPPROTO_UDP)
+				txd->opts1 = cpu_to_le32(first_eor | first_len |
+							 FirstFrag | DescOwn |
+							 IPCS | UDPCS);
+			else
+				BUG();
+		} else
+			txd->opts1 = cpu_to_le32(first_eor | first_len |
+						 FirstFrag | DescOwn);
 		wmb();
-
-		cp->tx_opts[first_entry] = ctrl;
-		netif_dbg(cp, tx_queued, cp->dev, "tx queued, slots %d-%d, skblen %d\n",
-			  first_entry, entry, skb->len);
 	}
-	cp->tx_head = NEXT_TX(entry);
+	cp->tx_head = entry;
 
 	netdev_sent_queue(dev, skb->len);
+	netif_dbg(cp, tx_queued, cp->dev, "tx queued, slot %d, skblen %d\n",
+		  entry, skb->len);
 	if (TX_BUFFS_AVAIL(cp) <= (MAX_SKB_FRAGS + 1))
 		netif_stop_queue(dev);
 
@@ -1105,7 +1115,6 @@ static int cp_init_rings (struct cp_private *cp)
 {
 	memset(cp->tx_ring, 0, sizeof(struct cp_desc) * CP_TX_RING_SIZE);
 	cp->tx_ring[CP_TX_RING_SIZE - 1].opts1 = cpu_to_le32(RingEnd);
-	memset(cp->tx_opts, 0, sizeof(cp->tx_opts));
 
 	cp_init_rings_index(cp);
 
@@ -1142,7 +1151,7 @@ static void cp_clean_rings (struct cp_private *cp)
 			desc = cp->rx_ring + i;
 			dma_unmap_single(&cp->pdev->dev,le64_to_cpu(desc->addr),
 					 cp->rx_buf_sz, PCI_DMA_FROMDEVICE);
-			dev_kfree_skb_any(cp->rx_skb[i]);
+			dev_kfree_skb(cp->rx_skb[i]);
 		}
 	}
 
@@ -1155,7 +1164,7 @@ static void cp_clean_rings (struct cp_private *cp)
 					 le32_to_cpu(desc->opts1) & 0xffff,
 					 PCI_DMA_TODEVICE);
 			if (le32_to_cpu(desc->opts1) & LastFrag)
-				dev_kfree_skb_any(skb);
+				dev_kfree_skb(skb);
 			cp->dev->stats.tx_dropped++;
 		}
 	}
@@ -1163,7 +1172,6 @@ static void cp_clean_rings (struct cp_private *cp)
 
 	memset(cp->rx_ring, 0, sizeof(struct cp_desc) * CP_RX_RING_SIZE);
 	memset(cp->tx_ring, 0, sizeof(struct cp_desc) * CP_TX_RING_SIZE);
-	memset(cp->tx_opts, 0, sizeof(cp->tx_opts));
 
 	memset(cp->rx_skb, 0, sizeof(struct sk_buff *) * CP_RX_RING_SIZE);
 	memset(cp->tx_skb, 0, sizeof(struct sk_buff *) * CP_TX_RING_SIZE);
@@ -1241,7 +1249,7 @@ static void cp_tx_timeout(struct net_device *dev)
 {
 	struct cp_private *cp = netdev_priv(dev);
 	unsigned long flags;
-	int rc, i;
+	int rc;
 
 	netdev_warn(dev, "Transmit timeout, status %2x %4x %4x %4x\n",
 		    cpr8(Cmd), cpr16(CpCmd),
@@ -1249,26 +1257,13 @@ static void cp_tx_timeout(struct net_device *dev)
 
 	spin_lock_irqsave(&cp->lock, flags);
 
-	netif_dbg(cp, tx_err, cp->dev, "TX ring head %d tail %d desc %x\n",
-		  cp->tx_head, cp->tx_tail, cpr16(TxDmaOkLowDesc));
-	for (i = 0; i < CP_TX_RING_SIZE; i++) {
-		netif_dbg(cp, tx_err, cp->dev,
-			  "TX slot %d @%p: %08x (%08x) %08x %llx %p\n",
-			  i, &cp->tx_ring[i], le32_to_cpu(cp->tx_ring[i].opts1),
-			  cp->tx_opts[i], le32_to_cpu(cp->tx_ring[i].opts2),
-			  le64_to_cpu(cp->tx_ring[i].addr),
-			  cp->tx_skb[i]);
-	}
-
 	cp_stop_hw(cp);
 	cp_clean_rings(cp);
 	rc = cp_init_rings(cp);
 	cp_start_hw(cp);
-	__cp_set_rx_mode(dev);
-	cpw16_f(IntrMask, cp_norx_intr_mask);
+	cp_enable_irq(cp);
 
 	netif_wake_queue(dev);
-	napi_schedule_irqoff(&cp->napi);
 
 	spin_unlock_irqrestore(&cp->lock, flags);
 }
@@ -1858,15 +1853,6 @@ static void cp_set_d3_state (struct cp_private *cp)
 	pci_set_power_state (cp->pdev, PCI_D3hot);
 }
 
-static netdev_features_t cp_features_check(struct sk_buff *skb,
-					   struct net_device *dev,
-					   netdev_features_t features)
-{
-	if (skb_shinfo(skb)->gso_size > MSSMask)
-		features &= ~NETIF_F_TSO;
-
-	return vlan_features_check(skb, features);
-}
 static const struct net_device_ops cp_netdev_ops = {
 	.ndo_open		= cp_open,
 	.ndo_stop		= cp_close,
@@ -1879,7 +1865,6 @@ static const struct net_device_ops cp_netdev_ops = {
 	.ndo_tx_timeout		= cp_tx_timeout,
 	.ndo_set_features	= cp_set_features,
 	.ndo_change_mtu		= cp_change_mtu,
-	.ndo_features_check	= cp_features_check,
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= cp_poll_controller,
@@ -1999,12 +1984,12 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->ethtool_ops = &cp_ethtool_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
 
-	dev->features |= NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO |
-		NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX;
+	dev->features |= NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX;
 
 	if (pci_using_dac)
 		dev->features |= NETIF_F_HIGHDMA;
 
+	/* disabled by default until verified */
 	dev->hw_features |= NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO |
 		NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX;
 	dev->vlan_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO |

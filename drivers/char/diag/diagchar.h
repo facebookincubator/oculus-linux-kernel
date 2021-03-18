@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2018,2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -66,29 +66,16 @@
 #define DIAG_CON_LPASS		(0x0004)	/* Bit mask for LPASS */
 #define DIAG_CON_WCNSS		(0x0008)	/* Bit mask for WCNSS */
 #define DIAG_CON_SENSORS	(0x0010)	/* Bit mask for Sensors */
-#define DIAG_CON_WDSP		(0x0020)	/* Bit mask for WDSP */
-#define DIAG_CON_CDSP		(0x0040)	/* Bit mask for CDSP */
-
-#define DIAG_CON_UPD_WLAN		(0x1000) /*Bit mask for WLAN PD*/
-#define DIAG_CON_UPD_AUDIO		(0x2000) /*Bit mask for AUDIO PD*/
-#define DIAG_CON_UPD_SENSORS	(0x4000) /*Bit mask for SENSORS PD*/
-
 #define DIAG_CON_NONE		(0x0000)	/* Bit mask for No SS*/
 #define DIAG_CON_ALL		(DIAG_CON_APSS | DIAG_CON_MPSS \
 				| DIAG_CON_LPASS | DIAG_CON_WCNSS \
-				| DIAG_CON_SENSORS | DIAG_CON_WDSP \
-				| DIAG_CON_CDSP)
-#define DIAG_CON_UPD_ALL	(DIAG_CON_UPD_WLAN \
-				| DIAG_CON_UPD_AUDIO \
-				| DIAG_CON_UPD_SENSORS)
+				| DIAG_CON_SENSORS)
 
 #define DIAG_STM_MODEM	0x01
 #define DIAG_STM_LPASS	0x02
 #define DIAG_STM_WCNSS	0x04
 #define DIAG_STM_APPS	0x08
 #define DIAG_STM_SENSORS 0x10
-#define DIAG_STM_WDSP 0x20
-#define DIAG_STM_CDSP 0x40
 
 #define INVALID_PID		-1
 #define DIAG_CMD_FOUND		1
@@ -174,7 +161,7 @@
 #define PKT_ALLOC	1
 #define PKT_RESET	2
 
-#define FEATURE_MASK_LEN	4
+#define FEATURE_MASK_LEN	2
 
 #define DIAG_MD_NONE			0
 #define DIAG_MD_PERIPHERAL		1
@@ -213,33 +200,13 @@
 #define PERIPHERAL_LPASS	1
 #define PERIPHERAL_WCNSS	2
 #define PERIPHERAL_SENSORS	3
-#define PERIPHERAL_WDSP		4
-#define PERIPHERAL_CDSP		5
-#define NUM_PERIPHERALS		6
+#define NUM_PERIPHERALS		4
 #define APPS_DATA		(NUM_PERIPHERALS)
 
-#define UPD_WLAN		7
-#define UPD_AUDIO		8
-#define UPD_SENSORS		9
-#define NUM_UPD			3
-
-#define DIAG_ID_APPS		1
-#define DIAG_ID_MPSS		2
-#define DIAG_ID_WLAN		3
-#define DIAG_ID_LPASS		4
-#define DIAG_ID_CDSP		5
-#define DIAG_ID_AUDIO		6
-#define DIAG_ID_SENSORS		7
-
 /* Number of sessions possible in Memory Device Mode. +1 for Apps data */
-#define NUM_MD_SESSIONS		(NUM_PERIPHERALS \
-					+ NUM_UPD + 1)
+#define NUM_MD_SESSIONS		(NUM_PERIPHERALS + 1)
 
 #define MD_PERIPHERAL_MASK(x)	(1 << x)
-
-#define MD_PERIPHERAL_PD_MASK(x)					\
-	((x == PERIPHERAL_MODEM) ? (1 << UPD_WLAN) :			\
-	((x == PERIPHERAL_LPASS) ? (1 << UPD_AUDIO | 1 << UPD_SENSORS) : 0))\
 
 /*
  * Number of stm processors includes all the peripherals and
@@ -434,7 +401,6 @@ struct diag_partial_pkt_t {
 struct diag_logging_mode_param_t {
 	uint32_t req_mode;
 	uint32_t peripheral_mask;
-	uint32_t pd_mask;
 	uint8_t mode_param;
 } __packed;
 
@@ -447,7 +413,6 @@ struct diag_md_session_t {
 	struct diag_mask_info *msg_mask;
 	struct diag_mask_info *log_mask;
 	struct diag_mask_info *event_mask;
-	struct thread_info *md_client_thread_info;
 	struct task_struct *task;
 };
 
@@ -483,9 +448,7 @@ struct diag_feature_t {
 	uint8_t log_on_demand;
 	uint8_t separate_cmd_rsp;
 	uint8_t encode_hdlc;
-	uint8_t untag_header;
 	uint8_t peripheral_buffering;
-	uint8_t pd_buffering;
 	uint8_t mask_centralization;
 	uint8_t stm_support;
 	uint8_t sockets_enabled;
@@ -503,7 +466,8 @@ struct diagchar_dev {
 	struct class *diagchar_class;
 	struct device *diag_dev;
 	int ref_count;
-	struct mutex diag_notifier_mutex;
+	int mask_clear;
+	struct mutex diag_maskclear_mutex;
 	struct mutex diagchar_mutex;
 	struct mutex diag_file_mutex;
 	wait_queue_head_t wait_q;
@@ -515,9 +479,6 @@ struct diagchar_dev {
 	int use_device_tree;
 	int supports_separate_cmdrsp;
 	int supports_apps_hdlc_encoding;
-	int supports_apps_header_untagging;
-	int supports_pd_buffering;
-	int peripheral_untag[NUM_PERIPHERALS];
 	int supports_sockets;
 	/* The state requested in the STM command */
 	int stm_state_requested[NUM_STM_PROCESSORS];
@@ -547,6 +508,7 @@ struct diagchar_dev {
 	struct workqueue_struct *diag_dci_wq;
 	struct list_head cmd_reg_list;
 	struct mutex cmd_reg_mutex;
+	spinlock_t dci_mempool_lock;
 	uint32_t cmd_reg_count;
 	struct mutex diagfwd_channel_mutex[NUM_PERIPHERALS];
 	/* Sizes that reflect memory pool sizes */
@@ -568,8 +530,8 @@ struct diagchar_dev {
 	struct diagfwd_info *diagfwd_cmd[NUM_PERIPHERALS];
 	struct diagfwd_info *diagfwd_dci_cmd[NUM_PERIPHERALS];
 	struct diag_feature_t feature[NUM_PERIPHERALS];
-	struct diag_buffering_mode_t buffering_mode[NUM_MD_SESSIONS];
-	uint8_t buffering_flag[NUM_MD_SESSIONS];
+	struct diag_buffering_mode_t buffering_mode[NUM_PERIPHERALS];
+	uint8_t buffering_flag[NUM_PERIPHERALS];
 	struct mutex mode_lock;
 	unsigned char *user_space_data_buf;
 	uint8_t user_space_data_busy;
@@ -612,9 +574,6 @@ struct diagchar_dev {
 	int in_busy_dcipktdata;
 	int logging_mode;
 	int logging_mask;
-	int pd_logging_mode[NUM_UPD];
-	int pd_session_clear[NUM_UPD];
-	int num_pd_session;
 	int mask_check;
 	uint32_t md_session_mask;
 	uint8_t md_session_mode;
@@ -673,9 +632,7 @@ void diag_cmd_remove_reg(struct diag_cmd_reg_entry_t *entry, uint8_t proc);
 void diag_cmd_remove_reg_by_pid(int pid);
 void diag_cmd_remove_reg_by_proc(int proc);
 int diag_cmd_chk_polling(struct diag_cmd_reg_entry_t *entry);
-int diag_mask_param(void);
 void diag_clear_masks(int pid);
-uint8_t diag_mask_to_pd_value(uint32_t peripheral_mask);
 
 void diag_record_stats(int type, int flag);
 

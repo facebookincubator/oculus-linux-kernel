@@ -183,9 +183,6 @@ struct ipa_api_controller {
 
 	u16 (*ipa_get_smem_restr_bytes)(void);
 
-	int (*ipa_broadcast_wdi_quota_reach_ind)(uint32_t fid,
-		uint64_t num_bytes);
-
 	int (*ipa_uc_wdi_get_dbpa)(struct ipa_wdi_db_params *out);
 
 	int (*ipa_uc_reg_rdyCB)(struct ipa_wdi_uc_ready_params *param);
@@ -362,18 +359,12 @@ struct ipa_api_controller {
 
 	void *(*ipa_get_ipc_logbuf_low)(void);
 
-	int (*ipa_rx_poll)(u32 clnt_hdl, int budget);
-
-	void (*ipa_recycle_wan_skb)(struct sk_buff *skb);
-
 	int (*ipa_setup_uc_ntn_pipes)(struct ipa_ntn_conn_in_params *in,
 		ipa_notify_cb notify, void *priv, u8 hdr_len,
 		struct ipa_ntn_conn_out_params *);
 
 	int (*ipa_tear_down_uc_offload_pipes)(int ipa_ep_idx_ul,
 		int ipa_ep_idx_dl);
-
-	struct device *(*ipa_get_pdev)(void);
 };
 
 #ifdef CONFIG_IPA

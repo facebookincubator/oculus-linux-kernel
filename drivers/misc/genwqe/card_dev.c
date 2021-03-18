@@ -395,7 +395,7 @@ static void genwqe_vma_open(struct vm_area_struct *vma)
 static void genwqe_vma_close(struct vm_area_struct *vma)
 {
 	unsigned long vsize = vma->vm_end - vma->vm_start;
-	struct inode *inode = file_inode(vma->vm_file);
+	struct inode *inode = vma->vm_file->f_dentry->d_inode;
 	struct dma_mapping *dma_map;
 	struct genwqe_dev *cd = container_of(inode->i_cdev, struct genwqe_dev,
 					    cdev_genwqe);
@@ -418,7 +418,7 @@ static void genwqe_vma_close(struct vm_area_struct *vma)
 	kfree(dma_map);
 }
 
-static const struct vm_operations_struct genwqe_vma_ops = {
+static struct vm_operations_struct genwqe_vma_ops = {
 	.open   = genwqe_vma_open,
 	.close  = genwqe_vma_close,
 };
@@ -449,7 +449,7 @@ static int genwqe_mmap(struct file *filp, struct vm_area_struct *vma)
 	if (get_order(vsize) > MAX_ORDER)
 		return -ENOMEM;
 
-	dma_map = kzalloc(sizeof(struct dma_mapping), GFP_KERNEL);
+	dma_map = kzalloc(sizeof(struct dma_mapping), GFP_ATOMIC);
 	if (dma_map == NULL)
 		return -ENOMEM;
 
@@ -785,7 +785,7 @@ static int genwqe_pin_mem(struct genwqe_file *cfile, struct genwqe_mem *m)
 	map_addr = (m->addr & PAGE_MASK);
 	map_size = round_up(m->size + (m->addr & ~PAGE_MASK), PAGE_SIZE);
 
-	dma_map = kzalloc(sizeof(struct dma_mapping), GFP_KERNEL);
+	dma_map = kzalloc(sizeof(struct dma_mapping), GFP_ATOMIC);
 	if (dma_map == NULL)
 		return -ENOMEM;
 

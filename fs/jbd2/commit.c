@@ -124,7 +124,7 @@ static int journal_submit_commit_record(journal_t *journal,
 	struct commit_header *tmp;
 	struct buffer_head *bh;
 	int ret;
-	struct timespec64 now = current_kernel_time64();
+	struct timespec now = current_kernel_time();
 
 	*cbh = NULL;
 
@@ -142,7 +142,8 @@ static int journal_submit_commit_record(journal_t *journal,
 	tmp->h_commit_sec = cpu_to_be64(now.tv_sec);
 	tmp->h_commit_nsec = cpu_to_be32(now.tv_nsec);
 
-	if (jbd2_has_feature_checksum(journal)) {
+	if (JBD2_HAS_COMPAT_FEATURE(journal,
+				    JBD2_FEATURE_COMPAT_CHECKSUM)) {
 		tmp->h_chksum_type 	= JBD2_CRC32_CHKSUM;
 		tmp->h_chksum_size 	= JBD2_CRC32_CHKSUM_SIZE;
 		tmp->h_chksum[0] 	= cpu_to_be32(crc32_sum);
@@ -156,7 +157,8 @@ static int journal_submit_commit_record(journal_t *journal,
 	bh->b_end_io = journal_end_buffer_io_sync;
 
 	if (journal->j_flags & JBD2_BARRIER &&
-	    !jbd2_has_feature_async_commit(journal))
+	    !JBD2_HAS_INCOMPAT_FEATURE(journal,
+				       JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT))
 		ret = submit_bh(WRITE_SYNC | WRITE_FLUSH_FUA, bh);
 	else
 		ret = submit_bh(WRITE_SYNC, bh);
@@ -315,7 +317,7 @@ static void write_tag_block(journal_t *j, journal_block_tag_t *tag,
 				   unsigned long long block)
 {
 	tag->t_blocknr = cpu_to_be32(block & (u32)~0);
-	if (jbd2_has_feature_64bit(j))
+	if (JBD2_HAS_INCOMPAT_FEATURE(j, JBD2_FEATURE_INCOMPAT_64BIT))
 		tag->t_blocknr_high = cpu_to_be32((block >> 31) >> 1);
 }
 
@@ -354,7 +356,7 @@ static void jbd2_block_tag_csum_set(journal_t *j, journal_block_tag_t *tag,
 			     bh->b_size);
 	kunmap_atomic(addr);
 
-	if (jbd2_has_feature_csum3(j))
+	if (JBD2_HAS_INCOMPAT_FEATURE(j, JBD2_FEATURE_INCOMPAT_CSUM_V3))
 		tag3->t_checksum = cpu_to_be32(csum32);
 	else
 		tag->t_checksum = cpu_to_be16(csum32);
@@ -728,7 +730,8 @@ start_journal_io:
 				/*
 				 * Compute checksum.
 				 */
-				if (jbd2_has_feature_checksum(journal)) {
+				if (JBD2_HAS_COMPAT_FEATURE(journal,
+					JBD2_FEATURE_COMPAT_CHECKSUM)) {
 					crc32_sum =
 					    jbd2_checksum_data(crc32_sum, bh);
 				}
@@ -794,7 +797,8 @@ start_journal_io:
 		blkdev_issue_flush(journal->j_fs_dev, GFP_NOFS, NULL);
 
 	/* Done it all: now write the commit record asynchronously. */
-	if (jbd2_has_feature_async_commit(journal)) {
+	if (JBD2_HAS_INCOMPAT_FEATURE(journal,
+				      JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
 		err = journal_submit_commit_record(journal, commit_transaction,
 						 &cbh, crc32_sum);
 		if (err)
@@ -885,7 +889,8 @@ start_journal_io:
 	commit_transaction->t_state = T_COMMIT_JFLUSH;
 	write_unlock(&journal->j_state_lock);
 
-	if (!jbd2_has_feature_async_commit(journal)) {
+	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
+				       JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
 		err = journal_submit_commit_record(journal, commit_transaction,
 						&cbh, crc32_sum);
 		if (err)
@@ -893,7 +898,8 @@ start_journal_io:
 	}
 	if (cbh)
 		err = journal_wait_on_commit_record(journal, cbh);
-	if (jbd2_has_feature_async_commit(journal) &&
+	if (JBD2_HAS_INCOMPAT_FEATURE(journal,
+				      JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT) &&
 	    journal->j_flags & JBD2_BARRIER) {
 		blkdev_issue_flush(journal->j_dev, GFP_NOFS, NULL);
 	}

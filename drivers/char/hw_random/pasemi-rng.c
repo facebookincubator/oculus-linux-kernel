@@ -133,16 +133,16 @@ static int rng_remove(struct platform_device *dev)
 	return 0;
 }
 
-static const struct of_device_id rng_match[] = {
+static struct of_device_id rng_match[] = {
 	{ .compatible      = "1682m-rng", },
 	{ .compatible      = "pasemi,pwrficient-rng", },
 	{ },
 };
-MODULE_DEVICE_TABLE(of, rng_match);
 
 static struct platform_driver rng_driver = {
 	.driver = {
 		.name = "pasemi-rng",
+		.owner = THIS_MODULE,
 		.of_match_table = rng_match,
 	},
 	.probe		= rng_probe,

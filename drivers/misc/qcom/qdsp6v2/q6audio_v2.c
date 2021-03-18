@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2013, 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -74,7 +74,7 @@ void  audio_in_get_dsp_frames(void *priv,
 	struct q6audio_in *audio = (struct q6audio_in *)priv;
 	uint32_t index;
 
-	index = q6asm_get_buf_index_from_token(token);
+	index = token;
 	pr_debug("%s:session id %d: index=%d nr frames=%d offset[%d]\n",
 			__func__, audio->ac->session, token, payload[9],
 			payload[5]);
@@ -84,13 +84,6 @@ void  audio_in_get_dsp_frames(void *priv,
 			audio->ac->session, payload[8], payload[10]);
 	pr_debug("%s:session id %d: enc_framesotal_size=0x%8x\n", __func__,
 			audio->ac->session, payload[4]);
-
-	/* Ensure the index is within max array size: FRAME_NUM */
-	if (index >= FRAME_NUM) {
-		pr_err("%s: Invalid index %d\n",
-			__func__, index);
-		return;
-	}
 
 	audio->out_frame_info[index][0] = payload[9];
 	audio->out_frame_info[index][1] = payload[5];

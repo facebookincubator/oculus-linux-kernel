@@ -355,8 +355,7 @@ struct dasd_gneq {
 		__u8 identifier:2;
 		__u8 reserved:6;
 	} __attribute__ ((packed)) flags;
-	__u8 record_selector;
-	__u8 reserved[4];
+	__u8 reserved[5];
 	struct {
 		__u8 value:2;
 		__u8 number:6;
@@ -493,18 +492,10 @@ struct alias_pav_group {
 	struct dasd_device *next;
 };
 
-struct dasd_conf_data {
-	struct dasd_ned neds[5];
-	u8 reserved[64];
-	struct dasd_gneq gneq;
-} __packed;
-
 struct dasd_eckd_private {
 	struct dasd_eckd_characteristics rdc_data;
 	u8 *conf_data;
 	int conf_len;
-	/* per path configuration data */
-	struct dasd_conf_data *path_conf_data[8];
 	/* pointers to specific parts in the conf_data */
 	struct dasd_ned *ned;
 	struct dasd_sneq *sneq;

@@ -21,7 +21,6 @@
 #include <linux/perf_event.h>
 #include <linux/interrupt.h>
 #include <linux/kdebug.h>
-#include <linux/uaccess.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -30,6 +29,7 @@
 #include <asm/setup.h>
 #include <asm/smp.h>
 #include <asm/traps.h>
+#include <asm/uaccess.h>
 
 #include "mm_32.h"
 
@@ -196,7 +196,7 @@ asmlinkage void do_sparc_fault(struct pt_regs *regs, int text_fault, int write,
 	 * If we're in an interrupt or have no user
 	 * context, we must not take the fault..
 	 */
-	if (pagefault_disabled() || !mm)
+	if (in_atomic() || !mm)
 		goto no_context;
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);

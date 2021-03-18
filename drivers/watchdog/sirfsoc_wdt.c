@@ -154,7 +154,6 @@ static int sirfsoc_wdt_probe(struct platform_device *pdev)
 
 	watchdog_init_timeout(&sirfsoc_wdd, timeout, &pdev->dev);
 	watchdog_set_nowayout(&sirfsoc_wdd, nowayout);
-	sirfsoc_wdd.parent = &pdev->dev;
 
 	ret = watchdog_register_device(&sirfsoc_wdd);
 	if (ret)
@@ -211,6 +210,7 @@ MODULE_DEVICE_TABLE(of, sirfsoc_wdt_of_match);
 static struct platform_driver sirfsoc_wdt_driver = {
 	.driver = {
 		.name = "sirfsoc-wdt",
+		.owner = THIS_MODULE,
 		.pm = &sirfsoc_wdt_pm_ops,
 		.of_match_table	= sirfsoc_wdt_of_match,
 	},

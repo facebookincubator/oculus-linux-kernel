@@ -53,8 +53,7 @@ struct ds2760_device_info {
 	int charge_status;		/* POWER_SUPPLY_STATUS_* */
 
 	int full_counter;
-	struct power_supply *bat;
-	struct power_supply_desc bat_desc;
+	struct power_supply bat;
 	struct device *w1_dev;
 	struct workqueue_struct *monitor_wqueue;
 	struct delayed_work monitor_work;
@@ -255,7 +254,7 @@ static void ds2760_battery_update_status(struct ds2760_device_info *di)
 	if (di->charge_status == POWER_SUPPLY_STATUS_UNKNOWN)
 		di->full_counter = 0;
 
-	if (power_supply_am_i_supplied(di->bat)) {
+	if (power_supply_am_i_supplied(&di->bat)) {
 		if (di->current_uA > 10000) {
 			di->charge_status = POWER_SUPPLY_STATUS_CHARGING;
 			di->full_counter = 0;
@@ -288,7 +287,7 @@ static void ds2760_battery_update_status(struct ds2760_device_info *di)
 	}
 
 	if (di->charge_status != old_charge_status)
-		power_supply_changed(di->bat);
+		power_supply_changed(&di->bat);
 }
 
 static void ds2760_battery_write_status(struct ds2760_device_info *di,
@@ -347,9 +346,12 @@ static void ds2760_battery_work(struct work_struct *work)
 	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, interval);
 }
 
+#define to_ds2760_device_info(x) container_of((x), struct ds2760_device_info, \
+					      bat);
+
 static void ds2760_battery_external_power_changed(struct power_supply *psy)
 {
-	struct ds2760_device_info *di = power_supply_get_drvdata(psy);
+	struct ds2760_device_info *di = to_ds2760_device_info(psy);
 
 	dev_dbg(di->dev, "%s\n", __func__);
 
@@ -375,7 +377,7 @@ static void ds2760_battery_set_charged_work(struct work_struct *work)
 	 * that error.
 	 */
 
-	if (!power_supply_am_i_supplied(di->bat))
+	if (!power_supply_am_i_supplied(&di->bat))
 		return;
 
 	bias = (signed char) di->current_raw +
@@ -394,7 +396,7 @@ static void ds2760_battery_set_charged_work(struct work_struct *work)
 
 static void ds2760_battery_set_charged(struct power_supply *psy)
 {
-	struct ds2760_device_info *di = power_supply_get_drvdata(psy);
+	struct ds2760_device_info *di = to_ds2760_device_info(psy);
 
 	/* postpone the actual work by 20 secs. This is for debouncing GPIO
 	 * signals and to let the current value settle. See AN4188. */
@@ -405,7 +407,7 @@ static int ds2760_battery_get_property(struct power_supply *psy,
 				       enum power_supply_property psp,
 				       union power_supply_propval *val)
 {
-	struct ds2760_device_info *di = power_supply_get_drvdata(psy);
+	struct ds2760_device_info *di = to_ds2760_device_info(psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -456,7 +458,7 @@ static int ds2760_battery_set_property(struct power_supply *psy,
 				       enum power_supply_property psp,
 				       const union power_supply_propval *val)
 {
-	struct ds2760_device_info *di = power_supply_get_drvdata(psy);
+	struct ds2760_device_info *di = to_ds2760_device_info(psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
@@ -506,7 +508,6 @@ static enum power_supply_property ds2760_battery_props[] = {
 
 static int ds2760_battery_probe(struct platform_device *pdev)
 {
-	struct power_supply_config psy_cfg = {};
 	char status;
 	int retval = 0;
 	struct ds2760_device_info *di;
@@ -519,21 +520,19 @@ static int ds2760_battery_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, di);
 
-	di->dev				= &pdev->dev;
-	di->w1_dev			= pdev->dev.parent;
-	di->bat_desc.name		= dev_name(&pdev->dev);
-	di->bat_desc.type		= POWER_SUPPLY_TYPE_BATTERY;
-	di->bat_desc.properties		= ds2760_battery_props;
-	di->bat_desc.num_properties	= ARRAY_SIZE(ds2760_battery_props);
-	di->bat_desc.get_property	= ds2760_battery_get_property;
-	di->bat_desc.set_property	= ds2760_battery_set_property;
-	di->bat_desc.property_is_writeable =
+	di->dev			= &pdev->dev;
+	di->w1_dev		= pdev->dev.parent;
+	di->bat.name		= dev_name(&pdev->dev);
+	di->bat.type		= POWER_SUPPLY_TYPE_BATTERY;
+	di->bat.properties	= ds2760_battery_props;
+	di->bat.num_properties	= ARRAY_SIZE(ds2760_battery_props);
+	di->bat.get_property	= ds2760_battery_get_property;
+	di->bat.set_property	= ds2760_battery_set_property;
+	di->bat.property_is_writeable =
 				  ds2760_battery_property_is_writeable;
-	di->bat_desc.set_charged	= ds2760_battery_set_charged;
-	di->bat_desc.external_power_changed =
+	di->bat.set_charged	= ds2760_battery_set_charged;
+	di->bat.external_power_changed =
 				  ds2760_battery_external_power_changed;
-
-	psy_cfg.drv_data		= di;
 
 	di->charge_status = POWER_SUPPLY_STATUS_UNKNOWN;
 
@@ -556,10 +555,9 @@ static int ds2760_battery_probe(struct platform_device *pdev)
 	if (current_accum)
 		ds2760_battery_set_current_accum(di, current_accum);
 
-	di->bat = power_supply_register(&pdev->dev, &di->bat_desc, &psy_cfg);
-	if (IS_ERR(di->bat)) {
+	retval = power_supply_register(&pdev->dev, &di->bat);
+	if (retval) {
 		dev_err(di->dev, "failed to register battery\n");
-		retval = PTR_ERR(di->bat);
 		goto batt_failed;
 	}
 
@@ -576,7 +574,7 @@ static int ds2760_battery_probe(struct platform_device *pdev)
 	goto success;
 
 workqueue_failed:
-	power_supply_unregister(di->bat);
+	power_supply_unregister(&di->bat);
 batt_failed:
 di_alloc_failed:
 success:
@@ -590,7 +588,7 @@ static int ds2760_battery_remove(struct platform_device *pdev)
 	cancel_delayed_work_sync(&di->monitor_work);
 	cancel_delayed_work_sync(&di->set_charged_work);
 	destroy_workqueue(di->monitor_wqueue);
-	power_supply_unregister(di->bat);
+	power_supply_unregister(&di->bat);
 
 	return 0;
 }
@@ -612,7 +610,7 @@ static int ds2760_battery_resume(struct platform_device *pdev)
 	struct ds2760_device_info *di = platform_get_drvdata(pdev);
 
 	di->charge_status = POWER_SUPPLY_STATUS_UNKNOWN;
-	power_supply_changed(di->bat);
+	power_supply_changed(&di->bat);
 
 	mod_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ);
 

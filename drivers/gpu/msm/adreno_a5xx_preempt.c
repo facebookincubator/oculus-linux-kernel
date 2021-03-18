@@ -44,7 +44,7 @@ static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 
 	if (reset_timer)
 		rb->dispatch_q.expires = jiffies +
-			msecs_to_jiffies(adreno_drawobj_timeout);
+			msecs_to_jiffies(adreno_cmdbatch_timeout);
 
 	spin_unlock_irqrestore(&rb->preempt_lock, flags);
 }
@@ -526,7 +526,7 @@ static int a5xx_preemption_ringbuffer_init(struct adreno_device *adreno_dev,
 	return 0;
 }
 
-#ifdef CONFIG_QCOM_KGSL_IOMMU
+#ifdef CONFIG_MSM_KGSL_IOMMU
 static int a5xx_preemption_iommu_init(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);

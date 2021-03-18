@@ -14,14 +14,13 @@
 struct dtt200u_fe_state {
 	struct dvb_usb_device *d;
 
-	enum fe_status stat;
+	fe_status_t stat;
 
 	struct dtv_frontend_properties fep;
 	struct dvb_frontend frontend;
 };
 
-static int dtt200u_fe_read_status(struct dvb_frontend *fe,
-				  enum fe_status *stat)
+static int dtt200u_fe_read_status(struct dvb_frontend* fe, fe_status_t *stat)
 {
 	struct dtt200u_fe_state *state = fe->demodulator_priv;
 	u8 st = GET_TUNE_STATUS, b[3];
@@ -106,7 +105,7 @@ static int dtt200u_fe_set_frontend(struct dvb_frontend *fe)
 	struct dtv_frontend_properties *fep = &fe->dtv_property_cache;
 	struct dtt200u_fe_state *state = fe->demodulator_priv;
 	int i;
-	enum fe_status st;
+	fe_status_t st;
 	u16 freq = fep->frequency / 250000;
 	u8 bwbuf[2] = { SET_BANDWIDTH, 0 },freqbuf[3] = { SET_RF_FREQ, 0, 0 };
 

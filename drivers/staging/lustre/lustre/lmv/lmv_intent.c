@@ -99,8 +99,8 @@ static int lmv_intent_remote(struct obd_export *exp, void *lmm,
 		goto out;
 	}
 
-	op_data = kzalloc(sizeof(*op_data), GFP_NOFS);
-	if (!op_data) {
+	OBD_ALLOC_PTR(op_data);
+	if (op_data == NULL) {
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -142,7 +142,7 @@ static int lmv_intent_remote(struct obd_export *exp, void *lmm,
 	it->d.lustre.it_lock_mode = pmode;
 
 out_free_op_data:
-	kfree(op_data);
+	OBD_FREE_PTR(op_data);
 out:
 	if (rc && pmode)
 		ldlm_lock_decref(&plock, pmode);
@@ -186,8 +186,8 @@ int lmv_intent_open(struct obd_export *exp, struct md_op_data *op_data,
 			return rc;
 	}
 
-	CDEBUG(D_INODE, "OPEN_INTENT with fid1=" DFID ", fid2=" DFID ", name='%s' -> mds #%d\n",
-	       PFID(&op_data->op_fid1),
+	CDEBUG(D_INODE, "OPEN_INTENT with fid1="DFID", fid2="DFID","
+	       " name='%s' -> mds #%d\n", PFID(&op_data->op_fid1),
 	       PFID(&op_data->op_fid2), op_data->op_name, tgt->ltd_idx);
 
 	rc = md_intent_lock(tgt->ltd_exp, op_data, lmm, lmmsize, it, flags,
@@ -226,8 +226,8 @@ int lmv_intent_open(struct obd_export *exp, struct md_op_data *op_data,
 		 * this is normal situation, we should not print error here,
 		 * only debug info.
 		 */
-		CDEBUG(D_INODE, "Can't handle remote %s: dir " DFID "(" DFID "):%*s: %d\n",
-		       LL_IT2STR(it), PFID(&op_data->op_fid2),
+		CDEBUG(D_INODE, "Can't handle remote %s: dir "DFID"("DFID"):"
+		       "%*s: %d\n", LL_IT2STR(it), PFID(&op_data->op_fid2),
 		       PFID(&op_data->op_fid1), op_data->op_namelen,
 		       op_data->op_name, rc);
 		return rc;

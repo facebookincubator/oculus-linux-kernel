@@ -26,16 +26,16 @@ static inline ino_t u32_to_ino_t(__u32 uino)
  */
 typedef struct svc_fh {
 	struct knfsd_fh		fh_handle;	/* FH data */
-	int			fh_maxsize;	/* max size for fh_handle */
 	struct dentry *		fh_dentry;	/* validated dentry */
 	struct svc_export *	fh_export;	/* export pointer */
+	int			fh_maxsize;	/* max size for fh_handle */
 
-	bool			fh_locked;	/* inode locked by us */
-	bool			fh_want_write;	/* remount protection taken */
+	unsigned char		fh_locked;	/* inode locked by us */
+	unsigned char		fh_want_write;	/* remount protection taken */
 
 #ifdef CONFIG_NFSD_V3
-	bool			fh_post_saved;	/* post-op attrs saved */
-	bool			fh_pre_saved;	/* pre-op attrs saved */
+	unsigned char		fh_post_saved;	/* post-op attrs saved */
+	unsigned char		fh_pre_saved;	/* pre-op attrs saved */
 
 	/* Pre-op attributes saved during fh_lock */
 	__u64			fh_pre_size;	/* size before operation */
@@ -187,24 +187,6 @@ fh_init(struct svc_fh *fhp, int maxsize)
 	return fhp;
 }
 
-static inline bool fh_match(struct knfsd_fh *fh1, struct knfsd_fh *fh2)
-{
-	if (fh1->fh_size != fh2->fh_size)
-		return false;
-	if (memcmp(fh1->fh_base.fh_pad, fh2->fh_base.fh_pad, fh1->fh_size) != 0)
-		return false;
-	return true;
-}
-
-static inline bool fh_fsid_match(struct knfsd_fh *fh1, struct knfsd_fh *fh2)
-{
-	if (fh1->fh_fsid_type != fh2->fh_fsid_type)
-		return false;
-	if (memcmp(fh1->fh_fsid, fh2->fh_fsid, key_len(fh1->fh_fsid_type)) != 0)
-		return false;
-	return true;
-}
-
 #ifdef CONFIG_NFSD_V3
 /*
  * The wcc data stored in current_fh should be cleared
@@ -213,8 +195,8 @@ static inline bool fh_fsid_match(struct knfsd_fh *fh1, struct knfsd_fh *fh2)
 static inline void
 fh_clear_wcc(struct svc_fh *fhp)
 {
-	fhp->fh_post_saved = false;
-	fhp->fh_pre_saved = false;
+	fhp->fh_post_saved = 0;
+	fhp->fh_pre_saved = 0;
 }
 
 /*
@@ -225,13 +207,13 @@ fill_pre_wcc(struct svc_fh *fhp)
 {
 	struct inode    *inode;
 
-	inode = d_inode(fhp->fh_dentry);
+	inode = fhp->fh_dentry->d_inode;
 	if (!fhp->fh_pre_saved) {
 		fhp->fh_pre_mtime = inode->i_mtime;
 		fhp->fh_pre_ctime = inode->i_ctime;
 		fhp->fh_pre_size  = inode->i_size;
 		fhp->fh_pre_change = inode->i_version;
-		fhp->fh_pre_saved = true;
+		fhp->fh_pre_saved = 1;
 	}
 }
 
@@ -264,10 +246,10 @@ fh_lock_nested(struct svc_fh *fhp, unsigned int subclass)
 		return;
 	}
 
-	inode = d_inode(dentry);
+	inode = dentry->d_inode;
 	mutex_lock_nested(&inode->i_mutex, subclass);
 	fill_pre_wcc(fhp);
-	fhp->fh_locked = true;
+	fhp->fh_locked = 1;
 }
 
 static inline void
@@ -284,8 +266,8 @@ fh_unlock(struct svc_fh *fhp)
 {
 	if (fhp->fh_locked) {
 		fill_post_wcc(fhp);
-		mutex_unlock(&d_inode(fhp->fh_dentry)->i_mutex);
-		fhp->fh_locked = false;
+		mutex_unlock(&fhp->fh_dentry->d_inode->i_mutex);
+		fhp->fh_locked = 0;
 	}
 }
 

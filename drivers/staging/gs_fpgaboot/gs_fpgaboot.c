@@ -17,6 +17,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/string.h>
@@ -44,6 +45,27 @@ static struct platform_device	*firmware_pdev;
 static char	*file = "xlinx_fpga_firmware.bit";
 module_param(file, charp, S_IRUGO);
 MODULE_PARM_DESC(file, "Xilinx FPGA firmware file.");
+
+#ifdef DEBUG_FPGA
+static void datadump(char *msg, void *m, int n)
+{
+	int i;
+	unsigned char *c;
+
+	pr_info("=== %s ===\n", msg);
+
+	c = m;
+
+	for (i = 0; i < n; i++) {
+		if ((i&0xf) == 0)
+			pr_info(KERN_INFO "\n  0x%4x: ", i);
+
+		pr_info("%02X ", c[i]);
+	}
+
+	pr_info("\n");
+}
+#endif /* DEBUG_FPGA */
 
 static void read_bitstream(char *bitdata, char *buf, int *offset, int rdsize)
 {
@@ -135,10 +157,12 @@ static void gs_print_header(struct fpgaimage *fimage)
 static void gs_read_bitstream(struct fpgaimage *fimage)
 {
 	char *bitdata;
+	int size;
 	int offset;
 
 	offset = 0;
 	bitdata = (char *)fimage->fw_entry->data;
+	size = fimage->fw_entry->size;
 
 	readmagic_bitstream(bitdata, &offset);
 	readinfo_bitstream(bitdata, fimage->filename, &offset);
@@ -171,15 +195,15 @@ static int gs_read_image(struct fpgaimage *fimage)
 	return 0;
 }
 
-static int gs_load_image(struct fpgaimage *fimage, char *fw_file)
+static int gs_load_image(struct fpgaimage *fimage, char *file)
 {
 	int err;
 
-	pr_info("load fpgaimage %s\n", fw_file);
+	pr_info("load fpgaimage %s\n", file);
 
-	err = request_firmware(&fimage->fw_entry, fw_file, &firmware_pdev->dev);
+	err = request_firmware(&fimage->fw_entry, file, &firmware_pdev->dev);
 	if (err != 0) {
-		pr_err("firmware %s is missing, cannot continue.\n", fw_file);
+		pr_err("firmware %s is missing, cannot continue.\n", file);
 		return err;
 	}
 
@@ -196,9 +220,9 @@ static int gs_download_image(struct fpgaimage *fimage, enum wbus bus_bytes)
 	size = fimage->lendata;
 
 #ifdef DEBUG_FPGA
-	print_hex_dump_bytes("bitfile sample: ", DUMP_PREFIX_OFFSET,
-			     bitdata, 0x100);
+	datadump("bitfile sample", bitdata, 0x100);
 #endif /* DEBUG_FPGA */
+
 	if (!xl_supported_prog_bus_width(bus_bytes)) {
 		pr_err("unsupported program bus width %d\n",
 				bus_bytes);
@@ -292,8 +316,10 @@ static int gs_fpgaboot(void)
 	struct fpgaimage	*fimage;
 
 	fimage = kmalloc(sizeof(struct fpgaimage), GFP_KERNEL);
-	if (!fimage)
-		return -ENOMEM;
+	if (fimage == NULL) {
+		pr_err("No memory is available\n");
+		goto err_out;
+	}
 
 	err = gs_load_image(fimage, file);
 	if (err) {
@@ -335,44 +361,50 @@ err_out2:
 err_out1:
 	kfree(fimage);
 
+err_out:
 	return -1;
 
 }
 
 static int __init gs_fpgaboot_init(void)
 {
-	int err;
+	int err, r;
+
+	r = -1;
 
 	pr_info("FPGA DOWNLOAD --->\n");
 
 	pr_info("FPGA image file name: %s\n", file);
 
 	err = init_driver();
-	if (err) {
+	if (err != 0) {
 		pr_err("FPGA DRIVER INIT FAIL!!\n");
-		return err;
+		return r;
 	}
 
 	err = xl_init_io();
 	if (err) {
 		pr_err("GPIO INIT FAIL!!\n");
+		r = -1;
 		goto errout;
 	}
 
 	err = gs_fpgaboot();
 	if (err) {
 		pr_err("FPGA DOWNLOAD FAIL!!\n");
+		r = -1;
 		goto errout;
 	}
 
 	pr_info("FPGA DOWNLOAD DONE <---\n");
 
-	return 0;
+	r = 0;
+	return r;
 
 errout:
 	finish_driver();
 
-	return err;
+	return r;
 }
 
 static void __exit gs_fpgaboot_exit(void)

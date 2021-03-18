@@ -35,14 +35,9 @@ config MACH_SUN7I
 	select SUN5I_HSTIMER
 
 config MACH_SUN8I
-	bool "Allwinner sun8i Family SoCs support"
+	bool "Allwinner A23 (sun8i) SoCs support"
 	default ARCH_SUNXI
 	select ARM_GIC
 	select MFD_SUN6I_PRCM
-
-config MACH_SUN9I
-	bool "Allwinner (sun9i) SoCs support"
-	default ARCH_SUNXI
-	select ARM_GIC
 
 endif

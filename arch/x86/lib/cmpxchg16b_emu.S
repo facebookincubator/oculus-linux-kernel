@@ -6,6 +6,7 @@
  *
  */
 #include <linux/linkage.h>
+#include <asm/dwarf2.h>
 #include <asm/percpu.h>
 
 .text
@@ -20,6 +21,7 @@
  * %al  : Operation successful
  */
 ENTRY(this_cpu_cmpxchg16b_emu)
+CFI_STARTPROC
 
 #
 # Emulate 'cmpxchg16b %gs:(%rsi)' except we return the result in %al not
@@ -30,7 +32,7 @@ ENTRY(this_cpu_cmpxchg16b_emu)
 # *atomic* on a single cpu (as provided by the this_cpu_xx class of
 # macros).
 #
-	pushfq
+	pushfq_cfi
 	cli
 
 	cmpq PER_CPU_VAR((%rsi)), %rax
@@ -41,13 +43,17 @@ ENTRY(this_cpu_cmpxchg16b_emu)
 	movq %rbx, PER_CPU_VAR((%rsi))
 	movq %rcx, PER_CPU_VAR(8(%rsi))
 
-	popfq
+	CFI_REMEMBER_STATE
+	popfq_cfi
 	mov $1, %al
 	ret
 
+	CFI_RESTORE_STATE
 .Lnot_same:
-	popfq
+	popfq_cfi
 	xor %al,%al
 	ret
+
+CFI_ENDPROC
 
 ENDPROC(this_cpu_cmpxchg16b_emu)

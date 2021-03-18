@@ -191,7 +191,7 @@ asmlinkage int sys_sigreturn(struct pt_regs *regs)
 	struct sigframe __user *frame;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current->restart_block.fn = do_no_restart_syscall;
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
 
 	/*
 	 * Since we stacked the signal on a 64-bit boundary,
@@ -221,7 +221,7 @@ asmlinkage int sys_rt_sigreturn(struct pt_regs *regs)
 	struct rt_sigframe __user *frame;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current->restart_block.fn = do_no_restart_syscall;
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
 
 	/*
 	 * Since we stacked the signal on a 64-bit boundary,
@@ -318,6 +318,17 @@ get_sigframe(struct ksignal *ksig, struct pt_regs *regs, int framesize)
 	return frame;
 }
 
+/*
+ * translate the signal
+ */
+static inline int map_sig(int sig)
+{
+	struct thread_info *thread = current_thread_info();
+	if (sig < 32 && thread->exec_domain && thread->exec_domain->signal_invmap)
+		sig = thread->exec_domain->signal_invmap[sig];
+	return sig;
+}
+
 static int
 setup_return(struct pt_regs *regs, struct ksignal *ksig,
 	     unsigned long __user *rc, void __user *frame)
@@ -343,6 +354,7 @@ setup_return(struct pt_regs *regs, struct ksignal *ksig,
 		 */
 		thumb = handler & 1;
 
+#if __LINUX_ARM_ARCH__ >= 6
 		/*
 		 * Clear the If-Then Thumb-2 execution state.  ARM spec
 		 * requires this to be all 000s in ARM mode.  Snapdragon
@@ -351,10 +363,11 @@ setup_return(struct pt_regs *regs, struct ksignal *ksig,
 		 *
 		 * We must do this whenever we are running on a Thumb-2
 		 * capable CPU, which includes ARMv6T2.  However, we elect
-		 * to always do this to simplify the code; this field is
-		 * marked UNK/SBZP for older architectures.
+		 * to do this whenever we're on an ARMv6 or later CPU for
+		 * simplicity.
 		 */
 		cpsr &= ~PSR_IT_MASK;
+#endif
 
 		if (thumb) {
 			cpsr |= PSR_T_BIT;
@@ -404,7 +417,7 @@ setup_return(struct pt_regs *regs, struct ksignal *ksig,
 		}
 	}
 
-	regs->ARM_r0 = ksig->sig;
+	regs->ARM_r0 = map_sig(ksig->sig);
 	regs->ARM_sp = (unsigned long)frame;
 	regs->ARM_lr = retcode;
 	regs->ARM_pc = handler;
@@ -565,12 +578,6 @@ static int do_signal(struct pt_regs *regs, int syscall)
 asmlinkage int
 do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 {
-	/*
-	 * The assembly code enters us with IRQs off, but it hasn't
-	 * informed the tracing code of that for efficiency reasons.
-	 * Update the trace code with the current status.
-	 */
-	trace_hardirqs_off();
 	do {
 		if (likely(thread_flags & _TIF_NEED_RESCHED)) {
 			schedule();
@@ -590,6 +597,7 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 				}
 				syscall = 0;
 			} else if (thread_flags & _TIF_UPROBE) {
+				clear_thread_flag(TIF_UPROBE);
 				uprobe_notify_resume(regs);
 			} else {
 				clear_thread_flag(TIF_NOTIFY_RESUME);

@@ -167,8 +167,7 @@ static struct i2c_algorithm opera1_i2c_algo = {
 	.functionality = opera1_i2c_func,
 };
 
-static int opera1_set_voltage(struct dvb_frontend *fe,
-			      enum fe_sec_voltage voltage)
+static int opera1_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t voltage)
 {
 	static u8 command_13v[1]={0x00};
 	static u8 command_18v[1]={0x01};

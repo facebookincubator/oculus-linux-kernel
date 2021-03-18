@@ -537,7 +537,7 @@ static void netxen_p2_nic_set_multi(struct net_device *netdev)
 	u8 null_addr[ETH_ALEN];
 	int i;
 
-	eth_zero_addr(null_addr);
+	memset(null_addr, 0, ETH_ALEN);
 
 	if (netdev->flags & IFF_PROMISC) {
 

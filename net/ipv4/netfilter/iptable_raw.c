@@ -20,16 +20,20 @@ static const struct xt_table packet_raw = {
 
 /* The work comes in here from netfilter.c. */
 static unsigned int
-iptable_raw_hook(void *priv, struct sk_buff *skb,
-		 const struct nf_hook_state *state)
+iptable_raw_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
+		 const struct net_device *in, const struct net_device *out,
+		 int (*okfn)(struct sk_buff *))
 {
-	if (state->hook == NF_INET_LOCAL_OUT &&
+	const struct net *net;
+
+	if (ops->hooknum == NF_INET_LOCAL_OUT &&
 	    (skb->len < sizeof(struct iphdr) ||
 	     ip_hdrlen(skb) < sizeof(struct iphdr)))
 		/* root is playing with raw sockets. */
 		return NF_ACCEPT;
 
-	return ipt_do_table(skb, state, state->net->ipv4.iptable_raw);
+	net = dev_net((in != NULL) ? in : out);
+	return ipt_do_table(skb, ops->hooknum, in, out, net->ipv4.iptable_raw);
 }
 
 static struct nf_hook_ops *rawtable_ops __read_mostly;

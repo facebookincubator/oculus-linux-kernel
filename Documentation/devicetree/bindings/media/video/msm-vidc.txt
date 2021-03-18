@@ -17,6 +17,8 @@ Optional properties:
 - interrupts : should contain the vidc interrupt.
 - qcom,platform-version : mask and shift of the platform version bits
     in efuse register.
+- qcom,capability-version : mask and shift of the capability version bits
+    in efuse register.
 - qcom,load-freq-tbl : load (in macroblocks/sec) and corresponding vcodec
   clock required along with codec's config, which is a bitmap that describes
   what the clock is used for. The bitmaps are as follows:
@@ -126,21 +128,10 @@ Optional properties:
            internal persist1 = 0x400
            internal cmd queue = 0x800
 - qcom,pm-qos-latency-us = The latency used to vote for QOS power manager. This
-  value is typically max(latencies of every cluster at all power levels) + 1
+value is typically max(latencies of every cluster at all power levels) + 1
 - qcom,max-secure-instances = An int containing max number of concurrent secure
   instances supported, accounting for venus and system wide limitations like
   memory, performance etc.
-- qcom,debug-timeout = A bool indicating that FW errors such as SYS_ERROR,
-  SESSION_ERROR and timeouts will be treated as Fatal.
-- qcom,power-conf = Indicates the value at which or beyond, a video session
-  is configured in low power mode to have power benefits. Value is defined
-  interms of HxW of the video session beyond which power benefit is desired.
-- qcom,cx-ipeak-data : phandle of cx_ipeak device node and bit position on
-  the cx register where venus is supposed to vote
-- qcom,clock-freq-threshold : Operating threshold frequency of venus which
-  video driver uses to check against the frequency voted. Whenever venus
-  clock frequency crosses this mark, driver intimates cx ipeak driver on
-  supported targets.
 
 [Second level nodes]
 Context Banks
@@ -192,9 +183,6 @@ Optional properties:
 - qcom,bus-rage-kbps : an array of two items (<min max>) that indicate the
   minimum and maximum acceptable votes for the bus.
   In the absence of this property <0 INT_MAX> is used.
-- qcom,ubwc-10bit : UBWC 10 bit content has different bus requirements,
-  this tag will be used to pick the appropriate bus as per the session profile
-  as shown below in example.
 
 Example:
 
@@ -235,7 +223,6 @@ Example:
 		qcom,qdss-presets = <0xFC307000 0x1000>,
 			<0xFC322000 0x1000>;
 		qcom,max-hw-load = <1224450>; /* 4k @ 30 + 1080p @ 30*/
-		qcom,power-conf = <8294400>; /* WxH - 3840*2160 */
 		qcom,never-unload-fw;
 		clock-names = "foo_clk", "bar_clk", "baz_clk";
 		qcom,clock-configs = <0x3 0x1 0x0>;
@@ -282,18 +269,5 @@ Example:
 			qcom,bus-slave = <MSM_BUS_SLAVE_EBI_CH0>;
 			qcom,bus-governor = "msm-vidc-ddr";
 			qcom,bus-range-kbps = <1000 3388000>;
-		};
-		qcom,profile-dec-ubwc-10bit {
-			qcom,codec-mask = <0xffffffff>;
-			qcom,ubwc-10bit;
-			qcom,load-busfreq-tbl =
-				<979200 2446336>,  /* UHD30D     */
-				<864000 2108416>,  /* 720p240D   */
-				<489600 1207296>,  /* 1080p60D   */
-				<432000 1058816>,  /* 720p120D   */
-				<244800 616448>,   /* 1080p30D   */
-				<216000 534528>,   /* 720p60D    */
-				<108000 271360>,   /* 720p30D    */
-				<0 0>;
 		};
 	};

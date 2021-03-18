@@ -519,7 +519,6 @@ static const u8 stmpe1601_regs[] = {
 	[STMPE_IDX_GPDR_LSB]	= STMPE1601_REG_GPIO_SET_DIR_LSB,
 	[STMPE_IDX_GPRER_LSB]	= STMPE1601_REG_GPIO_RE_LSB,
 	[STMPE_IDX_GPFER_LSB]	= STMPE1601_REG_GPIO_FE_LSB,
-	[STMPE_IDX_GPPUR_LSB]	= STMPE1601_REG_GPIO_PU_LSB,
 	[STMPE_IDX_GPAFR_U_MSB]	= STMPE1601_REG_GPIO_AF_U_MSB,
 	[STMPE_IDX_IEGPIOR_LSB]	= STMPE1601_REG_INT_EN_GPIO_MASK_LSB,
 	[STMPE_IDX_ISGPIOR_MSB]	= STMPE1601_REG_INT_STA_GPIO_MSB,
@@ -668,7 +667,6 @@ static const u8 stmpe1801_regs[] = {
 	[STMPE_IDX_GPDR_LSB]	= STMPE1801_REG_GPIO_SET_DIR_LOW,
 	[STMPE_IDX_GPRER_LSB]	= STMPE1801_REG_GPIO_RE_LOW,
 	[STMPE_IDX_GPFER_LSB]	= STMPE1801_REG_GPIO_FE_LOW,
-	[STMPE_IDX_GPPUR_LSB]	= STMPE1801_REG_GPIO_PULL_UP_LOW,
 	[STMPE_IDX_IEGPIOR_LSB]	= STMPE1801_REG_INT_EN_GPIO_MASK_LOW,
 	[STMPE_IDX_ISGPIOR_LSB]	= STMPE1801_REG_INT_STA_GPIO_LOW,
 };
@@ -752,8 +750,6 @@ static const u8 stmpe24xx_regs[] = {
 	[STMPE_IDX_GPDR_LSB]	= STMPE24XX_REG_GPDR_LSB,
 	[STMPE_IDX_GPRER_LSB]	= STMPE24XX_REG_GPRER_LSB,
 	[STMPE_IDX_GPFER_LSB]	= STMPE24XX_REG_GPFER_LSB,
-	[STMPE_IDX_GPPUR_LSB]	= STMPE24XX_REG_GPPUR_LSB,
-	[STMPE_IDX_GPPDR_LSB]	= STMPE24XX_REG_GPPDR_LSB,
 	[STMPE_IDX_GPAFR_U_MSB]	= STMPE24XX_REG_GPAFR_U_MSB,
 	[STMPE_IDX_IEGPIOR_LSB]	= STMPE24XX_REG_IEGPIOR_LSB,
 	[STMPE_IDX_ISGPIOR_MSB]	= STMPE24XX_REG_ISGPIOR_MSB,
@@ -795,7 +791,6 @@ static int stmpe24xx_get_altfunc(struct stmpe *stmpe, enum stmpe_block block)
 		return 2;
 
 	case STMPE_BLOCK_KEYPAD:
-	case STMPE_BLOCK_PWM:
 		return 1;
 
 	case STMPE_BLOCK_GPIO:
@@ -972,18 +967,25 @@ static int stmpe_irq_map(struct irq_domain *d, unsigned int virq,
 	irq_set_chip_data(virq, stmpe);
 	irq_set_chip_and_handler(virq, chip, handle_edge_irq);
 	irq_set_nested_thread(virq, 1);
+#ifdef CONFIG_ARM
+	set_irq_flags(virq, IRQF_VALID);
+#else
 	irq_set_noprobe(virq);
+#endif
 
 	return 0;
 }
 
 static void stmpe_irq_unmap(struct irq_domain *d, unsigned int virq)
 {
+#ifdef CONFIG_ARM
+		set_irq_flags(virq, 0);
+#endif
 		irq_set_chip_and_handler(virq, NULL, NULL);
 		irq_set_chip_data(virq, NULL);
 }
 
-static const struct irq_domain_ops stmpe_irq_ops = {
+static struct irq_domain_ops stmpe_irq_ops = {
         .map    = stmpe_irq_map,
         .unmap  = stmpe_irq_unmap,
         .xlate  = irq_domain_xlate_twocell,

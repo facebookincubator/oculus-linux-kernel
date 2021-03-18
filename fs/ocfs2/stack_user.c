@@ -655,7 +655,14 @@ static int ocfs2_control_init(void)
 
 static void ocfs2_control_exit(void)
 {
-	misc_deregister(&ocfs2_control_device);
+	int rc;
+
+	rc = misc_deregister(&ocfs2_control_device);
+	if (rc)
+		printk(KERN_ERR
+		       "ocfs2: Unable to deregister ocfs2_control device "
+		       "(errno %d)\n",
+		       -rc);
 }
 
 static void fsdlm_lock_ast_wrapper(void *astarg)
@@ -997,8 +1004,10 @@ static int user_cluster_connect(struct ocfs2_cluster_connection *conn)
 	BUG_ON(conn == NULL);
 
 	lc = kzalloc(sizeof(struct ocfs2_live_connection), GFP_KERNEL);
-	if (!lc)
-		return -ENOMEM;
+	if (!lc) {
+		rc = -ENOMEM;
+		goto out;
+	}
 
 	init_waitqueue_head(&lc->oc_wait);
 	init_completion(&lc->oc_sync_wait);
@@ -1054,7 +1063,7 @@ static int user_cluster_connect(struct ocfs2_cluster_connection *conn)
 	}
 
 out:
-	if (rc)
+	if (rc && lc)
 		kfree(lc);
 	return rc;
 }

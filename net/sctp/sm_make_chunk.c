@@ -1001,7 +1001,7 @@ no_mem:
 
 /* Helper to create ABORT with a SCTP_ERROR_USER_ABORT error.  */
 struct sctp_chunk *sctp_make_abort_user(const struct sctp_association *asoc,
-					struct msghdr *msg,
+					const struct msghdr *msg,
 					size_t paylen)
 {
 	struct sctp_chunk *retval;
@@ -1018,7 +1018,7 @@ struct sctp_chunk *sctp_make_abort_user(const struct sctp_association *asoc,
 		if (!payload)
 			goto err_payload;
 
-		err = memcpy_from_msg(payload, msg, paylen);
+		err = memcpy_fromiovec(payload, msg->msg_iov, paylen);
 		if (err < 0)
 			goto err_copy;
 	}
@@ -1491,26 +1491,26 @@ static void *sctp_addto_chunk_fixed(struct sctp_chunk *chunk,
  * chunk is not big enough.
  * Returns a kernel err value.
  */
-int sctp_user_addto_chunk(struct sctp_chunk *chunk, int len,
-			  struct iov_iter *from)
+int sctp_user_addto_chunk(struct sctp_chunk *chunk, int off, int len,
+			  struct iovec *data)
 {
-	void *target;
-	ssize_t copied;
+	__u8 *target;
+	int err = 0;
 
 	/* Make room in chunk for data.  */
 	target = skb_put(chunk->skb, len);
 
 	/* Copy data (whole iovec) into chunk */
-	copied = copy_from_iter(target, len, from);
-	if (copied != len)
-		return -EFAULT;
+	if ((err = memcpy_fromiovecend(target, data, off, len)))
+		goto out;
 
 	/* Adjust the chunk length field.  */
 	chunk->chunk_hdr->length =
 		htons(ntohs(chunk->chunk_hdr->length) + len);
 	chunk->chunk_end = skb_tail_pointer(chunk->skb);
 
-	return 0;
+out:
+	return err;
 }
 
 /* Helper function to assign a TSN if needed.  This assumes that both
@@ -2494,7 +2494,7 @@ static int sctp_process_param(struct sctp_association *asoc,
 	__u16 sat;
 	int retval = 1;
 	sctp_scope_t scope;
-	u32 stale;
+	time_t stale;
 	struct sctp_af *af;
 	union sctp_addr_param *addr_param;
 	struct sctp_transport *t;
@@ -3090,19 +3090,8 @@ static __be16 sctp_process_asconf_param(struct sctp_association *asoc,
 			sctp_assoc_set_primary(asoc, asconf->transport);
 			sctp_assoc_del_nonprimary_peers(asoc,
 							asconf->transport);
-			return SCTP_ERROR_NO_ERROR;
-		}
-
-		/* If the address is not part of the association, the
-		 * ASCONF-ACK with Error Cause Indication Parameter
-		 * which including cause of Unresolvable Address should
-		 * be sent.
-		 */
-		peer = sctp_assoc_lookup_paddr(asoc, &addr);
-		if (!peer)
-			return SCTP_ERROR_DNS_FAILED;
-
-		sctp_assoc_rm_peer(asoc, peer);
+		} else
+			sctp_assoc_del_peer(asoc, &addr);
 		break;
 	case SCTP_PARAM_SET_PRIMARY:
 		/* ADDIP Section 4.2.4
@@ -3143,17 +3132,10 @@ bool sctp_verify_asconf(const struct sctp_association *asoc,
 		case SCTP_PARAM_IPV4_ADDRESS:
 			if (length != sizeof(sctp_ipv4addr_param_t))
 				return false;
-			/* ensure there is only one addr param and it's in the
-			 * beginning of addip_hdr params, or we reject it.
-			 */
-			if (param.v != addip->addip_hdr.params)
-				return false;
 			addr_param_seen = true;
 			break;
 		case SCTP_PARAM_IPV6_ADDRESS:
 			if (length != sizeof(sctp_ipv6addr_param_t))
-				return false;
-			if (param.v != addip->addip_hdr.params)
 				return false;
 			addr_param_seen = true;
 			break;

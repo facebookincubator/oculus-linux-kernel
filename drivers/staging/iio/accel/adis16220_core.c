@@ -21,28 +21,29 @@
 #include "adis16220.h"
 
 static ssize_t adis16220_read_16bit(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf)
+		struct device_attribute *attr,
+		char *buf)
 {
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct adis16220_state *st = iio_priv(indio_dev);
 	ssize_t ret;
-	u16 val;
+	s16 val = 0;
 
 	/* Take the iio_dev status lock */
 	mutex_lock(&indio_dev->mlock);
-	ret = adis_read_reg_16(&st->adis, this_attr->address, &val);
+	ret = adis_read_reg_16(&st->adis, this_attr->address,
+					(u16 *)&val);
 	mutex_unlock(&indio_dev->mlock);
 	if (ret)
 		return ret;
-	return sprintf(buf, "%u\n", val);
+	return sprintf(buf, "%d\n", val);
 }
 
 static ssize_t adis16220_write_16bit(struct device *dev,
-				     struct device_attribute *attr,
-				     const char *buf,
-				     size_t len)
+		struct device_attribute *attr,
+		const char *buf,
+		size_t len)
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
@@ -75,8 +76,8 @@ static int adis16220_capture(struct iio_dev *indio_dev)
 }
 
 static ssize_t adis16220_write_capture(struct device *dev,
-				       struct device_attribute *attr,
-				       const char *buf, size_t len)
+		struct device_attribute *attr,
+		const char *buf, size_t len)
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	bool val;
@@ -95,10 +96,10 @@ static ssize_t adis16220_write_capture(struct device *dev,
 }
 
 static ssize_t adis16220_capture_buffer_read(struct iio_dev *indio_dev,
-					     char *buf,
-					     loff_t off,
-					     size_t count,
-					     int addr)
+					char *buf,
+					loff_t off,
+					size_t count,
+					int addr)
 {
 	struct adis16220_state *st = iio_priv(indio_dev);
 	struct spi_transfer xfers[] = {
@@ -130,13 +131,14 @@ static ssize_t adis16220_capture_buffer_read(struct iio_dev *indio_dev,
 
 	/* write the begin position of capture buffer */
 	ret = adis_write_reg_16(&st->adis,
-				ADIS16220_CAPT_PNTR,
-				off > 1);
+					ADIS16220_CAPT_PNTR,
+					off > 1);
 	if (ret)
 		return -EIO;
 
 	/* read count/2 values from capture buffer */
 	mutex_lock(&st->buf_lock);
+
 
 	for (i = 0; i < count; i += 2) {
 		st->tx[i] = ADIS_READ_REG(addr);
@@ -146,6 +148,7 @@ static ssize_t adis16220_capture_buffer_read(struct iio_dev *indio_dev,
 
 	ret = spi_sync_transfer(st->adis.spi, xfers, ARRAY_SIZE(xfers));
 	if (ret) {
+
 		mutex_unlock(&st->buf_lock);
 		return -EIO;
 	}
@@ -179,9 +182,9 @@ static struct bin_attribute accel_bin = {
 };
 
 static ssize_t adis16220_adc1_bin_read(struct file *filp, struct kobject *kobj,
-				       struct bin_attribute *attr,
-				       char *buf, loff_t off,
-				       size_t count)
+				struct bin_attribute *attr,
+				char *buf, loff_t off,
+				size_t count)
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(kobj_to_dev(kobj));
 
@@ -200,9 +203,9 @@ static struct bin_attribute adc1_bin = {
 };
 
 static ssize_t adis16220_adc2_bin_read(struct file *filp, struct kobject *kobj,
-				       struct bin_attribute *attr,
-				       char *buf, loff_t off,
-				       size_t count)
+				struct bin_attribute *attr,
+				char *buf, loff_t off,
+				size_t count)
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(kobj_to_dev(kobj));
 
@@ -210,6 +213,7 @@ static ssize_t adis16220_adc2_bin_read(struct file *filp, struct kobject *kobj,
 					off, count,
 					ADIS16220_CAPT_BUF2);
 }
+
 
 static struct bin_attribute adc2_bin = {
 	.attr = {
@@ -482,6 +486,7 @@ static int adis16220_remove(struct spi_device *spi)
 static struct spi_driver adis16220_driver = {
 	.driver = {
 		.name = "adis16220",
+		.owner = THIS_MODULE,
 	},
 	.probe = adis16220_probe,
 	.remove = adis16220_remove,

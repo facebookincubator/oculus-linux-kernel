@@ -24,24 +24,22 @@
 
 bool vsp1_entity_is_streaming(struct vsp1_entity *entity)
 {
-	unsigned long flags;
 	bool streaming;
 
-	spin_lock_irqsave(&entity->lock, flags);
+	mutex_lock(&entity->lock);
 	streaming = entity->streaming;
-	spin_unlock_irqrestore(&entity->lock, flags);
+	mutex_unlock(&entity->lock);
 
 	return streaming;
 }
 
 int vsp1_entity_set_streaming(struct vsp1_entity *entity, bool streaming)
 {
-	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&entity->lock, flags);
+	mutex_lock(&entity->lock);
 	entity->streaming = streaming;
-	spin_unlock_irqrestore(&entity->lock, flags);
+	mutex_unlock(&entity->lock);
 
 	if (!streaming)
 		return 0;
@@ -51,9 +49,9 @@ int vsp1_entity_set_streaming(struct vsp1_entity *entity, bool streaming)
 
 	ret = v4l2_ctrl_handler_setup(entity->subdev.ctrl_handler);
 	if (ret < 0) {
-		spin_lock_irqsave(&entity->lock, flags);
+		mutex_lock(&entity->lock);
 		entity->streaming = false;
-		spin_unlock_irqrestore(&entity->lock, flags);
+		mutex_unlock(&entity->lock);
 	}
 
 	return ret;
@@ -65,12 +63,12 @@ int vsp1_entity_set_streaming(struct vsp1_entity *entity, bool streaming)
 
 struct v4l2_mbus_framefmt *
 vsp1_entity_get_pad_format(struct vsp1_entity *entity,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_fh *fh,
 			   unsigned int pad, u32 which)
 {
 	switch (which) {
 	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_get_try_format(&entity->subdev, cfg, pad);
+		return v4l2_subdev_get_try_format(fh, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
 		return &entity->formats[pad];
 	default:
@@ -81,14 +79,14 @@ vsp1_entity_get_pad_format(struct vsp1_entity *entity,
 /*
  * vsp1_entity_init_formats - Initialize formats on all pads
  * @subdev: V4L2 subdevice
- * @cfg: V4L2 subdev pad configuration
+ * @fh: V4L2 subdev file handle
  *
- * Initialize all pad formats with default values. If cfg is not NULL, try
+ * Initialize all pad formats with default values. If fh is not NULL, try
  * formats are initialized on the file handle. Otherwise active formats are
  * initialized on the device.
  */
 void vsp1_entity_init_formats(struct v4l2_subdev *subdev,
-			    struct v4l2_subdev_pad_config *cfg)
+			    struct v4l2_subdev_fh *fh)
 {
 	struct v4l2_subdev_format format;
 	unsigned int pad;
@@ -97,17 +95,17 @@ void vsp1_entity_init_formats(struct v4l2_subdev *subdev,
 		memset(&format, 0, sizeof(format));
 
 		format.pad = pad;
-		format.which = cfg ? V4L2_SUBDEV_FORMAT_TRY
+		format.which = fh ? V4L2_SUBDEV_FORMAT_TRY
 			     : V4L2_SUBDEV_FORMAT_ACTIVE;
 
-		v4l2_subdev_call(subdev, pad, set_fmt, cfg, &format);
+		v4l2_subdev_call(subdev, pad, set_fmt, fh, &format);
 	}
 }
 
 static int vsp1_entity_open(struct v4l2_subdev *subdev,
 			    struct v4l2_subdev_fh *fh)
 {
-	vsp1_entity_init_formats(subdev, fh->pad);
+	vsp1_entity_init_formats(subdev, fh);
 
 	return 0;
 }
@@ -195,7 +193,7 @@ int vsp1_entity_init(struct vsp1_device *vsp1, struct vsp1_entity *entity,
 	if (i == ARRAY_SIZE(vsp1_routes))
 		return -EINVAL;
 
-	spin_lock_init(&entity->lock);
+	mutex_init(&entity->lock);
 
 	entity->vsp1 = vsp1;
 	entity->source_pad = num_pads - 1;
@@ -230,4 +228,6 @@ void vsp1_entity_destroy(struct vsp1_entity *entity)
 	if (entity->subdev.ctrl_handler)
 		v4l2_ctrl_handler_free(entity->subdev.ctrl_handler);
 	media_entity_cleanup(&entity->subdev.entity);
+
+	mutex_destroy(&entity->lock);
 }

@@ -63,7 +63,6 @@ extern void klist_iter_init(struct klist *k, struct klist_iter *i);
 extern void klist_iter_init_node(struct klist *k, struct klist_iter *i,
 				 struct klist_node *n);
 extern void klist_iter_exit(struct klist_iter *i);
-extern struct klist_node *klist_prev(struct klist_iter *i);
 extern struct klist_node *klist_next(struct klist_iter *i);
 
 #endif

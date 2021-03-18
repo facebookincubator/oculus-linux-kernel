@@ -17,7 +17,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/acpi.h>
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/spinlock.h>
@@ -52,7 +51,6 @@
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
-#include <asm/virt.h>
 #include <asm/edac.h>
 
 #define CREATE_TRACE_POINTS
@@ -64,10 +62,12 @@
  * where to place its SVC stack
  */
 struct secondary_data secondary_data;
+volatile unsigned long secondary_holding_pen_release = INVALID_HWID;
 
 enum ipi_msg_type {
 	IPI_RESCHEDULE,
 	IPI_CALL_FUNC,
+	IPI_CALL_FUNC_SINGLE,
 	IPI_CPU_STOP,
 	IPI_TIMER,
 	IPI_IRQ_WORK,
@@ -147,14 +147,15 @@ asmlinkage void secondary_start_kernel(void)
 	current->active_mm = mm;
 
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
-
 	pr_debug("CPU%u: Booted secondary processor\n", cpu);
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
 	 * point to zero page to avoid speculatively fetching new entries.
 	 */
-	cpu_uninstall_idmap();
+	cpu_set_reserved_ttbr0();
+	local_flush_tlb_all();
+	cpu_set_default_tcr_t0sz();
 
 	preempt_disable();
 	trace_hardirqs_off();
@@ -186,8 +187,6 @@ asmlinkage void secondary_start_kernel(void)
 	 * the CPU migration code to notice that the CPU is online
 	 * before we continue.
 	 */
-	pr_info("CPU%u: Booted secondary processor [%08x]\n",
-					 cpu, read_cpuid_id());
 	set_cpu_online(cpu, true);
 	complete(&cpu_running);
 
@@ -241,8 +240,7 @@ int __cpu_disable(void)
 	/*
 	 * OK - migrate IRQs away from this CPU
 	 */
-	irq_migrate_all_off_this_cpu();
-
+	migrate_irqs();
 	return 0;
 }
 
@@ -254,10 +252,12 @@ static int op_cpu_kill(unsigned int cpu)
 	 * time and hope that it's dead, so let's skip the wait and just hope.
 	 */
 	if (!cpu_ops[cpu]->cpu_kill)
-		return 0;
+		return 1;
 
 	return cpu_ops[cpu]->cpu_kill(cpu);
 }
+
+static DECLARE_COMPLETION(cpu_died);
 
 /*
  * called on the thread which is asking for a CPU to be shutdown -
@@ -265,9 +265,7 @@ static int op_cpu_kill(unsigned int cpu)
  */
 void __cpu_die(unsigned int cpu)
 {
-	int err;
-
-	if (!cpu_wait_death(cpu, 5)) {
+	if (!wait_for_completion_timeout(&cpu_died, msecs_to_jiffies(5000))) {
 		pr_crit("CPU%u: cpu didn't die\n", cpu);
 		return;
 	}
@@ -279,10 +277,8 @@ void __cpu_die(unsigned int cpu)
 	 * verify that it has really left the kernel before we consider
 	 * clobbering anything it might still be using.
 	 */
-	err = op_cpu_kill(cpu);
-	if (err)
-		pr_warn("CPU%d may not have shut down cleanly: %d\n",
-			cpu, err);
+	if (!op_cpu_kill(cpu))
+		pr_warn("CPU%d may not have shut down cleanly\n", cpu);
 }
 
 /*
@@ -302,7 +298,7 @@ void __ref cpu_die(void)
 	local_irq_disable();
 
 	/* Tell __cpu_die() that this CPU is now safe to dispose of */
-	(void)cpu_report_death();
+	complete(&cpu_died);
 
 	/*
 	 * Actually shutdown the CPU. This must never fail. The specific hotplug
@@ -324,171 +320,18 @@ void __ref cpu_die(void)
 }
 #endif
 
-static void __init hyp_mode_check(void)
-{
-	if (is_hyp_mode_available())
-		pr_info("CPU: All CPU(s) started at EL2\n");
-	else if (is_hyp_mode_mismatched())
-		WARN_TAINT(1, TAINT_CPU_OUT_OF_SPEC,
-			   "CPU: CPUs started in inconsistent modes");
-	else
-		pr_info("CPU: All CPU(s) started at EL1\n");
-}
-
 void __init smp_cpus_done(unsigned int max_cpus)
 {
 	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
 	setup_cpu_features();
-	hyp_mode_check();
-	apply_alternatives_all();
+	apply_alternatives();
 }
 
 void __init smp_prepare_boot_cpu(void)
 {
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
-	cpuinfo_store_boot_cpu();
 }
 
-static u64 __init of_get_cpu_mpidr(struct device_node *dn)
-{
-	const __be32 *cell;
-	u64 hwid;
-
-	/*
-	 * A cpu node with missing "reg" property is
-	 * considered invalid to build a cpu_logical_map
-	 * entry.
-	 */
-	cell = of_get_property(dn, "reg", NULL);
-	if (!cell) {
-		pr_err("%s: missing reg property\n", dn->full_name);
-		return INVALID_HWID;
-	}
-
-	hwid = of_read_number(cell, of_n_addr_cells(dn));
-	/*
-	 * Non affinity bits must be set to 0 in the DT
-	 */
-	if (hwid & ~MPIDR_HWID_BITMASK) {
-		pr_err("%s: invalid reg property\n", dn->full_name);
-		return INVALID_HWID;
-	}
-	return hwid;
-}
-
-/*
- * Duplicate MPIDRs are a recipe for disaster. Scan all initialized
- * entries and check for duplicates. If any is found just ignore the
- * cpu. cpu_logical_map was initialized to INVALID_HWID to avoid
- * matching valid MPIDR values.
- */
-static bool __init is_mpidr_duplicate(unsigned int cpu, u64 hwid)
-{
-	unsigned int i;
-
-	for (i = 1; (i < cpu) && (i < NR_CPUS); i++)
-		if (cpu_logical_map(i) == hwid)
-			return true;
-	return false;
-}
-
-/*
- * Initialize cpu operations for a logical cpu and
- * set it in the possible mask on success
- */
-static int __init smp_cpu_setup(int cpu)
-{
-	if (cpu_read_ops(cpu))
-		return -ENODEV;
-
-	if (cpu_ops[cpu]->cpu_init(cpu))
-		return -ENODEV;
-
-	set_cpu_possible(cpu, true);
-
-	return 0;
-}
-
-static bool bootcpu_valid __initdata;
-static unsigned int cpu_count = 1;
-
-#ifdef CONFIG_ACPI
-/*
- * acpi_map_gic_cpu_interface - parse processor MADT entry
- *
- * Carry out sanity checks on MADT processor entry and initialize
- * cpu_logical_map on success
- */
-static void __init
-acpi_map_gic_cpu_interface(struct acpi_madt_generic_interrupt *processor)
-{
-	u64 hwid = processor->arm_mpidr;
-
-	if (!(processor->flags & ACPI_MADT_ENABLED)) {
-		pr_debug("skipping disabled CPU entry with 0x%llx MPIDR\n", hwid);
-		return;
-	}
-
-	if (hwid & ~MPIDR_HWID_BITMASK || hwid == INVALID_HWID) {
-		pr_err("skipping CPU entry with invalid MPIDR 0x%llx\n", hwid);
-		return;
-	}
-
-	if (is_mpidr_duplicate(cpu_count, hwid)) {
-		pr_err("duplicate CPU MPIDR 0x%llx in MADT\n", hwid);
-		return;
-	}
-
-	/* Check if GICC structure of boot CPU is available in the MADT */
-	if (cpu_logical_map(0) == hwid) {
-		if (bootcpu_valid) {
-			pr_err("duplicate boot CPU MPIDR: 0x%llx in MADT\n",
-			       hwid);
-			return;
-		}
-		bootcpu_valid = true;
-		return;
-	}
-
-	if (cpu_count >= NR_CPUS)
-		return;
-
-	/* map the logical cpu id to cpu MPIDR */
-	cpu_logical_map(cpu_count) = hwid;
-
-	/*
-	 * Set-up the ACPI parking protocol cpu entries
-	 * while initializing the cpu_logical_map to
-	 * avoid parsing MADT entries multiple times for
-	 * nothing (ie a valid cpu_logical_map entry should
-	 * contain a valid parking protocol data set to
-	 * initialize the cpu if the parking protocol is
-	 * the only available enable method).
-	 */
-	acpi_set_mailbox_entry(cpu_count, processor);
-
-	cpu_count++;
-}
-
-static int __init
-acpi_parse_gic_cpu_interface(struct acpi_subtable_header *header,
-			     const unsigned long end)
-{
-	struct acpi_madt_generic_interrupt *processor;
-
-	processor = (struct acpi_madt_generic_interrupt *)header;
-	if (BAD_MADT_GICC_ENTRY(processor, end))
-		return -EINVAL;
-
-	acpi_table_print_madt_entry(header);
-
-	acpi_map_gic_cpu_interface(processor);
-
-	return 0;
-}
-#else
-#define acpi_table_parse_madt(...)	do { } while (0)
-#endif
 void (*__smp_cross_call)(const struct cpumask *, unsigned int);
 DEFINE_PER_CPU(bool, pending_ipi);
 
@@ -507,20 +350,49 @@ void smp_cross_call_common(const struct cpumask *cpumask, unsigned int func)
  * cpu logical map array containing MPIDR values related to logical
  * cpus. Assumes that cpu_logical_map(0) has already been initialized.
  */
-static void __init of_parse_and_init_cpus(void)
+void __init smp_init_cpus(void)
 {
 	struct device_node *dn = NULL;
+	unsigned int i, cpu = 1;
+	bool bootcpu_valid = false;
 
 	while ((dn = of_find_node_by_type(dn, "cpu"))) {
-		u64 hwid = of_get_cpu_mpidr(dn);
+		const u32 *cell;
+		u64 hwid;
 
-		if (hwid == INVALID_HWID)
+		/*
+		 * A cpu node with missing "reg" property is
+		 * considered invalid to build a cpu_logical_map
+		 * entry.
+		 */
+		cell = of_get_property(dn, "reg", NULL);
+		if (!cell) {
+			pr_err("%s: missing reg property\n", dn->full_name);
 			goto next;
+		}
+		hwid = of_read_number(cell, of_n_addr_cells(dn));
 
-		if (is_mpidr_duplicate(cpu_count, hwid)) {
-			pr_err("%s: duplicate cpu reg properties in the DT\n",
-				dn->full_name);
+		/*
+		 * Non affinity bits must be set to 0 in the DT
+		 */
+		if (hwid & ~MPIDR_HWID_BITMASK) {
+			pr_err("%s: invalid reg property\n", dn->full_name);
 			goto next;
+		}
+
+		/*
+		 * Duplicate MPIDRs are a recipe for disaster. Scan
+		 * all initialized entries and check for
+		 * duplicates. If any is found just ignore the cpu.
+		 * cpu_logical_map was initialized to INVALID_HWID to
+		 * avoid matching valid MPIDR values.
+		 */
+		for (i = 1; (i < cpu) && (i < NR_CPUS); i++) {
+			if (cpu_logical_map(i) == hwid) {
+				pr_err("%s: duplicate cpu reg properties in the DT\n",
+					dn->full_name);
+				goto next;
+			}
 		}
 
 		/*
@@ -547,58 +419,38 @@ static void __init of_parse_and_init_cpus(void)
 			continue;
 		}
 
-		if (cpu_count >= NR_CPUS)
+		if (cpu >= NR_CPUS)
+			goto next;
+
+		if (cpu_read_ops(dn, cpu) != 0)
+			goto next;
+
+		if (cpu_ops[cpu]->cpu_init(dn, cpu))
 			goto next;
 
 		pr_debug("cpu logical map 0x%llx\n", hwid);
-		cpu_logical_map(cpu_count) = hwid;
+		cpu_logical_map(cpu) = hwid;
 next:
-		cpu_count++;
+		cpu++;
 	}
-}
 
-/*
- * Enumerate the possible CPU set from the device tree or ACPI and build the
- * cpu logical map array containing MPIDR values related to logical
- * cpus. Assumes that cpu_logical_map(0) has already been initialized.
- */
-void __init smp_init_cpus(void)
-{
-	int i;
-
-	if (acpi_disabled)
-		of_parse_and_init_cpus();
-	else
-		/*
-		 * do a walk of MADT to determine how many CPUs
-		 * we have including disabled CPUs, and get information
-		 * we need for SMP init
-		 */
-		acpi_table_parse_madt(ACPI_MADT_TYPE_GENERIC_INTERRUPT,
-				      acpi_parse_gic_cpu_interface, 0);
-
-	if (cpu_count > NR_CPUS)
-		pr_warn("no. of cores (%d) greater than configured maximum of %d - clipping\n",
-			cpu_count, NR_CPUS);
+	/* sanity check */
+	if (cpu > NR_CPUS)
+		pr_warning("no. of cores (%d) greater than configured maximum of %d - clipping\n",
+			   cpu, NR_CPUS);
 
 	if (!bootcpu_valid) {
-		pr_err("missing boot CPU MPIDR, not enabling secondaries\n");
+		pr_err("DT missing boot CPU MPIDR, not enabling secondaries\n");
 		return;
 	}
 
 	/*
-	 * We need to set the cpu_logical_map entries before enabling
-	 * the cpus so that cpu processor description entries (DT cpu nodes
-	 * and ACPI MADT entries) can be retrieved by matching the cpu hwid
-	 * with entries in cpu_logical_map while initializing the cpus.
-	 * If the cpu set-up fails, invalidate the cpu_logical_map entry.
+	 * All the cpus that made it to the cpu_logical_map have been
+	 * validated so set them as possible cpus.
 	 */
-	for (i = 1; i < NR_CPUS; i++) {
-		if (cpu_logical_map(i) != INVALID_HWID) {
-			if (smp_cpu_setup(i))
-				cpu_logical_map(i) = INVALID_HWID;
-		}
-	}
+	for (i = 0; i < NR_CPUS; i++)
+		if (cpu_logical_map(i) != INVALID_HWID)
+			set_cpu_possible(i, true);
 }
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
@@ -652,10 +504,26 @@ void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 	__smp_cross_call = fn;
 }
 
+void arch_send_call_function_ipi_mask(const struct cpumask *mask)
+{
+	smp_cross_call_common(mask, IPI_CALL_FUNC);
+}
+
+void arch_send_call_function_single_ipi(int cpu)
+{
+	smp_cross_call_common(cpumask_of(cpu), IPI_CALL_FUNC_SINGLE);
+}
+
+void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
+{
+	smp_cross_call_common(mask, IPI_WAKEUP);
+}
+
 static const char *ipi_types[NR_IPI] __tracepoint_string = {
 #define S(x,s)	[x] = s
 	S(IPI_RESCHEDULE, "Rescheduling interrupts"),
 	S(IPI_CALL_FUNC, "Function call interrupts"),
+	S(IPI_CALL_FUNC_SINGLE, "Single function call interrupts"),
 	S(IPI_CPU_STOP, "CPU stop interrupts"),
 	S(IPI_TIMER, "Timer broadcast interrupts"),
 	S(IPI_IRQ_WORK, "IRQ work interrupts"),
@@ -665,11 +533,6 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
 {
-	unsigned int cpu;
-
-	for_each_cpu(cpu, target)
-		per_cpu(pending_ipi, cpu) = true;
-
 	trace_ipi_raise(target, ipi_types[ipinr]);
 	__smp_cross_call(target, ipinr);
 }
@@ -698,23 +561,6 @@ u64 smp_irq_stat_cpu(unsigned int cpu)
 
 	return sum;
 }
-
-void arch_send_call_function_ipi_mask(const struct cpumask *mask)
-{
-	smp_cross_call_common(mask, IPI_CALL_FUNC);
-}
-
-void arch_send_call_function_single_ipi(int cpu)
-{
-	smp_cross_call_common(cpumask_of(cpu), IPI_CALL_FUNC);
-}
-
-#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
-void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
-{
-	smp_cross_call(mask, IPI_WAKEUP);
-}
-#endif
 
 #ifdef CONFIG_IRQ_WORK
 void arch_irq_work_raise(void)
@@ -772,13 +618,13 @@ static void smp_send_all_cpu_backtrace(void)
 		return;
 
 	cpumask_copy(&backtrace_mask, cpu_online_mask);
-	cpumask_clear_cpu(this_cpu, &backtrace_mask);
+	cpu_clear(this_cpu, backtrace_mask);
 
 	pr_info("Backtrace for cpu %d (current):\n", this_cpu);
 	dump_stack();
 
 	pr_info("\nsending IPI to all other CPUs:\n");
-	if (!cpumask_empty(&backtrace_mask))
+	if (!cpus_empty(backtrace_mask))
 		smp_cross_call_common(&backtrace_mask, IPI_CPU_BACKTRACE);
 
 	/* Wait for up to 10 seconds for all other CPUs to do the backtrace */
@@ -797,12 +643,12 @@ static void smp_send_all_cpu_backtrace(void)
  */
 static void ipi_cpu_backtrace(unsigned int cpu, struct pt_regs *regs)
 {
-	if (cpumask_test_cpu(cpu, &backtrace_mask)) {
+	if (cpu_isset(cpu, backtrace_mask)) {
 		raw_spin_lock(&backtrace_lock);
 		pr_warn("IPI backtrace for cpu %d\n", cpu);
 		show_regs(regs);
 		raw_spin_unlock(&backtrace_lock);
-		cpumask_clear_cpu(cpu, &backtrace_mask);
+		cpu_clear(cpu, backtrace_mask);
 	}
 }
 
@@ -828,7 +674,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
 	if ((unsigned)ipinr < NR_IPI) {
-		trace_ipi_entry_rcuidle(ipi_types[ipinr]);
+		trace_ipi_entry(ipi_types[ipinr]);
 		__inc_irq_stat(cpu, ipi_irqs[ipinr]);
 	}
 
@@ -840,6 +686,12 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	case IPI_CALL_FUNC:
 		irq_enter();
 		generic_smp_call_function_interrupt();
+		irq_exit();
+		break;
+
+	case IPI_CALL_FUNC_SINGLE:
+		irq_enter();
+		generic_smp_call_function_single_interrupt();
 		irq_exit();
 		break;
 
@@ -856,6 +708,8 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		irq_exit();
 		break;
 #endif
+	case IPI_WAKEUP:
+		break;
 
 #ifdef CONFIG_IRQ_WORK
 	case IPI_IRQ_WORK:
@@ -864,18 +718,9 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		irq_exit();
 		break;
 #endif
-
 	case IPI_CPU_BACKTRACE:
 		ipi_cpu_backtrace(cpu, regs);
 		break;
-
-#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
-	case IPI_WAKEUP:
-		WARN_ONCE(!acpi_parking_protocol_valid(cpu),
-			  "CPU%u: Wake-up IPI outside the ACPI parking protocol\n",
-			  cpu);
-		break;
-#endif
 
 	default:
 		pr_crit("CPU%u: Unknown IPI message 0x%x\n", cpu, ipinr);
@@ -883,8 +728,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	}
 
 	if ((unsigned)ipinr < NR_IPI)
-		trace_ipi_exit_rcuidle(ipi_types[ipinr]);
-
+		trace_ipi_exit(ipi_types[ipinr]);
 	per_cpu(pending_ipi, cpu) = false;
 	set_irq_regs(old_regs);
 }
@@ -910,7 +754,7 @@ void smp_send_stop(void)
 		cpumask_t mask;
 
 		cpumask_copy(&mask, cpu_online_mask);
-		cpumask_clear_cpu(smp_processor_id(), &mask);
+		cpu_clear(smp_processor_id(), mask);
 
 		smp_cross_call_common(&mask, IPI_CPU_STOP);
 	}

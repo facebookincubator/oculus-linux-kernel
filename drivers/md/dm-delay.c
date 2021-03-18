@@ -122,7 +122,6 @@ static void flush_expired_bios(struct work_struct *work)
  *    <device> <offset> <delay> [<write_device> <write_offset> <write_delay>]
  *
  * With separate write parameters, the first set is only used for reads.
- * Offsets are specified in sectors.
  * Delays are specified in milliseconds.
  */
 static int delay_ctr(struct dm_target *ti, unsigned int argc, char **argv)
@@ -130,10 +129,9 @@ static int delay_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	struct delay_c *dc;
 	unsigned long long tmpll;
 	char dummy;
-	int ret;
 
 	if (argc != 3 && argc != 6) {
-		ti->error = "Requires exactly 3 or 6 arguments";
+		ti->error = "requires exactly 3 or 6 arguments";
 		return -EINVAL;
 	}
 
@@ -145,7 +143,6 @@ static int delay_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	dc->reads = dc->writes = 0;
 
-	ret = -EINVAL;
 	if (sscanf(argv[1], "%llu%c", &tmpll, &dummy) != 1) {
 		ti->error = "Invalid device sector";
 		goto bad;
@@ -157,14 +154,12 @@ static int delay_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad;
 	}
 
-	ret = dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
-			    &dc->dev_read);
-	if (ret) {
+	if (dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
+			  &dc->dev_read)) {
 		ti->error = "Device lookup failed";
 		goto bad;
 	}
 
-	ret = -EINVAL;
 	dc->dev_write = NULL;
 	if (argc == 3)
 		goto out;
@@ -180,15 +175,13 @@ static int delay_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad_dev_read;
 	}
 
-	ret = dm_get_device(ti, argv[3], dm_table_get_mode(ti->table),
-			    &dc->dev_write);
-	if (ret) {
+	if (dm_get_device(ti, argv[3], dm_table_get_mode(ti->table),
+			  &dc->dev_write)) {
 		ti->error = "Write device lookup failed";
 		goto bad_dev_read;
 	}
 
 out:
-	ret = -EINVAL;
 	dc->kdelayd_wq = alloc_workqueue("kdelayd", WQ_MEM_RECLAIM, 0);
 	if (!dc->kdelayd_wq) {
 		DMERR("Couldn't start kdelayd");
@@ -215,7 +208,7 @@ bad_dev_read:
 	dm_put_device(ti, dc->dev_read);
 bad:
 	kfree(dc);
-	return ret;
+	return -EINVAL;
 }
 
 static void delay_dtr(struct dm_target *ti)
@@ -238,12 +231,12 @@ static int delay_bio(struct delay_c *dc, int delay, struct bio *bio)
 	unsigned long expires = 0;
 
 	if (!delay || !atomic_read(&dc->may_delay))
-		return DM_MAPIO_REMAPPED;
+		return 1;
 
 	delayed = dm_per_bio_data(bio, sizeof(struct dm_delay_info));
 
 	delayed->context = dc;
-	delayed->expires = expires = jiffies + msecs_to_jiffies(delay);
+	delayed->expires = expires = jiffies + (delay * HZ / 1000);
 
 	mutex_lock(&delayed_bios_lock);
 
@@ -258,7 +251,7 @@ static int delay_bio(struct delay_c *dc, int delay, struct bio *bio)
 
 	queue_timeout(dc, expires);
 
-	return DM_MAPIO_SUBMITTED;
+	return 0;
 }
 
 static void delay_presuspend(struct dm_target *ti)

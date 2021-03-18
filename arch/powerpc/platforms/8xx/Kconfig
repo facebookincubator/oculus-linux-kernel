@@ -1,3 +1,6 @@
+config FADS
+	bool
+
 config CPM1
 	bool
 	select CPM
@@ -10,6 +13,7 @@ choice
 
 config MPC8XXFADS
 	bool "FADS"
+	select FADS
 
 config MPC86XADS
 	bool "MPC86XADS"

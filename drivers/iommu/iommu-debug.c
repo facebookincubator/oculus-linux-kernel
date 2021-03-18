@@ -24,7 +24,6 @@
 #include <linux/dma-contiguous.h>
 #include <soc/qcom/secure_buffer.h>
 #include <linux/qcom_iommu.h>
-#include <linux/module.h>
 #include <linux/dma-mapping.h>
 #include <asm/cacheflush.h>
 #include <asm/dma-iommu.h>
@@ -49,6 +48,8 @@ static const char *iommu_debug_attr_to_string(enum iommu_attr attr)
 		return "DOMAIN_ATTR_FSL_PAMUV1";
 	case DOMAIN_ATTR_NESTING:
 		return "DOMAIN_ATTR_NESTING";
+	case DOMAIN_ATTR_COHERENT_HTW_DISABLE:
+		return "DOMAIN_ATTR_COHERENT_HTW_DISABLE";
 	case DOMAIN_ATTR_PT_BASE_ADDR:
 		return "DOMAIN_ATTR_PT_BASE_ADDR";
 	case DOMAIN_ATTR_SECURE_VMID:
@@ -71,10 +72,6 @@ static const char *iommu_debug_attr_to_string(enum iommu_attr attr)
 		return "DOMAIN_ATTR_S1_BYPASS";
 	case DOMAIN_ATTR_FAST:
 		return "DOMAIN_ATTR_FAST";
-	case DOMAIN_ATTR_EARLY_MAP:
-		return "DOMAIN_ATTR_EARLY_MAP";
-	case DOMAIN_ATTR_CB_STALL_DISABLE:
-		return "DOMAIN_ATTR_CB_STALL_DISABLE";
 	default:
 		return "Unknown attr!";
 	}
@@ -144,13 +141,13 @@ void iommu_debug_domain_remove(struct iommu_domain *domain)
 #ifdef CONFIG_64BIT
 
 #define kstrtoux kstrtou64
-#define kstrtox_from_user kstrtoull_from_user
+#define kstrtox_from_user kstrtoll_from_user
 #define kstrtosize_t kstrtoul
 
 #else
 
 #define kstrtoux kstrtou32
-#define kstrtox_from_user kstrtouint_from_user
+#define kstrtox_from_user kstrtoint_from_user
 #define kstrtosize_t kstrtouint
 
 #endif
@@ -416,6 +413,7 @@ static int iommu_debug_profiling_show(struct seq_file *s, void *ignored)
 	const size_t sizes[] = { SZ_4K, SZ_64K, SZ_2M, SZ_1M * 12,
 					SZ_1M * 20, 0 };
 	enum iommu_attr attrs[] = {
+		DOMAIN_ATTR_COHERENT_HTW_DISABLE,
 		DOMAIN_ATTR_ATOMIC,
 	};
 	int htw_disable = 1, atomic = 1;
@@ -446,11 +444,12 @@ static int iommu_debug_secure_profiling_show(struct seq_file *s, void *ignored)
 					SZ_1M * 20, 0 };
 
 	enum iommu_attr attrs[] = {
+		DOMAIN_ATTR_COHERENT_HTW_DISABLE,
 		DOMAIN_ATTR_ATOMIC,
 		DOMAIN_ATTR_SECURE_VMID,
 	};
 	int one = 1, secure_vmid = VMID_CP_PIXEL;
-	void *attr_values[] = { &one, &secure_vmid };
+	void *attr_values[] = { &one, &one, &secure_vmid };
 
 	iommu_debug_device_profiling(s, ddev->dev, attrs, attr_values,
 				     ARRAY_SIZE(attrs), sizes);
@@ -478,6 +477,7 @@ static int iommu_debug_profiling_fast_show(struct seq_file *s, void *ignored)
 	size_t sizes[] = {SZ_4K, SZ_8K, SZ_16K, SZ_64K, 0};
 	enum iommu_attr attrs[] = {
 		DOMAIN_ATTR_FAST,
+		DOMAIN_ATTR_COHERENT_HTW_DISABLE,
 		DOMAIN_ATTR_ATOMIC,
 	};
 	int one = 1;
@@ -531,7 +531,7 @@ static int iommu_debug_profiling_fast_dma_api_show(struct seq_file *s,
 	if (!virt)
 		goto out;
 
-	mapping = arm_iommu_create_mapping(&platform_bus_type, 0, SZ_1G * 4ULL);
+	mapping = arm_iommu_create_mapping(&platform_bus_type, 0, SZ_1G * 4UL);
 	if (!mapping) {
 		seq_puts(s, "fast_smmu_create_mapping failed\n");
 		goto out_kfree;
@@ -631,8 +631,8 @@ static const struct file_operations iommu_debug_profiling_fast_dma_api_fops = {
 static int __tlb_stress_sweep(struct device *dev, struct seq_file *s)
 {
 	int i, ret = 0;
-	u64 iova;
-	const u64  max = SZ_1G * 4ULL - 1;
+	unsigned long iova;
+	const unsigned long max = SZ_1G * 4UL;
 	void *virt;
 	phys_addr_t phys;
 	dma_addr_t dma_addr;
@@ -704,8 +704,8 @@ static int __tlb_stress_sweep(struct device *dev, struct seq_file *s)
 	}
 
 	/* we're all full again. unmap everything. */
-	for (iova = 0; iova < max; iova += SZ_8K)
-		dma_unmap_single(dev, (dma_addr_t)iova, SZ_8K, DMA_TO_DEVICE);
+	for (dma_addr = 0; dma_addr < max; dma_addr += SZ_8K)
+		dma_unmap_single(dev, dma_addr, SZ_8K, DMA_TO_DEVICE);
 
 out:
 	free_pages((unsigned long)virt, get_order(SZ_8K));
@@ -738,7 +738,7 @@ static int __rand_va_sweep(struct device *dev, struct seq_file *s,
 			   const size_t size)
 {
 	u64 iova;
-	const u64 max = SZ_1G * 4ULL - 1;
+	const unsigned long max = SZ_1G * 4UL;
 	int i, remapped, unmapped, ret = 0;
 	void *virt;
 	dma_addr_t dma_addr, dma_addr2;
@@ -770,9 +770,9 @@ static int __rand_va_sweep(struct device *dev, struct seq_file *s,
 	fib_init(&fib);
 	for (iova = get_next_fib(&fib) * size;
 	     iova < max - size;
-	     iova = (u64)get_next_fib(&fib) * size) {
-		dma_addr = (dma_addr_t)(iova);
-		dma_addr2 = (dma_addr_t)((max + 1) - size - iova);
+	     iova = get_next_fib(&fib) * size) {
+		dma_addr = iova;
+		dma_addr2 = max - size - iova;
 		if (dma_addr == dma_addr2) {
 			WARN(1,
 			"%s test needs update! The random number sequence is folding in on itself and should be changed.\n",
@@ -798,8 +798,8 @@ static int __rand_va_sweep(struct device *dev, struct seq_file *s,
 		ret = -EINVAL;
 	}
 
-	for (iova = 0; iova < max; iova += size)
-		dma_unmap_single(dev, (dma_addr_t)iova, size, DMA_TO_DEVICE);
+	for (dma_addr = 0; dma_addr < max; dma_addr += size)
+		dma_unmap_single(dev, dma_addr, size, DMA_TO_DEVICE);
 
 out:
 	free_pages((unsigned long)virt, get_order(size));
@@ -812,7 +812,7 @@ static int __check_mapping(struct device *dev, struct iommu_domain *domain,
 	phys_addr_t res = iommu_iova_to_phys_hard(domain, iova);
 	phys_addr_t res2 = iommu_iova_to_phys(domain, iova);
 
-	WARN(res != res2, "hard/soft iova_to_phys fns don't agree...");
+	BUG_ON(res != res2);
 
 	if (res != expected) {
 		dev_err_ratelimited(dev,
@@ -827,11 +827,10 @@ static int __check_mapping(struct device *dev, struct iommu_domain *domain,
 static int __full_va_sweep(struct device *dev, struct seq_file *s,
 			   const size_t size, struct iommu_domain *domain)
 {
-	u64 iova;
+	unsigned long iova;
 	dma_addr_t dma_addr;
 	void *virt;
 	phys_addr_t phys;
-	const u64 max = SZ_1G * 4ULL - 1;
 	int ret = 0, i;
 
 	virt = (void *)__get_free_pages(GFP_KERNEL, get_order(size));
@@ -846,7 +845,7 @@ static int __full_va_sweep(struct device *dev, struct seq_file *s,
 	}
 	phys = virt_to_phys(virt);
 
-	for (iova = 0, i = 0; iova < max; iova += size, ++i) {
+	for (iova = 0, i = 0; iova < SZ_1G * 4UL; iova += size, ++i) {
 		unsigned long expected = iova;
 
 		dma_addr = dma_map_single(dev, virt, size, DMA_TO_DEVICE);
@@ -894,8 +893,8 @@ static int __full_va_sweep(struct device *dev, struct seq_file *s,
 	}
 
 out:
-	for (iova = 0; iova < max; iova += size)
-		dma_unmap_single(dev, (dma_addr_t)iova, size, DMA_TO_DEVICE);
+	for (dma_addr = 0; dma_addr < SZ_1G * 4UL; dma_addr += size)
+		dma_unmap_single(dev, dma_addr, size, DMA_TO_DEVICE);
 
 	free_pages((unsigned long)virt, get_order(size));
 	return ret;
@@ -1084,8 +1083,7 @@ static int __apply_to_new_mapping(struct seq_file *s,
 	int ret = -EINVAL, fast = 1;
 	phys_addr_t pt_phys;
 
-	mapping = arm_iommu_create_mapping(&platform_bus_type, 0,
-						(SZ_1G * 4ULL));
+	mapping = arm_iommu_create_mapping(&platform_bus_type, 0, SZ_1G * 4UL);
 	if (!mapping)
 		goto out;
 
@@ -1097,15 +1095,11 @@ static int __apply_to_new_mapping(struct seq_file *s,
 	if (arm_iommu_attach_device(dev, mapping))
 		goto out_release_mapping;
 
-	if (iommu_domain_get_attr(mapping->domain, DOMAIN_ATTR_PT_BASE_ADDR,
-				  &pt_phys)) {
-		ds_printf(dev, s, "Couldn't get page table base address\n");
-		goto out_release_mapping;
-	}
-
+	BUG_ON(iommu_domain_get_attr(mapping->domain, DOMAIN_ATTR_PT_BASE_ADDR,
+				     &pt_phys));
 	dev_err(dev, "testing with pgtables at %pa\n", &pt_phys);
 	if (iommu_enable_config_clocks(mapping->domain)) {
-		ds_printf(dev, s, "Couldn't enable clocks\n");
+		ds_printf(dev, s, "Couldn't enable clocks");
 		goto out_release_mapping;
 	}
 	ret = fn(dev, s, mapping->domain, priv);
@@ -1154,9 +1148,7 @@ static int iommu_debug_functional_arm_dma_api_show(struct seq_file *s,
 	size_t sizes[] = {SZ_4K, SZ_64K, SZ_2M, SZ_1M * 12, 0};
 	int ret = -EINVAL;
 
-	/* Make the size equal to MAX_ULONG */
-	mapping = arm_iommu_create_mapping(&platform_bus_type, 0,
-						(SZ_1G * 4ULL - 1));
+	mapping = arm_iommu_create_mapping(&platform_bus_type, 0, SZ_1G * 4UL);
 	if (!mapping)
 		goto out;
 
@@ -1191,6 +1183,7 @@ static const struct file_operations iommu_debug_functional_arm_dma_api_fops = {
 static int iommu_debug_attach_do_attach(struct iommu_debug_device *ddev,
 					int val, bool is_secure)
 {
+	int htw_disable = 1;
 	struct bus_type *bus;
 
 	bus = msm_iommu_get_bus(ddev->dev);
@@ -1201,6 +1194,13 @@ static int iommu_debug_attach_do_attach(struct iommu_debug_device *ddev,
 	if (!ddev->domain) {
 		pr_err("Couldn't allocate domain\n");
 		return -ENOMEM;
+	}
+
+	if (iommu_domain_set_attr(ddev->domain,
+				  DOMAIN_ATTR_COHERENT_HTW_DISABLE,
+				  &htw_disable)) {
+		pr_err("Couldn't disable coherent htw\n");
+		goto out_domain_free;
 	}
 
 	val = VMID_CP_CAMERA;
@@ -1366,12 +1366,16 @@ static ssize_t iommu_debug_atos_read(struct file *file, char __user *ubuf,
 	memset(buf, 0, 100);
 
 	phys = iommu_iova_to_phys_hard(ddev->domain, ddev->iova);
-	if (!phys)
+	if (!phys) {
 		strlcpy(buf, "FAIL\n", 100);
-	else
+		phys = iommu_iova_to_phys(ddev->domain, ddev->iova);
+		dev_err(ddev->dev, "ATOS for %pa failed. Software walk returned: %pa\n",
+			&ddev->iova, &phys);
+	} else {
 		snprintf(buf, 100, "%pa\n", &phys);
+	}
 
-	buflen = min(count, strlen(buf));
+	buflen = min(count, strlen(buf)+1);
 	if (copy_to_user(ubuf, buf, buflen)) {
 		pr_err("Couldn't copy_to_user\n");
 		retval = -EFAULT;
@@ -1473,7 +1477,7 @@ static ssize_t iommu_debug_unmap_write(struct file *file,
 				       const char __user *ubuf,
 				       size_t count, loff_t *offset)
 {
-	ssize_t retval = 0;
+	ssize_t retval = -EINVAL;
 	char *comma1;
 	char buf[100];
 	dma_addr_t iova;
@@ -1776,41 +1780,16 @@ static inline int iommu_debug_init_tests(void) { return 0; }
 static inline void iommu_debug_destroy_tests(void) { }
 #endif
 
-/*
- * This isn't really a "driver", we just need something in the device tree
- * so that our tests can run without any client drivers, and our tests rely
- * on parsing the device tree for nodes with the `iommus' property.
- */
-static int iommu_debug_pass(struct platform_device *pdev)
-{
-	return 0;
-}
-
-static const struct of_device_id iommu_debug_of_match[] = {
-	{ .compatible = "iommu-debug-test" },
-	{ },
-};
-
-static struct platform_driver iommu_debug_driver = {
-	.probe = iommu_debug_pass,
-	.remove = iommu_debug_pass,
-	.driver = {
-		.name = "iommu-debug",
-		.of_match_table = iommu_debug_of_match,
-	},
-};
-
 static int iommu_debug_init(void)
 {
 	if (iommu_debug_init_tests())
 		return -ENODEV;
 
-	return platform_driver_register(&iommu_debug_driver);
+	return 0;
 }
 
 static void iommu_debug_exit(void)
 {
-	platform_driver_unregister(&iommu_debug_driver);
 	iommu_debug_destroy_tests();
 }
 

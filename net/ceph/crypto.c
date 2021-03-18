@@ -79,6 +79,10 @@ int ceph_crypto_key_unarmor(struct ceph_crypto_key *key, const char *inkey)
 	return 0;
 }
 
+
+
+#define AES_KEY_SIZE 16
+
 static struct crypto_blkcipher *ceph_crypto_alloc_cipher(void)
 {
 	return crypto_alloc_blkcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
@@ -537,7 +541,7 @@ static int ceph_key_preparse(struct key_preparsed_payload *prep)
 	if (ret < 0)
 		goto err_ckey;
 
-	prep->payload.data[0] = ckey;
+	prep->payload[0] = ckey;
 	prep->quotalen = datalen;
 	return 0;
 
@@ -549,14 +553,14 @@ err:
 
 static void ceph_key_free_preparse(struct key_preparsed_payload *prep)
 {
-	struct ceph_crypto_key *ckey = prep->payload.data[0];
+	struct ceph_crypto_key *ckey = prep->payload[0];
 	ceph_crypto_key_destroy(ckey);
 	kfree(ckey);
 }
 
 static void ceph_key_destroy(struct key *key)
 {
-	struct ceph_crypto_key *ckey = key->payload.data[0];
+	struct ceph_crypto_key *ckey = key->payload.data;
 
 	ceph_crypto_key_destroy(ckey);
 	kfree(ckey);

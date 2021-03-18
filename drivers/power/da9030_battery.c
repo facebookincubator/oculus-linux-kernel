@@ -89,8 +89,7 @@ struct da9030_battery_thresholds {
 };
 
 struct da9030_charger {
-	struct power_supply *psy;
-	struct power_supply_desc psy_desc;
+	struct power_supply psy;
 
 	struct device *master;
 
@@ -246,7 +245,7 @@ static void da9030_set_charge(struct da9030_charger *charger, int on)
 
 	da903x_write(charger->master, DA9030_CHARGE_CONTROL, val);
 
-	power_supply_changed(charger->psy);
+	power_supply_changed(&charger->psy);
 }
 
 static void da9030_charger_check_state(struct da9030_charger *charger)
@@ -342,7 +341,8 @@ static int da9030_battery_get_property(struct power_supply *psy,
 				   enum power_supply_property psp,
 				   union power_supply_propval *val)
 {
-	struct da9030_charger *charger = power_supply_get_drvdata(psy);
+	struct da9030_charger *charger;
+	charger = container_of(psy, struct da9030_charger, psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -447,16 +447,16 @@ static void da9030_battery_convert_thresholds(struct da9030_charger *charger,
 
 static void da9030_battery_setup_psy(struct da9030_charger *charger)
 {
-	struct power_supply_desc *psy_desc = &charger->psy_desc;
+	struct power_supply *psy = &charger->psy;
 	struct power_supply_info *info = charger->battery_info;
 
-	psy_desc->name = info->name;
-	psy_desc->use_for_apm = info->use_for_apm;
-	psy_desc->type = POWER_SUPPLY_TYPE_BATTERY;
-	psy_desc->get_property = da9030_battery_get_property;
+	psy->name = info->name;
+	psy->use_for_apm = info->use_for_apm;
+	psy->type = POWER_SUPPLY_TYPE_BATTERY;
+	psy->get_property = da9030_battery_get_property;
 
-	psy_desc->properties = da9030_battery_props;
-	psy_desc->num_properties = ARRAY_SIZE(da9030_battery_props);
+	psy->properties = da9030_battery_props;
+	psy->num_properties = ARRAY_SIZE(da9030_battery_props);
 };
 
 static int da9030_battery_charger_init(struct da9030_charger *charger)
@@ -494,7 +494,6 @@ static int da9030_battery_charger_init(struct da9030_charger *charger)
 static int da9030_battery_probe(struct platform_device *pdev)
 {
 	struct da9030_charger *charger;
-	struct power_supply_config psy_cfg = {};
 	struct da9030_battery_info *pdata = pdev->dev.platform_data;
 	int ret;
 
@@ -542,13 +541,9 @@ static int da9030_battery_probe(struct platform_device *pdev)
 		goto err_notifier;
 
 	da9030_battery_setup_psy(charger);
-	psy_cfg.drv_data = charger;
-	charger->psy = power_supply_register(&pdev->dev, &charger->psy_desc,
-					     &psy_cfg);
-	if (IS_ERR(charger->psy)) {
-		ret = PTR_ERR(charger->psy);
+	ret = power_supply_register(&pdev->dev, &charger->psy);
+	if (ret)
 		goto err_ps_register;
-	}
 
 	charger->debug_file = da9030_bat_create_debugfs(charger);
 	platform_set_drvdata(pdev, charger);
@@ -576,7 +571,7 @@ static int da9030_battery_remove(struct platform_device *dev)
 				   DA9030_EVENT_CHIOVER | DA9030_EVENT_TBAT);
 	cancel_delayed_work_sync(&charger->work);
 	da9030_set_charge(charger, 0);
-	power_supply_unregister(charger->psy);
+	power_supply_unregister(&charger->psy);
 
 	return 0;
 }
@@ -584,6 +579,7 @@ static int da9030_battery_remove(struct platform_device *dev)
 static struct platform_driver da903x_battery_driver = {
 	.driver	= {
 		.name	= "da903x-battery",
+		.owner	= THIS_MODULE,
 	},
 	.probe = da9030_battery_probe,
 	.remove = da9030_battery_remove,

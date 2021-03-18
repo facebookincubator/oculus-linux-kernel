@@ -37,7 +37,6 @@ struct audit_chunk {
 
 static LIST_HEAD(tree_list);
 static LIST_HEAD(prune_list);
-static struct task_struct *prune_thread;
 
 /*
  * One struct chunk is attached to each inode of interest.
@@ -175,9 +174,9 @@ static void insert_hash(struct audit_chunk *chunk)
 	struct fsnotify_mark *entry = &chunk->mark;
 	struct list_head *list;
 
-	if (!entry->inode)
+	if (!entry->i.inode)
 		return;
-	list = chunk_hash(entry->inode);
+	list = chunk_hash(entry->i.inode);
 	list_add_rcu(&chunk->hash, list);
 }
 
@@ -189,7 +188,7 @@ struct audit_chunk *audit_tree_lookup(const struct inode *inode)
 
 	list_for_each_entry_rcu(p, list, hash) {
 		/* mark.inode may have gone NULL, but who cares? */
-		if (p->mark.inode == inode) {
+		if (p->mark.i.inode == inode) {
 			atomic_long_inc(&p->refs);
 			return p;
 		}
@@ -197,13 +196,13 @@ struct audit_chunk *audit_tree_lookup(const struct inode *inode)
 	return NULL;
 }
 
-bool audit_tree_match(struct audit_chunk *chunk, struct audit_tree *tree)
+int audit_tree_match(struct audit_chunk *chunk, struct audit_tree *tree)
 {
 	int n;
 	for (n = 0; n < chunk->count; n++)
 		if (chunk->owners[n].owner == tree)
-			return true;
-	return false;
+			return 1;
+	return 0;
 }
 
 /* tagging and untagging inodes with trees */
@@ -232,7 +231,7 @@ static void untag_chunk(struct node *p)
 		new = alloc_chunk(size);
 
 	spin_lock(&entry->lock);
-	if (chunk->dead || !entry->inode) {
+	if (chunk->dead || !entry->i.inode) {
 		spin_unlock(&entry->lock);
 		if (new)
 			free_chunk(new);
@@ -259,7 +258,7 @@ static void untag_chunk(struct node *p)
 		goto Fallback;
 
 	fsnotify_duplicate_mark(&new->mark, entry);
-	if (fsnotify_add_mark(&new->mark, new->mark.group, new->mark.inode, NULL, 1)) {
+	if (fsnotify_add_mark(&new->mark, new->mark.group, new->mark.i.inode, NULL, 1)) {
 		fsnotify_put_mark(&new->mark);
 		goto Fallback;
 	}
@@ -387,7 +386,7 @@ static int tag_chunk(struct inode *inode, struct audit_tree *tree)
 	chunk_entry = &chunk->mark;
 
 	spin_lock(&old_entry->lock);
-	if (!old_entry->inode) {
+	if (!old_entry->i.inode) {
 		/* old_entry is being shot, lets just lie */
 		spin_unlock(&old_entry->lock);
 		fsnotify_put_mark(old_entry);
@@ -396,7 +395,7 @@ static int tag_chunk(struct inode *inode, struct audit_tree *tree)
 	}
 
 	fsnotify_duplicate_mark(chunk_entry, old_entry);
-	if (fsnotify_add_mark(chunk_entry, chunk_entry->group, chunk_entry->inode, NULL, 1)) {
+	if (fsnotify_add_mark(chunk_entry, chunk_entry->group, chunk_entry->i.inode, NULL, 1)) {
 		spin_unlock(&old_entry->lock);
 		fsnotify_put_mark(chunk_entry);
 		fsnotify_put_mark(old_entry);
@@ -479,8 +478,6 @@ static void kill_rules(struct audit_tree *tree)
 		if (rule->tree) {
 			/* not a half-baked one */
 			audit_tree_log_remove_rule(rule);
-			if (entry->rule.exe)
-				audit_remove_mark(entry->rule.exe);
 			rule->tree = NULL;
 			list_del_rcu(&entry->list);
 			list_del(&entry->rule.list);
@@ -579,7 +576,7 @@ int audit_remove_tree_rule(struct audit_krule *rule)
 
 static int compare_root(struct vfsmount *mnt, void *arg)
 {
-	return d_backing_inode(mnt->mnt_root) == arg;
+	return mnt->mnt_root->d_inode == arg;
 }
 
 void audit_trim_trees(void)
@@ -614,7 +611,7 @@ void audit_trim_trees(void)
 		list_for_each_entry(node, &tree->chunks, list) {
 			struct audit_chunk *chunk = find_chunk(node);
 			/* this could be NULL if the watch is dying else where... */
-			struct inode *inode = chunk->mark.inode;
+			struct inode *inode = chunk->mark.i.inode;
 			node->index |= 1U<<31;
 			if (iterate_mounts(compare_root, inode, root_mnt))
 				node->index &= ~(1U<<31);
@@ -651,58 +648,7 @@ void audit_put_tree(struct audit_tree *tree)
 
 static int tag_mount(struct vfsmount *mnt, void *arg)
 {
-	return tag_chunk(d_backing_inode(mnt->mnt_root), arg);
-}
-
-/*
- * That gets run when evict_chunk() ends up needing to kill audit_tree.
- * Runs from a separate thread.
- */
-static int prune_tree_thread(void *unused)
-{
-	for (;;) {
-		set_current_state(TASK_INTERRUPTIBLE);
-		if (list_empty(&prune_list))
-			schedule();
-		__set_current_state(TASK_RUNNING);
-
-		mutex_lock(&audit_cmd_mutex);
-		mutex_lock(&audit_filter_mutex);
-
-		while (!list_empty(&prune_list)) {
-			struct audit_tree *victim;
-
-			victim = list_entry(prune_list.next,
-					struct audit_tree, list);
-			list_del_init(&victim->list);
-
-			mutex_unlock(&audit_filter_mutex);
-
-			prune_one(victim);
-
-			mutex_lock(&audit_filter_mutex);
-		}
-
-		mutex_unlock(&audit_filter_mutex);
-		mutex_unlock(&audit_cmd_mutex);
-	}
-	return 0;
-}
-
-static int audit_launch_prune(void)
-{
-	if (prune_thread)
-		return 0;
-	prune_thread = kthread_create(prune_tree_thread, NULL,
-				"audit_prune_tree");
-	if (IS_ERR(prune_thread)) {
-		pr_err("cannot start thread audit_prune_tree");
-		prune_thread = NULL;
-		return -ENOMEM;
-	} else {
-		wake_up_process(prune_thread);
-		return 0;
-	}
+	return tag_chunk(mnt->mnt_root->d_inode, arg);
 }
 
 /* called with audit_filter_mutex */
@@ -727,12 +673,6 @@ int audit_add_tree_rule(struct audit_krule *rule)
 	list_add(&rule->rlist, &tree->rules);
 	/* do not set rule->tree yet */
 	mutex_unlock(&audit_filter_mutex);
-
-	if (unlikely(!prune_thread)) {
-		err = audit_launch_prune();
-		if (err)
-			goto Err;
-	}
 
 	err = kern_path(tree->pathname, 0, &path);
 	if (err)
@@ -871,10 +811,36 @@ int audit_tag_tree(char *old, char *new)
 	return failed;
 }
 
+/*
+ * That gets run when evict_chunk() ends up needing to kill audit_tree.
+ * Runs from a separate thread.
+ */
+static int prune_tree_thread(void *unused)
+{
+	mutex_lock(&audit_cmd_mutex);
+	mutex_lock(&audit_filter_mutex);
+
+	while (!list_empty(&prune_list)) {
+		struct audit_tree *victim;
+
+		victim = list_entry(prune_list.next, struct audit_tree, list);
+		list_del_init(&victim->list);
+
+		mutex_unlock(&audit_filter_mutex);
+
+		prune_one(victim);
+
+		mutex_lock(&audit_filter_mutex);
+	}
+
+	mutex_unlock(&audit_filter_mutex);
+	mutex_unlock(&audit_cmd_mutex);
+	return 0;
+}
 
 static void audit_schedule_prune(void)
 {
-	wake_up_process(prune_thread);
+	kthread_run(prune_tree_thread, NULL, "audit_prune_tree");
 }
 
 /*
@@ -941,9 +907,9 @@ static void evict_chunk(struct audit_chunk *chunk)
 	for (n = 0; n < chunk->count; n++)
 		list_del_init(&chunk->owners[n].list);
 	spin_unlock(&hash_lock);
-	mutex_unlock(&audit_filter_mutex);
 	if (need_prune)
 		audit_schedule_prune();
+	mutex_unlock(&audit_filter_mutex);
 }
 
 static int audit_tree_handle_event(struct fsnotify_group *group,

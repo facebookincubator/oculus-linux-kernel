@@ -261,9 +261,7 @@ static int tegra_rtc_proc(struct device *dev, struct seq_file *seq)
 	if (!dev || !dev->driver)
 		return 0;
 
-	seq_printf(seq, "name\t\t: %s\n", dev_name(dev));
-
-	return 0;
+	return seq_printf(seq, "name\t\t: %s\n", dev_name(dev));
 }
 
 static irqreturn_t tegra_rtc_irq_handler(int irq, void *data)
@@ -422,6 +420,7 @@ static struct platform_driver tegra_rtc_driver = {
 	.shutdown	= tegra_rtc_shutdown,
 	.driver		= {
 		.name	= "tegra_rtc",
+		.owner	= THIS_MODULE,
 		.of_match_table = tegra_rtc_dt_match,
 		.pm	= &tegra_rtc_pm_ops,
 	},

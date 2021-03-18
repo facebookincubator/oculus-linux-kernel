@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -50,9 +50,6 @@
  * @limitation:		CPR limitation select fuse parameter value
  * @aging_init_quot_diff:	Initial quotient difference between CPR aging
  *			min and max sensors measured at time of manufacturing
- * @force_highest_corner:	Flag indicating that all corners must operate
- *			at the voltage of the highest corner.  This is
- *			applicable to MSM8998 only.
  *
  * This struct holds the values for all of the fuses read from memory.
  */
@@ -63,7 +60,6 @@ struct cpr3_msm8996_mmss_fuses {
 	u64	cpr_fusing_rev;
 	u64	limitation;
 	u64	aging_init_quot_diff;
-	u64	force_highest_corner;
 };
 
 /* Fuse combos 0 -  7 map to CPR fusing revision 0 - 7 */
@@ -72,11 +68,12 @@ struct cpr3_msm8996_mmss_fuses {
 /*
  * Fuse combos 0 -  7 map to CPR fusing revision 0 - 7 with speed bin fuse = 0.
  * Fuse combos 8 - 15 map to CPR fusing revision 0 - 7 with speed bin fuse = 1.
+ * Fuse combos 16 - 23 map to CPR fusing revision 0 - 7 with speed bin fuse = 2.
  */
-#define CPR3_MSM8996PRO_MMSS_FUSE_COMBO_COUNT	16
+#define CPR3_MSM8996PRO_MMSS_FUSE_COMBO_COUNT	24
 
 /* Fuse combos 0 -  7 map to CPR fusing revision 0 - 7 */
-#define CPR3_MSM8998_MMSS_FUSE_COMBO_COUNT	8
+#define CPR3_MSMCOBALT_MMSS_FUSE_COMBO_COUNT	8
 
 /*
  * MSM8996 MMSS fuse parameter locations:
@@ -128,49 +125,42 @@ static const struct cpr3_fuse_param msm8996pro_mmss_speed_bin_param[] = {
 	{},
 };
 
-/* MSM8998 MMSS fuse parameter locations: */
+/* MSMCOBALT MMSS fuse parameter locations: */
 static const struct cpr3_fuse_param
-msm8998_mmss_init_voltage_param[MSM8996_MMSS_FUSE_CORNERS][2] = {
+msmcobalt_mmss_init_voltage_param[MSM8996_MMSS_FUSE_CORNERS][2] = {
 	{{65, 39, 43}, {} },
 	{{65, 34, 38}, {} },
 	{{65, 29, 33}, {} },
 	{{65, 24, 28}, {} },
 };
 
-static const struct cpr3_fuse_param msm8998_cpr_fusing_rev_param[] = {
+static const struct cpr3_fuse_param msmcobalt_cpr_fusing_rev_param[] = {
 	{39, 48, 50},
 	{},
 };
 
-static const struct cpr3_fuse_param msm8998_cpr_limitation_param[] = {
+static const struct cpr3_fuse_param msmcobalt_cpr_limitation_param[] = {
 	{41, 46, 47},
 	{},
 };
 
 static const struct cpr3_fuse_param
-msm8998_mmss_aging_init_quot_diff_param[] = {
+msmcobalt_mmss_aging_init_quot_diff_param[] = {
 	{65, 60, 63},
 	{66, 0, 3},
 	{},
 };
 
 static const struct cpr3_fuse_param
-msm8998_mmss_offset_voltage_param[MSM8996_MMSS_FUSE_CORNERS][2] = {
+msmcobalt_mmss_offset_voltage_param[MSM8996_MMSS_FUSE_CORNERS][2] = {
 	{{65, 56, 59}, {} },
 	{{65, 52, 55}, {} },
 	{{65, 48, 51}, {} },
 	{{65, 44, 47}, {} },
 };
 
-static const struct cpr3_fuse_param
-msm8998_cpr_force_highest_corner_param[] = {
-	{100, 45, 45},
-	{},
-};
-
 #define MSM8996PRO_SOC_ID			4
-#define MSM8998_V1_SOC_ID			5
-#define MSM8998_V2_SOC_ID			6
+#define MSMCOBALT_SOC_ID			5
 
 /*
  * Some initial msm8996 parts cannot be used in a meaningful way by software.
@@ -201,40 +191,16 @@ static const int msm8996pro_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
 	1065000,
 };
 
-static const int msm8998_v1_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
-	528000,
-	656000,
-	812000,
-	932000,
-};
-
-static const int
-msm8998_v1_rev0_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
+static const int msmcobalt_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
 	632000,
 	768000,
 	896000,
 	1032000,
 };
 
-static const int msm8998_v2_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
-	516000,
-	628000,
-	752000,
-	924000,
-};
-
-static const int
-msm8998_v2_rev0_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
-	616000,
-	740000,
-	828000,
-	1024000,
-};
-
 #define MSM8996_MMSS_FUSE_STEP_VOLT		10000
 #define MSM8996_MMSS_OFFSET_FUSE_STEP_VOLT	10000
 #define MSM8996_MMSS_VOLTAGE_FUSE_SIZE		5
-#define MSM8996_MMSS_MIN_VOLTAGE_FUSE_VAL	0x1F
 #define MSM8996_MMSS_AGING_INIT_QUOT_DIFF_SCALE	2
 #define MSM8996_MMSS_AGING_INIT_QUOT_DIFF_SIZE	6
 
@@ -245,41 +211,20 @@ msm8998_v2_rev0_mmss_fuse_ref_volt[MSM8996_MMSS_FUSE_CORNERS] = {
 #define MSM8996_MMSS_AGING_SENSOR_ID		29
 #define MSM8996_MMSS_AGING_BYPASS_MASK0		(GENMASK(23, 0))
 
-#define MSM8998_MMSS_AGING_INIT_QUOT_DIFF_SCALE	1
-#define MSM8998_MMSS_AGING_INIT_QUOT_DIFF_SIZE	8
+/* Use scaled gate count (GCNT) for aging measurements */
+#define MSM8996_MMSS_AGING_GCNT_SCALING_FACTOR	1500
 
-#define MSM8998_MMSS_CPR_SENSOR_COUNT			35
+#define MSMCOBALT_MMSS_AGING_INIT_QUOT_DIFF_SCALE	1
+#define MSMCOBALT_MMSS_AGING_INIT_QUOT_DIFF_SIZE	8
 
-#define MSM8998_MMSS_AGING_SENSOR_ID			29
-#define MSM8998_MMSS_AGING_BYPASS_MASK0		(GENMASK(23, 0))
+#define MSMCOBALT_MMSS_CPR_SENSOR_COUNT			35
 
-#define MSM8998_MMSS_MAX_TEMP_POINTS			3
-#define MSM8998_MMSS_TEMP_SENSOR_ID_START		12
-#define MSM8998_MMSS_TEMP_SENSOR_ID_END		13
+#define MSMCOBALT_MMSS_AGING_SENSOR_ID			17
+#define MSMCOBALT_MMSS_AGING_BYPASS_MASK0		0
 
-/*
- * Some initial msm8998 parts cannot be operated at low voltages.  The
- * open-loop voltage fuses are reused to identify these parts so that software
- * can properly handle the limitation.  0xF means that the next higher fuse
- * corner should be used.  0xE means that the next higher fuse corner which
- * does not have a voltage limitation should be used.
- */
-enum msm8998_cpr_partial_binning {
-	MSM8998_CPR_PARTIAL_BINNING_NEXT_CORNER = 0xF,
-	MSM8998_CPR_PARTIAL_BINNING_SAFE_CORNER = 0xE,
-};
-
-/*
- * The partial binning open-loop voltage fuse values only apply to the lowest
- * two fuse corners (0 and 1, i.e. MinSVS and SVS).
- */
-#define MSM8998_CPR_PARTIAL_BINNING_MAX_FUSE_CORNER	1
-
-static inline bool cpr3_ctrl_is_msm8998(const struct cpr3_controller *ctrl)
-{
-	return ctrl->soc_revision == MSM8998_V1_SOC_ID ||
-		ctrl->soc_revision == MSM8998_V2_SOC_ID;
-}
+#define MSMCOBALT_MMSS_MAX_TEMP_POINTS			3
+#define MSMCOBALT_MMSS_TEMP_SENSOR_ID_START		12
+#define MSMCOBALT_MMSS_TEMP_SENSOR_ID_END		13
 
 /**
  * cpr3_msm8996_mmss_read_fuse_data() - load MMSS specific fuse parameter values
@@ -313,8 +258,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 	}
 
 	rc = cpr3_read_fuse_param(base,
-			cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-				? msm8998_cpr_fusing_rev_param
+			vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? msmcobalt_cpr_fusing_rev_param
 				: msm8996_cpr_fusing_rev_param,
 			&fuse->cpr_fusing_rev);
 	if (rc) {
@@ -325,8 +270,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 	cpr3_info(vreg, "CPR fusing revision = %llu\n", fuse->cpr_fusing_rev);
 
 	rc = cpr3_read_fuse_param(base,
-			cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-				? msm8998_cpr_limitation_param
+			vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? msmcobalt_cpr_limitation_param
 				: msm8996_cpr_limitation_param,
 			&fuse->limitation);
 	if (rc) {
@@ -341,8 +286,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 		? "CPR disabled and no interpolation" : "none");
 
 	rc = cpr3_read_fuse_param(base,
-			cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-				? msm8998_mmss_aging_init_quot_diff_param
+			vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? msmcobalt_mmss_aging_init_quot_diff_param
 				: msm8996_mmss_aging_init_quot_diff_param,
 			&fuse->aging_init_quot_diff);
 	if (rc) {
@@ -353,8 +298,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 
 	for (i = 0; i < MSM8996_MMSS_FUSE_CORNERS; i++) {
 		rc = cpr3_read_fuse_param(base,
-			cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-				? msm8998_mmss_init_voltage_param[i]
+			vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? msmcobalt_mmss_init_voltage_param[i]
 				: msm8996_mmss_init_voltage_param[i],
 			&fuse->init_voltage[i]);
 		if (rc) {
@@ -364,8 +309,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 		}
 
 		rc = cpr3_read_fuse_param(base,
-			cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-				? msm8998_mmss_offset_voltage_param[i]
+			vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? msmcobalt_mmss_offset_voltage_param[i]
 				: msm8996_mmss_offset_voltage_param[i],
 			&fuse->offset_voltage[i]);
 		if (rc) {
@@ -375,21 +320,8 @@ static int cpr3_msm8996_mmss_read_fuse_data(struct cpr3_regulator *vreg)
 		}
 	}
 
-	if (cpr3_ctrl_is_msm8998(vreg->thread->ctrl)) {
-		rc = cpr3_read_fuse_param(base,
-			msm8998_cpr_force_highest_corner_param,
-			&fuse->force_highest_corner);
-		if (rc) {
-			cpr3_err(vreg, "Unable to read CPR force highest corner fuse, rc=%d\n",
-				rc);
-			return rc;
-		}
-		if (fuse->force_highest_corner)
-			cpr3_info(vreg, "Fusing requires all operation at the highest corner\n");
-	}
-
-	if (cpr3_ctrl_is_msm8998(vreg->thread->ctrl)) {
-		combo_max = CPR3_MSM8998_MMSS_FUSE_COMBO_COUNT;
+	if (vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID) {
+		combo_max = CPR3_MSMCOBALT_MMSS_FUSE_COMBO_COUNT;
 		vreg->fuse_combo = fuse->cpr_fusing_rev;
 	} else if (vreg->thread->ctrl->soc_revision == MSM8996PRO_SOC_ID) {
 		combo_max = CPR3_MSM8996PRO_MMSS_FUSE_COMBO_COUNT;
@@ -453,27 +385,48 @@ done:
 }
 
 /**
- * cpr3_msm8996_mmss_adjust_target_quotients() - adjust the target quotients
- *		for each corner according to device tree values and fuse values
+ * cpr3_msm8996_mmss_apply_closed_loop_offset_voltages() - modify the
+ *		closed-loop voltage adjustments by the amounts that are needed
+ *		for this fuse combo
  * @vreg:		Pointer to the CPR3 regulator
+ * @volt_adjust:	Array of closed-loop voltage adjustment values of length
+ *			vreg->corner_count which is further adjusted based upon
+ *			offset voltage fuse values.
  *
  * Return: 0 on success, errno on failure
  */
-static int cpr3_msm8996_mmss_adjust_target_quotients(
-			struct cpr3_regulator *vreg)
+static int cpr3_msm8996_mmss_apply_closed_loop_offset_voltages(
+			struct cpr3_regulator *vreg, int *volt_adjust)
 {
 	struct cpr3_msm8996_mmss_fuses *fuse = vreg->platform_fuses;
 	const struct cpr3_fuse_param (*offset_param)[2];
+	u32 *corner_map;
 	int *volt_offset;
-	int i, fuse_len, rc = 0;
+	int rc = 0, i, fuse_len;
 
+	if (!of_find_property(vreg->of_node,
+		"qcom,cpr-fused-closed-loop-voltage-adjustment-map", NULL)) {
+		/* No closed-loop offset required. */
+		return 0;
+	}
+
+	corner_map = kcalloc(vreg->corner_count, sizeof(*corner_map),
+				GFP_KERNEL);
 	volt_offset = kcalloc(vreg->fuse_corner_count, sizeof(*volt_offset),
 				GFP_KERNEL);
-	if (!volt_offset)
-		return -ENOMEM;
+	if (!corner_map || !volt_offset) {
+		rc = -ENOMEM;
+		goto done;
+	}
 
-	offset_param = cpr3_ctrl_is_msm8998(vreg->thread->ctrl)
-			? msm8998_mmss_offset_voltage_param
+	rc = cpr3_parse_corner_array_property(vreg,
+		"qcom,cpr-fused-closed-loop-voltage-adjustment-map",
+		1, corner_map);
+	if (rc)
+		goto done;
+
+	offset_param = vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID
+			? msmcobalt_mmss_offset_voltage_param
 			: msm8996_mmss_offset_voltage_param;
 	for (i = 0; i < vreg->fuse_corner_count; i++) {
 		fuse_len = offset_param[i][0].bit_end + 1
@@ -486,11 +439,223 @@ static int cpr3_msm8996_mmss_adjust_target_quotients(
 				i, volt_offset[i]);
 	}
 
-	rc = cpr3_adjust_target_quotients(vreg, volt_offset);
-	if (rc)
-		cpr3_err(vreg, "adjust target quotients failed, rc=%d\n", rc);
+	for (i = 0; i < vreg->corner_count; i++) {
+		if (corner_map[i] == 0) {
+			continue;
+		} else if (corner_map[i] > vreg->fuse_corner_count) {
+			cpr3_err(vreg, "corner %d mapped to invalid fuse corner: %u\n",
+				i, corner_map[i]);
+			rc = -EINVAL;
+			goto done;
+		}
 
+		volt_adjust[i] += volt_offset[corner_map[i] - 1];
+	}
+
+done:
+	kfree(corner_map);
 	kfree(volt_offset);
+
+	return rc;
+}
+
+/**
+ * cpr3_mmss_enforce_inc_quotient_monotonicity() - Ensure that target quotients
+ *		increase monotonically from lower to higher corners
+ * @vreg:		Pointer to the CPR3 regulator
+ *
+ * Return: 0 on success, errno on failure
+ */
+static void cpr3_mmss_enforce_inc_quotient_monotonicity(
+		struct cpr3_regulator *vreg)
+{
+	int i, j;
+
+	for (i = 1; i < vreg->corner_count; i++) {
+		for (j = 0; j < CPR3_RO_COUNT; j++) {
+			if (vreg->corner[i].target_quot[j]
+			    && vreg->corner[i].target_quot[j]
+					< vreg->corner[i - 1].target_quot[j]) {
+				cpr3_debug(vreg, "corner %d RO%u target quot=%u < corner %d RO%u target quot=%u; overriding: corner %d RO%u target quot=%u\n",
+					i, j,
+					vreg->corner[i].target_quot[j],
+					i - 1, j,
+					vreg->corner[i - 1].target_quot[j],
+					i, j,
+					vreg->corner[i - 1].target_quot[j]);
+				vreg->corner[i].target_quot[j]
+					= vreg->corner[i - 1].target_quot[j];
+			}
+		}
+	}
+}
+
+/**
+ * cpr3_mmss_enforce_dec_quotient_monotonicity() - Ensure that target quotients
+ *		decrease monotonically from higher to lower corners
+ * @vreg:		Pointer to the CPR3 regulator
+ *
+ * Return: 0 on success, errno on failure
+ */
+static void cpr3_mmss_enforce_dec_quotient_monotonicity(
+		struct cpr3_regulator *vreg)
+{
+	int i, j;
+
+	for (i = vreg->corner_count - 2; i >= 0; i--) {
+		for (j = 0; j < CPR3_RO_COUNT; j++) {
+			if (vreg->corner[i + 1].target_quot[j]
+			    && vreg->corner[i].target_quot[j]
+					> vreg->corner[i + 1].target_quot[j]) {
+				cpr3_debug(vreg, "corner %d RO%u target quot=%u > corner %d RO%u target quot=%u; overriding: corner %d RO%u target quot=%u\n",
+					i, j,
+					vreg->corner[i].target_quot[j],
+					i + 1, j,
+					vreg->corner[i + 1].target_quot[j],
+					i, j,
+					vreg->corner[i + 1].target_quot[j]);
+				vreg->corner[i].target_quot[j]
+					= vreg->corner[i + 1].target_quot[j];
+			}
+		}
+	}
+}
+
+/**
+ * _cpr3_mmss_adjust_target_quotients() - adjust the target quotients for each
+ *		corner of the regulator according to input adjustment and
+ *		scaling arrays
+ * @vreg:		Pointer to the CPR3 regulator
+ * @volt_adjust:	Pointer to an array of closed-loop voltage adjustments
+ *			with units of microvolts.  The array must have
+ *			vreg->corner_count number of elements.
+ * @ro_scale:		Pointer to a flattened 2D array of RO scaling factors.
+ *			The array must have an inner dimension of CPR3_RO_COUNT
+ *			and an outer dimension of vreg->corner_count
+ * @label:		Null terminated string providing a label for the type
+ *			of adjustment.
+ *
+ * Return: true if any corners received a positive voltage adjustment (> 0),
+ *	   else false
+ */
+static bool _cpr3_mmss_adjust_target_quotients(struct cpr3_regulator *vreg,
+		const int *volt_adjust, const int *ro_scale, const char *label)
+{
+	int i, j, quot_adjust;
+	bool is_increasing = false;
+	u32 prev_quot;
+
+	for (i = 0; i < vreg->corner_count; i++) {
+		for (j = 0; j < CPR3_RO_COUNT; j++) {
+			if (vreg->corner[i].target_quot[j]) {
+				quot_adjust = cpr3_quot_adjustment(
+					ro_scale[i * CPR3_RO_COUNT + j],
+					volt_adjust[i]);
+				if (quot_adjust) {
+					prev_quot = vreg->corner[i].
+							target_quot[j];
+					vreg->corner[i].target_quot[j]
+						+= quot_adjust;
+					cpr3_debug(vreg, "adjusted corner %d RO%d target quot %s: %u --> %u (%d uV)\n",
+						i, j, label, prev_quot,
+						vreg->corner[i].target_quot[j],
+						volt_adjust[i]);
+				}
+			}
+		}
+		if (volt_adjust[i] > 0)
+			is_increasing = true;
+	}
+
+	return is_increasing;
+}
+
+/**
+ * cpr3_mmss_adjust_target_quotients() - adjust the target quotients for each
+ *		corner according to device tree values and fuse values
+ * @vreg:		Pointer to the CPR3 regulator
+ *
+ * Return: 0 on success, errno on failure
+ */
+static int cpr3_mmss_adjust_target_quotients(struct cpr3_regulator *vreg)
+{
+	int i, rc;
+	int *volt_adjust, *ro_scale;
+	bool explicit_adjustment, fused_adjustment, is_increasing;
+
+	explicit_adjustment = of_find_property(vreg->of_node,
+		"qcom,cpr-closed-loop-voltage-adjustment", NULL);
+	fused_adjustment = of_find_property(vreg->of_node,
+		"qcom,cpr-fused-closed-loop-voltage-adjustment-map", NULL);
+
+	if (!explicit_adjustment && !fused_adjustment && !vreg->aging_allowed) {
+		/* No adjustment required. */
+		return 0;
+	} else if (!of_find_property(vreg->of_node,
+			"qcom,cpr-ro-scaling-factor", NULL)) {
+		cpr3_err(vreg, "qcom,cpr-ro-scaling-factor is required for closed-loop voltage adjustment, but is missing\n");
+		return -EINVAL;
+	}
+
+	volt_adjust = kcalloc(vreg->corner_count, sizeof(*volt_adjust),
+				GFP_KERNEL);
+	ro_scale = kcalloc(vreg->corner_count * CPR3_RO_COUNT,
+				sizeof(*ro_scale), GFP_KERNEL);
+	if (!volt_adjust || !ro_scale) {
+		rc = -ENOMEM;
+		goto done;
+	}
+
+	rc = cpr3_parse_corner_array_property(vreg,
+			"qcom,cpr-ro-scaling-factor", CPR3_RO_COUNT, ro_scale);
+	if (rc) {
+		cpr3_err(vreg, "could not load RO scaling factors, rc=%d\n",
+			rc);
+		goto done;
+	}
+
+	for (i = 0; i < vreg->corner_count; i++)
+		memcpy(vreg->corner[i].ro_scale, &ro_scale[i * CPR3_RO_COUNT],
+			sizeof(*ro_scale) * CPR3_RO_COUNT);
+
+	if (explicit_adjustment) {
+		rc = cpr3_parse_corner_array_property(vreg,
+			"qcom,cpr-closed-loop-voltage-adjustment",
+			1, volt_adjust);
+		if (rc) {
+			cpr3_err(vreg, "could not load closed-loop voltage adjustments, rc=%d\n",
+				rc);
+			goto done;
+		}
+
+		_cpr3_mmss_adjust_target_quotients(vreg, volt_adjust, ro_scale,
+			"from DT");
+		cpr3_mmss_enforce_inc_quotient_monotonicity(vreg);
+	}
+
+	if (fused_adjustment) {
+		memset(volt_adjust, 0,
+			sizeof(*volt_adjust) * vreg->corner_count);
+
+		rc = cpr3_msm8996_mmss_apply_closed_loop_offset_voltages(vreg,
+			volt_adjust);
+		if (rc) {
+			cpr3_err(vreg, "could not apply fused closed-loop voltage reductions, rc=%d\n",
+				rc);
+			goto done;
+		}
+
+		is_increasing = _cpr3_mmss_adjust_target_quotients(vreg,
+					volt_adjust, ro_scale, "from fuse");
+		if (is_increasing)
+			cpr3_mmss_enforce_inc_quotient_monotonicity(vreg);
+		else
+			cpr3_mmss_enforce_dec_quotient_monotonicity(vreg);
+	}
+
+done:
+	kfree(volt_adjust);
+	kfree(ro_scale);
 	return rc;
 }
 
@@ -516,10 +681,9 @@ static int cpr3_msm8996_mmss_calculate_open_loop_voltages(
 {
 	struct device_node *node = vreg->of_node;
 	struct cpr3_msm8996_mmss_fuses *fuse = vreg->platform_fuses;
-	bool is_msm8998 = cpr3_ctrl_is_msm8998(vreg->thread->ctrl);
 	int rc = 0;
 	bool allow_interpolation;
-	u64 freq_low, volt_low, freq_high, volt_high, volt_init;
+	u64 freq_low, volt_low, freq_high, volt_high;
 	int i, j;
 	const int *ref_volt;
 	int *fuse_volt;
@@ -534,38 +698,16 @@ static int cpr3_msm8996_mmss_calculate_open_loop_voltages(
 		goto done;
 	}
 
-	if (vreg->thread->ctrl->soc_revision == MSM8998_V2_SOC_ID
-	    && fuse->cpr_fusing_rev == 0)
-		ref_volt = msm8998_v2_rev0_mmss_fuse_ref_volt;
-	else if (vreg->thread->ctrl->soc_revision == MSM8998_V2_SOC_ID)
-		ref_volt = msm8998_v2_mmss_fuse_ref_volt;
-	else if (vreg->thread->ctrl->soc_revision == MSM8998_V1_SOC_ID
-	    && fuse->cpr_fusing_rev == 0)
-		ref_volt = msm8998_v1_rev0_mmss_fuse_ref_volt;
-	else if (vreg->thread->ctrl->soc_revision == MSM8998_V1_SOC_ID)
-		ref_volt = msm8998_v1_mmss_fuse_ref_volt;
+	if (vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID)
+		ref_volt = msmcobalt_mmss_fuse_ref_volt;
 	else if (vreg->thread->ctrl->soc_revision == MSM8996PRO_SOC_ID)
 		ref_volt = msm8996pro_mmss_fuse_ref_volt;
 	else
 		ref_volt = msm8996_mmss_fuse_ref_volt;
 
 	for (i = 0; i < vreg->fuse_corner_count; i++) {
-		volt_init = fuse->init_voltage[i];
-		/*
-		 * Handle partial binning on MSM8998 where the initial voltage
-		 * fuse is reused as a flag for partial binning needs.  Set the
-		 * open-loop voltage to the minimum possible value so that it
-		 * does not result in higher fuse corners getting forced to
-		 * higher open-loop voltages after monotonicity enforcement.
-		 */
-		if (is_msm8998 &&
-		    (volt_init == MSM8998_CPR_PARTIAL_BINNING_NEXT_CORNER ||
-		     volt_init == MSM8998_CPR_PARTIAL_BINNING_SAFE_CORNER) &&
-		    i <= MSM8998_CPR_PARTIAL_BINNING_MAX_FUSE_CORNER)
-			volt_init = MSM8996_MMSS_MIN_VOLTAGE_FUSE_VAL;
-
 		fuse_volt[i] = cpr3_convert_open_loop_voltage_fuse(ref_volt[i],
-			MSM8996_MMSS_FUSE_STEP_VOLT, volt_init,
+			MSM8996_MMSS_FUSE_STEP_VOLT, fuse->init_voltage[i],
 			MSM8996_MMSS_VOLTAGE_FUSE_SIZE);
 		cpr3_info(vreg, "fuse_corner[%d] open-loop=%7d uV\n",
 			i, fuse_volt[i]);
@@ -654,99 +796,6 @@ done:
 }
 
 /**
- * cpr3_msm8998_partial_binning_override() - override the voltage and quotient
- *		settings for low corners based upon the special partial binning
- *		open-loop voltage fuse values
- * @vreg:		Pointer to the CPR3 regulator
- *
- * Some parts are not able to operate at low voltages.  The partial binning
- * open-loop voltage fuse values specify if a given part has such limitations.
- *
- * Return: 0 on success, errno on failure
- */
-static int cpr3_msm8998_partial_binning_override(struct cpr3_regulator *vreg)
-{
-	struct cpr3_msm8996_mmss_fuses *fuse = vreg->platform_fuses;
-	u64 next = MSM8998_CPR_PARTIAL_BINNING_NEXT_CORNER;
-	u64 safe = MSM8998_CPR_PARTIAL_BINNING_SAFE_CORNER;
-	u32 proc_freq;
-	struct cpr3_corner *corner;
-	struct cpr3_corner *safe_corner;
-	int i, j, low, high, safe_fuse_corner, max_fuse_corner;
-
-	if (!cpr3_ctrl_is_msm8998(vreg->thread->ctrl))
-		return 0;
-
-	/* Handle the force highest corner fuse. */
-	if (fuse->force_highest_corner) {
-		cpr3_info(vreg, "overriding CPR parameters for corners 0 to %d with quotients and voltages of corner %d\n",
-			vreg->corner_count - 2, vreg->corner_count - 1);
-		corner = &vreg->corner[vreg->corner_count - 1];
-		for (i = 0; i < vreg->corner_count - 1; i++) {
-			proc_freq = vreg->corner[i].proc_freq;
-			vreg->corner[i] = *corner;
-			vreg->corner[i].proc_freq = proc_freq;
-		}
-
-		/*
-		 * Return since the potential partial binning fuse values are
-		 * superceded by the force highest corner fuse value.
-		 */
-		return 0;
-	}
-
-	/*
-	 * Allow up to the max corner which can be fused with partial
-	 * binning values.
-	 */
-	max_fuse_corner = min(MSM8998_CPR_PARTIAL_BINNING_MAX_FUSE_CORNER,
-				vreg->fuse_corner_count - 2);
-
-	for (i = 0; i <= max_fuse_corner; i++) {
-		/* Determine which higher corners to override with (if any). */
-		if (fuse->init_voltage[i] != next
-		    && fuse->init_voltage[i] != safe)
-			continue;
-
-		for (j = i + 1; j <= max_fuse_corner; j++)
-			if (fuse->init_voltage[j] != next
-			    && fuse->init_voltage[j] != safe)
-				break;
-		safe_fuse_corner = j;
-
-		j = fuse->init_voltage[i] == next ? i + 1 : safe_fuse_corner;
-
-		low = i > 0 ? vreg->fuse_corner_map[i] : 0;
-		high = vreg->fuse_corner_map[i + 1] - 1;
-
-		cpr3_info(vreg, "overriding CPR parameters for corners %d to %d with quotients of corner %d and voltages of corner %d\n",
-			low, high, vreg->fuse_corner_map[j],
-			vreg->fuse_corner_map[safe_fuse_corner]);
-
-		corner = &vreg->corner[vreg->fuse_corner_map[j]];
-		safe_corner
-		       = &vreg->corner[vreg->fuse_corner_map[safe_fuse_corner]];
-
-		for (j = low; j <= high; j++) {
-			proc_freq = vreg->corner[j].proc_freq;
-			vreg->corner[j] = *corner;
-			vreg->corner[j].proc_freq = proc_freq;
-
-			vreg->corner[j].floor_volt
-				= safe_corner->floor_volt;
-			vreg->corner[j].ceiling_volt
-				= safe_corner->ceiling_volt;
-			vreg->corner[j].open_loop_volt
-				= safe_corner->open_loop_volt;
-			vreg->corner[j].abs_ceiling_volt
-				= safe_corner->abs_ceiling_volt;
-		}
-	}
-
-	return 0;
-}
-
-/**
  * cpr3_mmss_print_settings() - print out MMSS CPR configuration settings into
  *		the kernel log for debugging purposes
  * @vreg:		Pointer to the CPR3 regulator
@@ -808,16 +857,18 @@ static int cpr3_mmss_init_aging(struct cpr3_controller *ctrl)
 		return -ENOMEM;
 
 	ctrl->aging_sensor->ro_scale = aging_ro_scale;
+	ctrl->aging_gcnt_scaling_factor
+				= MSM8996_MMSS_AGING_GCNT_SCALING_FACTOR;
 
-	if (cpr3_ctrl_is_msm8998(ctrl)) {
-		ctrl->aging_sensor->sensor_id = MSM8998_MMSS_AGING_SENSOR_ID;
+	if (vreg->thread->ctrl->soc_revision == MSMCOBALT_SOC_ID) {
+		ctrl->aging_sensor->sensor_id = MSMCOBALT_MMSS_AGING_SENSOR_ID;
 		ctrl->aging_sensor->bypass_mask[0]
-					= MSM8998_MMSS_AGING_BYPASS_MASK0;
+					= MSMCOBALT_MMSS_AGING_BYPASS_MASK0;
 		ctrl->aging_sensor->init_quot_diff
 			= cpr3_convert_open_loop_voltage_fuse(0,
-				MSM8998_MMSS_AGING_INIT_QUOT_DIFF_SCALE,
+				MSMCOBALT_MMSS_AGING_INIT_QUOT_DIFF_SCALE,
 				fuse->aging_init_quot_diff,
-				MSM8998_MMSS_AGING_INIT_QUOT_DIFF_SIZE);
+				MSMCOBALT_MMSS_AGING_INIT_QUOT_DIFF_SIZE);
 	} else {
 		ctrl->aging_sensor->sensor_id = MSM8996_MMSS_AGING_SENSOR_ID;
 		ctrl->aging_sensor->bypass_mask[0]
@@ -879,7 +930,7 @@ static int cpr3_mmss_init_thread(struct cpr3_thread *thread)
 		return rc;
 	}
 
-	rc = cpr3_msm8996_mmss_adjust_target_quotients(vreg);
+	rc = cpr3_mmss_adjust_target_quotients(vreg);
 	if (rc) {
 		cpr3_err(vreg, "unable to adjust target quotients, rc=%d\n",
 			rc);
@@ -908,20 +959,13 @@ static int cpr3_mmss_init_thread(struct cpr3_thread *thread)
 		return rc;
 	}
 
-	if (cpr3_ctrl_is_msm8998(thread->ctrl)) {
+	if (thread->ctrl->soc_revision == MSMCOBALT_SOC_ID) {
 		rc = cpr4_parse_core_count_temp_voltage_adj(vreg, false);
 		if (rc) {
 			cpr3_err(vreg, "unable to parse temperature based voltage adjustments, rc=%d\n",
 				 rc);
 			return rc;
 		}
-	}
-
-	rc = cpr3_msm8998_partial_binning_override(vreg);
-	if (rc) {
-		cpr3_err(vreg, "unable to override CPR parameters based on partial binning fuse values, rc=%d\n",
-			rc);
-		return rc;
 	}
 
 	cpr3_mmss_print_settings(vreg);
@@ -946,9 +990,9 @@ static int cpr4_mmss_parse_temp_adj_properties(struct cpr3_controller *ctrl)
 
 	temp_point_count = len / sizeof(u32);
 	if (temp_point_count <= 0
-	    || temp_point_count > MSM8998_MMSS_MAX_TEMP_POINTS) {
+	    || temp_point_count > MSMCOBALT_MMSS_MAX_TEMP_POINTS) {
 		cpr3_err(ctrl, "invalid number of temperature points %d > %d (max)\n",
-			 temp_point_count, MSM8998_MMSS_MAX_TEMP_POINTS);
+			 temp_point_count, MSMCOBALT_MMSS_MAX_TEMP_POINTS);
 		return -EINVAL;
 	}
 
@@ -985,8 +1029,8 @@ static int cpr4_mmss_parse_temp_adj_properties(struct cpr3_controller *ctrl)
 		return -EINVAL;
 	}
 
-	ctrl->temp_sensor_id_start = MSM8998_MMSS_TEMP_SENSOR_ID_START;
-	ctrl->temp_sensor_id_end = MSM8998_MMSS_TEMP_SENSOR_ID_END;
+	ctrl->temp_sensor_id_start = MSMCOBALT_MMSS_TEMP_SENSOR_ID_START;
+	ctrl->temp_sensor_id_end = MSMCOBALT_MMSS_TEMP_SENSOR_ID_END;
 	ctrl->allow_temp_adj = true;
 
 	return rc;
@@ -1011,14 +1055,14 @@ static int cpr3_mmss_init_controller(struct cpr3_controller *ctrl)
 		return rc;
 	}
 
-	if (cpr3_ctrl_is_msm8998(ctrl)) {
+	if (ctrl->soc_revision == MSMCOBALT_SOC_ID) {
 		rc = cpr4_mmss_parse_temp_adj_properties(ctrl);
 		if (rc)
 			return rc;
 	}
 
-	ctrl->sensor_count = cpr3_ctrl_is_msm8998(ctrl)
-				? MSM8998_MMSS_CPR_SENSOR_COUNT
+	ctrl->sensor_count = ctrl->soc_revision == MSMCOBALT_SOC_ID
+				? MSMCOBALT_MMSS_CPR_SENSOR_COUNT
 				: MSM8996_MMSS_CPR_SENSOR_COUNT;
 
 	/*
@@ -1031,7 +1075,7 @@ static int cpr3_mmss_init_controller(struct cpr3_controller *ctrl)
 		return -ENOMEM;
 
 	ctrl->cpr_clock_rate = MSM8996_MMSS_CPR_CLOCK_RATE;
-	ctrl->ctrl_type = cpr3_ctrl_is_msm8998(ctrl)
+	ctrl->ctrl_type = ctrl->soc_revision == MSMCOBALT_SOC_ID
 				? CPR_CTRL_TYPE_CPR4 : CPR_CTRL_TYPE_CPR3;
 
 	if (ctrl->ctrl_type == CPR_CTRL_TYPE_CPR4) {
@@ -1048,8 +1092,8 @@ static int cpr3_mmss_init_controller(struct cpr3_controller *ctrl)
 	ctrl->iface_clk = devm_clk_get(ctrl->dev, "iface_clk");
 	if (IS_ERR(ctrl->iface_clk)) {
 		rc = PTR_ERR(ctrl->iface_clk);
-		if (cpr3_ctrl_is_msm8998(ctrl)) {
-			/* iface_clk is optional for msm8998 */
+		if (ctrl->soc_revision == MSMCOBALT_SOC_ID) {
+			/* iface_clk is optional for msmcobalt */
 			ctrl->iface_clk = NULL;
 		} else if (rc == -EPROBE_DEFER) {
 			return rc;
@@ -1088,7 +1132,7 @@ static int cpr3_mmss_regulator_resume(struct platform_device *pdev)
 }
 
 /* Data corresponds to the SoC revision */
-static const struct of_device_id cpr_regulator_match_table[] = {
+static struct of_device_id cpr_regulator_match_table[] = {
 	{
 		.compatible = "qcom,cpr3-msm8996-v1-mmss-regulator",
 		.data = (void *)(uintptr_t)1,
@@ -1110,16 +1154,8 @@ static const struct of_device_id cpr_regulator_match_table[] = {
 		.data = (void *)(uintptr_t)MSM8996PRO_SOC_ID,
 	},
 	{
-		.compatible = "qcom,cpr4-msm8998-v1-mmss-regulator",
-		.data = (void *)(uintptr_t)MSM8998_V1_SOC_ID,
-	},
-	{
-		.compatible = "qcom,cpr4-msm8998-v2-mmss-regulator",
-		.data = (void *)(uintptr_t)MSM8998_V2_SOC_ID,
-	},
-	{
-		.compatible = "qcom,cpr4-msm8998-mmss-regulator",
-		.data = (void *)(uintptr_t)MSM8998_V2_SOC_ID,
+		.compatible = "qcom,cpr4-msmcobalt-mmss-regulator",
+		.data = (void *)(uintptr_t)MSMCOBALT_SOC_ID,
 	},
 	{}
 };

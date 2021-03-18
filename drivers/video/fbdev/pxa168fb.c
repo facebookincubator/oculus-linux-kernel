@@ -615,7 +615,7 @@ static int pxa168fb_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	clk = devm_clk_get(&pdev->dev, "LCDCLK");
+	clk = clk_get(&pdev->dev, "LCDCLK");
 	if (IS_ERR(clk)) {
 		dev_err(&pdev->dev, "unable to get LCDCLK");
 		return PTR_ERR(clk);
@@ -624,18 +624,21 @@ static int pxa168fb_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
 		dev_err(&pdev->dev, "no IO memory defined\n");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto failed_put_clk;
 	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "no IRQ defined\n");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto failed_put_clk;
 	}
 
 	info = framebuffer_alloc(sizeof(struct pxa168fb_info), &pdev->dev);
 	if (info == NULL) {
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto failed_put_clk;
 	}
 
 	/* Initialize private data */
@@ -773,6 +776,8 @@ failed_free_fbmem:
 			info->screen_base, fbi->fb_start_dma);
 failed_free_info:
 	kfree(info);
+failed_put_clk:
+	clk_put(clk);
 
 	dev_err(&pdev->dev, "frame buffer device init failed with %d\n", ret);
 	return ret;
@@ -808,6 +813,7 @@ static int pxa168fb_remove(struct platform_device *pdev)
 				info->screen_base, info->fix.smem_start);
 
 	clk_disable(fbi->clk);
+	clk_put(fbi->clk);
 
 	framebuffer_release(info);
 
@@ -817,6 +823,7 @@ static int pxa168fb_remove(struct platform_device *pdev)
 static struct platform_driver pxa168fb_driver = {
 	.driver		= {
 		.name	= "pxa168-fb",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= pxa168fb_probe,
 	.remove		= pxa168fb_remove,

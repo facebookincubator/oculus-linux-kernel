@@ -20,8 +20,6 @@
 # error "please don't include this file directly"
 #endif
 
-#include <linux/types.h>
-
 #define TICKET_SHIFT	16
 
 typedef struct {

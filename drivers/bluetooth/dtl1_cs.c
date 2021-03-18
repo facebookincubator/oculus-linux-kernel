@@ -182,9 +182,9 @@ static void dtl1_control(struct dtl1_info *info, struct sk_buff *skb)
 	int i;
 
 	printk(KERN_INFO "Bluetooth: Nokia control data =");
-	for (i = 0; i < skb->len; i++)
+	for (i = 0; i < skb->len; i++) {
 		printk(" %02x", skb->data[i]);
-
+	}
 	printk("\n");
 
 	/* transition to active state */
@@ -357,6 +357,8 @@ static irqreturn_t dtl1_interrupt(int irq, void *dev_inst)
 
 static int dtl1_hci_open(struct hci_dev *hdev)
 {
+	set_bit(HCI_RUNNING, &(hdev->flags));
+
 	return 0;
 }
 
@@ -374,6 +376,9 @@ static int dtl1_hci_flush(struct hci_dev *hdev)
 
 static int dtl1_hci_close(struct hci_dev *hdev)
 {
+	if (!test_and_clear_bit(HCI_RUNNING, &(hdev->flags)))
+		return 0;
+
 	dtl1_hci_flush(hdev);
 
 	return 0;
@@ -401,7 +406,7 @@ static int dtl1_hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 		break;
 	default:
 		return -EILSEQ;
-	}
+	};
 
 	nsh.zero = 0;
 	nsh.len = skb->len;

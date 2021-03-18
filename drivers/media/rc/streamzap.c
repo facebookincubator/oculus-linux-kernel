@@ -152,8 +152,7 @@ static void sz_push_full_pulse(struct streamzap_ir *sz,
 				sz->signal_last.tv_usec);
 			rawir.duration -= sz->sum;
 			rawir.duration = US_TO_NS(rawir.duration);
-			rawir.duration = (rawir.duration > IR_MAX_DURATION) ?
-					 IR_MAX_DURATION : rawir.duration;
+			rawir.duration &= IR_MAX_DURATION;
 		}
 		sz_push(sz, rawir);
 
@@ -166,8 +165,7 @@ static void sz_push_full_pulse(struct streamzap_ir *sz,
 	rawir.duration += SZ_RESOLUTION / 2;
 	sz->sum += rawir.duration;
 	rawir.duration = US_TO_NS(rawir.duration);
-	rawir.duration = (rawir.duration > IR_MAX_DURATION) ?
-			 IR_MAX_DURATION : rawir.duration;
+	rawir.duration &= IR_MAX_DURATION;
 	sz_push(sz, rawir);
 }
 

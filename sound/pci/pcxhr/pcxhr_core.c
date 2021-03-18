@@ -24,7 +24,7 @@
 #include <linux/firmware.h>
 #include <linux/interrupt.h>
 #include <linux/pci.h>
-#include <linux/io.h>
+#include <asm/io.h>
 #include <sound/core.h>
 #include "pcxhr.h"
 #include "pcxhr_mixer.h"
@@ -910,9 +910,8 @@ int pcxhr_set_pipe_state(struct pcxhr_mgr *mgr, int playback_mask,
 	int audio_mask;
 
 #ifdef CONFIG_SND_DEBUG_VERBOSE
-	ktime_t start_time, stop_time, diff_time;
-
-	start_time = ktime_get();
+	struct timeval my_tv1, my_tv2;
+	do_gettimeofday(&my_tv1);
 #endif
 	audio_mask = (playback_mask |
 		      (capture_mask << PCXHR_PIPE_STATE_CAPTURE_OFFSET));
@@ -961,10 +960,9 @@ int pcxhr_set_pipe_state(struct pcxhr_mgr *mgr, int playback_mask,
 			return err;
 	}
 #ifdef CONFIG_SND_DEBUG_VERBOSE
-	stop_time = ktime_get();
-	diff_time = ktime_sub(stop_time, start_time);
+	do_gettimeofday(&my_tv2);
 	dev_dbg(&mgr->pci->dev, "***SET PIPE STATE*** TIME = %ld (err = %x)\n",
-			(long)(ktime_to_ns(diff_time)), err);
+		    (long)(my_tv2.tv_usec - my_tv1.tv_usec), err);
 #endif
 	return 0;
 }
@@ -1341,6 +1339,5 @@ irqreturn_t pcxhr_threaded_irq(int irq, void *dev_id)
 	}
 
 	pcxhr_msg_thread(mgr);
-	mutex_unlock(&mgr->lock);
 	return IRQ_HANDLED;
 }

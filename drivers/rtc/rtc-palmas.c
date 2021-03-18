@@ -275,7 +275,7 @@ static int palmas_rtc_probe(struct platform_device *pdev)
 	struct palmas_rtc *palmas_rtc = NULL;
 	int ret;
 	bool enable_bb_charging = false;
-	bool high_bb_charging = false;
+	bool high_bb_charging;
 
 	if (pdev->dev.of_node) {
 		enable_bb_charging = of_property_read_bool(pdev->dev.of_node,
@@ -399,6 +399,7 @@ static struct platform_driver palmas_rtc_driver = {
 	.probe		= palmas_rtc_probe,
 	.remove		= palmas_rtc_remove,
 	.driver		= {
+		.owner	= THIS_MODULE,
 		.name	= "palmas-rtc",
 		.pm	= &palmas_rtc_pm_ops,
 		.of_match_table = of_match_ptr(of_palmas_rtc_match),

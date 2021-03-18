@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,8 +27,6 @@
 #include <linux/io.h>
 #include <asm-generic/sizes.h>
 #include <linux/msm_rtb.h>
-#include <asm/timex.h>
-#include <soc/qcom/minidump.h>
 
 #define SENTINEL_BYTE_1 0xFF
 #define SENTINEL_BYTE_2 0xAA
@@ -43,9 +41,8 @@
  * 4) 4 bytes index
  * 4) 8 bytes extra data from the caller
  * 5) 8 bytes of timestamp
- * 6) 8 bytes of cyclecount
  *
- * Total = 40 bytes.
+ * Total = 32 bytes.
  */
 struct msm_rtb_layout {
 	unsigned char sentinel[3];
@@ -54,7 +51,6 @@ struct msm_rtb_layout {
 	uint64_t caller;
 	uint64_t data;
 	uint64_t timestamp;
-	uint64_t cycle_count;
 } __attribute__ ((__packed__));
 
 
@@ -69,7 +65,7 @@ struct msm_rtb_state {
 	int step_size;
 };
 
-#if defined(CONFIG_QCOM_RTB_SEPARATE_CPUS)
+#if defined(CONFIG_MSM_RTB_SEPARATE_CPUS)
 DEFINE_PER_CPU(atomic_t, msm_rtb_idx_cpu);
 #else
 static atomic_t msm_rtb_idx;
@@ -136,11 +132,6 @@ static void msm_rtb_write_timestamp(struct msm_rtb_layout *start)
 	start->timestamp = sched_clock();
 }
 
-static void msm_rtb_write_cyclecount(struct msm_rtb_layout *start)
-{
-	start->cycle_count = get_cycles();
-}
-
 static void uncached_logk_pc_idx(enum logk_event_type log_type, uint64_t caller,
 				 uint64_t data, int idx)
 {
@@ -154,7 +145,6 @@ static void uncached_logk_pc_idx(enum logk_event_type log_type, uint64_t caller,
 	msm_rtb_write_idx(idx, start);
 	msm_rtb_write_data(data, start);
 	msm_rtb_write_timestamp(start);
-	msm_rtb_write_cyclecount(start);
 	mb();
 
 	return;
@@ -170,7 +160,7 @@ static void uncached_logk_timestamp(int idx)
 			(uint64_t)upper_32_bits(timestamp), idx);
 }
 
-#if defined(CONFIG_QCOM_RTB_SEPARATE_CPUS)
+#if defined(CONFIG_MSM_RTB_SEPARATE_CPUS)
 static int msm_rtb_get_idx(void)
 {
 	int cpu, i, offset;
@@ -244,8 +234,7 @@ EXPORT_SYMBOL(uncached_logk);
 static int msm_rtb_probe(struct platform_device *pdev)
 {
 	struct msm_rtb_platform_data *d = pdev->dev.platform_data;
-	struct md_region md_entry;
-#if defined(CONFIG_QCOM_RTB_SEPARATE_CPUS)
+#if defined(CONFIG_MSM_RTB_SEPARATE_CPUS)
 	unsigned int cpu;
 #endif
 	int ret;
@@ -296,14 +285,8 @@ static int msm_rtb_probe(struct platform_device *pdev)
 
 	memset(msm_rtb.rtb, 0, msm_rtb.size);
 
-	strlcpy(md_entry.name, "KRTB_BUF", sizeof(md_entry.name));
-	md_entry.virt_addr = (uintptr_t)msm_rtb.rtb;
-	md_entry.phys_addr = msm_rtb.phys;
-	md_entry.size = msm_rtb.size;
-	if (msm_minidump_add_region(&md_entry))
-		pr_info("Failed to add RTB in Minidump\n");
 
-#if defined(CONFIG_QCOM_RTB_SEPARATE_CPUS)
+#if defined(CONFIG_MSM_RTB_SEPARATE_CPUS)
 	for_each_possible_cpu(cpu) {
 		atomic_t *a = &per_cpu(msm_rtb_idx_cpu, cpu);
 		atomic_set(a, cpu);

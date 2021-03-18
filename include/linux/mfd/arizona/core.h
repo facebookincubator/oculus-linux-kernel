@@ -24,9 +24,6 @@ enum arizona_type {
 	WM5102 = 1,
 	WM5110 = 2,
 	WM8997 = 3,
-	WM8280 = 4,
-	WM8998 = 5,
-	WM1814 = 6,
 };
 
 #define ARIZONA_IRQ_GP1                    0
@@ -119,7 +116,6 @@ struct arizona {
 	int num_core_supplies;
 	struct regulator_bulk_data core_supplies[ARIZONA_MAX_CORE_SUPPLIES];
 	struct regulator *dcvdd;
-	bool has_fully_powered_off;
 
 	struct arizona_pdata pdata;
 
@@ -130,7 +126,7 @@ struct arizona {
 	struct regmap_irq_chip_data *aod_irq_chip;
 	struct regmap_irq_chip_data *irq_chip;
 
-	bool hpdet_clamp;
+	bool hpdet_magic;
 	unsigned int hp_ena;
 
 	struct mutex clk_lock;
@@ -145,7 +141,6 @@ struct arizona {
 
 	uint16_t dac_comp_coeff;
 	uint8_t dac_comp_enabled;
-	struct mutex dac_comp_lock;
 };
 
 int arizona_clk32k_enable(struct arizona *arizona);
@@ -156,18 +151,9 @@ int arizona_request_irq(struct arizona *arizona, int irq, char *name,
 void arizona_free_irq(struct arizona *arizona, int irq, void *data);
 int arizona_set_irq_wake(struct arizona *arizona, int irq, int on);
 
-#ifdef CONFIG_MFD_WM5102
 int wm5102_patch(struct arizona *arizona);
-#else
-static inline int wm5102_patch(struct arizona *arizona)
-{
-	return 0;
-}
-#endif
-
 int wm5110_patch(struct arizona *arizona);
 int wm8997_patch(struct arizona *arizona);
-int wm8998_patch(struct arizona *arizona);
 
 extern int arizona_of_get_named_gpio(struct arizona *arizona, const char *prop,
 				     bool mandatory);

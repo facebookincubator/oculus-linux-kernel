@@ -52,7 +52,10 @@ static bool __init processor_physically_present(acpi_handle handle)
 	type = (acpi_type == ACPI_TYPE_DEVICE) ? 1 : 0;
 	cpuid = acpi_get_cpuid(handle, type, acpi_id);
 
-	return !invalid_logical_cpuid(cpuid);
+	if (cpuid == -1)
+		return false;
+
+	return true;
 }
 
 static void acpi_set_pdc_bits(u32 *buf)

@@ -66,31 +66,25 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 	do { \
 		ret = cw1200_apb_write_32(priv, CW1200_APB(reg), (val)); \
 		if (ret < 0) \
-			goto exit; \
-	} while (0)
-#define APB_WRITE2(reg, val) \
-	do { \
-		ret = cw1200_apb_write_32(priv, CW1200_APB(reg), (val)); \
-		if (ret < 0) \
-			goto free_buffer; \
+			goto error; \
 	} while (0)
 #define APB_READ(reg, val) \
 	do { \
 		ret = cw1200_apb_read_32(priv, CW1200_APB(reg), &(val)); \
 		if (ret < 0) \
-			goto free_buffer; \
+			goto error; \
 	} while (0)
 #define REG_WRITE(reg, val) \
 	do { \
 		ret = cw1200_reg_write_32(priv, (reg), (val)); \
 		if (ret < 0) \
-			goto exit; \
+			goto error; \
 	} while (0)
 #define REG_READ(reg, val) \
 	do { \
 		ret = cw1200_reg_read_32(priv, (reg), &(val)); \
 		if (ret < 0) \
-			goto exit; \
+			goto error; \
 	} while (0)
 
 	switch (priv->hw_revision) {
@@ -148,14 +142,14 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 	ret = request_firmware(&firmware, fw_path, priv->pdev);
 	if (ret) {
 		pr_err("Can't load firmware file %s.\n", fw_path);
-		goto exit;
+		goto error;
 	}
 
 	buf = kmalloc(DOWNLOAD_BLOCK_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!buf) {
 		pr_err("Can't allocate firmware load buffer.\n");
 		ret = -ENOMEM;
-		goto firmware_release;
+		goto error;
 	}
 
 	/* Check if the bootloader is ready */
@@ -169,7 +163,7 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 	if (val32 != DOWNLOAD_I_AM_HERE) {
 		pr_err("Bootloader is not ready.\n");
 		ret = -ETIMEDOUT;
-		goto free_buffer;
+		goto error;
 	}
 
 	/* Calculcate number of download blocks */
@@ -177,7 +171,7 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 
 	/* Updating the length in Download Ctrl Area */
 	val32 = firmware->size; /* Explicit cast from size_t to u32 */
-	APB_WRITE2(DOWNLOAD_IMAGE_SIZE_REG, val32);
+	APB_WRITE(DOWNLOAD_IMAGE_SIZE_REG, val32);
 
 	/* Firmware downloading loop */
 	for (block = 0; block < num_blocks; block++) {
@@ -189,7 +183,7 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 		if (val32 != DOWNLOAD_PENDING) {
 			pr_err("Bootloader reported error %d.\n", val32);
 			ret = -EIO;
-			goto free_buffer;
+			goto error;
 		}
 
 		/* loop until put - get <= 24K */
@@ -204,7 +198,7 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 		if ((put - get) > (DOWNLOAD_FIFO_SIZE - DOWNLOAD_BLOCK_SIZE)) {
 			pr_err("Timeout waiting for FIFO.\n");
 			ret = -ETIMEDOUT;
-			goto free_buffer;
+			goto error;
 		}
 
 		/* calculate the block size */
@@ -226,12 +220,12 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 		if (ret < 0) {
 			pr_err("Can't write firmware block @ %d!\n",
 			       put & (DOWNLOAD_FIFO_SIZE - 1));
-			goto free_buffer;
+			goto error;
 		}
 
 		/* update the put register */
 		put += block_size;
-		APB_WRITE2(DOWNLOAD_PUT_REG, put);
+		APB_WRITE(DOWNLOAD_PUT_REG, put);
 	} /* End of firmware download loop */
 
 	/* Wait for the download completion */
@@ -244,21 +238,19 @@ static int cw1200_load_firmware_cw1200(struct cw1200_common *priv)
 	if (val32 != DOWNLOAD_SUCCESS) {
 		pr_err("Wait for download completion failed: 0x%.8X\n", val32);
 		ret = -ETIMEDOUT;
-		goto free_buffer;
+		goto error;
 	} else {
 		pr_info("Firmware download completed.\n");
 		ret = 0;
 	}
 
-free_buffer:
+error:
 	kfree(buf);
-firmware_release:
-	release_firmware(firmware);
-exit:
+	if (firmware)
+		release_firmware(firmware);
 	return ret;
 
 #undef APB_WRITE
-#undef APB_WRITE2
 #undef APB_READ
 #undef REG_WRITE
 #undef REG_READ

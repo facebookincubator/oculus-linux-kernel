@@ -35,13 +35,13 @@ struct q6v5_data {
 	struct clk *snoc_axi_clk;
 	struct clk *mnoc_axi_clk;
 	struct clk *qdss_clk;
+	struct clk *qpic_clk;
 	void __iomem *axi_halt_base; /* Halt base of q6, mss,
 					nc are in same 4K page */
 	void __iomem *axi_halt_q6;
 	void __iomem *axi_halt_mss;
 	void __iomem *axi_halt_nc;
 	void __iomem *restart_reg;
-	void __iomem *cxip_lm_vote_clear;
 	struct regulator *vreg;
 	struct regulator *vreg_cx;
 	struct regulator *vreg_mx;
@@ -63,14 +63,12 @@ struct q6v5_data {
 	bool qdsp6v56_1_10;
 	bool qdsp6v61_1_1;
 	bool qdsp6v62_1_2;
-	bool qdsp6v62_1_5;
 	bool non_elf_image;
 	bool restart_reg_sec;
 	bool override_acc;
 	int override_acc_1;
 	bool ahb_clk_vote;
 	bool mx_spike_wa;
-	bool cx_ipeak_vote;
 };
 
 int pil_q6v5_make_proxy_votes(struct pil_desc *pil);

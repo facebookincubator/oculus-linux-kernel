@@ -15,12 +15,8 @@
 #include <linux/pagemap.h>
 #include <linux/sched.h>
 #include <linux/fsnotify.h>
-#include <linux/kthread.h>
 
 #include "kernfs-internal.h"
-
-static DEFINE_KTHREAD_WORKER(kernfs_notify_worker);
-static struct task_struct *kernfs_notify_thread = NULL;
 
 /*
  * There's one kernfs_open_file for each open file and one kernfs_open_node
@@ -110,7 +106,7 @@ static void *kernfs_seq_start(struct seq_file *sf, loff_t *ppos)
 	const struct kernfs_ops *ops;
 
 	/*
-	 * @of->mutex nests outside active ref and is primarily to ensure that
+	 * @of->mutex nests outside active ref and is just to ensure that
 	 * the ops aren't called concurrently for the same open file.
 	 */
 	mutex_lock(&of->mutex);
@@ -193,16 +189,13 @@ static ssize_t kernfs_file_direct_read(struct kernfs_open_file *of,
 	const struct kernfs_ops *ops;
 	char *buf;
 
-	buf = of->prealloc_buf;
-	if (!buf)
-		buf = kmalloc(len, GFP_KERNEL);
+	buf = kmalloc(len, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
 	/*
-	 * @of->mutex nests outside active ref and is used both to ensure that
-	 * the ops aren't called concurrently for the same open file, and
-	 * to provide exclusive access to ->prealloc_buf (when that exists).
+	 * @of->mutex nests outside active ref and is just to ensure that
+	 * the ops aren't called concurrently for the same open file.
 	 */
 	mutex_lock(&of->mutex);
 	if (!kernfs_get_active(of->kn)) {
@@ -211,29 +204,27 @@ static ssize_t kernfs_file_direct_read(struct kernfs_open_file *of,
 		goto out_free;
 	}
 
-	of->event = atomic_read(&of->kn->attr.open->event);
 	ops = kernfs_ops(of->kn);
 	if (ops->read)
 		len = ops->read(of, buf, len, *ppos);
 	else
 		len = -EINVAL;
 
+	kernfs_put_active(of->kn);
+	mutex_unlock(&of->mutex);
+
 	if (len < 0)
-		goto out_unlock;
+		goto out_free;
 
 	if (copy_to_user(user_buf, buf, len)) {
 		len = -EFAULT;
-		goto out_unlock;
+		goto out_free;
 	}
 
 	*ppos += len;
 
- out_unlock:
-	kernfs_put_active(of->kn);
-	mutex_unlock(&of->mutex);
  out_free:
-	if (buf != of->prealloc_buf)
-		kfree(buf);
+	kfree(buf);
 	return len;
 }
 
@@ -287,16 +278,19 @@ static ssize_t kernfs_fop_write(struct file *file, const char __user *user_buf,
 		len = min_t(size_t, count, PAGE_SIZE);
 	}
 
-	buf = of->prealloc_buf;
-	if (!buf)
-		buf = kmalloc(len + 1, GFP_KERNEL);
+	buf = kmalloc(len + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
+	if (copy_from_user(buf, user_buf, len)) {
+		len = -EFAULT;
+		goto out_free;
+	}
+	buf[len] = '\0';	/* guarantee string termination */
+
 	/*
-	 * @of->mutex nests outside active ref and is used both to ensure that
-	 * the ops aren't called concurrently for the same open file, and
-	 * to provide exclusive access to ->prealloc_buf (when that exists).
+	 * @of->mutex nests outside active ref and is just to ensure that
+	 * the ops aren't called concurrently for the same open file.
 	 */
 	mutex_lock(&of->mutex);
 	if (!kernfs_get_active(of->kn)) {
@@ -305,27 +299,19 @@ static ssize_t kernfs_fop_write(struct file *file, const char __user *user_buf,
 		goto out_free;
 	}
 
-	if (copy_from_user(buf, user_buf, len)) {
-		len = -EFAULT;
-		goto out_unlock;
-	}
-	buf[len] = '\0';	/* guarantee string termination */
-
 	ops = kernfs_ops(of->kn);
 	if (ops->write)
 		len = ops->write(of, buf, len, *ppos);
 	else
 		len = -EINVAL;
 
-	if (len > 0)
-		*ppos += len;
-
-out_unlock:
 	kernfs_put_active(of->kn);
 	mutex_unlock(&of->mutex);
+
+	if (len > 0)
+		*ppos += len;
 out_free:
-	if (buf != of->prealloc_buf)
-		kfree(buf);
+	kfree(buf);
 	return len;
 }
 
@@ -453,6 +439,27 @@ static struct mempolicy *kernfs_vma_get_policy(struct vm_area_struct *vma,
 	return pol;
 }
 
+static int kernfs_vma_migrate(struct vm_area_struct *vma,
+			      const nodemask_t *from, const nodemask_t *to,
+			      unsigned long flags)
+{
+	struct file *file = vma->vm_file;
+	struct kernfs_open_file *of = kernfs_of(file);
+	int ret;
+
+	if (!of->vm_ops)
+		return 0;
+
+	if (!kernfs_get_active(of->kn))
+		return 0;
+
+	ret = 0;
+	if (of->vm_ops->migrate)
+		ret = of->vm_ops->migrate(vma, from, to, flags);
+
+	kernfs_put_active(of->kn);
+	return ret;
+}
 #endif
 
 static const struct vm_operations_struct kernfs_vm_ops = {
@@ -463,6 +470,7 @@ static const struct vm_operations_struct kernfs_vm_ops = {
 #ifdef CONFIG_NUMA
 	.set_policy	= kernfs_vma_set_policy,
 	.get_policy	= kernfs_vma_get_policy,
+	.migrate	= kernfs_vma_migrate,
 #endif
 };
 
@@ -677,22 +685,6 @@ static int kernfs_fop_open(struct inode *inode, struct file *file)
 	 */
 	of->atomic_write_len = ops->atomic_write_len;
 
-	error = -EINVAL;
-	/*
-	 * ->seq_show is incompatible with ->prealloc,
-	 * as seq_read does its own allocation.
-	 * ->read must be used instead.
-	 */
-	if (ops->prealloc && ops->seq_show)
-		goto err_free;
-	if (ops->prealloc) {
-		int len = of->atomic_write_len ?: PAGE_SIZE;
-		of->prealloc_buf = kmalloc(len + 1, GFP_KERNEL);
-		error = -ENOMEM;
-		if (!of->prealloc_buf)
-			goto err_free;
-	}
-
 	/*
 	 * Always instantiate seq_file even if read access doesn't use
 	 * seq_file or is not requested.  This unifies private data access
@@ -723,7 +715,6 @@ static int kernfs_fop_open(struct inode *inode, struct file *file)
 err_close:
 	seq_release(inode, file);
 err_free:
-	kfree(of->prealloc_buf);
 	kfree(of);
 err_out:
 	kernfs_put_active(kn);
@@ -737,7 +728,6 @@ static int kernfs_fop_release(struct inode *inode, struct file *filp)
 
 	kernfs_put_open_node(kn, of);
 	seq_release(inode, filp);
-	kfree(of->prealloc_buf);
 	kfree(of);
 
 	return 0;
@@ -789,6 +779,7 @@ static unsigned int kernfs_fop_poll(struct file *filp, poll_table *wait)
 	struct kernfs_node *kn = filp->f_path.dentry->d_fsdata;
 	struct kernfs_open_node *on = kn->attr.open;
 
+	/* need parent for the kobj, grab both */
 	if (!kernfs_get_active(kn))
 		goto trigger;
 
@@ -805,9 +796,36 @@ static unsigned int kernfs_fop_poll(struct file *filp, poll_table *wait)
 	return DEFAULT_POLLMASK|POLLERR|POLLPRI;
 }
 
-static void __notify_kernfs_node(struct kernfs_node *kn)
+static void kernfs_notify_workfn(struct work_struct *work)
 {
+	struct kernfs_node *kn;
+	struct kernfs_open_node *on;
 	struct kernfs_super_info *info;
+repeat:
+	/* pop one off the notify_list */
+	spin_lock_irq(&kernfs_notify_lock);
+	kn = kernfs_notify_list;
+	if (kn == KERNFS_NOTIFY_EOL) {
+		spin_unlock_irq(&kernfs_notify_lock);
+		return;
+	}
+	kernfs_notify_list = kn->attr.notify_next;
+	kn->attr.notify_next = NULL;
+	spin_unlock_irq(&kernfs_notify_lock);
+
+	/* kick poll */
+	spin_lock_irq(&kernfs_open_node_lock);
+
+	on = kn->attr.open;
+	if (on) {
+		atomic_inc(&on->event);
+		wake_up_interruptible(&on->poll);
+	}
+
+	spin_unlock_irq(&kernfs_open_node_lock);
+
+	/* kick fsnotify */
+	mutex_lock(&kernfs_mutex);
 
 	list_for_each_entry(info, &kernfs_root(kn)->supers, node) {
 		struct inode *inode;
@@ -827,28 +845,8 @@ static void __notify_kernfs_node(struct kernfs_node *kn)
 
 		iput(inode);
 	}
-}
 
-static void kernfs_notify_workfn(struct kthread_work *work)
-{
-	struct kernfs_node *kn;
-repeat:
-	/* pop one off the notify_list */
-	spin_lock_irq(&kernfs_notify_lock);
-	kn = kernfs_notify_list;
-	if (kn == KERNFS_NOTIFY_EOL) {
-		spin_unlock_irq(&kernfs_notify_lock);
-		return;
-	}
-	kernfs_notify_list = kn->attr.notify_next;
-	kn->attr.notify_next = NULL;
-	spin_unlock_irq(&kernfs_notify_lock);
-
-	/* kick fsnotify */
-	mutex_lock(&kernfs_mutex);
-	__notify_kernfs_node(kn);
 	mutex_unlock(&kernfs_mutex);
-
 	kernfs_put(kn);
 	goto repeat;
 }
@@ -862,44 +860,20 @@ repeat:
  */
 void kernfs_notify(struct kernfs_node *kn)
 {
-	static DEFINE_KTHREAD_WORK(kernfs_notify_work, kernfs_notify_workfn);
+	static DECLARE_WORK(kernfs_notify_work, kernfs_notify_workfn);
 	unsigned long flags;
-	struct kernfs_open_node *on;
 
 	if (WARN_ON(kernfs_type(kn) != KERNFS_FILE))
 		return;
 
-	/* kick poll immediately */
-	spin_lock_irqsave(&kernfs_open_node_lock, flags);
-	on = kn->attr.open;
-	if (on) {
-		atomic_inc(&on->event);
-		wake_up_interruptible(&on->poll);
-	}
-	spin_unlock_irqrestore(&kernfs_open_node_lock, flags);
-
-	if (!in_interrupt() && mutex_trylock(&kernfs_mutex)) {
-		/*
-		 * notify the kernfs node directly if not in an interrupt
-		 * and the lock is successfully grabbed
-		 */
+	spin_lock_irqsave(&kernfs_notify_lock, flags);
+	if (!kn->attr.notify_next) {
 		kernfs_get(kn);
-		__notify_kernfs_node(kn);
-		mutex_unlock(&kernfs_mutex);
-		kernfs_put(kn);
-	} else {
-		/* schedule work to kick fsnotify */
-		BUG_ON(kernfs_notify_thread == NULL);
-		spin_lock_irqsave(&kernfs_notify_lock, flags);
-		if (!kn->attr.notify_next) {
-			kernfs_get(kn);
-			kn->attr.notify_next = kernfs_notify_list;
-			kernfs_notify_list = kn;
-			queue_kthread_work(&kernfs_notify_worker,
-				&kernfs_notify_work);
-		}
-		spin_unlock_irqrestore(&kernfs_notify_lock, flags);
+		kn->attr.notify_next = kernfs_notify_list;
+		kernfs_notify_list = kn;
+		schedule_work(&kernfs_notify_work);
 	}
+	spin_unlock_irqrestore(&kernfs_notify_lock, flags);
 }
 EXPORT_SYMBOL_GPL(kernfs_notify);
 
@@ -922,6 +896,7 @@ const struct file_operations kernfs_file_fops = {
  * @ops: kernfs operations for the file
  * @priv: private data for the file
  * @ns: optional namespace tag of the file
+ * @name_is_static: don't copy file name
  * @key: lockdep key for the file's active_ref, %NULL to disable lockdep
  *
  * Returns the created node on success, ERR_PTR() value on error.
@@ -931,6 +906,7 @@ struct kernfs_node *__kernfs_create_file(struct kernfs_node *parent,
 					 umode_t mode, loff_t size,
 					 const struct kernfs_ops *ops,
 					 void *priv, const void *ns,
+					 bool name_is_static,
 					 struct lock_class_key *key)
 {
 	struct kernfs_node *kn;
@@ -938,6 +914,8 @@ struct kernfs_node *__kernfs_create_file(struct kernfs_node *parent,
 	int rc;
 
 	flags = KERNFS_FILE;
+	if (name_is_static)
+		flags |= KERNFS_STATIC_NAME;
 
 	kn = kernfs_new_node(parent, name, (mode & S_IALLUGO) | S_IFREG, flags);
 	if (!kn)
@@ -972,38 +950,3 @@ struct kernfs_node *__kernfs_create_file(struct kernfs_node *parent,
 	}
 	return kn;
 }
-
-#ifdef CONFIG_KERNFS_NOTIFIER_CPU_AFFINITY_MASK
-char *kernfs_notifier_cpu_mask = CONFIG_KERNFS_NOTIFIER_CPU_AFFINITY_MASK;
-#else
-char *kernfs_notifier_cpu_mask = NULL;
-#endif
-
-static int __init kernfs_init_notify_kthread(void)
-{
-	int rc = 0;
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
-	cpumask_t cpumask;
-
-	kernfs_notify_thread = kthread_run(kthread_worker_fn,
-		&kernfs_notify_worker, "kernfs_notifier");
-	if (IS_ERR(kernfs_notify_thread)) {
-		pr_err("failed to start kernfs notify thread\n");
-		rc = PTR_ERR(kernfs_notify_thread);
-		kernfs_notify_thread = NULL;
-		goto exit;
-	}
-
-	sched_setscheduler(kernfs_notify_thread, SCHED_FIFO, &param);
-
-	if (!kernfs_notifier_cpu_mask)
-		goto exit;
-
-	cpumask_clear(&cpumask);
-	if (!cpumask_parse(kernfs_notifier_cpu_mask, &cpumask))
-		set_cpus_allowed_ptr(kernfs_notify_thread, &cpumask);
-
-exit:
-	return rc;
-}
-early_initcall(kernfs_init_notify_kthread);

@@ -419,7 +419,16 @@ static int twl4030_init_sih_modules(unsigned line)
 
 static inline void activate_irq(int irq)
 {
-	irq_clear_status_flags(irq, IRQ_NOREQUEST | IRQ_NOPROBE);
+#ifdef CONFIG_ARM
+	/*
+	 * ARM requires an extra step to clear IRQ_NOREQUEST, which it
+	 * sets on behalf of every irq_chip.  Also sets IRQ_NOPROBE.
+	 */
+	set_irq_flags(irq, IRQF_VALID);
+#else
+	/* same effect on other architectures */
+	irq_set_noprobe(irq);
+#endif
 }
 
 /*----------------------------------------------------------------------*/
@@ -665,7 +674,7 @@ int twl4030_sih_setup(struct device *dev, int module, int irq_base)
 	irq_set_handler_data(irq, agent);
 	agent->irq_name = kasprintf(GFP_KERNEL, "twl4030_%s", sih->name);
 	status = request_threaded_irq(irq, NULL, handle_twl4030_sih,
-				      IRQF_EARLY_RESUME | IRQF_ONESHOT,
+				      IRQF_EARLY_RESUME,
 				      agent->irq_name ?: sih->name, NULL);
 
 	dev_info(dev, "%s (irq %d) chaining IRQs %d..%d\n", sih->name,

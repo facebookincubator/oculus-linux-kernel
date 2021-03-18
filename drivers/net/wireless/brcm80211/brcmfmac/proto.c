@@ -20,9 +20,9 @@
 #include <linux/netdevice.h>
 
 #include <brcmu_wifi.h>
-#include "core.h"
-#include "bus.h"
-#include "debug.h"
+#include "dhd.h"
+#include "dhd_bus.h"
+#include "dhd_dbg.h"
 #include "proto.h"
 #include "bcdc.h"
 #include "msgbuf.h"

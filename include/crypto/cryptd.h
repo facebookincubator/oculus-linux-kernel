@@ -14,7 +14,6 @@
 
 #include <linux/crypto.h>
 #include <linux/kernel.h>
-#include <crypto/aead.h>
 #include <crypto/hash.h>
 
 struct cryptd_ablkcipher {

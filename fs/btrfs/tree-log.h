@@ -29,7 +29,6 @@ struct btrfs_log_ctx {
 	int log_ret;
 	int log_transid;
 	int io_err;
-	bool log_new_dentries;
 	struct list_head list;
 };
 
@@ -38,7 +37,6 @@ static inline void btrfs_init_log_ctx(struct btrfs_log_ctx *ctx)
 	ctx->log_ret = 0;
 	ctx->log_transid = 0;
 	ctx->io_err = 0;
-	ctx->log_new_dentries = false;
 	INIT_LIST_HEAD(&ctx->list);
 }
 

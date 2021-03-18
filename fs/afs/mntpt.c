@@ -106,7 +106,14 @@ static struct dentry *afs_mntpt_lookup(struct inode *dir,
 				       struct dentry *dentry,
 				       unsigned int flags)
 {
-	_enter("%p,%p{%pd2}", dir, dentry, dentry);
+	_enter("%p,%p{%p{%s},%s}",
+	       dir,
+	       dentry,
+	       dentry->d_parent,
+	       dentry->d_parent ?
+	       dentry->d_parent->d_name.name : (const unsigned char *) "",
+	       dentry->d_name.name);
+
 	return ERR_PTR(-EREMOTE);
 }
 
@@ -115,7 +122,14 @@ static struct dentry *afs_mntpt_lookup(struct inode *dir,
  */
 static int afs_mntpt_open(struct inode *inode, struct file *file)
 {
-	_enter("%p,%p{%pD2}", inode, file, file);
+	_enter("%p,%p{%p{%s},%s}",
+	       inode, file,
+	       file->f_path.dentry->d_parent,
+	       file->f_path.dentry->d_parent ?
+	       file->f_path.dentry->d_parent->d_name.name :
+	       (const unsigned char *) "",
+	       file->f_path.dentry->d_name.name);
+
 	return -EREMOTE;
 }
 
@@ -132,9 +146,9 @@ static struct vfsmount *afs_mntpt_do_automount(struct dentry *mntpt)
 	bool rwpath = false;
 	int ret;
 
-	_enter("{%pd}", mntpt);
+	_enter("{%s}", mntpt->d_name.name);
 
-	BUG_ON(!d_inode(mntpt));
+	BUG_ON(!mntpt->d_inode);
 
 	ret = -ENOMEM;
 	devname = (char *) get_zeroed_page(GFP_KERNEL);
@@ -145,7 +159,7 @@ static struct vfsmount *afs_mntpt_do_automount(struct dentry *mntpt)
 	if (!options)
 		goto error_no_options;
 
-	vnode = AFS_FS_I(d_inode(mntpt));
+	vnode = AFS_FS_I(mntpt->d_inode);
 	if (test_bit(AFS_VNODE_PSEUDODIR, &vnode->flags)) {
 		/* if the directory is a pseudo directory, use the d_name */
 		static const char afs_root_cell[] = ":root.cell.";
@@ -169,14 +183,14 @@ static struct vfsmount *afs_mntpt_do_automount(struct dentry *mntpt)
 		}
 	} else {
 		/* read the contents of the AFS special symlink */
-		loff_t size = i_size_read(d_inode(mntpt));
+		loff_t size = i_size_read(mntpt->d_inode);
 		char *buf;
 
 		ret = -EINVAL;
 		if (size > PAGE_SIZE - 1)
 			goto error_no_page;
 
-		page = read_mapping_page(d_inode(mntpt)->i_mapping, 0, NULL);
+		page = read_mapping_page(mntpt->d_inode->i_mapping, 0, NULL);
 		if (IS_ERR(page)) {
 			ret = PTR_ERR(page);
 			goto error_no_page;
@@ -228,7 +242,7 @@ struct vfsmount *afs_d_automount(struct path *path)
 {
 	struct vfsmount *newmnt;
 
-	_enter("{%pd}", path->dentry);
+	_enter("{%s}", path->dentry->d_name.name);
 
 	newmnt = afs_mntpt_do_automount(path->dentry);
 	if (IS_ERR(newmnt))

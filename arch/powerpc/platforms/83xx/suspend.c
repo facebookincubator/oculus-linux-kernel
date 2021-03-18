@@ -435,6 +435,7 @@ static const struct of_device_id pmc_match[] = {
 static struct platform_driver pmc_driver = {
 	.driver = {
 		.name = "mpc83xx-pmc",
+		.owner = THIS_MODULE,
 		.of_match_table = pmc_match,
 	},
 	.probe = pmc_probe,
@@ -445,4 +446,5 @@ static int pmc_init(void)
 {
 	return platform_driver_register(&pmc_driver);
 }
-device_initcall(pmc_init);
+
+module_init(pmc_init);

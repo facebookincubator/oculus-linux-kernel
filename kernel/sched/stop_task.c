@@ -31,6 +31,14 @@ dec_hmp_sched_stats_stop(struct rq *rq, struct task_struct *p)
 	dec_cumulative_runnable_avg(&rq->hmp_stats, p);
 }
 
+#ifdef CONFIG_SCHED_QHMP
+static void
+fixup_hmp_sched_stats_stop(struct rq *rq, struct task_struct *p,
+			   u32 new_task_load)
+{
+	fixup_cumulative_runnable_avg(&rq->hmp_stats, p, new_task_load);
+}
+#else
 static void
 fixup_hmp_sched_stats_stop(struct rq *rq, struct task_struct *p,
 			   u32 new_task_load, u32 new_pred_demand)
@@ -41,6 +49,7 @@ fixup_hmp_sched_stats_stop(struct rq *rq, struct task_struct *p,
 	fixup_cumulative_runnable_avg(&rq->hmp_stats, p, task_load_delta,
 				      pred_demand_delta);
 }
+#endif
 
 #else	/* CONFIG_SCHED_HMP */
 
@@ -160,7 +169,6 @@ const struct sched_class stop_sched_class = {
 
 #ifdef CONFIG_SMP
 	.select_task_rq		= select_task_rq_stop,
-	.set_cpus_allowed	= set_cpus_allowed_common,
 #endif
 
 	.set_curr_task          = set_curr_task_stop,

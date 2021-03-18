@@ -22,12 +22,10 @@
 
 __invalid_entry:
 	v7m_exception_entry
-#ifdef CONFIG_PRINTK
 	adr	r0, strerr
 	mrs	r1, ipsr
 	mov	r2, lr
 	bl	printk
-#endif
 	mov	r0, sp
 	bl	show_regs
 1:	b	1b
@@ -117,14 +115,9 @@ ENTRY(__switch_to)
 ENDPROC(__switch_to)
 
 	.data
-#if CONFIG_CPU_V7M_NUM_IRQ <= 112
-	.align	9
-#else
-	.align	10
-#endif
-
+	.align	8
 /*
- * Vector table (Natural alignment need to be ensured)
+ * Vector table (64 words => 256 bytes natural alignment)
  */
 ENTRY(vector_table)
 	.long	0			@ 0 - Reset stack pointer
@@ -143,6 +136,6 @@ ENTRY(vector_table)
 	.long	__invalid_entry		@ 13 - Reserved
 	.long	__pendsv_entry		@ 14 - PendSV
 	.long	__invalid_entry		@ 15 - SysTick
-	.rept	CONFIG_CPU_V7M_NUM_IRQ
-	.long	__irq_entry		@ External Interrupts
+	.rept	64 - 16
+	.long	__irq_entry		@ 16..64 - External Interrupts
 	.endr

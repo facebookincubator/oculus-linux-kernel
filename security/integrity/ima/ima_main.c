@@ -106,10 +106,9 @@ static void ima_rdwr_violation_check(struct file *file,
 	*pathname = ima_d_path(&file->f_path, pathbuf);
 
 	if (send_tomtou)
-		ima_add_violation(file, *pathname, iint,
-				  "invalid_pcr", "ToMToU");
+		ima_add_violation(file, *pathname, "invalid_pcr", "ToMToU");
 	if (send_writers)
-		ima_add_violation(file, *pathname, iint,
+		ima_add_violation(file, *pathname,
 				  "invalid_pcr", "open_writers");
 }
 
@@ -144,7 +143,7 @@ void ima_file_free(struct file *file)
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint;
 
-	if (!ima_policy_flag || !S_ISREG(inode->i_mode))
+	if (!iint_initialized || !S_ISREG(inode->i_mode))
 		return;
 
 	iint = integrity_iint_find(inode);
@@ -247,8 +246,7 @@ out_digsig:
 		rc = -EACCES;
 	kfree(xattr_value);
 out_free:
-	if (pathbuf)
-		__putname(pathbuf);
+	kfree(pathbuf);
 out:
 	mutex_unlock(&inode->i_mutex);
 	if ((rc && must_appraise) && (ima_appraise & IMA_APPRAISE_ENFORCE))

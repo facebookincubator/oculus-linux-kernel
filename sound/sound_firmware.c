@@ -12,6 +12,7 @@ static int do_mod_firmware_load(const char *fn, char **fp)
 	struct file* filp;
 	long l;
 	char *dp;
+	loff_t pos;
 
 	filp = filp_open(fn, 0, 0);
 	if (IS_ERR(filp))
@@ -33,7 +34,8 @@ static int do_mod_firmware_load(const char *fn, char **fp)
 		fput(filp);
 		return 0;
 	}
-	if (kernel_read(filp, 0, dp, l) != l)
+	pos = 0;
+	if (vfs_read(filp, dp, l, &pos) != l)
 	{
 		printk(KERN_INFO "Failed to read '%s'.\n", fn);
 		vfree(dp);

@@ -434,7 +434,7 @@ out:
 	return ret;
 }
 
-const struct btrfs_compress_op btrfs_lzo_compress = {
+struct btrfs_compress_op btrfs_lzo_compress = {
 	.alloc_workspace	= lzo_alloc_workspace,
 	.free_workspace		= lzo_free_workspace,
 	.compress_pages		= lzo_compress_pages,

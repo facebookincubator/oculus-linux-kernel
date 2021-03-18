@@ -178,7 +178,7 @@ continue_block:
 	## 2a) PROCESS FULL BLOCKS:
 	################################################################
 full_block:
-	movl    $128,%eax
+	movq    $128,%rax
 	lea     128*8*2(block_0), block_1
 	lea     128*8*3(block_0), block_2
 	add     $128*8*1, block_0
@@ -330,7 +330,7 @@ ENDPROC(crc_pcl)
 	## PCLMULQDQ tables
 	## Table is 128 entries x 2 words (8 bytes) each
 	################################################################
-.section	.rodata, "a", %progbits
+.section	.rotata, "a", %progbits
 .align 8
 K_table:
 	.long 0x493c7d27, 0x00000001

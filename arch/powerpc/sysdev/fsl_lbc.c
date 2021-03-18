@@ -407,4 +407,4 @@ static int __init fsl_lbc_init(void)
 {
 	return platform_driver_register(&fsl_lbc_ctrl_driver);
 }
-subsys_initcall(fsl_lbc_init);
+module_init(fsl_lbc_init);

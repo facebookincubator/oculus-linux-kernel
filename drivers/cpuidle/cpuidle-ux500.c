@@ -19,6 +19,7 @@
 #include <linux/platform_device.h>
 
 #include <asm/cpuidle.h>
+#include <asm/proc-fns.h>
 
 static atomic_t master = ATOMIC_INIT(0);
 static DEFINE_SPINLOCK(master_lock);
@@ -100,7 +101,8 @@ static struct cpuidle_driver ux500_idle_driver = {
 			.enter		  = ux500_enter_idle,
 			.exit_latency	  = 70,
 			.target_residency = 260,
-			.flags		  = CPUIDLE_FLAG_TIMER_STOP,
+			.flags		  = CPUIDLE_FLAG_TIME_VALID |
+			                    CPUIDLE_FLAG_TIMER_STOP,
 			.name		  = "ApIdle",
 			.desc		  = "ARM Retention",
 		},
@@ -121,6 +123,7 @@ static int dbx500_cpuidle_probe(struct platform_device *pdev)
 static struct platform_driver dbx500_cpuidle_plat_driver = {
 	.driver = {
 		.name = "cpuidle-dbx500",
+		.owner = THIS_MODULE,
 	},
 	.probe = dbx500_cpuidle_probe,
 };

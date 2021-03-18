@@ -25,11 +25,7 @@
 #include <asm/cacheflush.h>
 #include <asm/cpu_ops.h>
 #include <asm/cputype.h>
-#include <asm/io.h>
 #include <asm/smp_plat.h>
-
-extern void secondary_holding_pen(void);
-volatile unsigned long secondary_holding_pen_release = INVALID_HWID;
 
 static phys_addr_t cpu_release_addr[NR_CPUS];
 
@@ -49,14 +45,8 @@ static void write_pen_release(u64 val)
 }
 
 
-static int smp_spin_table_cpu_init(unsigned int cpu)
+static int smp_spin_table_cpu_init(struct device_node *dn, unsigned int cpu)
 {
-	struct device_node *dn;
-
-	dn = of_get_cpu_node(cpu, NULL);
-	if (!dn)
-		return -ENODEV;
-
 	/*
 	 * Determine the address from which the CPU is polling.
 	 */
@@ -125,9 +115,11 @@ static int smp_spin_table_cpu_boot(unsigned int cpu)
 	return 0;
 }
 
-const struct cpu_operations smp_spin_table_ops = {
+static struct cpu_operations smp_spin_table_ops = {
 	.name		= "spin-table",
 	.cpu_init	= smp_spin_table_cpu_init,
 	.cpu_prepare	= smp_spin_table_cpu_prepare,
 	.cpu_boot	= smp_spin_table_cpu_boot,
 };
+CPU_METHOD_OF_DECLARE(spin_table,
+		"spin-table", &smp_spin_table_ops);

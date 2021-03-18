@@ -12,4 +12,3 @@ obj-$(CONFIG_SB1250_MAC) += sb1250-mac.o
 obj-$(CONFIG_TIGON3) += tg3.o
 obj-$(CONFIG_BGMAC) += bgmac.o
 obj-$(CONFIG_SYSTEMPORT) += bcmsysport.o
-obj-$(CONFIG_BNXT) += bnxt/

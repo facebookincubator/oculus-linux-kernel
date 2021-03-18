@@ -11,6 +11,7 @@
 #include <linux/namei.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/kmemleak.h>
 #include "internal.h"
 
 static const struct dentry_operations proc_sys_dentry_operations;
@@ -18,28 +19,6 @@ static const struct file_operations proc_sys_file_operations;
 static const struct inode_operations proc_sys_inode_operations;
 static const struct file_operations proc_sys_dir_file_operations;
 static const struct inode_operations proc_sys_dir_operations;
-
-/* Support for permanently empty directories */
-
-struct ctl_table sysctl_mount_point[] = {
-	{ }
-};
-
-static bool is_empty_dir(struct ctl_table_header *head)
-{
-	return head->ctl_table[0].child == sysctl_mount_point;
-}
-
-static void set_empty_dir(struct ctl_dir *dir)
-{
-	dir->header.ctl_table[0].child = sysctl_mount_point;
-}
-
-static void clear_empty_dir(struct ctl_dir *dir)
-
-{
-	dir->header.ctl_table[0].child = NULL;
-}
 
 void proc_sys_poll_notify(struct ctl_table_poll *poll)
 {
@@ -209,17 +188,6 @@ static int insert_header(struct ctl_dir *dir, struct ctl_table_header *header)
 	struct ctl_table *entry;
 	int err;
 
-	/* Is this a permanently empty directory? */
-	if (is_empty_dir(&dir->header))
-		return -EROFS;
-
-	/* Am I creating a permanently empty directory? */
-	if (header->ctl_table == sysctl_mount_point) {
-		if (!RB_EMPTY_ROOT(&dir->root))
-			return -EINVAL;
-		set_empty_dir(dir);
-	}
-
 	dir->header.nreg++;
 	header->parent = dir;
 	err = insert_links(header);
@@ -235,8 +203,6 @@ fail:
 	erase_header(header);
 	put_links(header);
 fail_links:
-	if (header->ctl_table == sysctl_mount_point)
-		clear_empty_dir(dir);
 	header->parent = NULL;
 	drop_sysctl_table(&dir->header);
 	return err;
@@ -454,8 +420,6 @@ static struct inode *proc_sys_make_inode(struct super_block *sb,
 		inode->i_mode |= S_IFDIR;
 		inode->i_op = &proc_sys_dir_operations;
 		inode->i_fop = &proc_sys_dir_file_operations;
-		if (is_empty_dir(head))
-			make_empty_dir_inode(inode);
 	}
 out:
 	return inode;
@@ -641,7 +605,7 @@ static bool proc_sys_fill_cache(struct file *file,
 			return false;
 		}
 	}
-	inode = d_inode(child);
+	inode = child->d_inode;
 	ino  = inode->i_ino;
 	type = inode->i_mode >> 12;
 	dput(child);
@@ -747,7 +711,7 @@ static int proc_sys_permission(struct inode *inode, int mask)
 
 static int proc_sys_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	int error;
 
 	if (attr->ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
@@ -764,7 +728,7 @@ static int proc_sys_setattr(struct dentry *dentry, struct iattr *attr)
 
 static int proc_sys_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	struct ctl_table_header *head = grab_header(inode);
 	struct ctl_table *table = PROC_I(inode)->sysctl_entry;
 
@@ -810,12 +774,12 @@ static int proc_sys_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	if (flags & LOOKUP_RCU)
 		return -ECHILD;
-	return !PROC_I(d_inode(dentry))->sysctl->unregistering;
+	return !PROC_I(dentry->d_inode)->sysctl->unregistering;
 }
 
 static int proc_sys_delete(const struct dentry *dentry)
 {
-	return !!PROC_I(d_inode(dentry))->sysctl->unregistering;
+	return !!PROC_I(dentry->d_inode)->sysctl->unregistering;
 }
 
 static int sysctl_is_seen(struct ctl_table_header *p)
@@ -842,7 +806,7 @@ static int proc_sys_compare(const struct dentry *parent, const struct dentry *de
 	/* Although proc doesn't have negative dentries, rcu-walk means
 	 * that inode here can be NULL */
 	/* AV: can it, indeed? */
-	inode = d_inode_rcu(dentry);
+	inode = ACCESS_ONCE(dentry->d_inode);
 	if (!inode)
 		return 1;
 	if (name->len != len)
@@ -948,7 +912,7 @@ static struct ctl_dir *get_subdir(struct ctl_dir *dir,
 found:
 	subdir->header.nreg++;
 failed:
-	if (IS_ERR(subdir)) {
+	if (unlikely(IS_ERR(subdir))) {
 		pr_err("sysctl could not get directory: ");
 		sysctl_print_dir(dir);
 		pr_cont("/%*.*s %ld\n",
@@ -1227,6 +1191,8 @@ struct ctl_table_header *__register_sysctl_table(
 			 sizeof(struct ctl_node)*nr_entries, GFP_KERNEL);
 	if (!header)
 		return NULL;
+
+	kmemleak_not_leak(header);
 
 	node = (struct ctl_node *)(header + 1);
 	init_header(header, root, set, node, table);

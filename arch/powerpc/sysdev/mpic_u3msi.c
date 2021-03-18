@@ -10,6 +10,7 @@
  */
 
 #include <linux/irq.h>
+#include <linux/bootmem.h>
 #include <linux/msi.h>
 #include <asm/mpic.h>
 #include <asm/prom.h>
@@ -109,7 +110,7 @@ static void u3msi_teardown_msi_irqs(struct pci_dev *pdev)
 	struct msi_desc *entry;
 	irq_hw_number_t hwirq;
 
-	for_each_pci_msi_entry(entry, pdev) {
+        list_for_each_entry(entry, &pdev->msi_list, list) {
 		if (entry->irq == NO_IRQ)
 			continue;
 
@@ -141,7 +142,7 @@ static int u3msi_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 		return -ENXIO;
 	}
 
-	for_each_pci_msi_entry(entry, pdev) {
+	list_for_each_entry(entry, &pdev->msi_list, list) {
 		hwirq = msi_bitmap_alloc_hwirqs(&msi_mpic->msi_bitmap, 1);
 		if (hwirq < 0) {
 			pr_debug("u3msi: failed allocating hwirq\n");
@@ -182,7 +183,6 @@ static int u3msi_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 int mpic_u3msi_init(struct mpic *mpic)
 {
 	int rc;
-	struct pci_controller *phb;
 
 	rc = mpic_msi_init_allocator(mpic);
 	if (rc) {
@@ -195,11 +195,9 @@ int mpic_u3msi_init(struct mpic *mpic)
 	BUG_ON(msi_mpic);
 	msi_mpic = mpic;
 
-	list_for_each_entry(phb, &hose_list, list_node) {
-		WARN_ON(phb->controller_ops.setup_msi_irqs);
-		phb->controller_ops.setup_msi_irqs = u3msi_setup_msi_irqs;
-		phb->controller_ops.teardown_msi_irqs = u3msi_teardown_msi_irqs;
-	}
+	WARN_ON(ppc_md.setup_msi_irqs);
+	ppc_md.setup_msi_irqs = u3msi_setup_msi_irqs;
+	ppc_md.teardown_msi_irqs = u3msi_teardown_msi_irqs;
 
 	return 0;
 }

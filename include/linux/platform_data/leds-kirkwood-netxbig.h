@@ -40,7 +40,6 @@ struct netxbig_led {
 	int		mode_addr;
 	int		*mode_val;
 	int		bright_addr;
-	int		bright_max;
 };
 
 struct netxbig_led_platform_data {

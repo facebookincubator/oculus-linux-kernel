@@ -59,17 +59,31 @@ static int hp6xxled_probe(struct platform_device *pdev)
 {
 	int ret;
 
-	ret = devm_led_classdev_register(&pdev->dev, &hp6xx_red_led);
+	ret = led_classdev_register(&pdev->dev, &hp6xx_red_led);
 	if (ret < 0)
 		return ret;
 
-	return devm_led_classdev_register(&pdev->dev, &hp6xx_green_led);
+	ret = led_classdev_register(&pdev->dev, &hp6xx_green_led);
+	if (ret < 0)
+		led_classdev_unregister(&hp6xx_red_led);
+
+	return ret;
+}
+
+static int hp6xxled_remove(struct platform_device *pdev)
+{
+	led_classdev_unregister(&hp6xx_red_led);
+	led_classdev_unregister(&hp6xx_green_led);
+
+	return 0;
 }
 
 static struct platform_driver hp6xxled_driver = {
 	.probe		= hp6xxled_probe,
+	.remove		= hp6xxled_remove,
 	.driver		= {
 		.name		= "hp6xx-led",
+		.owner		= THIS_MODULE,
 	},
 };
 

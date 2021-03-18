@@ -44,8 +44,10 @@ static void qce_ablkcipher_done(void *data)
 			error);
 
 	if (diff_dst)
-		dma_unmap_sg(qce->dev, rctx->src_sg, rctx->src_nents, dir_src);
-	dma_unmap_sg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst);
+		qce_unmapsg(qce->dev, rctx->src_sg, rctx->src_nents, dir_src,
+			    rctx->dst_chained);
+	qce_unmapsg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst,
+		    rctx->dst_chained);
 
 	sg_free_table(&rctx->dst_tbl);
 
@@ -78,11 +80,15 @@ qce_ablkcipher_async_req_handle(struct crypto_async_request *async_req)
 	dir_src = diff_dst ? DMA_TO_DEVICE : DMA_BIDIRECTIONAL;
 	dir_dst = diff_dst ? DMA_FROM_DEVICE : DMA_BIDIRECTIONAL;
 
-	rctx->src_nents = sg_nents_for_len(req->src, req->nbytes);
-	if (diff_dst)
-		rctx->dst_nents = sg_nents_for_len(req->dst, req->nbytes);
-	else
+	rctx->src_nents = qce_countsg(req->src, req->nbytes,
+				      &rctx->src_chained);
+	if (diff_dst) {
+		rctx->dst_nents = qce_countsg(req->dst, req->nbytes,
+					      &rctx->dst_chained);
+	} else {
 		rctx->dst_nents = rctx->src_nents;
+		rctx->dst_chained = rctx->src_chained;
+	}
 
 	rctx->dst_nents += 1;
 
@@ -110,12 +116,14 @@ qce_ablkcipher_async_req_handle(struct crypto_async_request *async_req)
 	sg_mark_end(sg);
 	rctx->dst_sg = rctx->dst_tbl.sgl;
 
-	ret = dma_map_sg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst);
+	ret = qce_mapsg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst,
+			rctx->dst_chained);
 	if (ret < 0)
 		goto error_free;
 
 	if (diff_dst) {
-		ret = dma_map_sg(qce->dev, req->src, rctx->src_nents, dir_src);
+		ret = qce_mapsg(qce->dev, req->src, rctx->src_nents, dir_src,
+				rctx->src_chained);
 		if (ret < 0)
 			goto error_unmap_dst;
 		rctx->src_sg = req->src;
@@ -141,9 +149,11 @@ error_terminate:
 	qce_dma_terminate_all(&qce->dma);
 error_unmap_src:
 	if (diff_dst)
-		dma_unmap_sg(qce->dev, req->src, rctx->src_nents, dir_src);
+		qce_unmapsg(qce->dev, req->src, rctx->src_nents, dir_src,
+			    rctx->src_chained);
 error_unmap_dst:
-	dma_unmap_sg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst);
+	qce_unmapsg(qce->dev, rctx->dst_sg, rctx->dst_nents, dir_dst,
+		    rctx->dst_chained);
 error_free:
 	sg_free_table(&rctx->dst_tbl);
 	return ret;

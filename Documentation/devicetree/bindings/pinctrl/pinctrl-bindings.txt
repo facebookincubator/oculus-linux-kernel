@@ -38,7 +38,7 @@ property exists to define the pin configuration. Each state may also be
 assigned a name. When names are used, another property exists to map from
 those names to the integer IDs.
 
-Each client device's own binding determines the set of states that must be
+Each client device's own binding determines the set of states the must be
 defined in its device tree node, and whether to define the set of state
 IDs that must be provided, or whether to define the set of state names that
 must be provided.
@@ -133,27 +133,16 @@ pin multiplexing nodes:
 
 function		- the mux function to select
 groups			- the list of groups to select with this function
-			  (either this or "pins" must be specified)
-pins			- the list of pins to select with this function (either
-			  this or "groups" must be specified)
 
 Example:
 
 state_0_node_a {
-	uart0 {
-		function = "uart0";
-		groups = "u0rxtx", "u0rtscts";
-	};
+	function = "uart0";
+	groups = "u0rxtx", "u0rtscts";
 };
 state_1_node_a {
-	spi0 {
-		function = "spi0";
-		groups = "spi0pins";
-	};
-};
-state_2_node_a {
-	function = "i2c0";
-	pins = "mfio29", "mfio30";
+	function = "spi0";
+	groups = "spi0pins";
 };
 
 == Generic pin configuration node content ==
@@ -199,22 +188,16 @@ slew-rate		- set the slew rate
 For example:
 
 state_0_node_a {
-	cts_rxd {
-		pins = "GPIO0_AJ5", "GPIO2_AH4"; /* CTS+RXD */
-		bias-pull-up;
-	};
+	pins = "GPIO0_AJ5", "GPIO2_AH4"; /* CTS+RXD */
+	bias-pull-up;
 };
 state_1_node_a {
-	rts_txd {
-		pins = "GPIO1_AJ3", "GPIO3_AH3"; /* RTS+TXD */
-		output-high;
-	};
+	pins = "GPIO1_AJ3", "GPIO3_AH3"; /* RTS+TXD */
+	output-high;
 };
 state_2_node_a {
-	foo {
-		group = "foo-group";
-		bias-pull-up;
-	};
+	group = "foo-group";
+	bias-pull-up;
 };
 
 Some of the generic properties take arguments. For those that do, the
@@ -233,4 +216,4 @@ arguments are described below.
   or 0 to disable debouncing
 
 More in-depth documentation on these parameters can be found in
-<include/linux/pinctrl/pinconf-generic.h>
+<include/linux/pinctrl/pinconfig-generic.h>

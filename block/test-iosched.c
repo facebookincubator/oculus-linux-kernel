@@ -105,8 +105,10 @@ EXPORT_SYMBOL(check_test_completion);
  * A callback to be called per bio completion.
  * Frees the bio memory.
  */
-static void end_test_bio(struct bio *bio)
+static void end_test_bio(struct bio *bio, int err)
 {
+	if (err)
+		clear_bit(BIO_UPTODATE, &bio->bi_flags);
 	bio_put(bio);
 }
 

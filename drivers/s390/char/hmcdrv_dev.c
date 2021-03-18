@@ -136,7 +136,8 @@ static int hmcdrv_dev_open(struct inode *inode, struct file *fp)
 	if (rc)
 		module_put(THIS_MODULE);
 
-	pr_debug("open file '/dev/%pD' with return code %d\n", fp, rc);
+	pr_debug("open file '/dev/%s' with return code %d\n",
+		 fp->f_dentry->d_name.name, rc);
 	return rc;
 }
 
@@ -145,7 +146,7 @@ static int hmcdrv_dev_open(struct inode *inode, struct file *fp)
  */
 static int hmcdrv_dev_release(struct inode *inode, struct file *fp)
 {
-	pr_debug("closing file '/dev/%pD'\n", fp);
+	pr_debug("closing file '/dev/%s'\n", fp->f_dentry->d_name.name);
 	kfree(fp->private_data);
 	fp->private_data = NULL;
 	hmcdrv_ftp_shutdown();
@@ -230,8 +231,8 @@ static ssize_t hmcdrv_dev_read(struct file *fp, char __user *ubuf,
 	retlen = hmcdrv_dev_transfer((char *) fp->private_data,
 				     *pos, ubuf, len);
 
-	pr_debug("read from file '/dev/%pD' at %lld returns %zd/%zu\n",
-		 fp, (long long) *pos, retlen, len);
+	pr_debug("read from file '/dev/%s' at %lld returns %zd/%zu\n",
+		 fp->f_dentry->d_name.name, (long long) *pos, retlen, len);
 
 	if (retlen > 0)
 		*pos += retlen;
@@ -247,8 +248,8 @@ static ssize_t hmcdrv_dev_write(struct file *fp, const char __user *ubuf,
 {
 	ssize_t retlen;
 
-	pr_debug("writing file '/dev/%pD' at pos. %lld with length %zd\n",
-		 fp, (long long) *pos, len);
+	pr_debug("writing file '/dev/%s' at pos. %lld with length %zd\n",
+		 fp->f_dentry->d_name.name, (long long) *pos, len);
 
 	if (!fp->private_data) { /* first expect a cmd write */
 		fp->private_data = kmalloc(len + 1, GFP_KERNEL);
@@ -271,7 +272,8 @@ static ssize_t hmcdrv_dev_write(struct file *fp, const char __user *ubuf,
 	if (retlen > 0)
 		*pos += retlen;
 
-	pr_debug("write to file '/dev/%pD' returned %zd\n", fp, retlen);
+	pr_debug("write to file '/dev/%s' returned %zd\n",
+		 fp->f_dentry->d_name.name, retlen);
 
 	return retlen;
 }

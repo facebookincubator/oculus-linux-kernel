@@ -93,7 +93,9 @@ struct bictcp {
 	u32	epoch_start;	/* beginning of an epoch */
 	u32	ack_cnt;	/* number of acks */
 	u32	tcp_cwnd;	/* estimated tcp cwnd */
-	u16	unused;
+#define ACK_RATIO_SHIFT	4
+#define ACK_RATIO_LIMIT (32u << ACK_RATIO_SHIFT)
+	u16	delayed_ack;	/* estimate the ratio of Packets/ACKs << 4 */
 	u8	sample_cnt;	/* number of samples to decide curr_rtt */
 	u8	found;		/* the exit point is found? */
 	u32	round_start;	/* beginning of each round */
@@ -112,6 +114,7 @@ static inline void bictcp_reset(struct bictcp *ca)
 	ca->bic_K = 0;
 	ca->delay_min = 0;
 	ca->epoch_start = 0;
+	ca->delayed_ack = 2 << ACK_RATIO_SHIFT;
 	ca->ack_cnt = 0;
 	ca->tcp_cwnd = 0;
 	ca->found = 0;
@@ -149,27 +152,6 @@ static void bictcp_init(struct sock *sk)
 
 	if (!hystart && initial_ssthresh)
 		tcp_sk(sk)->snd_ssthresh = initial_ssthresh;
-}
-
-static void bictcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
-{
-	if (event == CA_EVENT_TX_START) {
-		struct bictcp *ca = inet_csk_ca(sk);
-		u32 now = tcp_time_stamp;
-		s32 delta;
-
-		delta = now - tcp_sk(sk)->lsndtime;
-
-		/* We were application limited (idle) for a while.
-		 * Shift epoch_start to keep cwnd growth to cubic curve.
-		 */
-		if (ca->epoch_start && delta > 0) {
-			ca->epoch_start += delta;
-			if (after(ca->epoch_start, now))
-				ca->epoch_start = now;
-		}
-		return;
-	}
 }
 
 /* calculate the cubic root of x using a table lookup followed by one
@@ -223,30 +205,23 @@ static u32 cubic_root(u64 a)
 /*
  * Compute congestion window to use.
  */
-static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
+static inline void bictcp_update(struct bictcp *ca, u32 cwnd)
 {
 	u32 delta, bic_target, max_cnt;
 	u64 offs, t;
 
-	ca->ack_cnt += acked;	/* count the number of ACKed packets */
+	ca->ack_cnt++;	/* count the number of ACKs */
 
 	if (ca->last_cwnd == cwnd &&
 	    (s32)(tcp_time_stamp - ca->last_time) <= HZ / 32)
 		return;
-
-	/* The CUBIC function can update ca->cnt at most once per jiffy.
-	 * On all cwnd reduction events, ca->epoch_start is set to 0,
-	 * which will force a recalculation of ca->cnt.
-	 */
-	if (ca->epoch_start && tcp_time_stamp == ca->last_time)
-		goto tcp_friendliness;
 
 	ca->last_cwnd = cwnd;
 	ca->last_time = tcp_time_stamp;
 
 	if (ca->epoch_start == 0) {
 		ca->epoch_start = tcp_time_stamp;	/* record beginning */
-		ca->ack_cnt = acked;			/* start counting */
+		ca->ack_cnt = 1;			/* start counting */
 		ca->tcp_cwnd = cwnd;			/* syn with cubic */
 
 		if (ca->last_max_cwnd <= cwnd) {
@@ -308,7 +283,6 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 	if (ca->last_max_cwnd == 0 && ca->cnt > 20)
 		ca->cnt = 20;	/* increase cwnd 5% per RTT */
 
-tcp_friendliness:
 	/* TCP Friendly */
 	if (tcp_friendliness) {
 		u32 scale = beta_scale;
@@ -327,10 +301,9 @@ tcp_friendliness:
 		}
 	}
 
-	/* The maximum rate of cwnd increase CUBIC allows is 1 packet per
-	 * 2 packets ACKed, meaning cwnd grows at 1.5x per RTT.
-	 */
-	ca->cnt = max(ca->cnt, 2U);
+	ca->cnt = (ca->cnt << ACK_RATIO_SHIFT) / ca->delayed_ack;
+	if (ca->cnt == 0)			/* cannot be zero */
+		ca->cnt = 1;
 }
 
 static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
@@ -341,15 +314,14 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	if (!tcp_is_cwnd_limited(sk))
 		return;
 
-	if (tcp_in_slow_start(tp)) {
+	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		if (hystart && after(ack, ca->end_seq))
 			bictcp_hystart_reset(sk);
-		acked = tcp_slow_start(tp, acked);
-		if (!acked)
-			return;
+		tcp_slow_start(tp, acked);
+	} else {
+		bictcp_update(ca, tp->snd_cwnd);
+		tcp_cong_avoid_ai(tp, ca->cnt);
 	}
-	bictcp_update(ca, tp->snd_cwnd, acked);
-	tcp_cong_avoid_ai(tp, ca->cnt, acked);
 }
 
 static u32 bictcp_recalc_ssthresh(struct sock *sk)
@@ -391,28 +363,16 @@ static void hystart_update(struct sock *sk, u32 delay)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 
-	if (ca->found & hystart_detect)
-		return;
-
-	if (hystart_detect & HYSTART_ACK_TRAIN) {
+	if (!(ca->found & hystart_detect)) {
 		u32 now = bictcp_clock();
 
 		/* first detection parameter - ack-train detection */
 		if ((s32)(now - ca->last_ack) <= hystart_ack_delta) {
 			ca->last_ack = now;
-			if ((s32)(now - ca->round_start) > ca->delay_min >> 4) {
+			if ((s32)(now - ca->round_start) > ca->delay_min >> 4)
 				ca->found |= HYSTART_ACK_TRAIN;
-				NET_INC_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTTRAINDETECT);
-				NET_ADD_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTTRAINCWND,
-						 tp->snd_cwnd);
-				tp->snd_ssthresh = tp->snd_cwnd;
-			}
 		}
-	}
 
-	if (hystart_detect & HYSTART_DELAY) {
 		/* obtain the minimum delay of more than sampling packets */
 		if (ca->sample_cnt < HYSTART_MIN_SAMPLES) {
 			if (ca->curr_rtt == 0 || ca->curr_rtt > delay)
@@ -421,16 +381,15 @@ static void hystart_update(struct sock *sk, u32 delay)
 			ca->sample_cnt++;
 		} else {
 			if (ca->curr_rtt > ca->delay_min +
-			    HYSTART_DELAY_THRESH(ca->delay_min >> 3)) {
+			    HYSTART_DELAY_THRESH(ca->delay_min>>4))
 				ca->found |= HYSTART_DELAY;
-				NET_INC_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTDELAYDETECT);
-				NET_ADD_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTDELAYCWND,
-						 tp->snd_cwnd);
-				tp->snd_ssthresh = tp->snd_cwnd;
-			}
 		}
+		/*
+		 * Either one of two conditions are met,
+		 * we exit from slow start immediately.
+		 */
+		if (ca->found & hystart_detect)
+			tp->snd_ssthresh = tp->snd_cwnd;
 	}
 }
 
@@ -439,9 +398,19 @@ static void hystart_update(struct sock *sk, u32 delay)
  */
 static void bictcp_acked(struct sock *sk, u32 cnt, s32 rtt_us)
 {
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 	u32 delay;
+
+	if (icsk->icsk_ca_state == TCP_CA_Open) {
+		u32 ratio = ca->delayed_ack;
+
+		ratio -= ca->delayed_ack >> ACK_RATIO_SHIFT;
+		ratio += cnt;
+
+		ca->delayed_ack = clamp(ratio, 1U, ACK_RATIO_LIMIT);
+	}
 
 	/* Some calls are for duplicates without timetamps */
 	if (rtt_us < 0)
@@ -460,7 +429,7 @@ static void bictcp_acked(struct sock *sk, u32 cnt, s32 rtt_us)
 		ca->delay_min = delay;
 
 	/* hystart triggers when cwnd is larger than some threshold */
-	if (hystart && tcp_in_slow_start(tp) &&
+	if (hystart && tp->snd_cwnd <= tp->snd_ssthresh &&
 	    tp->snd_cwnd >= hystart_low_window)
 		hystart_update(sk, delay);
 }
@@ -471,7 +440,6 @@ static struct tcp_congestion_ops cubictcp __read_mostly = {
 	.cong_avoid	= bictcp_cong_avoid,
 	.set_state	= bictcp_state,
 	.undo_cwnd	= bictcp_undo_cwnd,
-	.cwnd_event	= bictcp_cwnd_event,
 	.pkts_acked     = bictcp_acked,
 	.owner		= THIS_MODULE,
 	.name		= "cubic",

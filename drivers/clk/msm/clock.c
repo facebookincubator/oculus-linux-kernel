@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/clock.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2007-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2016, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -96,7 +96,7 @@ static int update_vdd(struct clk_vdd_class *vdd_class)
 			goto set_voltage_fail;
 
 		if (ua) {
-			rc = regulator_set_load(r[i], ua[new_base + i]);
+			rc = regulator_set_optimum_mode(r[i], ua[new_base + i]);
 			rc = rc > 0 ? 0 : rc;
 			if (rc)
 				goto set_mode_fail;
@@ -124,7 +124,7 @@ enable_disable_fail:
 	if (ua) {
 		regulator_set_voltage(r[i], uv[cur_base + i],
 			vdd_class->use_max_uV ? INT_MAX : uv[max_lvl + i]);
-		regulator_set_load(r[i], ua[cur_base + i]);
+		regulator_set_optimum_mode(r[i], ua[cur_base + i]);
 	}
 
 set_mode_fail:
@@ -136,7 +136,7 @@ set_voltage_fail:
 		regulator_set_voltage(r[i], uv[cur_base + i],
 			vdd_class->use_max_uV ? INT_MAX : uv[max_lvl + i]);
 		if (ua)
-			regulator_set_load(r[i], ua[cur_base + i]);
+			regulator_set_optimum_mode(r[i], ua[cur_base + i]);
 		if (cur_lvl == 0 || cur_lvl == vdd_class->num_levels)
 			regulator_disable(r[i]);
 		else if (level == 0)
@@ -824,6 +824,28 @@ int clk_set_flags(struct clk *clk, unsigned long flags)
 	return clk->ops->set_flags(clk, flags);
 }
 EXPORT_SYMBOL(clk_set_flags);
+
+int clk_set_duty_cycle(struct clk *clk, u32 numerator, u32 denominator)
+{
+	if (IS_ERR_OR_NULL(clk))
+		return -EINVAL;
+
+	if (numerator > denominator) {
+		pr_err("Numerator cannot be > denominator\n");
+		return -EINVAL;
+	}
+
+	if (!denominator) {
+		pr_err("Denominator can not be Zero\n");
+		return -EINVAL;
+	}
+
+	if (!clk->ops->set_duty_cycle)
+		return -ENOSYS;
+
+	return clk->ops->set_duty_cycle(clk, numerator, denominator);
+}
+EXPORT_SYMBOL(clk_set_duty_cycle);
 
 static LIST_HEAD(initdata_list);
 

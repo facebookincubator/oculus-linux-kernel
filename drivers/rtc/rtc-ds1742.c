@@ -134,7 +134,7 @@ static ssize_t ds1742_nvram_read(struct file *filp, struct kobject *kobj,
 	void __iomem *ioaddr = pdata->ioaddr_nvram;
 	ssize_t count;
 
-	for (count = 0; count < size; count++)
+	for (count = 0; size > 0 && pos < pdata->size_nvram; count++, size--)
 		*buf++ = readb(ioaddr + pos++);
 	return count;
 }
@@ -149,7 +149,7 @@ static ssize_t ds1742_nvram_write(struct file *filp, struct kobject *kobj,
 	void __iomem *ioaddr = pdata->ioaddr_nvram;
 	ssize_t count;
 
-	for (count = 0; count < size; count++)
+	for (count = 0; size > 0 && pos < pdata->size_nvram; count++, size--)
 		writeb(*buf++, ioaddr + pos++);
 	return count;
 }
@@ -230,6 +230,7 @@ static struct platform_driver ds1742_rtc_driver = {
 	.remove		= ds1742_rtc_remove,
 	.driver		= {
 		.name	= "rtc-ds1742",
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(ds1742_rtc_of_match),
 	},
 };

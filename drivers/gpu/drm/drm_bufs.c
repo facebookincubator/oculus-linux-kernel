@@ -582,7 +582,7 @@ static void drm_cleanup_buf_error(struct drm_device * dev,
 	}
 }
 
-#if IS_ENABLED(CONFIG_AGP)
+#if __OS_HAS_AGP
 /**
  * Add AGP buffers for DMA transfers.
  *
@@ -756,7 +756,7 @@ int drm_legacy_addbufs_agp(struct drm_device *dev,
 	return 0;
 }
 EXPORT_SYMBOL(drm_legacy_addbufs_agp);
-#endif /* CONFIG_AGP */
+#endif				/* __OS_HAS_AGP */
 
 int drm_legacy_addbufs_pci(struct drm_device *dev,
 			   struct drm_buf_desc *request)
@@ -1145,7 +1145,7 @@ int drm_legacy_addbufs(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_HAVE_DMA))
 		return -EINVAL;
 
-#if IS_ENABLED(CONFIG_AGP)
+#if __OS_HAS_AGP
 	if (request->flags & _DRM_AGP_BUFFER)
 		ret = drm_legacy_addbufs_agp(dev, request);
 	else

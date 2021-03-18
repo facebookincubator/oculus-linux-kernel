@@ -14,8 +14,10 @@ Unlike shared disk storage cluster filesystems (e.g. OCFS2, GFS, GPFS),
 Lustre has independent Metadata and Data servers that clients can access
 in parallel to maximize performance.
 
-In order to use Lustre client you will need to download the "lustre-client"
-package that contains the userspace tools from http://lustre.org/download/
+In order to use Lustre client you will need to download lustre client
+tools from
+https://downloads.hpdd.intel.com/public/lustre/latest-feature-release/
+the package name is lustre-client.
 
 You will need to install and configure your Lustre servers separately.
 
@@ -74,10 +76,12 @@ Mount Options
 
 More Information
 ================
-You can get more information at the Lustre website: http://wiki.lustre.org/
+You can get more information at
+OpenSFS website: http://lustre.opensfs.org/about/
+Intel HPDD wiki: https://wiki.hpdd.intel.com
 
-Source for the userspace tools and out-of-tree client and server code
-is available at: http://git.hpdd.intel.com/fs/lustre-release.git
+Out of tree Lustre client and server code is available at:
+http://git.whamcloud.com/fs/lustre-release.git
 
 Latest binary packages:
-http://lustre.org/download/
+http://lustre.opensfs.org/download-lustre/

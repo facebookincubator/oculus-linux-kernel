@@ -55,7 +55,7 @@ struct au8522_state {
 	struct dvb_frontend frontend;
 
 	u32 current_frequency;
-	enum fe_modulation current_modulation;
+	fe_modulation_t current_modulation;
 
 	u32 fe_status;
 	unsigned int led_state;

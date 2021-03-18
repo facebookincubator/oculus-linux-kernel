@@ -50,14 +50,9 @@ void __init efi_bgrt_init(void)
 		       bgrt_tab->version);
 		return;
 	}
-	if (bgrt_tab->status & 0xfe) {
-		pr_err("Ignoring BGRT: reserved status bits are non-zero %u\n",
-		       bgrt_tab->status);
-		return;
-	}
 	if (bgrt_tab->status != 1) {
-		pr_debug("Ignoring BGRT: invalid status %u (expected 1)\n",
-			 bgrt_tab->status);
+		pr_err("Ignoring BGRT: invalid status %u (expected 1)\n",
+		       bgrt_tab->status);
 		return;
 	}
 	if (bgrt_tab->image_type != 0) {
@@ -72,7 +67,7 @@ void __init efi_bgrt_init(void)
 
 	image = efi_lookup_mapped_addr(bgrt_tab->image_address);
 	if (!image) {
-		image = early_ioremap(bgrt_tab->image_address,
+		image = early_memremap(bgrt_tab->image_address,
 				       sizeof(bmp_header));
 		ioremapped = true;
 		if (!image) {
@@ -94,7 +89,7 @@ void __init efi_bgrt_init(void)
 	}
 
 	if (ioremapped) {
-		image = early_ioremap(bgrt_tab->image_address,
+		image = early_memremap(bgrt_tab->image_address,
 				       bmp_header.size);
 		if (!image) {
 			pr_err("Ignoring BGRT: failed to map image memory\n");

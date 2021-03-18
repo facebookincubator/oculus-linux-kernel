@@ -99,6 +99,7 @@ MODULE_DEVICE_TABLE(of, bcm2835_rng_of_match);
 static struct platform_driver bcm2835_rng_driver = {
 	.driver = {
 		.name = "bcm2835-rng",
+		.owner = THIS_MODULE,
 		.of_match_table = bcm2835_rng_of_match,
 	},
 	.probe		= bcm2835_rng_probe,

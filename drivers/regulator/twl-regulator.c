@@ -1104,8 +1104,7 @@ static int twlreg_probe(struct platform_device *pdev)
 		template = match->data;
 		id = template->desc.id;
 		initdata = of_get_regulator_init_data(&pdev->dev,
-						      pdev->dev.of_node,
-						      &template->desc);
+						      pdev->dev.of_node);
 		drvdata = NULL;
 	} else {
 		id = pdev->id;
@@ -1221,6 +1220,7 @@ static struct platform_driver twlreg_driver = {
 	 */
 	.driver  = {
 		.name  = "twl_reg",
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(twl_of_match),
 	},
 };

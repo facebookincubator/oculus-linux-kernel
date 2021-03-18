@@ -342,8 +342,8 @@ static int load_aout_binary(struct linux_binprm *bprm)
 			    time_after(jiffies, error_time + 5*HZ)) {
 			printk(KERN_WARNING
 			       "fd_offset is not page aligned. Please convert "
-			       "program: %pD\n",
-			       bprm->file);
+			       "program: %s\n",
+			       bprm->file->f_path.dentry->d_name.name);
 			error_time = jiffies;
 		}
 #endif
@@ -429,8 +429,8 @@ static int load_aout_library(struct file *file)
 		if (time_after(jiffies, error_time + 5*HZ)) {
 			printk(KERN_WARNING
 			       "N_TXTOFF is not page aligned. Please convert "
-			       "library: %pD\n",
-			       file);
+			       "library: %s\n",
+			       file->f_path.dentry->d_name.name);
 			error_time = jiffies;
 		}
 #endif

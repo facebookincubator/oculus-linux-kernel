@@ -1,4 +1,4 @@
-obj-y += fuse/
+obj-$(CONFIG_ARCH_TEGRA) += fuse/
 
-obj-y += common.o
-obj-y += pmc.o
+obj-$(CONFIG_ARCH_TEGRA) += common.o
+obj-$(CONFIG_ARCH_TEGRA) += pmc.o

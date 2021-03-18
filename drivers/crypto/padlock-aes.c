@@ -22,7 +22,7 @@
 #include <asm/cpu_device_id.h>
 #include <asm/byteorder.h>
 #include <asm/processor.h>
-#include <asm/fpu/api.h>
+#include <asm/i387.h>
 
 /*
  * Number of data blocks actually fetched for each xcrypt insn.

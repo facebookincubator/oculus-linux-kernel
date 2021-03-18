@@ -264,9 +264,7 @@ out:
 	return err;
 }
 
-static int
-twl4030_config_wakeup12_sequence(const struct twl4030_power_data *pdata,
-				 u8 address)
+static int twl4030_config_wakeup12_sequence(u8 address)
 {
 	int err = 0;
 	u8 data;
@@ -295,14 +293,13 @@ twl4030_config_wakeup12_sequence(const struct twl4030_power_data *pdata,
 	if (err)
 		goto out;
 
-	if (pdata->ac_charger_quirk || machine_is_omap_3430sdp() ||
-	    machine_is_omap_ldp()) {
+	if (machine_is_omap_3430sdp() || machine_is_omap_ldp()) {
 		/* Disabling AC charger effect on sleep-active transitions */
 		err = twl_i2c_read_u8(TWL_MODULE_PM_MASTER, &data,
 				      R_CFG_P1_TRANSITION);
 		if (err)
 			goto out;
-		data &= ~STARTON_CHG;
+		data &= ~(1<<1);
 		err = twl_i2c_write_u8(TWL_MODULE_PM_MASTER, data,
 				       R_CFG_P1_TRANSITION);
 		if (err)
@@ -462,9 +459,8 @@ static int twl4030_configure_resource(struct twl4030_resconfig *rconfig)
 	return 0;
 }
 
-static int load_twl4030_script(const struct twl4030_power_data *pdata,
-			       struct twl4030_script *tscript,
-			       u8 address)
+static int load_twl4030_script(struct twl4030_script *tscript,
+	       u8 address)
 {
 	int err;
 	static int order;
@@ -491,7 +487,7 @@ static int load_twl4030_script(const struct twl4030_power_data *pdata,
 		if (err)
 			goto out;
 
-		err = twl4030_config_wakeup12_sequence(pdata, address);
+		err = twl4030_config_wakeup12_sequence(address);
 		if (err)
 			goto out;
 		order = 1;
@@ -571,7 +567,7 @@ twl4030_power_configure_scripts(const struct twl4030_power_data *pdata)
 	u8 address = twl4030_start_script_address;
 
 	for (i = 0; i < pdata->num; i++) {
-		err = load_twl4030_script(pdata, pdata->scripts[i], address);
+		err = load_twl4030_script(pdata->scripts[i], address);
 		if (err)
 			return err;
 		address += pdata->scripts[i]->size;
@@ -833,22 +829,7 @@ static struct twl4030_power_data osc_off_idle = {
 	.board_config		= osc_off_rconfig,
 };
 
-static struct twl4030_power_data omap3_idle_ac_quirk = {
-	.scripts		= omap3_idle_scripts,
-	.num			= ARRAY_SIZE(omap3_idle_scripts),
-	.resource_config	= omap3_idle_rconfig,
-	.ac_charger_quirk	= true,
-};
-
-static struct twl4030_power_data omap3_idle_ac_quirk_osc_off = {
-	.scripts		= omap3_idle_scripts,
-	.num			= ARRAY_SIZE(omap3_idle_scripts),
-	.resource_config	= omap3_idle_rconfig,
-	.board_config		= osc_off_rconfig,
-	.ac_charger_quirk	= true,
-};
-
-static const struct of_device_id twl4030_power_of_match[] = {
+static struct of_device_id twl4030_power_of_match[] = {
 	{
 		.compatible = "ti,twl4030-power",
 	},
@@ -863,18 +844,6 @@ static const struct of_device_id twl4030_power_of_match[] = {
 	{
 		.compatible = "ti,twl4030-power-idle-osc-off",
 		.data = &osc_off_idle,
-	},
-	{
-		.compatible = "ti,twl4030-power-omap3-sdp",
-		.data = &omap3_idle_ac_quirk,
-	},
-	{
-		.compatible = "ti,twl4030-power-omap3-ldp",
-		.data = &omap3_idle_ac_quirk_osc_off,
-	},
-	{
-		.compatible = "ti,twl4030-power-omap3-evm",
-		.data = &omap3_idle_ac_quirk,
 	},
 	{ },
 };
@@ -964,6 +933,7 @@ static int twl4030_power_remove(struct platform_device *pdev)
 static struct platform_driver twl4030_power_driver = {
 	.driver = {
 		.name	= "twl4030_power",
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(twl4030_power_of_match),
 	},
 	.probe		= twl4030_power_probe,

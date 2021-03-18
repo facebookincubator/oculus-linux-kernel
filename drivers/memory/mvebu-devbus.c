@@ -346,6 +346,7 @@ static struct platform_driver mvebu_devbus_driver = {
 	.probe		= mvebu_devbus_probe,
 	.driver		= {
 		.name	= "mvebu-devbus",
+		.owner	= THIS_MODULE,
 		.of_match_table = mvebu_devbus_of_match,
 	},
 };

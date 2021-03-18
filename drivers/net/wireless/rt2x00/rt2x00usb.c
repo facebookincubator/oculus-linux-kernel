@@ -42,27 +42,37 @@ int rt2x00usb_vendor_request(struct rt2x00_dev *rt2x00dev,
 {
 	struct usb_device *usb_dev = to_usb_device_intf(rt2x00dev->dev);
 	int status;
+	unsigned int i;
 	unsigned int pipe =
 	    (requesttype == USB_VENDOR_REQUEST_IN) ?
 	    usb_rcvctrlpipe(usb_dev, 0) : usb_sndctrlpipe(usb_dev, 0);
-	unsigned long expire = jiffies + msecs_to_jiffies(timeout);
 
 	if (!test_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags))
 		return -ENODEV;
 
-	do {
+	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
 		status = usb_control_msg(usb_dev, pipe, request, requesttype,
 					 value, offset, buffer, buffer_length,
-					 timeout / 2);
+					 timeout);
 		if (status >= 0)
 			return 0;
 
-		if (status == -ENODEV) {
-			/* Device has disappeared. */
+		/*
+		 * Check for errors
+		 * -ENODEV: Device has disappeared, no point continuing.
+		 * All other errors: Try again.
+		 */
+		else if (status == -ENODEV) {
 			clear_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags);
 			break;
 		}
-	} while (time_before(jiffies, expire));
+	}
+
+	/* If the port is powered down, we get a -EPROTO error, and this
+	 * leads to a endless loop. So just say that the device is gone.
+	 */
+	if (status == -EPROTO)
+		clear_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags);
 
 	rt2x00_err(rt2x00dev,
 		   "Vendor Request 0x%02x failed for offset 0x%04x with error %d\n",
@@ -106,7 +116,7 @@ EXPORT_SYMBOL_GPL(rt2x00usb_vendor_req_buff_lock);
 int rt2x00usb_vendor_request_buff(struct rt2x00_dev *rt2x00dev,
 				  const u8 request, const u8 requesttype,
 				  const u16 offset, void *buffer,
-				  const u16 buffer_length)
+				  const u16 buffer_length, const int timeout)
 {
 	int status = 0;
 	unsigned char *tb;
@@ -121,7 +131,7 @@ int rt2x00usb_vendor_request_buff(struct rt2x00_dev *rt2x00dev,
 		bsize = min_t(u16, CSR_CACHE_SIZE, len);
 		status = rt2x00usb_vendor_req_buff_lock(rt2x00dev, request,
 							requesttype, off, tb,
-							bsize, REGISTER_TIMEOUT);
+							bsize, timeout);
 
 		tb  += bsize;
 		len -= bsize;
@@ -144,7 +154,7 @@ int rt2x00usb_regbusy_read(struct rt2x00_dev *rt2x00dev,
 	if (!test_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags))
 		return -ENODEV;
 
-	for (i = 0; i < REGISTER_USB_BUSY_COUNT; i++) {
+	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
 		rt2x00usb_register_read_lock(rt2x00dev, offset, reg);
 		if (!rt2x00_get_field32(*reg, field))
 			return 1;
@@ -274,7 +284,7 @@ static void rt2x00usb_interrupt_txdone(struct urb *urb)
 	 * Schedule the delayed work for reading the TX status
 	 * from the device.
 	 */
-	if (!rt2x00_has_cap_flag(rt2x00dev, REQUIRE_TXSTATUS_FIFO) ||
+	if (!test_bit(REQUIRE_TXSTATUS_FIFO, &rt2x00dev->cap_flags) ||
 	    !kfifo_is_empty(&rt2x00dev->txstatus_fifo))
 		queue_work(rt2x00dev->workqueue, &rt2x00dev->txdone_work);
 }
@@ -456,7 +466,7 @@ static bool rt2x00usb_flush_entry(struct queue_entry *entry, void *data)
 	 * Kill guardian urb (if required by driver).
 	 */
 	if ((entry->queue->qid == QID_BEACON) &&
-	    (rt2x00_has_cap_flag(rt2x00dev, REQUIRE_BEACON_GUARD)))
+	    (test_bit(REQUIRE_BEACON_GUARD, &rt2x00dev->cap_flags)))
 		usb_kill_urb(bcn_priv->guardian_urb);
 
 	return false;
@@ -655,7 +665,7 @@ static int rt2x00usb_alloc_entries(struct data_queue *queue)
 	 * then we are done.
 	 */
 	if (queue->qid != QID_BEACON ||
-	    !rt2x00_has_cap_flag(rt2x00dev, REQUIRE_BEACON_GUARD))
+	    !test_bit(REQUIRE_BEACON_GUARD, &rt2x00dev->cap_flags))
 		return 0;
 
 	for (i = 0; i < queue->limit; i++) {
@@ -690,7 +700,7 @@ static void rt2x00usb_free_entries(struct data_queue *queue)
 	 * then we are done.
 	 */
 	if (queue->qid != QID_BEACON ||
-	    !rt2x00_has_cap_flag(rt2x00dev, REQUIRE_BEACON_GUARD))
+	    !test_bit(REQUIRE_BEACON_GUARD, &rt2x00dev->cap_flags))
 		return;
 
 	for (i = 0; i < queue->limit; i++) {

@@ -74,8 +74,8 @@ static int imx_ssi_set_dai_tdm_slot(struct snd_soc_dai *cpu_dai,
 	sccr |= SSI_STCCR_DC(slots - 1);
 	writel(sccr, ssi->base + SSI_SRCCR);
 
-	writel(~tx_mask, ssi->base + SSI_STMSK);
-	writel(~rx_mask, ssi->base + SSI_SRMSK);
+	writel(tx_mask, ssi->base + SSI_STMSK);
+	writel(rx_mask, ssi->base + SSI_SRMSK);
 
 	return 0;
 }
@@ -95,8 +95,7 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_I2S:
 		/* data on rising edge of bclk, frame low 1clk before data */
-		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSI |
-			SSI_STCR_TEFS;
+		strcr |= SSI_STCR_TFSI | SSI_STCR_TEFS | SSI_STCR_TXBIT0;
 		scr |= SSI_SCR_NET;
 		if (ssi->flags & IMX_SSI_USE_I2S_SLAVE) {
 			scr &= ~SSI_I2S_MODE_MASK;
@@ -105,31 +104,33 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 		break;
 	case SND_SOC_DAIFMT_LEFT_J:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP;
+		strcr |= SSI_STCR_TXBIT0;
 		break;
 	case SND_SOC_DAIFMT_DSP_B:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL;
+		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0;
 		break;
 	case SND_SOC_DAIFMT_DSP_A:
 		/* data on rising edge of bclk, frame high 1clk before data */
-		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL |
-			SSI_STCR_TEFS;
+		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0 | SSI_STCR_TEFS;
 		break;
 	}
 
 	/* DAI clock inversion */
 	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
 	case SND_SOC_DAIFMT_IB_IF:
-		strcr ^= SSI_STCR_TSCKP | SSI_STCR_TFSI;
+		strcr |= SSI_STCR_TFSI;
+		strcr &= ~SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_IB_NF:
-		strcr ^= SSI_STCR_TSCKP;
+		strcr &= ~(SSI_STCR_TSCKP | SSI_STCR_TFSI);
 		break;
 	case SND_SOC_DAIFMT_NB_IF:
-		strcr ^= SSI_STCR_TFSI;
+		strcr |= SSI_STCR_TFSI | SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_NB_NF:
+		strcr &= ~SSI_STCR_TFSI;
+		strcr |= SSI_STCR_TSCKP;
 		break;
 	}
 
@@ -339,6 +340,7 @@ static const struct snd_soc_dai_ops imx_ssi_pcm_dai_ops = {
 	.set_fmt	= imx_ssi_set_dai_fmt,
 	.set_clkdiv	= imx_ssi_set_dai_clkdiv,
 	.set_sysclk	= imx_ssi_set_dai_sysclk,
+	.xlate_tdm_slot_mask = fsl_asoc_xlate_tdm_slot_mask,
 	.set_tdm_slot	= imx_ssi_set_dai_tdm_slot,
 	.trigger	= imx_ssi_trigger,
 };
@@ -380,7 +382,7 @@ static struct snd_soc_dai_driver imx_ssi_dai = {
 
 static struct snd_soc_dai_driver imx_ac97_dai = {
 	.probe = imx_ssi_dai_probe,
-	.bus_control = true,
+	.ac97_control = 1,
 	.playback = {
 		.stream_name = "AC97 Playback",
 		.channels_min = 2,
@@ -602,7 +604,7 @@ static int imx_ssi_probe(struct platform_device *pdev)
 	ssi->fiq_params.dma_params_tx = &ssi->dma_params_tx;
 
 	ssi->fiq_init = imx_pcm_fiq_init(pdev, &ssi->fiq_params);
-	ssi->dma_init = imx_pcm_dma_init(pdev, IMX_SSI_DMABUF_SIZE);
+	ssi->dma_init = imx_pcm_dma_init(pdev);
 
 	if (ssi->fiq_init && ssi->dma_init) {
 		ret = ssi->fiq_init;
@@ -645,6 +647,7 @@ static struct platform_driver imx_ssi_driver = {
 
 	.driver = {
 		.name = "imx-ssi",
+		.owner = THIS_MODULE,
 	},
 };
 

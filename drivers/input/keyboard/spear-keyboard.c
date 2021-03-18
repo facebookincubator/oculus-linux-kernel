@@ -3,7 +3,7 @@
  * Based on omap-keypad driver
  *
  * Copyright (C) 2010 ST Microelectronics
- * Rajeev Kumar <rajeevkumar.linux@gmail.com>
+ * Rajeev Kumar<rajeev-dlh.kumar@st.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -385,6 +385,7 @@ static struct platform_driver spear_kbd_driver = {
 	.remove		= spear_kbd_remove,
 	.driver		= {
 		.name	= "keyboard",
+		.owner	= THIS_MODULE,
 		.pm	= &spear_kbd_pm_ops,
 		.of_match_table = of_match_ptr(spear_kbd_id_table),
 	},

@@ -12,9 +12,6 @@
 #include <linux/vmstat.h>
 #include <linux/atomic.h>
 #include <linux/vmalloc.h>
-#ifdef CONFIG_CMA
-#include <linux/cma.h>
-#endif
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include "internal.h"
@@ -27,6 +24,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 {
 	struct sysinfo i;
 	unsigned long committed;
+	struct vmalloc_info vmi;
 	long cached;
 	long available;
 	unsigned long pagecache;
@@ -47,6 +45,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 			total_swapcache_pages() - i.bufferram;
 	if (cached < 0)
 		cached = 0;
+
+	get_vmalloc_info(&vmi);
 
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
 		pages[lru] = global_page_state(NR_LRU_BASE + lru);
@@ -138,10 +138,6 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		"AnonHugePages:  %8lu kB\n"
 #endif
-#ifdef CONFIG_CMA
-		"CmaTotal:       %8lu kB\n"
-		"CmaFree:        %8lu kB\n"
-#endif
 		,
 		K(i.totalram),
 		K(i.freeram),
@@ -188,18 +184,14 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		K(vm_commit_limit()),
 		K(committed),
 		(unsigned long)VMALLOC_TOTAL >> 10,
-		0ul, // used to be vmalloc 'used'
-		0ul  // used to be vmalloc 'largest_chunk'
+		vmi.used >> 10,
+		vmi.largest_chunk >> 10
 #ifdef CONFIG_MEMORY_FAILURE
-		, atomic_long_read(&num_poisoned_pages) << (PAGE_SHIFT - 10)
+		,atomic_long_read(&num_poisoned_pages) << (PAGE_SHIFT - 10)
 #endif
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-		, K(global_page_state(NR_ANON_TRANSPARENT_HUGEPAGES) *
+		,K(global_page_state(NR_ANON_TRANSPARENT_HUGEPAGES) *
 		   HPAGE_PMD_NR)
-#endif
-#ifdef CONFIG_CMA
-		, K(totalcma_pages)
-		, K(global_page_state(NR_FREE_CMA_PAGES))
 #endif
 		);
 

@@ -52,30 +52,29 @@
 #define AES_REG_IV(dd, x)		((dd)->pdata->iv_ofs + ((x) * 0x04))
 
 #define AES_REG_CTRL(dd)		((dd)->pdata->ctrl_ofs)
-#define AES_REG_CTRL_CTR_WIDTH_MASK	GENMASK(8, 7)
-#define AES_REG_CTRL_CTR_WIDTH_32	0
-#define AES_REG_CTRL_CTR_WIDTH_64	BIT(7)
-#define AES_REG_CTRL_CTR_WIDTH_96	BIT(8)
-#define AES_REG_CTRL_CTR_WIDTH_128	GENMASK(8, 7)
-#define AES_REG_CTRL_CTR		BIT(6)
-#define AES_REG_CTRL_CBC		BIT(5)
-#define AES_REG_CTRL_KEY_SIZE		GENMASK(4, 3)
-#define AES_REG_CTRL_DIRECTION		BIT(2)
-#define AES_REG_CTRL_INPUT_READY	BIT(1)
-#define AES_REG_CTRL_OUTPUT_READY	BIT(0)
-#define AES_REG_CTRL_MASK		GENMASK(24, 2)
+#define AES_REG_CTRL_CTR_WIDTH_MASK	(3 << 7)
+#define AES_REG_CTRL_CTR_WIDTH_32		(0 << 7)
+#define AES_REG_CTRL_CTR_WIDTH_64		(1 << 7)
+#define AES_REG_CTRL_CTR_WIDTH_96		(2 << 7)
+#define AES_REG_CTRL_CTR_WIDTH_128		(3 << 7)
+#define AES_REG_CTRL_CTR		(1 << 6)
+#define AES_REG_CTRL_CBC		(1 << 5)
+#define AES_REG_CTRL_KEY_SIZE		(3 << 3)
+#define AES_REG_CTRL_DIRECTION		(1 << 2)
+#define AES_REG_CTRL_INPUT_READY	(1 << 1)
+#define AES_REG_CTRL_OUTPUT_READY	(1 << 0)
 
 #define AES_REG_DATA_N(dd, x)		((dd)->pdata->data_ofs + ((x) * 0x04))
 
 #define AES_REG_REV(dd)			((dd)->pdata->rev_ofs)
 
 #define AES_REG_MASK(dd)		((dd)->pdata->mask_ofs)
-#define AES_REG_MASK_SIDLE		BIT(6)
-#define AES_REG_MASK_START		BIT(5)
-#define AES_REG_MASK_DMA_OUT_EN		BIT(3)
-#define AES_REG_MASK_DMA_IN_EN		BIT(2)
-#define AES_REG_MASK_SOFTRESET		BIT(1)
-#define AES_REG_AUTOIDLE		BIT(0)
+#define AES_REG_MASK_SIDLE		(1 << 6)
+#define AES_REG_MASK_START		(1 << 5)
+#define AES_REG_MASK_DMA_OUT_EN		(1 << 3)
+#define AES_REG_MASK_DMA_IN_EN		(1 << 2)
+#define AES_REG_MASK_SOFTRESET		(1 << 1)
+#define AES_REG_AUTOIDLE		(1 << 0)
 
 #define AES_REG_LENGTH_N(x)		(0x54 + ((x) * 0x04))
 
@@ -255,7 +254,7 @@ static int omap_aes_write_ctrl(struct omap_aes_dev *dd)
 {
 	unsigned int key32;
 	int i, err;
-	u32 val;
+	u32 val, mask = 0;
 
 	err = omap_aes_hw_init(dd);
 	if (err)
@@ -275,13 +274,17 @@ static int omap_aes_write_ctrl(struct omap_aes_dev *dd)
 	val = FLD_VAL(((dd->ctx->keylen >> 3) - 1), 4, 3);
 	if (dd->flags & FLAGS_CBC)
 		val |= AES_REG_CTRL_CBC;
-	if (dd->flags & FLAGS_CTR)
+	if (dd->flags & FLAGS_CTR) {
 		val |= AES_REG_CTRL_CTR | AES_REG_CTRL_CTR_WIDTH_128;
-
+		mask = AES_REG_CTRL_CTR | AES_REG_CTRL_CTR_WIDTH_MASK;
+	}
 	if (dd->flags & FLAGS_ENCRYPT)
 		val |= AES_REG_CTRL_DIRECTION;
 
-	omap_aes_write_mask(dd, AES_REG_CTRL(dd), val, AES_REG_CTRL_MASK);
+	mask |= AES_REG_CTRL_CBC | AES_REG_CTRL_DIRECTION |
+			AES_REG_CTRL_KEY_SIZE;
+
+	omap_aes_write_mask(dd, AES_REG_CTRL(dd), val, mask);
 
 	return 0;
 }
@@ -555,9 +558,6 @@ static int omap_aes_check_aligned(struct scatterlist *sg, int total)
 {
 	int len = 0;
 
-	if (!IS_ALIGNED(total, AES_BLOCK_SIZE))
-		return -EINVAL;
-
 	while (sg) {
 		if (!IS_ALIGNED(sg->offset, 4))
 			return -1;
@@ -577,10 +577,9 @@ static int omap_aes_check_aligned(struct scatterlist *sg, int total)
 static int omap_aes_copy_sgs(struct omap_aes_dev *dd)
 {
 	void *buf_in, *buf_out;
-	int pages, total;
+	int pages;
 
-	total = ALIGN(dd->total, AES_BLOCK_SIZE);
-	pages = get_order(total);
+	pages = get_order(dd->total);
 
 	buf_in = (void *)__get_free_pages(GFP_ATOMIC, pages);
 	buf_out = (void *)__get_free_pages(GFP_ATOMIC, pages);
@@ -595,11 +594,11 @@ static int omap_aes_copy_sgs(struct omap_aes_dev *dd)
 	sg_copy_buf(buf_in, dd->in_sg, 0, dd->total, 0);
 
 	sg_init_table(&dd->in_sgl, 1);
-	sg_set_buf(&dd->in_sgl, buf_in, total);
+	sg_set_buf(&dd->in_sgl, buf_in, dd->total);
 	dd->in_sg = &dd->in_sgl;
 
 	sg_init_table(&dd->out_sgl, 1);
-	sg_set_buf(&dd->out_sgl, buf_out, total);
+	sg_set_buf(&dd->out_sgl, buf_out, dd->total);
 	dd->out_sg = &dd->out_sgl;
 
 	return 0;
@@ -612,7 +611,7 @@ static int omap_aes_handle_queue(struct omap_aes_dev *dd,
 	struct omap_aes_ctx *ctx;
 	struct omap_aes_reqctx *rctx;
 	unsigned long flags;
-	int err, ret = 0, len;
+	int err, ret = 0;
 
 	spin_lock_irqsave(&dd->lock, flags);
 	if (req)
@@ -651,9 +650,8 @@ static int omap_aes_handle_queue(struct omap_aes_dev *dd,
 		dd->sgs_copied = 0;
 	}
 
-	len = ALIGN(dd->total, AES_BLOCK_SIZE);
-	dd->in_sg_len = scatterwalk_bytes_sglen(dd->in_sg, len);
-	dd->out_sg_len = scatterwalk_bytes_sglen(dd->out_sg, len);
+	dd->in_sg_len = scatterwalk_bytes_sglen(dd->in_sg, dd->total);
+	dd->out_sg_len = scatterwalk_bytes_sglen(dd->out_sg, dd->total);
 	BUG_ON(dd->in_sg_len < 0 || dd->out_sg_len < 0);
 
 	rctx = ablkcipher_request_ctx(req);
@@ -680,7 +678,7 @@ static void omap_aes_done_task(unsigned long data)
 {
 	struct omap_aes_dev *dd = (struct omap_aes_dev *)data;
 	void *buf_in, *buf_out;
-	int pages, len;
+	int pages;
 
 	pr_debug("enter done_task\n");
 
@@ -699,8 +697,7 @@ static void omap_aes_done_task(unsigned long data)
 
 		sg_copy_buf(buf_out, dd->orig_out, 0, dd->total_save, 1);
 
-		len = ALIGN(dd->total_save, AES_BLOCK_SIZE);
-		pages = get_order(len);
+		pages = get_order(dd->total_save);
 		free_pages((unsigned long)buf_in, pages);
 		free_pages((unsigned long)buf_out, pages);
 	}
@@ -728,6 +725,11 @@ static int omap_aes_crypt(struct ablkcipher_request *req, unsigned long mode)
 	pr_debug("nbytes: %d, enc: %d, cbc: %d\n", req->nbytes,
 		  !!(mode & FLAGS_ENCRYPT),
 		  !!(mode & FLAGS_CBC));
+
+	if (!IS_ALIGNED(req->nbytes, AES_BLOCK_SIZE)) {
+		pr_err("request size is not exact amount of AES blocks\n");
+		return -EINVAL;
+	}
 
 	dd = omap_aes_find_dev(ctx);
 	if (!dd)
@@ -831,7 +833,7 @@ static struct crypto_alg algs_ecb_cbc[] = {
 {
 	.cra_name		= "ecb(aes)",
 	.cra_driver_name	= "ecb-aes-omap",
-	.cra_priority		= 300,
+	.cra_priority		= 100,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER |
 				  CRYPTO_ALG_KERN_DRIVER_ONLY |
 				  CRYPTO_ALG_ASYNC,
@@ -853,7 +855,7 @@ static struct crypto_alg algs_ecb_cbc[] = {
 {
 	.cra_name		= "cbc(aes)",
 	.cra_driver_name	= "cbc-aes-omap",
-	.cra_priority		= 300,
+	.cra_priority		= 100,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER |
 				  CRYPTO_ALG_KERN_DRIVER_ONLY |
 				  CRYPTO_ALG_ASYNC,
@@ -879,7 +881,7 @@ static struct crypto_alg algs_ctr[] = {
 {
 	.cra_name		= "ctr(aes)",
 	.cra_driver_name	= "ctr-aes-omap",
-	.cra_priority		= 300,
+	.cra_priority		= 100,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER |
 				  CRYPTO_ALG_KERN_DRIVER_ONLY |
 				  CRYPTO_ALG_ASYNC,
@@ -1000,7 +1002,7 @@ static irqreturn_t omap_aes_irq(int irq, void *dev_id)
 
 			scatterwalk_advance(&dd->in_walk, 4);
 			if (dd->in_sg->length == _calc_walked(in)) {
-				dd->in_sg = sg_next(dd->in_sg);
+				dd->in_sg = scatterwalk_sg_next(dd->in_sg);
 				if (dd->in_sg) {
 					scatterwalk_start(&dd->in_walk,
 							  dd->in_sg);
@@ -1032,7 +1034,7 @@ static irqreturn_t omap_aes_irq(int irq, void *dev_id)
 			*dst = omap_aes_read(dd, AES_REG_DATA_N(dd, i));
 			scatterwalk_advance(&dd->out_walk, 4);
 			if (dd->out_sg->length == _calc_walked(out)) {
-				dd->out_sg = sg_next(dd->out_sg);
+				dd->out_sg = scatterwalk_sg_next(dd->out_sg);
 				if (dd->out_sg) {
 					scatterwalk_start(&dd->out_walk,
 							  dd->out_sg);
@@ -1044,7 +1046,9 @@ static irqreturn_t omap_aes_irq(int irq, void *dev_id)
 			}
 		}
 
-		dd->total -= min_t(size_t, AES_BLOCK_SIZE, dd->total);
+		dd->total -= AES_BLOCK_SIZE;
+
+		BUG_ON(dd->total < 0);
 
 		/* Clear IRQ status */
 		status &= ~AES_REG_IRQ_DATA_OUT;
@@ -1318,6 +1322,7 @@ static struct platform_driver omap_aes_driver = {
 	.remove	= omap_aes_remove,
 	.driver	= {
 		.name	= "omap-aes",
+		.owner	= THIS_MODULE,
 		.pm	= &omap_aes_pm_ops,
 		.of_match_table	= omap_aes_of_match,
 	},

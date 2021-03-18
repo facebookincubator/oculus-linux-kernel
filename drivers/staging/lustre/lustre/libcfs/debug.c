@@ -57,42 +57,8 @@ module_param(libcfs_debug, int, 0644);
 MODULE_PARM_DESC(libcfs_debug, "Lustre kernel debug mask");
 EXPORT_SYMBOL(libcfs_debug);
 
-static int libcfs_param_debug_mb_set(const char *val,
-				     const struct kernel_param *kp)
-{
-	int rc;
-	unsigned num;
-
-	rc = kstrtouint(val, 0, &num);
-	if (rc < 0)
-		return rc;
-
-	if (!*((unsigned int *)kp->arg)) {
-		*((unsigned int *)kp->arg) = num;
-		return 0;
-	}
-
-	rc = cfs_trace_set_debug_mb(num);
-
-	if (!rc)
-		*((unsigned int *)kp->arg) = cfs_trace_get_debug_mb();
-
-	return rc;
-}
-
-/* While debug_mb setting look like unsigned int, in fact
- * it needs quite a bunch of extra processing, so we define special
- * debugmb parameter type with corresponding methods to handle this case */
-static struct kernel_param_ops param_ops_debugmb = {
-	.set = libcfs_param_debug_mb_set,
-	.get = param_get_uint,
-};
-
-#define param_check_debugmb(name, p) \
-		__param_check(name, p, unsigned int)
-
-static unsigned int libcfs_debug_mb;
-module_param(libcfs_debug_mb, debugmb, 0644);
+unsigned int libcfs_debug_mb = 0;
+module_param(libcfs_debug_mb, uint, 0644);
 MODULE_PARM_DESC(libcfs_debug_mb, "Total debug buffer size.");
 EXPORT_SYMBOL(libcfs_debug_mb);
 
@@ -106,106 +72,18 @@ module_param(libcfs_console_ratelimit, uint, 0644);
 MODULE_PARM_DESC(libcfs_console_ratelimit, "Lustre kernel debug console ratelimit (0 to disable)");
 EXPORT_SYMBOL(libcfs_console_ratelimit);
 
-static int param_set_delay_minmax(const char *val,
-				  const struct kernel_param *kp,
-				  long min, long max)
-{
-	long d;
-	int sec;
-	int rc;
-
-	rc = kstrtoint(val, 0, &sec);
-	if (rc)
-		return -EINVAL;
-
-	d = cfs_time_seconds(sec) / 100;
-	if (d < min || d > max)
-		return -EINVAL;
-
-	*((unsigned int *)kp->arg) = d;
-
-	return 0;
-}
-
-static int param_get_delay(char *buffer, const struct kernel_param *kp)
-{
-	unsigned int d = *(unsigned int *)kp->arg;
-
-	return sprintf(buffer, "%u", (unsigned int)cfs_duration_sec(d * 100));
-}
-
 unsigned int libcfs_console_max_delay;
+module_param(libcfs_console_max_delay, uint, 0644);
+MODULE_PARM_DESC(libcfs_console_max_delay, "Lustre kernel debug console max delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_max_delay);
+
 unsigned int libcfs_console_min_delay;
+module_param(libcfs_console_min_delay, uint, 0644);
+MODULE_PARM_DESC(libcfs_console_min_delay, "Lustre kernel debug console min delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_min_delay);
 
-static int param_set_console_max_delay(const char *val,
-				       const struct kernel_param *kp)
-{
-	return param_set_delay_minmax(val, kp,
-				      libcfs_console_min_delay, INT_MAX);
-}
-
-static struct kernel_param_ops param_ops_console_max_delay = {
-	.set = param_set_console_max_delay,
-	.get = param_get_delay,
-};
-
-#define param_check_console_max_delay(name, p) \
-		__param_check(name, p, unsigned int)
-
-module_param(libcfs_console_max_delay, console_max_delay, 0644);
-MODULE_PARM_DESC(libcfs_console_max_delay, "Lustre kernel debug console max delay (jiffies)");
-
-static int param_set_console_min_delay(const char *val,
-				       const struct kernel_param *kp)
-{
-	return param_set_delay_minmax(val, kp,
-				      1, libcfs_console_max_delay);
-}
-
-static struct kernel_param_ops param_ops_console_min_delay = {
-	.set = param_set_console_min_delay,
-	.get = param_get_delay,
-};
-
-#define param_check_console_min_delay(name, p) \
-		__param_check(name, p, unsigned int)
-
-module_param(libcfs_console_min_delay, console_min_delay, 0644);
-MODULE_PARM_DESC(libcfs_console_min_delay, "Lustre kernel debug console min delay (jiffies)");
-
-static int param_set_uint_minmax(const char *val,
-				 const struct kernel_param *kp,
-				 unsigned int min, unsigned int max)
-{
-	unsigned int num;
-	int ret;
-
-	if (!val)
-		return -EINVAL;
-	ret = kstrtouint(val, 0, &num);
-	if (ret < 0 || num < min || num > max)
-		return -EINVAL;
-	*((unsigned int *)kp->arg) = num;
-	return 0;
-}
-
-static int param_set_uintpos(const char *val, const struct kernel_param *kp)
-{
-	return param_set_uint_minmax(val, kp, 1, -1);
-}
-
-static struct kernel_param_ops param_ops_uintpos = {
-	.set = param_set_uintpos,
-	.get = param_get_uint,
-};
-
-#define param_check_uintpos(name, p) \
-		__param_check(name, p, unsigned int)
-
 unsigned int libcfs_console_backoff = CDEBUG_DEFAULT_BACKOFF;
-module_param(libcfs_console_backoff, uintpos, 0644);
+module_param(libcfs_console_backoff, uint, 0644);
 MODULE_PARM_DESC(libcfs_console_backoff, "Lustre kernel debug console backoff factor");
 EXPORT_SYMBOL(libcfs_console_backoff);
 
@@ -215,20 +93,29 @@ EXPORT_SYMBOL(libcfs_debug_binary);
 unsigned int libcfs_stack = 3 * THREAD_SIZE / 4;
 EXPORT_SYMBOL(libcfs_stack);
 
+unsigned int portal_enter_debugger;
+EXPORT_SYMBOL(portal_enter_debugger);
+
 unsigned int libcfs_catastrophe;
 EXPORT_SYMBOL(libcfs_catastrophe);
+
+unsigned int libcfs_watchdog_ratelimit = 300;
+EXPORT_SYMBOL(libcfs_watchdog_ratelimit);
 
 unsigned int libcfs_panic_on_lbug = 1;
 module_param(libcfs_panic_on_lbug, uint, 0644);
 MODULE_PARM_DESC(libcfs_panic_on_lbug, "Lustre kernel panic on LBUG");
 EXPORT_SYMBOL(libcfs_panic_on_lbug);
 
+atomic_t libcfs_kmemory = ATOMIC_INIT(0);
+EXPORT_SYMBOL(libcfs_kmemory);
+
 static wait_queue_head_t debug_ctlwq;
 
 char libcfs_debug_file_path_arr[PATH_MAX] = LIBCFS_DEBUG_FILE_PATH_DEFAULT;
 
 /* We need to pass a pointer here, but elsewhere this must be a const */
-static char *libcfs_debug_file_path;
+char *libcfs_debug_file_path;
 module_param(libcfs_debug_file_path, charp, 0644);
 MODULE_PARM_DESC(libcfs_debug_file_path,
 		 "Path for dumping debug logs, set 'NONE' to prevent log dumping");
@@ -237,7 +124,7 @@ int libcfs_panic_in_progress;
 
 /* libcfs_debug_token2mask() expects the returned
  * string in lower-case */
-static const char *
+const char *
 libcfs_debug_subsys2str(int subsys)
 {
 	switch (1 << subsys) {
@@ -298,7 +185,7 @@ libcfs_debug_subsys2str(int subsys)
 
 /* libcfs_debug_token2mask() expects the returned
  * string in lower-case */
-static const char *
+const char *
 libcfs_debug_dbg2str(int debug)
 {
 	switch (1 << debug) {
@@ -431,7 +318,9 @@ libcfs_debug_str2mask(int *mask, const char *str, int is_subsys)
 	if (t >= 1 && matched == n) {
 		/* don't print warning for lctl set_param debug=0 or -1 */
 		if (m != 0 && m != -1)
-			CWARN("You are trying to use a numerical value for the mask - this will be deprecated in a future release.\n");
+			CWARN("You are trying to use a numerical value for the "
+			      "mask - this will be deprecated in a future "
+			      "release.\n");
 		*mask = m;
 		return 0;
 	}
@@ -452,8 +341,8 @@ void libcfs_debug_dumplog_internal(void *arg)
 
 	if (strncmp(libcfs_debug_file_path_arr, "NONE", 4) != 0) {
 		snprintf(debug_file_name, sizeof(debug_file_name) - 1,
-			 "%s.%lld.%ld", libcfs_debug_file_path_arr,
-			 (s64)ktime_get_real_seconds(), (long_ptr_t)arg);
+			 "%s.%ld.%ld", libcfs_debug_file_path_arr,
+			 get_seconds(), (long_ptr_t)arg);
 		pr_alert("LustreError: dumping log to %s\n",
 		       debug_file_name);
 		cfs_tracefile_dump_all_pages(debug_file_name);
@@ -463,7 +352,7 @@ void libcfs_debug_dumplog_internal(void *arg)
 	current->journal_info = journal_info;
 }
 
-static int libcfs_debug_dumplog_thread(void *arg)
+int libcfs_debug_dumplog_thread(void *arg)
 {
 	libcfs_debug_dumplog_internal(arg);
 	wake_up(&debug_ctlwq);
@@ -486,8 +375,8 @@ void libcfs_debug_dumplog(void)
 			     (void *)(long)current_pid(),
 			     "libcfs_debug_dumper");
 	if (IS_ERR(dumper))
-		pr_err("LustreError: cannot start log dump thread: %ld\n",
-		       PTR_ERR(dumper));
+		pr_err("LustreError: cannot start log dump thread:"
+		       " %ld\n", PTR_ERR(dumper));
 	else
 		schedule();
 
@@ -522,15 +411,13 @@ int libcfs_debug_init(unsigned long bufsize)
 	if (max > cfs_trace_max_debug_mb() || max < num_possible_cpus()) {
 		max = TCD_MAX_PAGES;
 	} else {
-		max = max / num_possible_cpus();
-		max <<= (20 - PAGE_CACHE_SHIFT);
+		max = (max / num_possible_cpus());
+		max = (max << (20 - PAGE_CACHE_SHIFT));
 	}
 	rc = cfs_tracefile_init(max);
 
-	if (rc == 0) {
+	if (rc == 0)
 		libcfs_register_panic_notifier();
-		libcfs_debug_mb = cfs_trace_get_debug_mb();
-	}
 
 	return rc;
 }
@@ -562,7 +449,6 @@ int libcfs_debug_mark_buffer(const char *text)
 
 	return 0;
 }
-
 #undef DEBUG_SUBSYSTEM
 #define DEBUG_SUBSYSTEM S_LNET
 
@@ -574,3 +460,11 @@ void libcfs_debug_set_level(unsigned int debug_level)
 }
 
 EXPORT_SYMBOL(libcfs_debug_set_level);
+
+void libcfs_log_goto(struct libcfs_debug_msg_data *msgdata, const char *label,
+		     long_ptr_t rc)
+{
+	libcfs_debug_msg(msgdata, "Process leaving via %s (rc=%lu : %ld : %#lx)\n",
+			 label, (ulong_ptr_t)rc, rc, rc);
+}
+EXPORT_SYMBOL(libcfs_log_goto);

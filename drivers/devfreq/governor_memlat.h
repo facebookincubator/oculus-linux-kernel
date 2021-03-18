@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,11 +29,6 @@ struct dev_stats {
 	unsigned long inst_count;
 	unsigned long mem_count;
 	unsigned long freq;
-};
-
-struct core_dev_map {
-	unsigned int core_mhz;
-	unsigned int target_freq;
 };
 
 /**
@@ -68,7 +63,6 @@ struct memlat_hwmon {
 	struct dev_stats *core_stats;
 
 	struct devfreq *df;
-	struct core_dev_map *freq_map;
 };
 
 #ifdef CONFIG_DEVFREQ_GOV_MEMLAT

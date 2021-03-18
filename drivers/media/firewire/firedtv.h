@@ -96,11 +96,11 @@ struct firedtv {
 
 	enum model_type		type;
 	char			subunit;
-	s8			isochannel;
+	char			isochannel;
 	struct fdtv_ir_context	*ir_context;
 
-	enum fe_sec_voltage	voltage;
-	enum fe_sec_tone_mode	tone;
+	fe_sec_voltage_t	voltage;
+	fe_sec_tone_mode_t	tone;
 
 	struct mutex		demux_mutex;
 	unsigned long		channel_active;

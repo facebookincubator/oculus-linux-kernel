@@ -8,9 +8,7 @@
 #include <linux/kthread.h>
 #include <linux/random.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/mm.h>
-#include <linux/vmalloc.h>
 
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
@@ -257,4 +255,5 @@ static int start_pageattr_test(void)
 
 	return 0;
 }
-device_initcall(start_pageattr_test);
+
+module_init(start_pageattr_test);

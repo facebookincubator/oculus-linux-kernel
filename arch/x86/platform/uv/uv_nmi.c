@@ -104,7 +104,7 @@ static int param_set_local64(const char *val, const struct kernel_param *kp)
 	return 0;
 }
 
-static const struct kernel_param_ops param_ops_local64 = {
+static struct kernel_param_ops param_ops_local64 = {
 	.get = param_get_local64,
 	.set = param_set_local64,
 };
@@ -273,6 +273,20 @@ static inline void uv_clear_nmi(int cpu)
 	}
 }
 
+/* Print non-responding cpus */
+static void uv_nmi_nr_cpus_pr(char *fmt)
+{
+	static char cpu_list[1024];
+	int len = sizeof(cpu_list);
+	int c = cpumask_weight(uv_nmi_cpu_mask);
+	int n = cpulist_scnprintf(cpu_list, len, uv_nmi_cpu_mask);
+
+	if (n >= len-1)
+		strcpy(&cpu_list[len - 6], "...\n");
+
+	printk(fmt, c, cpu_list);
+}
+
 /* Ping non-responding cpus attemping to force them into the NMI handler */
 static void uv_nmi_nr_cpus_ping(void)
 {
@@ -357,61 +371,54 @@ static void uv_nmi_wait(int master)
 			break;
 
 		/* if not all made it in, send IPI NMI to them */
-		pr_alert("UV: Sending NMI IPI to %d non-responding CPUs: %*pbl\n",
-			 cpumask_weight(uv_nmi_cpu_mask),
-			 cpumask_pr_args(uv_nmi_cpu_mask));
-
+		uv_nmi_nr_cpus_pr(KERN_ALERT
+			"UV: Sending NMI IPI to %d non-responding CPUs: %s\n");
 		uv_nmi_nr_cpus_ping();
 
 		/* if all cpus are in, then done */
 		if (!uv_nmi_wait_cpus(0))
 			break;
 
-		pr_alert("UV: %d CPUs not in NMI loop: %*pbl\n",
-			 cpumask_weight(uv_nmi_cpu_mask),
-			 cpumask_pr_args(uv_nmi_cpu_mask));
+		uv_nmi_nr_cpus_pr(KERN_ALERT
+			"UV: %d CPUs not in NMI loop: %s\n");
 	} while (0);
 
 	pr_alert("UV: %d of %d CPUs in NMI\n",
 		atomic_read(&uv_nmi_cpus_in_nmi), num_online_cpus());
 }
 
-/* Dump Instruction Pointer header */
 static void uv_nmi_dump_cpu_ip_hdr(void)
 {
-	pr_info("\nUV: %4s %6s %-32s %s   (Note: PID 0 not listed)\n",
+	printk(KERN_DEFAULT
+		"\nUV: %4s %6s %-32s %s   (Note: PID 0 not listed)\n",
 		"CPU", "PID", "COMMAND", "IP");
 }
 
-/* Dump Instruction Pointer info */
 static void uv_nmi_dump_cpu_ip(int cpu, struct pt_regs *regs)
 {
-	pr_info("UV: %4d %6d %-32.32s ", cpu, current->pid, current->comm);
+	printk(KERN_DEFAULT "UV: %4d %6d %-32.32s ",
+		cpu, current->pid, current->comm);
+
 	printk_address(regs->ip);
 }
 
-/*
- * Dump this CPU's state.  If action was set to "kdump" and the crash_kexec
- * failed, then we provide "dump" as an alternate action.  Action "dump" now
- * also includes the show "ips" (instruction pointers) action whereas the
- * action "ips" only displays instruction pointers for the non-idle CPU's.
- * This is an abbreviated form of the "ps" command.
- */
+/* Dump this cpu's state */
 static void uv_nmi_dump_state_cpu(int cpu, struct pt_regs *regs)
 {
 	const char *dots = " ................................. ";
 
-	if (cpu == 0)
-		uv_nmi_dump_cpu_ip_hdr();
+	if (uv_nmi_action_is("ips")) {
+		if (cpu == 0)
+			uv_nmi_dump_cpu_ip_hdr();
 
-	if (current->pid != 0 || !uv_nmi_action_is("ips"))
-		uv_nmi_dump_cpu_ip(cpu, regs);
+		if (current->pid != 0)
+			uv_nmi_dump_cpu_ip(cpu, regs);
 
-	if (uv_nmi_action_is("dump")) {
-		pr_info("UV:%sNMI process trace for CPU %d\n", dots, cpu);
+	} else if (uv_nmi_action_is("dump")) {
+		printk(KERN_DEFAULT
+			"UV:%sNMI process trace for CPU %d\n", dots, cpu);
 		show_regs(regs);
 	}
-
 	this_cpu_write(uv_cpu_nmi.state, UV_NMI_STATE_DUMP_DONE);
 }
 
@@ -473,7 +480,8 @@ static void uv_nmi_dump_state(int cpu, struct pt_regs *regs, int master)
 				uv_nmi_trigger_dump(tcpu);
 		}
 		if (ignored)
-			pr_alert("UV: %d CPUs ignored NMI\n", ignored);
+			printk(KERN_DEFAULT "UV: %d CPUs ignored NMI\n",
+				ignored);
 
 		console_loglevel = saved_console_loglevel;
 		pr_alert("UV: process trace complete\n");
@@ -495,9 +503,8 @@ static void uv_nmi_touch_watchdogs(void)
 	touch_nmi_watchdog();
 }
 
+#if defined(CONFIG_KEXEC)
 static atomic_t uv_nmi_kexec_failed;
-
-#if defined(CONFIG_KEXEC_CORE)
 static void uv_nmi_kdump(int cpu, int master, struct pt_regs *regs)
 {
 	/* Call crash to dump system state */
@@ -506,9 +513,10 @@ static void uv_nmi_kdump(int cpu, int master, struct pt_regs *regs)
 		crash_kexec(regs);
 
 		pr_emerg("UV: crash_kexec unexpectedly returned, ");
-		atomic_set(&uv_nmi_kexec_failed, 1);
 		if (!kexec_crash_image) {
 			pr_cont("crash kernel not loaded\n");
+			atomic_set(&uv_nmi_kexec_failed, 1);
+			uv_nmi_sync_exit(1);
 			return;
 		}
 		pr_cont("kexec busy, stalling cpus while waiting\n");
@@ -517,16 +525,18 @@ static void uv_nmi_kdump(int cpu, int master, struct pt_regs *regs)
 	/* If crash exec fails the slaves should return, otherwise stall */
 	while (atomic_read(&uv_nmi_kexec_failed) == 0)
 		mdelay(10);
+
+	/* Crash kernel most likely not loaded, return in an orderly fashion */
+	uv_nmi_sync_exit(0);
 }
 
-#else /* !CONFIG_KEXEC_CORE */
+#else /* !CONFIG_KEXEC */
 static inline void uv_nmi_kdump(int cpu, int master, struct pt_regs *regs)
 {
 	if (master)
 		pr_err("UV: NMI kdump: KEXEC not supported in this kernel\n");
-	atomic_set(&uv_nmi_kexec_failed, 1);
 }
-#endif /* !CONFIG_KEXEC_CORE */
+#endif /* !CONFIG_KEXEC */
 
 #ifdef CONFIG_KGDB
 #ifdef CONFIG_KGDB_KDB
@@ -614,13 +624,8 @@ int uv_handle_nmi(unsigned int reason, struct pt_regs *regs)
 	master = (atomic_read(&uv_nmi_cpu) == cpu);
 
 	/* If NMI action is "kdump", then attempt to do it */
-	if (uv_nmi_action_is("kdump")) {
+	if (uv_nmi_action_is("kdump"))
 		uv_nmi_kdump(cpu, master, regs);
-
-		/* Unexpected return, revert action to "dump" */
-		if (master)
-			strncpy(uv_nmi_action, "dump", strlen(uv_nmi_action));
-	}
 
 	/* Pause as all cpus enter the NMI handler */
 	uv_nmi_wait(master);
@@ -646,7 +651,6 @@ int uv_handle_nmi(unsigned int reason, struct pt_regs *regs)
 		atomic_set(&uv_nmi_cpus_in_nmi, -1);
 		atomic_set(&uv_nmi_cpu, -1);
 		atomic_set(&uv_in_nmi, 0);
-		atomic_set(&uv_nmi_kexec_failed, 0);
 	}
 
 	uv_nmi_touch_watchdogs();

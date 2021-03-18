@@ -137,11 +137,15 @@ __init_HFSCR:
 /*
  * Clear the TLB using the specified IS form of tlbiel instruction
  * (invalidate by congruence class). P7 has 128 CCs., P8 has 512.
+ *
+ * r3 = IS field
  */
 __init_tlb_power7:
+	li	r3,0xc00	/* IS field = 0b11 */
+_GLOBAL(__flush_tlb_power7)
 	li	r6,128
 	mtctr	r6
-	li	r7,0xc00	/* IS field = 0b11 */
+	mr	r7,r3		/* IS field */
 	ptesync
 2:	tlbiel	r7
 	addi	r7,r7,0x1000
@@ -150,9 +154,11 @@ __init_tlb_power7:
 1:	blr
 
 __init_tlb_power8:
+	li	r3,0xc00	/* IS field = 0b11 */
+_GLOBAL(__flush_tlb_power8)
 	li	r6,512
 	mtctr	r6
-	li	r7,0xc00	/* IS field = 0b11 */
+	mr	r7,r3		/* IS field */
 	ptesync
 2:	tlbiel	r7
 	addi	r7,r7,0x1000

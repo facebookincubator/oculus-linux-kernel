@@ -10,11 +10,8 @@
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-#include <asm/v7m.h>
 
- AR_CLASS(	.arch	armv7-a	)
- M_CLASS(	.arch	armv7-m	)
-
+	.arch	armv7-a
 /*
  * Debugging stuff
  *
@@ -117,12 +114,7 @@
  * sort out different calling conventions
  */
 		.align
-		/*
-		 * Always enter in ARM state for CPUs that support the ARM ISA.
-		 * As of today (2014) that's exactly the members of the A and R
-		 * classes.
-		 */
- AR_CLASS(	.arm	)
+		.arm				@ Always enter in ARM state
 start:
 		.type	start,#function
 		.rept	7
@@ -130,7 +122,7 @@ start:
 		.endr
    ARM(		mov	r0, r0		)
    ARM(		b	1f		)
- THUMB(		badr	r12, 1f		)
+ THUMB(		adr	r12, BSYM(1f)	)
  THUMB(		bx	r12		)
 
 		.word	_magic_sig	@ Magic numbers to help the loader
@@ -140,15 +132,14 @@ start:
 
  THUMB(		.thumb			)
 1:
- ARM_BE8(	setend	be		)	@ go BE8 if compiled for BE8
- AR_CLASS(	mrs	r9, cpsr	)
+ ARM_BE8(	setend	be )			@ go BE8 if compiled for BE8
+		mrs	r9, cpsr
 #ifdef CONFIG_ARM_VIRT_EXT
 		bl	__hyp_stub_install	@ get into SVC mode, reversibly
 #endif
 		mov	r7, r1			@ save architecture ID
 		mov	r8, r2			@ save atags pointer
 
-#ifndef CONFIG_CPU_V7M
 		/*
 		 * Booting from Angel - need to enter SVC mode and disable
 		 * FIQs/IRQs (numeric definitions from angel arm.h source).
@@ -164,7 +155,6 @@ not_angel:
 		safe_svcmode_maskall r0
 		msr	spsr_cxsf, r9		@ Save the CPU boot mode in
 						@ SPSR
-#endif
 		/*
 		 * Note that some cache flushing and other stuff may
 		 * be needed here - is there an Angel SWI call for this?
@@ -178,26 +168,9 @@ not_angel:
 		.text
 
 #ifdef CONFIG_AUTO_ZRELADDR
-		/*
-		 * Find the start of physical memory.  As we are executing
-		 * without the MMU on, we are in the physical address space.
-		 * We just need to get rid of any offset by aligning the
-		 * address.
-		 *
-		 * This alignment is a balance between the requirements of
-		 * different platforms - we have chosen 128MB to allow
-		 * platforms which align the start of their physical memory
-		 * to 128MB to use this feature, while allowing the zImage
-		 * to be placed within the first 128MB of memory on other
-		 * platforms.  Increasing the alignment means we place
-		 * stricter alignment requirements on the start of physical
-		 * memory, but relaxing it means that we break people who
-		 * are already placing their zImage in (eg) the top 64MB
-		 * of this range.
-		 */
+		@ determine final kernel image address
 		mov	r4, pc
 		and	r4, r4, #0xf8000000
-		/* Determine final kernel image address. */
 		add	r4, r4, #TEXT_OFFSET
 #else
 		ldr	r4, =zreladdr
@@ -205,7 +178,7 @@ not_angel:
 
 		/*
 		 * Set up a page table only if it won't overwrite ourself.
-		 * That means r4 < pc || r4 - 16k page directory > &_end.
+		 * That means r4 < pc && r4 - 16k page directory > &_end.
 		 * Given that r4 > &_end is most unfrequent, we add a rough
 		 * additional 1MB of room for a possible appended DTB.
 		 */
@@ -290,37 +263,16 @@ restart:	adr	r0, LC0
 		 * OK... Let's do some funky business here.
 		 * If we do have a DTB appended to zImage, and we do have
 		 * an ATAG list around, we want the later to be translated
-		 * and folded into the former here. No GOT fixup has occurred
-		 * yet, but none of the code we're about to call uses any
-		 * global variable.
+		 * and folded into the former here.  To be on the safe side,
+		 * let's temporarily move  the stack away into the malloc
+		 * area.  No GOT fixup has occurred yet, but none of the
+		 * code we're about to call uses any global variable.
 		*/
-
-		/* Get the initial DTB size */
-		ldr	r5, [r6, #4]
-#ifndef __ARMEB__
-		/* convert to little endian */
-		eor	r1, r5, r5, ror #16
-		bic	r1, r1, #0x00ff0000
-		mov	r5, r5, ror #8
-		eor	r5, r5, r1, lsr #8
-#endif
-		/* 50% DTB growth should be good enough */
-		add	r5, r5, r5, lsr #1
-		/* preserve 64-bit alignment */
-		add	r5, r5, #7
-		bic	r5, r5, #7
-		/* clamp to 32KB min and 1MB max */
-		cmp	r5, #(1 << 15)
-		movlo	r5, #(1 << 15)
-		cmp	r5, #(1 << 20)
-		movhi	r5, #(1 << 20)
-		/* temporarily relocate the stack past the DTB work space */
-		add	sp, sp, r5
-
+		add	sp, sp, #0x10000
 		stmfd	sp!, {r0-r3, ip, lr}
 		mov	r0, r8
 		mov	r1, r6
-		mov	r2, r5
+		sub	r2, sp, r6
 		bl	atags_to_fdt
 
 		/*
@@ -333,11 +285,11 @@ restart:	adr	r0, LC0
 		bic	r0, r0, #1
 		add	r0, r0, #0x100
 		mov	r1, r6
-		mov	r2, r5
+		sub	r2, sp, r6
 		bleq	atags_to_fdt
 
 		ldmfd	sp!, {r0-r3, ip, lr}
-		sub	sp, sp, r5
+		sub	sp, sp, #0x10000
 #endif
 
 		mov	r8, r6			@ use the appended device tree
@@ -354,7 +306,7 @@ restart:	adr	r0, LC0
 		subs	r1, r5, r1
 		addhi	r9, r9, r1
 
-		/* Get the current DTB size */
+		/* Get the dtb's size */
 		ldr	r5, [r6, #4]
 #ifndef __ARMEB__
 		/* convert r5 (dtb size) to little endian */
@@ -447,7 +399,7 @@ dtb_check_done:
 
 		bl	cache_clean_flush
 
-		badr	r0, restart
+		adr	r0, BSYM(restart)
 		add	r0, r0, r6
 		mov	pc, r0
 
@@ -687,7 +639,7 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		mov	r0, r3
 		mov	r9, r0, lsr #18
 		mov	r9, r9, lsl #18		@ start of RAM
-		add	r10, r9, #0x10000000	@ a reasonable RAM size
+		add	r10, r9, #CONFIG_ARM_DECOMPRESSOR_LIMIT
 		mov	r1, #0x12		@ XN|U + section mapping
 		orr	r1, r1, #3 << 10	@ AP=11
 		add	r2, r3, #16384
@@ -776,7 +728,7 @@ __armv7_mmu_cache_on:
 		orrne	r0, r0, #1		@ MMU enabled
 		movne	r1, #0xfffffffd		@ domain 0 = client
 		bic     r6, r6, #1 << 31        @ 32-bit translation system
-		bic     r6, r6, #(7 << 0) | (1 << 4)	@ use only ttbr0
+		bic     r6, r6, #3 << 0         @ use only ttbr0
 		mcrne	p15, 0, r3, c2, c0, 0	@ load page table pointer
 		mcrne	p15, 0, r0, c8, c7, 0	@ flush I,D TLBs
 		mcr	p15, 0, r0, c7, c5, 4	@ ISB
@@ -839,16 +791,6 @@ __common_mmu_cache_on:
 call_cache_fn:	adr	r12, proc_types
 #ifdef CONFIG_CPU_CP15
 		mrc	p15, 0, r9, c0, c0	@ get processor ID
-#elif defined(CONFIG_CPU_V7M)
-		/*
-		 * On v7-M the processor id is located in the V7M_SCB_CPUID
-		 * register, but as cache handling is IMPLEMENTATION DEFINED on
-		 * v7-M (if existant at all) we just return early here.
-		 * If V7M_SCB_CPUID were used the cpu ID functions (i.e.
-		 * __armv7_mmu_cache_{on,off,flush}) would be selected which
-		 * use cp15 registers that are not implemented on v7-M.
-		 */
-		bx	lr
 #else
 		ldr	r9, =CONFIG_PROCESSOR_ID
 #endif
@@ -1349,9 +1291,8 @@ __hyp_reentry_vectors:
 
 __enter_kernel:
 		mov	r0, #0			@ must be 0
- ARM(		mov	pc, r4		)	@ call kernel
- M_CLASS(	add	r4, r4, #1	)	@ enter in Thumb mode for M class
- THUMB(		bx	r4		)	@ entry point is always ARM for A/R classes
+ ARM(		mov	pc, r4	)		@ call kernel
+ THUMB(		bx	r4	)		@ entry point is always ARM
 
 reloc_code_end:
 

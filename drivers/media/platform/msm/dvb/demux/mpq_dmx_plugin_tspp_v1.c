@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -353,7 +353,7 @@ static void mpq_dmx_tspp_aggregated_process(int tsif, int channel_id)
 	int i;
 
 	while ((tspp_data_desc = tspp_get_buffer(0, channel_id)) != NULL) {
-		if (aggregate_count == 0)
+		if (0 == aggregate_count)
 			buff_current_addr_phys = tspp_data_desc->phys_base;
 		notif_size = tspp_data_desc->size / TSPP_RAW_TTS_SIZE;
 		mpq_dmx_tspp_info.tsif[tsif].aggregate_ids[aggregate_count] =
@@ -444,13 +444,13 @@ static int mpq_dmx_tspp_thread(void *arg)
 		mpq_demux = mpq_dmx_tspp_info.tsif[tsif].mpq_demux;
 		mpq_demux->hw_notification_size = 0;
 
-		if (allocation_mode != MPQ_DMX_TSPP_CONTIGUOUS_PHYS_ALLOC &&
+		if (MPQ_DMX_TSPP_CONTIGUOUS_PHYS_ALLOC != allocation_mode &&
 			mpq_sdmx_is_loaded())
 			pr_err_once(
 				"%s: TSPP Allocation mode does not support secure demux.\n",
 				__func__);
 
-		if (allocation_mode == MPQ_DMX_TSPP_CONTIGUOUS_PHYS_ALLOC &&
+		if (MPQ_DMX_TSPP_CONTIGUOUS_PHYS_ALLOC == allocation_mode &&
 			mpq_sdmx_is_loaded()) {
 			mpq_dmx_tspp_aggregated_process(tsif, channel_id);
 		} else {
@@ -1634,9 +1634,6 @@ static int mpq_tspp_dmx_write_to_decoder(
 	if (dvb_dmx_is_video_feed(feed))
 		return mpq_dmx_process_video_packet(feed, buf);
 
-	if (dvb_dmx_is_audio_feed(feed))
-		return mpq_dmx_process_audio_packet(feed, buf);
-
 	if (dvb_dmx_is_pcr_feed(feed))
 		return mpq_dmx_process_pcr_packet(feed, buf);
 
@@ -1666,7 +1663,7 @@ static int mpq_tspp_dmx_get_caps(struct dmx_demux *demux,
 
 	caps->caps = DMX_CAP_PULL_MODE | DMX_CAP_VIDEO_DECODER_DATA |
 		DMX_CAP_TS_INSERTION | DMX_CAP_VIDEO_INDEXING |
-		DMX_CAP_AUDIO_DECODER_DATA | DMX_CAP_AUTO_BUFFER_FLUSH;
+		DMX_CAP_AUTO_BUFFER_FLUSH;
 	caps->recording_max_video_pids_indexed = 0;
 	caps->num_decoders = MPQ_ADAPTER_MAX_NUM_OF_INTERFACES;
 	caps->num_demux_devices = CONFIG_DVB_MPQ_NUM_DMX_DEVICES;
@@ -1756,8 +1753,6 @@ static int mpq_tspp_dmx_get_stc(struct dmx_demux *demux, unsigned int num,
 {
 	enum tspp_source source;
 	u32 tcr_counter;
-	u64 avtimer_stc = 0;
-	int tts_source = 0;
 
 	if (!demux || !stc || !base)
 		return -EINVAL;
@@ -1769,18 +1764,11 @@ static int mpq_tspp_dmx_get_stc(struct dmx_demux *demux, unsigned int num,
 	else
 		return -EINVAL;
 
-	if (tspp_get_tts_source(0, &tts_source) < 0)
-		tts_source = TSIF_TTS_TCR;
+	tspp_get_ref_clk_counter(0, source, &tcr_counter);
 
-	if (tts_source != TSIF_TTS_LPASS_TIMER) {
-		tspp_get_ref_clk_counter(0, source, &tcr_counter);
-		*stc = ((u64)tcr_counter) * 256; /* conversion to 27MHz */
-		*base = 300; /* divisor to get 90KHz clock from stc value */
-	} else {
-		if (tspp_get_lpass_time_counter(0, source, &avtimer_stc) < 0)
-			return -EINVAL;
-		*stc = avtimer_stc;
-	}
+	*stc = ((u64)tcr_counter) * 256; /* conversion to 27MHz */
+	*base = 300; /* divisor to get 90KHz clock from stc value */
+
 	return 0;
 }
 
@@ -1851,10 +1839,6 @@ static int mpq_tspp_dmx_init(
 
 	/* Extend dvb-demux debugfs with TSPP statistics. */
 	mpq_dmx_init_debugfs_entries(mpq_demux);
-
-	/* Get the TSIF TTS info */
-	if (tspp_get_tts_source(0, &mpq_demux->ts_packet_timestamp_source) < 0)
-		mpq_demux->ts_packet_timestamp_source = TSIF_TTS_TCR;
 
 	return 0;
 
@@ -1980,5 +1964,7 @@ static void __exit mpq_dmx_tspp_plugin_exit(void)
 module_init(mpq_dmx_tspp_plugin_init);
 module_exit(mpq_dmx_tspp_plugin_exit);
 
-MODULE_DESCRIPTION("Qualcomm Technologies Inc. demux TSPP version 1 HW Plugin");
+MODULE_DESCRIPTION("Qualcomm demux TSPP version 1 HW Plugin");
 MODULE_LICENSE("GPL v2");
+
+

@@ -659,24 +659,27 @@ static int rsi_mac80211_set_key(struct ieee80211_hw *hw,
  *				 informs the f/w regarding this.
  * @hw: Pointer to the ieee80211_hw structure.
  * @vif: Pointer to the ieee80211_vif structure.
- * @params: Pointer to A-MPDU action parameters
+ * @action: ieee80211_ampdu_mlme_action enum.
+ * @sta: Pointer to the ieee80211_sta structure.
+ * @tid: Traffic identifier.
+ * @ssn: Pointer to ssn value.
+ * @buf_size: Buffer size (for kernel version > 2.6.38).
  *
  * Return: status: 0 on success, negative error code on failure.
  */
 static int rsi_mac80211_ampdu_action(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
-				     struct ieee80211_ampdu_params *params)
+				     enum ieee80211_ampdu_mlme_action action,
+				     struct ieee80211_sta *sta,
+				     unsigned short tid,
+				     unsigned short *ssn,
+				     unsigned char buf_size)
 {
 	int status = -EOPNOTSUPP;
 	struct rsi_hw *adapter = hw->priv;
 	struct rsi_common *common = adapter->priv;
 	u16 seq_no = 0;
 	u8 ii = 0;
-	struct ieee80211_sta *sta = params->sta;
-	enum ieee80211_ampdu_mlme_action action = params->action;
-	u16 tid = params->tid;
-	u16 *ssn = &params->ssn;
-	u8 buf_size = params->buf_size;
 
 	for (ii = 0; ii < RSI_MAX_VIFS; ii++) {
 		if (vif == adapter->vifs[ii])
@@ -1059,9 +1062,10 @@ int rsi_mac80211_attach(struct rsi_common *common)
 	hw->priv = adapter;
 	adapter->hw = hw;
 
-	ieee80211_hw_set(hw, SIGNAL_DBM);
-	ieee80211_hw_set(hw, HAS_RATE_CONTROL);
-	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+	hw->flags = IEEE80211_HW_SIGNAL_DBM |
+		    IEEE80211_HW_HAS_RATE_CONTROL |
+		    IEEE80211_HW_AMPDU_AGGREGATION |
+		    0;
 
 	hw->queues = MAX_HW_QUEUES;
 	hw->extra_tx_headroom = RSI_NEEDED_HEADROOM;

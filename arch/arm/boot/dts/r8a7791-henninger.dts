@@ -23,7 +23,6 @@
 
 	chosen {
 		bootargs = "console=ttySC0,38400 ignore_loglevel rw root=/dev/nfs ip=dhcp";
-		stdout-path = &scif0;
 	};
 
 	memory@40000000 {
@@ -141,11 +140,6 @@
 		renesas,groups = "vin0_data8", "vin0_clk";
 		renesas,function = "vin0";
 	};
-
-	can0_pins: can0 {
-		renesas,groups = "can0_data";
-		renesas,function = "can0";
-	};
 };
 
 &scif0 {
@@ -161,7 +155,7 @@
 
 	phy-handle = <&phy1>;
 	renesas,ether-link-active-low;
-	status = "okay";
+	status = "ok";
 
 	phy1: ethernet-phy@1 {
 		reg = <1>;
@@ -226,7 +220,7 @@
 	flash@0 {
 		#address-cells = <1>;
 		#size-cells = <1>;
-		compatible = "spansion,s25fl512s", "jedec,spi-nor";
+		compatible = "spansion,s25fl512s";
 		reg = <0>;
 		spi-max-frequency = <30000000>;
 		spi-tx-bus-width = <4>;
@@ -277,17 +271,6 @@
 	pinctrl-names = "default";
 };
 
-&hsusb {
-	status = "okay";
-	pinctrl-0 = <&usb0_pins>;
-	pinctrl-names = "default";
-	renesas,enable-gpio = <&gpio5 31 GPIO_ACTIVE_HIGH>;
-};
-
-&usbphy {
-	status = "okay";
-};
-
 &pcie_bus_clk {
 	status = "okay";
 };
@@ -298,7 +281,7 @@
 
 /* composite video input */
 &vin0 {
-	status = "okay";
+	status = "ok";
 	pinctrl-0 = <&vin0_pins>;
 	pinctrl-names = "default";
 
@@ -311,10 +294,4 @@
 			bus-width = <8>;
 		};
 	};
-};
-
-&can0 {
-	pinctrl-0 = <&can0_pins>;
-	pinctrl-names = "default";
-	status = "okay";
 };

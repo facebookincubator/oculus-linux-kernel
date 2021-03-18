@@ -101,8 +101,9 @@ int cw1200_pm_init(struct cw1200_pm_state *pm,
 {
 	spin_lock_init(&pm->lock);
 
-	setup_timer(&pm->stay_awake, cw1200_pm_stay_awake_tmo,
-		    (unsigned long)pm);
+	init_timer(&pm->stay_awake);
+	pm->stay_awake.data = (unsigned long)pm;
+	pm->stay_awake.function = cw1200_pm_stay_awake_tmo;
 
 	return 0;
 }

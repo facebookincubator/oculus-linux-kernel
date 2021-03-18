@@ -45,7 +45,7 @@ menuconfig USB_GADGET
 if USB_GADGET
 
 config USB_GADGET_DEBUG
-	bool "Debugging messages (DEVELOPMENT)"
+	boolean "Debugging messages (DEVELOPMENT)"
 	depends on DEBUG_KERNEL
 	help
 	   Many controller and gadget drivers will print some debugging
@@ -73,7 +73,7 @@ config USB_GADGET_VERBOSE
 	   production build.
 
 config USB_GADGET_DEBUG_FILES
-	bool "Debugging information files (DEVELOPMENT)"
+	boolean "Debugging information files (DEVELOPMENT)"
 	depends on PROC_FS
 	help
 	   Some of the drivers in the "gadget" framework can expose
@@ -84,7 +84,7 @@ config USB_GADGET_DEBUG_FILES
 	   here.  If in doubt, or to conserve kernel memory, say "N".
 
 config USB_GADGET_DEBUG_FS
-	bool "Debugging information files in debugfs (DEVELOPMENT)"
+	boolean "Debugging information files in debugfs (DEVELOPMENT)"
 	depends on DEBUG_FS
 	help
 	   Some of the drivers in the "gadget" framework can expose
@@ -113,7 +113,7 @@ config USB_GADGET_VBUS_DRAW
 
 config USB_GADGET_STORAGE_NUM_BUFFERS
 	int "Number of storage pipeline buffers"
-	range 2 32
+	range 2 4
 	default 2
 	help
 	   Usually 2 buffers are enough to establish a good buffering
@@ -175,12 +175,6 @@ config USB_F_SUBSET
 config USB_F_RNDIS
 	tristate
 
-config USB_F_QCRNDIS
-	tristate
-
-config USB_F_RMNET_BAM
-	tristate
-
 config USB_F_MASS_STORAGE
 	tristate
 
@@ -189,20 +183,12 @@ config USB_F_FS
 
 config USB_F_UAC1
 	tristate
-
+ 
 config USB_F_UAC2
 	tristate
 
 config USB_F_UVC
-	tristate
-
-config USB_F_MIDI
-	tristate
-
-config USB_F_HID
-	tristate
-
-config USB_F_PRINTER
+	select VIDEOBUF2_VMALLOC
 	tristate
 
 config USB_F_MTP
@@ -215,21 +201,6 @@ config USB_F_AUDIO_SRC
 	tristate
 
 config USB_F_ACC
-	tristate
-
-config USB_F_DIAG
-	tristate
-
-config USB_F_GSI
-	tristate
-
-config USB_F_CDEV
-	tristate
-
-config USB_F_QDSS
-	tristate
-
-config USB_F_CCID
 	tristate
 
 choice
@@ -266,7 +237,7 @@ config USB_CONFIGFS
 	  For more information see Documentation/usb/gadget_configfs.txt.
 
 config USB_CONFIGFS_SERIAL
-	bool "Generic serial bulk in/out"
+	boolean "Generic serial bulk in/out"
 	depends on USB_CONFIGFS
 	depends on TTY
 	select USB_U_SERIAL
@@ -275,7 +246,7 @@ config USB_CONFIGFS_SERIAL
 	  The function talks to the Linux-USB generic serial driver.
 
 config USB_CONFIGFS_ACM
-	bool "Abstract Control Model (CDC ACM)"
+	boolean "Abstract Control Model (CDC ACM)"
 	depends on USB_CONFIGFS
 	depends on TTY
 	select USB_U_SERIAL
@@ -285,7 +256,7 @@ config USB_CONFIGFS_ACM
 	  MS-Windows hosts or with the Linux-USB "cdc-acm" driver.
 
 config USB_CONFIGFS_OBEX
-	bool "Object Exchange Model (CDC OBEX)"
+	boolean "Object Exchange Model (CDC OBEX)"
 	depends on USB_CONFIGFS
 	depends on TTY
 	select USB_U_SERIAL
@@ -295,7 +266,7 @@ config USB_CONFIGFS_OBEX
 	  since the kernel itself doesn't implement the OBEX protocol.
 
 config USB_CONFIGFS_NCM
-	bool "Network Control Model (CDC NCM)"
+	boolean "Network Control Model (CDC NCM)"
 	depends on USB_CONFIGFS
 	depends on NET
 	select USB_U_ETHER
@@ -306,7 +277,7 @@ config USB_CONFIGFS_NCM
 	  different alignment possibilities.
 
 config USB_CONFIGFS_ECM
-	bool "Ethernet Control Model (CDC ECM)"
+	boolean "Ethernet Control Model (CDC ECM)"
 	depends on USB_CONFIGFS
 	depends on NET
 	select USB_U_ETHER
@@ -318,7 +289,7 @@ config USB_CONFIGFS_ECM
 	  supported by firmware for smart network devices.
 
 config USB_CONFIGFS_ECM_SUBSET
-	bool "Ethernet Control Model (CDC ECM) subset"
+	boolean "Ethernet Control Model (CDC ECM) subset"
 	depends on USB_CONFIGFS
 	depends on NET
 	select USB_U_ETHER
@@ -326,14 +297,6 @@ config USB_CONFIGFS_ECM_SUBSET
 	help
 	  On hardware that can't implement the full protocol,
 	  a simple CDC subset is used, placing fewer demands on USB.
-
-config USB_CONFIGFS_QCRNDIS
-	bool "QCRNDIS"
-	depends on USB_CONFIGFS
-	depends on RNDIS_IPA
-	depends on NET
-	select USB_U_ETHER
-	select USB_F_QCRNDIS
 
 config USB_CONFIGFS_RNDIS
 	bool "RNDIS"
@@ -351,12 +314,6 @@ config USB_CONFIGFS_RNDIS
 	   XP, you'll need to download drivers from Microsoft's website; a URL
 	   is given in comments found in that info file.
 
-config USB_CONFIGFS_RMNET_BAM
-	bool "RMNET"
-	depends on USB_CONFIGFS
-	depends on IPA
-	select USB_F_RMNET_BAM
-
 config USB_CONFIGFS_EEM
 	bool "Ethernet Emulation Model (EEM)"
 	depends on USB_CONFIGFS
@@ -373,7 +330,7 @@ config USB_CONFIGFS_EEM
 	  the host is the same (a usbX device), so the differences are minimal.
 
 config USB_CONFIGFS_PHONET
-	bool "Phonet protocol"
+	boolean "Phonet protocol"
 	depends on USB_CONFIGFS
 	depends on NET
 	depends on PHONET
@@ -383,7 +340,7 @@ config USB_CONFIGFS_PHONET
 	  The Phonet protocol implementation for USB device.
 
 config USB_CONFIGFS_MASS_STORAGE
-	bool "Mass storage"
+	boolean "Mass storage"
 	depends on USB_CONFIGFS
 	depends on BLOCK
 	select USB_F_MASS_STORAGE
@@ -394,7 +351,7 @@ config USB_CONFIGFS_MASS_STORAGE
 	  specified as a module parameter or sysfs option.
 
 config USB_CONFIGFS_F_LB_SS
-	bool "Loopback and sourcesink function (for testing)"
+	boolean "Loopback and sourcesink function (for testing)"
 	depends on USB_CONFIGFS
 	select USB_F_SS_LB
 	help
@@ -407,7 +364,7 @@ config USB_CONFIGFS_F_LB_SS
 	  and its driver through a basic set of functional tests.
 
 config USB_CONFIGFS_F_FS
-	bool "Function filesystem (FunctionFS)"
+	boolean "Function filesystem (FunctionFS)"
 	depends on USB_CONFIGFS
 	select USB_F_FS
 	help
@@ -419,18 +376,18 @@ config USB_CONFIGFS_F_FS
 	  mass storage) and other are implemented in user space.
 
 config USB_CONFIGFS_F_MTP
-	boolean "MTP gadget"
-	depends on USB_CONFIGFS
-	select USB_F_MTP
-	help
-	  USB gadget MTP support
+        boolean "MTP gadget"
+        depends on USB_CONFIGFS
+        select USB_F_MTP
+        help
+          USB gadget MTP support
 
 config USB_CONFIGFS_F_PTP
-	boolean "PTP gadget"
-	depends on USB_CONFIGFS && USB_CONFIGFS_F_MTP
-	select USB_F_PTP
-	help
-	  USB gadget PTP support
+        boolean "PTP gadget"
+        depends on USB_CONFIGFS && USB_CONFIGFS_F_MTP
+        select USB_F_PTP
+        help
+          USB gadget PTP support
 
 config USB_CONFIGFS_F_ACC
 	boolean "Accessory gadget"
@@ -442,8 +399,6 @@ config USB_CONFIGFS_F_ACC
 config USB_CONFIGFS_F_AUDIO_SRC
 	boolean "Audio Source gadget"
 	depends on USB_CONFIGFS && USB_CONFIGFS_F_ACC
-	depends on SND
-	select SND_PCM
 	select USB_F_AUDIO_SRC
 	help
 	  USB gadget Audio Source support
@@ -456,122 +411,32 @@ config USB_CONFIGFS_UEVENT
 	  state changes. The gadget can be in any of the following
 	  three states: "CONNECTED/DISCONNECTED/CONFIGURED"
 
-config USB_CONFIGFS_F_UAC1
-	bool "Audio Class 1.0"
-	depends on USB_CONFIGFS
-	depends on SND
+config USB_G_ANDROID
+	boolean "Android Composite Gadget"
+	select USB_F_ACM
+	select USB_F_AUDIO_SRC
+	select USB_F_SERIAL
 	select USB_LIBCOMPOSITE
-	select SND_PCM
-	select USB_F_UAC1
+	select USB_F_FS
+	select USB_U_SERIAL
+	select USB_F_ECM
+	select USB_F_NCM
+	select USB_F_MASS_STORAGE
+	select USB_F_UAC1 if SND_PCM
+	select USB_F_UAC2 if SND_PCM
+	select USB_F_UVC if MEDIA_SUPPORT
 	help
-	  This Audio function implements 1 AudioControl interface,
-	  1 AudioStreaming Interface each for USB-OUT and USB-IN.
-	  This driver requires a real Audio codec to be present
-	  on the device.
+	  The Android Composite Gadget supports multiple USB
+	  functions: adb, acm, mass storage, mtp, accessory
+	  and rndis.
+	  Each function can be configured and enabled/disabled
+	  dynamically from userspace through a sysfs interface.
 
-config USB_CONFIGFS_F_UAC2
-	bool "Audio Class 2.0"
-	depends on USB_CONFIGFS
-	depends on SND
-	select USB_LIBCOMPOSITE
-	select SND_PCM
-	select USB_F_UAC2
+config USB_ANDROID_RNDIS_DWORD_ALIGNED
+	boolean "Use double word aligned"
+	depends on USB_G_ANDROID
 	help
-	  This Audio function is compatible with USB Audio Class
-	  specification 2.0. It implements 1 AudioControl interface,
-	  1 AudioStreaming Interface each for USB-OUT and USB-IN.
-	  This driver doesn't expect any real Audio codec to be present
-	  on the device - the audio streams are simply sinked to and
-	  sourced from a virtual ALSA sound card created. The user-space
-	  application may choose to do whatever it wants with the data
-	  received from the USB Host and choose to provide whatever it
-	  wants as audio data to the USB Host.
-
-config USB_CONFIGFS_F_MIDI
-	bool "MIDI function"
-	depends on USB_CONFIGFS
-	depends on SND
-	select USB_LIBCOMPOSITE
-	select SND_RAWMIDI
-	select USB_F_MIDI
-	help
-	  The MIDI Function acts as a USB Audio device, with one MIDI
-	  input and one MIDI output. These MIDI jacks appear as
-	  a sound "card" in the ALSA sound system. Other MIDI
-	  connections can then be made on the gadget system, using
-	  ALSA's aconnect utility etc.
-
-config USB_CONFIGFS_F_HID
-	bool "HID function"
-	depends on USB_CONFIGFS
-	select USB_F_HID
-	help
-	  The HID function driver provides generic emulation of USB
-	  Human Interface Devices (HID).
-
-	  For more information, see Documentation/usb/gadget_hid.txt.
-
-config USB_CONFIGFS_F_UVC
-	bool "USB Webcam function"
-	depends on USB_CONFIGFS
-	depends on VIDEO_DEV
-	select VIDEOBUF2_VMALLOC
-	select USB_F_UVC
-	help
-	  The Webcam function acts as a composite USB Audio and Video Class
-	  device. It provides a userspace API to process UVC control requests
-	  and stream video data to the host.
-
-config USB_CONFIGFS_F_PRINTER
-	bool "Printer function"
-	select USB_F_PRINTER
-	depends on USB_CONFIGFS
-	help
-	  The Printer function channels data between the USB host and a
-	  userspace program driving the print engine. The user space
-	  program reads and writes the device file /dev/g_printer<X> to
-	  receive or send printer data. It can use ioctl calls to
-	  the device file to get or set printer status.
-
-	  For more information, see Documentation/usb/gadget_printer.txt
-	  which includes sample code for accessing the device file.
-
-config USB_CONFIGFS_F_DIAG
-	bool "USB Diag function"
-	select USB_F_DIAG
-	depends on USB_CONFIGFS
-	help
-	  Diag function driver enables support for Qualcomm diagnostics
-	  port over USB.
-
-config USB_CONFIGFS_F_GSI
-	bool "USB GSI function"
-	select USB_F_GSI
-	depends on USB_CONFIGFS
-	help
-	  Generic function driver to support h/w acceleration to IPA over GSI.
-
-config USB_CONFIGFS_F_CDEV
-	bool "USB Serial Character function"
-	select USB_F_CDEV
-	depends on USB_CONFIGFS
-	help
-	  Generic USB serial character function driver to support DUN/NMEA.
-
-config USB_CONFIGFS_F_QDSS
-	bool "USB QDSS function"
-	select USB_F_QDSS
-	depends on USB_CONFIGFS
-	help
-	  USB QDSS function driver to get hwtracing related data over USB.
-
-config USB_CONFIGFS_F_CCID
-	bool "USB CCID function"
-	select USB_F_CCID
-	depends on USB_CONFIGFS
-	help
-	  USB CCID function driver creats transport layer between the
-	  userspace CCID component and the Windows Host.
+		Provides dword aligned for DMA controller.
 
 source "drivers/usb/gadget/legacy/Kconfig"
 

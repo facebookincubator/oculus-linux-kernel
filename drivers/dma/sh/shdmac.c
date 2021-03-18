@@ -572,6 +572,7 @@ err_no_irq:
 
 static void sh_dmae_chan_remove(struct sh_dmae_device *shdev)
 {
+	struct dma_device *dma_dev = &shdev->shdma_dev.dma_dev;
 	struct shdma_chan *schan;
 	int i;
 
@@ -580,14 +581,17 @@ static void sh_dmae_chan_remove(struct sh_dmae_device *shdev)
 
 		shdma_chan_remove(schan);
 	}
+	dma_dev->chancnt = 0;
 }
 
-#ifdef CONFIG_PM
+static void sh_dmae_shutdown(struct platform_device *pdev)
+{
+	struct sh_dmae_device *shdev = platform_get_drvdata(pdev);
+	sh_dmae_ctl_stop(shdev);
+}
+
 static int sh_dmae_runtime_suspend(struct device *dev)
 {
-	struct sh_dmae_device *shdev = dev_get_drvdata(dev);
-
-	sh_dmae_ctl_stop(shdev);
 	return 0;
 }
 
@@ -597,14 +601,10 @@ static int sh_dmae_runtime_resume(struct device *dev)
 
 	return sh_dmae_rst(shdev);
 }
-#endif
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 static int sh_dmae_suspend(struct device *dev)
 {
-	struct sh_dmae_device *shdev = dev_get_drvdata(dev);
-
-	sh_dmae_ctl_stop(shdev);
 	return 0;
 }
 
@@ -634,12 +634,16 @@ static int sh_dmae_resume(struct device *dev)
 
 	return 0;
 }
+#else
+#define sh_dmae_suspend NULL
+#define sh_dmae_resume NULL
 #endif
 
 static const struct dev_pm_ops sh_dmae_pm = {
-	SET_SYSTEM_SLEEP_PM_OPS(sh_dmae_suspend, sh_dmae_resume)
-	SET_RUNTIME_PM_OPS(sh_dmae_runtime_suspend, sh_dmae_runtime_resume,
-			   NULL)
+	.suspend		= sh_dmae_suspend,
+	.resume			= sh_dmae_resume,
+	.runtime_suspend	= sh_dmae_runtime_suspend,
+	.runtime_resume		= sh_dmae_runtime_resume,
 };
 
 static dma_addr_t sh_dmae_slave_addr(struct shdma_chan *schan)
@@ -682,10 +686,6 @@ MODULE_DEVICE_TABLE(of, sh_dmae_of_match);
 
 static int sh_dmae_probe(struct platform_device *pdev)
 {
-	const enum dma_slave_buswidth widths =
-		DMA_SLAVE_BUSWIDTH_1_BYTE   | DMA_SLAVE_BUSWIDTH_2_BYTES |
-		DMA_SLAVE_BUSWIDTH_4_BYTES  | DMA_SLAVE_BUSWIDTH_8_BYTES |
-		DMA_SLAVE_BUSWIDTH_16_BYTES | DMA_SLAVE_BUSWIDTH_32_BYTES;
 	const struct sh_dmae_pdata *pdata;
 	unsigned long chan_flag[SH_DMAE_MAX_CHANNELS] = {};
 	int chan_irq[SH_DMAE_MAX_CHANNELS];
@@ -747,11 +747,6 @@ static int sh_dmae_probe(struct platform_device *pdev)
 		if (IS_ERR(shdev->dmars))
 			return PTR_ERR(shdev->dmars);
 	}
-
-	dma_dev->src_addr_widths = widths;
-	dma_dev->dst_addr_widths = widths;
-	dma_dev->directions = BIT(DMA_MEM_TO_DEV) | BIT(DMA_DEV_TO_MEM);
-	dma_dev->residue_granularity = DMA_RESIDUE_GRANULARITY_DESCRIPTOR;
 
 	if (!pdata->slave_only)
 		dma_cap_set(DMA_MEMCPY, dma_dev->cap_mask);
@@ -929,12 +924,14 @@ static int sh_dmae_remove(struct platform_device *pdev)
 }
 
 static struct platform_driver sh_dmae_driver = {
-	.driver		= {
+	.driver 	= {
+		.owner	= THIS_MODULE,
 		.pm	= &sh_dmae_pm,
 		.name	= SH_DMAE_DRV_NAME,
 		.of_match_table = sh_dmae_of_match,
 	},
 	.remove		= sh_dmae_remove,
+	.shutdown	= sh_dmae_shutdown,
 };
 
 static int __init sh_dmae_init(void)

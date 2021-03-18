@@ -147,118 +147,150 @@ static s8 da850_queue_priority_mapping[][2] = {
 	{-1, -1}
 };
 
-static struct edma_soc_info da8xx_edma0_pdata = {
+static struct edma_soc_info da830_edma_cc0_info = {
 	.queue_priority_mapping	= da8xx_queue_priority_mapping,
 	.default_queue		= EVENTQ_1,
 };
 
-static struct edma_soc_info da850_edma1_pdata = {
-	.queue_priority_mapping	= da850_queue_priority_mapping,
-	.default_queue		= EVENTQ_0,
+static struct edma_soc_info *da830_edma_info[EDMA_MAX_CC] = {
+	&da830_edma_cc0_info,
 };
 
-static struct resource da8xx_edma0_resources[] = {
+static struct edma_soc_info da850_edma_cc_info[] = {
 	{
-		.name	= "edma3_cc",
+		.queue_priority_mapping	= da8xx_queue_priority_mapping,
+		.default_queue		= EVENTQ_1,
+	},
+	{
+		.queue_priority_mapping	= da850_queue_priority_mapping,
+		.default_queue		= EVENTQ_0,
+	},
+};
+
+static struct edma_soc_info *da850_edma_info[EDMA_MAX_CC] = {
+	&da850_edma_cc_info[0],
+	&da850_edma_cc_info[1],
+};
+
+static struct resource da830_edma_resources[] = {
+	{
+		.name	= "edma_cc0",
 		.start	= DA8XX_TPCC_BASE,
 		.end	= DA8XX_TPCC_BASE + SZ_32K - 1,
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.name	= "edma3_tc0",
+		.name	= "edma_tc0",
 		.start	= DA8XX_TPTC0_BASE,
 		.end	= DA8XX_TPTC0_BASE + SZ_1K - 1,
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.name	= "edma3_tc1",
+		.name	= "edma_tc1",
 		.start	= DA8XX_TPTC1_BASE,
 		.end	= DA8XX_TPTC1_BASE + SZ_1K - 1,
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.name	= "edma3_ccint",
+		.name	= "edma0",
 		.start	= IRQ_DA8XX_CCINT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.name	= "edma3_ccerrint",
+		.name	= "edma0_err",
 		.start	= IRQ_DA8XX_CCERRINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
 
-static struct resource da850_edma1_resources[] = {
+static struct resource da850_edma_resources[] = {
 	{
-		.name	= "edma3_cc",
+		.name	= "edma_cc0",
+		.start	= DA8XX_TPCC_BASE,
+		.end	= DA8XX_TPCC_BASE + SZ_32K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.name	= "edma_tc0",
+		.start	= DA8XX_TPTC0_BASE,
+		.end	= DA8XX_TPTC0_BASE + SZ_1K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.name	= "edma_tc1",
+		.start	= DA8XX_TPTC1_BASE,
+		.end	= DA8XX_TPTC1_BASE + SZ_1K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.name	= "edma_cc1",
 		.start	= DA850_TPCC1_BASE,
 		.end	= DA850_TPCC1_BASE + SZ_32K - 1,
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.name	= "edma3_tc0",
+		.name	= "edma_tc2",
 		.start	= DA850_TPTC2_BASE,
 		.end	= DA850_TPTC2_BASE + SZ_1K - 1,
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.name	= "edma3_ccint",
+		.name	= "edma0",
+		.start	= IRQ_DA8XX_CCINT0,
+		.flags	= IORESOURCE_IRQ,
+	},
+	{
+		.name	= "edma0_err",
+		.start	= IRQ_DA8XX_CCERRINT,
+		.flags	= IORESOURCE_IRQ,
+	},
+	{
+		.name	= "edma1",
 		.start	= IRQ_DA850_CCINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.name	= "edma3_ccerrint",
+		.name	= "edma1_err",
 		.start	= IRQ_DA850_CCERRINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
 
-static const struct platform_device_info da8xx_edma0_device __initconst = {
+static struct platform_device da830_edma_device = {
 	.name		= "edma",
-	.id		= 0,
-	.dma_mask	= DMA_BIT_MASK(32),
-	.res		= da8xx_edma0_resources,
-	.num_res	= ARRAY_SIZE(da8xx_edma0_resources),
-	.data		= &da8xx_edma0_pdata,
-	.size_data	= sizeof(da8xx_edma0_pdata),
+	.id		= -1,
+	.dev = {
+		.platform_data = da830_edma_info,
+	},
+	.num_resources	= ARRAY_SIZE(da830_edma_resources),
+	.resource	= da830_edma_resources,
 };
 
-static const struct platform_device_info da850_edma1_device __initconst = {
+static struct platform_device da850_edma_device = {
 	.name		= "edma",
-	.id		= 1,
-	.dma_mask	= DMA_BIT_MASK(32),
-	.res		= da850_edma1_resources,
-	.num_res	= ARRAY_SIZE(da850_edma1_resources),
-	.data		= &da850_edma1_pdata,
-	.size_data	= sizeof(da850_edma1_pdata),
+	.id		= -1,
+	.dev = {
+		.platform_data = da850_edma_info,
+	},
+	.num_resources	= ARRAY_SIZE(da850_edma_resources),
+	.resource	= da850_edma_resources,
 };
 
 int __init da830_register_edma(struct edma_rsv_info *rsv)
 {
-	struct platform_device *edma_pdev;
+	da830_edma_cc0_info.rsv = rsv;
 
-	da8xx_edma0_pdata.rsv = rsv;
-
-	edma_pdev = platform_device_register_full(&da8xx_edma0_device);
-	return IS_ERR(edma_pdev) ? PTR_ERR(edma_pdev) : 0;
+	return platform_device_register(&da830_edma_device);
 }
 
 int __init da850_register_edma(struct edma_rsv_info *rsv[2])
 {
-	struct platform_device *edma_pdev;
-
 	if (rsv) {
-		da8xx_edma0_pdata.rsv = rsv[0];
-		da850_edma1_pdata.rsv = rsv[1];
+		da850_edma_cc_info[0].rsv = rsv[0];
+		da850_edma_cc_info[1].rsv = rsv[1];
 	}
 
-	edma_pdev = platform_device_register_full(&da8xx_edma0_device);
-	if (IS_ERR(edma_pdev)) {
-		pr_warn("%s: Failed to register eDMA0\n", __func__);
-		return PTR_ERR(edma_pdev);
-	}
-	edma_pdev = platform_device_register_full(&da850_edma1_device);
-	return IS_ERR(edma_pdev) ? PTR_ERR(edma_pdev) : 0;
+	return platform_device_register(&da850_edma_device);
 }
 
 static struct resource da8xx_i2c_resources0[] = {
@@ -431,22 +463,15 @@ static struct resource da830_mcasp1_resources[] = {
 	},
 	/* TX event */
 	{
-		.name	= "tx",
 		.start	= DAVINCI_DA830_DMA_MCASP1_AXEVT,
 		.end	= DAVINCI_DA830_DMA_MCASP1_AXEVT,
 		.flags	= IORESOURCE_DMA,
 	},
 	/* RX event */
 	{
-		.name	= "rx",
 		.start	= DAVINCI_DA830_DMA_MCASP1_AREVT,
 		.end	= DAVINCI_DA830_DMA_MCASP1_AREVT,
 		.flags	= IORESOURCE_DMA,
-	},
-	{
-		.name	= "common",
-		.start	= IRQ_DA8XX_MCASPINT,
-		.flags	= IORESOURCE_IRQ,
 	},
 };
 
@@ -455,41 +480,6 @@ static struct platform_device da830_mcasp1_device = {
 	.id		= 1,
 	.num_resources	= ARRAY_SIZE(da830_mcasp1_resources),
 	.resource	= da830_mcasp1_resources,
-};
-
-static struct resource da830_mcasp2_resources[] = {
-	{
-		.name	= "mpu",
-		.start	= DAVINCI_DA830_MCASP2_REG_BASE,
-		.end	= DAVINCI_DA830_MCASP2_REG_BASE + (SZ_1K * 12) - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	/* TX event */
-	{
-		.name	= "tx",
-		.start	= DAVINCI_DA830_DMA_MCASP2_AXEVT,
-		.end	= DAVINCI_DA830_DMA_MCASP2_AXEVT,
-		.flags	= IORESOURCE_DMA,
-	},
-	/* RX event */
-	{
-		.name	= "rx",
-		.start	= DAVINCI_DA830_DMA_MCASP2_AREVT,
-		.end	= DAVINCI_DA830_DMA_MCASP2_AREVT,
-		.flags	= IORESOURCE_DMA,
-	},
-	{
-		.name	= "common",
-		.start	= IRQ_DA8XX_MCASPINT,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device da830_mcasp2_device = {
-	.name		= "davinci-mcasp",
-	.id		= 2,
-	.num_resources	= ARRAY_SIZE(da830_mcasp2_resources),
-	.resource	= da830_mcasp2_resources,
 };
 
 static struct resource da850_mcasp_resources[] = {
@@ -501,22 +491,15 @@ static struct resource da850_mcasp_resources[] = {
 	},
 	/* TX event */
 	{
-		.name	= "tx",
 		.start	= DAVINCI_DA8XX_DMA_MCASP0_AXEVT,
 		.end	= DAVINCI_DA8XX_DMA_MCASP0_AXEVT,
 		.flags	= IORESOURCE_DMA,
 	},
 	/* RX event */
 	{
-		.name	= "rx",
 		.start	= DAVINCI_DA8XX_DMA_MCASP0_AREVT,
 		.end	= DAVINCI_DA8XX_DMA_MCASP0_AREVT,
 		.flags	= IORESOURCE_DMA,
-	},
-	{
-		.name	= "common",
-		.start	= IRQ_DA8XX_MCASPINT,
-		.flags	= IORESOURCE_IRQ,
 	},
 };
 
@@ -529,31 +512,14 @@ static struct platform_device da850_mcasp_device = {
 
 void __init da8xx_register_mcasp(int id, struct snd_platform_data *pdata)
 {
-	struct platform_device *pdev;
-
-	switch (id) {
-	case 0:
-		/* Valid for DA830/OMAP-L137 or DA850/OMAP-L138 */
-		pdev = &da850_mcasp_device;
-		break;
-	case 1:
-		/* Valid for DA830/OMAP-L137 only */
-		if (!cpu_is_davinci_da830())
-			return;
-		pdev = &da830_mcasp1_device;
-		break;
-	case 2:
-		/* Valid for DA830/OMAP-L137 only */
-		if (!cpu_is_davinci_da830())
-			return;
-		pdev = &da830_mcasp2_device;
-		break;
-	default:
-		return;
+	/* DA830/OMAP-L137 has 3 instances of McASP */
+	if (cpu_is_davinci_da830() && id == 1) {
+		da830_mcasp1_device.dev.platform_data = pdata;
+		platform_device_register(&da830_mcasp1_device);
+	} else if (cpu_is_davinci_da850()) {
+		da850_mcasp_device.dev.platform_data = pdata;
+		platform_device_register(&da850_mcasp_device);
 	}
-
-	pdev->dev.platform_data = pdata;
-	platform_device_register(pdev);
 }
 
 static struct resource da8xx_pruss_resources[] = {
@@ -978,13 +944,11 @@ static struct davinci_spi_platform_data da8xx_spi_pdata[] = {
 		.version	= SPI_VERSION_2,
 		.intr_line	= 1,
 		.dma_event_q	= EVENTQ_0,
-		.prescaler_limit = 2,
 	},
 	[1] = {
 		.version	= SPI_VERSION_2,
 		.intr_line	= 1,
 		.dma_event_q	= EVENTQ_0,
-		.prescaler_limit = 2,
 	},
 };
 

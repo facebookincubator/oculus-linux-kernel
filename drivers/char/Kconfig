@@ -7,13 +7,17 @@ menu "Character devices"
 source "drivers/tty/Kconfig"
 
 config DEVMEM
-	bool "/dev/mem virtual device support"
+	bool "Memory device driver"
 	default y
 	help
-	  Say Y here if you want to support the /dev/mem device.
-	  The /dev/mem device is used to access areas of physical
-	  memory.
-	  When in doubt, say "Y".
+	  The memory driver provides two character devices, mem and kmem, which
+	  provide access to the system's memory. The mem device is a view of
+	  physical memory, and each byte in the device corresponds to the
+	  matching physical address. The kmem device is the same as mem, but
+	  the addresses correspond to the kernel's virtual address space rather
+	  than physical memory. These devices are standard parts of a Linux
+	  system and most users should say Y here. You might say N if very
+	  security conscience or memory is tight.
 
 config DEVKMEM
 	bool "/dev/kmem virtual device support"
@@ -590,7 +594,19 @@ config DEVPORT
 	depends on ISA || PCI
 	default y
 
+config DCC_TTY
+	tristate "DCC tty driver"
+	depends on ARM
+
 source "drivers/s390/char/Kconfig"
+
+config MSM_SMD_PKT
+	bool "Enable device interface for some SMD packet ports"
+	default n
+	depends on MSM_SMD
+	help
+	  Enables userspace clients to read and write to some packet SMD
+	  ports via device interface for MSM chipset.
 
 config TILE_SROM
 	bool "Character-device access via hypervisor to the Tilera SPI ROM"
@@ -606,20 +622,28 @@ config TILE_SROM
 source "drivers/char/xillybus/Kconfig"
 
 config MSM_ADSPRPC
-	tristate "QTI ADSP RPC driver"
-	depends on MSM_GLINK
+	tristate "Qualcomm ADSP RPC driver"
+	depends on MSM_SMD
 	help
 	  Provides a communication mechanism that allows for clients to
 	  make remote method invocations across processor boundary to
 	  applications DSP processor. Say M if you want to enable this
 	  module.
 
+config MSM_MDSP_TS
+	tristate "Qualcomm Technologies Inc MDSP TimeStamp driver"
+	depends on MSM_SMD
+	help
+	  Provides a high response mechanism that allows for AP to get
+	  timestamp from mDSP. It provides the device /dev/vsync_ts_diff
+	  for user to read the timestamp, and the timestamp is transferred
+	  through smd between mDSP and AP.
+
 config MSM_RDBG
-	tristate "QTI Remote debug driver"
+	tristate "Qualcomm Remote debug driver"
 	help
 	  Implements a shared memory based transport mechanism that allows
 	  for a debugger running on a host PC to communicate with a remote
 	  stub running on peripheral subsystems such as the ADSP, MODEM etc.
-
 endmenu
 

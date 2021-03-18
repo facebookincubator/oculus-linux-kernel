@@ -14,7 +14,6 @@
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/pwm.h>
 #include <linux/pwm_backlight.h>
 #include <linux/serial_core.h>
 #include <linux/serial_s3c.h>
@@ -140,11 +139,6 @@ static struct platform_device smartq_usb_otg_vbus_dev = {
 	.dev.platform_data	= &smartq_usb_otg_vbus_pdata,
 };
 
-static struct pwm_lookup smartq_pwm_lookup[] = {
-	PWM_LOOKUP("samsung-pwm", 1, "pwm-backlight.0", NULL,
-		   1000000000 / (1000 * 20), PWM_POLARITY_NORMAL),
-};
-
 static int smartq_bl_init(struct device *dev)
 {
     s3c_gpio_cfgpin(S3C64XX_GPF(15), S3C_GPIO_SFN(2));
@@ -153,8 +147,10 @@ static int smartq_bl_init(struct device *dev)
 }
 
 static struct platform_pwm_backlight_data smartq_backlight_data = {
+	.pwm_id		= 1,
 	.max_brightness	= 1000,
 	.dft_brightness	= 600,
+	.pwm_period_ns	= 1000000000 / (1000 * 20),
 	.enable_gpio	= -1,
 	.init		= smartq_bl_init,
 };
@@ -193,7 +189,7 @@ static struct s3c_hwmon_pdata smartq_hwmon_pdata __initdata = {
 	},
 };
 
-static struct dwc2_hsotg_plat smartq_hsotg_pdata;
+static struct s3c_hsotg_plat smartq_hsotg_pdata;
 
 static int __init smartq_lcd_setup_gpio(void)
 {
@@ -386,7 +382,7 @@ void __init smartq_map_io(void)
 void __init smartq_machine_init(void)
 {
 	s3c_i2c0_set_platdata(NULL);
-	dwc2_hsotg_set_platdata(&smartq_hsotg_pdata);
+	s3c_hsotg_set_platdata(&smartq_hsotg_pdata);
 	s3c_hwmon_set_platdata(&smartq_hwmon_pdata);
 	s3c_sdhci1_set_platdata(&smartq_internal_hsmmc_pdata);
 	s3c_sdhci2_set_platdata(&smartq_internal_hsmmc_pdata);
@@ -400,6 +396,5 @@ void __init smartq_machine_init(void)
 	WARN_ON(smartq_usb_host_init());
 	WARN_ON(smartq_wifi_init());
 
-	pwm_add_table(smartq_pwm_lookup, ARRAY_SIZE(smartq_pwm_lookup));
 	platform_add_devices(smartq_devices, ARRAY_SIZE(smartq_devices));
 }

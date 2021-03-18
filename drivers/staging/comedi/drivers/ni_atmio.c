@@ -250,7 +250,7 @@ static int ni_isapnp_find_board(struct pnp_dev **dev)
 					  ISAPNP_FUNCTION(ni_boards[i].
 							  isapnp_id), NULL);
 
-		if (!isapnp_dev || !isapnp_dev->card)
+		if (isapnp_dev == NULL || isapnp_dev->card == NULL)
 			continue;
 
 		if (pnp_device_attach(isapnp_dev) < 0)
@@ -274,16 +274,15 @@ static int ni_isapnp_find_board(struct pnp_dev **dev)
 	return 0;
 }
 
-static const struct ni_board_struct *ni_atmio_probe(struct comedi_device *dev)
+static int ni_getboardtype(struct comedi_device *dev)
 {
 	int device_id = ni_read_eeprom(dev, 511);
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(ni_boards); i++) {
-		const struct ni_board_struct *board = &ni_boards[i];
+		if (ni_boards[i].device_id == device_id)
+			return i;
 
-		if (board->device_id == device_id)
-			return board;
 	}
 	if (device_id == 255)
 		dev_err(dev->class_dev, "can't find board\n");
@@ -294,21 +293,24 @@ static const struct ni_board_struct *ni_atmio_probe(struct comedi_device *dev)
 		dev_err(dev->class_dev,
 			"unknown device ID %d -- contact author\n", device_id);
 
-	return NULL;
+	return -1;
 }
 
 static int ni_atmio_attach(struct comedi_device *dev,
 			   struct comedi_devconfig *it)
 {
-	const struct ni_board_struct *board;
+	const struct ni_board_struct *boardtype;
+	struct ni_private *devpriv;
 	struct pnp_dev *isapnp_dev;
 	int ret;
 	unsigned long iobase;
+	int board;
 	unsigned int irq;
 
 	ret = ni_alloc_private(dev);
 	if (ret)
 		return ret;
+	devpriv = dev->private;
 
 	iobase = it->options[0];
 	irq = it->options[1];
@@ -327,11 +329,15 @@ static int ni_atmio_attach(struct comedi_device *dev,
 	if (ret)
 		return ret;
 
-	board = ni_atmio_probe(dev);
-	if (!board)
-		return -ENODEV;
-	dev->board_ptr = board;
-	dev->board_name = board->name;
+	/* get board type */
+
+	board = ni_getboardtype(dev);
+	if (board < 0)
+		return -EIO;
+
+	dev->board_ptr = ni_boards + board;
+	boardtype = dev->board_ptr;
+	dev->board_name = boardtype->name;
 
 	/* irq stuff */
 
@@ -350,6 +356,7 @@ static int ni_atmio_attach(struct comedi_device *dev,
 	ret = ni_E_init(dev, ni_irqpin[dev->irq], 0);
 	if (ret < 0)
 		return ret;
+
 
 	return 0;
 }

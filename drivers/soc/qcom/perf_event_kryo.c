@@ -18,9 +18,9 @@
 #include <linux/perf_event.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
-#include <linux/perf/arm_pmu.h>
 
 #include <soc/qcom/perf_event_kryo.h>
+#include <asm/pmu.h>
 
 #define	ARMV8_IDX_CYCLE_COUNTER	0
 
@@ -118,12 +118,7 @@ static void kryo_write_pmresr(int reg, int l_h, u32 val)
 
 static u32 kryo_read_pmresr(int reg, int l_h)
 {
-	u32 val;
-
-	if (reg > KRYO_MAX_L1_REG) {
-		pr_err("Invalid read of RESR reg %d\n", reg);
-		return 0;
-	}
+	u32 val = 0;
 
 	if (l_h == RESR_L) {
 		switch (reg) {
@@ -136,6 +131,9 @@ static u32 kryo_read_pmresr(int reg, int l_h)
 		case 2:
 			asm volatile("mrs %0, " pmresr2l_el0 : "=r" (val));
 			break;
+		default:
+			pr_err("Invalid read of RESR reg %d\n", reg);
+			break;
 		}
 	} else {
 		switch (reg) {
@@ -147,6 +145,9 @@ static u32 kryo_read_pmresr(int reg, int l_h)
 			break;
 		case 2:
 			asm volatile("mrs %0," pmresr2h_el0 : "=r" (val));
+			break;
+		default:
+			pr_err("Invalid read of RESR reg %d\n", reg);
 			break;
 		}
 	}
@@ -205,15 +206,13 @@ static void kryo_clear_resr(struct kryo_evt *evtinfo)
 	kryo_write_pmresr(evtinfo->reg, evtinfo->l_h, val);
 }
 
-static void kryo_pmu_disable_event(struct perf_event *event)
+static void kryo_pmu_disable_event(struct hw_perf_event *hwc, int idx)
 {
 	unsigned long flags;
 	u32 val = 0;
 	unsigned long ev_num;
 	struct kryo_evt evtinfo;
-	struct hw_perf_event *hwc = &event->hw;
-	int idx = hwc->idx;
-	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+	struct pmu_hw_events *events = cpu_pmu->get_hw_events();
 
 	/* Disable counter and interrupt */
 	raw_spin_lock_irqsave(&events->pmu_lock, flags);
@@ -242,16 +241,14 @@ kryo_dis_out:
 	raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
-static void kryo_pmu_enable_event(struct perf_event *event)
+static void kryo_pmu_enable_event(struct hw_perf_event *hwc, int idx)
 {
 	unsigned long flags;
 	u32 val = 0;
 	unsigned long ev_num;
 	struct kryo_evt evtinfo;
-	struct hw_perf_event *hwc = &event->hw;
-	int idx = hwc->idx;
 	unsigned long long prev_count = local64_read(&hwc->prev_count);
-	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+	struct pmu_hw_events *events = cpu_pmu->get_hw_events();
 
 	/*
 	 * Enable counter and interrupt, and set the counter to count
@@ -284,7 +281,7 @@ static void kryo_pmu_enable_event(struct perf_event *event)
 	armv8pmu_enable_intens(idx);
 
 	/* Restore prev val */
-	cpu_pmu->write_counter(event, prev_count & COUNT_MASK);
+	cpu_pmu->write_counter(idx, prev_count & COUNT_MASK);
 
 	/* Enable counter */
 	armv8pmu_enable_counter(idx);
@@ -313,9 +310,9 @@ static inline void kryo_init_usermode(void)
 
 static int kryo_map_event(struct perf_event *event)
 {
-	return armpmu_map_event(event, &armv8_pmuv3_perf_map,
-				&armv8_pmuv3_perf_cache_map,
-				KRYO_EVT_MASK);
+	return map_cpu_event(event, &armv8_pmuv3_perf_map,
+			     &armv8_pmuv3_perf_cache_map,
+			     KRYO_EVT_MASK);
 }
 
 static void kryo_pmu_reset(void *info)
@@ -338,6 +335,41 @@ static void kryo_pmu_reset(void *info)
 
 	/* Reset all counters */
 	armv8pmu_pmcr_write(ARMV8_PMCR_P | ARMV8_PMCR_C);
+}
+
+static int kryo_check_column_exclusion(struct arm_pmu *armpmu,
+				       struct hw_perf_event *hwc)
+{
+	struct pmu_hw_events *hw_events = armpmu->get_hw_events();
+	struct hw_perf_event *hwc_i;
+	u32 r_g_mask = KRYO_EVT_REG_MASK | KRYO_EVT_GROUP_MASK;
+	u32 r_g_value = hwc->config_base & r_g_mask;
+	int i;
+
+	/* Only check for kryo implementation events */
+	if (((hwc->config_base & KRYO_EVT_PREFIX_MASK) >> KRYO_EVT_PREFIX_SHIFT)
+	    != KRYO_EVT_PREFIX)
+		return 0;
+
+	/*
+	 * Tests against all existing events. This function is called per-cpu
+	 * so we are only concerned with events on this CPU. Conflicting
+	 * task events (with cpu == -1) will be detected on the first CPU
+	 * that they run on and when disabled they won't show up on
+	 * other CPUs.
+	 */
+	for (i = 1; i < armpmu->num_events; i++) {
+		if (hw_events->events[i] == NULL)
+			continue;
+		hwc_i = &hw_events->events[i]->hw;
+		if (r_g_value == (hwc_i->config_base & r_g_mask)) {
+			pr_err("column exclusion violation, events %lx, %lx\n",
+			       hwc_i->config_base & KRYO_EVT_MASK,
+			       hwc->config_base & KRYO_EVT_MASK);
+			return -EPERM;
+		}
+	}
+	return 0;
 }
 
 /* NRCCG format for perf RAW codes. */
@@ -368,22 +400,21 @@ static const struct attribute_group *kryo_pmu_attr_grps[] = {
 	NULL,
 };
 
-int kryo_pmu_init(struct arm_pmu *kryo_pmu)
+int kryo_pmu_init(struct arm_pmu *armv8_pmu)
 {
 	pr_info("CPU pmu for kryo-pmuv3 detected\n");
 
-	armv8_pmu_init(kryo_pmu);
-	cpu_pmu = kryo_pmu;
+	cpu_pmu = armv8_pmu;
 
 	cpu_pmu->enable			= kryo_pmu_enable_event;
 	cpu_pmu->disable		= kryo_pmu_disable_event;
 	cpu_pmu->reset			= kryo_pmu_reset;
+	cpu_pmu->check_event		= kryo_check_column_exclusion;
 	cpu_pmu->pmu.attr_groups	= kryo_pmu_attr_grps;
 	cpu_pmu->map_event              = kryo_map_event;
 	cpu_pmu->name			= "qcom,kryo-pmuv3";
 
 	kryo_clear_resrs();
 
-	return armv8pmu_probe_num_events(cpu_pmu);
+	return 0;
 }
-

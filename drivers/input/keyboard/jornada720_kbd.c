@@ -167,6 +167,7 @@ MODULE_ALIAS("platform:jornada720_kbd");
 static struct platform_driver jornada720_kbd_driver = {
 	.driver  = {
 		.name    = "jornada720_kbd",
+		.owner	= THIS_MODULE,
 	 },
 	.probe   = jornada720_kbd_probe,
 	.remove  = jornada720_kbd_remove,

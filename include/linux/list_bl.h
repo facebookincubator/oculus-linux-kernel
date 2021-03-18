@@ -93,10 +93,9 @@ static inline void __hlist_bl_del(struct hlist_bl_node *n)
 	LIST_BL_BUG_ON((unsigned long)n & LIST_BL_LOCKMASK);
 
 	/* pprev may be `first`, so be careful not to lose the lock bit */
-	WRITE_ONCE(*pprev,
-		   (struct hlist_bl_node *)
+	*pprev = (struct hlist_bl_node *)
 			((unsigned long)next |
-			 ((unsigned long)*pprev & LIST_BL_LOCKMASK)));
+			 ((unsigned long)*pprev & LIST_BL_LOCKMASK));
 	if (next)
 		next->pprev = pprev;
 }

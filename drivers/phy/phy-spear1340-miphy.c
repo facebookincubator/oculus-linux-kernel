@@ -2,8 +2,8 @@
  * ST spear1340-miphy driver
  *
  * Copyright (C) 2014 ST Microelectronics
- * Pratyush Anand <pratyush.anand@gmail.com>
- * Mohit Kumar <mohit.kumar.dhaka@gmail.com>
+ * Pratyush Anand <pratyush.anand@st.com>
+ * Mohit Kumar <mohit.kumar@st.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -189,7 +189,7 @@ static const struct of_device_id spear1340_miphy_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, spear1340_miphy_of_match);
 
-static const struct phy_ops spear1340_miphy_ops = {
+static struct phy_ops spear1340_miphy_ops = {
 	.init = spear1340_miphy_init,
 	.exit = spear1340_miphy_exit,
 	.owner = THIS_MODULE,
@@ -229,14 +229,14 @@ static struct phy *spear1340_miphy_xlate(struct device *dev,
 
 	if (args->args_count < 1) {
 		dev_err(dev, "DT did not pass correct no of args\n");
-		return ERR_PTR(-ENODEV);
+		return NULL;
 	}
 
 	priv->mode = args->args[0];
 
 	if (priv->mode != SATA && priv->mode != PCIE) {
 		dev_err(dev, "DT did not pass correct phy mode\n");
-		return ERR_PTR(-ENODEV);
+		return NULL;
 	}
 
 	return priv->phy;
@@ -259,7 +259,7 @@ static int spear1340_miphy_probe(struct platform_device *pdev)
 		return PTR_ERR(priv->misc);
 	}
 
-	priv->phy = devm_phy_create(dev, NULL, &spear1340_miphy_ops);
+	priv->phy = devm_phy_create(dev, NULL, &spear1340_miphy_ops, NULL);
 	if (IS_ERR(priv->phy)) {
 		dev_err(dev, "failed to create SATA PCIe PHY\n");
 		return PTR_ERR(priv->phy);
@@ -290,5 +290,5 @@ static struct platform_driver spear1340_miphy_driver = {
 module_platform_driver(spear1340_miphy_driver);
 
 MODULE_DESCRIPTION("ST SPEAR1340-MIPHY driver");
-MODULE_AUTHOR("Pratyush Anand <pratyush.anand@gmail.com>");
+MODULE_AUTHOR("Pratyush Anand <pratyush.anand@st.com>");
 MODULE_LICENSE("GPL v2");

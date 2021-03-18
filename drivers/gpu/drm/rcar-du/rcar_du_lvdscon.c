@@ -12,7 +12,6 @@
  */
 
 #include <drm/drmP.h>
-#include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
 
@@ -28,11 +27,7 @@
 struct rcar_du_lvds_connector {
 	struct rcar_du_connector connector;
 
-	struct {
-		unsigned int width_mm;		/* Panel width in mm */
-		unsigned int height_mm;		/* Panel height in mm */
-		struct videomode mode;
-	} panel;
+	struct rcar_du_panel_data panel;
 };
 
 #define to_rcar_lvds_connector(c) \
@@ -75,37 +70,39 @@ rcar_du_lvds_connector_detect(struct drm_connector *connector, bool force)
 }
 
 static const struct drm_connector_funcs connector_funcs = {
-	.dpms = drm_atomic_helper_connector_dpms,
-	.reset = drm_atomic_helper_connector_reset,
+	.dpms = drm_helper_connector_dpms,
 	.detect = rcar_du_lvds_connector_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = rcar_du_lvds_connector_destroy,
-	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
-	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
 int rcar_du_lvds_connector_init(struct rcar_du_device *rcdu,
 				struct rcar_du_encoder *renc,
+				const struct rcar_du_panel_data *panel,
 				/* TODO const */ struct device_node *np)
 {
-	struct drm_encoder *encoder = rcar_encoder_to_drm_encoder(renc);
 	struct rcar_du_lvds_connector *lvdscon;
 	struct drm_connector *connector;
-	struct display_timing timing;
 	int ret;
 
 	lvdscon = devm_kzalloc(rcdu->dev, sizeof(*lvdscon), GFP_KERNEL);
 	if (lvdscon == NULL)
 		return -ENOMEM;
 
-	ret = of_get_display_timing(np, "panel-timing", &timing);
-	if (ret < 0)
-		return ret;
+	if (panel) {
+		lvdscon->panel = *panel;
+	} else {
+		struct display_timing timing;
 
-	videomode_from_timing(&timing, &lvdscon->panel.mode);
+		ret = of_get_display_timing(np, "panel-timing", &timing);
+		if (ret < 0)
+			return ret;
 
-	of_property_read_u32(np, "width-mm", &lvdscon->panel.width_mm);
-	of_property_read_u32(np, "height-mm", &lvdscon->panel.height_mm);
+		videomode_from_timing(&timing, &lvdscon->panel.mode);
+
+		of_property_read_u32(np, "width-mm", &lvdscon->panel.width_mm);
+		of_property_read_u32(np, "height-mm", &lvdscon->panel.height_mm);
+	}
 
 	connector = &lvdscon->connector.connector;
 	connector->display_info.width_mm = lvdscon->panel.width_mm;
@@ -121,14 +118,15 @@ int rcar_du_lvds_connector_init(struct rcar_du_device *rcdu,
 	if (ret < 0)
 		return ret;
 
-	connector->dpms = DRM_MODE_DPMS_OFF;
+	drm_helper_connector_dpms(connector, DRM_MODE_DPMS_OFF);
 	drm_object_property_set_value(&connector->base,
 		rcdu->ddev->mode_config.dpms_property, DRM_MODE_DPMS_OFF);
 
-	ret = drm_mode_connector_attach_encoder(connector, encoder);
+	ret = drm_mode_connector_attach_encoder(connector, &renc->encoder);
 	if (ret < 0)
 		return ret;
 
+	connector->encoder = &renc->encoder;
 	lvdscon->connector.encoder = renc;
 
 	return 0;

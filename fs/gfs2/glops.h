@@ -12,8 +12,6 @@
 
 #include "incore.h"
 
-extern struct workqueue_struct *gfs2_freeze_wq;
-
 extern const struct gfs2_glock_operations gfs2_meta_glops;
 extern const struct gfs2_glock_operations gfs2_inode_glops;
 extern const struct gfs2_glock_operations gfs2_rgrp_glops;

@@ -7,6 +7,7 @@
 #include <linux/of_device.h>
 #include <linux/module.h>
 #include <linux/spi/pxa2xx_spi.h>
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 
 #include <linux/dmaengine.h>
@@ -18,7 +19,6 @@ enum {
 	PORT_BSW0,
 	PORT_BSW1,
 	PORT_BSW2,
-	PORT_QUARK_X1000,
 };
 
 struct pxa_spi_info {
@@ -61,7 +61,7 @@ static struct pxa_spi_info spi_info_configs[] = {
 		.max_clk_rate = 3686400,
 	},
 	[PORT_BYT] = {
-		.type = LPSS_BYT_SSP,
+		.type = LPSS_SSP,
 		.port_id = 0,
 		.num_chipselect = 1,
 		.max_clk_rate = 50000000,
@@ -69,7 +69,7 @@ static struct pxa_spi_info spi_info_configs[] = {
 		.rx_param = &byt_rx_param,
 	},
 	[PORT_BSW0] = {
-		.type = LPSS_BYT_SSP,
+		.type = LPSS_SSP,
 		.port_id = 0,
 		.num_chipselect = 1,
 		.max_clk_rate = 50000000,
@@ -77,7 +77,7 @@ static struct pxa_spi_info spi_info_configs[] = {
 		.rx_param = &bsw0_rx_param,
 	},
 	[PORT_BSW1] = {
-		.type = LPSS_BYT_SSP,
+		.type = LPSS_SSP,
 		.port_id = 1,
 		.num_chipselect = 1,
 		.max_clk_rate = 50000000,
@@ -85,18 +85,12 @@ static struct pxa_spi_info spi_info_configs[] = {
 		.rx_param = &bsw1_rx_param,
 	},
 	[PORT_BSW2] = {
-		.type = LPSS_BYT_SSP,
+		.type = LPSS_SSP,
 		.port_id = 2,
 		.num_chipselect = 1,
 		.max_clk_rate = 50000000,
 		.tx_param = &bsw2_tx_param,
 		.rx_param = &bsw2_rx_param,
-	},
-	[PORT_QUARK_X1000] = {
-		.type = QUARK_X1000_SSP,
-		.port_id = -1,
-		.num_chipselect = 1,
-		.max_clk_rate = 50000000,
 	},
 };
 
@@ -197,7 +191,6 @@ static void pxa2xx_spi_pci_remove(struct pci_dev *dev)
 
 static const struct pci_device_id pxa2xx_spi_pci_devices[] = {
 	{ PCI_VDEVICE(INTEL, 0x2e6a), PORT_CE4100 },
-	{ PCI_VDEVICE(INTEL, 0x0935), PORT_QUARK_X1000 },
 	{ PCI_VDEVICE(INTEL, 0x0f0e), PORT_BYT },
 	{ PCI_VDEVICE(INTEL, 0x228e), PORT_BSW0 },
 	{ PCI_VDEVICE(INTEL, 0x2290), PORT_BSW1 },

@@ -457,6 +457,7 @@ static struct platform_driver netx_eth_driver = {
 	.resume		= netx_eth_drv_resume,
 	.driver		= {
 		.name	= CARDNAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

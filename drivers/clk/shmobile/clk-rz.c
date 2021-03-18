@@ -10,7 +10,6 @@
  */
 
 #include <linux/clk-provider.h>
-#include <linux/clk/shmobile.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
@@ -100,7 +99,5 @@ static void __init rz_cpg_clocks_init(struct device_node *np)
 	}
 
 	of_clk_add_provider(np, of_clk_src_onecell_get, &cpg->data);
-
-	cpg_mstp_add_clk_domain(np);
 }
 CLK_OF_DECLARE(rz_cpg_clks, "renesas,rz-cpg-clocks", rz_cpg_clocks_init);

@@ -19,7 +19,6 @@
 #include <linux/mutex.h>
 #include <linux/clk.h>
 #include <linux/clkdev.h>
-#include <linux/clk-provider.h>
 #include <linux/of.h>
 
 #include "clk.h"
@@ -28,8 +27,33 @@ static LIST_HEAD(clocks);
 static DEFINE_MUTEX(clocks_mutex);
 
 #if defined(CONFIG_OF)
-static struct clk *__of_clk_get(struct device_node *np, int index,
-			       const char *dev_id, const char *con_id)
+
+/**
+ * of_clk_get_by_clkspec() - Lookup a clock form a clock provider
+ * @clkspec: pointer to a clock specifier data structure
+ *
+ * This function looks up a struct clk from the registered list of clock
+ * providers, an input is a clock specifier data structure as returned
+ * from the of_parse_phandle_with_args() function call.
+ */
+struct clk *of_clk_get_by_clkspec(struct of_phandle_args *clkspec)
+{
+	struct clk *clk;
+
+	if (!clkspec)
+		return ERR_PTR(-EINVAL);
+
+	of_clk_lock();
+	clk = __of_clk_get_from_provider(clkspec);
+
+	if (!IS_ERR(clk) && !__clk_get(clk))
+		clk = ERR_PTR(-ENOENT);
+
+	of_clk_unlock();
+	return clk;
+}
+
+struct clk *of_clk_get(struct device_node *np, int index)
 {
 	struct of_phandle_args clkspec;
 	struct clk *clk;
@@ -43,21 +67,22 @@ static struct clk *__of_clk_get(struct device_node *np, int index,
 	if (rc)
 		return ERR_PTR(rc);
 
-	clk = __of_clk_get_from_provider(&clkspec, dev_id, con_id);
+	clk = of_clk_get_by_clkspec(&clkspec);
 	of_node_put(clkspec.np);
-
 	return clk;
-}
-
-struct clk *of_clk_get(struct device_node *np, int index)
-{
-	return __of_clk_get(np, index, np->full_name, NULL);
 }
 EXPORT_SYMBOL(of_clk_get);
 
-static struct clk *__of_clk_get_by_name(struct device_node *np,
-					const char *dev_id,
-					const char *name)
+/**
+ * of_clk_get_by_name() - Parse and lookup a clock referenced by a device node
+ * @np: pointer to clock consumer node
+ * @name: name of consumer's clock input, or NULL for the first clock reference
+ *
+ * This function parses the clocks and clock-names properties,
+ * and uses them to look up the struct clk from the registered list of clock
+ * providers.
+ */
+struct clk *of_clk_get_by_name(struct device_node *np, const char *name)
 {
 	struct clk *clk = ERR_PTR(-ENOENT);
 
@@ -72,7 +97,7 @@ static struct clk *__of_clk_get_by_name(struct device_node *np,
 		 */
 		if (name)
 			index = of_property_match_string(np, "clock-names", name);
-		clk = __of_clk_get(np, index, dev_id, name);
+		clk = of_clk_get(np, index);
 		if (!IS_ERR(clk))
 			break;
 		else if (name && index >= 0)
@@ -90,33 +115,7 @@ static struct clk *__of_clk_get_by_name(struct device_node *np,
 
 	return clk;
 }
-
-/**
- * of_clk_get_by_name() - Parse and lookup a clock referenced by a device node
- * @np: pointer to clock consumer node
- * @name: name of consumer's clock input, or NULL for the first clock reference
- *
- * This function parses the clocks and clock-names properties,
- * and uses them to look up the struct clk from the registered list of clock
- * providers.
- */
-struct clk *of_clk_get_by_name(struct device_node *np, const char *name)
-{
-	if (!np)
-		return ERR_PTR(-ENOENT);
-
-	return __of_clk_get_by_name(np, np->full_name, name);
-}
 EXPORT_SYMBOL(of_clk_get_by_name);
-
-#else /* defined(CONFIG_OF) && defined(CONFIG_COMMON_CLK) */
-
-static struct clk *__of_clk_get_by_name(struct device_node *np,
-					const char *dev_id,
-					const char *name)
-{
-	return ERR_PTR(-ENOENT);
-}
 #endif
 
 /*
@@ -165,25 +164,11 @@ static struct clk_lookup *clk_find(const char *dev_id, const char *con_id)
 struct clk *clk_get_sys(const char *dev_id, const char *con_id)
 {
 	struct clk_lookup *cl;
-	struct clk *clk = NULL;
 
 	mutex_lock(&clocks_mutex);
-
 	cl = clk_find(dev_id, con_id);
-	if (!cl)
-		goto out;
-
-	clk = __clk_create_clk(cl->clk_hw, dev_id, con_id);
-	if (IS_ERR(clk))
-		goto out;
-
-	if (!__clk_get(clk)) {
-		__clk_free_clk(clk);
+	if (cl && !__clk_get(cl->clk))
 		cl = NULL;
-		goto out;
-	}
-
-out:
 	mutex_unlock(&clocks_mutex);
 
 	return cl ? cl->clk : ERR_PTR(-ENOENT);
@@ -196,8 +181,10 @@ struct clk *clk_get(struct device *dev, const char *con_id)
 	struct clk *clk;
 
 	if (dev) {
-		clk = __of_clk_get_by_name(dev->of_node, dev_id, con_id);
-		if (!IS_ERR(clk) || PTR_ERR(clk) == -EPROBE_DEFER)
+		clk = of_clk_get_by_name(dev->of_node, con_id);
+		if (!IS_ERR(clk))
+			return clk;
+		if (PTR_ERR(clk) == -EPROBE_DEFER)
 			return clk;
 	}
 
@@ -211,18 +198,11 @@ void clk_put(struct clk *clk)
 }
 EXPORT_SYMBOL(clk_put);
 
-static void __clkdev_add(struct clk_lookup *cl)
+void clkdev_add(struct clk_lookup *cl)
 {
 	mutex_lock(&clocks_mutex);
 	list_add_tail(&cl->node, &clocks);
 	mutex_unlock(&clocks_mutex);
-}
-
-void clkdev_add(struct clk_lookup *cl)
-{
-	if (!cl->clk_hw)
-		cl->clk_hw = __clk_get_hw(cl->clk);
-	__clkdev_add(cl);
 }
 EXPORT_SYMBOL(clkdev_add);
 
@@ -230,7 +210,6 @@ void clkdev_add_table(struct clk_lookup *cl, size_t num)
 {
 	mutex_lock(&clocks_mutex);
 	while (num--) {
-		cl->clk_hw = __clk_get_hw(cl->clk);
 		list_add_tail(&cl->node, &clocks);
 		cl++;
 	}
@@ -247,7 +226,7 @@ struct clk_lookup_alloc {
 };
 
 static struct clk_lookup * __init_refok
-vclkdev_alloc(struct clk_hw *hw, const char *con_id, const char *dev_fmt,
+vclkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt,
 	va_list ap)
 {
 	struct clk_lookup_alloc *cla;
@@ -256,7 +235,7 @@ vclkdev_alloc(struct clk_hw *hw, const char *con_id, const char *dev_fmt,
 	if (!cla)
 		return NULL;
 
-	cla->cl.clk_hw = hw;
+	cla->cl.clk = clk;
 	if (con_id) {
 		strlcpy(cla->con_id, con_id, sizeof(cla->con_id));
 		cla->cl.con_id = cla->con_id;
@@ -270,19 +249,6 @@ vclkdev_alloc(struct clk_hw *hw, const char *con_id, const char *dev_fmt,
 	return &cla->cl;
 }
 
-static struct clk_lookup *
-vclkdev_create(struct clk_hw *hw, const char *con_id, const char *dev_fmt,
-	va_list ap)
-{
-	struct clk_lookup *cl;
-
-	cl = vclkdev_alloc(hw, con_id, dev_fmt, ap);
-	if (cl)
-		__clkdev_add(cl);
-
-	return cl;
-}
-
 struct clk_lookup * __init_refok
 clkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt, ...)
 {
@@ -290,50 +256,28 @@ clkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt, ...)
 	va_list ap;
 
 	va_start(ap, dev_fmt);
-	cl = vclkdev_alloc(__clk_get_hw(clk), con_id, dev_fmt, ap);
+	cl = vclkdev_alloc(clk, con_id, dev_fmt, ap);
 	va_end(ap);
 
 	return cl;
 }
 EXPORT_SYMBOL(clkdev_alloc);
 
-/**
- * clkdev_create - allocate and add a clkdev lookup structure
- * @clk: struct clk to associate with all clk_lookups
- * @con_id: connection ID string on device
- * @dev_fmt: format string describing device name
- *
- * Returns a clk_lookup structure, which can be later unregistered and
- * freed.
- */
-struct clk_lookup *clkdev_create(struct clk *clk, const char *con_id,
-	const char *dev_fmt, ...)
+int clk_add_alias(const char *alias, const char *alias_dev_name, char *id,
+	struct device *dev)
 {
-	struct clk_lookup *cl;
-	va_list ap;
-
-	va_start(ap, dev_fmt);
-	cl = vclkdev_create(__clk_get_hw(clk), con_id, dev_fmt, ap);
-	va_end(ap);
-
-	return cl;
-}
-EXPORT_SYMBOL_GPL(clkdev_create);
-
-int clk_add_alias(const char *alias, const char *alias_dev_name,
-	const char *con_id, struct device *dev)
-{
-	struct clk *r = clk_get(dev, con_id);
+	struct clk *r = clk_get(dev, id);
 	struct clk_lookup *l;
 
 	if (IS_ERR(r))
 		return PTR_ERR(r);
 
-	l = clkdev_create(r, alias, alias_dev_name ? "%s" : NULL,
-			  alias_dev_name);
+	l = clkdev_alloc(r, alias, alias_dev_name);
 	clk_put(r);
-
-	return l ? 0 : -ENODEV;
+	if (!l)
+		return -ENODEV;
+	clkdev_add(l);
+	return 0;
 }
 EXPORT_SYMBOL(clk_add_alias);
 
@@ -373,12 +317,16 @@ int clk_register_clkdev(struct clk *clk, const char *con_id,
 		return PTR_ERR(clk);
 
 	va_start(ap, dev_fmt);
-	cl = vclkdev_create(__clk_get_hw(clk), con_id, dev_fmt, ap);
+	cl = vclkdev_alloc(clk, con_id, dev_fmt, ap);
 	va_end(ap);
 
-	return cl ? 0 : -ENOMEM;
+	if (!cl)
+		return -ENOMEM;
+
+	clkdev_add(cl);
+
+	return 0;
 }
-EXPORT_SYMBOL(clk_register_clkdev);
 
 /**
  * clk_register_clkdevs - register a set of clk_lookup for a struct clk
@@ -399,8 +347,8 @@ int clk_register_clkdevs(struct clk *clk, struct clk_lookup *cl, size_t num)
 		return PTR_ERR(clk);
 
 	for (i = 0; i < num; i++, cl++) {
-		cl->clk_hw = __clk_get_hw(clk);
-		__clkdev_add(cl);
+		cl->clk = clk;
+		clkdev_add(cl);
 	}
 
 	return 0;

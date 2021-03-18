@@ -22,11 +22,6 @@ static LIST_HEAD(phy_list);
 static LIST_HEAD(phy_bind_list);
 static DEFINE_SPINLOCK(phy_lock);
 
-struct phy_devm {
-	struct usb_phy *phy;
-	struct notifier_block *nb;
-};
-
 static struct usb_phy *__usb_find_phy(struct list_head *list,
 	enum usb_phy_type type)
 {
@@ -64,9 +59,6 @@ static struct usb_phy *__of_usb_find_phy(struct device_node *node)
 {
 	struct usb_phy  *phy;
 
-	if (!of_device_is_available(node))
-		return ERR_PTR(-ENODEV);
-
 	list_for_each_entry(phy, &phy_list, head) {
 		if (node != phy->dev->of_node)
 			continue;
@@ -74,7 +66,7 @@ static struct usb_phy *__of_usb_find_phy(struct device_node *node)
 		return phy;
 	}
 
-	return ERR_PTR(-EPROBE_DEFER);
+	return ERR_PTR(-ENODEV);
 }
 
 static void devm_usb_phy_release(struct device *dev, void *res)
@@ -82,15 +74,6 @@ static void devm_usb_phy_release(struct device *dev, void *res)
 	struct usb_phy *phy = *(struct usb_phy **)res;
 
 	usb_put_phy(phy);
-}
-
-static void devm_usb_phy_release2(struct device *dev, void *_res)
-{
-	struct phy_devm *res = _res;
-
-	if (res->nb)
-		usb_unregister_notifier(res->phy, res->nb);
-	usb_put_phy(res->phy);
 }
 
 static int devm_usb_phy_match(struct device *dev, void *res, void *match_data)
@@ -167,66 +150,6 @@ err0:
 EXPORT_SYMBOL_GPL(usb_get_phy);
 
 /**
- * devm_usb_get_phy_by_node - find the USB PHY by device_node
- * @dev - device that requests this phy
- * @node - the device_node for the phy device.
- * @nb - a notifier_block to register with the phy.
- *
- * Returns the phy driver associated with the given device_node,
- * after getting a refcount to it, -ENODEV if there is no such phy or
- * -EPROBE_DEFER if the device is not yet loaded. While at that, it
- * also associates the device with
- * the phy using devres. On driver detach, release function is invoked
- * on the devres data, then, devres data is freed.
- *
- * For use by peripheral drivers for devices related to a phy,
- * such as a charger.
- */
-struct  usb_phy *devm_usb_get_phy_by_node(struct device *dev,
-					  struct device_node *node,
-					  struct notifier_block *nb)
-{
-	struct usb_phy	*phy = ERR_PTR(-ENOMEM);
-	struct phy_devm	*ptr;
-	unsigned long	flags;
-
-	ptr = devres_alloc(devm_usb_phy_release2, sizeof(*ptr), GFP_KERNEL);
-	if (!ptr) {
-		dev_dbg(dev, "failed to allocate memory for devres\n");
-		goto err0;
-	}
-
-	spin_lock_irqsave(&phy_lock, flags);
-
-	phy = __of_usb_find_phy(node);
-	if (IS_ERR(phy)) {
-		devres_free(ptr);
-		goto err1;
-	}
-
-	if (!try_module_get(phy->dev->driver->owner)) {
-		phy = ERR_PTR(-ENODEV);
-		devres_free(ptr);
-		goto err1;
-	}
-	if (nb)
-		usb_register_notifier(phy, nb);
-	ptr->phy = phy;
-	ptr->nb = nb;
-	devres_add(dev, ptr);
-
-	get_device(phy->dev);
-
-err1:
-	spin_unlock_irqrestore(&phy_lock, flags);
-
-err0:
-
-	return phy;
-}
-EXPORT_SYMBOL_GPL(devm_usb_get_phy_by_node);
-
-/**
  * devm_usb_get_phy_by_phandle - find the USB PHY by phandle
  * @dev - device that requests this phy
  * @phandle - name of the property holding the phy phandle value
@@ -244,8 +167,9 @@ EXPORT_SYMBOL_GPL(devm_usb_get_phy_by_node);
 struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	const char *phandle, u8 index)
 {
+	struct usb_phy	*phy = ERR_PTR(-ENOMEM), **ptr;
+	unsigned long	flags;
 	struct device_node *node;
-	struct usb_phy	*phy;
 
 	if (!dev->of_node) {
 		dev_dbg(dev, "device does not have a device node entry\n");
@@ -258,8 +182,33 @@ struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 			dev->of_node->full_name);
 		return ERR_PTR(-ENODEV);
 	}
-	phy = devm_usb_get_phy_by_node(dev, node, NULL);
+
+	ptr = devres_alloc(devm_usb_phy_release, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr) {
+		dev_dbg(dev, "failed to allocate memory for devres\n");
+		goto err0;
+	}
+
+	spin_lock_irqsave(&phy_lock, flags);
+
+	phy = __of_usb_find_phy(node);
+	if (IS_ERR(phy) || !try_module_get(phy->dev->driver->owner)) {
+		phy = ERR_PTR(-EPROBE_DEFER);
+		devres_free(ptr);
+		goto err1;
+	}
+
+	*ptr = phy;
+	devres_add(dev, ptr);
+
+	get_device(phy->dev);
+
+err1:
+	spin_unlock_irqrestore(&phy_lock, flags);
+
+err0:
 	of_node_put(node);
+
 	return phy;
 }
 EXPORT_SYMBOL_GPL(devm_usb_get_phy_by_phandle);
@@ -497,15 +446,3 @@ int usb_bind_phy(const char *dev_name, u8 index,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(usb_bind_phy);
-
-/**
- * usb_phy_set_event - set event to phy event
- * @x: the phy returned by usb_get_phy();
- *
- * This sets event to phy event
- */
-void usb_phy_set_event(struct usb_phy *x, unsigned long event)
-{
-	x->last_event = event;
-}
-EXPORT_SYMBOL_GPL(usb_phy_set_event);

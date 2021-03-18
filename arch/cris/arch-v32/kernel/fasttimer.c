@@ -501,8 +501,7 @@ static int proc_fasttimer_show(struct seq_file *m, void *v)
 			i = debug_log_cnt;
 
 		while ((i != end_i || debug_log_cnt_wrapped)) {
-			seq_printf(m, debug_log_string[i], debug_log_value[i]);
-			if (seq_has_overflowed(m))
+			if (seq_printf(m, debug_log_string[i], debug_log_value[i]) < 0)
 				return 0;
 			i = (i+1) % DEBUG_LOG_MAX;
 		}
@@ -517,21 +516,23 @@ static int proc_fasttimer_show(struct seq_file *m, void *v)
 		int cur = (fast_timers_started - i - 1) % NUM_TIMER_STATS;
 
 #if 1 //ndef FAST_TIMER_LOG
-		seq_printf(m, "div: %i delay: %i\n",
+		seq_printf(m, "div: %i delay: %i"
+			   "\n",
 			   timer_div_settings[cur],
 			   timer_delay_settings[cur]);
 #endif
 #ifdef FAST_TIMER_LOG
 		t = &timer_started_log[cur];
-		seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu d: %6li us data: 0x%08lX\n",
-			   t->name,
-			   (unsigned long)t->tv_set.tv_jiff,
-			   (unsigned long)t->tv_set.tv_usec,
-			   (unsigned long)t->tv_expires.tv_jiff,
-			   (unsigned long)t->tv_expires.tv_usec,
-			   t->delay_us,
-			   t->data);
-		if (seq_has_overflowed(m))
+		if (seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu "
+			       "d: %6li us data: 0x%08lX"
+			       "\n",
+			       t->name,
+			       (unsigned long)t->tv_set.tv_jiff,
+			       (unsigned long)t->tv_set.tv_usec,
+			       (unsigned long)t->tv_expires.tv_jiff,
+			       (unsigned long)t->tv_expires.tv_usec,
+			       t->delay_us,
+			       t->data) < 0)
 			return 0;
 #endif
 	}
@@ -543,15 +544,16 @@ static int proc_fasttimer_show(struct seq_file *m, void *v)
 	seq_printf(m, "Timers added: %i\n", fast_timers_added);
 	for (i = 0; i < num_to_show; i++) {
 		t = &timer_added_log[(fast_timers_added - i - 1) % NUM_TIMER_STATS];
-		seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu d: %6li us data: 0x%08lX\n",
-			   t->name,
-			   (unsigned long)t->tv_set.tv_jiff,
-			   (unsigned long)t->tv_set.tv_usec,
-			   (unsigned long)t->tv_expires.tv_jiff,
-			   (unsigned long)t->tv_expires.tv_usec,
-			   t->delay_us,
-			   t->data);
-		if (seq_has_overflowed(m))
+		if (seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu "
+			       "d: %6li us data: 0x%08lX"
+			       "\n",
+			       t->name,
+			       (unsigned long)t->tv_set.tv_jiff,
+			       (unsigned long)t->tv_set.tv_usec,
+			       (unsigned long)t->tv_expires.tv_jiff,
+			       (unsigned long)t->tv_expires.tv_usec,
+			       t->delay_us,
+			       t->data) < 0)
 			return 0;
 	}
 	seq_putc(m, '\n');
@@ -561,15 +563,16 @@ static int proc_fasttimer_show(struct seq_file *m, void *v)
 	seq_printf(m, "Timers expired: %i\n", fast_timers_expired);
 	for (i = 0; i < num_to_show; i++){
 		t = &timer_expired_log[(fast_timers_expired - i - 1) % NUM_TIMER_STATS];
-		seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu d: %6li us data: 0x%08lX\n",
-			   t->name,
-			   (unsigned long)t->tv_set.tv_jiff,
-			   (unsigned long)t->tv_set.tv_usec,
-			   (unsigned long)t->tv_expires.tv_jiff,
-			   (unsigned long)t->tv_expires.tv_usec,
-			   t->delay_us,
-			   t->data);
-		if (seq_has_overflowed(m))
+		if (seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu "
+			       "d: %6li us data: 0x%08lX"
+			       "\n",
+			       t->name,
+			       (unsigned long)t->tv_set.tv_jiff,
+			       (unsigned long)t->tv_set.tv_usec,
+			       (unsigned long)t->tv_expires.tv_jiff,
+			       (unsigned long)t->tv_expires.tv_usec,
+			       t->delay_us,
+			       t->data) < 0)
 			return 0;
 	}
 	seq_putc(m, '\n');
@@ -581,15 +584,19 @@ static int proc_fasttimer_show(struct seq_file *m, void *v)
 	while (t != NULL){
 		nextt = t->next;
 		local_irq_restore(flags);
-		seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu d: %6li us data: 0x%08lX\n",
-			   t->name,
-			   (unsigned long)t->tv_set.tv_jiff,
-			   (unsigned long)t->tv_set.tv_usec,
-			   (unsigned long)t->tv_expires.tv_jiff,
-			   (unsigned long)t->tv_expires.tv_usec,
-			   t->delay_us,
-			   t->data);
-		if (seq_has_overflowed(m))
+		if (seq_printf(m, "%-14s s: %6lu.%06lu e: %6lu.%06lu "
+			       "d: %6li us data: 0x%08lX"
+/*			" func: 0x%08lX" */
+			       "\n",
+			       t->name,
+			       (unsigned long)t->tv_set.tv_jiff,
+			       (unsigned long)t->tv_set.tv_usec,
+			       (unsigned long)t->tv_expires.tv_jiff,
+			       (unsigned long)t->tv_expires.tv_usec,
+			       t->delay_us,
+			       t->data
+/*                      , t->function */
+			       ) < 0)
 			return 0;
 		local_irq_save(flags);
 		if (t->next != nextt)

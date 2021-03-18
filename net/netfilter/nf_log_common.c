@@ -17,7 +17,6 @@
 #include <net/route.h>
 
 #include <linux/netfilter.h>
-#include <linux/netfilter_bridge.h>
 #include <linux/netfilter/xt_LOG.h>
 #include <net/netfilter/nf_log.h>
 
@@ -134,7 +133,7 @@ EXPORT_SYMBOL_GPL(nf_log_dump_tcp_header);
 
 void nf_log_dump_sk_uid_gid(struct nf_log_buf *m, struct sock *sk)
 {
-	if (!sk || !sk_fullsock(sk))
+	if (!sk || sk->sk_state == TCP_TIME_WAIT)
 		return;
 
 	read_lock_bh(&sk->sk_callback_lock);
@@ -164,10 +163,10 @@ nf_log_dump_packet_common(struct nf_log_buf *m, u_int8_t pf,
 		const struct net_device *physindev;
 		const struct net_device *physoutdev;
 
-		physindev = nf_bridge_get_physindev(skb);
+		physindev = skb->nf_bridge->physindev;
 		if (physindev && in != physindev)
 			nf_log_buf_add(m, "PHYSIN=%s ", physindev->name);
-		physoutdev = nf_bridge_get_physoutdev(skb);
+		physoutdev = skb->nf_bridge->physoutdev;
 		if (physoutdev && out != physoutdev)
 			nf_log_buf_add(m, "PHYSOUT=%s ", physoutdev->name);
 	}

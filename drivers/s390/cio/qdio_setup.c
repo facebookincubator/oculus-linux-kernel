@@ -91,7 +91,10 @@ EXPORT_SYMBOL_GPL(qdio_reset_buffers);
  */
 static inline int qebsm_possible(void)
 {
+#ifdef CONFIG_64BIT
 	return css_general_characteristics.qebsm;
+#endif
+	return 0;
 }
 
 /*

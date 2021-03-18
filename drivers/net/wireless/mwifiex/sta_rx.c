@@ -90,7 +90,6 @@ int mwifiex_process_rx_packet(struct mwifiex_private *priv,
 	struct ethhdr *eth;
 	u16 rx_pkt_off, rx_pkt_len;
 	u8 *offset;
-	u8 adj_rx_rate = 0;
 
 	local_rx_pd = (struct rxpd *) (skb->data);
 
@@ -141,7 +140,7 @@ int mwifiex_process_rx_packet(struct mwifiex_private *priv,
 
 	if (priv->hs2_enabled &&
 	    mwifiex_discard_gratuitous_arp(priv, skb)) {
-		mwifiex_dbg(priv->adapter, INFO, "Bypassed Gratuitous ARP\n");
+		dev_dbg(priv->adapter->dev, "Bypassed Gratuitous ARP\n");
 		dev_kfree_skb_any(skb);
 		return 0;
 	}
@@ -156,18 +155,9 @@ int mwifiex_process_rx_packet(struct mwifiex_private *priv,
 
 	priv->rxpd_htinfo = local_rx_pd->ht_info;
 
-	if (GET_BSS_ROLE(priv) == MWIFIEX_BSS_ROLE_STA ||
-	    GET_BSS_ROLE(priv) == MWIFIEX_BSS_ROLE_UAP) {
-		adj_rx_rate = mwifiex_adjust_data_rate(priv, priv->rxpd_rate,
-						       priv->rxpd_htinfo);
-		mwifiex_hist_data_add(priv, adj_rx_rate, local_rx_pd->snr,
-				      local_rx_pd->nf);
-	}
-
 	ret = mwifiex_recv_packet(priv, skb);
 	if (ret == -1)
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "recv packet failed\n");
+		dev_err(priv->adapter->dev, "recv packet failed\n");
 
 	return ret;
 }
@@ -204,9 +194,9 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 	rx_pkt_hdr = (void *)local_rx_pd + rx_pkt_offset;
 
 	if ((rx_pkt_offset + rx_pkt_length) > (u16) skb->len) {
-		mwifiex_dbg(adapter, ERROR,
-			    "wrong rx packet: len=%d, rx_pkt_offset=%d, rx_pkt_length=%d\n",
-			    skb->len, rx_pkt_offset, rx_pkt_length);
+		dev_err(adapter->dev,
+			"wrong rx packet: len=%d, rx_pkt_offset=%d, rx_pkt_length=%d\n",
+			skb->len, rx_pkt_offset, rx_pkt_length);
 		priv->stats.rx_dropped++;
 		dev_kfree_skb_any(skb);
 		return ret;
@@ -215,7 +205,7 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 	if (rx_pkt_type == PKT_TYPE_MGMT) {
 		ret = mwifiex_process_mgmt_packet(priv, skb);
 		if (ret)
-			mwifiex_dbg(adapter, ERROR, "Rx of mgmt packet failed");
+			dev_err(adapter->dev, "Rx of mgmt packet failed");
 		dev_kfree_skb_any(skb);
 		return ret;
 	}
@@ -242,9 +232,6 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 			if (sta_ptr)
 				sta_ptr->rx_seq[local_rx_pd->priority] =
 					      le16_to_cpu(local_rx_pd->seq_num);
-			mwifiex_auto_tdls_update_peer_signal(priv, ta,
-							     local_rx_pd->snr,
-							     local_rx_pd->nf);
 		}
 	} else {
 		if (rx_pkt_type != PKT_TYPE_BAR)

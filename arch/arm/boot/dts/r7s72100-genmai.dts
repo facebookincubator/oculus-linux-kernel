@@ -21,8 +21,7 @@
 	};
 
 	chosen {
-		bootargs = "ignore_loglevel rw root=/dev/nfs ip=dhcp";
-		stdout-path = &scif2;
+		bootargs = "console=ttySC2,115200 ignore_loglevel rw root=/dev/nfs ip=dhcp";
 	};
 
 	memory {
@@ -45,7 +44,7 @@
 };
 
 &mtu2 {
-	status = "okay";
+	status = "ok";
 };
 
 &i2c2 {

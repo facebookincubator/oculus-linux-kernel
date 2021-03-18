@@ -10,7 +10,6 @@
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
@@ -237,7 +236,7 @@ static struct elog_obj *create_elog_obj(uint64_t id, size_t size, uint64_t type)
 	return elog;
 }
 
-static irqreturn_t elog_event(int irq, void *data)
+static void elog_work_fn(struct work_struct *work)
 {
 	__be64 size;
 	__be64 id;
@@ -251,7 +250,7 @@ static irqreturn_t elog_event(int irq, void *data)
 	rc = opal_get_elog_size(&id, &size, &type);
 	if (rc != OPAL_SUCCESS) {
 		pr_err("ELOG: OPAL log info read failed\n");
-		return IRQ_HANDLED;
+		return;
 	}
 
 	elog_size = be64_to_cpu(size);
@@ -270,16 +269,31 @@ static irqreturn_t elog_event(int irq, void *data)
 	 * entries.
 	 */
 	if (kset_find_obj(elog_kset, name))
-		return IRQ_HANDLED;
+		return;
 
 	create_elog_obj(log_id, elog_size, elog_type);
-
-	return IRQ_HANDLED;
 }
+
+static DECLARE_WORK(elog_work, elog_work_fn);
+
+static int elog_event(struct notifier_block *nb,
+				unsigned long events, void *change)
+{
+	/* check for error log event */
+	if (events & OPAL_EVENT_ERROR_LOG_AVAIL)
+		schedule_work(&elog_work);
+	return 0;
+}
+
+static struct notifier_block elog_nb = {
+	.notifier_call  = elog_event,
+	.next           = NULL,
+	.priority       = 0
+};
 
 int __init opal_elog_init(void)
 {
-	int rc = 0, irq;
+	int rc = 0;
 
 	/* ELOG not supported by firmware */
 	if (!opal_check_token(OPAL_ELOG_READ))
@@ -291,24 +305,15 @@ int __init opal_elog_init(void)
 		return -1;
 	}
 
-	irq = opal_event_request(ilog2(OPAL_EVENT_ERROR_LOG_AVAIL));
-	if (!irq) {
-		pr_err("%s: Can't register OPAL event irq (%d)\n",
-		       __func__, irq);
-		return irq;
-	}
-
-	rc = request_threaded_irq(irq, NULL, elog_event,
-			IRQF_TRIGGER_HIGH | IRQF_ONESHOT, "opal-elog", NULL);
+	rc = opal_notifier_register(&elog_nb);
 	if (rc) {
-		pr_err("%s: Can't request OPAL event irq (%d)\n",
-		       __func__, rc);
+		pr_err("%s: Can't register OPAL event notifier (%d)\n",
+		__func__, rc);
 		return rc;
 	}
 
 	/* We are now ready to pull error logs from opal. */
-	if (opal_check_token(OPAL_ELOG_RESEND))
-		opal_resend_pending_logs();
+	opal_resend_pending_logs();
 
 	return 0;
 }

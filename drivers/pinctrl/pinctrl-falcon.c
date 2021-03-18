@@ -101,7 +101,6 @@ static void lantiq_load_pin_desc(struct pinctrl_pin_desc *d, int bank, int len)
 	for (i = 0; i < len; i++) {
 		/* strlen("ioXYZ") + 1 = 6 */
 		char *name = kzalloc(6, GFP_KERNEL);
-
 		snprintf(name, 6, "io%d", base + i);
 		d[i].number = base + i;
 		d[i].name = name;
@@ -464,7 +463,7 @@ static int pinctrl_falcon_probe(struct platform_device *pdev)
 								   &res);
 		if (IS_ERR(falcon_info.membase[*bank]))
 			return PTR_ERR(falcon_info.membase[*bank]);
-
+		
 		avail = pad_r32(falcon_info.membase[*bank],
 					LTQ_PADC_AVAIL);
 		pins = fls(avail);
@@ -501,6 +500,7 @@ static struct platform_driver pinctrl_falcon_driver = {
 	.probe = pinctrl_falcon_probe,
 	.driver = {
 		.name = "pinctrl-falcon",
+		.owner = THIS_MODULE,
 		.of_match_table = falcon_match,
 	},
 };

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, 2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -682,14 +682,11 @@ static void cleanup_stats(struct lpm_stats *stats)
 {
 	struct list_head *centry = NULL;
 	struct lpm_stats *pos = NULL;
-	struct lpm_stats *n = NULL;
 
 	centry = &stats->child;
-	list_for_each_entry_safe_reverse(pos, n, centry, sibling) {
-		if (!list_empty(&pos->child)) {
+	list_for_each_entry_reverse(pos, centry, sibling) {
+		if (!list_empty(&pos->child))
 			cleanup_stats(pos);
-			continue;
-		}
 
 		list_del_init(&pos->child);
 
@@ -812,7 +809,7 @@ EXPORT_SYMBOL(lpm_stats_cluster_exit);
  */
 void lpm_stats_cpu_enter(uint32_t index, uint64_t time)
 {
-	struct lpm_stats *stats = &(*this_cpu_ptr(&(cpu_stats)));
+	struct lpm_stats *stats = &__get_cpu_var(cpu_stats);
 
 	stats->sleep_time = time;
 
@@ -832,7 +829,7 @@ EXPORT_SYMBOL(lpm_stats_cpu_enter);
  */
 void lpm_stats_cpu_exit(uint32_t index, uint64_t time, bool success)
 {
-	struct lpm_stats *stats = &(*this_cpu_ptr(&(cpu_stats)));
+	struct lpm_stats *stats = &__get_cpu_var(cpu_stats);
 
 	if (!stats->time_stats)
 		return;

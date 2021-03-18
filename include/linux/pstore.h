@@ -22,13 +22,12 @@
 #ifndef _LINUX_PSTORE_H
 #define _LINUX_PSTORE_H
 
-#include <linux/compiler.h>
-#include <linux/errno.h>
+#include <linux/time.h>
 #include <linux/kmsg_dump.h>
 #include <linux/mutex.h>
-#include <linux/spinlock.h>
-#include <linux/time.h>
 #include <linux/types.h>
+#include <linux/spinlock.h>
+#include <linux/errno.h>
 
 /* types */
 enum pstore_type_id {
@@ -41,7 +40,6 @@ enum pstore_type_id {
 	PSTORE_TYPE_PPC_OF	= 5,
 	PSTORE_TYPE_PPC_COMMON	= 6,
 	PSTORE_TYPE_PMSG	= 7,
-	PSTORE_TYPE_PPC_OPAL	= 8,
 	PSTORE_TYPE_UNKNOWN	= 255
 };
 
@@ -68,10 +66,6 @@ struct pstore_info {
 			enum kmsg_dump_reason reason, u64 *id,
 			unsigned int part, const char *buf, bool compressed,
 			size_t size, struct pstore_info *psi);
-	int		(*write_buf_user)(enum pstore_type_id type,
-			enum kmsg_dump_reason reason, u64 *id,
-			unsigned int part, const char __user *buf,
-			bool compressed, size_t size, struct pstore_info *psi);
 	int		(*erase)(enum pstore_type_id type, u64 id,
 			int count, struct timespec time,
 			struct pstore_info *psi);
@@ -80,8 +74,20 @@ struct pstore_info {
 
 #define	PSTORE_FLAGS_FRAGILE	1
 
+#ifdef CONFIG_PSTORE
 extern int pstore_register(struct pstore_info *);
-extern void pstore_unregister(struct pstore_info *);
 extern bool pstore_cannot_block_path(enum kmsg_dump_reason reason);
+#else
+static inline int
+pstore_register(struct pstore_info *psi)
+{
+	return -ENODEV;
+}
+static inline bool
+pstore_cannot_block_path(enum kmsg_dump_reason reason)
+{
+	return false;
+}
+#endif
 
 #endif /*_LINUX_PSTORE_H*/

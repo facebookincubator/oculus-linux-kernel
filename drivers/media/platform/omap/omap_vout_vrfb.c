@@ -21,7 +21,6 @@
 
 #include "omap_voutdef.h"
 #include "omap_voutlib.h"
-#include "omap_vout_vrfb.h"
 
 #define OMAP_DMA_NO_DEVICE	0
 

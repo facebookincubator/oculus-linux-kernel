@@ -34,12 +34,10 @@
 #include <au1000.h>
 
 extern void __init board_setup(void);
-extern void __init alchemy_set_lpj(void);
+extern void set_cpuspec(void);
 
 void __init plat_mem_setup(void)
 {
-	alchemy_set_lpj();
-
 	if (au1xxx_cpu_needs_config_od())
 		/* Various early Au1xx0 errata corrected by this */
 		set_c0_config(1 << 19); /* Set Config[OD] */
@@ -72,9 +70,9 @@ void __init plat_mem_setup(void)
 	iomem_resource.end = IOMEM_RESOURCE_END;
 }
 
-#if defined(CONFIG_PHYS_ADDR_T_64BIT) && defined(CONFIG_PCI)
+#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_PCI)
 /* This routine should be valid for all Au1x based boards */
-phys_addr_t __fixup_bigphys_addr(phys_addr_t phys_addr, phys_addr_t size)
+phys_t __fixup_bigphys_addr(phys_t phys_addr, phys_t size)
 {
 	unsigned long start = ALCHEMY_PCI_MEMWIN_START;
 	unsigned long end = ALCHEMY_PCI_MEMWIN_END;
@@ -85,7 +83,7 @@ phys_addr_t __fixup_bigphys_addr(phys_addr_t phys_addr, phys_addr_t size)
 
 	/* Check for PCI memory window */
 	if (phys_addr >= start && (phys_addr + size - 1) <= end)
-		return (phys_addr_t)(AU1500_PCI_MEM_PHYS_ADDR + phys_addr);
+		return (phys_t)(AU1500_PCI_MEM_PHYS_ADDR + phys_addr);
 
 	/* default nop */
 	return phys_addr;

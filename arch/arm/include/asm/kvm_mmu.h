@@ -115,27 +115,6 @@ static inline void kvm_set_s2pmd_writable(pmd_t *pmd)
 	pmd_val(*pmd) |= L_PMD_S2_RDWR;
 }
 
-static inline void kvm_set_s2pte_readonly(pte_t *pte)
-{
-	pte_val(*pte) = (pte_val(*pte) & ~L_PTE_S2_RDWR) | L_PTE_S2_RDONLY;
-}
-
-static inline bool kvm_s2pte_readonly(pte_t *pte)
-{
-	return (pte_val(*pte) & L_PTE_S2_RDWR) == L_PTE_S2_RDONLY;
-}
-
-static inline void kvm_set_s2pmd_readonly(pmd_t *pmd)
-{
-	pmd_val(*pmd) = (pmd_val(*pmd) & ~L_PMD_S2_RDWR) | L_PMD_S2_RDONLY;
-}
-
-static inline bool kvm_s2pmd_readonly(pmd_t *pmd)
-{
-	return (pmd_val(*pmd) & L_PMD_S2_RDWR) == L_PMD_S2_RDONLY;
-}
-
-
 /* Open coded p*d_addr_end that can deal with 64bit addresses */
 #define kvm_pgd_addr_end(addr, end)					\
 ({	u64 __boundary = ((addr) + PGDIR_SIZE) & PGDIR_MASK;		\
@@ -266,18 +245,7 @@ static inline void __kvm_flush_dcache_pud(pud_t pud)
 
 #define kvm_virt_to_phys(x)		virt_to_idmap((unsigned long)(x))
 
-void kvm_set_way_flush(struct kvm_vcpu *vcpu);
-void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled);
-
-static inline bool __kvm_cpu_uses_extended_idmap(void)
-{
-	return false;
-}
-
-static inline void __kvm_extend_hypmap(pgd_t *boot_hyp_pgd,
-				       pgd_t *hyp_pgd,
-				       pgd_t *merged_hyp_pgd,
-				       unsigned long hyp_idmap_start) { }
+void stage2_flush_vm(struct kvm *kvm);
 
 #endif	/* !__ASSEMBLY__ */
 

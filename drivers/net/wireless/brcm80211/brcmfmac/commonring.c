@@ -19,8 +19,19 @@
 #include <brcmu_utils.h>
 #include <brcmu_wifi.h>
 
-#include "core.h"
+#include "dhd.h"
 #include "commonring.h"
+
+
+/* dma flushing needs implementation for mips and arm platforms. Should
+ * be put in util. Note, this is not real flushing. It is virtual non
+ * cached memory. Only write buffers should have to be drained. Though
+ * this may be different depending on platform......
+ * SEE ALSO msgbuf.c
+ */
+#define brcmf_dma_flush(addr, len)
+#define brcmf_dma_invalidate_cache(addr, len)
+
 
 void brcmf_commonring_register_cb(struct brcmf_commonring *commonring,
 				  int (*cr_ring_bell)(void *ctx),
@@ -195,9 +206,14 @@ int brcmf_commonring_write_complete(struct brcmf_commonring *commonring)
 	address = commonring->buf_addr;
 	address += (commonring->f_ptr * commonring->item_len);
 	if (commonring->f_ptr > commonring->w_ptr) {
+		brcmf_dma_flush(address,
+				(commonring->depth - commonring->f_ptr) *
+				commonring->item_len);
 		address = commonring->buf_addr;
 		commonring->f_ptr = 0;
 	}
+	brcmf_dma_flush(address, (commonring->w_ptr - commonring->f_ptr) *
+			commonring->item_len);
 
 	commonring->f_ptr = commonring->w_ptr;
 
@@ -223,6 +239,8 @@ void brcmf_commonring_write_cancel(struct brcmf_commonring *commonring,
 void *brcmf_commonring_get_read_ptr(struct brcmf_commonring *commonring,
 				    u16 *n_items)
 {
+	void *ret_addr;
+
 	if (commonring->cr_update_wptr)
 		commonring->cr_update_wptr(commonring->cr_ctx);
 
@@ -233,18 +251,21 @@ void *brcmf_commonring_get_read_ptr(struct brcmf_commonring *commonring,
 	if (*n_items == 0)
 		return NULL;
 
-	return commonring->buf_addr +
-	       (commonring->r_ptr * commonring->item_len);
-}
+	ret_addr = commonring->buf_addr +
+		   (commonring->r_ptr * commonring->item_len);
 
-
-int brcmf_commonring_read_complete(struct brcmf_commonring *commonring,
-				   u16 n_items)
-{
-	commonring->r_ptr += n_items;
+	commonring->r_ptr += *n_items;
 	if (commonring->r_ptr == commonring->depth)
 		commonring->r_ptr = 0;
 
+	brcmf_dma_invalidate_cache(ret_addr, *n_ items * commonring->item_len);
+
+	return ret_addr;
+}
+
+
+int brcmf_commonring_read_complete(struct brcmf_commonring *commonring)
+{
 	if (commonring->cr_write_rptr)
 		return commonring->cr_write_rptr(commonring->cr_ctx);
 

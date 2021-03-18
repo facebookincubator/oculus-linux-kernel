@@ -468,10 +468,10 @@ static struct proto dn_proto = {
 	.obj_size		= sizeof(struct dn_sock),
 };
 
-static struct sock *dn_alloc_sock(struct net *net, struct socket *sock, gfp_t gfp, int kern)
+static struct sock *dn_alloc_sock(struct net *net, struct socket *sock, gfp_t gfp)
 {
 	struct dn_scp *scp;
-	struct sock *sk = sk_alloc(net, PF_DECnet, gfp, &dn_proto, kern);
+	struct sock *sk = sk_alloc(net, PF_DECnet, gfp, &dn_proto);
 
 	if  (!sk)
 		goto out;
@@ -696,7 +696,7 @@ static int dn_create(struct net *net, struct socket *sock, int protocol,
 	}
 
 
-	if ((sk = dn_alloc_sock(net, sock, GFP_KERNEL, kern)) == NULL)
+	if ((sk = dn_alloc_sock(net, sock, GFP_KERNEL)) == NULL)
 		return -ENOBUFS;
 
 	sk->sk_protocol = protocol;
@@ -1099,7 +1099,7 @@ static int dn_accept(struct socket *sock, struct socket *newsock, int flags)
 
 	cb = DN_SKB_CB(skb);
 	sk->sk_ack_backlog--;
-	newsk = dn_alloc_sock(sock_net(sk), newsock, sk->sk_allocation, 0);
+	newsk = dn_alloc_sock(sock_net(sk), newsock, sk->sk_allocation);
 	if (newsk == NULL) {
 		release_sock(sk);
 		kfree_skb(skb);
@@ -1672,8 +1672,8 @@ static int dn_data_ready(struct sock *sk, struct sk_buff_head *q, int flags, int
 }
 
 
-static int dn_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
-		      int flags)
+static int dn_recvmsg(struct kiocb *iocb, struct socket *sock,
+	struct msghdr *msg, size_t size, int flags)
 {
 	struct sock *sk = sock->sk;
 	struct dn_scp *scp = DN_SK(sk);
@@ -1750,9 +1750,9 @@ static int dn_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 		}
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		sk_set_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 		sk_wait_event(sk, &timeo, dn_data_ready(sk, queue, flags, target));
-		sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+		clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 		finish_wait(sk_sleep(sk), &wait);
 	}
 
@@ -1763,7 +1763,7 @@ static int dn_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 		if ((chunk + copied) > size)
 			chunk = size - copied;
 
-		if (memcpy_to_msg(msg, skb->data, chunk)) {
+		if (memcpy_toiovec(msg->msg_iov, skb->data, chunk)) {
 			rv = -EFAULT;
 			break;
 		}
@@ -1908,7 +1908,8 @@ static inline struct sk_buff *dn_alloc_send_pskb(struct sock *sk,
 	return skb;
 }
 
-static int dn_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+static int dn_sendmsg(struct kiocb *iocb, struct socket *sock,
+		      struct msghdr *msg, size_t size)
 {
 	struct sock *sk = sock->sk;
 	struct dn_scp *scp = DN_SK(sk);
@@ -2007,10 +2008,10 @@ static int dn_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 			}
 
 			prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-			sk_set_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+			set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 			sk_wait_event(sk, &timeo,
 				      !dn_queue_too_long(scp, queue, flags));
-			sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 			finish_wait(sk_sleep(sk), &wait);
 			continue;
 		}
@@ -2034,7 +2035,7 @@ static int dn_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 		skb_reserve(skb, 64 + DN_MAX_NSP_DATA_HEADER);
 
-		if (memcpy_from_msg(skb_put(skb, len), msg, len)) {
+		if (memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len)) {
 			err = -EFAULT;
 			goto out;
 		}

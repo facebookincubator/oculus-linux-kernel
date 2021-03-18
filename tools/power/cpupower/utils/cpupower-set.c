@@ -18,7 +18,7 @@
 #include "helpers/bitmask.h"
 
 static struct option set_opts[] = {
-	{"perf-bias", required_argument, NULL, 'b'},
+	{ .name = "perf-bias",	.has_arg = required_argument,	.flag = NULL,	.val = 'b'},
 	{ },
 };
 

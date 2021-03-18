@@ -97,7 +97,7 @@ static int ecap_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 
 	writew(reg_val, pc->mmio_base + ECCTL2);
 
-	if (!pwm_is_enabled(pwm)) {
+	if (!test_bit(PWMF_ENABLED, &pwm->flags)) {
 		/* Update active registers if not running */
 		writel(duty_cycles, pc->mmio_base + CAP2);
 		writel(period_cycles, pc->mmio_base + CAP1);
@@ -111,7 +111,7 @@ static int ecap_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 		writel(period_cycles, pc->mmio_base + CAP3);
 	}
 
-	if (!pwm_is_enabled(pwm)) {
+	if (!test_bit(PWMF_ENABLED, &pwm->flags)) {
 		reg_val = readw(pc->mmio_base + ECCTL2);
 		/* Disable APWM mode to put APWM output Low */
 		reg_val &= ~ECCTL2_APWM_MODE;
@@ -179,7 +179,7 @@ static void ecap_pwm_disable(struct pwm_chip *chip, struct pwm_device *pwm)
 
 static void ecap_pwm_free(struct pwm_chip *chip, struct pwm_device *pwm)
 {
-	if (pwm_is_enabled(pwm)) {
+	if (test_bit(PWMF_ENABLED, &pwm->flags)) {
 		dev_warn(chip->dev, "Removing PWM device without disabling\n");
 		pm_runtime_put_sync(chip->dev);
 	}
@@ -306,7 +306,7 @@ static int ecap_pwm_suspend(struct device *dev)
 	ecap_pwm_save_context(pc);
 
 	/* Disable explicitly if PWM is running */
-	if (pwm_is_enabled(pwm))
+	if (test_bit(PWMF_ENABLED, &pwm->flags))
 		pm_runtime_put_sync(dev);
 
 	return 0;
@@ -318,7 +318,7 @@ static int ecap_pwm_resume(struct device *dev)
 	struct pwm_device *pwm = pc->chip.pwms;
 
 	/* Enable explicitly if PWM was running */
-	if (pwm_is_enabled(pwm))
+	if (test_bit(PWMF_ENABLED, &pwm->flags))
 		pm_runtime_get_sync(dev);
 
 	ecap_pwm_restore_context(pc);
@@ -331,6 +331,7 @@ static SIMPLE_DEV_PM_OPS(ecap_pwm_pm_ops, ecap_pwm_suspend, ecap_pwm_resume);
 static struct platform_driver ecap_pwm_driver = {
 	.driver = {
 		.name	= "ecap",
+		.owner	= THIS_MODULE,
 		.of_match_table = ecap_of_match,
 		.pm	= &ecap_pwm_pm_ops,
 	},

@@ -18,9 +18,6 @@ struct iio_subirq {
 	bool enabled;
 };
 
-struct iio_dev;
-struct iio_trigger;
-
 /**
  * struct iio_trigger_ops - operations structure for an iio_trigger.
  * @owner:		used to monitor usage count of the trigger.

@@ -15,7 +15,6 @@
 #include <net/dst.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
-#include <net/l3mdev.h>
 
 static struct xfrm_policy_afinfo xfrm4_policy_afinfo;
 
@@ -31,8 +30,6 @@ static struct dst_entry *__xfrm4_dst_lookup(struct net *net, struct flowi4 *fl4,
 	fl4->flowi4_tos = tos;
 	if (saddr)
 		fl4->saddr = saddr->a4;
-
-	fl4->flowi4_flags = FLOWI_FLAG_SKIP_NH_OIF;
 
 	rt = __ip_route_output_key(net, fl4);
 	if (!IS_ERR(rt))
@@ -96,7 +93,6 @@ static int xfrm4_fill_dst(struct xfrm_dst *xdst, struct net_device *dev,
 	xdst->u.rt.rt_gateway = rt->rt_gateway;
 	xdst->u.rt.rt_uses_gateway = rt->rt_uses_gateway;
 	xdst->u.rt.rt_pmtu = rt->rt_pmtu;
-	xdst->u.rt.rt_table_id = rt->rt_table_id;
 	INIT_LIST_HEAD(&xdst->u.rt.rt_uncached);
 
 	return 0;
@@ -111,7 +107,7 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl, int reverse)
 	int oif = 0;
 
 	if (skb_dst(skb))
-		oif = l3mdev_fib_oif(skb_dst(skb)->dev);
+		oif = skb_dst(skb)->dev->ifindex;
 
 	memset(fl4, 0, sizeof(struct flowi4));
 	fl4->flowi4_mark = skb->mark;
@@ -126,10 +122,7 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl, int reverse)
 		case IPPROTO_DCCP:
 			if (xprth + 4 < skb->data ||
 			    pskb_may_pull(skb, xprth + 4 - skb->data)) {
-				__be16 *ports;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				ports = (__be16 *)xprth;
+				__be16 *ports = (__be16 *)xprth;
 
 				fl4->fl4_sport = ports[!!reverse];
 				fl4->fl4_dport = ports[!reverse];
@@ -137,12 +130,8 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl, int reverse)
 			break;
 
 		case IPPROTO_ICMP:
-			if (xprth + 2 < skb->data ||
-			    pskb_may_pull(skb, xprth + 2 - skb->data)) {
-				u8 *icmp;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				icmp = xprth;
+			if (pskb_may_pull(skb, xprth + 2 - skb->data)) {
+				u8 *icmp = xprth;
 
 				fl4->fl4_icmp_type = icmp[0];
 				fl4->fl4_icmp_code = icmp[1];
@@ -150,50 +139,33 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl, int reverse)
 			break;
 
 		case IPPROTO_ESP:
-			if (xprth + 4 < skb->data ||
-			    pskb_may_pull(skb, xprth + 4 - skb->data)) {
-				__be32 *ehdr;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				ehdr = (__be32 *)xprth;
+			if (pskb_may_pull(skb, xprth + 4 - skb->data)) {
+				__be32 *ehdr = (__be32 *)xprth;
 
 				fl4->fl4_ipsec_spi = ehdr[0];
 			}
 			break;
 
 		case IPPROTO_AH:
-			if (xprth + 8 < skb->data ||
-			    pskb_may_pull(skb, xprth + 8 - skb->data)) {
-				__be32 *ah_hdr;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				ah_hdr = (__be32 *)xprth;
+			if (pskb_may_pull(skb, xprth + 8 - skb->data)) {
+				__be32 *ah_hdr = (__be32 *)xprth;
 
 				fl4->fl4_ipsec_spi = ah_hdr[1];
 			}
 			break;
 
 		case IPPROTO_COMP:
-			if (xprth + 4 < skb->data ||
-			    pskb_may_pull(skb, xprth + 4 - skb->data)) {
-				__be16 *ipcomp_hdr;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				ipcomp_hdr = (__be16 *)xprth;
+			if (pskb_may_pull(skb, xprth + 4 - skb->data)) {
+				__be16 *ipcomp_hdr = (__be16 *)xprth;
 
 				fl4->fl4_ipsec_spi = htonl(ntohs(ipcomp_hdr[1]));
 			}
 			break;
 
 		case IPPROTO_GRE:
-			if (xprth + 12 < skb->data ||
-			    pskb_may_pull(skb, xprth + 12 - skb->data)) {
-				__be16 *greflags;
-				__be32 *gre_hdr;
-
-				xprth = skb_network_header(skb) + iph->ihl * 4;
-				greflags = (__be16 *)xprth;
-				gre_hdr = (__be32 *)xprth;
+			if (pskb_may_pull(skb, xprth + 12 - skb->data)) {
+				__be16 *greflags = (__be16 *)xprth;
+				__be32 *gre_hdr = (__be32 *)xprth;
 
 				if (greflags[0] & GRE_KEY) {
 					if (greflags[0] & GRE_CSUM)
@@ -260,6 +232,7 @@ static void xfrm4_dst_ifdown(struct dst_entry *dst, struct net_device *dev,
 
 static struct dst_ops xfrm4_dst_ops_template = {
 	.family =		AF_INET,
+	.protocol =		cpu_to_be16(ETH_P_IP),
 	.gc =			xfrm4_garbage_collect,
 	.update_pmtu =		xfrm4_update_pmtu,
 	.redirect =		xfrm4_redirect,
@@ -267,7 +240,7 @@ static struct dst_ops xfrm4_dst_ops_template = {
 	.destroy =		xfrm4_dst_destroy,
 	.ifdown =		xfrm4_dst_ifdown,
 	.local_out =		__ip_local_out,
-	.gc_thresh =		INT_MAX,
+	.gc_thresh =		32768,
 };
 
 static struct xfrm_policy_afinfo xfrm4_policy_afinfo = {
@@ -326,7 +299,7 @@ static void __net_exit xfrm4_net_sysctl_exit(struct net *net)
 {
 	struct ctl_table *table;
 
-	if (!net->ipv4.xfrm4_hdr)
+	if (net->ipv4.xfrm4_hdr == NULL)
 		return;
 
 	table = net->ipv4.xfrm4_hdr->ctl_table_arg;

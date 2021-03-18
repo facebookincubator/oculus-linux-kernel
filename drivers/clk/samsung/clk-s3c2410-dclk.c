@@ -8,10 +8,6 @@
  * Common Clock Framework support for s3c24xx external clock output.
  */
 
-#include <linux/clkdev.h>
-#include <linux/slab.h>
-#include <linux/clk.h>
-#include <linux/clk-provider.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include "clk.h"
@@ -61,7 +57,7 @@ struct s3c24xx_clkout {
 static u8 s3c24xx_clkout_get_parent(struct clk_hw *hw)
 {
 	struct s3c24xx_clkout *clkout = to_s3c24xx_clkout(hw);
-	int num_parents = clk_hw_get_num_parents(hw);
+	int num_parents = __clk_get_num_parents(hw->clk);
 	u32 val;
 
 	val = readl_relaxed(S3C24XX_MISCCR) >> clkout->shift;
@@ -85,13 +81,13 @@ static int s3c24xx_clkout_set_parent(struct clk_hw *hw, u8 index)
 	return ret;
 }
 
-static const struct clk_ops s3c24xx_clkout_ops = {
+const struct clk_ops s3c24xx_clkout_ops = {
 	.get_parent = s3c24xx_clkout_get_parent,
 	.set_parent = s3c24xx_clkout_set_parent,
 	.determine_rate = __clk_mux_determine_rate,
 };
 
-static struct clk *s3c24xx_register_clkout(struct device *dev, const char *name,
+struct clk *s3c24xx_register_clkout(struct device *dev, const char *name,
 		const char **parent_names, u8 num_parents,
 		u8 shift, u32 mask)
 {
@@ -408,7 +404,7 @@ static struct s3c24xx_dclk_drv_data dclk_variants[] = {
 	},
 };
 
-static const struct platform_device_id s3c24xx_dclk_driver_ids[] = {
+static struct platform_device_id s3c24xx_dclk_driver_ids[] = {
 	{
 		.name		= "s3c2410-dclk",
 		.driver_data	= (kernel_ulong_t)&dclk_variants[S3C2410],

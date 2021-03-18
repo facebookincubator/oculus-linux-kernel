@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/jiffies.h>
+#include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -279,8 +280,6 @@ int nla_memcpy(void *dest, const struct nlattr *src, int count)
 	int minlen = min_t(int, count, nla_len(src));
 
 	memcpy(dest, nla_data(src), minlen);
-	if (count > minlen)
-		memset(dest + minlen, 0, count - minlen);
 
 	return minlen;
 }

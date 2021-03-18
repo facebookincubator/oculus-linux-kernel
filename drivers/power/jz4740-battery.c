@@ -46,8 +46,7 @@ struct jz_battery {
 
 	struct completion read_completion;
 
-	struct power_supply *battery;
-	struct power_supply_desc battery_desc;
+	struct power_supply battery;
 	struct delayed_work work;
 
 	struct mutex lock;
@@ -55,7 +54,7 @@ struct jz_battery {
 
 static inline struct jz_battery *psy_to_jz_battery(struct power_supply *psy)
 {
-	return power_supply_get_drvdata(psy);
+	return container_of(psy, struct jz_battery, battery);
 }
 
 static irqreturn_t jz_battery_irq_handler(int irq, void *devid)
@@ -214,7 +213,7 @@ static void jz_battery_update(struct jz_battery *jz_battery)
 	}
 
 	if (has_changed)
-		power_supply_changed(jz_battery->battery);
+		power_supply_changed(&jz_battery->battery);
 }
 
 static enum power_supply_property jz_battery_properties[] = {
@@ -243,9 +242,8 @@ static int jz_battery_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct jz_battery_platform_data *pdata = pdev->dev.parent->platform_data;
-	struct power_supply_config psy_cfg = {};
 	struct jz_battery *jz_battery;
-	struct power_supply_desc *battery_desc;
+	struct power_supply *battery;
 	struct resource *mem;
 
 	if (!pdata) {
@@ -273,17 +271,14 @@ static int jz_battery_probe(struct platform_device *pdev)
 	if (IS_ERR(jz_battery->base))
 		return PTR_ERR(jz_battery->base);
 
-	battery_desc = &jz_battery->battery_desc;
-	battery_desc->name = pdata->info.name;
-	battery_desc->type = POWER_SUPPLY_TYPE_BATTERY;
-	battery_desc->properties	= jz_battery_properties;
-	battery_desc->num_properties	= ARRAY_SIZE(jz_battery_properties);
-	battery_desc->get_property	= jz_battery_get_property;
-	battery_desc->external_power_changed =
-					jz_battery_external_power_changed;
-	battery_desc->use_for_apm	= 1;
-
-	psy_cfg.drv_data = jz_battery;
+	battery = &jz_battery->battery;
+	battery->name = pdata->info.name;
+	battery->type = POWER_SUPPLY_TYPE_BATTERY;
+	battery->properties	= jz_battery_properties;
+	battery->num_properties	= ARRAY_SIZE(jz_battery_properties);
+	battery->get_property = jz_battery_get_property;
+	battery->external_power_changed = jz_battery_external_power_changed;
+	battery->use_for_apm = 1;
 
 	jz_battery->pdata = pdata;
 	jz_battery->pdev = pdev;
@@ -335,11 +330,9 @@ static int jz_battery_probe(struct platform_device *pdev)
 	else
 		jz4740_adc_set_config(pdev->dev.parent, JZ_ADC_CONFIG_BAT_MB, 0);
 
-	jz_battery->battery = power_supply_register(&pdev->dev, battery_desc,
-							&psy_cfg);
-	if (IS_ERR(jz_battery->battery)) {
+	ret = power_supply_register(&pdev->dev, &jz_battery->battery);
+	if (ret) {
 		dev_err(&pdev->dev, "power supply battery register failed.\n");
-		ret = PTR_ERR(jz_battery->battery);
 		goto err_free_charge_irq;
 	}
 
@@ -371,7 +364,7 @@ static int jz_battery_remove(struct platform_device *pdev)
 		gpio_free(jz_battery->pdata->gpio_charge);
 	}
 
-	power_supply_unregister(jz_battery->battery);
+	power_supply_unregister(&jz_battery->battery);
 
 	free_irq(jz_battery->irq, jz_battery);
 
@@ -413,6 +406,7 @@ static struct platform_driver jz_battery_driver = {
 	.remove		= jz_battery_remove,
 	.driver = {
 		.name = "jz4740-battery",
+		.owner = THIS_MODULE,
 		.pm = JZ_BATTERY_PM_OPS,
 	},
 };

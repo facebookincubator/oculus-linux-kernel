@@ -1,4 +1,4 @@
-* Qualcomm Technologies, Inc. MSM CCI
+* Qualcomm MSM CCI
 
 [First level nodes]
 Required properties:
@@ -40,7 +40,7 @@ Optional properties:
 	  like default
 
 [Second level nodes]
-* Qualcomm Technologies, Inc. CCI clock settings
+* Qualcomm CCI clock settings
 
 Optional properties:
 - qcom,hw-thigh : should contain high period of the SCL clock in terms of CCI
@@ -56,7 +56,7 @@ Optional properties:
 - qcom,hw-trdhld : should contain internal hold time for SDA
 - qcom,hw-tsp : should contain filtering of glitches
 
-* Qualcomm Technologies, Inc. MSM Sensor
+* Qualcomm MSM Sensor
 
 MSM sensor node contains properties of camera sensor
 
@@ -106,8 +106,6 @@ Optional properties:
 - qcom,mount-angle : should contain the physical mount angle of the sensor on
     the target
     - 0, 90, 180, 360
-- qcom,secure : should be enabled to operate the camera in secure mode
-    - 0, 1
 - qcom,mclk-23880000 : should be enabled if the supported mclk is 23.88Mhz and
     not 24 Mhz.
 - qcom,gpio-no-mux : should contain field to indicate whether gpio mux table is
@@ -172,10 +170,8 @@ Optional properties:
    should contain phandle of respective ir-led node
 - qcom,ir-cut-src : if ir cut is supported by this sensor, this property
    should contain phandle of respective ir-cut node
-- qcom,special-support-sensors: if only some special sensors are supported
-   on this board, add sensor name in this property.
 
-* Qualcomm Technologies, Inc. MSM ACTUATOR
+* Qualcomm MSM ACTUATOR
 
 Required properties:
 - cell-index : should contain unique identifier to differentiate
@@ -202,7 +198,7 @@ Optional properties:
    (in the same order).
 - cam_vaf-supply : should contain regulator from which AF voltage is supplied
 
-* Qualcomm Technologies, Inc. MSM OIS
+* Qualcomm MSM OIS
 
 Required properties:
 - cell-index : should contain unique identifier to differentiate
@@ -281,7 +277,6 @@ Example:
 		qcom,csiphy-sd-index = <0>;
 		qcom,csid-sd-index = <0>;
 		qcom,mount-angle = <90>;
-		qcom,secure = <1>;
 		qcom,led-flash-src = <&led_flash0>;
 		qcom,actuator-src = <&actuator0>;
 		qcom,eeprom-src = <&eeprom0>;

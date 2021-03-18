@@ -38,7 +38,6 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/of.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/rtc.h>
@@ -165,7 +164,13 @@ static int pcf2123_rtc_read_time(struct device *dev, struct rtc_time *tm)
 			tm->tm_sec, tm->tm_min, tm->tm_hour,
 			tm->tm_mday, tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	return rtc_valid_tm(tm);
+	/* the clock can give out invalid datetime, but we cannot return
+	 * -EINVAL otherwise hwclock will refuse to set the time on bootup.
+	 */
+	if (rtc_valid_tm(tm) < 0)
+		dev_err(dev, "retrieved date/time is not valid.\n");
+
+	return 0;
 }
 
 static int pcf2123_rtc_set_time(struct device *dev, struct rtc_time *tm)
@@ -335,18 +340,10 @@ static int pcf2123_remove(struct spi_device *spi)
 	return 0;
 }
 
-#ifdef CONFIG_OF
-static const struct of_device_id pcf2123_dt_ids[] = {
-	{ .compatible = "nxp,rtc-pcf2123", },
-	{ /* sentinel */ }
-};
-MODULE_DEVICE_TABLE(of, pcf2123_dt_ids);
-#endif
-
 static struct spi_driver pcf2123_driver = {
 	.driver	= {
 			.name	= "rtc-pcf2123",
-			.of_match_table = of_match_ptr(pcf2123_dt_ids),
+			.owner	= THIS_MODULE,
 	},
 	.probe	= pcf2123_probe,
 	.remove	= pcf2123_remove,

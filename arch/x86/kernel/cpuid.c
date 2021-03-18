@@ -143,7 +143,7 @@ static int cpuid_device_create(int cpu)
 
 	dev = device_create(cpuid_class, NULL, MKDEV(CPUID_MAJOR, cpu), NULL,
 			    "cpu%d", cpu);
-	return PTR_ERR_OR_ZERO(dev);
+	return IS_ERR(dev) ? PTR_ERR(dev) : 0;
 }
 
 static void cpuid_device_destroy(int cpu)
@@ -170,7 +170,7 @@ static int cpuid_class_cpu_callback(struct notifier_block *nfb,
 	return notifier_from_errno(err);
 }
 
-static struct notifier_block cpuid_class_cpu_notifier =
+static struct notifier_block __refdata cpuid_class_cpu_notifier =
 {
 	.notifier_call = cpuid_class_cpu_callback,
 };

@@ -38,7 +38,7 @@
 		.endm
 
 		.macro	senduart,rd,rx
-		strb	\rd, [\rx, #UART_FIFO_OFFSET]	@ TXDATA
+		str	\rd, [\rx, #UART_FIFO_OFFSET]	@ TXDATA
 		.endm
 
 		.macro	waituart,rd,rx

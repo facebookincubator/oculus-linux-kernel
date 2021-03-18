@@ -124,25 +124,32 @@ static int timer_set_next_event(unsigned long delta,
 	return 0;
 }
 
-static int timer_set_shutdown(struct clock_event_device *evt)
+static void timer_set_mode(enum clock_event_mode mode,
+			   struct clock_event_device *dev)
 {
 	unsigned long flags;
 
 	local_irq_save(flags);
-	/* disable the matching interrupt */
-	__raw_writel(0x00, mmp_timer_base + TMR_IER(0));
+	switch (mode) {
+	case CLOCK_EVT_MODE_ONESHOT:
+	case CLOCK_EVT_MODE_UNUSED:
+	case CLOCK_EVT_MODE_SHUTDOWN:
+		/* disable the matching interrupt */
+		__raw_writel(0x00, mmp_timer_base + TMR_IER(0));
+		break;
+	case CLOCK_EVT_MODE_RESUME:
+	case CLOCK_EVT_MODE_PERIODIC:
+		break;
+	}
 	local_irq_restore(flags);
-
-	return 0;
 }
 
 static struct clock_event_device ckevt = {
-	.name			= "clockevent",
-	.features		= CLOCK_EVT_FEAT_ONESHOT,
-	.rating			= 200,
-	.set_next_event		= timer_set_next_event,
-	.set_state_shutdown	= timer_set_shutdown,
-	.set_state_oneshot	= timer_set_shutdown,
+	.name		= "clockevent",
+	.features	= CLOCK_EVT_FEAT_ONESHOT,
+	.rating		= 200,
+	.set_next_event	= timer_set_next_event,
+	.set_mode	= timer_set_mode,
 };
 
 static cycle_t clksrc_read(struct clocksource *cs)
@@ -206,7 +213,7 @@ void __init timer_init(int irq)
 }
 
 #ifdef CONFIG_OF
-static const struct of_device_id mmp_timer_dt_ids[] = {
+static struct of_device_id mmp_timer_dt_ids[] = {
 	{ .compatible = "mrvl,mmp-timer", },
 	{}
 };

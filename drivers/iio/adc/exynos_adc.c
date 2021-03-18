@@ -39,8 +39,6 @@
 #include <linux/iio/iio.h>
 #include <linux/iio/machine.h>
 #include <linux/iio/driver.h>
-#include <linux/mfd/syscon.h>
-#include <linux/regmap.h>
 
 /* S3C/EXYNOS4412/5250 ADC_V1 registers definitions */
 #define ADC_V1_CON(x)		((x) + 0x00)
@@ -92,14 +90,11 @@
 
 #define EXYNOS_ADC_TIMEOUT	(msecs_to_jiffies(100))
 
-#define EXYNOS_ADCV1_PHY_OFFSET	0x0718
-#define EXYNOS_ADCV2_PHY_OFFSET	0x0720
-
 struct exynos_adc {
 	struct exynos_adc_data	*data;
 	struct device		*dev;
 	void __iomem		*regs;
-	struct regmap		*pmu_map;
+	void __iomem		*enable_reg;
 	struct clk		*clk;
 	struct clk		*sclk;
 	unsigned int		irq;
@@ -115,7 +110,6 @@ struct exynos_adc_data {
 	int num_channels;
 	bool needs_sclk;
 	bool needs_adc_phy;
-	int phy_offset;
 	u32 mask;
 
 	void (*init_hw)(struct exynos_adc *info);
@@ -189,7 +183,7 @@ static void exynos_adc_v1_init_hw(struct exynos_adc *info)
 	u32 con1;
 
 	if (info->data->needs_adc_phy)
-		regmap_write(info->pmu_map, info->data->phy_offset, 1);
+		writel(1, info->enable_reg);
 
 	/* set default prescaler values and Enable prescaler */
 	con1 =  ADC_V1_CON_PRSCLV(49) | ADC_V1_CON_PRSCEN;
@@ -204,7 +198,7 @@ static void exynos_adc_v1_exit_hw(struct exynos_adc *info)
 	u32 con;
 
 	if (info->data->needs_adc_phy)
-		regmap_write(info->pmu_map, info->data->phy_offset, 0);
+		writel(0, info->enable_reg);
 
 	con = readl(ADC_V1_CON(info->regs));
 	con |= ADC_V1_CON_STANDBY;
@@ -231,7 +225,6 @@ static const struct exynos_adc_data exynos_adc_v1_data = {
 	.num_channels	= MAX_ADC_V1_CHANNELS,
 	.mask		= ADC_DATX_MASK,	/* 12 bit ADC resolution */
 	.needs_adc_phy	= true,
-	.phy_offset	= EXYNOS_ADCV1_PHY_OFFSET,
 
 	.init_hw	= exynos_adc_v1_init_hw,
 	.exit_hw	= exynos_adc_v1_exit_hw,
@@ -321,7 +314,7 @@ static void exynos_adc_v2_init_hw(struct exynos_adc *info)
 	u32 con1, con2;
 
 	if (info->data->needs_adc_phy)
-		regmap_write(info->pmu_map, info->data->phy_offset, 1);
+		writel(1, info->enable_reg);
 
 	con1 = ADC_V2_CON1_SOFT_RESET;
 	writel(con1, ADC_V2_CON1(info->regs));
@@ -339,7 +332,7 @@ static void exynos_adc_v2_exit_hw(struct exynos_adc *info)
 	u32 con;
 
 	if (info->data->needs_adc_phy)
-		regmap_write(info->pmu_map, info->data->phy_offset, 0);
+		writel(0, info->enable_reg);
 
 	con = readl(ADC_V2_CON1(info->regs));
 	con &= ~ADC_CON_EN_START;
@@ -369,7 +362,6 @@ static const struct exynos_adc_data exynos_adc_v2_data = {
 	.num_channels	= MAX_ADC_V2_CHANNELS,
 	.mask		= ADC_DATX_MASK, /* 12 bit ADC resolution */
 	.needs_adc_phy	= true,
-	.phy_offset	= EXYNOS_ADCV2_PHY_OFFSET,
 
 	.init_hw	= exynos_adc_v2_init_hw,
 	.exit_hw	= exynos_adc_v2_exit_hw,
@@ -382,38 +374,8 @@ static const struct exynos_adc_data exynos3250_adc_data = {
 	.mask		= ADC_DATX_MASK, /* 12 bit ADC resolution */
 	.needs_sclk	= true,
 	.needs_adc_phy	= true,
-	.phy_offset	= EXYNOS_ADCV1_PHY_OFFSET,
 
 	.init_hw	= exynos_adc_v2_init_hw,
-	.exit_hw	= exynos_adc_v2_exit_hw,
-	.clear_irq	= exynos_adc_v2_clear_irq,
-	.start_conv	= exynos_adc_v2_start_conv,
-};
-
-static void exynos_adc_exynos7_init_hw(struct exynos_adc *info)
-{
-	u32 con1, con2;
-
-	if (info->data->needs_adc_phy)
-		regmap_write(info->pmu_map, info->data->phy_offset, 1);
-
-	con1 = ADC_V2_CON1_SOFT_RESET;
-	writel(con1, ADC_V2_CON1(info->regs));
-
-	con2 = readl(ADC_V2_CON2(info->regs));
-	con2 &= ~ADC_V2_CON2_C_TIME(7);
-	con2 |= ADC_V2_CON2_C_TIME(0);
-	writel(con2, ADC_V2_CON2(info->regs));
-
-	/* Enable interrupts */
-	writel(1, ADC_V2_INT_EN(info->regs));
-}
-
-static const struct exynos_adc_data exynos7_adc_data = {
-	.num_channels	= MAX_ADC_V1_CHANNELS,
-	.mask		= ADC_DATX_MASK, /* 12 bit ADC resolution */
-
-	.init_hw	= exynos_adc_exynos7_init_hw,
 	.exit_hw	= exynos_adc_v2_exit_hw,
 	.clear_irq	= exynos_adc_v2_clear_irq,
 	.start_conv	= exynos_adc_v2_start_conv,
@@ -444,9 +406,6 @@ static const struct of_device_id exynos_adc_match[] = {
 	}, {
 		.compatible = "samsung,exynos3250-adc",
 		.data = &exynos3250_adc_data,
-	}, {
-		.compatible = "samsung,exynos7-adc",
-		.data = &exynos7_adc_data,
 	},
 	{},
 };
@@ -599,13 +558,10 @@ static int exynos_adc_probe(struct platform_device *pdev)
 
 
 	if (info->data->needs_adc_phy) {
-		info->pmu_map = syscon_regmap_lookup_by_phandle(
-					pdev->dev.of_node,
-					"samsung,syscon-phandle");
-		if (IS_ERR(info->pmu_map)) {
-			dev_err(&pdev->dev, "syscon regmap lookup failed.\n");
-			return PTR_ERR(info->pmu_map);
-		}
+		mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+		info->enable_reg = devm_ioremap_resource(&pdev->dev, mem);
+		if (IS_ERR(info->enable_reg))
+			return PTR_ERR(info->enable_reg);
 	}
 
 	irq = platform_get_irq(pdev, 0);

@@ -252,7 +252,7 @@ struct dw_dma_chan {
 	u8			src_master;
 	u8			dst_master;
 
-	/* configuration passed via .device_config */
+	/* configuration passed via DMA_SLAVE_CONFIG */
 	struct dma_slave_config dma_sconfig;
 };
 
@@ -285,7 +285,7 @@ struct dw_dma {
 
 	/* hardware configuration */
 	unsigned char		nr_masters;
-	unsigned char		data_width[DW_DMA_MAX_NR_MASTERS];
+	unsigned char		data_width[4];
 };
 
 static inline struct dw_dma_regs __iomem *__dw_regs(struct dw_dma *dw)

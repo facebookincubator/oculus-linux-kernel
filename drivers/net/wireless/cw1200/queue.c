@@ -179,7 +179,9 @@ int cw1200_queue_init(struct cw1200_queue *queue,
 	INIT_LIST_HEAD(&queue->pending);
 	INIT_LIST_HEAD(&queue->free_pool);
 	spin_lock_init(&queue->lock);
-	setup_timer(&queue->gc, cw1200_queue_gc, (unsigned long)queue);
+	init_timer(&queue->gc);
+	queue->gc.data = (unsigned long)queue;
+	queue->gc.function = cw1200_queue_gc;
 
 	queue->pool = kzalloc(sizeof(struct cw1200_queue_item) * capacity,
 			GFP_KERNEL);

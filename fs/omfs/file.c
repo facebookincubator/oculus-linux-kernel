@@ -337,6 +337,8 @@ static sector_t omfs_bmap(struct address_space *mapping, sector_t block)
 
 const struct file_operations omfs_file_operations = {
 	.llseek = generic_file_llseek,
+	.read = new_sync_read,
+	.write = new_sync_write,
 	.read_iter = generic_file_read_iter,
 	.write_iter = generic_file_write_iter,
 	.mmap = generic_file_mmap,
@@ -346,7 +348,7 @@ const struct file_operations omfs_file_operations = {
 
 static int omfs_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	int error;
 
 	error = inode_change_ok(inode, attr);

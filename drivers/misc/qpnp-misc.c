@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014,2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014,2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,7 @@
 #include <linux/module.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/regmap.h>
+#include <linux/spmi.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/qpnp-misc.h>
@@ -45,7 +45,8 @@ struct qpnp_misc_version {
  *				exclusion between probing and accessing misc
  *				driver information
  * @dev:			Device pointer to the misc device
- * @regmap:			Regmap pointer to the misc device
+ * @resource:			Resource pointer that holds base address
+ * @spmi:			Spmi pointer which holds spmi information
  * @version:			struct that holds the subtype and dig_major_rev
  *				of the chip.
  */
@@ -53,10 +54,10 @@ struct qpnp_misc_dev {
 	struct list_head		list;
 	struct mutex			mutex;
 	struct device			*dev;
-	struct regmap			*regmap;
+	struct resource			*resource;
+	struct spmi_device		*spmi;
 	struct qpnp_misc_version	version;
 
-	u32				base;
 	u8				pwm_sel;
 	bool				enable_gp_driver;
 };
@@ -82,29 +83,26 @@ static struct qpnp_misc_version irq_support_version[] = {
 	{0x16, 0x00}, /* PMDCALIFORNIUM */
 };
 
-static int qpnp_write_byte(struct qpnp_misc_dev *mdev, u16 addr, u8 val)
+static int qpnp_write_byte(struct spmi_device *spmi, u16 addr, u8 val)
 {
 	int rc;
 
-	rc = regmap_write(mdev->regmap, mdev->base + addr, val);
+	rc = spmi_ext_register_writel(spmi->ctrl, spmi->sid, addr, &val, 1);
 	if (rc)
-		pr_err("regmap write failed rc=%d\n", rc);
+		pr_err("SPMI write failed rc=%d\n", rc);
 
 	return rc;
 }
 
-static int qpnp_read_byte(struct qpnp_misc_dev *mdev, u16 addr, u8 *val)
+static int qpnp_read_byte(struct spmi_device *spmi, u16 addr, u8 *val)
 {
-	unsigned int temp;
 	int rc;
 
-	rc = regmap_read(mdev->regmap, mdev->base + addr, &temp);
+	rc = spmi_ext_register_readl(spmi->ctrl, spmi->sid, addr, val, 1);
 	if (rc) {
-		pr_err("regmap read failed rc=%d\n", rc);
+		pr_err("SPMI read failed rc=%d\n", rc);
 		return rc;
 	}
-
-	*val = (u8)temp;
 	return rc;
 }
 
@@ -128,86 +126,6 @@ static bool __misc_irqs_available(struct qpnp_misc_dev *dev)
 	if (version_name == INVALID)
 		return 0;
 	return 1;
-}
-
-int qpnp_misc_write_reg(struct device_node *node, u16 addr, u8 val)
-{
-	struct qpnp_misc_dev *mdev = NULL;
-	struct qpnp_misc_dev *mdev_found = NULL;
-	int rc;
-
-	if (IS_ERR_OR_NULL(node)) {
-		pr_err("Invalid device node pointer\n");
-		return -EINVAL;
-	}
-
-	mutex_lock(&qpnp_misc_dev_list_mutex);
-	list_for_each_entry(mdev, &qpnp_misc_dev_list, list) {
-		if (mdev->dev->of_node == node) {
-			mdev_found = mdev;
-			break;
-		}
-	}
-	mutex_unlock(&qpnp_misc_dev_list_mutex);
-
-	if (!mdev_found) {
-		/*
-		 * No MISC device was found. This API should only
-		 * be called by drivers which have specified the
-		 * misc phandle in their device tree node.
-		 */
-		pr_err("no probed misc device found\n");
-		return -EPROBE_DEFER;
-	}
-
-	rc = qpnp_write_byte(mdev, addr, val);
-	if (rc < 0) {
-		dev_err(mdev->dev, "Failed to write addr %x, rc=%d\n", addr, rc);
-		return rc;
-	}
-
-	return 0;
-}
-
-int qpnp_misc_read_reg(struct device_node *node, u16 addr, u8 *val)
-{
-	struct qpnp_misc_dev *mdev = NULL;
-	struct qpnp_misc_dev *mdev_found = NULL;
-	int rc;
-	u8 temp;
-
-	if (IS_ERR_OR_NULL(node)) {
-		pr_err("Invalid device node pointer\n");
-		return -EINVAL;
-	}
-
-	mutex_lock(&qpnp_misc_dev_list_mutex);
-	list_for_each_entry(mdev, &qpnp_misc_dev_list, list) {
-		if (mdev->dev->of_node == node) {
-			mdev_found = mdev;
-			break;
-		}
-	}
-	mutex_unlock(&qpnp_misc_dev_list_mutex);
-
-	if (!mdev_found) {
-		/*
-		 * No MISC device was found. This API should only
-		 * be called by drivers which have specified the
-		 * misc phandle in their device tree node.
-		 */
-		pr_err("no probed misc device found\n");
-		return -EPROBE_DEFER;
-	}
-
-	rc = qpnp_read_byte(mdev, addr, &temp);
-	if (rc < 0) {
-		dev_err(mdev->dev, "Failed to read addr %x, rc=%d\n", addr, rc);
-		return rc;
-	}
-
-	*val = temp;
-	return 0;
 }
 
 int qpnp_misc_irqs_available(struct device *consumer_dev)
@@ -250,24 +168,16 @@ int qpnp_misc_irqs_available(struct device *consumer_dev)
 
 static int qpnp_misc_dt_init(struct qpnp_misc_dev *mdev)
 {
-	struct device_node *node = mdev->dev->of_node;
 	u32 val;
-	int rc;
 
-	rc = of_property_read_u32(node, "reg", &mdev->base);
-	if (rc < 0 || !mdev->base) {
-		dev_err(mdev->dev, "Base address not defined or invalid\n");
-		return -EINVAL;
-	}
-
-	if (!of_property_read_u32(node, "qcom,pwm-sel", &val)) {
+	if (!of_property_read_u32(mdev->dev->of_node, "qcom,pwm-sel", &val)) {
 		if (val > PWM_SEL_MAX) {
 			dev_err(mdev->dev, "Invalid value for pwm-sel\n");
 			return -EINVAL;
 		}
 		mdev->pwm_sel = (u8)val;
 	}
-	mdev->enable_gp_driver = of_property_read_bool(node,
+	mdev->enable_gp_driver = of_property_read_bool(mdev->dev->of_node,
 						"qcom,enable-gp-driver");
 
 	WARN((mdev->pwm_sel > 0 && !mdev->enable_gp_driver),
@@ -287,15 +197,18 @@ static int qpnp_misc_config(struct qpnp_misc_dev *mdev)
 	switch (version_name) {
 	case PMDCALIFORNIUM:
 		if (mdev->pwm_sel > 0 && mdev->enable_gp_driver) {
-			rc = qpnp_write_byte(mdev, REG_PWM_SEL, mdev->pwm_sel);
+			rc = qpnp_write_byte(mdev->spmi,
+				mdev->resource->start + REG_PWM_SEL,
+				mdev->pwm_sel);
 			if (rc < 0) {
 				dev_err(mdev->dev,
 					"Failed to write PWM_SEL reg\n");
 				return rc;
 			}
 
-			rc = qpnp_write_byte(mdev, REG_GP_DRIVER_EN,
-					GP_DRIVER_EN_BIT);
+			rc = qpnp_write_byte(mdev->spmi,
+				mdev->resource->start + REG_GP_DRIVER_EN,
+				GP_DRIVER_EN_BIT);
 			if (rc < 0) {
 				dev_err(mdev->dev,
 					"Failed to write GP_DRIVER_EN reg\n");
@@ -310,38 +223,35 @@ static int qpnp_misc_config(struct qpnp_misc_dev *mdev)
 	return 0;
 }
 
-static int qpnp_misc_probe(struct platform_device *pdev)
+static int qpnp_misc_probe(struct spmi_device *spmi)
 {
+	struct resource *resource;
 	struct qpnp_misc_dev *mdev = ERR_PTR(-EINVAL);
 	int rc;
 
-	mdev = devm_kzalloc(&pdev->dev, sizeof(*mdev), GFP_KERNEL);
+	resource = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
+	if (!resource) {
+		pr_err("Unable to get spmi resource for MISC\n");
+		return -EINVAL;
+	}
+
+	mdev = kzalloc(sizeof(*mdev), GFP_KERNEL);
 	if (!mdev)
 		return -ENOMEM;
 
-	mdev->dev = &pdev->dev;
-	mdev->regmap = dev_get_regmap(mdev->dev->parent, NULL);
-	if (!mdev->regmap) {
-		dev_err(mdev->dev, "Parent regmap is unavailable\n");
-		return -ENXIO;
-	}
+	mdev->spmi = spmi;
+	mdev->dev = &(spmi->dev);
+	mdev->resource = resource;
 
-	rc = qpnp_misc_dt_init(mdev);
-	if (rc < 0) {
-		dev_err(mdev->dev,
-			"Error reading device tree properties, rc=%d\n", rc);
-		return rc;
-	}
-
-
-	rc = qpnp_read_byte(mdev, REG_SUBTYPE, &mdev->version.subtype);
+	rc = qpnp_read_byte(spmi, resource->start + REG_SUBTYPE,
+				&mdev->version.subtype);
 	if (rc < 0) {
 		dev_err(mdev->dev, "Failed to read subtype, rc=%d\n", rc);
 		return rc;
 	}
 
-	rc = qpnp_read_byte(mdev, REG_DIG_MAJOR_REV,
-			&mdev->version.dig_major_rev);
+	rc = qpnp_read_byte(spmi, resource->start + REG_DIG_MAJOR_REV,
+				&mdev->version.dig_major_rev);
 	if (rc < 0) {
 		dev_err(mdev->dev, "Failed to read dig_major_rev, rc=%d\n", rc);
 		return rc;
@@ -350,6 +260,13 @@ static int qpnp_misc_probe(struct platform_device *pdev)
 	mutex_lock(&qpnp_misc_dev_list_mutex);
 	list_add_tail(&mdev->list, &qpnp_misc_dev_list);
 	mutex_unlock(&qpnp_misc_dev_list_mutex);
+
+	rc = qpnp_misc_dt_init(mdev);
+	if (rc < 0) {
+		dev_err(mdev->dev,
+			"Error reading device tree properties, rc=%d\n", rc);
+		return rc;
+	}
 
 	rc = qpnp_misc_config(mdev);
 	if (rc < 0) {
@@ -362,7 +279,7 @@ static int qpnp_misc_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_driver qpnp_misc_driver = {
+static struct spmi_driver qpnp_misc_driver = {
 	.probe	= qpnp_misc_probe,
 	.driver	= {
 		.name		= QPNP_MISC_DEV_NAME,
@@ -373,15 +290,15 @@ static struct platform_driver qpnp_misc_driver = {
 
 static int __init qpnp_misc_init(void)
 {
-	return platform_driver_register(&qpnp_misc_driver);
+	return spmi_driver_register(&qpnp_misc_driver);
 }
 
 static void __exit qpnp_misc_exit(void)
 {
-	return platform_driver_unregister(&qpnp_misc_driver);
+	return spmi_driver_unregister(&qpnp_misc_driver);
 }
 
-subsys_initcall(qpnp_misc_init);
+module_init(qpnp_misc_init);
 module_exit(qpnp_misc_exit);
 
 MODULE_DESCRIPTION(QPNP_MISC_DEV_NAME);

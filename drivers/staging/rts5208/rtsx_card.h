@@ -1061,13 +1061,7 @@ int card_power_off(struct rtsx_chip *chip, u8 card);
 
 static inline int card_power_off_all(struct rtsx_chip *chip)
 {
-	int retval;
-
-	retval = rtsx_write_register(chip, CARD_PWR_CTL, 0x0F, 0x0F);
-	if (retval) {
-		rtsx_trace(chip);
-		return retval;
-	}
+	RTSX_WRITE_REG(chip, CARD_PWR_CTL, 0x0F, 0x0F);
 
 	return STATUS_SUCCESS;
 }

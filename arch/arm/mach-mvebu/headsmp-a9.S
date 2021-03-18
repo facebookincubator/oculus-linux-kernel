@@ -13,11 +13,14 @@
  */
 
 #include <linux/linkage.h>
+#include <linux/init.h>
 
 #include <asm/assembler.h>
 
+	__CPUINIT
+
 ENTRY(mvebu_cortex_a9_secondary_startup)
 ARM_BE8(setend	be)
-	bl	armada_38x_scu_power_up
+	bl      v7_invalidate_l1
 	b	secondary_startup
 ENDPROC(mvebu_cortex_a9_secondary_startup)

@@ -272,6 +272,7 @@ static int ideapad_remove(struct platform_device *pdev)
 static struct platform_driver slidebar_drv = {
 	.driver = {
 		.name = "ideapad_slidebar",
+		.owner = THIS_MODULE,
 	},
 	.remove = ideapad_remove,
 };

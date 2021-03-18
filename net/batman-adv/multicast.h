@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2015 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2014 B.A.T.M.A.N. contributors:
  *
  * Linus Lüssing
  *
@@ -17,10 +17,6 @@
 
 #ifndef _NET_BATMAN_ADV_MULTICAST_H_
 #define _NET_BATMAN_ADV_MULTICAST_H_
-
-#include "main.h"
-
-struct sk_buff;
 
 /**
  * batadv_forw_mode - the way a packet should be forwarded as
@@ -54,6 +50,7 @@ void batadv_mcast_purge_orig(struct batadv_orig_node *orig_node);
 
 static inline void batadv_mcast_mla_update(struct batadv_priv *bat_priv)
 {
+	return;
 }
 
 static inline enum batadv_forw_mode
@@ -70,10 +67,12 @@ static inline int batadv_mcast_init(struct batadv_priv *bat_priv)
 
 static inline void batadv_mcast_free(struct batadv_priv *bat_priv)
 {
+	return;
 }
 
 static inline void batadv_mcast_purge_orig(struct batadv_orig_node *orig_node)
 {
+	return;
 }
 
 #endif /* CONFIG_BATMAN_ADV_MCAST */

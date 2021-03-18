@@ -212,22 +212,15 @@ static int symbol_valid(struct sym_entry *s)
 		"_SDA_BASE_",		/* ppc */
 		"_SDA2_BASE_",		/* ppc */
 		NULL };
-
-	static char *special_suffixes[] = {
-		"_veneer",		/* arm */
-		NULL };
-
 	int i;
-	char *sym_name = (char *)s->sym + 1;
-
+	int offset = 1;
 
 	if (s->addr < kernel_start_addr)
 		return 0;
 
 	/* skip prefix char */
-	if (symbol_prefix_char && *sym_name == symbol_prefix_char)
-		sym_name++;
-
+	if (symbol_prefix_char && *(s->sym + 1) == symbol_prefix_char)
+		offset++;
 
 	/* if --all-symbols is not specified, then symbols outside the text
 	 * and inittext sections are discarded */
@@ -242,25 +235,21 @@ static int symbol_valid(struct sym_entry *s)
 		 * rules.
 		 */
 		if ((s->addr == text_range_text->end &&
-				strcmp(sym_name,
+				strcmp((char *)s->sym + offset,
 				       text_range_text->end_sym)) ||
 		    (s->addr == text_range_inittext->end &&
-				strcmp(sym_name,
+				strcmp((char *)s->sym + offset,
 				       text_range_inittext->end_sym)))
 			return 0;
 	}
 
 	/* Exclude symbols which vary between passes. */
+	if (strstr((char *)s->sym + offset, "_compiled."))
+		return 0;
+
 	for (i = 0; special_symbols[i]; i++)
-		if (strcmp(sym_name, special_symbols[i]) == 0)
+		if( strcmp((char *)s->sym + offset, special_symbols[i]) == 0 )
 			return 0;
-
-	for (i = 0; special_suffixes[i]; i++) {
-		int l = strlen(sym_name) - strlen(special_suffixes[i]);
-
-		if (l >= 0 && strcmp(sym_name + l, special_suffixes[i]) == 0)
-			return 0;
-	}
 
 	return 1;
 }

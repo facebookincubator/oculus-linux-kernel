@@ -1263,8 +1263,7 @@ static int dib8000_agc_startup(struct dvb_frontend *fe)
 	struct dib8000_state *state = fe->demodulator_priv;
 	enum frontend_tune_state *tune_state = &state->tune_state;
 	int ret = 0;
-	u16 reg;
-	u32 upd_demod_gain_period = 0x8000;
+	u16 reg, upd_demod_gain_period = 0x8000;
 
 	switch (*tune_state) {
 	case CT_AGC_START:
@@ -3380,13 +3379,13 @@ static int dib8000_sleep(struct dvb_frontend *fe)
 	return dib8000_set_adc_state(state, DIBX000_SLOW_ADC_OFF) | dib8000_set_adc_state(state, DIBX000_ADC_OFF);
 }
 
-static int dib8000_read_status(struct dvb_frontend *fe, enum fe_status *stat);
+static int dib8000_read_status(struct dvb_frontend *fe, fe_status_t * stat);
 
 static int dib8000_get_frontend(struct dvb_frontend *fe)
 {
 	struct dib8000_state *state = fe->demodulator_priv;
 	u16 i, val = 0;
-	enum fe_status stat = 0;
+	fe_status_t stat = 0;
 	u8 index_frontend, sub_index_frontend;
 
 	fe->dtv_property_cache.bandwidth_hz = 6000000;
@@ -3733,9 +3732,9 @@ static int dib8000_set_frontend(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int dib8000_get_stats(struct dvb_frontend *fe, enum fe_status stat);
+static int dib8000_get_stats(struct dvb_frontend *fe, fe_status_t stat);
 
-static int dib8000_read_status(struct dvb_frontend *fe, enum fe_status *stat)
+static int dib8000_read_status(struct dvb_frontend *fe, fe_status_t * stat)
 {
 	struct dib8000_state *state = fe->demodulator_priv;
 	u16 lock_slave = 0, lock;
@@ -4089,7 +4088,7 @@ static u32 dib8000_get_time_us(struct dvb_frontend *fe, int layer)
 	return time_us;
 }
 
-static int dib8000_get_stats(struct dvb_frontend *fe, enum fe_status stat)
+static int dib8000_get_stats(struct dvb_frontend *fe, fe_status_t stat)
 {
 	struct dib8000_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &state->fe[0]->dtv_property_cache;

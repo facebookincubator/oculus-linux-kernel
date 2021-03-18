@@ -65,6 +65,7 @@ static int fill_read_buffer(struct dentry * dentry, struct configfs_buffer * buf
 {
 	struct configfs_attribute * attr = to_attr(dentry);
 	struct config_item * item = to_item(dentry->d_parent);
+	struct configfs_item_operations * ops = buffer->ops;
 	int ret = 0;
 	ssize_t count;
 
@@ -73,8 +74,7 @@ static int fill_read_buffer(struct dentry * dentry, struct configfs_buffer * buf
 	if (!buffer->page)
 		return -ENOMEM;
 
-	count = attr->show(item, buffer->page);
-
+	count = ops->show_attribute(item,attr,buffer->page);
 	buffer->needs_read_fill = 0;
 	BUG_ON(count > (ssize_t)SIMPLE_ATTR_SIZE);
 	if (count >= 0)
@@ -171,8 +171,9 @@ flush_write_buffer(struct dentry * dentry, struct configfs_buffer * buffer, size
 {
 	struct configfs_attribute * attr = to_attr(dentry);
 	struct config_item * item = to_item(dentry->d_parent);
+	struct configfs_item_operations * ops = buffer->ops;
 
-	return attr->store(item, buffer->page, count);
+	return ops->store_attribute(item,attr,buffer->page,count);
 }
 
 
@@ -236,7 +237,8 @@ static int check_perm(struct inode * inode, struct file * file)
 	 * and we must have a store method.
 	 */
 	if (file->f_mode & FMODE_WRITE) {
-		if (!(inode->i_mode & S_IWUGO) || !attr->store)
+
+		if (!(inode->i_mode & S_IWUGO) || !ops->store_attribute)
 			goto Eaccess;
 
 	}
@@ -246,7 +248,7 @@ static int check_perm(struct inode * inode, struct file * file)
 	 * must be a show method for it.
 	 */
 	if (file->f_mode & FMODE_READ) {
-		if (!(inode->i_mode & S_IRUGO) || !attr->show)
+		if (!(inode->i_mode & S_IRUGO) || !ops->show_attribute)
 			goto Eaccess;
 	}
 
@@ -311,6 +313,21 @@ const struct file_operations configfs_file_operations = {
 	.release	= configfs_release,
 };
 
+
+int configfs_add_file(struct dentry * dir, const struct configfs_attribute * attr, int type)
+{
+	struct configfs_dirent * parent_sd = dir->d_fsdata;
+	umode_t mode = (attr->ca_mode & S_IALLUGO) | S_IFREG;
+	int error = 0;
+
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_NORMAL);
+	error = configfs_make_dirent(parent_sd, NULL, (void *) attr, mode, type);
+	mutex_unlock(&dir->d_inode->i_mutex);
+
+	return error;
+}
+
+
 /**
  *	configfs_create_file - create an attribute file for an item.
  *	@item:	item we're creating for.
@@ -319,16 +336,9 @@ const struct file_operations configfs_file_operations = {
 
 int configfs_create_file(struct config_item * item, const struct configfs_attribute * attr)
 {
-	struct dentry *dir = item->ci_dentry;
-	struct configfs_dirent *parent_sd = dir->d_fsdata;
-	umode_t mode = (attr->ca_mode & S_IALLUGO) | S_IFREG;
-	int error = 0;
+	BUG_ON(!item || !item->ci_dentry || !attr);
 
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_NORMAL);
-	error = configfs_make_dirent(parent_sd, NULL, (void *) attr, mode,
-				     CONFIGFS_ITEM_ATTR);
-	mutex_unlock(&d_inode(dir)->i_mutex);
-
-	return error;
+	return configfs_add_file(item->ci_dentry, attr,
+				 CONFIGFS_ITEM_ATTR);
 }
 

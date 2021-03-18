@@ -50,7 +50,10 @@ static int cyttsp4_i2c_probe(struct i2c_client *client,
 	ts = cyttsp4_probe(&cyttsp4_i2c_bus_ops, &client->dev, client->irq,
 			  CYTTSP4_I2C_DATA_SIZE);
 
-	return PTR_ERR_OR_ZERO(ts);
+	if (IS_ERR(ts))
+		return PTR_ERR(ts);
+
+	return 0;
 }
 
 static int cyttsp4_i2c_remove(struct i2c_client *client)
@@ -71,6 +74,7 @@ MODULE_DEVICE_TABLE(i2c, cyttsp4_i2c_id);
 static struct i2c_driver cyttsp4_i2c_driver = {
 	.driver = {
 		.name	= CYTTSP4_I2C_NAME,
+		.owner	= THIS_MODULE,
 		.pm	= &cyttsp4_pm_ops,
 	},
 	.probe		= cyttsp4_i2c_probe,
@@ -83,3 +87,4 @@ module_i2c_driver(cyttsp4_i2c_driver);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 MODULE_AUTHOR("Cypress");
+MODULE_ALIAS("i2c:cyttsp4");

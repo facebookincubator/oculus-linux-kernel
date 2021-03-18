@@ -85,7 +85,7 @@ static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
  *
  * Called with IRQs disabled
  */
-void vexpress_cpu_die(unsigned int cpu)
+void __ref vexpress_cpu_die(unsigned int cpu)
 {
 	int spurious = 0;
 

@@ -37,7 +37,7 @@ int verify_signature(const struct key *key,
 		return -EINVAL;
 	subtype = asymmetric_key_subtype(key);
 	if (!subtype ||
-	    !key->payload.data[0])
+	    !key->payload.data)
 		return -EINVAL;
 	if (!subtype->verify_signature)
 		return -ENOTSUPP;

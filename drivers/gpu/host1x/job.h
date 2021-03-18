@@ -23,7 +23,7 @@ struct host1x_job_gather {
 	u32 words;
 	dma_addr_t base;
 	struct host1x_bo *bo;
-	u32 offset;
+	int offset;
 	bool handled;
 };
 

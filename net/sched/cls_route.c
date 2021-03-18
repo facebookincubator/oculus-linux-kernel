@@ -256,15 +256,12 @@ static unsigned long route4_get(struct tcf_proto *tp, u32 handle)
 	return 0;
 }
 
+static void route4_put(struct tcf_proto *tp, unsigned long f)
+{
+}
+
 static int route4_init(struct tcf_proto *tp)
 {
-	struct route4_head *head;
-
-	head = kzalloc(sizeof(struct route4_head), GFP_KERNEL);
-	if (head == NULL)
-		return -ENOBUFS;
-
-	rcu_assign_pointer(tp->root, head);
 	return 0;
 }
 
@@ -277,20 +274,13 @@ route4_delete_filter(struct rcu_head *head)
 	kfree(f);
 }
 
-static bool route4_destroy(struct tcf_proto *tp, bool force)
+static void route4_destroy(struct tcf_proto *tp)
 {
 	struct route4_head *head = rtnl_dereference(tp->root);
 	int h1, h2;
 
 	if (head == NULL)
-		return true;
-
-	if (!force) {
-		for (h1 = 0; h1 <= 256; h1++) {
-			if (rcu_access_pointer(head->table[h1]))
-				return false;
-		}
-	}
+		return;
 
 	for (h1 = 0; h1 <= 256; h1++) {
 		struct route4_bucket *b;
@@ -315,7 +305,6 @@ static bool route4_destroy(struct tcf_proto *tp, bool force)
 	}
 	RCU_INIT_POINTER(tp->root, NULL);
 	kfree_rcu(head, rcu);
-	return true;
 }
 
 static int route4_delete(struct tcf_proto *tp, unsigned long arg)
@@ -499,6 +488,13 @@ static int route4_change(struct net *net, struct sk_buff *in_skb,
 			return -EINVAL;
 
 	err = -ENOBUFS;
+	if (head == NULL) {
+		head = kzalloc(sizeof(struct route4_head), GFP_KERNEL);
+		if (head == NULL)
+			goto errout;
+		rcu_assign_pointer(tp->root, head);
+	}
+
 	f = kzalloc(sizeof(struct route4_filter), GFP_KERNEL);
 	if (!f)
 		goto errout;
@@ -601,6 +597,7 @@ static int route4_dump(struct net *net, struct tcf_proto *tp, unsigned long fh,
 		       struct sk_buff *skb, struct tcmsg *t)
 {
 	struct route4_filter *f = (struct route4_filter *)fh;
+	unsigned char *b = skb_tail_pointer(skb);
 	struct nlattr *nest;
 	u32 id;
 
@@ -642,7 +639,7 @@ static int route4_dump(struct net *net, struct tcf_proto *tp, unsigned long fh,
 	return skb->len;
 
 nla_put_failure:
-	nla_nest_cancel(skb, nest);
+	nlmsg_trim(skb, b);
 	return -1;
 }
 
@@ -652,6 +649,7 @@ static struct tcf_proto_ops cls_route4_ops __read_mostly = {
 	.init		=	route4_init,
 	.destroy	=	route4_destroy,
 	.get		=	route4_get,
+	.put		=	route4_put,
 	.change		=	route4_change,
 	.delete		=	route4_delete,
 	.walk		=	route4_walk,

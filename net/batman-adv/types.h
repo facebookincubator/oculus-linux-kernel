@@ -1,4 +1,4 @@
-/* Copyright (C) 2007-2015 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2007-2014 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -18,23 +18,9 @@
 #ifndef _NET_BATMAN_ADV_TYPES_H_
 #define _NET_BATMAN_ADV_TYPES_H_
 
-#ifndef _NET_BATMAN_ADV_MAIN_H_
-#error only "main.h" can be included directly
-#endif
-
-#include <linux/bitops.h>
-#include <linux/compiler.h>
-#include <linux/if_ether.h>
-#include <linux/netdevice.h>
-#include <linux/sched.h> /* for linux/wait.h */
-#include <linux/spinlock.h>
-#include <linux/types.h>
-#include <linux/wait.h>
-#include <linux/workqueue.h>
-
 #include "packet.h"
-
-struct seq_file;
+#include "bitarray.h"
+#include <linux/kernel.h>
 
 #ifdef CONFIG_BATMAN_ADV_DAT
 
@@ -44,7 +30,7 @@ struct seq_file;
  *
  * *Please be careful: batadv_dat_addr_t must be UNSIGNED*
  */
-#define batadv_dat_addr_t u16
+#define batadv_dat_addr_t uint16_t
 
 #endif /* CONFIG_BATMAN_ADV_DAT */
 
@@ -103,10 +89,10 @@ struct batadv_hard_iface_bat_iv {
  */
 struct batadv_hard_iface {
 	struct list_head list;
-	s16 if_num;
+	int16_t if_num;
 	char if_status;
 	struct net_device *net_dev;
-	u8 num_bcasts;
+	uint8_t num_bcasts;
 	struct kobject *hardif_obj;
 	atomic_t refcount;
 	struct packet_type batman_adv_ptype;
@@ -132,8 +118,8 @@ struct batadv_orig_ifinfo {
 	struct hlist_node list;
 	struct batadv_hard_iface *if_outgoing;
 	struct batadv_neigh_node __rcu *router; /* rcu protected pointer */
-	u32 last_real_seqno;
-	u8 last_ttl;
+	uint32_t last_real_seqno;
+	uint8_t last_ttl;
 	unsigned long batman_seqno_reset;
 	atomic_t refcount;
 	struct rcu_head rcu;
@@ -146,15 +132,13 @@ struct batadv_orig_ifinfo {
  * @timestamp: time (jiffie) of last received fragment
  * @seqno: sequence number of the fragments in the list
  * @size: accumulated size of packets in list
- * @total_size: expected size of the assembled packet
  */
 struct batadv_frag_table_entry {
 	struct hlist_head head;
 	spinlock_t lock; /* protects head */
 	unsigned long timestamp;
-	u16 seqno;
-	u16 size;
-	u16 total_size;
+	uint16_t seqno;
+	uint16_t size;
 };
 
 /**
@@ -166,7 +150,7 @@ struct batadv_frag_table_entry {
 struct batadv_frag_list_entry {
 	struct hlist_node list;
 	struct sk_buff *skb;
-	u8 no;
+	uint8_t no;
 };
 
 /**
@@ -175,7 +159,7 @@ struct batadv_frag_list_entry {
  * @num_entries: number of TT entries for this VLAN
  */
 struct batadv_vlan_tt {
-	u32 crc;
+	uint32_t crc;
 	atomic_t num_entries;
 };
 
@@ -190,23 +174,22 @@ struct batadv_vlan_tt {
 struct batadv_orig_node_vlan {
 	unsigned short vid;
 	struct batadv_vlan_tt tt;
-	struct hlist_node list;
+	struct list_head list;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };
 
 /**
  * struct batadv_orig_bat_iv - B.A.T.M.A.N. IV private orig_node members
- * @bcast_own: set of bitfields (one per hard interface) where each one counts
- * the number of our OGMs this orig_node rebroadcasted "back" to us  (relative
- * to last_real_seqno). Every bitfield is BATADV_TQ_LOCAL_WINDOW_SIZE bits long.
- * @bcast_own_sum: sum of bcast_own
+ * @bcast_own: bitfield containing the number of our OGMs this orig_node
+ *  rebroadcasted "back" to us (relative to last_real_seqno)
+ * @bcast_own_sum: counted result of bcast_own
  * @ogm_cnt_lock: lock protecting bcast_own, bcast_own_sum,
  *  neigh_node->bat_iv.real_bits & neigh_node->bat_iv.real_packet_count
  */
 struct batadv_orig_bat_iv {
 	unsigned long *bcast_own;
-	u8 *bcast_own_sum;
+	uint8_t *bcast_own_sum;
 	/* ogm_cnt_lock protects: bcast_own, bcast_own_sum,
 	 * neigh_node->bat_iv.real_bits & neigh_node->bat_iv.real_packet_count
 	 */
@@ -216,12 +199,12 @@ struct batadv_orig_bat_iv {
 /**
  * struct batadv_orig_node - structure for orig_list maintaining nodes of mesh
  * @orig: originator ethernet address
+ * @primary_addr: hosts primary interface address
  * @ifinfo_list: list for routers per outgoing interface
  * @last_bonding_candidate: pointer to last ifinfo of last used router
  * @batadv_dat_addr_t:  address of the orig node in the distributed hash
  * @last_seen: time when last packet from this node was received
  * @bcast_seqno_reset: time when the broadcast seqno window was reset
- * @mcast_handler_lock: synchronizes mcast-capability and -flag changes
  * @mcast_flags: multicast flags announced by the orig node
  * @mcast_want_all_unsnoop_node: a list node for the
  *  mcast.want_all_unsnoopables list
@@ -260,7 +243,8 @@ struct batadv_orig_bat_iv {
  * @bat_iv: B.A.T.M.A.N. IV private structure
  */
 struct batadv_orig_node {
-	u8 orig[ETH_ALEN];
+	uint8_t orig[ETH_ALEN];
+	uint8_t primary_addr[ETH_ALEN];
 	struct hlist_head ifinfo_list;
 	struct batadv_orig_ifinfo *last_bonding_candidate;
 #ifdef CONFIG_BATMAN_ADV_DAT
@@ -269,9 +253,7 @@ struct batadv_orig_node {
 	unsigned long last_seen;
 	unsigned long bcast_seqno_reset;
 #ifdef CONFIG_BATMAN_ADV_MCAST
-	/* synchronizes mcast tvlv specific orig changes */
-	spinlock_t mcast_handler_lock;
-	u8 mcast_flags;
+	uint8_t mcast_flags;
 	struct hlist_node mcast_want_all_unsnoopables_node;
 	struct hlist_node mcast_want_all_ipv4_node;
 	struct hlist_node mcast_want_all_ipv6_node;
@@ -280,12 +262,12 @@ struct batadv_orig_node {
 	unsigned long capa_initialized;
 	atomic_t last_ttvn;
 	unsigned char *tt_buff;
-	s16 tt_buff_len;
+	int16_t tt_buff_len;
 	spinlock_t tt_buff_lock; /* protects tt_buff & tt_buff_len */
 	/* prevents from changing the table while reading it */
 	spinlock_t tt_lock;
 	DECLARE_BITMAP(bcast_bits, BATADV_TQ_LOCAL_WINDOW_SIZE);
-	u32 last_bcast_seqno;
+	uint32_t last_bcast_seqno;
 	struct hlist_head neigh_list;
 	/* neigh_list_lock protects: neigh_list and router */
 	spinlock_t neigh_list_lock;
@@ -302,7 +284,7 @@ struct batadv_orig_node {
 	spinlock_t out_coding_list_lock; /* Protects out_coding_list */
 #endif
 	struct batadv_frag_table_entry fragments[BATADV_FRAG_BUFFER_COUNT];
-	struct hlist_head vlan_list;
+	struct list_head vlan_list;
 	spinlock_t vlan_list_lock; /* protects vlan_list */
 	struct batadv_orig_bat_iv bat_iv;
 };
@@ -319,7 +301,7 @@ enum batadv_orig_capabilities {
 	BATADV_ORIG_CAPA_HAS_DAT,
 	BATADV_ORIG_CAPA_HAS_NC,
 	BATADV_ORIG_CAPA_HAS_TT,
-	BATADV_ORIG_CAPA_HAS_MCAST,
+	BATADV_ORIG_CAPA_HAS_MCAST = BIT(3),
 };
 
 /**
@@ -328,14 +310,16 @@ enum batadv_orig_capabilities {
  * @orig_node: pointer to corresponding orig node
  * @bandwidth_down: advertised uplink download bandwidth
  * @bandwidth_up: advertised uplink upload bandwidth
+ * @deleted: this struct is scheduled for deletion
  * @refcount: number of contexts the object is used
  * @rcu: struct used for freeing in an RCU-safe manner
  */
 struct batadv_gw_node {
 	struct hlist_node list;
 	struct batadv_orig_node *orig_node;
-	u32 bandwidth_down;
-	u32 bandwidth_up;
+	uint32_t bandwidth_down;
+	uint32_t bandwidth_up;
+	unsigned long deleted;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };
@@ -356,7 +340,7 @@ struct batadv_gw_node {
 struct batadv_neigh_node {
 	struct hlist_node list;
 	struct batadv_orig_node *orig_node;
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	struct hlist_head ifinfo_list;
 	spinlock_t ifinfo_lock;	/* protects ifinfo_list and its members */
 	struct batadv_hard_iface *if_incoming;
@@ -376,11 +360,11 @@ struct batadv_neigh_node {
  * @real_packet_count: counted result of real_bits
  */
 struct batadv_neigh_ifinfo_bat_iv {
-	u8 tq_recv[BATADV_TQ_GLOBAL_WINDOW_SIZE];
-	u8 tq_index;
-	u8 tq_avg;
+	uint8_t tq_recv[BATADV_TQ_GLOBAL_WINDOW_SIZE];
+	uint8_t tq_index;
+	uint8_t tq_avg;
 	DECLARE_BITMAP(real_bits, BATADV_TQ_LOCAL_WINDOW_SIZE);
-	u8 real_packet_count;
+	uint8_t real_packet_count;
 };
 
 /**
@@ -396,7 +380,7 @@ struct batadv_neigh_ifinfo {
 	struct hlist_node list;
 	struct batadv_hard_iface *if_outgoing;
 	struct batadv_neigh_ifinfo_bat_iv bat_iv;
-	u8 last_ttl;
+	uint8_t last_ttl;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };
@@ -409,7 +393,7 @@ struct batadv_neigh_ifinfo {
  */
 #ifdef CONFIG_BATMAN_ADV_BLA
 struct batadv_bcast_duplist_entry {
-	u8 orig[ETH_ALEN];
+	uint8_t orig[ETH_ALEN];
 	__be32 crc;
 	unsigned long entrytime;
 };
@@ -535,13 +519,13 @@ struct batadv_priv_tt {
 	struct list_head changes_list;
 	struct batadv_hashtable *local_hash;
 	struct batadv_hashtable *global_hash;
-	struct hlist_head req_list;
+	struct list_head req_list;
 	struct list_head roam_list;
 	spinlock_t changes_list_lock; /* protects changes */
 	spinlock_t req_list_lock; /* protects req_list */
 	spinlock_t roam_list_lock; /* protects roam_list */
 	unsigned char *last_changeset;
-	s16 last_changeset_len;
+	int16_t last_changeset_len;
 	/* protects last_changeset & last_changeset_len */
 	spinlock_t last_changeset_lock;
 	/* prevents from executing a commit while reading the table */
@@ -661,7 +645,7 @@ struct batadv_priv_mcast {
 	struct hlist_head want_all_unsnoopables_list;
 	struct hlist_head want_all_ipv4_list;
 	struct hlist_head want_all_ipv6_list;
-	u8 flags;
+	uint8_t flags;
 	bool enabled;
 	atomic_t num_disabled;
 	atomic_t num_want_all_unsnoopables;
@@ -779,7 +763,7 @@ struct batadv_priv {
 	atomic_t mesh_state;
 	struct net_device *soft_iface;
 	struct net_device_stats stats;
-	u64 __percpu *bat_counters; /* Per cpu counters */
+	uint64_t __percpu *bat_counters; /* Per cpu counters */
 	atomic_t aggregated_ogms;
 	atomic_t bonding;
 	atomic_t fragmentation;
@@ -801,8 +785,8 @@ struct batadv_priv {
 #ifdef CONFIG_BATMAN_ADV_DEBUG
 	atomic_t log_level;
 #endif
-	u32 isolation_mark;
-	u32 isolation_mark_mask;
+	uint32_t isolation_mark;
+	uint32_t isolation_mark_mask;
 	atomic_t bcast_seqno;
 	atomic_t bcast_queue_left;
 	atomic_t batman_queue_left;
@@ -868,7 +852,7 @@ struct batadv_socket_client {
 struct batadv_socket_packet {
 	struct list_head list;
 	size_t icmp_len;
-	u8 icmp_packet[BATADV_ICMP_MAX_PACKET_SIZE];
+	uint8_t icmp_packet[BATADV_ICMP_MAX_PACKET_SIZE];
 };
 
 /**
@@ -889,14 +873,14 @@ struct batadv_socket_packet {
  */
 #ifdef CONFIG_BATMAN_ADV_BLA
 struct batadv_bla_backbone_gw {
-	u8 orig[ETH_ALEN];
+	uint8_t orig[ETH_ALEN];
 	unsigned short vid;
 	struct hlist_node hash_entry;
 	struct batadv_priv *bat_priv;
 	unsigned long lasttime;
 	atomic_t wait_periods;
 	atomic_t request_sent;
-	u16 crc;
+	uint16_t crc;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };
@@ -912,7 +896,7 @@ struct batadv_bla_backbone_gw {
  * @rcu: struct used for freeing in an RCU-safe manner
  */
 struct batadv_bla_claim {
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	unsigned short vid;
 	struct batadv_bla_backbone_gw *backbone_gw;
 	unsigned long lasttime;
@@ -934,10 +918,10 @@ struct batadv_bla_claim {
  * @rcu: struct used for freeing in an RCU-safe manner
  */
 struct batadv_tt_common_entry {
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	unsigned short vid;
 	struct hlist_node hash_entry;
-	u16 flags;
+	uint16_t flags;
 	unsigned long added_at;
 	atomic_t refcount;
 	struct rcu_head rcu;
@@ -979,14 +963,14 @@ struct batadv_tt_global_entry {
  */
 struct batadv_tt_orig_list_entry {
 	struct batadv_orig_node *orig_node;
-	u8 ttvn;
+	uint8_t ttvn;
 	struct hlist_node list;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };
 
 /**
- * struct batadv_tt_change_node - structure for tt changes occurred
+ * struct batadv_tt_change_node - structure for tt changes occured
  * @list: list node for batadv_priv_tt::changes_list
  * @change: holds the actual translation table diff data
  */
@@ -1002,9 +986,9 @@ struct batadv_tt_change_node {
  * @list: list node for batadv_priv_tt::req_list
  */
 struct batadv_tt_req_node {
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	unsigned long issued_at;
-	struct hlist_node list;
+	struct list_head list;
 };
 
 /**
@@ -1016,7 +1000,7 @@ struct batadv_tt_req_node {
  * @list: list node for batadv_priv_tt::roam_list
  */
 struct batadv_tt_roam_node {
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	atomic_t counter;
 	unsigned long first_time;
 	struct list_head list;
@@ -1033,7 +1017,7 @@ struct batadv_tt_roam_node {
  */
 struct batadv_nc_node {
 	struct list_head list;
-	u8 addr[ETH_ALEN];
+	uint8_t addr[ETH_ALEN];
 	atomic_t refcount;
 	struct rcu_head rcu;
 	struct batadv_orig_node *orig_node;
@@ -1057,8 +1041,8 @@ struct batadv_nc_path {
 	atomic_t refcount;
 	struct list_head packet_list;
 	spinlock_t packet_list_lock; /* Protects packet_list */
-	u8 next_hop[ETH_ALEN];
-	u8 prev_hop[ETH_ALEN];
+	uint8_t next_hop[ETH_ALEN];
+	uint8_t prev_hop[ETH_ALEN];
 	unsigned long last_valid;
 };
 
@@ -1110,11 +1094,11 @@ struct batadv_skb_cb {
 struct batadv_forw_packet {
 	struct hlist_node list;
 	unsigned long send_time;
-	u8 own;
+	uint8_t own;
 	struct sk_buff *skb;
-	u16 packet_len;
-	u32 direct_link_flags;
-	u8 num_packets;
+	uint16_t packet_len;
+	uint32_t direct_link_flags;
+	uint8_t num_packets;
 	struct delayed_work delayed_work;
 	struct batadv_hard_iface *if_incoming;
 	struct batadv_hard_iface *if_outgoing;
@@ -1136,8 +1120,6 @@ struct batadv_forw_packet {
  * @bat_neigh_is_equiv_or_better: check if neigh1 is equally good or better
  *  than neigh2 for their respective outgoing interface from the metric
  *  prospective
- * @bat_neigh_free: free the resources allocated by the routing algorithm for a
- *  neigh_node object
  * @bat_orig_print: print the originator table (optional)
  * @bat_orig_free: free the resources allocated by the routing algorithm for an
  *  orig_node object
@@ -1155,7 +1137,6 @@ struct batadv_algo_ops {
 	void (*bat_primary_iface_set)(struct batadv_hard_iface *hard_iface);
 	void (*bat_ogm_schedule)(struct batadv_hard_iface *hard_iface);
 	void (*bat_ogm_emit)(struct batadv_forw_packet *forw_packet);
-	/* neigh_node handling API */
 	int (*bat_neigh_cmp)(struct batadv_neigh_node *neigh1,
 			     struct batadv_hard_iface *if_outgoing1,
 			     struct batadv_neigh_node *neigh2,
@@ -1165,7 +1146,6 @@ struct batadv_algo_ops {
 		 struct batadv_hard_iface *if_outgoing1,
 		 struct batadv_neigh_node *neigh2,
 		 struct batadv_hard_iface *if_outgoing2);
-	void (*bat_neigh_free)(struct batadv_neigh_node *neigh);
 	/* orig_node handling API */
 	void (*bat_orig_print)(struct batadv_priv *priv, struct seq_file *seq,
 			       struct batadv_hard_iface *hard_iface);
@@ -1189,7 +1169,7 @@ struct batadv_algo_ops {
  */
 struct batadv_dat_entry {
 	__be32 ip;
-	u8 mac_addr[ETH_ALEN];
+	uint8_t mac_addr[ETH_ALEN];
 	unsigned short vid;
 	unsigned long last_update;
 	struct hlist_node hash_entry;
@@ -1251,13 +1231,14 @@ struct batadv_tvlv_handler {
 	struct hlist_node list;
 	void (*ogm_handler)(struct batadv_priv *bat_priv,
 			    struct batadv_orig_node *orig,
-			    u8 flags, void *tvlv_value, u16 tvlv_value_len);
+			    uint8_t flags,
+			    void *tvlv_value, uint16_t tvlv_value_len);
 	int (*unicast_handler)(struct batadv_priv *bat_priv,
-			       u8 *src, u8 *dst,
-			       void *tvlv_value, u16 tvlv_value_len);
-	u8 type;
-	u8 version;
-	u8 flags;
+			       uint8_t *src, uint8_t *dst,
+			       void *tvlv_value, uint16_t tvlv_value_len);
+	uint8_t type;
+	uint8_t version;
+	uint8_t flags;
 	atomic_t refcount;
 	struct rcu_head rcu;
 };

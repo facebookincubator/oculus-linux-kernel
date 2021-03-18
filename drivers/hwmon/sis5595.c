@@ -215,6 +215,7 @@ static void sis5595_init_device(struct sis5595_data *data);
 
 static struct platform_driver sis5595_driver = {
 	.driver = {
+		.owner	= THIS_MODULE,
 		.name	= "sis5595",
 	},
 	.probe		= sis5595_probe,

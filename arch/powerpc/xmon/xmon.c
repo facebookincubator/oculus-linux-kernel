@@ -25,7 +25,6 @@
 #include <linux/irq.h>
 #include <linux/bug.h>
 #include <linux/nmi.h>
-#include <linux/ctype.h>
 
 #include <asm/ptrace.h>
 #include <asm/string.h>
@@ -50,12 +49,6 @@
 #ifdef CONFIG_PPC64
 #include <asm/hvcall.h>
 #include <asm/paca.h>
-#endif
-
-#if defined(CONFIG_PPC_SPLPAR)
-#include <asm/plpar_wrappers.h>
-#else
-static inline long plapr_set_ciabr(unsigned long ciabr) {return 0; };
 #endif
 
 #include "nonstdio.h"
@@ -95,9 +88,10 @@ struct bpt {
 };
 
 /* Bits in bpt.enabled */
-#define BP_CIABR	1
-#define BP_TRAP		2
-#define BP_DABR		4
+#define BP_IABR_TE	1		/* IABR translation enabled */
+#define BP_IABR		2
+#define BP_TRAP		8
+#define BP_DABR		0x10
 
 #define NBPTS	256
 static struct bpt bpts[NBPTS];
@@ -184,6 +178,14 @@ extern void xmon_leave(void);
 #define GETWORD(v)	(((v)[0] << 24) + ((v)[1] << 16) + ((v)[2] << 8) + (v)[3])
 #endif
 
+#define isxdigit(c)	(('0' <= (c) && (c) <= '9') \
+			 || ('a' <= (c) && (c) <= 'f') \
+			 || ('A' <= (c) && (c) <= 'F'))
+#define isalnum(c)	(('0' <= (c) && (c) <= '9') \
+			 || ('a' <= (c) && (c) <= 'z') \
+			 || ('A' <= (c) && (c) <= 'Z'))
+#define isspace(c)	(c == ' ' || c == '\t' || c == 10 || c == 13 || c == 0)
+
 static char *help_string = "\
 Commands:\n\
   b	show breakpoints\n\
@@ -242,7 +244,6 @@ Commands:\n\
 "  u	dump TLB\n"
 #endif
 "  ?	help\n"
-"  # n	limit output to n lines per page (for dp, dpa, dl)\n"
 "  zr	reboot\n\
   zh	halt\n"
 ;
@@ -267,45 +268,6 @@ static inline void cflush(void *p)
 static inline void cinval(void *p)
 {
 	asm volatile ("dcbi 0,%0; icbi 0,%0" : : "r" (p));
-}
-
-/**
- * write_ciabr() - write the CIABR SPR
- * @ciabr:	The value to write.
- *
- * This function writes a value to the CIARB register either directly
- * through mtspr instruction if the kernel is in HV privilege mode or
- * call a hypervisor function to achieve the same in case the kernel
- * is in supervisor privilege mode.
- */
-static void write_ciabr(unsigned long ciabr)
-{
-	if (!cpu_has_feature(CPU_FTR_ARCH_207S))
-		return;
-
-	if (cpu_has_feature(CPU_FTR_HVMODE)) {
-		mtspr(SPRN_CIABR, ciabr);
-		return;
-	}
-	plapr_set_ciabr(ciabr);
-}
-
-/**
- * set_ciabr() - set the CIABR
- * @addr:	The value to set.
- *
- * This function sets the correct privilege value into the the HW
- * breakpoint address before writing it up in the CIABR register.
- */
-static void set_ciabr(unsigned long addr)
-{
-	addr &= ~CIABR_PRIV;
-
-	if (cpu_has_feature(CPU_FTR_HVMODE))
-		addr |= CIABR_PRIV_HYPER;
-	else
-		addr |= CIABR_PRIV_SUPER;
-	write_ciabr(addr);
 }
 
 /*
@@ -766,7 +728,7 @@ static void insert_bpts(void)
 
 	bp = bpts;
 	for (i = 0; i < NBPTS; ++i, ++bp) {
-		if ((bp->enabled & (BP_TRAP|BP_CIABR)) == 0)
+		if ((bp->enabled & (BP_TRAP|BP_IABR)) == 0)
 			continue;
 		if (mread(bp->address, &bp->instr[0], 4) != 4) {
 			printf("Couldn't read instruction at %lx, "
@@ -781,7 +743,7 @@ static void insert_bpts(void)
 			continue;
 		}
 		store_inst(&bp->instr[0]);
-		if (bp->enabled & BP_CIABR)
+		if (bp->enabled & BP_IABR)
 			continue;
 		if (mwrite(bp->address, &bpinstr, 4) != 4) {
 			printf("Couldn't write instruction at %lx, "
@@ -803,9 +765,9 @@ static void insert_cpu_bpts(void)
 		brk.len = 8;
 		__set_breakpoint(&brk);
 	}
-
-	if (iabr)
-		set_ciabr(iabr->address);
+	if (iabr && cpu_has_feature(CPU_FTR_IABR))
+		mtspr(SPRN_IABR, iabr->address
+			 | (iabr->enabled & (BP_IABR|BP_IABR_TE)));
 }
 
 static void remove_bpts(void)
@@ -816,7 +778,7 @@ static void remove_bpts(void)
 
 	bp = bpts;
 	for (i = 0; i < NBPTS; ++i, ++bp) {
-		if ((bp->enabled & (BP_TRAP|BP_CIABR)) != BP_TRAP)
+		if ((bp->enabled & (BP_TRAP|BP_IABR)) != BP_TRAP)
 			continue;
 		if (mread(bp->address, &instr, 4) == 4
 		    && instr == bpinstr
@@ -831,19 +793,10 @@ static void remove_bpts(void)
 static void remove_cpu_bpts(void)
 {
 	hw_breakpoint_disable();
-	write_ciabr(0);
+	if (cpu_has_feature(CPU_FTR_IABR))
+		mtspr(SPRN_IABR, 0);
 }
 
-static void set_lpp_cmd(void)
-{
-	unsigned long lpp;
-
-	if (!scanhex(&lpp)) {
-		printf("Invalid number.\n");
-		lpp = 0;
-	}
-	xmon_set_pagination_lpp(lpp);
-}
 /* Command interpreting routine */
 static char *last_cmd;
 
@@ -935,9 +888,6 @@ cmds(struct pt_regs *excp)
 		case '?':
 			xmon_puts(help_string);
 			break;
-		case '#':
-			set_lpp_cmd();
-			break;
 		case 'b':
 			bpt_cmds();
 			break;
@@ -958,7 +908,7 @@ cmds(struct pt_regs *excp)
 		case 'u':
 			dump_segments();
 			break;
-#elif defined(CONFIG_44x)
+#elif defined(CONFIG_4xx)
 		case 'u':
 			dump_tlb_44x();
 			break;
@@ -1032,8 +982,7 @@ static void bootcmds(void)
 	else if (cmd == 'h')
 		ppc_md.halt();
 	else if (cmd == 'p')
-		if (pm_power_off)
-			pm_power_off();
+		ppc_md.power_off();
 }
 
 static int cpu_cmd(void)
@@ -1179,7 +1128,7 @@ static char *breakpoint_help_string =
     "b <addr> [cnt]   set breakpoint at given instr addr\n"
     "bc               clear all breakpoints\n"
     "bc <n/addr>      clear breakpoint number n or at addr\n"
-    "bi <addr> [cnt]  set hardware instr breakpoint (POWER8 only)\n"
+    "bi <addr> [cnt]  set hardware instr breakpoint (POWER3/RS64 only)\n"
     "bd <addr> [cnt]  set hardware data breakpoint\n"
     "";
 
@@ -1218,13 +1167,13 @@ bpt_cmds(void)
 		break;
 
 	case 'i':	/* bi - hardware instr breakpoint */
-		if (!cpu_has_feature(CPU_FTR_ARCH_207S)) {
+		if (!cpu_has_feature(CPU_FTR_IABR)) {
 			printf("Hardware instruction breakpoint "
 			       "not supported on this cpu\n");
 			break;
 		}
 		if (iabr) {
-			iabr->enabled &= ~BP_CIABR;
+			iabr->enabled &= ~(BP_IABR | BP_IABR_TE);
 			iabr = NULL;
 		}
 		if (!scanhex(&a))
@@ -1233,7 +1182,7 @@ bpt_cmds(void)
 			break;
 		bp = new_breakpoint(a);
 		if (bp != NULL) {
-			bp->enabled |= BP_CIABR;
+			bp->enabled |= BP_IABR | BP_IABR_TE;
 			iabr = bp;
 		}
 		break;
@@ -1290,7 +1239,7 @@ bpt_cmds(void)
 				if (!bp->enabled)
 					continue;
 				printf("%2x %s   ", BP_NUM(bp),
-				    (bp->enabled & BP_CIABR) ? "inst": "trap");
+				    (bp->enabled & BP_IABR)? "inst": "trap");
 				xmon_print_symbol(bp->address, "  ", "\n");
 			}
 			break;
@@ -2001,6 +1950,7 @@ memex(void)
 			case '^':
 				adrs -= size;
 				break;
+				break;
 			case '/':
 				if (nslash > 0)
 					adrs -= 1 << nslash;
@@ -2086,9 +2036,6 @@ static void xmon_rawdump (unsigned long adrs, long ndump)
 static void dump_one_paca(int cpu)
 {
 	struct paca_struct *p;
-#ifdef CONFIG_PPC_STD_MMU_64
-	int i = 0;
-#endif
 
 	if (setjmp(bus_error_jmp) != 0) {
 		printf("*** Error dumping paca for cpu 0x%x!\n", cpu);
@@ -2102,12 +2049,12 @@ static void dump_one_paca(int cpu)
 
 	printf("paca for cpu 0x%x @ %p:\n", cpu, p);
 
-	printf(" %-*s = %s\n", 20, "possible", cpu_possible(cpu) ? "yes" : "no");
-	printf(" %-*s = %s\n", 20, "present", cpu_present(cpu) ? "yes" : "no");
-	printf(" %-*s = %s\n", 20, "online", cpu_online(cpu) ? "yes" : "no");
+	printf(" %-*s = %s\n", 16, "possible", cpu_possible(cpu) ? "yes" : "no");
+	printf(" %-*s = %s\n", 16, "present", cpu_present(cpu) ? "yes" : "no");
+	printf(" %-*s = %s\n", 16, "online", cpu_online(cpu) ? "yes" : "no");
 
 #define DUMP(paca, name, format) \
-	printf(" %-*s = %#-*"format"\t(0x%lx)\n", 20, #name, 18, paca->name, \
+	printf(" %-*s = %#-*"format"\t(0x%lx)\n", 16, #name, 18, paca->name, \
 		offsetof(struct paca_struct, name));
 
 	DUMP(p, lock_token, "x");
@@ -2119,41 +2066,11 @@ static void dump_one_paca(int cpu)
 #ifdef CONFIG_PPC_BOOK3S_64
 	DUMP(p, mc_emergency_sp, "p");
 	DUMP(p, in_mce, "x");
-	DUMP(p, hmi_event_available, "x");
 #endif
 	DUMP(p, data_offset, "lx");
 	DUMP(p, hw_cpu_id, "x");
 	DUMP(p, cpu_start, "x");
 	DUMP(p, kexec_state, "x");
-#ifdef CONFIG_PPC_STD_MMU_64
-	for (i = 0; i < SLB_NUM_BOLTED; i++) {
-		u64 esid, vsid;
-
-		if (!p->slb_shadow_ptr)
-			continue;
-
-		esid = be64_to_cpu(p->slb_shadow_ptr->save_area[i].esid);
-		vsid = be64_to_cpu(p->slb_shadow_ptr->save_area[i].vsid);
-
-		if (esid || vsid) {
-			printf(" slb_shadow[%d]:       = 0x%016lx 0x%016lx\n",
-				i, esid, vsid);
-		}
-	}
-	DUMP(p, vmalloc_sllp, "x");
-	DUMP(p, slb_cache_ptr, "x");
-	for (i = 0; i < SLB_CACHE_ENTRIES; i++)
-		printf(" slb_cache[%d]:        = 0x%016lx\n", i, p->slb_cache[i]);
-#endif
-	DUMP(p, dscr_default, "llx");
-#ifdef CONFIG_PPC_BOOK3E
-	DUMP(p, pgd, "p");
-	DUMP(p, kernel_pgd, "p");
-	DUMP(p, tcd_ptr, "p");
-	DUMP(p, mc_kstack, "p");
-	DUMP(p, crit_kstack, "p");
-	DUMP(p, dbg_kstack, "p");
-#endif
 	DUMP(p, __current, "p");
 	DUMP(p, kstack, "lx");
 	DUMP(p, stab_rr, "lx");
@@ -2164,27 +2081,7 @@ static void dump_one_paca(int cpu)
 	DUMP(p, io_sync, "x");
 	DUMP(p, irq_work_pending, "x");
 	DUMP(p, nap_state_lost, "x");
-	DUMP(p, sprg_vdso, "llx");
 
-#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
-	DUMP(p, tm_scratch, "llx");
-#endif
-
-#ifdef CONFIG_PPC_POWERNV
-	DUMP(p, core_idle_state_ptr, "p");
-	DUMP(p, thread_idle_state, "x");
-	DUMP(p, thread_mask, "x");
-	DUMP(p, subcore_sibling_mask, "x");
-#endif
-
-	DUMP(p, user_time, "llx");
-	DUMP(p, system_time, "llx");
-	DUMP(p, user_time_scaled, "llx");
-	DUMP(p, starttime, "llx");
-	DUMP(p, starttime_user, "llx");
-	DUMP(p, startspurr, "llx");
-	DUMP(p, utime_sspurr, "llx");
-	DUMP(p, stolen_time, "llx");
 #undef DUMP
 
 	catch_memory_errors = 0;
@@ -2224,6 +2121,9 @@ static void dump_pacas(void)
 }
 #endif
 
+#define isxdigit(c)	(('0' <= (c) && (c) <= '9') \
+			 || ('a' <= (c) && (c) <= 'f') \
+			 || ('A' <= (c) && (c) <= 'F'))
 static void
 dump(void)
 {
@@ -2233,9 +2133,7 @@ dump(void)
 
 #ifdef CONFIG_PPC64
 	if (c == 'p') {
-		xmon_start_pagination();
 		dump_pacas();
-		xmon_end_pagination();
 		return;
 	}
 #endif
@@ -2384,12 +2282,10 @@ dump_log_buf(void)
 	sync();
 
 	kmsg_dump_rewind_nolock(&dumper);
-	xmon_start_pagination();
 	while (kmsg_dump_get_line_nolock(&dumper, false, buf, sizeof(buf), &len)) {
 		buf[len] = '\0';
 		printf("%s", buf);
 	}
-	xmon_end_pagination();
 
 	sync();
 	/* wait a little while to see if we get a machine check */
@@ -2630,7 +2526,7 @@ scanhex(unsigned long *vp)
 		int i;
 		for (i=0; i<63; i++) {
 			c = inchar();
-			if (isspace(c) || c == '\0') {
+			if (isspace(c)) {
 				termch = c;
 				break;
 			}
@@ -2801,7 +2697,7 @@ static void xmon_print_symbol(unsigned long address, const char *mid,
 void dump_segments(void)
 {
 	int i;
-	unsigned long esid,vsid;
+	unsigned long esid,vsid,valid;
 	unsigned long llp;
 
 	printf("SLB contents of cpu 0x%x\n", smp_processor_id());
@@ -2809,9 +2705,10 @@ void dump_segments(void)
 	for (i = 0; i < mmu_slb_size; i++) {
 		asm volatile("slbmfee  %0,%1" : "=r" (esid) : "r" (i));
 		asm volatile("slbmfev  %0,%1" : "=r" (vsid) : "r" (i));
-		if (esid || vsid) {
+		valid = (esid & SLB_ESID_V);
+		if (valid | esid | vsid) {
 			printf("%02d %016lx %016lx", i, esid, vsid);
-			if (esid & SLB_ESID_V) {
+			if (valid) {
 				llp = vsid & SLB_VSID_LLP;
 				if (vsid & SLB_VSID_B_1T) {
 					printf("  1T  ESID=%9lx  VSID=%13lx LLP:%3lx \n",

@@ -108,6 +108,8 @@ struct inode *ubifs_new_inode(struct ubifs_info *c, const struct inode *dir,
 	inode->i_mtime = inode->i_atime = inode->i_ctime =
 			 ubifs_current_time(inode);
 	inode->i_mapping->nrpages = 0;
+	/* Disable readahead */
+	inode->i_mapping->backing_dev_info = &c->bdi;
 
 	switch (mode & S_IFMT) {
 	case S_IFREG:
@@ -500,7 +502,7 @@ static int ubifs_link(struct dentry *old_dentry, struct inode *dir,
 		      struct dentry *dentry)
 {
 	struct ubifs_info *c = dir->i_sb->s_fs_info;
-	struct inode *inode = d_inode(old_dentry);
+	struct inode *inode = old_dentry->d_inode;
 	struct ubifs_inode *ui = ubifs_inode(inode);
 	struct ubifs_inode *dir_ui = ubifs_inode(dir);
 	int err, sz_change = CALC_DENT_SIZE(dentry->d_name.len);
@@ -555,7 +557,7 @@ out_cancel:
 static int ubifs_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct ubifs_info *c = dir->i_sb->s_fs_info;
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	struct ubifs_inode *dir_ui = ubifs_inode(dir);
 	int sz_change = CALC_DENT_SIZE(dentry->d_name.len);
 	int err, budgeted = 1;
@@ -647,7 +649,7 @@ static int check_dir_empty(struct ubifs_info *c, struct inode *dir)
 static int ubifs_rmdir(struct inode *dir, struct dentry *dentry)
 {
 	struct ubifs_info *c = dir->i_sb->s_fs_info;
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	int sz_change = CALC_DENT_SIZE(dentry->d_name.len);
 	int err, budgeted = 1;
 	struct ubifs_inode *dir_ui = ubifs_inode(dir);
@@ -663,7 +665,7 @@ static int ubifs_rmdir(struct inode *dir, struct dentry *dentry)
 		inode->i_ino, dir->i_ino);
 	ubifs_assert(mutex_is_locked(&dir->i_mutex));
 	ubifs_assert(mutex_is_locked(&inode->i_mutex));
-	err = check_dir_empty(c, d_inode(dentry));
+	err = check_dir_empty(c, dentry->d_inode);
 	if (err)
 		return err;
 
@@ -887,7 +889,6 @@ static int ubifs_symlink(struct inode *dir, struct dentry *dentry,
 
 	memcpy(ui->data, symname, len);
 	((char *)ui->data)[len] = '\0';
-	inode->i_link = ui->data;
 	/*
 	 * The terminating zero byte is not written to the flash media and it
 	 * is put just to make later in-memory string processing simpler. Thus,
@@ -969,8 +970,8 @@ static int ubifs_rename(struct inode *old_dir, struct dentry *old_dentry,
 			struct inode *new_dir, struct dentry *new_dentry)
 {
 	struct ubifs_info *c = old_dir->i_sb->s_fs_info;
-	struct inode *old_inode = d_inode(old_dentry);
-	struct inode *new_inode = d_inode(new_dentry);
+	struct inode *old_inode = old_dentry->d_inode;
+	struct inode *new_inode = new_dentry->d_inode;
 	struct ubifs_inode *old_inode_ui = ubifs_inode(old_inode);
 	int err, release, sync = 0, move = (new_dir != old_dir);
 	int is_dir = S_ISDIR(old_inode->i_mode);
@@ -1135,7 +1136,7 @@ int ubifs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		  struct kstat *stat)
 {
 	loff_t size;
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	struct ubifs_inode *ui = ubifs_inode(inode);
 
 	mutex_lock(&ui->ui_mutex);

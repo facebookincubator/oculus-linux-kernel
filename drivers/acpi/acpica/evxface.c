@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,16 +51,6 @@
 
 #define _COMPONENT          ACPI_EVENTS
 ACPI_MODULE_NAME("evxface")
-#if (!ACPI_REDUCED_HARDWARE)
-/* Local prototypes */
-static acpi_status
-acpi_ev_install_gpe_handler(acpi_handle gpe_device,
-			    u32 gpe_number,
-			    u32 type,
-			    u8 is_raw_handler,
-			    acpi_gpe_handler address, void *context);
-
-#endif
 
 
 /*******************************************************************************
@@ -86,7 +76,6 @@ acpi_ev_install_gpe_handler(acpi_handle gpe_device,
  *              handlers.
  *
  ******************************************************************************/
-
 acpi_status
 acpi_install_notify_handler(acpi_handle device,
 			    u32 handler_type,
@@ -405,7 +394,7 @@ cleanup:
 }
 
 ACPI_EXPORT_SYMBOL(acpi_install_exception_handler)
-#endif
+#endif				/*  ACPI_FUTURE_USAGE  */
 
 #if (!ACPI_REDUCED_HARDWARE)
 /*******************************************************************************
@@ -728,37 +717,32 @@ ACPI_EXPORT_SYMBOL(acpi_remove_fixed_event_handler)
 
 /*******************************************************************************
  *
- * FUNCTION:    acpi_ev_install_gpe_handler
+ * FUNCTION:    acpi_install_gpe_handler
  *
  * PARAMETERS:  gpe_device      - Namespace node for the GPE (NULL for FADT
  *                                defined GPEs)
  *              gpe_number      - The GPE number within the GPE block
  *              type            - Whether this GPE should be treated as an
  *                                edge- or level-triggered interrupt.
- *              is_raw_handler  - Whether this GPE should be handled using
- *                                the special GPE handler mode.
  *              address         - Address of the handler
  *              context         - Value passed to the handler on each GPE
  *
  * RETURN:      Status
  *
- * DESCRIPTION: Internal function to install a handler for a General Purpose
- *              Event.
+ * DESCRIPTION: Install a handler for a General Purpose Event.
  *
  ******************************************************************************/
-static acpi_status
-acpi_ev_install_gpe_handler(acpi_handle gpe_device,
-			    u32 gpe_number,
-			    u32 type,
-			    u8 is_raw_handler,
-			    acpi_gpe_handler address, void *context)
+acpi_status
+acpi_install_gpe_handler(acpi_handle gpe_device,
+			 u32 gpe_number,
+			 u32 type, acpi_gpe_handler address, void *context)
 {
 	struct acpi_gpe_event_info *gpe_event_info;
 	struct acpi_gpe_handler_info *handler;
 	acpi_status status;
 	acpi_cpu_flags flags;
 
-	ACPI_FUNCTION_TRACE(ev_install_gpe_handler);
+	ACPI_FUNCTION_TRACE(acpi_install_gpe_handler);
 
 	/* Parameter validation */
 
@@ -791,10 +775,8 @@ acpi_ev_install_gpe_handler(acpi_handle gpe_device,
 
 	/* Make sure that there isn't a handler there already */
 
-	if ((ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
-	     ACPI_GPE_DISPATCH_HANDLER) ||
-	    (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
-	     ACPI_GPE_DISPATCH_RAW_HANDLER)) {
+	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
+	    ACPI_GPE_DISPATCH_HANDLER) {
 		status = AE_ALREADY_EXISTS;
 		goto free_and_exit;
 	}
@@ -811,10 +793,9 @@ acpi_ev_install_gpe_handler(acpi_handle gpe_device,
 	 * automatically during initialization, in which case it has to be
 	 * disabled now to avoid spurious execution of the handler.
 	 */
-	if (((ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
-	      ACPI_GPE_DISPATCH_METHOD) ||
-	     (ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
-	      ACPI_GPE_DISPATCH_NOTIFY)) && gpe_event_info->runtime_count) {
+	if (((handler->original_flags & ACPI_GPE_DISPATCH_METHOD) ||
+	     (handler->original_flags & ACPI_GPE_DISPATCH_NOTIFY)) &&
+	    gpe_event_info->runtime_count) {
 		handler->originally_enabled = TRUE;
 		(void)acpi_ev_remove_gpe_reference(gpe_event_info);
 
@@ -835,10 +816,7 @@ acpi_ev_install_gpe_handler(acpi_handle gpe_device,
 
 	gpe_event_info->flags &=
 	    ~(ACPI_GPE_XRUPT_TYPE_MASK | ACPI_GPE_DISPATCH_MASK);
-	gpe_event_info->flags |=
-	    (u8)(type |
-		 (is_raw_handler ? ACPI_GPE_DISPATCH_RAW_HANDLER :
-		  ACPI_GPE_DISPATCH_HANDLER));
+	gpe_event_info->flags |= (u8)(type | ACPI_GPE_DISPATCH_HANDLER);
 
 	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);
 
@@ -852,75 +830,7 @@ free_and_exit:
 	goto unlock_and_exit;
 }
 
-/*******************************************************************************
- *
- * FUNCTION:    acpi_install_gpe_handler
- *
- * PARAMETERS:  gpe_device      - Namespace node for the GPE (NULL for FADT
- *                                defined GPEs)
- *              gpe_number      - The GPE number within the GPE block
- *              type            - Whether this GPE should be treated as an
- *                                edge- or level-triggered interrupt.
- *              address         - Address of the handler
- *              context         - Value passed to the handler on each GPE
- *
- * RETURN:      Status
- *
- * DESCRIPTION: Install a handler for a General Purpose Event.
- *
- ******************************************************************************/
-
-acpi_status
-acpi_install_gpe_handler(acpi_handle gpe_device,
-			 u32 gpe_number,
-			 u32 type, acpi_gpe_handler address, void *context)
-{
-	acpi_status status;
-
-	ACPI_FUNCTION_TRACE(acpi_install_gpe_handler);
-
-	status =
-	    acpi_ev_install_gpe_handler(gpe_device, gpe_number, type, FALSE,
-					address, context);
-
-	return_ACPI_STATUS(status);
-}
-
 ACPI_EXPORT_SYMBOL(acpi_install_gpe_handler)
-
-/*******************************************************************************
- *
- * FUNCTION:    acpi_install_gpe_raw_handler
- *
- * PARAMETERS:  gpe_device      - Namespace node for the GPE (NULL for FADT
- *                                defined GPEs)
- *              gpe_number      - The GPE number within the GPE block
- *              type            - Whether this GPE should be treated as an
- *                                edge- or level-triggered interrupt.
- *              address         - Address of the handler
- *              context         - Value passed to the handler on each GPE
- *
- * RETURN:      Status
- *
- * DESCRIPTION: Install a handler for a General Purpose Event.
- *
- ******************************************************************************/
-acpi_status
-acpi_install_gpe_raw_handler(acpi_handle gpe_device,
-			     u32 gpe_number,
-			     u32 type, acpi_gpe_handler address, void *context)
-{
-	acpi_status status;
-
-	ACPI_FUNCTION_TRACE(acpi_install_gpe_raw_handler);
-
-	status = acpi_ev_install_gpe_handler(gpe_device, gpe_number, type, TRUE,
-					     address, context);
-
-	return_ACPI_STATUS(status);
-}
-
-ACPI_EXPORT_SYMBOL(acpi_install_gpe_raw_handler)
 
 /*******************************************************************************
  *
@@ -970,10 +880,8 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 
 	/* Make sure that a handler is indeed installed */
 
-	if ((ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) !=
-	     ACPI_GPE_DISPATCH_HANDLER) &&
-	    (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) !=
-	     ACPI_GPE_DISPATCH_RAW_HANDLER)) {
+	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) !=
+	    ACPI_GPE_DISPATCH_HANDLER) {
 		status = AE_NOT_EXIST;
 		goto unlock_and_exit;
 	}
@@ -988,7 +896,6 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 	/* Remove the handler */
 
 	handler = gpe_event_info->dispatch.handler;
-	gpe_event_info->dispatch.handler = NULL;
 
 	/* Restore Method node (if any), set dispatch flags */
 
@@ -1002,10 +909,9 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 	 * enabled, it should be enabled at this point to restore the
 	 * post-initialization configuration.
 	 */
-	if (((ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
-	      ACPI_GPE_DISPATCH_METHOD) ||
-	     (ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
-	      ACPI_GPE_DISPATCH_NOTIFY)) && handler->originally_enabled) {
+	if (((handler->original_flags & ACPI_GPE_DISPATCH_METHOD) ||
+	     (handler->original_flags & ACPI_GPE_DISPATCH_NOTIFY)) &&
+	    handler->originally_enabled) {
 		(void)acpi_ev_add_gpe_reference(gpe_event_info);
 	}
 

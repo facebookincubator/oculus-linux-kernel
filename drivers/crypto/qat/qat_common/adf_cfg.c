@@ -50,7 +50,6 @@
 #include <linux/seq_file.h>
 #include "adf_accel_devices.h"
 #include "adf_cfg.h"
-#include "adf_common_drv.h"
 
 static DEFINE_MUTEX(qat_cfg_read_lock);
 
@@ -123,7 +122,7 @@ static const struct file_operations qat_dev_cfg_fops = {
  * The table stores device specific config values.
  * To be used by QAT device specific drivers.
  *
- * Return: 0 on success, error code otherwise.
+ * Return: 0 on success, error code othewise.
  */
 int adf_cfg_dev_add(struct adf_accel_dev *accel_dev)
 {
@@ -142,8 +141,7 @@ int adf_cfg_dev_add(struct adf_accel_dev *accel_dev)
 						  dev_cfg_data,
 						  &qat_dev_cfg_fops);
 	if (!dev_cfg_data->debug) {
-		dev_err(&GET_DEV(accel_dev),
-			"Failed to create qat cfg debugfs entry.\n");
+		pr_err("QAT: Failed to create qat cfg debugfs entry.\n");
 		kfree(dev_cfg_data);
 		accel_dev->cfg = NULL;
 		return -EFAULT;
@@ -161,7 +159,6 @@ void adf_cfg_del_all(struct adf_accel_dev *accel_dev)
 	down_write(&dev_cfg_data->lock);
 	adf_cfg_section_del_all(&dev_cfg_data->sec_list);
 	up_write(&dev_cfg_data->lock);
-	clear_bit(ADF_STATUS_CONFIGURED, &accel_dev->status);
 }
 
 /**
@@ -177,9 +174,6 @@ void adf_cfg_del_all(struct adf_accel_dev *accel_dev)
 void adf_cfg_dev_remove(struct adf_accel_dev *accel_dev)
 {
 	struct adf_cfg_device_data *dev_cfg_data = accel_dev->cfg;
-
-	if (!dev_cfg_data)
-		return;
 
 	down_write(&dev_cfg_data->lock);
 	adf_cfg_section_del_all(&dev_cfg_data->sec_list);
@@ -279,7 +273,7 @@ static int adf_cfg_key_val_get(struct adf_accel_dev *accel_dev,
  * in the given acceleration device
  * To be used by QAT device specific drivers.
  *
- * Return: 0 on success, error code otherwise.
+ * Return: 0 on success, error code othewise.
  */
 int adf_cfg_add_key_value_param(struct adf_accel_dev *accel_dev,
 				const char *section_name,
@@ -309,7 +303,7 @@ int adf_cfg_add_key_value_param(struct adf_accel_dev *accel_dev,
 		snprintf(key_val->val, ADF_CFG_MAX_VAL_LEN_IN_BYTES,
 			 "0x%lx", (unsigned long)val);
 	} else {
-		dev_err(&GET_DEV(accel_dev), "Unknown type given.\n");
+		pr_err("QAT: Unknown type given.\n");
 		kfree(key_val);
 		return -1;
 	}
@@ -330,7 +324,7 @@ EXPORT_SYMBOL_GPL(adf_cfg_add_key_value_param);
  * will be stored.
  * To be used by QAT device specific drivers.
  *
- * Return: 0 on success, error code otherwise.
+ * Return: 0 on success, error code othewise.
  */
 int adf_cfg_section_add(struct adf_accel_dev *accel_dev, const char *name)
 {

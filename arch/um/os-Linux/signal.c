@@ -1,6 +1,4 @@
 /*
- * Copyright (C) 2015 Anton Ivanov (aivanov@{brocade.com,kot-begemot.co.uk})
- * Copyright (C) 2015 Thomas Meyer (thomas@m3y3r.de)
  * Copyright (C) 2004 PathScale, Inc
  * Copyright (C) 2004 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
  * Licensed under the GPL
@@ -15,6 +13,7 @@
 #include <kern_util.h>
 #include <os.h>
 #include <sysdep/mcontext.h>
+#include "internal.h"
 
 void (*sig_info[NSIG])(int, struct siginfo *, struct uml_pt_regs *) = {
 	[SIGTRAP]	= relay_signal,
@@ -24,8 +23,7 @@ void (*sig_info[NSIG])(int, struct siginfo *, struct uml_pt_regs *) = {
 	[SIGBUS]	= bus_handler,
 	[SIGSEGV]	= segv_handler,
 	[SIGIO]		= sigio_handler,
-	[SIGALRM]	= timer_handler
-};
+	[SIGVTALRM]	= timer_handler };
 
 static void sig_handler_common(int sig, struct siginfo *si, mcontext_t *mc)
 {
@@ -40,7 +38,7 @@ static void sig_handler_common(int sig, struct siginfo *si, mcontext_t *mc)
 	}
 
 	/* enable signals if sig isn't IRQ signal */
-	if ((sig != SIGIO) && (sig != SIGWINCH) && (sig != SIGALRM))
+	if ((sig != SIGIO) && (sig != SIGWINCH) && (sig != SIGVTALRM))
 		unblock_signals();
 
 	(*sig_info[sig])(sig, si, &r);
@@ -57,8 +55,8 @@ static void sig_handler_common(int sig, struct siginfo *si, mcontext_t *mc)
 #define SIGIO_BIT 0
 #define SIGIO_MASK (1 << SIGIO_BIT)
 
-#define SIGALRM_BIT 1
-#define SIGALRM_MASK (1 << SIGALRM_BIT)
+#define SIGVTALRM_BIT 1
+#define SIGVTALRM_MASK (1 << SIGVTALRM_BIT)
 
 static int signals_enabled;
 static unsigned int signals_pending;
@@ -80,47 +78,43 @@ void sig_handler(int sig, struct siginfo *si, mcontext_t *mc)
 	set_signals(enabled);
 }
 
-static void timer_real_alarm_handler(mcontext_t *mc)
+static void real_alarm_handler(mcontext_t *mc)
 {
 	struct uml_pt_regs regs;
 
 	if (mc != NULL)
 		get_regs_from_mc(&regs, mc);
-	timer_handler(SIGALRM, NULL, &regs);
+	regs.is_user = 0;
+	unblock_signals();
+	timer_handler(SIGVTALRM, NULL, &regs);
 }
 
-void timer_alarm_handler(int sig, struct siginfo *unused_si, mcontext_t *mc)
+void alarm_handler(int sig, struct siginfo *unused_si, mcontext_t *mc)
 {
 	int enabled;
 
 	enabled = signals_enabled;
 	if (!signals_enabled) {
-		signals_pending |= SIGALRM_MASK;
+		signals_pending |= SIGVTALRM_MASK;
 		return;
 	}
 
 	block_signals();
 
-	timer_real_alarm_handler(mc);
+	real_alarm_handler(mc);
 	set_signals(enabled);
 }
 
-void deliver_alarm(void) {
-    timer_alarm_handler(SIGALRM, NULL, NULL);
-}
-
-void timer_set_signal_handler(void)
+void timer_init(void)
 {
-	set_handler(SIGALRM);
+	set_handler(SIGVTALRM);
 }
 
 void set_sigstack(void *sig_stack, int size)
 {
-	stack_t stack = {
-		.ss_flags = 0,
-		.ss_sp = sig_stack,
-		.ss_size = size - sizeof(void *)
-	};
+	stack_t stack = ((stack_t) { .ss_flags	= 0,
+				     .ss_sp	= (__ptr_t) sig_stack,
+				     .ss_size 	= size - sizeof(void *) });
 
 	if (sigaltstack(&stack, NULL) != 0)
 		panic("enabling signal stack failed, errno = %d\n", errno);
@@ -135,8 +129,9 @@ static void (*handlers[_NSIG])(int sig, struct siginfo *si, mcontext_t *mc) = {
 
 	[SIGIO] = sig_handler,
 	[SIGWINCH] = sig_handler,
-	[SIGALRM] = timer_alarm_handler
+	[SIGVTALRM] = alarm_handler
 };
+
 
 static void hard_handler(int sig, siginfo_t *si, void *p)
 {
@@ -191,9 +186,9 @@ void set_handler(int sig)
 
 	/* block irq ones */
 	sigemptyset(&action.sa_mask);
+	sigaddset(&action.sa_mask, SIGVTALRM);
 	sigaddset(&action.sa_mask, SIGIO);
 	sigaddset(&action.sa_mask, SIGWINCH);
-	sigaddset(&action.sa_mask, SIGALRM);
 
 	if (sig == SIGSEGV)
 		flags |= SA_NODEFER;
@@ -286,8 +281,8 @@ void unblock_signals(void)
 		if (save_pending & SIGIO_MASK)
 			sig_handler_common(SIGIO, NULL, NULL);
 
-		if (save_pending & SIGALRM_MASK)
-			timer_real_alarm_handler(NULL);
+		if (save_pending & SIGVTALRM_MASK)
+			real_alarm_handler(NULL);
 	}
 }
 

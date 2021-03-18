@@ -72,7 +72,3 @@
 &ipu1_di0_disp0 {
 	remote-endpoint = <&display0_in>;
 };
-
-&pwm3 {
-	status = "okay";
-};

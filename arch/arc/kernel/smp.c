@@ -26,12 +26,10 @@
 #include <asm/setup.h>
 #include <asm/mach_desc.h>
 
-#ifndef CONFIG_ARC_HAS_LLSC
 arch_spinlock_t smp_atomic_ops_lock = __ARCH_SPIN_LOCK_UNLOCKED;
 arch_spinlock_t smp_bitops_lock = __ARCH_SPIN_LOCK_UNLOCKED;
-#endif
 
-struct plat_smp_ops  __weak plat_smp_ops;
+struct plat_smp_ops  plat_smp_ops;
 
 /* XXX: per cpu ? Only needed once in early seconday boot */
 struct task_struct *secondary_idle_tsk;
@@ -42,13 +40,8 @@ void __init smp_prepare_boot_cpu(void)
 }
 
 /*
- * Called from setup_arch() before calling setup_processor()
- *
- * - Initialise the CPU possible map early - this describes the CPUs
- *   which may be present or become present in the system.
- * - Call early smp init hook. This can initialize a specific multi-core
- *   IP which is say common to several platforms (hence not part of
- *   platform specific int_early() hook)
+ * Initialise the CPU possible map early - this describes the CPUs
+ * which may be present or become present in the system.
  */
 void __init smp_init_cpus(void)
 {
@@ -56,9 +49,6 @@ void __init smp_init_cpus(void)
 
 	for (i = 0; i < NR_CPUS; i++)
 		set_cpu_possible(i, true);
-
-	if (plat_smp_ops.init_early_smp)
-		plat_smp_ops.init_early_smp();
 }
 
 /* called from init ( ) =>  process 1 */
@@ -80,28 +70,34 @@ void __init smp_cpus_done(unsigned int max_cpus)
 }
 
 /*
- * Default smp boot helper for Run-on-reset case where all cores start off
- * together. Non-masters need to wait for Master to start running.
- * This is implemented using a flag in memory, which Non-masters spin-wait on.
- * Master sets it to cpu-id of core to "ungate" it.
+ * After power-up, a non Master CPU needs to wait for Master to kick start it
+ *
+ * The default implementation halts
+ *
+ * This relies on platform specific support allowing Master to directly set
+ * this CPU's PC (to be @first_lines_of_secondary() and kick start it.
+ *
+ * In lack of such h/w assist, platforms can override this function
+ *   - make this function busy-spin on a token, eventually set by Master
+ *     (from arc_platform_smp_wakeup_cpu())
+ *   - Once token is available, jump to @first_lines_of_secondary
+ *     (using inline asm).
+ *
+ * Alert: can NOT use stack here as it has not been determined/setup for CPU.
+ *        If it turns out to be elaborate, it's better to code it in assembly
+ *
  */
-static volatile int wake_flag;
-
-static void arc_default_smp_cpu_kick(int cpu, unsigned long pc)
+void __weak arc_platform_smp_wait_to_boot(int cpu)
 {
-	BUG_ON(cpu == 0);
-	wake_flag = cpu;
+	/*
+	 * As a hack for debugging - since debugger will single-step over the
+	 * FLAG insn - wrap the halt itself it in a self loop
+	 */
+	__asm__ __volatile__(
+	"1:		\n"
+	"	flag 1	\n"
+	"	b 1b	\n");
 }
-
-void arc_platform_smp_wait_to_boot(int cpu)
-{
-	while (wake_flag != cpu)
-		;
-
-	wake_flag = 0;
-	__asm__ __volatile__("j @first_lines_of_secondary	\n");
-}
-
 
 const char *arc_platform_smp_cpuinfo(void)
 {
@@ -131,12 +127,8 @@ void start_kernel_secondary(void)
 
 	pr_info("## CPU%u LIVE ##: Executing Code...\n", cpu);
 
-	/* Some SMP H/w setup - for each cpu */
-	if (plat_smp_ops.init_per_cpu)
-		plat_smp_ops.init_per_cpu(cpu);
-
-	if (machine_desc->init_per_cpu)
-		machine_desc->init_per_cpu(cpu);
+	if (machine_desc->init_smp)
+		machine_desc->init_smp(cpu);
 
 	arc_local_timer_setup();
 
@@ -167,8 +159,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	if (plat_smp_ops.cpu_kick)
 		plat_smp_ops.cpu_kick(cpu,
 				(unsigned long)first_lines_of_secondary);
-	else
-		arc_default_smp_cpu_kick(cpu, (unsigned long)NULL);
 
 	/* wait for 1 sec after kicking the secondary */
 	wait_till = jiffies + HZ;
@@ -190,7 +180,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 /*
  * not supported here
  */
-int setup_profiling_timer(unsigned int multiplier)
+int __init setup_profiling_timer(unsigned int multiplier)
 {
 	return -EINVAL;
 }
@@ -229,7 +219,7 @@ static void ipi_send_msg_one(int cpu, enum ipi_msg_type msg)
 	 * and read back old value
 	 */
 	do {
-		new = old = ACCESS_ONCE(*ipi_data_ptr);
+		new = old = *ipi_data_ptr;
 		new |= 1U << msg;
 	} while (cmpxchg(ipi_data_ptr, old, new) != old);
 
@@ -286,10 +276,8 @@ static void ipi_cpu_stop(void)
 	machine_halt();
 }
 
-static inline int __do_IPI(unsigned long msg)
+static inline void __do_IPI(unsigned long msg)
 {
-	int rc = 0;
-
 	switch (msg) {
 	case IPI_RESCHEDULE:
 		scheduler_ipi();
@@ -304,10 +292,8 @@ static inline int __do_IPI(unsigned long msg)
 		break;
 
 	default:
-		rc = 1;
+		pr_warn("IPI with unexpected msg %ld\n", msg);
 	}
-
-	return rc;
 }
 
 /*
@@ -317,7 +303,6 @@ static inline int __do_IPI(unsigned long msg)
 irqreturn_t do_IPI(int irq, void *dev_id)
 {
 	unsigned long pending;
-	unsigned long __maybe_unused copy;
 
 	pr_debug("IPI [%ld] received on cpu %d\n",
 		 *this_cpu_ptr(&ipi_data), smp_processor_id());
@@ -329,18 +314,11 @@ irqreturn_t do_IPI(int irq, void *dev_id)
 	 * "dequeue" the msg corresponding to this IPI (and possibly other
 	 * piggybacked msg from elided IPIs: see ipi_send_msg_one() above)
 	 */
-	copy = pending = xchg(this_cpu_ptr(&ipi_data), 0);
+	pending = xchg(this_cpu_ptr(&ipi_data), 0);
 
 	do {
 		unsigned long msg = __ffs(pending);
-		int rc;
-
-		rc = __do_IPI(msg);
-#ifdef CONFIG_ARC_IPI_DBG
-		/* IPI received but no valid @msg */
-		if (rc)
-			pr_info("IPI with bogus msg %ld in %ld\n", msg, copy);
-#endif
+		__do_IPI(msg);
 		pending &= ~(1U << msg);
 	} while (pending);
 

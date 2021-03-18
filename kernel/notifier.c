@@ -402,7 +402,6 @@ int raw_notifier_call_chain(struct raw_notifier_head *nh,
 }
 EXPORT_SYMBOL_GPL(raw_notifier_call_chain);
 
-#ifdef CONFIG_SRCU
 /*
  *	SRCU notifier chain routines.    Registration and unregistration
  *	use a mutex, and call_chain is synchronized by SRCU (no locks).
@@ -529,8 +528,6 @@ void srcu_init_notifier_head(struct srcu_notifier_head *nh)
 }
 EXPORT_SYMBOL_GPL(srcu_init_notifier_head);
 
-#endif /* CONFIG_SRCU */
-
 static ATOMIC_NOTIFIER_HEAD(die_chain);
 
 int notrace notify_die(enum die_val val, const char *str,
@@ -544,8 +541,6 @@ int notrace notify_die(enum die_val val, const char *str,
 		.signr	= sig,
 
 	};
-	RCU_LOCKDEP_WARN(!rcu_is_watching(),
-			   "notify_die called but RCU thinks we're quiescent");
 	return atomic_notifier_call_chain(&die_chain, val, &args);
 }
 NOKPROBE_SYMBOL(notify_die);

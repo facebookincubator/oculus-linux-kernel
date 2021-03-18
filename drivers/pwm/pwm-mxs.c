@@ -35,10 +35,6 @@
 #define  PERIOD_CDIV(div)	(((div) & 0x7) << 20)
 #define  PERIOD_CDIV_MAX	8
 
-static const unsigned int cdiv[PERIOD_CDIV_MAX] = {
-	1, 2, 4, 8, 16, 64, 256, 1024
-};
-
 struct mxs_pwm_chip {
 	struct pwm_chip chip;
 	struct clk *clk;
@@ -58,13 +54,13 @@ static int mxs_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 
 	rate = clk_get_rate(mxs->clk);
 	while (1) {
-		c = rate / cdiv[div];
+		c = rate / (1 << div);
 		c = c * period_ns;
 		do_div(c, 1000000000);
 		if (c < PERIOD_PERIOD_MAX)
 			break;
 		div++;
-		if (div >= PERIOD_CDIV_MAX)
+		if (div > PERIOD_CDIV_MAX)
 			return -EINVAL;
 	}
 
@@ -77,7 +73,7 @@ static int mxs_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * If the PWM channel is disabled, make sure to turn on the clock
 	 * before writing the register. Otherwise, keep it enabled.
 	 */
-	if (!pwm_is_enabled(pwm)) {
+	if (!test_bit(PWMF_ENABLED, &pwm->flags)) {
 		ret = clk_prepare_enable(mxs->clk);
 		if (ret)
 			return ret;
@@ -92,7 +88,7 @@ static int mxs_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	/*
 	 * If the PWM is not enabled, turn the clock off again to save power.
 	 */
-	if (!pwm_is_enabled(pwm))
+	if (!test_bit(PWMF_ENABLED, &pwm->flags))
 		clk_disable_unprepare(mxs->clk);
 
 	return 0;
@@ -193,6 +189,7 @@ MODULE_DEVICE_TABLE(of, mxs_pwm_dt_ids);
 static struct platform_driver mxs_pwm_driver = {
 	.driver = {
 		.name = "mxs-pwm",
+		.owner = THIS_MODULE,
 		.of_match_table = mxs_pwm_dt_ids,
 	},
 	.probe = mxs_pwm_probe,

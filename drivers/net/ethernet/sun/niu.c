@@ -3341,7 +3341,8 @@ static int niu_rbr_add_page(struct niu *np, struct rx_ring_info *rp,
 
 	niu_hash_page(rp, page, addr);
 	if (rp->rbr_blocks_per_page > 1)
-		atomic_add(rp->rbr_blocks_per_page - 1, &page->_count);
+		atomic_add(rp->rbr_blocks_per_page - 1,
+			   &compound_head(page)->_count);
 
 	for (i = 0; i < rp->rbr_blocks_per_page; i++) {
 		__le32 *rbr = &rp->rbr[start_index + i];
@@ -6650,16 +6651,23 @@ static netdev_tx_t niu_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_BUSY;
 	}
 
-	if (eth_skb_pad(skb))
-		goto out;
+	if (skb->len < ETH_ZLEN) {
+		unsigned int pad_bytes = ETH_ZLEN - skb->len;
+
+		if (skb_pad(skb, pad_bytes))
+			goto out;
+		skb_put(skb, pad_bytes);
+	}
 
 	len = sizeof(struct tx_pkt_hdr) + 15;
 	if (skb_headroom(skb) < len) {
 		struct sk_buff *skb_new;
 
 		skb_new = skb_realloc_headroom(skb, len);
-		if (!skb_new)
+		if (!skb_new) {
+			rp->tx_errors++;
 			goto out_drop;
+		}
 		kfree_skb(skb);
 		skb = skb_new;
 	} else
@@ -6987,10 +6995,10 @@ static int niu_class_to_ethflow(u64 class, int *flow_type)
 		*flow_type = IP_USER_FLOW;
 		break;
 	default:
-		return -EINVAL;
+		return 0;
 	}
 
-	return 0;
+	return 1;
 }
 
 static int niu_ethflow_to_class(int flow_type, u64 *class)
@@ -7196,9 +7204,11 @@ static int niu_get_ethtool_tcam_entry(struct niu *np,
 	class = (tp->key[0] & TCAM_V4KEY0_CLASS_CODE) >>
 		TCAM_V4KEY0_CLASS_CODE_SHIFT;
 	ret = niu_class_to_ethflow(class, &fsp->flow_type);
+
 	if (ret < 0) {
 		netdev_info(np->dev, "niu%d: niu_class_to_ethflow failed\n",
 			    parent->index);
+		ret = -EINVAL;
 		goto out;
 	}
 
@@ -10175,6 +10185,7 @@ MODULE_DEVICE_TABLE(of, niu_match);
 static struct platform_driver niu_of_driver = {
 	.driver = {
 		.name = "niu",
+		.owner = THIS_MODULE,
 		.of_match_table = niu_match,
 	},
 	.probe		= niu_of_probe,

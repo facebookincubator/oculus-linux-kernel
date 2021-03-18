@@ -1743,6 +1743,7 @@ static int onenand_panic_write(struct mtd_info *mtd, loff_t to, size_t len,
 	struct onenand_chip *this = mtd->priv;
 	int column, subpage;
 	int written = 0;
+	int ret = 0;
 
 	if (this->state == FL_PM_SUSPENDED)
 		return -EBUSY;
@@ -1785,10 +1786,15 @@ static int onenand_panic_write(struct mtd_info *mtd, loff_t to, size_t len,
 		onenand_panic_wait(mtd);
 
 		/* In partial page write we don't update bufferram */
-		onenand_update_bufferram(mtd, to, !subpage);
+		onenand_update_bufferram(mtd, to, !ret && !subpage);
 		if (ONENAND_IS_2PLANE(this)) {
 			ONENAND_SET_BUFFERRAM1(this);
-			onenand_update_bufferram(mtd, to + this->writesize, !subpage);
+			onenand_update_bufferram(mtd, to + this->writesize, !ret && !subpage);
+		}
+
+		if (ret) {
+			printk(KERN_ERR "%s: write failed %d\n", __func__, ret);
+			break;
 		}
 
 		written += thislen;
@@ -1802,7 +1808,7 @@ static int onenand_panic_write(struct mtd_info *mtd, loff_t to, size_t len,
 	}
 
 	*retlen = written;
-	return 0;
+	return ret;
 }
 
 /**

@@ -240,7 +240,7 @@ static struct resource pmu_resource = {
 };
 
 static struct platform_device pmu_device = {
-	.name			= "armv7-pmu",
+	.name			= "arm-pmu",
 	.id			= -1,
 	.num_resources		= 1,
 	.resource		= &pmu_resource,

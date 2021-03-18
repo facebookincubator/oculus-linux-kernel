@@ -86,7 +86,6 @@ static void __init imx6sx_init_irq(void)
 	imx_init_l2cache();
 	imx_src_init();
 	irqchip_init();
-	imx6_pm_ccm_init("fsl,imx6sx-ccm");
 }
 
 static void __init imx6sx_init_late(void)

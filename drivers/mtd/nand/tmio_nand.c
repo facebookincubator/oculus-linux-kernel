@@ -382,7 +382,6 @@ static int tmio_probe(struct platform_device *dev)
 	nand_chip = &tmio->chip;
 	mtd->priv = nand_chip;
 	mtd->name = "tmio-nand";
-	mtd->dev.parent = &dev->dev;
 
 	tmio->ccr = devm_ioremap(&dev->dev, ccr->start, resource_size(ccr));
 	if (!tmio->ccr)

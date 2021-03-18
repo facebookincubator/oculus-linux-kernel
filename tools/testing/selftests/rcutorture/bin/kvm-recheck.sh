@@ -43,10 +43,6 @@ do
 		if test -f "$i/console.log"
 		then
 			configcheck.sh $i/.config $i/ConfigFragment
-			if test -r $i/Make.oldconfig.err
-			then
-				cat $i/Make.oldconfig.err
-			fi
 			parse-build.sh $i/Make.out $configfile
 			parse-torture.sh $i/console.log $configfile
 			parse-console.sh $i/console.log $configfile

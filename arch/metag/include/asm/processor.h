@@ -111,6 +111,7 @@ struct thread_struct {
  */
 #define start_thread(regs, pc, usp) do {				   \
 	unsigned int *argc = (unsigned int *) bprm->exec;		   \
+	set_fs(USER_DS);						   \
 	current->thread.int_depth = 1;					   \
 	/* Force this process down to user land */			   \
 	regs->ctx.SaveMask = TBICTX_PRIV_BIT;				   \

@@ -33,7 +33,6 @@
 #include <linux/mutex.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/max77693.h>
-#include <linux/mfd/max77693-common.h>
 #include <linux/mfd/max77693-private.h>
 #include <linux/regulator/machine.h>
 #include <linux/regmap.h>
@@ -44,18 +43,12 @@
 
 static const struct mfd_cell max77693_devs[] = {
 	{ .name = "max77693-pmic", },
-	{
-		.name = "max77693-charger",
-		.of_compatible = "maxim,max77693-charger",
-	},
+	{ .name = "max77693-charger", },
 	{ .name = "max77693-muic", },
+	{ .name = "max77693-haptic", },
 	{
-		.name = "max77693-haptic",
-		.of_compatible = "maxim,max77693-haptic",
-	},
-	{
-		.name = "max77693-led",
-		.of_compatible = "maxim,max77693-led",
+		.name = "max77693-flash",
+		.of_compatible = "maxim,max77693-flash",
 	},
 };
 
@@ -154,12 +147,6 @@ static const struct regmap_irq_chip max77693_muic_irq_chip = {
 	.num_irqs		= ARRAY_SIZE(max77693_muic_irqs),
 };
 
-static const struct regmap_config max77693_regmap_haptic_config = {
-	.reg_bits = 8,
-	.val_bits = 8,
-	.max_register = MAX77693_HAPTIC_REG_END,
-};
-
 static int max77693_i2c_probe(struct i2c_client *i2c,
 			      const struct i2c_device_id *id)
 {
@@ -194,42 +181,33 @@ static int max77693_i2c_probe(struct i2c_client *i2c,
 	} else
 		dev_info(max77693->dev, "device ID: 0x%x\n", reg_data);
 
-	max77693->i2c_muic = i2c_new_dummy(i2c->adapter, I2C_ADDR_MUIC);
-	if (!max77693->i2c_muic) {
+	max77693->muic = i2c_new_dummy(i2c->adapter, I2C_ADDR_MUIC);
+	if (!max77693->muic) {
 		dev_err(max77693->dev, "Failed to allocate I2C device for MUIC\n");
 		return -ENODEV;
 	}
-	i2c_set_clientdata(max77693->i2c_muic, max77693);
+	i2c_set_clientdata(max77693->muic, max77693);
 
-	max77693->i2c_haptic = i2c_new_dummy(i2c->adapter, I2C_ADDR_HAPTIC);
-	if (!max77693->i2c_haptic) {
+	max77693->haptic = i2c_new_dummy(i2c->adapter, I2C_ADDR_HAPTIC);
+	if (!max77693->haptic) {
 		dev_err(max77693->dev, "Failed to allocate I2C device for Haptic\n");
 		ret = -ENODEV;
 		goto err_i2c_haptic;
 	}
-	i2c_set_clientdata(max77693->i2c_haptic, max77693);
-
-	max77693->regmap_haptic = devm_regmap_init_i2c(max77693->i2c_haptic,
-					&max77693_regmap_haptic_config);
-	if (IS_ERR(max77693->regmap_haptic)) {
-		ret = PTR_ERR(max77693->regmap_haptic);
-		dev_err(max77693->dev,
-			"failed to initialize haptic register map: %d\n", ret);
-		goto err_regmap;
-	}
+	i2c_set_clientdata(max77693->haptic, max77693);
 
 	/*
 	 * Initialize register map for MUIC device because use regmap-muic
 	 * instance of MUIC device when irq of max77693 is initialized
 	 * before call max77693-muic probe() function.
 	 */
-	max77693->regmap_muic = devm_regmap_init_i2c(max77693->i2c_muic,
+	max77693->regmap_muic = devm_regmap_init_i2c(max77693->muic,
 					 &max77693_regmap_muic_config);
 	if (IS_ERR(max77693->regmap_muic)) {
 		ret = PTR_ERR(max77693->regmap_muic);
 		dev_err(max77693->dev,
 			"failed to allocate register map: %d\n", ret);
-		goto err_regmap;
+		goto err_regmap_muic;
 	}
 
 	ret = regmap_add_irq_chip(max77693->regmap, max77693->irq,
@@ -239,7 +217,7 @@ static int max77693_i2c_probe(struct i2c_client *i2c,
 				&max77693->irq_data_led);
 	if (ret) {
 		dev_err(max77693->dev, "failed to add irq chip: %d\n", ret);
-		goto err_regmap;
+		goto err_regmap_muic;
 	}
 
 	ret = regmap_add_irq_chip(max77693->regmap, max77693->irq,
@@ -256,7 +234,7 @@ static int max77693_i2c_probe(struct i2c_client *i2c,
 				IRQF_ONESHOT | IRQF_SHARED |
 				IRQF_TRIGGER_FALLING, 0,
 				&max77693_charger_irq_chip,
-				&max77693->irq_data_chg);
+				&max77693->irq_data_charger);
 	if (ret) {
 		dev_err(max77693->dev, "failed to add irq chip: %d\n", ret);
 		goto err_irq_charger;
@@ -297,15 +275,15 @@ err_mfd:
 err_intsrc:
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_muic);
 err_irq_muic:
-	regmap_del_irq_chip(max77693->irq, max77693->irq_data_chg);
+	regmap_del_irq_chip(max77693->irq, max77693->irq_data_charger);
 err_irq_charger:
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_topsys);
 err_irq_topsys:
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_led);
-err_regmap:
-	i2c_unregister_device(max77693->i2c_haptic);
+err_regmap_muic:
+	i2c_unregister_device(max77693->haptic);
 err_i2c_haptic:
-	i2c_unregister_device(max77693->i2c_muic);
+	i2c_unregister_device(max77693->muic);
 	return ret;
 }
 
@@ -316,12 +294,12 @@ static int max77693_i2c_remove(struct i2c_client *i2c)
 	mfd_remove_devices(max77693->dev);
 
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_muic);
-	regmap_del_irq_chip(max77693->irq, max77693->irq_data_chg);
+	regmap_del_irq_chip(max77693->irq, max77693->irq_data_charger);
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_topsys);
 	regmap_del_irq_chip(max77693->irq, max77693->irq_data_led);
 
-	i2c_unregister_device(max77693->i2c_muic);
-	i2c_unregister_device(max77693->i2c_haptic);
+	i2c_unregister_device(max77693->muic);
+	i2c_unregister_device(max77693->haptic);
 
 	return 0;
 }
@@ -373,6 +351,7 @@ static const struct of_device_id max77693_dt_match[] = {
 static struct i2c_driver max77693_i2c_driver = {
 	.driver = {
 		   .name = "max77693",
+		   .owner = THIS_MODULE,
 		   .pm = &max77693_pm,
 		   .of_match_table = of_match_ptr(max77693_dt_match),
 	},

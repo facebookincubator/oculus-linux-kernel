@@ -9,7 +9,6 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include <linux/clk.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
@@ -48,7 +47,7 @@
 
 static DEFINE_SPINLOCK(clk_lock);
 
-static struct mmp_clk_factor_masks uart_factor_masks = {
+static struct clk_factor_masks uart_factor_masks = {
 	.factor = 2,
 	.num_mask = 0x1fff,
 	.den_mask = 0x1fff,
@@ -56,7 +55,7 @@ static struct mmp_clk_factor_masks uart_factor_masks = {
 	.den_shift = 0,
 };
 
-static struct mmp_clk_factor_tbl uart_factor_tbl[] = {
+static struct clk_factor_tbl uart_factor_tbl[] = {
 	{.num = 8125, .den = 1536},	/*14.745MHZ */
 };
 
@@ -159,7 +158,7 @@ void __init pxa168_clk_init(void)
 	uart_pll = mmp_clk_register_factor("uart_pll", "pll1_4", 0,
 				mpmu_base + MPMU_UART_PLL,
 				&uart_factor_masks, uart_factor_tbl,
-				ARRAY_SIZE(uart_factor_tbl), &clk_lock);
+				ARRAY_SIZE(uart_factor_tbl));
 	clk_set_rate(uart_pll, 14745600);
 	clk_register_clkdev(uart_pll, "uart_pll", NULL);
 

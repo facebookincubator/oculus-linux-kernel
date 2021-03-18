@@ -33,6 +33,7 @@ struct emuframe {
 
 int mips_dsemul(struct pt_regs *regs, mips_instruction ir, unsigned long cpc)
 {
+	extern asmlinkage void handle_dsemulret(void);
 	struct emuframe __user *fr;
 	int err;
 
@@ -93,9 +94,9 @@ int mips_dsemul(struct pt_regs *regs, mips_instruction ir, unsigned long cpc)
 	regs->cp0_epc = ((unsigned long) &fr->emul) |
 		get_isa16_mode(regs->cp0_epc);
 
-	flush_cache_sigtramp((unsigned long)&fr->emul);
+	flush_cache_sigtramp((unsigned long)&fr->badinst);
 
-	return 0;
+	return SIGILL;		/* force out of emulation loop */
 }
 
 int do_dsemulret(struct pt_regs *xcp)
@@ -157,6 +158,6 @@ int do_dsemulret(struct pt_regs *xcp)
 
 	/* Set EPC to return to post-branch instruction */
 	xcp->cp0_epc = epc;
-	MIPS_FPU_EMU_INC_STATS(ds_emul);
+
 	return 1;
 }

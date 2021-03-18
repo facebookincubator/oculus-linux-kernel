@@ -34,6 +34,7 @@
 #include <linux/rculist.h>
 #include <linux/interrupt.h>
 #include <linux/genalloc.h>
+#include <linux/of_address.h>
 #include <linux/of_device.h>
 
 static inline size_t chunk_size(const struct gen_pool_chunk *chunk)
@@ -160,7 +161,6 @@ struct gen_pool *gen_pool_create(int min_alloc_order, int nid)
 		pool->min_alloc_order = min_alloc_order;
 		pool->algo = gen_pool_first_fit;
 		pool->data = NULL;
-		pool->name = NULL;
 	}
 	return pool;
 }
@@ -253,8 +253,8 @@ void gen_pool_destroy(struct gen_pool *pool)
 
 		kfree(chunk);
 	}
-	kfree_const(pool->name);
 	kfree(pool);
+	return;
 }
 EXPORT_SYMBOL(gen_pool_destroy);
 
@@ -415,7 +415,7 @@ bool addr_in_gen_pool(struct gen_pool *pool, unsigned long start,
 			size_t size)
 {
 	bool found = false;
-	unsigned long end = start + size - 1;
+	unsigned long end = start + size;
 	struct gen_pool_chunk *chunk;
 
 	rcu_read_lock();
@@ -571,92 +571,55 @@ static void devm_gen_pool_release(struct device *dev, void *res)
 	gen_pool_destroy(*(struct gen_pool **)res);
 }
 
-static int devm_gen_pool_match(struct device *dev, void *res, void *data)
-{
-	struct gen_pool **p = res;
-
-	/* NULL data matches only a pool without an assigned name */
-	if (!data && !(*p)->name)
-		return 1;
-
-	if (!data || !(*p)->name)
-		return 0;
-
-	return !strcmp((*p)->name, data);
-}
-
-/**
- * gen_pool_get - Obtain the gen_pool (if any) for a device
- * @dev: device to retrieve the gen_pool from
- * @name: name of a gen_pool or NULL, identifies a particular gen_pool on device
- *
- * Returns the gen_pool for the device if one is present, or NULL.
- */
-struct gen_pool *gen_pool_get(struct device *dev, const char *name)
-{
-	struct gen_pool **p;
-
-	p = devres_find(dev, devm_gen_pool_release, devm_gen_pool_match,
-			(void *)name);
-	if (!p)
-		return NULL;
-	return *p;
-}
-EXPORT_SYMBOL_GPL(gen_pool_get);
-
 /**
  * devm_gen_pool_create - managed gen_pool_create
  * @dev: device that provides the gen_pool
  * @min_alloc_order: log base 2 of number of bytes each bitmap bit represents
- * @nid: node selector for allocated gen_pool, %NUMA_NO_NODE for all nodes
- * @name: name of a gen_pool or NULL, identifies a particular gen_pool on device
+ * @nid: node id of the node the pool structure should be allocated on, or -1
  *
  * Create a new special memory pool that can be used to manage special purpose
  * memory not managed by the regular kmalloc/kfree interface. The pool will be
  * automatically destroyed by the device management code.
  */
 struct gen_pool *devm_gen_pool_create(struct device *dev, int min_alloc_order,
-				      int nid, const char *name)
+		int nid)
 {
 	struct gen_pool **ptr, *pool;
-	const char *pool_name = NULL;
-
-	/* Check that genpool to be created is uniquely addressed on device */
-	if (gen_pool_get(dev, name))
-		return ERR_PTR(-EINVAL);
-
-	if (name) {
-		pool_name = kstrdup_const(name, GFP_KERNEL);
-		if (!pool_name)
-			return ERR_PTR(-ENOMEM);
-	}
 
 	ptr = devres_alloc(devm_gen_pool_release, sizeof(*ptr), GFP_KERNEL);
-	if (!ptr)
-		goto free_pool_name;
 
 	pool = gen_pool_create(min_alloc_order, nid);
-	if (!pool)
-		goto free_devres;
-
-	*ptr = pool;
-	pool->name = pool_name;
-	devres_add(dev, ptr);
+	if (pool) {
+		*ptr = pool;
+		devres_add(dev, ptr);
+	} else {
+		devres_free(ptr);
+	}
 
 	return pool;
-
-free_devres:
-	devres_free(ptr);
-free_pool_name:
-	kfree_const(pool_name);
-
-	return ERR_PTR(-ENOMEM);
 }
 EXPORT_SYMBOL(devm_gen_pool_create);
 
+/**
+ * dev_get_gen_pool - Obtain the gen_pool (if any) for a device
+ * @dev: device to retrieve the gen_pool from
+ *
+ * Returns the gen_pool for the device if one is present, or NULL.
+ */
+struct gen_pool *dev_get_gen_pool(struct device *dev)
+{
+	struct gen_pool **p = devres_find(dev, devm_gen_pool_release, NULL,
+					NULL);
+
+	if (!p)
+		return NULL;
+	return *p;
+}
+EXPORT_SYMBOL_GPL(dev_get_gen_pool);
+
 #ifdef CONFIG_OF
 /**
- * of_gen_pool_get - find a pool by phandle property
+ * of_get_named_gen_pool - find a pool by phandle property
  * @np: device node
  * @propname: property name containing phandle(s)
  * @index: index into the phandle array
@@ -665,34 +628,20 @@ EXPORT_SYMBOL(devm_gen_pool_create);
  * address of the device tree node pointed at by the phandle property,
  * or NULL if not found.
  */
-struct gen_pool *of_gen_pool_get(struct device_node *np,
+struct gen_pool *of_get_named_gen_pool(struct device_node *np,
 	const char *propname, int index)
 {
 	struct platform_device *pdev;
-	struct device_node *np_pool, *parent;
-	const char *name = NULL;
-	struct gen_pool *pool = NULL;
+	struct device_node *np_pool;
 
 	np_pool = of_parse_phandle(np, propname, index);
 	if (!np_pool)
 		return NULL;
-
 	pdev = of_find_device_by_node(np_pool);
-	if (!pdev) {
-		/* Check if named gen_pool is created by parent node device */
-		parent = of_get_parent(np_pool);
-		pdev = of_find_device_by_node(parent);
-		of_node_put(parent);
-
-		of_property_read_string(np_pool, "label", &name);
-		if (!name)
-			name = np_pool->name;
-	}
-	if (pdev)
-		pool = gen_pool_get(&pdev->dev, name);
 	of_node_put(np_pool);
-
-	return pool;
+	if (!pdev)
+		return NULL;
+	return dev_get_gen_pool(&pdev->dev);
 }
-EXPORT_SYMBOL_GPL(of_gen_pool_get);
+EXPORT_SYMBOL_GPL(of_get_named_gen_pool);
 #endif /* CONFIG_OF */

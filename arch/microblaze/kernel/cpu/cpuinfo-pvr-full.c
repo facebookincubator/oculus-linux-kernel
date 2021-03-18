@@ -33,7 +33,7 @@
 void set_cpuinfo_pvr_full(struct cpuinfo *ci, struct device_node *cpu)
 {
 	struct pvr_s pvr;
-	u32 temp; /* for saving temp value */
+	int temp; /* for saving temp value */
 	get_pvr(&pvr);
 
 	CI(ver_code, VERSION);

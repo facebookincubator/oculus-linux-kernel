@@ -1,5 +1,5 @@
 /* Intel PRO/1000 Linux driver
- * Copyright(c) 1999 - 2015 Intel Corporation.
+ * Copyright(c) 1999 - 2014 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -90,9 +90,12 @@ static int e1000e_phc_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
 						     ptp_clock_info);
 	unsigned long flags;
+	s64 now;
 
 	spin_lock_irqsave(&adapter->systim_lock, flags);
-	timecounter_adjtime(&adapter->tc, delta);
+	now = timecounter_read(&adapter->tc);
+	now += delta;
+	timecounter_init(&adapter->tc, &adapter->cc, now);
 	spin_unlock_irqrestore(&adapter->systim_lock, flags);
 
 	return 0;
@@ -106,18 +109,20 @@ static int e1000e_phc_adjtime(struct ptp_clock_info *ptp, s64 delta)
  * Read the timecounter and return the correct value in ns after converting
  * it into a struct timespec.
  **/
-static int e1000e_phc_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
+static int e1000e_phc_gettime(struct ptp_clock_info *ptp, struct timespec *ts)
 {
 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
 						     ptp_clock_info);
 	unsigned long flags;
+	u32 remainder;
 	u64 ns;
 
 	spin_lock_irqsave(&adapter->systim_lock, flags);
 	ns = timecounter_read(&adapter->tc);
 	spin_unlock_irqrestore(&adapter->systim_lock, flags);
 
-	*ts = ns_to_timespec64(ns);
+	ts->tv_sec = div_u64_rem(ns, NSEC_PER_SEC, &remainder);
+	ts->tv_nsec = remainder;
 
 	return 0;
 }
@@ -131,14 +136,14 @@ static int e1000e_phc_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
  * wall timer value.
  **/
 static int e1000e_phc_settime(struct ptp_clock_info *ptp,
-			      const struct timespec64 *ts)
+			      const struct timespec *ts)
 {
 	struct e1000_adapter *adapter = container_of(ptp, struct e1000_adapter,
 						     ptp_clock_info);
 	unsigned long flags;
 	u64 ns;
 
-	ns = timespec64_to_ns(ts);
+	ns = timespec_to_ns(ts);
 
 	/* reset the timecounter */
 	spin_lock_irqsave(&adapter->systim_lock, flags);
@@ -169,12 +174,11 @@ static void e1000e_systim_overflow_work(struct work_struct *work)
 	struct e1000_adapter *adapter = container_of(work, struct e1000_adapter,
 						     systim_overflow_work.work);
 	struct e1000_hw *hw = &adapter->hw;
-	struct timespec64 ts;
+	struct timespec ts;
 
-	adapter->ptp_clock_info.gettime64(&adapter->ptp_clock_info, &ts);
+	adapter->ptp_clock_info.gettime(&adapter->ptp_clock_info, &ts);
 
-	e_dbg("SYSTIM overflow check at %lld.%09lu\n",
-	      (long long) ts.tv_sec, ts.tv_nsec);
+	e_dbg("SYSTIM overflow check at %ld.%09lu\n", ts.tv_sec, ts.tv_nsec);
 
 	schedule_delayed_work(&adapter->systim_overflow_work,
 			      E1000_SYSTIM_OVERFLOW_PERIOD);
@@ -189,8 +193,8 @@ static const struct ptp_clock_info e1000e_ptp_clock_info = {
 	.pps		= 0,
 	.adjfreq	= e1000e_phc_adjfreq,
 	.adjtime	= e1000e_phc_adjtime,
-	.gettime64	= e1000e_phc_gettime,
-	.settime64	= e1000e_phc_settime,
+	.gettime	= e1000e_phc_gettime,
+	.settime	= e1000e_phc_settime,
 	.enable		= e1000e_phc_enable,
 };
 
@@ -220,9 +224,7 @@ void e1000e_ptp_init(struct e1000_adapter *adapter)
 	switch (hw->mac.type) {
 	case e1000_pch2lan:
 	case e1000_pch_lpt:
-	case e1000_pch_spt:
-		if (((hw->mac.type != e1000_pch_lpt) &&
-		     (hw->mac.type != e1000_pch_spt)) ||
+		if ((hw->mac.type != e1000_pch_lpt) ||
 		    (er32(TSYNCRXCTL) & E1000_TSYNCRXCTL_SYSCFI)) {
 			adapter->ptp_clock_info.max_adj = 24000000 - 1;
 			break;

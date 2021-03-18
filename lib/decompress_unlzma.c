@@ -620,7 +620,7 @@ STATIC inline int INIT unlzma(unsigned char *buf, long in_len,
 
 	num_probs = LZMA_BASE_SIZE + (LZMA_LIT_SIZE << (lc + lp));
 	p = (uint16_t *) large_malloc(num_probs * sizeof(*p));
-	if (p == NULL)
+	if (p == 0)
 		goto exit_2;
 	num_probs = LZMA_LITERAL + (LZMA_LIT_SIZE << (lc + lp));
 	for (i = 0; i < num_probs; i++)
@@ -667,12 +667,13 @@ exit_0:
 }
 
 #ifdef PREBOOT
-STATIC int INIT __decompress(unsigned char *buf, long in_len,
+STATIC int INIT decompress(unsigned char *buf, long in_len,
 			      long (*fill)(void*, unsigned long),
 			      long (*flush)(void*, unsigned long),
-			      unsigned char *output, long out_len,
+			      unsigned char *output,
 			      long *posp,
-			      void (*error)(char *x))
+			      void(*error)(char *x)
+	)
 {
 	return unlzma(buf, in_len - 4, fill, flush, output, posp, error);
 }

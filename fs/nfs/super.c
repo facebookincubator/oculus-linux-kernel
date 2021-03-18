@@ -43,6 +43,7 @@
 #include <linux/seq_file.h>
 #include <linux/mount.h>
 #include <linux/namei.h>
+#include <linux/nfs_idmap.h>
 #include <linux/vfs.h>
 #include <linux/inet.h>
 #include <linux/in6.h>
@@ -310,6 +311,7 @@ const struct super_operations nfs_sops = {
 	.destroy_inode	= nfs_destroy_inode,
 	.write_inode	= nfs_write_inode,
 	.drop_inode	= nfs_drop_inode,
+	.put_super	= nfs_put_super,
 	.statfs		= nfs_statfs,
 	.evict_inode	= nfs_evict_inode,
 	.umount_begin	= nfs_umount_begin,
@@ -381,12 +383,9 @@ int __init register_nfs_fs(void)
 	ret = nfs_register_sysctl();
 	if (ret < 0)
 		goto error_2;
-	ret = register_shrinker(&acl_shrinker);
-	if (ret < 0)
-		goto error_3;
+	register_shrinker(&acl_shrinker);
 	return 0;
-error_3:
-	nfs_unregister_sysctl();
+
 error_2:
 	unregister_nfs4_fs();
 error_1:
@@ -435,7 +434,7 @@ int nfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	struct nfs_server *server = NFS_SB(dentry->d_sb);
 	unsigned char blockbits;
 	unsigned long blockres;
-	struct nfs_fh *fh = NFS_FH(d_inode(dentry));
+	struct nfs_fh *fh = NFS_FH(dentry->d_inode);
 	struct nfs_fsstat res;
 	int error = -ENOMEM;
 
@@ -449,7 +448,7 @@ int nfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 		pd_dentry = dget_parent(dentry);
 		if (pd_dentry != NULL) {
-			nfs_zap_caches(d_inode(pd_dentry));
+			nfs_zap_caches(pd_dentry->d_inode);
 			dput(pd_dentry);
 		}
 	}
@@ -2195,7 +2194,7 @@ nfs_compare_remount_data(struct nfs_server *nfss,
 	    data->version != nfss->nfs_client->rpc_ops->version ||
 	    data->minorversion != nfss->nfs_client->cl_minorversion ||
 	    data->retrans != nfss->client->cl_timeout->to_retries ||
-	    !nfs_auth_info_match(&data->auth_info, nfss->client->cl_auth->au_flavor) ||
+	    data->selected_flavor != nfss->client->cl_auth->au_flavor ||
 	    data->acregmin != nfss->acregmin / HZ ||
 	    data->acregmax != nfss->acregmax / HZ ||
 	    data->acdirmin != nfss->acdirmin / HZ ||
@@ -2243,6 +2242,7 @@ nfs_remount(struct super_block *sb, int *flags, char *raw_data)
 	data->wsize = nfss->wsize;
 	data->retrans = nfss->client->cl_timeout->to_retries;
 	data->selected_flavor = nfss->client->cl_auth->au_flavor;
+	data->auth_info = nfss->auth_info;
 	data->acregmin = nfss->acregmin / HZ;
 	data->acregmax = nfss->acregmax / HZ;
 	data->acdirmin = nfss->acdirmin / HZ;
@@ -2527,7 +2527,7 @@ int nfs_clone_sb_security(struct super_block *s, struct dentry *mntroot,
 			  struct nfs_mount_info *mount_info)
 {
 	/* clone any lsm security options from the parent to the new sb */
-	if (d_inode(mntroot)->i_op != NFS_SB(s)->nfs_client->rpc_ops->dir_inode_ops)
+	if (mntroot->d_inode->i_op != NFS_SB(s)->nfs_client->rpc_ops->dir_inode_ops)
 		return -ESTALE;
 	return security_sb_clone_mnt_opts(mount_info->cloned->sb, s);
 }
@@ -2572,7 +2572,7 @@ struct dentry *nfs_fs_mount_common(struct nfs_server *server,
 		error = nfs_bdi_register(server);
 		if (error) {
 			mntroot = ERR_PTR(error);
-			goto error_splat_super;
+			goto error_splat_bdi;
 		}
 		server->super = s;
 	}
@@ -2604,6 +2604,9 @@ error_splat_root:
 	dput(mntroot);
 	mntroot = ERR_PTR(error);
 error_splat_super:
+	if (server && !s->s_root)
+		bdi_unregister(&server->backing_dev_info);
+error_splat_bdi:
 	deactivate_locked_super(s);
 	goto out;
 }
@@ -2651,19 +2654,27 @@ out:
 EXPORT_SYMBOL_GPL(nfs_fs_mount);
 
 /*
+ * Ensure that we unregister the bdi before kill_anon_super
+ * releases the device name
+ */
+void nfs_put_super(struct super_block *s)
+{
+	struct nfs_server *server = NFS_SB(s);
+
+	bdi_unregister(&server->backing_dev_info);
+}
+EXPORT_SYMBOL_GPL(nfs_put_super);
+
+/*
  * Destroy an NFS2/3 superblock
  */
 void nfs_kill_super(struct super_block *s)
 {
 	struct nfs_server *server = NFS_SB(s);
-	dev_t dev = s->s_dev;
 
-	generic_shutdown_super(s);
-
+	kill_anon_super(s);
 	nfs_fscache_release_super_cookie(s);
-
 	nfs_free_server(server);
-	free_anon_bdev(dev);
 }
 EXPORT_SYMBOL_GPL(nfs_kill_super);
 
@@ -2816,6 +2827,7 @@ out_invalid_transport_udp:
  * NFS client for backwards compatibility
  */
 unsigned int nfs_callback_set_tcpport;
+unsigned short nfs_callback_tcpport;
 /* Default cache timeout is 10 minutes */
 unsigned int nfs_idmap_cache_timeout = 600;
 /* Turn off NFSv4 uid/gid mapping when using AUTH_SYS */
@@ -2826,6 +2838,7 @@ char nfs4_client_id_uniquifier[NFS4_CLIENT_ID_UNIQ_LEN] = "";
 bool recover_lost_locks = false;
 
 EXPORT_SYMBOL_GPL(nfs_callback_set_tcpport);
+EXPORT_SYMBOL_GPL(nfs_callback_tcpport);
 EXPORT_SYMBOL_GPL(nfs_idmap_cache_timeout);
 EXPORT_SYMBOL_GPL(nfs4_disable_idmapping);
 EXPORT_SYMBOL_GPL(max_session_slots);
@@ -2848,7 +2861,7 @@ static int param_set_portnr(const char *val, const struct kernel_param *kp)
 	*((unsigned int *)kp->arg) = num;
 	return 0;
 }
-static const struct kernel_param_ops param_ops_portnr = {
+static struct kernel_param_ops param_ops_portnr = {
 	.set = param_set_portnr,
 	.get = param_get_uint,
 };

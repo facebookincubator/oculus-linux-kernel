@@ -33,8 +33,6 @@ static struct pm80x_chip_mapping chip_mapping[] = {
 	{0x3,	CHIP_PM800},
 	/* 88PM805 chip id number */
 	{0x0,	CHIP_PM805},
-	/* 88PM860 chip id number */
-	{0x4,	CHIP_PM860},
 };
 
 /*

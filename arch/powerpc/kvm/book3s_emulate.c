@@ -23,7 +23,6 @@
 #include <asm/reg.h>
 #include <asm/switch_to.h>
 #include <asm/time.h>
-#include "book3s.h"
 
 #define OP_19_XOP_RFID		18
 #define OP_19_XOP_RFI		50

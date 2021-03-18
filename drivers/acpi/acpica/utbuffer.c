@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -150,16 +150,8 @@ void acpi_ut_dump_buffer(u8 *buffer, u32 count, u32 display, u32 base_offset)
 				return;
 			}
 
-			/*
-			 * Add comment characters so rest of line is ignored when
-			 * compiled
-			 */
-			if (j == 0) {
-				acpi_os_printf("// ");
-			}
-
 			buf_char = buffer[(acpi_size) i + j];
-			if (isprint(buf_char)) {
+			if (ACPI_IS_PRINT(buf_char)) {
 				acpi_os_printf("%c", buf_char);
 			} else {
 				acpi_os_printf(".");
@@ -319,7 +311,7 @@ acpi_ut_dump_buffer_to_file(ACPI_FILE file,
 			}
 
 			buf_char = buffer[(acpi_size) i + j];
-			if (isprint(buf_char)) {
+			if (ACPI_IS_PRINT(buf_char)) {
 				acpi_ut_file_printf(file, "%c", buf_char);
 			} else {
 				acpi_ut_file_printf(file, ".");

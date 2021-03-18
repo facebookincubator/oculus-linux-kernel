@@ -298,18 +298,18 @@ vfs_removexattr(struct dentry *dentry, const char *name)
 
 	mutex_lock(&inode->i_mutex);
 	error = security_inode_removexattr(dentry, name);
-	if (error)
-		goto out;
+	if (error) {
+		mutex_unlock(&inode->i_mutex);
+		return error;
+	}
 
 	error = inode->i_op->removexattr(dentry, name);
+	mutex_unlock(&inode->i_mutex);
 
 	if (!error) {
 		fsnotify_xattr(dentry);
 		evm_inode_post_removexattr(dentry, name);
 	}
-
-out:
-	mutex_unlock(&inode->i_mutex);
 	return error;
 }
 EXPORT_SYMBOL_GPL(vfs_removexattr);
@@ -405,14 +405,16 @@ SYSCALL_DEFINE5(fsetxattr, int, fd, const char __user *, name,
 		const void __user *,value, size_t, size, int, flags)
 {
 	struct fd f = fdget(fd);
+	struct dentry *dentry;
 	int error = -EBADF;
 
 	if (!f.file)
 		return error;
-	audit_file(f.file);
+	dentry = f.file->f_path.dentry;
+	audit_inode(NULL, dentry, 0);
 	error = mnt_want_write_file(f.file);
 	if (!error) {
-		error = setxattr(f.file->f_path.dentry, name, value, size, flags);
+		error = setxattr(dentry, name, value, size, flags);
 		mnt_drop_write_file(f.file);
 	}
 	fdput(f);
@@ -507,7 +509,7 @@ SYSCALL_DEFINE4(fgetxattr, int, fd, const char __user *, name,
 
 	if (!f.file)
 		return error;
-	audit_file(f.file);
+	audit_inode(NULL, f.file->f_path.dentry, 0);
 	error = getxattr(f.file->f_path.dentry, name, value, size);
 	fdput(f);
 	return error;
@@ -588,7 +590,7 @@ SYSCALL_DEFINE3(flistxattr, int, fd, char __user *, list, size_t, size)
 
 	if (!f.file)
 		return error;
-	audit_file(f.file);
+	audit_inode(NULL, f.file->f_path.dentry, 0);
 	error = listxattr(f.file->f_path.dentry, list, size);
 	fdput(f);
 	return error;
@@ -649,14 +651,16 @@ SYSCALL_DEFINE2(lremovexattr, const char __user *, pathname,
 SYSCALL_DEFINE2(fremovexattr, int, fd, const char __user *, name)
 {
 	struct fd f = fdget(fd);
+	struct dentry *dentry;
 	int error = -EBADF;
 
 	if (!f.file)
 		return error;
-	audit_file(f.file);
+	dentry = f.file->f_path.dentry;
+	audit_inode(NULL, dentry, 0);
 	error = mnt_want_write_file(f.file);
 	if (!error) {
-		error = removexattr(f.file->f_path.dentry, name);
+		error = removexattr(dentry, name);
 		mnt_drop_write_file(f.file);
 	}
 	fdput(f);
@@ -720,7 +724,7 @@ generic_getxattr(struct dentry *dentry, const char *name, void *buffer, size_t s
 	handler = xattr_resolve_name(dentry->d_sb->s_xattr, &name);
 	if (!handler)
 		return -EOPNOTSUPP;
-	return handler->get(handler, dentry, name, buffer, size);
+	return handler->get(dentry, name, buffer, size, handler->flags);
 }
 
 /*
@@ -735,15 +739,15 @@ generic_listxattr(struct dentry *dentry, char *buffer, size_t buffer_size)
 
 	if (!buffer) {
 		for_each_xattr_handler(handlers, handler) {
-			size += handler->list(handler, dentry, NULL, 0,
-					      NULL, 0);
+			size += handler->list(dentry, NULL, 0, NULL, 0,
+					      handler->flags);
 		}
 	} else {
 		char *buf = buffer;
 
 		for_each_xattr_handler(handlers, handler) {
-			size = handler->list(handler, dentry, buf, buffer_size,
-					     NULL, 0);
+			size = handler->list(dentry, buf, buffer_size,
+					     NULL, 0, handler->flags);
 			if (size > buffer_size)
 				return -ERANGE;
 			buf += size;
@@ -767,7 +771,7 @@ generic_setxattr(struct dentry *dentry, const char *name, const void *value, siz
 	handler = xattr_resolve_name(dentry->d_sb->s_xattr, &name);
 	if (!handler)
 		return -EOPNOTSUPP;
-	return handler->set(handler, dentry, name, value, size, flags);
+	return handler->set(dentry, name, value, size, flags, handler->flags);
 }
 
 /*
@@ -782,37 +786,14 @@ generic_removexattr(struct dentry *dentry, const char *name)
 	handler = xattr_resolve_name(dentry->d_sb->s_xattr, &name);
 	if (!handler)
 		return -EOPNOTSUPP;
-	return handler->set(handler, dentry, name, NULL, 0, XATTR_REPLACE);
+	return handler->set(dentry, name, NULL, 0,
+			    XATTR_REPLACE, handler->flags);
 }
 
 EXPORT_SYMBOL(generic_getxattr);
 EXPORT_SYMBOL(generic_listxattr);
 EXPORT_SYMBOL(generic_setxattr);
 EXPORT_SYMBOL(generic_removexattr);
-
-/**
- * xattr_full_name  -  Compute full attribute name from suffix
- *
- * @handler:	handler of the xattr_handler operation
- * @name:	name passed to the xattr_handler operation
- *
- * The get and set xattr handler operations are called with the remainder of
- * the attribute name after skipping the handler's prefix: for example, "foo"
- * is passed to the get operation of a handler with prefix "user." to get
- * attribute "user.foo".  The full name is still "there" in the name though.
- *
- * Note: the list xattr handler operation when called from the vfs is passed a
- * NULL name; some file systems use this operation internally, with varying
- * semantics.
- */
-const char *xattr_full_name(const struct xattr_handler *handler,
-			    const char *name)
-{
-	size_t prefix_len = strlen(handler->prefix);
-
-	return name - prefix_len;
-}
-EXPORT_SYMBOL(xattr_full_name);
 
 /*
  * Allocate new xattr and copy in the value; but leave the name to callers.

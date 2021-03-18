@@ -4,6 +4,8 @@
 #include <asm/metag_mem.h>
 
 #define nop()		asm volatile ("NOP")
+#define mb()		wmb()
+#define rmb()		barrier()
 
 #ifdef CONFIG_METAG_META21
 
@@ -39,13 +41,13 @@ static inline void wr_fence(void)
 
 #endif /* !CONFIG_METAG_META21 */
 
-/* flush writes through the write combiner */
-#define mb()		wr_fence()
-#define rmb()		barrier()
-#define wmb()		mb()
+static inline void wmb(void)
+{
+	/* flush writes through the write combiner */
+	wr_fence();
+}
 
-#define dma_rmb()	rmb()
-#define dma_wmb()	wmb()
+#define read_barrier_depends()  do { } while (0)
 
 #ifndef CONFIG_SMP
 #define fence()		do { } while (0)
@@ -80,22 +82,19 @@ static inline void fence(void)
 #define smp_wmb()       barrier()
 #endif
 #endif
-
-#define read_barrier_depends()		do { } while (0)
-#define smp_read_barrier_depends()	do { } while (0)
-
-#define smp_store_mb(var, value) do { WRITE_ONCE(var, value); smp_mb(); } while (0)
+#define smp_read_barrier_depends()     do { } while (0)
+#define set_mb(var, value) do { var = value; smp_mb(); } while (0)
 
 #define smp_store_release(p, v)						\
 do {									\
 	compiletime_assert_atomic_type(*p);				\
 	smp_mb();							\
-	WRITE_ONCE(*p, v);						\
+	ACCESS_ONCE(*p) = (v);						\
 } while (0)
 
 #define smp_load_acquire(p)						\
 ({									\
-	typeof(*p) ___p1 = READ_ONCE(*p);				\
+	typeof(*p) ___p1 = ACCESS_ONCE(*p);				\
 	compiletime_assert_atomic_type(*p);				\
 	smp_mb();							\
 	___p1;								\

@@ -230,9 +230,9 @@ getlog
 
 	cat getlog
 
-device_dump
-	This command is used to dump driver information and firmware memory
-	segments.
+fw_dump
+	This command is used to dump firmware memory into files.
+	Separate file will be created for each memory segment.
 	Usage:
 
 	cat fw_dump

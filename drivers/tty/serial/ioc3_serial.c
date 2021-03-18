@@ -2137,8 +2137,7 @@ ioc3uart_probe(struct ioc3_submodule *is, struct ioc3_driver_data *idd)
 
 	/* register port with the serial core */
 
-	ret = ioc3_serial_core_attach(is, idd);
-	if (ret)
+	if ((ret = ioc3_serial_core_attach(is, idd)))
 		goto out4;
 
 	Num_of_ioc3_cards++;

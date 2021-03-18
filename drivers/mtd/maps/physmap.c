@@ -167,6 +167,7 @@ static int physmap_flash_probe(struct platform_device *dev)
 		} else {
 			devices_found++;
 		}
+		info->mtd[i]->owner = THIS_MODULE;
 		info->mtd[i]->dev.parent = &dev->dev;
 	}
 
@@ -216,6 +217,7 @@ static struct platform_driver physmap_flash_driver = {
 	.shutdown	= physmap_flash_shutdown,
 	.driver		= {
 		.name	= "physmap-flash",
+		.owner	= THIS_MODULE,
 	},
 };
 

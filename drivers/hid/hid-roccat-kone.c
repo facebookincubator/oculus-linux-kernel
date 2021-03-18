@@ -46,7 +46,6 @@ static void kone_profile_activated(struct kone_device *kone, uint new_profile)
 static void kone_profile_report(struct kone_device *kone, uint new_profile)
 {
 	struct kone_roccat_report roccat_report;
-
 	roccat_report.event = kone_mouse_event_switch_profile;
 	roccat_report.value = new_profile;
 	roccat_report.key = 0;
@@ -164,7 +163,6 @@ static int kone_set_settings(struct usb_device *usb_dev,
 		struct kone_settings const *settings)
 {
 	int retval;
-
 	retval = kone_send(usb_dev, kone_command_settings,
 			settings, sizeof(struct kone_settings));
 	if (retval)
@@ -389,7 +387,7 @@ static struct bin_attribute bin_attr_profile##number = {	\
 	.read = kone_sysfs_read_profilex,			\
 	.write = kone_sysfs_write_profilex,			\
 	.private = &profile_numbers[number-1],			\
-}
+};
 PROFILE_ATTR(1);
 PROFILE_ATTR(2);
 PROFILE_ATTR(3);
@@ -458,7 +456,6 @@ static ssize_t kone_sysfs_show_tcu(struct device *dev,
 static int kone_tcu_command(struct usb_device *usb_dev, int number)
 {
 	unsigned char value;
-
 	value = number;
 	return kone_send(usb_dev, kone_command_calibrate, &value, 1);
 }
@@ -700,8 +697,10 @@ static int kone_init_specials(struct hid_device *hdev)
 			== USB_INTERFACE_PROTOCOL_MOUSE) {
 
 		kone = kzalloc(sizeof(*kone), GFP_KERNEL);
-		if (!kone)
+		if (!kone) {
+			hid_err(hdev, "can't alloc device descriptor\n");
 			return -ENOMEM;
+		}
 		hid_set_drvdata(hdev, kone);
 
 		retval = kone_init_kone_device_struct(usb_dev, kone);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -47,8 +47,6 @@
 									04 00];
 		qcom,adjust-timer-wakeup-ms = <1>;
 		qcom,mdss-dsi-reset-sequence = <1 10>, <0 10>, <1 10>;
-		qcom,mdss-pan-physical-width-dimension = <74>;
-		qcom,mdss-pan-physical-height-dimension = <131>;
 		qcom,mdss-dsi-t-clk-post = <0x0d>;
 		qcom,mdss-dsi-t-clk-pre = <0x2d>;
 		qcom,mdss-dsi-bl-max-level = <4095>;
@@ -86,8 +84,8 @@
 			05 01 00 00 a0 00 02 11 00
 			05 01 00 00 a0 00 02 29 00];
 
-		qcom,mdss-dsi-off-command = [05 01 00 00 0a 00 02 28 00
-			05 01 00 00 3c 00 02 10 00];
+		qcom,mdss-dsi-off-command = [05 01 00 00 78 00 02 28 00
+			05 01 00 00 78 00 02 10 00];
 
 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";

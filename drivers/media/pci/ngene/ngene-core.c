@@ -1526,12 +1526,10 @@ static int init_channel(struct ngene_channel *chan)
 	if (chan->fe2) {
 		if (dvb_register_frontend(adapter, chan->fe2) < 0)
 			goto err;
-		if (chan->fe) {
-			chan->fe2->tuner_priv = chan->fe->tuner_priv;
-			memcpy(&chan->fe2->ops.tuner_ops,
-			       &chan->fe->ops.tuner_ops,
-			       sizeof(struct dvb_tuner_ops));
-		}
+		chan->fe2->tuner_priv = chan->fe->tuner_priv;
+		memcpy(&chan->fe2->ops.tuner_ops,
+		       &chan->fe->ops.tuner_ops,
+		       sizeof(struct dvb_tuner_ops));
 	}
 
 	if (chan->has_demux) {

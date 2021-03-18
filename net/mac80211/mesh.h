@@ -207,9 +207,9 @@ struct mesh_rmc {
 /* Various */
 int ieee80211_fill_mesh_addresses(struct ieee80211_hdr *hdr, __le16 *fc,
 				  const u8 *da, const u8 *sa);
-unsigned int ieee80211_new_mesh_header(struct ieee80211_sub_if_data *sdata,
-				       struct ieee80211s_hdr *meshhdr,
-				       const char *addr4or5, const char *addr6);
+int ieee80211_new_mesh_header(struct ieee80211_sub_if_data *sdata,
+			      struct ieee80211s_hdr *meshhdr,
+			      const char *addr4or5, const char *addr6);
 int mesh_rmc_check(struct ieee80211_sub_if_data *sdata,
 		   const u8 *addr, struct ieee80211s_hdr *mesh_hdr);
 bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
@@ -227,10 +227,6 @@ int mesh_add_ht_cap_ie(struct ieee80211_sub_if_data *sdata,
 		       struct sk_buff *skb);
 int mesh_add_ht_oper_ie(struct ieee80211_sub_if_data *sdata,
 			struct sk_buff *skb);
-int mesh_add_vht_cap_ie(struct ieee80211_sub_if_data *sdata,
-			struct sk_buff *skb);
-int mesh_add_vht_oper_ie(struct ieee80211_sub_if_data *sdata,
-			 struct sk_buff *skb);
 void mesh_rmc_free(struct ieee80211_sub_if_data *sdata);
 int mesh_rmc_init(struct ieee80211_sub_if_data *sdata);
 void ieee80211s_init(void);
@@ -274,8 +270,6 @@ int mpp_path_add(struct ieee80211_sub_if_data *sdata,
 		 const u8 *dst, const u8 *mpp);
 struct mesh_path *
 mesh_path_lookup_by_idx(struct ieee80211_sub_if_data *sdata, int idx);
-struct mesh_path *
-mpp_path_lookup_by_idx(struct ieee80211_sub_if_data *sdata, int idx);
 void mesh_path_fix_nexthop(struct mesh_path *mpath, struct sta_info *next_hop);
 void mesh_path_expire(struct ieee80211_sub_if_data *sdata);
 void mesh_rx_path_sel_frame(struct ieee80211_sub_if_data *sdata,
@@ -323,7 +317,6 @@ void mesh_path_tx_root_frame(struct ieee80211_sub_if_data *sdata);
 
 bool mesh_action_is_path_sel(struct ieee80211_mgmt *mgmt);
 extern int mesh_paths_generation;
-extern int mpp_paths_generation;
 
 #ifdef CONFIG_MAC80211_MESH
 static inline

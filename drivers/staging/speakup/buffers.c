@@ -63,8 +63,7 @@ void synth_buffer_add(char ch)
 {
 	if (!synth->alive) {
 		/* This makes sure that we won't stop TTYs if there is no synth
-		 * to restart them
-		 */
+		 * to restart them */
 		return;
 	}
 	if (synth_buffer_free() <= 100) {
@@ -101,7 +100,6 @@ EXPORT_SYMBOL_GPL(synth_buffer_peek);
 
 void synth_buffer_clear(void)
 {
-	buff_in = synth_buffer;
-	buff_out = synth_buffer;
+	buff_in = buff_out = synth_buffer;
 }
 EXPORT_SYMBOL_GPL(synth_buffer_clear);

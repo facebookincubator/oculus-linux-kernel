@@ -2264,7 +2264,7 @@ static int capidrv_addcontr(u16 contr, struct capi_profile *profp)
 		return -1;
 	}
 	card->owner = THIS_MODULE;
-	setup_timer(&card->listentimer, listentimerfunc, (unsigned long)card);
+	init_timer(&card->listentimer);
 	strcpy(card->name, id);
 	card->contrnr = contr;
 	card->nbchan = profp->nbchannel;
@@ -2331,6 +2331,8 @@ static int capidrv_addcontr(u16 contr, struct capi_profile *profp)
 	card->cipmask = 0x1FFF03FF;	/* any */
 	card->cipmask2 = 0;
 
+	card->listentimer.data = (unsigned long)card;
+	card->listentimer.function = listentimerfunc;
 	send_listen(card);
 	mod_timer(&card->listentimer, jiffies + 60 * HZ);
 

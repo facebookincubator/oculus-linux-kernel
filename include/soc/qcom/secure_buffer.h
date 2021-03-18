@@ -37,7 +37,6 @@ enum vmid {
 	VMID_CP_APP = 0x12,
 	VMID_WLAN = 0x18,
 	VMID_WLAN_CE = 0x19,
-	VMID_CP_CAMERA_PREVIEW = 0x1D,
 	VMID_LAST,
 	VMID_INVAL = -1
 };
@@ -80,12 +79,11 @@ static inline int hyp_assign_phys(phys_addr_t addr, u64 size,
 {
 	return -ENOSYS;
 }
-
 static inline bool msm_secure_v2_is_supported(void)
 {
 	return false;
 }
-static inline const char *msm_secure_vmid_to_string(int secure_vmid)
+const char *msm_secure_vmid_to_string(int secure_vmid)
 {
 	return "N/A";
 }

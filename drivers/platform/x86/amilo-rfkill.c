@@ -138,6 +138,7 @@ static int amilo_rfkill_remove(struct platform_device *device)
 static struct platform_driver amilo_rfkill_driver = {
 	.driver = {
 		.name	= KBUILD_MODNAME,
+		.owner	= THIS_MODULE,
 	},
 	.probe	= amilo_rfkill_probe,
 	.remove	= amilo_rfkill_remove,

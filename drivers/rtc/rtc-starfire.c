@@ -54,6 +54,7 @@ static int __init starfire_rtc_probe(struct platform_device *pdev)
 static struct platform_driver starfire_rtc_driver = {
 	.driver		= {
 		.name	= "rtc-starfire",
+		.owner	= THIS_MODULE,
 	},
 };
 

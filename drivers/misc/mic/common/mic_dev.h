@@ -21,19 +21,6 @@
 #ifndef __MIC_DEV_H__
 #define __MIC_DEV_H__
 
-/* The maximum number of MIC devices supported in a single host system. */
-#define MIC_MAX_NUM_DEVS 128
-
-/**
- * enum mic_hw_family - The hardware family to which a device belongs.
- */
-enum mic_hw_family {
-	MIC_FAMILY_X100 = 0,
-	MIC_FAMILY_X200,
-	MIC_FAMILY_UNKNOWN,
-	MIC_FAMILY_LAST
-};
-
 /**
  * struct mic_mw - MIC memory window
  *
@@ -60,8 +47,5 @@ struct mic_mw {
  */
 #define MIC_VIRTIO_PARAM_DEV_REMOVE 0x1
 #define MIC_VIRTIO_PARAM_CONFIG_CHANGED 0x2
-
-/* Maximum number of DMA channels */
-#define MIC_MAX_DMA_CHAN 4
 
 #endif

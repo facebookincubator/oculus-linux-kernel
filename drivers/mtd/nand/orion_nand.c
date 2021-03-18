@@ -19,7 +19,7 @@
 #include <linux/mtd/partitions.h>
 #include <linux/clk.h>
 #include <linux/err.h>
-#include <linux/io.h>
+#include <asm/io.h>
 #include <asm/sizes.h>
 #include <linux/platform_data/mtd-orion_nand.h>
 
@@ -85,24 +85,33 @@ static int __init orion_nand_probe(struct platform_device *pdev)
 	int ret = 0;
 	u32 val = 0;
 
-	nc = devm_kzalloc(&pdev->dev,
-			sizeof(struct nand_chip) + sizeof(struct mtd_info),
-			GFP_KERNEL);
-	if (!nc)
-		return -ENOMEM;
+	nc = kzalloc(sizeof(struct nand_chip) + sizeof(struct mtd_info), GFP_KERNEL);
+	if (!nc) {
+		ret = -ENOMEM;
+		goto no_res;
+	}
 	mtd = (struct mtd_info *)(nc + 1);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	io_base = devm_ioremap_resource(&pdev->dev, res);
+	if (!res) {
+		ret = -ENODEV;
+		goto no_res;
+	}
 
-	if (IS_ERR(io_base))
-		return PTR_ERR(io_base);
+	io_base = ioremap(res->start, resource_size(res));
+	if (!io_base) {
+		dev_err(&pdev->dev, "ioremap failed\n");
+		ret = -EIO;
+		goto no_res;
+	}
 
 	if (pdev->dev.of_node) {
 		board = devm_kzalloc(&pdev->dev, sizeof(struct orion_nand_data),
 					GFP_KERNEL);
-		if (!board)
-			return -ENOMEM;
+		if (!board) {
+			ret = -ENOMEM;
+			goto no_res;
+		}
 		if (!of_property_read_u32(pdev->dev.of_node, "cle", &val))
 			board->cle = (u8)val;
 		else
@@ -124,7 +133,7 @@ static int __init orion_nand_probe(struct platform_device *pdev)
 	}
 
 	mtd->priv = nc;
-	mtd->dev.parent = &pdev->dev;
+	mtd->owner = THIS_MODULE;
 
 	nc->priv = board;
 	nc->IO_ADDR_R = nc->IO_ADDR_W = io_base;
@@ -176,6 +185,9 @@ no_dev:
 		clk_disable_unprepare(clk);
 		clk_put(clk);
 	}
+	iounmap(io_base);
+no_res:
+	kfree(nc);
 
 	return ret;
 }
@@ -183,9 +195,14 @@ no_dev:
 static int orion_nand_remove(struct platform_device *pdev)
 {
 	struct mtd_info *mtd = platform_get_drvdata(pdev);
+	struct nand_chip *nc = mtd->priv;
 	struct clk *clk;
 
 	nand_release(mtd);
+
+	iounmap(nc->IO_ADDR_W);
+
+	kfree(nc);
 
 	clk = clk_get(&pdev->dev, NULL);
 	if (!IS_ERR(clk)) {
@@ -201,13 +218,13 @@ static const struct of_device_id orion_nand_of_match_table[] = {
 	{ .compatible = "marvell,orion-nand", },
 	{},
 };
-MODULE_DEVICE_TABLE(of, orion_nand_of_match_table);
 #endif
 
 static struct platform_driver orion_nand_driver = {
 	.remove		= orion_nand_remove,
 	.driver		= {
 		.name	= "orion_nand",
+		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(orion_nand_of_match_table),
 	},
 };

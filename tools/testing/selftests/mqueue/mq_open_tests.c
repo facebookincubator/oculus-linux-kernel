@@ -31,7 +31,6 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <mqueue.h>
-#include <error.h>
 
 static char *usage =
 "Usage:\n"

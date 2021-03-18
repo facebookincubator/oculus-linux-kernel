@@ -39,7 +39,6 @@ EXPORT_SYMBOL_GPL(pkey_algo);
 const char *const pkey_id_type_name[PKEY_ID_TYPE__LAST] = {
 	[PKEY_ID_PGP]		= "PGP",
 	[PKEY_ID_X509]		= "X509",
-	[PKEY_ID_PKCS7]		= "PKCS#7",
 };
 EXPORT_SYMBOL_GPL(pkey_id_type_name);
 
@@ -49,7 +48,7 @@ EXPORT_SYMBOL_GPL(pkey_id_type_name);
 static void public_key_describe(const struct key *asymmetric_key,
 				struct seq_file *m)
 {
-	struct public_key *key = asymmetric_key->payload.data[asym_crypto];
+	struct public_key *key = asymmetric_key->payload.data;
 
 	if (key)
 		seq_printf(m, "%s.%s",
@@ -112,7 +111,7 @@ EXPORT_SYMBOL_GPL(public_key_verify_signature);
 static int public_key_verify_signature_2(const struct key *key,
 					 const struct public_key_signature *sig)
 {
-	const struct public_key *pk = key->payload.data[asym_crypto];
+	const struct public_key *pk = key->payload.data;
 	return public_key_verify_signature(pk, sig);
 }
 

@@ -322,14 +322,13 @@ mwifiex_get_cfp(struct mwifiex_private *priv, u8 band, u16 channel, u32 freq)
 		return cfp;
 
 	if (mwifiex_band_to_radio_type(band) == HostCmd_SCAN_RADIO_TYPE_BG)
-		sband = priv->wdev.wiphy->bands[IEEE80211_BAND_2GHZ];
+		sband = priv->wdev->wiphy->bands[IEEE80211_BAND_2GHZ];
 	else
-		sband = priv->wdev.wiphy->bands[IEEE80211_BAND_5GHZ];
+		sband = priv->wdev->wiphy->bands[IEEE80211_BAND_5GHZ];
 
 	if (!sband) {
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "%s: cannot find cfp by band %d\n",
-			    __func__, band);
+		dev_err(priv->adapter->dev, "%s: cannot find cfp by band %d\n",
+			__func__, band);
 		return cfp;
 	}
 
@@ -350,10 +349,9 @@ mwifiex_get_cfp(struct mwifiex_private *priv, u8 band, u16 channel, u32 freq)
 		}
 	}
 	if (i == sband->n_channels) {
-		mwifiex_dbg(priv->adapter, ERROR,
-			    "%s: cannot find cfp by band %d\t"
-			    "& channel=%d freq=%d\n",
-			    __func__, band, channel, freq);
+		dev_err(priv->adapter->dev, "%s: cannot find cfp by band %d"
+			" & channel=%d freq=%d\n", __func__, band, channel,
+			freq);
 	} else {
 		if (!ch)
 			return cfp;
@@ -433,17 +431,15 @@ u32 mwifiex_get_supported_rates(struct mwifiex_private *priv, u8 *rates)
 	    priv->bss_mode == NL80211_IFTYPE_P2P_CLIENT) {
 		switch (adapter->config_bands) {
 		case BAND_B:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_b\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_b\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_b,
 					       sizeof(supported_rates_b));
 			break;
 		case BAND_G:
 		case BAND_G | BAND_GN:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_g\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_g\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_g,
 					       sizeof(supported_rates_g));
 			break;
@@ -453,17 +449,15 @@ u32 mwifiex_get_supported_rates(struct mwifiex_private *priv, u8 *rates)
 		case BAND_A | BAND_B | BAND_G | BAND_GN | BAND_AN:
 		case BAND_A | BAND_B | BAND_G | BAND_GN | BAND_AN | BAND_AAC:
 		case BAND_B | BAND_G | BAND_GN:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_bg\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_bg\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_bg,
 					       sizeof(supported_rates_bg));
 			break;
 		case BAND_A:
 		case BAND_A | BAND_G:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_a\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_a\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_a,
 					       sizeof(supported_rates_a));
 			break;
@@ -472,16 +466,14 @@ u32 mwifiex_get_supported_rates(struct mwifiex_private *priv, u8 *rates)
 		case BAND_A | BAND_AN | BAND_AAC:
 		case BAND_A | BAND_G | BAND_AN | BAND_GN:
 		case BAND_A | BAND_G | BAND_AN | BAND_GN | BAND_AAC:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_a\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_a\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_a,
 					       sizeof(supported_rates_a));
 			break;
 		case BAND_GN:
-			mwifiex_dbg(adapter, INFO, "info: infra band=%d\t"
-				    "supported_rates_n\n",
-				    adapter->config_bands);
+			dev_dbg(adapter->dev, "info: infra band=%d "
+				"supported_rates_n\n", adapter->config_bands);
 			k = mwifiex_copy_rates(rates, k, supported_rates_n,
 					       sizeof(supported_rates_n));
 			break;
@@ -490,25 +482,25 @@ u32 mwifiex_get_supported_rates(struct mwifiex_private *priv, u8 *rates)
 		/* Ad-hoc mode */
 		switch (adapter->adhoc_start_band) {
 		case BAND_B:
-			mwifiex_dbg(adapter, INFO, "info: adhoc B\n");
+			dev_dbg(adapter->dev, "info: adhoc B\n");
 			k = mwifiex_copy_rates(rates, k, adhoc_rates_b,
 					       sizeof(adhoc_rates_b));
 			break;
 		case BAND_G:
 		case BAND_G | BAND_GN:
-			mwifiex_dbg(adapter, INFO, "info: adhoc G only\n");
+			dev_dbg(adapter->dev, "info: adhoc G only\n");
 			k = mwifiex_copy_rates(rates, k, adhoc_rates_g,
 					       sizeof(adhoc_rates_g));
 			break;
 		case BAND_B | BAND_G:
 		case BAND_B | BAND_G | BAND_GN:
-			mwifiex_dbg(adapter, INFO, "info: adhoc BG\n");
+			dev_dbg(adapter->dev, "info: adhoc BG\n");
 			k = mwifiex_copy_rates(rates, k, adhoc_rates_bg,
 					       sizeof(adhoc_rates_bg));
 			break;
 		case BAND_A:
 		case BAND_A | BAND_AN:
-			mwifiex_dbg(adapter, INFO, "info: adhoc A\n");
+			dev_dbg(adapter->dev, "info: adhoc A\n");
 			k = mwifiex_copy_rates(rates, k, adhoc_rates_a,
 					       sizeof(adhoc_rates_a));
 			break;
@@ -516,22 +508,4 @@ u32 mwifiex_get_supported_rates(struct mwifiex_private *priv, u8 *rates)
 	}
 
 	return k;
-}
-
-u8 mwifiex_adjust_data_rate(struct mwifiex_private *priv,
-			    u8 rx_rate, u8 rate_info)
-{
-	u8 rate_index = 0;
-
-	/* HT40 */
-	if ((rate_info & BIT(0)) && (rate_info & BIT(1)))
-		rate_index = MWIFIEX_RATE_INDEX_MCS0 +
-			     MWIFIEX_BW20_MCS_NUM + rx_rate;
-	else if (rate_info & BIT(0)) /* HT20 */
-		rate_index = MWIFIEX_RATE_INDEX_MCS0 + rx_rate;
-	else
-		rate_index = (rx_rate > MWIFIEX_RATE_INDEX_OFDM0) ?
-			      rx_rate - 1 : rx_rate;
-
-	return rate_index;
 }

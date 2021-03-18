@@ -103,7 +103,7 @@ static Dwarf_Frame *get_eh_frame(Dwfl_Module *mod, Dwarf_Addr pc)
 		return NULL;
 	}
 
-	result = dwarf_cfi_addrframe(cfi, pc-bias, &frame);
+	result = dwarf_cfi_addrframe(cfi, pc, &frame);
 	if (result) {
 		pr_debug("%s(): %s\n", __func__, dwfl_errmsg(-1));
 		return NULL;
@@ -128,7 +128,7 @@ static Dwarf_Frame *get_dwarf_frame(Dwfl_Module *mod, Dwarf_Addr pc)
 		return NULL;
 	}
 
-	result = dwarf_cfi_addrframe(cfi, pc-bias, &frame);
+	result = dwarf_cfi_addrframe(cfi, pc, &frame);
 	if (result) {
 		pr_debug("%s(): %s\n", __func__, dwfl_errmsg(-1));
 		return NULL;
@@ -145,7 +145,7 @@ static Dwarf_Frame *get_dwarf_frame(Dwfl_Module *mod, Dwarf_Addr pc)
  *		yet used)
  *	-1 in case of errors
  */
-static int check_return_addr(struct dso *dso, u64 map_start, Dwarf_Addr pc)
+static int check_return_addr(const char *exec_file, Dwarf_Addr pc)
 {
 	int		rc = -1;
 	Dwfl		*dwfl;
@@ -155,31 +155,16 @@ static int check_return_addr(struct dso *dso, u64 map_start, Dwarf_Addr pc)
 	Dwarf_Addr	start = pc;
 	Dwarf_Addr	end = pc;
 	bool		signalp;
-	const char	*exec_file = dso->long_name;
 
-	dwfl = dso->dwfl;
-
+	dwfl = dwfl_begin(&offline_callbacks);
 	if (!dwfl) {
-		dwfl = dwfl_begin(&offline_callbacks);
-		if (!dwfl) {
-			pr_debug("dwfl_begin() failed: %s\n", dwarf_errmsg(-1));
-			return -1;
-		}
+		pr_debug("dwfl_begin() failed: %s\n", dwarf_errmsg(-1));
+		return -1;
+	}
 
-		mod = dwfl_report_elf(dwfl, exec_file, exec_file, -1,
-						map_start, false);
-		if (!mod) {
-			pr_debug("dwfl_report_elf() failed %s\n",
-						dwarf_errmsg(-1));
-			/*
-			 * We normally cache the DWARF debug info and never
-			 * call dwfl_end(). But to prevent fd leak, free in
-			 * case of error.
-			 */
-			dwfl_end(dwfl);
-			goto out;
-		}
-		dso->dwfl = dwfl;
+	if (dwfl_report_offline(dwfl, "",  exec_file, -1) == NULL) {
+		pr_debug("dwfl_report_offline() failed %s\n", dwarf_errmsg(-1));
+		goto out;
 	}
 
 	mod = dwfl_addrmodule(dwfl, pc);
@@ -209,6 +194,7 @@ static int check_return_addr(struct dso *dso, u64 map_start, Dwarf_Addr pc)
 	rc = check_return_reg(ra_regno, frame);
 
 out:
+	dwfl_end(dwfl);
 	return rc;
 }
 
@@ -235,7 +221,8 @@ out:
  *	index:	of callchain entry that needs to be ignored (if any)
  *	-1	if no entry needs to be ignored or in case of errors
  */
-int arch_skip_callchain_idx(struct thread *thread, struct ip_callchain *chain)
+int arch_skip_callchain_idx(struct machine *machine, struct thread *thread,
+				struct ip_callchain *chain)
 {
 	struct addr_location al;
 	struct dso *dso = NULL;
@@ -248,7 +235,7 @@ int arch_skip_callchain_idx(struct thread *thread, struct ip_callchain *chain)
 
 	ip = chain->ips[2];
 
-	thread__find_addr_location(thread, PERF_RECORD_MISC_USER,
+	thread__find_addr_location(thread, machine, PERF_RECORD_MISC_USER,
 			MAP__FUNCTION, ip, &al);
 
 	if (al.map)
@@ -259,10 +246,10 @@ int arch_skip_callchain_idx(struct thread *thread, struct ip_callchain *chain)
 		return skip_slot;
 	}
 
-	rc = check_return_addr(dso, al.map->start, ip);
+	rc = check_return_addr(dso->long_name, ip);
 
-	pr_debug("[DSO %s, sym %s, ip 0x%" PRIx64 "] rc %d\n",
-				dso->long_name, al.sym->name, ip, rc);
+	pr_debug("DSO %s, nr %" PRIx64 ", ip 0x%" PRIx64 "rc %d\n",
+				dso->long_name, chain->nr, ip, rc);
 
 	if (rc == 0) {
 		/*

@@ -37,7 +37,6 @@
 #include <asm/pgtable.h>
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/smp_twd.h>
-#include <asm/system_info.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -234,7 +233,7 @@ static struct resource realview_eb_eth_resources[] = {
 	[1] = {
 		.start		= IRQ_EB_ETH,
 		.end		= IRQ_EB_ETH,
-		.flags		= IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE,
+		.flags		= IORESOURCE_IRQ,
 	},
 };
 
@@ -297,6 +296,7 @@ static struct resource pmu_resources[] = {
 };
 
 static struct platform_device pmu_device = {
+	.name			= "arm-pmu",
 	.id			= -1,
 	.num_resources		= ARRAY_SIZE(pmu_resources),
 	.resource		= pmu_resources,
@@ -451,7 +451,6 @@ static void __init realview_eb_init(void)
 		 */
 		l2x0_init(__io_address(REALVIEW_EB11MP_L220_BASE), 0x00790000, 0xfe000fff);
 #endif
-		pmu_device.name = core_tile_a9mp() ? "armv7-pmu" : "armv6-pmu";
 		platform_device_register(&pmu_device);
 	}
 

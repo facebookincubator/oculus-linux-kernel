@@ -218,14 +218,13 @@ static int update_netprio(const void *v, struct file *file, unsigned n)
 	return 0;
 }
 
-static void net_prio_attach(struct cgroup_taskset *tset)
+static void net_prio_attach(struct cgroup_subsys_state *css,
+			    struct cgroup_taskset *tset)
 {
 	struct task_struct *p;
-	struct cgroup_subsys_state *css;
+	void *v = (void *)(unsigned long)css->cgroup->id;
 
-	cgroup_taskset_for_each(p, css, tset) {
-		void *v = (void *)(unsigned long)css->cgroup->id;
-
+	cgroup_taskset_for_each(p, tset) {
 		task_lock(p);
 		iterate_fd(p->files, 0, update_netprio, v);
 		task_unlock(p);

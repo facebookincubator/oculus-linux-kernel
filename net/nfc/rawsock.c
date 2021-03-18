@@ -211,7 +211,8 @@ static void rawsock_tx_work(struct work_struct *work)
 	}
 }
 
-static int rawsock_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
+static int rawsock_sendmsg(struct kiocb *iocb, struct socket *sock,
+			   struct msghdr *msg, size_t len)
 {
 	struct sock *sk = sock->sk;
 	struct nfc_dev *dev = nfc_rawsock(sk)->dev;
@@ -230,7 +231,7 @@ static int rawsock_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	if (skb == NULL)
 		return rc;
 
-	rc = memcpy_from_msg(skb_put(skb, len), msg, len);
+	rc = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
 	if (rc < 0) {
 		kfree_skb(skb);
 		return rc;
@@ -247,8 +248,8 @@ static int rawsock_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	return len;
 }
 
-static int rawsock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
-			   int flags)
+static int rawsock_recvmsg(struct kiocb *iocb, struct socket *sock,
+			   struct msghdr *msg, size_t len, int flags)
 {
 	int noblock = flags & MSG_DONTWAIT;
 	struct sock *sk = sock->sk;
@@ -268,7 +269,7 @@ static int rawsock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 		copied = len;
 	}
 
-	rc = skb_copy_datagram_msg(skb, 0, msg, copied);
+	rc = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
 
 	skb_free_datagram(sk, skb);
 
@@ -321,8 +322,7 @@ static void rawsock_destruct(struct sock *sk)
 
 	if (sk->sk_state == TCP_ESTABLISHED) {
 		nfc_deactivate_target(nfc_rawsock(sk)->dev,
-				      nfc_rawsock(sk)->target_idx,
-				      NFC_TARGET_MODE_IDLE);
+				      nfc_rawsock(sk)->target_idx);
 		nfc_put_device(nfc_rawsock(sk)->dev);
 	}
 
@@ -335,7 +335,7 @@ static void rawsock_destruct(struct sock *sk)
 }
 
 static int rawsock_create(struct net *net, struct socket *sock,
-			  const struct nfc_protocol *nfc_proto, int kern)
+			  const struct nfc_protocol *nfc_proto)
 {
 	struct sock *sk;
 
@@ -349,7 +349,7 @@ static int rawsock_create(struct net *net, struct socket *sock,
 	else
 		sock->ops = &rawsock_ops;
 
-	sk = sk_alloc(net, PF_NFC, GFP_ATOMIC, nfc_proto->proto, kern);
+	sk = sk_alloc(net, PF_NFC, GFP_ATOMIC, nfc_proto->proto);
 	if (!sk)
 		return -ENOMEM;
 

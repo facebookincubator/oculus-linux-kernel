@@ -1,0 +1,46 @@
+comment "Collection of Oculus Driver"
+menu "Oculus Drivers"
+
+config MISCFIFO
+	tristate "miscfifo chardev driver"
+	default n
+	---help---
+	  Like seqfile, this driver provides file operations to
+	  easily implement a chardev backed by a kfifo.
+
+	  Drivers using this chardev only have to call one of the
+	  send() functions to deliver events to userspace.
+
+config MISCFIFO_SAMPLE
+	tristate "miscfifo chardev driver example"
+	default n
+	---help---
+	  Example usage of miscfifo chardev driver
+
+config OCULUS_MINISENSOR_SPI
+	tristate "Mini sensor kernel driver"
+	default n
+	depends on OF
+	depends on SPI
+	depends on SYSFS
+	depends on MISCFIFO
+	---help---
+	  Kernel portion of sensor driver that implement a simple API.
+	  This driver implements a thin interface that handles I/O, interrupts and
+	  time-stamping.  The bulk of the driver implementation / state management
+	  specific to the sensor device will be in userspace.
+
+config OCULUS_LIS2MDL_I2C
+	tristate "Thin ST LIS2MDL Mag Driver (Oculus Version)"
+	default n
+	depends on OF
+	depends on I2C
+	depends on SYSFS
+	depends on MISCFIFO
+	---help---
+	  Kernel portion of ST LIS2MDL Magnetometer driver
+	  This driver implements a thin interface that handles I/O, interrupts and
+	  time-stamping.  The bulk of the driver implementation / state management
+	  will be in userspace.
+
+endmenu

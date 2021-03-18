@@ -11,14 +11,6 @@
 	.text;			\
 	.align 4;
 
-#define EX_LD_FP(x)		\
-98:	x;			\
-	.section __ex_table,"a";\
-	.align 4;		\
-	.word 98b, __retl_one_asi_fp;\
-	.text;			\
-	.align 4;
-
 #ifndef ASI_AIUS
 #define ASI_AIUS	0x11
 #endif

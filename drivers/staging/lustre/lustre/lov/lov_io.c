@@ -51,7 +51,6 @@ static inline void lov_sub_enter(struct lov_io_sub *sub)
 {
 	sub->sub_reenter++;
 }
-
 static inline void lov_sub_exit(struct lov_io_sub *sub)
 {
 	sub->sub_reenter--;
@@ -71,7 +70,7 @@ static void lov_io_sub_fini(const struct lu_env *env, struct lov_io *lio,
 		if (sub->sub_stripe == lio->lis_single_subio_index)
 			lio->lis_single_subio_index = -1;
 		else if (!sub->sub_borrowed)
-			kfree(sub->sub_io);
+			OBD_FREE_PTR(sub->sub_io);
 		sub->sub_io = NULL;
 	}
 	if (sub->sub_env != NULL && !IS_ERR(sub->sub_env)) {
@@ -91,6 +90,7 @@ static void lov_io_sub_inherit(struct cl_io *io, struct lov_io *lio,
 	case CIT_SETATTR: {
 		io->u.ci_setattr.sa_attr = parent->u.ci_setattr.sa_attr;
 		io->u.ci_setattr.sa_valid = parent->u.ci_setattr.sa_valid;
+		io->u.ci_setattr.sa_capa = parent->u.ci_setattr.sa_capa;
 		if (cl_io_is_trunc(io)) {
 			loff_t new_size = parent->u.ci_setattr.sa_attr.lvb_size;
 
@@ -111,6 +111,7 @@ static void lov_io_sub_inherit(struct cl_io *io, struct lov_io *lio,
 	case CIT_FSYNC: {
 		io->u.ci_fsync.fi_start = start;
 		io->u.ci_fsync.fi_end = end;
+		io->u.ci_fsync.fi_capa = parent->u.ci_fsync.fi_capa;
 		io->u.ci_fsync.fi_fid = parent->u.ci_fsync.fi_fid;
 		io->u.ci_fsync.fi_mode = parent->u.ci_fsync.fi_mode;
 		break;
@@ -147,9 +148,6 @@ static int lov_io_sub_init(const struct lu_env *env, struct lov_io *lio,
 	LASSERT(sub->sub_env == NULL);
 	LASSERT(sub->sub_stripe < lio->lis_stripe_count);
 
-	if (unlikely(lov_r0(lov)->lo_sub[stripe] == NULL))
-		return -EIO;
-
 	result = 0;
 	sub->sub_io_initialized = 0;
 	sub->sub_borrowed = 0;
@@ -178,9 +176,8 @@ static int lov_io_sub_init(const struct lu_env *env, struct lov_io *lio,
 				sub->sub_io = &lio->lis_single_subio;
 				lio->lis_single_subio_index = stripe;
 			} else {
-				sub->sub_io = kzalloc(sizeof(*sub->sub_io),
-						      GFP_NOFS);
-				if (!sub->sub_io)
+				OBD_ALLOC_PTR(sub->sub_io);
+				if (sub->sub_io == NULL)
 					result = -ENOMEM;
 			}
 		}
@@ -272,6 +269,7 @@ struct lov_io_sub *lov_page_subio(const struct lu_env *env, struct lov_io *lio,
 	return lov_sub_get(env, lio, stripe);
 }
 
+
 static int lov_io_subio_init(const struct lu_env *env, struct lov_io *lio,
 			     struct cl_io *io)
 {
@@ -284,10 +282,8 @@ static int lov_io_subio_init(const struct lu_env *env, struct lov_io *lio,
 	 * Need to be optimized, we can't afford to allocate a piece of memory
 	 * when writing a page. -jay
 	 */
-	lio->lis_subs =
-		libcfs_kvzalloc(lsm->lsm_stripe_count *
-				sizeof(lio->lis_subs[0]),
-				GFP_NOFS);
+	OBD_ALLOC_LARGE(lio->lis_subs,
+			lsm->lsm_stripe_count * sizeof(lio->lis_subs[0]));
 	if (lio->lis_subs != NULL) {
 		lio->lis_nr_subios = lio->lis_stripe_count;
 		lio->lis_single_subio_index = -1;
@@ -330,7 +326,6 @@ static void lov_io_slice_init(struct lov_io *lio,
 
 	case CIT_FAULT: {
 		pgoff_t index = io->u.ci_fault.ft_index;
-
 		lio->lis_pos = cl_offset(io->ci_obj, index);
 		lio->lis_endpos = cl_offset(io->ci_obj, index + 1);
 		break;
@@ -361,7 +356,8 @@ static void lov_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 	if (lio->lis_subs != NULL) {
 		for (i = 0; i < lio->lis_nr_subios; i++)
 			lov_io_sub_fini(env, lio, &lio->lis_subs[i]);
-		kvfree(lio->lis_subs);
+		OBD_FREE_LARGE(lio->lis_subs,
+			 lio->lis_nr_subios * sizeof(lio->lis_subs[0]));
 		lio->lis_nr_subios = 0;
 	}
 
@@ -395,16 +391,7 @@ static int lov_io_iter_init(const struct lu_env *env,
 					   endpos, &start, &end))
 			continue;
 
-		if (unlikely(lov_r0(lio->lis_object)->lo_sub[stripe] == NULL)) {
-			if (ios->cis_io->ci_type == CIT_READ ||
-			    ios->cis_io->ci_type == CIT_WRITE ||
-			    ios->cis_io->ci_type == CIT_FAULT)
-				return -EIO;
-
-			continue;
-		}
-
-		end = lov_offset_mod(end, 1);
+		end = lov_offset_mod(end, +1);
 		sub = lov_sub_get(env, lio, stripe);
 		if (!IS_ERR(sub)) {
 			lov_io_sub_inherit(sub->sub_io, lio, stripe,
@@ -545,6 +532,7 @@ static void lov_io_unlock(const struct lu_env *env,
 	LASSERT(rc == 0);
 }
 
+
 static struct cl_page_list *lov_io_submit_qin(struct lov_device *ld,
 					      struct cl_page_list *qin,
 					      int idx, int alloc)
@@ -603,10 +591,8 @@ static int lov_io_submit(const struct lu_env *env,
 
 	LASSERT(lio->lis_subs != NULL);
 	if (alloc) {
-		stripes_qin =
-			libcfs_kvzalloc(sizeof(*stripes_qin) *
-					lio->lis_nr_subios,
-					GFP_NOFS);
+		OBD_ALLOC_LARGE(stripes_qin,
+				sizeof(*stripes_qin) * lio->lis_nr_subios);
 		if (stripes_qin == NULL)
 			return -ENOMEM;
 
@@ -659,7 +645,8 @@ static int lov_io_submit(const struct lu_env *env,
 	}
 
 	if (alloc) {
-		kvfree(stripes_qin);
+		OBD_FREE_LARGE(stripes_qin,
+			 sizeof(*stripes_qin) * lio->lis_nr_subios);
 	} else {
 		int i;
 
@@ -727,8 +714,6 @@ static int lov_io_fault_start(const struct lu_env *env,
 	fio = &ios->cis_io->u.ci_fault;
 	lio = cl2lov_io(env, ios);
 	sub = lov_sub_get(env, lio, lov_page_stripe(fio->ft_page));
-	if (IS_ERR(sub))
-		return PTR_ERR(sub);
 	sub->sub_io->u.ci_fault.ft_nob = fio->ft_nob;
 	lov_sub_put(sub);
 	return lov_io_start(env, ios);
@@ -928,7 +913,7 @@ int lov_io_init_empty(const struct lu_env *env, struct cl_object *obj,
 		break;
 	case CIT_FSYNC:
 	case CIT_SETATTR:
-		result = 1;
+		result = +1;
 		break;
 	case CIT_WRITE:
 		result = -EBADF;
@@ -990,5 +975,4 @@ int lov_io_init_released(const struct lu_env *env, struct cl_object *obj,
 	io->ci_result = result < 0 ? result : 0;
 	return result != 0;
 }
-
 /** @} lov */

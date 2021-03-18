@@ -22,8 +22,7 @@
 	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
 
 	chosen {
-		bootargs = "earlyprintk";
-		stdout-path = "serial0:115200n8";
+		bootargs = "console=ttyS0,115200";
 	};
 
 	memory {

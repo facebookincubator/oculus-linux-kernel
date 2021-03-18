@@ -296,6 +296,7 @@ static int au1xpsc_i2s_drvprobe(struct platform_device *pdev)
 {
 	struct resource *iores, *dmares;
 	unsigned long sel;
+	int ret;
 	struct au1xpsc_audio_data *wd;
 
 	wd = devm_kzalloc(&pdev->dev, sizeof(struct au1xpsc_audio_data),
@@ -304,9 +305,19 @@ static int au1xpsc_i2s_drvprobe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	iores = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	wd->mmio = devm_ioremap_resource(&pdev->dev, iores);
-	if (IS_ERR(wd->mmio))
-		return PTR_ERR(wd->mmio);
+	if (!iores)
+		return -ENODEV;
+
+	ret = -EBUSY;
+	if (!devm_request_mem_region(&pdev->dev, iores->start,
+				     resource_size(iores),
+				     pdev->name))
+		return -EBUSY;
+
+	wd->mmio = devm_ioremap(&pdev->dev, iores->start,
+				resource_size(iores));
+	if (!wd->mmio)
+		return -EBUSY;
 
 	dmares = platform_get_resource(pdev, IORESOURCE_DMA, 0);
 	if (!dmares)
@@ -408,6 +419,7 @@ static struct dev_pm_ops au1xpsci2s_pmops = {
 static struct platform_driver au1xpsc_i2s_driver = {
 	.driver		= {
 		.name	= "au1xpsc_i2s",
+		.owner	= THIS_MODULE,
 		.pm	= AU1XPSCI2S_PMOPS,
 	},
 	.probe		= au1xpsc_i2s_drvprobe,

@@ -31,7 +31,8 @@
 #include "nouveau_crtc.h"
 
 static void
-nouveau_dp_probe_oui(struct drm_device *dev, struct nvkm_i2c_aux *aux, u8 *dpcd)
+nouveau_dp_probe_oui(struct drm_device *dev, struct nouveau_i2c_port *auxch,
+		     u8 *dpcd)
 {
 	struct nouveau_drm *drm = nouveau_drm(dev);
 	u8 buf[3];
@@ -39,11 +40,11 @@ nouveau_dp_probe_oui(struct drm_device *dev, struct nvkm_i2c_aux *aux, u8 *dpcd)
 	if (!(dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_OUI_SUPPORT))
 		return;
 
-	if (!nvkm_rdaux(aux, DP_SINK_OUI, buf, 3))
+	if (!nv_rdaux(auxch, DP_SINK_OUI, buf, 3))
 		NV_DEBUG(drm, "Sink OUI: %02hx%02hx%02hx\n",
 			     buf[0], buf[1], buf[2]);
 
-	if (!nvkm_rdaux(aux, DP_BRANCH_OUI, buf, 3))
+	if (!nv_rdaux(auxch, DP_BRANCH_OUI, buf, 3))
 		NV_DEBUG(drm, "Branch OUI: %02hx%02hx%02hx\n",
 			     buf[0], buf[1], buf[2]);
 
@@ -54,15 +55,15 @@ nouveau_dp_detect(struct nouveau_encoder *nv_encoder)
 {
 	struct drm_device *dev = nv_encoder->base.base.dev;
 	struct nouveau_drm *drm = nouveau_drm(dev);
-	struct nvkm_i2c_aux *aux;
+	struct nouveau_i2c_port *auxch;
 	u8 *dpcd = nv_encoder->dp.dpcd;
 	int ret;
 
-	aux = nv_encoder->aux;
-	if (!aux)
+	auxch = nv_encoder->i2c;
+	if (!auxch)
 		return -ENODEV;
 
-	ret = nvkm_rdaux(aux, DP_DPCD_REV, dpcd, 8);
+	ret = nv_rdaux(auxch, DP_DPCD_REV, dpcd, 8);
 	if (ret)
 		return ret;
 
@@ -83,6 +84,6 @@ nouveau_dp_detect(struct nouveau_encoder *nv_encoder)
 	NV_DEBUG(drm, "maximum: %dx%d\n",
 		     nv_encoder->dp.link_nr, nv_encoder->dp.link_bw);
 
-	nouveau_dp_probe_oui(dev, aux, dpcd);
+	nouveau_dp_probe_oui(dev, auxch, dpcd);
 	return 0;
 }

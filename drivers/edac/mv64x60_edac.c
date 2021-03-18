@@ -178,7 +178,7 @@ static int mv64x60_pci_err_probe(struct platform_device *pdev)
 		res = devm_request_irq(&pdev->dev,
 				       pdata->irq,
 				       mv64x60_pci_isr,
-				       0,
+				       IRQF_DISABLED,
 				       "[EDAC] PCI err",
 				       pci);
 		if (res < 0) {
@@ -345,7 +345,7 @@ static int mv64x60_sram_err_probe(struct platform_device *pdev)
 		res = devm_request_irq(&pdev->dev,
 				       pdata->irq,
 				       mv64x60_sram_isr,
-				       0,
+				       IRQF_DISABLED,
 				       "[EDAC] SRAM err",
 				       edac_dev);
 		if (res < 0) {
@@ -540,7 +540,7 @@ static int mv64x60_cpu_err_probe(struct platform_device *pdev)
 		res = devm_request_irq(&pdev->dev,
 				       pdata->irq,
 				       mv64x60_cpu_isr,
-				       0,
+				       IRQF_DISABLED,
 				       "[EDAC] CPU err",
 				       edac_dev);
 		if (res < 0) {
@@ -789,8 +789,7 @@ static int mv64x60_mc_err_probe(struct platform_device *pdev)
 	ctl = (ctl & 0xff00ffff) | 0x10000;
 	out_le32(pdata->mc_vbase + MV64X60_SDRAM_ERR_ECC_CNTL, ctl);
 
-	res = edac_mc_add_mc(mci);
-	if (res) {
+	if (edac_mc_add_mc(mci)) {
 		edac_dbg(3, "failed edac_mc_add_mc()\n");
 		goto err;
 	}
@@ -801,7 +800,7 @@ static int mv64x60_mc_err_probe(struct platform_device *pdev)
 		res = devm_request_irq(&pdev->dev,
 				       pdata->irq,
 				       mv64x60_mc_isr,
-				       0,
+				       IRQF_DISABLED,
 				       "[EDAC] MC err",
 				       mci);
 		if (res < 0) {

@@ -210,6 +210,7 @@ static struct platform_driver pmi_of_platform_driver = {
 	.remove		= pmi_of_remove,
 	.driver = {
 		.name = "pmi",
+		.owner = THIS_MODULE,
 		.of_match_table = pmi_match,
 	},
 };

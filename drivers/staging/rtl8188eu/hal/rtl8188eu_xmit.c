@@ -20,7 +20,6 @@
 #define _RTL8188E_XMIT_C_
 #include <osdep_service.h>
 #include <drv_types.h>
-#include <mon.h>
 #include <wifi.h>
 #include <osdep_intf.h>
 #include <usb_ops_linux.h>
@@ -400,7 +399,7 @@ static s32 rtw_dump_xframe(struct adapter *adapt, struct xmit_frame *pxmitframe)
 
 		mem_addr += w_sz;
 
-		mem_addr = (u8 *)round_up((size_t)mem_addr, 4);
+		mem_addr = (u8 *) round_up((size_t)mem_addr, 4);
 	}
 
 	rtw_free_xmitframe(pxmitpriv, pxmitframe);
@@ -650,7 +649,7 @@ static s32 pre_xmitframe(struct adapter *adapt, struct xmit_frame *pxmitframe)
 		goto enqueue;
 
 	pxmitbuf = rtw_alloc_xmitbuf(pxmitpriv);
-	if (!pxmitbuf)
+	if (pxmitbuf == NULL)
 		goto enqueue;
 
 	spin_unlock_bh(&pxmitpriv->lock);
@@ -685,9 +684,6 @@ enqueue:
 
 s32 rtl8188eu_mgnt_xmit(struct adapter *adapt, struct xmit_frame *pmgntframe)
 {
-	struct xmit_priv *xmitpriv = &adapt->xmitpriv;
-
-	rtl88eu_mon_xmit_hook(adapt->pmondev, pmgntframe, xmitpriv->frag_len);
 	return rtw_dump_xframe(adapt, pmgntframe);
 }
 

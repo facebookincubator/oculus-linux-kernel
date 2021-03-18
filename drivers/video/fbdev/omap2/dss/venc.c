@@ -35,7 +35,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
-#include <linux/component.h>
 
 #include <video/omapdss.h>
 
@@ -275,12 +274,6 @@ const struct omap_video_timings omap_dss_pal_timings = {
 	.vbp		= 41,
 
 	.interlace	= true,
-
-	.hsync_level = OMAPDSS_SIG_ACTIVE_LOW,
-	.vsync_level = OMAPDSS_SIG_ACTIVE_LOW,
-	.data_pclk_edge = OMAPDSS_DRIVE_SIG_RISING_EDGE,
-	.de_level = OMAPDSS_SIG_ACTIVE_HIGH,
-	.sync_pclk_edge = OMAPDSS_DRIVE_SIG_FALLING_EDGE,
 };
 EXPORT_SYMBOL(omap_dss_pal_timings);
 
@@ -296,12 +289,6 @@ const struct omap_video_timings omap_dss_ntsc_timings = {
 	.vbp		= 31,
 
 	.interlace	= true,
-
-	.hsync_level = OMAPDSS_SIG_ACTIVE_LOW,
-	.vsync_level = OMAPDSS_SIG_ACTIVE_LOW,
-	.data_pclk_edge = OMAPDSS_DRIVE_SIG_RISING_EDGE,
-	.de_level = OMAPDSS_SIG_ACTIVE_HIGH,
-	.sync_pclk_edge = OMAPDSS_DRIVE_SIG_FALLING_EDGE,
 };
 EXPORT_SYMBOL(omap_dss_ntsc_timings);
 
@@ -815,7 +802,7 @@ static void venc_init_output(struct platform_device *pdev)
 	omapdss_register_output(out);
 }
 
-static void venc_uninit_output(struct platform_device *pdev)
+static void __exit venc_uninit_output(struct platform_device *pdev)
 {
 	struct omap_dss_device *out = &venc.output;
 
@@ -865,9 +852,8 @@ err:
 }
 
 /* VENC HW IP initialisation */
-static int venc_bind(struct device *dev, struct device *master, void *data)
+static int omap_venchw_probe(struct platform_device *pdev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
 	u8 rev_id;
 	struct resource *venc_mem;
 	int r;
@@ -926,28 +912,12 @@ err_runtime_get:
 	return r;
 }
 
-static void venc_unbind(struct device *dev, struct device *master, void *data)
+static int __exit omap_venchw_remove(struct platform_device *pdev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-
 	venc_uninit_output(pdev);
 
 	pm_runtime_disable(&pdev->dev);
-}
 
-static const struct component_ops venc_component_ops = {
-	.bind	= venc_bind,
-	.unbind	= venc_unbind,
-};
-
-static int venc_probe(struct platform_device *pdev)
-{
-	return component_add(&pdev->dev, &venc_component_ops);
-}
-
-static int venc_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &venc_component_ops);
 	return 0;
 }
 
@@ -980,6 +950,7 @@ static const struct dev_pm_ops venc_pm_ops = {
 	.runtime_resume = venc_runtime_resume,
 };
 
+
 static const struct of_device_id venc_of_match[] = {
 	{ .compatible = "ti,omap2-venc", },
 	{ .compatible = "ti,omap3-venc", },
@@ -988,10 +959,11 @@ static const struct of_device_id venc_of_match[] = {
 };
 
 static struct platform_driver omap_venchw_driver = {
-	.probe		= venc_probe,
-	.remove		= venc_remove,
+	.probe		= omap_venchw_probe,
+	.remove         = __exit_p(omap_venchw_remove),
 	.driver         = {
 		.name   = "omapdss_venc",
+		.owner  = THIS_MODULE,
 		.pm	= &venc_pm_ops,
 		.of_match_table = venc_of_match,
 		.suppress_bind_attrs = true,
@@ -1003,7 +975,7 @@ int __init venc_init_platform_driver(void)
 	return platform_driver_register(&omap_venchw_driver);
 }
 
-void venc_uninit_platform_driver(void)
+void __exit venc_uninit_platform_driver(void)
 {
 	platform_driver_unregister(&omap_venchw_driver);
 }

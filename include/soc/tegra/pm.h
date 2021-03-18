@@ -17,7 +17,7 @@ enum tegra_suspend_mode {
 	TEGRA_MAX_SUSPEND_MODE,
 };
 
-#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_ARM)
+#ifdef CONFIG_PM_SLEEP
 enum tegra_suspend_mode
 tegra_pm_validate_suspend_mode(enum tegra_suspend_mode mode);
 

@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -348,19 +348,18 @@ acpi_rs_create_pci_routing_table(union acpi_operand_object *package_object,
 				status =
 				    acpi_ns_handle_to_pathname((acpi_handle)
 							       node,
-							       &path_buffer,
-							       FALSE);
+							       &path_buffer);
 
 				/* +1 to include null terminator */
 
 				user_prt->length +=
-				    (u32)strlen(user_prt->source) + 1;
+				    (u32) ACPI_STRLEN(user_prt->source) + 1;
 				break;
 
 			case ACPI_TYPE_STRING:
 
-				strcpy(user_prt->source,
-				       obj_desc->string.pointer);
+				ACPI_STRCPY(user_prt->source,
+					    obj_desc->string.pointer);
 
 				/*
 				 * Add to the Length field the length of the string

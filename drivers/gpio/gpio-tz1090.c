@@ -375,7 +375,7 @@ static int gpio_set_irq_wake(struct irq_data *data, unsigned int on)
 #define gpio_set_irq_wake NULL
 #endif
 
-static void tz1090_gpio_irq_handler(struct irq_desc *desc)
+static void tz1090_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 {
 	irq_hw_number_t hw;
 	unsigned int irq_stat, irq_no;
@@ -400,7 +400,7 @@ static void tz1090_gpio_irq_handler(struct irq_desc *desc)
 				== IRQ_TYPE_EDGE_BOTH)
 			tz1090_gpio_irq_next_edge(bank, hw);
 
-		generic_handle_irq_desc(child_desc);
+		generic_handle_irq_desc(irq_no, child_desc);
 	}
 }
 
@@ -446,7 +446,7 @@ static int tz1090_gpio_bank_probe(struct tz1090_gpio_bank_info *info)
 	bank->irq = irq_of_parse_and_map(np, 0);
 
 	/* The interrupt is optional (it may be used by another core on chip) */
-	if (!bank->irq) {
+	if (bank->irq < 0) {
 		dev_info(dev, "IRQ not provided for bank %u, IRQs disabled\n",
 			 info->index);
 		return 0;
@@ -510,8 +510,8 @@ static int tz1090_gpio_bank_probe(struct tz1090_gpio_bank_info *info)
 	gc->chip_types[1].chip.flags		= IRQCHIP_MASK_ON_SUSPEND;
 
 	/* Setup chained handler for this GPIO bank */
-	irq_set_chained_handler_and_data(bank->irq, tz1090_gpio_irq_handler,
-					 bank);
+	irq_set_handler_data(bank->irq, bank);
+	irq_set_chained_handler(bank->irq, tz1090_gpio_irq_handler);
 
 	return 0;
 }
@@ -573,7 +573,7 @@ static int tz1090_gpio_probe(struct platform_device *pdev)
 
 	/* Ioremap the registers */
 	priv.reg = devm_ioremap(&pdev->dev, res_regs->start,
-				resource_size(res_regs));
+				 res_regs->end - res_regs->start);
 	if (!priv.reg) {
 		dev_err(&pdev->dev, "unable to ioremap registers\n");
 		return -ENOMEM;
@@ -593,6 +593,7 @@ static struct of_device_id tz1090_gpio_of_match[] = {
 static struct platform_driver tz1090_gpio_driver = {
 	.driver = {
 		.name		= "tz1090-gpio",
+		.owner		= THIS_MODULE,
 		.of_match_table	= tz1090_gpio_of_match,
 	},
 	.probe		= tz1090_gpio_probe,

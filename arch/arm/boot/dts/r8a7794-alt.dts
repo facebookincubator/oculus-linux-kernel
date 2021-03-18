@@ -20,8 +20,7 @@
 	};
 
 	chosen {
-		bootargs = "ignore_loglevel rw root=/dev/nfs ip=dhcp";
-		stdout-path = &scif2;
+		bootargs = "console=ttySC0,38400 ignore_loglevel rw root=/dev/nfs ip=dhcp";
 	};
 
 	memory@40000000 {
@@ -40,22 +39,9 @@
 };
 
 &cmt0 {
-	status = "okay";
-};
-
-&ether {
-	phy-handle = <&phy1>;
-	renesas,ether-link-active-low;
-	status = "okay";
-
-	phy1: ethernet-phy@1 {
-		reg = <1>;
-		interrupt-parent = <&irqc0>;
-		interrupts = <8 IRQ_TYPE_LEVEL_LOW>;
-		micrel,led-mode = <1>;
-	};
+	status = "ok";
 };
 
 &scif2 {
-	status = "okay";
+	status = "ok";
 };

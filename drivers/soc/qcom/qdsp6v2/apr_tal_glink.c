@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017 The Linux Foundation.
+/* Copyright (c) 2016 The Linux Foundation.
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,6 +17,7 @@
 #include <linux/uaccess.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
+#include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/errno.h>
@@ -33,8 +34,13 @@
 #define APR_MAXIMUM_NUM_OF_RETRIES 2
 
 struct apr_tx_buf {
-	struct apr_pkt_priv pkt_priv;
+	struct list_head list;
 	char buf[APR_MAX_BUF];
+};
+
+struct apr_buf_list {
+	struct list_head list;
+	spinlock_t lock;
 };
 
 struct link_state {
@@ -45,6 +51,7 @@ struct link_state {
 };
 
 static struct link_state link_state[APR_DEST_MAX];
+static struct apr_buf_list buf_list;
 
 static char *svc_names[APR_DEST_MAX][APR_CLIENT_MAX] = {
 	{
@@ -60,36 +67,44 @@ static char *svc_names[APR_DEST_MAX][APR_CLIENT_MAX] = {
 static struct apr_svc_ch_dev
 	apr_svc_ch[APR_DL_MAX][APR_DEST_MAX][APR_CLIENT_MAX];
 
-static struct apr_tx_buf *apr_alloc_buf(int len)
+static int apr_get_free_buf(int len, void **buf)
 {
-
-	if (len > APR_MAX_BUF) {
-		pr_err("%s: buf too large [%d]\n", __func__, len);
-		return ERR_PTR(-EINVAL);
-	}
-
-	return kzalloc(sizeof(struct apr_tx_buf), GFP_ATOMIC);
-}
-
-static void apr_free_buf(const void *ptr)
-{
-
-	struct apr_pkt_priv *apr_pkt_priv = (struct apr_pkt_priv *)ptr;
 	struct apr_tx_buf *tx_buf;
+	unsigned long flags;
 
-	if (!apr_pkt_priv) {
-		pr_err("%s: Invalid apr_pkt_priv\n", __func__);
-		return;
+	if (!buf || len > APR_MAX_BUF) {
+		pr_err("%s: buf too large [%d]\n", __func__, len);
+		return -EINVAL;
 	}
 
-	if (apr_pkt_priv->pkt_owner == APR_PKT_OWNER_DRIVER) {
-		tx_buf = container_of((void *)apr_pkt_priv,
-				      struct apr_tx_buf, pkt_priv);
-		pr_debug("%s: Freeing buffer %pK", __func__, tx_buf);
-		kfree(tx_buf);
+	spin_lock_irqsave(&buf_list.lock, flags);
+	if (list_empty(&buf_list.list)) {
+		spin_unlock_irqrestore(&buf_list.lock, flags);
+		pr_err("%s: No buf available\n", __func__);
+		return -ENOMEM;
 	}
+
+	tx_buf = list_first_entry(&buf_list.list, struct apr_tx_buf, list);
+	list_del(&tx_buf->list);
+	spin_unlock_irqrestore(&buf_list.lock, flags);
+
+	*buf = tx_buf->buf;
+	return 0;
 }
 
+static void apr_buf_add_tail(const void *buf)
+{
+	struct apr_tx_buf *list;
+	unsigned long flags;
+
+	if (!buf)
+		return;
+
+	spin_lock_irqsave(&buf_list.lock, flags);
+	list = container_of((void *)buf, struct apr_tx_buf, buf);
+	list_add_tail(&list->list, &buf_list.list);
+	spin_unlock_irqrestore(&buf_list.lock, flags);
+}
 
 static int __apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 			   struct apr_pkt_priv *pkt_priv, int len)
@@ -98,7 +113,8 @@ static int __apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 	unsigned long flags;
 
 	spin_lock_irqsave(&apr_ch->w_lock, flags);
-	rc = glink_tx(apr_ch->handle, pkt_priv, data, len, GLINK_TX_ATOMIC);
+	rc = glink_tx(apr_ch->handle, pkt_priv, data, len,
+			GLINK_TX_REQ_INTENT | GLINK_TX_ATOMIC);
 	spin_unlock_irqrestore(&apr_ch->w_lock, flags);
 
 	if (rc)
@@ -114,22 +130,16 @@ int apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 {
 	int rc = 0, retries = 0;
 	void *pkt_data = NULL;
-	struct apr_tx_buf *tx_buf;
-	struct apr_pkt_priv *pkt_priv_ptr = pkt_priv;
 
 	if (!apr_ch->handle || !pkt_priv)
 		return -EINVAL;
 
 	if (pkt_priv->pkt_owner == APR_PKT_OWNER_DRIVER) {
-		tx_buf = apr_alloc_buf(len);
-		if (IS_ERR_OR_NULL(tx_buf)) {
-			rc = -EINVAL;
+		rc = apr_get_free_buf(len, &pkt_data);
+		if (rc)
 			goto exit;
-		}
-		memcpy(tx_buf->buf, data, len);
-		memcpy(&tx_buf->pkt_priv, pkt_priv, sizeof(tx_buf->pkt_priv));
-		pkt_priv_ptr = &tx_buf->pkt_priv;
-		pkt_data = tx_buf->buf;
+
+		memcpy(pkt_data, data, len);
 	} else {
 		pkt_data = data;
 	}
@@ -138,13 +148,13 @@ int apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 		if (rc == -EAGAIN)
 			udelay(50);
 
-		rc = __apr_tal_write(apr_ch, pkt_data, pkt_priv_ptr, len);
+		rc = __apr_tal_write(apr_ch, pkt_data, pkt_priv, len);
 	} while (rc == -EAGAIN && retries++ < APR_MAXIMUM_NUM_OF_RETRIES);
 
 	if (rc < 0) {
 		pr_err("%s: Unable to send the packet, rc:%d\n", __func__, rc);
 		if (pkt_priv->pkt_owner == APR_PKT_OWNER_DRIVER)
-			kfree(tx_buf);
+			apr_buf_add_tail(pkt_data);
 	}
 exit:
 	return rc;
@@ -170,20 +180,20 @@ void apr_tal_notify_rx(void *handle, const void *priv, const void *pkt_priv,
 	glink_rx_done(apr_ch->handle, ptr, true);
 }
 
-static void apr_tal_notify_tx_abort(void *handle, const void *priv,
-				    const void *pkt_priv)
-{
-	pr_debug("%s: tx_abort received for pkt_priv:%pK\n",
-		 __func__, pkt_priv);
-	apr_free_buf(pkt_priv);
-}
-
 void apr_tal_notify_tx_done(void *handle, const void *priv,
 			    const void *pkt_priv, const void *ptr)
 {
-	pr_debug("%s: tx_done received for pkt_priv:%pK\n",
-		 __func__, pkt_priv);
-	apr_free_buf(pkt_priv);
+	struct apr_pkt_priv *apr_pkt_priv = (struct apr_pkt_priv *)pkt_priv;
+
+	if (!pkt_priv || !ptr) {
+		pr_err("%s: Invalid pkt_priv or ptr\n", __func__);
+		return;
+	}
+
+	pr_debug("%s: tx_done received\n", __func__);
+
+	if (apr_pkt_priv->pkt_owner == APR_PKT_OWNER_DRIVER)
+		apr_buf_add_tail(ptr);
 }
 
 bool apr_tal_notify_rx_intent_req(void *handle, const void *priv,
@@ -217,7 +227,6 @@ static void apr_tal_notify_remote_rx_intent(void *handle, const void *priv,
 	 */
 	pr_debug("%s: remote queued an intent\n", __func__);
 	apr_ch->if_remote_intent_ready = true;
-	wake_up(&apr_ch->wait);
 }
 
 void apr_tal_notify_state(void *handle, const void *priv, unsigned event)
@@ -306,17 +315,21 @@ struct apr_svc_ch_dev *apr_tal_open(uint32_t clnt, uint32_t dest, uint32_t dl,
 	open_cfg.notify_state = apr_tal_notify_state;
 	open_cfg.notify_rx_intent_req = apr_tal_notify_rx_intent_req;
 	open_cfg.notify_remote_rx_intent = apr_tal_notify_remote_rx_intent;
-	open_cfg.notify_tx_abort = apr_tal_notify_tx_abort;
 	open_cfg.priv = apr_ch;
-	open_cfg.transport = "smem";
+	/*
+	 * The transport name "smd_trans" is required if far end is using SMD.
+	 * In that case Glink will fall back to SMD and the client (APR in this
+	 * case) will still work as if Glink is the communication channel.
+	 * If far end is already using Glink, this property will be ignored in
+	 * Glink layer and communication will be through Glink.
+	 */
+	open_cfg.transport = "smd_trans";
 
 	apr_ch->channel_state = GLINK_REMOTE_DISCONNECTED;
 	apr_ch->handle = glink_open(&open_cfg);
 	if (IS_ERR_OR_NULL(apr_ch->handle)) {
 		pr_err("%s: glink_open failed %s\n", __func__,
 		       svc_names[dest][clnt]);
-		apr_ch->handle = NULL;
-		rc = -EINVAL;
 		goto unlock;
 	}
 
@@ -406,13 +419,13 @@ static void apr_tal_link_state_cb(struct glink_link_state_cb_info *cb_info,
 }
 
 static struct glink_link_info mpss_link_info = {
-	.transport = "smem",
+	.transport = NULL,
 	.edge = "mpss",
 	.glink_link_state_notif_cb = apr_tal_link_state_cb,
 };
 
 static struct glink_link_info lpass_link_info = {
-	.transport = "smem",
+	.transport = NULL,
 	.edge = "lpass",
 	.glink_link_state_notif_cb = apr_tal_link_state_cb,
 };
@@ -420,6 +433,8 @@ static struct glink_link_info lpass_link_info = {
 static int __init apr_tal_init(void)
 {
 	int i, j, k;
+	struct apr_tx_buf *buf;
+	struct list_head *ptr, *next;
 
 	for (i = 0; i < APR_DL_MAX; i++) {
 		for (j = 0; j < APR_DEST_MAX; j++) {
@@ -435,6 +450,21 @@ static int __init apr_tal_init(void)
 	for (i = 0; i < APR_DEST_MAX; i++)
 		init_waitqueue_head(&link_state[i].wait);
 
+	spin_lock_init(&buf_list.lock);
+	INIT_LIST_HEAD(&buf_list.list);
+	for (i = 0; i < APR_NUM_OF_TX_BUF; i++) {
+		buf = kzalloc(sizeof(struct apr_tx_buf), GFP_KERNEL);
+		if (!buf) {
+			pr_err("%s: Unable to allocate tx buf\n", __func__);
+			goto tx_buf_alloc_fail;
+		}
+
+		INIT_LIST_HEAD(&buf->list);
+		spin_lock(&buf_list.lock);
+		list_add_tail(&buf->list, &buf_list.list);
+		spin_unlock(&buf_list.lock);
+	}
+
 	link_state[APR_DEST_MODEM].link_state = GLINK_LINK_STATE_DOWN;
 	link_state[APR_DEST_MODEM].handle =
 		glink_register_link_state_cb(&mpss_link_info, NULL);
@@ -448,5 +478,13 @@ static int __init apr_tal_init(void)
 		pr_err("%s: Unable to register lpass link state\n", __func__);
 
 	return 0;
+
+tx_buf_alloc_fail:
+	list_for_each_safe(ptr, next, &buf_list.list) {
+		buf = list_entry(ptr, struct apr_tx_buf, list);
+		list_del(&buf->list);
+		kfree(buf);
+	}
+	return -ENOMEM;
 }
 device_initcall(apr_tal_init);

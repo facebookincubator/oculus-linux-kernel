@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,7 +73,7 @@ acpi_tb_init_table_descriptor(struct acpi_table_desc *table_desc,
 	 * Initialize the table descriptor. Set the pointer to NULL, since the
 	 * table is not fully mapped at this time.
 	 */
-	memset(table_desc, 0, sizeof(struct acpi_table_desc));
+	ACPI_MEMSET(table_desc, 0, sizeof(struct acpi_table_desc));
 	table_desc->address = address;
 	table_desc->length = table->length;
 	table_desc->flags = flags;
@@ -465,9 +465,9 @@ acpi_status acpi_tb_resize_root_table_list(void)
 	/* Copy and free the previous table array */
 
 	if (acpi_gbl_root_table_list.tables) {
-		memcpy(tables, acpi_gbl_root_table_list.tables,
-		       (acpi_size) table_count *
-		       sizeof(struct acpi_table_desc));
+		ACPI_MEMCPY(tables, acpi_gbl_root_table_list.tables,
+			    (acpi_size) table_count *
+			    sizeof(struct acpi_table_desc));
 
 		if (acpi_gbl_root_table_list.flags & ACPI_ROOT_ORIGIN_ALLOCATED) {
 			ACPI_FREE(acpi_gbl_root_table_list.tables);
@@ -484,23 +484,19 @@ acpi_status acpi_tb_resize_root_table_list(void)
 
 /*******************************************************************************
  *
- * FUNCTION:    acpi_tb_get_next_table_descriptor
+ * FUNCTION:    acpi_tb_get_next_root_index
  *
  * PARAMETERS:  table_index         - Where table index is returned
- *              table_desc          - Where table descriptor is returned
  *
- * RETURN:      Status and table index/descriptor.
+ * RETURN:      Status and table index.
  *
  * DESCRIPTION: Allocate a new ACPI table entry to the global table list
  *
  ******************************************************************************/
 
-acpi_status
-acpi_tb_get_next_table_descriptor(u32 *table_index,
-				  struct acpi_table_desc **table_desc)
+acpi_status acpi_tb_get_next_root_index(u32 *table_index)
 {
 	acpi_status status;
-	u32 i;
 
 	/* Ensure that there is room for the table in the Root Table List */
 
@@ -512,16 +508,8 @@ acpi_tb_get_next_table_descriptor(u32 *table_index,
 		}
 	}
 
-	i = acpi_gbl_root_table_list.current_table_count;
+	*table_index = acpi_gbl_root_table_list.current_table_count;
 	acpi_gbl_root_table_list.current_table_count++;
-
-	if (table_index) {
-		*table_index = i;
-	}
-	if (table_desc) {
-		*table_desc = &acpi_gbl_root_table_list.tables[i];
-	}
-
 	return (AE_OK);
 }
 

@@ -31,18 +31,12 @@
 					      struct mdp_set_cfg)
 
 /*
- * Ioctl for setting the PLL PPM.
- * PLL PPM is passed by the user space using this IOCTL.
- */
-#define MSMFB_MDP_SET_PANEL_PPM _IOW(MDP_IOCTL_MAGIC, 131, int)
-
-/*
  * To allow proper structure padding for 64bit/32bit target
  */
 #ifdef __LP64
-#define MDP_LAYER_COMMIT_V1_PAD 2
-#else
 #define MDP_LAYER_COMMIT_V1_PAD 3
+#else
+#define MDP_LAYER_COMMIT_V1_PAD 4
 #endif
 
 /**********************************************************************
@@ -90,22 +84,6 @@ LAYER FLAG CONFIGURATION
 /* Flag enabled qseed3 scaling for the current layer */
 #define MDP_LAYER_ENABLE_QSEED3_SCALE   0x800
 
-/*
- * layer will work in multirect mode, where single hardware should
- * fetch multiple rectangles with a single hardware
- */
-#define MDP_LAYER_MULTIRECT_ENABLE		0x1000
-
-/*
- * if flag present and multirect is enabled, multirect will work in parallel
- * fetch mode, otherwise it will default to serial fetch mode.
- */
-#define MDP_LAYER_MULTIRECT_PARALLEL_MODE	0x2000
-
-
-/* Flag indicates that layer is associated with secure camera session */
-#define MDP_LAYER_SECURE_CAMERA_SESSION		0x4000
-
 /**********************************************************************
 DESTINATION SCALER FLAG CONFIGURATION
 **********************************************************************/
@@ -126,10 +104,16 @@ DESTINATION SCALER FLAG CONFIGURATION
 #define MDP_DESTSCALER_ENHANCER_UPDATE	0x4
 
 /*
- * Indicating a partial update to panel ROI. ROI can be
- * applied anytime when Destination scaler is enabled.
+ * layer will work in multirect mode, where single hardware should
+ * fetch multiple rectangles with a single hardware
  */
-#define MDP_DESTSCALER_ROI_ENABLE	0x8
+#define MDP_LAYER_MULTIRECT_ENABLE		0x1000
+
+/*
+ * if flag present and multirect is enabled, multirect will work in parallel
+ * fetch mode, otherwise it will default to serial fetch mode.
+ */
+#define MDP_LAYER_MULTIRECT_PARALLEL_MODE	0x2000
 
 /**********************************************************************
 VALIDATE/COMMIT FLAG CONFIGURATION
@@ -154,110 +138,9 @@ VALIDATE/COMMIT FLAG CONFIGURATION
  */
 #define MDP_COMMIT_SYNC_FENCE_WAIT		0x04
 
-/* Flag to enable AVR(Adaptive variable refresh) feature. */
-#define MDP_COMMIT_AVR_EN			0x08
-
-/*
- * Flag to select one shot mode when AVR feature is enabled.
- * Default mode is continuous mode.
- */
-#define MDP_COMMIT_AVR_ONE_SHOT_MODE		0x10
-
-/* Flag to indicate dual partial ROI update */
-#define MDP_COMMIT_PARTIAL_UPDATE_DUAL_ROI	0x20
-
-/* Flag to update brightness when commit */
-#define MDP_COMMIT_UPDATE_BRIGHTNESS		0x40
-
-/* Flag to enable concurrent writeback for the frame */
-#define MDP_COMMIT_CWB_EN 0x800
-
-/*
- * Flag to select DSPP as the data point for CWB. If CWB
- * is enabled without this flag, LM will be selected as data point.
- */
-#define MDP_COMMIT_CWB_DSPP 0x1000
-
-/*
- * Flag to indicate that rectangle number is being assigned
- * by userspace in multi-rectangle mode
- */
-#define MDP_COMMIT_RECT_NUM 0x2000
-
 #define MDP_COMMIT_VERSION_1_0		0x00010000
 
 #define OUT_LAYER_COLOR_SPACE
-
-/* From CEA.861.3 */
-#define MDP_HDR_EOTF_SMTPE_ST2084	0x2
-#define MDP_HDR_EOTF_HLG		0x3
-
-/* From Vesa DPv1.4 - Pixel Encoding - Table 2-120 */
-#define MDP_PIXEL_ENCODING_RGB		0x0
-#define MDP_PIXEL_ENCODING_YCBCR_444	0x1
-#define MDP_PIXEL_ENCODING_YCBCR_422	0x2
-#define MDP_PIXEL_ENCODING_YCBCR_420	0x3
-#define MDP_PIXEL_ENCODING_Y_ONLY	0x4
-#define MDP_PIXEL_ENCODING_RAW		0x5
-
-/* From Vesa DPv1.4 - Colorimetry Formats - Table 2-120 */
-/* RGB - used with MDP_DP_PIXEL_ENCODING_RGB */
-#define MDP_COLORIMETRY_RGB_SRGB		0x0
-#define MDP_COLORIMETRY_RGB_WIDE_FIXED_POINT	0x1
-#define MDP_COLORIMETRY_RGB_WIDE_FLOAT_POINT	0x2
-#define MDP_COLORIMETRY_RGB_ADOBE		0x3
-#define MDP_COLORIMETRY_RGB_DPI_P3		0x4
-#define MDP_COLORIMETRY_RGB_CUSTOM		0x5
-#define MDP_COLORIMETRY_RGB_ITU_R_BT_2020	0x6
-
-/* YUV - used with MDP_DP_PIXEL_ENCODING_YCBCR(444 or 422 or 420) */
-#define MDP_COLORIMETRY_YCBCR_ITU_R_BT_601		0x0
-#define MDP_COLORIMETRY_YCBCR_ITU_R_BT_709		0x1
-#define MDP_COLORIMETRY_YCBCR_XV_YCC_601		0x2
-#define MDP_COLORIMETRY_YCBCR_XV_YCC_709		0x3
-#define MDP_COLORIMETRY_YCBCR_S_YCC_601		0x4
-#define MDP_COLORIMETRY_YCBCR_ADOBE_YCC_601		0x5
-#define MDP_COLORIMETRY_YCBCR_ITU_R_BT_2020_YCBCR_CONST	0x6
-#define MDP_COLORIMETRY_YCBCR_ITU_R_BT_2020_YCBCR	0x7
-
-/* Dynamic Range - Table 2-120 */
-/* Full range */
-#define MDP_DYNAMIC_RANGE_VESA	0x0
-/* Limited range */
-#define MDP_DYNAMIC_RANGE_CEA	0x1
-
-/* Bits per component(bpc) for Pixel encoding format RGB from Table 2-120 */
-#define MDP_RGB_6_BPC	0x0
-#define MDP_RGB_8_BPC	0x1
-#define MDP_RGB_10_BPC	0x2
-#define MDP_RGB_12_BPC	0x3
-#define MDP_RGB_16_BPC	0x4
-
-/*
- * Bits per component(bpc) for Pixel encoding format YCbCr444, YCbCr422,
- * YCbCr420 and Y only
- * from Table 2-120
- */
-#define MDP_YUV_8_BPC	0x1
-#define MDP_YUV_10_BPC	0x2
-#define MDP_YUV_12_BPC	0x3
-#define MDP_YUV_16_BPC	0x4
-
-/* Bits per component(bpc) for Pixel encoding format RAW from Table 2-120 */
-#define MDP_RAW_6_BPC	0x1
-#define MDP_RAW_7_BPC	0x2
-#define MDP_RAW_8_BPC	0x3
-#define MDP_RAW_10_BPC	0x4
-#define MDP_RAW_12_BPC	0x5
-#define MDP_RAW_14_BPC	0x6
-#define MDP_RAW16_BPC	0x7
-
-/* Content Type - Table 2-120 */
-#define MDP_CONTENT_TYPE_NOT_DEFINED	0x0
-#define MDP_CONTENT_TYPE_GRAPHICS		0x1
-#define MDP_CONTENT_TYPE_PHOTO			0x2
-#define MDP_CONTENT_TYPE_VIDEO		0x3
-#define MDP_CONTENT_TYPE_GAME		0x4
 
 /**********************************************************************
 Configuration structures
@@ -276,12 +159,9 @@ struct mdp_layer_plane {
 };
 
 /* Configure the pipe to use a single color component. */
-#define MDP_LAYER_COLOR_R  0x1
-#define MDP_LAYER_COLOR_G  0x2
-#define MDP_LAYER_COLOR_B  0x3
-
-/* Have a layer "color" type for mura data. */
-#define MDP_LAYER_MURA  0x4
+#define MDP_LAYER_COLOR_R	0x1
+#define MDP_LAYER_COLOR_G	0x2
+#define MDP_LAYER_COLOR_B	0x3
 
 struct mdp_layer_buffer {
 	/* layer width in pixels. */
@@ -445,14 +325,8 @@ struct mdp_input_layer {
 	 */
 	int			error_code;
 
-	/*
-	 * For source pipes supporting multi-rectangle, this field identifies
-	 * the rectangle index of the source pipe.
-	 */
-	uint32_t		rect_num;
-
 	/* 32bits reserved value for future usage. */
-	uint32_t		reserved[5];
+	uint32_t		reserved[6];
 };
 
 struct mdp_output_layer {
@@ -511,12 +385,6 @@ struct mdp_destination_scaler_data {
 	 * A userspace pointer points to struct mdp_scale_data_v2.
 	 */
 	uint64_t	__user scale;
-
-	/*
-	 * Panel ROI is used when partial update is required in
-	 * current commit call.
-	 */
-	struct mdp_rect	panel_roi;
 };
 
 /*
@@ -596,9 +464,6 @@ struct mdp_layer_commit_v1 {
 	 * Represents number of Destination scaler data provied by userspace.
 	 */
 	uint32_t		dest_scaler_cnt;
-
-	/* Backlight level that would update when display commit */
-	uint32_t		bl_level;
 
 	/* 32-bits reserved value for future usage. */
 	uint32_t		reserved[MDP_LAYER_COMMIT_V1_PAD];
@@ -811,28 +676,5 @@ struct mdp_set_cfg {
 	uint64_t flags;
 	uint32_t len;
 	uint64_t __user payload;
-};
-
-#define HDR_PRIMARIES_COUNT 3
-
-#define MDP_HDR_STREAM
-
-struct mdp_hdr_stream {
-	uint32_t eotf;
-	uint32_t display_primaries_x[HDR_PRIMARIES_COUNT];
-	uint32_t display_primaries_y[HDR_PRIMARIES_COUNT];
-	uint32_t white_point_x;
-	uint32_t white_point_y;
-	uint32_t max_luminance;
-	uint32_t min_luminance;
-	uint32_t max_content_light_level;
-	uint32_t max_average_light_level;
-	/* DP related */
-	uint32_t pixel_encoding;
-	uint32_t colorimetry;
-	uint32_t range;
-	uint32_t bits_per_component;
-	uint32_t content_type;
-	uint32_t reserved[5];
 };
 #endif

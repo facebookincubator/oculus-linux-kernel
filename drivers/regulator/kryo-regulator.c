@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,7 +28,7 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
-#include <linux/regulator/msm-ldo-regulator.h>
+#include <linux/regulator/kryo-regulator.h>
 
 #include <soc/qcom/spm.h>
 
@@ -89,9 +89,9 @@ struct kryo_regulator {
 	struct regulator_dev		*retention_rdev;
 	struct regulator_desc		retention_desc;
 	const char			*name;
-	enum msm_ldo_supply_mode	mode;
-	enum msm_ldo_supply_mode	retention_mode;
-	enum msm_ldo_supply_mode	pre_lpm_state_mode;
+	enum kryo_supply_mode		mode;
+	enum kryo_supply_mode		retention_mode;
+	enum kryo_supply_mode		pre_lpm_state_mode;
 	void __iomem			*reg_base;
 	void __iomem			*pm_apcc_base;
 	struct dentry			*debugfs;
@@ -248,7 +248,7 @@ static int kryo_set_ldo_volt(struct kryo_regulator *kvreg, int volt)
 
 /* Locks must be held by the caller */
 static int kryo_configure_mode(struct kryo_regulator *kvreg,
-				enum msm_ldo_supply_mode mode)
+				enum kryo_supply_mode mode)
 {
 	u32 reg;
 	int timeout = PWR_GATE_SWITCH_TIMEOUT_US;
@@ -333,7 +333,7 @@ static int kryo_regulator_is_enabled(struct regulator_dev *rdev)
 }
 
 static int kryo_regulator_set_voltage(struct regulator_dev *rdev,
-			int min_volt, int max_volt, unsigned int *selector)
+			int min_volt, int max_volt, unsigned *selector)
 {
 	struct kryo_regulator *kvreg = rdev_get_drvdata(rdev);
 	int rc;
@@ -400,7 +400,7 @@ static int kryo_regulator_get_bypass(struct regulator_dev *rdev,
 }
 
 static int kryo_regulator_list_voltage(struct regulator_dev *rdev,
-				       unsigned int selector)
+				       unsigned selector)
 {
 	struct kryo_regulator *kvreg = rdev_get_drvdata(rdev);
 
@@ -411,7 +411,7 @@ static int kryo_regulator_list_voltage(struct regulator_dev *rdev,
 }
 
 static int kryo_regulator_retention_set_voltage(struct regulator_dev *rdev,
-			int min_volt, int max_volt, unsigned int *selector)
+			int min_volt, int max_volt, unsigned *selector)
 {
 	struct kryo_regulator *kvreg = rdev_get_drvdata(rdev);
 	int rc;
@@ -499,7 +499,7 @@ static int kryo_regulator_retention_get_bypass(struct regulator_dev *rdev,
 }
 
 static int kryo_regulator_retention_list_voltage(struct regulator_dev *rdev,
-				       unsigned int selector)
+				       unsigned selector)
 {
 	struct kryo_regulator *kvreg = rdev_get_drvdata(rdev);
 
@@ -624,7 +624,7 @@ static void kryo_debugfs_init(struct kryo_regulator *kvreg)
 		return;
 	}
 
-	temp = debugfs_create_file("mode", 0444, kvreg->debugfs,
+	temp = debugfs_create_file("mode", S_IRUGO, kvreg->debugfs,
 				   kvreg, &kryo_dbg_mode_fops);
 
 	if (IS_ERR_OR_NULL(temp)) {
@@ -811,10 +811,9 @@ static int kryo_regulator_retention_init(struct kryo_regulator *kvreg,
 	struct device *dev = &pdev->dev;
 	struct regulator_init_data *init_data;
 	struct regulator_config reg_config = {};
-	int rc = 0;
+	int rc;
 
-	init_data = of_get_regulator_init_data(dev, ret_node,
-			&kvreg->retention_desc);
+	init_data = of_get_regulator_init_data(dev, ret_node);
 	if (!init_data) {
 		kvreg_err(kvreg, "regulator init data is missing\n");
 		return -EINVAL;
@@ -847,7 +846,7 @@ static int kryo_regulator_retention_init(struct kryo_regulator *kvreg,
 		return rc;
 	}
 
-	return rc;
+	return 0;
 }
 
 static int kryo_regulator_lpm_prepare(struct kryo_regulator *kvreg)
@@ -972,7 +971,7 @@ static int kryo_regulator_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	init_data = of_get_regulator_init_data(dev, dev->of_node, NULL);
+	init_data = of_get_regulator_init_data(dev, dev->of_node);
 
 	if (!init_data) {
 		dev_err(dev, "regulator init data is missing\n");
@@ -989,8 +988,10 @@ static int kryo_regulator_probe(struct platform_device *pdev)
 	init_data->constraints.input_uV = init_data->constraints.max_uV;
 
 	kvreg = devm_kzalloc(dev, sizeof(*kvreg), GFP_KERNEL);
-	if (!kvreg)
+	if (!kvreg) {
+		dev_err(dev, "memory allocation failed\n");
 		return -ENOMEM;
+	}
 
 	rc = kryo_regulator_init_data(pdev, kvreg);
 	if (rc) {
@@ -1071,7 +1072,7 @@ static int kryo_regulator_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id kryo_regulator_match_table[] = {
+static struct of_device_id kryo_regulator_match_table[] = {
 	{ .compatible = "qcom,kryo-regulator", },
 	{}
 };

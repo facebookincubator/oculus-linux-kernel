@@ -10,7 +10,6 @@ struct reset_control;
 int reset_control_reset(struct reset_control *rstc);
 int reset_control_assert(struct reset_control *rstc);
 int reset_control_deassert(struct reset_control *rstc);
-int reset_control_status(struct reset_control *rstc);
 
 struct reset_control *reset_control_get(struct device *dev, const char *id);
 void reset_control_put(struct reset_control *rstc);
@@ -58,12 +57,6 @@ static inline int reset_control_deassert(struct reset_control *rstc)
 	return 0;
 }
 
-static inline int reset_control_status(struct reset_control *rstc)
-{
-	WARN_ON(1);
-	return 0;
-}
-
 static inline void reset_control_put(struct reset_control *rstc)
 {
 	WARN_ON(1);
@@ -72,20 +65,6 @@ static inline void reset_control_put(struct reset_control *rstc)
 static inline int device_reset_optional(struct device *dev)
 {
 	return -ENOSYS;
-}
-
-static inline struct reset_control *__must_check reset_control_get(
-					struct device *dev, const char *id)
-{
-	WARN_ON(1);
-	return ERR_PTR(-EINVAL);
-}
-
-static inline struct reset_control *__must_check devm_reset_control_get(
-					struct device *dev, const char *id)
-{
-	WARN_ON(1);
-	return ERR_PTR(-EINVAL);
 }
 
 static inline struct reset_control *reset_control_get_optional(

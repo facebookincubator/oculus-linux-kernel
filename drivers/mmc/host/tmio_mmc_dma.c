@@ -28,8 +28,8 @@ void tmio_mmc_enable_dma(struct tmio_mmc_host *host, bool enable)
 	if (!host->chan_tx || !host->chan_rx)
 		return;
 
-	if (host->dma->enable)
-		host->dma->enable(host, enable);
+	if (host->pdata->flags & TMIO_MMC_HAVE_CTL_DMA_REG)
+		sd_ctrl_write16(host, CTL_DMA_ENABLE, enable ? 2 : 0);
 }
 
 void tmio_mmc_abort_dma(struct tmio_mmc_host *host)
@@ -49,10 +49,11 @@ static void tmio_mmc_start_dma_rx(struct tmio_mmc_host *host)
 	struct scatterlist *sg = host->sg_ptr, *sg_tmp;
 	struct dma_async_tx_descriptor *desc = NULL;
 	struct dma_chan *chan = host->chan_rx;
+	struct tmio_mmc_data *pdata = host->pdata;
 	dma_cookie_t cookie;
 	int ret, i;
 	bool aligned = true, multiple = true;
-	unsigned int align = (1 << host->pdata->alignment_shift) - 1;
+	unsigned int align = (1 << pdata->dma->alignment_shift) - 1;
 
 	for_each_sg(sg, sg_tmp, host->sg_len, i) {
 		if (sg_tmp->offset & align)
@@ -125,10 +126,11 @@ static void tmio_mmc_start_dma_tx(struct tmio_mmc_host *host)
 	struct scatterlist *sg = host->sg_ptr, *sg_tmp;
 	struct dma_async_tx_descriptor *desc = NULL;
 	struct dma_chan *chan = host->chan_tx;
+	struct tmio_mmc_data *pdata = host->pdata;
 	dma_cookie_t cookie;
 	int ret, i;
 	bool aligned = true, multiple = true;
-	unsigned int align = (1 << host->pdata->alignment_shift) - 1;
+	unsigned int align = (1 << pdata->dma->alignment_shift) - 1;
 
 	for_each_sg(sg, sg_tmp, host->sg_len, i) {
 		if (sg_tmp->offset & align)
@@ -260,8 +262,8 @@ out:
 void tmio_mmc_request_dma(struct tmio_mmc_host *host, struct tmio_mmc_data *pdata)
 {
 	/* We can only either use DMA for both Tx and Rx or not use it at all */
-	if (!host->dma || (!host->pdev->dev.of_node &&
-		(!pdata->chan_priv_tx || !pdata->chan_priv_rx)))
+	if (!pdata->dma || (!host->pdev->dev.of_node &&
+		(!pdata->dma->chan_priv_tx || !pdata->dma->chan_priv_rx)))
 		return;
 
 	if (!host->chan_tx && !host->chan_rx) {
@@ -278,7 +280,7 @@ void tmio_mmc_request_dma(struct tmio_mmc_host *host, struct tmio_mmc_data *pdat
 		dma_cap_set(DMA_SLAVE, mask);
 
 		host->chan_tx = dma_request_slave_channel_compat(mask,
-					host->dma->filter, pdata->chan_priv_tx,
+					pdata->dma->filter, pdata->dma->chan_priv_tx,
 					&host->pdev->dev, "tx");
 		dev_dbg(&host->pdev->dev, "%s: TX: got channel %p\n", __func__,
 			host->chan_tx);
@@ -286,18 +288,18 @@ void tmio_mmc_request_dma(struct tmio_mmc_host *host, struct tmio_mmc_data *pdat
 		if (!host->chan_tx)
 			return;
 
+		if (pdata->dma->chan_priv_tx)
+			cfg.slave_id = pdata->dma->slave_id_tx;
 		cfg.direction = DMA_MEM_TO_DEV;
-		cfg.dst_addr = res->start + (CTL_SD_DATA_PORT << host->bus_shift);
-		cfg.dst_addr_width = host->dma->dma_buswidth;
-		if (!cfg.dst_addr_width)
-			cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
+		cfg.dst_addr = res->start + (CTL_SD_DATA_PORT << host->pdata->bus_shift);
+		cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 		cfg.src_addr = 0;
 		ret = dmaengine_slave_config(host->chan_tx, &cfg);
 		if (ret < 0)
 			goto ecfgtx;
 
 		host->chan_rx = dma_request_slave_channel_compat(mask,
-					host->dma->filter, pdata->chan_priv_rx,
+					pdata->dma->filter, pdata->dma->chan_priv_rx,
 					&host->pdev->dev, "rx");
 		dev_dbg(&host->pdev->dev, "%s: RX: got channel %p\n", __func__,
 			host->chan_rx);
@@ -305,11 +307,11 @@ void tmio_mmc_request_dma(struct tmio_mmc_host *host, struct tmio_mmc_data *pdat
 		if (!host->chan_rx)
 			goto ereqrx;
 
+		if (pdata->dma->chan_priv_rx)
+			cfg.slave_id = pdata->dma->slave_id_rx;
 		cfg.direction = DMA_DEV_TO_MEM;
-		cfg.src_addr = cfg.dst_addr + host->pdata->dma_rx_offset;
-		cfg.src_addr_width = host->dma->dma_buswidth;
-		if (!cfg.src_addr_width)
-			cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
+		cfg.src_addr = cfg.dst_addr + pdata->dma->dma_rx_offset;
+		cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 		cfg.dst_addr = 0;
 		ret = dmaengine_slave_config(host->chan_rx, &cfg);
 		if (ret < 0)

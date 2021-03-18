@@ -40,6 +40,7 @@ struct hfi_packetization_ops {
 		void *resource_value);
 	int (*sys_debug_config)(struct hfi_cmd_sys_set_property_packet *pkt,
 			u32 mode);
+	int (*sys_feature_config)(struct hfi_cmd_sys_set_property_packet *pkt);
 	int (*sys_coverage_config)(struct hfi_cmd_sys_set_property_packet *pkt,
 			u32 mode);
 	int (*sys_release_resource)(

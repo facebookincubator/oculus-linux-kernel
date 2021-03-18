@@ -111,3 +111,4 @@ int __init msm_dummy_clk_init(void)
 	return platform_driver_register(&msm_clock_dummy_driver);
 }
 arch_initcall(msm_dummy_clk_init);
+

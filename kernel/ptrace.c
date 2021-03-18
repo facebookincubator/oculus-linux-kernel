@@ -479,6 +479,8 @@ static bool __ptrace_detach(struct task_struct *tracer, struct task_struct *p)
 
 static int ptrace_detach(struct task_struct *child, unsigned int data)
 {
+	bool dead = false;
+
 	if (!valid_signal(data))
 		return -EIO;
 
@@ -488,38 +490,54 @@ static int ptrace_detach(struct task_struct *child, unsigned int data)
 
 	write_lock_irq(&tasklist_lock);
 	/*
-	 * We rely on ptrace_freeze_traced(). It can't be killed and
-	 * untraced by another thread, it can't be a zombie.
+	 * This child can be already killed. Make sure de_thread() or
+	 * our sub-thread doing do_wait() didn't do release_task() yet.
 	 */
-	WARN_ON(!child->ptrace || child->exit_state);
-	/*
-	 * tasklist_lock avoids the race with wait_task_stopped(), see
-	 * the comment in ptrace_resume().
-	 */
-	child->exit_code = data;
-	__ptrace_detach(current, child);
+	if (child->ptrace) {
+		child->exit_code = data;
+		dead = __ptrace_detach(current, child);
+	}
 	write_unlock_irq(&tasklist_lock);
 
 	proc_ptrace_connector(child, PTRACE_DETACH);
+	if (unlikely(dead))
+		release_task(child);
 
 	return 0;
 }
 
 /*
  * Detach all tasks we were using ptrace on. Called with tasklist held
- * for writing.
+ * for writing, and returns with it held too. But note it can release
+ * and reacquire the lock.
  */
-void exit_ptrace(struct task_struct *tracer, struct list_head *dead)
+void exit_ptrace(struct task_struct *tracer)
+	__releases(&tasklist_lock)
+	__acquires(&tasklist_lock)
 {
 	struct task_struct *p, *n;
+	LIST_HEAD(ptrace_dead);
+
+	if (likely(list_empty(&tracer->ptraced)))
+		return;
 
 	list_for_each_entry_safe(p, n, &tracer->ptraced, ptrace_entry) {
 		if (unlikely(p->ptrace & PT_EXITKILL))
 			send_sig_info(SIGKILL, SEND_SIG_FORCED, p);
 
 		if (__ptrace_detach(tracer, p))
-			list_add(&p->ptrace_entry, dead);
+			list_add(&p->ptrace_entry, &ptrace_dead);
 	}
+
+	write_unlock_irq(&tasklist_lock);
+	BUG_ON(!list_empty(&tracer->ptraced));
+
+	list_for_each_entry_safe(p, n, &ptrace_dead, ptrace_entry) {
+		list_del_init(&p->ptrace_entry);
+		release_task(p);
+	}
+
+	write_lock_irq(&tasklist_lock);
 }
 
 int ptrace_readdata(struct task_struct *tsk, unsigned long src, char __user *dst, int len)
@@ -578,19 +596,6 @@ static int ptrace_setoptions(struct task_struct *child, unsigned long data)
 
 	if (data & ~(unsigned long)PTRACE_O_MASK)
 		return -EINVAL;
-
-	if (unlikely(data & PTRACE_O_SUSPEND_SECCOMP)) {
-		if (!config_enabled(CONFIG_CHECKPOINT_RESTORE) ||
-		    !config_enabled(CONFIG_SECCOMP))
-			return -EINVAL;
-
-		if (!capable(CAP_SYS_ADMIN))
-			return -EPERM;
-
-		if (seccomp_mode(&current->seccomp) != SECCOMP_MODE_DISABLED ||
-		    current->ptrace & PT_SUSPEND_SECCOMP)
-			return -EPERM;
-	}
 
 	/* Avoid intermediate state when all opts are cleared */
 	flags = child->ptrace;
@@ -1039,11 +1044,6 @@ int ptrace_request(struct task_struct *child, long request,
 		break;
 	}
 #endif
-
-	case PTRACE_SECCOMP_GET_FILTER:
-		ret = seccomp_get_filter(child, addr, datavp);
-		break;
-
 	default:
 		break;
 	}
@@ -1137,6 +1137,7 @@ int generic_ptrace_pokedata(struct task_struct *tsk, unsigned long addr,
 }
 
 #if defined CONFIG_COMPAT
+#include <linux/compat.h>
 
 int compat_ptrace_request(struct task_struct *child, compat_long_t request,
 			  compat_ulong_t addr, compat_ulong_t data)

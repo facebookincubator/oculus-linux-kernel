@@ -23,14 +23,9 @@
 #include <linux/delay.h>
 #include <linux/ccp.h>
 #include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/acpi.h>
 
 #include "ccp-dev.h"
 
-struct ccp_platform {
-	int coherent;
-};
 
 static int ccp_get_irq(struct ccp_device *ccp)
 {
@@ -92,9 +87,7 @@ static struct resource *ccp_find_mmio_area(struct ccp_device *ccp)
 static int ccp_platform_probe(struct platform_device *pdev)
 {
 	struct ccp_device *ccp;
-	struct ccp_platform *ccp_platform;
 	struct device *dev = &pdev->dev;
-	enum dev_dma_attr attr;
 	struct resource *ior;
 	int ret;
 
@@ -103,11 +96,7 @@ static int ccp_platform_probe(struct platform_device *pdev)
 	if (!ccp)
 		goto e_err;
 
-	ccp_platform = devm_kzalloc(dev, sizeof(*ccp_platform), GFP_KERNEL);
-	if (!ccp_platform)
-		goto e_err;
-
-	ccp->dev_specific = ccp_platform;
+	ccp->dev_specific = NULL;
 	ccp->get_irq = ccp_get_irqs;
 	ccp->free_irq = ccp_free_irqs;
 
@@ -115,37 +104,32 @@ static int ccp_platform_probe(struct platform_device *pdev)
 	ccp->io_map = devm_ioremap_resource(dev, ior);
 	if (IS_ERR(ccp->io_map)) {
 		ret = PTR_ERR(ccp->io_map);
-		goto e_err;
+		goto e_free;
 	}
 	ccp->io_regs = ccp->io_map;
 
-	attr = device_get_dma_attr(dev);
-	if (attr == DEV_DMA_NOT_SUPPORTED) {
-		dev_err(dev, "DMA is not supported");
-		goto e_err;
-	}
+	if (!dev->dma_mask)
+		dev->dma_mask = &dev->coherent_dma_mask;
+	*(dev->dma_mask) = DMA_BIT_MASK(48);
+	dev->coherent_dma_mask = DMA_BIT_MASK(48);
 
-	ccp_platform->coherent = (attr == DEV_DMA_COHERENT);
-	if (ccp_platform->coherent)
+	if (of_property_read_bool(dev->of_node, "dma-coherent"))
 		ccp->axcache = CACHE_WB_NO_ALLOC;
 	else
 		ccp->axcache = CACHE_NONE;
-
-	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(48));
-	if (ret) {
-		dev_err(dev, "dma_set_mask_and_coherent failed (%d)\n", ret);
-		goto e_err;
-	}
 
 	dev_set_drvdata(dev, ccp);
 
 	ret = ccp_init(ccp);
 	if (ret)
-		goto e_err;
+		goto e_free;
 
 	dev_notice(dev, "enabled\n");
 
 	return 0;
+
+e_free:
+	kfree(ccp);
 
 e_err:
 	dev_notice(dev, "initialization failed\n");
@@ -158,6 +142,8 @@ static int ccp_platform_remove(struct platform_device *pdev)
 	struct ccp_device *ccp = dev_get_drvdata(dev);
 
 	ccp_destroy(ccp);
+
+	kfree(ccp);
 
 	dev_notice(dev, "disabled\n");
 
@@ -214,31 +200,16 @@ static int ccp_platform_resume(struct platform_device *pdev)
 }
 #endif
 
-#ifdef CONFIG_ACPI
-static const struct acpi_device_id ccp_acpi_match[] = {
-	{ "AMDI0C00", 0 },
-	{ },
-};
-MODULE_DEVICE_TABLE(acpi, ccp_acpi_match);
-#endif
-
-#ifdef CONFIG_OF
-static const struct of_device_id ccp_of_match[] = {
+static const struct of_device_id ccp_platform_ids[] = {
 	{ .compatible = "amd,ccp-seattle-v1a" },
 	{ },
 };
-MODULE_DEVICE_TABLE(of, ccp_of_match);
-#endif
 
 static struct platform_driver ccp_platform_driver = {
 	.driver = {
-		.name = "ccp",
-#ifdef CONFIG_ACPI
-		.acpi_match_table = ccp_acpi_match,
-#endif
-#ifdef CONFIG_OF
-		.of_match_table = ccp_of_match,
-#endif
+		.name = "AMD Cryptographic Coprocessor",
+		.owner = THIS_MODULE,
+		.of_match_table = ccp_platform_ids,
 	},
 	.probe = ccp_platform_probe,
 	.remove = ccp_platform_remove,

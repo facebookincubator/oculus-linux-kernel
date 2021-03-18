@@ -274,6 +274,7 @@ static struct platform_driver rtc_device_driver = {
 	.remove = rtc_remove,
 	.driver = {
 		.name	= "ds2404",
+		.owner	= THIS_MODULE,
 	},
 };
 module_platform_driver(rtc_device_driver);

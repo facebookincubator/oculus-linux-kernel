@@ -14,7 +14,7 @@
 
 #include <linux/linkage.h>
 
-	.text
+	.data
 	.align
 
 	/*

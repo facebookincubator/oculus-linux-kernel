@@ -106,6 +106,19 @@ void hw_timer_init(irq_handler_t handler)
   pquicc->timer_tgcr  = tgcr_save;
 }
 
+int BSP_set_clock_mmss(unsigned long nowtime)
+{
+#if 0
+  short real_seconds = nowtime % 60, real_minutes = (nowtime / 60) % 60;
+
+  tod->second1 = real_seconds / 10;
+  tod->second2 = real_seconds % 10;
+  tod->minute1 = real_minutes / 10;
+  tod->minute2 = real_minutes % 10;
+#endif
+  return 0;
+}
+
 void BSP_reset (void)
 {
   local_irq_disable();
@@ -154,7 +167,8 @@ void __init config_BSP(char *command, int len)
 #if defined(CONFIG_UCQUICC) && 0
   printk(KERN_INFO "uCquicc serial string [%s]\n",getserialnum());
   p = scc1_hwaddr = gethwaddr(0);
-  printk(KERN_INFO "uCquicc hwaddr %pM\n", p);
+  printk(KERN_INFO "uCquicc hwaddr %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n",
+         p[0], p[1], p[2], p[3], p[4], p[5]);
 
   p = getbenv("APPEND");
   if (p)

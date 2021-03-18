@@ -100,7 +100,6 @@ struct kkuc_reg {
 	struct file	*kr_fp;
 	__u32		kr_data;
 };
-
 static struct list_head kkuc_groups[KUC_GRP_MAX+1] = {};
 /* Protect message sending against remove and adds */
 static DECLARE_RWSEM(kg_sem);
@@ -229,12 +228,12 @@ int libcfs_kkuc_group_foreach(int group, libcfs_kkuc_cb_t cb_func,
 	if (kkuc_groups[group].next == NULL)
 		return 0;
 
-	down_write(&kg_sem);
+	down_read(&kg_sem);
 	list_for_each_entry(reg, &kkuc_groups[group], kr_chain) {
 		if (reg->kr_fp != NULL)
 			rc = cb_func(reg->kr_data, cb_arg);
 	}
-	up_write(&kg_sem);
+	up_read(&kg_sem);
 
 	return rc;
 }

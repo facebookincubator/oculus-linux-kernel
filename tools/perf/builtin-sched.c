@@ -23,13 +23,12 @@
 #include <semaphore.h>
 #include <pthread.h>
 #include <math.h>
-#include <api/fs/fs.h>
 
 #define PR_SET_NAME		15               /* Set process name */
 #define MAX_CPUS		4096
 #define COMM_LEN		20
 #define SYM_LEN			129
-#define MAX_PID			1024000
+#define MAX_PID			65536
 
 struct sched_atom;
 
@@ -95,7 +94,6 @@ struct work_atoms {
 	u64			total_lat;
 	u64			nb_atoms;
 	u64			total_runtime;
-	int			num_merged;
 };
 
 typedef int (*sort_fn_t)(struct work_atoms *, struct work_atoms *);
@@ -126,7 +124,7 @@ struct perf_sched {
 	struct perf_tool tool;
 	const char	 *sort_order;
 	unsigned long	 nr_tasks;
-	struct task_desc **pid_to_task;
+	struct task_desc *pid_to_task[MAX_PID];
 	struct task_desc **tasks;
 	const struct trace_sched_handler *tp_handler;
 	pthread_mutex_t	 start_work_mutex;
@@ -169,10 +167,8 @@ struct perf_sched {
 	u64		 all_runtime;
 	u64		 all_count;
 	u64		 cpu_last_switched[MAX_CPUS];
-	struct rb_root	 atom_root, sorted_atom_root, merged_atom_root;
+	struct rb_root	 atom_root, sorted_atom_root;
 	struct list_head sort_list, cmp_pid;
-	bool force;
-	bool skip_merge;
 };
 
 static u64 get_nsecs(void)
@@ -330,19 +326,8 @@ static struct task_desc *register_pid(struct perf_sched *sched,
 				      unsigned long pid, const char *comm)
 {
 	struct task_desc *task;
-	static int pid_max;
 
-	if (sched->pid_to_task == NULL) {
-		if (sysctl__read_int("kernel/pid_max", &pid_max) < 0)
-			pid_max = MAX_PID;
-		BUG_ON((sched->pid_to_task = calloc(pid_max, sizeof(struct task_desc *))) == NULL);
-	}
-	if (pid >= (unsigned long)pid_max) {
-		BUG_ON((sched->pid_to_task = realloc(sched->pid_to_task, (pid + 1) *
-			sizeof(struct task_desc *))) == NULL);
-		while (pid >= (unsigned long)pid_max)
-			sched->pid_to_task[pid_max++] = NULL;
-	}
+	BUG_ON(pid >= MAX_PID);
 
 	task = sched->pid_to_task[pid];
 
@@ -361,7 +346,7 @@ static struct task_desc *register_pid(struct perf_sched *sched,
 
 	sched->pid_to_task[pid] = task;
 	sched->nr_tasks++;
-	sched->tasks = realloc(sched->tasks, sched->nr_tasks * sizeof(struct task_desc *));
+	sched->tasks = realloc(sched->tasks, sched->nr_tasks * sizeof(struct task_task *));
 	BUG_ON(!sched->tasks);
 	sched->tasks[task->nr] = task;
 
@@ -440,45 +425,24 @@ static u64 get_cpu_usage_nsec_parent(void)
 	return sum;
 }
 
-static int self_open_counters(struct perf_sched *sched, unsigned long cur_task)
+static int self_open_counters(void)
 {
 	struct perf_event_attr attr;
-	char sbuf[STRERR_BUFSIZE], info[STRERR_BUFSIZE];
+	char sbuf[STRERR_BUFSIZE];
 	int fd;
-	struct rlimit limit;
-	bool need_privilege = false;
 
 	memset(&attr, 0, sizeof(attr));
 
 	attr.type = PERF_TYPE_SOFTWARE;
 	attr.config = PERF_COUNT_SW_TASK_CLOCK;
 
-force_again:
 	fd = sys_perf_event_open(&attr, 0, -1, -1,
 				 perf_event_open_cloexec_flag());
 
-	if (fd < 0) {
-		if (errno == EMFILE) {
-			if (sched->force) {
-				BUG_ON(getrlimit(RLIMIT_NOFILE, &limit) == -1);
-				limit.rlim_cur += sched->nr_tasks - cur_task;
-				if (limit.rlim_cur > limit.rlim_max) {
-					limit.rlim_max = limit.rlim_cur;
-					need_privilege = true;
-				}
-				if (setrlimit(RLIMIT_NOFILE, &limit) == -1) {
-					if (need_privilege && errno == EPERM)
-						strcpy(info, "Need privilege\n");
-				} else
-					goto force_again;
-			} else
-				strcpy(info, "Have a try with -f option\n");
-		}
+	if (fd < 0)
 		pr_err("Error: sys_perf_event_open() syscall returned "
-		       "with %d (%s)\n%s", fd,
-		       strerror_r(errno, sbuf, sizeof(sbuf)), info);
-		exit(EXIT_FAILURE);
-	}
+		       "with %d (%s)\n", fd,
+		       strerror_r(errno, sbuf, sizeof(sbuf)));
 	return fd;
 }
 
@@ -496,7 +460,6 @@ static u64 get_cpu_usage_nsec_self(int fd)
 struct sched_thread_parms {
 	struct task_desc  *task;
 	struct perf_sched *sched;
-	int fd;
 };
 
 static void *thread_func(void *ctx)
@@ -507,12 +470,13 @@ static void *thread_func(void *ctx)
 	u64 cpu_usage_0, cpu_usage_1;
 	unsigned long i, ret;
 	char comm2[22];
-	int fd = parms->fd;
+	int fd;
 
 	zfree(&parms);
 
 	sprintf(comm2, ":%s", this_task->comm);
 	prctl(PR_SET_NAME, comm2);
+	fd = self_open_counters();
 	if (fd < 0)
 		return NULL;
 again:
@@ -564,7 +528,6 @@ static void create_tasks(struct perf_sched *sched)
 		BUG_ON(parms == NULL);
 		parms->task = task = sched->tasks[i];
 		parms->sched = sched;
-		parms->fd = self_open_counters(sched, i);
 		sem_init(&task->sleep_sem, 0, 0);
 		sem_init(&task->ready_for_work, 0, 0);
 		sem_init(&task->work_done_sem, 0, 0);
@@ -609,13 +572,13 @@ static void wait_for_tasks(struct perf_sched *sched)
 	cpu_usage_1 = get_cpu_usage_nsec_parent();
 	if (!sched->runavg_cpu_usage)
 		sched->runavg_cpu_usage = sched->cpu_usage;
-	sched->runavg_cpu_usage = (sched->runavg_cpu_usage * (sched->replay_repeat - 1) + sched->cpu_usage) / sched->replay_repeat;
+	sched->runavg_cpu_usage = (sched->runavg_cpu_usage * 9 + sched->cpu_usage) / 10;
 
 	sched->parent_cpu_usage = cpu_usage_1 - cpu_usage_0;
 	if (!sched->runavg_parent_cpu_usage)
 		sched->runavg_parent_cpu_usage = sched->parent_cpu_usage;
-	sched->runavg_parent_cpu_usage = (sched->runavg_parent_cpu_usage * (sched->replay_repeat - 1) +
-					 sched->parent_cpu_usage)/sched->replay_repeat;
+	sched->runavg_parent_cpu_usage = (sched->runavg_parent_cpu_usage * 9 +
+					 sched->parent_cpu_usage)/10;
 
 	ret = pthread_mutex_lock(&sched->start_work_mutex);
 	BUG_ON(ret);
@@ -647,7 +610,7 @@ static void run_one_test(struct perf_sched *sched)
 	sched->sum_fluct += fluct;
 	if (!sched->run_avg)
 		sched->run_avg = delta;
-	sched->run_avg = (sched->run_avg * (sched->replay_repeat - 1) + delta) / sched->replay_repeat;
+	sched->run_avg = (sched->run_avg * 9 + delta) / 10;
 
 	printf("#%-3ld: %0.3f, ", sched->nr_runs, (double)delta / 1000000.0);
 
@@ -772,7 +735,7 @@ static int replay_fork_event(struct perf_sched *sched,
 	if (child == NULL || parent == NULL) {
 		pr_debug("thread does not exist on fork event: child %p, parent %p\n",
 				 child, parent);
-		goto out_put;
+		return 0;
 	}
 
 	if (verbose) {
@@ -783,9 +746,6 @@ static int replay_fork_event(struct perf_sched *sched,
 
 	register_pid(sched, parent->tid, thread__comm_str(parent));
 	register_pid(sched, child->tid, thread__comm_str(child));
-out_put:
-	thread__put(child);
-	thread__put(parent);
 	return 0;
 }
 
@@ -871,7 +831,7 @@ static int thread_atoms_insert(struct perf_sched *sched, struct thread *thread)
 		return -1;
 	}
 
-	atoms->thread = thread__get(thread);
+	atoms->thread = thread;
 	INIT_LIST_HEAD(&atoms->work_list);
 	__thread_latency_insert(&sched->atom_root, atoms, &sched->cmp_pid);
 	return 0;
@@ -962,7 +922,7 @@ static int latency_switch_event(struct perf_sched *sched,
 	struct work_atoms *out_events, *in_events;
 	struct thread *sched_out, *sched_in;
 	u64 timestamp0, timestamp = sample->time;
-	int cpu = sample->cpu, err = -1;
+	int cpu = sample->cpu;
 	s64 delta;
 
 	BUG_ON(cpu >= MAX_CPUS || cpu < 0);
@@ -981,17 +941,15 @@ static int latency_switch_event(struct perf_sched *sched,
 
 	sched_out = machine__findnew_thread(machine, -1, prev_pid);
 	sched_in = machine__findnew_thread(machine, -1, next_pid);
-	if (sched_out == NULL || sched_in == NULL)
-		goto out_put;
 
 	out_events = thread_atoms_search(&sched->atom_root, sched_out, &sched->cmp_pid);
 	if (!out_events) {
 		if (thread_atoms_insert(sched, sched_out))
-			goto out_put;
+			return -1;
 		out_events = thread_atoms_search(&sched->atom_root, sched_out, &sched->cmp_pid);
 		if (!out_events) {
 			pr_err("out-event: Internal tree error");
-			goto out_put;
+			return -1;
 		}
 	}
 	if (add_sched_out_event(out_events, sched_out_state(prev_state), timestamp))
@@ -1000,25 +958,22 @@ static int latency_switch_event(struct perf_sched *sched,
 	in_events = thread_atoms_search(&sched->atom_root, sched_in, &sched->cmp_pid);
 	if (!in_events) {
 		if (thread_atoms_insert(sched, sched_in))
-			goto out_put;
+			return -1;
 		in_events = thread_atoms_search(&sched->atom_root, sched_in, &sched->cmp_pid);
 		if (!in_events) {
 			pr_err("in-event: Internal tree error");
-			goto out_put;
+			return -1;
 		}
 		/*
 		 * Take came in we have not heard about yet,
 		 * add in an initial atom in runnable state:
 		 */
 		if (add_sched_out_event(in_events, 'R', timestamp))
-			goto out_put;
+			return -1;
 	}
 	add_sched_in_event(in_events, timestamp);
-	err = 0;
-out_put:
-	thread__put(sched_out);
-	thread__put(sched_in);
-	return err;
+
+	return 0;
 }
 
 static int latency_runtime_event(struct perf_sched *sched,
@@ -1031,29 +986,23 @@ static int latency_runtime_event(struct perf_sched *sched,
 	struct thread *thread = machine__findnew_thread(machine, -1, pid);
 	struct work_atoms *atoms = thread_atoms_search(&sched->atom_root, thread, &sched->cmp_pid);
 	u64 timestamp = sample->time;
-	int cpu = sample->cpu, err = -1;
-
-	if (thread == NULL)
-		return -1;
+	int cpu = sample->cpu;
 
 	BUG_ON(cpu >= MAX_CPUS || cpu < 0);
 	if (!atoms) {
 		if (thread_atoms_insert(sched, thread))
-			goto out_put;
+			return -1;
 		atoms = thread_atoms_search(&sched->atom_root, thread, &sched->cmp_pid);
 		if (!atoms) {
 			pr_err("in-event: Internal tree error");
-			goto out_put;
+			return -1;
 		}
 		if (add_sched_out_event(atoms, 'R', timestamp))
-			goto out_put;
+			return -1;
 	}
 
 	add_runtime_event(atoms, runtime, timestamp);
-	err = 0;
-out_put:
-	thread__put(thread);
-	return err;
+	return 0;
 }
 
 static int latency_wakeup_event(struct perf_sched *sched,
@@ -1066,22 +1015,19 @@ static int latency_wakeup_event(struct perf_sched *sched,
 	struct work_atom *atom;
 	struct thread *wakee;
 	u64 timestamp = sample->time;
-	int err = -1;
 
 	wakee = machine__findnew_thread(machine, -1, pid);
-	if (wakee == NULL)
-		return -1;
 	atoms = thread_atoms_search(&sched->atom_root, wakee, &sched->cmp_pid);
 	if (!atoms) {
 		if (thread_atoms_insert(sched, wakee))
-			goto out_put;
+			return -1;
 		atoms = thread_atoms_search(&sched->atom_root, wakee, &sched->cmp_pid);
 		if (!atoms) {
 			pr_err("wakeup-event: Internal tree error");
-			goto out_put;
+			return -1;
 		}
 		if (add_sched_out_event(atoms, 'S', timestamp))
-			goto out_put;
+			return -1;
 	}
 
 	BUG_ON(list_empty(&atoms->work_list));
@@ -1100,21 +1046,17 @@ static int latency_wakeup_event(struct perf_sched *sched,
 	 * skip in this case.
 	 */
 	if (sched->profile_cpu == -1 && atom->state != THREAD_SLEEPING)
-		goto out_ok;
+		return 0;
 
 	sched->nr_timestamps++;
 	if (atom->sched_out_time > timestamp) {
 		sched->nr_unordered_timestamps++;
-		goto out_ok;
+		return 0;
 	}
 
 	atom->state = THREAD_WAIT_CPU;
 	atom->wake_up_time = timestamp;
-out_ok:
-	err = 0;
-out_put:
-	thread__put(wakee);
-	return err;
+	return 0;
 }
 
 static int latency_migrate_task_event(struct perf_sched *sched,
@@ -1127,7 +1069,6 @@ static int latency_migrate_task_event(struct perf_sched *sched,
 	struct work_atoms *atoms;
 	struct work_atom *atom;
 	struct thread *migrant;
-	int err = -1;
 
 	/*
 	 * Only need to worry about migration when profiling one CPU.
@@ -1136,20 +1077,18 @@ static int latency_migrate_task_event(struct perf_sched *sched,
 		return 0;
 
 	migrant = machine__findnew_thread(machine, -1, pid);
-	if (migrant == NULL)
-		return -1;
 	atoms = thread_atoms_search(&sched->atom_root, migrant, &sched->cmp_pid);
 	if (!atoms) {
 		if (thread_atoms_insert(sched, migrant))
-			goto out_put;
+			return -1;
 		register_pid(sched, migrant->tid, thread__comm_str(migrant));
 		atoms = thread_atoms_search(&sched->atom_root, migrant, &sched->cmp_pid);
 		if (!atoms) {
 			pr_err("migration-event: Internal tree error");
-			goto out_put;
+			return -1;
 		}
 		if (add_sched_out_event(atoms, 'R', timestamp))
-			goto out_put;
+			return -1;
 	}
 
 	BUG_ON(list_empty(&atoms->work_list));
@@ -1161,10 +1100,8 @@ static int latency_migrate_task_event(struct perf_sched *sched,
 
 	if (atom->sched_out_time > timestamp)
 		sched->nr_unordered_timestamps++;
-	err = 0;
-out_put:
-	thread__put(migrant);
-	return err;
+
+	return 0;
 }
 
 static void output_lat_thread(struct perf_sched *sched, struct work_atoms *work_list)
@@ -1184,10 +1121,7 @@ static void output_lat_thread(struct perf_sched *sched, struct work_atoms *work_
 	sched->all_runtime += work_list->total_runtime;
 	sched->all_count   += work_list->nb_atoms;
 
-	if (work_list->num_merged > 1)
-		ret = printf("  %s:(%d) ", thread__comm_str(work_list->thread), work_list->num_merged);
-	else
-		ret = printf("  %s:%d ", thread__comm_str(work_list->thread), work_list->thread->tid);
+	ret = printf("  %s:%d ", thread__comm_str(work_list->thread), work_list->thread->tid);
 
 	for (i = 0; i < 24 - ret; i++)
 		printf(" ");
@@ -1203,13 +1137,12 @@ static void output_lat_thread(struct perf_sched *sched, struct work_atoms *work_
 
 static int pid_cmp(struct work_atoms *l, struct work_atoms *r)
 {
-	if (l->thread == r->thread)
-		return 0;
 	if (l->thread->tid < r->thread->tid)
 		return -1;
 	if (l->thread->tid > r->thread->tid)
 		return 1;
-	return (int)(l->thread - r->thread);
+
+	return 0;
 }
 
 static int avg_cmp(struct work_atoms *l, struct work_atoms *r)
@@ -1308,21 +1241,16 @@ static int sort_dimension__add(const char *tok, struct list_head *list)
 static void perf_sched__sort_lat(struct perf_sched *sched)
 {
 	struct rb_node *node;
-	struct rb_root *root = &sched->atom_root;
-again:
+
 	for (;;) {
 		struct work_atoms *data;
-		node = rb_first(root);
+		node = rb_first(&sched->atom_root);
 		if (!node)
 			break;
 
-		rb_erase(node, root);
+		rb_erase(node, &sched->atom_root);
 		data = rb_entry(node, struct work_atoms, node);
 		__thread_latency_insert(&sched->sorted_atom_root, data, &sched->sort_list);
-	}
-	if (root == &sched->atom_root) {
-		root = &sched->merged_atom_root;
-		goto again;
 	}
 }
 
@@ -1367,10 +1295,8 @@ static int map_switch_event(struct perf_sched *sched, struct perf_evsel *evsel,
 	}
 
 	sched_in = machine__findnew_thread(machine, -1, next_pid);
-	if (sched_in == NULL)
-		return -1;
 
-	sched->curr_thread[this_cpu] = thread__get(sched_in);
+	sched->curr_thread[this_cpu] = sched_in;
 
 	printf("  ");
 
@@ -1419,8 +1345,6 @@ static int map_switch_event(struct perf_sched *sched, struct perf_evsel *evsel,
 	} else {
 		printf("\n");
 	}
-
-	thread__put(sched_in);
 
 	return 0;
 }
@@ -1515,7 +1439,8 @@ static int perf_sched__process_tracepoint_sample(struct perf_tool *tool __maybe_
 	return err;
 }
 
-static int perf_sched__read_events(struct perf_sched *sched)
+static int perf_sched__read_events(struct perf_sched *sched,
+				   struct perf_session **psession)
 {
 	const struct perf_evsel_str_handler handlers[] = {
 		{ "sched:sched_switch",	      process_sched_switch_event, },
@@ -1528,9 +1453,7 @@ static int perf_sched__read_events(struct perf_sched *sched)
 	struct perf_data_file file = {
 		.path = input_name,
 		.mode = PERF_DATA_MODE_READ,
-		.force = sched->force,
 	};
-	int rc = -1;
 
 	session = perf_session__new(&file, false, &sched->tool);
 	if (session == NULL) {
@@ -1544,21 +1467,27 @@ static int perf_sched__read_events(struct perf_sched *sched)
 		goto out_delete;
 
 	if (perf_session__has_traces(session, "record -R")) {
-		int err = perf_session__process_events(session);
+		int err = perf_session__process_events(session, &sched->tool);
 		if (err) {
 			pr_err("Failed to process events, error %d", err);
 			goto out_delete;
 		}
 
-		sched->nr_events      = session->evlist->stats.nr_events[0];
-		sched->nr_lost_events = session->evlist->stats.total_lost;
-		sched->nr_lost_chunks = session->evlist->stats.nr_events[PERF_RECORD_LOST];
+		sched->nr_events      = session->stats.nr_events[0];
+		sched->nr_lost_events = session->stats.total_lost;
+		sched->nr_lost_chunks = session->stats.nr_events[PERF_RECORD_LOST];
 	}
 
-	rc = 0;
+	if (psession)
+		*psession = session;
+	else
+		perf_session__delete(session);
+
+	return 0;
+
 out_delete:
 	perf_session__delete(session);
-	return rc;
+	return -1;
 }
 
 static void print_bad_events(struct perf_sched *sched)
@@ -1583,69 +1512,17 @@ static void print_bad_events(struct perf_sched *sched)
 	}
 }
 
-static void __merge_work_atoms(struct rb_root *root, struct work_atoms *data)
-{
-	struct rb_node **new = &(root->rb_node), *parent = NULL;
-	struct work_atoms *this;
-	const char *comm = thread__comm_str(data->thread), *this_comm;
-
-	while (*new) {
-		int cmp;
-
-		this = container_of(*new, struct work_atoms, node);
-		parent = *new;
-
-		this_comm = thread__comm_str(this->thread);
-		cmp = strcmp(comm, this_comm);
-		if (cmp > 0) {
-			new = &((*new)->rb_left);
-		} else if (cmp < 0) {
-			new = &((*new)->rb_right);
-		} else {
-			this->num_merged++;
-			this->total_runtime += data->total_runtime;
-			this->nb_atoms += data->nb_atoms;
-			this->total_lat += data->total_lat;
-			list_splice(&data->work_list, &this->work_list);
-			if (this->max_lat < data->max_lat) {
-				this->max_lat = data->max_lat;
-				this->max_lat_at = data->max_lat_at;
-			}
-			zfree(&data);
-			return;
-		}
-	}
-
-	data->num_merged++;
-	rb_link_node(&data->node, parent, new);
-	rb_insert_color(&data->node, root);
-}
-
-static void perf_sched__merge_lat(struct perf_sched *sched)
-{
-	struct work_atoms *data;
-	struct rb_node *node;
-
-	if (sched->skip_merge)
-		return;
-
-	while ((node = rb_first(&sched->atom_root))) {
-		rb_erase(node, &sched->atom_root);
-		data = rb_entry(node, struct work_atoms, node);
-		__merge_work_atoms(&sched->merged_atom_root, data);
-	}
-}
-
 static int perf_sched__lat(struct perf_sched *sched)
 {
 	struct rb_node *next;
+	struct perf_session *session;
 
 	setup_pager();
 
-	if (perf_sched__read_events(sched))
+	/* save session -- references to threads are held in work_list */
+	if (perf_sched__read_events(sched, &session))
 		return -1;
 
-	perf_sched__merge_lat(sched);
 	perf_sched__sort_lat(sched);
 
 	printf("\n -----------------------------------------------------------------------------------------------------------------\n");
@@ -1660,7 +1537,6 @@ static int perf_sched__lat(struct perf_sched *sched)
 		work_list = rb_entry(next, struct work_atoms, node);
 		output_lat_thread(sched, work_list);
 		next = rb_next(next);
-		thread__zput(work_list->thread);
 	}
 
 	printf(" -----------------------------------------------------------------------------------------------------------------\n");
@@ -1672,6 +1548,7 @@ static int perf_sched__lat(struct perf_sched *sched)
 	print_bad_events(sched);
 	printf("\n");
 
+	perf_session__delete(session);
 	return 0;
 }
 
@@ -1680,7 +1557,7 @@ static int perf_sched__map(struct perf_sched *sched)
 	sched->max_cpu = sysconf(_SC_NPROCESSORS_CONF);
 
 	setup_pager();
-	if (perf_sched__read_events(sched))
+	if (perf_sched__read_events(sched, NULL))
 		return -1;
 	print_bad_events(sched);
 	return 0;
@@ -1695,7 +1572,7 @@ static int perf_sched__replay(struct perf_sched *sched)
 
 	test_calibrations(sched);
 
-	if (perf_sched__read_events(sched))
+	if (perf_sched__read_events(sched, NULL))
 		return -1;
 
 	printf("nr_run_events:        %ld\n", sched->nr_run_events);
@@ -1729,8 +1606,8 @@ static void setup_sorting(struct perf_sched *sched, const struct option *options
 	for (tok = strtok_r(str, ", ", &tmp);
 			tok; tok = strtok_r(NULL, ", ", &tmp)) {
 		if (sort_dimension__add(tok, &sched->sort_list) < 0) {
-			usage_with_options_msg(usage_msg, options,
-					"Unknown --sort key: `%s'", tok);
+			error("Unknown --sort key: `%s'", tok);
+			usage_with_options(usage_msg, options);
 		}
 	}
 
@@ -1797,7 +1674,6 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 		.profile_cpu	      = -1,
 		.next_shortname1      = 'A',
 		.next_shortname2      = '0',
-		.skip_merge           = 0,
 	};
 	const struct option latency_options[] = {
 	OPT_STRING('s', "sort", &sched.sort_order, "key[,key2...]",
@@ -1808,8 +1684,6 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 		    "CPU to profile on"),
 	OPT_BOOLEAN('D', "dump-raw-trace", &dump_trace,
 		    "dump raw trace in ASCII"),
-	OPT_BOOLEAN('p', "pids", &sched.skip_merge,
-		    "latency stats per pid instead of per comm"),
 	OPT_END()
 	};
 	const struct option replay_options[] = {
@@ -1819,7 +1693,6 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 		    "be more verbose (show symbol address, etc)"),
 	OPT_BOOLEAN('D', "dump-raw-trace", &dump_trace,
 		    "dump raw trace in ASCII"),
-	OPT_BOOLEAN('f', "force", &sched.force, "don't complain, do it"),
 	OPT_END()
 	};
 	const struct option sched_options[] = {

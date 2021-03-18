@@ -179,7 +179,8 @@ static int sirfsoc_pwrc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int __maybe_unused sirfsoc_pwrc_resume(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int sirfsoc_pwrc_resume(struct device *dev)
 {
 	struct sirfsoc_pwrc_drvdata *pwrcdrv = dev_get_drvdata(dev);
 	struct input_dev *input = pwrcdrv->input;
@@ -195,6 +196,7 @@ static int __maybe_unused sirfsoc_pwrc_resume(struct device *dev)
 
 	return 0;
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(sirfsoc_pwrc_pm_ops, NULL, sirfsoc_pwrc_resume);
 
@@ -203,6 +205,7 @@ static struct platform_driver sirfsoc_pwrc_driver = {
 	.remove		= sirfsoc_pwrc_remove,
 	.driver		= {
 		.name	= "sirfsoc-pwrc",
+		.owner	= THIS_MODULE,
 		.pm	= &sirfsoc_pwrc_pm_ops,
 		.of_match_table = sirfsoc_pwrc_of_match,
 	}

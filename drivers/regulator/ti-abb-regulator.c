@@ -837,8 +837,7 @@ skip_opt:
 		return -EINVAL;
 	}
 
-	initdata = of_get_regulator_init_data(dev, pdev->dev.of_node,
-					      &abb->rdesc);
+	initdata = of_get_regulator_init_data(dev, pdev->dev.of_node);
 	if (!initdata) {
 		dev_err(dev, "%s: Unable to alloc regulator init data\n",
 			__func__);
@@ -892,6 +891,7 @@ static struct platform_driver ti_abb_driver = {
 	.probe = ti_abb_probe,
 	.driver = {
 		   .name = "ti_abb",
+		   .owner = THIS_MODULE,
 		   .of_match_table = of_match_ptr(ti_abb_of_match),
 		   },
 };

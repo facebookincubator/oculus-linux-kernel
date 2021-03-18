@@ -179,41 +179,19 @@
 #define MVFR1_FPFTZ_SHIFT		0
 
 
-#define ID_AA64MMFR0_TGRAN4_SHIFT	28
-#define ID_AA64MMFR0_TGRAN64_SHIFT	24
-#define ID_AA64MMFR0_TGRAN16_SHIFT	20
-
-#define ID_AA64MMFR0_TGRAN4_NI		0xf
-#define ID_AA64MMFR0_TGRAN4_SUPPORTED	0x0
-#define ID_AA64MMFR0_TGRAN64_NI		0xf
-#define ID_AA64MMFR0_TGRAN64_SUPPORTED	0x0
-#define ID_AA64MMFR0_TGRAN16_NI		0x0
-#define ID_AA64MMFR0_TGRAN16_SUPPORTED	0x1
-
-#if defined(CONFIG_ARM64_4K_PAGES)
-#define ID_AA64MMFR0_TGRAN_SHIFT	ID_AA64MMFR0_TGRAN4_SHIFT
-#define ID_AA64MMFR0_TGRAN_SUPPORTED	ID_AA64MMFR0_TGRAN4_SUPPORTED
-#elif defined(CONFIG_ARM64_16K_PAGES)
-#define ID_AA64MMFR0_TGRAN_SHIFT	ID_AA64MMFR0_TGRAN16_SHIFT
-#define ID_AA64MMFR0_TGRAN_SUPPORTED	ID_AA64MMFR0_TGRAN16_SUPPORTED
-#elif defined(CONFIG_ARM64_64K_PAGES)
-#define ID_AA64MMFR0_TGRAN_SHIFT	ID_AA64MMFR0_TGRAN64_SHIFT
-#define ID_AA64MMFR0_TGRAN_SUPPORTED	ID_AA64MMFR0_TGRAN64_SUPPORTED
-#endif
-
 #ifdef __ASSEMBLY__
 
 	.irp	num,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30
-	.equ	.L__reg_num_x\num, \num
+	.equ	__reg_num_x\num, \num
 	.endr
-	.equ	.L__reg_num_xzr, 31
+	.equ	__reg_num_xzr, 31
 
 	.macro	mrs_s, rt, sreg
-	.inst	0xd5200000|(\sreg)|(.L__reg_num_\rt)
+	.inst	0xd5200000|(\sreg)|(__reg_num_\rt)
 	.endm
 
 	.macro	msr_s, sreg, rt
-	.inst	0xd5000000|(\sreg)|(.L__reg_num_\rt)
+	.inst	0xd5000000|(\sreg)|(__reg_num_\rt)
 	.endm
 
 #else
@@ -222,16 +200,16 @@
 
 asm(
 "	.irp	num,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30\n"
-"	.equ	.L__reg_num_x\\num, \\num\n"
+"	.equ	__reg_num_x\\num, \\num\n"
 "	.endr\n"
-"	.equ	.L__reg_num_xzr, 31\n"
+"	.equ	__reg_num_xzr, 31\n"
 "\n"
 "	.macro	mrs_s, rt, sreg\n"
-"	.inst	0xd5200000|(\\sreg)|(.L__reg_num_\\rt)\n"
+"	.inst	0xd5200000|(\\sreg)|(__reg_num_\\rt)\n"
 "	.endm\n"
 "\n"
 "	.macro	msr_s, sreg, rt\n"
-"	.inst	0xd5000000|(\\sreg)|(.L__reg_num_\\rt)\n"
+"	.inst	0xd5000000|(\\sreg)|(__reg_num_\\rt)\n"
 "	.endm\n"
 );
 

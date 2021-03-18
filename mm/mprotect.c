@@ -29,8 +29,6 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
-#include "internal.h"
-
 /*
  * For a prot_numa update we only hold mmap_sem for read so there is a
  * potential race with faulting where a pmd was temporarily none. This
@@ -77,38 +75,37 @@ static unsigned long change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 		oldpte = *pte;
 		if (pte_present(oldpte)) {
 			pte_t ptent;
-			bool preserve_write = prot_numa && pte_write(oldpte);
+			bool updated = false;
 
-			/*
-			 * Avoid trapping faults against the zero or KSM
-			 * pages. See similar comment in change_huge_pmd.
-			 */
-			if (prot_numa) {
+			if (!prot_numa) {
+				ptent = ptep_modify_prot_start(mm, addr, pte);
+				if (pte_numa(ptent))
+					ptent = pte_mknonnuma(ptent);
+				ptent = pte_modify(ptent, newprot);
+				/*
+				 * Avoid taking write faults for pages we
+				 * know to be dirty.
+				 */
+				if (dirty_accountable && pte_dirty(ptent) &&
+				    (pte_soft_dirty(ptent) ||
+				     !(vma->vm_flags & VM_SOFTDIRTY)))
+					ptent = pte_mkwrite(ptent);
+				ptep_modify_prot_commit(mm, addr, pte, ptent);
+				updated = true;
+			} else {
 				struct page *page;
 
 				page = vm_normal_page(vma, addr, oldpte);
-				if (!page || PageKsm(page))
-					continue;
-
-				/* Avoid TLB flush if possible */
-				if (pte_protnone(oldpte))
-					continue;
+				if (page && !PageKsm(page)) {
+					if (!pte_numa(oldpte)) {
+						ptep_set_numa(mm, addr, pte);
+						updated = true;
+					}
+				}
 			}
-
-			ptent = ptep_modify_prot_start(mm, addr, pte);
-			ptent = pte_modify(ptent, newprot);
-			if (preserve_write)
-				ptent = pte_mkwrite(ptent);
-
-			/* Avoid taking write faults for known dirty pages */
-			if (dirty_accountable && pte_dirty(ptent) &&
-					(pte_soft_dirty(ptent) ||
-					 !(vma->vm_flags & VM_SOFTDIRTY))) {
-				ptent = pte_mkwrite(ptent);
-			}
-			ptep_modify_prot_commit(mm, addr, pte, ptent);
-			pages++;
-		} else if (IS_ENABLED(CONFIG_MIGRATION)) {
+			if (updated)
+				pages++;
+		} else if (IS_ENABLED(CONFIG_MIGRATION) && !pte_file(oldpte)) {
 			swp_entry_t entry = pte_to_swp_entry(oldpte);
 
 			if (is_write_migration_entry(entry)) {
@@ -292,8 +289,8 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 	 */
 	pgoff = vma->vm_pgoff + ((start - vma->vm_start) >> PAGE_SHIFT);
 	*pprev = vma_merge(mm, *pprev, start, end, newflags,
-			   vma->anon_vma, vma->vm_file, pgoff, vma_policy(vma),
-			   vma->vm_userfaultfd_ctx, vma_get_anon_name(vma));
+			vma->anon_vma, vma->vm_file, pgoff, vma_policy(vma),
+			vma_get_anon_name(vma));
 	if (*pprev) {
 		vma = *pprev;
 		goto success;
@@ -324,15 +321,6 @@ success:
 
 	change_protection(vma, start, end, vma->vm_page_prot,
 			  dirty_accountable, 0);
-
-	/*
-	 * Private VM_LOCKED VMA becoming writable: trigger COW to avoid major
-	 * fault on access.
-	 */
-	if ((oldflags & (VM_WRITE | VM_SHARED | VM_LOCKED)) == VM_LOCKED &&
-			(newflags & VM_WRITE)) {
-		populate_vma_page_range(vma, start, end, NULL);
-	}
 
 	vm_stat_account(mm, oldflags, vma->vm_file, -nrpages);
 	vm_stat_account(mm, newflags, vma->vm_file, nrpages);

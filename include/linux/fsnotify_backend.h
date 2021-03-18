@@ -84,6 +84,8 @@ struct fsnotify_fname;
  * Each group much define these ops.  The fsnotify infrastructure will call
  * these operations for each relevant group.
  *
+ * should_send_event - given a group, inode, and mask this function determines
+ *		if the group is interested in this event.
  * handle_event - main call for a group to handle an fs event
  * free_group_priv - called when a group refcnt hits 0 to clean up the private union
  * freeing_mark - called when a mark is being destroyed for some reason.  The group
@@ -195,49 +197,53 @@ struct fsnotify_group {
 #define FSNOTIFY_EVENT_INODE	2
 
 /*
- * A mark is simply an object attached to an in core inode which allows an
+ * Inode specific fields in an fsnotify_mark
+ */
+struct fsnotify_inode_mark {
+	struct inode *inode;		/* inode this mark is associated with */
+	struct hlist_node i_list;	/* list of marks by inode->i_fsnotify_marks */
+	struct list_head free_i_list;	/* tmp list used when freeing this mark */
+};
+
+/*
+ * Mount point specific fields in an fsnotify_mark
+ */
+struct fsnotify_vfsmount_mark {
+	struct vfsmount *mnt;		/* vfsmount this mark is associated with */
+	struct hlist_node m_list;	/* list of marks by inode->i_fsnotify_marks */
+	struct list_head free_m_list;	/* tmp list used when freeing this mark */
+};
+
+/*
+ * a mark is simply an object attached to an in core inode which allows an
  * fsnotify listener to indicate they are either no longer interested in events
  * of a type matching mask or only interested in those events.
  *
- * These are flushed when an inode is evicted from core and may be flushed
- * when the inode is modified (as seen by fsnotify_access).  Some fsnotify
- * users (such as dnotify) will flush these when the open fd is closed and not
- * at inode eviction or modification.
- *
- * Text in brackets is showing the lock(s) protecting modifications of a
- * particular entry. obj_lock means either inode->i_lock or
- * mnt->mnt_root->d_lock depending on the mark type.
+ * these are flushed when an inode is evicted from core and may be flushed
+ * when the inode is modified (as seen by fsnotify_access).  Some fsnotify users
+ * (such as dnotify) will flush these when the open fd is closed and not at
+ * inode eviction or modification.
  */
 struct fsnotify_mark {
-	/* Mask this mark is for [mark->lock, group->mark_mutex] */
-	__u32 mask;
-	/* We hold one for presence in g_list. Also one ref for each 'thing'
+	__u32 mask;			/* mask this mark is for */
+	/* we hold ref for each i_list and g_list.  also one ref for each 'thing'
 	 * in kernel that found and may be using this mark. */
-	atomic_t refcnt;
-	/* Group this mark is for. Set on mark creation, stable until last ref
-	 * is dropped */
-	struct fsnotify_group *group;
-	/* List of marks by group->i_fsnotify_marks. Also reused for queueing
-	 * mark into destroy_list when it's waiting for the end of SRCU period
-	 * before it can be freed. [group->mark_mutex] */
-	struct list_head g_list;
-	/* Protects inode / mnt pointers, flags, masks */
-	spinlock_t lock;
-	/* List of marks for inode / vfsmount [obj_lock] */
-	struct hlist_node obj_list;
-	union {	/* Object pointer [mark->lock, group->mark_mutex] */
-		struct inode *inode;	/* inode this mark is associated with */
-		struct vfsmount *mnt;	/* vfsmount this mark is associated with */
+	atomic_t refcnt;		/* active things looking at this mark */
+	struct fsnotify_group *group;	/* group this mark is for */
+	struct list_head g_list;	/* list of marks by group->i_fsnotify_marks */
+	spinlock_t lock;		/* protect group and inode */
+	union {
+		struct fsnotify_inode_mark i;
+		struct fsnotify_vfsmount_mark m;
 	};
-	/* Events types to ignore [mark->lock, group->mark_mutex] */
-	__u32 ignored_mask;
+	__u32 ignored_mask;		/* events types to ignore */
 #define FSNOTIFY_MARK_FLAG_INODE		0x01
 #define FSNOTIFY_MARK_FLAG_VFSMOUNT		0x02
 #define FSNOTIFY_MARK_FLAG_OBJECT_PINNED	0x04
 #define FSNOTIFY_MARK_FLAG_IGNORED_SURV_MODIFY	0x08
 #define FSNOTIFY_MARK_FLAG_ALIVE		0x10
-#define FSNOTIFY_MARK_FLAG_ATTACHED		0x20
-	unsigned int flags;		/* flags [mark->lock] */
+	unsigned int flags;		/* vfsmount or inode mark? */
+	struct list_head destroy_list;
 	void (*free_mark)(struct fsnotify_mark *mark); /* called on final put+free */
 };
 
@@ -354,10 +360,8 @@ extern int fsnotify_add_mark_locked(struct fsnotify_mark *mark, struct fsnotify_
 /* given a group and a mark, flag mark to be freed when all references are dropped */
 extern void fsnotify_destroy_mark(struct fsnotify_mark *mark,
 				  struct fsnotify_group *group);
-/* detach mark from inode / mount list, group list, drop inode reference */
-extern void fsnotify_detach_mark(struct fsnotify_mark *mark);
-/* free mark */
-extern void fsnotify_free_mark(struct fsnotify_mark *mark);
+extern void fsnotify_destroy_mark_locked(struct fsnotify_mark *mark,
+					 struct fsnotify_group *group);
 /* run all the marks in a group, and clear all of the vfsmount marks */
 extern void fsnotify_clear_vfsmount_marks_by_group(struct fsnotify_group *group);
 /* run all the marks in a group, and clear all of the inode marks */
@@ -368,7 +372,7 @@ extern void fsnotify_clear_marks_by_group_flags(struct fsnotify_group *group, un
 extern void fsnotify_clear_marks_by_group(struct fsnotify_group *group);
 extern void fsnotify_get_mark(struct fsnotify_mark *mark);
 extern void fsnotify_put_mark(struct fsnotify_mark *mark);
-extern void fsnotify_unmount_inodes(struct super_block *sb);
+extern void fsnotify_unmount_inodes(struct list_head *list);
 
 /* put here because inotify does some weird stuff when destroying watches */
 extern void fsnotify_init_event(struct fsnotify_event *event,
@@ -404,7 +408,7 @@ static inline u32 fsnotify_get_cookie(void)
 	return 0;
 }
 
-static inline void fsnotify_unmount_inodes(struct super_block *sb)
+static inline void fsnotify_unmount_inodes(struct list_head *list)
 {}
 
 #endif	/* CONFIG_FSNOTIFY */

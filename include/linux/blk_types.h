@@ -14,8 +14,19 @@ struct page;
 struct block_device;
 struct io_context;
 struct cgroup_subsys_state;
-typedef void (bio_end_io_t) (struct bio *);
+typedef void (bio_end_io_t) (struct bio *, int);
 typedef void (bio_destructor_t) (struct bio *);
+
+#define BC_ENCRYPT_FL		0x00000001
+#define BC_AES_256_XTS_FL	0x00000002
+
+#define BC_MAX_ENCRYPTION_KEY_SIZE	64
+
+struct bio_crypt_ctx {
+	unsigned int	bc_flags;
+	unsigned int	bc_key_size;
+	struct key	*bc_keyring_key;
+};
 
 /*
  * was unsigned short, but we might as well be ready for > 64kB I/O pages
@@ -39,15 +50,6 @@ struct bvec_iter {
 						   current bvec */
 };
 
-#ifdef CONFIG_BLOCK_PERF_FRAMEWORK
-/* Double declaration from ktime.h so as to not break the include dependency
- * chain. Should be kept up to date.
- */
-union blk_ktime {
-	s64	tv64;
-};
-#endif
-
 /*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)
@@ -55,18 +57,13 @@ union blk_ktime {
 struct bio {
 	struct bio		*bi_next;	/* request queue link */
 	struct block_device	*bi_bdev;
-	unsigned int		bi_flags;	/* status, command, etc */
-	int			bi_error;
+	unsigned long		bi_flags;	/* status, command, etc */
 	unsigned long		bi_rw;		/* bottom bits READ/WRITE,
 						 * top bits priority
 						 */
 
 	struct bvec_iter	bi_iter;
 
-#ifdef CONFIG_BLOCK_PERF_FRAMEWORK
-	union blk_ktime		submit_time;
-	unsigned int            blk_sector_count;
-#endif
 	/* Number of segments in this BIO after
 	 * physical address coalescing is performed.
 	 */
@@ -79,7 +76,7 @@ struct bio {
 	unsigned int		bi_seg_front_size;
 	unsigned int		bi_seg_back_size;
 
-	atomic_t		__bi_remaining;
+	atomic_t		bi_remaining;
 
 	bio_end_io_t		*bi_end_io;
 
@@ -113,11 +110,14 @@ struct bio {
 
 	unsigned short		bi_max_vecs;	/* max bvl_vecs we can hold */
 
-	atomic_t		__bi_cnt;	/* pin count */
+	atomic_t		bi_cnt;		/* pin count */
 
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
 	struct bio_set		*bi_pool;
+
+	/* Encryption context. May contain secret key material. */
+	struct bio_crypt_ctx	bi_crypt_ctx;
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -132,14 +132,17 @@ struct bio {
 /*
  * bio flags
  */
-#define BIO_SEG_VALID	1	/* bi_phys_segments valid */
-#define BIO_CLONED	2	/* doesn't own data */
-#define BIO_BOUNCED	3	/* bio is a bounce bio */
-#define BIO_USER_MAPPED 4	/* contains user pages */
-#define BIO_NULL_MAPPED 5	/* contains invalid user pages */
-#define BIO_QUIET	6	/* Make BIO Quiet */
-#define BIO_CHAIN	7	/* chained bio, ->bi_remaining in effect */
-#define BIO_REFFED	8	/* bio has elevated ->bi_cnt */
+#define BIO_UPTODATE	0	/* ok after I/O completion */
+#define BIO_RW_BLOCK	1	/* RW_AHEAD set, and read/write would block */
+#define BIO_EOF		2	/* out-out-bounds error */
+#define BIO_SEG_VALID	3	/* bi_phys_segments valid */
+#define BIO_CLONED	4	/* doesn't own data */
+#define BIO_BOUNCED	5	/* bio is a bounce bio */
+#define BIO_USER_MAPPED 6	/* contains user pages */
+#define BIO_EOPNOTSUPP	7	/* not supported */
+#define BIO_NULL_MAPPED 8	/* contains invalid user pages */
+#define BIO_QUIET	9	/* Make BIO Quiet */
+#define BIO_SNAP_STABLE	10	/* bio data must be snapshotted during write */
 
 /*
  * Flags starting here get preserved by bio_reset() - this includes
@@ -153,14 +156,23 @@ struct bio {
  * at the dm level
  */
 #define BIO_DONTFREE 14
+
+/*
+ * Added for Req based dm which need to perform post processing. This flag
+ * ensures blk_update_request does not free the bios or request, this is done
+ * at the dm level
+ */
+#define BIO_DONTFREE 14
 #define BIO_INLINECRYPT 15
+
+#define bio_flagged(bio, flag)	((bio)->bi_flags & (1 << (flag)))
 
 /*
  * top 4 bits of bio flags indicate the pool this bio came from
  */
 #define BIO_POOL_BITS		(4)
 #define BIO_POOL_NONE		((1UL << BIO_POOL_BITS) - 1)
-#define BIO_POOL_OFFSET		(32 - BIO_POOL_BITS)
+#define BIO_POOL_OFFSET		(BITS_PER_LONG - BIO_POOL_BITS)
 #define BIO_POOL_MASK		(1UL << BIO_POOL_OFFSET)
 #define BIO_POOL_IDX(bio)	((bio)->bi_flags >> BIO_POOL_OFFSET)
 
@@ -217,7 +229,6 @@ enum rq_flag_bits {
 	__REQ_PM,		/* runtime pm request */
 	__REQ_HASHED,		/* on IO scheduler merge hash */
 	__REQ_MQ_INFLIGHT,	/* track inflight for MQ */
-	__REQ_NO_TIMEOUT,	/* requests may never expire */
 	__REQ_URGENT,		/* urgent request */
 	__REQ_NR_BITS,		/* stops here */
 };
@@ -247,7 +258,7 @@ enum rq_flag_bits {
 
 /* This mask is used for both bio and request merge checking */
 #define REQ_NOMERGE_FLAGS \
-	(REQ_NOMERGE | REQ_STARTED | REQ_SOFTBARRIER | REQ_FLUSH | REQ_FUA | REQ_FLUSH_SEQ)
+	(REQ_NOMERGE | REQ_STARTED | REQ_SOFTBARRIER | REQ_FLUSH | REQ_FUA)
 
 #define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
 #define REQ_THROTTLED		(1ULL << __REQ_THROTTLED)
@@ -275,30 +286,5 @@ enum rq_flag_bits {
 #define REQ_PM			(1ULL << __REQ_PM)
 #define REQ_HASHED		(1ULL << __REQ_HASHED)
 #define REQ_MQ_INFLIGHT		(1ULL << __REQ_MQ_INFLIGHT)
-#define REQ_NO_TIMEOUT		(1ULL << __REQ_NO_TIMEOUT)
-
-typedef unsigned int blk_qc_t;
-#define BLK_QC_T_NONE	-1U
-#define BLK_QC_T_SHIFT	16
-
-static inline bool blk_qc_t_valid(blk_qc_t cookie)
-{
-	return cookie != BLK_QC_T_NONE;
-}
-
-static inline blk_qc_t blk_tag_to_qc_t(unsigned int tag, unsigned int queue_num)
-{
-	return tag | (queue_num << BLK_QC_T_SHIFT);
-}
-
-static inline unsigned int blk_qc_t_to_queue_num(blk_qc_t cookie)
-{
-	return cookie >> BLK_QC_T_SHIFT;
-}
-
-static inline unsigned int blk_qc_t_to_tag(blk_qc_t cookie)
-{
-	return cookie & ((1u << BLK_QC_T_SHIFT) - 1);
-}
 
 #endif /* __LINUX_BLK_TYPES_H */

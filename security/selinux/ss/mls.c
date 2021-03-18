@@ -654,15 +654,19 @@ int mls_import_netlbl_cat(struct context *context,
 
 	rc = ebitmap_netlbl_import(&context->range.level[0].cat,
 				   secattr->attr.mls.cat);
-	if (rc)
+	if (rc != 0)
 		goto import_netlbl_cat_failure;
-	memcpy(&context->range.level[1].cat, &context->range.level[0].cat,
-	       sizeof(context->range.level[0].cat));
+
+	rc = ebitmap_cpy(&context->range.level[1].cat,
+			 &context->range.level[0].cat);
+	if (rc != 0)
+		goto import_netlbl_cat_failure;
 
 	return 0;
 
 import_netlbl_cat_failure:
 	ebitmap_destroy(&context->range.level[0].cat);
+	ebitmap_destroy(&context->range.level[1].cat);
 	return rc;
 }
 #endif /* CONFIG_NETLABEL */

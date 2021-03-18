@@ -68,8 +68,7 @@ out:
 static int soc_compr_open_fe(struct snd_compr_stream *cstream)
 {
 	struct snd_soc_pcm_runtime *fe = cstream->private_data;
-	struct snd_pcm_substream *fe_substream =
-		 fe->pcm->streams[cstream->direction].substream;
+	struct snd_pcm_substream *fe_substream = fe->pcm->streams[0].substream;
 	struct snd_soc_platform *platform = fe->platform;
 	struct snd_soc_dpcm *dpcm;
 	struct snd_soc_dapm_widget_list *list;
@@ -235,6 +234,7 @@ static int soc_compr_free_fe(struct snd_compr_stream *cstream)
 {
 	struct snd_soc_pcm_runtime *fe = cstream->private_data;
 	struct snd_soc_platform *platform = fe->platform;
+	struct snd_soc_dai *codec_dai = fe->codec_dai;
 	struct snd_soc_dpcm *dpcm;
 	int stream, ret;
 
@@ -246,6 +246,7 @@ static int soc_compr_free_fe(struct snd_compr_stream *cstream)
 		stream = SNDRV_PCM_STREAM_CAPTURE;
 
 	snd_soc_runtime_deactivate(fe, stream);
+	snd_soc_dai_digital_mute(codec_dai, 1, cstream->direction);
 
 	fe->dpcm[stream].runtime_update = SND_SOC_DPCM_UPDATE_FE;
 
@@ -253,13 +254,17 @@ static int soc_compr_free_fe(struct snd_compr_stream *cstream)
 	if (ret < 0)
 		dev_err(fe->dev, "compressed hw_free failed %d\n", ret);
 
+	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+		dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_STOP);
+
 	ret = dpcm_be_dai_shutdown(fe, stream);
 
 	/* mark FE's links ready to prune */
 	list_for_each_entry(dpcm, &fe->dpcm[stream].be_clients, list_be)
 		dpcm->state = SND_SOC_DPCM_LINK_STATE_FREE;
 
-	dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_STOP);
+	if (stream != SNDRV_PCM_STREAM_PLAYBACK)
+		dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_STOP);
 
 	fe->dpcm[stream].state = SND_SOC_DPCM_STATE_CLOSE;
 	fe->dpcm[stream].runtime_update = SND_SOC_DPCM_UPDATE_NO;
@@ -444,8 +449,7 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 					struct snd_compr_params *params)
 {
 	struct snd_soc_pcm_runtime *fe = cstream->private_data;
-	struct snd_pcm_substream *fe_substream =
-		 fe->pcm->streams[cstream->direction].substream;
+	struct snd_pcm_substream *fe_substream = fe->pcm->streams[0].substream;
 	struct snd_soc_platform *platform = fe->platform;
 	struct snd_soc_pcm_runtime *be_list[DPCM_MAX_BE_USERS];
 	struct snd_soc_dpcm *dpcm;
@@ -553,8 +557,6 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 				goto exit;
 		}
 
-		dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_START);
-
 		if (fe->dai_link->compr_ops &&
 				fe->dai_link->compr_ops->set_params) {
 			ret = fe->dai_link->compr_ops->set_params(cstream);
@@ -566,7 +568,11 @@ exit:
 		if (fe->err_ops < 0 || ret < 0)
 			goto out;
 	}
-	dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_START);
+	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+		dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_START);
+	else
+		dpcm_dapm_stream_event(fe, stream, SND_SOC_DAPM_STREAM_START);
+
 	fe->dpcm[stream].state = SND_SOC_DPCM_STATE_PREPARE;
 
 out:
@@ -744,15 +750,8 @@ static struct snd_compr_ops soc_compr_dyn_ops = {
 	.get_codec_caps = soc_compr_get_codec_caps
 };
 
-/**
- * snd_soc_new_compress - create a new compress.
- *
- * @rtd: The runtime for which we will create compress
- * @num: the device index number (zero based - shared with normal PCMs)
- *
- * Return: 0 for success, else error.
- */
-int snd_soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
+/* create a new compress */
+int soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 {
 	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_platform *platform = rtd->platform;
@@ -760,9 +759,10 @@ int snd_soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	struct snd_compr *compr;
 	struct snd_pcm *be_pcm;
+	struct snd_pcm_substream *be_playback_substream;
+	struct snd_pcm_substream *be_capture_substream;
 	char new_name[64];
 	int ret = 0, direction = 0;
-	int playback = 0, capture = 0;
 
 	if (rtd->num_codecs > 1) {
 		dev_err(rtd->card->dev, "Multicodec not supported for compressed stream\n");
@@ -774,27 +774,11 @@ int snd_soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 			rtd->dai_link->stream_name, codec_dai->name, num);
 
 	if (codec_dai->driver->playback.channels_min)
-		playback = 1;
-	if (codec_dai->driver->capture.channels_min)
-		capture = 1;
-
-	capture = capture && cpu_dai->driver->capture.channels_min;
-	playback = playback && cpu_dai->driver->playback.channels_min;
-
-	/*
-	 * Compress devices are unidirectional so only one of the directions
-	 * should be set, check for that (xor)
-	 */
-	if (playback + capture != 1) {
-		dev_err(rtd->card->dev, "Invalid direction for compress P %d, C %d\n",
-				playback, capture);
-		return -EINVAL;
-	}
-
-	if(playback)
 		direction = SND_COMPRESS_PLAYBACK;
-	else
+	else if (codec_dai->driver->capture.channels_min)
 		direction = SND_COMPRESS_CAPTURE;
+	else
+		return -EINVAL;
 
 	compr = kzalloc(sizeof(*compr), GFP_KERNEL);
 	if (compr == NULL) {
@@ -825,6 +809,14 @@ int snd_soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 
 		rtd->pcm = be_pcm;
 		rtd->fe_compr = 1;
+		be_playback_substream =
+			be_pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
+		be_capture_substream =
+			be_pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream;
+		if (be_playback_substream)
+			be_playback_substream->private_data = rtd;
+		if (be_capture_substream)
+			be_capture_substream->private_data = rtd;
 		if (rtd->dai_link->dpcm_playback)
 			be_pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream->private_data = rtd;
 		else if (rtd->dai_link->dpcm_capture)
@@ -867,4 +859,3 @@ compr_err:
 	kfree(compr);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(snd_soc_new_compress);

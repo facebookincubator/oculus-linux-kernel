@@ -7,8 +7,7 @@ struct intel_uncore_type **uncore_pci_uncores = empty_uncore;
 static bool pcidrv_registered;
 struct pci_driver *uncore_pci_driver;
 /* pci bus to socket mapping */
-DEFINE_RAW_SPINLOCK(pci2phy_map_lock);
-struct list_head pci2phy_map_head = LIST_HEAD_INIT(pci2phy_map_head);
+int uncore_pcibus_to_physid[256] = { [0 ... 255] = -1, };
 struct pci_dev *uncore_extra_pci_dev[UNCORE_SOCKET_MAX][UNCORE_EXTRA_PCI_DEV_MAX];
 
 static DEFINE_RAW_SPINLOCK(uncore_box_lock);
@@ -20,59 +19,6 @@ static struct event_constraint uncore_constraint_fixed =
 	EVENT_CONSTRAINT(~0ULL, 1 << UNCORE_PMC_IDX_FIXED, ~0ULL);
 struct event_constraint uncore_constraint_empty =
 	EVENT_CONSTRAINT(0, 0, 0);
-
-int uncore_pcibus_to_physid(struct pci_bus *bus)
-{
-	struct pci2phy_map *map;
-	int phys_id = -1;
-
-	raw_spin_lock(&pci2phy_map_lock);
-	list_for_each_entry(map, &pci2phy_map_head, list) {
-		if (map->segment == pci_domain_nr(bus)) {
-			phys_id = map->pbus_to_physid[bus->number];
-			break;
-		}
-	}
-	raw_spin_unlock(&pci2phy_map_lock);
-
-	return phys_id;
-}
-
-struct pci2phy_map *__find_pci2phy_map(int segment)
-{
-	struct pci2phy_map *map, *alloc = NULL;
-	int i;
-
-	lockdep_assert_held(&pci2phy_map_lock);
-
-lookup:
-	list_for_each_entry(map, &pci2phy_map_head, list) {
-		if (map->segment == segment)
-			goto end;
-	}
-
-	if (!alloc) {
-		raw_spin_unlock(&pci2phy_map_lock);
-		alloc = kmalloc(sizeof(struct pci2phy_map), GFP_KERNEL);
-		raw_spin_lock(&pci2phy_map_lock);
-
-		if (!alloc)
-			return NULL;
-
-		goto lookup;
-	}
-
-	map = alloc;
-	alloc = NULL;
-	map->segment = segment;
-	for (i = 0; i < 256; i++)
-		map->pbus_to_physid[i] = -1;
-	list_add_tail(&map->list, &pci2phy_map_head);
-
-end:
-	kfree(alloc);
-	return map;
-}
 
 ssize_t uncore_event_show(struct kobject *kobj,
 			  struct kobj_attribute *attr, char *buf)
@@ -287,8 +233,9 @@ static enum hrtimer_restart uncore_pmu_hrtimer(struct hrtimer *hrtimer)
 
 void uncore_pmu_start_hrtimer(struct intel_uncore_box *box)
 {
-	hrtimer_start(&box->hrtimer, ns_to_ktime(box->hrtimer_duration),
-		      HRTIMER_MODE_REL_PINNED);
+	__hrtimer_start_range_ns(&box->hrtimer,
+			ns_to_ktime(box->hrtimer_duration), 0,
+			HRTIMER_MODE_REL_PINNED, 0);
 }
 
 void uncore_pmu_cancel_hrtimer(struct intel_uncore_box *box)
@@ -418,8 +365,9 @@ static int uncore_assign_events(struct intel_uncore_box *box, int assign[], int 
 	bitmap_zero(used_mask, UNCORE_PMC_IDX_MAX);
 
 	for (i = 0, wmin = UNCORE_PMC_IDX_MAX, wmax = 0; i < n; i++) {
+		hwc = &box->event_list[i]->hw;
 		c = uncore_get_event_constraint(box, box->event_list[i]);
-		box->event_constraint[i] = c;
+		hwc->constraint = c;
 		wmin = min(wmin, c->weight);
 		wmax = max(wmax, c->weight);
 	}
@@ -427,7 +375,7 @@ static int uncore_assign_events(struct intel_uncore_box *box, int assign[], int 
 	/* fastpath, try to reuse previous register */
 	for (i = 0; i < n; i++) {
 		hwc = &box->event_list[i]->hw;
-		c = box->event_constraint[i];
+		c = hwc->constraint;
 
 		/* never assigned */
 		if (hwc->idx == -1)
@@ -447,8 +395,8 @@ static int uncore_assign_events(struct intel_uncore_box *box, int assign[], int 
 	}
 	/* slow path */
 	if (i != n)
-		ret = perf_assign_events(box->event_constraint, n,
-					 wmin, wmax, n, assign);
+		ret = perf_assign_events(box->event_list, n,
+					 wmin, wmax, assign);
 
 	if (!assign || ret) {
 		for (i = 0; i < n; i++)
@@ -715,7 +663,11 @@ static int uncore_pmu_event_init(struct perf_event *event)
 static ssize_t uncore_get_attr_cpumask(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	return cpumap_print_to_pagebuf(true, buf, &uncore_cpu_mask);
+	int n = cpulist_scnprintf(buf, PAGE_SIZE - 2, &uncore_cpu_mask);
+
+	buf[n++] = '\n';
+	buf[n] = '\0';
+	return n;
 }
 
 static DEVICE_ATTR(cpumask, S_IRUGO, uncore_get_attr_cpumask, NULL);
@@ -863,7 +815,7 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 	int phys_id;
 	bool first_box = false;
 
-	phys_id = uncore_pcibus_to_physid(pdev->bus);
+	phys_id = uncore_pcibus_to_physid[pdev->bus->number];
 	if (phys_id < 0)
 		return -ENODEV;
 
@@ -910,10 +862,9 @@ static void uncore_pci_remove(struct pci_dev *pdev)
 {
 	struct intel_uncore_box *box = pci_get_drvdata(pdev);
 	struct intel_uncore_pmu *pmu;
-	int i, cpu, phys_id;
+	int i, cpu, phys_id = uncore_pcibus_to_physid[pdev->bus->number];
 	bool last_box = false;
 
-	phys_id = uncore_pcibus_to_physid(pdev->bus);
 	box = pci_get_drvdata(pdev);
 	if (!box) {
 		for (i = 0; i < UNCORE_EXTRA_PCI_DEV_MAX; i++) {
@@ -966,9 +917,6 @@ static int __init uncore_pci_init(void)
 	case 63: /* Haswell-EP */
 		ret = hswep_uncore_pci_init();
 		break;
-	case 86: /* BDX-DE */
-		ret = bdx_uncore_pci_init();
-		break;
 	case 42: /* Sandy Bridge */
 		ret = snb_uncore_pci_init();
 		break;
@@ -978,9 +926,6 @@ static int __init uncore_pci_init(void)
 	case 60: /* Haswell */
 	case 69: /* Haswell Celeron */
 		ret = hsw_uncore_pci_init();
-		break;
-	case 61: /* Broadwell */
-		ret = bdw_uncore_pci_init();
 		break;
 	default:
 		return 0;
@@ -1267,11 +1212,6 @@ static int __init uncore_cpu_init(void)
 		break;
 	case 42: /* Sandy Bridge */
 	case 58: /* Ivy Bridge */
-	case 60: /* Haswell */
-	case 69: /* Haswell */
-	case 70: /* Haswell */
-	case 61: /* Broadwell */
-	case 71: /* Broadwell */
 		snb_uncore_cpu_init();
 		break;
 	case 45: /* Sandy Bridge-EP */
@@ -1286,9 +1226,6 @@ static int __init uncore_cpu_init(void)
 		break;
 	case 63: /* Haswell-EP */
 		hswep_uncore_cpu_init();
-		break;
-	case 86: /* BDX-DE */
-		bdx_uncore_cpu_init();
 		break;
 	default:
 		return 0;

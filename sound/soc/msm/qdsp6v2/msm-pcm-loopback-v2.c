@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, 2019 The Linux Foundation. All rights reserved.
 
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
@@ -66,11 +66,11 @@ static struct fe_dai_session_map session_map[LOOPBACK_SESSION_MAX] = {
 	{ {}, NULL},
 };
 
-static u32 hfp_tx_mute;
-
 struct msm_pcm_pdata {
 	int perf_mode;
 };
+
+static u32 hfp_tx_mute;
 
 static void stop_pcm(struct msm_pcm_loopback *pcm);
 static int msm_pcm_loopback_get_session(struct snd_soc_pcm_runtime *rtd,
@@ -136,6 +136,7 @@ static int msm_loopback_session_mute_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
+	mutex_lock(&loopback_session_lock);
 	pr_debug("%s: mute=%d\n", __func__, mute);
 	hfp_tx_mute = mute;
 	for (n = 0; n < LOOPBACK_SESSION_MAX; n++) {
@@ -148,6 +149,7 @@ static int msm_loopback_session_mute_put(struct snd_kcontrol *kcontrol,
 			pr_err("%s: Send mute command failed rc=%d\n",
 				__func__, ret);
 	}
+	 mutex_unlock(&loopback_session_lock);
 done:
 	return ret;
 }
@@ -350,6 +352,8 @@ static void stop_pcm(struct msm_pcm_loopback *pcm)
 
 	if (pcm->audio_client == NULL)
 		return;
+
+	mutex_lock(&loopback_session_lock);
 	q6asm_cmd(pcm->audio_client, CMD_CLOSE);
 
 	if (pcm->playback_substream != NULL) {
@@ -364,6 +368,7 @@ static void stop_pcm(struct msm_pcm_loopback *pcm)
 	}
 	q6asm_audio_client_free(pcm->audio_client);
 	pcm->audio_client = NULL;
+	mutex_unlock(&loopback_session_lock);
 }
 
 static int msm_pcm_close(struct snd_pcm_substream *substream)
@@ -489,6 +494,7 @@ static int msm_pcm_volume_ctl_put(struct snd_kcontrol *kcontrol,
 	int volume = ucontrol->value.integer.value[0];
 
 	pr_debug("%s: volume : 0x%x\n", __func__, volume);
+	mutex_lock(&loopback_session_lock);
 	if ((!substream) || (!substream->runtime)) {
 		pr_err("%s substream or runtime not found\n", __func__);
 		rc = -ENODEV;
@@ -500,6 +506,7 @@ static int msm_pcm_volume_ctl_put(struct snd_kcontrol *kcontrol,
 		goto exit;
 	}
 	rc = pcm_loopback_set_volume(prtd, volume);
+	mutex_unlock(&loopback_session_lock);
 
 exit:
 	return rc;
@@ -520,13 +527,16 @@ static int msm_pcm_volume_ctl_get(struct snd_kcontrol *kcontrol,
 		rc = -ENODEV;
 		goto exit;
 	}
+	mutex_lock(&loopback_session_lock);
 	prtd = substream->runtime->private_data;
 	if (!prtd) {
 		rc = -ENODEV;
+		mutex_unlock(&loopback_session_lock);
 		goto exit;
 	}
 	ucontrol->value.integer.value[0] = prtd->volume;
 
+	mutex_unlock(&loopback_session_lock);
 exit:
 	return rc;
 }
@@ -556,45 +566,48 @@ static int msm_pcm_playback_app_type_cfg_ctl_put(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	u64 fe_id = kcontrol->private_value;
-	int session_type = SESSION_TYPE_RX;
-	int be_id = ucontrol->value.integer.value[3];
-	int ret = 0;
 	int app_type;
 	int acdb_dev_id;
 	int sample_rate = 48000;
 
+	pr_debug("%s: fe_id- %llu\n", __func__, fe_id);
+	if (fe_id >= MSM_FRONTEND_DAI_MAX) {
+		pr_err("%s: Received out of bounds fe_id %llu\n",
+			__func__, fe_id);
+		return -EINVAL;
+	}
+
 	app_type = ucontrol->value.integer.value[0];
 	acdb_dev_id = ucontrol->value.integer.value[1];
-	if (ucontrol->value.integer.value[2] != 0)
+	if (0 != ucontrol->value.integer.value[2])
 		sample_rate = ucontrol->value.integer.value[2];
-	pr_debug("%s: fe_id- %llu session_type- %d be_id- %d app_type- %d acdb_dev_id- %d sample_rate- %d\n",
-		__func__, fe_id, session_type, be_id,
-		app_type, acdb_dev_id, sample_rate);
-	ret = msm_pcm_routing_reg_stream_app_type_cfg(fe_id, session_type,
-						      be_id, app_type,
-						      acdb_dev_id, sample_rate);
-	if (ret < 0)
-		pr_err("%s: msm_pcm_routing_reg_stream_app_type_cfg failed returned %d\n",
-			__func__, ret);
+	pr_debug("%s: app_type- %d acdb_dev_id- %d sample_rate- %d session_type- %d\n",
+		__func__, app_type, acdb_dev_id, sample_rate, SESSION_TYPE_RX);
+	msm_pcm_routing_reg_stream_app_type_cfg(fe_id, app_type,
+			acdb_dev_id, sample_rate, SESSION_TYPE_RX);
 
-	return ret;
+	return 0;
 }
 
 static int msm_pcm_playback_app_type_cfg_ctl_get(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	u64 fe_id = kcontrol->private_value;
-	int session_type = SESSION_TYPE_RX;
-	int be_id = ucontrol->value.integer.value[3];
 	int ret = 0;
 	int app_type;
 	int acdb_dev_id;
 	int sample_rate;
 
-	ret = msm_pcm_routing_get_stream_app_type_cfg(fe_id, session_type,
-						      be_id, &app_type,
-						      &acdb_dev_id,
-						      &sample_rate);
+	pr_debug("%s: fe_id- %llu\n", __func__, fe_id);
+	if (fe_id >= MSM_FRONTEND_DAI_MAX) {
+		pr_err("%s: Received out of bounds fe_id %llu\n",
+			__func__, fe_id);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	ret = msm_pcm_routing_get_stream_app_type_cfg(fe_id, SESSION_TYPE_RX,
+		&app_type, &acdb_dev_id, &sample_rate);
 	if (ret < 0) {
 		pr_err("%s: msm_pcm_routing_get_stream_app_type_cfg failed returned %d\n",
 			__func__, ret);
@@ -604,8 +617,8 @@ static int msm_pcm_playback_app_type_cfg_ctl_get(struct snd_kcontrol *kcontrol,
 	ucontrol->value.integer.value[0] = app_type;
 	ucontrol->value.integer.value[1] = acdb_dev_id;
 	ucontrol->value.integer.value[2] = sample_rate;
-	pr_debug("%s: fedai_id %llu, session_type %d, be_id %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
-		__func__, fe_id, session_type, be_id,
+	pr_debug("%s: fedai_id %llu, session_type %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
+		__func__, fe_id, SESSION_TYPE_RX,
 		app_type, acdb_dev_id, sample_rate);
 done:
 	return ret;
@@ -615,45 +628,48 @@ static int msm_pcm_capture_app_type_cfg_ctl_put(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	u64 fe_id = kcontrol->private_value;
-	int session_type = SESSION_TYPE_TX;
-	int be_id = ucontrol->value.integer.value[3];
-	int ret = 0;
 	int app_type;
 	int acdb_dev_id;
 	int sample_rate = 48000;
 
+	pr_debug("%s: fe_id- %llu\n", __func__, fe_id);
+	if (fe_id >= MSM_FRONTEND_DAI_MAX) {
+		pr_err("%s: Received out of bounds fe_id %llu\n",
+			__func__, fe_id);
+		return -EINVAL;
+	}
+
 	app_type = ucontrol->value.integer.value[0];
 	acdb_dev_id = ucontrol->value.integer.value[1];
-	if (ucontrol->value.integer.value[2] != 0)
+	if (0 != ucontrol->value.integer.value[2])
 		sample_rate = ucontrol->value.integer.value[2];
-	pr_debug("%s: fe_id- %llu session_type- %d be_id- %d app_type- %d acdb_dev_id- %d sample_rate- %d\n",
-		__func__, fe_id, session_type, be_id,
-		app_type, acdb_dev_id, sample_rate);
-	ret = msm_pcm_routing_reg_stream_app_type_cfg(fe_id, session_type,
-						      be_id, app_type,
-						      acdb_dev_id, sample_rate);
-	if (ret < 0)
-		pr_err("%s: msm_pcm_routing_reg_stream_app_type_cfg failed returned %d\n",
-			__func__, ret);
+	pr_debug("%s: app_type- %d acdb_dev_id- %d sample_rate- %d session_type- %d\n",
+		__func__, app_type, acdb_dev_id, sample_rate, SESSION_TYPE_TX);
+	msm_pcm_routing_reg_stream_app_type_cfg(fe_id, app_type,
+			acdb_dev_id, sample_rate, SESSION_TYPE_TX);
 
-	return ret;
+	return 0;
 }
 
 static int msm_pcm_capture_app_type_cfg_ctl_get(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	u64 fe_id = kcontrol->private_value;
-	int session_type = SESSION_TYPE_TX;
-	int be_id = ucontrol->value.integer.value[3];
 	int ret = 0;
 	int app_type;
 	int acdb_dev_id;
 	int sample_rate;
 
-	ret = msm_pcm_routing_get_stream_app_type_cfg(fe_id, session_type,
-						      be_id, &app_type,
-						      &acdb_dev_id,
-						      &sample_rate);
+	pr_debug("%s: fe_id- %llu\n", __func__, fe_id);
+	if (fe_id >= MSM_FRONTEND_DAI_MAX) {
+		pr_err("%s: Received out of bounds fe_id %llu\n",
+			__func__, fe_id);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	ret = msm_pcm_routing_get_stream_app_type_cfg(fe_id, SESSION_TYPE_TX,
+		&app_type, &acdb_dev_id, &sample_rate);
 	if (ret < 0) {
 		pr_err("%s: msm_pcm_routing_get_stream_app_type_cfg failed returned %d\n",
 			__func__, ret);
@@ -663,8 +679,8 @@ static int msm_pcm_capture_app_type_cfg_ctl_get(struct snd_kcontrol *kcontrol,
 	ucontrol->value.integer.value[0] = app_type;
 	ucontrol->value.integer.value[1] = acdb_dev_id;
 	ucontrol->value.integer.value[2] = sample_rate;
-	pr_debug("%s: fedai_id %llu, session_type %d, be_id %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
-		__func__, fe_id, session_type, be_id,
+	pr_debug("%s: fedai_id %llu, session_type %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
+		__func__, fe_id, SESSION_TYPE_TX,
 		app_type, acdb_dev_id, sample_rate);
 done:
 	return ret;

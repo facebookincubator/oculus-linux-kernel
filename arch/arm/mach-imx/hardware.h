@@ -22,7 +22,6 @@
 
 #ifndef __ASSEMBLY__
 #include <asm/io.h>
-#include <soc/imx/revision.h>
 #endif
 #include <asm/sizes.h>
 
@@ -113,6 +112,7 @@
 #include "mx21.h"
 #include "mx27.h"
 #include "mx1.h"
+#include "mx25.h"
 
 #define imx_map_entry(soc, name, _type)	{				\
 	.virtual = soc ## _IO_P2V(soc ## _ ## name ## _BASE_ADDR),	\

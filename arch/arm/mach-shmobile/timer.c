@@ -12,6 +12,11 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ *
  */
 #include <linux/platform_device.h>
 #include <linux/clocksource.h>
@@ -40,7 +45,6 @@ void __init shmobile_init_delay(void)
 	struct device_node *np, *cpus;
 	bool is_a7_a8_a9 = false;
 	bool is_a15 = false;
-	bool has_arch_timer = false;
 	u32 max_freq = 0;
 
 	cpus = of_find_node_by_path("/cpus");
@@ -53,16 +57,12 @@ void __init shmobile_init_delay(void)
 		if (!of_property_read_u32(np, "clock-frequency", &freq))
 			max_freq = max(max_freq, freq);
 
-		if (of_device_is_compatible(np, "arm,cortex-a8") ||
-		    of_device_is_compatible(np, "arm,cortex-a9")) {
+		if (of_device_is_compatible(np, "arm,cortex-a7") ||
+		    of_device_is_compatible(np, "arm,cortex-a8") ||
+		    of_device_is_compatible(np, "arm,cortex-a9"))
 			is_a7_a8_a9 = true;
-		} else if (of_device_is_compatible(np, "arm,cortex-a7")) {
-			is_a7_a8_a9 = true;
-			has_arch_timer = true;
-		} else if (of_device_is_compatible(np, "arm,cortex-a15")) {
+		else if (of_device_is_compatible(np, "arm,cortex-a15"))
 			is_a15 = true;
-			has_arch_timer = true;
-		}
 	}
 
 	of_node_put(cpus);
@@ -70,10 +70,29 @@ void __init shmobile_init_delay(void)
 	if (!max_freq)
 		return;
 
-	if (!has_arch_timer || !IS_ENABLED(CONFIG_ARM_ARCH_TIMER)) {
-		if (is_a7_a8_a9)
-			shmobile_setup_delay_hz(max_freq, 1, 3);
-		else if (is_a15)
-			shmobile_setup_delay_hz(max_freq, 2, 4);
-	}
+	if (is_a7_a8_a9)
+		shmobile_setup_delay_hz(max_freq, 1, 3);
+	else if (is_a15 && !IS_ENABLED(CONFIG_ARM_ARCH_TIMER))
+		shmobile_setup_delay_hz(max_freq, 2, 4);
 }
+
+static void __init shmobile_late_time_init(void)
+{
+	/*
+	 * Make sure all compiled-in early timers register themselves.
+	 *
+	 * Run probe() for two "earlytimer" devices, these will be the
+	 * clockevents and clocksource devices respectively. In the event
+	 * that only a clockevents device is available, we -ENODEV on the
+	 * clocksource and the jiffies clocksource is used transparently
+	 * instead. No error handling is necessary here.
+	 */
+	early_platform_driver_register_all("earlytimer");
+	early_platform_driver_probe("earlytimer", 2, 0);
+}
+
+void __init shmobile_earlytimer_init(void)
+{
+	late_time_init = shmobile_late_time_init;
+}
+

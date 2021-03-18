@@ -161,7 +161,7 @@ static struct i2c_board_info vpr200_i2c_devices[] = {
 	}
 };
 
-static const iomux_v3_cfg_t vpr200_pads[] __initconst = {
+static iomux_v3_cfg_t vpr200_pads[] = {
 	/* UART1 */
 	MX35_PAD_TXD1__UART1_TXD_MUX,
 	MX35_PAD_RXD1__UART1_RXD_MUX,

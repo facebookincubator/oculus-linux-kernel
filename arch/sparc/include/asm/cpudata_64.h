@@ -24,8 +24,7 @@ typedef struct {
 	unsigned int	icache_line_size;
 	unsigned int	ecache_size;
 	unsigned int	ecache_line_size;
-	unsigned short	sock_id;
-	unsigned short	core_id;
+	int		core_id;
 	int		proc_id;
 } cpuinfo_sparc;
 

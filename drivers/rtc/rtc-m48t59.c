@@ -345,12 +345,11 @@ static ssize_t m48t59_nvram_read(struct file *filp, struct kobject *kobj,
 	ssize_t cnt = 0;
 	unsigned long flags;
 
-	spin_lock_irqsave(&m48t59->lock, flags);
-
-	for (; cnt < size; cnt++)
+	for (; size > 0 && pos < pdata->offset; cnt++, size--) {
+		spin_lock_irqsave(&m48t59->lock, flags);
 		*buf++ = M48T59_READ(cnt);
-
-	spin_unlock_irqrestore(&m48t59->lock, flags);
+		spin_unlock_irqrestore(&m48t59->lock, flags);
+	}
 
 	return cnt;
 }
@@ -366,12 +365,11 @@ static ssize_t m48t59_nvram_write(struct file *filp, struct kobject *kobj,
 	ssize_t cnt = 0;
 	unsigned long flags;
 
-	spin_lock_irqsave(&m48t59->lock, flags);
-
-	for (; cnt < size; cnt++)
+	for (; size > 0 && pos < pdata->offset; cnt++, size--) {
+		spin_lock_irqsave(&m48t59->lock, flags);
 		M48T59_WRITE(*buf++, cnt);
-
-	spin_unlock_irqrestore(&m48t59->lock, flags);
+		spin_unlock_irqrestore(&m48t59->lock, flags);
+	}
 
 	return cnt;
 }
@@ -506,6 +504,7 @@ MODULE_ALIAS("platform:rtc-m48t59");
 static struct platform_driver m48t59_rtc_driver = {
 	.driver		= {
 		.name	= "rtc-m48t59",
+		.owner	= THIS_MODULE,
 	},
 	.probe		= m48t59_rtc_probe,
 	.remove		= m48t59_rtc_remove,

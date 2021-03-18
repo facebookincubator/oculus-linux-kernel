@@ -2,7 +2,7 @@
  * Driver for the ST Microelectronics SPEAr1310 pinmux
  *
  * Copyright (C) 2012 ST Microelectronics
- * Viresh Kumar <vireshk@kernel.org>
+ * Viresh Kumar <viresh.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -2712,6 +2712,7 @@ static int spear1310_pinctrl_remove(struct platform_device *pdev)
 static struct platform_driver spear1310_pinctrl_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = spear1310_pinctrl_of_match,
 	},
 	.probe = spear1310_pinctrl_probe,
@@ -2730,7 +2731,7 @@ static void __exit spear1310_pinctrl_exit(void)
 }
 module_exit(spear1310_pinctrl_exit);
 
-MODULE_AUTHOR("Viresh Kumar <vireshk@kernel.org>");
+MODULE_AUTHOR("Viresh Kumar <viresh.linux@gmail.com>");
 MODULE_DESCRIPTION("ST Microelectronics SPEAr1310 pinctrl driver");
 MODULE_LICENSE("GPL v2");
 MODULE_DEVICE_TABLE(of, spear1310_pinctrl_of_match);

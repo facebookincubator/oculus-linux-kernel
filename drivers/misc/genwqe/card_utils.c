@@ -220,8 +220,7 @@ void *__genwqe_alloc_consistent(struct genwqe_dev *cd, size_t size,
 	if (get_order(size) > MAX_ORDER)
 		return NULL;
 
-	return dma_alloc_coherent(&cd->pci_dev->dev, size, dma_handle,
-				  GFP_KERNEL);
+	return pci_alloc_consistent(cd->pci_dev, size, dma_handle);
 }
 
 void __genwqe_free_consistent(struct genwqe_dev *cd, size_t size,
@@ -230,7 +229,7 @@ void __genwqe_free_consistent(struct genwqe_dev *cd, size_t size,
 	if (vaddr == NULL)
 		return;
 
-	dma_free_coherent(&cd->pci_dev->dev, size, vaddr, dma_handle);
+	pci_free_consistent(cd->pci_dev, size, vaddr, dma_handle);
 }
 
 static void genwqe_unmap_pages(struct genwqe_dev *cd, dma_addr_t *dma_list,

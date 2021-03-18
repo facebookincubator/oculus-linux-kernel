@@ -11,6 +11,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/dmaengine.h>
@@ -661,11 +665,15 @@ err_desc_get:
 	return NULL;
 }
 
-static int pd_device_terminate_all(struct dma_chan *chan)
+static int pd_device_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
+			     unsigned long arg)
 {
 	struct pch_dma_chan *pd_chan = to_pd_chan(chan);
 	struct pch_dma_desc *desc, *_d;
 	LIST_HEAD(list);
+
+	if (cmd != DMA_TERMINATE_ALL)
+		return -ENXIO;
 
 	spin_lock_irq(&pd_chan->lock);
 
@@ -924,7 +932,7 @@ static int pch_dma_probe(struct pci_dev *pdev,
 	pd->dma.device_tx_status = pd_tx_status;
 	pd->dma.device_issue_pending = pd_issue_pending;
 	pd->dma.device_prep_slave_sg = pd_prep_slave_sg;
-	pd->dma.device_terminate_all = pd_device_terminate_all;
+	pd->dma.device_control = pd_device_control;
 
 	err = dma_async_device_register(&pd->dma);
 	if (err) {
@@ -945,7 +953,6 @@ err_free_res:
 err_disable_pdev:
 	pci_disable_device(pdev);
 err_free_mem:
-	kfree(pd);
 	return err;
 }
 
@@ -990,7 +997,7 @@ static void pch_dma_remove(struct pci_dev *pdev)
 #define PCI_DEVICE_ID_ML7831_DMA1_8CH	0x8810
 #define PCI_DEVICE_ID_ML7831_DMA2_4CH	0x8815
 
-static const struct pci_device_id pch_dma_id_table[] = {
+const struct pci_device_id pch_dma_id_table[] = {
 	{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_EG20T_PCH_DMA_8CH), 8 },
 	{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_EG20T_PCH_DMA_4CH), 4 },
 	{ PCI_VDEVICE(ROHM, PCI_DEVICE_ID_ML7213_DMA1_8CH), 8}, /* UART Video */

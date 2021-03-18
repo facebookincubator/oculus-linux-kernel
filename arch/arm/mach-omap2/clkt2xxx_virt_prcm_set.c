@@ -232,12 +232,14 @@ void omap2xxx_clkt_vps_init(void)
 	struct clk_hw_omap *hw = NULL;
 	struct clk *clk;
 	const char *parent_name = "mpu_ck";
+	struct clk_lookup *lookup = NULL;
 
 	omap2xxx_clkt_vps_late_init();
 	omap2xxx_clkt_vps_check_bootloader_rates();
 
 	hw = kzalloc(sizeof(*hw), GFP_KERNEL);
-	if (!hw)
+	lookup = kzalloc(sizeof(*lookup), GFP_KERNEL);
+	if (!hw || !lookup)
 		goto cleanup;
 	init.name = "virt_prcm_set";
 	init.ops = &virt_prcm_set_ops;
@@ -247,9 +249,15 @@ void omap2xxx_clkt_vps_init(void)
 	hw->hw.init = &init;
 
 	clk = clk_register(NULL, &hw->hw);
-	clkdev_create(clk, "cpufreq_ck", NULL);
+
+	lookup->dev_id = NULL;
+	lookup->con_id = "cpufreq_ck";
+	lookup->clk = clk;
+
+	clkdev_add(lookup);
 	return;
 cleanup:
 	kfree(hw);
+	kfree(lookup);
 }
 #endif

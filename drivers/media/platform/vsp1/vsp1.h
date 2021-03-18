@@ -16,6 +16,7 @@
 #include <linux/io.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/platform_data/vsp1.h>
 
 #include <media/media-device.h>
 #include <media/v4l2-device.h>
@@ -39,20 +40,9 @@ struct vsp1_uds;
 #define VSP1_MAX_UDS		3
 #define VSP1_MAX_WPF		4
 
-#define VSP1_HAS_LIF		(1 << 0)
-#define VSP1_HAS_LUT		(1 << 1)
-#define VSP1_HAS_SRU		(1 << 2)
-
-struct vsp1_platform_data {
-	unsigned int features;
-	unsigned int rpf_count;
-	unsigned int uds_count;
-	unsigned int wpf_count;
-};
-
 struct vsp1_device {
 	struct device *dev;
-	struct vsp1_platform_data pdata;
+	struct vsp1_platform_data *pdata;
 
 	void __iomem *mmio;
 	struct clk *clock;

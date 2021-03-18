@@ -1558,9 +1558,9 @@ static int dib7000p_set_frontend(struct dvb_frontend *fe)
 	return ret;
 }
 
-static int dib7000p_get_stats(struct dvb_frontend *fe, enum fe_status stat);
+static int dib7000p_get_stats(struct dvb_frontend *fe, fe_status_t stat);
 
-static int dib7000p_read_status(struct dvb_frontend *fe, enum fe_status *stat)
+static int dib7000p_read_status(struct dvb_frontend *fe, fe_status_t * stat)
 {
 	struct dib7000p_state *state = fe->demodulator_priv;
 	u16 lock = dib7000p_read_word(state, 509);
@@ -1780,7 +1780,7 @@ static u32 interpolate_value(u32 value, struct linear_segments *segments,
 }
 
 /* FIXME: may require changes - this one was borrowed from dib8000 */
-static u32 dib7000p_get_time_us(struct dvb_frontend *demod)
+static u32 dib7000p_get_time_us(struct dvb_frontend *demod, int layer)
 {
 	struct dtv_frontend_properties *c = &demod->dtv_property_cache;
 	u64 time_us, tmp64;
@@ -1877,10 +1877,11 @@ static u32 dib7000p_get_time_us(struct dvb_frontend *demod)
 	return time_us;
 }
 
-static int dib7000p_get_stats(struct dvb_frontend *demod, enum fe_status stat)
+static int dib7000p_get_stats(struct dvb_frontend *demod, fe_status_t stat)
 {
 	struct dib7000p_state *state = demod->demodulator_priv;
 	struct dtv_frontend_properties *c = &demod->dtv_property_cache;
+	int i;
 	int show_per_stats = 0;
 	u32 time_us = 0, val, snr;
 	u64 blocks, ucb;
@@ -1934,7 +1935,7 @@ static int dib7000p_get_stats(struct dvb_frontend *demod, enum fe_status stat)
 
 		/* Estimate the number of packets based on bitrate */
 		if (!time_us)
-			time_us = dib7000p_get_time_us(demod);
+			time_us = dib7000p_get_time_us(demod, -1);
 
 		if (time_us) {
 			blocks = 1250000ULL * 1000000ULL;
@@ -1948,7 +1949,7 @@ static int dib7000p_get_stats(struct dvb_frontend *demod, enum fe_status stat)
 
 	/* Get post-BER measures */
 	if (time_after(jiffies, state->ber_jiffies_stats)) {
-		time_us = dib7000p_get_time_us(demod);
+		time_us = dib7000p_get_time_us(demod, -1);
 		state->ber_jiffies_stats = jiffies + msecs_to_jiffies((time_us + 500) / 1000);
 
 		dprintk("Next all layers stats available in %u us.", time_us);
@@ -1968,7 +1969,7 @@ static int dib7000p_get_stats(struct dvb_frontend *demod, enum fe_status stat)
 		c->block_error.stat[0].scale = FE_SCALE_COUNTER;
 		c->block_error.stat[0].uvalue += val;
 
-		time_us = dib7000p_get_time_us(demod);
+		time_us = dib7000p_get_time_us(demod, i);
 		if (time_us) {
 			blocks = 1250000ULL * 1000000ULL;
 			do_div(blocks, time_us * 8 * 204);

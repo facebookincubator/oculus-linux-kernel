@@ -40,7 +40,6 @@
 #include <linux/seq_file.h>
 #include <linux/root_dev.h>
 #include <linux/of.h>
-#include <linux/of_pci.h>
 #include <linux/kexec.h>
 
 #include <asm/mmu.h>
@@ -112,7 +111,7 @@ static void __init fwnmi_init(void)
 		fwnmi_active = 1;
 }
 
-static void pseries_8259_cascade(struct irq_desc *desc)
+static void pseries_8259_cascade(unsigned int irq, struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	unsigned int cascade_irq = i8259_irq();
@@ -255,26 +254,19 @@ static void __init pseries_discover_pic(void)
 static int pci_dn_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *data)
 {
 	struct of_reconfig_data *rd = data;
-	struct device_node *parent, *np = rd->dn;
-	struct pci_dn *pdn;
+	struct device_node *np = rd->dn;
+	struct pci_dn *pci = NULL;
 	int err = NOTIFY_OK;
 
 	switch (action) {
 	case OF_RECONFIG_ATTACH_NODE:
-		parent = of_get_parent(np);
-		pdn = parent ? PCI_DN(parent) : NULL;
-		if (pdn) {
-			/* Create pdn and EEH device */
-			update_dn_pci_info(np, pdn->phb);
-			eeh_dev_init(PCI_DN(np), pdn->phb);
-		}
+		pci = np->parent->data;
+		if (pci) {
+			update_dn_pci_info(np, pci->phb);
 
-		of_node_put(parent);
-		break;
-	case OF_RECONFIG_DETACH_NODE:
-		pdn = PCI_DN(np);
-		if (pdn)
-			list_del(&pdn->list);
+			/* Create EEH device for the OF node */
+			eeh_dev_init(np, pci->phb);
+		}
 		break;
 	default:
 		err = NOTIFY_DONE;
@@ -469,36 +461,6 @@ static long pseries_little_endian_exceptions(void)
 }
 #endif
 
-static void __init find_and_init_phbs(void)
-{
-	struct device_node *node;
-	struct pci_controller *phb;
-	struct device_node *root = of_find_node_by_path("/");
-
-	for_each_child_of_node(root, node) {
-		if (node->type == NULL || (strcmp(node->type, "pci") != 0 &&
-					   strcmp(node->type, "pciex") != 0))
-			continue;
-
-		phb = pcibios_alloc_controller(node);
-		if (!phb)
-			continue;
-		rtas_setup_phb(phb);
-		pci_process_bridge_OF_ranges(phb, node, 0);
-		isa_bridge_find_early(phb);
-		phb->controller_ops = pseries_pci_controller_ops;
-	}
-
-	of_node_put(root);
-	pci_devs_phb_init();
-
-	/*
-	 * PCI_PROBE_ONLY and PCI_REASSIGN_ALL_BUS can be set via properties
-	 * in chosen.
-	 */
-	of_pci_check_probe_only();
-}
-
 static void __init pSeries_setup_arch(void)
 {
 	set_arch_panic_timeout(10, ARCH_PANIC_TIMEOUT);
@@ -538,11 +500,7 @@ static void __init pSeries_setup_arch(void)
 
 	if (firmware_has_feature(FW_FEATURE_SET_MODE)) {
 		long rc;
-
-		rc = pSeries_enable_reloc_on_exc();
-		if (rc == H_P2) {
-			pr_info("Relocation on exceptions not supported\n");
-		} else if (rc != H_SUCCESS) {
+		if ((rc = pSeries_enable_reloc_on_exc()) != H_SUCCESS) {
 			pr_warn("Unable to enable relocation on exceptions: "
 				"%ld\n", rc);
 		}
@@ -702,34 +660,6 @@ static void __init pSeries_init_early(void)
 	pr_debug(" <- pSeries_init_early()\n");
 }
 
-/**
- * pseries_power_off - tell firmware about how to power off the system.
- *
- * This function calls either the power-off rtas token in normal cases
- * or the ibm,power-off-ups token (if present & requested) in case of
- * a power failure. If power-off token is used, power on will only be
- * possible with power button press. If ibm,power-off-ups token is used
- * it will allow auto poweron after power is restored.
- */
-static void pseries_power_off(void)
-{
-	int rc;
-	int rtas_poweroff_ups_token = rtas_token("ibm,power-off-ups");
-
-	if (rtas_flash_term_hook)
-		rtas_flash_term_hook(SYS_POWER_OFF);
-
-	if (rtas_poweron_auto == 0 ||
-		rtas_poweroff_ups_token == RTAS_UNKNOWN_SERVICE) {
-		rc = rtas_call(rtas_token("power-off"), 2, 1, NULL, -1, -1);
-		printk(KERN_INFO "RTAS power-off returned %d\n", rc);
-	} else {
-		rc = rtas_call(rtas_poweroff_ups_token, 0, 1, NULL);
-		printk(KERN_INFO "RTAS ibm,power-off-ups returned %d\n", rc);
-	}
-	for (;;);
-}
-
 /*
  * Called very early, MMU is off, device-tree isn't unflattened
  */
@@ -812,8 +742,6 @@ static int __init pSeries_probe(void)
 	else
 		hpte_init_native();
 
-	pm_power_off = pseries_power_off;
-
 	pr_debug("Machine is%s LPAR !\n",
 	         (powerpc_firmware_features & FW_FEATURE_LPAR) ? "" : " not");
 
@@ -827,9 +755,37 @@ static int pSeries_pci_probe_mode(struct pci_bus *bus)
 	return PCI_PROBE_NORMAL;
 }
 
-struct pci_controller_ops pseries_pci_controller_ops = {
-	.probe_mode		= pSeries_pci_probe_mode,
-};
+/**
+ * pSeries_power_off - tell firmware about how to power off the system.
+ *
+ * This function calls either the power-off rtas token in normal cases
+ * or the ibm,power-off-ups token (if present & requested) in case of
+ * a power failure. If power-off token is used, power on will only be
+ * possible with power button press. If ibm,power-off-ups token is used
+ * it will allow auto poweron after power is restored.
+ */
+static void pSeries_power_off(void)
+{
+	int rc;
+	int rtas_poweroff_ups_token = rtas_token("ibm,power-off-ups");
+
+	if (rtas_flash_term_hook)
+		rtas_flash_term_hook(SYS_POWER_OFF);
+
+	if (rtas_poweron_auto == 0 ||
+		rtas_poweroff_ups_token == RTAS_UNKNOWN_SERVICE) {
+		rc = rtas_call(rtas_token("power-off"), 2, 1, NULL, -1, -1);
+		printk(KERN_INFO "RTAS power-off returned %d\n", rc);
+	} else {
+		rc = rtas_call(rtas_poweroff_ups_token, 0, 1, NULL);
+		printk(KERN_INFO "RTAS ibm,power-off-ups returned %d\n", rc);
+	}
+	for (;;);
+}
+
+#ifndef CONFIG_PCI
+void pSeries_final_fixup(void) { }
+#endif
 
 define_machine(pseries) {
 	.name			= "pSeries",
@@ -839,7 +795,9 @@ define_machine(pseries) {
 	.show_cpuinfo		= pSeries_show_cpuinfo,
 	.log_error		= pSeries_log_error,
 	.pcibios_fixup		= pSeries_final_fixup,
+	.pci_probe_mode		= pSeries_pci_probe_mode,
 	.restart		= rtas_restart,
+	.power_off		= pSeries_power_off,
 	.halt			= rtas_halt,
 	.panic			= rtas_os_term,
 	.get_boot_time		= rtas_get_boot_time,

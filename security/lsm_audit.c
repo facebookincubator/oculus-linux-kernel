@@ -211,7 +211,7 @@ static inline void print_ipv4_addr(struct audit_buffer *ab, __be32 addr,
 static void dump_common_audit_data(struct audit_buffer *ab,
 				   struct common_audit_data *a)
 {
-	char comm[sizeof(current->comm)];
+	struct task_struct *tsk = current;
 
 	/*
 	 * To keep stack sizes in check force programers to notice if they
@@ -220,8 +220,8 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 	 */
 	BUILD_BUG_ON(sizeof(a->u) > sizeof(void *)*2);
 
-	audit_log_format(ab, " pid=%d comm=", task_pid_nr(current));
-	audit_log_untrustedstring(ab, memcpy(comm, current->comm, sizeof(comm)));
+	audit_log_format(ab, " pid=%d comm=", task_pid_nr(tsk));
+	audit_log_untrustedstring(ab, tsk->comm);
 
 	switch (a->type) {
 	case LSM_AUDIT_DATA_NONE:
@@ -237,7 +237,7 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 
 		audit_log_d_path(ab, " path=", &a->u.path);
 
-		inode = d_backing_inode(a->u.path.dentry);
+		inode = a->u.path.dentry->d_inode;
 		if (inode) {
 			audit_log_format(ab, " dev=");
 			audit_log_untrustedstring(ab, inode->i_sb->s_id);
@@ -266,7 +266,7 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 		audit_log_format(ab, " name=");
 		audit_log_untrustedstring(ab, a->u.dentry->d_name.name);
 
-		inode = d_backing_inode(a->u.dentry);
+		inode = a->u.dentry->d_inode;
 		if (inode) {
 			audit_log_format(ab, " dev=");
 			audit_log_untrustedstring(ab, inode->i_sb->s_id);
@@ -291,19 +291,16 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 		audit_log_format(ab, " ino=%lu", inode->i_ino);
 		break;
 	}
-	case LSM_AUDIT_DATA_TASK: {
-		struct task_struct *tsk = a->u.tsk;
+	case LSM_AUDIT_DATA_TASK:
+		tsk = a->u.tsk;
 		if (tsk) {
 			pid_t pid = task_pid_nr(tsk);
 			if (pid) {
-				char comm[sizeof(tsk->comm)];
-				audit_log_format(ab, " opid=%d ocomm=", pid);
-				audit_log_untrustedstring(ab,
-				    memcpy(comm, tsk->comm, sizeof(comm)));
+				audit_log_format(ab, " pid=%d comm=", pid);
+				audit_log_untrustedstring(ab, tsk->comm);
 			}
 		}
 		break;
-	}
 	case LSM_AUDIT_DATA_NET:
 		if (a->u.net->sk) {
 			struct sock *sk = a->u.net->sk;

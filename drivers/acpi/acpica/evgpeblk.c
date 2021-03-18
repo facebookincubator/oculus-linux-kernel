@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -474,12 +474,10 @@ acpi_ev_initialize_gpe_block(struct acpi_gpe_xrupt_info *gpe_xrupt_info,
 			 * Ignore GPEs that have no corresponding _Lxx/_Exx method
 			 * and GPEs that are used to wake the system
 			 */
-			if ((ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
+			if (((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
 			     ACPI_GPE_DISPATCH_NONE)
-			    || (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
-				ACPI_GPE_DISPATCH_HANDLER)
-			    || (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
-				ACPI_GPE_DISPATCH_RAW_HANDLER)
+			    || ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK)
+				== ACPI_GPE_DISPATCH_HANDLER)
 			    || (gpe_event_info->flags & ACPI_GPE_CAN_WAKE)) {
 				continue;
 			}

@@ -293,8 +293,7 @@ static const struct regmap_config tps62360_regmap_config = {
 };
 
 static struct tps62360_regulator_platform_data *
-	of_get_tps62360_platform_data(struct device *dev,
-				      const struct regulator_desc *desc)
+	of_get_tps62360_platform_data(struct device *dev)
 {
 	struct tps62360_regulator_platform_data *pdata;
 	struct device_node *np = dev->of_node;
@@ -303,8 +302,7 @@ static struct tps62360_regulator_platform_data *
 	if (!pdata)
 		return NULL;
 
-	pdata->reg_init_data = of_get_regulator_init_data(dev, dev->of_node,
-							  desc);
+	pdata->reg_init_data = of_get_regulator_init_data(dev, dev->of_node);
 	if (!pdata->reg_init_data) {
 		dev_err(dev, "Not able to get OF regulator init data\n");
 		return NULL;
@@ -352,17 +350,6 @@ static int tps62360_probe(struct i2c_client *client,
 
 	pdata = dev_get_platdata(&client->dev);
 
-	tps = devm_kzalloc(&client->dev, sizeof(*tps), GFP_KERNEL);
-	if (!tps)
-		return -ENOMEM;
-
-	tps->desc.name = client->name;
-	tps->desc.id = 0;
-	tps->desc.ops = &tps62360_dcdc_ops;
-	tps->desc.type = REGULATOR_VOLTAGE;
-	tps->desc.owner = THIS_MODULE;
-	tps->desc.uV_step = 10000;
-
 	if (client->dev.of_node) {
 		const struct of_device_id *match;
 		match = of_match_device(of_match_ptr(tps62360_of_match),
@@ -373,8 +360,7 @@ static int tps62360_probe(struct i2c_client *client,
 		}
 		chip_id = (int)(long)match->data;
 		if (!pdata)
-			pdata = of_get_tps62360_platform_data(&client->dev,
-							      &tps->desc);
+			pdata = of_get_tps62360_platform_data(&client->dev);
 	} else if (id) {
 		chip_id = id->driver_data;
 	} else {
@@ -387,6 +373,10 @@ static int tps62360_probe(struct i2c_client *client,
 						__func__);
 		return -EIO;
 	}
+
+	tps = devm_kzalloc(&client->dev, sizeof(*tps), GFP_KERNEL);
+	if (!tps)
+		return -ENOMEM;
 
 	tps->en_discharge = pdata->en_discharge;
 	tps->en_internal_pulldn = pdata->en_internal_pulldn;
@@ -410,6 +400,13 @@ static int tps62360_probe(struct i2c_client *client,
 	default:
 		return -ENODEV;
 	}
+
+	tps->desc.name = client->name;
+	tps->desc.id = 0;
+	tps->desc.ops = &tps62360_dcdc_ops;
+	tps->desc.type = REGULATOR_VOLTAGE;
+	tps->desc.owner = THIS_MODULE;
+	tps->desc.uV_step = 10000;
 
 	tps->regmap = devm_regmap_init_i2c(client, &tps62360_regmap_config);
 	if (IS_ERR(tps->regmap)) {
@@ -515,6 +512,7 @@ MODULE_DEVICE_TABLE(i2c, tps62360_id);
 static struct i2c_driver tps62360_i2c_driver = {
 	.driver = {
 		.name = "tps62360",
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(tps62360_of_match),
 	},
 	.probe = tps62360_probe,

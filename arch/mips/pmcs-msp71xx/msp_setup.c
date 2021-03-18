@@ -10,8 +10,6 @@
  * option) any later version.
  */
 
-#include <linux/delay.h>
-
 #include <asm/bootinfo.h>
 #include <asm/cacheflush.h>
 #include <asm/idle.h>
@@ -39,6 +37,7 @@ extern void msp_serial_setup(void);
 void msp7120_reset(void)
 {
 	void *start, *end, *iptr;
+	register int i;
 
 	/* Diasble all interrupts */
 	local_irq_disable();
@@ -78,7 +77,7 @@ void msp7120_reset(void)
 	 */
 
 	/* Wait a bit for the DDRC to settle */
-	mdelay(125);
+	for (i = 0; i < 100000000; i++);
 
 #if defined(CONFIG_PMC_MSP7120_GW)
 	/*

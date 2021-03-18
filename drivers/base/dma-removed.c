@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *  Copyright (C) 2000-2004 Russell King
  *
  * This program is free software; you can redistribute it and/or modify
@@ -229,7 +229,7 @@ void *removed_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 	int nbits;
 	unsigned int align;
 
-	if (!gfpflags_allow_blocking(gfp))
+	if (!(gfp & __GFP_WAIT))
 		return NULL;
 
 	size = PAGE_ALIGN(size);
@@ -296,7 +296,6 @@ void removed_free(struct device *dev, size_t size, void *cpu_addr,
 					attrs);
 	struct removed_region *dma_mem = dev->removed_mem;
 
-	size = PAGE_ALIGN(size);
 	if (!no_kernel_mapping)
 		iounmap(cpu_addr);
 	mutex_lock(&dma_mem->lock);

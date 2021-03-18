@@ -24,7 +24,7 @@
 
 #include "sunrpc.h"
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+#ifdef RPC_DEBUG
 #define RPCDBG_FACILITY		RPCDBG_SCHED
 #endif
 
@@ -89,8 +89,8 @@ __rpc_add_timer(struct rpc_wait_queue *queue, struct rpc_task *task)
 	if (!task->tk_timeout)
 		return;
 
-	dprintk("RPC: %5u setting alarm for %u ms\n",
-		task->tk_pid, jiffies_to_msecs(task->tk_timeout));
+	dprintk("RPC: %5u setting alarm for %lu ms\n",
+			task->tk_pid, task->tk_timeout * 1000 / HZ);
 
 	task->u.tk_wait.expires = jiffies + task->tk_timeout;
 	if (list_empty(&queue->timer_list.list) || time_before(task->u.tk_wait.expires, queue->timer_list.expires))
@@ -250,15 +250,15 @@ void rpc_destroy_wait_queue(struct rpc_wait_queue *queue)
 }
 EXPORT_SYMBOL_GPL(rpc_destroy_wait_queue);
 
-static int rpc_wait_bit_killable(struct wait_bit_key *key, int mode)
+static int rpc_wait_bit_killable(struct wait_bit_key *key)
 {
-	freezable_schedule_unsafe();
-	if (signal_pending_state(mode, current))
+	if (fatal_signal_pending(current))
 		return -ERESTARTSYS;
+	freezable_schedule_unsafe();
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || IS_ENABLED(CONFIG_TRACEPOINTS)
+#if defined(RPC_DEBUG) || defined(RPC_TRACEPOINTS)
 static void rpc_task_set_debuginfo(struct rpc_task *task)
 {
 	static atomic_t rpc_pid;
@@ -844,10 +844,10 @@ static void rpc_async_schedule(struct work_struct *work)
 void *rpc_malloc(struct rpc_task *task, size_t size)
 {
 	struct rpc_buffer *buf;
-	gfp_t gfp = GFP_NOIO | __GFP_NOWARN;
+	gfp_t gfp = GFP_NOWAIT | __GFP_NOWARN;
 
 	if (RPC_IS_SWAPPER(task))
-		gfp = __GFP_MEMALLOC | GFP_NOWAIT | __GFP_NOWARN;
+		gfp |= __GFP_MEMALLOC;
 
 	size += sizeof(struct rpc_buffer);
 	if (size <= RPC_BUFFER_MAXSIZE)
@@ -1069,8 +1069,7 @@ static int rpciod_start(void)
 	 * Create the rpciod thread and wait for it to start.
 	 */
 	dprintk("RPC:       creating workqueue rpciod\n");
-	/* Note: highpri because network receive is latency sensitive */
-	wq = alloc_workqueue("rpciod", WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+	wq = alloc_workqueue("rpciod", WQ_MEM_RECLAIM, 1);
 	rpciod_workqueue = wq;
 	return rpciod_workqueue != NULL;
 }
@@ -1092,10 +1091,14 @@ void
 rpc_destroy_mempool(void)
 {
 	rpciod_stop();
-	mempool_destroy(rpc_buffer_mempool);
-	mempool_destroy(rpc_task_mempool);
-	kmem_cache_destroy(rpc_task_slabp);
-	kmem_cache_destroy(rpc_buffer_slabp);
+	if (rpc_buffer_mempool)
+		mempool_destroy(rpc_buffer_mempool);
+	if (rpc_task_mempool)
+		mempool_destroy(rpc_task_mempool);
+	if (rpc_task_slabp)
+		kmem_cache_destroy(rpc_task_slabp);
+	if (rpc_buffer_slabp)
+		kmem_cache_destroy(rpc_buffer_slabp);
 	rpc_destroy_wait_queue(&delay_queue);
 }
 

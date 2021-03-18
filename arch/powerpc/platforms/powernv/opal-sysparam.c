@@ -55,10 +55,8 @@ static ssize_t opal_get_sys_param(u32 param_id, u32 length, void *buffer)
 	}
 
 	ret = opal_get_param(token, param_id, (u64)buffer, length);
-	if (ret != OPAL_ASYNC_COMPLETION) {
-		ret = opal_error_code(ret);
+	if (ret != OPAL_ASYNC_COMPLETION)
 		goto out_token;
-	}
 
 	ret = opal_async_wait_response(token, &msg);
 	if (ret) {
@@ -67,7 +65,7 @@ static ssize_t opal_get_sys_param(u32 param_id, u32 length, void *buffer)
 		goto out_token;
 	}
 
-	ret = opal_error_code(be64_to_cpu(msg.params[1]));
+	ret = be64_to_cpu(msg.params[1]);
 
 out_token:
 	opal_async_release_token(token);
@@ -91,10 +89,8 @@ static int opal_set_sys_param(u32 param_id, u32 length, void *buffer)
 
 	ret = opal_set_param(token, param_id, (u64)buffer, length);
 
-	if (ret != OPAL_ASYNC_COMPLETION) {
-		ret = opal_error_code(ret);
+	if (ret != OPAL_ASYNC_COMPLETION)
 		goto out_token;
-	}
 
 	ret = opal_async_wait_response(token, &msg);
 	if (ret) {
@@ -103,7 +99,7 @@ static int opal_set_sys_param(u32 param_id, u32 length, void *buffer)
 		goto out_token;
 	}
 
-	ret = opal_error_code(be64_to_cpu(msg.params[1]));
+	ret = be64_to_cpu(msg.params[1]);
 
 out_token:
 	opal_async_release_token(token);
@@ -166,20 +162,10 @@ void __init opal_sys_param_init(void)
 		goto out;
 	}
 
-	/* Some systems do not use sysparams; this is not an error */
-	sysparam = of_find_node_by_path("/ibm,opal/sysparams");
-	if (!sysparam)
-		goto out;
-
-	if (!of_device_is_compatible(sysparam, "ibm,opal-sysparams")) {
-		pr_err("SYSPARAM: Opal sysparam node not compatible\n");
-		goto out_node_put;
-	}
-
 	sysparam_kobj = kobject_create_and_add("sysparams", opal_kobj);
 	if (!sysparam_kobj) {
 		pr_err("SYSPARAM: Failed to create sysparam kobject\n");
-		goto out_node_put;
+		goto out;
 	}
 
 	/* Allocate big enough buffer for any get/set transactions */
@@ -190,19 +176,30 @@ void __init opal_sys_param_init(void)
 		goto out_kobj_put;
 	}
 
+	sysparam = of_find_node_by_path("/ibm,opal/sysparams");
+	if (!sysparam) {
+		pr_err("SYSPARAM: Opal sysparam node not found\n");
+		goto out_param_buf;
+	}
+
+	if (!of_device_is_compatible(sysparam, "ibm,opal-sysparams")) {
+		pr_err("SYSPARAM: Opal sysparam node not compatible\n");
+		goto out_node_put;
+	}
+
 	/* Number of parameters exposed through DT */
 	count = of_property_count_strings(sysparam, "param-name");
 	if (count < 0) {
 		pr_err("SYSPARAM: No string found of property param-name in "
 				"the node %s\n", sysparam->name);
-		goto out_param_buf;
+		goto out_node_put;
 	}
 
 	id = kzalloc(sizeof(*id) * count, GFP_KERNEL);
 	if (!id) {
 		pr_err("SYSPARAM: Failed to allocate memory to read parameter "
 				"id\n");
-		goto out_param_buf;
+		goto out_node_put;
 	}
 
 	size = kzalloc(sizeof(*size) * count, GFP_KERNEL);
@@ -296,12 +293,12 @@ out_free_size:
 	kfree(size);
 out_free_id:
 	kfree(id);
+out_node_put:
+	of_node_put(sysparam);
 out_param_buf:
 	kfree(param_data_buf);
 out_kobj_put:
 	kobject_put(sysparam_kobj);
-out_node_put:
-	of_node_put(sysparam);
 out:
 	return;
 }

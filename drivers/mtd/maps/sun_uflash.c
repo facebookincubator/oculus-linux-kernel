@@ -150,6 +150,7 @@ MODULE_DEVICE_TABLE(of, uflash_match);
 static struct platform_driver uflash_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = uflash_match,
 	},
 	.probe		= uflash_probe,

@@ -139,7 +139,7 @@ static int r8192_wx_force_reset(struct net_device *dev,
 
 	down(&priv->wx_sem);
 
-	netdev_dbg(dev, "%s(): force reset ! extra is %d\n", __func__, *extra);
+	printk("%s(): force reset ! extra is %d\n", __func__, *extra);
 	priv->force_reset = *extra;
 	up(&priv->wx_sem);
 	return 0;
@@ -171,6 +171,7 @@ static int r8192_wx_set_crcmon(struct net_device *dev,
 	struct r8192_priv *priv = ieee80211_priv(dev);
 	int *parms = (int *)extra;
 	int enable = (parms[0] > 0);
+	short prev = priv->crcmon;
 
 	down(&priv->wx_sem);
 
@@ -181,6 +182,11 @@ static int r8192_wx_set_crcmon(struct net_device *dev,
 
 	DMESG("bad CRC in monitor mode are %s",
 	      priv->crcmon ? "accepted" : "rejected");
+
+	if (prev != priv->crcmon && priv->up) {
+		/* rtl8180_down(dev); */
+		/* rtl8180_up(dev); */
+	}
 
 	up(&priv->wx_sem);
 
@@ -263,12 +269,12 @@ static int rtl8180_wx_get_range(struct net_device *dev,
 	range->max_qual.qual = 100;
 	/* TODO: Find real max RSSI and stick here */
 	range->max_qual.level = 0;
-	range->max_qual.noise = 0x100 - 98;
+	range->max_qual.noise = -98;
 	range->max_qual.updated = 7; /* Updated all three */
 
 	range->avg_qual.qual = 92; /* > 8% missed beacons is 'bad' */
 	/* TODO: Find real 'good' to 'bad' threshold value for RSSI */
-	range->avg_qual.level = 0x100 - 78;
+	range->avg_qual.level = 20 + -98;
 	range->avg_qual.noise = 0;
 	range->avg_qual.updated = 7; /* Updated all three */
 
@@ -335,7 +341,7 @@ static int r8192_wx_set_scan(struct net_device *dev, struct iw_request_info *a,
 	if (!priv->up)
 		return -ENETDOWN;
 
-	if (priv->ieee80211->LinkDetectInfo.bBusyTraffic)
+	if (priv->ieee80211->LinkDetectInfo.bBusyTraffic == true)
 		return -EAGAIN;
 	if (wrqu->data.flags & IW_SCAN_THIS_ESSID) {
 		struct iw_scan_req *req = (struct iw_scan_req *)b;

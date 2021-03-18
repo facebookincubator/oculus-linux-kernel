@@ -22,7 +22,6 @@
 
 #include "core.h"
 #include "bus.h"
-#include "host.h"
 #include "sd.h"
 #include "sdio_bus.h"
 #include "mmc_ops.h"
@@ -367,22 +366,19 @@ static int sdio_enable_4bit_bus(struct mmc_card *card)
 	int err;
 
 	if (card->type == MMC_TYPE_SDIO)
-		err = sdio_enable_wide(card);
-	else if ((card->host->caps & MMC_CAP_4_BIT_DATA) &&
-		 (card->scr.bus_widths & SD_SCR_BUS_WIDTH_4)) {
+		return sdio_enable_wide(card);
+
+	if ((card->host->caps & MMC_CAP_4_BIT_DATA) &&
+		(card->scr.bus_widths & SD_SCR_BUS_WIDTH_4)) {
 		err = mmc_app_set_bus_width(card, MMC_BUS_WIDTH_4);
 		if (err)
 			return err;
-		err = sdio_enable_wide(card);
-		if (err <= 0)
-			mmc_app_set_bus_width(card, MMC_BUS_WIDTH_1);
 	} else
 		return 0;
 
-	if (err > 0) {
-		mmc_set_bus_width(card->host, MMC_BUS_WIDTH_4);
-		err = 0;
-	}
+	err = sdio_enable_wide(card);
+	if (err <= 0)
+		mmc_app_set_bus_width(card, MMC_BUS_WIDTH_1);
 
 	return err;
 }
@@ -476,38 +472,69 @@ static unsigned char host_drive_to_sdio_drive(int host_strength)
 
 static void sdio_select_driver_type(struct mmc_card *card)
 {
-	int card_drv_type, drive_strength, drv_type;
+	int host_drv_type = SD_DRIVER_TYPE_B;
+	int card_drv_type = SD_DRIVER_TYPE_B;
+	int drive_strength;
 	unsigned char card_strength;
 	int err;
 
-	card->drive_strength = 0;
+	/*
+	 * If the host doesn't support any of the Driver Types A,C or D,
+	 * or there is no board specific handler then default Driver
+	 * Type B is used.
+	 */
+	if (!(card->host->caps &
+		(MMC_CAP_DRIVER_TYPE_A |
+		 MMC_CAP_DRIVER_TYPE_C |
+		 MMC_CAP_DRIVER_TYPE_D)))
+		return;
 
-	card_drv_type = card->sw_caps.sd3_drv_type | SD_DRIVER_TYPE_B;
+	if (!card->host->ops->select_drive_strength)
+		return;
 
-	drive_strength = mmc_select_drive_strength(card,
-						   card->sw_caps.uhs_max_dtr,
-						   card_drv_type, &drv_type);
+	if (card->host->caps & MMC_CAP_DRIVER_TYPE_A)
+		host_drv_type |= SD_DRIVER_TYPE_A;
 
-	if (drive_strength) {
-		/* if error just use default for drive strength B */
-		err = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_DRIVE_STRENGTH, 0,
-				       &card_strength);
-		if (err)
-			return;
+	if (card->host->caps & MMC_CAP_DRIVER_TYPE_C)
+		host_drv_type |= SD_DRIVER_TYPE_C;
 
-		card_strength &= ~(SDIO_DRIVE_DTSx_MASK<<SDIO_DRIVE_DTSx_SHIFT);
-		card_strength |= host_drive_to_sdio_drive(drive_strength);
+	if (card->host->caps & MMC_CAP_DRIVER_TYPE_D)
+		host_drv_type |= SD_DRIVER_TYPE_D;
 
-		/* if error default to drive strength B */
-		err = mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_DRIVE_STRENGTH,
-				       card_strength, NULL);
-		if (err)
-			return;
-		card->drive_strength = drive_strength;
-	}
+	if (card->sw_caps.sd3_drv_type & SD_DRIVER_TYPE_A)
+		card_drv_type |= SD_DRIVER_TYPE_A;
 
-	if (drv_type)
-		mmc_set_driver_type(card->host, drv_type);
+	if (card->sw_caps.sd3_drv_type & SD_DRIVER_TYPE_C)
+		card_drv_type |= SD_DRIVER_TYPE_C;
+
+	if (card->sw_caps.sd3_drv_type & SD_DRIVER_TYPE_D)
+		card_drv_type |= SD_DRIVER_TYPE_D;
+
+	/*
+	 * The drive strength that the hardware can support
+	 * depends on the board design.  Pass the appropriate
+	 * information and let the hardware specific code
+	 * return what is possible given the options
+	 */
+	drive_strength = card->host->ops->select_drive_strength(
+		card->sw_caps.uhs_max_dtr,
+		host_drv_type, card_drv_type);
+
+	/* if error just use default for drive strength B */
+	err = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_DRIVE_STRENGTH, 0,
+		&card_strength);
+	if (err)
+		return;
+
+	card_strength &= ~(SDIO_DRIVE_DTSx_MASK<<SDIO_DRIVE_DTSx_SHIFT);
+	card_strength |= host_drive_to_sdio_drive(drive_strength);
+
+	err = mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_DRIVE_STRENGTH,
+		card_strength, NULL);
+
+	/* if error default to drive strength B */
+	if (!err)
+		mmc_set_driver_type(card->host, drive_strength);
 }
 
 
@@ -596,8 +623,13 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	/*
 	 * Switch to wider bus (if supported).
 	 */
-	if (card->host->caps & MMC_CAP_4_BIT_DATA)
+	if (card->host->caps & MMC_CAP_4_BIT_DATA) {
 		err = sdio_enable_4bit_bus(card);
+		if (err > 0) {
+			mmc_set_bus_width(card->host, MMC_BUS_WIDTH_4);
+			err = 0;
+		}
+	}
 
 	/* Set the driver strength for the card */
 	sdio_select_driver_type(card);
@@ -611,11 +643,17 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	 * SPI mode doesn't define CMD19 and tuning is only valid for SDR50 and
 	 * SDR104 mode SD-cards. Note that tuning is mandatory for SDR104.
 	 */
-	if (!mmc_host_is_spi(card->host) &&
-	    ((card->host->ios.timing == MMC_TIMING_UHS_SDR50) ||
-	      (card->host->ios.timing == MMC_TIMING_UHS_SDR104)))
-		err = mmc_execute_tuning(card);
+	if (!mmc_host_is_spi(card->host) && card->host->ops->execute_tuning &&
+			((card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR50) ||
+			 (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104))) {
+		mmc_host_clk_hold(card->host);
+		err = card->host->ops->execute_tuning(card->host,
+						      MMC_SEND_TUNING_BLOCK);
+		mmc_host_clk_release(card->host);
+	}
+
 out:
+
 	return err;
 }
 
@@ -710,7 +748,7 @@ try_again:
 	 */
 	if (!powered_resume && (rocr & ocr & R4_18V_PRESENT)) {
 		err = mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_180,
-					ocr_card);
+					ocr);
 		if (err == -EAGAIN) {
 			sdio_reset(host);
 			mmc_go_idle(host);
@@ -999,22 +1037,18 @@ static int mmc_sdio_pre_suspend(struct mmc_host *host)
 static int mmc_sdio_suspend(struct mmc_host *host)
 {
 	MMC_TRACE(host, "%s: Enter\n", __func__);
-	mmc_claim_host(host);
-
-	if (mmc_card_keep_power(host) && mmc_card_wake_sdio_irq(host))
+	if (mmc_card_keep_power(host) && mmc_card_wake_sdio_irq(host)) {
+		mmc_claim_host(host);
 		sdio_disable_wide(host->card);
-
-	if (!mmc_card_keep_power(host)) {
-		mmc_power_off(host);
-	} else if (host->ios.clock) {
-		mmc_gate_clock(host);
-	} else if (host->retune_period) {
-		mmc_retune_timer_stop(host);
-		mmc_retune_needed(host);
+		mmc_release_host(host);
 	}
 
-	mmc_release_host(host);
+	if (!mmc_card_keep_power(host))
+		mmc_power_off(host);
+	else if (host->ios.clock)
+		mmc_gate_clock(host);
 	MMC_TRACE(host, "%s: Exit\n", __func__);
+
 	return 0;
 }
 
@@ -1049,12 +1083,8 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	if (mmc_card_is_removable(host) || !mmc_card_keep_power(host)) {
 		sdio_reset(host);
 		mmc_go_idle(host);
-		mmc_send_if_cond(host, host->card->ocr);
-		err = mmc_send_io_op_cond(host, 0, NULL);
-		if (!err)
-			err = mmc_sdio_init_card(host, host->card->ocr,
-						 host->card,
-						 mmc_card_keep_power(host));
+		err = mmc_sdio_init_card(host, host->card->ocr, host->card,
+					mmc_card_keep_power(host));
 	} else if (mmc_card_keep_power(host) && mmc_card_wake_sdio_irq(host)) {
 		/* We may have switched to 1-bit mode during suspend */
 		err = sdio_enable_4bit_bus(host->card);
@@ -1113,7 +1143,7 @@ static int mmc_sdio_power_restore(struct mmc_host *host)
 
 	sdio_reset(host);
 	mmc_go_idle(host);
-	mmc_send_if_cond(host, host->card->ocr);
+	mmc_send_if_cond(host, host->ocr_avail);
 
 	ret = mmc_send_io_op_cond(host, 0, NULL);
 	if (ret)
@@ -1133,29 +1163,14 @@ out:
 static int mmc_sdio_runtime_suspend(struct mmc_host *host)
 {
 	/* No references to the card, cut the power to it. */
-	mmc_claim_host(host);
 	mmc_power_off(host);
-	mmc_release_host(host);
-
 	return 0;
 }
 
 static int mmc_sdio_runtime_resume(struct mmc_host *host)
 {
-	int ret;
-
 	/* Restore power and re-initialize. */
-	mmc_claim_host(host);
 	mmc_power_up(host, host->card->ocr);
-	ret = mmc_sdio_power_restore(host);
-	mmc_release_host(host);
-
-	return ret;
-}
-
-static int mmc_sdio_reset(struct mmc_host *host)
-{
-	mmc_power_cycle(host, host->card->ocr);
 	return mmc_sdio_power_restore(host);
 }
 
@@ -1169,7 +1184,6 @@ static const struct mmc_bus_ops mmc_sdio_ops = {
 	.runtime_resume = mmc_sdio_runtime_resume,
 	.power_restore = mmc_sdio_power_restore,
 	.alive = mmc_sdio_alive,
-	.reset = mmc_sdio_reset,
 };
 
 

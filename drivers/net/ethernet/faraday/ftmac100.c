@@ -1177,6 +1177,7 @@ static struct platform_driver ftmac100_driver = {
 	.remove		= __exit_p(ftmac100_remove),
 	.driver		= {
 		.name	= DRV_NAME,
+		.owner	= THIS_MODULE,
 	},
 };
 

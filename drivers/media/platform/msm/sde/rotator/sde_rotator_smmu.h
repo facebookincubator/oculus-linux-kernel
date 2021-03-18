@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,7 +17,6 @@
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
-#include <linux/mdss_smmu_ext.h>
 
 #include "sde_rotator_io_util.h"
 
@@ -28,6 +27,11 @@ enum sde_iommu_domain_type {
 };
 
 int sde_smmu_init(struct device *dev);
+
+static inline int sde_smmu_dma_data_direction(int dir)
+{
+	return dir;
+}
 
 int sde_smmu_ctrl(int enable);
 
@@ -41,7 +45,4 @@ int sde_smmu_map_dma_buf(struct dma_buf *dma_buf,
 void sde_smmu_unmap_dma_buf(struct sg_table *table, int domain,
 		int dir, struct dma_buf *dma_buf);
 
-int sde_smmu_secure_ctrl(int enable);
-
-int sde_smmu_set_dma_direction(int dir);
 #endif /* SDE_ROTATOR_SMMU_H */

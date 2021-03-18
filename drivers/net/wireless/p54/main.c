@@ -182,7 +182,7 @@ static int p54_start(struct ieee80211_hw *dev)
 	if (err)
 		goto out;
 
-	eth_broadcast_addr(priv->bssid);
+	memset(priv->bssid, ~0, ETH_ALEN);
 	priv->mode = NL80211_IFTYPE_MONITOR;
 	err = p54_setup_mac(priv);
 	if (err) {
@@ -274,8 +274,8 @@ static void p54_remove_interface(struct ieee80211_hw *dev,
 		wait_for_completion_interruptible_timeout(&priv->beacon_comp, HZ);
 	}
 	priv->mode = NL80211_IFTYPE_MONITOR;
-	eth_zero_addr(priv->mac_addr);
-	eth_zero_addr(priv->bssid);
+	memset(priv->mac_addr, 0, ETH_ALEN);
+	memset(priv->bssid, 0, ETH_ALEN);
 	p54_setup_mac(priv);
 	mutex_unlock(&priv->conf_mutex);
 }
@@ -305,9 +305,9 @@ static void p54_reset_stats(struct p54_common *priv)
 		struct survey_info *info = &priv->survey[chan->hw_value];
 
 		/* only reset channel statistics, don't touch .filled, etc. */
-		info->time = 0;
-		info->time_busy = 0;
-		info->time_tx = 0;
+		info->channel_time = 0;
+		info->channel_time_busy = 0;
+		info->channel_time_tx = 0;
 	}
 
 	priv->update_stats = true;
@@ -395,11 +395,13 @@ static void p54_configure_filter(struct ieee80211_hw *dev,
 {
 	struct p54_common *priv = dev->priv;
 
-	*total_flags &= FIF_ALLMULTI | FIF_OTHER_BSS;
+	*total_flags &= FIF_PROMISC_IN_BSS |
+			FIF_ALLMULTI |
+			FIF_OTHER_BSS;
 
 	priv->filter_flags = *total_flags;
 
-	if (changed_flags & FIF_OTHER_BSS)
+	if (changed_flags & (FIF_PROMISC_IN_BSS | FIF_OTHER_BSS))
 		p54_setup_mac(priv);
 
 	if (changed_flags & FIF_ALLMULTI || multicast)
@@ -573,8 +575,6 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 			key->hw_key_idx = 0xff;
 			goto out_unlock;
 		}
-
-		key->flags |= IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 	} else {
 		slot = key->hw_key_idx;
 
@@ -634,7 +634,7 @@ static int p54_get_survey(struct ieee80211_hw *dev, int idx,
 
 		if (in_use) {
 			/* test if the reported statistics are valid. */
-			if  (survey->time != 0) {
+			if  (survey->channel_time != 0) {
 				survey->filled |= SURVEY_INFO_IN_USE;
 			} else {
 				/*
@@ -746,12 +746,12 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 	spin_lock_init(&priv->tx_stats_lock);
 	skb_queue_head_init(&priv->tx_queue);
 	skb_queue_head_init(&priv->tx_pending);
-	ieee80211_hw_set(dev, REPORTS_TX_ACK_STATUS);
-	ieee80211_hw_set(dev, MFP_CAPABLE);
-	ieee80211_hw_set(dev, PS_NULLFUNC_STACK);
-	ieee80211_hw_set(dev, SUPPORTS_PS);
-	ieee80211_hw_set(dev, RX_INCLUDES_FCS);
-	ieee80211_hw_set(dev, SIGNAL_DBM);
+	dev->flags = IEEE80211_HW_RX_INCLUDES_FCS |
+		     IEEE80211_HW_SIGNAL_DBM |
+		     IEEE80211_HW_SUPPORTS_PS |
+		     IEEE80211_HW_PS_NULLFUNC_STACK |
+		     IEEE80211_HW_MFP_CAPABLE |
+		     IEEE80211_HW_REPORTS_TX_ACK_STATUS;
 
 	dev->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 				      BIT(NL80211_IFTYPE_ADHOC) |
@@ -792,7 +792,7 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 	init_completion(&priv->beacon_comp);
 	INIT_DELAYED_WORK(&priv->work, p54_work);
 
-	eth_broadcast_addr(priv->mc_maclist[0]);
+	memset(&priv->mc_maclist[0], ~0, ETH_ALEN);
 	priv->curchan = NULL;
 	p54_reset_stats(priv);
 	return dev;

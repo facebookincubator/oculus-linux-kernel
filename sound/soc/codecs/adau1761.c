@@ -255,8 +255,7 @@ static const struct snd_kcontrol_new adau1761_input_mux_control =
 static int adau1761_dejitter_fixup(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct adau *adau = snd_soc_codec_get_drvdata(codec);
+	struct adau *adau = snd_soc_codec_get_drvdata(w->codec);
 
 	/* After any power changes have been made the dejitter circuit
 	 * has to be reinitialized. */
@@ -466,6 +465,7 @@ static int adau1761_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	}
+	codec->dapm.bias_level = level;
 	return 0;
 }
 
@@ -482,7 +482,6 @@ static enum adau1761_output_mode adau1761_get_lineout_mode(
 
 static int adau1761_setup_digmic_jackdetect(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct adau1761_platform_data *pdata = codec->dev->platform_data;
 	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 	enum adau1761_digmic_jackdet_pin_mode mode;
@@ -515,18 +514,21 @@ static int adau1761_setup_digmic_jackdetect(struct snd_soc_codec *codec)
 		if (ret)
 			return ret;
 	case ADAU1761_DIGMIC_JACKDET_PIN_MODE_NONE: /* fallthrough */
-		ret = snd_soc_dapm_add_routes(dapm, adau1761_no_dmic_routes,
+		ret = snd_soc_dapm_add_routes(&codec->dapm,
+			adau1761_no_dmic_routes,
 			ARRAY_SIZE(adau1761_no_dmic_routes));
 		if (ret)
 			return ret;
 		break;
 	case ADAU1761_DIGMIC_JACKDET_PIN_MODE_DIGMIC:
-		ret = snd_soc_dapm_new_controls(dapm, adau1761_dmic_widgets,
+		ret = snd_soc_dapm_new_controls(&codec->dapm,
+			adau1761_dmic_widgets,
 			ARRAY_SIZE(adau1761_dmic_widgets));
 		if (ret)
 			return ret;
 
-		ret = snd_soc_dapm_add_routes(dapm, adau1761_dmic_routes,
+		ret = snd_soc_dapm_add_routes(&codec->dapm,
+			adau1761_dmic_routes,
 			ARRAY_SIZE(adau1761_dmic_routes));
 		if (ret)
 			return ret;
@@ -544,7 +546,6 @@ static int adau1761_setup_digmic_jackdetect(struct snd_soc_codec *codec)
 
 static int adau1761_setup_headphone_mode(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 	struct adau1761_platform_data *pdata = codec->dev->platform_data;
 	enum adau1761_output_mode mode;
@@ -575,12 +576,12 @@ static int adau1761_setup_headphone_mode(struct snd_soc_codec *codec)
 	}
 
 	if (mode == ADAU1761_OUTPUT_MODE_HEADPHONE_CAPLESS) {
-		ret = snd_soc_dapm_new_controls(dapm,
+		ret = snd_soc_dapm_new_controls(&codec->dapm,
 			adau1761_capless_dapm_widgets,
 			ARRAY_SIZE(adau1761_capless_dapm_widgets));
 		if (ret)
 			return ret;
-		ret = snd_soc_dapm_add_routes(dapm,
+		ret = snd_soc_dapm_add_routes(&codec->dapm,
 			adau1761_capless_dapm_routes,
 			ARRAY_SIZE(adau1761_capless_dapm_routes));
 	} else {
@@ -588,12 +589,12 @@ static int adau1761_setup_headphone_mode(struct snd_soc_codec *codec)
 			ARRAY_SIZE(adau1761_mono_controls));
 		if (ret)
 			return ret;
-		ret = snd_soc_dapm_new_controls(dapm,
+		ret = snd_soc_dapm_new_controls(&codec->dapm,
 			adau1761_mono_dapm_widgets,
 			ARRAY_SIZE(adau1761_mono_dapm_widgets));
 		if (ret)
 			return ret;
-		ret = snd_soc_dapm_add_routes(dapm,
+		ret = snd_soc_dapm_add_routes(&codec->dapm,
 			adau1761_mono_dapm_routes,
 			ARRAY_SIZE(adau1761_mono_dapm_routes));
 	}
@@ -638,7 +639,6 @@ static bool adau1761_readable_register(struct device *dev, unsigned int reg)
 
 static int adau1761_codec_probe(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct adau1761_platform_data *pdata = codec->dev->platform_data;
 	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 	int ret;
@@ -691,15 +691,22 @@ static int adau1761_codec_probe(struct snd_soc_codec *codec)
 		return ret;
 
 	if (adau->type == ADAU1761) {
-		ret = snd_soc_dapm_new_controls(dapm, adau1761_dapm_widgets,
+		ret = snd_soc_dapm_new_controls(&codec->dapm,
+			adau1761_dapm_widgets,
 			ARRAY_SIZE(adau1761_dapm_widgets));
 		if (ret)
 			return ret;
 
-		ret = snd_soc_dapm_add_routes(dapm, adau1761_dapm_routes,
+		ret = snd_soc_dapm_add_routes(&codec->dapm,
+			adau1761_dapm_routes,
 			ARRAY_SIZE(adau1761_dapm_routes));
 		if (ret)
 			return ret;
+
+		ret = adau17x1_load_firmware(adau, codec->dev,
+			ADAU1761_FIRMWARE);
+		if (ret)
+			dev_warn(codec->dev, "Failed to firmware\n");
 	}
 
 	ret = adau17x1_add_routes(codec);
@@ -768,20 +775,16 @@ int adau1761_probe(struct device *dev, struct regmap *regmap,
 	enum adau17x1_type type, void (*switch_mode)(struct device *dev))
 {
 	struct snd_soc_dai_driver *dai_drv;
-	const char *firmware_name;
 	int ret;
 
-	if (type == ADAU1361) {
-		dai_drv = &adau1361_dai_driver;
-		firmware_name = NULL;
-	} else {
-		dai_drv = &adau1761_dai_driver;
-		firmware_name = ADAU1761_FIRMWARE;
-	}
-
-	ret = adau17x1_probe(dev, regmap, type, switch_mode, firmware_name);
+	ret = adau17x1_probe(dev, regmap, type, switch_mode);
 	if (ret)
 		return ret;
+
+	if (type == ADAU1361)
+		dai_drv = &adau1361_dai_driver;
+	else
+		dai_drv = &adau1761_dai_driver;
 
 	return snd_soc_register_codec(dev, &adau1761_codec_driver, dai_drv, 1);
 }
@@ -795,7 +798,6 @@ const struct regmap_config adau1761_regmap_config = {
 	.num_reg_defaults = ARRAY_SIZE(adau1761_reg_defaults),
 	.readable_reg = adau1761_readable_register,
 	.volatile_reg = adau17x1_volatile_register,
-	.precious_reg = adau17x1_precious_register,
 	.cache_type = REGCACHE_RBTREE,
 };
 EXPORT_SYMBOL_GPL(adau1761_regmap_config);

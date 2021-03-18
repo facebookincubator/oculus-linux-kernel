@@ -1000,6 +1000,7 @@ static int ax_resume(struct platform_device *pdev)
 static struct platform_driver axdrv = {
 	.driver	= {
 		.name		= "ax88796",
+		.owner		= THIS_MODULE,
 	},
 	.probe		= ax_probe,
 	.remove		= ax_remove,

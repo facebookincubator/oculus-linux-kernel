@@ -15,8 +15,6 @@
  *
  */
 
-#include <linux/compat.h>
-#include <linux/types.h>
 #include "audio_utils_aio.h"
 
 static struct miscdevice audio_amrwb_misc;
@@ -73,53 +71,6 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return rc;
 }
 
-static long audio_compat_ioctl(struct file *file, unsigned int cmd,
-			       unsigned long arg)
-{
-	struct q6audio_aio *audio = file->private_data;
-	int rc = 0;
-
-	switch (cmd) {
-	case AUDIO_START: {
-		pr_debug("%s[%pK]: AUDIO_START session_id[%d]\n", __func__,
-				audio, audio->ac->session);
-		if (audio->feedback == NON_TUNNEL_MODE) {
-			/* Configure PCM output block */
-			rc = q6asm_enc_cfg_blk_pcm(audio->ac,
-					audio->pcm_cfg.sample_rate,
-					audio->pcm_cfg.channel_count);
-			if (rc < 0) {
-				pr_err("%s: pcm output block config failed rc=%d\n",
-					__func__, rc);
-				break;
-			}
-		}
-
-		rc = audio_aio_enable(audio);
-		audio->eos_rsp = 0;
-		audio->eos_flag = 0;
-		if (!rc) {
-			audio->enabled = 1;
-		} else {
-			audio->enabled = 0;
-			pr_err("%s: Audio Start procedure failed rc=%d\n",
-				__func__, rc);
-			break;
-		}
-		pr_debug("%s: AUDIO_START sessionid[%d]enable[%d]\n", __func__,
-				audio->ac->session,
-				audio->enabled);
-		if (audio->stopped == 1)
-			audio->stopped = 0;
-		break;
-	}
-	default:
-		pr_debug("%s[%pK]: Calling compat ioctl\n", __func__, audio);
-		rc = audio->codec_compat_ioctl(file, cmd, arg);
-	}
-	return rc;
-}
-
 static int audio_open(struct inode *inode, struct file *file)
 {
 	struct q6audio_aio *audio = NULL;
@@ -139,6 +90,8 @@ static int audio_open(struct inode *inode, struct file *file)
 	audio->miscdevice = &audio_amrwb_misc;
 	audio->wakelock_voted = false;
 	audio->audio_ws_mgr = &audio_amrwb_ws_mgr;
+
+	init_waitqueue_head(&audio->event_wait);
 
 	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_cb,
 					     (void *)audio);
@@ -208,7 +161,6 @@ static const struct file_operations audio_amrwb_fops = {
 	.release = audio_aio_release,
 	.unlocked_ioctl = audio_ioctl,
 	.fsync = audio_aio_fsync,
-	.compat_ioctl = audio_compat_ioctl,
 };
 
 static struct miscdevice audio_amrwb_misc = {
