@@ -34,6 +34,7 @@
 #include <qdf_types.h>
 #include <csr_api.h>
 #include <sap_api.h>
+#include <sir_mac_prot_def.h>
 #include "osapi_linux.h"
 #include <wmi_unified.h>
 #include "wlan_pmo_hw_filter_public_struct.h"
@@ -46,9 +47,6 @@ struct hdd_context;
 
 #define FW_MODULE_LOG_LEVEL_STRING_LENGTH  (512)
 #define TX_SCHED_WRR_PARAMS_NUM            (5)
-
-/* Number of items that can be configured */
-#define MAX_CFG_INI_ITEMS   1024
 
 /* Defines for all of the things we read from the configuration (registry). */
 
@@ -103,9 +101,6 @@ struct hdd_context;
  */
 
 struct hdd_config {
-	/* Bitmap to track what is explicitly configured */
-	DECLARE_BITMAP(bExplicitCfg, MAX_CFG_INI_ITEMS);
-
 	/* Config parameters */
 	enum hdd_dot11_mode dot11Mode;
 
@@ -142,7 +137,8 @@ struct hdd_config {
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	/* WLAN Logging */
 	bool wlan_logging_enable;
-	bool wlan_logging_to_console;
+	uint32_t wlan_console_log_levels;
+	uint8_t host_log_custom_nl_proto;
 #endif /* WLAN_LOGGING_SOCK_SVC_ENABLE */
 
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
@@ -176,7 +172,16 @@ struct hdd_config {
 	uint32_t tcp_delack_timer_count;
 	bool     enable_tcp_param_update;
 	uint32_t bus_low_cnt_threshold;
+	bool enable_latency_crit_clients;
 #endif /*WLAN_FEATURE_DP_BUS_BANDWIDTH*/
+
+#ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
+	bool del_ack_enable;
+	uint32_t del_ack_threshold_high;
+	uint32_t del_ack_threshold_low;
+	uint16_t del_ack_timer_value;
+	uint16_t del_ack_pkt_count;
+#endif
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 	uint32_t tx_flow_low_watermark;
@@ -191,6 +196,7 @@ struct hdd_config {
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
 	uint32_t napi_cpu_affinity_mask;
 	/* CPU affinity mask for rx_thread */
+	uint32_t rx_thread_ul_affinity_mask;
 	uint32_t rx_thread_affinity_mask;
 	uint8_t cpu_map_list[CFG_DP_RPS_RX_QUEUE_CPU_MAP_LIST_LEN];
 	bool multicast_replay_filter;
@@ -200,15 +206,16 @@ struct hdd_config {
 	bool enable_dp_trace;
 	uint8_t dp_trace_config[DP_TRACE_CONFIG_STRING_LENGTH];
 #endif
-#ifdef WLAN_NUD_TRACKING
 	uint8_t enable_nud_tracking;
-#endif
-	uint8_t operating_channel;
+	uint32_t operating_chan_freq;
 	uint8_t num_vdevs;
 	uint8_t enable_concurrent_sta[CFG_CONCURRENT_IFACE_MAX_LEN];
 	uint8_t dbs_scan_selection[CFG_DBS_SCAN_PARAM_LENGTH];
 #ifdef FEATURE_RUNTIME_PM
 	uint8_t runtime_pm;
+#endif
+#ifdef WLAN_FEATURE_WMI_SEND_RECV_QMI
+	bool is_qmi_stats_enabled;
 #endif
 	uint8_t inform_bss_rssi_raw;
 
@@ -221,8 +228,27 @@ struct hdd_config {
 #ifdef WLAN_FEATURE_TSF_PLUS
 	uint8_t tsf_ptp_options;
 #endif /* WLAN_FEATURE_TSF_PLUS */
+
+#ifdef WLAN_SUPPORT_TXRX_HL_BUNDLE
+	uint32_t pkt_bundle_threshold_high;
+	uint32_t pkt_bundle_threshold_low;
+	uint16_t pkt_bundle_timer_value;
+	uint16_t pkt_bundle_size;
+#endif
 	uint32_t dp_proto_event_bitmap;
+
+#ifdef SAR_SAFETY_FEATURE
+	uint32_t sar_safety_timeout;
+	uint32_t sar_safety_unsolicited_timeout;
+	uint32_t sar_safety_req_resp_timeout;
+	uint32_t sar_safety_req_resp_retry;
+	uint32_t sar_safety_index;
+	uint32_t sar_safety_sleep_index;
+	bool enable_sar_safety;
+	bool config_sar_safety_sleep_index;
+#endif
 	bool get_roam_chan_from_fw;
+	uint32_t fisa_enable;
 
 #ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 	/* Periodicity of logging */
@@ -230,6 +256,11 @@ struct hdd_config {
 	/* Duration for which periodic logging should be done */
 	uint32_t periodic_stats_timer_duration;
 #endif /* WLAN_FEATURE_PERIODIC_STA_STATS */
+	uint8_t nb_commands_interval;
+
+#ifdef FEATURE_CLUB_LL_STATS_AND_GET_STATION
+	uint32_t sta_stats_cache_expiry_time;
+#endif
 };
 
 /**
@@ -277,7 +308,32 @@ QDF_STATUS hdd_hex_string_to_u16_array(char *str, uint16_t *int_array,
 
 void hdd_cfg_print_global_config(struct hdd_context *hdd_ctx);
 
+/**
+ * hdd_update_nss() - Update the number of spatial streams supported.
+ *
+ * @adapter: the pointer to adapter
+ * @nss: the number of spatial streams to be updated
+ *
+ * This function is used to modify the number of spatial streams
+ * supported when not in connected state.
+ *
+ * Return: QDF_STATUS_SUCCESS if nss is correctly updated,
+ *              otherwise QDF_STATUS_E_FAILURE would be returned
+ */
 QDF_STATUS hdd_update_nss(struct hdd_adapter *adapter, uint8_t nss);
+
+/**
+ * hdd_get_nss() - Get the number of spatial streams supported by the adapter
+ *
+ * @adapter: the pointer to adapter
+ * @nss: the number of spatial streams supported by the adapter
+ *
+ * This function is used to get the number of spatial streams supported by
+ * the adapter.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS hdd_get_nss(struct hdd_adapter *adapter, uint8_t *nss);
 
 /**
  * hdd_dfs_indicate_radar() - Block tx as radar found on the channel
@@ -294,6 +350,15 @@ QDF_STATUS hdd_update_nss(struct hdd_adapter *adapter, uint8_t nss);
 bool hdd_dfs_indicate_radar(struct hdd_context *hdd_ctx);
 
 /**
+ * hdd_restore_all_ps() - Restore all the powersave configuration overwritten
+ * by hdd_override_all_ps.
+ * @hdd_ctx: Pointer to HDD context.
+ *
+ * Return: None
+ */
+void hdd_restore_all_ps(struct hdd_context *hdd_ctx);
+
+/**
  * hdd_override_all_ps() - overrides to disables all the powersave features.
  * @hdd_ctx: Pointer to HDD context.
  * Overrides below powersave ini configurations.
@@ -302,10 +367,126 @@ bool hdd_dfs_indicate_radar(struct hdd_context *hdd_ctx);
  * gRuntimePM=0
  * gWlanAutoShutdown = 0
  * gEnableSuspend=0
- * gEnablePowerSaveOffload=0
  * gEnableWoW=0
  *
  * Return: None
  */
 void hdd_override_all_ps(struct hdd_context *hdd_ctx);
-#endif
+
+/**
+ * hdd_vendor_mode_to_phymode() - Get eCsrPhyMode according to vendor phy mode
+ * @vendor_phy_mode: vendor phy mode
+ * @crs_phy_mode: phy mode of eCsrPhyMode
+ *
+ * Return: 0 on success, negative errno value on error
+ */
+int hdd_vendor_mode_to_phymode(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+			       eCsrPhyMode *csr_phy_mode);
+
+/**
+ * hdd_vendor_mode_to_band() - Get band_info according to vendor phy mode
+ * @vendor_phy_mode: vendor phy mode
+ * @supported_band: supported band bitmap
+ * @is_6ghz_supported: whether 6ghz is supported
+ *
+ * Return: 0 on success, negative errno value on error
+ */
+int hdd_vendor_mode_to_band(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+			    uint8_t *supported_band, bool is_6ghz_supported);
+
+/**
+ * hdd_vendor_mode_to_bonding_mode() - Get channel bonding mode according to
+ * vendor phy mode
+ * @vendor_phy_mode: vendor phy mode
+ * @bonding_mode: channel bonding mode
+ *
+ * Return: 0 on success, negative errno value on error
+ */
+int
+hdd_vendor_mode_to_bonding_mode(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+				uint32_t *bonding_mode);
+
+/**
+ * hdd_update_phymode() - update the PHY mode of the adapter
+ * @adapter: adapter being modified
+ * @phymode: new PHY mode for the adapter
+ * @supported_band: supported band bitmap for the adapter
+ * @bonding_mode: new channel bonding mode for the adapter
+ *
+ * This function is called when the adapter is set to a new PHY mode.
+ * It takes a holistic look at the desired PHY mode along with the
+ * configured capabilities of the driver and the reported capabilities
+ * of the hardware in order to correctly configure all PHY-related
+ * parameters.
+ *
+ * Return: 0 on success, negative errno value on error
+ */
+int hdd_update_phymode(struct hdd_adapter *adapter, eCsrPhyMode phymode,
+		       uint8_t supported_band, uint32_t bonding_mode);
+
+/**
+ * hdd_get_ldpc() - Get adapter LDPC
+ * @adapter: adapter being queried
+ * @value: where to store the value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_get_ldpc(struct hdd_adapter *adapter, int *value);
+
+/**
+ * hdd_set_ldpc() - Set adapter LDPC
+ * @adapter: adapter being modified
+ * @value: new LDPC value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_set_ldpc(struct hdd_adapter *adapter, int value);
+
+/**
+ * hdd_get_tx_stbc() - Get adapter TX STBC
+ * @adapter: adapter being queried
+ * @value: where to store the value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_get_tx_stbc(struct hdd_adapter *adapter, int *value);
+
+/**
+ * hdd_set_tx_stbc() - Set adapter TX STBC
+ * @adapter: adapter being modified
+ * @value: new TX STBC value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_set_tx_stbc(struct hdd_adapter *adapter, int value);
+
+/**
+ * hdd_get_rx_stbc() - Get adapter RX STBC
+ * @adapter: adapter being queried
+ * @value: where to store the value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_get_rx_stbc(struct hdd_adapter *adapter, int *value);
+
+/**
+ * hdd_set_rx_stbc() - Set adapter RX STBC
+ * @adapter: adapter being modified
+ * @value: new RX STBC value
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_set_rx_stbc(struct hdd_adapter *adapter, int value);
+
+/**
+ * hdd_update_channel_width() - Update adapter channel width settings
+ * @adapter: adapter being modified
+ * @chwidth: new channel width of enum eSirMacHTChannelWidth
+ * @bonding_mode: channel bonding mode of the new channel width
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int hdd_update_channel_width(struct hdd_adapter *adapter,
+			     enum eSirMacHTChannelWidth chwidth,
+			     uint32_t bonding_mode);
+#endif /* end #if !defined(HDD_CONFIG_H__) */

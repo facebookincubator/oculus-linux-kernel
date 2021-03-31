@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -56,6 +56,7 @@ enum notifier_state {
 } notifier_state;
 
 static p_cds_sched_context gp_cds_sched_context;
+
 #ifdef QCA_CONFIG_SMP
 static int cds_ol_rx_thread(void *arg);
 static uint32_t affine_cpu;
@@ -91,6 +92,17 @@ void cds_set_rx_thread_cpu_mask(uint8_t cpu_affinity_mask)
 		return;
 	}
 	sched_context->conf_rx_thread_cpu_mask = cpu_affinity_mask;
+}
+
+void cds_set_rx_thread_ul_cpu_mask(uint8_t cpu_affinity_mask)
+{
+	p_cds_sched_context sched_context = get_cds_sched_ctxt();
+
+	if (!sched_context) {
+		qdf_err("invalid context");
+		return;
+	}
+	sched_context->conf_rx_thread_ul_affinity = cpu_affinity_mask;
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
@@ -234,6 +246,62 @@ int cds_sched_handle_cpu_hot_plug(void)
 	}
 	mutex_unlock(&pSchedContext->affinity_lock);
 	return 0;
+}
+
+void cds_sched_handle_rx_thread_affinity_req(bool high_throughput)
+{
+	p_cds_sched_context pschedcontext = get_cds_sched_ctxt();
+	unsigned long cpus;
+	qdf_cpu_mask new_mask;
+	unsigned char core_affine_count = 0;
+
+	if (!pschedcontext || !pschedcontext->ol_rx_thread)
+		return;
+
+	if (cds_is_load_or_unload_in_progress()) {
+		cds_err("load or unload in progress");
+		return;
+	}
+
+	if (pschedcontext->rx_affinity_required == high_throughput)
+		return;
+
+	pschedcontext->rx_affinity_required = high_throughput;
+	qdf_cpumask_clear(&new_mask);
+	if (!high_throughput) {
+		/* Attach to all cores, let scheduler decide */
+		qdf_cpumask_setall(&new_mask);
+		goto affine_thread;
+	}
+	for_each_online_cpu(cpus) {
+		if (topology_physical_package_id(cpus) >
+		    CDS_MAX_CPU_CLUSTERS) {
+			cds_err("can handle max %d clusters ",
+				CDS_MAX_CPU_CLUSTERS);
+			return;
+		}
+		if (pschedcontext->conf_rx_thread_ul_affinity &&
+		    (pschedcontext->conf_rx_thread_ul_affinity &
+				 (1 << cpus)))
+			qdf_cpumask_set_cpu(cpus, &new_mask);
+
+		core_affine_count++;
+	}
+
+affine_thread:
+	cds_rx_thread_log_cpu_affinity_change(
+		core_affine_count,
+		(int)pschedcontext->rx_affinity_required,
+		&pschedcontext->rx_thread_cpu_mask,
+		&new_mask);
+
+	mutex_lock(&pschedcontext->affinity_lock);
+	if (!cpumask_equal(&pschedcontext->rx_thread_cpu_mask, &new_mask)) {
+		cpumask_copy(&pschedcontext->rx_thread_cpu_mask, &new_mask);
+		cds_set_cpus_allowed_ptr_with_mask(pschedcontext->ol_rx_thread,
+						   &new_mask);
+	}
+	mutex_unlock(&pschedcontext->affinity_lock);
 }
 
 /**
@@ -438,6 +506,7 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 			   cds_cpu_before_offline_cb);
 	mutex_init(&pSchedContext->affinity_lock);
 	pSchedContext->high_throughput_required = false;
+	pSchedContext->rx_affinity_required = false;
 #endif
 	gp_cds_sched_context = pSchedContext;
 
@@ -459,11 +528,9 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 	/* We're good now: Let's get the ball rolling!!! */
 	cds_debug("CDS Scheduler successfully Opened");
 	return QDF_STATUS_SUCCESS;
-
 #ifdef QCA_CONFIG_SMP
 OL_RX_THREAD_START_FAILURE:
 #endif
-
 #ifdef QCA_CONFIG_SMP
 	qdf_cpuhp_unregister(&pSchedContext->cpuhp_event_handle);
 	cds_free_ol_rx_pkt_freeq(gp_cds_sched_context);
@@ -729,9 +796,7 @@ static int cds_ol_rx_thread(void *arg)
 	set_user_nice(current, -1);
 #endif
 
-#ifdef MSM_PLATFORM
-	set_wake_up_idle(true);
-#endif
+	qdf_set_wake_up_idle(true);
 
 	complete(&pSchedContext->ol_rx_start_event);
 
@@ -821,6 +886,7 @@ QDF_STATUS cds_sched_close(void)
 	}
 
 	cds_close_rx_thread();
+
 	gp_cds_sched_context = NULL;
 	return QDF_STATUS_SUCCESS;
 } /* cds_sched_close() */

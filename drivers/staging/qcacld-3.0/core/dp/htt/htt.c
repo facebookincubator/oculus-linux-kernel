@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2014-2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,6 +38,7 @@
 #include <cds_api.h>
 #include "hif.h"
 #include <cdp_txrx_handle.h>
+#include <ol_txrx_peer_find.h>
 
 #define HTT_HTC_PKT_POOL_INIT_SIZE 100  /* enough for a large A-MPDU */
 
@@ -570,6 +571,13 @@ htt_attach(struct htt_pdev_t *pdev, int desc_pool_size)
 		ol_tx_target_credit_update(
 				pdev->txrx_pdev, ol_cfg_target_tx_credit(
 					pdev->ctrl_pdev));
+		DPTRACE(qdf_dp_trace_credit_record(QDF_HTT_ATTACH,
+			QDF_CREDIT_INC,
+			ol_cfg_target_tx_credit(pdev->ctrl_pdev),
+			qdf_atomic_read(&pdev->txrx_pdev->target_tx_credit),
+			qdf_atomic_read(&pdev->txrx_pdev->txq_grps[0].credit),
+			qdf_atomic_read(&pdev->txrx_pdev->txq_grps[1].credit)));
+
 	} else {
 		enum wlan_frm_fmt frm_type;
 
@@ -794,6 +802,8 @@ int htt_htc_attach(struct htt_pdev_t *pdev, uint16_t service_id)
 	connect.EpCallbacks.EpTxCompleteMultiple = NULL;
 	connect.EpCallbacks.EpRecv = htt_t2h_msg_handler;
 	connect.EpCallbacks.ep_resume_tx_queue = htt_tx_resume_handler;
+	connect.EpCallbacks.ep_padding_credit_update =
+					htt_tx_padding_credit_update_handler;
 
 	/* rx buffers currently are provided by HIF, not by EpRecvRefill */
 	connect.EpCallbacks.EpRecvRefill = NULL;
@@ -845,8 +855,13 @@ void htt_log_rx_ring_info(htt_pdev_handle pdev)
 		  "%s: Data Stall Detected with reason 4 (=FW_RX_REFILL_FAILED)."
 		  "src htt rx ring:  space for %d elements, filled with %d buffers, buffers in the ring %d, refill debt %d",
 		  __func__, pdev->rx_ring.size, pdev->rx_ring.fill_level,
-		  pdev->rx_ring.fill_cnt,
+		  qdf_atomic_read(&pdev->rx_ring.fill_cnt),
 		  qdf_atomic_read(&pdev->rx_ring.refill_debt));
+}
+
+void htt_rx_refill_failure(htt_pdev_handle pdev)
+{
+	QDF_BUG(qdf_atomic_read(&pdev->rx_ring.refill_debt));
 }
 
 #if HTT_DEBUG_LEVEL > 5

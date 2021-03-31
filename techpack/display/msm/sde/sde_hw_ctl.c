@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -767,7 +767,7 @@ static void sde_hw_ctl_clear_all_blendstages(struct sde_hw_ctl *ctx)
 }
 
 static void sde_hw_ctl_setup_blendstage(struct sde_hw_ctl *ctx,
-	enum sde_lm lm, int flags, struct sde_hw_stage_cfg *stage_cfg)
+	enum sde_lm lm, int lm_layout, struct sde_hw_stage_cfg *stage_cfg)
 {
 	struct sde_hw_blk_reg_map *c;
 	u32 mixercfg = 0, mixercfg_ext = 0, mix, ext;
@@ -802,10 +802,10 @@ static void sde_hw_ctl_setup_blendstage(struct sde_hw_ctl *ctx,
 			enum sde_sspp_multirect_index rect_index =
 				stage_cfg->multirect_index[i][j];
 
-			enum sde_sspp_layout_index layout_index =
-				stage_cfg->layout_index[i][j];
+			enum sde_layout sspp_layout =
+				stage_cfg->sspp_layout[i][j];
 
-			if (layout_index && (flags != layout_index))
+			if (sspp_layout && (sspp_layout != lm_layout))
 				continue;
 
 			switch (stage_cfg->stage[i][j]) {

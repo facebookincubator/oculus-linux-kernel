@@ -26,6 +26,8 @@
 #include "cds_utils.h"
 #include "cds_api.h"
 #include "wlan_ocb_ucfg_api.h"
+#include "lim_utils.h"
+#include "../../core/src/vdev_mgr_ops.h"
 
 /**
  * wma_start_ocb_vdev() - start OCB vdev
@@ -35,37 +37,46 @@
  */
 static QDF_STATUS wma_start_ocb_vdev(struct ocb_config *config)
 {
-	struct wma_target_req *msg;
-	struct wma_vdev_start_req req;
 	QDF_STATUS status;
 	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
+	struct wlan_objmgr_vdev *vdev;
+	struct vdev_mlme_obj *mlme_obj;
+	struct wlan_channel *des_chan;
+	uint8_t dot11_mode;
 
-	qdf_mem_zero(&req, sizeof(req));
-	msg = wma_fill_vdev_req(wma, config->vdev_id,
-				WMA_OCB_SET_CONFIG_CMD,
-				WMA_TARGET_REQ_TYPE_VDEV_START,
-				(void *)config, 1000);
-	if (!msg) {
-		WMA_LOGE(FL("Failed to fill vdev req %d"), config->vdev_id);
-
-		return QDF_STATUS_E_NOMEM;
+	vdev = wma->interfaces[config->vdev_id].vdev;
+	if (!vdev) {
+		wma_err("vdev is NULL");
+		return QDF_STATUS_E_FAILURE;
 	}
-	req.chan = cds_freq_to_chan(config->channels[0].chan_freq);
-	req.vdev_id = msg->vdev_id;
-	if (cds_chan_to_band(req.chan) == CDS_BAND_2GHZ)
-		req.dot11_mode = MLME_DOT11_MODE_11G;
+
+	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(vdev);
+	if (!mlme_obj) {
+		wma_err("vdev component object is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	des_chan = vdev->vdev_mlme.des_chan;
+
+	des_chan->ch_freq = config->channels[0].chan_freq;
+	if (wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq))
+		dot11_mode = MLME_DOT11_MODE_11G;
 	else
-		req.dot11_mode = MLME_DOT11_MODE_11A;
+		dot11_mode = MLME_DOT11_MODE_11A;
+	des_chan->ch_ieee =
+		wlan_reg_freq_to_chan(wma->pdev, des_chan->ch_freq);
 
-	req.preferred_rx_streams = 2;
-	req.preferred_tx_streams = 2;
+	status = lim_set_ch_phy_mode(vdev, dot11_mode);
+	if (QDF_IS_STATUS_ERROR(status))
+		return QDF_STATUS_E_FAILURE;
 
-	status = wma_vdev_start(wma, &req, false);
-	if (status != QDF_STATUS_SUCCESS) {
-		wma_remove_vdev_req(wma, req.vdev_id,
-				    WMA_TARGET_REQ_TYPE_VDEV_START);
-		WMA_LOGE(FL("vdev_start failed, status = %d"), status);
-	}
+	mlme_obj->mgmt.chainmask_info.num_rx_chain = 2;
+	mlme_obj->mgmt.chainmask_info.num_tx_chain = 2;
+
+	status = wma_vdev_pre_start(config->vdev_id, false);
+	if (status != QDF_STATUS_SUCCESS)
+		return status;
+
+	status = vdev_mgr_start_send(mlme_obj, false);
 
 	return status;
 }

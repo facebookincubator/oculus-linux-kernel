@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,7 @@
 #include "cdp_txrx_cmn.h"
 #include "cdp_txrx_misc.h"
 #include "ol_txrx_types.h"
+#include "ol_defines.h"
 #ifdef FEATURE_WLAN_DIAG_SUPPORT
 #include "host_diag_core_event.h"
 #include "host_diag_core_log.h"
@@ -60,21 +61,29 @@ static inline void hdd_data_stall_send_event(uint32_t reason)
 
 /**
  * hdd_data_stall_process_event() - Process data stall event
- * @data_stall_info: data stall message
+ * @message: data stall message
  *
- * Process data stall event
+ * Process data stall message
  *
- * Return: void
+ * Return: QDF_STATUS
  */
-static void hdd_data_stall_process_event(
-			struct data_stall_event_info *data_stall_info)
+static QDF_STATUS hdd_data_stall_process_event(struct scheduler_msg *msg)
 {
+	struct data_stall_event_info *data_stall_info;
+
+	if (!msg)
+		return QDF_STATUS_E_FAILURE;
+
+	data_stall_info = msg->bodyptr;
+
 	hdd_data_stall_send_event(data_stall_info->data_stall_type);
+
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
  * hdd_data_stall_process_cb() - Process data stall message
- * @info: data stall message
+ * @message: data stall message
  *
  * Process data stall message
  *
@@ -118,10 +127,8 @@ int hdd_register_data_stall_detect_cb(void)
 
 	/* Register the data stall callback */
 	hdd_debug("Register data stall detect callback");
-	status = cdp_data_stall_cb_register(
-					soc,
-					cds_get_context(QDF_MODULE_ID_TXRX),
-					hdd_data_stall_process_cb);
+	status = cdp_data_stall_cb_register(soc, OL_TXRX_PDEV_ID,
+					    hdd_data_stall_process_cb);
 	return qdf_status_to_os_return(status);
 }
 
@@ -132,9 +139,7 @@ int hdd_deregister_data_stall_detect_cb(void)
 
 	/* De-Register the data stall callback */
 	hdd_debug("De-Register data stall detect callback");
-	status = cdp_data_stall_cb_deregister(
-					soc,
-					cds_get_context(QDF_MODULE_ID_TXRX),
-					hdd_data_stall_process_cb);
+	status = cdp_data_stall_cb_deregister(soc, OL_TXRX_PDEV_ID,
+					      hdd_data_stall_process_cb);
 	return qdf_status_to_os_return(status);
 }

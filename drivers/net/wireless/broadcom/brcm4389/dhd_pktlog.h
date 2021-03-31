@@ -58,6 +58,8 @@ typedef struct dhd_dbg_pktlog_info {
 	uint32 driver_ts_usec;
 	uint32 firmware_ts;
 	uint32 pkt_hash;
+	uint32 tx_status_ts_sec;
+	uint32 tx_status_ts_usec;
 	bool direction;
 	void *pkt;
 } dhd_dbg_pktlog_info_t;
@@ -84,6 +86,9 @@ typedef struct dhd_pktlog_ring
 	spinlock_t *pktlog_ring_lock;
 	dhd_pub_t *dhdp;
 	dhd_pktlog_ring_info_t *ring_info_mem; /* ring_info mem pointer */
+#ifdef DHD_PKT_LOGGING_DBGRING
+	void *dbg_ring;
+#endif /* DHD_PKT_LOGGING_DBGRING */
 } dhd_pktlog_ring_t;
 
 typedef struct dhd_pktlog_filter_info

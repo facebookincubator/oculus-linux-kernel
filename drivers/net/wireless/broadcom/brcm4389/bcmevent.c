@@ -201,6 +201,9 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 #if defined(XRAPI) || defined(TSF_GSYNC)
 	BCMEVENT_NAME(WLC_E_TSF_GSYNC),
 #endif /* XRAPI */
+#if defined(XRAPI)
+	BCMEVENT_NAME(WLC_E_XR_SOFTAP_PSMODE),
+#endif /* XRAPI */
 
 	BCMEVENT_NAME(WLC_E_CSA_START_IND),
 	BCMEVENT_NAME(WLC_E_CSA_DONE_IND),

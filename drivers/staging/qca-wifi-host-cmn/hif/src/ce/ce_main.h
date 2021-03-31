@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,6 +49,7 @@
 #define CE_USEFUL_SIZE		0x00000058
 #define CE_ALL_BITMAP  0xFFFF
 
+#define HIF_REQUESTED_EVENTS 20
 /**
  * enum ce_id_type
  *
@@ -70,15 +71,35 @@ enum ce_id_type {
 	CE_ID_MAX
 };
 
+/**
+ * enum ce_buckets
+ *
+ * @ce_buckets: CE tasklet time buckets
+ * @CE_BUCKET_500_US: tasklet bucket to store 0-0.5ms
+ * @CE_BUCKET_1_MS: tasklet bucket to store 0.5-1ms
+ * @CE_BUCKET_2_MS: tasklet bucket to store 1-2ms
+ * @CE_BUCKET_5_MS: tasklet bucket to store 2-5ms
+ * @CE_BUCKET_10_MS: tasklet bucket to store 5-10ms
+ * @CE_BUCKET_BEYOND: tasklet bucket to store > 10ms
+ * @CE_BUCKET_MAX: enum max value
+ */
+#ifdef CE_TASKLET_DEBUG_ENABLE
+enum ce_buckets {
+	CE_BUCKET_500_US,
+	CE_BUCKET_1_MS,
+	CE_BUCKET_2_MS,
+	CE_BUCKET_5_MS,
+	CE_BUCKET_10_MS,
+	CE_BUCKET_BEYOND,
+	CE_BUCKET_MAX,
+};
+#endif
+
 enum ce_target_type {
 	CE_SVC_LEGACY,
 	CE_SVC_SRNG,
 	CE_MAX_TARGET_TYPE
 };
-
-#ifdef CONFIG_WIN
-#define QWLAN_VERSIONSTR "WIN"
-#endif
 
 enum ol_ath_hif_pkt_ecodes {
 	HIF_PIPE_NO_RESOURCE = 0
@@ -138,8 +159,33 @@ static inline bool hif_dummy_grp_done(struct hif_exec_context *grp_entry, int
 extern struct hif_execution_ops tasklet_sched_ops;
 extern struct hif_execution_ops napi_sched_ops;
 
+/**
+ * struct ce_stats
+ *
+ * @ce_per_cpu: Stats of the CEs running per CPU
+ * @record_index: Current index to store in time record
+ * @tasklet_sched_entry_ts: Timestamp when tasklet is scheduled
+ * @tasklet_exec_entry_ts: Timestamp when tasklet is started execuiton
+ * @tasklet_exec_time_record: Last N number of tasklets execution time
+ * @tasklet_sched_time_record: Last N number of tasklets scheduled time
+ * @ce_tasklet_exec_bucket: Tasklet execution time buckets
+ * @ce_tasklet_sched_bucket: Tasklet time in queue buckets
+ * @ce_tasklet_exec_last_update: Latest timestamp when bucket is updated
+ * @ce_tasklet_sched_last_update: Latest timestamp when bucket is updated
+ */
 struct ce_stats {
 	uint32_t ce_per_cpu[CE_COUNT_MAX][QDF_MAX_AVAILABLE_CPU];
+#ifdef CE_TASKLET_DEBUG_ENABLE
+	uint32_t record_index[CE_COUNT_MAX];
+	uint64_t tasklet_sched_entry_ts[CE_COUNT_MAX];
+	uint64_t tasklet_exec_entry_ts[CE_COUNT_MAX];
+	uint64_t tasklet_exec_time_record[CE_COUNT_MAX][HIF_REQUESTED_EVENTS];
+	uint64_t tasklet_sched_time_record[CE_COUNT_MAX][HIF_REQUESTED_EVENTS];
+	uint64_t ce_tasklet_exec_bucket[CE_COUNT_MAX][CE_BUCKET_MAX];
+	uint64_t ce_tasklet_sched_bucket[CE_COUNT_MAX][CE_BUCKET_MAX];
+	uint64_t ce_tasklet_exec_last_update[CE_COUNT_MAX][CE_BUCKET_MAX];
+	uint64_t ce_tasklet_sched_last_update[CE_COUNT_MAX][CE_BUCKET_MAX];
+#endif
 };
 
 struct HIF_CE_state {
@@ -218,6 +264,49 @@ struct ce_info {
 } qdf_packed;
 #endif
 #endif
+
+/**
+ * struct ce_index
+ *
+ * @id: CE id
+ * @sw_index: sw index
+ * @write_index: write index
+ * @hp: ring head pointer
+ * @tp: ring tail pointer
+ * @status_hp: status ring head pointer
+ * @status_tp: status ring tail pointer
+ */
+struct ce_index {
+	uint8_t id;
+	union {
+		struct {
+			uint16_t sw_index;
+			uint16_t write_index;
+		} legacy_info;
+		struct {
+			uint16_t hp;
+			uint16_t tp;
+			uint16_t status_hp;
+			uint16_t status_tp;
+		} srng_info;
+	} u;
+} qdf_packed;
+
+/**
+ * struct hang_event_info
+ *
+ * @tlv_header: tlv header
+ * @active_tasklet_count: active tasklet count
+ * @active_grp_tasklet_cnt: active grp tasklet count
+ * @ce_info: CE info
+ */
+struct hang_event_info {
+	uint16_t tlv_header;
+	uint8_t active_tasklet_count;
+	uint8_t active_grp_tasklet_cnt;
+	uint8_t ce_count;
+	struct ce_index ce_info[CE_COUNT_MAX];
+} qdf_packed;
 
 void hif_ce_stop(struct hif_softc *scn);
 int hif_dump_ce_registers(struct hif_softc *scn);

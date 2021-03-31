@@ -680,15 +680,20 @@ extern bool _sdiodevenab;
 
 #ifdef BCMSPMIS
 extern bool _bcmspmi_enab;
+extern bool _bcmspmi_plat_enab;
 #if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
 	#define	BCMSPMIS_ENAB()		(_bcmspmi_enab)
+	#define BCMSPMIS_PLAT_ENAB()	(_bcmspmi_plat_enab)
 #elif defined(BCMSPMIS_DISABLED)
 	#define	BCMSPMIS_ENAB()		0
+	#define BCMSPMIS_PLAT_ENAB()	0
 #else
 	#define	BCMSPMIS_ENAB()		1
+	#define BCMSPMIS_PLAT_ENAB()	(_bcmspmi_plat_enab)
 #endif
 #else
 	#define	BCMSPMIS_ENAB()		0
+	#define BCMSPMIS_PLAT_ENAB()	0
 #endif /* BCMSPMIS */
 
 #ifdef BCMDVFS /* BCMDVFS support enab macros */
@@ -801,6 +806,12 @@ extern uint32 gFWID;
 #define BCMPOST_TRAP_RODATA(_data)	_data
 #else
 #define BCMPOST_TRAP_RODATA(_data) __attribute__ ((__section__ (".ro_ontrap." #_data))) _data
+#endif
+
+#if defined(BCMROMBUILD)
+#define BCMPOST_TRAP_RAM_RODATA(data)	BCMRAMDATA(data)
+#else
+#define BCMPOST_TRAP_RAM_RODATA(data)	BCMPOST_TRAP_RODATA(data)
 #endif
 
 /* Similar to RO data on trap, we want code that's used after a trap to be placed in a special area

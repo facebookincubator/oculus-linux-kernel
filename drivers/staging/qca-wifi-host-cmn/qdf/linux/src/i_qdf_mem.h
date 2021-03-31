@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,11 +39,8 @@
 #include <linux/cache.h> /* L1_CACHE_BYTES */
 
 #define __qdf_cache_line_sz L1_CACHE_BYTES
-#if defined(CONFIG_MCL)
-#include <cds_queue.h>
-#else
-#include <sys/queue.h>
-#endif
+#include "queue.h"
+
 #else
 /*
  * Provide dummy defs for kernel data types, functions, and enums
@@ -61,9 +58,13 @@
 #endif /* __KERNEL__ */
 #include <qdf_status.h>
 
-#ifdef CONFIG_ARM_SMMU
+#if IS_ENABLED(CONFIG_ARM_SMMU)
 #include <pld_common.h>
+#ifdef ENABLE_SMMU_S1_TRANSLATION
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 #include <asm/dma-iommu.h>
+#endif
+#endif
 #include <linux/iommu.h>
 #endif
 
@@ -99,7 +100,18 @@ typedef struct __qdf_mempool_ctxt {
 
 #endif /* __KERNEL__ */
 
+#define __page_size ((size_t)PAGE_SIZE)
 #define __qdf_align(a, mask) ALIGN(a, mask)
+
+#ifdef DISABLE_MEMDEBUG_PANIC
+#define QDF_MEMDEBUG_PANIC(reason_fmt, args...) \
+	do { \
+		/* no-op */ \
+	} while (false)
+#else
+#define QDF_MEMDEBUG_PANIC(reason_fmt, args...) \
+	QDF_DEBUG_PANIC(reason_fmt, ## args)
+#endif
 
 /* typedef for dma_data_direction */
 typedef enum dma_data_direction __dma_data_direction;
@@ -210,7 +222,7 @@ static inline bool __qdf_mem_smmu_s1_enabled(qdf_device_t osdev)
 	return osdev->smmu_s1_enabled;
 }
 
-#ifdef CONFIG_ARM_SMMU
+#if IS_ENABLED(CONFIG_ARM_SMMU) && defined(ENABLE_SMMU_S1_TRANSLATION)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 /**
  * __qdf_dev_get_domain() - get iommu domain from osdev
@@ -441,4 +453,61 @@ __qdf_mem_set_dma_pa(qdf_device_t osdev,
 {
 	mem_info->pa = dma_pa;
 }
+
+/**
+ * __qdf_mem_alloc_consistent() - allocates consistent qdf memory
+ * @osdev: OS device handle
+ * @dev: Pointer to device handle
+ * @size: Size to be allocated
+ * @paddr: Physical address
+ * @func: Function name of the call site
+ * @line: line numbe rof the call site
+ *
+ * Return: pointer of allocated memory or null if memory alloc fails
+ */
+void *__qdf_mem_alloc_consistent(qdf_device_t osdev, void *dev,
+				 qdf_size_t size, qdf_dma_addr_t *paddr,
+				 const char *func, uint32_t line);
+
+/**
+ * __qdf_mem_malloc() - allocates QDF memory
+ * @size: Number of bytes of memory to allocate.
+ *
+ * @func: Function name of the call site
+ * @line: line numbe rof the call site
+ *
+ * This function will dynamicallly allocate the specified number of bytes of
+ * memory.
+ *
+ * Return:
+ * Upon successful allocate, returns a non-NULL pointer to the allocated
+ * memory.  If this function is unable to allocate the amount of memory
+ * specified (for any reason) it returns NULL.
+ */
+void *__qdf_mem_malloc(qdf_size_t size, const char *func, uint32_t line);
+
+/**
+ * __qdf_mem_free() - free QDF memory
+ * @ptr: Pointer to the starting address of the memory to be freed.
+ *
+ * This function will free the memory pointed to by 'ptr'.
+ * Return: None
+ */
+void __qdf_mem_free(void *ptr);
+
+/**
+ * __qdf_mem_free_consistent() - free consistent qdf memory
+ * @osdev: OS device handle
+ * @dev: Pointer to device handle
+ * @size: Size to be allocated
+ * @vaddr: virtual address
+ * @paddr: Physical address
+ * @memctx: Pointer to DMA context
+ *
+ * Return: none
+ */
+void __qdf_mem_free_consistent(qdf_device_t osdev, void *dev,
+			       qdf_size_t size, void *vaddr,
+			       qdf_dma_addr_t paddr, qdf_dma_context_t memctx);
+
 #endif /* __I_QDF_MEM_H */

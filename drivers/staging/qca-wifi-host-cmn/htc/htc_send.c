@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,9 @@
 /* #endif */
 #define HTC_DATA_RESOURCE_THRS 256
 #define HTC_DATA_MINDESC_PERPACKET 2
+
+/* maximum number of requeue attempts before print */
+#define MAX_REQUEUE_WARN 5
 
 enum HTC_SEND_QUEUE_RESULT {
 	HTC_SEND_QUEUE_OK = 0,  /* packet was queued */
@@ -66,12 +69,15 @@ void htc_dump_counter_info(HTC_HANDLE HTCHandle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 
+	if (!target)
+		return;
+
 	AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
 			("\n%s: ce_send_cnt = %d, TX_comp_cnt = %d\n",
 			 __func__, target->ce_send_cnt, target->TX_comp_cnt));
 }
 
-int htc_get_tx_queue_depth(HTC_HANDLE *htc_handle, HTC_ENDPOINT_ID endpoint_id)
+int htc_get_tx_queue_depth(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
 	HTC_ENDPOINT *endpoint = &target->endpoint[endpoint_id];
@@ -112,8 +118,10 @@ static inline void restore_tx_packet(HTC_TARGET *target, HTC_PACKET *pPacket)
 		qdf_nbuf_unmap(target->osdev, netbuf, QDF_DMA_TO_DEVICE);
 		pPacket->PktInfo.AsTx.Flags &= ~HTC_TX_PACKET_FLAG_FIXUP_NETBUF;
 	}
-
-	qdf_nbuf_pull_head(netbuf, sizeof(HTC_FRAME_HDR));
+	if (pPacket->PktInfo.AsTx.Flags &
+		HTC_TX_PACKET_FLAG_HTC_HEADER_IN_NETBUF_DATA) {
+		qdf_nbuf_pull_head(netbuf, sizeof(HTC_FRAME_HDR));
+	}
 }
 
 static void send_packet_completion(HTC_TARGET *target, HTC_PACKET *pPacket)
@@ -127,7 +135,7 @@ static void send_packet_completion(HTC_TARGET *target, HTC_PACKET *pPacket)
 	 * In case of SSR, we cannot call the upper layer completion
 	 * callbacks, hence just free the nbuf and HTC packet here.
 	 */
-	if (hif_get_target_status(target->hif_dev)) {
+	if (target->hif_dev && hif_get_target_status(target->hif_dev)) {
 		htc_free_control_tx_packet(target, pPacket);
 		return;
 	}
@@ -168,8 +176,25 @@ static void log_packet_info(HTC_TARGET *target, HTC_PACKET *pPacket)
 		qdf_nbuf_push_head(netbuf, sizeof(HTC_FRAME_HDR));
 	}
 }
+
+/**
+ * htc_inc_runtime_cnt: Increment htc runtime count
+ * @target: handle of HTC context
+ *
+ * Return: None
+ */
+static inline
+void htc_inc_runtime_cnt(HTC_TARGET *target)
+{
+	qdf_atomic_inc(&target->htc_runtime_cnt);
+}
 #else
 static void log_packet_info(HTC_TARGET *target, HTC_PACKET *pPacket)
+{
+}
+
+static inline
+void htc_inc_runtime_cnt(HTC_TARGET *target)
 {
 }
 #endif
@@ -302,8 +327,10 @@ htc_send_update_tx_bundle_stats(HTC_TARGET *target,
 				qdf_size_t data_len,
 				int TxCreditSize)
 {
-	if ((data_len / TxCreditSize) <= HTC_MAX_MSG_PER_BUNDLE_TX)
-		target->tx_bundle_stats[(data_len / TxCreditSize) - 1]++;
+	int index = ((data_len + TxCreditSize - 1) / TxCreditSize) - 1;
+
+	if (index < HTC_MAX_MSG_PER_BUNDLE_TX)
+		target->tx_bundle_stats[index]++;
 }
 
 /**
@@ -371,12 +398,136 @@ static QDF_STATUS htc_send_bundled_netbuf(HTC_TARGET *target,
 			       pEndpoint->UL_PipeID,
 			       pEndpoint->Id, data_len,
 			       bundleBuf, data_attr);
-	if (status != QDF_STATUS_SUCCESS) {
-		qdf_print("%s:hif_send_head failed(len=%zu).", __func__,
-			  data_len);
+	if (qdf_unlikely(QDF_IS_STATUS_ERROR(status))) {
+		HTC_PACKET_QUEUE requeue;
+
+		qdf_print("hif_send_head failed(len=%zu).", data_len);
+		INIT_HTC_PACKET_QUEUE(&requeue);
+		LOCK_HTC_TX(target);
+		pEndpoint->ul_outstanding_cnt--;
+		HTC_PACKET_REMOVE(&pEndpoint->TxLookupQueue, pPacketTx);
+
+		if (pPacketTx->PktInfo.AsTx.Tag == HTC_TX_PACKET_TAG_BUNDLED) {
+			HTC_PACKET *temp_packet;
+			HTC_PACKET_QUEUE *packet_queue =
+				(HTC_PACKET_QUEUE *)pPacketTx->pContext;
+
+			HTC_PACKET_QUEUE_ITERATE_ALLOW_REMOVE(packet_queue,
+							      temp_packet) {
+				HTC_PACKET_ENQUEUE(&requeue, temp_packet);
+			} HTC_PACKET_QUEUE_ITERATE_END;
+
+			UNLOCK_HTC_TX(target);
+			free_htc_bundle_packet(target, pPacketTx);
+			LOCK_HTC_TX(target);
+
+		} else {
+			HTC_PACKET_ENQUEUE(&requeue, pPacketTx);
+		}
+
+		HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(&pEndpoint->TxQueue,
+						  &requeue);
+		UNLOCK_HTC_TX(target);
 	}
 	return status;
 }
+
+#ifdef QCA_TX_PADDING_CREDIT_SUPPORT
+#define SDIO_BLOCK_SIZE		512
+static int htc_tx_pad_credit_avail(HTC_ENDPOINT *ep)
+{
+	int ret = 0;
+
+	if (!ep || !ep->EpCallBacks.pContext ||
+	    !ep->EpCallBacks.ep_padding_credit_update)
+		return 1;
+
+	ret = ep->EpCallBacks.ep_padding_credit_update(ep->EpCallBacks.pContext,
+						       0);
+
+	if (ret < 2)
+		AR_DEBUG_PRINTF(ATH_DEBUG_INFO, ("%s ret %d\n", __func__, ret));
+
+	return ret;
+}
+
+static bool htc_handle_extra_tx_credit(HTC_ENDPOINT *ep,
+				       HTC_PACKET *p_last_htc_pkt,
+				       unsigned char *p_last_pkt_bundle_buffer,
+				       unsigned char **p_bundle_buffer,
+				       int tot_data_len)
+{
+	bool extra_tx_credit = FALSE;
+	HTC_FRAME_HDR *p_htc_hdr;
+	int first_buf_bundled_len = 0, last_buf_len = 0;
+	int sdio_pad = 0, free_space = 0;
+	int (*update_ep_padding_credit)(void *, int);
+
+	update_ep_padding_credit = ep->EpCallBacks.ep_padding_credit_update;
+
+	AR_DEBUG_PRINTF(ATH_DEBUG_SEND,
+			("%s Tot data_len = %d\n", __func__, tot_data_len));
+
+	if (!p_last_htc_pkt)
+		return extra_tx_credit;
+
+	last_buf_len = (p_last_htc_pkt->ActualLength + HTC_HDR_LENGTH);
+	if (tot_data_len != last_buf_len) {
+		first_buf_bundled_len = tot_data_len - ep->TxCreditSize;
+		free_space = tot_data_len -
+					(first_buf_bundled_len + last_buf_len);
+	} else {
+		free_space = ep->TxCreditSize - tot_data_len;
+	}
+
+	sdio_pad = SDIO_BLOCK_SIZE - ((first_buf_bundled_len + last_buf_len) %
+			SDIO_BLOCK_SIZE);
+
+	AR_DEBUG_PRINTF(ATH_DEBUG_SEND,
+			("%s first_buf_bundled_len = %d last_buf_len = %d\n",
+			__func__, first_buf_bundled_len, last_buf_len));
+
+	AR_DEBUG_PRINTF(ATH_DEBUG_SEND,
+			("%s sdio_pad = %d free_space = %d\n", __func__,
+			sdio_pad, free_space));
+
+	if (sdio_pad <= free_space) {
+		if (p_bundle_buffer && *p_bundle_buffer) {
+			/* Align Tx bundled buf to avoid a extra Padding buf */
+			*p_bundle_buffer -= (free_space - sdio_pad);
+		}
+	} else {
+		/* Extra Padding Buffer needed, consume extra tx credit */
+		AR_DEBUG_PRINTF(ATH_DEBUG_SEND,
+				("%s Used a Tx credit for Padding Buffer\n",
+				 __func__));
+		p_htc_hdr = (HTC_FRAME_HDR *)(p_last_pkt_bundle_buffer);
+		p_htc_hdr->Flags |= HTC_FLAGS_PADDING_CHECK;
+		extra_tx_credit = TRUE;
+		if (ep->EpCallBacks.ep_padding_credit_update) {
+			/* Decrement 1 credit at host,
+			 * due to extra tx credit consumed by padding buffer
+			 */
+			update_ep_padding_credit(ep->EpCallBacks.pContext, -1);
+		}
+	}
+	return extra_tx_credit;
+}
+#else
+static int htc_tx_pad_credit_avail(HTC_ENDPOINT *ep)
+{
+	return 1;
+}
+
+static bool htc_handle_extra_tx_credit(HTC_ENDPOINT *ep,
+				       HTC_PACKET *p_last_htc_pkt,
+				       unsigned char *p_last_pkt_bundle_buffer,
+				       unsigned char **p_bundle_buffer,
+				       int tot_data_len)
+{
+	return FALSE;
+}
+#endif
 
 /**
  * htc_issue_packets_bundle() - HTC function to send bundle packets from a queue
@@ -399,6 +550,8 @@ static void htc_issue_packets_bundle(HTC_TARGET *target,
 	int creditPad, creditRemainder, transferLength, bundlesSpaceRemaining =
 		0;
 	HTC_PACKET_QUEUE *pQueueSave = NULL;
+	HTC_PACKET *p_last_htc_pkt = NULL;
+	unsigned char *p_last_pkt_bundle_buffer = NULL;
 
 	bundlesSpaceRemaining =
 		target->MaxMsgsPerHTCBundle * pEndpoint->TxCreditSize;
@@ -414,6 +567,10 @@ static void htc_issue_packets_bundle(HTC_TARGET *target,
 	pBundleBuffer = qdf_nbuf_data(bundleBuf);
 	pQueueSave = (HTC_PACKET_QUEUE *) pPacketTx->pContext;
 	while (1) {
+		if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+			if (htc_tx_pad_credit_avail(pEndpoint) < 1)
+				break;
+		}
 		pPacket = htc_packet_dequeue(pPktQueue);
 		if (!pPacket)
 			break;
@@ -431,6 +588,12 @@ static void htc_issue_packets_bundle(HTC_TARGET *target,
 		}
 
 		if (bundlesSpaceRemaining < transferLength) {
+			htc_handle_extra_tx_credit(pEndpoint, p_last_htc_pkt,
+						   p_last_pkt_bundle_buffer,
+						   &pBundleBuffer,
+						   pBundleBuffer -
+						   qdf_nbuf_data(bundleBuf));
+
 			/* send out previous buffer */
 			htc_send_bundled_netbuf(target, pEndpoint,
 						pBundleBuffer - last_credit_pad,
@@ -459,6 +622,9 @@ static void htc_issue_packets_bundle(HTC_TARGET *target,
 			pBundleBuffer = qdf_nbuf_data(bundleBuf);
 			pQueueSave = (HTC_PACKET_QUEUE *) pPacketTx->pContext;
 		}
+
+		p_last_htc_pkt = pPacket;
+		p_last_pkt_bundle_buffer = pBundleBuffer;
 
 		bundlesSpaceRemaining -= transferLength;
 		netbuf = GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
@@ -500,15 +666,41 @@ static void htc_issue_packets_bundle(HTC_TARGET *target,
 			last_credit_pad = creditPad;
 	}
 	/* send out remaining buffer */
-	if (pBundleBuffer != qdf_nbuf_data(bundleBuf))
+	if (pBundleBuffer != qdf_nbuf_data(bundleBuf)) {
+		htc_handle_extra_tx_credit(pEndpoint, p_last_htc_pkt,
+					   p_last_pkt_bundle_buffer,
+					   &pBundleBuffer,
+					   pBundleBuffer -
+					   qdf_nbuf_data(bundleBuf));
+
 		htc_send_bundled_netbuf(target, pEndpoint,
 					pBundleBuffer - last_credit_pad,
 					pPacketTx);
-	else
+	} else {
 		free_htc_bundle_packet(target, pPacketTx);
+	}
 }
 #endif /* ENABLE_BUNDLE_TX */
 #else
+static int htc_tx_pad_credit_avail(HTC_ENDPOINT *ep)
+{
+	return 1;
+}
+
+bool htc_handle_extra_tx_credit(HTC_ENDPOINT *ep,
+				HTC_PACKET *p_last_htc_pkt,
+				unsigned char *p_last_pkt_bundle_buffer,
+				unsigned char **p_bundle_buffer,
+				int tot_data_len);
+bool htc_handle_extra_tx_credit(HTC_ENDPOINT *ep,
+				HTC_PACKET *p_last_htc_pkt,
+				unsigned char *p_last_pkt_bundle_buffer,
+				unsigned char **p_bundle_buffer,
+				int tot_data_len)
+{
+	return FALSE;
+}
+
 static void htc_issue_packets_bundle(HTC_TARGET *target,
 				     HTC_ENDPOINT *pEndpoint,
 				     HTC_PACKET_QUEUE *pPktQueue)
@@ -537,6 +729,14 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 	enum qdf_bus_type bus_type;
 	QDF_STATUS ret;
 	bool rt_put = false;
+	bool used_extra_tx_credit = false;
+	uint8_t *buf = NULL;
+	int (*update_ep_padding_credit)(void *, int);
+	void *ctx = NULL;
+	bool rt_put_in_resp;
+
+	update_ep_padding_credit =
+			pEndpoint->EpCallBacks.ep_padding_credit_update;
 
 	bus_type = hif_get_bus_type(target->hif_dev);
 
@@ -544,6 +744,7 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 			("+htc_issue_packets: Queue: %pK, Pkts %d\n", pPktQueue,
 			 HTC_PACKET_QUEUE_DEPTH(pPktQueue)));
 	while (true) {
+		rt_put_in_resp = false;
 		if (HTC_TX_BUNDLE_ENABLED(target) &&
 		    HTC_PACKET_QUEUE_DEPTH(pPktQueue) >=
 		    HTC_MIN_MSG_PER_BUNDLE) {
@@ -551,6 +752,11 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 			case QDF_BUS_TYPE_SDIO:
 				if (!IS_TX_CREDIT_FLOW_ENABLED(pEndpoint))
 					break;
+				if (update_ep_padding_credit) {
+					if (htc_tx_pad_credit_avail
+					    (pEndpoint) < 1)
+						break;
+				}
 			case QDF_BUS_TYPE_USB:
 				htc_issue_packets_bundle(target,
 							pEndpoint,
@@ -563,6 +769,13 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 		/* if not bundling or there was a packet that could not be
 		 * placed in a bundle, and send it by normal way
 		 */
+		if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+			if (htc_tx_pad_credit_avail(pEndpoint) < 1) {
+				status = QDF_STATUS_E_FAILURE;
+				break;
+			}
+		}
+
 		pPacket = htc_packet_dequeue(pPktQueue);
 		if (!pPacket) {
 			/* local queue is fully drained */
@@ -643,20 +856,40 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 		 */
 		if (pPacket->PktInfo.AsTx.Tag == HTC_TX_PACKET_TAG_RUNTIME_PUT)
 			rt_put = true;
+		else if (pPacket->PktInfo.AsTx.Tag ==
+			 HTC_TX_PACKET_TAG_RTPM_PUT_RC)
+			rt_put_in_resp = true;
+
 #if DEBUG_BUNDLE
 		qdf_print(" Send single EP%d buffer size:0x%x, total:0x%x.",
 			  pEndpoint->Id,
 			  pEndpoint->TxCreditSize,
 			  HTC_HDR_LENGTH + pPacket->ActualLength);
 #endif
+		buf = (uint8_t *)qdf_nbuf_get_frag_vaddr(netbuf, 0);
+		used_extra_tx_credit =
+			htc_handle_extra_tx_credit(pEndpoint, pPacket, buf,
+						   NULL, pPacket->ActualLength +
+						   HTC_HDR_LENGTH);
+
 		status = hif_send_head(target->hif_dev,
 				       pEndpoint->UL_PipeID, pEndpoint->Id,
 				       HTC_HDR_LENGTH + pPacket->ActualLength,
 				       netbuf, data_attr);
 
+		if (status != QDF_STATUS_SUCCESS) {
+			if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+				if (used_extra_tx_credit) {
+					ctx = pEndpoint->EpCallBacks.pContext;
+					update_ep_padding_credit(ctx, 1);
+				}
+			}
+		}
+
 		htc_issue_tx_bundle_stats_inc(target);
 
 		target->ce_send_cnt++;
+		pEndpoint->htc_send_cnt++;
 
 		if (qdf_unlikely(QDF_IS_STATUS_ERROR(status))) {
 			if (status != QDF_STATUS_E_RESOURCES) {
@@ -668,6 +901,13 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 				AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
 						("hif_send Failed status:%d\n",
 						 status));
+			} else {
+				if (target->htc_pkt_dbg) {
+					if (pEndpoint->num_requeues_warn >
+						MAX_REQUEUE_WARN) {
+						hif_print_napi_stats(target->hif_dev);
+					}
+				}
 			}
 
 			/* only unmap if we mapped in this function */
@@ -683,6 +923,7 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 				LOCK_HTC_TX(target);
 			}
 			target->ce_send_cnt--;
+			pEndpoint->htc_send_cnt--;
 			pEndpoint->ul_outstanding_cnt--;
 			HTC_PACKET_REMOVE(&pEndpoint->TxLookupQueue, pPacket);
 			htc_packet_set_magic_cookie(pPacket, 0);
@@ -704,11 +945,20 @@ static QDF_STATUS htc_issue_packets(HTC_TARGET *target,
 					   RTPM_ID_HTC);
 			rt_put = false;
 		}
+
+		if (rt_put_in_resp)
+			htc_inc_runtime_cnt(target);
 	}
+
 	if (qdf_unlikely(QDF_IS_STATUS_ERROR(status))) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-			("htc_issue_packets, failed pkt:0x%pK status:%d",
-			 pPacket, status));
+		if (((status == QDF_STATUS_E_RESOURCES) &&
+		     (pEndpoint->num_requeues_warn > MAX_REQUEUE_WARN)) ||
+		     (status != QDF_STATUS_E_RESOURCES)) {
+			QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_INFO,
+				  "failed pkt:0x%pK status:%d endpoint:%d",
+				  pPacket, status, pEndpoint->Id);
+		}
+
 	}
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-htc_issue_packets\n"));
@@ -1074,6 +1324,7 @@ static enum HTC_SEND_QUEUE_RESULT htc_try_send(HTC_TARGET *target,
 	int tx_resources;
 	int overflow;
 	enum HTC_SEND_QUEUE_RESULT result = HTC_SEND_QUEUE_OK;
+	QDF_STATUS status;
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("+htc_try_send (Queue:%pK Depth:%d)\n",
 					 pCallersSendQueue,
@@ -1215,14 +1466,6 @@ static enum HTC_SEND_QUEUE_RESULT htc_try_send(HTC_TARGET *target,
 		return result;
 	}
 
-	if (!IS_TX_CREDIT_FLOW_ENABLED(pEndpoint)) {
-		tx_resources =
-			hif_get_free_queue_number(target->hif_dev,
-						  pEndpoint->UL_PipeID);
-	} else {
-		tx_resources = 0;
-	}
-
 	LOCK_HTC_TX(target);
 
 	if (!HTC_QUEUE_EMPTY(&sendQueue)) {
@@ -1261,6 +1504,14 @@ static enum HTC_SEND_QUEUE_RESULT htc_try_send(HTC_TARGET *target,
 	/* now drain the endpoint TX queue for transmission as long as we have
 	 * enough transmit resources
 	 */
+	if (!IS_TX_CREDIT_FLOW_ENABLED(pEndpoint)) {
+		tx_resources =
+			hif_get_free_queue_number(target->hif_dev,
+						  pEndpoint->UL_PipeID);
+	} else {
+		tx_resources = 0;
+	}
+
 	while (true) {
 
 		if (HTC_PACKET_QUEUE_DEPTH(&pEndpoint->TxQueue) == 0)
@@ -1331,14 +1582,30 @@ static enum HTC_SEND_QUEUE_RESULT htc_try_send(HTC_TARGET *target,
 			UNLOCK_HTC_TX(target);
 
 		/* send what we can */
-		if (htc_issue_packets(target, pEndpoint, &sendQueue)) {
+		status = htc_issue_packets(target, pEndpoint, &sendQueue);
+		if (status) {
 			int i;
 			wlan_rtpm_dbgid rtpm_dbgid;
 
 			result = HTC_SEND_QUEUE_DROP;
-			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("htc_issue_packets, failed status:%d put it back to head of callersSendQueue",
-				 result));
+
+			switch (status) {
+			case  QDF_STATUS_E_RESOURCES:
+				if (pEndpoint->num_requeues_warn <= MAX_REQUEUE_WARN) {
+					pEndpoint->num_requeues_warn++;
+					pEndpoint->total_num_requeues++;
+					break;
+				} else {
+					pEndpoint->total_num_requeues++;
+					pEndpoint->num_requeues_warn = 0;
+				}
+			default:
+				QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_INFO,
+					  "htc_issue_packets, failed status:%d"
+					  "endpoint:%d, put it back to head of"
+					  "callersSendQueue", result, pEndpoint->Id);
+				break;
+			}
 
 			rtpm_dbgid =
 				htc_send_pkts_rtpm_dbgid_get(
@@ -1353,6 +1620,9 @@ static enum HTC_SEND_QUEUE_RESULT htc_try_send(HTC_TARGET *target,
 			HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(&pEndpoint->TxQueue,
 							  &sendQueue);
 			break;
+		}  else {
+			if (pEndpoint->num_requeues_warn)
+				pEndpoint->num_requeues_warn = 0;
 		}
 
 		if (!IS_TX_CREDIT_FLOW_ENABLED(pEndpoint)) {
@@ -1518,6 +1788,8 @@ static inline QDF_STATUS __htc_send_pkt(HTC_HANDLE HTCHandle,
 		return QDF_STATUS_E_INVAL;
 
 	qdf_nbuf_push_head(netbuf, sizeof(HTC_FRAME_HDR));
+	pPacket->PktInfo.AsTx.Flags |=
+		HTC_TX_PACKET_FLAG_HTC_HEADER_IN_NETBUF_DATA;
 	/* setup HTC frame header */
 	htc_hdr = (HTC_FRAME_HDR *)qdf_nbuf_get_frag_vaddr(netbuf, 0);
 	AR_DEBUG_ASSERT(htc_hdr);
@@ -1715,6 +1987,7 @@ QDF_STATUS htc_send_data_pkt(HTC_HANDLE HTCHandle, HTC_PACKET *pPacket,
 	int tx_resources;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	uint32_t data_attr = 0;
+	bool used_extra_tx_credit = false;
 
 	if (pPacket) {
 		if ((pPacket->Endpoint >= ENDPOINT_MAX) ||
@@ -1859,12 +2132,41 @@ QDF_STATUS htc_send_data_pkt(HTC_HANDLE HTCHandle, HTC_PACKET *pPacket,
 		     HTC_MIN_MSG_PER_BUNDLE) &&
 		    (hif_get_bus_type(target->hif_dev) == QDF_BUS_TYPE_SDIO ||
 		     hif_get_bus_type(target->hif_dev) == QDF_BUS_TYPE_USB)) {
+			if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+				if (htc_tx_pad_credit_avail(pEndpoint) < 1) {
+					status = QDF_STATUS_E_RESOURCES;
+					/* put the sendQueue back at the front
+					 * of pEndpoint->TxQueue
+					 */
+					LOCK_HTC_TX(target);
+					HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(
+							&pEndpoint->TxQueue,
+							&sendQueue);
+					UNLOCK_HTC_TX(target);
+					break;
+				}
+			}
 			htc_issue_packets_bundle(target, pEndpoint, &sendQueue);
+		}
+		if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+			if (htc_tx_pad_credit_avail(pEndpoint) < 1) {
+				status = QDF_STATUS_E_RESOURCES;
+				/* put the sendQueue back at the front
+				 * of pEndpoint->TxQueue
+				 */
+				LOCK_HTC_TX(target);
+				HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(
+							&pEndpoint->TxQueue,
+							&sendQueue);
+				UNLOCK_HTC_TX(target);
+				break;
+			}
 		}
 		pPacket = htc_packet_dequeue(&sendQueue);
 		if (!pPacket)
 			break;
 		netbuf = GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
+		pHtcHdr = (HTC_FRAME_HDR *)qdf_nbuf_get_frag_vaddr(netbuf, 0);
 
 		LOCK_HTC_TX(target);
 		/* store in look up queue to match completions */
@@ -1873,11 +2175,27 @@ QDF_STATUS htc_send_data_pkt(HTC_HANDLE HTCHandle, HTC_PACKET *pPacket,
 		pEndpoint->ul_outstanding_cnt++;
 		UNLOCK_HTC_TX(target);
 
+		used_extra_tx_credit =
+				htc_handle_extra_tx_credit(pEndpoint, pPacket,
+							   (uint8_t *)pHtcHdr,
+							   NULL,
+							   pPacket->ActualLength
+							   + HTC_HDR_LENGTH);
+
 		status = hif_send_head(target->hif_dev,
 				       pEndpoint->UL_PipeID,
 				       pEndpoint->Id,
 				       HTC_HDR_LENGTH + pPacket->ActualLength,
 				       netbuf, data_attr);
+		if (status != QDF_STATUS_SUCCESS) {
+			if (pEndpoint->EpCallBacks.ep_padding_credit_update) {
+				if (used_extra_tx_credit) {
+					pEndpoint->EpCallBacks.
+					ep_padding_credit_update
+					(pEndpoint->EpCallBacks.pContext, 1);
+				}
+			}
+		}
 #if DEBUG_BUNDLE
 		qdf_print(" Send single EP%d buffer size:0x%x, total:0x%x.",
 			  pEndpoint->Id,
@@ -1955,7 +2273,6 @@ static HTC_PACKET *htc_lookup_tx_packet(HTC_TARGET *target,
 	LOCK_HTC_EP_TX_LOOKUP(pEndpoint);
 
 	LOCK_HTC_TX(target);
-
 	/* mark that HIF has indicated the send complete for another packet */
 	pEndpoint->ul_outstanding_cnt--;
 
@@ -2034,6 +2351,7 @@ QDF_STATUS htc_tx_completion_handler(void *Context,
 
 	pEndpoint = &target->endpoint[EpID];
 	target->TX_comp_cnt++;
+	pEndpoint->htc_comp_cnt++;
 
 	do {
 		pPacket = htc_lookup_tx_packet(target, pEndpoint, netbuf);
@@ -2154,6 +2472,9 @@ void htc_kick_queues(void *context)
 	HTC_TARGET *target = (HTC_TARGET *)context;
 	HTC_ENDPOINT *endpoint = NULL;
 
+	if (hif_pm_runtime_get_sync(target->hif_dev, RTPM_ID_HTC))
+		return;
+
 	for (i = 0; i < ENDPOINT_MAX; i++) {
 		endpoint = &target->endpoint[i];
 
@@ -2168,6 +2489,8 @@ void htc_kick_queues(void *context)
 	}
 
 	hif_fastpath_resume(target->hif_dev);
+
+	hif_pm_runtime_put(target->hif_dev, RTPM_ID_HTC);
 }
 #endif
 
@@ -2245,6 +2568,13 @@ void htc_indicate_activity_change(HTC_HANDLE HTCHandle,
 bool htc_is_endpoint_active(HTC_HANDLE HTCHandle, HTC_ENDPOINT_ID Endpoint)
 {
 	return true;
+}
+
+void htc_set_pkt_dbg(HTC_HANDLE handle, A_BOOL dbg_flag)
+{
+	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(handle);
+
+	target->htc_pkt_dbg = dbg_flag;
 }
 
 void htc_set_nodrop_pkt(HTC_HANDLE HTCHandle, A_BOOL isNodropPkt)
@@ -2349,7 +2679,7 @@ void htc_process_credit_rpt(HTC_TARGET *target, HTC_CREDIT_REPORT *pRpt,
 			htc_try_send(target, pEndpoint, NULL);
 #else
 			if (pEndpoint->service_id == HTT_DATA_MSG_SVC)
-				htc_send_data_pkt(target, NULL, 0);
+				htc_send_data_pkt((HTC_HANDLE)target, NULL, 0);
 			else
 				htc_try_send(target, pEndpoint, NULL);
 #endif

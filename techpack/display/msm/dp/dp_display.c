@@ -977,6 +977,9 @@ static int dp_display_process_hpd_high(struct dp_display_private *dp)
 	dp->dp_display.max_pclk_khz = min(dp->parser->max_pclk_khz,
 					dp->debug->max_pclk_khz);
 
+	dp->dp_display.force_bond_mode = dp->parser->force_bond_mode ||
+					dp->debug->force_bond_mode;
+
 	/*
 	 * If dp video session is not restored from a previous session teardown
 	 * by userspace, ensure the host_init is executed, in such a scenario,
@@ -1124,6 +1127,27 @@ static int dp_display_usbpd_configure_cb(struct device *dev)
 		DP_ERR("no driver data found\n");
 		rc = -ENODEV;
 		goto end;
+	}
+
+	/*
+	 * When dp is connected during boot, there is a chance that
+	 * configure_cb is called before drm probe is finished and
+	 * cause host_init failure. Here we poll the value of
+	 * poll_enabled and wait until drm driver is ready.
+	 */
+	if (!dp->dp_display.drm_dev->mode_config.poll_enabled) {
+		const int poll_timeout = 10000;
+		int i;
+
+		for (i = 0; !dp->dp_display.drm_dev->mode_config.poll_enabled &&
+				i < poll_timeout; i++)
+			usleep_range(1000, 1100);
+
+		if (i == poll_timeout) {
+			DP_ERR("driver is not loaded\n");
+			rc = -ENODEV;
+			goto end;
+		}
 	}
 
 	if (!dp->debug->sim_mode && !dp->parser->no_aux_switch
@@ -1577,6 +1601,7 @@ static int dp_init_sub_modules(struct dp_display_private *dp)
 	}
 
 	g_dp_display->is_mst_supported = dp->parser->has_mst;
+	g_dp_display->dsc_cont_pps = dp->parser->dsc_continuous_pps;
 
 	dp->catalog = dp_catalog_get(dev, dp->parser);
 	if (IS_ERR(dp->catalog)) {
@@ -2937,6 +2962,11 @@ static int dp_display_mst_connector_update_link_info(
 			DP_RECEIVER_DSC_CAP_SIZE + 1);
 	memcpy(&dp_panel->link_info, &dp->panel->link_info,
 			sizeof(dp_panel->link_info));
+	dp_panel->mst_state = dp->panel->mst_state;
+	dp_panel->widebus_en = dp->panel->widebus_en;
+	dp_panel->fec_en = dp->panel->fec_en;
+	dp_panel->dsc_en = dp->panel->dsc_en;
+	dp_panel->fec_overhead_fp = dp->panel->fec_overhead_fp;
 
 	DP_MST_DEBUG("dp mst connector:%d link info updated\n",
 		connector->base.id);
@@ -3017,6 +3047,47 @@ static void dp_display_wakeup_phy_layer(struct dp_display *dp_display,
 		hpd->wakeup_phy(hpd, wakeup);
 }
 
+static int dp_display_get_display_type(struct dp_display *dp_display,
+		const char **display_type)
+{
+	struct dp_display_private *dp;
+
+	if (!dp_display || !display_type) {
+		pr_err("invalid input\n");
+		return -EINVAL;
+	}
+
+	dp = container_of(dp_display, struct dp_display_private, dp_display);
+
+	if (dp->parser)
+		*display_type = dp->parser->display_type;
+
+	return 0;
+}
+
+static int dp_display_mst_get_fixed_topology_display_type(
+		struct dp_display *dp_display, u32 strm_id,
+		const char **display_type)
+{
+	struct dp_display_private *dp;
+
+	if (!dp_display || !display_type) {
+		pr_err("invalid input\n");
+		return -EINVAL;
+	}
+
+	if (strm_id >= DP_STREAM_MAX) {
+		pr_err("invalid stream id:%d\n", strm_id);
+		return -EINVAL;
+	}
+
+	dp = container_of(dp_display, struct dp_display_private, dp_display);
+
+	*display_type = dp->parser->mst_fixed_display_type[strm_id];
+
+	return 0;
+}
+
 static int dp_display_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -3091,6 +3162,9 @@ static int dp_display_probe(struct platform_device *pdev)
 	g_dp_display->wakeup_phy_layer =
 					dp_display_wakeup_phy_layer;
 	g_dp_display->set_colorspace = dp_display_setup_colospace;
+	g_dp_display->get_display_type = dp_display_get_display_type;
+	g_dp_display->mst_get_fixed_topology_display_type =
+				dp_display_mst_get_fixed_topology_display_type;
 
 	rc = component_add(&pdev->dev, &dp_display_comp_ops);
 	if (rc) {

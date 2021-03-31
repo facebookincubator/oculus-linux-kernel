@@ -771,12 +771,60 @@ static const char pwrstr_cnt[] = "count:";
 static const char pwrstr_dur[] = "duration_usec:";
 static const char pwrstr_ts[] = "last_entry_timestamp_usec:";
 
+ssize_t print_pwrstats_cum(char *buf)
+{
+	ssize_t ret = 0;
+
+	ret += scnprintf(buf, PAGE_SIZE - 1, "AWAKE:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.awake_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.awake_dur);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
+			laststats.awake_last_entry_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "ASLEEP:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.pm_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.pm_dur);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
+			laststats.pm_last_entry_us);
+
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L0:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.l0_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.l0_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.l1_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.l1_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_1:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.l1_1_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.l1_1_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_2:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.l1_2_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.l1_2_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L2:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
+			accumstats.l2_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
+			accumstats.l2_dur_us);
+
+	return ret;
+}
+
 void update_pwrstats_cum(uint64 *accum, uint64 *last, uint64 *now, bool force)
 {
 	if (accum) { /* accumulation case, ex; counts, duration */
 		if (*now < *last) {
-			if (force || ((*last - *now) > USEC_PER_MSEC)) {
-				/* not to update accum for pm_dur/awake_dur case */
+			if (force) {
+				/* force update for pm_cnt/awake_cnt and PCIE stats */
 				*accum += *now;
 				*last = *now;
 			}
@@ -800,6 +848,8 @@ static const uint16 pwrstats_req_type[] = {
 	+ sizeof(wl_pwr_pm_accum_stats_v1_t) \
 	+ (uint)strlen("pwrstats") + 1
 
+extern uint64 dhdpcie_get_last_suspend_time(dhd_pub_t *dhdp);
+
 static ssize_t
 show_pwrstats_path(struct dhd_info *dev, char *buf)
 {
@@ -817,6 +867,34 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 	uint64 ts_sec, ts_usec, time_delta;
 
 	ASSERT(g_dhd_pub);
+
+	/* Even if dongle is in D3 state,
+	 * ASLEEP duration should be updated with estimated value.
+	 */
+	if (!dhd_os_check_if_up(&dhd->pub)) {
+		if (dhd->pub.busstate == DHD_BUS_SUSPEND) {
+			static uint64 last_suspend_end_time = 0;
+			uint64 curr_time = 0, estimated_pm_dur = 0;
+
+			if (last_suspend_end_time <
+					dhdpcie_get_last_suspend_time(&dhd->pub)) {
+				last_suspend_end_time = dhdpcie_get_last_suspend_time(&dhd->pub);
+			}
+
+			curr_time = OSL_LOCALTIME_NS();
+			if (curr_time >= last_suspend_end_time) {
+				estimated_pm_dur =
+					(curr_time - last_suspend_end_time) / NSEC_PER_USEC;
+				estimated_pm_dur += laststats.pm_dur;
+
+				update_pwrstats_cum(&accumstats.pm_dur, &laststats.pm_dur,
+					&estimated_pm_dur, FALSE);
+				last_suspend_end_time = curr_time;
+			}
+		}
+		ret = print_pwrstats_cum(buf);
+		goto done; /* Not ready yet */
+	}
 
 	len = PWRSTATS_IOV_BUF_LEN;
 	iovar_buf = (char *)MALLOCZ(g_dhd_pub->osh, len);
@@ -845,7 +923,8 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		iovar_buf, PWRSTATS_IOV_BUF_LEN, NULL);
 	if (err != BCME_OK) {
 		DHD_ERROR(("error (%d) - size = %zu\n", err, sizeof(wl_pwrstats_t)));
-		goto print_old;
+		ret = print_pwrstats_cum(buf);
+		goto done;
 	}
 
 	/* Check version */
@@ -942,7 +1021,6 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		*(uint8**)&p_data += taglen;
 	} while (len >= BCM_XTLV_HDR_SIZE);
 
-print_old:
 	/* [awake|pm]_last_entry_us are provided based on host timestamp.
 	 * These are calculated by dongle timestamp + (delta time of host & dongle)
 	 * If the newly calculated delta time is more than 1 second gap from
@@ -964,24 +1042,9 @@ print_old:
 	update_pwrstats_cum(&accumstats.pm_dur, &laststats.pm_dur, &pwrstats_sysfs.pm_dur,
 			FALSE);
 	update_pwrstats_cum(NULL, &laststats.awake_last_entry_us,
-			&pwrstats_sysfs.awake_last_entry_us, TRUE);
+			&pwrstats_sysfs.awake_last_entry_us, FALSE);
 	update_pwrstats_cum(NULL, &laststats.pm_last_entry_us,
-			&pwrstats_sysfs.pm_last_entry_us, TRUE);
-
-	ret += scnprintf(buf, PAGE_SIZE - 1, "AWAKE:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.awake_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.awake_dur);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
-			laststats.awake_last_entry_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "ASLEEP:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.pm_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.pm_dur);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
-			laststats.pm_last_entry_us);
+			&pwrstats_sysfs.pm_last_entry_us, FALSE);
 
 	update_pwrstats_cum(&accumstats.l0_cnt, &laststats.l0_cnt, &pwrstats_sysfs.l0_cnt,
 			TRUE);
@@ -1004,32 +1067,7 @@ print_old:
 	update_pwrstats_cum(&accumstats.l2_dur_us, &laststats.l2_dur_us,
 			&pwrstats_sysfs.l2_dur_us, TRUE);
 
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L0:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l0_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l0_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_1:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_1_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_1_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_2:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_2_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_2_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L2:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l2_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l2_dur_us);
-
+	ret = print_pwrstats_cum(buf);
 done:
 	if (p_query) {
 		MFREE(g_dhd_pub->osh, p_query, len);
@@ -1823,6 +1861,7 @@ static struct dhd_attr dhd_attr_proptx =
 
 #if defined(DHD_ADPS_BAM_EXPORT) && defined(WL_BAM)
 #define BAD_AP_MAC_ADDR_ELEMENT_NUM	6
+#define MACF_READ	"%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx"
 wl_bad_ap_mngr_t *g_bad_ap_mngr = NULL;
 
 static ssize_t
@@ -1868,10 +1907,10 @@ store_adps_bam_list(struct dhd_info *dev, const char *buf, size_t count)
 	len = count;
 	offset = 0;
 	do {
-		ret = sscanf(buf + offset, MACF"\n",
-			(uint32 *)&bad_ap.bssid.octet[0], (uint32 *)&bad_ap.bssid.octet[1],
-			(uint32 *)&bad_ap.bssid.octet[2], (uint32 *)&bad_ap.bssid.octet[3],
-			(uint32 *)&bad_ap.bssid.octet[4], (uint32 *)&bad_ap.bssid.octet[5]);
+		ret = sscanf(buf + offset, MACF_READ"\n",
+			&bad_ap.bssid.octet[0], &bad_ap.bssid.octet[1],
+			&bad_ap.bssid.octet[2], &bad_ap.bssid.octet[3],
+			&bad_ap.bssid.octet[4], &bad_ap.bssid.octet[5]);
 		if (ret != BAD_AP_MAC_ADDR_ELEMENT_NUM) {
 			DHD_ERROR(("%s - fail to parse bad ap data\n", __FUNCTION__));
 			return -EINVAL;
@@ -1961,6 +2000,42 @@ __ATTR(control_logtrace, 0660, show_control_logtrace, set_control_logtrace);
 uint8 control_he_enab = 1;
 #endif /* DISABLE_HE_ENAB || CUSTOM_CONTROL_HE_ENAB */
 
+#ifdef RX_PKT_POOL
+static ssize_t
+show_max_rx_pkt_pool(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", dhd->rx_pkt_pool.max_size);
+	return ret;
+}
+
+static ssize_t
+set_max_rx_pkt_pool(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	uint32 val;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return count;
+	}
+
+	val = bcm_atoi(buf);
+
+	dhd->rx_pkt_pool.max_size = ((val > MAX_RX_PKT_POOL) &&
+		(val <= (MAX_RX_PKT_POOL * 8))) ? val : MAX_RX_PKT_POOL;
+	DHD_ERROR(("%s: MAX_RX_PKT_POOL: %d\n", __FUNCTION__, dhd->rx_pkt_pool.max_size));
+	return count;
+}
+
+static struct dhd_attr dhd_attr_max_rx_pkt_pool=
+__ATTR(dhd_max_rx_pkt_pool, 0660, show_max_rx_pkt_pool, set_max_rx_pkt_pool);
+#endif /* RX_PKT_POOL */
+
 #if defined(CUSTOM_CONTROL_HE_ENAB)
 static ssize_t
 show_control_he_enab(struct dhd_info *dev, char *buf)
@@ -2021,6 +2096,47 @@ set_wl_accel_force_reg_on(struct dhd_info *dhd, const char *buf, size_t count)
 static struct dhd_attr dhd_attr_wl_accel_force_reg_on=
 __ATTR(wl_accel_force_reg_on, 0660, show_wl_accel_force_reg_on, set_wl_accel_force_reg_on);
 #endif /* WLAN_ACCEL_BOOT */
+
+#if defined(SUPPORT_AP_INIT_BWCONF)
+static ssize_t
+show_wl_softap_bw(struct dhd_info *dhd, char *buf)
+{
+	dhd_pub_t *dhdp;
+	ssize_t ret = 0;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+	dhdp = &dhd->pub;
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", dhdp->wl_softap_bw);
+	return ret;
+}
+
+static ssize_t
+set_wl_softap_bw(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	uint32 val;
+	dhd_pub_t *dhdp;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return count;
+	}
+
+	dhdp = &dhd->pub;
+	val = bcm_atoi(buf);
+
+	dhdp->wl_softap_bw = val;
+	DHD_ERROR(("%s: wl_softap_bw: %d\n", __FUNCTION__, dhdp->wl_softap_bw));
+	return count;
+}
+
+static struct dhd_attr dhd_attr_wl_softap_bw=
+__ATTR(wl_softap_bw, 0660, show_wl_softap_bw, set_wl_softap_bw);
+#endif /* SUPPORT_AP_INIT_BWCONF */
 
 #if defined(AGG_H2D_DB)
 extern bool agg_h2d_db_enab;
@@ -2385,6 +2501,12 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_agg_h2d_db_inflight_thresh.attr,
 	&dhd_attr_agg_h2d_db_timeout.attr,
 #endif /* AGG_H2D_DB */
+#if defined(SUPPORT_AP_INIT_BWCONF)
+	&dhd_attr_wl_softap_bw.attr,
+#endif /* SUPPORT_AP_INIT_BWCONF */
+#if defined(RX_PKT_POOL)
+	&dhd_attr_max_rx_pkt_pool.attr,
+#endif /* RX_PKT_POOL */
 	NULL
 };
 
@@ -2558,7 +2680,7 @@ set_lb_rxp_stop_thr(struct dhd_info *dev, const char *buf, size_t count)
 	}
 	dhdp = &dhd->pub;
 
-	lb_rxp_stop_thr = bcm_strtoul(buf, NULL, 10);
+	lb_rxp_stop_thr = (uint32)bcm_strtoul(buf, NULL, 10);
 	sscanf(buf, "%u", &lb_rxp_stop_thr);
 
 	/* disable lb_rxp flow ctrl */
@@ -2617,7 +2739,7 @@ set_lb_rxp_strt_thr(struct dhd_info *dev, const char *buf, size_t count)
 	}
 	dhdp = &dhd->pub;
 
-	lb_rxp_strt_thr = bcm_strtoul(buf, NULL, 10);
+	lb_rxp_strt_thr = (uint32)bcm_strtoul(buf, NULL, 10);
 	sscanf(buf, "%u", &lb_rxp_strt_thr);
 
 	/* disable lb_rxp flow ctrl */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -110,6 +110,23 @@ struct wlan_psoc_host_ppe_threshold {
 };
 
 /**
+ * struct wlan_psoc_host_hal_reg_cap_ext - extended regulatory capabilities
+ * recvd in EXT service
+ * @wireless_modes: REGDMN MODE
+ * @low_2ghz_chan: lower 2.4GHz channels
+ * @high_2ghz_chan: higher 2.4 GHz channels
+ * @low_5ghz_chan: lower 5 GHz channels
+ * @high_5ghz_chan: higher 5 GHz channels
+ */
+struct wlan_psoc_host_hal_reg_cap_ext {
+	uint32_t wireless_modes;
+	uint32_t low_2ghz_chan;
+	uint32_t high_2ghz_chan;
+	uint32_t low_5ghz_chan;
+	uint32_t high_5ghz_chan;
+};
+
+/**
  * struct wlan_psoc_host_mac_phy_caps - Phy caps recvd in EXT service
  *  @hw_mode_id: identify a particular set of HW characteristics,
  *        as specified by the subsequent fields. WMI_MAC_PHY_CAPABILITIES
@@ -120,6 +137,7 @@ struct wlan_psoc_host_ppe_threshold {
  *        by hw_mode_id.
  * @pdev_id: pdev_id starts with 1. pdev_id 1 => phy_id 0, pdev_id 2 => phy_id 1
  * @phy_id: Starts with 0
+ * @phy_idx: Index to mac phy caps structure for the given hw_mode_id and phy_id
  * @hw_mode_config_type: holds the enum wmi_hw_mode_config_type
  * @bitmap of supported modulations
  * @supported_bands: supported bands, enum WLAN_BAND_CAPABILITY
@@ -161,11 +179,17 @@ struct wlan_psoc_host_ppe_threshold {
  * @he_ppet5G: 5G HE PPET info
  * @chainmask_table_id: chain mask table id
  * @lmac_id: hw mac id
+ * @reg_cap_ext: extended regulatory capabilities
+ * @tgt_pdev_id: target pdev id assigned and used by firmware
+ * @nss_ratio_enabled: This flag is set if nss ratio is received from FW as part
+ *                     of service ready ext event.
+ * @nss_ratio: nss ratio is used to calculate the NSS value for 160MHz.
  */
 struct wlan_psoc_host_mac_phy_caps {
 	uint32_t hw_mode_id;
 	uint32_t pdev_id;
 	uint32_t phy_id;
+	uint8_t phy_idx;
 	int hw_mode_config_type;
 	uint32_t supports_11b:1,
 		 supports_11g:1,
@@ -198,6 +222,10 @@ struct wlan_psoc_host_mac_phy_caps {
 	struct wlan_psoc_host_ppe_threshold he_ppet5G;
 	uint32_t chainmask_table_id;
 	uint32_t lmac_id;
+	struct wlan_psoc_host_hal_reg_cap_ext reg_cap_ext;
+	uint32_t tgt_pdev_id;
+	bool nss_ratio_enabled;
+	uint8_t nss_ratio_info;
 };
 
 /**
@@ -211,6 +239,32 @@ struct wlan_psoc_host_hw_mode_caps {
 	uint32_t hw_mode_id;
 	uint32_t phy_id_map;
 	uint32_t hw_mode_config_type;
+};
+
+/*
+ * struct wlan_psoc_host_mac_phy_caps_ext2 - Phy caps received in EXT2 service
+ * @hw_mode_id: HW mode id
+ * @pdev_id: Pdev id
+ * @phy_id: Phy id
+ * @wireless_modes_ext: Extended wireless modes
+ */
+struct wlan_psoc_host_mac_phy_caps_ext2 {
+	uint32_t hw_mode_id;
+	uint32_t pdev_id;
+	uint32_t phy_id;
+	uint32_t wireless_modes_ext;
+};
+
+/*
+ * struct wlan_psoc_host_scan_radio_caps - scan radio capabilities
+ * @phy_id: phy id
+ * @scan_radio_supported: indicates scan radio support
+ * @dfs_en: indicates DFS needs to be enabled/disabled for scan radio vap
+ */
+struct wlan_psoc_host_scan_radio_caps {
+	uint32_t phy_id;
+	bool scan_radio_supported;
+	bool dfs_en;
 };
 
 /**
@@ -255,6 +309,9 @@ struct wlan_psoc_host_spectral_scaling_params {
  * @supports_chan_width_80: channel width 80 support for this chain mask.
  * @supports_chan_width_160: channel width 160 support for this chain mask.
  * @supports_chan_width_80P80: channel width 80P80 support for this chain mask.
+ * @supports_aSpectral: Agile Spectral support for this chain mask.
+ * @supports_aSpectral_160: Agile Spectral support in 160 MHz.
+ * @supports_aDFS_160: Agile DFS support in 160 MHz for this chain mask.
  * @chain_mask_2G: 2G support for this chain mask.
  * @chain_mask_5G: 5G support for this chain mask.
  * @chain_mask_tx: Tx support for this chain mask.
@@ -268,7 +325,10 @@ struct wlan_psoc_host_chainmask_capabilities {
 		 supports_chan_width_80:1,
 		 supports_chan_width_160:1,
 		 supports_chan_width_80P80:1,
-		 reserved:22,
+		 supports_aSpectral:1,
+		 supports_aSpectral_160:1,
+		 supports_aDFS_160:1,
+		 reserved:19,
 		 chain_mask_2G:1,
 		 chain_mask_5G:1,
 		 chain_mask_tx:1,
@@ -289,20 +349,6 @@ struct wlan_psoc_host_chainmask_table {
 	struct wlan_psoc_host_chainmask_capabilities *cap_list;
 };
 
-#ifdef WLAN_SUPPORT_RF_CHARACTERIZATION
-/**
- * struct wlan_psoc_host_rf_characterization_entry - rf characterization table
- * @freq: center frequency of primary channel
- * @bw: bandwidth of primary channel
- * @chan_metric: primary channel-specific metric
- */
-struct wlan_psoc_host_rf_characterization_entry {
-	uint16_t freq;
-	wmi_host_channel_width bw;
-	uint8_t chan_metric;
-};
-#endif
-
 /**
  * struct wlan_psoc_host_service_ext_param - EXT service base params in event
  * @default_conc_scan_config_bits: Default concurrenct scan config
@@ -322,8 +368,6 @@ struct wlan_psoc_host_rf_characterization_entry {
  * @max_bssid_indicator: Maximum number of VAPs in MBSS IE
  * @num_bin_scaling_params: Number of Spectral bin scaling parameters
  * @chainmask_table: Available chain mask tables.
- * @num_rf_characterization_entries: Number of RF characterization info entries
- * @rf_characterization_entries: Channel RF characterization information entries
  * @sar_version: SAR version info
  */
 struct wlan_psoc_host_service_ext_param {
@@ -342,11 +386,6 @@ struct wlan_psoc_host_service_ext_param {
 	uint32_t num_bin_scaling_params;
 	struct wlan_psoc_host_chainmask_table
 		chainmask_table[PSOC_MAX_CHAINMASK_TABLES];
-#ifdef WLAN_SUPPORT_RF_CHARACTERIZATION
-	uint32_t num_rf_characterization_entries;
-	struct wlan_psoc_host_rf_characterization_entry
-		*rf_characterization_entries;
-#endif
 	uint32_t sar_version;
 };
 
@@ -356,13 +395,30 @@ struct wlan_psoc_host_service_ext_param {
  * reg_db_version_minor: REG DB version minor number
  * bdf_reg_db_version_major: BDF REG DB version major number
  * bdf_reg_db_version_minor: BDF REG DB version minor number
+ * @num_dbr_ring_caps: Number of direct buf rx ring capabilities
+ * @chwidth_num_peer_caps: Peer limit for peer_chan_width_switch WMI cmd
+ * @max_ndp_sessions: Max number of ndp session fw supports
+ * @preamble_puncture_bw_cap: Preamble Puncturing Tx support
+ * @num_scan_radio_caps: Number of scan radio capabilities
+ * @max_users_dl_ofdma: Max number of users per-PPDU for Downlink OFDMA
+ * @max_users_ul_ofdma: Max number of users per-PPDU for Uplink OFDMA
+ * @max_users_dl_mumimo: Max number of users per-PPDU for Downlink MU-MIMO
+ * @max_users_ul_mumimo: Max number of users per-PPDU for Uplink MU-MIMO
  */
 struct wlan_psoc_host_service_ext2_param {
 	uint8_t reg_db_version_major;
 	uint8_t reg_db_version_minor;
 	uint8_t bdf_reg_db_version_major;
 	uint8_t bdf_reg_db_version_minor;
-
+	uint32_t num_dbr_ring_caps;
+	uint32_t chwidth_num_peer_caps;
+	uint32_t max_ndp_sessions;
+	uint32_t preamble_puncture_bw_cap;
+	uint8_t num_scan_radio_caps;
+	uint16_t max_users_dl_ofdma;
+	uint16_t max_users_ul_ofdma;
+	uint16_t max_users_dl_mumimo;
+	uint16_t max_users_ul_mumimo;
 };
 
 #endif /* _SERVICE_READY_PARAM_H_*/

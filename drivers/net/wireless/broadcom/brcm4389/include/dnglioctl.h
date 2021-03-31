@@ -59,8 +59,9 @@
 #define RTEDEVRMPMK		0x8918  /* Remove PMK */
 #define RTEDEVDBGVAL		0x8919  /* Set debug val */
 #define RTEDEVVIFDEL		0x891A  /* Delete virtual cfgs */
+#define RTEQUIESCEFORCE		0x891B	/* Force D11 core into quiesce */
 /* Ensure last RTE IOCTL define val is assigned to RTEIOCTLEND */
-#define RTEIOCTLEND		0x891A  /* LAST RTE IOCTL value */
+#define RTEIOCTLEND		0x891B  /* LAST RTE IOCTL value */
 
 #define RTE_IOCTL_QUERY		0x00
 #define RTE_IOCTL_SET		0x01
@@ -175,4 +176,93 @@ typedef struct mpu_test_args {
 	uint8 val[];
 } mpu_test_args_t;
 
+/* dsec command uses bcm iov framework (bcm_iov_buf_t) for iovar input/output */
+/* dsec command vesion */
+#define DSEC_IOV_VERSION_V1		1u
+
+enum desc_cmd_ids {
+	DSEC_CMD_ALL			= 0u,
+	DSEC_CMD_TRANSUNLOCK		= 1u,
+	DSEC_CMD_SBOOT			= 2u,
+	DSEC_CMD_RGNLOCK		= 3u
+};
+
+/* TRANSIENT unlock command */
+#define TRANSIENT_UNLOCK_VER_V1		1u
+#define TRANSIENT_UNLOCK_KEY_SIZE	4u	/* 4 Words of 32-bit each */
+#define TRANSIENT_UNLOCK_SALT_SIZE	16u	/* 16 Words of 32-bit each */
+
+enum desc_crypto_subcmd_ids {
+	DSEC_TRUNLOCK_SUBCMD_NONE	= 0u,
+	DSEC_TRUNLOCK_SUBCMD_VER	= 1u,
+	DSEC_TRUNLOCK_SUBCMD_STATUS	= 2u,
+	DSEC_TRUNLOCK_SUBCMD_UNLOCK	= 3u
+};
+
+typedef struct {
+	uint16 version;				/* cmd structure version */
+	uint16 length;				/* cmd struct len */
+	uint16 subcmd_id;			/* transient_unlock sub command */
+	uint16 status;				/* Unlock status */
+	uint32 key[TRANSIENT_UNLOCK_KEY_SIZE];	/* otp read mode */
+	uint32 salt[TRANSIENT_UNLOCK_SALT_SIZE]; /* byte offset into otp to start read */
+} transient_unlock_cmd_v1_t;
+
+/* OTP Region lock command */
+#define DSEC_RGN_LOCK_VER_V1		1u
+
+/* OTP Lock Regions */
+#define DSEC_LOCK_RGN_NONE		0u
+#define DSEC_LOCK_RGN_WAFER_SORT	1u
+#define DSEC_LOCK_RGN_HASH_DATA		2u
+#define DSEC_LOCK_RGN_FINAL_TEST	3u
+#define DSEC_LOCK_RGN_AUTOLOAD		4u
+#define DSEC_LOCK_RGN_UPPER_GU		5u
+#define DSEC_LOCK_RGN_LOWER_GU		6u
+#define DSEC_LOCK_RGN_HW_SW		7u
+#define DSEC_LOCK_RGN_BT		8u
+#define DSEC_LOCK_RGN_SECURE		9u
+#define DSEC_LOCK_RGN_SECURE_V		10u
+#define DSEC_LOCK_RGN_SECURE_VI_0	11u
+#define DSEC_LOCK_RGN_SECURE_VI_1	12u
+
+/* SECURE OTP command */
+#define DSEC_OTP_VER_V1			1u
+
+enum dsec_sboot_xtlv_id {
+	DSEC_OTP_XTLV_NONE			= 0u,	/* Not valid otp tag */
+	DSEC_OTP_XTLV_VER			= 1u,	/* OTP region type */
+	/* 2u is can be used */
+
+	/* RNG Lock Tags: */
+	DSEC_OTP_XTLV_RGN			= 3u,	/* OTP region type */
+	DSEC_OTP_XTLV_DATA			= 4u,	/* OTP region lock data */
+
+	/* SBOOT Tags: */
+	DSEC_OTP_XTLV_SBOOT_FW_SIG_ENABLE	= 5u,	/* FW signing enable bit */
+	DSEC_OTP_XTLV_SBOOT_FW_SIG_DISABLE	= 6u,	/* FW signing disaable bit */
+	DSEC_OTP_XTLV_SBOOT_ROM_PROTECT_ENABLE	= 7u,	/* ROM protect enable bit */
+	DSEC_OTP_XTLV_SBOOT_ROM_PROTECT_PATCH	= 8u,	/* ROM protect from patch */
+	DSEC_OTP_XTLV_SBOOT_HOST_RD_NONSEC_EN	= 9u,	/* Host read non secure enable bit */
+	DSEC_OTP_XTLV_SBOOT_HOST_RD_NONSEC_DIS	= 10u,	/* Host read non secure disable bit */
+	DSEC_OTP_XTLV_SBOOT_HOST_WR_NONSEC_EN	= 11u,	/* Host write non secure enable bit */
+	DSEC_OTP_XTLV_SBOOT_HOST_WR_NONSEC_DIS	= 12u,	/* Host write non secure disable bit */
+	DSEC_OTP_XTLV_SBOOT_DBGREGS_PROT_ENAB	= 13u,	/* ARM DBG regs protect enable bit */
+	DSEC_OTP_XTLV_SBOOT_DBGREGS_PROT_DIS	= 14u,	/* ARM DBG regs protect disable bit */
+	DSEC_OTP_XTLV_SBOOT_JTAG_PROTECT_ENAB	= 15u,	/* JTAG protect disable bit */
+	DSEC_OTP_XTLV_SBOOT_JTAG_PROTECT_DIS	= 16u,	/* JTAG protect re-enable bit */
+	DSEC_OTP_XTLV_SBOOT_TCAM_PROTECT_SIZE	= 17u,	/* TCAM protect enable size field 8 bits */
+	DSEC_OTP_XTLV_SBOOT_ACTIVATE_SECURITY	= 18u,	/* Active security enable bit */
+	DSEC_OTP_XTLV_SBOOT_KEY_REVOC_BITS	= 19u,	/* Key revocation Bits field 16 bits */
+	DSEC_OTP_XTLV_SBOOT_CUSTOMER_PUB_KEY_1	= 20u,	/* Customer public key 1 field 257 bits */
+	DSEC_OTP_XTLV_SBOOT_CUSTOMER_PUB_KEY_2	= 21u,	/* Customer public key 2 field 257 bits */
+	DSEC_OTP_XTLV_SBOOT_LOT_NUM		= 22u,	/* Chip lot num low bits [0:16] 17 bits */
+	DSEC_OTP_XTLV_SBOOT_WAFER_NUM		= 23u,	/* Chip wafer num 5 bits */
+	DSEC_OTP_XTLV_SBOOT_WAFER_X		= 24u,	/* Chip wafer X 9 bits */
+	DSEC_OTP_XTLV_SBOOT_WAFER_Y		= 25u,	/* Chip wafer Y 9 bits */
+	DSEC_OTP_XTLV_SBOOT_UNLOCK_HASH_VAL	= 26u,	/* Unlock Hash Val 128 bits */
+	DSEC_OTP_XTLV_SBOOT_PRODUCTION_CHIP	= 27u,	/* Production chip bit */
+	DSEC_OTP_XTLV_SBOOT_ENCRYPTION_KEY	= 28u,	/* AES wrapped fw encryption key 320 bits */
+	DSEC_OTP_XTLV_SBOOT_LOT_NUM_MS		= 29u,	/* Chip lot num high bits [17:47] 31 bits */
+};
 #endif /* _dngl_ioctl_h_ */

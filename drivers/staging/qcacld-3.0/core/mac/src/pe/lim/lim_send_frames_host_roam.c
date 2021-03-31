@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,7 +30,6 @@
 #include "lim_security_utils.h"
 #include "lim_prop_exts_utils.h"
 #include "dot11f.h"
-#include "lim_sta_hash_api.h"
 #include "sch_api.h"
 #include "lim_send_messages.h"
 #include "lim_assoc_utils.h"
@@ -81,7 +80,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 	uint8_t *add_ie;
 	const uint8_t *wps_ie = NULL;
 	uint8_t tx_flag = 0;
-	uint8_t sme_sessionid = 0;
+	uint8_t vdev_id = 0;
 	bool vht_enabled = false;
 	tpSirMacMgmtHdr mac_hdr;
 	tftSMEContext *ft_sme_context;
@@ -89,7 +88,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 	if (!pe_session)
 		return;
 
-	sme_sessionid = pe_session->smeSessionId;
+	vdev_id = pe_session->vdev_id;
 
 	/* check this early to avoid unncessary operation */
 	if (!pe_session->pLimReAssocReq)
@@ -279,7 +278,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 #endif
 	}
 
-	ft_sme_context = &mac_ctx->roam.roamSession[sme_sessionid].ftSmeContext;
+	ft_sme_context = &mac_ctx->roam.roamSession[vdev_id].ftSmeContext;
 	if (pe_session->htCapability &&
 	    mac_ctx->lim.htCapabilityPresentInBeacon) {
 		populate_dot11f_ht_caps(mac_ctx, pe_session, &frm->HTCaps);
@@ -317,6 +316,8 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 		pe_debug("Populate HE IEs");
 		populate_dot11f_he_caps(mac_ctx, pe_session,
 					&frm->he_cap);
+		populate_dot11f_he_6ghz_cap(mac_ctx, pe_session,
+					    &frm->he_6ghz_band_cap);
 	}
 
 	status = dot11f_get_packed_re_assoc_request_size(mac_ctx, frm,
@@ -371,9 +372,9 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 	pe_debug("*** Sending Re-Assoc Request length: %d %d to",
 		       bytes, payload);
 
-	if (pe_session->assocReq) {
-		qdf_mem_free(pe_session->assocReq);
-		pe_session->assocReq = NULL;
+	if (pe_session->assoc_req) {
+		qdf_mem_free(pe_session->assoc_req);
+		pe_session->assoc_req = NULL;
 		pe_session->assocReqLen = 0;
 	}
 
@@ -383,13 +384,13 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 		payload += add_ie_len;
 	}
 
-	pe_session->assocReq = qdf_mem_malloc(payload);
-	if (pe_session->assocReq) {
+	pe_session->assoc_req = qdf_mem_malloc(payload);
+	if (pe_session->assoc_req) {
 		/*
 		 * Store the Assoc request. This is sent to csr/hdd in
 		 * join cnf response.
 		 */
-		qdf_mem_copy(pe_session->assocReq,
+		qdf_mem_copy(pe_session->assoc_req,
 			     frame + sizeof(tSirMacMgmtHdr), payload);
 		pe_session->assocReqLen = payload;
 	}
@@ -408,30 +409,31 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 			   (uint8_t *) frame, (bytes + ft_ies_length));
 
 	if ((pe_session->ftPEContext.pFTPreAuthReq) &&
-	    (BAND_5G == lim_get_rf_band(
-	     pe_session->ftPEContext.pFTPreAuthReq->preAuthchannelNum)))
+	    (!wlan_reg_is_24ghz_ch_freq(
+	     pe_session->ftPEContext.pFTPreAuthReq->pre_auth_channel_freq)))
 		tx_flag |= HAL_USE_BD_RATE2_FOR_MANAGEMENT_FRAME;
-	else if ((BAND_5G == lim_get_rf_band(pe_session->currentOperChannel)) ||
-		 (pe_session->opmode == QDF_P2P_CLIENT_MODE) ||
-		 (pe_session->opmode == QDF_P2P_GO_MODE))
+	else if (wlan_reg_is_5ghz_ch_freq(pe_session->curr_op_freq) ||
+		 pe_session->opmode == QDF_P2P_CLIENT_MODE ||
+		 pe_session->opmode == QDF_P2P_GO_MODE)
 		tx_flag |= HAL_USE_BD_RATE2_FOR_MANAGEMENT_FRAME;
 
-	if (pe_session->assocReq) {
-		qdf_mem_free(pe_session->assocReq);
-		pe_session->assocReq = NULL;
+	if (pe_session->assoc_req) {
+		qdf_mem_free(pe_session->assoc_req);
+		pe_session->assoc_req = NULL;
 		pe_session->assocReqLen = 0;
 	}
 	if (ft_ies_length) {
-		pe_session->assocReq = qdf_mem_malloc(ft_ies_length);
-		if (!pe_session->assocReq) {
+		pe_session->assoc_req = qdf_mem_malloc(ft_ies_length);
+		if (!pe_session->assoc_req) {
 			pe_session->assocReqLen = 0;
 		} else {
 			/*
 			 * Store the FT IEs. This is sent to csr/hdd in
 			 * join cnf response.
 			 */
-			qdf_mem_copy(pe_session->assocReq,
-				ft_sme_context->reassoc_ft_ies, ft_ies_length);
+			qdf_mem_copy(pe_session->assoc_req,
+				     ft_sme_context->reassoc_ft_ies,
+				     ft_ies_length);
 			pe_session->assocReqLen = ft_ies_length;
 		}
 	} else {
@@ -448,7 +450,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 	qdf_status = wma_tx_frame(mac_ctx, packet,
 				(uint16_t) (bytes + ft_ies_length),
 				TXRX_FRM_802_11_MGMT, ANI_TXDIR_TODS, 7,
-				lim_tx_complete, frame, tx_flag, sme_sessionid,
+				lim_tx_complete, frame, tx_flag, vdev_id,
 				0, RATEID_DEFAULT);
 	MTRACE(qdf_trace(QDF_MODULE_ID_PE, TRACE_CODE_TX_COMPLETE,
 		       pe_session->peSessionId, qdf_status));
@@ -489,12 +491,12 @@ void lim_send_retry_reassoc_req_frame(struct mac_context *mac,
 	}
 	/* Prepare and send Reassociation request frame */
 	/* start reassoc timer. */
-	mac->lim.limTimers.gLimReassocFailureTimer.sessionId =
+	mac->lim.lim_timers.gLimReassocFailureTimer.sessionId =
 		pe_session->peSessionId;
 	/* Start reassociation failure timer */
 	MTRACE(qdf_trace(QDF_MODULE_ID_PE, TRACE_CODE_TIMER_ACTIVATE,
 			 pe_session->peSessionId, eLIM_REASSOC_FAIL_TIMER));
-	if (tx_timer_activate(&mac->lim.limTimers.gLimReassocFailureTimer)
+	if (tx_timer_activate(&mac->lim.lim_timers.gLimReassocFailureTimer)
 	    != TX_SUCCESS) {
 		/* Could not start reassoc failure timer. */
 		/* Log error */
@@ -502,7 +504,7 @@ void lim_send_retry_reassoc_req_frame(struct mac_context *mac,
 		/* Return Reassoc confirm with */
 		/* Resources Unavailable */
 		mlmReassocCnf.resultCode = eSIR_SME_RESOURCES_UNAVAILABLE;
-		mlmReassocCnf.protStatusCode = eSIR_MAC_UNSPEC_FAILURE_STATUS;
+		mlmReassocCnf.protStatusCode = STATUS_UNSPECIFIED_FAILURE;
 		goto end;
 	}
 
@@ -521,7 +523,7 @@ end:
 		pTmpMlmReassocReq = NULL;
 	}
 	mlmReassocCnf.resultCode = eSIR_SME_FT_REASSOC_FAILURE;
-	mlmReassocCnf.protStatusCode = eSIR_MAC_UNSPEC_FAILURE_STATUS;
+	mlmReassocCnf.protStatusCode = STATUS_UNSPECIFIED_FAILURE;
 	/* Update PE sessio Id */
 	mlmReassocCnf.sessionId = pe_session->peSessionId;
 
@@ -693,6 +695,8 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 		pe_debug("Populate HE IEs");
 		populate_dot11f_he_caps(mac, pe_session,
 					&frm->he_cap);
+		populate_dot11f_he_6ghz_cap(mac, pe_session,
+					    &frm->he_6ghz_band_cap);
 	}
 
 	nStatus =
@@ -741,9 +745,9 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 
 	pe_debug("*** Sending Re-Association Request length: %d" "to", nBytes);
 
-	if (pe_session->assocReq) {
-		qdf_mem_free(pe_session->assocReq);
-		pe_session->assocReq = NULL;
+	if (pe_session->assoc_req) {
+		qdf_mem_free(pe_session->assoc_req);
+		pe_session->assoc_req = NULL;
 		pe_session->assocReqLen = 0;
 	}
 
@@ -753,17 +757,17 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 		nPayload += nAddIELen;
 	}
 
-	pe_session->assocReq = qdf_mem_malloc(nPayload);
-	if (pe_session->assocReq) {
+	pe_session->assoc_req = qdf_mem_malloc(nPayload);
+	if (pe_session->assoc_req) {
 		/* Store the Assocrequest. It is sent to csr in joincnfrsp */
-		qdf_mem_copy(pe_session->assocReq,
+		qdf_mem_copy(pe_session->assoc_req,
 			     pFrame + sizeof(tSirMacMgmtHdr), nPayload);
 		pe_session->assocReqLen = nPayload;
 	}
 
-	if ((BAND_5G == lim_get_rf_band(pe_session->currentOperChannel)) ||
-	    (pe_session->opmode == QDF_P2P_CLIENT_MODE) ||
-	    (pe_session->opmode == QDF_P2P_GO_MODE))
+	if (wlan_reg_is_5ghz_ch_freq(pe_session->curr_op_freq) ||
+	    pe_session->opmode == QDF_P2P_CLIENT_MODE ||
+	    pe_session->opmode == QDF_P2P_GO_MODE)
 		txFlag |= HAL_USE_BD_RATE2_FOR_MANAGEMENT_FRAME;
 
 	if (pe_session->opmode == QDF_P2P_CLIENT_MODE ||

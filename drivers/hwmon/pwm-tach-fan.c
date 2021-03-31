@@ -341,12 +341,13 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 	if (!ctx)
 		return -EINVAL;
 
-	if (pwm_fan_has_failure(ctx)) {
+	if (pwm_fan_has_failure(ctx))
 		/* Set a state that exceeds the maximum to signal userspace. */
 		*state = ctx->pwm_fan_max_state + 1;
-	} else {
+	else if (!ctx->is_display_on)
+		*state = 0;
+	else
 		*state = ctx->pwm_fan_state;
-	}
 
 	return 0;
 }

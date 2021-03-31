@@ -247,6 +247,7 @@
 #define EVENT_LOG_TAG_HP2P_ERR			232
 #define EVENT_LOG_TAG_SB_SCHED_DBG_SYNC		233
 #define EVENT_LOG_TAG_ENHANCED_TS		234
+#define EVENT_LOG_TAG_PHY_OBSS_INFO		235
 
 /* Available space for new tags for Dingo, Iguana and branches
  * prior to Koala only. From Koala onwards, new tags must be greater
@@ -499,8 +500,11 @@
 #define EVENT_LOG_TAG_XRAPI_INFO		399
 #endif	/* WLXRAPI */
 
+#define EVENT_LOG_TAG_PROXD_DBG			400
+
+#define EVENT_LOG_TAG_SB_SCHED_TIMEREF		401
 /* EVENT_LOG_TAG_MAX	= Set to the same value of last tag, not last tag + 1 */
-#define EVENT_LOG_TAG_MAX			399
+#define EVENT_LOG_TAG_MAX			401
 
 typedef enum wl_el_set_type_def {
 	EVENT_LOG_SET_TYPE_DEFAULT = 0, /* flush the log buffer when it is full - Default option */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -144,11 +144,10 @@ void qdf_debugfs_write(qdf_debugfs_file_t file, const uint8_t *buf,
  * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
  * @value: pointer to a u8 variable (global/static)
  *
- * Return: dentry for the file; NULL in case of failure.
- *
+ * Return: None
  */
-qdf_dentry_t qdf_debugfs_create_u8(const char *name, uint16_t mode,
-				   qdf_dentry_t parent, u8 *value);
+void qdf_debugfs_create_u8(const char *name, uint16_t mode,
+			   qdf_dentry_t parent, u8 *value);
 
 /**
  * qdf_debugfs_create_u16() - create a debugfs file for a u16 variable
@@ -157,11 +156,10 @@ qdf_dentry_t qdf_debugfs_create_u8(const char *name, uint16_t mode,
  * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
  * @value: pointer to a u16 variable (global/static)
  *
- * Return: dentry for the file; NULL in case of failure.
- *
+ * Return: None
  */
-qdf_dentry_t qdf_debugfs_create_u16(const char *name, uint16_t mode,
-				    qdf_dentry_t parent, u16 *value);
+void qdf_debugfs_create_u16(const char *name, uint16_t mode,
+			    qdf_dentry_t parent, u16 *value);
 
 /**
  * qdf_debugfs_create_u32() - create a debugfs file for a u32 variable
@@ -170,11 +168,10 @@ qdf_dentry_t qdf_debugfs_create_u16(const char *name, uint16_t mode,
  * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
  * @value: pointer to a u32 variable (global/static)
  *
- * Return: dentry for the file; NULL in case of failure.
- *
+ * Return: None
  */
-qdf_dentry_t qdf_debugfs_create_u32(const char *name, uint16_t mode,
-				    qdf_dentry_t parent, u32 *value);
+void qdf_debugfs_create_u32(const char *name, uint16_t mode,
+			    qdf_dentry_t parent, u32 *value);
 
 /**
  * qdf_debugfs_create_u64() - create a debugfs file for a u64 variable
@@ -183,11 +180,10 @@ qdf_dentry_t qdf_debugfs_create_u32(const char *name, uint16_t mode,
  * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
  * @value: pointer to a u64 variable (global/static)
  *
- * Return: dentry for the file; NULL in case of failure.
- *
+ * Return: None
  */
-qdf_dentry_t qdf_debugfs_create_u64(const char *name, uint16_t mode,
-				    qdf_dentry_t parent, u64 *value);
+void qdf_debugfs_create_u64(const char *name, uint16_t mode,
+			    qdf_dentry_t parent, u64 *value);
 
 /**
  * qdf_debugfs_create_atomic() - create a debugfs file for an atomic variable
@@ -196,12 +192,11 @@ qdf_dentry_t qdf_debugfs_create_u64(const char *name, uint16_t mode,
  * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
  * @value: pointer to an atomic variable (global/static)
  *
- * Return: dentry for the file; NULL in case of failure.
- *
+ * Return: None
  */
-qdf_dentry_t qdf_debugfs_create_atomic(const char *name, uint16_t mode,
-				       qdf_dentry_t parent,
-				       qdf_atomic_t *value);
+void qdf_debugfs_create_atomic(const char *name, uint16_t mode,
+			       qdf_dentry_t parent,
+			       qdf_atomic_t *value);
 
 /**
  * qdf_debugfs_create_string() - create a debugfs file for a string
@@ -239,6 +234,43 @@ void qdf_debugfs_remove_dir(qdf_dentry_t d);
  *
  */
 void qdf_debugfs_remove_file(qdf_dentry_t d);
+
+/**
+ * qdf_debugfs_create_file_simplified() - Create a simple debugfs file
+ * where a single function call produces all the desired output
+ * @name: name of the file
+ * @mode: qdf file mode
+ * @parent: parent node. If NULL, defaults to base 'qdf_debugfs_root'
+ * @fops: file operations { .show, .write , .priv... }
+ *
+ * Users just have to define the show() function and pass it via @fops.show()
+ * argument. When the output time comes, the show() will be called once.
+ * The show() function must do everything that is needed to write the data,
+ * all in one function call.
+ * This is useful either for writing small amounts of data to debugfs or
+ * for cases in which the output is not iterative.
+ * The private data can be passed via @fops.priv, which will be available
+ * inside the show() function as the 'private' filed of the qdf_debugfs_file_t.
+ *
+ * Return: dentry structure pointer in case of success, otherwise NULL.
+ *
+ */
+
+qdf_dentry_t qdf_debugfs_create_file_simplified(const char *name, uint16_t mode,
+						qdf_dentry_t parent,
+						struct qdf_debugfs_fops *fops);
+
+/**
+ * qdf_debugfs_printer() - Print formated string into debugfs file
+ * @priv: The private data
+ * @fmt: Format string
+ * @...: arguments for the format string
+ *
+ * This function prints a new line character after printing the formatted
+ * string into the debugfs file.
+ * This function can be passed when the argument is of type qdf_abstract_print
+ */
+int qdf_debugfs_printer(void *priv, const char *fmt, ...);
 
 #else /* WLAN_DEBUGFS */
 
@@ -283,43 +315,38 @@ static inline void qdf_debugfs_write(qdf_debugfs_file_t file,
 {
 }
 
-static inline qdf_dentry_t qdf_debugfs_create_u8(const char *name,
-						 uint16_t mode,
-						 qdf_dentry_t parent, u8 *value)
+static inline void qdf_debugfs_create_u8(const char *name,
+					 uint16_t mode,
+					 qdf_dentry_t parent, u8 *value)
 {
-	return NULL;
 }
 
-static inline qdf_dentry_t qdf_debugfs_create_u16(const char *name,
-						  uint16_t mode,
-						  qdf_dentry_t parent,
-						  u16 *value)
+static inline void qdf_debugfs_create_u16(const char *name,
+					  uint16_t mode,
+					  qdf_dentry_t parent,
+					  u16 *value)
 {
-	return NULL;
 }
 
-static inline qdf_dentry_t qdf_debugfs_create_u32(const char *name,
-						  uint16_t mode,
-						  qdf_dentry_t parent,
-						  u32 *value)
+static inline void qdf_debugfs_create_u32(const char *name,
+					  uint16_t mode,
+					  qdf_dentry_t parent,
+					  u32 *value)
 {
-	return NULL;
 }
 
-static inline qdf_dentry_t qdf_debugfs_create_u64(const char *name,
-						  uint16_t mode,
-						  qdf_dentry_t parent,
-						  u64 *value)
+static inline void qdf_debugfs_create_u64(const char *name,
+					  uint16_t mode,
+					  qdf_dentry_t parent,
+					  u64 *value)
 {
-	return NULL;
 }
 
-static inline qdf_dentry_t qdf_debugfs_create_atomic(const char *name,
-						     uint16_t mode,
-						     qdf_dentry_t parent,
-						     qdf_atomic_t *value)
+static inline void qdf_debugfs_create_atomic(const char *name,
+					     uint16_t mode,
+					     qdf_dentry_t parent,
+					     qdf_atomic_t *value)
 {
-	return NULL;
 }
 
 static inline qdf_dentry_t debugfs_create_string(const char *name,
@@ -333,5 +360,18 @@ static inline void qdf_debugfs_remove_dir_recursive(qdf_dentry_t d) {}
 static inline void qdf_debugfs_remove_dir(qdf_dentry_t d) {}
 static inline void qdf_debugfs_remove_file(qdf_dentry_t d) {}
 
+static inline
+qdf_dentry_t qdf_debugfs_create_file_simplified(const char *name, uint16_t mode,
+						qdf_dentry_t parent,
+						struct qdf_debugfs_fops *fops)
+{
+	return NULL;
+}
+
+static inline
+int qdf_debugfs_printer(void *priv, const char *fmt, ...)
+{
+	return 0;
+}
 #endif /* WLAN_DEBUGFS */
 #endif /* _QDF_DEBUGFS_H */

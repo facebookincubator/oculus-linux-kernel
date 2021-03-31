@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,116 +25,10 @@
 #ifndef _CDP_TXRX_MON_H_
 #define _CDP_TXRX_MON_H_
 #include "cdp_txrx_handle.h"
-static inline void cdp_monitor_set_filter_ucast_data
-	(ol_txrx_soc_handle soc, struct cdp_pdev *pdev, u_int8_t val)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return;
-	}
 
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_set_filter_ucast_data)
-		return;
-
-	soc->ops->mon_ops->txrx_monitor_set_filter_ucast_data
-			(pdev, val);
-}
-
-static inline void cdp_monitor_set_filter_mcast_data
-	(ol_txrx_soc_handle soc, struct cdp_pdev *pdev, u_int8_t val)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_set_filter_mcast_data)
-		return;
-
-	soc->ops->mon_ops->txrx_monitor_set_filter_mcast_data
-			(pdev, val);
-}
-
-static inline void cdp_monitor_set_filter_non_data
-	(ol_txrx_soc_handle soc, struct cdp_pdev *pdev, u_int8_t val)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_set_filter_non_data)
-		return;
-
-	soc->ops->mon_ops->txrx_monitor_set_filter_non_data
-			(pdev, val);
-}
-
-static inline bool cdp_monitor_get_filter_ucast_data
-(ol_txrx_soc_handle soc, struct cdp_vdev *vdev_txrx_handle)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return 0;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_get_filter_ucast_data)
-		return 0;
-
-	return soc->ops->mon_ops->txrx_monitor_get_filter_ucast_data
-			(vdev_txrx_handle);
-}
-
-static inline bool cdp_monitor_get_filter_mcast_data
-(ol_txrx_soc_handle soc, struct cdp_vdev *vdev_txrx_handle)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return 0;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_get_filter_mcast_data)
-		return 0;
-
-	return soc->ops->mon_ops->txrx_monitor_get_filter_mcast_data
-			(vdev_txrx_handle);
-}
-
-static inline bool cdp_monitor_get_filter_non_data
-(ol_txrx_soc_handle soc, struct cdp_vdev *vdev_txrx_handle)
-{
-	if (!soc || !soc->ops) {
-		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
-				"%s: Invalid Instance", __func__);
-		QDF_BUG(0);
-		return 0;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_get_filter_non_data)
-		return 0;
-
-	return soc->ops->mon_ops->txrx_monitor_get_filter_non_data
-			(vdev_txrx_handle);
-}
-
-static inline QDF_STATUS cdp_reset_monitor_mode
-(ol_txrx_soc_handle soc, struct cdp_pdev *pdev)
+static inline QDF_STATUS cdp_reset_monitor_mode(ol_txrx_soc_handle soc,
+						uint8_t pdev_id,
+						u_int8_t smart_monitor)
 {
 	if (!soc || !soc->ops) {
 		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
@@ -147,23 +41,32 @@ static inline QDF_STATUS cdp_reset_monitor_mode
 	    !soc->ops->mon_ops->txrx_reset_monitor_mode)
 		return 0;
 
-	return soc->ops->mon_ops->txrx_reset_monitor_mode(pdev);
+	return soc->ops->mon_ops->txrx_reset_monitor_mode(soc, pdev_id,
+							  smart_monitor);
 }
 
-static inline void cdp_record_monitor_chan_num
-(ol_txrx_soc_handle soc, struct cdp_pdev *pdev, int chan_num)
+/**
+ * cdp_deliver_tx_mgmt() - Deliver mgmt frame for tx capture
+ * @soc: Datapath SOC handle
+ * @pdev_id: id of datapath PDEV handle
+ * @nbuf: Management frame buffer
+ */
+static inline QDF_STATUS
+cdp_deliver_tx_mgmt(ol_txrx_soc_handle soc, uint8_t pdev_id,
+		    qdf_nbuf_t nbuf)
 {
 	if (!soc || !soc->ops) {
 		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
 			  "%s: Invalid Instance", __func__);
 		QDF_BUG(0);
-		return;
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_monitor_record_channel)
-		return;
+	    !soc->ops->mon_ops->txrx_deliver_tx_mgmt)
+		return QDF_STATUS_E_FAILURE;
 
-	soc->ops->mon_ops->txrx_monitor_record_channel(pdev, chan_num);
+	return soc->ops->mon_ops->txrx_deliver_tx_mgmt(soc, pdev_id, nbuf);
 }
+
 #endif

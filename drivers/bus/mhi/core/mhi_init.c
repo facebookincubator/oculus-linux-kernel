@@ -1560,9 +1560,9 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	INIT_WORK(&mhi_cntrl->st_worker, mhi_pm_st_worker);
 	init_waitqueue_head(&mhi_cntrl->state_event);
 
-	mhi_cntrl->special_wq = alloc_ordered_workqueue("mhi_special_w",
+	mhi_cntrl->wq = alloc_ordered_workqueue("mhi_w",
 						WQ_MEM_RECLAIM | WQ_HIGHPRI);
-	if (!mhi_cntrl->special_wq)
+	if (!mhi_cntrl->wq)
 		goto error_alloc_cmd;
 
 	INIT_WORK(&mhi_cntrl->special_work, mhi_special_purpose_work);
@@ -1688,7 +1688,7 @@ error_add_dev:
 
 error_alloc_dev:
 	kfree(mhi_cntrl->mhi_cmd);
-	destroy_workqueue(mhi_cntrl->special_wq);
+	destroy_workqueue(mhi_cntrl->wq);
 
 error_alloc_cmd:
 	vfree(mhi_cntrl->mhi_chan);
@@ -1760,7 +1760,7 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 	 * allocate rddm table if specified, this table is for debug purpose
 	 * so we'll ignore erros
 	 */
-	if (mhi_cntrl->rddm_size) {
+	if (mhi_cntrl->rddm_supported && mhi_cntrl->rddm_size) {
 		mhi_alloc_bhie_table(mhi_cntrl, &mhi_cntrl->rddm_image,
 				     mhi_cntrl->rddm_size);
 
@@ -1773,6 +1773,13 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 					   &bhie_off);
 			if (ret) {
 				MHI_CNTRL_ERR("Error getting bhie offset\n");
+				goto bhie_error;
+			}
+
+			if (bhie_off >= mhi_cntrl->len) {
+				MHI_ERR("Invalid BHIE=0x%x  len=0x%x\n",
+					bhie_off, mhi_cntrl->len);
+				ret = -EINVAL;
 				goto bhie_error;
 			}
 
@@ -1793,10 +1800,8 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 	return 0;
 
 bhie_error:
-	if (mhi_cntrl->rddm_image) {
-		mhi_free_bhie_table(mhi_cntrl, mhi_cntrl->rddm_image);
-		mhi_cntrl->rddm_image = NULL;
-	}
+	if (mhi_cntrl->rddm_image)
+		mhi_free_bhie_table(mhi_cntrl, &mhi_cntrl->rddm_image);
 
 error_dev_ctxt:
 	mutex_unlock(&mhi_cntrl->pm_mutex);
@@ -1807,15 +1812,11 @@ EXPORT_SYMBOL(mhi_prepare_for_power_up);
 
 void mhi_unprepare_after_power_down(struct mhi_controller *mhi_cntrl)
 {
-	if (mhi_cntrl->fbc_image) {
-		mhi_free_bhie_table(mhi_cntrl, mhi_cntrl->fbc_image);
-		mhi_cntrl->fbc_image = NULL;
-	}
+	if (mhi_cntrl->fbc_image)
+		mhi_free_bhie_table(mhi_cntrl, &mhi_cntrl->fbc_image);
 
-	if (mhi_cntrl->rddm_image) {
-		mhi_free_bhie_table(mhi_cntrl, mhi_cntrl->rddm_image);
-		mhi_cntrl->rddm_image = NULL;
-	}
+	if (mhi_cntrl->rddm_image)
+		mhi_free_bhie_table(mhi_cntrl, &mhi_cntrl->rddm_image);
 
 	mhi_deinit_dev_ctxt(mhi_cntrl);
 	mhi_cntrl->pre_init = false;

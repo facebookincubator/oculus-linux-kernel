@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017, 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,6 +24,11 @@
 
 #ifndef _WIFI_POS_MAIN_H_
 #define _WIFI_POS_MAIN_H_
+
+#ifdef CNSS_GENL
+#define ENHNC_FLAGS_LEN 4
+#define NL_ENABLE_OEM_REQ_RSP 0x00000001
+#endif
 
 /* forward reference */
 struct wlan_objmgr_psoc;
@@ -65,4 +70,12 @@ QDF_STATUS  wifi_pos_psoc_obj_destroyed_notification(
 int wifi_pos_oem_rsp_handler(struct wlan_objmgr_psoc *psoc,
 			     struct oem_data_rsp *oem_rsp);
 
+/**
+ * wifi_pos_get_tx_ops: api to get tx ops
+ * @psoc: pointer to psoc object
+ *
+ * Return: tx ops
+ */
+struct wlan_lmac_if_wifi_pos_tx_ops *
+	wifi_pos_get_tx_ops(struct wlan_objmgr_psoc *psoc);
 #endif

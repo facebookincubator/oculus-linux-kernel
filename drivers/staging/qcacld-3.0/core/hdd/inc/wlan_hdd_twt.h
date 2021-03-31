@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,10 +28,19 @@
 
 #include "qdf_types.h"
 #include "qdf_status.h"
+#include "qca_vendor.h"
+#include <net/cfg80211.h>
 
 struct hdd_context;
+struct hdd_adapter;
 struct wma_tgt_cfg;
-struct wmi_twt_enable_complete_event_param;
+struct wmi_twt_add_dialog_param;
+struct wmi_twt_del_dialog_param;
+struct wmi_twt_pause_dialog_cmd_param;
+struct wmi_twt_resume_dialog_cmd_param;
+
+extern const struct nla_policy
+wlan_hdd_wifi_twt_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_TWT_MAX + 1];
 
 #ifdef WLAN_SUPPORT_TWT
 /**
@@ -65,6 +74,23 @@ enum twt_status {
 };
 
 /**
+ * wlan_hdd_cfg80211_wifi_twt_config() - Wifi twt configuration
+ * vendor command
+ * @wiphy: wiphy device pointer
+ * @wdev: wireless device pointer
+ * @data: Vendor command data buffer
+ * @data_len: Buffer length
+ *
+ * Handles QCA_NL80211_VENDOR_SUBCMD_CONFIG_TWT
+ *
+ * Return: 0 for success, negative errno for failure.
+ */
+int wlan_hdd_cfg80211_wifi_twt_config(struct wiphy *wiphy,
+				      struct wireless_dev *wdev,
+				      const void *data,
+				      int data_len);
+
+/**
  * hdd_update_tgt_twt_cap() - Update TWT target capabilities
  * @hdd_ctx: HDD Context
  * @cfg: Pointer to target configuration
@@ -82,7 +108,6 @@ void hdd_update_tgt_twt_cap(struct hdd_context *hdd_ctx,
  */
 void hdd_send_twt_enable_cmd(struct hdd_context *hdd_ctx);
 
-#define TWT_DISABLE_COMPLETE_TIMEOUT 1000
 /**
  * hdd_send_twt_disable_cmd() - Send TWT disable command to target
  * @hdd_ctx: HDD Context
@@ -113,6 +138,47 @@ void wlan_hdd_twt_init(struct hdd_context *hdd_ctx);
  */
 void wlan_hdd_twt_deinit(struct hdd_context *hdd_ctx);
 
+/**
+ * hdd_test_config_twt_setup_session() - Process TWT setup
+ * operation in the received test config vendor command and
+ * send it to firmare
+ * @adapter: adapter pointer
+ * @tb: nl attributes
+ *
+ * Handles QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_TWT_SETUP
+ *
+ * Return: 0 for Success and negative value for failure
+ */
+int hdd_test_config_twt_setup_session(struct hdd_adapter *adapter,
+				      struct nlattr **tb);
+
+/**
+ * hdd_test_config_twt_terminate_session() - Process TWT terminate
+ * operation in the received test config vendor command and send
+ * it to firmare
+ * @adapter: adapter pointer
+ * @tb: nl attributes
+ *
+ * Handles QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_TWT_TERMINATE
+ *
+ * Return: 0 for Success and negative value for failure
+ */
+int hdd_test_config_twt_terminate_session(struct hdd_adapter *adapter,
+					  struct nlattr **tb);
+
+#define FEATURE_VENDOR_SUBCMD_WIFI_CONFIG_TWT                            \
+{                                                                        \
+	.info.vendor_id = QCA_NL80211_VENDOR_ID,                         \
+	.info.subcmd =                                                   \
+		QCA_NL80211_VENDOR_SUBCMD_CONFIG_TWT,                    \
+	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |                            \
+		WIPHY_VENDOR_CMD_NEED_NETDEV |                           \
+		WIPHY_VENDOR_CMD_NEED_RUNNING,                           \
+	.doit = wlan_hdd_cfg80211_wifi_twt_config,                       \
+	vendor_command_policy(wlan_hdd_wifi_twt_config_policy,           \
+			      QCA_WLAN_VENDOR_ATTR_CONFIG_TWT_MAX)       \
+},
+
 #else
 static inline void hdd_update_tgt_twt_cap(struct hdd_context *hdd_ctx,
 					  struct wma_tgt_cfg *cfg)
@@ -136,5 +202,22 @@ static inline void wlan_hdd_twt_deinit(struct hdd_context *hdd_ctx)
 {
 }
 
+static inline
+int hdd_test_config_twt_setup_session(struct hdd_adapter *adapter,
+				      struct nlattr **tb)
+{
+	return -EINVAL;
+}
+
+static inline
+int hdd_test_config_twt_terminate_session(struct hdd_adapter *adapter,
+					  struct nlattr **tb)
+{
+	return -EINVAL;
+}
+
+#define FEATURE_VENDOR_SUBCMD_WIFI_CONFIG_TWT
+
 #endif
+
 #endif /* if !defined(WLAN_HDD_TWT_H)*/

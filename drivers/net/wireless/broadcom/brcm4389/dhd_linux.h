@@ -143,7 +143,7 @@ struct wk_trace_record {
 		} else { \
 			wklock_info = kzalloc(sizeof(*wklock_info), GFP_ATOMIC); \
 			if (!wklock_info) {\
-				printk("Can't allocate wk_trace_record \n"); \
+				DHD_ERROR(("Can't allocate wk_trace_record \n")); \
 			} else { \
 				wklock_info->addr = func_addr; \
 				wklock_info->lock_type = wklock_type; \
@@ -560,13 +560,13 @@ struct dhd_rx_tx_work {
 #endif /* FILTER_IE */
 
 #define NULL_CHECK(p, s, err)  \
-			do { \
-				if (!(p)) { \
-					printk("NULL POINTER (%s) : %s\n", __FUNCTION__, (s)); \
-					err = BCME_ERROR; \
-					return err; \
-				} \
-			} while (0)
+do { \
+	if (!(p)) { \
+		DHD_ERROR(("NULL POINTER (%s) : %s\n", __FUNCTION__, (s))); \
+		err = BCME_ERROR; \
+		return err; \
+	} \
+} while (0)
 
 int dhd_wifi_platform_register_drv(void);
 void dhd_wifi_platform_unregister_drv(void);

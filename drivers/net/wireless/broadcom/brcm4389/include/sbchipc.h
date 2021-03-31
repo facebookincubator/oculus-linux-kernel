@@ -4120,6 +4120,11 @@ typedef volatile struct {
 #define PMU_4362_MACCORE_0_RES_REQ_MASK		(0x3FCBF7FFu)
 #define PMU_4362_MACCORE_1_RES_REQ_MASK		(0x7FFB3647u)
 
+/* 4381 related */
+#define CST4381_CHIPMODE_PCIE(cs)               (((cs) & (1 << 7)) != 0)        /* PCIE */
+#define CST4381_CHIPMODE_SDIO(cs)               (((cs) & (1 << 31)) != 0)       /* SDIO */
+#define CST4381_CHIPMODE_USB(cs)               (((cs) & (1 << 20)) != 0)        /* USB */
+
 #define PMU_MACCORE_0_RES_REQ_TIMER		0x1d000000
 #define PMU_MACCORE_0_RES_REQ_MASK		0x5FF2364F
 

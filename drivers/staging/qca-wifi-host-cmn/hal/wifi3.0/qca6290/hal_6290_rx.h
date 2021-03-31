@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,309 @@
 #include "dp_types.h"
 #include "hal_api_mon.h"
 #include "phyrx_other_receive_info_ru_details.h"
+
+#define HAL_RX_MPDU_GET_SEQUENCE_NUMBER(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_NUMBER_OFFSET)),	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_NUMBER_MASK,	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_NUMBER_LSB))
+
+#define HAL_RX_MSDU_END_DA_IS_MCBC_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_5_DA_IS_MCBC_OFFSET)),	\
+		RX_MSDU_END_5_DA_IS_MCBC_MASK,		\
+		RX_MSDU_END_5_DA_IS_MCBC_LSB))
+
+#define HAL_RX_MSDU_END_SA_IS_VALID_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_5_SA_IS_VALID_OFFSET)),	\
+		RX_MSDU_END_5_SA_IS_VALID_MASK,		\
+		RX_MSDU_END_5_SA_IS_VALID_LSB))
+
+#define HAL_RX_MSDU_END_SA_IDX_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_13_SA_IDX_OFFSET)),	\
+		RX_MSDU_END_13_SA_IDX_MASK,		\
+		RX_MSDU_END_13_SA_IDX_LSB))
+
+#define HAL_RX_MSDU_END_L3_HEADER_PADDING_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,		\
+		RX_MSDU_END_5_L3_HEADER_PADDING_OFFSET)),	\
+		RX_MSDU_END_5_L3_HEADER_PADDING_MASK,		\
+		RX_MSDU_END_5_L3_HEADER_PADDING_LSB))
+
+#define HAL_RX_MPDU_ENCRYPTION_INFO_VALID(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,		\
+	RX_MPDU_INFO_2_FRAME_ENCRYPTION_INFO_VALID_OFFSET)),	\
+	RX_MPDU_INFO_2_FRAME_ENCRYPTION_INFO_VALID_MASK,	\
+	RX_MPDU_INFO_2_FRAME_ENCRYPTION_INFO_VALID_LSB))
+
+#define HAL_RX_MPDU_PN_31_0_GET(_rx_mpdu_info)		\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+	RX_MPDU_INFO_4_PN_31_0_OFFSET)),		\
+	RX_MPDU_INFO_4_PN_31_0_MASK,			\
+	RX_MPDU_INFO_4_PN_31_0_LSB))
+
+#define HAL_RX_MPDU_PN_63_32_GET(_rx_mpdu_info)		\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+	RX_MPDU_INFO_5_PN_63_32_OFFSET)),		\
+	RX_MPDU_INFO_5_PN_63_32_MASK,			\
+	RX_MPDU_INFO_5_PN_63_32_LSB))
+
+#define HAL_RX_MPDU_PN_95_64_GET(_rx_mpdu_info)		\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+	RX_MPDU_INFO_6_PN_95_64_OFFSET)),		\
+	RX_MPDU_INFO_6_PN_95_64_MASK,			\
+	RX_MPDU_INFO_6_PN_95_64_LSB))
+
+#define HAL_RX_MPDU_PN_127_96_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+	RX_MPDU_INFO_7_PN_127_96_OFFSET)),		\
+	RX_MPDU_INFO_7_PN_127_96_MASK,			\
+	RX_MPDU_INFO_7_PN_127_96_LSB))
+
+#define HAL_RX_MSDU_END_FIRST_MSDU_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_5_FIRST_MSDU_OFFSET)),	\
+		RX_MSDU_END_5_FIRST_MSDU_MASK,		\
+		RX_MSDU_END_5_FIRST_MSDU_LSB))
+
+#define HAL_RX_MSDU_END_DA_IS_VALID_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_5_DA_IS_VALID_OFFSET)),	\
+		RX_MSDU_END_5_DA_IS_VALID_MASK,		\
+		RX_MSDU_END_5_DA_IS_VALID_LSB))
+
+#define HAL_RX_MSDU_END_LAST_MSDU_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_5_LAST_MSDU_OFFSET)),	\
+		RX_MSDU_END_5_LAST_MSDU_MASK,		\
+		RX_MSDU_END_5_LAST_MSDU_LSB))
+
+#define HAL_RX_MPDU_GET_MAC_AD4_VALID(_rx_mpdu_info)		\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,		\
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_OFFSET)),	\
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_MASK,		\
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_LSB))
+
+#define HAL_RX_MPDU_INFO_SW_PEER_ID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR((_rx_mpdu_info),	\
+		RX_MPDU_INFO_1_SW_PEER_ID_OFFSET)),	\
+		RX_MPDU_INFO_1_SW_PEER_ID_MASK,		\
+		RX_MPDU_INFO_1_SW_PEER_ID_LSB))
+
+#define HAL_RX_MPDU_GET_TODS(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+		RX_MPDU_INFO_2_TO_DS_OFFSET)),	\
+		RX_MPDU_INFO_2_TO_DS_MASK,	\
+		RX_MPDU_INFO_2_TO_DS_LSB))
+
+#define HAL_RX_MPDU_GET_FROMDS(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+		RX_MPDU_INFO_2_FR_DS_OFFSET)),	\
+		RX_MPDU_INFO_2_FR_DS_MASK,	\
+		RX_MPDU_INFO_2_FR_DS_LSB))
+
+#define HAL_RX_MPDU_GET_FRAME_CONTROL_VALID(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+		RX_MPDU_INFO_2_MPDU_FRAME_CONTROL_VALID_OFFSET)),	\
+		RX_MPDU_INFO_2_MPDU_FRAME_CONTROL_VALID_MASK,	\
+		RX_MPDU_INFO_2_MPDU_FRAME_CONTROL_VALID_LSB))
+
+#define HAL_RX_MPDU_MAC_ADDR_AD1_VALID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_2_MAC_ADDR_AD1_VALID_OFFSET)), \
+		RX_MPDU_INFO_2_MAC_ADDR_AD1_VALID_MASK,	\
+		RX_MPDU_INFO_2_MAC_ADDR_AD1_VALID_LSB))
+
+#define HAL_RX_MPDU_AD1_31_0_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_15_MAC_ADDR_AD1_31_0_OFFSET)), \
+		RX_MPDU_INFO_15_MAC_ADDR_AD1_31_0_MASK,	\
+		RX_MPDU_INFO_15_MAC_ADDR_AD1_31_0_LSB))
+
+#define HAL_RX_MPDU_AD1_47_32_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_16_MAC_ADDR_AD1_47_32_OFFSET)), \
+		RX_MPDU_INFO_16_MAC_ADDR_AD1_47_32_MASK,	\
+		RX_MPDU_INFO_16_MAC_ADDR_AD1_47_32_LSB))
+
+#define HAL_RX_MPDU_MAC_ADDR_AD2_VALID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_2_MAC_ADDR_AD2_VALID_OFFSET)), \
+		RX_MPDU_INFO_2_MAC_ADDR_AD2_VALID_MASK,	\
+		RX_MPDU_INFO_2_MAC_ADDR_AD2_VALID_LSB))
+
+#define HAL_RX_MPDU_AD2_15_0_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_16_MAC_ADDR_AD2_15_0_OFFSET)), \
+		RX_MPDU_INFO_16_MAC_ADDR_AD2_15_0_MASK,	\
+		RX_MPDU_INFO_16_MAC_ADDR_AD2_15_0_LSB))
+
+#define HAL_RX_MPDU_AD2_47_16_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_17_MAC_ADDR_AD2_47_16_OFFSET)), \
+		RX_MPDU_INFO_17_MAC_ADDR_AD2_47_16_MASK,	\
+		RX_MPDU_INFO_17_MAC_ADDR_AD2_47_16_LSB))
+
+#define HAL_RX_MPDU_MAC_ADDR_AD3_VALID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_2_MAC_ADDR_AD3_VALID_OFFSET)), \
+		RX_MPDU_INFO_2_MAC_ADDR_AD3_VALID_MASK,	\
+		RX_MPDU_INFO_2_MAC_ADDR_AD3_VALID_LSB))
+
+#define HAL_RX_MPDU_AD3_31_0_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_18_MAC_ADDR_AD3_31_0_OFFSET)), \
+		RX_MPDU_INFO_18_MAC_ADDR_AD3_31_0_MASK,	\
+		RX_MPDU_INFO_18_MAC_ADDR_AD3_31_0_LSB))
+
+#define HAL_RX_MPDU_AD3_47_32_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_19_MAC_ADDR_AD3_47_32_OFFSET)), \
+		RX_MPDU_INFO_19_MAC_ADDR_AD3_47_32_MASK,	\
+		RX_MPDU_INFO_19_MAC_ADDR_AD3_47_32_LSB))
+
+#define HAL_RX_MPDU_MAC_ADDR_AD4_VALID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_OFFSET)), \
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_MASK,	\
+		RX_MPDU_INFO_2_MAC_ADDR_AD4_VALID_LSB))
+
+#define HAL_RX_MPDU_AD4_31_0_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_20_MAC_ADDR_AD4_31_0_OFFSET)), \
+		RX_MPDU_INFO_20_MAC_ADDR_AD4_31_0_MASK,	\
+		RX_MPDU_INFO_20_MAC_ADDR_AD4_31_0_LSB))
+
+#define HAL_RX_MPDU_AD4_47_32_GET(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info, \
+		RX_MPDU_INFO_21_MAC_ADDR_AD4_47_32_OFFSET)), \
+		RX_MPDU_INFO_21_MAC_ADDR_AD4_47_32_MASK,	\
+		RX_MPDU_INFO_21_MAC_ADDR_AD4_47_32_LSB))
+
+#define HAL_RX_MPDU_GET_SEQUENCE_CONTROL_VALID(_rx_mpdu_info)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_CONTROL_VALID_OFFSET)),	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_CONTROL_VALID_MASK,	\
+		RX_MPDU_INFO_2_MPDU_SEQUENCE_CONTROL_VALID_LSB))
+
+#define HAL_RX_MPDU_INFO_QOS_CONTROL_VALID_GET(_rx_mpdu_info) \
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR((_rx_mpdu_info),		\
+		RX_MPDU_INFO_2_MPDU_QOS_CONTROL_VALID_OFFSET)),		\
+		RX_MPDU_INFO_2_MPDU_QOS_CONTROL_VALID_MASK,		\
+		RX_MPDU_INFO_2_MPDU_QOS_CONTROL_VALID_LSB))
+
+#define HAL_RX_MSDU_END_SA_SW_PEER_ID_GET(_rx_msdu_end)		\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,		\
+		RX_MSDU_END_16_SA_SW_PEER_ID_OFFSET)),		\
+		RX_MSDU_END_16_SA_SW_PEER_ID_MASK,		\
+		RX_MSDU_END_16_SA_SW_PEER_ID_LSB))
+
+#define HAL_RX_MSDU0_BUFFER_ADDR_LSB(link_desc_va)      \
+	(uint8_t *)(link_desc_va) +			\
+	RX_MSDU_LINK_8_RX_MSDU_DETAILS_MSDU_0_OFFSET
+
+#define HAL_RX_MSDU_DESC_INFO_PTR_GET(msdu0)			\
+	(uint8_t *)(msdu0) +				\
+	RX_MSDU_DETAILS_2_RX_MSDU_DESC_INFO_RX_MSDU_DESC_INFO_DETAILS_OFFSET
+
+#define HAL_ENT_MPDU_DESC_INFO(ent_ring_desc)		\
+	(uint8_t *)(ent_ring_desc) +			\
+	RX_MPDU_DETAILS_2_RX_MPDU_DESC_INFO_RX_MPDU_DESC_INFO_DETAILS_OFFSET
+
+#define HAL_DST_MPDU_DESC_INFO(dst_ring_desc)		\
+	(uint8_t *)(dst_ring_desc) +			\
+	REO_DESTINATION_RING_2_RX_MPDU_DESC_INFO_RX_MPDU_DESC_INFO_DETAILS_OFFSET
+
+#define HAL_RX_GET_FC_VALID(rx_mpdu_start)	\
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_2, MPDU_FRAME_CONTROL_VALID)
+
+#define HAL_RX_GET_TO_DS_FLAG(rx_mpdu_start)	\
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_2, TO_DS)
+
+#define HAL_RX_GET_MAC_ADDR1_VALID(rx_mpdu_start) \
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_2, MAC_ADDR_AD1_VALID)
+
+#define HAL_RX_GET_MAC_ADDR2_VALID(rx_mpdu_start) \
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_2, MAC_ADDR_AD2_VALID)
+
+#define HAL_RX_GET_FILTER_CATEGORY(rx_mpdu_start) \
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_0, RXPCU_MPDU_FILTER_IN_CATEGORY)
+
+#define HAL_RX_GET_PPDU_ID(rx_mpdu_start)	\
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_0, PHY_PPDU_ID)
+
+#define HAL_RX_GET_SW_FRAME_GROUP_ID(rx_mpdu_start)	\
+	HAL_RX_GET(rx_mpdu_start, RX_MPDU_INFO_0, SW_FRAME_GROUP_ID)
+
+#define HAL_REO_R0_CONFIG(soc, reg_val, reo_params)		\
+	do { \
+		(reg_val) &= \
+			~(HWIO_REO_R0_GENERAL_ENABLE_FRAGMENT_DEST_RING_BMSK |\
+			HWIO_REO_R0_GENERAL_ENABLE_AGING_LIST_ENABLE_BMSK |\
+			HWIO_REO_R0_GENERAL_ENABLE_AGING_FLUSH_ENABLE_BMSK);\
+		(reg_val) |= \
+			HAL_SM(HWIO_REO_R0_GENERAL_ENABLE, \
+			       FRAGMENT_DEST_RING, \
+			       (reo_params)->frag_dst_ring) | \
+			HAL_SM(HWIO_REO_R0_GENERAL_ENABLE, \
+			       AGING_LIST_ENABLE, 1) |\
+			HAL_SM(HWIO_REO_R0_GENERAL_ENABLE, \
+			       AGING_FLUSH_ENABLE, 1);\
+		HAL_REG_WRITE((soc), \
+			      HWIO_REO_R0_GENERAL_ENABLE_ADDR(	\
+			      SEQ_WCSS_UMAC_REO_REG_OFFSET), \
+			      (reg_val)); \
+	} while (0)
+
+#define HAL_RX_MSDU_DESC_INFO_GET(msdu_details_ptr) \
+	((struct rx_msdu_desc_info *) \
+	_OFFSET_TO_BYTE_PTR(msdu_details_ptr, \
+UNIFIED_RX_MSDU_DETAILS_2_RX_MSDU_DESC_INFO_RX_MSDU_DESC_INFO_DETAILS_OFFSET))
+
+#define HAL_RX_LINK_DESC_MSDU0_PTR(link_desc)   \
+	((struct rx_msdu_details *) \
+	 _OFFSET_TO_BYTE_PTR((link_desc),\
+	UNIFIED_RX_MSDU_LINK_8_RX_MSDU_DETAILS_MSDU_0_OFFSET))
+
+#define HAL_RX_MSDU_END_FLOW_IDX_GET(_rx_msdu_end)  \
+		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \
+		RX_MSDU_END_14_FLOW_IDX_OFFSET)),  \
+		RX_MSDU_END_14_FLOW_IDX_MASK,    \
+		RX_MSDU_END_14_FLOW_IDX_LSB))
+
+#define HAL_RX_MSDU_END_FLOW_IDX_INVALID_GET(_rx_msdu_end)  \
+		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \
+		RX_MSDU_END_5_FLOW_IDX_INVALID_OFFSET)),  \
+		RX_MSDU_END_5_FLOW_IDX_INVALID_MASK,    \
+		RX_MSDU_END_5_FLOW_IDX_INVALID_LSB))
+
+#define HAL_RX_MSDU_END_FLOW_IDX_TIMEOUT_GET(_rx_msdu_end)  \
+		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \
+		RX_MSDU_END_5_FLOW_IDX_TIMEOUT_OFFSET)),  \
+		RX_MSDU_END_5_FLOW_IDX_TIMEOUT_MASK,    \
+		RX_MSDU_END_5_FLOW_IDX_TIMEOUT_LSB))
+
+#define HAL_RX_MSDU_END_FSE_METADATA_GET(_rx_msdu_end)  \
+		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \
+		RX_MSDU_END_15_FSE_METADATA_OFFSET)),  \
+		RX_MSDU_END_15_FSE_METADATA_MASK,    \
+		RX_MSDU_END_15_FSE_METADATA_LSB))
+
+#define HAL_RX_MSDU_END_CCE_METADATA_GET(_rx_msdu_end)	\
+	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,	\
+		RX_MSDU_END_16_CCE_METADATA_OFFSET)),	\
+		RX_MSDU_END_16_CCE_METADATA_MASK,	\
+		RX_MSDU_END_16_CCE_METADATA_LSB))
+
+#define HAL_RX_TLV_GET_TCP_CHKSUM(buf) \
+	(_HAL_MS( \
+		 (*_OFFSET_TO_WORD_PTR(&(((struct rx_pkt_tlvs *)(buf))->\
+			 msdu_end_tlv.rx_msdu_end), \
+			 RX_MSDU_END_1_TCP_UDP_CHKSUM_OFFSET)), \
+		RX_MSDU_END_1_TCP_UDP_CHKSUM_MASK, \
+		RX_MSDU_END_1_TCP_UDP_CHKSUM_LSB))
 
 #if defined(QCA_WIFI_QCA6290_11AX)
 #define HAL_RX_MSDU_START_MIMO_SS_BITMAP(_rx_msdu_start)\

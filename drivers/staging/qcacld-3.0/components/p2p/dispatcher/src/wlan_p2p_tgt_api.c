@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +40,7 @@
 static inline struct wlan_lmac_if_p2p_tx_ops *
 wlan_psoc_get_p2p_tx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &(psoc->soc_cb.tx_ops.p2p);
+	return &(psoc->soc_cb.tx_ops->p2p);
 }
 
 #ifdef FEATURE_P2P_LISTEN_OFFLOAD
@@ -107,7 +107,6 @@ QDF_STATUS tgt_p2p_lo_event_cb(struct wlan_objmgr_psoc *psoc,
 
 	lo_stop_event = qdf_mem_malloc(sizeof(*lo_stop_event));
 	if (!lo_stop_event) {
-		p2p_err("Failed to allocate p2p lo stop event");
 		qdf_mem_free(event_info);
 		return QDF_STATUS_E_NOMEM;
 	}
@@ -158,10 +157,8 @@ tgt_p2p_add_mac_addr_status_event_cb(struct wlan_objmgr_psoc *psoc,
 	}
 
 	mac_filter_rsp = qdf_mem_malloc(sizeof(*mac_filter_rsp));
-	if (!mac_filter_rsp) {
-		p2p_err("random_mac:Failed to allocate mac_filter_rsp");
+	if (!mac_filter_rsp)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	mac_filter_rsp->p2p_soc_obj = p2p_soc_obj;
 	mac_filter_rsp->vdev_id = event_info->vdev_id;
@@ -259,7 +256,6 @@ QDF_STATUS tgt_p2p_mgmt_ota_comp_cb(void *context, qdf_nbuf_t buf,
 
 	tx_conf_event = qdf_mem_malloc(sizeof(*tx_conf_event));
 	if (!tx_conf_event) {
-		p2p_err("Failed to allocate tx cnf event");
 		qdf_nbuf_free(buf);
 		return QDF_STATUS_E_NOMEM;
 	}
@@ -349,7 +345,7 @@ QDF_STATUS tgt_p2p_mgmt_frame_rx_cb(struct wlan_objmgr_psoc *psoc,
 
 	pdata = (uint8_t *)qdf_nbuf_data(buf);
 	rx_mgmt->frame_len = mgmt_rx_params->buf_len;
-	rx_mgmt->rx_chan = mgmt_rx_params->channel;
+	rx_mgmt->rx_freq = mgmt_rx_params->chan_freq;
 	rx_mgmt->vdev_id = vdev_id;
 	rx_mgmt->frm_type = frm_type;
 	rx_mgmt->rx_rssi = mgmt_rx_params->snr +
@@ -408,7 +404,6 @@ QDF_STATUS  tgt_p2p_noa_event_cb(struct wlan_objmgr_psoc *psoc,
 
 	noa_event = qdf_mem_malloc(sizeof(*noa_event));
 	if (!noa_event) {
-		p2p_err("Failed to allocate p2p noa event");
 		qdf_mem_free(event_info);
 		return QDF_STATUS_E_NOMEM;
 	}

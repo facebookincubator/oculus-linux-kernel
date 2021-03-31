@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,12 +36,24 @@
 #include <ol_rx_defrag.h>
 
 /*=== data types and defines ===*/
-
-/*---*/
+#define OL_RX_REORDER_ROUND_PWR2(value) g_log2ceil[value]
 
 /*=== global variables ===*/
 
-/*---*/
+static char g_log2ceil[] = {
+	1,                      /* 0 -> 1 */
+	1,                      /* 1 -> 1 */
+	2,                      /* 2 -> 2 */
+	4, 4,                   /* 3-4 -> 4 */
+	8, 8, 8, 8,             /* 5-8 -> 8 */
+	16, 16, 16, 16, 16, 16, 16, 16, /* 9-16 -> 16 */
+	32, 32, 32, 32, 32, 32, 32, 32,
+	32, 32, 32, 32, 32, 32, 32, 32, /* 17-32 -> 32 */
+	64, 64, 64, 64, 64, 64, 64, 64,
+	64, 64, 64, 64, 64, 64, 64, 64,
+	64, 64, 64, 64, 64, 64, 64, 64,
+	64, 64, 64, 64, 64, 64, 64, 64, /* 33-64 -> 64 */
+};
 
 /*=== function definitions ===*/
 
@@ -150,7 +162,7 @@ ol_rx_seq_num_check(struct ol_txrx_pdev_t *pdev,
 	uint16_t seq_num = IEEE80211_SEQ_MAX;
 	bool retry = 0;
 
-	seq_num = htt_rx_mpdu_desc_seq_num(pdev->htt_pdev, rx_mpdu_desc);
+	seq_num = htt_rx_mpdu_desc_seq_num(pdev->htt_pdev, rx_mpdu_desc, false);
 
 	 /* For mcast packets, we only the dup-detection, not re-order check */
 
@@ -282,7 +294,7 @@ ol_rx_reorder_release(struct ol_txrx_vdev_t *vdev,
 		seq_num = htt_rx_mpdu_desc_seq_num(
 			htt_pdev,
 			htt_rx_msdu_desc_retrieve(htt_pdev,
-						  head_msdu));
+						  head_msdu), false);
 		peer->tids_last_seq[tid] = seq_num;
 		/* rx_opt_proc takes a NULL-terminated list of msdu netbufs */
 		qdf_nbuf_set_next(tail_msdu, NULL);
@@ -367,7 +379,7 @@ ol_rx_reorder_flush(struct ol_txrx_vdev_t *vdev,
 
 		seq_num = htt_rx_mpdu_desc_seq_num(
 			htt_pdev,
-			htt_rx_msdu_desc_retrieve(htt_pdev, head_msdu));
+			htt_rx_msdu_desc_retrieve(htt_pdev, head_msdu), false);
 		peer->tids_last_seq[tid] = seq_num;
 		/* rx_opt_proc takes a NULL-terminated list of msdu netbufs */
 		qdf_nbuf_set_next(tail_msdu, NULL);
@@ -503,6 +515,106 @@ ol_rx_reorder_peer_cleanup(struct ol_txrx_vdev_t *vdev,
 }
 
 /* functions called by HTT */
+
+void
+ol_rx_addba_handler(ol_txrx_pdev_handle pdev,
+		    uint16_t peer_id,
+		    uint8_t tid,
+		    uint8_t win_sz, uint16_t start_seq_num, uint8_t failed)
+{
+	uint8_t round_pwr2_win_sz;
+	unsigned int array_size;
+	struct ol_txrx_peer_t *peer;
+	struct ol_rx_reorder_t *rx_reorder;
+	void *array_mem = NULL;
+
+	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+		ol_txrx_err("invalid tid, %u", tid);
+		WARN_ON(1);
+		return;
+	}
+
+	peer = ol_txrx_peer_find_by_id(pdev, peer_id);
+	if (!peer) {
+		ol_txrx_err("not able to find peer, %u", peer_id);
+		return;
+	}
+
+	if (pdev->cfg.host_addba) {
+		ol_ctrl_rx_addba_complete(pdev->ctrl_pdev,
+					  &peer->mac_addr.raw[0], tid, failed);
+	}
+	if (failed)
+		return;
+
+	peer->tids_last_seq[tid] = IEEE80211_SEQ_MAX;   /* invalid */
+	rx_reorder = &peer->tids_rx_reorder[tid];
+
+	TXRX_ASSERT2(win_sz <= 64);
+	round_pwr2_win_sz = OL_RX_REORDER_ROUND_PWR2(win_sz);
+	array_size =
+		round_pwr2_win_sz * sizeof(struct ol_rx_reorder_array_elem_t);
+
+	array_mem = qdf_mem_malloc(array_size);
+	if (!array_mem)
+		return;
+
+	if (rx_reorder->array != &rx_reorder->base) {
+		ol_txrx_info("delete array for tid %d", tid);
+		qdf_mem_free(rx_reorder->array);
+	}
+
+	rx_reorder->array = array_mem;
+	rx_reorder->win_sz = win_sz;
+	TXRX_ASSERT1(rx_reorder->array);
+
+	rx_reorder->win_sz_mask = round_pwr2_win_sz - 1;
+	rx_reorder->num_mpdus = 0;
+
+	peer->tids_next_rel_idx[tid] =
+		OL_RX_REORDER_IDX_INIT(start_seq_num, rx_reorder->win_sz,
+				       rx_reorder->win_sz_mask);
+}
+
+void
+ol_rx_delba_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id, uint8_t tid)
+{
+	struct ol_txrx_peer_t *peer;
+	struct ol_rx_reorder_t *rx_reorder;
+
+	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+		ol_txrx_err("invalid tid, %u", tid);
+		WARN_ON(1);
+		return;
+	}
+
+	peer = ol_txrx_peer_find_by_id(pdev, peer_id);
+	if (!peer) {
+		ol_txrx_err("not able to find peer, %u", peer_id);
+		return;
+	}
+
+	peer->tids_next_rel_idx[tid] = INVALID_REORDER_INDEX;
+	rx_reorder = &peer->tids_rx_reorder[tid];
+
+	/* check that there really was a block ack agreement */
+	TXRX_ASSERT1(rx_reorder->win_sz_mask != 0);
+	/*
+	 * Deallocate the old rx reorder array.
+	 * The call to ol_rx_reorder_init below
+	 * will reset rx_reorder->array to point to
+	 * the single-element statically-allocated reorder array
+	 * used for non block-ack cases.
+	 */
+	if (rx_reorder->array != &rx_reorder->base) {
+		ol_txrx_dbg("delete reorder array, tid:%d",
+			    tid);
+		qdf_mem_free(rx_reorder->array);
+	}
+
+	/* set up the TID with default parameters (ARQ window size = 1) */
+	ol_rx_reorder_init(rx_reorder, tid);
+}
 
 void
 ol_rx_flush_handler(ol_txrx_pdev_handle pdev,
@@ -647,29 +759,31 @@ ol_rx_pn_ind_handler(ol_txrx_pdev_handle pdev,
 						current_time_ms;
 					ol_txrx_warn(
 					   "Tgt PN check failed - TID %d, peer %pK "
-					   "("QDF_MAC_ADDR_STR")\n"
+					   "("QDF_MAC_ADDR_FMT")\n"
 					   "    PN (u64 x2)= 0x%08llx %08llx (LSBs = %lld)\n"
 					   "    new seq num = %d\n",
 					   tid, peer,
-					   QDF_MAC_ADDR_ARRAY(peer->mac_addr.raw),
+					   QDF_MAC_ADDR_REF(peer->mac_addr.raw),
 					   pn.pn128[1],
 					   pn.pn128[0],
 					   pn.pn128[0] & 0xffffffffffffULL,
 					   htt_rx_mpdu_desc_seq_num(htt_pdev,
-								    rx_desc));
+								    rx_desc,
+								    false));
 				} else {
 					ol_txrx_dbg(
 					   "Tgt PN check failed - TID %d, peer %pK "
-					   "("QDF_MAC_ADDR_STR")\n"
+					   "("QDF_MAC_ADDR_FMT")\n"
 					   "    PN (u64 x2)= 0x%08llx %08llx (LSBs = %lld)\n"
 					   "    new seq num = %d\n",
 					   tid, peer,
-					   QDF_MAC_ADDR_ARRAY(peer->mac_addr.raw),
+					   QDF_MAC_ADDR_REF(peer->mac_addr.raw),
 					   pn.pn128[1],
 					   pn.pn128[0],
 					   pn.pn128[0] & 0xffffffffffffULL,
 					   htt_rx_mpdu_desc_seq_num(htt_pdev,
-								    rx_desc));
+								    rx_desc,
+								    false));
 				}
 				ol_rx_err(pdev->ctrl_pdev, vdev->vdev_id,
 					  peer->mac_addr.raw, tid,

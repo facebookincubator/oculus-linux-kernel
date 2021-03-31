@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,11 @@ bool ucfg_ipa_is_present(void)
 	return ipa_is_hw_support();
 }
 
+bool ucfg_ipa_is_ready(void)
+{
+	return ipa_is_ready();
+}
+
 bool ucfg_ipa_is_enabled(void)
 {
 	return ipa_config_is_enabled();
@@ -39,10 +44,10 @@ bool ucfg_ipa_uc_is_enabled(void)
 	return ipa_config_is_uc_enabled();
 }
 
-void ucfg_ipa_set_txrx_handle(struct wlan_objmgr_psoc *psoc,
-				    void *txrx_handle)
+void ucfg_ipa_set_pdev_id(struct wlan_objmgr_psoc *psoc,
+			  uint8_t pdev_id)
 {
-	return ipa_set_txrx_handle(psoc, txrx_handle);
+	return ipa_set_pdev_id(psoc, pdev_id);
 }
 
 void ucfg_ipa_set_dp_handle(struct wlan_objmgr_psoc *psoc,
@@ -112,9 +117,10 @@ void ucfg_ipa_set_dfs_cac_tx(struct wlan_objmgr_pdev *pdev, bool tx_block)
 	return ipa_set_dfs_cac_tx(pdev, tx_block);
 }
 
-void ucfg_ipa_set_ap_ibss_fwd(struct wlan_objmgr_pdev *pdev, bool intra_bss)
+void ucfg_ipa_set_ap_ibss_fwd(struct wlan_objmgr_pdev *pdev, uint8_t session_id,
+			      bool intra_bss)
 {
-	return ipa_set_ap_ibss_fwd(pdev, intra_bss);
+	return ipa_set_ap_ibss_fwd(pdev, session_id, intra_bss);
 }
 
 void ucfg_ipa_uc_force_pipe_shutdown(struct wlan_objmgr_pdev *pdev)
@@ -161,11 +167,11 @@ QDF_STATUS ucfg_ipa_send_mcc_scc_msg(struct wlan_objmgr_pdev *pdev,
 
 QDF_STATUS ucfg_ipa_wlan_evt(struct wlan_objmgr_pdev *pdev,
 			     qdf_netdev_t net_dev, uint8_t device_mode,
-			     uint8_t sta_id, uint8_t session_id,
+			     uint8_t session_id,
 			     enum wlan_ipa_wlan_event ipa_event_type,
 			     uint8_t *mac_addr)
 {
-	return ipa_wlan_evt(pdev, net_dev, device_mode, sta_id, session_id,
+	return ipa_wlan_evt(pdev, net_dev, device_mode, session_id,
 			    ipa_event_type, mac_addr);
 }
 
@@ -212,6 +218,11 @@ void ucfg_ipa_component_config_update(struct wlan_objmgr_psoc *psoc)
 	ipa_component_config_update(psoc);
 }
 
+void ucfg_ipa_component_config_free(void)
+{
+	ipa_component_config_free();
+}
+
 uint32_t ucfg_ipa_get_tx_buf_count(void)
 {
 	return ipa_get_tx_buf_count();
@@ -221,4 +232,10 @@ void ucfg_ipa_update_tx_stats(struct wlan_objmgr_pdev *pdev, uint64_t sta_tx,
 			      uint64_t ap_tx)
 {
 	ipa_update_tx_stats(pdev, sta_tx, ap_tx);
+}
+
+void ucfg_ipa_flush_pending_vdev_events(struct wlan_objmgr_pdev *pdev,
+					uint8_t vdev_id)
+{
+	ipa_flush_pending_vdev_events(pdev, vdev_id);
 }

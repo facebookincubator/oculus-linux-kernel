@@ -113,6 +113,39 @@ static void __gsi_config_gen_irq(int ee, uint32_t mask, uint32_t val)
 			GSI_EE_n_CNTXT_GSI_IRQ_EN_OFFS(ee));
 }
 
+static void gsi_get_rp_wp(unsigned long chan_hdl,
+	uint32_t *rp, uint32_t *wp)
+{
+	struct gsi_chan_ctx *ctx;
+	int ee;
+
+	if (!gsi_ctx) {
+		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
+		return;
+	}
+
+	if (chan_hdl >= gsi_ctx->max_ch) {
+		GSIERR("bad params, can't read rp and wp");
+		return;
+	}
+
+	ctx = &gsi_ctx->chan[chan_hdl];
+	ee = gsi_ctx->per.ee;
+	if (ctx->props.prot == GSI_CHAN_PROT_WDI3) {
+		*rp = gsi_readl(gsi_ctx->base +
+			GSI_EE_n_GSI_CH_k_RE_FETCH_READ_PTR_OFFS(chan_hdl,
+				gsi_ctx->per.ee));
+		*wp = gsi_readl(gsi_ctx->base +
+			GSI_EE_n_GSI_CH_k_RE_FETCH_WRITE_PTR_OFFS(chan_hdl,
+				gsi_ctx->per.ee));
+	} else {
+		*rp = gsi_readl(gsi_ctx->base +
+			GSI_EE_n_GSI_CH_k_CNTXT_4_OFFS(ctx->props.ch_id, ee));
+		*wp = gsi_readl(gsi_ctx->base +
+			GSI_EE_n_GSI_CH_k_CNTXT_6_OFFS(ctx->props.ch_id, ee));
+	}
+}
+
 static void gsi_channel_state_change_wait(unsigned long chan_hdl,
 	struct gsi_chan_ctx *ctx,
 	uint32_t tm, enum gsi_ch_cmd_opcode op)
@@ -126,6 +159,7 @@ static void gsi_channel_state_change_wait(unsigned long chan_hdl,
 	enum gsi_chan_state curr_state = GSI_CHAN_STATE_NOT_ALLOCATED;
 	int stop_in_proc_retry = 0;
 	int stop_retry = 0;
+	uint32_t rp, wp;
 
 	/*
 	 * Start polling the GSI channel for
@@ -207,15 +241,24 @@ static void gsi_channel_state_change_wait(unsigned long chan_hdl,
 			return;
 		}
 
+		gsi_get_rp_wp(chan_hdl, &rp, &wp);
 		GSIDBG("GSI wait on chan_hld=%lu irqtyp=%u state=%u intr=%u\n",
 			chan_hdl,
 			type,
 			ctx->state,
 			gsi_pending_intr);
+		GSIDBG("rp=%u wp=%u\n", rp, wp);
 	}
 
-	GSIDBG("invalidating the channel state when timeout happens\n");
-	ctx->state = curr_state;
+	val = gsi_readl(gsi_ctx->base +
+			GSI_EE_n_GSI_CH_k_CNTXT_0_OFFS(chan_hdl,
+				gsi_ctx->per.ee));
+	ctx->state = (val &
+		GSI_EE_n_GSI_CH_k_CNTXT_0_CHSTATE_BMSK) >>
+		GSI_EE_n_GSI_CH_k_CNTXT_0_CHSTATE_SHFT;
+	GSIDBG("Channel state change timeout, curr ch_state=%d\n",
+		ctx->state);
+	GSI_ASSERT();
 }
 
 static void gsi_handle_ch_ctrl(int ee)
@@ -534,9 +577,14 @@ static void gsi_process_chan(struct gsi_xfer_compl_evt *evt,
 			ch_ctx->ring.rp_local = rp;
 		}
 
-
-		/* the element at RP is also processed */
-		gsi_incr_ring_rp(&ch_ctx->ring);
+		/*
+		 * Increment RP local only in polling context to avoid
+		 * sys len mismatch.
+		 */
+		if (!(callback && ch_ctx->props.dir ==
+					GSI_CHAN_DIR_FROM_GSI))
+			/* the element at RP is also processed */
+			gsi_incr_ring_rp(&ch_ctx->ring);
 
 		ch_ctx->ring.rp = ch_ctx->ring.rp_local;
 		rp_idx = gsi_find_idx_from_addr(&ch_ctx->ring, rp);
@@ -546,11 +594,20 @@ static void gsi_process_chan(struct gsi_xfer_compl_evt *evt,
 		notify->veid = evt->veid;
 	}
 
-	ch_ctx->stats.completed++;
 
 	WARN_ON(!ch_ctx->user_data[rp_idx].valid);
 	notify->xfer_user_data = ch_ctx->user_data[rp_idx].p;
-	ch_ctx->user_data[rp_idx].valid = false;
+	/*
+	 * In suspend just before stopping the channel possible to receive
+	 * the IEOB interrupt and xfer pointer will not be processed in this
+	 * mode and moving channel poll mode. In resume after starting the
+	 * channel will receive the IEOB interrupt and xfer pointer will be
+	 * overwritten. To avoid this process all data in polling context.
+	 */
+	if (!(callback && ch_ctx->props.dir == GSI_CHAN_DIR_FROM_GSI)) {
+		ch_ctx->stats.completed++;
+		ch_ctx->user_data[rp_idx].valid = false;
+	}
 
 	notify->chan_user_data = ch_ctx->props.chan_user_data;
 	notify->evt_id = evt->code;
@@ -569,10 +626,18 @@ static void gsi_process_evt_re(struct gsi_evt_ctx *ctx,
 		struct gsi_chan_xfer_notify *notify, bool callback)
 {
 	struct gsi_xfer_compl_evt *evt;
+	struct gsi_chan_ctx *ch_ctx;
 
 	evt = (struct gsi_xfer_compl_evt *)(ctx->ring.base_va +
 			ctx->ring.rp_local - ctx->ring.base);
 	gsi_process_chan(evt, notify, callback);
+	/*
+	 * Increment RP local only in polling context to avoid
+	 * sys len mismatch.
+	 */
+	ch_ctx = &gsi_ctx->chan[evt->chid];
+	if (callback && ch_ctx->props.dir == GSI_CHAN_DIR_FROM_GSI)
+		return;
 	gsi_incr_ring_rp(&ctx->ring);
 	/* recycle this element */
 	gsi_incr_ring_wp(&ctx->ring);
@@ -746,56 +811,42 @@ static void gsi_handle_general(int ee)
 			GSI_EE_n_CNTXT_GSI_IRQ_CLR_OFFS(ee));
 }
 
-#define GSI_ISR_MAX_ITER 50
-
 static void gsi_handle_irq(void)
 {
 	uint32_t type;
 	int ee = gsi_ctx->per.ee;
-	unsigned long cnt = 0;
 
-	while (1) {
-		if (!gsi_ctx->per.clk_status_cb())
-			break;
-		type = gsi_readl(gsi_ctx->base +
-			GSI_EE_n_CNTXT_TYPE_IRQ_OFFS(ee));
+	if (!gsi_ctx->per.clk_status_cb())
+		return;
 
-		if (!type)
-			break;
+	type = gsi_readl(gsi_ctx->base +
+		GSI_EE_n_CNTXT_TYPE_IRQ_OFFS(ee));
 
-		GSIDBG_LOW("type 0x%x\n", type);
+	if (!type)
+		return;
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_CH_CTRL_BMSK)
-			gsi_handle_ch_ctrl(ee);
+	GSIDBG_LOW("type 0x%x\n", type);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_EV_CTRL_BMSK)
-			gsi_handle_ev_ctrl(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_CH_CTRL_BMSK)
+		gsi_handle_ch_ctrl(ee);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_GLOB_EE_BMSK)
-			gsi_handle_glob_ee(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_EV_CTRL_BMSK)
+		gsi_handle_ev_ctrl(ee);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_IEOB_BMSK)
-			gsi_handle_ieob(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_GLOB_EE_BMSK)
+		gsi_handle_glob_ee(ee);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_INTER_EE_CH_CTRL_BMSK)
-			gsi_handle_inter_ee_ch_ctrl(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_IEOB_BMSK)
+		gsi_handle_ieob(ee);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_INTER_EE_EV_CTRL_BMSK)
-			gsi_handle_inter_ee_ev_ctrl(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_INTER_EE_CH_CTRL_BMSK)
+		gsi_handle_inter_ee_ch_ctrl(ee);
 
-		if (type & GSI_EE_n_CNTXT_TYPE_IRQ_GENERAL_BMSK)
-			gsi_handle_general(ee);
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_INTER_EE_EV_CTRL_BMSK)
+		gsi_handle_inter_ee_ev_ctrl(ee);
 
-		if (unlikely(++cnt > GSI_ISR_MAX_ITER)) {
-			/*
-			 * Max number of spurious interrupts from hardware.
-			 * Unexpected hardware state.
-			 */
-			GSIERR("Too many spurious interrupt from GSI HW\n");
-			GSI_ASSERT();
-		}
-
-	}
+	if (type & GSI_EE_n_CNTXT_TYPE_IRQ_GENERAL_BMSK)
+		gsi_handle_general(ee);
 }
 
 static irqreturn_t gsi_isr(int irq, void *ctxt)

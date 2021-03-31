@@ -360,8 +360,8 @@ wl_cfg80211_is_policy_config_allowed(struct bcm_cfg80211 *cfg)
 
 	mutex_lock(&cfg->if_sync);
 
-	sta_assoc_state = (wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg)) ||
-		wl_get_drv_status(cfg, CONNECTING, bcmcfg_to_prmry_ndev(cfg)));
+	sta_assoc_state = (wl_get_drv_status_all(cfg, CONNECTED) ||
+		wl_get_drv_status_all(cfg, CONNECTING));
 	active_sec_iface = wl_cfg80211_get_sec_iface(cfg);
 	p2p_disc_on = wl_get_p2p_status(cfg, SCANNING);
 
@@ -1533,6 +1533,36 @@ wl_get_nl80211_band(u32 wl_band)
 	return err;
 }
 
+bool
+wl_is_sta_connected(struct bcm_cfg80211 *cfg)
+{
+	bool sta_connected = false;
+
+#ifdef WL_DUAL_APSTA
+	if (wl_get_drv_status_all(cfg, CONNECTED) >= 2) {
+		/* If both STA interfaces are connected return failure */
+		return false;
+	} else {
+		struct net_info *iter, *next;
+
+		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+		for_each_ndev(cfg, iter, next) {
+			GCC_DIAGNOSTIC_POP();
+			if ((iter->ndev) && (wl_get_drv_status(cfg, CONNECTED, iter->ndev)) &&
+				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
+				return true;
+			}
+		}
+	}
+#else
+	if (wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
+		return true;
+	}
+#endif /* WL_DUAL_APSTA */
+
+	return sta_connected;
+}
+
 s32
 wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_channel *chan,
@@ -1543,14 +1573,20 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	u32 bw = WL_CHANSPEC_BW_20;
 	s32 err = BCME_OK;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-#if defined(CUSTOM_SET_CPUCORE) || defined(APSTA_RESTRICTED_CHANNEL)
+#if defined(CUSTOM_SET_CPUCORE) || defined(APSTA_RESTRICTED_CHANNEL) || \
+	defined(SUPPORT_AP_INIT_BWCONF)
 	dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
 #endif /* CUSTOM_SET_CPUCORE || APSTA_RESTRICTED_CHANNEL */
+#if defined(SUPPORT_AP_INIT_BWCONF)
+	u32 configured_bw;
+#endif /* SUPPORT_AP_INIT_BWCONF */
 
 	dev = ndev_to_wlc_ndev(dev, cfg);
 	chspec = wl_freq_to_chanspec(chan->center_freq);
-	WL_ERR(("netdev_ifidx(%d), chan_type(%d) target channel(%d) chan->center_freq (%d)\n",
-		dev->ifindex, channel_type, CHSPEC_CHANNEL(chspec), chan->center_freq));
+	WL_ERR(("netdev_ifidx(%d) chspec(%x) chan_type(%d) "
+		" target channel(%d) chan->center_freq (%d)\n",
+		dev->ifindex, chspec, channel_type,
+		CHSPEC_CHANNEL(chspec), chan->center_freq));
 
 		if (IS_P2P_GO(dev->ieee80211_ptr) && (CHSPEC_IS6G(chspec))) {
 			WL_ERR(("P2P GO not allowed on 6G\n"));
@@ -1616,11 +1652,28 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 		return err;
 	}
 
+#if defined(SUPPORT_AP_INIT_BWCONF)
+#if defined(XRAPI)
+	if (CHSPEC_IS2G(chspec)) {
+		/* SoftAP in 2G is not allowed */
+		err = BCME_EPERM;
+		WL_ERR(("Bring up softAP in 2G is not allowed! \n"));
+		return err;
+	}
+#endif /* XRAPI */
+	/* Update BW for 5G and 6G SoftAP if BW is configured */
+	configured_bw = wl_update_configured_bw(wl_get_configured_ap_bw(dhd));
+	if (configured_bw != INVCHANSPEC) {
+		bw = configured_bw;
+	}
+#endif /* SUPPORT_AP_INIT_BWCONF */
+
 	/* In case of 5G downgrade BW to 80MHz as 160MHz channels falls in DFS */
 	if (CHSPEC_IS5G(chspec) && (bw == WL_CHANSPEC_BW_160)) {
 		bw = WL_CHANSPEC_BW_80;
 	}
 set_channel:
+	WL_DBG(("bw = %x, chspec =%x, chspec band = %x\n", bw, chspec, CHSPEC_BAND(chspec)));
 	cur_chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
 		bw, CHSPEC_BAND(chspec));
 #ifdef WL_6G_BAND
@@ -1657,8 +1710,7 @@ set_channel:
 				if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP &&
 					DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_HOSTAP_MODE) &&
 					(CHSPEC_IS2G(chspec)) &&
-					!wl_get_drv_status(cfg, CONNECTED,
-						bcmcfg_to_prmry_ndev(cfg))) {
+					!wl_is_sta_connected(cfg)) {
 					WL_DBG(("Disabling frameburst on "
 						"stand-alone 2GHz SoftAP\n"));
 					wl_cfg80211_set_frameburst(cfg, FALSE);
@@ -4312,11 +4364,10 @@ wl_update_sta_chanspec_info(struct bcm_cfg80211 *cfg, struct net_device *ndev, c
 	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 	u8 *iovar_buf = NULL;
 	u16 iovar_buf_len = WLC_IOCTL_MEDLEN;
-	sta_info_v4_t *sta4;
+	wlcfg_sta_info_t *sta;
 	chanspec_t chanspec = 0;
 	s32 ifidx;
 	s32 ret;
-	u16 version;
 
 	ifidx = dhd_net2idx(dhdp->info, ndev);
 	if (ifidx < 0) {
@@ -4338,26 +4389,13 @@ wl_update_sta_chanspec_info(struct bcm_cfg80211 *cfg, struct net_device *ndev, c
 		goto exit;
 	}
 
-	sta4 = (sta_info_v4_t *)iovar_buf;
-	version = dtoh16(sta4->ver);
-	if (version < WL_STA_VER_4) {
-		WL_ERR(("Unsupported sta info ver:%d\n", dtoh16(sta4->ver)));
+	sta = (wlcfg_sta_info_t *)iovar_buf;
+	if (!IS_STA_INFO_VER(sta)) {
+		WL_ERR(("Unsupported sta info ver:%d\n", dtoh16(sta->ver)));
 		goto exit;
 	}
 
-	if (version == WL_STA_VER_4) {
-		chanspec = dtoh16(sta4->chanspec);
-	} else if (version == WL_STA_VER_5) {
-		sta_info_v5_t *sta5 = (sta_info_v5_t *)iovar_buf;
-		chanspec = dtoh16(sta5->chanspec);
-	} else if (version == WL_STA_VER_6) {
-		sta_info_v6_t *sta6 = (sta_info_v6_t *)iovar_buf;
-		chanspec = dtoh16(sta6->chanspec);
-	} else {
-		WL_ERR(("unsupported STA Info version\n"));
-		goto exit;
-	}
-
+	chanspec = dtoh16(sta->chanspec);
 	dhd_update_sta_chanspec_info(dhdp, ifidx, addr, chanspec);
 
 	WL_INFORM_MEM(("[%s] updated client sta info. chanspec:0x%x\n",
@@ -6437,8 +6475,7 @@ wl_set_ap_bw(struct net_device *dev, u32 bw, char *ifname)
 	}
 
 	if ((DHD_OPMODE_STA_SOFTAP_CONCURR(dhdp) &&
-		wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) ||
-		wl_cfgnan_is_enabled(cfg)) {
+		wl_is_sta_connected(cfg)) || wl_cfgnan_is_enabled(cfg)) {
 		WL_ERR(("BW control in concurrent mode is not supported\n"));
 		return BCME_BUSY;
 	}
@@ -6613,3 +6650,104 @@ wl_restore_ap_bw(struct bcm_cfg80211 *cfg)
 	}
 }
 #endif /* SUPPORT_AP_BWCTRL */
+
+#ifdef WL_DUAL_APSTA
+static void
+wl_dualsta_enable_roam(struct bcm_cfg80211 *cfg,
+		struct net_device *dev, bool enable)
+{
+	struct net_info *iter, *next;
+	bool roam_val = false;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	for_each_ndev(cfg, iter, next) {
+		GCC_DIAGNOSTIC_POP();
+		if ((iter->ndev) &&
+				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
+			if (iter->ndev == dev) {
+				/* We are interested in state of other interface */
+				continue;
+			}
+
+			if (!enable && !(wl_get_drv_status(cfg, CONNECTED, iter->ndev))) {
+				/* For roam disable, need to look only for STA connected case */
+				continue;
+			}
+
+			roam_val = enable ? FALSE : TRUE;
+			wldev_iovar_setint(iter->ndev, "roam_off", roam_val);
+			wldev_iovar_setint(dev, "roam_off", roam_val);
+			WL_INFORM_MEM(("[DUALSTA] roam %s for %s, %s\n",
+				enable ? "enabled" : "disabled",
+				iter->ndev->name, dev->name));
+			return;
+		}
+	}
+}
+
+void
+wl_cfgvif_dualsta_roam_config(struct bcm_cfg80211 *cfg, struct net_device *dev,
+		wl_assoc_state_t state)
+{
+	u32 connected_ifaces = wl_get_drv_status_all(cfg, CONNECTED);
+
+	if (!IS_STA_IFACE(dev->ieee80211_ptr)) {
+		WL_DBG(("non-sta iface. ignore.\n"));
+		return;
+	}
+
+	if ((state == WL_STATE_ASSOCIATING) &&
+			(connected_ifaces >= 1))  {
+		/* If we already have another STA connected, disable ROAM
+		 * on both STA interfaces. Enable it back from linkdown or
+		 * setPrimarySta context.
+		 */
+		wl_dualsta_enable_roam(cfg, dev, FALSE);
+
+	} else if (state == WL_STATE_LINKDOWN) {
+		/* If link down came for STA interface and there are no two active STA
+		 * connections, enable back the roam
+		 */
+		if (connected_ifaces <= 1) {
+			wl_dualsta_enable_roam(cfg, dev, TRUE);
+		}
+	}
+}
+#endif /* WL_DUAL_APSTA */
+
+#ifdef SUPPORT_AP_INIT_BWCONF
+uint32
+wl_get_configured_ap_bw(dhd_pub_t *dhdp)
+{
+	WL_DBG(("%s: Confitured SoftAP BW is %d\n", __FUNCTION__, dhdp->wl_softap_bw));
+
+	return dhdp->wl_softap_bw;
+}
+
+uint32
+wl_update_configured_bw(uint32 bw)
+{
+	uint32 configured_bw = INVCHANSPEC;
+
+	switch (bw)
+	{
+	case 20:
+		configured_bw = WL_CHANSPEC_BW_20;
+		break;
+	case 40:
+		configured_bw = WL_CHANSPEC_BW_40;
+		break;
+	case 80:
+		configured_bw = WL_CHANSPEC_BW_80;
+		break;
+	case 160:
+		configured_bw = WL_CHANSPEC_BW_160;
+		break;
+	default:
+		/* wl_softap_bw have invalid BW, use default BW for each band */
+		WL_ERR(("BW %d is not allowed, Use default BW \n", bw));
+	}
+
+	return configured_bw;
+}
+#endif /* SUPPORT_AP_INIT_BWCONF */

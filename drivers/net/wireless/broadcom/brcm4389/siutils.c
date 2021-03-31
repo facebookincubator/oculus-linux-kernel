@@ -962,7 +962,8 @@ si_muxenab(si_t *sih, uint32 w)
 		}
 		break;
 
-case BCM4385_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
+	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		if (w & MUXENAB_DEF_UART_MASK) {
 			uint32 uart_rx = 0, uart_tx = 0;
@@ -1236,6 +1237,7 @@ si_gpio_enable(si_t *sih, uint32 mask)
 	case BCM4369_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 		fnsel = CC_FNSEL_SAMEASPIN;
@@ -1283,6 +1285,7 @@ BCMPOSTTRAPFN(si_gci_host_wake_gpio_enable)(si_t *sih, uint8 gpio, bool state)
 	case BCM4369_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -1306,6 +1309,7 @@ si_gci_time_sync_gpio_enable(si_t *sih, uint8 gpio, bool state)
 	case BCM4362_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -1338,6 +1342,7 @@ si_gci_time_sync_gpio_init(si_t *sih)
 	case BCM4362_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -1514,6 +1519,7 @@ si_enable_device_wake(si_t *sih, uint8 *wake_mask, uint8 *cur_status)
 	case BCM4369_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -2821,6 +2827,11 @@ si_doattach(si_info_t *sii, uint devid, osl_t *osh, volatile void *regs,
 			}
 		}
 
+#ifndef SOCI_NCI_BUS
+		/* If !SOCI_NCI_BUS, nci_scan(sih) is always 0. */
+		err_at = 6;
+		goto exit;
+#else
 		if ((sii->numcores = nci_scan(sih)) == 0u) {
 			err_at = 6;
 			goto exit;
@@ -2829,6 +2840,7 @@ si_doattach(si_info_t *sii, uint devid, osl_t *osh, volatile void *regs,
 				nci_dump_erom(sii->nci_info);
 			}
 		}
+#endif /* !SOCI_NCI_BUS */
 	} else {
 
 		if (si_alloc_coresinfo(sii, osh, cc) == NULL) {
@@ -4540,7 +4552,15 @@ si_chip_hostif(const si_t *sih)
 			hosti = CHIP_HOSTIF_PCIEMODE;
 		}
 		break;
-
+	case BCM4381_CHIP_GRPID:
+		if (CST4381_CHIPMODE_PCIE(sih->chipst)) {
+			hosti = CHIP_HOSTIF_PCIEMODE;
+		} else if (CST4381_CHIPMODE_SDIO(sih->chipst)) {
+			hosti = CHIP_HOSTIF_SDIOMODE;
+		} else if (CST4381_CHIPMODE_USB(sih->chipst)) {
+			hosti = CHIP_HOSTIF_USBMODE;
+		}
+		break;
 	default:
 		break;
 	}
@@ -6968,7 +6988,8 @@ sysmem_banksize(const si_info_t *sii, sysmemregs_t *regs, uint8 idx)
 	return banksize;
 }
 
-#define SI_COREINFO_DELAY_USEC	10u
+#define SI_CORE_RESET_DELAY_USEC	10u
+#define SI_CORE_RESET_RETRY		5u
 
 /** Return the RAM size of the SYSMEM core */
 uint32
@@ -6984,6 +7005,7 @@ si_sysmem_size(si_t *sih)
 	uint memsize = 0;
 	uint8 i;
 	uint nb, nrb;
+	uint32 retry = SI_CORE_RESET_RETRY;
 
 	SI_MSG_DBG_REG(("%s: Enter\n", __FUNCTION__));
 	/* Block ints and save current core */
@@ -6991,17 +7013,34 @@ si_sysmem_size(si_t *sih)
 	origidx = si_coreidx(sih);
 
 	/* Switch to SYSMEM core */
-	if (!(regs = si_setcore(sih, SYSMEM_CORE_ID, 0)))
+	if (!(regs = si_setcore(sih, SYSMEM_CORE_ID, 0))) {
+		SI_ERROR(("%s: si_setcore SYSMEM_CORE_ID failed\n", __FUNCTION__));
 		goto done;
+	}
 
-	/* Get info for determining size */
-	if (!(wasup = si_iscoreup(sih)))
-		si_core_reset(sih, 0, 0);
+	while (retry--) {
+		/* retry if core is not up */
+		if (!(wasup = si_iscoreup(sih))) {
+			SI_PRINT(("%s: core not up, do si_core_reset, retry:%d\n",
+				__FUNCTION__, retry));
+			si_core_reset(sih, 0, 0);
+			/* Add some delay after reset */
+			OSL_DELAY(SI_CORE_RESET_DELAY_USEC);
+		} else {
+			break;
+		}
+	}
 
-	/* Add some delay before accessing the coreinfo */
-	OSL_DELAY(SI_COREINFO_DELAY_USEC);
+	if (retry == 0) {
+		SI_ERROR(("%s: failed\n", __FUNCTION__));
+		goto restore_core;
+	}
 
 	coreinfo = R_REG(sii->osh, &regs->coreinfo);
+	if (coreinfo == (uint32)-1) {
+		SI_ERROR(("%s: invalid coreinfo:0x%x\n", __FUNCTION__, coreinfo));
+		goto restore_core;
+	}
 
 	/* Number of ROM banks, SW need to skip the ROM banks. */
 	if (si_corerev(sih) < 12) {
@@ -7018,6 +7057,7 @@ si_sysmem_size(si_t *sih)
 	for (i = 0; i < nb; i++)
 		memsize += sysmem_banksize(sii, regs, i + nrb);
 
+restore_core:
 	si_setcoreidx(sih, origidx);
 
 done:
@@ -8246,6 +8286,7 @@ si_is_sprom_available(si_t *sih)
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		return (sih->chipst & CST4387_SPROM_PRESENT) != 0;
+	case BCM4381_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 	case BCM4397_CHIP_GRPID:
@@ -8287,6 +8328,7 @@ si_is_otp_disabled(const si_t *sih)
 	case BCM4362_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -8361,6 +8403,7 @@ si_cis_source(const si_t *sih)
 		if (sih->chipst & CST4387_SPROM_PRESENT)
 			return CIS_SROM;
 		return CIS_OTP;
+	case BCM4381_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 	case BCM4397_CHIP_GRPID:
@@ -8385,6 +8428,7 @@ uint16 si_fabid(si_t *sih)
 		case BCM4362_CHIP_GRPID:
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
+		case BCM4381_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -8502,6 +8546,7 @@ si_update_masks(si_t *sih)
 	case BCM4362_CHIP_GRPID:
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -9058,6 +9103,7 @@ si_pll_closeloop(si_t *sih)
 		case BCM4362_CHIP_GRPID:
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
+		case BCM4381_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -9937,6 +9983,7 @@ si_chipcap_sdio_ate_only(const si_t *sih)
 		break;
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:

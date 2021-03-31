@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,7 +22,11 @@
 #include <linux/slab.h>
 
 #ifdef CONFIG_PLD_SNOC_ICNSS
+#ifdef CONFIG_PLD_SNOC_ICNSS2
+#include <soc/qcom/icnss2.h>
+#else
 #include <soc/qcom/icnss.h>
+#endif
 #endif
 
 #include "pld_internal.h"
@@ -30,6 +34,45 @@
 #include "osif_psoc_sync.h"
 
 #ifdef CONFIG_PLD_SNOC_ICNSS
+/**
+ * pld_snoc_idle_restart_cb() - Perform idle restart
+ * @pdev: platform device
+ *
+ * This function will be called if there is an idle restart request
+ *
+ * Return: int
+ **/
+static int pld_snoc_idle_restart_cb(struct device *dev)
+{
+	struct pld_context *pld_context;
+
+	pld_context = pld_get_global_context();
+	if (pld_context->ops->idle_restart)
+		return pld_context->ops->idle_restart(dev, PLD_BUS_TYPE_SNOC);
+
+	return -ENODEV;
+}
+
+/**
+ * pld_snoc_idle_shutdown_cb() - Perform idle shutdown
+ * @pdev: PCIE device
+ * @id: PCIE device ID
+ *
+ * This function will be called if there is an idle shutdown request
+ *
+ * Return: int
+ */
+static int pld_snoc_idle_shutdown_cb(struct device *dev)
+{
+	struct pld_context *pld_context;
+
+	pld_context = pld_get_global_context();
+	if (pld_context->ops->shutdown)
+		return pld_context->ops->idle_shutdown(dev, PLD_BUS_TYPE_SNOC);
+
+	return -ENODEV;
+}
+
 /**
  * pld_snoc_probe() - Probe function for platform driver
  * @dev: device
@@ -240,12 +283,25 @@ static int pld_snoc_resume_noirq(struct device *dev)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static int pld_update_hang_evt_data(struct icnss_uevent_hang_data *evt_data,
+				    struct pld_uevent_data *data)
+{
+	if (!evt_data || !data)
+		return -EINVAL;
+
+	data->hang_data.hang_event_data = evt_data->hang_event_data;
+	data->hang_data.hang_event_data_len = evt_data->hang_event_data_len;
+	return 0;
+}
+
 static int pld_snoc_uevent(struct device *dev,
 			   struct icnss_uevent_data *uevent)
 {
 	struct pld_context *pld_context;
-	struct icnss_uevent_fw_down_data *uevent_data = NULL;
-	struct pld_uevent_data data;
+	struct icnss_uevent_fw_down_data *fw_down_data = NULL;
+	struct icnss_uevent_hang_data *hang_data = NULL;
+	struct pld_uevent_data data = {0};
 
 	pld_context = pld_get_global_context();
 	if (!pld_context)
@@ -264,9 +320,16 @@ static int pld_snoc_uevent(struct device *dev,
 	case ICNSS_UEVENT_FW_DOWN:
 		if (!uevent->data)
 			return -EINVAL;
-		uevent_data = (struct icnss_uevent_fw_down_data *)uevent->data;
+		fw_down_data = (struct icnss_uevent_fw_down_data *)uevent->data;
 		data.uevent = PLD_FW_DOWN;
-		data.fw_down.crashed = uevent_data->crashed;
+		data.fw_down.crashed = fw_down_data->crashed;
+		break;
+	case ICNSS_UEVENT_HANG_DATA:
+		if (!uevent->data)
+			return -EINVAL;
+		hang_data = (struct icnss_uevent_hang_data *)uevent->data;
+		data.uevent = PLD_FW_HANG_EVENT;
+		pld_update_hang_evt_data(hang_data, &data);
 		break;
 	default:
 		goto out;
@@ -276,6 +339,44 @@ static int pld_snoc_uevent(struct device *dev,
 out:
 	return 0;
 }
+#else
+static int pld_snoc_uevent(struct device *dev,
+			   struct icnss_uevent_data *uevent)
+{
+	struct pld_context *pld_context;
+	struct icnss_uevent_fw_down_data *fw_down_data = NULL;
+	struct pld_uevent_data data = {0};
+
+	pld_context = pld_get_global_context();
+	if (!pld_context)
+		return -EINVAL;
+
+	if (!pld_context->ops->uevent)
+		goto out;
+
+	if (!uevent)
+		return -EINVAL;
+
+	switch (uevent->uevent) {
+	case ICNSS_UEVENT_FW_CRASHED:
+		data.uevent = PLD_FW_CRASHED;
+		break;
+	case ICNSS_UEVENT_FW_DOWN:
+		if (!uevent->data)
+			return -EINVAL;
+		fw_down_data = (struct icnss_uevent_fw_down_data *)uevent->data;
+		data.uevent = PLD_FW_DOWN;
+		data.fw_down.crashed = fw_down_data->crashed;
+		break;
+	default:
+		goto out;
+	}
+
+	pld_context->ops->uevent(dev, &data);
+out:
+	return 0;
+}
+#endif
 
 #ifdef MULTI_IF_NAME
 #define PLD_SNOC_OPS_NAME "pld_snoc_" MULTI_IF_NAME
@@ -295,6 +396,8 @@ struct icnss_driver_ops pld_snoc_ops = {
 	.suspend_noirq = pld_snoc_suspend_noirq,
 	.resume_noirq = pld_snoc_resume_noirq,
 	.uevent = pld_snoc_uevent,
+	.idle_restart  = pld_snoc_idle_restart_cb,
+	.idle_shutdown = pld_snoc_idle_shutdown_cb,
 };
 
 /**

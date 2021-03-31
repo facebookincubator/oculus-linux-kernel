@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,11 +39,9 @@ QDF_STATUS pmo_allocate_ctx(void)
 	/* allocate offload mgr ctx */
 	gp_pmo_ctx = (struct wlan_pmo_ctx *)qdf_mem_malloc(
 			sizeof(*gp_pmo_ctx));
-	if (!gp_pmo_ctx) {
-		pmo_err("unable to allocate pmo_ctx");
-		QDF_ASSERT(0);
+	if (!gp_pmo_ctx)
 		return QDF_STATUS_E_NOMEM;
-	}
+
 	qdf_spinlock_create(&gp_pmo_ctx->lock);
 
 	return QDF_STATUS_SUCCESS;
@@ -111,6 +109,10 @@ static void wlan_pmo_wow_pulse_init_cfg(struct wlan_objmgr_psoc *psoc,
 			cfg_get(psoc, CFG_PMO_WOW_PULSE_HIGH);
 	psoc_cfg->wow_pulse_interval_low =
 			cfg_get(psoc, CFG_PMO_WOW_PULSE_LOW);
+	psoc_cfg->wow_pulse_repeat_count =
+			cfg_get(psoc, CFG_PMO_WOW_PULSE_REPEAT);
+	psoc_cfg->wow_pulse_init_state =
+			cfg_get(psoc, CFG_PMO_WOW_PULSE_INIT);
 }
 #else
 static void wlan_pmo_wow_pulse_init_cfg(struct wlan_objmgr_psoc *psoc,
@@ -183,14 +185,13 @@ static void wlan_pmo_init_cfg(struct wlan_objmgr_psoc *psoc,
 	psoc_cfg->sta_dynamic_dtim = cfg_get(psoc, CFG_PMO_ENABLE_DYNAMIC_DTIM);
 	psoc_cfg->sta_mod_dtim = cfg_get(psoc, CFG_PMO_ENABLE_MODULATED_DTIM);
 	psoc_cfg->enable_mc_list = cfg_get(psoc, CFG_PMO_MC_ADDR_LIST_ENABLE);
-	psoc_cfg->power_save_mode = cfg_get(psoc, CFG_PMO_POWERSAVE_OFFLOAD);
+	psoc_cfg->power_save_mode = cfg_get(psoc, CFG_PMO_POWERSAVE_MODE);
+	psoc_cfg->is_mod_dtim_on_sys_suspend_enabled =
+			cfg_get(psoc, CFG_PMO_MOD_DTIM_ON_SYS_SUSPEND);
+	psoc_cfg->default_power_save_mode = psoc_cfg->power_save_mode;
 	psoc_cfg->max_ps_poll = cfg_get(psoc, CFG_PMO_MAX_PS_POLL);
 
 	psoc_cfg->wow_enable = cfg_get(psoc, CFG_PMO_WOW_ENABLE);
-	psoc_cfg->wowlan_deauth_enable =
-			cfg_get(psoc, CFG_PMO_WOWLAN_DEAUTH_ENABLE);
-	psoc_cfg->wowlan_disassoc_enable =
-			cfg_get(psoc, CFG_PMO_WOWLAN_DISASSOC_ENABLE);
 
 	wlan_extwow_init_cfg(psoc, psoc_cfg);
 	psoc_cfg->apf_enable = cfg_get(psoc, CFG_PMO_APF_ENABLE);
@@ -386,24 +387,24 @@ void *pmo_core_psoc_get_hif_handle(struct wlan_objmgr_psoc *psoc)
 	return hif_hdl;
 }
 
-void pmo_core_psoc_set_txrx_handle(struct wlan_objmgr_psoc *psoc,
-				   void *txrx_hdl)
+void pmo_core_psoc_set_txrx_pdev_id(struct wlan_objmgr_psoc *psoc,
+				    uint8_t txrx_pdev_id)
 {
 	struct pmo_psoc_priv_obj *psoc_ctx;
 
 	pmo_psoc_with_ctx(psoc, psoc_ctx) {
-		psoc_ctx->txrx_hdl = txrx_hdl;
+		psoc_ctx->txrx_pdev_id = txrx_pdev_id;
 	}
 }
 
-void *pmo_core_psoc_get_txrx_handle(struct wlan_objmgr_psoc *psoc)
+uint8_t pmo_core_psoc_get_txrx_handle(struct wlan_objmgr_psoc *psoc)
 {
-	void *txrx_hdl = NULL;
+	uint8_t txrx_pdev_id = OL_TXRX_INVALID_PDEV_ID;
 	struct pmo_psoc_priv_obj *psoc_ctx;
 
 	pmo_psoc_with_ctx(psoc, psoc_ctx) {
-		txrx_hdl = psoc_ctx->txrx_hdl;
+		txrx_pdev_id = psoc_ctx->txrx_pdev_id;
 	}
 
-	return txrx_hdl;
+	return txrx_pdev_id;
 }

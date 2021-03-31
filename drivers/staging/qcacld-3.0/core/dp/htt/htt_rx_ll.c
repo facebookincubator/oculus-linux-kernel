@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -124,7 +124,7 @@ static inline qdf_nbuf_t htt_rx_netbuf_pop(htt_pdev_handle pdev)
 	idx++;
 	idx &= pdev->rx_ring.size_mask;
 	pdev->rx_ring.sw_rd_idx.msdu_payld = idx;
-	pdev->rx_ring.fill_cnt--;
+	qdf_atomic_dec(&pdev->rx_ring.fill_cnt);
 	return msdu;
 }
 
@@ -483,7 +483,7 @@ moretofill:
 		}
 
 		pdev->rx_ring.buf.paddrs_ring[idx] = paddr_marked;
-		pdev->rx_ring.fill_cnt++;
+		qdf_atomic_inc(&pdev->rx_ring.fill_cnt);
 
 		num--;
 		idx++;
@@ -767,7 +767,8 @@ htt_rx_mpdu_desc_retry_ll(htt_pdev_handle pdev, void *mpdu_desc)
 }
 
 static uint16_t htt_rx_mpdu_desc_seq_num_ll(htt_pdev_handle pdev,
-					    void *mpdu_desc)
+					    void *mpdu_desc,
+					    bool update_seq_num)
 {
 	struct htt_host_rx_desc_base *rx_desc =
 		(struct htt_host_rx_desc_base *)mpdu_desc;
@@ -1396,6 +1397,40 @@ int htt_rx_msdu_buff_in_order_replenish(htt_pdev_handle pdev, uint32_t num)
 	return filled;
 }
 
+#if defined(WLAN_FEATURE_TSF_PLUS) && !defined(CONFIG_HL_SUPPORT)
+/**
+ * htt_rx_tail_msdu_timestamp() - update tail msdu tsf64 timestamp
+ * @tail_rx_desc: pointer to tail msdu descriptor
+ * @timestamp_rx_desc: pointer to timestamp msdu descriptor
+ *
+ * Return: none
+ */
+static inline void htt_rx_tail_msdu_timestamp(
+			struct htt_host_rx_desc_base *tail_rx_desc,
+			struct htt_host_rx_desc_base *timestamp_rx_desc)
+{
+	if (tail_rx_desc) {
+		if (!timestamp_rx_desc) {
+			tail_rx_desc->ppdu_end.wb_timestamp_lower_32 = 0;
+			tail_rx_desc->ppdu_end.wb_timestamp_upper_32 = 0;
+		} else {
+			if (timestamp_rx_desc != tail_rx_desc) {
+				tail_rx_desc->ppdu_end.wb_timestamp_lower_32 =
+			timestamp_rx_desc->ppdu_end.wb_timestamp_lower_32;
+				tail_rx_desc->ppdu_end.wb_timestamp_upper_32 =
+			timestamp_rx_desc->ppdu_end.wb_timestamp_upper_32;
+			}
+		}
+	}
+}
+#else
+static inline void htt_rx_tail_msdu_timestamp(
+			struct htt_host_rx_desc_base *tail_rx_desc,
+			struct htt_host_rx_desc_base *timestamp_rx_desc)
+{
+}
+#endif
+
 static int
 htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 				qdf_nbuf_t rx_ind_msg,
@@ -1409,12 +1444,13 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 	unsigned int msdu_count = 0;
 	uint8_t offload_ind, frag_ind;
 	uint8_t peer_id;
-	struct htt_host_rx_desc_base *rx_desc;
+	struct htt_host_rx_desc_base *rx_desc = NULL;
 	enum rx_pkt_fate status = RX_PKT_FATE_SUCCESS;
 	qdf_dma_addr_t paddr;
 	qdf_mem_info_t mem_map_table = {0};
 	int ret = 1;
 	bool ipa_smmu = false;
+	struct htt_host_rx_desc_base *timestamp_rx_desc = NULL;
 
 	HTT_ASSERT1(htt_rx_in_order_ring_elems(pdev) != 0);
 
@@ -1522,6 +1558,10 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 		/* cache consistency has been taken care of by qdf_nbuf_unmap */
 		rx_desc = htt_rx_desc(msdu);
 		htt_rx_extract_lro_info(msdu, rx_desc);
+
+		/* check if the msdu is last mpdu */
+		if (rx_desc->attention.last_mpdu)
+			timestamp_rx_desc = rx_desc;
 
 		/*
 		 * Make the netbuf's data pointer point to the payload rather
@@ -1639,6 +1679,8 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 			qdf_nbuf_set_next(msdu, NULL);
 		}
 	}
+
+	htt_rx_tail_msdu_timestamp(rx_desc, timestamp_rx_desc);
 
 end:
 	return ret;
@@ -2007,7 +2049,8 @@ void htt_rx_fill_ring_count(htt_pdev_handle pdev)
 {
 	int num_to_fill;
 
-	num_to_fill = pdev->rx_ring.fill_level - pdev->rx_ring.fill_cnt;
+	num_to_fill = pdev->rx_ring.fill_level -
+		qdf_atomic_read(&pdev->rx_ring.fill_cnt);
 	htt_rx_ring_fill_n(pdev, num_to_fill /* okay if <= 0 */);
 }
 
@@ -2095,7 +2138,7 @@ int htt_rx_attach(struct htt_pdev_t *pdev)
 		       htt_rx_ring_refill_retry, (void *)pdev,
 		       QDF_TIMER_TYPE_SW);
 
-	pdev->rx_ring.fill_cnt = 0;
+	qdf_atomic_init(&pdev->rx_ring.fill_cnt);
 	pdev->rx_ring.pop_fail_cnt = 0;
 #ifdef DEBUG_DMA_DONE
 	pdev->rx_ring.dbg_ring_idx = 0;

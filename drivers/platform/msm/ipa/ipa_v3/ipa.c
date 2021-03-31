@@ -58,8 +58,8 @@
 
 #define IPA_SUSPEND_BUSY_TIMEOUT (msecs_to_jiffies(10))
 
-#define DEFAULT_MPM_RING_SIZE_UL 6
-#define DEFAULT_MPM_RING_SIZE_DL 16
+#define DEFAULT_MPM_RING_SIZE_UL 64
+#define DEFAULT_MPM_RING_SIZE_DL 64
 #define DEFAULT_MPM_TETH_AGGR_SIZE 24
 #define DEFAULT_MPM_UC_THRESH_SIZE 4
 /*
@@ -6201,6 +6201,7 @@ static void ipa3_load_ipa_fw(struct work_struct *work)
 	if (result) {
 		IPAERR("IPA FW loading process has failed result=%d\n",
 			result);
+		ipa_assert();
 		return;
 	}
 	pr_info("IPA FW loaded successfully\n");

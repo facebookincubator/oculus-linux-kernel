@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,10 +20,6 @@
 #define _DP_RX_DEFRAG_H
 
 #include "hal_rx.h"
-
-#ifdef CONFIG_MCL
-#include <cds_ieee80211_common.h>
-#endif
 
 #define DEFRAG_IEEE80211_KEY_LEN	8
 #define DEFRAG_IEEE80211_FCS_LEN	4
@@ -52,11 +48,11 @@ struct dp_rx_defrag_cipher {
 	uint8_t ic_miclen;
 };
 
-uint32_t dp_rx_frag_handle(struct dp_soc *soc, void *ring_desc,
-		struct hal_rx_mpdu_desc_info *mpdu_desc_info,
-		struct dp_rx_desc *rx_desc,
-		uint8_t *mac_id,
-		uint32_t quota);
+uint32_t dp_rx_frag_handle(struct dp_soc *soc, hal_ring_desc_t  ring_desc,
+			   struct hal_rx_mpdu_desc_info *mpdu_desc_info,
+			   struct dp_rx_desc *rx_desc,
+			   uint8_t *mac_id,
+			   uint32_t quota);
 
 /*
  * dp_rx_frag_get_mac_hdr() - Return pointer to the mac hdr
@@ -73,7 +69,7 @@ uint32_t dp_rx_frag_handle(struct dp_soc *soc, void *ring_desc,
 static inline
 struct ieee80211_frame *dp_rx_frag_get_mac_hdr(uint8_t *rx_desc_info)
 {
-	int rx_desc_len = hal_rx_get_desc_len();
+	int rx_desc_len = SIZE_OF_DATA_RX_TLV;
 	return (struct ieee80211_frame *)(rx_desc_info + rx_desc_len);
 }
 

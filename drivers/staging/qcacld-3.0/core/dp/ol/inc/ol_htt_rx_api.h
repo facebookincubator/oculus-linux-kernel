@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -380,7 +380,8 @@ bool (*htt_rx_mpdu_desc_retry)(
  * @return the LSBs of the sequence number for the MPDU
  */
 extern uint16_t
-(*htt_rx_mpdu_desc_seq_num)(htt_pdev_handle pdev, void *mpdu_desc);
+(*htt_rx_mpdu_desc_seq_num)(htt_pdev_handle pdev, void *mpdu_desc,
+			    bool update_seq_num);
 
 /**
  * @brief Return a rx MPDU's rx reorder array index, based on sequence number.
@@ -919,7 +920,8 @@ int htt_rx_msdu_buff_in_order_replenish(htt_pdev_handle pdev, uint32_t num)
  * @return network buffer handle to the MPDU
  */
 #if defined(FEATURE_MONITOR_MODE_SUPPORT)
-#if !defined(QCA6290_HEADERS_DEF) && !defined(QCA6390_HEADERS_DEF)
+#if !defined(QCA6290_HEADERS_DEF) && !defined(QCA6390_HEADERS_DEF) && \
+    !defined(QCA6490_HEADERS_DEF) && !defined(QCA6750_HEADERS_DEF)
 qdf_nbuf_t
 htt_rx_restitch_mpdu_from_msdus(htt_pdev_handle pdev,
 				qdf_nbuf_t head_msdu,

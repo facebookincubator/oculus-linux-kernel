@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018,2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2008 Atheros Communications, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -34,6 +34,9 @@
 
 /* 5 GHz spectrum channel */
 #define WLAN_CHAN_5GHZ             0x0000000000000100
+
+/* 6 GHz spectrum channel */
+#define WLAN_CHAN_6GHZ             0x0000001000000000
 
 /* Radar found on channel */
 #define WLAN_CHAN_DFS_RADAR        0x0000000000001000
@@ -193,44 +196,74 @@
 #define WLAN_CHAN_11AXA_HE20 \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE20)
 
+#define WLAN_CHAN_11AXA_HE20_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE20)
+
 #define WLAN_CHAN_11AXA_HE40PLUS \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE40PLUS)
+
+#define WLAN_CHAN_11AXA_HE40PLUS_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE40PLUS)
 
 #define WLAN_CHAN_11AXA_HE40MINUS \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE40MINUS)
 
+#define WLAN_CHAN_11AXA_HE40MINUS_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE40MINUS)
+
 #define WLAN_CHAN_11AXA_HE80 \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE80)
+
+#define WLAN_CHAN_11AXA_HE80_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE80)
 
 #define WLAN_CHAN_11AXA_HE160 \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE160)
 
+#define WLAN_CHAN_11AXA_HE160_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE160)
+
 #define WLAN_CHAN_11AXA_HE80_80 \
 	(WLAN_CHAN_5GHZ | WLAN_CHAN_HE80_80)
 
+#define WLAN_CHAN_11AXA_HE80_80_6G \
+	(WLAN_CHAN_6GHZ | WLAN_CHAN_HE80_80)
+
 #define WLAN_IS_CHAN_11AXA_HE20(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE20) == \
-	 WLAN_CHAN_11AXA_HE20)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE20) == \
+	 WLAN_CHAN_11AXA_HE20) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE20_6G) == \
+	 WLAN_CHAN_11AXA_HE20_6G))
 
 #define WLAN_IS_CHAN_11AXA_HE40PLUS(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40PLUS) == \
-	 WLAN_CHAN_11AXA_HE40PLUS)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40PLUS) == \
+	 WLAN_CHAN_11AXA_HE40PLUS) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40PLUS_6G) == \
+	  WLAN_CHAN_11AXA_HE40PLUS_6G))
 
 #define WLAN_IS_CHAN_11AXA_HE40MINUS(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40MINUS) == \
-	 WLAN_CHAN_11AXA_HE40MINUS)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40MINUS) == \
+	 WLAN_CHAN_11AXA_HE40MINUS) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE40MINUS_6G) == \
+	 WLAN_CHAN_11AXA_HE40MINUS_6G))
 
 #define WLAN_IS_CHAN_11AXA_HE80(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80) == \
-	 WLAN_CHAN_11AXA_HE80)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80) == \
+	 WLAN_CHAN_11AXA_HE80) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80_6G) == \
+	  WLAN_CHAN_11AXA_HE80_6G))
 
 #define WLAN_IS_CHAN_11AXA_HE160(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE160) == \
-	 WLAN_CHAN_11AXA_HE160)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE160) == \
+	 WLAN_CHAN_11AXA_HE160) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE160_6G) == \
+	  WLAN_CHAN_11AXA_HE160_6G))
 
 #define WLAN_IS_CHAN_11AXA_HE80_80(_c) \
-	(((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80_80) == \
-	 WLAN_CHAN_11AXA_HE80_80)
+	((((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80_80) == \
+	 WLAN_CHAN_11AXA_HE80_80) || \
+	 (((_c)->dfs_ch_flags & WLAN_CHAN_11AXA_HE80_80_6G) == \
+	  WLAN_CHAN_11AXA_HE80_80_6G))
 
 #define WLAN_IS_CHAN_DFS(_c) \
 	(((_c)->dfs_ch_flagext & \
@@ -290,5 +323,9 @@
 #define WLAN_IS_CHAN_MODE_80_80(_c)       \
 	(WLAN_IS_CHAN_11AC_VHT80_80(_c)   || \
 	 WLAN_IS_CHAN_11AXA_HE80_80(_c))
+
+#define WLAN_IS_CHAN_MODE_165(_dfs, _c) \
+	(dfs_is_restricted_80p80mhz_supported(_dfs) && \
+	WLAN_IS_CHAN_MODE_80_80(_c))
 
 #endif /* _DFS_CHANNEL_H_ */

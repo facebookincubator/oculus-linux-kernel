@@ -1352,6 +1352,7 @@ static int smblib_get_pulse_cnt(struct smb_charger *chg, int *count)
 #define USBIN_150MA	150000
 #define USBIN_500MA	500000
 #define USBIN_900MA	900000
+#define USBIN_1000MA	1000000
 static int set_sdp_current(struct smb_charger *chg, int icl_ua)
 {
 	int rc;
@@ -3162,6 +3163,28 @@ int smblib_get_prop_dc_voltage_now(struct smb_charger *chg,
 	return rc;
 }
 
+int smblib_get_prop_dc_hw_current_max(struct smb_charger *chg,
+				    union power_supply_propval *val)
+{
+	int rc;
+
+	if (!chg->wls_psy) {
+		chg->wls_psy = power_supply_get_by_name("wireless");
+		if (!chg->wls_psy)
+			return -ENODEV;
+	}
+	rc = power_supply_get_property(chg->wls_psy,
+				POWER_SUPPLY_PROP_CURRENT_MAX,
+				val);
+	if (rc < 0) {
+		dev_err(chg->dev, "Couldn't get POWER_SUPPLY_PROP_HW_CURRENT_MAX, rc=%d\n",
+				rc);
+		return rc;
+	}
+
+	return rc;
+}
+
 /*******************
  * DC PSY SETTERS *
  *******************/
@@ -3259,6 +3282,16 @@ int smblib_set_prop_dc_reset(struct smb_charger *chg)
 
 	smblib_dbg(chg, PR_MISC, "Wireless charger removal detection successful\n");
 	return rc;
+}
+
+int smblib_set_prop_dc_hw_current_max(struct smb_charger *chg,
+					const union power_supply_propval *val)
+{
+	chg->param.dc_icl.max_u = val->intval;
+	chg->wls_icl_ua = val->intval;
+	chg->param.dc_icl.step_u = DCIN_ICL_STEP_UA;
+
+	return 0;
 }
 
 /*******************
@@ -4006,6 +4039,24 @@ int smblib_get_prop_low_power(struct smb_charger *chg,
 int smblib_get_prop_input_current_settled(struct smb_charger *chg,
 					  union power_supply_propval *val)
 {
+	return smblib_get_charge_param(chg, &chg->param.icl_stat, &val->intval);
+}
+
+int smblib_get_prop_input_current_max(struct smb_charger *chg,
+					  union power_supply_propval *val)
+{
+	int icl_ua = 0, rc;
+
+	rc = smblib_get_charge_param(chg, &chg->param.usb_icl, &icl_ua);
+	if (rc < 0)
+		return rc;
+
+	if (is_override_vote_enabled_locked(chg->usb_icl_votable) &&
+					icl_ua < USBIN_1000MA) {
+		val->intval = USBIN_1000MA;
+		return 0;
+	}
+
 	return smblib_get_charge_param(chg, &chg->param.icl_stat, &val->intval);
 }
 
@@ -7709,28 +7760,45 @@ relax:
 }
 
 #define USBPD_REV_30	2
+#define DC_HW_CURRENT_MAX 3000000
 static void smblib_dc_detect_work(struct work_struct *work)
 {
-	union power_supply_propval prop_usbval;
-	union power_supply_propval prop_dcval, val;
+	union power_supply_propval val;
 	struct smb_charger *chg = container_of(work, struct smb_charger,
 						dc_detect_work);
 	int rc;
 
-	rc = smblib_get_prop_usb_present(chg, &prop_usbval);
+	rc = smblib_get_prop_usb_present(chg, &val);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't get usb present rc = %d\n", rc);
 		return;
 	}
-	if (prop_usbval.intval) {
+	if (val.intval) {
 		if (chg->pd_active != USBPD_REV_30) {
-			smblib_get_prop_usb_voltage_max(chg, &prop_usbval);
+			smblib_get_prop_usb_voltage_max(chg, &val);
 			smblib_dbg(chg, PR_WLS, "detect usb voltage max: %d uV\n",
-					prop_usbval.intval);
-			if (prop_usbval.intval < DC_VOLTAGE_9V)
+					val.intval);
+			if (val.intval < DC_VOLTAGE_9V)
 				smblib_set_usb_suspend(chg, true);
 		}
 	}
+
+	/* Wait 500ms to get CYPD3177 ready */
+	msleep(500);
+
+	rc = smblib_get_prop_dc_hw_current_max(chg, &val);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't get dc hw current max rc = %d\n", rc);
+		return;
+	}
+	val.intval = val.intval * 1000;
+
+	/*
+	 * If the maximum charging current is 3.0A, change
+	 * the maximum DC current to 3.0A
+	 */
+	if (val.intval == DC_HW_CURRENT_MAX)
+		smblib_set_prop_dc_hw_current_max(chg, &val);
 }
 
 static int smblib_create_votables(struct smb_charger *chg)

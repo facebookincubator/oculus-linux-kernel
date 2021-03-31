@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -29,7 +29,7 @@
  * dfs_main_attach() - Allocates memory for wlan_dfs members.
  * @dfs: Pointer to wlan_dfs structure.
  */
-#if defined(WLAN_DFS_DIRECT_ATTACH) || defined(WLAN_DFS_PARTIAL_OFFLOAD)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 int dfs_main_attach(struct wlan_dfs *dfs);
 #else
 static inline int dfs_main_attach(struct wlan_dfs *dfs)
@@ -42,7 +42,7 @@ static inline int dfs_main_attach(struct wlan_dfs *dfs)
  * dfs_main_detach() - Free dfs variables.
  * @dfs: Pointer to wlan_dfs structure.
  */
-#if defined(WLAN_DFS_DIRECT_ATTACH) || defined(WLAN_DFS_PARTIAL_OFFLOAD)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 void dfs_main_detach(struct wlan_dfs *dfs);
 #else
 static inline void dfs_main_detach(struct wlan_dfs *dfs)
@@ -55,7 +55,7 @@ static inline void dfs_main_detach(struct wlan_dfs *dfs)
  * wlan_dfs_task_timer.
  * @dfs: Pointer to wlan_dfs structure.
  */
-#if defined(WLAN_DFS_DIRECT_ATTACH) || defined(WLAN_DFS_PARTIAL_OFFLOAD)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 int dfs_start_host_based_bangradar(struct wlan_dfs *dfs);
 #else
 static inline int dfs_start_host_based_bangradar(struct wlan_dfs *dfs)
@@ -68,7 +68,7 @@ static inline int dfs_start_host_based_bangradar(struct wlan_dfs *dfs)
  * dfs_main_timer_reset() - Stop dfs timers.
  * @dfs: Pointer to wlan_dfs structure.
  */
-#if defined(WLAN_DFS_DIRECT_ATTACH) || defined(WLAN_DFS_PARTIAL_OFFLOAD)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 void dfs_main_timer_reset(struct wlan_dfs *dfs);
 #else
 static inline void dfs_main_timer_reset(struct wlan_dfs *dfs)
@@ -80,34 +80,12 @@ static inline void dfs_main_timer_reset(struct wlan_dfs *dfs)
  * dfs_main_timer_detach() - Free dfs timers.
  * @dfs: Pointer to wlan_dfs structure.
  */
-#if defined(WLAN_DFS_DIRECT_ATTACH) || defined(WLAN_DFS_PARTIAL_OFFLOAD)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 void dfs_main_timer_detach(struct wlan_dfs *dfs);
 #else
 static inline void dfs_main_timer_detach(struct wlan_dfs *dfs)
 {
 }
 #endif
-
-#ifdef CONFIG_WIN
-#if DA_SUPPORT
-#if defined(WLAN_DFS_DIRECT_ATTACH)
-void dfs_get_da_radars(struct wlan_dfs *dfs);
-#else
-static inline void dfs_get_da_radars(struct wlan_dfs *dfs)
-{
-}
-#endif
-#else
-#define dfs_get_da_radars(dfs) /**/
-#endif /* _DA_SUPPORT_ */
-#else
-#if defined(WLAN_DFS_DIRECT_ATTACH)
-void dfs_get_da_radars(struct wlan_dfs *dfs);
-#else
-static inline void dfs_get_da_radars(struct wlan_dfs *dfs)
-{
-}
-#endif
-#endif /* _CONFIG_WIN_ */
 
 #endif /* _DFS_FILTER_INIT_H_ */

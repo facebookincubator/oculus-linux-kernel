@@ -200,8 +200,8 @@ int hif_exec_event(struct hif_opaque_softc *hif_ctx, enum qca_napi_event event,
 		break;
 	}
 	default: {
-		HIF_ERROR("%s: unknown event: %d (data=0x%0lx)",
-			  __func__, event, (unsigned long) data);
+		hif_err("Unknown event: %d (data=0x%0lx)",
+			event, (unsigned long) data);
 		break;
 	} /* default */
 	}; /* switch */
@@ -455,7 +455,7 @@ static inline void hif_exec_bl_irq(struct qca_napi_data *napid, bool bl_flag)
 			for (j = 0; j < exec_ctx->numirq; j++)
 				irq_modify_status(exec_ctx->os_irq[j],
 						  IRQ_NO_BALANCING, 0);
-		HIF_DBG("%s: bl_flag %d CE %d", __func__, bl_flag, i);
+		hif_debug("bl_flag %d CE %d", bl_flag, i);
 	}
 }
 

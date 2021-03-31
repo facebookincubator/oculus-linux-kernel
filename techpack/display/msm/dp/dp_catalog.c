@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 
@@ -1505,6 +1505,7 @@ static void dp_catalog_panel_dp_flush(struct dp_catalog_panel *panel,
 	struct dp_catalog_private *catalog;
 	struct dp_io_data *io_data;
 	u32 dp_flush, offset;
+	struct dp_dsc_cfg_data *dsc;
 
 	if (!panel) {
 		DP_ERR("invalid input\n");
@@ -1518,6 +1519,7 @@ static void dp_catalog_panel_dp_flush(struct dp_catalog_panel *panel,
 
 	catalog = dp_catalog_get_priv(panel);
 	io_data = catalog->io.dp_link;
+	dsc = &panel->dsc;
 
 	if (panel->stream_id == DP_STREAM_0)
 		offset = 0;
@@ -1525,6 +1527,11 @@ static void dp_catalog_panel_dp_flush(struct dp_catalog_panel *panel,
 		offset = MMSS_DP1_FLUSH - MMSS_DP_FLUSH;
 
 	dp_flush = dp_read(MMSS_DP_FLUSH + offset);
+
+	if ((flush_bit == DP_PPS_FLUSH) &&
+		dsc->continuous_pps)
+		dp_flush &= ~BIT(2);
+
 	dp_flush |= BIT(flush_bit);
 	dp_write(MMSS_DP_FLUSH + offset, dp_flush);
 }

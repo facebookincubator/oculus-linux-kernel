@@ -155,6 +155,8 @@ typedef struct {
 
 #define PCIE_SHARED2_PTM		0x01000000u	/* PCIe PTM */
 #define PCIE_SHARED2_LLW2		0x02000000u	/* GCR based LLW2 */
+#define PCIE_SHARED2_RX_CMPL_PRIO_VALID	0x04000000u	/* Prio is valid in Rx Cmpl */
+#define PCIE_SHARED2_LPM_SUPPORT	0x08000000u	/* LPM mode support */
 
 #define PCIE_SHARED2_D2H_D11_TX_STATUS	0x40000000
 #define PCIE_SHARED2_H2D_D11_TX_STATUS	0x80000000
@@ -531,6 +533,7 @@ typedef struct {
 #define CHECK_NOWRITE_SPACE(r, w, d) \
 	(((uint32)(r) == (uint32)((w) + 1)) || (((r) == 0) && ((w) == ((d) - 1))))
 
+#ifndef PRIV_PCIE_RING_MACROS
 /* These should be moved into pciedev.h --- */
 #define WRT_PEND(x)	((x)->wr_pending)
 #define DNGL_RING_WPTR(msgbuf)		(*((msgbuf)->tcm_rs_w_ptr)) /**< advanced by producer */
@@ -550,6 +553,9 @@ typedef struct {
 #define	 HOST_RING_END(x)	((uint8 *)HOST_RING_BASE((x)) + \
 					((RING_MAX_ITEM((x))-1)*RING_LEN_ITEMS((x))))
 
+#define RING_MESH(x)	(((x)->txpost_ext_cap_flags) & PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_MESH)
+#endif /* PRIV_PCIE_RING_MACROS */
+
 /* Trap types copied in the pciedev_shared.trap_addr */
 #define	FW_INITIATED_TRAP_TYPE	(0x1 << 7)
 #define	HEALTHCHECK_NODS_TRAP_TYPE	(0x1 << 6)
@@ -558,7 +564,5 @@ typedef struct {
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_RSVD	(1u << 0u) /* Reserved  */
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_CSO		(1u << 1u) /* CSO */
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_MESH	(1u << 2u) /* MESH */
-
-#define RING_MESH(x)	(((x)->txpost_ext_cap_flags) & PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_MESH)
 
 #endif	/* _bcmpcie_h_ */

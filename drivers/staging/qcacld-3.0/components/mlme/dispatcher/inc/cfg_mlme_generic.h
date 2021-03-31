@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -107,7 +107,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -129,7 +129,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -140,27 +140,35 @@
 
 /*
  * <ini>
- * BandCapability - Preferred band (0: Both,  1: 2.4G only,  2: 5G only)
+ * BandCapability - Preferred band (0: Both 2.4G and 5G,
+ *				    1: 2.4G only,
+ *				    2: 5G only,
+ *				    3: Both 2.4G and 5G,
+ *				    4: 6G only,
+ *				    5: Both 2.4G and 6G,
+ *				    6: Both 5G and 6G,
+ *				    7: 2.4G, 5G, and 6G)
  * @Min: 0
- * @Max: 2
- * @Default: 0
+ * @Max: 7
+ * @Default: 7
  *
  * This ini is used to set default band capability
- * (0: Both, 1: 2.4G only, 2: 5G only)
+ * (0: Both 2.4G and 5G, 1: 2.4G only, 2: 5G only, 3: Both 2.4G and 5G,
+ *  4: 6G only, 5: Both 2.4G and 6G, 6: Both 5G and 6G, 7: 2.4G, 5G, and 6G)
  *
  * Related: None
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
 #define CFG_BAND_CAPABILITY CFG_INI_UINT( \
 	"BandCapability", \
 	0, \
-	2, \
-	0, \
+	7, \
+	7, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Band Capability")
 
@@ -258,7 +266,7 @@
  *
  * Supported Feature: 802.11b, 2x2
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -282,7 +290,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -303,7 +311,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -331,7 +339,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -352,7 +360,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -373,7 +381,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -398,7 +406,7 @@
  *
  * Supported Feature: 5/10 Mhz channel width support
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -422,7 +430,7 @@
  *
  * Supported Feature: General
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -447,7 +455,7 @@
  *
  * Supported Feature: SSR
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -544,7 +552,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -582,7 +590,7 @@
  * gRemoveTimeStampSyncCmd - Enable/Disable to remove time stamp sync cmd
  * @Min: 0
  * @Max: 1
- * @Default: 0
+ * @Default: 1
  *
  * This ini is used to enable/disable the removal of time stamp sync cmd
  *
@@ -592,8 +600,30 @@
  */
 #define CFG_REMOVE_TIME_STAMP_SYNC_CMD CFG_INI_BOOL( \
 	"gRemoveTimeStampSyncCmd", \
-	0, \
+	1, \
 	"Enable to remove time stamp sync cmd")
+
+/*
+ * <ini>
+ * disable_4way_hs_offload - Enable/Disable 4 way handshake offload to firmware
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * 0  4-way HS to be handled in firmware
+ * 1  4-way HS to be handled in supplicant
+ *
+ * Related: None
+ *
+ * Supported Feature: STA Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_DISABLE_4WAY_HS_OFFLOAD CFG_INI_BOOL("disable_4way_hs_offload", \
+						 0, \
+						 "Enable/disable 4 way handshake offload to firmware")
 
 /*
  * <ini>
@@ -642,6 +672,7 @@
 #define CFG_BMISS_SKIP_FULL_SCAN CFG_INI_BOOL("bmiss_skip_full_scan", \
 			0, \
 			"To decide partial/partial scan followed by full scan")
+
 /*
  * <ini>
  * gEnableRingBuffer - Enable Ring Buffer for Bug Report
@@ -660,9 +691,96 @@
  * </ini>
  */
 #define CFG_ENABLE_RING_BUFFER CFG_INI_BOOL( \
-			"gEnableRingBuffer", \
-			1, \
-			"To Enable Ring Buffer")
+		"gEnableRingBuffer", \
+		1, \
+		"To Enable Ring Buffer")
+
+/*
+ * <ini>
+ * dfs_chan_ageout_time - Set DFS Channel ageout time(in seconds)
+ * @Min: 0
+ * @Max: 8
+ * Default: 0
+ *
+ * Ageout time is the time upto which DFS channel information such as beacon
+ * found is remembered. So that Firmware performs Active scan instead of the
+ * Passive to reduce the Dwell time.
+ * This ini Parameter used to set ageout timer value from host to FW.
+ * If not set, Firmware will disable ageout time.
+ *
+ * Supported Feature: STA scan in DFS channels
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_DFS_CHAN_AGEOUT_TIME CFG_INI_UINT("dfs_chan_ageout_time", \
+			0, 8, 0, CFG_VALUE_OR_DEFAULT, \
+			"Set DFS Channel ageout time from host to firmware")
+
+/*
+ * <ini>
+ * sae_connect_retries - Bit mask to retry Auth and full connection on assoc
+ * timeout to same AP and auth retries during roaming
+ * @Min: 0x0
+ * @Max: 0x53
+ * @Default: 0x49
+ *
+ * This ini is used to set max auth retry in auth phase of roaming and initial
+ * connection and max connection retry in case of assoc timeout. MAX Auth
+ * retries are capped to 3, connection retries are capped to 2 and roam Auth
+ * retry is capped to 1.
+ * Default is 0x49 i.e. 1 retry each.
+ *
+ * Bits       Retry Type
+ * BIT[0:2]   AUTH retries
+ * BIT[3:5]   Connection reties
+ * BIT[6:8]   ROAM AUTH retries
+ *
+ * Some Possible values are as below
+ * 0          - NO auth/roam Auth retry and NO full connection retry after
+ *              assoc timeout
+ * 0x49       - 1 auth/roam auth retry and 1 full connection retry
+ * 0x52       - 1 roam auth retry, 2 auth retry and 2 full connection retry
+ * 0x1 /0x2   - 0 roam auth retry, 1 or 2 auth retry respectively and NO full
+ *              connection retry
+ * 0x8 /0x10  - 0 roam auth retry,NO auth retry and 1 or 2 full connection retry
+ *              respectively.
+ * 0x4A       - 1 roam auth retry,2 auth retry and 1 full connection retry
+ * 0x51       - 1 auth/roam auth retry and 2 full connection retry
+ *
+ * Related: None
+ *
+ * Supported Feature: STA SAE
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_SAE_CONNECION_RETRIES CFG_INI_UINT("sae_connect_retries", \
+				0, 0x53, 0x49, CFG_VALUE_OR_DEFAULT, \
+				"Bit mask to retry Auth and full connection on assoc timeout to same AP for SAE connection")
+
+/*
+ * <ini>
+ *
+ * wls_6ghz_capable - WiFi Location Service(WLS) is 6Ghz capable
+ * @Min: 0 (WLS 6Ghz non-capable)
+ * @Max: 1 (WLS 6Ghz capable)
+ * @Default: 0 (WLS 6Ghz non-capable)
+ *
+ * Related: None
+ *
+ * Supported Feature: General
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_WLS_6GHZ_CAPABLE CFG_INI_BOOL( \
+	"wls_6ghz_capable", \
+	0, \
+	"WiFi Location Service(WLS) is 6Ghz capable or not")
 
 #define CFG_GENERIC_ALL \
 	CFG(CFG_ENABLE_DEBUG_PACKET_LOG) \
@@ -681,6 +799,7 @@
 	CFG(CFG_ENABLE_LPASS_SUPPORT) \
 	CFG(CFG_ENABLE_SELF_RECOVERY) \
 	CFG(CFG_ENABLE_DEAUTH_TO_DISASSOC_MAP) \
+	CFG(CFG_DISABLE_4WAY_HS_OFFLOAD) \
 	CFG(CFG_SAP_DOT11MC) \
 	CFG(CFG_ENABLE_FATAL_EVENT_TRIGGER) \
 	CFG(CFG_SUB_20_CHANNEL_WIDTH) \
@@ -692,5 +811,8 @@
 	CFG(CFG_REMOVE_TIME_STAMP_SYNC_CMD) \
 	CFG(CFG_MGMT_RETRY_MAX) \
 	CFG(CFG_BMISS_SKIP_FULL_SCAN) \
-	CFG(CFG_ENABLE_RING_BUFFER)
+	CFG(CFG_ENABLE_RING_BUFFER) \
+	CFG(CFG_DFS_CHAN_AGEOUT_TIME) \
+	CFG(CFG_SAE_CONNECION_RETRIES) \
+	CFG(CFG_WLS_6GHZ_CAPABLE)
 #endif /* __CFG_MLME_GENERIC_H */

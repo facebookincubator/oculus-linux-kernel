@@ -190,8 +190,7 @@ ol_rx_fwd_check(struct ol_txrx_vdev_t *vdev,
 						 QDF_NBUF_TX_EXT_TID_INVALID);
 			}
 
-			if (!ol_txrx_fwd_desc_thresh_check(
-						(struct cdp_vdev *)vdev)) {
+			if (!ol_txrx_fwd_desc_thresh_check(vdev)) {
 				/* Drop the packet*/
 				htt_rx_msdu_desc_free(pdev->htt_pdev, msdu);
 				TXRX_STATS_MSDU_LIST_INCR(
@@ -255,14 +254,17 @@ ol_rx_fwd_check(struct ol_txrx_vdev_t *vdev,
 /*
  * ol_get_intra_bss_fwd_pkts_count() - to get the total tx and rx packets
  *   that has been forwarded from txrx layer without going to upper layers.
+ * @soc_hdl: Datapath soc handle
  * @vdev_id: vdev id
  * @fwd_tx_packets: pointer to forwarded tx packets count parameter
  * @fwd_rx_packets: pointer to forwarded rx packets count parameter
  *
  * Return: status -> A_OK - success, A_ERROR - failure
  */
-A_STATUS ol_get_intra_bss_fwd_pkts_count(uint8_t vdev_id,
-		uint64_t *fwd_tx_packets, uint64_t *fwd_rx_packets)
+A_STATUS ol_get_intra_bss_fwd_pkts_count(struct cdp_soc_t *soc_hdl,
+					 uint8_t vdev_id,
+					 uint64_t *fwd_tx_packets,
+					 uint64_t *fwd_rx_packets)
 {
 	struct ol_txrx_vdev_t *vdev = NULL;
 

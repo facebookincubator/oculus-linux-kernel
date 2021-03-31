@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -25,15 +25,26 @@
 #include "../../core/spectral_cmn_api_i.h"
 
 /**
- * tgt_get_target_handle() - Get target_if handle
+ * tgt_get_pdev_target_handle() - Get pdev target_if handle
  * @pdev: Pointer to pdev
  *
- * Get handle to target_if internal Spectral data
+ * Get handle to pdev target_if internal Spectral data
  *
- * Return: Handle to target_if internal Spectral data on success, NULL on
+ * Return: Handle to pdev target_if internal Spectral data on success, NULL on
  * failure
  */
-void *tgt_get_target_handle(struct wlan_objmgr_pdev *pdev);
+void *tgt_get_pdev_target_handle(struct wlan_objmgr_pdev *pdev);
+
+/**
+ * tgt_get_psoc_target_handle() - Get psoc target_if handle
+ * @psoc: Pointer to psoc
+ *
+ * Get handle to psoc target_if internal Spectral data
+ *
+ * Return: Handle to psoc target_if internal Spectral data on success, NULL on
+ * failure
+ */
+void *tgt_get_psoc_target_handle(struct wlan_objmgr_psoc *psoc);
 
 /**
  * tgt_spectral_control()- handler for demultiplexing requests from higher layer
@@ -66,10 +77,26 @@ void *tgt_pdev_spectral_init(struct wlan_objmgr_pdev *pdev);
 void tgt_pdev_spectral_deinit(struct wlan_objmgr_pdev *pdev);
 
 /**
+ * tgt_psoc_spectral_init() - implementation for spectral init
+ * @psoc: Pointer to psoc
+ *
+ * Return: On success, pointer to Spectral psoc target_if internal private data,
+ * on failure, NULL
+ */
+void *tgt_psoc_spectral_init(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * tgt_psoc_spectral_deinit() - implementation for spectral de-init
+ * @psoc: Pointer to psoc
+ *
+ * Return: None
+ */
+void tgt_psoc_spectral_deinit(struct wlan_objmgr_psoc *psoc);
+
+/**
  * tgt_set_spectral_config() - Set spectral config
  * @pdev: Pointer to pdev object
- * @threshtype: spectral parameter type
- * @value: Value to be configured for the given spectral parameter
+ * @param: Pointer object describing Spectral parameter
  * @smode: Spectral scan mode
  * @err: Spectral control path error code
  *
@@ -78,8 +105,7 @@ void tgt_pdev_spectral_deinit(struct wlan_objmgr_pdev *pdev);
  * Return: QDF_STATUS_SUCCESS on success, else QDF_STATUS_E_FAILURE
  */
 QDF_STATUS tgt_set_spectral_config(struct wlan_objmgr_pdev *pdev,
-				   const u_int32_t threshtype,
-				   const u_int32_t value,
+				   const struct spectral_cp_param *param,
 				   const enum spectral_scan_mode smode,
 				   enum spectral_cp_error_code *err);
 
@@ -101,14 +127,16 @@ QDF_STATUS tgt_get_spectral_config(struct wlan_objmgr_pdev *pdev,
 /**
  * tgt_start_spectral_scan() - Start spectral scan
  * @pdev: Pointer to pdev object
+ * @vdev_id: VDEV id
  * @smode: Spectral scan mode
- * @res: Spectral control path error code
+ * @err: Spectral control path error code
  *
  * Implementation for starting spectral scan
  *
  * Return: QDF_STATUS_SUCCESS on success, else QDF_STATUS_E_FAILURE
  */
 QDF_STATUS tgt_start_spectral_scan(struct wlan_objmgr_pdev *pdev,
+				   uint8_t vdev_id,
 				   enum spectral_scan_mode smode,
 				   enum spectral_cp_error_code *err);
 
@@ -116,13 +144,15 @@ QDF_STATUS tgt_start_spectral_scan(struct wlan_objmgr_pdev *pdev,
  * tgt_stop_spectral_scan() - Stop spectral scan
  * @pdev: Pointer to pdev object
  * @smode: Spectral scan mode
+ * @err: Spectral control path error code
  *
  * Implementation for stop spectral scan
  *
  * Return: QDF_STATUS_SUCCESS on success, else QDF_STATUS_E_FAILURE
  */
 QDF_STATUS tgt_stop_spectral_scan(struct wlan_objmgr_pdev *pdev,
-				  enum spectral_scan_mode smode);
+				  enum spectral_scan_mode smode,
+				  enum spectral_cp_error_code *err);
 
 /**
  * tgt_is_spectral_active() - Get whether Spectral is active
@@ -195,17 +225,30 @@ QDF_STATUS tgt_get_spectral_diagstats(struct wlan_objmgr_pdev *pdev,
 				      struct spectral_diag_stats *stats);
 
 /**
- * tgt_register_wmi_spectral_cmd_ops() - Register wmi_spectral_cmd_ops
- * @cmd_ops: Pointer to the structure having wmi_spectral_cmd function pointers
- * @pdev: Pointer to pdev object
+ * tgt_register_spectral_wmi_ops() - Register Spectral WMI operations
+ * @psoc: Pointer to psoc bject
+ * @wmi_ops: Pointer to the structure having Spectral WMI operations
  *
- * Implementation to register wmi_spectral_cmd_ops in spectral
+ * Implementation to register Spectral WMI operations in spectral
  * internal data structure
  *
- * Return: void
+ * Return: QDF_STATUS
  */
-void tgt_register_wmi_spectral_cmd_ops(struct wlan_objmgr_pdev *pdev,
-				       struct wmi_spectral_cmd_ops *cmd_ops);
+QDF_STATUS tgt_register_spectral_wmi_ops(struct wlan_objmgr_psoc *psoc,
+					 struct spectral_wmi_ops *wmi_ops);
+
+/**
+ * tgt_register_spectral_tgt_ops() - Register Spectral target operations
+ * @psoc: Pointer to psoc bject
+ * @tgt_ops: Pointer to the structure having Spectral target operations
+ *
+ * Implementation to register Spectral target operations in spectral
+ * internal data structure
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS tgt_register_spectral_tgt_ops(struct wlan_objmgr_psoc *psoc,
+					 struct spectral_tgt_ops *tgt_ops);
 
 /**
  * tgt_spectral_register_nl_cb() - Register Netlink callbacks
@@ -271,4 +314,34 @@ tgt_spectral_unregister_to_dbr(struct wlan_objmgr_pdev *pdev);
  */
 uint32_t
 tgt_spectral_get_target_type(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * tgt_set_spectral_dma_debug() - Set DMA debug for Spectral
+ * @pdev: Pointer to pdev object
+ * @dma_debug_type: Type of Spectral DMA debug i.e., ring or buffer debug
+ * @dma_debug_enable: Value to be set for @dma_debug_type
+ *
+ * Return: QDF_STATUS of operation
+ */
+QDF_STATUS tgt_set_spectral_dma_debug(struct wlan_objmgr_pdev *pdev,
+				      enum spectral_dma_debug dma_debug_type,
+				      bool dma_debug_enable);
+
+/**
+ * tgt_spectral_register_events() - Register Spectral WMI event handlers
+ * @psoc: Pointer to psoc object
+ *
+ * Return: QDF_STATUS of operation
+ */
+QDF_STATUS
+tgt_spectral_register_events(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * tgt_spectral_unregister_events() - Unregister Spectral WMI event handlers
+ * @psoc: Pointer to psoc object
+ *
+ * Return: QDF_STATUS of operation
+ */
+QDF_STATUS
+tgt_spectral_unregister_events(struct wlan_objmgr_psoc *psoc);
 #endif /* _WLAN_SPECTRAL_TGT_API_H_ */

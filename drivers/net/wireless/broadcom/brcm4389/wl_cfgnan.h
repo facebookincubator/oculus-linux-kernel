@@ -165,6 +165,9 @@
 #define NAN_NMI_RAND_PVT_CMD_VENDOR		(1 << 31)
 #define NAN_NMI_RAND_CLUSTER_MERGE_ENAB		(1 << 30)
 #define NAN_NMI_RAND_AUTODAM_LWT_MODE_ENAB	(1 << 29)
+#define NAN_NMI_RAND_INTVL_MASK			~(NAN_NMI_RAND_PVT_CMD_VENDOR | \
+						NAN_NMI_RAND_CLUSTER_MERGE_ENAB | \
+						NAN_NMI_RAND_AUTODAM_LWT_MODE_ENAB)
 
 #ifdef WL_NAN_DEBUG
 #define NAN_MUTEX_LOCK() {WL_DBG(("Mutex Lock: Enter: %s\n", __FUNCTION__)); \
@@ -217,6 +220,7 @@
 
 #define NAN_RNG_GEOFENCE_MAX_RETRY_CNT	3u
 
+#define NAN_MAX_CHANNEL_INFO_SUPPORTED	4u
 /*
 * Discovery Beacon Interval config,
 * Default value is 128 msec in 2G DW and 176 msec in 2G/5G DW.
@@ -383,6 +387,17 @@ typedef struct nan_mac_list {
 	uint32 num_mac_addr;
 	uint8 *list;
 } nan_mac_list_t;
+
+typedef struct nan_channel_info {
+	uint32 channel;
+	uint32 bandwidth;
+	uint32 nss;
+} nan_channel_info_t;
+
+typedef struct nan_ndl_sched_info {
+	uint32 num_channels;
+	nan_channel_info_t channel_info[NAN_MAX_CHANNEL_INFO_SUPPORTED];
+} nan_ndl_sched_info_t;
 
 typedef struct wl_nan_sid_beacon_tune {
 	uint8 sid_enable;	/* flag for sending service id in beacon */
@@ -565,6 +580,7 @@ typedef struct nan_event_data {
 	uint32 range_measurement_cm;
 	uint32 ranging_ind;
 	uint8 rng_id;
+	nan_ndl_sched_info_t ndl_sched_info;
 } nan_event_data_t;
 
 /*
@@ -726,6 +742,8 @@ typedef struct wl_nancfg
 	uint8 max_ndi_supported;
 	wl_ndi_data_t *ndi;
 	bool ranging_enable;
+	struct delayed_work nan_nmi_rand; /* WQ for periodic nmi randomization */
+	uint32 nmi_rand_intvl; /* nmi randomization interval */
 } wl_nancfg_t;
 
 bool wl_cfgnan_is_enabled(struct bcm_cfg80211 *cfg);
@@ -948,7 +966,9 @@ typedef enum {
 	NAN_ATTRIBUTE_NSS				= 225,
 	NAN_ATTRIBUTE_ENABLE_RANGING			= 226,
 	NAN_ATTRIBUTE_DW_EARLY_TERM			= 227,
-	NAN_ATTRIBUTE_MAX				= 228
+	NAN_ATTRIBUTE_CHANNEL_INFO			= 228,
+	NAN_ATTRIBUTE_NUM_CHANNELS			= 229,
+	NAN_ATTRIBUTE_MAX				= 230
 } NAN_ATTRIBUTE;
 
 enum geofence_suspend_reason {

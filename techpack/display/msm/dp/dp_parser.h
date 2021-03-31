@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_PARSER_H_
@@ -193,10 +193,14 @@ static inline char *dp_phy_aux_config_type_to_string(u32 cfg_type)
  * @gpio_aux_switch: presence GPIO AUX switch status
  * @dsc_feature_enable: DSC feature enable status
  * @fec_feature_enable: FEC feature enable status
+ * @dsc_continuous_pps: PPS sent every frame by HW
  * @max_dp_dsc_blks: maximum DSC blks for DP interface
  * @max_dp_dsc_input_width_pixs: Maximum input width for DSC block
  * @has_widebus: widebus (2PPC) feature eanble status
-  *@mst_fixed_port: mst port_num reserved for fixed topology
+ * @mst_fixed_port: mst port_num reserved for fixed topology
+ * @mst_fixed_display_type: mst display_type reserved for fixed topology
+ * @display_type: display type as defined in device tree.
+ * @force_bond_mode: force dp in bond mode
  * @parse: function to be called by client to parse device tree.
  * @get_io: function to be called by client to get io data.
  * @get_io_buf: function to be called by client to get io buffers.
@@ -221,12 +225,16 @@ struct dp_parser {
 	bool no_aux_switch;
 	bool dsc_feature_enable;
 	bool fec_feature_enable;
+	bool dsc_continuous_pps;
 	bool has_widebus;
 	bool gpio_aux_switch;
 	u32 max_dp_dsc_blks;
 	u32 max_dp_dsc_input_width_pixs;
 	bool lphw_hpd;
+	bool force_bond_mode;
 	u32 mst_fixed_port[MAX_DP_MST_STREAMS];
+	const char *mst_fixed_display_type[MAX_DP_MST_STREAMS];
+	const char *display_type;
 
 	int (*parse)(struct dp_parser *parser);
 	struct dp_io_data *(*get_io)(struct dp_parser *parser, char *name);

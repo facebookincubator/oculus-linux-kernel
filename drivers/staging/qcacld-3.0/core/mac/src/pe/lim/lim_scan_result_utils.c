@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -69,8 +69,7 @@ lim_collect_bss_description(struct mac_context *mac,
 	uint8_t *pBody;
 	uint32_t ieLen = 0;
 	tpSirMacMgmtHdr pHdr;
-	uint8_t channelNum;
-	uint8_t rxChannel;
+	uint32_t chan_freq;
 	uint8_t rfBand = 0;
 
 	pHdr = WMA_GET_RX_MAC_HEADER(pRxPacketInfo);
@@ -82,7 +81,6 @@ lim_collect_bss_description(struct mac_context *mac,
 	}
 	ieLen =
 		WMA_GET_RX_PAYLOAD_LEN(pRxPacketInfo) - SIR_MAC_B_PR_SSID_OFFSET;
-	rxChannel = WMA_GET_RX_CH(pRxPacketInfo);
 	pBody = WMA_GET_RX_MPDU_DATA(pRxPacketInfo);
 	rfBand = WMA_GET_RX_RFBAND(pRxPacketInfo);
 
@@ -116,7 +114,7 @@ lim_collect_bss_description(struct mac_context *mac,
 
 	if (!pBssDescr->beaconInterval) {
 		pe_warn("Beacon Interval is ZERO, making it to default 100 "
-			   QDF_MAC_ADDR_STR, QDF_MAC_ADDR_ARRAY(pHdr->bssId));
+			   QDF_MAC_ADDR_FMT, QDF_MAC_ADDR_REF(pHdr->bssId));
 		pBssDescr->beaconInterval = 100;
 	}
 	/*
@@ -132,15 +130,12 @@ lim_collect_bss_description(struct mac_context *mac,
 	 * This fix will work for 5Ghz 11n devices, but for 11a devices, we have to rely on RXP routing flag to get the correct channel.
 	 * So The problem of incorrect channel reporting in 5Ghz will still remain for 11a devices.
 	 */
-	pBssDescr->channelId = lim_get_channel_from_beacon(mac, pBPR);
-
-	pBssDescr->channelIdSelf = pBssDescr->channelId;
-	pBssDescr->rx_channel = rxChannel;
+	chan_freq = lim_get_channel_from_beacon(mac, pBPR);
+	pBssDescr->chan_freq = chan_freq;
 
 	/* set the network type in bss description */
-	channelNum = pBssDescr->channelId;
 	pBssDescr->nwType =
-		lim_get_nw_type(mac, channelNum, SIR_MAC_MGMT_FRAME, pBPR);
+		lim_get_nw_type(mac, chan_freq, SIR_MAC_MGMT_FRAME, pBPR);
 
 	/* Copy RSSI & SINR from BD */
 	pBssDescr->rssi = (int8_t) WMA_GET_RX_RSSI_NORMALIZED(pRxPacketInfo);
@@ -148,16 +143,17 @@ lim_collect_bss_description(struct mac_context *mac,
 
 	/* SINR no longer reported by HW */
 	pBssDescr->sinr = 0;
-	pe_debug(QDF_MAC_ADDR_STR " rssi: normalized: %d, absolute: %d",
-		QDF_MAC_ADDR_ARRAY(pHdr->bssId), pBssDescr->rssi,
+	pe_debug(QDF_MAC_ADDR_FMT " rssi: normalized: %d, absolute: %d",
+		QDF_MAC_ADDR_REF(pHdr->bssId), pBssDescr->rssi,
 		pBssDescr->rssi_raw);
 
 	pBssDescr->received_time = (uint64_t)qdf_mc_timer_get_system_time();
 	pBssDescr->tsf_delta = WMA_GET_RX_TSF_DELTA(pRxPacketInfo);
 	pBssDescr->seq_ctrl = pHdr->seqControl;
 
-	pe_debug("Received %s from BSSID: %pM tsf_delta = %u Seq Num: %x ssid:%.*s, rssi: %d",
-		 pBssDescr->fProbeRsp ? "Probe Rsp" : "Beacon", pHdr->bssId,
+	pe_debug("Received %s from BSSID: "QDF_MAC_ADDR_FMT" tsf_delta = %u Seq Num: %x ssid:%.*s, rssi: %d",
+		 pBssDescr->fProbeRsp ? "Probe Rsp" : "Beacon",
+		 QDF_MAC_ADDR_REF(pHdr->bssId),
 		 pBssDescr->tsf_delta, ((pHdr->seqControl.seqNumHi <<
 		 HIGH_SEQ_NUM_OFFSET) | pHdr->seqControl.seqNumLo),
 		 pBPR->ssId.length, pBPR->ssId.ssId, pBssDescr->rssi_raw);
@@ -194,7 +190,7 @@ lim_collect_bss_description(struct mac_context *mac,
 		     pBody + SIR_MAC_B_PR_SSID_OFFSET, ieLen);
 
 	/*set channel number in beacon in case it is not present */
-	pBPR->channelNumber = pBssDescr->channelId;
+	pBPR->chan_freq = chan_freq;
 	mac->lim.beacon_probe_rsp_cnt_per_scan++;
 
 	return;

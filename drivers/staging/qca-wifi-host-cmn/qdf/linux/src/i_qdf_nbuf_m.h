@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,9 +34,6 @@
 #define QDF_NBUF_CB_RX_LRO_CTX(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m.lro_ctx)
 
-#define QDF_NBUF_CB_RX_VDEV_ID(skb) \
-	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m.vdev_id)
-
 #define QDF_NBUF_CB_TX_IPA_OWNED(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.tx.dev.priv_cb_m.ipa.owned)
 #define QDF_NBUF_CB_TX_IPA_PRIV(skb) \
@@ -60,6 +57,29 @@
 #define QDF_NBUF_CB_RX_MAP_IDX(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m.dp. \
 	wifi2.map_index)
+
+#define  QDF_NBUF_CB_RX_PEER_CACHED_FRM(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m. \
+	 peer_cached_buf_frm)
+
+#define  QDF_NBUF_CB_RX_FLUSH_IND(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m.flush_ind)
+
+#define  QDF_NBUF_CB_RX_PACKET_BUFF_POOL(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m. \
+	 packet_buf_pool)
+
+#define  QDF_NBUF_CB_RX_PACKET_L3_HDR_PAD(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m. \
+	 l3_hdr_pad)
+
+#define  QDF_NBUF_CB_RX_PACKET_EXC_FRAME(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m. \
+	 exc_frm)
+
+#define  QDF_NBUF_CB_RX_PACKET_IPA_SMMU_MAP(skb) \
+	 (((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.dev.priv_cb_m. \
+	 ipa_smmu_map)
 
 #define __qdf_nbuf_ipa_owned_get(skb) \
 	QDF_NBUF_CB_TX_IPA_OWNED(skb)
@@ -150,5 +170,8 @@ qdf_nbuf_deinit_replenish_timer(void)
 {
 	__qdf_nbuf_deinit_replenish_timer();
 }
+
+static inline void
+__qdf_nbuf_dma_inv_range(const void *buf_start, const void *buf_end) {}
 
 #endif /*_I_QDF_NBUF_M_H */

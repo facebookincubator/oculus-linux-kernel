@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -23,7 +23,8 @@
 #include "hif_io32.h"
 #include "multibus.h"
 #include "dummy.h"
-#if defined(HIF_PCI) || defined(HIF_SNOC) || defined(HIF_AHB)
+#if defined(HIF_PCI) || defined(HIF_SNOC) || defined(HIF_AHB) || \
+    defined(HIF_IPCI)
 #include "ce_main.h"
 #include "ce_api.h"
 #include "ce_internal.h"
@@ -81,7 +82,7 @@ static QDF_STATUS hif_verify_basic_ops(struct hif_softc *hif_sc)
 
 	for (i = 0; i < NUM_OPS; i++) {
 		if (!ops_array[i]) {
-			HIF_ERROR("%s: function %d is null", __func__, i);
+			hif_err("ops_array[%d] is null", i);
 			status = QDF_STATUS_E_NOSUPPORT;
 		}
 	}
@@ -98,6 +99,8 @@ int hif_bus_get_context_size(enum qdf_bus_type bus_type)
 	switch (bus_type) {
 	case QDF_BUS_TYPE_PCI:
 		return hif_pci_get_context_size();
+	case QDF_BUS_TYPE_IPCI:
+		return hif_ipci_get_context_size();
 	case QDF_BUS_TYPE_AHB:
 		return hif_ahb_get_context_size();
 	case QDF_BUS_TYPE_SNOC:
@@ -129,6 +132,9 @@ QDF_STATUS hif_bus_open(struct hif_softc *hif_sc,
 	case QDF_BUS_TYPE_PCI:
 		status = hif_initialize_pci_ops(hif_sc);
 		break;
+	case QDF_BUS_TYPE_IPCI:
+		status = hif_initialize_ipci_ops(hif_sc);
+		break;
 	case QDF_BUS_TYPE_SNOC:
 		status = hif_initialize_snoc_ops(&hif_sc->bus_ops);
 		break;
@@ -147,7 +153,7 @@ QDF_STATUS hif_bus_open(struct hif_softc *hif_sc,
 	}
 
 	if (status != QDF_STATUS_SUCCESS) {
-		HIF_ERROR("%s: %d not supported", __func__, bus_type);
+		hif_err("bus_type: %d not supported", bus_type);
 		return status;
 	}
 
@@ -260,6 +266,18 @@ void hif_disable_bus(struct hif_softc *hif_sc)
 {
 	hif_sc->bus_ops.hif_disable_bus(hif_sc);
 }
+
+#ifdef FEATURE_RUNTIME_PM
+struct hif_runtime_pm_ctx *hif_bus_get_rpm_ctx(struct hif_softc *hif_sc)
+{
+	return hif_sc->bus_ops.hif_bus_get_rpm_ctx(hif_sc);
+}
+
+struct device *hif_bus_get_dev(struct hif_softc *hif_sc)
+{
+	return hif_sc->bus_ops.hif_bus_get_dev(hif_sc);
+}
+#endif
 
 int hif_bus_configure(struct hif_softc *hif_sc)
 {
@@ -510,6 +528,30 @@ int hif_apps_wake_irq_enable(struct hif_opaque_softc *hif_ctx)
 	enable_irq(scn->wake_irq);
 
 	return 0;
+}
+
+int hif_apps_disable_irq_wake(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	return disable_irq_wake(scn->wake_irq);
+}
+
+int hif_apps_enable_irq_wake(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	return enable_irq_wake(scn->wake_irq);
 }
 
 #ifdef WLAN_FEATURE_BMI

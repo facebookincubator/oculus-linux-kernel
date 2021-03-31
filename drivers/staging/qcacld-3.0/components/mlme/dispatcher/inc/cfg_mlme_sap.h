@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -68,7 +68,7 @@
 #define CFG_ASSOC_STA_LIMIT CFG_UINT( \
 			"cfg_assoc_sta_limit", \
 			1, \
-			32, \
+			64, \
 			10, \
 			CFG_VALUE_OR_DEFAULT, \
 			"CFG_ASSOC_STA_LIMIT")
@@ -94,14 +94,6 @@
 			"gEnableLTECoex", \
 			0, \
 			"enabled lte coex")
-
-#define CFG_RMC_ACTION_PERIOD_FREQUENCY CFG_UINT( \
-			"cfg_rcm_action_period_frequency", \
-			100, \
-			1000, \
-			300, \
-			CFG_VALUE_OR_DEFAULT, \
-			"CFG_RMC_ACTION_PERIOD_FREQUENCY")
 
 /*
  * <ini>
@@ -229,7 +221,7 @@
  * gSapGetPeerInfo - Enable/Disable remote peer info query support
  * @Min: 0 - Disable remote peer info query support
  * @Max: 1 - Enable remote peer info query support
- * @Default: 0
+ * @Default: 1
  *
  * This ini is used to enable/disable remote peer info query support
  *
@@ -239,7 +231,7 @@
  */
  #define CFG_SAP_GET_PEER_INFO CFG_INI_BOOL( \
 			"gSapGetPeerInfo", \
-			0, \
+			1, \
 			"sap get peer info")
 
 /*
@@ -268,7 +260,7 @@
  * <ini>
  * gSoftApMaxPeers - Set Max peers connected for SAP
  * @Min: 1
- * @Max: 32
+ * @Max: 64
  * @Default: 32
  *
  * This ini is used to set Max peers connected for SAP
@@ -284,7 +276,7 @@
  #define CFG_SAP_MAX_NO_PEERS CFG_INI_UINT( \
 			"gSoftApMaxPeers", \
 			1, \
-			32, \
+			64, \
 			32, \
 			CFG_VALUE_OR_DEFAULT, \
 			"max no of peers")
@@ -463,30 +455,6 @@
 			0, \
 			CFG_VALUE_OR_DEFAULT, \
 			"reduced beacon interval")
-/*
- * <ini>
- * gMaxLIModulatedDTIM - Set MaxLIModulate Dtim
- * @Min: 1
- * @Max: 10
- * @Default: 10
- *
- * This ini is used to set default MaxLIModulatedDTIM
- *
- * Related: None
- *
- * Supported Feature: STA
- *
- * Usage: Internal/External
- *
- * </ini>
- */
-#define CFG_MAX_LI_MODULATED_DTIM CFG_INI_UINT( \
-			"gMaxLIModulatedDTIM", \
-			1, \
-			10, \
-			10, \
-			CFG_VALUE_OR_DEFAULT, \
-			"Max modulated dtim")
 
 /*
  * <ini>
@@ -741,6 +709,29 @@
 #define CFG_SAP_SAE
 #endif /* WLAN_FEATURE_SAE */
 
+/*
+ *
+ * <ini>
+ * enable_sap_fils_discovery - Enable/Disable fils discovery for 6Ghz SAP
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * Enable: 6Ghz SAP transmits fils discovery frame at every 20ms
+ * Disable: 6Ghz SAP transmits probe response frame at every 20ms
+ *
+ * Related: None
+ *
+ * Supported Feature: SAP
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_6G_SAP_FILS_DISCOVERY_ENABLED CFG_INI_BOOL( \
+					"enable_6g_sap_fils_discovery", \
+					1, \
+					"Enable/Disable fils discovery for SAP")
+
 #define CFG_SAP_ALL \
 	CFG_SAP_SAE \
 	CFG(CFG_AP_ENABLE_RANDOM_BSSID) \
@@ -751,7 +742,6 @@
 	CFG(CFG_11G_ONLY_POLICY) \
 	CFG(CFG_ASSOC_STA_LIMIT) \
 	CFG(CFG_ENABLE_LTE_COEX) \
-	CFG(CFG_RMC_ACTION_PERIOD_FREQUENCY) \
 	CFG(CFG_RATE_FOR_TX_MGMT) \
 	CFG(CFG_RATE_FOR_TX_MGMT_2G) \
 	CFG(CFG_RATE_FOR_TX_MGMT_5G) \
@@ -775,6 +765,7 @@
 	CFG(CFG_SAP_11AC_OVERRIDE) \
 	CFG(CFG_GO_FORCE_11N_FOR_11AC) \
 	CFG(CFG_GO_11AC_OVERRIDE) \
-	CFG(CFG_IS_SAP_BCAST_DEAUTH_ENABLED)
+	CFG(CFG_IS_SAP_BCAST_DEAUTH_ENABLED) \
+	CFG(CFG_6G_SAP_FILS_DISCOVERY_ENABLED)
 
 #endif /* __CFG_MLME_SAP_H */

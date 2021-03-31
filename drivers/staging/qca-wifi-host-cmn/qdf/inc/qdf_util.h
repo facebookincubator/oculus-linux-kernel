@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,6 +52,11 @@ typedef __qdf_wait_queue_head_t qdf_wait_queue_head_t;
 #define qdf_wmb()                 __qdf_wmb()
 
 /**
+ * qdf_rmb - read memory barrier.
+ */
+#define qdf_rmb()                 __qdf_rmb()
+
+/**
  * qdf_mb - read + write memory barrier.
  */
 #define qdf_mb()                 __qdf_mb()
@@ -87,6 +92,10 @@ typedef __qdf_wait_queue_head_t qdf_wait_queue_head_t;
  */
 #define qdf_target_assert_always(expr)  __qdf_target_assert(expr)
 
+#define QDF_SET_PARAM(__param, __val)    ((__param) |= (1 << (__val)))
+#define QDF_HAS_PARAM(__param, __val)    ((__param) &  (1 << (__val)))
+#define QDF_CLEAR_PARAM(__param, __val)  ((__param) &= ((~1) << (__val)))
+
 /**
  * QDF_MAX - get maximum of two values
  * @_x: 1st argument
@@ -113,6 +122,16 @@ typedef __qdf_wait_queue_head_t qdf_wait_queue_head_t;
 	 (_a)[4] == 0xff &&        \
 	 (_a)[5] == 0xff)
 
+/* Get number of bits from the index bit */
+#define QDF_GET_BITS(_val, _index, _num_bits) \
+		(((_val) >> (_index)) & ((1 << (_num_bits)) - 1))
+
+/* Set val to number of bits from the index bit */
+#define QDF_SET_BITS(_var, _index, _num_bits, _val) do { \
+		(_var) &= ~(((1 << (_num_bits)) - 1) << (_index)); \
+		(_var) |= (((_val) & ((1 << (_num_bits)) - 1)) << (_index)); \
+		} while (0)
+
 #define QDF_DECLARE_EWMA(name, factor, weight) \
 	__QDF_DECLARE_EWMA(name, factor, weight)
 
@@ -137,6 +156,18 @@ typedef __qdf_wait_queue_head_t qdf_wait_queue_head_t;
 
 #define qdf_ewma_rx_rssi_read(rx_rssi) \
 	__qdf_ewma_rx_rssi_read(rx_rssi)
+
+#define QDF_CHAR_BIT 8
+
+/**
+ * qdf_bitmap - Define a bitmap
+ * @name: name of the bitmap
+ * @bits: num of bits in the bitmap
+ *
+ * Return: none
+ */
+#define qdf_bitmap(name, bits) __qdf_bitmap(name, bits)
+
 /**
  * qdf_set_bit() - set bit in address
  * @nr: bit number to be set
@@ -181,6 +212,27 @@ typedef __qdf_wait_queue_head_t qdf_wait_queue_head_t;
  * Return: position first set bit in addr
  */
 #define qdf_find_first_bit(addr, nbits)    __qdf_find_first_bit(addr, nbits)
+
+/**
+ * qdf_bitmap_empty() - Check if bitmap is empty
+ * @addr: Address buffer pointer
+ * @nbits: Number of bits
+ *
+ * Return: True if no bit set, else false
+ */
+#define qdf_bitmap_empty(addr, nbits)    __qdf_bitmap_empty(addr, nbits)
+
+/**
+ * qdf_bitmap_and() - AND operation on the bitmap
+ * @dst: Destination buffer pointer
+ * @src1: First source buffer pointer
+ * @src2: Second source buffer pointer
+ * @nbits: Number of bits
+ *
+ * Return: Bitwise and of src1 and src2 in dst
+ */
+#define qdf_bitmap_and(dst, src1, src2, nbits) \
+		__qdf_bitmap_and(dst, src1, src2, nbits)
 
 #define qdf_wait_queue_interruptible(wait_queue, condition) \
 		__qdf_wait_queue_interruptible(wait_queue, condition)
@@ -593,10 +645,10 @@ int qdf_get_cpu(void)
 }
 
 /**
- * qdf_get_hweight8() - count num of 1's in bitmap
+ * qdf_get_hweight8() - count num of 1's in 8-bit bitmap
  * @value: input bitmap
  *
- * Count num of 1's set in the bitmap
+ * Count num of 1's set in the 8-bit bitmap
  *
  * Return: num of 1's
  */
@@ -606,6 +658,43 @@ unsigned int qdf_get_hweight8(unsigned int w)
 	unsigned int res = w - ((w >> 1) & 0x55);
 	res = (res & 0x33) + ((res >> 2) & 0x33);
 	return (res + (res >> 4)) & 0x0F;
+}
+
+/**
+ * qdf_get_hweight16() - count num of 1's in 16-bit bitmap
+ * @value: input bitmap
+ *
+ * Count num of 1's set in the 16-bit bitmap
+ *
+ * Return: num of 1's
+ */
+static inline
+unsigned int qdf_get_hweight16(unsigned int w)
+{
+	unsigned int res = (w & 0x5555) + ((w >> 1) & 0x5555);
+
+	res = (res & 0x3333) + ((res >> 2) & 0x3333);
+	res = (res & 0x0F0F) + ((res >> 4) & 0x0F0F);
+	return (res & 0x00FF) + ((res >> 8) & 0x00FF);
+}
+
+/**
+ * qdf_get_hweight32() - count num of 1's in 32-bit bitmap
+ * @value: input bitmap
+ *
+ * Count num of 1's set in the 32-bit bitmap
+ *
+ * Return: num of 1's
+ */
+static inline
+unsigned int qdf_get_hweight32(unsigned int w)
+{
+	unsigned int res = (w & 0x55555555) + ((w >> 1) & 0x55555555);
+
+	res = (res & 0x33333333) + ((res >> 2) & 0x33333333);
+	res = (res & 0x0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F);
+	res = (res & 0x00FF00FF) + ((res >> 8) & 0x00FF00FF);
+	return (res & 0x0000FFFF) + ((res >> 16) & 0x0000FFFF);
 }
 
 /**
@@ -764,6 +853,19 @@ static inline
 int qdf_hex_str_to_binary(u8 *dst, const char *src, size_t count)
 {
 	return __qdf_hex_str_to_binary(dst, src, count);
+}
+
+/**
+ * qdf_fls() - find last set bit in a given 32 bit input
+ * @x: 32 bit mask
+ *
+ * Return: zero if the input is zero, otherwise returns the bit
+ * position of the last set bit, where the LSB is 1 and MSB is 32.
+ */
+static inline
+int qdf_fls(uint32_t x)
+{
+	return __qdf_fls(x);
 }
 
 #endif /*_QDF_UTIL_H*/

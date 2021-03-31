@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,6 +20,7 @@
 #ifdef IPA_OFFLOAD
 
 #include <linux/ipa.h>
+#include <linux/version.h>
 
 /**
  * __qdf_ipa_wdi_meter_evt_type_t - type of event client callback is
@@ -378,10 +379,40 @@ typedef struct ipa_wdi_buffer_info __qdf_ipa_wdi_buffer_info_t;
 typedef struct ipa_gsi_ep_config __qdf_ipa_gsi_ep_config_t;
 
 #ifdef WDI3_STATS_UPDATE
+/**
+ * __qdf_ipa_wdi_tx_info_t - WLAN embedded TX information
+ */
 typedef struct ipa_wdi_tx_info __qdf_ipa_wdi_tx_info_t;
+
+#define QDF_IPA_WDI_TX_INFO_STA_TX_BYTES(stats_info)	\
+	(((struct ipa_wdi_tx_info *)stats_info)->sta_tx)
+#define QDF_IPA_WDI_TX_INFO_SAP_TX_BYTES(stats_info)	\
+	(((struct ipa_wdi_tx_info *)stats_info)->ap_tx)
+/**
+ * __qdf_ipa_wdi_bw_info_t - BW levels to be monitored by uC
+ */
 typedef struct ipa_wdi_bw_info __qdf_ipa_wdi_bw_info_t;
+
+#define QDF_IPA_WDI_BW_INFO_THRESHOLD_LEVEL_1(bw_info)	\
+	(((struct ipa_wdi_bw_info *)bw_info)->threshold[0])
+#define QDF_IPA_WDI_BW_INFO_THRESHOLD_LEVEL_2(bw_info)	\
+	(((struct ipa_wdi_bw_info *)bw_info)->threshold[1])
+#define QDF_IPA_WDI_BW_INFO_THRESHOLD_LEVEL_3(bw_info)	\
+	(((struct ipa_wdi_bw_info *)bw_info)->threshold[2])
+#define QDF_IPA_WDI_BW_INFO_START_STOP(bw_info)	\
+	(((struct ipa_wdi_bw_info *)bw_info)->stop)
+
+/**
+ * __qdf_ipa_inform_wlan_bw_t - BW information given by IPA driver
+ */
 typedef struct ipa_inform_wlan_bw  __qdf_ipa_inform_wlan_bw_t;
-#endif
+
+#define QDF_IPA_INFORM_WLAN_BW_INDEX(bw_inform)	\
+	(((struct ipa_inform_wlan_bw*)bw_inform)->index)
+#define QDF_IPA_INFORM_WLAN_BW_THROUGHPUT(bw_inform)	\
+	(((struct ipa_inform_wlan_bw*)bw_inform)->throughput)
+
+#endif /* WDI3_STATS_UPDATE */
 
 /**
  * __qdf_ipa_dp_evt_type_t - type of event client callback is
@@ -523,6 +554,10 @@ typedef struct ipa_wlan_hdr_attrib_val __qdf_ipa_wlan_hdr_attrib_val_t;
 #define __QDF_IPA_CLIENT_WLAN2_CONS IPA_CLIENT_WLAN2_CONS
 #define __QDF_IPA_CLIENT_WLAN3_CONS IPA_CLIENT_WLAN3_CONS
 #define __QDF_IPA_CLIENT_WLAN4_CONS IPA_CLIENT_WLAN4_CONS
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+#define IPA_LAN_RX_NAPI_SUPPORT
+#endif
 
 /*
  * Resume / Suspend
@@ -937,5 +972,16 @@ static bool __qdf_get_ipa_smmu_enabled(void)
 }
 #endif
 
+#ifdef IPA_LAN_RX_NAPI_SUPPORT
+/**
+ * ipa_get_lan_rx_napi() - Check if NAPI is enabled in LAN RX DP
+ *
+ * Returns: true if enabled, false otherwise
+ */
+static inline bool __qdf_ipa_get_lan_rx_napi(void)
+{
+	return ipa_get_lan_rx_napi();
+}
+#endif /* IPA_LAN_RX_NAPI_SUPPORT */
 #endif /* IPA_OFFLOAD */
 #endif /* _I_QDF_IPA_H */

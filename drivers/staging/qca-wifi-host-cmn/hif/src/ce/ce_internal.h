@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -89,6 +89,12 @@ struct CE_ring_state {
 	unsigned int high_water_mark_nentries;
 	void *srng_ctx;
 	void **per_transfer_context;
+
+	/* HAL CE ring type */
+	uint32_t hal_ring_type;
+	/* ring memory prealloc */
+	uint8_t is_ring_prealloc;
+
 	OS_DMA_MEM_CONTEXT(ce_dmacontext); /* OS Specific DMA context */
 };
 
@@ -468,6 +474,8 @@ enum hif_ce_event_type {
 	HIF_RX_DESC_PRE_NBUF_ALLOC,
 	HIF_RX_DESC_PRE_NBUF_MAP,
 	HIF_RX_DESC_POST_NBUF_MAP,
+
+	HIF_EVENT_TYPE_MAX,
 };
 
 void ce_init_ce_desc_event_log(struct hif_softc *scn, int ce_id, int size);
@@ -554,6 +562,7 @@ int hif_get_wake_ce_id(struct hif_softc *scn, uint8_t *ce_id);
 
 /**
  * struct hif_ce_desc_event - structure for detailing a ce event
+ * @index: location of the descriptor in the ce ring;
  * @type: what the event was
  * @time: when it happened
  * @current_hp: holds the current ring hp value
@@ -563,7 +572,6 @@ int hif_get_wake_ce_id(struct hif_softc *scn, uint8_t *ce_id);
  * @dma_addr: physical/iova address based on smmu status
  * @dma_to_phy: physical address from iova address
  * @virt_to_phy: physical address from virtual address
- * @index: location of the descriptor in the ce ring;
  * @actual_data_len: length of the data
  * @data: data pointed by descriptor
  */
@@ -571,6 +579,7 @@ struct hif_ce_desc_event {
 	int index;
 	enum hif_ce_event_type type;
 	uint64_t time;
+	int cpu_id;
 #ifdef HELIUMPLUS
 	union ce_desc descriptor;
 #else
@@ -665,6 +674,7 @@ void hif_clear_ce_desc_debug_data(struct hif_ce_desc_event *event)
  * Return:
  */
 void hif_ce_desc_data_record(struct hif_ce_desc_event *event, int len);
+
 QDF_STATUS alloc_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id);
 void free_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id);
 #else

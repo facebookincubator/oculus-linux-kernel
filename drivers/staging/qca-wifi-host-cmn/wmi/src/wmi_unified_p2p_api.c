@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,11 +22,9 @@
 #include <wmi_unified_priv.h>
 #include <wmi_unified_p2p_api.h>
 
-QDF_STATUS wmi_unified_set_p2pgo_oppps_req(void *wmi_hdl,
+QDF_STATUS wmi_unified_set_p2pgo_oppps_req(wmi_unified_t wmi_handle,
 					   struct p2p_ps_params *oppps)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (wmi_handle->ops->send_set_p2pgo_oppps_req_cmd)
 		return wmi_handle->ops->send_set_p2pgo_oppps_req_cmd(wmi_handle,
 								     oppps);
@@ -34,11 +32,9 @@ QDF_STATUS wmi_unified_set_p2pgo_oppps_req(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
-QDF_STATUS wmi_unified_set_p2pgo_noa_req_cmd(void *wmi_hdl,
+QDF_STATUS wmi_unified_set_p2pgo_noa_req_cmd(wmi_unified_t wmi_handle,
 					     struct p2p_ps_params *noa)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (wmi_handle->ops->send_set_p2pgo_noa_req_cmd)
 		return wmi_handle->ops->send_set_p2pgo_noa_req_cmd(wmi_handle,
 								   noa);
@@ -46,13 +42,12 @@ QDF_STATUS wmi_unified_set_p2pgo_noa_req_cmd(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
-QDF_STATUS wmi_extract_p2p_noa_ev_param(void *wmi_hdl, void *evt_buf,
+QDF_STATUS wmi_extract_p2p_noa_ev_param(wmi_unified_t wmi_handle,
+					void *evt_buf,
 					struct p2p_noa_info *param)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -64,13 +59,11 @@ QDF_STATUS wmi_extract_p2p_noa_ev_param(void *wmi_hdl, void *evt_buf,
 }
 
 QDF_STATUS
-wmi_send_set_mac_addr_rx_filter_cmd(void *wmi_hdl,
+wmi_send_set_mac_addr_rx_filter_cmd(wmi_unified_t wmi_handle,
 				    struct p2p_set_mac_filter *param)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -82,13 +75,12 @@ wmi_send_set_mac_addr_rx_filter_cmd(void *wmi_hdl,
 }
 
 QDF_STATUS
-wmi_extract_mac_addr_rx_filter_evt_param(void *wmi_hdl, void *evt_buf,
+wmi_extract_mac_addr_rx_filter_evt_param(wmi_unified_t wmi_handle,
+					 void *evt_buf,
 					 struct p2p_set_mac_filter_evt *param)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -100,13 +92,11 @@ wmi_extract_mac_addr_rx_filter_evt_param(void *wmi_hdl, void *evt_buf,
 }
 
 #ifdef FEATURE_P2P_LISTEN_OFFLOAD
-QDF_STATUS wmi_unified_p2p_lo_start_cmd(void *wmi_hdl,
+QDF_STATUS wmi_unified_p2p_lo_start_cmd(wmi_unified_t wmi_handle,
 					struct p2p_lo_start *param)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -117,12 +107,11 @@ QDF_STATUS wmi_unified_p2p_lo_start_cmd(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
-QDF_STATUS wmi_unified_p2p_lo_stop_cmd(void *wmi_hdl, uint8_t vdev_id)
+QDF_STATUS wmi_unified_p2p_lo_stop_cmd(wmi_unified_t wmi_handle,
+				       uint8_t vdev_id)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -133,13 +122,12 @@ QDF_STATUS wmi_unified_p2p_lo_stop_cmd(void *wmi_hdl, uint8_t vdev_id)
 	return QDF_STATUS_E_FAILURE;
 }
 
-QDF_STATUS wmi_extract_p2p_lo_stop_ev_param(void *wmi_hdl, void *evt_buf,
+QDF_STATUS wmi_extract_p2p_lo_stop_ev_param(wmi_unified_t wmi_handle,
+					    void *evt_buf,
 					    struct p2p_lo_event *param)
 {
-	wmi_unified_t wmi_handle = (wmi_unified_t)wmi_hdl;
-
 	if (!wmi_handle) {
-		WMI_LOGE("wmi handle is null");
+		wmi_err("wmi handle is null");
 		return QDF_STATUS_E_INVAL;
 	}
 

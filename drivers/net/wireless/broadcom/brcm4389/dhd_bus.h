@@ -416,4 +416,6 @@ extern int dhdpcie_get_max_eventbufpost(struct dhd_bus *bus);
 extern void dhd_bus_flow_ring_status_isr_trace(dhd_pub_t *dhd);
 extern void dhd_bus_flow_ring_status_dpc_trace(dhd_pub_t *dhd);
 #endif /* DHD_FLOW_RING_STATUS_TRACE */
+
+extern bool dhd_bus_init_done(struct dhd_bus *bus);
 #endif /* _dhd_bus_h_ */

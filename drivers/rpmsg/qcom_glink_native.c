@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2016-2017, Linaro Ltd
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/idr.h>
@@ -96,6 +96,7 @@ struct glink_core_rx_intent {
 	size_t size;
 	bool reuse;
 	bool in_use;
+	bool advertised;
 	u32 offset;
 
 	struct list_head node;
@@ -221,6 +222,7 @@ struct glink_channel {
 
 	struct mutex intent_req_lock;
 	bool intent_req_result;
+	bool channel_ready;
 	atomic_t intent_req_comp;
 	wait_queue_head_t intent_req_event;
 };
@@ -724,6 +726,15 @@ static int qcom_glink_advertise_intent(struct qcom_glink *glink,
 		__le32 liid;
 	} __packed;
 	struct command cmd;
+	unsigned long flags;
+
+	spin_lock_irqsave(&channel->intent_lock, flags);
+	if (intent->advertised) {
+		spin_unlock_irqrestore(&channel->intent_lock, flags);
+		return 0;
+	}
+	intent->advertised = true;
+	spin_unlock_irqrestore(&channel->intent_lock, flags);
 
 	cmd.id = cpu_to_le16(RPM_CMD_INTENT);
 	cmd.lcid = cpu_to_le16(channel->lcid);
@@ -829,6 +840,7 @@ static void qcom_glink_handle_intent_req(struct qcom_glink *glink,
 	struct glink_core_rx_intent *intent = NULL;
 	struct glink_core_rx_intent *tmp;
 	struct glink_channel *channel;
+	struct rpmsg_endpoint *ept;
 	unsigned long flags;
 	int iid;
 
@@ -854,8 +866,9 @@ static void qcom_glink_handle_intent_req(struct qcom_glink *glink,
 		return;
 	}
 
+	ept = &channel->ept;
 	intent = qcom_glink_alloc_intent(glink, channel, size, false);
-	if (intent)
+	if (intent && channel->channel_ready)
 		qcom_glink_advertise_intent(glink, channel, intent);
 
 	qcom_glink_send_intent_req_ack(glink, channel, !!intent);
@@ -930,6 +943,14 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail)
 		/* Drop the message */
 		goto advance_rx;
 	}
+
+	if (!channel->ept.cb) {
+		dev_err(glink->dev,
+			"Callback not available on channel %s\n",
+			channel->name);
+		return -EAGAIN;
+	}
+
 	CH_INFO(channel, "chunk_size:%d left_size:%d\n", chunk_size, left_size);
 
 	if (glink->intentless) {
@@ -984,11 +1005,17 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail)
 	if (!left_size) {
 		spin_lock(&channel->recv_lock);
 		if (channel->ept.cb) {
-			channel->ept.cb(channel->ept.rpdev,
+			ret = channel->ept.cb(channel->ept.rpdev,
 					intent->data,
 					intent->offset,
 					channel->ept.priv,
 					RPMSG_ADDR_ANY);
+			if (ret < 0)
+				CH_INFO(channel,
+					"glink:callback error ret = %d\n", ret);
+		} else {
+			CH_INFO(channel, "callback not present\n");
+			dev_err(glink->dev, "glink:callback not present\n");
 		}
 		spin_unlock(&channel->recv_lock);
 
@@ -1328,13 +1355,14 @@ static struct rpmsg_endpoint *qcom_glink_create_ept(struct rpmsg_device *rpdev,
 		if (ret)
 			return NULL;
 	}
+	CH_INFO(channel, "Initializing ept\n");
 
 	ept = &channel->ept;
 	ept->rpdev = rpdev;
 	ept->cb = cb;
 	ept->priv = priv;
 	ept->ops = &glink_endpoint_ops;
-
+	CH_INFO(channel, "Initialized ept\n");
 	return ept;
 }
 
@@ -1344,15 +1372,33 @@ static int qcom_glink_announce_create(struct rpmsg_device *rpdev)
 	struct device_node *np = rpdev->dev.of_node;
 	struct qcom_glink *glink = channel->glink;
 	struct glink_core_rx_intent *intent;
+	struct glink_core_rx_intent *tmp;
 	const struct property *prop = NULL;
 	__be32 defaults[] = { cpu_to_be32(SZ_1K), cpu_to_be32(5) };
 	int num_intents;
 	int num_groups = 1;
 	__be32 *val = defaults;
+	unsigned long flags;
+	int iid;
 	int size;
 
+	CH_INFO(channel, "Entered\n");
 	if (glink->intentless || !completion_done(&channel->open_ack))
 		return 0;
+
+	channel->channel_ready = true;
+
+	/*Serve any pending intent request*/
+	spin_lock_irqsave(&channel->intent_lock, flags);
+	idr_for_each_entry(&channel->liids, tmp, iid) {
+		if (!tmp->reuse && !tmp->advertised) {
+			intent = tmp;
+			spin_unlock_irqrestore(&channel->intent_lock, flags);
+			qcom_glink_advertise_intent(glink, channel, intent);
+			spin_lock_irqsave(&channel->intent_lock, flags);
+		}
+	}
+	spin_unlock_irqrestore(&channel->intent_lock, flags);
 
 	prop = of_find_property(np, "qcom,intents", NULL);
 	if (prop) {
@@ -1373,6 +1419,7 @@ static int qcom_glink_announce_create(struct rpmsg_device *rpdev)
 			qcom_glink_advertise_intent(glink, channel, intent);
 		}
 	}
+	CH_INFO(channel, "Exit\n");
 	return 0;
 }
 

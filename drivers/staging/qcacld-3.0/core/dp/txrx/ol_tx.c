@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -43,16 +43,20 @@
 
 /**
  * ol_tx_data() - send data frame
- * @vdev: virtual device handle
+ * @soc_hdl: datapath soc handle
+ * @vdev_id: virtual interface id
  * @skb: skb
  *
  * Return: skb/NULL for success
  */
-qdf_nbuf_t ol_tx_data(void *data_vdev, qdf_nbuf_t skb)
+qdf_nbuf_t ol_tx_data(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+		      qdf_nbuf_t skb)
 {
 	struct ol_txrx_pdev_t *pdev;
 	qdf_nbuf_t ret;
-	ol_txrx_vdev_handle vdev = data_vdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_vdev_handle vdev = ol_txrx_get_vdev_from_soc_vdev_id(soc,
+								     vdev_id);
 
 	if (qdf_unlikely(!vdev)) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
@@ -85,15 +89,22 @@ qdf_nbuf_t ol_tx_data(void *data_vdev, qdf_nbuf_t skb)
 }
 
 #ifdef IPA_OFFLOAD
-qdf_nbuf_t ol_tx_send_ipa_data_frame(struct cdp_vdev *vdev, qdf_nbuf_t skb)
+qdf_nbuf_t ol_tx_send_ipa_data_frame(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+				     qdf_nbuf_t skb)
 {
-	struct ol_txrx_pdev_t *pdev = cds_get_context(QDF_MODULE_ID_TXRX);
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	struct ol_txrx_pdev_t *pdev = ol_txrx_get_pdev_from_pdev_id(
+							soc, OL_TXRX_PDEV_ID);
+	ol_txrx_vdev_handle vdev = ol_txrx_get_vdev_from_soc_vdev_id(soc,
+								     vdev_id);
 	qdf_nbuf_t ret;
 
 	if (qdf_unlikely(!pdev)) {
-		qdf_net_buf_debug_acquire_skb(skb, __FILE__, __LINE__);
-
-		ol_txrx_err("pdev is NULL");
+		ol_txrx_err("%s: invalid pdev", __func__);
+		return skb;
+	}
+	if (qdf_unlikely(!vdev)) {
+		ol_txrx_err("%s: invalid vdev, vdev_id:%d", __func__, vdev_id);
 		return skb;
 	}
 
@@ -122,41 +133,59 @@ qdf_nbuf_t ol_tx_send_ipa_data_frame(struct cdp_vdev *vdev, qdf_nbuf_t skb)
 #endif
 
 void
-ol_txrx_data_tx_cb_set(struct cdp_vdev *pvdev,
+ol_txrx_data_tx_cb_set(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 		       ol_txrx_data_tx_cb callback, void *ctxt)
 {
-	struct ol_txrx_vdev_t *vdev = (struct ol_txrx_vdev_t *)pvdev;
-	struct ol_txrx_pdev_t *pdev = vdev->pdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_vdev_handle vdev = ol_txrx_get_vdev_from_soc_vdev_id(soc,
+								     vdev_id);
+	struct ol_txrx_pdev_t *pdev;
 
+	if (!vdev || !vdev->pdev)
+		return;
+
+	pdev = vdev->pdev;
 	pdev->tx_data_callback.func = callback;
 	pdev->tx_data_callback.ctxt = ctxt;
 }
 
-void
-ol_txrx_mgmt_tx_cb_set(struct cdp_pdev *ppdev, uint8_t type,
+QDF_STATUS
+ol_txrx_mgmt_tx_cb_set(struct cdp_soc_t *soc_hdl, uint8_t pdev_id, uint8_t type,
 		       ol_txrx_mgmt_tx_cb download_cb,
 		       ol_txrx_mgmt_tx_cb ota_ack_cb, void *ctxt)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	struct ol_txrx_pdev_t *pdev = ol_txrx_get_pdev_from_pdev_id(soc,
+								    pdev_id);
+
+	if (!pdev)
+		return QDF_STATUS_E_FAILURE;
 
 	TXRX_ASSERT1(type < OL_TXRX_MGMT_NUM_TYPES);
 	pdev->tx_mgmt_cb.download_cb = download_cb;
 	pdev->tx_mgmt_cb.ota_ack_cb = ota_ack_cb;
 	pdev->tx_mgmt_cb.ctxt = ctxt;
+
+	return QDF_STATUS_SUCCESS;
 }
 
 int
-ol_txrx_mgmt_send_ext(struct cdp_vdev *pvdev,
-		  qdf_nbuf_t tx_mgmt_frm,
-		  uint8_t type, uint8_t use_6mbps, uint16_t chanfreq)
+ol_txrx_mgmt_send_ext(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+		      qdf_nbuf_t tx_mgmt_frm, uint8_t type,
+		      uint8_t use_6mbps, uint16_t chanfreq)
 {
-	struct ol_txrx_vdev_t *vdev =
-				(struct ol_txrx_vdev_t *)pvdev;
-	struct ol_txrx_pdev_t *pdev = vdev->pdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_vdev_handle vdev = ol_txrx_get_vdev_from_soc_vdev_id(soc,
+								     vdev_id);
+	struct ol_txrx_pdev_t *pdev;
 	struct ol_tx_desc_t *tx_desc;
 	struct ol_txrx_msdu_info_t tx_msdu_info;
 	int result = 0;
 
+	if (!vdev || !vdev->pdev)
+		return QDF_STATUS_E_FAULT;
+
+	pdev = vdev->pdev;
 	tx_msdu_info.tso_info.is_tso = 0;
 
 	tx_msdu_info.htt.action.use_6mbps = use_6mbps;

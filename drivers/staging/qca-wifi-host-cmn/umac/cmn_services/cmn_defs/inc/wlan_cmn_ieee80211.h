@@ -26,10 +26,12 @@
 #include <osdep.h>
 
 #define IEEE80211_CCMP_HEADERLEN    8
+#define IEEE80211_HT_CTRL_LEN       4
 #define IEEE80211_CCMP_MICLEN       8
 #define WLAN_IEEE80211_GCMP_HEADERLEN    8
 #define WLAN_IEEE80211_GCMP_MICLEN       16
 #define IEEE80211_FC1_WEP           0x40
+#define IEEE80211_FC1_ORDER         0x80
 #define WLAN_HDR_IV_LEN            3
 #define WLAN_HDR_EXT_IV_BIT        0x20
 #define WLAN_HDR_EXT_IV_LEN        4
@@ -43,6 +45,10 @@
 #define MBO_OCE_OUI 0x506f9a16
 #define MBO_OCE_OUI_SIZE 4
 #define REDUCED_WAN_METRICS_ATTR 103
+#define OCE_DISALLOW_ASSOC_ATTR  0x4
+#define AP_TX_PWR_ATTR 107
+#define OCE_SUBNET_ID_ATTR 108
+#define OCE_SUBNET_ID_LEN 6
 
 /* WCN IE */
 /* Microsoft OUI */
@@ -134,6 +140,7 @@
 #define WLAN_IBSS_IE_MAX_LEN                     2
 #define WLAN_REQUEST_IE_MAX_LEN                  255
 #define WLAN_RM_CAPABILITY_IE_MAX_LEN            5
+#define WLAN_RNR_IE_MIN_LEN                      5
 
 /* HT capability flags */
 #define WLAN_HTCAP_C_ADVCODING             0x0001
@@ -178,6 +185,19 @@
 /* 80 + 80 MHz Operating Channel  (revised signalling) */
 #define WLAN_VHTOP_CHWIDTH_REVSIG_80_80  1
 
+#define WLAN_HEOP_FIXED_PARAM_LENGTH       7
+#define WLAN_HEOP_VHTOP_LENGTH             3
+#define WLAN_HEOP_CO_LOCATED_BSS_LENGTH    1
+
+#define WLAN_HEOP_VHTOP_PRESENT_MASK       0x00004000  /* B14 */
+#define WLAN_HEOP_CO_LOCATED_BSS_MASK      0x00008000  /* B15 */
+#define WLAN_HEOP_6GHZ_INFO_PRESENT_MASK   0X00020000  /* B17 */
+
+#define WLAN_HE_6GHZ_CHWIDTH_20           0 /* 20MHz Oper Ch width */
+#define WLAN_HE_6GHZ_CHWIDTH_40           1 /* 40MHz Oper Ch width */
+#define WLAN_HE_6GHZ_CHWIDTH_80           2 /* 80MHz Oper Ch width */
+#define WLAN_HE_6GHZ_CHWIDTH_160_80_80    3 /* 160/80+80 MHz Oper Ch width */
+
 #define WLAN_RATE_VAL              0x7f
 
 #define WLAN_RV(v)     ((v) & WLAN_RATE_VAL)
@@ -198,6 +218,20 @@
 	WLAN_VHTOP_CHWIDTH_REVSIG_80_80) && \
 	((vhtop)->vht_op_ch_freq_seg2 != 0) && \
 	(abs((vhtop)->vht_op_ch_freq_seg2 - (vhtop)->vht_op_ch_freq_seg1) > 8))
+
+/* Check if channel width is HE160 in HE 6ghz params */
+#define WLAN_IS_HE160(he_6g_param) (((he_6g_param)->width == \
+	WLAN_HE_6GHZ_CHWIDTH_160_80_80) && \
+	((he_6g_param)->chan_freq_seg1 != 0) && \
+	(abs((he_6g_param)->chan_freq_seg1 - \
+	(he_6g_param)->chan_freq_seg0) == 8))
+
+/* Check if channel width is HE80p80 in HE 6ghz params */
+#define WLAN_IS_HE80_80(he_6g_param) (((he_6g_param)->width == \
+	WLAN_HE_6GHZ_CHWIDTH_160_80_80) && \
+	((he_6g_param)->chan_freq_seg1 != 0) && \
+	(abs((he_6g_param)->chan_freq_seg1 - \
+	(he_6g_param)->chan_freq_seg0) > 8))
 
 #define LE_READ_2(p) \
 	((uint16_t)\
@@ -378,8 +412,10 @@ enum element_ie {
 	WLAN_ELEMID_AID              = 197,
 	WLAN_ELEMID_QUIET_CHANNEL    = 198,
 	WLAN_ELEMID_OP_MODE_NOTIFY   = 199,
+	WLAN_ELEMID_REDUCED_NEIGHBOR_REPORT = 201,
 	WLAN_ELEMID_VENDOR           = 221,
 	WLAN_ELEMID_FILS_INDICATION  = 240,
+	WLAN_ELEMID_RSNXE            = 244,
 	WLAN_ELEMID_EXTN_ELEM        = 255,
 };
 
@@ -389,6 +425,7 @@ enum element_ie {
  * @WLAN_EXTN_ELEMID_HECAP:  HE capabilities IE
  * @WLAN_EXTN_ELEMID_HEOP:   HE Operation IE
  * @WLAN_EXTN_ELEMID_MUEDCA: MU-EDCA IE
+ * @WLAN_EXTN_ELEMID_HE_6G_CAP: HE 6GHz Band Capabilities IE
  * @WLAN_EXTN_ELEMID_SRP:    spatial reuse parameter IE
  */
 enum extn_element_ie {
@@ -397,7 +434,365 @@ enum extn_element_ie {
 	WLAN_EXTN_ELEMID_HEOP        = 36,
 	WLAN_EXTN_ELEMID_MUEDCA      = 38,
 	WLAN_EXTN_ELEMID_SRP         = 39,
+	WLAN_EXTN_ELEMID_HE_6G_CAP   = 59,
 	WLAN_EXTN_ELEMID_ESP         = 11,
+};
+
+/**
+ * enum wlan_reason_code - wlan reason codes Reason codes
+ * (IEEE Std 802.11-2016, 9.4.1.7, Table 9-45)
+ * @REASON_UNSPEC_FAILURE: Unspecified reason
+ * @REASON_PREV_AUTH_NOT_VALID: Previous authentication no longer valid
+ * @REASON_DEAUTH_NETWORK_LEAVING: Deauthenticated because sending station
+ * is leaving (or has left) IBSS or ESS
+ * @REASON_DISASSOC_DUE_TO_INACTIVITY: Disassociated due to inactivity
+ * @REASON_DISASSOC_AP_BUSY: Disassociated because AP is unable
+ * to handle all currently associated STAs
+ * @REASON_CLASS2_FRAME_FROM_NON_AUTH_STA: Class 2 frame received from
+ * nonauthenticated station
+ * @REASON_CLASS3_FRAME_FROM_NON_ASSOC_STA: Class 3 frame received from
+ * nonassociated station
+ * @REASON_DISASSOC_NETWORK_LEAVING: Disassociated because sending station
+ * is leaving (or has left) BSS
+ * @REASON_STA_NOT_AUTHENTICATED: Station requesting (re)association
+ * is not authenticated with responding station
+ * @REASON_BAD_PWR_CAPABILITY: Disassociated because the
+ * information in the Power Capability element is unacceptable
+ * @REASON_BAD_SUPPORTED_CHANNELS: Disassociated because the
+ * information in the Supported Channels element is unacceptable
+ * @REASON_DISASSOC_BSS_TRANSITION: Disassociated due to BSS transition
+ * management
+ * @REASON_INVALID_IE: Invalid element, i.e., an element defined in this
+ * standard for which the content does not meet the specifications in Clause 9
+ * @REASON_MIC_FAILURE: Message integrity code (MIC) failure
+ * @REASON_4WAY_HANDSHAKE_TIMEOUT: 4-Way Handshake timeout
+ * @REASON_GROUP_KEY_UPDATE_TIMEOUT: Group Key Handshake timeout
+ * @REASON_IN_4WAY_DIFFERS: Information element in 4-Way Handshake
+ * different from (Re)Association Request/Probe Response/Beacon frame
+ * @REASON_INVALID_GROUP_CIPHER: Invalid group cipher
+ * @REASON_INVALID_PAIRWISE_CIPHER: Invalid pairwise cipher
+ * @REASON_INVALID_AKMP: Invalid AKMP
+ * @REASON_UNSUPPORTED_RSNE_VER: Unsupported RSNE version
+ * @REASON_INVALID_RSNE_CAPABILITIES: Invalid RSNE capabilities
+ * @REASON_1X_AUTH_FAILURE: IEEE 802.1X authentication failed
+ * @REASON_CIPHER_SUITE_REJECTED: Cipher suite rejected because of the
+ * security policy
+ * @REASON_TDLS_PEER_UNREACHABLE: TDLS direct-link teardown due to TDLS
+ * peer STA unreachable via the TDLS direct link
+ * @REASON_TDLS_UNSPEC: TDLS direct-link teardown for unspecified
+ * reason
+ * @REASON_DISASSOC_SSP_REQUESTED: Disassociated because session terminated
+ * by SSP request
+ * @REASON_NO_SSP_ROAMING_AGREEMENT: Disassociated because of lack of SSP
+ * roaming agreement
+ * REASON_BAD_CIPHER_OR_AKM: Requested service rejected because of SSP
+ * cipher suite or AKM requirement
+ * @REASON_LOCATION_NOT_AUTHORIZED: Requested service not authorized in
+ * this location
+ * @REASON_SERVICE_CHANGE_PRECLUDES_TS: TS deleted because QoS AP
+ * lacks sufficient bandwidth for this QoS STA due to a change in BSS service
+ * characteristics or operational mode (e.g., an HT BSS change from 40 MHz
+ * channel to 20 MHz channel)
+ * @REASON_QOS_UNSPECIFIED: Disassociated for unspecified, QoS-related
+ * reason
+ * @REASON_NO_BANDWIDTH: Disassociated because QoS AP lacks sufficient
+ * bandwidth for this QoS STA
+ * @REASON_XS_UNACKED_FRAMES: Disassociated because excessive number of
+ * frames need to be acknowledged, but are not acknowledged due to AP
+ * transmissions and/or poor channel conditions
+ * @REASON_EXCEEDED_TXOP: Disassociated because STA is transmitting outside
+ * the limits of its TXOPs
+ * @REASON_STA_LEAVING: Requested from peer STA as the STA is leaving the
+ * BSS (or resetting)
+ * @REASON_END_TS_BA_DLS: Requesting STA is no longer using the stream
+ * or session
+ * @REASON_UNKNOWN_TS_BA: Requesting STA received frames using a
+ * mechanism for which setup has not been completed
+ * @REASON_TIMEDOUT:  Requested from peer STA due to timeout
+ * @REASON_PEERKEY_MISMATCH: Peer STA does not support the requested
+ * cipher suite
+ * @REASON_AUTHORIZED_ACCESS_LIMIT_REACHED: Disassociated because
+ * authorized access limit reached
+ * @REASON_EXTERNAL_SERVICE_REQUIREMENTS: Disassociated due to external
+ * service requirements
+ * @REASON_INVALID_FT_ACTION_FRAME_COUNT: Invalid FT Action frame count
+ * @REASON_INVALID_PMKID: Invalid pairwise master key identifier (PMKID)
+ * @REASON_INVALID_MDE: Invalid MDE
+ * @REASON_INVALID_FTE: Invalid FTE
+ * @REASON_MESH_PEERING_CANCELLED: Mesh peering canceled for unknown
+ * reasons
+ * @REASON_MESH_MAX_PEERS: The mesh STA has reached the supported maximum
+ * number of peer mesh STAs
+ * @REASON_MESH_CONFIG_POLICY_VIOLATION: The received information violates
+ * the Mesh Configuration policy configured in the mesh STA profile
+ * @REASON_MESH_CLOSE_RCVD: The mesh STA has received a Mesh Peering Close
+ * frame requesting to close the mesh peering
+ * @REASON_MESH_MAX_RETRIES: The mesh STA has resent dot11MeshMaxRetries
+ * Mesh Peering Open frames, without receiving a Mesh Peering Confirm frame
+ * @REASON_MESH_CONFIRM_TIMEOUT: The confirmTimer for the mesh peering
+ * instance times out.
+ * @REASON_MESH_INVALID_GTK: The mesh STA fails to unwrap the GTK or
+ * the values in the wrapped contents do not match
+ * @REASON_MESH_INCONSISTENT_PARAMS: The mesh STA receives inconsistent
+ * information about the mesh parameters between mesh peering Management frames
+ * @REASON_MESH_INVALID_SECURITY_CAP: The mesh STA fails the authenticated
+ * mesh peering exchange because due to failure in selecting either the pairwise
+ * ciphersuite or group ciphersuite
+ * @REASON_MESH_PATH_ERROR_NO_PROXY_INFO: The mesh STA does not have proxy
+ * information for this external destination.
+ * @REASON_MESH_PATH_ERROR_NO_FORWARDING_INFO: The mesh STA does not have
+ * forwarding information for this destination.
+ * @REASON_MESH_PATH_ERROR_DEST_UNREACHABLE: The mesh STA determines that
+ * the link to the next hop of an active path in its forwarding information is
+ * no longer usable.
+ * @REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS: The Deauthentication frame
+ * was sent because the MAC address of the STA already exists in the mesh BSS
+ * @REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ: The mesh STA performs
+ * channel switch to meet regulatory requirements.
+ * @REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED: The mesh STA performs channel
+ * switching with unspecified reason.
+ * @REASON_POOR_RSSI_CONDITIONS: Disassociated due to poor RSSI conditions
+ *
+ *
+ * Internal reason codes: Add any internal reason code just after
+ * REASON_PROP_START and decrease the value of REASON_PROP_START
+ * accordingly.
+ *
+ * @REASON_PROP_START: Start of prop reason code
+ * @REASON_HOST_TRIGGERED_ROAM_FAILURE: Reason host triggered roam failed
+ * @REASON_FW_TRIGGERED_ROAM_FAILURE: Firmware triggered roam failed
+ * @REASON_GATEWAY_REACHABILITY_FAILURE: Due to NUD failure
+ * @REASON_UNSUPPORTED_CHANNEL_CSA: due to unsuppoerted channel in CSA
+ * @REASON_OPER_CHANNEL_DISABLED_INDOOR: as channel is disabled in indoor
+ * @REASON_OPER_CHANNEL_USER_DISABLED: due to channel disabled by user
+ * @REASON_DEVICE_RECOVERY: due to SSR
+ * @REASON_KEY_TIMEOUT: due to key Timeout
+ * @REASON_OPER_CHANNEL_BAND_CHANGE: due to change in BAND
+ * @REASON_IFACE_DOWN: as interface is going down
+ * @REASON_PEER_XRETRY_FAIL: due to sta kickout with reason no ACK
+ * @REASON_PEER_INACTIVITY: due to sta kickout with reason inactivity
+ * @REASON_SA_QUERY_TIMEOUT: due to sta kickout due to SA query timeout
+ * @REASON_CHANNEL_SWITCH_FAILED: as channel switch failed
+ * @REASON_BEACON_MISSED: due to beacon miss
+ * @REASON_USER_TRIGGERED_ROAM_FAILURE: Reason user triggered roam failed
+ */
+enum wlan_reason_code {
+	REASON_UNSPEC_FAILURE = 1,
+	REASON_PREV_AUTH_NOT_VALID = 2,
+	REASON_DEAUTH_NETWORK_LEAVING = 3,
+	REASON_DISASSOC_DUE_TO_INACTIVITY = 4,
+	REASON_DISASSOC_AP_BUSY = 5,
+	REASON_CLASS2_FRAME_FROM_NON_AUTH_STA = 6,
+	REASON_CLASS3_FRAME_FROM_NON_ASSOC_STA = 7,
+	REASON_DISASSOC_NETWORK_LEAVING = 8,
+	REASON_STA_NOT_AUTHENTICATED = 9,
+	REASON_BAD_PWR_CAPABILITY = 10,
+	REASON_BAD_SUPPORTED_CHANNELS = 11,
+	REASON_DISASSOC_BSS_TRANSITION = 12,
+	REASON_INVALID_IE = 13,
+	REASON_MIC_FAILURE = 14,
+	REASON_4WAY_HANDSHAKE_TIMEOUT = 15,
+	REASON_GROUP_KEY_UPDATE_TIMEOUT = 16,
+	REASON_IN_4WAY_DIFFERS = 17,
+	REASON_INVALID_GROUP_CIPHER = 18,
+	REASON_INVALID_PAIRWISE_CIPHER = 19,
+	REASON_INVALID_AKMP = 20,
+	REASON_UNSUPPORTED_RSNE_VER = 21,
+	REASON_INVALID_RSNE_CAPABILITIES = 22,
+	REASON_1X_AUTH_FAILURE = 23,
+	REASON_CIPHER_SUITE_REJECTED = 24,
+	REASON_TDLS_PEER_UNREACHABLE = 25,
+	REASON_TDLS_UNSPEC = 26,
+	REASON_DISASSOC_SSP_REQUESTED = 27,
+	REASON_NO_SSP_ROAMING_AGREEMENT = 28,
+	REASON_BAD_CIPHER_OR_AKM = 29,
+	REASON_LOCATION_NOT_AUTHORIZED = 30,
+	REASON_SERVICE_CHANGE_PRECLUDES_TS = 31,
+	REASON_QOS_UNSPECIFIED = 32,
+	REASON_NO_BANDWIDTH = 33,
+	REASON_XS_UNACKED_FRAMES = 34,
+	REASON_EXCEEDED_TXOP = 35,
+	REASON_STA_LEAVING = 36,
+	REASON_END_TS_BA_DLS = 37,
+	REASON_UNKNOWN_TS_BA = 38,
+	REASON_TIMEDOUT = 39,
+	REASON_PEERKEY_MISMATCH = 45,
+	REASON_AUTHORIZED_ACCESS_LIMIT_REACHED = 46,
+	REASON_EXTERNAL_SERVICE_REQUIREMENTS = 47,
+	REASON_INVALID_FT_ACTION_FRAME_COUNT = 48,
+	REASON_INVALID_PMKID = 49,
+	REASON_INVALID_MDE = 50,
+	REASON_INVALID_FTE = 51,
+	REASON_MESH_PEERING_CANCELLED = 52,
+	REASON_MESH_MAX_PEERS = 53,
+	REASON_MESH_CONFIG_POLICY_VIOLATION = 54,
+	REASON_MESH_CLOSE_RCVD = 55,
+	REASON_MESH_MAX_RETRIES = 56,
+	REASON_MESH_CONFIRM_TIMEOUT = 57,
+	REASON_MESH_INVALID_GTK = 58,
+	REASON_MESH_INCONSISTENT_PARAMS = 59,
+	REASON_MESH_INVALID_SECURITY_CAP = 60,
+	REASON_MESH_PATH_ERROR_NO_PROXY_INFO = 61,
+	REASON_MESH_PATH_ERROR_NO_FORWARDING_INFO = 62,
+	REASON_MESH_PATH_ERROR_DEST_UNREACHABLE = 63,
+	REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS = 64,
+	REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ = 65,
+	REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED = 66,
+	REASON_POOR_RSSI_CONDITIONS = 71,
+	/* 72–65535 reserved */
+
+	/* Internal reason codes */
+	REASON_PROP_START = 65519,
+	REASON_HOST_TRIGGERED_ROAM_FAILURE  = 65519,
+	REASON_FW_TRIGGERED_ROAM_FAILURE = 65520,
+	REASON_GATEWAY_REACHABILITY_FAILURE = 65521,
+	REASON_UNSUPPORTED_CHANNEL_CSA = 65522,
+	REASON_OPER_CHANNEL_DISABLED_INDOOR = 65523,
+	REASON_OPER_CHANNEL_USER_DISABLED = 65524,
+	REASON_DEVICE_RECOVERY = 65525,
+	REASON_KEY_TIMEOUT = 65526,
+	REASON_OPER_CHANNEL_BAND_CHANGE = 65527,
+	REASON_IFACE_DOWN = 65528,
+	REASON_PEER_XRETRY_FAIL = 65529,
+	REASON_PEER_INACTIVITY = 65530,
+	REASON_SA_QUERY_TIMEOUT = 65531,
+	REASON_CHANNEL_SWITCH_FAILED = 65532,
+	REASON_BEACON_MISSED = 65533,
+	REASON_USER_TRIGGERED_ROAM_FAILURE = 65534,
+};
+
+/**
+ * enum wlan_status_code - wlan status codes
+ * (IEEE Std 802.11-2016, 9.4.1.9, Table 9-46)
+ * @STATUS_SUCCESS: Success full
+ * @STATUS_UNSPECIFIED_FAILURE: Unspecified failure.
+ * @STATUS_TDLS_WAKEUP_REJECT: TDLS wakeup schedule rejected but alternative
+ * schedule provided.
+ * @STATUS_SECURITY_DISABLED: Security disabled.
+ * @STATUS_UNACCEPTABLE_LIFETIME: Unacceptable lifetime.
+ * @STATUS_NOT_IN_SAME_BSS: Not in same BSS.
+ * @STATUS_CAPS_UNSUPPORTED: Cannot support all requested capabilities in the
+ * Capability Information field.
+ * @STATUS_REASSOC_NO_ASSOC: Reassociation denied due to inability to confirm
+ * that association exists.
+ * @STATUS_ASSOC_DENIED_UNSPEC: Association denied due to reason outside the
+ * scope of this standard.
+ * @STATUS_NOT_SUPPORTED_AUTH_ALG: Responding STA does not support the specified
+ * authentication algorithm.
+ * @STATUS_UNKNOWN_AUTH_TRANSACTION: Received an Authentication frame with
+ * authentication transaction sequence number out of expected sequence.
+ * @STATUS_CHALLENGE_FAIL: Authentication rejected because of challenge failure.
+ * @STATUS_AUTH_TIMEOUT: Authentication rejected due to timeout waiting for next
+ * frame in sequence.
+ * @STATUS_AP_UNABLE_TO_HANDLE_NEW_STA: Association denied because AP is unable
+ * to handle additional associated STAs.
+ * @STATUS_ASSOC_DENIED_RATES: Association denied due to requesting STA not
+ * supporting all of the data rates in the BSSBasicRateSet parameter,
+ * the Basic HT-MCS Set field of the HT Operation parameter, or the Basic
+ * VHT-MCS and NSS Set field in the VHT Operation parameter.
+ * @STATUS_ASSOC_DENIED_NOSHORT: Association denied due to requesting
+ * STA not supporting the short preamble option.
+ * @STATUS_SPEC_MGMT_REQUIRED: Association request rejected because Spectrum
+ * Management capability is required.
+ * @STATUS_PWR_CAPABILITY_NOT_VALID: Association request rejected because the
+ * information in the Power Capability element is unacceptable.
+ * @STATUS_SUPPORTED_CHANNEL_NOT_VALID: Association request rejected because
+ * the information in the Supported Channels element is unacceptable.
+ * @STATUS_ASSOC_DENIED_NO_SHORT_SLOT_TIME: Association denied due to requesting
+ * STA not supporting the Short Slot Time option.
+ * @STATUS_ASSOC_DENIED_NO_HT: Association denied because the requesting STA
+ * does not support HT features.
+ * @STATUS_R0KH_UNREACHABLE: R0KH unreachable.
+ * @STATUS_ASSOC_DENIED_NO_PCO: Association denied because the requesting STA
+ * does not support the phased coexistence operation (PCO) transition time
+ * required by the AP.
+ * @STATUS_ASSOC_REJECTED_TEMPORARILY: Association request rejected temporarily,
+ * try again later.
+ * @STATUS_ROBUST_MGMT_FRAME_POLICY_VIOLATION: Robust management frame policy
+ * violation.
+ * @STATUS_UNSPECIFIED_QOS_FAILURE: Unspecified, QoS-related failure.
+ * @STATUS_DENIED_INSUFFICIENT_BANDWIDTH: Association denied because QoS AP or
+ * PCP has insufficient bandwidth to handle another QoS STA.
+ * @STATUS_DENIED_POOR_CHANNEL_CONDITIONS: Association denied due to excessive
+ * frame loss rates and/or poor conditions on current operating channel.
+ * @STATUS_DENIED_QOS_NOT_SUPPORTED: Association (with QoS BSS) denied because
+ * the requesting STA does not support the QoS facility.
+ * @STATUS_REQUEST_DECLINED: The request has been declined.
+ * @STATUS_INVALID_PARAMETERS: The request has not been successful as one
+ * or more parameters have invalid values.
+ * @STATUS_REJECTED_WITH_SUGGESTED_CHANGES: The allocation or TS has not been
+ * created because the request cannot be honored; however, a suggested TSPEC/DMG
+ * TSPEC is provided so that the initiating STA can attempt to set another
+ * allocation or TS with the suggested changes to the TSPEC/DMG TSPEC
+ * @STATUS_INVALID_IE: Invalid element, i.e., an element defined in this
+ * standard for which the content does not meet the specifications in Clause 9.
+ * @STATUS_GROUP_CIPHER_NOT_VALID: Invalid group cipher.
+ * @STATUS_PAIRWISE_CIPHER_NOT_VALID: Invalid pairwise cipher.
+ * @STATUS_AKMP_NOT_VALID: Invalid AKMP.
+ * @STATUS_UNSUPPORTED_RSN_IE_VERSION: Unsupported RSNE version.
+ * @STATUS_INVALID_RSN_IE_CAPAB: Invalid RSNE capabilities.
+ * @STATUS_CIPHER_REJECTED_PER_POLICY: Cipher suite rejected because of security
+ * policy.
+ * @STATUS_TS_NOT_CREATED: The TS or allocation has not been created; however,
+ * the HC or PCP might be capable of creating a TS or allocation, in response to
+ * a request, after the time indicated in the TS Delay element.
+ * @STATUS_DIRECT_LINK_NOT_ALLOWED: Direct link is not allowed in the BSS by
+ * policy.
+ * @STATUS_DEST_STA_NOT_PRESENT: The Destination STA is not present within this
+ * BSS.
+ * @STATUS_DEST_STA_NOT_QOS_STA: The Destination STA is not a QoS STA.
+ * @STATUS_ASSOC_DENIED_LISTEN_INT_TOO_LARGE: Association denied because the
+ * listen interval is too large.
+ * @STATUS_INVALID_FT_ACTION_FRAME_COUNT: Invalid FT Action frame count.
+ * @STATUS_INVALID_PMKID: Invalid pairwise master key identifier (PMKID).
+ */
+enum wlan_status_code {
+	STATUS_SUCCESS = 0,
+	STATUS_UNSPECIFIED_FAILURE = 1,
+	STATUS_TDLS_WAKEUP_REJECT = 3,
+	STATUS_SECURITY_DISABLED = 5,
+	STATUS_UNACCEPTABLE_LIFETIME = 6,
+	STATUS_NOT_IN_SAME_BSS = 7,
+	STATUS_CAPS_UNSUPPORTED = 10,
+	STATUS_REASSOC_NO_ASSOC = 11,
+	STATUS_ASSOC_DENIED_UNSPEC = 12,
+	STATUS_NOT_SUPPORTED_AUTH_ALG = 13,
+	STATUS_UNKNOWN_AUTH_TRANSACTION = 14,
+	STATUS_CHALLENGE_FAIL = 15,
+	STATUS_AUTH_TIMEOUT = 16,
+	STATUS_AP_UNABLE_TO_HANDLE_NEW_STA = 17,
+	STATUS_ASSOC_DENIED_RATES = 18,
+	STATUS_ASSOC_DENIED_NOSHORT = 19,
+	STATUS_SPEC_MGMT_REQUIRED = 22,
+	STATUS_PWR_CAPABILITY_NOT_VALID = 23,
+	STATUS_SUPPORTED_CHANNEL_NOT_VALID = 24,
+	STATUS_ASSOC_DENIED_NO_SHORT_SLOT_TIME = 25,
+	STATUS_ASSOC_DENIED_NO_HT = 27,
+	STATUS_R0KH_UNREACHABLE = 28,
+	STATUS_ASSOC_DENIED_NO_PCO = 29,
+	STATUS_ASSOC_REJECTED_TEMPORARILY = 30,
+	STATUS_ROBUST_MGMT_FRAME_POLICY_VIOLATION = 31,
+	STATUS_UNSPECIFIED_QOS_FAILURE = 32,
+	STATUS_DENIED_INSUFFICIENT_BANDWIDTH = 33,
+	STATUS_DENIED_POOR_CHANNEL_CONDITIONS = 34,
+	STATUS_DENIED_QOS_NOT_SUPPORTED = 35,
+	STATUS_REQUEST_DECLINED = 37,
+	STATUS_INVALID_PARAMETERS = 38,
+	STATUS_REJECTED_WITH_SUGGESTED_CHANGES = 39,
+	STATUS_INVALID_IE = 40,
+	STATUS_GROUP_CIPHER_NOT_VALID = 41,
+	STATUS_PAIRWISE_CIPHER_NOT_VALID = 42,
+	STATUS_AKMP_NOT_VALID = 43,
+	STATUS_UNSUPPORTED_RSN_IE_VERSION = 44,
+	STATUS_INVALID_RSN_IE_CAPAB = 45,
+	STATUS_CIPHER_REJECTED_PER_POLICY = 46,
+	STATUS_TS_NOT_CREATED = 47,
+	STATUS_DIRECT_LINK_NOT_ALLOWED = 48,
+	STATUS_DEST_STA_NOT_PRESENT = 49,
+	STATUS_DEST_STA_NOT_QOS_STA = 50,
+	STATUS_ASSOC_DENIED_LISTEN_INT_TOO_LARGE = 51,
+	STATUS_INVALID_FT_ACTION_FRAME_COUNT = 52,
+	STATUS_INVALID_PMKID = 53,
 };
 
 #define WLAN_OUI_SIZE 4
@@ -469,6 +864,16 @@ enum extn_element_ie {
 #define RSN_CAP_MFP_REQUIRED 0x40
 
 /**
+ * struct element_info - defines length of a memory block and memory block
+ * @len: length of memory block
+ * @ptr: memory block pointer
+ */
+struct element_info {
+	uint32_t len;
+	uint8_t *ptr;
+};
+
+/**
  * struct wlan_rsn_ie_hdr: rsn ie header
  * @elem_id: RSN element id WLAN_ELEMID_RSN.
  * @len: rsn ie length
@@ -480,34 +885,7 @@ struct wlan_rsn_ie_hdr {
 	u8 version[2];
 };
 
-#define WLAN_RSN_IE_MIN_LEN                    2
-
-/**
- * struct wlan_rsn_ie: rsn ie info
- * @ver: RSN ver
- * @gp_cipher_suite: group cipher
- * @pwise_cipher_count: number of pw cipher
- * @pwise_cipher_suites:  pair wise cipher list
- * @akm_suite_count: Number of akm suite
- * @akm_suites: akm suites list
- * @cap: RSN capability
- * @pmkid_count: number of PMKID
- * @pmkid: PMKID list
- * @mgmt_cipher_suite: management (11w) cipher suite
- */
-struct wlan_rsn_ie {
-	uint16_t ver;
-	uint32_t gp_cipher_suite;
-	uint16_t pwise_cipher_count;
-	uint32_t pwise_cipher_suites[WLAN_MAX_CIPHER];
-	uint16_t akm_suite_count;
-	uint32_t akm_suites[WLAN_MAX_CIPHER];
-	uint16_t cap;
-	uint16_t pmkid_count;
-	uint8_t pmkid[MAX_PMKID][PMKID_LEN];
-	uint32_t mgmt_cipher_suite;
-};
-
+#define WLAN_RSN_IE_MIN_LEN             2
 #define WLAN_WAPI_IE_MIN_LEN            20
 
 /**
@@ -524,26 +902,6 @@ struct wlan_wpa_ie_hdr {
 	u8 version[2];
 };
 
-/**
- * struct wlan_wpa_ie: WPA ie info
- * @ver: WPA ver
- * @mc_cipher: multicast cipher
- * @uc_cipher_count: number of unicast cipher
- * @uc_ciphers:  unicast cipher list
- * @auth_suite_count: Number of akm suite
- * @auth_suites: akm suites list
- * @cap: WPA capability
- */
-struct wlan_wpa_ie {
-	uint16_t ver;
-	uint32_t mc_cipher;
-	uint16_t uc_cipher_count;
-	uint32_t uc_ciphers[WLAN_MAX_CIPHER];
-	uint16_t auth_suite_count;
-	uint32_t auth_suites[WLAN_MAX_CIPHER];
-	uint16_t cap;
-};
-
 #define WAPI_VERSION 1
 #define WLAN_WAPI_OUI 0x721400
 
@@ -551,24 +909,6 @@ struct wlan_wpa_ie {
 
 #define WLAN_WAI_CERT_OR_SMS4 0x01
 #define WLAN_WAI_PSK 0x02
-
-/**
- * struct wlan_wapi_ie: WAPI ie info
- * @ver: WAPI ver
- * @akm_suite_count: Number of akm suite
- * @akm_suites: akm suites list
- * @uc_cipher_suites:unicast cipher count
- * @uc_cipher_suites: unicast cipher suite
- * @mc_cipher_suite: mc cipher suite
- */
-struct wlan_wapi_ie {
-	uint16_t ver;
-	uint16_t akm_suite_count;
-	uint32_t akm_suites[WLAN_MAX_CIPHER];
-	uint16_t uc_cipher_count;
-	uint32_t uc_cipher_suites[WLAN_MAX_CIPHER];
-	uint32_t mc_cipher_suite;
-};
 
 /**
  * struct wlan_frame_hdr: generic IEEE 802.11 frames
@@ -957,6 +1297,62 @@ struct wlan_ie_vhtop {
 	uint8_t vht_op_ch_freq_seg1;
 	uint8_t vht_op_ch_freq_seg2;
 	uint16_t vhtop_basic_mcs_set;
+} qdf_packed;
+
+#define WLAN_HE_PHYCAP_160_SUPPORT BIT(2)
+#define WLAN_HE_PHYCAP_80_80_SUPPORT BIT(3)
+#define WLAN_HE_MACCAP_LEN 6
+#define WLAN_HE_PHYCAP_LEN 11
+#define WLAN_HE_MAX_MCS_MAPS 3
+/**
+ * struct wlan_ie_hecaps - HT capabilities
+ * @elem_id: HE caps IE
+ * @elem_len: HE caps IE len
+ * @elem_id_extn: HE caps extension id
+ * @he_mac_cap: HE mac capabilities
+ * @he_phy_cap: HE phy capabilities
+ * @phy_cap_bytes: HT phy capability bytes
+ * @supported_ch_width_set: Supported channel width set
+ * @mcs_bw_map: MCS NSS map per bandwidth
+ * @rx_mcs_map: RX MCS map
+ * @tx_mcs_map: TX MCS map
+ */
+struct wlan_ie_hecaps {
+	uint8_t elem_id;
+	uint8_t elem_len;
+	uint8_t elem_id_extn;
+	uint8_t he_mac_cap[WLAN_HE_MACCAP_LEN];
+	union {
+		uint8_t phy_cap_bytes[WLAN_HE_PHYCAP_LEN];
+		struct {
+			uint32_t reserved:1;
+			uint32_t supported_ch_width_set:7;
+		} qdf_packed;
+	} qdf_packed he_phy_cap;
+	struct {
+		uint16_t rx_mcs_map;
+		uint16_t tx_mcs_map;
+	} qdf_packed mcs_bw_map[WLAN_HE_MAX_MCS_MAPS];
+} qdf_packed;
+
+/**
+ * struct he_oper_6g_param: 6 Ghz params for HE
+ * @primary_channel: HE 6GHz Primary channel number
+ * @width: HE 6GHz BSS Channel Width
+ * @duplicate_beacon: HE 6GHz Duplicate beacon field
+ * @reserved: Reserved bits
+ * @chan_freq_seg0: HE 6GHz Channel Centre Frequency Segment 0
+ * @chan_freq_seg1: HE 6GHz Channel Centre Frequency Segment 1
+ * @minimum_rate: HE 6GHz Minimum Rate
+ */
+struct he_oper_6g_param {
+	uint8_t primary_channel;
+	uint8_t width:2,
+		duplicate_beacon:1,
+		reserved:5;
+	uint8_t chan_freq_seg0;
+	uint8_t chan_freq_seg1;
+	uint8_t minimum_rate;
 } qdf_packed;
 
 /**
@@ -1485,323 +1881,6 @@ is_sae_single_pmk_oui(uint8_t *frm)
 }
 
 /**
- * wlan_parse_rsn_ie() - parse rsn ie
- * @rsn_ie: rsn ie ptr
- * @rsn: out structure for the parsed ie
- *
- * API, function to parse rsn ie, if optional fields are not present use the
- * default values defined by standard.
- *
- * Return: QDF_STATUS
- */
-static inline QDF_STATUS wlan_parse_rsn_ie(uint8_t *rsn_ie,
-	struct wlan_rsn_ie *rsn)
-{
-	uint8_t rsn_ie_len, i;
-	uint8_t *ie;
-	int rem_len;
-	const struct wlan_rsn_ie_hdr *hdr;
-
-	if (!rsn_ie)
-		return QDF_STATUS_E_NULL_VALUE;
-
-	ie = rsn_ie;
-	rsn_ie_len = ie[1] + 2;
-
-	/*
-	 * Check the length once for fixed parts:
-	 * element id, len and version. Other, variable-length data,
-	 * must be checked separately.
-	 */
-	if (rsn_ie_len < sizeof(struct wlan_rsn_ie_hdr))
-		return QDF_STATUS_E_INVAL;
-
-	hdr = (struct wlan_rsn_ie_hdr *) rsn_ie;
-
-	if (hdr->elem_id != WLAN_ELEMID_RSN ||
-	    LE_READ_2(hdr->version) != RSN_VERSION)
-		return QDF_STATUS_E_INVAL;
-
-	/* Set default values for optional field. */
-	rsn->gp_cipher_suite = WLAN_RSN_SEL(WLAN_CSE_CCMP);
-	rsn->pwise_cipher_count = 1;
-	rsn->pwise_cipher_suites[0] = WLAN_RSN_SEL(WLAN_CSE_CCMP);
-	rsn->akm_suite_count = 1;
-	rsn->akm_suites[0] = WLAN_RSN_SEL(WLAN_AKM_IEEE8021X);
-
-	rsn->ver = LE_READ_2(hdr->version);
-
-	ie = (uint8_t *) (hdr + 1);
-	rem_len = rsn_ie_len - sizeof(*hdr);
-
-	/* Check if optional group cipher is present */
-	if (rem_len >= WLAN_RSN_SELECTOR_LEN) {
-		rsn->gp_cipher_suite  = LE_READ_4(ie);
-		ie += WLAN_RSN_SELECTOR_LEN;
-		rem_len -= WLAN_RSN_SELECTOR_LEN;
-	} else if (rem_len > 0) {
-		/* RSN IE is invalid as group cipher is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Check if optional pairwise cipher is present */
-	if (rem_len >= 2) {
-		rsn->pwise_cipher_count = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-		if (rsn->pwise_cipher_count == 0 ||
-		    rsn->pwise_cipher_count > WLAN_MAX_CIPHER ||
-		    rsn->pwise_cipher_count > rem_len / WLAN_RSN_SELECTOR_LEN)
-			return QDF_STATUS_E_INVAL;
-		for (i = 0; i < rsn->pwise_cipher_count; i++) {
-			rsn->pwise_cipher_suites[i] = LE_READ_4(ie);
-			ie += WLAN_RSN_SELECTOR_LEN;
-			rem_len -= WLAN_RSN_SELECTOR_LEN;
-		}
-	} else if (rem_len == 1) {
-		/* RSN IE is invalid as pairwise cipher is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Check if optional akm suite is present */
-	if (rem_len >= 2) {
-		rsn->akm_suite_count = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-		if (rsn->akm_suite_count == 0 ||
-		    rsn->akm_suite_count > WLAN_MAX_CIPHER ||
-		    rsn->akm_suite_count > rem_len / WLAN_RSN_SELECTOR_LEN)
-			return QDF_STATUS_E_INVAL;
-		for (i = 0; i < rsn->akm_suite_count; i++) {
-			rsn->akm_suites[i] = LE_READ_4(ie);
-			ie += WLAN_RSN_SELECTOR_LEN;
-			rem_len -= WLAN_RSN_SELECTOR_LEN;
-		}
-	} else if (rem_len == 1) {
-		/* RSN IE is invalid as akm suite is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Update capabilty if present */
-	if (rem_len >= 2) {
-		rsn->cap = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-	} else if (rem_len == 1) {
-		/* RSN IE is invalid as cap field is truncated */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Update PMKID if present */
-	if (rem_len >= 2) {
-		rsn->pmkid_count = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-		if (rsn->pmkid_count > MAX_PMKID ||
-		    rsn->pmkid_count > (unsigned int)rem_len / PMKID_LEN) {
-			rsn->pmkid_count = 0;
-			return QDF_STATUS_E_INVAL;
-		}
-
-		qdf_mem_copy(rsn->pmkid, ie,
-			rsn->pmkid_count * PMKID_LEN);
-		ie += rsn->pmkid_count * PMKID_LEN;
-		rem_len -= rsn->pmkid_count * PMKID_LEN;
-	} else if (rem_len == 1) {
-		/* RSN IE is invalid as pmkid count field is truncated */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Update mgmt cipher if present */
-	if (rem_len >= WLAN_RSN_SELECTOR_LEN) {
-		rsn->mgmt_cipher_suite = LE_READ_4(ie);
-		ie += WLAN_RSN_SELECTOR_LEN;
-		rem_len -= WLAN_RSN_SELECTOR_LEN;
-	} else if (rem_len > 0) {
-		/* RSN IE is invalid as mgmt cipher is truncated */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * wlan_parse_wpa_ie() - parse wpa ie
- * @wpa_ie: wpa ie ptr
- * @wpa: out structure for the parsed ie
- *
- * API, function to parse wpa ie, if optional fields are not present use the
- * default values defined by standard.
- *
- * Return: QDF_STATUS
- */
-static inline QDF_STATUS wlan_parse_wpa_ie(uint8_t *wpa_ie,
-	struct wlan_wpa_ie *wpa)
-{
-	uint8_t wpa_ie_len, i;
-	uint8_t *ie;
-	int rem_len;
-	struct wlan_wpa_ie_hdr *hdr;
-
-	if (!wpa_ie)
-		return QDF_STATUS_E_NULL_VALUE;
-
-	ie = wpa_ie;
-	wpa_ie_len = ie[1] + 2;
-
-	/*
-	 * Check the length once for fixed parts:
-	 * element id, len, oui and version. Other, variable-length data,
-	 * must be checked separately.
-	 */
-	if (wpa_ie_len < sizeof(struct wlan_wpa_ie_hdr))
-		return QDF_STATUS_E_INVAL;
-
-	hdr = (struct wlan_wpa_ie_hdr *) wpa_ie;
-
-	if (hdr->elem_id != WLAN_ELEMID_VENDOR ||
-	    !is_wpa_oui(wpa_ie) ||
-	    LE_READ_2(hdr->version) != WPA_VERSION)
-		return QDF_STATUS_E_INVAL;
-
-	/* Set default values for optional field. */
-	wpa->mc_cipher = WLAN_WPA_SEL(WLAN_CSE_TKIP);
-	wpa->uc_cipher_count = 1;
-	wpa->uc_ciphers[0] = WLAN_WPA_SEL(WLAN_CSE_TKIP);
-	wpa->auth_suite_count = 1;
-	wpa->auth_suites[0] = WLAN_WPA_SEL(WLAN_ASE_8021X_UNSPEC);
-
-	wpa->ver = LE_READ_2(hdr->version);
-	ie = (uint8_t *) (hdr + 1);
-	rem_len = wpa_ie_len - sizeof(*hdr);
-
-	/* Check if optional group cipher is present */
-	if (rem_len >= WLAN_WPA_SELECTOR_LEN) {
-		wpa->mc_cipher = LE_READ_4(ie);
-		ie += WLAN_WPA_SELECTOR_LEN;
-		rem_len -= WLAN_WPA_SELECTOR_LEN;
-	} else if (rem_len > 0) {
-		/* WPA IE is invalid as group cipher is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Check if optional pairwise cipher is present */
-	if (rem_len >= 2) {
-		wpa->uc_cipher_count = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-		if (wpa->uc_cipher_count == 0 ||
-		    wpa->uc_cipher_count > WLAN_MAX_CIPHER ||
-		    wpa->uc_cipher_count > rem_len / WLAN_WPA_SELECTOR_LEN)
-			return QDF_STATUS_E_INVAL;
-		for (i = 0; i < wpa->uc_cipher_count; i++) {
-			wpa->uc_ciphers[i] = LE_READ_4(ie);
-			ie += WLAN_WPA_SELECTOR_LEN;
-			rem_len -= WLAN_WPA_SELECTOR_LEN;
-		}
-	} else if (rem_len == 1) {
-		/* WPA IE is invalid as pairwise cipher is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Check if optional akm suite is present */
-	if (rem_len >= 2) {
-		wpa->auth_suite_count = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-		if (wpa->auth_suite_count == 0 ||
-		    wpa->auth_suite_count > WLAN_MAX_CIPHER ||
-		    wpa->auth_suite_count > rem_len / WLAN_WPA_SELECTOR_LEN)
-			return QDF_STATUS_E_INVAL;
-		for (i = 0; i < wpa->auth_suite_count; i++) {
-			wpa->auth_suites[i] = LE_READ_4(ie);
-			ie += WLAN_WPA_SELECTOR_LEN;
-			rem_len -= WLAN_WPA_SELECTOR_LEN;
-		}
-	} else if (rem_len == 1) {
-		/* WPA IE is invalid as akm suite is of invalid length */
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* Update capabilty if optional capabilty is present */
-	if (rem_len >= 2) {
-		wpa->cap = LE_READ_2(ie);
-		ie += 2;
-		rem_len -= 2;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * wlan_parse_wapi_ie() - parse wapi ie
- * @wapi_ie: wpa ie ptr
- * @wapi: out structure for the parsed  IE
- *
- * API, function to parse wapi ie
- *
- * Return: void
- */
-static inline void wlan_parse_wapi_ie(uint8_t *wapi_ie,
-	struct wlan_wapi_ie *wapi)
-{
-	uint8_t len, i;
-	uint8_t *ie;
-
-	if (!wapi_ie)
-		return;
-
-	ie = wapi_ie;
-	len = ie[1];
-	/*
-	 * Check the length once for fixed parts: OUI, type,
-	 * version, mcast cipher, and 2 selector counts.
-	 * Other, variable-length data, must be checked separately.
-	 */
-	if (len < 20)
-		return;
-
-	ie += 2;
-
-	wapi->ver = LE_READ_2(ie);
-	if (wapi->ver != WAPI_VERSION)
-		return;
-
-	ie += 2;
-	len -= 2;
-
-	/* akm */
-	wapi->akm_suite_count = LE_READ_2(ie);
-
-	ie += 2;
-	len -= 2;
-
-	if ((wapi->akm_suite_count > WLAN_MAX_CIPHER) ||
-		   len < (wapi->akm_suite_count * WLAN_OUI_SIZE))
-		return;
-	for (i = 0 ; i < wapi->akm_suite_count; i++) {
-		wapi->akm_suites[i] = LE_READ_4(ie);
-		ie += WLAN_OUI_SIZE;
-		len -= WLAN_OUI_SIZE;
-	}
-
-	wapi->uc_cipher_count = LE_READ_2(ie);
-	ie += 2;
-	len -= 2;
-	if ((wapi->uc_cipher_count > WLAN_MAX_CIPHER) ||
-	   len < (wapi->uc_cipher_count * WLAN_OUI_SIZE + 2))
-		return;
-	for (i = 0 ; i < wapi->uc_cipher_count; i++) {
-		wapi->uc_cipher_suites[i] = LE_READ_4(ie);
-		ie += WLAN_OUI_SIZE;
-		len -= WLAN_OUI_SIZE;
-	}
-
-	if (len >= WLAN_OUI_SIZE)
-		wapi->mc_cipher_suite = LE_READ_4(ie);
-}
-
-/**
  * wlan_parse_oce_reduced_wan_metrics_ie() - parse oce wan metrics
  * @mbo_oce_ie: MBO/OCE ie ptr
  * @wan_metrics: out structure for the reduced wan metric
@@ -1850,4 +1929,148 @@ wlan_parse_oce_reduced_wan_metrics_ie(uint8_t *mbo_oce_ie,
 	return false;
 }
 
+/**
+ * wlan_parse_oce_subnet_id_ie() - parse oce subnet id IE
+ * @mbo_oce_ie: MBO/OCE IE pointer
+ *
+ * While parsing vendor IE, is_mbo_oce_oui() API does sanity of
+ * length and attribute ID for MBO_OCE_OUI and after passing the
+ * sanity only mbo_oce IE is stored in scan cache.
+ * It is a callers responsiblity to get the mbo_oce_ie pointer
+ * using util_scan_entry_mbo_oce() API, which points to mbo_oce
+ * stored in scan cache. Thus caller is responsible for ensuring
+ * the length of the IE is consistent with the embedded length.
+ *
+ * Return: true if oce subnet id is present, else false
+ */
+static inline bool
+wlan_parse_oce_subnet_id_ie(uint8_t *mbo_oce_ie)
+{
+	uint8_t len, attribute_len, attribute_id;
+	uint8_t *ie;
+
+	if (!mbo_oce_ie)
+		return false;
+
+	ie = mbo_oce_ie;
+	len = ie[1];
+	ie += 2;
+
+	if (len <= MBO_OCE_OUI_SIZE)
+		return false;
+
+	ie += MBO_OCE_OUI_SIZE;
+	len -= MBO_OCE_OUI_SIZE;
+
+	while (len > 2) {
+		attribute_id = ie[0];
+		attribute_len = ie[1];
+		len -= 2;
+		if (attribute_len > len)
+			return false;
+
+		if (attribute_id == OCE_SUBNET_ID_ATTR)
+			return true;
+
+		ie += (attribute_len + 2);
+		len -= attribute_len;
+	}
+
+	return false;
+}
+
+/**
+ * wlan_parse_oce_assoc_disallowed_ie() - parse oce assoc disallowed IE
+ * @mbo_oce_ie: MBO/OCE ie ptr
+ * @reason: reason for disallowing assoc.
+ *
+ * API, function to parse OCE assoc disallowed param from the OCE MBO IE
+ *
+ * Return: true if assoc disallowed field is present in the IE
+ */
+static inline bool
+wlan_parse_oce_assoc_disallowed_ie(uint8_t *mbo_oce_ie, uint8_t *reason)
+{
+	uint8_t len, attribute_len, attribute_id;
+	uint8_t *ie;
+
+	if (!mbo_oce_ie)
+		return false;
+
+	ie = mbo_oce_ie;
+	len = ie[1];
+	ie += 2;
+
+	if (len <= MBO_OCE_OUI_SIZE)
+		return false;
+
+	ie += MBO_OCE_OUI_SIZE;
+	len -= MBO_OCE_OUI_SIZE;
+
+	while (len > 2) {
+		attribute_id = ie[0];
+		attribute_len = ie[1];
+		len -= 2;
+		if (attribute_len > len)
+			return false;
+
+		if (attribute_id == OCE_DISALLOW_ASSOC_ATTR) {
+			*reason = ie[2];
+			return true;
+		}
+
+		ie += (attribute_len + 2);
+		len -= attribute_len;
+	}
+
+	return false;
+}
+
+/*
+ * wlan_parse_oce_ap_tx_pwr_ie() - parse oce ap tx pwr
+ * @mbo_oce_ie: MBO/OCE ie ptr
+ * @ap_tx_pwr: pointer to hold value of ap_tx_pwr in dbm
+ *
+ * Return: true if oce ap tx pwr is present, else false
+ */
+static inline bool
+wlan_parse_oce_ap_tx_pwr_ie(uint8_t *mbo_oce_ie, int8_t *ap_tx_pwr_dbm)
+{
+	uint8_t len, attribute_len, attribute_id;
+	uint8_t *ie;
+	int8_t ap_tx_power_in_2_complement;
+
+	if (!mbo_oce_ie)
+		return false;
+
+	ie = mbo_oce_ie;
+	len = ie[1];
+	ie += 2;
+
+	if (len <= MBO_OCE_OUI_SIZE)
+		return false;
+
+	ie += MBO_OCE_OUI_SIZE;
+	len -= MBO_OCE_OUI_SIZE;
+
+	while (len > 2) {
+		attribute_id = ie[0];
+		attribute_len = ie[1];
+		len -= 2;
+		if (attribute_len > len)
+			return false;
+
+		if (attribute_id == AP_TX_PWR_ATTR) {
+			ap_tx_power_in_2_complement = ie[2];
+			*ap_tx_pwr_dbm =
+				(int8_t)(256 - ap_tx_power_in_2_complement);
+			return true;
+		}
+
+		ie += (attribute_len + 2);
+		len -= attribute_len;
+	}
+
+	return false;
+}
 #endif /* _WLAN_CMN_IEEE80211_DEFS_H_ */

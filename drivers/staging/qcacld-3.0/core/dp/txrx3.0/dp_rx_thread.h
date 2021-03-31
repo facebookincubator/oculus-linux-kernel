@@ -23,6 +23,7 @@
 #include <qdf_event.h>
 #include <qdf_threads.h>
 #include <wlan_objmgr_vdev_obj.h>
+
 /* Maximum number of REO rings supported (for stats tracking) */
 #define DP_RX_TM_MAX_REO_RINGS 4
 
@@ -40,6 +41,7 @@ struct dp_rx_tm_handle_cmn;
 /**
  * struct dp_rx_thread_stats - structure holding stats for DP RX thread
  * @nbuf_queued: packets queued into the thread per reo ring
+ * @nbuf_queued_total: packets queued into the thread for all reo rings
  * @nbuf_dequeued: packets de-queued from the thread
  * @nbuf_sent_to_stack: packets sent to the stack. some dequeued packets may be
  *			dropped due to no peer or vdev, hence this stat.
@@ -50,10 +52,11 @@ struct dp_rx_tm_handle_cmn;
  * @rx_flushed: packets flushed after vdev delete
  * @dropped_invalid_peer: packets(nbuf_list) dropped due to no peer
  * @dropped_others: packets dropped due to other reasons
-
+ * @dropped_enq_fail: packets dropped due to pending queue full
  */
 struct dp_rx_thread_stats {
 	unsigned int nbuf_queued[DP_RX_TM_MAX_REO_RINGS];
+	unsigned int nbuf_queued_total;
 	unsigned int nbuf_dequeued;
 	unsigned int nbuf_sent_to_stack;
 	unsigned int gro_flushes;
@@ -64,6 +67,7 @@ struct dp_rx_thread_stats {
 	unsigned int dropped_invalid_peer;
 	unsigned int dropped_invalid_os_rx_handles;
 	unsigned int dropped_others;
+	unsigned int dropped_enq_fail;
 };
 
 /**
@@ -126,12 +130,26 @@ enum dp_rx_thread_state {
  * @txrx_handle_cmn: opaque txrx handle to get to pdev and soc
  * @state: state of the rx_threads. All of them should be in the same state.
  * @rx_thread: array of pointers of type struct dp_rx_thread
+ * @allow_dropping: flag to indicate frame dropping is enabled
  */
 struct dp_rx_tm_handle {
 	uint8_t num_dp_rx_threads;
 	struct dp_txrx_handle_cmn *txrx_handle_cmn;
 	enum dp_rx_thread_state state;
 	struct dp_rx_thread **rx_thread;
+	qdf_atomic_t allow_dropping;
+};
+
+/**
+ * enum dp_rx_gro_flush_code - enum differentiate different GRO flushes
+ * @DP_RX_GRO_NOT_FLUSH: not fush indication
+ * @DP_RX_GRO_NORMAL_FLUSH: Regular full flush
+ * @DP_RX_GRO_LOW_TPUT_FLUSH: Flush during low tput level
+ */
+enum dp_rx_gro_flush_code {
+	DP_RX_GRO_NOT_FLUSH,
+	DP_RX_GRO_NORMAL_FLUSH,
+	DP_RX_GRO_LOW_TPUT_FLUSH
 };
 
 /**
@@ -166,11 +184,13 @@ QDF_STATUS dp_rx_tm_enqueue_pkt(struct dp_rx_tm_handle *rx_tm_hdl,
  * dp_rx_tm_gro_flush_ind() - flush GRO packets for a RX Context Id
  * @rx_tm_hdl: dp_rx_tm_handle containing the overall thread infrastructure
  * @rx_ctx_id: RX Thread Contex Id for which GRO flush needs to be done
+ * @flush_code: flush code to differentiate low TPUT flush
  *
  * Return: QDF_STATUS_SUCCESS
  */
 QDF_STATUS dp_rx_tm_gro_flush_ind(struct dp_rx_tm_handle *rx_tm_handle,
-				  int rx_ctx_id);
+				  int rx_ctx_id,
+				  enum dp_rx_gro_flush_code flush_code);
 
 /**
  * dp_rx_tm_suspend() - suspend all threads in RXTI

@@ -57,6 +57,16 @@
 struct dhd_sock_qos_info;
 #endif /* DHD_QOS_ON_SOCK_FLOW */
 
+#ifdef RX_PKT_POOL
+#define RX_PKTPOOL_RESCHED_DELAY_MS 500u
+#define RX_PKTPOOL_FETCH_MAX_ATTEMPTS 10u
+typedef struct pkt_pool {
+	struct sk_buff_head skb_q     ____cacheline_aligned;
+	uint32 max_size;
+	uint16 rxbuf_sz;
+} pkt_pool_t;
+#endif /* RX_PKT_POOL */
+
 /*
  * Do not include this header except for the dhd_linux.c dhd_linux_sysfs.c
  * Local private structure (extension of pub)
@@ -438,6 +448,10 @@ typedef struct dhd_info {
 #ifdef WL_CFGVENDOR_SEND_ALERT_EVENT
 	struct work_struct dhd_alert_process_work;
 #endif /* WL_CFGVENDOR_SEND_ALERT_EVENT */
+#ifdef RX_PKT_POOL
+	pkt_pool_t rx_pkt_pool;
+	tsk_ctl_t rx_pktpool_thread;
+#endif
 } dhd_info_t;
 
 /** priv_link is the link between netdev and the dhdif and dhd_info structs. */
@@ -500,6 +514,12 @@ int dhd_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcp
 int dhd_register_cpuhp_callback(dhd_info_t *dhd);
 int dhd_unregister_cpuhp_callback(dhd_info_t *dhd);
 #endif /* DHD_LB */
+
+#ifdef RX_PKT_POOL
+void dhd_rx_pktpool_init(dhd_info_t *dhd);
+void dhd_rx_pktpool_deinit(dhd_info_t *dhd);
+#endif /* RX_PKT_POOL */
+
 #if defined(SET_PCIE_IRQ_CPU_CORE) || defined(DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON)
 void dhd_irq_set_affinity(dhd_pub_t *dhdp, const struct cpumask *cpumask);
 #endif /* SET_PCIE_IRQ_CPU_CORE ||  DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
@@ -514,12 +534,9 @@ extern uint fis_enab;
  * Since their minor versions are changed in the Android R OS
  * Added defines for these platforms
  * 4.19.81 -> 4.19.110, 4.14.78 -> 4.14.170
- * For Exynos9830,
- * It doesn't have indication flag, please note that it's for Android ROS onwards.
  */
 #if (defined(BOARD_HIKEY) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 96))) || \
-	(defined(CONFIG_SOC_EXYNOS9830) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 87))) \
-	|| (defined(CONFIG_ARCH_MSM) && (((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 170)) && \
+	(defined(CONFIG_ARCH_MSM) && (((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 170)) && \
 	(LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))) || (LINUX_VERSION_CODE >= \
 	KERNEL_VERSION(4, 19, 110))))
 #define WAKELOCK_BACKPORT

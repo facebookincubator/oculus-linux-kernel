@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_CATALOG_H_
@@ -149,6 +149,7 @@ struct dp_catalog_audio {
 
 struct dp_dsc_cfg_data {
 	bool dsc_en;
+	bool continuous_pps;
 	char pps[128];
 	u32 pps_len;
 	u32 pps_word[32];

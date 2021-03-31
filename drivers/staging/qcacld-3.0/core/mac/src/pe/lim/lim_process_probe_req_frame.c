@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -255,9 +255,7 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 	tAniSSID ssid;
 
 	mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
-	if (LIM_IS_AP_ROLE(session) ||
-		(LIM_IS_IBSS_ROLE(session) &&
-			 (WMA_GET_RX_BEACON_SENT(rx_pkt_info)))) {
+	if (LIM_IS_AP_ROLE(session)) {
 		frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_pkt_info);
 
 		pe_debug("Received Probe Request: %d bytes from",
@@ -283,8 +281,8 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 		if (sir_convert_probe_req_frame2_struct(mac_ctx, body_ptr,
 				frame_len, &probe_req) == QDF_STATUS_E_FAILURE) {
 			pe_err("Parse error ProbeReq, length: %d, SA is: "
-					QDF_MAC_ADDR_STR, frame_len,
-					QDF_MAC_ADDR_ARRAY(mac_hdr->sa));
+					QDF_MAC_ADDR_FMT, frame_len,
+					QDF_MAC_ADDR_REF(mac_hdr->sa));
 			return;
 		}
 		if (session->opmode == QDF_P2P_GO_MODE) {
@@ -446,7 +444,8 @@ lim_indicate_probe_req_to_hdd(struct mac_context *mac, uint8_t *pBd,
 	lim_send_sme_mgmt_frame_ind(mac, pHdr->fc.subType,
 				    (uint8_t *) pHdr,
 				    (frameLen + sizeof(tSirMacMgmtHdr)),
-				    pe_session->smeSessionId, WMA_GET_RX_CH(pBd),
+				    pe_session->smeSessionId,
+				    WMA_GET_RX_FREQ(pBd),
 				    pe_session,
 				    WMA_GET_RX_RSSI_NORMALIZED(pBd),
 				    RXMGMT_FLAG_NONE);
@@ -489,8 +488,7 @@ lim_process_probe_req_frame_multiple_bss(struct mac_context *mac_ctx,
 		if (LIM_IS_AP_ROLE(session))
 			lim_indicate_probe_req_to_hdd(mac_ctx,
 					buf_descr, session);
-		if (LIM_IS_AP_ROLE(session) ||
-			LIM_IS_IBSS_ROLE(session))
+		if (LIM_IS_AP_ROLE(session))
 			lim_process_probe_req_frame(mac_ctx,
 					buf_descr, session);
 	}

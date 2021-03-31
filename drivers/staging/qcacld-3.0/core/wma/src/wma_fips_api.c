@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,23 +38,21 @@ wma_fips_event_handler(void *handle, uint8_t *event, uint32_t len)
 	wma_fips_cb callback;
 	QDF_STATUS status;
 
-	WMA_LOGI(FL("handle:%pK event:%pK len:%u"), handle, event, len);
-
 	wma_handle = handle;
 	if (!wma_handle) {
-		WMA_LOGE(FL("NULL wma_handle"));
+		wma_err("NULL wma_handle");
 		return QDF_STATUS_E_INVAL;
 	}
 
 	wmi_handle = wma_handle->wmi_handle;
 	if (!wmi_handle) {
-		WMA_LOGE(FL("NULL wmi_handle"));
+		wma_err("NULL wmi_handle");
 		return QDF_STATUS_E_INVAL;
 	}
 
 	status = wmi_extract_fips_event_data(wmi_handle, event, &param);
 
-	WMA_LOGI(FL("Received FIPS event, pdev:%u status:%u data_len:%u"),
+	wma_info("Received FIPS event, pdev:%u status:%u data_len:%u",
 		 param.pdev_id, param.error_status, param.data_len);
 
 	/* make sure extraction error is propagated to upper layers */
@@ -79,13 +77,13 @@ QDF_STATUS wma_fips_request(WMA_HANDLE handle,
 	QDF_STATUS status;
 
 	if (!wma_handle) {
-		WMA_LOGE(FL("NULL wma_handle"));
+		wma_err("NULL wma_handle");
 		return QDF_STATUS_E_INVAL;
 	}
 
 	wmi_handle = wma_handle->wmi_handle;
 	if (!wmi_handle) {
-		WMA_LOGE(FL("NULL wmi_handle"));
+		wma_err("NULL wmi_handle");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -93,8 +91,8 @@ QDF_STATUS wma_fips_request(WMA_HANDLE handle,
 	fips_context = context;
 	status = wmi_unified_pdev_fips_cmd_send(wmi_handle, param);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		WMA_LOGE(FL("wmi_unified_pdev_fips_cmd_send() error: %u"),
-			 status);
+		wma_err("wmi_unified_pdev_fips_cmd_send() error: %u",
+			status);
 		fips_callback = NULL;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -102,6 +102,8 @@ enum {
 };
 
 struct cdp_mon_status {
+	/* bss color value 1-63 used for update on ppdu_desc bsscolor */
+	uint8_t bsscolor;
 	int rs_numchains;
 	int rs_flags;
 #define IEEE80211_RX_FCS_ERROR      0x01
@@ -193,7 +195,7 @@ struct cdp_mon_status {
 	uint32_t cdp_rs_bw;
 	uint32_t cdp_rs_nss;
 	uint8_t  cdp_rs_fcs_err;
-
+	bool     cdp_rs_rxdma_err;
 };
 
 enum {
@@ -217,6 +219,16 @@ enum {
  * @dup_mon_linkdesc_cnt: duplicate link descriptor indications from HW
  * @dup_mon_buf_cnt: duplicate buffer indications from HW
  * @tlv_tag_status_err: status not correct in the tlv tag
+ * @status_buf_done_war: Number of status ring buffers for which DMA not done
+ *  WAR is applied.
+ * @mon_rx_bufs_replenished_dest: Rx buffers replenish count
+ * @mon_rx_bufs_reaped_dest: Rx buffer reap count
+ * @ppdu_id_mismatch: counter to track ppdu id mismatch in
+ *  mointor status and monitor destination ring
+ * @ppdu_id_match: counter to track ppdu id match in
+ *  mointor status and monitor destination ring
+ * @status_ppdu_drop: Number of ppdu dropped from monitor status ring
+ * @dest_ppdu_drop: Number of ppdu dropped from monitor destination ring
  */
 struct cdp_pdev_mon_stats {
 #ifndef REMOVE_MON_DBG_STATS
@@ -236,7 +248,14 @@ struct cdp_pdev_mon_stats {
 	uint32_t stat_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
 	uint32_t dest_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
 	uint32_t ppdu_id_hist_idx;
-	uint32_t tlv_tag_status_err;
 	uint32_t mon_rx_dest_stuck;
+	uint32_t tlv_tag_status_err;
+	uint32_t status_buf_done_war;
+	uint32_t mon_rx_bufs_replenished_dest;
+	uint32_t mon_rx_bufs_reaped_dest;
+	uint32_t ppdu_id_mismatch;
+	uint32_t ppdu_id_match;
+	uint32_t status_ppdu_drop;
+	uint32_t dest_ppdu_drop;
 };
 #endif

@@ -27,6 +27,14 @@ static struct cam_irq_register_set vfe175_130_top_irq_reg_set[2] = {
 	},
 };
 
+static struct cam_vfe_rdi_overflow_status vfe175_130_rdi_irq_status = {
+	.rdi0_overflow_mask = 0x8,
+	.rdi1_overflow_mask = 0x10,
+	.rdi2_overflow_mask = 0x18,
+	.rdi3_overflow_mask = 0x20,
+	.rdi_overflow_mask  = 0x3c,
+};
+
 static struct cam_irq_controller_reg_info vfe175_130_top_irq_reg_info = {
 	.num_registers = 2,
 	.irq_reg_set = vfe175_130_top_irq_reg_set,
@@ -368,6 +376,10 @@ static struct cam_vfe_top_ver2_reg_offset_common vfe175_130_top_common_reg = {
 	.three_D_cfg              = 0x00000054,
 	.violation_status         = 0x0000007C,
 	.reg_update_cmd           = 0x000004AC,
+	.irq_mask_0               = 0x0000005C,
+	.irq_mask_1               = 0x00000060,
+	.irq_status_0             = 0x0000006C,
+	.irq_status_1             = 0x00000070,
 };
 
 static struct cam_vfe_rdi_ver2_reg vfe175_130_rdi_reg = {
@@ -441,6 +453,7 @@ static struct cam_vfe_top_ver2_hw_info vfe175_130_top_hw_info = {
 		.common_reg      = &vfe175_130_top_common_reg,
 		.rdi_reg         = &vfe175_130_rdi_reg,
 		.common_reg_data = &vfe175_130_rdi_reg_data,
+		.rdi_irq_status  = &vfe175_130_rdi_irq_status,
 		.reg_data = {
 			&vfe_175_130_rdi_0_data,
 			&vfe_175_130_rdi_1_data,

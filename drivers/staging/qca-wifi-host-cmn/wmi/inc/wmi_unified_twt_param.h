@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -124,6 +124,61 @@ struct wmi_twt_disable_complete_event {
 	uint32_t pdev_id;
 };
 
+/* TWT event types
+ *  refer to wmi_unified.h enum wmi_twt_session_stats_type
+ */
+enum host_twt_session_stats_type {
+	HOST_TWT_SESSION_SETUP     = 1,
+	HOST_TWT_SESSION_TEARDOWN  = 2,
+	HOST_TWT_SESSION_UPDATE    = 3,
+};
+
+/**
+ * struct wmi_host_twt_session_stats_info:
+ * @vdev_id: id of VDEV for twt session
+ * @peer_mac: MAC address of node
+ * @event_type: Indicates TWT session type (SETUP/TEARDOWN/UPDATE)
+ * @flow_id: TWT flow identifier established with TWT peer
+ * @bcast:  If this is a broacast TWT session
+ * @trig: If the TWT session is trigger enabled
+ * @announ: If the flow type is announced/unannounced
+ * @protection: If the TWT protection field is set
+ * @info_frame_disabled: If the TWT Information frame is disabled
+ * @dialog_id: Dialog_id of current session
+ * @wake_dura_us: wake duration in us
+ * @wake_intvl_us: wake time interval in us
+ * @sp_offset_us: Time until initial TWT SP occurs
+ * @sp_tsf_us_lo: TWT wake time TSF in usecs lower bits - 31:0
+ * @sp_tsf_us_hi: TWT wake time TSF in usecs higher bits - 63:32
+ */
+struct wmi_host_twt_session_stats_info {
+	uint32_t vdev_id;
+	uint8_t peer_mac[QDF_MAC_ADDR_SIZE];
+	uint32_t event_type;
+	uint32_t flow_id:16,
+		 bcast:1,
+		 trig:1,
+		 announ:1,
+		 protection:1,
+		 info_frame_disabled:1;
+	uint32_t dialog_id;
+	uint32_t wake_dura_us;
+	uint32_t wake_intvl_us;
+	uint32_t sp_offset_us;
+	uint32_t sp_tsf_us_lo;
+	uint32_t sp_tsf_us_hi;
+};
+
+/** struct wmi_twt_session_stats_event:
+ * @pdev_id: pdev_id for identifying the MAC.
+ * @num_sessions: number of TWT sessions
+ * @twt_sessions: received TWT sessions
+ */
+struct wmi_twt_session_stats_event_param {
+	uint32_t pdev_id;
+	uint32_t num_sessions;
+};
+
 /* from IEEE 802.11ah section 9.4.2.200 */
 enum WMI_HOST_TWT_COMMAND {
 	WMI_HOST_TWT_COMMAND_REQUEST_TWT    = 0,
@@ -162,6 +217,11 @@ enum WMI_HOST_TWT_COMMAND {
  *                   1 means un-announced TWT
  * @flag_protection: 0 means TWT protection is required,
  *                   1 means TWT protection is not required
+ * @b_twt_id0: 0 means BTWT recommendation will not be used
+ *             1 means BTWT recommendation will be used
+ * @flag_reserved: unused bits
+ * @b_twt_recommendation: defines types of frames tx during bTWT SP
+ * @b_twt_persistence: Countdown VAL frames to param update/teardown
  */
 struct wmi_twt_add_dialog_param {
 	uint32_t vdev_id;
@@ -176,7 +236,11 @@ struct wmi_twt_add_dialog_param {
 		flag_bcast:1,
 		flag_trigger:1,
 		flag_flow_type:1,
-		flag_protection:1;
+		flag_protection:1,
+		flag_b_twt_id0:1,
+		flag_reserved:11,
+		b_twt_persistence:8,
+		b_twt_recommendation:3;
 };
 
 /* enum - status code of adding TWT dialog
@@ -206,28 +270,70 @@ enum WMI_HOST_ADD_TWT_STATUS {
 	WMI_HOST_ADD_TWT_STATUS_UNKNOWN_ERROR,
 };
 
+/**
+ * struct wmi_twt_add_dialog_additional_params -
+ * @twt_cmd: TWT command
+ * @bcast: 0 means Individual TWT
+ *         1 means Broadcast TWT
+ * @trig_en: 0 means non-Trigger-enabled TWT
+ *           1 means Trigger-enabled TWT
+ * @announce: 0 means announced TWT
+ *            1 means un-announced TWT
+ * @protection: 0 means TWT protection is required
+ *              1 means TWT protection is not required
+ * @b_twt_id0: 0 means non-0 B-TWT ID or I-TWT
+ *             1 means B-TWT ID 0
+ * @info_frame_disabled: 0 means TWT Information frame is enabled
+ *                       1 means TWT Information frame is disabled
+ * @wake_dura_us: wake duration in us
+ * @wake_intvl_us: wake time interval in us
+ * @sp_offset_us: Time until initial TWT SP occurs
+ * @sp_tsf_us_lo: TWT service period tsf in usecs lower bits - 31:0
+ * @sp_tsf_us_hi: TWT service period tsf in usecs higher bits - 63:32
+ */
+struct wmi_twt_add_dialog_additional_params {
+	uint32_t twt_cmd:8,
+		 bcast:1,
+		 trig_en:1,
+		 announce:1,
+		 protection:1,
+		 b_twt_id0:1,
+		 info_frame_disabled:1;
+	uint32_t wake_dur_us;
+	uint32_t wake_intvl_us;
+	uint32_t sp_offset_us;
+	uint32_t sp_tsf_us_lo;
+	uint32_t sp_tsf_us_hi;
+};
+
 /** struct wmi_twt_add_dialog_complete_param -
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: TWT dialog ID
  * @status: refer to WMI_HOST_ADD_TWT_STATUS enum
+ * @num_additional_twt_params: no of additional_twt_params available
  */
 struct wmi_twt_add_dialog_complete_event_param {
 	uint32_t vdev_id;
 	uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
 	uint32_t dialog_id;
 	uint32_t status;
+	uint32_t num_additional_twt_params;
 };
 
 /** struct wmi_twt_del_dialog_param -
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: TWT dialog ID
+ * @b_twt_persistence: persistence val for b-twt
  */
 struct wmi_twt_del_dialog_param {
 	uint32_t vdev_id;
 	uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
 	uint32_t dialog_id;
+#ifdef WLAN_SUPPORT_BCAST_TWT
+	uint32_t b_twt_persistence;
+#endif
 };
 
 /* status code of deleting TWT dialog
@@ -256,12 +362,16 @@ enum WMI_HOST_DEL_TWT_STATUS {
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: TWT dialog ID
+ * @b_twt_persistence: persistence val for b-twt
  * @status: refer to WMI_HOST_DEL_TWT_STATUS enum
  */
 struct wmi_twt_del_dialog_complete_event_param {
 	uint32_t vdev_id;
 	uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
 	uint32_t dialog_id;
+#ifdef WLAN_SUPPORT_BCAST_TWT
+	uint32_t b_twt_persistence;
+#endif
 	uint32_t status;
 };
 
@@ -287,6 +397,7 @@ struct wmi_twt_pause_dialog_cmd_param {
  *                          request/response frame
  * WMI_HOST_PAUSE_TWT_STATUS_UNKNOWN_ERROR: pausing TWT dialog failed with an
  *                          unknown reason
+ * WMI_HOST_PAUSE_TWT_STATUS_ALREADY_PAUSED: TWT dialog already in paused state
  */
 enum WMI_HOST_PAUSE_TWT_STATUS {
 	WMI_HOST_PAUSE_TWT_STATUS_OK,
@@ -296,6 +407,7 @@ enum WMI_HOST_PAUSE_TWT_STATUS {
 	WMI_HOST_PAUSE_TWT_STATUS_NO_RESOURCE,
 	WMI_HOST_PAUSE_TWT_STATUS_NO_ACK,
 	WMI_HOST_PAUSE_TWT_STATUS_UNKNOWN_ERROR,
+	WMI_HOST_PAUSE_TWT_STATUS_ALREADY_PAUSED,
 };
 
 /** struct wmi_twt_pause_dialog_complete_event_param -
@@ -363,5 +475,105 @@ struct wmi_twt_resume_dialog_complete_event_param {
 	uint32_t dialog_id;
 	uint32_t status;
 };
+
+#ifdef WLAN_SUPPORT_BCAST_TWT
+/** struct wmi_twt_btwt_invite_sta_cmd_param -
+ * @vdev_id: VDEV identifier
+ * @peer_macaddr: Peer mac address
+ * @dialog_id: TWT dialog ID
+ */
+struct wmi_twt_btwt_invite_sta_cmd_param {
+	uint32_t vdev_id;
+	uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
+	uint32_t dialog_id;
+};
+
+/* enum WMI_HOST_INVITATION_TWT_BTWT_STATUS - status code of TWT Invitation
+ *                              dialog
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_OK: BTWT invitation successfully
+ *                              completed
+ * WMI_HOST_INVITATION_TWT_TWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
+ *                              exists
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_INVALID_PARAM: invalid parameters
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
+ *                              handling this dialog
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ *                              request/response frame
+ * WMI_HOST_INVITATION_TWT_BTWT_STATUS_UNKNOWN_ERROR: BTWT invitation failed
+ *                              with an unknown reason
+ */
+enum WMI_HOST_INVITATION_TWT_BTWT_STATUS {
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_OK,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_DIALOG_ID_NOT_EXIST,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_INVALID_PARAM,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_DIALOG_ID_BUSY,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_NO_RESOURCE,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_NO_ACK,
+	WMI_HOST_INVITATION_TWT_BTWT_STATUS_UNKNOWN_ERROR,
+};
+
+/** struct wmi_twt_btwt_invite_sta_complete_event_param -
+ * @vdev_id: VDEV identifier
+ * @peer_macaddr: Peer mac address
+ * @dialog_id: BTWT dialog ID
+ * @status: refer to WMI_HOST_INVITATION_TWT_BTWT_STATUS
+ */
+struct wmi_twt_btwt_invite_sta_complete_event_param {
+		uint32_t vdev_id;
+		uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
+		uint32_t dialog_id;
+		uint32_t status;
+};
+
+/** struct wmi_twt_btwt_remove_sta_cmd_param -
+ * @vdev_id: VDEV identifier
+ * @peer_macaddr: Peer mac address
+ * @dialog_id: BTWT dialog ID
+ */
+struct wmi_twt_btwt_remove_sta_cmd_param {
+		uint32_t vdev_id;
+		uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
+		uint32_t dialog_id;
+};
+
+/* enum WMI_HOST_KICKOFF_TWT_BTWT_STATUS - status code of resuming TWT dialog
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_OK: TWT kickoff successfully completed
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
+ *                              exists
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_INVALID_PARAM: invalid parameters
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
+ *                              handling this dialog
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NOT_PAUSED: Dialog not currently paused
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ *                              request/response frame
+ * WMI_HOST_KICKOFF_TWT_BTWT_STATUS_UNKNOWN_ERROR: BTWT kickoff failed with an
+ *                              unknown reason
+ */
+enum WMI_HOST_KICKOFF_TWT_BTWT_STATUS {
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_OK,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_DIALOG_ID_NOT_EXIST,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_INVALID_PARAM,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_DIALOG_ID_BUSY,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NOT_PAUSED,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NO_RESOURCE,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_NO_ACK,
+	WMI_HOST_KICKOFF_TWT_BTWT_STATUS_UNKNOWN_ERROR,
+};
+
+/** struct wmi_twt_btwt_remove_sta_complete_event_param -
+ * @vdev_id: VDEV identifier
+ * @peer_macaddr: Peer mac address
+ * @dialog_id: BTWT dialog ID
+ * @status: refer to WMI_HOST_KICKOFF_TWT_BTWT_STATUS
+ */
+struct wmi_twt_btwt_remove_sta_complete_event_param {
+	uint32_t vdev_id;
+	uint8_t  peer_macaddr[QDF_MAC_ADDR_SIZE];
+	uint32_t dialog_id;
+	uint32_t status;
+};
+#endif
 
 #endif /* _WMI_UNIFIED_TWT_PARAM_H_ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,7 @@
 static inline struct wlan_lmac_if_p2p_rx_ops *
 target_if_psoc_get_p2p_rx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &(psoc->soc_cb.rx_ops.p2p);
+	return &(psoc->soc_cb.rx_ops->p2p);
 }
 
 #ifdef FEATURE_P2P_LISTEN_OFFLOAD
@@ -85,10 +85,8 @@ static int target_p2p_lo_event_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	event_info = qdf_mem_malloc(sizeof(*event_info));
-	if (!event_info) {
-		target_if_err("Failed to allocate p2p lo event");
+	if (!event_info)
 		return -ENOMEM;
-	}
 
 	if (wmi_extract_p2p_lo_stop_ev_param(wmi_handle, data,
 			event_info)) {
@@ -235,10 +233,8 @@ static int target_p2p_noa_event_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	event_info = qdf_mem_malloc(sizeof(*event_info));
-	if (!event_info) {
-		target_if_err("failed to allocate p2p noa information");
+	if (!event_info)
 		return -ENOMEM;
-	}
 
 	if (wmi_extract_p2p_noa_ev_param(wmi_handle, data,
 			event_info)) {
@@ -361,7 +357,7 @@ QDF_STATUS target_if_p2p_set_noa(struct wlan_objmgr_psoc *psoc,
 
 	target_if_debug("psoc:%pK, vdev_id:%d disable_noa:%d",
 				psoc, vdev_id, disable_noa);
-	param.if_id = vdev_id;
+	param.vdev_id = vdev_id;
 	param.param_id = WMI_VDEV_PARAM_DISABLE_NOA_P2P_GO;
 	param.param_value = (uint32_t)disable_noa;
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_CSIPHY_SOC_H_
@@ -30,6 +30,7 @@
 #define CSIPHY_VERSION_V11                        0x11
 #define CSIPHY_VERSION_V12                        0x12
 #define CSIPHY_VERSION_V121                       0x121
+#define CSIPHY_VERSION_V123                       0x123
 #define CSIPHY_VERSION_V20                        0x20
 
 /**
@@ -53,7 +54,7 @@ int cam_csiphy_parse_dt_info(struct platform_device *pdev,
  *
  * This API enables SOC related parameters
  */
-int cam_csiphy_enable_hw(struct csiphy_device *csiphy_dev);
+int cam_csiphy_enable_hw(struct csiphy_device *csiphy_dev, int32_t index);
 
 /**
  * @csiphy_dev: CSIPhy device structure
@@ -69,5 +70,12 @@ int cam_csiphy_disable_hw(struct csiphy_device *csiphy_dev);
  * (needs to be macro enabled before use)
  */
 int cam_csiphy_mem_dmp(struct cam_hw_soc_info *soc_info);
+
+/**
+ * @csiphy_dev: CSIPhy device structure
+ *
+ * This API dumps memory for the entire status region
+ */
+int32_t cam_csiphy_status_dmp(struct csiphy_device *csiphy_dev);
 
 #endif /* _CAM_CSIPHY_SOC_H_ */

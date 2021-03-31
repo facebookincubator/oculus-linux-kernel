@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -61,6 +61,7 @@ typedef struct sGenericQosCmd {
 /**
  * struct s_nss_update_cmd - Format of nss update request
  * @new_nss: new nss value
+ * @ch_width: new channel width - optional
  * @session_id: Session ID
  * @set_hw_mode_cb: HDD nss update callback
  * @context: Adapter context
@@ -70,6 +71,7 @@ typedef struct sGenericQosCmd {
  */
 struct s_nss_update_cmd {
 	uint32_t new_nss;
+	uint32_t ch_width;
 	uint32_t session_id;
 	void *nss_update_cb;
 	void *context;
@@ -78,11 +80,20 @@ struct s_nss_update_cmd {
 	uint32_t original_vdev_id;
 };
 
+/**
+ * struct sir_disconnect_stats_cmd: command structure to get disconnect stats
+ * @peer_mac_addr: MAC address of the peer disconnected
+ *
+ */
+struct sir_disconnect_stats_cmd {
+	struct qdf_mac_addr peer_mac_addr;
+};
+
 typedef struct tagSmeCmd {
 	tListElem Link;
 	eSmeCommandType command;
 	uint32_t cmd_id;
-	uint32_t sessionId;
+	uint32_t vdev_id;
 	union {
 		struct roam_cmd roamCmd;
 		struct wmstatus_changecmd wmStatusChangeCmd;
@@ -92,6 +103,7 @@ typedef struct tagSmeCmd {
 		struct s_nss_update_cmd nss_update_cmd;
 		struct policy_mgr_dual_mac_config set_dual_mac_cmd;
 		struct sir_antenna_mode_param set_antenna_mode_cmd;
+		struct sir_disconnect_stats_cmd disconnect_stats_cmd;
 	} u;
 } tSmeCmd;
 
@@ -142,29 +154,35 @@ void csr_roam_wm_status_change_complete(struct mac_context *mac_ctx,
 					uint8_t session_id);
 void csr_roam_process_wm_status_change_command(struct mac_context *mac,
 		tSmeCmd *pCommand);
+
 /**
- * csr_process_del_sta_session_command() - Post WMA_DEL_STA_SELF_REQ to wma
- *
+ * csr_roam_get_disconnect_stats_complete() - Remove get disconnect stats
+ * command from SME active command list
  * @mac_ctx: global mac context
- * @sme_command: received Delete Self station request command
+ * This API removes get disconnect stats command from SME active command list
+ * if present.
  *
- * This API sends the WMA_DEL_STA_SELF_REQ msg to WMA.
- *
- * Return: QDF_STATUS_SUCCESS or QDF_STATUS_E_FAILURE
+ * Return: void
  */
-QDF_STATUS csr_process_del_sta_session_command(struct mac_context *mac_ctx,
-					       tSmeCmd *sme_command);
+void csr_roam_get_disconnect_stats_complete(struct mac_context *mac_ctx);
+
+/**
+ * csr_roam_process_get_disconnect_stats_command() - Process get disconnect
+ * stats
+ * @mac_ctx: global mac context
+ * @pCommand: Command to be processed
+ *
+ * Return: void
+ */
+void csr_roam_process_get_disconnect_stats_command(struct mac_context *mac,
+						   tSmeCmd *cmd);
 void csr_reinit_roam_cmd(struct mac_context *mac, tSmeCmd *pCommand);
-void csr_reinit_wm_status_change_cmd(struct mac_context *mac, tSmeCmd *pCommand);
-QDF_STATUS csr_roam_send_set_key_cmd(struct mac_context *mac_ctx,
-		uint32_t session_id, struct setkey_cmd *set_key_cmd);
-QDF_STATUS csr_is_valid_channel(struct mac_context *mac, uint8_t chnNum);
+void csr_reinit_wm_status_change_cmd(struct mac_context *mac,
+				     tSmeCmd *pCommand);
+QDF_STATUS csr_is_valid_channel(struct mac_context *mac, uint32_t freq);
 
 QDF_STATUS sme_acquire_global_lock(struct sme_context *sme);
 QDF_STATUS sme_release_global_lock(struct sme_context *sme);
-
-QDF_STATUS csr_process_add_sta_session_rsp(struct mac_context *mac, uint8_t *pMsg);
-QDF_STATUS csr_process_del_sta_session_rsp(struct mac_context *mac, uint8_t *pMsg);
 
 /**
  * csr_flush_cfg_bg_scan_roam_channel_list() - Flush the channel list
@@ -178,20 +196,20 @@ void csr_flush_cfg_bg_scan_roam_channel_list(tCsrChannelInfo *channel_info);
  * csr_create_bg_scan_roam_channel_list() - Create roam scan chan list
  * @mac: global mac context
  * @channel_info: Channel list to be populated for roam scan
- * @chan_list: Channel list to be populated from
+ * @chan_freq_list: Channel list to be populated from
  * @num_chan: Number of channels
  *
  * Return: QDF_STATUS_SUCCESS or QDF_STATUS_E_FAILURE
  */
 QDF_STATUS csr_create_bg_scan_roam_channel_list(struct mac_context *mac,
 						tCsrChannelInfo *channel_info,
-						const uint8_t *chan_list,
+						const uint32_t *chan_freq_list,
 						const uint8_t num_chan);
 
 #ifdef FEATURE_WLAN_ESE
 QDF_STATUS csr_create_roam_scan_channel_list(struct mac_context *mac,
 		uint8_t sessionId,
-		uint8_t *pChannelList,
+		uint32_t *chan_freq_list,
 		uint8_t numChannels,
 		const enum band_info band);
 #endif

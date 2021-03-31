@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,13 +49,22 @@ enum wlan_serialization_status
 wlan_vdev_mlme_ser_stop_bss(struct wlan_serialization_command *cmd);
 
 /**
- * wlan_vdev_mlme_ser_restart_bss() - Add restart bss cmd to serialization
+ * wlan_vdev_mlme_ser_vdev_restart() - Add vdev restart cmd to serialization
  * @cmd: Serialization command
  *
  * Return: Status of enqueue in the serialization module
  */
 enum wlan_serialization_status
-wlan_vdev_mlme_ser_restart_bss(struct wlan_serialization_command *cmd);
+wlan_vdev_mlme_ser_vdev_restart(struct wlan_serialization_command *cmd);
+
+/**
+ * wlan_vdev_mlme_ser_pdev_restart() - Add pdev restart cmd to serialization
+ * @cmd: Serialization command
+ *
+ * Return: Status of enqueue in the serialization module
+ */
+enum wlan_serialization_status
+wlan_vdev_mlme_ser_pdev_restart(struct wlan_serialization_command *cmd);
 
 /**
  * wlan_vdev_mlme_ser_connect() - Add connect cmd to serialization
@@ -109,5 +118,15 @@ wlan_vdev_mlme_ser_cancel_request(struct wlan_objmgr_vdev *vdev,
  * Return: void
  */
 void mlme_ser_inc_act_cmd_timeout(struct wlan_serialization_command *cmd);
+
+/**
+ * wlan_vdev_mlme_ser_pdev_csa_restart - Add pdev CSA restart cmd to
+ * serialization
+ * @cmd: Serialization command
+ *
+ * Return: Status of enqueue in the serialization module
+ */
+enum wlan_serialization_status
+wlan_vdev_mlme_ser_pdev_csa_restart(struct wlan_serialization_command *cmd);
 
 #endif /* _WLAN_VDEV_MLME_SER_IF_H_ */

@@ -1037,6 +1037,14 @@ static int _sde_encoder_atomic_check_reserve(struct drm_encoder *drm_enc,
 			return ret;
 		}
 
+		ret = sde_connector_get_info(sde_conn_state->base.connector,
+				&sde_enc->disp_info);
+		if (ret) {
+			SDE_ERROR_ENC(sde_enc,
+				"failed to get disp info, rc = %d\n", ret);
+			return ret;
+		}
+
 		if (sde_conn_state->mode_info.comp_info.comp_type &&
 			sde_conn_state->mode_info.comp_info.comp_ratio >=
 					MSM_DISPLAY_COMPRESSION_RATIO_MAX) {
@@ -1395,15 +1403,12 @@ static int _sde_encoder_dsc_n_lm_1_enc_1_intf(struct sde_encoder_virt *sde_enc)
 	return 0;
 }
 
-
-
-
 static int _sde_encoder_dsc_4_lm_3_enc_2_intf(struct sde_encoder_virt *sde_enc,
 		struct sde_encoder_kickoff_params *params)
 {
 	int this_frame_slices;
 	int intf_ip_w, enc_ip_w;
-	int ich_res, dsc_common_mode;
+	int ich_res, dsc_common_mode = 0;
 	struct sde_encoder_phys *enc_master = sde_enc->cur_master;
 	const struct sde_rect *roi = &sde_enc->cur_conn_roi;
 	struct sde_hw_dsc *hw_dsc[MAX_CHANNELS_PER_ENC];
@@ -1436,7 +1441,6 @@ static int _sde_encoder_dsc_4_lm_3_enc_2_intf(struct sde_encoder_virt *sde_enc,
 
 	dsc = &sde_enc->mode_info.comp_info.dsc_info;
 
-	dsc_common_mode = 0;
 	if (enc_master->intf_mode == INTF_MODE_VIDEO)
 		dsc_common_mode |= DSC_MODE_VIDEO;
 
@@ -1462,36 +1466,35 @@ static int _sde_encoder_dsc_4_lm_3_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	SDE_EVT32(DRMID(&sde_enc->base), roi->w, roi->h,
 			dsc_common_mode, i, params->affected_displays);
 
-	/* In quad pipe 3DMUX DSC use case, we are only allocating 3 DSCS
-	 * instead of 2 because we can only get pingpong irq on left two DSC
-	 * of each pair, and RM currently only handles contiguous allocation
-	 * of resources.
-	 */
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[0], hw_dsc_pp[0], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[0], false);
+
+	/* This topology reserves 3 DSC but only programs 2 (DSC-0, DSC-2)*/
+	_sde_encoder_dsc_pipe_cfg(hw_dsc[0], hw_pp[0], dsc,
+			dsc_common_mode, ich_res, true, hw_dsc_pp[0], false);
+
 	cfg.dsc[0] = hw_dsc[0]->idx;
 	cfg.dsc_count++;
+
 	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[0]->idx, 1);
+		hw_ctl->ops.update_bitmask_dsc(hw_ctl, cfg.dsc[0], 1);
 
+	_sde_encoder_dsc_pipe_cfg(hw_dsc[2], hw_pp[2], dsc,
+			dsc_common_mode, ich_res, true, hw_dsc_pp[2], false);
 
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[2], hw_dsc_pp[2], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[2], false);
 	cfg.dsc[1] = hw_dsc[2]->idx;
 	cfg.dsc_count++;
+
 	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[2]->idx, 1);
+		hw_ctl->ops.update_bitmask_dsc(hw_ctl, cfg.dsc[1], 1);
 
 	/* setup dsc active configuration in the control path */
 	if (hw_ctl->ops.setup_dsc_cfg) {
 		hw_ctl->ops.setup_dsc_cfg(hw_ctl, &cfg);
 		SDE_DEBUG_ENC(sde_enc,
-				"setup_dsc_cfg hw_ctl[%d], count:%d,dsc[0]:%d, dsc[2]:%d\n",
-				hw_ctl->idx,
-				cfg.dsc_count,
-				cfg.dsc[0],
-				cfg.dsc[2]);
+				"setup_dsc_cfg hw_ctl[%d], count:%d, dsc[0]:%d, dsc[1]:%d\n",
+				hw_ctl->idx, cfg.dsc_count, cfg.dsc[0],
+				cfg.dsc[1]);
 	}
+
 	return 0;
 }
 
@@ -1533,15 +1536,10 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 
 	dsc = &sde_enc->mode_info.comp_info.dsc_info;
 
-	dsc_common_mode |= DSC_MODE_SPLIT_PANEL | DSC_MODE_MULTIPLEX;
+	dsc_common_mode = DSC_MODE_SPLIT_PANEL | DSC_MODE_MULTIPLEX;
 	if (enc_master->intf_mode == INTF_MODE_VIDEO)
 		dsc_common_mode |= DSC_MODE_VIDEO;
 
-	/*
-	 * In quad pipe dsc merge, dsc picture width is half of the
-	 * full panel size, since each dsc pair need to process
-	 * left and right half of the panel.
-	 */
 	if (enc_master->split_role == ENC_ROLE_MASTER ||
 			enc_master->split_role == ENC_ROLE_SLAVE)
 		dsc_pic_width = roi->w / 2;
@@ -1568,49 +1566,27 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	SDE_EVT32(DRMID(&sde_enc->base), roi->w, roi->h,
 			dsc_common_mode, i, params->affected_displays);
 
-	//TODO: handle quad pipe partial update use case
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[0], hw_dsc_pp[0], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[0], false);
-	cfg.dsc[0] = hw_dsc[0]->idx;
-	cfg.dsc_count++;
-	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[0]->idx, 1);
+	for (i = 0; i < params->num_channels; i++) {
+		_sde_encoder_dsc_pipe_cfg(hw_dsc[i], hw_pp[i], dsc,
+				dsc_common_mode, ich_res, true, hw_dsc_pp[i],
+				false);
 
+		cfg.dsc[i] = hw_dsc[i]->idx;
+		cfg.dsc_count++;
 
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[1], hw_dsc_pp[1], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[1], false);
-	cfg.dsc[1] = hw_dsc[1]->idx;
-	cfg.dsc_count++;
-	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[1]->idx, 1);
-
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[2], hw_dsc_pp[2], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[2], false);
-	cfg.dsc[2] = hw_dsc[2]->idx;
-	cfg.dsc_count++;
-	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[2]->idx, 1);
-
-
-	_sde_encoder_dsc_pipe_cfg(hw_dsc[3], hw_dsc_pp[3], dsc, dsc_common_mode,
-			ich_res, true, hw_dsc_pp[3], false);
-	cfg.dsc[3] = hw_dsc[3]->idx;
-	cfg.dsc_count++;
-	if (hw_ctl->ops.update_bitmask_dsc)
-		hw_ctl->ops.update_bitmask_dsc(hw_ctl, hw_dsc[3]->idx, 1);
+		if (hw_ctl->ops.update_bitmask_dsc)
+			hw_ctl->ops.update_bitmask_dsc(hw_ctl, cfg.dsc[i], 1);
+	}
 
 	/* setup dsc active configuration in the control path */
 	if (hw_ctl->ops.setup_dsc_cfg) {
 		hw_ctl->ops.setup_dsc_cfg(hw_ctl, &cfg);
 		SDE_DEBUG_ENC(sde_enc,
-				"setup_dsc_cfg hw_ctl[%d], count:%d,dsc[0]:%d, dsc[1]:%d, dsc[2]:%d, dsc[3]:%d\n",
-				hw_ctl->idx,
-				cfg.dsc_count,
-				cfg.dsc[0],
-				cfg.dsc[1],
-				cfg.dsc[2],
-				cfg.dsc[3]);
+				"setup_dsc_cfg hw_ctl[%d], count:%d, dsc[0]:%d, dsc[1]:%d, dsc[2]:%d, dsc[3]:%d\n",
+				hw_ctl->idx, cfg.dsc_count, cfg.dsc[0],
+				cfg.dsc[1], cfg.dsc[2], cfg.dsc[3]);
 	}
+
 	return 0;
 }
 
@@ -3118,6 +3094,29 @@ static void sde_encoder_virt_mode_switch(struct drm_encoder *drm_enc,
 	}
 }
 
+static int _sde_encoder_calc_lm_to_intf_ratio(struct sde_encoder_virt *sde_enc,
+	int *ratio)
+{
+	int num_lm, num_intf;
+	int lm_to_intf_ratio;
+
+	if (!sde_enc || !ratio)
+		return -EINVAL;
+
+	num_lm = sde_enc->mode_info.topology.num_lm;
+	num_intf = sde_enc->mode_info.topology.num_intf;
+	if (!num_lm || !num_intf)
+		return -EINVAL;
+
+	lm_to_intf_ratio = num_lm / num_intf;
+	if (!lm_to_intf_ratio)
+		lm_to_intf_ratio = 1;
+
+	*ratio = lm_to_intf_ratio;
+
+	return 0;
+}
+
 static void sde_encoder_virt_mode_set(struct drm_encoder *drm_enc,
 				      struct drm_display_mode *mode,
 				      struct drm_display_mode *adj_mode)
@@ -3132,7 +3131,7 @@ static void sde_encoder_virt_mode_set(struct drm_encoder *drm_enc,
 	enum sde_intf_mode intf_mode;
 	bool is_cmd_mode = false;
 	int i = 0, ret;
-	int num_lm, num_intf, lm_per_intf;
+	int ratio;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -3265,35 +3264,25 @@ static void sde_encoder_virt_mode_set(struct drm_encoder *drm_enc,
 			(struct sde_hw_pingpong *) request_hw.hw;
 	}
 
-	num_lm = sde_enc->mode_info.topology.num_lm;
-	num_intf = sde_enc->mode_info.topology.num_intf;
-	if (!num_lm || !num_intf) {
-		SDE_ERROR_ENC(sde_enc, "invalid topology lm=%d, intf=%d",
-				num_lm, num_intf);
+	if (_sde_encoder_calc_lm_to_intf_ratio(sde_enc, &ratio)) {
+		SDE_ERROR_ENC(sde_enc, "invalid lm to interface ratio");
 		return;
 	}
-
-	lm_per_intf = num_lm / num_intf;
-	if (!lm_per_intf) {
-		lm_per_intf = 1;
-		SDE_DEBUG_ENC(sde_enc, "pp split, force lm_per_intf=1",
-				lm_per_intf);
-	}
-	SDE_DEBUG_ENC(sde_enc, "lm_per_intf=%d", lm_per_intf);
 
 	for (i = 0; i < sde_enc->num_phys_encs; i++) {
 		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
 
 		if (phys) {
-			if (!sde_enc->hw_pp[i * lm_per_intf] &&
+			if (!sde_enc->hw_pp[i * ratio] &&
 				sde_enc->topology.num_intf) {
 				SDE_ERROR_ENC(sde_enc, "invalid hw_pp[%d]\n",
-					i * lm_per_intf);
+						i * ratio);
 				return;
 			}
 
-			phys->hw_pp = sde_enc->hw_pp[i * lm_per_intf];
+			phys->hw_pp = sde_enc->hw_pp[i * ratio];
 			phys->connector = conn->state->connector;
+
 			if (phys->ops.mode_set)
 				phys->ops.mode_set(phys, mode, adj_mode);
 		}
@@ -5499,7 +5488,7 @@ int sde_encoder_helper_reset_mixers(struct sde_encoder_phys *phys_enc,
 		if (phys_enc->hw_ctl->ops.setup_blendstage)
 			phys_enc->hw_ctl->ops.setup_blendstage(
 					phys_enc->hw_ctl, hw_lm->idx,
-					hw_lm->cfg.flags, NULL);
+					hw_lm->cfg.lm_layout, NULL);
 	}
 
 	if (!lm_valid) {

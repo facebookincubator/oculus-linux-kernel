@@ -176,3 +176,39 @@ void wlan_mgmt_txrx_desc_put(
 				      MGMT_TXRX_WAKELOCK_REASON_TX_CMP);
 	}
 }
+
+#ifdef WLAN_IOT_SIM_SUPPORT
+QDF_STATUS iot_sim_mgmt_tx_update(struct wlan_objmgr_psoc *psoc,
+				  struct wlan_objmgr_vdev *vdev,
+				  qdf_nbuf_t buf)
+{
+	struct wlan_lmac_if_rx_ops *rx_ops;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	rx_ops = wlan_psoc_get_lmac_if_rxops(psoc);
+	if (!rx_ops) {
+		mgmt_txrx_err("rx_ops is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+	if (rx_ops->iot_sim_rx_ops.iot_sim_cmd_handler) {
+		status = rx_ops->iot_sim_rx_ops.iot_sim_cmd_handler(vdev,
+								    buf,
+								    NULL,
+								    true,
+								    NULL);
+		if (status == QDF_STATUS_E_NULL_VALUE)
+			mgmt_txrx_err("iot_sim frame drop");
+		else
+			status = QDF_STATUS_SUCCESS;
+	}
+
+	return status;
+}
+#else
+QDF_STATUS iot_sim_mgmt_tx_update(struct wlan_objmgr_psoc *psoc,
+				  struct wlan_objmgr_vdev *vdev,
+				  qdf_nbuf_t buf)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif

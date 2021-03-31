@@ -104,6 +104,10 @@ static inline mac_handle_t MAC_HANDLE(struct mac_context *mac)
 #define HIGH_SEQ_NUM_OFFSET                             4
 #define DEF_HE_AUTO_SGI_LTF                             0x0F07
 
+#define PMF_WEP_DISABLE 2
+#define PMF_INCORRECT_KEY 1
+#define PMF_CORRECT_KEY 0
+
 /**
  * enum log_event_type - Type of event initiating bug report
  * @WLAN_LOG_TYPE_NON_FATAL: Non fatal event
@@ -234,12 +238,6 @@ typedef void (*CHANGE_CHANNEL_CALLBACK)(struct mac_context *mac, QDF_STATUS stat
 					uint32_t *data,
 					struct pe_session *pe_session);
 
-/* / LIM global definitions */
-struct lim_ibss_info {
-	void *mac_hdr;
-	void *beacon;
-};
-
 typedef struct sDialogueToken {
 	/* bytes 0-3 */
 	uint16_t assocId;
@@ -281,7 +279,6 @@ typedef struct sLimTimers {
 	/* Update OLBC Cache Timer */
 	TX_TIMER gLimUpdateOlbcCacheTimer;
 
-	TX_TIMER gLimChannelSwitchTimer;
 	TX_TIMER gLimFTPreAuthRspTimer;
 
 	TX_TIMER gLimPeriodicJoinProbeReqTimer;
@@ -306,7 +303,7 @@ typedef struct {
 typedef struct sAniSirLim {
 	/* ////////////////////////////////////     TIMER RELATED START /////////////////////////////////////////// */
 
-	tLimTimers limTimers;
+	tLimTimers lim_timers;
 	/* / Flag to track if LIM timers are created or not */
 	uint32_t gLimTimersCreated;
 
@@ -338,20 +335,6 @@ typedef struct sAniSirLim {
 	void *gpLimMlmSetKeysReq;
 
 	/* ////////////////////////////////////////     BSS RELATED END /////////////////////////////////////////// */
-
-	/* ////////////////////////////////////////     IBSS RELATED START /////////////////////////////////////////// */
-	/* This indicates whether this STA coalesced and adapter to peer's capabilities or not. */
-	uint8_t gLimIbssCoalescingHappened;
-
-	/* / Definition for storing IBSS peers BSS description */
-	tLimIbssPeerNode *gLimIbssPeerList;
-	uint32_t gLimNumIbssPeers;
-	uint32_t ibss_retry_cnt;
-
-	/* ibss info - params for which ibss to join while coalescing */
-	struct lim_ibss_info ibss_info;
-
-	/* ////////////////////////////////////////     IBSS RELATED END /////////////////////////////////////////// */
 
 	/* ////////////////////////////////////////     STATS/COUNTER RELATED START /////////////////////////////////////////// */
 
@@ -645,6 +628,7 @@ typedef struct sAniSirLim {
 	/* wsc info required to form the wsc IE */
 	tLimWscIeInfo wscIeInfo;
 	struct pe_session *gpSession;  /* Pointer to  session table */
+	uint8_t max_sta_of_pe_session;
 
 	qdf_mutex_t lim_frame_register_lock;
 	qdf_list_t gLimMgmtFrameRegistratinQueue;
@@ -660,9 +644,7 @@ typedef struct sAniSirLim {
 
 	QDF_STATUS(*sme_msg_callback)
 		(struct mac_context *mac, struct scheduler_msg *msg);
-	QDF_STATUS(*stop_roaming_callback)
-		(mac_handle_t mac, uint8_t session_id, uint8_t reason,
-		 uint32_t requestor);
+	stop_roaming_fn_t stop_roaming_callback;
 	uint8_t retry_packet_cnt;
 	uint8_t beacon_probe_rsp_cnt_per_scan;
 	wlan_scan_requester req_id;
@@ -729,8 +711,6 @@ struct vdev_type_nss {
  * struct mgmt_beacon_probe_filter
  * @num_sta_sessions: Number of active PE STA sessions
  * @sta_bssid: Array of PE STA session's peer BSSIDs
- * @num_ibss_sessions: Number of active PE IBSS sessions
- * @ibss_ssid: Array of PE IBSS session's SSID
  * @num_sap_session: Number of active PE SAP sessions
  * @sap_channel: Array of PE SAP session's channels
  *
@@ -740,11 +720,17 @@ struct vdev_type_nss {
 struct mgmt_beacon_probe_filter {
 	uint8_t num_sta_sessions;
 	tSirMacAddr sta_bssid[WLAN_MAX_VDEVS];
-	uint8_t num_ibss_sessions;
-	tSirMacSSid ibss_ssid[WLAN_MAX_VDEVS];
 	uint8_t num_sap_sessions;
 	uint8_t sap_channel[WLAN_MAX_VDEVS];
 };
+
+#ifdef FEATURE_ANI_LEVEL_REQUEST
+struct ani_level_params {
+	void (*ani_level_cb)(struct wmi_host_ani_level_event *ani, uint8_t num,
+			     void *context);
+	void *context;
+};
+#endif
 
 /**
  * struct mac_context - Global MAC context
@@ -766,8 +752,6 @@ struct mac_context {
 	struct csr_scanstruct scan;
 	struct csr_roamstruct roam;
 	tRrmContext rrm;
-	uint8_t isCoalesingInIBSSAllowed;
-	uint8_t lteCoexAntShare;
 	uint8_t beacon_offload;
 	bool pmf_offload;
 	bool is_fils_roaming_supported;
@@ -780,23 +764,19 @@ struct mac_context {
 	struct vdev_type_nss vdev_type_nss_5g;
 
 	uint16_t mgmtSeqNum;
-	uint32_t sta_sap_scc_on_dfs_chan;
 	sir_mgmt_frame_ind_callback mgmt_frame_ind_cb;
 	qdf_atomic_t global_cmd_id;
 	struct wlan_objmgr_psoc *psoc;
 	struct wlan_objmgr_pdev *pdev;
 	void (*chan_info_cb)(struct scan_chan_info *chan_info);
-	/* Based on INI parameter */
-	uint32_t dual_mac_feature_disable;
-
 	enum  country_src reg_hint_src;
 	uint32_t rx_packet_drop_counter;
 	enum auth_tx_ack_status auth_ack_status;
 	uint8_t user_configured_nss;
-	bool ignore_assoc_disallowed;
 	uint32_t peer_rssi;
 	uint32_t peer_txrate;
 	uint32_t peer_rxrate;
+	uint32_t rx_retry_cnt;
 	uint32_t rx_mc_bc_cnt;
 	/* 11k Offload Support */
 	bool is_11k_offload_supported;
@@ -818,12 +798,18 @@ struct mac_context {
 	bool he_om_ctrl_cfg_tx_nsts_set;
 	uint8_t he_om_ctrl_cfg_tx_nsts;
 	bool he_om_ctrl_ul_mu_data_dis;
+	uint8_t is_usr_cfg_pmf_wep;
 #ifdef WLAN_FEATURE_11AX
 	tDot11fIEhe_cap he_cap_2g;
 	tDot11fIEhe_cap he_cap_5g;
 #endif
 	bool obss_scan_offload;
 	bool bcn_reception_stats;
+	csr_session_close_cb session_close_cb;
+	csr_roam_complete_cb session_roam_complete_cb;
+#ifdef FEATURE_ANI_LEVEL_REQUEST
+	struct ani_level_params ani_params;
+#endif
 };
 
 #ifdef FEATURE_WLAN_TDLS

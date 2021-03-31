@@ -77,6 +77,7 @@ enum sde_plane_sclcheck_state {
  * @defer_prepare_fb:	indicate if prepare_fb call was deferred
  * @pipe_order_flags: contains pipe order flags:
  *			SDE_SSPP_RIGHT - right pipe in source split pair
+ * @layout_offset:	horizontal layout offset for global coordinate
  * @scaler3_cfg: configuration data for scaler3
  * @pixel_ext: configuration data for pixel extensions
  * @scaler_check_state: indicates status of user provided pixel extension data
@@ -97,6 +98,7 @@ struct sde_plane_state {
 	bool pending;
 	bool defer_prepare_fb;
 	uint32_t pipe_order_flags;
+	int layout_offset;
 
 	/* scaler configuration */
 	struct sde_hw_scaler3_cfg scaler3_cfg;

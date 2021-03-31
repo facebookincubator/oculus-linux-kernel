@@ -50,7 +50,6 @@
 #define GET_LIM_SYSTEM_ROLE(pe_session)      (pe_session->limSystemRole)
 #define LIM_IS_AP_ROLE(pe_session)           (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_AP_ROLE)
 #define LIM_IS_STA_ROLE(pe_session)          (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_STA_ROLE)
-#define LIM_IS_IBSS_ROLE(pe_session)         (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_STA_IN_IBSS_ROLE)
 #define LIM_IS_UNKNOWN_ROLE(pe_session)      (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_UNKNOWN_ROLE)
 #define LIM_IS_P2P_DEVICE_ROLE(pe_session)   (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_P2P_DEVICE_ROLE)
 #define LIM_IS_P2P_DEVICE_GO(pe_session)     (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_P2P_DEVICE_GO)
@@ -68,9 +67,42 @@
 #define LIM_IS_CONNECTION_ACTIVE(pe_session)  (pe_session->LimRxedBeaconCntDuringHB)
 /*mac->lim.gLimProcessDefdMsgs*/
 #define GET_LIM_PROCESS_DEFD_MESGS(mac) (mac->lim.gLimProcessDefdMsgs)
+
+/**
+ * lim_post_msg_api() - post normal priority PE message
+ * @mac: mac context
+ * @msg: message to be posted
+ *
+ * This function is called to post a message to the tail of the PE
+ * message queue to be processed in the MC Thread with normal
+ * priority.
+ *
+ * Return: QDF_STATUS_SUCCESS on success, other QDF_STATUS on error
+ */
+QDF_STATUS lim_post_msg_api(struct mac_context *mac, struct scheduler_msg *msg);
+
+static inline void
+lim_post_msg_to_process_deferred_queue(struct mac_context *mac)
+{
+	struct scheduler_msg msg = {0};
+	QDF_STATUS status;
+
+	if (!mac->lim.gLimProcessDefdMsgs || !mac->lim.gLimDeferredMsgQ.size)
+		return;
+
+	msg.type = SIR_LIM_PROCESS_DEFERRED_QUEUE;
+	msg.bodyptr = NULL;
+	msg.bodyval = 0;
+
+	status = lim_post_msg_api(mac, &msg);
+	if (QDF_IS_STATUS_ERROR(status))
+		pe_err("Failed to post lim msg:0x%x", msg.type);
+}
+
 #define SET_LIM_PROCESS_DEFD_MESGS(mac, val) \
-		mac->lim.gLimProcessDefdMsgs = val; \
-		pe_debug("Defer LIM msg %d", val);
+	mac->lim.gLimProcessDefdMsgs = val; \
+	pe_debug("Defer LIM msg %d", val); \
+	lim_post_msg_to_process_deferred_queue(mac);
 
 /* LIM exported function templates */
 #define LIM_MIN_BCN_PR_LENGTH  12
@@ -113,6 +145,20 @@ QDF_STATUS pe_close(struct mac_context *mac);
 QDF_STATUS lim_start(struct mac_context *mac);
 QDF_STATUS pe_start(struct mac_context *mac);
 void pe_stop(struct mac_context *mac);
+
+#ifdef WLAN_FEATURE_11W
+/**
+ * lim_stop_pmfcomeback_timer() - stop pmf comeback timer
+ * @session: Pointer to PE session
+ *
+ * Return: None
+ */
+void lim_stop_pmfcomeback_timer(struct pe_session *session);
+#else
+static inline void lim_stop_pmfcomeback_timer(struct pe_session *session)
+{
+}
+#endif
 
 /**
  * pe_register_mgmt_rx_frm_callback() - registers callback for receiving
@@ -157,19 +203,6 @@ void pe_register_callbacks_with_wma(struct mac_context *mac,
 void lim_cleanup(struct mac_context *);
 
 /**
- * lim_post_msg_api() - post normal priority PE message
- * @mac: mac context
- * @msg: message to be posted
- *
- * This function is called to post a message to the tail of the PE
- * message queue to be processed in the MC Thread with normal
- * priority.
- *
- * Return: QDF_STATUS_SUCCESS on success, other QDF_STATUS on error
- */
-QDF_STATUS lim_post_msg_api(struct mac_context *mac, struct scheduler_msg *msg);
-
-/**
  * lim_post_msg_high_priority() - post high priority PE message
  * @mac: mac context
  * @msg: message to be posted
@@ -189,20 +222,24 @@ QDF_STATUS lim_post_msg_high_priority(struct mac_context *mac,
  */
 void lim_message_processor(struct mac_context *, struct scheduler_msg *);
 
-/**
- * Function to handle IBSS coalescing.
- * Beacon Processing module to call this.
- */
-QDF_STATUS lim_handle_ibss_coalescing(struct mac_context *,
-				      tpSchBeaconStruct,
-				      uint8_t *, struct pe_session *);
 /* / Function used by other Sirius modules to read global SME state */
 static inline tLimSmeStates lim_get_sme_state(struct mac_context *mac)
 {
 	return mac->lim.gLimSmeState;
 }
 
-void lim_received_hb_handler(struct mac_context *, uint8_t,
+/**
+ * lim_received_hb_handler() - This function is called by
+ * sch_beacon_process() upon receiving a Beacon on STA. This
+ * also gets called upon receiving Probe Response after heat
+ * beat failure is detected.
+ *
+ * @mac - global mac structure
+ * @chan_freq - channel frequency indicated in Beacon, Probe
+ *
+ * Response return - none
+ */
+void lim_received_hb_handler(struct mac_context *, uint32_t,
 			     struct pe_session *);
 
 /* / Function that triggers STA context deletion */
@@ -283,6 +320,10 @@ pe_roam_synch_callback(struct mac_context *mac_ctx,
 		       struct roam_offload_synch_ind *roam_sync_ind_ptr,
 		       struct bss_description *bss_desc_ptr,
 		       enum sir_roam_op_code reason);
+
+void
+lim_check_ft_initial_im_association(struct roam_offload_synch_ind *roam_synch,
+				    struct pe_session *session_entry);
 
 /**
  * pe_disconnect_callback() - Callback to handle deauth event is received
@@ -366,10 +407,10 @@ static inline void lim_get_phy_mode(struct mac_context *mac, uint32_t *phyMode,
 
 /* ----------------------------------------------------------------------- */
 static inline void lim_get_rf_band_new(struct mac_context *mac,
-				       enum band_info *band,
+				       enum reg_wifi_band *band,
 				       struct pe_session *pe_session)
 {
-	*band = pe_session ? pe_session->limRFBand : BAND_UNKNOWN;
+	*band = pe_session ? pe_session->limRFBand : REG_BAND_UNKNOWN;
 }
 
 /**

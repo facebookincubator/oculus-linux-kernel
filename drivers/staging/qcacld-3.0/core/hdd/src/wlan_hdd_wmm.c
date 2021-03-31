@@ -57,6 +57,7 @@
 #include "sme_api.h"
 #include "wlan_mlme_ucfg_api.h"
 #include "cfg_ucfg_api.h"
+#include "wlan_hdd_object_manager.h"
 
 #define HDD_WMM_UP_TO_AC_MAP_SIZE 8
 #define DSCP(x)	x
@@ -70,6 +71,65 @@ const uint8_t hdd_wmm_up_to_ac_map[] = {
 	SME_AC_VI,
 	SME_AC_VO,
 	SME_AC_VO
+};
+
+#define CONFIG_TSPEC_OPERATION \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_OPERATION
+#define CONFIG_TSPEC_TSID \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_TSID
+#define CONFIG_TSPEC_DIRECTION \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_DIRECTION
+#define CONFIG_TSPEC_APSD \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_APSD
+#define CONFIG_TSPEC_USER_PRIORITY \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_USER_PRIORITY
+#define CONFIG_TSPEC_ACK_POLICY \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_ACK_POLICY
+#define CONFIG_TSPEC_NOMINAL_MSDU_SIZE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_NOMINAL_MSDU_SIZE
+#define CONFIG_TSPEC_MAXIMUM_MSDU_SIZE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAXIMUM_MSDU_SIZE
+#define CONFIG_TSPEC_MIN_SERVICE_INTERVAL \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MIN_SERVICE_INTERVAL
+#define CONFIG_TSPEC_MAX_SERVICE_INTERVAL \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX_SERVICE_INTERVAL
+#define CONFIG_TSPEC_INACTIVITY_INTERVAL \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_INACTIVITY_INTERVAL
+#define CONFIG_TSPEC_SUSPENSION_INTERVAL \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_SUSPENSION_INTERVAL
+#define CONFIG_TSPEC_MINIMUM_DATA_RATE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MINIMUM_DATA_RATE
+#define CONFIG_TSPEC_MEAN_DATA_RATE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MEAN_DATA_RATE
+#define CONFIG_TSPEC_PEAK_DATA_RATE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_PEAK_DATA_RATE
+#define CONFIG_TSPEC_BURST_SIZE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_BURST_SIZE
+#define CONFIG_TSPEC_MINIMUM_PHY_RATE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MINIMUM_PHY_RATE
+#define CONFIG_TSPEC_SURPLUS_BANDWIDTH_ALLOWANCE \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_SURPLUS_BANDWIDTH_ALLOWANCE
+
+const struct nla_policy
+config_tspec_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX + 1] = {
+	[CONFIG_TSPEC_OPERATION] = {.type = NLA_U8},
+	[CONFIG_TSPEC_TSID] = {.type = NLA_U8},
+	[CONFIG_TSPEC_DIRECTION] = {.type = NLA_U8},
+	[CONFIG_TSPEC_APSD] = {.type = NLA_FLAG},
+	[CONFIG_TSPEC_USER_PRIORITY] = {.type = NLA_U8},
+	[CONFIG_TSPEC_ACK_POLICY] = {.type = NLA_U8},
+	[CONFIG_TSPEC_NOMINAL_MSDU_SIZE] = {.type = NLA_U16},
+	[CONFIG_TSPEC_MAXIMUM_MSDU_SIZE] = {.type = NLA_U16},
+	[CONFIG_TSPEC_MIN_SERVICE_INTERVAL] = {.type = NLA_U32},
+	[CONFIG_TSPEC_MAX_SERVICE_INTERVAL] = {.type = NLA_U32},
+	[CONFIG_TSPEC_INACTIVITY_INTERVAL] = {.type = NLA_U32},
+	[CONFIG_TSPEC_SUSPENSION_INTERVAL] = {.type = NLA_U32},
+	[CONFIG_TSPEC_MINIMUM_DATA_RATE] = {.type = NLA_U32},
+	[CONFIG_TSPEC_MEAN_DATA_RATE] = {.type = NLA_U32},
+	[CONFIG_TSPEC_PEAK_DATA_RATE] = {.type = NLA_U32},
+	[CONFIG_TSPEC_BURST_SIZE] = {.type = NLA_U32},
+	[CONFIG_TSPEC_MINIMUM_PHY_RATE] = {.type = NLA_U32},
+	[CONFIG_TSPEC_SURPLUS_BANDWIDTH_ALLOWANCE] = {.type = NLA_U16},
 };
 
 /**
@@ -163,13 +223,11 @@ static void hdd_wmm_enable_tl_uapsd(struct hdd_wmm_qos_context *qos_context)
 					      &delayed_trgr_frm_int);
 	/* everything is in place to notify TL */
 	status =
-		sme_enable_uapsd_for_ac((WLAN_HDD_GET_STATION_CTX_PTR(adapter))->
-					   conn_info.sta_id[0], ac_type,
-					   ac->tspec.ts_info.tid,
-					   ac->tspec.ts_info.up,
-					   service_interval, suspension_interval,
-					   direction, psb, adapter->vdev_id,
-					   delayed_trgr_frm_int);
+		sme_enable_uapsd_for_ac(ac_type, ac->tspec.ts_info.tid,
+					ac->tspec.ts_info.up,
+					service_interval, suspension_interval,
+					direction, psb, adapter->vdev_id,
+					delayed_trgr_frm_int);
 
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("Failed to enable U-APSD for AC=%d", ac_type);
@@ -204,10 +262,7 @@ static void hdd_wmm_disable_tl_uapsd(struct hdd_wmm_qos_context *qos_context)
 
 	/* have we previously enabled UAPSD? */
 	if (ac->is_uapsd_info_valid == true) {
-		status =
-			sme_disable_uapsd_for_ac((WLAN_HDD_GET_STATION_CTX_PTR
-							     (adapter))->conn_info.sta_id[0],
-						    ac_type, adapter->vdev_id);
+		status = sme_disable_uapsd_for_ac(ac_type, adapter->vdev_id);
 
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			hdd_err("Failed to disable U-APSD for AC=%d", ac_type);
@@ -299,7 +354,7 @@ static void hdd_wmm_notify_app(struct hdd_wmm_qos_context *qos_context)
 
 	/* send the event */
 	hdd_debug("Sending [%s]", buf);
-	wireless_send_event(adapter->dev, IWEVCUSTOM, &wrqu, buf);
+	hdd_wext_send_event(adapter->dev, IWEVCUSTOM, &wrqu, buf);
 }
 
 #ifdef FEATURE_WLAN_ESE
@@ -1412,8 +1467,8 @@ static void __hdd_wmm_do_implicit_qos(struct hdd_wmm_qos_context *qos_context)
 		 * record
 		 */
 		hdd_wmm_free_context(qos_context);
-
-		/* fall through and start packets flowing */
+		/* start packets flowing */
+		/* fallthrough */
 	case SME_QOS_STATUS_SETUP_SUCCESS_NO_ACM_NO_APSD_RSP:
 		/* no ACM in effect, no need to setup U-APSD */
 	case SME_QOS_STATUS_SETUP_SUCCESS_APSD_SET_ALREADY:
@@ -1467,12 +1522,15 @@ static void hdd_wmm_do_implicit_qos(struct work_struct *work)
 QDF_STATUS hdd_send_dscp_up_map_to_fw(struct hdd_adapter *adapter)
 {
 	uint32_t *dscp_to_up_map = adapter->dscp_to_up_map;
-	struct wlan_objmgr_vdev *vdev = adapter->vdev;
+	struct wlan_objmgr_vdev *vdev;
 	int ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
 
 	if (vdev) {
 		/* Send DSCP to TID map table to FW */
 		ret = os_if_fwol_send_dscp_up_map_to_fw(vdev, dscp_to_up_map);
+		hdd_objmgr_put_vdev(vdev);
 		if (ret && ret != -EOPNOTSUPP)
 			return QDF_STATUS_E_FAILURE;
 	}
@@ -1553,7 +1611,7 @@ static inline QDF_STATUS hdd_custom_dscp_up_map(
 #endif /* WLAN_CUSTOM_DSCP_UP_MAP */
 
 /**
- * hdd_wmm_init() - initialize the WMM DSCP configuation
+ * hdd_wmm_dscp_initial_state() - initialize the WMM DSCP configuration
  * @adapter : [in]  pointer to Adapter context
  *
  * This function will initialize the WMM DSCP configuation of an
@@ -1562,12 +1620,11 @@ static inline QDF_STATUS hdd_custom_dscp_up_map(
  *
  * Return: QDF_STATUS enumeration
  */
-QDF_STATUS hdd_wmm_init(struct hdd_adapter *adapter)
+QDF_STATUS hdd_wmm_dscp_initial_state(struct hdd_adapter *adapter)
 {
 	enum sme_qos_wmmuptype *dscp_to_up_map = adapter->dscp_to_up_map;
 	struct wlan_objmgr_psoc *psoc = adapter->hdd_ctx->psoc;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-
 
 	if (!psoc) {
 		hdd_err("Invalid psoc handle");
@@ -1600,6 +1657,8 @@ QDF_STATUS hdd_wmm_adapter_init(struct hdd_adapter *adapter)
 	sme_ac_enum_type ac_type;
 
 	hdd_enter();
+
+	hdd_wmm_dscp_initial_state(adapter);
 
 	adapter->hdd_wmm_status.qap = false;
 	INIT_LIST_HEAD(&adapter->hdd_wmm_status.context_list);
@@ -1806,6 +1865,17 @@ void hdd_wmm_classify_pkt(struct hdd_adapter *adapter,
 	dscp = (tos >> 2) & 0x3f;
 	*user_pri = adapter->dscp_to_up_map[dscp];
 
+	/*
+	 * Upgrade the priority, if the user priority of this packet is
+	 * less than the configured threshold.
+	 */
+	if (*user_pri < adapter->upgrade_udp_qos_threshold &&
+	    (qdf_nbuf_is_ipv4_udp_pkt(skb) || qdf_nbuf_is_ipv6_udp_pkt(skb))) {
+		/* Upgrade UDP pkt priority alone */
+		*user_pri = qca_wlan_ac_to_sme_qos(
+				adapter->upgrade_udp_qos_threshold);
+	}
+
 #ifdef HDD_WMM_DEBUG
 	hdd_debug("tos is %d, dscp is %d, up is %d", tos, dscp, *user_pri);
 #endif /* HDD_WMM_DEBUG */
@@ -1824,7 +1894,9 @@ static uint16_t __hdd_get_queue_index(uint16_t up)
 	return hdd_linux_up_to_ac_map[up];
 }
 
-#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_HL_NETDEV_FLOW_CONTROL)
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || \
+	defined(QCA_HL_NETDEV_FLOW_CONTROL) || \
+	defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 /**
  * hdd_get_queue_index() - get queue index
  * @up: user priority
@@ -1899,7 +1971,13 @@ static uint16_t hdd_wmm_select_queue(struct net_device *dev,
 	return index;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
+			  struct net_device *sb_dev)
+{
+	return hdd_wmm_select_queue(dev, skb);
+}
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
 			  struct net_device *sb_dev,
 			  select_queue_fallback_t fallback)
@@ -2058,8 +2136,6 @@ QDF_STATUS hdd_wmm_acquire_access(struct hdd_adapter *adapter,
 		/* no memory for QoS context.  Nothing we can do but
 		 * let data flow
 		 */
-		QDF_TRACE(QDF_MODULE_ID_HDD_DATA, QDF_TRACE_LEVEL_ERROR,
-			  "%s: Unable to allocate context", __func__);
 		adapter->hdd_wmm_status.ac_status[ac_type].is_access_allowed =
 			true;
 		*granted = true;
@@ -2153,8 +2229,6 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		}
 
 		status = sme_enable_uapsd_for_ac(
-				(WLAN_HDD_GET_STATION_CTX_PTR(
-				adapter))->conn_info.sta_id[0],
 				SME_AC_VO, 7, 7, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
 				adapter->vdev_id,
@@ -2178,8 +2252,6 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		}
 
 		status = sme_enable_uapsd_for_ac(
-				(WLAN_HDD_GET_STATION_CTX_PTR(
-				adapter))->conn_info.sta_id[0],
 				SME_AC_VI, 5, 5, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
 				adapter->vdev_id,
@@ -2203,8 +2275,6 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		}
 
 		status = sme_enable_uapsd_for_ac(
-				(WLAN_HDD_GET_STATION_CTX_PTR(
-				adapter))->conn_info.sta_id[0],
 				SME_AC_BK, 2, 2, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
 				adapter->vdev_id,
@@ -2228,8 +2298,6 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		}
 
 		status = sme_enable_uapsd_for_ac(
-				(WLAN_HDD_GET_STATION_CTX_PTR(
-				adapter))->conn_info.sta_id[0],
 				SME_AC_BE, 3, 3, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
 				adapter->vdev_id,
@@ -2243,7 +2311,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 					       adapter->vdev_id);
 
 	if (!QDF_IS_STATUS_SUCCESS(status))
-		hdd_wmm_init(adapter);
+		hdd_wmm_dscp_initial_state(adapter);
 
 	hdd_exit();
 
@@ -2370,10 +2438,8 @@ bool hdd_wmm_is_acm_allowed(uint8_t vdev_id)
 	}
 
 	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
-	if (hdd_validate_adapter(adapter)) {
-		hdd_err("Invalid adapter");
+	if (hdd_validate_adapter(adapter))
 		return false;
-	}
 
 	wmm_ac_status = adapter->hdd_wmm_status.ac_status;
 
@@ -2471,7 +2537,6 @@ hdd_wlan_wmm_status_e hdd_wmm_addts(struct hdd_adapter *adapter,
 	qos_context = qdf_mem_malloc(sizeof(*qos_context));
 	if (!qos_context) {
 		/* no memory for QoS context.  Nothing we can do */
-		hdd_err("Unable to allocate QoS context");
 		return HDD_WLAN_WMM_STATUS_INTERNAL_FAILURE;
 	}
 	/* we assume the tspec has already been validated by the caller */
@@ -2704,4 +2769,253 @@ hdd_wlan_wmm_status_e hdd_wmm_checkts(struct hdd_adapter *adapter, uint32_t hand
 	}
 	mutex_unlock(&adapter->hdd_wmm_status.mutex);
 	return status;
+}
+
+/**
+ * __wlan_hdd_cfg80211_config_tspec() - config tspec
+ * @wiphy: pointer to wireless wiphy structure.
+ * @wdev: pointer to wireless_dev structure.
+ * @data: pointer to config tspec command parameters.
+ * @data_len: the length in byte of config tspec command parameters.
+ *
+ * Return: An error code or 0 on success.
+ */
+static int __wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    const void *data,
+					    int data_len)
+{
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct sme_qos_wmmtspecinfo tspec;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX + 1];
+	uint8_t oper, ts_id;
+	hdd_wlan_wmm_status_e status;
+	int ret;
+
+	hdd_enter_dev(wdev->netdev);
+
+	ret = wlan_hdd_validate_context(hdd_ctx);
+	if (ret != 0)
+		return ret;
+
+	ret = wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX,
+				      data, data_len, config_tspec_policy);
+	if (ret) {
+		hdd_err_rl("Invalid ATTR");
+		return -EINVAL;
+	}
+
+	if (!tb[CONFIG_TSPEC_OPERATION] || !tb[CONFIG_TSPEC_TSID]) {
+		hdd_err_rl("Mandatory attributes are not present");
+		return -EINVAL;
+	}
+
+	memset(&tspec, 0, sizeof(tspec));
+
+	oper = nla_get_u8(tb[CONFIG_TSPEC_OPERATION]);
+	ts_id = nla_get_u8(tb[CONFIG_TSPEC_TSID]);
+
+	switch (oper) {
+	case QCA_WLAN_TSPEC_ADD:
+
+		tspec.ts_info.tid = ts_id;
+
+		/* Mandatory attributes */
+		if (tb[CONFIG_TSPEC_DIRECTION]) {
+			uint8_t direction = nla_get_u8(
+						    tb[CONFIG_TSPEC_DIRECTION]);
+
+			switch (direction) {
+			case QCA_WLAN_TSPEC_DIRECTION_UPLINK:
+				tspec.ts_info.direction =
+						SME_QOS_WMM_TS_DIR_UPLINK;
+				break;
+			case QCA_WLAN_TSPEC_DIRECTION_DOWNLINK:
+				tspec.ts_info.direction =
+						SME_QOS_WMM_TS_DIR_DOWNLINK;
+				break;
+			case QCA_WLAN_TSPEC_DIRECTION_BOTH:
+				tspec.ts_info.direction =
+						SME_QOS_WMM_TS_DIR_BOTH;
+				break;
+			default:
+				hdd_err_rl("Invalid direction %d", direction);
+				return -EINVAL;
+			}
+		} else {
+			hdd_err_rl("Direction is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_APSD])
+			tspec.ts_info.psb = 1;
+
+		if (tb[CONFIG_TSPEC_ACK_POLICY]) {
+			uint8_t ack_policy = nla_get_u8(
+						   tb[CONFIG_TSPEC_ACK_POLICY]);
+
+			switch (ack_policy) {
+			case QCA_WLAN_TSPEC_NORMAL_ACK:
+				tspec.ts_info.ack_policy =
+					SME_QOS_WMM_TS_ACK_POLICY_NORMAL_ACK;
+				break;
+			case QCA_WLAN_TSPEC_BLOCK_ACK:
+				tspec.ts_info.ack_policy =
+			       SME_QOS_WMM_TS_ACK_POLICY_HT_IMMEDIATE_BLOCK_ACK;
+				break;
+			default:
+				hdd_err_rl("Invalid ack policy %d", ack_policy);
+				return -EINVAL;
+			}
+		} else {
+			hdd_err_rl("ACK policy is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_NOMINAL_MSDU_SIZE]) {
+			tspec.nominal_msdu_size = nla_get_u16(
+					    tb[CONFIG_TSPEC_NOMINAL_MSDU_SIZE]);
+		} else {
+			hdd_err_rl("Nominal msdu size is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_MAXIMUM_MSDU_SIZE]) {
+			tspec.maximum_msdu_size = nla_get_u16(
+					    tb[CONFIG_TSPEC_MAXIMUM_MSDU_SIZE]);
+		} else {
+			hdd_err_rl("Maximum msdu size is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_MIN_SERVICE_INTERVAL]) {
+			tspec.min_service_interval = nla_get_u32(
+					 tb[CONFIG_TSPEC_MIN_SERVICE_INTERVAL]);
+		} else {
+			hdd_err_rl("Min service interval is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_MAX_SERVICE_INTERVAL]) {
+			tspec.max_service_interval = nla_get_u32(
+					 tb[CONFIG_TSPEC_MAX_SERVICE_INTERVAL]);
+		} else {
+			hdd_err_rl("Max service interval is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_INACTIVITY_INTERVAL]) {
+			tspec.inactivity_interval = nla_get_u32(
+					  tb[CONFIG_TSPEC_INACTIVITY_INTERVAL]);
+		} else {
+			hdd_err_rl("Inactivity interval is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_SUSPENSION_INTERVAL]) {
+			tspec.suspension_interval = nla_get_u32(
+					  tb[CONFIG_TSPEC_SUSPENSION_INTERVAL]);
+		} else {
+			hdd_err_rl("Suspension interval is not present");
+			return -EINVAL;
+		}
+
+		if (tb[CONFIG_TSPEC_SURPLUS_BANDWIDTH_ALLOWANCE]) {
+			tspec.surplus_bw_allowance = nla_get_u16(
+				  tb[CONFIG_TSPEC_SURPLUS_BANDWIDTH_ALLOWANCE]);
+		} else {
+			hdd_err_rl("Surplus bw allowance is not present");
+			return -EINVAL;
+		}
+
+		/* Optional attributes */
+		if (tb[CONFIG_TSPEC_USER_PRIORITY])
+			tspec.ts_info.up = nla_get_u8(
+						tb[CONFIG_TSPEC_USER_PRIORITY]);
+
+		if (tb[CONFIG_TSPEC_MINIMUM_DATA_RATE])
+			tspec.min_data_rate = nla_get_u32(
+					    tb[CONFIG_TSPEC_MINIMUM_DATA_RATE]);
+
+		if (tb[CONFIG_TSPEC_MEAN_DATA_RATE])
+			tspec.mean_data_rate = nla_get_u32(
+					       tb[CONFIG_TSPEC_MEAN_DATA_RATE]);
+
+		if (tb[CONFIG_TSPEC_PEAK_DATA_RATE])
+			tspec.peak_data_rate = nla_get_u32(
+					       tb[CONFIG_TSPEC_PEAK_DATA_RATE]);
+
+		if (tb[CONFIG_TSPEC_BURST_SIZE])
+			tspec.max_burst_size = nla_get_u32(
+						   tb[CONFIG_TSPEC_BURST_SIZE]);
+
+		if (tspec.max_burst_size)
+			tspec.ts_info.burst_size_defn = 1;
+
+		if (tb[CONFIG_TSPEC_MINIMUM_PHY_RATE])
+			tspec.min_phy_rate = nla_get_u32(
+					     tb[CONFIG_TSPEC_MINIMUM_PHY_RATE]);
+
+		status = hdd_wmm_addts(adapter, ts_id, &tspec);
+		if (status == HDD_WLAN_WMM_STATUS_SETUP_FAILED ||
+		    status == HDD_WLAN_WMM_STATUS_SETUP_FAILED_BAD_PARAM ||
+		    status == HDD_WLAN_WMM_STATUS_SETUP_FAILED_NO_WMM ||
+		    status == HDD_WLAN_WMM_STATUS_MODIFY_FAILED ||
+		    status == HDD_WLAN_WMM_STATUS_MODIFY_FAILED_BAD_PARAM ||
+		    status == HDD_WLAN_WMM_STATUS_SETUP_UAPSD_SET_FAILED ||
+		    status == HDD_WLAN_WMM_STATUS_MODIFY_UAPSD_SET_FAILED ||
+		    status == HDD_WLAN_WMM_STATUS_INTERNAL_FAILURE) {
+			hdd_err_rl("hdd_wmm_addts failed %d", status);
+			return -EINVAL;
+		}
+		break;
+
+	case QCA_WLAN_TSPEC_DEL:
+
+		status = hdd_wmm_delts(adapter, ts_id);
+		if (status == HDD_WLAN_WMM_STATUS_RELEASE_FAILED ||
+		    status == HDD_WLAN_WMM_STATUS_RELEASE_FAILED_BAD_PARAM ||
+		    status == HDD_WLAN_WMM_STATUS_INTERNAL_FAILURE) {
+			hdd_err_rl("hdd_wmm_delts failed %d", status);
+			return -EINVAL;
+		}
+		break;
+
+	case QCA_WLAN_TSPEC_GET:
+
+		status = hdd_wmm_checkts(adapter, ts_id);
+		if (status == HDD_WLAN_WMM_STATUS_LOST ||
+		    status == HDD_WLAN_WMM_STATUS_INTERNAL_FAILURE) {
+			hdd_err_rl("hdd_wmm_checkts failed %d", status);
+			return -EINVAL;
+		}
+		break;
+
+	default:
+		hdd_err_rl("Invalid operation %d", oper);
+		return -EINVAL;
+	}
+
+	hdd_exit();
+
+	return 0;
+}
+
+int wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
+				   struct wireless_dev *wdev,
+				   const void *data, int data_len)
+{
+	int errno;
+	struct osif_vdev_sync *vdev_sync;
+
+	errno = osif_vdev_sync_op_start(wdev->netdev, &vdev_sync);
+	if (errno)
+		return errno;
+
+	errno = __wlan_hdd_cfg80211_config_tspec(wiphy, wdev, data, data_len);
+
+	osif_vdev_sync_op_stop(vdev_sync);
+
+	return errno;
 }

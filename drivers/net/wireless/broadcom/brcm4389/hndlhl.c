@@ -217,7 +217,7 @@ si_lhl_select_lpo(si_t *sih, osl_t *osh, int sel, uint32 lpo)
 
 	/* for 4377 and chiprev B0 and greater do not power-off other LPOs */
 	if (BCM4389_CHIP(sih->chip) || BCM4378_CHIP(sih->chip) || BCM4397_CHIP(sih->chip) ||
-		BCM4388_CHIP(sih->chip) || BCM4387_CHIP(sih->chip) ||
+		BCM4388_CHIP(sih->chip) || BCM4387_CHIP(sih->chip) || BCM4381_CHIP(sih->chip) ||
 		(CHIPID(sih->chip) == BCM4377_CHIP_ID)) {
 		LHL_ERROR(("NOT Power Down other LPO\n"));
 	} else {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -362,7 +362,6 @@ __ol_transfer_bin_file(struct ol_context *ol_ctx, enum ATH_BIN_FILE file,
 
 		temp_eeprom = qdf_mem_malloc(fw_entry_size);
 		if (!temp_eeprom) {
-			BMI_ERR("%s: Memory allocation failed", __func__);
 			status = -ENOMEM;
 			goto release_fw;
 		}
@@ -545,13 +544,19 @@ struct ramdump_info {
 
 /**
  * if have platform driver support, reinit will be called by CNSS.
- * recovery flag will be cleaned by reinit function. If not support,
- * clean recovery flag in CLD driver.
+ * recovery flag will be cleaned and CRASHED indication will be sent
+ * to user space by reinit function. If not support, clean recovery
+ * flag and send CRASHED indication in CLD driver.
  */
-static inline void ol_check_clean_recovery_flag(struct device *dev)
+static inline void ol_check_clean_recovery_flag(struct ol_context *ol_ctx)
 {
-	if (!pld_have_platform_driver_support(dev))
+	qdf_device_t qdf_dev = ol_ctx->qdf_dev;
+
+	if (!pld_have_platform_driver_support(qdf_dev->dev)) {
 		cds_set_recovery_in_progress(false);
+		if (ol_ctx->fw_crashed_cb)
+			ol_ctx->fw_crashed_cb();
+	}
 }
 
 #if !defined(QCA_WIFI_3_0)
@@ -588,10 +593,8 @@ int ol_copy_ramdump(struct hif_opaque_softc *scn)
 		return 0;
 	}
 	info = qdf_mem_malloc(sizeof(struct ramdump_info));
-	if (!info) {
-		BMI_ERR("%s Memory for Ramdump Allocation failed", __func__);
+	if (!info)
 		return -ENOMEM;
-	}
 
 	ol_get_ramdump_mem(qdf_dev->dev, info);
 
@@ -608,7 +611,7 @@ int ol_copy_ramdump(struct hif_opaque_softc *scn)
 	return ret;
 }
 
-void ramdump_work_handler(void *data)
+static void __ramdump_work_handler(void *data)
 {
 	int ret;
 	uint32_t host_interest_address;
@@ -645,7 +648,7 @@ void ramdump_work_handler(void *data)
 		BMI_ERR("HifDiagReadiMem FW Dump Area Pointer failed!");
 		ol_copy_ramdump(ramdump_scn);
 		pld_device_crashed(qdf_dev->dev);
-		ol_check_clean_recovery_flag(qdf_dev->dev);
+		ol_check_clean_recovery_flag(ol_ctx);
 
 		return;
 	}
@@ -672,10 +675,10 @@ void ramdump_work_handler(void *data)
 	 */
 	if (cds_is_load_or_unload_in_progress())
 		cds_set_recovery_in_progress(false);
-	else
+	else {
 		pld_device_crashed(qdf_dev->dev);
-
-	ol_check_clean_recovery_flag(qdf_dev->dev);
+		ol_check_clean_recovery_flag(ol_ctx);
+	}
 	return;
 
 out_fail:
@@ -686,7 +689,19 @@ out_fail:
 	else
 		pld_device_crashed(qdf_dev->dev);
 
-	ol_check_clean_recovery_flag(qdf_dev->dev);
+	ol_check_clean_recovery_flag(ol_ctx);
+}
+
+void ramdump_work_handler(void *data)
+{
+	struct qdf_op_sync *op_sync;
+
+	if (qdf_op_protect(&op_sync))
+		return;
+
+	__ramdump_work_handler(data);
+
+	qdf_op_unprotect(op_sync);
 }
 
 void fw_indication_work_handler(void *data)
@@ -696,6 +711,8 @@ void fw_indication_work_handler(void *data)
 
 	pld_device_self_recovery(qdf_dev->dev,
 				 PLD_REASON_DEFAULT);
+
+	ol_check_clean_recovery_flag(ol_ctx);
 }
 
 void ol_target_failure(void *instance, QDF_STATUS status)
@@ -706,12 +723,17 @@ void ol_target_failure(void *instance, QDF_STATUS status)
 	struct ol_config_info *ini_cfg = ol_get_ini_handle(ol_ctx);
 	qdf_device_t qdf_dev = ol_ctx->qdf_dev;
 	int ret;
+	bool skip_recovering_check = false;
 	enum hif_target_status target_status = hif_get_target_status(scn);
 
 	if (hif_get_bus_type(scn) == QDF_BUS_TYPE_SNOC) {
 		BMI_ERR("SNOC doesn't suppor this code path!");
 		return;
 	}
+
+	/* If Host driver trigger target failure, skip recovering check */
+	if (cds_is_target_asserting())
+		skip_recovering_check = true;
 
 	qdf_event_set(&wma->recovery_event);
 
@@ -728,8 +750,13 @@ void ol_target_failure(void *instance, QDF_STATUS status)
 		return;
 	}
 
-	if (cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
+	if (!skip_recovering_check && cds_is_driver_recovering()) {
 		BMI_ERR("%s: Recovery in progress, ignore!\n", __func__);
+		return;
+	}
+
+	if (cds_is_driver_in_bad_state()) {
+		BMI_ERR("%s: Driver in bad state, ignore!\n", __func__);
 		return;
 	}
 
@@ -1919,4 +1946,10 @@ void ol_init_ini_config(struct ol_context *ol_ctx,
 			struct ol_config_info *cfg)
 {
 	qdf_mem_copy(&ol_ctx->cfg_info, cfg, sizeof(struct ol_config_info));
+}
+
+void ol_set_fw_crashed_cb(struct ol_context *ol_ctx,
+			  void (*callback_fn)(void))
+{
+	ol_ctx->fw_crashed_cb = callback_fn;
 }

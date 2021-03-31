@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -186,7 +186,8 @@ void * (*htt_rx_mpdu_desc_list_next)(htt_pdev_handle pdev,
 
 bool (*htt_rx_mpdu_desc_retry)(htt_pdev_handle pdev, void *mpdu_desc);
 
-uint16_t (*htt_rx_mpdu_desc_seq_num)(htt_pdev_handle pdev, void *mpdu_desc);
+uint16_t (*htt_rx_mpdu_desc_seq_num)(htt_pdev_handle pdev, void *mpdu_desc,
+				     bool update_seq_num);
 
 void (*htt_rx_mpdu_desc_pn)(htt_pdev_handle pdev,
 			    void *mpdu_desc,
@@ -269,7 +270,7 @@ static int htt_rx_ipa_uc_alloc_wdi2_rsc(struct htt_pdev_t *pdev,
 	pdev->ipa_uc_rx_rsc.rx2_ind_ring =
 		qdf_mem_shared_mem_alloc(pdev->osdev,
 					 rx_ind_ring_elements *
-					 sizeof(qdf_dma_addr_t));
+					 sizeof(target_paddr_t));
 	if (!pdev->ipa_uc_rx_rsc.rx2_ind_ring) {
 		QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_ERROR,
 			  "%s: Unable to allocate memory for IPA rx2 ind ring",

@@ -43,8 +43,8 @@
 #define DHD_LOG_DUMP_FWLOG_TS	DHD_LOG_DUMP_WRITE_TS
 #endif
 
-#if defined(CUSTOMER_DBG_SYSTEM_TIME) && defined(DHD_DEBUGABILITY_LOG_DUMP_RING)
-#define DBG_PRINT_PREFIX "[%s][dhd][wlan]", dhd_dbg_get_system_timestamp()
+#ifdef CUSTOM_PREFIX
+#define DBG_PRINT_PREFIX "[%s]"CUSTOM_PREFIX, OSL_GET_RTCTIME()
 #else
 #define DBG_PRINT_PREFIX
 #endif

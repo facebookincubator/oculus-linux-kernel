@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -25,6 +25,7 @@
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <wlan_spectral_public_structs.h>
 
 /* NETLINK related declarations */
 #if (KERNEL_VERSION(2, 6, 31) > LINUX_VERSION_CODE)
@@ -36,7 +37,7 @@ void os_if_spectral_nl_data_ready(struct sk_buff *skb);
 #ifndef SPECTRAL_NETLINK
 #define SPECTRAL_NETLINK              (NETLINK_GENERIC + 1)
 #endif
-#define MAX_SPECTRAL_PAYLOAD         1500
+#define MAX_SPECTRAL_PAYLOAD         (2004)
 
 /* Init's network namespace */
 extern struct net init_net;

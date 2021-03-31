@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -76,15 +76,15 @@ static void usb_hif_usb_transmit_complete(struct urb *urb)
 	struct HIF_USB_PIPE *pipe = urb_context->pipe;
 	struct hif_usb_send_context *send_context;
 
-	HIF_DBG("+%s: pipe: %d, stat:%d, len:%d", __func__,
+	hif_debug("+: pipe: %d, stat:%d, len:%d",
 		pipe->logical_pipe_num, urb->status, urb->actual_length);
 
 	/* this urb is not pending anymore */
 	usb_hif_remove_pending_transfer(urb_context);
 
 	if (urb->status != 0) {
-		HIF_ERROR("%s:  pipe: %d, failed:%d",
-			  __func__, pipe->logical_pipe_num, urb->status);
+		hif_err("pipe: %d, failed: %d", pipe->logical_pipe_num,
+			urb->status);
 	}
 
 	buf = urb_context->buf;
@@ -102,7 +102,7 @@ static void usb_hif_usb_transmit_complete(struct urb *urb)
 	skb_queue_tail(&pipe->io_comp_queue, buf);
 	HIF_USB_SCHEDULE_WORK(pipe);
 
-	HIF_DBG("-%s", __func__);
+	hif_debug("-");
 }
 
 /**
@@ -134,8 +134,8 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 	uint32_t head_data_len, tmp_frag_count = 0;
 	unsigned char *data_ptr;
 
-	HIF_DBG("+%s pipe : %d, buf:0x%pK nbytes %u",
-		__func__, pipe_id, buf, nbytes);
+	hif_debug("+ pipe : %d, buf:0x%pK nbytes %u",
+		 pipe_id, buf, nbytes);
 
 	frag_count = qdf_nbuf_get_num_frags(buf);
 	if (frag_count == 1) {
@@ -160,8 +160,7 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 		}
 	} else {
 		/* Extra fragments overflow */
-		HIF_ERROR("%s Extra fragments count overflow : %d\n",
-			  __func__, frag_count);
+		hif_err("Extra fragments count overflow : %d", frag_count);
 		status = QDF_STATUS_E_RESOURCES;
 		goto err;
 	}
@@ -210,8 +209,8 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 		/* TODO : note, it is possible to run out of urbs if 2
 		 * endpoints map to the same pipe ID
 		 */
-		HIF_ERROR("%s pipe:%d no urbs left. URB Cnt : %d",
-			__func__, pipe_id, pipe->urb_cnt);
+		hif_err("pipe: %d no urbs left. URB Cnt: %d",
+			pipe_id, pipe->urb_cnt);
 		status = QDF_STATUS_E_RESOURCES;
 		goto err;
 	}
@@ -232,10 +231,9 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 	if ((len % pipe->max_packet_size) == 0)
 		/* hit a max packet boundary on this pipe */
 
-	HIF_DBG
-	    ("athusb bulk send submit:%d, 0x%X (ep:0x%2.2X), %d bytes",
-	     pipe->logical_pipe_num, pipe->usb_pipe_handle,
-	     pipe->ep_address, nbytes);
+	hif_debug("athusb bulk send submit:%d, 0x%X (ep:0x%2.2X), %d bytes",
+		 pipe->logical_pipe_num, pipe->usb_pipe_handle,
+		 pipe->ep_address, nbytes);
 
 	usb_hif_enqueue_pending_transfer(pipe, urb_context);
 	usb_status = usb_submit_urb(urb, GFP_ATOMIC);
@@ -245,8 +243,7 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 		else
 			qdf_nbuf_pull_head(buf, head_data_len);
 		urb_context->buf = NULL;
-		HIF_ERROR("athusb : usb bulk transmit failed %d",
-				usb_status);
+		hif_err("athusb: usb bulk transmit failed %d", usb_status);
 		usb_hif_remove_pending_transfer(urb_context);
 		usb_hif_cleanup_transmit_urb(urb_context);
 		status = QDF_STATUS_E_FAILURE;
@@ -256,10 +253,10 @@ static QDF_STATUS hif_send_internal(struct HIF_DEVICE_USB *hif_usb_device,
 err:
 	if (!QDF_IS_STATUS_SUCCESS(status) &&
 				(status != QDF_STATUS_E_RESOURCES)) {
-		HIF_ERROR("athusb send failed %d", status);
+		hif_err("athusb send failed %d", status);
 	}
 
-	HIF_DBG("-%s pipe : %d", __func__, pipe_id);
+	hif_debug("- pipe: %d", pipe_id);
 
 	return status;
 }
@@ -298,8 +295,14 @@ uint16_t hif_get_free_queue_number(struct hif_opaque_softc *scn,
 				   uint8_t pipe_id)
 {
 	struct HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(scn);
+	struct HIF_USB_PIPE *pipe = &device->pipes[pipe_id];
+	u16 urb_cnt;
 
-	return device->pipes[pipe_id].urb_cnt;
+	qdf_spin_lock_irqsave(&pipe->device->cs_lock);
+	urb_cnt =  pipe->urb_cnt;
+	qdf_spin_unlock_irqrestore(&pipe->device->cs_lock);
+
+	return urb_cnt;
 }
 
 /**
@@ -343,7 +346,7 @@ void hif_usb_device_deinit(struct hif_usb_softc *sc)
 {
 	struct HIF_DEVICE_USB *device = &sc->hif_hdl;
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 
 	usb_hif_cleanup_pipe_resources(device);
 
@@ -353,7 +356,7 @@ void hif_usb_device_deinit(struct hif_usb_softc *sc)
 	if (device->diag_resp_buffer)
 		qdf_mem_free(device->diag_resp_buffer);
 
-	HIF_TRACE("-%s", __func__);
+	hif_info("-");
 }
 
 /**
@@ -371,18 +374,18 @@ QDF_STATUS hif_usb_device_init(struct hif_usb_softc *sc)
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	struct HIF_USB_PIPE *pipe;
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 
 	do {
 
 		qdf_spinlock_create(&(device->cs_lock));
 		qdf_spinlock_create(&(device->rx_lock));
 		qdf_spinlock_create(&(device->tx_lock));
+		qdf_spinlock_create(&device->rx_prestart_lock);
 		device->udev = dev;
 		device->interface = interface;
 
-		HIF_ERROR("%s device %pK device->udev %pK device->interface %pK",
-			__func__,
+		hif_err("device %pK device->udev %pK device->interface %pK",
 			device,
 			device->udev,
 			device->interface);
@@ -415,9 +418,9 @@ QDF_STATUS hif_usb_device_init(struct hif_usb_softc *sc)
 		device->rx_ctrl_pipe_supported = 1;
 
 	if (status != QDF_STATUS_SUCCESS)
-		HIF_ERROR("%s: abnormal condition", __func__);
+		hif_err("abnormal condition (status=%d)", status);
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 	return status;
 }
 
@@ -432,7 +435,7 @@ QDF_STATUS hif_start(struct hif_opaque_softc *scn)
 	struct HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(scn);
 	int i;
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 	usb_hif_prestart_recv_pipes(device);
 
 	/* set the TX resource avail threshold for each TX pipe */
@@ -441,7 +444,7 @@ QDF_STATUS hif_start(struct hif_opaque_softc *scn)
 		    device->pipes[i].urb_alloc / 2;
 	}
 
-	HIF_TRACE("-%s", __func__);
+	hif_info("-");
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -455,11 +458,11 @@ void hif_usb_stop_device(struct hif_softc *hif_sc)
 {
 	struct HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(hif_sc);
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 
 	usb_hif_flush_all(device);
 
-	HIF_TRACE("-%s", __func__);
+	hif_info("-");
 }
 
 /**
@@ -487,7 +490,7 @@ void hif_get_default_pipe(struct hif_opaque_softc *scn, uint8_t *ul_pipe,
  * @ul_is_polled: if ul is polling based
  * @ul_is_polled: if dl is polling based
  *
- * Return: QDF_STATUS_SUCCESS if success else an appropriate QDF_STATUS error
+ * Return: status
  */
 int hif_map_service_to_pipe(struct hif_opaque_softc *scn, uint16_t svc_id,
 			    uint8_t *ul_pipe, uint8_t *dl_pipe,
@@ -523,7 +526,7 @@ int hif_map_service_to_pipe(struct hif_opaque_softc *scn, uint16_t svc_id,
 		break;
 	}
 
-	return status;
+	return qdf_status_to_os_return(status);
 }
 #else
 
@@ -542,7 +545,7 @@ int hif_map_service_to_pipe(struct hif_opaque_softc *scn, uint16_t svc_id,
  * @ul_is_polled: if ul is polling based
  * @ul_is_polled: if dl is polling based
  *
- * Return: QDF_STATUS_SUCCESS if success else an appropriate QDF_STATUS error
+ * Return: status
  */
 int hif_map_service_to_pipe(struct hif_opaque_softc *scn, uint16_t svc_id,
 			    uint8_t *ul_pipe, uint8_t *dl_pipe,
@@ -607,7 +610,7 @@ int hif_map_service_to_pipe(struct hif_opaque_softc *scn, uint16_t svc_id,
 		break;
 	}
 
-	return status;
+	return qdf_status_to_os_return(status);
 }
 #endif
 
@@ -781,31 +784,31 @@ void hif_dump_info(struct hif_opaque_softc *scn)
 
 	for (i = 0; i < HIF_USB_PIPE_MAX; i++) {
 		pipe = &device->pipes[i];
-		HIF_ERROR("PipeIndex : %d URB Cnt : %d PipeHandle : %x",
+		hif_err("PipeIndex: %d URB Cnt: %d PipeHandle: %x",
 			i, pipe->urb_cnt,
 			pipe->usb_pipe_handle);
 		if (usb_pipeisoc(pipe->usb_pipe_handle))
-			HIF_INFO("Pipe Type ISOC");
+			hif_info("Pipe Type ISOC");
 		else if (usb_pipebulk(pipe->usb_pipe_handle))
-			HIF_INFO("Pipe Type BULK");
+			hif_info("Pipe Type BULK");
 		else if (usb_pipeint(pipe->usb_pipe_handle))
-			HIF_INFO("Pipe Type INT");
+			hif_info("Pipe Type INT");
 		else if (usb_pipecontrol(pipe->usb_pipe_handle))
-			HIF_INFO("Pipe Type control");
+			hif_info("Pipe Type control");
 	}
 
 	for (i = 0; i < iface_desc->desc.bNumEndpoints; i++) {
 		ep_desc = &iface_desc->endpoint[i].desc;
 		if (ep_desc) {
-			HIF_INFO(
-				"ep_desc : %pK Index : %d: DescType : %d Addr : %d Maxp : %d Atrrib : %d",
+			hif_info(
+				"ep_desc: %pK Index: %d: DescType: %d Addr: %d Maxp: %d Atrrib: %d",
 				ep_desc, i, ep_desc->bDescriptorType,
 				ep_desc->bEndpointAddress,
 				ep_desc->wMaxPacketSize,
 				ep_desc->bmAttributes);
 			if ((ep_desc) && (usb_endpoint_type(ep_desc) ==
 						USB_ENDPOINT_XFER_ISOC)) {
-				HIF_INFO("ISOC EP Detected");
+				hif_info("ISOC EP Detected");
 			}
 		}
 	}
@@ -840,7 +843,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 
 	if ((address & 0x3) || ((uintptr_t)data & 0x3))
 		return QDF_STATUS_E_IO;
@@ -856,7 +859,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
 		data += sizeof(uint32_t);
 
 	}
-	HIF_TRACE("-%s", __func__);
+	hif_info("-");
 	return status;
 }
 qdf_export_symbol(hif_diag_read_mem);
@@ -876,7 +879,7 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn,
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
-	HIF_TRACE("+%s", __func__);
+	hif_info("+");
 	if ((address & 0x3) || ((uintptr_t)data & 0x3))
 		return QDF_STATUS_E_IO;
 
@@ -891,7 +894,7 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn,
 		data += sizeof(uint32_t);
 
 	}
-	HIF_TRACE("-%s", __func__);
+	hif_info("-");
 	return status;
 }
 
@@ -908,7 +911,7 @@ void hif_send_complete_check(struct hif_opaque_softc *scn,
 
 void hif_suspend_wow(struct hif_opaque_softc *scn)
 {
-	HIF_INFO("HIFsuspendwow - TODO");
+	hif_info("HIFsuspendwow - TODO");
 }
 
 /**
@@ -932,8 +935,8 @@ void hif_usb_set_bundle_mode(struct hif_softc *scn,
 	device->rx_bundle_buf_len = device->rx_bundle_cnt *
 					HIF_USB_RX_BUNDLE_ONE_PKT_SIZE;
 
-	HIF_DBG("athusb bundle %s cnt %d", enabled ? "enabled" : "disabled",
-			rx_bundle_cnt);
+	hif_debug("athusb bundle %s cnt %d", enabled ? "enabled" : "disabled",
+		 rx_bundle_cnt);
 }
 
 /**

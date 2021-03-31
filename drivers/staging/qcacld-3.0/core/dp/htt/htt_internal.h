@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -226,7 +226,11 @@ struct htt_host_rx_desc_base {
  *    @posted: time-stamp when HTT message is recived
  *    @recvd : 0x48545452584D5367 ('HTTRXMSG')
  */
+#ifdef CONFIG_SLUB_DEBUG_ON
 #define HTT_RX_RING_BUFF_DBG_LIST          (8 * 1024)
+#else
+#define HTT_RX_RING_BUFF_DBG_LIST          (4 * 1024)
+#endif
 struct rx_buf_debug {
 	qdf_dma_addr_t paddr;
 	qdf_nbuf_t     nbuf;
@@ -581,6 +585,8 @@ static inline void htt_t2h_msg_handler_fast(void *htt_pdev,
 void htt_h2t_send_complete(void *context, HTC_PACKET *pkt);
 
 QDF_STATUS htt_h2t_ver_req_msg(struct htt_pdev_t *pdev);
+
+int htt_tx_padding_credit_update_handler(void *context, int pad_credit);
 
 #if defined(HELIUMPLUS)
 QDF_STATUS
@@ -1092,7 +1098,7 @@ static inline qdf_nbuf_t
 htt_rx_in_order_netbuf_pop(htt_pdev_handle pdev, qdf_dma_addr_t paddr)
 {
 	HTT_ASSERT1(htt_rx_in_order_ring_elems(pdev) != 0);
-	pdev->rx_ring.fill_cnt--;
+	qdf_atomic_dec(&pdev->rx_ring.fill_cnt);
 	paddr = htt_paddr_trim_to_37(paddr);
 	return htt_rx_hash_list_lookup(pdev, paddr);
 }
@@ -1117,6 +1123,19 @@ int htt_rx_mon_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 					qdf_nbuf_t *head_msdu,
 					qdf_nbuf_t *tail_msdu,
 					uint32_t *replenish_cnt);
+
+/**
+ * htt_rx_mon_get_rx_status() - Update information about the rx status,
+ * which is used later for radiotap updation.
+ * @pdev: Pointer to pdev handle
+ * @rx_desc: Pointer to struct htt_host_rx_desc_base
+ * @rx_status: Return variable updated with rx_status
+ *
+ * Return: None
+ */
+void htt_rx_mon_get_rx_status(htt_pdev_handle pdev,
+			      struct htt_host_rx_desc_base *rx_desc,
+			      struct mon_rx_status *rx_status);
 #else
 static inline
 int htt_rx_mon_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
@@ -1126,6 +1145,13 @@ int htt_rx_mon_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 					uint32_t *replenish_cnt)
 {
 	return 0;
+}
+
+static inline
+void htt_rx_mon_get_rx_status(htt_pdev_handle pdev,
+			      struct htt_host_rx_desc_base *rx_desc,
+			      struct mon_rx_status *rx_status)
+{
 }
 #endif
 

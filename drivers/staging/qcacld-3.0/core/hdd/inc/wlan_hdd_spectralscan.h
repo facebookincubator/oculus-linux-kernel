@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,12 +27,6 @@
 #define WLAN_HDD_SPECTRALSCAN_H
 
 #ifdef WLAN_CONV_SPECTRAL_ENABLE
-
-#define SPECTRAL_VERSION_1                              1
-#define SPECTRAL_VERSION_2                              2
-#define SPECTRAL_VERSION_3                              3
-#define SPECTRAL_SUB_VERSION_0                          0
-#define SPECTRAL_SUB_VERSION_1                          1
 
 /*
  * enum spectral_scan_msg_type - spectral scan registration
@@ -68,48 +62,57 @@ struct spectral_scan_msg_v {
 	uint32_t sub_version;
 };
 
-#define FEATURE_SPECTRAL_SCAN_VENDOR_COMMANDS \
-{ \
-	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
+#define FEATURE_SPECTRAL_SCAN_VENDOR_COMMANDS                         \
+{                                                                     \
+	.info.vendor_id = QCA_NL80211_VENDOR_ID,                      \
 	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_START, \
 	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 			WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scan_start \
+	.doit = wlan_hdd_cfg80211_spectral_scan_start, \
+	vendor_command_policy(spectral_scan_policy, \
+			      QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX) \
 }, \
 { \
 	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
 	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_STOP, \
 	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 		WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scan_stop \
+	.doit = wlan_hdd_cfg80211_spectral_scan_stop, \
+	vendor_command_policy(spectral_scan_policy, \
+			      QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX) \
 }, \
 { \
 	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
 	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CONFIG, \
 	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 			WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scam_get_config \
+	.doit = wlan_hdd_cfg80211_spectral_scam_get_config, \
+	vendor_command_policy(spectral_scan_policy, \
+			      QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX) \
 }, \
 { \
 	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
 	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_DIAG_STATS, \
-	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
-		WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scan_get_diag_stats \
-}, \
-{ \
-	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
+	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |                                  \
+		WIPHY_VENDOR_CMD_NEED_NETDEV,                                  \
+	.doit = wlan_hdd_cfg80211_spectral_scan_get_diag_stats,                \
+	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0)                          \
+},                                                                             \
+{                                                                            \
+	.info.vendor_id = QCA_NL80211_VENDOR_ID,                             \
 	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CAP_INFO, \
-	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
-			WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scan_get_cap_info \
-}, \
-{ \
-	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
-	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS, \
-	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
-		WIPHY_VENDOR_CMD_NEED_NETDEV, \
-	.doit = wlan_hdd_cfg80211_spectral_scan_get_status \
+	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |                                \
+			WIPHY_VENDOR_CMD_NEED_NETDEV,                        \
+	.doit = wlan_hdd_cfg80211_spectral_scan_get_cap_info,                \
+	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0)                        \
+},                                                                           \
+{                                                                            \
+	.info.vendor_id = QCA_NL80211_VENDOR_ID,                             \
+	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS,   \
+	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |                                \
+		WIPHY_VENDOR_CMD_NEED_NETDEV,                                \
+	.doit = wlan_hdd_cfg80211_spectral_scan_get_status,                  \
+	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0)                        \
 },
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,6 +36,21 @@
 
 /* Max number of scans allowed from userspace */
 #define WLAN_MAX_SCAN_COUNT 8
+
+extern const struct nla_policy cfg80211_scan_policy[
+			QCA_WLAN_VENDOR_ATTR_SCAN_MAX + 1];
+
+#define FEATURE_ABORT_SCAN_VENDOR_COMMANDS \
+	{ \
+		.info.vendor_id = QCA_NL80211_VENDOR_ID, \
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ABORT_SCAN, \
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
+			WIPHY_VENDOR_CMD_NEED_NETDEV | \
+			WIPHY_VENDOR_CMD_NEED_RUNNING, \
+		.doit = wlan_hdd_vendor_abort_scan, \
+		vendor_command_policy(cfg80211_scan_policy, \
+				      QCA_WLAN_VENDOR_ATTR_SCAN_MAX) \
+	},
 
 /* GPS application requirement */
 #define QCOM_VENDOR_IE_ID 221
@@ -108,6 +123,7 @@ enum scan_source {
  * @scan_id: scan identifier used across host layers which is generated at WMI
  * @source: scan request originator (NL/Vendor scan)
  * @dev: net device (same as what is in scan_request)
+ * @scan_start_timestamp: scan start time
  *
  * Scan request linked list element
  */
@@ -117,6 +133,7 @@ struct scan_req {
 	uint32_t scan_id;
 	uint8_t source;
 	struct net_device *dev;
+	qdf_time_t scan_start_timestamp;
 };
 
 /**
@@ -128,6 +145,14 @@ struct scan_req {
  * @half_rate: Half rate flag
  * @quarter_rate: Quarter rate flag
  * @strict_pscan: strict passive scan flag
+ * @dwell_time_active: Active dwell time. Ignored if zero or inapplicable.
+ * @dwell_time_active_2g: 2.4 GHz specific active dwell time. Ignored if zero or
+ * inapplicable.
+ * @dwell_time_passive: Passive dwell time. Ignored if zero or inapplicable.
+ * @dwell_time_active_6g: 6 GHz specific active dwell time. Ignored if zero or
+ * inapplicable.
+ * @dwell_time_passive_6g: 6 GHz specific passive dwell time. Ignored if zero or
+ * inapplicable.
  */
 struct scan_params {
 	uint8_t source;
@@ -137,6 +162,11 @@ struct scan_params {
 	bool half_rate;
 	bool quarter_rate;
 	bool strict_pscan;
+	uint32_t dwell_time_active;
+	uint32_t dwell_time_active_2g;
+	uint32_t dwell_time_passive;
+	uint32_t dwell_time_active_6g;
+	uint32_t dwell_time_passive_6g;
 };
 
 /**
@@ -399,4 +429,17 @@ void wlan_config_sched_scan_plans_to_wiphy(struct wiphy *wiphy,
 }
 #endif /* FEATURE_WLAN_SCAN_PNO */
 
+/**
+ * wlan_cfg80211_scan_done() - Scan completed callback to cfg80211
+ * @netdev: Net device
+ * @req : Scan request
+ * @aborted : true scan aborted false scan success
+ *
+ * This function notifies scan done to cfg80211
+ *
+ * Return: none
+ */
+void wlan_cfg80211_scan_done(struct net_device *netdev,
+			     struct cfg80211_scan_request *req,
+			     bool aborted);
 #endif

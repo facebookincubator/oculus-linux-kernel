@@ -296,12 +296,14 @@ naming_info_t bcm4389_naming_table[] = {
 	{ {"1wk_es43"}, {"_1wk_es43_c0"}, {"_c0"} },
 	{ {"1wk_es50"}, {"_1wk_es50_c1"}, {"_c1"} },
 	{ {"1wk_es51"}, {"_1wk_es51_c1"}, {"_c1"} },
+	{ {"1wk_es60"}, {"_1wk_es60_c1"}, {"_c1"} },
 	{ {"1wk_es10"}, {"_1wk_es10_c1"}, {"_c1"} },
 	{ {"1wk_es11"}, {"_1wk_es11_c1"}, {"_c1"} },
-	{ {"usi_es10"}, {"_ES10_c0"}, {""} },
-	{ {"usi_es11"}, {"_ES11_c0"}, {""} },
-	{ {"usi_es12"}, {"_ES12_c1"}, {"_c1"} },
-	{ {"usi_es13"}, {"_ES13_c1"}, {"_c1"} }
+	{ {"usi_es10"}, {"_ES10"}, {"_c0"} },
+	{ {"usi_es11"}, {"_ES11"}, {"_c0"} },
+	{ {"usi_es12"}, {"_ES12"}, {""} },
+	{ {"usi_es13"}, {"_ES13"}, {""} },
+	{ {"usi_es15"}, {"_ES15"}, {""} },
 };
 
 /* select the NVRAM/FW tag naming table */
@@ -457,7 +459,7 @@ dhd_find_naming_info_by_chip_rev(dhd_pub_t *dhdp, bool *is_murata_fem)
 }
 #endif /* USE_CID_CHECK */
 #ifdef USE_DIRECT_VID_TAG
-static int
+int
 concate_nvram_by_vid(dhd_pub_t *dhdp, char *nv_path, char *chipstr)
 {
 	unsigned char vid[MAX_VID_LEN];
@@ -1664,12 +1666,14 @@ vid_info_t vid_info[] = {
 	{ 3, { 0x43, 0x22, }, { "murata_mur_1wk_es43" } },
 	{ 3, { 0x50, 0x22, }, { "murata_mur_1wk_es50" } },
 	{ 3, { 0x51, 0x24, }, { "murata_mur_1wk_es51" } },
+	{ 3, { 0x60, 0x24, }, { "murata_mur_1wk_es60" } },
 	{ 3, { 0x10, 0x25, }, { "murata_mur_1wk_es10" } },
 	{ 3, { 0x11, 0x25, }, { "murata_mur_1wk_es11" } },
 	{ 3, { 0x10, 0x99, }, { "USI_WM_usi_es10" } },
 	{ 3, { 0x11, 0x99, }, { "USI_WM_usi_es11" } },
 	{ 3, { 0x12, 0x99, }, { "USI_WM_usi_es12" } },
 	{ 3, { 0x13, 0x99, }, { "USI_WM_usi_es13" } },
+	{ 3, { 0x15, 0x99, }, { "USI_WM_usi_es15" } },
 #endif /* SUPPORT_MIXED_MODULES */
 };
 #else

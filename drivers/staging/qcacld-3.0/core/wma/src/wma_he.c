@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -90,7 +90,7 @@ static void wma_he_populate_ppet(uint32_t *ppet, int nss, int ru,
 	int byte_idx = 0, used, i, j;
 	uint8_t ppet16, ppet8;
 
-	WMA_LOGD(FL("nss: %d ru: %d req_byte: %d\n"), nss, ru, req_byte);
+	wma_debug("nss: %d ru: %d req_byte: %d", nss, ru, req_byte);
 	/* NSS and RU_IDX are already populated */
 	used = HE_PPET_NSS_RU_LEN;
 
@@ -98,10 +98,10 @@ static void wma_he_populate_ppet(uint32_t *ppet, int nss, int ru,
 		for (j = 1; j <= ru; j++) {
 			ppet16 = WMI_GET_PPET16(ppet, j, i);
 			ppet8 = WMI_GET_PPET8(ppet, j, i);
-			WMA_LOGD(FL("ppet16 (nss:%d ru:%d): %04x"),
-				 i, j, ppet16);
-			WMA_LOGD(FL("ppet8 (nss:%d ru:%d): %04x"),
-				 i, j, ppet8);
+			wma_nofl_debug("ppet16 (nss:%d ru:%d): %04x",
+				      i, j, ppet16);
+			wma_nofl_debug("ppet8 (nss:%d ru:%d): %04x",
+				      i, j, ppet8);
 			wma_he_ppet_merge(host_ppet, &byte_idx, &used, ppet16);
 			wma_he_ppet_merge(host_ppet, &byte_idx, &used, ppet8);
 		}
@@ -129,7 +129,7 @@ static void wma_convert_he_ppet(uint8_t *he_ppet,
 
 	ppet_1 = NULL;
 	if (!ppet) {
-		WMA_LOGE(FL("PPET is NULL"));
+		wma_err("PPET is NULL");
 		qdf_mem_zero(he_ppet, HE_MAX_PPET_SIZE);
 		return;
 	}
@@ -162,6 +162,7 @@ static void wma_convert_he_ppet(uint8_t *he_ppet,
  * @supp_mcs: Max MCS supported (Tx/Rx)
  * @tx_chain_mask: Tx chain mask
  * @rx_chain_mask: Rx chain mask
+ * @mcs_12_13_support: Store the supported MCS 12/13 capability
  *
  * This function converts various HE capability received as part of extended
  * service ready event into dot11f structure. GET macros are defined at WMI
@@ -171,7 +172,8 @@ static void wma_convert_he_ppet(uint8_t *he_ppet,
  */
 static void wma_convert_he_cap(tDot11fIEhe_cap *he_cap, uint32_t *mac_cap,
 			       uint32_t *phy_cap, uint32_t supp_mcs,
-			       uint32_t tx_chain_mask, uint32_t rx_chain_mask)
+			       uint32_t tx_chain_mask, uint32_t rx_chain_mask,
+			       uint16_t *mcs_12_13_supp)
 {
 	uint8_t nss, chan_width;
 	uint16_t rx_mcs_le_80, tx_mcs_le_80, rx_mcs_160, tx_mcs_160;
@@ -227,6 +229,7 @@ static void wma_convert_he_cap(tDot11fIEhe_cap *he_cap, uint32_t *mac_cap,
 		WMI_HECAP_MAC_PUNCSOUNDING_GET(mac_cap[1]);
 	he_cap->ht_vht_trg_frm_rx_supp =
 		WMI_HECAP_MAC_HTVHTTRIGRX_GET(mac_cap[1]);
+	*mcs_12_13_supp = WMI_GET_BITS(mac_cap[1], 16, 16);
 	/* HE PHY capabilities */
 	chan_width = WMI_HECAP_PHY_CBW_GET(phy_cap);
 	he_cap->chan_width_0 = HE_CH_WIDTH_GET_BIT(chan_width, 0);
@@ -313,7 +316,7 @@ static void wma_convert_he_cap(tDot11fIEhe_cap *he_cap, uint32_t *mac_cap,
 	 * supp_mcs is split into 16 bits with lower indicating le_80 and
 	 * upper indicating 160 and 80_80.
 	 */
-	WMA_LOGD(FL("supported_mcs: 0x%08x\n"), supp_mcs);
+	wma_debug("supported_mcs: 0x%08x", supp_mcs);
 	rx_mcs_le_80 = supp_mcs & 0xFFFF;
 	tx_mcs_le_80 = supp_mcs & 0xFFFF;
 	rx_mcs_160 = (supp_mcs & 0xFFFF0000) >> 16;
@@ -346,7 +349,8 @@ static void wma_convert_he_cap(tDot11fIEhe_cap *he_cap, uint32_t *mac_cap,
  * Return: none
  */
 static void wma_derive_ext_he_cap(tDot11fIEhe_cap *he_cap,
-				  tDot11fIEhe_cap *new_cap)
+				  tDot11fIEhe_cap *new_cap,
+				  bool is_5g_cap)
 {
 	uint16_t mcs_1, mcs_2;
 
@@ -424,9 +428,6 @@ static void wma_derive_ext_he_cap(tDot11fIEhe_cap *he_cap,
 	he_cap->chan_width_5 = he_cap->chan_width_5 | new_cap->chan_width_5;
 	he_cap->chan_width_6 = he_cap->chan_width_6 | new_cap->chan_width_6;
 
-	he_cap->rx_pream_puncturing =
-		QDF_MIN(he_cap->rx_pream_puncturing,
-				new_cap->rx_pream_puncturing);
 	he_cap->device_class = QDF_MIN(he_cap->device_class,
 			new_cap->device_class);
 	he_cap->ldpc_coding = QDF_MIN(he_cap->ldpc_coding,
@@ -516,22 +517,19 @@ static void wma_derive_ext_he_cap(tDot11fIEhe_cap *he_cap,
 	mcs_1 = he_cap->tx_he_mcs_map_lt_80;
 	mcs_2 = new_cap->tx_he_mcs_map_lt_80;
 	he_cap->tx_he_mcs_map_lt_80 = HE_INTERSECT_MCS(mcs_1, mcs_2);
-	mcs_1 = *((uint16_t *)he_cap->rx_he_mcs_map_160);
-	mcs_2 = *((uint16_t *)new_cap->rx_he_mcs_map_160);
-	*((uint16_t *)he_cap->rx_he_mcs_map_160) =
-		HE_INTERSECT_MCS(mcs_1, mcs_2);
-	mcs_1 = *((uint16_t *)he_cap->tx_he_mcs_map_160);
-	mcs_2 = *((uint16_t *)new_cap->tx_he_mcs_map_160);
-	*((uint16_t *)he_cap->tx_he_mcs_map_160) =
-		HE_INTERSECT_MCS(mcs_1, mcs_2);
-	mcs_1 = *((uint16_t *)he_cap->rx_he_mcs_map_80_80);
-	mcs_2 = *((uint16_t *)new_cap->rx_he_mcs_map_80_80);
-	*((uint16_t *)he_cap->rx_he_mcs_map_80_80) =
-		HE_INTERSECT_MCS(mcs_1, mcs_2);
-	mcs_1 = *((uint16_t *)he_cap->tx_he_mcs_map_80_80);
-	mcs_2 = *((uint16_t *)new_cap->tx_he_mcs_map_80_80);
-	*((uint16_t *)he_cap->tx_he_mcs_map_80_80) =
-		HE_INTERSECT_MCS(mcs_1, mcs_2);
+	if (is_5g_cap) {
+		he_cap->rx_pream_puncturing =
+					QDF_MIN(he_cap->rx_pream_puncturing,
+						new_cap->rx_pream_puncturing);
+		*((uint16_t *)he_cap->rx_he_mcs_map_160) =
+			*((uint16_t *)new_cap->rx_he_mcs_map_160);
+		*((uint16_t *)he_cap->tx_he_mcs_map_160) =
+			*((uint16_t *)new_cap->tx_he_mcs_map_160);
+		*((uint16_t *)he_cap->rx_he_mcs_map_80_80) =
+			*((uint16_t *)new_cap->rx_he_mcs_map_80_80);
+		*((uint16_t *)he_cap->tx_he_mcs_map_80_80) =
+			*((uint16_t *)new_cap->tx_he_mcs_map_80_80);
+	}
 }
 
 void wma_print_he_cap(tDot11fIEhe_cap *he_cap)
@@ -540,61 +538,60 @@ void wma_print_he_cap(tDot11fIEhe_cap *he_cap)
 	struct ppet_hdr *hdr;
 
 	if (!he_cap->present) {
-		WMA_LOGI(FL("HE Capabilities not present"));
 		return;
 	}
 
-	WMA_LOGD(FL("HE Capabilities:"));
+	wma_debug("HE Capabilities:");
 
 	/* HE MAC capabilities */
-	WMA_LOGD("\tHTC-HE conrol: 0x%01x", he_cap->htc_he);
-	WMA_LOGD("\tTWT Requestor support: 0x%01x", he_cap->twt_request);
-	WMA_LOGD("\tTWT Responder support: 0x%01x", he_cap->twt_responder);
-	WMA_LOGD("\tFragmentation support: 0x%02x", he_cap->fragmentation);
-	WMA_LOGD("\tMax no.of frag MSDUs: 0x%03x",
-		 he_cap->max_num_frag_msdu_amsdu_exp);
-	WMA_LOGD("\tMin. frag size: 0x%02x", he_cap->min_frag_size);
-	WMA_LOGD("\tTrigger MAC pad duration: 0x%02x",
-			he_cap->trigger_frm_mac_pad);
-	WMA_LOGD("\tMulti-TID aggr RX support: 0x%03x",
-		 he_cap->multi_tid_aggr_rx_supp);
-	WMA_LOGD("\tLink adaptation: 0x%02x", he_cap->he_link_adaptation);
-	WMA_LOGD("\tAll ACK support: 0x%01x", he_cap->all_ack);
-	WMA_LOGD("\tTriggered resp. scheduling: 0x%01x",
-		 he_cap->trigd_rsp_sched);
-	WMA_LOGD("\tA-Buff status report: 0x%01x", he_cap->a_bsr);
-	WMA_LOGD("\tBroadcast TWT support: 0x%01x", he_cap->broadcast_twt);
-	WMA_LOGD("\t32bit BA bitmap support: 0x%01x", he_cap->ba_32bit_bitmap);
-	WMA_LOGD("\tMU Cascading support: 0x%01x", he_cap->mu_cascade);
-	WMA_LOGD("\tACK enabled Multi-TID: 0x%01x",
-			he_cap->ack_enabled_multitid);
-	WMA_LOGD("\tOMI A-Control support: 0x%01x", he_cap->omi_a_ctrl);
-	WMA_LOGD("\tOFDMA RA support: 0x%01x", he_cap->ofdma_ra);
-	WMA_LOGD("\tMax A-MPDU Length: 0x%02x", he_cap->max_ampdu_len_exp_ext);
-	WMA_LOGD("\tA-MSDU Fragmentation: 0x%01x", he_cap->amsdu_frag);
-	WMA_LOGD("\tFlex. TWT sched support: 0x%01x", he_cap->flex_twt_sched);
-	WMA_LOGD("\tRx Ctrl frame to MBSS: 0x%01x", he_cap->rx_ctrl_frame);
-	WMA_LOGD("\tBSRP A-MPDU Aggregation: 0x%01x", he_cap->bsrp_ampdu_aggr);
-	WMA_LOGD("\tQuite Time Period support: 0x%01x", he_cap->qtp);
-	WMA_LOGD("\tA-BQR support: 0x%01x", he_cap->a_bqr);
-	WMA_LOGD("\tSR Responder: 0x%01x", he_cap->spatial_reuse_param_rspder);
-	WMA_LOGD("\tndp feedback supp: 0x%01x", he_cap->ndp_feedback_supp);
-	WMA_LOGD("\tops supp: 0x%01x", he_cap->ops_supp);
-	WMA_LOGD("\tamsdu in ampdu: 0x%01x", he_cap->amsdu_in_ampdu);
-	WMA_LOGD("\tMulti-TID aggr Tx support: 0x%03x",
-		 he_cap->multi_tid_aggr_tx_supp);
-	WMA_LOGD("\tHE sub ch sel tx supp: 0x%01x",
-		 he_cap->he_sub_ch_sel_tx_supp);
-	WMA_LOGD("\tUL 2x996 tone RU supp: 0x%01x",
-		 he_cap->ul_2x996_tone_ru_supp);
-	WMA_LOGD("\tOM ctrl UL MU data dis rx supp: 0x%01x",
-		 he_cap->om_ctrl_ul_mu_data_dis_rx);
-	WMA_LOGD("\tHE dynamic SMPS supp: 0x%01x",
-		 he_cap->he_dynamic_smps);
-	WMA_LOGD("\tPunctured sounding supp: 0x%01x",
-		 he_cap->punctured_sounding_supp);
-	WMA_LOGD("\tHT VHT Trigger frame Rx supp: 0x%01x",
-		 he_cap->ht_vht_trg_frm_rx_supp);
+	wma_nofl_debug("\tHTC-HE conrol: 0x%01x", he_cap->htc_he);
+	wma_nofl_debug("\tTWT Requestor support: 0x%01x", he_cap->twt_request);
+	wma_nofl_debug("\tTWT Responder support: 0x%01x", he_cap->twt_responder);
+	wma_nofl_debug("\tFragmentation support: 0x%02x", he_cap->fragmentation);
+	wma_nofl_debug("\tMax no.of frag MSDUs: 0x%03x",
+		      he_cap->max_num_frag_msdu_amsdu_exp);
+	wma_nofl_debug("\tMin. frag size: 0x%02x", he_cap->min_frag_size);
+	wma_nofl_debug("\tTrigger MAC pad duration: 0x%02x",
+		      he_cap->trigger_frm_mac_pad);
+	wma_nofl_debug("\tMulti-TID aggr RX support: 0x%03x",
+		      he_cap->multi_tid_aggr_rx_supp);
+	wma_nofl_debug("\tLink adaptation: 0x%02x", he_cap->he_link_adaptation);
+	wma_nofl_debug("\tAll ACK support: 0x%01x", he_cap->all_ack);
+	wma_nofl_debug("\tTriggered resp. scheduling: 0x%01x",
+		      he_cap->trigd_rsp_sched);
+	wma_nofl_debug("\tA-Buff status report: 0x%01x", he_cap->a_bsr);
+	wma_nofl_debug("\tBroadcast TWT support: 0x%01x", he_cap->broadcast_twt);
+	wma_nofl_debug("\t32bit BA bitmap support: 0x%01x", he_cap->ba_32bit_bitmap);
+	wma_nofl_debug("\tMU Cascading support: 0x%01x", he_cap->mu_cascade);
+	wma_nofl_debug("\tACK enabled Multi-TID: 0x%01x",
+		      he_cap->ack_enabled_multitid);
+	wma_nofl_debug("\tOMI A-Control support: 0x%01x", he_cap->omi_a_ctrl);
+	wma_nofl_debug("\tOFDMA RA support: 0x%01x", he_cap->ofdma_ra);
+	wma_nofl_debug("\tMax A-MPDU Length: 0x%02x", he_cap->max_ampdu_len_exp_ext);
+	wma_nofl_debug("\tA-MSDU Fragmentation: 0x%01x", he_cap->amsdu_frag);
+	wma_nofl_debug("\tFlex. TWT sched support: 0x%01x", he_cap->flex_twt_sched);
+	wma_nofl_debug("\tRx Ctrl frame to MBSS: 0x%01x", he_cap->rx_ctrl_frame);
+	wma_nofl_debug("\tBSRP A-MPDU Aggregation: 0x%01x", he_cap->bsrp_ampdu_aggr);
+	wma_nofl_debug("\tQuite Time Period support: 0x%01x", he_cap->qtp);
+	wma_nofl_debug("\tA-BQR support: 0x%01x", he_cap->a_bqr);
+	wma_nofl_debug("\tSR Responder: 0x%01x", he_cap->spatial_reuse_param_rspder);
+	wma_nofl_debug("\tndp feedback supp: 0x%01x", he_cap->ndp_feedback_supp);
+	wma_nofl_debug("\tops supp: 0x%01x", he_cap->ops_supp);
+	wma_nofl_debug("\tamsdu in ampdu: 0x%01x", he_cap->amsdu_in_ampdu);
+	wma_nofl_debug("\tMulti-TID aggr Tx support: 0x%03x",
+		      he_cap->multi_tid_aggr_tx_supp);
+	wma_nofl_debug("\tHE sub ch sel tx supp: 0x%01x",
+		      he_cap->he_sub_ch_sel_tx_supp);
+	wma_nofl_debug("\tUL 2x996 tone RU supp: 0x%01x",
+		      he_cap->ul_2x996_tone_ru_supp);
+	wma_nofl_debug("\tOM ctrl UL MU data dis rx supp: 0x%01x",
+		      he_cap->om_ctrl_ul_mu_data_dis_rx);
+	wma_nofl_debug("\tHE dynamic SMPS supp: 0x%01x",
+		      he_cap->he_dynamic_smps);
+	wma_nofl_debug("\tPunctured sounding supp: 0x%01x",
+		      he_cap->punctured_sounding_supp);
+	wma_nofl_debug("\tHT VHT Trigger frame Rx supp: 0x%01x",
+		      he_cap->ht_vht_trg_frm_rx_supp);
 
 	/* HE PHY capabilities */
 	chan_width = HE_CH_WIDTH_COMBINE(he_cap->chan_width_0,
@@ -602,98 +599,98 @@ void wma_print_he_cap(tDot11fIEhe_cap *he_cap)
 				he_cap->chan_width_3, he_cap->chan_width_4,
 				he_cap->chan_width_5, he_cap->chan_width_6);
 
-	WMA_LOGD("\tChannel width support: 0x%07x", chan_width);
-	WMA_LOGD("\tPreamble puncturing Rx: 0x%04x",
-			he_cap->rx_pream_puncturing);
-	WMA_LOGD("\tClass of device: 0x%01x", he_cap->device_class);
-	WMA_LOGD("\tLDPC coding support: 0x%01x", he_cap->ldpc_coding);
-	WMA_LOGD("\tLTF and GI for HE PPDUs: 0x%02x",
-		 he_cap->he_1x_ltf_800_gi_ppdu);
-	WMA_LOGD("\tMidamble Tx Rx MAX NSTS: 0x%02x",
-		 he_cap->midamble_tx_rx_max_nsts);
-	WMA_LOGD("\tLTF and GI for NDP: 0x%02x", he_cap->he_4x_ltf_3200_gi_ndp);
-	WMA_LOGD("\tTB PPDU STBC Tx support <= 80M: 0x%01x",
-		 he_cap->tb_ppdu_tx_stbc_lt_80mhz);
-	WMA_LOGD("\tSTBC Rx support <= 80M: 0x%01x", he_cap->rx_stbc_lt_80mhz);
-	WMA_LOGD("\tDoppler support: 0x%02x", he_cap->doppler);
-	WMA_LOGD("\tUL MU: 0x%02x", he_cap->ul_mu);
-	WMA_LOGD("\tDCM encoding Tx: 0x%03x", he_cap->dcm_enc_tx);
-	WMA_LOGD("\tDCM encoding Rx: 0x%03x", he_cap->dcm_enc_rx);
-	WMA_LOGD("\tHE MU PPDU payload support: 0x%01x", he_cap->ul_he_mu);
-	WMA_LOGD("\tSU Beamformer: 0x%01x", he_cap->su_beamformer);
-	WMA_LOGD("\tSU Beamformee: 0x%01x", he_cap->su_beamformee);
-	WMA_LOGD("\tMU Beamformer: 0x%01x", he_cap->mu_beamformer);
-	WMA_LOGD("\tBeamformee STS for <= 80Mhz: 0x%03x",
-			he_cap->bfee_sts_lt_80);
-	WMA_LOGD("\tBeamformee STS for > 80Mhz: 0x%03x",
-			he_cap->bfee_sts_gt_80);
-	WMA_LOGD("\tNo. of sounding dim <= 80Mhz: 0x%03x",
-			he_cap->num_sounding_lt_80);
-	WMA_LOGD("\tNo. of sounding dim > 80Mhz: 0x%03x",
-			he_cap->num_sounding_gt_80);
-	WMA_LOGD("\tNg=16 for SU feedback support: 0x%01x",
-			he_cap->su_feedback_tone16);
-	WMA_LOGD("\tNg=16 for MU feedback support: 0x%01x",
-			he_cap->mu_feedback_tone16);
-	WMA_LOGD("\tCodebook size for SU: 0x%01x", he_cap->codebook_su);
-	WMA_LOGD("\tCodebook size for MU: 0x%01x ", he_cap->codebook_mu);
-	WMA_LOGD("\tBeamforming trigger w/ Trigger: 0x%01x",
-			he_cap->beamforming_feedback);
-	WMA_LOGD("\tHE ER SU PPDU payload: 0x%01x", he_cap->he_er_su_ppdu);
-	WMA_LOGD("\tDL MUMIMO on partial BW: 0x%01x",
-			he_cap->dl_mu_mimo_part_bw);
-	WMA_LOGD("\tPPET present: 0x%01x", he_cap->ppet_present);
-	WMA_LOGD("\tSRP based SR-support: 0x%01x", he_cap->srp);
-	WMA_LOGD("\tPower boost factor: 0x%01x", he_cap->power_boost);
-	WMA_LOGD("\t4x HE LTF support: 0x%01x", he_cap->he_ltf_800_gi_4x);
+	wma_nofl_debug("\tChannel width support: 0x%07x", chan_width);
+	wma_nofl_debug("\tPreamble puncturing Rx: 0x%04x",
+		      he_cap->rx_pream_puncturing);
+	wma_nofl_debug("\tClass of device: 0x%01x", he_cap->device_class);
+	wma_nofl_debug("\tLDPC coding support: 0x%01x", he_cap->ldpc_coding);
+	wma_nofl_debug("\tLTF and GI for HE PPDUs: 0x%02x",
+		      he_cap->he_1x_ltf_800_gi_ppdu);
+	wma_nofl_debug("\tMidamble Tx Rx MAX NSTS: 0x%02x",
+		      he_cap->midamble_tx_rx_max_nsts);
+	wma_nofl_debug("\tLTF and GI for NDP: 0x%02x", he_cap->he_4x_ltf_3200_gi_ndp);
+	wma_nofl_debug("\tTB PPDU STBC Tx support <= 80M: 0x%01x",
+		      he_cap->tb_ppdu_tx_stbc_lt_80mhz);
+	wma_nofl_debug("\tSTBC Rx support <= 80M: 0x%01x", he_cap->rx_stbc_lt_80mhz);
+	wma_nofl_debug("\tDoppler support: 0x%02x", he_cap->doppler);
+	wma_nofl_debug("\tUL MU: 0x%02x", he_cap->ul_mu);
+	wma_nofl_debug("\tDCM encoding Tx: 0x%03x", he_cap->dcm_enc_tx);
+	wma_nofl_debug("\tDCM encoding Rx: 0x%03x", he_cap->dcm_enc_rx);
+	wma_nofl_debug("\tHE MU PPDU payload support: 0x%01x", he_cap->ul_he_mu);
+	wma_nofl_debug("\tSU Beamformer: 0x%01x", he_cap->su_beamformer);
+	wma_nofl_debug("\tSU Beamformee: 0x%01x", he_cap->su_beamformee);
+	wma_nofl_debug("\tMU Beamformer: 0x%01x", he_cap->mu_beamformer);
+	wma_nofl_debug("\tBeamformee STS for <= 80Mhz: 0x%03x",
+		      he_cap->bfee_sts_lt_80);
+	wma_nofl_debug("\tBeamformee STS for > 80Mhz: 0x%03x",
+		      he_cap->bfee_sts_gt_80);
+	wma_nofl_debug("\tNo. of sounding dim <= 80Mhz: 0x%03x",
+		      he_cap->num_sounding_lt_80);
+	wma_nofl_debug("\tNo. of sounding dim > 80Mhz: 0x%03x",
+		      he_cap->num_sounding_gt_80);
+	wma_nofl_debug("\tNg=16 for SU feedback support: 0x%01x",
+		      he_cap->su_feedback_tone16);
+	wma_nofl_debug("\tNg=16 for MU feedback support: 0x%01x",
+		      he_cap->mu_feedback_tone16);
+	wma_nofl_debug("\tCodebook size for SU: 0x%01x", he_cap->codebook_su);
+	wma_nofl_debug("\tCodebook size for MU: 0x%01x ", he_cap->codebook_mu);
+	wma_nofl_debug("\tBeamforming trigger w/ Trigger: 0x%01x",
+		      he_cap->beamforming_feedback);
+	wma_nofl_debug("\tHE ER SU PPDU payload: 0x%01x", he_cap->he_er_su_ppdu);
+	wma_nofl_debug("\tDL MUMIMO on partial BW: 0x%01x",
+		      he_cap->dl_mu_mimo_part_bw);
+	wma_nofl_debug("\tPPET present: 0x%01x", he_cap->ppet_present);
+	wma_nofl_debug("\tSRP based SR-support: 0x%01x", he_cap->srp);
+	wma_nofl_debug("\tPower boost factor: 0x%01x", he_cap->power_boost);
+	wma_nofl_debug("\t4x HE LTF support: 0x%01x", he_cap->he_ltf_800_gi_4x);
 
-	WMA_LOGD("\tMax NC: 0x%01x", he_cap->max_nc);
-	WMA_LOGD("\tTB PPDU stbc Tx gt 80mhz: 0x%01x",
-		 he_cap->tb_ppdu_tx_stbc_gt_80mhz);
-	WMA_LOGD("\tstbc Rx gt 80mhz: 0x%01x", he_cap->rx_stbc_gt_80mhz);
-	WMA_LOGD("\ter_he_ltf_800_gi_4x: 0x%01x", he_cap->er_he_ltf_800_gi_4x);
-	WMA_LOGD("\the_ppdu_20_in_40Mhz_2G: 0x%01x",
-					he_cap->he_ppdu_20_in_40Mhz_2G);
-	WMA_LOGD("\the_ppdu_20_in_160_80p80Mhz: 0x%01x",
-					he_cap->he_ppdu_20_in_160_80p80Mhz);
-	WMA_LOGD("\the_ppdu_80_in_160_80p80Mhz: 0x%01x",
-					he_cap->he_ppdu_80_in_160_80p80Mhz);
-	WMA_LOGD("\ter_1x_he_ltf_gi: 0x%01x",
-					he_cap->er_1x_he_ltf_gi);
-	WMA_LOGD("\tmidamble_tx_rx_1x_he_ltf: 0x%01x",
-		 he_cap->midamble_tx_rx_1x_he_ltf);
-	WMA_LOGD("\tDCM max BW: 0x%02x",
-		 he_cap->dcm_max_bw);
-	WMA_LOGD("\tlonger_than_16_he_sigb_ofdm_sym: 0x%01x",
-		 he_cap->longer_than_16_he_sigb_ofdm_sym);
-	WMA_LOGD("\tnon_trig_cqi_feedback: 0x%01x",
-		 he_cap->non_trig_cqi_feedback);
-	WMA_LOGD("\ttx_1024_qam_lt_242_tone_ru: 0x%01x",
-		 he_cap->tx_1024_qam_lt_242_tone_ru);
-	WMA_LOGD("\trx_1024_qam_lt_242_tone_ru: 0x%01x",
-		 he_cap->rx_1024_qam_lt_242_tone_ru);
-	WMA_LOGD("\trx_full_bw_su_he_mu_compress_sigb: 0x%01x",
-		 he_cap->rx_full_bw_su_he_mu_compress_sigb);
-	WMA_LOGD("\trx_full_bw_su_he_mu_non_cmpr_sigb: 0x%01x",
-		 he_cap->rx_full_bw_su_he_mu_non_cmpr_sigb);
-	WMA_LOGD("\tRx MCS MAP for BW <= 80 MHz: 0x%x",
-		he_cap->rx_he_mcs_map_lt_80);
-	WMA_LOGD("\tTx MCS MAP for BW <= 80 MHz: 0x%x",
-		he_cap->tx_he_mcs_map_lt_80);
-	WMA_LOGD("\tRx MCS MAP for BW = 160 MHz: 0x%x",
-		*((uint16_t *)he_cap->rx_he_mcs_map_160));
-	WMA_LOGD("\tTx MCS MAP for BW = 160 MHz: 0x%x",
-		*((uint16_t *)he_cap->tx_he_mcs_map_160));
-	WMA_LOGD("\tRx MCS MAP for BW = 80 + 80 MHz: 0x%x",
-		*((uint16_t *)he_cap->rx_he_mcs_map_80_80));
-	WMA_LOGD("\tTx MCS MAP for BW = 80 + 80 MHz: 0x%x",
-		*((uint16_t *)he_cap->tx_he_mcs_map_80_80));
+	wma_nofl_debug("\tMax NC: 0x%01x", he_cap->max_nc);
+	wma_nofl_debug("\tTB PPDU stbc Tx gt 80mhz: 0x%01x",
+		      he_cap->tb_ppdu_tx_stbc_gt_80mhz);
+	wma_nofl_debug("\tstbc Rx gt 80mhz: 0x%01x", he_cap->rx_stbc_gt_80mhz);
+	wma_nofl_debug("\ter_he_ltf_800_gi_4x: 0x%01x", he_cap->er_he_ltf_800_gi_4x);
+	wma_nofl_debug("\the_ppdu_20_in_40Mhz_2G: 0x%01x",
+		      he_cap->he_ppdu_20_in_40Mhz_2G);
+	wma_nofl_debug("\the_ppdu_20_in_160_80p80Mhz: 0x%01x",
+		      he_cap->he_ppdu_20_in_160_80p80Mhz);
+	wma_nofl_debug("\the_ppdu_80_in_160_80p80Mhz: 0x%01x",
+		      he_cap->he_ppdu_80_in_160_80p80Mhz);
+	wma_nofl_debug("\ter_1x_he_ltf_gi: 0x%01x",
+		      he_cap->er_1x_he_ltf_gi);
+	wma_nofl_debug("\tmidamble_tx_rx_1x_he_ltf: 0x%01x",
+		      he_cap->midamble_tx_rx_1x_he_ltf);
+	wma_nofl_debug("\tDCM max BW: 0x%02x",
+		      he_cap->dcm_max_bw);
+	wma_nofl_debug("\tlonger_than_16_he_sigb_ofdm_sym: 0x%01x",
+		      he_cap->longer_than_16_he_sigb_ofdm_sym);
+	wma_nofl_debug("\tnon_trig_cqi_feedback: 0x%01x",
+		      he_cap->non_trig_cqi_feedback);
+	wma_nofl_debug("\ttx_1024_qam_lt_242_tone_ru: 0x%01x",
+		      he_cap->tx_1024_qam_lt_242_tone_ru);
+	wma_nofl_debug("\trx_1024_qam_lt_242_tone_ru: 0x%01x",
+		      he_cap->rx_1024_qam_lt_242_tone_ru);
+	wma_nofl_debug("\trx_full_bw_su_he_mu_compress_sigb: 0x%01x",
+		      he_cap->rx_full_bw_su_he_mu_compress_sigb);
+	wma_nofl_debug("\trx_full_bw_su_he_mu_non_cmpr_sigb: 0x%01x",
+		      he_cap->rx_full_bw_su_he_mu_non_cmpr_sigb);
+	wma_nofl_debug("\tRx MCS MAP for BW <= 80 MHz: 0x%x",
+		      he_cap->rx_he_mcs_map_lt_80);
+	wma_nofl_debug("\tTx MCS MAP for BW <= 80 MHz: 0x%x",
+		      he_cap->tx_he_mcs_map_lt_80);
+	wma_nofl_debug("\tRx MCS MAP for BW = 160 MHz: 0x%x",
+		      *((uint16_t *)he_cap->rx_he_mcs_map_160));
+	wma_nofl_debug("\tTx MCS MAP for BW = 160 MHz: 0x%x",
+		      *((uint16_t *)he_cap->tx_he_mcs_map_160));
+	wma_nofl_debug("\tRx MCS MAP for BW = 80 + 80 MHz: 0x%x",
+		      *((uint16_t *)he_cap->rx_he_mcs_map_80_80));
+	wma_nofl_debug("\tTx MCS MAP for BW = 80 + 80 MHz: 0x%x",
+		      *((uint16_t *)he_cap->tx_he_mcs_map_80_80));
 
 	hdr = (struct ppet_hdr *)&he_cap->ppet.ppe_threshold.ppe_th[0];
 	/* HE PPET */
-	WMA_LOGD("\tNSS: %d", hdr->nss + 1);
-	WMA_LOGD("\tRU Index mask: 0x%04x", hdr->ru_idx_mask);
-	WMA_LOGD("\tnum_ppet: %d", he_cap->ppet.ppe_threshold.num_ppe_th);
+	wma_nofl_debug("\tNSS: %d", hdr->nss + 1);
+	wma_nofl_debug("\tRU Index mask: 0x%04x", hdr->ru_idx_mask);
+	wma_nofl_debug("\tnum_ppet: %d", he_cap->ppet.ppe_threshold.num_ppe_th);
 	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_DEBUG,
 		he_cap->ppet.ppe_threshold.ppe_th,
 		he_cap->ppet.ppe_threshold.num_ppe_th);
@@ -705,36 +702,36 @@ void wma_print_he_ppet(void *he_ppet)
 	struct wmi_host_ppe_threshold *ppet = he_ppet;
 
 	if (!ppet) {
-		WMA_LOGI(FL("PPET is NULL"));
+		wma_err("PPET is NULL");
 		return;
 	}
 
 	numss = ppet->numss_m1 + 1;
 	ru_bit_mask = ppet->ru_bit_mask;
 
-	WMA_LOGD(FL("HE PPET: ru_idx_mask: %04x"), ru_bit_mask);
+	wma_debug("HE PPET: ru_idx_mask: %04x", ru_bit_mask);
 	for (ru_count = 0; ru_bit_mask; ru_bit_mask >>= 1)
 		if (ru_bit_mask & 0x1)
 			ru_count++;
 
 	if (ru_count > 0) {
-		WMA_LOGD(FL("PPET has following RU INDEX,"));
+		wma_debug("PPET has following RU INDEX,");
 		if (ppet->ru_bit_mask & HE_RU_ALLOC_INDX0_MASK)
-			WMA_LOGD("\tRU ALLOCATION INDEX 0");
+			wma_nofl_debug("\tRU ALLOCATION INDEX 0");
 		if (ppet->ru_bit_mask & HE_RU_ALLOC_INDX1_MASK)
-			WMA_LOGD("\tRU ALLOCATION INDEX 1");
+			wma_nofl_debug("\tRU ALLOCATION INDEX 1");
 		if (ppet->ru_bit_mask & HE_RU_ALLOC_INDX2_MASK)
-			WMA_LOGD("\tRU ALLOCATION INDEX 2");
+			wma_nofl_debug("\tRU ALLOCATION INDEX 2");
 		if (ppet->ru_bit_mask & HE_RU_ALLOC_INDX3_MASK)
-			WMA_LOGD("\tRU ALLOCATION INDEX 3");
+			wma_nofl_debug("\tRU ALLOCATION INDEX 3");
 	}
 
-	WMA_LOGD(FL("HE PPET: nss: %d, ru_count: %d"), numss, ru_count);
+	wma_debug("HE PPET: nss: %d, ru_count: %d", numss, ru_count);
 
 	for (i = 0; i < numss; i++) {
-		WMA_LOGD("PPET for NSS[%d]", i);
+		wma_nofl_debug("PPET for NSS[%d]", i);
 		for (j = 1; j <= ru_count; j++) {
-			WMA_LOGD("\tNSS[%d],RU[%d]: PPET16: %02x PPET8: %02x",
+			wma_nofl_debug("\tNSS[%d],RU[%d]: PPET16: %02x PPET8: %02x",
 			    i, j,
 			    WMI_GET_PPET16(ppet->ppet16_ppet8_ru3_ru0, j, i),
 			    WMI_GET_PPET8(ppet->ppet16_ppet8_ru3_ru0, j, i));
@@ -745,149 +742,149 @@ void wma_print_he_ppet(void *he_ppet)
 
 void wma_print_he_phy_cap(uint32_t *phy_cap)
 {
-	WMA_LOGD(FL("HE PHY Capabilities:"));
+	wma_debug("HE PHY Capabilities:");
 
-	WMA_LOGD("\tChannel width support: 0x%07x",
-		WMI_HECAP_PHY_CBW_GET(phy_cap));
-	WMA_LOGD("\tPreamble puncturing Rx: 0x%04x",
-		WMI_HECAP_PHY_PREAMBLEPUNCRX_GET(phy_cap));
-	WMA_LOGD("\tClass of device: 0x%01x", WMI_HECAP_PHY_COD_GET(phy_cap));
-	WMA_LOGD("\tLDPC coding support: 0x%01x",
-		WMI_HECAP_PHY_LDPC_GET(phy_cap));
-	WMA_LOGD("\tLTF and GI for HE PPDUs: 0x%02x",
-		WMI_HECAP_PHY_LTFGIFORHE_GET(phy_cap));
-	WMA_LOGD("\tLTF and GI for NDP: 0x%02x",
-		WMI_HECAP_PHY_LTFGIFORNDP_GET(phy_cap));
-	WMA_LOGD("\tSTBC Tx & Rx support (BW <= 80Mhz): 0x%02x",
-			(WMI_HECAP_PHY_RXSTBC_GET(phy_cap) << 1) |
-			 WMI_HECAP_PHY_TXSTBC_GET(phy_cap));
-	WMA_LOGD("\tDoppler support: 0x%02x",
-			(WMI_HECAP_PHY_RXDOPPLER_GET(phy_cap) << 1) |
-			 WMI_HECAP_PHY_TXDOPPLER(phy_cap));
-	WMA_LOGD("\tUL MU (Full BW): 0x%01x",
-		  WMI_HECAP_PHY_UL_MU_MIMO_GET(phy_cap));
-	WMA_LOGD("\tUL MU (Partial BW): 0x%01x",
-		  WMI_HECAP_PHY_ULMUMIMOOFDMA_GET(phy_cap));
-	WMA_LOGD("\tDCM encoding Tx: 0x%03x", WMI_HECAP_PHY_DCMTX_GET(phy_cap));
-	WMA_LOGD("\tDCM encoding Rx: 0x%03x", WMI_HECAP_PHY_DCMRX_GET(phy_cap));
-	WMA_LOGD("\tHE MU PPDU payload support: 0x%01x",
-		WMI_HECAP_PHY_ULHEMU_GET(phy_cap));
-	WMA_LOGD("\tSU Beamformer: 0x%01x", WMI_HECAP_PHY_SUBFMR_GET(phy_cap));
-	WMA_LOGD("\tSU Beamformee: 0x%01x", WMI_HECAP_PHY_SUBFME_GET(phy_cap));
-	WMA_LOGD("\tMU Beamformer: 0x%01x", WMI_HECAP_PHY_MUBFMR_GET(phy_cap));
-	WMA_LOGD("\tBeamformee STS for <= 80Mhz: 0x%03x",
-			WMI_HECAP_PHY_BFMESTSLT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tNSTS total for <= 80Mhz: 0x%03x",
-		WMI_HECAP_PHY_NSTSLT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tBeamformee STS for > 80Mhz: 0x%03x",
-		WMI_HECAP_PHY_BFMESTSGT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tNSTS total for > 80Mhz: 0x%03x",
-		WMI_HECAP_PHY_NSTSGT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tNo. of sounding dim <= 80Mhz: 0x%03x",
-		WMI_HECAP_PHY_NUMSOUNDLT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tNo. of sounding dim > 80Mhz: 0x%03x",
-		WMI_HECAP_PHY_NUMSOUNDGT80MHZ_GET(phy_cap));
-	WMA_LOGD("\tNg=16 for SU feedback support: 0x%01x",
-		WMI_HECAP_PHY_NG16SUFEEDBACKLT80_GET(phy_cap));
-	WMA_LOGD("\tNg=16 for MU feedback support: 0x%01x",
-		WMI_HECAP_PHY_NG16MUFEEDBACKGT80_GET(phy_cap));
-	WMA_LOGD("\tCodebook size for SU: 0x%01x",
-		WMI_HECAP_PHY_CODBK42SU_GET(phy_cap));
-	WMA_LOGD("\tCodebook size for MU: 0x%01x ",
-		WMI_HECAP_PHY_CODBK75MU_GET(phy_cap));
-	WMA_LOGD("\tBeamforming trigger w/ Trigger: 0x%01x",
-		WMI_HECAP_PHY_BFFEEDBACKTRIG_GET(phy_cap));
-	WMA_LOGD("\tHE ER SU PPDU payload: 0x%01x",
-		WMI_HECAP_PHY_HEERSU_GET(phy_cap));
-	WMA_LOGD("\tDL MUMIMO on partial BW: 0x%01x",
-		WMI_HECAP_PHY_DLMUMIMOPARTIALBW_GET(phy_cap));
-	WMA_LOGD("\tPPET present: 0x%01x",
-		 WMI_HECAP_PHY_PETHRESPRESENT_GET(phy_cap));
-	WMA_LOGD("\tSRP based SR-support: 0x%01x",
-		WMI_HECAP_PHY_SRPSPRESENT_GET(phy_cap));
-	WMA_LOGD("\tPower boost factor: 0x%01x",
-		WMI_HECAP_PHY_PWRBOOSTAR_GET(phy_cap));
-	WMA_LOGD("\t4x HE LTF support: 0x%01x",
-		WMI_HECAP_PHY_4XLTFAND800NSECSGI_GET(phy_cap));
-	WMA_LOGD("\tMax Nc supported: 0x%03x",
-		WMI_HECAP_PHY_MAXNC_GET(phy_cap));
-	WMA_LOGD("\tSTBC Tx & Rx support (BW > 80Mhz): 0x%02x",
-			(WMI_HECAP_PHY_STBCRXGT80_GET(phy_cap) << 1) |
-			 WMI_HECAP_PHY_STBCTXGT80_GET(phy_cap));
-	WMA_LOGD("\tER 4x HE LTF support: 0x%01x",
-		 WMI_HECAP_PHY_ERSU4X800NSECGI_GET(phy_cap));
+	wma_nofl_debug("\tChannel width support: 0x%07x",
+		      WMI_HECAP_PHY_CBW_GET(phy_cap));
+	wma_nofl_debug("\tPreamble puncturing Rx: 0x%04x",
+		      WMI_HECAP_PHY_PREAMBLEPUNCRX_GET(phy_cap));
+	wma_nofl_debug("\tClass of device: 0x%01x", WMI_HECAP_PHY_COD_GET(phy_cap));
+	wma_nofl_debug("\tLDPC coding support: 0x%01x",
+		      WMI_HECAP_PHY_LDPC_GET(phy_cap));
+	wma_nofl_debug("\tLTF and GI for HE PPDUs: 0x%02x",
+		      WMI_HECAP_PHY_LTFGIFORHE_GET(phy_cap));
+	wma_nofl_debug("\tLTF and GI for NDP: 0x%02x",
+		      WMI_HECAP_PHY_LTFGIFORNDP_GET(phy_cap));
+	wma_nofl_debug("\tSTBC Tx & Rx support (BW <= 80Mhz): 0x%02x",
+		      (WMI_HECAP_PHY_RXSTBC_GET(phy_cap) << 1) |
+		       WMI_HECAP_PHY_TXSTBC_GET(phy_cap));
+	wma_nofl_debug("\tDoppler support: 0x%02x",
+		      (WMI_HECAP_PHY_RXDOPPLER_GET(phy_cap) << 1) |
+		       WMI_HECAP_PHY_TXDOPPLER(phy_cap));
+	wma_nofl_debug("\tUL MU (Full BW): 0x%01x",
+		      WMI_HECAP_PHY_UL_MU_MIMO_GET(phy_cap));
+	wma_nofl_debug("\tUL MU (Partial BW): 0x%01x",
+		      WMI_HECAP_PHY_ULMUMIMOOFDMA_GET(phy_cap));
+	wma_nofl_debug("\tDCM encoding Tx: 0x%03x", WMI_HECAP_PHY_DCMTX_GET(phy_cap));
+	wma_nofl_debug("\tDCM encoding Rx: 0x%03x", WMI_HECAP_PHY_DCMRX_GET(phy_cap));
+	wma_nofl_debug("\tHE MU PPDU payload support: 0x%01x",
+		      WMI_HECAP_PHY_ULHEMU_GET(phy_cap));
+	wma_nofl_debug("\tSU Beamformer: 0x%01x", WMI_HECAP_PHY_SUBFMR_GET(phy_cap));
+	wma_nofl_debug("\tSU Beamformee: 0x%01x", WMI_HECAP_PHY_SUBFME_GET(phy_cap));
+	wma_nofl_debug("\tMU Beamformer: 0x%01x", WMI_HECAP_PHY_MUBFMR_GET(phy_cap));
+	wma_nofl_debug("\tBeamformee STS for <= 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_BFMESTSLT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tNSTS total for <= 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_NSTSLT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tBeamformee STS for > 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_BFMESTSGT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tNSTS total for > 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_NSTSGT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tNo. of sounding dim <= 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_NUMSOUNDLT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tNo. of sounding dim > 80Mhz: 0x%03x",
+		      WMI_HECAP_PHY_NUMSOUNDGT80MHZ_GET(phy_cap));
+	wma_nofl_debug("\tNg=16 for SU feedback support: 0x%01x",
+		      WMI_HECAP_PHY_NG16SUFEEDBACKLT80_GET(phy_cap));
+	wma_nofl_debug("\tNg=16 for MU feedback support: 0x%01x",
+		      WMI_HECAP_PHY_NG16MUFEEDBACKGT80_GET(phy_cap));
+	wma_nofl_debug("\tCodebook size for SU: 0x%01x",
+		      WMI_HECAP_PHY_CODBK42SU_GET(phy_cap));
+	wma_nofl_debug("\tCodebook size for MU: 0x%01x ",
+		      WMI_HECAP_PHY_CODBK75MU_GET(phy_cap));
+	wma_nofl_debug("\tBeamforming trigger w/ Trigger: 0x%01x",
+		      WMI_HECAP_PHY_BFFEEDBACKTRIG_GET(phy_cap));
+	wma_nofl_debug("\tHE ER SU PPDU payload: 0x%01x",
+		      WMI_HECAP_PHY_HEERSU_GET(phy_cap));
+	wma_nofl_debug("\tDL MUMIMO on partial BW: 0x%01x",
+		      WMI_HECAP_PHY_DLMUMIMOPARTIALBW_GET(phy_cap));
+	wma_nofl_debug("\tPPET present: 0x%01x",
+		       WMI_HECAP_PHY_PETHRESPRESENT_GET(phy_cap));
+	wma_nofl_debug("\tSRP based SR-support: 0x%01x",
+		      WMI_HECAP_PHY_SRPSPRESENT_GET(phy_cap));
+	wma_nofl_debug("\tPower boost factor: 0x%01x",
+		      WMI_HECAP_PHY_PWRBOOSTAR_GET(phy_cap));
+	wma_nofl_debug("\t4x HE LTF support: 0x%01x",
+		      WMI_HECAP_PHY_4XLTFAND800NSECSGI_GET(phy_cap));
+	wma_nofl_debug("\tMax Nc supported: 0x%03x",
+		      WMI_HECAP_PHY_MAXNC_GET(phy_cap));
+	wma_nofl_debug("\tSTBC Tx & Rx support (BW > 80Mhz): 0x%02x",
+		      (WMI_HECAP_PHY_STBCRXGT80_GET(phy_cap) << 1) |
+		       WMI_HECAP_PHY_STBCTXGT80_GET(phy_cap));
+	wma_nofl_debug("\tER 4x HE LTF support: 0x%01x",
+		       WMI_HECAP_PHY_ERSU4X800NSECGI_GET(phy_cap));
 }
 
 void wma_print_he_mac_cap_w1(uint32_t mac_cap)
 {
-	WMA_LOGD(FL("HE MAC Capabilities:"));
+	wma_debug("HE MAC Capabilities:");
 
-	WMA_LOGD("\tHTC-HE conrol: 0x%01x", WMI_HECAP_MAC_HECTRL_GET(mac_cap));
-	WMA_LOGD("\tTWT Requestor support: 0x%01x",
-			WMI_HECAP_MAC_TWTREQ_GET(mac_cap));
-	WMA_LOGD("\tTWT Responder support: 0x%01x",
-			WMI_HECAP_MAC_TWTRSP_GET(mac_cap));
-	WMA_LOGD("\tFragmentation support: 0x%02x",
-			WMI_HECAP_MAC_HEFRAG_GET(mac_cap));
-	WMA_LOGD("\tMax no.of frag MSDUs: 0x%03x",
-			WMI_HECAP_MAC_MAXFRAGMSDU_GET(mac_cap));
-	WMA_LOGD("\tMin. frag size: 0x%02x",
-			WMI_HECAP_MAC_MINFRAGSZ_GET(mac_cap));
-	WMA_LOGD("\tTrigger MAC pad duration: 0x%02x",
-			WMI_HECAP_MAC_TRIGPADDUR_GET(mac_cap));
-	WMA_LOGD("\tMulti-TID aggr Rx support: 0x%03x",
-		 WMI_HECAP_MAC_MTID_RX_GET(mac_cap));
-	WMA_LOGD("\tLink adaptation: 0x%02x",
-			WMI_HECAP_MAC_HELINK_ADPT_GET(mac_cap));
-	WMA_LOGD("\tAll ACK support: 0x%01x",
-			WMI_HECAP_MAC_AACK_GET(mac_cap));
-	WMA_LOGD("\tUL MU resp. scheduling: 0x%01x",
-			WMI_HECAP_MAC_TRS_GET(mac_cap));
-	WMA_LOGD("\tA-Buff status report: 0x%01x",
-			WMI_HECAP_MAC_BSR_GET(mac_cap));
-	WMA_LOGD("\tBroadcast TWT support: 0x%01x",
-			WMI_HECAP_MAC_BCSTTWT_GET(mac_cap));
-	WMA_LOGD("\t32bit BA bitmap support: 0x%01x",
-			WMI_HECAP_MAC_32BITBA_GET(mac_cap));
-	WMA_LOGD("\tMU Cascading support: 0x%01x",
-			WMI_HECAP_MAC_MUCASCADE_GET(mac_cap));
-	WMA_LOGD("\tACK enabled Multi-TID: 0x%01x",
-			WMI_HECAP_MAC_ACKMTIDAMPDU_GET(mac_cap));
-	WMA_LOGD("\tOMI A-Control support: 0x%01x",
-			WMI_HECAP_MAC_OMI_GET(mac_cap));
-	WMA_LOGD("\tOFDMA RA support: 0x%01x",
-			WMI_HECAP_MAC_OFDMARA_GET(mac_cap));
-	WMA_LOGD("\tMax A-MPDU Length: 0x%02x",
-		WMI_HECAP_MAC_MAXAMPDULEN_EXP_GET(mac_cap));
-	WMA_LOGD("\tA-MSDU Fragmentation: 0x%01x",
-		WMI_HECAP_MAC_AMSDUFRAG_GET(mac_cap));
-	WMA_LOGD("\tFlex. TWT sched support: 0x%01x",
-		WMI_HECAP_MAC_FLEXTWT_GET(mac_cap));
-	WMA_LOGD("\tRx Ctrl frame to MBSS: 0x%01x",
-			WMI_HECAP_MAC_MBSS_GET(mac_cap));
+	wma_nofl_debug("\tHTC-HE conrol: 0x%01x", WMI_HECAP_MAC_HECTRL_GET(mac_cap));
+	wma_nofl_debug("\tTWT Requestor support: 0x%01x",
+		      WMI_HECAP_MAC_TWTREQ_GET(mac_cap));
+	wma_nofl_debug("\tTWT Responder support: 0x%01x",
+		      WMI_HECAP_MAC_TWTRSP_GET(mac_cap));
+	wma_nofl_debug("\tFragmentation support: 0x%02x",
+		      WMI_HECAP_MAC_HEFRAG_GET(mac_cap));
+	wma_nofl_debug("\tMax no.of frag MSDUs: 0x%03x",
+		      WMI_HECAP_MAC_MAXFRAGMSDU_GET(mac_cap));
+	wma_nofl_debug("\tMin. frag size: 0x%02x",
+		      WMI_HECAP_MAC_MINFRAGSZ_GET(mac_cap));
+	wma_nofl_debug("\tTrigger MAC pad duration: 0x%02x",
+		      WMI_HECAP_MAC_TRIGPADDUR_GET(mac_cap));
+	wma_nofl_debug("\tMulti-TID aggr Rx support: 0x%03x",
+		       WMI_HECAP_MAC_MTID_RX_GET(mac_cap));
+	wma_nofl_debug("\tLink adaptation: 0x%02x",
+		      WMI_HECAP_MAC_HELINK_ADPT_GET(mac_cap));
+	wma_nofl_debug("\tAll ACK support: 0x%01x",
+		      WMI_HECAP_MAC_AACK_GET(mac_cap));
+	wma_nofl_debug("\tUL MU resp. scheduling: 0x%01x",
+		      WMI_HECAP_MAC_TRS_GET(mac_cap));
+	wma_nofl_debug("\tA-Buff status report: 0x%01x",
+		      WMI_HECAP_MAC_BSR_GET(mac_cap));
+	wma_nofl_debug("\tBroadcast TWT support: 0x%01x",
+		      WMI_HECAP_MAC_BCSTTWT_GET(mac_cap));
+	wma_nofl_debug("\t32bit BA bitmap support: 0x%01x",
+		      WMI_HECAP_MAC_32BITBA_GET(mac_cap));
+	wma_nofl_debug("\tMU Cascading support: 0x%01x",
+		      WMI_HECAP_MAC_MUCASCADE_GET(mac_cap));
+	wma_nofl_debug("\tACK enabled Multi-TID: 0x%01x",
+		      WMI_HECAP_MAC_ACKMTIDAMPDU_GET(mac_cap));
+	wma_nofl_debug("\tOMI A-Control support: 0x%01x",
+		      WMI_HECAP_MAC_OMI_GET(mac_cap));
+	wma_nofl_debug("\tOFDMA RA support: 0x%01x",
+		      WMI_HECAP_MAC_OFDMARA_GET(mac_cap));
+	wma_nofl_debug("\tMax A-MPDU Length: 0x%02x",
+		      WMI_HECAP_MAC_MAXAMPDULEN_EXP_GET(mac_cap));
+	wma_nofl_debug("\tA-MSDU Fragmentation: 0x%01x",
+		      WMI_HECAP_MAC_AMSDUFRAG_GET(mac_cap));
+	wma_nofl_debug("\tFlex. TWT sched support: 0x%01x",
+		      WMI_HECAP_MAC_FLEXTWT_GET(mac_cap));
+	wma_nofl_debug("\tRx Ctrl frame to MBSS: 0x%01x",
+		      WMI_HECAP_MAC_MBSS_GET(mac_cap));
 }
 
 void wma_print_he_mac_cap_w2(uint32_t mac_cap)
 {
-	WMA_LOGD("\tBSRP A-MPDU Aggregation: 0x%01x",
-		WMI_HECAP_MAC_BSRPAMPDU_GET(mac_cap));
-	WMA_LOGD("\tQuite Time Period support: 0x%01x",
-		WMI_HECAP_MAC_QTP_GET(mac_cap));
-	WMA_LOGD("\tA-BQR support: 0x%01x", WMI_HECAP_MAC_ABQR_GET(mac_cap));
-	WMA_LOGD("\tSR Responder support: 0x%01x",
-		 WMI_HECAP_MAC_SRPRESP_GET(mac_cap));
-	WMA_LOGD("\tNDP Feedback Support: 0x%01x",
-		 WMI_HECAP_MAC_NDPFDBKRPT_GET(mac_cap));
-	WMA_LOGD("\tOPS Support: 0x%01x",
-		 WMI_HECAP_MAC_OPS_GET(mac_cap));
-	WMA_LOGD("\tMulti-TID aggr Tx support: 0x%03x",
-		 WMI_HECAP_MAC_MTID_TX_GET(mac_cap));
-	WMA_LOGD("\tSub Ch selective Tx support: 0x%01x",
-		 WMI_HECAP_MAC_SUBCHANSELTX_GET(mac_cap));
-	WMA_LOGD("\tUL 2x996 tone RU: 0x%01x",
-		 WMI_HECAP_MAC_UL2X996RU_GET(mac_cap));
-	WMA_LOGD("\tOM ctrl UL MU data disable Rx: 0x%01x",
-		 WMI_HECAP_MAC_OMCULMUDDIS_GET(mac_cap));
+	wma_nofl_debug("\tBSRP A-MPDU Aggregation: 0x%01x",
+		      WMI_HECAP_MAC_BSRPAMPDU_GET(mac_cap));
+	wma_nofl_debug("\tQuite Time Period support: 0x%01x",
+		      WMI_HECAP_MAC_QTP_GET(mac_cap));
+	wma_nofl_debug("\tA-BQR support: 0x%01x", WMI_HECAP_MAC_ABQR_GET(mac_cap));
+	wma_nofl_debug("\tSR Responder support: 0x%01x",
+		      WMI_HECAP_MAC_SRPRESP_GET(mac_cap));
+	wma_nofl_debug("\tNDP Feedback Support: 0x%01x",
+		      WMI_HECAP_MAC_NDPFDBKRPT_GET(mac_cap));
+	wma_nofl_debug("\tOPS Support: 0x%01x",
+		      WMI_HECAP_MAC_OPS_GET(mac_cap));
+	wma_nofl_debug("\tMulti-TID aggr Tx support: 0x%03x",
+		      WMI_HECAP_MAC_MTID_TX_GET(mac_cap));
+	wma_nofl_debug("\tSub Ch selective Tx support: 0x%01x",
+		      WMI_HECAP_MAC_SUBCHANSELTX_GET(mac_cap));
+	wma_nofl_debug("\tUL 2x996 tone RU: 0x%01x",
+		      WMI_HECAP_MAC_UL2X996RU_GET(mac_cap));
+	wma_nofl_debug("\tOM ctrl UL MU data disable Rx: 0x%01x",
+		      WMI_HECAP_MAC_OMCULMUDDIS_GET(mac_cap));
 }
 
 void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
@@ -898,6 +895,7 @@ void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
 	struct wlan_psoc_host_mac_phy_caps *mac_cap, *mac_phy_cap;
 	tDot11fIEhe_cap he_cap_mac;
 	tDot11fIEhe_cap tmp_he_cap = {0};
+	bool is_5g_cap;
 
 	qdf_mem_zero(&tgt_cfg->he_cap_2g, sizeof(tgt_cfg->he_cap_2g));
 	qdf_mem_zero(&tgt_cfg->he_cap_5g, sizeof(tgt_cfg->he_cap_5g));
@@ -905,14 +903,20 @@ void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
 	mac_phy_cap = target_psoc_get_mac_phy_cap(tgt_hdl);
 	total_mac_phy_cnt = target_psoc_get_total_mac_phy_cnt(tgt_hdl);
 
+	if (!mac_phy_cap) {
+		wma_err("Invalid MAC PHY capabilities handle");
+		he_cap->present = false;
+		return;
+	}
+
 	if (!num_hw_modes) {
-		WMA_LOGE(FL("No extended HE cap for current SOC"));
+		wma_err("No extended HE cap for current SOC");
 		he_cap->present = false;
 		return;
 	}
 
 	if (!tgt_cfg->services.en_11ax) {
-		WMA_LOGI(FL("Target does not support 11AX"));
+		wma_info("Target does not support 11AX");
 		he_cap->present = false;
 		return;
 	}
@@ -921,14 +925,16 @@ void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
 		qdf_mem_zero(&he_cap_mac,
 				sizeof(tDot11fIEhe_cap));
 		mac_cap = &mac_phy_cap[i];
+		is_5g_cap = false;
 		if (mac_cap->supported_bands & WLAN_2G_CAPABILITY) {
 			wma_convert_he_cap(&he_cap_mac,
 					mac_cap->he_cap_info_2G,
 					mac_cap->he_cap_phy_info_2G,
 					mac_cap->he_supp_mcs_2G,
 					mac_cap->tx_chain_mask_2G,
-					mac_cap->rx_chain_mask_2G);
-			WMA_LOGD(FL("2g phy: nss: %d, ru_idx_msk: %d"),
+					mac_cap->rx_chain_mask_2G,
+					&tgt_cfg->he_mcs_12_13_supp_2g);
+			wma_debug("2g phy: nss: %d, ru_idx_msk: %d",
 					mac_cap->he_ppet2G.numss_m1,
 					mac_cap->he_ppet2G.ru_bit_mask);
 			wma_convert_he_ppet(tgt_cfg->ppet_2g,
@@ -938,9 +944,11 @@ void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
 
 		if (he_cap_mac.present) {
 			wma_derive_ext_he_cap(&tmp_he_cap,
-					      &he_cap_mac);
+					      &he_cap_mac,
+					      is_5g_cap);
 			wma_derive_ext_he_cap(&tgt_cfg->he_cap_2g,
-					      &he_cap_mac);
+					      &he_cap_mac,
+					      is_5g_cap);
 		}
 
 		qdf_mem_zero(&he_cap_mac,
@@ -951,19 +959,23 @@ void wma_update_target_ext_he_cap(struct target_psoc_info *tgt_hdl,
 					mac_cap->he_cap_phy_info_5G,
 					mac_cap->he_supp_mcs_5G,
 					mac_cap->tx_chain_mask_5G,
-					mac_cap->rx_chain_mask_5G);
-			WMA_LOGD(FL("5g phy: nss: %d, ru_idx_msk: %d"),
-					mac_cap->he_ppet2G.numss_m1,
-					mac_cap->he_ppet2G.ru_bit_mask);
+					mac_cap->rx_chain_mask_5G,
+					&tgt_cfg->he_mcs_12_13_supp_5g);
+			wma_debug("5g phy: nss: %d, ru_idx_msk: %d",
+					mac_cap->he_ppet5G.numss_m1,
+					mac_cap->he_ppet5G.ru_bit_mask);
 			wma_convert_he_ppet(tgt_cfg->ppet_5g,
 					(struct wmi_host_ppe_threshold *)
 					&mac_cap->he_ppet5G);
+			is_5g_cap = true;
 		}
 		if (he_cap_mac.present) {
 			wma_derive_ext_he_cap(&tmp_he_cap,
-					      &he_cap_mac);
+					      &he_cap_mac,
+					      is_5g_cap);
 			wma_derive_ext_he_cap(&tgt_cfg->he_cap_5g,
-					      &he_cap_mac);
+					      &he_cap_mac,
+					      is_5g_cap);
 		}
 	}
 
@@ -977,19 +989,19 @@ void wma_he_update_tgt_services(struct wmi_unified *wmi_handle,
 	if (wmi_service_enabled(wmi_handle, wmi_service_11ax)) {
 		cfg->en_11ax = true;
 		wma_set_fw_wlan_feat_caps(DOT11AX);
-		WMA_LOGI(FL("11ax is enabled"));
+		wma_debug("11ax is enabled");
 	} else {
-		WMA_LOGI(FL("11ax is not enabled"));
+		wma_debug("11ax is not enabled");
 	}
 }
 
 void wma_print_he_op(tDot11fIEhe_op *he_ops)
 {
-	WMA_LOGD(FL("bss_color %0x def_pe_dur %0x twt_req %0x txop_rts_thre %0x vht_oper %0x"),
+	wma_debug("bss_color %0x def_pe_dur %0x twt_req %0x txop_rts_thre %0x vht_oper %0x",
 		 he_ops->bss_color, he_ops->default_pe,
 		 he_ops->twt_required, he_ops->txop_rts_threshold,
 		 he_ops->vht_oper_present);
-	WMA_LOGD(FL("\tpart_bss_color: %0x, MBSSID AP: %0x, BSS color dis %0x"),
+	wma_debug("\tpart_bss_color: %0x, MBSSID AP: %0x, BSS color dis %0x",
 		 he_ops->partial_bss_col, he_ops->co_located_bss,
 		 he_ops->bss_col_disabled);
 }
@@ -1028,7 +1040,7 @@ static void wma_parse_he_ppet(int8_t *rcvd_ppet,
 			ru++;
 	}
 
-	WMA_LOGD(FL("Rcvd nss=%d ru_idx_mask: %0x ru_count=%d"),
+	wma_debug("Rcvd nss=%d ru_idx_mask: %0x ru_count=%d",
 		 nss, hdr->ru_idx_mask, ru);
 
 	/* each nss-ru pair have 2 PPET (PPET8/PPET16) */
@@ -1082,7 +1094,7 @@ static void wma_parse_he_ppet(int8_t *rcvd_ppet,
 				ppet = ppet1 | ppet2;
 				ppet_r[i] |= (ppet << (j - 1) * HE_PPET_SIZE);
 			}
-			WMA_LOGD(FL("nss:%d ru:%d ppet_r:%0x"), i, j/2,
+			wma_debug("nss:%d ru:%d ppet_r:%0x", i, j / 2,
 				 ppet_r[i]);
 		}
 	}
@@ -1098,7 +1110,7 @@ void wma_populate_peer_he_cap(struct peer_assoc_params *peer,
 	uint8_t temp, i, chan_width;
 
 	if (params->he_capable)
-		peer->peer_flags |= WMI_PEER_HE;
+		peer->he_flag = 1;
 	else
 		return;
 
@@ -1241,21 +1253,56 @@ void wma_populate_peer_he_cap(struct peer_assoc_params *peer,
 		params->supportedRates.rx_he_mcs_map_lt_80;
 	peer->peer_he_tx_mcs_set[0] =
 		params->supportedRates.tx_he_mcs_map_lt_80;
+	if (params->he_mcs_12_13_map) {
+		peer->peer_he_tx_mcs_set[0] |=
+			(params->he_mcs_12_13_map <<
+			 WMA_MCS_12_13_MAP_L80) & WMA_MCS_12_13_PEER_RATE_MAP;
+		peer->peer_he_rx_mcs_set[0] |=
+			(params->he_mcs_12_13_map <<
+			 WMA_MCS_12_13_MAP_L80) & WMA_MCS_12_13_PEER_RATE_MAP;
+	}
 
 	if (params->ch_width > CH_WIDTH_80MHZ) {
 		peer->peer_he_mcs_count = WMI_HOST_MAX_HE_RATE_SET;
-		peer->peer_he_rx_mcs_set[1] =
+		peer->peer_he_rx_mcs_set[1] |=
 			params->supportedRates.rx_he_mcs_map_160;
-		peer->peer_he_tx_mcs_set[1] =
+		peer->peer_he_tx_mcs_set[1] |=
 			params->supportedRates.tx_he_mcs_map_160;
-		peer->peer_he_rx_mcs_set[2] =
+		peer->peer_he_rx_mcs_set[2] |=
 			params->supportedRates.rx_he_mcs_map_80_80;
-		peer->peer_he_tx_mcs_set[2] =
+		peer->peer_he_tx_mcs_set[2] |=
 			params->supportedRates.tx_he_mcs_map_80_80;
+
+		if (params->he_mcs_12_13_map) {
+			peer->peer_he_tx_mcs_set[1] |=
+				(params->he_mcs_12_13_map <<
+				 WMA_MCS_12_13_MAP_G80) &
+				 WMA_MCS_12_13_PEER_RATE_MAP;
+			peer->peer_he_tx_mcs_set[2] |=
+				(params->he_mcs_12_13_map <<
+				 WMA_MCS_12_13_MAP_G80) &
+				 WMA_MCS_12_13_PEER_RATE_MAP;
+			peer->peer_he_rx_mcs_set[1] |=
+				(params->he_mcs_12_13_map <<
+				 WMA_MCS_12_13_MAP_G80) &
+				 WMA_MCS_12_13_PEER_RATE_MAP;
+			peer->peer_he_rx_mcs_set[2] |=
+				(params->he_mcs_12_13_map <<
+				 WMA_MCS_12_13_MAP_G80) &
+				 WMA_MCS_12_13_PEER_RATE_MAP;
+		}
 	}
 
+	wma_debug("Sending TX/RX MCS set to FW: <=80: %x, 160: %x, 80+80: %x",
+		  peer->peer_he_rx_mcs_set[0], peer->peer_he_rx_mcs_set[1],
+		  peer->peer_he_rx_mcs_set[2]);
+
+#define HE2x2MCSMASK 0xc
+
+	peer->peer_nss = ((params->supportedRates.rx_he_mcs_map_lt_80 &
+			 HE2x2MCSMASK) == HE2x2MCSMASK) ? 1 : 2;
 	for (i = 0; i < peer->peer_he_mcs_count; i++)
-		WMA_LOGD(FL("[HE - MCS Map: %d] rx_mcs: 0x%x, tx_mcs: 0x%x"), i,
+		wma_debug("[HE - MCS Map: %d] rx_mcs: 0x%x, tx_mcs: 0x%x", i,
 			peer->peer_he_rx_mcs_set[i],
 			peer->peer_he_tx_mcs_set[i]);
 
@@ -1271,56 +1318,61 @@ void wma_populate_peer_he_cap(struct peer_assoc_params *peer,
 	wma_parse_he_ppet(he_cap->ppet.ppe_threshold.ppe_th, &peer->peer_ppet);
 
 	wma_print_he_cap(he_cap);
-	WMA_LOGD(FL("Peer HE Capabilities:"));
+	wma_debug("Peer HE Capabilities:");
 	wma_print_he_phy_cap(phy_cap);
 	wma_print_he_mac_cap_w1(mac_cap[0]);
 	wma_print_he_mac_cap_w2(mac_cap[1]);
 	wma_print_he_ppet(&peer->peer_ppet);
 
-	return;
+	if (params->he_6ghz_band_caps.present) {
+		peer->peer_he_caps_6ghz =
+			(params->he_6ghz_band_caps.min_mpdu_start_spacing <<
+			 HE_6G_MIN_MPDU_START_SAPCE_BIT_POS) |
+			(params->he_6ghz_band_caps.max_ampdu_len_exp <<
+			 HE_6G_MAX_AMPDU_LEN_EXP_BIT_POS) |
+			(params->he_6ghz_band_caps.max_mpdu_len <<
+			 HE_6G_MAX_MPDU_LEN_BIT_POS) |
+			(params->he_6ghz_band_caps.sm_pow_save <<
+			 HE_6G_SMPS_BIT_POS) |
+			(params->he_6ghz_band_caps.rd_responder <<
+			 HE_6G_RD_RESP_BIT_POS) |
+			(params->he_6ghz_band_caps.rx_ant_pattern_consistency <<
+			 HE_6G_RX_ANT_PATTERN_BIT_POS) |
+			(params->he_6ghz_band_caps.tx_ant_pattern_consistency <<
+			 HE_6G_TX_ANT_PATTERN_BIT_POS);
+		wma_debug("HE 6GHz band caps: %0x", peer->peer_he_caps_6ghz);
+	} else {
+		wma_debug("HE 6GHz band caps not present");
+		peer->peer_he_caps_6ghz = 0;
+	}
 }
 
-void wma_update_vdev_he_ops(struct wma_vdev_start_req *req,
-		tpAddBssParams add_bss)
+void wma_update_vdev_he_ops(uint32_t *he_ops, tDot11fIEhe_op *he_op)
 {
-	uint32_t he_ops = 0;
-	tDot11fIEhe_op *he_op = &add_bss->he_op;
-
-	req->he_capable = add_bss->he_capable;
-
-	WMI_HEOPS_COLOR_SET(he_ops, he_op->bss_color);
-	WMI_HEOPS_DEFPE_SET(he_ops, he_op->default_pe);
-	WMI_HEOPS_TWT_SET(he_ops, he_op->twt_required);
-	WMI_HEOPS_RTSTHLD_SET(he_ops, he_op->txop_rts_threshold);
-	WMI_HEOPS_PARTBSSCOLOR_SET(he_ops, he_op->partial_bss_col);
-	WMI_HEOPS_BSSCOLORDISABLE_SET(he_ops, he_op->bss_col_disabled);
-
-	req->he_ops = he_ops;
-}
-
-void wma_copy_vdev_start_he_ops(struct vdev_start_params *params,
-		struct wma_vdev_start_req *req)
-{
-	params->he_ops = req->he_ops;
+	WMI_HEOPS_COLOR_SET(*he_ops, he_op->bss_color);
+	WMI_HEOPS_DEFPE_SET(*he_ops, he_op->default_pe);
+	WMI_HEOPS_TWT_SET(*he_ops, he_op->twt_required);
+	WMI_HEOPS_RTSTHLD_SET(*he_ops, he_op->txop_rts_threshold);
+	WMI_HEOPS_PARTBSSCOLOR_SET(*he_ops, he_op->partial_bss_col);
+	WMI_HEOPS_BSSCOLORDISABLE_SET(*he_ops, he_op->bss_col_disabled);
 }
 
 void wma_vdev_set_he_bss_params(tp_wma_handle wma, uint8_t vdev_id,
-				struct wma_vdev_start_req *req)
+				struct vdev_mlme_he_ops_info *he_info)
 {
 	QDF_STATUS ret;
 
-	if (!req->he_capable)
+	if (!he_info->he_ops)
 		return;
-
 	ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
-			WMI_VDEV_PARAM_HEOPS_0_31, req->he_ops);
+			WMI_VDEV_PARAM_HEOPS_0_31, he_info->he_ops);
 
 	if (QDF_IS_STATUS_ERROR(ret))
-		WMA_LOGE(FL("Failed to set HE OPs"));
+		wma_err("Failed to set HE OPs");
 }
 
 void wma_vdev_set_he_config(tp_wma_handle wma, uint8_t vdev_id,
-				tpAddBssParams add_bss)
+				struct bss_params *add_bss)
 {
 	QDF_STATUS ret;
 	int8_t pd_min, pd_max, sec_ch_ed, tx_pwr;
@@ -1328,19 +1380,13 @@ void wma_vdev_set_he_config(tp_wma_handle wma, uint8_t vdev_id,
 	ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
 				 WMI_VDEV_PARAM_OBSSPD, add_bss->he_sta_obsspd);
 	if (QDF_IS_STATUS_ERROR(ret))
-		WMA_LOGE(FL("Failed to set HE Config"));
+		wma_err("Failed to set HE Config");
 	pd_min = add_bss->he_sta_obsspd & 0xff,
 	pd_max = (add_bss->he_sta_obsspd & 0xff00) >> 8,
 	sec_ch_ed = (add_bss->he_sta_obsspd & 0xff0000) >> 16,
 	tx_pwr = (add_bss->he_sta_obsspd & 0xff000000) >> 24;
-	WMA_LOGD(FL("HE_STA_OBSSPD: PD_MIN: %d PD_MAX: %d SEC_CH_ED: %d TX_PWR: %d"),
+	wma_debug("HE_STA_OBSSPD: PD_MIN: %d PD_MAX: %d SEC_CH_ED: %d TX_PWR: %d",
 		 pd_min, pd_max, sec_ch_ed, tx_pwr);
-}
-
-void wma_update_vdev_he_capable(struct wma_vdev_start_req *req,
-		tpSwitchChannelParams params)
-{
-	req->he_capable = params->he_capable;
 }
 
 QDF_STATUS wma_update_he_ops_ie(tp_wma_handle wma, uint8_t vdev_id,
@@ -1350,7 +1396,7 @@ QDF_STATUS wma_update_he_ops_ie(tp_wma_handle wma, uint8_t vdev_id,
 	uint32_t dword_he_op = 0;
 
 	if (!wma) {
-		WMA_LOGE(FL("wrong wma_handle...."));
+		wma_err("wrong wma_handle....");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -1361,12 +1407,12 @@ QDF_STATUS wma_update_he_ops_ie(tp_wma_handle wma, uint8_t vdev_id,
 	WMI_HEOPS_PARTBSSCOLOR_SET(dword_he_op, he_op->partial_bss_col);
 	WMI_HEOPS_BSSCOLORDISABLE_SET(dword_he_op, he_op->bss_col_disabled);
 
-	WMA_LOGD("vdev_id: %d HE_OPs: 0x%x", vdev_id, dword_he_op);
+	wma_debug("vdev_id: %d HE_OPs: 0x%x", vdev_id, dword_he_op);
 	ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
 			WMI_VDEV_PARAM_HEOPS_0_31, dword_he_op);
 
 	if (QDF_IS_STATUS_ERROR(ret))
-		WMA_LOGE(FL("Failed to set HE OPs"));
+		wma_err("Failed to set HE OPs");
 
 	return ret;
 }
@@ -1412,10 +1458,10 @@ void wma_set_he_txbf_params(uint8_t vdev_id, bool su_bfer,
 	 */
 	status = wma_vdev_set_param(wma->wmi_handle, vdev_id,
 				    WMI_VDEV_PARAM_SET_HEMU_MODE, hemu_mode);
-	WMA_LOGD("set HEMU_MODE (hemu_mode = 0x%x)", hemu_mode);
+	wma_debug("set HEMU_MODE (hemu_mode = 0x%x)", hemu_mode);
 
 	if (QDF_IS_STATUS_ERROR(status))
-		WMA_LOGE("failed to set HEMU_MODE(status = %d)", status);
+		wma_err("failed to set HEMU_MODE(status = %d)", status);
 }
 
 QDF_STATUS wma_get_he_capabilities(struct he_capability *he_cap)
@@ -1424,7 +1470,7 @@ QDF_STATUS wma_get_he_capabilities(struct he_capability *he_cap)
 
 	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
 	if (!wma_handle) {
-		WMA_LOGE(FL("Invalid WMA handle"));
+		wma_err("Invalid WMA handle");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -1454,7 +1500,7 @@ void wma_set_he_vdev_param(struct wma_txrx_node *intr, WMI_VDEV_PARAM param_id,
 		intr->config.range_ext = value;
 		break;
 	default:
-		WMA_LOGE(FL("Unhandled HE vdev param: %0x"), param_id);
+		wma_err("Unhandled HE vdev param: %0x", param_id);
 		break;
 	}
 }
@@ -1468,7 +1514,7 @@ uint32_t wma_get_he_vdev_param(struct wma_txrx_node *intr,
 	case WMI_VDEV_PARAM_HE_RANGE_EXT:
 		return intr->config.range_ext;
 	default:
-		WMA_LOGE(FL("Unhandled HE vdev param: %0x"), param_id);
+		wma_err("Unhandled HE vdev param: %0x", param_id);
 		break;
 	}
 	return 0;

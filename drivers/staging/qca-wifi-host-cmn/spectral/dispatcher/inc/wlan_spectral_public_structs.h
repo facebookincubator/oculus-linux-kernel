@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011,2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011,2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -162,31 +162,6 @@ enum spectral_msg_type {
 };
 
 /**
- * enum wlan_cfg80211_spectral_vendorcmd_handler_idx - Indices to cfg80211
- * spectral vendor command handlers
- * @SPECTRAL_SCAN_START_HANDLER_IDX:  Index to SPECTRAL_SCAN_START handler
- * @SPECTRAL_SCAN_STOP_HANDLER_IDX:  Index to SPECTRAL_SCAN_STOP handler
- * @SPECTRAL_SCAN_GET_CONFIG_HANDLER_IDX: Index to SPECTRAL_SCAN_GET_CONFIG
- * handler
- * @SPECTRAL_SCAN_GET_DIAG_STATS_HANDLER_IDX: Index to
- * SPECTRAL_SCAN_GET_DIAG_STATS handler
- * @SPECTRAL_SCAN_GET_CAP_HANDLER_IDX: Index to SPECTRAL_SCAN_GET_CAP handler
- * @SPECTRAL_SCAN_GET_STATUS_HANDLER_IDX: Index to SPECTRAL_SCAN_GET_STATUS
- * handler
- * @SPECTRAL_SCAN_VENDOR_CMD_HANDLER_MAX: Number of cfg80211 spectral
- * vendor command handlers supported
- */
-enum wlan_cfg80211_spectral_vendorcmd_handler_idx {
-	SPECTRAL_SCAN_START_HANDLER_IDX,
-	SPECTRAL_SCAN_STOP_HANDLER_IDX,
-	SPECTRAL_SCAN_GET_CONFIG_HANDLER_IDX,
-	SPECTRAL_SCAN_GET_DIAG_STATS_HANDLER_IDX,
-	SPECTRAL_SCAN_GET_CAP_HANDLER_IDX,
-	SPECTRAL_SCAN_GET_STATUS_HANDLER_IDX,
-	SPECTRAL_SCAN_VENDOR_CMD_HANDLER_MAX,
-};
-
-/**
  * enum spectral_debug - Spectral debug level
  * @DEBUG_SPECTRAL:  Minimal SPECTRAL debug
  * @DEBUG_SPECTRAL1: Normal SPECTRAL debug
@@ -218,16 +193,92 @@ enum spectral_capability_type {
 
 /**
  * enum spectral_cp_error_code - Spectral control path response code
+ * @SPECTRAL_SCAN_RESP_ERR_INVALID: Invalid error identifier
  * @SPECTRAL_SCAN_RESP_ERR_PARAM_UNSUPPORTED: parameter unsupported
  * @SPECTRAL_SCAN_RESP_ERR_MODE_UNSUPPORTED: mode unsupported
  * @SPECTRAL_SCAN_RESP_ERR_PARAM_INVALID_VALUE: invalid parameter value
  * @SPECTRAL_SCAN_RESP_ERR_PARAM_NOT_INITIALIZED: parameter uninitialized
  */
 enum spectral_cp_error_code {
+	SPECTRAL_SCAN_ERR_INVALID,
 	SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED,
 	SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED,
 	SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE,
 	SPECTRAL_SCAN_ERR_PARAM_NOT_INITIALIZED,
+};
+
+/**
+ * enum spectral_dma_debug -   Spectral DMA debug
+ * @SPECTRAL_DMA_RING_DEBUG:   Spectral DMA ring debug
+ * @SPECTRAL_DMA_BUFFER_DEBUG: Spectral DMA buffer debug
+ */
+enum spectral_dma_debug {
+	SPECTRAL_DMA_RING_DEBUG,
+	SPECTRAL_DMA_BUFFER_DEBUG,
+};
+
+struct wiphy;
+
+/**
+ * struct spectral_cfg80211_vendor_cmd_handlers - Spectral vendor command
+ * handlers
+ * @wlan_cfg80211_spectral_scan_start: start scan handler
+ * @wlan_cfg80211_spectral_scan_stop: stop scan handler
+ * @wlan_cfg80211_spectral_scan_get_config: get config handler
+ * @wlan_cfg80211_spectral_scan_get_diag_stats: get diag stats handler
+ * @wlan_cfg80211_spectral_scan_get_cap: get capability handler
+ * @wlan_cfg80211_spectral_scan_get_status: get status handler
+ */
+struct spectral_cfg80211_vendor_cmd_handlers {
+	int (*wlan_cfg80211_spectral_scan_start)(struct wiphy *wiphy,
+						 struct wlan_objmgr_pdev *pdev,
+						 struct wlan_objmgr_vdev *vdev,
+						 const void *data,
+						 int data_len);
+	int (*wlan_cfg80211_spectral_scan_stop)(struct wiphy *wiphy,
+						struct wlan_objmgr_pdev *pdev,
+						struct wlan_objmgr_vdev *vdev,
+						const void *data,
+						int data_len);
+	int (*wlan_cfg80211_spectral_scan_get_config)(
+						struct wiphy *wiphy,
+						struct wlan_objmgr_pdev *pdev,
+						struct wlan_objmgr_vdev *vdev,
+						const void *data,
+						int data_len);
+	int (*wlan_cfg80211_spectral_scan_get_diag_stats)(
+						struct wiphy *wiphy,
+						struct wlan_objmgr_pdev *pdev,
+						struct wlan_objmgr_vdev *vdev,
+						const void *data,
+						int data_len);
+	int (*wlan_cfg80211_spectral_scan_get_cap)(
+						struct wiphy *wiphy,
+						struct wlan_objmgr_pdev *pdev,
+						struct wlan_objmgr_vdev *vdev,
+						const void *data,
+						int data_len);
+	int (*wlan_cfg80211_spectral_scan_get_status)(
+						struct wiphy *wiphy,
+						struct wlan_objmgr_pdev *pdev,
+						struct wlan_objmgr_vdev *vdev,
+						const void *data,
+						int data_len);
+};
+
+/**
+ * struct spectral_cp_param - Spectral control path data structure which
+ * contains parameter and its value
+ * @id: Parameter ID
+ * @value: Single parameter value
+ * @freq: Spectral scan frequency
+ */
+struct spectral_cp_param {
+	uint32_t id;
+	union {
+		uint32_t value;
+		struct spectral_config_frequency freq;
+	};
 };
 
 /**
@@ -377,15 +428,30 @@ struct spectral_scan_debug_request {
 };
 
 /**
+ * struct spectral_scan_dma_debug_request - DMA debug request
+ * @dma_debug_enable: Enable/disable @dma_debug_type
+ * @dma_debug_type: Type of Spectral DMA debug i.e., ring or buffer debug
+ * @sscan_err_code: Spectral scan error code
+ */
+struct spectral_scan_dma_debug_request {
+	bool dma_debug_enable;
+	enum spectral_dma_debug dma_debug_type;
+	enum spectral_cp_error_code sscan_err_code;
+};
+
+/**
  * struct spectral_cp_request - Spectral control path request
  *                              Creating request and extracting response has to
  *                              be atomic.
  * @ss_mode: Spectral scan mode
  * @req_id: Request identifier
+ * @vdev_id: VDEV id
+ * @dma_debug_req: Spectral DMA debug request
  */
 struct spectral_cp_request {
 	enum spectral_scan_mode ss_mode;
 	uint8_t req_id;
+	uint8_t vdev_id;
 	union {
 		struct spectral_scan_config_request config_req;
 		struct spectral_scan_action_request action_req;
@@ -394,6 +460,7 @@ struct spectral_cp_request {
 		struct spectral_scan_get_chan_width_request chan_width_req;
 		struct spectral_scan_get_status_request status_req;
 		struct spectral_scan_debug_request debug_req;
+		struct spectral_scan_dma_debug_request dma_debug_req;
 	};
 };
 

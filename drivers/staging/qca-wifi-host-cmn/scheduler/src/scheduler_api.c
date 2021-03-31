@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,6 +19,8 @@
 #include <scheduler_api.h>
 #include <scheduler_core.h>
 #include <qdf_atomic.h>
+#include <qdf_module.h>
+#include <qdf_platform.h>
 
 QDF_STATUS scheduler_disable(void)
 {
@@ -30,6 +32,11 @@ QDF_STATUS scheduler_disable(void)
 	QDF_BUG(sched_ctx);
 	if (!sched_ctx)
 		return QDF_STATUS_E_INVAL;
+
+	if (!sched_ctx->sch_thread) {
+		sched_debug("Scheduler already disabled");
+		return QDF_STATUS_SUCCESS;
+	}
 
 	/* send shutdown signal to scheduler thread */
 	qdf_atomic_set_bit(MC_SHUTDOWN_EVENT_MASK, &sched_ctx->sch_event_flag);
@@ -53,15 +60,20 @@ static inline void scheduler_watchdog_notify(struct scheduler_ctx *sched)
 	if (sched->watchdog_callback)
 		qdf_sprint_symbol(symbol, sched->watchdog_callback);
 
-	sched_err("WLAN_BUG_RCA: Callback %s (type 0x%x) exceeded its allotted time of %ds",
-		  sched->watchdog_callback ? symbol : "<null>",
-		  sched->watchdog_msg_type, SCHEDULER_WATCHDOG_TIMEOUT / 1000);
+	sched_fatal("Callback %s (type 0x%x) exceeded its allotted time of %ds",
+		    sched->watchdog_callback ? symbol : "<null>",
+		    sched->watchdog_msg_type,
+		    SCHEDULER_WATCHDOG_TIMEOUT / 1000);
 }
 
-#ifdef CONFIG_SLUB_DEBUG_ON
 static void scheduler_watchdog_timeout(void *arg)
 {
 	struct scheduler_ctx *sched = arg;
+
+	if (qdf_is_recovering()) {
+		sched_debug("Recovery is in progress ignore timeout");
+		return;
+	}
 
 	scheduler_watchdog_notify(sched);
 	if (sched->sch_thread)
@@ -73,12 +85,6 @@ static void scheduler_watchdog_timeout(void *arg)
 
 	QDF_DEBUG_PANIC("Going down for Scheduler Watchdog Bite!");
 }
-#else
-static void scheduler_watchdog_timeout(void *arg)
-{
-	scheduler_watchdog_notify((struct scheduler_ctx *)arg);
-}
-#endif
 
 QDF_STATUS scheduler_enable(void)
 {
@@ -100,7 +106,7 @@ QDF_STATUS scheduler_enable(void)
 	sched_ctx->sch_thread = qdf_create_thread(scheduler_thread, sched_ctx,
 						  "scheduler_thread");
 	if (!sched_ctx->sch_thread) {
-		sched_err("Failed to create scheduler thread");
+		sched_fatal("Failed to create scheduler thread");
 		return QDF_STATUS_E_RESOURCES;
 	}
 
@@ -124,7 +130,7 @@ QDF_STATUS scheduler_init(void)
 
 	status = scheduler_create_ctx();
 	if (QDF_IS_STATUS_ERROR(status)) {
-		sched_err("Failed to create context; status:%d", status);
+		sched_fatal("Failed to create context; status:%d", status);
 		return status;
 	}
 
@@ -137,25 +143,26 @@ QDF_STATUS scheduler_init(void)
 
 	status = scheduler_queues_init(sched_ctx);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		sched_err("Failed to init queues; status:%d", status);
+		sched_fatal("Failed to init queues; status:%d", status);
 		goto ctx_destroy;
 	}
 
 	status = qdf_event_create(&sched_ctx->sch_start_event);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		sched_err("Failed to create start event; status:%d", status);
+		sched_fatal("Failed to create start event; status:%d", status);
 		goto queues_deinit;
 	}
 
 	status = qdf_event_create(&sched_ctx->sch_shutdown);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		sched_err("Failed to create shutdown event; status:%d", status);
+		sched_fatal("Failed to create shutdown event; status:%d",
+			    status);
 		goto start_event_destroy;
 	}
 
 	status = qdf_event_create(&sched_ctx->resume_sch_event);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		sched_err("Failed to create resume event; status:%d", status);
+		sched_fatal("Failed to create resume event; status:%d", status);
 		goto shutdown_event_destroy;
 	}
 
@@ -462,7 +469,10 @@ QDF_STATUS scheduler_timer_q_mq_handler(struct scheduler_msg *msg)
 	if (msg->reserved != SYS_MSG_COOKIE || msg->type != SYS_MSG_ID_MC_TIMER)
 		return sched_ctx->legacy_sys_handler(msg);
 
-	timer_callback = msg->callback;
+	/* scheduler_msg_process_fn_t and qdf_mc_timer_callback_t have
+	 * different parameters and return type
+	 */
+	timer_callback = (qdf_mc_timer_callback_t)msg->callback;
 	QDF_BUG(timer_callback);
 	if (!timer_callback)
 		return QDF_STATUS_E_FAILURE;
@@ -639,7 +649,7 @@ void scheduler_mc_timer_callback(qdf_mc_timer_t *timer)
 	/* serialize to scheduler controller thread */
 	msg.type = SYS_MSG_ID_MC_TIMER;
 	msg.reserved = SYS_MSG_COOKIE;
-	msg.callback = callback;
+	msg.callback = (scheduler_msg_process_fn_t)callback;
 	msg.bodyptr = user_data;
 	msg.bodyval = 0;
 
@@ -698,3 +708,5 @@ QDF_STATUS scheduler_post_message_debug(QDF_MODULE_ID src_id,
 
 	return status;
 }
+
+qdf_export_symbol(scheduler_post_message_debug);

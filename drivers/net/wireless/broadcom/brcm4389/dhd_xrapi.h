@@ -32,4 +32,28 @@ dhd_tsf_gsync_handler(dhd_pub_t *dhd, const wl_event_msg_t *event, void *event_d
 #endif /* TSF_GSYNC */
 extern void
 dhd_xrapi_eot_handler(dhd_pub_t *dhdp, void * pktbuf);
+
+#ifdef QFLUSH_LOG
+
+#include <bcmmsgbuf.h>
+#define MAX_TXSTATUS_HISTORY 30u
+#define MAX_TXSTATUS_NG 27u
+
+extern int
+dhd_xrapi_qflushlog_detach(dhd_pub_t *dhdp);
+extern int
+dhd_xrapi_qflushlog_attach(dhd_pub_t *dhdp);
+extern void
+dhd_msgbuf_txstatus_histo(dhd_pub_t *dhd, host_txbuf_cmpl_t * txstatus);
+#endif /* QFLUSH_LOG */
+
+extern int
+dhd_xrapi_softap_psmode_handler(dhd_pub_t *dhd, const wl_event_msg_t *event);
+#if defined(DHD_MAGIC_PKT_FILTER)
+extern int
+dhd_xrapi_install_wake_pkt_filter(dhd_pub_t *dhd);
+extern int
+dhd_xrapi_enable_wake_pkt_filter(dhd_pub_t *dhd, bool enable);
+#endif /* DHD_MAGIC_PKT_FILTER */
+
 #endif  /* _dhd_xrapi_h_ */

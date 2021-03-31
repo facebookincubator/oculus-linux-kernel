@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -134,7 +134,7 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 	struct CE_handle *ce_send_hdl = send_pipe_info->ce_hdl;
 	qdf_dma_addr_t CE_request, CE_response = 0;
 	struct BMI_transaction *transaction = NULL;
-	int status = QDF_STATUS_SUCCESS;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	struct HIF_CE_pipe_info *recv_pipe_info =
 		&(hif_state->pipe_info[BMI_CE_NUM_TO_HOST]);
 	struct CE_handle *ce_recv = recv_pipe_info->ce_hdl;
@@ -221,8 +221,7 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 	if (qdf_semaphore_acquire_timeout
 		       (&transaction->bmi_transaction_sem,
 			HIF_EXCHANGE_BMI_MSG_TIMEOUT)) {
-		HIF_ERROR("%s: Fatal error, BMI transaction timeout. Please check the HW interface!!",
-			  __func__);
+		hif_err("BMI transaction timeout. Please check the HW interface!!");
 		qdf_mem_free(transaction);
 		return QDF_STATUS_E_TIMEOUT;
 	}
@@ -239,8 +238,7 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 			    &completed_nbytes, &id,
 			    &flags) != QDF_STATUS_SUCCESS) {
 			if (i++ > BMI_RSP_TO_MILLISEC) {
-				HIF_ERROR("%s:error, can't get bmi response",
-					__func__);
+				hif_err("Can't get bmi response");
 				status = QDF_STATUS_E_BUSY;
 				break;
 			}

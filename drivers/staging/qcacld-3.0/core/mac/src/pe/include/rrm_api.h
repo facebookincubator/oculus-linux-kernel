@@ -35,7 +35,15 @@
 
 QDF_STATUS rrm_initialize(struct mac_context *mac);
 
-QDF_STATUS rrm_cleanup(struct mac_context *mac);
+/**
+ * rrm_cleanup  - cleanup RRM measurement related data for the measurement
+ * index
+ * @mac: Pointer to mac context
+ * @idx: Measurement index
+ *
+ * Return: None
+ */
+void rrm_cleanup(struct mac_context *mac, uint8_t idx);
 
 QDF_STATUS rrm_process_link_measurement_request(struct mac_context *mac,
 						uint8_t *pRxPacketInfo,
@@ -81,6 +89,24 @@ rrm_process_neighbor_report_req(struct mac_context *mac,
 QDF_STATUS
 rrm_process_beacon_report_xmit(struct mac_context *mac_ctx,
 			       tpSirBeaconReportXmitInd beacon_xmit_ind);
+
+/**
+ * rrm_reject_req - Reject rrm request
+ * @radiomes_report: radio measurement report
+ * @rrm_req: Array of Measurement request IEs
+ * @num_report: Num of report
+ * @index: Measurement index
+ * @measurement_type: Measurement Type
+ *
+ * Reject the Radio Resource Measurement request, if one is
+ * already in progress
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS rrm_reject_req(tpSirMacRadioMeasureReport *radiomes_report,
+			  tDot11fRadioMeasurementRequest *rrm_req,
+			  uint8_t *num_report, uint8_t index,
+			  uint8_t measurement_type);
 
 void lim_update_rrm_capability(struct mac_context *mac_ctx,
 			       struct join_req *join_req);

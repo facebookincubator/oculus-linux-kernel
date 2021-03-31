@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -334,33 +334,79 @@ ol_tx_tid(
 static inline
 struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
 						struct ol_txrx_vdev_t *vdev,
+						uint8_t *dest_addr,
 						uint8_t *peer_id)
 {
 	struct ol_txrx_peer_t *peer = NULL;
+	uint8_t zero_mac_addr[QDF_MAC_ADDR_SIZE] = { 0, 0, 0, 0, 0, 0 };
+	enum peer_debug_id_type id_type = PEER_DEBUG_ID_OL_INTERNAL;
+
+	struct ol_txrx_peer_t *(*find_peer)(struct ol_txrx_pdev_t *pdev,
+					    uint8_t *peer_mac_addr,
+					    int mac_addr_is_aligned,
+					    u8 check_valid,
+					    enum peer_debug_id_type dbg_id)
+		= ol_txrx_peer_find_hash_find_get_ref;
 
 	if (vdev->hlTdlsFlag) {
-		peer = ol_txrx_peer_find_hash_find_get_ref(pdev,
-					vdev->hl_tdls_ap_mac_addr.raw, 0, 1,
-					PEER_DEBUG_ID_OL_INTERNAL);
+		peer = find_peer(pdev, vdev->hl_tdls_ap_mac_addr.raw,
+				 0, 1, id_type);
 
-		if (peer &&  (peer->peer_ids[0] == HTT_INVALID_PEER_ID)) {
-			ol_txrx_peer_release_ref(peer,
-						 PEER_DEBUG_ID_OL_INTERNAL);
+		if (peer && (peer->peer_ids[0] == HTT_INVALID_PEER_ID)) {
+			ol_txrx_peer_release_ref(peer, id_type);
 			peer = NULL;
 		} else {
-			if (peer)
+			if (peer) {
 				*peer_id = peer->local_id;
+				return peer;
+			}
 		}
 	}
-	if (!peer)
-		peer = ol_txrx_assoc_peer_find(vdev);
 
+	/* Packets destined to TDLS Peer or AP with 'No TDLS Link'.
+	 * Optimized to directly get the peer based on 'dest_addr'
+	 */
+	if (vdev->last_real_peer &&
+	    !qdf_mem_cmp(vdev->last_real_peer->mac_addr.raw,
+			 dest_addr, QDF_MAC_ADDR_SIZE)) {
+		ol_txrx_peer_get_ref(vdev->last_real_peer, id_type);
+		*peer_id = vdev->last_real_peer->local_id;
+		peer = vdev->last_real_peer;
+	} else {
+		/* packets destined for other peers or AP with TDLS Link */
+		if (vdev->last_real_peer &&
+		    !qdf_mem_cmp(vdev->hl_tdls_ap_mac_addr.raw,
+				 zero_mac_addr,
+				 QDF_MAC_ADDR_SIZE)) {
+		/* With No TDLS Link return last_real_peer for both AP
+		 * and other bss peer
+		 */
+			ol_txrx_peer_get_ref(vdev->last_real_peer, id_type);
+			*peer_id = vdev->last_real_peer->local_id;
+			peer = vdev->last_real_peer;
+		} else { /* packet destined for other peers and AP when
+			  * STA has TDLS link
+			  */
+			peer = find_peer(pdev, vdev->hl_tdls_ap_mac_addr.raw,
+					 0, 1, id_type);
+
+			if (peer &&
+			    (peer->peer_ids[0] == HTT_INVALID_PEER_ID)) {
+				ol_txrx_peer_release_ref(peer, id_type);
+				peer = NULL;
+			} else {
+				if (peer)
+					*peer_id = peer->local_id;
+			}
+		}
+	}
 	return peer;
 }
 
 #else
 static struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
 						struct ol_txrx_vdev_t *vdev,
+						uint8_t *dest_addr,
 						uint8_t *peer_id)
 {
 	struct ol_txrx_peer_t *peer = NULL;
@@ -385,7 +431,7 @@ ol_tx_classify(
 	A_UINT8 tid;
 	u_int8_t peer_id;
 
-	TX_SCHED_DEBUG_PRINT("Enter %s\n", __func__);
+	TX_SCHED_DEBUG_PRINT("Enter");
 	dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
 	if (unlikely(!dest_addr)) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX,
@@ -410,9 +456,9 @@ ol_tx_classify(
 			if (!peer) {
 				QDF_TRACE(QDF_MODULE_ID_TXRX,
 					  QDF_TRACE_LEVEL_ERROR,
-					  "Error: STA %pK ("QDF_MAC_ADDR_STR") trying to send bcast DA tx data frame w/o association\n",
+					  "Error: STA %pK ("QDF_MAC_ADDR_FMT") trying to send bcast DA tx data frame w/o association\n",
 					  vdev,
-					  QDF_MAC_ADDR_ARRAY(vdev->mac_addr.raw));
+					  QDF_MAC_ADDR_REF(vdev->mac_addr.raw));
 				return NULL; /* error */
 			} else if ((peer->security[
 				OL_TXRX_PEER_SECURITY_MULTICAST].sec_type
@@ -457,9 +503,9 @@ ol_tx_classify(
 			if (!peer) {
 				QDF_TRACE(QDF_MODULE_ID_TXRX,
 					  QDF_TRACE_LEVEL_ERROR,
-					  "Error: vdev %pK ("QDF_MAC_ADDR_STR") trying to send bcast/mcast, but no self-peer found\n",
+					  "Error: vdev %pK ("QDF_MAC_ADDR_FMT") trying to send bcast/mcast, but no self-peer found\n",
 					  vdev,
-					  QDF_MAC_ADDR_ARRAY(vdev->mac_addr.raw));
+					  QDF_MAC_ADDR_REF(vdev->mac_addr.raw));
 				return NULL; /* error */
 			}
 		}
@@ -503,7 +549,9 @@ ol_tx_classify(
 			 * then the frame is either for the AP itself, or is
 			 * supposed to be sent to the AP for forwarding.
 			 */
-			peer = ol_tx_tdls_peer_find(pdev, vdev, &peer_id);
+			peer = ol_tx_tdls_peer_find(pdev, vdev,
+						    dest_addr,
+						    &peer_id);
 		} else {
 			peer = ol_txrx_peer_find_hash_find_get_ref(pdev,
 								   dest_addr,
@@ -517,14 +565,12 @@ ol_tx_classify(
 			 * associated peer. It is illegitimate to send unicast
 			 * data if there is no peer to send it to.
 			 */
-			QDF_TRACE(QDF_MODULE_ID_TXRX,
-				  QDF_TRACE_LEVEL_ERROR,
-				  "Error: vdev %pK ("QDF_MAC_ADDR_STR") trying to send unicast tx data frame to an unknown peer\n",
-				  vdev,
-				  QDF_MAC_ADDR_ARRAY(vdev->mac_addr.raw));
+			ol_txrx_err_rl("Error: vdev %pK (" QDF_MAC_ADDR_FMT ") trying to send unicast tx data frame to an unknown peer",
+				       vdev,
+				       QDF_MAC_ADDR_REF(vdev->mac_addr.raw));
 			return NULL; /* error */
 		}
-		TX_SCHED_DEBUG_PRINT("Peer found\n");
+		TX_SCHED_DEBUG_PRINT("Peer found");
 		if (!peer->qos_capable) {
 			tid = OL_TX_NON_QOS_TID;
 		} else if ((peer->security[
@@ -598,7 +644,7 @@ ol_tx_classify(
 	/* Update Tx Queue info */
 	tx_desc->txq = txq;
 
-	TX_SCHED_DEBUG_PRINT("Leave %s\n", __func__);
+	TX_SCHED_DEBUG_PRINT("Leave");
 	return txq;
 }
 
@@ -615,7 +661,7 @@ ol_tx_classify_mgmt(
 	A_UINT8 *dest_addr;
 	union ol_txrx_align_mac_addr_t local_mac_addr_aligned, *mac_addr;
 
-	TX_SCHED_DEBUG_PRINT("Enter %s\n", __func__);
+	TX_SCHED_DEBUG_PRINT("Enter");
 	dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
 	if (unlikely(!dest_addr)) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX,
@@ -713,7 +759,7 @@ ol_tx_classify_mgmt(
 	/* Update Tx Queue info */
 	tx_desc->txq = txq;
 
-	TX_SCHED_DEBUG_PRINT("Leave %s\n", __func__);
+	TX_SCHED_DEBUG_PRINT("Leave");
 	return txq;
 }
 

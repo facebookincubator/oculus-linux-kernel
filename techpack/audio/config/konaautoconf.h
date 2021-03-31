@@ -2,6 +2,8 @@
 /* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
+#define CONFIG_AUDIO_EXT_CLK_UP 1
+#define CONFIG_PINCTRL_LPI 1
 #define CONFIG_MSM_CDC_PINCTRL 1
 #define CONFIG_MSM_QDSP6_APRV2_RPMSG 1
 #define CONFIG_SND_SOC_MSM_QDSP6V2_INTF 1

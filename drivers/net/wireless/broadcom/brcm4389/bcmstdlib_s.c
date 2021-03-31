@@ -73,7 +73,7 @@
  * than RSIZE_MAX, writes destsz zero bytes into the dest object.
  */
 int
-memmove_s(void *dest, size_t destsz, const void *src, size_t n)
+BCMPOSTTRAPFN(memmove_s)(void *dest, size_t destsz, const void *src, size_t n)
 {
 	int err = BCME_OK;
 

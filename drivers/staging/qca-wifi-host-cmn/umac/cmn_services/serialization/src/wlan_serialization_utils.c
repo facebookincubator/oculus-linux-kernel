@@ -157,9 +157,26 @@ QDF_STATUS wlan_serialization_cleanup_vdev_timers(
 	struct wlan_serialization_timer *ser_timer;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	uint32_t i = 0;
+	struct wlan_objmgr_pdev *pdev = NULL;
+	struct wlan_objmgr_psoc *psoc = NULL;
 
-	psoc_ser_obj = wlan_serialization_get_psoc_obj(
-			wlan_vdev_get_psoc(vdev));
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		QDF_BUG(0);
+		ser_err("pdev is null");
+		status = QDF_STATUS_E_FAILURE;
+		goto error;
+	}
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc) {
+		QDF_BUG(0);
+		ser_err("psoc is null");
+		status = QDF_STATUS_E_FAILURE;
+		goto error;
+	}
+
+	psoc_ser_obj = wlan_serialization_get_psoc_obj(psoc);
 
 	if (!psoc_ser_obj) {
 		ser_err("Invalid psoc_ser_obj");
@@ -462,7 +479,7 @@ wlan_serialization_remove_cmd_from_queue(
 		goto error;
 
 	if (!queue || wlan_serialization_list_empty(queue)) {
-		ser_err("Empty queue");
+		ser_debug("Empty queue");
 		goto error;
 	}
 
@@ -757,6 +774,30 @@ bool wlan_serialization_match_cmd_pdev(qdf_list_node_t *nnode,
 	return match_found;
 }
 
+bool wlan_serialization_match_cmd_blocking(
+		qdf_list_node_t *nnode,
+		enum wlan_serialization_node node_type)
+{
+	struct wlan_serialization_command_list *cmd_list = NULL;
+	bool match_found = false;
+
+	if (node_type == WLAN_SER_PDEV_NODE)
+		cmd_list =
+			qdf_container_of(nnode,
+					 struct wlan_serialization_command_list,
+					 pdev_node);
+	else
+		cmd_list =
+			qdf_container_of(nnode,
+					 struct wlan_serialization_command_list,
+					 vdev_node);
+
+	if (cmd_list->cmd.is_blocking)
+		match_found = true;
+
+	return match_found;
+}
+
 qdf_list_node_t *
 wlan_serialization_find_cmd(qdf_list_t *queue,
 			    enum wlan_serialization_match_type match_type,
@@ -860,4 +901,16 @@ wlan_serialization_destroy_lock(qdf_spinlock_t *lock)
 	qdf_spinlock_destroy(lock);
 
 	return QDF_STATUS_SUCCESS;
+}
+
+bool wlan_serialization_any_vdev_cmd_active(
+		struct wlan_serialization_pdev_queue *pdev_queue)
+{
+	uint32_t vdev_bitmap_size;
+
+	vdev_bitmap_size =
+		(QDF_CHAR_BIT * sizeof(pdev_queue->vdev_active_cmd_bitmap));
+
+	return !qdf_bitmap_empty(pdev_queue->vdev_active_cmd_bitmap,
+				 vdev_bitmap_size);
 }

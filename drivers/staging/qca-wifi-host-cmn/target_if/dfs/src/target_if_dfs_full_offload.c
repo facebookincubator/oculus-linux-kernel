@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -33,7 +33,6 @@
 
 #if defined(QCA_SUPPORT_AGILE_DFS)
 #include <wlan_mlme_dispatcher.h>
-#define QUICK_OCAC_MODE 0
 #endif
 /**
  * target_if_dfs_cac_complete_event_handler() - CAC complete indication.
@@ -257,10 +256,10 @@ static int target_if_dfs_radar_detection_event_handler(
  * for full offload.
  * @psoc: Pointer to psoc object.
  *
- * Return: 0 on successful registration.
+ * Return: QDF_STATUS_SUCCESS on successful registration.
  */
 #if defined(QCA_SUPPORT_AGILE_DFS)
-static int target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
+static QDF_STATUS target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
 {
 	return wmi_unified_register_event(
 			get_wmi_unified_hdl_from_psoc(psoc),
@@ -268,9 +267,9 @@ static int target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
 			target_if_dfs_ocac_complete_event_handler);
 }
 #else
-static int target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
+static QDF_STATUS target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
 {
-	return 0;
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 
@@ -278,7 +277,7 @@ static int target_if_dfs_reg_ocac_event(struct wlan_objmgr_psoc *psoc)
 QDF_STATUS target_if_dfs_reg_offload_events(
 		struct wlan_objmgr_psoc *psoc)
 {
-	int ret1, ret2, ret3;
+	QDF_STATUS ret1, ret2, ret3;
 
 	ret1 = wmi_unified_register_event(
 			get_wmi_unified_hdl_from_psoc(psoc),
@@ -295,7 +294,8 @@ QDF_STATUS target_if_dfs_reg_offload_events(
 	ret3 = target_if_dfs_reg_ocac_event(psoc);
 	target_if_debug("wmi_vdev_ocac_complete_event_id ret=%d", ret3);
 
-	if (ret1 || ret2 || ret3)
+	if (QDF_IS_STATUS_ERROR(ret1) || QDF_IS_STATUS_ERROR(ret2) ||
+	    QDF_IS_STATUS_ERROR(ret3))
 		return QDF_STATUS_E_FAILURE;
 	else
 		return QDF_STATUS_SUCCESS;
@@ -344,7 +344,7 @@ free_vdevref:
 }
 
 QDF_STATUS target_send_agile_ch_cfg_cmd(struct wlan_objmgr_pdev *pdev,
-					uint8_t *ch_freq)
+					struct dfs_agile_cac_params *adfs_param)
 {
 	wmi_unified_t wmi_handle;
 	struct vdev_adfs_ch_cfg_params param;
@@ -372,12 +372,13 @@ QDF_STATUS target_send_agile_ch_cfg_cmd(struct wlan_objmgr_pdev *pdev,
 
 	qdf_mem_set(&param, sizeof(param), 0);
 	param.vdev_id = wlan_vdev_get_id(vdev);
-	param.ocac_mode = QUICK_OCAC_MODE;
-	param.min_duration_ms = 60000;
-	param.max_duration_ms = 0;
-	param.chan_freq = *ch_freq;
-	param.chan_width = wlan_vdev_get_ch_width(vdev);
-	param.center_freq = *ch_freq;
+	param.ocac_mode = adfs_param->ocac_mode;
+	param.min_duration_ms = adfs_param->min_precac_timeout;
+	param.max_duration_ms = adfs_param->max_precac_timeout;
+	param.chan_freq = adfs_param->precac_center_freq_1;
+	param.chan_width = adfs_param->precac_chwidth;
+	param.center_freq1 = adfs_param->precac_center_freq_1;
+	param.center_freq2 = adfs_param->precac_center_freq_2;
 
 	status = wmi_unified_send_vdev_adfs_ch_cfg_cmd(wmi_handle, &param);
 	if (QDF_IS_STATUS_ERROR(status))
@@ -390,8 +391,8 @@ free_vdevref:
 }
 #endif
 
-#if (defined(CONFIG_MCL) || defined(QCA_WIFI_QCA8074) || \
-	defined(QCA_WIFI_QCA6018))
+#if (defined(WLAN_DFS_FULL_OFFLOAD) || defined(QCA_WIFI_QCA8074) || \
+	defined(QCA_WIFI_QCA6018) || defined(QCA_WIFI_QCA5018))
 QDF_STATUS target_process_bang_radar_cmd(
 		struct wlan_objmgr_pdev *pdev,
 		struct dfs_emulate_bang_radar_test_cmd *dfs_unit_test)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,8 +38,6 @@
 
 #include "lim_utils.h"
 #include "lim_send_messages.h"
-#include "lim_sta_hash_api.h"
-
 #include "rrm_api.h"
 
 #ifdef FEATURE_WLAN_DIAG_SUPPORT
@@ -59,7 +57,7 @@ ap_beacon_process_5_ghz(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 	if (!session->htCapability)
 		return;
 
-	if (bcn_struct->channelNumber != session->currentOperChannel)
+	if (bcn_struct->chan_freq != session->curr_op_freq)
 		return;
 
 	/* 11a (non HT) AP  overlaps or */
@@ -102,7 +100,7 @@ ap_beacon_process_24_ghz(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 	/* We are 11G AP. */
 	if ((phy_mode == WNI_CFG_PHY_MODE_11G) &&
 	    (false == session->htCapability)) {
-		if (bcn_struct->channelNumber != session->currentOperChannel)
+		if (bcn_struct->chan_freq != session->curr_op_freq)
 			return;
 
 		tmp_exp = (!bcn_struct->erpPresent &&
@@ -131,7 +129,7 @@ ap_beacon_process_24_ghz(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 	if (!session->htCapability)
 		return;
 
-	if (bcn_struct->channelNumber != session->currentOperChannel)
+	if (bcn_struct->chan_freq != session->curr_op_freq)
 		return;
 
 	tmp_exp = (!bcn_struct->erpPresent && !bcn_struct->HTInfo.present) ||
@@ -223,67 +221,21 @@ ap_beacon_process(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 		  tpUpdateBeaconParams bcn_prm, struct pe_session *session)
 {
 	uint32_t phy_mode;
-	enum band_info rf_band = BAND_UNKNOWN;
+	enum reg_wifi_band rf_band = REG_BAND_UNKNOWN;
 	/* Get RF band from session */
 	rf_band = session->limRFBand;
 
 	lim_get_phy_mode(mac_ctx, &phy_mode, session);
 
-	if (BAND_5G == rf_band)
+	if (REG_BAND_5G == rf_band)
 		ap_beacon_process_5_ghz(mac_ctx, rx_pkt_info, bcn_struct,
 					bcn_prm, session, phy_mode);
-	else if (BAND_2G == rf_band)
+	else if (REG_BAND_2G == rf_band)
 		ap_beacon_process_24_ghz(mac_ctx, rx_pkt_info, bcn_struct,
 					 bcn_prm, session, phy_mode);
 }
 
 /* -------------------------------------------------------------------- */
-
-/**
- * __sch_beacon_process_no_session
- *
- * FUNCTION:
- * Process the received beacon frame when
- *  -- Station is not scanning
- *  -- No corresponding session is found
- *
- * LOGIC:
- *        Following scenarios exist when Session Does not exist:
- *             * IBSS Beacons, when IBSS session already exists with same SSID,
- *                but from STA which has not yet joined and has a different BSSID.
- *                - invoke lim_handle_ibs_scoalescing with the session context of existing IBSS session.
- *
- *             * IBSS Beacons when IBSS session does not exist, only Infra or BT-AMP session exists,
- *                then save the beacon in the scan results and throw it away.
- *
- *             * Infra Beacons
- *                - beacons received when no session active
- *                    should not come here, it should be handled as part of scanning,
- *                    else they should not be getting received, should update scan results and drop it if that happens.
- *                - beacons received when IBSS session active:
- *                    update scan results and drop it.
- *                - beacons received when Infra session(STA) is active:
- *                    update scan results and drop it
- *                - beacons received when BT-STA session is active:
- *                    update scan results and drop it.
- *                - beacons received when Infra/BT-STA  or Infra/IBSS is active.
- *                    update scan results and drop it.
- *
-
- */
-static void __sch_beacon_process_no_session(struct mac_context *mac,
-					    tpSchBeaconStruct pBeacon,
-					    uint8_t *pRxPacketInfo)
-{
-	struct pe_session *pe_session = NULL;
-
-	pe_session = lim_is_ibss_session_active(mac);
-	if (pe_session) {
-		lim_handle_ibss_coalescing(mac, pBeacon, pRxPacketInfo,
-					   pe_session);
-	}
-	return;
-}
 
 /**
  * get_operating_channel_width() - Get operating channel width
@@ -316,14 +268,11 @@ static tSirMacHTChannelWidth get_operating_channel_width(tpDphHashNode stads)
 }
 
 /*
- * sch_bcn_process_sta() - Process the received beacon frame for sta,
- * bt_amp_sta
- *
+ * sch_bcn_process_sta() - Process the received beacon frame for sta
  * @mac_ctx:        mac_ctx
  * @bcn:            beacon struct
  * @rx_pkt_info:    received packet info
  * @session:        pe session pointer
- * @bss_idx:         bss index
  * @beaconParams:   update beacon params
  * @sendProbeReq:   out flag to indicate if probe rsp is to be sent
  * @pMh:            mac header
@@ -336,7 +285,7 @@ static bool
 sch_bcn_process_sta(struct mac_context *mac_ctx,
 			       tpSchBeaconStruct bcn,
 			       uint8_t *rx_pkt_info,
-			       struct pe_session *session, uint8_t *bss_idx,
+			       struct pe_session *session,
 			       tUpdateBeaconParams *beaconParams,
 			       uint8_t *sendProbeReq, tpSirMacMgmtHdr pMh)
 {
@@ -353,10 +302,9 @@ sch_bcn_process_sta(struct mac_context *mac_ctx,
 	 * This is the Beacon received from the AP  we're currently associated
 	 * with. Check if there are any changes in AP's capabilities
 	 */
-	if ((uint8_t) bcn->channelNumber != session->currentOperChannel) {
-		pe_err("Channel Change from %d --> %d - Ignoring beacon!",
-		       session->currentOperChannel,
-		       bcn->channelNumber);
+	if (bcn->chan_freq != session->curr_op_freq) {
+		pe_err("Channel Change freq from %d --> %d - Ignoring beacon!",
+		       session->curr_op_freq, bcn->chan_freq);
 		return false;
 	}
 
@@ -370,11 +318,7 @@ sch_bcn_process_sta(struct mac_context *mac_ctx,
 	}
 
 	lim_detect_change_in_ap_capabilities(mac_ctx, bcn, session);
-	if (lim_get_sta_hash_bssidx(mac_ctx, DPH_STA_HASH_INDEX_PEER, bss_idx,
-				    session) != QDF_STATUS_SUCCESS)
-		return false;
-
-	beaconParams->bss_idx = *bss_idx;
+	beaconParams->bss_idx = session->vdev_id;
 	qdf_mem_copy((uint8_t *) &session->lastBeaconTimeStamp,
 			(uint8_t *) bcn->timeStamp, sizeof(uint64_t));
 	session->currentBssBeaconCnt++;
@@ -447,7 +391,7 @@ sch_bcn_process_sta(struct mac_context *mac_ctx,
 					session->gLimEdcaParams, session);
 				lim_send_edca_params(mac_ctx,
 					session->gLimEdcaParamsActive,
-					sta->bssId, false);
+					session->vdev_id, false);
 			} else {
 				pe_err("Self Entry missing in Hash Table");
 			}
@@ -487,7 +431,7 @@ static void update_nss(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 		sta_ds->vhtSupportedRxNss =
 			beacon->OperatingMode.rxNSS + 1;
 		lim_set_nss_change(mac_ctx, session_entry,
-			sta_ds->vhtSupportedRxNss, sta_ds->staIndex,
+			sta_ds->vhtSupportedRxNss,
 			mgmt_hdr->sa);
 	}
 }
@@ -580,8 +524,8 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 			((oper_mode != bcn->OperatingMode.chanWidth) ||
 			(sta_ds->vhtSupportedRxNss !=
 			(bcn->OperatingMode.rxNSS + 1)))) {
-			pe_debug("received OpMode Chanwidth %d, staIdx = %d",
-			       bcn->OperatingMode.chanWidth, sta_ds->staIndex);
+			pe_debug("received OpMode Chanwidth %d",
+				 bcn->OperatingMode.chanWidth);
 			pe_debug("MAC - %0x:%0x:%0x:%0x:%0x:%0x",
 			       mac_hdr->sa[0], mac_hdr->sa[1],
 			       mac_hdr->sa[2], mac_hdr->sa[3],
@@ -622,7 +566,7 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 				ch_width = eHT_CHANNEL_WIDTH_20MHZ;
 			}
 			lim_check_vht_op_mode_change(mac_ctx, session,
-				ch_width, sta_ds->staIndex, mac_hdr->sa);
+				ch_width, mac_hdr->sa);
 			update_nss(mac_ctx, sta_ds, bcn, session, mac_hdr);
 		}
 		return;
@@ -649,8 +593,8 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 
 	if (!skip_opmode_update &&
 	    (oper_mode != bcn->VHTOperation.chanWidth)) {
-		pe_debug("received VHTOP CHWidth %d staIdx = %d",
-		       bcn->VHTOperation.chanWidth, sta_ds->staIndex);
+		pe_debug("received VHTOP CHWidth %d",
+			 bcn->VHTOperation.chanWidth);
 		pe_debug("MAC - %0x:%0x:%0x:%0x:%0x:%0x",
 		       mac_hdr->sa[0], mac_hdr->sa[1],
 		       mac_hdr->sa[2], mac_hdr->sa[3],
@@ -690,41 +634,23 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 			}
 		}
 		lim_check_vht_op_mode_change(mac_ctx, session, ch_width,
-						sta_ds->staIndex, mac_hdr->sa);
+						mac_hdr->sa);
 	}
 }
 
-/*
- * sch_bcn_process_sta_ibss() - Process the received beacon frame
- * for sta, bt_amp_sta and ibss
- *
- * @mac_ctx:        mac_ctx
- * @bcn:            beacon struct
- * @rx_pkt_info:    received packet info
- * @session:        pe session pointer
- * @bss_idx:         bss index
- * @beaconParams:   update beacon params
- * @sendProbeReq:   out flag to indicate if probe rsp is to be sent
- * @pMh:            mac header
- *
- * Process the received beacon frame for sta and ibss
- *
- * Return: void
- */
 static void
-sch_bcn_process_sta_ibss(struct mac_context *mac_ctx,
-				    tpSchBeaconStruct bcn,
-				    uint8_t *rx_pkt_info,
-				    struct pe_session *session,
-				    uint8_t *bss_idx,
-				    tUpdateBeaconParams *beaconParams,
-				    uint8_t *sendProbeReq, tpSirMacMgmtHdr pMh)
+sch_bcn_process_sta_opmode(struct mac_context *mac_ctx,
+			    tpSchBeaconStruct bcn,
+			    uint8_t *rx_pkt_info,
+			    struct pe_session *session,
+			    tUpdateBeaconParams *beaconParams,
+			    uint8_t *sendProbeReq, tpSirMacMgmtHdr pMh)
 {
 	tpDphHashNode sta = NULL;
 	uint16_t aid;
 	uint8_t cb_mode;
 
-	if (CHAN_ENUM_14 >= session->currentOperChannel) {
+	if (wlan_reg_is_24ghz_ch_freq(session->curr_op_freq)) {
 		if (session->force_24ghz_in_ht20)
 			cb_mode = WNI_CFG_CHANNEL_BONDING_MODE_DISABLE;
 		else
@@ -735,8 +661,7 @@ sch_bcn_process_sta_ibss(struct mac_context *mac_ctx,
 	/* check for VHT capability */
 	sta = dph_lookup_hash_entry(mac_ctx, pMh->sa, &aid,
 			&session->dph.dphHashTable);
-	if ((!sta) || ((sta) &&
-					(STA_INVALID_IDX == sta->staIndex)))
+	if ((!sta))
 		return;
 	sch_bcn_update_opmode_change(mac_ctx, sta, session, bcn, pMh,
 				     cb_mode);
@@ -769,66 +694,25 @@ static void get_local_power_constraint_beacon(
 }
 #endif
 
-/*
- * __sch_beacon_process_for_session() - Process the received beacon frame when
- * station is not scanning and corresponding session is found
- *
- *
- * @mac_ctx:        mac_ctx
- * @bcn:            beacon struct
- * @rx_pkt_info:    received packet info
- * @session:        pe session pointer
- *
- * Following scenarios exist when Session exists
- *   IBSS STA receiving beacons from IBSS Peers, who are part of IBSS.
- *     - call lim_handle_ibs_scoalescing with that session context.
- *   Infra STA receiving beacons from AP to which it is connected
- *     - call sch_beacon_processFromAP with that session's context.
- *     - call sch_beacon_processFromAP with that session's context.
- *     (here need to make sure BTAP creates session entry for BT STA)
- *     - just update the beacon count for heart beat purposes for now,
- *       for now, don't process the beacon.
- *   Infra/IBSS both active and receives IBSS beacon:
- *     - call lim_handle_ibs_scoalescing with that session context.
- *   Infra/IBSS both active and receives Infra beacon:
- *     - call sch_beacon_processFromAP with that session's context.
- *        any updates to EDCA parameters will be effective for IBSS as well,
- *        even though no WMM for IBSS ?? Need to figure out how to handle
- *        this scenario.
- *   Infra/BTSTA both active and receive Infra beacon.
- *     - change in EDCA parameters on Infra affect the BTSTA link.
- *        Update the same parameters on BT link
- *   Infra/BTSTA both active and receive BT-AP beacon.
- *     - update beacon cnt for heartbeat
- *   Infra/BTAP both active and receive Infra beacon.
- *     - BT-AP starts advertising BE parameters from Infra AP, if they get
- *       changed.
- *   Infra/BTAP both active and receive BTSTA beacon.
- *       - update beacon cnt for heartbeat
- *
- * Return: void
- */
 static void __sch_beacon_process_for_session(struct mac_context *mac_ctx,
 					     tpSchBeaconStruct bcn,
 					     uint8_t *rx_pkt_info,
 					     struct pe_session *session)
 {
-	uint8_t bss_idx = 0;
 	tUpdateBeaconParams beaconParams;
 	uint8_t sendProbeReq = false;
 	tpSirMacMgmtHdr pMh = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 	int8_t regMax = 0, maxTxPower = 0, local_constraint;
 	struct lim_max_tx_pwr_attr tx_pwr_attr = {0};
+	uint32_t chan_freq = 0;
 
 	qdf_mem_zero(&beaconParams, sizeof(tUpdateBeaconParams));
 	beaconParams.paramChangeBitmap = 0;
 
-	if (LIM_IS_IBSS_ROLE(session)) {
-		lim_handle_ibss_coalescing(mac_ctx, bcn, rx_pkt_info, session);
-	} else if (LIM_IS_STA_ROLE(session)) {
-		if (false == sch_bcn_process_sta(mac_ctx, bcn,
-				rx_pkt_info, session, &bss_idx,
-				&beaconParams, &sendProbeReq, pMh))
+	if (LIM_IS_STA_ROLE(session)) {
+		if (false == sch_bcn_process_sta(mac_ctx, bcn, rx_pkt_info,
+						 session, &beaconParams,
+						 &sendProbeReq, pMh))
 			return;
 	}
 
@@ -838,38 +722,16 @@ static void __sch_beacon_process_for_session(struct mac_context *mac_ctx,
 	 */
 	if (!(session->vhtCapability && (bcn->OperatingMode.present ||
 	   bcn->VHTOperation.present)) && session->htCapability &&
-	   bcn->HTInfo.present && !LIM_IS_IBSS_ROLE(session))
+	   bcn->HTInfo.present)
 		lim_update_sta_run_time_ht_switch_chnl_params(mac_ctx,
-						&bcn->HTInfo, bss_idx, session);
+						&bcn->HTInfo, session);
 
-	if ((LIM_IS_STA_ROLE(session) && !wma_is_csa_offload_enabled())
-	    || LIM_IS_IBSS_ROLE(session)) {
-		/* Channel Switch information element updated */
-		if (bcn->channelSwitchPresent) {
-			/*
-			 * on receiving channel switch announcement from AP,
-			 * delete all TDLS peers before leaving BSS and proceed
-			 * for channel switch
-			 */
-			if (LIM_IS_STA_ROLE(session)) {
-				lim_update_tdls_set_state_for_fw(session,
-								 false);
-				lim_delete_tdls_peers(mac_ctx, session);
-			}
-			lim_update_channel_switch(mac_ctx, bcn, session);
-		} else if (session->gLimSpecMgmt.dot11hChanSwState ==
-				eLIM_11H_CHANSW_RUNNING) {
-			lim_cancel_dot11h_channel_switch(mac_ctx, session);
-		}
-	}
-	if (LIM_IS_STA_ROLE(session)
-	    || LIM_IS_IBSS_ROLE(session))
-		sch_bcn_process_sta_ibss(mac_ctx, bcn,
-					rx_pkt_info, session, &bss_idx,
-					&beaconParams, &sendProbeReq, pMh);
+	if (LIM_IS_STA_ROLE(session))
+		sch_bcn_process_sta_opmode(mac_ctx, bcn, rx_pkt_info, session,
+					    &beaconParams, &sendProbeReq, pMh);
 	/* Obtain the Max Tx power for the current regulatory  */
-	regMax = lim_get_regulatory_max_transmit_power(
-				mac_ctx, session->currentOperChannel);
+	regMax = wlan_reg_get_channel_reg_power_for_freq(
+				mac_ctx->pdev, session->curr_op_freq);
 
 	local_constraint = regMax;
 
@@ -886,10 +748,7 @@ static void __sch_beacon_process_for_session(struct mac_context *mac_ctx,
 
 	tx_pwr_attr.reg_max = regMax;
 	tx_pwr_attr.ap_tx_power = local_constraint;
-	tx_pwr_attr.ini_tx_power = mac_ctx->mlme_cfg->power.max_tx_power;
-	tx_pwr_attr.frequency =
-			wlan_reg_get_channel_freq(mac_ctx->pdev,
-						  session->currentOperChannel);
+	tx_pwr_attr.frequency = session->curr_op_freq;
 
 	maxTxPower = lim_get_max_tx_power(mac_ctx, &tx_pwr_attr);
 
@@ -904,12 +763,12 @@ static void __sch_beacon_process_for_session(struct mac_context *mac_ctx,
 	}
 
 	/* Indicate to LIM that Beacon is received */
-	if (bcn->HTInfo.present)
-		lim_received_hb_handler(mac_ctx,
-				(uint8_t) bcn->HTInfo.primaryChannel, session);
-	else
-		lim_received_hb_handler(mac_ctx, (uint8_t) bcn->channelNumber,
-				session);
+	if (bcn->HTInfo.present) {
+		chan_freq = wlan_reg_legacy_chan_to_freq(mac_ctx->pdev,
+							 bcn->HTInfo.primaryChannel);
+		lim_received_hb_handler(mac_ctx, chan_freq, session);
+	} else
+		lim_received_hb_handler(mac_ctx, bcn->chan_freq, session);
 
 	/*
 	 * I don't know if any additional IE is required here. Currently, not
@@ -917,7 +776,7 @@ static void __sch_beacon_process_for_session(struct mac_context *mac_ctx,
 	 */
 	if (sendProbeReq)
 		lim_send_probe_req_mgmt_frame(mac_ctx, &session->ssId,
-			session->bssId, session->currentOperChannel,
+			session->bssId, session->curr_op_freq,
 			session->self_mac_addr, session->dot11mode, NULL, NULL);
 
 	if ((false == mac_ctx->sap.SapDfsInfo.is_dfs_cac_timer_running)
@@ -1052,7 +911,7 @@ void sch_beacon_process_for_ap(struct mac_context *mac_ctx,
 	qdf_mem_zero(&bcn_prm, sizeof(tUpdateBeaconParams));
 	bcn_prm.paramChangeBitmap = 0;
 
-	bcn_prm.bss_idx = ap_session->bss_idx;
+	bcn_prm.bss_idx = ap_session->vdev_id;
 
 	if (!ap_session->is_session_obss_color_collision_det_enabled)
 		sch_check_bss_color_ie(mac_ctx, ap_session,
@@ -1093,8 +952,10 @@ void sch_send_beacon_report(struct mac_context *mac_ctx,
 			    struct pe_session *session)
 {
 	struct wlan_beacon_report beacon_report;
+	beacon_report_cb sme_bcn_cb;
 
-	if (!mac_ctx->lim.sme_bcn_rcv_callback)
+	sme_bcn_cb = mac_ctx->lim.sme_bcn_rcv_callback;
+	if (!sme_bcn_cb)
 		return;
 
 	if (!LIM_IS_STA_ROLE(session))
@@ -1108,8 +969,7 @@ void sch_send_beacon_report(struct mac_context *mac_ctx,
 		qdf_mem_copy(&beacon_report.time_stamp,
 			     &beacon_struct->timeStamp, sizeof(qdf_time_t));
 		beacon_report.beacon_interval = beacon_struct->beaconInterval;
-		beacon_report.frequency =
-				cds_chan_to_freq(beacon_struct->channelNumber);
+		beacon_report.frequency = beacon_struct->chan_freq;
 
 		beacon_report.ssid.length = beacon_struct->ssId.length;
 		qdf_mem_copy(&beacon_report.ssid.ssid,
@@ -1123,8 +983,7 @@ void sch_send_beacon_report(struct mac_context *mac_ctx,
 		beacon_report.vdev_id = session->vdev_id;
 
 		/* Send report to upper layer */
-		mac_ctx->lim.sme_bcn_rcv_callback(mac_ctx->hdd_handle,
-						  &beacon_report);
+		sme_bcn_cb(mac_ctx->hdd_handle, &beacon_report);
 	}
 }
 
@@ -1151,6 +1010,8 @@ sch_beacon_process(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 {
 	static tSchBeaconStruct bcn;
 
+	if (!session)
+		return;
 	/* Convert the beacon frame into a structure */
 	if (sir_convert_beacon_frame2_struct(mac_ctx, (uint8_t *) rx_pkt_info,
 		&bcn) != QDF_STATUS_SUCCESS) {
@@ -1158,17 +1019,8 @@ sch_beacon_process(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 		return;
 	}
 
-	/*
-	 * Now process the beacon in the context of the BSS which is
-	 * transmitting the beacons, if one is found
-	 */
-	if (!session) {
-		__sch_beacon_process_no_session(mac_ctx, &bcn, rx_pkt_info);
-	} else {
-		sch_send_beacon_report(mac_ctx, &bcn, session);
-		__sch_beacon_process_for_session(mac_ctx, &bcn, rx_pkt_info,
-						 session);
-	}
+	sch_send_beacon_report(mac_ctx, &bcn, session);
+	__sch_beacon_process_for_session(mac_ctx, &bcn, rx_pkt_info, session);
 }
 
 /**
@@ -1329,7 +1181,7 @@ QDF_STATUS lim_obss_generate_detection_config(struct mac_context *mac_ctx,
 					      struct obss_detection_cfg *cfg)
 {
 	uint32_t phy_mode;
-	enum band_info rf_band = BAND_UNKNOWN;
+	enum reg_wifi_band rf_band = REG_BAND_UNKNOWN;
 	struct obss_detection_cfg *cur_detect;
 
 	if (!mac_ctx || !session || !cfg) {
@@ -1365,7 +1217,7 @@ QDF_STATUS lim_obss_generate_detection_config(struct mac_context *mac_ctx,
 		 cur_detect->obss_ht_mixed_detect_mode,
 		 cur_detect->obss_ht_20mhz_detect_mode);
 
-	if (rf_band == BAND_2G) {
+	if (rf_band == REG_BAND_2G) {
 		if ((phy_mode == WNI_CFG_PHY_MODE_11G ||
 		    session->htCapability) &&
 		    !session->gLim11bParams.protectionEnabled) {
@@ -1427,7 +1279,7 @@ QDF_STATUS lim_obss_generate_detection_config(struct mac_context *mac_ctx,
 				OBSS_OFFLOAD_DETECTION_DISABLED;
 	}
 
-	if ((rf_band == BAND_5G) && session->htCapability) {
+	if ((rf_band == REG_BAND_5G) && session->htCapability) {
 		if (!session->gLim11aParams.protectionEnabled) {
 			if (!session->gLimOverlap11aParams.protectionEnabled)
 				cfg->obss_11a_detect_mode =
@@ -1441,7 +1293,7 @@ QDF_STATUS lim_obss_generate_detection_config(struct mac_context *mac_ctx,
 		}
 	}
 
-	if (((rf_band == BAND_2G) || (rf_band == BAND_5G)) &&
+	if (((rf_band == REG_BAND_2G) || (rf_band == REG_BAND_5G)) &&
 	    session->htCapability) {
 
 		if (!session->gLimHt20Params.protectionEnabled) {
@@ -1560,16 +1412,15 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	bool enable;
 	struct pe_session *session;
 	tUpdateBeaconParams bcn_prm;
-	enum band_info rf_band = BAND_UNKNOWN;
+	enum reg_wifi_band rf_band = REG_BAND_UNKNOWN;
 	struct obss_detection_cfg *cur_detect;
 
-	pe_debug("obss detect ind id %d, reason %d, msk 0x%x, " QDF_MAC_ADDR_STR,
+	pe_debug("obss detect ind id %d, reason %d, msk 0x%x, " QDF_MAC_ADDR_FMT,
 		 obss_detection->vdev_id, obss_detection->reason,
 		 obss_detection->matched_detection_masks,
-		 QDF_MAC_ADDR_ARRAY(obss_detection->matched_bssid_addr));
+		 QDF_MAC_ADDR_REF(obss_detection->matched_bssid_addr));
 
-	session = pe_find_session_by_sme_session_id(mac_ctx,
-						    obss_detection->vdev_id);
+	session = pe_find_session_by_vdev_id(mac_ctx, obss_detection->vdev_id);
 	if (!session) {
 		pe_err("Failed to get session for id %d",
 		       obss_detection->vdev_id);
@@ -1627,7 +1478,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 
 	if (OBSS_DETECTION_IS_11B_AP(detect_masks)) {
 		if (reason != obss_cfg->obss_11b_ap_detect_mode ||
-		    rf_band != BAND_2G)
+		    rf_band != REG_BAND_2G)
 			goto wrong_detection;
 
 		lim_enable11g_protection(mac_ctx, enable, true,
@@ -1636,7 +1487,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	}
 	if (OBSS_DETECTION_IS_11B_STA(detect_masks)) {
 		if (reason != obss_cfg->obss_11b_sta_detect_mode ||
-		    rf_band != BAND_2G)
+		    rf_band != REG_BAND_2G)
 			goto wrong_detection;
 
 		lim_enable11g_protection(mac_ctx, enable, true,
@@ -1645,7 +1496,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	}
 	if (OBSS_DETECTION_IS_11G_AP(detect_masks)) {
 		if (reason != obss_cfg->obss_11g_ap_detect_mode ||
-		    rf_band != BAND_2G)
+		    rf_band != REG_BAND_2G)
 			goto wrong_detection;
 
 		lim_enable_ht_protection_from11g(mac_ctx, enable, true,
@@ -1654,7 +1505,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	}
 	if (OBSS_DETECTION_IS_11A(detect_masks)) {
 		if (reason != obss_cfg->obss_11a_detect_mode ||
-		    rf_band != BAND_5G)
+		    rf_band != REG_BAND_5G)
 			goto wrong_detection;
 
 		lim_update_11a_protection(mac_ctx, enable, true,
@@ -1664,7 +1515,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	if (OBSS_DETECTION_IS_HT_LEGACY(detect_masks)) {
 		/* for 5GHz, we have only 11a detection, which covers legacy */
 		if (reason != obss_cfg->obss_ht_legacy_detect_mode ||
-		    rf_band != BAND_2G)
+		    rf_band != REG_BAND_2G)
 			goto wrong_detection;
 
 		lim_enable_ht_protection_from11g(mac_ctx, enable, true,
@@ -1674,7 +1525,7 @@ QDF_STATUS lim_process_obss_detection_ind(struct mac_context *mac_ctx,
 	if (OBSS_DETECTION_IS_HT_MIXED(detect_masks)) {
 		/* for 5GHz, we have only 11a detection, which covers ht mix */
 		if (reason != obss_cfg->obss_ht_mixed_detect_mode ||
-		    rf_band != BAND_2G)
+		    rf_band != REG_BAND_2G)
 			goto wrong_detection;
 
 		lim_enable_ht_protection_from11g(mac_ctx, enable, true,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,6 +26,8 @@
 #include "target_if.h"
 #include "target_if_pmo.h"
 #include "wmi_unified_api.h"
+#include "qdf_types.h"
+#include "pld_common.h"
 
 #define TGT_WILDCARD_PDEV_ID 0x0
 
@@ -74,7 +76,7 @@ QDF_STATUS target_if_pmo_send_vdev_update_param_req(
 		return QDF_STATUS_E_INVAL;
 	}
 
-	param.if_id = vdev_id;
+	param.vdev_id = vdev_id;
 	param.param_id = param_id;
 	param.param_value = param_value;
 	target_if_debug("set vdev param vdev_id: %d value: %d for param_id: %d",
@@ -112,7 +114,7 @@ QDF_STATUS target_if_pmo_send_vdev_ps_param_req(
 	 * result resume right after suspend (WOW_ENABLE).
 	 */
 	switch (param_id) {
-	case pmo_sta_ps_enable_qpower:
+	case pmo_sta_ps_enable_advanced_power:
 		param_id = WMI_STA_PS_ENABLE_QPOWER;
 		break;
 	case pmo_sta_ps_param_inactivity_time:
@@ -127,7 +129,7 @@ QDF_STATUS target_if_pmo_send_vdev_ps_param_req(
 	}
 
 	sta_ps_param.vdev_id = vdev_id;
-	sta_ps_param.param = param_id;
+	sta_ps_param.param_id = param_id;
 	sta_ps_param.value = param_value;
 	target_if_debug("set vdev param vdev_id: %d value: %d for param_id: %d",
 			vdev_id, param_value, param_id);
@@ -275,6 +277,26 @@ bool target_if_pmo_get_runtime_pm_in_progress(
 	return wmi_get_runtime_pm_inprogress(wmi_handle);
 }
 
+#ifdef HOST_WAKEUP_OVER_QMI
+QDF_STATUS target_if_pmo_psoc_send_host_wakeup_ind(
+		struct wlan_objmgr_psoc *psoc)
+{
+	qdf_device_t qdf_dev;
+	int ret;
+
+	qdf_dev = wlan_psoc_get_qdf_dev(psoc);
+	if (!qdf_dev)
+		return QDF_STATUS_E_INVAL;
+
+	ret = pld_exit_power_save(qdf_dev->dev);
+	if (ret) {
+		target_if_err("Failed to exit power save, ret: %d", ret);
+		return qdf_status_from_os_return(ret);
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+#else
 QDF_STATUS target_if_pmo_psoc_send_host_wakeup_ind(
 		struct wlan_objmgr_psoc *psoc)
 {
@@ -288,6 +310,7 @@ QDF_STATUS target_if_pmo_psoc_send_host_wakeup_ind(
 
 	return wmi_unified_host_wakeup_ind_to_fw_cmd(wmi_handle);
 }
+#endif
 
 QDF_STATUS target_if_pmo_psoc_send_target_resume_req(
 		struct wlan_objmgr_psoc *psoc)

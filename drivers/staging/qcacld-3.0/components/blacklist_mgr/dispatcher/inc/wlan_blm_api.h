@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,19 +28,6 @@
 
 #ifdef FEATURE_BLACKLIST_MGR
 #include "wlan_blm_core.h"
-
-/**
- * wlan_blm_filter_bssid() - Wrapper API to blm_filter_bssid
- * @pdev: pdev object
- * @scan_list: scan list whose results are to filtered out.
- *
- * This API is a wrapper to blm_filter_bssid.
- */
-static inline QDF_STATUS
-wlan_blm_filter_bssid(struct wlan_objmgr_pdev *pdev, qdf_list_t *scan_list)
-{
-	return blm_filter_bssid(pdev, scan_list);
-}
 
 /**
  * wlan_blm_add_bssid_to_reject_list() - Add BSSID to the specific reject list.
@@ -103,12 +90,22 @@ wlan_blm_get_bssid_reject_list(struct wlan_objmgr_pdev *pdev,
 					 reject_ap_type);
 }
 
-#else
-static inline QDF_STATUS
-wlan_blm_filter_bssid(struct wlan_objmgr_pdev *pdev, qdf_list_t *scan_list)
+/**
+ * wlan_blm_get_rssi_blacklist_threshold() - Get the RSSI blacklist threshold
+ * @pdev: pdev object
+ *
+ * This API will get the rssi blacklist threshold value configured via
+ * CFG_BLACKLIST_RSSI_THRESHOLD.
+ *
+ * Return: int32_t (threshold value)
+ */
+static inline int32_t
+wlan_blm_get_rssi_blacklist_threshold(struct wlan_objmgr_pdev *pdev)
 {
-	return QDF_STATUS_SUCCESS;
+	return blm_get_rssi_blacklist_threshold(pdev);
 }
+
+#else
 
 static inline QDF_STATUS
 wlan_blm_add_bssid_to_reject_list(struct wlan_objmgr_pdev *pdev,
@@ -133,5 +130,10 @@ wlan_blm_update_bssid_connect_params(struct wlan_objmgr_pdev *pdev,
 {
 }
 
+static inline int32_t
+wlan_blm_get_rssi_blacklist_threshold(struct wlan_objmgr_pdev *pdev)
+{
+	return 0;
+}
 #endif
 #endif

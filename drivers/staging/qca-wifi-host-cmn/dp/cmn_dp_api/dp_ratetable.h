@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,7 +34,6 @@ enum CMN_BW_TYPES {
 };
 
 #define NUM_SPATIAL_STREAMS 8
-#define SUPPORT_11AX 1
 #define MAX_SPATIAL_STREAMS_SUPPORTED_AT_160MHZ 4
 #define VHT_EXTRA_MCS_SUPPORT
 #define CONFIG_160MHZ_SUPPORT 1
@@ -166,7 +165,7 @@ enum DP_CMN_MODULATION_TYPE dp_getmodulation(
 
 uint32_t
 dp_getrateindex(uint32_t gi, uint16_t mcs, uint8_t nss, uint8_t preamble,
-		uint8_t bw, uint32_t *rix);
+		uint8_t bw, uint32_t *rix, uint16_t *ratecode);
 
 int dp_rate_idx_to_kbps(uint8_t rate_idx, uint8_t gintval);
 

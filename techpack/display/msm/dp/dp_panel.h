@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_PANEL_H_
@@ -132,6 +132,7 @@ struct dp_panel {
 	bool dsc_en;
 	bool fec_en;
 	bool widebus_en;
+	bool dsc_continuous_pps;
 	bool mst_state;
 
 	s64 fec_overhead_fp;

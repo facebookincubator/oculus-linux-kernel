@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,12 +25,26 @@
 #define __REG_SERVICES_PUBLIC_STRUCT_H_
 
 #define REG_SBS_SEPARATION_THRESHOLD 100
+
+#ifdef CONFIG_BAND_6GHZ
+#define REG_MAX_CHANNELS_PER_OPERATING_CLASS        70
+/*
+ * These tx-power macros are present till the 6G regdomains are defined to
+ * support tx-power values for various client types.
+ */
+#define REG_PSD_MAX_TXPOWER_FOR_DEFAULT_CLIENT      (-1) /* dBm */
+#define REG_PSD_MAX_TXPOWER_FOR_SUBORDINATE_CLIENT  5    /* dBm */
+#define REG_EIRP_MAX_TXPOWER_FOR_SUBORDINATE_CLIENT 24   /* dBm */
+#else
 #define REG_MAX_CHANNELS_PER_OPERATING_CLASS  25
+#endif
+
 #define REG_MAX_SUPP_OPER_CLASSES 32
 #define REG_MAX_CHAN_CHANGE_CBKS 30
+#define REG_INVALID_TXPOWER 255
 #define MAX_STA_VDEV_CNT 4
 #define INVALID_VDEV_ID 0xFF
-#define INVALID_CHANNEL_NUM 0xBAD
+#define INVALID_CHANNEL_NUM 0x0
 #define CH_AVOID_MAX_RANGE   4
 #define REG_ALPHA2_LEN 2
 #define MAX_REG_RULES 10
@@ -40,12 +54,14 @@
 #define REGULATORY_CHAN_RADAR        BIT(3)
 #define REGULATORY_CHAN_NO_OFDM      BIT(6)
 #define REGULATORY_CHAN_INDOOR_ONLY  BIT(9)
+#define REGULATORY_CHAN_AFC          BIT(13)
 
 #define REGULATORY_CHAN_NO_HT40      BIT(4)
 #define REGULATORY_CHAN_NO_80MHZ     BIT(7)
 #define REGULATORY_CHAN_NO_160MHZ    BIT(8)
 #define REGULATORY_CHAN_NO_20MHZ     BIT(11)
 #define REGULATORY_CHAN_NO_10MHZ     BIT(12)
+#define REGULATORY_CHAN_INVALID      BIT(14)
 
 #define REGULATORY_PHYMODE_NO11A     BIT(0)
 #define REGULATORY_PHYMODE_NO11B     BIT(1)
@@ -53,6 +69,15 @@
 #define REGULATORY_CHAN_NO11N        BIT(3)
 #define REGULATORY_PHYMODE_NO11AC    BIT(4)
 #define REGULATORY_PHYMODE_NO11AX    BIT(5)
+
+#define BW_5_MHZ      5
+#define BW_10_MHZ     10
+#define BW_20_MHZ     20
+#define BW_25_MHZ     25
+#define BW_40_MHZ     40
+#define BW_80_MHZ     80
+#define BW_160_MHZ    160
+#define BW_40_MHZ     40
 
 /**
  * enum dfs_reg - DFS region
@@ -62,8 +87,12 @@
  * @DFS_MKK_REGION: MKK region
  * @DFS_CN_REGION: China region
  * @DFS_KR_REGION: Korea region
+ * @DFS_MKK_REGION: MKKN region
+ * that supports updated W53 RADAR pattern
+ * detection.
  * @DFS_UNDEF_REGION: Undefined region
  */
+
 enum dfs_reg {
 	DFS_UNINIT_REGION = 0,
 	DFS_FCC_REGION = 1,
@@ -71,6 +100,7 @@ enum dfs_reg {
 	DFS_MKK_REGION = 3,
 	DFS_CN_REGION = 4,
 	DFS_KR_REGION = 5,
+	DFS_MKKN_REGION = 6,
 	DFS_UNDEF_REGION = 0xFFFF,
 };
 
@@ -79,231 +109,16 @@ enum dfs_reg {
  * OP_CLASS_EU- Class corresponds to EU
  * OP_CLASS_JAPAN- Class corresponds to JAPAN
  * OP_CLASS_GLOBAL- Class corresponds to GLOBAL
+ * OP_CLASS_CHINA- Class corresponds to CHINA
  */
 enum op_class_table_num {
 	OP_CLASS_US = 1,
 	OP_CLASS_EU,
 	OP_CLASS_JAPAN,
-	OP_CLASS_GLOBAL
-};
-#ifdef CONFIG_LEGACY_CHAN_ENUM
-
-/**
- * enum channel_enum - channel enumeration
- * @CHAN_ENUM_1:  channel number 1
- * @CHAN_ENUM_2:  channel number 2
- * @CHAN_ENUM_3:  channel number 3
- * @CHAN_ENUM_4:  channel number 4
- * @CHAN_ENUM_5:  channel number 5
- * @CHAN_ENUM_6:  channel number 6
- * @CHAN_ENUM_7:  channel number 7
- * @CHAN_ENUM_8:  channel number 8
- * @CHAN_ENUM_9:  channel number 9
- * @CHAN_ENUM_10:  channel number 10
- * @CHAN_ENUM_11:  channel number 11
- * @CHAN_ENUM_12:  channel number 12
- * @CHAN_ENUM_13:  channel number 13
- * @CHAN_ENUM_14:  channel number 14
- * @CHAN_ENUM_183:  channel number 183
- * @CHAN_ENUM_184:  channel number 184
- * @CHAN_ENUM_185:  channel number 185
- * @CHAN_ENUM_187:  channel number 187
- * @CHAN_ENUM_188:  channel number 188
- * @CHAN_ENUM_189:  channel number 189
- * @CHAN_ENUM_192:  channel number 192
- * @CHAN_ENUM_196:  channel number 196
- * @CHAN_ENUM_36:  channel number 36
- * @CHAN_ENUM_40:  channel number 40
- * @CHAN_ENUM_44:  channel number 44
- * @CHAN_ENUM_48:  channel number 48
- * @CHAN_ENUM_52:  channel number 52
- * @CHAN_ENUM_56:  channel number 56
- * @CHAN_ENUM_60:  channel number 60
- * @CHAN_ENUM_64:  channel number 64
- * @CHAN_ENUM_100:  channel number 100
- * @CHAN_ENUM_104:  channel number 104
- * @CHAN_ENUM_108:  channel number 108
- * @CHAN_ENUM_112:  channel number 112
- * @CHAN_ENUM_116:  channel number 116
- * @CHAN_ENUM_120:  channel number 120
- * @CHAN_ENUM_124:  channel number 124
- * @CHAN_ENUM_128:  channel number 128
- * @CHAN_ENUM_132:  channel number 132
- * @CHAN_ENUM_136:  channel number 136
- * @CHAN_ENUM_140:  channel number 140
- * @CHAN_ENUM_144:  channel number 144
- * @CHAN_ENUM_149:  channel number 149
- * @CHAN_ENUM_153:  channel number 153
- * @CHAN_ENUM_157:  channel number 157
- * @CHAN_ENUM_161:  channel number 161
- * @CHAN_ENUM_165:  channel number 165
- * @CHAN_ENUM_169:  channel number 169
- * @CHAN_ENUM_170:  channel number 170
- * @CHAN_ENUM_171:  channel number 171
- * @CHAN_ENUM_172:  channel number 172
- * @CHAN_ENUM_173:  channel number 173
- * @CHAN_ENUM_174:  channel number 174
- * @CHAN_ENUM_175:  channel number 175
- * @CHAN_ENUM_176:  channel number 176
- * @CHAN_ENUM_177:  channel number 177
- * @CHAN_ENUM_178:  channel number 178
- * @CHAN_ENUM_179:  channel number 179
- * @CHAN_ENUM_180:  channel number 180
- * @CHAN_ENUM_181:  channel number 181
- * @CHAN_ENUM_182:  channel number 182
- * @CHAN_ENUM_183:  channel number 183
- * @CHAN_ENUM_184:  channel number 184
- */
-
-#ifdef WLAN_FEATURE_DSRC
-enum channel_enum {
-	CHAN_ENUM_1,
-	CHAN_ENUM_2,
-	CHAN_ENUM_3,
-	CHAN_ENUM_4,
-	CHAN_ENUM_5,
-	CHAN_ENUM_6,
-	CHAN_ENUM_7,
-	CHAN_ENUM_8,
-	CHAN_ENUM_9,
-	CHAN_ENUM_10,
-	CHAN_ENUM_11,
-	CHAN_ENUM_12,
-	CHAN_ENUM_13,
-	CHAN_ENUM_14,
-
-	CHAN_ENUM_36,
-	CHAN_ENUM_40,
-	CHAN_ENUM_44,
-	CHAN_ENUM_48,
-	CHAN_ENUM_52,
-	CHAN_ENUM_56,
-	CHAN_ENUM_60,
-	CHAN_ENUM_64,
-
-	CHAN_ENUM_100,
-	CHAN_ENUM_104,
-	CHAN_ENUM_108,
-	CHAN_ENUM_112,
-	CHAN_ENUM_116,
-	CHAN_ENUM_120,
-	CHAN_ENUM_124,
-	CHAN_ENUM_128,
-	CHAN_ENUM_132,
-	CHAN_ENUM_136,
-	CHAN_ENUM_140,
-	CHAN_ENUM_144,
-
-	CHAN_ENUM_149,
-	CHAN_ENUM_153,
-	CHAN_ENUM_157,
-	CHAN_ENUM_161,
-	CHAN_ENUM_165,
-
-	CHAN_ENUM_170,
-	CHAN_ENUM_171,
-	CHAN_ENUM_172,
-	CHAN_ENUM_173,
-	CHAN_ENUM_174,
-	CHAN_ENUM_175,
-	CHAN_ENUM_176,
-	CHAN_ENUM_177,
-	CHAN_ENUM_178,
-	CHAN_ENUM_179,
-	CHAN_ENUM_180,
-	CHAN_ENUM_181,
-	CHAN_ENUM_182,
-	CHAN_ENUM_183,
-	CHAN_ENUM_184,
-
-	NUM_CHANNELS,
-
-	MIN_24GHZ_CHANNEL = CHAN_ENUM_1,
-	MAX_24GHZ_CHANNEL = CHAN_ENUM_14,
-	NUM_24GHZ_CHANNELS = (MAX_24GHZ_CHANNEL - MIN_24GHZ_CHANNEL + 1),
-
-	MIN_49GHZ_CHANNEL = INVALID_CHANNEL_NUM,
-	MAX_49GHZ_CHANNEL = INVALID_CHANNEL_NUM - 1,
-	NUM_49GHZ_CHANNELS = MAX_49GHZ_CHANNEL - MIN_49GHZ_CHANNEL + 1,
-
-	MIN_5GHZ_CHANNEL = CHAN_ENUM_36,
-	MAX_5GHZ_CHANNEL = CHAN_ENUM_184,
-	NUM_5GHZ_CHANNELS = (MAX_5GHZ_CHANNEL - MIN_5GHZ_CHANNEL + 1),
-
-	MIN_DSRC_CHANNEL = CHAN_ENUM_170,
-	MAX_DSRC_CHANNEL = CHAN_ENUM_184,
-	NUM_DSRC_CHANNELS = (MAX_DSRC_CHANNEL - MIN_DSRC_CHANNEL + 1),
-
-	INVALID_CHANNEL = 0xBAD,
+	OP_CLASS_GLOBAL,
+	OP_CLASS_CHINA
 };
 
-#else
-enum channel_enum {
-	CHAN_ENUM_1,
-	CHAN_ENUM_2,
-	CHAN_ENUM_3,
-	CHAN_ENUM_4,
-	CHAN_ENUM_5,
-	CHAN_ENUM_6,
-	CHAN_ENUM_7,
-	CHAN_ENUM_8,
-	CHAN_ENUM_9,
-	CHAN_ENUM_10,
-	CHAN_ENUM_11,
-	CHAN_ENUM_12,
-	CHAN_ENUM_13,
-	CHAN_ENUM_14,
-
-	CHAN_ENUM_36,
-	CHAN_ENUM_40,
-	CHAN_ENUM_44,
-	CHAN_ENUM_48,
-	CHAN_ENUM_52,
-	CHAN_ENUM_56,
-	CHAN_ENUM_60,
-	CHAN_ENUM_64,
-
-	CHAN_ENUM_100,
-	CHAN_ENUM_104,
-	CHAN_ENUM_108,
-	CHAN_ENUM_112,
-	CHAN_ENUM_116,
-	CHAN_ENUM_120,
-	CHAN_ENUM_124,
-	CHAN_ENUM_128,
-	CHAN_ENUM_132,
-	CHAN_ENUM_136,
-	CHAN_ENUM_140,
-	CHAN_ENUM_144,
-
-	CHAN_ENUM_149,
-	CHAN_ENUM_153,
-	CHAN_ENUM_157,
-	CHAN_ENUM_161,
-	CHAN_ENUM_165,
-	CHAN_ENUM_169,
-	CHAN_ENUM_173,
-
-	NUM_CHANNELS,
-
-	MIN_24GHZ_CHANNEL = CHAN_ENUM_1,
-	MAX_24GHZ_CHANNEL = CHAN_ENUM_14,
-	NUM_24GHZ_CHANNELS = (MAX_24GHZ_CHANNEL - MIN_24GHZ_CHANNEL + 1),
-
-	MIN_49GHZ_CHANNEL = INVALID_CHANNEL_NUM,
-	MAX_49GHZ_CHANNEL = INVALID_CHANNEL_NUM - 1,
-	NUM_49GHZ_CHANNELS = MAX_49GHZ_CHANNEL - MIN_49GHZ_CHANNEL + 1,
-
-	MIN_5GHZ_CHANNEL = CHAN_ENUM_36,
-
-	MAX_5GHZ_CHANNEL = CHAN_ENUM_173,
-
-	NUM_5GHZ_CHANNELS = (MAX_5GHZ_CHANNEL - MIN_5GHZ_CHANNEL + 1),
-	INVALID_CHANNEL = 0xBAD,
-};
-#endif /* WLAN_FEATURE_DSRC */
-
-#else /* CONFIG_LEGACY_CHAN_ENUM */
 /**
  * enum channel_enum - channel enumeration
  * @CHAN_ENUM_2412: channel with freq 2412
@@ -403,6 +218,66 @@ enum channel_enum {
  * @CHAN_ENUM_5910: channel with freq 5910
  * @CHAN_ENUM_5915: channel with freq 5915
  * @CHAN_ENUM_5920: channel with freq 5920
+ * @CHAN_ENUM_5935: channel with freq 5935
+ * @CHAN_ENUM_5955: channel with freq 5955
+ * @CHAN_ENUM_5975: channel with freq 5975
+ * @CHAN_ENUM_5995: channel with freq 5995
+ * @CHAN_ENUM_6015: channel with freq 6015
+ * @CHAN_ENUM_6035: channel with freq 6035
+ * @CHAN_ENUM_6055: channel with freq 6055
+ * @CHAN_ENUM_6075: channel with freq 6075
+ * @CHAN_ENUM_6095: channel with freq 6095
+ * @CHAN_ENUM_6115: channel with freq 6115
+ * @CHAN_ENUM_6135: channel with freq 6135
+ * @CHAN_ENUM_6155: channel with freq 6155
+ * @CHAN_ENUM_6175: channel with freq 6175
+ * @CHAN_ENUM_6195: channel with freq 6195
+ * @CHAN_ENUM_6215: channel with freq 6215
+ * @CHAN_ENUM_6235: channel with freq 6235
+ * @CHAN_ENUM_6255: channel with freq 6255
+ * @CHAN_ENUM_6275: channel with freq 6275
+ * @CHAN_ENUM_6295: channel with freq 6295
+ * @CHAN_ENUM_6315: channel with freq 6315
+ * @CHAN_ENUM_6335: channel with freq 6335
+ * @CHAN_ENUM_6355: channel with freq 6355
+ * @CHAN_ENUM_6375: channel with freq 6375
+ * @CHAN_ENUM_6395: channel with freq 6395
+ * @CHAN_ENUM_6415: channel with freq 6415
+ * @CHAN_ENUM_6435: channel with freq 6435
+ * @CHAN_ENUM_6455: channel with freq 6455
+ * @CHAN_ENUM_6475: channel with freq 6475
+ * @CHAN_ENUM_6495: channel with freq 6495
+ * @CHAN_ENUM_6515: channel with freq 6515
+ * @CHAN_ENUM_6535: channel with freq 6535
+ * @CHAN_ENUM_6555: channel with freq 6555
+ * @CHAN_ENUM_6575: channel with freq 6575
+ * @CHAN_ENUM_6595: channel with freq 6595
+ * @CHAN_ENUM_6615: channel with freq 6615
+ * @CHAN_ENUM_6635: channel with freq 6635
+ * @CHAN_ENUM_6655: channel with freq 6655
+ * @CHAN_ENUM_6675: channel with freq 6675
+ * @CHAN_ENUM_6695: channel with freq 6695
+ * @CHAN_ENUM_6715: channel with freq 6715
+ * @CHAN_ENUM_6735: channel with freq 6735
+ * @CHAN_ENUM_6755: channel with freq 6755
+ * @CHAN_ENUM_6775: channel with freq 6775
+ * @CHAN_ENUM_6795: channel with freq 6795
+ * @CHAN_ENUM_6815: channel with freq 6815
+ * @CHAN_ENUM_6835: channel with freq 6835
+ * @CHAN_ENUM_6855: channel with freq 6855
+ * @CHAN_ENUM_6875: channel with freq 6875
+ * @CHAN_ENUM_6895: channel with freq 6895
+ * @CHAN_ENUM_6915: channel with freq 6915
+ * @CHAN_ENUM_6935: channel with freq 6935
+ * @CHAN_ENUM_6955: channel with freq 6955
+ * @CHAN_ENUM_6975: channel with freq 6975
+ * @CHAN_ENUM_6995: channel with freq 6995
+ * @CHAN_ENUM_7015: channel with freq 7015
+ * @CHAN_ENUM_7035: channel with freq 7035
+ * @CHAN_ENUM_7055: channel with freq 7055
+ * @CHAN_ENUM_7075: channel with freq 7075
+ * @CHAN_ENUM_7095: channel with freq 7095
+ * @CHAN_ENUM_7115: channel with freq 7115
  */
 enum channel_enum {
 	CHAN_ENUM_2412,
@@ -489,15 +364,19 @@ enum channel_enum {
 	CHAN_ENUM_5805,
 	CHAN_ENUM_5825,
 	CHAN_ENUM_5845,
-
+#ifdef WLAN_FEATURE_DSRC
 	CHAN_ENUM_5850,
 	CHAN_ENUM_5855,
 	CHAN_ENUM_5860,
+#endif
 	CHAN_ENUM_5865,
+#ifdef WLAN_FEATURE_DSRC
 	CHAN_ENUM_5870,
 	CHAN_ENUM_5875,
 	CHAN_ENUM_5880,
+#endif
 	CHAN_ENUM_5885,
+#ifdef WLAN_FEATURE_DSRC
 	CHAN_ENUM_5890,
 	CHAN_ENUM_5895,
 	CHAN_ENUM_5900,
@@ -505,8 +384,74 @@ enum channel_enum {
 	CHAN_ENUM_5910,
 	CHAN_ENUM_5915,
 	CHAN_ENUM_5920,
+#endif /* WLAN_FEATURE_DSRC */
+#ifdef CONFIG_BAND_6GHZ
+	CHAN_ENUM_5935,
+	CHAN_ENUM_5955,
+	CHAN_ENUM_5975,
+	CHAN_ENUM_5995,
+	CHAN_ENUM_6015,
+	CHAN_ENUM_6035,
+	CHAN_ENUM_6055,
+	CHAN_ENUM_6075,
+	CHAN_ENUM_6095,
+	CHAN_ENUM_6115,
+	CHAN_ENUM_6135,
+	CHAN_ENUM_6155,
+	CHAN_ENUM_6175,
+	CHAN_ENUM_6195,
+	CHAN_ENUM_6215,
+	CHAN_ENUM_6235,
+	CHAN_ENUM_6255,
+	CHAN_ENUM_6275,
+	CHAN_ENUM_6295,
+	CHAN_ENUM_6315,
+	CHAN_ENUM_6335,
+	CHAN_ENUM_6355,
+	CHAN_ENUM_6375,
+	CHAN_ENUM_6395,
+	CHAN_ENUM_6415,
+	CHAN_ENUM_6435,
+	CHAN_ENUM_6455,
+	CHAN_ENUM_6475,
+	CHAN_ENUM_6495,
+	CHAN_ENUM_6515,
+	CHAN_ENUM_6535,
+	CHAN_ENUM_6555,
+	CHAN_ENUM_6575,
+	CHAN_ENUM_6595,
+	CHAN_ENUM_6615,
+	CHAN_ENUM_6635,
+	CHAN_ENUM_6655,
+	CHAN_ENUM_6675,
+	CHAN_ENUM_6695,
+	CHAN_ENUM_6715,
+	CHAN_ENUM_6735,
+	CHAN_ENUM_6755,
+	CHAN_ENUM_6775,
+	CHAN_ENUM_6795,
+	CHAN_ENUM_6815,
+	CHAN_ENUM_6835,
+	CHAN_ENUM_6855,
+	CHAN_ENUM_6875,
+	CHAN_ENUM_6895,
+	CHAN_ENUM_6915,
+	CHAN_ENUM_6935,
+	CHAN_ENUM_6955,
+	CHAN_ENUM_6975,
+	CHAN_ENUM_6995,
+	CHAN_ENUM_7015,
+	CHAN_ENUM_7035,
+	CHAN_ENUM_7055,
+	CHAN_ENUM_7075,
+	CHAN_ENUM_7095,
+	CHAN_ENUM_7115,
+#endif /* CONFIG_BAND_6GHZ */
 
 	NUM_CHANNELS,
+
+	MIN_CHANNEL = CHAN_ENUM_2412,
+	MAX_CHANNEL = (NUM_CHANNELS - 1),
 
 	MIN_24GHZ_CHANNEL = CHAN_ENUM_2412,
 	MAX_24GHZ_CHANNEL = CHAN_ENUM_2484,
@@ -517,16 +462,49 @@ enum channel_enum {
 	NUM_49GHZ_CHANNELS = (MAX_49GHZ_CHANNEL - MIN_49GHZ_CHANNEL + 1),
 
 	MIN_5GHZ_CHANNEL = CHAN_ENUM_5180,
+	MAX_5GHZ_CHANNEL = CHAN_ENUM_5885,
+	NUM_5GHZ_CHANNELS = (MAX_5GHZ_CHANNEL - MIN_5GHZ_CHANNEL + 1),
+
+#ifdef WLAN_FEATURE_DSRC
+	MIN_5GHZ_CHANNEL = CHAN_ENUM_5180,
 	MAX_5GHZ_CHANNEL = CHAN_ENUM_5920,
 	NUM_5GHZ_CHANNELS = (MAX_5GHZ_CHANNEL - MIN_5GHZ_CHANNEL + 1),
 
 	MIN_DSRC_CHANNEL = CHAN_ENUM_5850,
 	MAX_DSRC_CHANNEL = CHAN_ENUM_5920,
 	NUM_DSRC_CHANNELS = (MAX_DSRC_CHANNEL - MIN_DSRC_CHANNEL + 1),
+#endif
+
+	MIN_5DOT9_CHANNEL = CHAN_ENUM_5845,
+	MAX_5DOT9_CHANNEL = CHAN_ENUM_5885,
+	NUM_5DOT9_CHANNELS = (MAX_5DOT9_CHANNEL - MIN_5DOT9_CHANNEL + 1),
 
 	INVALID_CHANNEL = 0xBAD,
-};
+
+#ifdef DISABLE_UNII_SHARED_BANDS
+	MIN_UNII_1_BAND_CHANNEL = CHAN_ENUM_5180,
+	MAX_UNII_1_BAND_CHANNEL = CHAN_ENUM_5240,
+	NUM_UNII_1_BAND_CHANNELS = (MAX_UNII_1_BAND_CHANNEL -
+				    MIN_UNII_1_BAND_CHANNEL + 1),
+
+	MIN_UNII_2A_BAND_CHANNEL = CHAN_ENUM_5260,
+	MAX_UNII_2A_BAND_CHANNEL = CHAN_ENUM_5320,
+	NUM_UNII_2A_BAND_CHANNELS = (MAX_UNII_2A_BAND_CHANNEL -
+				     MIN_UNII_2A_BAND_CHANNEL + 1),
 #endif
+
+#ifdef CONFIG_BAND_6GHZ
+	MIN_6GHZ_CHANNEL = CHAN_ENUM_5935,
+	MAX_6GHZ_CHANNEL = CHAN_ENUM_7115,
+	NUM_6GHZ_CHANNELS = (MAX_6GHZ_CHANNEL - MIN_6GHZ_CHANNEL + 1),
+	MIN_6GHZ_NON_ORPHAN_CHANNEL = CHAN_ENUM_5955,
+#else
+	MIN_6GHZ_CHANNEL = INVALID_CHANNEL,
+	MAX_6GHZ_CHANNEL = INVALID_CHANNEL,
+	NUM_6GHZ_CHANNELS = 0,
+	MIN_6GHZ_NON_ORPHAN_CHANNEL = INVALID_CHANNEL,
+#endif /* CONFIG_BAND_6GHZ */
+};
 
 /**
  * enum channel_state - channel state
@@ -542,6 +520,32 @@ enum channel_state {
 	CHANNEL_STATE_DFS,
 	CHANNEL_STATE_ENABLE,
 	CHANNEL_STATE_INVALID,
+};
+
+/**
+ * enum reg_6g_ap_type - Regulatory AP type for regulatory info subfield.
+ * @REG_INDOOR_AP: Indoor AP
+ * @REG_STANDARD_POWER_AP: Standard Power AP
+ * @REG_MAX_AP_TYPE: Maximum value possible for (3 bits) regulatory info
+ * sub-field in the 6G HE Operation IE
+ */
+enum reg_6g_ap_type {
+	REG_INDOOR_AP = 0,
+	REG_STANDARD_POWER_AP = 1,
+	REG_MAX_AP_TYPE = 7,
+};
+
+/**
+ * enum reg_6g_client_type - Regulatory client type for max tx-power category
+ * @REG_DEFAULT_CLIENT: Default client
+ * @REG_SUBORDINATE_CLIENT: Subordinate client
+ * @REG_MAX_CLIENT_TYPE: Maximum value possible for max tx-power category
+ * (2 bits) sub-field in the TPE (Transmit Power Envelope) IE
+ */
+enum reg_6g_client_type {
+	REG_DEFAULT_CLIENT = 0,
+	REG_SUBORDINATE_CLIENT = 1,
+	REG_MAX_CLIENT_TYPE = 3,
 };
 
 /**
@@ -584,23 +588,29 @@ enum ctl_value {
  * struct ch_params
  * @ch_width: channel width
  * @sec_ch_offset: secondary channel offset
- * @center_freq_seg0: center freq for segment 0
- * @center_freq_seg1: center freq for segment 1
+ * @center_freq_seg0: channel number for segment 0
+ * @center_freq_seg1: channel number segment 1
+ * @mhz_freq_seg0: Center frequency for segment 0
+ * @mhz_freq_seg1: Center frequency for segment 1
  */
 struct ch_params {
 	enum phy_ch_width ch_width;
 	uint8_t sec_ch_offset;
 	uint8_t center_freq_seg0;
 	uint8_t center_freq_seg1;
+	qdf_freq_t mhz_freq_seg0;
+	qdf_freq_t mhz_freq_seg1;
 };
 
 /**
  * struct channel_power
+ * @center_freq: Channel Center Frequency
  * @chan_num: channel number
  * @tx_power: TX power
  */
 struct channel_power {
-	uint32_t chan_num;
+	qdf_freq_t center_freq;
+	uint8_t chan_num;
 	uint32_t tx_power;
 };
 
@@ -622,17 +632,61 @@ enum offset_t {
 };
 
 /**
+ * enum behav_limit - behavior limit
+ * @BEHAV_NONE: none
+ * @BEHAV_BW40_LOW_PRIMARY: BW40 low primary
+ * @BEHAV_BW40_HIGH_PRIMARY: BW40 high primary
+ * @BEHAV_BW80_PLUS: BW 80 plus
+ * @BEHAV_INVALID: invalid behavior
+ */
+enum behav_limit {
+	BEHAV_NONE,
+	BEHAV_BW40_LOW_PRIMARY,
+	BEHAV_BW40_HIGH_PRIMARY,
+	BEHAV_BW80_PLUS,
+	BEHAV_INVALID = 0xFF
+};
+
+/**
  * struct reg_dmn_op_class_map_t: operating class
  * @op_class: operating class number
- * @ch_spacing: channel spacing
+ * @chan_spacing: channel spacing
  * @offset: offset
+ * @behav_limit: OR of bitmaps of enum behav_limit
+ * @start_freq: starting frequency
  * @channels: channel set
  */
 struct reg_dmn_op_class_map_t {
 	uint8_t op_class;
-	uint8_t ch_spacing;
+	uint8_t chan_spacing;
 	enum offset_t offset;
+	uint16_t behav_limit;
+	qdf_freq_t start_freq;
 	uint8_t channels[REG_MAX_CHANNELS_PER_OPERATING_CLASS];
+};
+
+/**
+ * struct regdmn_ap_cap_opclass_t: AP Cap operation class table
+ * @op_class: operating class number
+ * @ch_width: channel width in MHz
+ * @start_freq: Starting Frequency in MHz
+ * @behav_limit: OR of bitmaps of enum behav_limit
+ * @max_tx_pwr_dbm: Maximum tx power in dbm
+ * @num_supported_chan: Number of supported channels
+ * @num_non_supported_chan: Number of non-supported channels
+ * @sup_chan_list: Array of supported channel numbers
+ * @non_sup_chan_list: Array of non supported channel numbers
+ */
+struct regdmn_ap_cap_opclass_t {
+	uint8_t op_class;
+	uint8_t ch_width;
+	qdf_freq_t start_freq;
+	uint16_t behav_limit;
+	uint8_t max_tx_pwr_dbm;
+	uint8_t num_supported_chan;
+	uint8_t num_non_supported_chan;
+	uint8_t sup_chan_list[REG_MAX_CHANNELS_PER_OPERATING_CLASS];
+	uint8_t non_sup_chan_list[REG_MAX_CHANNELS_PER_OPERATING_CLASS];
 };
 
 /**
@@ -712,8 +766,8 @@ enum country_src {
  * @nol_history: Set NOL-History when STA vap detects RADAR.
  */
 struct regulatory_channel {
-	uint32_t center_freq;
-	uint32_t chan_num;
+	qdf_freq_t center_freq;
+	uint8_t chan_num;
 	enum channel_state state;
 	uint32_t chan_flags;
 	uint32_t tx_power;
@@ -723,7 +777,6 @@ struct regulatory_channel {
 	bool nol_chan;
 	bool nol_history;
 };
-
 
 /**
  * struct regulatory: regulatory information
@@ -759,8 +812,8 @@ struct regulatory {
  * @max_bw: max bw
  */
 struct chan_map {
-	uint32_t center_freq;
-	uint32_t chan_num;
+	qdf_freq_t center_freq;
+	uint8_t chan_num;
 	uint16_t min_bw;
 	uint16_t max_bw;
 };
@@ -771,8 +824,18 @@ struct chan_map {
  * @end_ch: end channel
  */
 struct bonded_channel {
-	uint16_t start_ch;
-	uint16_t end_ch;
+	uint8_t start_ch;
+	uint8_t end_ch;
+};
+
+/**
+ * struct bonded_channel_freq
+ * @start_freq: start channel frequency
+ * @end_freq: end channel frequency
+ */
+struct bonded_channel_freq {
+	uint16_t start_freq;
+	uint16_t end_freq;
 };
 
 struct set_country {
@@ -835,7 +898,7 @@ struct cur_reg_rule {
  * @min_bw_5g: minimum 5G bw
  * @max_bw_5g: maximum 5G bw
  * @num_2g_reg_rules: number 2G reg rules
- * @num_5g_reg_rules: number 5G reg rules
+ * @num_5g_reg_rules: number 5G  and 6G reg rules
  * @reg_rules_2g_ptr: ptr to 2G reg rules
  * @reg_rules_5g_ptr: ptr to 5G reg rules
  */
@@ -874,6 +937,38 @@ struct reg_rule_info {
 	struct cur_reg_rule reg_rules[MAX_REG_RULES];
 };
 
+/**
+ * enum reg_reg_wifi_band
+ * @REG_BAND_2G: 2G band
+ * @REG_BAND_5G: 5G band
+ * @REG_BAND_6G: 6G band
+ * @REG_BAND_UNKNOWN: Unsupported band
+ */
+enum reg_wifi_band {
+	REG_BAND_2G,
+	REG_BAND_5G,
+	REG_BAND_6G,
+	REG_BAND_UNKNOWN
+};
+
+#ifdef DISABLE_UNII_SHARED_BANDS
+/**
+ * enum reg_unii_band
+ * @REG_UNII_BAND_1: Disable UNII-1 band channels
+ * @REG_UNII_BAND_2A: Disable UNII-2A band channels
+ */
+enum reg_unii_band {
+	REG_UNII_BAND_1 = 0x0,
+	REG_UNII_BAND_2A = 0x1,
+};
+#endif
+
+#define REG_BAND_MASK_ALL (BIT(REG_BAND_2G) | BIT(REG_BAND_5G) \
+			  | BIT(REG_BAND_6G))
+
+/* Avoid the use of band_info as it does not support 6GHz band. Use
+ * reg_wifi_band, as it supports the 6GHz band
+ */
 /**
  * enum band_info
  * @BAND_ALL:all bands
@@ -916,18 +1011,23 @@ enum restart_beaconing_on_ch_avoid_rule {
  * away from active LTE channels
  * @enable_srd_chan_in_master_mode: SRD channel support in master mode
  * @enable_11d_in_world_mode: enable 11d in world mode
+ * @enable_5dot9_ghz_chan_in_master_mode: 5.9 GHz channel support in
+ * master mode
+ * @retain_nol_across_regdmn_update: Retain the NOL list across the regdomain.
  */
 struct reg_config_vars {
 	uint32_t enable_11d_support;
 	uint32_t scan_11d_interval;
 	uint32_t userspace_ctry_priority;
-	enum band_info band_capability;
+	uint32_t band_capability;
 	uint32_t dfs_enabled;
 	uint32_t indoor_chan_enabled;
 	uint32_t force_ssc_disable_indoor_channel;
 	enum restart_beaconing_on_ch_avoid_rule restart_beaconing;
-	bool enable_srd_chan_in_master_mode;
+	uint8_t enable_srd_chan_in_master_mode;
 	bool enable_11d_in_world_mode;
+	bool enable_5dot9_ghz_chan_in_master_mode;
+	bool retain_nol_across_regdmn_update;
 };
 
 /**
@@ -1040,8 +1140,8 @@ struct cur_regdmn_info {
  * @end_freq: end freq
  */
 struct ch_avoid_freq_type {
-	uint32_t start_freq;
-	uint32_t end_freq;
+	qdf_freq_t start_freq;
+	qdf_freq_t end_freq;
 };
 
 /**
@@ -1056,12 +1156,12 @@ struct ch_avoid_ind_type {
 
 /**
  * struct unsafe_ch_list
- * @ch_cnt: no.of channels
- * @ch_list: channel list
+ * @chan_cnt: no.of channels
+ * @chan_freq_list: channel frequency list
  */
 struct unsafe_ch_list {
-	uint16_t ch_cnt;
-	uint16_t ch_list[NUM_CHANNELS];
+	uint16_t chan_cnt;
+	uint16_t chan_freq_list[NUM_CHANNELS];
 };
 
 /**
@@ -1073,6 +1173,14 @@ struct avoid_freq_ind_data {
 	struct ch_avoid_ind_type freq_list;
 	struct unsafe_ch_list chan_list;
 };
+
+#define FIVEG_STARTING_FREQ        5000
+#define TWOG_STARTING_FREQ         2407
+#define TWOG_CHAN_14_IN_MHZ        2484
+#define TWOG_CHAN_1_IN_MHZ         2412
+#define TWOG_CHAN_5_IN_MHZ         2432
+#define TWOG_CHAN_6_IN_MHZ         2437
+#define TWOG_CHAN_13_IN_MHZ        2472
 
 /**
  * struct reg_ctl_params - reg ctl and regd info
@@ -1088,6 +1196,28 @@ struct reg_ctl_params {
 	uint16_t regd_5g;
 	uint8_t ctl_2g;
 	uint8_t ctl_5g;
+};
+
+/**
+ * enum reg_phymode - Regulatory phymode
+ * @REG_PHYMODE_INVALID: Invalid phymode
+ * @REG_PHYMODE_11B: 802.11b phymode
+ * @REG_PHYMODE_11G: 802.11g phymode
+ * @REG_PHYMODE_11A: 802.11a phymode
+ * @REG_PHYMODE_11N: 802.11n phymode
+ * @REG_PHYMODE_11AC: 802.11ac phymode
+ * @REG_PHYMODE_11AX: 802.11ax phymode
+ * @REG_PHYMODE_MAX: placeholder for future phymodes
+ */
+enum reg_phymode {
+	REG_PHYMODE_INVALID,
+	REG_PHYMODE_11B,
+	REG_PHYMODE_11G,
+	REG_PHYMODE_11A,
+	REG_PHYMODE_11N,
+	REG_PHYMODE_11AC,
+	REG_PHYMODE_11AX,
+	REG_PHYMODE_MAX,
 };
 
 #endif

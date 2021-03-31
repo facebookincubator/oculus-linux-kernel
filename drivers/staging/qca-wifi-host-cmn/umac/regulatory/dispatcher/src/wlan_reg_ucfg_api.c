@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -119,15 +119,15 @@ QDF_STATUS ucfg_reg_get_current_cc(struct wlan_objmgr_pdev *pdev,
 #ifdef CONFIG_REG_CLIENT
 
 QDF_STATUS ucfg_reg_set_band(struct wlan_objmgr_pdev *pdev,
-			     enum band_info band)
+			     uint32_t band_bitmap)
 {
-	return reg_set_band(pdev, band);
+	return reg_set_band(pdev, band_bitmap);
 }
 
 QDF_STATUS ucfg_reg_get_band(struct wlan_objmgr_pdev *pdev,
-			     enum band_info *band)
+			     uint32_t *band_bitmap)
 {
-	return reg_get_band(pdev, band);
+	return reg_get_band(pdev, band_bitmap);
 }
 
 /**
@@ -227,13 +227,6 @@ QDF_STATUS ucfg_reg_enable_dfs_channels(struct wlan_objmgr_pdev *pdev,
 	return reg_enable_dfs_channels(pdev, dfs_enable);
 }
 
-QDF_STATUS ucfg_reg_get_curr_band(struct wlan_objmgr_pdev *pdev,
-				  enum band_info *band)
-{
-	return reg_get_curr_band(pdev, band);
-
-}
-
 void ucfg_reg_register_chan_change_callback(struct wlan_objmgr_psoc *psoc,
 					    void *cbk, void *arg)
 {
@@ -256,6 +249,12 @@ enum country_src ucfg_reg_get_cc_and_src(struct wlan_objmgr_psoc *psoc,
 
 void ucfg_reg_unit_simulate_ch_avoid(struct wlan_objmgr_psoc *psoc,
 	struct ch_avoid_ind_type *ch_avoid)
+{
+	reg_process_ch_avoid_event(psoc, ch_avoid);
+}
+
+void ucfg_reg_ch_avoid(struct wlan_objmgr_psoc *psoc,
+		       struct ch_avoid_ind_type *ch_avoid)
 {
 	reg_process_ch_avoid_event(psoc, ch_avoid);
 }
@@ -286,7 +285,33 @@ QDF_STATUS ucfg_reg_set_hal_reg_cap(struct wlan_objmgr_psoc *psoc,
 }
 qdf_export_symbol(ucfg_reg_set_hal_reg_cap);
 
+QDF_STATUS ucfg_reg_update_hal_reg_cap(struct wlan_objmgr_psoc *psoc,
+				       uint32_t wireless_modes, uint8_t phy_id)
+{
+	return reg_update_hal_reg_cap(psoc, wireless_modes, phy_id);
+}
+
+qdf_export_symbol(ucfg_reg_update_hal_reg_cap);
+
 #ifdef DISABLE_CHANNEL_LIST
+#ifdef CONFIG_CHAN_FREQ_API
+/**
+ * ucfg_reg_cache_channel_freq_state() - Cache the current state of the channels
+ * based of the channel center frequency.
+ * @pdev: The physical dev to cache the channels for
+ * @channel_list: List of the channels for which states needs to be cached
+ * @num_channels: Number of channels in the list
+ *
+ */
+void ucfg_reg_cache_channel_freq_state(struct wlan_objmgr_pdev *pdev,
+				       uint32_t *channel_list,
+				       uint32_t num_channels)
+{
+	reg_cache_channel_freq_state(pdev, channel_list, num_channels);
+}
+#endif /* CONFIG_CHAN_FREQ_API */
+
+#ifdef CONFIG_CHAN_NUM_API
 /**
  * ucfg_reg_cache_channel_state() - Cache the current state of the channles
  * @pdev: The physical dev to cache the channels for
@@ -299,6 +324,7 @@ void ucfg_reg_cache_channel_state(struct wlan_objmgr_pdev *pdev,
 {
 	reg_cache_channel_state(pdev, channel_list, num_channels);
 }
+#endif /* CONFIG_CHAN_NUM_API */
 
 /**
  * ucfg_reg_restore_cached_channels() - Cache the current state of the channles
@@ -314,3 +340,11 @@ QDF_STATUS ucfg_set_ignore_fw_reg_offload_ind(struct wlan_objmgr_psoc *psoc)
 {
 	return reg_set_ignore_fw_reg_offload_ind(psoc);
 }
+
+#ifdef DISABLE_UNII_SHARED_BANDS
+QDF_STATUS
+ucfg_reg_get_unii_5g_bitmap(struct wlan_objmgr_pdev *pdev, uint8_t *bitmap)
+{
+	return reg_get_unii_5g_bitmap(pdev, bitmap);
+}
+#endif

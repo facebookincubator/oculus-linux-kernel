@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,7 +25,6 @@
 #ifndef __TARGET_IF_VDEV_MGR_TX_OPS_H__
 #define __TARGET_IF_VDEV_MGR_TX_OPS_H__
 
-#ifdef CMN_VDEV_MGR_TGT_IF_ENABLE
 #include <wlan_vdev_mgr_tgt_if_tx_defs.h>
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_objmgr_psoc_obj.h>
@@ -49,7 +48,15 @@ struct wmi_unified *target_if_vdev_mgr_wmi_handle_get(
 static inline struct wlan_lmac_if_mlme_tx_ops *
 target_if_vdev_mgr_get_tx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.tx_ops.mops;
+	struct wlan_lmac_if_tx_ops *tx_ops;
+
+	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	if (!tx_ops) {
+		mlme_err("tx_ops is NULL");
+		return NULL;
+	}
+
+	return &tx_ops->mops;
 }
 
 /**
@@ -62,13 +69,41 @@ target_if_vdev_mgr_get_tx_ops(struct wlan_objmgr_psoc *psoc)
 QDF_STATUS
 target_if_vdev_mgr_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops);
 
-#else
-
-static inline QDF_STATUS
-target_if_vdev_mgr_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
+/**
+ * target_if_vdev_mgr_assert_mgmt() - vdev assert mgmt api
+ * @PSOC: pointer to objmgr psoc
+ * @vdev_id: vdev id
+ *
+ * Return: NA
+ */
+#ifdef VDEV_ASSERT_MANAGEMENT
+static inline void target_if_vdev_mgr_assert_mgmt(
+					struct wlan_objmgr_psoc *psoc,
+					uint8_t vdev_id)
 {
-	return QDF_STATUS_SUCCESS;
 }
+#else
+static inline void target_if_vdev_mgr_assert_mgmt(
+					struct wlan_objmgr_psoc *psoc,
+					uint8_t vdev_id)
 
-#endif /* CMN_VDEV_MGR_TGT_IF_ENABLE */
+{
+	QDF_ASSERT(0);
+}
+#endif
+
+/**
+ * target_if_vdev_mgr_rsp_timer_stop() - API to stop response timer for
+ * vdev manager operations
+ * @psoc: pointer to psoc object
+ * @vdev_rsp: vdev response timer
+ * @clear_bit: enum of wlan_vdev_mgr_tgt_if_rsp_bit
+ *
+ * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
+ */
+QDF_STATUS target_if_vdev_mgr_rsp_timer_stop(
+				struct wlan_objmgr_psoc *psoc,
+				struct vdev_response_timer *vdev_rsp,
+				enum wlan_vdev_mgr_tgt_if_rsp_bit clear_bit);
+
 #endif /* __TARGET_IF_VDEV_MGR_TX_OPS_H__ */

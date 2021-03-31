@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -61,19 +61,27 @@ struct blm_pdev_priv_obj {
  * @bad_bssid_counter_thresh: This is the threshold count which is incremented
  * after every NUD fail, and after this much count, the BSSID would be moved to
  * blacklist.
+ * @delta_rssi: This is the rssi threshold, only when rssi
+ * improves by this value the entry for BSSID should be removed from black
+ * list manager list.
  */
 struct blm_config {
 	qdf_time_t avoid_list_exipry_time;
 	qdf_time_t black_list_exipry_time;
 	qdf_time_t bad_bssid_counter_reset_time;
 	uint8_t bad_bssid_counter_thresh;
+	uint32_t delta_rssi;
 };
 
 /**
  * struct blm_psoc_priv_obj - Psoc priv structure of the blacklist manager.
+ * @pdev_id: pdev id
+ * @is_suspended: is black list manager state suspended
  * @blm_cfg: These are the config ini params that the user can configure.
  */
 struct blm_psoc_priv_obj {
+	uint8_t pdev_id;
+	bool is_suspended;
 	struct blm_config blm_cfg;
 };
 

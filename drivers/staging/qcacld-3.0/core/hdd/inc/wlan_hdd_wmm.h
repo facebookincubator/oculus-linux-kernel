@@ -47,6 +47,7 @@
 #include <wlan_hdd_main.h>
 #include <wlan_hdd_wext.h>
 #include <sme_qos_api.h>
+#include <qca_vendor.h>
 
 /*Maximum number of ACs */
 #define WLAN_MAX_AC                         4
@@ -216,7 +217,7 @@ int hdd_wmmps_helper(struct hdd_adapter *adapter, uint8_t *ptr);
 QDF_STATUS hdd_send_dscp_up_map_to_fw(struct hdd_adapter *adapter);
 
 /**
- * hdd_wmm_init() - initialize the WMM DSCP configuation
+ * hdd_wmm_dscp_initial_state() - initialize the WMM DSCP configuration
  * @adapter : [in]  pointer to Adapter context
  *
  * This function will initialize the WMM DSCP configuation of an
@@ -225,7 +226,7 @@ QDF_STATUS hdd_send_dscp_up_map_to_fw(struct hdd_adapter *adapter);
  *
  * Return: QDF_STATUS enumeration
  */
-QDF_STATUS hdd_wmm_init(struct hdd_adapter *adapter);
+QDF_STATUS hdd_wmm_dscp_initial_state(struct hdd_adapter *adapter);
 
 /**
  * hdd_wmm_adapter_init() - initialize the WMM configuration of an adapter
@@ -260,7 +261,10 @@ QDF_STATUS hdd_wmm_adapter_close(struct hdd_adapter *adapter);
  *
  * Return: Qdisc queue index.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
+			  struct net_device *sb_dev);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
 			  struct net_device *sb_dev,
 			  select_queue_fallback_t fallback);
@@ -398,4 +402,33 @@ hdd_wlan_wmm_status_e hdd_wmm_checkts(struct hdd_adapter *adapter,
 QDF_STATUS hdd_wmm_adapter_clear(struct hdd_adapter *adapter);
 
 void wlan_hdd_process_peer_unauthorised_pause(struct hdd_adapter *adapter);
+
+extern const struct nla_policy
+config_tspec_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX + 1];
+
+/**
+ * wlan_hdd_cfg80211_config_tspec() - config tpsec
+ * @wiphy: pointer to wireless wiphy structure.
+ * @wdev: pointer to wireless_dev structure.
+ * @data: pointer to config tspec command parameters.
+ * @data_len: the length in byte of config tspec command parameters.
+ *
+ * Return: An error code or 0 on success.
+ */
+int wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
+				   struct wireless_dev *wdev,
+				   const void *data, int data_len);
+
+#define FEATURE_WMM_COMMANDS						\
+{									\
+	.info.vendor_id = QCA_NL80211_VENDOR_ID,			\
+	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_CONFIG_TSPEC,		\
+	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |				\
+		WIPHY_VENDOR_CMD_NEED_NETDEV |				\
+		WIPHY_VENDOR_CMD_NEED_RUNNING,				\
+	.doit = wlan_hdd_cfg80211_config_tspec,				\
+	vendor_command_policy(config_tspec_policy,			\
+			      QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX)	\
+},
+
 #endif /* #ifndef _WLAN_HDD_WMM_H */

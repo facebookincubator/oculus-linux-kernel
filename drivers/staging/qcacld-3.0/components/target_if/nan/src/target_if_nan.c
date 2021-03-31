@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,20 +27,23 @@
 #include "wlan_nan_api.h"
 #include "wmi_unified_api.h"
 #include "scheduler_api.h"
+#include <wmi_unified.h>
 
-static void target_if_nan_event_flush_cb(struct scheduler_msg *msg)
+static QDF_STATUS target_if_nan_event_flush_cb(struct scheduler_msg *msg)
 {
 	struct wlan_objmgr_psoc *psoc;
 
 	if (!msg || !msg->bodyptr) {
 		target_if_err("Empty message for NAN Discovery event");
-		return;
+		return QDF_STATUS_E_INVAL;
 	}
 
 	psoc = ((struct nan_event_params *)msg->bodyptr)->psoc;
 	wlan_objmgr_psoc_release_ref(psoc, WLAN_NAN_ID);
 	qdf_mem_free(msg->bodyptr);
 	msg->bodyptr = NULL;
+
+	return QDF_STATUS_SUCCESS;
 }
 
 static QDF_STATUS target_if_nan_event_dispatcher(struct scheduler_msg *msg)
@@ -224,6 +227,42 @@ static QDF_STATUS target_if_nan_ndp_initiator_req(
 	return status;
 }
 
+static int target_if_nan_dmesg_handler(ol_scn_t scn, uint8_t *data,
+				       uint32_t data_len)
+{
+	QDF_STATUS status;
+	struct nan_dump_msg msg;
+	struct wmi_unified *wmi_handle;
+	struct wlan_objmgr_psoc *psoc;
+
+	psoc = target_if_get_psoc_from_scn_hdl(scn);
+	if (!psoc) {
+		target_if_err("psoc is null");
+		return -EINVAL;
+	}
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("wmi_handle is null");
+		return -EINVAL;
+	}
+
+	status = wmi_extract_nan_msg(wmi_handle, data, &msg);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		target_if_err("parsing of event failed, %d", status);
+		return -EINVAL;
+	}
+
+	if (!msg.msg) {
+		target_if_err("msg not present %d", msg.data_len);
+		return -EINVAL;
+	}
+
+	target_if_info("%s", msg.msg);
+
+	return 0;
+}
+
 static int target_if_ndp_initiator_rsp_handler(ol_scn_t scn, uint8_t *data,
 						uint32_t len)
 {
@@ -246,10 +285,8 @@ static int target_if_ndp_initiator_rsp_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	rsp = qdf_mem_malloc(sizeof(*rsp));
-	if (!rsp) {
-		target_if_err("malloc failed");
+	if (!rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_initiator_rsp(wmi_handle, data, rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -296,10 +333,8 @@ static int target_if_ndp_ind_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	rsp = qdf_mem_malloc(sizeof(*rsp));
-	if (!rsp) {
-		target_if_err("malloc failed");
+	if (!rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_ind(wmi_handle, data, rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -346,10 +381,8 @@ static int target_if_ndp_confirm_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	rsp = qdf_mem_malloc(sizeof(*rsp));
-	if (!rsp) {
-		target_if_err("malloc failed");
+	if (!rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_confirm(wmi_handle, data, rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -445,10 +478,8 @@ static int target_if_ndp_responder_rsp_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	rsp = qdf_mem_malloc(sizeof(*rsp));
-	if (!rsp) {
-		target_if_err("malloc failed");
+	if (!rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_responder_rsp(wmi_handle, data, rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -544,10 +575,8 @@ static int target_if_ndp_end_rsp_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	end_rsp = qdf_mem_malloc(sizeof(*end_rsp));
-	if (!end_rsp) {
-		target_if_err("malloc failed");
+	if (!end_rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_end_rsp(wmi_handle, data, end_rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -645,10 +674,8 @@ static int target_if_ndp_sch_update_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	rsp = qdf_mem_malloc(sizeof(*rsp));
-	if (!rsp) {
-		target_if_err("malloc failed");
+	if (!rsp)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_sch_update(wmi_handle, data, rsp);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -724,10 +751,8 @@ static int target_if_ndp_host_event_handler(ol_scn_t scn, uint8_t *data,
 	}
 
 	host_evt = qdf_mem_malloc(sizeof(*host_evt));
-	if (!host_evt) {
-		target_if_err("malloc failed");
+	if (!host_evt)
 		return -ENOMEM;
-	}
 
 	status = wmi_extract_ndp_host_event(wmi_handle, data, host_evt);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -908,10 +933,9 @@ int target_if_nan_rsp_handler(ol_scn_t scn, uint8_t *data, uint32_t len)
 	}
 
 	nan_rsp = qdf_mem_malloc(sizeof(*nan_rsp) + temp_evt_params.buf_len);
-	if (!nan_rsp) {
-		target_if_err("malloc failed");
+	if (!nan_rsp)
 		return -ENOMEM;
-	}
+
 	qdf_mem_copy(nan_rsp, &temp_evt_params, sizeof(*nan_rsp));
 
 	status = wlan_objmgr_psoc_try_get_ref(psoc, WLAN_NAN_ID);
@@ -965,6 +989,15 @@ QDF_STATUS target_if_nan_register_events(struct wlan_objmgr_psoc *psoc)
 		WMI_RX_UMAC_CTX);
 	if (ret) {
 		target_if_err("wmi event registration failed, ret: %d", ret);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ret = wmi_unified_register_event_handler(handle, wmi_nan_dmesg_event_id,
+						 target_if_nan_dmesg_handler,
+						 WMI_RX_UMAC_CTX);
+	if (ret) {
+		target_if_err("wmi event registration failed, ret: %d", ret);
+		target_if_nan_deregister_events(psoc);
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -1092,6 +1125,13 @@ QDF_STATUS target_if_nan_deregister_events(struct wlan_objmgr_psoc *psoc)
 	}
 
 	ret = wmi_unified_unregister_event_handler(handle,
+						   wmi_nan_dmesg_event_id);
+	if (ret) {
+		target_if_err("wmi event deregistration failed, ret: %d", ret);
+		status = ret;
+	}
+
+	ret = wmi_unified_unregister_event_handler(handle,
 				wmi_ndp_initiator_rsp_event_id);
 	if (ret) {
 		target_if_err("wmi event deregistration failed, ret: %d", ret);
@@ -1108,4 +1148,30 @@ QDF_STATUS target_if_nan_deregister_events(struct wlan_objmgr_psoc *psoc)
 		return QDF_STATUS_E_FAILURE;
 	else
 		return QDF_STATUS_SUCCESS;
+}
+
+void target_if_nan_set_vdev_feature_config(struct wlan_objmgr_psoc *psoc,
+					   uint8_t vdev_id)
+{
+	QDF_STATUS status;
+	uint32_t nan_features;
+	struct vdev_set_params param;
+	wmi_unified_t wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+
+	if (!wmi_handle) {
+		target_if_err("Invalid wmi handle");
+		return;
+	}
+
+	ucfg_get_nan_feature_config(psoc, &nan_features);
+	target_if_debug("vdev_id:%d NAN features:0x%x", vdev_id, nan_features);
+
+	param.vdev_id = vdev_id;
+	param.param_id = WMI_VDEV_PARAM_ENABLE_DISABLE_NAN_CONFIG_FEATURES;
+	param.param_value = nan_features;
+
+	status = wmi_unified_vdev_set_param_send(wmi_handle, &param);
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("failed to set NAN_CONFIG_FEATURES(status = %d)",
+			      status);
 }

@@ -121,7 +121,7 @@ void dsc_vdev_destroy(struct dsc_vdev **out_vdev)
  * resumed after the current trans/op is completed. return QDF_STATUS_E_AGAIN
  * in this case.
  *
- * If there is a psoc transition taking place because of psoc idle shutdown,
+ * If there is a psoc transition taking place becasue of psoc idle shutdown,
  * then the vdev trans/ops should be rejected and queued in the DSC queue so
  * that it may be resumed after the current trans/ops is completed. Return
  * QDF_STATUS_E_AGAIN in this case.
@@ -139,7 +139,7 @@ static QDF_STATUS __dsc_vdev_can_trans(struct dsc_vdev *vdev)
 		return QDF_STATUS_E_INVAL;
 
 	if (qdf_is_recovering())
-		return QDF_STATUS_E_AGAIN;
+		return QDF_STATUS_E_INVAL;
 
 	if (__dsc_trans_active_or_queued(&vdev->psoc->trans)) {
 		/* psoc idle shutdown(wifi off) needs to be added in DSC queue

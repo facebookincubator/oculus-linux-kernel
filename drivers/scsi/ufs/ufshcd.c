@@ -439,6 +439,8 @@ static struct ufs_dev_fix ufs_fixups[] = {
 		UFS_DEVICE_QUIRK_DELAY_BEFORE_LPM),
 	UFS_FIX(UFS_VENDOR_TOSHIBA, UFS_ANY_MODEL,
 		UFS_DEVICE_QUIRK_NO_LINK_OFF),
+	UFS_FIX(UFS_VENDOR_MICRON, UFS_ANY_MODEL,
+		UFS_DEVICE_QUIRK_NO_LINK_OFF),
 	UFS_FIX(UFS_VENDOR_TOSHIBA, "THGLF2G9C8KBADG",
 		UFS_DEVICE_QUIRK_PA_TACTIVATE),
 	UFS_FIX(UFS_VENDOR_TOSHIBA, "THGLF2G9D8KBADG",
@@ -462,7 +464,10 @@ static struct ufs_dev_fix ufs_fixups[] = {
 		UFS_DEVICE_QUIRK_HS_G1_TO_HS_G3_SWITCH),
 	UFS_FIX(UFS_VENDOR_SKHYNIX, "hC8HL1",
 		UFS_DEVICE_QUIRK_HS_G1_TO_HS_G3_SWITCH),
-
+	UFS_FIX(UFS_VENDOR_SAMSUNG, "KLUEG8UHDB-C2D1",
+		UFS_DEVICE_QUIRK_PA_HIBER8TIME),
+	UFS_FIX(UFS_VENDOR_SAMSUNG, "KLUDG4UHDB-B2D1",
+		UFS_DEVICE_QUIRK_PA_HIBER8TIME),
 	END_FIX
 };
 
@@ -2232,12 +2237,12 @@ start:
 		 * work and to enable clocks.
 		 */
 	case CLKS_OFF:
-		ufshcd_scsi_block_requests(hba);
 		hba->clk_gating.state = REQ_CLKS_ON;
 		trace_ufshcd_clk_gating(dev_name(hba->dev),
 					hba->clk_gating.state);
-		queue_work(hba->clk_gating.clk_gating_workq,
-			   &hba->clk_gating.ungate_work);
+		if (queue_work(hba->clk_gating.clk_gating_workq,
+			       &hba->clk_gating.ungate_work))
+			ufshcd_scsi_block_requests(hba);
 		/*
 		 * fall through to check if we should wait for this
 		 * work to be done or not.
@@ -4526,14 +4531,21 @@ int ufshcd_read_desc_param(struct ufs_hba *hba,
 
 	/* Sanity checks */
 	if (ret || !buff_len) {
-		dev_err(hba->dev, "%s: Failed to get full descriptor length",
+		dev_err(hba->dev, "%s: Failed to get full descriptor length\n",
 			__func__);
 		return ret;
 	}
 
+	if (param_offset >= buff_len ||
+	    param_offset + param_size > buff_len) {
+		dev_err(hba->dev, "%s: Invalid offset 0x%x or size 0x%x in descriptor IDN 0x%x, length 0x%x\n",
+			__func__, param_offset, param_size, desc_id, buff_len);
+		return -EINVAL;
+	}
+
 	/* Check whether we need temp memory */
-	if (param_offset != 0 || param_size < buff_len) {
-		desc_buf = kmalloc(buff_len, GFP_KERNEL);
+	if (param_offset != 0) {
+		desc_buf = kzalloc(buff_len, GFP_KERNEL);
 		if (!desc_buf)
 			return -ENOMEM;
 	} else {
@@ -4547,14 +4559,14 @@ int ufshcd_read_desc_param(struct ufs_hba *hba,
 					desc_buf, &buff_len);
 
 	if (ret) {
-		dev_err(hba->dev, "%s: Failed reading descriptor. desc_id %d, desc_index %d, param_offset %d, ret %d",
+		dev_err(hba->dev, "%s: Failed reading descriptor. desc_id %d, desc_index %d, param_offset %d, ret %d\n",
 			__func__, desc_id, desc_index, param_offset, ret);
 		goto out;
 	}
 
 	/* Sanity check */
 	if (desc_buf[QUERY_DESC_DESC_TYPE_OFFSET] != desc_id) {
-		dev_err(hba->dev, "%s: invalid desc_id %d in descriptor header",
+		dev_err(hba->dev, "%s: invalid desc_id %d in descriptor header\n",
 			__func__, desc_buf[QUERY_DESC_DESC_TYPE_OFFSET]);
 		ret = -EINVAL;
 		goto out;
@@ -6062,37 +6074,6 @@ static int ufshcd_get_lu_wp(struct ufs_hba *hba,
 	return ret;
 }
 
-/*
- * ufshcd_get_wb_alloc_units - returns "dLUNumWriteBoosterBufferAllocUnits"
- * @hba: per-adapter instance
- * @lun: UFS device lun id
- * @d_lun_wbb_au: pointer to buffer to hold the LU's alloc units info
- *
- * Returns 0 in case of success and d_lun_wbb_au would be returned
- * Returns -ENOTSUPP if reading d_lun_wbb_au is not supported.
- * Returns -EINVAL in case of invalid parameters passed to this function.
- */
-static int ufshcd_get_wb_alloc_units(struct ufs_hba *hba,
-			    u8 lun,
-			    u8 *d_lun_wbb_au)
-{
-	int ret;
-
-	if (!d_lun_wbb_au)
-		ret = -EINVAL;
-
-	/* WB can be supported only from LU0..LU7 */
-	else if (lun >= UFS_UPIU_MAX_GENERAL_LUN)
-		ret = -ENOTSUPP;
-	else
-		ret = ufshcd_read_unit_desc_param(hba,
-					  lun,
-					  UNIT_DESC_PARAM_WB_BUF_ALLOC_UNITS,
-					  d_lun_wbb_au,
-					  sizeof(*d_lun_wbb_au));
-	return ret;
-}
-
 /**
  * ufshcd_get_lu_power_on_wp_status - get LU's power on write protect
  * status
@@ -6136,9 +6117,6 @@ static int ufshcd_slave_alloc(struct scsi_device *sdev)
 	sdev->no_report_opcodes = 1;
 
 	/* WRITE_SAME command is not supported*/
-	sdev->no_write_same = 1;
-
-	/* WRITE_SAME command is not supported */
 	sdev->no_write_same = 1;
 
 	ufshcd_set_queue_depth(sdev);
@@ -7800,6 +7778,9 @@ static int ufshcd_issue_tm_cmd(struct ufs_hba *hba, int lun_id, int task_id,
 		if (ufshcd_clear_tm_cmd(hba, free_slot))
 			dev_WARN(hba->dev, "%s: unable clear tm cmd (slot %d) after timeout\n",
 					__func__, free_slot);
+		spin_lock_irqsave(host->host_lock, flags);
+		__clear_bit(free_slot, &hba->outstanding_tasks);
+		spin_unlock_irqrestore(host->host_lock, flags);
 		err = -ETIMEDOUT;
 	} else {
 		err = ufshcd_task_req_compl(hba, free_slot, tm_response);
@@ -8471,9 +8452,9 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
 {
 	int err;
 	size_t buff_len;
-	u8 model_index;
-	u8 *desc_buf, wb_buf[4];
-	u32 lun, res;
+	u8 model_index, lun;
+	u8 *desc_buf;
+	u32 d_lu_wb_buf_alloc;
 
 	buff_len = max_t(size_t, hba->desc_size.dev_desc,
 			 QUERY_DESC_MAX_SIZE + 1);
@@ -8523,14 +8504,17 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
 
 		hba->dev_info.wb_config_lun = false;
 		for (lun = 0; lun < UFS_UPIU_MAX_GENERAL_LUN; lun++) {
-			memset(wb_buf, 0, sizeof(wb_buf));
-			err = ufshcd_get_wb_alloc_units(hba, lun, wb_buf);
+			d_lu_wb_buf_alloc = 0;
+			err = ufshcd_read_unit_desc_param(hba,
+					lun,
+					UNIT_DESC_PARAM_WB_BUF_ALLOC_UNITS,
+					(u8 *)&d_lu_wb_buf_alloc,
+					sizeof(d_lu_wb_buf_alloc));
+
 			if (err)
 				break;
 
-			res = wb_buf[0] << 24 | wb_buf[1] << 16 |
-				wb_buf[2] << 8 | wb_buf[3];
-			if (res) {
+			if (d_lu_wb_buf_alloc) {
 				hba->dev_info.wb_config_lun = true;
 				break;
 			}
@@ -8630,6 +8614,13 @@ static int ufshcd_tune_pa_hibern8time(struct ufs_hba *hba)
 	int ret = 0;
 	u32 local_tx_hibern8_time_cap = 0, peer_rx_hibern8_time_cap = 0;
 	u32 max_hibern8_time, tuned_pa_hibern8time;
+	u32 pa_hibern8time_quirk_enabled = hba->dev_info.quirks &
+		UFS_DEVICE_QUIRK_PA_HIBER8TIME;
+
+	if (!ufshcd_is_unipro_pa_params_tuning_req(hba) &&
+	    !pa_hibern8time_quirk_enabled) {
+		return 0;
+	}
 
 	ret = ufshcd_dme_get(hba,
 			     UIC_ARG_MIB_SEL(TX_HIBERN8TIME_CAPABILITY,
@@ -8650,6 +8641,13 @@ static int ufshcd_tune_pa_hibern8time(struct ufs_hba *hba)
 	/* make sure proper unit conversion is applied */
 	tuned_pa_hibern8time = ((max_hibern8_time * HIBERN8TIME_UNIT_US)
 				/ PA_HIBERN8_TIME_UNIT_US);
+	/* PA_HIBERN8TIME is product of tuned_pa_hibern8time * granularity,
+	 * setting tuned_pa_hibern8time as 3 and since granularity is 100us
+	 * for both host and device side, 3 *100us = 300us is set as
+	 * PA_HIBERN8TIME if UFS_DEVICE_QUIRK_PA_HIBER8TIME quirk is enabled
+	 */
+	if (pa_hibern8time_quirk_enabled)
+		tuned_pa_hibern8time = 3; /* 3 *100us =300us */
 	ret = ufshcd_dme_set(hba, UIC_ARG_MIB(PA_HIBERN8TIME),
 			     tuned_pa_hibern8time);
 out:
@@ -8728,11 +8726,10 @@ out:
 
 static void ufshcd_tune_unipro_params(struct ufs_hba *hba)
 {
-	if (ufshcd_is_unipro_pa_params_tuning_req(hba)) {
+	if (ufshcd_is_unipro_pa_params_tuning_req(hba))
 		ufshcd_tune_pa_tactivate(hba);
-		ufshcd_tune_pa_hibern8time(hba);
-	}
 
+	ufshcd_tune_pa_hibern8time(hba);
 	if (hba->dev_info.quirks & UFS_DEVICE_QUIRK_PA_TACTIVATE)
 		/* set 1ms timeout for PA_TACTIVATE */
 		ufshcd_dme_set(hba, UIC_ARG_MIB(PA_TACTIVATE), 10);
@@ -9056,21 +9053,27 @@ reinit:
 			goto out;
 	}
 
-	/**
-	 * UFS3.0 and newer devices use Vcc and Vccq(1.2V)
-	 * while UFS2.1 devices use Vcc and Vccq2(1.8V) power
-	 * supplies. If the system allows turning off the regulators
-	 * during power collapse event, turn off the regulators
-	 * during system suspend events. This will cause the UFS
-	 * device to re-initialize upon system resume events.
+	/*
+	 * On 4.19 kernel, the controlling of Vccq requlator got changed.
+	 * Its relying on sys_suspend_pwr_off regulator dt flag instead of spm
+	 * level.
+	 * Updated logic is not honoring spm level specified and the device
+	 * specific quirks for the desired link state.
+	 * Below change is to fix above listed issue without distrubing the
+	 * present logic.
 	 */
-	if ((hba->dev_info.w_spec_version >= 0x300 && hba->vreg_info.vccq &&
-		hba->vreg_info.vccq->sys_suspend_pwr_off) ||
-		(hba->dev_info.w_spec_version < 0x300 &&
-		hba->vreg_info.vccq2->sys_suspend_pwr_off))
-		hba->spm_lvl = ufs_get_desired_pm_lvl_for_dev_link_state(
+	if (hba->spm_lvl == ufs_get_desired_pm_lvl_for_dev_link_state(
 				UFS_POWERDOWN_PWR_MODE,
-				UIC_LINK_OFF_STATE);
+				UIC_LINK_OFF_STATE)) {
+		if ((hba->dev_info.w_spec_version >= 0x300 &&
+		     hba->vreg_info.vccq &&
+		     !hba->vreg_info.vccq->sys_suspend_pwr_off))
+			hba->vreg_info.vccq->sys_suspend_pwr_off = true;
+
+		if ((hba->dev_info.w_spec_version < 0x300 &&
+		     !hba->vreg_info.vccq2->sys_suspend_pwr_off))
+			hba->vreg_info.vccq2->sys_suspend_pwr_off = true;
+	}
 
 	/* UFS device is also active now */
 	ufshcd_set_ufs_dev_active(hba);
@@ -10382,6 +10385,7 @@ static int ufshcd_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 			goto enable_gating;
 	}
 
+	flush_work(&hba->eeh_work);
 	ret = ufshcd_link_state_transition(hba, req_link_state, 1);
 	if (ret)
 		goto set_dev_active;
@@ -10535,11 +10539,16 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 			 * we can proceed after checking the link and
 			 * dev state.
 			 */
-			if ((host_byte(ret) == DID_TIME_OUT) &&
-			    ufshcd_is_ufs_dev_active(hba) &&
+			if (ufshcd_is_ufs_dev_active(hba) &&
 			    ufshcd_is_link_active(hba))
 				ret = 0;
-			else
+
+			else if ((work_pending(&hba->eh_work)) ||
+				ufshcd_eh_in_progress(hba)) {
+				flush_work(&hba->eh_work);
+				ret = 0;
+				}
+			if (ret)
 				goto set_old_link_state;
 		}
 	}

@@ -207,10 +207,6 @@ void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 		} else if (tx_cpu == 0) {
 			tx_cpu = cpumask_first(dhd->cpumask_secondary_new);
 		}
-
-		/* If no CPU was available for tx processing, choose CPU 0 */
-		if (tx_cpu >= nr_cpu_ids)
-			tx_cpu = 0;
 	}
 
 	if ((primary_available_cpus == 0) &&
@@ -219,11 +215,16 @@ void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 		tx_cpu = napi_cpu = nr_cpu_ids - 1;
 	}
 
+	/* If no CPU was available for napi processing, choose CPU 0 */
+	if (napi_cpu >= nr_cpu_ids)
+		napi_cpu = 0;
+
+	/* If no CPU was available for tx processing, choose CPU 0 */
+	if (tx_cpu >= nr_cpu_ids)
+		tx_cpu = 0;
+
 	DHD_INFO(("%s After secondary CPU check napi_cpu %d tx_cpu %d nr cpu ids %d\n",
 		__FUNCTION__, napi_cpu, tx_cpu, nr_cpu_ids));
-
-	ASSERT(napi_cpu < nr_cpu_ids);
-	ASSERT(tx_cpu < nr_cpu_ids);
 
 	atomic_set(&dhd->rx_napi_cpu, napi_cpu);
 	atomic_set(&dhd->tx_cpu, tx_cpu);
@@ -1081,6 +1082,15 @@ dhd_napi_schedule(void *info)
 
 	DHD_INFO(("%s rx_napi_struct<%p> on cpu<%d>\n",
 		__FUNCTION__, &dhd->rx_napi_struct, atomic_read(&dhd->rx_napi_cpu)));
+
+	DHD_GENERAL_LOCK(&dhd->pub, flags);
+
+	if (DHD_BUS_BUSY_CHECK_SUSPEND_IN_PROGRESS(&dhd->pub)) {
+		DHD_GENERAL_UNLOCK(&dhd->pub, flags);
+		return;
+	}
+
+	DHD_GENERAL_UNLOCK(&dhd->pub, flags);
 
 	/* add napi_struct to softnet data poll list and raise NET_RX_SOFTIRQ */
 	if (napi_schedule_prep(&dhd->rx_napi_struct)) {

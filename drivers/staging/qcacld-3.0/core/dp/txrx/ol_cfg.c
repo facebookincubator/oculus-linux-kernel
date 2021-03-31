@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -23,6 +23,7 @@
 
 unsigned int vow_config;
 
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 /**
  * ol_tx_set_flow_control_parameters() - set flow control parameters
  * @cfg_ctx: cfg context
@@ -40,6 +41,7 @@ void ol_tx_set_flow_control_parameters(struct cdp_cfg *cfg_pdev,
 	cfg_ctx->tx_flow_stop_queue_th =
 					cfg_param->tx_flow_stop_queue_th;
 }
+#endif
 
 #ifdef CONFIG_HL_SUPPORT
 
@@ -117,6 +119,39 @@ uint8_t ol_defrag_timeout_check(void)
 }
 #endif
 
+#ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
+/**
+ * ol_cfg_update_del_ack_params() - update delayed ack params
+ * @cfg_ctx: cfg context
+ * @cfg_param: parameters
+ *
+ * Return: none
+ */
+void ol_cfg_update_del_ack_params(struct txrx_pdev_cfg_t *cfg_ctx,
+				  struct txrx_pdev_cfg_param_t *cfg_param)
+{
+	cfg_ctx->del_ack_enable = cfg_param->del_ack_enable;
+	cfg_ctx->del_ack_timer_value = cfg_param->del_ack_timer_value;
+	cfg_ctx->del_ack_pkt_count = cfg_param->del_ack_pkt_count;
+}
+#endif
+
+#ifdef WLAN_SUPPORT_TXRX_HL_BUNDLE
+static inline
+void ol_cfg_update_bundle_params(struct txrx_pdev_cfg_t *cfg_ctx,
+				 struct txrx_pdev_cfg_param_t *cfg_param)
+{
+	cfg_ctx->bundle_timer_value = cfg_param->bundle_timer_value;
+	cfg_ctx->bundle_size = cfg_param->bundle_size;
+}
+#else
+static inline
+void ol_cfg_update_bundle_params(struct txrx_pdev_cfg_t *cfg_ctx,
+				 struct txrx_pdev_cfg_param_t *cfg_param)
+{
+}
+#endif
+
 /* FIX THIS -
  * For now, all these configuration parameters are hardcoded.
  * Many of these should actually be determined dynamically instead.
@@ -143,7 +178,7 @@ struct cdp_cfg *ol_pdev_cfg_attach(qdf_device_t osdev, void *pcfg_param)
 	cfg_ctx->max_thruput_mbps = MAX_THROUGHPUT;
 	cfg_ctx->max_nbuf_frags = 1;
 	cfg_ctx->vow_config = vow_config;
-	cfg_ctx->target_tx_credit = TARGET_TX_CREDIT;
+	cfg_ctx->target_tx_credit = CFG_TGT_NUM_MSDU_DESC;
 	cfg_ctx->throttle_period_ms = 40;
 	cfg_ctx->dutycycle_level[0] = THROTTLE_DUTY_CYCLE_LEVEL0;
 	cfg_ctx->dutycycle_level[1] = THROTTLE_DUTY_CYCLE_LEVEL1;
@@ -165,6 +200,8 @@ struct cdp_cfg *ol_pdev_cfg_attach(qdf_device_t osdev, void *pcfg_param)
 	cfg_ctx->enable_rxthread = cfg_param->enable_rxthread;
 	cfg_ctx->ip_tcp_udp_checksum_offload =
 		cfg_param->ip_tcp_udp_checksum_offload;
+	cfg_ctx->p2p_ip_tcp_udp_checksum_offload =
+		cfg_param->p2p_ip_tcp_udp_checksum_offload;
 	cfg_ctx->ce_classify_enabled = cfg_param->ce_classify_enabled;
 	cfg_ctx->gro_enable = cfg_param->gro_enable;
 	cfg_ctx->tso_enable = cfg_param->tso_enable;
@@ -173,6 +210,11 @@ struct cdp_cfg *ol_pdev_cfg_attach(qdf_device_t osdev, void *pcfg_param)
 		cfg_param->enable_data_stall_detection;
 	cfg_ctx->enable_flow_steering = cfg_param->enable_flow_steering;
 	cfg_ctx->disable_intra_bss_fwd = cfg_param->disable_intra_bss_fwd;
+	cfg_ctx->pktlog_buffer_size = cfg_param->pktlog_buffer_size;
+
+	ol_cfg_update_del_ack_params(cfg_ctx, cfg_param);
+
+	ol_cfg_update_bundle_params(cfg_ctx, cfg_param);
 
 	ol_tx_set_flow_control_parameters((struct cdp_cfg *)cfg_ctx, cfg_param);
 
@@ -191,6 +233,64 @@ struct cdp_cfg *ol_pdev_cfg_attach(qdf_device_t osdev, void *pcfg_param)
 
 	return (struct cdp_cfg *)cfg_ctx;
 }
+
+#ifdef WLAN_SUPPORT_TXRX_HL_BUNDLE
+
+int ol_cfg_get_bundle_timer_value(struct cdp_cfg *cfg_pdev)
+{
+	struct txrx_pdev_cfg_t *cfg = (struct txrx_pdev_cfg_t *)cfg_pdev;
+
+	return cfg->bundle_timer_value;
+}
+
+int ol_cfg_get_bundle_size(struct cdp_cfg *cfg_pdev)
+{
+	struct txrx_pdev_cfg_t *cfg = (struct txrx_pdev_cfg_t *)cfg_pdev;
+
+	return cfg->bundle_size;
+}
+#endif
+
+#ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
+/**
+ * ol_cfg_get_del_ack_timer_value() - get delayed ack timer value
+ * @cfg_pdev: pdev handle
+ *
+ * Return: timer value
+ */
+int ol_cfg_get_del_ack_timer_value(struct cdp_cfg *cfg_pdev)
+{
+	struct txrx_pdev_cfg_t *cfg = (struct txrx_pdev_cfg_t *)cfg_pdev;
+
+	return cfg->del_ack_timer_value;
+}
+
+/**
+ * ol_cfg_get_del_ack_enable_value() - get delayed ack enable value
+ * @cfg_pdev: pdev handle
+ *
+ * Return: enable/disable
+ */
+bool ol_cfg_get_del_ack_enable_value(struct cdp_cfg *cfg_pdev)
+{
+	struct txrx_pdev_cfg_t *cfg = (struct txrx_pdev_cfg_t *)cfg_pdev;
+
+	return cfg->del_ack_enable;
+}
+
+/**
+ * ol_cfg_get_del_ack_count_value() - get delayed ack count value
+ * @pdev: cfg_pdev handle
+ *
+ * Return: count value
+ */
+int ol_cfg_get_del_ack_count_value(struct cdp_cfg *cfg_pdev)
+{
+	struct txrx_pdev_cfg_t *cfg = (struct txrx_pdev_cfg_t *)cfg_pdev;
+
+	return cfg->del_ack_pkt_count;
+}
+#endif
 
 int ol_cfg_is_high_latency(struct cdp_cfg *cfg_pdev)
 {
@@ -407,6 +507,7 @@ int ol_cfg_is_rx_thread_enabled(struct cdp_cfg *cfg_pdev)
 	return cfg->enable_rxthread;
 }
 
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 /**
  * ol_cfg_get_tx_flow_stop_queue_th() - return stop queue threshold
  * @pdev : handle to the physical device
@@ -432,7 +533,7 @@ int ol_cfg_get_tx_flow_start_queue_offset(struct cdp_cfg *cfg_pdev)
 
 	return cfg->tx_flow_start_queue_offset;
 }
-
+#endif
 
 #ifdef IPA_OFFLOAD
 unsigned int ol_cfg_ipa_uc_offload_enabled(struct cdp_cfg *cfg_pdev)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012, 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,6 +31,7 @@
 
 #define HDD_WAKELOCK_TIMEOUT_CONNECT 1000
 #define HDD_WAKELOCK_TIMEOUT_RESUME 1000
+#define DISABLE_KRAIT_IDLE_PS_VAL      1
 
 /*
  * HDD_WAKELOCK_CONNECT_COMPLETE = CSR_JOIN_FAILURE_TIMEOUT_DEFAULT (3000) +
@@ -127,6 +128,18 @@ struct pkt_filter_cfg {
 	struct pkt_filter_param_cfg params_data[HDD_MAX_CMP_PER_PACKET_FILTER];
 };
 
+#endif
+
+#ifdef FEATURE_ANI_LEVEL_REQUEST
+/**
+ * ani_priv - structure to store the priv data for get ani request
+ * @num_freq: number of freq received from the FW
+ * @ani: data received from the FW
+ */
+struct ani_priv {
+	uint32_t num_freq;
+	struct wmi_host_ani_level_event *ani;
+};
 #endif
 
 /**
@@ -429,16 +442,15 @@ int wlan_hdd_ipv6_changed(struct notifier_block *nb,
 			  unsigned long data, void *arg);
 
 /**
- * hdd_set_qpower_config() - set qpower config to firmware
+ * hdd_set_power_config() - set power config to firmware
  * @hddctx: HDD context
  * @adapter: HDD adapter
- * @qpower: new qpower config value
+ * @power: new power config value
  *
  * Return: 0 on success; Errno on failure
  */
-int hdd_set_qpower_config(struct hdd_context *hddctx,
-			  struct hdd_adapter *adapter,
-			  uint8_t qpower);
+int hdd_set_power_config(struct hdd_context *hddctx,
+			 struct hdd_adapter *adapter, uint8_t power);
 
 #ifdef FEATURE_WLAN_DIAG_SUPPORT
 /**
@@ -568,4 +580,19 @@ static inline int wlan_hdd_rx_thread_suspend(struct hdd_context *hdd_ctx)
 }
 #endif
 
+#ifdef FEATURE_ANI_LEVEL_REQUEST
+/**
+ * wlan_hdd_get_ani_level() - Wrapper to call API to fetch ani level
+ * @adapter: pointer to HDD adapter
+ * @ani: pointer to structure storing ani level for channels
+ * @parsed_freqs: parsed freqs from the get ani command
+ * @num_freqs: number of parsed channels
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_hdd_get_ani_level(struct hdd_adapter *adapter,
+				  struct wmi_host_ani_level_event *ani,
+				  uint32_t *parsed_freqs,
+				  uint8_t num_freqs);
+#endif /* FEATURE_ANI_LEVEL_REQUEST */
 #endif /* __WLAN_HDD_POWER_H */

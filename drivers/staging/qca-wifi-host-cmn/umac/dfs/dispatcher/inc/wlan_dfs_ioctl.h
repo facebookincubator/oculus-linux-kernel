@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2016-2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2010, Atheros Communications Inc.
  * All Rights Reserved.
  *
@@ -53,29 +53,45 @@
 #define DFS_SET_DISABLE_RADAR_MARKING 25
 #define DFS_GET_DISABLE_RADAR_MARKING 26
 
+#define DFS_INJECT_SEQUENCE 27
+#define DFS_ALLOW_HW_PULSES 28
+#define DFS_SET_PRI_MULTIPILER   29
+
+#define RESTRICTED_80P80_START_FREQ 5660
+#define RESTRICTED_80P80_END_FREQ 5805
+
+/* Check if the given frequencies are within restricted 80P80 start freq(5660)
+ * and end freq (5805).
+ */
+#define CHAN_WITHIN_RESTRICTED_80P80(cfreq1, cfreq2) \
+	((((cfreq1) >= RESTRICTED_80P80_START_FREQ) && \
+	  ((cfreq1) <= RESTRICTED_80P80_END_FREQ) && \
+	  ((cfreq2) >= RESTRICTED_80P80_START_FREQ) && \
+	  ((cfreq2) <= RESTRICTED_80P80_END_FREQ)) ? true : false)
+
 /*
  * Spectral IOCTLs use DFS_LAST_IOCTL as the base.
  * This must always be the last IOCTL in DFS and have
  * the highest value.
  */
-#define DFS_LAST_IOCTL 27
+#define DFS_LAST_IOCTL 29
 
 #ifndef DFS_CHAN_MAX
-#define DFS_CHAN_MAX 1023
+#define DFS_CHAN_MAX 25
 #endif
 
 /**
  * struct dfsreq_nolelem - NOL elements.
  * @nol_freq:          NOL channel frequency.
  * @nol_chwidth:       NOL channel width.
- * @nol_start_ticks:   OS ticks when the NOL timer started.
+ * @nol_start_us:      OS microseconds when the NOL timer started.
  * @nol_timeout_ms:    Nol timeout value in msec.
  */
 
 struct dfsreq_nolelem {
 	uint16_t        nol_freq;
 	uint16_t        nol_chwidth;
-	unsigned long   nol_start_ticks;
+	uint64_t        nol_start_us;
 	uint32_t        nol_timeout_ms;
 };
 
@@ -151,12 +167,14 @@ enum dfs_bangradar_types {
  * @seg_id:         Segment ID information.
  * @is_chirp:       Chirp radar or not.
  * @freq_offset:    Frequency offset at which radar was found.
+ * @detector_id:    Detector ID corresponding to primary/agile detectors.
  */
 struct dfs_bangradar_params {
 	enum dfs_bangradar_types bangradar_type;
 	uint8_t seg_id;
 	uint8_t is_chirp;
 	int32_t freq_offset;
+	uint8_t detector_id;
 };
 #define DFS_IOCTL_PARAM_NOVAL  65535
 #define DFS_IOCTL_PARAM_ENABLE 0x8000
@@ -188,6 +206,10 @@ struct dfs_bangradar_params {
 
 /* Flag to exclude Japan W53 channnels */
 #define DFS_RANDOM_CH_FLAG_NO_JAPAN_W53_CH      0x0100 /* 0000 0001 0000 0000 */
+
+/* Restricted 80P80 MHz is enabled */
+#define DFS_RANDOM_CH_FLAG_RESTRICTED_80P80_ENABLED 0x0200
+						       /* 0000 0010 0000 0000 */
 
 /**
  * struct wlan_dfs_caps - DFS capability structure.
@@ -269,6 +291,106 @@ enum WLAN_DFS_EVENTS {
 	WLAN_EV_CAC_COMPLETED,
 	WLAN_EV_NOL_STARTED,
 	WLAN_EV_NOL_FINISHED,
+};
+
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(WLAN_DFS_SYNTHETIC_RADAR)
+/**
+ * Structure of Pulse to be injected into the DFS Module
+ * ******************************************************
+ * Header
+ * ======
+ * ----------|--------------|
+ * num_pulses| total_len_seq|
+ * ----------|--------------|
+ * Buffer Contents per pulse:
+ * ==========================
+ * ------|----------|-----------|----------|-----------|---------------|--------
+ * r_rssi|r_ext_rssi|r_rs_tstamp|r_fulltsf |fft_datalen|total_len_pulse|FFT
+ *       |          |           |          |           |               |Buffer..
+ * ------|----------|-----------|----------|-----------|---------------|--------
+ */
+
+/**
+ * struct synthetic_pulse - Radar Pulse Structure to be filled on reading the
+ * user file.
+ * @r_rssi:          RSSI of the pulse.
+ * @r_ext_rssi:      Extension Channel RSSI.
+ * @r_rs_tstamp:     Timestamp.
+ * @r_fulltsf:       TSF64.
+ * @fft_datalen:     Total len of FFT.
+ * @total_len_pulse: Total len of the pulse.
+ * @fft_buf:         Pointer to fft data.
+ */
+
+struct synthetic_pulse {
+	uint8_t r_rssi;
+	uint8_t r_ext_rssi;
+	uint32_t r_rs_tstamp;
+	uint64_t r_fulltsf;
+	uint16_t fft_datalen;
+	uint16_t total_len_pulse;
+	unsigned char *fft_buf;
+} qdf_packed;
+
+/**
+ * struct synthetic_seq - Structure to hold an array of pointers to the
+ * pulse structure.
+ * @num_pulses:    Total num of pulses in the sequence.
+ * @total_len_seq: Total len of the sequence.
+ * @pulse:         Array of pointers to synthetic_pulse structure.
+ */
+
+struct synthetic_seq {
+	uint8_t num_pulses;
+	uint32_t total_len_seq;
+	struct synthetic_pulse *pulse[0];
+};
+
+/**
+ * struct seq_store - Structure to hold an array of pointers to the synthetic
+ * sequence structure.
+ * @num_sequence: Total number of "sequence of pulses" in the file.
+ * @seq_arr:      Array of pointers to synthetic_seq structure.
+ */
+
+struct seq_store {
+	uint8_t num_sequence;
+	struct synthetic_seq *seq_arr[0];
+};
+#endif /* WLAN_DFS_PARTIAL_OFFLOAD && WLAN_DFS_SYNTHETIC_RADAR */
+
+/**
+ * enum dfs_agile_sm_evt - DFS Agile SM events.
+ * @DFS_AGILE_SM_EV_AGILE_START: Event to start AGILE PreCAC/RCAC.
+ * @DFS_AGILE_SM_EV_AGILE_DOWN:  Event to stop AGILE PreCAC/RCAC..
+ * @DFS_AGILE_SM_EV_AGILE_DONE:  Event to complete AGILE PreCAC/RCAC..
+ * @DFS_AGILE_SM_EV_ADFS_RADAR: Event to restart AGILE PreCAC/RCAC after radar.
+ */
+enum dfs_agile_sm_evt {
+	DFS_AGILE_SM_EV_AGILE_START = 0,
+	DFS_AGILE_SM_EV_AGILE_STOP =  1,
+	DFS_AGILE_SM_EV_AGILE_DONE =  2,
+	DFS_AGILE_SM_EV_ADFS_RADAR =  3,
+};
+
+/**
+ * enum precac_status_for_chan - preCAC status for channels.
+ * @DFS_NO_PRECAC_COMPLETED_CHANS: None of the channels are preCAC completed.
+ * @DFS_PRECAC_COMPLETED_CHAN: A given channel is preCAC completed.
+ * @DFS_PRECAC_REQUIRED_CHAN:  A given channel required preCAC.
+ * @DFS_INVALID_PRECAC_STATUS: Invalid status.
+ *
+ * Note: "DFS_NO_PRECAC_COMPLETED_CHANS" has more priority than
+ * "DFS_PRECAC_COMPLETED_CHAN". This is because if the preCAC list does not
+ * have any channel that completed preCAC, "DFS_NO_PRECAC_COMPLETED_CHANS"
+ * is returned and search for preCAC completion (DFS_PRECAC_COMPLETED_CHAN)
+ * for a given channel is not done.
+ */
+enum precac_status_for_chan {
+	DFS_NO_PRECAC_COMPLETED_CHANS,
+	DFS_PRECAC_COMPLETED_CHAN,
+	DFS_PRECAC_REQUIRED_CHAN,
+	DFS_INVALID_PRECAC_STATUS,
 };
 
 #endif  /* _DFS_IOCTL_H_ */

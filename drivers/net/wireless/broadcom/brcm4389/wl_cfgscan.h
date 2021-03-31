@@ -176,8 +176,11 @@ typedef enum {
 } wifi_band;
 
 extern bool wl_cfgscan_is_dfs_set(wifi_band band);
-extern s32 wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg, int band,
-        uint16 *list, uint32 *num_channels);
+extern s32 wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg,
+		struct wireless_dev *wdev, int band, uint32 *list, uint32 *num_channels);
 #endif /* DHD_GET_VALID_CHANNELS */
 extern int wl_android_get_sta_channel(struct bcm_cfg80211 *cfg);
+#ifdef WL_SCHED_SCAN
+extern void wl_cfgscan_sched_scan_stop_work(struct work_struct *work);
+#endif /* WL_SCHED_SCAN */
 #endif /* _wl_cfgscan_h_ */

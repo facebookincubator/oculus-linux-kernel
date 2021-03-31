@@ -22,7 +22,7 @@
 #define WCN6750_DEVICE_ID 0x6750
 #define ADRASTEA_DEVICE_ID 0xabcd
 #define QMI_WLFW_MAX_NUM_MEM_SEG 32
-
+#define THERMAL_NAME_LENGTH 20
 extern uint64_t dynamic_feature_mask;
 
 enum icnss_bdf_type {
@@ -109,6 +109,8 @@ enum icnss_driver_state {
 	ICNSS_MODE_ON,
 	ICNSS_BLOCK_SHUTDOWN,
 	ICNSS_PDR,
+	ICNSS_DEL_SERVER,
+	ICNSS_COLD_BOOT_CAL,
 };
 
 struct ce_irq_list {
@@ -131,6 +133,15 @@ struct icnss_vreg_info {
 	struct regulator *reg;
 	struct icnss_vreg_cfg cfg;
 	u32 enabled;
+};
+
+struct icnss_cpr_info {
+	resource_size_t tcs_cmd_base_addr;
+	resource_size_t tcs_cmd_data_addr;
+	void __iomem *tcs_cmd_base_addr_io;
+	void __iomem *tcs_cmd_data_addr_io;
+	u32 cpr_pmic_addr;
+	u32 voltage;
 };
 
 enum icnss_vreg_type {
@@ -158,6 +169,10 @@ struct icnss_fw_mem {
 	unsigned long attrs;
 };
 
+enum icnss_power_save_mode {
+	ICNSS_POWER_SAVE_ENTER,
+	ICNSS_POWER_SAVE_EXIT,
+};
 struct icnss_stats {
 	struct {
 		uint32_t posted;
@@ -230,6 +245,9 @@ struct icnss_stats {
 	u32 exit_power_save_req;
 	u32 exit_power_save_resp;
 	u32 exit_power_save_err;
+	u32 enter_power_save_req;
+	u32 enter_power_save_resp;
+	u32 enter_power_save_err;
 	u32 soc_wake_req;
 	u32 soc_wake_resp;
 	u32 soc_wake_err;
@@ -283,6 +301,15 @@ struct icnss_msi_config {
 	struct icnss_msi_user *users;
 };
 
+struct icnss_thermal_cdev {
+	struct list_head tcdev_list;
+	int tcdev_id;
+	unsigned long curr_thermal_state;
+	unsigned long max_thermal_state;
+	struct device_node *dev_node;
+	struct thermal_cooling_device *tcdev;
+};
+
 struct icnss_priv {
 	uint32_t magic;
 	struct platform_device *pdev;
@@ -290,6 +317,7 @@ struct icnss_priv {
 	struct ce_irq_list ce_irq_list[ICNSS_MAX_IRQ_REGISTRATIONS];
 	struct list_head vreg_list;
 	struct list_head clk_list;
+	struct icnss_cpr_info cpr_info;
 	unsigned long device_id;
 	struct icnss_msi_config *msi_config;
 	u32 msi_base_data;
@@ -301,6 +329,8 @@ struct icnss_priv {
 	void __iomem *mem_base_va;
 	u32 mem_base_size;
 	struct iommu_domain *iommu_domain;
+	dma_addr_t smmu_iova_start;
+	size_t smmu_iova_len;
 	dma_addr_t smmu_iova_ipa_start;
 	size_t smmu_iova_ipa_len;
 	struct qmi_handle qmi;
@@ -363,6 +393,7 @@ struct icnss_priv {
 	bool vbatt_supported;
 	char function_name[WLFW_FUNCTION_NAME_LEN + 1];
 	bool is_ssr;
+	bool smmu_s1_enable;
 	struct kobject *icnss_kobject;
 	atomic_t is_shutdown;
 	u32 qdss_mem_seg_len;
@@ -370,6 +401,8 @@ struct icnss_priv {
 	void *get_info_cb_ctx;
 	int (*get_info_cb)(void *ctx, void *event, int event_len);
 	atomic_t soc_wake_ref_count;
+	struct list_head icnss_tcdev_list;
+	struct mutex tcdev_lock;
 };
 
 struct icnss_reg_info {
@@ -390,5 +423,9 @@ char *icnss_soc_wake_event_to_str(enum icnss_soc_wake_event_type type);
 int icnss_soc_wake_event_post(struct icnss_priv *priv,
 			      enum icnss_soc_wake_event_type type,
 			      u32 flags, void *data);
+int icnss_get_iova(struct icnss_priv *priv, u64 *addr, u64 *size);
+int icnss_get_iova_ipa(struct icnss_priv *priv, u64 *addr, u64 *size);
+int icnss_get_cpr_info(struct icnss_priv *priv);
+int icnss_update_cpr_info(struct icnss_priv *priv);
 #endif
 

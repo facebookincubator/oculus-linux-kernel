@@ -310,7 +310,9 @@ extern int get_int16_vararray_slicespecific(osl_t *osh, char *vars, char *vars_t
 extern uint get_slicespecific_var_name(osl_t *osh, char *vars_table_accessor,
 	const char *name, char **name_out);
 
+#if defined(BCMNVRAMR) || defined(BCMNVRAMW)
 extern uint getgpiopin(char *vars, char *pin_name, uint def_pin);
+#endif /* BCMNVRAMR || BCMNVRAMW */
 #ifdef BCMDBG
 extern void prpkt(const char *msg, osl_t *osh, void *p0);
 #endif /* BCMDBG */

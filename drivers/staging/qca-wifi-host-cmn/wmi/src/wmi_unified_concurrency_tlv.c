@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,14 +53,16 @@ static QDF_STATUS send_set_enable_disable_mcc_adaptive_scheduler_cmd_tlv(
 		       WMITLV_GET_STRUCT_TLVLEN
 			       (wmi_resmgr_adaptive_ocs_enable_disable_cmd_fixed_param));
 	cmd->enable = mcc_adaptive_scheduler;
-	cmd->pdev_id = wmi_handle->ops->convert_pdev_id_host_to_target(pdev_id);
+	cmd->pdev_id = wmi_handle->ops->convert_pdev_id_host_to_target(
+								wmi_handle,
+								pdev_id);
 
 	wmi_mtrace(WMI_RESMGR_ADAPTIVE_OCS_ENABLE_DISABLE_CMDID, NO_SESSION, 0);
 	ret = wmi_unified_cmd_send(wmi_handle, buf, len,
 				   WMI_RESMGR_ADAPTIVE_OCS_ENABLE_DISABLE_CMDID);
 	if (QDF_IS_STATUS_ERROR(ret)) {
-		WMI_LOGP("%s: Failed to send enable/disable MCC"
-			 " adaptive scheduler command", __func__);
+		wmi_err("Failed to send enable/disable MCC"
+			" adaptive scheduler command");
 		wmi_buf_free(buf);
 	}
 
@@ -100,9 +102,9 @@ static QDF_STATUS send_set_mcc_channel_time_latency_cmd_tlv(
 	 */
 	if ((latency_chan1 > 0) &&
 	    (latency_chan1 < WMI_MCC_MIN_NON_ZERO_CHANNEL_LATENCY)) {
-		WMI_LOGE("%s: Invalid time latency for Channel #1 = %dms "
+		wmi_err("Invalid time latency for Channel #1 = %dms "
 			 "Minimum is 30ms (or 0 to use default value by "
-			 "firmware)", __func__, latency_chan1);
+			 "firmware)", latency_chan1);
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -134,8 +136,7 @@ static QDF_STATUS send_set_mcc_channel_time_latency_cmd_tlv(
 	ret = wmi_unified_cmd_send(wmi_handle, buf, len,
 				   WMI_RESMGR_SET_CHAN_LATENCY_CMDID);
 	if (QDF_IS_STATUS_ERROR(ret)) {
-		WMI_LOGE("%s: Failed to send MCC Channel Time Latency command",
-			 __func__);
+		wmi_err("Failed to send MCC Channel Time Latency command");
 		wmi_buf_free(buf);
 		QDF_ASSERT(0);
 	}
@@ -172,18 +173,16 @@ static QDF_STATUS send_set_mcc_channel_time_quota_cmd_tlv(
 	uint32_t chan1_freq = adapter_1_chan_freq;
 	uint32_t chan2_freq = adapter_2_chan_freq;
 
-	WMI_LOGD("%s: freq1:%dMHz, Quota1:%dms, "
-		 "freq2:%dMHz, Quota2:%dms", __func__,
-		 chan1_freq, quota_chan1, chan2_freq,
-		 quota_chan2);
+	wmi_debug("freq1:%dMHz, Quota1:%dms, freq2:%dMHz, Quota2:%dms",
+		 chan1_freq, quota_chan1, chan2_freq, quota_chan2);
 
 	/*
 	 * Perform sanity check on time quota values provided.
 	 */
 	if (quota_chan1 < WMI_MCC_MIN_CHANNEL_QUOTA ||
 	    quota_chan1 > WMI_MCC_MAX_CHANNEL_QUOTA) {
-		WMI_LOGE("%s: Invalid time quota for Channel #1=%dms. Minimum "
-			 "is 20ms & maximum is 80ms", __func__, quota_chan1);
+		wmi_err("Invalid time quota for Channel #1=%dms. Minimum "
+			 "is 20ms & maximum is 80ms", quota_chan1);
 		return QDF_STATUS_E_INVAL;
 	}
 	/* Set WMI CMD for channel time quota here */
@@ -221,7 +220,7 @@ static QDF_STATUS send_set_mcc_channel_time_quota_cmd_tlv(
 	ret = wmi_unified_cmd_send(wmi_handle, buf, len,
 				   WMI_RESMGR_SET_CHAN_TIME_QUOTA_CMDID);
 	if (QDF_IS_STATUS_ERROR(ret)) {
-		WMI_LOGE("Failed to send MCC Channel Time Quota command");
+		wmi_err("Failed to send MCC Channel Time Quota command");
 		wmi_buf_free(buf);
 		QDF_ASSERT(0);
 	}

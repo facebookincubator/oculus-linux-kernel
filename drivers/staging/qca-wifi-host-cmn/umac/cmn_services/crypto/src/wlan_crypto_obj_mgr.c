@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -195,7 +195,30 @@ static void wlan_crypto_free_key(struct wlan_crypto_comp_priv *crypto_priv)
 		}
 	}
 
+	for (i = 0; i < WLAN_CRYPTO_MAXBIGTKKEYIDX; i++) {
+		if (crypto_priv->bigtk_key[i]) {
+			qdf_mem_free(crypto_priv->bigtk_key[i]);
+			crypto_priv->bigtk_key[i] = NULL;
+		}
+	}
+
 }
+
+#ifdef CRYPTO_SET_KEY_CONVERGED
+void wlan_crypto_free_vdev_key(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_crypto_comp_priv *crypto_priv;
+
+	crypto_debug("free key for vdev %d", wlan_vdev_get_id(vdev));
+	crypto_priv = wlan_get_vdev_crypto_obj(vdev);
+	if (!crypto_priv) {
+		crypto_err("crypto_priv NULL");
+		return;
+	}
+
+	wlan_crypto_free_key(crypto_priv);
+}
+#endif
 
 static QDF_STATUS wlan_crypto_vdev_obj_destroy_handler(
 						struct wlan_objmgr_vdev *vdev,

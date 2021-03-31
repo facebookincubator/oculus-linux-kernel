@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017,2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017,2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -58,20 +58,89 @@ static inline void qdf_nbuf_ipa_priv_set(qdf_nbuf_t buf, uint32_t priv)
 /**
  * qdf_nbuf_set_rx_protocol_tag()
  * @buf: Network buffer
- * @val: Value to be set
- * Return: void
+ * @val: Value to be set in the nbuf
+ * Return: None
  */
-static inline void qdf_nbuf_set_rx_protocol_tag(qdf_nbuf_t buf, uint32_t val)
+static inline void qdf_nbuf_set_rx_protocol_tag(qdf_nbuf_t buf, uint16_t val)
 {
 }
 
 /**
  * qdf_nbuf_get_rx_protocol_tag()
  * @buf: Network buffer
- * Return: void
+ * Return: Value of rx protocol tag, here 0
  */
-static inline int qdf_nbuf_get_rx_protocol_tag(qdf_nbuf_t buf)
+static inline uint16_t qdf_nbuf_get_rx_protocol_tag(qdf_nbuf_t buf)
 {
 	return 0;
+}
+
+/**
+ * qdf_nbuf_set_rx_flow_tag() - set given value in flow tag field
+ * of buf(skb->cb)
+ * @buf: Network buffer
+ * @val: Rx Flow Tag to be set in the nbuf
+ * Return: None
+ */
+static inline void qdf_nbuf_set_rx_flow_tag(qdf_nbuf_t buf, uint16_t val)
+{
+}
+
+/**
+ * qdf_nbuf_get_rx_flow_tag() - Get the value of flow_tag
+ * field of buf(skb->cb)
+ * @buf: Network buffer
+ * Return: Value of rx flow tag, here 0
+ */
+static inline uint16_t qdf_nbuf_get_rx_flow_tag(qdf_nbuf_t buf)
+{
+	return 0;
+}
+
+/**
+ * qdf_nbuf_set_exc_frame() - set exception frame flag
+ * @buf: Network buffer whose cb is to set exception frame flag
+ * @value: exception frame flag, value 0 or 1.
+ *
+ * Return: none
+ */
+static inline void qdf_nbuf_set_exc_frame(qdf_nbuf_t buf, uint8_t value)
+{
+	QDF_NBUF_CB_RX_PACKET_EXC_FRAME(buf) = value;
+}
+
+/**
+ * qdf_nbuf_is_exc_frame() - check exception frame flag bit
+ * @buf: Network buffer to get exception flag
+ *
+ * Return: 0 or 1
+ */
+static inline uint8_t qdf_nbuf_is_exc_frame(qdf_nbuf_t buf)
+{
+	return QDF_NBUF_CB_RX_PACKET_EXC_FRAME(buf);
+}
+
+/**
+ * qdf_nbuf_set_rx_ipa_smmu_map() - set ipa smmu mapped flag
+ * @buf: Network buffer
+ * @value: 1 - ipa smmu mapped, 0 - ipa smmu unmapped
+ *
+ * Return: none
+ */
+static inline void qdf_nbuf_set_rx_ipa_smmu_map(qdf_nbuf_t buf,
+						uint8_t value)
+{
+	QDF_NBUF_CB_RX_PACKET_IPA_SMMU_MAP(buf) = value;
+}
+
+/**
+ * qdf_nbuf_is_rx_ipa_smmu_map() - check ipa smmu map flag
+ * @buf: Network buffer
+ *
+ * Return 0 or 1
+ */
+static inline uint8_t qdf_nbuf_is_rx_ipa_smmu_map(qdf_nbuf_t buf)
+{
+	return QDF_NBUF_CB_RX_PACKET_IPA_SMMU_MAP(buf);
 }
 #endif /* _QDF_NBUF_M_H */

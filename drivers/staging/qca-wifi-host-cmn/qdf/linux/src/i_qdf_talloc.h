@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,16 +33,14 @@
 #define __can_sleep() \
 	(!in_interrupt() && !irqs_disabled() && !in_atomic())
 
-#define __zalloc_sleeps(size) kmalloc(size, GFP_KERNEL)
-#define __zalloc_atomic(size) kmalloc(size, GFP_ATOMIC)
+#define __zalloc_sleeps(size) kzalloc(size, GFP_KERNEL)
+#define __zalloc_atomic(size) kzalloc(size, GFP_ATOMIC)
 #define __zalloc_auto(size) \
-	kmalloc(size, __can_sleep() ? GFP_KERNEL : GFP_ATOMIC)
+	kzalloc(size, __can_sleep() ? GFP_KERNEL : GFP_ATOMIC)
 
 #define __free(ptr) kfree(ptr)
 
 #define __alloc_size(ptr) ksize(ptr)
-
-#define __page_size ((size_t)PAGE_SIZE)
 
 #endif /* __I_QDF_TALLOC_H */
 

@@ -30,6 +30,7 @@
 #include <qdf_lock.h>
 #include <qdf_idr.h>
 #include <qdf_mc_timer.h>
+#include <wlan_scan_public_structs.h>
 
 #define MAX_QUEUE_LENGTH 20
 #define P2P_NOA_ATTR_IND 0x1090
@@ -466,6 +467,16 @@ QDF_STATUS p2p_msg_flush_callback(struct scheduler_msg *msg);
  * Return: QDF_STATUS_SUCCESS - in case of success
  */
 QDF_STATUS p2p_event_flush_callback(struct scheduler_msg *msg);
+
+/**
+ * p2p_check_oui_and_force_1x1() - Function to get P2P client device
+ * attributes from assoc request frame IE passed in.
+ * @assoc_ie:     Pointer to the IEs in the association req frame
+ * @assoc_ie_len: Total length of the IE in association req frame
+ *
+ * Return: true if the OUI is present else false
+ */
+bool p2p_check_oui_and_force_1x1(uint8_t *assoc_ie, uint32_t assoc_ie_len);
 
 #ifdef FEATURE_P2P_LISTEN_OFFLOAD
 /**

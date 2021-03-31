@@ -1566,7 +1566,6 @@ wl_cfgp2p_discover_listen(struct bcm_cfg80211 *cfg, s32 channel, u32 duration_ms
 {
 #define EXTRA_DELAY_TIME	100
 	s32 ret = BCME_OK;
-	timer_list_compat_t *_timer;
 	s32 extra_delay;
 	struct net_device *netdev = bcmcfg_to_prmry_ndev(cfg);
 
@@ -1591,7 +1590,6 @@ wl_cfgp2p_discover_listen(struct bcm_cfg80211 *cfg, s32 channel, u32 duration_ms
 
 	ret = wl_cfgp2p_set_p2p_mode(cfg, WL_P2P_DISC_ST_LISTEN, channel, (u16) duration_ms,
 	            wl_to_p2p_bss_bssidx(cfg, P2PAPI_BSSCFG_DEVICE));
-	_timer = &cfg->p2p->listen_timer;
 
 	/*  We will wait to receive WLC_E_P2P_DISC_LISTEN_COMPLETE from dongle ,
 	 *  otherwise we will wait up to duration_ms + 100ms + duration / 10
@@ -1604,7 +1602,7 @@ wl_cfgp2p_discover_listen(struct bcm_cfg80211 *cfg, s32 channel, u32 duration_ms
 		extra_delay = 0;
 	}
 
-	INIT_TIMER(_timer, wl_cfgp2p_listen_expired, duration_ms, extra_delay);
+	mod_timer(&cfg->p2p->listen_timer, jiffies + msecs_to_jiffies(duration_ms + extra_delay));
 #ifdef WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST
 	wl_clr_p2p_status(cfg, LISTEN_EXPIRED);
 #endif /* WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST */

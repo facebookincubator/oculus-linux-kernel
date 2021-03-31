@@ -217,6 +217,7 @@
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
 	qcom,wcn-bt = <1>;
 	qcom,ext-disp-audio-rx = <1>;
+	qcom,tdm-max-slots = <8>;
 	qcom,audio-routing =
 		"AMIC1", "MIC BIAS1",
 		"MIC BIAS1", "Analog Mic1",

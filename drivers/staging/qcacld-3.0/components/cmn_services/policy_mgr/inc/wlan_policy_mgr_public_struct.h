@@ -57,7 +57,14 @@
 
 #define MAX_MAC 2
 
+#ifdef FEATURE_FOURTH_CONNECTION
+#define MAX_NUMBER_OF_CONC_CONNECTIONS 4
+#else
 #define MAX_NUMBER_OF_CONC_CONNECTIONS 3
+#endif
+
+/* Policy manager default request id */
+#define POLICY_MGR_DEF_REQ_ID 0
 
 typedef int (*send_mode_change_event_cb)(void);
 
@@ -174,6 +181,18 @@ enum policy_mgr_pcl_channel_order {
 };
 
 /**
+ * policy_mgr_pcl_band_priority - Band priority between 5G and 6G channel
+ * @POLICY_MGR_PCL_BAND_5G_THEN_6G: 5 Ghz channel followed by 6 Ghz channel
+ * @POLICY_MGR_PCL_BAND_6G_THEN_5G: 6 Ghz channel followed by 5 Ghz channel
+ *
+ *  Band priority between 5G and 6G
+ */
+enum policy_mgr_pcl_band_priority {
+	POLICY_MGR_PCL_BAND_5G_THEN_6G = 0,
+	POLICY_MGR_PCL_BAND_6G_THEN_5G,
+};
+
+/**
  * enum policy_mgr_max_rx_ss - Maximum number of receive spatial streams
  * @POLICY_MGR_RX_NSS_1: Receive Nss = 1
  * @POLICY_MGR_RX_NSS_2: Receive Nss = 2
@@ -239,7 +258,6 @@ enum policy_mgr_conc_priority_mode {
  * @PM_SAP_MODE: SAP mode
  * @PM_P2P_CLIENT_MODE: P2P client mode
  * @PM_P2P_GO_MODE: P2P Go mode
- * @PM_IBSS_MODE: IBSS mode
  * @PM_NDI_MODE: NDI mode
  * @PM_NAN_DISC_MODE: NAN Discovery mode
  * @PM_MAX_NUM_OF_MODE: max value place holder
@@ -249,7 +267,6 @@ enum policy_mgr_con_mode {
 	PM_SAP_MODE,
 	PM_P2P_CLIENT_MODE,
 	PM_P2P_GO_MODE,
-	PM_IBSS_MODE,
 	PM_NDI_MODE,
 	PM_NAN_DISC_MODE,
 	PM_MAX_NUM_OF_MODE
@@ -355,10 +372,6 @@ enum policy_mgr_pcl_type {
  * @PM_SAP_24_2x2: SAP connection using 2x2@2.4 Ghz
  * @PM_SAP_5_1x1: SAP connection using 1x1@5 Ghz
  * @PM_SAP_5_1x1: SAP connection using 2x2@5 Ghz
- * @PM_IBSS_24_1x1:  IBSS connection using 1x1@2.4 Ghz
- * @PM_IBSS_24_2x2:  IBSS connection using 2x2@2.4 Ghz
- * @PM_IBSS_5_1x1:  IBSS connection using 1x1@5 Ghz
- * @PM_IBSS_5_2x2:  IBSS connection using 2x2@5 Ghz
  * @PM_NAN_DISC_24_1x1:  NAN Discovery using 1x1@2.4 Ghz
  * @PM_NAN_DISC_24_2x2:  NAN Discovery using 2x2@2.4 Ghz
  * @PM_NDI_24_1x1:  NAN Datapath using 1x1@2.4 Ghz
@@ -387,10 +400,6 @@ enum policy_mgr_one_connection_mode {
 	PM_SAP_24_2x2,
 	PM_SAP_5_1x1,
 	PM_SAP_5_2x2,
-	PM_IBSS_24_1x1,
-	PM_IBSS_24_2x2,
-	PM_IBSS_5_1x1,
-	PM_IBSS_5_2x2,
 	PM_NAN_DISC_24_1x1,
 	PM_NAN_DISC_24_2x2,
 	PM_NDI_24_1x1,
@@ -562,6 +571,16 @@ enum policy_mgr_one_connection_mode {
  *			1x1
  * @PM_SAP_SAP_DBS_2x2: SAP & SAP connection on DBS using 2x2
  * @PM_SAP_SAP_SBS_5_1x1: SAP & SAP connection on 5G SBS using 1x1
+ * @PM_SAP_NAN_DISC_SCC_24_1x1: SAP & NAN connection on
+ *			SCC using 1x1@2.4 Ghz
+ * @PM_SAP_NAN_DISC_SCC_24_2x2: SAP & NAN connection on
+ *			SCC using 2x2@2.4 Ghz
+ * @PM_SAP_NAN_DISC_MCC_24_1x1: SAP & NAN connection on
+ *			MCC using 1x1@2.4 Ghz
+ * @PM_SAP_NAN_DISC_MCC_24_2x2: SAP & NAN connection on
+ *			SCC using 2x2@2.4 Ghz
+ * @PM_SAP_NAN_DISC_DBS_1x1: SAP & NAN connection on DBS using 1x1
+ * @PM_SAP_NAN_DISC_DBS_2x2: SAP & NAN connection on DBS using 2x2
  * @PM_STA_STA_SCC_24_1x1: STA & STA connection on
  *			SCC using 1x1@2.4 Ghz
  * @PM_STA_STA_SCC_24_2x2: STA & STA connection on
@@ -598,6 +617,21 @@ enum policy_mgr_one_connection_mode {
  * @PM_NAN_DISC_NDI_MCC_24_2x2: NAN & NDI connection on MCC using 2x2 on 2.4 GHz
  * @PM_NAN_DISC_NDI_DBS_1x1: NAN & NDI connection on DBS using 1x1
  * @PM_NAN_DISC_NDI_DBS_2x2: NAN & NDI connection on DBS using 2x2
+ * @PM_P2P_GO_P2P_GO_SCC_24_1x1: P2P GO & P2P GO SCC on 2.4G using 1x1
+ * @PM_P2P_GO_P2P_GO_SCC_24_2x2: P2P GO & P2P GO SCC on 2.4G using 2x2
+ * @PM_P2P_GO_P2P_GO_MCC_24_1x1: P2P GO & P2P GO MCC on 2.4G using 1x1
+ * @PM_P2P_GO_P2P_GO_MCC_24_2x2: P2P GO & P2P GO MCC on 2.4G using 2x2
+ * @PM_P2P_GO_P2P_GO_SCC_5_1x1: P2P GO & P2P GO SCC on 5G using 1x1
+ * @PM_P2P_GO_P2P_GO_SCC_5_2x2: P2P GO & P2P GO SCC on 5G using 2x2
+ * @PM_P2P_GO_P2P_GO_MCC_5_1x1: P2P GO & P2P GO MCC on 5G using 1x1
+ * @PM_P2P_GO_P2P_GO_MCC_5_2x2: P2P GO & P2P GO MCC on 5G using 2x2
+ * @PM_P2P_GO_P2P_GO_MCC_24_5_1x1: P2P GO 2.4G & P2P GO 5G dual band MCC
+ *                                 using 1x1
+ * @PM_P2P_GO_P2P_GO_MCC_24_5_2x2: P2P GO 2.4G & P2P GO 5G dual band MCC
+ *                                 using 2x2
+ * @PM_P2P_GO_P2P_GO_DBS_1x1: P2P GO & P2P GO on DBS using 1x1
+ * @PM_P2P_GO_P2P_GO_DBS_2x2: P2P GO & P2P GO on DBS using 2x2
+ * @PM_P2P_GO_P2P_GO_SBS_5_1x1: P2P GO & P2P GO on SBS using 1x1
  *
  * These are generic IDs that identify the various roles in the
  * software system
@@ -694,6 +728,12 @@ enum policy_mgr_two_connection_mode {
 	PM_SAP_SAP_DBS_1x1,
 	PM_SAP_SAP_DBS_2x2,
 	PM_SAP_SAP_SBS_5_1x1,
+	PM_SAP_NAN_DISC_SCC_24_1x1,
+	PM_SAP_NAN_DISC_SCC_24_2x2,
+	PM_SAP_NAN_DISC_MCC_24_1x1,
+	PM_SAP_NAN_DISC_MCC_24_2x2,
+	PM_SAP_NAN_DISC_DBS_1x1,
+	PM_SAP_NAN_DISC_DBS_2x2,
 	PM_STA_STA_SCC_24_1x1,
 	PM_STA_STA_SCC_24_2x2,
 	PM_STA_STA_MCC_24_1x1,
@@ -719,9 +759,69 @@ enum policy_mgr_two_connection_mode {
 	PM_NAN_DISC_NDI_MCC_24_2x2,
 	PM_NAN_DISC_NDI_DBS_1x1,
 	PM_NAN_DISC_NDI_DBS_2x2,
-
+	PM_P2P_GO_P2P_GO_SCC_24_1x1,
+	PM_P2P_GO_P2P_GO_SCC_24_2x2,
+	PM_P2P_GO_P2P_GO_MCC_24_1x1,
+	PM_P2P_GO_P2P_GO_MCC_24_2x2,
+	PM_P2P_GO_P2P_GO_SCC_5_1x1,
+	PM_P2P_GO_P2P_GO_SCC_5_2x2,
+	PM_P2P_GO_P2P_GO_MCC_5_1x1,
+	PM_P2P_GO_P2P_GO_MCC_5_2x2,
+	PM_P2P_GO_P2P_GO_MCC_24_5_1x1,
+	PM_P2P_GO_P2P_GO_MCC_24_5_2x2,
+	PM_P2P_GO_P2P_GO_DBS_1x1,
+	PM_P2P_GO_P2P_GO_DBS_2x2,
+	PM_P2P_GO_P2P_GO_SBS_5_1x1,
 	PM_MAX_TWO_CONNECTION_MODE
 };
+
+#ifdef FEATURE_FOURTH_CONNECTION
+/**
+ * enum policy_mgr_three_connection_mode - Combination of first three
+ * connections type, concurrency state, band used.
+ *
+ * @PM_STA_SAP_SCC_24_SAP_5_DBS: STA & SAP connection on 2.4 Ghz SCC, another
+ * SAP on 5 G
+ * @PM_STA_SAP_SCC_5_SAP_24_DBS: STA & SAP connection on 5 Ghz SCC, another
+ * SAP on 2.4 G
+ * @PM_STA_SAP_SCC_24_STA_5_DBS: STA & SAP connection on 2.4 Ghz SCC, another
+ * STA on 5G
+ * @PM_STA_SAP_SCC_5_STA_24_DBS: STA & SAP connection on 5 Ghz SCC, another
+ * STA on 2.4 G
+ * @PM_NAN_DISC_SAP_SCC_24_NDI_5_DBS: NAN_DISC & SAP connection on 2.4 Ghz SCC,
+ * NDI/NDP on 5 G
+ * @PM_NAN_DISC_NDI_SCC_24_SAP_5_DBS: NAN_DISC & NDI/NDP connection on 2.4 Ghz
+ * SCC, SAP on 5 G
+ * @PM_SAP_NDI_SCC_5_NAN_DISC_24_DBS: SAP & NDI/NDP connection on 5 Ghz,
+ * NAN_DISC on 24 Ghz
+ * @PM_NAN_DISC_STA_24_NDI_5_DBS: STA and NAN Disc on 2.4Ghz and NDI on 5ghz DBS
+ * @PM_NAN_DISC_NDI_24_STA_5_DBS: NDI and NAN Disc on 2.4Ghz and STA on 5ghz DBS
+ * @PM_STA_NDI_5_NAN_DISC_24_DBS: STA, NDI on 5ghz and NAN Disc on 2.4Ghz DBS
+ * @PM_STA_NDI_NAN_DISC_24_SMM: STA, NDI, NAN Disc all on 2.4ghz SMM
+ * @PM_NAN_DISC_NDI_24_NDI_5_DBS: NDI and NAN Disc on 2.4Ghz and second NDI in
+ * 5ghz DBS
+ * @PM_NDI_NDI_5_NAN_DISC_24_DBS: Both NDI on 5ghz and NAN Disc on 2.4Ghz DBS
+ * @PM_NDI_NDI_NAN_DISC_24_SMM: Both NDI, NAN Disc on 2.4ghz SMM
+ */
+enum policy_mgr_three_connection_mode {
+	PM_STA_SAP_SCC_24_SAP_5_DBS,
+	PM_STA_SAP_SCC_5_SAP_24_DBS,
+	PM_STA_SAP_SCC_24_STA_5_DBS,
+	PM_STA_SAP_SCC_5_STA_24_DBS,
+	PM_NAN_DISC_SAP_SCC_24_NDI_5_DBS,
+	PM_NAN_DISC_NDI_SCC_24_SAP_5_DBS,
+	PM_SAP_NDI_SCC_5_NAN_DISC_24_DBS,
+	PM_NAN_DISC_STA_24_NDI_5_DBS,
+	PM_NAN_DISC_NDI_24_STA_5_DBS,
+	PM_STA_NDI_5_NAN_DISC_24_DBS,
+	PM_STA_NDI_NAN_DISC_24_SMM,
+	PM_NAN_DISC_NDI_24_NDI_5_DBS,
+	PM_NDI_NDI_5_NAN_DISC_24_DBS,
+	PM_NDI_NDI_NAN_DISC_24_SMM,
+
+	PM_MAX_THREE_CONNECTION_MODE
+};
+#endif
 
 /**
  * enum policy_mgr_conc_next_action - actions to be taken on old
@@ -790,7 +890,6 @@ enum policy_mgr_band {
 /**
  * enum policy_mgr_conn_update_reason: Reason for conc connection update
  * @POLICY_MGR_UPDATE_REASON_SET_OPER_CHAN: Set probable operating channel
- * @POLICY_MGR_UPDATE_REASON_JOIN_IBSS: Join IBSS
  * @POLICY_MGR_UPDATE_REASON_UT: Unit test related
  * @POLICY_MGR_UPDATE_REASON_START_AP: Start AP
  * @POLICY_MGR_UPDATE_REASON_NORMAL_STA: Connection to Normal STA
@@ -806,10 +905,10 @@ enum policy_mgr_band {
  *        to the other DBS mode. This reason code indicates such condition.
  * @POLICY_MGR_UPDATE_REASON_NAN_DISCOVERY: NAN Discovery related
  * @POLICY_MGR_UPDATE_REASON_NDP_UPDATE: NAN Datapath related update
+ * @POLICY_MGR_UPDATE_REASON_STA_CONNECT: STA/CLI connection to peer
  */
 enum policy_mgr_conn_update_reason {
 	POLICY_MGR_UPDATE_REASON_SET_OPER_CHAN,
-	POLICY_MGR_UPDATE_REASON_JOIN_IBSS,
 	POLICY_MGR_UPDATE_REASON_UT,
 	POLICY_MGR_UPDATE_REASON_START_AP,
 	POLICY_MGR_UPDATE_REASON_NORMAL_STA,
@@ -824,6 +923,7 @@ enum policy_mgr_conn_update_reason {
 	POLICY_MGR_UPDATE_REASON_NAN_DISCOVERY,
 	POLICY_MGR_UPDATE_REASON_NDP_UPDATE,
 	POLICY_MGR_UPDATE_REASON_LFR2_ROAM,
+	POLICY_MGR_UPDATE_REASON_STA_CONNECT,
 };
 
 /**
@@ -875,9 +975,10 @@ enum set_hw_mode_status {
 	SET_HW_MODE_STATUS_ALREADY,
 };
 
-typedef void (*dual_mac_cb)(enum set_hw_mode_status status,
-		uint32_t scan_config,
-		uint32_t fw_mode_config);
+typedef void (*dual_mac_cb)(struct wlan_objmgr_psoc *psoc,
+			    enum set_hw_mode_status status,
+			    uint32_t scan_config,
+			    uint32_t fw_mode_config);
 /**
  * enum policy_mgr_hw_mode_change - identify the HW mode switching to.
  *
@@ -924,27 +1025,56 @@ enum dbs_support {
 };
 
 /**
+ * enum conn_6ghz_flag - structure to define connection 6ghz capable info
+ * in policy mgr conn info struct
+ *
+ * @CONN_6GHZ_FLAG_VALID: The 6ghz flag is valid (has been initialized)
+ * @CONN_6GHZ_FLAG_ACS_OR_USR_ALLOWED: AP is configured in 6ghz band capable
+ *   by user:
+ *   a. ACS channel range includes 6ghz.
+ *   b. SAP is started in 6ghz fix channel.
+ * @CONN_6GHZ_FLAG_SECURITY_ALLOWED: AP has security mode which is permitted in
+ *   6ghz band.
+ * @CONN_6GHZ_FLAG_NO_LEGACY_CLIENT: AP has no legacy client connected
+ */
+enum conn_6ghz_flag {
+	CONN_6GHZ_FLAG_VALID = 0x0001,
+	CONN_6GHZ_FLAG_ACS_OR_USR_ALLOWED = 0x0002,
+	CONN_6GHZ_FLAG_SECURITY_ALLOWED = 0x0004,
+	CONN_6GHZ_FLAG_NO_LEGACY_CLIENT = 0x0008,
+};
+
+#define CONN_6GHZ_CAPABLIE (CONN_6GHZ_FLAG_VALID | \
+			     CONN_6GHZ_FLAG_ACS_OR_USR_ALLOWED | \
+			     CONN_6GHZ_FLAG_SECURITY_ALLOWED | \
+			     CONN_6GHZ_FLAG_NO_LEGACY_CLIENT)
+
+/**
  * struct policy_mgr_conc_connection_info - information of all existing
  * connections in the wlan system
  *
  * @mode: connection type
- * @chan: channel of the connection
+ * @freq: Channel frequency
  * @bw: channel bandwidth used for the connection
  * @mac: The HW mac it is running
  * @chain_mask: The original capability advertised by HW
  * @original_nss: nss negotiated at connection time
  * @vdev_id: vdev id of the connection
  * @in_use: if the table entry is active
+ * @ch_flagext: Channel extension flags.
+ * @conn_6ghz_flag: connection 6ghz capable flags
  */
 struct policy_mgr_conc_connection_info {
 	enum policy_mgr_con_mode mode;
-	uint8_t       chan;
+	uint32_t      freq;
 	enum hw_mode_bandwidth bw;
 	uint8_t       mac;
 	enum policy_mgr_chain_mode chain_mask;
 	uint32_t      original_nss;
 	uint32_t      vdev_id;
 	bool          in_use;
+	uint16_t      ch_flagext;
+	enum conn_6ghz_flag conn_6ghz_flag;
 };
 
 /**
@@ -1006,6 +1136,8 @@ struct policy_mgr_dual_mac_config {
  * @next_action: next action to happen at policy mgr
  * @action: current hw change action to be done
  * @context: psoc context
+ * @request_id: Request id provided by the requester, can be used while
+ * calling callback to the requester
  */
 struct policy_mgr_hw_mode {
 	uint32_t hw_mode_index;
@@ -1015,6 +1147,7 @@ struct policy_mgr_hw_mode {
 	uint8_t next_action;
 	enum policy_mgr_conc_next_action action;
 	struct wlan_objmgr_psoc *context;
+	uint32_t request_id;
 };
 
 /**
@@ -1024,7 +1157,7 @@ struct policy_mgr_hw_mode {
  * @pcl_len: Number of channels in the PCL
  */
 struct policy_mgr_pcl_list {
-	uint8_t pcl_list[NUM_CHANNELS];
+	uint32_t pcl_list[NUM_CHANNELS];
 	uint8_t weight_list[NUM_CHANNELS];
 	uint32_t pcl_len;
 };
@@ -1042,9 +1175,9 @@ struct policy_mgr_pcl_list {
  * @weight_list: Weights assigned by policy manager
  */
 struct policy_mgr_pcl_chan_weights {
-	uint8_t pcl_list[NUM_CHANNELS];
+	uint32_t pcl_list[NUM_CHANNELS];
 	uint32_t pcl_len;
-	uint8_t saved_chan_list[NUM_CHANNELS];
+	uint32_t saved_chan_list[NUM_CHANNELS];
 	uint32_t saved_num_chan;
 	uint8_t weighed_valid_list[NUM_CHANNELS];
 	uint8_t weight_list[NUM_CHANNELS];
@@ -1058,6 +1191,7 @@ struct policy_mgr_pcl_chan_weights {
  * @mhz: channel frequency in MHz
  * @chan_width: channel bandwidth
  * @mac_id: the mac on which vdev is on
+ * @ch_flagext: Channel extension flags.
  */
 struct policy_mgr_vdev_entry_info {
 	uint32_t type;
@@ -1065,6 +1199,7 @@ struct policy_mgr_vdev_entry_info {
 	uint32_t mhz;
 	uint32_t chan_width;
 	uint32_t mac_id;
+	uint16_t ch_flagext;
 };
 
 /**
@@ -1141,10 +1276,21 @@ struct dbs_nss {
  * @mac_id: The HW mac it is running
  * @vdev_id: vdev id
  * @channel: channel of the connection
+ * @ch_freq: channel freq in Mhz
  */
 struct connection_info {
 	uint8_t mac_id;
 	uint8_t vdev_id;
 	uint8_t channel;
+	uint32_t ch_freq;
+};
+
+/**
+ * struct sta_ap_intf_check_work_ctx - sta_ap_intf_check_work
+ * related info
+ * @psoc: pointer to PSOC object information
+ */
+struct sta_ap_intf_check_work_ctx {
+	struct wlan_objmgr_psoc *psoc;
 };
 #endif /* __WLAN_POLICY_MGR_PUBLIC_STRUCT_H */

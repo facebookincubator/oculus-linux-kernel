@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -98,11 +98,26 @@ typedef unsigned long dma_addr_t;
 typedef unsigned long phys_addr_t;
 typedef unsigned long __sgtable_t;
 
+#ifndef SIOCGIWAP
 #define SIOCGIWAP       0
+#endif
+
+#ifndef IWEVCUSTOM
 #define IWEVCUSTOM      0
+#endif
+
+#ifndef IWEVREGISTERED
 #define IWEVREGISTERED  0
+#endif
+
+#ifndef IWEVEXPIRED
 #define IWEVEXPIRED     0
+#endif
+
+#ifndef SIOCGIWSCAN
 #define SIOCGIWSCAN     0
+#endif
+
 #define DMA_TO_DEVICE   0
 #define DMA_BIDIRECTIONAL 0
 #define DMA_FROM_DEVICE 0
@@ -209,6 +224,7 @@ struct __qdf_mempool_ctxt;
  * @QDF_BUS_TYPE_SNOC: SNOC Bus
  * @QDF_BUS_TYPE_SIM: Simulator
  * @QDF_BUS_TYPE_USB: USB Bus
+ * @QDF_BUS_TYPE_IPCI: IPCI Bus
  */
 enum qdf_bus_type {
 	QDF_BUS_TYPE_NONE = -1,
@@ -217,7 +233,8 @@ enum qdf_bus_type {
 	QDF_BUS_TYPE_SNOC,
 	QDF_BUS_TYPE_SIM,
 	QDF_BUS_TYPE_SDIO,
-	QDF_BUS_TYPE_USB
+	QDF_BUS_TYPE_USB,
+	QDF_BUS_TYPE_IPCI
 };
 
 /**
@@ -250,14 +267,16 @@ struct __qdf_device {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 	struct iommu_domain *domain;
 #else
+#ifdef ENABLE_SMMU_S1_TRANSLATION
 	struct dma_iommu_mapping *iommu_mapping;
+#endif
 #endif
 };
 typedef struct __qdf_device *__qdf_device_t;
 
 typedef size_t __qdf_size_t;
 typedef off_t __qdf_off_t;
-typedef uint8_t __iomem *__qdf_iomem_t;
+typedef void __iomem* __qdf_iomem_t;
 
 typedef uint32_t ath_dma_addr_t;
 
@@ -312,8 +331,6 @@ enum __qdf_net_wireless_evcode {
 	__QDF_CUSTOM_PUSH_BUTTON = IWEVCUSTOM,
 };
 
-#define __qdf_print               printk
-#define __qdf_vprint              vprintk
 #define __qdf_snprint             snprintf
 #define __qdf_vsnprint            vsnprintf
 #define __qdf_toupper            toupper

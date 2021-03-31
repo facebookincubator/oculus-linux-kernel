@@ -130,7 +130,6 @@ struct va_macro_swr_ctrl_platform_data {
 							  void *data),
 			  void *swrm_handle,
 			  int action);
-	int (*pinctrl_setup)(void *handle, bool enable);
 };
 
 struct va_macro_priv {
@@ -460,59 +459,20 @@ static int va_macro_swr_pwr_event(struct snd_soc_dapm_widget *w,
 				dev_dbg(va_dev, "%s: clock switch failed\n",
 					__func__);
 		if (va_priv->lpi_enable) {
-			bolero_register_event_listener(component, true, false);
+			bolero_register_event_listener(component, true);
 			va_priv->register_event_listener = true;
 		}
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if (va_priv->register_event_listener) {
 			va_priv->register_event_listener = false;
-			bolero_register_event_listener(component, false, false);
+			bolero_register_event_listener(component, false);
 		}
 		if (bolero_tx_clk_switch(component, CLK_SRC_TX_RCG))
 			dev_dbg(va_dev, "%s: clock switch failed\n",__func__);
 		if (va_priv->lpass_audio_hw_vote)
 			digital_cdc_rsc_mgr_hw_vote_disable(
 				va_priv->lpass_audio_hw_vote);
-		break;
-	default:
-		dev_err(va_priv->dev,
-			"%s: invalid DAPM event %d\n", __func__, event);
-		ret = -EINVAL;
-	}
-	return ret;
-}
-
-static int va_macro_swr_intr_event(struct snd_soc_dapm_widget *w,
-			       struct snd_kcontrol *kcontrol, int event)
-{
-	struct snd_soc_component *component =
-			snd_soc_dapm_to_component(w->dapm);
-	int ret = 0;
-	struct device *va_dev = NULL;
-	struct va_macro_priv *va_priv = NULL;
-
-	if (!va_macro_get_data(component, &va_dev, &va_priv, __func__))
-		return -EINVAL;
-
-	dev_dbg(va_dev, "%s: event = %d, lpi_enable = %d\n",
-		__func__, event, va_priv->lpi_enable);
-
-	if (!va_priv->lpi_enable)
-		return ret;
-
-	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		if (va_priv->lpi_enable) {
-			bolero_register_event_listener(component, true, true);
-			va_priv->register_event_listener = true;
-		}
-		break;
-	case SND_SOC_DAPM_POST_PMD:
-		if (va_priv->register_event_listener) {
-			va_priv->register_event_listener = false;
-			bolero_register_event_listener(component, false, true);
-		}
 		break;
 	default:
 		dev_err(va_priv->dev,
@@ -549,7 +509,6 @@ static int va_macro_mclk_event(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	struct device *va_dev = NULL;
 	struct va_macro_priv *va_priv = NULL;
-	int clk_src = 0;
 
 	if (!va_macro_get_data(component, &va_dev, &va_priv, __func__))
 		return -EINVAL;
@@ -571,22 +530,6 @@ static int va_macro_mclk_event(struct snd_soc_dapm_widget *w,
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if (va_priv->lpi_enable) {
-			if (va_priv->version == BOLERO_VERSION_2_1) {
-				if (va_priv->swr_ctrl_data) {
-					clk_src = CLK_SRC_TX_RCG;
-					ret = swrm_wcd_notify(
-					va_priv->swr_ctrl_data[0].va_swr_pdev,
-					SWR_REQ_CLK_SWITCH, &clk_src);
-					if (ret)
-						dev_dbg(va_dev,
-					"%s: clock switch failed\n",
-						__func__);
-				}
-			} else if (bolero_tx_clk_switch(component,
-					CLK_SRC_TX_RCG)) {
-				dev_dbg(va_dev, "%s: clock switch failed\n",
-					__func__);
-			}
 			va_macro_mclk_enable(va_priv, 0, true);
 		} else {
 			bolero_tx_mclk_enable(component, 0);
@@ -1958,7 +1901,7 @@ static const struct snd_soc_dapm_widget va_macro_dapm_widgets_v2[] = {
 		VA_MACRO_AIF3_CAP, 0,
 		va_aif3_cap_mixer_v2, ARRAY_SIZE(va_aif3_cap_mixer_v2)),
 
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", -1, SND_SOC_NOPM, 0, 0,
+	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", -2, SND_SOC_NOPM, 0, 0,
 			      va_macro_swr_pwr_event_v2,
 			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
@@ -2000,12 +1943,8 @@ static const struct snd_soc_dapm_widget va_macro_dapm_widgets_v3[] = {
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			   SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
 
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", -1, SND_SOC_NOPM, 0, 0,
+	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", -2, SND_SOC_NOPM, 0, 0,
 			      va_macro_swr_pwr_event,
-			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_INTR", 0, SND_SOC_NOPM, 0, 0,
-			      va_macro_swr_intr_event,
 			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 };
 
@@ -2150,10 +2089,6 @@ static const struct snd_soc_dapm_widget va_macro_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY_S("VA_MCLK", -1, SND_SOC_NOPM, 0, 0,
 			      va_macro_mclk_event,
-			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_INTR", 0, SND_SOC_NOPM, 0, 0,
-			      va_macro_swr_intr_event,
 			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 };
 
@@ -2301,15 +2236,6 @@ static const struct snd_soc_dapm_route va_audio_map_v3[] = {
 	{"VA SMIC MUX3", "SWR_MIC9", "VA SWR_MIC9"},
 	{"VA SMIC MUX3", "SWR_MIC10", "VA SWR_MIC10"},
 	{"VA SMIC MUX3", "SWR_MIC11", "VA SWR_MIC11"},
-
-	{"VA DMIC0", NULL, "VA_SWR_INTR"},
-	{"VA DMIC1", NULL, "VA_SWR_INTR"},
-	{"VA DMIC2", NULL, "VA_SWR_INTR"},
-	{"VA DMIC3", NULL, "VA_SWR_INTR"},
-	{"VA DMIC4", NULL, "VA_SWR_INTR"},
-	{"VA DMIC5", NULL, "VA_SWR_INTR"},
-	{"VA DMIC6", NULL, "VA_SWR_INTR"},
-	{"VA DMIC7", NULL, "VA_SWR_INTR"},
 };
 
 static const struct snd_soc_dapm_route va_audio_map_v2[] = {
@@ -2545,15 +2471,6 @@ static const struct snd_soc_dapm_route va_audio_map[] = {
 	{"VA SMIC MUX7", "SWR_DMIC5", "VA SWR_MIC5"},
 	{"VA SMIC MUX7", "SWR_DMIC6", "VA SWR_MIC6"},
 	{"VA SMIC MUX7", "SWR_DMIC7", "VA SWR_MIC7"},
-
-	{"VA DMIC0", NULL, "VA_SWR_INTR"},
-	{"VA DMIC1", NULL, "VA_SWR_INTR"},
-	{"VA DMIC2", NULL, "VA_SWR_INTR"},
-	{"VA DMIC3", NULL, "VA_SWR_INTR"},
-	{"VA DMIC4", NULL, "VA_SWR_INTR"},
-	{"VA DMIC5", NULL, "VA_SWR_INTR"},
-	{"VA DMIC6", NULL, "VA_SWR_INTR"},
-	{"VA DMIC7", NULL, "VA_SWR_INTR"},
 
 	{"VA SWR_ADC0", NULL, "VA_SWR_PWR"},
 	{"VA SWR_ADC1", NULL, "VA_SWR_PWR"},
@@ -3215,7 +3132,6 @@ static int va_macro_probe(struct platform_device *pdev)
 		va_priv->swr_plat_data.clk = va_macro_swrm_clock;
 		va_priv->swr_plat_data.core_vote = va_macro_core_vote;
 		va_priv->swr_plat_data.handle_irq = NULL;
-		va_priv->swr_plat_data.pinctrl_setup = NULL;
 		mutex_init(&va_priv->swr_clk_lock);
 	}
 	va_priv->is_used_va_swr_gpio = is_used_va_swr_gpio;

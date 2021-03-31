@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -92,10 +92,11 @@ send_set_rap_ps_cmd_tlv(wmi_unified_t wmi_handle,
 		       WMITLV_GET_STRUCT_TLVLEN
 			       (wmi_pdev_set_rap_config_fixed_param));
 	cmd->pdev_id = wmi_handle->ops->convert_pdev_id_host_to_target(
-						      WMI_HOST_PDEV_ID_SOC);
+						     wmi_handle,
+						     WMI_HOST_PDEV_ID_SOC);
 
 	cmd->type = WMI_ROGUE_AP_ON_STA_PS;
-	if (count)
+	if (rap->detect_enable)
 		cmd->sta_ps_detection_enabled = 1;
 	else
 		cmd->sta_ps_detection_enabled = 0;

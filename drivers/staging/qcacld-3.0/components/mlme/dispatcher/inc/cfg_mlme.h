@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,7 +26,6 @@
 #include "cfg_mlme_chainmask.h"
 #include "cfg_mlme_edca_params.h"
 #include "cfg_mlme_generic.h"
-#include "cfg_mlme_ibss.h"
 #include "cfg_mlme_acs.h"
 #include "cfg_mlme_power.h"
 #include "cfg_mlme_ht_caps.h"
@@ -49,7 +48,7 @@
 #include "cfg_mlme_sap.h"
 #include "cfg_mlme_stats.h"
 #include "cfg_mlme_twt.h"
-#include "cfg_mlme_scoring.h"
+#include "cfg_mlme_roam_scoring.h"
 #include "cfg_mlme_oce.h"
 #include "cfg_mlme_threshold.h"
 #include "cfg_mlme_feature_flag.h"
@@ -75,7 +74,6 @@
 	CFG_GENERIC_ALL \
 	CFG_HT_CAPS_ALL \
 	CFG_HE_CAPS_ALL \
-	CFG_IBSS_ALL \
 	CFG_LFR_ALL \
 	CFG_MBO_ALL \
 	CFG_MLME_POWER_ALL \
@@ -90,7 +88,7 @@
 	CFG_REG_ALL \
 	CFG_SAP_ALL \
 	CFG_SAP_PROTECTION_ALL \
-	CFG_SCORING_ALL \
+	CFG_ROAM_SCORING_ALL \
 	CFG_STA_ALL \
 	CFG_STATS_ALL \
 	CFG_THRESHOLD_ALL \

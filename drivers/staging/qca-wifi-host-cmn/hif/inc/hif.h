@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,6 +38,7 @@ extern "C" {
 #ifdef IPA_OFFLOAD
 #include <linux/ipa.h>
 #endif
+#include "cfg_ucfg_api.h"
 #include "qdf_dev.h"
 #define ENABLE_MBOX_DUMMY_SPACE_FEATURE 1
 
@@ -63,9 +64,15 @@ typedef void *hif_handle_t;
 #define HIF_TYPE_QCA6390 18
 #define HIF_TYPE_QCA8074V2 19
 #define HIF_TYPE_QCA6018  20
+#define HIF_TYPE_QCN9000 21
+#define HIF_TYPE_QCA6490 22
+#define HIF_TYPE_QCA6750 23
+#define HIF_TYPE_QCA5018 24
+#define HIF_TYPE_QCN9100 25
+
+#define DMA_COHERENT_MASK_DEFAULT   37
 
 #ifdef IPA_OFFLOAD
-#define DMA_COHERENT_MASK_IPA_VER_3_AND_ABOVE   37
 #define DMA_COHERENT_MASK_BELOW_IPA_VER_3       32
 #endif
 
@@ -115,16 +122,8 @@ struct CE_state;
 #define CE_COUNT_MAX 12
 #define HIF_MAX_GRP_IRQ 16
 
-#ifdef CONFIG_WIN
-#define HIF_MAX_GROUP 12
-#else
+#ifndef HIF_MAX_GROUP
 #define HIF_MAX_GROUP 7
-#endif
-
-#ifdef CONFIG_SLUB_DEBUG_ON
-#ifndef CONFIG_WIN
-#define HIF_CONFIG_SLUB_DEBUG_ON
-#endif
 #endif
 
 #ifndef NAPI_YIELD_BUDGET_BASED
@@ -317,15 +316,20 @@ struct hif_opaque_softc {
 /**
  * enum hif_event_type - Type of DP events to be recorded
  * @HIF_EVENT_IRQ_TRIGGER: IRQ trigger event
+ * @HIF_EVENT_TIMER_ENTRY: Monitor Timer entry event
+ * @HIF_EVENT_TIMER_EXIT: Monitor Timer exit event
  * @HIF_EVENT_BH_SCHED: NAPI POLL scheduled event
  * @HIF_EVENT_SRNG_ACCESS_START: hal ring access start event
  * @HIF_EVENT_SRNG_ACCESS_END: hal ring access end event
  */
 enum hif_event_type {
 	HIF_EVENT_IRQ_TRIGGER,
+	HIF_EVENT_TIMER_ENTRY,
+	HIF_EVENT_TIMER_EXIT,
 	HIF_EVENT_BH_SCHED,
 	HIF_EVENT_SRNG_ACCESS_START,
 	HIF_EVENT_SRNG_ACCESS_END,
+	/* Do check hif_hist_skip_event_record when adding new events */
 };
 
 #ifdef WLAN_FEATURE_DP_EVENT_HISTORY
@@ -357,6 +361,16 @@ struct hif_event_record {
 };
 
 /**
+ * struct hif_event_misc - history related misc info
+ * @last_irq_index: last irq event index in history
+ * @last_irq_ts: last irq timestamp
+ */
+struct hif_event_misc {
+	int32_t last_irq_index;
+	uint64_t last_irq_ts;
+};
+
+/**
  * struct hif_event_history - history for one interrupt group
  * @index: index to store new event
  * @event: event entry
@@ -366,6 +380,7 @@ struct hif_event_record {
  */
 struct hif_event_history {
 	qdf_atomic_t index;
+	struct hif_event_misc misc;
 	struct hif_event_record event[HIF_EVENT_HIST_MAX];
 };
 
@@ -380,6 +395,24 @@ struct hif_event_history {
 void hif_hist_record_event(struct hif_opaque_softc *hif_ctx,
 			   struct hif_event_record *event,
 			   uint8_t intr_grp_id);
+
+/**
+ * hif_event_history_init() - Initialize SRNG event history buffers
+ * @hif_ctx: HIF opaque context
+ * @id: context group ID for which history is recorded
+ *
+ * Returns: None
+ */
+void hif_event_history_init(struct hif_opaque_softc *hif_ctx, uint8_t id);
+
+/**
+ * hif_event_history_deinit() - De-initialize SRNG event history buffers
+ * @hif_ctx: HIF opaque context
+ * @id: context group ID for which history is recorded
+ *
+ * Returns: None
+ */
+void hif_event_history_deinit(struct hif_opaque_softc *hif_ctx, uint8_t id);
 
 /**
  * hif_record_event() - Wrapper function to form and record DP event
@@ -406,8 +439,9 @@ static inline void hif_record_event(struct hif_opaque_softc *hif_ctx,
 	event.tp = tp;
 	event.type = type;
 
-	return hif_hist_record_event(hif_ctx, &event,
-				     intr_grp_id);
+	hif_hist_record_event(hif_ctx, &event, intr_grp_id);
+
+	return;
 }
 
 #else
@@ -418,6 +452,16 @@ static inline void hif_record_event(struct hif_opaque_softc *hif_ctx,
 				    uint32_t hp,
 				    uint32_t tp,
 				    enum hif_event_type type)
+{
+}
+
+static inline void hif_event_history_init(struct hif_opaque_softc *hif_ctx,
+					  uint8_t id)
+{
+}
+
+static inline void hif_event_history_deinit(struct hif_opaque_softc *hif_ctx,
+					    uint8_t id)
 {
 }
 #endif /* WLAN_FEATURE_DP_EVENT_HISTORY */
@@ -470,8 +514,8 @@ enum hif_disable_type {
  * enum hif_device_config_opcode: configure mode
  *
  * @HIF_DEVICE_POWER_STATE: device power state
- * @HIF_DEVICE_GET_MBOX_BLOCK_SIZE: get mbox block size
- * @HIF_DEVICE_GET_MBOX_ADDR: get mbox block address
+ * @HIF_DEVICE_GET_BLOCK_SIZE: get block size
+ * @HIF_DEVICE_GET_ADDR: get block address
  * @HIF_DEVICE_GET_PENDING_EVENTS_FUNC: get pending events functions
  * @HIF_DEVICE_GET_IRQ_PROC_MODE: get irq proc mode
  * @HIF_DEVICE_GET_RECV_EVENT_MASK_UNMASK_FUNC: receive event function
@@ -539,6 +583,8 @@ struct htc_callbacks {
  * @is_load_unload_in_progress: Query if driver state Load/Unload in Progress
  * @is_driver_unloading: Query if driver is unloading.
  * @get_bandwidth_level: Query current bandwidth level for the driver
+ * @prealloc_get_consistent_mem_unligned: get prealloc unaligned consistent mem
+ * @prealloc_put_consistent_mem_unligned: put unaligned consistent mem to pool
  * This Structure provides callback pointer for HIF to query hdd for driver
  * states.
  */
@@ -550,6 +596,10 @@ struct hif_driver_state_callbacks {
 	bool (*is_driver_unloading)(void *context);
 	bool (*is_target_ready)(void *context);
 	int (*get_bandwidth_level)(void *context);
+	void *(*prealloc_get_consistent_mem_unaligned)(qdf_size_t size,
+						       qdf_dma_addr_t *paddr,
+						       uint32_t ring_type);
+	void (*prealloc_put_consistent_mem_unaligned)(void *vaddr);
 };
 
 /* This API detaches the HTC layer from the HIF device */
@@ -635,15 +685,25 @@ bool hif_is_polled_mode_enabled(struct hif_opaque_softc *hif_ctx);
 void hif_enable_fastpath(struct hif_opaque_softc *hif_ctx);
 bool hif_is_fastpath_mode_enabled(struct hif_opaque_softc *hif_ctx);
 void *hif_get_ce_handle(struct hif_opaque_softc *hif_ctx, int ret);
-int hif_ce_fastpath_cb_register(struct hif_opaque_softc *hif_ctx,
-				fastpath_msg_handler handler, void *context);
+
+/**
+ * hif_ce_fastpath_cb_register() - Register callback for fastpath msg handler
+ * @handler: Callback funtcion
+ * @context: handle for callback function
+ *
+ * Return: QDF_STATUS_SUCCESS on success or QDF_STATUS_E_FAILURE
+ */
+QDF_STATUS hif_ce_fastpath_cb_register(
+		struct hif_opaque_softc *hif_ctx,
+		fastpath_msg_handler handler, void *context);
 #else
-static inline int hif_ce_fastpath_cb_register(struct hif_opaque_softc *hif_ctx,
-					      fastpath_msg_handler handler,
-					      void *context)
+static inline QDF_STATUS hif_ce_fastpath_cb_register(
+		struct hif_opaque_softc *hif_ctx,
+		fastpath_msg_handler handler, void *context)
 {
 	return QDF_STATUS_E_FAILURE;
 }
+
 static inline void *hif_get_ce_handle(struct hif_opaque_softc *hif_ctx, int ret)
 {
 	return NULL;
@@ -676,6 +736,7 @@ struct hif_msg_callbacks {
 					uint8_t pipeID);
 	void (*txResourceAvailHandler)(void *context, uint8_t pipe);
 	void (*fwEventHandler)(void *context, QDF_STATUS status);
+	void (*update_bundle_stats)(void *context, uint8_t no_of_pkt_in_bundle);
 };
 
 enum hif_target_status {
@@ -836,15 +897,35 @@ void hif_disable_isr(struct hif_opaque_softc *hif_ctx);
 void hif_reset_soc(struct hif_opaque_softc *hif_ctx);
 void hif_save_htc_htt_config_endpoint(struct hif_opaque_softc *hif_ctx,
 				      int htc_htt_tx_endpoint);
-struct hif_opaque_softc *hif_open(qdf_device_t qdf_ctx, uint32_t mode,
+
+/**
+ * hif_open() - Create hif handle
+ * @qdf_ctx: qdf context
+ * @mode: Driver Mode
+ * @bus_type: Bus Type
+ * @cbk: CDS Callbacks
+ * @psoc: psoc object manager
+ *
+ * API to open HIF Context
+ *
+ * Return: HIF Opaque Pointer
+ */
+struct hif_opaque_softc *hif_open(qdf_device_t qdf_ctx,
+				  uint32_t mode,
 				  enum qdf_bus_type bus_type,
-				  struct hif_driver_state_callbacks *cbk);
+				  struct hif_driver_state_callbacks *cbk,
+				  struct wlan_objmgr_psoc *psoc);
+
 void hif_close(struct hif_opaque_softc *hif_ctx);
 QDF_STATUS hif_enable(struct hif_opaque_softc *hif_ctx, struct device *dev,
 		      void *bdev, const struct hif_bus_id *bid,
 		      enum qdf_bus_type bus_type,
 		      enum hif_enable_type type);
 void hif_disable(struct hif_opaque_softc *hif_ctx, enum hif_disable_type type);
+#ifdef CE_TASKLET_DEBUG_ENABLE
+void hif_enable_ce_latency_stats(struct hif_opaque_softc *hif_ctx,
+				 uint8_t value);
+#endif
 void hif_display_stats(struct hif_opaque_softc *hif_ctx);
 void hif_clear_stats(struct hif_opaque_softc *hif_ctx);
 
@@ -932,12 +1013,11 @@ int hif_pm_runtime_prevent_suspend(struct hif_opaque_softc *ol_sc,
 		struct hif_pm_runtime_lock *lock);
 int hif_pm_runtime_allow_suspend(struct hif_opaque_softc *ol_sc,
 		struct hif_pm_runtime_lock *lock);
-int hif_pm_runtime_prevent_suspend_timeout(struct hif_opaque_softc *ol_sc,
-		struct hif_pm_runtime_lock *lock, unsigned int delay);
 bool hif_pm_runtime_is_suspended(struct hif_opaque_softc *hif_ctx);
 int hif_pm_runtime_get_monitor_wake_intr(struct hif_opaque_softc *hif_ctx);
 void hif_pm_runtime_set_monitor_wake_intr(struct hif_opaque_softc *hif_ctx,
 					  int val);
+void hif_pm_runtime_check_and_request_resume(struct hif_opaque_softc *hif_ctx);
 void hif_pm_runtime_mark_dp_rx_busy(struct hif_opaque_softc *hif_ctx);
 int hif_pm_runtime_is_dp_rx_busy(struct hif_opaque_softc *hif_ctx);
 qdf_time_t hif_pm_runtime_get_dp_rx_busy_mark(struct hif_opaque_softc *hif_ctx);
@@ -988,10 +1068,6 @@ static inline int hif_pm_runtime_prevent_suspend(struct hif_opaque_softc *ol_sc,
 static inline int hif_pm_runtime_allow_suspend(struct hif_opaque_softc *ol_sc,
 		struct hif_pm_runtime_lock *lock)
 { return 0; }
-static inline int
-hif_pm_runtime_prevent_suspend_timeout(struct hif_opaque_softc *ol_sc,
-		struct hif_pm_runtime_lock *lock, unsigned int delay)
-{ return 0; }
 static inline bool hif_pm_runtime_is_suspended(struct hif_opaque_softc *hif_ctx)
 { return false; }
 static inline int
@@ -999,6 +1075,9 @@ hif_pm_runtime_get_monitor_wake_intr(struct hif_opaque_softc *hif_ctx)
 { return 0; }
 static inline void
 hif_pm_runtime_set_monitor_wake_intr(struct hif_opaque_softc *hif_ctx, int val)
+{ return; }
+static inline void
+hif_pm_runtime_check_and_request_resume(struct hif_opaque_softc *hif_ctx)
 { return; }
 static inline void
 hif_pm_runtime_mark_dp_rx_busy(struct hif_opaque_softc *hif_ctx) {};
@@ -1110,6 +1189,28 @@ int hif_apps_wake_irq_enable(struct hif_opaque_softc *hif_ctx);
  */
 int hif_apps_wake_irq_disable(struct hif_opaque_softc *hif_ctx);
 
+/**
+ * hif_apps_enable_irq_wake() - Enables the irq wake from the APPS side
+ * @hif_ctx: an opaque HIF handle to use
+ *
+ * This function always applies to the APPS side kernel interrupt handling
+ * to wake the system from suspend.
+ *
+ * Return: errno
+ */
+int hif_apps_enable_irq_wake(struct hif_opaque_softc *hif_ctx);
+
+/**
+ * hif_apps_disable_irq_wake() - Disables the wake irq from the APPS side
+ * @hif_ctx: an opaque HIF handle to use
+ *
+ * This function always applies to the APPS side kernel interrupt handling
+ * to disable the wake irq.
+ *
+ * Return: errno
+ */
+int hif_apps_disable_irq_wake(struct hif_opaque_softc *hif_ctx);
+
 #ifdef FEATURE_RUNTIME_PM
 int hif_pre_runtime_suspend(struct hif_opaque_softc *hif_ctx);
 void hif_pre_runtime_resume(struct hif_opaque_softc *hif_ctx);
@@ -1181,11 +1282,31 @@ typedef uint32_t (*ext_intr_handler)(void *, uint32_t);
 int32_t hif_get_int_ctx_irq_num(struct hif_opaque_softc *softc,
 				uint8_t id);
 
-uint32_t hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx);
-uint32_t  hif_register_ext_group(struct hif_opaque_softc *hif_ctx,
-		uint32_t numirq, uint32_t irq[], ext_intr_handler handler,
-		void *cb_ctx, const char *context_name,
-		enum hif_exec_type type, uint32_t scale);
+/**
+ * hif_configure_ext_group_interrupts() - Congigure ext group intrrupts
+ * @hif_ctx: hif opaque context
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx);
+
+/**
+ * hif_register_ext_group() - API to register external group
+ * interrupt handler.
+ * @hif_ctx : HIF Context
+ * @numirq: number of irq's in the group
+ * @irq: array of irq values
+ * @handler: callback interrupt handler function
+ * @cb_ctx: context to passed in callback
+ * @type: napi vs tasklet
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS hif_register_ext_group(struct hif_opaque_softc *hif_ctx,
+				  uint32_t numirq, uint32_t irq[],
+				  ext_intr_handler handler,
+				  void *cb_ctx, const char *context_name,
+				  enum hif_exec_type type, uint32_t scale);
 
 void hif_deregister_exec_group(struct hif_opaque_softc *hif_ctx,
 				const char *context_name);
@@ -1213,6 +1334,50 @@ void hif_clear_napi_stats(struct hif_opaque_softc *hif_ctx);
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef FORCE_WAKE
+/**
+ * hif_force_wake_request() - Function to wake from power collapse
+ * @handle: HIF opaque handle
+ *
+ * Description: API to check if the device is awake or not before
+ * read/write to BAR + 4K registers. If device is awake return
+ * success otherwise write '1' to
+ * PCIE_PCIE_LOCAL_REG_PCIE_SOC_WAKE_PCIE_LOCAL_REG which will interrupt
+ * the device and does wakeup the PCI and MHI within 50ms
+ * and then the device writes a value to
+ * PCIE_SOC_PCIE_REG_PCIE_SCRATCH_0_SOC_PCIE_REG to complete the
+ * handshake process to let the host know the device is awake.
+ *
+ * Return: zero - success/non-zero - failure
+ */
+int hif_force_wake_request(struct hif_opaque_softc *handle);
+
+/**
+ * hif_force_wake_release() - API to release/reset the SOC wake register
+ * from interrupting the device.
+ * @handle: HIF opaque handle
+ *
+ * Description: API to set the
+ * PCIE_PCIE_LOCAL_REG_PCIE_SOC_WAKE_PCIE_LOCAL_REG to '0'
+ * to release the interrupt line.
+ *
+ * Return: zero - success/non-zero - failure
+ */
+int hif_force_wake_release(struct hif_opaque_softc *handle);
+#else
+static inline
+int hif_force_wake_request(struct hif_opaque_softc *handle)
+{
+	return 0;
+}
+
+static inline
+int hif_force_wake_release(struct hif_opaque_softc *handle)
+{
+	return 0;
+}
+#endif /* FORCE_WAKE */
 
 #ifdef FEATURE_HAL_DELAYED_REG_WRITE
 /**
@@ -1246,6 +1411,7 @@ void hif_allow_link_low_power_states(struct hif_opaque_softc *hif)
 #endif
 
 void *hif_get_dev_ba(struct hif_opaque_softc *hif_handle);
+void *hif_get_dev_ba_ce(struct hif_opaque_softc *hif_handle);
 
 /**
  * hif_set_initial_wakeup_cb() - set the initial wakeup event handler function
@@ -1308,7 +1474,8 @@ hif_get_ce_service_max_yield_time(struct hif_opaque_softc *hif);
  * Return: void
  */
 void hif_set_ce_service_max_rx_ind_flush(struct hif_opaque_softc *hif,
-				       uint8_t ce_service_max_rx_ind_flush);
+					 uint8_t ce_service_max_rx_ind_flush);
+
 #ifdef OL_ATH_SMART_LOGGING
 /*
  * hif_log_ce_dump() - Copy all the CE DEST ring to buf
@@ -1328,6 +1495,73 @@ uint8_t *hif_log_dump_ce(struct hif_softc *scn, uint8_t *buf_cur,
 			 uint8_t *buf_init, uint32_t buf_sz,
 			 uint32_t ce, uint32_t skb_sz);
 #endif /* OL_ATH_SMART_LOGGING */
+
+/*
+ * hif_softc_to_hif_opaque_softc - API to convert hif_softc handle
+ * to hif_opaque_softc handle
+ * @hif_handle - hif_softc type
+ *
+ * Return: hif_opaque_softc type
+ */
+static inline struct hif_opaque_softc *
+hif_softc_to_hif_opaque_softc(struct hif_softc *hif_handle)
+{
+	return (struct hif_opaque_softc *)hif_handle;
+}
+
+#ifdef FORCE_WAKE
+/**
+ * hif_srng_init_phase(): Indicate srng initialization phase
+ * to avoid force wake as UMAC power collapse is not yet
+ * enabled
+ * @hif_ctx: hif opaque handle
+ * @init_phase: initialization phase
+ *
+ * Return:  None
+ */
+void hif_srng_init_phase(struct hif_opaque_softc *hif_ctx,
+			 bool init_phase);
+#else
+static inline
+void hif_srng_init_phase(struct hif_opaque_softc *hif_ctx,
+			 bool init_phase)
+{
+}
+#endif /* FORCE_WAKE */
+
+#ifdef HIF_IPCI
+/**
+ * hif_shutdown_notifier_cb - Call back for shutdown notifier
+ * @ctx: hif handle
+ *
+ * Return:  None
+ */
+void hif_shutdown_notifier_cb(void *ctx);
+#else
+static inline
+void hif_shutdown_notifier_cb(void *ctx)
+{
+}
+#endif /* HIF_IPCI */
+
+#ifdef HIF_CE_LOG_INFO
+/**
+ * hif_log_ce_info() - API to log ce info
+ * @scn: hif handle
+ * @data: hang event data buffer
+ * @offset: offset at which data needs to be written
+ *
+ * Return:  None
+ */
+void hif_log_ce_info(struct hif_softc *scn, uint8_t *data,
+		     unsigned int *offset);
+#else
+static inline
+void hif_log_ce_info(struct hif_softc *scn, uint8_t *data,
+		     unsigned int *offset)
+{
+}
+#endif
 
 #ifdef HIF_CPU_PERF_AFFINE_MASK
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,6 +22,13 @@
 #include "qdf_nbuf.h"
 #include "qdf_atomic.h"
 #include "wmi_unified_api.h"
+
+#ifdef WLAN_DEBUGFS
+#ifdef DIRECT_BUF_RX_DEBUG
+/* Base debugfs entry for DBR module */
+extern qdf_dentry_t dbr_debugfs_entry;
+#endif /* DIRECT_BUF_RX_DEBUG */
+#endif /* WLAN_DEBUGFS */
 
 #define direct_buf_rx_alert(params...) \
 	QDF_TRACE_FATAL(QDF_MODULE_ID_DIRECT_BUF_RX, params)
@@ -68,6 +75,7 @@ enum DBR_MODULE {
 	DBR_MODULE_MAX,
 };
 
+#ifdef WMI_DBR_SUPPORT
 /**
  * struct direct_buf_rx_data - direct buffer rx data
  * @dbr_len: Length of the buffer DMAed
@@ -85,6 +93,7 @@ struct direct_buf_rx_data {
 	bool meta_data_valid;
 	struct direct_buf_rx_metadata meta_data;
 };
+#endif
 
 /**
  * struct dbr_module_config - module configuration for dbr

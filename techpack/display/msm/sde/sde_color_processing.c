@@ -854,7 +854,8 @@ static int sde_cp_enable_crtc_blob_property(struct drm_crtc *crtc,
 		DRM_ERROR("invalid blob id %lld\n", val);
 		return -EINVAL;
 	}
-	if (blob->length != prop_node->prop_blob_sz) {
+	if ((blob->length != prop_node->prop_blob_sz) &&
+		(blob->length != (2 * prop_node->prop_blob_sz))) {
 		DRM_ERROR("invalid blob len %zd exp %d feature %d\n",
 		    blob->length, prop_node->prop_blob_sz, prop_node->feature);
 		drm_property_blob_put(blob);

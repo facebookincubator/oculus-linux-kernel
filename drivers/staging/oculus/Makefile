@@ -20,6 +20,5 @@ obj-$(CONFIG_MISCFIFO_SAMPLE)		+= miscfifo-sample.o
 obj-$(CONFIG_MOLOKINI)			+= molokini.o
 obj-$(CONFIG_NAUTILUS_CLK)		+= nautilus_clk.o
 obj-$(CONFIG_unknown1_BLU)		+= unknown1_blu_spi.o
-obj-$(CONFIG_SYNCBOSS)			+= swd_driver.o fwupdate_manager.o fw_helpers.o syncboss_swd_ops.o syncboss_spi.o swd.o hubert_swd_ops.o spi_fastpath.o
-obj-$(CONFIG_SYNCBOSS_CAMERA_CONTROL)	+= syncboss_camera.o
+obj-$(CONFIG_SYNCBOSS)			+= syncboss/
 obj-$(CONFIG_VIRTUAL_SENSOR_UTILS)	+= virtual_sensor_utils.o

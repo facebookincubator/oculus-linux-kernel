@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -57,7 +57,6 @@
 typedef enum eLimSystemRole {
 	eLIM_UNKNOWN_ROLE,
 	eLIM_AP_ROLE,
-	eLIM_STA_IN_IBSS_ROLE,
 	eLIM_STA_ROLE,
 	eLIM_P2P_DEVICE_ROLE,
 	eLIM_P2P_DEVICE_GO,
@@ -251,7 +250,7 @@ struct lim_sta_context {
 	enum ani_akm_type akm_type;	/* akm in rsn/wpa ie */
 	uint16_t listenInterval;
 	tSirMacCapabilityInfo capabilityInfo;
-	tSirMacReasonCodes disassocReason;
+	enum wlan_reason_code disassocReason;
 
 	tSirResultCodes resultCode;
 
@@ -266,6 +265,7 @@ struct lim_sta_context {
 #ifdef WLAN_FEATURE_11AX
 	bool he_capable;
 #endif
+	bool force_1x1;
 	uint8_t *owe_ie;
 	uint32_t owe_ie_len;
 };
@@ -329,81 +329,6 @@ typedef struct sLimNoShortSlotParams {
 	tCacheParams staNoShortSlotCache[LIM_PROT_STA_CACHE_SIZE];
 } tLimNoShortSlotParams, *tpLimNoShortSlotParams;
 
-typedef struct tLimIbssPeerNode tLimIbssPeerNode;
-struct tLimIbssPeerNode {
-	tLimIbssPeerNode *next;
-	tSirMacAddr peerMacAddr;
-	uint8_t extendedRatesPresent:1;
-	uint8_t edcaPresent:1;
-	uint8_t wmeEdcaPresent:1;
-	uint8_t wmeInfoPresent:1;
-	uint8_t htCapable:1;
-	uint8_t vhtCapable:1;
-	uint8_t rsvd:2;
-	uint8_t htSecondaryChannelOffset;
-	tSirMacCapabilityInfo capabilityInfo;
-	tSirMacRateSet supportedRates;
-	tSirMacRateSet extendedRates;
-	uint8_t supportedMCSSet[SIZE_OF_SUPPORTED_MCS_SET];
-	tSirMacEdcaParamSetIE edcaParams;
-	uint8_t erpIePresent;
-
-	/* HT Capabilities of IBSS Peer */
-	uint8_t htGreenfield;
-	uint8_t htShortGI40Mhz;
-	uint8_t htShortGI20Mhz;
-
-	/* DSSS/CCK at 40 MHz: Enabled 1 or Disabled */
-	uint8_t htDsssCckRate40MHzSupport;
-
-	/* MIMO Power Save */
-	tSirMacHTMIMOPowerSaveState htMIMOPSState;
-
-	/* */
-	/* A-MPDU Density */
-	/* 000 - No restriction */
-	/* 001 - 1/8 usec */
-	/* 010 - 1/4 usec */
-	/* 011 - 1/2 usec */
-	/* 100 - 1 usec */
-	/* 101 - 2 usec */
-	/* 110 - 4 usec */
-	/* 111 - 8 usec */
-	/* */
-	uint8_t htAMpduDensity;
-
-	/* Maximum Rx A-MPDU factor */
-	uint8_t htMaxRxAMpduFactor;
-
-	/* Set to 0 for 3839 octets */
-	/* Set to 1 for 7935 octets */
-	uint8_t htMaxAmsduLength;
-
-	/* */
-	/* Recommended Tx Width Set */
-	/* 0 - use 20 MHz channel (control channel) */
-	/* 1 - use 40 Mhz channel */
-	/* */
-	uint8_t htSupportedChannelWidthSet;
-
-	uint8_t htLdpcCapable;
-
-	uint8_t beaconHBCount;
-	uint8_t heartbeatFailure;
-
-	uint8_t *beacon;        /* Hold beacon to be sent to HDD/CSR */
-	uint16_t beaconLen;
-
-	tDot11fIEVHTCaps VHTCaps;
-	uint8_t vhtSupportedChannelWidthSet;
-	uint8_t vhtBeamFormerCapable;
-	/*
-	 * Peer Atim Info
-	 */
-	uint8_t atimIePresent;
-	uint32_t peerAtimWindowLength;
-};
-
 /* Enums used for channel switching. */
 typedef enum eLimChannelSwitchState {
 	eLIM_CHANNEL_SWITCH_IDLE,
@@ -414,6 +339,7 @@ typedef enum eLimChannelSwitchState {
 /* Channel Switch Info */
 typedef struct sLimChannelSwitchInfo {
 	tLimChannelSwitchState state;
+	uint32_t sw_target_freq;
 	uint8_t primaryChannel;
 	uint8_t ch_center_freq_seg0;
 	uint8_t ch_center_freq_seg1;

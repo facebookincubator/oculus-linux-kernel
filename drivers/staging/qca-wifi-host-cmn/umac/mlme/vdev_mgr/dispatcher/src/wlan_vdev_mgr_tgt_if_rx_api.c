@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,26 +22,39 @@
  * This file provide definition for APIs registered for LMAC MLME Rx Ops
  */
 #include <qdf_types.h>
+#include <qdf_module.h>
 #include <wlan_vdev_mgr_tgt_if_rx_defs.h>
 #include <wlan_vdev_mgr_tgt_if_rx_api.h>
 #include <include/wlan_vdev_mlme.h>
 #include <wlan_mlme_dbg.h>
 #include <wlan_vdev_mlme_api.h>
 #include <target_if_vdev_mgr_tx_ops.h>
+#include <wlan_psoc_mlme_main.h>
+#include <include/wlan_psoc_mlme.h>
+#include <include/wlan_mlme_cmn.h>
 
-static struct vdev_response_timer *
-tgt_vdev_mgr_get_response_timer_info(struct wlan_objmgr_vdev *vdev)
+struct vdev_response_timer *
+tgt_vdev_mgr_get_response_timer_info(struct wlan_objmgr_psoc *psoc,
+				     uint8_t vdev_id)
 {
-	struct vdev_mlme_obj *vdev_mlme;
+	struct psoc_mlme_obj *psoc_mlme;
 
-	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
-	if (!vdev_mlme) {
-		mlme_err("VDEV_%d: VDEV_MLME is NULL", wlan_vdev_get_id(vdev));
+	if (vdev_id >= WLAN_UMAC_PSOC_MAX_VDEVS) {
+		mlme_err("Incorrect vdev_id: %d", vdev_id);
 		return NULL;
 	}
 
-	return &vdev_mlme->vdev_rt;
+	psoc_mlme = mlme_psoc_get_priv(psoc);
+	if (!psoc_mlme) {
+		mlme_err("VDEV_%d PSOC_%d PSOC_MLME is NULL", vdev_id,
+			 wlan_psoc_get_id(psoc));
+		return NULL;
+	}
+
+	return &psoc_mlme->psoc_vdev_rt[vdev_id];
 }
+
+qdf_export_symbol(tgt_vdev_mgr_get_response_timer_info);
 
 static QDF_STATUS tgt_vdev_mgr_start_response_handler(
 					struct wlan_objmgr_psoc *psoc,
@@ -50,8 +63,6 @@ static QDF_STATUS tgt_vdev_mgr_start_response_handler(
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct vdev_mlme_obj *vdev_mlme;
 	struct wlan_objmgr_vdev *vdev;
-	struct vdev_response_timer *vdev_rsp;
-	struct wlan_lmac_if_mlme_tx_ops *tx_ops;
 
 	if (!rsp || !psoc) {
 		mlme_err("Invalid input");
@@ -67,25 +78,8 @@ static QDF_STATUS tgt_vdev_mgr_start_response_handler(
 
 	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
 	if (!vdev_mlme) {
-		mlme_err("VDEV_%d: VDEV_MLME is NULL", rsp->vdev_id);
-		goto tgt_vdev_mgr_start_response_handler_end;
-	}
-
-	vdev_rsp = &vdev_mlme->vdev_rt;
-	if (!vdev_rsp) {
-		mlme_err("VDEV_%d: Invalid response", rsp->vdev_id);
-		goto tgt_vdev_mgr_start_response_handler_end;
-	}
-
-	tx_ops = target_if_vdev_mgr_get_tx_ops(psoc);
-	if (rsp->resp_type == RESTART_RESPONSE)
-		status = tx_ops->vdev_mgr_rsp_timer_stop(vdev, vdev_rsp,
-							 RESTART_RESPONSE_BIT);
-	else
-		status = tx_ops->vdev_mgr_rsp_timer_stop(vdev, vdev_rsp,
-							 START_RESPONSE_BIT);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		mlme_err("VDEV_%d: Unexpected response", rsp->vdev_id);
+		mlme_err("VDEV_%d PSOC_%d VDEV_MLME is NULL", rsp->vdev_id,
+			 wlan_psoc_get_id(psoc));
 		goto tgt_vdev_mgr_start_response_handler_end;
 	}
 
@@ -93,6 +87,7 @@ static QDF_STATUS tgt_vdev_mgr_start_response_handler(
 		status = vdev_mlme->ops->mlme_vdev_ext_start_rsp(
 								vdev_mlme,
 								rsp);
+
 tgt_vdev_mgr_start_response_handler_end:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_VDEV_TARGET_IF_ID);
 	return status;
@@ -105,8 +100,6 @@ static QDF_STATUS tgt_vdev_mgr_stop_response_handler(
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct vdev_mlme_obj *vdev_mlme;
 	struct wlan_objmgr_vdev *vdev;
-	struct vdev_response_timer *vdev_rsp;
-	struct wlan_lmac_if_mlme_tx_ops *tx_ops;
 
 	if (!rsp || !psoc) {
 		mlme_err("Invalid input");
@@ -122,21 +115,8 @@ static QDF_STATUS tgt_vdev_mgr_stop_response_handler(
 
 	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
 	if (!vdev_mlme) {
-		mlme_err("VDEV_%d: VDEV_MLME is NULL", rsp->vdev_id);
-		goto tgt_vdev_mgr_stop_response_handler_end;
-	}
-
-	vdev_rsp = &vdev_mlme->vdev_rt;
-	if (!vdev_rsp) {
-		mlme_err("VDEV_%d: Invalid response", rsp->vdev_id);
-		goto tgt_vdev_mgr_stop_response_handler_end;
-	}
-
-	tx_ops = target_if_vdev_mgr_get_tx_ops(psoc);
-	status = tx_ops->vdev_mgr_rsp_timer_stop(vdev, vdev_rsp,
-						 STOP_RESPONSE_BIT);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		mlme_err("VDEV_%d: Unexpected response", rsp->vdev_id);
+		mlme_err("VDEV_%d: PSOC_%d VDEV_MLME is NULL", rsp->vdev_id,
+			 wlan_psoc_get_id(psoc));
 		goto tgt_vdev_mgr_stop_response_handler_end;
 	}
 
@@ -144,20 +124,29 @@ static QDF_STATUS tgt_vdev_mgr_stop_response_handler(
 		status = vdev_mlme->ops->mlme_vdev_ext_stop_rsp(
 								vdev_mlme,
 								rsp);
+
 tgt_vdev_mgr_stop_response_handler_end:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_VDEV_TARGET_IF_ID);
 	return status;
 }
 
-QDF_STATUS tgt_vdev_mgr_delete_response_handler(
+static QDF_STATUS tgt_vdev_mgr_delete_response_handler(
 					struct wlan_objmgr_psoc *psoc,
 					struct vdev_delete_response *rsp)
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+
+	status = mlme_vdev_ops_ext_hdl_delete_rsp(psoc, rsp);
+	return status;
+}
+
+static QDF_STATUS tgt_vdev_mgr_peer_delete_all_response_handler(
+					struct wlan_objmgr_psoc *psoc,
+					struct peer_delete_all_response *rsp)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct vdev_mlme_obj *vdev_mlme;
 	struct wlan_objmgr_vdev *vdev;
-	struct vdev_response_timer *vdev_rsp;
-	struct wlan_lmac_if_mlme_tx_ops *tx_ops;
 
 	if (!rsp || !psoc) {
 		mlme_err("Invalid input");
@@ -174,31 +163,18 @@ QDF_STATUS tgt_vdev_mgr_delete_response_handler(
 
 	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
 	if (!vdev_mlme) {
-		mlme_err("VDEV_%d: VDEV_MLME is NULL", rsp->vdev_id);
-		goto tgt_vdev_mgr_delete_response_handler_end;
-	}
-
-	vdev_rsp = &vdev_mlme->vdev_rt;
-	if (!vdev_rsp) {
-		mlme_err("VDEV_%d: Invalid response", rsp->vdev_id);
-		goto tgt_vdev_mgr_delete_response_handler_end;
-	}
-
-	tx_ops = target_if_vdev_mgr_get_tx_ops(psoc);
-	status = tx_ops->vdev_mgr_rsp_timer_stop(vdev, vdev_rsp,
-						 DELETE_RESPONSE_BIT);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		mlme_err("VDEV_%d: Unexpected response", rsp->vdev_id);
-		goto tgt_vdev_mgr_delete_response_handler_end;
+		mlme_err("VDEV_%d: PSOC_%d VDEV_MLME is NULL", rsp->vdev_id,
+			 wlan_psoc_get_id(psoc));
+		goto tgt_vdev_mgr_peer_delete_all_response_handler_end;
 	}
 
 	if ((vdev_mlme->ops) &&
-	    vdev_mlme->ops->mlme_vdev_ext_delete_rsp)
-		status = vdev_mlme->ops->mlme_vdev_ext_delete_rsp(
+	    vdev_mlme->ops->mlme_vdev_ext_peer_delete_all_rsp)
+		status = vdev_mlme->ops->mlme_vdev_ext_peer_delete_all_rsp(
 								vdev_mlme,
 								rsp);
 
-tgt_vdev_mgr_delete_response_handler_end:
+tgt_vdev_mgr_peer_delete_all_response_handler_end:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_VDEV_TARGET_IF_ID);
 	return status;
 }
@@ -220,13 +196,49 @@ tgt_vdev_mgr_tbttoffset_update_handler(uint32_t num_vdevs, bool is_ext)
 	return status;
 }
 
-static QDF_STATUS
+QDF_STATUS
 tgt_vdev_mgr_ext_tbttoffset_update_handle(uint32_t num_vdevs, bool is_ext)
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 
 	return status;
 }
+
+static QDF_STATUS tgt_vdev_mgr_multi_vdev_restart_resp_handler(
+					struct wlan_objmgr_psoc *psoc,
+					struct multi_vdev_restart_resp *resp)
+{
+	return mlme_vdev_ops_ext_hdl_multivdev_restart_resp(psoc, resp);
+}
+
+#ifdef FEATURE_VDEV_OPS_WAKELOCK
+static struct psoc_mlme_wakelock *
+tgt_psoc_get_wakelock_info(struct wlan_objmgr_psoc *psoc)
+{
+	struct psoc_mlme_obj *psoc_mlme;
+
+	psoc_mlme = mlme_psoc_get_priv(psoc);
+	if (!psoc_mlme) {
+		mlme_err("PSOC_MLME is NULL");
+		return NULL;
+	}
+
+	return &psoc_mlme->psoc_mlme_wakelock;
+}
+
+static inline void
+tgt_psoc_reg_wakelock_info_rx_op(struct wlan_lmac_if_mlme_rx_ops
+				     *mlme_rx_ops)
+{
+	mlme_rx_ops->psoc_get_wakelock_info = tgt_psoc_get_wakelock_info;
+}
+#else
+static inline void
+tgt_psoc_reg_wakelock_info_rx_op(struct wlan_lmac_if_mlme_rx_ops
+				     *mlme_rx_ops)
+{
+}
+#endif
 
 void tgt_vdev_mgr_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops)
 {
@@ -242,6 +254,11 @@ void tgt_vdev_mgr_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops)
 		tgt_vdev_mgr_stop_response_handler;
 	mlme_rx_ops->vdev_mgr_delete_response =
 		tgt_vdev_mgr_delete_response_handler;
-	mlme_rx_ops->vdev_mgr_get_response_timer_info =
+	mlme_rx_ops->vdev_mgr_peer_delete_all_response =
+		tgt_vdev_mgr_peer_delete_all_response_handler;
+	mlme_rx_ops->psoc_get_vdev_response_timer_info =
 		tgt_vdev_mgr_get_response_timer_info;
+	mlme_rx_ops->vdev_mgr_multi_vdev_restart_resp =
+		tgt_vdev_mgr_multi_vdev_restart_resp_handler;
+	tgt_psoc_reg_wakelock_info_rx_op(&rx_ops->mops);
 }

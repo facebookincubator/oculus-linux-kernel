@@ -125,9 +125,6 @@ enum wl_cfgp2p_status {
 #define p2p_scan(cfg) ((cfg)->p2p->scan)
 #define p2p_is_on(cfg) ((cfg)->p2p && (cfg)->p2p->on)
 
-/* dword align allocation */
-#define WLC_IOCTL_MAXLEN 8192
-
 #if defined(CUSTOMER_DBG_PREFIX_ENABLE)
 #define USER_PREFIX_CFGP2P		"[cfgp2p][wlan] "
 #define CFGP2P_ERROR_TEXT		USER_PREFIX_CFGP2P
@@ -211,13 +208,6 @@ enum wl_cfgp2p_status {
 			pr_cont args;					\
 		}									\
 	} while (0)
-
-#define INIT_TIMER(timer, func, duration, extra_delay)	\
-	do {				   \
-		init_timer_compat(timer, func, cfg); \
-		timer_expires(timer) = jiffies + msecs_to_jiffies(duration + extra_delay); \
-		add_timer(timer); \
-	} while (0);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) && !defined(WL_CFG80211_P2P_DEV_IF)
 #define WL_CFG80211_P2P_DEV_IF

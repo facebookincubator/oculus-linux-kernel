@@ -27,6 +27,7 @@ enum cnss_bus_width_type {
 enum cnss_platform_cap_flag {
 	CNSS_HAS_EXTERNAL_SWREG = 0x01,
 	CNSS_HAS_UART_ACCESS = 0x02,
+	CNSS_HAS_DRV_SUPPORT = 0x04,
 };
 
 struct cnss_platform_cap {
@@ -195,6 +196,7 @@ extern int cnss_get_platform_cap(struct device *dev,
 extern struct iommu_domain *cnss_smmu_get_domain(struct device *dev);
 extern int cnss_smmu_map(struct device *dev,
 			 phys_addr_t paddr, uint32_t *iova_addr, size_t size);
+extern int cnss_smmu_unmap(struct device *dev, uint32_t iova_addr, size_t size);
 extern int cnss_get_soc_info(struct device *dev, struct cnss_soc_info *info);
 extern int cnss_request_bus_bandwidth(struct device *dev, int bandwidth);
 extern int cnss_power_up(struct device *dev);
@@ -212,6 +214,7 @@ extern int cnss_wlan_pm_control(struct device *dev, bool vote);
 extern int cnss_auto_suspend(struct device *dev);
 extern int cnss_auto_resume(struct device *dev);
 extern int cnss_pci_is_drv_connected(struct device *dev);
+extern int cnss_pci_force_wake_request_sync(struct device *dev, int timeout);
 extern int cnss_pci_force_wake_request(struct device *dev);
 extern int cnss_pci_is_device_awake(struct device *dev);
 extern int cnss_pci_force_wake_release(struct device *dev);
@@ -235,5 +238,5 @@ extern int cnss_athdiag_write(struct device *dev, uint32_t offset,
 			      uint32_t mem_type, uint32_t data_len,
 			      uint8_t *input);
 extern int cnss_set_fw_log_mode(struct device *dev, uint8_t fw_log_mode);
-
+extern int cnss_set_pcie_gen_speed(struct device *dev, u8 pcie_gen_speed);
 #endif /* _NET_CNSS2_H */

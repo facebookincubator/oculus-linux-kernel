@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,11 +29,18 @@
 #include <wlan_scan_tgt_api.h>
 #include <target_if.h>
 
-
 static inline struct wlan_lmac_if_scan_rx_ops *
 target_if_scan_get_rx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.rx_ops.scan;
+	struct wlan_lmac_if_rx_ops *rx_ops;
+
+	rx_ops = wlan_psoc_get_lmac_if_rxops(psoc);
+	if (!rx_ops) {
+		target_if_err("rx_ops is NULL");
+		return NULL;
+	}
+
+	return &rx_ops->scan;
 }
 
 static int
@@ -74,6 +81,11 @@ target_if_scan_event_handler(ol_scn_t scn, uint8_t *data, uint32_t datalen)
 	}
 
 	scan_rx_ops = target_if_scan_get_rx_ops(psoc);
+	if (!scan_rx_ops) {
+		target_if_err("scan_rx_ops is NULL");
+		return -EINVAL;
+	}
+
 	if (scan_rx_ops->scan_ev_handler) {
 		status = scan_rx_ops->scan_ev_handler(psoc, event_info);
 		if (status != QDF_STATUS_SUCCESS) {
@@ -93,12 +105,10 @@ target_if_scan_event_handler(ol_scn_t scn, uint8_t *data, uint32_t datalen)
 int target_if_nlo_complete_handler(ol_scn_t scn, uint8_t *data,
 	uint32_t len)
 {
-	wmi_nlo_event *nlo_event;
 	struct scan_event_info *event_info;
 	struct wlan_objmgr_psoc *psoc;
+	struct wmi_unified *wmi_handle;
 	struct wlan_lmac_if_scan_rx_ops *scan_rx_ops;
-	WMI_NLO_MATCH_EVENTID_param_tlvs *param_buf =
-		(WMI_NLO_MATCH_EVENTID_param_tlvs *) data;
 	QDF_STATUS status;
 
 	if (!scn || !data) {
@@ -112,18 +122,32 @@ int target_if_nlo_complete_handler(ol_scn_t scn, uint8_t *data,
 		return -EINVAL;
 	}
 
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("wmi_handle is NULL");
+		return -EINVAL;
+	}
+
 	event_info = qdf_mem_malloc(sizeof(*event_info));
 	if (!event_info)
 		return -ENOMEM;
 
-	nlo_event = param_buf->fixed_param;
-	target_if_debug("PNO complete event received for vdev %d",
-			nlo_event->vdev_id);
+	if (wmi_extract_nlo_complete_ev_param(wmi_handle, data,
+					      &event_info->event)) {
+		target_if_err("Failed to extract WMI PNO complete event");
+		qdf_mem_free(event_info);
+		return -EINVAL;
+	}
 
-	event_info->event.type = SCAN_EVENT_TYPE_NLO_COMPLETE;
-	event_info->event.vdev_id = nlo_event->vdev_id;
+	target_if_debug("PNO complete event received for vdev %d",
+			event_info->event.vdev_id);
 
 	scan_rx_ops = target_if_scan_get_rx_ops(psoc);
+	if (!scan_rx_ops) {
+		target_if_err("scan_rx_ops is NULL");
+		return -EINVAL;
+	}
+
 	if (scan_rx_ops->scan_ev_handler) {
 		status = scan_rx_ops->scan_ev_handler(psoc, event_info);
 		if (status != QDF_STATUS_SUCCESS) {
@@ -141,12 +165,10 @@ int target_if_nlo_complete_handler(ol_scn_t scn, uint8_t *data,
 int target_if_nlo_match_event_handler(ol_scn_t scn, uint8_t *data,
 	uint32_t len)
 {
-	wmi_nlo_event *nlo_event;
 	struct scan_event_info *event_info;
 	struct wlan_objmgr_psoc *psoc;
+	struct wmi_unified *wmi_handle;
 	struct wlan_lmac_if_scan_rx_ops *scan_rx_ops;
-	WMI_NLO_MATCH_EVENTID_param_tlvs *param_buf =
-		(WMI_NLO_MATCH_EVENTID_param_tlvs *) data;
 	QDF_STATUS status;
 
 	if (!scn || !data) {
@@ -160,18 +182,32 @@ int target_if_nlo_match_event_handler(ol_scn_t scn, uint8_t *data,
 		return -EINVAL;
 	}
 
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("wmi_handle is NULL");
+		return -EINVAL;
+	}
+
 	event_info = qdf_mem_malloc(sizeof(*event_info));
 	if (!event_info)
 		return -ENOMEM;
 
-	nlo_event = param_buf->fixed_param;
-	target_if_debug("PNO match event received for vdev %d",
-			nlo_event->vdev_id);
+	if (wmi_extract_nlo_match_ev_param(wmi_handle, data,
+					   &event_info->event)) {
+		target_if_err("Failed to extract WMI PNO match event");
+		qdf_mem_free(event_info);
+		return -EINVAL;
+	}
 
-	event_info->event.type = SCAN_EVENT_TYPE_NLO_MATCH;
-	event_info->event.vdev_id = nlo_event->vdev_id;
+	target_if_debug("PNO match event received for vdev %d",
+			event_info->event.vdev_id);
 
 	scan_rx_ops = target_if_scan_get_rx_ops(psoc);
+	if (!scan_rx_ops) {
+		target_if_err("scan_rx_ops is NULL");
+		return -EINVAL;
+	}
+
 	if (scan_rx_ops->scan_ev_handler) {
 		status = scan_rx_ops->scan_ev_handler(psoc, event_info);
 		if (status != QDF_STATUS_SUCCESS) {
@@ -378,7 +414,7 @@ QDF_STATUS
 target_if_scan_start(struct wlan_objmgr_pdev *pdev,
 		struct scan_start_request *req)
 {
-	void *pdev_wmi_handle;
+	wmi_unified_t pdev_wmi_handle;
 
 	pdev_wmi_handle = GET_WMI_HDL_FROM_PDEV(pdev);
 	if (!pdev_wmi_handle) {
@@ -392,7 +428,7 @@ QDF_STATUS
 target_if_scan_cancel(struct wlan_objmgr_pdev *pdev,
 		struct scan_cancel_param *req)
 {
-	void *pdev_wmi_handle;
+	wmi_unified_t pdev_wmi_handle;
 
 	pdev_wmi_handle = GET_WMI_HDL_FROM_PDEV(pdev);
 	if (!pdev_wmi_handle) {
@@ -431,6 +467,11 @@ target_if_scan_set_max_active_scans(struct wlan_objmgr_psoc *psoc,
 	QDF_STATUS status;
 
 	scan_rx_ops = target_if_scan_get_rx_ops(psoc);
+	if (!scan_rx_ops) {
+		target_if_err("scan_rx_ops is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	if (scan_rx_ops->scan_set_max_active_scans) {
 		status = scan_rx_ops->scan_set_max_active_scans(psoc,
 				max_active_scans);

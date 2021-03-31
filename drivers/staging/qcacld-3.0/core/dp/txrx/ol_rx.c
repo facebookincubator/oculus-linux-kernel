@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,6 +33,7 @@
 #include <ol_rx_reorder_timeout.h>      /* OL_RX_REORDER_TIMEOUT_UPDATE */
 #include <ol_rx_defrag.h>       /* ol_rx_defrag_waitlist_flush */
 #include <ol_txrx_internal.h>
+#include <ol_txrx.h>
 #include <wdi_event.h>
 #ifdef QCA_SUPPORT_SW_TXRX_ENCAP
 #include <ol_txrx_encap.h>      /* ol_rx_decap_info_t, etc */
@@ -55,6 +56,8 @@
 #include <cdp_txrx_handle.h>
 #include <pld_common.h>
 #include <htt_internal.h>
+#include <wlan_pkt_capture_ucfg_api.h>
+#include <wlan_cfr_ucfg_api.h>
 
 #ifndef OL_RX_INDICATION_MAX_RECORDS
 #define OL_RX_INDICATION_MAX_RECORDS 2048
@@ -152,7 +155,7 @@ void ol_rx_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
 	else
 		data.mac_id = 0;
 
-	wdi_event_handler(WDI_EVENT_RX_DESC_REMOTE, (struct cdp_pdev *)pdev,
+	wdi_event_handler(WDI_EVENT_RX_DESC_REMOTE, pdev->id,
 			  &data);
 }
 #else
@@ -175,7 +178,7 @@ void ol_rx_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
 	else
 		data.mac_id = 0;
 
-	wdi_event_handler(WDI_EVENT_RX_DESC_REMOTE, (struct cdp_pdev *)pdev,
+	wdi_event_handler(WDI_EVENT_RX_DESC_REMOTE, pdev->id,
 			  &data);
 }
 #endif
@@ -228,8 +231,15 @@ void ol_rx_trigger_restore(htt_pdev_handle htt_pdev, qdf_nbuf_t head_msdu,
 void ol_rx_update_histogram_stats(uint32_t msdu_count, uint8_t frag_ind,
 		 uint8_t offload_ind)
 {
-	struct ol_txrx_pdev_t *pdev = cds_get_context(QDF_MODULE_ID_TXRX);
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	ol_txrx_pdev_handle pdev;
 
+	if (qdf_unlikely(!soc)) {
+		ol_txrx_err("soc is NULL");
+		return;
+	}
+
+	pdev = ol_txrx_get_pdev_from_pdev_id(soc, OL_TXRX_PDEV_ID);
 	if (!pdev) {
 		ol_txrx_err("pdev is NULL");
 		return;
@@ -300,7 +310,7 @@ static void ol_rx_process_inv_peer(ol_txrx_pdev_handle pdev,
 	msg.wh = wh;
 	msg.msdu = msdu;
 	msg.vdev_id = vdev->vdev_id;
-	wdi_event_handler(WDI_EVENT_RX_PEER_INVALID, (struct cdp_pdev *)pdev,
+	wdi_event_handler(WDI_EVENT_RX_PEER_INVALID, pdev->id,
 			  &msg);
 }
 #else
@@ -407,11 +417,12 @@ static void process_reorder(ol_txrx_pdev_handle pdev,
 	enum htt_rx_status mpdu_status;
 	int reorder_idx;
 
-	reorder_idx = htt_rx_mpdu_desc_reorder_idx(htt_pdev, rx_mpdu_desc);
+	reorder_idx = htt_rx_mpdu_desc_reorder_idx(htt_pdev, rx_mpdu_desc,
+						   true);
 	OL_RX_REORDER_TRACE_ADD(pdev, tid,
 				reorder_idx,
 				htt_rx_mpdu_desc_seq_num(htt_pdev,
-							 rx_mpdu_desc),
+							 rx_mpdu_desc, false),
 				1);
 	ol_rx_mpdu_rssi_update(peer, rx_mpdu_desc);
 	/*
@@ -467,7 +478,7 @@ static void process_reorder(ol_txrx_pdev_handle pdev,
 		if (peer->tids_rx_reorder[tid].win_sz_mask == 0) {
 			peer->tids_last_seq[tid] = htt_rx_mpdu_desc_seq_num(
 				htt_pdev,
-				rx_mpdu_desc);
+				rx_mpdu_desc, false);
 		}
 	}
 } /* process_reorder */
@@ -723,13 +734,14 @@ ol_rx_indication_handler(ol_txrx_pdev_handle pdev,
 							    pdev->htt_pdev,
 							    msdu),
 						    &key_id) == true) {
-						ol_rx_err(pdev->ctrl_pdev,
-							  vdev->vdev_id,
-							  peer->mac_addr.raw,
-							  tid, 0,
-							  OL_RX_ERR_TKIP_MIC,
-							  msdu, &pn.pn48,
-							  key_id);
+						ol_rx_send_mic_err_ind(
+							vdev->pdev,
+							vdev->vdev_id,
+							peer->mac_addr.raw,
+							tid, 0,
+							OL_RX_ERR_TKIP_MIC,
+							msdu, &pn.pn48,
+							key_id);
 					}
 				}
 
@@ -799,9 +811,9 @@ ol_rx_sec_ind_handler(ol_txrx_pdev_handle pdev,
 		return;
 	}
 	ol_txrx_dbg(
-		"sec spec for peer %pK ("QDF_MAC_ADDR_STR"): %s key of type %d\n",
+		"sec spec for peer %pK ("QDF_MAC_ADDR_FMT"): %s key of type %d\n",
 		peer,
-		QDF_MAC_ADDR_ARRAY(peer->mac_addr.raw),
+		QDF_MAC_ADDR_REF(peer->mac_addr.raw),
 		is_unicast ? "ucast" : "mcast", sec_type);
 	sec_index = is_unicast ? txrx_sec_ucast : txrx_sec_mcast;
 	peer->security[sec_index].sec_type = sec_type;
@@ -946,6 +958,43 @@ ol_rx_offload_deliver_ind_handler(ol_txrx_pdev_handle pdev,
 }
 
 void
+ol_rx_send_mic_err_ind(struct ol_txrx_pdev_t *pdev, uint8_t vdev_id,
+		       uint8_t *peer_mac_addr, int tid, uint32_t tsf32,
+		       enum ol_rx_err_type err_type, qdf_nbuf_t rx_frame,
+		       uint64_t *pn, uint8_t key_id)
+{
+	struct cdp_rx_mic_err_info mic_failure_info;
+	qdf_ether_header_t *eth_hdr;
+	struct ol_if_ops *tops = NULL;
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	ol_txrx_soc_handle ol_txrx_soc = &soc->cdp_soc;
+
+	if (err_type != OL_RX_ERR_TKIP_MIC)
+		return;
+
+	if (qdf_nbuf_len(rx_frame) < sizeof(*eth_hdr))
+		return;
+
+	eth_hdr = (qdf_ether_header_t *)qdf_nbuf_data(rx_frame);
+
+	qdf_copy_macaddr((struct qdf_mac_addr *)&mic_failure_info.ta_mac_addr,
+			 (struct qdf_mac_addr *)peer_mac_addr);
+	qdf_copy_macaddr((struct qdf_mac_addr *)&mic_failure_info.da_mac_addr,
+			 (struct qdf_mac_addr *)eth_hdr->ether_dhost);
+	mic_failure_info.key_id = key_id;
+	mic_failure_info.multicast =
+		IEEE80211_IS_MULTICAST(eth_hdr->ether_dhost);
+	qdf_mem_copy(mic_failure_info.tsc, pn, SIR_CIPHER_SEQ_CTR_SIZE);
+	mic_failure_info.frame_type = cdp_rx_frame_type_802_3;
+	mic_failure_info.data = NULL;
+	mic_failure_info.vdev_id = vdev_id;
+
+	tops = ol_txrx_soc->ol_ops;
+	if (tops->rx_mic_error)
+		tops->rx_mic_error(soc->psoc, pdev->id, &mic_failure_info);
+}
+
+void
 ol_rx_mic_error_handler(
 	ol_txrx_pdev_handle pdev,
 	u_int8_t tid,
@@ -971,11 +1020,11 @@ ol_rx_mic_error_handler(
 				if (htt_rx_msdu_desc_key_id(
 					vdev->pdev->htt_pdev, msdu_desc,
 					&key_id) == true) {
-					ol_rx_err(vdev->pdev->ctrl_pdev,
-						  vdev->vdev_id,
-						  peer->mac_addr.raw, tid, 0,
-						  OL_RX_ERR_TKIP_MIC, msdu,
-						  &pn.pn48, key_id);
+					ol_rx_send_mic_err_ind(vdev->pdev,
+						vdev->vdev_id,
+						peer->mac_addr.raw, tid, 0,
+						OL_RX_ERR_TKIP_MIC, msdu,
+						&pn.pn48, key_id);
 				}
 			}
 		}
@@ -1136,6 +1185,21 @@ void ol_rx_timestamp(struct cdp_cfg *cfg_pdev,
 	msdu->tstamp = ns_to_ktime((u_int64_t)rx_ppdu_desc->tsf32 *
 				   NSEC_PER_USEC);
 }
+
+static inline void ol_rx_timestamp_update(ol_txrx_pdev_handle pdev,
+					  qdf_nbuf_t head_msdu,
+					  qdf_nbuf_t tail_msdu)
+{
+	qdf_nbuf_t loop_msdu;
+	struct htt_host_rx_desc_base *rx_desc;
+
+	loop_msdu = head_msdu;
+	while (loop_msdu) {
+		rx_desc = htt_rx_msdu_desc_retrieve(pdev->htt_pdev, loop_msdu);
+		ol_rx_timestamp(pdev->ctrl_pdev, rx_desc, loop_msdu);
+		loop_msdu = qdf_nbuf_next(loop_msdu);
+	}
+}
 #else
 void ol_rx_timestamp(struct cdp_cfg *cfg_pdev,
 		     void *rx_desc, qdf_nbuf_t msdu)
@@ -1161,10 +1225,63 @@ void ol_rx_timestamp(struct cdp_cfg *cfg_pdev,
 
 	msdu->tstamp = ns_to_ktime(tsf64_ns);
 }
+
+/**
+ * ol_rx_timestamp_update() - update msdu tsf64 timestamp
+ * @pdev: pointer to txrx handle
+ * @head_msdu: pointer to head msdu
+ * @tail_msdu: pointer to tail msdu
+ *
+ * Return: none
+ */
+static inline void ol_rx_timestamp_update(ol_txrx_pdev_handle pdev,
+					  qdf_nbuf_t head_msdu,
+					  qdf_nbuf_t tail_msdu)
+{
+	qdf_nbuf_t loop_msdu;
+	uint64_t hostime, detlahostime, tsf64_time;
+	struct htt_host_rx_desc_base *rx_desc;
+
+	if (!ol_cfg_is_ptp_rx_opt_enabled(pdev->ctrl_pdev))
+		return;
+
+	if (!tail_msdu)
+		return;
+
+	hostime = ktime_get_ns();
+	rx_desc = htt_rx_msdu_desc_retrieve(pdev->htt_pdev, tail_msdu);
+	if (rx_desc->ppdu_end.wb_timestamp_lower_32 == 0 &&
+	    rx_desc->ppdu_end.wb_timestamp_upper_32 == 0) {
+		detlahostime = hostime - pdev->last_host_time;
+		do_div(detlahostime, NSEC_PER_USEC);
+		tsf64_time = pdev->last_tsf64_time + detlahostime;
+
+		rx_desc->ppdu_end.wb_timestamp_lower_32 =
+						tsf64_time & 0xFFFFFFFF;
+		rx_desc->ppdu_end.wb_timestamp_upper_32 = tsf64_time >> 32;
+	} else {
+		pdev->last_host_time = hostime;
+		pdev->last_tsf64_time =
+		  (uint64_t)rx_desc->ppdu_end.wb_timestamp_upper_32 << 32 |
+		  rx_desc->ppdu_end.wb_timestamp_lower_32;
+	}
+
+	loop_msdu = head_msdu;
+	while (loop_msdu) {
+		ol_rx_timestamp(pdev->ctrl_pdev, rx_desc, loop_msdu);
+		loop_msdu = qdf_nbuf_next(loop_msdu);
+	}
+}
 #endif
 #else
 void ol_rx_timestamp(struct cdp_cfg *cfg_pdev,
 		     void *rx_desc, qdf_nbuf_t msdu)
+{
+}
+
+static inline void ol_rx_timestamp_update(ol_txrx_pdev_handle pdev,
+					  qdf_nbuf_t head_msdu,
+					  qdf_nbuf_t tail_msdu)
 {
 }
 #endif
@@ -1297,9 +1414,9 @@ ol_rx_deliver(struct ol_txrx_vdev_t *vdev,
 		if (OL_RX_DECAP(vdev, peer, msdu, &info) != A_OK) {
 			discard = 1;
 			ol_txrx_dbg(
-				"decap error %pK from peer %pK ("QDF_MAC_ADDR_STR") len %d\n",
+				"decap error %pK from peer %pK ("QDF_MAC_ADDR_FMT") len %d\n",
 				msdu, peer,
-				QDF_MAC_ADDR_ARRAY(peer->mac_addr.raw),
+				QDF_MAC_ADDR_REF(peer->mac_addr.raw),
 				qdf_nbuf_len(msdu));
 			goto DONE;
 		}
@@ -1353,6 +1470,8 @@ DONE:
 			ol_rx_timestamp(pdev->ctrl_pdev, rx_desc, msdu);
 			OL_TXRX_LIST_APPEND(deliver_list_head,
 					    deliver_list_tail, msdu);
+			QDF_NBUF_CB_DP_TRACE_PRINT(msdu) = false;
+			qdf_dp_trace_set_track(msdu, QDF_RX);
 		}
 		msdu = next;
 	}
@@ -1445,6 +1564,7 @@ ol_rx_in_order_indication_handler(ol_txrx_pdev_handle pdev,
 {
 	struct ol_txrx_vdev_t *vdev = NULL;
 	struct ol_txrx_peer_t *peer = NULL;
+	struct ol_txrx_peer_t *peer_head = NULL;
 	htt_pdev_handle htt_pdev = NULL;
 	int status;
 	qdf_nbuf_t head_msdu = NULL, tail_msdu = NULL;
@@ -1453,8 +1573,14 @@ ol_rx_in_order_indication_handler(ol_txrx_pdev_handle pdev,
 	uint32_t msdu_count;
 	uint8_t pktlog_bit;
 	uint32_t filled = 0;
-	struct htt_host_rx_desc_base *rx_desc;
-	qdf_nbuf_t loop_msdu;
+	uint8_t bssid[QDF_MAC_ADDR_SIZE];
+	bool offloaded_pkt;
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+
+	if (qdf_unlikely(!soc)) {
+		ol_txrx_err("soc is NULL");
+		return;
+	}
 
 	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
 		ol_txrx_err("invalid tid, %u", tid);
@@ -1518,6 +1644,43 @@ ol_rx_in_order_indication_handler(ol_txrx_pdev_handle pdev,
 	/* rx_opt_proc takes a NULL-terminated list of msdu netbufs */
 	qdf_nbuf_set_next(tail_msdu, NULL);
 
+	/* Packet Capture Mode */
+
+	if ((ucfg_pkt_capture_get_pktcap_mode((void *)soc->psoc) &
+	      PKT_CAPTURE_MODE_DATA_ONLY)) {
+		offloaded_pkt = ucfg_pkt_capture_rx_offloaded_pkt(rx_ind_msg);
+		if (peer) {
+			vdev = peer->vdev;
+			if (peer->vdev) {
+				qdf_spin_lock_bh(&pdev->peer_ref_mutex);
+				peer_head = TAILQ_FIRST(&vdev->peer_list);
+				qdf_spin_unlock_bh(&pdev->peer_ref_mutex);
+				if (peer_head) {
+					qdf_spin_lock_bh(
+						&peer_head->peer_info_lock);
+					qdf_mem_copy(bssid,
+						     &peer_head->mac_addr.raw,
+						     QDF_MAC_ADDR_SIZE);
+					qdf_spin_unlock_bh(
+						&peer_head->peer_info_lock);
+
+					ucfg_pkt_capture_rx_msdu_process(
+							bssid, head_msdu,
+							peer->vdev->vdev_id,
+							htt_pdev);
+				}
+			}
+		} else if (offloaded_pkt) {
+			ucfg_pkt_capture_rx_msdu_process(
+						bssid, head_msdu,
+						HTT_INVALID_VDEV,
+						htt_pdev);
+
+			ucfg_pkt_capture_rx_drop_offload_pkt(head_msdu);
+			return;
+		}
+	}
+
 	/* Pktlog */
 	ol_rx_send_pktlog_event(pdev, peer, head_msdu, pktlog_bit);
 
@@ -1539,15 +1702,9 @@ ol_rx_in_order_indication_handler(ol_txrx_pdev_handle pdev,
 		}
 		return;
 	}
-	/*Loop msdu to fill tstamp with tsf64 time in ol_rx_timestamp*/
-	loop_msdu = head_msdu;
-	while (loop_msdu) {
-		qdf_nbuf_t msdu = head_msdu;
 
-		rx_desc = htt_rx_msdu_desc_retrieve(pdev->htt_pdev, loop_msdu);
-		ol_rx_timestamp(pdev->ctrl_pdev, rx_desc, msdu);
-		loop_msdu = qdf_nbuf_next(loop_msdu);
-	}
+	/*Loop msdu to fill tstamp with tsf64 time in ol_rx_timestamp*/
+	ol_rx_timestamp_update(pdev, head_msdu, tail_msdu);
 
 	peer->rx_opt_proc(vdev, peer, tid, head_msdu);
 }
@@ -1573,12 +1730,18 @@ void ol_rx_pkt_dump_call(
 	uint8_t peer_id,
 	uint8_t status)
 {
-	ol_txrx_pdev_handle pdev;
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	ol_txrx_soc_handle soc_hdl = ol_txrx_soc_t_to_cdp_soc_t(soc);
 	struct ol_txrx_peer_t *peer = NULL;
 	ol_txrx_pktdump_cb packetdump_cb;
-	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	ol_txrx_pdev_handle pdev;
 
-	pdev = cds_get_context(QDF_MODULE_ID_TXRX);
+	if (qdf_unlikely(!soc)) {
+		ol_txrx_err("soc is NULL");
+		return;
+	}
+
+	pdev = ol_txrx_get_pdev_from_pdev_id(soc, OL_TXRX_PDEV_ID);
 	if (!pdev) {
 		ol_txrx_err("pdev is NULL");
 		return;
@@ -1593,7 +1756,7 @@ void ol_rx_pkt_dump_call(
 	packetdump_cb = pdev->ol_rx_packetdump_cb;
 	if (packetdump_cb &&
 	    wlan_op_mode_sta == peer->vdev->opmode)
-		packetdump_cb(soc, (struct cdp_vdev *)peer->vdev,
+		packetdump_cb(soc_hdl, OL_TXRX_PDEV_ID, peer->vdev->vdev_id,
 			      msdu, status, RX_DATA_PKT);
 }
 #endif
@@ -1835,4 +1998,68 @@ void ol_ath_add_vow_extstats(htt_pdev_handle pdev, qdf_nbuf_t msdu)
 	}
 }
 
+#endif
+
+#ifdef WLAN_CFR_ENABLE
+void ol_rx_cfr_capture_msg_handler(qdf_nbuf_t htt_t2h_msg)
+{
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	HTT_PEER_CFR_CAPTURE_MSG_TYPE cfr_type;
+	struct htt_cfr_dump_compl_ind *cfr_dump;
+	struct htt_cfr_dump_ind_type_1 cfr_ind;
+	struct csi_cfr_header cfr_hdr = {};
+	uint32_t mem_index, req_id, vdev_id;
+	uint32_t *msg_word;
+	uint8_t *mac_addr;
+
+	msg_word = (uint32_t *)qdf_nbuf_data(htt_t2h_msg);
+
+	/* First payload word */
+	msg_word++;
+	cfr_dump = (struct htt_cfr_dump_compl_ind *)msg_word;
+	cfr_type = cfr_dump->msg_type;
+	if (cfr_type != HTT_PEER_CFR_CAPTURE_MSG_TYPE_1) {
+		ol_txrx_err("Unsupported cfr msg type 0x%x", cfr_type);
+		return;
+	}
+
+	/* Second payload word */
+	msg_word++;
+	req_id = HTT_T2H_CFR_DUMP_TYPE1_MEM_REQ_ID_GET(*msg_word);
+	if (req_id != CFR_CAPTURE_HOST_MEM_REQ_ID) {
+		ol_txrx_err("Invalid req id in cfr capture msg");
+		return;
+	}
+	cfr_hdr.start_magic_num = 0xDEADBEAF;
+	cfr_hdr.u.meta_v1.status = HTT_T2H_CFR_DUMP_TYPE1_STATUS_GET(
+					*msg_word);
+	cfr_hdr.u.meta_v1.capture_bw = HTT_T2H_CFR_DUMP_TYPE1_CAP_BW_GET(
+					*msg_word);
+	cfr_hdr.u.meta_v1.capture_mode = HTT_T2H_CFR_DUMP_TYPE1_MODE_GET(
+					*msg_word);
+	cfr_hdr.u.meta_v1.sts_count = HTT_T2H_CFR_DUMP_TYPE1_STS_GET(
+					*msg_word);
+	cfr_hdr.u.meta_v1.channel_bw = HTT_T2H_CFR_DUMP_TYPE1_CHAN_BW_GET(
+					*msg_word);
+	cfr_hdr.u.meta_v1.capture_type = HTT_T2H_CFR_DUMP_TYPE1_CAP_TYPE_GET(
+					*msg_word);
+
+	vdev_id = HTT_T2H_CFR_DUMP_TYPE1_VDEV_ID_GET(*msg_word);
+
+	mac_addr = (uint8_t *)(msg_word + 1);
+	qdf_mem_copy(cfr_hdr.u.meta_v1.peer_addr, mac_addr, QDF_MAC_ADDR_SIZE);
+
+	cfr_ind = cfr_dump->htt_cfr_dump_compl_ind_type_1;
+
+	cfr_hdr.u.meta_v1.prim20_chan = cfr_ind.chan.chan_mhz;
+	cfr_hdr.u.meta_v1.center_freq1 = cfr_ind.chan.band_center_freq1;
+	cfr_hdr.u.meta_v1.center_freq2 = cfr_ind.chan.band_center_freq2;
+	cfr_hdr.u.meta_v1.phy_mode = cfr_ind.chan.chan_mode;
+	cfr_hdr.u.meta_v1.length = cfr_ind.length;
+	cfr_hdr.u.meta_v1.timestamp = cfr_ind.timestamp;
+
+	mem_index = cfr_ind.index;
+
+	ucfg_cfr_capture_data((void *)soc->psoc, vdev_id, &cfr_hdr, mem_index);
+}
 #endif

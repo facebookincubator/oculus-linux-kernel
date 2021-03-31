@@ -38,7 +38,12 @@
 #include "mac_tcl_reg_seq_hwioreg.h"
 #include "ce_src_desc.h"
 #include "ce_stat_desc.h"
+#ifdef QCA_WIFI_QCA6490
+#include "wfss_ce_channel_dst_reg_seq_hwioreg.h"
+#include "wfss_ce_channel_src_reg_seq_hwioreg.h"
+#else
 #include "wfss_ce_reg_seq_hwioreg.h"
+#endif /* QCA_WIFI_QCA6490 */
 #include "wbm_link_descriptor_ring.h"
 #include "wbm_reg_seq_hwioreg.h"
 #include "wbm_buffer_ring.h"
@@ -57,7 +62,7 @@
 #include "rxpcu_ppdu_end_info.h"
 #include "phyrx_he_sig_a_su.h"
 #include "phyrx_he_sig_a_mu_dl.h"
-#if defined(CONFIG_MCL) && defined(QCA_WIFI_QCA6290_11AX)
+#if defined(QCA_WIFI_QCA6290_11AX_MU_UL) && defined(QCA_WIFI_QCA6290_11AX)
 #include "phyrx_he_sig_a_mu_ul.h"
 #endif
 #include "phyrx_he_sig_b1_mu.h"
@@ -73,21 +78,18 @@
 #include "phyrx_rssi_legacy.h"
 #include "wcss_version.h"
 #include "rx_msdu_link.h"
+#include "hal_internal.h"
 
 #define HAL_SRNG_REO_EXCEPTION HAL_SRNG_REO2SW1
 #define HAL_SRNG_REO_ALTERNATE_SELECT 0x7
 #define HAL_NON_QOS_TID 16
 
-/* calculate the register address offset from bar0 of shadow register x */
-#ifdef QCA_WIFI_QCA6390
-#define SHADOW_REGISTER(x) (0x000008FC + (4 * (x)))
-#else
-#define SHADOW_REGISTER(x) (0x00003024 + (4 * (x)))
-#endif
-
 /* TODO: Check if the following can be provided directly by HW headers */
 #define SRNG_LOOP_CNT_MASK REO_DESTINATION_RING_15_LOOPING_COUNT_MASK
 #define SRNG_LOOP_CNT_LSB REO_DESTINATION_RING_15_LOOPING_COUNT_LSB
+
+/* HAL Macro to get the buffer info size */
+#define HAL_RX_BUFFINFO_NUM_DWORDS NUM_OF_DWORDS_BUFFER_ADDR_INFO
 
 #define HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_MS 100 /* milliseconds */
 #define HAL_DEFAULT_VO_REO_TIMEOUT_MS 40 /* milliseconds */
@@ -114,8 +116,17 @@
 #define HAL_REG_WRITE_CONFIRM(_soc, _reg, _value) \
 	hal_write32_mb_confirm(_soc, (_reg), (_value))
 
+#define HAL_REG_WRITE_CONFIRM_RETRY(_soc, _reg, _value, _recovery) \
+	hal_write32_mb_confirm_retry(_soc, (_reg), (_value), (_recovery))
+
 #define HAL_REG_READ(_soc, _offset) \
 	hal_read32_mb(_soc, (_offset))
+
+#define HAL_CMEM_WRITE(_soc, _reg, _value) \
+	hal_write32_mb_cmem(_soc, (_reg), (_value))
+
+#define HAL_CMEM_READ(_soc, _offset) \
+	hal_read32_mb_cmem(_soc, (_offset))
 
 #define WBM_IDLE_DESC_LIST 1
 
@@ -339,8 +350,9 @@ static inline void hal_set_link_desc_addr(void *desc, uint32_t cookie,
  * @tid: TID number
  *
  */
-static inline uint32_t hal_get_reo_qdesc_size(void *hal_soc,
-	uint32_t ba_window_size, int tid)
+static inline
+uint32_t hal_get_reo_qdesc_size(hal_soc_handle_t hal_soc_hdl,
+				uint32_t ba_window_size, int tid)
 {
 	/* Return descriptor size corresponding to window size of 2 since
 	 * we set ba_window_size to 2 while setting up REO descriptors as

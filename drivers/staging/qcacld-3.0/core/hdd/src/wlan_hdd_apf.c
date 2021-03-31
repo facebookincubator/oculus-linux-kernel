@@ -50,8 +50,7 @@
 #define APF_MAX \
 	QCA_WLAN_VENDOR_ATTR_PACKET_FILTER_MAX
 
-static const struct nla_policy
-wlan_hdd_apf_offload_policy[APF_MAX + 1] = {
+const struct nla_policy wlan_hdd_apf_offload_policy[APF_MAX + 1] = {
 	[APF_SUBCMD] = {.type = NLA_U32},
 	[APF_VERSION] = {.type = NLA_U32},
 	[APF_FILTER_ID] = {.type = NLA_U32},
@@ -239,6 +238,8 @@ static int hdd_set_reset_apf_offload(struct hdd_context *hdd_ctx,
 		ret = -EINVAL;
 		goto fail;
 	}
+
+	apf_set_offload.session_id = adapter->vdev_id;
 	apf_set_offload.total_length = nla_get_u32(tb[APF_PACKET_SIZE]);
 
 	if (!apf_set_offload.total_length) {
@@ -263,7 +264,6 @@ static int hdd_set_reset_apf_offload(struct hdd_context *hdd_ctx,
 
 	apf_set_offload.current_length = prog_len;
 	nla_memcpy(apf_set_offload.program, tb[APF_PROGRAM], prog_len);
-	apf_set_offload.session_id = adapter->vdev_id;
 
 	/* Parse and fetch filter Id */
 	if (!tb[APF_FILTER_ID]) {
@@ -508,6 +508,11 @@ static int hdd_apf_read_memory(struct hdd_adapter *adapter, struct nlattr **tb)
 		return -EINVAL;
 	}
 	read_mem_params.addr_offset = nla_get_u32(tb[APF_CURRENT_OFFSET]);
+	if (read_mem_params.addr_offset > MAX_APF_MEMORY_LEN) {
+		hdd_err("attr apf memory offset should be less than %d",
+			MAX_APF_MEMORY_LEN);
+		return -EINVAL;
+	}
 
 	/* Read length */
 	if (!tb[APF_PACKET_SIZE]) {

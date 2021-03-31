@@ -158,7 +158,6 @@ QDF_STATUS pmo_psoc_object_created_notification(
 
 	psoc_ctx = qdf_mem_malloc(sizeof(*psoc_ctx));
 	if (!psoc_ctx) {
-		pmo_err("Failed to allocate pmo_psoc");
 		status = QDF_STATUS_E_NOMEM;
 		goto out;
 	}
@@ -244,7 +243,6 @@ QDF_STATUS pmo_vdev_object_created_notification(
 
 	vdev_ctx = qdf_mem_malloc(sizeof(*vdev_ctx));
 	if (!vdev_ctx) {
-		pmo_err("Failed to allocate vdev_ctx");
 		status = QDF_STATUS_E_NOMEM;
 		goto out;
 	}
@@ -730,47 +728,6 @@ pmo_unregister_is_device_in_low_pwr_mode(struct wlan_objmgr_psoc *psoc)
 	}
 
 	pmo_psoc_put_ref(psoc);
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS pmo_register_get_vdev_dp_handle(struct wlan_objmgr_psoc *psoc,
-					   pmo_get_vdev_dp_handle handler)
-{
-	struct pmo_psoc_priv_obj *psoc_ctx;
-
-	if (!psoc) {
-		QDF_BUG(psoc);
-		pmo_err("psoc is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	if (!handler) {
-		QDF_BUG(handler);
-		pmo_err("pmo_get_vdev_dp_handle is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	pmo_psoc_with_ctx(psoc, psoc_ctx) {
-		psoc_ctx->get_vdev_dp_handle = handler;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS pmo_unregister_get_vdev_dp_handle(struct wlan_objmgr_psoc *psoc)
-{
-	struct pmo_psoc_priv_obj *psoc_ctx;
-
-	if (!psoc) {
-		QDF_BUG(psoc);
-		pmo_err("psoc is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	pmo_psoc_with_ctx(psoc, psoc_ctx) {
-		psoc_ctx->get_vdev_dp_handle = NULL;
-	}
 
 	return QDF_STATUS_SUCCESS;
 }

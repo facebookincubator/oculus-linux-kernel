@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,6 +37,7 @@ static QDF_STATUS policy_mgr_init_cfg(struct wlan_objmgr_psoc *psoc)
 	cfg->max_conc_cxns = cfg_get(psoc, CFG_MAX_CONC_CXNS);
 	cfg->conc_rule1 = cfg_get(psoc, CFG_ENABLE_CONC_RULE1);
 	cfg->conc_rule2 = cfg_get(psoc, CFG_ENABLE_CONC_RULE2);
+	cfg->pcl_band_priority = cfg_get(psoc, CFG_PCL_BAND_PRIORITY);
 	cfg->dbs_selection_plcy = cfg_get(psoc, CFG_DBS_SELECTION_PLCY);
 	cfg->vdev_priority_list = cfg_get(psoc, CFG_VDEV_CUSTOM_PRIORITY_LIST);
 	cfg->chnl_select_plcy = cfg_get(psoc, CFG_CHNL_SELECT_LOGIC_CONC);
@@ -54,6 +55,9 @@ static QDF_STATUS policy_mgr_init_cfg(struct wlan_objmgr_psoc *psoc)
 		cfg_get(psoc, CFG_FORCE_1X1_FEATURE);
 	cfg->sta_sap_scc_on_dfs_chnl =
 		cfg_get(psoc, CFG_STA_SAP_SCC_ON_DFS_CHAN);
+	if (cfg->sta_sap_scc_on_dfs_chnl == 2 &&
+	    !cfg_get(psoc, CFG_ENABLE_DFS_MASTER_CAPABILITY))
+		cfg->sta_sap_scc_on_dfs_chnl = 0;
 	cfg->nan_sap_scc_on_lte_coex_chnl =
 		cfg_get(psoc, CFG_NAN_SAP_SCC_ON_LTE_COEX_CHAN);
 	cfg->sta_sap_scc_on_lte_coex_chnl =
@@ -62,8 +66,8 @@ static QDF_STATUS policy_mgr_init_cfg(struct wlan_objmgr_psoc *psoc)
 		cfg_get(psoc, CFG_ENABLE_SAP_MANDATORY_CHAN_LIST);
 	cfg->mark_indoor_chnl_disable =
 		cfg_get(psoc, CFG_MARK_INDOOR_AS_DISABLE_FEATURE);
-	cfg->prefer_5g_scc_to_dbs = cfg_get(psoc, CFG_PREFER_5G_SCC_TO_DBS);
 	cfg->go_force_scc = cfg_get(psoc, CFG_P2P_GO_ENABLE_FORCE_SCC);
+	cfg->prefer_5g_scc_to_dbs = cfg_get(psoc, CFG_PREFER_5G_SCC_TO_DBS);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -144,8 +148,24 @@ QDF_STATUS ucfg_policy_mgr_get_chnl_select_plcy(struct wlan_objmgr_psoc *psoc,
 }
 
 
+QDF_STATUS ucfg_policy_mgr_set_dynamic_mcc_adaptive_sch(
+					struct wlan_objmgr_psoc *psoc,
+					bool dynamic_mcc_adaptive_sch)
+{
+	return policy_mgr_set_dynamic_mcc_adaptive_sch(
+					psoc, dynamic_mcc_adaptive_sch);
+}
+
+QDF_STATUS ucfg_policy_mgr_get_dynamic_mcc_adaptive_sch(
+					struct wlan_objmgr_psoc *psoc,
+					bool *dynamic_mcc_adaptive_sch)
+{
+	return policy_mgr_get_dynamic_mcc_adaptive_sch(
+					psoc, dynamic_mcc_adaptive_sch);
+}
+
 QDF_STATUS ucfg_policy_mgr_get_mcc_adaptive_sch(struct wlan_objmgr_psoc *psoc,
-						uint8_t *mcc_adaptive_sch)
+						bool *mcc_adaptive_sch)
 {
 	return policy_mgr_get_mcc_adaptive_sch(psoc, mcc_adaptive_sch);
 }
@@ -203,6 +223,14 @@ ucfg_policy_mgr_get_sta_sap_scc_lte_coex_chnl(struct wlan_objmgr_psoc *psoc,
 {
 	return policy_mgr_get_sta_sap_scc_lte_coex_chnl(psoc,
 							sta_sap_scc_lte_coex);
+}
+
+QDF_STATUS
+ucfg_policy_mgr_init_chan_avoidance(struct wlan_objmgr_psoc *psoc,
+				    qdf_freq_t *chan_freq_list,
+				    uint16_t chan_cnt)
+{
+	return policy_mgr_init_chan_avoidance(psoc, chan_freq_list, chan_cnt);
 }
 
 QDF_STATUS ucfg_policy_mgr_get_sap_mandt_chnl(struct wlan_objmgr_psoc *psoc,

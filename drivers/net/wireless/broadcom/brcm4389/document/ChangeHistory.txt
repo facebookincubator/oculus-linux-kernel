@@ -1,4 +1,36 @@
-BCM4389 DHD 101.10.418.2 for FB Project R1 Release
+BCM4389 DHD 101.10.452.1  for FB Project R4 Release
+
+DHD 101.10.452.1 - 2020.12.30
+- Fixed a kernel crash during rmmod - patch2, CS1436509
+- Extend XRAPI GPIO timesync to include latest beacon time - DHD part
+
+Others
+ - Fixed kernel panic when scheduled scan triggered
+ - Fixed kernel panic due to accessing a common ring before the ring is initialized
+ - Improved debuggability of wifi turn on failure case
+ - Fixed kernel panic in dhd_update_sta_chanspec_info
+ - Fixed kernel panic while accessing si_scan_core_present
+ - Fixed potential stack size build error issue according to compiler option
+ - Fixed to allocate the packet(skb) for Rx buffer when pktget fails
+ - Fixed to collect SSSR dump properly even though Wi-Fi on failure
+ - Fixed to return the error value properly at the dhd_preinit_ioctls/dhd_net_bus_devreset context
+ - Fixed to validate pcie link state by checking different registers
+
+
+DHD 101.10.418.4 - 2020.12.21
+
+New features
+- Install magic packet filter, turn on/off during a host suspend/resume
+Other Fixes
+- CSP#11436509 Fixed a kernel crash during rmmod
+
+DHD 101.10.418.3 - 2020.11.30
+
+New features
+ - Added SOFTAP_PSMODE MAC event
+ - Softap Bandwidth Configuration
+ - Disable firmware roaming offload by default
+ - Queue flush Update
 
 DHD 101.10.418.2 - 2020.10.27
 
@@ -24,7 +56,6 @@ Other Fixes
  - SoftAP interface creation failure in an aging test
  - Compile error with kernel 5.9.x
  - Wrong print of ifidx/bssidx in the event path
-
 
 
 DHD 101.10.371.2 - 2020.09.15

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -214,8 +214,24 @@ typedef __qdf_ipa_gsi_ep_config_t qdf_ipa_gsi_ep_config_t;
 typedef __qdf_ipa_dp_evt_type_t qdf_ipa_dp_evt_type_t;
 
 #ifdef WDI3_STATS_UPDATE
+/**
+ * qdf_ipa_wdi_tx_info_t - WLAN embedded TX bytes information
+ *
+ * WLAN host fills this structure to update IPA driver about
+ * embedded TX information.
+ */
 typedef __qdf_ipa_wdi_tx_info_t qdf_ipa_wdi_tx_info_t;
+
+/**
+ * qdf_ipa_wdi_bw_info_t - BW threshold levels to be monitored
+ * by IPA uC
+ */
 typedef __qdf_ipa_wdi_bw_info_t qdf_ipa_wdi_bw_info_t;
+
+/**
+ * qdf_ipa_inform_wlan_bw_t - BW information given by IPA driver
+ * whenever uC detects threshold level reached
+ */
 typedef __qdf_ipa_inform_wlan_bw_t qdf_ipa_inform_wlan_bw_t;
 #endif
 
@@ -649,5 +665,22 @@ static inline bool qdf_get_ipa_smmu_enabled(void)
 }
 #endif
 
+#ifdef IPA_LAN_RX_NAPI_SUPPORT
+/**
+ * qdf_ipa_get_lan_rx_napi() - Check if NAPI is enabled in LAN
+ * RX DP
+ *
+ * Returns: true if enabled, false otherwise
+ */
+static inline bool qdf_ipa_get_lan_rx_napi(void)
+{
+	return __qdf_ipa_get_lan_rx_napi();
+}
+#else
+static inline bool qdf_ipa_get_lan_rx_napi(void)
+{
+	return false;
+}
+#endif /* IPA_LAN_RX_NAPI_SUPPORT */
 #endif /* IPA_OFFLOAD */
 #endif /* _QDF_IPA_H */

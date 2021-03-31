@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -260,6 +260,8 @@ typedef __qdf_ipa_wdi_conn_out_params_t qdf_ipa_wdi_conn_out_params_t;
 	__QDF_IPA_WDI_CONN_OUT_PARAMS_TX_UC_DB_VA(pipe_out)
 #define QDF_IPA_WDI_CONN_OUT_PARAMS_RX_UC_DB_PA(pipe_out)	\
 	__QDF_IPA_WDI_CONN_OUT_PARAMS_RX_UC_DB_PA(pipe_out)
+#define QDF_IPA_WDI_CONN_OUT_PARAMS_IS_DB_DDR_MAPPED(pipe_out)	\
+	__QDF_IPA_WDI_CONN_OUT_PARAMS_IS_DB_DDR_MAPPED(pipe_out)
 
 /**
  * qdf_ipa_wdi_perf_profile_t - To set BandWidth profile
@@ -400,9 +402,9 @@ static inline int qdf_ipa_wdi_release_smmu_mapping(uint32_t num_buffers,
 
 #ifdef WDI3_STATS_UPDATE
 /**
- * qdf_ipa_wdi_wlan_stats() - send embedded Tx in bytes to IPA
- *
- * @tx_stats: tx stats in bytes on sta and sap interface
+ * qdf_ipa_wdi_wlan_stats() - Client should call this function to
+ *		send Tx byte counts to IPA driver
+ * @tx_count: number of Tx bytes
  *
  * Returns: 0 on success, negative on failure
  */
@@ -412,7 +414,7 @@ static inline int qdf_ipa_wdi_wlan_stats(qdf_ipa_wdi_tx_info_t *tx_stats)
 }
 
 /**
- * ipa_uc_bw_monitor() - start/stop uc bw monitoring
+ * qdf_ipa_uc_bw_monitor() - start/stop uc bw monitoring
  * @bw_info: set bw info levels to monitor
  *
  * Returns: 0 on success, negative on failure

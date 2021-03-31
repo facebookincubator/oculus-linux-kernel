@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -94,6 +94,9 @@
 #define txrx_nofl_dbg(params...) \
 	QDF_TRACE_DEBUG_NO_FL(QDF_MODULE_ID_TXRX, params)
 
+#define ol_txrx_err_rl(params...) \
+	QDF_TRACE_ERROR_RL(QDF_MODULE_ID_TXRX, params)
+
 /*
  * define PN check failure message print rate
  * as 1 second
@@ -114,6 +117,8 @@
 #define txrx_nofl_warn(params...)
 #define txrx_nofl_info(params...)
 #define txrx_nofl_dbg(params...)
+
+#define ol_txrx_err_rl(params...)
 
 #endif /* TXRX_PRINT_ENABLE */
 
@@ -164,7 +169,12 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 	msdu = mpdu_list;
 	while (!htt_rx_msdu_desc_completes_mpdu
 		       (htt_pdev, htt_rx_msdu_desc_retrieve(htt_pdev, msdu))) {
-		msdu = qdf_nbuf_next(msdu);
+		if (!qdf_nbuf_next(msdu)) {
+			qdf_err("last-msdu bit not set!");
+			break;
+		} else {
+			msdu = qdf_nbuf_next(msdu);
+		}
 		TXRX_ASSERT2(msdu);
 	}
 	/* msdu now points to the last MSDU within the first MPDU */
@@ -209,6 +219,9 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 					     netbuf);			\
 		else if (status == htt_tx_status_no_ack)		\
 			TXRX_STATS_MSDU_INCR(pdev, tx.dropped.no_ack, netbuf); \
+		else if (status == htt_tx_status_drop)		\
+			TXRX_STATS_MSDU_INCR(pdev, tx.dropped.target_drop, \
+					     netbuf);			\
 		else if (status == htt_tx_status_download_fail)		\
 			TXRX_STATS_MSDU_INCR(pdev, tx.dropped.download_fail, \
 					     netbuf);			\
@@ -264,6 +277,12 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 				 _p_cntrs);				       \
 			TXRX_STATS_ADD(_pdev, pub.tx.dropped.no_ack.bytes,     \
 				 _b_cntrs);				       \
+			break;                                                 \
+		case htt_tx_status_drop:                                    \
+			TXRX_STATS_ADD(_pdev,				       \
+				 pub.tx.dropped.target_drop.pkts, _p_cntrs);\
+			TXRX_STATS_ADD(_pdev,				       \
+				pub.tx.dropped.target_drop.bytes, _b_cntrs);\
 			break;                                                 \
 		case htt_tx_status_download_fail:                              \
 			TXRX_STATS_ADD(_pdev,				       \

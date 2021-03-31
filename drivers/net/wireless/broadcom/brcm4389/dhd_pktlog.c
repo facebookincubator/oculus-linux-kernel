@@ -32,6 +32,7 @@
 #include <dhd_dbg.h>
 #include <dhd_pktlog.h>
 #include <dhd_wlfc.h>
+#include <dhd_debug.h>
 
 #ifdef DHD_COMPACT_PKT_LOG
 #include <bcmip.h>
@@ -129,9 +130,37 @@ static int dhd_cpkt_log_init_tt(dhd_pub_t *dhdp);
 static void dhd_cpkt_log_deinit_tt(dhd_pub_t *dhdp);
 #endif	/* DHD_COMPACT_PKT_LOG */
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+#define DHD_PKT_LOGGING_DBGRING_MAX_SIZE	400u
+const char dhd_eap_pattern[] = "12 0xffff 0x888e";
+const char dhd_arp_pattern[] = "12 0xffff 0x0806";
+const char dhd_icmp_pattern[] =
+	"12 0xffffff0000000000000000ff 0x080045000000000000000001";
+const char dhd_icmpv6_pattern[] =
+	"12 0xfffff00000000000ff 0x86dd6000000000003a";
+const char dhd_dhcp_pattern_01[] =
+	"12 0xffffff0000000000000000ff00000000000000000000ffffffff"
+	" 0x0800450000000000000000110000000000000000000000430044";
+const char dhd_dhcp_pattern_02[] =
+	"12 0xffffff0000000000000000ff00000000000000000000ffffffff"
+	" 0x0800450000000000000000110000000000000000000000440043";
+const char dhd_dns_pattern_01[] =
+	"12 0xffffff0000000000000000ff000000000000000000000000ffff"
+	" 0x0800450000000000000000110000000000000000000000000035";
+const char dhd_dns_pattern_02[] =
+	"12 0xffffff0000000000000000ff00000000000000000000ffff0000"
+	" 0x0800450000000000000000110000000000000000000000350000";
+const char dhd_dns_pattern_03[] =
+	"12 0xffffff0000000000000000ff00000000000000000000ffffffff"
+	" 0x0800450000000000000000110000000000000000000014e914e9";
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
 int
 dhd_os_attach_pktlog(dhd_pub_t *dhdp)
 {
+#ifdef DHD_PKT_LOGGING_DBGRING
+	char filter_pattern[MAX_FILTER_PATTERN_LEN];
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	dhd_pktlog_t *pktlog;
 
 	if (!dhdp) {
@@ -157,6 +186,16 @@ dhd_os_attach_pktlog(dhd_pub_t *dhdp)
 #ifdef DHD_COMPACT_PKT_LOG
 	dhd_cpkt_log_init_tt(dhdp);
 #endif
+
+#ifdef DHD_PKT_LOGGING_DBGRING
+/* By default, EAP, ARP, ICMP, ICMPV6, DHCP packets are allowed. */
+	DHD_PKTLOG_FILTER_ADD(dhd_eap_pattern, filter_pattern, dhdp);
+	DHD_PKTLOG_FILTER_ADD(dhd_arp_pattern, filter_pattern, dhdp);
+	DHD_PKTLOG_FILTER_ADD(dhd_icmp_pattern, filter_pattern, dhdp);
+	DHD_PKTLOG_FILTER_ADD(dhd_icmpv6_pattern, filter_pattern, dhdp);
+	DHD_PKTLOG_FILTER_ADD(dhd_dhcp_pattern_01, filter_pattern, dhdp);
+	DHD_PKTLOG_FILTER_ADD(dhd_dhcp_pattern_02, filter_pattern, dhdp);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 	DHD_ERROR(("%s(): dhd_os_attach_pktlog attach\n", __FUNCTION__));
 
@@ -316,10 +355,16 @@ dhd_pktlog_ring_add_pkts(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pktid
 	dhd_pktlog_ring_info_t *pkts;
 	dhd_pktlog_ring_t *pktlog_ring;
 	dhd_pktlog_filter_t *pktlog_filter;
-	u64 ts_nsec;
 	uint32 pktlog_case = 0;
-	unsigned long rem_nsec;
 	unsigned long flags = 0;
+#ifdef DHD_PKT_LOGGING_DBGRING
+	struct timespec64 ts;
+	dhd_dbg_ring_t *ring;
+	ring = &dhdp->dbg->dbg_rings[PACKET_LOG_RING_ID];
+#else
+	u64 ts_nsec;
+	unsigned long rem_nsec;
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 	/*
 	 * dhdp, dhdp->pktlog, dhd->pktlog_ring, pktlog_ring->start
@@ -340,6 +385,11 @@ dhd_pktlog_ring_add_pkts(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pktid
 		return BCME_OK;
 	}
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+	if (ring->log_level == RING_LOG_LEVEL_EXCESSIVE) {
+		/* In excessive log level, pass through without pattern matching */
+	} else
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	if ((direction != PKT_WAKERX) &&
 		dhd_pktlog_filter_matched(pktlog_filter, pktdata, pktlog_case)
 		== FALSE) {
@@ -366,16 +416,27 @@ dhd_pktlog_ring_add_pkts(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pktid
 	}
 
 	/* Update packet information */
+#ifdef DHD_PKT_LOGGING_DBGRING
+	ktime_get_real_ts64(&ts);
+
+	pkts->info.driver_ts_sec = (uint32)ts.tv_sec;
+	pkts->info.driver_ts_usec = (uint32)(ts.tv_nsec/NSEC_PER_USEC);
+#else
 	ts_nsec = local_clock();
 	rem_nsec = do_div(ts_nsec, NSEC_PER_SEC);
 
-	pkts->info.pkt = PKTDUP(dhdp->osh, pkt);
-	pkts->info.pkt_len = PKTLEN(dhdp->osh, pkt);
 	pkts->info.driver_ts_sec = (uint32)ts_nsec;
 	pkts->info.driver_ts_usec = (uint32)(rem_nsec/NSEC_PER_USEC);
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
+	pkts->info.pkt = PKTDUP(dhdp->osh, pkt);
+	pkts->info.pkt_len = PKTLEN(dhdp->osh, pkt);
 	pkts->info.firmware_ts = 0U;
 	pkts->info.payload_type = FRAME_TYPE_ETHERNET_II;
 	pkts->info.direction = direction;
+
+	pkts->info.tx_status_ts_sec = 0;
+	pkts->info.tx_status_ts_usec = 0;
 
 	if (direction == PKT_TX) {
 		pkts->info.pkt_hash =  __dhd_dbg_pkt_hash((uintptr_t)pkt, pktid);
@@ -396,6 +457,12 @@ dhd_pktlog_ring_add_pkts(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pktid
 	dll_append(&pktlog_ring->ring_info_head, (dll_t *)pkts);
 	pktlog_ring->pktcount++;
 	DHD_PKT_LOG_UNLOCK(pktlog_ring->pktlog_ring_lock, flags);
+#ifdef DHD_PKT_LOGGING_DBGRING
+	dhd_dbg_update_to_ring(dhdp, pktlog_ring->dbg_ring,
+		dhd_pktlog_get_item_length(pkts));
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
+	DHD_PKT_LOG(("%s(): pktcount=%d\n", __FUNCTION__, pktlog_ring->pktcount));
 	return BCME_OK;
 }
 
@@ -410,7 +477,8 @@ dhd_pktlog_ring_tx_status(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pkti
 	dhd_pktlog_filter_t *pktlog_filter;
 	dll_t *item_p, *next_p;
 	unsigned long flags = 0;
-
+	u64 ts_nsec;
+	unsigned long rem_nsec;
 #ifdef BDC
 	struct bdc_header *h;
 	BCM_REFERENCE(h);
@@ -430,6 +498,9 @@ dhd_pktlog_ring_tx_status(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pkti
 
 	pkt_hash = __dhd_dbg_pkt_hash((uintptr_t)pkt, pktid);
 	pkt_fate = __dhd_dbg_map_tx_status_to_pkt_fate(status);
+
+	ts_nsec = local_clock();
+	rem_nsec = do_div(ts_nsec, NSEC_PER_SEC);
 
 	/* find the sent tx packet and adding pkt_fate info */
 	DHD_PKT_LOG_LOCK(pktlog_ring->pktlog_ring_lock, flags);
@@ -451,6 +522,8 @@ dhd_pktlog_ring_tx_status(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pkti
 		PKTPULL(dhdp->osh, tx_pkt->info.pkt, BDC_HEADER_LEN);
 		PKTPULL(dhdp->osh, tx_pkt->info.pkt, (h->dataOffset << DHD_WORD_TO_LEN_SHIFT));
 #endif /* BDC */
+		tx_pkt->info.tx_status_ts_sec = (uint32)ts_nsec;
+		tx_pkt->info.tx_status_ts_usec = (uint32)(rem_nsec/NSEC_PER_USEC);
 		DHD_PKT_LOG(("%s(): Found pkt hash in prev pos\n", __FUNCTION__));
 		break;
 	    }
@@ -1023,9 +1096,14 @@ dhd_pktlog_get_item_length(dhd_pktlog_ring_info_t *report_ptr)
 	} else {
 		frame_len = (uint32)min(report_ptr->info.pkt_len, (size_t)MAX_FRAME_LEN_80211_MGMT);
 	}
-
-	bytes_user_data = sprintf(buf, "%s:%s:%02d\n", DHD_PKTLOG_FATE_INFO_FORMAT,
-			(report_ptr->tx_fate ? "Failure" : "Succeed"), report_ptr->tx_fate);
+#ifdef DHD_PKT_LOGGING_DBGRING
+	frame_len = (uint32)min(frame_len, DHD_PKT_LOGGING_DBGRING_MAX_SIZE);
+#endif /* DHD_PKT_LOGGING_DBGRING */
+	bytes_user_data = snprintf(buf, sizeof(buf), "%s:%s:%02d:%s:%d.%d s\n",
+			DHD_PKTLOG_FATE_INFO_FORMAT,
+			(report_ptr->tx_fate ? "Failure" : "Succeed"), report_ptr->tx_fate,
+			(report_ptr->info.direction == PKT_TX) ? "TX" : "RX",
+			report_ptr->info.tx_status_ts_sec, report_ptr->info.tx_status_ts_usec);
 	write_frame_len = frame_len + bytes_user_data;
 
 	/* pcap pkt head has incl_len and orig_len */
@@ -1042,8 +1120,12 @@ dhd_pktlog_get_dump_length(dhd_pub_t *dhdp)
 {
 	dhd_pktlog_ring_info_t *report_ptr;
 	dhd_pktlog_ring_t *pktlog_ring;
-	uint32 len;
+	uint32 len = 0;
 	dll_t *item_p, *next_p;
+#ifdef DHD_PKT_LOGGING_DBGRING
+	dhd_dbg_ring_t *ring;
+	ring = &dhdp->dbg->dbg_rings[PACKET_LOG_RING_ID];
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 	if (!dhdp || !dhdp->pktlog) {
 		DHD_PKT_LOG(("%s(): dhdp=%p pktlog=%p\n",
@@ -1059,15 +1141,20 @@ dhd_pktlog_get_dump_length(dhd_pub_t *dhdp)
 
 	pktlog_ring = dhdp->pktlog->pktlog_ring;
 	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, FALSE);
-
+#ifndef DHD_PKT_LOGGING_DBGRING
 	len = sizeof(dhd_pktlog_pcap_hdr_t);
-
+#endif /* !DHD_PKT_LOGGING_DBGRING */
 	for (item_p = dll_head_p(&pktlog_ring->ring_info_head);
 			!dll_end(&pktlog_ring->ring_info_head, item_p);
 			item_p = next_p) {
 		next_p = dll_next_p(item_p);
 		report_ptr = (dhd_pktlog_ring_info_t *)item_p;
 		len += dhd_pktlog_get_item_length(report_ptr);
+#ifdef DHD_PKT_LOGGING_DBGRING
+		if (len >= ring->threshold) {
+			break;
+		}
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	}
 	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, TRUE);
 	DHD_PKT_LOG(("calcuated pkt log dump len:%d\n", len));
@@ -1076,17 +1163,26 @@ dhd_pktlog_get_dump_length(dhd_pub_t *dhdp)
 }
 
 int
+#ifdef DHD_PKT_LOGGING_DBGRING
+dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf,
+	uint32 *written_bytes)
+#else
 dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 size)
+#endif /* DHD_PKT_LOGGING_DBGRING */
 {
 	dhd_pktlog_ring_info_t *report_ptr;
 	dhd_pktlog_ring_t *pktlog_ring;
 	char buf[DHD_PKTLOG_FATE_INFO_STR_LEN];
+#ifndef DHD_PKT_LOGGING_DBGRING
 	dhd_pktlog_pcap_hdr_t pcap_h;
+	loff_t pos = 0;
+#else
+	uint32 size = 0;
+#endif /* !DHD_PKT_LOGGING_DBGRING */
 	uint32 write_frame_len;
 	uint32 frame_len;
-	ulong len;
+	ulong len = 0;
 	int bytes_user_data = 0;
-	loff_t pos = 0;
 	int ret = BCME_OK;
 	dll_t *item_p, *next_p;
 
@@ -1102,6 +1198,15 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 		return -EINVAL;
 	}
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+	if (user_buf) {
+		size = *written_bytes;
+	} else if (file) {
+		/* With DHD_PKT_LOGGING_DBGRING, this path is not allowed. */
+		return BCME_UNSUPPORTED;
+	}
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
 	if (file && !user_buf && (size == 0)) {
 		DHD_ERROR(("Local file pktlog dump requested\n"));
 	} else if (!file && user_buf && (size > 0)) {
@@ -1113,7 +1218,7 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 
 	pktlog_ring = dhdp->pktlog->pktlog_ring;
 	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, FALSE);
-
+#ifndef DHD_PKT_LOGGING_DBGRING
 	pcap_h.magic_number = PKTLOG_PCAP_MAGIC_NUM;
 	pcap_h.version_major = PKTLOG_PCAP_MAJOR_VER;
 	pcap_h.version_minor = PKTLOG_PCAP_MINOR_VER;
@@ -1124,20 +1229,78 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 
 	ret = dhd_export_debug_data((char *)&pcap_h, file, user_buf, sizeof(pcap_h), &pos);
 	len = sizeof(pcap_h);
-
+#endif /* !DHD_PKT_LOGGING_DBGRING */
 	for (item_p = dll_head_p(&pktlog_ring->ring_info_head);
 			!dll_end(&pktlog_ring->ring_info_head, item_p);
 			item_p = next_p) {
+#ifdef DHD_PKT_LOGGING_DBGRING
+		uint32 captured_frame_len;
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 		next_p = dll_next_p(item_p);
 		report_ptr = (dhd_pktlog_ring_info_t *)item_p;
-
+#ifdef DHD_PKT_LOGGING_DBGRING
+		if (report_ptr->info.direction == PKT_TX &&
+				report_ptr->tx_fate == TX_PKT_FATE_DRV_QUEUED) {
+			/* Not updated txfate yet, postpone some time. */
+			report_ptr->tx_fate |= TX_PKT_FATE_DRV_WAIT_UPDATE;
+			continue;
+		}
+#endif /* DHD_PKT_LOGGING_DBGRING */
 		if ((file == NULL) &&
 			(len + dhd_pktlog_get_item_length(report_ptr) > size)) {
 			DHD_ERROR(("overflowed pkt logs are dropped\n"));
 			break;
 		}
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&report_ptr->info.driver_ts_sec,
+			sizeof(report_ptr->info.driver_ts_sec));
+		len += sizeof(report_ptr->info.driver_ts_sec);
+
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&report_ptr->info.driver_ts_usec,
+			sizeof(report_ptr->info.driver_ts_usec));
+		len += sizeof(report_ptr->info.driver_ts_usec);
+
+		if (report_ptr->info.payload_type == FRAME_TYPE_ETHERNET_II) {
+			frame_len = (uint32)min(report_ptr->info.pkt_len,
+					(size_t)MAX_FRAME_LEN_ETHERNET);
+		} else {
+			frame_len = (uint32)min(report_ptr->info.pkt_len,
+					(size_t)MAX_FRAME_LEN_80211_MGMT);
+		}
+
+		bytes_user_data = snprintf(buf, sizeof(buf), "%s:%s:%02d\n",
+				DHD_PKTLOG_FATE_INFO_FORMAT,
+				(report_ptr->tx_fate ? "Failure" : "Succeed"),
+				(report_ptr->tx_fate & !(TX_PKT_FATE_DRV_WAIT_UPDATE)));
+		write_frame_len = frame_len + bytes_user_data;
+		frame_len = (uint32)min(frame_len, DHD_PKT_LOGGING_DBGRING_MAX_SIZE);
+		captured_frame_len = frame_len + bytes_user_data;
+
+		/* pcap pkt head has incl_len and orig_len */
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&captured_frame_len, sizeof(captured_frame_len));
+		len += sizeof(captured_frame_len);
+
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&write_frame_len, sizeof(write_frame_len));
+		len += sizeof(write_frame_len);
+
+		ret = memcpy_s((void*)(user_buf + len), size - len, PKTDATA(pktlog_ring->dhdp->osh,
+			report_ptr->info.pkt), frame_len);
+		len += frame_len;
+
+		ret = memcpy_s((void*)(user_buf + len), size - len, buf, bytes_user_data);
+		len += bytes_user_data;
+
+		dll_delete((dll_t *)report_ptr);
+		PKTFREE(pktlog_ring->dhdp->osh, report_ptr->info.pkt, TRUE);
+		pktlog_ring->pktcount--;
+		dll_append(&pktlog_ring->ring_info_free, (dll_t *)report_ptr);
+#else
 		ret = dhd_export_debug_data((char*)&report_ptr->info.driver_ts_sec, file,
 				user_buf, sizeof(report_ptr->info.driver_ts_sec), &pos);
 		len += sizeof(report_ptr->info.driver_ts_sec);
@@ -1155,8 +1318,13 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 					(size_t)MAX_FRAME_LEN_80211_MGMT);
 		}
 
-		bytes_user_data = sprintf(buf, "%s:%s:%02d\n", DHD_PKTLOG_FATE_INFO_FORMAT,
-				(report_ptr->tx_fate ? "Failure" : "Succeed"), report_ptr->tx_fate);
+		bytes_user_data = snprintf(buf, sizeof(buf), "%s:%s:%02d:%s:%d.%d s\n",
+				DHD_PKTLOG_FATE_INFO_FORMAT,
+				(report_ptr->tx_fate ? "Failure" : "Succeed"),
+				report_ptr->tx_fate,
+				(report_ptr->info.direction == PKT_TX) ? "TX" : "RX",
+				report_ptr->info.tx_status_ts_sec,
+				report_ptr->info.tx_status_ts_usec);
 		write_frame_len = frame_len + bytes_user_data;
 
 		/* pcap pkt head has incl_len and orig_len */
@@ -1179,7 +1347,11 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 
 		ret = dhd_export_debug_data(buf, file, user_buf, bytes_user_data, &pos);
 		len += bytes_user_data;
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	}
+#ifdef DHD_PKT_LOGGING_DBGRING
+	*written_bytes = len;
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, TRUE);
 
 	return ret;
@@ -1188,7 +1360,11 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 int
 dhd_pktlog_dump_write_memory(dhd_pub_t *dhdp, const void *user_buf, uint32 size)
 {
+#ifdef DHD_PKT_LOGGING_DBGRING
+	int ret = dhd_pktlog_dump_write(dhdp, NULL, user_buf, &size);
+#else
 	int ret = dhd_pktlog_dump_write(dhdp, NULL, user_buf, size);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	if (ret < 0) {
 		DHD_ERROR(("dhd_pktlog_dump_write_memory error\n"));
 	}

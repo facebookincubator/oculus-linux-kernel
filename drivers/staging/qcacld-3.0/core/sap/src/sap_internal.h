@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -122,9 +122,13 @@ struct sap_avoid_channels_info {
 
 struct sap_context {
 
-	/* Include the current channel of AP */
-	uint32_t channel;
-	uint32_t secondary_ch;
+	/* Include the current channel frequency of AP */
+	uint32_t chan_freq;
+	uint32_t sec_ch_freq;
+
+#ifdef DCS_INTERFERENCE_DETECTION
+	qdf_freq_t dcs_ch_freq;
+#endif
 
 	/* Include the SME(CSR) sessionId here */
 	uint8_t sessionId;
@@ -167,11 +171,11 @@ struct sap_context {
 	uint32_t nStaWPARSnReqIeLength;
 	uint8_t pStaWpaRsnReqIE[MAX_ASSOC_IND_IE_LEN];
 
-	uint8_t *channelList;
+	uint32_t *freq_list;
 	uint8_t num_of_channel;
 	uint16_t ch_width_orig;
 	struct ch_params ch_params;
-	uint32_t chan_id_before_switch_band;
+	uint32_t chan_freq_before_switch_band;
 	enum phy_ch_width chan_width_before_switch_band;
 	uint32_t auto_channel_select_weight;
 	bool enableOverLapCh;
@@ -225,6 +229,7 @@ struct sap_context {
 	bool dfs_cac_offload;
 	bool is_chan_change_inprogress;
 	qdf_list_t owe_pending_assoc_ind_list;
+	uint32_t freq_before_ch_switch;
 };
 
 /*----------------------------------------------------------------------------
@@ -291,9 +296,9 @@ QDF_STATUS wlansap_pre_start_bss_acs_scan_callback(mac_handle_t mac_handle,
  * Runs a algorithm to select the best channel to operate in based on BSS
  * rssi and bss count on each channel
  *
- * Returns: channel number if success, 0 otherwise
+ * Returns: channel frequency if success, 0 otherwise
  */
-uint8_t sap_select_channel(mac_handle_t mac_handle, struct sap_context *sap_ctx,
+uint32_t sap_select_channel(mac_handle_t mac_handle, struct sap_context *sap_ctx,
 			   qdf_list_t *scan_list);
 
 QDF_STATUS
@@ -435,11 +440,11 @@ void sap_scan_event_callback(struct wlan_objmgr_vdev *vdev,
  *
  * process radar indication.
  *
- * Return: channel to which sap wishes to switch.
+ * Return: frequency to which sap wishes to switch.
  */
-uint8_t sap_indicate_radar(struct sap_context *sap_ctx);
+qdf_freq_t sap_indicate_radar(struct sap_context *sap_ctx);
 #else
-static inline uint8_t sap_indicate_radar(struct sap_context *sap_ctx)
+static inline qdf_freq_t sap_indicate_radar(struct sap_context *sap_ctx)
 {
 	return 0;
 }
@@ -454,10 +459,10 @@ static inline uint8_t sap_indicate_radar(struct sap_context *sap_ctx)
  * range configuration when ACS scan fails due to some reasons, such as scan
  * timeout, etc.
  *
- * Return: Selected operating channel number
+ * Return: Selected operating channel frequency
  */
-uint8_t sap_select_default_oper_chan(struct mac_context *mac_ctx,
-				     struct sap_acs_cfg *acs_cfg);
+uint32_t sap_select_default_oper_chan(struct mac_context *mac_ctx,
+				      struct sap_acs_cfg *acs_cfg);
 
 /*
  * sap_is_dfs_cac_wait_state() - check if sap is in cac wait state
@@ -465,28 +470,7 @@ uint8_t sap_select_default_oper_chan(struct mac_context *mac_ctx,
  *
  * Return: true if sap is in cac wait state
  */
-static inline bool sap_is_dfs_cac_wait_state(struct sap_context *sap_ctx)
-{
-	if (!sap_ctx)
-		return false;
-
-	return  QDF_IS_STATUS_SUCCESS(wlan_vdev_is_dfs_cac_wait(sap_ctx->vdev));
-}
-
-/**
- * sap_channel_in_acs_channel_list() - check if channel in acs channel list
- * @channel_num: channel to check
- * @sap_ctx: struct ptSapContext
- * @spect_info_params: strcut tSapChSelSpectInfo
- *
- * This function checks if specified channel is in the configured ACS channel
- * list.
- *
- * Return: channel number if in acs channel list or SAP_CHANNEL_NOT_SELECTED
- */
-uint8_t sap_channel_in_acs_channel_list(uint8_t channel_num,
-					struct sap_context *sap_ctx,
-					tSapChSelSpectInfo *spect_info_params);
+bool sap_is_dfs_cac_wait_state(struct sap_context *sap_ctx);
 
 /**
  * sap_chan_bond_dfs_sub_chan - check bonded channel includes dfs sub chan
@@ -502,29 +486,4 @@ bool
 sap_chan_bond_dfs_sub_chan(struct sap_context *sap_context,
 			   uint8_t channel_number,
 			   ePhyChanBondState bond_state);
-
-/**
- * sap_acquire_vdev_ref() - Increment reference count for vdev object
- * @mac: mac handle
- * @sap_ctx: to store vdev object pointer
- * @session_id: used to get vdev object
- *
- * This function is used to increment vdev object reference count and store
- * vdev pointer in sap_ctx.
- *
- * Return: QDF_STATUS_SUCCESS - If able to get vdev object reference
- *				else qdf status failure codes
- */
-QDF_STATUS sap_acquire_vdev_ref(struct mac_context *mac,
-				struct sap_context *sap_ctx,
-				uint8_t session_id);
-
-/**
- * sap_release_vdev_ref() - Decrement reference count for vdev object
- * @sap_ctx: for which vdev reference is to be decremented
- *
- * Return: None
- */
-void sap_release_vdev_ref(struct sap_context *sap_ctx);
-
 #endif

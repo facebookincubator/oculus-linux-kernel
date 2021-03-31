@@ -46,6 +46,20 @@ bcm_static_pkt_t *bcm_static_skb = 0;
 void* wifi_platform_prealloc(void *adapter, int section, unsigned long size);
 #endif /* CONFIG_DHD_USE_STATIC_BUF */
 
+#ifndef CUSTOM_PREFIX
+#define BCM_PRINT(args)	\
+	do {			\
+		pr_cont args;	\
+	} while (0)
+#else
+#define BCM_PRINT_PREFIX "[%s]"CUSTOM_PREFIX, OSL_GET_RTCTIME()
+#define BCM_PRINT(args)			\
+	do {					\
+		pr_cont(OSL_PRINT_PREFIX);	\
+		pr_cont args;			\
+	} while (0)
+#endif /* CUSTOM_PREFIX */
+
 #ifdef BCM_OBJECT_TRACE
 /* don't clear the first 4 byte that is the pkt sn */
 #define OSL_PKTTAG_CLEAR(p) \
@@ -71,12 +85,12 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 		if (!bcm_static_buf && adapter) {
 			if (!(bcm_static_buf = (bcm_static_buf_t *)wifi_platform_prealloc(adapter,
 				3, STATIC_BUF_SIZE + STATIC_BUF_TOTAL_LEN))) {
-				printk("can not alloc static buf!\n");
+				BCM_PRINT(("can not alloc static buf!\n"));
 				bcm_static_skb = NULL;
 				ASSERT(osh->magic == OS_HANDLE_MAGIC);
 				return -ENOMEM;
 			} else {
-				printk("succeed to alloc static buf\n");
+				BCM_PRINT(("succeed to alloc static buf\n"));
 			}
 
 			spin_lock_init(&bcm_static_buf->static_lock);
@@ -91,7 +105,7 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 			bcm_static_skb = (bcm_static_pkt_t *)((char *)bcm_static_buf + 2048);
 			skb_buff_ptr = wifi_platform_prealloc(adapter, 4, 0);
 			if (!skb_buff_ptr) {
-				printk("cannot alloc static buf!\n");
+				BCM_PRINT(("cannot alloc static buf!\n"));
 				bcm_static_buf = NULL;
 				bcm_static_skb = NULL;
 				ASSERT(osh->magic == OS_HANDLE_MAGIC);
@@ -137,7 +151,7 @@ BCMFASTPATH(osl_alloc_skb)(osl_t *osh, unsigned int len)
 {
 	struct sk_buff *skb;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
-	gfp_t flags = (in_atomic() || irqs_disabled()) ? GFP_ATOMIC : GFP_KERNEL;
+	gfp_t flags = CAN_SLEEP() ? GFP_KERNEL : GFP_ATOMIC;
 
 #ifdef DHD_USE_ATOMIC_PKTGET
 	flags = GFP_ATOMIC;
@@ -345,15 +359,15 @@ BCMFASTPATH(linux_pktfree)(osl_t *osh, void *p, bool send)
 
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_CTRLBUF)
 	if (skb && (skb->mac_len == PREALLOC_USED_MAGIC)) {
-		printk("%s: pkt %p is from static pool\n",
-			__FUNCTION__, p);
+		BCM_PRINT(("%s: pkt %p is from static pool\n",
+			__FUNCTION__, p));
 		dump_stack();
 		return;
 	}
 
 	if (skb && (skb->mac_len == PREALLOC_FREE_MAGIC)) {
-		printk("%s: pkt %p is from static pool and not in used\n",
-			__FUNCTION__, p);
+		BCM_PRINT(("%s: pkt %p is from static pool and not in used\n",
+			__FUNCTION__, p));
 		dump_stack();
 		return;
 	}
@@ -407,7 +421,7 @@ osl_pktget_static(osl_t *osh, uint len)
 		return linux_pktget(osh, len);
 
 	if (len > DHD_SKB_MAX_BUFSIZE) {
-		printk("%s: attempt to allocate huge packet (0x%x)\n", __FUNCTION__, len);
+		BCM_PRINT(("%s: attempt to allocate huge packet (0x%x)\n", __FUNCTION__, len));
 		return linux_pktget(osh, len);
 	}
 
@@ -450,7 +464,7 @@ osl_pktget_static(osl_t *osh, uint len)
 	}
 
 	OSL_STATIC_PKT_UNLOCK(&bcm_static_skb->osl_pkt_lock, flags);
-	printk("%s: all static pkt in use!\n", __FUNCTION__);
+	BCM_PRINT(("%s: all static pkt in use!\n", __FUNCTION__));
 	return NULL;
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
@@ -521,7 +535,7 @@ osl_pktget_static(osl_t *osh, uint len)
 #endif /* ENHANCED_STATIC_BUF */
 
 	up(&bcm_static_skb->osl_pkt_sem);
-	printk("%s: all static pkt in use!\n", __FUNCTION__);
+	BCM_PRINT(("%s: all static pkt in use!\n", __FUNCTION__));
 	return linux_pktget(osh, len);
 #endif /* DHD_USE_STATIC_CTRLBUF */
 }
@@ -550,15 +564,15 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 	for (i = 0; i < STATIC_PKT_2PAGE_NUM; i++) {
 		if (p == bcm_static_skb->skb_8k[i]) {
 			if (bcm_static_skb->pkt_use[i] == 0) {
-				printk("%s: static pkt idx %d(%p) is double free\n",
-					__FUNCTION__, i, p);
+				BCM_PRINT(("%s: static pkt idx %d(%p) is double free\n",
+					__FUNCTION__, i, p));
 			} else {
 				bcm_static_skb->pkt_use[i] = 0;
 			}
 
 			if (skb->mac_len != PREALLOC_USED_MAGIC) {
-				printk("%s: static pkt idx %d(%p) is not in used\n",
-					__FUNCTION__, i, p);
+				BCM_PRINT(("%s: static pkt idx %d(%p) is not in used\n",
+					__FUNCTION__, i, p));
 			}
 
 			skb->mac_len = PREALLOC_FREE_MAGIC;
@@ -568,7 +582,7 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 	}
 
 	OSL_STATIC_PKT_UNLOCK(&bcm_static_skb->osl_pkt_lock, flags);
-	printk("%s: packet %p does not exist in the pool\n", __FUNCTION__, p);
+	BCM_PRINT(("%s: packet %p does not exist in the pool\n", __FUNCTION__, p));
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
 	for (i = 0; i < STATIC_PKT_1PAGE_NUM; i++) {
@@ -683,25 +697,25 @@ void osl_ctrace_dump(osl_t *osh, struct bcmstrbuf *b)
 	if (b != NULL)
 		bcm_bprintf(b, " Total %d sbk not free\n", osh->ctrace_num);
 	else
-		printk(" Total %d sbk not free\n", osh->ctrace_num);
+		BCM_PRINT((" Total %d sbk not free\n", osh->ctrace_num));
 
 	list_for_each_entry(skb, &osh->ctrace_list, ctrace_list) {
 		if (b != NULL)
 			bcm_bprintf(b, "[%d] skb %p:\n", ++idx, skb);
 		else
-			printk("[%d] skb %p:\n", ++idx, skb);
+			BCM_PRINT(("[%d] skb %p:\n", ++idx, skb));
 
 		for (i = 0; i < skb->ctrace_count; i++) {
 			j = (skb->ctrace_start + i) % CTRACE_NUM;
 			if (b != NULL)
 				bcm_bprintf(b, "    [%s(%d)]\n", skb->func[j], skb->line[j]);
 			else
-				printk("    [%s(%d)]\n", skb->func[j], skb->line[j]);
+				BCM_PRINT(("    [%s(%d)]\n", skb->func[j], skb->line[j]));
 		}
 		if (b != NULL)
 			bcm_bprintf(b, "\n");
 		else
-			printk("\n");
+			BCM_PRINT(("\n"));
 	}
 
 	OSL_CTRACE_UNLOCK(&osh->ctrace_lock, flags);

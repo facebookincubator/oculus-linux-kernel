@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -161,16 +161,18 @@ static inline void wlan_crypto_put_be64(u8 *a, u64 val)
 	a[7] = val & 0xff;
 }
 
-#define WLAN_CRYPTO_TX_OPS_ALLOCKEY(psoc) \
-		(psoc->soc_cb.tx_ops.crypto_tx_ops.allockey)
-#define WLAN_CRYPTO_TX_OPS_SETKEY(psoc) \
-		(psoc->soc_cb.tx_ops.crypto_tx_ops.setkey)
-#define WLAN_CRYPTO_TX_OPS_DELKEY(psoc) \
-		(psoc->soc_cb.tx_ops.crypto_tx_ops.delkey)
-#define WLAN_CRYPTO_TX_OPS_DEFAULTKEY(psoc) \
-		(psoc->soc_cb.tx_ops.crypto_tx_ops.defaultkey)
-#define WLAN_CRYPTO_TX_OPS_SET_KEY(psoc) \
-		((psoc)->soc_cb.tx_ops.crypto_tx_ops.set_key)
+#define WLAN_CRYPTO_TX_OPS_ALLOCKEY(tx_ops) \
+	((tx_ops)->crypto_tx_ops.allockey)
+#define WLAN_CRYPTO_TX_OPS_SETKEY(tx_ops) \
+	((tx_ops)->crypto_tx_ops.setkey)
+#define WLAN_CRYPTO_TX_OPS_DELKEY(tx_ops) \
+	((tx_ops)->crypto_tx_ops.delkey)
+#define WLAN_CRYPTO_TX_OPS_DEFAULTKEY(tx_ops) \
+	((tx_ops)->crypto_tx_ops.defaultkey)
+#define WLAN_CRYPTO_TX_OPS_SET_KEY(tx_ops) \
+	((tx_ops)->crypto_tx_ops.set_key)
+#define WLAN_CRYPTO_TX_OPS_GETPN(tx_ops) \
+	((tx_ops)->crypto_tx_ops.getpn)
 
 /* unalligned little endian access */
 #ifndef LE_READ_2
@@ -255,7 +257,7 @@ static inline void wlan_crypto_put_be64(u8 *a, u64 val)
 					WLAN_RSN_SEL(11)
 #define RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192\
 					WLAN_RSN_SEL(12)
-#define RSN_AUTH_KEY_MGMT_FT_802_1X_SUITE_B_192\
+#define RSN_AUTH_KEY_MGMT_FT_802_1X_SUITE_B_384\
 					WLAN_RSN_SEL(13)
 #define RSN_AUTH_KEY_MGMT_FILS_SHA256   WLAN_RSN_SEL(14)
 #define RSN_AUTH_KEY_MGMT_FILS_SHA384   WLAN_RSN_SEL(15)
@@ -425,19 +427,23 @@ struct wlan_crypto_mmie {
  * @crypto_params:    crypto params for the peer
  * @key:              key buffers for this peer
  * @igtk_key:         igtk key buffer for this peer
+ * @bigtk_key:        bigtk key buffer for this peer
  * @igtk_key_type:    igtk key type
  * @def_tx_keyid:     default key used for this peer
  * @def_igtk_tx_keyid default igtk key used for this peer
+ * @def_bigtk_tx_keyid default bigtk key used for this peer
  * @fils_aead_set     fils params for this peer
  *
  */
 struct wlan_crypto_comp_priv {
 	struct wlan_crypto_params crypto_params;
-	struct wlan_crypto_key *key[WLAN_CRYPTO_MAXKEYIDX];
+	struct wlan_crypto_key *key[WLAN_CRYPTO_MAX_VLANKEYIX];
 	struct wlan_crypto_key *igtk_key[WLAN_CRYPTO_MAXIGTKKEYIDX];
-	uint32_t igtk_key_type;
+	struct wlan_crypto_key *bigtk_key[WLAN_CRYPTO_MAXBIGTKKEYIDX];
+	enum wlan_crypto_cipher_type igtk_key_type;
 	uint8_t def_tx_keyid;
 	uint8_t def_igtk_tx_keyid;
+	uint8_t def_bigtk_tx_keyid;
 	uint8_t fils_aead_set;
 };
 
@@ -514,6 +520,12 @@ static inline uint8_t ieee80211_hdrsize(const void *data)
 			== WLAN_FC0_STYPE_QOS_DATA))) {
 		size += sizeof(uint16_t);
 		/* Qos frame with Order bit set indicates an HTC frame */
+		if (hdr->i_fc[1] & WLAN_FC1_ORDER)
+			size += (sizeof(uint8_t)*4);
+	}
+	if (((WLAN_FC0_GET_STYPE(hdr->i_fc[0])
+			== WLAN_FC0_STYPE_ACTION))) {
+		/* Action frame with Order bit set indicates an HTC frame */
 		if (hdr->i_fc[1] & WLAN_FC1_ORDER)
 			size += (sizeof(uint8_t)*4);
 	}

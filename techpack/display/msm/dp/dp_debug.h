@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_DEBUG_H_
@@ -79,9 +79,12 @@ struct dp_debug {
 	char hdcp_status[SZ_128];
 	struct dp_mst_connector dp_mst_connector_list;
 	bool mst_hpd_sim;
+
 	bool mst_sim_add_con;
 	bool mst_sim_remove_con;
 	int mst_sim_remove_con_id;
+
+	bool force_bond_mode;
 	u32 mst_port_cnt;
 
 	u8 *(*get_edid)(struct dp_debug *dp_debug);

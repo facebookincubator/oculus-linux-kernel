@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,6 +25,7 @@
 #include <wlan_objmgr_vdev_obj.h>
 #include "include/wlan_vdev_mlme.h"
 #include "wlan_mlme_main.h"
+#include "wma_if.h"
 
 /**
  * mlme_register_mlme_ext_ops() - Register mlme ext ops
@@ -111,6 +112,60 @@ mlme_set_vdev_start_failed(struct wlan_objmgr_vdev *vdev, bool val);
 bool mlme_is_connection_fail(struct wlan_objmgr_vdev *vdev);
 
 /**
+ * mlme_is_wapi_sta_active() - check sta with wapi security exists and is active
+ * @pdev: pdev pointer
+ *
+ * Return: true if sta with wapi security exists
+ */
+#ifdef FEATURE_WLAN_WAPI
+bool mlme_is_wapi_sta_active(struct wlan_objmgr_pdev *pdev);
+#else
+static inline bool mlme_is_wapi_sta_active(struct wlan_objmgr_pdev *pdev)
+{
+	return false;
+}
+#endif
+
+QDF_STATUS mlme_set_bigtk_support(struct wlan_objmgr_vdev *vdev, bool val);
+
+bool mlme_get_bigtk_support(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_set_roam_reason_better_ap() - set roam reason better AP
+ * @vdev: vdev pointer
+ * @val: value to be set
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+mlme_set_roam_reason_better_ap(struct wlan_objmgr_vdev *vdev, bool val);
+
+/**
+ * mlme_get_roam_reason_better_ap() - get roam reason better AP
+ * @vdev: vdev pointer
+ *
+ * Return: bool
+ */
+bool mlme_get_roam_reason_better_ap(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_set_hb_ap_rssi() - set hb ap RSSI
+ * @vdev: vdev pointer
+ * @val: value to be set
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlme_set_hb_ap_rssi(struct wlan_objmgr_vdev *vdev, uint32_t val);
+
+/**
+ * mlme_get_hb_ap_rssi() - get HB AP RSSIc
+ * @vdev: vdev pointer
+ *
+ * Return: rssi value
+ */
+uint32_t mlme_get_hb_ap_rssi(struct wlan_objmgr_vdev *vdev);
+
+/**
  * mlme_set_connection_fail() - set connection failure flag
  * @vdev: vdev pointer
  * @val: value to be set
@@ -165,7 +220,44 @@ mlme_set_mbssid_info(struct wlan_objmgr_vdev *vdev,
  * Return: None
  */
 void mlme_get_mbssid_info(struct wlan_objmgr_vdev *vdev,
-			  struct vdev_mlme_mbss_11ax **mbss_11ax);
+			  struct vdev_mlme_mbss_11ax *mbss_11ax);
+
+/**
+ * mlme_set_tx_power() - set tx power
+ * @vdev: vdev pointer
+ * @tx_power: tx power to be set
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlme_set_tx_power(struct wlan_objmgr_vdev *vdev,
+			     int8_t tx_power);
+
+/**
+ * mlme_get_tx_power() - get tx power
+ * @vdev: vdev pointer
+ * @tx_power: tx power info
+ *
+ * Return: None
+ */
+int8_t mlme_get_tx_power(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_get_max_reg_power() - get max reg power
+ * @vdev: vdev pointer
+ *
+ * Return: max reg power
+ */
+int8_t mlme_get_max_reg_power(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_set_max_reg_power() - set max reg power
+ * @vdev: vdev pointer
+ * @max_tx_power: max tx power to be set
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlme_set_max_reg_power(struct wlan_objmgr_vdev *vdev,
+				 int8_t max_reg_power);
 
 /**
  * mlme_is_vdev_in_beaconning_mode() - check if vdev is beaconing mode
@@ -188,10 +280,100 @@ QDF_STATUS mlme_set_assoc_type(struct wlan_objmgr_vdev *vdev,
 			       enum vdev_assoc_type assoc_type);
 
 /**
+ * mlme_get_vdev_bss_peer_mac_addr() - to get peer mac address
+ * @vdev: pointer to vdev
+ * @bss_peer_mac_address: pointer to bss_peer_mac_address
+ *
+ * This API is used to get mac address of peer.
+ *
+ * Return: QDF_STATUS based on overall success
+ */
+QDF_STATUS mlme_get_vdev_bss_peer_mac_addr(
+		struct wlan_objmgr_vdev *vdev,
+		struct qdf_mac_addr *bss_peer_mac_address);
+
+/**
+ * mlme_get_vdev_stop_type() - to get vdev stop type
+ * @vdev: vdev pointer
+ * @vdev_stop_type: vdev stop type
+ *
+ * This API will get vdev stop type from mlme legacy priv.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlme_get_vdev_stop_type(struct wlan_objmgr_vdev *vdev,
+				   uint32_t *vdev_stop_type);
+
+/**
+ * mlme_set_vdev_stop_type() - to set vdev stop type
+ * @vdev: vdev pointer
+ * @vdev_stop_type: vdev stop type
+ *
+ * This API will set vdev stop type from mlme legacy priv.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlme_set_vdev_stop_type(struct wlan_objmgr_vdev *vdev,
+				   uint32_t vdev_stop_type);
+
+/**
  * mlme_get_assoc_type() - get associate type
  * @vdev: vdev pointer
  *
  * Return: associate type
  */
 enum vdev_assoc_type  mlme_get_assoc_type(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_vdev_create_send() - function to send the vdev create to firmware
+ * @vdev: vdev pointer
+ *
+ * Return: QDF_STATUS_SUCCESS when the command has been successfully sent
+ * to firmware or QDF_STATUS_E_** when there is a failure in sending the command
+ * to firmware.
+ */
+QDF_STATUS mlme_vdev_create_send(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_vdev_self_peer_create() - function to send the vdev create self peer
+ * @vdev: vdev pointer
+ *
+ * Return: QDF_STATUS_SUCCESS when the self peer is successfully created
+ * to firmware or QDF_STATUS_E_** when there is a failure.
+ */
+QDF_STATUS mlme_vdev_self_peer_create(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_vdev_self_peer_delete() - function to delete vdev self peer
+ * @self_peer_del_msg: scheduler message containing the del_vdev_params
+ *
+ * Return: QDF_STATUS_SUCCESS when the self peer is successfully deleted
+ * to firmware or QDF_STATUS_E_** when there is a failure.
+ */
+QDF_STATUS mlme_vdev_self_peer_delete(struct scheduler_msg *self_peer_del_msg);
+
+/**
+ * mlme_vdev_uses_self_peer() - send vdev del resp to Upper layer
+ * @vdev_type: params of del vdev response
+ *
+ * Return: boolean
+ */
+bool mlme_vdev_uses_self_peer(uint32_t vdev_type, uint32_t vdev_subtype);
+
+/**
+ * mlme_vdev_self_peer_delete_resp() - send vdev self peer delete resp to Upper
+ * layer
+ * @param: params of del vdev response
+ *
+ * Return: none
+ */
+void mlme_vdev_self_peer_delete_resp(struct del_vdev_params *param);
+
+/**
+ * mlme_vdev_del_resp() - send vdev delete resp to Upper layer
+ * @vdev_id: vdev id for which del vdev response is received
+ *
+ * Return: none
+ */
+void mlme_vdev_del_resp(uint8_t vdev_id);
 #endif

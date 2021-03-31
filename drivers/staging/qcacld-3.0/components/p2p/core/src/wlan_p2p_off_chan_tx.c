@@ -46,7 +46,7 @@
 static inline struct wlan_lmac_if_p2p_tx_ops *
 p2p_psoc_get_tx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.tx_ops.p2p;
+	return &psoc->soc_cb.tx_ops->p2p;
 }
 
 /**
@@ -117,11 +117,24 @@ static QDF_STATUS p2p_vdev_check_valid(struct tx_action_context *tx_ctx)
 	mode = wlan_vdev_mlme_get_opmode(vdev);
 	p2p_debug("vdev mode:%d", mode);
 
-	/* drop probe response for go, sap */
+	/* drop probe response/disassoc/deauth for go, sap */
 	if ((mode == QDF_SAP_MODE ||
 	     mode == QDF_P2P_GO_MODE) &&
-	    tx_ctx->frame_info.sub_type == P2P_MGMT_PROBE_RSP) {
-		p2p_debug("drop probe response, mode:%d", mode);
+	    ((tx_ctx->frame_info.sub_type == P2P_MGMT_PROBE_RSP) ||
+	     (tx_ctx->frame_info.sub_type == P2P_MGMT_DISASSOC) ||
+	     (tx_ctx->frame_info.sub_type == P2P_MGMT_DEAUTH))) {
+		p2p_debug("drop frame, mode:%d, sub type:%d", mode,
+			  tx_ctx->frame_info.sub_type);
+		status = QDF_STATUS_E_FAILURE;
+	}
+
+	/* drop action frame for sap */
+	if ((mode == QDF_SAP_MODE) &&
+	    (tx_ctx->frame_info.sub_type == P2P_MGMT_ACTION) &&
+	    (tx_ctx->frame_info.public_action_type ==
+	     P2P_PUBLIC_ACTION_NOT_SUPPORT) &&
+	    (tx_ctx->frame_info.action_type == P2P_ACTION_NOT_SUPPORT)) {
+		p2p_debug("drop action frame for SAP");
 		status = QDF_STATUS_E_FAILURE;
 	}
 
@@ -150,12 +163,25 @@ static QDF_STATUS p2p_vdev_check_valid(struct tx_action_context *tx_ctx)
 	mode = wlan_vdev_mlme_get_opmode(vdev);
 	p2p_debug("vdev mode:%d", mode);
 
-	/* drop probe response for sta, go, sap */
-	if ((mode == QDF_STA_MODE ||
-	     mode == QDF_SAP_MODE ||
-	     mode == QDF_P2P_GO_MODE) &&
-	    tx_ctx->frame_info.sub_type == P2P_MGMT_PROBE_RSP) {
-		p2p_debug("drop probe response, mode:%d", mode);
+	/* drop probe response/disassoc/deauth for sta, go, sap */
+	if ((mode == QDF_STA_MODE &&
+	     tx_ctx->frame_info.sub_type == P2P_MGMT_PROBE_RSP) ||
+	    ((mode == QDF_SAP_MODE || mode == QDF_P2P_GO_MODE) &&
+	     ((tx_ctx->frame_info.sub_type == P2P_MGMT_PROBE_RSP) ||
+	     (tx_ctx->frame_info.sub_type == P2P_MGMT_DISASSOC) ||
+	     (tx_ctx->frame_info.sub_type == P2P_MGMT_DEAUTH)))) {
+		p2p_debug("drop frame, mode:%d, sub type:%d", mode,
+			  tx_ctx->frame_info.sub_type);
+		status = QDF_STATUS_E_FAILURE;
+	}
+
+	/* drop ation frame for sap */
+	if ((mode == QDF_SAP_MODE) &&
+	    (tx_ctx->frame_info.sub_type == P2P_MGMT_ACTION) &&
+	    (tx_ctx->frame_info.public_action_type ==
+	     P2P_PUBLIC_ACTION_NOT_SUPPORT) &&
+	    (tx_ctx->frame_info.action_type == P2P_ACTION_NOT_SUPPORT)) {
+		p2p_debug("drop action frame for SAP");
 		status = QDF_STATUS_E_FAILURE;
 	}
 
@@ -220,7 +246,7 @@ static QDF_STATUS p2p_check_and_update_channel(struct tx_action_context *tx_ctx)
  *
  * Return: pointer to p2p ie
  */
-static const uint8_t *p2p_get_p2pie_ptr(const uint8_t *ie, uint16_t ie_len)
+const uint8_t *p2p_get_p2pie_ptr(const uint8_t *ie, uint16_t ie_len)
 {
 	return wlan_get_vendor_ie_ptr_from_oui(P2P_OUI,
 			P2P_OUI_SIZE, ie, ie_len);
@@ -629,17 +655,6 @@ static char *p2p_get_frame_type_str(struct p2p_frame_info *frame_info)
 	if (frame_info->sub_type == P2P_MGMT_NOT_SUPPORT)
 		return "Not support sub frame";
 
-	switch (frame_info->sub_type) {
-	case P2P_MGMT_PROBE_REQ:
-		return "P2P roc request";
-	case P2P_MGMT_PROBE_RSP:
-		return "P2P cancel roc request";
-	case P2P_MGMT_ACTION:
-		break;
-	default:
-		return "Invalid P2P command";
-	}
-
 	if (frame_info->action_type == P2P_ACTION_PRESENCE_REQ)
 		return "P2P action presence request";
 	if (frame_info->action_type == P2P_ACTION_PRESENCE_RSP)
@@ -673,7 +688,7 @@ static char *p2p_get_frame_type_str(struct p2p_frame_info *frame_info)
 	case P2P_PUBLIC_ACTION_GAS_COMB_RSP:
 		return "GAS come back response";
 	default:
-		return "Not support action frame";
+		return "Other frame";
 	}
 }
 
@@ -726,26 +741,12 @@ static QDF_STATUS p2p_get_frame_info(uint8_t *data_buf, uint32_t length,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	frame_info->type = P2P_FRAME_MGMT;
+	frame_info->type = type;
+	frame_info->sub_type = sub_type;
 
-	if (sub_type == P2P_MGMT_PROBE_RSP) {
-		frame_info->sub_type = P2P_MGMT_PROBE_RSP;
-		p2p_debug("Probe Response");
+	if (sub_type != P2P_MGMT_ACTION)
 		return QDF_STATUS_SUCCESS;
-	}
 
-	if (sub_type == P2P_MGMT_PROBE_REQ) {
-		frame_info->sub_type = P2P_MGMT_PROBE_REQ;
-		p2p_debug("Probe Request");
-		return QDF_STATUS_SUCCESS;
-	}
-
-	if (sub_type != P2P_MGMT_ACTION) {
-		p2p_debug("not support sub type");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	frame_info->sub_type = P2P_MGMT_ACTION;
 	buf += P2P_ACTION_OFFSET;
 	if (length > P2P_PUBLIC_ACTION_FRAME_TYPE_OFFSET &&
 	    buf[0] == P2P_PUBLIC_ACTION_FRAME &&
@@ -806,9 +807,9 @@ static QDF_STATUS p2p_tx_update_connection_status(
 
 	if (tx_frame_info->public_action_type !=
 		P2P_PUBLIC_ACTION_NOT_SUPPORT)
-		p2p_debug("%s ---> OTA to " QDF_MAC_ADDR_STR,
+		p2p_debug("%s ---> OTA to " QDF_MAC_ADDR_FMT,
 			  p2p_get_frame_type_str(tx_frame_info),
-			  QDF_MAC_ADDR_ARRAY(mac_to));
+			  QDF_MAC_ADDR_REF(mac_to));
 
 	if ((tx_frame_info->public_action_type ==
 	     P2P_PUBLIC_ACTION_PROV_DIS_REQ) &&
@@ -850,9 +851,9 @@ static QDF_STATUS p2p_rx_update_connection_status(
 
 	if (rx_frame_info->public_action_type !=
 		P2P_PUBLIC_ACTION_NOT_SUPPORT)
-		p2p_info("%s <--- OTA from " QDF_MAC_ADDR_STR,
+		p2p_info("%s <--- OTA from " QDF_MAC_ADDR_FMT,
 			  p2p_get_frame_type_str(rx_frame_info),
-			  QDF_MAC_ADDR_ARRAY(mac_from));
+			  QDF_MAC_ADDR_REF(mac_from));
 
 	if ((rx_frame_info->public_action_type ==
 	     P2P_PUBLIC_ACTION_PROV_DIS_REQ) &&
@@ -1082,10 +1083,8 @@ static QDF_STATUS p2p_roc_req_for_tx_action(
 	QDF_STATUS status;
 
 	roc_ctx = qdf_mem_malloc(sizeof(struct p2p_roc_context));
-	if (!roc_ctx) {
-		p2p_err("Failed to allocate p2p roc context");
+	if (!roc_ctx)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	p2p_soc_obj = tx_ctx->p2p_soc_obj;
 	roc_ctx->p2p_soc_obj = p2p_soc_obj;
@@ -1559,8 +1558,8 @@ static QDF_STATUS p2p_populate_rmf_field(struct tx_action_context *tx_ctx,
 
 	if (!p2p_soc_obj->p2p_cb.is_mgmt_protected(
 		tx_ctx->vdev_id, wh->i_addr1)) {
-		p2p_debug("non rmf connection vdev %d "QDF_MAC_ADDR_STR,
-			  tx_ctx->vdev_id, QDF_MAC_ADDR_ARRAY(wh->i_addr1));
+		p2p_debug("non rmf connection vdev %d "QDF_MAC_ADDR_FMT,
+			  tx_ctx->vdev_id, QDF_MAC_ADDR_REF(wh->i_addr1));
 		return QDF_STATUS_SUCCESS;
 	}
 	if (!qdf_is_macaddr_group((struct qdf_mac_addr *)wh->i_addr1) &&
@@ -1594,10 +1593,10 @@ static QDF_STATUS p2p_populate_rmf_field(struct tx_action_context *tx_ctx,
 			     *size - sizeof(*wh));
 		rmf_wh = (struct wlan_frame_hdr *)frame;
 		(rmf_wh)->i_fc[1] |= IEEE80211_FC1_WEP;
-		p2p_debug("set protection 0x%x cat %d "QDF_MAC_ADDR_STR,
+		p2p_debug("set protection 0x%x cat %d "QDF_MAC_ADDR_FMT,
 			  tx_ctx->frame_info.sub_type,
 			  action_hdr->action_category,
-			  QDF_MAC_ADDR_ARRAY(wh->i_addr1));
+			  QDF_MAC_ADDR_REF(wh->i_addr1));
 
 		qdf_nbuf_free(*ppkt);
 		*ppbuf = frame;
@@ -1833,10 +1832,8 @@ QDF_STATUS p2p_cleanup_tx_sync(
 
 	p2p_debug("p2p_soc_obj:%pK, vdev:%pK", p2p_soc_obj, vdev);
 	param = qdf_mem_malloc(sizeof(*param));
-	if (!param) {
-		p2p_err("failed to allocate cleanup param");
+	if (!param)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	param->p2p_soc_obj = p2p_soc_obj;
 	if (vdev)
@@ -2094,8 +2091,8 @@ p2p_add_random_mac(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 	struct p2p_vdev_priv_obj *p2p_vdev_obj;
 	struct wlan_objmgr_vdev *vdev;
 
-	p2p_debug("random_mac:vdev %d mac_addr:%pM rnd_cookie=%llu freq = %u",
-		  vdev_id, mac, rnd_cookie, freq);
+	p2p_debug("random_mac:vdev %d mac_addr:"QDF_MAC_ADDR_FMT" rnd_cookie=%llu freq = %u",
+		  vdev_id, QDF_MAC_ADDR_REF(mac), rnd_cookie, freq);
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(soc, vdev_id, WLAN_P2P_ID);
 	if (!vdev) {
@@ -2137,8 +2134,8 @@ p2p_add_random_mac(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 				rnd_cookie);
 		qdf_spin_unlock(&p2p_vdev_obj->random_mac_lock);
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_P2P_ID);
-		p2p_debug("random_mac:append %d vdev %d freq %d %pM rnd_cookie %llu",
-			  append_ret, vdev_id, freq, mac, rnd_cookie);
+		p2p_debug("random_mac:append %d vdev %d freq %d "QDF_MAC_ADDR_FMT" rnd_cookie %llu",
+			  append_ret, vdev_id, freq, QDF_MAC_ADDR_REF(mac), rnd_cookie);
 		if (!append_ret) {
 			p2p_debug("random_mac:failed to append rnd_cookie");
 			return QDF_STATUS_E_NOMEM;
@@ -2173,8 +2170,8 @@ p2p_add_random_mac(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 	p2p_vdev_obj->random_mac[i].freq = freq;
 	qdf_spin_unlock(&p2p_vdev_obj->random_mac_lock);
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_P2P_ID);
-	p2p_debug("random_mac:add vdev %d freq %d %pM rnd_cookie %llu",
-		  vdev_id, freq, mac, rnd_cookie);
+	p2p_debug("random_mac:add vdev %d freq %d "QDF_MAC_ADDR_FMT" rnd_cookie %llu",
+		  vdev_id, freq, QDF_MAC_ADDR_REF(mac), rnd_cookie);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -2230,8 +2227,8 @@ p2p_del_random_mac(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 			qdf_mc_timer_start(&random_mac->clear_timer, duration);
 
 			qdf_spin_lock(&p2p_vdev_obj->random_mac_lock);
-			p2p_debug("random_mac:noref on vdev %d addr %pM",
-				  vdev_id, random_mac->addr);
+			p2p_debug("random_mac:noref on vdev %d addr "QDF_MAC_ADDR_FMT,
+				  vdev_id, QDF_MAC_ADDR_REF(random_mac->addr));
 		}
 		break;
 	}
@@ -2281,8 +2278,8 @@ void p2p_del_all_rand_mac_vdev(struct wlan_objmgr_vdev *vdev)
 		qdf_mc_timer_stop(&p2p_vdev_obj->random_mac[i].clear_timer);
 		p2p_clear_mac_filter(wlan_vdev_get_psoc(vdev),
 				     wlan_vdev_get_id(vdev), addr, freq);
-		p2p_debug("random_mac:delall vdev %d freq %d addr %pM",
-			  wlan_vdev_get_id(vdev), freq, addr);
+		p2p_debug("random_mac:delall vdev %d freq %d addr "QDF_MAC_ADDR_FMT,
+			  wlan_vdev_get_id(vdev), freq, QDF_MAC_ADDR_REF(addr));
 
 		qdf_spin_lock(&p2p_vdev_obj->random_mac_lock);
 	}
@@ -2403,9 +2400,10 @@ QDF_STATUS p2p_process_set_rand_mac_rsp(struct p2p_mac_filter_rsp *resp)
 		return QDF_STATUS_E_INVAL;
 	}
 
-	p2p_debug("random_mac:get pending req on vdev %d set %d mac filter %pM freq %d",
+	p2p_debug("random_mac:get pending req on vdev %d set %d mac filter "QDF_MAC_ADDR_FMT" freq %d",
 		  p2p_vdev_obj->pending_req.vdev_id,
-		  p2p_vdev_obj->pending_req.set, p2p_vdev_obj->pending_req.mac,
+		  p2p_vdev_obj->pending_req.set,
+		  QDF_MAC_ADDR_REF(p2p_vdev_obj->pending_req.mac),
 		  p2p_vdev_obj->pending_req.freq);
 	if (p2p_vdev_obj->pending_req.cb)
 		p2p_vdev_obj->pending_req.cb(
@@ -2432,9 +2430,9 @@ p2p_process_set_rand_mac(struct p2p_set_mac_filter_req *set_filter_req)
 		p2p_debug("random_mac:set_filter_req is null");
 		return QDF_STATUS_E_INVAL;
 	}
-	p2p_debug("random_mac:vdev %d set %d mac filter %pM freq %d",
+	p2p_debug("random_mac:vdev %d set %d mac filter "QDF_MAC_ADDR_FMT" freq %d",
 		  set_filter_req->vdev_id, set_filter_req->set,
-		  set_filter_req->mac, set_filter_req->freq);
+		  QDF_MAC_ADDR_REF(set_filter_req->mac), set_filter_req->freq);
 
 	soc = set_filter_req->soc;
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(
@@ -2452,10 +2450,10 @@ p2p_process_set_rand_mac(struct p2p_set_mac_filter_req *set_filter_req)
 		goto get_p2p_obj_failed;
 	}
 	if (p2p_vdev_obj->pending_req.soc) {
-		p2p_debug("random_mac:Busy on vdev %d set %d mac filter %pM freq %d",
+		p2p_debug("random_mac:Busy on vdev %d set %d mac filter "QDF_MAC_ADDR_FMT" freq %d",
 			  p2p_vdev_obj->pending_req.vdev_id,
 			  p2p_vdev_obj->pending_req.set,
-			  p2p_vdev_obj->pending_req.mac,
+			  QDF_MAC_ADDR_REF(p2p_vdev_obj->pending_req.mac),
 			  p2p_vdev_obj->pending_req.freq);
 		goto get_p2p_obj_failed;
 	}
@@ -2512,8 +2510,8 @@ p2p_set_mac_filter(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 	struct scheduler_msg msg = {0};
 	QDF_STATUS status;
 
-	p2p_debug("random_mac:vdev %d freq %d set %d %pM",
-		  vdev_id, freq, set, mac);
+	p2p_debug("random_mac:vdev %d freq %d set %d "QDF_MAC_ADDR_FMT,
+		  vdev_id, freq, set, QDF_MAC_ADDR_REF(mac));
 
 	set_filter_req = qdf_mem_malloc(sizeof(*set_filter_req));
 	if (!set_filter_req)
@@ -2632,8 +2630,9 @@ p2p_set_rand_mac(struct wlan_objmgr_psoc *soc, uint32_t vdev_id,
 		} else {
 			priv = osif_request_priv(request);
 			ret = priv->result;
-			p2p_debug("random_mac:vdev %d freq %d result %d %pM rnd_cookie %llu",
-				  vdev_id, freq, priv->result, mac, rnd_cookie);
+			p2p_debug("random_mac:vdev %d freq %d result %d "QDF_MAC_ADDR_FMT" rnd_cookie %llu",
+				  vdev_id, freq, priv->result,
+				  QDF_MAC_ADDR_REF(mac), rnd_cookie);
 		}
 	}
 	osif_request_put(request);
@@ -2750,8 +2749,8 @@ static void p2p_mac_clear_timeout(void *context)
 	qdf_spin_unlock(&p2p_vdev_obj->random_mac_lock);
 
 	vdev_id = wlan_vdev_get_id(p2p_vdev_obj->vdev);
-	p2p_debug("random_mac:clear timeout vdev %d %pM freq %d clr %d",
-		  vdev_id, addr, freq, clear);
+	p2p_debug("random_mac:clear timeout vdev %d "QDF_MAC_ADDR_FMT" freq %d clr %d",
+		  vdev_id, QDF_MAC_ADDR_REF(addr), freq, clear);
 	if (clear)
 		p2p_clear_mac_filter(wlan_vdev_get_psoc(p2p_vdev_obj->vdev),
 				     vdev_id, addr, freq);
@@ -3039,10 +3038,10 @@ QDF_STATUS p2p_process_rx_mgmt(
 		return QDF_STATUS_E_INVAL;
 	}
 
-	p2p_debug("soc:%pK, frame_len:%d, rx_chan:%d, vdev_id:%d, frm_type:%d, rx_rssi:%d, buf:%pK",
-		p2p_soc_obj->soc, rx_mgmt->frame_len,
-		rx_mgmt->rx_chan, rx_mgmt->vdev_id, rx_mgmt->frm_type,
-		rx_mgmt->rx_rssi, rx_mgmt->buf);
+	p2p_debug("soc:%pK, frame_len:%d, rx_freq:%d, vdev_id:%d, frm_type:%d, rx_rssi:%d, buf:%pK",
+		  p2p_soc_obj->soc, rx_mgmt->frame_len,
+		  rx_mgmt->rx_freq, rx_mgmt->vdev_id, rx_mgmt->frm_type,
+		  rx_mgmt->rx_rssi, rx_mgmt->buf);
 
 	if (rx_mgmt->frm_type == MGMT_ACTION_VENDOR_SPECIFIC) {
 		p2p_get_frame_info(rx_mgmt->buf, rx_mgmt->frame_len,

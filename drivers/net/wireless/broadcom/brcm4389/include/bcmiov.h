@@ -120,7 +120,7 @@ typedef int (*bcm_iov_cmd_set_t)(const bcm_iov_cmd_digest_t *dig,
  */
 struct bcm_iov_batch_subcmd {
 	uint16 id;
-	uint16 len;
+	uint16 len;		/* length of subcmd, including options */
 	union {
 		uint32 options;
 		uint32 status;
@@ -138,7 +138,7 @@ struct bcm_iov_batch_buf {
 /* non-batched command version = major|minor w/ major <= 127 */
 struct bcm_iov_buf {
 	uint16 version;
-	uint16 len;
+	uint16 len;		/* length of data, after id */
 	bcm_iov_cmd_id_t id;
 	uint16 data[1]; /* 32 bit alignment may be repurposed by the command */
 	/* command specific data follows */
@@ -253,8 +253,20 @@ struct bcm_iov_cmd_tlv_info {
 
 /* Command parsing options with respect to validation */
 /* Possible values for parse context options */
-/* Bit 0 - Validate only */
-#define BCM_IOV_PARSE_OPT_BATCH_VALIDATE 0x00000001
+
+/* Validate all the commands in batch first */
+#define BCM_IOV_PARSE_OPT_BATCH_VALIDATE	0x00000001u
+
+/* implement version command within bcmiov. ver_cmd and api_ver in
+ * parse config (see below) need to specified along with this option.
+ */
+#define BCM_IOV_PARSE_OPT_AUTO_VER	0x00000002u
+
+/* option for non-batched commands to not copy when input and outputs
+ * overlap. this means that the api user/iov handers are able to handle
+ * overlapping input/output, copying as necessary.
+ */
+#define BCM_IOV_PARSE_OPT_NBOVLPOK	0x00000004u
 
 typedef uint32 bcm_iov_parse_opts_t;
 
@@ -268,6 +280,8 @@ typedef struct bcm_iov_parse_config {
 	bcm_iov_get_digest_t dig_fn;
 	int max_regs;
 	void *alloc_ctx;
+	uint16 ver_cmd;	/* version command */
+	uint16 api_ver; /* version of the API/iovar */
 } bcm_iov_parse_config_t;
 
 /* API */

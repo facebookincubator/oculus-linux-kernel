@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -101,4 +101,30 @@ QDF_STATUS mac_open(struct wlan_objmgr_psoc *psoc, mac_handle_t *mac_handle,
  */
 QDF_STATUS mac_close(mac_handle_t mac_handle);
 
+/**
+ * mac_register_sesssion_open_close_cb() - register open/close session cb
+ * @mac_handle: Opaque handle to the MAC context
+ * @close_session: callback to be registered with SME for closing the session
+ * @callback: Common callback to hdd for all modes
+ */
+void mac_register_sesssion_open_close_cb(mac_handle_t mac_handle,
+					 csr_session_close_cb close_session,
+					 csr_roam_complete_cb callback);
+
+#ifdef WLAN_BCN_RECV_FEATURE
+/**
+ * mac_register_bcn_report_send_cb() - Register bcn receive start
+ * indication handler callback
+ * @mac: Pointer to Global MAC structure
+ * @cb: A pointer to store the callback
+ *
+ * Once driver gets QCA_NL80211_VENDOR_SUBCMD_BEACON_REPORTING vendor
+ * command with attribute for start only. MAC layer register a sme
+ * callback through this function.
+ *
+ * Return: None.
+ */
+void mac_register_bcn_report_send_cb(struct mac_context *mac,
+				     beacon_report_cb cb);
+#endif /* WLAN_BCN_RECV_FEATURE */
 #endif /* __MAC_INIT_API_H */

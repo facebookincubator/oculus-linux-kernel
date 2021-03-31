@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -46,6 +46,7 @@
 #define CMD_IS_ACTIVE                 2
 #define CMD_ACTIVE_MARKED_FOR_CANCEL  3
 #define CMD_ACTIVE_MARKED_FOR_REMOVAL 4
+#define CMD_MARKED_FOR_MOVEMENT       5
 /**
  * struct wlan_serialization_timer - Timer used for serialization
  * @cmd:      Cmd to which the timer is linked
@@ -103,7 +104,7 @@ struct wlan_serialization_pdev_queue {
 	qdf_list_t active_list;
 	qdf_list_t pending_list;
 	qdf_list_t cmd_pool_list;
-	uint32_t vdev_active_cmd_bitmap;
+	qdf_bitmap(vdev_active_cmd_bitmap, WLAN_UMAC_PSOC_MAX_VDEVS);
 	bool blocking_cmd_active;
 	uint16_t blocking_cmd_waiting;
 	qdf_spinlock_t pdev_queue_lock;
@@ -547,6 +548,19 @@ bool wlan_serialization_match_cmd_pdev(qdf_list_node_t *nnode,
 				       enum wlan_serialization_node node_type);
 
 /**
+ * wlan_serialization_match_cmd_blocking() - Check for a blocking cmd
+ * @nnode: The node on which the matching has to be done
+ * @node_type: Pdev node or vdev node
+ *
+ * This API will check if the give command of nnode is a blocking command.
+ *
+ * Return: True if blocking command, false otherwise.
+ */
+bool wlan_serialization_match_cmd_blocking(
+		qdf_list_node_t *nnode,
+		enum wlan_serialization_node node_type);
+
+/**
  * wlan_serialization_find_cmd() - Find the cmd matching the given criterias
  * @cmd: Serialization command information
  * @cmd_type: Command type to be matched
@@ -667,6 +681,15 @@ wlan_serialization_create_lock(qdf_spinlock_t *lock);
  */
 QDF_STATUS
 wlan_serialization_destroy_lock(qdf_spinlock_t *lock);
+
+/**
+ * wlan_serialization_any_vdev_cmd_active() - Check any vdev cmd active for pdev
+ * @pdev_queue: serialization pdev queue object
+ *
+ * Return: true or false
+ */
+bool wlan_serialization_any_vdev_cmd_active(
+		struct wlan_serialization_pdev_queue *pdev_queue);
 
 /**
  * wlan_ser_update_cmd_history() - Update serialization queue history

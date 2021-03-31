@@ -33,6 +33,9 @@
 #include <wlan_hdd_wowl.h>
 #include <cds_sched.h>
 #include <wlan_hdd_debugfs_llstat.h>
+#include <wlan_hdd_debugfs_mibstat.h>
+#include "wlan_hdd_debugfs_unit_test.h"
+
 
 #define MAX_USER_COMMAND_SIZE_WOWL_ENABLE 8
 #define MAX_USER_COMMAND_SIZE_WOWL_PATTERN 512
@@ -313,7 +316,6 @@ static ssize_t __wcnss_patterngen_write(struct net_device *net_dev,
 		delPeriodicTxPtrnParams =
 			qdf_mem_malloc(sizeof(tSirDelPeriodicTxPtrn));
 		if (!delPeriodicTxPtrnParams) {
-			hdd_err("Memory allocation failed!");
 			qdf_mem_free(cmd);
 			return -ENOMEM;
 		}
@@ -376,7 +378,6 @@ static ssize_t __wcnss_patterngen_write(struct net_device *net_dev,
 
 	addPeriodicTxPtrnParams = qdf_mem_malloc(sizeof(tSirAddPeriodicTxPtrn));
 	if (!addPeriodicTxPtrnParams) {
-		hdd_err("Memory allocation failed!");
 		qdf_mem_free(cmd);
 		return -ENOMEM;
 	}
@@ -532,8 +533,10 @@ QDF_STATUS hdd_debugfs_init(struct hdd_adapter *adapter)
 
 	adapter->debugfs_phy = debugfs_create_dir(net_dev->name, 0);
 
-	if (!adapter->debugfs_phy)
+	if (!adapter->debugfs_phy) {
+		hdd_err("debugfs: create folder %s fail", net_dev->name);
 		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (!debugfs_create_file("wow_pattern", 00400 | 00200,
 					adapter->debugfs_phy, net_dev,
@@ -543,6 +546,9 @@ QDF_STATUS hdd_debugfs_init(struct hdd_adapter *adapter)
 	if (!debugfs_create_file("pattern_gen", 00400 | 00200,
 					adapter->debugfs_phy, net_dev,
 					&fops_patterngen))
+		return QDF_STATUS_E_FAILURE;
+
+	if (wlan_hdd_create_mib_stats_file(adapter))
 		return QDF_STATUS_E_FAILURE;
 
 	if (wlan_hdd_create_ll_stats_file(adapter))

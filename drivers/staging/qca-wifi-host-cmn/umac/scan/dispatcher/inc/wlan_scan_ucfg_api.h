@@ -163,15 +163,25 @@ ucfg_scan_get_pno_match(struct wlan_objmgr_vdev *vdev)
 }
 #endif /* FEATURE_WLAN_SCAN_PNO */
 /**
- * ucfg_scan_start() - Public API to start a scan
+ * ucfg_scm_scan_free_scan_request_mem() - Free scan request memory
+ * @req: scan_start_request object
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS ucfg_scm_scan_free_scan_request_mem(struct scan_start_request *req);
+
+/**
+ * ucfg_scan_start() - ucfg Public API to start a scan
  * @req: start scan req params
  *
- * The Public API to start a scan. Post a msg to target_if queue
+ * The ucfg public API to start a scan. Post a msg to target_if queue
  *
- * Return: 0 for success or error code.
+ * Return: QDF_STATUS
  */
-QDF_STATUS
-ucfg_scan_start(struct scan_start_request *req);
+static inline QDF_STATUS ucfg_scan_start(struct scan_start_request *req)
+{
+	return wlan_scan_start(req);
+}
 
 /**
  * ucfg_scan_set_psoc_enable() - Public API to enable scans for psoc
@@ -301,16 +311,19 @@ ucfg_scan_config_hidden_ssid_for_bssid(struct wlan_objmgr_pdev *pdev,
 	return QDF_STATUS_SUCCESS;
 }
 #endif /* WLAN_DFS_CHAN_HIDDEN_SSID */
+
 /**
- * ucfg_scan_cancel() - Public API to stop a scan
+ * ucfg_scan_cancel() - ucfg Public API to cancel the scan
  * @req: stop scan request params
  *
- * The Public API to stop a scan. Post a msg to target_if queue
+ * The ucfg public API to stop a scan. Post a msg to target_if queue
  *
- * Return: 0 for success or error code.
+ * Return: QDF_STATUS.
  */
-QDF_STATUS
-ucfg_scan_cancel(struct scan_cancel_request *req);
+static inline QDF_STATUS ucfg_scan_cancel(struct scan_cancel_request *req)
+{
+	return wlan_scan_cancel(req);
+}
 
 /**
  * ucfg_scan_cancel_sync() - Public API to stop a scan and wait
@@ -363,7 +376,7 @@ QDF_STATUS ucfg_scan_flush_results(struct wlan_objmgr_pdev *pdev,
  * ucfg_scan_filter_valid_channel() - The Public API to filter scan result
  * based on valid channel list
  * @pdev: pdev object
- * @chan_list: valid channel list
+ * @chan_freq_list: valid channel frequency (in MHz) list
  * @num_chan: number of valid channels
  *
  * The Public API to to filter scan result
@@ -372,7 +385,7 @@ QDF_STATUS ucfg_scan_flush_results(struct wlan_objmgr_pdev *pdev,
  * Return: void.
  */
 void ucfg_scan_filter_valid_channel(struct wlan_objmgr_pdev *pdev,
-	uint8_t *chan_list, uint32_t num_chan);
+	uint32_t *chan_freq_list, uint32_t num_chan);
 
 /**
  * ucfg_scan_db_iterate() - function to iterate scan table

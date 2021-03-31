@@ -39,6 +39,8 @@
 #include "wmi_unified.h"
 #include "wmi_unified_param.h"
 
+struct twt_add_dialog_complete_event;
+struct wmi_twt_add_dialog_complete_event_param;
 struct wmi_twt_enable_complete_event_param;
 /*--------------------------------------------------------------------------
   Type declarations
@@ -51,7 +53,7 @@ typedef enum eSmeCommandType {
 	eSmeCsrCommandMask = 0x10000,
 	eSmeCommandRoam,
 	eSmeCommandWmStatusChange,
-	e_sme_command_del_sta_session,
+	eSmeCommandGetdisconnectStats,
 	/* QOS */
 	eSmeQosCommandMask = 0x40000,   /* To identify Qos commands */
 	eSmeCommandAddTs,
@@ -70,16 +72,6 @@ typedef enum eSmeState {
 
 #define SME_IS_START(mac)  (SME_STATE_STOP != (mac)->sme.state)
 #define SME_IS_READY(mac)  (SME_STATE_READY == (mac)->sme.state)
-
-/* HDD Callback function */
-typedef void (*ibss_peer_info_cb)(void *cb_context,
-				  tSirPeerInfoRspParams *infoParam);
-
-/* Peer info */
-struct ibss_peer_info_cb_info {
-	void *peer_info_cb_context;
-	ibss_peer_info_cb peer_info_cb;
-};
 
 /**
  * struct stats_ext_event - stats_ext_event payload
@@ -152,9 +144,60 @@ typedef void (*p2p_lo_callback)(void *context,
 typedef void (*sme_send_oem_data_rsp_msg)(struct oem_data_rsp *);
 #endif
 
-typedef void (*twt_enable_cb)(hdd_handle_t hdd_handle,
-			      struct wmi_twt_enable_complete_event_param *params);
+#ifdef WLAN_SUPPORT_TWT
+/**
+ * typedef twt_enable_cb - TWT enable callback signature.
+ * @hdd_handle: Opaque handle to the HDD context
+ * @params: TWT enable complete event parameters.
+ */
+typedef
+void (*twt_enable_cb)(hdd_handle_t hdd_handle,
+		      struct wmi_twt_enable_complete_event_param *params);
+
+/**
+ * typedef twt_disable_cb - TWT enable callback signature.
+ * @hdd_handle: Opaque handle to the HDD context
+ */
 typedef void (*twt_disable_cb)(hdd_handle_t hdd_handle);
+
+/**
+ * typedef twt_add_dialog_cb - TWT add dialog callback signature.
+ * @context: Opaque context that the client can use to associate the
+ *           callback with the request.
+ * @add_dialog_event: pointer to event buf containing twt response parameters
+ */
+typedef void (*twt_add_dialog_cb)(void *context,
+				  struct twt_add_dialog_complete_event *add_dialog_event);
+
+/**
+ * typedef twt_del_dialog_cb - TWT delete dialog callback signature.
+ * @context: Opaque context that the client can use to associate the
+ *           callback with the request.
+ * @params: TWT delete dialog complete event parameters.
+ */
+typedef void (*twt_del_dialog_cb)(void *context,
+				  struct wmi_twt_del_dialog_complete_event_param *params);
+
+/**
+ * typedef twt_pause_dialog_cb - TWT pause dialog callback signature.
+ * @context: Opaque context that the client can use to associate the
+ *           callback with the request.
+ * @params: TWT pause dialog complete event parameters.
+ */
+typedef
+void (*twt_pause_dialog_cb)(void *context,
+			    struct wmi_twt_pause_dialog_complete_event_param *params);
+
+/**
+ * typedef twt_resume_dialog_cb - TWT resume dialog callback signature.
+ * @context: Opaque context that the client can use to associate the
+ *           callback with the request.
+ * @params: TWT resume dialog complete event parameters.
+ */
+typedef
+void (*twt_resume_dialog_cb)(void *context,
+			     struct wmi_twt_resume_dialog_complete_event_param *params);
+#endif
 
 #ifdef FEATURE_WLAN_APF
 /**
@@ -227,15 +270,6 @@ typedef void (*bt_activity_info_cb)(hdd_handle_t hdd_handle,
 				    uint32_t bt_activity);
 
 /**
- * typedef congestion_cb - congestion callback function
- * @hdd_handle: HDD handle registered with SME
- * @congestion: Current congestion value
- * @vdev_id: ID of the vdev for which congestion is being reported
- */
-typedef void (*congestion_cb)(hdd_handle_t hdd_handle, uint32_t congestion,
-			      uint32_t vdev_id);
-
-/**
  * typedef rso_cmd_status_cb - RSO command status  callback function
  * @hdd_handle: HDD handle registered with SME
  * @rso_status: Status of the operation
@@ -263,8 +297,8 @@ typedef void (*hidden_ssid_cb)(hdd_handle_t hdd_handle,
  * @hdd_handle: HDD handle registered with SME
  * @beacon_report: Beacon report structure
  */
-typedef void (*beacon_report_cb)(hdd_handle_t hdd_handle,
-				 struct wlan_beacon_report *beacon_report);
+typedef QDF_STATUS (*beacon_report_cb)
+	(hdd_handle_t hdd_handle, struct wlan_beacon_report *beacon_report);
 
 /**
  * beacon_pause_cb : scan start callback fun
@@ -289,6 +323,7 @@ typedef void (*sme_get_isolation_cb)(struct sir_isolation_resp *param,
 
 #ifdef WLAN_FEATURE_MOTION_DETECTION
 typedef QDF_STATUS (*md_host_evt_cb)(void *hdd_ctx, struct sir_md_evt *event);
+typedef QDF_STATUS (*md_bl_evt_cb)(void *hdd_ctx, struct sir_md_bl_evt *event);
 #endif /* WLAN_FEATURE_MOTION_DETECTION */
 
 struct sme_context {
@@ -299,7 +334,6 @@ struct sme_context {
 	void **sme_cmd_buf_addr;
 	tDblLinkList sme_cmd_freelist;    /* preallocated roam cmd list */
 	enum QDF_OPMODE curr_device_mode;
-	struct ibss_peer_info_cb_info peer_info_cb_info;
 #ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 	host_event_wlan_status_payload_type eventPayload;
 #endif
@@ -307,7 +341,7 @@ struct sme_context {
 	link_layer_stats_cb link_layer_stats_cb;
 	void (*link_layer_stats_ext_cb)(hdd_handle_t callback_ctx,
 					tSirLLStatsResults *rsp);
-#ifdef WLAN_POWER_DEBUGFS
+#ifdef WLAN_POWER_DEBUG
 	void *power_debug_stats_context;
 	void (*power_stats_resp_callback)(struct power_stats_response *rsp,
 						void *callback_context);
@@ -327,14 +361,7 @@ struct sme_context {
 	/* linkspeed callback */
 	sme_link_speed_cb link_speed_cb;
 	void *link_speed_context;
-	/* get peer info callback */
-	void (*pget_peer_info_ind_cb)(struct sir_peer_info_resp *param,
-		void *pcontext);
-	void *pget_peer_info_cb_context;
-	/* get extended peer info callback */
-	void (*pget_peer_info_ext_ind_cb)(struct sir_peer_info_ext_resp *param,
-		void *pcontext);
-	void *pget_peer_info_ext_cb_context;
+
 	sme_get_isolation_cb get_isolation_cb;
 	void *get_isolation_cb_context;
 #ifdef FEATURE_WLAN_EXTSCAN
@@ -365,7 +392,6 @@ struct sme_context {
 	bool (*get_connection_info_cb)(uint8_t *session_id,
 			enum scan_reject_states *reason);
 	rso_cmd_status_cb rso_cmd_status_cb;
-	congestion_cb congestion_cb;
 	pwr_save_fail_cb chip_power_save_fail_cb;
 	bt_activity_info_cb bt_activity_info_cb;
 	void *get_arp_stats_context;
@@ -377,14 +403,25 @@ struct sme_context {
 	void *fw_state_context;
 #endif /* FEATURE_FW_STATE */
 	tx_queue_cb tx_queue_cb;
+#ifdef WLAN_SUPPORT_TWT
 	twt_enable_cb twt_enable_cb;
 	twt_disable_cb twt_disable_cb;
+	twt_add_dialog_cb twt_add_dialog_cb;
+	twt_del_dialog_cb twt_del_dialog_cb;
+	twt_pause_dialog_cb twt_pause_dialog_cb;
+	twt_resume_dialog_cb twt_resume_dialog_cb;
+	void *twt_add_dialog_context;
+	void *twt_del_dialog_context;
+	void *twt_pause_dialog_context;
+	void *twt_resume_dialog_context;
+#endif
 #ifdef FEATURE_WLAN_APF
 	apf_get_offload_cb apf_get_offload_cb;
 	apf_read_mem_cb apf_read_mem_cb;
 #endif
 #ifdef WLAN_FEATURE_MOTION_DETECTION
 	md_host_evt_cb md_host_evt_cb;
+	md_bl_evt_cb md_bl_evt_cb;
 	void *md_ctx;
 #endif /* WLAN_FEATURE_MOTION_DETECTION */
 	/* hidden ssid rsp callback */
@@ -402,10 +439,18 @@ struct sme_context {
 #endif
 #ifdef FEATURE_OEM_DATA
 	void (*oem_data_event_handler_cb)
-			(const struct oem_data *oem_event_data);
+			(const struct oem_data *oem_event_data,
+			 uint8_t vdev_id);
+	uint8_t oem_data_vdev_id;
 #endif
 	sme_get_raom_scan_ch_callback roam_scan_ch_callback;
 	void *roam_scan_ch_get_context;
+#ifdef FEATURE_MONITOR_MODE_SUPPORT
+	void (*monitor_mode_cb)(uint8_t vdev_id);
+#endif
+#if defined(CLD_PM_QOS) && defined(WLAN_FEATURE_LL_MODE)
+	void (*beacon_latency_event_cb)(uint32_t latency_level);
+#endif
 };
 
 #endif /* #if !defined( __SMEINTERNAL_H ) */

@@ -1145,9 +1145,9 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_ndp_attr_s {
 #define NAN_NDP_RESPONSE(_ndp)	(((_ndp)->type_status & NAN_NDP_TYPE_MASK) == NAN_NDP_TYPE_RESPONSE)
 #define NAN_NDP_CONFIRM(_ndp)	(((_ndp)->type_status & NAN_NDP_TYPE_MASK) == NAN_NDP_TYPE_CONFIRM)
 #define NAN_NDP_SECURITY_INST(_ndp)	(((_ndp)->type_status & NAN_NDP_TYPE_MASK) == \
-									NAN_NDP_TYPE_SECURITY)
+						NAN_NDP_TYPE_SECURITY)
 #define NAN_NDP_TERMINATE(_ndp) (((_ndp)->type_status & NAN_NDP_TYPE_MASK) == \
-									NAN_NDP_TYPE_TERMINATE)
+						NAN_NDP_TYPE_TERMINATE)
 #define NAN_NDP_STATUS_SHIFT	4
 #define NAN_NDP_STATUS_MASK	0xF0
 #define NAN_NDP_STATUS_CONT	(0 << NAN_NDP_STATUS_SHIFT)
@@ -1334,7 +1334,9 @@ enum nan_sec_csid {
 	NAN_SEC_ALGO_NONE = 0,
 	NAN_SEC_ALGO_NCS_SK_CCM_128 = 1,     /* CCMP 128 */
 	NAN_SEC_ALGO_NCS_SK_GCM_256 = 2,     /* GCMP 256 */
-	NAN_SEC_ALGO_LAST = 3
+	NAN_SEC_ALGO_NCS_PK_CCM_128 = 3,     /* CCMP 128 */
+	NAN_SEC_ALGO_NCS_PK_GCM_256 = 4,     /* GCMP 256 */
+	NAN_SEC_ALGO_LAST
 };
 typedef int8 nan_sec_csid_e;
 

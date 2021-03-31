@@ -3696,7 +3696,6 @@ static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
 {
 	struct device *dev;
 	struct device_node *np;
-	char hp_det_gpio_label[50];
 	int i, rc;
 
 	dev = cm7120_codec->dev;
@@ -3709,7 +3708,7 @@ static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
 	cm7120_codec->hp_count = of_gpio_named_count(dev->of_node,
 						"cm7120,headphone-det-gpios");
 	if (cm7120_codec->hp_count < 0) {
-		dev_warn(dev, "Audio jack detetction is not supported.\n");
+		dev_warn(dev, "Audio jack detection is not supported.\n");
 		return 0;
 	}
 
@@ -3740,32 +3739,27 @@ static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
 		}
 		cm7120_codec->hp_irq_gpios[i] = rc;
 
-		snprintf(hp_det_gpio_label, sizeof(hp_det_gpio_label),
-				"cm7120 hp det.%d", i);
 		rc = devm_gpio_request(dev, cm7120_codec->hp_irq_gpios[i],
-				hp_det_gpio_label);
+				"cm7120-hp-det");
 		if (rc) {
-			dev_err(dev, "%s gpio request fail\n",
-					hp_det_gpio_label);
+			dev_err(dev, "cm7120-hp-det gpio request fail\n");
 			rc = -EINVAL;
 			goto error;
 		}
 
 		rc = gpio_direction_input(cm7120_codec->hp_irq_gpios[i]);
 		if (rc) {
-			dev_err(dev, "%s input fail\n", hp_det_gpio_label);
+			dev_err(dev, "cm7120-hp-det input fail\n");
 			rc = -EINVAL;
 			goto error;
 		}
 
 		cm7120_codec->hp_irqs[i] =
 			gpio_to_irq(cm7120_codec->hp_irq_gpios[i]);
-		snprintf(hp_det_gpio_label, sizeof(hp_det_gpio_label),
-				"cm7120.%d", i);
 		rc = devm_request_threaded_irq(dev, cm7120_codec->hp_irqs[i],
 			NULL, cm7120_headset_det_irq_thread,
 			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
-			IRQF_ONESHOT, hp_det_gpio_label, cm7120_codec);
+			IRQF_ONESHOT, "cm7120-hp-det", cm7120_codec);
 		if (rc != 0) {
 			dev_err(dev, "Failed to request IRQ %d: %d\n",
 				cm7120_codec->hp_irqs[i], rc);
