@@ -29,8 +29,12 @@ struct wmi_ops {
 			 struct wmi_scan_ev_arg *arg);
 	int (*pull_mgmt_rx)(struct ath10k *ar, struct sk_buff *skb,
 			    struct wmi_mgmt_rx_ev_arg *arg);
+	int (*pull_mgmt_tx_compl)(struct ath10k *ar, struct sk_buff *skb,
+				  struct wmi_tlv_mgmt_tx_compl_ev_arg *arg);
 	int (*pull_ch_info)(struct ath10k *ar, struct sk_buff *skb,
 			    struct wmi_ch_info_ev_arg *arg);
+	int (*pull_peer_delete_resp)(struct ath10k *ar, struct sk_buff *skb,
+				     struct wmi_peer_delete_resp_ev_arg *arg);
 	int (*pull_vdev_start)(struct ath10k *ar, struct sk_buff *skb,
 			       struct wmi_vdev_start_ev_arg *arg);
 	int (*pull_peer_kick)(struct ath10k *ar, struct sk_buff *skb,
@@ -125,6 +129,9 @@ struct wmi_ops {
 					     enum wmi_force_fw_hang_type type,
 					     u32 delay_ms);
 	struct sk_buff *(*gen_mgmt_tx)(struct ath10k *ar, struct sk_buff *skb);
+	struct sk_buff *(*gen_mgmt_tx_send)(struct ath10k *ar,
+					    struct sk_buff *skb,
+					    dma_addr_t paddr);
 	struct sk_buff *(*gen_dbglog_cfg)(struct ath10k *ar, u64 module_enable,
 					  u32 log_level);
 	struct sk_buff *(*gen_pktlog_enable)(struct ath10k *ar, u32 filter);
@@ -158,6 +165,10 @@ struct wmi_ops {
 					      u32 num_ac);
 	struct sk_buff *(*gen_sta_keepalive)(struct ath10k *ar,
 					     const struct wmi_sta_keepalive_arg *arg);
+	struct sk_buff *(*gen_set_arp_ns_offload)(struct ath10k *ar,
+						  struct ath10k_vif *arvif);
+	struct sk_buff *(*gen_gtk_offload)(struct ath10k *ar,
+					   struct ath10k_vif *arvif);
 	struct sk_buff *(*gen_wow_enable)(struct ath10k *ar);
 	struct sk_buff *(*gen_wow_add_wakeup_event)(struct ath10k *ar, u32 vdev_id,
 						    enum wmi_wow_wakeup_event event,
@@ -200,6 +211,8 @@ struct wmi_ops {
 					(struct ath10k *ar,
 					 enum wmi_bss_survey_req_type type);
 	struct sk_buff *(*gen_echo)(struct ath10k *ar, u32 value);
+	struct sk_buff *(*gen_csa_offload)(struct ath10k *ar,
+					   u32 vdev_id, bool enable);
 };
 
 int ath10k_wmi_cmd_send(struct ath10k *ar, struct sk_buff *skb, u32 cmd_id);
@@ -236,6 +249,16 @@ ath10k_wmi_pull_scan(struct ath10k *ar, struct sk_buff *skb,
 }
 
 static inline int
+ath10k_wmi_pull_mgmt_tx_compl(struct ath10k *ar, struct sk_buff *skb,
+			      struct wmi_tlv_mgmt_tx_compl_ev_arg *arg)
+{
+	if (!ar->wmi.ops->pull_mgmt_tx_compl)
+		return -EOPNOTSUPP;
+
+	return ar->wmi.ops->pull_mgmt_tx_compl(ar, skb, arg);
+}
+
+static inline int
 ath10k_wmi_pull_mgmt_rx(struct ath10k *ar, struct sk_buff *skb,
 			struct wmi_mgmt_rx_ev_arg *arg)
 {
@@ -243,6 +266,16 @@ ath10k_wmi_pull_mgmt_rx(struct ath10k *ar, struct sk_buff *skb,
 		return -EOPNOTSUPP;
 
 	return ar->wmi.ops->pull_mgmt_rx(ar, skb, arg);
+}
+
+static inline int
+ath10k_wmi_pull_peer_delete_resp(struct ath10k *ar, struct sk_buff *skb,
+				 struct wmi_peer_delete_resp_ev_arg *arg)
+{
+	if (!ar->wmi.ops->pull_peer_delete_resp)
+		return -EOPNOTSUPP;
+
+	return ar->wmi.ops->pull_peer_delete_resp(ar, skb, arg);
 }
 
 static inline int
@@ -375,12 +408,33 @@ ath10k_wmi_get_txbf_conf_scheme(struct ath10k *ar)
 }
 
 static inline int
+ath10k_wmi_mgmt_tx_send(struct ath10k *ar, struct sk_buff *msdu,
+			dma_addr_t paddr)
+{
+	struct sk_buff *skb;
+	int ret;
+
+	if (!ar->wmi.ops->gen_mgmt_tx_send)
+		return -EOPNOTSUPP;
+
+	skb = ar->wmi.ops->gen_mgmt_tx_send(ar, msdu, paddr);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+
+	ret = ath10k_wmi_cmd_send(ar, skb,
+				  ar->wmi.cmd->mgmt_tx_send_cmdid);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static inline int
 ath10k_wmi_mgmt_tx(struct ath10k *ar, struct sk_buff *msdu)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(msdu);
 	struct sk_buff *skb;
 	int ret;
-	u32 mgmt_tx_cmdid;
 
 	if (!ar->wmi.ops->gen_mgmt_tx)
 		return -EOPNOTSUPP;
@@ -389,12 +443,8 @@ ath10k_wmi_mgmt_tx(struct ath10k *ar, struct sk_buff *msdu)
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
 
-	if (QCA_REV_WCN3990(ar))
-		mgmt_tx_cmdid = ar->wmi.cmd->mgmt_tx_send_cmdid;
-	else
-		mgmt_tx_cmdid = ar->wmi.cmd->mgmt_tx_cmdid;
-
-	ret = ath10k_wmi_cmd_send(ar, skb, mgmt_tx_cmdid);
+	ret = ath10k_wmi_cmd_send(ar, skb,
+				  ar->wmi.cmd->mgmt_tx_cmdid);
 	if (ret)
 		return ret;
 
@@ -669,6 +719,9 @@ ath10k_wmi_vdev_spectral_conf(struct ath10k *ar,
 	struct sk_buff *skb;
 	u32 cmd_id;
 
+	if (!ar->wmi.ops->gen_vdev_spectral_conf)
+		return -EOPNOTSUPP;
+
 	skb = ar->wmi.ops->gen_vdev_spectral_conf(ar, arg);
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
@@ -683,6 +736,9 @@ ath10k_wmi_vdev_spectral_enable(struct ath10k *ar, u32 vdev_id, u32 trigger,
 {
 	struct sk_buff *skb;
 	u32 cmd_id;
+
+	if (!ar->wmi.ops->gen_vdev_spectral_enable)
+		return -EOPNOTSUPP;
 
 	skb = ar->wmi.ops->gen_vdev_spectral_enable(ar, vdev_id, trigger,
 						    enable);
@@ -1169,6 +1225,40 @@ ath10k_wmi_sta_keepalive(struct ath10k *ar,
 }
 
 static inline int
+ath10k_wmi_set_arp_ns_offload(struct ath10k *ar, struct ath10k_vif *arvif)
+{
+	struct sk_buff *skb;
+	u32 cmd_id;
+
+	if (!ar->wmi.ops->gen_set_arp_ns_offload)
+		return -EOPNOTSUPP;
+
+	skb = ar->wmi.ops->gen_set_arp_ns_offload(ar, arvif);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+
+	cmd_id = ar->wmi.cmd->set_arp_ns_offload_cmdid;
+	return ath10k_wmi_cmd_send(ar, skb, cmd_id);
+}
+
+static inline int
+ath10k_wmi_gtk_offload(struct ath10k *ar, struct ath10k_vif *arvif)
+{
+	struct sk_buff *skb;
+	u32 cmd_id;
+
+	if (!ar->wmi.ops->gen_gtk_offload)
+		return -EOPNOTSUPP;
+
+	skb = ar->wmi.ops->gen_gtk_offload(ar, arvif);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+
+	cmd_id = ar->wmi.cmd->gtk_offload_cmdid;
+	return ath10k_wmi_cmd_send(ar, skb, cmd_id);
+}
+
+static inline int
 ath10k_wmi_wow_enable(struct ath10k *ar)
 {
 	struct sk_buff *skb;
@@ -1402,6 +1492,23 @@ ath10k_wmi_pdev_bss_chan_info_request(struct ath10k *ar,
 
 	return ath10k_wmi_cmd_send(ar, skb,
 				   wmi->cmd->pdev_bss_chan_info_request_cmdid);
+}
+
+static inline int
+ath10k_wmi_csa_offload(struct ath10k *ar, u32 vdev_id, bool enable)
+{
+	struct sk_buff *skb;
+	u32 cmd_id;
+
+	if (!ar->wmi.ops->gen_csa_offload)
+		return -EOPNOTSUPP;
+
+	skb = ar->wmi.ops->gen_csa_offload(ar, vdev_id, enable);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+
+	cmd_id = ar->wmi.cmd->csa_offload_enable_cmdid;
+	return ath10k_wmi_cmd_send(ar, skb, cmd_id);
 }
 
 static inline int

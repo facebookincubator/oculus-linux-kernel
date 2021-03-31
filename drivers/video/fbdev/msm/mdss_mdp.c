@@ -1,7 +1,7 @@
 /*
  * MDSS MDP Interface (used by framebuffer core)
  *
- * Copyright (c) 2007-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2019, The Linux Foundation. All rights reserved.
  * Copyright (C) 2007 Google Incorporated
  *
  * This software is licensed under the terms of the GNU General Public
@@ -1797,7 +1797,8 @@ static inline int mdss_mdp_irq_clk_register(struct mdss_data_type *mdata,
 
 static void __mdss_restore_sec_cfg(struct mdss_data_type *mdata)
 {
-	int ret, scm_ret = 0;
+	int ret;
+	u64 scm_ret = 0;
 
 	if (test_bit(MDSS_CAPS_SCM_RESTORE_NOT_REQUIRED, mdata->mdss_caps_map))
 		return;
@@ -1808,7 +1809,7 @@ static void __mdss_restore_sec_cfg(struct mdss_data_type *mdata)
 
 	ret = scm_restore_sec_cfg(SEC_DEVICE_MDSS, 0, &scm_ret);
 	if (ret || scm_ret)
-		pr_warn("scm_restore_sec_cfg failed %d %d\n",
+		pr_warn("scm_restore_sec_cfg failed %d %llu\n",
 				ret, scm_ret);
 
 	__mdss_mdp_reg_access_clk_enable(mdata, false);
@@ -2180,7 +2181,6 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 		mdss_set_quirk(mdata, MDSS_QUIRK_MDP_CLK_SET_RATE);
 		mdata->has_wb_ubwc = true;
 		set_bit(MDSS_CAPS_10_BIT_SUPPORTED, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_AVR_SUPPORTED, mdata->mdss_caps_map);
 		set_bit(MDSS_CAPS_SEC_DETACH_SMMU, mdata->mdss_caps_map);
 		mdss_set_quirk(mdata, MDSS_QUIRK_HDR_SUPPORT_ENABLED);
 		break;
@@ -2782,6 +2782,8 @@ ssize_t mdss_mdp_show_capabilities(struct device *dev,
 		SPRINT(" avr");
 	if (mdss_has_quirk(mdata, MDSS_QUIRK_HDR_SUPPORT_ENABLED))
 		SPRINT(" hdr");
+	if (mdata->nvig_pipes && mdata->mdp_rev >= MDSS_MDP_HW_REV_300)
+		SPRINT(" vig_csc_db"); /* double buffered VIG CSC block */
 	SPRINT("\n");
 #undef SPRINT
 
@@ -3115,7 +3117,8 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		MDSS_MDP_REG_SPLIT_DISPLAY_EN);
 	if (intf_sel != 0) {
 		for (i = 0; i < 4; i++)
-			num_of_display_on += ((intf_sel >> i*8) & 0x000000FF);
+			num_of_display_on +=
+				(((intf_sel >> i*8) & 0x000000FF) ? 1 : 0);
 
 		/*
 		 * For split display enabled - DSI0, DSI1 interfaces are

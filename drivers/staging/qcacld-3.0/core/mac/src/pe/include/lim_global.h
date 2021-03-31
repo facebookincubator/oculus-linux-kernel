@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -67,7 +58,11 @@
 	((LIntrvl * LIM_TIM_WAIT_COUNT_FACTOR) > LIM_MIN_TIM_WAIT_COUNT ? \
 	(LIntrvl * LIM_TIM_WAIT_COUNT_FACTOR) : LIM_MIN_TIM_WAIT_COUNT)
 
-#define LIM_MAX_CSA_IE_UPDATES    (5)
+#ifdef CHANNEL_HOPPING_ALL_BANDS
+#define CHAN_HOP_ALL_BANDS_ENABLE        1
+#else
+#define CHAN_HOP_ALL_BANDS_ENABLE        0
+#endif
 
 /* enums exported by LIM are as follows */
 
@@ -99,7 +94,6 @@ typedef enum eLimSmeStates {
 	eLIM_SME_WT_AUTH_STATE,
 	eLIM_SME_WT_ASSOC_STATE,
 	eLIM_SME_WT_REASSOC_STATE,
-	eLIM_SME_WT_REASSOC_LINK_FAIL_STATE,
 	eLIM_SME_JOIN_FAILURE_STATE,
 	eLIM_SME_ASSOCIATED_STATE,
 	eLIM_SME_REASSOCIATED_STATE,
@@ -163,6 +157,7 @@ typedef enum eLimMlmStates {
 	eLIM_MLM_WT_ADD_BSS_RSP_FT_REASSOC_STATE,
 	eLIM_MLM_WT_FT_REASSOC_RSP_STATE,
 	eLIM_MLM_P2P_LISTEN_STATE,
+	eLIM_MLM_WT_SAE_AUTH_STATE,
 } tLimMlmStates;
 
 /* 11h channel quiet states */
@@ -199,31 +194,6 @@ typedef enum eLimDot11hChanSwStates {
 	eLIM_11H_CHANSW_END
 } tLimDot11hChanSwStates;
 
-
-/* WLAN_SUSPEND_LINK Related */
-typedef void (*SUSPEND_RESUME_LINK_CALLBACK)(tpAniSirGlobal pMac,
-					     QDF_STATUS status,
-					     uint32_t *data);
-
-/* LIM to HAL SCAN Management Message Interface states */
-typedef enum eLimHalScanState {
-	eLIM_HAL_IDLE_SCAN_STATE,
-	eLIM_HAL_INIT_SCAN_WAIT_STATE,
-	eLIM_HAL_START_SCAN_WAIT_STATE,
-	eLIM_HAL_END_SCAN_WAIT_STATE,
-	eLIM_HAL_FINISH_SCAN_WAIT_STATE,
-	eLIM_HAL_INIT_LEARN_WAIT_STATE,
-	eLIM_HAL_START_LEARN_WAIT_STATE,
-	eLIM_HAL_END_LEARN_WAIT_STATE,
-	eLIM_HAL_FINISH_LEARN_WAIT_STATE,
-	eLIM_HAL_SCANNING_STATE,
-/* WLAN_SUSPEND_LINK Related */
-	eLIM_HAL_SUSPEND_LINK_WAIT_STATE,
-	eLIM_HAL_SUSPEND_LINK_STATE,
-	eLIM_HAL_RESUME_LINK_WAIT_STATE,
-/* end WLAN_SUSPEND_LINK Related */
-} tLimLimHalScanState;
-
 /* MLM Req/Cnf structure definitions */
 typedef struct sLimMlmAuthReq {
 	tSirMacAddr peerMacAddr;
@@ -244,49 +214,6 @@ typedef struct sLimMlmJoinReq {
 	 */
 } tLimMlmJoinReq, *tpLimMlmJoinReq;
 
-typedef struct sLimMlmScanReq {
-	tSirBssType bssType;
-	tSirMacAddr bssId;
-	tSirMacSSid ssId[SIR_SCAN_MAX_NUM_SSID];
-	tSirScanType scanType;
-	uint32_t minChannelTime;
-	uint32_t maxChannelTime;
-	uint32_t dot11mode;
-	/* Number of SSIDs to scan(send Probe request) */
-	uint8_t numSsid;
-
-	bool p2pSearch;
-	uint16_t uIEFieldLen;
-	uint16_t uIEFieldOffset;
-
-	uint8_t sessionId;
-	/* channelList MUST be the last field of this structure */
-	tSirChannelList channelList;
-	/*-----------------------------
-	   tLimMlmScanReq....
-	   -----------------------------
-	   uIEFiledLen
-	   -----------------------------
-	   uIEFiledOffset               ----+
-	   -----------------------------    |
-	   channelList.numChannels          |
-	   -----------------------------    |
-	   ... variable size up to          |
-	   channelNumber[numChannels-1]     |
-	   This can be zero, if             |
-	   numChannel is zero.              |
-	   ----------------------------- <--+
-	   ... variable size uIEFiled
-	   up to uIEFieldLen (can be 0)
-	   -----------------------------*/
-} tLimMlmScanReq, *tpLimMlmScanReq;
-
-typedef struct tLimScanResultNode tLimScanResultNode;
-struct tLimScanResultNode {
-	tLimScanResultNode *next;
-	tSirBssDescription bssDescription;
-};
-
 #ifdef FEATURE_OEM_DATA_SUPPORT
 
 /* OEM Data related structure definitions */
@@ -303,6 +230,33 @@ typedef struct sLimMlmOemDataRsp {
 } tLimMlmOemDataRsp, *tpLimMlmOemDataRsp;
 #endif
 
+/* Forward declarations */
+struct sSirAssocReq;
+struct sDphHashNode;
+
+/* struct lim_assoc_data - Assoc data to be cached to defer association
+ *			   indication to SME
+ * @present: Indicates whether assoc data is present or not
+ * @sub_type: Indicates whether it is Association Request(=0) or Reassociation
+ *            Request(=1) frame
+ * @hdr: MAC header
+ * @assoc_req: pointer to parsed ASSOC/REASSOC Request frame
+ * @pmf_connection: flag indicating pmf connection
+ * @assoc_req_copied: boolean to indicate if assoc req was copied to tmp above
+ * @dup_entry: flag indicating if duplicate entry found
+ * @sta_ds: station dph entry
+ */
+struct lim_assoc_data {
+	bool present;
+	uint8_t sub_type;
+	tSirMacMgmtHdr hdr;
+	struct sSirAssocReq *assoc_req;
+	bool pmf_connection;
+	bool assoc_req_copied;
+	bool dup_entry;
+	struct sDphHashNode *sta_ds;
+};
+
 /* Pre-authentication structure definition */
 typedef struct tLimPreAuthNode {
 	struct tLimPreAuthNode *next;
@@ -318,6 +272,10 @@ typedef struct tLimPreAuthNode {
 	TX_TIMER timer;
 	uint16_t seq_num;
 	unsigned long timestamp;
+	/* keeping copy of association request received, this is
+	 * to defer the association request processing
+	 */
+	struct lim_assoc_data assoc_req;
 } tLimPreAuthNode, *tpLimPreAuthNode;
 
 /* Pre-authentication table definition */
@@ -329,27 +287,33 @@ typedef struct tLimPreAuthTable {
 /* / Per STA context structure definition */
 typedef struct sLimMlmStaContext {
 	tLimMlmStates mlmState;
-	tAniAuthType authType;
+	tAniAuthType authType;		/* auth algo in auth frame */
+	enum ani_akm_type akm_type;	/* akm in rsn/wpa ie */
 	uint16_t listenInterval;
 	tSirMacCapabilityInfo capabilityInfo;
-	tSirMacPropRateSet propRateSet;
 	tSirMacReasonCodes disassocReason;
-	uint16_t cleanupTrigger;
 
 	tSirResultCodes resultCode;
-	uint16_t protStatusCode;
 
+	tSirMacPropRateSet propRateSet;
 	uint8_t subType:1;      /* Indicates ASSOC (0) or REASSOC (1) */
 	uint8_t updateContext:1;
 	uint8_t schClean:1;
 	/* 802.11n HT Capability in Station: Enabled 1 or DIsabled 0 */
 	uint8_t htCapability:1;
 	uint8_t vhtCapability:1;
+	uint16_t cleanupTrigger;
+	uint16_t protStatusCode;
+#ifdef WLAN_FEATURE_11AX
+	bool he_capable;
+#endif
+	uint8_t *owe_ie;
+	uint32_t owe_ie_len;
 } tLimMlmStaContext, *tpLimMlmStaContext;
 
 /* Structure definition to hold deferred messages queue parameters */
 typedef struct sLimDeferredMsgQParams {
-	tSirMsgQ deferredQueue[MAX_DEFERRED_QUEUE_LEN];
+	struct scheduler_msg deferredQueue[MAX_DEFERRED_QUEUE_LEN];
 	uint16_t size;
 	uint16_t read;
 	uint16_t write;

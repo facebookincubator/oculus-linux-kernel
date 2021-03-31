@@ -137,10 +137,10 @@ struct i2c_hid {
 						   * register of the HID
 						   * descriptor. */
 	unsigned int		bufsize;	/* i2c buffer size */
-	char			*inbuf;		/* Input buffer */
-	char			*rawbuf;	/* Raw Input buffer */
-	char			*cmdbuf;	/* Command buffer */
-	char			*argsbuf;	/* Command arguments buffer */
+	u8			*inbuf;		/* Input buffer */
+	u8			*rawbuf;	/* Raw Input buffer */
+	u8			*cmdbuf;	/* Command buffer */
+	u8			*argsbuf;	/* Command arguments buffer */
 
 	unsigned long		flags;		/* device flags */
 
@@ -364,6 +364,15 @@ static int i2c_hid_hwreset(struct i2c_client *client)
 	if (ret)
 		return ret;
 
+	/*
+	 * The HID over I2C specification states that if a DEVICE needs time
+	 * after the PWR_ON request, it should utilise CLOCK stretching.
+	 * However, it has been observered that the Windows driver provides a
+	 * 1ms sleep between the PWR_ON and RESET requests and that some devices
+	 * rely on this.
+	 */
+	usleep_range(1000, 5000);
+
 	i2c_hid_dbg(ihid, "resetting...\n");
 
 	ret = i2c_hid_command(client, &hid_reset_cmd, NULL, 0);
@@ -378,7 +387,8 @@ static int i2c_hid_hwreset(struct i2c_client *client)
 
 static void i2c_hid_get_input(struct i2c_hid *ihid)
 {
-	int ret, ret_size;
+	int ret;
+	u32 ret_size;
 	int size = le16_to_cpu(ihid->hdesc.wMaxInputLength);
 
 	if (size > ihid->bufsize)
@@ -403,7 +413,7 @@ static void i2c_hid_get_input(struct i2c_hid *ihid)
 		return;
 	}
 
-	if (ret_size > size) {
+	if ((ret_size > size) || (ret_size < 2)) {
 		dev_err(&ihid->client->dev, "%s: incomplete report (%d/%d)\n",
 			__func__, size, ret_size);
 		return;
@@ -434,6 +444,66 @@ static int i2c_hid_get_report_length(struct hid_report *report)
 {
 	return ((report->size - 1) >> 3) + 1 +
 		report->device->report_enum[report->type].numbered + 2;
+}
+
+static void i2c_hid_init_report(struct hid_report *report, u8 *buffer,
+	size_t bufsize)
+{
+	struct hid_device *hid = report->device;
+	struct i2c_client *client = hid->driver_data;
+	struct i2c_hid *ihid = i2c_get_clientdata(client);
+	unsigned int size, ret_size;
+
+	size = i2c_hid_get_report_length(report);
+	if (i2c_hid_get_report(client,
+			report->type == HID_FEATURE_REPORT ? 0x03 : 0x01,
+			report->id, buffer, size))
+		return;
+
+	i2c_hid_dbg(ihid, "report (len=%d): %*ph\n", size, size, buffer);
+
+	ret_size = buffer[0] | (buffer[1] << 8);
+
+	if (ret_size != size) {
+		dev_err(&client->dev, "error in %s size:%d / ret_size:%d\n",
+			__func__, size, ret_size);
+		return;
+	}
+
+	/* hid->driver_lock is held as we are in probe function,
+	 * we just need to setup the input fields, so using
+	 * hid_report_raw_event is safe. */
+	hid_report_raw_event(hid, report->type, buffer + 2, size - 2, 1);
+}
+
+/*
+ * Initialize all reports
+ */
+static void i2c_hid_init_reports(struct hid_device *hid)
+{
+	struct hid_report *report;
+	struct i2c_client *client = hid->driver_data;
+	struct i2c_hid *ihid = i2c_get_clientdata(client);
+	u8 *inbuf = kzalloc(ihid->bufsize, GFP_KERNEL);
+
+	if (!inbuf) {
+		dev_err(&client->dev, "can not retrieve initial reports\n");
+		return;
+	}
+
+	/*
+	 * The device must be powered on while we fetch initial reports
+	 * from it.
+	 */
+	pm_runtime_get_sync(&client->dev);
+
+	list_for_each_entry(report,
+		&hid->report_enum[HID_FEATURE_REPORT].report_list, list)
+		i2c_hid_init_report(report, inbuf, ihid->bufsize);
+
+	pm_runtime_put(&client->dev);
+
+	kfree(inbuf);
 }
 
 /*
@@ -471,7 +541,8 @@ static int i2c_hid_alloc_buffers(struct i2c_hid *ihid, size_t report_size)
 {
 	/* the worst case is computed from the set_report command with a
 	 * reportID > 15 and the maximum report length */
-	int args_len = sizeof(__u8) + /* optional ReportID byte */
+	int args_len = sizeof(__u8) + /* ReportID */
+		       sizeof(__u8) + /* optional ReportID byte */
 		       sizeof(__u16) + /* data register */
 		       sizeof(__u16) + /* size of the report */
 		       report_size; /* report */
@@ -649,6 +720,9 @@ static int i2c_hid_start(struct hid_device *hid)
 		if (ret)
 			return ret;
 	}
+
+	if (!(hid->quirks & HID_QUIRK_NO_INIT_REPORTS))
+		i2c_hid_init_reports(hid);
 
 	return 0;
 }
@@ -942,6 +1016,14 @@ static int i2c_hid_probe(struct i2c_client *client,
 	pm_runtime_get_noresume(&client->dev);
 	pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
+
+	/* Make sure there is something at this address */
+	ret = i2c_smbus_read_byte(client);
+	if (ret < 0) {
+		dev_dbg(&client->dev, "nothing at this address: %d\n", ret);
+		ret = -ENXIO;
+		goto err_pm;
+	}
 
 	ret = i2c_hid_fetch_hid_descriptor(ihid);
 	if (ret < 0)

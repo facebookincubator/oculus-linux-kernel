@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011, 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -98,7 +89,7 @@ ol_tx_desc_hl(
 
 
 /**
- * @brief Use a tx descriptor ID to find the corresponding desriptor object.
+ * @brief Use a tx descriptor ID to find the corresponding descriptor object.
  *
  * @param pdev - the data physical device sending the data
  * @param tx_desc_id - the ID of the descriptor in question
@@ -116,7 +107,7 @@ static inline struct ol_tx_desc_t *ol_tx_desc_find(
 }
 
 /**
- * @brief Use a tx descriptor ID to find the corresponding desriptor object
+ * @brief Use a tx descriptor ID to find the corresponding descriptor object
  *    and add sanity check.
  *
  * @param pdev - the data physical device sending the data
@@ -136,9 +127,8 @@ ol_tx_desc_find_check(struct ol_txrx_pdev_t *pdev, u_int16_t tx_desc_id)
 
 	tx_desc = ol_tx_desc_find(pdev, tx_desc_id);
 
-	if (tx_desc->pkt_type == ol_tx_frm_freed) {
+	if (tx_desc->pkt_type == ol_tx_frm_freed)
 		return NULL;
-	}
 
 	return tx_desc;
 }
@@ -148,10 +138,18 @@ ol_tx_desc_find_check(struct ol_txrx_pdev_t *pdev, u_int16_t tx_desc_id)
 static inline struct ol_tx_desc_t *
 ol_tx_desc_find_check(struct ol_txrx_pdev_t *pdev, u_int16_t tx_desc_id)
 {
+	struct ol_tx_desc_t *tx_desc;
+
 	if (tx_desc_id >= pdev->tx_desc.pool_size)
 		return NULL;
-	else
-		return ol_tx_desc_find(pdev, tx_desc_id);
+
+	tx_desc = ol_tx_desc_find(pdev, tx_desc_id);
+
+	/* check against invalid tx_desc_id */
+	if (ol_cfg_is_high_latency(pdev->ctrl_pdev) && !tx_desc->vdev)
+		return NULL;
+
+	return tx_desc;
 }
 #endif
 
@@ -161,7 +159,7 @@ ol_tx_desc_find_check(struct ol_txrx_pdev_t *pdev, u_int16_t tx_desc_id)
  *  Free a batch of "standard" tx descriptors and their tx frames.
  *  Free each tx descriptor, by returning it to the freelist.
  *  Unmap each netbuf, and free the netbufs as a batch.
- *  Irregular tx frames like TSO or managment frames that require
+ *  Irregular tx frames like TSO or management frames that require
  *  special handling are processed by the ol_tx_desc_frame_free_nonstd
  *  function rather than this function.
  *
@@ -215,7 +213,7 @@ ol_tx_desc_id(struct ol_txrx_pdev_t *pdev, struct ol_tx_desc_t *tx_desc)
  * @return void pointer to the beacon header for the given vdev
  */
 
-void *ol_ath_get_bcn_header(ol_pdev_handle pdev, A_UINT32 vdev_id);
+void *ol_ath_get_bcn_header(struct cdp_cfg *cfg_pdev, A_UINT32 vdev_id);
 
 /*
  * @brief Free a tx descriptor, without freeing the matching frame.
@@ -263,6 +261,7 @@ static inline
 struct ol_tx_desc_t *ol_tx_get_desc_global_pool(struct ol_txrx_pdev_t *pdev)
 {
 	struct ol_tx_desc_t *tx_desc = &pdev->tx_desc.freelist->tx_desc;
+
 	pdev->tx_desc.freelist = pdev->tx_desc.freelist->next;
 	pdev->tx_desc.num_free--;
 	return tx_desc;
@@ -286,11 +285,21 @@ void ol_tx_put_desc_global_pool(struct ol_txrx_pdev_t *pdev,
 	pdev->tx_desc.freelist =
 			 (union ol_tx_desc_list_elem_t *)tx_desc;
 	pdev->tx_desc.num_free++;
-	return;
 }
 
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
+
+#ifdef QCA_LL_TX_FLOW_CONTROL_RESIZE
+int ol_tx_distribute_descs_to_deficient_pools_from_global_pool(void);
+#else
+static inline
+int ol_tx_distribute_descs_to_deficient_pools_from_global_pool(void)
+{
+	return 0;
+}
+#endif
+
 int ol_tx_free_invalid_flow_pool(struct ol_tx_flow_pool_t *pool);
 /**
  * ol_tx_get_desc_flow_pool() - get descriptor from flow pool
@@ -304,6 +313,7 @@ static inline
 struct ol_tx_desc_t *ol_tx_get_desc_flow_pool(struct ol_tx_flow_pool_t *pool)
 {
 	struct ol_tx_desc_t *tx_desc = &pool->freelist->tx_desc;
+
 	pool->freelist = pool->freelist->next;
 	pool->avail_desc--;
 	return tx_desc;
@@ -326,7 +336,6 @@ void ol_tx_put_desc_flow_pool(struct ol_tx_flow_pool_t *pool,
 	((union ol_tx_desc_list_elem_t *)tx_desc)->next = pool->freelist;
 	pool->freelist = (union ol_tx_desc_list_elem_t *)tx_desc;
 	pool->avail_desc++;
-	return;
 }
 
 #else
@@ -363,7 +372,8 @@ void ol_tx_desc_dup_detect_init(struct ol_txrx_pdev_t *pdev, uint16_t pool_size)
 static inline
 void ol_tx_desc_dup_detect_deinit(struct ol_txrx_pdev_t *pdev)
 {
-	qdf_print("%s: pool_size %d num_free %d\n", __func__,
+	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
+		  "%s: pool_size %d num_free %d\n", __func__,
 		pdev->tx_desc.pool_size, pdev->tx_desc.num_free);
 	if (pdev->tx_desc.free_list_bitmap)
 		qdf_mem_free(pdev->tx_desc.free_list_bitmap);

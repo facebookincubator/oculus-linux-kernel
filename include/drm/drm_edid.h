@@ -24,6 +24,7 @@
 #define __DRM_EDID_H__
 
 #include <linux/types.h>
+#include <linux/hdmi.h>
 
 #define EDID_LENGTH 128
 #define DDC_ADDR 0x50
@@ -209,6 +210,20 @@ struct detailed_timing {
 #define DRM_EDID_HDMI_DC_30               (1 << 4)
 #define DRM_EDID_HDMI_DC_Y444             (1 << 3)
 
+/* YCBCR 420 deep color modes */
+#define DRM_EDID_YCBCR420_DC_48  (1 << 2)
+#define DRM_EDID_YCBCR420_DC_36  (1 << 1)
+#define DRM_EDID_YCBCR420_DC_30  (1 << 0)
+
+#define DRM_EDID_COLORIMETRY_xvYCC_601	(1 << 0)
+#define DRM_EDID_COLORIMETRY_xvYCC_709	(1 << 1)
+#define DRM_EDID_COLORIMETRY_sYCC_601	(1 << 2)
+#define DRM_EDID_COLORIMETRY_ADBYCC_601	(1 << 3)
+#define DRM_EDID_COLORIMETRY_ADB_RGB	(1 << 4)
+#define DRM_EDID_COLORIMETRY_BT2020_CYCC	(1 << 5)
+#define DRM_EDID_COLORIMETRY_BT2020_YCC	(1 << 6)
+#define DRM_EDID_COLORIMETRY_BT2020_RGB	(1 << 7)
+
 /* ELD Header Block */
 #define DRM_ELD_HEADER_BLOCK_SIZE	4
 
@@ -266,6 +281,11 @@ struct detailed_timing {
 
 #define DRM_ELD_CEA_SAD(mnl, sad)	(20 + (mnl) + 3 * (sad))
 
+/* HDMI 2.0 */
+#define DRM_EDID_3D_INDEPENDENT_VIEW	(1 << 2)
+#define DRM_EDID_3D_DUAL_VIEW		(1 << 1)
+#define DRM_EDID_3D_OSD_DISPARITY	(1 << 0)
+
 struct edid {
 	u8 header[8];
 	/* Vendor & product info */
@@ -319,8 +339,6 @@ struct cea_sad {
 struct drm_encoder;
 struct drm_connector;
 struct drm_display_mode;
-struct hdmi_avi_infoframe;
-struct hdmi_vendor_infoframe;
 
 void drm_edid_to_eld(struct drm_connector *connector, struct edid *edid);
 int drm_edid_to_sad(struct edid *edid, struct cea_sad **sads);
@@ -328,7 +346,16 @@ int drm_edid_to_speaker_allocation(struct edid *edid, u8 **sadb);
 int drm_av_sync_delay(struct drm_connector *connector,
 		      const struct drm_display_mode *mode);
 struct drm_connector *drm_select_eld(struct drm_encoder *encoder);
-int drm_load_edid_firmware(struct drm_connector *connector);
+
+#ifdef CONFIG_DRM_LOAD_EDID_FIRMWARE
+struct edid *drm_load_edid_firmware(struct drm_connector *connector);
+#else
+static inline struct edid *
+drm_load_edid_firmware(struct drm_connector *connector)
+{
+	return ERR_PTR(-ENOENT);
+}
+#endif
 
 int
 drm_hdmi_avi_infoframe_from_display_mode(struct hdmi_avi_infoframe *frame,

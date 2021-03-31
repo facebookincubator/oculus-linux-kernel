@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2012, 2014-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #if !defined(__SMERRMINTERNAL_H)
@@ -73,6 +64,7 @@ typedef struct sRrmSMEContext {
 	uint16_t token;
 	struct qdf_mac_addr sessionBssId;
 	uint8_t regClass;
+	uint8_t measurement_idx;
 	/* list of all channels to be measured. */
 	tCsrChannelInfo channelList;
 	uint8_t currentIndex;
@@ -83,7 +75,7 @@ typedef struct sRrmSMEContext {
 	uint16_t randnIntvl;
 	uint16_t duration[SIR_ESE_MAX_MEAS_IE_REQS];
 	uint8_t measMode[SIR_ESE_MAX_MEAS_IE_REQS];
-	struct rrm_config_param rrmConfig;
+	uint32_t scan_id;
 	qdf_mc_timer_t IterMeasTimer;
 	tDblLinkList neighborReportCache;
 	tRrmNeighborRequestControlInfo neighborReqControlInfo;
@@ -93,11 +85,13 @@ typedef struct sRrmSMEContext {
 	bool eseBcnReqInProgress;
 #endif /* FEATURE_WLAN_ESE */
 	tRrmMsgReqSource msgSource;
+	wlan_scan_requester req_id;
 } tRrmSMEContext, *tpRrmSMEContext;
 
 typedef struct sRrmNeighborReq {
 	uint8_t no_ssid;
 	tSirMacSSid ssid;
+	bool neighbor_report_offload;
 } tRrmNeighborReq, *tpRrmNeighborReq;
 
 #endif /* #if !defined( __SMERRMINTERNAL_H ) */

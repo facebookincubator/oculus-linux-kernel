@@ -157,7 +157,7 @@ static struct step_chg_cfg step_chg_config = {
 };
 
 static struct cycle_fv_cfg cycle_fv_config = {
-	.psy_prop	= POWER_SUPPLY_PROP_AGGREGATE_CYCLE_COUNT,
+	.psy_prop	= POWER_SUPPLY_PROP_CYCLE_COUNT,
 	.prop_name	= "CYCLE",
 	.hysteresis	= 0,
 	.fv_cfg		= {
@@ -335,7 +335,7 @@ static int handle_cycle_fv_config(struct step_chg_info *chip)
 	union power_supply_propval pval = {0, };
 	int rc = 0, cycle_count = 0, fv_uv = 0;
 
-	rc = power_supply_get_property(chip->chg_psy,
+	rc = power_supply_get_property(chip->batt_psy,
 		cycle_fv_config.psy_prop, &pval);
 	if (pval.intval < 0 || pval.intval > MAX_CYCLES) {
 		pr_warn("Invalid cycle count: %d, defaulting to 0!\n",
@@ -526,12 +526,25 @@ static void status_change_work(struct work_struct *work)
 	int reschedule_us;
 	int reschedule_jeita_work_us = 0;
 	int reschedule_step_work_us = 0;
+	union power_supply_propval pval = {0, };
 
-	if (!is_charger_available(chip))
+	if (!is_charger_available(chip)) {
+		__pm_relax(chip->step_chg_ws);
 		return;
+	}
 
-	if (!is_batt_available(chip))
+	if (!is_batt_available(chip)) {
+		__pm_relax(chip->step_chg_ws);
 		return;
+	}
+
+	/* skip jeita and step if not charging */
+	rc = power_supply_get_property(chip->batt_psy,
+		POWER_SUPPLY_PROP_STATUS, &pval);
+	if (pval.intval != POWER_SUPPLY_STATUS_CHARGING) {
+		__pm_relax(chip->step_chg_ws);
+		return;
+	}
 
 	/* Always handle profile first so it can be used later */
 	handle_chg_profile(chip);
@@ -539,7 +552,6 @@ static void status_change_work(struct work_struct *work)
 	/* Always handle cycle count next so it can be used later */
 	handle_cycle_fv_config(chip);
 
-	/* skip elapsed_us debounce for handling battery temperature */
 	rc = handle_jeita(chip);
 	if (rc > 0)
 		reschedule_jeita_work_us = rc;

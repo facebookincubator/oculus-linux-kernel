@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include "msm_kms.h"
 #include "sde_connector.h"
 #include "dsi_drm.h"
+#include "sde_trace.h"
 
 #define to_dsi_bridge(x)     container_of((x), struct dsi_bridge, base)
 #define to_dsi_state(x)      container_of((x), struct dsi_connector_state, base)
@@ -56,6 +57,10 @@ static void convert_to_dsi_mode(const struct drm_display_mode *drm_mode,
 		dsi_mode->flags |= DSI_MODE_FLAG_DFPS;
 	if (msm_needs_vblank_pre_modeset(drm_mode))
 		dsi_mode->flags |= DSI_MODE_FLAG_VBLANK_PRE_MODESET;
+	dsi_mode->timing.h_sync_polarity =
+		(drm_mode->flags & DRM_MODE_FLAG_PHSYNC) ? false : true;
+	dsi_mode->timing.v_sync_polarity =
+		(drm_mode->flags & DRM_MODE_FLAG_PVSYNC) ? false : true;
 }
 
 static void convert_to_drm_mode(const struct dsi_display_mode *dsi_mode,
@@ -87,6 +92,10 @@ static void convert_to_drm_mode(const struct dsi_display_mode *dsi_mode,
 		drm_mode->private_flags |= MSM_MODE_FLAG_SEAMLESS_DYNAMIC_FPS;
 	if (dsi_mode->flags & DSI_MODE_FLAG_VBLANK_PRE_MODESET)
 		drm_mode->private_flags |= MSM_MODE_FLAG_VBLANK_PRE_MODESET;
+	drm_mode->flags |= (dsi_mode->timing.h_sync_polarity) ?
+				DRM_MODE_FLAG_NHSYNC : DRM_MODE_FLAG_PHSYNC;
+	drm_mode->flags |= (dsi_mode->timing.v_sync_polarity) ?
+				DRM_MODE_FLAG_NVSYNC : DRM_MODE_FLAG_PVSYNC;
 
 	drm_mode_set_name(drm_mode);
 }
@@ -130,19 +139,24 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
+	SDE_ATRACE_BEGIN("dsi_bridge_pre_enable");
 	rc = dsi_display_prepare(c_bridge->display);
 	if (rc) {
 		pr_err("[%d] DSI display prepare failed, rc=%d\n",
 		       c_bridge->id, rc);
+		SDE_ATRACE_END("dsi_bridge_pre_enable");
 		return;
 	}
 
+	SDE_ATRACE_BEGIN("dsi_display_enable");
 	rc = dsi_display_enable(c_bridge->display);
 	if (rc) {
 		pr_err("[%d] DSI display enable failed, rc=%d\n",
 		       c_bridge->id, rc);
 		(void)dsi_display_unprepare(c_bridge->display);
 	}
+	SDE_ATRACE_END("dsi_display_enable");
+	SDE_ATRACE_END("dsi_bridge_pre_enable");
 }
 
 static void dsi_bridge_enable(struct drm_bridge *bridge)
@@ -193,19 +207,25 @@ static void dsi_bridge_post_disable(struct drm_bridge *bridge)
 		return;
 	}
 
+	SDE_ATRACE_BEGIN("dsi_bridge_post_disable");
+	SDE_ATRACE_BEGIN("dsi_display_disable");
 	rc = dsi_display_disable(c_bridge->display);
 	if (rc) {
 		pr_err("[%d] DSI display disable failed, rc=%d\n",
 		       c_bridge->id, rc);
+		SDE_ATRACE_END("dsi_display_disable");
 		return;
 	}
+	SDE_ATRACE_END("dsi_display_disable");
 
 	rc = dsi_display_unprepare(c_bridge->display);
 	if (rc) {
 		pr_err("[%d] DSI display unprepare failed, rc=%d\n",
 		       c_bridge->id, rc);
+		SDE_ATRACE_END("dsi_bridge_post_disable");
 		return;
 	}
+	SDE_ATRACE_END("dsi_bridge_post_disable");
 }
 
 static void dsi_bridge_mode_set(struct drm_bridge *bridge,
@@ -213,18 +233,21 @@ static void dsi_bridge_mode_set(struct drm_bridge *bridge,
 				struct drm_display_mode *adjusted_mode)
 {
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
+	struct dsi_panel *panel;
 
-	if (!bridge || !mode || !adjusted_mode) {
+	if (!bridge || !mode || !adjusted_mode || !c_bridge->display ||
+		!c_bridge->display->panel[0]) {
 		pr_err("Invalid params\n");
 		return;
 	}
 
+	/* dsi drm bridge is always the first panel */
+	panel = c_bridge->display->panel[0];
 	memset(&(c_bridge->dsi_mode), 0x0, sizeof(struct dsi_display_mode));
 	convert_to_dsi_mode(adjusted_mode, &(c_bridge->dsi_mode));
 
 	pr_debug("note: using panel cmd/vid mode instead of user val\n");
-	c_bridge->dsi_mode.panel_mode =
-		c_bridge->display->panel->mode.panel_mode;
+	c_bridge->dsi_mode.panel_mode = panel->mode.panel_mode;
 }
 
 static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
@@ -265,12 +288,36 @@ static const struct drm_bridge_funcs dsi_bridge_ops = {
 	.mode_set     = dsi_bridge_mode_set,
 };
 
+int dsi_display_set_top_ctl(struct drm_connector *connector,
+			struct drm_display_mode *adj_mode, void *display)
+{
+	int rc = 0;
+	struct dsi_display *dsi_display = (struct dsi_display *)display;
+
+	if (!dsi_display) {
+		SDE_ERROR("dsi_display is NULL\n");
+		return -EINVAL;
+	}
+
+	if (dsi_display->display_topology) {
+		SDE_DEBUG("%s, set display topology %d\n",
+				__func__, dsi_display->display_topology);
+
+		msm_property_set_property(sde_connector_get_propinfo(connector),
+			sde_connector_get_property_values(connector->state),
+			CONNECTOR_PROP_TOPOLOGY_CONTROL,
+			dsi_display->display_topology);
+	}
+	return rc;
+}
+
 int dsi_conn_post_init(struct drm_connector *connector,
 		void *info,
 		void *display)
 {
 	struct dsi_display *dsi_display = display;
 	struct dsi_panel *panel;
+	int i;
 
 	if (!info || !dsi_display)
 		return -EINVAL;
@@ -299,60 +346,65 @@ int dsi_conn_post_init(struct drm_connector *connector,
 		break;
 	}
 
-	if (!dsi_display->panel) {
-		pr_debug("invalid panel data\n");
-		goto end;
-	}
+	for (i = 0; i < dsi_display->panel_count; i++) {
+		if (!dsi_display->panel[i]) {
+			pr_debug("invalid panel data\n");
+			goto end;
+		}
 
-	panel = dsi_display->panel;
-	sde_kms_info_add_keystr(info, "panel name", panel->name);
+		panel = dsi_display->panel[i];
+		sde_kms_info_add_keystr(info, "panel name", panel->name);
 
-	switch (panel->mode.panel_mode) {
-	case DSI_OP_VIDEO_MODE:
-		sde_kms_info_add_keystr(info, "panel mode", "video");
-		break;
-	case DSI_OP_CMD_MODE:
-		sde_kms_info_add_keystr(info, "panel mode", "command");
-		sde_kms_info_add_keyint(info, "mdp_transfer_time_us",
-				panel->cmd_config.mdp_transfer_time_us);
-		break;
-	default:
-		pr_debug("invalid panel type:%d\n", panel->mode.panel_mode);
-		break;
-	}
-	sde_kms_info_add_keystr(info, "dfps support",
-			panel->dfps_caps.dfps_support ? "true" : "false");
+		switch (panel->mode.panel_mode) {
+		case DSI_OP_VIDEO_MODE:
+			sde_kms_info_add_keystr(info, "panel mode", "video");
+			break;
+		case DSI_OP_CMD_MODE:
+			sde_kms_info_add_keystr(info, "panel mode", "command");
+			break;
+		default:
+			pr_debug("invalid panel type:%d\n",
+					panel->mode.panel_mode);
+			break;
+		}
+		sde_kms_info_add_keystr(info, "dfps support",
+				panel->dfps_caps.dfps_support ?
+					"true" : "false");
 
-	switch (panel->phy_props.rotation) {
-	case DSI_PANEL_ROTATE_NONE:
-		sde_kms_info_add_keystr(info, "panel orientation", "none");
-		break;
-	case DSI_PANEL_ROTATE_H_FLIP:
-		sde_kms_info_add_keystr(info, "panel orientation", "horz flip");
-		break;
-	case DSI_PANEL_ROTATE_V_FLIP:
-		sde_kms_info_add_keystr(info, "panel orientation", "vert flip");
-		break;
-	default:
-		pr_debug("invalid panel rotation:%d\n",
+		switch (panel->phy_props.rotation) {
+		case DSI_PANEL_ROTATE_NONE:
+			sde_kms_info_add_keystr(info, "panel orientation",
+						"none");
+			break;
+		case DSI_PANEL_ROTATE_H_FLIP:
+			sde_kms_info_add_keystr(info, "panel orientation",
+						"horz flip");
+			break;
+		case DSI_PANEL_ROTATE_V_FLIP:
+			sde_kms_info_add_keystr(info, "panel orientation",
+						"vert flip");
+			break;
+		default:
+			pr_debug("invalid panel rotation:%d\n",
 						panel->phy_props.rotation);
-		break;
-	}
+			break;
+		}
 
-	switch (panel->bl_config.type) {
-	case DSI_BACKLIGHT_PWM:
-		sde_kms_info_add_keystr(info, "backlight type", "pwm");
-		break;
-	case DSI_BACKLIGHT_WLED:
-		sde_kms_info_add_keystr(info, "backlight type", "wled");
-		break;
-	case DSI_BACKLIGHT_DCS:
-		sde_kms_info_add_keystr(info, "backlight type", "dcs");
-		break;
-	default:
-		pr_debug("invalid panel backlight type:%d\n",
-						panel->bl_config.type);
-		break;
+		switch (panel->bl_config.type) {
+		case DSI_BACKLIGHT_PWM:
+			sde_kms_info_add_keystr(info, "backlight type", "pwm");
+			break;
+		case DSI_BACKLIGHT_WLED:
+			sde_kms_info_add_keystr(info, "backlight type", "wled");
+			break;
+		case DSI_BACKLIGHT_DCS:
+			sde_kms_info_add_keystr(info, "backlight type", "dcs");
+			break;
+		default:
+			pr_debug("invalid panel backlight type:%d\n",
+							panel->bl_config.type);
+			break;
+		}
 	}
 
 end:
@@ -410,7 +462,7 @@ int dsi_connector_get_modes(struct drm_connector *connector,
 	rc = dsi_display_get_modes(display, NULL, &count);
 	if (rc) {
 		pr_err("failed to get num of modes, rc=%d\n", rc);
-		goto error;
+		goto end;
 	}
 
 	size = count * sizeof(*modes);

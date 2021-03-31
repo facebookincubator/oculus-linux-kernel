@@ -4,6 +4,8 @@
  * Copyright (C) Linaro 2012
  * Author: <benjamin.gaignard@linaro.org> for ST-Ericsson.
  *
+ * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -66,22 +68,18 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	struct ion_cma_buffer_info *info;
 	DEFINE_DMA_ATTRS(attrs);
 
-	dev_dbg(dev, "Request buffer allocation len %ld\n", len);
-
 	info = kzalloc(sizeof(struct ion_cma_buffer_info), GFP_KERNEL);
 	if (!info)
 		return ION_CMA_ALLOCATE_FAILED;
 
-	if (!ION_IS_CACHED(flags)) {
+	if (!ION_IS_CACHED(flags))
 		info->cpu_addr = dma_alloc_writecombine(dev, len,
 					&(info->handle), GFP_KERNEL);
-	} else {
+	else {
 		dma_set_attr(DMA_ATTR_FORCE_COHERENT, &attrs);
 		info->cpu_addr = dma_alloc_attrs(dev, len,
 					&(info->handle), GFP_KERNEL, &attrs);
 	}
-	pr_debug("ION allocated new buffer: heap: %u flags: %lx align: %lx info->cpu_addr %p\n",
-					heap->id, flags, align, info->cpu_addr);
 
 	if (!info->cpu_addr) {
 		dev_err(dev, "Fail to allocate buffer\n");
@@ -99,7 +97,6 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 
 	/* keep this for memory release */
 	buffer->priv_virt = info;
-	dev_dbg(dev, "Allocate buffer %pK\n", buffer);
 	return 0;
 
 err:
@@ -113,7 +110,6 @@ static void ion_cma_free(struct ion_buffer *buffer)
 	struct ion_cma_buffer_info *info = buffer->priv_virt;
 	DEFINE_DMA_ATTRS(attrs);
 
-	dev_dbg(dev, "Release buffer %pK\n", buffer);
 	/* release memory */
 
 	if (ION_IS_CACHED(buffer->flags))
@@ -163,10 +159,10 @@ static int ion_cma_mmap(struct ion_heap *mapper, struct ion_buffer *buffer,
 	struct ion_cma_buffer_info *info = buffer->priv_virt;
 	DEFINE_DMA_ATTRS(attrs);
 
-	if (!info->is_cached) {
+	if (!info->is_cached)
 		return dma_mmap_nonconsistent(dev, vma, info->cpu_addr,
 				info->handle, buffer->size);
-	} else {
+	else {
 		dma_set_attr(DMA_ATTR_FORCE_COHERENT, &attrs);
 		return dma_mmap_attrs(dev, vma, info->cpu_addr,
 				info->handle, buffer->size, &attrs);
@@ -239,7 +235,7 @@ struct ion_heap *ion_cma_heap_create(struct ion_platform_heap *data)
 	/* set device as private heaps data, later it will be
 	 * used to make the link with reserved CMA memory */
 	heap->priv = data->priv;
-	heap->type = ION_HEAP_TYPE_DMA;
+	heap->type = (enum ion_heap_type)ION_HEAP_TYPE_DMA;
 	cma_heap_has_outer_cache = data->has_outer_cache;
 	return heap;
 }
@@ -251,10 +247,12 @@ void ion_cma_heap_destroy(struct ion_heap *heap)
 
 static void ion_secure_cma_free(struct ion_buffer *buffer)
 {
-	int ret = 0;
-	u32 source_vm;
+	int i, ret = 0;
+	int source_vm;
 	int dest_vmid;
 	int dest_perms;
+	struct sg_table *sgt;
+	struct scatterlist *sg;
 	struct ion_cma_buffer_info *info = buffer->priv_virt;
 
 	source_vm = get_secure_vmid(buffer->flags);
@@ -265,13 +263,16 @@ static void ion_secure_cma_free(struct ion_buffer *buffer)
 	dest_vmid = VMID_HLOS;
 	dest_perms = PERM_READ | PERM_WRITE | PERM_EXEC;
 
-	ret = hyp_assign_table(info->table, &source_vm, 1,
-				&dest_vmid, &dest_perms, 1);
+	sgt = info->table;
+	ret = hyp_assign_table(sgt, &source_vm, 1, &dest_vmid, &dest_perms, 1);
 	if (ret) {
 		pr_err("%s: Not freeing memory since assign failed\n",
 							__func__);
 		return;
 	}
+
+	for_each_sg(sgt->sgl, sg, sgt->nents, i)
+		ClearPagePrivate(sg_page(sg));
 
 	ion_cma_free(buffer);
 }
@@ -280,11 +281,13 @@ static int ion_secure_cma_allocate(struct ion_heap *heap,
 			struct ion_buffer *buffer, unsigned long len,
 			unsigned long align, unsigned long flags)
 {
-	int ret = 0;
+	int i, ret = 0;
 	int source_vm;
 	int dest_vm;
 	int dest_perms;
 	struct ion_cma_buffer_info *info;
+	struct sg_table *sgt;
+	struct scatterlist *sg;
 
 	source_vm = VMID_HLOS;
 	dest_vm = get_secure_vmid(flags);
@@ -306,12 +309,17 @@ static int ion_secure_cma_allocate(struct ion_heap *heap,
 	}
 
 	info = buffer->priv_virt;
-	ret = hyp_assign_table(info->table, &source_vm, 1,
-				&dest_vm, &dest_perms, 1);
+	sgt = info->table;
+	ret = hyp_assign_table(sgt, &source_vm, 1, &dest_vm, &dest_perms, 1);
 	if (ret) {
 		pr_err("%s: Assign call failed\n", __func__);
 		goto err;
 	}
+
+	/* Set the private bit to indicate that we've secured this */
+	for_each_sg(sgt->sgl, sg, sgt->nents, i)
+		SetPagePrivate(sg_page(sg));
+
 	return ret;
 
 err:
@@ -369,7 +377,7 @@ struct ion_heap *ion_cma_secure_heap_create(struct ion_platform_heap *data)
 	 * used to make the link with reserved CMA memory
 	 */
 	heap->priv = data->priv;
-	heap->type = ION_HEAP_TYPE_HYP_CMA;
+	heap->type = (enum ion_heap_type)ION_HEAP_TYPE_HYP_CMA;
 	cma_heap_has_outer_cache = data->has_outer_cache;
 	return heap;
 }

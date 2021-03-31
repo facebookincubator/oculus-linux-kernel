@@ -38,6 +38,10 @@ enum sde_rot_dbg_evtlog_flag {
 	sde_rot_evtlog_tout_handler(false, __func__, ##__VA_ARGS__, \
 		SDE_ROT_EVTLOG_TOUT_DATA_LIMITER)
 
+void sde_rot_evtlog(const char *name, int line, int flag, ...);
+void sde_rot_dump_panic(void);
+void sde_rot_evtlog_tout_handler(bool queue, const char *name, ...);
+
 struct sde_rotator_device;
 
 struct sde_rotator_debug_base {
@@ -53,30 +57,11 @@ struct sde_rotator_debug_base {
 };
 
 #if defined(CONFIG_DEBUG_FS)
-void sde_rot_evtlog(const char *name, int line, int flag, ...);
-void sde_rot_dump_panic(void);
-void sde_rot_evtlog_tout_handler(bool queue, const char *name, ...);
-
 struct dentry *sde_rotator_create_debugfs(
 		struct sde_rotator_device *rot_dev);
 
 void sde_rotator_destroy_debugfs(struct dentry *debugfs);
 #else
-static void __maybe_unused sde_rot_evtlog(const char *name, int line,
-					  int flag, ...)
-{
-}
-
-static void __maybe_unused sde_rot_dump_panic(void)
-{
-	panic("sde_rotator");
-}
-
-static void __maybe_unused sde_rot_evtlog_tout_handler(bool queue,
-						       const char *name, ...)
-{
-}
-
 static inline
 struct dentry *sde_rotator_create_debugfs(
 		struct sde_rotator_device *rot_dev)

@@ -199,7 +199,7 @@ static void mdss_dsi_phy_v3_config_lane_settings(
 		DSI_PHY_W32(ctrl->phy_io.base, LNX_LPRX_CTRL(i), 0);
 
 		DSI_PHY_W32(ctrl->phy_io.base, LNX_PIN_SWAP(i), 0x0);
-		DSI_PHY_W32(ctrl->phy_io.base, LNX_HSTX_STR_CTRL(i), 0x66);
+		DSI_PHY_W32(ctrl->phy_io.base, LNX_HSTX_STR_CTRL(i), 0x88);
 	}
 	mdss_dsi_phy_v3_config_lpcdrx(ctrl, true);
 

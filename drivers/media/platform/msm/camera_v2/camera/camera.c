@@ -371,16 +371,15 @@ static int camera_v4l2_s_fmt_vid_cap_mplane(struct file *filep, void *fh,
 			rc = -ENOMEM;
 			mutex_unlock(sp->vb2_q.lock);
 			goto done;
-	}
+		}
 		memcpy(sp->vb2_q.drv_priv, pfmt->fmt.raw_data,
 			sizeof(struct msm_v4l2_format_data));
 		user_fmt = (struct msm_v4l2_format_data *)sp->vb2_q.drv_priv;
 
 		pr_debug("%s: num planes :%c\n", __func__,
 					user_fmt->num_planes);
-		/* num_planes need to bound checked, otherwise for loop
-		 * can execute forever
-		 */
+		/*num_planes need to bound checked, otherwise for loop
+		can execute forever */
 		if (WARN_ON(user_fmt->num_planes > VIDEO_MAX_PLANES)) {
 			rc = -EINVAL;
 			mutex_unlock(sp->vb2_q.lock);
@@ -971,5 +970,3 @@ video_fail:
 init_end:
 	return rc;
 }
-
-EXPORT_SYMBOL(camera_init_v4l2);

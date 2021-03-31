@@ -202,6 +202,11 @@ struct request {
 	int			lat_hist_enabled;
 };
 
+static inline bool blk_rq_is_passthrough(struct request *rq)
+{
+	return rq->cmd_type != REQ_TYPE_FS;
+}
+
 static inline unsigned short req_get_ioprio(struct request *req)
 {
 	return req->ioprio;
@@ -587,9 +592,10 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
 			     REQ_FAILFAST_DRIVER))
 
-#define blk_account_rq(rq) \
-	(((rq)->cmd_flags & REQ_STARTED) && \
-	 ((rq)->cmd_type == REQ_TYPE_FS))
+static inline bool blk_account_rq(struct request *rq)
+{
+	return (rq->cmd_flags & REQ_STARTED) && !blk_rq_is_passthrough(rq);
+}
 
 #define blk_rq_cpu_valid(rq)	((rq)->cpu != -1)
 #define blk_bidi_rq(rq)		((rq)->next_rq != NULL)
@@ -650,7 +656,7 @@ static inline void blk_clear_rl_full(struct request_list *rl, bool sync)
 
 static inline bool rq_mergeable(struct request *rq)
 {
-	if (rq->cmd_type != REQ_TYPE_FS)
+	if (blk_rq_is_passthrough(rq))
 		return false;
 
 	if (rq->cmd_flags & REQ_NOMERGE_FLAGS)
@@ -888,15 +894,15 @@ static inline unsigned int blk_max_size_offset(struct request_queue *q,
 	if (!q->limits.chunk_sectors)
 		return q->limits.max_sectors;
 
-	return q->limits.chunk_sectors -
-			(offset & (q->limits.chunk_sectors - 1));
+	return min(q->limits.max_sectors, (unsigned int)(q->limits.chunk_sectors -
+			(offset & (q->limits.chunk_sectors - 1))));
 }
 
 static inline unsigned int blk_rq_get_max_sectors(struct request *rq)
 {
 	struct request_queue *q = rq->q;
 
-	if (unlikely(rq->cmd_type != REQ_TYPE_FS))
+	if (blk_rq_is_passthrough(rq))
 		return q->limits.max_hw_sectors;
 
 	if (!q->limits.chunk_sectors || (rq->cmd_flags & REQ_DISCARD))
@@ -1700,43 +1706,26 @@ static const u_int64_t latency_x_axis_us[] = {
 #define BLK_IO_LAT_HIST_ZERO            2
 
 struct io_latency_state {
-	u_int64_t	latency_y_axis_read[ARRAY_SIZE(latency_x_axis_us) + 1];
-	u_int64_t	latency_reads_elems;
-	u_int64_t	latency_y_axis_write[ARRAY_SIZE(latency_x_axis_us) + 1];
-	u_int64_t	latency_writes_elems;
+	u_int64_t	latency_y_axis[ARRAY_SIZE(latency_x_axis_us) + 1];
+	u_int64_t	latency_elems;
+	u_int64_t	latency_sum;
 };
 
 static inline void
-blk_update_latency_hist(struct io_latency_state *s,
-			int read,
-			u_int64_t delta_us)
+blk_update_latency_hist(struct io_latency_state *s, u_int64_t delta_us)
 {
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(latency_x_axis_us); i++) {
-		if (delta_us < (u_int64_t)latency_x_axis_us[i]) {
-			if (read)
-				s->latency_y_axis_read[i]++;
-			else
-				s->latency_y_axis_write[i]++;
+	for (i = 0; i < ARRAY_SIZE(latency_x_axis_us); i++)
+		if (delta_us < (u_int64_t)latency_x_axis_us[i])
 			break;
-		}
-	}
-	if (i == ARRAY_SIZE(latency_x_axis_us)) {
-		/* Overflowed the histogram */
-		if (read)
-			s->latency_y_axis_read[i]++;
-		else
-			s->latency_y_axis_write[i]++;
-	}
-	if (read)
-		s->latency_reads_elems++;
-	else
-		s->latency_writes_elems++;
+	s->latency_y_axis[i]++;
+	s->latency_elems++;
+	s->latency_sum += delta_us;
 }
 
-void blk_zero_latency_hist(struct io_latency_state *s);
-ssize_t blk_latency_hist_show(struct io_latency_state *s, char *buf);
+ssize_t blk_latency_hist_show(char* name, struct io_latency_state *s,
+		char *buf, int buf_size);
 
 #else /* CONFIG_BLOCK */
 

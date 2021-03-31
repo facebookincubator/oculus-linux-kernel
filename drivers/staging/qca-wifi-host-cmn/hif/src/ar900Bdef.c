@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010,2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010, 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -16,6 +16,8 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "qdf_module.h"
+
 #if defined(AR900B_HEADERS_DEF)
 #define AR900B 1
 
@@ -31,11 +33,11 @@
 #include "AR900B/hw/si_reg.h"
 #include "AR900B/extra/hw/pcie_local_reg.h"
 #include "AR900B/hw/ce_wrapper_reg_csr.h"
-#if 0
-#include "hw/soc_core_reg.h"
-#include "hw/soc_pcie_reg.h"
-#include "hw/ce_reg_csr.h"
-#endif
+/* TODO
+ * #include "hw/soc_core_reg.h"
+ * #include "hw/soc_pcie_reg.h"
+ * #include "hw/ce_reg_csr.h"
+ */
 
 #include "AR900B/extra/hw/soc_core_reg.h"
 #include "AR900B/hw/soc_pcie_reg.h"
@@ -219,6 +221,7 @@
 #define MY_TARGET_BOARD_EXT_DATA_SZ AR900B_BOARD_EXT_DATA_SZ
 #include "targetdef.h"
 #include "hostdef.h"
+qdf_export_symbol(AR900B_CE_TARGETdef);
 #else
 #include "common_drv.h"
 #include "targetdef.h"
@@ -226,3 +229,5 @@
 struct targetdef_s *AR900B_TARGETdef;
 struct hostdef_s *AR900B_HOSTdef;
 #endif /*AR900B_HEADERS_DEF */
+qdf_export_symbol(AR900B_TARGETdef);
+qdf_export_symbol(AR900B_HOSTdef);

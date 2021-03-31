@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2012-2017, 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,8 +20,7 @@
 #define _MSM_PCM_H
 #include <sound/apr_audio-v2.h>
 #include <sound/q6asm-v2.h>
-
-
+#include "msm-pcm-routing-v2.h"
 
 /* Support unconventional sample rates 12000, 24000 as well */
 #define USE_RATE                \
@@ -105,7 +104,7 @@ struct msm_audio {
 	int mmap_flag;
 	atomic_t pending_buffer;
 	bool set_channel_map;
-	char channel_map[8];
+	char channel_map[PCM_FORMAT_MAX_NUM_CHANNEL_V2];
 	int cmd_interrupt;
 	bool meta_data_mode;
 	uint32_t volume;
@@ -124,7 +123,10 @@ struct output_meta_data_st {
 
 struct msm_plat_data {
 	int perf_mode;
+	bool avs_ver;
 	struct snd_pcm *pcm;
+	struct snd_pcm *pcm_device[MSM_FRONTEND_DAI_MM_SIZE];
+	struct msm_pcm_channel_mixer chmixer_pspd[MSM_FRONTEND_DAI_MM_SIZE][2];
 	struct mutex lock;
 };
 

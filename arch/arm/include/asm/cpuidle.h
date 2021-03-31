@@ -2,7 +2,6 @@
 #define __ASM_ARM_CPUIDLE_H
 
 #include <asm/proc-fns.h>
-#include <linux/cpuidle.h>
 
 #ifdef CONFIG_CPU_IDLE
 extern int arm_cpuidle_simple_enter(struct cpuidle_device *dev,
@@ -31,7 +30,7 @@ static inline int arm_cpuidle_simple_enter(struct cpuidle_device *dev,
 struct device_node;
 
 struct cpuidle_ops {
-	int (*suspend)(int cpu, unsigned long arg);
+	int (*suspend)(unsigned long arg);
 	int (*init)(struct device_node *, int cpu);
 };
 

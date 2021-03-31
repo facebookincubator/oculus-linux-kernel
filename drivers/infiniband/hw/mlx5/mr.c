@@ -614,6 +614,33 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 	return 0;
 }
 
+static void wait_for_async_commands(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent;
+	int total = 0;
+	int i;
+	int j;
+
+	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
+		ent = &cache->ent[i];
+		for (j = 0 ; j < 1000; j++) {
+			if (!ent->pending)
+				break;
+			msleep(50);
+		}
+	}
+	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
+		ent = &cache->ent[i];
+		total += ent->pending;
+	}
+
+	if (total)
+		mlx5_ib_warn(dev, "aborted while there are %d pending mr requests\n", total);
+	else
+		mlx5_ib_warn(dev, "done with all pending requests\n");
+}
+
 int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev)
 {
 	int i;
@@ -627,6 +654,7 @@ int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev)
 		clean_keys(dev, i);
 
 	destroy_workqueue(dev->cache.wq);
+	wait_for_async_commands(dev);
 	del_timer_sync(&dev->delay_timer);
 
 	return 0;
@@ -764,7 +792,7 @@ static struct mlx5_ib_mr *reg_umr(struct ib_pd *pd, struct ib_umem *umem,
 	struct device *ddev = dev->ib_dev.dma_device;
 	struct umr_common *umrc = &dev->umrc;
 	struct mlx5_ib_umr_context umr_context;
-	struct mlx5_umr_wr umrwr;
+	struct mlx5_umr_wr umrwr = {};
 	struct ib_send_wr *bad;
 	struct mlx5_ib_mr *mr;
 	struct ib_sge sg;
@@ -811,7 +839,6 @@ static struct mlx5_ib_mr *reg_umr(struct ib_pd *pd, struct ib_umem *umem,
 		goto free_pas;
 	}
 
-	memset(&umrwr, 0, sizeof(umrwr));
 	umrwr.wr.wr_id = (u64)(unsigned long)&umr_context;
 	prep_umr_reg_wqe(pd, &umrwr.wr, &sg, dma, npages, mr->mmr.key,
 			 page_shift, virt_addr, len, access_flags);
@@ -1135,11 +1162,10 @@ static int unreg_umr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 {
 	struct umr_common *umrc = &dev->umrc;
 	struct mlx5_ib_umr_context umr_context;
-	struct mlx5_umr_wr umrwr;
+	struct mlx5_umr_wr umrwr = {};
 	struct ib_send_wr *bad;
 	int err;
 
-	memset(&umrwr.wr, 0, sizeof(umrwr));
 	umrwr.wr.wr_id = (u64)(unsigned long)&umr_context;
 	prep_umr_unreg_wqe(dev, &umrwr.wr, mr->mmr.key);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 Qualcomm Atheros, Inc.
+ * Copyright (c) 2012-2017 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -84,6 +84,7 @@ void wil_set_capabilities(struct wil6210_priv *wil)
 
 	/* extract FW capabilities from file without loading the FW */
 	wil_request_firmware(wil, wil->wil_fw_name, false);
+	wil_refresh_fw_capabilities(wil);
 }
 
 void wil_disable_irq(struct wil6210_priv *wil)
@@ -198,16 +199,18 @@ static int wil_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		.ramdump = wil_platform_rop_ramdump,
 		.fw_recovery = wil_platform_rop_fw_recovery,
 	};
+	u32 bar_size = pci_resource_len(pdev, 0);
 
 	/* check HW */
 	dev_info(&pdev->dev, WIL_NAME
-		 " device found [%04x:%04x] (rev %x)\n",
-		 (int)pdev->vendor, (int)pdev->device, (int)pdev->revision);
+		 " device found [%04x:%04x] (rev %x) bar size 0x%x\n",
+		 (int)pdev->vendor, (int)pdev->device, (int)pdev->revision,
+		 bar_size);
 
-	if (pci_resource_len(pdev, 0) != WIL6210_MEM_SIZE) {
-		dev_err(&pdev->dev, "Not " WIL_NAME "? "
-			"BAR0 size is %lu while expecting %lu\n",
-			(ulong)pci_resource_len(pdev, 0), WIL6210_MEM_SIZE);
+	if ((bar_size < WIL6210_MIN_MEM_SIZE) ||
+	    (bar_size > WIL6210_MAX_MEM_SIZE)) {
+		dev_err(&pdev->dev, "Unexpected BAR0 size 0x%x\n",
+			bar_size);
 		return -ENODEV;
 	}
 
@@ -220,6 +223,7 @@ static int wil_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	wil->pdev = pdev;
 	pci_set_drvdata(pdev, wil);
+	wil->bar_size = bar_size;
 	/* rollback to if_free */
 
 	wil->platform_handle =
@@ -282,15 +286,6 @@ static int wil_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	wil_set_capabilities(wil);
 	wil6210_clear_irq(wil);
-
-	wil->keep_radio_on_during_sleep =
-		wil->platform_ops.keep_radio_on_during_sleep &&
-		wil->platform_ops.keep_radio_on_during_sleep(
-			wil->platform_handle) &&
-		test_bit(WMI_FW_CAPABILITY_D3_SUSPEND, wil->fw_capabilities);
-
-	wil_info(wil, "keep_radio_on_during_sleep (%d)\n",
-		 wil->keep_radio_on_during_sleep);
 
 	/* FW should raise IRQ when ready */
 	rc = wil_if_pcie_enable(wil);

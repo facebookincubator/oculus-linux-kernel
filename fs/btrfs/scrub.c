@@ -2513,7 +2513,7 @@ static int scrub_extent(struct scrub_ctx *sctx, u64 logical, u64 len,
 			have_csum = scrub_find_csum(sctx, logical, csum);
 			if (have_csum == 0)
 				++sctx->stat.no_csum;
-			if (sctx->is_dev_replace && !have_csum) {
+			if (0 && sctx->is_dev_replace && !have_csum) {
 				ret = copy_nocow_pages(sctx, logical, l,
 						       mirror_num,
 						      physical_for_dev_replace);
@@ -3460,7 +3460,7 @@ static noinline_for_stack int scrub_chunk(struct scrub_ctx *sctx,
 		return ret;
 	}
 
-	map = (struct map_lookup *)em->bdev;
+	map = em->map_lookup;
 	if (em->start != chunk_offset)
 		goto out;
 

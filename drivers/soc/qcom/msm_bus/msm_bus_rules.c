@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -65,8 +65,8 @@ static struct rule_node_info *get_node(u32 id, void *data)
 
 	list_for_each_entry(node_it, &node_list, link) {
 		if (node_it->id == id) {
-			if ((id == NB_ID)) {
-				if ((node_it->data == data)) {
+			if (id == NB_ID) {
+				if (node_it->data == data) {
 					node_match = node_it;
 					break;
 				}
@@ -597,7 +597,7 @@ void msm_rule_register(int num_rules, struct bus_rule_type *rule,
 static bool __rule_unregister(int num_rules, struct bus_rule_type *rule,
 					struct notifier_block *nb)
 {
-	int i;
+	int i = 0;
 	struct rule_node_info *node = NULL;
 	struct rule_node_info *node_tmp = NULL;
 	struct rules_def *node_rule;

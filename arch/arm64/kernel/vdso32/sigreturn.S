@@ -23,7 +23,7 @@
 
 #include <linux/linkage.h>
 #include <asm/asm-offsets.h>
-#include <asm/unistd.h>
+#include <asm/unistd32.h>
 
 .macro sigreturn_trampoline name, syscall, regs_offset
 	/*
@@ -59,18 +59,18 @@ END(\name)
 
 	.arm
 	sigreturn_trampoline __kernel_sigreturn_arm, \
-			     __NR_compat_sigreturn, \
+			     __NR_sigreturn, \
 			     COMPAT_SIGFRAME_REGS_OFFSET
 
 	sigreturn_trampoline __kernel_rt_sigreturn_arm, \
-			     __NR_compat_rt_sigreturn, \
+			     __NR_rt_sigreturn, \
 			     COMPAT_RT_SIGFRAME_REGS_OFFSET
 
 	.thumb
 	sigreturn_trampoline __kernel_sigreturn_thumb, \
-			     __NR_compat_sigreturn, \
+			     __NR_sigreturn, \
 			     COMPAT_SIGFRAME_REGS_OFFSET
 
 	sigreturn_trampoline __kernel_rt_sigreturn_thumb, \
-			     __NR_compat_rt_sigreturn, \
+			     __NR_rt_sigreturn, \
 			     COMPAT_RT_SIGFRAME_REGS_OFFSET

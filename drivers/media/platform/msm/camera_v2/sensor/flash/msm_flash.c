@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2017, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -363,7 +363,8 @@ static int32_t msm_flash_i2c_release(
 {
 	int32_t rc = 0;
 
-	if (!(&flash_ctrl->power_info) || !(&flash_ctrl->flash_i2c_client)) {
+	if ((&flash_ctrl->power_info == NULL) ||
+		(&flash_ctrl->flash_i2c_client == NULL)) {
 		pr_err("%s:%d failed: %pK %pK\n",
 			__func__, __LINE__, &flash_ctrl->power_info,
 			&flash_ctrl->flash_i2c_client);

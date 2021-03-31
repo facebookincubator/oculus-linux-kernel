@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017,2019-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -393,31 +393,22 @@ exit:
 	return count;
 }
 
-static ssize_t hdmi_hdcp2p2_sysfs_wta_min_level_change(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+static void mdss_hdmi_hdcp2p2_min_level_change(void *client_ctx,
+		int min_enc_level)
 {
 	struct hdmi_hdcp2p2_ctrl *ctrl =
-		hdmi_get_featuredata_from_sysfs_dev(dev, HDMI_TX_FEAT_HDCP2P2);
+		(struct hdmi_hdcp2p2_ctrl *)client_ctx;
 	struct hdcp_lib_wakeup_data cdata = {
 		HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE};
 	bool enc_notify = true;
 	enum hdcp_states enc_lvl;
-	int min_enc_lvl;
-	int rc;
 
 	if (!ctrl) {
 		pr_err("invalid input\n");
-		rc = -EINVAL;
-		goto exit;
+		return;
 	}
 
-	rc = kstrtoint(buf, 10, &min_enc_lvl);
-	if (rc) {
-		DEV_ERR("%s: kstrtoint failed. rc=%d\n", __func__, rc);
-		goto exit;
-	}
-
-	switch (min_enc_lvl) {
+	switch (min_enc_level) {
 	case 0:
 		enc_lvl = HDCP_STATE_AUTH_ENC_NONE;
 		break;
@@ -431,7 +422,7 @@ static ssize_t hdmi_hdcp2p2_sysfs_wta_min_level_change(struct device *dev,
 		enc_notify = false;
 	}
 
-	pr_debug("enc level changed %d\n", min_enc_lvl);
+	pr_debug("enc level changed %d\n", min_enc_level);
 
 	cdata.context = ctrl->lib_ctx;
 	hdmi_hdcp2p2_wakeup_lib(ctrl, &cdata);
@@ -441,10 +432,6 @@ static ssize_t hdmi_hdcp2p2_sysfs_wta_min_level_change(struct device *dev,
 
 	if (enc_notify && ctrl->init_data.notify_status)
 		ctrl->init_data.notify_status(ctrl->init_data.cb_data, enc_lvl);
-
-	rc = count;
-exit:
-	return  rc;
 }
 
 static void hdmi_hdcp2p2_auth_failed(struct hdmi_hdcp2p2_ctrl *ctrl)
@@ -461,6 +448,41 @@ static void hdmi_hdcp2p2_auth_failed(struct hdmi_hdcp2p2_ctrl *ctrl)
 	/* notify hdmi tx about HDCP failure */
 	ctrl->init_data.notify_status(ctrl->init_data.cb_data,
 		HDCP_STATE_AUTH_FAIL);
+}
+
+static void hdmi_hdcp2p2_fail_noreauth(struct hdmi_hdcp2p2_ctrl *ctrl)
+{
+	if (!ctrl) {
+		pr_err("invalid input\n");
+		return;
+	}
+
+	atomic_set(&ctrl->auth_state, HDCP_STATE_AUTH_FAIL);
+
+	hdmi_hdcp2p2_ddc_disable(ctrl->init_data.cb_data);
+
+	/* notify hdmi tx about HDCP failure */
+	ctrl->init_data.notify_status(ctrl->init_data.cb_data,
+		HDCP_STATE_AUTH_FAIL_NOREAUTH);
+}
+
+static void hdmi_hdcp2p2_srm_cb(void *client_ctx)
+{
+	struct hdmi_hdcp2p2_ctrl *ctrl =
+		(struct hdmi_hdcp2p2_ctrl *)client_ctx;
+	struct hdcp_lib_wakeup_data cdata = {
+		HDCP_LIB_WKUP_CMD_INVALID};
+
+	if (!ctrl) {
+		pr_err("invalid input\n");
+		return;
+	}
+
+	cdata.context = ctrl->lib_ctx;
+	cdata.cmd = HDCP_LIB_WKUP_CMD_STOP;
+	hdmi_hdcp2p2_wakeup_lib(ctrl, &cdata);
+
+	hdmi_hdcp2p2_fail_noreauth(ctrl);
 }
 
 static int hdmi_hdcp2p2_ddc_read_message(struct hdmi_hdcp2p2_ctrl *ctrl,
@@ -549,13 +571,10 @@ static int hdmi_hdcp2p2_read_version(struct hdmi_hdcp2p2_ctrl *ctrl,
 	return rc;
 }
 
-static DEVICE_ATTR(min_level_change, S_IWUSR, NULL,
-		hdmi_hdcp2p2_sysfs_wta_min_level_change);
 static DEVICE_ATTR(tethered, S_IRUGO | S_IWUSR, hdmi_hdcp2p2_sysfs_rda_tethered,
 		hdmi_hdcp2p2_sysfs_wta_tethered);
 
 static struct attribute *hdmi_hdcp2p2_fs_attrs[] = {
-	&dev_attr_min_level_change.attr,
 	&dev_attr_tethered.attr,
 	NULL,
 };
@@ -721,6 +740,14 @@ static void hdmi_hdcp2p2_recv_msg(struct hdmi_hdcp2p2_ctrl *ctrl)
 		goto exit;
 	}
 
+	if (ddc_data->ddc_max_retries_fail) {
+		pr_debug("rxstatus ddc failed\n");
+
+		ddc_data->ddc_max_retries_fail = false;
+		rc = -ENOLINK;
+		goto exit;
+	}
+
 	if (ddc_data->reauth_req) {
 		ddc_data->reauth_req = false;
 
@@ -878,6 +905,15 @@ static void hdmi_hdcp2p2_link_work(struct kthread_work *work)
 
 	ddc_data = &ddc_ctrl->hdcp2p2_ddc_data;
 
+	if (ddc_data->ddc_max_retries_fail) {
+		pr_debug("rxstatus ddc failed\n");
+
+		ddc_data->ddc_max_retries_fail = false;
+		rc = -ENOLINK;
+		cdata.cmd = HDCP_LIB_WKUP_CMD_STOP;
+		goto exit;
+	}
+
 	if (ddc_data->reauth_req) {
 		pr_debug("reauth triggered by sink\n");
 
@@ -995,6 +1031,8 @@ void *hdmi_hdcp2p2_init(struct hdcp_init_data *init_data)
 
 	static struct hdcp_client_ops client_ops = {
 		.wakeup = hdmi_hdcp2p2_wakeup,
+		.notify_lvl_change = mdss_hdmi_hdcp2p2_min_level_change,
+		.srm_cb = hdmi_hdcp2p2_srm_cb,
 	};
 
 	static struct hdcp_txmtr_ops txmtr_ops;

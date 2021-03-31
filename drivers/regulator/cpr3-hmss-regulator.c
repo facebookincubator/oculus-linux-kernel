@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -87,8 +87,9 @@ struct cpr3_msm8996_hmss_fuses {
 /*
  * Fuse combos 0 -  7 map to CPR fusing revision 0 - 7 with speed bin fuse = 0.
  * Fuse combos 8 - 15 map to CPR fusing revision 0 - 7 with speed bin fuse = 1.
+ * Fuse combos 16 - 23 map to CPR fusing revision 0 - 7 with speed bin fuse = 2.
  */
-#define CPR3_MSM8996_HMSS_FUSE_COMBO_COUNT	16
+#define CPR3_MSM8996_HMSS_FUSE_COMBO_COUNT	24
 
 /*
  * Constants which define the name of each fuse corner.  Note that no actual
@@ -419,6 +420,9 @@ static const int msm8996_vdd_mx_fuse_ret_volt[] = {
 
 #define MSM8996_HMSS_AGING_SENSOR_ID		11
 #define MSM8996_HMSS_AGING_BYPASS_MASK0		(GENMASK(7, 0) & ~BIT(3))
+
+/* Use scaled gate count (GCNT) for aging measurements */
+#define MSM8996_HMSS_AGING_GCNT_SCALING_FACTOR	1500
 
 /**
  * cpr3_msm8996_hmss_use_voltage_offset_fuse() - return if this part utilizes
@@ -1501,7 +1505,7 @@ static int cpr3_hmss_init_regulator(struct cpr3_regulator *vreg)
 static int cpr3_hmss_init_aging(struct cpr3_controller *ctrl)
 {
 	struct cpr3_msm8996_hmss_fuses *fuse = NULL;
-	struct cpr3_regulator *vreg;
+	struct cpr3_regulator *vreg = NULL;
 	u32 aging_ro_scale;
 	int i, j, rc;
 
@@ -1541,6 +1545,8 @@ static int cpr3_hmss_init_aging(struct cpr3_controller *ctrl)
 	ctrl->aging_sensor->sensor_id = MSM8996_HMSS_AGING_SENSOR_ID;
 	ctrl->aging_sensor->bypass_mask[0] = MSM8996_HMSS_AGING_BYPASS_MASK0;
 	ctrl->aging_sensor->ro_scale = aging_ro_scale;
+	ctrl->aging_gcnt_scaling_factor
+				= MSM8996_HMSS_AGING_GCNT_SCALING_FACTOR;
 
 	ctrl->aging_sensor->init_quot_diff
 		= cpr3_convert_open_loop_voltage_fuse(0,
@@ -1659,20 +1665,29 @@ static int cpr3_hmss_init_controller(struct cpr3_controller *ctrl)
 	return 0;
 }
 
-static int cpr3_hmss_regulator_suspend(struct platform_device *pdev,
-				pm_message_t state)
+#if CONFIG_PM
+static int cpr3_hmss_regulator_suspend(struct device *dev)
 {
-	struct cpr3_controller *ctrl = platform_get_drvdata(pdev);
+	struct cpr3_controller *ctrl = dev_get_drvdata(dev);
 
 	return cpr3_regulator_suspend(ctrl);
 }
 
-static int cpr3_hmss_regulator_resume(struct platform_device *pdev)
+static int cpr3_hmss_regulator_resume(struct device *dev)
 {
-	struct cpr3_controller *ctrl = platform_get_drvdata(pdev);
+	struct cpr3_controller *ctrl = dev_get_drvdata(dev);
 
 	return cpr3_regulator_resume(ctrl);
 }
+#else
+#define cpr3_hmss_regulator_suspend NULL
+#define cpr3_hmss_regulator_resume NULL
+#endif
+
+static const struct dev_pm_ops cpr3_hmss_regulator_pm_ops = {
+	.suspend	= cpr3_hmss_regulator_suspend,
+	.resume		= cpr3_hmss_regulator_resume,
+};
 
 /* Data corresponds to the SoC revision */
 static const struct of_device_id cpr_regulator_match_table[] = {
@@ -1704,7 +1719,7 @@ static int cpr3_hmss_regulator_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *match;
 	struct cpr3_controller *ctrl;
-	struct cpr3_regulator *vreg;
+	struct cpr3_regulator *vreg = NULL;
 	int i, j, rc;
 
 	if (!dev->of_node) {
@@ -1805,11 +1820,10 @@ static struct platform_driver cpr3_hmss_regulator_driver = {
 		.name		= "qcom,cpr3-hmss-regulator",
 		.of_match_table	= cpr_regulator_match_table,
 		.owner		= THIS_MODULE,
+		.pm             = &cpr3_hmss_regulator_pm_ops,
 	},
 	.probe		= cpr3_hmss_regulator_probe,
 	.remove		= cpr3_hmss_regulator_remove,
-	.suspend	= cpr3_hmss_regulator_suspend,
-	.resume		= cpr3_hmss_regulator_resume,
 };
 
 static int cpr_regulator_init(void)

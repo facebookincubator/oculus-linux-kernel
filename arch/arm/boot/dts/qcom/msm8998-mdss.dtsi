@@ -212,7 +212,7 @@
 
 		qcom,mdss-pp-offsets {
 			qcom,mdss-sspp-mdss-igc-lut-off = <0x2000>;
-			qcom,mdss-sspp-vig-pcc-off = <0x1780>;
+			qcom,mdss-sspp-vig-pcc-off = <0x1b00>;
 			qcom,mdss-sspp-rgb-pcc-off = <0x380>;
 			qcom,mdss-sspp-dma-pcc-off = <0x380>;
 			qcom,mdss-lm-pgc-off = <0x3c0>;
@@ -335,6 +335,7 @@
 				qcom,supply-max-voltage = <0>;
 				qcom,supply-enable-load = <0>;
 				qcom,supply-disable-load = <0>;
+				qcom,supply-lp-mode-disable-allowed;
 			};
 		};
 
@@ -363,6 +364,7 @@
 				qcom,supply-max-voltage = <880000>;
 				qcom,supply-enable-load = <73400>;
 				qcom,supply-disable-load = <32>;
+				qcom,supply-lp-mode-disable-allowed;
 			};
 		};
 
@@ -406,7 +408,7 @@
 						00 00 00 00
 						00 00 00 00
 						00 00 00 00
-						00 20 00 80];
+						00 00 00 80];
 		};
 
 		mdss_dsi1: qcom,mdss_dsi_ctrl1@c996000 {
@@ -446,7 +448,7 @@
 						00 00 00 00
 						00 00 00 00
 						00 00 00 00
-						00 20 00 80];
+						00 00 00 80];
 		};
 	};
 
@@ -668,5 +670,3 @@
 		qcom,pluggable;
 	};
 };
-
-#include "msm8998-mdss-panels.dtsi"

@@ -244,8 +244,10 @@ static void sysrq_handle_showallcpus(int key)
 	 * architecture has no support for it:
 	 */
 	if (!trigger_all_cpu_backtrace()) {
-		struct pt_regs *regs = get_irq_regs();
+		struct pt_regs *regs = NULL;
 
+		if (in_irq())
+			regs = get_irq_regs();
 		if (regs) {
 			pr_info("CPU%d:\n", smp_processor_id());
 			show_regs(regs);
@@ -264,7 +266,10 @@ static struct sysrq_key_op sysrq_showallcpus_op = {
 
 static void sysrq_handle_showregs(int key)
 {
-	struct pt_regs *regs = get_irq_regs();
+	struct pt_regs *regs = NULL;
+
+	if (in_irq())
+		regs = get_irq_regs();
 	if (regs)
 		show_regs(regs);
 	perf_event_print_debug();
@@ -946,8 +951,8 @@ static const struct input_device_id sysrq_ids[] = {
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 				INPUT_DEVICE_ID_MATCH_KEYBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
-		.keybit = { BIT_MASK(KEY_LEFTALT) },
+		.evbit = { [BIT_WORD(EV_KEY)] = BIT_MASK(EV_KEY) },
+		.keybit = { [BIT_WORD(KEY_LEFTALT)] = BIT_MASK(KEY_LEFTALT) },
 	},
 	{ },
 };

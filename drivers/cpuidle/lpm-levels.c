@@ -36,6 +36,7 @@
 #include <linux/moduleparam.h>
 #include <linux/sched.h>
 #include <linux/cpu_pm.h>
+#include <linux/arm-smccc.h>
 #include <soc/qcom/spm.h>
 #include <soc/qcom/pm.h>
 #include <soc/qcom/rpm-notifier.h>
@@ -164,13 +165,13 @@ s32 msm_cpuidle_get_deep_idle_latency(void)
 void lpm_suspend_wake_time(uint64_t wakeup_time)
 {
 	if (wakeup_time <= 0) {
-		suspend_wake_time = msm_pm_sleep_time_override;
+		suspend_wake_time = msm_pm_sleep_time_override * MSEC_PER_SEC;
 		return;
 	}
 
 	if (msm_pm_sleep_time_override &&
 		(msm_pm_sleep_time_override < wakeup_time))
-		suspend_wake_time = msm_pm_sleep_time_override;
+		suspend_wake_time = msm_pm_sleep_time_override * MSEC_PER_SEC;
 	else
 		suspend_wake_time = wakeup_time;
 }
@@ -363,6 +364,7 @@ static int lpm_cpu_callback(struct notifier_block *cpu_nb,
 }
 
 #ifdef CONFIG_ARM_PSCI
+
 static int __init set_cpuidle_ops(void)
 {
 	int ret = 0, cpu;
@@ -376,6 +378,7 @@ static int __init set_cpuidle_ops(void)
 exit:
 	return ret;
 }
+
 #endif
 
 static enum hrtimer_restart lpm_hrtimer_cb(struct hrtimer *h)
@@ -691,22 +694,21 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	int best_level = -1;
 	uint32_t latency_us = pm_qos_request_for_cpu(PM_QOS_CPU_DMA_LATENCY,
 							dev->cpu);
-	uint32_t sleep_us =
-		(uint32_t)(ktime_to_us(tick_nohz_get_sleep_length()));
+	s64 sleep_us = ktime_to_us(tick_nohz_get_sleep_length());
 	uint32_t modified_time_us = 0;
 	uint32_t next_event_us = 0;
 	int i, idx_restrict;
 	uint32_t lvl_latency_us = 0;
 	uint64_t predicted = 0;
 	uint32_t htime = 0, idx_restrict_time = 0;
-	uint32_t next_wakeup_us = sleep_us;
+	uint32_t next_wakeup_us = (uint32_t)sleep_us;
 	uint32_t *min_residency = get_per_cpu_min_residency(dev->cpu);
 	uint32_t *max_residency = get_per_cpu_max_residency(dev->cpu);
 
 	if (!cpu)
 		return -EINVAL;
 
-	if (sleep_disabled && !cpu_isolated(dev->cpu))
+	if ((sleep_disabled && !cpu_isolated(dev->cpu)) || sleep_us  < 0)
 		return 0;
 
 	idx_restrict = cpu->nlevels + 1;
@@ -747,8 +749,8 @@ static int cpu_power_select(struct cpuidle_device *dev,
 			if (next_wakeup_us > max_residency[i]) {
 				predicted = lpm_cpuidle_predict(dev, cpu,
 					&idx_restrict, &idx_restrict_time);
-				if (predicted < min_residency[i])
-					predicted = 0;
+				if (predicted && (predicted < min_residency[i]))
+					predicted = min_residency[i];
 			} else
 				invalidate_predict_history(dev);
 		}
@@ -818,7 +820,7 @@ static uint64_t get_cluster_sleep_time(struct lpm_cluster *cluster,
 		if (!suspend_wake_time)
 			return ~0ULL;
 		else
-			return USEC_PER_SEC * suspend_wake_time;
+			return USEC_PER_MSEC * suspend_wake_time;
 	}
 
 	cpumask_and(&online_cpus_in_cluster,
@@ -1452,7 +1454,6 @@ unlock_and_return:
 }
 
 #if !defined(CONFIG_CPU_V7)
-asmlinkage int __invoke_psci_fn_smc(u64, u64, u64, u64);
 bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
 {
 	/*
@@ -1705,7 +1706,8 @@ static int cluster_cpuidle_register(struct lpm_cluster *cl)
 		struct cpuidle_state *st = &cl->drv->states[i];
 		struct lpm_cpu_level *cpu_level = &cl->cpu->levels[i];
 		snprintf(st->name, CPUIDLE_NAME_LEN, "C%u\n", i);
-		snprintf(st->desc, CPUIDLE_DESC_LEN, cpu_level->name);
+		snprintf(st->desc, CPUIDLE_DESC_LEN, "%s",
+			cpu_level->name);
 		st->flags = 0;
 		st->exit_latency = cpu_level->pwr.latency_us;
 		st->power_usage = cpu_level->pwr.ss_power;

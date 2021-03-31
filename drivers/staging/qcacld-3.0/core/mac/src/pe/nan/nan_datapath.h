@@ -1,7 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,11 +25,13 @@
 #ifndef __MAC_NAN_DATAPATH_H
 #define __MAC_NAN_DATAPATH_H
 
-#ifdef WLAN_FEATURE_NAN_DATAPATH
+#if defined(WLAN_FEATURE_NAN_DATAPATH) || defined(WLAN_FEATURE_NAN_CONVERGENCE)
 
 #include "sir_common.h"
 #include "ani_global.h"
 #include "sir_params.h"
+
+struct peer_nan_datapath_map;
 
 /**
  * struct ndp_peer_node - structure for holding per-peer context
@@ -56,7 +56,7 @@
  * @ht_mimo_ps_state: MIMO power state
  * @ht_ampdu_density: AMPDU density
  * @ht_max_rxampdu_factor: receieve AMPDU factor
- * @ht_max_amsdu_len: Max AMSDU lengh supported
+ * @ht_max_amsdu_len: Max AMSDU length supported
  * @ht_supp_chan_widthset: Supported channel widthset
  * @ht_ldpc_capable: LDPC capable
  * @heartbeat_failure: heart beat failure indication flag
@@ -100,13 +100,8 @@ struct ndp_peer_node {
 #endif
 };
 
-/* Function to process NDP requests */
-QDF_STATUS lim_handle_ndp_request_message(tpAniSirGlobal mac_ctx,
-					tpSirMsgQ msg);
-/* Function to process NDP events */
-QDF_STATUS lim_handle_ndp_event_message(tpAniSirGlobal mac_ctx, cds_msg_t *msg);
 void lim_process_ndi_mlm_add_bss_rsp(tpAniSirGlobal mac_ctx,
-				     tpSirMsgQ lim_msg_q,
+				     struct scheduler_msg *lim_msg_q,
 				     tpPESession session_entry);
 /* Handler for DEL BSS resp for NDI interface */
 void lim_ndi_del_bss_rsp(tpAniSirGlobal  mac_ctx,
@@ -115,29 +110,23 @@ void lim_ndi_del_bss_rsp(tpAniSirGlobal  mac_ctx,
 void lim_ndp_add_sta_rsp(tpAniSirGlobal mac_ctx, tpPESession session_entry,
 			 tAddStaParams *add_sta_rsp);
 
-void lim_process_ndi_del_sta_rsp(tpAniSirGlobal mac_ctx, tpSirMsgQ lim_msg,
-						tpPESession pe_session);
+void lim_process_ndi_del_sta_rsp(tpAniSirGlobal mac_ctx,
+				 struct scheduler_msg *lim_msg,
+				 tpPESession pe_session);
+
+QDF_STATUS lim_add_ndi_peer_converged(uint32_t vdev_id,
+				struct qdf_mac_addr peer_mac_addr);
+
+void lim_ndp_delete_peers_converged(struct peer_nan_datapath_map *ndp_map,
+				    uint8_t num_peers);
+
+void lim_ndp_delete_peers_by_addr_converged(uint8_t vdev_id,
+					struct qdf_mac_addr peer_ndi_mac_addr);
 
 #else
-
-/* Function to process NDP requests */
-static inline QDF_STATUS lim_handle_ndp_request_message(tpAniSirGlobal mac_ctx,
-					tpSirMsgQ msg)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-/* Function to process NDP events */
-static inline QDF_STATUS lim_handle_ndp_event_message(tpAniSirGlobal mac_ctx,
-						      cds_msg_t *msg)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-/* Function to process NDP events */
 static inline void lim_process_ndi_mlm_add_bss_rsp(tpAniSirGlobal mac_ctx,
-						   tpSirMsgQ lim_msg_q,
-						   tpPESession session_entry)
+					struct scheduler_msg *lim_msg_q,
+					tpPESession session_entry)
 {
 }
 static inline void lim_ndi_del_bss_rsp(tpAniSirGlobal mac_ctx,
@@ -145,7 +134,8 @@ static inline void lim_ndi_del_bss_rsp(tpAniSirGlobal mac_ctx,
 {
 }
 static inline void lim_process_ndi_del_sta_rsp(tpAniSirGlobal mac_ctx,
-				tpSirMsgQ lim_msg, tpPESession pe_session)
+				struct scheduler_msg *lim_msg,
+				tpPESession pe_session)
 {
 }
 
@@ -155,7 +145,13 @@ static inline void lim_ndp_add_sta_rsp(tpAniSirGlobal mac_ctx,
 {
 }
 
-#endif /* WLAN_FEATURE_NAN_DATAPATH */
+#endif /* WLAN_FEATURE_NAN_DATAPATH || WLAN_FEATURE_NAN_CONVERGENCE */
+
+static inline QDF_STATUS lim_handle_ndp_event_message(tpAniSirGlobal mac_ctx,
+						      struct scheduler_msg *msg)
+{
+	return QDF_STATUS_SUCCESS;
+}
 
 #endif /* __MAC_NAN_DATAPATH_H */
 

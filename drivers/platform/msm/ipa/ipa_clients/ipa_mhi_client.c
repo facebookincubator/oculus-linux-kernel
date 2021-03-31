@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -140,6 +140,25 @@ struct ipa_mhi_client_ctx {
 
 static struct ipa_mhi_client_ctx *ipa_mhi_client_ctx;
 
+#ifdef CONFIG_DEBUG_FS
+#define IPA_MHI_MAX_MSG_LEN 512
+static char dbg_buff[IPA_MHI_MAX_MSG_LEN];
+static struct dentry *dent;
+
+static char *ipa_mhi_channel_state_str[] = {
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
+};
+
+#define MHI_CH_STATE_STR(state) \
+	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
+	ipa_mhi_channel_state_str[(state)] : \
+	"INVALID")
+
 static int ipa_mhi_read_write_host(enum ipa_mhi_dma_dir dir, void *dev_addr,
 	u64 host_addr, int size)
 {
@@ -213,25 +232,6 @@ fail_memcopy:
 			mem.phys_base);
 	return res;
 }
-
-#ifdef CONFIG_DEBUG_FS
-#define IPA_MHI_MAX_MSG_LEN 512
-static char dbg_buff[IPA_MHI_MAX_MSG_LEN];
-static struct dentry *dent;
-
-static char *ipa_mhi_channel_state_str[] = {
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
-};
-
-#define MHI_CH_STATE_STR(state) \
-	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
-	ipa_mhi_channel_state_str[(state)] : \
-	"INVALID")
 
 static int ipa_mhi_print_channel_info(struct ipa_mhi_channel_ctx *channel,
 	char *buff, int len)
@@ -459,11 +459,6 @@ static void ipa_mhi_debugfs_init(void)
 	IPA_MHI_FUNC_EXIT();
 	return;
 fail:
-	debugfs_remove_recursive(dent);
-}
-
-static void ipa_mhi_debugfs_destroy(void)
-{
 	debugfs_remove_recursive(dent);
 }
 
@@ -1064,6 +1059,7 @@ static void ipa_mhi_gsi_ev_err_cb(struct gsi_evt_err_notify *notify)
 		IPA_MHI_ERR("Unexpected err evt: %d\n", notify->evt_id);
 	}
 	IPA_MHI_ERR("err_desc=0x%x\n", notify->err_desc);
+	ipa_assert();
 }
 
 static void ipa_mhi_gsi_ch_err_cb(struct gsi_chan_err_notify *notify)
@@ -1095,6 +1091,7 @@ static void ipa_mhi_gsi_ch_err_cb(struct gsi_chan_err_notify *notify)
 		IPA_MHI_ERR("Unexpected err evt: %d\n", notify->evt_id);
 	}
 	IPA_MHI_ERR("err_desc=0x%x\n", notify->err_desc);
+	ipa_assert();
 }
 
 
@@ -2049,6 +2046,8 @@ static int ipa_mhi_suspend_dl(bool force)
 	if (ipa_get_transport_type() == IPA_TRANSPORT_TYPE_GSI)
 		ipa_mhi_update_host_ch_state(true);
 
+	return 0;
+
 fail_stop_event_update_dl_channel:
 		ipa_mhi_resume_channels(true,
 				ipa_mhi_client_ctx->dl_channels);
@@ -2313,6 +2312,11 @@ int ipa_mhi_destroy_all_channels(void)
 
 	IPA_MHI_FUNC_EXIT();
 	return 0;
+}
+
+static void ipa_mhi_debugfs_destroy(void)
+{
+	debugfs_remove_recursive(dent);
 }
 
 /**

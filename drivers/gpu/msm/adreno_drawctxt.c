@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2017,2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -301,6 +301,7 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 	/* Give the bad news to everybody waiting around */
 	wake_up_all(&drawctxt->waiting);
 	wake_up_all(&drawctxt->wq);
+	wake_up_all(&drawctxt->timeout);
 }
 
 /*
@@ -320,6 +321,27 @@ static inline void _set_context_priority(struct adreno_context *drawctxt)
 	drawctxt->base.priority =
 		(drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) >>
 		KGSL_CONTEXT_PRIORITY_SHIFT;
+}
+
+static inline bool _is_current_uid_privileged(struct kgsl_device *device)
+{
+	struct kgsl_privileged_uid_node *entry;
+	kuid_t uid;
+
+	/*
+	 * If the privileged UID list is empty, then all UIDs should be
+	 * considered privileged for the purposes of allowing high-priority
+	 * contexts.
+	 */
+	if (list_empty(&device->privileged_uid_list))
+		return true;
+
+	uid = current_uid();
+	list_for_each_entry(entry, &device->privileged_uid_list, node)
+		if (entry->uid == uid.val)
+			return true;
+
+	return false;
 }
 
 /**
@@ -344,6 +366,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 		KGSL_CONTEXT_PER_CONTEXT_TS |
 		KGSL_CONTEXT_USER_GENERATED_TS |
 		KGSL_CONTEXT_NO_FAULT_TOLERANCE |
+		KGSL_CONTEXT_INVALIDATE_ON_FAULT |
 		KGSL_CONTEXT_CTX_SWITCH |
 		KGSL_CONTEXT_PRIORITY_MASK |
 		KGSL_CONTEXT_TYPE_MASK |
@@ -391,6 +414,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	spin_lock_init(&drawctxt->lock);
 	init_waitqueue_head(&drawctxt->wq);
 	init_waitqueue_head(&drawctxt->waiting);
+	init_waitqueue_head(&drawctxt->timeout);
 
 	/* Set the context priority */
 	_set_context_priority(drawctxt);
@@ -398,7 +422,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	/*
 	 * If the TID of the caller matches privileged_tid and it's requesting
 	 * a high-priority context, elevate it to RB[0]. If the UID of the
-	 * caller matches privileged_uid then allow it to get a high-priority
+	 * caller is in privileged_uid_list then allow it to get a high-priority
 	 * context. If neither of these cases are true then restrict the
 	 * context to medium-priority at most.
 	 */
@@ -407,9 +431,8 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	    drawctxt->base.priority == KGSL_CONTEXT_PRIORITY_HIGH) {
 		/* Elevate this TID's context from high to max priority */
 		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MAX;
-	} else if (adreno_dev->dev.privileged_uid != (uid_t)-1 &&
-	           adreno_dev->dev.privileged_uid != (current_uid()).val &&
-	           drawctxt->base.priority < KGSL_CONTEXT_PRIORITY_MED) {
+	} else if (!_is_current_uid_privileged(&adreno_dev->dev) &&
+		   drawctxt->base.priority < KGSL_CONTEXT_PRIORITY_MED) {
 		/* Block out this UID's context from getting high+ priority */
 		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MED;
 	}
@@ -527,20 +550,32 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 		drawctxt->internal_timestamp, 30 * 1000);
 
 	/*
-	 * If the wait for global fails due to timeout then nothing after this
-	 * point is likely to work very well - Get GPU snapshot and BUG_ON()
-	 * so we can take advantage of the debug tools to figure out what the
-	 * h - e - double hockey sticks happened. If EAGAIN error is returned
+	 * If the wait for global fails due to timeout then mark it as
+	 * context detach timeout fault and schedule dispatcher to kick
+	 * in GPU recovery. For a ADRENO_CTX_DETATCH_TIMEOUT_FAULT we clear
+	 * the policy and invalidate the context. If EAGAIN error is returned
 	 * then recovery will kick in and there will be no more commands in the
-	 * RB pipe from this context which is waht we are waiting for, so ignore
-	 * -EAGAIN error
+	 * RB pipe from this context which is what we are waiting for, so ignore
+	 * -EAGAIN error.
 	 */
 	if (ret && ret != -EAGAIN) {
-		KGSL_DRV_ERR(device, "Wait for global ts=%d type=%d error=%d\n",
-				drawctxt->internal_timestamp,
+		KGSL_DRV_ERR(device,
+				"Wait for global ctx=%d ts=%d type=%d error=%d\n",
+				drawctxt->base.id, drawctxt->internal_timestamp,
 				drawctxt->type, ret);
-		device->force_panic = 1;
-		kgsl_device_snapshot(device, context);
+
+		adreno_set_gpu_fault(adreno_dev,
+				ADRENO_CTX_DETATCH_TIMEOUT_FAULT);
+		mutex_unlock(&device->mutex);
+
+		/* Schedule dispatcher to kick in recovery */
+		adreno_dispatcher_schedule(device);
+
+		/* Wait for context to be invalidated and release context */
+		ret = wait_event_interruptible_timeout(drawctxt->timeout,
+					kgsl_context_invalid(&drawctxt->base),
+					msecs_to_jiffies(5000));
+		return;
 	}
 
 	kgsl_sharedmem_writel(device, &device->memstore,

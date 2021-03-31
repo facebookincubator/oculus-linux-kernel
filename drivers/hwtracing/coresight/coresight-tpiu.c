@@ -45,8 +45,12 @@
 #define TPIU_ITATBCTR0		0xef8
 
 /** register definition **/
+/* FFSR - 0x300 */
+#define FFSR_FT_STOPPED_BIT	1
 /* FFCR - 0x304 */
+#define FFCR_FON_MAN_BIT	6
 #define FFCR_FON_MAN		BIT(6)
+#define FFCR_STOP_FI		BIT(12)
 
 /**
  * @base:	memory mapped base address for this component.
@@ -85,10 +89,14 @@ static void tpiu_disable_hw(struct tpiu_drvdata *drvdata)
 {
 	CS_UNLOCK(drvdata->base);
 
-	/* Clear formatter controle reg. */
-	writel_relaxed(0x0, drvdata->base + TPIU_FFCR);
+	/* Clear formatter and stop on flush */
+	writel_relaxed(FFCR_STOP_FI, drvdata->base + TPIU_FFCR);
 	/* Generate manual flush */
-	writel_relaxed(FFCR_FON_MAN, drvdata->base + TPIU_FFCR);
+	writel_relaxed(FFCR_STOP_FI | FFCR_FON_MAN, drvdata->base + TPIU_FFCR);
+	/* Wait for flush to complete */
+	coresight_timeout(drvdata->base, TPIU_FFCR, FFCR_FON_MAN_BIT, 0);
+	/* Wait for formatter to stop */
+	coresight_timeout(drvdata->base, TPIU_FFSR, FFSR_FT_STOPPED_BIT, 1);
 
 	CS_LOCK(drvdata->base);
 }
@@ -185,14 +193,6 @@ static int tpiu_probe(struct amba_device *adev, const struct amba_id *id)
 	return 0;
 }
 
-static int tpiu_remove(struct amba_device *adev)
-{
-	struct tpiu_drvdata *drvdata = amba_get_drvdata(adev);
-
-	coresight_unregister(drvdata->csdev);
-	return 0;
-}
-
 #ifdef CONFIG_PM
 static int tpiu_runtime_suspend(struct device *dev)
 {
@@ -236,9 +236,9 @@ static struct amba_driver tpiu_driver = {
 		.name	= "coresight-tpiu",
 		.owner	= THIS_MODULE,
 		.pm	= &tpiu_dev_pm_ops,
+		.suppress_bind_attrs = true,
 	},
 	.probe		= tpiu_probe,
-	.remove		= tpiu_remove,
 	.id_table	= tpiu_ids,
 };
 

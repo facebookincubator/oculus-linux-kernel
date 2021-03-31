@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,74 +10,9 @@
  * GNU General Public License for more details.
  */
 
-#include "dsi-panel-toshiba-720p-video.dtsi"
-#include "dsi-panel-sharp-dualmipi-wqxga-video.dtsi"
-#include "dsi-panel-nt35597-dualmipi-wqxga-video.dtsi"
-#include "dsi-panel-nt35597-dualmipi-wqxga-cmd.dtsi"
-#include "dsi-panel-nt35597-dsc-wqxga-video.dtsi"
-#include "dsi-panel-jdi-dualmipi-video.dtsi"
-#include "dsi-panel-jdi-dualmipi-cmd.dtsi"
-#include "dsi-panel-jdi-4k-dualmipi-video-nofbc.dtsi"
-#include "dsi-panel-sim-video.dtsi"
-#include "dsi-panel-sim-dualmipi-video.dtsi"
-#include "dsi-panel-sim-cmd.dtsi"
-#include "dsi-panel-sim-dualmipi-cmd.dtsi"
-#include "dsi-panel-nt35597-dsc-wqxga-cmd.dtsi"
-#include "dsi-panel-hx8379a-truly-fwvga-video.dtsi"
-#include "dsi-panel-r69007-dualdsi-wqxga-cmd.dtsi"
-#include "dsi-panel-jdi-1080p-video.dtsi"
-#include "dsi-panel-sharp-1080p-cmd.dtsi"
+#include "msm8996-mdss-panels.dtsi"
 
 &soc {
-	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <62000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <20>;
-		};
-
-		qcom,panel-supply-entry@1 {
-			reg = <1>;
-			qcom,supply-name = "lab";
-			qcom,supply-min-voltage = <4600000>;
-			qcom,supply-max-voltage = <6000000>;
-			qcom,supply-enable-load = <100000>;
-			qcom,supply-disable-load = <100>;
-		};
-
-		qcom,panel-supply-entry@2 {
-			reg = <2>;
-			qcom,supply-name = "ibb";
-			qcom,supply-min-voltage = <4600000>;
-			qcom,supply-max-voltage = <6000000>;
-			qcom,supply-enable-load = <100000>;
-			qcom,supply-disable-load = <100>;
-			qcom,supply-post-on-sleep = <20>;
-		};
-	};
-
-	dsi_panel_pwr_supply_no_labibb: dsi_panel_pwr_supply_no_labibb {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <62000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <20>;
-		};
-	};
-
 	dsi_panel_pwr_supply_vdd_no_labibb: dsi_panel_pwr_supply_vdd_no_labibb {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -108,8 +43,8 @@
 		label = "dsi_dual_sharp_video";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>;
-		qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+		qcom,dsi-ctrl = <&sde_dsi0 &sde_dsi1>;
+		qcom,dsi-phy = <&sde_dsi_phy0 &sde_dsi_phy1>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -122,9 +57,9 @@
 
 		qcom,dsi-panel = <&dsi_dual_sharp_video>;
 		vddio-supply = <&pm8994_l14>;
-		lab-supply = <&lab_regulator>;
-		ibb-supply = <&ibb_regulator>;
-		qcom,dsi-display-active;
+		/delete-property/ lab-supply;
+		/delete-property/ ibb-supply;
+		/delete-property/ qcom,dsi-display-active;
 	};
 
 	single_dsi_sim_vid: qcom,dsi-display@1 {
@@ -132,8 +67,8 @@
 		label = "single_dsi_sim";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		qcom,dsi-ctrl = <&sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -145,8 +80,8 @@
 
 		qcom,dsi-panel = <&dsi_sim_vid>;
 		vddio-supply = <&pm8994_l14>;
-		lab-supply = <&lab_regulator>;
-		ibb-supply = <&ibb_regulator>;
+		/delete-property/ lab-supply;
+		/delete-property/ ibb-supply;
 	};
 
 	dsi_toshiba_720p_vid: qcom,dsi-display@2 {
@@ -154,8 +89,8 @@
 		label = "single_dsi_toshiba_720p";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		qcom,dsi-ctrl = <&sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -175,8 +110,8 @@
 		label = "single_dsi_jdi_1080p";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		qcom,dsi-ctrl = <&sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -194,8 +129,8 @@
 		label = "single_dsi_sharp_1080p";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		qcom,dsi-ctrl = <&sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -207,8 +142,8 @@
 		qcom,dsi-panel = <&dsi_sharp_1080_cmd>;
 		vddio-supply = <&pm8994_l14>;
 		vdd-supply = <&pm8994_l19>;
-		lab-supply = <&lab_regulator>;
-		ibb-supply = <&ibb_regulator>;
+		/delete-property/ lab-supply;
+		/delete-property/ ibb-supply;
 	};
 
 	sde_wb: qcom,wb-display@0 {
@@ -223,8 +158,8 @@
 		qcom,display-type = "primary";
 
 		/* dsi1/dsi0 swapped due to IMGSWAP */
-		qcom,dsi-ctrl = <&mdss_dsi1 &mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+		qcom,dsi-ctrl = <&sde_dsi1 &sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0 &sde_dsi_phy1>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -236,8 +171,8 @@
 
 		qcom,dsi-panel = <&dsi_dual_nt35597_cmd>;
 		vddio-supply = <&pm8994_l14>;
-		lab-supply = <&lab_regulator>;
-		ibb-supply = <&ibb_regulator>;
+		/delete-property/ lab-supply;
+		/delete-property/ ibb-supply;
 	};
 
 	dsi_dual_nt35597_video_1: qcom,dsi-display@6 {
@@ -245,8 +180,8 @@
 		label = "dsi_dual_nt35597_video";
 		qcom,display-type = "primary";
 
-		qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>;
-		qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+		qcom,dsi-ctrl = <&sde_dsi0 &sde_dsi1>;
+		qcom,dsi-phy = <&sde_dsi_phy0 &sde_dsi_phy1>;
 		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
 			 <&clock_mmss clk_ext_pclk0_clk_src>;
 		clock-names = "src_byte_clk", "src_pixel_clk";
@@ -258,14 +193,61 @@
 
 		qcom,dsi-panel = <&dsi_dual_nt35597_video>;
 		vddio-supply = <&pm8994_l14>;
-		lab-supply = <&lab_regulator>;
-		ibb-supply = <&ibb_regulator>;
+		/delete-property/ lab-supply;
+		/delete-property/ ibb-supply;
+	};
+
+	dsi_adv_7533_1: qcom,dsi-display@7 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_adv_7533_1";
+		qcom,display-type = "secondary";
+
+		qcom,dsi-ctrl = <&sde_dsi0>;
+		qcom,dsi-phy = <&sde_dsi_phy0>;
+		clocks = <&clock_mmss clk_ext_byte0_clk_src>,
+			<&clock_mmss clk_ext_pclk0_clk_src>;
+		clock-names = "src_byte_clk", "src_pixel_clk";
+
+		qcom,dsi-panel = <&dsi_adv7533_1080p>;
+		vddio-supply = <&pm8994_l14>;
+		qcom,bridge-index = <0>;
+	};
+
+	dsi_adv_7533_2: qcom,dsi-display@8 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_adv_7533_2";
+		qcom,display-type = "tertiary";
+
+		qcom,dsi-ctrl = <&sde_dsi1>;
+		qcom,dsi-phy = <&sde_dsi_phy1>;
+		clocks = <&clock_mmss clk_ext_byte1_clk_src>,
+			<&clock_mmss clk_ext_pclk1_clk_src>;
+		clock-names = "src_byte_clk", "src_pixel_clk";
+
+		qcom,dsi-panel = <&dsi_adv7533_1080p>;
+		vddio-supply = <&pm8994_l14>;
+		qcom,bridge-index = <1>;
+	};
+
+	msm_ext_disp: qcom,msm_ext_disp {
+		compatible = "qcom,msm-ext-disp";
+
+		ext_disp_audio_codec: qcom,msm-ext-disp-audio-codec-rx {
+			compatible = "qcom,msm-ext-disp-audio-codec-rx";
+			qcom,msm_ext_disp = <&msm_ext_disp>;
+		};
+	};
+
+	sde_hdmi: qcom,hdmi-display {
+		compatible = "qcom,hdmi-display";
+		label = "sde_hdmi";
+		qcom,display-type = "primary";
+		qcom,msm_ext_disp = <&msm_ext_disp>;
 	};
 };
 
-&mdss_mdp {
-	connectors = <&dsi_dual_sharp_video_1
-		&sde_wb>;
+&sde_kms {
+	connectors = <&sde_hdmi_tx &sde_hdmi &dsi_adv_7533_1 &dsi_adv_7533_2>;
 };
 
 &dsi_dual_sharp_video {

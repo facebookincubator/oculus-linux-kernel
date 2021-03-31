@@ -805,7 +805,7 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		if (err) {
 			pr_err("%s: failed to configure crypto: err %d tag %d\n",
 					mmc_hostname(mmc), err, tag);
-			goto out;
+			goto ice_err;
 		}
 	}
 
@@ -823,7 +823,7 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	if (err) {
 		pr_err("%s: %s: failed to setup tx desc: %d\n",
 		       mmc_hostname(mmc), __func__, err);
-		goto out;
+		goto desc_err;
 	}
 
 	cq_host->mrq_slot[tag] = mrq;
@@ -843,6 +843,22 @@ ring_doorbell:
 	/* Commit the doorbell write immediately */
 	wmb();
 
+	return err;
+
+desc_err:
+	if (cq_host->ops->crypto_cfg_end) {
+		err = cq_host->ops->crypto_cfg_end(mmc, mrq);
+		if (err) {
+			pr_err("%s: failed to end ice config: err %d tag %d\n",
+					mmc_hostname(mmc), err, tag);
+		}
+	}
+	if (!(cq_host->caps & CMDQ_CAP_CRYPTO_SUPPORT) &&
+			cq_host->ops->crypto_cfg_reset)
+		cq_host->ops->crypto_cfg_reset(mmc, tag);
+ice_err:
+	if (err)
+		cmdq_runtime_pm_put(cq_host);
 out:
 	return err;
 }
@@ -1102,12 +1118,17 @@ skip_cqterri:
 		 * before setting doorbell, hence one is not needed here.
 		 */
 		for_each_set_bit(tag, &comp_status, cq_host->num_slots) {
-			/* complete the corresponding mrq */
-			pr_debug("%s: completing tag -> %lu\n",
-				 mmc_hostname(mmc), tag);
-			MMC_TRACE(mmc, "%s: completing tag -> %lu\n",
-				__func__, tag);
+			mrq = get_req_by_tag(cq_host, tag);
+			if (!((mrq->cmd && mrq->cmd->error) ||
+					mrq->cmdq_req->resp_err ||
+					(mrq->data && mrq->data->error))) {
+				/* complete the corresponding mrq */
+				pr_debug("%s: completing tag -> %lu\n",
+					 mmc_hostname(mmc), tag);
+				MMC_TRACE(mmc, "%s: completing tag -> %lu\n",
+					__func__, tag);
 				cmdq_finish_data(mmc, tag);
+			}
 		}
 	}
 

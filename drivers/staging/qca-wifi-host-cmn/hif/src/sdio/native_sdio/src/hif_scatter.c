@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include <linux/mmc/card.h>
@@ -122,6 +113,9 @@ QDF_STATUS do_hif_read_write_scatter(struct hif_sdio_dev *device,
 	req_priv = busrequest->scatter_req;
 
 	A_ASSERT(req_priv != NULL);
+	if (!req_priv) {
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	req = req_priv->hif_scatter_req;
 
@@ -160,7 +154,8 @@ QDF_STATUS do_hif_read_write_scatter(struct hif_sdio_dev *device,
 		/* setup each sg entry */
 		if ((unsigned long)req->scatter_list[i].buffer & 0x3) {
 			/* note some scatter engines can handle unaligned
-			 * buffers, print this as informational only */
+			 * buffers, print this as informational only
+			 */
 			AR_DEBUG_PRINTF(ATH_DEBUG_SCATTER,
 				("HIF: (%s) Scatter Buf is unaligned 0x%lx\n",
 				 req->
@@ -225,7 +220,9 @@ QDF_STATUS do_hif_read_write_scatter(struct hif_sdio_dev *device,
 				 (unsigned long)busrequest, status));
 		/* complete the request */
 		A_ASSERT(req->completion_routine != NULL);
-		req->completion_routine(req);
+		if (req->completion_routine) {
+			req->completion_routine(req);
+		}
 	} else {
 		AR_DEBUG_PRINTF(ATH_DEBUG_SCATTER,
 			("HIF-SCATTER async_task upping busreq : 0x%lX (%d)\n",
@@ -257,6 +254,9 @@ static QDF_STATUS hif_read_write_scatter(struct hif_sdio_dev *device,
 	do {
 
 		A_ASSERT(req_priv != NULL);
+		if (!req_priv) {
+			break;
+		}
 
 		AR_DEBUG_PRINTF(ATH_DEBUG_SCATTER,
 			("HIF-SCATTER: total len: %d Scatter Entries: %d\n",
@@ -297,7 +297,8 @@ static QDF_STATUS hif_read_write_scatter(struct hif_sdio_dev *device,
 		}
 
 		/* add bus request to the async list for the async
-		 * I/O thread to process */
+		 * I/O thread to process
+		 */
 		add_to_async_list(device, req_priv->busrequest);
 
 		if (request & HIF_SYNCHRONOUS) {
@@ -313,15 +314,15 @@ static QDF_STATUS hif_read_write_scatter(struct hif_sdio_dev *device,
 				/* interrupted, exit */
 				status = QDF_STATUS_E_FAILURE;
 				break;
-			} else {
-				status = req->completion_status;
 			}
+			status = req->completion_status;
 		} else {
 			AR_DEBUG_PRINTF(ATH_DEBUG_SCATTER,
 				("HIF-SCATTER: queued async req: 0x%lX\n",
 					 (unsigned long)req_priv->busrequest));
 			/* wake thread, it will process and then take
-			 * care of the async callback */
+			 * care of the async callback
+			 */
 			up(&device->sem_async);
 			status = QDF_STATUS_SUCCESS;
 		}
@@ -356,8 +357,7 @@ QDF_STATUS setup_hif_scatter_support(struct hif_sdio_dev *device,
 	if (device->func->card->host->max_segs <
 	    MAX_SCATTER_ENTRIES_PER_REQ) {
 		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("host only supports scatter of : %d entries,"
-				 "need: %d\n",
+				("host only supports scatter of : %d entries, need: %d\n",
 				 device->func->card->host->max_segs,
 				 MAX_SCATTER_ENTRIES_PER_REQ));
 		status = QDF_STATUS_E_NOSUPPORT;
@@ -454,6 +454,9 @@ void cleanup_hif_scatter_resources(struct hif_sdio_dev *device)
 
 		req_priv = (struct HIF_SCATTER_REQ_PRIV *)req->hif_private[0];
 		A_ASSERT(req_priv != NULL);
+		if (!req_priv) {
+			continue;
+		}
 
 		if (req_priv->busrequest != NULL) {
 			req_priv->busrequest->scatter_req = NULL;

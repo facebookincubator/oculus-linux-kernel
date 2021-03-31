@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,9 +10,8 @@
  * GNU General Public License for more details.
  */
 
-#include "msm8998-pinctrl.dtsi"
 #include "msm8998-camera-sensor-cdp.dtsi"
-/ {
+&vendor {
 	bluetooth: bt_wcn3990 {
 		compatible = "qca,wcn3990";
 		qca,bt-vdd-io-supply = <&pm8998_s3>;
@@ -269,7 +268,7 @@
 	qcom,mdss-dsi-mode-sel-gpio-state = "dual_port";
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 	qcom,partial-update-enabled = "single_roi";
-	qcom,panel-roi-alignment = <720 128 720 128 1440 128>;
+	qcom,panel-roi-alignment = <720 256 720 256 1440 256>;
 };
 
 &dsi_dual_nt35597_truly_video {
@@ -380,6 +379,20 @@
 };
 
 &dsi_dual_sim_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&dsi_dual_sharp_wqhd_video {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&dsi_dual_sharp_wqhd_cmd {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
@@ -525,6 +538,10 @@
 };
 
 &snd_9335 {
+	qcom,mbhc-audio-jack-type = "6-pole-jack";
+};
+
+&snd_934x {
 	qcom,mbhc-audio-jack-type = "6-pole-jack";
 };
 

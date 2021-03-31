@@ -728,6 +728,11 @@ static int ufs_qcom_config_vreg(struct device *dev,
 
 	reg = vreg->reg;
 	if (regulator_count_voltages(reg) > 0) {
+		uA_load = on ? vreg->max_uA : 0;
+		ret = regulator_set_load(vreg->reg, uA_load);
+		if (ret)
+			goto out;
+
 		min_uV = on ? vreg->min_uV : 0;
 		ret = regulator_set_voltage(reg, min_uV, vreg->max_uV);
 		if (ret) {
@@ -735,11 +740,6 @@ static int ufs_qcom_config_vreg(struct device *dev,
 					__func__, vreg->name, ret);
 			goto out;
 		}
-
-		uA_load = on ? vreg->max_uA : 0;
-		ret = regulator_set_load(vreg->reg, uA_load);
-		if (ret)
-			goto out;
 	}
 out:
 	return ret;
@@ -783,22 +783,6 @@ static int ufs_qcom_disable_vreg(struct device *dev, struct ufs_vreg *vreg)
 	vreg->enabled = false;
 out:
 	return ret;
-}
-
-static void ufs_qcom_phy_off(struct ufs_hba *hba)
-{
-	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
-	struct phy *phy = host->generic_phy;
-
-	phy_power_off(phy);
-}
-
-static void ufs_qcom_phy_on(struct ufs_hba *hba)
-{
-	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
-	struct phy *phy = host->generic_phy;
-
-	phy_power_on(phy);
 }
 
 static int ufs_qcom_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
@@ -1286,7 +1270,7 @@ static int ufs_qcom_update_bus_bw_vote(struct ufs_qcom_host *host)
 	return 0;
 }
 
-static int ufs_qcom_set_bus_vote(struct ufs_qcom_host *host, int vote)
+static int ufs_qcom_set_bus_vote(struct ufs_hba *hba, bool on)
 {
 	return 0;
 }
@@ -1513,7 +1497,7 @@ static void ufs_qcom_advertise_quirks(struct ufs_hba *hba)
 		hba->quirks |= UFSHCD_QUIRK_BROKEN_LCC;
 	}
 
-	if (host->hw_ver.major >= 0x2) {
+	if (host->hw_ver.major == 0x2) {
 		hba->quirks |= UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION;
 
 		if (!ufs_qcom_cap_qunipro(host))
@@ -2432,7 +2416,8 @@ static int ufs_qcom_clk_scale_notify(struct ufs_hba *hba,
  */
 static int ufs_qcom_update_sec_cfg(struct ufs_hba *hba, bool restore_sec_cfg)
 {
-	int ret = 0, scm_ret = 0;
+	int ret = 0;
+	u64 scm_ret = 0;
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 
 	/* scm command buffer structrue */
@@ -2473,7 +2458,7 @@ static int ufs_qcom_update_sec_cfg(struct ufs_hba *hba, bool restore_sec_cfg)
 	cbuf.device_id = UFS_TZ_DEV_ID;
 	ret = scm_restore_sec_cfg(cbuf.device_id, cbuf.spare, &scm_ret);
 	if (ret || scm_ret) {
-		dev_dbg(hba->dev, "%s: failed, ret %d scm_ret %d\n",
+		dev_dbg(hba->dev, "%s: failed, ret %d scm_ret %llu\n",
 			__func__, ret, scm_ret);
 		if (!ret)
 			ret = scm_ret;
@@ -2482,7 +2467,7 @@ static int ufs_qcom_update_sec_cfg(struct ufs_hba *hba, bool restore_sec_cfg)
 	}
 
 out:
-	dev_dbg(hba->dev, "%s: ip: restore_sec_cfg %d, op: restore_sec_cfg %d, ret %d scm_ret %d\n",
+	dev_dbg(hba->dev, "%s: ip: restore_sec_cfg %d, op: restore_sec_cfg %d, ret %d scm_ret %llu\n",
 		__func__, restore_sec_cfg, host->sec_cfg_updated, ret, scm_ret);
 	return ret;
 }
@@ -2611,7 +2596,7 @@ bool ufs_qcom_testbus_cfg_is_ok(struct ufs_qcom_host *host,
 int ufs_qcom_testbus_config(struct ufs_qcom_host *host)
 {
 	int reg = 0;
-	int offset, ret = 0, testbus_sel_offset = 19;
+	int offset = 0, ret = 0, testbus_sel_offset = 19;
 	u32 mask = TEST_BUS_SUB_SEL_MASK;
 	unsigned long flags;
 	struct ufs_hba *hba;
@@ -2726,6 +2711,27 @@ static void ufs_qcom_print_unipro_testbus(struct ufs_hba *hba)
 	kfree(testbus);
 }
 
+static void ufs_qcom_print_utp_hci_testbus(struct ufs_hba *hba)
+{
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+	u32 *testbus = NULL;
+	int i, nminor = 32, testbus_len = nminor * sizeof(u32);
+
+	testbus = kmalloc(testbus_len, GFP_KERNEL);
+	if (!testbus)
+		return;
+
+	host->testbus.select_major = TSTBUS_UTP_HCI;
+	for (i = 0; i < nminor; i++) {
+		host->testbus.select_minor = i;
+		ufs_qcom_testbus_config(host);
+		testbus[i] = ufshcd_readl(hba, UFS_TEST_BUS);
+	}
+	print_hex_dump(KERN_ERR, "UTP_HCI_TEST_BUS ", DUMP_PREFIX_OFFSET,
+			16, 4, testbus, testbus_len, false);
+	kfree(testbus);
+}
+
 static void ufs_qcom_dump_dbg_regs(struct ufs_hba *hba, bool no_sleep)
 {
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
@@ -2743,6 +2749,8 @@ static void ufs_qcom_dump_dbg_regs(struct ufs_hba *hba, bool no_sleep)
 	ufs_qcom_testbus_read(hba);
 	usleep_range(1000, 1100);
 	ufs_qcom_print_unipro_testbus(hba);
+	usleep_range(1000, 1100);
+	ufs_qcom_print_utp_hci_testbus(hba);
 	usleep_range(1000, 1100);
 	ufs_qcom_phy_dbg_register_dump(phy);
 	usleep_range(1000, 1100);
@@ -2768,8 +2776,6 @@ static struct ufs_hba_variant_ops ufs_hba_qcom_vops = {
 	.suspend		= ufs_qcom_suspend,
 	.resume			= ufs_qcom_resume,
 	.full_reset		= ufs_qcom_full_reset,
-	.phy_off                = ufs_qcom_phy_off,
-	.phy_on                 = ufs_qcom_phy_on,
 	.update_sec_cfg		= ufs_qcom_update_sec_cfg,
 	.get_scale_down_gear	= ufs_qcom_get_scale_down_gear,
 	.set_bus_vote		= ufs_qcom_set_bus_vote,
@@ -2855,6 +2861,7 @@ static const struct of_device_id ufs_qcom_of_match[] = {
 	{ .compatible = "qcom,ufshc"},
 	{},
 };
+MODULE_DEVICE_TABLE(of, ufs_qcom_of_match);
 
 static const struct dev_pm_ops ufs_qcom_pm_ops = {
 	.suspend	= ufshcd_pltfrm_suspend,

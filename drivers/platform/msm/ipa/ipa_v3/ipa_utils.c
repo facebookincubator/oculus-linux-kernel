@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1024,7 +1024,7 @@ u8 ipa3_get_qmb_master_sel(enum ipa_client_type client)
 
 void ipa3_set_client(int index, enum ipacm_client_enum client, bool uplink)
 {
-	if (client >= IPACM_CLIENT_MAX || client < IPACM_CLIENT_USB) {
+	if (client > IPACM_CLIENT_MAX || client < IPACM_CLIENT_USB) {
 		IPAERR("Bad client number! client =%d\n", client);
 	} else if (index >= IPA3_MAX_NUM_PIPES || index < 0) {
 		IPAERR("Bad pipe index! index =%d\n", index);
@@ -3153,6 +3153,7 @@ int ipa3_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_cfg_ep_holb_by_client = ipa3_cfg_ep_holb_by_client;
 	api_ctrl->ipa_cfg_ep_ctrl = ipa3_cfg_ep_ctrl;
 	api_ctrl->ipa_add_hdr = ipa3_add_hdr;
+	api_ctrl->ipa_add_hdr_usr = ipa3_add_hdr_usr;
 	api_ctrl->ipa_del_hdr = ipa3_del_hdr;
 	api_ctrl->ipa_commit_hdr = ipa3_commit_hdr;
 	api_ctrl->ipa_reset_hdr = ipa3_reset_hdr;
@@ -3162,6 +3163,7 @@ int ipa3_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_add_hdr_proc_ctx = ipa3_add_hdr_proc_ctx;
 	api_ctrl->ipa_del_hdr_proc_ctx = ipa3_del_hdr_proc_ctx;
 	api_ctrl->ipa_add_rt_rule = ipa3_add_rt_rule;
+	api_ctrl->ipa_add_rt_rule_usr = ipa3_add_rt_rule_usr;
 	api_ctrl->ipa_del_rt_rule = ipa3_del_rt_rule;
 	api_ctrl->ipa_commit_rt = ipa3_commit_rt;
 	api_ctrl->ipa_reset_rt = ipa3_reset_rt;
@@ -3170,6 +3172,7 @@ int ipa3_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_query_rt_index = ipa3_query_rt_index;
 	api_ctrl->ipa_mdfy_rt_rule = ipa3_mdfy_rt_rule;
 	api_ctrl->ipa_add_flt_rule = ipa3_add_flt_rule;
+	api_ctrl->ipa_add_flt_rule_usr = ipa3_add_flt_rule_usr;
 	api_ctrl->ipa_del_flt_rule = ipa3_del_flt_rule;
 	api_ctrl->ipa_mdfy_flt_rule = ipa3_mdfy_flt_rule;
 	api_ctrl->ipa_commit_flt = ipa3_commit_flt;
@@ -3291,6 +3294,8 @@ int ipa3_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_tear_down_uc_offload_pipes =
 		ipa3_tear_down_uc_offload_pipes;
 	api_ctrl->ipa_get_pdev = ipa3_get_pdev;
+	api_ctrl->ipa_ntn_uc_reg_rdyCB = ipa3_ntn_uc_reg_rdyCB;
+	api_ctrl->ipa_ntn_uc_dereg_rdyCB = ipa3_ntn_uc_dereg_rdyCB;
 
 	return 0;
 }
@@ -3524,6 +3529,51 @@ void ipa3_suspend_apps_pipes(bool suspend)
 	}
 }
 
+int ipa3_allocate_dma_task_for_gsi(void)
+{
+	struct ipahal_imm_cmd_dma_task_32b_addr cmd = { 0 };
+
+	IPADBG("Allocate mem\n");
+	ipa3_ctx->dma_task_info.mem.size = IPA_GSI_CHANNEL_STOP_PKT_SIZE;
+	ipa3_ctx->dma_task_info.mem.base = dma_alloc_coherent(ipa3_ctx->pdev,
+		ipa3_ctx->dma_task_info.mem.size,
+		&ipa3_ctx->dma_task_info.mem.phys_base,
+		GFP_KERNEL);
+	if (!ipa3_ctx->dma_task_info.mem.base) {
+		IPAERR("no mem\n");
+		return -EFAULT;
+	}
+
+	cmd.flsh = 1;
+	cmd.size1 = ipa3_ctx->dma_task_info.mem.size;
+	cmd.addr1 = ipa3_ctx->dma_task_info.mem.phys_base;
+	cmd.packet_size = ipa3_ctx->dma_task_info.mem.size;
+	ipa3_ctx->dma_task_info.cmd_pyld = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_DMA_TASK_32B_ADDR, &cmd, false);
+	if (!ipa3_ctx->dma_task_info.cmd_pyld) {
+		IPAERR("failed to construct dma_task_32b_addr cmd\n");
+		dma_free_coherent(ipa3_ctx->pdev,
+			ipa3_ctx->dma_task_info.mem.size,
+			ipa3_ctx->dma_task_info.mem.base,
+			ipa3_ctx->dma_task_info.mem.phys_base);
+		memset(&ipa3_ctx->dma_task_info, 0,
+			sizeof(ipa3_ctx->dma_task_info));
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+void ipa3_free_dma_task_for_gsi(void)
+{
+	dma_free_coherent(ipa3_ctx->pdev,
+		ipa3_ctx->dma_task_info.mem.size,
+		ipa3_ctx->dma_task_info.mem.base,
+		ipa3_ctx->dma_task_info.mem.phys_base);
+	ipahal_destroy_imm_cmd(ipa3_ctx->dma_task_info.cmd_pyld);
+	memset(&ipa3_ctx->dma_task_info, 0, sizeof(ipa3_ctx->dma_task_info));
+}
+
 /**
  * ipa3_inject_dma_task_for_gsi()- Send DMA_TASK to IPA for GSI stop channel
  *
@@ -3532,41 +3582,12 @@ void ipa3_suspend_apps_pipes(bool suspend)
  */
 int ipa3_inject_dma_task_for_gsi(void)
 {
-	static struct ipa_mem_buffer mem = {0};
-	struct ipahal_imm_cmd_dma_task_32b_addr cmd = {0};
-	static struct ipahal_imm_cmd_pyld *cmd_pyld;
 	struct ipa3_desc desc = {0};
-
-	/* allocate the memory only for the very first time */
-	if (!mem.base) {
-		IPADBG("Allocate mem\n");
-		mem.size = IPA_GSI_CHANNEL_STOP_PKT_SIZE;
-		mem.base = dma_alloc_coherent(ipa3_ctx->pdev,
-			mem.size,
-			&mem.phys_base,
-			GFP_KERNEL);
-		if (!mem.base) {
-			IPAERR("no mem\n");
-			return -EFAULT;
-		}
-	}
-	if (!cmd_pyld) {
-		cmd.flsh = 1;
-		cmd.size1 = mem.size;
-		cmd.addr1 = mem.phys_base;
-		cmd.packet_size = mem.size;
-		cmd_pyld = ipahal_construct_imm_cmd(
-			IPA_IMM_CMD_DMA_TASK_32B_ADDR, &cmd, false);
-		if (!cmd_pyld) {
-			IPAERR("failed to construct dma_task_32b_addr cmd\n");
-			return -EFAULT;
-		}
-	}
 
 	desc.opcode = ipahal_imm_cmd_get_opcode_param(
 		IPA_IMM_CMD_DMA_TASK_32B_ADDR, 1);
-	desc.pyld = cmd_pyld->data;
-	desc.len = cmd_pyld->len;
+	desc.pyld = ipa3_ctx->dma_task_info.cmd_pyld->data;
+	desc.len = ipa3_ctx->dma_task_info.cmd_pyld->len;
 	desc.type = IPA_IMM_CMD_DESC;
 
 	IPADBG("sending 1B packet to IPA\n");
@@ -3843,4 +3864,20 @@ struct device *ipa3_get_pdev(void)
 		return NULL;
 
 	return ipa3_ctx->pdev;
+}
+
+bool ipa3_check_idr_if_freed(void *ptr)
+{
+	int id;
+	void *iter_ptr;
+
+	spin_lock(&ipa3_ctx->idr_lock);
+	idr_for_each_entry(&ipa3_ctx->ipa_idr, iter_ptr, id) {
+		if ((uintptr_t)ptr == (uintptr_t)iter_ptr) {
+			spin_unlock(&ipa3_ctx->idr_lock);
+			return false;
+		}
+	}
+	spin_unlock(&ipa3_ctx->idr_lock);
+	return true;
 }

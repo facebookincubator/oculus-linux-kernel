@@ -77,6 +77,7 @@ static int chacha20_simd(struct blkcipher_desc *desc, struct scatterlist *dst,
 
 	blkcipher_walk_init(&walk, dst, src, nbytes);
 	err = blkcipher_walk_virt_block(desc, &walk, CHACHA20_BLOCK_SIZE);
+	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	crypto_chacha20_init(state, crypto_blkcipher_ctx(desc->tfm), walk.iv);
 
@@ -125,7 +126,7 @@ static struct crypto_alg alg = {
 
 static int __init chacha20_simd_mod_init(void)
 {
-	if (!cpu_has_ssse3)
+	if (!boot_cpu_has(X86_FEATURE_SSSE3))
 		return -ENODEV;
 
 #ifdef CONFIG_AS_AVX2

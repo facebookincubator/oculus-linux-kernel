@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -92,7 +92,7 @@
 			};
 		};
 
-		smb138x_parallel_slave: qcom,smb138x-parallel-slave@1000 {
+		smb1381_charger: qcom,smb1381-charger@1000 {
 			compatible = "qcom,smb138x-parallel-slave";
 			qcom,pmic-revid = <&smb138x_revid>;
 			reg = <0x1000 0x700>;
@@ -215,6 +215,13 @@
 	status = "ok";
 };
 
+&sdc2_cd_on {
+	config {
+		/delete-property/ bias-pull-up;
+		bias-disable;
+	};
+};
+
 &sdhc_2 {
 	/* device core power supply */
 	vdd-supply = <&pm660l_l5>;
@@ -261,6 +268,16 @@
 };
 
 &pm660_gpios {
+	/* GPIO 11 for home key */
+	gpio@ca00 {
+		status = "ok";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+
 	/* GPIO 4 (NFC_CLK_REQ) */
 	gpio@c300 {
 		qcom,mode = <0>;
@@ -332,6 +349,10 @@
 };
 
 &soc {
+	qcom,msm-ssc-sensors {
+		compatible = "qcom,msm-ssc-sensors";
+	};
+
 	gpio_keys {
 		compatible = "gpio-keys";
 		input-name = "gpio-keys";
@@ -345,7 +366,6 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
-
 	};
 
 	hbtp {
@@ -365,17 +385,13 @@
 		qcom,afe-power-on-delay-us = <1000>;
 		qcom,afe-power-off-delay-us = <6>;
 	};
-
-	qcom,msm-ssc-sensors {
-		compatible = "qcom,msm-ssc-sensors";
-	};
 };
 
 &qusb_phy0 {
 	qcom,qusb-phy-init-seq = <0xf8 0x80
-				0x80 0x84
+				0x83 0x84
 				0x83 0x88
-				0xc7 0x8c
+				0xc3 0x8c
 				0x30 0x08
 				0x79 0x0c
 				0x21 0x10

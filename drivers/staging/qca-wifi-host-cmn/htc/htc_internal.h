@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _HTC_INTERNAL_H_
@@ -57,6 +48,12 @@ extern "C" {
 #define HTC_MAX_MSG_PER_BUNDLE_TX           32
 #endif
 
+#ifdef HIF_SDIO
+#define UPDATE_ALT_CREDIT(tar, val) (tar->AltDataCreditSize = (uint16_t) val)
+#else
+#define UPDATE_ALT_CREDIT(tar, val) /* no-op */
+#endif
+
 /*
  * HTC_MAX_TX_BUNDLE_SEND_LIMIT -
  * This value is in units of tx frame fragments.
@@ -69,7 +66,8 @@ extern "C" {
 
 #define HTC_PACKET_CONTAINER_ALLOCATION     32
 #define NUM_CONTROL_TX_BUFFERS              2
-#define HTC_CONTROL_BUFFER_SIZE             (HTC_MAX_CONTROL_MESSAGE_LENGTH + HTC_HDR_LENGTH)
+#define HTC_CONTROL_BUFFER_SIZE             (HTC_MAX_CONTROL_MESSAGE_LENGTH + \
+					     HTC_HDR_LENGTH)
 #define HTC_CONTROL_BUFFER_ALIGN            32
 #define HTC_TARGET_RESPONSE_POLL_MS         10
 #if !defined(A_SIMOS_DEVHOST)
@@ -80,24 +78,38 @@ extern "C" {
 
 #define HTC_SERVICE_TX_PACKET_TAG  HTC_TX_PACKET_TAG_INTERNAL
 
+#ifndef HTC_CREDIT_HISTORY_MAX
 #define HTC_CREDIT_HISTORY_MAX              1024
+#endif
 
 #define HTC_IS_EPPING_ENABLED(_x)           ((_x) == QDF_GLOBAL_EPPING_MODE)
 
-typedef enum {
+enum htc_credit_exchange_type {
 	HTC_REQUEST_CREDIT,
 	HTC_PROCESS_CREDIT_REPORT,
 	HTC_SUSPEND_ACK,
 	HTC_SUSPEND_NACK,
 	HTC_INITIAL_WAKE_UP,
-} htc_credit_exchange_type;
+};
 
-typedef struct {
-	htc_credit_exchange_type type;
-	uint64_t time;
-	uint32_t tx_credit;
-	uint32_t htc_tx_queue_depth;
-} HTC_CREDIT_HISTORY;
+static inline const char*
+htc_credit_exchange_type_str(enum htc_credit_exchange_type type)
+{
+	switch (type) {
+	case HTC_REQUEST_CREDIT:
+		return "HTC_REQUEST_CREDIT";
+	case HTC_PROCESS_CREDIT_REPORT:
+		return "HTC_PROCESS_CREDIT_REPORT";
+	case HTC_SUSPEND_ACK:
+		return "HTC_SUSPEND_ACK";
+	case HTC_SUSPEND_NACK:
+		return "HTC_SUSPEND_NACK";
+	case HTC_INITIAL_WAKE_UP:
+		return "HTC_INITIAL_WAKE_UP";
+	default:
+		return "Unknown htc_credit_exchange_type";
+	}
+}
 
 typedef struct _HTC_ENDPOINT {
 	HTC_ENDPOINT_ID Id;
@@ -107,34 +119,48 @@ typedef struct _HTC_ENDPOINT {
 	 */
 	HTC_SERVICE_ID service_id;
 
-	HTC_EP_CALLBACKS EpCallBacks;           /* callbacks associated with this endpoint */
-	HTC_PACKET_QUEUE TxQueue;               /* HTC frame buffer TX queue */
-	int MaxTxQueueDepth;            /* max depth of the TX queue before we need to
-					call driver's full handler */
-	int MaxMsgLength;               /* max length of endpoint message */
+	/* callbacks associated with this endpoint */
+	struct htc_ep_callbacks EpCallBacks;
+	/* HTC frame buffer TX queue */
+	HTC_PACKET_QUEUE TxQueue;
+	/* max depth of the TX queue before calling driver's full handler */
+	int MaxTxQueueDepth;
+	/* max length of endpoint message */
+	int MaxMsgLength;
 	uint8_t UL_PipeID;
 	uint8_t DL_PipeID;
-	int ul_is_polled;               /* Need to call HIF to get tx completion callbacks? */
+	/* Need to call HIF to get tx completion callbacks? */
+	int ul_is_polled;
 	qdf_timer_t ul_poll_timer;
 	int ul_poll_timer_active;
 	int ul_outstanding_cnt;
-	int dl_is_polled;               /* Need to call HIF to fetch rx?  (Not currently supported.) */
-#if 0                           /* not currently supported */
-	qdf_timer_t dl_poll_timer;
-#endif
+	/* Need to call HIF to fetch rx?  (Not currently supported.) */
+	int dl_is_polled;
+	/* not currently supported */
+	/* qdf_timer_t dl_poll_timer; */
 
-	HTC_PACKET_QUEUE TxLookupQueue;         /* lookup queue to match netbufs to htc packets */
-	HTC_PACKET_QUEUE RxBufferHoldQueue;             /* temporary hold queue for back compatibility */
-	uint8_t SeqNo;          /* TX seq no (helpful) for debugging */
-	qdf_atomic_t TxProcessCount;            /* serialization */
+	/* lookup queue to match netbufs to htc packets */
+	HTC_PACKET_QUEUE TxLookupQueue;
+	/* temporary hold queue for back compatibility */
+	HTC_PACKET_QUEUE RxBufferHoldQueue;
+	/* TX seq no (helpful) for debugging */
+	uint8_t SeqNo;
+	/* serialization */
+	qdf_atomic_t TxProcessCount;
 	struct _HTC_TARGET *target;
-	int TxCredits;          /* TX credits available on this endpoint */
-	int TxCreditSize;               /* size in bytes of each credit (set by HTC) */
-	int TxCreditsPerMaxMsg;         /* credits required per max message (precalculated) */
+	/* TX credits available on this endpoint */
+	int TxCredits;
+	/* size in bytes of each credit (set by HTC) */
+	int TxCreditSize;
+	/* credits required per max message (precalculated) */
+	int TxCreditsPerMaxMsg;
 #ifdef HTC_EP_STAT_PROFILING
-	HTC_ENDPOINT_STATS endpoint_stats;     /* endpoint statistics */
+	/* endpoint statistics */
+	struct htc_endpoint_stats endpoint_stats;
 #endif
 	bool TxCreditFlowEnabled;
+	bool async_update;  /* packets can be queued asynchronously */
+	qdf_spinlock_t lookup_queue_lock;
 } HTC_ENDPOINT;
 
 #ifdef HTC_EP_STAT_PROFILING
@@ -143,16 +169,17 @@ typedef struct _HTC_ENDPOINT {
 #define INC_HTC_EP_STAT(p, stat, count)
 #endif
 
-typedef struct {
+struct htc_service_tx_credit_allocation {
 	uint16_t service_id;
 	uint8_t CreditAllocation;
-} HTC_SERVICE_TX_CREDIT_ALLOCATION;
+};
 
 #define HTC_MAX_SERVICE_ALLOC_ENTRIES 8
 
 /* Error codes for HTC layer packet stats*/
 enum ol_ath_htc_pkt_ecodes {
-	GET_HTC_PKT_Q_FAIL = 0,         /* error- get packet at head of HTC_PACKET_Q */
+	/* error- get packet at head of HTC_PACKET_Q */
+	GET_HTC_PKT_Q_FAIL = 0,
 	HTC_PKT_Q_EMPTY,
 	HTC_SEND_Q_EMPTY
 };
@@ -166,15 +193,15 @@ typedef struct _HTC_TARGET {
 	qdf_spinlock_t HTCCreditLock;
 	uint32_t HTCStateFlags;
 	void *host_handle;
-	HTC_INIT_INFO HTCInitInfo;
-	HTC_PACKET *pHTCPacketStructPool;               /* pool of HTC packets */
+	struct htc_init_info HTCInitInfo;
+	HTC_PACKET *pHTCPacketStructPool; /* pool of HTC packets */
 	HTC_PACKET_QUEUE ControlBufferTXFreeList;
 	uint8_t CtrlResponseBuffer[HTC_MAX_CONTROL_MESSAGE_LENGTH];
 	int CtrlResponseLength;
 	qdf_event_t ctrl_response_valid;
 	bool CtrlResponseProcessing;
 	int TotalTransmitCredits;
-	HTC_SERVICE_TX_CREDIT_ALLOCATION
+	struct htc_service_tx_credit_allocation
 		ServiceTxAllocTable[HTC_MAX_SERVICE_ALLOC_ENTRIES];
 	int TargetCreditSize;
 #ifdef RX_SG_SUPPORT
@@ -192,12 +219,12 @@ typedef struct _HTC_TARGET {
 	qdf_work_t queue_kicker;
 
 #ifdef HIF_SDIO
-	A_UINT16 AltDataCreditSize;
+	uint16_t AltDataCreditSize;
 #endif
-	A_UINT32 avail_tx_credits;
+	uint32_t avail_tx_credits;
 #if defined(DEBUG_HL_LOGGING) && defined(CONFIG_HL_SUPPORT)
-	A_UINT32 rx_bundle_stats[HTC_MAX_MSG_PER_BUNDLE_RX];
-	A_UINT32 tx_bundle_stats[HTC_MAX_MSG_PER_BUNDLE_TX];
+	uint32_t rx_bundle_stats[HTC_MAX_MSG_PER_BUNDLE_RX];
+	uint32_t tx_bundle_stats[HTC_MAX_MSG_PER_BUNDLE_TX];
 #endif
 
 	uint32_t con_mode;
@@ -207,39 +234,37 @@ typedef struct _HTC_TARGET {
 	 * drop it. Besides, nodrop pkts have higher priority than normal pkts.
 	 */
 	A_BOOL is_nodrop_pkt;
+
+	/*
+	 * Number of WMI endpoints used.
+	 * Default value is 1. But it should be overidden after htc_create to
+	 * reflect the actual count.
+	 */
+	uint8_t wmi_ep_count;
+	/* Flag to indicate whether htc header length check is required */
+	bool htc_hdr_length_check;
 } HTC_TARGET;
 
-#if defined ENABLE_BUNDLE_TX
-#define HTC_TX_BUNDLE_ENABLED(target) (target->MaxMsgsPerHTCBundle > 1)
-#else
-#define HTC_TX_BUNDLE_ENABLED(target) 0
-#endif
-
-#if defined ENABLE_BUNDLE_RX
-#define HTC_RX_BUNDLE_ENABLED(target) (target->MaxMsgsPerHTCBundle > 1)
-#else
-#define HTC_RX_BUNDLE_ENABLED(target) 0
-#endif
-
-#define HTC_ENABLE_BUNDLE(target) (target->MaxMsgsPerHTCBundle > 1)
 
 #ifdef RX_SG_SUPPORT
 #define RESET_RX_SG_CONFIG(_target) \
+do { \
 	_target->ExpRxSgTotalLen = 0; \
 	_target->CurRxSgTotalLen = 0; \
-	_target->IsRxSgInprogress = false;
+	_target->IsRxSgInprogress = false; \
+} while (0)
 #endif
 
-#define HTC_STATE_STOPPING      (1 << 0)
-#define HTC_STOPPING(t)         ((t)->HTCStateFlags & HTC_STATE_STOPPING)
-#define LOCK_HTC(t)             qdf_spin_lock_bh(&(t)->HTCLock);
-#define UNLOCK_HTC(t)           qdf_spin_unlock_bh(&(t)->HTCLock);
-#define LOCK_HTC_RX(t)          qdf_spin_lock_bh(&(t)->HTCRxLock);
-#define UNLOCK_HTC_RX(t)        qdf_spin_unlock_bh(&(t)->HTCRxLock);
-#define LOCK_HTC_TX(t)          qdf_spin_lock_bh(&(t)->HTCTxLock);
-#define UNLOCK_HTC_TX(t)        qdf_spin_unlock_bh(&(t)->HTCTxLock);
-#define LOCK_HTC_CREDIT(t)      qdf_spin_lock_bh(&(t)->HTCCreditLock);
-#define UNLOCK_HTC_CREDIT(t)    qdf_spin_unlock_bh(&(t)->HTCCreditLock);
+#define HTC_STATE_STOPPING         (1 << 0)
+#define HTC_STOPPING(t)            ((t)->HTCStateFlags & HTC_STATE_STOPPING)
+#define LOCK_HTC(t)                qdf_spin_lock_bh(&(t)->HTCLock)
+#define UNLOCK_HTC(t)              qdf_spin_unlock_bh(&(t)->HTCLock)
+#define LOCK_HTC_RX(t)             qdf_spin_lock_bh(&(t)->HTCRxLock)
+#define UNLOCK_HTC_RX(t)           qdf_spin_unlock_bh(&(t)->HTCRxLock)
+#define LOCK_HTC_TX(t)             qdf_spin_lock_bh(&(t)->HTCTxLock)
+#define UNLOCK_HTC_TX(t)           qdf_spin_unlock_bh(&(t)->HTCTxLock)
+#define LOCK_HTC_EP_TX_LOOKUP(t)   qdf_spin_lock_bh(&(t)->lookup_queue_lock)
+#define UNLOCK_HTC_EP_TX_LOOKUP(t) qdf_spin_unlock_bh(&(t)->lookup_queue_lock)
 
 #define GET_HTC_TARGET_FROM_HANDLE(hnd) ((HTC_TARGET *)(hnd))
 
@@ -251,21 +276,19 @@ typedef struct _HTC_TARGET {
 #define OL_ATH_HTC_PKT_ERROR_COUNT_INCR(_target, _ecode)	\
 	do { \
 		if (_ecode == GET_HTC_PKT_Q_FAIL) \
-		(_target->htc_pkt_stats.htc_get_pkt_q_fail_count) += 1 \
-		; \
+		(_target->htc_pkt_stats.htc_get_pkt_q_fail_count) += 1; \
 		if (_ecode == HTC_PKT_Q_EMPTY) \
-		(_target->htc_pkt_stats.htc_pkt_q_empty_count) += 1 \
-		; \
+		(_target->htc_pkt_stats.htc_pkt_q_empty_count) += 1; \
 		if (_ecode == HTC_SEND_Q_EMPTY) \
-		(_target->htc_pkt_stats.htc_send_q_empty_count) += 1 \
-		; \
-	} while (0);
+		(_target->htc_pkt_stats.htc_send_q_empty_count) += 1; \
+	} while (0)
 /* internal HTC functions */
 
 QDF_STATUS htc_rx_completion_handler(void *Context, qdf_nbuf_t netbuf,
 				   uint8_t pipeID);
 QDF_STATUS htc_tx_completion_handler(void *Context, qdf_nbuf_t netbuf,
-				   unsigned int transferID, uint32_t toeplitz_hash_result);
+					unsigned int transferID,
+					uint32_t toeplitz_hash_result);
 
 HTC_PACKET *allocate_htc_bundle_packet(HTC_TARGET *target);
 void free_htc_bundle_packet(HTC_TARGET *target, HTC_PACKET *pPacket);
@@ -275,8 +298,21 @@ void free_htc_packet_container(HTC_TARGET *target, HTC_PACKET *pPacket);
 void htc_flush_rx_hold_queue(HTC_TARGET *target, HTC_ENDPOINT *pEndpoint);
 void htc_flush_endpoint_tx(HTC_TARGET *target, HTC_ENDPOINT *pEndpoint,
 			   HTC_TX_TAG Tag);
+
+/**
+ * htc_flush_endpoint_txlookupQ() - Flush EP's lookup queue
+ * @target: HTC target
+ * @endpoint_id: EP ID
+ * @call_ep_callback: whether to call EP tx completion callback
+ *
+ * Return: void
+ */
+void htc_flush_endpoint_txlookupQ(HTC_TARGET *target,
+				  HTC_ENDPOINT_ID endpoint_id,
+				  bool call_ep_callback);
+
 void htc_recv_init(HTC_TARGET *target);
-A_STATUS htc_wait_recv_ctrl_message(HTC_TARGET *target);
+QDF_STATUS htc_wait_recv_ctrl_message(HTC_TARGET *target);
 void htc_free_control_tx_packet(HTC_TARGET *target, HTC_PACKET *pPacket);
 HTC_PACKET *htc_alloc_control_tx_packet(HTC_TARGET *target);
 uint8_t htc_get_credit_allocation(HTC_TARGET *target, uint16_t service_id);
@@ -290,9 +326,6 @@ void htc_send_complete_check_cleanup(void *context);
 #ifdef FEATURE_RUNTIME_PM
 void htc_kick_queues(void *context);
 #endif
-
-void htc_credit_record(htc_credit_exchange_type type, uint32_t tx_credit,
-		       uint32_t htc_tx_queue_depth);
 
 static inline void htc_send_complete_poll_timer_stop(HTC_ENDPOINT *
 						     pEndpoint) {
@@ -309,9 +342,8 @@ static inline void htc_send_complete_poll_timer_start(HTC_ENDPOINT *
 	LOCK_HTC_TX(pEndpoint->target);
 	if (pEndpoint->ul_outstanding_cnt
 	    && !pEndpoint->ul_poll_timer_active) {
-		/*
-		   qdf_timer_start(
-		   &pEndpoint->ul_poll_timer, HTC_POLL_CLEANUP_PERIOD_MS);
+		/* qdf_timer_start(
+		 * &pEndpoint->ul_poll_timer, HTC_POLL_CLEANUP_PERIOD_MS);
 		 */
 		pEndpoint->ul_poll_timer_active = 1;
 	}
@@ -356,4 +388,19 @@ htc_send_complete_check(HTC_ENDPOINT *pEndpoint, int force) {
 #define ENABLE_BUNDLE_RX 1
 #endif
 #endif /*defined(HIF_SDIO) || defined(HIF_USB)*/
+
+#if defined ENABLE_BUNDLE_TX
+#define HTC_TX_BUNDLE_ENABLED(target) (target->MaxMsgsPerHTCBundle > 1)
+#else
+#define HTC_TX_BUNDLE_ENABLED(target) 0
+#endif
+
+#if defined ENABLE_BUNDLE_RX
+#define HTC_RX_BUNDLE_ENABLED(target) (target->MaxMsgsPerHTCBundle > 1)
+#else
+#define HTC_RX_BUNDLE_ENABLED(target) 0
+#endif
+
+#define HTC_ENABLE_BUNDLE(target) (target->MaxMsgsPerHTCBundle > 1)
+
 #endif /* !_HTC_HOST_INTERNAL_H_ */

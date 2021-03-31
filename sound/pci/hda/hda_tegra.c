@@ -249,10 +249,12 @@ static int hda_tegra_suspend(struct device *dev)
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct azx *chip = card->private_data;
 	struct hda_tegra *hda = container_of(chip, struct hda_tegra, chip);
+	struct hdac_bus *bus = azx_bus(chip);
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 
 	azx_stop_chip(chip);
+	synchronize_irq(bus->irq);
 	azx_enter_link_reset(chip);
 	hda_tegra_disable_clocks(hda);
 
@@ -464,6 +466,8 @@ static int hda_tegra_create(struct snd_card *card,
 	if (err < 0)
 		return err;
 
+	chip->bus.needs_damn_long_delay = 1;
+
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
 	if (err < 0) {
 		dev_err(card->dev, "Error creating device\n");
@@ -481,8 +485,7 @@ MODULE_DEVICE_TABLE(of, hda_tegra_match);
 
 static int hda_tegra_probe(struct platform_device *pdev)
 {
-	const unsigned int driver_flags = AZX_DCAPS_RIRB_DELAY |
-					  AZX_DCAPS_CORBRP_SELF_CLEAR;
+	const unsigned int driver_flags = AZX_DCAPS_CORBRP_SELF_CLEAR;
 	struct snd_card *card;
 	struct azx *chip;
 	struct hda_tegra *hda;

@@ -154,7 +154,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
-		return -ENODEV;
+		return irq;
 
 	/* Try to set 64-bit DMA first */
 	if (WARN_ON(!pdev->dev.dma_mask))
@@ -233,9 +233,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 
 	hcd_to_bus(xhci->shared_hcd)->skip_resume = true;
 
-	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
-		xhci->shared_hcd->can_do_streams = 1;
-
 	hcd->usb_phy = devm_usb_get_phy_by_phandle(&pdev->dev, "usb-phy", 0);
 	if (IS_ERR(hcd->usb_phy)) {
 		ret = PTR_ERR(hcd->usb_phy);
@@ -253,6 +250,9 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		goto disable_usb_phy;
 
 	device_wakeup_enable(&hcd->self.root_hub->dev);
+
+	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
+		xhci->shared_hcd->can_do_streams = 1;
 
 	ret = usb_add_hcd(xhci->shared_hcd, irq, IRQF_SHARED);
 	if (ret)
@@ -325,6 +325,34 @@ static int xhci_plat_remove(struct platform_device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int xhci_plat_suspend(struct device *dev)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+
+	if (!xhci)
+		return 0;
+
+	dev_dbg(dev, "xhci-plat PM suspend\n");
+
+	return xhci_suspend(xhci, true);
+}
+
+static int xhci_plat_resume(struct device *dev)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+
+	if (!xhci)
+		return 0;
+
+	dev_dbg(dev, "xhci-plat PM resume\n");
+
+	return (!hcd_to_bus(hcd)->skip_resume) ? xhci_resume(xhci, false) : 0;
+}
+#endif
+
 #ifdef CONFIG_PM
 static int xhci_plat_runtime_idle(struct device *dev)
 {
@@ -340,6 +368,39 @@ static int xhci_plat_runtime_idle(struct device *dev)
 	pm_runtime_mark_last_busy(dev);
 	pm_runtime_autosuspend(dev);
 	return -EBUSY;
+}
+
+static int xhci_plat_pm_freeze(struct device *dev)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+
+	if (!xhci)
+		return 0;
+
+	dev_dbg(dev, "xhci-plat freeze\n");
+
+	return xhci_suspend(xhci, false);
+}
+
+static int xhci_plat_pm_restore(struct device *dev)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(dev);
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	int ret;
+
+	if (!xhci)
+		return 0;
+
+	dev_dbg(dev, "xhci-plat restore\n");
+
+	ret = xhci_resume(xhci, true);
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+	pm_runtime_mark_last_busy(dev);
+
+	return ret;
 }
 
 static int xhci_plat_runtime_suspend(struct device *dev)
@@ -373,7 +434,11 @@ static int xhci_plat_runtime_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops xhci_plat_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(NULL, NULL)
+	.suspend	= xhci_plat_suspend,
+	.resume		= xhci_plat_resume,
+	.freeze		= xhci_plat_pm_freeze,
+	.restore	= xhci_plat_pm_restore,
+	.thaw		= xhci_plat_pm_restore,
 	SET_RUNTIME_PM_OPS(xhci_plat_runtime_suspend, xhci_plat_runtime_resume,
 			   xhci_plat_runtime_idle)
 };

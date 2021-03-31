@@ -6,7 +6,6 @@
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
-#include <asm/processor.h>
 #include <asm/apicdef.h>
 #include <linux/atomic.h>
 #include <asm/fixmap.h>
@@ -45,7 +44,7 @@ static inline void generic_apic_probe(void)
 
 #ifdef CONFIG_X86_LOCAL_APIC
 
-extern unsigned int apic_verbosity;
+extern int apic_verbosity;
 extern int local_apic_timer_c2_ok;
 
 extern int disable_apic;

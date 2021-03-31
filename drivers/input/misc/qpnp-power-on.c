@@ -32,8 +32,6 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/input/qpnp-power-on.h>
 #include <linux/power_supply.h>
-#include <linux/proc_fs.h>
-#include <linux/sysctl.h>
 
 #define PMIC_VER_8941           0x01
 #define PMIC_VERSION_REG        0x0105
@@ -230,10 +228,6 @@ module_param_named(
 	ship_mode_en, pon_ship_mode_en, int, 0600
 );
 
-/* ctl_table data pointers are const */
-static int sysctl_startup_reason;
-static int sysctl_shutdown_reason;
-
 static struct qpnp_pon *sys_reset_dev;
 static DEFINE_SPINLOCK(spon_list_slock);
 static LIST_HEAD(spon_dev_list);
@@ -345,9 +339,6 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 	int rc = 0;
 	struct qpnp_pon *pon = sys_reset_dev;
 
-	/* Only support 8 boot reasons */
-	reason &= 0x7;
-
 	if (!pon)
 		return 0;
 
@@ -356,10 +347,10 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 
 	if (is_pon_gen2(pon))
 		rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
-					   GENMASK(3, 1), (reason << 1));
+					   GENMASK(7, 1), (reason << 1));
 	else
 		rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
-					   GENMASK(3, 2), (reason << 2));
+					   GENMASK(7, 2), (reason << 2));
 
 	if (rc)
 		dev_err(&pon->pdev->dev,
@@ -368,29 +359,6 @@ int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 	return rc;
 }
 EXPORT_SYMBOL(qpnp_pon_set_restart_reason);
-
-
-int qpnp_pon_set_boot_chime_volume(uint8_t boot_volume)
-{
-	struct qpnp_pon *pon = sys_reset_dev;
-	int rc = 0;
-
-	if (!pon)
-		return 0;
-
-	/* Only numbers from 0 to 15 */
-	boot_volume &= 0xF;
-
-	rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon),
-				GENMASK(7, 4), (boot_volume << 4));
-
-	if (rc)
-		dev_err(&pon->pdev->dev,
-				"Unable to write to addr=%x, rc(%d)\n",
-				QPNP_PON_SOFT_RB_SPARE(pon), rc);
-	return rc;
-}
-EXPORT_SYMBOL(qpnp_pon_set_boot_chime_volume);
 
 /*
  * qpnp_pon_check_hard_reset_stored - Checks if the PMIC need to
@@ -2161,14 +2129,12 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 	index = ffs(pon_sts) - 1;
 	cold_boot = !qpnp_pon_is_warm_reset();
 	if (index >= ARRAY_SIZE(qpnp_pon_reason) || index < 0) {
-		sysctl_startup_reason = -1;
 		dev_info(&pon->pdev->dev,
 			"PMIC@SID%d Power-on reason: Unknown and '%s' boot\n",
 			to_spmi_device(pon->pdev->dev.parent)->usid,
 			 cold_boot ? "cold" : "warm");
 	} else {
 		pon->pon_trigger_reason = index;
-		sysctl_startup_reason = index;
 		dev_info(&pon->pdev->dev,
 			"PMIC@SID%d Power-on reason: %s and '%s' boot\n",
 			to_spmi_device(pon->pdev->dev.parent)->usid,
@@ -2194,13 +2160,11 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 	}
 	index = ffs(poff_sts) - 1 + reason_index_offset;
 	if (index >= ARRAY_SIZE(qpnp_poff_reason) || index < 0) {
-		sysctl_shutdown_reason = -1;
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Unknown power-off reason\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid);
 	} else {
 		pon->pon_power_off_reason = index;
-		sysctl_shutdown_reason = index;
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Power-off reason: %s\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid,
@@ -2433,55 +2397,14 @@ static struct platform_driver qpnp_pon_driver = {
 	.remove		= qpnp_pon_remove,
 };
 
-/* Place files in /proc/sys/kernel */
-static struct ctl_table pon_table[] = {
-	{
-		.procname  = "startup_reason",
-		.data    = &sysctl_startup_reason,
-		.maxlen      = sizeof(sysctl_startup_reason),
-		.mode    = 0444,
-		.proc_handler  = proc_dointvec,
-	},
-	{
-		.procname  = "shutdown_reason",
-		.data    = &sysctl_shutdown_reason,
-		.maxlen    = sizeof(sysctl_shutdown_reason),
-		.mode    = 0444,
-		.proc_handler  = proc_dointvec,
-	},
-	{ }
-};
-
-static struct ctl_table pon_root_table[] = {
-	{
-		.procname  = "kernel",
-		.maxlen    = 0,
-		.mode    = 0555,
-		.child    = pon_table,
-	},
-	{ }
-};
-static struct ctl_table_header *pon_sysctl_header;
-
 static int __init qpnp_pon_init(void)
 {
-	sysctl_startup_reason = -1;
-	sysctl_shutdown_reason = -1;
-
-	pon_sysctl_header = register_sysctl_table(pon_root_table);
-	if (!pon_sysctl_header) {
-		pr_err("qpnp-power-on: Unable to register startup/shutdown_reason sysctls\n");
-		return -ENOMEM;
-	}
-
 	return platform_driver_register(&qpnp_pon_driver);
 }
 subsys_initcall(qpnp_pon_init);
 
 static void __exit qpnp_pon_exit(void)
 {
-	unregister_sysctl_table(pon_sysctl_header);
-
 	return platform_driver_unregister(&qpnp_pon_driver);
 }
 module_exit(qpnp_pon_exit);

@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2012, 2014-2017 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -48,10 +39,6 @@ struct ol_rx_cached_buf {
 };
 
 struct txrx_rx_metainfo;
-
-typedef QDF_STATUS (*ol_rx_callback_fp)(void *p_cds_gctx,
-					 qdf_nbuf_t pDataBuff,
-					 uint8_t ucSTAId);
 
 /**
  * @brief Divide a jumbo TCP frame into smaller segments.
@@ -82,18 +69,11 @@ qdf_nbuf_t ol_txrx_osif_tso_segment(ol_txrx_vdev_handle txrx_vdev,
 				    int max_seg_payload_bytes,
 				    qdf_nbuf_t jumbo_tcp_frame);
 
-qdf_nbuf_t ol_tx_data(ol_txrx_vdev_handle data_vdev, qdf_nbuf_t skb);
+qdf_nbuf_t ol_tx_data(void *data_vdev, qdf_nbuf_t skb);
 
 void ol_rx_data_process(struct ol_txrx_peer_t *peer,
 			qdf_nbuf_t rx_buf_list);
 
 void ol_txrx_flush_rx_frames(struct ol_txrx_peer_t *peer,
 			     bool drop);
-/**
- * ol_txrx_flush_cache_rx_queue() - flush cache rx queue frame
- *
- * Return: None
- */
-void ol_txrx_flush_cache_rx_queue(void);
-
 #endif /* _OL_TXRX_OSIF_API__H_ */

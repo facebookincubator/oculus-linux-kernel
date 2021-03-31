@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017,2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -413,6 +413,8 @@ static void snapshot_rb_ibs(struct kgsl_device *device,
 				ibsize = rbptr[index + 3];
 			}
 
+			index = (index + 1) % KGSL_RB_DWORDS;
+
 			/* Don't parse known global IBs */
 			if (iommu_is_setstate_addr(device, ibaddr, ibsize))
 				continue;
@@ -423,9 +425,8 @@ static void snapshot_rb_ibs(struct kgsl_device *device,
 
 			parse_ib(device, snapshot, snapshot->process,
 				ibaddr, ibsize);
-		}
-
-		index = (index + 1) % KGSL_RB_DWORDS;
+		} else
+			index = (index + 1) % KGSL_RB_DWORDS;
 	}
 
 }

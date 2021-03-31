@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -51,7 +42,6 @@
 
 static struct proc_dir_entry *proc_file_driver, *proc_dir_driver;
 
-
 /** memdump_get_file_data() - get data available in proc file
  *
  * @file - handle for the proc file.
@@ -69,17 +59,9 @@ static void *memdump_get_file_data(struct file *file)
 	return hdd_ctx;
 }
 
-/**
- * hdd_driver_mem_cleanup() - Frees memory allocated for
- * driver dump
- *
- * This function unallocates driver dump memory.
- *
- * Return: None
- */
-static void hdd_driver_mem_cleanup(void)
+void hdd_driver_mem_cleanup(void)
 {
-	hdd_context_t *hdd_ctx;
+	struct hdd_context *hdd_ctx;
 
 	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 	if (!hdd_ctx) {
@@ -95,7 +77,7 @@ static void hdd_driver_mem_cleanup(void)
 
 
 /**
- * hdd_driver_memdump_read() - perform read operation in driver
+ * __hdd_driver_memdump_read() - perform read operation in driver
  * memory dump proc file
  * @file  - handle for the proc file.
  * @buf   - pointer to user space buffer.
@@ -104,19 +86,21 @@ static void hdd_driver_mem_cleanup(void)
  *
  * This function performs read operation for the driver memory dump proc file.
  *
- * Return: number of bytes read on success, error code otherwise.
+ * Return: number of bytes read on success
+ *         negative error code in case of failure
+ *         0 in case of no more data
  */
-static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
-					size_t count, loff_t *pos)
+static ssize_t __hdd_driver_memdump_read(struct file *file, char __user *buf,
+					 size_t count, loff_t *pos)
 {
 	int status;
 	QDF_STATUS qdf_status;
-	hdd_context_t *hdd_ctx;
+	struct hdd_context *hdd_ctx;
 	size_t no_of_bytes_read = 0;
 
 	hdd_ctx = memdump_get_file_data(file);
 
-	hdd_notice("Read req for size:%zu pos:%llu", count, *pos);
+	hdd_debug("Read req for size:%zu pos:%llu", count, *pos);
 	status = wlan_hdd_validate_context(hdd_ctx);
 	if (status != 0)
 		return -EINVAL;
@@ -129,7 +113,7 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 	} else if (!count || (hdd_ctx->driver_dump_size &&
 				(*pos >= hdd_ctx->driver_dump_size))) {
 		mutex_unlock(&hdd_ctx->memdump_lock);
-		hdd_warn("No more data to copy");
+		hdd_debug("No more data to copy");
 		return 0;
 	} else if ((*pos == 0) || (hdd_ctx->driver_dump_mem == NULL)) {
 		/*
@@ -157,7 +141,7 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 		if (qdf_status != QDF_STATUS_SUCCESS)
 			hdd_err("Error in dump driver information, status %d",
 				qdf_status);
-		hdd_notice("driver_dump_size: %d",
+		hdd_debug("driver_dump_size: %d",
 					hdd_ctx->driver_dump_size);
 	}
 
@@ -185,6 +169,31 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 	return no_of_bytes_read;
 }
 
+/**
+ * hdd_driver_memdump_read() - perform read operation in driver
+ * memory dump proc file
+ * @file  - handle for the proc file.
+ * @buf   - pointer to user space buffer.
+ * @count - number of bytes to be read.
+ * @pos   - offset in the from buffer.
+ *
+ * This function performs read operation for the driver memory dump proc file.
+ *
+ * Return: number of bytes read on success
+ *         negative error code in case of failure
+ *         0 in case of no more data
+ */
+static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
+				       size_t count, loff_t *pos)
+{
+	ssize_t len;
+
+	cds_ssr_protect(__func__);
+	len = __hdd_driver_memdump_read(file, buf, count, pos);
+	cds_ssr_unprotect(__func__);
+
+	return len;
+}
 
 /**
  * struct driver_dump_fops - file operations for driver dump feature
@@ -206,11 +215,11 @@ read: hdd_driver_memdump_read
  *
  * Return:   0 on success, error code otherwise.
  */
-static int hdd_driver_memdump_procfs_init(hdd_context_t *hdd_ctx)
+static int hdd_driver_memdump_procfs_init(struct hdd_context *hdd_ctx)
 {
 	proc_dir_driver = proc_mkdir(PROCFS_DRIVER_DUMP_DIR, NULL);
 	if (proc_dir_driver == NULL) {
-		pr_debug("Error: Could not initialize /proc/%s\n",
+		pr_debug("Could not initialize /proc/%s\n",
 			 PROCFS_DRIVER_DUMP_DIR);
 		return -ENOMEM;
 	}
@@ -220,7 +229,7 @@ static int hdd_driver_memdump_procfs_init(hdd_context_t *hdd_ctx)
 				     &driver_dump_fops, hdd_ctx);
 	if (proc_file_driver == NULL) {
 		remove_proc_entry(PROCFS_DRIVER_DUMP_NAME, proc_dir_driver);
-		pr_debug("Error: Could not initialize /proc/%s\n",
+		pr_debug("Could not initialize /proc/%s\n",
 			  PROCFS_DRIVER_DUMP_NAME);
 		return -ENOMEM;
 	}
@@ -259,12 +268,7 @@ static void hdd_driver_memdump_procfs_remove(void)
 int hdd_driver_memdump_init(void)
 {
 	int status;
-	hdd_context_t *hdd_ctx;
-
-	if (hdd_get_conparam() == QDF_GLOBAL_FTM_MODE) {
-		hdd_err("Not initializing memdump in FTM mode");
-		return -EINVAL;
-	}
+	struct hdd_context *hdd_ctx;
 
 	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 	if (!hdd_ctx) {
@@ -292,12 +296,5 @@ int hdd_driver_memdump_init(void)
  */
 void hdd_driver_memdump_deinit(void)
 {
-	if (hdd_get_conparam() == QDF_GLOBAL_FTM_MODE) {
-		hdd_err("Not deinitializing memdump in FTM mode");
-		return;
-	}
-
 	hdd_driver_memdump_procfs_remove();
-
-	hdd_driver_mem_cleanup();
 }

@@ -57,6 +57,8 @@
 #include <linux/trace_events.h>
 #include <linux/suspend.h>
 
+#include <soc/qcom/watchdog.h>
+
 #include "tree.h"
 #include "rcu.h"
 
@@ -246,24 +248,17 @@ static int rcu_gp_in_progress(struct rcu_state *rsp)
  */
 void rcu_sched_qs(void)
 {
-	unsigned long flags;
-
-	if (__this_cpu_read(rcu_sched_data.cpu_no_qs.s)) {
-		trace_rcu_grace_period(TPS("rcu_sched"),
-				       __this_cpu_read(rcu_sched_data.gpnum),
-				       TPS("cpuqs"));
-		__this_cpu_write(rcu_sched_data.cpu_no_qs.b.norm, false);
-		if (!__this_cpu_read(rcu_sched_data.cpu_no_qs.b.exp))
-			return;
-		local_irq_save(flags);
-		if (__this_cpu_read(rcu_sched_data.cpu_no_qs.b.exp)) {
-			__this_cpu_write(rcu_sched_data.cpu_no_qs.b.exp, false);
-			rcu_report_exp_rdp(&rcu_sched_state,
-					   this_cpu_ptr(&rcu_sched_data),
-					   true);
-		}
-		local_irq_restore(flags);
-	}
+	if (!__this_cpu_read(rcu_sched_data.cpu_no_qs.s))
+		return;
+	trace_rcu_grace_period(TPS("rcu_sched"),
+			       __this_cpu_read(rcu_sched_data.gpnum),
+			       TPS("cpuqs"));
+	__this_cpu_write(rcu_sched_data.cpu_no_qs.b.norm, false);
+	if (!__this_cpu_read(rcu_sched_data.cpu_no_qs.b.exp))
+		return;
+	__this_cpu_write(rcu_sched_data.cpu_no_qs.b.exp, false);
+	rcu_report_exp_rdp(&rcu_sched_state,
+			   this_cpu_ptr(&rcu_sched_data), true);
 }
 
 void rcu_bh_qs(void)
@@ -300,16 +295,15 @@ EXPORT_PER_CPU_SYMBOL_GPL(rcu_qs_ctr);
  * We inform the RCU core by emulating a zero-duration dyntick-idle
  * period, which we in turn do by incrementing the ->dynticks counter
  * by two.
+ *
+ * The caller must have disabled interrupts.
  */
 static void rcu_momentary_dyntick_idle(void)
 {
-	unsigned long flags;
 	struct rcu_data *rdp;
 	struct rcu_dynticks *rdtp;
 	int resched_mask;
 	struct rcu_state *rsp;
-
-	local_irq_save(flags);
 
 	/*
 	 * Yes, we can lose flag-setting operations.  This is OK, because
@@ -340,13 +334,12 @@ static void rcu_momentary_dyntick_idle(void)
 		smp_mb__after_atomic(); /* Later stuff after QS. */
 		break;
 	}
-	local_irq_restore(flags);
 }
 
 /*
  * Note a context switch.  This is a quiescent state for RCU-sched,
  * and requires special handling for preemptible RCU.
- * The caller must have disabled preemption.
+ * The caller must have disabled interrupts.
  */
 void rcu_note_context_switch(void)
 {
@@ -376,9 +369,14 @@ EXPORT_SYMBOL_GPL(rcu_note_context_switch);
  */
 void rcu_all_qs(void)
 {
+	unsigned long flags;
+
 	barrier(); /* Avoid RCU read-side critical sections leaking down. */
-	if (unlikely(raw_cpu_read(rcu_sched_qs_mask)))
+	if (unlikely(raw_cpu_read(rcu_sched_qs_mask))) {
+		local_irq_save(flags);
 		rcu_momentary_dyntick_idle();
+		local_irq_restore(flags);
+	}
 	this_cpu_inc(rcu_qs_ctr);
 	barrier(); /* Avoid RCU read-side critical sections leaking up. */
 }
@@ -759,6 +757,12 @@ void rcu_irq_exit(void)
 
 	local_irq_save(flags);
 	rdtp = this_cpu_ptr(&rcu_dynticks);
+
+	/* Page faults can happen in NMI handlers, so check... */
+	if (READ_ONCE(rdtp->dynticks_nmi_nesting))
+		return;
+
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_irq_exit() invoked with irqs enabled!!!");
 	oldval = rdtp->dynticks_nesting;
 	rdtp->dynticks_nesting--;
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_RCU_EQS_DEBUG) &&
@@ -887,6 +891,12 @@ void rcu_irq_enter(void)
 
 	local_irq_save(flags);
 	rdtp = this_cpu_ptr(&rcu_dynticks);
+
+	/* Page faults can happen in NMI handlers, so check... */
+	if (READ_ONCE(rdtp->dynticks_nmi_nesting))
+		return;
+
+	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_irq_enter() invoked with irqs enabled!!!");
 	oldval = rdtp->dynticks_nesting;
 	rdtp->dynticks_nesting++;
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_RCU_EQS_DEBUG) &&
@@ -1298,6 +1308,11 @@ static void print_other_cpu_stall(struct rcu_state *rsp, unsigned long gpnum)
 
 	rcu_check_gp_kthread_starvation(rsp);
 
+#ifdef CONFIG_RCU_STALL_WATCHDOG_BITE
+	/* Induce watchdog bite */
+	msm_trigger_wdog_bite();
+#endif
+
 	force_quiescent_state(rsp);  /* Kick them all. */
 }
 
@@ -1332,6 +1347,11 @@ static void print_cpu_stall(struct rcu_state *rsp)
 		WRITE_ONCE(rsp->jiffies_stall,
 			   jiffies + 3 * rcu_jiffies_till_stall_check() + 3);
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
+
+#ifdef CONFIG_RCU_STALL_WATCHDOG_BITE
+	/* Induce non secure watchdog bite to collect context */
+	msm_trigger_wdog_bite();
+#endif
 
 	/*
 	 * Attempt to revive the RCU machinery by forcing a context switch.
@@ -1599,15 +1619,23 @@ static int rcu_future_gp_cleanup(struct rcu_state *rsp, struct rcu_node *rnp)
 }
 
 /*
- * Awaken the grace-period kthread for the specified flavor of RCU.
- * Don't do a self-awaken, and don't bother awakening when there is
- * nothing for the grace-period kthread to do (as in several CPUs
- * raced to awaken, and we lost), and finally don't try to awaken
- * a kthread that has not yet been created.
+ * Awaken the grace-period kthread.  Don't do a self-awaken (unless in
+ * an interrupt or softirq handler), and don't bother awakening when there
+ * is nothing for the grace-period kthread to do (as in several CPUs raced
+ * to awaken, and we lost), and finally don't try to awaken a kthread that
+ * has not yet been created.  If all those checks are passed, track some
+ * debug information and awaken.
+ *
+ * So why do the self-wakeup when in an interrupt or softirq handler
+ * in the grace-period kthread's context?  Because the kthread might have
+ * been interrupted just as it was going to sleep, and just after the final
+ * pre-sleep check of the awaken condition.  In this case, a wakeup really
+ * is required, and is therefore supplied.
  */
 static void rcu_gp_kthread_wake(struct rcu_state *rsp)
 {
-	if (current == rsp->gp_kthread ||
+	if ((current == rsp->gp_kthread &&
+	     !in_interrupt() && !in_serving_softirq()) ||
 	    !READ_ONCE(rsp->gp_flags) ||
 	    !rsp->gp_kthread)
 		return;
@@ -3805,7 +3833,7 @@ static void synchronize_sched_expedited_wait(struct rcu_state *rsp)
 					continue;
 				rdp = per_cpu_ptr(rsp->rda, cpu);
 				pr_cont(" %d-%c%c%c", cpu,
-					"O."[cpu_online(cpu)],
+					"O."[!!cpu_online(cpu)],
 					"o."[!!(rdp->grpmask & rnp->expmaskinit)],
 					"N."[!!(rdp->grpmask & rnp->expmaskinitnext)]);
 			}

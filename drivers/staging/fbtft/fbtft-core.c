@@ -392,11 +392,11 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned start_line,
 
 	if (unlikely(timeit)) {
 		ts_end = ktime_get();
-		if (ktime_to_ns(par->update_time))
+		if (!ktime_to_ns(par->update_time))
 			par->update_time = ts_start;
 
-		par->update_time = ts_start;
 		fps = ktime_us_delta(ts_start, par->update_time);
+		par->update_time = ts_start;
 		fps = fps ? 1000000 / fps : 0;
 
 		throughput = ktime_us_delta(ts_end, ts_start);
@@ -813,7 +813,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	if (par->gamma.curves && gamma) {
 		if (fbtft_gamma_parse_str(par,
 			par->gamma.curves, gamma, strlen(gamma)))
-			goto alloc_fail;
+			goto release_framebuf;
 	}
 
 	/* Transmit buffer */
@@ -836,7 +836,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 			txbuf = devm_kzalloc(par->info->device, txbuflen, GFP_KERNEL);
 		}
 		if (!txbuf)
-			goto alloc_fail;
+			goto release_framebuf;
 		par->txbuf.buf = txbuf;
 		par->txbuf.len = txbuflen;
 	}
@@ -871,6 +871,9 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
 
 	return info;
+
+release_framebuf:
+	framebuffer_release(info);
 
 alloc_fail:
 	vfree(vmem);

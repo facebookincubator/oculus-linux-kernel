@@ -311,7 +311,7 @@ static void mdss_dp_calc_tu_parameters(u8 link_rate, u8 ln_cnt,
 	bool n_err_neg, nn_err_neg;
 	u8 hblank_margin = 16;
 
-	u8 tu_size, tu_size_desired, tu_size_minus1;
+	u8 tu_size, tu_size_desired = 0, tu_size_minus1;
 	int valid_boundary_link;
 	u64 resulting_valid;
 	u64 total_valid;
@@ -786,21 +786,58 @@ void mdss_dp_timing_cfg(struct dss_io_data *ctrl_io,
 	writel_relaxed(data, ctrl_io->base + DP_ACTIVE_HOR_VER);
 }
 
-void mdss_dp_sw_config_msa(struct dss_io_data *ctrl_io,
-				char lrate, struct dss_io_data *dp_cc_io)
+static bool use_fixed_nvid(struct mdss_dp_drv_pdata *dp)
+{
+	/*
+	 * For better interop experience, used a fixed NVID=0x8000
+	 * whenever connected to a VGA dongle downstream
+	 */
+	return mdss_dp_is_dsp_type_vga(dp);
+}
+
+void mdss_dp_sw_config_msa(struct mdss_dp_drv_pdata *dp)
 {
 	u32 pixel_m, pixel_n;
 	u32 mvid, nvid;
+	u64 mvid_calc;
+	u32 const nvid_fixed = 0x8000;
+	struct dss_io_data *ctrl_io = &dp->ctrl_io;
+	struct dss_io_data *dp_cc_io = &dp->dp_cc_io;
+	u32 lrate_kbps;
+	u64 stream_rate_khz;
 
-	pixel_m = readl_relaxed(dp_cc_io->base + MMSS_DP_PIXEL_M);
-	pixel_n = readl_relaxed(dp_cc_io->base + MMSS_DP_PIXEL_N);
-	pr_debug("pixel_m=0x%x, pixel_n=0x%x\n",
-					pixel_m, pixel_n);
+	if (use_fixed_nvid(dp)) {
+		pr_debug("use fixed NVID=0x%x\n", nvid_fixed);
+		nvid = nvid_fixed;
 
-	mvid = (pixel_m & 0xFFFF) * 5;
-	nvid = (0xFFFF & (~pixel_n)) + (pixel_m & 0xFFFF);
-	if (lrate == DP_LINK_RATE_540)
-		nvid *= 2;
+		lrate_kbps = dp->link_rate * DP_LINK_RATE_MULTIPLIER /
+			DP_KHZ_TO_HZ;
+		stream_rate_khz = div_u64(dp->panel_data.panel_info.clk_rate,
+			DP_KHZ_TO_HZ);
+		pr_debug("link rate=%dkbps, stream_rate_khz=%lluKhz",
+			lrate_kbps, stream_rate_khz);
+
+		/*
+		 * For intermediate results, use 64 bit arithmetic to avoid
+		 * loss of precision.
+		 */
+		mvid_calc = stream_rate_khz * nvid;
+		mvid_calc = div_u64(mvid_calc, lrate_kbps);
+
+		/*
+		 * truncate back to 32 bits as this final divided value will
+		 * always be within the range of a 32 bit unsigned int.
+		 */
+		mvid = (u32) mvid_calc;
+	} else {
+		pixel_m = readl_relaxed(dp_cc_io->base + MMSS_DP_PIXEL_M);
+		pixel_n = readl_relaxed(dp_cc_io->base + MMSS_DP_PIXEL_N);
+		pr_debug("pixel_m=0x%x, pixel_n=0x%x\n", pixel_m, pixel_n);
+		mvid = (pixel_m & 0xFFFF) * 5;
+		nvid = (0xFFFF & (~pixel_n)) + (pixel_m & 0xFFFF);
+		if (dp->link_rate == DP_LINK_RATE_540)
+			nvid *= 2;
+	}
 
 	pr_debug("mvid=0x%x, nvid=0x%x\n", mvid, nvid);
 	writel_relaxed(mvid, ctrl_io->base + DP_SOFTWARE_MVID);
@@ -1196,6 +1233,7 @@ static void mdss_dp_audio_setup_audio_stream_sdp(struct dss_io_data *ctrl_io,
 
 	/* Config header and parity byte 1 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_STREAM_0);
+	value &= 0x0000ffff;
 	new_value = 0x02;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_1_BIT)
@@ -1206,7 +1244,8 @@ static void mdss_dp_audio_setup_audio_stream_sdp(struct dss_io_data *ctrl_io,
 
 	/* Config header and parity byte 2 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_STREAM_1);
-	new_value = value;
+	value &= 0xffff0000;
+	new_value = 0x00;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_2_BIT)
 			| (parity_byte << PARITY_BYTE_2_BIT));
@@ -1216,6 +1255,7 @@ static void mdss_dp_audio_setup_audio_stream_sdp(struct dss_io_data *ctrl_io,
 
 	/* Config header and parity byte 3 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_STREAM_1);
+	value &= 0x0000ffff;
 	new_value = num_of_channels - 1;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_3_BIT)
@@ -1234,6 +1274,7 @@ static void mdss_dp_audio_setup_audio_timestamp_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 1 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_TIMESTAMP_0);
+	value &= 0x0000ffff;
 	new_value = 0x1;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_1_BIT)
@@ -1244,6 +1285,7 @@ static void mdss_dp_audio_setup_audio_timestamp_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 2 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_TIMESTAMP_1);
+	value &= 0xffff0000;
 	new_value = 0x17;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_2_BIT)
@@ -1254,6 +1296,7 @@ static void mdss_dp_audio_setup_audio_timestamp_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 3 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_TIMESTAMP_1);
+	value &= 0x0000ffff;
 	new_value = (0x0 | (0x11 << 2));
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_3_BIT)
@@ -1271,6 +1314,7 @@ static void mdss_dp_audio_setup_audio_infoframe_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 1 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_INFOFRAME_0);
+	value &= 0x0000ffff;
 	new_value = 0x84;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_1_BIT)
@@ -1281,6 +1325,7 @@ static void mdss_dp_audio_setup_audio_infoframe_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 2 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_INFOFRAME_1);
+	value &= 0xffff0000;
 	new_value = 0x1b;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_2_BIT)
@@ -1291,6 +1336,7 @@ static void mdss_dp_audio_setup_audio_infoframe_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 3 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_INFOFRAME_1);
+	value &= 0x0000ffff;
 	new_value = (0x0 | (0x11 << 2));
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_3_BIT)
@@ -1312,6 +1358,7 @@ static void mdss_dp_audio_setup_copy_management_sdp(struct dss_io_data *ctrl_io)
 	/* Config header and parity byte 1 */
 	value = readl_relaxed(ctrl_io->base +
 					MMSS_DP_AUDIO_COPYMANAGEMENT_0);
+	value &= 0x0000ffff;
 	new_value = 0x05;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_1_BIT)
@@ -1324,6 +1371,7 @@ static void mdss_dp_audio_setup_copy_management_sdp(struct dss_io_data *ctrl_io)
 	/* Config header and parity byte 2 */
 	value = readl_relaxed(ctrl_io->base +
 					MMSS_DP_AUDIO_COPYMANAGEMENT_1);
+	value &= 0xffff0000;
 	new_value = 0x0F;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_2_BIT)
@@ -1336,6 +1384,7 @@ static void mdss_dp_audio_setup_copy_management_sdp(struct dss_io_data *ctrl_io)
 	/* Config header and parity byte 3 */
 	value = readl_relaxed(ctrl_io->base +
 					MMSS_DP_AUDIO_COPYMANAGEMENT_1);
+	value &= 0x0000ffff;
 	new_value = 0x0;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_3_BIT)
@@ -1361,6 +1410,7 @@ static void mdss_dp_audio_setup_isrc_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 1 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_ISRC_0);
+	value &= 0x0000ffff;
 	new_value = 0x06;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_1_BIT)
@@ -1371,6 +1421,7 @@ static void mdss_dp_audio_setup_isrc_sdp(struct dss_io_data *ctrl_io)
 
 	/* Config header and parity byte 2 */
 	value = readl_relaxed(ctrl_io->base + MMSS_DP_AUDIO_ISRC_1);
+	value &= 0xffff0000;
 	new_value = 0x0F;
 	parity_byte = mdss_dp_calculate_parity_byte(new_value);
 	value |= ((new_value << HEADER_BYTE_2_BIT)

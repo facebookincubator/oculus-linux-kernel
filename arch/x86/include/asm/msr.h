@@ -32,6 +32,16 @@ struct msr_regs_info {
 	int err;
 };
 
+struct saved_msr {
+	bool valid;
+	struct msr_info info;
+};
+
+struct saved_msrs {
+	unsigned int num;
+	struct saved_msr *array;
+};
+
 static inline unsigned long long native_read_tscp(unsigned int *aux)
 {
 	unsigned long low, high;
@@ -147,8 +157,7 @@ static __always_inline unsigned long long rdtsc_ordered(void)
 	 * that some other imaginary CPU is updating continuously with a
 	 * time stamp.
 	 */
-	alternative_2("", "mfence", X86_FEATURE_MFENCE_RDTSC,
-			  "lfence", X86_FEATURE_LFENCE_RDTSC);
+	barrier_nospec();
 	return rdtsc();
 }
 

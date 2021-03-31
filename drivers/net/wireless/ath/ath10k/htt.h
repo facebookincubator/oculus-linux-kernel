@@ -122,6 +122,19 @@ struct htt_msdu_ext_desc {
 				 | HTT_MSDU_EXT_DESC_FLAG_TCP_IPV4_CSUM_ENABLE \
 				 | HTT_MSDU_EXT_DESC_FLAG_TCP_IPV6_CSUM_ENABLE)
 
+#define HTT_TX_IPV4_CSUM_EN	BIT(16)
+#define HTT_TX_UDP_IPV4_CSUM_EN	BIT(17)
+#define HTT_TX_UDP_IPV6_CSUM_EN	BIT(18)
+#define HTT_TX_TCP_IPV4_CSUM_EN	BIT(19)
+#define HTT_TX_TCP_IPV6_CSUM_EN	BIT(20)
+#define HTT_TX_PARTIAL_CSUM_EN	BIT(21)
+
+#define HTT_TX_CHECKSUM_ENABLE	(HTT_TX_IPV4_CSUM_EN \
+				| HTT_TX_UDP_IPV4_CSUM_EN \
+				| HTT_TX_UDP_IPV6_CSUM_EN \
+				| HTT_TX_TCP_IPV4_CSUM_EN \
+				| HTT_TX_TCP_IPV6_CSUM_EN)
+
 enum htt_data_tx_desc_flags0 {
 	HTT_DATA_TX_DESC_FLAGS0_MAC_HDR_PRESENT = 1 << 0,
 	HTT_DATA_TX_DESC_FLAGS0_NO_AGGR         = 1 << 1,
@@ -541,6 +554,7 @@ struct htt_rx_indication_hdr {
 #define HTT_RX_INDICATION_INFO2_SERVICE_LSB     24
 
 #define HTT_WCN3990_PADDR_MASK 0x1F
+#define HTT_WCN3990_ARCH_PADDR_MASK 0x1FFFFFFFFF
 
 enum htt_rx_legacy_rate {
 	HTT_RX_OFDM_48 = 0,
@@ -865,8 +879,7 @@ struct htt_rx_offload_ind {
 
 struct htt_rx_in_ord_msdu_desc {
 #ifdef CONFIG_ATH10K_SNOC
-	__le32 msdu_paddr_lo;
-	__le32 msdu_paddr_hi;
+	__le64 msdu_paddr;
 #else
 	__le32 msdu_paddr;
 #endif
@@ -1732,16 +1745,21 @@ struct ath10k_htt {
 
 #define RX_HTT_HDR_STATUS_LEN 64
 
-/* This structure layout is programmed via rx ring setup
- * so that FW knows how to transfer the rx descriptor to the host.
- * Buffers like this are placed on the rx ring. */
-struct htt_rx_desc {
+struct htt_host_fw_desc_base {
 	union {
 		/* This field is filled on the host using the msdu buffer
 		 * from htt_rx_indication */
 		struct fw_rx_desc_base fw_desc;
 		u32 pad;
 	} __packed;
+};
+
+/* This structure layout is programmed via rx ring setup
+ * so that FW knows how to transfer the rx descriptor to the host.
+ * Buffers like this are placed on the rx ring.
+ */
+struct htt_rx_desc {
+	struct htt_host_fw_desc_base fw_desc_base;
 	struct {
 		struct rx_attention attention;
 		struct rx_frag_info frag_info;
@@ -1834,5 +1852,7 @@ int ath10k_htt_tx(struct ath10k_htt *htt,
 void ath10k_htt_rx_pktlog_completion_handler(struct ath10k *ar,
 					     struct sk_buff *skb);
 int ath10k_htt_txrx_compl_task(struct ath10k *ar, int budget);
+struct sk_buff *ath10k_htt_tx_find_msdu_by_id(struct ath10k_htt *htt,
+					      u16 msdu_id);
 
 #endif

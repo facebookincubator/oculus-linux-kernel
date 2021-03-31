@@ -58,7 +58,7 @@ static struct kobj_type ktype_veth_pool;
 
 static const char ibmveth_driver_name[] = "ibmveth";
 static const char ibmveth_driver_string[] = "IBM Power Virtual Ethernet Driver";
-#define ibmveth_driver_version "1.05"
+#define ibmveth_driver_version "1.06"
 
 MODULE_AUTHOR("Santiago Leon <santil@linux.vnet.ibm.com>");
 MODULE_DESCRIPTION("IBM Power Virtual Ethernet Driver");
@@ -135,6 +135,11 @@ static inline int ibmveth_rxq_buffer_valid(struct ibmveth_adapter *adapter)
 static inline int ibmveth_rxq_frame_offset(struct ibmveth_adapter *adapter)
 {
 	return ibmveth_rxq_flags(adapter) & IBMVETH_RXQ_OFF_MASK;
+}
+
+static inline int ibmveth_rxq_large_packet(struct ibmveth_adapter *adapter)
+{
+	return ibmveth_rxq_flags(adapter) & IBMVETH_RXQ_LRG_PKT;
 }
 
 static inline int ibmveth_rxq_frame_length(struct ibmveth_adapter *adapter)
@@ -1158,11 +1163,15 @@ out:
 
 map_failed_frags:
 	last = i+1;
-	for (i = 0; i < last; i++)
+	for (i = 1; i < last; i++)
 		dma_unmap_page(&adapter->vdev->dev, descs[i].fields.address,
 			       descs[i].fields.flags_len & IBMVETH_BUF_LEN_MASK,
 			       DMA_TO_DEVICE);
 
+	dma_unmap_single(&adapter->vdev->dev,
+			 descs[0].fields.address,
+			 descs[0].fields.flags_len & IBMVETH_BUF_LEN_MASK,
+			 DMA_TO_DEVICE);
 map_failed:
 	if (!firmware_has_feature(FW_FEATURE_CMO))
 		netdev_err(netdev, "tx: unable to map xmit buffer\n");
@@ -1170,6 +1179,53 @@ map_failed:
 	skb_linearize(skb);
 	force_bounce = 1;
 	goto retry_bounce;
+}
+
+static void ibmveth_rx_mss_helper(struct sk_buff *skb, u16 mss, int lrg_pkt)
+{
+	struct tcphdr *tcph;
+	int offset = 0;
+	int hdr_len;
+
+	/* only TCP packets will be aggregated */
+	if (skb->protocol == htons(ETH_P_IP)) {
+		struct iphdr *iph = (struct iphdr *)skb->data;
+
+		if (iph->protocol == IPPROTO_TCP) {
+			offset = iph->ihl * 4;
+			skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
+		} else {
+			return;
+		}
+	} else if (skb->protocol == htons(ETH_P_IPV6)) {
+		struct ipv6hdr *iph6 = (struct ipv6hdr *)skb->data;
+
+		if (iph6->nexthdr == IPPROTO_TCP) {
+			offset = sizeof(struct ipv6hdr);
+			skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
+		} else {
+			return;
+		}
+	} else {
+		return;
+	}
+	/* if mss is not set through Large Packet bit/mss in rx buffer,
+	 * expect that the mss will be written to the tcp header checksum.
+	 */
+	tcph = (struct tcphdr *)(skb->data + offset);
+	if (lrg_pkt) {
+		skb_shinfo(skb)->gso_size = mss;
+	} else if (offset) {
+		skb_shinfo(skb)->gso_size = ntohs(tcph->check);
+		tcph->check = 0;
+	}
+
+	if (skb_shinfo(skb)->gso_size) {
+		hdr_len = offset + tcph->doff * 4;
+		skb_shinfo(skb)->gso_segs =
+				DIV_ROUND_UP(skb->len - hdr_len,
+					     skb_shinfo(skb)->gso_size);
+	}
 }
 
 static int ibmveth_poll(struct napi_struct *napi, int budget)
@@ -1180,8 +1236,8 @@ static int ibmveth_poll(struct napi_struct *napi, int budget)
 	int frames_processed = 0;
 	unsigned long lpar_rc;
 	struct iphdr *iph;
+	u16 mss = 0;
 
-restart_poll:
 	while (frames_processed < budget) {
 		if (!ibmveth_rxq_pending_buffer(adapter))
 			break;
@@ -1197,8 +1253,20 @@ restart_poll:
 			int length = ibmveth_rxq_frame_length(adapter);
 			int offset = ibmveth_rxq_frame_offset(adapter);
 			int csum_good = ibmveth_rxq_csum_good(adapter);
+			int lrg_pkt = ibmveth_rxq_large_packet(adapter);
 
 			skb = ibmveth_rxq_get_buffer(adapter);
+
+			/* if the large packet bit is set in the rx queue
+			 * descriptor, the mss will be written by PHYP eight
+			 * bytes from the start of the rx buffer, which is
+			 * skb->data at this stage
+			 */
+			if (lrg_pkt) {
+				__be64 *rxmss = (__be64 *)(skb->data + 8);
+
+				mss = (u16)be64_to_cpu(*rxmss);
+			}
 
 			new_skb = NULL;
 			if (length < rx_copybreak)
@@ -1233,9 +1301,13 @@ restart_poll:
 					if (iph->check == 0xffff) {
 						iph->check = 0;
 						iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
-						adapter->rx_large_packets++;
 					}
 				}
+			}
+
+			if (length > netdev->mtu + ETH_HLEN) {
+				ibmveth_rx_mss_helper(skb, mss, lrg_pkt);
+				adapter->rx_large_packets++;
 			}
 
 			napi_gro_receive(napi, skb);	/* send it up */
@@ -1263,7 +1335,6 @@ restart_poll:
 		    napi_reschedule(napi)) {
 			lpar_rc = h_vio_signal(adapter->vdev->unit_address,
 					       VIO_IRQ_DISABLE);
-			goto restart_poll;
 		}
 	}
 
@@ -1484,7 +1555,7 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
 	struct net_device *netdev;
 	struct ibmveth_adapter *adapter;
 	unsigned char *mac_addr_p;
-	unsigned int *mcastFilterSize_p;
+	__be32 *mcastFilterSize_p;
 	long ret;
 	unsigned long ret_attr;
 
@@ -1506,8 +1577,9 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
 		return -EINVAL;
 	}
 
-	mcastFilterSize_p = (unsigned int *)vio_get_attribute(dev,
-						VETH_MCAST_FILTER_SIZE, NULL);
+	mcastFilterSize_p = (__be32 *)vio_get_attribute(dev,
+							VETH_MCAST_FILTER_SIZE,
+							NULL);
 	if (!mcastFilterSize_p) {
 		dev_err(&dev->dev, "Can't find VETH_MCAST_FILTER_SIZE "
 			"attribute\n");
@@ -1524,7 +1596,7 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
 
 	adapter->vdev = dev;
 	adapter->netdev = netdev;
-	adapter->mcastFilterSize = *mcastFilterSize_p;
+	adapter->mcastFilterSize = be32_to_cpu(*mcastFilterSize_p);
 	adapter->pool_config = 0;
 
 	netif_napi_add(netdev, &adapter->napi, ibmveth_poll, 16);
@@ -1533,8 +1605,11 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
 	netdev->netdev_ops = &ibmveth_netdev_ops;
 	netdev->ethtool_ops = &netdev_ethtool_ops;
 	SET_NETDEV_DEV(netdev, &dev->dev);
-	netdev->hw_features = NETIF_F_SG | NETIF_F_RXCSUM |
-		NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
+	netdev->hw_features = NETIF_F_SG;
+	if (vio_get_attribute(dev, "ibm,illan-options", NULL) != NULL) {
+		netdev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+				       NETIF_F_RXCSUM;
+	}
 
 	netdev->features |= netdev->hw_features;
 

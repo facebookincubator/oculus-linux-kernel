@@ -178,11 +178,6 @@ static void dm_bufio_lock(struct dm_bufio_client *c)
 	mutex_lock_nested(&c->lock, dm_bufio_in_request());
 }
 
-static int dm_bufio_trylock(struct dm_bufio_client *c)
-{
-	return mutex_trylock(&c->lock);
-}
-
 static void dm_bufio_unlock(struct dm_bufio_client *c)
 {
 	mutex_unlock(&c->lock);
@@ -225,7 +220,7 @@ static DEFINE_SPINLOCK(param_spinlock);
  * Buffers are freed after this timeout
  */
 static unsigned dm_bufio_max_age = DM_BUFIO_DEFAULT_AGE_SECS;
-static unsigned dm_bufio_retain_bytes = DM_BUFIO_DEFAULT_RETAIN_BYTES;
+static unsigned long dm_bufio_retain_bytes = DM_BUFIO_DEFAULT_RETAIN_BYTES;
 
 static unsigned long dm_bufio_peak_allocated;
 static unsigned long dm_bufio_allocated_kmem_cache;
@@ -818,6 +813,7 @@ enum new_flag {
 static struct dm_buffer *__alloc_buffer_wait_no_callback(struct dm_bufio_client *c, enum new_flag nf)
 {
 	struct dm_buffer *b;
+	bool tried_noio_alloc = false;
 
 	/*
 	 * dm-bufio is resistant to allocation failures (it just keeps
@@ -841,6 +837,15 @@ static struct dm_buffer *__alloc_buffer_wait_no_callback(struct dm_bufio_client 
 
 		if (nf == NF_PREFETCH)
 			return NULL;
+
+		if (dm_bufio_cache_size_latch != 1 && !tried_noio_alloc) {
+			dm_bufio_unlock(c);
+			b = alloc_buffer(c, GFP_NOIO | __GFP_NORETRY | __GFP_NOMEMALLOC | __GFP_NOWARN);
+			dm_bufio_lock(c);
+			if (b)
+				return b;
+			tried_noio_alloc = true;
+		}
 
 		if (!list_empty(&c->reserved_buffers)) {
 			b = list_entry(c->reserved_buffers.next,
@@ -920,10 +925,11 @@ static void __get_memory_limit(struct dm_bufio_client *c,
 {
 	unsigned long buffers;
 
-	if (ACCESS_ONCE(dm_bufio_cache_size) != dm_bufio_cache_size_latch) {
-		mutex_lock(&dm_bufio_clients_lock);
-		__cache_size_refresh();
-		mutex_unlock(&dm_bufio_clients_lock);
+	if (unlikely(ACCESS_ONCE(dm_bufio_cache_size) != dm_bufio_cache_size_latch)) {
+		if (mutex_trylock(&dm_bufio_clients_lock)) {
+			__cache_size_refresh();
+			mutex_unlock(&dm_bufio_clients_lock);
+		}
 	}
 
 	buffers = dm_bufio_cache_size_per_client >>
@@ -933,7 +939,8 @@ static void __get_memory_limit(struct dm_bufio_client *c,
 		buffers = c->minimum_buffers;
 
 	*limit_buffers = buffers;
-	*threshold_buffers = buffers * DM_BUFIO_WRITEBACK_PERCENT / 100;
+	*threshold_buffers = mult_frac(buffers,
+				       DM_BUFIO_WRITEBACK_PERCENT, 100);
 }
 
 /*
@@ -1519,10 +1526,10 @@ static bool __try_evict_buffer(struct dm_buffer *b, gfp_t gfp)
 	return true;
 }
 
-static unsigned get_retain_buffers(struct dm_bufio_client *c)
+static unsigned long get_retain_buffers(struct dm_bufio_client *c)
 {
-        unsigned retain_bytes = ACCESS_ONCE(dm_bufio_retain_bytes);
-        return retain_bytes / c->block_size;
+        unsigned long retain_bytes = ACCESS_ONCE(dm_bufio_retain_bytes);
+        return retain_bytes >> (c->sectors_per_block_bits + SECTOR_SHIFT);
 }
 
 static void __scan(struct dm_bufio_client *c)
@@ -1532,7 +1539,7 @@ static void __scan(struct dm_bufio_client *c)
 	unsigned long freed = 0;
 	unsigned long count = c->n_buffers[LIST_CLEAN] +
 			      c->n_buffers[LIST_DIRTY];
-	unsigned retain_target = get_retain_buffers(c);
+	unsigned long retain_target = get_retain_buffers(c);
 
 	for (l = 0; l < LIST_SIZE; l++) {
 		list_for_each_entry_safe_reverse(b, tmp, &c->lru[l], lru_list) {
@@ -1581,6 +1588,7 @@ static unsigned long dm_bufio_shrink_count(struct shrinker *shrink, struct shrin
 		count = 0;
 	else
 		count -= retain_target;
+
 	if (unlikely(count < queued_for_cleanup))
 		count = 0;
 	else
@@ -1771,10 +1779,18 @@ static bool older_than(struct dm_buffer *b, unsigned long age_hz)
 static void __evict_old_buffers(struct dm_bufio_client *c, unsigned long age_hz)
 {
 	struct dm_buffer *b, *tmp;
-	unsigned retain_target = get_retain_buffers(c);
-	unsigned count;
+	unsigned long retain_target = get_retain_buffers(c);
+	unsigned long count;
+	LIST_HEAD(write_list);
 
 	dm_bufio_lock(c);
+
+	__check_watermark(c, &write_list);
+	if (unlikely(!list_empty(&write_list))) {
+		dm_bufio_unlock(c);
+		__flush_write_list(&write_list);
+		dm_bufio_lock(c);
+	}
 
 	count = c->n_buffers[LIST_CLEAN] + c->n_buffers[LIST_DIRTY];
 	list_for_each_entry_safe_reverse(b, tmp, &c->lru[LIST_CLEAN], lru_list) {
@@ -1799,6 +1815,8 @@ static void cleanup_old_buffers(void)
 	struct dm_bufio_client *c;
 
 	mutex_lock(&dm_bufio_clients_lock);
+
+	__cache_size_refresh();
 
 	list_for_each_entry(c, &dm_bufio_all_clients, client_list)
 		__evict_old_buffers(c, max_age_hz);
@@ -1836,19 +1854,15 @@ static int __init dm_bufio_init(void)
 	memset(&dm_bufio_caches, 0, sizeof dm_bufio_caches);
 	memset(&dm_bufio_cache_names, 0, sizeof dm_bufio_cache_names);
 
-	mem = (__u64)((totalram_pages - totalhigh_pages) *
-		      DM_BUFIO_MEMORY_PERCENT / 100) << PAGE_SHIFT;
+	mem = (__u64)mult_frac(totalram_pages - totalhigh_pages,
+			       DM_BUFIO_MEMORY_PERCENT, 100) << PAGE_SHIFT;
 
 	if (mem > ULONG_MAX)
 		mem = ULONG_MAX;
 
 #ifdef CONFIG_MMU
-	/*
-	 * Get the size of vmalloc space the same way as VMALLOC_TOTAL
-	 * in fs/proc/internal.h
-	 */
-	if (mem > (VMALLOC_END - VMALLOC_START) * DM_BUFIO_VMALLOC_PERCENT / 100)
-		mem = (VMALLOC_END - VMALLOC_START) * DM_BUFIO_VMALLOC_PERCENT / 100;
+	if (mem > mult_frac(VMALLOC_TOTAL, DM_BUFIO_VMALLOC_PERCENT, 100))
+		mem = mult_frac(VMALLOC_TOTAL, DM_BUFIO_VMALLOC_PERCENT, 100);
 #endif
 
 	dm_bufio_default_cache_size = mem;
@@ -1922,7 +1936,7 @@ MODULE_PARM_DESC(max_cache_size_bytes, "Size of metadata cache");
 module_param_named(max_age_seconds, dm_bufio_max_age, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(max_age_seconds, "Max age of a buffer in seconds");
 
-module_param_named(retain_bytes, dm_bufio_retain_bytes, uint, S_IRUGO | S_IWUSR);
+module_param_named(retain_bytes, dm_bufio_retain_bytes, ulong, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(retain_bytes, "Try to keep at least this many bytes cached in memory");
 
 module_param_named(peak_allocated_bytes, dm_bufio_peak_allocated, ulong, S_IRUGO | S_IWUSR);

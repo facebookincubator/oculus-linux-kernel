@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef __ATH_PCI_H__
 #define __ATH_PCI_H__
 
@@ -33,6 +24,7 @@
 #include <linux/interrupt.h>
 
 #define ATH_DBG_DEFAULT   0
+#define DRAM_SIZE               0x000a8000
 #include "hif.h"
 #include "cepci.h"
 #include "ce_main.h"
@@ -103,7 +95,7 @@ struct hif_pci_pm_stats {
 struct hif_msi_info {
 	void *magic;
 	dma_addr_t magic_da;
-	OS_DMA_MEM_CONTEXT(dmacontext)
+	OS_DMA_MEM_CONTEXT(dmacontext);
 };
 
 struct hif_pci_softc {
@@ -116,13 +108,12 @@ struct hif_pci_softc {
 	int num_msi_intrs;      /* number of MSI interrupts granted */
 	/* 0 --> using legacy PCI line interrupts */
 	struct tasklet_struct intr_tq;  /* tasklet */
-
 	struct hif_msi_info msi_info;
+	int ce_msi_irq_num[CE_COUNT_MAX];
 	int irq;
 	int irq_event;
 	int cacheline_sz;
 	u16 devid;
-	qdf_dma_addr_t soc_pcie_bar0;
 	struct hif_tasklet_entry tasklet_entries[HIF_MAX_TASKLET_NUM];
 	bool pci_enabled;
 	qdf_spinlock_t irq_lock;
@@ -134,7 +125,7 @@ struct hif_pci_softc {
 	struct hif_pci_pm_stats pm_stats;
 	struct work_struct pm_work;
 	spinlock_t runtime_lock;
-	struct timer_list runtime_timer;
+	qdf_timer_t runtime_timer;
 	struct list_head prevent_suspend_list;
 	unsigned long runtime_timer_expires;
 	qdf_runtime_lock_t prevent_linkdown_lock;
@@ -148,7 +139,7 @@ bool hif_pci_targ_is_present(struct hif_softc *scn, void *__iomem *mem);
 int hif_configure_irq(struct hif_softc *sc);
 void hif_pci_cancel_deferred_target_sleep(struct hif_softc *scn);
 void wlan_tasklet(unsigned long data);
-irqreturn_t hif_pci_interrupt_handler(int irq, void *arg);
+irqreturn_t hif_pci_legacy_ce_interrupt_handler(int irq, void *arg);
 int hif_pci_addr_in_boundary(struct hif_softc *scn, uint32_t offset);
 
 /*
@@ -169,7 +160,7 @@ int hif_pci_addr_in_boundary(struct hif_softc *scn, uint32_t offset);
 /*
  * There may be some pending tx frames during platform suspend.
  * Suspend operation should be delayed until those tx frames are
- * transfered from the host to target. This macro specifies how
+ * transferred from the host to target. This macro specifies how
  * long suspend thread has to sleep before checking pending tx
  * frame count.
  */

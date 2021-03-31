@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011, 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _OL_RX_PN_H_
@@ -60,7 +51,8 @@ int ol_rx_pn_wapi_cmp(union htt_rx_pn_t *new_pn,
  */
 void
 ol_rx_pn_check(struct ol_txrx_vdev_t *vdev,
-	       struct ol_txrx_peer_t *peer, unsigned tid, qdf_nbuf_t msdu_list);
+	       struct ol_txrx_peer_t *peer, unsigned int tid,
+	       qdf_nbuf_t msdu_list);
 
 /**
  * @brief If applicable, check the Packet Number to detect replays.
@@ -82,7 +74,7 @@ ol_rx_pn_check(struct ol_txrx_vdev_t *vdev,
 void
 ol_rx_pn_check_only(struct ol_txrx_vdev_t *vdev,
 		    struct ol_txrx_peer_t *peer,
-		    unsigned tid, qdf_nbuf_t msdu_list);
+		    unsigned int tid, qdf_nbuf_t msdu_list);
 
 /**
  * @brief If applicable, check the Packet Number to detect replays.
@@ -100,6 +92,6 @@ ol_rx_pn_check_only(struct ol_txrx_vdev_t *vdev,
 qdf_nbuf_t
 ol_rx_pn_check_base(struct ol_txrx_vdev_t *vdev,
 		    struct ol_txrx_peer_t *peer,
-		    unsigned tid, qdf_nbuf_t msdu_list);
+		    unsigned int tid, qdf_nbuf_t msdu_list);
 
 #endif /* _OL_RX_PN_H_ */

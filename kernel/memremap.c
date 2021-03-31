@@ -159,7 +159,9 @@ static void devm_memremap_pages_release(struct device *dev, void *res)
 	struct page_map *page_map = res;
 
 	/* pages are dead and unused, undo the arch mapping */
+	mem_hotplug_begin();
 	arch_remove_memory(page_map->res.start, resource_size(&page_map->res));
+	mem_hotplug_done();
 }
 
 void *devm_memremap_pages(struct device *dev, struct resource *res)
@@ -169,14 +171,11 @@ void *devm_memremap_pages(struct device *dev, struct resource *res)
 	struct page_map *page_map;
 	int error, nid;
 
-	if (is_ram == REGION_MIXED) {
-		WARN_ONCE(1, "%s attempted on mixed region %pr\n",
-				__func__, res);
+	if (is_ram != REGION_DISJOINT) {
+		WARN_ONCE(1, "%s attempted on %s region %pr\n", __func__,
+				is_ram == REGION_MIXED ? "mixed" : "ram", res);
 		return ERR_PTR(-ENXIO);
 	}
-
-	if (is_ram == REGION_INTERSECTS)
-		return __va(res->start);
 
 	page_map = devres_alloc_node(devm_memremap_pages_release,
 			sizeof(*page_map), GFP_KERNEL, dev_to_node(dev));
@@ -189,7 +188,9 @@ void *devm_memremap_pages(struct device *dev, struct resource *res)
 	if (nid < 0)
 		nid = numa_mem_id();
 
+	mem_hotplug_begin();
 	error = arch_add_memory(nid, res->start, resource_size(res), true);
+	mem_hotplug_done();
 	if (error) {
 		devres_free(page_map);
 		return ERR_PTR(error);
@@ -198,5 +199,5 @@ void *devm_memremap_pages(struct device *dev, struct resource *res)
 	devres_add(dev, page_map);
 	return __va(res->start);
 }
-EXPORT_SYMBOL(devm_memremap_pages);
+EXPORT_SYMBOL_GPL(devm_memremap_pages);
 #endif /* CONFIG_ZONE_DEVICE */

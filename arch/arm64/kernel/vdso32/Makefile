@@ -1,10 +1,18 @@
 #
 # Building a vDSO image for AArch32.
 #
-# Author: Kevin Brodsky <kevin.brodsky at arm.com>
+# Author: Kevin Brodsky <kevin.brodsky@arm.com>
 # A mix between the arm64 and arm vDSO Makefiles.
 
-CC_ARM32 := $(CROSS_COMPILE_ARM32)gcc
+ifeq ($(cc-name),clang)
+  CC_ARM32 := $(cc-name) $(CLANG_TARGET_ARM32) -no-integrated-as
+  GCC_ARM32_TC := $(realpath $(dir $(shell which $(CROSS_COMPILE_ARM32)ld))/..)
+ifneq ($(GCC_ARM32_TC),)
+  CC_ARM32 += --gcc-toolchain=$(GCC_ARM32_TC)
+endif
+else
+  CC_ARM32 := $(CROSS_COMPILE_ARM32)$(cc-name)
+endif
 
 # Same as cc-*option, but using CC_ARM32 instead of CC
 cc32-option = $(call try-run,\
@@ -25,7 +33,9 @@ cc32-ldoption = $(call try-run,\
 # NOSTDINC_FLAGS
 VDSO_CPPFLAGS := -nostdinc -isystem $(shell $(CC_ARM32) -print-file-name=include)
 VDSO_CPPFLAGS += $(LINUXINCLUDE)
-VDSO_CPPFLAGS += $(KBUILD_CPPFLAGS)
+VDSO_CPPFLAGS += -D__KERNEL__
+VDSO_CPPFLAGS += $(call cc-option,-Qunused-arguments,)
+VDSO_CPPFLAGS += $(ARCH_CPPFLAGS) $(KCPPFLAGS)
 
 # Common C and assembly flags
 # From top-level Makefile
@@ -97,7 +107,10 @@ VDSO_LDFLAGS += $(call cc32-ldoption,-fuse-ld=bfd)
 
 
 # Borrow vdsomunge.c from the arm vDSO
-hostprogs-y := vdsomunge
+# We have to use a relative path because scripts/Makefile.host prefixes
+# $(hostprogs-y) with $(obj)
+munge := ../../../arm/vdso/vdsomunge
+hostprogs-y := $(munge)
 
 c-obj-vdso := vgettimeofday.o
 asm-obj-vdso := sigreturn.o
@@ -123,7 +136,7 @@ $(obj)/vdso.so: OBJCOPYFLAGS := -S
 $(obj)/vdso.so: $(obj)/vdso.so.dbg FORCE
 	$(call if_changed,objcopy)
 
-$(obj)/vdso.so.dbg: $(obj)/vdso.so.raw $(obj)/vdsomunge FORCE
+$(obj)/vdso.so.dbg: $(obj)/vdso.so.raw $(obj)/$(munge) FORCE
 	$(call if_changed,vdsomunge)
 
 # Link rule for the .so file, .lds has to be first
@@ -131,22 +144,22 @@ $(obj)/vdso.so.raw: $(src)/vdso.lds $(obj-vdso) FORCE
 	$(call if_changed,vdsold)
 
 # Compilation rules for the vDSO sources
-$(c-obj-vdso): %.o: %.c FORCE
+$(filter-out vgettimeofday.o, $(c-obj-vdso)): %.o: %.c FORCE
 	$(call if_changed_dep,vdsocc)
 $(asm-obj-vdso): %.o: %.S FORCE
 	$(call if_changed_dep,vdsoas)
 
 # Actual build commands
-quiet_cmd_vdsold = VDSOL   $@
+quiet_cmd_vdsold = VDSOL32   $@
       cmd_vdsold = $(CC_ARM32) -Wp,-MD,$(depfile) $(VDSO_LDFLAGS) \
                    -Wl,-T $(filter %.lds,$^) $(filter %.o,$^) -o $@
-quiet_cmd_vdsocc = VDSOC   $@
+quiet_cmd_vdsocc = VDSOC32   $@
       cmd_vdsocc = $(CC_ARM32) -Wp,-MD,$(depfile) $(VDSO_CFLAGS) -c -o $@ $<
-quiet_cmd_vdsoas = VDSOA   $@
+quiet_cmd_vdsoas = VDSOA32   $@
       cmd_vdsoas = $(CC_ARM32) -Wp,-MD,$(depfile) $(VDSO_AFLAGS) -c -o $@ $<
 
 quiet_cmd_vdsomunge = MUNGE   $@
-      cmd_vdsomunge = $(objtree)/$(obj)/vdsomunge $< $@
+      cmd_vdsomunge = $(obj)/$(munge) $< $@
 
 # Generate vDSO offsets using helper script (borrowed from the 64-bit vDSO)
 gen-vdsosym := $(srctree)/$(src)/../vdso/gen_vdso_offsets.sh

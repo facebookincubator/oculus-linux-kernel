@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -75,6 +75,26 @@ static int sharedmem_mmap(struct uio_info *info, struct vm_area_struct *vma)
 	return result;
 }
 
+#ifdef CONFIG_MSM_GVM_QUIN
+static void free_shared_ram_perms(u32 client_id, phys_addr_t addr, u32 size)
+{
+	int ret;
+	u32 source_vmlist[2] = {VMID_HLOS, VMID_MSS_MSA};
+	int dest_vmids[1] = {VMID_HLOS};
+	int dest_perms[1] = {PERM_READ|PERM_WRITE|PERM_EXEC};
+
+	if (client_id != MPSS_RMTS_CLIENT_ID)
+		return;
+
+	ret = hyp_assign_phys(addr, size, source_vmlist, 2, dest_vmids,
+				dest_perms, 1);
+	if (ret != 0) {
+		pr_err("hyp_assign_phys failed IPA=0x016%pa size=%u err=%d\n",
+			&addr, size, ret);
+	}
+}
+#endif
+
 /* Setup the shared ram permissions.
  * This function currently supports the mpss client only.
  */
@@ -107,10 +127,12 @@ static int msm_sharedmem_probe(struct platform_device *pdev)
 	struct resource *clnt_res = NULL;
 	u32 client_id = ((u32)~0U);
 	u32 shared_mem_size = 0;
+	u32 shared_mem_tot_sz = 0;
 	void *shared_mem = NULL;
 	phys_addr_t shared_mem_pyhsical = 0;
 	bool is_addr_dynamic = false;
 	struct sharemem_qmi_entry qmi_entry;
+	bool guard_memory = false;
 
 	/* Get the addresses from platform-data */
 	if (!pdev->dev.of_node) {
@@ -145,13 +167,30 @@ static int msm_sharedmem_probe(struct platform_device *pdev)
 
 	if (shared_mem_pyhsical == 0) {
 		is_addr_dynamic = true;
-		shared_mem = dma_alloc_coherent(&pdev->dev, shared_mem_size,
+
+		/*
+		 * If guard_memory is set, then the shared memory region
+		 * will be guarded by SZ_4K at the start and at the end.
+		 * This is needed to overcome the XPU limitation on few
+		 * MSM HW, so as to make this memory not contiguous with
+		 * other allocations that may possibly happen from other
+		 * clients in the system.
+		 */
+		guard_memory = of_property_read_bool(pdev->dev.of_node,
+				"qcom,guard-memory");
+
+		shared_mem_tot_sz = guard_memory ? shared_mem_size + SZ_8K :
+					shared_mem_size;
+
+		shared_mem = dma_alloc_coherent(&pdev->dev, shared_mem_tot_sz,
 					&shared_mem_pyhsical, GFP_KERNEL);
 		if (shared_mem == NULL) {
 			pr_err("Shared mem alloc client=%s, size=%u\n",
 				clnt_res->name, shared_mem_size);
 			return -ENOMEM;
 		}
+		if (guard_memory)
+			shared_mem_pyhsical += SZ_4K;
 	}
 
 	/* Set up the permissions for the shared ram that was allocated. */
@@ -184,6 +223,23 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_MSM_GVM_QUIN
+static void msm_sharedmem_shutdown(struct platform_device *pdev)
+{
+	struct uio_info *info = dev_get_drvdata(&pdev->dev);
+
+	phys_addr_t shared_mem_addr = info->mem[0].addr;
+	u32 shared_mem_size = info->mem[0].size;
+
+	free_shared_ram_perms(MPSS_RMTS_CLIENT_ID, shared_mem_addr,
+			shared_mem_size);
+}
+#else
+static void msm_sharedmem_shutdown(struct platform_device *pdev)
+{
+}
+#endif
+
 static int msm_sharedmem_remove(struct platform_device *pdev)
 {
 	struct uio_info *info = dev_get_drvdata(&pdev->dev);
@@ -202,6 +258,7 @@ MODULE_DEVICE_TABLE(of, msm_sharedmem_of_match);
 static struct platform_driver msm_sharedmem_driver = {
 	.probe          = msm_sharedmem_probe,
 	.remove         = msm_sharedmem_remove,
+	.shutdown       = msm_sharedmem_shutdown,
 	.driver         = {
 		.name   = DRIVER_NAME,
 		.owner	= THIS_MODULE,

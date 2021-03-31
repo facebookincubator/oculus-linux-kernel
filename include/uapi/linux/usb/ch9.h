@@ -812,6 +812,8 @@ struct usb_wireless_cap_descriptor {	/* Ultra Wide Band */
 	__u8  bReserved;
 } __attribute__((packed));
 
+#define USB_DT_USB_WIRELESS_CAP_SIZE	11
+
 /* USB 2.0 Extension descriptor */
 #define	USB_CAP_TYPE_EXT		2
 
@@ -895,6 +897,46 @@ struct usb_ssp_cap_descriptor {
 #define USB_SSP_SUBLINK_SPEED_LSM	(0xff << 16)	/* Lanespeed mantissa */
 } __attribute__((packed));
 
+/*
+ * Precision time measurement capability descriptor: advertised by devices and
+ * hubs that support PTM
+ */
+#define	USB_PTM_CAP_TYPE	0xb
+struct usb_ptm_cap_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+	__u8  bDevCapabilityType;
+} __attribute__((packed));
+
+/*
+ * Configuration Summary descriptors: Defines a list of functions in the
+ * configuration. This descriptor may be used by Host software to decide
+ * which Configuration to use to obtain the desired functionality.
+ */
+#define	USB_CAP_TYPE_CONFIG_SUMMARY	0x10
+
+struct function_class_info {
+	__u8 bClass;
+	__u8 bSubClass;
+	__u8 bProtocol;
+};
+
+struct usb_config_summary_descriptor {
+	__u8 bLength;
+	__u8 bDescriptorType;
+	__u8 bDevCapabilityType;
+	__u16 bcdVersion;
+	__u8 bConfigurationValue;
+	__u8 bMaxPower;
+	__u8 bNumFunctions;
+	struct function_class_info cs_info[];
+} __attribute__((packed));
+
+/*
+ * The size of the descriptor for the Sublink Speed Attribute Count
+ * (SSAC) specified in bmAttributes[4:0].
+ */
+#define USB_DT_USB_SSP_CAP_SIZE(ssac)	(16 + ssac * 4)
 
 /*-------------------------------------------------------------------------*/
 
@@ -991,6 +1033,7 @@ enum usb3_link_state {
 	USB3_LPM_U3
 };
 
+#define USB_DT_USB_PTM_ID_SIZE		3
 /*
  * A U1 timeout of 0x0 means the parent hub will reject any transitions to U1.
  * 0xff means the parent hub will accept transitions to U1, but will not

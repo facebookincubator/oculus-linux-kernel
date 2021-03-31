@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _WLAN_HDD_WOWL_H
@@ -83,13 +74,13 @@
  *
  * PBM (when enabled) can perform filtering on unicast data or
  * broadcast data or both. These configurations are part of factory
- * defaults (cfg.dat) and the deafult behavior is to perform filtering
+ * defaults (cfg.dat) and the default behavior is to perform filtering
  * on both unicast and data frames.
  *
  * MP filtering (when enabled) is performed ALWAYS on both unicast and
  * broadcast data frames.
  *
- * Mangement frames are not subjected to WoWL filtering and are
+ * Management frames are not subjected to WoWL filtering and are
  * discarded when WoWL is enabled.
  *
  * Whenever a patern match succeeds, RX path is restored and packets
@@ -103,34 +94,35 @@
  */
 
 #include <qdf_types.h>
+#include "wlan_pmo_wow_public_struct.h"
 
-#define WOWL_PTRN_MAX_SIZE          146
-#define WOWL_PTRN_MASK_MAX_SIZE      19
-#define WOWL_MAX_PTRNS_ALLOWED       CFG_MAX_WOW_FILTERS_MAX
+#define WOWL_PTRN_MAX_SIZE	146
+#define WOWL_PTRN_MASK_MAX_SIZE	19
+#define WOWL_MAX_PTRNS_ALLOWED	PMO_WOW_FILTERS_MAX
 
 /**
  * hdd_add_wowl_ptrn() - Function which will add the WoWL pattern to be
  *			 used when PBM filtering is enabled
- * @pAdapter: pointer to the adapter
+ * @adapter: pointer to the adapter
  * @ptrn: pointer to the pattern string to be added
  *
  * Return: false if any errors encountered, true otherwise
  */
-bool hdd_add_wowl_ptrn(hdd_adapter_t *pAdapter, const char *ptrn);
+bool hdd_add_wowl_ptrn(struct hdd_adapter *adapter, const char *ptrn);
 
 /**
  * hdd_del_wowl_ptrn() - Function which will remove a WoWL pattern
- * @pAdapter: pointer to the adapter
+ * @adapter: pointer to the adapter
  * @ptrn: pointer to the pattern string to be removed
  *
  * Return: false if any errors encountered, true otherwise
  */
-bool hdd_del_wowl_ptrn(hdd_adapter_t *pAdapter, const char *ptrn);
+bool hdd_del_wowl_ptrn(struct hdd_adapter *adapter, const char *ptrn);
 
 /**
  * hdd_add_wowl_ptrn_debugfs() - Function which will add a WoW pattern
  *				 sent from debugfs interface
- * @pAdapter: pointer to the adapter
+ * @adapter: pointer to the adapter
  * @pattern_idx: index of the pattern to be added
  * @pattern_offset: offset of the pattern in the frame payload
  * @pattern_buf: pointer to the pattern hex string to be added
@@ -138,44 +130,26 @@ bool hdd_del_wowl_ptrn(hdd_adapter_t *pAdapter, const char *ptrn);
  *
  * Return: false if any errors encountered, true otherwise
  */
-bool hdd_add_wowl_ptrn_debugfs(hdd_adapter_t *pAdapter, uint8_t pattern_idx,
+bool hdd_add_wowl_ptrn_debugfs(struct hdd_adapter *adapter, uint8_t pattern_idx,
 			       uint8_t pattern_offset, char *pattern_buf,
 			       char *pattern_mask);
 
 /**
  * hdd_del_wowl_ptrn_debugfs() - Function which will remove a WoW pattern
  *				 sent from debugfs interface
- * @pAdapter: pointer to the adapter
+ * @adapter: pointer to the adapter
  * @pattern_idx: index of the pattern to be removed
  *
  * Return: false if any errors encountered, true otherwise
  */
-bool hdd_del_wowl_ptrn_debugfs(hdd_adapter_t *pAdapter, uint8_t pattern_idx);
+bool hdd_del_wowl_ptrn_debugfs(struct hdd_adapter *adapter,
+			       uint8_t pattern_idx);
 
 /**
- * hdd_enter_wowl() - Function which will enable WoWL. At least one
- *		      of MP and PBM must be enabled
- * @pAdapter: pointer to the adapter
- * @enable_mp: Whether to enable magic packet WoWL mode
- * @enable_pbm: Whether to enable pattern byte matching WoWL mode
- *
- * Return: false if any errors encountered, true otherwise
- */
-bool hdd_enter_wowl(hdd_adapter_t *pAdapter, bool enable_mp, bool enable_pbm);
-
-/**
- * hdd_exit_wowl() - Function which will disable WoWL
- * @pAdapter: pointer to the adapter
- *
- * Return: false if any errors encountered, true otherwise
- */
-bool hdd_exit_wowl(hdd_adapter_t *pAdapter);
-
-/**
- * hdd_deinit_wowl() - Deinit function to cleanup WoWL allocated memory
+ * hdd_free_user_wowl_ptrns() - Deinit function to cleanup WoWL allocated memory
  *
  * Return: None
  */
-void hdd_deinit_wowl(void);
+void hdd_free_user_wowl_ptrns(void);
 
 #endif /* #ifndef _WLAN_HDD_WOWL_H */

@@ -34,7 +34,7 @@
  *
  * Return: zero if success, non-zero otherwise
  */
-int hdd_enable_default_pkt_filters(hdd_adapter_t *pAadapter);
+int hdd_enable_default_pkt_filters(struct hdd_adapter *pAadapter);
 
 /**
  * hdd_disable_default_pkt_filters() - Disable default packet filters based
@@ -43,7 +43,7 @@ int hdd_enable_default_pkt_filters(hdd_adapter_t *pAadapter);
  *
  * Return: zero if success, non-zero otherwise
  */
-int hdd_disable_default_pkt_filters(hdd_adapter_t *pAdapter);
+int hdd_disable_default_pkt_filters(struct hdd_adapter *adapter);
 
 /**
  * wlan_hdd_set_filter() - Set packet filter
@@ -53,7 +53,7 @@ int hdd_disable_default_pkt_filters(hdd_adapter_t *pAdapter);
  *
  * Return: 0 on success, non-zero on error
  */
-int wlan_hdd_set_filter(hdd_context_t *hdd_ctx,
+int wlan_hdd_set_filter(struct hdd_context *hdd_ctx,
 			struct pkt_filter_cfg *request,
 			uint8_t sessionId);
 #endif

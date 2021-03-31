@@ -245,8 +245,7 @@ phys_addr_t __init_memblock memblock_find_in_range_node(phys_addr_t size,
 		 * so we use WARN_ONCE() here to see the stack trace if
 		 * fail happens.
 		 */
-		WARN_ONCE(1, "memblock: bottom-up allocation failed, "
-			     "memory hotunplug may be affected\n");
+		WARN_ONCE(1, "memblock: bottom-up allocation failed, memory hotunplug may be affected\n");
 	}
 
 	return __memblock_find_range_top_down(start, end, size, align, nid,
@@ -827,6 +826,27 @@ int __init_memblock memblock_mark_mirror(phys_addr_t base, phys_addr_t size)
 	return memblock_setclr_flag(base, size, 1, MEMBLOCK_MIRROR);
 }
 
+/**
+ * memblock_mark_nomap - Mark a memory region with flag MEMBLOCK_NOMAP.
+ * @base: the base phys addr of the region
+ * @size: the size of the region
+ *
+ * Return 0 on success, -errno on failure.
+ */
+int __init_memblock memblock_mark_nomap(phys_addr_t base, phys_addr_t size)
+{
+	return memblock_setclr_flag(base, size, 1, MEMBLOCK_NOMAP);
+}
+
+/**
+ * memblock_clear_nomap - Clear a flag of MEMBLOCK_NOMAP memory region
+ * @base: the base phys addr of the region
+ * @size: the size of the region
+ */
+int __init_memblock memblock_clear_nomap(phys_addr_t base, phys_addr_t size)
+{
+	return memblock_setclr_flag(base, size, 0, MEMBLOCK_NOMAP);
+}
 
 /**
  * __next_reserved_mem_region - next function for for_each_reserved_region()
@@ -916,6 +936,10 @@ void __init_memblock __next_mem_range(u64 *idx, int nid, ulong flags,
 
 		/* if we want mirror memory skip non-mirror memory regions */
 		if ((flags & MEMBLOCK_MIRROR) && !memblock_is_mirror(m))
+			continue;
+
+		/* skip nomap memory unless we were asked for it explicitly */
+		if (!(flags & MEMBLOCK_NOMAP) && memblock_is_nomap(m))
 			continue;
 
 		if (!type_b) {
@@ -1025,6 +1049,10 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid, ulong flags,
 
 		/* if we want mirror memory skip non-mirror memory regions */
 		if ((flags & MEMBLOCK_MIRROR) && !memblock_is_mirror(m))
+			continue;
+
+		/* skip nomap memory unless we were asked for it explicitly */
+		if (!(flags & MEMBLOCK_NOMAP) && memblock_is_nomap(m))
 			continue;
 
 		if (!type_b) {
@@ -1538,6 +1566,15 @@ int __init_memblock memblock_is_memory(phys_addr_t addr)
 	return memblock_search(&memblock.memory, addr) != -1;
 }
 
+int __init_memblock memblock_is_map_memory(phys_addr_t addr)
+{
+	int i = memblock_search(&memblock.memory, addr);
+
+	if (i == -1)
+		return false;
+	return !memblock_is_nomap(&memblock.memory.regions[i]);
+}
+
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 int __init_memblock memblock_search_pfn_nid(unsigned long pfn,
 			 unsigned long *start_pfn, unsigned long *end_pfn)
@@ -1577,11 +1614,12 @@ int __init_memblock memblock_is_region_memory(phys_addr_t base, phys_addr_t size
 		 memblock.memory.regions[idx].size) >= end;
 }
 
-int __init_memblock memblock_overlaps_memory(phys_addr_t base, phys_addr_t size)
+bool __init_memblock memblock_overlaps_memory(phys_addr_t base,
+					      phys_addr_t size)
 {
 	memblock_cap_size(base, &size);
 
-	return memblock_overlaps_region(&memblock.memory, base, size) >= 0;
+	return memblock_overlaps_region(&memblock.memory, base, size);
 }
 
 /**
@@ -1658,6 +1696,30 @@ static void __init_memblock memblock_dump(struct memblock_type *type, char *name
 		pr_info(" %s[%#x]\t[%#016llx-%#016llx], %#llx bytes%s flags: %#lx\n",
 			name, i, base, base + size - 1, size, nid_buf, flags);
 	}
+}
+
+extern unsigned long __init_memblock
+memblock_reserved_memory_within(phys_addr_t start_addr, phys_addr_t end_addr)
+{
+	struct memblock_type *type = &memblock.reserved;
+	unsigned long size = 0;
+	int idx;
+
+	for (idx = 0; idx < type->cnt; idx++) {
+		struct memblock_region *rgn = &type->regions[idx];
+		phys_addr_t start, end;
+
+		if (rgn->base + rgn->size < start_addr)
+			continue;
+		if (rgn->base > end_addr)
+			continue;
+
+		start = rgn->base;
+		end = start + rgn->size;
+		size += end - start;
+	}
+
+	return size;
 }
 
 void __init_memblock __memblock_dump_all(void)

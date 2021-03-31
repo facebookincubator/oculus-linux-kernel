@@ -1773,6 +1773,38 @@ void mdss_mdp_hw_rev_debug_caps_init(struct mdss_data_type *mdata)
 	}
 }
 
+void mdss_mdp_debug_mid(u32 mid)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	struct mdss_debug_data *mdd = mdata->debug_inf.debug_data;
+	struct range_dump_node *xlog_node;
+	struct mdss_debug_base *blk_base;
+	char *addr;
+	u32 len;
+
+	list_for_each_entry(blk_base, &mdd->base_list, head) {
+		list_for_each_entry(xlog_node, &blk_base->dump_list, head) {
+			if (xlog_node->xin_id != mid)
+				continue;
+
+			len = get_dump_range(&xlog_node->offset,
+				blk_base->max_offset);
+			addr = blk_base->base + xlog_node->offset.start;
+			pr_info("%s: mid:%d range_base=0x%pK start=0x%x end=0x%x\n",
+				xlog_node->range_name, mid, addr,
+				xlog_node->offset.start, xlog_node->offset.end);
+
+			/*
+			 * Next instruction assumes that MDP clocks are ON
+			 * because it is called from interrupt context
+			 */
+			mdss_dump_reg((const char *)xlog_node->range_name,
+				MDSS_DBG_DUMP_IN_LOG, addr, len,
+				&xlog_node->reg_dump, true);
+		}
+	}
+}
+
 static void __print_time(char *buf, u32 size, u64 ts)
 {
 	unsigned long rem_ns = do_div(ts, NSEC_PER_SEC);
@@ -1831,12 +1863,14 @@ static void __print_buf(struct seq_file *s, struct mdss_mdp_data *buf,
 	seq_puts(s, "\n");
 }
 
-static void __dump_pipe(struct seq_file *s, struct mdss_mdp_pipe *pipe)
+static void __dump_pipe(struct seq_file *s, struct mdss_mdp_pipe *pipe,
+		struct msm_fb_data_type *mfd)
 {
 	struct mdss_mdp_data *buf;
 	int format;
 	int smps[4];
 	int i;
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 
 	seq_printf(s, "\nSSPP #%d type=%s ndx=%x flags=0x%16llx play_cnt=%u xin_id=%d\n",
 			pipe->num, mdss_mdp_pipetype2str(pipe->type),
@@ -1891,11 +1925,14 @@ static void __dump_pipe(struct seq_file *s, struct mdss_mdp_pipe *pipe)
 
 	seq_puts(s, "Data:\n");
 
+	mutex_lock(&mdp5_data->list_lock);
 	list_for_each_entry(buf, &pipe->buf_queue, pipe_list)
 		__print_buf(s, buf, false);
+	mutex_unlock(&mdp5_data->list_lock);
 }
 
-static void __dump_mixer(struct seq_file *s, struct mdss_mdp_mixer *mixer)
+static void __dump_mixer(struct seq_file *s, struct mdss_mdp_mixer *mixer,
+		struct msm_fb_data_type *mfd)
 {
 	struct mdss_mdp_pipe *pipe;
 	int i, cnt = 0;
@@ -1912,7 +1949,7 @@ static void __dump_mixer(struct seq_file *s, struct mdss_mdp_mixer *mixer)
 	for (i = 0; i < ARRAY_SIZE(mixer->stage_pipe); i++) {
 		pipe = mixer->stage_pipe[i];
 		if (pipe) {
-			__dump_pipe(s, pipe);
+			__dump_pipe(s, pipe, mfd);
 			cnt++;
 		}
 	}
@@ -1987,8 +2024,8 @@ static void __dump_ctl(struct seq_file *s, struct mdss_mdp_ctl *ctl)
 	seq_printf(s, "Play Count=%u  Underrun Count=%u\n",
 			ctl->play_cnt, ctl->underrun_cnt);
 
-	__dump_mixer(s, ctl->mixer_left);
-	__dump_mixer(s, ctl->mixer_right);
+	__dump_mixer(s, ctl->mixer_left, ctl->mfd);
+	__dump_mixer(s, ctl->mixer_right, ctl->mfd);
 }
 
 static int __dump_mdp(struct seq_file *s, struct mdss_data_type *mdata)
@@ -2041,38 +2078,6 @@ void mdss_mdp_dump(struct mdss_data_type *mdata)
 }
 
 #ifdef CONFIG_DEBUG_FS
-void mdss_mdp_debug_mid(u32 mid)
-{
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	struct mdss_debug_data *mdd = mdata->debug_inf.debug_data;
-	struct range_dump_node *xlog_node;
-	struct mdss_debug_base *blk_base;
-	char *addr;
-	u32 len;
-
-	list_for_each_entry(blk_base, &mdd->base_list, head) {
-		list_for_each_entry(xlog_node, &blk_base->dump_list, head) {
-			if (xlog_node->xin_id != mid)
-				continue;
-
-			len = get_dump_range(&xlog_node->offset,
-				blk_base->max_offset);
-			addr = blk_base->base + xlog_node->offset.start;
-			pr_info("%s: mid:%d range_base=0x%pK start=0x%x end=0x%x\n",
-				xlog_node->range_name, mid, addr,
-				xlog_node->offset.start, xlog_node->offset.end);
-
-			/*
-			 * Next instruction assumes that MDP clocks are ON
-			 * because it is called from interrupt context
-			 */
-			mdss_dump_reg((const char *)xlog_node->range_name,
-				MDSS_DBG_DUMP_IN_LOG, addr, len,
-				&xlog_node->reg_dump, true);
-		}
-	}
-}
-
 static void __dump_buf_data(struct seq_file *s, struct msm_fb_data_type *mfd)
 {
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);

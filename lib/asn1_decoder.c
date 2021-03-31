@@ -227,7 +227,7 @@ next_op:
 		hdr = 2;
 
 		/* Extract a tag from the data */
-		if (unlikely(dp >= datalen - 1))
+		if (unlikely(datalen - dp < 2))
 			goto data_overrun_error;
 		tag = data[dp++];
 		if (unlikely((tag & 0x1f) == ASN1_LONG_TAG))
@@ -273,7 +273,7 @@ next_op:
 				int n = len - 0x80;
 				if (unlikely(n > 2))
 					goto length_too_long;
-				if (unlikely(dp >= datalen - n))
+				if (unlikely(n > datalen - dp))
 					goto data_overrun_error;
 				hdr += n;
 				for (len = 0; n > 0; n--) {
@@ -438,6 +438,8 @@ next_op:
 			else
 				act = machine[pc + 1];
 			ret = actions[act](context, hdr, 0, data + tdp, len);
+			if (ret < 0)
+				return ret;
 		}
 		pc += asn1_op_lengths[op];
 		goto next_op;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -142,6 +142,8 @@ void compute_work_load(struct devfreq_dev_status *stats,
 		struct devfreq_msm_adreno_tz_data *priv,
 		struct devfreq *devfreq)
 {
+	u64 busy;
+
 	spin_lock(&sample_lock);
 	/*
 	 * Keep collecting the stats till the client
@@ -149,8 +151,10 @@ void compute_work_load(struct devfreq_dev_status *stats,
 	 * is done when the entry is read
 	 */
 	acc_total += stats->total_time;
-	acc_relative_busy += (stats->busy_time * stats->current_frequency) /
-				devfreq->profile->freq_table[0];
+	busy = (u64)stats->busy_time * stats->current_frequency;
+	do_div(busy, devfreq->profile->freq_table[0]);
+	acc_relative_busy += busy;
+
 	spin_unlock(&sample_lock);
 }
 
@@ -478,8 +482,6 @@ static int tz_suspend(struct devfreq *devfreq)
 static int tz_handler(struct devfreq *devfreq, unsigned int event, void *data)
 {
 	int result;
-
-	BUG_ON(devfreq == NULL);
 
 	switch (event) {
 	case DEVFREQ_GOV_START:

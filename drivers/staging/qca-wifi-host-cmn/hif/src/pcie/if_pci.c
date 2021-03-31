@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
@@ -35,6 +26,7 @@
 #include "hif_io32.h"
 #include "if_pci.h"
 #include "hif.h"
+#include "target_type.h"
 #include "hif_main.h"
 #include "ce_main.h"
 #include "ce_api.h"
@@ -54,6 +46,7 @@
 #include "if_pci_internal.h"
 #include "ce_tasklet.h"
 #include "targaddrs.h"
+#include "hif_exec.h"
 
 #include "pci_api.h"
 #include "ahb_api.h"
@@ -86,7 +79,6 @@ struct ce_irq_reg_table {
 #ifndef QCA_WIFI_3_0_ADRASTEA
 static inline void hif_pci_route_adrastea_interrupt(struct hif_pci_softc *sc)
 {
-	return;
 }
 #else
 void hif_pci_route_adrastea_interrupt(struct hif_pci_softc *sc)
@@ -110,6 +102,7 @@ void hif_pci_route_adrastea_interrupt(struct hif_pci_softc *sc)
 	}
 }
 #endif
+
 
 /**
  * pci_dispatch_ce_irq() - pci_dispatch_ce_irq
@@ -146,9 +139,8 @@ static void pci_dispatch_interrupt(struct hif_softc *scn)
 		}
 		Q_TARGET_ACCESS_END(scn);
 		return;
-	} else {
-		Q_TARGET_ACCESS_END(scn);
 	}
+	Q_TARGET_ACCESS_END(scn);
 
 	scn->ce_irq_summary = intr_summary;
 	for (id = 0; intr_summary && (id < scn->ce_count); id++) {
@@ -159,14 +151,15 @@ static void pci_dispatch_interrupt(struct hif_softc *scn)
 	}
 }
 
-irqreturn_t hif_pci_interrupt_handler(int irq, void *arg)
+irqreturn_t hif_pci_legacy_ce_interrupt_handler(int irq, void *arg)
 {
 	struct hif_pci_softc *sc = (struct hif_pci_softc *)arg;
 	struct hif_softc *scn = HIF_GET_SOFTC(sc);
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(arg);
+
 	volatile int tmp;
-	uint16_t val;
-	uint32_t bar0;
+	uint16_t val = 0;
+	uint32_t bar0 = 0;
 	uint32_t fw_indicator_address, fw_indicator;
 	bool ssr_irq = false;
 	unsigned int host_cause, host_enable;
@@ -189,7 +182,8 @@ irqreturn_t hif_pci_interrupt_handler(int irq, void *arg)
 		/* Clear Legacy PCI line interrupts
 		 * IMPORTANT: INTR_CLR regiser has to be set
 		 * after INTR_ENABLE is set to 0,
-		 * otherwise interrupt can not be really cleared */
+		 * otherwise interrupt can not be really cleared
+		 */
 		hif_write32_mb(sc->mem +
 			      (SOC_CORE_BASE_ADDRESS |
 			       PCIE_INTR_ENABLE_ADDRESS), 0);
@@ -201,10 +195,11 @@ irqreturn_t hif_pci_interrupt_handler(int irq, void *arg)
 			      HOST_GROUP0_MASK);
 
 		if (ADRASTEA_BU)
-			hif_write32_mb(sc->mem + 0x2f100c , (host_cause >> 1));
+			hif_write32_mb(sc->mem + 0x2f100c, (host_cause >> 1));
 
 		/* IMPORTANT: this extra read transaction is required to
-		 * flush the posted write buffer */
+		 * flush the posted write buffer
+		 */
 		if (!ADRASTEA_BU) {
 		tmp =
 			hif_read32_mb(sc->mem +
@@ -304,6 +299,33 @@ bool hif_pci_targ_is_present(struct hif_softc *scn, void *__iomem *mem)
 	return 1;               /* FIX THIS */
 }
 
+int hif_get_irq_num(struct hif_opaque_softc *scn, int *irq, uint32_t size)
+{
+	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
+	int i = 0;
+
+	if (!irq || !size) {
+		return -EINVAL;
+	}
+
+	if (!sc->num_msi_intrs || sc->num_msi_intrs == 1) {
+		irq[0] = sc->irq;
+		return 1;
+	}
+
+	if (sc->num_msi_intrs > size) {
+		qdf_print("Not enough space in irq buffer to return irqs\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < sc->num_msi_intrs; i++) {
+		irq[i] = sc->irq +  i + MSI_ASSIGN_CE_INITIAL;
+	}
+
+	return sc->num_msi_intrs;
+}
+
+
 /**
  * hif_pci_cancel_deferred_target_sleep() - cancels the defered target sleep
  * @scn: hif_softc
@@ -335,7 +357,6 @@ void hif_pci_cancel_deferred_target_sleep(struct hif_softc *scn)
 #else
 inline void hif_pci_cancel_deferred_target_sleep(struct hif_softc *scn)
 {
-	return;
 }
 #endif
 
@@ -391,15 +412,14 @@ static void hif_pci_device_reset(struct hif_pci_softc *sc)
 		return;
 
 	/* NB: Don't check resetok here.  This form of reset
-	 * is integral to correct operation. */
+	 * is integral to correct operation.
+	 */
 
-	if (!SOC_GLOBAL_RESET_ADDRESS) {
+	if (!SOC_GLOBAL_RESET_ADDRESS)
 		return;
-	}
 
-	if (!mem) {
+	if (!mem)
 		return;
-	}
 
 	HIF_ERROR("%s: Reset Device", __func__);
 
@@ -446,7 +466,7 @@ static void hif_pci_device_reset(struct hif_pci_softc *sc)
 /* CPU warm reset function
  * Steps:
  * 1. Disable all pending interrupts - so no pending interrupts on WARM reset
- * 2. Clear the FW_INDICATOR_ADDRESS -so Traget CPU intializes FW
+ * 2. Clear the FW_INDICATOR_ADDRESS -so Traget CPU initializes FW
  *    correctly on WARM reset
  * 3. Clear TARGET CPU LF timer interrupt
  * 4. Reset all CEs to clear any pending CE tarnsactions
@@ -461,11 +481,11 @@ static void hif_pci_device_warm_reset(struct hif_pci_softc *sc)
 	struct hif_softc *scn = HIF_GET_SOFTC(sc);
 
 	/* NB: Don't check resetok here.  This form of reset is
-	 * integral to correct operation. */
+	 * integral to correct operation.
+	 */
 
-	if (!mem) {
+	if (!mem)
 		return;
-	}
 
 	HIF_INFO_MED("%s: Target Warm Reset", __func__);
 
@@ -574,6 +594,7 @@ static void hif_pci_device_warm_reset(struct hif_pci_softc *sc)
 }
 
 #ifndef QCA_WIFI_3_0
+/* only applicable to legacy ce */
 int hif_check_fw_reg(struct hif_opaque_softc *hif_ctx)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
@@ -599,7 +620,7 @@ int hif_check_fw_reg(struct hif_opaque_softc *hif_ctx)
 int hif_check_soc_status(struct hif_opaque_softc *hif_ctx)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
-	uint16_t device_id;
+	uint16_t device_id = 0;
 	uint32_t val;
 	uint16_t timeout_count = 0;
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
@@ -734,7 +755,8 @@ static void __hif_pci_dump_registers(struct hif_softc *scn)
 					      val);
 
 				/* read (@gpio_athr_wlan_reg)
-				 * WLAN_DEBUG_OUT_DATA */
+				 * WLAN_DEBUG_OUT_DATA
+				 */
 				val = hif_read32_mb(mem + GPIO_BASE_ADDRESS +
 						   WLAN_DEBUG_OUT_OFFSET);
 				val = WLAN_DEBUG_OUT_DATA_GET(val);
@@ -836,7 +858,7 @@ static irqreturn_t ce_per_engine_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef HIF_CONFIG_SLUB_DEBUG_ON
 
 /* worker thread to schedule wlan_tasklet in SLUB debug build */
 static void reschedule_tasklet_work_handler(void *arg)
@@ -855,7 +877,6 @@ static void reschedule_tasklet_work_handler(void *arg)
 	}
 
 	tasklet_schedule(&sc->intr_tq);
-	return;
 }
 
 /**
@@ -872,7 +893,7 @@ static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc)
 }
 #else
 static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc) { }
-#endif /* CONFIG_SLUB_DEBUG_ON */
+#endif /* HIF_CONFIG_SLUB_DEBUG_ON */
 
 void wlan_tasklet(unsigned long data)
 {
@@ -1075,7 +1096,7 @@ static const struct file_operations hif_pci_runtime_pm_fops = {
 static void hif_runtime_pm_debugfs_create(struct hif_pci_softc *sc)
 {
 	sc->pm_dentry = debugfs_create_file("cnss_runtime_pm",
-					S_IRUSR, NULL, sc,
+					0400, NULL, sc,
 					&hif_pci_runtime_pm_fops);
 }
 
@@ -1106,7 +1127,7 @@ static void hif_runtime_exit(struct device *dev)
 	pm_runtime_set_active(dev);
 }
 
-static void hif_pm_runtime_lock_timeout_fn(unsigned long data);
+static void hif_pm_runtime_lock_timeout_fn(void *data);
 
 /**
  * hif_pm_runtime_start(): start the runtime pm
@@ -1130,8 +1151,9 @@ static void hif_pm_runtime_start(struct hif_pci_softc *sc)
 		return;
 	}
 
-	setup_timer(&sc->runtime_timer, hif_pm_runtime_lock_timeout_fn,
-			(unsigned long)sc);
+	qdf_timer_init(NULL, &sc->runtime_timer,
+		       hif_pm_runtime_lock_timeout_fn,
+		       sc, QDF_TIMER_TYPE_WAKE_APPS);
 
 	HIF_INFO("%s: Enabling RUNTIME PM, Delay: %d ms", __func__,
 			ol_sc->hif_config.runtime_pm_delay);
@@ -1165,7 +1187,7 @@ static void hif_pm_runtime_stop(struct hif_pci_softc *sc)
 	qdf_atomic_set(&sc->pm_state, HIF_PM_RUNTIME_STATE_NONE);
 
 	hif_runtime_pm_debugfs_remove(sc);
-	del_timer_sync(&sc->runtime_timer);
+	qdf_timer_free(&sc->runtime_timer);
 	/* doesn't wait for penting trafic unlike cld-2.0 */
 }
 
@@ -1209,7 +1231,7 @@ static void hif_pm_runtime_sanitize_on_exit(struct hif_pci_softc *sc)
 	spin_lock_bh(&sc->runtime_lock);
 	list_for_each_entry_safe(ctx, tmp, &sc->prevent_suspend_list, list) {
 		spin_unlock_bh(&sc->runtime_lock);
-		hif_pm_runtime_allow_suspend(GET_HIF_OPAQUE_HDL(sc), ctx);
+		hif_runtime_lock_deinit(GET_HIF_OPAQUE_HDL(sc), ctx);
 		spin_lock_bh(&sc->runtime_lock);
 	}
 	spin_unlock_bh(&sc->runtime_lock);
@@ -1242,7 +1264,7 @@ static void hif_pm_runtime_sanitize_on_ssr_exit(struct hif_pci_softc *sc)
 
 	spin_lock_bh(&sc->runtime_lock);
 	list_for_each_entry_safe(ctx, tmp, &sc->prevent_suspend_list, list) {
-		 __hif_pm_runtime_allow_suspend(sc, ctx);
+		__hif_pm_runtime_allow_suspend(sc, ctx);
 	}
 	spin_unlock_bh(&sc->runtime_lock);
 }
@@ -1257,6 +1279,7 @@ static void hif_pm_runtime_close(struct hif_pci_softc *sc)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(sc);
 
+	qdf_runtime_lock_deinit(&sc->prevent_linkdown_lock);
 	if (qdf_atomic_read(&sc->pm_state) == HIF_PM_RUNTIME_STATE_NONE)
 		return;
 
@@ -1317,10 +1340,11 @@ static void hif_enable_power_gating(struct hif_pci_softc *sc)
  * hif_enable_power_management() - enable power management
  * @hif_ctx: hif context
  *
- * Currently only does runtime pm.  Eventually this function could
- * consolidate other power state features such as only letting
- * the soc sleep after the driver finishes loading and re-enabling
- * aspm (hif_enable_power_gating).
+ * Enables runtime pm, aspm(PCI.. hif_enable_power_gating) and re-enabling
+ * soc-sleep after driver load (hif_pci_target_sleep_state_adjust).
+ *
+ * note: epping mode does not call this function as it does not
+ *       care about saving power.
  */
 void hif_pci_enable_power_management(struct hif_softc *hif_sc,
 				 bool is_packet_log_enabled)
@@ -1338,7 +1362,9 @@ void hif_pci_enable_power_management(struct hif_softc *hif_sc,
 		hif_enable_power_gating(pci_ctx);
 
 	if (!CONFIG_ATH_PCIE_MAX_PERF &&
-	    CONFIG_ATH_PCIE_AWAKE_WHILE_DRIVER_LOAD) {
+	    CONFIG_ATH_PCIE_AWAKE_WHILE_DRIVER_LOAD &&
+	    !ce_srng_based(hif_sc)) {
+		/* allow sleep for PCIE_AWAKE_WHILE_DRIVER_LOAD feature */
 		if (hif_pci_target_sleep_state_adjust(hif_sc, true, false) < 0)
 			HIF_ERROR("%s, failed to set target to sleep",
 				  __func__);
@@ -1405,37 +1431,6 @@ QDF_STATUS hif_pci_open(struct hif_softc *hif_ctx, enum qdf_bus_type bus_type)
 	qdf_spinlock_create(&sc->irq_lock);
 
 	return hif_ce_open(hif_ctx);
-}
-
-#ifdef BMI_RSP_POLLING
-#define BMI_RSP_CB_REGISTER 0
-#else
-#define BMI_RSP_CB_REGISTER 1
-#endif
-
-/**
- * hif_register_bmi_callbacks() - register bmi callbacks
- * @hif_sc: hif context
- *
- * Bmi phase uses different copy complete callbacks than mission mode.
- */
-static void hif_register_bmi_callbacks(struct hif_softc *hif_sc)
-{
-	struct HIF_CE_pipe_info *pipe_info;
-	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(hif_sc);
-
-	/*
-	 * Initially, establish CE completion handlers for use with BMI.
-	 * These are overwritten with generic handlers after we exit BMI phase.
-	 */
-	pipe_info = &hif_state->pipe_info[BMI_CE_NUM_TO_TARG];
-	ce_send_cb_register(pipe_info->ce_hdl, hif_bmi_send_done, pipe_info, 0);
-
-	if (BMI_RSP_CB_REGISTER) {
-		pipe_info = &hif_state->pipe_info[BMI_CE_NUM_TO_HOST];
-		ce_recv_cb_register(
-			pipe_info->ce_hdl, hif_bmi_recv_data, pipe_info, 0);
-	}
 }
 
 /**
@@ -1539,7 +1534,8 @@ static void hif_set_hia_extnd(struct hif_softc *scn)
 			target_type == TARGET_TYPE_QCA9984 ||
 			target_type == TARGET_TYPE_QCA9888) {
 		/* CHIP revision is 8-11 bits of the CHIP_ID register 0xec
-		in RTC space */
+		 * in RTC space
+		 */
 		tgt_info->target_revision
 			= CHIP_ID_REVISION_GET(hif_read32_mb(scn->mem
 					+ CHIP_ID_ADDRESS));
@@ -1578,7 +1574,8 @@ static void hif_set_hia_extnd(struct hif_softc *scn)
 		 * Assume 1.0 clock can't be tuned, reset to defaults
 		 */
 
-		qdf_print(KERN_INFO"%s: setting the target pll frac %x intval %x\n",
+		qdf_print(KERN_INFO
+			  "%s: setting the target pll frac %x intval %x\n",
 			  __func__, frac, intval);
 
 		/* do not touch frac, and int val, let them be default -1,
@@ -1602,7 +1599,8 @@ static void hif_set_hia_extnd(struct hif_softc *scn)
 			hif_diag_write_access(hif_hdl,
 					flag2_value + 4, intval);
 		} else {
-			qdf_print(KERN_INFO"%s: no frac provided, skipping pre-configuring PLL\n",
+			qdf_print(KERN_INFO
+				  "%s: no frac provided, skipping pre-configuring PLL\n",
 				  __func__);
 		}
 
@@ -1619,7 +1617,7 @@ static void hif_set_hia_extnd(struct hif_softc *scn)
 					hi_desired_cpu_speed_hz));
 			hif_diag_read_access(hif_hdl, flag2_targ_addr,
 							&flag2_value);
-			qdf_print("\n ====> hi_desired_cpu_speed_hz Address %x\n",
+			qdf_print("\n ==> hi_desired_cpu_speed_hz Address %x\n",
 				  flag2_value);
 			hif_diag_write_access(hif_hdl, flag2_value,
 				ar900b_20_targ_clk/*300000000u*/);
@@ -1703,13 +1701,14 @@ static int hif_set_hia(struct hif_softc *scn)
 	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(scn);
 	struct hif_target_info *tgt_info = hif_get_target_info_handle(hif_hdl);
 	uint32_t target_type = tgt_info->target_type;
-	int target_ce_config_sz, target_service_to_ce_map_sz;
+	uint32_t target_ce_config_sz, target_service_to_ce_map_sz;
 	static struct CE_pipe_config *target_ce_config;
 	struct service_to_pipe *target_service_to_ce_map;
 
 	HIF_TRACE("%s: E", __func__);
 
-	hif_get_target_ce_config(&target_ce_config, &target_ce_config_sz,
+	hif_get_target_ce_config(scn,
+				 &target_ce_config, &target_ce_config_sz,
 				 &target_service_to_ce_map,
 				 &target_service_to_ce_map_sz,
 				 NULL, NULL);
@@ -1960,8 +1959,7 @@ int hif_pci_bus_configure(struct hif_softc *hif_sc)
 {
 	int status = 0;
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(hif_sc);
-	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(hif_sc);
-	struct hif_target_info *tgt_info = hif_get_target_info_handle(hif_hdl);
+	struct hif_opaque_softc *hif_osc = GET_HIF_OPAQUE_HDL(hif_sc);
 
 	hif_ce_prepare_config(hif_sc);
 
@@ -1976,22 +1974,29 @@ int hif_pci_bus_configure(struct hif_softc *hif_sc)
 			       QDF_TIMER_TYPE_WAKE_APPS);
 	hif_state->sleep_timer_init = true;
 
-	if (ADRASTEA_BU) {
-		status = hif_wlan_enable(hif_sc);
-
-		if (status) {
-			HIF_ERROR("%s: hif_wlan_enable error = %d",
-					__func__, status);
-			goto timer_free;
-		}
+	status = hif_wlan_enable(hif_sc);
+	if (status) {
+		HIF_ERROR("%s: hif_wlan_enable error = %d",
+			  __func__, status);
+		goto timer_free;
 	}
 
 	A_TARGET_ACCESS_LIKELY(hif_sc);
 
-	if (CONFIG_ATH_PCIE_MAX_PERF ||
-	    CONFIG_ATH_PCIE_AWAKE_WHILE_DRIVER_LOAD) {
-		/* Force AWAKE forever/till the driver is loaded */
-		if (tgt_info->target_type != TARGET_TYPE_IPQ4019) {
+	if ((CONFIG_ATH_PCIE_MAX_PERF ||
+	     CONFIG_ATH_PCIE_AWAKE_WHILE_DRIVER_LOAD) &&
+	    !ce_srng_based(hif_sc)) {
+		/*
+		 * prevent sleep for PCIE_AWAKE_WHILE_DRIVER_LOAD feature
+		 * prevent sleep when we want to keep firmware always awake
+		 * note: when we want to keep firmware always awake,
+		 *       hif_target_sleep_state_adjust will point to a dummy
+		 *       function, and hif_pci_target_sleep_state_adjust must
+		 *       be called instead.
+		 * note: bus type check is here because AHB bus is reusing
+		 *       hif_pci_bus_configure code.
+		 */
+		if (hif_sc->bus_type == QDF_BUS_TYPE_PCI) {
 			if (hif_pci_target_sleep_state_adjust(hif_sc,
 					false, true) < 0) {
 				status = -EACCES;
@@ -2000,21 +2005,36 @@ int hif_pci_bus_configure(struct hif_softc *hif_sc)
 		}
 	}
 
+	/* todo: consider replacing this with an srng field */
+	if ((hif_sc->target_info.target_type == TARGET_TYPE_QCA8074) &&
+			(hif_sc->bus_type == QDF_BUS_TYPE_AHB)) {
+		hif_sc->per_ce_irq = true;
+	}
+
 	status = hif_config_ce(hif_sc);
 	if (status)
 		goto disable_wlan;
 
-	status = hif_set_hia(hif_sc);
-	if (status)
-		goto unconfig_ce;
+	/* QCA_WIFI_QCA8074_VP:Should not be executed on 8074 VP platform */
+	if (hif_needs_bmi(hif_osc)) {
+		status = hif_set_hia(hif_sc);
+		if (status)
+			goto unconfig_ce;
 
-	HIF_INFO_MED("%s: hif_set_hia done", __func__);
+		HIF_INFO_MED("%s: hif_set_hia done", __func__);
 
-	hif_register_bmi_callbacks(hif_sc);
+		hif_register_bmi_callbacks(hif_sc);
+	}
 
-	status = hif_configure_irq(hif_sc);
-	if (status < 0)
-		goto unconfig_ce;
+	if ((hif_sc->target_info.target_type == TARGET_TYPE_QCA8074) &&
+			(hif_sc->bus_type == QDF_BUS_TYPE_PCI))
+		HIF_INFO_MED("%s: Skip irq config for PCI based 8074 target",
+						__func__);
+	else {
+		status = hif_configure_irq(hif_sc);
+		if (status < 0)
+			goto unconfig_ce;
+	}
 
 	A_TARGET_ACCESS_UNLIKELY(hif_sc);
 
@@ -2024,8 +2044,7 @@ unconfig_ce:
 	hif_unconfig_ce(hif_sc);
 disable_wlan:
 	A_TARGET_ACCESS_UNLIKELY(hif_sc);
-	if (ADRASTEA_BU)
-		hif_wlan_disable(hif_sc);
+	hif_wlan_disable(hif_sc);
 
 timer_free:
 	qdf_timer_stop(&hif_state->sleep_timer);
@@ -2044,19 +2063,21 @@ timer_free:
 void hif_pci_close(struct hif_softc *hif_sc)
 {
 	struct hif_pci_softc *hif_pci_sc = HIF_GET_PCI_SOFTC(hif_sc);
+
 	hif_pm_runtime_close(hif_pci_sc);
 	hif_ce_close(hif_sc);
 }
 
 #define BAR_NUM 0
 
+#ifndef CONFIG_PLD_PCIE_INIT
 static int hif_enable_pci(struct hif_pci_softc *sc,
 			  struct pci_dev *pdev,
 			  const struct pci_device_id *id)
 {
 	void __iomem *mem;
 	int ret = 0;
-	uint16_t device_id;
+	uint16_t device_id = 0;
 	struct hif_softc *ol_sc = HIF_GET_SOFTC(sc);
 
 	pci_read_config_word(pdev, PCI_DEVICE_ID, &device_id);
@@ -2090,9 +2111,11 @@ static int hif_enable_pci(struct hif_pci_softc *sc,
 		ret = -EIO;
 		goto err_region;
 	}
+
 #ifdef CONFIG_ARM_LPAE
 	/* if CONFIG_ARM_LPAE is enabled, we have to set 64 bits mask
-	 * for 32 bits device also. */
+	 * for 32 bits device also.
+	 */
 	ret =  pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (ret) {
 		HIF_ERROR("%s: Cannot enable 64-bit pci DMA", __func__);
@@ -2129,13 +2152,28 @@ static int hif_enable_pci(struct hif_pci_softc *sc,
 		ret = -EIO;
 		goto err_iomap;
 	}
+
+	pr_err("*****BAR is %pK\n", mem);
+
 	sc->mem = mem;
+
+	HIF_INFO("%s, mem after pci_iomap:%pK\n",
+	       __func__, sc->mem);
+
+	/* Hawkeye emulation specific change */
+	if ((device_id == RUMIM2M_DEVICE_ID_NODE0) ||
+		(device_id == RUMIM2M_DEVICE_ID_NODE1) ||
+		(device_id == RUMIM2M_DEVICE_ID_NODE2) ||
+		(device_id == RUMIM2M_DEVICE_ID_NODE3)) {
+		mem = mem + 0x0c000000;
+		sc->mem = mem;
+		HIF_INFO("%s: Changing PCI mem base to %pK\n",
+			__func__, sc->mem);
+	}
+
 	sc->mem_len = pci_resource_len(pdev, BAR_NUM);
-	sc->pdev = pdev;
-	sc->dev = &pdev->dev;
-	sc->devid = id->device;
-	sc->cacheline_sz = dma_get_cache_alignment();
 	ol_sc->mem = mem;
+	ol_sc->mem_pa = pci_resource_start(pdev, BAR_NUM);
 	sc->pci_enabled = true;
 	return ret;
 
@@ -2147,6 +2185,29 @@ err_region:
 	pci_disable_device(pdev);
 	return ret;
 }
+#else
+static int hif_enable_pci(struct hif_pci_softc *sc,
+			  struct pci_dev *pdev,
+			  const struct pci_device_id *id)
+{
+	PCI_CFG_TO_DISABLE_L1SS_STATES(pdev, 0x188);
+	sc->pci_enabled = true;
+	return 0;
+}
+#endif
+
+
+#ifndef CONFIG_PLD_PCIE_INIT
+static inline void hif_pci_deinit(struct hif_pci_softc *sc)
+{
+	pci_iounmap(sc->pdev, sc->mem);
+	pci_clear_master(sc->pdev);
+	pci_release_region(sc->pdev, BAR_NUM);
+	pci_disable_device(sc->pdev);
+}
+#else
+static inline void hif_pci_deinit(struct hif_pci_softc *sc) {}
+#endif
 
 static void hif_disable_pci(struct hif_pci_softc *sc)
 {
@@ -2157,12 +2218,11 @@ static void hif_disable_pci(struct hif_pci_softc *sc)
 		return;
 	}
 	hif_pci_device_reset(sc);
-	pci_iounmap(sc->pdev, sc->mem);
+
+	hif_pci_deinit(sc);
+
 	sc->mem = NULL;
 	ol_sc->mem = NULL;
-	pci_clear_master(sc->pdev);
-	pci_release_region(sc->pdev, BAR_NUM);
-	pci_disable_device(sc->pdev);
 }
 
 static int hif_pci_probe_tgt_wakeup(struct hif_pci_softc *sc)
@@ -2203,17 +2263,18 @@ static int hif_pci_probe_tgt_wakeup(struct hif_pci_softc *sc)
 		while (wait_limit-- &&
 			   !(hif_read32_mb(sc->mem +
 					  PCIE_LOCAL_BASE_ADDRESS +
-					  PCIE_SOC_RDY_STATUS_ADDRESS) \
+					  PCIE_SOC_RDY_STATUS_ADDRESS)
 					  & PCIE_SOC_RDY_STATUS_BAR_MASK)) {
 			qdf_mdelay(10);
 		}
 		if (wait_limit < 0) {
-			/* AR6320v1 doesn't support checking of BAR0 configuration,
-				 takes one sec to wait BAR0 ready */
+			/* AR6320v1 doesn't support checking of BAR0
+			 * configuration, takes one sec to wait BAR0 ready
+			 */
 			HIF_INFO_MED("%s: AR6320v1 waits two sec for BAR0",
 				    __func__);
 		}
-    }
+	}
 #endif
 
 #ifndef QCA_WIFI_3_0
@@ -2265,6 +2326,7 @@ irq_handled:
 
 }
 
+/* deprecated */
 static int hif_configure_msi(struct hif_pci_softc *sc)
 {
 	int ret = 0;
@@ -2337,7 +2399,7 @@ static int hif_configure_msi(struct hif_pci_softc *sc)
 			tasklet_init(&sc->intr_tq,
 				wlan_tasklet, (unsigned long)sc);
 			ret = request_irq(sc->pdev->irq,
-					  hif_pci_interrupt_handler,
+					 hif_pci_legacy_ce_interrupt_handler,
 					  IRQF_SHARED, "wlan_pci", sc);
 			if (ret) {
 				HIF_ERROR("%s: request_irq failed", __func__);
@@ -2359,8 +2421,8 @@ static int hif_configure_msi(struct hif_pci_softc *sc)
 		sc->num_msi_intrs = 1;
 		tasklet_init(&sc->intr_tq, wlan_tasklet, (unsigned long)sc);
 		ret = request_irq(sc->pdev->irq,
-				  hif_pci_interrupt_handler, IRQF_SHARED,
-				  "wlan_pci", sc);
+				  hif_pci_legacy_ce_interrupt_handler,
+				  IRQF_SHARED, "wlan_pci", sc);
 		if (ret) {
 			HIF_ERROR("%s: request_irq failed", __func__);
 			goto err_intr;
@@ -2380,7 +2442,7 @@ static int hif_configure_msi(struct hif_pci_softc *sc)
 	return ret;
 
 err_intr:
-if (sc->num_msi_intrs >= 1)
+	if (sc->num_msi_intrs >= 1)
 		pci_disable_msi(sc->pdev);
 	return ret;
 }
@@ -2396,14 +2458,16 @@ static int hif_pci_configure_legacy_irq(struct hif_pci_softc *sc)
 	/* do notn support MSI or MSI IRQ failed */
 	tasklet_init(&sc->intr_tq, wlan_tasklet, (unsigned long)sc);
 	ret = request_irq(sc->pdev->irq,
-			  hif_pci_interrupt_handler, IRQF_SHARED,
+			  hif_pci_legacy_ce_interrupt_handler, IRQF_SHARED,
 			  "wlan_pci", sc);
 	if (ret) {
 		HIF_ERROR("%s: request_irq failed, ret = %d", __func__, ret);
 		goto end;
 	}
+	scn->wake_irq = sc->pdev->irq;
 	/* Use sc->irq instead of sc->pdev-irq
-	platform_device pdev doesn't have an irq field */
+	 * platform_device pdev doesn't have an irq field
+	 */
 	sc->irq = sc->pdev->irq;
 	/* Use Legacy PCI Interrupts */
 	hif_write32_mb(sc->mem+(SOC_CORE_BASE_ADDRESS |
@@ -2418,7 +2482,10 @@ static int hif_pci_configure_legacy_irq(struct hif_pci_softc *sc)
 			(target_type == TARGET_TYPE_AR900B)  ||
 			(target_type == TARGET_TYPE_QCA9984) ||
 			(target_type == TARGET_TYPE_AR9888) ||
-			(target_type == TARGET_TYPE_QCA9888)) {
+			(target_type == TARGET_TYPE_QCA9888) ||
+			(target_type == TARGET_TYPE_AR6320V1) ||
+			(target_type == TARGET_TYPE_AR6320V2) ||
+			(target_type == TARGET_TYPE_AR6320V3)) {
 		hif_write32_mb(scn->mem + PCIE_LOCAL_BASE_ADDRESS +
 				PCIE_SOC_WAKE_ADDRESS, PCIE_SOC_WAKE_V_MASK);
 	}
@@ -2426,6 +2493,61 @@ end:
 	QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_ERROR,
 			  "%s: X, ret = %d", __func__, ret);
 	return ret;
+}
+
+static int hif_ce_srng_msi_free_irq(struct hif_softc *scn)
+{
+	int ret;
+	int ce_id, irq;
+	uint32_t msi_data_start;
+	uint32_t msi_data_count;
+	uint32_t msi_irq_start;
+	struct HIF_CE_state *ce_sc = HIF_GET_CE_STATE(scn);
+
+	ret = pld_get_user_msi_assignment(scn->qdf_dev->dev, "CE",
+					    &msi_data_count, &msi_data_start,
+					    &msi_irq_start);
+	if (ret)
+		return ret;
+
+	/* needs to match the ce_id -> irq data mapping
+	 * used in the srng parameter configuration
+	 */
+	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
+		unsigned int msi_data;
+
+		if (!ce_sc->tasklets[ce_id].inited)
+			continue;
+
+		msi_data = (ce_id % msi_data_count) + msi_irq_start;
+		irq = pld_get_msi_irq(scn->qdf_dev->dev, msi_data);
+
+		HIF_INFO("%s: (ce_id %d, msi_data %d, irq %d)", __func__,
+			  ce_id, msi_data, irq);
+
+		free_irq(irq, &ce_sc->tasklets[ce_id]);
+	}
+
+	return ret;
+}
+
+static void hif_pci_deconfigure_grp_irq(struct hif_softc *scn)
+{
+	int i, j, irq;
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct hif_exec_context *hif_ext_group;
+
+	for (i = 0; i < hif_state->hif_num_extgroup; i++) {
+		hif_ext_group = hif_state->hif_ext_group[i];
+		if (hif_ext_group->irq_requested) {
+			hif_ext_group->irq_requested = false;
+			for (j = 0; j < hif_ext_group->numirq; j++) {
+				irq = hif_ext_group->os_irq[j];
+				free_irq(irq, hif_ext_group);
+			}
+			hif_ext_group->numirq = 0;
+		}
+	}
 }
 
 /**
@@ -2439,25 +2561,36 @@ end:
  */
 void hif_pci_nointrs(struct hif_softc *scn)
 {
-	int i;
+	int i, ret;
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
 
+	ce_unregister_irq(hif_state, CE_ALL_BITMAP);
+
 	if (scn->request_irq_done == false)
 		return;
-	if (sc->num_msi_intrs > 0) {
+
+	hif_pci_deconfigure_grp_irq(scn);
+
+	ret = hif_ce_srng_msi_free_irq(scn);
+	if (ret != -EINVAL) {
+		/* ce irqs freed in hif_ce_srng_msi_free_irq */
+
+		if (scn->wake_irq)
+			free_irq(scn->wake_irq, scn);
+		scn->wake_irq = 0;
+	} else if (sc->num_msi_intrs > 0) {
 		/* MSI interrupt(s) */
-		for (i = 0; i < sc->num_msi_intrs; i++) {
+		for (i = 0; i < sc->num_msi_intrs; i++)
 			free_irq(sc->irq + i, sc);
-		}
 		sc->num_msi_intrs = 0;
 	} else {
 		/* Legacy PCI line interrupt
-		Use sc->irq instead of sc->pdev-irq
-		platform_device pdev doesn't have an irq field */
+		 * Use sc->irq instead of sc->pdev-irq
+		 * platform_device pdev doesn't have an irq field
+		 */
 		free_irq(sc->irq, sc);
 	}
-	ce_unregister_irq(hif_state, 0xfff);
 	scn->request_irq_done = false;
 }
 
@@ -2497,7 +2630,8 @@ void hif_pci_disable_bus(struct hif_softc *scn)
 	 * Need to enable for AR9888_REV1 once CPU warm reset sequence is
 	 * verified for AR9888_REV1
 	 */
-	if ((tgt_info->target_version == AR9888_REV2_VERSION) || (tgt_info->target_version == AR9887_REV1_VERSION))
+	if ((tgt_info->target_version == AR9888_REV2_VERSION) ||
+	    (tgt_info->target_version == AR9887_REV1_VERSION))
 		hif_pci_device_warm_reset(sc);
 	else
 		hif_pci_device_reset(sc);
@@ -2506,17 +2640,16 @@ void hif_pci_disable_bus(struct hif_softc *scn)
 #endif
 	mem = (void __iomem *)sc->mem;
 	if (mem) {
+#ifndef CONFIG_PLD_PCIE_INIT
 		pci_disable_msi(pdev);
+#endif
 		hif_dump_pipe_debug_count(scn);
 		if (scn->athdiag_procfs_inited) {
 			athdiag_procfs_remove();
 			scn->athdiag_procfs_inited = false;
 		}
-		pci_iounmap(pdev, mem);
+		hif_pci_deinit(sc);
 		scn->mem = NULL;
-		pci_release_region(pdev, BAR_NUM);
-		pci_clear_master(pdev);
-		pci_disable_device(pdev);
 	}
 	HIF_INFO("%s: X", __func__);
 }
@@ -2525,7 +2658,7 @@ void hif_pci_disable_bus(struct hif_softc *scn)
 
 #ifdef FEATURE_RUNTIME_PM
 /**
- * hif_runtime_prevent_linkdown() - prevent or allow a runtime pm from occuring
+ * hif_runtime_prevent_linkdown() - prevent or allow a runtime pm from occurring
  * @scn: hif context
  * @flag: prevent linkdown if true otherwise allow
  *
@@ -2534,7 +2667,6 @@ void hif_pci_disable_bus(struct hif_softc *scn)
 static void hif_runtime_prevent_linkdown(struct hif_softc *scn, bool flag)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
-	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(scn);
 
 	if (flag)
 		qdf_runtime_pm_prevent_suspend(&sc->prevent_linkdown_lock);
@@ -2559,158 +2691,52 @@ static void hif_runtime_prevent_linkdown(struct hif_softc *scn, bool flag)
  */
 void hif_pci_prevent_linkdown(struct hif_softc *scn, bool flag)
 {
-	HIF_ERROR("wlan: %s pcie power collapse",
-			(flag ? "disable" : "enable"));
+	int errno;
+
+	HIF_DBG("wlan: %s pcie power collapse", flag ? "disable" : "enable");
 	hif_runtime_prevent_linkdown(scn, flag);
-	pld_wlan_pm_control(scn->qdf_dev->dev, flag);
+
+	errno = pld_wlan_pm_control(scn->qdf_dev->dev, flag);
+	if (errno)
+		HIF_ERROR("%s: Failed pld_wlan_pm_control; errno %d",
+			  __func__, errno);
 }
 #else
 void hif_pci_prevent_linkdown(struct hif_softc *scn, bool flag)
 {
-	HIF_ERROR("wlan: %s pcie power collapse",
+	HIF_DBG("wlan: %s pcie power collapse",
 			(flag ? "disable" : "enable"));
 	hif_runtime_prevent_linkdown(scn, flag);
 }
 #endif
 
-/**
- * hif_bus_suspend_link_up() - suspend the bus
- *
- * Configures the pci irq line as a wakeup source.
- *
- * Return: 0 for success and non-zero for failure
- */
-static int hif_bus_suspend_link_up(struct hif_softc *scn)
+static int hif_mark_wake_irq_wakeable(struct hif_softc *scn)
 {
-	struct pci_dev *pdev;
-	int status;
-	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
+	int errno;
 
-	if (!sc)
-		return -EFAULT;
-
-	pdev = sc->pdev;
-
-	status = hif_drain_tasklets(scn);
-	if (status != 0)
-		return status;
-
-	if (unlikely(enable_irq_wake(pdev->irq))) {
-		HIF_ERROR("%s: Fail to enable wake IRQ!", __func__);
-		return -EINVAL;
-	}
-
-	hif_cancel_deferred_target_sleep(scn);
-
-	return 0;
-}
-
-/**
- * hif_bus_resume_link_up() - hif bus resume API
- *
- * This function disables the wakeup source.
- *
- * Return: 0 for success and non-zero for failure
- */
-static int hif_bus_resume_link_up(struct hif_softc *scn)
-{
-	struct pci_dev *pdev;
-	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
-
-	if (!sc)
-		return -EFAULT;
-
-	pdev = sc->pdev;
-
-	if (!pdev) {
-		HIF_ERROR("%s: pci_dev is null", __func__);
-		return -EFAULT;
-	}
-
-	if (unlikely(disable_irq_wake(pdev->irq))) {
-		HIF_ERROR("%s: Fail to disable wake IRQ!", __func__);
-		return -EFAULT;
+	errno = enable_irq_wake(scn->wake_irq);
+	if (errno) {
+		HIF_ERROR("%s: Failed to mark wake IRQ: %d", __func__, errno);
+		return errno;
 	}
 
 	return 0;
 }
 
 /**
- * hif_bus_suspend_link_down() - suspend the bus
+ * hif_pci_bus_suspend(): prepare hif for suspend
  *
- * Suspends the hif layer taking care of draining recieve queues and
- * shutting down copy engines if needed. Ensures opy engine interrupts
- * are disabled when it returns.  Prevents register access after it
- * returns.
- *
- * Return: 0 for success and non-zero for failure
- */
-static int hif_bus_suspend_link_down(struct hif_softc *scn)
-{
-	struct pci_dev *pdev;
-	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
-	int status = 0;
-
-	pdev = sc->pdev;
-
-	disable_irq(pdev->irq);
-
-	status = hif_drain_tasklets(scn);
-	if (status != 0) {
-		enable_irq(pdev->irq);
-		return status;
-	}
-
-	/* Stop the HIF Sleep Timer */
-	hif_cancel_deferred_target_sleep(scn);
-
-	qdf_atomic_set(&scn->link_suspended, 1);
-
-	return 0;
-}
-
-/**
- * hif_bus_resume_link_down() - hif bus resume API
- *
- * This function resumes the bus reenabling interupts.
- *
- * Return: 0 for success and non-zero for failure
- */
-static int hif_bus_resume_link_down(struct hif_softc *scn)
-{
-	struct pci_dev *pdev;
-	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
-
-	if (!sc)
-		return -EFAULT;
-
-	pdev = sc->pdev;
-
-	if (!pdev) {
-		HIF_ERROR("%s: pci_dev is null", __func__);
-		return -EFAULT;
-	}
-
-	qdf_atomic_set(&scn->link_suspended, 0);
-
-	enable_irq(pdev->irq);
-
-	return 0;
-}
-
-/**
- * hif_pci_suspend(): prepare hif for suspend
- *
- * chose suspend type based on link suspend voting.
+ * Enables pci bus wake irq based on link suspend voting.
  *
  * Return: 0 for success and non-zero error code for failure
  */
 int hif_pci_bus_suspend(struct hif_softc *scn)
 {
 	if (hif_can_suspend_link(GET_HIF_OPAQUE_HDL(scn)))
-		return hif_bus_suspend_link_down(scn);
-	else
-		return hif_bus_suspend_link_up(scn);
+		return 0;
+
+	/* pci link is staying up; enable wake irq */
+	return hif_mark_wake_irq_wakeable(scn);
 }
 
 /**
@@ -2724,7 +2750,7 @@ int hif_pci_bus_suspend(struct hif_softc *scn)
  */
 static int __hif_check_link_status(struct hif_softc *scn)
 {
-	uint16_t dev_id;
+	uint16_t dev_id = 0;
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
 	struct hif_driver_state_callbacks *cbk = hif_get_callbacks_handle(scn);
 
@@ -2752,10 +2778,23 @@ static int __hif_check_link_status(struct hif_softc *scn)
 	return -EACCES;
 }
 
+static int hif_unmark_wake_irq_wakeable(struct hif_softc *scn)
+{
+	int errno;
+
+	errno = disable_irq_wake(scn->wake_irq);
+	if (errno) {
+		HIF_ERROR("%s: Failed to unmark wake IRQ: %d", __func__, errno);
+		return errno;
+	}
+
+	return 0;
+}
+
 /**
- * hif_bus_resume(): prepare hif for resume
+ * hif_pci_bus_resume(): prepare hif for resume
  *
- * chose suspend type based on link suspend voting.
+ * Disables pci bus wake irq based on link suspend voting.
  *
  * Return: 0 for success and non-zero error code for failure
  */
@@ -2768,9 +2807,50 @@ int hif_pci_bus_resume(struct hif_softc *scn)
 		return ret;
 
 	if (hif_can_suspend_link(GET_HIF_OPAQUE_HDL(scn)))
-		return hif_bus_resume_link_down(scn);
-	else
-		return hif_bus_resume_link_up(scn);
+		return 0;
+
+	/* pci link is up; disable wake irq */
+	return hif_unmark_wake_irq_wakeable(scn);
+}
+
+/**
+ * hif_pci_bus_suspend_noirq() - ensure there are no pending transactions
+ * @scn: hif context
+ *
+ * Ensure that if we received the wakeup message before the irq
+ * was disabled that the message is pocessed before suspending.
+ *
+ * Return: -EBUSY if we fail to flush the tasklets.
+ */
+int hif_pci_bus_suspend_noirq(struct hif_softc *scn)
+{
+	if (hif_drain_tasklets(scn) != 0)
+		return -EBUSY;
+
+	/* Stop the HIF Sleep Timer */
+	hif_cancel_deferred_target_sleep(scn);
+
+	if (hif_can_suspend_link(GET_HIF_OPAQUE_HDL(scn)))
+		qdf_atomic_set(&scn->link_suspended, 1);
+
+	return 0;
+}
+
+/**
+ * hif_pci_bus_resume_noirq() - ensure there are no pending transactions
+ * @scn: hif context
+ *
+ * Ensure that if we received the wakeup message before the irq
+ * was disabled that the message is pocessed before suspending.
+ *
+ * Return: -EBUSY if we fail to flush the tasklets.
+ */
+int hif_pci_bus_resume_noirq(struct hif_softc *scn)
+{
+	if (hif_can_suspend_link(GET_HIF_OPAQUE_HDL(scn)))
+		qdf_atomic_set(&scn->link_suspended, 0);
+
+	return 0;
 }
 
 #ifdef FEATURE_RUNTIME_PM
@@ -2830,6 +2910,7 @@ static void hif_runtime_pm_set_state_suspended(struct hif_softc *scn)
 static void hif_log_runtime_suspend_success(struct hif_softc *hif_ctx)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(hif_ctx);
+
 	if (sc == NULL)
 		return;
 
@@ -2846,6 +2927,7 @@ static void hif_log_runtime_suspend_success(struct hif_softc *hif_ctx)
 static void hif_log_runtime_suspend_failure(void *hif_ctx)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(hif_ctx);
+
 	if (sc == NULL)
 		return;
 
@@ -2855,12 +2937,13 @@ static void hif_log_runtime_suspend_failure(void *hif_ctx)
 /**
  * hif_log_runtime_resume_success() - log a successful runtime resume
  *
- * log a successfull runtime resume
+ * log a successful runtime resume
  * mark last busy to prevent immediate runtime suspend
  */
 static void hif_log_runtime_resume_success(void *hif_ctx)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(hif_ctx);
+
 	if (sc == NULL)
 		return;
 
@@ -2959,18 +3042,49 @@ void hif_process_runtime_resume_success(struct hif_opaque_softc *hif_ctx)
  */
 int hif_runtime_suspend(struct hif_opaque_softc *hif_ctx)
 {
-	return hif_pci_bus_suspend(HIF_GET_SOFTC(hif_ctx));
+	int errno;
+
+	errno = hif_bus_suspend(hif_ctx);
+	if (errno) {
+		HIF_ERROR("%s: failed bus suspend: %d", __func__, errno);
+		return errno;
+	}
+
+	errno = hif_apps_irqs_disable(hif_ctx);
+	if (errno) {
+		HIF_ERROR("%s: failed disable irqs: %d", __func__, errno);
+		goto bus_resume;
+	}
+
+	errno = hif_bus_suspend_noirq(hif_ctx);
+	if (errno) {
+		HIF_ERROR("%s: failed bus suspend noirq: %d", __func__, errno);
+		goto irqs_enable;
+	}
+
+	/* link should always be down; skip enable wake irq */
+
+	return 0;
+
+irqs_enable:
+	QDF_BUG(!hif_apps_irqs_enable(hif_ctx));
+
+bus_resume:
+	QDF_BUG(!hif_bus_resume(hif_ctx));
+
+	return errno;
 }
 
-#ifdef WLAN_FEATURE_FASTPATH
 /**
  * hif_fastpath_resume() - resume fastpath for runtimepm
  *
  * ensure that the fastpath write index register is up to date
  * since runtime pm may cause ce_send_fast to skip the register
  * write.
+ *
+ * fastpath only applicable to legacy copy engine
  */
-static void hif_fastpath_resume(struct hif_opaque_softc *hif_ctx)
+void hif_fastpath_resume(struct hif_opaque_softc *hif_ctx)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
 	struct CE_state *ce_state;
@@ -2992,10 +3106,6 @@ static void hif_fastpath_resume(struct hif_opaque_softc *hif_ctx)
 		Q_TARGET_ACCESS_END(scn);
 	}
 }
-#else
-static void hif_fastpath_resume(struct hif_opaque_softc *hif_ctx) {}
-#endif
-
 
 /**
  * hif_runtime_resume() - do the bus resume part of a runtime resume
@@ -3004,11 +3114,12 @@ static void hif_fastpath_resume(struct hif_opaque_softc *hif_ctx) {}
  */
 int hif_runtime_resume(struct hif_opaque_softc *hif_ctx)
 {
-	int status = hif_pci_bus_resume(HIF_GET_SOFTC(hif_ctx));
+	/* link should always be down; skip disable wake irq */
 
-	hif_fastpath_resume(hif_ctx);
-
-	return status;
+	QDF_BUG(!hif_bus_resume_noirq(hif_ctx));
+	QDF_BUG(!hif_apps_irqs_enable(hif_ctx));
+	QDF_BUG(!hif_bus_resume(hif_ctx));
+	return 0;
 }
 #endif /* #ifdef FEATURE_RUNTIME_PM */
 
@@ -3034,12 +3145,14 @@ void hif_pci_disable_isr(struct hif_softc *scn)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
 
+	hif_exec_kill(&scn->osc);
 	hif_nointrs(scn);
 	hif_free_msi_ctx(scn);
 	/* Cancel the pending tasklet */
 	ce_tasklet_kill(scn);
 	tasklet_kill(&sc->intr_tq);
 	qdf_atomic_set(&scn->active_tasklet_cnt, 0);
+	qdf_atomic_set(&scn->active_grp_tasklet_cnt, 0);
 }
 
 /* Function to reset SoC */
@@ -3083,8 +3196,8 @@ static inline void hif_msm_pcie_debug_info(struct hif_pci_softc *sc) {};
  */
 static int hif_log_soc_wakeup_timeout(struct hif_pci_softc *sc)
 {
-	uint16_t val;
-	uint32_t bar;
+	uint16_t val = 0;
+	uint32_t bar = 0;
 	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(sc);
 	struct hif_softc *scn = HIF_GET_SOFTC(sc);
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(sc);
@@ -3182,7 +3295,6 @@ int hif_pci_target_sleep_state_adjust(struct hif_softc *scn,
 	static int max_delay;
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
 	static int debug;
-
 	if (scn->recovery)
 		return -EACCES;
 
@@ -3244,12 +3356,9 @@ int hif_pci_target_sleep_state_adjust(struct hif_softc *scn,
 				if (hif_targ_is_awake(scn, pci_addr)) {
 					hif_state->verified_awake = true;
 					break;
-				} else
-				if (!hif_pci_targ_is_present
-					    (scn, pci_addr)) {
-					break;
 				}
-
+				if (!hif_pci_targ_is_present(scn, pci_addr))
+					break;
 				if (tot_delay > PCIE_SLEEP_ADJUST_TIMEOUT)
 					return hif_log_soc_wakeup_timeout(sc);
 
@@ -3378,7 +3487,183 @@ int hif_ahb_configure_legacy_irq(struct hif_pci_softc *sc)
 	QDF_BUG(0);
 	return -EINVAL;
 }
+
+int hif_ahb_configure_irq(struct hif_pci_softc *sc)
+{
+	QDF_BUG(0);
+	return -EINVAL;
+}
 #endif
+
+static irqreturn_t hif_ce_interrupt_handler(int irq, void *context)
+{
+	struct ce_tasklet_entry *tasklet_entry = context;
+	return ce_dispatch_interrupt(tasklet_entry->ce_id, tasklet_entry);
+}
+extern const char *ce_name[];
+
+static int hif_ce_msi_map_ce_to_irq(struct hif_softc *scn, int ce_id)
+{
+	struct hif_pci_softc *pci_scn = HIF_GET_PCI_SOFTC(scn);
+
+	return pci_scn->ce_msi_irq_num[ce_id];
+}
+
+/* hif_srng_msi_irq_disable() - disable the irq for msi
+ * @hif_sc: hif context
+ * @ce_id: which ce to disable copy complete interrupts for
+ *
+ * since MSI interrupts are not level based, the system can function
+ * without disabling these interrupts.  Interrupt mitigation can be
+ * added here for better system performance.
+ */
+static void hif_ce_srng_msi_irq_disable(struct hif_softc *hif_sc, int ce_id)
+{
+	disable_irq_nosync(hif_ce_msi_map_ce_to_irq(hif_sc, ce_id));
+}
+
+static void hif_ce_srng_msi_irq_enable(struct hif_softc *hif_sc, int ce_id)
+{
+	enable_irq(hif_ce_msi_map_ce_to_irq(hif_sc, ce_id));
+}
+
+static void hif_ce_legacy_msi_irq_disable(struct hif_softc *hif_sc, int ce_id)
+{}
+
+static void hif_ce_legacy_msi_irq_enable(struct hif_softc *hif_sc, int ce_id)
+{}
+
+static int hif_ce_msi_configure_irq(struct hif_softc *scn)
+{
+	int ret;
+	int ce_id, irq;
+	uint32_t msi_data_start;
+	uint32_t msi_data_count;
+	uint32_t msi_irq_start;
+	struct HIF_CE_state *ce_sc = HIF_GET_CE_STATE(scn);
+	struct hif_pci_softc *pci_sc = HIF_GET_PCI_SOFTC(scn);
+
+	/* do wake irq assignment */
+	ret = pld_get_user_msi_assignment(scn->qdf_dev->dev, "WAKE",
+					  &msi_data_count, &msi_data_start,
+					  &msi_irq_start);
+	if (ret)
+		return ret;
+
+	scn->wake_irq = pld_get_msi_irq(scn->qdf_dev->dev, msi_irq_start);
+	ret = request_irq(scn->wake_irq, hif_wake_interrupt_handler, 0,
+			  "wlan_wake_irq", scn);
+	if (ret)
+		return ret;
+
+	/* do ce irq assignments */
+	ret = pld_get_user_msi_assignment(scn->qdf_dev->dev, "CE",
+					    &msi_data_count, &msi_data_start,
+					    &msi_irq_start);
+	if (ret)
+		goto free_wake_irq;
+
+	if (ce_srng_based(scn)) {
+		scn->bus_ops.hif_irq_disable = &hif_ce_srng_msi_irq_disable;
+		scn->bus_ops.hif_irq_enable = &hif_ce_srng_msi_irq_enable;
+	} else {
+		scn->bus_ops.hif_irq_disable = &hif_ce_legacy_msi_irq_disable;
+		scn->bus_ops.hif_irq_enable = &hif_ce_legacy_msi_irq_enable;
+	}
+
+	scn->bus_ops.hif_map_ce_to_irq = &hif_ce_msi_map_ce_to_irq;
+
+	/* needs to match the ce_id -> irq data mapping
+	 * used in the srng parameter configuration
+	 */
+	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
+		unsigned int msi_data = (ce_id % msi_data_count) +
+			msi_irq_start;
+		irq = pld_get_msi_irq(scn->qdf_dev->dev, msi_data);
+		HIF_DBG("%s: (ce_id %d, msi_data %d, irq %d tasklet %pK)",
+			 __func__, ce_id, msi_data, irq,
+			 &ce_sc->tasklets[ce_id]);
+
+		/* implies the ce is also initialized */
+		if (!ce_sc->tasklets[ce_id].inited)
+			continue;
+
+		pci_sc->ce_msi_irq_num[ce_id] = irq;
+		ret = request_irq(irq, hif_ce_interrupt_handler,
+				  IRQF_SHARED,
+				  ce_name[ce_id],
+				  &ce_sc->tasklets[ce_id]);
+		if (ret)
+			goto free_irq;
+	}
+
+	return ret;
+
+free_irq:
+	/* the request_irq for the last ce_id failed so skip it. */
+	while (ce_id > 0 && ce_id < scn->ce_count) {
+		unsigned int msi_data;
+
+		ce_id--;
+		msi_data = (ce_id % msi_data_count) + msi_data_start;
+		irq = pld_get_msi_irq(scn->qdf_dev->dev, msi_data);
+		free_irq(irq, &ce_sc->tasklets[ce_id]);
+	}
+
+free_wake_irq:
+	free_irq(scn->wake_irq, scn->qdf_dev->dev);
+	scn->wake_irq = 0;
+
+	return ret;
+}
+
+static void hif_exec_grp_irq_disable(struct hif_exec_context *hif_ext_group)
+{
+	int i;
+
+	for (i = 0; i < hif_ext_group->numirq; i++)
+		disable_irq_nosync(hif_ext_group->os_irq[i]);
+}
+
+static void hif_exec_grp_irq_enable(struct hif_exec_context *hif_ext_group)
+{
+	int i;
+
+	for (i = 0; i < hif_ext_group->numirq; i++)
+		enable_irq(hif_ext_group->os_irq[i]);
+}
+
+
+int hif_pci_configure_grp_irq(struct hif_softc *scn,
+			      struct hif_exec_context *hif_ext_group)
+{
+	int ret = 0;
+	int irq = 0;
+	int j;
+
+	hif_ext_group->irq_enable = &hif_exec_grp_irq_enable;
+	hif_ext_group->irq_disable = &hif_exec_grp_irq_disable;
+	hif_ext_group->work_complete = &hif_dummy_grp_done;
+
+	for (j = 0; j < hif_ext_group->numirq; j++) {
+		irq = hif_ext_group->irq[j];
+
+		HIF_DBG("%s: request_irq = %d for grp %d",
+			  __func__, irq, hif_ext_group->grp_id);
+		ret = request_irq(irq,
+				  hif_ext_group_interrupt_handler,
+				  IRQF_SHARED, "wlan_EXT_GRP",
+				  hif_ext_group);
+		if (ret) {
+			HIF_ERROR("%s: request_irq failed ret = %d",
+				  __func__, ret);
+			return -EFAULT;
+		}
+		hif_ext_group->os_irq[j] = irq;
+	}
+	hif_ext_group->irq_requested = true;
+	return 0;
+}
 
 /**
  * hif_configure_irq() - configure interrupt
@@ -3396,8 +3681,17 @@ int hif_configure_irq(struct hif_softc *scn)
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
 
 	HIF_TRACE("%s: E", __func__);
+	if (scn->polled_mode_on) {
+		scn->request_irq_done = false;
+		return 0;
+	}
 
 	hif_init_reschedule_tasklet_work(sc);
+
+	ret = hif_ce_msi_configure_irq(scn);
+	if (ret == 0) {
+		goto end;
+	}
 
 	if (ENABLE_MSI) {
 		ret = hif_configure_msi(sc);
@@ -3408,6 +3702,9 @@ int hif_configure_irq(struct hif_softc *scn)
 	switch (scn->target_info.target_type) {
 	case TARGET_TYPE_IPQ4019:
 		ret = hif_ahb_configure_legacy_irq(sc);
+		break;
+	case TARGET_TYPE_QCA8074:
+		ret = hif_ahb_configure_irq(sc);
 		break;
 	default:
 		ret = hif_pci_configure_legacy_irq(sc);
@@ -3425,7 +3722,7 @@ end:
 
 /**
  * hif_target_sync() : ensure the target is ready
- * @scn: hif controll structure
+ * @scn: hif control structure
  *
  * Informs fw that we plan to use legacy interupts so that
  * it can begin booting. Ensures that the fw finishes booting
@@ -3449,6 +3746,7 @@ static void hif_target_sync(struct hif_softc *scn)
 	if (HAS_FW_INDICATOR) {
 		int wait_limit = 500;
 		int fw_ind = 0;
+
 		HIF_TRACE("%s: Loop checking FW signal", __func__);
 		while (1) {
 			fw_ind = hif_read32_mb(scn->mem +
@@ -3474,6 +3772,21 @@ static void hif_target_sync(struct hif_softc *scn)
 			PCIE_SOC_WAKE_ADDRESS, PCIE_SOC_WAKE_RESET);
 }
 
+#ifdef CONFIG_PLD_PCIE_INIT
+static void hif_pci_get_soc_info(struct hif_pci_softc *sc, struct device *dev)
+{
+	struct pld_soc_info info;
+
+	pld_get_soc_info(dev, &info);
+	sc->mem = info.v_addr;
+	sc->ce_sc.ol_sc.mem    = info.v_addr;
+	sc->ce_sc.ol_sc.mem_pa = info.p_addr;
+}
+#else
+static void hif_pci_get_soc_info(struct hif_pci_softc *sc, struct device *dev)
+{}
+#endif
+
 /**
  * hif_enable_bus(): enable bus
  *
@@ -3488,7 +3801,7 @@ static void hif_target_sync(struct hif_softc *scn)
  */
 QDF_STATUS hif_pci_enable_bus(struct hif_softc *ol_sc,
 			  struct device *dev, void *bdev,
-			  const hif_bus_id *bid,
+			  const struct hif_bus_id *bid,
 			  enum hif_enable_type type)
 {
 	int ret = 0;
@@ -3514,6 +3827,7 @@ QDF_STATUS hif_pci_enable_bus(struct hif_softc *ol_sc,
 	sc->devid = id->device;
 	sc->cacheline_sz = dma_get_cache_alignment();
 	tgt_info = hif_get_target_info_handle(hif_hdl);
+	hif_pci_get_soc_info(sc, dev);
 again:
 	ret = hif_enable_pci(sc, pdev, id);
 	if (ret < 0) {
@@ -3543,30 +3857,34 @@ again:
 	hif_register_tbl_attach(ol_sc, hif_type);
 	hif_target_register_tbl_attach(ol_sc, target_type);
 
-	ret = hif_pci_probe_tgt_wakeup(sc);
-	if (ret < 0) {
-		HIF_ERROR("%s: ERROR - hif_pci_prob_wakeup error = %d",
-			   __func__, ret);
-		if (ret == -EAGAIN)
-			probe_again++;
-		goto err_tgtstate;
-	}
-	HIF_TRACE("%s: hif_pci_probe_tgt_wakeup done", __func__);
-
 	tgt_info->target_type = target_type;
 
-	sc->soc_pcie_bar0 = pci_resource_start(pdev, BAR_NUM);
-	if (!sc->soc_pcie_bar0) {
-		HIF_ERROR("%s: ERROR - cannot get CE BAR0", __func__);
+	if (ce_srng_based(ol_sc)) {
+		HIF_TRACE("%s:Skip tgt_wake up for srng devices\n", __func__);
+	} else {
+		ret = hif_pci_probe_tgt_wakeup(sc);
+		if (ret < 0) {
+			HIF_ERROR("%s: ERROR - hif_pci_prob_wakeup error = %d",
+					__func__, ret);
+			if (ret == -EAGAIN)
+				probe_again++;
+			goto err_tgtstate;
+		}
+		HIF_TRACE("%s: hif_pci_probe_tgt_wakeup done", __func__);
+	}
+
+	if (!ol_sc->mem_pa) {
+		HIF_ERROR("%s: ERROR - BAR0 uninitialized", __func__);
 		ret = -EIO;
 		goto err_tgtstate;
 	}
-	ol_sc->mem_pa = sc->soc_pcie_bar0;
 
-	hif_target_sync(ol_sc);
+	if (!ce_srng_based(ol_sc)) {
+		hif_target_sync(ol_sc);
 
-	if (ADRASTEA_BU)
-		hif_vote_link_up(hif_hdl);
+		if (ADRASTEA_BU)
+			hif_vote_link_up(hif_hdl);
+	}
 
 	return 0;
 
@@ -3626,17 +3944,20 @@ void hif_pci_irq_enable(struct hif_softc *scn, int ce_id)
 	/* check for missed firmware crash */
 	hif_fw_interrupt_handler(0, scn);
 }
+
 /**
  * hif_pci_irq_disable() - ce_irq_disable
  * @scn: hif_softc
  * @ce_id: ce_id
+ *
+ * only applicable to legacy copy engine...
  *
  * Return: void
  */
 void hif_pci_irq_disable(struct hif_softc *scn, int ce_id)
 {
 	/* For Rome only need to wake up target */
-	/* target access is maintained untill interrupts are re-enabled */
+	/* target access is maintained until interrupts are re-enabled */
 	Q_TARGET_ACCESS_BEGIN(scn);
 }
 
@@ -3656,7 +3977,7 @@ void hif_pm_runtime_get_noresume(struct hif_opaque_softc *hif_ctx)
 /**
  * hif_pm_runtime_get() - do a get opperation on the device
  *
- * A get opperation will prevent a runtime suspend untill a
+ * A get opperation will prevent a runtime suspend until a
  * corresponding put is done.  This api should be used when sending
  * data.
  *
@@ -3761,7 +4082,8 @@ int hif_pm_runtime_put(struct hif_opaque_softc *hif_ctx)
 
 
 /**
- * __hif_pm_runtime_prevent_suspend() - prevent runtime suspend for a protocol reason
+ * __hif_pm_runtime_prevent_suspend() - prevent runtime suspend for a protocol
+ *                                      reason
  * @hif_sc: pci context
  * @lock: runtime_pm lock being acquired
  *
@@ -3868,14 +4190,14 @@ static int __hif_pm_runtime_allow_suspend(struct hif_pci_softc *hif_sc,
  * hif_pm_runtime_lock_timeout_fn() - callback the runtime lock timeout
  * @data: calback data that is the pci context
  *
- * if runtime locks are aquired with a timeout, this function releases
+ * if runtime locks are acquired with a timeout, this function releases
  * the locks when the last runtime lock expires.
  *
  * dummy implementation until lock acquisition is implemented.
  */
-static void hif_pm_runtime_lock_timeout_fn(unsigned long data)
+static void hif_pm_runtime_lock_timeout_fn(void *data)
 {
-	struct hif_pci_softc *hif_sc = (struct hif_pci_softc *)data;
+	struct hif_pci_softc *hif_sc = data;
 	unsigned long timer_expires;
 	struct hif_pm_runtime_lock *context, *temp;
 
@@ -3962,7 +4284,7 @@ int hif_pm_runtime_allow_suspend(struct hif_opaque_softc *ol_sc,
 	 */
 	if (hif_sc->prevent_suspend_cnt == 0 &&
 			hif_sc->runtime_timer_expires > 0) {
-		del_timer(&hif_sc->runtime_timer);
+		qdf_timer_free(&hif_sc->runtime_timer);
 		hif_sc->runtime_timer_expires = 0;
 	}
 
@@ -4040,7 +4362,7 @@ int hif_pm_runtime_prevent_suspend_timeout(struct hif_opaque_softc *ol_sc,
 	 * timeout
 	 */
 	if (time_after(expires, hif_sc->runtime_timer_expires)) {
-		mod_timer(&hif_sc->runtime_timer, expires);
+		qdf_timer_mod(&hif_sc->runtime_timer, delay);
 		hif_sc->runtime_timer_expires = expires;
 	}
 
@@ -4058,7 +4380,7 @@ int hif_pm_runtime_prevent_suspend_timeout(struct hif_opaque_softc *ol_sc,
  * hif_runtime_lock_init() - API to initialize Runtime PM context
  * @name: Context name
  *
- * This API initalizes the Runtime PM context of the caller and
+ * This API initializes the Runtime PM context of the caller and
  * return the pointer.
  *
  * Return: None
@@ -4067,9 +4389,11 @@ int hif_runtime_lock_init(qdf_runtime_lock_t *lock, const char *name)
 {
 	struct hif_pm_runtime_lock *context;
 
+	HIF_INFO("Initializing Runtime PM wakelock %s", name);
+
 	context = qdf_mem_malloc(sizeof(*context));
 	if (!context) {
-		HIF_ERROR("%s: No memory for Runtime PM wakelock context\n",
+		HIF_ERROR("%s: No memory for Runtime PM wakelock context",
 			  __func__);
 		return -ENOMEM;
 	}
@@ -4092,33 +4416,70 @@ void hif_runtime_lock_deinit(struct hif_opaque_softc *hif_ctx,
 	struct hif_pm_runtime_lock *context = data;
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(hif_ctx);
 
-	if (!sc)
+	if (!context) {
+		HIF_ERROR("Runtime PM wakelock context is NULL");
 		return;
+	}
 
-	if (!context)
-		return;
+	HIF_INFO("Deinitializing Runtime PM wakelock %s", context->name);
 
 	/*
 	 * Ensure to delete the context list entry and reduce the usage count
 	 * before freeing the context if context is active.
 	 */
-	spin_lock_bh(&sc->runtime_lock);
-	__hif_pm_runtime_allow_suspend(sc, context);
-	spin_unlock_bh(&sc->runtime_lock);
+	if (sc) {
+		spin_lock_bh(&sc->runtime_lock);
+		__hif_pm_runtime_allow_suspend(sc, context);
+		spin_unlock_bh(&sc->runtime_lock);
+	}
 
 	qdf_mem_free(context);
 }
 #endif /* FEATURE_RUNTIME_PM */
 
+int hif_pci_legacy_map_ce_to_irq(struct hif_softc *scn, int ce_id)
+{
+	struct hif_pci_softc *pci_scn = HIF_GET_PCI_SOFTC(scn);
+
+	/* legacy case only has one irq */
+	return pci_scn->irq;
+}
+
 int hif_pci_addr_in_boundary(struct hif_softc *scn, uint32_t offset)
 {
 	struct hif_pci_softc *sc = HIF_GET_PCI_SOFTC(scn);
+	struct hif_target_info *tgt_info;
 
-	if (unlikely(offset + sizeof(unsigned int) > sc->mem_len)) {
-		HIF_TRACE("Refusing to read memory at 0x%x - 0x%x (max 0x%x)\n",
-			  offset, offset + sizeof(unsigned int), sc->mem_len);
-		return -EINVAL;
+	tgt_info = hif_get_target_info_handle(GET_HIF_OPAQUE_HDL(scn));
+
+	if (tgt_info->target_type == TARGET_TYPE_QCA6290 ||
+	    tgt_info->target_type == TARGET_TYPE_QCA8074) {
+		/*
+		 * Need to consider offset's memtype for QCA6290/QCA8074,
+		 * also mem_len and DRAM_BASE_ADDRESS/DRAM_SIZE need to be
+		 * well initialized/defined.
+		 */
+		return 0;
 	}
 
-	return 0;
+	if ((offset >= DRAM_BASE_ADDRESS && offset <= DRAM_BASE_ADDRESS + DRAM_SIZE)
+		 || (offset + sizeof(unsigned int) <= sc->mem_len)) {
+		return 0;
+	}
+
+	HIF_TRACE("Refusing to read memory at 0x%x - 0x%lx (max 0x%zx)\n",
+		 offset, offset + sizeof(unsigned int), sc->mem_len);
+
+	return -EINVAL;
+}
+
+/**
+ * hif_pci_needs_bmi() - return true if the soc needs bmi through the driver
+ * @scn: hif context
+ *
+ * Return: true if soc needs driver bmi otherwise false
+ */
+bool hif_pci_needs_bmi(struct hif_softc *scn)
+{
+	return !ce_srng_based(scn);
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -52,6 +52,7 @@
 #define MAX_DPHY_DATA_LN                            4
 #define CLOCK_OFFSET                              0x700
 #define CSIPHY_SOF_DEBUG_COUNT                      2
+#define GBPS                                    1000000000
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -134,8 +135,10 @@ static int msm_csiphy_3phase_lane_config(
 	uint8_t i = 0;
 	uint16_t lane_mask = 0, lane_enable = 0, temp;
 	void __iomem *csiphybase;
+	uint64_t two_gbps = 0;
 
 	csiphybase = csiphy_dev->base;
+	two_gbps = 2 * (uint64_t)csiphy_params->lane_cnt * GBPS;
 	lane_mask = csiphy_params->lane_mask & 0x7;
 	while (lane_mask != 0) {
 		temp = (i << 1)+1;
@@ -281,11 +284,20 @@ static int msm_csiphy_3phase_lane_config(
 				csiphy_3ph_reg.mipi_csiphy_3ph_lnn_ctrl51.addr +
 				0x200*i);
 		}
-		msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-			mipi_csiphy_3ph_lnn_ctrl25.data,
-			csiphybase + csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-			mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
 
+		if ((csiphy_dev->hw_version == CSIPHY_VERSION_V35) &&
+			(csiphy_params->data_rate > two_gbps)) {
+			msm_camera_io_w(0x40,
+				csiphybase +
+				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
+				mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
+		} else {
+			msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
+				mipi_csiphy_3ph_lnn_ctrl25.data,
+				csiphybase +
+				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
+				mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
+		}
 		lane_mask >>= 1;
 		i++;
 	}
@@ -437,6 +449,11 @@ static int msm_csiphy_2phase_lane_config(
 
 	csiphybase = csiphy_dev->base;
 	lane_mask = csiphy_params->lane_mask & 0x1f;
+
+	lane_enable = msm_camera_io_r(csiphybase +
+		csiphy_dev->ctrl_reg->csiphy_3ph_reg.
+		mipi_csiphy_3ph_cmn_ctrl5.addr);
+
 	for (i = 0; i < MAX_DPHY_DATA_LN; i++) {
 		if (mask == 0x2) {
 			if (lane_mask & mask)
@@ -474,7 +491,11 @@ static int msm_csiphy_2phase_lane_config(
 			clk_lane = 0;
 		}
 
-		if (csiphy_params->combo_mode == 1) {
+		/* In combo mode setting the 4th lane
+		 * as clk_lane for 1 lane sensor, checking
+		 * the lane_mask == 0x18 for one lane sensor
+		 */
+		if ((csiphy_params->combo_mode == 1) && (lane_mask == 0x18)) {
 			val |= 0xA;
 			if (mask == csiphy_dev->ctrl_reg->
 				csiphy_reg.combo_clk_mask) {
@@ -520,6 +541,12 @@ static int msm_csiphy_2phase_lane_config(
 				mipi_csiphy_2ph_lnn_cfg4.data, csiphybase +
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg4.addr + offset);
+			if (lane_mask == 0x18)
+				msm_camera_io_w(0x80,
+					csiphybase +
+					csiphy_dev->ctrl_reg->csiphy_3ph_reg.
+					mipi_csiphy_2ph_lnn_cfg1.addr + offset);
+
 		} else {
 			msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg1.data,
@@ -540,8 +567,8 @@ static int msm_csiphy_2phase_lane_config(
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg5.addr + offset);
 		}
-		if (clk_lane == 1 &&
-			csiphy_dev->hw_version == CSIPHY_VERSION_V342) {
+		if (clk_lane == 1 && lane_mask != 0x18 &&
+			(csiphy_dev->hw_version == CSIPHY_VERSION_V342)) {
 			msm_camera_io_w(0x1f,
 				csiphybase +
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
@@ -782,10 +809,10 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 		ratio = csiphy_dev->csiphy_max_clk/clk_rate;
 		csiphy_params->settle_cnt = csiphy_params->settle_cnt/ratio;
 	}
-	CDBG("%s csiphy_params, mask = 0x%x cnt = %d\n",
+	CDBG("%s csiphy_params, mask = 0x%x cnt = %d, data rate = %llu\n",
 		__func__,
 		csiphy_params->lane_mask,
-		csiphy_params->lane_cnt);
+		csiphy_params->lane_cnt, csiphy_params->data_rate);
 	CDBG("%s csiphy_params, settle cnt = 0x%x csid %d\n",
 		__func__, csiphy_params->settle_cnt,
 		csiphy_params->csid_core);

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2012, 2014-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**=========================================================================
@@ -43,60 +34,89 @@
 
 #define RRM_BCN_RPT_NO_BSS_INFO    0
 #define RRM_BCN_RPT_MIN_RPT        1
+#define RRM_CH_BUF_LEN             45
 
 uint8_t rrm_get_min_of_max_tx_power(tpAniSirGlobal pMac, int8_t regMax,
 				    int8_t apTxPower);
 
-extern tSirRetStatus rrm_initialize(tpAniSirGlobal pMac);
+QDF_STATUS rrm_initialize(tpAniSirGlobal pMac);
 
-extern tSirRetStatus rrm_cleanup(tpAniSirGlobal pMac);
+/**
+ * rrm_cleanup  - cleanup RRM measurement related data for the measurement
+ * index
+ * @mac: Pointer to mac context
+ * @idx: Measurement index
+ *
+ * Return: None
+ */
+void rrm_cleanup(tpAniSirGlobal mac, uint8_t idx);
 
-extern tSirRetStatus rrm_process_link_measurement_request(tpAniSirGlobal pMac,
-							  uint8_t *pRxPacketInfo,
-							  tDot11fLinkMeasurementRequest
+QDF_STATUS rrm_process_link_measurement_request(tpAniSirGlobal pMac,
+						uint8_t *pRxPacketInfo,
+						tDot11fLinkMeasurementRequest
 							  *pLinkReq,
-							  tpPESession
+						tpPESession
 							  pSessionEntry);
 
-extern tSirRetStatus rrm_process_radio_measurement_request(tpAniSirGlobal pMac,
-							   tSirMacAddr peer,
-							   tDot11fRadioMeasurementRequest
+QDF_STATUS rrm_process_radio_measurement_request(tpAniSirGlobal pMac,
+						 tSirMacAddr peer,
+						 tDot11fRadioMeasurementRequest
 							   *pRRMReq,
-							   tpPESession
+						 tpPESession
 							   pSessionEntry);
 
-extern tSirRetStatus rrm_process_neighbor_report_response(tpAniSirGlobal pMac,
-							  tDot11fNeighborReportResponse
+QDF_STATUS rrm_process_neighbor_report_response(tpAniSirGlobal pMac,
+						tDot11fNeighborReportResponse
 							  *pNeighborRep,
-							  tpPESession
+						tpPESession
 							  pSessionEntry);
 
-extern tSirRetStatus rrm_send_set_max_tx_power_req(tpAniSirGlobal pMac,
-						   int8_t txPower,
-						   tpPESession pSessionEntry);
+QDF_STATUS rrm_send_set_max_tx_power_req(tpAniSirGlobal pMac,
+					 int8_t txPower,
+					 tpPESession pSessionEntry);
 
-extern int8_t rrm_get_mgmt_tx_power(tpAniSirGlobal pMac,
-				       tpPESession pSessionEntry);
+int8_t rrm_get_mgmt_tx_power(tpAniSirGlobal pMac,
+			     tpPESession pSessionEntry);
 
-extern void rrm_cache_mgmt_tx_power(tpAniSirGlobal pMac,
-				    int8_t txPower, tpPESession pSessionEntry);
+void rrm_cache_mgmt_tx_power(tpAniSirGlobal pMac,
+			     int8_t txPower, tpPESession pSessionEntry);
 
-extern tpRRMCaps rrm_get_capabilities(tpAniSirGlobal pMac,
-				      tpPESession pSessionEntry);
+tpRRMCaps rrm_get_capabilities(tpAniSirGlobal pMac,
+			       tpPESession pSessionEntry);
 
-extern void rrm_get_start_tsf(tpAniSirGlobal pMac, uint32_t *pStartTSF);
+void rrm_get_start_tsf(tpAniSirGlobal pMac, uint32_t *pStartTSF);
 
-extern void rrm_update_start_tsf(tpAniSirGlobal pMac, uint32_t startTSF[2]);
+void rrm_update_start_tsf(tpAniSirGlobal pMac, uint32_t startTSF[2]);
 
-extern tSirRetStatus rrm_set_max_tx_power_rsp(tpAniSirGlobal pMac,
-					      tpSirMsgQ limMsgQ);
+QDF_STATUS rrm_set_max_tx_power_rsp(tpAniSirGlobal pMac,
+				    struct scheduler_msg *limMsgQ);
 
-extern tSirRetStatus
+QDF_STATUS
 rrm_process_neighbor_report_req(tpAniSirGlobal pMac,
 				tpSirNeighborReportReqInd pNeighborReq);
-extern tSirRetStatus
+
+QDF_STATUS
 rrm_process_beacon_report_xmit(tpAniSirGlobal pMac,
 			       tpSirBeaconReportXmitInd pBcnReport);
-extern void lim_update_rrm_capability(tpAniSirGlobal mac_ctx,
-				      tpSirSmeJoinReq join_req);
+
+void lim_update_rrm_capability(tpAniSirGlobal mac_ctx,
+			       tpSirSmeJoinReq join_req);
+/**
+ * rrm_reject_req - Reject rrm request
+ * @radiomes_report: radio measurement report
+ * @rrm_req: Array of Measurement request IEs
+ * @num_report: Num of report
+ * @index: Measurement index
+ * @measurement_type: Measurement Type
+ *
+ * Reject the Radio Resource Measurement request, if one is
+ * already in progress
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS rrm_reject_req(tpSirMacRadioMeasureReport *radiomes_report,
+			  tDot11fRadioMeasurementRequest *rrm_req,
+			  uint8_t *num_report, uint8_t index,
+			  uint8_t measurement_type);
+
 #endif

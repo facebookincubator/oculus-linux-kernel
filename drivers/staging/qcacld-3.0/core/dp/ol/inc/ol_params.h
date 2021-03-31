@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2015 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2015, 2017-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,21 +17,15 @@
  */
 
 /*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
-/*
- * Defintions for the Atheros Wireless LAN controller driver.
+ * Definitions for the Atheros Wireless LAN controller driver.
  */
 #ifndef _DEV_OL_PARAMS_H
 #define _DEV_OL_PARAMS_H
 #include "ol_txrx_stats.h"
 #include "wlan_defs.h"          /* for wlan statst definitions */
 /*
-** Enumeration of PDEV Configuration parameter
-*/
+ * Enumeration of PDEV Configuration parameter
+ */
 
 enum ol_ath_param_t {
 	OL_ATH_PARAM_TXCHAINMASK = 0,
@@ -84,17 +75,17 @@ enum ol_ath_param_t {
 };
 
 /*
-** Enumeration of PDEV Configuration parameter
-*/
+ * Enumeration of PDEV Configuration parameter
+ */
 
 enum ol_hal_param_t {
 	OL_HAL_CONFIG_DMA_BEACON_RESPONSE_TIME = 0
 };
 
 /*
-** structure to hold all stats information
-** for offload device interface
-*/
+ * structure to hold all stats information
+ * for offload device interface
+ */
 struct ol_stats {
 	int txrx_stats_level;
 	struct ol_txrx_stats txrx_stats;

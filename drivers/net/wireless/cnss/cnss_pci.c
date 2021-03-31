@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -83,6 +83,7 @@
 #define QCA6180_DEVICE_ID	(0x0041)
 #define QCA6180_REV_ID_OFFSET	(0x08)
 
+#define WLAN_EN_VREG_NAME	"vdd-wlan-en"
 #define WLAN_VREG_NAME		"vdd-wlan"
 #define WLAN_VREG_IO_NAME	"vdd-wlan-io"
 #define WLAN_VREG_XTAL_NAME	"vdd-wlan-xtal"
@@ -114,6 +115,8 @@
 #define WLAN_VREG_SP2T_MIN	2700000
 
 #define POWER_ON_DELAY		2
+#define WLAN_VREG_IO_DELAY_MIN	100
+#define WLAN_VREG_IO_DELAY_MAX	1000
 #define WLAN_ENABLE_DELAY	10
 #define WLAN_RECOVERY_DELAY	1
 #define PCIE_ENABLE_DELAY	100
@@ -154,6 +157,7 @@ struct cnss_wlan_gpio_info {
 };
 
 struct cnss_wlan_vreg_info {
+	struct regulator *wlan_en_reg;
 	struct regulator *wlan_reg;
 	struct regulator *soc_swreg;
 	struct regulator *ant_switch;
@@ -236,6 +240,7 @@ static struct cnss_data {
 	dma_addr_t smmu_iova_start;
 	size_t smmu_iova_len;
 	struct cnss_wlan_vreg_info vreg_info;
+	bool wlan_en_vreg_support;
 	struct cnss_wlan_gpio_info gpio_info;
 	bool pcie_link_state;
 	bool pcie_link_down_ind;
@@ -291,6 +296,17 @@ module_param(pcie_link_down_panic, uint, S_IRUSR | S_IWUSR);
 MODULE_PARM_DESC(pcie_link_down_panic,
 		"Trigger kernel panic when PCIe link down is detected");
 
+static void cnss_put_wlan_enable_gpio(void)
+{
+	struct cnss_wlan_gpio_info *gpio_info = &penv->gpio_info;
+	struct cnss_wlan_vreg_info *vreg_info = &penv->vreg_info;
+
+	if (penv->wlan_en_vreg_support)
+		regulator_put(vreg_info->wlan_en_reg);
+	else
+		gpio_free(gpio_info->num);
+}
+
 static int cnss_wlan_vreg_on(struct cnss_wlan_vreg_info *vreg_info)
 {
 	int ret;
@@ -304,13 +320,6 @@ static int cnss_wlan_vreg_on(struct cnss_wlan_vreg_info *vreg_info)
 		}
 	}
 
-	ret = regulator_enable(vreg_info->wlan_reg);
-	if (ret) {
-		pr_err("%s: regulator enable failed for WLAN power\n",
-				__func__);
-		goto error_enable;
-	}
-
 	if (vreg_info->wlan_reg_io) {
 		ret = regulator_enable(vreg_info->wlan_reg_io);
 		if (ret) {
@@ -318,6 +327,8 @@ static int cnss_wlan_vreg_on(struct cnss_wlan_vreg_info *vreg_info)
 				__func__);
 			goto error_enable_reg_io;
 		}
+
+		usleep_range(WLAN_VREG_IO_DELAY_MIN, WLAN_VREG_IO_DELAY_MAX);
 	}
 
 	if (vreg_info->wlan_reg_xtal_aon) {
@@ -336,6 +347,13 @@ static int cnss_wlan_vreg_on(struct cnss_wlan_vreg_info *vreg_info)
 				__func__);
 			goto error_enable_reg_xtal;
 		}
+	}
+
+	ret = regulator_enable(vreg_info->wlan_reg);
+	if (ret) {
+		pr_err("%s: regulator enable failed for WLAN power\n",
+		       __func__);
+		goto error_enable;
 	}
 
 	if (vreg_info->wlan_reg_sp2t) {
@@ -374,6 +392,8 @@ error_enable_ant_switch:
 	if (vreg_info->wlan_reg_sp2t)
 		regulator_disable(vreg_info->wlan_reg_sp2t);
 error_enable_reg_sp2t:
+	regulator_disable(vreg_info->wlan_reg);
+error_enable:
 	if (vreg_info->wlan_reg_xtal)
 		regulator_disable(vreg_info->wlan_reg_xtal);
 error_enable_reg_xtal:
@@ -383,8 +403,6 @@ error_enable_reg_xtal_aon:
 	if (vreg_info->wlan_reg_io)
 		regulator_disable(vreg_info->wlan_reg_io);
 error_enable_reg_io:
-	regulator_disable(vreg_info->wlan_reg);
-error_enable:
 	if (vreg_info->wlan_reg_core)
 		regulator_disable(vreg_info->wlan_reg_core);
 error_enable_reg_core:
@@ -422,6 +440,13 @@ static int cnss_wlan_vreg_off(struct cnss_wlan_vreg_info *vreg_info)
 		}
 	}
 
+	ret = regulator_disable(vreg_info->wlan_reg);
+	if (ret) {
+		pr_err("%s: regulator disable failed for WLAN power\n",
+		       __func__);
+		goto error_disable;
+	}
+
 	if (vreg_info->wlan_reg_xtal) {
 		ret = regulator_disable(vreg_info->wlan_reg_xtal);
 		if (ret) {
@@ -447,13 +472,6 @@ static int cnss_wlan_vreg_off(struct cnss_wlan_vreg_info *vreg_info)
 				__func__);
 			goto error_disable;
 		}
-	}
-
-	ret = regulator_disable(vreg_info->wlan_reg);
-	if (ret) {
-		pr_err("%s: regulator disable failed for WLAN power\n",
-				__func__);
-		goto error_disable;
 	}
 
 	if (vreg_info->wlan_reg_core) {
@@ -551,6 +569,7 @@ out:
 
 static void cnss_wlan_gpio_set(struct cnss_wlan_gpio_info *info, bool state)
 {
+#ifndef CONFIG_MSM_GVM_QUIN
 	if (!info->prop)
 		return;
 
@@ -570,6 +589,28 @@ static void cnss_wlan_gpio_set(struct cnss_wlan_gpio_info *info, bool state)
 
 	pr_debug("%s: %s gpio is now %s\n", __func__,
 		 info->name, info->state ? "enabled" : "disabled");
+#else
+	return;
+#endif
+}
+
+static int cnss_configure_wlan_en_gpio(bool state)
+{
+	int ret = 0;
+	struct cnss_wlan_gpio_info *gpio_info = &penv->gpio_info;
+	struct cnss_wlan_vreg_info *vreg_info = &penv->vreg_info;
+
+	if (penv->wlan_en_vreg_support) {
+		if (state)
+			ret = regulator_enable(vreg_info->wlan_en_reg);
+		else
+			ret = regulator_disable(vreg_info->wlan_en_reg);
+	} else {
+		cnss_wlan_gpio_set(gpio_info, state);
+	}
+
+	msleep(WLAN_ENABLE_DELAY);
+	return ret;
 }
 
 static int cnss_pinctrl_init(struct cnss_wlan_gpio_info *gpio_info,
@@ -678,14 +719,71 @@ end:
 	return ret;
 }
 
+static int cnss_get_wlan_enable_gpio(
+	struct cnss_wlan_gpio_info *gpio_info,
+	struct platform_device *pdev)
+{
+	int ret = 0;
+	struct device *dev = &pdev->dev;
+
+	if (!of_find_property(dev->of_node, gpio_info->name, NULL)) {
+		gpio_info->prop = false;
+		return -ENODEV;
+	}
+
+	gpio_info->prop = true;
+	ret = of_get_named_gpio(dev->of_node, gpio_info->name, 0);
+	if (ret >= 0) {
+		gpio_info->num = ret;
+	} else {
+		if (ret == -EPROBE_DEFER)
+			pr_debug("get WLAN_EN GPIO probe defer\n");
+		else
+			pr_err(
+			"can't get gpio %s ret %d", gpio_info->name, ret);
+	}
+
+	ret = cnss_pinctrl_init(gpio_info, pdev);
+	if (ret)
+		pr_debug("%s: pinctrl init failed!\n", __func__);
+
+	ret = cnss_wlan_gpio_init(gpio_info);
+	if (ret)
+		pr_err("gpio init failed\n");
+
+	return ret;
+}
+
+static int cnss_get_wlan_bootstrap_gpio(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct device_node *node = (&pdev->dev)->of_node;
+
+	if (!of_find_property(node, WLAN_BOOTSTRAP_GPIO_NAME, NULL))
+		return ret;
+
+	penv->wlan_bootstrap_gpio =
+		of_get_named_gpio(node, WLAN_BOOTSTRAP_GPIO_NAME, 0);
+	if (penv->wlan_bootstrap_gpio > 0) {
+		ret = cnss_wlan_bootstrap_gpio_init();
+	} else {
+		ret = penv->wlan_bootstrap_gpio;
+		pr_err(
+		"%s: Can't get GPIO %s, ret = %d",
+		__func__, WLAN_BOOTSTRAP_GPIO_NAME, ret);
+	}
+
+	return ret;
+}
+
 static int cnss_wlan_get_resources(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct cnss_wlan_gpio_info *gpio_info = &penv->gpio_info;
 	struct cnss_wlan_vreg_info *vreg_info = &penv->vreg_info;
+	struct device_node *node = pdev->dev.of_node;
 
-	if (of_get_property(pdev->dev.of_node,
-		WLAN_VREG_CORE_NAME"-supply", NULL)) {
+	if (of_get_property(node, WLAN_VREG_CORE_NAME "-supply", NULL)) {
 		vreg_info->wlan_reg_core = regulator_get(&pdev->dev,
 			WLAN_VREG_CORE_NAME);
 		if (IS_ERR(vreg_info->wlan_reg_core)) {
@@ -715,6 +813,33 @@ static int cnss_wlan_get_resources(struct platform_device *pdev)
 		}
 	}
 
+	if (of_get_property(node, WLAN_VREG_IO_NAME "-supply", NULL)) {
+		vreg_info->wlan_reg_io = regulator_get(&pdev->dev,
+			WLAN_VREG_IO_NAME);
+		if (!IS_ERR(vreg_info->wlan_reg_io)) {
+			ret = regulator_set_voltage(vreg_info->wlan_reg_io,
+				WLAN_VREG_IO_MIN, WLAN_VREG_IO_MAX);
+			if (ret) {
+				pr_err("%s: Set wlan_vreg_io failed!\n",
+					__func__);
+				goto err_reg_io_set;
+			}
+
+			ret = regulator_enable(vreg_info->wlan_reg_io);
+			if (ret) {
+				pr_err("%s: Enable wlan_vreg_io failed!\n",
+					__func__);
+				goto err_reg_io_enable;
+			}
+
+			usleep_range(WLAN_VREG_IO_DELAY_MIN,
+				     WLAN_VREG_IO_DELAY_MAX);
+		}
+	}
+
+	if (cnss_enable_xtal_ldo(pdev))
+		goto err_reg_xtal_enable;
+
 	vreg_info->wlan_reg = regulator_get(&pdev->dev, WLAN_VREG_NAME);
 
 	if (IS_ERR(vreg_info->wlan_reg)) {
@@ -733,33 +858,7 @@ static int cnss_wlan_get_resources(struct platform_device *pdev)
 		goto err_reg_enable;
 	}
 
-	if (of_get_property(pdev->dev.of_node,
-		WLAN_VREG_IO_NAME"-supply", NULL)) {
-		vreg_info->wlan_reg_io = regulator_get(&pdev->dev,
-			WLAN_VREG_IO_NAME);
-		if (!IS_ERR(vreg_info->wlan_reg_io)) {
-			ret = regulator_set_voltage(vreg_info->wlan_reg_io,
-				WLAN_VREG_IO_MIN, WLAN_VREG_IO_MAX);
-			if (ret) {
-				pr_err("%s: Set wlan_vreg_io failed!\n",
-					__func__);
-				goto err_reg_io_set;
-			}
-
-			ret = regulator_enable(vreg_info->wlan_reg_io);
-			if (ret) {
-				pr_err("%s: Enable wlan_vreg_io failed!\n",
-					__func__);
-				goto err_reg_io_enable;
-			}
-		}
-	}
-
-	if (cnss_enable_xtal_ldo(pdev))
-		goto err_reg_xtal_enable;
-
-	if (of_get_property(pdev->dev.of_node,
-		WLAN_VREG_SP2T_NAME"-supply", NULL)) {
+	if (of_get_property(node, WLAN_VREG_SP2T_NAME "-supply", NULL)) {
 		vreg_info->wlan_reg_sp2t =
 			regulator_get(&pdev->dev, WLAN_VREG_SP2T_NAME);
 		if (!IS_ERR(vreg_info->wlan_reg_sp2t)) {
@@ -780,8 +879,7 @@ static int cnss_wlan_get_resources(struct platform_device *pdev)
 		}
 	}
 
-	if (of_get_property(pdev->dev.of_node,
-			    WLAN_ANT_SWITCH_NAME "-supply", NULL)) {
+	if (of_get_property(node, WLAN_ANT_SWITCH_NAME "-supply", NULL)) {
 		vreg_info->ant_switch =
 			regulator_get(&pdev->dev, WLAN_ANT_SWITCH_NAME);
 		if (!IS_ERR(vreg_info->ant_switch)) {
@@ -811,13 +909,10 @@ static int cnss_wlan_get_resources(struct platform_device *pdev)
 		}
 	}
 
-	if (of_find_property((&pdev->dev)->of_node,
-				"qcom,wlan-uart-access", NULL))
+	if (of_find_property(node, "qcom,wlan-uart-access", NULL))
 		penv->cap.cap_flag |= CNSS_HAS_UART_ACCESS;
 
-	if (of_get_property(pdev->dev.of_node,
-		    WLAN_SWREG_NAME"-supply", NULL)) {
-
+	if (of_get_property(node, WLAN_SWREG_NAME "-supply", NULL)) {
 		vreg_info->soc_swreg = regulator_get(&pdev->dev,
 			WLAN_SWREG_NAME);
 		if (IS_ERR(vreg_info->soc_swreg)) {
@@ -840,68 +935,41 @@ static int cnss_wlan_get_resources(struct platform_device *pdev)
 		penv->cap.cap_flag |= CNSS_HAS_EXTERNAL_SWREG;
 	}
 
-	vreg_info->state = VREG_ON;
-
-	if (!of_find_property((&pdev->dev)->of_node, gpio_info->name, NULL)) {
-		gpio_info->prop = false;
-		goto end;
-	}
-
-	gpio_info->prop = true;
-	ret = of_get_named_gpio((&pdev->dev)->of_node,
-				gpio_info->name, 0);
-
-	if (ret >= 0) {
-		gpio_info->num = ret;
-		ret = 0;
-	} else {
-		if (ret == -EPROBE_DEFER)
-			pr_debug("get WLAN_EN GPIO probe defer\n");
-		else
-			pr_err("can't get gpio %s ret %d",
-			       gpio_info->name, ret);
-		goto err_get_gpio;
-	}
-
-	ret = cnss_pinctrl_init(gpio_info, pdev);
-	if (ret) {
-		pr_err("%s: pinctrl init failed!\n", __func__);
-		goto err_pinctrl_init;
-	}
-
-	ret = cnss_wlan_gpio_init(gpio_info);
-	if (ret) {
-		pr_err("gpio init failed\n");
-		goto err_gpio_init;
-	}
-
-	if (of_find_property((&pdev->dev)->of_node,
-		WLAN_BOOTSTRAP_GPIO_NAME, NULL)) {
-		penv->wlan_bootstrap_gpio =
-			of_get_named_gpio((&pdev->dev)->of_node,
-					WLAN_BOOTSTRAP_GPIO_NAME, 0);
-		if (penv->wlan_bootstrap_gpio > 0) {
-			ret = cnss_wlan_bootstrap_gpio_init();
-			if (ret)
-				goto err_gpio_init;
-		} else {
-			if (ret == -EPROBE_DEFER) {
-				pr_debug("%s: Get GPIO %s probe defer\n",
-					__func__, WLAN_BOOTSTRAP_GPIO_NAME);
-			} else {
-				pr_err("%s: Can't get GPIO %s, ret = %d",
-					__func__, WLAN_BOOTSTRAP_GPIO_NAME,
-					ret);
-			}
-			goto err_gpio_init;
+	penv->wlan_en_vreg_support =
+		of_property_read_bool(node, "qcom,wlan-en-vreg-support");
+	if (penv->wlan_en_vreg_support) {
+		vreg_info->wlan_en_reg =
+			regulator_get(&pdev->dev, WLAN_EN_VREG_NAME);
+		if (IS_ERR(vreg_info->wlan_en_reg)) {
+			pr_err("%s:wlan_en vreg get failed\n", __func__);
+			ret = PTR_ERR(vreg_info->wlan_en_reg);
+			goto err_wlan_en_reg_get;
 		}
 	}
-end:
+
+	if (!penv->wlan_en_vreg_support) {
+		ret = cnss_get_wlan_enable_gpio(gpio_info, pdev);
+		if (ret) {
+			pr_err(
+			"%s:Failed to config the WLAN_EN gpio\n", __func__);
+			goto err_gpio_wlan_en;
+		}
+	}
+	vreg_info->state = VREG_ON;
+
+	ret = cnss_get_wlan_bootstrap_gpio(pdev);
+	if (ret) {
+		pr_err("%s: Failed to enable wlan bootstrap gpio\n", __func__);
+		goto err_gpio_wlan_bootstrap;
+	}
+
 	return ret;
 
-err_gpio_init:
-err_pinctrl_init:
-err_get_gpio:
+err_gpio_wlan_bootstrap:
+	cnss_put_wlan_enable_gpio();
+err_gpio_wlan_en:
+err_wlan_en_reg_get:
+	vreg_info->wlan_en_reg = NULL;
 	if (vreg_info->soc_swreg)
 		regulator_disable(vreg_info->soc_swreg);
 	vreg_info->state = VREG_OFF;
@@ -926,7 +994,11 @@ err_reg_sp2t_enable:
 err_reg_sp2t_set:
 	if (vreg_info->wlan_reg_sp2t)
 		regulator_put(vreg_info->wlan_reg_sp2t);
+	regulator_disable(vreg_info->wlan_reg);
 
+err_reg_enable:
+	regulator_put(vreg_info->wlan_reg);
+err_reg_get:
 	cnss_disable_xtal_ldo(pdev);
 
 err_reg_xtal_enable:
@@ -937,12 +1009,6 @@ err_reg_io_enable:
 err_reg_io_set:
 	if (vreg_info->wlan_reg_io)
 		regulator_put(vreg_info->wlan_reg_io);
-	regulator_disable(vreg_info->wlan_reg);
-
-err_reg_enable:
-	regulator_put(vreg_info->wlan_reg);
-
-err_reg_get:
 	if (vreg_info->wlan_reg_core)
 		regulator_disable(vreg_info->wlan_reg_core);
 
@@ -962,7 +1028,7 @@ static void cnss_wlan_release_resources(void)
 
 	if (penv->wlan_bootstrap_gpio > 0)
 		gpio_free(penv->wlan_bootstrap_gpio);
-	gpio_free(gpio_info->num);
+	cnss_put_wlan_enable_gpio();
 	gpio_info->state = WLAN_EN_LOW;
 	gpio_info->prop = false;
 	cnss_wlan_vreg_set(vreg_info, VREG_OFF);
@@ -972,13 +1038,13 @@ static void cnss_wlan_release_resources(void)
 		regulator_put(vreg_info->ant_switch);
 	if (vreg_info->wlan_reg_sp2t)
 		regulator_put(vreg_info->wlan_reg_sp2t);
+	regulator_put(vreg_info->wlan_reg);
 	if (vreg_info->wlan_reg_xtal)
 		regulator_put(vreg_info->wlan_reg_xtal);
 	if (vreg_info->wlan_reg_xtal_aon)
 		regulator_put(vreg_info->wlan_reg_xtal_aon);
 	if (vreg_info->wlan_reg_io)
 		regulator_put(vreg_info->wlan_reg_io);
-	regulator_put(vreg_info->wlan_reg);
 	if (vreg_info->wlan_reg_core)
 		regulator_put(vreg_info->wlan_reg_core);
 	vreg_info->state = VREG_OFF;
@@ -1415,8 +1481,8 @@ static int cnss_smmu_init(struct device *dev)
 					   penv->smmu_iova_start,
 					   penv->smmu_iova_len);
 	if (IS_ERR(mapping)) {
-		pr_err("%s: create mapping failed, err = %d\n", __func__, ret);
 		ret = PTR_ERR(mapping);
+		pr_err("%s: create mapping failed, err = %d\n", __func__, ret);
 		goto map_fail;
 	}
 
@@ -1467,6 +1533,21 @@ int cnss_msm_pcie_pm_control(
 	return msm_pcie_pm_control(pm_opt, bus_num, pdev, NULL, options);
 }
 
+#ifndef CONFIG_GHS_VMM
+static int cnss_msm_pcie_suspend_resume(
+		enum msm_pcie_pm_opt pm_opt, u32 bus_num,
+		struct pci_dev *pdev, u32 options)
+{
+	return msm_pcie_pm_control(pm_opt, bus_num, pdev, NULL, options);
+}
+#else
+static inline int cnss_msm_pcie_suspend_resume(
+		enum msm_pcie_pm_opt pm_opt, u32 bus_num,
+		struct pci_dev *pdev, u32 options)
+{
+	return 0;
+}
+#endif
 int cnss_pci_load_and_free_saved_state(
 	struct pci_dev *dev, struct pci_saved_state **state)
 {
@@ -1498,7 +1579,6 @@ int cnss_msm_pcie_enumerate(u32 rc_idx)
 	return msm_pcie_enumerate(rc_idx);
 }
 #else /* !defined CONFIG_PCI_MSM */
-
 struct pci_saved_state *cnss_pci_store_saved_state(struct pci_dev *dev)
 {
 	return NULL;
@@ -1508,7 +1588,7 @@ int cnss_msm_pcie_pm_control(
 		enum msm_pcie_pm_opt pm_opt, u32 bus_num,
 		struct pci_dev *pdev, u32 options)
 {
-	return -ENODEV;
+	return 0;
 }
 
 int cnss_pci_load_and_free_saved_state(
@@ -1519,27 +1599,27 @@ int cnss_pci_load_and_free_saved_state(
 
 int cnss_msm_pcie_shadow_control(struct pci_dev *dev, bool enable)
 {
-	return -ENODEV;
+	return 0;
 }
 
 int cnss_msm_pcie_deregister_event(struct msm_pcie_register_event *reg)
 {
-	return -ENODEV;
+	return 0;
 }
 
 int cnss_msm_pcie_recover_config(struct pci_dev *dev)
 {
-	return -ENODEV;
+	return 0;
 }
 
 int cnss_msm_pcie_register_event(struct msm_pcie_register_event *reg)
 {
-	return -ENODEV;
+	return 0;
 }
 
 int cnss_msm_pcie_enumerate(u32 rc_idx)
 {
-	return -EPROBE_DEFER;
+	return 0;
 }
 #endif
 
@@ -1548,7 +1628,6 @@ static int cnss_wlan_pci_probe(struct pci_dev *pdev,
 {
 	int ret = 0;
 	struct cnss_wlan_vreg_info *vreg_info = &penv->vreg_info;
-	struct cnss_wlan_gpio_info *gpio_info = &penv->gpio_info;
 	void *cpu_addr;
 	dma_addr_t dma_handle;
 	struct codeswap_codeseg_info *cnss_seg_info = NULL;
@@ -1597,7 +1676,7 @@ static int cnss_wlan_pci_probe(struct pci_dev *pdev,
 		pci_save_state(pdev);
 		penv->saved_state = cnss_pci_store_saved_state(pdev);
 
-		ret = cnss_msm_pcie_pm_control(
+		ret = cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_SUSPEND, cnss_get_pci_dev_bus_number(pdev),
 			pdev, PM_OPTIONS);
 		if (ret) {
@@ -1607,7 +1686,7 @@ static int cnss_wlan_pci_probe(struct pci_dev *pdev,
 		penv->pcie_link_state = PCIE_LINK_DOWN;
 	}
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	ret = cnss_wlan_vreg_set(vreg_info, VREG_OFF);
 
 	if (ret) {
@@ -1914,7 +1993,7 @@ static inline void __cnss_disable_irq(void *data)
 {
 	struct pci_dev *pdev = data;
 
-	disable_irq(pdev->irq);
+	disable_irq_nosync(pdev->irq);
 }
 
 void cnss_pci_events_cb(struct msm_pcie_notify *notify)
@@ -2254,8 +2333,7 @@ again:
 		msleep(WLAN_BOOTSTRAP_DELAY);
 	}
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_HIGH);
-	msleep(WLAN_ENABLE_DELAY);
+	cnss_configure_wlan_en_gpio(WLAN_EN_HIGH);
 
 	if (!pdev) {
 		pr_debug("%s: invalid pdev. register pci device\n", __func__);
@@ -2283,7 +2361,7 @@ again:
 		pr_err("%s: PCIe event register failed! %d\n", __func__, ret);
 
 	if (!penv->pcie_link_state && !penv->pcie_link_down_ind) {
-		ret = cnss_msm_pcie_pm_control(
+		ret = cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_RESUME, cnss_get_pci_dev_bus_number(pdev),
 			pdev, PM_OPTIONS);
 		if (ret) {
@@ -2292,11 +2370,9 @@ again:
 		}
 		penv->pcie_link_state = PCIE_LINK_UP;
 	} else if (!penv->pcie_link_state && penv->pcie_link_down_ind) {
-
-		ret = cnss_msm_pcie_pm_control(
+		ret = cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_RESUME, cnss_get_pci_dev_bus_number(pdev),
 			pdev, PM_OPTIONS_RESUME_LINK_DOWN);
-
 		if (ret) {
 			pr_err("PCIe link bring-up failed (link down option)\n");
 			goto err_pcie_link_up;
@@ -2333,13 +2409,12 @@ again:
 			pci_save_state(pdev);
 			penv->saved_state = cnss_pci_store_saved_state(pdev);
 			cnss_msm_pcie_deregister_event(&penv->event_reg);
-			cnss_msm_pcie_pm_control(
+			cnss_msm_pcie_suspend_resume(
 				MSM_PCIE_SUSPEND,
 				cnss_get_pci_dev_bus_number(pdev),
 				pdev, PM_OPTIONS);
 			penv->pcie_link_state = PCIE_LINK_DOWN;
-			cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
-			msleep(WLAN_ENABLE_DELAY);
+			cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 			cnss_wlan_vreg_set(vreg_info, VREG_OFF);
 			msleep(POWER_ON_DELAY);
 			probe_again++;
@@ -2359,14 +2434,14 @@ err_wlan_probe:
 err_pcie_link_up:
 	cnss_msm_pcie_deregister_event(&penv->event_reg);
 	if (penv->pcie_link_state) {
-		cnss_msm_pcie_pm_control(
+		cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_SUSPEND, cnss_get_pci_dev_bus_number(pdev),
 			pdev, PM_OPTIONS);
 		penv->pcie_link_state = PCIE_LINK_DOWN;
 	}
 
 err_pcie_reg:
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	cnss_wlan_vreg_set(vreg_info, VREG_OFF);
 	if (penv->pdev) {
 		pr_err("%d: Unregistering PCI device\n", __LINE__);
@@ -2422,8 +2497,7 @@ void cnss_wlan_unregister_driver(struct cnss_wlan_driver *driver)
 	if (penv->pcie_link_state && !penv->pcie_link_down_ind) {
 		pci_save_state(pdev);
 		penv->saved_state = cnss_pci_store_saved_state(pdev);
-
-		if (cnss_msm_pcie_pm_control(
+		if (cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_SUSPEND, cnss_get_pci_dev_bus_number(pdev),
 			pdev, PM_OPTIONS)) {
 			pr_err("Failed to shutdown PCIe link\n");
@@ -2431,8 +2505,7 @@ void cnss_wlan_unregister_driver(struct cnss_wlan_driver *driver)
 		}
 	} else if (penv->pcie_link_state && penv->pcie_link_down_ind) {
 		penv->saved_state = NULL;
-
-		if (cnss_msm_pcie_pm_control(
+		if (cnss_msm_pcie_suspend_resume(
 			MSM_PCIE_SUSPEND, cnss_get_pci_dev_bus_number(pdev),
 				pdev, PM_OPTIONS_SUSPEND_LINK_DOWN)) {
 			pr_err("Failed to shutdown PCIe link (with linkdown option)\n");
@@ -2447,8 +2520,7 @@ void cnss_wlan_unregister_driver(struct cnss_wlan_driver *driver)
 cut_power:
 	penv->driver = NULL;
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
-
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	if (cnss_wlan_vreg_set(vreg_info, VREG_OFF))
 		pr_err("wlan vreg OFF failed\n");
 }
@@ -2560,8 +2632,7 @@ static int cnss_shutdown(const struct subsys_desc *subsys, bool force_stop)
 	}
 
 cut_power:
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
-
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	if (cnss_wlan_vreg_set(vreg_info, VREG_OFF))
 		pr_err("cnss: Failed to set WLAN VREG_OFF!\n");
 
@@ -2594,8 +2665,7 @@ static int cnss_powerup(const struct subsys_desc *subsys)
 	}
 
 	msleep(POWER_ON_DELAY);
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_HIGH);
-	msleep(WLAN_ENABLE_DELAY);
+	cnss_configure_wlan_en_gpio(WLAN_EN_HIGH);
 
 	if (!pdev) {
 		pr_err("%d: invalid pdev\n", __LINE__);
@@ -2655,13 +2725,17 @@ err_wlan_reinit:
 	penv->pcie_link_state = PCIE_LINK_DOWN;
 
 err_pcie_link_up:
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	cnss_wlan_vreg_set(vreg_info, VREG_OFF);
 	if (penv->pdev) {
-		pr_err("%d: Unregistering pci device\n", __LINE__);
-		pci_unregister_driver(&cnss_wlan_pci_driver);
-		penv->pdev = NULL;
-		penv->pci_register_again = true;
+		if (wdrv && wdrv->update_status)
+			wdrv->update_status(penv->pdev, CNSS_SSR_FAIL);
+		if (!penv->recovery_in_progress) {
+			pr_err("%d: Unregistering pci device\n", __LINE__);
+			pci_unregister_driver(&cnss_wlan_pci_driver);
+			penv->pdev = NULL;
+			penv->pci_register_again = true;
+		}
 	}
 
 err_wlan_vreg_on:
@@ -2814,7 +2888,9 @@ static int cnss_probe(struct platform_device *pdev)
 	struct esoc_desc *desc;
 	const char *client_desc;
 	struct device *dev = &pdev->dev;
+#ifndef CONFIG_MSM_GVM_QUIN
 	u32 rc_num;
+#endif
 	struct resource *res;
 	u32 ramdump_size = 0;
 	u32 smmu_iova_address[2];
@@ -2843,9 +2919,13 @@ static int cnss_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_get_wlan_res;
 
-	cnss_wlan_gpio_set(&penv->gpio_info, WLAN_EN_HIGH);
-	msleep(WLAN_ENABLE_DELAY);
+	ret = cnss_configure_wlan_en_gpio(WLAN_EN_HIGH);
+	if (ret) {
+		pr_err("%s: Failed to enable WLAN enable gpio\n", __func__);
+		goto err_get_rc;
+	}
 
+#ifndef CONFIG_MSM_GVM_QUIN
 	ret = of_property_read_u32(dev->of_node, "qcom,wlan-rc-num", &rc_num);
 	if (ret) {
 		pr_err("%s: Failed to find PCIe RC number!\n", __func__);
@@ -2857,6 +2937,7 @@ static int cnss_probe(struct platform_device *pdev)
 		pr_err("%s: Failed to enable PCIe RC%x!\n", __func__, rc_num);
 		goto err_pcie_enumerate;
 	}
+#endif
 
 	penv->pcie_link_state = PCIE_LINK_UP;
 
@@ -3037,9 +3118,11 @@ err_subsys_reg:
 		devm_unregister_esoc_client(&pdev->dev, penv->esoc_desc);
 
 err_esoc_reg:
+#ifndef CONFIG_MSM_GVM_QUIN
 err_pcie_enumerate:
+#endif
 err_get_rc:
-	cnss_wlan_gpio_set(&penv->gpio_info, WLAN_EN_LOW);
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	cnss_wlan_release_resources();
 
 err_get_wlan_res:
@@ -3050,8 +3133,6 @@ err_get_wlan_res:
 
 static int cnss_remove(struct platform_device *pdev)
 {
-	struct cnss_wlan_gpio_info *gpio_info = &penv->gpio_info;
-
 	unregister_pm_notifier(&cnss_pm_notifier);
 	device_remove_file(&pdev->dev, &dev_attr_fw_image_setup);
 
@@ -3072,7 +3153,7 @@ static int cnss_remove(struct platform_device *pdev)
 		}
 	}
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	if (penv->wlan_bootstrap_gpio > 0)
 		gpio_set_value(penv->wlan_bootstrap_gpio, WLAN_BOOTSTRAP_LOW);
 	cnss_wlan_release_resources();
@@ -3094,6 +3175,9 @@ static struct platform_driver cnss_driver = {
 		.name = "cnss",
 		.owner = THIS_MODULE,
 		.of_match_table = cnss_dt_match,
+#ifdef CONFIG_CNSS_ASYNC
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+#endif
 	},
 };
 
@@ -3570,8 +3654,7 @@ static int __cnss_pcie_power_up(struct device *dev)
 		msleep(WLAN_BOOTSTRAP_DELAY);
 	}
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_HIGH);
-	msleep(WLAN_ENABLE_DELAY);
+	cnss_configure_wlan_en_gpio(WLAN_EN_HIGH);
 	return 0;
 }
 
@@ -3584,8 +3667,7 @@ static int __cnss_pcie_power_down(struct device *dev)
 	vreg_info = &penv->vreg_info;
 	gpio_info = &penv->gpio_info;
 
-	cnss_wlan_gpio_set(gpio_info, WLAN_EN_LOW);
-
+	cnss_configure_wlan_en_gpio(WLAN_EN_LOW);
 	if (penv->wlan_bootstrap_gpio > 0)
 		gpio_set_value(penv->wlan_bootstrap_gpio, WLAN_BOOTSTRAP_LOW);
 

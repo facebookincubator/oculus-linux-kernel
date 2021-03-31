@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -50,7 +41,8 @@
 
 /* Type declarations */
 /* qdf Timer callback function prototype (well, actually a prototype for
-   a pointer to this callback function) */
+ * a pointer to this callback function)
+ */
 typedef void (*qdf_mc_timer_callback_t)(void *user_data);
 
 typedef enum {
@@ -65,7 +57,7 @@ struct qdf_mc_timer_s;
 typedef struct qdf_mc_timer_node_s {
 	qdf_list_node_t node;
 	char *file_name;
-	unsigned int line_num;
+	uint32_t line_num;
 	struct qdf_mc_timer_s *qdf_timer;
 } qdf_mc_timer_node_t;
 #endif
@@ -89,6 +81,7 @@ void qdf_try_allowing_sleep(QDF_TIMER_TYPE type);
 #ifdef TIMER_MANAGER
 void qdf_mc_timer_manager_init(void);
 void qdf_mc_timer_manager_exit(void);
+void qdf_mc_timer_check_for_leaks(void);
 #else
 /**
  * qdf_mc_timer_manager_init() - initialize QDF debug timer manager
@@ -109,6 +102,15 @@ static inline void qdf_mc_timer_manager_init(void)
 static inline void qdf_mc_timer_manager_exit(void)
 {
 }
+
+/**
+ * qdf_mc_timer_check_for_leaks() - Assert there are no active mc timers
+ *
+ * If there are active timers, this API prints them and panics.
+ *
+ * Return: None
+ */
+static inline void qdf_mc_timer_check_for_leaks(void) { }
 #endif
 /**
  * qdf_mc_timer_get_current_state() - get the current state of the timer
@@ -225,6 +227,22 @@ QDF_STATUS qdf_mc_timer_start(qdf_mc_timer_t *timer, uint32_t expiration_time);
 QDF_STATUS qdf_mc_timer_stop(qdf_mc_timer_t *timer);
 
 /**
+ * qdf_mc_timer_stop_sync() - stop a QDF Timer
+ * @timer: Pointer to timer object
+ * qdf_mc_timer_stop_sync() function stops a timer synchronously
+ * that has been started but has not expired, essentially
+ * cancelling the 'start' request.
+ *
+ * After a timer is stopped, it goes back to the state it was in after it
+ * was created and can be started again via a call to qdf_mc_timer_start().
+ *
+ * Return:
+ * QDF_STATUS_SUCCESS - Timer is initialized successfully
+ * QDF failure status - Timer initialization failed
+ */
+QDF_STATUS qdf_mc_timer_stop_sync(qdf_mc_timer_t *timer);
+
+/**
  * qdf_mc_timer_get_system_ticks() - get the system time in 10ms ticks
  *
  * qdf_mc_timer_get_system_ticks() function returns the current number
@@ -250,10 +268,10 @@ unsigned long qdf_mc_timer_get_system_ticks(void);
 unsigned long qdf_mc_timer_get_system_time(void);
 
 /**
-  * qdf_get_monotonic_boottime_ns() - Get kernel boottime in ns
-  *
-  * Return: kernel boottime in nano sec
-  */
+ * qdf_get_monotonic_boottime_ns() - Get kernel boottime in ns
+ *
+ * Return: kernel boottime in nano sec (includes time spent in suspend)
+ */
 s64 qdf_get_monotonic_boottime_ns(void);
 
 /**
@@ -265,6 +283,13 @@ s64 qdf_get_monotonic_boottime_ns(void);
  * Return: none
  */
 void qdf_timer_module_init(void);
+
+/**
+ * qdf_get_time_of_the_day_ms() - get time of the day in millisec
+ *
+ * Return: time of the day in ms
+ */
+qdf_time_t qdf_get_time_of_the_day_ms(void);
 
 /**
  * qdf_timer_module_deinit() - Deinitializes a QDF timer module.
@@ -284,4 +309,22 @@ void qdf_timer_module_deinit(void);
  * Return: None
  */
 void qdf_get_time_of_the_day_in_hr_min_sec_usec(char *tbuf, int len);
+
+void qdf_register_mc_timer_callback(void (*callback) (qdf_mc_timer_t *data));
+
+/**
+ * qdf_timer_set_multiplier() - set the global QDF timer scalar value
+ * @multiplier: the scalar value to apply
+ *
+ * Return: None
+ */
+void qdf_timer_set_multiplier(uint32_t multiplier);
+
+/**
+ * qdf_timer_get_multiplier() - get the global QDF timer scalar value
+ *
+ * Return: the global QDF timer scalar value
+ */
+uint32_t qdf_timer_get_multiplier(void);
+
 #endif /* __QDF_MC_TIMER_H */

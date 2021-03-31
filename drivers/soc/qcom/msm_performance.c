@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -309,7 +309,7 @@ static int set_managed_cpus(const char *buf, const struct kernel_param *kp)
 static int get_managed_cpus(char *buf, const struct kernel_param *kp)
 {
 	int i, cnt = 0, total_cnt = 0;
-	char tmp[MAX_LENGTH_CPU_STRING];
+	char tmp[MAX_LENGTH_CPU_STRING] = "";
 
 	if (!clusters_inited)
 		return cnt;
@@ -347,7 +347,7 @@ device_param_cb(managed_cpus, &param_ops_managed_cpus, NULL, 0644);
 static int get_managed_online_cpus(char *buf, const struct kernel_param *kp)
 {
 	int i, cnt = 0, total_cnt = 0;
-	char tmp[MAX_LENGTH_CPU_STRING];
+	char tmp[MAX_LENGTH_CPU_STRING] = "";
 	struct cpumask tmp_mask;
 	struct cluster *i_cl;
 
@@ -2379,6 +2379,7 @@ end:
 static void __ref try_hotplug(struct cluster *data)
 {
 	unsigned int i;
+	struct device *dev;
 
 	if (!clusters_inited)
 		return;
@@ -2405,7 +2406,8 @@ static void __ref try_hotplug(struct cluster *data)
 			pr_debug("msm_perf: Offlining CPU%d\n", i);
 			cpumask_set_cpu(i, data->offlined_cpus);
 			lock_device_hotplug();
-			if (device_offline(get_cpu_device(i))) {
+			dev = get_cpu_device(i);
+			if (!dev || device_offline(dev)) {
 				cpumask_clear_cpu(i, data->offlined_cpus);
 				pr_debug("msm_perf: Offlining CPU%d failed\n",
 									i);
@@ -2423,7 +2425,8 @@ static void __ref try_hotplug(struct cluster *data)
 				continue;
 			pr_debug("msm_perf: Onlining CPU%d\n", i);
 			lock_device_hotplug();
-			if (device_online(get_cpu_device(i))) {
+			dev = get_cpu_device(i);
+			if (!dev || device_online(dev)) {
 				pr_debug("msm_perf: Onlining CPU%d failed\n",
 									i);
 				unlock_device_hotplug();
@@ -2442,11 +2445,19 @@ static void __ref try_hotplug(struct cluster *data)
 static void __ref release_cluster_control(struct cpumask *off_cpus)
 {
 	int cpu;
+	struct device *dev;
 
 	for_each_cpu(cpu, off_cpus) {
 		pr_debug("msm_perf: Release CPU %d\n", cpu);
 		lock_device_hotplug();
-		if (!device_online(get_cpu_device(cpu)))
+		dev = get_cpu_device(cpu);
+		if (!dev) {
+			pr_debug("msm_perf: Failed to get CPU%d\n",
+								cpu);
+			unlock_device_hotplug();
+			continue;
+		}
+		if (!device_online(dev))
 			cpumask_clear_cpu(cpu, off_cpus);
 		unlock_device_hotplug();
 	}
@@ -2717,9 +2728,9 @@ error:
 	for (i = 0; i < num_clusters; i++) {
 		if (!managed_clusters[i])
 			break;
-		if (managed_clusters[i]->offlined_cpus)
+		if (managed_clusters[i]->offlined_cpus != NULL)
 			free_cpumask_var(managed_clusters[i]->offlined_cpus);
-		if (managed_clusters[i]->cpus)
+		if (managed_clusters[i]->cpus != NULL)
 			free_cpumask_var(managed_clusters[i]->cpus);
 		kfree(managed_clusters[i]);
 	}

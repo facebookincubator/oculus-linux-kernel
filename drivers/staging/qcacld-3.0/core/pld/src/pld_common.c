@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #define pr_fmt(fmt) "wlan_pld:%s:%d:: " fmt, __func__, __LINE__
 
 #include <linux/printk.h>
@@ -34,8 +25,11 @@
 #include <linux/slab.h>
 #include <linux/pm.h>
 
-#if defined(CONFIG_PLD_PCIE_CNSS) || defined(CONFIG_PLD_SDIO_CNSS)
+#ifdef CONFIG_PLD_SDIO_CNSS
 #include <net/cnss.h>
+#endif
+#ifdef CONFIG_PLD_PCIE_CNSS
+#include <net/cnss2.h>
 #endif
 #ifdef CONFIG_PLD_SNOC_ICNSS
 #include <soc/qcom/icnss.h>
@@ -185,7 +179,7 @@ static enum pld_bus_type pld_get_bus_type(struct device *dev)
 	pld_context = pld_get_global_context();
 
 	if (dev == NULL || pld_context == NULL) {
-		pr_err("Invalid info: dev %p, context %p\n",
+		pr_err("Invalid info: dev %pK, context %pK\n",
 		       dev, pld_context);
 		return PLD_BUS_TYPE_NONE;
 	}
@@ -341,10 +335,10 @@ int pld_wlan_enable(struct device *dev, struct pld_wlan_enable_cfg *config,
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_wlan_enable(config, mode, host_version);
+		ret = pld_pcie_wlan_enable(dev, config, mode, host_version);
 		break;
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_wlan_enable(config, mode, host_version);
+		ret = pld_snoc_wlan_enable(dev, config, mode, host_version);
 		break;
 	case PLD_BUS_TYPE_SDIO:
 		break;
@@ -372,10 +366,10 @@ int pld_wlan_disable(struct device *dev, enum pld_driver_mode mode)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_wlan_disable(mode);
+		ret = pld_pcie_wlan_disable(dev, mode);
 		break;
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_wlan_disable(mode);
+		ret = pld_snoc_wlan_disable(dev, mode);
 		break;
 	case PLD_BUS_TYPE_SDIO:
 		break;
@@ -403,10 +397,10 @@ int pld_set_fw_log_mode(struct device *dev, u8 fw_log_mode)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_set_fw_log_mode(fw_log_mode);
+		ret = pld_pcie_set_fw_log_mode(dev, fw_log_mode);
 		break;
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_set_fw_log_mode(fw_log_mode);
+		ret = pld_snoc_set_fw_log_mode(dev, fw_log_mode);
 		break;
 	case PLD_BUS_TYPE_SDIO:
 		break;
@@ -466,18 +460,21 @@ int pld_get_fw_files_for_target(struct device *dev,
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_fw_files_for_target(pfw_files,
-				       target_type, target_version);
+		ret = pld_pcie_get_fw_files_for_target(dev, pfw_files,
+						       target_type,
+						       target_version);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
 	case PLD_BUS_TYPE_SDIO:
 		ret = pld_sdio_get_fw_files_for_target(pfw_files,
-				       target_type, target_version);
+						       target_type,
+						       target_version);
 		break;
 	case PLD_BUS_TYPE_USB:
 	ret = pld_usb_get_fw_files_for_target(pfw_files,
-				target_type, target_version);
+					      target_type,
+					      target_version);
 	break;
 	default:
 		ret = -EINVAL;
@@ -499,7 +496,7 @@ void pld_is_pci_link_down(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_link_down();
+		pld_pcie_link_down(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -510,182 +507,20 @@ void pld_is_pci_link_down(struct device *dev)
 }
 
 /**
- * pld_shadow_control() - Control pci shadow registers
- * @dev: device
- * @enable: 0 for disable, 1 for enable
- *
- * This function is for suspend/resume. It can control if we
- * use pci shadow registers (for saving config space) or not.
- * During suspend we disable it to avoid config space corruption.
- *
- * Return: 0 for success
- *         Non zero failure code for errors
- */
-int pld_shadow_control(struct device *dev, bool enable)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_shadow_control(enable);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-/**
- * pld_set_wlan_unsafe_channel() - Set unsafe channel
- * @dev: device
- * @unsafe_ch_list: unsafe channel list
- * @ch_count: number of channel
- *
- * Return: 0 for success
- *         Non zero failure code for errors
- */
-int pld_set_wlan_unsafe_channel(struct device *dev,
-				u16 *unsafe_ch_list, u16 ch_count)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_set_wlan_unsafe_channel(unsafe_ch_list,
-						       ch_count);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_set_wlan_unsafe_channel(unsafe_ch_list,
-						       ch_count);
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		/* To do get unsafe channel via cnss sdio API */
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-/**
- * pld_get_wlan_unsafe_channel() - Get unsafe channel
- * @dev: device
- * @unsafe_ch_list: buffer to unsafe channel list
- * @ch_count: number of channel
- * @buf_len: buffer length
- *
- * Return WLAN unsafe channel to the buffer.
- *
- * Return: 0 for success
- *         Non zero failure code for errors
- */
-int pld_get_wlan_unsafe_channel(struct device *dev, u16 *unsafe_ch_list,
-				u16 *ch_count, u16 buf_len)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_wlan_unsafe_channel(unsafe_ch_list,
-						       ch_count, buf_len);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_get_wlan_unsafe_channel(unsafe_ch_list,
-						       ch_count, buf_len);
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		/* To do get unsafe channel via cnss sdio API */
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-/**
- * pld_wlan_set_dfs_nol() - Set DFS info
- * @dev: device
- * @info: DFS info
- * @info_len: info length
- *
- * Return: 0 for success
- *         Non zero failure code for errors
- */
-int pld_wlan_set_dfs_nol(struct device *dev, void *info, u16 info_len)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_wlan_set_dfs_nol(info, info_len);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_wlan_set_dfs_nol(info, info_len);
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		/* To do get nol via cnss sdio API */
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-/**
- * pld_wlan_get_dfs_nol() - Get DFS info
- * @dev: device
- * @info: buffer to DFS info
- * @info_len: info length
- *
- * Return DFS info to the buffer.
- *
- * Return: 0 for success
- *         Non zero failure code for errors
- */
-int pld_wlan_get_dfs_nol(struct device *dev, void *info, u16 info_len)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_wlan_get_dfs_nol(info, info_len);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_wlan_get_dfs_nol(info, info_len);
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-/**
  * pld_schedule_recovery_work() - Schedule recovery work
  * @dev: device
+ * @reason: recovery reason
  *
  * Schedule a system self recovery work.
  *
  * Return: void
  */
-void pld_schedule_recovery_work(struct device *dev)
+void pld_schedule_recovery_work(struct device *dev,
+				enum pld_recovery_reason reason)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_schedule_recovery_work();
+		pld_pcie_schedule_recovery_work(dev, reason);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -713,7 +548,7 @@ int pld_wlan_pm_control(struct device *dev, bool vote)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_wlan_pm_control(vote);
+		ret = pld_pcie_wlan_pm_control(dev, vote);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -740,11 +575,12 @@ void *pld_get_virt_ramdump_mem(struct device *dev, unsigned long *size)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		mem = pld_pcie_get_virt_ramdump_mem(size);
+		mem = pld_pcie_get_virt_ramdump_mem(dev, size);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
 	case PLD_BUS_TYPE_SDIO:
+		mem = pld_sdio_get_virt_ramdump_mem(dev, size);
 		break;
 	default:
 		pr_err("Invalid device type\n");
@@ -767,11 +603,12 @@ void pld_device_crashed(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_device_crashed();
+		pld_pcie_device_crashed(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
 	case PLD_BUS_TYPE_SDIO:
+		pld_sdio_device_crashed(dev);
 		break;
 	default:
 		pr_err("Invalid device type\n");
@@ -782,18 +619,21 @@ void pld_device_crashed(struct device *dev)
 /**
  * pld_device_self_recovery() - Device self recovery
  * @dev: device
+ * @reason: recovery reason
  *
  * Return: void
  */
-void pld_device_self_recovery(struct device *dev)
+void pld_device_self_recovery(struct device *dev,
+			      enum pld_recovery_reason reason)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_device_self_recovery();
+		pld_pcie_device_self_recovery(dev, reason);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
 	case PLD_BUS_TYPE_SDIO:
+		pld_sdio_device_self_recovery(dev);
 		break;
 	default:
 		pr_err("Invalid device type\n");
@@ -813,7 +653,7 @@ void pld_intr_notify_q6(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_intr_notify_q6();
+		pld_pcie_intr_notify_q6(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -836,7 +676,7 @@ void pld_request_pm_qos(struct device *dev, u32 qos_val)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_request_pm_qos(qos_val);
+		pld_pcie_request_pm_qos(dev, qos_val);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -863,7 +703,7 @@ void pld_remove_pm_qos(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_remove_pm_qos();
+		pld_pcie_remove_pm_qos(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -892,7 +732,7 @@ int pld_request_bus_bandwidth(struct device *dev, int bandwidth)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_request_bus_bandwidth(bandwidth);
+		ret = pld_pcie_request_bus_bandwidth(dev, bandwidth);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -923,7 +763,7 @@ int pld_get_platform_cap(struct device *dev, struct pld_platform_cap *cap)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_platform_cap(cap);
+		ret = pld_pcie_get_platform_cap(dev, cap);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -935,29 +775,6 @@ int pld_get_platform_cap(struct device *dev, struct pld_platform_cap *cap)
 	}
 
 	return ret;
-}
-
-/**
- * pld_set_driver_status() - Set driver status
- * @dev: device
- * @status: driver status
- *
- * Return: void
- */
-void pld_set_driver_status(struct device *dev, enum pld_driver_status status)
-{
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_set_driver_status(status);
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		break;
-	default:
-		pr_err("Invalid device type\n");
-		break;
-	}
 }
 
 /**
@@ -980,7 +797,7 @@ int pld_get_sha_hash(struct device *dev, const u8 *data,
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_sha_hash(data, data_len,
+		ret = pld_pcie_get_sha_hash(dev, data, data_len,
 					    hash_idx, out);
 		break;
 	case PLD_BUS_TYPE_SNOC:
@@ -1007,7 +824,7 @@ void *pld_get_fw_ptr(struct device *dev)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ptr = pld_pcie_get_fw_ptr();
+		ptr = pld_pcie_get_fw_ptr(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -1034,7 +851,7 @@ int pld_auto_suspend(struct device *dev)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_auto_suspend();
+		ret = pld_pcie_auto_suspend(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -1061,7 +878,7 @@ int pld_auto_resume(struct device *dev)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_auto_resume();
+		ret = pld_pcie_auto_resume(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -1095,7 +912,8 @@ int pld_ce_request_irq(struct device *dev, unsigned int ce_id,
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_ce_request_irq(ce_id, handler, flags, name, ctx);
+		ret = pld_snoc_ce_request_irq(dev, ce_id,
+					      handler, flags, name, ctx);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 		break;
@@ -1122,7 +940,7 @@ int pld_ce_free_irq(struct device *dev, unsigned int ce_id, void *ctx)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_ce_free_irq(ce_id, ctx);
+		ret = pld_snoc_ce_free_irq(dev, ce_id, ctx);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 		break;
@@ -1145,7 +963,7 @@ void pld_enable_irq(struct device *dev, unsigned int ce_id)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		pld_snoc_enable_irq(ce_id);
+		pld_snoc_enable_irq(dev, ce_id);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 		break;
@@ -1168,7 +986,7 @@ void pld_disable_irq(struct device *dev, unsigned int ce_id)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		pld_snoc_disable_irq(ce_id);
+		pld_snoc_disable_irq(dev, ce_id);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 		break;
@@ -1178,61 +996,6 @@ void pld_disable_irq(struct device *dev, unsigned int ce_id)
 		pr_err("Invalid device type\n");
 		break;
 	}
-}
-
-/**
- * pld_increment_driver_load_cnt() - Maintain driver load count
- * @dev: device
- *
- * This function maintain a count which get increase whenever wiphy
- * is registered
- *
- * Return: void
- */
-void pld_increment_driver_load_cnt(struct device *dev)
-{
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_increment_driver_load_cnt();
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		pld_snoc_increment_driver_load_cnt();
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		break;
-	default:
-		pr_err("Invalid device type\n");
-		break;
-	}
-}
-
-/**
- * pld_get_driver_load_cnt() - get driver load count
- * @dev: device
- *
- * This function provide total wiphy registration count from starting
- *
- * Return: int
- */
-int pld_get_driver_load_cnt(struct device *dev)
-{
-	int ret = 0;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_driver_load_cnt();
-		break;
-	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_get_driver_load_cnt();
-		break;
-	case PLD_BUS_TYPE_SDIO:
-		break;
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
 }
 
 /**
@@ -1251,9 +1014,10 @@ int pld_get_soc_info(struct device *dev, struct pld_soc_info *info)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_get_soc_info(info);
+		ret = pld_snoc_get_soc_info(dev, info);
 		break;
 	case PLD_BUS_TYPE_PCIE:
+		ret = pld_pcie_get_soc_info(dev, info);
 		break;
 	case PLD_BUS_TYPE_SDIO:
 		break;
@@ -1278,10 +1042,10 @@ int pld_get_ce_id(struct device *dev, int irq)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_get_ce_id(irq);
+		ret = pld_snoc_get_ce_id(dev, irq);
 		break;
 	case PLD_BUS_TYPE_PCIE:
-		ret = pld_pcie_get_ce_id(irq);
+		ret = pld_pcie_get_ce_id(dev, irq);
 		break;
 	default:
 		ret = -EINVAL;
@@ -1304,7 +1068,7 @@ int pld_get_irq(struct device *dev, int ce_id)
 
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_get_irq(ce_id);
+		ret = pld_snoc_get_irq(dev, ce_id);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 	default:
@@ -1325,7 +1089,7 @@ void pld_lock_pm_sem(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_lock_pm_sem();
+		pld_pcie_lock_pm_sem(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -1349,7 +1113,7 @@ void pld_release_pm_sem(struct device *dev)
 {
 	switch (pld_get_bus_type(dev)) {
 	case PLD_BUS_TYPE_PCIE:
-		pld_pcie_release_pm_sem();
+		pld_pcie_release_pm_sem(dev);
 		break;
 	case PLD_BUS_TYPE_SNOC:
 		break;
@@ -1438,6 +1202,9 @@ int pld_athdiag_read(struct device *dev, uint32_t offset,
 					    datalen, output);
 		break;
 	case PLD_BUS_TYPE_PCIE:
+		ret = pld_pcie_athdiag_read(dev, offset, memtype,
+					    datalen, output);
+		break;
 	case PLD_BUS_TYPE_SDIO:
 	case PLD_BUS_TYPE_USB:
 		break;
@@ -1472,6 +1239,9 @@ int pld_athdiag_write(struct device *dev, uint32_t offset,
 					     datalen, input);
 		break;
 	case PLD_BUS_TYPE_PCIE:
+		ret = pld_pcie_athdiag_write(dev, offset, memtype,
+					     datalen, input);
+		break;
 	case PLD_BUS_TYPE_SDIO:
 	case PLD_BUS_TYPE_USB:
 		break;
@@ -1483,6 +1253,30 @@ int pld_athdiag_write(struct device *dev, uint32_t offset,
 	return ret;
 }
 
+/**
+ * pld_smmu_get_domain() - Get SMMU domain
+ * @dev: device
+ *
+ * Return: Pointer to the domain
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+void *pld_smmu_get_domain(struct device *dev)
+{
+	void *ptr = NULL;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		ptr = pld_snoc_smmu_get_domain(dev);
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		break;
+	}
+
+	return ptr;
+}
+#else
 /**
  * pld_smmu_get_mapping() - Get SMMU mapping context
  * @dev: device
@@ -1508,6 +1302,7 @@ void *pld_smmu_get_mapping(struct device *dev)
 
 	return ptr;
 }
+#endif
 
 /**
  * pld_smmu_map() - Map SMMU
@@ -1542,6 +1337,141 @@ int pld_smmu_map(struct device *dev, phys_addr_t paddr,
 	return ret;
 }
 
+#ifdef CONFIG_SMMU_S1_UNMAP
+/**
+ * pld_smmu_unmap() - Unmap SMMU
+ * @dev: device
+ * @iova_addr: IOVA address to be unmapped
+ * @size: size to be unmapped
+ *
+ * Return: 0 for success
+ *         Non zero failure code for errors
+ */
+int pld_smmu_unmap(struct device *dev,
+		   uint32_t iova_addr, size_t size)
+{
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		ret = pld_snoc_smmu_unmap(dev, iova_addr, size);
+		break;
+	case PLD_BUS_TYPE_PCIE:
+		pr_err("Not supported on type %d\n", type);
+		ret = -ENODEV;
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+#endif
+
+/**
+ * pld_get_user_msi_assignment() - Get MSI assignment information
+ * @dev: device structure
+ * @user_name: name of the user who requests the MSI assignment
+ * @num_vectors: number of the MSI vectors assigned for the user
+ * @user_base_data: MSI base data assigned for the user, this equals to
+ *                  endpoint base data from config space plus base vector
+ * @base_vector: base MSI vector (offset) number assigned for the user
+ *
+ * Return: 0 for success
+ *         Negative failure code for errors
+ */
+int pld_get_user_msi_assignment(struct device *dev, char *user_name,
+				int *num_vectors, uint32_t *user_base_data,
+				uint32_t *base_vector)
+{
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_PCIE:
+		ret = pld_pcie_get_user_msi_assignment(dev, user_name,
+						       num_vectors,
+						       user_base_data,
+						       base_vector);
+		break;
+	case PLD_BUS_TYPE_SNOC:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		pr_err("Not supported on type %d\n", type);
+		ret = -ENODEV;
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * pld_get_msi_irq() - Get MSI IRQ number used for request_irq()
+ * @dev: device structure
+ * @vector: MSI vector (offset) number
+ *
+ * Return: Positive IRQ number for success
+ *         Negative failure code for errors
+ */
+int pld_get_msi_irq(struct device *dev, unsigned int vector)
+{
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_PCIE:
+		ret = pld_pcie_get_msi_irq(dev, vector);
+		break;
+	case PLD_BUS_TYPE_SNOC:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		pr_err("Not supported on type %d\n", type);
+		ret = -ENODEV;
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * pld_get_msi_address() - Get the MSI address
+ * @dev: device structure
+ * @msi_addr_low: lower 32-bit of the address
+ * @msi_addr_high: higher 32-bit of the address
+ *
+ * Return: Void
+ */
+void pld_get_msi_address(struct device *dev, uint32_t *msi_addr_low,
+			 uint32_t *msi_addr_high)
+{
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_PCIE:
+		pld_pcie_get_msi_address(dev, msi_addr_low, msi_addr_high);
+		break;
+	case PLD_BUS_TYPE_SNOC:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		pr_err("Not supported on type %d\n", type);
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		break;
+	}
+}
+
 /**
  * pld_socinfo_get_serial_number() - Get SOC serial number
  * @dev: device
@@ -1568,40 +1498,6 @@ unsigned int pld_socinfo_get_serial_number(struct device *dev)
 	return ret;
 }
 
-/*
- * pld_get_wlan_mac_address() - API to query MAC address from Platform
- * Driver
- * @dev: Device Structure
- * @num: Pointer to number of MAC address supported
- *
- * Platform Driver can have MAC address stored. This API needs to be used
- * to get those MAC address
- *
- * Return: Pointer to the list of MAC address
- */
-uint8_t *pld_get_wlan_mac_address(struct device *dev, uint32_t *num)
-{
-	enum pld_bus_type type = pld_get_bus_type(dev);
-
-	switch (type) {
-	case PLD_BUS_TYPE_PCIE:
-		return pld_pcie_get_wlan_mac_address(dev, num);
-	case PLD_BUS_TYPE_SDIO:
-		return pld_sdio_get_wlan_mac_address(dev, num);
-	case PLD_BUS_TYPE_SNOC:
-		return pld_snoc_get_wlan_mac_address(dev, num);
-	case PLD_BUS_TYPE_USB:
-		pr_err("Not supported on type %d\n", type);
-		break;
-	default:
-		pr_err("Invalid device type\n");
-		break;
-	}
-
-	*num = 0;
-	return NULL;
-}
-
 /**
  * pld_is_qmi_disable() - Check QMI support is present or not
  * @dev: device
@@ -1617,12 +1513,41 @@ int pld_is_qmi_disable(struct device *dev)
 
 	switch (type) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_is_qmi_disable();
+		ret = pld_snoc_is_qmi_disable(dev);
 		break;
 	case PLD_BUS_TYPE_PCIE:
 	case PLD_BUS_TYPE_SDIO:
 		pr_err("Not supported on type %d\n", type);
 		ret = -EINVAL;
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * pld_is_fw_down() - Check WLAN fw is down or not
+ *
+ * @dev: device
+ *
+ * This API will be called to check if WLAN FW is down or not.
+ *
+ *  Return: 1 FW is down
+ *          0 FW is not down
+ *          Non zero failure code for errors
+ */
+int pld_is_fw_down(struct device *dev)
+{
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		ret = pld_snoc_is_fw_down(dev);
 		break;
 	default:
 		pr_err("Invalid device type %d\n", type);
@@ -1644,94 +1569,161 @@ int pld_is_qmi_disable(struct device *dev)
  */
 int pld_force_assert_target(struct device *dev)
 {
-	int ret = 0;
 	enum pld_bus_type type = pld_get_bus_type(dev);
 
 	switch (type) {
 	case PLD_BUS_TYPE_SNOC:
-		ret = pld_snoc_force_assert_target(dev);
-		break;
-
+		return pld_snoc_force_assert_target(dev);
 	case PLD_BUS_TYPE_PCIE:
+		return pld_pcie_force_assert_target(dev);
 	case PLD_BUS_TYPE_SDIO:
-		ret = -EINVAL;
-		break;
+		return -EINVAL;
 	default:
 		pr_err("Invalid device type %d\n", type);
-		ret = -EINVAL;
+		return -EINVAL;
+	}
+}
+
+/**
+ * pld_is_fw_dump_skipped() - get fw dump skipped status.
+ *  The subsys ssr status help the driver to decide whether to skip
+ *  the FW memory dump when FW assert.
+ *  For SDIO case, the memory dump progress takes 1 minutes to
+ *  complete, which is not acceptable in SSR enabled.
+ *
+ *  Return: true if need to skip FW dump.
+ */
+bool pld_is_fw_dump_skipped(struct device *dev)
+{
+	bool ret = false;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SDIO:
+		ret = pld_sdio_is_fw_dump_skipped();
+		break;
+	default:
 		break;
 	}
 	return ret;
 }
 
-#ifdef CONFIG_CNSS_UTILS
-/**
- * pld_set_cc_source() - Set the country code source
- * @dev: device
- * @cc_source: country code
- *
- * return: void
- */
-void pld_set_cc_source(struct device *dev,
-			enum pld_cc_src cc_source)
+int pld_is_pdr(struct device *dev)
 {
-	enum cnss_utils_cc_src cc;
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
 
-	switch (cc_source) {
-	case PLD_SOURCE_CORE:
-		cc = CNSS_UTILS_SOURCE_CORE;
-		break;
-	case PLD_SOURCE_11D:
-		cc = CNSS_UTILS_SOURCE_11D;
-		break;
-	case PLD_SOURCE_USER:
-		cc = CNSS_UTILS_SOURCE_USER;
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		ret = pld_snoc_is_pdr();
 		break;
 	default:
-		cc = CNSS_UTILS_SOURCE_CORE;
+		break;
+	}
+	return ret;
+}
+
+int pld_is_fw_rejuvenate(struct device *dev)
+{
+	int ret = 0;
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		ret = pld_snoc_is_fw_rejuvenate();
+		break;
+	default:
+		break;
+	}
+	return ret;
+}
+
+int pld_idle_shutdown(struct device *dev,
+		      int (*shutdown_cb)(struct device *dev))
+{
+	int errno = -EINVAL;
+	enum pld_bus_type type;
+
+	if (!shutdown_cb)
+		return -EINVAL;
+
+	type = pld_get_bus_type(dev);
+	switch (type) {
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+	case PLD_BUS_TYPE_PCIE:
+		errno = shutdown_cb(dev);
+		break;
+	case PLD_BUS_TYPE_SNOC:
+		errno = pld_snoc_idle_shutdown(dev);
+		break;
+	default:
+		pr_err("Invalid device type %d\n", type);
 		break;
 	}
 
-	cnss_utils_set_cc_source(dev, cc);
+	return errno;
 }
-/**
- * pld_get_cc_source() - Get the country code source
- * @dev: device
- *
- * return: cc_source
- */
-enum pld_cc_src pld_get_cc_source(struct device *dev)
-{
-	enum cnss_utils_cc_src cc;
-	enum pld_cc_src cc_source;
 
-	cc = cnss_utils_get_cc_source(dev);
-	switch (cc) {
-	case CNSS_UTILS_SOURCE_CORE:
-		cc_source = PLD_SOURCE_CORE;
+int pld_idle_restart(struct device *dev,
+		     int (*restart_cb)(struct device *dev))
+{
+	int errno = -EINVAL;
+	enum pld_bus_type type;
+
+	if (!restart_cb)
+		return -EINVAL;
+
+	type = pld_get_bus_type(dev);
+	switch (type) {
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+	case PLD_BUS_TYPE_PCIE:
+		errno = restart_cb(dev);
 		break;
-	case CNSS_UTILS_SOURCE_11D:
-		cc_source = PLD_SOURCE_11D;
-		break;
-	case CNSS_UTILS_SOURCE_USER:
-		cc_source = PLD_SOURCE_USER;
+	case PLD_BUS_TYPE_SNOC:
+		errno = pld_snoc_idle_restart(dev);
 		break;
 	default:
-		cc_source = PLD_SOURCE_CORE;
+		pr_err("Invalid device type %d\n", type);
 		break;
 	}
 
-	return cc_source;
-}
-#else
-void pld_set_cc_source(struct device *dev,
-			enum pld_cc_src cc_source)
-{
-	return;
+	return errno;
 }
 
-enum pld_cc_src pld_get_cc_source(struct device *dev)
+#ifdef FEATURE_WLAN_TIME_SYNC_FTM
+/**
+ * pld_get_audio_wlan_timestamp() - Get audio timestamp
+ * @dev: device pointer
+ * @type: trigger type
+ * @ts: audio timestamp
+ *
+ * This API can be used to get audio timestamp.
+ *
+ * Return: 0 if trigger to get audio timestamp is successful
+ *         Non zero failure code for errors
+ */
+int pld_get_audio_wlan_timestamp(struct device *dev,
+				 enum pld_wlan_time_sync_trigger_type type,
+				 uint64_t *ts)
 {
-	return PLD_SOURCE_CORE;
+	int ret = 0;
+	enum pld_bus_type bus_type;
+
+	bus_type = pld_get_bus_type(dev);
+	switch (bus_type) {
+	case PLD_BUS_TYPE_SNOC:
+		ret = pld_snoc_get_audio_wlan_timestamp(dev, type, ts);
+		break;
+	case PLD_BUS_TYPE_PCIE:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
 }
-#endif
+#endif /* FEATURE_WLAN_TIME_SYNC_FTM */

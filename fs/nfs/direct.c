@@ -86,9 +86,9 @@ struct nfs_direct_req {
 	struct nfs_direct_mirror mirrors[NFS_PAGEIO_DESCRIPTOR_MIRROR_MAX];
 	int			mirror_count;
 
+	loff_t			io_start;	/* Start offset for I/O */
 	ssize_t			count,		/* bytes actually processed */
 				bytes_left,	/* bytes left to be sent */
-				io_start,	/* start of IO */
 				error;		/* any reported error */
 	struct completion	completion;	/* wait for i/o completion */
 
@@ -670,6 +670,10 @@ static void nfs_direct_write_reschedule(struct nfs_direct_req *dreq)
 
 	req = nfs_list_entry(reqs.next);
 	nfs_direct_setup_mirroring(dreq, &desc, req);
+	if (desc.pg_error < 0) {
+		list_splice_init(&reqs, &failed);
+		goto out_failed;
+	}
 
 	list_for_each_entry_safe(req, tmp, &reqs, wb_list) {
 		if (!nfs_pageio_add_request(&desc, req)) {
@@ -677,13 +681,17 @@ static void nfs_direct_write_reschedule(struct nfs_direct_req *dreq)
 			nfs_list_add_request(req, &failed);
 			spin_lock(cinfo.lock);
 			dreq->flags = 0;
-			dreq->error = -EIO;
+			if (desc.pg_error < 0)
+				dreq->error = desc.pg_error;
+			else
+				dreq->error = -EIO;
 			spin_unlock(cinfo.lock);
 		}
 		nfs_release_request(req);
 	}
 	nfs_pageio_complete(&desc);
 
+out_failed:
 	while (!list_empty(&failed)) {
 		req = nfs_list_entry(failed.next);
 		nfs_list_remove_request(req);
@@ -787,10 +795,8 @@ static void nfs_direct_write_completion(struct nfs_pgio_header *hdr)
 
 	spin_lock(&dreq->lock);
 
-	if (test_bit(NFS_IOHDR_ERROR, &hdr->flags)) {
-		dreq->flags = 0;
+	if (test_bit(NFS_IOHDR_ERROR, &hdr->flags))
 		dreq->error = hdr->error;
-	}
 	if (dreq->error == 0) {
 		nfs_direct_good_bytes(dreq, hdr);
 		if (nfs_write_need_commit(hdr)) {
@@ -900,6 +906,11 @@ static ssize_t nfs_direct_write_schedule_iovec(struct nfs_direct_req *dreq,
 			}
 
 			nfs_direct_setup_mirroring(dreq, &desc, req);
+			if (desc.pg_error < 0) {
+				nfs_free_request(req);
+				result = desc.pg_error;
+				break;
+			}
 
 			nfs_lock_request(req);
 			req->wb_index = pos >> PAGE_SHIFT;

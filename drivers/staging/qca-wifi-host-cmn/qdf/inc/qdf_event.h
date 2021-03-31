@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -46,7 +37,6 @@ extern "C" {
 #endif /* __cplusplus */
 
 typedef __qdf_event_t qdf_event_t;
-
 /* Function declarations and documenation */
 
 QDF_STATUS qdf_event_create(qdf_event_t *event);
@@ -107,6 +97,14 @@ void qdf_event_list_init(void);
  * Return: None
  */
 void qdf_event_list_destroy(void);
+
+/**
+ * qdf_exit_thread() - exit thread execution
+ * @status: QDF status
+ *
+ * Return: QDF status
+ */
+QDF_STATUS qdf_exit_thread(QDF_STATUS status);
 
 #ifdef __cplusplus
 }

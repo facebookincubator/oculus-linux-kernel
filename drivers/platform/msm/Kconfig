@@ -184,7 +184,7 @@ config MSM_11AD
 	tristate "Platform driver for 11ad chip"
 	depends on PCI
 	depends on PCI_MSM
-	default y
+	default m
 	---help---
 	  This module adds required platform support for wireless adapter based on
 	  Qualcomm Technologies, Inc. 11ad chip, integrated into MSM platform
@@ -208,25 +208,13 @@ config USB_BAM
 	  USB BAM driver was added to supports SPS Peripheral-to-Peripheral
 	  transfers between the USB and other peripheral.
 
-config OCULUS
-	bool "Support for Oculus hardware"
-	default y
+config MSM_EXT_DISPLAY
+	bool "MSM External Display Driver"
 	help
-	  Enable support for Oculus systems and boards.
+	  Enabling this option adds MSM External Display Driver.
+	  External Display driver was added to support the communication
+	  between external display driver and its couterparts.
 
-config VS1_BOARD
-	bool "VS1 (Monterey P1/P1.5/P2) Platform"
-	depends on OCULUS
-	depends on ARCH_MSM8998
-	depends on MSMB_CAMERA
-	help
-	  Enabling this option adds support for the Oculus Monterey P1 platform
-	  and enables required drivers.
+source "drivers/platform/msm/qcn/Kconfig"
 
-config VS2_BOARD
-	bool "VS2 Board"
-	depends on OCULUS
-	help
-	  Enabling this option adds support for the VS2 platform
-	  and enables required drivers.
 endmenu

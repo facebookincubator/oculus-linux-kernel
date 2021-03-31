@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,6 +18,7 @@
 
 #ifndef __AHB_API_H
 #define __AHB_API_H
+struct hif_exec_context;
 
 QDF_STATUS hif_ahb_open(struct hif_softc *hif_ctx,
 			 enum qdf_bus_type bus_type);
@@ -29,12 +30,14 @@ void hif_ahb_nointrs(struct hif_softc *scn);
 void hif_ahb_reset_soc(struct hif_softc *hif_ctx);
 QDF_STATUS hif_ahb_enable_bus(struct hif_softc *ol_sc,
 			  struct device *dev, void *bdev,
-			  const hif_bus_id *bid,
+			  const struct hif_bus_id *bid,
 			  enum hif_enable_type type);
 void hif_ahb_disable_bus(struct hif_softc *scn);
 int hif_ahb_bus_configure(struct hif_softc *scn);
 void hif_ahb_irq_disable(struct hif_softc *scn, int ce_id);
 void hif_ahb_irq_enable(struct hif_softc *scn, int ce_id);
+void hif_ahb_exec_grp_irq_disable(struct hif_exec_context *hif_ext_grp);
+void hif_ahb_exec_grp_irq_enable(struct hif_exec_context *hif_ext_grp);
 int hif_ahb_dump_registers(struct hif_softc *scn);
 
 int hif_ahb_configure_legacy_irq(struct hif_pci_softc *sc);
@@ -43,5 +46,8 @@ void hif_ahb_device_reset(struct hif_softc *scn);
 int hif_ahb_enable_radio(struct hif_pci_softc *sc,
 		struct platform_device *pdev,
 		const struct platform_device_id *id);
-
+int hif_ahb_configure_irq(struct hif_pci_softc *sc);
+int hif_ahb_configure_grp_irq(struct hif_softc *scn,
+			      struct hif_exec_context *hif_ext_grp);
+bool hif_ahb_needs_bmi(struct hif_softc *scn);
 #endif

@@ -28,7 +28,7 @@ static u8 custom_gesture_index[GESTURE_CUSTOM_NUMBER] = { 0 };
 int enableGesture(u8 *mask, int size)
 {
 	u8 cmd[size+2];
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int i, res;
 	int event_to_search[4] = {EVENTID_GESTURE, EVENT_TYPE_ENB, 0x00, GESTURE_ENABLE};
 
@@ -82,7 +82,7 @@ int enableGesture(u8 *mask, int size)
 int disableGesture(u8 *mask, int size)
 {
 	u8 cmd[2+GESTURE_MASK_SIZE];
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	u8 temp;
 	int i, res;
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, 0x00, GESTURE_DISABLE };
@@ -141,7 +141,7 @@ int startAddCustomGesture(u8 gestureID)
 {
 	u8 cmd[3] = { FTS_CMD_GESTURE_CMD, GESTURE_START_ADD,  gestureID };
 	int res;
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, gestureID, GESTURE_START_ADD };
 
 	res = fts_writeFwCmd(cmd, 3);
@@ -168,7 +168,7 @@ int finishAddCustomGesture(u8 gestureID)
 {
 	u8 cmd[3] = { FTS_CMD_GESTURE_CMD, GESTURE_FINISH_ADD,  gestureID };
 	int res;
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, gestureID, GESTURE_FINISH_ADD };
 
 	res = fts_writeFwCmd(cmd, 3);
@@ -199,7 +199,7 @@ int loadCustomGesture(u8 *template, u8 gestureID)
 	int toWrite, offset = 0;
 	u8 cmd[TEMPLATE_CHUNK + 5];
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, gestureID, GESTURE_DATA_ADD };
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 
 	logError(0, "%s Starting adding custom gesture procedure...\n", tag);
 
@@ -334,7 +334,9 @@ int addCustomGesture(u8 *data, int size, u8 gestureID)
 	index = gestureID - GESTURE_CUSTOM_OFFSET;
 
 	logError(0, "%s Starting Custom Gesture Adding procedure...\n", tag);
-	if (size != GESTURE_CUSTOM_POINTS && gestureID != GES_ID_CUST1 && gestureID != GES_ID_CUST2 && gestureID != GES_ID_CUST3 && gestureID != GES_ID_CUST4 && gestureID && GES_ID_CUST5) {
+	if ((size != GESTURE_CUSTOM_POINTS) && (gestureID != GES_ID_CUST1)
+		&& (gestureID != GES_ID_CUST2) && (gestureID != GES_ID_CUST3)
+		&& (gestureID != GES_ID_CUST4) && (gestureID != GES_ID_CUST5)) {
 		logError(1, "%s addCustomGesture: Invalid size (%d) or Custom GestureID (%02X)! ERROR %08X\n", tag, size, gestureID, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
@@ -359,12 +361,14 @@ int removeCustomGesture(u8 gestureID)
 	int res, index;
 	u8 cmd[3] = { FTS_CMD_GESTURE_CMD, GETURE_REMOVE_CUSTOM, gestureID };
 	int event_to_search[4] = {EVENTID_GESTURE, EVENT_TYPE_ENB, gestureID, GETURE_REMOVE_CUSTOM };
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 
 	index = gestureID - GESTURE_CUSTOM_OFFSET;
 
 	logError(0, "%s Starting Custom Gesture Removing procedure...\n", tag);
-	if (gestureID != GES_ID_CUST1 && gestureID != GES_ID_CUST2 && gestureID != GES_ID_CUST3 && gestureID != GES_ID_CUST4 && gestureID && GES_ID_CUST5) {
+	if ((gestureID != GES_ID_CUST1) && (gestureID != GES_ID_CUST2)
+		&& (gestureID != GES_ID_CUST3) && (gestureID != GES_ID_CUST4)
+		&& (gestureID != GES_ID_CUST5)) {
 		logError(1, "%s removeCustomGesture: Invalid size (%d) or Custom GestureID (%02X)! ERROR %08X\n", tag, gestureID, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
@@ -381,7 +385,8 @@ int removeCustomGesture(u8 gestureID)
 		return res;
 	}
 
-	if (readData[2] != gestureID || readData[4] != 0x00) { /* check of gestureID is redundant */
+	/* check of gestureID is redundant */
+	if ((readData[2] != gestureID) || (readData[4] != 0x00)) {
 		logError(1, "%s removeCustomGesture: remove event status not OK! ERROR %08X\n", tag, readData[4]);
 		return ERROR_GESTURE_REMOVE;
 	}

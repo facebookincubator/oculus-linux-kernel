@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,28 +17,19 @@
  */
 
 /*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
+ * DOC: smeTrace.c
+ *  Implementation for trace related APIs
+ *
+ * Author Kiran Kumar Reddy CH L V
  */
-
-/************************************************************************
-   smeTrace.c
-
-   \brief implementation for trace related APIs
-
-   \author Kiran Kumar Reddy CH L V
-
-   ========================================================================*/
 #include "ani_global.h"          /* for tpAniSirGlobal */
-#include "sms_debug.h"
 #include "mac_trace.h"
 #include "sme_trace.h"
 #include "sme_internal.h"
 #ifndef SME_TRACE_RECORD
 void sme_trace_init(tpAniSirGlobal pMac)
 {
-	return;
+
 }
 #endif
 #ifdef SME_TRACE_RECORD
@@ -101,7 +89,6 @@ static uint8_t *sme_trace_get_rx_msg_string(uint32_t code)
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_GET_RSSI);
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_GET_CNTRYCODE);
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_SET_CNTRYCODE);
-		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_CHANGE_CNTRYCODE);
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_SET_CFGPRIVACY);
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_NEIGHBOR_REPORTREQ);
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_DBG_READREG);
@@ -162,13 +149,8 @@ static uint8_t *sme_trace_get_rx_msg_string(uint32_t code)
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_TDLS_DEL_PEER_STA);
 #endif
 		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_PREF_NET_LIST);
-#ifdef FEATURE_WLAN_LPHB
-		CASE_RETURN_STRING(TRACE_CODE_SME_RX_HDD_LPHB_CONFIG_REQ);
-#endif /* FEATURE_WLAN_LPHB */
-
 	default:
 		return "UNKNOWN";
-		break;
 	}
 }
 
@@ -176,74 +158,49 @@ static uint8_t *sme_trace_get_command_string(uint32_t command)
 {
 	switch (command) {
 		CASE_RETURN_STRING(eSmeNoCommand);
-		CASE_RETURN_STRING(eSmeDropCommand);
 		CASE_RETURN_STRING(eSmeCsrCommandMask);
-		CASE_RETURN_STRING(eSmeCommandScan);
 		CASE_RETURN_STRING(eSmeCommandRoam);
 		CASE_RETURN_STRING(eSmeCommandWmStatusChange);
-		CASE_RETURN_STRING(eSmeCommandSetKey);
-		CASE_RETURN_STRING(eSmeCommandAddStaSession);
-		CASE_RETURN_STRING(eSmeCommandDelStaSession);
-#ifdef FEATURE_WLAN_TDLS
-		CASE_RETURN_STRING(eSmeCommandTdlsSendMgmt);
-		CASE_RETURN_STRING(eSmeCommandTdlsAddPeer);
-		CASE_RETURN_STRING(eSmeCommandTdlsDelPeer);
-		CASE_RETURN_STRING(eSmeCommandTdlsLinkEstablish);
-#endif
-		CASE_RETURN_STRING(eSmePmcCommandMask);
-		CASE_RETURN_STRING(eSmeCommandEnterBmps);
-		CASE_RETURN_STRING(eSmeCommandExitBmps);
-		CASE_RETURN_STRING(eSmeCommandEnterUapsd);
-		CASE_RETURN_STRING(eSmeCommandExitUapsd);
-		CASE_RETURN_STRING(eSmeCommandExitWowl);
-		CASE_RETURN_STRING(eSmeCommandEnterStandby);
+		CASE_RETURN_STRING(e_sme_command_del_sta_session);
 		CASE_RETURN_STRING(eSmeQosCommandMask);
 		CASE_RETURN_STRING(eSmeCommandAddTs);
 		CASE_RETURN_STRING(eSmeCommandDelTs);
-#ifdef FEATURE_OEM_DATA_SUPPORT
-		CASE_RETURN_STRING(eSmeCommandOemDataReq);
-#endif
-		CASE_RETURN_STRING(eSmeCommandRemainOnChannel);
 		CASE_RETURN_STRING(e_sme_command_set_hw_mode);
 		CASE_RETURN_STRING(e_sme_command_nss_update);
 		CASE_RETURN_STRING(e_sme_command_set_dual_mac_config);
 		CASE_RETURN_STRING(e_sme_command_set_antenna_mode);
-		CASE_RETURN_STRING(eSmeCommandNdpInitiatorRequest);
-		CASE_RETURN_STRING(eSmeCommandNdpResponderRequest);
-		CASE_RETURN_STRING(eSmeCommandNdpDataEndInitiatorRequest);
 	default:
 		return "UNKNOWN";
-		break;
 	}
 }
 
-static void sme_trace_dump(tpAniSirGlobal mac_ctx, tp_qdf_trace_record record,
+static void sme_trace_dump(void *mac_ctx, tp_qdf_trace_record record,
 			   uint16_t rec_index)
 {
 	switch (record->code) {
 	case TRACE_CODE_SME_COMMAND:
-		sms_log(mac_ctx, LOG1, "%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		sme_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			rec_index, record->qtime, record->time, record->session,
 			"SME COMMAND:",
 			sme_trace_get_command_string(record->data),
 			record->data);
 		break;
 	case TRACE_CODE_SME_TX_WMA_MSG:
-		sms_log(mac_ctx, LOG1, "%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		sme_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			rec_index, record->qtime, record->time, record->session,
 			"TX WMA Msg:",
 			mac_trace_get_wma_msg_string((uint16_t)record->data),
 			record->data);
 		break;
 	case TRACE_CODE_SME_RX_WMA_MSG:
-		sms_log(mac_ctx, LOG1, "%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		sme_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			rec_index, record->qtime, record->time, record->session,
 			"RX WMA Msg:",
 			mac_trace_get_sme_msg_string((uint16_t)record->data),
 			record->data);
 		break;
 	default:
-		sms_log(mac_ctx, LOG1, "%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		sme_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			rec_index, record->qtime, record->time, record->session,
 			"RX HDD MSG:",
 			sme_trace_get_rx_msg_string(record->code),
@@ -254,6 +211,6 @@ static void sme_trace_dump(tpAniSirGlobal mac_ctx, tp_qdf_trace_record record,
 
 void sme_trace_init(tpAniSirGlobal pMac)
 {
-	qdf_trace_register(QDF_MODULE_ID_SME, (tp_qdf_trace_cb) &sme_trace_dump);
+	qdf_trace_register(QDF_MODULE_ID_SME, &sme_trace_dump);
 }
 #endif

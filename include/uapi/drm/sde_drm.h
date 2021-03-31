@@ -60,9 +60,52 @@
  * construct bitmask via (1UL << SDE_DRM_<flag>)
  */
 #define SDE_DRM_DEINTERLACE         0   /* Specifies interlaced input */
+#define SDE_DRM_LINEPADDING         1   /* Specifies line padding input */
 
 /* DRM bitmasks are restricted to 0..63 */
 #define SDE_DRM_BITMASK_COUNT       64
+
+/**
+ * Framebuffer modes for "fb_translation_mode" PLANE property
+ *
+ * @SDE_DRM_FB_NON_SEC:          IOMMU configuration for this framebuffer mode
+ *                               is non-secure domain and requires
+ *                               both stage I and stage II translations when
+ *                               this buffer is accessed by the display HW.
+ *                               This is the default mode of all frambuffers.
+ * @SDE_DRM_FB_SEC:              IOMMU configuration for this framebuffer mode
+ *                               is secure domain and requires
+ *                               both stage I and stage II translations when
+ *                               this buffer is accessed by the display HW.
+ * @SDE_DRM_FB_NON_SEC_DIR_TRANS: IOMMU configuration for this framebuffer mode
+ *                               is non-secure domain and requires
+ *                               only stage II translation when
+ *                               this buffer is accessed by the display HW.
+ * @SDE_DRM_FB_SEC_DIR_TRANS:    IOMMU configuration for this framebuffer mode
+ *                               is secure domain and requires
+ *                               only stage II translation when
+ *                               this buffer is accessed by the display HW.
+*/
+
+#define SDE_DRM_FB_NON_SEC              0
+#define SDE_DRM_FB_SEC                  1
+#define SDE_DRM_FB_NON_SEC_DIR_TRANS    2
+#define SDE_DRM_FB_SEC_DIR_TRANS        3
+
+/**
+ * Secure levels for "security_level" CRTC property.
+ *                        CRTC property which specifies what plane types
+ *                        can be attached to this CRTC. Plane component
+ *                        derives the plane type based on the FB_MODE.
+ * @ SDE_DRM_SEC_NON_SEC: Both Secure and non-secure plane types can be
+ *                        attached to this CRTC. This is the default state of
+ *                        the CRTC.
+ * @ SDE_DRM_SEC_ONLY:    Only secure planes can be added to this CRTC. If a
+ *                        CRTC is instructed to be in this mode it follows the
+ *                        platform dependent restrictions.
+ */
+#define SDE_DRM_SEC_NON_SEC            0
+#define SDE_DRM_SEC_ONLY               1
 
 /**
  * struct sde_drm_pix_ext_v1 - version 1 of pixel ext structure
@@ -294,5 +337,15 @@ struct sde_drm_wb_cfg {
 	uint32_t count_modes;
 	uint64_t modes;
 };
+
+/**
+ * Define extended power modes supported by the SDE connectors.
+ */
+#define SDE_MODE_DPMS_ON       0
+#define SDE_MODE_DPMS_LP1      1
+#define SDE_MODE_DPMS_LP2      2
+#define SDE_MODE_DPMS_STANDBY  3
+#define SDE_MODE_DPMS_SUSPEND  4
+#define SDE_MODE_DPMS_OFF      5
 
 #endif /* _SDE_DRM_H_ */

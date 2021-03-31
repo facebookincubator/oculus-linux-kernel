@@ -170,7 +170,6 @@ u32 get_dump_range(struct dump_offset *range_node, size_t max_offset);
 void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag, char *addr,
 	int len, u32 **dump_mem, bool from_isr);
 void mdss_mdp_debug_mid(u32 mid);
-int mdss_dump_misr_data(char **buf, u32 size);
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag, u32 **dump_mem);
 #else
 struct mdss_debug_base;
@@ -214,15 +213,14 @@ static inline void mdss_xlog(const char *name, int line, int flag, ...) { }
 static inline void mdss_dsi_debug_check_te(struct mdss_panel_data *pdata) { }
 static inline void mdss_xlog_tout_handler_default(bool queue,
 	const char *name, ...) { }
-static u32 __maybe_unused get_dump_range(struct dump_offset *range_node,
-	size_t max_offset) { return 0; }
-static void __maybe_unused mdss_dump_reg(const char *dump_name,
-	u32 reg_dump_flag, char *addr,
-	int len, u32 **dump_mem, bool from_isr) { }
-static void __maybe_unused mdss_mdp_debug_mid(u32 mid) { }
-static int __maybe_unused mdss_dump_misr_data(char **buf, u32 size)
+u32 get_dump_range(struct dump_offset *range_node, size_t max_offset)
 	{ return 0; }
+void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag, char *addr,
+	int len, u32 **dump_mem, bool from_isr) { }
+void mdss_mdp_debug_mid(u32 mid) { }
 #endif
+
+int mdss_dump_misr_data(char **buf, u32 size);
 
 static inline int mdss_debug_register_io(const char *name,
 		struct dss_io_data *io_data, struct mdss_debug_base **dbg_blk)

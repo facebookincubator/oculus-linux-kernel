@@ -84,14 +84,14 @@ static size_t rng_buffer_size(void)
 
 static void add_early_randomness(struct hwrng *rng)
 {
-	unsigned char bytes[16];
 	int bytes_read;
+	size_t size = min_t(size_t, 16, rng_buffer_size());
 
 	mutex_lock(&reading_mutex);
-	bytes_read = rng_get_data(rng, bytes, sizeof(bytes), 1);
+	bytes_read = rng_get_data(rng, rng_buffer, size, 0);
 	mutex_unlock(&reading_mutex);
 	if (bytes_read > 0)
-		add_device_randomness(bytes, bytes_read);
+		add_device_randomness(rng_buffer, bytes_read);
 }
 
 static inline void cleanup_rng(struct kref *kref)
@@ -238,7 +238,10 @@ static ssize_t rng_dev_read(struct file *filp, char __user *buf,
 			goto out;
 		}
 
-		mutex_lock(&reading_mutex);
+		if (mutex_lock_interruptible(&reading_mutex)) {
+			err = -ERESTARTSYS;
+			goto out_put;
+		}
 		if (!data_avail) {
 			bytes_read = rng_get_data(rng, rng_buffer,
 				rng_buffer_size(),
@@ -288,6 +291,7 @@ out:
 
 out_unlock_reading:
 	mutex_unlock(&reading_mutex);
+out_put:
 	put_rng(rng);
 	goto out;
 }

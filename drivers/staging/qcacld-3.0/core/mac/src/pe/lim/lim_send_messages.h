@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -43,43 +34,45 @@
 #include "lim_types.h"
 #include "wma_if.h"
 #include "sir_params.h"
-tSirRetStatus lim_send_cf_params(tpAniSirGlobal pMac, uint8_t bssIdx,
+QDF_STATUS lim_send_cf_params(tpAniSirGlobal pMac, uint8_t bssIdx,
 				 uint8_t cfpCount, uint8_t cfpPeriod);
-tSirRetStatus lim_send_beacon_params(tpAniSirGlobal pMac,
+QDF_STATUS lim_send_beacon_params(tpAniSirGlobal pMac,
 				     tpUpdateBeaconParams pUpdatedBcnParams,
 				     tpPESession psessionEntry);
-/* tSirRetStatus lim_send_beacon_params(tpAniSirGlobal pMac, tpUpdateBeaconParams pUpdatedBcnParams); */
-tSirRetStatus lim_send_mode_update(tpAniSirGlobal pMac,
+/* QDF_STATUS lim_send_beacon_params(tpAniSirGlobal pMac, tpUpdateBeaconParams pUpdatedBcnParams); */
+QDF_STATUS lim_send_mode_update(tpAniSirGlobal pMac,
 				   tUpdateVHTOpMode *tempParam,
 				   tpPESession psessionEntry);
-tSirRetStatus lim_send_rx_nss_update(tpAniSirGlobal pMac,
+QDF_STATUS lim_send_rx_nss_update(tpAniSirGlobal pMac,
 				     tUpdateRxNss *tempParam,
 				     tpPESession psessionEntry);
 
-tSirRetStatus lim_set_membership(tpAniSirGlobal pMac,
+QDF_STATUS lim_set_membership(tpAniSirGlobal pMac,
 				 tUpdateMembership *pTempParam,
 				 tpPESession psessionEntry);
 
-tSirRetStatus lim_set_user_pos(tpAniSirGlobal pMac,
+QDF_STATUS lim_set_user_pos(tpAniSirGlobal pMac,
 			       tUpdateUserPos *pTempParam,
 			       tpPESession psessionEntry);
-tSirRetStatus lim_send_switch_chnl_params(tpAniSirGlobal pMac,
+QDF_STATUS lim_send_switch_chnl_params(tpAniSirGlobal pMac,
 					  uint8_t chnlNumber,
 					  uint8_t ch_center_freq_seg0,
 					  uint8_t ch_center_freq_seg1,
 					  enum phy_ch_width ch_width,
 					  int8_t maxTxPower,
 					  uint8_t peSessionId,
-					  uint8_t is_restart);
+					  uint8_t is_restart,
+					  uint32_t cac_duration_ms,
+					  uint32_t dfs_regdomain);
 
-tSirRetStatus lim_send_edca_params(tpAniSirGlobal pMac,
+QDF_STATUS lim_send_edca_params(tpAniSirGlobal pMac,
 				   tSirMacEdcaParamRecord *pUpdatedEdcaParams,
-				   uint16_t bssIdx);
-tSirRetStatus lim_set_link_state(tpAniSirGlobal pMac, tSirLinkState state,
+				   uint16_t bssIdx, bool mu_edca);
+QDF_STATUS lim_set_link_state(tpAniSirGlobal pMac, tSirLinkState state,
 				 tSirMacAddr bssId, tSirMacAddr selfMac,
 				 tpSetLinkStateCallback callback,
 				 void *callbackArg);
-extern tSirRetStatus lim_set_link_state_ft(tpAniSirGlobal pMac, tSirLinkState
+extern QDF_STATUS lim_set_link_state_ft(tpAniSirGlobal pMac, tSirLinkState
 					   state, tSirMacAddr bssId,
 					   tSirMacAddr selfMacAddr, int ft,
 					   tpPESession psessionEntry);
@@ -96,15 +89,14 @@ void lim_set_active_edca_params(tpAniSirGlobal pMac,
 #define DS_PARAM_CHANNEL_MASK   0x0
 #define VHTOP_CHWIDTH_MASK      0xFC
 
-tSirRetStatus lim_send_beacon_filter_info(tpAniSirGlobal pMac,
-					  tpPESession psessionEntry);
+#define MAX_VENDOR_IES_LEN 1532
 
 #ifdef WLAN_FEATURE_11W
-tSirRetStatus lim_send_exclude_unencrypt_ind(tpAniSirGlobal pMac,
+QDF_STATUS lim_send_exclude_unencrypt_ind(tpAniSirGlobal pMac,
 					     bool excludeUnenc,
 					     tpPESession psessionEntry);
 #endif
-tSirRetStatus lim_send_ht40_obss_scanind(tpAniSirGlobal mac_ctx,
+QDF_STATUS lim_send_ht40_obss_scanind(tpAniSirGlobal mac_ctx,
 						tpPESession session);
 void lim_handle_sme_join_result(tpAniSirGlobal,
 		tSirResultCodes, uint16_t, tpPESession);

@@ -832,12 +832,6 @@ config INPUT_DRV2667_HAPTICS
 	  To compile this driver as a module, choose M here: the
 	  module will be called drv2667-haptics.
 
-config INPUT_CAPELLA_CM36687
-	tristate "cm36687 optical sensor"
-	depends on I2C
-	help
-	  Say Y here to enable the cm36687 Optical Sensor.
-
 source "drivers/input/misc/ots_pat9125/Kconfig"
 
 config INPUT_STMVL53L0

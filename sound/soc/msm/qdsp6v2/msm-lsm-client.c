@@ -599,7 +599,7 @@ static int msm_lsm_reg_model(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	int rc = 0;
 	u8 *snd_model_ptr;
-	size_t offset;
+	size_t offset = 0;
 
 	rc = q6lsm_snd_model_buf_alloc(prtd->lsm_client,
 				       p_info->param_size,
@@ -1712,7 +1712,7 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 			dev_err(rtd->dev,
 				"%s REG_SND_MODEL failed err %d\n",
 				__func__, err);
-		return err;
+		goto done;
 		}
 		break;
 	case SNDRV_LSM_SET_PARAMS: {
@@ -1884,13 +1884,15 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 			dev_err(rtd->dev,
 				"%s: Invalid params event_status_v3\n",
 				__func__);
-			return -EINVAL;
+			err = -EINVAL;
+			goto done;
 		}
 		if (copy_from_user(&userarg, arg, sizeof(userarg))) {
 			dev_err(rtd->dev,
 				"%s: err copyuser event_status_v3\n",
 				__func__);
-			return -EFAULT;
+			err = -EFAULT;
+			goto done;
 		}
 
 		if (userarg.payload_size >
@@ -1898,7 +1900,8 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 			pr_err("%s: payload_size %d is invalid, max allowed = %d\n",
 				__func__, userarg.payload_size,
 				LISTEN_MAX_STATUS_PAYLOAD_SIZE);
-			return -EINVAL;
+			err = -EINVAL;
+			goto done;
 		}
 
 		size = sizeof(struct snd_lsm_event_status_v3) +
@@ -1908,7 +1911,8 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 			dev_err(rtd->dev,
 				"%s: Allocation failed event status size %d\n",
 				__func__, size);
-			return -EFAULT;
+			err = -EFAULT;
+			goto done;
 		}
 		user->payload_size = userarg.payload_size;
 		err = msm_lsm_ioctl_shared(substream, cmd, user);
@@ -2275,21 +2279,18 @@ static int msm_lsm_app_type_cfg_ctl_put(struct snd_kcontrol *kcontrol,
 	u64 fe_id = kcontrol->private_value;
 	int session_type = SESSION_TYPE_TX;
 	int be_id = ucontrol->value.integer.value[3];
+	struct msm_pcm_stream_app_type_cfg cfg_data = {0};
 	int ret = 0;
-	int app_type;
-	int acdb_dev_id;
-	int sample_rate;
 
-	app_type = ucontrol->value.integer.value[0];
-	acdb_dev_id = ucontrol->value.integer.value[1];
-	sample_rate = ucontrol->value.integer.value[2];
+	cfg_data.app_type = ucontrol->value.integer.value[0];
+	cfg_data.acdb_dev_id = ucontrol->value.integer.value[1];
+	cfg_data.sample_rate = ucontrol->value.integer.value[2];
 
 	pr_debug("%s: fe_id- %llu session_type- %d be_id- %d app_type- %d acdb_dev_id- %d sample_rate- %d\n",
 		__func__, fe_id, session_type, be_id,
-		app_type, acdb_dev_id, sample_rate);
+		cfg_data.app_type, cfg_data.acdb_dev_id, cfg_data.sample_rate);
 	ret = msm_pcm_routing_reg_stream_app_type_cfg(fe_id, session_type,
-						      be_id, app_type,
-						      acdb_dev_id, sample_rate);
+						      be_id, &cfg_data);
 	if (ret < 0)
 		pr_err("%s: msm_pcm_routing_reg_stream_app_type_cfg failed returned %d\n",
 			__func__, ret);
@@ -2302,28 +2303,25 @@ static int msm_lsm_app_type_cfg_ctl_get(struct snd_kcontrol *kcontrol,
 {
 	u64 fe_id = kcontrol->private_value;
 	int session_type = SESSION_TYPE_TX;
-	int be_id = ucontrol->value.integer.value[3];
+	int be_id = 0;
+	struct msm_pcm_stream_app_type_cfg cfg_data = {0};
 	int ret = 0;
-	int app_type;
-	int acdb_dev_id;
-	int sample_rate;
 
 	ret = msm_pcm_routing_get_stream_app_type_cfg(fe_id, session_type,
-						      be_id, &app_type,
-						      &acdb_dev_id,
-						      &sample_rate);
+						      &be_id, &cfg_data);
 	if (ret < 0) {
 		pr_err("%s: msm_pcm_routing_get_stream_app_type_cfg failed returned %d\n",
 			__func__, ret);
 		goto done;
 	}
 
-	ucontrol->value.integer.value[0] = app_type;
-	ucontrol->value.integer.value[1] = acdb_dev_id;
-	ucontrol->value.integer.value[2] = sample_rate;
+	ucontrol->value.integer.value[0] = cfg_data.app_type;
+	ucontrol->value.integer.value[1] = cfg_data.acdb_dev_id;
+	ucontrol->value.integer.value[2] = cfg_data.sample_rate;
+	ucontrol->value.integer.value[3] = be_id;
 	pr_debug("%s: fedai_id %llu, session_type %d, be_id %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
 		__func__, fe_id, session_type, be_id,
-		app_type, acdb_dev_id, sample_rate);
+		cfg_data.app_type, cfg_data.acdb_dev_id, cfg_data.sample_rate);
 done:
 	return ret;
 }

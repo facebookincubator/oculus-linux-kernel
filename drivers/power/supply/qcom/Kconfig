@@ -1,5 +1,23 @@
 menu "Qualcomm Technologies Inc Charger and Fuel Gauge support"
 
+config QPNP_SMBCHARGER
+	tristate "QPNP SMB Charger driver"
+	depends on MFD_SPMI_PMIC
+	help
+	  Say Y here to enable the dual path switch mode battery charger which
+	  supports USB detection and battery charging up to 3A.
+	  The driver also offers relevant information to userspace via the
+	  power supply framework.
+
+config QPNP_FG
+	tristate "QPNP fuel gauge driver"
+	depends on MFD_SPMI_PMIC
+	help
+	  Say Y here to enable the Fuel Gauge driver. This adds support for
+	  battery fuel gauging and state of charge of battery connected to the
+	  fuel gauge. The state of charge is reported through a BMS power
+	  supply property and also sends uevents when the capacity is updated.
+
 config QPNP_FG_GEN3
 	tristate "QPNP GEN3 fuel gauge driver"
 	depends on MFD_SPMI_PMIC
@@ -8,6 +26,17 @@ config QPNP_FG_GEN3
 	  for battery fuel gauging and state of charge of battery connected to
 	  the fuel gauge. The state of charge is reported through a BMS power
 	  supply property and also sends uevents when the capacity is updated.
+
+config QPNP_FG_GEN3_LEGACY_CYCLE_COUNT
+	tristate "QPNP GEN3 fuel gauge cycle count bins"
+	depends on QPNP_FG_GEN3
+        default y
+	help
+	  Say Y here to enable the GEN3 FG initial QCOM cycle count implementation.
+          When not selected then POWER_SUPPLY_PROP_CYCLE_COUNT exposes the linux
+          power supply battery cycle count which is not based on cycle bins.
+	  When selected only 'bms' will expose POWER_SUPPLY_PROP_CYCLE_COUNT
+          reporting the bucket based value.
 
 config SMB135X_CHARGER
 	tristate "SMB135X Battery Charger"

@@ -439,8 +439,14 @@ int mlx4_en_activate_rx_rings(struct mlx4_en_priv *priv)
 		ring->cqn = priv->rx_cq[ring_ind]->mcq.cqn;
 
 		ring->stride = stride;
-		if (ring->stride <= TXBB_SIZE)
+		if (ring->stride <= TXBB_SIZE) {
+			/* Stamp first unused send wqe */
+			__be32 *ptr = (__be32 *)ring->buf;
+			__be32 stamp = cpu_to_be32(1 << STAMP_SHIFT);
+			*ptr = stamp;
+			/* Move pointer to start of rx section */
 			ring->buf += TXBB_SIZE;
+		}
 
 		ring->log_stride = ffs(ring->stride) - 1;
 		ring->buf_size = ring->size * ring->stride;
@@ -502,8 +508,11 @@ void mlx4_en_recover_from_oom(struct mlx4_en_priv *priv)
 		return;
 
 	for (ring = 0; ring < priv->rx_ring_num; ring++) {
-		if (mlx4_en_is_ring_empty(priv->rx_ring[ring]))
+		if (mlx4_en_is_ring_empty(priv->rx_ring[ring])) {
+			local_bh_disable();
 			napi_reschedule(&priv->rx_cq[ring]->napi);
+			local_bh_enable();
+		}
 	}
 }
 
@@ -716,13 +725,27 @@ static int get_fixed_ipv6_csum(__wsum hw_checksum, struct sk_buff *skb,
 	return 0;
 }
 #endif
+
+#define short_frame(size) ((size) <= ETH_ZLEN + ETH_FCS_LEN)
+
 static int check_csum(struct mlx4_cqe *cqe, struct sk_buff *skb, void *va,
 		      netdev_features_t dev_features)
 {
 	__wsum hw_checksum = 0;
+	void *hdr;
 
-	void *hdr = (u8 *)va + sizeof(struct ethhdr);
+	/* CQE csum doesn't cover padding octets in short ethernet
+	 * frames. And the pad field is appended prior to calculating
+	 * and appending the FCS field.
+	 *
+	 * Detecting these padded frames requires to verify and parse
+	 * IP headers, so we simply force all those small frames to skip
+	 * checksum complete.
+	 */
+	if (short_frame(skb->len))
+		return -EINVAL;
 
+	hdr = (u8 *)va + sizeof(struct ethhdr);
 	hw_checksum = csum_unfold((__force __sum16)cqe->checksum);
 
 	if (cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_CVLAN_PRESENT_MASK) &&
@@ -842,6 +865,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 			(cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_L2_TUNNEL));
 
 		if (likely(dev->features & NETIF_F_RXCSUM)) {
+			/* TODO: For IP non TCP/UDP packets when csum complete is
+			 * not an option (not supported or any other reason) we can
+			 * actually check cqe IPOK status bit and report
+			 * CHECKSUM_UNNECESSARY rather than CHECKSUM_NONE
+			 */
 			if (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_TCP |
 						      MLX4_CQE_STATUS_UDP)) {
 				if ((cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPOK)) &&

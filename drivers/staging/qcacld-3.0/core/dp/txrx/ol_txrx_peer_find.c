@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*=== includes ===*/
@@ -40,19 +31,19 @@
 #include <ol_txrx_api.h>        /* ol_txrx_pdev_t, etc. */
 #include <ol_txrx_dbg.h>        /* TXRX_DEBUG_LEVEL */
 #include <ol_txrx_internal.h>   /* ol_txrx_pdev_t, etc. */
-#include <ol_txrx.h>            /* ol_txrx_peer_unref_delete */
+#include <ol_txrx.h>            /* ol_txrx_peer_release_ref */
 #include <ol_txrx_peer_find.h>  /* ol_txrx_peer_find_attach, etc. */
 #include <ol_tx_queue.h>
-#include "wma_api.h"
+#include "wlan_roam_debug.h"
 
 /*=== misc. / utility function definitions ==================================*/
 
-static int ol_txrx_log2_ceil(unsigned value)
+static int ol_txrx_log2_ceil(unsigned int value)
 {
 	/* need to switch to unsigned math so that negative values
 	 * will right-shift towards 0 instead of -1
 	 */
-	unsigned tmp = value;
+	unsigned int tmp = value;
 	int log2 = -1;
 
 	if (value == 0) {
@@ -70,24 +61,26 @@ static int ol_txrx_log2_ceil(unsigned value)
 	return log2;
 }
 
-/**
- * __ol_txrx_peer_change_ref_cnt() - change peer ref count by the input value
- * @peer: pointer to peer structure
- * @change: value to add to the peer->ref_cnt, can be negative
- * @fname: name of the calling function
- * @line: line number of the calling function
- *
- * Return: the QDF_STATUS return from hdd_execute_config_command
- */
-void __ol_txrx_peer_change_ref_cnt(struct ol_txrx_peer_t *peer,
-						int change,
-						const char *fname,
-						int line)
+int ol_txrx_peer_get_ref(struct ol_txrx_peer_t *peer,
+			  enum peer_debug_id_type dbg_id)
 {
-	qdf_atomic_add(change, &peer->ref_cnt);
-	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO_HIGH,
-		"[%s][%d]: peer %pK peer->ref_cnt changed by (%d) to %d",
-		fname, line, peer, change, qdf_atomic_read(&peer->ref_cnt));
+	int refs_dbg_id;
+
+	if (!peer) {
+		ol_txrx_err("peer is null for ID %d", dbg_id);
+		return -EINVAL;
+	}
+
+	if (dbg_id >= PEER_DEBUG_ID_MAX || dbg_id < 0) {
+		ol_txrx_err("incorrect debug_id %d ", dbg_id);
+		return -EINVAL;
+	}
+
+	qdf_atomic_inc(&peer->ref_cnt);
+	qdf_atomic_inc(&peer->access_list[dbg_id]);
+	refs_dbg_id = qdf_atomic_read(&peer->access_list[dbg_id]);
+
+	return refs_dbg_id;
 }
 
 /*=== function definitions for peer MAC addr --> peer object hash table =====*/
@@ -143,11 +136,11 @@ static void ol_txrx_peer_find_hash_detach(struct ol_txrx_pdev_t *pdev)
 	qdf_mem_free(pdev->peer_hash.bins);
 }
 
-static inline unsigned
+static inline unsigned int
 ol_txrx_peer_find_hash_index(struct ol_txrx_pdev_t *pdev,
 			     union ol_txrx_align_mac_addr_t *mac_addr)
 {
-	unsigned index;
+	unsigned int index;
 
 	index =
 		mac_addr->align2.bytes_ab ^
@@ -161,7 +154,7 @@ void
 ol_txrx_peer_find_hash_add(struct ol_txrx_pdev_t *pdev,
 			   struct ol_txrx_peer_t *peer)
 {
-	unsigned index;
+	unsigned int index;
 
 	index = ol_txrx_peer_find_hash_index(pdev, &peer->mac_addr);
 	qdf_spin_lock_bh(&pdev->peer_ref_mutex);
@@ -183,7 +176,7 @@ struct ol_txrx_peer_t *ol_txrx_peer_vdev_find_hash(struct ol_txrx_pdev_t *pdev,
 						   uint8_t check_valid)
 {
 	union ol_txrx_align_mac_addr_t local_mac_addr_aligned, *mac_addr;
-	unsigned index;
+	unsigned int index;
 	struct ol_txrx_peer_t *peer;
 
 	if (mac_addr_is_aligned) {
@@ -199,9 +192,8 @@ struct ol_txrx_peer_t *ol_txrx_peer_vdev_find_hash(struct ol_txrx_pdev_t *pdev,
 		if (ol_txrx_peer_find_mac_addr_cmp(mac_addr, &peer->mac_addr) ==
 		    0 && (check_valid == 0 || peer->valid)
 		    && peer->vdev == vdev) {
-			/* found it - increment the ref count before releasing
-			   the lock */
-			OL_TXRX_PEER_INC_REF_CNT(peer);
+			/* found it */
+			ol_txrx_peer_get_ref(peer, PEER_DEBUG_ID_OL_INTERNAL);
 			qdf_spin_unlock_bh(&pdev->peer_ref_mutex);
 			return peer;
 		}
@@ -210,13 +202,16 @@ struct ol_txrx_peer_t *ol_txrx_peer_vdev_find_hash(struct ol_txrx_pdev_t *pdev,
 	return NULL;            /* failure */
 }
 
-struct ol_txrx_peer_t *ol_txrx_peer_find_hash_find_inc_ref(struct ol_txrx_pdev_t *pdev,
-						   uint8_t *peer_mac_addr,
-						   int mac_addr_is_aligned,
-						   uint8_t check_valid)
+struct ol_txrx_peer_t *
+	ol_txrx_peer_find_hash_find_get_ref
+				(struct ol_txrx_pdev_t *pdev,
+				uint8_t *peer_mac_addr,
+				int mac_addr_is_aligned,
+				u8 check_valid,
+				enum peer_debug_id_type dbg_id)
 {
 	union ol_txrx_align_mac_addr_t local_mac_addr_aligned, *mac_addr;
-	unsigned index;
+	unsigned int index;
 	struct ol_txrx_peer_t *peer;
 
 	if (mac_addr_is_aligned) {
@@ -231,9 +226,8 @@ struct ol_txrx_peer_t *ol_txrx_peer_find_hash_find_inc_ref(struct ol_txrx_pdev_t
 	TAILQ_FOREACH(peer, &pdev->peer_hash.bins[index], hash_list_elem) {
 		if (ol_txrx_peer_find_mac_addr_cmp(mac_addr, &peer->mac_addr) ==
 		    0 && (check_valid == 0 || peer->valid)) {
-			/* found it - increment the ref count before
-			   releasing the lock */
-			OL_TXRX_PEER_INC_REF_CNT(peer);
+			/* found it */
+			ol_txrx_peer_get_ref(peer, dbg_id);
 			qdf_spin_unlock_bh(&pdev->peer_ref_mutex);
 			return peer;
 		}
@@ -246,7 +240,7 @@ void
 ol_txrx_peer_find_hash_remove(struct ol_txrx_pdev_t *pdev,
 			      struct ol_txrx_peer_t *peer)
 {
-	unsigned index;
+	unsigned int index;
 
 	index = ol_txrx_peer_find_hash_index(pdev, &peer->mac_addr);
 	/*
@@ -270,7 +264,7 @@ ol_txrx_peer_find_hash_remove(struct ol_txrx_pdev_t *pdev,
 
 void ol_txrx_peer_find_hash_erase(struct ol_txrx_pdev_t *pdev)
 {
-	unsigned i;
+	unsigned int i;
 	/*
 	 * Not really necessary to take peer_ref_mutex lock - by this point,
 	 * it's known that the pdev is no longer in use.
@@ -295,11 +289,13 @@ void ol_txrx_peer_find_hash_erase(struct ol_txrx_pdev_t *pdev)
 				/*
 				 * Artificially adjust the peer's ref count to
 				 * 1, so it will get deleted by
-				 * OL_TXRX_PEER_UNREF_DELETE.
+				 * ol_txrx_peer_release_ref.
 				 */
 				qdf_atomic_init(&peer->ref_cnt); /* set to 0 */
-				OL_TXRX_PEER_INC_REF_CNT(peer); /* incr to 1 */
-				OL_TXRX_PEER_UNREF_DELETE(peer);
+				ol_txrx_peer_get_ref(peer,
+						     PEER_DEBUG_ID_OL_HASH_ERS);
+				ol_txrx_peer_release_ref(peer,
+						     PEER_DEBUG_ID_OL_HASH_ERS);
 			}
 		}
 	}
@@ -379,11 +375,17 @@ static inline void ol_txrx_peer_find_add_id(struct ol_txrx_pdev_t *pdev,
 	int i;
 	uint32_t peer_id_ref_cnt;
 	uint32_t peer_ref_cnt;
+	u8 check_valid = 0;
+
+	if (pdev->enable_peer_unmap_conf_support)
+		check_valid = 1;
 
 	/* check if there's already a peer object with this MAC address */
 	peer =
-		ol_txrx_peer_find_hash_find_inc_ref(pdev, peer_mac_addr,
-					    1 /* is aligned */, 0);
+		ol_txrx_peer_find_hash_find_get_ref(pdev, peer_mac_addr,
+						    1 /* is aligned */,
+						    check_valid,
+						    PEER_DEBUG_ID_OL_PEER_MAP);
 
 	if (!peer || peer_id == HTT_INVALID_PEER) {
 		/*
@@ -391,11 +393,13 @@ static inline void ol_txrx_peer_find_add_id(struct ol_txrx_pdev_t *pdev,
 		 * If the peer ID is for a vdev, then we will fail to find a
 		 * peer with a matching MAC address.
 		 */
-		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+		ol_txrx_err(
 			  "%s: peer not found or peer ID is %d invalid",
 			  __func__, peer_id);
-		wma_peer_debug_log(DEBUG_INVALID_VDEV_ID, DEBUG_PEER_MAP_EVENT,
-				   peer_id, peer_mac_addr, peer, 0, 0);
+		wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+				    DEBUG_PEER_MAP_EVENT,
+				    peer_id, peer_mac_addr,
+				    peer, 0, 0);
 
 		return;
 	}
@@ -434,21 +438,19 @@ static inline void ol_txrx_peer_find_add_id(struct ol_txrx_pdev_t *pdev,
 				peer_id_to_obj_map[peer_id].peer_id_ref_cnt);
 	peer_ref_cnt = qdf_atomic_read(&peer->ref_cnt);
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO_HIGH,
-	   "%s: peer %pK ID %d peer_id[%d] peer_id_ref_cnt %d",
-	   __func__, peer, peer_id, i, peer_id_ref_cnt);
-
-	wma_peer_debug_log(DEBUG_INVALID_VDEV_ID, DEBUG_PEER_MAP_EVENT,
-			   peer_id, &peer->mac_addr.raw, peer,
-			   peer_id_ref_cnt,
-			   peer_ref_cnt);
+	   "%s: peer %pK ID %d peer_id[%d] peer_id_ref_cnt %d peer->ref_cnt %d",
+	   __func__, peer, peer_id, i, peer_id_ref_cnt, peer_ref_cnt);
+	wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+			    DEBUG_PEER_MAP_EVENT,
+			    peer_id, &peer->mac_addr.raw, peer,
+			    peer_id_ref_cnt,
+			    peer_ref_cnt);
 
 
 	if (status) {
 		/* TBDXXX: assert for now */
 		qdf_assert(0);
 	}
-
-	return;
 }
 
 /*=== allocation / deallocation function definitions ========================*/
@@ -470,6 +472,51 @@ void ol_txrx_peer_find_detach(struct ol_txrx_pdev_t *pdev)
 	ol_txrx_peer_find_hash_detach(pdev);
 }
 
+/**
+ * ol_txrx_peer_unmap_conf_handler() - send peer unmap conf cmd to FW
+ * @pdev: pdev_handle
+ * @peer_id: peer_id
+ *
+ * Return: None
+ */
+static inline void
+ol_txrx_peer_unmap_conf_handler(ol_txrx_pdev_handle pdev,
+				uint16_t peer_id)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+
+	if (peer_id == HTT_INVALID_PEER) {
+		ol_txrx_err(
+		   "invalid peer ID %d\n", peer_id);
+		return;
+	}
+
+	qdf_atomic_inc(&pdev->peer_id_to_obj_map[peer_id].peer_id_unmap_cnt);
+
+	if (qdf_atomic_read(
+		&pdev->peer_id_to_obj_map[peer_id].peer_id_unmap_cnt) ==
+		pdev->peer_id_unmap_ref_cnt) {
+		ol_txrx_dbg("send unmap conf cmd: peer_id[%d] unmap_cnt[%d]",
+			    peer_id, pdev->peer_id_unmap_ref_cnt);
+		status = pdev->peer_unmap_sync_cb(
+				DEBUG_INVALID_VDEV_ID,
+				1, &peer_id);
+
+		if (status == QDF_STATUS_SUCCESS ||
+		    status == QDF_STATUS_E_BUSY) {
+			qdf_atomic_init(
+			&pdev->peer_id_to_obj_map[peer_id].peer_id_unmap_cnt);
+		} else {
+			qdf_atomic_set(
+			&pdev->peer_id_to_obj_map[peer_id].peer_id_unmap_cnt,
+			OL_TXRX_INVALID_PEER_UNMAP_COUNT);
+			ol_txrx_err("unable to send unmap conf cmd [%d]",
+				    peer_id);
+		}
+
+	}
+}
+
 /*=== function definitions for message handling =============================*/
 
 #if defined(CONFIG_HL_SUPPORT)
@@ -482,6 +529,7 @@ ol_rx_peer_map_handler(ol_txrx_pdev_handle pdev,
 	ol_txrx_peer_find_add_id(pdev, peer_mac_addr, peer_id);
 	if (!tx_ready) {
 		struct ol_txrx_peer_t *peer;
+
 		peer = ol_txrx_peer_find_by_id(pdev, peer_id);
 		if (!peer) {
 			/* ol_txrx_peer_detach called before peer map arrived*/
@@ -489,6 +537,7 @@ ol_rx_peer_map_handler(ol_txrx_pdev_handle pdev,
 		} else {
 			if (tx_ready) {
 				int i;
+
 				/* unpause all tx queues now, since the
 				 * target is ready
 				 */
@@ -504,7 +553,8 @@ ol_rx_peer_map_handler(ol_txrx_pdev_handle pdev,
 
 				/* keep non-mgmt tx queues paused until assoc
 				 * is finished tx queues were paused in
-				 * ol_txrx_peer_attach*/
+				 * ol_txrx_peer_attach
+				 */
 				/* unpause tx mgmt queue */
 				ol_txrx_peer_tid_unpause(peer,
 							 HTT_TX_EXT_TID_MGMT);
@@ -516,6 +566,7 @@ ol_rx_peer_map_handler(ol_txrx_pdev_handle pdev,
 void ol_txrx_peer_tx_ready_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 {
 	struct ol_txrx_peer_t *peer;
+
 	peer = ol_txrx_peer_find_by_id(pdev, peer_id);
 	if (peer) {
 		int i;
@@ -541,12 +592,10 @@ ol_rx_peer_map_handler(ol_txrx_pdev_handle pdev,
 		       int tx_ready)
 {
 	ol_txrx_peer_find_add_id(pdev, peer_mac_addr, peer_id);
-
 }
 
 void ol_txrx_peer_tx_ready_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 {
-	return;
 }
 
 #endif
@@ -571,17 +620,21 @@ void ol_rx_peer_unmap_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 	int i = 0;
 	int32_t ref_cnt;
 
-
 	if (peer_id == HTT_INVALID_PEER) {
-		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+		ol_txrx_err(
 		   "%s: invalid peer ID %d\n", __func__, peer_id);
-		wma_peer_debug_log(DEBUG_INVALID_VDEV_ID,
-				   DEBUG_PEER_UNMAP_EVENT,
-				   peer_id, NULL, NULL, 0, 0x100);
+		wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+				    DEBUG_PEER_UNMAP_EVENT,
+				    peer_id, NULL, NULL, 0, 0x100);
 		return;
 	}
 
 	qdf_spin_lock_bh(&pdev->peer_map_unmap_lock);
+
+	/* send peer unmap conf cmd to fw for unmapped peer_ids */
+	if (pdev->enable_peer_unmap_conf_support &&
+	    pdev->peer_unmap_sync_cb)
+		ol_txrx_peer_unmap_conf_handler(pdev, peer_id);
 
 	if (qdf_atomic_read(
 		&pdev->peer_id_to_obj_map[peer_id].del_peer_id_ref_cnt)) {
@@ -591,15 +644,16 @@ void ol_rx_peer_unmap_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 		ref_cnt = qdf_atomic_read(&pdev->peer_id_to_obj_map[peer_id].
 							del_peer_id_ref_cnt);
 		qdf_spin_unlock_bh(&pdev->peer_map_unmap_lock);
-		wma_peer_debug_log(DEBUG_INVALID_VDEV_ID,
-				   DEBUG_PEER_UNMAP_EVENT,
-				   peer_id, NULL, NULL, ref_cnt, 0x101);
-		TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
+		wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+				    DEBUG_PEER_UNMAP_EVENT,
+				    peer_id, NULL, NULL, ref_cnt, 0x101);
+		ol_txrx_dbg(
 			   "%s: peer already deleted, peer_id %d del_peer_id_ref_cnt %d",
 			   __func__, peer_id, ref_cnt);
 		return;
 	}
 	peer = pdev->peer_id_to_obj_map[peer_id].peer;
+
 	if (peer == NULL) {
 		/*
 		 * Currently peer IDs are assigned for vdevs as well as peers.
@@ -607,13 +661,12 @@ void ol_rx_peer_unmap_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 		 * in peer_id_to_obj_map will be NULL.
 		 */
 		qdf_spin_unlock_bh(&pdev->peer_map_unmap_lock);
-		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+		ol_txrx_info(
 			   "%s: peer not found for peer_id %d",
 			   __func__, peer_id);
-		wma_peer_debug_log(DEBUG_INVALID_VDEV_ID,
-				   DEBUG_PEER_UNMAP_EVENT,
-				   peer_id, NULL, NULL, 0, 0x102);
-
+		wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+				    DEBUG_PEER_UNMAP_EVENT,
+				    peer_id, NULL, NULL, 0, 0x102);
 		return;
 	}
 
@@ -633,19 +686,20 @@ void ol_rx_peer_unmap_handler(ol_txrx_pdev_handle pdev, uint16_t peer_id)
 
 	qdf_spin_unlock_bh(&pdev->peer_map_unmap_lock);
 
-	wma_peer_debug_log(DEBUG_INVALID_VDEV_ID, DEBUG_PEER_UNMAP_EVENT,
-			   peer_id, &peer->mac_addr.raw, peer, ref_cnt,
-			   qdf_atomic_read(&peer->ref_cnt));
+	wlan_roam_debug_log(DEBUG_INVALID_VDEV_ID,
+			    DEBUG_PEER_UNMAP_EVENT,
+			    peer_id, &peer->mac_addr.raw, peer, ref_cnt,
+			    qdf_atomic_read(&peer->ref_cnt));
 
 	/*
 	 * Remove a reference to the peer.
 	 * If there are no more references, delete the peer object.
 	 */
-	OL_TXRX_PEER_UNREF_DELETE(peer);
+	ol_txrx_peer_release_ref(peer, PEER_DEBUG_ID_OL_PEER_MAP);
 
-	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
-	   "%s: peer_id %d peer %pK peer_id_ref_cnt %d",
-	   __func__, peer_id, peer, ref_cnt);
+	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
+		  "%s: peer_id %d peer %pK peer_id_ref_cnt %d",
+		  __func__, peer_id, peer, ref_cnt);
 }
 
 /**
@@ -666,10 +720,13 @@ void ol_txrx_peer_remove_obj_map_entries(ol_txrx_pdev_handle pdev,
 	uint16_t peer_id;
 	int32_t peer_id_ref_cnt;
 	int32_t num_deleted_maps = 0;
+	uint16_t save_peer_ids[MAX_NUM_PEER_ID_PER_PEER];
+	uint16_t save_peer_id_ref_cnt[MAX_NUM_PEER_ID_PER_PEER] = {0};
 
 	qdf_spin_lock_bh(&pdev->peer_map_unmap_lock);
 	for (i = 0; i < MAX_NUM_PEER_ID_PER_PEER; i++) {
 		peer_id = peer->peer_ids[i];
+		save_peer_ids[i] = HTT_INVALID_PEER;
 		if (peer_id == HTT_INVALID_PEER ||
 			pdev->peer_id_to_obj_map[peer_id].peer == NULL) {
 			/* unused peer_id, or object is already dereferenced */
@@ -684,12 +741,12 @@ void ol_txrx_peer_remove_obj_map_entries(ol_txrx_pdev_handle pdev,
 		peer_id_ref_cnt = qdf_atomic_read(
 					&pdev->peer_id_to_obj_map[peer_id].
 						peer_id_ref_cnt);
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO_LOW,
-			  FL("peer_id = %d, peer_id_ref_cnt = %d, index = %d"),
-			  peer_id, peer_id_ref_cnt, i);
+		save_peer_ids[i] = peer_id;
+		save_peer_id_ref_cnt[i] = peer_id_ref_cnt;
+
 		/*
 		 * Transfer peer_id_ref_cnt into del_peer_id_ref_cnt so that
-		 * OL_TXRX_PEER_UNREF_DELETE will decrement del_peer_id_ref_cnt
+		 * ol_txrx_peer_release_ref will decrement del_peer_id_ref_cnt
 		 * and any map events will increment peer_id_ref_cnt. Otherwise
 		 * accounting will be messed up.
 		 *
@@ -706,8 +763,25 @@ void ol_txrx_peer_remove_obj_map_entries(ol_txrx_pdev_handle pdev,
 	}
 	qdf_spin_unlock_bh(&pdev->peer_map_unmap_lock);
 
+	/* Debug print the information after releasing bh spinlock */
+	for (i = 0; i < MAX_NUM_PEER_ID_PER_PEER; i++) {
+		if (save_peer_ids[i] == HTT_INVALID_PEER)
+			continue;
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO_LOW,
+			  FL("peer_id = %d, peer_id_ref_cnt = %d, index = %d"),
+			  save_peer_ids[i], save_peer_id_ref_cnt[i], i);
+	}
+
+	if (num_deleted_maps > qdf_atomic_read(&peer->ref_cnt)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  FL("num_deleted_maps %d ref_cnt %d"),
+			  num_deleted_maps, qdf_atomic_read(&peer->ref_cnt));
+		QDF_BUG(0);
+		return;
+	}
+
 	while (num_deleted_maps-- > 0)
-		OL_TXRX_PEER_UNREF_DELETE(peer);
+		ol_txrx_peer_release_ref(peer, PEER_DEBUG_ID_OL_PEER_MAP);
 }
 
 struct ol_txrx_peer_t *ol_txrx_assoc_peer_find(struct ol_txrx_vdev_t *vdev)
@@ -721,7 +795,10 @@ struct ol_txrx_peer_t *ol_txrx_assoc_peer_find(struct ol_txrx_vdev_t *vdev)
 	 */
 	if (vdev->last_real_peer
 	    && vdev->last_real_peer->peer_ids[0] != HTT_INVALID_PEER_ID) {
-		OL_TXRX_PEER_INC_REF_CNT(vdev->last_real_peer);
+		qdf_spin_lock_bh(&vdev->pdev->peer_ref_mutex);
+		ol_txrx_peer_get_ref(vdev->last_real_peer,
+				     PEER_DEBUG_ID_OL_INTERNAL);
+		qdf_spin_unlock_bh(&vdev->pdev->peer_ref_mutex);
 		peer = vdev->last_real_peer;
 	} else {
 		peer = NULL;
@@ -754,6 +831,7 @@ void ol_txrx_peer_find_display(ol_txrx_pdev_handle pdev, int indent)
 	for (i = 0; i <= pdev->peer_hash.mask; i++) {
 		if (!TAILQ_EMPTY(&pdev->peer_hash.bins[i])) {
 			struct ol_txrx_peer_t *peer;
+
 			TAILQ_FOREACH(peer, &pdev->peer_hash.bins[i],
 				      hash_list_elem) {
 				QDF_TRACE(QDF_MODULE_ID_TXRX,

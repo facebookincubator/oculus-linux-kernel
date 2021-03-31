@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -147,6 +147,8 @@
 #define MIN_SOFT_START_US		0
 #define MAX_SOFT_START_US		2000
 
+#define BST_HEADROOM_DEFAULT_MV		200
+
 struct ldo_regulator {
 	struct regulator_desc		rdesc;
 	struct regulator_dev		*rdev;
@@ -187,6 +189,7 @@ struct bst_params {
 	int				soft_start_us;
 	int				vreg_ok_dbc_us;
 	int				voltage_mv;
+	u16				headroom_mv;
 };
 
 struct qpnp_lcdb {
@@ -195,6 +198,7 @@ struct qpnp_lcdb {
 	struct regmap			*regmap;
 	struct pmic_revid_data		*pmic_rev_id;
 	u32				base;
+	u32				wa_flags;
 	int				sc_irq;
 
 	/* TTW params */
@@ -260,6 +264,10 @@ enum lcdb_settings_index {
 	LCDB_NCP_PD_CTL,
 	LCDB_NCP_SOFT_START_CTL,
 	LCDB_SETTING_MAX,
+};
+
+enum lcdb_wa_flags {
+	NCP_SCP_DISABLE_WA = BIT(0),
 };
 
 static u32 soft_start_us[] = {
@@ -603,9 +611,7 @@ static int qpnp_lcdb_enable_wa(struct qpnp_lcdb *lcdb)
 		return rc;
 	}
 
-	/* execute the below for rev1.1 */
-	if (lcdb->pmic_rev_id->rev3 == PM660L_V1P1_REV3 &&
-		lcdb->pmic_rev_id->rev4 == PM660L_V1P1_REV4) {
+	if (lcdb->wa_flags & NCP_SCP_DISABLE_WA) {
 		/*
 		 * delay to make sure that the MID pin – ie the
 		 * output of the LCDB boost – returns to 0V
@@ -853,28 +859,40 @@ irq_handled:
 #define VOLTAGE_STEP_50_MV			50
 #define VOLTAGE_STEP_50MV_OFFSET		0xA
 static int qpnp_lcdb_set_bst_voltage(struct qpnp_lcdb *lcdb,
-					int voltage_mv)
+					int voltage_mv, u8 type)
 {
 	int rc = 0;
 	u8 val = 0;
+	int bst_voltage_mv;
+	struct ldo_regulator *ldo = &lcdb->ldo;
+	struct ncp_regulator *ncp = &lcdb->ncp;
+	struct bst_params *bst = &lcdb->bst;
 
-	if (voltage_mv < MIN_BST_VOLTAGE_MV)
-		voltage_mv = MIN_BST_VOLTAGE_MV;
-	else if (voltage_mv > MAX_BST_VOLTAGE_MV)
-		voltage_mv = MAX_BST_VOLTAGE_MV;
+	/* Vout_Boost = headroom_mv + max( Vout_LDO, abs (Vout_NCP)) */
+	bst_voltage_mv = max(voltage_mv, max(ldo->voltage_mv, ncp->voltage_mv));
+	bst_voltage_mv += bst->headroom_mv;
 
-	val = DIV_ROUND_UP(voltage_mv - MIN_BST_VOLTAGE_MV,
-					VOLTAGE_STEP_50_MV);
+	if (bst_voltage_mv < MIN_BST_VOLTAGE_MV)
+		bst_voltage_mv = MIN_BST_VOLTAGE_MV;
+	else if (bst_voltage_mv > MAX_BST_VOLTAGE_MV)
+		bst_voltage_mv = MAX_BST_VOLTAGE_MV;
 
-	rc = qpnp_lcdb_masked_write(lcdb, lcdb->base +
-				LCDB_BST_OUTPUT_VOLTAGE_REG,
-				SET_OUTPUT_VOLTAGE_MASK, val);
-	if (rc < 0)
-		pr_err("Failed to set boost voltage %d mv rc=%d\n",
-			voltage_mv, rc);
-	else
-		pr_debug("Boost voltage set = %d mv (0x%02x = 0x%02x)\n",
-			voltage_mv, LCDB_BST_OUTPUT_VOLTAGE_REG, val);
+	if (bst_voltage_mv != bst->voltage_mv) {
+		val = DIV_ROUND_UP(bst_voltage_mv - MIN_BST_VOLTAGE_MV,
+						VOLTAGE_STEP_50_MV);
+
+		rc = qpnp_lcdb_masked_write(lcdb, lcdb->base +
+					LCDB_BST_OUTPUT_VOLTAGE_REG,
+					SET_OUTPUT_VOLTAGE_MASK, val);
+		if (rc < 0) {
+			pr_err("Failed to set boost voltage %d mv rc=%d\n",
+				bst_voltage_mv, rc);
+		} else {
+			pr_debug("Boost voltage set = %d mv (0x%02x = 0x%02x)\n",
+			      bst_voltage_mv, LCDB_BST_OUTPUT_VOLTAGE_REG, val);
+			bst->voltage_mv = bst_voltage_mv;
+		}
+	}
 
 	return rc;
 }
@@ -905,25 +923,16 @@ static int qpnp_lcdb_set_voltage(struct qpnp_lcdb *lcdb,
 	u16 offset = LCDB_LDO_OUTPUT_VOLTAGE_REG;
 	u8 val = 0;
 
-	if (type == BST)
-		return qpnp_lcdb_set_bst_voltage(lcdb, voltage_mv);
-
-	if (type == NCP)
-		offset = LCDB_NCP_OUTPUT_VOLTAGE_REG;
-
 	if (!is_between(voltage_mv, MIN_VOLTAGE_MV, MAX_VOLTAGE_MV)) {
 		pr_err("Invalid voltage %dmv (min=%d max=%d)\n",
 			voltage_mv, MIN_VOLTAGE_MV, MAX_VOLTAGE_MV);
 		return -EINVAL;
 	}
 
-	/* Change the BST voltage to LDO + 100mV */
-	if (type == LDO) {
-		rc = qpnp_lcdb_set_bst_voltage(lcdb, voltage_mv + 100);
-		if (rc < 0) {
-			pr_err("Failed to set boost voltage rc=%d\n", rc);
-			return rc;
-		}
+	rc = qpnp_lcdb_set_bst_voltage(lcdb, voltage_mv, type);
+	if (rc < 0) {
+		pr_err("Failed to set boost voltage rc=%d\n", rc);
+		return rc;
 	}
 
 	/* Below logic is only valid for LDO and NCP type */
@@ -935,6 +944,9 @@ static int qpnp_lcdb_set_voltage(struct qpnp_lcdb *lcdb,
 						VOLTAGE_STEP_50_MV);
 		val += VOLTAGE_STEP_50MV_OFFSET;
 	}
+
+	if (type == NCP)
+		offset = LCDB_NCP_OUTPUT_VOLTAGE_REG;
 
 	rc = qpnp_lcdb_masked_write(lcdb, lcdb->base + offset,
 				SET_OUTPUT_VOLTAGE_MASK, val);
@@ -1058,6 +1070,8 @@ static int qpnp_lcdb_ldo_regulator_set_voltage(struct regulator_dev *rdev,
 	rc = qpnp_lcdb_set_voltage(lcdb, min_uV / 1000, LDO);
 	if (rc < 0)
 		pr_err("Failed to set LDO voltage rc=%c\n", rc);
+	else
+		lcdb->ldo.voltage_mv = min_uV / 1000;
 
 	return rc;
 }
@@ -1129,6 +1143,8 @@ static int qpnp_lcdb_ncp_regulator_set_voltage(struct regulator_dev *rdev,
 	rc = qpnp_lcdb_set_voltage(lcdb, min_uV / 1000, NCP);
 	if (rc < 0)
 		pr_err("Failed to set LDO voltage rc=%c\n", rc);
+	else
+		lcdb->ncp.voltage_mv = min_uV / 1000;
 
 	return rc;
 }
@@ -1388,6 +1404,12 @@ static int qpnp_lcdb_bst_dt_init(struct qpnp_lcdb *lcdb)
 			lcdb->bst.ps_threshold, MIN_BST_PS_MA, MAX_BST_PS_MA);
 		return -EINVAL;
 	}
+
+	/* Boost head room configuration */
+	of_property_read_u16(node, "qcom,bst-headroom-mv",
+					&lcdb->bst.headroom_mv);
+	if (lcdb->bst.headroom_mv < BST_HEADROOM_DEFAULT_MV)
+		lcdb->bst.headroom_mv = BST_HEADROOM_DEFAULT_MV;
 
 	return 0;
 }
@@ -1649,8 +1671,8 @@ static int qpnp_lcdb_init_bst(struct qpnp_lcdb *lcdb)
 
 		if (lcdb->bst.ps != -EINVAL) {
 			rc = qpnp_lcdb_masked_write(lcdb, lcdb->base +
-					LCDB_PS_CTL_REG, EN_PS_BIT,
-					&lcdb->bst.ps ? EN_PS_BIT : 0);
+				LCDB_PS_CTL_REG, EN_PS_BIT,
+				lcdb->bst.ps ? EN_PS_BIT : 0);
 			if (rc < 0) {
 				pr_err("Failed to disable BST PS rc=%d", rc);
 				return rc;
@@ -1695,13 +1717,32 @@ static int qpnp_lcdb_init_bst(struct qpnp_lcdb *lcdb)
 	}
 	lcdb->bst.soft_start_us = (val & SOFT_START_MASK) * 200	+ 200;
 
+	if (!lcdb->bst.headroom_mv)
+		lcdb->bst.headroom_mv = BST_HEADROOM_DEFAULT_MV;
+
 	return 0;
+}
+
+static void qpnp_lcdb_pmic_config(struct qpnp_lcdb *lcdb)
+{
+	switch (lcdb->pmic_rev_id->pmic_subtype) {
+	case PM660L_SUBTYPE:
+		if (lcdb->pmic_rev_id->rev4 < PM660L_V2P0_REV4)
+			lcdb->wa_flags |= NCP_SCP_DISABLE_WA;
+		break;
+	default:
+		break;
+	}
+
+	pr_debug("LCDB wa_flags = 0x%2x\n", lcdb->wa_flags);
 }
 
 static int qpnp_lcdb_hw_init(struct qpnp_lcdb *lcdb)
 {
 	int rc = 0;
 	u8 val = 0;
+
+	qpnp_lcdb_pmic_config(lcdb);
 
 	rc = qpnp_lcdb_init_bst(lcdb);
 	if (rc < 0) {
@@ -1721,8 +1762,7 @@ static int qpnp_lcdb_hw_init(struct qpnp_lcdb *lcdb)
 		return rc;
 	}
 
-	if (lcdb->sc_irq >= 0 &&
-		lcdb->pmic_rev_id->pmic_subtype != PM660L_SUBTYPE) {
+	if (lcdb->sc_irq >= 0 && !(lcdb->wa_flags & NCP_SCP_DISABLE_WA)) {
 		lcdb->sc_count = 0;
 		rc = devm_request_threaded_irq(lcdb->dev, lcdb->sc_irq,
 				NULL, qpnp_lcdb_sc_irq_handler, IRQF_ONESHOT,

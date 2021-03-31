@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -41,10 +32,45 @@
 #include "ani_global.h"
 #include "sir_types.h"
 
-tSirRetStatus mac_start(tHalHandle hHal, void *pHalMacStartParams);
-tSirRetStatus mac_stop(tHalHandle hHal, tHalStopType stopType);
-tSirRetStatus mac_open(tHalHandle *pHalHandle, tHddHandle hHdd,
-		       struct cds_config_info *cds_cfg);
-tSirRetStatus mac_close(tHalHandle hHal);
+/**
+ * struct mac_start_params - parameters needed when starting the MAC
+ * @driver_type: Operating mode of the driver
+ */
+struct mac_start_params {
+	enum qdf_driver_type driver_type;
+};
+
+/**
+ * mac_start() - Start all MAC modules
+ * @mac_handle: Opaque handle to the MAC context
+ * @params: Parameters needed to start the MAC
+ *
+ * This function is called to start MAC. This function will start all
+ * the mac modules.
+ *
+ * Return: QDF_STATUS_SUCCESS if the MAC was successfully started. Any
+ *         other value means that there was an issue with starting the
+ *         MAC and the MAC should not be considered operational.
+ */
+QDF_STATUS mac_start(mac_handle_t mac_handle,
+		     struct mac_start_params *params);
+
+/**
+ * mac_stop() - Stop all MAC modules
+ * @mac_handle: Opaque handle to the MAC context
+ *
+ * This function is called to stop MAC. This function will stop all
+ * the mac modules.
+ *
+ * Return: QDF_STATUS_SUCCESS if the MAC was successfully stopped. Any
+ *         other value means that there was an issue with stopping the
+ *         MAC, but the caller should still consider the MAC to be
+ *         stopped.
+ */
+QDF_STATUS mac_stop(mac_handle_t mac_handle);
+
+QDF_STATUS mac_open(struct wlan_objmgr_psoc *psoc, tHalHandle *pHalHandle,
+		    hdd_handle_t hdd_handle, struct cds_config_info *cds_cfg);
+QDF_STATUS mac_close(tHalHandle hHal);
 
 #endif /* __MAC_INIT_API_H */

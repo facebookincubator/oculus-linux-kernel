@@ -184,7 +184,7 @@ static int pcan_usb_fd_send_cmd(struct peak_usb_device *dev, void *cmd_tail)
 	void *cmd_head = pcan_usb_fd_cmd_buffer(dev);
 	int err = 0;
 	u8 *packet_ptr;
-	int i, n = 1, packet_len;
+	int packet_len;
 	ptrdiff_t cmd_len;
 
 	/* usb device unregistered? */
@@ -201,17 +201,13 @@ static int pcan_usb_fd_send_cmd(struct peak_usb_device *dev, void *cmd_tail)
 	}
 
 	packet_ptr = cmd_head;
+	packet_len = cmd_len;
 
 	/* firmware is not able to re-assemble 512 bytes buffer in full-speed */
-	if ((dev->udev->speed != USB_SPEED_HIGH) &&
-	    (cmd_len > PCAN_UFD_LOSPD_PKT_SIZE)) {
-		packet_len = PCAN_UFD_LOSPD_PKT_SIZE;
-		n += cmd_len / packet_len;
-	} else {
-		packet_len = cmd_len;
-	}
+	if (unlikely(dev->udev->speed != USB_SPEED_HIGH))
+		packet_len = min(packet_len, PCAN_UFD_LOSPD_PKT_SIZE);
 
-	for (i = 0; i < n; i++) {
+	do {
 		err = usb_bulk_msg(dev->udev,
 				   usb_sndbulkpipe(dev->udev,
 						   PCAN_USBPRO_EP_CMDOUT),
@@ -224,7 +220,12 @@ static int pcan_usb_fd_send_cmd(struct peak_usb_device *dev, void *cmd_tail)
 		}
 
 		packet_ptr += packet_len;
-	}
+		cmd_len -= packet_len;
+
+		if (cmd_len < PCAN_UFD_LOSPD_PKT_SIZE)
+			packet_len = cmd_len;
+
+	} while (packet_len > 0);
 
 	return err;
 }
@@ -850,7 +851,7 @@ static int pcan_usb_fd_init(struct peak_usb_device *dev)
 			goto err_out;
 
 		/* allocate command buffer once for all for the interface */
-		pdev->cmd_buffer_addr = kmalloc(PCAN_UFD_CMD_BUFFER_SIZE,
+		pdev->cmd_buffer_addr = kzalloc(PCAN_UFD_CMD_BUFFER_SIZE,
 						GFP_KERNEL);
 		if (!pdev->cmd_buffer_addr)
 			goto err_out_1;

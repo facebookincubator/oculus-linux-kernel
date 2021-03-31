@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -87,87 +87,6 @@ static void sde_encoder_phys_wb_set_traffic_shaper(
 }
 
 /**
- * sde_encoder_phys_setup_cdm - setup chroma down block
- * @phys_enc:	Pointer to physical encoder
- * @fb:		Pointer to output framebuffer
- * @format:	Output format
- */
-void sde_encoder_phys_setup_cdm(struct sde_encoder_phys *phys_enc,
-		struct drm_framebuffer *fb, const struct sde_format *format,
-		struct sde_rect *wb_roi)
-{
-	struct sde_hw_cdm *hw_cdm = phys_enc->hw_cdm;
-	struct sde_hw_cdm_cfg *cdm_cfg = &phys_enc->cdm_cfg;
-	int ret;
-
-	if (!SDE_FORMAT_IS_YUV(format)) {
-		SDE_DEBUG("[cdm_disable fmt:%x]\n",
-				format->base.pixel_format);
-
-		if (hw_cdm && hw_cdm->ops.disable)
-			hw_cdm->ops.disable(hw_cdm);
-
-		return;
-	}
-
-	memset(cdm_cfg, 0, sizeof(struct sde_hw_cdm_cfg));
-
-	cdm_cfg->output_width = wb_roi->w;
-	cdm_cfg->output_height = wb_roi->h;
-	cdm_cfg->output_fmt = format;
-	cdm_cfg->output_type = CDM_CDWN_OUTPUT_WB;
-	cdm_cfg->output_bit_depth = SDE_FORMAT_IS_DX(format) ?
-		CDM_CDWN_OUTPUT_10BIT : CDM_CDWN_OUTPUT_8BIT;
-
-	/* enable 10 bit logic */
-	switch (cdm_cfg->output_fmt->chroma_sample) {
-	case SDE_CHROMA_RGB:
-		cdm_cfg->h_cdwn_type = CDM_CDWN_DISABLE;
-		cdm_cfg->v_cdwn_type = CDM_CDWN_DISABLE;
-		break;
-	case SDE_CHROMA_H2V1:
-		cdm_cfg->h_cdwn_type = CDM_CDWN_COSITE;
-		cdm_cfg->v_cdwn_type = CDM_CDWN_DISABLE;
-		break;
-	case SDE_CHROMA_420:
-		cdm_cfg->h_cdwn_type = CDM_CDWN_COSITE;
-		cdm_cfg->v_cdwn_type = CDM_CDWN_OFFSITE;
-		break;
-	case SDE_CHROMA_H1V2:
-	default:
-		SDE_ERROR("unsupported chroma sampling type\n");
-		cdm_cfg->h_cdwn_type = CDM_CDWN_DISABLE;
-		cdm_cfg->v_cdwn_type = CDM_CDWN_DISABLE;
-		break;
-	}
-
-	SDE_DEBUG("[cdm_enable:%d,%d,%X,%d,%d,%d,%d]\n",
-			cdm_cfg->output_width,
-			cdm_cfg->output_height,
-			cdm_cfg->output_fmt->base.pixel_format,
-			cdm_cfg->output_type,
-			cdm_cfg->output_bit_depth,
-			cdm_cfg->h_cdwn_type,
-			cdm_cfg->v_cdwn_type);
-
-	if (hw_cdm && hw_cdm->ops.setup_cdwn) {
-		ret = hw_cdm->ops.setup_cdwn(hw_cdm, cdm_cfg);
-		if (ret < 0) {
-			SDE_ERROR("failed to setup CDM %d\n", ret);
-			return;
-		}
-	}
-
-	if (hw_cdm && hw_cdm->ops.enable) {
-		ret = hw_cdm->ops.enable(hw_cdm, cdm_cfg);
-		if (ret < 0) {
-			SDE_ERROR("failed to enable CDM %d\n", ret);
-			return;
-		}
-	}
-}
-
-/**
  * sde_encoder_phys_wb_setup_fb - setup output framebuffer
  * @phys_enc:	Pointer to physical encoder
  * @fb:		Pointer to output framebuffer
@@ -180,7 +99,8 @@ static void sde_encoder_phys_wb_setup_fb(struct sde_encoder_phys *phys_enc,
 	struct sde_hw_wb *hw_wb;
 	struct sde_hw_wb_cfg *wb_cfg;
 	const struct msm_format *format;
-	int ret, mmu_id;
+	int ret;
+	struct msm_gem_address_space *aspace;
 
 	if (!phys_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -193,9 +113,9 @@ static void sde_encoder_phys_wb_setup_fb(struct sde_encoder_phys *phys_enc,
 
 	wb_cfg->intf_mode = phys_enc->intf_mode;
 	wb_cfg->is_secure = (fb->flags & DRM_MODE_FB_SECURE) ? true : false;
-	mmu_id = (wb_cfg->is_secure) ?
-			wb_enc->mmu_id[SDE_IOMMU_DOMAIN_SECURE] :
-			wb_enc->mmu_id[SDE_IOMMU_DOMAIN_UNSECURE];
+	aspace = (wb_cfg->is_secure) ?
+			wb_enc->aspace[SDE_IOMMU_DOMAIN_SECURE] :
+			wb_enc->aspace[SDE_IOMMU_DOMAIN_UNSECURE];
 
 	SDE_DEBUG("[fb_secure:%d]\n", wb_cfg->is_secure);
 
@@ -217,7 +137,7 @@ static void sde_encoder_phys_wb_setup_fb(struct sde_encoder_phys *phys_enc,
 	wb_cfg->roi = *wb_roi;
 
 	if (hw_wb->caps->features & BIT(SDE_WB_XY_ROI_OFFSET)) {
-		ret = sde_format_populate_layout(mmu_id, fb, &wb_cfg->dest);
+		ret = sde_format_populate_layout(aspace, fb, &wb_cfg->dest);
 		if (ret) {
 			SDE_DEBUG("failed to populate layout %d\n", ret);
 			return;
@@ -226,7 +146,7 @@ static void sde_encoder_phys_wb_setup_fb(struct sde_encoder_phys *phys_enc,
 		wb_cfg->dest.height = fb->height;
 		wb_cfg->dest.num_planes = wb_cfg->dest.format->num_planes;
 	} else {
-		ret = sde_format_populate_layout_with_roi(mmu_id, fb, wb_roi,
+		ret = sde_format_populate_layout_with_roi(aspace, fb, wb_roi,
 			&wb_cfg->dest);
 		if (ret) {
 			/* this error should be detected during atomic_check */
@@ -492,7 +412,8 @@ static void sde_encoder_phys_wb_setup(
 
 	sde_encoder_phys_wb_set_traffic_shaper(phys_enc);
 
-	sde_encoder_phys_setup_cdm(phys_enc, fb, wb_enc->wb_fmt, wb_roi);
+	sde_encoder_phys_setup_cdm(phys_enc, wb_enc->wb_fmt,
+		CDM_CDWN_OUTPUT_WB, wb_roi);
 
 	sde_encoder_phys_wb_setup_fb(phys_enc, fb, wb_roi);
 
@@ -846,6 +767,22 @@ static void sde_encoder_phys_wb_disable(struct sde_encoder_phys *phys_enc)
 }
 
 /**
+ * sde_encoder_phys_wb_post_disable - post disable writeback encoder
+ * @phys_enc:	Pointer to physical encoder
+ */
+static void sde_encoder_phys_wb_post_disable(
+		struct sde_encoder_phys *phys_enc)
+{
+	if (!phys_enc || !phys_enc->hw_ctl) {
+		SDE_ERROR("invalid encoder %d\n", phys_enc != NULL);
+		return;
+	}
+
+	if (phys_enc->hw_ctl->ops.clear_intf_cfg)
+		phys_enc->hw_ctl->ops.clear_intf_cfg(phys_enc->hw_ctl);
+}
+
+/**
  * sde_encoder_phys_wb_get_hw_resources - get hardware resources
  * @phys_enc:	Pointer to physical encoder
  * @hw_res:	Pointer to encoder resources
@@ -982,6 +919,7 @@ static void sde_encoder_phys_wb_init_ops(struct sde_encoder_phys_ops *ops)
 	ops->mode_set = sde_encoder_phys_wb_mode_set;
 	ops->enable = sde_encoder_phys_wb_enable;
 	ops->disable = sde_encoder_phys_wb_disable;
+	ops->post_disable = sde_encoder_phys_wb_post_disable;
 	ops->destroy = sde_encoder_phys_wb_destroy;
 	ops->atomic_check = sde_encoder_phys_wb_atomic_check;
 	ops->get_hw_resources = sde_encoder_phys_wb_get_hw_resources;
@@ -1017,15 +955,15 @@ struct sde_encoder_phys *sde_encoder_phys_wb_init(
 	phys_enc = &wb_enc->base;
 
 	if (p->sde_kms->vbif[VBIF_NRT]) {
-		wb_enc->mmu_id[SDE_IOMMU_DOMAIN_UNSECURE] =
-			p->sde_kms->mmu_id[MSM_SMMU_DOMAIN_NRT_UNSECURE];
-		wb_enc->mmu_id[SDE_IOMMU_DOMAIN_SECURE] =
-			p->sde_kms->mmu_id[MSM_SMMU_DOMAIN_NRT_SECURE];
+		wb_enc->aspace[SDE_IOMMU_DOMAIN_UNSECURE] =
+			p->sde_kms->aspace[MSM_SMMU_DOMAIN_NRT_UNSECURE];
+		wb_enc->aspace[SDE_IOMMU_DOMAIN_SECURE] =
+			p->sde_kms->aspace[MSM_SMMU_DOMAIN_NRT_SECURE];
 	} else {
-		wb_enc->mmu_id[SDE_IOMMU_DOMAIN_UNSECURE] =
-			p->sde_kms->mmu_id[MSM_SMMU_DOMAIN_UNSECURE];
-		wb_enc->mmu_id[SDE_IOMMU_DOMAIN_SECURE] =
-			p->sde_kms->mmu_id[MSM_SMMU_DOMAIN_SECURE];
+		wb_enc->aspace[SDE_IOMMU_DOMAIN_UNSECURE] =
+			p->sde_kms->aspace[MSM_SMMU_DOMAIN_UNSECURE];
+		wb_enc->aspace[SDE_IOMMU_DOMAIN_SECURE] =
+			p->sde_kms->aspace[MSM_SMMU_DOMAIN_SECURE];
 	}
 
 	hw_mdp = sde_rm_get_mdp(&p->sde_kms->rm);

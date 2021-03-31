@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,7 +22,8 @@ void hif_sdio_close(struct hif_softc *hif_sc);
 int hif_sdio_bus_suspend(struct hif_softc *hif_ctx);
 int hif_sdio_bus_resume(struct hif_softc *hif_ctx);
 QDF_STATUS hif_sdio_enable_bus(struct hif_softc *hif_sc,
-			struct device *dev, void *bdev, const hif_bus_id *bid,
+			struct device *dev, void *bdev,
+			const struct hif_bus_id *bid,
 			enum hif_enable_type type);
 void hif_sdio_disable_bus(struct hif_softc *hif_sc);
 QDF_STATUS
@@ -31,3 +32,4 @@ hif_sdio_get_config_item(struct hif_softc *hif_sc,
 void hif_sdio_set_mailbox_swap(struct hif_softc *hif_sc);
 void hif_sdio_claim_device(struct hif_softc *hif_sc);
 void hif_sdio_mask_interrupt_call(struct hif_softc *scn);
+bool hif_sdio_needs_bmi(struct hif_softc *scn);

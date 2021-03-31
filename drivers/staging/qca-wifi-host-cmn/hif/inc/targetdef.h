@@ -33,9 +33,11 @@ extern struct targetdef_s *AR6320_TARGETdef;
 extern struct targetdef_s *AR900B_TARGETdef;
 extern struct targetdef_s *QCA9984_TARGETdef;
 extern struct targetdef_s *QCA9888_TARGETdef;
+extern struct targetdef_s *QCA6290_TARGETdef;
 #ifdef ATH_AHB
 extern struct targetdef_s *IPQ4019_TARGETdef;
 #endif
+extern struct targetdef_s *QCA8074_TARGETdef;
 
 extern struct ce_reg_def *AR6002_CE_TARGETdef;
 extern struct ce_reg_def *AR6003_CE_TARGETdef;
@@ -46,9 +48,11 @@ extern struct ce_reg_def *AR6320_CE_TARGETdef;
 extern struct ce_reg_def *AR900B_CE_TARGETdef;
 extern struct ce_reg_def *QCA9984_CE_TARGETdef;
 extern struct ce_reg_def *QCA9888_CE_TARGETdef;
+extern struct ce_reg_def *QCA6290_CE_TARGETdef;
 #ifdef ATH_AHB
 extern struct ce_reg_def *IPQ4019_CE_TARGETdef;
 #endif
+extern struct ce_reg_def *QCA8074_CE_TARGETdef;
 
 
 #endif

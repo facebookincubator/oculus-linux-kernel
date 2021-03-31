@@ -227,7 +227,7 @@ static int amdgpu_info_ioctl(struct drm_device *dev, void *data, struct drm_file
 			type = AMD_IP_BLOCK_TYPE_UVD;
 			ring_mask = adev->uvd.ring.ready ? 1 : 0;
 			ib_start_alignment = AMDGPU_GPU_PAGE_SIZE;
-			ib_size_alignment = 8;
+			ib_size_alignment = 16;
 			break;
 		case AMDGPU_HW_IP_VCE:
 			type = AMD_IP_BLOCK_TYPE_VCE;
@@ -405,6 +405,9 @@ static int amdgpu_info_ioctl(struct drm_device *dev, void *data, struct drm_file
 			se_num = 0xffffffff;
 		if (sh_num == AMDGPU_INFO_MMR_SH_INDEX_MASK)
 			sh_num = 0xffffffff;
+
+		if (info->read_mmr_reg.count > 128)
+			return -EINVAL;
 
 		regs = kmalloc_array(info->read_mmr_reg.count, sizeof(*regs), GFP_KERNEL);
 		if (!regs)

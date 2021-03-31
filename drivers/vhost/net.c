@@ -30,7 +30,7 @@
 
 #include "vhost.h"
 
-static int experimental_zcopytx = 1;
+static int experimental_zcopytx = 0;
 module_param(experimental_zcopytx, int, 0444);
 MODULE_PARM_DESC(experimental_zcopytx, "Enable Zero Copy TX;"
 		                       " 1 -Enable; 0 - Disable");
@@ -38,6 +38,12 @@ MODULE_PARM_DESC(experimental_zcopytx, "Enable Zero Copy TX;"
 /* Max number of bytes transferred before requeueing the job.
  * Using this limit prevents one virtqueue from starving others. */
 #define VHOST_NET_WEIGHT 0x80000
+
+/* Max number of packets transferred before requeueing the job.
+ * Using this limit prevents one virtqueue from starving others with small
+ * pkts.
+ */
+#define VHOST_NET_PKT_WEIGHT 256
 
 /* MAX number of TX used buffers for outstanding zerocopy */
 #define VHOST_MAX_PEND 128
@@ -61,7 +67,8 @@ MODULE_PARM_DESC(experimental_zcopytx, "Enable Zero Copy TX;"
 enum {
 	VHOST_NET_FEATURES = VHOST_FEATURES |
 			 (1ULL << VHOST_NET_F_VIRTIO_NET_HDR) |
-			 (1ULL << VIRTIO_NET_F_MRG_RXBUF)
+			 (1ULL << VIRTIO_NET_F_MRG_RXBUF) |
+			 (1ULL << VIRTIO_F_IOMMU_PLATFORM)
 };
 
 enum {
@@ -287,6 +294,69 @@ static void vhost_zerocopy_callback(struct ubuf_info *ubuf, bool success)
 	rcu_read_unlock_bh();
 }
 
+static inline unsigned long busy_clock(void)
+{
+	return local_clock() >> 10;
+}
+
+static bool vhost_can_busy_poll(struct vhost_dev *dev,
+				unsigned long endtime)
+{
+	return likely(!need_resched()) &&
+	       likely(!time_after(busy_clock(), endtime)) &&
+	       likely(!signal_pending(current)) &&
+	       !vhost_has_work(dev);
+}
+
+static void vhost_net_disable_vq(struct vhost_net *n,
+				 struct vhost_virtqueue *vq)
+{
+	struct vhost_net_virtqueue *nvq =
+		container_of(vq, struct vhost_net_virtqueue, vq);
+	struct vhost_poll *poll = n->poll + (nvq - n->vqs);
+	if (!vq->private_data)
+		return;
+	vhost_poll_stop(poll);
+}
+
+static int vhost_net_enable_vq(struct vhost_net *n,
+				struct vhost_virtqueue *vq)
+{
+	struct vhost_net_virtqueue *nvq =
+		container_of(vq, struct vhost_net_virtqueue, vq);
+	struct vhost_poll *poll = n->poll + (nvq - n->vqs);
+	struct socket *sock;
+
+	sock = vq->private_data;
+	if (!sock)
+		return 0;
+
+	return vhost_poll_start(poll, sock->file);
+}
+
+static int vhost_net_tx_get_vq_desc(struct vhost_net *net,
+				    struct vhost_virtqueue *vq,
+				    struct iovec iov[], unsigned int iov_size,
+				    unsigned int *out_num, unsigned int *in_num)
+{
+	unsigned long uninitialized_var(endtime);
+	int r = vhost_get_vq_desc(vq, vq->iov, ARRAY_SIZE(vq->iov),
+				  out_num, in_num, NULL, NULL);
+
+	if (r == vq->num && vq->busyloop_timeout) {
+		preempt_disable();
+		endtime = busy_clock() + vq->busyloop_timeout;
+		while (vhost_can_busy_poll(vq->dev, endtime) &&
+		       vhost_vq_avail_empty(vq->dev, vq))
+			cpu_relax_lowlatency();
+		preempt_enable();
+		r = vhost_get_vq_desc(vq, vq->iov, ARRAY_SIZE(vq->iov),
+				      out_num, in_num, NULL, NULL);
+	}
+
+	return r;
+}
+
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
 static void handle_tx(struct vhost_net *net)
@@ -308,10 +378,14 @@ static void handle_tx(struct vhost_net *net)
 	struct socket *sock;
 	struct vhost_net_ubuf_ref *uninitialized_var(ubufs);
 	bool zcopy, zcopy_used;
+	int sent_pkts = 0;
 
 	mutex_lock(&vq->mutex);
 	sock = vq->private_data;
 	if (!sock)
+		goto out;
+
+	if (!vq_iotlb_prefetch(vq))
 		goto out;
 
 	vhost_disable_notify(&net->dev, vq);
@@ -319,7 +393,7 @@ static void handle_tx(struct vhost_net *net)
 	hdr_size = nvq->vhost_hlen;
 	zcopy = nvq->ubufs;
 
-	for (;;) {
+	do {
 		/* Release DMAs done buffers first */
 		if (zcopy)
 			vhost_zerocopy_signal_used(net, vq);
@@ -331,10 +405,9 @@ static void handle_tx(struct vhost_net *net)
 			      % UIO_MAXIOV == nvq->done_idx))
 			break;
 
-		head = vhost_get_vq_desc(vq, vq->iov,
-					 ARRAY_SIZE(vq->iov),
-					 &out, &in,
-					 NULL, NULL);
+		head = vhost_net_tx_get_vq_desc(net, vq, vq->iov,
+						ARRAY_SIZE(vq->iov),
+						&out, &in);
 		/* On error, stop handling until the next kick. */
 		if (unlikely(head < 0))
 			break;
@@ -408,11 +481,7 @@ static void handle_tx(struct vhost_net *net)
 			vhost_zerocopy_signal_used(net, vq);
 		total_len += len;
 		vhost_net_tx_packet(net);
-		if (unlikely(total_len >= VHOST_NET_WEIGHT)) {
-			vhost_poll_queue(&vq->poll);
-			break;
-		}
-	}
+	} while (likely(!vhost_exceeds_weight(vq, ++sent_pkts, total_len)));
 out:
 	mutex_unlock(&vq->mutex);
 }
@@ -432,6 +501,43 @@ static int peek_head_len(struct sock *sk)
 	}
 
 	spin_unlock_irqrestore(&sk->sk_receive_queue.lock, flags);
+	return len;
+}
+
+static int vhost_net_rx_peek_head_len(struct vhost_net *net, struct sock *sk)
+{
+	struct vhost_net_virtqueue *nvq = &net->vqs[VHOST_NET_VQ_TX];
+	struct vhost_virtqueue *vq = &nvq->vq;
+	unsigned long uninitialized_var(endtime);
+	int len = peek_head_len(sk);
+
+	if (!len && vq->busyloop_timeout) {
+		/* Both tx vq and rx socket were polled here */
+		mutex_lock_nested(&vq->mutex, 1);
+		vhost_disable_notify(&net->dev, vq);
+
+		preempt_disable();
+		endtime = busy_clock() + vq->busyloop_timeout;
+
+		while (vhost_can_busy_poll(&net->dev, endtime) &&
+		       skb_queue_empty(&sk->sk_receive_queue) &&
+		       vhost_vq_avail_empty(&net->dev, vq))
+			cpu_relax_lowlatency();
+
+		preempt_enable();
+
+		if (!vhost_vq_avail_empty(&net->dev, vq))
+			vhost_poll_queue(&vq->poll);
+		else if (unlikely(vhost_enable_notify(&net->dev, vq))) {
+			vhost_disable_notify(&net->dev, vq);
+			vhost_poll_queue(&vq->poll);
+		}
+
+		mutex_unlock(&vq->mutex);
+
+		len = peek_head_len(sk);
+	}
+
 	return len;
 }
 
@@ -539,12 +645,18 @@ static void handle_rx(struct vhost_net *net)
 	struct socket *sock;
 	struct iov_iter fixup;
 	__virtio16 num_buffers;
+	int recv_pkts = 0;
 
-	mutex_lock(&vq->mutex);
+	mutex_lock_nested(&vq->mutex, 0);
 	sock = vq->private_data;
 	if (!sock)
 		goto out;
+
+	if (!vq_iotlb_prefetch(vq))
+		goto out;
+
 	vhost_disable_notify(&net->dev, vq);
+	vhost_net_disable_vq(net, vq);
 
 	vhost_hlen = nvq->vhost_hlen;
 	sock_hlen = nvq->sock_hlen;
@@ -553,7 +665,10 @@ static void handle_rx(struct vhost_net *net)
 		vq->log : NULL;
 	mergeable = vhost_has_feature(vq, VIRTIO_NET_F_MRG_RXBUF);
 
-	while ((sock_len = peek_head_len(sock->sk))) {
+	do {
+		sock_len = vhost_net_rx_peek_head_len(net, sock->sk);
+		if (!sock_len)
+			break;
 		sock_len += sock_hlen;
 		vhost_len = sock_len + vhost_hlen;
 		headcount = get_rx_bufs(vq, vq->heads, vhost_len,
@@ -561,7 +676,7 @@ static void handle_rx(struct vhost_net *net)
 					likely(mergeable) ? UIO_MAXIOV : 1);
 		/* On error, stop handling until the next kick. */
 		if (unlikely(headcount < 0))
-			break;
+			goto out;
 		/* On overrun, truncate and discard */
 		if (unlikely(headcount > UIO_MAXIOV)) {
 			iov_iter_init(&msg.msg_iter, READ, vq->iov, 1, 1);
@@ -580,7 +695,7 @@ static void handle_rx(struct vhost_net *net)
 			}
 			/* Nothing new?  Wait for eventfd to tell us
 			 * they refilled. */
-			break;
+			goto out;
 		}
 		/* We don't need to be notified again. */
 		iov_iter_init(&msg.msg_iter, READ, vq->iov, in, vhost_len);
@@ -608,7 +723,7 @@ static void handle_rx(struct vhost_net *net)
 					 &fixup) != sizeof(hdr)) {
 				vq_err(vq, "Unable to write vnet_hdr "
 				       "at addr %p\n", vq->iov->iov_base);
-				break;
+				goto out;
 			}
 		} else {
 			/* Header came from socket; we'll need to patch
@@ -624,18 +739,17 @@ static void handle_rx(struct vhost_net *net)
 				 &fixup) != sizeof num_buffers) {
 			vq_err(vq, "Failed num_buffers write");
 			vhost_discard_vq_desc(vq, headcount);
-			break;
+			goto out;
 		}
 		vhost_add_used_and_signal_n(&net->dev, vq, vq->heads,
 					    headcount);
 		if (unlikely(vq_log))
 			vhost_log_write(vq, vq_log, log, vhost_len);
 		total_len += vhost_len;
-		if (unlikely(total_len >= VHOST_NET_WEIGHT)) {
-			vhost_poll_queue(&vq->poll);
-			break;
-		}
-	}
+	} while (likely(!vhost_exceeds_weight(vq, ++recv_pkts, total_len)));
+
+	vhost_net_enable_vq(net, vq);
+
 out:
 	mutex_unlock(&vq->mutex);
 }
@@ -704,7 +818,8 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 		n->vqs[i].vhost_hlen = 0;
 		n->vqs[i].sock_hlen = 0;
 	}
-	vhost_dev_init(dev, vqs, VHOST_NET_VQ_MAX);
+	vhost_dev_init(dev, vqs, VHOST_NET_VQ_MAX,
+		       VHOST_NET_PKT_WEIGHT, VHOST_NET_WEIGHT);
 
 	vhost_poll_init(n->poll + VHOST_NET_VQ_TX, handle_tx_net, POLLOUT, dev);
 	vhost_poll_init(n->poll + VHOST_NET_VQ_RX, handle_rx_net, POLLIN, dev);
@@ -712,32 +827,6 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 	f->private_data = n;
 
 	return 0;
-}
-
-static void vhost_net_disable_vq(struct vhost_net *n,
-				 struct vhost_virtqueue *vq)
-{
-	struct vhost_net_virtqueue *nvq =
-		container_of(vq, struct vhost_net_virtqueue, vq);
-	struct vhost_poll *poll = n->poll + (nvq - n->vqs);
-	if (!vq->private_data)
-		return;
-	vhost_poll_stop(poll);
-}
-
-static int vhost_net_enable_vq(struct vhost_net *n,
-				struct vhost_virtqueue *vq)
-{
-	struct vhost_net_virtqueue *nvq =
-		container_of(vq, struct vhost_net_virtqueue, vq);
-	struct vhost_poll *poll = n->poll + (nvq - n->vqs);
-	struct socket *sock;
-
-	sock = vq->private_data;
-	if (!sock)
-		return 0;
-
-	return vhost_poll_start(poll, sock->file);
 }
 
 static struct socket *vhost_net_stop_vq(struct vhost_net *n,
@@ -917,7 +1006,7 @@ static long vhost_net_set_backend(struct vhost_net *n, unsigned index, int fd)
 
 		vhost_net_disable_vq(n, vq);
 		vq->private_data = sock;
-		r = vhost_init_used(vq);
+		r = vhost_vq_init_access(vq);
 		if (r)
 			goto err_used;
 		r = vhost_net_enable_vq(n, vq);
@@ -955,7 +1044,8 @@ err_used:
 	if (ubufs)
 		vhost_net_ubuf_put_wait_and_free(ubufs);
 err_ubufs:
-	sockfd_put(sock);
+	if (sock)
+		sockfd_put(sock);
 err_vq:
 	mutex_unlock(&vq->mutex);
 err:
@@ -968,20 +1058,21 @@ static long vhost_net_reset_owner(struct vhost_net *n)
 	struct socket *tx_sock = NULL;
 	struct socket *rx_sock = NULL;
 	long err;
-	struct vhost_memory *memory;
+	struct vhost_umem *umem;
 
 	mutex_lock(&n->dev.mutex);
 	err = vhost_dev_check_owner(&n->dev);
 	if (err)
 		goto done;
-	memory = vhost_dev_reset_owner_prepare();
-	if (!memory) {
+	umem = vhost_dev_reset_owner_prepare();
+	if (!umem) {
 		err = -ENOMEM;
 		goto done;
 	}
 	vhost_net_stop(n, &tx_sock, &rx_sock);
 	vhost_net_flush(n);
-	vhost_dev_reset_owner(&n->dev, memory);
+	vhost_dev_stop(&n->dev);
+	vhost_dev_reset_owner(&n->dev, umem);
 	vhost_net_vq_reset(n);
 done:
 	mutex_unlock(&n->dev.mutex);
@@ -1012,10 +1103,14 @@ static int vhost_net_set_features(struct vhost_net *n, u64 features)
 	}
 	mutex_lock(&n->dev.mutex);
 	if ((features & (1 << VHOST_F_LOG_ALL)) &&
-	    !vhost_log_access_ok(&n->dev)) {
-		mutex_unlock(&n->dev.mutex);
-		return -EFAULT;
+	    !vhost_log_access_ok(&n->dev))
+		goto out_unlock;
+
+	if ((features & (1ULL << VIRTIO_F_IOMMU_PLATFORM))) {
+		if (vhost_init_device_iotlb(&n->dev, true))
+			goto out_unlock;
 	}
+
 	for (i = 0; i < VHOST_NET_VQ_MAX; ++i) {
 		mutex_lock(&n->vqs[i].vq.mutex);
 		n->vqs[i].vq.acked_features = features;
@@ -1025,6 +1120,10 @@ static int vhost_net_set_features(struct vhost_net *n, u64 features)
 	}
 	mutex_unlock(&n->dev.mutex);
 	return 0;
+
+out_unlock:
+	mutex_unlock(&n->dev.mutex);
+	return -EFAULT;
 }
 
 static long vhost_net_set_owner(struct vhost_net *n)
@@ -1098,9 +1197,40 @@ static long vhost_net_compat_ioctl(struct file *f, unsigned int ioctl,
 }
 #endif
 
+static ssize_t vhost_net_chr_read_iter(struct kiocb *iocb, struct iov_iter *to)
+{
+	struct file *file = iocb->ki_filp;
+	struct vhost_net *n = file->private_data;
+	struct vhost_dev *dev = &n->dev;
+	int noblock = file->f_flags & O_NONBLOCK;
+
+	return vhost_chr_read_iter(dev, to, noblock);
+}
+
+static ssize_t vhost_net_chr_write_iter(struct kiocb *iocb,
+					struct iov_iter *from)
+{
+	struct file *file = iocb->ki_filp;
+	struct vhost_net *n = file->private_data;
+	struct vhost_dev *dev = &n->dev;
+
+	return vhost_chr_write_iter(dev, from);
+}
+
+static unsigned int vhost_net_chr_poll(struct file *file, poll_table *wait)
+{
+	struct vhost_net *n = file->private_data;
+	struct vhost_dev *dev = &n->dev;
+
+	return vhost_chr_poll(file, dev, wait);
+}
+
 static const struct file_operations vhost_net_fops = {
 	.owner          = THIS_MODULE,
 	.release        = vhost_net_release,
+	.read_iter      = vhost_net_chr_read_iter,
+	.write_iter     = vhost_net_chr_write_iter,
+	.poll           = vhost_net_chr_poll,
 	.unlocked_ioctl = vhost_net_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl   = vhost_net_compat_ioctl,

@@ -1559,7 +1559,8 @@ static int bnx2x_get_module_info(struct net_device *dev,
 	}
 
 	if (!sff8472_comp ||
-	    (diag_type & SFP_EEPROM_DIAG_ADDR_CHANGE_REQ)) {
+	    (diag_type & SFP_EEPROM_DIAG_ADDR_CHANGE_REQ) ||
+	    !(diag_type & SFP_EEPROM_DDM_IMPLEMENTED)) {
 		modinfo->type = ETH_MODULE_SFF_8079;
 		modinfo->eeprom_len = ETH_MODULE_SFF_8079_LEN;
 	} else {
@@ -3360,14 +3361,18 @@ static int bnx2x_set_rss_flags(struct bnx2x *bp, struct ethtool_rxnfc *info)
 			DP(BNX2X_MSG_ETHTOOL,
 			   "rss re-configured, UDP 4-tupple %s\n",
 			   udp_rss_requested ? "enabled" : "disabled");
-			return bnx2x_rss(bp, &bp->rss_conf_obj, false, true);
+			if (bp->state == BNX2X_STATE_OPEN)
+				return bnx2x_rss(bp, &bp->rss_conf_obj, false,
+						 true);
 		} else if ((info->flow_type == UDP_V6_FLOW) &&
 			   (bp->rss_conf_obj.udp_rss_v6 != udp_rss_requested)) {
 			bp->rss_conf_obj.udp_rss_v6 = udp_rss_requested;
 			DP(BNX2X_MSG_ETHTOOL,
 			   "rss re-configured, UDP 4-tupple %s\n",
 			   udp_rss_requested ? "enabled" : "disabled");
-			return bnx2x_rss(bp, &bp->rss_conf_obj, false, true);
+			if (bp->state == BNX2X_STATE_OPEN)
+				return bnx2x_rss(bp, &bp->rss_conf_obj, false,
+						 true);
 		}
 		return 0;
 
@@ -3481,7 +3486,10 @@ static int bnx2x_set_rxfh(struct net_device *dev, const u32 *indir,
 		bp->rss_conf_obj.ind_table[i] = indir[i] + bp->fp->cl_id;
 	}
 
-	return bnx2x_config_rss_eth(bp, false);
+	if (bp->state == BNX2X_STATE_OPEN)
+		return bnx2x_config_rss_eth(bp, false);
+
+	return 0;
 }
 
 /**

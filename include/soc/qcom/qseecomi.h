@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +19,7 @@
 #define QSEECOM_KEY_ID_SIZE   32
 
 #define QSEOS_RESULT_FAIL_SEND_CMD_NO_THREAD  -19   /*0xFFFFFFED*/
+#define QSEOS_RESULT_FAIL_APP_ALREADY_LOADED  -38   /*0xFFFFFFDA*/
 #define QSEOS_RESULT_FAIL_UNSUPPORTED_CE_PIPE -63
 #define QSEOS_RESULT_FAIL_KS_OP               -64
 #define QSEOS_RESULT_FAIL_KEY_ID_EXISTS       -65
@@ -104,82 +105,82 @@ enum qseecom_qsee_reentrancy_phase {
 	QSEE_REENTRANCY_PHASE_MAX = 0xFF
 };
 
-__packed  struct qsee_apps_region_info_ireq {
+struct qsee_apps_region_info_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t addr;
 	uint32_t size;
-};
+} __attribute__((__packed__));
 
-__packed  struct qsee_apps_region_info_64bit_ireq {
+struct qsee_apps_region_info_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint64_t addr;
 	uint32_t size;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_check_app_ireq {
+struct qseecom_check_app_ireq {
 	uint32_t qsee_cmd_id;
 	char     app_name[MAX_APP_NAME_SIZE];
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_load_app_ireq {
+struct qseecom_load_app_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t mdt_len;		/* Length of the mdt file */
 	uint32_t img_len;		/* Length of .bxx and .mdt files */
 	uint32_t phy_addr;		/* phy addr of the start of image */
 	char     app_name[MAX_APP_NAME_SIZE];	/* application name*/
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_load_app_64bit_ireq {
+struct qseecom_load_app_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t mdt_len;
 	uint32_t img_len;
 	uint64_t phy_addr;
 	char     app_name[MAX_APP_NAME_SIZE];
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_unload_app_ireq {
+struct qseecom_unload_app_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t  app_id;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_load_lib_image_ireq {
+struct qseecom_load_lib_image_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t mdt_len;
 	uint32_t img_len;
 	uint32_t phy_addr;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_load_lib_image_64bit_ireq {
+struct qseecom_load_lib_image_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t mdt_len;
 	uint32_t img_len;
 	uint64_t phy_addr;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_unload_lib_image_ireq {
+struct qseecom_unload_lib_image_ireq {
 	uint32_t qsee_cmd_id;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_register_listener_ireq {
+struct qseecom_register_listener_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t listener_id;
 	uint32_t sb_ptr;
 	uint32_t sb_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_register_listener_64bit_ireq {
+struct qseecom_register_listener_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t listener_id;
 	uint64_t sb_ptr;
 	uint32_t sb_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_unregister_listener_ireq {
+struct qseecom_unregister_listener_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t  listener_id;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_client_send_data_ireq {
+struct qseecom_client_send_data_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t app_id;
 	uint32_t req_ptr;
@@ -188,9 +189,9 @@ __packed struct qseecom_client_send_data_ireq {
 	uint32_t rsp_len;
 	uint32_t sglistinfo_ptr;
 	uint32_t sglistinfo_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_client_send_data_64bit_ireq {
+struct qseecom_client_send_data_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t app_id;
 	uint64_t req_ptr;
@@ -199,36 +200,36 @@ __packed struct qseecom_client_send_data_64bit_ireq {
 	uint32_t rsp_len;
 	uint64_t sglistinfo_ptr;
 	uint32_t sglistinfo_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_reg_log_buf_ireq {
+struct qseecom_reg_log_buf_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t phy_addr;
 	uint32_t len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_reg_log_buf_64bit_ireq {
+struct qseecom_reg_log_buf_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint64_t phy_addr;
 	uint32_t len;
-};
+} __attribute__((__packed__));
 
 /* send_data resp */
-__packed struct qseecom_client_listener_data_irsp {
+struct qseecom_client_listener_data_irsp {
 	uint32_t qsee_cmd_id;
 	uint32_t listener_id;
 	uint32_t status;
 	uint32_t sglistinfo_ptr;
 	uint32_t sglistinfo_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_client_listener_data_64bit_irsp {
+struct qseecom_client_listener_data_64bit_irsp {
 	uint32_t qsee_cmd_id;
 	uint32_t listener_id;
 	uint32_t status;
 	uint64_t sglistinfo_ptr;
 	uint32_t sglistinfo_len;
-};
+} __attribute__((__packed__));
 
 /*
  * struct qseecom_command_scm_resp - qseecom response buffer
@@ -237,40 +238,40 @@ __packed struct qseecom_client_listener_data_64bit_irsp {
  *                buffer
  * @sb_in_rsp_len: length of command response
  */
-__packed struct qseecom_command_scm_resp {
+struct qseecom_command_scm_resp {
 	uint32_t result;
 	enum qseecom_command_scm_resp_type resp_type;
 	unsigned int data;
-};
+} __attribute__((__packed__));
 
 struct qseecom_rpmb_provision_key {
 	uint32_t key_type;
 };
 
-__packed struct qseecom_client_send_service_ireq {
+struct qseecom_client_send_service_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t key_type; /* in */
 	unsigned int req_len; /* in */
 	uint32_t rsp_ptr; /* in/out */
 	unsigned int rsp_len; /* in/out */
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_client_send_service_64bit_ireq {
+struct qseecom_client_send_service_64bit_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t key_type;
 	unsigned int req_len;
 	uint64_t rsp_ptr;
 	unsigned int rsp_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_generate_ireq {
+struct qseecom_key_generate_ireq {
 	uint32_t qsee_command_id;
 	uint32_t flags;
 	uint8_t key_id[QSEECOM_KEY_ID_SIZE];
 	uint8_t hash32[QSEECOM_HASH_SIZE];
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_select_ireq {
+struct qseecom_key_select_ireq {
 	uint32_t qsee_command_id;
 	uint32_t ce;
 	uint32_t pipe;
@@ -278,33 +279,33 @@ __packed struct qseecom_key_select_ireq {
 	uint32_t flags;
 	uint8_t key_id[QSEECOM_KEY_ID_SIZE];
 	uint8_t hash32[QSEECOM_HASH_SIZE];
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_delete_ireq {
+struct qseecom_key_delete_ireq {
 	uint32_t qsee_command_id;
 	uint32_t flags;
 	uint8_t key_id[QSEECOM_KEY_ID_SIZE];
 	uint8_t hash32[QSEECOM_HASH_SIZE];
 
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_userinfo_update_ireq {
+struct qseecom_key_userinfo_update_ireq {
 	uint32_t qsee_command_id;
 	uint32_t flags;
 	uint8_t key_id[QSEECOM_KEY_ID_SIZE];
 	uint8_t current_hash32[QSEECOM_HASH_SIZE];
 	uint8_t new_hash32[QSEECOM_HASH_SIZE];
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_max_count_query_ireq {
+struct qseecom_key_max_count_query_ireq {
 	uint32_t flags;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_key_max_count_query_irsp {
+struct qseecom_key_max_count_query_irsp {
 	uint32_t max_key_count;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_qteec_ireq {
+struct qseecom_qteec_ireq {
 	uint32_t    qsee_cmd_id;
 	uint32_t    app_id;
 	uint32_t    req_ptr;
@@ -313,9 +314,9 @@ __packed struct qseecom_qteec_ireq {
 	uint32_t    resp_len;
 	uint32_t    sglistinfo_ptr;
 	uint32_t    sglistinfo_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_qteec_64bit_ireq {
+struct qseecom_qteec_64bit_ireq {
 	uint32_t    qsee_cmd_id;
 	uint32_t    app_id;
 	uint64_t    req_ptr;
@@ -324,21 +325,20 @@ __packed struct qseecom_qteec_64bit_ireq {
 	uint32_t    resp_len;
 	uint64_t    sglistinfo_ptr;
 	uint32_t    sglistinfo_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_client_send_fsm_key_req {
+struct qseecom_client_send_fsm_key_req {
 	uint32_t qsee_cmd_id;
 	uint32_t req_ptr;
 	uint32_t req_len;
 	uint32_t rsp_ptr;
 	uint32_t rsp_len;
-};
+} __attribute__((__packed__));
 
-__packed struct qseecom_continue_blocked_request_ireq {
+struct qseecom_continue_blocked_request_ireq {
 	uint32_t qsee_cmd_id;
 	uint32_t app_or_session_id; /*legacy: app_id; smcinvoke: session_id*/
-};
-
+} __attribute__((__packed__));
 
 /**********      ARMV8 SMC INTERFACE TZ MACRO     *******************/
 
@@ -352,7 +352,8 @@ __packed struct qseecom_continue_blocked_request_ireq {
 
 /*----------------------------------------------------------------------------
  * Owning Entity IDs (defined by ARM SMC doc)
- * -------------------------------------------------------------------------*/
+ * ---------------------------------------------------------------------------
+ */
 #define TZ_OWNER_ARM                     0     /** ARM Architecture call ID */
 #define TZ_OWNER_CPU                     1     /** CPU service call ID */
 #define TZ_OWNER_SIP                     2     /** SIP service call ID */
@@ -380,18 +381,18 @@ __packed struct qseecom_continue_blocked_request_ireq {
 #define TZ_OWNER_OS_RESERVED_13          62
 #define TZ_OWNER_OS_RESERVED_14          63
 
-#define TZ_SVC_INFO                      6     /* Misc. information services */
+#define TZ_SVC_INFO                      6    /* Misc. information services */
 
 /** Trusted Application call groups */
-#define TZ_SVC_APP_ID_PLACEHOLDER        0     /* SVC bits will contain App ID */
+#define TZ_SVC_APP_ID_PLACEHOLDER        0    /* SVC bits will contain App ID */
 
 /** General helper macro to create a bitmask from bits low to high. */
 #define TZ_MASK_BITS(h, l)     ((0xffffffff >> (32 - ((h - l) + 1))) << l)
 
-/**
-   Macro used to define an SMC ID based on the owner ID,
-   service ID, and function number.
-*/
+/*
+ * Macro used to define an SMC ID based on the owner ID,
+ * service ID, and function number.
+ */
 #define TZ_SYSCALL_CREATE_SMC_ID(o, s, f) \
 	((uint32_t)((((o & 0x3f) << 24) | (s & 0xff) << 8) | (f & 0xff)))
 
@@ -412,8 +413,8 @@ __packed struct qseecom_continue_blocked_request_ireq {
 	((p9&TZ_SYSCALL_PARAM_TYPE_MASK)<<20)+ \
 	((p10&TZ_SYSCALL_PARAM_TYPE_MASK)<<22))
 
-/**
-   Macros used to create the Parameter ID associated with the syscall
+/*
+ * Macros used to create the Parameter ID associated with the syscall
  */
 #define TZ_SYSCALL_CREATE_PARAM_ID_0 0
 #define TZ_SYSCALL_CREATE_PARAM_ID_1(p1) \
@@ -437,8 +438,8 @@ __packed struct qseecom_continue_blocked_request_ireq {
 #define TZ_SYSCALL_CREATE_PARAM_ID_10(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) \
 	TZ_SYSCALL_CREATE_PARAM_ID(10, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
 
-/**
-   Macro used to obtain the Parameter ID associated with the syscall
+/*
+ * Macro used to obtain the Parameter ID associated with the syscall
  */
 #define TZ_SYSCALL_GET_PARAM_ID(CMD_ID)        CMD_ID ## _PARAM_ID
 

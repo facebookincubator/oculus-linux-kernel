@@ -45,34 +45,32 @@ static char *pre_emph_names[] = {
 
 /***** radeon AUX functions *****/
 
-/* Atom needs data in little endian format
- * so swap as appropriate when copying data to
- * or from atom. Note that atom operates on
- * dw units.
+/* Atom needs data in little endian format so swap as appropriate when copying
+ * data to or from atom. Note that atom operates on dw units.
+ *
+ * Use to_le=true when sending data to atom and provide at least
+ * ALIGN(num_bytes,4) bytes in the dst buffer.
+ *
+ * Use to_le=false when receiving data from atom and provide ALIGN(num_bytes,4)
+ * byes in the src buffer.
  */
 void radeon_atom_copy_swap(u8 *dst, u8 *src, u8 num_bytes, bool to_le)
 {
 #ifdef __BIG_ENDIAN
-	u8 src_tmp[20], dst_tmp[20]; /* used for byteswapping */
-	u32 *dst32, *src32;
+	u32 src_tmp[5], dst_tmp[5];
 	int i;
+	u8 align_num_bytes = ALIGN(num_bytes, 4);
 
-	memcpy(src_tmp, src, num_bytes);
-	src32 = (u32 *)src_tmp;
-	dst32 = (u32 *)dst_tmp;
 	if (to_le) {
-		for (i = 0; i < ((num_bytes + 3) / 4); i++)
-			dst32[i] = cpu_to_le32(src32[i]);
-		memcpy(dst, dst_tmp, num_bytes);
+		memcpy(src_tmp, src, num_bytes);
+		for (i = 0; i < align_num_bytes / 4; i++)
+			dst_tmp[i] = cpu_to_le32(src_tmp[i]);
+		memcpy(dst, dst_tmp, align_num_bytes);
 	} else {
-		u8 dws = num_bytes & ~3;
-		for (i = 0; i < ((num_bytes + 3) / 4); i++)
-			dst32[i] = le32_to_cpu(src32[i]);
-		memcpy(dst, dst_tmp, dws);
-		if (num_bytes % 4) {
-			for (i = 0; i < (num_bytes % 4); i++)
-				dst[dws+i] = dst_tmp[dws+i];
-		}
+		memcpy(src_tmp, src, align_num_bytes);
+		for (i = 0; i < align_num_bytes / 4; i++)
+			dst_tmp[i] = le32_to_cpu(src_tmp[i]);
+		memcpy(dst, dst_tmp, num_bytes);
 	}
 #else
 	memcpy(dst, src, num_bytes);
@@ -315,13 +313,25 @@ int radeon_dp_get_dp_link_config(struct drm_connector *connector,
 	unsigned max_lane_num = drm_dp_max_lane_count(dpcd);
 	unsigned lane_num, i, max_pix_clock;
 
-	for (lane_num = 1; lane_num <= max_lane_num; lane_num <<= 1) {
-		for (i = 0; i < ARRAY_SIZE(link_rates) && link_rates[i] <= max_link_rate; i++) {
-			max_pix_clock = (lane_num * link_rates[i] * 8) / bpp;
+	if (radeon_connector_encoder_get_dp_bridge_encoder_id(connector) ==
+	    ENCODER_OBJECT_ID_NUTMEG) {
+		for (lane_num = 1; lane_num <= max_lane_num; lane_num <<= 1) {
+			max_pix_clock = (lane_num * 270000 * 8) / bpp;
 			if (max_pix_clock >= pix_clock) {
 				*dp_lanes = lane_num;
-				*dp_rate = link_rates[i];
+				*dp_rate = 270000;
 				return 0;
+			}
+		}
+	} else {
+		for (i = 0; i < ARRAY_SIZE(link_rates) && link_rates[i] <= max_link_rate; i++) {
+			for (lane_num = 1; lane_num <= max_lane_num; lane_num <<= 1) {
+				max_pix_clock = (lane_num * link_rates[i] * 8) / bpp;
+				if (max_pix_clock >= pix_clock) {
+					*dp_lanes = lane_num;
+					*dp_rate = link_rates[i];
+					return 0;
+				}
 			}
 		}
 	}

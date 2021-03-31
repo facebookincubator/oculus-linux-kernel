@@ -48,7 +48,7 @@ SoCs:
   compatible = "qcom,apqtitanium"
 
 - APQ8998
-  compatible = "qcom,apq8998"
+  compatible = "qcom,apq8098"
 
 - MDM9630
   compatible = "qcom,mdm9630"
@@ -94,6 +94,9 @@ SoCs:
 
 - SDM660
   compatible = "qcom,sdm660"
+
+- SDM455
+  compatible = "qcom,sdm455"
 
 - SDA658
   compatible = "qcom,sda658"
@@ -172,6 +175,9 @@ Generic board variants:
 - RUMI device:
   compatible = "qcom,rumi"
 
+- SVR device:
+  compatible = "qcom,svr"
+
 
 
 Boards (SoC type + board variant):
@@ -192,6 +198,7 @@ compatible = "qcom,apq8094-fluid"
 compatible = "qcom,apq8094-liquid"
 compatible = "qcom,apq8094-mtp"
 compatible = "qcom,apq8094-dragonboard"
+compatible = "qcom,apq8096-adp"
 compatible = "qcom,apq8096-cdp"
 compatible = "qcom,apq8096-mtp"
 compatible = "qcom,apq8096-dragonboard"
@@ -201,9 +208,10 @@ compatible = "qcom,apq8037-cdp"
 compatible = "qcom,apq8037-mtp"
 compatible = "qcom,apqtitanium-cdp"
 compatible = "qcom,apqtitanium-mtp"
-compatible = "qcom,apq8998-cdp"
-compatible = "qcom,apq8998-mtp"
-compatible = "qcom,apq8998-qrd"
+compatible = "qcom,apq8098-cdp"
+compatible = "qcom,apq8098-mtp"
+compatible = "qcom,apq8098-qrd"
+compatible = "qcom,apq8098-svr"
 compatible = "qcom,mdm9630-cdp"
 compatible = "qcom,mdm9630-mtp"
 compatible = "qcom,mdm9630-sim"
@@ -287,6 +295,9 @@ compatible = "qcom,sdm660-cdp"
 compatible = "qcom,sdm660-mtp"
 compatible = "qcom,sdm660-qrd"
 compatible = "qcom,sda660-qrd"
+compatible = "qcom,sdm455-mtp"
+compatible = "qcom,sdm455-qrd"
+compatible = "qcom,sdm455-cdp"
 compatible = "qcom,sda658-mtp"
 compatible = "qcom,sda658-cdp"
 compatible = "qcom,sda660-mtp"

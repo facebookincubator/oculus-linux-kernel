@@ -63,6 +63,7 @@ struct dm_verity {
 	sector_t hash_level_block[DM_VERITY_MAX_LEVELS];
 
 	struct dm_verity_fec *fec;	/* forward error correction */
+	unsigned long *validated_blocks; /* bitset blocks validated */
 };
 
 struct dm_verity_io {
@@ -136,4 +137,5 @@ extern void verity_io_hints(struct dm_target *ti, struct queue_limits *limits);
 extern void verity_dtr(struct dm_target *ti);
 extern int verity_ctr(struct dm_target *ti, unsigned argc, char **argv);
 extern int verity_map(struct dm_target *ti, struct bio *bio);
+extern void dm_verity_avb_error_handler(void);
 #endif /* DM_VERITY_H */

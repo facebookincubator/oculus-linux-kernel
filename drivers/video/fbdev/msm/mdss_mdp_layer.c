@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -741,14 +741,15 @@ static int __cursor_layer_check(struct msm_fb_data_type *mfd,
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	if ((layer->z_order != HW_CURSOR_STAGE(mdata))
+			|| layer->flags & MDP_LAYER_FLIP_LR
 			|| layer->src_rect.w > mdata->max_cursor_size
 			|| layer->src_rect.h > mdata->max_cursor_size
 			|| layer->src_rect.w != layer->dst_rect.w
 			|| layer->src_rect.h != layer->dst_rect.h
 			|| !mdata->ncursor_pipes) {
-		pr_err("Incorrect cursor configs for pipe:%d, cursor_pipes:%d, z_order:%d\n",
+		pr_err("Incorrect cursor configs for pipe:0x%x, ncursor_pipes:%d, z_order:%d, flags:0x%x\n",
 				layer->pipe_ndx, mdata->ncursor_pipes,
-				layer->z_order);
+				layer->z_order, layer->flags);
 		pr_err("src:{%d,%d,%d,%d}, dst:{%d,%d,%d,%d}\n",
 				layer->src_rect.x, layer->src_rect.y,
 				layer->src_rect.w, layer->src_rect.h,
@@ -974,26 +975,30 @@ static int __validate_layer_reconfig(struct mdp_input_layer *layer,
 	struct mdss_mdp_pipe *pipe)
 {
 	int status = 0;
-	struct mdss_mdp_format_params *src_fmt;
+	struct mdss_mdp_format_params *layer_src_fmt;
+	struct mdss_data_type *mdata = mfd_to_mdata(pipe->mfd);
+	bool is_csc_db = (mdata->mdp_rev < MDSS_MDP_HW_REV_300) ? false : true;
+
+	layer_src_fmt = mdss_mdp_get_format_params(layer->buffer.format);
+	if (!layer_src_fmt) {
+		pr_err("Invalid layer format %d\n", layer->buffer.format);
+		status = -EINVAL;
+		goto err_exit;
+	}
 
 	/*
-	 * csc registers are not double buffered. It is not permitted
-	 * to change them on staged pipe with YUV layer.
+	 * HW earlier to sdm 3.x.x does not support double buffer CSC.
+	 * Invalidate any reconfig of CSC block on staged pipe.
 	 */
-	if (pipe->csc_coeff_set != layer->color_space) {
-		src_fmt = mdss_mdp_get_format_params(layer->buffer.format);
-		if (!src_fmt) {
-			pr_err("Invalid layer format %d\n",
-						layer->buffer.format);
-			status = -EINVAL;
-		} else {
-			if (pipe->src_fmt->is_yuv && src_fmt &&
-							src_fmt->is_yuv) {
-				status = -EPERM;
-				pr_err("csc change is not permitted on used pipe\n");
-			}
-		}
+	if (!is_csc_db &&
+		(pipe->src_fmt->is_yuv && layer_src_fmt->is_yuv &&
+		pipe->csc_coeff_set != layer->color_space)) {
+		pr_err("CSC reconfig not allowed on staged pipe\n");
+		status = -EINVAL;
+		goto err_exit;
 	}
+
+err_exit:
 	return status;
 }
 
@@ -1857,9 +1862,15 @@ static int __validate_secure_session(struct mdss_overlay_private *mdp5_data)
 		pr_err("secure-camera cnt:%d secure video:%d secure display:%d\n",
 				secure_cam_pipes, secure_vid_pipes, sd_pipes);
 		return -EINVAL;
-	} else {
-		return 0;
+	} else if (mdp5_data->ctl->is_video_mode &&
+		((sd_pipes && !mdp5_data->sd_enabled) ||
+		(!sd_pipes && mdp5_data->sd_enabled)) &&
+		!mdp5_data->cache_null_commit) {
+		pr_err("NULL commit missing before display secure session entry/exit\n");
+		return -EINVAL;
 	}
+
+	return 0;
 }
 
 /*
@@ -2436,14 +2447,14 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 	int layer_count = commit->input_layer_cnt;
 	u32 ds_mode = 0;
 
-	struct mdss_mdp_pipe *pipe, *tmp, *left_blend_pipe;
+	struct mdss_mdp_pipe *pipe = NULL, *tmp, *left_blend_pipe;
 	struct mdss_mdp_pipe *right_plist[MAX_PIPES_PER_LM] = {0};
 	struct mdss_mdp_pipe *left_plist[MAX_PIPES_PER_LM] = {0};
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	struct mdss_data_type *mdata = mfd_to_mdata(mfd);
 
 	struct mdss_mdp_mixer *mixer = NULL;
-	struct mdp_input_layer *layer, *layer_list;
+	struct mdp_input_layer *layer = NULL, *layer_list;
 	struct mdss_mdp_validate_info_t *validate_info_list = NULL;
 	bool is_single_layer = false, force_validate;
 	enum layer_pipe_q pipe_q_type;
@@ -3195,11 +3206,14 @@ int mdss_mdp_layer_atomic_validate_wfd(struct msm_fb_data_type *mfd,
 		goto validate_failed;
 	}
 
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 	rc = mdss_mdp_wfd_setup(wfd, output_layer);
 	if (rc) {
 		pr_err("fail to prepare wfd = %d\n", rc);
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 		goto validate_failed;
 	}
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 
 	rc = mdss_mdp_layer_atomic_validate(mfd, file, commit);
 	if (rc) {

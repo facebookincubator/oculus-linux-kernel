@@ -27,9 +27,21 @@ obj-$(CONFIG_VIDEO_ADV7343) += adv7343.o
 obj-$(CONFIG_VIDEO_ADV7393) += adv7393.o
 obj-$(CONFIG_VIDEO_ADV7604) += adv7604.o
 obj-$(CONFIG_VIDEO_ADV7842) += adv7842.o
+ifeq ($(CONFIG_MSM_AIS),y)
+ccflags-y += -Idrivers/media/platform/msm/ais
+ccflags-y += -Idrivers/media/platform/msm/ais/common
+ccflags-y += -Idrivers/media/platform/msm/ais/sensor/io
+ccflags-y += -Idrivers/media/platform/msm/ais/sensor/cci
+else
+ccflags-y += -Idrivers/media/platform/msm/camera_v2
+ccflags-y += -Idrivers/media/platform/msm/camera_v2/common
+ccflags-y += -Idrivers/media/platform/msm/camera_v2/sensor/io
+ccflags-y += -Idrivers/media/platform/msm/camera_v2/sensor/cci
+endif
 obj-$(CONFIG_VIDEO_ADV7481) += adv7481.o
+obj-$(CONFIG_VIDEO_TVTUNER) += tvtuner.o
 obj-$(CONFIG_VIDEO_AD9389B) += ad9389b.o
-obj-$(CONFIG_VIDEO_ADV7511) += adv7511.o
+obj-$(CONFIG_VIDEO_ADV7511) += adv7511-v4l2.o
 obj-$(CONFIG_VIDEO_VPX3220) += vpx3220.o
 obj-$(CONFIG_VIDEO_VS6624)  += vs6624.o
 obj-$(CONFIG_VIDEO_BT819) += bt819.o

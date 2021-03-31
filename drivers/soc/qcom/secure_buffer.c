@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 Google, Inc
- * Copyright (c) 2011-2016,2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -144,7 +144,8 @@ static int secure_buffer_change_table(struct sg_table *table, int lock)
 		 * secure environment to ensure the data is actually present
 		 * in RAM
 		 */
-		dmac_flush_range(chunk_list, chunk_list + chunk_list_len);
+		dmac_flush_range(chunk_list,
+			(void *)chunk_list + chunk_list_len);
 
 		ret = secure_buffer_change_chunk(virt_to_phys(chunk_list),
 				nchunks, V2_CHUNK_SIZE, lock);
@@ -359,6 +360,7 @@ int hyp_assign_phys(phys_addr_t addr, u64 size, u32 *source_vm_list,
 	sg_free_table(&table);
 	return ret;
 }
+EXPORT_SYMBOL(hyp_assign_phys);
 
 const char *msm_secure_vmid_to_string(int secure_vmid)
 {
@@ -391,6 +393,8 @@ const char *msm_secure_vmid_to_string(int secure_vmid)
 		return "VMID_WLAN_CE";
 	case VMID_CP_CAMERA_PREVIEW:
 		return "VMID_CP_CAMERA_PREVIEW";
+	case VMID_CP_SPSS_SP_SHARED:
+		return "VMID_CP_SPSS_SP_SHARED";
 	case VMID_INVAL:
 		return "VMID_INVAL";
 	default:
@@ -403,11 +407,12 @@ const char *msm_secure_vmid_to_string(int secure_vmid)
 
 bool msm_secure_v2_is_supported(void)
 {
-	int version = scm_get_feat_version(FEATURE_ID_CP);
+	u64 version;
+	int ret = scm_get_feat_version(FEATURE_ID_CP, &version);
 
 	/*
 	 * if the version is < 1.1.0 then dynamic buffer allocation is
 	 * not supported
 	 */
-	return version >= MAKE_CP_VERSION(1, 1, 0);
+	return (ret == 0) && (version >= MAKE_CP_VERSION(1, 1, 0));
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,7 +31,7 @@
 #define GSI_MBIM_CTRL_NAME "android_mbim"
 #define GSI_DPL_CTRL_NAME "dpl_ctrl"
 #define GSI_CTRL_NAME_LEN (sizeof(GSI_MBIM_CTRL_NAME)+2)
-#define GSI_MAX_CTRL_PKT_SIZE 4096
+#define GSI_MAX_CTRL_PKT_SIZE 8192
 #define GSI_CTRL_DTR (1 << 0)
 
 
@@ -192,7 +192,6 @@ struct gsi_data_port {
 	struct usb_ep *out_ep;
 	struct usb_gsi_request in_request;
 	struct usb_gsi_request out_request;
-	struct usb_gadget *gadget;
 	int (*ipa_usb_notify_cb)(enum ipa_usb_notify_event, void *driver_data);
 	struct ipa_usb_teth_params ipa_init_params;
 	int in_channel_handle;
@@ -228,6 +227,7 @@ struct gsi_data_port {
 
 struct f_gsi {
 	struct usb_function function;
+	struct usb_gadget *gadget;
 	enum ipa_usb_teth_prot prot_id;
 	int ctrl_id;
 	int data_id;
@@ -237,6 +237,7 @@ struct f_gsi {
 	struct rndis_params *params;
 	atomic_t connected;
 	bool data_interface_up;
+	bool rndis_use_wceis;
 
 	const struct usb_endpoint_descriptor *in_ep_desc_backup;
 	const struct usb_endpoint_descriptor *out_ep_desc_backup;
@@ -470,9 +471,9 @@ static struct usb_interface_descriptor rndis_gsi_control_intf = {
 	/* .bInterfaceNumber = DYNAMIC */
 	/* status endpoint is optional; this could be patched later */
 	.bNumEndpoints =	1,
-	.bInterfaceClass =	USB_CLASS_WIRELESS_CONTROLLER,
-	.bInterfaceSubClass =   0x01,
-	.bInterfaceProtocol =   0x03,
+	.bInterfaceClass =	USB_CLASS_MISC,
+	.bInterfaceSubClass =   0x04,
+	.bInterfaceProtocol =   0x01, /* RNDIS over Ethernet */
 	/* .iInterface = DYNAMIC */
 };
 
@@ -530,9 +531,9 @@ rndis_gsi_iad_descriptor = {
 	.bDescriptorType =	USB_DT_INTERFACE_ASSOCIATION,
 	.bFirstInterface =	0, /* XXX, hardcoded */
 	.bInterfaceCount =	2, /* control + data */
-	.bFunctionClass =	USB_CLASS_WIRELESS_CONTROLLER,
-	.bFunctionSubClass =	0x01,
-	.bFunctionProtocol =	0x03,
+	.bFunctionClass =	USB_CLASS_MISC,
+	.bFunctionSubClass =	0x04,
+	.bFunctionProtocol =	0x01, /* RNDIS over Ethernet */
 	/* .iFunction = DYNAMIC */
 };
 

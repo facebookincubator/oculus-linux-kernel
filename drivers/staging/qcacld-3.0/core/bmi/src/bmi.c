@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include "i_bmi.h"
@@ -51,8 +42,9 @@ QDF_STATUS bmi_init(struct ol_context *ol_ctx)
 
 	if (!info->bmi_cmd_buff) {
 		info->bmi_cmd_buff =
-			qdf_mem_alloc_consistent(qdf_dev, qdf_dev->dev, MAX_BMI_CMDBUF_SZ,
-							&info->bmi_cmd_da);
+			qdf_mem_alloc_consistent(qdf_dev, qdf_dev->dev,
+						 MAX_BMI_CMDBUF_SZ,
+						 &info->bmi_cmd_da);
 		if (!info->bmi_cmd_buff) {
 			BMI_ERR("No Memory for BMI Command");
 			return QDF_STATUS_E_NOMEM;
@@ -61,8 +53,9 @@ QDF_STATUS bmi_init(struct ol_context *ol_ctx)
 
 	if (!info->bmi_rsp_buff) {
 		info->bmi_rsp_buff =
-			qdf_mem_alloc_consistent(qdf_dev, qdf_dev->dev, MAX_BMI_CMDBUF_SZ,
-							&info->bmi_rsp_da);
+			qdf_mem_alloc_consistent(qdf_dev, qdf_dev->dev,
+						 MAX_BMI_CMDBUF_SZ,
+						 &info->bmi_rsp_da);
 		if (!info->bmi_rsp_buff) {
 			BMI_ERR("No Memory for BMI Response");
 			goto end;
@@ -223,11 +216,11 @@ QDF_STATUS bmi_download_firmware(struct ol_context *ol_ctx)
 		if (NO_BMI) {
 			/* ol_ctx is not allocated in NO_BMI case */
 			return QDF_STATUS_SUCCESS;
-		} else {
-			BMI_ERR("ol_ctx is NULL");
-			bmi_assert(0);
-			return QDF_STATUS_NOT_INITIALIZED;
 		}
+
+		BMI_ERR("ol_ctx is NULL");
+		bmi_assert(0);
+		return QDF_STATUS_NOT_INITIALIZED;
 	}
 
 	scn = ol_ctx->scn;
@@ -258,15 +251,15 @@ QDF_STATUS bmi_read_soc_register(uint32_t address, uint32_t *param,
 	qdf_dma_addr_t rsp = info->bmi_rsp_da;
 
 	bmi_assert(BMI_COMMAND_FITS(sizeof(cid) + sizeof(address)));
-	qdf_mem_set(bmi_cmd_buff, 0, sizeof(cid) + sizeof(address));
-	qdf_mem_set(bmi_rsp_buff, 0, sizeof(cid) + sizeof(address));
+	qdf_mem_zero(bmi_cmd_buff, sizeof(cid) + sizeof(address));
+	qdf_mem_zero(bmi_rsp_buff, sizeof(cid) + sizeof(address));
 
 	if (info->bmi_done) {
 		BMI_DBG("Command disallowed");
 		return QDF_STATUS_E_PERM;
 	}
 
-	BMI_DBG("BMI Read SOC Register:device: 0x%p, address: 0x%x",
+	BMI_DBG("BMI Read SOC Register:device: 0x%pK, address: 0x%x",
 			 scn, address);
 
 	cid = BMI_READ_SOC_REGISTER;
@@ -303,14 +296,14 @@ QDF_STATUS bmi_write_soc_register(uint32_t address, uint32_t param,
 	qdf_dma_addr_t rsp = info->bmi_rsp_da;
 
 	bmi_assert(BMI_COMMAND_FITS(size));
-	qdf_mem_set(bmi_cmd_buff, 0, size);
+	qdf_mem_zero(bmi_cmd_buff, size);
 
 	if (info->bmi_done) {
 		BMI_DBG("Command disallowed");
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	BMI_DBG("SOC Register Write:device:0x%p, addr:0x%x, param:%d",
+	BMI_DBG("SOC Register Write:device:0x%pK, addr:0x%x, param:%d",
 						scn, address, param);
 
 	cid = BMI_WRITE_SOC_REGISTER;
@@ -348,14 +341,14 @@ bmilz_data(uint8_t *buffer, uint32_t length, struct ol_context *ol_ctx)
 	qdf_dma_addr_t rsp = info->bmi_rsp_da;
 
 	bmi_assert(BMI_COMMAND_FITS(BMI_DATASZ_MAX + header));
-	qdf_mem_set(bmi_cmd_buff, 0, BMI_DATASZ_MAX + header);
+	qdf_mem_zero(bmi_cmd_buff, BMI_DATASZ_MAX + header);
 
 	if (info->bmi_done) {
 		BMI_ERR("Command disallowed");
 		return QDF_STATUS_E_PERM;
 	}
 
-	BMI_DBG("BMI Send LZ Data: device: 0x%p, length: %d",
+	BMI_DBG("BMI Send LZ Data: device: 0x%pK, length: %d",
 						scn, length);
 
 	cid = BMI_LZ_DATA;
@@ -405,14 +398,14 @@ QDF_STATUS bmi_sign_stream_start(uint32_t address, uint8_t *buffer,
 	qdf_dma_addr_t rsp = info->bmi_rsp_da;
 
 	bmi_assert(BMI_COMMAND_FITS(BMI_DATASZ_MAX + header));
-	qdf_mem_set(bmi_cmd_buff, 0, BMI_DATASZ_MAX + header);
+	qdf_mem_zero(bmi_cmd_buff, BMI_DATASZ_MAX + header);
 
 	if (info->bmi_done) {
 		BMI_ERR("Command disallowed");
 		return QDF_STATUS_E_PERM;
 	}
 
-	BMI_ERR("Sign Stream start:device:0x%p, addr:0x%x, length:%d",
+	BMI_ERR("Sign Stream start:device:0x%pK, addr:0x%x, length:%d",
 						scn, address, length);
 
 	cid = BMI_SIGN_STREAM_START;
@@ -468,13 +461,13 @@ bmilz_stream_start(uint32_t address, struct ol_context *ol_ctx)
 	qdf_dma_addr_t rsp = info->bmi_rsp_da;
 
 	bmi_assert(BMI_COMMAND_FITS(sizeof(cid) + sizeof(address)));
-	qdf_mem_set(bmi_cmd_buff, 0, sizeof(cid) + sizeof(address));
+	qdf_mem_zero(bmi_cmd_buff, sizeof(cid) + sizeof(address));
 
 	if (info->bmi_done) {
 		BMI_DBG("Command disallowed");
 		return QDF_STATUS_E_PERM;
 	}
-	BMI_DBG("BMI LZ Stream Start: (device: 0x%p, address: 0x%x)",
+	BMI_DBG("BMI LZ Stream Start: (device: 0x%pK, address: 0x%x)",
 						scn, address);
 
 	cid = BMI_LZ_STREAM_START;
@@ -545,8 +538,8 @@ QDF_STATUS ol_cds_init(qdf_device_t qdf_dev, void *hif_ctx)
 	if (NO_BMI)
 		return QDF_STATUS_SUCCESS; /* no BMI for Q6 bring up */
 
-	status = cds_alloc_context(cds_get_global_context(), QDF_MODULE_ID_BMI,
-					(void **)&ol_info, sizeof(*ol_info));
+	status = cds_alloc_context(QDF_MODULE_ID_BMI,
+				   (void **)&ol_info, sizeof(*ol_info));
 
 	if (status != QDF_STATUS_SUCCESS) {
 		BMI_ERR("%s: CDS Allocation failed for ol_bmi context",
@@ -578,5 +571,5 @@ void ol_cds_free(void)
 	if (NO_BMI)
 		return;
 
-	cds_free_context(cds_get_global_context(), QDF_MODULE_ID_BMI, ol_info);
+	cds_free_context(QDF_MODULE_ID_BMI, ol_info);
 }

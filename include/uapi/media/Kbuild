@@ -1,3 +1,4 @@
+header-y += ais/
 header-y += msm_cam_sensor.h
 header-y += msm_camera.h
 header-y += msm_camsensor_sdk.h
@@ -19,3 +20,4 @@ header-y += msmb_ispif.h
 header-y += msmb_pproc.h
 header-y += radio-iris.h
 header-y += radio-iris-commands.h
+header-y += msm_ba.h

@@ -22,8 +22,11 @@
 #include <linux/regmap.h>
 #include <linux/delay.h>
 #include <linux/qpnp/qpnp-revid.h>
+#include <linux/power_supply.h>
+#ifdef CONFIG_VS1_BOARD
 #include <linux/qpnp-misc.h>
 #include <linux/regulator/consumer.h>
+#endif
 
 #define FG_ADC_RR_EN_CTL			0x46
 #define FG_ADC_RR_SKIN_TEMP_LSB			0x50
@@ -121,11 +124,13 @@
 #define FG_ADC_RR_GPIO_LSB			0xC4
 #define FG_ADC_RR_GPIO_MSB			0xC5
 
-#define FG_ADC_RR_ATEST_CTRL			0xC8
+#ifdef CONFIG_VS1_BOARD
 #define FG_ADC_RR_ATEST_CTRL_CTL		BIT(0)
-#define FG_ADC_RR_ATEST_TRIGGER			0xC9
-#define FG_ADC_RR_ATEST_EVERY_CYCLE_MASK	0x80
 #define FG_ADC_RR_ATEST_EVERY_CYCLE		BIT(7)
+#define FG_ADC_RR_ATEST_EVERY_CYCLE_MASK	0x80
+#endif
+#define FG_ADC_RR_ATEST_CTRL			0xC8
+#define FG_ADC_RR_ATEST_TRIGGER			0xC9
 #define FG_ADC_RR_ATEST_STS			0xCA
 #define FG_ADC_RR_ATEST_LSB			0xCC
 #define FG_ADC_RR_ATEST_MSB			0xCD
@@ -185,26 +190,38 @@
 #define FG_ADC_RR_VOLT_INPUT_FACTOR		8
 #define FG_ADC_RR_CURR_INPUT_FACTOR		2000
 #define FG_ADC_RR_CURR_USBIN_INPUT_FACTOR_MIL	1886
+#define FG_ADC_RR_CURR_USBIN_660_FACTOR_MIL	9
+#define FG_ADC_RR_CURR_USBIN_660_UV_VAL	579500
+
 #define FG_ADC_SCALE_MILLI_FACTOR		1000
 #define FG_ADC_KELVINMIL_CELSIUSMIL		273150
 
 #define FG_ADC_RR_GPIO_FS_RANGE			5000
 #define FG_RR_ADC_COHERENT_CHECK_RETRY		5
+#ifdef CONFIG_VS1_BOARD
 #define FG_RR_ADC_MAX_CONTINUOUS_BUFFER_LEN	256
+#else
+#define FG_RR_ADC_MAX_CONTINUOUS_BUFFER_LEN	16
+#endif
 #define FG_RR_ADC_STS_CHANNEL_READING_MASK	0x3
 #define FG_RR_ADC_STS_CHANNEL_STS		0x2
 
-#define FG_RR_CONV_CONTINUOUS_TIME_MIN_US	50000
-#define FG_RR_CONV_CONTINUOUS_TIME_MAX_US	51000
+#define FG_RR_CONV_CONTINUOUS_TIME_MIN_MS	50
 #define FG_RR_CONV_MAX_RETRY_CNT		50
+#define FG_RR_TP_REV_VERSION1		21
+#define FG_RR_TP_REV_VERSION2		29
+#define FG_RR_TP_REV_VERSION3		32
+
+#ifdef CONFIG_VS1_BOARD
 #define FG_RR_MISC_PREMUX_SEL			0x81
 
 #define FG_RR_ADC_SEC_ACCESS			0xd0
 #define FG_RR_ADC_SEC_VALUE			0xa5
 
 #define PULL_UP_RESIST  6800	/* 6.8 K * 1000 */
-#define VOLTAGE_SOURCE  3300	/* mV */
+#define VOLTAGE_SOURCE  3300	/* unit mV */
 #define GPIO2_RIN       3650	/* 3.65 K * 1000 */
+#endif
 
 /*
  * The channel number is not a physical index in hardware,
@@ -228,7 +245,9 @@ enum rradc_channel_id {
 	RR_ADC_CHG_TOO_HOT_TEMP,
 	RR_ADC_SKIN_HOT_TEMP,
 	RR_ADC_SKIN_TOO_HOT_TEMP,
+#ifdef CONFIG_VS1_BOARD
 	RR_ADC_ATEST,
+#endif
 	RR_ADC_MAX
 };
 
@@ -237,14 +256,18 @@ struct rradc_chip {
 	struct mutex			lock;
 	struct regmap			*regmap;
 	u16				base;
-	struct device_node              *misc_node;
-	u32                             misc_adc_premux_sel_reg;
 	struct iio_chan_spec		*iio_chans;
 	unsigned int			nchannels;
 	struct rradc_chan_prop		*chan_props;
 	struct device_node		*revid_dev_node;
 	struct pmic_revid_data		*pmic_fab_id;
-	struct regulator                *vdd_core;
+	int volt;
+	struct power_supply		*usb_trig;
+#ifdef CONFIG_VS1_BOARD
+	struct regulator		*vdd_core;
+	struct device_node		*misc_node;
+	u32				misc_adc_premux_sel_reg;
+#endif
 };
 
 struct rradc_channels {
@@ -348,8 +371,8 @@ static int rradc_post_process_therm(struct rradc_chip *chip,
 	int64_t temp;
 
 	/* K = code/4 */
-	temp = div64_s64(adc_code, FG_ADC_RR_BATT_THERM_LSB_K);
-	temp *= FG_ADC_SCALE_MILLI_FACTOR;
+	temp = ((int64_t)adc_code * FG_ADC_SCALE_MILLI_FACTOR);
+	temp = div64_s64(temp, FG_ADC_RR_BATT_THERM_LSB_K);
 	*result_millidegc = temp - FG_ADC_KELVINMIL_CELSIUSMIL;
 
 	return 0;
@@ -370,7 +393,7 @@ static int rradc_post_process_volt(struct rradc_chip *chip,
 	return 0;
 }
 
-static int rradc_post_process_curr(struct rradc_chip *chip,
+static int rradc_post_process_usbin_curr(struct rradc_chip *chip,
 			struct rradc_chan_prop *prop, u16 adc_code,
 			int *result_ua)
 {
@@ -378,14 +401,54 @@ static int rradc_post_process_curr(struct rradc_chip *chip,
 
 	if (!prop)
 		return -EINVAL;
-
-	if (prop->channel == RR_ADC_USBIN_I)
-		scale = FG_ADC_RR_CURR_USBIN_INPUT_FACTOR_MIL;
-	else
-		scale = FG_ADC_RR_CURR_INPUT_FACTOR;
+	if (chip->revid_dev_node) {
+		switch (chip->pmic_fab_id->pmic_subtype) {
+		case PM660_SUBTYPE:
+			if (((chip->pmic_fab_id->tp_rev
+				>= FG_RR_TP_REV_VERSION1)
+			&& (chip->pmic_fab_id->tp_rev
+				<= FG_RR_TP_REV_VERSION2))
+			|| (chip->pmic_fab_id->tp_rev
+				>= FG_RR_TP_REV_VERSION3)) {
+				chip->volt = div64_s64(chip->volt, 1000);
+				chip->volt = chip->volt *
+					FG_ADC_RR_CURR_USBIN_660_FACTOR_MIL;
+				chip->volt = FG_ADC_RR_CURR_USBIN_660_UV_VAL -
+					(chip->volt);
+				chip->volt = div64_s64(1000000000, chip->volt);
+				scale = chip->volt;
+			} else
+				scale = FG_ADC_RR_CURR_USBIN_INPUT_FACTOR_MIL;
+			break;
+		case PMI8998_SUBTYPE:
+			scale = FG_ADC_RR_CURR_USBIN_INPUT_FACTOR_MIL;
+			break;
+		default:
+			pr_err("No PMIC subtype found\n");
+			return -EINVAL;
+		}
+	}
 
 	/* scale * V/A; 2.5V ADC full scale */
 	ua = ((int64_t)adc_code * scale);
+	ua *= (FG_ADC_RR_FS_VOLTAGE_MV * FG_ADC_SCALE_MILLI_FACTOR);
+	ua = div64_s64(ua, (FG_MAX_ADC_READINGS * 1000));
+	*result_ua = ua;
+
+	return 0;
+}
+
+static int rradc_post_process_dcin_curr(struct rradc_chip *chip,
+			struct rradc_chan_prop *prop, u16 adc_code,
+			int *result_ua)
+{
+	int64_t ua = 0;
+
+	if (!prop)
+		return -EINVAL;
+
+	/* 0.5 V/A; 2.5V ADC full scale */
+	ua = ((int64_t)adc_code * FG_ADC_RR_CURR_INPUT_FACTOR);
 	ua *= (FG_ADC_RR_FS_VOLTAGE_MV * FG_ADC_SCALE_MILLI_FACTOR);
 	ua = div64_s64(ua, (FG_MAX_ADC_READINGS * 1000));
 	*result_ua = ua;
@@ -551,9 +614,10 @@ static int rradc_post_process_chg_temp(struct rradc_chip *chip,
 	return 0;
 }
 
+#ifdef CONFIG_VS1_BOARD
 static int64_t calculate_equivalent_resistance(int result_mv)
 {
-	int64_t equ_resist = equ_resist = div64_s64(PULL_UP_RESIST * result_mv,
+	int64_t equ_resist = div64_s64(PULL_UP_RESIST * result_mv,
 			VOLTAGE_SOURCE - result_mv);
 
 	pr_debug("[ATEST] equ resistance: %lld\n", equ_resist);
@@ -580,25 +644,31 @@ static int64_t calculate_voltage_division(int var_resist)
 
 	return volt_div;
 }
+#endif
 
 static int rradc_post_process_gpio(struct rradc_chip *chip,
 			struct rradc_chan_prop *prop, u16 adc_code,
 			int *result_mv)
 {
 	int64_t mv = 0;
+#ifdef CONFIG_VS1_BOARD
 	int64_t equ_resist = 0;
 	int64_t var_resist = 0;
 	int64_t volt_div = 0;
+#endif
 
 	/* 5V ADC full scale, 10 bit */
 	mv = ((int64_t)adc_code * FG_ADC_RR_GPIO_FS_RANGE);
 	mv = div64_s64(mv, FG_MAX_ADC_READINGS);
-
+#ifdef CONFIG_VS1_BOARD
 	equ_resist = calculate_equivalent_resistance(mv * 10);
 	var_resist = calculate_variable_resistance(equ_resist);
 	volt_div = calculate_voltage_division(var_resist);
 
 	*result_mv = (int)volt_div;
+#else
+	*result_mv = mv;
+#endif
 
 	return 0;
 }
@@ -646,13 +716,13 @@ static const struct rradc_channels rradc_chans[] = {
 			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_PROCESSED),
 			FG_ADC_RR_SKIN_TEMP_LSB, FG_ADC_RR_SKIN_TEMP_MSB,
 			FG_ADC_RR_AUX_THERM_STS)
-	RR_ADC_CHAN_CURRENT("usbin_i", &rradc_post_process_curr,
+	RR_ADC_CHAN_CURRENT("usbin_i", &rradc_post_process_usbin_curr,
 			FG_ADC_RR_USB_IN_I_LSB, FG_ADC_RR_USB_IN_I_MSB,
 			FG_ADC_RR_USB_IN_I_STS)
 	RR_ADC_CHAN_VOLT("usbin_v", &rradc_post_process_volt,
 			FG_ADC_RR_USB_IN_V_LSB, FG_ADC_RR_USB_IN_V_MSB,
 			FG_ADC_RR_USB_IN_V_STS)
-	RR_ADC_CHAN_CURRENT("dcin_i", &rradc_post_process_curr,
+	RR_ADC_CHAN_CURRENT("dcin_i", &rradc_post_process_dcin_curr,
 			FG_ADC_RR_DC_IN_I_LSB, FG_ADC_RR_DC_IN_I_MSB,
 			FG_ADC_RR_DC_IN_I_STS)
 	RR_ADC_CHAN_VOLT("dcin_v", &rradc_post_process_volt,
@@ -685,9 +755,11 @@ static const struct rradc_channels rradc_chans[] = {
 			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_PROCESSED),
 			FG_ADC_RR_SKIN_TOO_HOT, FG_ADC_RR_SKIN_TOO_HOT,
 			FG_ADC_RR_AUX_THERM_STS)
+#ifdef CONFIG_VS1_BOARD
 	RR_ADC_CHAN_VOLT("atest", &rradc_post_process_gpio,
 			FG_ADC_RR_ATEST_LSB, FG_ADC_RR_ATEST_MSB,
 			FG_ADC_RR_ATEST_STS)
+#endif
 };
 
 static int rradc_enable_continuous_mode(struct rradc_chip *chip)
@@ -737,6 +809,24 @@ static int rradc_disable_continuous_mode(struct rradc_chip *chip)
 	return rc;
 }
 
+static bool rradc_is_usb_present(struct rradc_chip *chip)
+{
+	union power_supply_propval pval;
+	int rc;
+	bool usb_present = false;
+
+	if (!chip->usb_trig) {
+		pr_debug("USB property not present\n");
+		return usb_present;
+	}
+
+	rc = power_supply_get_property(chip->usb_trig,
+			POWER_SUPPLY_PROP_PRESENT, &pval);
+	usb_present = (rc < 0) ? 0 : pval.intval;
+
+	return usb_present;
+}
+
 static int rradc_check_status_ready_with_retry(struct rradc_chip *chip,
 		struct rradc_chan_prop *prop, u8 *buf, u16 status)
 {
@@ -756,8 +846,18 @@ static int rradc_check_status_ready_with_retry(struct rradc_chip *chip,
 			(retry_cnt < FG_RR_CONV_MAX_RETRY_CNT)) {
 		pr_debug("%s is not ready; nothing to read:0x%x\n",
 			rradc_chans[prop->channel].datasheet_name, buf[0]);
-		usleep_range(FG_RR_CONV_CONTINUOUS_TIME_MIN_US,
-				FG_RR_CONV_CONTINUOUS_TIME_MAX_US);
+
+		if (((prop->channel == RR_ADC_CHG_TEMP) ||
+			(prop->channel == RR_ADC_SKIN_TEMP) ||
+			(prop->channel == RR_ADC_USBIN_I) ||
+			(prop->channel == RR_ADC_DIE_TEMP)) &&
+					((!rradc_is_usb_present(chip)))) {
+			pr_debug("USB not present for %d\n", prop->channel);
+			rc = -ENODATA;
+			break;
+		}
+
+		msleep(FG_RR_CONV_CONTINUOUS_TIME_MIN_MS);
 		retry_cnt++;
 		rc = rradc_read(chip, status, buf, 1);
 		if (rc < 0) {
@@ -775,7 +875,7 @@ static int rradc_check_status_ready_with_retry(struct rradc_chip *chip,
 static int rradc_read_channel_with_continuous_mode(struct rradc_chip *chip,
 			struct rradc_chan_prop *prop, u8 *buf)
 {
-	int rc = 0;
+	int rc = 0, ret = 0;
 	u16 status = 0;
 
 	rc = rradc_enable_continuous_mode(chip);
@@ -788,23 +888,25 @@ static int rradc_read_channel_with_continuous_mode(struct rradc_chip *chip,
 	rc = rradc_read(chip, status, buf, 1);
 	if (rc < 0) {
 		pr_err("status read failed:%d\n", rc);
-		return rc;
+		ret = rc;
+		goto disable;
 	}
 
 	rc = rradc_check_status_ready_with_retry(chip, prop,
 						buf, status);
 	if (rc < 0) {
 		pr_err("Status read failed:%d\n", rc);
-		return rc;
+		ret = rc;
 	}
 
+disable:
 	rc = rradc_disable_continuous_mode(chip);
 	if (rc < 0) {
 		pr_err("Failed to switch to non continuous mode\n");
-		return rc;
+		ret = rc;
 	}
 
-	return rc;
+	return ret;
 }
 
 static int rradc_enable_batt_id_channel(struct rradc_chip *chip, bool enable)
@@ -881,10 +983,12 @@ static int rradc_do_conversion(struct rradc_chip *chip,
 {
 	int rc = 0, bytes_to_read = 0;
 	u8 buf[6];
-	u8 reg_dump[0x100];
-	int i = 0;
 	u16 offset = 0, batt_id_5 = 0, batt_id_15 = 0, batt_id_150 = 0;
 	u16 status = 0;
+#ifdef CONFIG_VS1_BOARD
+	u8 reg_dump[0x100];
+	int i = 0;
+#endif
 
 	mutex_lock(&chip->lock);
 
@@ -920,6 +1024,7 @@ static int rradc_do_conversion(struct rradc_chip *chip,
 			goto fail;
 		}
 		break;
+#ifdef CONFIG_VS1_BOARD
 	case RR_ADC_ATEST:
 		rc = qpnp_misc_write_reg(chip->misc_node,
 				FG_RR_ADC_SEC_ACCESS,
@@ -1001,6 +1106,7 @@ static int rradc_do_conversion(struct rradc_chip *chip,
 			goto fail;
 		}
 		break;
+#endif
 	case RR_ADC_CHG_HOT_TEMP:
 	case RR_ADC_CHG_TOO_HOT_TEMP:
 	case RR_ADC_SKIN_HOT_TEMP:
@@ -1096,6 +1202,21 @@ static int rradc_read_raw(struct iio_dev *indio_dev,
 
 	switch (mask) {
 	case IIO_CHAN_INFO_PROCESSED:
+		if (((chip->pmic_fab_id->tp_rev
+				>= FG_RR_TP_REV_VERSION1)
+		&& (chip->pmic_fab_id->tp_rev
+				<= FG_RR_TP_REV_VERSION2))
+		|| (chip->pmic_fab_id->tp_rev
+				>= FG_RR_TP_REV_VERSION3)) {
+			if (chan->address == RR_ADC_USBIN_I) {
+				prop = &chip->chan_props[RR_ADC_USBIN_V];
+				rc = rradc_do_conversion(chip, prop, &adc_code);
+				if (rc)
+					break;
+				prop->scale(chip, prop, adc_code, &chip->volt);
+			}
+		}
+
 		prop = &chip->chan_props[chan->address];
 		rc = rradc_do_conversion(chip, prop, &adc_code);
 		if (rc)
@@ -1129,11 +1250,13 @@ static const struct iio_info rradc_info = {
 static int rradc_get_dt_data(struct rradc_chip *chip, struct device_node *node)
 {
 	const struct rradc_channels *rradc_chan;
-	struct device_node *misc_node;
 	struct iio_chan_spec *iio_chan;
 	unsigned int i = 0, base;
 	int rc = 0;
 	struct rradc_chan_prop prop;
+#ifdef CONFIG_VS1_BOARD
+	struct device_node *misc_node;
+#endif
 
 	chip->nchannels = RR_ADC_MAX;
 	chip->iio_chans = devm_kcalloc(chip->dev, chip->nchannels,
@@ -1172,6 +1295,7 @@ static int rradc_get_dt_data(struct rradc_chip *chip, struct device_node *node)
 		}
 	}
 
+#ifdef CONFIG_VS1_BOARD
 	if (of_find_property(node, "qcom,pmic-misc", NULL)) {
 		misc_node = of_parse_phandle(node, "qcom,pmic-misc", 0);
 		if (!misc_node)
@@ -1186,6 +1310,7 @@ static int rradc_get_dt_data(struct rradc_chip *chip, struct device_node *node)
 
 		chip->misc_node = misc_node;
 	}
+#endif
 
 	iio_chan = chip->iio_chans;
 
@@ -1217,7 +1342,6 @@ static int rradc_probe(struct platform_device *pdev)
 	struct iio_dev *indio_dev;
 	struct rradc_chip *chip;
 	int rc = 0;
-	int ret;
 
 	indio_dev = devm_iio_device_alloc(dev, sizeof(*chip));
 	if (!indio_dev)
@@ -1237,18 +1361,20 @@ static int rradc_probe(struct platform_device *pdev)
 	if (rc)
 		return rc;
 
+#ifdef CONFIG_VS1_BOARD
 	/* L18 regulator 3.3V enable for ipd sensor*/
 	chip->vdd_core = regulator_get(&pdev->dev, "qcom,vdd-core");
 	if (IS_ERR(chip->vdd_core))
 		pr_err("[RRADC]: L18 regulator getting error!!\n");
 
-	ret = regulator_set_voltage(chip->vdd_core, 3312000, 3312000);
-	if (ret < 0)
+	rc = regulator_set_voltage(chip->vdd_core, 3312000, 3312000);
+	if (rc < 0)
 		pr_err("[RRADC]: L18 regulator setting voltage failed!!\n");
 
-	ret = regulator_enable(chip->vdd_core);
-	if (ret < 0)
+	rc = regulator_enable(chip->vdd_core);
+	if (rc < 0)
 		pr_err("[RRADC]: L18 regulator enable failed!!\n");
+#endif
 
 	indio_dev->dev.parent = dev;
 	indio_dev->dev.of_node = node;
@@ -1257,6 +1383,10 @@ static int rradc_probe(struct platform_device *pdev)
 	indio_dev->info = &rradc_info;
 	indio_dev->channels = chip->iio_chans;
 	indio_dev->num_channels = chip->nchannels;
+
+	chip->usb_trig = power_supply_get_by_name("usb");
+	if (!chip->usb_trig)
+		pr_debug("Error obtaining usb power supply\n");
 
 	return devm_iio_device_register(dev, indio_dev);
 }

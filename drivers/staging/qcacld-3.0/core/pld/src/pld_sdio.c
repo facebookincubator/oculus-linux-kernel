@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,12 +28,38 @@
 
 #include "pld_common.h"
 #include "pld_internal.h"
+#include "pld_sdio.h"
+
 
 #ifdef CONFIG_SDIO
 /* SDIO manufacturer ID and Codes */
 #define MANUFACTURER_ID_AR6320_BASE        0x500
 #define MANUFACTURER_ID_QCA9377_BASE       0x700
+#define MANUFACTURER_ID_QCA9379_BASE       0x800
 #define MANUFACTURER_CODE                  0x271
+
+#ifndef CONFIG_CNSS
+static const struct pld_fw_files fw_files_qca6174_fw_1_1 = {
+	PREFIX "qwlan11.bin", PREFIX  "bdwlan11.bin", PREFIX "otp11.bin",
+	PREFIX  "utf11.bin", PREFIX "utfbd11.bin", PREFIX "qsetup11.bin",
+	PREFIX "epping11.bin", ""};
+static const struct pld_fw_files fw_files_qca6174_fw_2_0 = {
+	PREFIX "qwlan20.bin", PREFIX "bdwlan20.bin", PREFIX "otp20.bin",
+	PREFIX "utf20.bin", PREFIX "utfbd20.bin", PREFIX "qsetup20.bin",
+	PREFIX "epping20.bin", ""};
+static const struct pld_fw_files fw_files_qca6174_fw_1_3 = {
+	PREFIX "qwlan13.bin", PREFIX "bdwlan13.bin", PREFIX "otp13.bin",
+	PREFIX "utf13.bin", PREFIX "utfbd13.bin", PREFIX "qsetup13.bin",
+	PREFIX "epping13.bin", ""};
+static const struct pld_fw_files fw_files_qca6174_fw_3_0 = {
+	PREFIX "qwlan30.bin", PREFIX "bdwlan30.bin", PREFIX "otp30.bin",
+	PREFIX "utf30.bin", PREFIX "utfbd30.bin", PREFIX "qsetup30.bin",
+	PREFIX "epping30.bin", PREFIX "qwlan30i.bin"};
+static const struct pld_fw_files fw_files_default = {
+	PREFIX "qwlan.bin", PREFIX "bdwlan.bin", PREFIX "otp.bin",
+	PREFIX "utf.bin", PREFIX "utfbd.bin", PREFIX "qsetup.bin",
+	PREFIX "epping.bin", ""};
+#endif
 
 /**
  * pld_sdio_probe() - Probe function for SDIO platform driver
@@ -49,15 +75,16 @@ static int pld_sdio_probe(struct sdio_func *sdio_func,
 			  const struct sdio_device_id *id)
 {
 	struct pld_context *pld_context;
-	struct device *dev = &sdio_func->dev;
-	int ret = 0;
+	struct device *dev;
+	int ret;
 
 	pld_context = pld_get_global_context();
-	if (!pld_context) {
+	if (!pld_context || !sdio_func) {
 		ret = -ENODEV;
 		goto out;
 	}
 
+	dev = &sdio_func->dev;
 	ret = pld_add_dev(pld_context, dev, PLD_BUS_TYPE_SDIO);
 	if (ret)
 		goto out;
@@ -227,6 +254,22 @@ static struct sdio_device_id pld_sdio_id_table[] = {
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9377_BASE | 0xD))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9377_BASE | 0xE))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9377_BASE | 0xF))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x0))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x1))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x2))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x3))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x4))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x5))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x6))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x7))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x8))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0x9))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xA))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xB))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xC))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xD))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xE))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_QCA9379_BASE | 0xF))},
 	{},
 };
 
@@ -265,14 +308,23 @@ void pld_sdio_unregister_driver(void)
 	cnss_sdio_wlan_unregister_driver(&pld_sdio_ops);
 }
 #else
+
+#ifdef CONFIG_PM
+static const struct dev_pm_ops pld_device_pm_ops = {
+	.suspend = pld_sdio_suspend,
+	.resume = pld_sdio_resume,
+};
+#endif
+
 struct sdio_driver pld_sdio_ops = {
 	.name       = "pld_sdio",
 	.id_table   = pld_sdio_id_table,
 	.probe      = pld_sdio_probe,
 	.remove     = pld_sdio_remove,
-#ifdef CONFIG_PM
-	.suspend    = pld_sdio_suspend,
-	.resume     = pld_sdio_resume,
+#if defined(CONFIG_PM)
+	.drv = {
+		.pm = &pld_device_pm_ops,
+	}
 #endif
 };
 
@@ -288,6 +340,18 @@ void pld_sdio_unregister_driver(void)
 #endif
 
 #ifdef CONFIG_PLD_SDIO_CNSS
+#ifdef CONFIG_TUFELLO_DUAL_FW_SUPPORT
+static inline int pld_sdio_is_tufello_dual_fw_supported(void)
+{
+	return 1;
+}
+#else
+static inline int pld_sdio_is_tufello_dual_fw_supported(void)
+{
+	return 0;
+#endif
+}
+
 /**
  * pld_sdio_get_fw_files_for_target() - Get FW file names
  * @pfw_files: buffer for FW file names
@@ -310,25 +374,30 @@ int pld_sdio_get_fw_files_for_target(struct pld_fw_files *pfw_files,
 
 	memset(pfw_files, 0, sizeof(*pfw_files));
 
-	ret = cnss_get_fw_files_for_target(&cnss_fw_files,
+	if (target_version == PLD_QCA9377_REV1_1_VERSION) {
+		cnss_get_qca9377_fw_files(&cnss_fw_files, PLD_MAX_FILE_NAME,
+			pld_sdio_is_tufello_dual_fw_supported());
+	} else {
+		ret = cnss_get_fw_files_for_target(&cnss_fw_files,
 					   target_type, target_version);
+	}
 	if (0 != ret)
 		return ret;
 
-	strlcpy(pfw_files->image_file, cnss_fw_files.image_file,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->board_data, cnss_fw_files.board_data,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->otp_data, cnss_fw_files.otp_data,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->utf_file, cnss_fw_files.utf_file,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->utf_board_data, cnss_fw_files.utf_board_data,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->epping_file, cnss_fw_files.epping_file,
-		PLD_MAX_FILE_NAME);
-	strlcpy(pfw_files->evicted_data, cnss_fw_files.evicted_data,
-		PLD_MAX_FILE_NAME);
+	snprintf(pfw_files->image_file, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.image_file);
+	snprintf(pfw_files->board_data, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.board_data);
+	snprintf(pfw_files->otp_data, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.otp_data);
+	snprintf(pfw_files->utf_file, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.utf_file);
+	snprintf(pfw_files->utf_board_data, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.utf_board_data);
+	snprintf(pfw_files->epping_file, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.epping_file);
+	snprintf(pfw_files->evicted_data, PLD_MAX_FILE_NAME, PREFIX "%s",
+		cnss_fw_files.evicted_data);
 
 	return ret;
 }
@@ -369,6 +438,7 @@ int pld_sdio_get_fw_files_for_target(struct pld_fw_files *pfw_files,
 		memcpy(pfw_files, &fw_files_qca6174_fw_3_0, sizeof(*pfw_files));
 		break;
 	case PLD_QCA9377_REV1_1_VERSION:
+	case PLD_QCA9379_REV1_VERSION:
 		get_qca9377_fw_files(pfw_files, sizeof(*pfw_files));
 		break;
 	default:

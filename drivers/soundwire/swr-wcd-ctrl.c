@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -397,11 +397,17 @@ static int swrm_clk_request(struct swr_mstr_ctrl *swrm, bool enable)
 		return -EINVAL;
 
 	if (enable) {
-		swrm->clk(swrm->handle, true);
-		swrm->state = SWR_MSTR_UP;
-	} else {
+		swrm->clk_ref_count++;
+		if (swrm->clk_ref_count == 1) {
+			swrm->clk(swrm->handle, true);
+			swrm->state = SWR_MSTR_UP;
+		}
+	} else if (--swrm->clk_ref_count == 0) {
 		swrm->clk(swrm->handle, false);
 		swrm->state = SWR_MSTR_DOWN;
+	} else if (swrm->clk_ref_count < 0) {
+		pr_err("%s: swrm clk count mismatch\n", __func__);
+		swrm->clk_ref_count = 0;
 	}
 	return 0;
 }
@@ -540,7 +546,7 @@ static int swrm_read(struct swr_master *master, u8 dev_num, u16 reg_addr,
 {
 	struct swr_mstr_ctrl *swrm = swr_get_ctrl_data(master);
 	int ret = 0;
-	int val;
+	int val = 0;
 	u8 *reg_val = (u8 *)buf;
 
 	if (!swrm) {
@@ -647,6 +653,10 @@ static u8 get_inactive_bank_num(struct swr_mstr_ctrl *swrm)
 static void enable_bank_switch(struct swr_mstr_ctrl *swrm, u8 bank,
 				u8 row, u8 col)
 {
+	/* apply div2 setting for inactive bank before bank switch */
+	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
+			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
+
 	swrm_cmd_fifo_wr_cmd(swrm, ((row << 3) | col), 0xF, 0xF,
 			SWRS_SCP_FRAME_CTRL_BANK(bank));
 }
@@ -884,9 +894,6 @@ static void swrm_apply_port_config(struct swr_master *master)
 	dev_dbg(swrm->dev, "%s: enter bank: %d master_ports: %d\n",
 		__func__, bank, master->num_port);
 
-
-	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
-			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
 
 	swrm_copy_data_port_config(master, bank);
 }
@@ -1169,7 +1176,10 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 	u8 devnum = 0;
 	int ret = IRQ_HANDLED;
 
-	pm_runtime_get_sync(&swrm->pdev->dev);
+	mutex_lock(&swrm->reslock);
+	swrm_clk_request(swrm, true);
+	mutex_unlock(&swrm->reslock);
+
 	intr_sts = swrm->read(swrm->handle, SWRM_INTERRUPT_STATUS);
 	intr_sts &= SWRM_INTERRUPT_STATUS_RMSK;
 	for (i = 0; i < SWRM_INTERRUPT_MAX; i++) {
@@ -1257,8 +1267,10 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 			break;
 		}
 	}
-	pm_runtime_mark_last_busy(&swrm->pdev->dev);
-	pm_runtime_put_autosuspend(&swrm->pdev->dev);
+
+	mutex_lock(&swrm->reslock);
+	swrm_clk_request(swrm, false);
+	mutex_unlock(&swrm->reslock);
 	return ret;
 }
 
@@ -1369,7 +1381,6 @@ static int swrm_probe(struct platform_device *pdev)
 {
 	struct swr_mstr_ctrl *swrm;
 	struct swr_ctrl_platform_data *pdata;
-	struct swr_device *swr_dev, *safe;
 	int ret;
 
 	/* Allocate soundwire master driver structure */
@@ -1449,6 +1460,7 @@ static int swrm_probe(struct platform_device *pdev)
 	swrm->wcmd_id = 0;
 	swrm->slave_status = 0;
 	swrm->num_rx_chs = 0;
+	swrm->clk_ref_count = 0;
 	swrm->state = SWR_MSTR_RESUME;
 	init_completion(&swrm->reset);
 	init_completion(&swrm->broadcast);
@@ -1470,9 +1482,6 @@ static int swrm_probe(struct platform_device *pdev)
 		goto err_mstr_fail;
 	}
 
-	if (pdev->dev.of_node)
-		of_register_swr_devices(&swrm->master);
-
 	/* Add devices registered with board-info as the
 	   controller will be up now
 	 */
@@ -1489,14 +1498,10 @@ static int swrm_probe(struct platform_device *pdev)
 	}
 	swrm->version = swrm->read(swrm->handle, SWRM_COMP_HW_VERSION);
 
-	/* Enumerate slave devices */
-	list_for_each_entry_safe(swr_dev, safe, &swrm->master.devices,
-				 dev_list) {
-		ret = swr_startup_devices(swr_dev);
-		if (ret)
-			list_del(&swr_dev->dev_list);
-	}
 	mutex_unlock(&swrm->mlock);
+
+	if (pdev->dev.of_node)
+		of_register_swr_devices(&swrm->master);
 
 	dbgswrm = swrm;
 	debugfs_swrm_dent = debugfs_create_dir(dev_name(&pdev->dev), 0);
@@ -1723,6 +1728,8 @@ int swrm_wcd_notify(struct platform_device *pdev, u32 id, void *data)
 		    (swrm->state == SWR_MSTR_UP)) {
 			dev_dbg(swrm->dev, "%s: SWR master is already UP: %d\n",
 				__func__, swrm->state);
+			list_for_each_entry(swr_dev, &mstr->devices, dev_list)
+				swr_reset_device(swr_dev);
 		} else {
 			pm_runtime_mark_last_busy(&pdev->dev);
 			mutex_unlock(&swrm->reslock);

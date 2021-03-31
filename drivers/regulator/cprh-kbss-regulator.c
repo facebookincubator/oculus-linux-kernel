@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -78,10 +78,11 @@ struct cprh_kbss_fuses {
  * Fuse combos 8 - 15 map to CPR fusing revision 0 - 7 with speed bin fuse = 1.
  * Fuse combos 16 - 23 map to CPR fusing revision 0 - 7 with speed bin fuse = 2.
  * Fuse combos 24 - 31 map to CPR fusing revision 0 - 7 with speed bin fuse = 3.
+ * Fuse combos 32 - 39 map to CPR fusing revision 0 - 7 with speed bin fuse = 4.
  */
 #define CPRH_MSM8998_KBSS_FUSE_COMBO_COUNT	32
-#define CPRH_SDM660_KBSS_FUSE_COMBO_COUNT	32
-#define CPRH_SDM630_KBSS_FUSE_COMBO_COUNT	24
+#define CPRH_SDM660_KBSS_FUSE_COMBO_COUNT	40
+#define CPRH_SDM630_KBSS_FUSE_COMBO_COUNT	32
 
 /*
  * Constants which define the name of each fuse corner.
@@ -1986,7 +1987,7 @@ static int cprh_kbss_init_regulator(struct cpr3_regulator *vreg)
 static int cprh_kbss_init_aging(struct cpr3_controller *ctrl)
 {
 	struct cprh_kbss_fuses *fuse = NULL;
-	struct cpr3_regulator *vreg;
+	struct cpr3_regulator *vreg = NULL;
 	u32 aging_ro_scale;
 	int i, j, rc = 0;
 

@@ -31,7 +31,6 @@ extern bool no_fw_recovery;
 extern unsigned int mtu_max;
 extern unsigned short rx_ring_overflow_thrsh;
 extern int agg_wsize;
-extern u32 vring_idle_trsh;
 extern bool rx_align_2;
 extern bool rx_large_buf;
 extern bool debug_fw;
@@ -59,7 +58,8 @@ static inline u32 WIL_GET_BITS(u32 x, int b0, int b1)
 	return (x >> b0) & ((1 << (b1 - b0 + 1)) - 1);
 }
 
-#define WIL6210_MEM_SIZE (2*1024*1024UL)
+#define WIL6210_MIN_MEM_SIZE (2 * 1024 * 1024UL)
+#define WIL6210_MAX_MEM_SIZE (4 * 1024 * 1024UL)
 
 #define WIL_TX_Q_LEN_DEFAULT		(4000)
 #define WIL_RX_RING_SIZE_ORDER_DEFAULT	(10)
@@ -90,6 +90,11 @@ struct wil_suspend_stats {
 	unsigned long failed_resumes;
 	unsigned long rejected_by_device;
 	unsigned long rejected_by_host;
+	unsigned long long total_suspend_time;
+	unsigned long long min_suspend_time;
+	unsigned long long max_suspend_time;
+	ktime_t collection_start;
+	ktime_t suspend_start_time;
 };
 
 /* Calculate MAC buffer size for the firmware. It includes all overhead,
@@ -169,6 +174,10 @@ struct RGF_ICR {
 #define RGF_USER_USER_SCRATCH_PAD	(0x8802bc)
 #define RGF_USER_BL			(0x880A3C) /* Boot Loader */
 #define RGF_USER_FW_REV_ID		(0x880a8c) /* chip revision */
+#define RGF_USER_FW_CALIB_RESULT	(0x880a90) /* b0-7:result
+						    * b8-15:signature
+						    */
+	#define CALIB_RESULT_SIGNATURE	(0x11)
 #define RGF_USER_CLKS_CTL_0		(0x880abc)
 	#define BIT_USER_CLKS_CAR_AHB_SW_SEL	BIT(1) /* ref clk/PLL */
 	#define BIT_USER_CLKS_RST_PWGD	BIT(11) /* reset on "power good" */
@@ -266,6 +275,7 @@ struct RGF_ICR {
 	#define BIT_DMA_PSEUDO_CAUSE_MISC	BIT(2)
 
 #define RGF_HP_CTRL			(0x88265c)
+#define RGF_PAL_UNIT_ICR		(0x88266c) /* struct RGF_ICR */
 #define RGF_PCIE_LOS_COUNTER_CTL	(0x882dc4)
 
 /* MAC timer, usec, for packet lifetime */
@@ -620,6 +630,7 @@ extern u8 led_polarity;
 
 struct wil6210_priv {
 	struct pci_dev *pdev;
+	u32 bar_size;
 	struct wireless_dev *wdev;
 	void __iomem *csr;
 	DECLARE_BITMAP(status, wil_status_last);
@@ -690,6 +701,7 @@ struct wil6210_priv {
 	u8 vring2cid_tid[WIL6210_MAX_TX_RINGS][2]; /* [0] - CID, [1] - TID */
 	struct wil_sta_info sta[WIL6210_MAX_CID];
 	int bcast_vring;
+	u32 vring_idle_trsh; /* HW fetches up to 16 descriptors at once  */
 	bool use_extended_dma_addr; /* indicates whether we are using 48 bits */
 	/* scan */
 	struct cfg80211_scan_request *scan_request;
@@ -728,6 +740,13 @@ struct wil6210_priv {
 	struct wil_ftm_priv ftm;
 	bool tt_data_set;
 	struct wmi_tt_data tt_data;
+	struct {
+		bool enabled;
+		short omni;
+		short direct;
+	} snr_thresh;
+
+	int fw_calib_result;
 
 #ifdef CONFIG_PM
 #ifdef CONFIG_PM_SLEEP
@@ -859,6 +878,7 @@ int wil_up(struct wil6210_priv *wil);
 int __wil_up(struct wil6210_priv *wil);
 int wil_down(struct wil6210_priv *wil);
 int __wil_down(struct wil6210_priv *wil);
+void wil_refresh_fw_capabilities(struct wil6210_priv *wil);
 void wil_mbox_ring_le2cpus(struct wil6210_mbox_ring *r);
 int wil_find_cid(struct wil6210_priv *wil, const u8 *mac);
 void wil_set_ethtoolops(struct net_device *ndev);
@@ -942,8 +962,13 @@ int wil_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			 struct cfg80211_mgmt_tx_params *params,
 			 u64 *cookie);
 
+#if defined(CONFIG_WIL6210_DEBUGFS)
 int wil6210_debugfs_init(struct wil6210_priv *wil);
 void wil6210_debugfs_remove(struct wil6210_priv *wil);
+#else
+static inline int wil6210_debugfs_init(struct wil6210_priv *wil) { return 0; }
+static inline void wil6210_debugfs_remove(struct wil6210_priv *wil) {}
+#endif
 int wil6210_sysfs_init(struct wil6210_priv *wil);
 void wil6210_sysfs_remove(struct wil6210_priv *wil);
 int wil_cid_fill_sinfo(struct wil6210_priv *wil, int cid,
@@ -1034,4 +1059,5 @@ int wmi_link_maintain_cfg_write(struct wil6210_priv *wil,
 				const u8 *addr,
 				bool fst_link_loss);
 
+int wmi_set_snr_thresh(struct wil6210_priv *wil, short omni, short direct);
 #endif /* __WIL6210_H__ */

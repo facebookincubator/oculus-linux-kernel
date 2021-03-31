@@ -304,9 +304,17 @@ void eeh_slot_error_detail(struct eeh_pe *pe, int severity)
 	 *
 	 * For pHyp, we have to enable IO for log retrieval. Otherwise,
 	 * 0xFF's is always returned from PCI config space.
+	 *
+	 * When the @severity is EEH_LOG_PERM, the PE is going to be
+	 * removed. Prior to that, the drivers for devices included in
+	 * the PE will be closed. The drivers rely on working IO path
+	 * to bring the devices to quiet state. Otherwise, PCI traffic
+	 * from those devices after they are removed is like to cause
+	 * another unexpected EEH error.
 	 */
 	if (!(pe->type & EEH_PE_PHB)) {
-		if (eeh_has_flag(EEH_ENABLE_IO_FOR_LOG))
+		if (eeh_has_flag(EEH_ENABLE_IO_FOR_LOG) ||
+		    severity == EEH_LOG_PERM)
 			eeh_pci_enable(pe, EEH_OPT_THAW_MMIO);
 
 		/*
@@ -355,10 +363,19 @@ static inline unsigned long eeh_token_to_phys(unsigned long token)
 					   NULL, &hugepage_shift);
 	if (!ptep)
 		return token;
-	WARN_ON(hugepage_shift);
-	pa = pte_pfn(*ptep) << PAGE_SHIFT;
 
-	return pa | (token & (PAGE_SIZE-1));
+	pa = pte_pfn(*ptep);
+
+	/* On radix we can do hugepage mappings for io, so handle that */
+	if (hugepage_shift) {
+		pa <<= hugepage_shift;
+		pa |= token & ((1ul << hugepage_shift) - 1);
+	} else {
+		pa <<= PAGE_SHIFT;
+		pa |= token & (PAGE_SIZE - 1);
+	}
+
+	return pa;
 }
 
 /*

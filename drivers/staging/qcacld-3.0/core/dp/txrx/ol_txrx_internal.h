@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _OL_TXRX_INTERNAL__H_
@@ -39,7 +30,6 @@
 #include <ol_txrx_dbg.h>
 #include <enet.h>               /* ETHERNET_HDR_LEN, etc. */
 #include <ipv4.h>               /* IPV4_HDR_LEN, etc. */
-#include <ipv6.h>               /* IPV6_HDR_LEN, etc. */
 #include <ip_prot.h>            /* IP_PROTOCOL_TCP, etc. */
 
 #ifdef ATH_11AC_TXCOMPACT
@@ -74,64 +64,45 @@
 #define TXRX_ASSERT2(condition)
 #endif
 #endif /* #ifdef __KLOCWORK__ */
-enum {
-	/* FATAL_ERR - print only irrecoverable error messages */
-	TXRX_PRINT_LEVEL_FATAL_ERR,
-
-	/* ERR - include non-fatal err messages */
-	TXRX_PRINT_LEVEL_ERR,
-
-	/* WARN - include warnings */
-	TXRX_PRINT_LEVEL_WARN,
-
-	/* INFO1 - include fundamental, infrequent events */
-	TXRX_PRINT_LEVEL_INFO1,
-
-	/* INFO2 - include non-fundamental but infrequent events */
-	TXRX_PRINT_LEVEL_INFO2,
-
-	/* INFO3 - include frequent events */
-	/* to avoid performance impact, don't use INFO3
-	   unless explicitly enabled */
-#ifdef TXRX_PRINT_VERBOSE_ENABLE
-	TXRX_PRINT_LEVEL_INFO3,
-#endif /* TXRX_PRINT_VERBOSE_ENABLE */
-};
-
-extern unsigned g_txrx_print_level;
 
 #ifdef TXRX_PRINT_ENABLE
 
 #include <stdarg.h>             /* va_list */
 #include <qdf_types.h>          /* qdf_vprint */
 
-/* Supress 4296 - expression is always true
-* It will fire if level is TXRX_PRINT_LEVEL_FATAL_ERR (0)
-* because g_txrx_print_level is unsigned */
-#define ol_txrx_print(level, fmt, ...)  {		\
-		if (level <= g_txrx_print_level)	\
-			qdf_print(fmt, ## __VA_ARGS__); }
-#define TXRX_PRINT(level, fmt, ...) \
-	ol_txrx_print(level, "TXRX: " fmt, ## __VA_ARGS__)
+#define ol_txrx_log(level, args...) \
+		QDF_TRACE(QDF_MODULE_ID_TXRX, level, ## args)
+#define ol_txrx_logfl(level, format, args...) \
+		ol_txrx_log(level, FL(format), ## args)
 
-#ifdef TXRX_PRINT_VERBOSE_ENABLE
+#define ol_txrx_alert(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_FATAL, format, ## args)
+#define ol_txrx_err(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_ERROR, format, ## args)
+#define ol_txrx_warn(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_WARN, format, ## args)
+#define ol_txrx_info(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_INFO, format, ## args)
+#define ol_txrx_info_high(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_INFO_HIGH, format, ## args)
+#define ol_txrx_dbg(format, args...) \
+		ol_txrx_logfl(QDF_TRACE_LEVEL_DEBUG, format, ## args)
 
-#define ol_txrx_print_verbose(fmt, ...) {		  \
-	if (TXRX_PRINT_LEVEL_INFO3 <= g_txrx_print_level) \
-		qdf_print(fmt, ## __VA_ARGS__); }
-#define TXRX_PRINT_VERBOSE(fmt, ...) \
-	ol_txrx_print_verbose("TXRX: " fmt, ## __VA_ARGS__)
-#else
-#define TXRX_PRINT_VERBOSE(fmt, ...)
-#endif /* TXRX_PRINT_VERBOSE_ENABLE */
-
-/* define PN check failure message print rate
-   as 1 second */
+/*
+ * define PN check failure message print rate
+ * as 1 second
+ */
 #define TXRX_PN_CHECK_FAILURE_PRINT_PERIOD_MS  1000
 
 #else
-#define TXRX_PRINT(level, fmt, ...)
-#define TXRX_PRINT_VERBOSE(fmt, ...)
+#define ol_txrx_log(level, args...)
+#define ol_txrx_logfl(level, format, args...)
+#define ol_txrx_alert(format, args...)
+#define ol_txrx_err(format, args...)
+#define ol_txrx_warn(format, args...)
+#define ol_txrx_info(format, args...)
+#define ol_txrx_info_high(format, args...)
+#define ol_txrx_dbg(format, args...)
 #endif /* TXRX_PRINT_ENABLE */
 
 /*--- tx credit debug printouts ---*/
@@ -197,7 +168,7 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 /* default conditional defs (may be undefed below) */
 
 #define TXRX_STATS_INIT(_pdev) \
-	qdf_mem_set(&((_pdev)->stats), sizeof((_pdev)->stats), 0x0)
+	qdf_mem_zero(&((_pdev)->stats), sizeof((_pdev)->stats))
 #define TXRX_STATS_ADD(_pdev, _field, _delta) {		\
 		_pdev->stats._field += _delta; }
 #define TXRX_STATS_MSDU_INCR(pdev, field, netbuf) \
@@ -278,7 +249,7 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 			break;                                                 \
 		case htt_tx_status_no_ack:                                     \
 			TXRX_STATS_ADD(_pdev, pub.tx.dropped.no_ack.pkts,      \
-				 _p_cntrs);            			       \
+				 _p_cntrs);				       \
 			TXRX_STATS_ADD(_pdev, pub.tx.dropped.no_ack.bytes,     \
 				 _b_cntrs);				       \
 			break;                                                 \
@@ -289,6 +260,10 @@ ol_rx_mpdu_list_next(struct ol_txrx_pdev_t *pdev,
 				 pub.tx.dropped.download_fail.bytes, _b_cntrs);\
 			break;                                                 \
 		default:                                                       \
+			TXRX_STATS_ADD(_pdev,				       \
+				 pub.tx.dropped.others.pkts, _p_cntrs);        \
+			TXRX_STATS_ADD(_pdev,				       \
+				 pub.tx.dropped.others.bytes, _b_cntrs);       \
 			break;                                                 \
 		}                                                              \
 		TXRX_STATS_UPDATE_TX_COMP_HISTOGRAM(_pdev, _p_cntrs);          \
@@ -414,6 +389,7 @@ ol_txrx_frms_dump(const char *name,
 				}
 			} else {
 				struct llc_snap_hdr_t *llc_hdr;
+
 				/* (generic?) 802.11 */
 				l2_hdr_size = sizeof(struct ieee80211_frame);
 				llc_hdr = (struct llc_snap_hdr_t *)
@@ -424,12 +400,14 @@ ol_txrx_frms_dump(const char *name,
 			}
 			if (ethtype == ETHERTYPE_IPV4) {
 				struct ipv4_hdr_t *ipv4_hdr;
+
 				ipv4_hdr =
 					(struct ipv4_hdr_t *)(p + l2_hdr_size);
 				ip_prot = ipv4_hdr->protocol;
 				tcp_offset = l2_hdr_size + IPV4_HDR_LEN;
 			} else if (ethtype == ETHERTYPE_IPV6) {
 				struct ipv6_hdr_t *ipv6_hdr;
+
 				ipv6_hdr =
 					(struct ipv6_hdr_t *)(p + l2_hdr_size);
 				ip_prot = ipv6_hdr->next_hdr;
@@ -445,6 +423,7 @@ ol_txrx_frms_dump(const char *name,
 #if NEVERDEFINED
 				struct tcp_hdr_t *tcp_hdr;
 				uint32_t tcp_seq_num;
+
 				tcp_hdr = (struct tcp_hdr_t *)(p + tcp_offset);
 				tcp_seq_num =
 					(tcp_hdr->seq_num[0] << 24) |
@@ -474,6 +453,7 @@ ol_txrx_frms_dump(const char *name,
 NOT_IP_TCP:
 		if (display_options & ol_txrx_frm_dump_contents) {
 			int i, frag_num, len_lim;
+
 			len_lim = max_len;
 			if (len_lim > qdf_nbuf_len(frm))
 				len_lim = qdf_nbuf_len(frm);
@@ -488,6 +468,7 @@ NOT_IP_TCP:
 			i = 0;
 			while (i < len_lim) {
 				int frag_bytes;
+
 				frag_bytes =
 					qdf_nbuf_get_frag_len(frm, frag_num);
 				if (frag_bytes > len_lim - i)
@@ -504,7 +485,7 @@ NOT_IP_TCP:
 
 			QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
 				  "frame %pK data (%pK), hex dump of bytes 0-%d of %d:\n",
-				frm, p, len_lim - 1, (int)qdf_nbuf_len(frm));
+				  frm, p, len_lim - 1, (int)qdf_nbuf_len(frm));
 			p = local_buf;
 			while (len_lim > 16) {
 				QDF_TRACE(QDF_MODULE_ID_TXRX,
@@ -543,7 +524,7 @@ NOT_IP_TCP:
 
 #define OL_RX_ERR_STATISTICS(pdev, vdev, err_type, sec_type, is_mcast) \
 	ol_rx_err_statistics(pdev->ctrl_pdev, vdev->vdev_id, err_type,	   \
-			     sec_type, is_mcast);
+			     sec_type, is_mcast)
 
 #define OL_RX_ERR_STATISTICS_1(pdev, vdev, peer, rx_desc, err_type)	\
 	do {								\
@@ -581,6 +562,7 @@ NOT_IP_TCP:
 		struct ol_pdev_t *pdev, qdf_nbuf_t rx_msdu)
 	{
 		struct ieee80211_frame *wh = NULL;
+
 		if (ol_cfg_frame_type(pdev) == wlan_frm_fmt_native_wifi)
 			/* For windows, it is always native wifi header .*/
 			wh = (struct ieee80211_frame *)qdf_nbuf_data(rx_msdu);
@@ -693,7 +675,7 @@ NOT_IP_TCP:
 	do { \
 		if (_p_cntrs == 1) { \
 			TXRX_STATS_ADD(_pdev, pub.tx.tso.tso_hist.pkts_1, 1); \
-		} else if (_p_cntrs >= 2 && _p_cntrs <= 5) {                   \
+		} else if (_p_cntrs >= 2 && _p_cntrs <= 5) {                  \
 			TXRX_STATS_ADD(_pdev,                                 \
 				pub.tx.tso.tso_hist.pkts_2_5, 1);             \
 		} else if (_p_cntrs > 5 && _p_cntrs <= 10) {                  \
@@ -713,8 +695,10 @@ NOT_IP_TCP:
 
 #define TXRX_STATS_TSO_RESET_MSDU(pdev, idx) \
 	do { \
-		pdev->stats.pub.tx.tso.tso_info.tso_msdu_info[idx].num_seg = 0; \
-		pdev->stats.pub.tx.tso.tso_info.tso_msdu_info[idx].tso_seg_idx = 0; \
+		pdev->stats.pub.tx.tso.tso_info.tso_msdu_info[idx].num_seg     \
+			= 0;						       \
+		pdev->stats.pub.tx.tso.tso_info.tso_msdu_info[idx].tso_seg_idx \
+			= 0;						       \
 	} while (0)
 
 #define TXRX_STATS_TSO_MSDU_IDX(pdev) \

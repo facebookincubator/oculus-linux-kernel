@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,6 +22,8 @@
 #include "../codecs/sdm660_cdc/msm-analog-cdc.h"
 #include "../codecs/wsa881x.h"
 
+#define __CHIPSET__ "SDM660 "
+#define MSM_DAILINK_NAME(name) (__CHIPSET__#name)
 #define DRV_NAME "sdm660-asoc-snd"
 
 #define MSM_INT_DIGITAL_CODEC "msm-dig-codec"
@@ -29,6 +31,7 @@
 
 #define DEV_NAME_STR_LEN  32
 #define DEFAULT_MCLK_RATE 9600000
+#define MSM_LL_QOS_VALUE 300 /* time in us to ensure LPM doesn't go in C3/C4 */
 
 struct dev_config {
 	u32 sample_rate;
@@ -133,7 +136,6 @@ static struct dev_config tdm_tx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 static struct dev_config ext_disp_rx_cfg[] = {
 	[DP_RX_IDX] =   {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 };
-
 static struct dev_config usb_rx_cfg = {
 	.sample_rate = SAMPLING_RATE_48KHZ,
 	.bit_format = SNDRV_PCM_FORMAT_S16_LE,
@@ -279,6 +281,7 @@ static char const *usb_sample_rate_text[] = {"KHZ_8", "KHZ_11P025",
 static char const *ext_disp_bit_format_text[] = {"S16_LE", "S24_LE"};
 static char const *ext_disp_sample_rate_text[] = {"KHZ_48", "KHZ_96",
 						  "KHZ_192"};
+static const char *const qos_text[] = {"Disable", "Enable"};
 
 static SOC_ENUM_SINGLE_EXT_DECL(ext_disp_rx_chs, ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(proxy_rx_chs, ch_text);
@@ -329,6 +332,9 @@ static SOC_ENUM_SINGLE_EXT_DECL(tdm_tx_sample_rate, tdm_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_chs, tdm_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_format, tdm_bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_sample_rate, tdm_sample_rate_text);
+static SOC_ENUM_SINGLE_EXT_DECL(qos_vote, qos_text);
+
+static int qos_vote_status;
 
 static struct afe_clk_set mi2s_clk[MI2S_MAX] = {
 	{
@@ -1817,6 +1823,55 @@ static int ext_disp_rx_sample_rate_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static int msm_qos_ctl_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.enumerated.item[0] = qos_vote_status;
+	return 0;
+}
+
+static int msm_qos_ctl_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct snd_soc_card *card = codec->component.card;
+	const char *fe_name = MSM_DAILINK_NAME(LowLatency);
+	struct snd_soc_pcm_runtime *rtd;
+	struct snd_pcm_substream *substream;
+	s32 usecs;
+
+	rtd = snd_soc_get_pcm_runtime(card, fe_name);
+	if (!rtd) {
+		pr_err("%s: fail to get pcm runtime for %s\n",
+			__func__, fe_name);
+		return -EINVAL;
+	}
+
+	substream = rtd->pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
+	if (!substream) {
+		pr_err("%s: substream is null\n", __func__);
+		return -EINVAL;
+	}
+
+	qos_vote_status = ucontrol->value.enumerated.item[0];
+	if (qos_vote_status) {
+		if (pm_qos_request_active(&substream->latency_pm_qos_req))
+			pm_qos_remove_request(&substream->latency_pm_qos_req);
+		if (!substream->runtime) {
+			pr_err("%s: runtime is null\n", __func__);
+			return -EINVAL;
+		}
+		usecs = MSM_LL_QOS_VALUE;
+		if (usecs >= 0)
+			pm_qos_add_request(&substream->latency_pm_qos_req,
+						PM_QOS_CPU_DMA_LATENCY, usecs);
+	} else {
+		if (pm_qos_request_active(&substream->latency_pm_qos_req))
+			pm_qos_remove_request(&substream->latency_pm_qos_req);
+	}
+	return 0;
+}
+
 const struct snd_kcontrol_new msm_common_snd_controls[] = {
 	SOC_ENUM_EXT("PROXY_RX Channels", proxy_rx_chs,
 			proxy_rx_ch_get, proxy_rx_ch_put),
@@ -2001,6 +2056,10 @@ const struct snd_kcontrol_new msm_common_snd_controls[] = {
 	SOC_ENUM_EXT("QUAT_TDM_TX_0 Channels", tdm_tx_chs,
 			tdm_tx_ch_get,
 			tdm_tx_ch_put),
+
+	SOC_ENUM_EXT("MultiMedia5_RX QOS Vote", qos_vote, msm_qos_ctl_get,
+			msm_qos_ctl_put),
+
 };
 
 /**
@@ -2553,11 +2612,9 @@ void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	mutex_lock(&mi2s_intf_conf[index].lock);
 	if (--mi2s_intf_conf[index].ref_cnt == 0) {
 		ret = msm_mi2s_set_sclk(substream, false);
-		if (ret < 0) {
+		if (ret < 0)
 			pr_err("%s:clock disable failed for MI2S (%d); ret=%d\n",
 				__func__, index, ret);
-			mi2s_intf_conf[index].ref_cnt++;
-		}
 		if (mi2s_intf_conf[index].msm_is_ext_mclk) {
 			mi2s_mclk[index].enable = 0;
 			pr_debug("%s: Disabling mclk, clk_freq_in_hz = %u\n",
@@ -3087,8 +3144,6 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 					"qcom,cdc-dmic-gpios", 0);
 		pdata->ext_spk_gpio_p = of_parse_phandle(pdev->dev.of_node,
 					"qcom,cdc-ext-spk-gpios", 0);
-		pdata->tert_mi2s_gpio_p = of_parse_phandle(pdev->dev.of_node,
-					"qcom,tert-mi2s-gpios", 0);
 	}
 
 	/*

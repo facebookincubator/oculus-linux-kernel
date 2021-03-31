@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,6 +17,7 @@
 #define ADM_PATH_LIVE_REC 0x2
 #define ADM_PATH_NONLIVE_REC 0x3
 #define ADM_PATH_COMPRESSED_RX 0x5
+#define ADM_PATH_COMPRESSED_TX 0x6
 #include <linux/qdsp6v2/rtac.h>
 #include <sound/q6afe-v2.h>
 #include <sound/q6audio-v2.h>
@@ -24,6 +25,8 @@
 #define MAX_MODULES_IN_TOPO 16
 #define ADM_GET_TOPO_MODULE_LIST_LENGTH\
 		((MAX_MODULES_IN_TOPO + 1) * sizeof(uint32_t))
+#define ADM_GET_TOPO_MODULE_INSTANCE_LIST_LENGTH                               \
+	((MAX_MODULES_IN_TOPO + 1) * 2 * sizeof(uint32_t))
 #define AUD_PROC_BLOCK_SIZE	4096
 #define AUD_VOL_BLOCK_SIZE	4096
 #define AUDIO_RX_CALIBRATION_SIZE	(AUD_PROC_BLOCK_SIZE + \
@@ -50,8 +53,15 @@ enum {
 	ADM_CLIENT_ID_MAX,
 };
 
+/* ENUM for adm_status & route_status */
+enum adm_status_flags {
+	ADM_STATUS_CALIBRATION_REQUIRED = 0,
+	ADM_STATUS_LIMITER,
+	ADM_STATUS_MAX,
+};
+
 #define MAX_COPPS_PER_PORT 0x8
-#define ADM_MAX_CHANNELS 8
+#define ADM_MAX_CHANNELS 32
 
 /* multiple copp per stream. */
 struct route_payload {
@@ -60,8 +70,28 @@ struct route_payload {
 	int app_type[MAX_COPPS_PER_PORT];
 	int acdb_dev_id[MAX_COPPS_PER_PORT];
 	int sample_rate[MAX_COPPS_PER_PORT];
+	unsigned long route_status[MAX_COPPS_PER_PORT];
 	unsigned short num_copps;
 	unsigned int session_id;
+};
+
+struct default_chmixer_param_id_coeff {
+	uint32_t index;
+	uint16_t num_output_channels;
+	uint16_t num_input_channels;
+};
+
+struct msm_pcm_channel_mixer {
+	int output_channel;
+	int input_channels[ADM_MAX_CHANNELS];
+	bool enable;
+	int rule;
+	int channel_weight[ADM_MAX_CHANNELS][ADM_MAX_CHANNELS];
+	int port_idx;
+	int input_channel;
+	uint16_t in_ch_map[ADM_MAX_CHANNELS];
+	uint16_t out_ch_map[ADM_MAX_CHANNELS];
+	int override_cfg;
 };
 
 int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
@@ -78,15 +108,27 @@ void adm_copp_mfc_cfg(int port_id, int copp_idx, int dst_sample_rate);
 int adm_get_params(int port_id, int copp_idx, uint32_t module_id,
 		   uint32_t param_id, uint32_t params_length, char *params);
 
+int adm_get_pp_params(int port_id, int copp_idx, uint32_t client_id,
+		      struct mem_mapping_hdr *mem_hdr,
+		      struct param_hdr_v3 *param_hdr, u8 *returned_param_data);
+
 int adm_send_params_v5(int port_id, int copp_idx, char *params,
 			      uint32_t params_length);
 
 int adm_dolby_dap_send_params(int port_id, int copp_idx, char *params,
 			      uint32_t params_length);
 
+int adm_set_pp_params(int port_id, int copp_idx,
+		      struct mem_mapping_hdr *mem_hdr, u8 *param_data,
+		      u32 params_size);
+
+int adm_pack_and_set_one_pp_param(int port_id, int copp_idx,
+				  struct param_hdr_v3 param_hdr,
+				  u8 *param_data);
+
 int adm_open(int port, int path, int rate, int mode, int topology,
 			   int perf_mode, uint16_t bits_per_sample,
-			   int app_type, int acdbdev_id);
+			   int app_type, int acdbdev_id, u32 copp_token);
 
 int adm_map_rtac_block(struct rtac_cal_block_data *cal_block);
 
@@ -123,12 +165,21 @@ int adm_get_topology_for_port_copp_idx(int port_id, int copp_idx);
 
 int adm_get_indexes_from_copp_id(int copp_id, int *port_idx, int *copp_idx);
 
-int adm_set_stereo_to_custom_stereo(int port_id, int copp_idx,
-				    unsigned int session_id,
-				    char *params, uint32_t params_length);
+int adm_set_pspd_matrix_params(int port_id, int copp_idx,
+				unsigned int session_id,
+				char *params, uint32_t params_length,
+				int session_type);
+
+int adm_set_downmix_params(int port_id, int copp_idx,
+				unsigned int session_id, char *params,
+				uint32_t params_length);
 
 int adm_get_pp_topo_module_list(int port_id, int copp_idx, int32_t param_length,
 				char *params);
+
+int adm_get_pp_topo_module_list_v2(int port_id, int copp_idx,
+				   int32_t param_length,
+				   int32_t *returned_params);
 
 int adm_set_volume(int port_id, int copp_idx, int volume);
 
@@ -141,6 +192,9 @@ int adm_send_set_multichannel_ec_primary_mic_ch(int port_id, int copp_idx,
 				int primary_mic_ch);
 
 int adm_param_enable(int port_id, int copp_idx, int module_id,  int enable);
+
+int adm_param_enable_v2(int port_id, int copp_idx,
+			struct module_instance_info mod_inst_info, int enable);
 
 int adm_send_calibration(int port_id, int copp_idx, int path, int perf_mode,
 			 int cal_type, char *params, int size);
@@ -163,4 +217,11 @@ int adm_get_sound_focus(int port_id, int copp_idx,
 			struct sound_focus_param *soundFocusData);
 int adm_get_source_tracking(int port_id, int copp_idx,
 			    struct source_tracking_param *sourceTrackingData);
+int adm_swap_speaker_channels(int port_id, int copp_idx, int sample_rate,
+				bool spk_swap);
+int adm_programable_channel_mixer(int port_id, int copp_idx, int session_id,
+			int session_type,
+			struct msm_pcm_channel_mixer *ch_mixer,
+			int channel_index);
+void adm_set_native_mode(int mode);
 #endif /* __Q6_ADM_V2_H__ */

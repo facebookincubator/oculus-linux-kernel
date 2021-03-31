@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2012, 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef DOT11FDEFS_H_82A7B72E_C36C_465D_82A7_139EA5322582
@@ -64,22 +55,19 @@
 #define DOT11F_HAVE_LOG_MACROS
 
 #define FRAMES_LOG0(ctx, sev, fmt) \
-	dot11f_log((ctx), (sev), (fmt));
+	QDF_TRACE(QDF_MODULE_ID_PE, (sev), (fmt));
 
 #define FRAMES_LOG1(ctx, sev, fmt, p1) \
-	dot11f_log((ctx), (sev), (fmt), (p1));
+	QDF_TRACE(QDF_MODULE_ID_PE, (sev), (fmt), (p1));
 
 #define FRAMES_LOG2(ctx, sev, fmt, p1, p2) \
-	dot11f_log((ctx), (sev), (fmt), (p1), (p2));
+	QDF_TRACE(QDF_MODULE_ID_PE, (sev), (fmt), (p1), (p2));
 
 #define FRAMES_LOG3(ctx, sev, fmt, p1, p2, p3) \
-	dot11f_log((ctx), (sev), (fmt), (p1), (p2), (p3));
-
-#define FRAMES_LOG4(ctx, sev, fmt, p1, p2, p3, p4) \
-	dot11f_log((ctx), (sev), (fmt), (p1), (p2), (p3), (p4));
+	QDF_TRACE(QDF_MODULE_ID_PE, (sev), (fmt), (p1), (p2), (p3));
 
 #define FRAMES_DUMP(ctx, sev, p, n) \
-	sir_dump_buf((pCtx), SIR_DBG_MODULE_ID, (sev), (p), (n));
+	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, (sev), (p), (n);
 
 #endif /* #if defined( DOT11F_ENABLE_LOGGING ) */
 

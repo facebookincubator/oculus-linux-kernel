@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,7 +34,9 @@
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
+#ifdef CONFIG_VS1_BOARD
 #include <linux/regulator/consumer.h>
+#endif
 
 /* QPNP VADC register definition */
 #define QPNP_VADC_REVISION1				0x0
@@ -201,7 +203,9 @@ struct qpnp_vadc_chip {
 	bool				vadc_hc;
 	int				vadc_debug_count;
 	struct sensor_device_attribute	sens_attr[0];
+#ifdef CONFIG_VS1_BOARD
 	struct regulator		*vdd_core;
+#endif
 };
 
 LIST_HEAD(qpnp_vadc_device_list);
@@ -1490,7 +1494,7 @@ int32_t qpnp_vadc_calib_vref(struct qpnp_vadc_chip *vadc,
 	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
 	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
 	conv.fast_avg_setup = ADC_FAST_AVG_SAMPLE_1;
-	conv.cal_val = calib_type;
+	conv.cal_val = (enum qpnp_adc_cal_val)calib_type;
 
 	if (vadc->vadc_hc) {
 		rc = qpnp_vadc_hc_configure(vadc, &conv);
@@ -1563,7 +1567,7 @@ int32_t qpnp_vadc_calib_gnd(struct qpnp_vadc_chip *vadc,
 	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
 	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
 	conv.fast_avg_setup = ADC_FAST_AVG_SAMPLE_1;
-	conv.cal_val = calib_type;
+	conv.cal_val = (enum qpnp_adc_cal_val)calib_type;
 
 	if (vadc->vadc_hc) {
 		rc = qpnp_vadc_hc_configure(vadc, &conv);
@@ -1681,10 +1685,10 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 					(calib_read_1 - calib_read_2);
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].dx =
 					vadc->adc->adc_prop->adc_vdd_reference;
-	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].adc_vref
-					= calib_read_1;
-	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].adc_gnd
-					= calib_read_2;
+	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].adc_vref =
+					calib_read_1;
+	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].adc_gnd =
+					calib_read_2;
 
 calib_fail:
 	return rc;
@@ -2527,8 +2531,7 @@ static ssize_t qpnp_adc_show(struct device *dev,
 	}
 
 	return snprintf(buf, QPNP_ADC_HWMON_NAME_LENGTH,
-			"Result:%lld Raw:%x\n",
-			result.physical, result.adc_code);
+		"Result:%lld Raw:%x\n", result.physical, result.adc_code);
 }
 
 static struct sensor_device_attribute qpnp_adc_attr =
@@ -2821,6 +2824,22 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 	vadc->vadc_iadc_sync_lock = false;
 	dev_set_drvdata(&pdev->dev, vadc);
 	list_add(&vadc->list, &qpnp_vadc_device_list);
+
+#ifdef CONFIG_VS1_BOARD
+	/* L18 regulator 3.3V enable for IPD sensor */
+	vadc->vdd_core = regulator_get(&pdev->dev, "qpnp-vadc-hc,vdd-core");
+	if (IS_ERR(vadc->vdd_core))
+		pr_err("[VADC]: L18 regulator getting error!!\n");
+
+	rc = regulator_set_voltage(vadc->vdd_core, 3312000, 3312000);
+	if (rc < 0)
+		pr_err("[VADC]: L18 regulator setting voltage failed!!\n");
+
+	rc = regulator_enable(vadc->vdd_core);
+	if (rc < 0)
+		pr_err("[VADC]: L18 regulator enable failed!!\n");
+#endif
+
 	return 0;
 
 err_setup:

@@ -48,9 +48,39 @@ static bool i8042_unlock;
 module_param_named(unlock, i8042_unlock, bool, 0);
 MODULE_PARM_DESC(unlock, "Ignore keyboard lock.");
 
-static bool i8042_reset;
-module_param_named(reset, i8042_reset, bool, 0);
-MODULE_PARM_DESC(reset, "Reset controller during init and cleanup.");
+enum i8042_controller_reset_mode {
+	I8042_RESET_NEVER,
+	I8042_RESET_ALWAYS,
+	I8042_RESET_ON_S2RAM,
+#define I8042_RESET_DEFAULT	I8042_RESET_ON_S2RAM
+};
+static enum i8042_controller_reset_mode i8042_reset = I8042_RESET_DEFAULT;
+static int i8042_set_reset(const char *val, const struct kernel_param *kp)
+{
+	enum i8042_controller_reset_mode *arg = kp->arg;
+	int error;
+	bool reset;
+
+	if (val) {
+		error = kstrtobool(val, &reset);
+		if (error)
+			return error;
+	} else {
+		reset = true;
+	}
+
+	*arg = reset ? I8042_RESET_ALWAYS : I8042_RESET_NEVER;
+	return 0;
+}
+
+static const struct kernel_param_ops param_ops_reset_param = {
+	.flags = KERNEL_PARAM_OPS_FL_NOARG,
+	.set = i8042_set_reset,
+};
+#define param_check_reset_param(name, p)	\
+	__param_check(name, p, enum i8042_controller_reset_mode)
+module_param_named(reset, i8042_reset, reset_param, 0);
+MODULE_PARM_DESC(reset, "Reset controller on resume, cleanup or both");
 
 static bool i8042_direct;
 module_param_named(direct, i8042_direct, bool, 0);
@@ -404,8 +434,10 @@ static int i8042_start(struct serio *serio)
 {
 	struct i8042_port *port = serio->port_data;
 
+	spin_lock_irq(&i8042_lock);
 	port->exists = true;
-	mb();
+	spin_unlock_irq(&i8042_lock);
+
 	return 0;
 }
 
@@ -418,16 +450,20 @@ static void i8042_stop(struct serio *serio)
 {
 	struct i8042_port *port = serio->port_data;
 
+	spin_lock_irq(&i8042_lock);
 	port->exists = false;
+	port->serio = NULL;
+	spin_unlock_irq(&i8042_lock);
 
 	/*
+	 * We need to make sure that interrupt handler finishes using
+	 * our serio port before we return from this function.
 	 * We synchronize with both AUX and KBD IRQs because there is
 	 * a (very unlikely) chance that AUX IRQ is raised for KBD port
 	 * and vice versa.
 	 */
 	synchronize_irq(I8042_AUX_IRQ);
 	synchronize_irq(I8042_KBD_IRQ);
-	port->serio = NULL;
 }
 
 /*
@@ -544,7 +580,7 @@ static irqreturn_t i8042_interrupt(int irq, void *dev_id)
 
 	spin_unlock_irqrestore(&i8042_lock, flags);
 
-	if (likely(port->exists && !filtered))
+	if (likely(serio && !filtered))
 		serio_interrupt(serio, data, dfl);
 
  out:
@@ -1019,7 +1055,7 @@ static int i8042_controller_init(void)
  * Reset the controller and reset CRT to the original value set by BIOS.
  */
 
-static void i8042_controller_reset(bool force_reset)
+static void i8042_controller_reset(bool s2r_wants_reset)
 {
 	i8042_flush();
 
@@ -1044,8 +1080,10 @@ static void i8042_controller_reset(bool force_reset)
  * Reset the controller if requested.
  */
 
-	if (i8042_reset || force_reset)
+	if (i8042_reset == I8042_RESET_ALWAYS ||
+	    (i8042_reset == I8042_RESET_ON_S2RAM && s2r_wants_reset)) {
 		i8042_controller_selftest();
+	}
 
 /*
  * Restore the original control register setting.
@@ -1110,7 +1148,7 @@ static void i8042_dritek_enable(void)
  * before suspending.
  */
 
-static int i8042_controller_resume(bool force_reset)
+static int i8042_controller_resume(bool s2r_wants_reset)
 {
 	int error;
 
@@ -1118,7 +1156,8 @@ static int i8042_controller_resume(bool force_reset)
 	if (error)
 		return error;
 
-	if (i8042_reset || force_reset) {
+	if (i8042_reset == I8042_RESET_ALWAYS ||
+	    (i8042_reset == I8042_RESET_ON_S2RAM && s2r_wants_reset)) {
 		error = i8042_controller_selftest();
 		if (error)
 			return error;
@@ -1195,7 +1234,7 @@ static int i8042_pm_resume_noirq(struct device *dev)
 
 static int i8042_pm_resume(struct device *dev)
 {
-	bool force_reset;
+	bool want_reset;
 	int i;
 
 	for (i = 0; i < I8042_NUM_PORTS; i++) {
@@ -1218,9 +1257,9 @@ static int i8042_pm_resume(struct device *dev)
 	 * off control to the platform firmware, otherwise we can simply restore
 	 * the mode.
 	 */
-	force_reset = pm_resume_via_firmware();
+	want_reset = pm_resume_via_firmware();
 
-	return i8042_controller_resume(force_reset);
+	return i8042_controller_resume(want_reset);
 }
 
 static int i8042_pm_thaw(struct device *dev)
@@ -1482,7 +1521,7 @@ static int __init i8042_probe(struct platform_device *dev)
 
 	i8042_platform_device = dev;
 
-	if (i8042_reset) {
+	if (i8042_reset == I8042_RESET_ALWAYS) {
 		error = i8042_controller_selftest();
 		if (error)
 			return error;

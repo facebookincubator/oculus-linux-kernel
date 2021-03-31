@@ -4,12 +4,17 @@ config DRM_MSM
 	depends on DRM
 	depends on ARCH_QCOM || (ARM && COMPILE_TEST)
 	depends on OF
+	depends on !MSM_GVM
 	select REGULATOR
 	select DRM_KMS_HELPER
 	select DRM_PANEL
 	select SHMEM
 	select TMPFS
 	select QCOM_SCM
+	select BACKLIGHT_CLASS_DEVICE
+	select MSM_EXT_DISPLAY
+	select MMU_NOTIFIER
+	select INTERVAL_TREE
 	default y
 	help
 	  DRM/KMS driver for MSM/snapdragon.
@@ -22,6 +27,16 @@ config DRM_MSM_REGISTER_LOGGING
 	  Compile in support for logging register reads/writes in a format
 	  that can be parsed by envytools demsm tool.  If enabled, register
 	  logging can be switched on via msm.reglog=y module param.
+
+config DRM_MSM_EARLY_CARD
+	bool "Enable Early DRM in MSM DRM driver"
+	depends on DRM_MSM
+	default y
+	help
+	  Choose this option if one wants to enable Early DRM driver
+	  for MSM/snapdragon.  Early DRM will create one DRI card to
+	  support early application.  One should also check device tree
+	  to assign proper display resources to early DRM
 
 config DRM_MSM_DSI
 	bool "Enable DSI support in MSM DRM driver"
@@ -87,4 +102,30 @@ config DRM_SDE_WB
 	default y
 	help
 	  Choose this option for writeback connector support.
+
+config DRM_SDE_SHD
+	bool "Enable Shared display support in SDE DRM"
+	depends on DRM_MSM
+	help
+	  Choose this option for shared display support.
+	  This option enables multiple logical displays
+	  to share one base physical encoder/connector.
+	  Each logical display will appear as different
+	  connectors and report back to user.
+
+config DRM_SDE_HDMI
+	bool "Enable HDMI driver support in DRM SDE driver"
+	depends on DRM_MSM
+	default y
+	help
+	  Choose this option if HDMI connector support is needed in SDE driver.
+
+config DRM_SDE_EVTLOG_DEBUG
+	bool "Enable event logging in MSM DRM"
+	depends on DRM_MSM
+	help
+          The SDE DRM debugging provides support to enable display debugging
+          features to: dump SDE registers during driver errors, panic
+          driver during fatal errors and enable some display-driver logging
+          into an internal buffer (this avoids logging overhead).
 

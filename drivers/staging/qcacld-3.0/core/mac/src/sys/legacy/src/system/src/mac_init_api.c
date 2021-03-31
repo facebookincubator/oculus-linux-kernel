@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -41,7 +32,6 @@
 #include "cfg_api.h"             /* cfg_cleanup */
 #include "lim_api.h"             /* lim_cleanup */
 #include "sir_types.h"
-#include "sys_debug.h"
 #include "sys_entry_func.h"
 #include "mac_init_api.h"
 
@@ -51,48 +41,34 @@
 
 static tAniSirGlobal global_mac_context;
 
-extern tSirRetStatus halDoCfgInit(tpAniSirGlobal pMac);
-extern tSirRetStatus halProcessStartEvent(tpAniSirGlobal pMac);
-
-tSirRetStatus mac_start(tHalHandle hHal, void *pHalMacStartParams)
+QDF_STATUS mac_start(mac_handle_t mac_handle,
+		     struct mac_start_params *params)
 {
-	tSirRetStatus status = eSIR_SUCCESS;
-	tpAniSirGlobal pMac = (tpAniSirGlobal) hHal;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tpAniSirGlobal mac = MAC_CONTEXT(mac_handle);
 
-	if (NULL == pMac) {
+	if (!mac || !params) {
 		QDF_ASSERT(0);
-		status = eSIR_FAILURE;
+		status = QDF_STATUS_E_FAILURE;
 		return status;
 	}
 
-	pMac->gDriverType =
-		((tHalMacStartParameters *) pHalMacStartParams)->driverType;
+	mac->gDriverType = params->driver_type;
 
-	sys_log(pMac, LOG2, FL("called"));
-
-	if (ANI_DRIVER_TYPE(pMac) != eDRIVER_TYPE_MFG) {
-		status = pe_start(pMac);
-	}
+	if (ANI_DRIVER_TYPE(mac) != QDF_DRIVER_TYPE_MFG)
+		status = pe_start(mac);
 
 	return status;
 }
 
-/** -------------------------------------------------------------
-   \fn mac_stop
-   \brief this function will be called from HDD to stop MAC. This function will stop all the mac modules.
- \       memory with global context will only be initialized not freed here.
-   \param   tHalHandle hHal
-   \param tHalStopType
-   \return tSirRetStatus
-   -------------------------------------------------------------*/
-
-tSirRetStatus mac_stop(tHalHandle hHal, tHalStopType stopType)
+QDF_STATUS mac_stop(mac_handle_t mac_handle)
 {
-	tpAniSirGlobal pMac = (tpAniSirGlobal) hHal;
-	pe_stop(pMac);
-	cfg_cleanup(pMac);
+	tpAniSirGlobal mac = MAC_CONTEXT(mac_handle);
 
-	return eSIR_SUCCESS;
+	pe_stop(mac);
+	cfg_cleanup(mac);
+
+	return QDF_STATUS_SUCCESS;
 }
 
 /** -------------------------------------------------------------
@@ -100,58 +76,67 @@ tSirRetStatus mac_stop(tHalHandle hHal, tHalStopType stopType)
    \brief this function will be called during init. This function is suppose to allocate all the
  \       memory with the global context will be allocated here.
    \param   tHalHandle pHalHandle
-   \param   tHddHandle hHdd
+   \param   hdd_handle_t hdd_handle
    \param   tHalOpenParameters* pHalOpenParams
-   \return tSirRetStatus
+   \return QDF_STATUS
    -------------------------------------------------------------*/
 
-tSirRetStatus mac_open(tHalHandle *pHalHandle, tHddHandle hHdd,
-		       struct cds_config_info *cds_cfg)
+QDF_STATUS mac_open(struct wlan_objmgr_psoc *psoc, tHalHandle *pHalHandle,
+		    hdd_handle_t hdd_handle, struct cds_config_info *cds_cfg)
 {
 	tpAniSirGlobal p_mac = &global_mac_context;
-	tSirRetStatus status = eSIR_SUCCESS;
+	QDF_STATUS status;
 
-	if (pHalHandle == NULL)
-		return eSIR_FAILURE;
+	QDF_BUG(pHalHandle);
+	if (!pHalHandle)
+		return QDF_STATUS_E_FAILURE;
 
 	/*
 	 * Set various global fields of p_mac here
-	 * (Could be platform dependant as some variables in p_mac are platform
-	 * dependant)
+	 * (Could be platform dependent as some variables in p_mac are platform
+	 * dependent)
 	 */
-	p_mac->hHdd = hHdd;
-	*pHalHandle = (tHalHandle) p_mac;
+	p_mac->hdd_handle = hdd_handle;
 
-	{
-		/*
-		 * For Non-FTM cases this value will be reset during mac_start
-		 */
-		if (cds_cfg->driver_type)
-			p_mac->gDriverType = eDRIVER_TYPE_MFG;
-
-		/* Call various PE (and other layer init here) */
-		if (eSIR_SUCCESS != log_init(p_mac))
-			return eSIR_FAILURE;
-
-		/* Call routine to initialize CFG data structures */
-		if (eSIR_SUCCESS != cfg_init(p_mac)) {
-			log_deinit(p_mac);
-			return eSIR_FAILURE;
-		}
-
-		sys_init_globals(p_mac);
+	status = wlan_objmgr_psoc_try_get_ref(psoc, WLAN_LEGACY_MAC_ID);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_err("PSOC get ref failure");
+		return QDF_STATUS_E_FAILURE;
 	}
+
+	p_mac->psoc = psoc;
+	*pHalHandle = (tHalHandle)p_mac;
+
+	/* For Non-FTM cases this value will be reset during mac_start */
+	if (cds_cfg->driver_type)
+		p_mac->gDriverType = QDF_DRIVER_TYPE_MFG;
+
+	status = cfg_init(p_mac);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_err("failed to init legacy CFG; status:%u", status);
+		goto release_psoc_ref;
+	}
+
+	sys_init_globals(p_mac);
 
 	/* FW: 0 to 2047 and Host: 2048 to 4095 */
 	p_mac->mgmtSeqNum = WLAN_HOST_SEQ_NUM_MIN - 1;
-	p_mac->first_scan_done = false;
+	p_mac->he_sgi_ltf_cfg_bit_mask = DEF_HE_AUTO_SGI_LTF;
+	p_mac->is_usr_cfg_amsdu_enabled = true;
 
-	status =  pe_open(p_mac, cds_cfg);
-	if (eSIR_SUCCESS != status) {
-		sys_log(p_mac, LOGE, FL("pe_open failure"));
-		cfg_de_init(p_mac);
-		log_deinit(p_mac);
+	status = pe_open(p_mac, cds_cfg);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_err("failed to open PE; status:%u", status);
+		goto deinit_cfg;
 	}
+
+	return QDF_STATUS_SUCCESS;
+
+deinit_cfg:
+	cfg_de_init(p_mac);
+
+release_psoc_ref:
+	wlan_objmgr_psoc_release_ref(psoc, WLAN_LEGACY_MAC_ID);
 
 	return status;
 }
@@ -164,22 +149,26 @@ tSirRetStatus mac_open(tHalHandle *pHalHandle, tHddHandle hHdd,
    \return none
    -------------------------------------------------------------*/
 
-tSirRetStatus mac_close(tHalHandle hHal)
+QDF_STATUS mac_close(tHalHandle hHal)
 {
 
 	tpAniSirGlobal pMac = (tpAniSirGlobal) hHal;
 
 	if (!pMac)
-		return eSIR_FAILURE;
+		return QDF_STATUS_E_FAILURE;
 
 	pe_close(pMac);
 
 	/* Call routine to free-up all CFG data structures */
 	cfg_de_init(pMac);
 
-	log_deinit(pMac);
-
+	if (pMac->pdev) {
+		wlan_objmgr_pdev_release_ref(pMac->pdev, WLAN_LEGACY_MAC_ID);
+		pMac->pdev = NULL;
+	}
+	wlan_objmgr_psoc_release_ref(pMac->psoc, WLAN_LEGACY_MAC_ID);
+	pMac->psoc = NULL;
 	qdf_mem_zero(pMac, sizeof(*pMac));
 
-	return eSIR_SUCCESS;
+	return QDF_STATUS_SUCCESS;
 }

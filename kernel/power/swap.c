@@ -36,6 +36,23 @@
 
 #define HIBERNATE_SIG	"S1SUSPEND"
 
+static int goldenimage;
+/*
+ * When reading an {un,}compressed image, we may restore pages in place,
+ * in which case some architectures need these pages cleaning before they
+ * can be executed. We don't know which pages these may be, so clean the lot.
+ */
+static bool clean_pages_on_read;
+static bool clean_pages_on_decompress;
+
+/*
+ * When reading an {un,}compressed image, we may restore pages in place,
+ * in which case some architectures need these pages cleaning before they
+ * can be executed. We don't know which pages these may be, so clean the lot.
+ */
+static bool clean_pages_on_read;
+static bool clean_pages_on_decompress;
+
 /*
  *	The swap map is a data structure used for keeping track of each page
  *	written to a swap partition.  It consists of many swap_map_page
@@ -241,6 +258,9 @@ static void hib_end_io(struct bio *bio)
 
 	if (bio_data_dir(bio) == WRITE)
 		put_page(page);
+	else if (clean_pages_on_read)
+		flush_icache_range((unsigned long)page_address(page),
+				   (unsigned long)page_address(page) + PAGE_SIZE);
 
 	if (bio->bi_error && !hb->error)
 		hb->error = bio->bi_error;
@@ -1049,6 +1069,7 @@ static int load_image(struct swap_map_handle *handle,
 
 	hib_init_batch(&hb);
 
+	clean_pages_on_read = true;
 	printk(KERN_INFO "PM: Loading image data pages (%u pages)...\n",
 		nr_to_read);
 	m = nr_to_read / 10;
@@ -1124,6 +1145,10 @@ static int lzo_decompress_threadfn(void *data)
 		d->unc_len = LZO_UNC_SIZE;
 		d->ret = lzo1x_decompress_safe(d->cmp + LZO_HEADER, d->cmp_len,
 		                               d->unc, &d->unc_len);
+		if (clean_pages_on_decompress)
+			flush_icache_range((unsigned long)d->unc,
+					   (unsigned long)d->unc + d->unc_len);
+
 		atomic_set(&d->stop, 1);
 		wake_up(&d->done);
 	}
@@ -1188,6 +1213,8 @@ static int load_image_lzo(struct swap_map_handle *handle,
 		goto out_clean;
 	}
 	memset(crc, 0, offsetof(struct crc_data, go));
+
+	clean_pages_on_decompress = true;
 
 	/*
 	 * Start the decompression threads.
@@ -1513,7 +1540,13 @@ int swsusp_check(void)
 			goto put;
 
 		if (!memcmp(HIBERNATE_SIG, swsusp_header->sig, 10)) {
-			memcpy(swsusp_header->sig, swsusp_header->orig_sig, 10);
+			if (!goldenimage) {
+				pr_debug("PM: corrupt hibernate image header\n");
+				memcpy(swsusp_header->sig,
+					swsusp_header->orig_sig, 10);
+			} else {
+				pr_debug("PM: Header corruption avoided\n");
+			}
 			/* Reset swap signature now */
 			error = hib_submit_io(WRITE_SYNC, swsusp_resume_block,
 						swsusp_header, NULL);
@@ -1587,3 +1620,10 @@ static int swsusp_header_init(void)
 }
 
 core_initcall(swsusp_header_init);
+
+static int __init golden_image_setup(char *str)
+{
+	goldenimage = 1;
+	return 1;
+}
+__setup("golden_image", golden_image_setup);

@@ -110,13 +110,23 @@ struct comm *thread__comm(const struct thread *thread)
 
 struct comm *thread__exec_comm(const struct thread *thread)
 {
-	struct comm *comm, *last = NULL;
+	struct comm *comm, *last = NULL, *second_last = NULL;
 
 	list_for_each_entry(comm, &thread->comm_list, list) {
 		if (comm->exec)
 			return comm;
+		second_last = last;
 		last = comm;
 	}
+
+	/*
+	 * 'last' with no start time might be the parent's comm of a synthesized
+	 * thread (created by processing a synthesized fork event). For a main
+	 * thread, that is very probably wrong. Prefer a later comm to avoid
+	 * that case.
+	 */
+	if (second_last && !last->start && thread->pid_ == thread->tid)
+		return second_last;
 
 	return last;
 }
@@ -227,7 +237,7 @@ void thread__find_cpumode_addr_location(struct thread *thread,
 					struct addr_location *al)
 {
 	size_t i;
-	const u8 const cpumodes[] = {
+	const u8 cpumodes[] = {
 		PERF_RECORD_MISC_USER,
 		PERF_RECORD_MISC_KERNEL,
 		PERF_RECORD_MISC_GUEST_USER,

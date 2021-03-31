@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,13 +13,23 @@
 #ifndef __Q6CORE_H__
 #define __Q6CORE_H__
 #include <linux/qdsp6v2/apr.h>
+#include <sound/apr_audio-v2.h>
 
 
 
 #define AVCS_CMD_ADSP_EVENT_GET_STATE		0x0001290C
 #define AVCS_CMDRSP_ADSP_EVENT_GET_STATE	0x0001290D
+#define AVCS_SERVICES_AND_STATIC_MODULES_READY		0x1
+#define AVCS_SERVICE_AND_ALL_MODULES_READY			0x5
 
-bool q6core_is_adsp_ready(void);
+int q6core_is_adsp_ready(void);
+int q6core_add_remove_pool_pages(phys_addr_t buf_add, uint32_t bufsz,
+			uint32_t mempool_id, bool add_pages);
+
+int q6core_get_service_version(uint32_t service_id,
+			       struct avcs_fwk_ver_info *ver_info,
+			       size_t size);
+size_t q6core_get_fwk_version_size(uint32_t service_id);
 
 #define ADSP_CMD_SET_DTS_EAGLE_DATA_ID 0x00012919
 #define DTS_EAGLE_LICENSE_ID           0x00028346
@@ -153,4 +163,39 @@ struct avcs_cmd_deregister_topologies {
 int32_t core_set_license(uint32_t key, uint32_t module_id);
 int32_t core_get_license_status(uint32_t module_id);
 
+#define ADSP_MEMORY_MAP_HLOS_PHYSPOOL 4
+#define AVCS_CMD_ADD_POOL_PAGES 0x0001292E
+#define AVCS_CMD_REMOVE_POOL_PAGES 0x0001292F
+
+struct avs_mem_assign_region {
+	struct apr_hdr       hdr;
+	u32                  pool_id;
+	u32                  size;
+	u32                  addr_lsw;
+	u32                  addr_msw;
+} __packed;
+
+#define AVCS_GET_VERSIONS	0x00012905
+struct avcs_cmd_get_version_result {
+	struct apr_hdr hdr;
+	uint32_t id;
+};
+#define AVCS_GET_VERSIONS_RSP	0x00012906
+
+#define AVCS_CMDRSP_Q6_ID_2_6	0x00040000
+#define AVCS_CMDRSP_Q6_ID_2_7	0x00040001
+#define AVCS_CMDRSP_Q6_ID_2_8   0x00040002
+#define AVCS_CMDRSP_Q6_ID_2_9   0x00040003
+
+enum q6_subsys_image {
+	Q6_SUBSYS_AVS2_6 = 1,
+	Q6_SUBSYS_AVS2_7,
+	Q6_SUBSYS_AVS2_8,
+	Q6_SUBSYS_AVS2_9,
+	Q6_SUBSYS_INVALID,
+};
+
+enum q6_subsys_image q6core_get_avs_version(void);
+
+int core_get_adsp_ver(void);
 #endif /* __Q6CORE_H__ */

@@ -234,13 +234,24 @@ static inline bool lockdep_softirq_start(void) { return false; }
 static inline void lockdep_softirq_end(bool in_hardirq) { }
 #endif
 
-asmlinkage __visible void __do_softirq(void)
+#define softirq_deferred_for_rt(pending)		\
+({							\
+	__u32 deferred = 0;				\
+	if (cpupri_check_rt()) {			\
+		deferred = pending & LONG_SOFTIRQ_MASK; \
+		pending &= ~LONG_SOFTIRQ_MASK;		\
+	}						\
+	deferred;					\
+})
+
+asmlinkage __visible void __softirq_entry __do_softirq(void)
 {
 	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
 	unsigned long old_flags = current->flags;
 	int max_restart = MAX_SOFTIRQ_RESTART;
 	struct softirq_action *h;
 	bool in_hardirq;
+	__u32 deferred;
 	__u32 pending;
 	int softirq_bit;
 
@@ -252,14 +263,14 @@ asmlinkage __visible void __do_softirq(void)
 	current->flags &= ~PF_MEMALLOC;
 
 	pending = local_softirq_pending();
+	deferred = softirq_deferred_for_rt(pending);
 	account_irq_enter_time(current);
-
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
 	in_hardirq = lockdep_softirq_start();
 
 restart:
 	/* Reset the pending bitmask before enabling irqs */
-	set_softirq_pending(0);
+	set_softirq_pending(deferred);
 	__this_cpu_write(active_softirqs, pending);
 
 	local_irq_enable();
@@ -295,14 +306,16 @@ restart:
 	local_irq_disable();
 
 	pending = local_softirq_pending();
+	deferred = softirq_deferred_for_rt(pending);
+
 	if (pending) {
 		if (time_before(jiffies, end) && !need_resched() &&
 		    --max_restart)
 			goto restart;
-
-		wakeup_softirqd();
 	}
 
+	if (pending | deferred)
+		wakeup_softirqd();
 	lockdep_softirq_end(in_hardirq);
 	account_irq_exit_time(current);
 	__local_bh_enable(SOFTIRQ_OFFSET);

@@ -105,7 +105,7 @@ static void fts_interrupt_enable(struct fts_ts_info *info);
 static int fts_init_hw(struct fts_ts_info *info);
 static int fts_mode_handler(struct fts_ts_info *info, int force);
 static int fts_command(struct fts_ts_info *info, unsigned char cmd);
-
+static void fts_unblank(struct fts_ts_info *info);
 static int fts_chip_initialization(struct fts_ts_info *info);
 
 void touch_callback(unsigned int status)
@@ -1003,7 +1003,10 @@ static unsigned char *fts_status_event_handler(
 	case FTS_WATER_MODE_ON:
 	case FTS_WATER_MODE_OFF:
 	default:
-		logError(1,  "%s %s Received unhandled status event = %02X %02X %02X %02X %02X %02X %02X %02X\n", tag, __func__, event[0], event[1], event[2], event[3], event[4], event[5], event[6], event[7]);
+		logError(0,
+			"%s %s Received unhandled status event = %02X %02X %02X %02X %02X %02X %02X %02X\n",
+			tag, __func__, event[0], event[1], event[2],
+			event[3], event[4], event[5], event[6], event[7]);
 	break;
 	}
 
@@ -1252,7 +1255,7 @@ static void fts_event_handler(struct work_struct *work)
 static int cx_crc_check(void)
 {
 	unsigned char regAdd1[3] = {FTS_CMD_HW_REG_R, ADDR_CRC_BYTE0, ADDR_CRC_BYTE1};
-	unsigned char val;
+	unsigned char val = 0;
 	unsigned char crc_status;
 	unsigned int error;
 
@@ -1484,8 +1487,12 @@ static int fts_init(struct fts_ts_info *info)
 
 	error = fts_interrupt_install(info);
 
-	if (error != OK)
+	if (error != OK) {
 		logError(1,  "%s Init (1) error (ERROR  = %08X)\n", error);
+		return error;
+	}
+
+	fts_unblank(info);
 
 	return error;
 }
@@ -1755,8 +1762,6 @@ static int fts_fb_state_chg_callback(struct notifier_block *nb, unsigned long va
 
 			info->resume_bit = 1;
 
-			fts_system_reset();
-
 			fts_mode_handler(info, 0);
 
 			info->sensor_sleep = false;
@@ -1770,6 +1775,26 @@ static int fts_fb_state_chg_callback(struct notifier_block *nb, unsigned long va
 	}
 	return NOTIFY_OK;
 
+}
+
+static void fts_unblank(struct fts_ts_info *info)
+{
+	int i;
+
+	for (i = 0; i < TOUCH_ID_MAX; i++) {
+		input_mt_slot(info->input_dev, i);
+		input_mt_report_slot_state(info->input_dev,
+			(i < FINGER_MAX) ? MT_TOOL_FINGER : MT_TOOL_PEN, 0);
+	}
+	input_sync(info->input_dev);
+
+	info->resume_bit = 1;
+
+	fts_mode_handler(info, 0);
+
+	info->sensor_sleep = false;
+
+	fts_enableInterrupt();
 }
 
 static struct notifier_block fts_noti_block = {
@@ -1959,9 +1984,9 @@ static int parse_dt(struct device *dev, struct fts_i2c_platform_data *bdata)
 	bdata->bus_reg_name = name;
 	logError(0, "%s bus_reg_name = %s\n", tag, name);
 
-	if (of_property_read_bool(np, "st, reset-gpio")) {
+	if (of_property_read_bool(np, "st,reset-gpio")) {
 		bdata->reset_gpio = of_get_named_gpio_flags(np,
-				"st, reset-gpio", 0, NULL);
+				"st,reset-gpio", 0, NULL);
 		logError(0, "%s reset_gpio =%d\n", tag, bdata->reset_gpio);
 	} else {
 		bdata->reset_gpio = GPIO_NOT_DEFINED;
@@ -2210,7 +2235,13 @@ static int fts_probe(struct i2c_client *client,
 	}
 
 #endif
-	queue_delayed_work(info->fwu_workqueue, &info->fwu_work, msecs_to_jiffies(EXP_FN_WORK_DELAY_MS));
+	/*if wanna auto-update FW when probe,
+	 * please don't comment the following code
+	 */
+
+	/* queue_delayed_work(info->fwu_workqueue, &info->fwu_work,
+	 * msecs_to_jiffies(EXP_FN_WORK_DELAY_MS));
+	 */
 	logError(1,  "%s Probe Finished!\n", tag);
 	return OK;
 

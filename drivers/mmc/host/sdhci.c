@@ -778,7 +778,7 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 			 * host->clock is in Hz.  target_timeout is in us.
 			 * Hence, us = 1000000 * cycles / Hz.  Round up.
 			 */
-			val = 1000000 * data->timeout_clks;
+			val = 1000000ULL * data->timeout_clks;
 			if (do_div(val, host->clock))
 				target_timeout++;
 			target_timeout += val;
@@ -1583,6 +1583,27 @@ static void sdhci_notify_halt(struct mmc_host *mmc, bool halt)
 	}
 }
 
+static int sdhci_reg_temp_callback(struct mmc_host *mmc)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	return host->ops->reg_temp_callback(host);
+}
+
+static int sdhci_check_temp(struct mmc_host *mmc)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	return host->ops->check_temp(host);
+}
+
+static int sdhci_dereg_temp_callback(struct mmc_host *mmc)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	return host->ops->dereg_temp_callback(host);
+}
+
 static inline void sdhci_update_power_policy(struct sdhci_host *host,
 		enum sdhci_power_policy policy)
 {
@@ -1702,7 +1723,8 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	sdhci_runtime_pm_get(host);
 	if (sdhci_check_state(host)) {
 		sdhci_dump_state(host);
-		WARN(1, "sdhci in bad state");
+		pr_err("%s: sdhci in bad state\n",
+			mmc_hostname(host->mmc));
 		mrq->cmd->error = -EIO;
 		if (mrq->data)
 			mrq->data->error = -EIO;
@@ -1823,7 +1845,9 @@ void sdhci_set_uhs_signaling(struct sdhci_host *host, unsigned timing)
 		ctrl_2 |= SDHCI_CTRL_UHS_SDR104;
 	else if (timing == MMC_TIMING_UHS_SDR12)
 		ctrl_2 |= SDHCI_CTRL_UHS_SDR12;
-	else if (timing == MMC_TIMING_UHS_SDR25)
+	else if (timing == MMC_TIMING_SD_HS ||
+		 timing == MMC_TIMING_MMC_HS ||
+		 timing == MMC_TIMING_UHS_SDR25)
 		ctrl_2 |= SDHCI_CTRL_UHS_SDR25;
 	else if (timing == MMC_TIMING_UHS_SDR50)
 		ctrl_2 |= SDHCI_CTRL_UHS_SDR50;
@@ -2521,7 +2545,27 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 			ctrl &= ~SDHCI_CTRL_EXEC_TUNING;
 			sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
 
+			sdhci_do_reset(host, SDHCI_RESET_CMD);
+			sdhci_do_reset(host, SDHCI_RESET_DATA);
+
 			err = -EIO;
+
+			if (cmd.opcode != MMC_SEND_TUNING_BLOCK_HS200)
+				goto out;
+
+			sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
+			sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
+
+			spin_unlock_irqrestore(&host->lock, flags);
+
+			memset(&cmd, 0, sizeof(cmd));
+			cmd.opcode = MMC_STOP_TRANSMISSION;
+			cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+			cmd.busy_timeout = 50;
+			mmc_wait_for_cmd(mmc, &cmd, 0);
+
+			spin_lock_irqsave(&host->lock, flags);
+
 			goto out;
 		}
 
@@ -2748,6 +2792,9 @@ static const struct mmc_host_ops sdhci_ops = {
 	.notify_load	= sdhci_notify_load,
 	.notify_halt	= sdhci_notify_halt,
 	.force_err_irq	= sdhci_force_err_irq,
+	.check_temp     = sdhci_check_temp,
+	.dereg_temp_callback    = sdhci_dereg_temp_callback,
+	.reg_temp_callback      = sdhci_reg_temp_callback,
 };
 
 /*****************************************************************************\
@@ -3319,7 +3366,8 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 			pr_err("%s: Card is consuming too much power!\n",
 				mmc_hostname(host->mmc));
 
-		if (intmask & SDHCI_INT_CARD_INT) {
+		if ((intmask & SDHCI_INT_CARD_INT) &&
+		    (host->ier & SDHCI_INT_CARD_INT)) {
 			sdhci_enable_sdio_irq_nolock(host, false);
 			host->thread_isr |= SDHCI_INT_CARD_INT;
 			result = IRQ_WAKE_THREAD;
@@ -3619,7 +3667,7 @@ static void sdhci_cmdq_set_transfer_params(struct mmc_host *mmc)
 			ctrl |= SDHCI_CTRL_ADMA32;
 		sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
 	}
-	if (host->ops->toggle_cdr)
+	if (host->ops->toggle_cdr && !host->cdr_support)
 		host->ops->toggle_cdr(host, false);
 }
 

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018,2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -47,9 +38,15 @@
 #include "cepci.h"
 #include "hif.h"
 #include "multibus.h"
+#include "hif_unit_test_suspend_i.h"
+#ifdef HIF_CE_LOG_INFO
+#include "qdf_notifier.h"
+#endif
 
 #define HIF_MIN_SLEEP_INACTIVITY_TIME_MS     50
 #define HIF_SLEEP_INACTIVITY_TIMER_PERIOD_MS 60
+
+#define HIF_MAX_BUDGET 0xFFFF
 
 /*
  * This macro implementation is exposed for efficiency only.
@@ -84,19 +81,30 @@
 #define AR6320_FW_2_0  (0x20)
 #define AR6320_FW_3_0  (0x30)
 #define AR6320_FW_3_2  (0x32)
-#define ADRASTEA_DEVICE_ID (0xabcd)
+#define QCA6290_EMULATION_DEVICE_ID (0xabcd)
+#define QCA6290_DEVICE_ID (0x1100)
 #define ADRASTEA_DEVICE_ID_P2_E12 (0x7021)
 #define AR9887_DEVICE_ID    (0x0050)
 #define AR900B_DEVICE_ID    (0x0040)
 #define QCA9984_DEVICE_ID   (0x0046)
 #define QCA9888_DEVICE_ID   (0x0056)
+#ifndef IPQ4019_DEVICE_ID
 #define IPQ4019_DEVICE_ID   (0x12ef)
+#endif
+#define QCA8074_DEVICE_ID   (0xffff) /* Todo: replace this with
+					actual number once available.
+					currently defining this to 0xffff for
+					emulation purpose */
+#define RUMIM2M_DEVICE_ID_NODE0	0xabc0
+#define RUMIM2M_DEVICE_ID_NODE1	0xabc1
+#define RUMIM2M_DEVICE_ID_NODE2	0xabc2
+#define RUMIM2M_DEVICE_ID_NODE3	0xabc3
 
 #define HIF_GET_PCI_SOFTC(scn) ((struct hif_pci_softc *)scn)
 #define HIF_GET_CE_STATE(scn) ((struct HIF_CE_state *)scn)
 #define HIF_GET_SDIO_SOFTC(scn) ((struct hif_sdio_softc *)scn)
 #define HIF_GET_USB_SOFTC(scn) ((struct hif_usb_softc *)scn)
-#define HIF_GET_USB_DEVICE(scn) ((HIF_DEVICE_USB *)scn)
+#define HIF_GET_USB_DEVICE(scn) ((struct HIF_DEVICE_USB *)scn)
 #define HIF_GET_SOFTC(scn) ((struct hif_softc *)scn)
 #define GET_HIF_OPAQUE_HDL(scn) ((struct hif_opaque_softc *)scn)
 
@@ -105,19 +113,20 @@ struct hif_ce_stats {
 	int ce_ring_delta_fail_count;
 };
 
-#ifdef WLAN_SUSPEND_RESUME_TEST
-struct fake_apps_context {
-	unsigned long state;
-	hif_fake_resume_callback resume_callback;
-	struct work_struct resume_work;
+/*
+ * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * for defined here
+ */
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+struct ce_desc_hist {
+	qdf_atomic_t history_index[CE_COUNT_MAX];
+	uint32_t enable[CE_COUNT_MAX];
+	uint32_t data_enable[CE_COUNT_MAX];
+	uint32_t hist_index;
+	uint32_t hist_id;
+	void *hist_ev[CE_COUNT_MAX];
 };
-
-enum hif_fake_apps_state_bits {
-	HIF_FA_SUSPENDED_BIT = 0
-};
-
-void hif_fake_apps_resume_work(struct work_struct *work);
-#endif /* WLAN_SUSPEND_RESUME_TEST */
+#endif /* #if defined(HIF_CONFIG_SLUB_DEBUG_ON) || HIF_CE_DEBUG_DATA_BUF */
 
 struct hif_softc {
 	struct hif_opaque_softc osc;
@@ -130,6 +139,7 @@ struct hif_softc {
 	qdf_device_t qdf_dev;
 	bool hif_init_done;
 	bool request_irq_done;
+	bool ext_grp_irq_configured;
 	/* Packet statistics */
 	struct hif_ce_stats pkt_stats;
 	enum hif_target_status target_status;
@@ -141,15 +151,18 @@ struct hif_softc {
 
 	bool recovery;
 	bool notice_send;
+	bool per_ce_irq;
 	uint32_t ce_irq_summary;
 	/* No of copy engines supported */
 	unsigned int ce_count;
 	atomic_t active_tasklet_cnt;
+	atomic_t active_grp_tasklet_cnt;
 	atomic_t link_suspended;
 	uint32_t *vaddr_rri_on_ddr;
 	qdf_dma_addr_t paddr_rri_on_ddr;
 	int linkstate_vote;
 	bool fastpath_mode_on;
+	bool polled_mode_on;
 	atomic_t tasklet_from_intr;
 	int htc_htt_tx_endpoint;
 	qdf_dma_addr_t mem_pa;
@@ -157,15 +170,49 @@ struct hif_softc {
 #ifdef FEATURE_NAPI
 	struct qca_napi_data napi_data;
 #endif /* FEATURE_NAPI */
+	/* stores ce_service_max_yield_time in ns */
+	unsigned long long ce_service_max_yield_time;
+	uint8_t ce_service_max_rx_ind_flush;
 	struct hif_driver_state_callbacks callbacks;
 	uint32_t hif_con_param;
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
 	uint32_t nss_wifi_ol_mode;
 #endif
-#ifdef WLAN_SUSPEND_RESUME_TEST
-	struct fake_apps_context fake_apps_ctx;
-#endif /* WLAN_SUSPEND_RESUME_TEST */
+	void *hal_soc;
+	struct hif_ut_suspend_context ut_suspend_ctx;
+	uint32_t hif_attribute;
+	int wake_irq;
+	void (*initial_wakeup_cb)(void *);
+	void *initial_wakeup_priv;
+#ifdef REMOVE_PKT_LOG
+	/* Handle to pktlog device */
+	void *pktlog_dev;
+#endif
+
+/*
+ * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * for defined here
+ */
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+	struct ce_desc_hist hif_ce_desc_hist;
+#endif /* #if defined(HIF_CONFIG_SLUB_DEBUG_ON) || HIF_CE_DEBUG_DATA_BUF */
+#ifdef IPA_OFFLOAD
+	qdf_shared_mem_t *ipa_ce_ring;
+#endif
+#ifdef HIF_CE_LOG_INFO
+	qdf_notif_block hif_recovery_notifier;
+#endif
 };
+
+static inline void *hif_get_hal_handle(void *hif_hdl)
+{
+	struct hif_softc *sc = (struct hif_softc *)hif_hdl;
+
+	if (!sc)
+		return NULL;
+
+	return sc->hal_soc;
+}
 
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
 static inline bool hif_is_nss_wifi_enabled(struct hif_softc *sc)
@@ -178,6 +225,12 @@ static inline bool hif_is_nss_wifi_enabled(struct hif_softc *sc)
 	return false;
 }
 #endif
+
+static inline uint8_t hif_is_attribute_set(struct hif_softc *sc,
+						uint32_t hif_attrib)
+{
+	return sc->hif_attribute == hif_attrib;
+}
 
 A_target_id_t hif_get_target_id(struct hif_softc *scn);
 void hif_dump_pipe_debug_count(struct hif_softc *scn);
@@ -209,13 +262,14 @@ void hif_bus_close(struct hif_softc *ol_sc);
 QDF_STATUS hif_bus_open(struct hif_softc *ol_sc,
 	enum qdf_bus_type bus_type);
 QDF_STATUS hif_enable_bus(struct hif_softc *ol_sc, struct device *dev,
-	void *bdev, const hif_bus_id *bid, enum hif_enable_type type);
+	void *bdev, const struct hif_bus_id *bid, enum hif_enable_type type);
 void hif_disable_bus(struct hif_softc *scn);
 void hif_bus_prevent_linkdown(struct hif_softc *scn, bool flag);
 int hif_bus_get_context_size(enum qdf_bus_type bus_type);
 void hif_read_phy_mem_base(struct hif_softc *scn, qdf_dma_addr_t *bar_value);
 uint32_t hif_get_conparam(struct hif_softc *scn);
-struct hif_driver_state_callbacks *hif_get_callbacks_handle(struct hif_softc *scn);
+struct hif_driver_state_callbacks *hif_get_callbacks_handle(
+							struct hif_softc *scn);
 bool hif_is_driver_unloading(struct hif_softc *scn);
 bool hif_is_load_or_unload_in_progress(struct hif_softc *scn);
 bool hif_is_recovery_in_progress(struct hif_softc *scn);
@@ -224,15 +278,31 @@ void hif_wlan_disable(struct hif_softc *scn);
 int hif_target_sleep_state_adjust(struct hif_softc *scn,
 					 bool sleep_ok,
 					 bool wait_for_it);
+/**
+ * hif_get_rx_ctx_id() - Returns NAPI instance ID based on CE ID
+ * @ctx_id: Rx CE context ID
+ * @hif_hdl: HIF Context
+ *
+ * Return: Rx instance ID
+ */
 int hif_get_rx_ctx_id(int ctx_id, struct hif_opaque_softc *hif_hdl);
+void hif_ramdump_handler(struct hif_opaque_softc *scn);
 #ifdef HIF_USB
 void hif_usb_get_hw_info(struct hif_softc *scn);
-void hif_ramdump_handler(struct hif_opaque_softc *scn);
-
+void hif_usb_ramdump_handler(struct hif_opaque_softc *scn);
 #else
 static inline void hif_usb_get_hw_info(struct hif_softc *scn) {}
-static inline void hif_ramdump_handler(struct hif_opaque_softc *scn) {}
+static inline void hif_usb_ramdump_handler(struct hif_opaque_softc *scn) {}
 #endif
+
+/**
+ * hif_wake_interrupt_handler() - interrupt handler for standalone wake irq
+ * @irq: the irq number that fired
+ * @context: the opaque pointer passed to request_irq()
+ *
+ * Return: an irq return type
+ */
+irqreturn_t hif_wake_interrupt_handler(int irq, void *context);
 
 #ifdef HIF_SNOC
 bool hif_is_target_register_access_allowed(struct hif_softc *hif_sc);
@@ -242,5 +312,12 @@ bool hif_is_target_register_access_allowed(struct hif_softc *hif_sc)
 {
 	return true;
 }
+#endif
+
+#ifdef ADRASTEA_RRI_ON_DDR
+void hif_uninit_rri_on_ddr(struct hif_softc *scn);
+#else
+static inline
+void hif_uninit_rri_on_ddr(struct hif_softc *scn) {}
 #endif
 #endif /* __HIF_MAIN_H__ */

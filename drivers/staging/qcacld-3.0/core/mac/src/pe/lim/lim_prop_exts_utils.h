@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2014, 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2014, 2016 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -52,31 +43,29 @@ void limCollectRSSI(tpAniSirGlobal);
 void limDeleteCurrentBssWdsNode(tpAniSirGlobal);
 uint32_t limComputeAvg(tpAniSirGlobal, uint32_t, uint32_t);
 
-/**
- * lim_check_vendor_ap_present() - checks if the Vendor OUIs are present
- * in the IE buffer
- *
- * @mac_ctx:       mac context.
- * @beacon_struct: pointer to beacon structure
- * @session:       pointer to pe session
- * @ie:            ie buffer
- * @ie_len:        length of ie buffer
- * @id:            action oui id enum
- *
- * This function parses the IE buffer and finds if any of the vendor OUI
- * is present in it.
- *
- * Return: true if the vendor OUI is present, else false
- */
-bool lim_check_vendor_ap_present(tpAniSirGlobal mac_ctx,
-		tSirProbeRespBeacon *beacon_struct,
-		tpPESession session,
-		uint8_t *ie, uint16_t ie_len,
-		enum wmi_action_oui_id id);
+#define LIM_ADAPTIVE_11R_OUI      "\x00\x40\x96\x2C"
+#define LIM_ADAPTIVE_11R_OUI_SIZE 4
 
-/* / Function to extract AP's HCF capability from IE fields */
-void lim_extract_ap_capability(tpAniSirGlobal, uint8_t *, uint16_t, uint8_t *,
-			       uint16_t *, uint8_t *, int8_t *, tpPESession);
+/**
+ * lim_extract_ap_capability() - extract AP's HCF/WME/WSM capability
+ * @mac_ctx: Pointer to Global MAC structure
+ * @p_ie: Pointer to starting IE in Beacon/Probe Response
+ * @ie_len: Length of all IEs combined
+ * @qos_cap: Bits are set according to capabilities
+ * @prop_cap: Pointer to prop info IE.
+ * @uapsd: pointer to uapsd
+ * @local_constraint: Pointer to local power constraint.
+ * @session: A pointer to session entry.
+ *
+ * This function is called to extract AP's HCF/WME/WSM capability
+ * from the IEs received from it in Beacon/Probe Response frames
+ *
+ * Return: None
+ */
+void lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
+			       uint16_t ie_len, uint8_t *qos_cap,
+			       uint16_t *prop_cap, uint8_t *uapsd,
+			       int8_t *local_constraint, tpPESession session);
 
 ePhyChanBondState lim_get_htcb_state(ePhyChanBondState aniCBMode);
 

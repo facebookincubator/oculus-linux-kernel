@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -105,9 +96,10 @@ typedef struct TX_TIMER_STRUCT {
 #define TIMER_MAX_NAME_LEN 50
 	char timerName[TIMER_MAX_NAME_LEN];
 #endif
+	uint8_t sessionId;
+	uint32_t expireInput;
 	uint64_t tmrSignature;
 	void (*pExpireFunc)(void *, uint32_t);
-	uint32_t expireInput;
 	uint64_t initScheduleTimeInMsecs;
 	uint64_t rescheduleTimeInMsecs;
 	qdf_mc_timer_t qdf_timer;
@@ -115,7 +107,6 @@ typedef struct TX_TIMER_STRUCT {
 	/* Pointer to the MAC global structure, which stores the context for the NIC, */
 	/* for which this timer is supposed to operate. */
 	void *pMac;
-	uint8_t sessionId;
 
 } TX_TIMER;
 

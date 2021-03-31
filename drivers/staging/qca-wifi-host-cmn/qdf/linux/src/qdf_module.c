@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: i_qdf_module.h
  * Linux-specific definitions for QDF module API's
@@ -32,6 +23,10 @@
 
 #include <linux/module.h>
 #include <qdf_perf.h>
+#include <qdf_trace.h>
+#include <qdf_nbuf.h>
+#include <qdf_mem.h>
+#include <qdf_event.h>
 
 MODULE_AUTHOR("Qualcomm Atheros Inc.");
 MODULE_DESCRIPTION("Qualcomm Atheros Device Framework Module");
@@ -49,7 +44,12 @@ MODULE_LICENSE("Dual BSD/GPL");
 static int __init
 qdf_mod_init(void)
 {
+	qdf_shared_print_ctrl_init();
+	qdf_mem_init();
+	qdf_logging_init();
 	qdf_perfmod_init();
+	qdf_nbuf_mod_init();
+	qdf_event_list_init();
 	return 0;
 }
 module_init(qdf_mod_init);
@@ -62,7 +62,12 @@ module_init(qdf_mod_init);
 static void __exit
 qdf_mod_exit(void)
 {
+	qdf_event_list_destroy();
+	qdf_nbuf_mod_exit();
 	qdf_perfmod_exit();
+	qdf_logging_exit();
+	qdf_mem_exit();
+	qdf_shared_print_ctrl_cleanup();
 }
 module_exit(qdf_mod_exit);
 

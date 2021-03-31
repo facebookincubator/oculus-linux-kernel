@@ -14,10 +14,10 @@ CFLAGS_REMOVE_return_address.o = -pg
 arm64-obj-y		:= debug-monitors.o entry.o irq.o fpsimd.o		\
 			   entry-fpsimd.o process.o ptrace.o setup.o signal.o	\
 			   sys.o stacktrace.o time.o traps.o io.o vdso.o	\
-			   hyp-stub.o psci.o psci-call.o cpu_ops.o insn.o	\
+			   hyp-stub.o psci.o cpu_ops.o insn.o	\
 			   return_address.o cpuinfo.o cpu_errata.o		\
 			   cpufeature.o alternative.o cacheinfo.o		\
-			   smp.o smp_spin_table.o topology.o
+			   smp.o smp_spin_table.o topology.o smccc-call.o
 
 extra-$(CONFIG_EFI)			:= efi-entry.o
 
@@ -25,11 +25,10 @@ OBJCOPYFLAGS := --prefix-symbols=__efistub_
 $(obj)/%.stub.o: $(obj)/%.o FORCE
 	$(call if_changed,objcopy)
 
-arm64-obj-$(CONFIG_COMPAT)		+= sys32.o signal32.o			\
-					   sys_compat.o entry32.o		\
-					   ../../arm/kernel/opcodes.o
+arm64-obj-$(CONFIG_COMPAT)		+= sys32.o signal32.o	\
+					   sys_compat.o entry32.o
 ifneq ($(CONFIG_VDSO32),y)
-arm64-obj-y				+= sigreturn32.o
+arm64-obj-$(CONFIG_COMPAT)		+= sigreturn32.o
 endif
 arm64-obj-$(CONFIG_KUSER_HELPERS)	+= kuser32.o
 arm64-obj-$(CONFIG_FUNCTION_TRACER)	+= ftrace.o entry-ftrace.o
@@ -47,20 +46,19 @@ arm64-obj-$(CONFIG_EFI)			+= efi.o efi-entry.stub.o
 arm64-obj-$(CONFIG_PCI)			+= pci.o
 arm64-obj-$(CONFIG_ARMV8_DEPRECATED)	+= armv8_deprecated.o
 arm64-obj-$(CONFIG_ACPI)		+= acpi.o
-arm64-obj-$(CONFIG_ARM64_ACPI_PARKING_PROTOCOL)	+= acpi_parking_protocol.o
 arm64-obj-$(CONFIG_RANDOMIZE_BASE)	+= kaslr.o
-
-obj-y					+= $(arm64-obj-y) vdso/
+arm64-obj-$(CONFIG_MSM_APP_API)		+= app_api.o
+arm64-obj-$(CONFIG_MSM_APP_SETTINGS)	+= app_setting.o
+arm64-obj-$(CONFIG_HIBERNATION)		+= hibernate.o hibernate-asm.o
+arm64-obj-$(CONFIG_ARM64_ACPI_PARKING_PROTOCOL)	+= acpi_parking_protocol.o
+arm64-obj-$(CONFIG_PARAVIRT)		+= paravirt.o
 
 ifeq ($(CONFIG_KVM),y)
 arm64-obj-$(CONFIG_HARDEN_BRANCH_PREDICTOR)	+= bpi.o
 endif
 
+obj-y					+= $(arm64-obj-y) vdso/ probes/
 obj-$(CONFIG_VDSO32)			+= vdso32/
 obj-m					+= $(arm64-obj-m)
 head-y					:= head.o
 extra-y					+= $(head-y) vmlinux.lds
-
-# vDSO - this must be built first to generate the symbol offsets
-$(objtree)/include/generated/vdso-offsets.h: FORCE
-	$(Q)$(MAKE) $(build)=$(obj)/vdso $@

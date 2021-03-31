@@ -5,7 +5,7 @@
  *
  * Copyright (C) 2012 Alexandra Chin <alexandra.chin@tw.synaptics.com>
  * Copyright (C) 2012 Scott Lin <scott.lin@tw.synaptics.com>
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -472,7 +472,7 @@ static int synaptics_i2c_change_pipe_owner(
 	struct synaptics_rmi4_data *rmi4_data, enum subsystem subsystem)
 {
 	/*scm call descriptor */
-	struct scm_desc desc;
+	struct scm_desc desc = {0};
 	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
 	int ret = 0;
 
@@ -3793,6 +3793,12 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 
 	rmi4_data->irq = gpio_to_irq(bdata->irq_gpio);
 
+	if (!exp_data.initialized) {
+		mutex_init(&exp_data.mutex);
+		INIT_LIST_HEAD(&exp_data.list);
+		exp_data.initialized = true;
+	}
+
 	retval = synaptics_rmi4_irq_enable(rmi4_data, true);
 	if (retval < 0) {
 		dev_err(&pdev->dev,
@@ -3801,13 +3807,14 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 		goto err_enable_irq;
 	}
 
-	if (!exp_data.initialized) {
-		mutex_init(&exp_data.mutex);
-		INIT_LIST_HEAD(&exp_data.list);
-		exp_data.initialized = true;
+	exp_data.workqueue = create_singlethread_workqueue("dsx_exp_workqueue");
+	if (exp_data.workqueue == NULL) {
+		dev_err(&pdev->dev,
+			"%s: Failed to create workqueue\n", __func__);
+		retval = -ENOMEM;
+		goto err_create_wq;
 	}
 
-	exp_data.workqueue = create_singlethread_workqueue("dsx_exp_workqueue");
 	INIT_DELAYED_WORK(&exp_data.work, synaptics_rmi4_exp_fn_work);
 	exp_data.rmi4_data = rmi4_data;
 	exp_data.queue_work = true;
@@ -3859,10 +3866,9 @@ err_create_debugfs_file:
 	debugfs_remove_recursive(rmi4_data->dir);
 err_create_debugfs_dir:
 	cancel_delayed_work_sync(&exp_data.work);
-	if (exp_data.workqueue != NULL) {
-		flush_workqueue(exp_data.workqueue);
-		destroy_workqueue(exp_data.workqueue);
-	}
+	flush_workqueue(exp_data.workqueue);
+	destroy_workqueue(exp_data.workqueue);
+err_create_wq:
 	synaptics_rmi4_irq_enable(rmi4_data, false);
 	free_irq(rmi4_data->irq, rmi4_data);
 

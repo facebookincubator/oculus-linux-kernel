@@ -1,7 +1,7 @@
 /*
  * sigreturn trampolines for AArch32.
  *
- * Copyright (C) 2005-2011 Nicolas Pitre <nico at fluxnic.net>
+ * Copyright (C) 2005-2011 Nicolas Pitre <nico@fluxnic.net>
  * Copyright (C) 2012 ARM Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,26 +34,34 @@ __aarch32_sigret_code_start:
 	/*
 	 * ARM Code
 	 */
-	.byte	__NR_compat_sigreturn, 0x70, 0xa0, 0xe3		// mov	r7, #__NR_compat_sigreturn
-	.byte	__NR_compat_sigreturn, 0x00, 0x00, 0xef		// svc	#__NR_compat_sigreturn
+	// mov	r7, #__NR_compat_sigreturn
+	.byte	__NR_compat_sigreturn, 0x70, 0xa0, 0xe3
+	// svc	#__NR_compat_sigreturn
+	.byte	__NR_compat_sigreturn, 0x00, 0x00, 0xef
 
 	/*
 	 * Thumb code
 	 */
-	.byte	__NR_compat_sigreturn, 0x27			// svc	#__NR_compat_sigreturn
-	.byte	__NR_compat_sigreturn, 0xdf			// mov	r7, #__NR_compat_sigreturn
+	// svc	#__NR_compat_sigreturn
+	.byte	__NR_compat_sigreturn, 0x27
+	// mov	r7, #__NR_compat_sigreturn
+	.byte	__NR_compat_sigreturn, 0xdf
 
 	/*
 	 * ARM code
 	 */
-	.byte	__NR_compat_rt_sigreturn, 0x70, 0xa0, 0xe3	// mov	r7, #__NR_compat_rt_sigreturn
-	.byte	__NR_compat_rt_sigreturn, 0x00, 0x00, 0xef	// svc	#__NR_compat_rt_sigreturn
+	// mov	r7, #__NR_compat_rt_sigreturn
+	.byte	__NR_compat_rt_sigreturn, 0x70, 0xa0, 0xe3
+	// svc	#__NR_compat_rt_sigreturn
+	.byte	__NR_compat_rt_sigreturn, 0x00, 0x00, 0xef
 
 	/*
 	 * Thumb code
 	 */
-	.byte	__NR_compat_rt_sigreturn, 0x27			// svc	#__NR_compat_rt_sigreturn
-	.byte	__NR_compat_rt_sigreturn, 0xdf			// mov	r7, #__NR_compat_rt_sigreturn
+	// svc	#__NR_compat_rt_sigreturn
+	.byte	__NR_compat_rt_sigreturn, 0x27
+	// mov	r7, #__NR_compat_rt_sigreturn
+	.byte	__NR_compat_rt_sigreturn, 0xdf
 
-	.globl __aarch32_sigret_code_end
+        .globl __aarch32_sigret_code_end
 __aarch32_sigret_code_end:

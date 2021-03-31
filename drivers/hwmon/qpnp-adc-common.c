@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1247,7 +1247,7 @@ int32_t qpnp_adc_scale_default(struct qpnp_vadc_chip *vadc,
 	} else {
 		qpnp_adc_scale_with_calib_param(adc_code, adc_properties,
 					chan_properties, &scale_voltage);
-		if (!chan_properties->calib_type == CALIB_ABSOLUTE)
+		if (!(chan_properties->calib_type == CALIB_ABSOLUTE))
 			scale_voltage *= 1000;
 	}
 
@@ -1726,7 +1726,7 @@ int qpnp_adc_get_revid_version(struct device *dev)
 	}
 
 	revid_data = get_revid_data(revid_dev_node);
-	if (IS_ERR(revid_data)) {
+	if (IS_ERR_OR_NULL(revid_data)) {
 		pr_debug("revid error rc = %ld\n", PTR_ERR(revid_data));
 		return -EINVAL;
 	}

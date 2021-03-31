@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2015-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2015-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: if_snoc.c
  *
@@ -37,13 +28,15 @@
 #include "hif_io32.h"
 #include "ce_main.h"
 #include "ce_tasklet.h"
+#include "ce_api.h"
+#include "ce_internal.h"
 #include "snoc_api.h"
-#include <soc/qcom/icnss.h>
 #include "pld_common.h"
 #include "qdf_util.h"
 #ifdef IPA_OFFLOAD
 #include <uapi/linux/msm_ipa.h>
 #endif
+#include "target_type.h"
 
 /**
  * hif_disable_isr(): disable isr
@@ -56,17 +49,19 @@
  */
 void hif_snoc_disable_isr(struct hif_softc *scn)
 {
+	hif_exec_kill(&scn->osc);
 	hif_nointrs(scn);
 	ce_tasklet_kill(scn);
 	qdf_atomic_set(&scn->active_tasklet_cnt, 0);
+	qdf_atomic_set(&scn->active_grp_tasklet_cnt, 0);
 }
 
 /**
  * hif_dump_registers(): dump bus debug registers
- * @scn: struct hif_opaque_softc
+ * @hif_ctx: struct hif_opaque_softc
  *
  * This function dumps hif bus debug registers
-  *
+ *
  * Return: 0 for success or error code
  */
 int hif_snoc_dump_registers(struct hif_softc *hif_ctx)
@@ -164,6 +159,7 @@ static QDF_STATUS hif_snoc_get_soc_info(struct hif_softc *scn)
 int hif_snoc_bus_configure(struct hif_softc *scn)
 {
 	int ret;
+	uint8_t wake_ce_id;
 
 	ret = hif_snoc_get_soc_info(scn);
 	if (ret)
@@ -180,7 +176,25 @@ int hif_snoc_bus_configure(struct hif_softc *scn)
 
 	ret = hif_config_ce(scn);
 	if (ret)
-		hif_wlan_disable(scn);
+		goto wlan_disable;
+
+	ret = hif_get_wake_ce_id(scn, &wake_ce_id);
+	if (ret)
+		goto unconfig_ce;
+
+	scn->wake_irq = pld_get_irq(scn->qdf_dev->dev, wake_ce_id);
+
+	HIF_INFO(FL("expecting wake from ce %d, irq %d"),
+		 wake_ce_id, scn->wake_irq);
+
+	return 0;
+
+unconfig_ce:
+	hif_unconfig_ce(scn);
+
+wlan_disable:
+	hif_wlan_disable(scn);
+
 	return ret;
 }
 
@@ -199,7 +213,7 @@ int hif_snoc_bus_configure(struct hif_softc *scn)
  * Return: 0 for success
  */
 static inline int hif_snoc_get_target_type(struct hif_softc *ol_sc,
-	struct device *dev, void *bdev, const hif_bus_id *bid,
+	struct device *dev, void *bdev, const struct hif_bus_id *bid,
 	uint32_t *hif_type, uint32_t *target_type)
 {
 	/* TODO: need to use HW version. Hard code for now */
@@ -214,21 +228,25 @@ static inline int hif_snoc_get_target_type(struct hif_softc *ol_sc,
 }
 
 #ifdef IPA_OFFLOAD
-static int hif_set_dma_coherent_mask(struct device *dev)
+static int hif_set_dma_coherent_mask(qdf_device_t osdev)
 {
 	uint8_t addr_bits;
+
+	if (false == hif_get_ipa_present())
+		return qdf_set_dma_coherent_mask(osdev->dev,
+					DMA_COHERENT_MASK_IPA_VER_3_AND_ABOVE);
 
 	if (hif_get_ipa_hw_type() < IPA_HW_v3_0)
 		addr_bits = DMA_COHERENT_MASK_BELOW_IPA_VER_3;
 	else
 		addr_bits = DMA_COHERENT_MASK_IPA_VER_3_AND_ABOVE;
 
-	return qdf_set_dma_coherent_mask(dev, addr_bits);
+	return qdf_set_dma_coherent_mask(osdev->dev, addr_bits);
 }
 #else
-static int hif_set_dma_coherent_mask(struct device *dev)
+static int hif_set_dma_coherent_mask(qdf_device_t osdev)
 {
-	return qdf_set_dma_coherent_mask(dev, 37);
+	return qdf_set_dma_coherent_mask(osdev->dev, 37);
 }
 #endif
 
@@ -243,7 +261,7 @@ static int hif_set_dma_coherent_mask(struct device *dev)
  */
 QDF_STATUS hif_snoc_enable_bus(struct hif_softc *ol_sc,
 			  struct device *dev, void *bdev,
-			  const hif_bus_id *bid,
+			  const struct hif_bus_id *bid,
 			  enum hif_enable_type type)
 {
 	int ret;
@@ -255,7 +273,7 @@ QDF_STATUS hif_snoc_enable_bus(struct hif_softc *ol_sc,
 		return QDF_STATUS_E_NOMEM;
 	}
 
-	ret = hif_set_dma_coherent_mask(dev);
+	ret = hif_set_dma_coherent_mask(ol_sc->qdf_dev);
 	if (ret) {
 		HIF_ERROR("%s: failed to set dma mask error = %d",
 				__func__, ret);
@@ -287,7 +305,7 @@ QDF_STATUS hif_snoc_enable_bus(struct hif_softc *ol_sc,
 	/* the bus should remain on durring suspend for snoc */
 	hif_vote_link_up(GET_HIF_OPAQUE_HDL(ol_sc));
 
-	HIF_TRACE("%s: X - hif_type = 0x%x, target_type = 0x%x",
+	HIF_DBG("%s: X - hif_type = 0x%x, target_type = 0x%x",
 		  __func__, hif_type, target_type);
 
 	return QDF_STATUS_SUCCESS;
@@ -325,10 +343,8 @@ void hif_snoc_disable_bus(struct hif_softc *scn)
 void hif_snoc_nointrs(struct hif_softc *scn)
 {
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
-	if (scn->request_irq_done) {
-		ce_unregister_irq(hif_state, 0xfff);
-		scn->request_irq_done = false;
-	}
+
+	ce_unregister_irq(hif_state, CE_ALL_BITMAP);
 }
 
 /**
@@ -369,40 +385,18 @@ void hif_snoc_irq_disable(struct hif_softc *scn, int ce_id)
 static
 QDF_STATUS hif_snoc_setup_wakeup_sources(struct hif_softc *scn, bool enable)
 {
-	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(scn);
-	uint8_t ul_pipe, dl_pipe;
-	int ul_is_polled, dl_is_polled;
-	int irq_to_wake_on;
-
-	QDF_STATUS status;
 	int ret;
 
-	status = hif_map_service_to_pipe(hif_hdl, HTC_CTRL_RSVD_SVC,
-					 &ul_pipe, &dl_pipe,
-					 &ul_is_polled, &dl_is_polled);
-	if (status) {
-		HIF_ERROR("%s: pipe_mapping failure", __func__);
-		return status;
-	}
-
-	irq_to_wake_on = icnss_get_irq(dl_pipe);
-	if (irq_to_wake_on < 0) {
-		HIF_ERROR("%s: failed to map ce to irq", __func__);
-		return QDF_STATUS_E_RESOURCES;
-	}
-
 	if (enable)
-		ret = enable_irq_wake(irq_to_wake_on);
+		ret = enable_irq_wake(scn->wake_irq);
 	else
-		ret = disable_irq_wake(irq_to_wake_on);
+		ret = disable_irq_wake(scn->wake_irq);
 
 	if (ret) {
 		HIF_ERROR("%s: Fail to setup wake IRQ!", __func__);
 		return QDF_STATUS_E_RESOURCES;
 	}
 
-	HIF_INFO("%s: expecting wake from ce %d, irq %d enable %d",
-		  __func__, dl_pipe, irq_to_wake_on, enable);
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -445,7 +439,7 @@ int hif_snoc_bus_resume(struct hif_softc *scn)
  * hif_snoc_bus_suspend_noirq() - ensure there are no pending transactions
  * @scn: hif context
  *
- * Ensure that if we recieved the wakeup message before the irq
+ * Ensure that if we received the wakeup message before the irq
  * was disabled that the message is pocessed before suspending.
  *
  * Return: -EBUSY if we fail to flush the tasklets.
@@ -455,6 +449,11 @@ int hif_snoc_bus_suspend_noirq(struct hif_softc *scn)
 	if (hif_drain_tasklets(scn) != 0)
 		return -EBUSY;
 	return 0;
+}
+
+int hif_snoc_map_ce_to_irq(struct hif_softc *scn, int ce_id)
+{
+	return pld_get_irq(scn->qdf_dev->dev, ce_id);
 }
 
 /**
@@ -471,4 +470,15 @@ bool hif_is_target_register_access_allowed(struct hif_softc *scn)
 		return hif_is_target_ready(scn);
 	else
 		return true;
+}
+
+/**
+ * hif_snoc_needs_bmi() - return true if the soc needs bmi through the driver
+ * @scn: hif context
+ *
+ * Return: true if soc needs driver bmi otherwise false
+ */
+bool hif_snoc_needs_bmi(struct hif_softc *scn)
+{
+	return false;
 }

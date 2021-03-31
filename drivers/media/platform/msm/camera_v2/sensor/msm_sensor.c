@@ -584,7 +584,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user((void __user *)(&read_config_ptr->data),
+		if (copy_to_user(&read_config_ptr->data,
 				&local_data, sizeof(local_data))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
@@ -1103,7 +1103,7 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user((void __user *)(&read_config_ptr->data),
+		if (copy_to_user(&read_config_ptr->data,
 				&local_data, sizeof(local_data))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;

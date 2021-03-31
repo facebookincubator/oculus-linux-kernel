@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -81,7 +72,6 @@ enum eWniMsgTypes {
 	eWNI_SME_SWITCH_CHL_IND,
 	eWNI_SME_STOP_BSS_REQ,
 	eWNI_SME_STOP_BSS_RSP,
-	eWNI_SME_NEIGHBOR_BSS_IND,
 	eWNI_SME_DEAUTH_CNF,
 	eWNI_SME_MIC_FAILURE_IND,
 	eWNI_SME_ADDTS_REQ,
@@ -93,21 +83,10 @@ enum eWniMsgTypes {
 	eWNI_SME_GET_STATISTICS_RSP,
 	eWNI_SME_GET_RSSI_REQ,
 	eWNI_SME_GET_ASSOC_STAS_REQ,
-	eWNI_SME_TKIP_CNTR_MEAS_REQ,
-	eWNI_SME_UPDATE_APWPSIE_REQ,
-	eWNI_SME_GET_WPSPBC_SESSION_REQ,
 	eWNI_SME_WPS_PBC_PROBE_REQ_IND,
-	eWNI_SME_SET_APWPARSNIEs_REQ,
 	eWNI_SME_UPPER_LAYER_ASSOC_CNF,
 	eWNI_SME_SESSION_UPDATE_PARAM,
 	eWNI_SME_CHNG_MCC_BEACON_INTERVAL,
-	eWNI_SME_REMAIN_ON_CHANNEL_REQ,
-	eWNI_SME_REMAIN_ON_CHN_RSP,
-	eWNI_SME_REMAIN_ON_CHN_RDY_IND,
-	eWNI_SME_SEND_ACTION_FRAME_IND,
-	eWNI_SME_ABORT_REMAIN_ON_CHAN_IND,
-	eWNI_SME_UPDATE_NOA,
-	eWNI_SME_CLEAR_DFS_CHANNEL_LIST,
 	eWNI_SME_GET_SNR_REQ,
 
 	eWNI_SME_RRM_MSG_TYPE_BEGIN,
@@ -131,11 +110,6 @@ enum eWniMsgTypes {
 #endif
 
 	eWNI_SME_REGISTER_MGMT_FRAME_REQ,
-#ifdef FEATURE_WLAN_SCAN_PNO
-	eWNI_SME_PREF_NETWORK_FOUND_IND,
-#endif /* FEATURE_WLAN_SCAN_PNO */
-
-	eWNI_SME_CHANGE_COUNTRY_CODE,
 	eWNI_SME_GENERIC_CHANGE_COUNTRY_CODE,
 	eWNI_SME_MAX_ASSOC_EXCEEDED,
 #ifdef FEATURE_WLAN_TDLS
@@ -160,7 +134,6 @@ enum eWniMsgTypes {
 	/* SIR_LIM_MSG_TYPES_BEGIN+0xB0 = 12B0 (which means max of 176 messages and */
 	/* eWNI_SME_TDLS_DEL_STA_RSP = 175. */
 	/* Should fix above issue to enable TDLS_INTERNAL */
-	eWNI_SME_SET_BCN_FILTER_REQ,
 	eWNI_SME_RESET_AP_CAPS_CHANGED,
 #ifdef WLAN_FEATURE_11W
 	eWNI_SME_UNPROT_MGMT_FRM_IND,
@@ -171,19 +144,12 @@ enum eWniMsgTypes {
 	eWNI_SME_CANDIDATE_FOUND_IND,   /*ROAM candidate indication from FW */
 	eWNI_SME_HANDOFF_REQ,   /*upper layer requested handoff to driver in STA mode */
 	eWNI_SME_ROAM_SCAN_OFFLOAD_RSP, /*Fwd the LFR scan offload rsp from FW to SME */
-#ifdef FEATURE_WLAN_LPHB
-	eWNI_SME_LPHB_IND,
-#endif /* FEATURE_WLAN_LPHB */
-
 	eWNI_SME_IBSS_PEER_INFO_RSP,
 	eWNI_SME_GET_TSM_STATS_REQ,
 	eWNI_SME_GET_TSM_STATS_RSP,
 	eWNI_SME_TSM_IE_IND,
 
 	eWNI_SME_READY_TO_SUSPEND_IND,
-#ifdef FEATURE_WLAN_CH_AVOID
-	eWNI_SME_CH_AVOID_IND,
-#endif /* FEATURE_WLAN_CH_AVOID */
 	/* DFS EVENTS */
 	eWNI_SME_DFS_RADAR_FOUND,       /* RADAR found indication from DFS */
 	eWNI_SME_CHANNEL_CHANGE_REQ,    /* Channel Change Request from SAP */
@@ -194,6 +160,7 @@ enum eWniMsgTypes {
 	/* update in beacons/probe rsp */
 	eWNI_SME_STATS_EXT_EVENT,
 	eWNI_SME_GET_PEER_INFO_IND,
+	eWNI_SME_GET_PEER_INFO_EXT_IND,
 	eWNI_SME_CSA_OFFLOAD_EVENT,
 	eWNI_SME_UPDATE_ADDITIONAL_IES, /* indicates Additional IE from hdd to PE */
 	eWNI_SME_MODIFY_ADDITIONAL_IES, /* To indicate IE modify from hdd to PE */
@@ -224,7 +191,6 @@ enum eWniMsgTypes {
 	eWNI_SME_HW_MODE_TRANS_IND,
 	eWNI_SME_NSS_UPDATE_REQ,
 	eWNI_SME_NSS_UPDATE_RSP,
-	eWNI_SME_SCAN_CMD,
 	eWNI_SME_OCB_SET_CONFIG_RSP,
 	eWNI_SME_OCB_GET_TSF_TIMER_RSP,
 	eWNI_SME_DCC_GET_STATS_RSP,
@@ -232,7 +198,6 @@ enum eWniMsgTypes {
 	eWNI_SME_DCC_STATS_EVENT,
 	eWNI_SME_SET_DUAL_MAC_CFG_REQ,
 	eWNI_SME_SET_DUAL_MAC_CFG_RESP,
-	eWNI_SME_ROC_CMD,
 	eWNI_SME_SET_THERMAL_LEVEL_IND,
 	eWNI_SME_SET_IE_REQ,
 	eWNI_SME_EXT_CHANGE_CHANNEL,
@@ -245,26 +210,33 @@ enum eWniMsgTypes {
 	eWNI_SME_MON_INIT_SESSION,
 	eWNI_SME_PDEV_SET_HT_VHT_IE,
 	eWNI_SME_SET_VDEV_IES_PER_BAND,
-	eWNI_SME_NDP_INITIATOR_REQ,
-	eWNI_SME_NDP_INITIATOR_RSP,
-	eWNI_SME_NDP_NEW_PEER_IND,
-	eWNI_SME_NDP_CONFIRM_IND,
-	eWNI_SME_NDP_INDICATION,
-	eWNI_SME_NDP_RESPONDER_REQ,
-	eWNI_SME_NDP_RESPONDER_RSP,
-	eWNI_SME_NDP_END_REQ,
-	eWNI_SME_NDP_END_RSP,
-	eWNI_SME_NDP_PEER_DEPARTED_IND,
-	eWNI_SME_NDP_END_IND,
-	eWNI_SME_REGISTER_P2P_ACK_CB,
 	eWNI_SME_SEND_DISASSOC_FRAME,
 	eWNI_SME_UPDATE_ACCESS_POLICY_VENDOR_IE,
 	eWNI_SME_DEFAULT_SCAN_IE,
+	eWNI_SME_ROAM_INVOKE,
 	eWNI_SME_ROAM_SCAN_OFFLOAD_REQ,
 	eWNI_SME_LOST_LINK_INFO_IND,
-	eWNI_SME_RSO_CMD_STATUS_IND,
 	eWNI_SME_DEL_ALL_TDLS_PEERS,
+	eWNI_SME_RSO_CMD_STATUS_IND,
+	eWMI_SME_LL_STATS_IND,
+	eWNI_SME_DFS_CAC_COMPLETE,
 	eWNI_SME_UPDATE_CONFIG,
+	eWNI_SME_BT_ACTIVITY_INFO_IND,
+	eWNI_SME_SET_HE_BSS_COLOR,
+	eWNI_SME_TRIGGER_SAE,
+	eWNI_SME_SEND_MGMT_FRAME_TX,
+	eWNI_SME_SEND_SAE_MSG,
+	eWNI_SME_SET_ADDBA_ACCEPT,
+	eWNI_SME_UPDATE_EDCA_PROFILE,
+	eWNI_SME_PURGE_ALL_PDEV_CMDS_REQ,
+	/* To indicate Hidden ssid start complition to upper layer */
+	eWNI_SME_HIDDEN_SSID_RESTART_RSP,
+	eWNI_SME_ANTENNA_ISOLATION_RSP,
+	WNI_SME_REGISTER_BCN_REPORT_SEND_CB,
+	eWNI_SME_MON_DEINIT_SESSION,
+	eWNI_SME_GET_ROAM_SCAN_CH_LIST_EVENT,
+	eWNI_SME_PEER_CLEANUP,
+	eWNI_SME_ROAM_SEND_PER_REQ,
 	eWNI_SME_MSG_TYPES_END
 };
 
@@ -328,7 +300,7 @@ enum ewni_tdls_connection_tracker_notification {
 #define ANI_CFG_CLEAR_STAT_RSP         (WNI_CFG_MSG_TYPES_BEGIN | 0x0b)
 
 /*---------------------------------------------------------------------*/
-/* CFG to HDD message paramter indices                                 */
+/* CFG to HDD message parameter indices                                 */
 
 /*   The followings are word indices starting from the message body    */
 
@@ -419,7 +391,7 @@ enum ewni_tdls_connection_tracker_notification {
 /* Shall be removed after stats integration */
 
 /*---------------------------------------------------------------------*/
-/* HDD to CFG message paramter indices                                 */
+/* HDD to CFG message parameter indices                                 */
 /*                                                                     */
 /*   The followings are word indices starting from the message body    */
 /*                                                                     */

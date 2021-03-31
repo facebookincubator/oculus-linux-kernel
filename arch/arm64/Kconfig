@@ -6,7 +6,6 @@ config ARM64
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
 	select ARCH_HAS_ELF_RANDOMIZE
 	select ARCH_HAS_GCOV_PROFILE_ALL
-    select ARCH_HAS_KCOV
 	select ARCH_HAS_SG_CHAIN
 	select ARCH_HAS_TICK_BROADCAST if GENERIC_CLOCKEVENTS_BROADCAST
 	select ARCH_USE_CMPXCHG_LOCKREF
@@ -64,6 +63,7 @@ config ARM64
 	select HAVE_ARCH_SECCOMP_FILTER
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_BPF_JIT
+	select HAVE_EBPF_JIT
 	select HAVE_C_RECORDMCOUNT
 	select HAVE_CC_STACKPROTECTOR
 	select HAVE_CMPXCHG_DOUBLE
@@ -86,9 +86,12 @@ config ARM64
 	select HAVE_PERF_EVENTS
 	select HAVE_PERF_REGS
 	select HAVE_PERF_USER_STACK_DUMP
+	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_RCU_TABLE_FREE
 	select HAVE_SYSCALL_TRACEPOINTS
 	select IOMMU_DMA if (IOMMU_SUPPORT && !ARCH_QCOM)
+	select HAVE_KPROBES
+	select HAVE_KRETPROBES if HAVE_KPROBES
 	select IRQ_DOMAIN
 	select IRQ_FORCED_THREADING
 	select MODULES_USE_ELF_RELA
@@ -99,11 +102,13 @@ config ARM64
 	select PERF_USE_VMALLOC
 	select POWER_RESET
 	select POWER_SUPPLY
-	select RTC_LIB
 	select SPARSE_IRQ
 	select SYSCTL_EXCEPTION_TRACE
 	select USER_STACKTRACE_SUPPORT
 	select HAVE_CONTEXT_TRACKING
+	select HAVE_ARM_SMCCC
+	select THREAD_INFO_IN_TASK
+	select HAVE_ARM_SMCCC
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
@@ -201,6 +206,16 @@ config NEED_SG_DMA_LENGTH
 config SMP
 	def_bool y
 
+config HOTPLUG_SIZE_BITS
+	int "Memory hotplug block size(28 => 256MB 30 => 1GB)"
+	depends on SPARSEMEM
+	default 30
+	help
+	 Selects granularity of hotplug memory. Block
+	 size for memory hotplug is represent as a power
+	 of 2.
+	 If unsure, stick with default value.
+
 config ARM64_DMA_USE_IOMMU
 	bool
 	select ARM_HAS_SG_CHAIN
@@ -247,6 +262,24 @@ config PGTABLE_LEVELS
 	default 3 if ARM64_4K_PAGES && ARM64_VA_BITS_39
 	default 3 if ARM64_16K_PAGES && ARM64_VA_BITS_47
 	default 4 if !ARM64_64K_PAGES && ARM64_VA_BITS_48
+
+config MSM_GVM
+	bool "Enable virtualization Support for MSM kernel"
+	help
+	  This enables support for MSM Kernel based virtual
+	  machine for any platform.
+	  This helps to enable virtual driver support.
+	  This should work on 64bit machine.
+	  If you don't know what to do here, say N.
+
+config MSM_GVM_QUIN
+	bool "Enable virtualization Support for MSM kernel required for QUIN platform"
+	help
+		This enables support for MSM Kernel based virtual
+		machine for QUIN platform.
+		This helps to enable virtual driver support.
+		This should work on 64bit machine.
+		If you don't know what to do here, say N.
 
 source "init/Kconfig"
 
@@ -444,6 +477,20 @@ config ARM64_ERRATUM_843419
 
 	  If unsure, say Y.
 
+config ARM64_ERRATUM_1024718
+	bool "Cortex-A55: 1024718: Update of DBM/AP bits without break before make might result in incorrect update"
+	default y
+	help
+	  This option adds work around for Arm Cortex-A55 Erratum 1024718.
+
+	  Affected Cortex-A55 cores (r0p0, r0p1, r1p0) could cause incorrect
+	  update of the hardware dirty bit when the DBM/AP bits are updated
+	  without a break-before-make. The work around is to disable the usage
+	  of hardware DBM locally on the affected cores. CPUs not affected by
+	  erratum will continue to use the feature.
+
+	  If unsure, say Y.
+
 config CAVIUM_ERRATUM_22375
 	bool "Cavium erratum 22375, 24313"
 	default y
@@ -541,6 +588,37 @@ config ARM64_64K_PAGES
 
 endchoice
 
+config MSM_APP_API
+	bool "API support to enable / disable app settings for MSM8996"
+	depends on ARCH_MSM8996 && (ENABLE_FP_SIMD_SETTINGS || MSM_APP_SETTINGS)
+	help
+	  Add API support to enable / disable the app settings to be used
+	  at runtime. These APIs are used to enable / disable app setting
+	  when specific aarch32 or aarch64 processes are running.
+
+	  If you are not sure what to do, select 'N' here.
+
+config ENABLE_FP_SIMD_SETTINGS
+	bool "Enable FP(Floating Point) Settings for Qualcomm MSM8996"
+	depends on ARCH_MSM8996
+	select MSM_APP_API
+	help
+	  Enable FP(Floating Point) and SIMD settings for the MSM8996 during
+	  the execution of the aarch32 processes and disable these settings
+	  when you switch to the aarch64 processes.
+
+	  If you are not sure what to do, select 'N' here.
+
+config MSM_APP_SETTINGS
+	bool "Support to enable / disable app settings for MSM8996"
+	depends on ARCH_MSM8996
+	select MSM_APP_API
+	help
+	  Expose an interface used by the userspace at runtime to
+	  enable / disable the app specific settings.
+
+	  If you are not sure what to do, select 'N' here.
+
 choice
 	prompt "Virtual address space size"
 	default ARM64_VA_BITS_39 if ARM64_4K_PAGES
@@ -611,6 +689,13 @@ config HOTPLUG_CPU
 	help
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
+
+config ARCH_ENABLE_MEMORY_HOTPLUG
+    depends on !NUMA
+	def_bool y
+
+config ARCH_ENABLE_MEMORY_HOTREMOVE
+	def_bool y
 
 # The GPIO number here must be sorted by descending number. In case of
 # a multiplatform kernel, we just want the highest value required by the
@@ -698,6 +783,10 @@ config ARCH_HAS_CACHE_LINE_SIZE
 
 source "mm/Kconfig"
 
+config ARCH_MEMORY_PROBE
+	def_bool y
+	depends on MEMORY_HOTPLUG
+
 config SECCOMP
 	bool "Enable seccomp to safely compute untrusted bytecode"
 	---help---
@@ -744,6 +833,18 @@ config FORCE_MAX_ZONEORDER
 
 	  However for 4K, we choose a higher default value, 11 as opposed to 10, giving us
 	  4M allocations matching the default size used by generic code.
+
+config UNMAP_KERNEL_AT_EL0
+	bool "Unmap kernel when running in userspace (aka \"KAISER\")" if EXPERT
+	default y
+	help
+	  Speculation attacks against some high-performance processors can
+	  be used to bypass MMU permission checks and leak kernel data to
+	  userspace. This can be defended against by unmapping the kernel
+	  when running in userspace, mapping it back in on exception entry
+	  via a trampoline page in the vector table.
+
+	  If unsure, say Y.
 
 config HARDEN_BRANCH_PREDICTOR
 	bool "Harden the branch predictor against aliasing attacks" if EXPERT
@@ -828,6 +929,14 @@ config SETEND_EMULATION
 
 	  If unsure, say Y
 endif
+
+config ARM64_SW_TTBR0_PAN
+	bool "Emulate Privileged Access Never using TTBR0_EL1 switching"
+	help
+	  Enabling this option prevents the kernel from accessing
+	  user-space memory directly by pointing TTBR0_EL1 to a reserved
+	  zeroed area and reserved ASID. The user access routines
+	  restore the valid TTBR0_EL1 temporarily.
 
 menu "ARMv8.1 architectural features"
 
@@ -1033,6 +1142,26 @@ config BUILD_ARM64_APPENDED_DTB_IMAGE
 	  DTBs to be built by default (instead of a standalone Image.gz.)
 	  The image will built in arch/arm64/boot/Image.gz-dtb
 
+choice
+	prompt "Appended DTB Kernel Image name"
+	depends on BUILD_ARM64_APPENDED_DTB_IMAGE
+	help
+	  Enabling this option will cause a specific kernel image Image or
+	  Image.gz to be used for final image creation.
+	  The image will built in arch/arm64/boot/IMAGE-NAME-dtb
+
+	config IMG_GZ_DTB
+		bool "Image.gz-dtb"
+	config IMG_DTB
+		bool "Image-dtb"
+endchoice
+
+config BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME
+	string
+	depends on BUILD_ARM64_APPENDED_DTB_IMAGE
+	default "Image.gz-dtb" if IMG_GZ_DTB
+	default "Image-dtb" if IMG_DTB
+
 config BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES
 	string "Default dtb names"
 	depends on BUILD_ARM64_APPENDED_DTB_IMAGE
@@ -1040,6 +1169,11 @@ config BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES
 	  Space separated list of names of dtbs to append when
 	  building a concatenated Image.gz-dtb.
 
+config BUILD_ARM64_DT_OVERLAY
+	bool "enable DT overlay compilation support"
+	depends on OF
+	help
+	  This option enables support for DT overlay compilation.
 endmenu
 
 menu "Userspace binary formats"
@@ -1049,7 +1183,7 @@ source "fs/Kconfig.binfmt"
 config COMPAT
 	bool "Kernel support for 32-bit EL0"
 	depends on ARM64_4K_PAGES || EXPERT
-	select COMPAT_BINFMT_ELF
+	select COMPAT_BINFMT_ELF if BINFMT_ELF
 	select HAVE_UID16
 	select OLD_SIGSUSPEND3
 	select COMPAT_OLD_SIGACTION
@@ -1075,7 +1209,7 @@ config KUSER_HELPERS
 	  Provide kuser helpers in a special purpose fixed-address page. The
 	  kernel provides helper code to userspace in read-only form at a fixed
 	  location to allow userspace to be independent of the CPU type fitted
-	  to the system. This permits 32-bit binaries to be run on ARMv4 through
+	  to the system. This permits 32-bit binaries to be run on ARMv6 through
 	  to ARMv8 without modification.
 
 	  See Documentation/arm/kernel_user_helpers.txt for details.
@@ -1083,7 +1217,7 @@ config KUSER_HELPERS
 	  However, the fixed-address nature of these helpers can be used by ROP
 	  (return-orientated programming) authors when creating exploits.
 
-	  If all of the 32-bit binaries and libraries which run on your platform
+	  If all of the 32-bit binaries and libraries that run on your platform
 	  are built specifically for your platform, and make no use of these
 	  helpers, then you can turn this option off to hinder such exploits.
 	  However, in that case, if a binary or library relying on those helpers
@@ -1092,34 +1226,55 @@ config KUSER_HELPERS
 	  the kuser helpers.
 
 	  Say N here only if you are absolutely certain that you do not need
-	  these helpers; otherwise, the safe option is to say Y.
+	  these helpers; otherwise, the safe option is to say Y (the default
+	  for now)
 
 config SYSVIPC_COMPAT
 	def_bool y
 	depends on COMPAT && SYSVIPC
 
+config KEYS_COMPAT
+	def_bool y
+	depends on COMPAT && KEYS
+
 config COMPAT_VDSO
 	bool "32-bit vDSO"
 	depends on COMPAT
+	select ARM_ARCH_TIMER_VCT_ACCESS
 	default n
 	help
 	  Warning: a 32-bit toolchain is necessary to build the vDSO. You
 	  must explicitly define which toolchain should be used by setting
 	  CROSS_COMPILE_ARM32 to the prefix of the 32-bit toolchain (same format
-	  as CROSS_COMPILE). If a 32-bit compiler cannot be found, a warning
-	  will be printed and the kernel will be built as if COMPAT_VDSO had not
-	  been set.
+	  as CROSS_COMPILE). If CROSS_COMPILE_ARM32 is empty, a warning will be
+	  printed and the kernel will be built as if COMPAT_VDSO had not been
+	  set. If CROSS_COMPILE_ARM32 is set to an invalid prefix, compilation
+	  will be aborted.
 
 	  Provide a vDSO to 32-bit processes. It includes the symbols provided
 	  by the vDSO from the 32-bit kernel, so that a 32-bit libc can use
 	  the compat vDSO without modification. It also provides sigreturn
 	  trampolines, replacing the sigreturn page.
 
+config CROSS_COMPILE_ARM32
+	string "32-bit toolchain prefix"
+	help
+	  Same as setting CROSS_COMPILE_ARM32 in the environment, but saved for
+	  future builds. The environment variable overrides this config option.
+
 endmenu
 
 menu "Power management options"
 
 source "kernel/power/Kconfig"
+
+config ARCH_HIBERNATION_POSSIBLE
+	def_bool y
+	depends on CPU_PM
+
+config ARCH_HIBERNATION_HEADER
+	def_bool y
+	depends on HIBERNATION
 
 config ARCH_SUSPEND_POSSIBLE
 	def_bool y

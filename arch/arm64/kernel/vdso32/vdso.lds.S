@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Author: Will Deacon <will.deacon at arm.com>
+ * Author: Will Deacon <will.deacon@arm.com>
  * Heavily based on the vDSO linker scripts for other archs.
  */
 
@@ -76,6 +76,8 @@ VERSION
 	global:
 		__vdso_clock_gettime;
 		__vdso_gettimeofday;
+		__vdso_clock_getres;
+		__vdso_time;
 		__kernel_sigreturn_arm;
 		__kernel_sigreturn_thumb;
 		__kernel_rt_sigreturn_arm;

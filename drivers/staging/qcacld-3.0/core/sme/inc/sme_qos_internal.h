@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #if !defined(__SMEQOSINTERNAL_H)
@@ -78,7 +69,6 @@ typedef enum {
 	SME_QOS_CSR_DISCONNECT_IND,
 	SME_QOS_CSR_HANDOFF_ASSOC_REQ,
 	SME_QOS_CSR_HANDOFF_COMPLETE,
-	SME_QOS_CSR_HANDOFF_FAILURE,
 	SME_QOS_CSR_PREAUTH_SUCCESS_IND,
 	SME_QOS_CSR_SET_KEY_SUCCESS_IND,
 } sme_qos_csr_event_indType;
@@ -107,7 +97,7 @@ typedef enum {
   ---------------------------------------------------------------------------*/
 typedef struct {
 	tSirBssDescription *pBssDesc;
-	tCsrRoamProfile *pProfile;
+	struct csr_roam_profile *pProfile;
 } sme_QosAssocInfo;
 
 /*--------------------------------------------------------------------------

@@ -4,25 +4,30 @@ snd-soc-hostless-pcm-objs := msm-pcm-hostless.o
 obj-$(CONFIG_SND_SOC_MSM_HOSTLESS_PCM) += snd-soc-hostless-pcm.o
 
 obj-$(CONFIG_SND_SOC_MSM_QDSP6V2_INTF) += qdsp6v2/
+obj-$(CONFIG_SND_SOC_QDSP6V2_VM) += qdsp6v2/
 
 snd-soc-qdsp6v2-objs := msm-dai-fe.o
 obj-$(CONFIG_SND_SOC_QDSP6V2) += snd-soc-qdsp6v2.o
+obj-$(CONFIG_SND_SOC_QDSP6V2_VM) += snd-soc-qdsp6v2.o
 
 #for CPE drivers
 snd-soc-cpe-objs := msm-cpe-lsm.o
 obj-$(CONFIG_SND_SOC_CPE) += snd-soc-cpe.o
 
 # for MSM8996 sound card driver
-snd-soc-msm8996-objs := msm8996.o
+snd-soc-msm8996-objs := msm8996.o apq8096-auto.o
 obj-$(CONFIG_SND_SOC_MSM8996) += snd-soc-msm8996.o
 
+# for MSM8996 virtualization sound card driver
+snd-soc-msm8996-vm-objs := apq8096-auto.o
+obj-$(CONFIG_SND_SOC_MSM8996_VM) += snd-soc-msm8996-vm.o
+
 # for MSM8998 sound card driver
-ifeq ($(CONFIG_SND_SOC_MSM8998_CM710X),y)
-snd-soc-msm8998-objs := msm8998-cm710x.o
-else
 snd-soc-msm8998-objs := msm8998.o
-endif
 obj-$(CONFIG_SND_SOC_MSM8998) += snd-soc-msm8998.o
+
+snd-soc-msm8998-cm710x-objs := msm8998-cm710x.o
+obj-$(CONFIG_SND_SOC_MSM8998_CM710X) += snd-soc-msm8998-cm710x.o
 
 # for SDM660 sound card driver
 snd-soc-sdm660-common-objs := sdm660-common.o

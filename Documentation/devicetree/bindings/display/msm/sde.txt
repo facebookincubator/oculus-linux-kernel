@@ -169,6 +169,7 @@ Optional properties:
 				e.g. qcom,sde-sspp-vig-blocks
 				-- qcom,sde-vig-csc-off: offset of CSC hardware
 				-- qcom,sde-vig-qseed-off: offset of QSEED hardware
+				-- qcom,sde-vig-qseed-size: A u32 address range for qseed scaler.
 				-- qcom,sde-vig-pcc: offset and version of PCC hardware
 				-- qcom,sde-vig-hsic: offset and version of global PA adjustment
 				-- qcom,sde-vig-memcolor: offset and version of PA memcolor hardware
@@ -178,6 +179,7 @@ Optional properties:
 				indicates that the SSPP RGB contains that feature hardware.
 				e.g. qcom,sde-sspp-vig-blocks
 				-- qcom,sde-rgb-scaler-off: offset of RGB scaler hardware
+				-- qcom,sde-rgb-scaler-size: A u32 address range for scaler.
 				-- qcom,sde-rgb-pcc: offset and version of PCC hardware
 - qcom,sde-dspp-blocks:		A node that lists the blocks inside the DSPP hardware. The
 				block entries will contain the offset and version of each
@@ -245,7 +247,19 @@ Optional properties:
 				applied in scenarios where panel interface can
 				be more tolerant to memory latency such as
 				command mode panels.
+- qcom,sde-mixer-display-pref: A string array indicating the preferred display type
+				for the mixer block. Possible values:
+				"primary" - preferred for primary display
+				"secondary" - preferred for secondary display
+				"tertiary" - preferred for tertiary display
+				"none" - no preference for display
 
+- qcom,sde-ctl-display-pref:    A string array indicating the preferred display type
+				for the ctl block. Possible values:
+				"primary" - preferred for primary display
+				"secondary" - preferred for secondary display
+				"tertiary" - preferred for tertiary display
+				"none" - no preference for display
 Bus Scaling Subnodes:
 - qcom,sde-reg-bus:		Property to provide Bus scaling for register access for
 				mdss blocks.
@@ -263,6 +277,22 @@ Bus Scaling Data:
 				Documentation/devicetree/bindings/arm/msm/msm_bus.txt
 				* Current values of src & dst are defined at
 				include/linux/msm-bus-board.h
+
+SMMU Subnodes:
+- smmu_sde_****:		Child nodes representing sde smmu virtual
+				devices
+
+Subnode properties:
+- compatible:			Compatible names used for smmu devices.
+				names should be:
+				"qcom,smmu_sde_unsec": smmu context bank device
+				for unsecure sde real time domain.
+				"qcom,smmu_sde_sec": smmu context bank device
+				for secure sde real time domain.
+				"qcom,smmu_sde_nrt_unsec": smmu context bank device
+				for unsecure sde non-real time domain.
+				"qcom,smmu_sde_nrt_sec": smmu context bank device
+				for secure sde non-real time domain.
 
 
 Please refer to ../../interrupt-controller/interrupts.txt for a general
@@ -401,6 +431,7 @@ Example:
     qcom,sde-sspp-vig-blocks {
         qcom,sde-vig-csc-off = <0x320>;
         qcom,sde-vig-qseed-off = <0x200>;
+        qcom,sde-vig-qseed-size = <0x74>;
         /* Offset from vig top, version of HSIC */
         qcom,sde-vig-hsic = <0x200 0x00010000>;
         qcom,sde-vig-memcolor = <0x200 0x00010000>;
@@ -409,6 +440,7 @@ Example:
 
     qcom,sde-sspp-rgb-blocks {
         qcom,sde-rgb-scaler-off = <0x200>;
+        qcom,sde-rgb-scaler-size = <0x74>;
         qcom,sde-rgb-pcc = <0x380 0x00010000>;
     };
 
@@ -469,4 +501,14 @@ Example:
               <1 590 0 160000>,
               <1 590 0 320000>;
         };
+
+    smmu_kms_unsec: qcom,smmu_kms_unsec_cb {
+        compatible = "qcom,smmu_sde_unsec";
+        iommus = <&mmss_smmu 0>;
+    };
+
+    smmu_kms_sec: qcom,smmu_kms_sec_cb {
+        compatible = "qcom,smmu_sde_sec";
+        iommus = <&mmss_smmu 1>;
+    };
   };

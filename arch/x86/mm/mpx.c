@@ -293,7 +293,7 @@ siginfo_t *mpx_generate_siginfo(struct pt_regs *regs)
 	 * We were not able to extract an address from the instruction,
 	 * probably because there was something invalid in it.
 	 */
-	if (info->si_addr == (void *)-1) {
+	if (info->si_addr == (void __user *)-1) {
 		err = -EINVAL;
 		goto err_out;
 	}
@@ -525,15 +525,7 @@ int mpx_handle_bd_fault(void)
 	if (!kernel_managing_mpx_tables(current->mm))
 		return -EINVAL;
 
-	if (do_mpx_bt_fault()) {
-		force_sig(SIGSEGV, current);
-		/*
-		 * The force_sig() is essentially "handling" this
-		 * exception, so we do not pass up the error
-		 * from do_mpx_bt_fault().
-		 */
-	}
-	return 0;
+	return do_mpx_bt_fault();
 }
 
 /*
@@ -544,10 +536,9 @@ static int mpx_resolve_fault(long __user *addr, int write)
 {
 	long gup_ret;
 	int nr_pages = 1;
-	int force = 0;
 
 	gup_ret = get_user_pages(current, current->mm, (unsigned long)addr,
-				 nr_pages, write, force, NULL, NULL);
+				 nr_pages, write ? FOLL_WRITE : 0, NULL, NULL);
 	/*
 	 * get_user_pages() returns number of pages gotten.
 	 * 0 means we failed to fault in and get anything,

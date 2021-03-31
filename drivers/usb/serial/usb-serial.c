@@ -314,10 +314,7 @@ static void serial_cleanup(struct tty_struct *tty)
 	serial = port->serial;
 	owner = serial->type->driver.owner;
 
-	mutex_lock(&serial->disc_mutex);
-	if (!serial->disconnected)
-		usb_autopm_put_interface(serial->interface);
-	mutex_unlock(&serial->disc_mutex);
+	usb_autopm_put_interface(serial->interface);
 
 	usb_serial_put(serial);
 	module_put(owner);
@@ -1077,7 +1074,8 @@ static int usb_serial_probe(struct usb_interface *interface,
 
 	serial->disconnected = 0;
 
-	usb_serial_console_init(serial->port[0]->minor);
+	if (num_ports > 0)
+		usb_serial_console_init(serial->port[0]->minor);
 exit:
 	module_put(type->driver.owner);
 	return 0;

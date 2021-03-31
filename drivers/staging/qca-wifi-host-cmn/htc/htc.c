@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,14 +16,10 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #include "htc_debug.h"
 #include "htc_internal.h"
+#include "htc_credit_history.h"
+#include "htc_hang_event.h"
 #include <hif.h>
 #include <qdf_nbuf.h>           /* qdf_nbuf_t */
 #include <qdf_types.h>          /* qdf_print */
@@ -53,6 +46,13 @@ ATH_DEBUG_INSTANTIATE_MODULE_VAR(htc,
 
 #endif
 
+#if (defined(CONFIG_MCL) || (QCA_WIFI_QCA8074))
+static const uint32_t svc_id[] = {WMI_CONTROL_SVC, WMI_CONTROL_SVC_WMAC1,
+						WMI_CONTROL_SVC_WMAC2};
+#else
+static const uint32_t svc_id[] = {WMI_CONTROL_SVC};
+#endif
+
 extern unsigned int htc_credit_flow;
 
 static void reset_endpoint_states(HTC_TARGET *target);
@@ -60,12 +60,11 @@ static void reset_endpoint_states(HTC_TARGET *target);
 static void destroy_htc_tx_ctrl_packet(HTC_PACKET *pPacket)
 {
 	qdf_nbuf_t netbuf;
+
 	netbuf = (qdf_nbuf_t) GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("free ctrl netbuf :0x%pK\n", netbuf));
-	if (netbuf != NULL) {
+	if (netbuf != NULL)
 		qdf_nbuf_free(netbuf);
-	}
-
 	qdf_mem_free(pPacket);
 }
 
@@ -76,9 +75,8 @@ static HTC_PACKET *build_htc_tx_ctrl_packet(qdf_device_t osdev)
 
 	do {
 		pPacket = (HTC_PACKET *) qdf_mem_malloc(sizeof(HTC_PACKET));
-		if (NULL == pPacket) {
+		if (pPacket == NULL)
 			break;
-		}
 		netbuf = qdf_nbuf_alloc(osdev, HTC_CONTROL_BUFFER_SIZE,
 					20, 4, true);
 		if (NULL == netbuf) {
@@ -88,7 +86,7 @@ static HTC_PACKET *build_htc_tx_ctrl_packet(qdf_device_t osdev)
 			break;
 		}
 		AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-				("alloc ctrl netbuf :0x%pK \n", netbuf));
+				("alloc ctrl netbuf :0x%pK\n", netbuf));
 		SET_HTC_PACKET_NET_BUF_CONTEXT(pPacket, netbuf);
 	} while (false);
 
@@ -129,12 +127,14 @@ void htc_set_target_failure_callback(HTC_HANDLE HTCHandle,
 				     HTC_TARGET_FAILURE Callback)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
+
 	target->HTCInitInfo.TargetFailure = Callback;
 }
 
 void htc_dump(HTC_HANDLE HTCHandle, uint8_t CmdId, bool start)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
+
 	hif_dump(target->hif_dev, CmdId, start);
 }
 
@@ -142,7 +142,10 @@ void htc_dump(HTC_HANDLE HTCHandle, uint8_t CmdId, bool start)
 static void htc_cleanup(HTC_TARGET *target)
 {
 	HTC_PACKET *pPacket;
-	/* qdf_nbuf_t netbuf; */
+	int i;
+	HTC_ENDPOINT *endpoint;
+	HTC_PACKET_QUEUE *pkt_queue;
+	qdf_nbuf_t netbuf;
 
 	if (target->hif_dev != NULL) {
 		hif_detach_htc(target->hif_dev);
@@ -152,37 +155,49 @@ static void htc_cleanup(HTC_TARGET *target)
 
 	while (true) {
 		pPacket = allocate_htc_packet_container(target);
-		if (NULL == pPacket) {
+		if (pPacket == NULL)
 			break;
-		}
 		qdf_mem_free(pPacket);
 	}
 
+	LOCK_HTC_TX(target);
 	pPacket = target->pBundleFreeList;
+	target->pBundleFreeList = NULL;
+	UNLOCK_HTC_TX(target);
 	while (pPacket) {
 		HTC_PACKET *pPacketTmp = (HTC_PACKET *) pPacket->ListLink.pNext;
+		netbuf = GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
+		if (netbuf)
+			qdf_nbuf_free(netbuf);
+		pkt_queue = pPacket->pContext;
+		if (pkt_queue)
+			qdf_mem_free(pkt_queue);
 		qdf_mem_free(pPacket);
 		pPacket = pPacketTmp;
 	}
+
 #ifdef TODO_FIXME
 	while (true) {
 		pPacket = htc_alloc_control_tx_packet(target);
-		if (NULL == pPacket) {
+		if (pPacket == NULL)
 			break;
-		}
 		netbuf = (qdf_nbuf_t) GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
-		if (netbuf != NULL) {
+		if (netbuf != NULL)
 			qdf_nbuf_free(netbuf);
-		}
-
 		qdf_mem_free(pPacket);
 	}
 #endif
+
+	htc_flush_endpoint_txlookupQ(target, ENDPOINT_0, true);
 
 	qdf_spinlock_destroy(&target->HTCLock);
 	qdf_spinlock_destroy(&target->HTCRxLock);
 	qdf_spinlock_destroy(&target->HTCTxLock);
 	qdf_spinlock_destroy(&target->HTCCreditLock);
+	for (i = 0; i < ENDPOINT_MAX; i++) {
+		endpoint = &target->endpoint[i];
+		qdf_spinlock_destroy(&endpoint->lookup_queue_lock);
+	}
 
 	/* free our instance */
 	qdf_mem_free(target);
@@ -238,8 +253,8 @@ static inline void htc_runtime_pm_init(HTC_TARGET *target) { }
 #endif
 
 /* registered target arrival callback from the HIF layer */
-HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
-		      uint32_t con_mode)
+HTC_HANDLE htc_create(void *ol_sc, struct htc_init_info *pInfo,
+			qdf_device_t osdev, uint32_t con_mode)
 {
 	struct hif_msg_callbacks htcCallbacks;
 	HTC_ENDPOINT *pEndpoint = NULL;
@@ -261,15 +276,21 @@ HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
 	}
 
 	htc_runtime_pm_init(target);
+	htc_credit_history_init();
 	qdf_spinlock_create(&target->HTCLock);
 	qdf_spinlock_create(&target->HTCRxLock);
 	qdf_spinlock_create(&target->HTCTxLock);
-	qdf_spinlock_create(&target->HTCCreditLock);
+	for (i = 0; i < ENDPOINT_MAX; i++) {
+		pEndpoint = &target->endpoint[i];
+		qdf_spinlock_create(&pEndpoint->lookup_queue_lock);
+	}
 	target->is_nodrop_pkt = false;
+	target->htc_hdr_length_check = false;
+	target->wmi_ep_count = 1;
 
 	do {
 		qdf_mem_copy(&target->HTCInitInfo, pInfo,
-			     sizeof(HTC_INIT_INFO));
+			     sizeof(struct htc_init_info));
 		target->host_handle = pInfo->pContext;
 		target->osdev = osdev;
 		target->con_mode = con_mode;
@@ -279,19 +300,17 @@ HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
 		INIT_HTC_PACKET_QUEUE(&target->ControlBufferTXFreeList);
 
 		for (i = 0; i < HTC_PACKET_CONTAINER_ALLOCATION; i++) {
-			HTC_PACKET *pPacket =
-				(HTC_PACKET *) qdf_mem_malloc(sizeof(HTC_PACKET));
-			if (pPacket != NULL) {
+			HTC_PACKET *pPacket = (HTC_PACKET *)
+					qdf_mem_malloc(sizeof(HTC_PACKET));
+			if (pPacket != NULL)
 				free_htc_packet_container(target, pPacket);
-			}
 		}
 
 #ifdef TODO_FIXME
 		for (i = 0; i < NUM_CONTROL_TX_BUFFERS; i++) {
 			pPacket = build_htc_tx_ctrl_packet();
-			if (NULL == pPacket) {
+			if (pPacket == NULL)
 				break;
-			}
 			htc_free_control_tx_packet(target, pPacket);
 		}
 #endif
@@ -301,7 +320,8 @@ HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
 		htcCallbacks.Context = target;
 		htcCallbacks.rxCompletionHandler = htc_rx_completion_handler;
 		htcCallbacks.txCompletionHandler = htc_tx_completion_handler;
-		htcCallbacks.txResourceAvailHandler = htc_tx_resource_avail_handler;
+		htcCallbacks.txResourceAvailHandler =
+						 htc_tx_resource_avail_handler;
 		htcCallbacks.fwEventHandler = htc_fw_event_handler;
 		target->hif_dev = ol_sc;
 
@@ -311,6 +331,9 @@ HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
 		hif_post_init(target->hif_dev, target, &htcCallbacks);
 		hif_get_default_pipe(target->hif_dev, &pEndpoint->UL_PipeID,
 				     &pEndpoint->DL_PipeID);
+		hif_set_initial_wakeup_cb(target->hif_dev,
+					  pInfo->target_initial_wakeup_cb,
+					  pInfo->target_psoc);
 
 	} while (false);
 
@@ -318,33 +341,40 @@ HTC_HANDLE htc_create(void *ol_sc, HTC_INIT_INFO *pInfo, qdf_device_t osdev,
 
 	HTC_TRACE("-htc_create: (0x%pK)", target);
 
+	htc_hang_event_notifier_register(target);
+
 	return (HTC_HANDLE) target;
 }
 
 void htc_destroy(HTC_HANDLE HTCHandle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
+
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
 			("+htc_destroy ..  Destroying :0x%pK\n", target));
+	htc_hang_event_notifier_unregister();
 	hif_stop(htc_get_hif_device(HTCHandle));
 	if (target)
 		htc_cleanup(target);
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("-htc_destroy\n"));
 }
 
-/* get the low level HIF device for the caller , the caller may wish to do low level
- * HIF requests */
+/* get the low level HIF device for the caller , the caller may wish to do low
+ * level HIF requests
+ */
 void *htc_get_hif_device(HTC_HANDLE HTCHandle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
+
 	return target->hif_dev;
 }
 
 static void htc_control_tx_complete(void *Context, HTC_PACKET *pPacket)
 {
 	HTC_TARGET *target = (HTC_TARGET *) Context;
+
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-			("+-htc_control_tx_complete 0x%pK (l:%d) \n", pPacket,
+			("+-htc_control_tx_complete 0x%pK (l:%d)\n", pPacket,
 			 pPacket->ActualLength));
 	htc_free_control_tx_packet(target, pPacket);
 }
@@ -362,8 +392,8 @@ static void htc_control_tx_complete(void *Context, HTC_PACKET *pPacket)
  */
 static void
 htc_setup_epping_credit_allocation(struct hif_opaque_softc *scn,
-				   HTC_SERVICE_TX_CREDIT_ALLOCATION *pEntry,
-				   int credits)
+			   struct htc_service_tx_credit_allocation *pEntry,
+			   int credits)
 {
 	switch (hif_get_bus_type(scn)) {
 	case QDF_BUS_TYPE_PCI:
@@ -383,7 +413,6 @@ htc_setup_epping_credit_allocation(struct hif_opaque_softc *scn,
 	default:
 		break;
 	}
-	return;
 }
 
 /**
@@ -395,39 +424,37 @@ htc_setup_epping_credit_allocation(struct hif_opaque_softc *scn,
 static
 A_STATUS htc_setup_target_buffer_assignments(HTC_TARGET *target)
 {
-	HTC_SERVICE_TX_CREDIT_ALLOCATION *pEntry;
+	struct htc_service_tx_credit_allocation *pEntry;
 	A_STATUS status;
 	int credits;
 	int creditsPerMaxMsg;
 
 	creditsPerMaxMsg = MAX_MESSAGE_SIZE / target->TargetCreditSize;
-	if (MAX_MESSAGE_SIZE % target->TargetCreditSize) {
+	if (MAX_MESSAGE_SIZE % target->TargetCreditSize)
 		creditsPerMaxMsg++;
-	}
 
 	/* TODO, this should be configured by the caller! */
 
 	credits = target->TotalTransmitCredits;
 	pEntry = &target->ServiceTxAllocTable[0];
 
+	status = A_OK;
 	/*
 	 * Allocate all credists/HTC buffers to WMI.
 	 * no buffers are used/required for data. data always
 	 * remains on host.
 	 */
-	status = A_OK;
-	pEntry++;
-	pEntry->service_id = WMI_CONTROL_SVC;
-	pEntry->CreditAllocation = credits;
-
 	if (HTC_IS_EPPING_ENABLED(target->con_mode)) {
+		pEntry++;
+		pEntry->service_id = WMI_CONTROL_SVC;
+		pEntry->CreditAllocation = credits;
 		/* endpoint ping is a testing tool directly on top of HTC in
 		 * both target and host sides.
-		 * In target side, the endppint ping fw has no wlan stack and the
+		 * In target side, the endppint ping fw has no wlan stack and
 		 * FW mboxping app directly sits on HTC and it simply drops
 		 * or loops back TX packets. For rx perf, FW mboxping app
 		 * generates packets and passes packets to HTC to send to host.
-		 * There is no WMI mesage exchanges between host and target
+		 * There is no WMI message exchanges between host and target
 		 * in endpoint ping case.
 		 * In host side, the endpoint ping driver is a Ethernet driver
 		 * and it directly sits on HTC. Only HIF, HTC, QDF, ADF are
@@ -440,21 +467,40 @@ A_STATUS htc_setup_target_buffer_assignments(HTC_TARGET *target)
 		 * space through the Ethernet interface.
 		 * For credit allocation, in SDIO bus case, only BE service is
 		 * used for tx/rx perf testing so that all credits are given
-		 * to BE service. In PCIe and USB bus case, endpoint ping uses both
-		 * BE and BK services to stress the bus so that the total credits
-		 * are equally distributed to BE and BK services.
+		 * to BE service. In PCIe and USB bus case, endpoint ping uses
+		 * both BE and BK services to stress the bus so that the total
+		 * credits are equally distributed to BE and BK services.
 		 */
 
 		htc_setup_epping_credit_allocation(target->hif_dev,
 						   pEntry, credits);
+	} else {
+		int i;
+		uint32_t max_wmi_svc = (sizeof(svc_id) / sizeof(uint32_t));
+
+		if ((target->wmi_ep_count == 0) ||
+				(target->wmi_ep_count > max_wmi_svc))
+			return A_ERROR;
+
+		/*
+		 * Divide credit among number of endpoints for WMI
+		 */
+		credits = credits / target->wmi_ep_count;
+		for (i = 0; i < target->wmi_ep_count; i++) {
+			status = A_OK;
+			pEntry++;
+			pEntry->service_id = svc_id[i];
+			pEntry->CreditAllocation = credits;
+		}
 	}
 
 	if (A_SUCCESS(status)) {
 		int i;
+
 		for (i = 0; i < HTC_MAX_SERVICE_ALLOC_ENTRIES; i++) {
 			if (target->ServiceTxAllocTable[i].service_id != 0) {
 				AR_DEBUG_PRINTF(ATH_DEBUG_INIT,
-						("HTC Service Index : %d TX : 0x%2.2X : alloc:%d\n",
+						("SVS Index : %d TX : 0x%2.2X : alloc:%d",
 						 i,
 						 target->ServiceTxAllocTable[i].
 						 service_id,
@@ -480,7 +526,7 @@ uint8_t htc_get_credit_allocation(HTC_TARGET *target, uint16_t service_id)
 	}
 
 	if (0 == allocation) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_INIT,
+		AR_DEBUG_PRINTF(ATH_DEBUG_RSVD1,
 			("HTC Service TX : 0x%2.2X : allocation is zero!\n",
 				 service_id));
 	}
@@ -488,13 +534,13 @@ uint8_t htc_get_credit_allocation(HTC_TARGET *target, uint16_t service_id)
 	return allocation;
 }
 
-A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
+QDF_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 {
-	A_STATUS status = A_OK;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 	HTC_READY_EX_MSG *pReadyMsg;
-	HTC_SERVICE_CONNECT_REQ connect;
-	HTC_SERVICE_CONNECT_RESP resp;
+	struct htc_service_connect_req connect;
+	struct htc_service_connect_resp resp;
 	HTC_READY_MSG *rdy_msg;
 	uint16_t htc_rdy_msg_id;
 	uint8_t i = 0;
@@ -502,27 +548,27 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
 			("htc_wait_target - Enter (target:0x%pK)\n", HTCHandle));
-	AR_DEBUG_PRINTF(ATH_DEBUG_ANY, ("+HWT\n"));
+	AR_DEBUG_PRINTF(ATH_DEBUG_RSVD1, ("+HWT\n"));
 
 	do {
 
 		status = hif_start(target->hif_dev);
-		if (A_FAILED(status)) {
-			AR_DEBUG_PRINTF(ATH_DEBUG_ERROR, ("hif_start failed\n"));
+		if (QDF_IS_STATUS_ERROR(status)) {
+			AR_DEBUG_PRINTF(ATH_DEBUG_ERROR,
+					("hif_start failed\n"));
 			break;
 		}
 
 		status = htc_wait_recv_ctrl_message(target);
 
-		if (A_FAILED(status)) {
+		if (QDF_IS_STATUS_ERROR(status))
 			break;
-		}
 
 		if (target->CtrlResponseLength < (sizeof(HTC_READY_EX_MSG))) {
 			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-					("Invalid HTC Ready Msg Len:%d! \n",
+					("Invalid HTC Ready Msg Len:%d!\n",
 					 target->CtrlResponseLength));
-			status = A_ECOMM;
+			status = QDF_STATUS_E_BADMSG;
 			break;
 		}
 
@@ -533,9 +579,9 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 			HTC_GET_FIELD(rdy_msg, HTC_READY_MSG, MESSAGEID);
 		if (htc_rdy_msg_id != HTC_MSG_READY_ID) {
 			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-					("Invalid HTC Ready Msg : 0x%X ! \n",
+					("Invalid HTC Ready Msg : 0x%X!\n",
 					 htc_rdy_msg_id));
-			status = A_ECOMM;
+			status = QDF_STATUS_E_BADMSG;
 			break;
 		}
 
@@ -545,20 +591,22 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 			(int)HTC_GET_FIELD(rdy_msg, HTC_READY_MSG, CREDITSIZE);
 		target->MaxMsgsPerHTCBundle =
 			(uint8_t) pReadyMsg->MaxMsgsPerHTCBundle;
-		/* for old fw this value is set to 0. But the minimum value should be 1,
-		 * i.e., no bundling */
+		UPDATE_ALT_CREDIT(target, pReadyMsg->AltDataCreditSize);
+		/* for old fw this value is set to 0. But the minimum value
+		 * should be 1, i.e., no bundling
+		 */
 		if (target->MaxMsgsPerHTCBundle < 1)
 			target->MaxMsgsPerHTCBundle = 1;
 
 		AR_DEBUG_PRINTF(ATH_DEBUG_INIT,
-				("Target Ready! : transmit resources : %d size:%d, MaxMsgsPerHTCBundle = %d\n",
+				("Target Ready! TX resource : %d size:%d, MaxMsgsPerHTCBundle = %d",
 				 target->TotalTransmitCredits,
 				 target->TargetCreditSize,
 				 target->MaxMsgsPerHTCBundle));
 
 		if ((0 == target->TotalTransmitCredits)
 		    || (0 == target->TargetCreditSize)) {
-			status = A_ECOMM;
+			status = QDF_STATUS_E_ABORTED;
 			break;
 		}
 
@@ -576,7 +624,9 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 
 				temp_bundle_packet = rx_bundle_packet;
 			}
+			LOCK_HTC_TX(target);
 			target->pBundleFreeList = temp_bundle_packet;
+			UNLOCK_HTC_TX(target);
 		}
 
 		/* done processing */
@@ -599,8 +649,9 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 
 	} while (false);
 
-	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("htc_wait_target - Exit (%d)\n", status));
-	AR_DEBUG_PRINTF(ATH_DEBUG_ANY, ("-HWT\n"));
+	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("htc_wait_target - Exit (%d)\n",
+			status));
+	AR_DEBUG_PRINTF(ATH_DEBUG_RSVD1, ("-HWT\n"));
 	return status;
 }
 
@@ -635,12 +686,12 @@ static void reset_endpoint_states(HTC_TARGET *target)
  * htc_start() - Main HTC function to trigger HTC start
  * @HTCHandle: pointer to HTC handle
  *
- * Return: A_OK for success or an appropriate A_STATUS error
+ * Return: QDF_STATUS_SUCCESS for success or an appropriate QDF_STATUS error
  */
-A_STATUS htc_start(HTC_HANDLE HTCHandle)
+QDF_STATUS htc_start(HTC_HANDLE HTCHandle)
 {
 	qdf_nbuf_t netbuf;
-	A_STATUS status = A_OK;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 	HTC_SETUP_COMPLETE_EX_MSG *pSetupComp;
 	HTC_PACKET *pSendPacket;
@@ -657,7 +708,7 @@ A_STATUS htc_start(HTC_HANDLE HTCHandle)
 			AR_DEBUG_ASSERT(false);
 			qdf_print("%s: allocControlTxPacket failed\n",
 				  __func__);
-			status = A_NO_MEMORY;
+			status = QDF_STATUS_E_NOMEM;
 			break;
 		}
 
@@ -673,17 +724,18 @@ A_STATUS htc_start(HTC_HANDLE HTCHandle)
 			      MESSAGEID, HTC_MSG_SETUP_COMPLETE_EX_ID);
 
 		if (!htc_credit_flow) {
-			AR_DEBUG_PRINTF(ATH_DEBUG_INIT,
-					("HTC will not use TX credit flow control\n"));
+			AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
+					("HTC will not use TX credit flow control"));
 			pSetupComp->SetupFlags |=
 				HTC_SETUP_COMPLETE_FLAGS_DISABLE_TX_CREDIT_FLOW;
 		} else {
-			AR_DEBUG_PRINTF(ATH_DEBUG_INIT,
-					("HTC using TX credit flow control\n"));
+			AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
+					("HTC using TX credit flow control"));
 		}
 
 		if ((hif_get_bus_type(target->hif_dev) == QDF_BUS_TYPE_SDIO) ||
-			(hif_get_bus_type(target->hif_dev) == QDF_BUS_TYPE_USB)) {
+					(hif_get_bus_type(target->hif_dev) ==
+							 QDF_BUS_TYPE_USB)) {
 			if (HTC_RX_BUNDLE_ENABLED(target))
 			pSetupComp->SetupFlags |=
 				HTC_SETUP_COMPLETE_FLAGS_ENABLE_BUNDLE_RECV;
@@ -698,10 +750,8 @@ A_STATUS htc_start(HTC_HANDLE HTCHandle)
 				       ENDPOINT_0, HTC_SERVICE_TX_PACKET_TAG);
 
 		status = htc_send_pkt((HTC_HANDLE) target, pSendPacket);
-		if (A_FAILED(status)) {
+		if (QDF_IS_STATUS_ERROR(status))
 			break;
-		}
-
 	} while (false);
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("htc_start Exit\n"));
@@ -740,10 +790,12 @@ void htc_flush_surprise_remove(HTC_HANDLE HTCHandle)
 
 	reset_endpoint_states(target);
 
-	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("-htc_flush_surprise_remove \n"));
+	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("-htc_flush_surprise_remove\n"));
 }
 
-/* stop HTC communications, i.e. stop interrupt reception, and flush all queued buffers */
+/* stop HTC communications, i.e. stop interrupt reception, and flush all queued
+ * buffers
+ */
 void htc_stop(HTC_HANDLE HTCHandle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
@@ -756,6 +808,7 @@ void htc_stop(HTC_HANDLE HTCHandle)
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("+htc_stop\n"));
 
+	HTC_INFO("%s: endpoints cleanup\n", __func__);
 	/* cleanup endpoints */
 	for (i = 0; i < ENDPOINT_MAX; i++) {
 		pEndpoint = &target->endpoint[i];
@@ -774,6 +827,7 @@ void htc_stop(HTC_HANDLE HTCHandle)
 	 * buffer leak
 	 */
 
+	HTC_INFO("%s: stopping hif layer\n", __func__);
 	hif_stop(target->hif_dev);
 
 #ifdef RX_SG_SUPPORT
@@ -783,6 +837,19 @@ void htc_stop(HTC_HANDLE HTCHandle)
 	RESET_RX_SG_CONFIG(target);
 	UNLOCK_HTC_RX(target);
 #endif
+
+	/**
+	 * In SSR case, HTC tx completion callback for wmi will be blocked
+	 * by TARGET_STATUS_RESET and HTC packets will be left unfreed on
+	 * lookup queue.
+	 */
+	HTC_INFO("%s: flush endpoints Tx lookup queue\n", __func__);
+	for (i = 0; i < ENDPOINT_MAX; i++) {
+		pEndpoint = &target->endpoint[i];
+		if (pEndpoint->service_id == WMI_CONTROL_SVC)
+			htc_flush_endpoint_txlookupQ(target, i, false);
+	}
+	HTC_INFO("%s: resetting endpoints state\n", __func__);
 
 	reset_endpoint_states(target);
 
@@ -816,14 +883,14 @@ void htc_dump_credit_states(HTC_HANDLE HTCHandle)
 				(" TxQueueDepth       : %d\n",
 				 HTC_PACKET_QUEUE_DEPTH(&pEndpoint->TxQueue)));
 		AR_DEBUG_PRINTF(ATH_DEBUG_ANY,
-				("----------------------------------------------------\n"));
+				("----------------------------------------\n"));
 	}
 }
 
 bool htc_get_endpoint_statistics(HTC_HANDLE HTCHandle,
 				   HTC_ENDPOINT_ID Endpoint,
-				   HTC_ENDPOINT_STAT_ACTION Action,
-				   HTC_ENDPOINT_STATS *pStats)
+				   enum htc_endpoint_stat_action Action,
+				   struct htc_endpoint_stats *pStats)
 {
 #ifdef HTC_EP_STAT_PROFILING
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
@@ -855,13 +922,13 @@ bool htc_get_endpoint_statistics(HTC_HANDLE HTCHandle,
 		A_ASSERT(pStats != NULL);
 		/* return the stats to the caller */
 		qdf_mem_copy(pStats, &target->endpoint[Endpoint].endpoint_stats,
-			 sizeof(HTC_ENDPOINT_STATS));
+			 sizeof(struct htc_endpoint_stats));
 	}
 
 	if (clearStats) {
 		/* reset stats */
 		qdf_mem_zero(&target->endpoint[Endpoint].endpoint_stats,
-			  sizeof(HTC_ENDPOINT_STATS));
+			  sizeof(struct htc_endpoint_stats));
 	}
 
 	UNLOCK_HTC_RX(target);
@@ -891,17 +958,15 @@ void *htc_get_targetdef(HTC_HANDLE htc_handle)
  * Return: None
  */
 void htc_ipa_get_ce_resource(HTC_HANDLE htc_handle,
-			     qdf_dma_addr_t *ce_sr_base_paddr,
+			     qdf_shared_mem_t **ce_sr,
 			     uint32_t *ce_sr_ring_size,
 			     qdf_dma_addr_t *ce_reg_paddr)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
 
-	if (target->hif_dev != NULL) {
+	if (target->hif_dev)
 		hif_ipa_get_ce_resource(target->hif_dev,
-					ce_sr_base_paddr,
-					ce_sr_ring_size, ce_reg_paddr);
-	}
+					ce_sr, ce_sr_ring_size, ce_reg_paddr);
 }
 #endif /* IPA_OFFLOAD */
 
@@ -1018,7 +1083,6 @@ int htc_pm_runtime_get(HTC_HANDLE htc_handle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
 
-	HTC_INFO("%s: %pS\n", __func__, (void *)_RET_IP_);
 	return hif_pm_runtime_get(target->hif_dev);
 }
 
@@ -1026,7 +1090,33 @@ int htc_pm_runtime_put(HTC_HANDLE htc_handle)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
 
-	HTC_INFO("%s: %pS\n", __func__, (void *)_RET_IP_);
 	return hif_pm_runtime_put(target->hif_dev);
 }
 #endif
+
+/**
+ * htc_set_wmi_endpoint_count: Set number of WMI endpoint
+ * @htc_handle: HTC handle
+ * @wmi_ep_count: WMI enpoint count
+ *
+ * return: None
+ */
+void htc_set_wmi_endpoint_count(HTC_HANDLE htc_handle, uint8_t wmi_ep_count)
+{
+	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
+
+	target->wmi_ep_count = wmi_ep_count;
+}
+
+/**
+ * htc_get_wmi_endpoint_count: Get number of WMI endpoint
+ * @htc_handle: HTC handle
+ *
+ * return: WMI enpoint count
+ */
+uint8_t htc_get_wmi_endpoint_count(HTC_HANDLE htc_handle)
+{
+	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
+
+	return target->wmi_ep_count;
+}

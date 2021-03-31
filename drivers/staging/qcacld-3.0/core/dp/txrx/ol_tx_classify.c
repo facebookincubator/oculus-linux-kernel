@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include <qdf_nbuf.h>         /* qdf_nbuf_t, etc. */
@@ -43,7 +34,7 @@
 #include <ip_prot.h>
 #include <enet.h>             /* ETHERTYPE_VLAN, etc. */
 #include <cds_ieee80211_common.h>        /* ieee80211_frame */
-
+#include <cdp_txrx_handle.h>
 /*
  * In theory, this tx classify code could be used on the host or in the target.
  * Thus, this code uses generic OS primitives, that can be aliased to either
@@ -87,7 +78,7 @@ ol_tx_classify_htt2_frm(
 }
 
 #define OL_TX_CLASSIFY_HTT2_EXTENSION(vdev, netbuf, msdu_info)      \
-	ol_tx_classify_htt2_frm(vdev, netbuf, msdu_info);
+	ol_tx_classify_htt2_frm(vdev, netbuf, msdu_info)
 #else
 #define OL_TX_CLASSIFY_HTT2_EXTENSION(vdev, netbuf, msdu_info)      /* no-op */
 #endif /* QCA_TX_HTT2_SUPPORT */
@@ -350,14 +341,17 @@ struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
 	struct ol_txrx_peer_t *peer = NULL;
 
 	if (vdev->hlTdlsFlag) {
-		peer = ol_txrx_find_peer_by_addr(pdev,
-						vdev->hl_tdls_ap_mac_addr.raw,
-						peer_id);
+		peer = ol_txrx_peer_find_hash_find_get_ref(pdev,
+					vdev->hl_tdls_ap_mac_addr.raw, 0, 1,
+					PEER_DEBUG_ID_OL_INTERNAL);
+
 		if (peer &&  (peer->peer_ids[0] == HTT_INVALID_PEER_ID)) {
+			ol_txrx_peer_release_ref(peer,
+						 PEER_DEBUG_ID_OL_INTERNAL);
 			peer = NULL;
 		} else {
 			if (peer)
-				OL_TXRX_PEER_INC_REF_CNT(peer);
+				*peer_id = peer->local_id;
 		}
 	}
 	if (!peer)
@@ -367,11 +361,12 @@ struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
 }
 
 #else
-struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
+static struct ol_txrx_peer_t *ol_tx_tdls_peer_find(struct ol_txrx_pdev_t *pdev,
 						struct ol_txrx_vdev_t *vdev,
 						uint8_t *peer_id)
 {
 	struct ol_txrx_peer_t *peer = NULL;
+
 	peer = ol_txrx_assoc_peer_find(vdev);
 
 	return peer;
@@ -396,6 +391,12 @@ ol_tx_classify(
 
 	TX_SCHED_DEBUG_PRINT("Enter %s\n", __func__);
 	dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
+	if (unlikely(NULL == dest_addr)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX,
+				QDF_TRACE_LEVEL_ERROR,
+				"Error: dest_addr is NULL.\n");
+		return NULL; /*error*/
+	}
 	if ((IEEE80211_IS_MULTICAST(dest_addr)) ||
 	    (vdev->opmode == wlan_op_mode_ocb)) {
 		txq = &vdev->txqs[OL_TX_VDEV_MCAST_BCAST];
@@ -445,8 +446,10 @@ ol_tx_classify(
 			tx_msdu_info->htt.info.peer_id = peer->peer_ids[0];
 		} else if (vdev->opmode == wlan_op_mode_ocb) {
 			tx_msdu_info->htt.info.peer_id = HTT_INVALID_PEER_ID;
-			/* In OCB mode, don't worry about the peer.
-			 *We don't need it. */
+			/*
+			 * In OCB mode, don't worry about the peer.
+			 * We don't need it.
+			 */
 			peer = NULL;
 		} else {
 			tx_msdu_info->htt.info.peer_id = HTT_INVALID_PEER_ID;
@@ -455,9 +458,11 @@ ol_tx_classify(
 			 * classify_extension function can check whether to
 			 * encrypt multicast / broadcast frames.
 			 */
-			peer = ol_txrx_peer_find_hash_find_inc_ref(pdev,
-							vdev->mac_addr.raw,
-							0, 1);
+			peer = ol_txrx_peer_find_hash_find_get_ref
+						(pdev,
+						 vdev->mac_addr.raw,
+						 0, 1,
+						 PEER_DEBUG_ID_OL_INTERNAL);
 			if (!peer) {
 				QDF_TRACE(QDF_MODULE_ID_TXRX,
 					  QDF_TRACE_LEVEL_ERROR,
@@ -512,30 +517,12 @@ ol_tx_classify(
 			 * then the frame is either for the AP itself, or is
 			 * supposed to be sent to the AP for forwarding.
 			 */
-#if 0
-			if (vdev->num_tdls_peers > 0) {
-				peer = NULL;
-				for (i = 0; i < vdev->num_tdls_peers; i++) {
-					int differs = adf_os_mem_cmp(
-							vdev->tdls_peers[i]->
-							mac_addr.raw,
-							dest_addr,
-							OL_TXRX_MAC_ADDR_LEN);
-					if (!differs) {
-						peer = vdev->tdls_peers[i];
-						break;
-					}
-				}
-			} else {
-				/* send to AP */
-				peer = ol_txrx_assoc_peer_find(vdev);
-			}
-#endif
 			peer = ol_tx_tdls_peer_find(pdev, vdev, &peer_id);
 		} else {
-			peer = ol_txrx_peer_find_hash_find_inc_ref(pdev,
-								dest_addr,
-								0, 1);
+			peer = ol_txrx_peer_find_hash_find_get_ref(pdev,
+								   dest_addr,
+								   0, 1,
+						PEER_DEBUG_ID_OL_INTERNAL);
 		}
 		tx_msdu_info->htt.info.is_unicast = true;
 		if (!peer) {
@@ -589,8 +576,13 @@ ol_tx_classify(
 		 */
 		if (tx_msdu_info->htt.info.peer_id == HTT_INVALID_PEER_ID) {
 			if (peer) {
+				ol_txrx_info(
+					   "%s: remove the peer for invalid peer_id %pK\n",
+					   __func__, peer);
 				/* remove the peer reference added above */
-				OL_TXRX_PEER_UNREF_DELETE(peer);
+				ol_txrx_peer_release_ref
+						(peer,
+						 PEER_DEBUG_ID_OL_INTERNAL);
 				tx_msdu_info->peer = NULL;
 			}
 			return NULL;
@@ -609,11 +601,12 @@ ol_tx_classify(
 	if (IEEE80211_IS_MULTICAST(dest_addr) && vdev->opmode !=
 				wlan_op_mode_sta && tx_msdu_info->peer !=
 								NULL) {
-		TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
+		ol_txrx_dbg(
 			   "%s: remove the peer reference %pK\n",
 			   __func__, peer);
 		/* remove the peer reference added above */
-		OL_TXRX_PEER_UNREF_DELETE(tx_msdu_info->peer);
+		ol_txrx_peer_release_ref(tx_msdu_info->peer,
+					 PEER_DEBUG_ID_OL_INTERNAL);
 		/* Making peer NULL in case if multicast non STA mode */
 		tx_msdu_info->peer = NULL;
 	}
@@ -643,6 +636,12 @@ ol_tx_classify_mgmt(
 
 	TX_SCHED_DEBUG_PRINT("Enter %s\n", __func__);
 	dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
+	if (unlikely(NULL == dest_addr)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX,
+				QDF_TRACE_LEVEL_ERROR,
+				"Error: dest_addr is NULL.\n");
+		return NULL; /*error*/
+	}
 	if (IEEE80211_IS_MULTICAST(dest_addr)) {
 		/*
 		 * AP:  beacons are broadcast,
@@ -681,23 +680,26 @@ ol_tx_classify_mgmt(
 			 * frame to vdev queue.
 			 */
 			if (peer) {
-				int rcnt;
 
 				qdf_mem_copy(
 					&local_mac_addr_aligned.raw[0],
 					dest_addr, OL_TXRX_MAC_ADDR_LEN);
 				mac_addr = &local_mac_addr_aligned;
-				if (ol_txrx_peer_find_mac_addr_cmp(
-							mac_addr,
-							&peer->mac_addr) != 0) {
-					rcnt = OL_TXRX_PEER_UNREF_DELETE(peer);
+				if (ol_txrx_peer_find_mac_addr_cmp
+						(mac_addr,
+						 &peer->mac_addr) != 0) {
+					ol_txrx_peer_release_ref
+						(peer,
+						 PEER_DEBUG_ID_OL_INTERNAL);
 					peer = NULL;
 				}
 			}
 		} else {
 			/* find the peer and increment its reference count */
-			peer = ol_txrx_peer_find_hash_find_inc_ref(pdev, dest_addr,
-									0, 1);
+			peer = ol_txrx_peer_find_hash_find_get_ref(pdev,
+								   dest_addr,
+								   0, 1,
+						PEER_DEBUG_ID_OL_INTERNAL);
 		}
 		tx_msdu_info->peer = peer;
 		if (!peer) {
@@ -734,14 +736,15 @@ ol_tx_classify_mgmt(
 	return txq;
 }
 
-A_STATUS
+#ifdef currently_unused
+QDF_STATUS
 ol_tx_classify_extension(
 	struct ol_txrx_vdev_t *vdev,
 	struct ol_tx_desc_t *tx_desc,
 	qdf_nbuf_t tx_msdu,
 	struct ol_txrx_msdu_info_t *msdu_info)
 {
-	A_UINT8 *datap = qdf_nbuf_data(tx_msdu);
+	u8 *datap = qdf_nbuf_data(tx_msdu);
 	struct ol_txrx_peer_t *peer;
 	int which_key;
 
@@ -774,7 +777,7 @@ ol_tx_classify_extension(
 
 	if (!msdu_info->htt.info.is_unicast) {
 		int l2_hdr_size;
-		A_UINT16 ethertype;
+		u16 ethertype;
 
 		if (msdu_info->htt.info.l2_hdr_type == htt_pkt_type_ethernet) {
 			struct ethernet_hdr_t *eh;
@@ -805,6 +808,7 @@ ol_tx_classify_extension(
 			msdu_info->htt.info.ethertype = ethertype;
 		} else { /* 802.11 */
 			struct llc_snap_hdr_t *llc;
+
 			l2_hdr_size = ol_txrx_ieee80211_hdrsize(datap);
 			llc = (struct llc_snap_hdr_t *)(datap + l2_hdr_size);
 			ethertype = (llc->ethertype[0] << 8) |
@@ -841,10 +845,10 @@ ol_tx_classify_extension(
 	 */
 	msdu_info->htt.action.do_tx_complete = 0;
 
-	return A_OK;
+	return QDF_STATUS_SUCCESS;
 }
 
-A_STATUS
+QDF_STATUS
 ol_tx_classify_mgmt_extension(
 		struct ol_txrx_vdev_t *vdev,
 		struct ol_tx_desc_t *tx_desc,
@@ -873,7 +877,7 @@ ol_tx_classify_mgmt_extension(
 	 *     htt.info.ethertype
 	 *     htt.action.do_encrypt
 	 *         (This will be filled in by other SW, which knows whether
-	 *         the peer has robust-managment-frames enabled.)
+	 *         the peer has robust-management-frames enabled.)
 	 */
 	wh = (struct ieee80211_frame *)qdf_nbuf_data(tx_msdu);
 	msdu_info->htt.info.frame_subtype =
@@ -881,7 +885,7 @@ ol_tx_classify_mgmt_extension(
 		IEEE80211_FC0_SUBTYPE_SHIFT;
 	msdu_info->htt.info.l3_hdr_offset = sizeof(struct ieee80211_frame);
 
-	return A_OK;
+	return QDF_STATUS_SUCCESS;
 }
-
+#endif
 #endif /* defined(CONFIG_HL_SUPPORT) */

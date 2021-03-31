@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -389,7 +389,7 @@ static ssize_t rpmstats_show(struct kobject *kobj,
 {
 	struct msm_rpmstats_private_data *prvdata = NULL;
 	struct msm_rpmstats_platform_data *pdata = NULL;
-	ssize_t ret;
+	ssize_t ret = 0;
 
 	mutex_lock(&rpm_stats_mutex);
 	pdata = GET_PDATA_OF_ATTR(attr);
@@ -428,9 +428,12 @@ static ssize_t rpmstats_show(struct kobject *kobj,
 		else if (prvdata->platform_data->version == 2)
 			prvdata->len = msm_rpmstats_copy_stats_v2(
 					prvdata);
+		else
+			goto exit;
 	}
 
-	ret = snprintf(buf, prvdata->len, prvdata->buf);
+	ret = snprintf(buf, prvdata->len, "%s", prvdata->buf);
+exit:
 	iounmap(prvdata->reg_base);
 ioremap_fail:
 	kfree(prvdata);
@@ -492,8 +495,10 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 							"phys_addr_base");
-	if (!res)
+	if (!res) {
+		kfree(pdata);
 		return -EINVAL;
+	}
 
 	offset = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 							"offset_addr");
@@ -501,8 +506,9 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 		/* Remap the rpm-stats pointer */
 		phys_ptr = ioremap_nocache(offset->start, SZ_4);
 		if (!phys_ptr) {
-			pr_err("%s: Failed to ioremap address: %x\n",
-					__func__, offset_addr);
+			pr_err("%s: Failed to ioremap address: %pa\n",
+					__func__, &offset->start);
+			kfree(pdata);
 			return -ENODEV;
 		}
 		offset_addr = readl_relaxed(phys_ptr);

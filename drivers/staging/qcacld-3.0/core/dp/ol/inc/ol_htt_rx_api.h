@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -190,8 +181,8 @@ int htt_rx_ind_release(htt_pdev_handle pdev, qdf_nbuf_t rx_ind_msg);
 void
 htt_rx_ind_release_seq_num_range(htt_pdev_handle pdev,
 				 qdf_nbuf_t rx_ind_msg,
-				 unsigned *seq_num_start,
-				 unsigned *seq_num_end);
+				 unsigned int *seq_num_start,
+				 unsigned int *seq_num_end);
 
 /*
  * For now, the host HTT -> host data rx status enum
@@ -689,10 +680,10 @@ extern int
  *
  * @param pdev - the HTT instance the rx data was received on
  * @param offload_deliver_msg - the nebuf containing the offload deliver message
- * @param head_msdu - call-by-reference network buffer handle, which gets set in this
- *      function to the head buffer of this MSDU
- * @param tail_msdu - call-by-reference network buffer handle, which gets set in this
- *      function to the tail buffer of this MSDU
+ * @param head_msdu - call-by-reference network buffer handle, which gets set in
+ *      this function to the head buffer of this MSDU
+ * @param tail_msdu - call-by-reference network buffer handle, which gets set in
+ *      this function to the tail buffer of this MSDU
  */
 extern int
 (*htt_rx_offload_msdu_pop)(htt_pdev_handle pdev,
@@ -798,7 +789,6 @@ void htt_rx_msdu_desc_free(htt_pdev_handle htt_pdev, qdf_nbuf_t msdu);
  */
 void htt_rx_msdu_buff_replenish(htt_pdev_handle pdev);
 
-#ifndef CONFIG_HL_SUPPORT
 /**
  * @brief Add new MSDU buffers for the target to fill.
  * @details
@@ -815,7 +805,6 @@ void htt_rx_msdu_buff_replenish(htt_pdev_handle pdev);
  * Return: number of buffers actually replenished
  */
 int htt_rx_msdu_buff_in_order_replenish(htt_pdev_handle pdev, uint32_t num);
-#endif
 
 /**
  * @brief Links list of MSDUs into an single MPDU. Updates RX stats
@@ -835,16 +824,28 @@ int htt_rx_msdu_buff_in_order_replenish(htt_pdev_handle pdev, uint32_t num);
  *      list, else operates on a cloned nbuf
  * @return network buffer handle to the MPDU
  */
+#if !defined(QCA6290_HEADERS_DEF) && defined(FEATURE_MONITOR_MODE_SUPPORT)
 qdf_nbuf_t
 htt_rx_restitch_mpdu_from_msdus(htt_pdev_handle pdev,
 				qdf_nbuf_t head_msdu,
 				struct ieee80211_rx_status *rx_status,
 				unsigned clone_not_reqd);
+#else
+static inline qdf_nbuf_t
+htt_rx_restitch_mpdu_from_msdus(htt_pdev_handle pdev,
+				qdf_nbuf_t head_msdu,
+				struct ieee80211_rx_status *rx_status,
+				unsigned clone_not_reqd)
+{
+	return NULL;
+}
+#endif
 
 /**
  * @brief Return the sequence number of MPDUs to flush.
  * @param pdev - the HTT instance the rx data was received on
- * @param rx_frag_ind_msg - the netbuf containing the rx fragment indication message
+ * @param rx_frag_ind_msg - the netbuf containing the rx fragment indication
+ *      message
  * @param seq_num_start - (call-by-reference output) sequence number
  *      for the start of the range of MPDUs to flush
  * @param seq_num_end - (call-by-reference output) sequence number
@@ -853,7 +854,7 @@ htt_rx_restitch_mpdu_from_msdus(htt_pdev_handle pdev,
 void
 htt_rx_frag_ind_flush_seq_num_range(htt_pdev_handle pdev,
 				    qdf_nbuf_t rx_frag_ind_msg,
-				    int *seq_num_start, int *seq_num_end);
+				    uint16_t *seq_num_start, uint16_t *seq_num_end);
 
 /**
  * htt_rx_msdu_rx_desc_size_hl() - Return the HL rx desc size
@@ -871,7 +872,6 @@ uint16_t htt_rx_msdu_rx_desc_size_hl(htt_pdev_handle pdev, void *msdu_desc);
  */
 void htt_rx_get_vowext_stats(qdf_nbuf_t msdu, struct vow_extstats *vowstats);
 
-#ifndef CONFIG_HL_SUPPORT
 /**
  * @brief parses the offload message passed by the target.
  * @param pdev - pdev handle
@@ -893,8 +893,29 @@ htt_rx_offload_paddr_msdu_pop_ll(htt_pdev_handle pdev,
 				 int *tid,
 				 uint8_t *fw_desc,
 				 qdf_nbuf_t *head_buf, qdf_nbuf_t *tail_buf);
-#endif
 
 uint32_t htt_rx_amsdu_rx_in_order_get_pktlog(qdf_nbuf_t rx_ind_msg);
+
+/**
+ * htt_rx_update_smmu_map() - set smmu map/unmap for rx buffers
+ * @pdev: htt pdev handle
+ * @map: value to set smmu map/unmap for rx buffers
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS htt_rx_update_smmu_map(struct htt_pdev_t *pdev, bool map);
+
+/** htt_tx_enable_ppdu_end
+ * @enable_ppdu_end - set it to 1 if WLAN_FEATURE_TSF_PLUS is defined,
+ *                    else do nothing
+ */
+#ifdef WLAN_FEATURE_TSF_PLUS
+void htt_rx_enable_ppdu_end(int *enable_ppdu_end);
+#else
+static inline
+void htt_rx_enable_ppdu_end(int *enable_ppdu_end)
+{
+}
+#endif
 
 #endif /* _OL_HTT_RX_API__H_ */

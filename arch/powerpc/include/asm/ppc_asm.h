@@ -224,6 +224,16 @@ name: \
 	.globl name; \
 name:
 
+#define _KPROBE_TOC(name)			\
+	.section ".kprobes.text","a";		\
+	.align 2 ;				\
+	.type name,@function;			\
+	.globl name;				\
+name:						\
+0:	addis r2,r12,(.TOC.-0b)@ha;		\
+	addi r2,r2,(.TOC.-0b)@l;		\
+	.localentry name,.-name
+
 #define DOTSYM(a)	a
 
 #else
@@ -260,6 +270,8 @@ name: \
 	.previous; \
 	.type GLUE(.,name),@function; \
 GLUE(.,name):
+
+#define _KPROBE_TOC(n)	_KPROBE(n)
 
 #define DOTSYM(a)	GLUE(.,a)
 
@@ -809,4 +821,15 @@ END_FTR_SECTION_NESTED(CPU_FTR_HAS_PPR,CPU_FTR_HAS_PPR,945)
 	.long 0x2400004c  /* rfid				*/
 #endif /* !CONFIG_PPC_BOOK3E */
 #endif /*  __ASSEMBLY__ */
+
+#ifdef CONFIG_PPC_FSL_BOOK3E
+#define BTB_FLUSH(reg)			\
+	lis reg,BUCSR_INIT@h;		\
+	ori reg,reg,BUCSR_INIT@l;	\
+	mtspr SPRN_BUCSR,reg;		\
+	isync;
+#else
+#define BTB_FLUSH(reg)
+#endif /* CONFIG_PPC_FSL_BOOK3E */
+
 #endif /* _ASM_POWERPC_PPC_ASM_H */

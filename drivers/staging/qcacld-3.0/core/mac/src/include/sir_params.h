@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -41,6 +32,23 @@
 #define __SIRPARAMS_H
 
 #include "sir_types.h"
+
+#define WAKELOCK_DURATION_RECOMMENDED	1000
+#define WAKELOCK_DURATION_MAX		3000
+
+
+#define SYSTEM_TIME_MSEC_TO_USEC      1000
+#define SYSTEM_TIME_SEC_TO_MSEC       1000
+#define SYSTEM_TIME_NSEC_TO_USEC      1000
+
+/*
+ * Following time is used to program WOW_TIMER_PATTERN to FW so that FW will
+ * wake host up to do graceful disconnect in case PEER remains un-authorized
+ * for this long.
+ */
+#define SIR_INSTALL_KEY_TIMEOUT_SEC      70
+#define SIR_INSTALL_KEY_TIMEOUT_MS       \
+			(SIR_INSTALL_KEY_TIMEOUT_SEC * SYSTEM_TIME_SEC_TO_MSEC)
 
 /* defines for WPS config states */
 #define       SAP_WPS_DISABLED             0
@@ -70,8 +78,34 @@ typedef enum {
 } ePhyChanBondState;
 
 #define MAX_BONDED_CHANNELS 8
-
-typedef enum {
+/**
+ * enum cap_bitmap - bit field for FW capability
+ * MCC - indicate MCC
+ * P2P - indicate P2P
+ * DOT11AC - indicate 11AC
+ * SLM_SESSIONIZATION - indicate SLM_SESSIONIZATION
+ * DOT11AC_OPMODE - indicate 11ac opmode
+ * SAP32STA - indicate SAP32STA
+ * TDLS - indicate TDLS
+ * P2P_GO_NOA_DECOUPLE_INIT_SCAN - indicate P2P_GO_NOA_DECOUPLE_INIT_SCAN
+ * WLANACTIVE_OFFLOAD - indicate active offload
+ * EXTENDED_SCAN - indicate extended scan
+ * PNO - indicate PNO
+ * NAN - indicate NAN
+ * RTT - indicate RTT
+ * DOT11AX - indicate 11ax
+ * WOW - indicate WOW
+ * WLAN_ROAM_SCAN_OFFLOAD - indicate Roam scan offload
+ * IBSS_HEARTBEAT_OFFLOAD - indicate IBSS HB offload
+ * WLAN_PERIODIC_TX_PTRN - indicate WLAN_PERIODIC_TX_PTRN
+ * ADVANCE_TDLS - indicate advanced TDLS
+ * TDLS_OFF_CHANNEL - indicate TDLS off channel
+ *
+ * This definition is independent of any other modules.
+ * We can use any unused numbers.
+ */
+#define MAX_SUPPORTED_FEATURE 32
+enum cap_bitmap {
 	MCC = 0,
 	P2P = 1,
 	DOT11AC = 2,
@@ -91,6 +125,7 @@ typedef enum {
 	NAN = 11,
 #endif
 	RTT = 12,
+	DOT11AX = 13,
 	WOW = 22,
 	WLAN_ROAM_SCAN_OFFLOAD = 23,
 	IBSS_HEARTBEAT_OFFLOAD = 26,
@@ -99,8 +134,9 @@ typedef enum {
 	ADVANCE_TDLS = 29,
 	TDLS_OFF_CHANNEL = 30,
 #endif
-	/* MAX_FEATURE_SUPPORTED = 128 */
-} placeHolderInCapBitmap;
+	VDEV_LATENCY_CONFIG = 31,
+	/* MAX_FEATURE_SUPPORTED = 32 */
+};
 
 typedef enum eSriLinkState {
 	eSIR_LINK_IDLE_STATE = 0,
@@ -110,35 +146,6 @@ typedef enum eSriLinkState {
 	eSIR_LINK_IBSS_STATE = 4,
 	eSIR_LINK_DOWN_STATE = 5,
 } tSirLinkState;
-
-/* / Message queue structure used across Sirius project. */
-/* / NOTE: this structure should be multiples of a word size (4bytes) */
-/* / as this is used in tx_queue where it expects to be multiples of 4 bytes. */
-typedef struct sSirMsgQ {
-	uint16_t type;
-	/*
-	 * This field can be used as sequence number/dialog token for matching
-	 * requests and responses.
-	 */
-	uint16_t reserved;
-	/**
-	 * Based on the type either a bodyptr pointer into
-	 * memory or bodyval as a 32 bit data is used.
-	 * bodyptr: is always a freeable pointer, one should always
-	 * make sure that bodyptr is always freeable.
-	 *
-	 * Messages should use either bodyptr or bodyval; not both !!!.
-	 */
-	void *bodyptr;
-	uint32_t bodyval;
-
-	/*
-	 * Some messages provide a callback function.  The function signature
-	 * must be agreed upon between the two entities exchanging the message
-	 */
-	void *callback;
-
-} tSirMsgQ, *tpSirMsgQ;
 
 /* / Mailbox Message Structure Define */
 typedef struct sSirMbMsg {
@@ -185,6 +192,20 @@ typedef struct sSirMbMsgP2p {
 	 */
 	uint32_t data[1];
 } tSirMbMsgP2p, *tpSirMbMsgP2p;
+
+/**
+ * struct sir_mgmt_msg - Structure used to send auth frame from CSR to LIM
+ * @type: Message type
+ * @msg_len: Message length
+ * @session_id: session id
+ * @data: Pointer to data tobe transmitted
+ */
+struct sir_mgmt_msg {
+	uint16_t type;
+	uint16_t msg_len;
+	uint8_t session_id;
+	uint8_t *data;
+};
 
 /* ******************************************* *
 *                                             *
@@ -275,20 +296,16 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_SET_TX_POWER_RSP           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 71)
 #define SIR_HAL_GET_TX_POWER_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 72)
 #define SIR_HAL_GET_TX_POWER_RSP           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 73)
-#define SIR_HAL_GET_NOISE_RSP              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 74)
+#define SIR_HAL_WMA_ROAM_SYNC_TIMEOUT      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 74)
 
 /* Messages to support transmit_halt and transmit_resume */
 #define SIR_HAL_TRANSMISSION_CONTROL_IND   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 75)
 
 #define SIR_HAL_LOW_RSSI_IND               (SIR_HAL_ITC_MSG_TYPES_BEGIN + 80)
 #define SIR_HAL_BEACON_FILTER_IND          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 81)
-/* / PE <-> HAL WOWL messages */
-#define SIR_HAL_WOW_ADD_PTRN               (SIR_HAL_ITC_MSG_TYPES_BEGIN + 82)
-#define SIR_HAL_WOW_DEL_PTRN               (SIR_HAL_ITC_MSG_TYPES_BEGIN + 83)
-#define SIR_HAL_WOWL_ENTER_REQ             (SIR_HAL_ITC_MSG_TYPES_BEGIN + 84)
-#define SIR_HAL_WOWL_ENTER_RSP             (SIR_HAL_ITC_MSG_TYPES_BEGIN + 85)
-#define SIR_HAL_WOWL_EXIT_REQ              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 86)
-#define SIR_HAL_WOWL_EXIT_RSP              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 87)
+
+/* 82-87 are unused */
+
 /* / PE <-> HAL statistics messages */
 #define SIR_HAL_GET_STATISTICS_REQ         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 88)
 #define SIR_HAL_GET_STATISTICS_RSP         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 89)
@@ -343,10 +360,6 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_SET_NS_OFFLOAD             (SIR_HAL_ITC_MSG_TYPES_BEGIN + 118)
 #endif /* WLAN_NS_OFFLOAD */
 
-#ifdef FEATURE_WLAN_SCAN_PNO
-#define SIR_HAL_SET_PNO_REQ                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 119)
-#endif /* FEATURE_WLAN_SCAN_PNO */
-
 #define SIR_HAL_SOC_ANTENNA_MODE_REQ        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 120)
 #define SIR_HAL_SOC_ANTENNA_MODE_RESP       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 121)
 
@@ -388,6 +401,7 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_TDLS_LINK_TEARDOWN         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 137)
 #endif
 #define SIR_HAL_ROAM_SCAN_OFFLOAD_REQ      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 138)
+#define SIR_HAL_ROAM_PRE_AUTH_STATUS_IND   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 139)
 
 #define SIR_HAL_TRAFFIC_STATS_IND          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 141)
 
@@ -425,14 +439,13 @@ typedef struct sSirMbMsgP2p {
 
 #define SIR_HAL_PDEV_SET_PCL_TO_FW         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 161)
 
-/* 162 unused */
+#ifdef WLAN_MWS_INFO_DEBUGFS
+#define SIR_HAL_GET_MWS_COEX_INFO_REQ      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 162)
+#endif /* WLAN_MWS_INFO_DEBUGFS */
 
 #define SIR_HAL_CLI_SET_CMD                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 163)
 #ifndef REMOVE_PKT_LOG
 #define SIR_HAL_PKTLOG_ENABLE_REQ          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 164)
-#endif
-#ifdef FEATURE_WLAN_SCAN_PNO
-#define SIR_HAL_SME_SCAN_CACHE_UPDATED     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 165)
 #endif
 #define SIR_HAL_START_SCAN_OFFLOAD_REQ     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 166)
 #define SIR_HAL_UPDATE_CHAN_LIST_REQ       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 167)
@@ -447,7 +460,7 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_UPDATE_USERPOS              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 173)
 
 #ifdef FEATURE_WLAN_TDLS
-#define SIR_HAL_UPDATE_FW_TDLS_STATE        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 174)
+/* (SIR_HAL_ITC_MSG_TYPES_BEGIN + 174) is not used */
 #define SIR_HAL_UPDATE_TDLS_PEER_STATE      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 175)
 #define SIR_HAL_TDLS_SHOULD_DISCOVER        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 176)
 #define SIR_HAL_TDLS_SHOULD_TEARDOWN        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 177)
@@ -527,7 +540,7 @@ typedef struct sSirMbMsgP2p {
 
 #define SIR_HAL_SET_BASE_MACADDR_IND         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 214)
 
-#define SIR_HAL_UNIT_TEST_CMD                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 215)
+/* (SIR_HAL_ITC_MSG_TYPES_BEGIN + 215) is unused */
 
 #define SIR_HAL_LINK_STATUS_GET_REQ          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 216)
 
@@ -600,7 +613,6 @@ typedef struct sSirMbMsgP2p {
 
 #define SIR_HAL_LRO_CONFIG_CMD              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 335)
 
-#define SIR_HAL_SET_EGAP_CONF_PARAMS        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 336)
 #define SIR_HAL_HT40_OBSS_SCAN_IND          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 337)
 
 #define SIR_HAL_TSF_GPIO_PIN_REQ            (SIR_HAL_ITC_MSG_TYPES_BEGIN + 338)
@@ -609,8 +621,8 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_REMOVE_BCN_FILTER_CMDID     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 340)
 
 
-#define SIR_HAL_BPF_GET_CAPABILITIES_REQ    (SIR_HAL_ITC_MSG_TYPES_BEGIN + 341)
-#define SIR_HAL_BPF_SET_INSTRUCTIONS_REQ    (SIR_HAL_ITC_MSG_TYPES_BEGIN + 342)
+#define SIR_HAL_APF_GET_CAPABILITIES_REQ    (SIR_HAL_ITC_MSG_TYPES_BEGIN + 341)
+#define SIR_HAL_APF_SET_INSTRUCTIONS_REQ    (SIR_HAL_ITC_MSG_TYPES_BEGIN + 342)
 
 #define SIR_HAL_SET_WISA_PARAMS             (SIR_HAL_ITC_MSG_TYPES_BEGIN + 343)
 #define SIR_HAL_SET_ADAPT_DWELLTIME_PARAMS  (SIR_HAL_ITC_MSG_TYPES_BEGIN + 344)
@@ -647,16 +659,47 @@ typedef struct sSirMbMsgP2p {
 #define SIR_HAL_SET_UDP_RESP_OFFLOAD        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 370)
 
 #define SIR_HAL_SET_PER_ROAM_CONFIG_CMD     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 371)
+#define SIR_HAL_RX_CHN_STATUS_EVENT         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 372)
 
-#define SIR_HAL_GET_RCPI_REQ                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 372)
+#define SIR_HAL_GET_RCPI_REQ                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 373)
 
-#define SIR_HAL_CONF_HW_FILTER              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 373)
-/* (SIR_HAL_ITC_MSG_TYPES_BEGIN + 374) is unused */
-/* ARP Debug stats */
-#define SIR_HAL_SET_ARP_STATS_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 375)
-#define SIR_HAL_GET_ARP_STATS_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 376)
+#ifdef WLAN_FEATURE_LINK_LAYER_STATS
+#define SIR_HAL_LL_STATS_EXT_SET_THRESHOLD  (SIR_HAL_ITC_MSG_TYPES_BEGIN + 378)
+#endif
+#define SIR_HAL_SET_DBS_SCAN_SEL_PARAMS     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 379)
+
+#define SIR_HAL_HIDDEN_SSID_RESTART_RSP     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 379)
 
 #define SIR_HAL_GET_PEER_INFO               (SIR_HAL_ITC_MSG_TYPES_BEGIN + 386)
+#define SIR_HAL_GET_PEER_INFO_EXT           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 387)
+
+/* ARP Debug stats */
+#define SIR_HAL_SET_ARP_STATS_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 388)
+#define SIR_HAL_GET_ARP_STATS_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 389)
+
+#define SIR_HAL_SET_LIMIT_OFF_CHAN          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 390)
+
+#define SIR_HAL_SET_DEL_PMKID_CACHE         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 391)
+#define SIR_HAL_HLP_IE_INFO                 (SIR_HAL_ITC_MSG_TYPES_BEGIN + 392)
+#define SIR_HAL_OBSS_DETECTION_REQ          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 393)
+#define SIR_HAL_OBSS_DETECTION_INFO         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 394)
+#define SIR_HAL_INVOKE_NEIGHBOR_REPORT      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 395)
+#define SIR_HAL_OBSS_COLOR_COLLISION_REQ    (SIR_HAL_ITC_MSG_TYPES_BEGIN + 396)
+#define SIR_HAL_OBSS_COLOR_COLLISION_INFO   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 397)
+
+#define SIR_HAL_SEND_ADDBA_REQ              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 398)
+#define SIR_HAL_GET_ROAM_SCAN_STATS         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 399)
+#define SIR_HAL_SEND_BCN_RSP                (SIR_HAL_ITC_MSG_TYPES_BEGIN + 401)
+#define SIR_HAL_BEACON_DEBUG_STATS_REQ       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 403)
+#define SIR_HAL_ROAM_BLACKLIST_MSG          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 404)
+
+#define SIR_HAL_SEND_PEER_UNMAP_CONF        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 411)
+
+#define SIR_HAL_GET_ISOLATION               (SIR_HAL_ITC_MSG_TYPES_BEGIN + 412)
+
+#define SIR_HAL_SET_ROAM_TRIGGERS           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 413)
+
+#define SIR_HAL_ROAM_SCAN_CH_REQ           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 414)
 
 #define SIR_HAL_MSG_TYPES_END               (SIR_HAL_MSG_TYPES_BEGIN + 0x1FF)
 
@@ -722,8 +765,6 @@ typedef struct sSirMbMsgP2p {
 
 #define SIR_LIM_WPS_OVERLAP_TIMEOUT      (SIR_LIM_TIMEOUT_MSG_START + 0x1D)
 #define SIR_LIM_FT_PREAUTH_RSP_TIMEOUT   (SIR_LIM_TIMEOUT_MSG_START + 0x1E)
-#define SIR_LIM_REMAIN_CHN_TIMEOUT       (SIR_LIM_TIMEOUT_MSG_START + 0x1F)
-#define SIR_LIM_INSERT_SINGLESHOT_NOA_TIMEOUT (SIR_LIM_TIMEOUT_MSG_START + 0x20)
 
 #define SIR_LIM_BEACON_GEN_IND          (SIR_LIM_TIMEOUT_MSG_START + 0x23)
 #define SIR_LIM_PERIODIC_PROBE_REQ_TIMEOUT    (SIR_LIM_TIMEOUT_MSG_START + 0x24)
@@ -735,19 +776,11 @@ typedef struct sSirMbMsgP2p {
 #define SIR_LIM_PERIODIC_JOIN_PROBE_REQ_TIMEOUT \
 					 (SIR_LIM_TIMEOUT_MSG_START + 0x28)
 
-#define SIR_LIM_CONVERT_ACTIVE_CHANNEL_TO_PASSIVE \
-					 (SIR_LIM_TIMEOUT_MSG_START + 0x2C)
 #define SIR_LIM_AUTH_RETRY_TIMEOUT     (SIR_LIM_TIMEOUT_MSG_START + 0x2D)
 
-#define SIR_LIM_MSG_TYPES_END            (SIR_LIM_MSG_TYPES_BEGIN+0xFF)
+#define SIR_LIM_AUTH_SAE_TIMEOUT     (SIR_LIM_TIMEOUT_MSG_START + 0x2E)
 
-/* SCH message types */
-#define SIR_SCH_MSG_TYPES_BEGIN        (SIR_SCH_MODULE_ID << 8)
-#define SIR_SCH_CHANNEL_SWITCH_REQUEST (SIR_SCH_MSG_TYPES_BEGIN)
-#define SIR_SCH_START_SCAN_REQ         (SIR_SCH_MSG_TYPES_BEGIN + 1)
-#define SIR_SCH_START_SCAN_RSP         (SIR_SCH_MSG_TYPES_BEGIN + 2)
-#define SIR_SCH_END_SCAN_NTF           (SIR_SCH_MSG_TYPES_BEGIN + 3)
-#define SIR_SCH_MSG_TYPES_END          (SIR_SCH_MSG_TYPES_BEGIN+0xFF)
+#define SIR_LIM_MSG_TYPES_END            (SIR_LIM_MSG_TYPES_BEGIN+0xFF)
 
 /* PMM message types */
 #define SIR_PMM_MSG_TYPES_BEGIN        (SIR_PMM_MODULE_ID << 8)
@@ -759,13 +792,9 @@ typedef struct sSirMbMsgP2p {
 #define SIR_MNT_RELEASE_BD             (SIR_MNT_MSG_TYPES_BEGIN + 0)
 #define SIR_MNT_MSG_TYPES_END          (SIR_MNT_MSG_TYPES_BEGIN + 0xFF)
 
-/* PTT message types */
-#define SIR_PTT_MSG_TYPES_BEGIN            0x3000
-#define SIR_PTT_MSG_TYPES_END              0x3300
-
 /* ****************************************** *
 *                                            *
-*         EVENT TYPE Defintions              *
+*         EVENT TYPE Definitions              *
 *                                            *
 * ****************************************** */
 
@@ -788,6 +817,7 @@ typedef struct sSirMbMsgP2p {
 #define PARAM_RIFS_MODE_CHANGED                            (1<<8)
 #define PARAM_LSIG_TXOP_FULL_SUPPORT_CHANGED   (1<<9)
 #define PARAM_OBSS_MODE_CHANGED                               (1<<10)
+#define PARAM_BSS_COLOR_CHANGED			(1 << 11)
 #define PARAM_BEACON_UPDATE_MASK    (PARAM_BCN_INTERVAL_CHANGED | \
 				     PARAM_SHORT_PREAMBLE_CHANGED | \
 				     PARAM_SHORT_SLOT_TIME_CHANGED | \
@@ -798,6 +828,7 @@ typedef struct sSirMbMsgP2p {
 				     PARAM_NON_GF_DEVICES_PRESENT_CHANGED | \
 				     PARAM_RIFS_MODE_CHANGED | \
 				     PARAM_LSIG_TXOP_FULL_SUPPORT_CHANGED | \
-				     PARAM_OBSS_MODE_CHANGED)
+				     PARAM_OBSS_MODE_CHANGED | \
+				     PARAM_BSS_COLOR_CHANGED)
 
 #endif

@@ -68,6 +68,7 @@ struct hda_bus {
 	unsigned int response_reset:1;	/* controller was reset */
 	unsigned int in_reset:1;	/* during reset operation */
 	unsigned int no_response_fallback:1; /* don't fallback at RIRB error */
+	unsigned int bus_probing :1;	/* during probing process */
 
 	int primary_dig_out_type;	/* primary digital out PCM type */
 	unsigned int mixer_assigned;	/* codec addr for mixer name */
@@ -294,6 +295,8 @@ struct hda_codec {
 
 #define list_for_each_codec(c, bus) \
 	list_for_each_entry(c, &(bus)->core.codec_list, core.list)
+#define list_for_each_codec_safe(c, n, bus)				\
+	list_for_each_entry_safe(c, n, &(bus)->core.codec_list, core.list)
 
 /* snd_hda_codec_read/write optional flags */
 #define HDA_RW_NO_RESPONSE_FALLBACK	(1 << 0)

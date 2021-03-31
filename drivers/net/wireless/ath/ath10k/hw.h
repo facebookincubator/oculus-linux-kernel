@@ -268,15 +268,116 @@ extern const struct ath10k_hw_regs qca99x0_regs;
 extern const struct ath10k_hw_regs qca4019_regs;
 extern const struct ath10k_hw_regs wcn3990_regs;
 
+struct ath10k_hw_ce_regs_addr_map {
+	u32 msb;
+	u32 lsb;
+	u32 mask;
+	unsigned int (*set)(unsigned int offset,
+			    struct ath10k_hw_ce_regs_addr_map *addr_map);
+	unsigned int (*get)(unsigned int offset,
+			    struct ath10k_hw_ce_regs_addr_map *addr_map);
+};
+
+struct ath10k_hw_ce_ctrl1 {
+	u32 addr;
+	u32 hw_mask;
+	u32 sw_mask;
+	u32 hw_wr_mask;
+	u32 sw_wr_mask;
+	u32 reset_mask;
+	u32 reset;
+	struct ath10k_hw_ce_regs_addr_map *src_ring;
+	struct ath10k_hw_ce_regs_addr_map *dst_ring;
+	struct ath10k_hw_ce_regs_addr_map *dmax;
+};
+
+struct ath10k_hw_ce_cmd_halt {
+	u32 status_reset;
+	u32 msb;
+	u32 mask;
+	struct ath10k_hw_ce_regs_addr_map *status;
+};
+
+struct ath10k_hw_ce_host_ie {
+	u32 copy_complete_reset;
+	struct ath10k_hw_ce_regs_addr_map *copy_complete;
+};
+
+struct ath10k_hw_ce_host_wm_regs {
+	u32 dstr_lmask;
+	u32 dstr_hmask;
+	u32 srcr_lmask;
+	u32 srcr_hmask;
+	u32 cc_mask;
+	u32 wm_mask;
+	u32 addr;
+};
+
+struct ath10k_hw_ce_misc_regs {
+	u32 axi_err;
+	u32 dstr_add_err;
+	u32 srcr_len_err;
+	u32 dstr_mlen_vio;
+	u32 dstr_overflow;
+	u32 srcr_overflow;
+	u32 err_mask;
+	u32 addr;
+};
+
+struct ath10k_hw_ce_dst_src_wm_regs {
+	u32 addr;
+	u32 low_rst;
+	u32 high_rst;
+	struct ath10k_hw_ce_regs_addr_map *wm_low;
+	struct ath10k_hw_ce_regs_addr_map *wm_high;
+};
+
+struct ath10k_hw_ce_ctrl1_upd {
+	u32 shift;
+	u32 mask;
+	u32 enable;
+};
+
+struct ath10k_hw_ce_regs {
+	u32 sr_base_addr;
+	u32 sr_size_addr;
+	u32 dr_base_addr;
+	u32 dr_size_addr;
+	u32 ce_cmd_addr;
+	u32 misc_ie_addr;
+	u32 sr_wr_index_addr;
+	u32 dst_wr_index_addr;
+	u32 current_srri_addr;
+	u32 current_drri_addr;
+	u32 ddr_addr_for_rri_low;
+	u32 ddr_addr_for_rri_high;
+	u32 ce_rri_low;
+	u32 ce_rri_high;
+	u32 host_ie_addr;
+	struct ath10k_hw_ce_host_wm_regs *wm_regs;
+	struct ath10k_hw_ce_misc_regs *misc_regs;
+	struct ath10k_hw_ce_ctrl1 *ctrl1_regs;
+	struct ath10k_hw_ce_cmd_halt *cmd_halt;
+	struct ath10k_hw_ce_host_ie *host_ie;
+	struct ath10k_hw_ce_dst_src_wm_regs *wm_srcr;
+	struct ath10k_hw_ce_dst_src_wm_regs *wm_dstr;
+	struct ath10k_hw_ce_ctrl1_upd *upd;
+};
+
+extern struct ath10k_hw_ce_regs wcn3990_ce_regs;
+extern struct ath10k_hw_ce_regs qcax_ce_regs;
+
 extern struct fw_flag wcn3990_fw_flags;
 
 struct ath10k_hw_values {
+	u32 pdev_suspend_option;
 	u32 rtc_state_val_on;
 	u8 ce_count;
 	u8 msi_assign_ce_max;
 	u8 num_target_ce_config_wlan;
 	u16 ce_desc_meta_data_mask;
 	u8 ce_desc_meta_data_lsb;
+	u8 default_listen_interval;
 };
 
 extern const struct ath10k_hw_values qca988x_values;
@@ -531,11 +632,14 @@ ath10k_rx_desc_get_l3_pad_bytes(struct ath10k_hw_params *hw,
 #define TARGET_TLV_NUM_TIDS			((TARGET_TLV_NUM_PEERS) * 2)
 #define TARGET_TLV_NUM_MSDU_DESC		(1024 + 32)
 #define TARGET_TLV_NUM_WOW_PATTERNS		22
+/* FW supports max 50 outstanding mgmt cmds */
+#define TARGET_TLV_MGMT_NUM_MSDU_DESC		(50)
 
 /* Target specific defines for WMI-HL-1.0 firmware */
 #define TARGET_HL_10_TLV_NUM_PEERS		14
 #define TARGET_HL_10_TLV_AST_SKID_LIMIT		6
 #define TARGET_HL_10_TLV_NUM_WDS_ENTRIES	2
+#define TARGET_HL_1_0_NUM_MSDU_DESC		(3600)
 
 /* Diagnostic Window */
 #define CE_DIAG_PIPE	7
@@ -891,5 +995,38 @@ struct ath10k_shadow_reg_address {
 
 extern struct ath10k_shadow_reg_value wcn3990_shadow_reg_value;
 extern struct ath10k_shadow_reg_address wcn3990_shadow_reg_address;
+
+#define ATH10K_PKTLOG_HDR_SIZE_16      0x8000
+
+enum {
+	ATH10k_PKTLOG_FLG_FRM_TYPE_LOCAL_S = 0,
+	ATH10K_PKTLOG_FLG_FRM_TYPE_REMOTE_S,
+	ATH10K_PKTLOG_FLG_FRM_TYPE_CLONE_S,
+	ATH10K_PKTLOG_FLG_FRM_TYPE_CBF_S,
+	ATH10K_PKTLOG_FLG_FRM_TYPE_UNKNOWN_S
+};
+
+enum ath10k_pktlog_type {
+	ATH10K_PKTLOG_TYPE_TX_CTRL = 1,
+	ATH10K_PKTLOG_TYPE_TX_STAT,
+	ATH10K_PKTLOG_TYPE_TX_MSDU_ID,
+	ATH10K_PKTLOG_TYPE_TX_FRM_HDR,
+	ATH10K_PKTLOG_TYPE_RX_STAT,
+	ATH10K_PKTLOG_TYPE_RC_FIND,
+	ATH10K_PKTLOG_TYPE_RC_UPDATE,
+	ATH10K_PKTLOG_TYPE_TX_VIRT_ADDR,
+	ATH10K_PKTLOG_TYPE_DBG_PRINT,
+	ATH10K_PKTLOG_TYPE_SW_EVENT,
+	ATH10K_PKTLOG_TYPE_MAX,
+};
+
+struct ath10k_pktlog_hdr {
+	__le16 flags;
+	__le16 missed_cnt;
+	__le16 log_type;
+	__le16 size;
+	__le32 timestamp;
+	u8 payload[0];
+} __packed;
 
 #endif /* _HW_H_ */

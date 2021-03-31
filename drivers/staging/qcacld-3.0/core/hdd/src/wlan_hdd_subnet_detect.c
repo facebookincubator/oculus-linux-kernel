@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2015-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2015-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,6 +30,7 @@
 #include "sme_api.h"
 #include "wlan_hdd_main.h"
 #include "wlan_hdd_subnet_detect.h"
+#include <qca_vendor.h>
 
 /*
  * define short names for the global vendor params
@@ -45,15 +43,15 @@
 static const struct nla_policy
 	policy[QCA_WLAN_VENDOR_ATTR_GW_PARAM_CONFIG_MAX + 1] = {
 		[PARAM_MAC_ADDR] = {
-				.type = NLA_BINARY,
+				.type = NLA_UNSPEC,
 				.len = QDF_MAC_ADDR_SIZE
 		},
 		[PARAM_IPV4_ADDR] = {
-				.type = NLA_BINARY,
+				.type = NLA_UNSPEC,
 				.len = QDF_IPV4_ADDR_SIZE
 		},
 		[PARAM_IPV6_ADDR] = {
-				.type = NLA_BINARY,
+				.type = NLA_UNSPEC,
 				.len = QDF_IPV6_ADDR_SIZE
 		}
 };
@@ -73,14 +71,14 @@ static int __wlan_hdd_cfg80211_set_gateway_params(struct wiphy *wiphy,
 		int data_len)
 {
 	struct net_device *dev = wdev->netdev;
-	hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-	hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_GW_PARAM_CONFIG_MAX + 1];
 	struct gateway_param_update_req req = { 0 };
 	int ret;
 	QDF_STATUS status;
 
-	ENTER_DEV(dev);
+	hdd_enter_dev(dev);
 
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (0 != ret)
@@ -88,7 +86,7 @@ static int __wlan_hdd_cfg80211_set_gateway_params(struct wiphy *wiphy,
 
 	/* user may have disabled the feature in INI */
 	if (!hdd_ctx->config->enable_lfr_subnet_detection) {
-		hdd_info("LFR Subnet Detection disabled in INI");
+		hdd_debug("LFR Subnet Detection disabled in INI");
 		return -ENOTSUPP;
 	}
 
@@ -96,12 +94,12 @@ static int __wlan_hdd_cfg80211_set_gateway_params(struct wiphy *wiphy,
 	 * and only in the connected state.
 	 */
 	if (QDF_STA_MODE != adapter->device_mode) {
-		hdd_err("Received GW param update for non-STA mode adapter");
+		hdd_debug("Received GW param update for non-STA mode adapter");
 		return -ENOTSUPP;
 	}
 
 	if (!hdd_conn_is_connected(WLAN_HDD_GET_STATION_CTX_PTR(adapter))) {
-		hdd_err("Received GW param update in disconnected state!");
+		hdd_debug("Received GW param update in disconnected state!");
 		return -ENOTSUPP;
 	}
 
@@ -110,8 +108,9 @@ static int __wlan_hdd_cfg80211_set_gateway_params(struct wiphy *wiphy,
 	 * ipv4 addr: 4 bytes
 	 * ipv6 addr: 16 bytes
 	 */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_GW_PARAM_CONFIG_MAX,
-			data, data_len, policy)) {
+	if (wlan_cfg80211_nla_parse(tb,
+				    QCA_WLAN_VENDOR_ATTR_GW_PARAM_CONFIG_MAX,
+				    data, data_len, policy)) {
 		hdd_err("Invalid ATTR list");
 		return -EINVAL;
 	}
@@ -145,23 +144,23 @@ static int __wlan_hdd_cfg80211_set_gateway_params(struct wiphy *wiphy,
 
 	req.max_retries = 3;
 	req.timeout = 100;   /* in milliseconds */
-	req.session_id = adapter->sessionId;
+	req.session_id = adapter->session_id;
 
-	hdd_info("**** Gateway Parameters: ****");
-	hdd_info("session id: %d", req.session_id);
-	hdd_info("ipv4 addr type: %d", req.ipv4_addr_type);
-	hdd_info("ipv6 addr type: %d", req.ipv6_addr_type);
-	hdd_info("gw mac addr: %pM", req.gw_mac_addr.bytes);
-	hdd_info("ipv4 addr: %pI4", req.ipv4_addr);
-	hdd_info("ipv6 addr: %pI6c", req.ipv6_addr);
+	hdd_debug("Configuring gateway for session %d", req.session_id);
+	hdd_debug("mac:%pM, ipv4:%pI4 (type %d), ipv6:%pI6c (type %d)",
+		  req.gw_mac_addr.bytes,
+		  req.ipv4_addr, req.ipv4_addr_type,
+		  req.ipv6_addr, req.ipv6_addr_type);
 
-	status = sme_gateway_param_update(hdd_ctx->hHal, &req);
+	hdd_nud_set_gateway_addr(adapter, req.gw_mac_addr);
+
+	status = sme_gateway_param_update(hdd_ctx->mac_handle, &req);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("sme_gateway_param_update failed(err=%d)", status);
 		ret = -EINVAL;
 	}
 
-	EXIT();
+	hdd_exit();
 	return ret;
 }
 

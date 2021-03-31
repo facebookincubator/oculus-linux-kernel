@@ -9,7 +9,11 @@ dts-dirs += freescale
 dts-dirs += hisilicon
 dts-dirs += marvell
 dts-dirs += mediatek
+ifeq ($(CONFIG_OCULUS),y)
+dts-dirs += oculus
+else
 dts-dirs += qcom
+endif
 dts-dirs += rockchip
 dts-dirs += sprd
 dts-dirs += xilinx

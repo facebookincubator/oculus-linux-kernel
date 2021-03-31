@@ -339,8 +339,6 @@ struct ufs_hba_variant_ops {
 	int	(*update_sec_cfg)(struct ufs_hba *hba, bool restore_sec_cfg);
 	u32	(*get_scale_down_gear)(struct ufs_hba *);
 	int	(*set_bus_vote)(struct ufs_hba *, bool);
-	void	(*phy_off)(struct ufs_hba *);
-	void	(*phy_on)(struct ufs_hba *);
 #ifdef CONFIG_DEBUG_FS
 	void	(*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
 	void	(*remove_debugfs)(struct ufs_hba *hba);
@@ -521,7 +519,7 @@ struct ufs_init_prefetch {
 	u32 icc_level;
 };
 
-#define UIC_ERR_REG_HIST_LENGTH 8
+#define UIC_ERR_REG_HIST_LENGTH 20
 /**
  * struct ufs_uic_err_reg_hist - keeps history of uic errors
  * @pos: index to indicate cyclic buffer position
@@ -640,6 +638,7 @@ struct ufs_stats {
 	struct ufshcd_clk_ctx clk_rel;
 	u32 hibern8_exit_cnt;
 	ktime_t last_hibern8_exit_tstamp;
+	u32 power_mode_change_cnt;
 	struct ufs_uic_err_reg_hist pa_err;
 	struct ufs_uic_err_reg_hist dl_err;
 	struct ufs_uic_err_reg_hist nl_err;
@@ -662,6 +661,27 @@ struct ufs_stats {
 		 UFSHCD_DBG_PRINT_HOST_REGS_EN | UFSHCD_DBG_PRINT_TRS_EN | \
 		 UFSHCD_DBG_PRINT_TMRS_EN | UFSHCD_DBG_PRINT_PWR_EN |	   \
 		 UFSHCD_DBG_PRINT_HOST_STATE_EN)
+
+struct ufshcd_cmd_log_entry {
+	char *str;	/* context like "send", "complete" */
+	char *cmd_type;	/* "scsi", "query", "nop", "dme" */
+	u8 lun;
+	u8 cmd_id;
+	sector_t lba;
+	int transfer_len;
+	u8 idn;		/* used only for query idn */
+	u32 doorbell;
+	u32 outstanding_reqs;
+	u32 seq_num;
+	unsigned int tag;
+	ktime_t tstamp;
+};
+
+struct ufshcd_cmd_log {
+	struct ufshcd_cmd_log_entry *entries;
+	int pos;
+	u32 seq_num;
+};
 
 /**
  * struct ufs_hba - per adapter private structure
@@ -835,6 +855,7 @@ struct ufs_hba {
 	/* Work Queues */
 	struct work_struct eh_work;
 	struct work_struct eeh_work;
+	struct work_struct rls_work;
 
 	/* HBA Errors */
 	u32 errors;
@@ -878,6 +899,7 @@ struct ufs_hba {
 
 	struct ufs_clk_gating clk_gating;
 	struct ufs_hibern8_on_idle hibern8_on_idle;
+	struct ufshcd_cmd_log cmd_log;
 
 	/* Control to enable/disable host capabilities */
 	u32 caps;
@@ -930,9 +952,11 @@ struct ufs_hba {
 
 	bool full_init_linereset;
 	struct pinctrl *pctrl;
-	
+
 	int			latency_hist_enabled;
-	struct io_latency_state io_lat_s;
+	struct io_latency_state io_lat_read;
+	struct io_latency_state io_lat_write;
+	bool restore_needed;
 };
 
 static inline void ufshcd_mark_shutdown_ongoing(struct ufs_hba *hba)
@@ -1051,7 +1075,6 @@ static inline void *ufshcd_get_variant(struct ufs_hba *hba)
 	BUG_ON(!hba);
 	return hba->priv;
 }
-
 extern int ufshcd_runtime_suspend(struct ufs_hba *hba);
 extern int ufshcd_runtime_resume(struct ufs_hba *hba);
 extern int ufshcd_runtime_idle(struct ufs_hba *hba);
@@ -1160,6 +1183,12 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, int desc_index, u8 *buf,
 				u32 size, bool ascii);
 
 /* Expose Query-Request API */
+int ufshcd_read_desc_param(struct ufs_hba *hba,
+			   enum desc_idn desc_id,
+			   int desc_index,
+			   u8 param_offset,
+			   u8 *param_read_buf,
+			   u8 param_size);
 int ufshcd_query_flag(struct ufs_hba *hba, enum query_opcode opcode,
 	enum flag_idn idn, bool *flag_res);
 int ufshcd_query_attr(struct ufs_hba *hba, enum query_opcode opcode,
@@ -1329,8 +1358,7 @@ static inline void ufshcd_vops_remove_debugfs(struct ufs_hba *hba)
 		hba->var->vops->remove_debugfs(hba);
 }
 #else
-static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba,
-						struct dentry *root)
+static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba, struct dentry *)
 {
 }
 
@@ -1402,5 +1430,7 @@ static inline void ufshcd_vops_pm_qos_req_end(struct ufs_hba *hba,
 	if (hba->var && hba->var->pm_qos_vops && hba->var->pm_qos_vops->req_end)
 		hba->var->pm_qos_vops->req_end(hba, req, lock);
 }
+
+extern struct ufs_pm_lvl_states ufs_pm_lvl_states[];
 
 #endif /* End of Header */

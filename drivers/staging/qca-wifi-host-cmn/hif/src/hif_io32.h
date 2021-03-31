@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2015-2017 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef __HIF_IO32_H__
@@ -40,7 +31,7 @@
 	hif_target_sleep_state_adjust(scn, false, true)
 #define Q_TARGET_ACCESS_END(scn) \
 	hif_target_sleep_state_adjust(scn, true, false)
-#define TARGET_REGISTER_ACCESS_ALLOW(scn)\
+#define TARGET_REGISTER_ACCESS_ALLOWED(scn)\
 		hif_is_target_register_access_allowed(scn)
 
 /*
@@ -106,6 +97,5 @@ void hif_target_write_checked(struct hif_softc *scn, uint32_t offset,
 
 void hif_irq_enable(struct hif_softc *scn, int irq_id);
 void hif_irq_disable(struct hif_softc *scn, int irq_id);
-
 
 #endif /* __HIF_IO32_H__ */

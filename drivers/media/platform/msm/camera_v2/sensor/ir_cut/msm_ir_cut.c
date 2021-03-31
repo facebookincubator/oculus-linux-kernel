@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -499,7 +499,6 @@ static long msm_ir_cut_subdev_do_ioctl(
 	struct msm_ir_cut_cfg_data_t ir_cut_data;
 
 	CDBG("Enter");
-	ir_cut_data.cfg_type = u32->cfg_type;
 
 	switch (cmd) {
 	case VIDIOC_MSM_IR_CUT_CFG32:
@@ -509,6 +508,7 @@ static long msm_ir_cut_subdev_do_ioctl(
 		return msm_ir_cut_subdev_ioctl(sd, cmd, arg);
 	}
 
+	ir_cut_data.cfg_type = u32->cfg_type;
 	rc = msm_ir_cut_subdev_ioctl(sd, cmd, &ir_cut_data);
 
 	CDBG("Exit");

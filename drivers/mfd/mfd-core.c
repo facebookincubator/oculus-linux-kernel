@@ -178,6 +178,7 @@ static int mfd_add_device(struct device *parent, int id,
 		for_each_child_of_node(parent->of_node, np) {
 			if (of_device_is_compatible(np, cell->of_compatible)) {
 				pdev->dev.of_node = np;
+				pdev->dev.fwnode = &np->fwnode;
 				break;
 			}
 		}
@@ -353,6 +354,8 @@ int mfd_clone_cell(const char *cell, const char **clones, size_t n_clones)
 			dev_err(dev, "failed to create platform device '%s'\n",
 					clones[i]);
 	}
+
+	put_device(dev);
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,7 +11,7 @@
  */
 
 &soc {
-	tlmm: pinctrl@01010000 {
+	tlmm: pinctrl@1010000 {
 		compatible = "qcom,msm8996-pinctrl";
 		reg = <0x01010000 0x300000>;
 		interrupts = <0 208 0>;
@@ -20,6 +20,20 @@
 		interrupt-controller;
 		#interrupt-cells = <2>;
 
+		/* pin governing mux between QSPI and modem on auto boards */
+		modem_mux: mdm_mux {
+			mux {
+				pins = "gpio121";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio121";
+				drive-strength = <2>;
+				bias-pull-up;
+				output-high;
+			};
+		};
 		/* add pingrp for adv7533 */
 		pmx_adv7533: pmx_adv7533 {
 			adv7533_0_int_active: adv7533_0_int_active {
@@ -699,6 +713,19 @@
 					bias-pull-down;
 				};
 			};
+
+			i2c_12_bitbang: i2c_12_bitbang {
+				mux {
+					pins = "gpio87", "gpio88";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio87", "gpio88";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
 		};
 
 		i2c_6 {
@@ -719,6 +746,19 @@
 				mux {
 					pins = "gpio27", "gpio28";
 					function = "blsp_i2c6";
+				};
+
+				config {
+					pins = "gpio27", "gpio28";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
+
+			i2c_6_bitbang: i2c_6_bitbang {
+				mux {
+					pins = "gpio27", "gpio28";
+					function = "gpio";
 				};
 
 				config {
@@ -755,6 +795,19 @@
 					bias-pull-up;
 				};
 			};
+
+			i2c_7_bitbang: i2c_7_bitbang {
+				mux {
+					pins = "gpio55", "gpio56";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio55", "gpio56";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
 		};
 
 		i2c_8 {
@@ -775,6 +828,19 @@
 				mux {
 					pins = "gpio6", "gpio7";
 					function = "blsp_i2c8";
+				};
+
+				config {
+					pins = "gpio6", "gpio7";
+					drive-strength = <4>;
+					bias-pull-up;
+				};
+			};
+
+			i2c_8_bitbang: i2c_8_bitbang {
+				mux {
+					pins = "gpio6", "gpio7";
+					function = "gpio";
 				};
 
 				config {
@@ -1435,7 +1501,7 @@
 		};
 
 		cnss_pins {
-			cnss_default: cnss_default {
+			cnss_bootstrap_active: cnss_bootstrap_active {
 				mux {
 					pins = "gpio46";
 					function = "gpio";
@@ -1444,6 +1510,20 @@
 				config {
 					pins = "gpio46";
 					drive-strength = <16>;
+					output-high;
+					bias-pull-up;
+				};
+			};
+			cnss_bootstrap_sleep: cnss_bootstrap_sleep {
+				mux {
+					pins = "gpio46";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio46";
+					drive-strength = <2>;
+					output-low;
 					bias-pull-down;
 				};
 			};
@@ -2703,5 +2783,75 @@
 				};
 			};
 		};
+
+		pmx_pps: pmx_pps {
+				mux {
+					pins = "gpio22";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio22";
+					drive-strength = <16>; /* 16 mA */
+					bias-pull-down; /* pull down */
+				};
+		};
+
+		can_reset {
+			can_rst_on: rst_on {
+				mux {
+					pins = "gpio71";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio71";
+					drive-strength = <2>; /* 2 mA */
+					bias-pull-up;
+				};
+			};
+
+			can_rst_off: rst_off {
+				mux {
+					pins = "gpio71";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio71";
+					drive-strength = <2>; /* 2 mA */
+					bias-pull-up;
+					output-high;
+				};
+			};
+		};
+
+		ntn_clk_sync: ntn_clk_sync {
+			mux {
+				pins = "gpio69";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio69";
+				drive-strength = <8>; /* 8 mA */
+				output-low;
+				bias-pull-down;         /* PULL down */
+			};
+		};
+
+		pinctrl_pps: ppsgrp {
+			mux {
+				pins = "gpio128";
+				function = "nav_dr";
+			};
+
+			config {
+				pins =  "gpio128";
+				drive-strength = <16>;
+				bias-pull-down;
+			};
+		};
+
 	};
 };

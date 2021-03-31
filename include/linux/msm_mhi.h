@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,11 +12,14 @@
 #ifndef MSM_MHI_H
 #define MSM_MHI_H
 #include <linux/types.h>
-
-struct mhi_client_handle;
+#include <linux/device.h>
+#include <linux/scatterlist.h>
 
 #define MHI_DMA_MASK       0xFFFFFFFFFFULL
 #define MHI_MAX_MTU        0xFFFF
+
+struct mhi_client_config;
+struct mhi_device_ctxt;
 
 enum MHI_CLIENT_CHANNEL {
 	MHI_CLIENT_LOOPBACK_OUT = 0,
@@ -59,21 +62,26 @@ enum MHI_CLIENT_CHANNEL {
 	MHI_CLIENT_CSVT_IN = 43,
 	MHI_CLIENT_SMCT_OUT = 44,
 	MHI_CLIENT_SMCT_IN = 45,
-	MHI_CLIENT_RESERVED_1_LOWER = 46,
+	MHI_CLIENT_IP_SW_4_OUT = 46,
+	MHI_CLIENT_IP_SW_4_IN = 47,
+	MHI_CLIENT_RESERVED_1_LOWER = 48,
 	MHI_CLIENT_RESERVED_1_UPPER = 99,
 	MHI_CLIENT_IP_HW_0_OUT = 100,
 	MHI_CLIENT_IP_HW_0_IN = 101,
-	MHI_CLIENT_RESERVED_2_LOWER = 102,
+	MHI_CLIENT_IP_HW_ADPL_IN = 102,
+	MHI_CLIENT_RESERVED_2_LOWER = 103,
 	MHI_CLIENT_RESERVED_2_UPPER = 127,
-	MHI_MAX_CHANNELS = 102
+	MHI_MAX_CHANNELS = 103
 };
 
 enum MHI_CB_REASON {
-	MHI_CB_XFER = 0x0,
-	MHI_CB_MHI_DISABLED = 0x4,
-	MHI_CB_MHI_ENABLED = 0x8,
-	MHI_CB_CHAN_RESET_COMPLETE = 0x10,
-	MHI_CB_reserved = 0x80000000,
+	MHI_CB_XFER,
+	MHI_CB_MHI_DISABLED,
+	MHI_CB_MHI_ENABLED,
+	MHI_CB_MHI_SHUTDOWN,
+	MHI_CB_SYS_ERROR,
+	MHI_CB_RDDM,
+	MHI_CB_MHI_PROBED,
 };
 
 enum MHI_FLAGS {
@@ -98,8 +106,125 @@ struct mhi_cb_info {
 };
 
 struct mhi_client_info_t {
+	enum MHI_CLIENT_CHANNEL chan;
+	const struct device *dev;
+	const char *node_name;
 	void (*mhi_client_cb)(struct mhi_cb_info *);
+	bool pre_allocate;
+	size_t max_payload;
+	void *user_data;
 };
+
+struct mhi_client_handle {
+	u32 dev_id;
+	u32 domain;
+	u32 bus;
+	u32 slot;
+	bool enabled;
+	struct mhi_client_config *client_config;
+};
+
+struct __packed bhi_vec_entry {
+	u64 phys_addr;
+	u64 size;
+};
+
+/**
+ * struct mhi_device - IO resources for MHI
+ * @dev: device node points to of_node
+ * @pdev: pci device node
+ * @resource: bar memory space and IRQ resources
+ * @support_rddm: this device support ramdump collection
+ * @rddm_size: size of ramdump buffer in bytes to allocate
+ * @pm_runtime_get: fp for bus masters rpm pm_runtime_get
+ * @pm_runtime_noidle: fp for bus masters rpm pm_runtime_noidle
+ * @status_cb: fp for MHI status change notifications
+ * @mhi_dev_ctxt: private data for host
+ */
+struct mhi_device {
+	struct device *dev;
+	struct pci_dev *pci_dev;
+	struct resource resources[2];
+	bool support_rddm;
+	size_t rddm_size;
+	int (*pm_runtime_get)(struct pci_dev *pci_dev);
+	void (*pm_runtime_put_noidle)(struct pci_dev *pci_dev);
+	void (*status_cb)(enum MHI_CB_REASON, void *priv);
+	struct mhi_device_ctxt *mhi_dev_ctxt;
+};
+
+enum mhi_dev_ctrl {
+	MHI_DEV_CTRL_INIT,
+	MHI_DEV_CTRL_DE_INIT,
+	MHI_DEV_CTRL_SUSPEND,
+	MHI_DEV_CTRL_RESUME,
+	MHI_DEV_CTRL_POWER_OFF,
+	MHI_DEV_CTRL_POWER_ON,
+	MHI_DEV_CTRL_TRIGGER_RDDM,
+	MHI_DEV_CTRL_RDDM,
+	MHI_DEV_CTRL_RDDM_KERNEL_PANIC,
+	MHI_DEV_CTRL_NOTIFY_LINK_ERROR,
+	MHI_DEV_CTRL_MAXCMD,
+};
+
+enum mhi_rddm_segment {
+	MHI_RDDM_FW_SEGMENT,
+	MHI_RDDM_RD_SEGMENT,
+};
+
+#if defined(CONFIG_MSM_MHI)
+/**
+ * mhi_is_device_ready - Check if MHI is ready to register clients
+ *
+ * @dev: device node that points to DT node
+ * @node_name: device tree node that links MHI node
+ *
+ * @Return true if ready
+ */
+bool mhi_is_device_ready(const struct device * const dev,
+			 const char *node_name);
+
+/**
+ * mhi_resgister_device - register hardware resources with MHI
+ *
+ * @mhi_device: resources to be used
+ * @node_name: DT node name
+ * @userdata: cb data for client
+ * @Return 0 on success
+ */
+int mhi_register_device(struct mhi_device *mhi_device, const char *node_name,
+			void *user_data);
+
+/**
+ * mhi_register_channel - Client must call this function to obtain a handle for
+ *			  any MHI operations
+ *
+ *  @client_handle:  Handle populated by MHI, opaque to client
+ *  @client_info:    Channel\device information provided by client to
+ *                   which the handle maps to.
+ *
+ * @Return errno
+ */
+int mhi_register_channel(struct mhi_client_handle **client_handle,
+			 struct mhi_client_info_t *client_info);
+
+/**
+ * mhi_pm_control_device - power management control api
+ * @mhi_device: registered device structure
+ * @ctrl: specific command
+ * @Return 0 on success
+ */
+int mhi_pm_control_device(struct mhi_device *mhi_device,
+			  enum mhi_dev_ctrl ctrl);
+
+/**
+ * mhi_xfer_rddm - transfer rddm segment to bus master
+ * @mhi_device: registered device structure
+ * @seg: scatterlist pointing to segments
+ * @Return: # of segments, 0 if no segment available
+ */
+int mhi_xfer_rddm(struct mhi_device *mhi_device, enum mhi_rddm_segment seg,
+		  struct scatterlist **sg_list);
 
 /**
  * mhi_deregister_channel - de-register callbacks from MHI
@@ -109,27 +234,6 @@ struct mhi_client_info_t {
  * @Return errno
  */
 int mhi_deregister_channel(struct mhi_client_handle *client_handle);
-
-/**
- * mhi_register_channel - Client must call this function to obtain a handle for
- *			  any MHI operations
- *
- *  @client_handle:  Handle populated by MHI, opaque to client
- *  @chan:           Channel provided by client to which the handle
- *                   maps to.
- *  @device_index:   MHI device for which client wishes to register, if
- *                   there are multiple devices supporting MHI. Client
- *                   should specify 0 for the first device 1 for second etc.
- *  @info:           Client provided callbacks which MHI will invoke on events
- *  @user_data:      Client provided context to be returned to client upon
- *                   callback invocation.
- *  Not thread safe, caller must ensure concurrency protection.
- *
- * @Return errno
- */
-int mhi_register_channel(struct mhi_client_handle **client_handle,
-		enum MHI_CLIENT_CHANNEL chan, s32 device_index,
-		struct mhi_client_info_t *client_info, void *user_data);
 
 /**
  * mhi_open_channel - Client must call this function to open a channel
@@ -158,8 +262,8 @@ int mhi_open_channel(struct mhi_client_handle *client_handle);
  *
  * @Return errno
  */
-int mhi_queue_xfer(struct mhi_client_handle *client_handle,
-		void *buf, size_t buf_len, enum MHI_FLAGS mhi_flags);
+int mhi_queue_xfer(struct mhi_client_handle *client_handle, void *buf,
+		   size_t buf_len, enum MHI_FLAGS mhi_flags);
 
 /**
  * mhi_close_channel - Client can request channel to be closed and handle freed
@@ -200,7 +304,7 @@ int mhi_get_free_desc(struct mhi_client_handle *client_handle);
  * @Return  non negative on success
  */
 int mhi_poll_inbound(struct mhi_client_handle *client_handle,
-			     struct mhi_result *result);
+		     struct mhi_result *result);
 
 /**
  * mhi_get_max_desc - Get the maximum number of descriptors
@@ -211,12 +315,107 @@ int mhi_poll_inbound(struct mhi_client_handle *client_handle,
  */
 int mhi_get_max_desc(struct mhi_client_handle *client_handle);
 
-/* RmNET Reserved APIs, This APIs are reserved for use by the linux network
-* stack only. Use by other clients will introduce system wide issues
-*/
-int mhi_set_lpm(struct mhi_client_handle *client_handle, int enable_lpm);
+/* following APIs meant to be used by rmnet interface only */
+int mhi_set_lpm(struct mhi_client_handle *client_handle, bool enable_lpm);
 int mhi_get_epid(struct mhi_client_handle *mhi_handle);
 struct mhi_result *mhi_poll(struct mhi_client_handle *client_handle);
 void mhi_mask_irq(struct mhi_client_handle *client_handle);
 void mhi_unmask_irq(struct mhi_client_handle *client_handle);
+
+#else
+static inline bool mhi_is_device_ready(const struct device * const dev,
+				       const char *node_name)
+{
+	return false;
+};
+
+static inline int mhi_register_device(struct mhi_device *mhi_device,
+				      const char *node_name, void *user_data)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_register_channel(struct mhi_client_handle **client_handle,
+				       struct mhi_client_info_t *client_info)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_pm_control_device(struct mhi_device *mhi_device,
+					enum mhi_dev_ctrl ctrl)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_xfer_rddm(struct mhi_device *mhi_device,
+				enum mhi_rddm_segment seg,
+				struct scatterlist **sg_list)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_deregister_channel(struct mhi_client_handle
+					 *client_handle)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_open_channel(struct mhi_client_handle *client_handle)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_queue_xfer(struct mhi_client_handle *client_handle,
+				 void *buf, size_t buf_len,
+				 enum MHI_FLAGS mhi_flags)
+{
+	return -EINVAL;
+};
+
+static inline void mhi_close_channel(struct mhi_client_handle *client_handle)
+{
+};
+
+static inline int mhi_get_free_desc(struct mhi_client_handle *client_handle)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_poll_inbound(struct mhi_client_handle *client_handle,
+				   struct mhi_result *result)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_get_max_desc(struct mhi_client_handle *client_handle)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_set_lpm(struct mhi_client_handle *client_handle,
+			      bool enable_lpm)
+{
+	return -EINVAL;
+};
+
+static inline int mhi_get_epid(struct mhi_client_handle *mhi_handle)
+{
+	return -EINVAL;
+};
+
+static inline struct mhi_result *mhi_poll(struct mhi_client_handle
+					  *client_handle)
+{
+	return NULL;
+};
+
+static inline void mhi_mask_irq(struct mhi_client_handle *client_handle)
+{
+};
+
+static inline void mhi_unmask_irq(struct mhi_client_handle *client_handle)
+{
+};
+
+#endif
 #endif

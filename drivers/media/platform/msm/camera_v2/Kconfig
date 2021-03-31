@@ -255,19 +255,17 @@ config MSM_SEC_CCI_DEBUG
 	  debugging.
 
 config MSM_CAMERA_DAEMON_ENABLED
-	bool "QTI MSM Camera Daemon userspace support"
+	bool "QTI MSM Camera daemon userspace support"
 	default y
 	depends on MSMB_CAMERA
 	---help---
-	  Enable support for the QTI userspace camera daemon.
-	  Defaults to Y
+	  Enable support for userspace camera daemon by default.
 
 config MSM_CAMERA_SENSOR_DRIVER
-	bool "Enable QTI MSM camera sensor kernel driver"
+	bool "Enable QTI MSM camera sensor driver"
 	default y
 	depends on MSM_CAMERA_SENSOR
 	---help---
-	  Allow the Linux kernel MSM camera sensor driver to handle
+	  Allow the Linux kernel camera sensor driver to handle
 	  initialization and management. Disable if the sensor is
 	  handled by an external mechanism.
-	  Defaults to Y

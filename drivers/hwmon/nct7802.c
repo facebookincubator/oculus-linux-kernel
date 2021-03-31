@@ -259,13 +259,15 @@ static int nct7802_read_fan_min(struct nct7802_data *data, u8 reg_fan_low,
 		ret = 0;
 	else if (ret)
 		ret = DIV_ROUND_CLOSEST(1350000U, ret);
+	else
+		ret = 1350000U;
 abort:
 	mutex_unlock(&data->access_lock);
 	return ret;
 }
 
 static int nct7802_write_fan_min(struct nct7802_data *data, u8 reg_fan_low,
-				 u8 reg_fan_high, unsigned int limit)
+				 u8 reg_fan_high, unsigned long limit)
 {
 	int err;
 
@@ -326,8 +328,8 @@ static int nct7802_write_voltage(struct nct7802_data *data, int nr, int index,
 	int shift = 8 - REG_VOLTAGE_LIMIT_MSB_SHIFT[index - 1][nr];
 	int err;
 
+	voltage = clamp_val(voltage, 0, 0x3ff * nct7802_vmul[nr]);
 	voltage = DIV_ROUND_CLOSEST(voltage, nct7802_vmul[nr]);
-	voltage = clamp_val(voltage, 0, 0x3ff);
 
 	mutex_lock(&data->access_lock);
 	err = regmap_write(data->regmap,
@@ -402,7 +404,7 @@ static ssize_t store_temp(struct device *dev, struct device_attribute *attr,
 	if (err < 0)
 		return err;
 
-	val = clamp_val(DIV_ROUND_CLOSEST(val, 1000), -128, 127);
+	val = DIV_ROUND_CLOSEST(clamp_val(val, -128000, 127000), 1000);
 
 	err = regmap_write(data->regmap, nr, val & 0xff);
 	return err ? : count;
@@ -766,7 +768,7 @@ static struct attribute *nct7802_in_attrs[] = {
 	&sensor_dev_attr_in3_alarm.dev_attr.attr,
 	&sensor_dev_attr_in3_beep.dev_attr.attr,
 
-	&sensor_dev_attr_in4_input.dev_attr.attr,	/* 17 */
+	&sensor_dev_attr_in4_input.dev_attr.attr,	/* 16 */
 	&sensor_dev_attr_in4_min.dev_attr.attr,
 	&sensor_dev_attr_in4_max.dev_attr.attr,
 	&sensor_dev_attr_in4_alarm.dev_attr.attr,
@@ -792,9 +794,9 @@ static umode_t nct7802_in_is_visible(struct kobject *kobj,
 
 	if (index >= 6 && index < 11 && (reg & 0x03) != 0x03)	/* VSEN1 */
 		return 0;
-	if (index >= 11 && index < 17 && (reg & 0x0c) != 0x0c)	/* VSEN2 */
+	if (index >= 11 && index < 16 && (reg & 0x0c) != 0x0c)	/* VSEN2 */
 		return 0;
-	if (index >= 17 && (reg & 0x30) != 0x30)		/* VSEN3 */
+	if (index >= 16 && (reg & 0x30) != 0x30)		/* VSEN3 */
 		return 0;
 
 	return attr->mode;

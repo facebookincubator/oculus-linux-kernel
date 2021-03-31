@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -402,6 +402,8 @@ static int msm_isp_start_fetch_engine_multi_pass(struct vfe_device *vfe_dev,
 			return -EINVAL;
 		}
 		vfe_idx = msm_isp_get_vfe_idx_for_stream(vfe_dev, stream_info);
+		vfe_dev->hw_info->vfe_ops.core_ops.reset_hw(vfe_dev,
+			0, 1);
 		msm_isp_reset_framedrop(vfe_dev, stream_info);
 
 		mutex_lock(&vfe_dev->buf_mgr->lock);
@@ -481,8 +483,12 @@ static int msm_isp_cfg_pix(struct vfe_device *vfe_dev,
 
 	if (input_cfg->d.pix_cfg.input_mux == CAMIF ||
 		input_cfg->d.pix_cfg.input_mux == TESTGEN) {
-		vfe_dev->axi_data.src_info[VFE_PIX_0].width =
-			input_cfg->d.pix_cfg.camif_cfg.pixels_per_line;
+		if (input_cfg->d.pix_cfg.input_mux == CAMIF)
+			vfe_dev->axi_data.src_info[VFE_PIX_0].width =
+				input_cfg->d.pix_cfg.camif_cfg.pixels_per_line;
+		if (input_cfg->d.pix_cfg.input_mux == TESTGEN)
+			vfe_dev->axi_data.src_info[VFE_PIX_0].width =
+			input_cfg->d.pix_cfg.testgen_cfg.pixels_per_line;
 		if (input_cfg->d.pix_cfg.camif_cfg.subsample_cfg.
 			sof_counter_step > 0) {
 			vfe_dev->axi_data.src_info[VFE_PIX_0].
@@ -1761,6 +1767,7 @@ int msm_isp_get_bit_per_pixel(uint32_t output_format)
 	case V4L2_PIX_FMT_QGRBG12:
 	case V4L2_PIX_FMT_QRGGB12:
 	case V4L2_PIX_FMT_Y12:
+	case MSM_V4L2_PIX_FMT_META12:
 		return 12;
 	case V4L2_PIX_FMT_SBGGR14:
 	case V4L2_PIX_FMT_SGBRG14:
@@ -2084,6 +2091,10 @@ static void msm_isp_enqueue_tasklet_cmd(struct vfe_device *vfe_dev,
 	} else {
 		atomic_add(1, &vfe_dev->irq_cnt);
 	}
+	atomic_add(1, &vfe_dev->irq_cnt);
+	trace_msm_cam_isp_status_dump("VFE_IRQ:", vfe_dev->pdev->id,
+		vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id,
+		irq_status0, irq_status1);
 	queue_cmd->vfeInterruptStatus0 = irq_status0;
 	queue_cmd->vfeInterruptStatus1 = irq_status1;
 	queue_cmd->vfe_pingpong_status = ping_pong_status;
@@ -2095,7 +2106,7 @@ static void msm_isp_enqueue_tasklet_cmd(struct vfe_device *vfe_dev,
 		MSM_VFE_TASKLETQ_SIZE;
 	list_add_tail(&queue_cmd->list, &tasklet->tasklet_q);
 	spin_unlock_irqrestore(&tasklet->tasklet_lock, flags);
-	tasklet_schedule(&tasklet->tasklet);
+	tasklet_hi_schedule(&tasklet->tasklet);
 }
 
 irqreturn_t msm_isp_process_irq(int irq_num, void *data)
@@ -2183,6 +2194,9 @@ void msm_isp_do_tasklet(unsigned long data)
 		atomic_sub(1, &vfe_dev->irq_cnt);
 		msm_isp_prepare_tasklet_debug_info(vfe_dev,
 			irq_status0, irq_status1, ts);
+		trace_msm_cam_isp_status_dump("VFE_TASKLET:", vfe_dev->pdev->id,
+			vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id,
+			irq_status0, irq_status1);
 		irq_ops = &vfe_dev->hw_info->vfe_ops.irq_ops;
 		irq_ops->process_reset_irq(vfe_dev,
 			irq_status0, irq_status1);
@@ -2285,7 +2299,7 @@ int msm_isp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	vfe_dev->isp_raw0_debug = 0;
 	vfe_dev->isp_raw1_debug = 0;
 	vfe_dev->isp_raw2_debug = 0;
-
+	vfe_dev->irq_sof_id = 0;
 	if (vfe_dev->hw_info->vfe_ops.core_ops.init_hw(vfe_dev) < 0) {
 		pr_err("%s: init hardware failed\n", __func__);
 		vfe_dev->vfe_open_cnt--;
@@ -2357,6 +2371,7 @@ int msm_isp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	long rc = 0;
 	int wm;
+	int i;
 	struct vfe_device *vfe_dev = v4l2_get_subdevdata(sd);
 	ISP_DBG("%s E open_cnt %u\n", __func__, vfe_dev->vfe_open_cnt);
 	mutex_lock(&vfe_dev->realtime_mutex);
@@ -2406,6 +2421,8 @@ int msm_isp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		msm_isp_end_avtimer();
 		vfe_dev->vt_enable = 0;
 	}
+	for (i = 0; i < VFE_SRC_MAX; i++)
+		vfe_dev->axi_data.src_info[i].lpm = 0;
 	MSM_ISP_DUAL_VFE_MUTEX_UNLOCK(vfe_dev);
 	vfe_dev->is_split = 0;
 

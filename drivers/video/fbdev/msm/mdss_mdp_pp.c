@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -120,6 +120,18 @@ struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 		{ 0x0010, 0x00eb, 0x0010, 0x00f0, 0x0010, 0x00f0,},
 	},
+	[MDSS_MDP_CSC_RGB2YUV_709FR] = {
+		0,
+		{
+			0x006d, 0x016e, 0x0025,
+			0xffc5, 0xff3b, 0x0100,
+			0x0100, 0xff17, 0xffe9
+		},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x0, 0x0080, 0x0080,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+	},
 	[MDSS_MDP_CSC_RGB2YUV_2020L] = {
 		0,
 		{
@@ -167,6 +179,18 @@ struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0x0, 0x0,},
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+	},
+	[MDSS_MDP_CSC_RGB2RGB_L] = {
+		0,
+		{
+			0x01b7, 0x0000, 0x0000,
+			0x0000, 0x01b7, 0x0000,
+			0x0000, 0x0000, 0x01b7,
+		},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x10, 0x10, 0x10,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+		{ 0x10, 0xeb, 0x10, 0xeb, 0x10, 0xeb,},
 	},
 };
 
@@ -267,6 +291,18 @@ struct mdp_csc_cfg mdp_csc_10bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
 		{ 0x0040, 0x03ac, 0x0040, 0x03c0, 0x0040, 0x03c0,},
 	},
+	[MDSS_MDP_CSC_RGB2YUV_709FR] = {
+		0,
+		{
+			0x006d, 0x016e, 0x0025,
+			0xffc5, 0xff3b, 0x0100,
+			0x0100, 0xff17, 0xffe9
+		},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x0, 0x0200, 0x0200,},
+		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+	},
 	[MDSS_MDP_CSC_RGB2YUV_2020L] = {
 		0,
 		{
@@ -314,6 +350,18 @@ struct mdp_csc_cfg mdp_csc_10bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0x0, 0x0,},
 		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
 		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+	},
+	[MDSS_MDP_CSC_RGB2RGB_L] = {
+		0,
+		{
+			0x01b7, 0x0000, 0x0000,
+			0x0000, 0x01b7, 0x0000,
+			0x0000, 0x0000, 0x01b7,
+		},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x40, 0x40, 0x40,},
+		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+		{ 0x40, 0x3ac, 0x40, 0x3ac, 0x40, 0x3ac,},
 	},
 };
 
@@ -447,6 +495,13 @@ static u32 igc_limited[IGC_LUT_ENTRIES] = {
 #define PP_FLAGS_DIRTY_PGC	0x100
 #define PP_FLAGS_DIRTY_SHARP	0x200
 #define PP_FLAGS_DIRTY_PA_DITHER 0x400
+
+#define PP_EARLY_PROGRAM_DIRTY_MASK (PP_FLAGS_DIRTY_PCC | \
+		PP_FLAGS_DIRTY_ENHIST | PP_FLAGS_DIRTY_HIST_COL)
+#define PP_DEFERRED_PROGRAM_DIRTY_MASK (PP_FLAGS_DIRTY_IGC | \
+		PP_FLAGS_DIRTY_PGC | PP_FLAGS_DIRTY_ARGC | \
+		PP_FLAGS_DIRTY_GAMUT | PP_FLAGS_DIRTY_PA | \
+		PP_FLAGS_DIRTY_DITHER | PP_FLAGS_DIRTY_PA_DITHER)
 
 /* Leave space for future features */
 #define PP_FLAGS_RESUME_COMMIT	0x10000000
@@ -631,7 +686,7 @@ int mdss_mdp_csc_setup_data(u32 block, u32 blk_idx, struct mdp_csc_cfg *data)
 		lv_shift = CSC_8BIT_LV_SHIFT;
 		/*
 		 * CSC is used on VIG pipes and currently VIG pipes do not
-		 * support multirect so always use RECT0
+		 * support multirect so always use RECT0.
 		 */
 		pipe = mdss_mdp_pipe_search(mdata, BIT(blk_idx),
 				MDSS_MDP_PIPE_RECT0);
@@ -2103,11 +2158,19 @@ int mdss_mdp_pp_setup_locked(struct mdss_mdp_ctl *ctl,
 		}
 	}
 
+	if (info->pp_program_mask & PP_NORMAL_PROGRAM_MASK) {
+		mdss_pp_res_left->pp_disp_flags[disp_num] &=
+				~PP_EARLY_PROGRAM_DIRTY_MASK;
+		mdss_pp_res_right->pp_disp_flags[disp_num] &=
+				~PP_EARLY_PROGRAM_DIRTY_MASK;
+	}
 	if (info->pp_program_mask & PP_DEFER_PROGRAM_MASK) {
 		/* clear dirty flag */
 		if (disp_num < MDSS_BLOCK_DISP_NUM) {
-			mdss_pp_res_left->pp_disp_flags[disp_num] = 0;
-			mdss_pp_res_right->pp_disp_flags[disp_num] = 0;
+			mdss_pp_res_left->pp_disp_flags[disp_num] &=
+				~PP_DEFERRED_PROGRAM_DIRTY_MASK;
+			mdss_pp_res_right->pp_disp_flags[disp_num] &=
+				~PP_DEFERRED_PROGRAM_DIRTY_MASK;
 			if (disp_num < mdata->nad_cfgs)
 				mdata->ad_cfgs[disp_num].reg_sts = 0;
 		}
@@ -2518,6 +2581,8 @@ int mdss_mdp_pp_overlay_init(struct msm_fb_data_type *mfd)
 		pr_err("Invalid mfd %pK mdata %pK\n", mfd, mdata);
 		return -EPERM;
 	}
+	if (mfd->index >= (MDP_BLOCK_MAX - MDP_LOGICAL_BLOCK_DISP_0))
+		return 0;
 
 	if (mdata->nad_cfgs)
 		mfd->mdp.ad_calc_bl = pp_ad_calc_bl;
@@ -2602,7 +2667,7 @@ static int pp_ad_calc_bl(struct msm_fb_data_type *mfd, int bl_in, int *bl_out,
 	}
 
 	if (!ad->bl_mfd || !ad->bl_mfd->panel_info ||
-		!ad->bl_att_lut) {
+		ad->bl_att_lut == NULL) {
 		pr_err("Invalid ad info: bl_mfd = 0x%pK, ad->bl_mfd->panel_info = 0x%pK, bl_att_lut = 0x%pK\n",
 			ad->bl_mfd,
 			(!ad->bl_mfd) ? NULL : ad->bl_mfd->panel_info,
@@ -5369,7 +5434,7 @@ static int is_valid_calib_dspp_addr(char __iomem *ptr)
 			ret = MDP_PP_OPS_READ | MDP_PP_OPS_WRITE;
 			break;
 		/* Dither enable/disable */
-		} else if ((ptr == base + MDSS_MDP_REG_DSPP_DITHER_DEPTH)) {
+		} else if (ptr == base + MDSS_MDP_REG_DSPP_DITHER_DEPTH) {
 			ret = MDP_PP_OPS_READ | MDP_PP_OPS_WRITE;
 			break;
 		/* Six zone and mem color */
@@ -6071,6 +6136,13 @@ static int pp_mfd_release_all(struct msm_fb_data_type *mfd)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	int ret = 0;
+	if (!mfd || !mdata) {
+		pr_err("Invalid mfd %pK mdata %pK\n", mfd, mdata);
+		return -EPERM;
+	}
+
+	if (mfd->index >= (MDP_BLOCK_MAX - MDP_LOGICAL_BLOCK_DISP_0))
+		return ret;
 
 	if (mdata->nad_cfgs) {
 		ret = pp_mfd_ad_release_all(mfd);

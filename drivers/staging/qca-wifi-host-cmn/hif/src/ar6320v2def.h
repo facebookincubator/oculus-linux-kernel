@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _AR6320V2DEF_H_
@@ -187,6 +178,9 @@
 #define AR6320V2_SOC_CHIP_ID_VERSION_LSB                  18
 #define AR6320V2_SOC_CHIP_ID_REVISION_MASK                0x00000f00
 #define AR6320V2_SOC_CHIP_ID_REVISION_LSB                 8
+#if defined(HIF_SDIO)
+#define AR6320V2_FW_IND_HELPER                            4
+#endif
 #if defined(HIF_PCI) || defined(HIF_SNOC) || defined(HIF_AHB)
 #define AR6320V2_CE_WRAPPER_BASE_ADDRESS                  0x00034000
 #define AR6320V2_CE0_BASE_ADDRESS                         0x00034400
@@ -476,9 +470,9 @@ struct targetdef_s ar6320v2_targetdef = {
 		AR6320V2_RX_MSDU_END_4_FIRST_MSDU_MASK,
 	.d_RX_MSDU_END_4_FIRST_MSDU_LSB =
 		AR6320V2_RX_MSDU_END_4_FIRST_MSDU_LSB,
-    .d_RX_MPDU_START_0_RETRY_MASK =
+	.d_RX_MPDU_START_0_RETRY_MASK =
 		AR6320V2_RX_MPDU_START_0_RETRY_MASK,
-    .d_RX_MPDU_START_0_SEQ_NUM_MASK =
+	.d_RX_MPDU_START_0_SEQ_NUM_MASK =
 		AR6320V2_RX_MPDU_START_0_SEQ_NUM_MASK,
 	.d_RX_MPDU_START_0_SEQ_NUM_MASK =
 		AR6320V2_RX_MPDU_START_0_SEQ_NUM_MASK,
@@ -487,9 +481,9 @@ struct targetdef_s ar6320v2_targetdef = {
 		AR6320V2_RX_MPDU_START_2_PN_47_32_LSB,
 	.d_RX_MPDU_START_2_PN_47_32_MASK =
 		AR6320V2_RX_MPDU_START_2_PN_47_32_MASK,
-    .d_RX_MPDU_START_2_TID_LSB =
+	.d_RX_MPDU_START_2_TID_LSB =
 		AR6320V2_RX_MPDU_START_2_TID_LSB,
-    .d_RX_MPDU_START_2_TID_MASK =
+	.d_RX_MPDU_START_2_TID_MASK =
 		AR6320V2_RX_MPDU_START_2_TID_MASK,
 	.d_RX_MSDU_END_1_EXT_WAPI_PN_63_48_MASK =
 		AR6320V2_RX_MSDU_END_1_EXT_WAPI_PN_63_48_MASK,
@@ -746,6 +740,9 @@ struct hostdef_s ar6320v2_hostdef = {
 	.d_MSI_MAGIC_ADDRESS = MSI_MAGIC_ADDRESS,
 	.d_HOST_CE_COUNT = 8,
 	.d_ENABLE_MSI = 0,
+#endif
+#if defined(HIF_SDIO)
+	.d_FW_IND_HELPER = AR6320V2_FW_IND_HELPER,
 #endif
 };
 

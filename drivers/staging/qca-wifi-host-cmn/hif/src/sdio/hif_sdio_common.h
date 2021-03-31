@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,13 +15,6 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 
 #ifndef _HIF_SDIO_COMMON_H_
 #define _HIF_SDIO_COMMON_H_
@@ -107,7 +97,8 @@
  * requirement, but AR6003 support it, so the register
  * is placed in vendor specific field 0xF0(bit0)
  * In SDIO 3.0, the register is defined in SPEC, and its
- * address is 0x16(bit1) */
+ * address is 0x16(bit1)
+ */
 /* interrupt mode register of AR6003 */
 #define CCCR_SDIO_IRQ_MODE_REG_AR6003         0xF0
 /* mode to enable special 4-bit interrupt assertion without clock */

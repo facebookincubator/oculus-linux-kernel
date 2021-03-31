@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,7 +11,7 @@
  */
 
 &soc {
-	mdss_mdp: qcom,mdss_mdp@900000 {
+	sde_kms: qcom,sde_kms@900000 {
 		compatible = "qcom,sde-kms";
 		reg = <0x00900000 0x90000>,
 		      <0x009b0000 0x1040>,
@@ -19,6 +19,8 @@
 		reg-names = "mdp_phys",
 			"vbif_phys",
 			"vbif_nrt_phys";
+
+		contiguous-region = <&cont_splash_mem &cont_splash_mem_hdmi>;
 
 		/* clock and supply entries */
 		clocks = <&clock_mmss clk_mdss_ahb_clk>,
@@ -51,13 +53,25 @@
 		#interrupt-cells = <1>;
 		iommus = <&mdp_smmu 0>;
 
+		gpus = <&msm_gpu>;
+
 		/* hw blocks */
 		qcom,sde-off = <0x1000>;
+		qcom,sde-len = <0x450>;
 		qcom,sde-ctl-off = <0x2000 0x2200 0x2400
 				     0x2600 0x2800>;
+		qcom,sde-ctl-size = <0x60>;
+		qcom,sde-ctl-display-pref = "primary", "secondary", "none",
+				    "none", "none";
+
 		qcom,sde-mixer-off = <0x45000 0x46000 0x47000
 				      0x48000 0x49000 0x4a000>;
+		qcom,sde-mixer-size = <0x3c0>;
+		qcom,sde-mixer-display-pref = "primary", "secondary", "none",
+				      "none", "none";
+
 		qcom,sde-dspp-off = <0x55000 0x57000>;
+		qcom,sde-dspp-size = <0x17c0>;
 		qcom,sde-dspp-ad-off = <0x24000 0x22800>;
 		qcom,sde-dspp-ad-version = <0x00030000>;
 		qcom,sde-wb-off = <0x66000>;
@@ -66,12 +80,15 @@
 		qcom,sde-wb-clk-ctrl = <0x2bc 16>;
 		qcom,sde-intf-off = <0x6b000 0x6b800
 					0x6c000 0x6c800>;
+		qcom,sde-intf-size = <0x260>;
 		qcom,sde-intf-type = "none", "dsi", "dsi", "hdmi";
 		qcom,sde-pp-off = <0x71000 0x71800
 					  0x72000 0x72800 0x73000>;
+		qcom,sde-pp-size = <0xc8>;
 		qcom,sde-pp-slave = <0x0 0x0 0x0 0x0 0x1>;
 		qcom,sde-te2-off = <0x2000 0x2000 0x0 0x0 0x0>;
 		qcom,sde-cdm-off = <0x7a200>;
+		qcom,sde-cdm-size = <0x200>;
 		qcom,sde-dsc-off = <0x10000 0x10000 0x0 0x0 0x0>;
 		qcom,sde-intf-max-prefetch-lines = <0x15 0x15 0x15 0x15>;
 
@@ -84,6 +101,7 @@
 				      0xb000 0x15000 0x17000
 				      0x19000 0x1b000 0x25000
 				      0x27000 0x35000 0x37000>;
+		qcom,sde-sspp-src-size = <0x138>;
 
 		qcom,sde-sspp-xin-id = <0 4 8
 					12 1 5
@@ -178,24 +196,14 @@
 			};
 		};
 
-		smmu_mdp_unsec: qcom,smmu_mdp_unsec_cb {
-			compatible = "qcom,smmu_mdp_unsec";
+		smmu_kms_unsec: qcom,smmu_kms_unsec_cb {
+			compatible = "qcom,smmu_sde_unsec";
 			iommus = <&mdp_smmu 0>;
 		};
 
-		smmu_rot_unsec: qcom,smmu_rot_unsec_cb {
-			compatible = "qcom,smmu_rot_unsec";
-			iommus = <&rot_smmu 0>;
-		};
-
-		smmu_mdp_sec: qcom,smmu_mdp_sec_cb {
-			compatible = "qcom,smmu_mdp_sec";
+		smmu_kms_sec: qcom,smmu_kms_sec_cb {
+			compatible = "qcom,smmu_sde_sec";
 			iommus = <&mdp_smmu 1>;
-		};
-
-		smmu_rot_sec: qcom,smmu_rot_sec_cb {
-			compatible = "qcom,smmu_rot_sec";
-			iommus = <&rot_smmu 1>;
 		};
 
 		/* data and reg bus scale settings */
@@ -224,7 +232,7 @@
 		};
 	};
 
-	mdss_dsi0: qcom,mdss_dsi_ctrl0@994000 {
+	sde_dsi0: qcom,sde_dsi_ctrl0@994000 {
 		compatible = "qcom,dsi-ctrl-hw-v1.4";
 		label = "dsi-ctrl-0";
 		cell-index = <0>;
@@ -259,7 +267,7 @@
 			<22 512 0 0>,
 			<22 512 0 1000>;
 
-		interrupt-parent = <&mdss_mdp>;
+		interrupt-parent = <&sde_kms>;
 		interrupts = <4 0>;
 		qcom,core-supply-entries {
 			#address-cells = <1>;
@@ -300,7 +308,7 @@
 		};
 	};
 
-	mdss_dsi1: qcom,mdss_dsi_ctrl1@996000 {
+	sde_dsi1: qcom,sde_dsi_ctrl1@996000 {
 		compatible = "qcom,dsi-ctrl-hw-v1.4";
 		label = "dsi-ctrl-1";
 		cell-index = <1>;
@@ -334,7 +342,7 @@
 			<22 512 0 0>,
 			<22 512 0 1000>;
 
-		interrupt-parent = <&mdss_mdp>;
+		interrupt-parent = <&sde_kms>;
 		interrupts = <5 0>;
 		qcom,core-supply-entries {
 			#address-cells = <1>;
@@ -374,7 +382,7 @@
 		};
 	};
 
-	mdss_dsi_phy0: qcom,mdss_dsi_phy0@994400 {
+	sde_dsi_phy0: qcom,sde_dsi_phy0@994400 {
 		compatible = "qcom,dsi-phy-v4.0";
 		label = "dsi-phy-0";
 		cell-index = <0>;
@@ -433,7 +441,7 @@
 		};
 	};
 
-	mdss_dsi_phy1: qcom,mdss_dsi_phy1@996400 {
+	sde_dsi_phy1: qcom,sde_dsi_phy1@996400 {
 		compatible = "qcom,dsi-phy-v4.0";
 		label = "dsi-phy-1";
 		cell-index = <1>;
@@ -492,7 +500,7 @@
 		};
 	};
 
-	mdss_hdmi: qcom,hdmi_tx@9a0000 {
+	sde_hdmi_tx: qcom,hdmi_tx_8996@9a0000 {
 		compatible = "qcom,hdmi-tx-8996";
 
 		reg =	<0x009a0000 0x50c>,
@@ -512,7 +520,7 @@
 			"core_clk",
 			"alt_iface_clk",
 			"extp_clk";
-		interrupt-parent = <&mdss_mdp>;
+		interrupt-parent = <&sde_kms>;
 		interrupts = <8 0>;
 		hpd-gdsc-supply = <&gdsc_mdss>;
 		qcom,hdmi-tx-hpd-gpio = <&pm8994_mpps 4 0>;
@@ -524,23 +532,17 @@
 			     &mdss_hdmi_ddc_suspend
 			     &mdss_hdmi_cec_suspend>;
 
-		hdmi_audio: qcom,msm-hdmi-audio-rx {
+		sde_hdmi_audio: qcom,sde-hdmi-audio-rx {
 			compatible = "qcom,msm-hdmi-audio-codec-rx";
 		};
 	};
 };
 
-/* dummy nodes for compatibility with 8996 mdss dtsi */
 &soc {
-	mdss_dsi: qcom,mdss_dsi_dummy {
-		/* dummy node for backward compatibility */
-	};
+	msm_kms_edrm: qcom,msm_kms_edrm@900000 {
 
-	mdss_hdmi_tx: qcom,mdss_hdmi_tx_dummy {
-		/* dummy node for backward compatibility */
-	};
+		compatible = "qcom,msm-kms-edrm";
+		contiguous-region = <&cont_splash_mem &cont_splash_mem_hdmi>;
 
-	mdss_fb2: qcom,mdss_fb2_dummy {
-		/* dummy node for backward compatibility */
 	};
 };

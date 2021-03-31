@@ -20,10 +20,18 @@ hostprogs-$(CONFIG_ASN1)	 += asn1_compiler
 hostprogs-$(CONFIG_MODULE_SIG)	 += sign-file
 hostprogs-$(CONFIG_SYSTEM_TRUSTED_KEYRING) += extract-cert
 
+UNAME_S := $(shell uname -s)
+
 HOSTCFLAGS_sortextable.o = -I$(srctree)/tools/include
 HOSTCFLAGS_asn1_compiler.o = -I$(srctree)/include
+ifeq ($(UNAME_S),Darwin)
+OPENSSL_PREFIX := $(shell brew --prefix openssl)
+HOSTLOADLIBES_sign-file = -L$(OPENSSL_PREFIX)/lib -lcrypto
+HOSTLOADLIBES_extract-cert = -L$(OPENSSL_PREFIX)/lib -lcrypto
+else
 HOSTLOADLIBES_sign-file = -lcrypto
-HOSTLOADLIBES_extract-cert = -lcrypto -ldl
+HOSTLOADLIBES_extract-cert = -lcrypto
+endif
 
 always		:= $(hostprogs-y) $(hostprogs-m)
 

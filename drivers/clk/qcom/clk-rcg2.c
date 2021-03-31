@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -210,9 +210,11 @@ static unsigned long
 clk_rcg2_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 {
 	struct clk_rcg2 *rcg = to_clk_rcg2(hw);
+	const struct freq_tbl *f_curr;
 	u32 cfg, hid_div, m = 0, n = 0, mode = 0, mask;
 
-	if (rcg->enable_safe_config && !clk_hw_is_prepared(hw)) {
+	if (rcg->enable_safe_config && (!clk_hw_is_prepared(hw)
+				|| !clk_hw_is_enabled(hw))) {
 		if (!rcg->current_freq)
 			rcg->current_freq = cxo_f.freq;
 		return rcg->current_freq;
@@ -232,9 +234,17 @@ clk_rcg2_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 		mode >>= CFG_MODE_SHIFT;
 	}
 
-	mask = BIT(rcg->hid_width) - 1;
-	hid_div = cfg >> CFG_SRC_DIV_SHIFT;
-	hid_div &= mask;
+	if (rcg->enable_safe_config) {
+		f_curr = qcom_find_freq(rcg->freq_tbl, rcg->current_freq);
+		if (!f_curr)
+			return -EINVAL;
+
+		hid_div = f_curr->pre_div;
+	} else {
+		mask = BIT(rcg->hid_width) - 1;
+		hid_div = cfg >> CFG_SRC_DIV_SHIFT;
+		hid_div &= mask;
+	}
 
 	return calc_rate(parent_rate, m, n, mode, hid_div);
 }
@@ -301,6 +311,39 @@ static int clk_rcg2_determine_rate(struct clk_hw *hw,
 	struct clk_rcg2 *rcg = to_clk_rcg2(hw);
 
 	return _freq_tbl_determine_rate(hw, rcg->freq_tbl, req);
+}
+
+static bool clk_rcg2_current_config(struct clk_rcg2 *rcg,
+				    const struct freq_tbl *f)
+{
+	struct clk_hw *hw = &rcg->clkr.hw;
+	u32 cfg, mask, new_cfg;
+	int index;
+
+	if (rcg->mnd_width) {
+		mask = BIT(rcg->mnd_width) - 1;
+		regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + M_REG, &cfg);
+		if ((cfg & mask) != (f->m & mask))
+			return false;
+
+		regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + N_REG, &cfg);
+		if ((cfg & mask) != (~(f->n - f->m) & mask))
+			return false;
+	}
+
+	mask = (BIT(rcg->hid_width) - 1) | CFG_SRC_SEL_MASK;
+
+	index = qcom_find_src_index(hw, rcg->parent_map, f->src);
+
+	new_cfg = ((f->pre_div << CFG_SRC_DIV_SHIFT) |
+		(rcg->parent_map[index].cfg << CFG_SRC_SEL_SHIFT)) & mask;
+
+	regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + CFG_REG, &cfg);
+
+	if (new_cfg != (cfg & mask))
+		return false;
+
+	return true;
 }
 
 static int clk_rcg2_configure(struct clk_rcg2 *rcg, const struct freq_tbl *f)
@@ -974,6 +1017,8 @@ static int clk_byte2_set_rate(struct clk_hw *hw, unsigned long rate,
 	for (i = 0; i < num_parents; i++) {
 		if (cfg == rcg->parent_map[i].cfg) {
 			f.src = rcg->parent_map[i].src;
+			if (clk_rcg2_current_config(rcg, &f))
+				return 0;
 			return clk_rcg2_configure(rcg, &f);
 		}
 	}

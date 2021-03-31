@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016, 2018 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,15 +16,10 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #include "wmi_tlv_platform.c"
 #include "wmi_tlv_defs.h"
 #include "wmi_version.h"
+#include "qdf_module.h"
 
 #define WMITLV_GET_ATTRIB_NUM_TLVS  0xFFFFFFFF
 
@@ -53,45 +45,45 @@
 	WMITLV_SET_ATTRB0(id), \
 	WMITLV_TABLE(id,SET_TLV_ATTRIB, NULL, 0)
 
-A_UINT32 cmd_attr_list[] = {
+uint32_t cmd_attr_list[] = {
 	WMITLV_ALL_CMD_LIST(WMITLV_GET_CMD_EVT_ATTRB_LIST)
 };
 
-A_UINT32 evt_attr_list[] = {
+uint32_t evt_attr_list[] = {
 	WMITLV_ALL_EVT_LIST(WMITLV_GET_CMD_EVT_ATTRB_LIST)
 };
 
 #ifdef NO_DYNAMIC_MEM_ALLOC
 static wmitlv_cmd_param_info *g_wmi_static_cmd_param_info_buf;
-A_UINT32 g_wmi_static_max_cmd_param_tlvs;
+uint32_t g_wmi_static_max_cmd_param_tlvs;
 #endif
 
 
 /**
  * wmitlv_set_static_param_tlv_buf() - tlv helper function
  * @param_tlv_buf: tlv buffer parameter
- * @max_tlvs_accomodated: max no of tlv entries
+ * @max_tlvs_accommodated: max no of tlv entries
  *
  *
  * WMI TLV Helper function to set the static cmd_param_tlv structure
- * and number of TLVs that can be accomodated in the structure.
+ * and number of TLVs that can be accommodated in the structure.
  * This function should be used when dynamic memory allocation is not
  * supported. When dynamic memory allocation is not supported by any
  * component then NO_DYNAMIC_MEMALLOC macro has to be defined in respective
  * tlv_platform.c file. And respective component has to allocate
- * cmd_param_tlv structure buffer to accomodate whatever number of TLV's.
- * Both the buffer address and number of TLV's that can be accomodated in
+ * cmd_param_tlv structure buffer to accommodate whatever number of TLV's.
+ * Both the buffer address and number of TLV's that can be accommodated in
  * the buffer should be sent as arguments to this function.
  *
  * Return None
  */
 void
 wmitlv_set_static_param_tlv_buf(void *param_tlv_buf,
-				A_UINT32 max_tlvs_accomodated)
+				uint32_t max_tlvs_accommodated)
 {
 #ifdef NO_DYNAMIC_MEM_ALLOC
 	g_wmi_static_cmd_param_info_buf = param_tlv_buf;
-	g_wmi_static_max_cmd_param_tlvs = max_tlvs_accomodated;
+	g_wmi_static_max_cmd_param_tlvs = max_tlvs_accommodated;
 #endif
 }
 
@@ -109,12 +101,12 @@ wmitlv_set_static_param_tlv_buf(void *param_tlv_buf,
  * Return: 0 if success. Return >=1 if failure.
  */
 static
-A_UINT32 wmitlv_get_attributes(A_UINT32 is_cmd_id, A_UINT32 cmd_event_id,
-			       A_UINT32 curr_tlv_order,
+uint32_t wmitlv_get_attributes(uint32_t is_cmd_id, uint32_t cmd_event_id,
+			       uint32_t curr_tlv_order,
 			       wmitlv_attributes_struc *tlv_attr_ptr)
 {
-	A_UINT32 i, base_index, num_tlvs, num_entries;
-	A_UINT32 *pAttrArrayList;
+	uint32_t i, base_index, num_tlvs, num_entries;
+	uint32_t *pAttrArrayList;
 
 	if (is_cmd_id) {
 		pAttrArrayList = &cmd_attr_list[0];
@@ -197,15 +189,15 @@ A_UINT32 wmitlv_get_attributes(A_UINT32 is_cmd_id, A_UINT32 cmd_event_id,
  */
 static int
 wmitlv_check_tlv_params(void *os_handle, void *param_struc_ptr,
-			A_UINT32 param_buf_len, A_UINT32 is_cmd_id,
-			A_UINT32 wmi_cmd_event_id)
+			uint32_t param_buf_len, uint32_t is_cmd_id,
+			uint32_t wmi_cmd_event_id)
 {
 	wmitlv_attributes_struc attr_struct_ptr;
-	A_UINT32 buf_idx = 0;
-	A_UINT32 tlv_index = 0;
-	A_UINT8 *buf_ptr = (unsigned char *)param_struc_ptr;
-	A_UINT32 expected_num_tlvs, expected_tlv_len;
-	A_INT32 error = -1;
+	uint32_t buf_idx = 0;
+	uint32_t tlv_index = 0;
+	uint8_t *buf_ptr = (unsigned char *)param_struc_ptr;
+	uint32_t expected_num_tlvs, expected_tlv_len;
+	int32_t error = -1;
 
 	/* Get the number of TLVs for this command/event */
 	if (wmitlv_get_attributes
@@ -222,9 +214,9 @@ wmitlv_check_tlv_params(void *os_handle, void *param_struc_ptr,
 	expected_num_tlvs = attr_struct_ptr.cmd_num_tlv;
 
 	while ((buf_idx + WMI_TLV_HDR_SIZE) <= param_buf_len) {
-		A_UINT32 curr_tlv_tag =
+		uint32_t curr_tlv_tag =
 			WMITLV_GET_TLVTAG(WMITLV_GET_HDR(buf_ptr));
-		A_UINT32 curr_tlv_len =
+		uint32_t curr_tlv_len =
 			WMITLV_GET_TLVLEN(WMITLV_GET_HDR(buf_ptr));
 
 		if ((buf_idx + WMI_TLV_HDR_SIZE + curr_tlv_len) > param_buf_len) {
@@ -286,7 +278,7 @@ wmitlv_check_tlv_params(void *os_handle, void *param_struc_ptr,
 				    attr_struct_ptr.tag_id) {
 					expected_tlv_len =
 						roundup(expected_tlv_len,
-							sizeof(A_UINT32));
+							sizeof(uint32_t));
 				}
 
 				if (curr_tlv_len != expected_tlv_len) {
@@ -327,10 +319,10 @@ wmitlv_check_tlv_params(void *os_handle, void *param_struc_ptr,
 
 					if (curr_tlv_tag ==
 					    WMITLV_TAG_ARRAY_STRUC) {
-						A_UINT8 *tlv_buf_ptr = NULL;
-						A_UINT32 in_tlv_len;
-						A_UINT32 idx;
-						A_UINT32 num_of_elems;
+						uint8_t *tlv_buf_ptr = NULL;
+						uint32_t in_tlv_len;
+						uint32_t idx;
+						uint32_t num_of_elems;
 
 						/* Verify length of inner TLVs */
 
@@ -403,11 +395,11 @@ wmitlv_check_tlv_params(void *os_handle, void *param_struc_ptr,
 		}
 
 		/* Check TLV length is aligned to 4 bytes or not */
-		if ((curr_tlv_len % sizeof(A_UINT32)) != 0) {
+		if ((curr_tlv_len % sizeof(uint32_t)) != 0) {
 			wmi_tlv_print_error
 				("%s: ERROR: TLV length %d for Cmd=0x%x is not aligned to %zu bytes\n",
 				__func__, curr_tlv_len, wmi_cmd_event_id,
-				sizeof(A_UINT32));
+				sizeof(uint32_t));
 			goto Error_wmitlv_check_tlv_params;
 		}
 
@@ -442,9 +434,9 @@ Error_wmitlv_check_tlv_params:
  */
 int
 wmitlv_check_event_tlv_params(void *os_handle, void *param_struc_ptr,
-			      A_UINT32 param_buf_len, A_UINT32 wmi_cmd_event_id)
+			      uint32_t param_buf_len, uint32_t wmi_cmd_event_id)
 {
-	A_UINT32 is_cmd_id = 0;
+	uint32_t is_cmd_id = 0;
 
 	return wmitlv_check_tlv_params
 			(os_handle, param_struc_ptr, param_buf_len, is_cmd_id,
@@ -466,15 +458,16 @@ wmitlv_check_event_tlv_params(void *os_handle, void *param_struc_ptr,
  */
 int
 wmitlv_check_command_tlv_params(void *os_handle, void *param_struc_ptr,
-				A_UINT32 param_buf_len,
-				A_UINT32 wmi_cmd_event_id)
+				uint32_t param_buf_len,
+				uint32_t wmi_cmd_event_id)
 {
-	A_UINT32 is_cmd_id = 1;
+	uint32_t is_cmd_id = 1;
 
 	return wmitlv_check_tlv_params
 			(os_handle, param_struc_ptr, param_buf_len, is_cmd_id,
 			wmi_cmd_event_id);
 }
+qdf_export_symbol(wmitlv_check_command_tlv_params);
 
 /**
  * wmitlv_check_and_pad_tlvs() - tlv helper function
@@ -493,20 +486,20 @@ wmitlv_check_command_tlv_params(void *os_handle, void *param_struc_ptr,
  */
 static int
 wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
-			  A_UINT32 param_buf_len, A_UINT32 is_cmd_id,
-			  A_UINT32 wmi_cmd_event_id, void **wmi_cmd_struct_ptr)
+			  uint32_t param_buf_len, uint32_t is_cmd_id,
+			  uint32_t wmi_cmd_event_id, void **wmi_cmd_struct_ptr)
 {
 	wmitlv_attributes_struc attr_struct_ptr;
-	A_UINT32 buf_idx = 0;
-	A_UINT32 tlv_index = 0;
-	A_UINT32 num_of_elems = 0;
+	uint32_t buf_idx = 0;
+	uint32_t tlv_index = 0;
+	uint32_t num_of_elems = 0;
 	int tlv_size_diff = 0;
-	A_UINT8 *buf_ptr = (unsigned char *)param_struc_ptr;
+	uint8_t *buf_ptr = (unsigned char *)param_struc_ptr;
 	wmitlv_cmd_param_info *cmd_param_tlvs_ptr = NULL;
-	A_UINT32 remaining_expected_tlvs = 0xFFFFFFFF;
-	A_UINT32 len_wmi_cmd_struct_buf;
-	A_UINT32 free_buf_len;
-	A_INT32 error = -1;
+	uint32_t remaining_expected_tlvs = 0xFFFFFFFF;
+	uint32_t len_wmi_cmd_struct_buf;
+	uint32_t free_buf_len;
+	int32_t error = -1;
 
 	/* Get the number of TLVs for this command/event */
 	if (wmitlv_get_attributes
@@ -540,9 +533,9 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 	 * for base structure of format wmi_cmd_event_id##_param_tlvs */
 	*wmi_cmd_struct_ptr = g_wmi_static_cmd_param_info_buf;
 	if (attr_struct_ptr.cmd_num_tlv > g_wmi_static_max_cmd_param_tlvs) {
-		/* Error: Expecting more TLVs that accomodated for static structure  */
+		/* Error: Expecting more TLVs that accommodated for static structure  */
 		wmi_tlv_print_error
-			("%s: Error: Expecting more TLVs that accomodated for static structure. Expected:%d Accomodated:%d\n",
+			("%s: Error: Expecting more TLVs that accommodated for static structure. Expected:%d Accomodated:%d\n",
 			__func__, attr_struct_ptr.cmd_num_tlv,
 			g_wmi_static_max_cmd_param_tlvs);
 		return error;
@@ -562,9 +555,9 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 
 	while (((buf_idx + WMI_TLV_HDR_SIZE) <= param_buf_len)
 	       && (remaining_expected_tlvs)) {
-		A_UINT32 curr_tlv_tag =
+		uint32_t curr_tlv_tag =
 			WMITLV_GET_TLVTAG(WMITLV_GET_HDR(buf_ptr));
-		A_UINT32 curr_tlv_len =
+		uint32_t curr_tlv_len =
 			WMITLV_GET_TLVLEN(WMITLV_GET_HDR(buf_ptr));
 		int num_padding_bytes = 0;
 
@@ -631,7 +624,7 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 		} else {
 			/* This TLV has a variable number of elements */
 			if (WMITLV_TAG_ARRAY_STRUC == attr_struct_ptr.tag_id) {
-				A_UINT32 in_tlv_len = 0;
+				uint32_t in_tlv_len = 0;
 
 				if (curr_tlv_len != 0) {
 					in_tlv_len =
@@ -681,9 +674,9 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 		if ((WMITLV_TAG_ARRAY_STRUC == attr_struct_ptr.tag_id) &&
 		    (tlv_size_diff != 0)) {
 			void *new_tlv_buf = NULL;
-			A_UINT8 *tlv_buf_ptr = NULL;
-			A_UINT32 in_tlv_len;
-			A_UINT32 i;
+			uint8_t *tlv_buf_ptr = NULL;
+			uint32_t in_tlv_len;
+			uint32_t i;
 
 			if (attr_struct_ptr.tag_varied_size == WMITLV_SIZE_FIX) {
 				/* This is not allowed. The tag WMITLV_TAG_ARRAY_STRUC can
@@ -725,7 +718,7 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 			wmi_tlv_OS_MEMZERO(new_tlv_buf,
 					   (num_of_elems *
 					    attr_struct_ptr.tag_struct_size));
-			tlv_buf_ptr = (A_UINT8 *) new_tlv_buf;
+			tlv_buf_ptr = (uint8_t *) new_tlv_buf;
 			for (i = 0; i < num_of_elems; i++) {
 				if (tlv_size_diff > 0) {
 					/* Incoming structure size is greater than expected
@@ -751,9 +744,9 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 			}
 #else
 			{
-				A_UINT8 *src_addr;
-				A_UINT8 *dst_addr;
-				A_UINT32 buf_mov_len;
+				uint8_t *src_addr;
+				uint8_t *dst_addr;
+				uint32_t buf_mov_len;
 
 				if (tlv_size_diff < 0) {
 					/* Incoming structure size is smaller than expected size
@@ -834,11 +827,11 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 					/* Incoming structure size is greater than expected size
 					 * then this needs shrinking for each element in the array */
 
-					/* Find amount of bytes to be shrinked for one element */
+					/* Find amount of bytes to be shrunk for one element */
 					num_padding_bytes = tlv_size_diff * -1;
 
 					/* Move subsequent elements of array up by number of bytes
-					 * to be shrinked for one element */
+					 * to be shrunk for one element */
 					tlv_buf_ptr = buf_ptr;
 					for (i = 0; i < (num_of_elems - 1); i++) {
 						src_addr =
@@ -859,7 +852,7 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 							tag_struct_size;
 					}
 
-					/* Move subsequent TLVs by number of bytes to be shrinked
+					/* Move subsequent TLVs by number of bytes to be shrunk
 					 * for all elements */
 					if (param_buf_len >
 					    (buf_idx + curr_tlv_len)) {
@@ -879,7 +872,7 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 					}
 
 					/* Update the number of padding bytes to total number of
-					 * bytes shrinked for all elements in the array */
+					 * bytes shrunk for all elements in the array */
 					num_padding_bytes =
 						num_padding_bytes * num_of_elems;
 
@@ -937,9 +930,9 @@ wmitlv_check_and_pad_tlvs(void *os_handle, void *param_struc_ptr,
 			{
 				/* Note: tlv_size_diff is a value less than zero */
 				/* Move the Subsequent TLVs by amount of bytes needs to be padded */
-				A_UINT8 *src_addr;
-				A_UINT8 *dst_addr;
-				A_UINT32 src_len;
+				uint8_t *src_addr;
+				uint8_t *dst_addr;
+				uint32_t src_len;
 
 				num_padding_bytes = (tlv_size_diff * -1);
 
@@ -997,15 +990,16 @@ Error_wmitlv_check_and_pad_tlvs:
  */
 int
 wmitlv_check_and_pad_event_tlvs(void *os_handle, void *param_struc_ptr,
-				A_UINT32 param_buf_len,
-				A_UINT32 wmi_cmd_event_id,
+				uint32_t param_buf_len,
+				uint32_t wmi_cmd_event_id,
 				void **wmi_cmd_struct_ptr)
 {
-	A_UINT32 is_cmd_id = 0;
+	uint32_t is_cmd_id = 0;
 	return wmitlv_check_and_pad_tlvs
 			(os_handle, param_struc_ptr, param_buf_len, is_cmd_id,
 			wmi_cmd_event_id, wmi_cmd_struct_ptr);
 }
+qdf_export_symbol(wmitlv_check_and_pad_event_tlvs);
 
 /**
  * wmitlv_check_and_pad_command_tlvs() - tlv helper function
@@ -1022,11 +1016,11 @@ wmitlv_check_and_pad_event_tlvs(void *os_handle, void *param_struc_ptr,
  */
 int
 wmitlv_check_and_pad_command_tlvs(void *os_handle, void *param_struc_ptr,
-				  A_UINT32 param_buf_len,
-				  A_UINT32 wmi_cmd_event_id,
+				  uint32_t param_buf_len,
+				  uint32_t wmi_cmd_event_id,
 				  void **wmi_cmd_struct_ptr)
 {
-	A_UINT32 is_cmd_id = 1;
+	uint32_t is_cmd_id = 1;
 	return wmitlv_check_and_pad_tlvs
 			(os_handle, param_struc_ptr, param_buf_len, is_cmd_id,
 			wmi_cmd_event_id, wmi_cmd_struct_ptr);
@@ -1043,8 +1037,8 @@ wmitlv_check_and_pad_command_tlvs(void *os_handle, void *param_struc_ptr,
  *
  * Return: none
  */
-static void wmitlv_free_allocated_tlvs(A_UINT32 is_cmd_id,
-				       A_UINT32 cmd_event_id,
+static void wmitlv_free_allocated_tlvs(uint32_t is_cmd_id,
+				       uint32_t cmd_event_id,
 				       void **wmi_cmd_struct_ptr)
 {
 	void *ptr = *wmi_cmd_struct_ptr;
@@ -1106,7 +1100,7 @@ break;
  *
  * Return: none
  */
-void wmitlv_free_allocated_command_tlvs(A_UINT32 cmd_event_id,
+void wmitlv_free_allocated_command_tlvs(uint32_t cmd_event_id,
 					void **wmi_cmd_struct_ptr)
 {
 	wmitlv_free_allocated_tlvs(1, cmd_event_id, wmi_cmd_struct_ptr);
@@ -1122,11 +1116,12 @@ void wmitlv_free_allocated_command_tlvs(A_UINT32 cmd_event_id,
  *
  * Return: none
  */
-void wmitlv_free_allocated_event_tlvs(A_UINT32 cmd_event_id,
+void wmitlv_free_allocated_event_tlvs(uint32_t cmd_event_id,
 				      void **wmi_cmd_struct_ptr)
 {
 	wmitlv_free_allocated_tlvs(0, cmd_event_id, wmi_cmd_struct_ptr);
 }
+qdf_export_symbol(wmitlv_free_allocated_event_tlvs);
 
 /**
  * wmi_versions_are_compatible() - tlv helper function
@@ -1176,12 +1171,12 @@ wmi_versions_can_downgrade(int num_whitelist,
 			   wmi_abi_version *opp_vers,
 			   wmi_abi_version *out_vers)
 {
-	A_UINT8 can_try_to_downgrade;
-	A_UINT32 my_major_vers = WMI_VER_GET_MAJOR(my_vers->abi_version_0);
-	A_UINT32 my_minor_vers = WMI_VER_GET_MINOR(my_vers->abi_version_0);
-	A_UINT32 opp_major_vers = WMI_VER_GET_MAJOR(opp_vers->abi_version_0);
-	A_UINT32 opp_minor_vers = WMI_VER_GET_MINOR(opp_vers->abi_version_0);
-	A_UINT32 downgraded_minor_vers;
+	uint8_t can_try_to_downgrade;
+	uint32_t my_major_vers = WMI_VER_GET_MAJOR(my_vers->abi_version_0);
+	uint32_t my_minor_vers = WMI_VER_GET_MINOR(my_vers->abi_version_0);
+	uint32_t opp_major_vers = WMI_VER_GET_MAJOR(opp_vers->abi_version_0);
+	uint32_t opp_minor_vers = WMI_VER_GET_MINOR(opp_vers->abi_version_0);
+	uint32_t downgraded_minor_vers;
 
 	if ((my_vers->abi_version_ns_0 != opp_vers->abi_version_ns_0) ||
 	    (my_vers->abi_version_ns_1 != opp_vers->abi_version_ns_1) ||
@@ -1218,7 +1213,7 @@ wmi_versions_can_downgrade(int num_whitelist,
 	/* Try to see we can downgrade the supported version */
 	downgraded_minor_vers = my_minor_vers;
 	while (downgraded_minor_vers > opp_minor_vers) {
-		A_UINT8 downgraded = false;
+		uint8_t downgraded = false;
 		int i;
 
 		for (i = 0; i < num_whitelist; i++) {

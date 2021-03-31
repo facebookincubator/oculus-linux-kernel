@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /* ------------------------------------------------------------------------------ */
@@ -83,7 +74,7 @@
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR, ## args)
 #define A_PRINTF_LOG(args ...) \
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR, ## args)
-#define A_SNPRINTF(buf, len, args ...)   snprintf (buf, len, args)
+#define A_SNPRINTF(buf, len, args ...)   snprintf(buf, len, args)
 
 /*
  * Timer Functions
@@ -138,13 +129,13 @@ typedef struct timer_list A_TIMER;
 extern unsigned int panic_on_assert;
 #define A_ASSERT(expr)	\
 	if (!(expr)) {	 \
-		printk(KERN_ALERT "Debug Assert Caught, File %s, Line: %d, Test:%s \n", __FILE__, __LINE__, # expr); \
+		printk(KERN_ALERT "Debug Assert Caught, File %s, Line: %d, Test:%s\n", __FILE__, __LINE__, # expr); \
 		if (panic_on_assert) panic(# expr);								  \
 	}
 #else
 #define A_ASSERT(expr)	\
 	if (!(expr)) {	 \
-		printk(KERN_ALERT "Debug Assert Caught, File %s, Line: %d, Test:%s \n", __FILE__, __LINE__, # expr); \
+		printk(KERN_ALERT "Debug Assert Caught, File %s, Line: %d, Test:%s\n", __FILE__, __LINE__, # expr); \
 	}
 #endif
 #else
@@ -271,14 +262,14 @@ void a_netbuf_queue_init(A_NETBUF_QUEUE_T *q);
 
 #ifdef ANDROID
 #ifndef err
-#include <errno.h>
+#include <linux/errno.h>
 #define err(_s, args ...) do { \
 		fprintf(stderr, "%s: line %d ", __FILE__, __LINE__); \
 		fprintf(stderr, args); fprintf(stderr, ": %d\n", errno); \
 		exit(_s); } while (0)
 #endif
 #else
-#include <err.h>
+#include <linux/err.h>
 #endif
 
 #endif /* __KERNEL__ */

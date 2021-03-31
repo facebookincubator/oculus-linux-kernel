@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,6 +36,7 @@
 #include "msm_camera_io_util.h"
 #include <linux/debugfs.h>
 #include "cam_smmu_api.h"
+#include "msm_cam_cx_ipeak.h"
 
 #define MSM_CPP_DRV_NAME "msm_cpp"
 
@@ -1460,15 +1461,6 @@ static int cpp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		VBIF_CLIENT_CPP, cpp_vbif_error_handler);
 
 	if (cpp_dev->cpp_open_cnt == 1) {
-		rc = cpp_init_hardware(cpp_dev);
-		if (rc < 0) {
-			cpp_dev->cpp_open_cnt--;
-			cpp_dev->cpp_subscribe_list[i].active = 0;
-			cpp_dev->cpp_subscribe_list[i].vfh = NULL;
-			mutex_unlock(&cpp_dev->mutex);
-			return rc;
-		}
-
 		rc = cpp_init_mem(cpp_dev);
 		if (rc < 0) {
 			pr_err("Error: init memory fail\n");
@@ -1479,6 +1471,14 @@ static int cpp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 			return rc;
 		}
 
+		rc = cpp_init_hardware(cpp_dev);
+		if (rc < 0) {
+			cpp_dev->cpp_open_cnt--;
+			cpp_dev->cpp_subscribe_list[i].active = 0;
+			cpp_dev->cpp_subscribe_list[i].vfh = NULL;
+			mutex_unlock(&cpp_dev->mutex);
+			return rc;
+		}
 		cpp_dev->state = CPP_STATE_IDLE;
 
 		CPP_DBG("Invoking msm_ion_client_create()\n");
@@ -1537,7 +1537,9 @@ static int cpp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	}
 
 	if (cpp_dev->turbo_vote == 1) {
-		rc = cx_ipeak_update(cpp_dev->cpp_cx_ipeak, false);
+		pr_debug("%s:cx_ipeak_update unvote. ipeak bit %d\n",
+			__func__, cpp_dev->cx_ipeak_bit);
+		rc = cam_cx_ipeak_unvote_cx_ipeak(cpp_dev->cx_ipeak_bit);
 			if (rc)
 				pr_err("cx_ipeak_update failed");
 			else
@@ -1576,6 +1578,7 @@ static int cpp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 			msm_camera_io_r(cpp_dev->cpp_hw_base + 0x88));
 		pr_debug("DEBUG_R1: 0x%x\n",
 			msm_camera_io_r(cpp_dev->cpp_hw_base + 0x8C));
+
 		msm_camera_io_w(0x0, cpp_dev->base + MSM_CPP_MICRO_CLKEN_CTL);
 		msm_cpp_clear_timer(cpp_dev);
 		cpp_release_hardware(cpp_dev);
@@ -1630,6 +1633,7 @@ static int msm_cpp_buffer_ops(struct cpp_device *cpp_dev,
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF:
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE:
 	case VIDIOC_MSM_BUF_MNGR_GET_BUF:
+	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR:
 	default: {
 		struct msm_buf_mngr_info *buff_mgr_info =
 			(struct msm_buf_mngr_info *)arg;
@@ -2682,20 +2686,6 @@ static int msm_cpp_cfg_frame(struct cpp_device *cpp_dev,
 		return -EINVAL;
 	}
 
-	if (stripe_base == UINT_MAX || new_frame->num_strips >
-		(UINT_MAX - 1 - stripe_base) / stripe_size) {
-		pr_err("Invalid frame message,num_strips %d is large\n",
-			new_frame->num_strips);
-		return -EINVAL;
-	}
-
-	if (stripe_base == UINT_MAX || new_frame->num_strips >
-		(UINT_MAX - 1 - stripe_base) / stripe_size) {
-		pr_err("Invalid frame message,num_strips %d is large\n",
-			new_frame->num_strips);
-		return -EINVAL;
-	}
-
 	if ((stripe_base + new_frame->num_strips * stripe_size + 1) !=
 		new_frame->msg_len) {
 		pr_err("Invalid frame message,len=%d,expected=%d\n",
@@ -3122,7 +3112,9 @@ unsigned long cpp_cx_ipeak_update(struct cpp_device *cpp_dev,
 	if ((clock >= cpp_dev->hw_info.freq_tbl
 		[(cpp_dev->hw_info.freq_tbl_count) - 1]) &&
 		(cpp_dev->turbo_vote == 0)) {
-		ret = cx_ipeak_update(cpp_dev->cpp_cx_ipeak, true);
+		pr_debug("%s: clk is more than Nominal cpp, ipeak bit %d\n",
+			__func__, cpp_dev->cx_ipeak_bit);
+		ret = cam_cx_ipeak_update_vote_cx_ipeak(cpp_dev->cx_ipeak_bit);
 		if (ret) {
 			pr_err("cx_ipeak voting failed setting clock below turbo");
 			clock = cpp_dev->hw_info.freq_tbl
@@ -3135,7 +3127,10 @@ unsigned long cpp_cx_ipeak_update(struct cpp_device *cpp_dev,
 		[(cpp_dev->hw_info.freq_tbl_count) - 1]) {
 		clock_rate = msm_cpp_set_core_clk(cpp_dev, clock, idx);
 		if (cpp_dev->turbo_vote == 1) {
-			ret = cx_ipeak_update(cpp_dev->cpp_cx_ipeak, false);
+			pr_debug("%s:clk is less than Nominal, ipeak bit %d\n",
+				__func__, cpp_dev->cx_ipeak_bit);
+			ret = cam_cx_ipeak_unvote_cx_ipeak(
+				cpp_dev->cx_ipeak_bit);
 			if (ret)
 				pr_err("cx_ipeak unvoting failed");
 			else
@@ -3637,7 +3632,7 @@ STREAM_BUFF_END:
 			break;
 		}
 		buff_mgr_info.frame_id = frame_info.frame_id;
-		rc = msm_cpp_buffer_ops(cpp_dev, VIDIOC_MSM_BUF_MNGR_BUF_DONE,
+		rc = msm_cpp_buffer_ops(cpp_dev, VIDIOC_MSM_BUF_MNGR_BUF_ERROR,
 			0x0, &buff_mgr_info);
 		if (rc < 0) {
 			pr_err("error in buf done\n");
@@ -4618,8 +4613,12 @@ static int cpp_probe(struct platform_device *pdev)
 	if (of_find_property(pdev->dev.of_node, "qcom,cpp-cx-ipeak", NULL)) {
 		cpp_dev->cpp_cx_ipeak = cx_ipeak_register(
 			pdev->dev.of_node, "qcom,cpp-cx-ipeak");
-		if (cpp_dev->cpp_cx_ipeak)
-			CPP_DBG("Cx ipeak Registration Successful ");
+		if (cpp_dev->cpp_cx_ipeak) {
+			cam_cx_ipeak_register_cx_ipeak(cpp_dev->cpp_cx_ipeak,
+				&cpp_dev->cx_ipeak_bit);
+			pr_err("%s register cx_ipeak received bit %d\n",
+				__func__, cpp_dev->cx_ipeak_bit);
+		}
 		else
 			pr_err("Cx ipeak Registration Unsuccessful");
 	}
@@ -4805,6 +4804,7 @@ static struct platform_driver cpp_driver = {
 		.name = MSM_CPP_DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = msm_cpp_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 

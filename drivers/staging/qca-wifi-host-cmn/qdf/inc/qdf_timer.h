@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2016, 2018-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: qdf_timer
  * This file abstracts OS timers running in soft IRQ context.
@@ -36,15 +27,14 @@
 #include <qdf_types.h>
 #include <i_qdf_timer.h>
 
-/* Platform timer object */
-typedef __qdf_timer_t qdf_timer_t;
+typedef struct __qdf_timer_t qdf_timer_t;
 
 /**
  * qdf_timer_init() - initialize a timer
  * @hdl: OS handle
  * @timer: Timer object pointer
  * @func: Timer function
- * @arg: Arguement of timer function
+ * @arg: Argument of timer function
  * @type: deferrable or non deferrable timer type
  *
  * Timer type QDF_TIMER_TYPE_SW means its a deferrable sw timer which will
@@ -52,32 +42,33 @@ typedef __qdf_timer_t qdf_timer_t;
  * Timer type QDF_TIMER_TYPE_WAKE_APPS means its a non-deferrable timer which
  * will cause CPU wake up on expiry
  *
- * Return: none
+ * Return: QDF_STATUS
  */
-static inline void qdf_timer_init(qdf_handle_t hdl, qdf_timer_t *timer,
-				  qdf_timer_func_t func, void *arg,
-				  QDF_TIMER_TYPE type)
+static inline QDF_STATUS
+qdf_timer_init(qdf_handle_t hdl, qdf_timer_t *timer, qdf_timer_func_t func,
+	       void *arg, QDF_TIMER_TYPE type)
 {
-	__qdf_timer_init(hdl, timer, func, arg, type);
+	return __qdf_timer_init(timer, func, arg, type);
 }
 
 /**
- * qdf_timer_start() - start a one-shot timer
- * @timer: Timer object pointer
+ * qdf_timer_start() - start a timer
+ * @timer: timer to start
  * @msec: Expiration period in milliseconds
  *
  * Return: none
  */
-static inline void
-qdf_timer_start(qdf_timer_t *timer, int msec)
+static inline void qdf_timer_start(qdf_timer_t *timer, int msec)
 {
 	__qdf_timer_start(timer, msec);
 }
 
 /**
- * qdf_timer_mod() - modify existing timer to new timeout value
- * @timer: Timer object pointer
+ * qdf_timer_mod() - modify the timeout on a timer
+ * @timer: timer to modify
  * @msec: Expiration period in milliseconds
+ *
+ * If @timer is not active, it will be activated.
  *
  * Return: none
  */
@@ -87,39 +78,40 @@ static inline void qdf_timer_mod(qdf_timer_t *timer, int msec)
 }
 
 /**
- * qdf_timer_stop() - cancel qdf timer
- * @timer: Timer object pointer
+ * qdf_timer_stop() - cancel a timer
+ * @timer: timer to cancel
  *
- * return: bool TRUE Timer was cancelled and deactived
- * FALSE Timer was cancelled but already got fired.
+ * Note! The timer callback may be executing when this function call returns.
+ * If you want to ensure that it is not, use qdf_timer_sync_cancel() instead.
  *
- * The function will return after any running timer completes.
+ * Return: true if @timer was deactivated, false if @timer was not active
  */
 static inline bool qdf_timer_stop(qdf_timer_t *timer)
 {
 	return __qdf_timer_stop(timer);
 }
 
-
 /**
  * qdf_timer_sync_cancel - Cancel a timer synchronously
- * The function will return after any running timer completes.
- * @timer: timer object pointer
+ * @timer: timer to cancel
  *
- * return: bool TRUE timer was cancelled and deactived
- * FALSE timer was not cancelled
+ * If the timer callback is already running, this function blocks until it
+ * completes.
+ *
+ * Return: true if @timer was deactivated, false if @timer was not active
  */
 static inline bool qdf_timer_sync_cancel(qdf_timer_t *timer)
 {
 	return __qdf_timer_sync_cancel(timer);
 }
 
-
 /**
- * qdf_timer_free() - free qdf timer
- * @timer: Timer object pointer
+ * qdf_timer_free() - free a timer
+ * @timer: timer to free
  *
- * The function will return after any running timer completes.
+ * If the timer callback is already running, this function blocks until it
+ * completes.
+ *
  * Return: none
  */
 static inline void qdf_timer_free(qdf_timer_t *timer)

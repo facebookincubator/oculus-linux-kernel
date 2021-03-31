@@ -1,0 +1,34 @@
+* Kinetis K61 CAN *
+
+This driver implements SPI slave protocol for Freescale K61 CAN controller.
+
+Required properties:
+  - compatible: Should be "fsl,k61".
+  - reg: Should contain SPI chip select.
+  - interrupt-parent: Should specify interrupt controller for the interrupt.
+  - interrupts: Should contain IRQ line for the CAN controller.
+
+Optional properties:
+  - reset-gpio: Reference to the GPIO connected to the reset input.
+  - pinctrl-names : Names corresponding to the numbered pinctrl states.
+  - pinctrl-0 : This explains the active state of the GPIO line.
+  - pinctrl-1 : This explains the suspend state of the GPIO line.
+  - bits-per-word: Indicate how many bits are in a SPI frame. e.g.: 8, 16, 32.
+                   Default to 16.
+  - reset-delay-msec: Delay in milliseconds to be applied after resetting the chip.
+                      Default to 1 ms.
+
+Example:
+
+	can-controller@0 {
+		compatible = "fsl,k61";
+		reg = <0>;
+		interrupt-parent = <&tlmm_pinmux>;
+		interrupts = <25 0>;
+		reset-gpio = <&tlmm_pinmux 11 0x1>;
+		pinctrl-names = "active", "sleep";
+		pinctrl-0 = <&can_rst_on>;
+		pinctrl-1 = <&can_rst_off>;
+		bits-per-word = <8>;
+		reset-delay-msec = <100>;
+	};

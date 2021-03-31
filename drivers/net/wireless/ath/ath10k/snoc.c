@@ -1,6 +1,6 @@
 /* Copyright (c) 2005-2011 Atheros Communications Inc.
  * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
- * Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,17 +17,22 @@
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/bitops.h>
-
+#include <linux/suspend.h>
 #include "core.h"
 #include "debug.h"
 #include "hif.h"
 #include "htc.h"
 #include "ce.h"
 #include "snoc.h"
-#include <soc/qcom/icnss.h>
+#include "qmi.h"
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#define WCN3990_MAX_IRQ 12
+#include <linux/regulator/consumer.h>
+#include <linux/clk.h>
+
+#define WCN3990_MAX_IRQ	12
+#define WCN3990_WAKE_IRQ_CE	2
+
 const char *ce_name[WCN3990_MAX_IRQ] = {
 	"WLAN_CE_0",
 	"WLAN_CE_1",
@@ -46,6 +51,7 @@ const char *ce_name[WCN3990_MAX_IRQ] = {
 #define ATH10K_SNOC_TARGET_WAIT 3000
 #define ATH10K_SNOC_NUM_WARM_RESET_ATTEMPTS 3
 #define SNOC_HIF_POWER_DOWN_DELAY 30
+#define ATH10K_MAX_PROP_SIZE 32
 
 static void ath10k_snoc_buffer_cleanup(struct ath10k *ar);
 static int ath10k_snoc_request_irq(struct ath10k *ar);
@@ -96,8 +102,8 @@ static struct ce_attr host_ce_config_wlan[] = {
 	/* CE4: host->target HTT */
 	{
 		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
-		.src_nentries = 256,
-		.src_sz_max = 256,
+		.src_nentries = 2048,
+		.src_sz_max = 2048,
 		.dest_nentries = 0,
 		.send_cb = ath10k_snoc_htt_tx_cb,
 	},
@@ -106,8 +112,8 @@ static struct ce_attr host_ce_config_wlan[] = {
 	{
 		.flags = CE_ATTR_FLAGS,
 		.src_nentries = 0,
-		.src_sz_max = 512,
-		.dest_nentries = 512,
+		.src_sz_max = 0,
+		.dest_nentries = 0,
 		.recv_cb = ath10k_snoc_htt_rx_cb,
 	},
 
@@ -413,9 +419,23 @@ static struct ath10k_shadow_reg_cfg target_shadow_reg_cfg_map[] = {
 		{ 11, WCN3990_DST_WR_INDEX_OFFSET},
 };
 
-void ath10k_snoc_write32(void *ar, u32 offset, u32 value)
+static bool ath10k_snoc_has_fw_crashed(struct ath10k *ar)
 {
-	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv((struct ath10k *)ar);
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	return atomic_read(&ar_snoc->fw_crashed);
+}
+
+static void ath10k_snoc_fw_crashed_clear(struct ath10k *ar)
+{
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	atomic_set(&ar_snoc->fw_crashed, 0);
+}
+
+void ath10k_snoc_write32(struct ath10k *ar, u32 offset, u32 value)
+{
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 
 	if (!ar_snoc)
 		return;
@@ -423,9 +443,9 @@ void ath10k_snoc_write32(void *ar, u32 offset, u32 value)
 	iowrite32(value, ar_snoc->mem + offset);
 }
 
-u32 ath10k_snoc_read32(void *ar, u32 offset)
+u32 ath10k_snoc_read32(struct ath10k *ar, u32 offset)
 {
-	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv((struct ath10k *)ar);
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 	u32 val;
 
 	if (!ar_snoc)
@@ -462,9 +482,9 @@ static int __ath10k_snoc_rx_post_buf(struct ath10k_snoc_pipe *pipe)
 
 	ATH10K_SKB_RXCB(skb)->paddr = paddr;
 
-	spin_lock_bh(&ar_snoc->ce_lock);
+	spin_lock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	ret = __ath10k_ce_rx_post_buf(ce_pipe, skb, paddr);
-	spin_unlock_bh(&ar_snoc->ce_lock);
+	spin_unlock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	if (ret) {
 		dma_unmap_single(ar->dev, paddr, skb->len + skb_tailroom(skb),
 				 DMA_FROM_DEVICE);
@@ -488,9 +508,9 @@ static void ath10k_snoc_rx_post_pipe(struct ath10k_snoc_pipe *pipe)
 	if (!ce_pipe->dest_ring)
 		return;
 
-	spin_lock_bh(&ar_snoc->ce_lock);
+	spin_lock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	num = __ath10k_ce_rx_num_free_bufs(ce_pipe);
-	spin_unlock_bh(&ar_snoc->ce_lock);
+	spin_unlock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	while (num--) {
 		ret = __ath10k_snoc_rx_post_buf(pipe);
 		if (ret) {
@@ -626,34 +646,25 @@ static int ath10k_snoc_hif_tx_sg(struct ath10k *ar, u8 pipe_id,
 	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 	struct ath10k_snoc_pipe *snoc_pipe;
 	struct ath10k_ce_pipe *ce_pipe;
-	struct ath10k_ce_ring *src_ring;
-	unsigned int nentries_mask;
-	unsigned int sw_index;
-	unsigned int write_index;
 	int err, i = 0;
 
 	if (!ar_snoc)
 		return  -EINVAL;
 
+	if (atomic_read(&ar_snoc->fw_crashed))
+		return -ESHUTDOWN;
+
 	snoc_pipe = &ar_snoc->pipe_info[pipe_id];
 	ce_pipe = snoc_pipe->ce_hdl;
-	src_ring = ce_pipe->src_ring;
-	spin_lock_bh(&ar_snoc->ce_lock);
-
-	nentries_mask = src_ring->nentries_mask;
-	sw_index = src_ring->sw_index;
-	write_index = src_ring->write_index;
-
-	if (unlikely(CE_RING_DELTA(nentries_mask,
-				   write_index, sw_index - 1) < n_items)) {
-		err = -ENOBUFS;
-		goto err;
-	}
+	spin_lock_bh(&ar_snoc->opaque_ctx.ce_lock);
 
 	for (i = 0; i < n_items - 1; i++) {
 		ath10k_dbg(ar, ATH10K_DBG_SNOC,
 			   "snoc tx item %d paddr %pad len %d n_items %d\n",
 			   i, &items[i].paddr, items[i].len, n_items);
+
+		if (ath10k_snoc_has_fw_crashed(ar))
+			return  -EINVAL;
 
 		err = ath10k_ce_send_nolock(ce_pipe,
 					    items[i].transfer_context,
@@ -678,14 +689,14 @@ static int ath10k_snoc_hif_tx_sg(struct ath10k *ar, u8 pipe_id,
 	if (err)
 		goto err;
 
-	spin_unlock_bh(&ar_snoc->ce_lock);
+	spin_unlock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	return 0;
 
 err:
 	for (; i > 0; i--)
 		__ath10k_ce_send_revert(ce_pipe);
 
-	spin_unlock_bh(&ar_snoc->ce_lock);
+	spin_unlock_bh(&ar_snoc->opaque_ctx.ce_lock);
 	return err;
 }
 
@@ -753,9 +764,6 @@ static int ath10k_snoc_hif_map_service_to_pipe(struct ath10k *ar,
 			break;
 		}
 	}
-
-	if (WARN_ON(!ul_set || !dl_set))
-		return -ENOENT;
 
 	return 0;
 }
@@ -867,11 +875,17 @@ static void ath10k_snoc_hif_stop(struct ath10k *ar)
 {
 	if (!ar)
 		return;
-	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot hif stop\n");
-	ath10k_snoc_irq_disable(ar);
+	if (ath10k_snoc_has_fw_crashed(ar) ||
+	    test_bit(ATH10K_FLAG_CRASH_FLUSH, &ar->dev_flags)) {
+		ath10k_snoc_free_irq(ar);
+	} else {
+		ath10k_snoc_irq_disable(ar);
+	}
+
 	ath10k_snoc_flush(ar);
 	napi_synchronize(&ar->napi);
 	napi_disable(&ar->napi);
+	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot hif stop\n");
 }
 
 static int ath10k_snoc_alloc_pipes(struct ath10k *ar)
@@ -882,7 +896,7 @@ static int ath10k_snoc_alloc_pipes(struct ath10k *ar)
 
 	for (i = 0; i < CE_COUNT; i++) {
 		pipe = &ar_snoc->pipe_info[i];
-		pipe->ce_hdl = &ar_snoc->ce_states[i];
+		pipe->ce_hdl = &ar_snoc->opaque_ctx.ce_states[i];
 		pipe->pipe_num = i;
 		pipe->hif_ce_state = ar;
 
@@ -931,9 +945,15 @@ static int ath10k_snoc_init_pipes(struct ath10k *ar)
 
 static void ath10k_snoc_hif_power_down(struct ath10k *ar)
 {
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
 	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot hif power down\n");
 	msleep(SNOC_HIF_POWER_DOWN_DELAY);
-	icnss_wlan_disable(ICNSS_OFF);
+
+	if (!atomic_read(&ar_snoc->pm_ops_inprogress))
+		ath10k_snoc_qmi_wlan_disable(ar);
+
+	ce_remove_rri_on_ddr(ar);
 }
 
 int ath10k_snoc_get_ce_id(struct ath10k *ar, int irq)
@@ -942,7 +962,7 @@ int ath10k_snoc_get_ce_id(struct ath10k *ar, int irq)
 	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 
 	for (i = 0; i < CE_COUNT_MAX; i++) {
-		if (ar_snoc->ce_irqs[i] == irq)
+		if (ar_snoc->ce_irqs[i].irq_line == irq)
 		return i;
 	}
 	ath10k_err(ar, "No matching CE id for irq %d\n", irq);
@@ -975,15 +995,17 @@ static int ath10k_snoc_request_irq(struct ath10k *ar)
 	int irqflags = IRQF_TRIGGER_RISING;
 
 	for (id = 0; id < CE_COUNT_MAX; id++) {
-		ret = request_irq(ar_snoc->ce_irqs[id],
+		ret = request_irq(ar_snoc->ce_irqs[id].irq_line,
 				  ath10k_snoc_per_engine_handler,
 				  irqflags, ce_name[id], ar);
 		if (ret) {
 			ath10k_err(ar,
 				   "%s: cannot register CE %d irq handler, ret = %d",
 				   __func__, id, ret);
-			free_irq(ar_snoc->ce_irqs[id], ar);
+			atomic_set(&ar_snoc->ce_irqs[id].irq_req_stat, 0);
 			return ret;
+		} else {
+			 atomic_set(&ar_snoc->ce_irqs[id].irq_req_stat, 1);
 		}
 	}
 
@@ -995,31 +1017,38 @@ static void ath10k_snoc_free_irq(struct ath10k *ar)
 	int id;
 	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 
-	for (id = 0; id < CE_COUNT_MAX; id++)
-		free_irq(ar_snoc->ce_irqs[id], ar);
+	for (id = 0; id < CE_COUNT_MAX; id++) {
+		if (atomic_read(&ar_snoc->ce_irqs[id].irq_req_stat)) {
+			free_irq(ar_snoc->ce_irqs[id].irq_line, ar);
+			atomic_set(&ar_snoc->ce_irqs[id].irq_req_stat, 0);
+		}
+	}
 }
-
 
 static int ath10k_snoc_get_soc_info(struct ath10k *ar)
 {
-	int ret;
-	struct icnss_soc_info soc_info;
+	struct resource *res;
 	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+	struct platform_device *pdev;
 
-	memset(&soc_info, 0, sizeof(soc_info));
-
-	ret = icnss_get_soc_info(&soc_info);
-	if (ret < 0) {
-		ath10k_err(ar, "%s: icnss_get_soc_info error = %d",
-			   __func__, ret);
-		return ret;
+	pdev = ar_snoc->dev;
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "membase");
+	if (!res) {
+		ath10k_err(ar, "Memory base not found in DT\n");
+		return -EINVAL;
 	}
 
-	ar_snoc->mem = soc_info.v_addr;
-	ar_snoc->mem_pa = soc_info.p_addr;
+	ar_snoc->mem_pa = res->start;
+	ar_snoc->mem = devm_ioremap(&pdev->dev, ar_snoc->mem_pa,
+							    resource_size(res));
+	if (!ar_snoc->mem) {
+		ath10k_err(ar, "Memory base ioremap failed: phy addr: %pa\n",
+			   &ar_snoc->mem_pa);
+		return -EINVAL;
+	}
 
-	ar_snoc->target_info.soc_version = soc_info.soc_id;
-	ar_snoc->target_info.target_version = soc_info.soc_id;
+	ar_snoc->target_info.soc_version = ATH10K_HW_WCN3990;
+	ar_snoc->target_info.target_version = ATH10K_HW_WCN3990;
 	ar_snoc->target_info.target_revision = 0;
 
 	ath10k_dbg(ar, ATH10K_DBG_SNOC,
@@ -1033,11 +1062,10 @@ static int ath10k_snoc_get_soc_info(struct ath10k *ar)
 
 static int ath10k_snoc_wlan_enable(struct ath10k *ar)
 {
-	struct icnss_wlan_enable_cfg cfg;
-	int pipe_num, i;
+	struct ath10k_wlan_enable_cfg cfg;
+	enum ath10k_driver_mode mode;
+	int pipe_num;
 	struct ath10k_ce_tgt_pipe_cfg tgt_cfg[CE_COUNT_MAX];
-	struct ce_tgt_pipe_cfg *tmp_tgt_cfg;
-	struct ce_svc_pipe_cfg *tmp_svc_cfg;
 
 	for (pipe_num = 0; pipe_num < CE_COUNT_MAX; pipe_num++) {
 		tgt_cfg[pipe_num].pipe_num =
@@ -1054,25 +1082,21 @@ static int ath10k_snoc_wlan_enable(struct ath10k *ar)
 	}
 
 	cfg.num_ce_tgt_cfg = sizeof(target_ce_config_wlan) /
-				sizeof(struct ce_tgt_pipe_cfg);
-	cfg.ce_tgt_cfg = (struct ce_tgt_pipe_cfg *)
+				sizeof(struct ath10k_ce_tgt_pipe_cfg);
+	cfg.ce_tgt_cfg = (struct ath10k_ce_tgt_pipe_cfg *)
 		&tgt_cfg;
 	cfg.num_ce_svc_pipe_cfg = sizeof(target_service_to_ce_map_wlan) /
-				  sizeof(struct ce_svc_pipe_cfg);
-	cfg.ce_svc_cfg = (struct ce_svc_pipe_cfg *)
+				  sizeof(struct ath10k_ce_svc_pipe_cfg);
+	cfg.ce_svc_cfg = (struct ath10k_ce_svc_pipe_cfg *)
 		&target_service_to_ce_map_wlan;
 	cfg.num_shadow_reg_cfg = sizeof(target_shadow_reg_cfg_map) /
-					sizeof(struct icnss_shadow_reg_cfg);
-	cfg.shadow_reg_cfg = (struct icnss_shadow_reg_cfg *)
+					sizeof(struct ath10k_shadow_reg_cfg);
+	cfg.shadow_reg_cfg = (struct ath10k_shadow_reg_cfg *)
 		&target_shadow_reg_cfg_map;
 
-	for (i = 0; i < cfg.num_ce_tgt_cfg; i++)
-		tmp_tgt_cfg = cfg.ce_tgt_cfg + i;
-
-	for (i = 0; i < cfg.num_ce_svc_pipe_cfg; i++)
-		tmp_svc_cfg = cfg.ce_svc_cfg + i;
-
-	return icnss_wlan_enable(&cfg, ICNSS_MISSION, "5.1.0.26N");
+	mode = ar->testmode.utf_monitor ? ATH10K_FTM : ATH10K_MISSION;
+	return ath10k_snoc_qmi_wlan_enable(ar, &cfg, mode,
+					   "5.1.0.26N");
 }
 
 static int ath10k_snoc_bus_configure(struct ath10k *ar)
@@ -1086,14 +1110,21 @@ static int ath10k_snoc_bus_configure(struct ath10k *ar)
 		return ret;
 	}
 
+	ce_config_rri_on_ddr(ar);
+
 	return 0;
 }
 
 static int ath10k_snoc_hif_start(struct ath10k *ar)
 {
-	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot hif start\n");
+	if (ath10k_snoc_has_fw_crashed(ar)) {
+		ath10k_snoc_request_irq(ar);
+		ath10k_snoc_fw_crashed_clear(ar);
+	}
 	ath10k_snoc_irq_enable(ar);
 	ath10k_snoc_rx_post(ar);
+
+	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot hif start\n");
 	return 0;
 }
 
@@ -1110,14 +1141,26 @@ static int ath10k_snoc_claim(struct ath10k *ar)
 static int ath10k_snoc_hif_power_up(struct ath10k *ar)
 {
 	int ret;
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
 
 	ath10k_dbg(ar, ATH10K_DBG_SNOC, "%s:WCN3990 driver state = %d\n",
 		   __func__, ar->state);
 
-	if (ar->state == ATH10K_STATE_ON) {
+	if (atomic_read(&ar_snoc->pm_ops_inprogress)) {
+		ath10k_dbg(ar, ATH10K_DBG_SNOC,
+			   "%s: WLAN OFF CMD Reset on PM Resume\n", __func__);
+		ath10k_snoc_qmi_wlan_disable(ar);
+		atomic_set(&ar_snoc->pm_ops_inprogress, 0);
+	}
+
+	if ((ar->state == ATH10K_STATE_ON) ||
+	    (ar->state == ATH10K_STATE_RESTARTING) ||
+	    test_bit(ATH10K_FLAG_CRASH_FLUSH, &ar->dev_flags)) {
 		ret = ath10k_snoc_bus_configure(ar);
-		if (ret)
+		if (ret) {
 			ath10k_err(ar, "failed to configure bus: %d\n", ret);
+			return ret;
+		}
 	}
 	ret = ath10k_snoc_init_pipes(ar);
 	if (ret) {
@@ -1137,6 +1180,10 @@ static int ath10k_snoc_napi_poll(struct napi_struct *ctx, int budget)
 	struct ath10k *ar = container_of(ctx, struct ath10k, napi);
 	int done = 0;
 
+	if (ath10k_snoc_has_fw_crashed(ar)) {
+		napi_complete(ctx);
+		return done;
+	}
 	ath10k_ce_per_engine_service_any(ar);
 
 	done = ath10k_htt_txrx_compl_task(ar, budget);
@@ -1162,11 +1209,402 @@ static int ath10k_snoc_resource_init(struct ath10k *ar)
 			ret = -ENODEV;
 			goto out;
 		} else {
-			ar_snoc->ce_irqs[i] = res->start;
+			ar_snoc->ce_irqs[i].irq_line = res->start;
 		}
 	}
 
 out:
+	return ret;
+}
+
+static
+int ath10k_snoc_pm_notifier(struct notifier_block *nb,
+			    unsigned long pm_event, void *data)
+{
+	struct ath10k_snoc *ar_snoc =
+			container_of(nb, struct ath10k_snoc, pm_notifier);
+	struct ath10k *ar = ar_snoc->ar;
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC,
+		   "%s: PM Event: %lu\n", __func__, pm_event);
+
+	switch (pm_event) {
+	case PM_HIBERNATION_PREPARE:
+	case PM_SUSPEND_PREPARE:
+	case PM_POST_HIBERNATION:
+	case PM_POST_SUSPEND:
+	case PM_RESTORE_PREPARE:
+	case PM_POST_RESTORE:
+		atomic_set(&ar_snoc->pm_ops_inprogress, 1);
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static int ath10k_get_vreg_info(struct ath10k *ar, struct device *dev,
+				struct ath10k_wcn3990_vreg_info *vreg_info)
+{
+	int ret = 0;
+	char prop_name[ATH10K_MAX_PROP_SIZE];
+	struct regulator *reg;
+	const __be32 *prop;
+	int len = 0;
+	int i;
+
+	reg = devm_regulator_get_optional(dev, vreg_info->name);
+	if (PTR_ERR(reg) == -EPROBE_DEFER) {
+		ath10k_err(ar, "EPROBE_DEFER for regulator: %s\n",
+			   vreg_info->name);
+		ret = PTR_ERR(reg);
+		goto out;
+	}
+
+	if (IS_ERR(reg)) {
+		ret = PTR_ERR(reg);
+
+		if (vreg_info->required) {
+			ath10k_err(ar, "Regulator %s doesn't exist: %d\n",
+				   vreg_info->name, ret);
+			goto out;
+		} else {
+			ath10k_dbg(ar, ATH10K_DBG_SNOC,
+				   "Optional regulator %s doesn't exist: %d\n",
+				   vreg_info->name, ret);
+			goto done;
+		}
+	}
+
+	vreg_info->reg = reg;
+
+	snprintf(prop_name, ATH10K_MAX_PROP_SIZE,
+		 "qcom,%s-config", vreg_info->name);
+
+	prop = of_get_property(dev->of_node, prop_name, &len);
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "Got regulator cfg,prop: %s, len: %d\n",
+		   prop_name, len);
+
+	if (!prop || len < (2 * sizeof(__be32))) {
+		ath10k_dbg(ar, ATH10K_DBG_SNOC, "Property %s %s\n", prop_name,
+			   prop ? "invalid format" : "doesn't exist");
+		goto done;
+	}
+
+	for (i = 0; (i * sizeof(__be32)) < len; i++) {
+		switch (i) {
+		case 0:
+			vreg_info->min_v = be32_to_cpup(&prop[0]);
+			break;
+		case 1:
+			vreg_info->max_v = be32_to_cpup(&prop[1]);
+			break;
+		case 2:
+			vreg_info->load_ua = be32_to_cpup(&prop[2]);
+			break;
+		case 3:
+			vreg_info->settle_delay = be32_to_cpup(&prop[3]);
+			break;
+		default:
+			ath10k_dbg(ar, ATH10K_DBG_SNOC, "%s, ignoring val %d\n",
+				   prop_name, i);
+			break;
+		}
+	}
+
+done:
+	ath10k_dbg(ar, ATH10K_DBG_SNOC,
+		   "vreg: %s, min_v: %u, max_v: %u, load: %u, delay: %lu\n",
+		   vreg_info->name, vreg_info->min_v, vreg_info->max_v,
+		   vreg_info->load_ua, vreg_info->settle_delay);
+
+	return 0;
+
+out:
+	return ret;
+}
+
+static int ath10k_get_clk_info(struct ath10k *ar, struct device *dev,
+			       struct ath10k_wcn3990_clk_info *clk_info)
+{
+	struct clk *handle;
+	int ret = 0;
+
+	handle = devm_clk_get(dev, clk_info->name);
+	if (IS_ERR(handle)) {
+		ret = PTR_ERR(handle);
+		if (clk_info->required) {
+			ath10k_err(ar, "Clock %s isn't available: %d\n",
+				   clk_info->name, ret);
+			goto out;
+		} else {
+			ath10k_dbg(ar, ATH10K_DBG_SNOC, "Ignoring clk %s: %d\n",
+				   clk_info->name,
+				   ret);
+			ret = 0;
+			goto out;
+		}
+	}
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "Clock: %s, freq: %u\n",
+		   clk_info->name, clk_info->freq);
+
+	clk_info->handle = handle;
+out:
+	return ret;
+}
+
+static int ath10k_wcn3990_vreg_on(struct ath10k *ar)
+{
+	int ret = 0;
+	struct ath10k_wcn3990_vreg_info *vreg_info;
+	int i;
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	for (i = 0; i < ATH10K_WCN3990_VREG_INFO_SIZE; i++) {
+		vreg_info = &ar_snoc->vreg[i];
+
+		if (!vreg_info->reg)
+			continue;
+
+		ath10k_dbg(ar, ATH10K_DBG_SNOC, "Regulator %s being enabled\n",
+			   vreg_info->name);
+
+		ret = regulator_set_voltage(vreg_info->reg, vreg_info->min_v,
+					    vreg_info->max_v);
+		if (ret) {
+			ath10k_err(ar,
+				   "vreg %s, set failed:min:%u,max:%u,ret: %d\n",
+				   vreg_info->name, vreg_info->min_v,
+				   vreg_info->max_v, ret);
+			break;
+		}
+
+		if (vreg_info->load_ua) {
+			ret = regulator_set_load(vreg_info->reg,
+						 vreg_info->load_ua);
+			if (ret < 0) {
+				ath10k_err(ar,
+					   "Reg %s, can't set load:%u,ret: %d\n",
+					   vreg_info->name,
+					   vreg_info->load_ua, ret);
+				break;
+			}
+		}
+
+		ret = regulator_enable(vreg_info->reg);
+		if (ret) {
+			ath10k_err(ar, "Regulator %s, can't enable: %d\n",
+				   vreg_info->name, ret);
+			break;
+		}
+
+		if (vreg_info->settle_delay)
+			udelay(vreg_info->settle_delay);
+	}
+
+	if (!ret)
+		return 0;
+
+	for (; i >= 0; i--) {
+		vreg_info = &ar_snoc->vreg[i];
+
+		if (!vreg_info->reg)
+			continue;
+
+		regulator_disable(vreg_info->reg);
+		regulator_set_load(vreg_info->reg, 0);
+		regulator_set_voltage(vreg_info->reg, 0, vreg_info->max_v);
+	}
+
+	return ret;
+}
+
+static int ath10k_wcn3990_vreg_off(struct ath10k *ar)
+{
+	int ret = 0;
+	struct ath10k_wcn3990_vreg_info *vreg_info;
+	int i;
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	for (i = ATH10K_WCN3990_VREG_INFO_SIZE - 1; i >= 0; i--) {
+		vreg_info = &ar_snoc->vreg[i];
+
+		if (!vreg_info->reg)
+			continue;
+
+		ath10k_dbg(ar, ATH10K_DBG_SNOC, "Regulator %s being disabled\n",
+			   vreg_info->name);
+
+		ret = regulator_disable(vreg_info->reg);
+		if (ret)
+			ath10k_err(ar, "Regulator %s, can't disable: %d\n",
+				   vreg_info->name, ret);
+
+		ret = regulator_set_load(vreg_info->reg, 0);
+		if (ret < 0)
+			ath10k_err(ar, "Regulator %s, can't set load: %d\n",
+				   vreg_info->name, ret);
+
+		ret = regulator_set_voltage(vreg_info->reg, 0,
+					    vreg_info->max_v);
+		if (ret)
+			ath10k_err(ar, "Regulator %s, can't set voltage: %d\n",
+				   vreg_info->name, ret);
+	}
+
+	return ret;
+}
+
+static int ath10k_wcn3990_clk_init(struct ath10k *ar)
+{
+	struct ath10k_wcn3990_clk_info *clk_info;
+	int i;
+	int ret = 0;
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	for (i = 0; i < ATH10K_WCN3990_CLK_INFO_SIZE; i++) {
+		clk_info = &ar_snoc->clk[i];
+
+		if (!clk_info->handle)
+			continue;
+
+		ath10k_dbg(ar, ATH10K_DBG_SNOC, "Clock %s being enabled\n",
+			   clk_info->name);
+
+		if (clk_info->freq) {
+			ret = clk_set_rate(clk_info->handle, clk_info->freq);
+
+			if (ret) {
+				ath10k_err(ar, "Clk %s,set err: %u,ret: %d\n",
+					   clk_info->name, clk_info->freq,
+					   ret);
+				break;
+			}
+		}
+
+		ret = clk_prepare_enable(clk_info->handle);
+		if (ret) {
+			ath10k_err(ar, "Clock %s, can't enable: %d\n",
+				   clk_info->name, ret);
+			break;
+		}
+	}
+
+	if (ret == 0)
+		return 0;
+
+	for (; i >= 0; i--) {
+		clk_info = &ar_snoc->clk[i];
+
+		if (!clk_info->handle)
+			continue;
+
+		clk_disable_unprepare(clk_info->handle);
+	}
+
+	return ret;
+}
+
+static int ath10k_wcn3990_clk_deinit(struct ath10k *ar)
+{
+	struct ath10k_wcn3990_clk_info *clk_info;
+	int i;
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+
+	for (i = 0; i < ATH10K_WCN3990_CLK_INFO_SIZE; i++) {
+		clk_info = &ar_snoc->clk[i];
+
+		if (!clk_info->handle)
+			continue;
+
+		ath10k_dbg(ar, ATH10K_DBG_SNOC, "Clock %s being disabled\n",
+			   clk_info->name);
+
+		clk_disable_unprepare(clk_info->handle);
+	}
+
+	return 0;
+}
+
+static int ath10k_hw_power_on(struct ath10k *ar)
+{
+	int ret = 0;
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "HW Power on\n");
+
+	ret = ath10k_wcn3990_vreg_on(ar);
+	if (ret)
+		goto out;
+
+	ret = ath10k_wcn3990_clk_init(ar);
+	if (ret)
+		goto vreg_off;
+
+	return ret;
+
+vreg_off:
+	ath10k_wcn3990_vreg_off(ar);
+out:
+	return ret;
+}
+
+static int ath10k_hw_power_off(struct ath10k *ar)
+{
+	int ret = 0;
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "HW Power off\n");
+
+	ath10k_wcn3990_clk_deinit(ar);
+
+	ret = ath10k_wcn3990_vreg_off(ar);
+
+	return ret;
+}
+
+static int ath10k_snoc_hif_suspend(struct ath10k *ar)
+{
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+	int ret = 0;
+
+	if (!ar_snoc)
+		return -EINVAL;
+
+	if (!device_may_wakeup(ar->dev))
+		return -EINVAL;
+
+	ret = enable_irq_wake(ar_snoc->ce_irqs[WCN3990_WAKE_IRQ_CE].irq_line);
+	if (ret) {
+		ath10k_dbg(ar, ATH10K_DBG_SNOC,
+			   "HIF Suspend: Failed to enable wakeup IRQ\n");
+		return ret;
+	}
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "HIF Suspended\n");
+	return ret;
+}
+
+static int ath10k_snoc_hif_resume(struct ath10k *ar)
+{
+	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+	int ret = 0;
+
+	if (!ar_snoc)
+		return -EINVAL;
+
+	if (!device_may_wakeup(ar->dev))
+		return -EINVAL;
+
+	ret = disable_irq_wake(ar_snoc->ce_irqs[WCN3990_WAKE_IRQ_CE].irq_line);
+	if (ret) {
+		ath10k_dbg(ar, ATH10K_DBG_SNOC,
+			   "HIF Resume: Failed to disable wakeup IRQ\n");
+		return ret;
+	}
+
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "HIF Resumed\n");
 	return ret;
 }
 
@@ -1182,6 +1620,13 @@ static const struct ath10k_hif_ops ath10k_snoc_hif_ops = {
 	.power_down		= ath10k_snoc_hif_power_down,
 	.read32			= ath10k_snoc_read32,
 	.write32		= ath10k_snoc_write32,
+	.suspend		= ath10k_snoc_hif_suspend,
+	.resume			= ath10k_snoc_hif_resume,
+};
+
+static const struct ath10k_bus_ops ath10k_snoc_bus_ops = {
+	.read32		= ath10k_snoc_read32,
+	.write32	= ath10k_snoc_write32,
 };
 
 static int ath10k_snoc_probe(struct platform_device *pdev)
@@ -1192,6 +1637,7 @@ static int ath10k_snoc_probe(struct platform_device *pdev)
 	enum ath10k_hw_rev hw_rev;
 	struct device *dev;
 	u32 chip_id;
+	u32 i;
 
 	dev = &pdev->dev;
 	hw_rev = ATH10K_HW_WCN3990;
@@ -1210,11 +1656,14 @@ static int ath10k_snoc_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, ar);
 	ar_snoc->ar = ar;
 
-	spin_lock_init(&ar_snoc->ce_lock);
-	ar->bus_write32 = ath10k_snoc_write32;
-	ar->bus_read32 = ath10k_snoc_read32;
-	ar->ce_lock = ar_snoc->ce_lock;
-	ar->ce_states = ar_snoc->ce_states;
+	ret = ath10k_snoc_start_qmi_service(ar);
+	if (ret) {
+		ath10k_err(ar, "failed to start QMI service: %d\n", ret);
+		goto err_core_destroy;
+	}
+
+	spin_lock_init(&ar_snoc->opaque_ctx.ce_lock);
+	ar_snoc->opaque_ctx.bus_ops = &ath10k_snoc_bus_ops;
 	ath10k_snoc_resource_init(ar);
 
 	ar->target_version = ATH10K_HW_WCN3990;
@@ -1222,22 +1671,43 @@ static int ath10k_snoc_probe(struct platform_device *pdev)
 	setup_timer(&ar_snoc->rx_post_retry, ath10k_snoc_rx_replenish_retry,
 		    (unsigned long)ar);
 
+	memcpy(ar_snoc->vreg, vreg_cfg, sizeof(vreg_cfg));
+	for (i = 0; i < ATH10K_WCN3990_VREG_INFO_SIZE; i++) {
+		ret = ath10k_get_vreg_info(ar, dev, &ar_snoc->vreg[i]);
+		if (ret)
+			goto err_core_destroy;
+	}
+
+	memcpy(ar_snoc->clk, clk_cfg, sizeof(clk_cfg));
+	for (i = 0; i < ATH10K_WCN3990_CLK_INFO_SIZE; i++) {
+		ret = ath10k_get_clk_info(ar, dev, &ar_snoc->clk[i]);
+		if (ret)
+			goto err_core_destroy;
+	}
+
+	ret = ath10k_hw_power_on(ar);
+	if (ret) {
+		ath10k_err(ar, "failed to power on device: %d\n", ret);
+		goto err_stop_qmi_service;
+	}
+
 	ret = ath10k_snoc_claim(ar);
 	if (ret) {
 		ath10k_err(ar, "failed to claim device: %d\n", ret);
-		goto err_core_destroy;
+		goto err_hw_power_off;
 	}
+
 	ret = ath10k_snoc_bus_configure(ar);
 	if (ret) {
 		ath10k_err(ar, "failed to configure bus: %d\n", ret);
-		goto err_core_destroy;
+		goto err_hw_power_off;
 	}
 
 	ret = ath10k_snoc_alloc_pipes(ar);
 	if (ret) {
 		ath10k_err(ar, "failed to allocate copy engine pipes: %d\n",
 			   ret);
-		goto err_core_destroy;
+		goto err_hw_power_off;
 	}
 
 	netif_napi_add(&ar->napi_dev, &ar->napi, ath10k_snoc_napi_poll,
@@ -1256,6 +1726,13 @@ static int ath10k_snoc_probe(struct platform_device *pdev)
 		ath10k_err(ar, "failed to register driver core: %d\n", ret);
 		goto err_free_irq;
 	}
+
+	ath10k_snoc_modem_ssr_register_notifier(ar);
+	ath10k_snoc_pd_restart_enable(ar);
+
+	ar_snoc->pm_notifier.notifier_call = ath10k_snoc_pm_notifier;
+	register_pm_notifier(&ar_snoc->pm_notifier);
+
 	ath10k_dbg(ar, ATH10K_DBG_SNOC, "%s:WCN3990 probed\n", __func__);
 
 	return 0;
@@ -1265,6 +1742,12 @@ err_free_irq:
 
 err_free_pipes:
 	ath10k_snoc_free_pipes(ar);
+
+err_hw_power_off:
+	ath10k_hw_power_off(ar);
+
+err_stop_qmi_service:
+	ath10k_snoc_stop_qmi_service(ar);
 
 err_core_destroy:
 	ath10k_core_destroy(ar);
@@ -1283,13 +1766,18 @@ static int ath10k_snoc_remove(struct platform_device *pdev)
 	if (!ar_snoc)
 		return -EINVAL;
 
+	ath10k_dbg(ar, ATH10K_DBG_SNOC, "%s:WCN3990 removed\n", __func__);
+
+	unregister_pm_notifier(&ar_snoc->pm_notifier);
 	ath10k_core_unregister(ar);
+	ath10k_snoc_pdr_unregister_notifier(ar);
+	ath10k_snoc_modem_ssr_unregister_notifier(ar);
 	ath10k_snoc_free_irq(ar);
 	ath10k_snoc_release_resource(ar);
 	ath10k_snoc_free_pipes(ar);
+	ath10k_snoc_stop_qmi_service(ar);
+	ath10k_hw_power_off(ar);
 	ath10k_core_destroy(ar);
-
-	ath10k_dbg(ar, ATH10K_DBG_SNOC, "%s:WCN3990 removed\n", __func__);
 
 	return 0;
 }
@@ -1314,10 +1802,6 @@ static int __init ath10k_snoc_init(void)
 {
 	int ret;
 
-	if (!icnss_is_fw_ready()) {
-		pr_err("failed to get fw ready indication\n");
-		return -EAGAIN;
-	}
 	ret = platform_driver_register(&ath10k_snoc_driver);
 	if (ret)
 		pr_err("failed to register ath10k snoc driver: %d\n",

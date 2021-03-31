@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -299,6 +299,23 @@
 
 	soc: soc { };
 
+	firmware: firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait,slotselect,verify";
+					status = "ok";
+				};
+			};
+		};
+	};
+
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -389,8 +406,13 @@
 		};
 
 		cont_splash_mem: splash_region@9d400000 {
-			reg = <0x0 0x9d400000 0x0 0x02400000>;
+			reg = <0x0 0x9d400000 0x0 0x23ff000>;
 			label = "cont_splash_mem";
+		};
+
+		dfps_data_mem: dfps_data_mem@0x9f7ff000 {
+		       reg = <0 0x9f7ff000 0 0x00001000>;
+		       label = "dfps_data_mem";
 		};
 	};
 
@@ -596,6 +618,7 @@
 			compatible = "qcom,memshare-peripheral";
 			qcom,peripheral-size = <0x0>;
 			qcom,client-id = <1>;
+			qcom,allocate-on-request;
 			label = "modem";
 		};
 	};
@@ -609,6 +632,16 @@
 		qcom,client-id = <0 1 2 3 4 5 6 7 8 9 10 11>;
 		qcom,sensor-id = <0 8 10 4 5 6 7 9 2 1 3 11>;
 		qcom,sensors = <12>;
+	};
+
+	qcom,qbt1000 {
+		compatible = "qcom,qbt1000";
+		clock-names = "core", "iface";
+		clocks = <&clock_gcc GCC_BLSP1_QUP3_SPI_APPS_CLK>,
+			<&clock_gcc GCC_BLSP1_AHB_CLK>;
+		clock-frequency = <15000000>;
+		qcom,ipc-gpio = <&tlmm 72 0>;
+		qcom,finger-detect-gpio = <&pm660_gpios 11 0>;
 	};
 
 	qcom,sensor-information {
@@ -1346,6 +1379,16 @@
 			<  2380800000 0x0404007c 0x0c630063 0x3 10 >,
 			<  2515200000 0x04040083 0x0d680068 0x3 11 >;
 
+		qcom,perfcl-speedbin3-v0 =
+			<   300000000 0x0004000f 0x01200020 0x1 1 >,
+			<   787200000 0x05040029 0x04200020 0x1 2 >,
+			<  1113600000 0x0404003a 0x052e002e 0x1 3 >,
+			<  1344000000 0x04040046 0x07380038 0x2 4 >,
+			<  1516800000 0x0404004f 0x073f003f 0x2 5 >,
+			<  1670400000 0x04040057 0x08450045 0x2 6 >,
+			<  1881600000 0x04040062 0x094e004e 0x2 7 >,
+			<  2016000000 0x04040069 0x0a540054 0x2 8 >;
+
 		qcom,up-timer = <1000 1000>;
 		qcom,down-timer = <1000 1000>;
 		qcom,set-ret-inactive;
@@ -1659,11 +1702,12 @@
 		vdd-1.8-xo-supply = <&pm660_l9_pin_ctrl>;
 		vdd-1.3-rfa-supply = <&pm660_l6_pin_ctrl>;
 		vdd-3.3-ch0-supply = <&pm660_l19_pin_ctrl>;
-		qcom,vdd-0.8-cx-mx-config = <525000 950000>;
+		qcom,vdd-0.8-cx-mx-config = <848000 848000>;
 		qcom,vdd-1.8-xo-config = <1750000 1900000>;
 		qcom,vdd-1.3-rfa-config = <1200000 1370000>;
 		qcom,vdd-3.3-ch0-config = <3200000 3400000>;
 		qcom,wlan-msa-memory = <0x100000>;
+		qcom,wlan-msa-fixed-region = <&wlan_msa_mem>;
 		qcom,smmu-s1-bypass;
 	};
 
@@ -2013,8 +2057,8 @@
 		qcom,qsee-ce-hw-instance = <0>;
 		qcom,disk-encrypt-pipe-pair = <2>;
 		qcom,support-fde;
+		qcom,fde-key-size;
 		qcom,no-clock-support;
-		qcom,commonlib64-loaded-by-uefi;
 		qcom,msm-bus,name = "qseecom-noc";
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;

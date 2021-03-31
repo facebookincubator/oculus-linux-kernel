@@ -409,16 +409,6 @@ static void dce_v11_0_hpd_init(struct amdgpu_device *adev)
 	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
 		struct amdgpu_connector *amdgpu_connector = to_amdgpu_connector(connector);
 
-		if (connector->connector_type == DRM_MODE_CONNECTOR_eDP ||
-		    connector->connector_type == DRM_MODE_CONNECTOR_LVDS) {
-			/* don't try to enable hpd on eDP or LVDS avoid breaking the
-			 * aux dp channel on imac and help (but not completely fix)
-			 * https://bugzilla.redhat.com/show_bug.cgi?id=726143
-			 * also avoid interrupt storms during dpms.
-			 */
-			continue;
-		}
-
 		switch (amdgpu_connector->hpd.hpd) {
 		case AMDGPU_HPD_1:
 			idx = 0;
@@ -439,6 +429,19 @@ static void dce_v11_0_hpd_init(struct amdgpu_device *adev)
 			idx = 5;
 			break;
 		default:
+			continue;
+		}
+
+		if (connector->connector_type == DRM_MODE_CONNECTOR_eDP ||
+		    connector->connector_type == DRM_MODE_CONNECTOR_LVDS) {
+			/* don't try to enable hpd on eDP or LVDS avoid breaking the
+			 * aux dp channel on imac and help (but not completely fix)
+			 * https://bugzilla.redhat.com/show_bug.cgi?id=726143
+			 * also avoid interrupt storms during dpms.
+			 */
+			tmp = RREG32(mmDC_HPD_INT_CONTROL + hpd_offsets[idx]);
+			tmp = REG_SET_FIELD(tmp, DC_HPD_INT_CONTROL, DC_HPD_INT_EN, 0);
+			WREG32(mmDC_HPD_INT_CONTROL + hpd_offsets[idx], tmp);
 			continue;
 		}
 
@@ -1111,23 +1114,10 @@ static u32 dce_v11_0_latency_watermark(struct dce10_wm_params *wm)
 	a.full = dfixed_const(available_bandwidth);
 	b.full = dfixed_const(wm->num_heads);
 	a.full = dfixed_div(a, b);
+	tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);
+	tmp = min(dfixed_trunc(a), tmp);
 
-	b.full = dfixed_const(mc_latency + 512);
-	c.full = dfixed_const(wm->disp_clk);
-	b.full = dfixed_div(b, c);
-
-	c.full = dfixed_const(dmif_size);
-	b.full = dfixed_div(c, b);
-
-	tmp = min(dfixed_trunc(a), dfixed_trunc(b));
-
-	b.full = dfixed_const(1000);
-	c.full = dfixed_const(wm->disp_clk);
-	b.full = dfixed_div(c, b);
-	c.full = dfixed_const(wm->bytes_per_pixel);
-	b.full = dfixed_mul(b, c);
-
-	lb_fill_bw = min(tmp, dfixed_trunc(b));
+	lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);
 
 	a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);
 	b.full = dfixed_const(1000);
@@ -1235,14 +1225,14 @@ static void dce_v11_0_program_watermarks(struct amdgpu_device *adev,
 {
 	struct drm_display_mode *mode = &amdgpu_crtc->base.mode;
 	struct dce10_wm_params wm_low, wm_high;
-	u32 pixel_period;
+	u32 active_time;
 	u32 line_time = 0;
 	u32 latency_watermark_a = 0, latency_watermark_b = 0;
 	u32 tmp, wm_mask, lb_vblank_lead_lines = 0;
 
 	if (amdgpu_crtc->base.enabled && num_heads && mode) {
-		pixel_period = 1000000 / (u32)mode->clock;
-		line_time = min((u32)mode->crtc_htotal * pixel_period, (u32)65535);
+		active_time = 1000000UL * (u32)mode->crtc_hdisplay / (u32)mode->clock;
+		line_time = min((u32) (1000000UL * (u32)mode->crtc_htotal / (u32)mode->clock), (u32)65535);
 
 		/* watermark for high clocks */
 		if (adev->pm.dpm_enabled) {
@@ -1257,7 +1247,7 @@ static void dce_v11_0_program_watermarks(struct amdgpu_device *adev,
 
 		wm_high.disp_clk = mode->clock;
 		wm_high.src_width = mode->crtc_hdisplay;
-		wm_high.active_time = mode->crtc_hdisplay * pixel_period;
+		wm_high.active_time = active_time;
 		wm_high.blank_time = line_time - wm_high.active_time;
 		wm_high.interlaced = false;
 		if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -1296,7 +1286,7 @@ static void dce_v11_0_program_watermarks(struct amdgpu_device *adev,
 
 		wm_low.disp_clk = mode->clock;
 		wm_low.src_width = mode->crtc_hdisplay;
-		wm_low.active_time = mode->crtc_hdisplay * pixel_period;
+		wm_low.active_time = active_time;
 		wm_low.blank_time = line_time - wm_low.active_time;
 		wm_low.interlaced = false;
 		if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -3030,6 +3020,7 @@ static int dce_v11_0_sw_fini(void *handle)
 
 	dce_v11_0_afmt_fini(adev);
 
+	drm_mode_config_cleanup(adev->ddev);
 	adev->mode_info.mode_config_initialized = false;
 
 	return 0;
@@ -3700,8 +3691,14 @@ static void dce_v11_0_encoder_add(struct amdgpu_device *adev,
 	default:
 		encoder->possible_crtcs = 0x3;
 		break;
+	case 3:
+		encoder->possible_crtcs = 0x7;
+		break;
 	case 4:
 		encoder->possible_crtcs = 0xf;
+		break;
+	case 5:
+		encoder->possible_crtcs = 0x1f;
 		break;
 	case 6:
 		encoder->possible_crtcs = 0x3f;

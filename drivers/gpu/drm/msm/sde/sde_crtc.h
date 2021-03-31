@@ -81,7 +81,11 @@ struct sde_crtc_frame_event {
  * @debugfs_root  : Parent of debugfs node
  * @vblank_cb_count : count of vblank callback since last reset
  * @vblank_cb_time  : ktime at vblank count reset
- * @vblank_refcount : reference count for vblank enable request
+ * @vblank_requested : whether the user has requested vblank events
+ * @suspend         : whether or not a suspend operation is in progress
+ * @enabled       : whether the SDE CRTC is currently enabled. updated in the
+ *                  commit-thread, not state-swap time which is earlier, so
+ *                  safe to make decisions on during VBLANK on/off work
  * @feature_list  : list of color processing features supported on a crtc
  * @active_list   : list of color processing features are active
  * @dirty_list    : list of color processing features are dirty
@@ -89,7 +93,10 @@ struct sde_crtc_frame_event {
  * @frame_pending : Whether or not an update is pending
  * @frame_events  : static allocation of in-flight frame events
  * @frame_event_list : available frame event list
+ * @pending       : Whether any page-flip events are pending signal
  * @spin_lock     : spin lock for frame event, transaction status, etc...
+ * @cur_perf      : current performance committed to clock/bandwidth driver
+ * @new_perf      : new performance committed to clock/bandwidth driver
  */
 struct sde_crtc {
 	struct drm_crtc base;
@@ -109,13 +116,15 @@ struct sde_crtc {
 
 	/* output fence support */
 	struct sde_fence output_fence;
-
+	atomic_t pending;
 	struct sde_hw_stage_cfg stage_cfg;
 	struct dentry *debugfs_root;
 
 	u32 vblank_cb_count;
 	ktime_t vblank_cb_time;
-	atomic_t vblank_refcount;
+	bool vblank_requested;
+	bool suspend;
+	bool enabled;
 
 	struct list_head feature_list;
 	struct list_head active_list;
@@ -127,6 +136,9 @@ struct sde_crtc {
 	struct sde_crtc_frame_event frame_events[SDE_CRTC_FRAME_EVENT_SIZE];
 	struct list_head frame_event_list;
 	spinlock_t spin_lock;
+
+	struct sde_core_perf_params cur_perf;
+	struct sde_core_perf_params new_perf;
 };
 
 #define to_sde_crtc(x) container_of(x, struct sde_crtc, base)
@@ -141,6 +153,9 @@ struct sde_crtc {
  * @property_values: Current crtc property values
  * @input_fence_timeout_ns : Cached input fence timeout, in ns
  * @property_blobs: Reference pointers for blob properties
+ * @new_perf: new performance state being requested
+ * @is_shared: connector is shared
+ * @shared_roi: roi of the shared display
  */
 struct sde_crtc_state {
 	struct drm_crtc_state base;
@@ -154,8 +169,9 @@ struct sde_crtc_state {
 	uint64_t input_fence_timeout_ns;
 	struct drm_property_blob *property_blobs[CRTC_PROP_COUNT];
 
-	struct sde_core_perf_params cur_perf;
 	struct sde_core_perf_params new_perf;
+	bool is_shared;
+	struct sde_rect shared_roi;
 };
 
 #define to_sde_crtc_state(x) \
@@ -245,16 +261,10 @@ void sde_crtc_cancel_pending_flip(struct drm_crtc *crtc, struct drm_file *file);
 bool sde_crtc_is_rt(struct drm_crtc *crtc);
 
 /**
- * sde_crtc_get_intf_mode - get interface mode of the given crtc
+ * sde_crtc_get_intf_mode - get primary interface mode of the given crtc
  * @crtc: Pointert to crtc
  */
-static inline enum sde_intf_mode sde_crtc_get_intf_mode(struct drm_crtc *crtc)
-{
-	struct sde_crtc_state *cstate =
-			crtc ? to_sde_crtc_state(crtc->state) : NULL;
-
-	return cstate ? cstate->intf_mode : INTF_MODE_NONE;
-}
+enum sde_intf_mode sde_crtc_get_intf_mode(struct drm_crtc *crtc);
 
 /**
  * sde_core_perf_crtc_is_wb - check if writeback is primary output of this crtc
@@ -286,4 +296,13 @@ static inline bool sde_crtc_is_enabled(struct drm_crtc *crtc)
 	return crtc ? crtc->enabled : false;
 }
 
+/**
+ * sde_crtc_update_blob_property - update blob property of a given crtc
+ * @crtc: Pointer to crtc
+ * @key:  Pointer to key string
+ * @value: Signed 32 bit integer value
+ */
+void sde_crtc_update_blob_property(struct drm_crtc *crtc,
+				const char *key,
+				int32_t value);
 #endif /* _SDE_CRTC_H_ */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015,2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015,2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -201,7 +201,6 @@ enum i2c_msm_power_state {
 #define I2C_MSM_MAX_POLL_MSEC           (100)
 #define I2C_MSM_TIMEOUT_SAFTY_COEF      (10)
 #define I2C_MSM_TIMEOUT_MIN_USEC        (500000)
-#define I2C_QUP_MAX_BUS_RECOVERY_RETRY  (10)
 
 /* QUP v2 tags */
 #define QUP_TAG2_DATA_WRITE        (0x82ULL)
@@ -581,6 +580,8 @@ struct i2c_msm_xfer {
  * @rsrcs    resources from platform data including clocks, gpios, irqs, and
  *           memory regions.
  * @mstr_clk_ctl cached value for programming to mstr_clk_ctl register
+ * @i2c_sts_reg	 status of QUP_I2C_MASTER_STATUS register.
+ * @qup_op_reg	 status of QUP_OPERATIONAL register.
  */
 struct i2c_msm_ctrl {
 	struct device             *dev;
@@ -589,6 +590,8 @@ struct i2c_msm_ctrl {
 	struct i2c_msm_dbgfs       dbgfs;
 	struct i2c_msm_resources   rsrcs;
 	u32                        mstr_clk_ctl;
+	u32			   i2c_sts_reg;
+	u32			   qup_op_reg;
 	enum i2c_msm_power_state   pwr_state;
 };
 

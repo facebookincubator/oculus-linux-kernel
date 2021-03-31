@@ -155,6 +155,7 @@
 		interrupts = <GIC_SPI 329 IRQ_TYPE_LEVEL_HIGH>,
 			   <GIC_SPI 330 IRQ_TYPE_LEVEL_HIGH>,
 			   <GIC_SPI 331 IRQ_TYPE_EDGE_RISING>;
+		qcom,deferred-regulator-disable-delay = <80>;
 		vdd-supply = <&gdsc_gpu_cx>;
 		clocks = <&clock_gcc clk_gcc_gpu_cfg_ahb_clk>,
 			<&clock_gcc clk_gcc_bimc_gfx_clk>,
@@ -175,5 +176,17 @@
 		 * anyways, so using a dummy value is ok.
 		 */
 		iommus = <&mmss_smmu 42>;
+	};
+
+	iommu_coherent_test_device {
+		compatible = "iommu-debug-test";
+		/*
+		 * 43 shouldn't be used by anyone on the mmss_smmu.  We just
+		 * need _something_ here to get this node recognized by the
+		 * SMMU driver. Our test uses ATOS, which doesn't use SIDs
+		 * anyways, so using a dummy value is ok.
+		 */
+		iommus = <&mmss_smmu 43>;
+		dma-coherent;
 	};
 };

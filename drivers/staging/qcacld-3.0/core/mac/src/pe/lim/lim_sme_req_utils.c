@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -72,15 +63,12 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 	int len;
 
 	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_PRIVACY_ENABLED,
-			     &privacy) != eSIR_SUCCESS) {
-		lim_log(mac_ctx, LOGP, FL("Unable to retrieve POI from CFG"));
-	}
+			     &privacy) != QDF_STATUS_SUCCESS)
+		pe_warn("Unable to retrieve POI from CFG");
 
 	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_RSN_ENABLED, &val)
-		!= eSIR_SUCCESS) {
-		lim_log(mac_ctx, LOGP,
-			FL("Unable to retrieve RSN_ENABLED from CFG"));
-	}
+		!= QDF_STATUS_SUCCESS)
+		pe_warn("Unable to retrieve RSN_ENABLED from CFG");
 
 	if (rsn_ie->length && (!privacy || !val)) {
 		/* Privacy & RSN not enabled in CFG.
@@ -88,9 +76,8 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 		 * allow BSS creation/join with no Privacy capability
 		 * yet advertising WPA IE
 		 */
-		PELOG1(lim_log(mac_ctx, LOG1,
-			       FL("RSN ie len %d PRIVACY %d RSN %d"),
-			       rsn_ie->length, privacy, val);)
+		pe_debug("RSN ie len: %d PRIVACY: %d RSN: %d",
+			       rsn_ie->length, privacy, val);
 	}
 
 	if (!rsn_ie->length)
@@ -101,7 +88,7 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 	    && (rsn_ie->rsnIEdata[0] != DOT11F_EID_WAPI)
 #endif
 	    && (rsn_ie->rsnIEdata[0] != DOT11F_EID_WPA)) {
-		lim_log(mac_ctx, LOGE, FL("RSN/WPA/WAPI EID %d not [%d || %d]"),
+		pe_err("RSN/WPA/WAPI EID: %d not [%d || %d]",
 			rsn_ie->rsnIEdata[0], DOT11F_EID_RSN,
 			DOT11F_EID_WPA);
 		return false;
@@ -117,8 +104,7 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 			    DOT11F_IE_RSN_MAX_LEN)
 			    || (rsn_ie->rsnIEdata[start + 1] <
 				DOT11F_IE_RSN_MIN_LEN)) {
-				lim_log(mac_ctx, LOGE,
-					FL("RSN IE len %d not [%d,%d]"),
+				pe_err("RSN IE len: %d not [%d,%d]",
 					rsn_ie->rsnIEdata[start + 1],
 					DOT11F_IE_RSN_MIN_LEN,
 					DOT11F_IE_RSN_MAX_LEN);
@@ -139,8 +125,7 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 			    || (rsn_ie->rsnIEdata[start + 1] >
 				DOT11F_IE_WPA_MAX_LEN)
 			    || (SIR_MAC_WPA_OUI != val)) {
-				lim_log(mac_ctx, LOGE,
-					FL("WPA IE len %d not [%d,%d] OR data 0x%x not 0x%x"),
+				pe_err("WPA IE len: %d not [%d,%d] OR data 0x%x not 0x%x",
 					rsn_ie->rsnIEdata[start + 1],
 					DOT11F_IE_WPA_MIN_LEN,
 					DOT11F_IE_WPA_MAX_LEN,
@@ -154,8 +139,7 @@ lim_is_rsn_ie_valid_in_sme_req_message(tpAniSirGlobal mac_ctx, tpSirRSNie rsn_ie
 			    DOT11F_IE_WAPI_MAX_LEN)
 			    || (rsn_ie->rsnIEdata[start + 1] <
 				DOT11F_IE_WAPI_MIN_LEN)) {
-				lim_log(mac_ctx, LOGE,
-					FL("WAPI IE len %d not [%d,%d]"),
+				pe_err("WAPI IE len: %d not [%d,%d]",
 					rsn_ie->rsnIEdata[start + 1],
 					DOT11F_IE_WAPI_MIN_LEN,
 					DOT11F_IE_WAPI_MAX_LEN);
@@ -208,9 +192,7 @@ lim_is_addie_valid_in_sme_req_message(tpAniSirGlobal pMac, tpSirAddie pAddie)
 		elem_len = ptr[1];
 		left -= 2;
 		if (elem_len > left) {
-			lim_log(pMac, LOGE,
-				FL
-					("****Invalid Add IEs eid = %d elem_len=%d left=%d*****"),
+			pe_err("Invalid Add IEs eid: %d elem_len: %d left: %d",
 				elem_id, elem_len, left);
 			return false;
 		}
@@ -241,17 +223,17 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 						    tpSirRSNie rsn_ie,
 						    tpPESession session)
 {
+	uint32_t ret;
 	uint8_t wpa_idx = 0;
 	uint32_t privacy, val;
 
 	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_PRIVACY_ENABLED,
-			     &privacy) != eSIR_SUCCESS)
-		lim_log(mac_ctx, LOGP, FL("Unable to retrieve POI from CFG"));
+			     &privacy) != QDF_STATUS_SUCCESS)
+		pe_warn("Unable to retrieve POI from CFG");
 
 	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_RSN_ENABLED,
-			     &val) != eSIR_SUCCESS)
-		lim_log(mac_ctx, LOGP,
-			FL("Unable to retrieve RSN_ENABLED from CFG"));
+			     &val) != QDF_STATUS_SUCCESS)
+		pe_warn("Unable to retrieve RSN_ENABLED from CFG");
 
 	if (rsn_ie->length && (!privacy || !val)) {
 		/*
@@ -260,8 +242,7 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 		 * allow BSS creation/join with no Privacy capability
 		 * yet advertising WPA IE
 		 */
-		lim_log(mac_ctx, LOG1,
-			FL("RSN ie len %d but PRIVACY %d RSN %d"),
+		pe_debug("RSN ie len: %d but PRIVACY: %d RSN: %d",
 			rsn_ie->length, privacy, val);
 	}
 
@@ -270,7 +251,7 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 
 	if ((rsn_ie->rsnIEdata[0] != SIR_MAC_RSN_EID) &&
 	    (rsn_ie->rsnIEdata[0] != SIR_MAC_WPA_EID)) {
-		lim_log(mac_ctx, LOGE, FL("RSN/WPA EID %d not [%d || %d]"),
+		pe_err("RSN/WPA EID: %d not [%d || %d]",
 			rsn_ie->rsnIEdata[0], SIR_MAC_RSN_EID,
 			SIR_MAC_WPA_EID);
 		return false;
@@ -278,7 +259,7 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 	/* Check validity of RSN IE */
 	if ((rsn_ie->rsnIEdata[0] == SIR_MAC_RSN_EID) &&
 	    (rsn_ie->rsnIEdata[1] < SIR_MAC_RSN_IE_MIN_LENGTH)) {
-		lim_log(mac_ctx, LOGE, FL("RSN IE len %d not [%d,%d]"),
+		pe_err("RSN IE len: %d not [%d,%d]",
 			rsn_ie->rsnIEdata[1], SIR_MAC_RSN_IE_MIN_LENGTH,
 			SIR_MAC_RSN_IE_MAX_LENGTH);
 		return false;
@@ -286,26 +267,34 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 
 	if (rsn_ie->length > rsn_ie->rsnIEdata[1] + 2) {
 		if (rsn_ie->rsnIEdata[0] != SIR_MAC_RSN_EID) {
-			lim_log(mac_ctx, LOGE,
-				FL("First byte[%d] in rsnIEdata isn't RSN_EID"),
+			pe_err("First byte: %d in rsnIEdata isn't RSN_EID",
 				rsn_ie->rsnIEdata[1]);
 			return false;
 		}
-		lim_log(mac_ctx, LOG1,
-			FL("WPA IE is present along with WPA2 IE"));
+		pe_debug("WPA IE is present along with WPA2 IE");
 		wpa_idx = 2 + rsn_ie->rsnIEdata[1];
 	} else if ((rsn_ie->length == rsn_ie->rsnIEdata[1] + 2) &&
 		   (rsn_ie->rsnIEdata[0] == SIR_MAC_RSN_EID)) {
-		lim_log(mac_ctx, LOG1, FL("Only RSN IE is present"));
-		dot11f_unpack_ie_rsn(mac_ctx, &rsn_ie->rsnIEdata[2],
-				     (uint8_t) rsn_ie->length,
-				     &session->gStartBssRSNIe);
+		pe_debug("Only RSN IE is present");
+		ret = dot11f_unpack_ie_rsn(mac_ctx, &rsn_ie->rsnIEdata[2],
+					   rsn_ie->rsnIEdata[1],
+					   &session->gStartBssRSNIe, false);
+		if (!DOT11F_SUCCEEDED(ret)) {
+			pe_err("unpack failed, ret: %d", ret);
+			return false;
+		}
+		return true;
 	} else if ((rsn_ie->length == rsn_ie->rsnIEdata[1] + 2)
 		   && (rsn_ie->rsnIEdata[0] == SIR_MAC_WPA_EID)) {
-		lim_log(mac_ctx, LOG1, FL("Only WPA IE is present"));
-		dot11f_unpack_ie_wpa(mac_ctx, &rsn_ie->rsnIEdata[6],
-				     (uint8_t) rsn_ie->length - 4,
-				     &session->gStartBssWPAIe);
+		pe_debug("Only WPA IE is present");
+		ret = dot11f_unpack_ie_wpa(mac_ctx, &rsn_ie->rsnIEdata[6],
+					   rsn_ie->rsnIEdata[1] - 4,
+					   &session->gStartBssWPAIe, false);
+		if (!DOT11F_SUCCEEDED(ret)) {
+			pe_err("unpack failed, ret: %d", ret);
+			return false;
+		}
+		return true;
 	}
 	/* Check validity of WPA IE */
 	if (wpa_idx + 6 >= SIR_MAC_MAX_IE_LENGTH)
@@ -315,8 +304,7 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 	if ((rsn_ie->rsnIEdata[wpa_idx] == SIR_MAC_WPA_EID)
 	    && ((rsn_ie->rsnIEdata[wpa_idx + 1] < SIR_MAC_WPA_IE_MIN_LENGTH)
 	     || (SIR_MAC_WPA_OUI != val))) {
-		lim_log(mac_ctx, LOGE,
-			FL("WPA IE len %d not [%d,%d] OR data 0x%x not 0x%x"),
+		pe_err("WPA IE len: %d not [%d,%d] OR data 0x%x not 0x%x",
 			rsn_ie->rsnIEdata[1],
 			SIR_MAC_RSN_IE_MIN_LENGTH,
 			SIR_MAC_RSN_IE_MAX_LENGTH, val,
@@ -324,12 +312,21 @@ lim_set_rs_nie_wp_aiefrom_sme_start_bss_req_message(tpAniSirGlobal mac_ctx,
 		return false;
 	} else {
 		/* Both RSN and WPA IEs are present */
-		dot11f_unpack_ie_rsn(mac_ctx, &rsn_ie->rsnIEdata[2],
-				     (uint8_t) rsn_ie->length,
-				     &session->gStartBssRSNIe);
-		dot11f_unpack_ie_wpa(mac_ctx, &rsn_ie->rsnIEdata[wpa_idx + 6],
-				     rsn_ie->rsnIEdata[wpa_idx + 1] - 4,
-				     &session->gStartBssWPAIe);
+		ret = dot11f_unpack_ie_rsn(mac_ctx, &rsn_ie->rsnIEdata[2],
+					   rsn_ie->rsnIEdata[1],
+					   &session->gStartBssRSNIe, false);
+		if (!DOT11F_SUCCEEDED(ret)) {
+			pe_err("unpack failed, ret: %d", ret);
+			return false;
+		}
+		ret = dot11f_unpack_ie_wpa(mac_ctx,
+					   &rsn_ie->rsnIEdata[wpa_idx + 6],
+					   rsn_ie->rsnIEdata[wpa_idx + 1] - 4,
+					   &session->gStartBssWPAIe, false);
+		if (!DOT11F_SUCCEEDED(ret)) {
+			pe_err("unpack failed, ret: %d", ret);
+			return false;
+		}
 	}
 	return true;
 }
@@ -388,12 +385,11 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 	uint8_t i = 0;
 	tSirMacRateSet *opr_rates = &start_bss_req->operationalRateSet;
 
-	PELOG1(lim_log(mac_ctx, LOG1,
-	       FL("Parsed START_BSS_REQ fields are bssType=%s (%d), channelId=%d, SSID len=%d, rsnIE len=%d, nwType=%d, rateset len=%d"),
+	pe_debug("Parsed START_BSS_REQ fields are bssType: %s (%d) channelId: %d SSID len: %d rsnIE len: %d nwType: %d rateset len: %d",
 	       lim_bss_type_to_string(start_bss_req->bssType),
 	       start_bss_req->bssType, start_bss_req->channelId,
 	       start_bss_req->ssId.length, start_bss_req->rsnIE.length,
-	       start_bss_req->nwType, opr_rates->numRates);)
+	       start_bss_req->nwType, opr_rates->numRates);
 
 	switch (start_bss_req->bssType) {
 	case eSIR_INFRASTRUCTURE_MODE:
@@ -401,8 +397,7 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 		 * Should not have received start BSS req with bssType
 		 * Infrastructure on STA.
 		 */
-		lim_log(mac_ctx, LOGE,
-			FL("Invalid bssType %d in eWNI_SME_START_BSS_REQ"),
+		pe_warn("Invalid bssType: %d in eWNI_SME_START_BSS_REQ",
 			start_bss_req->bssType);
 		return false;
 		break;
@@ -417,8 +412,7 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 		 * Should not have received start BSS req with bssType
 		 * other than Infrastructure/IBSS.
 		 */
-		lim_log(mac_ctx, LOGW,
-			FL("Invalid bssType %d in eWNI_SME_START_BSS_REQ"),
+		pe_warn("Invalid bssType: %d in eWNI_SME_START_BSS_REQ",
 			start_bss_req->bssType);
 		return false;
 	}
@@ -426,8 +420,7 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 	if (start_bss_req->bssType == eSIR_IBSS_MODE
 	    && (!start_bss_req->ssId.length
 		|| start_bss_req->ssId.length > SIR_MAC_MAX_SSID_LENGTH)) {
-		lim_log(mac_ctx, LOGW,
-			FL("Invalid SSID length in eWNI_SME_START_BSS_REQ"));
+		pe_warn("Invalid SSID length in eWNI_SME_START_BSS_REQ");
 		return false;
 	}
 
@@ -445,10 +438,11 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 			if (sirIsArate(opr_rates->rate[i] & 0x7F))
 				continue;
 
-			lim_log(mac_ctx, LOGW,
-				FL("Invalid operational 11A rates"));
-			sir_dump_buf(mac_ctx, SIR_LIM_MODULE_ID, LOG2,
-				     opr_rates->rate, opr_rates->numRates);
+			pe_warn("Invalid operational 11A rates");
+			QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE,
+					   QDF_TRACE_LEVEL_WARN,
+					   opr_rates->rate,
+					   opr_rates->numRates);
 			return false;
 		}
 		return true;
@@ -459,10 +453,11 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 			if (sirIsGrate(opr_rates->rate[i] & 0x7F))
 				continue;
 
-			lim_log(mac_ctx, LOGW,
-				FL("Invalid operational 11G rates"));
-			sir_dump_buf(mac_ctx, SIR_LIM_MODULE_ID, LOG2,
-				     opr_rates->rate, opr_rates->numRates);
+			pe_warn("Invalid operational 11G rates");
+			QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE,
+					   QDF_TRACE_LEVEL_WARN,
+					   opr_rates->rate,
+					   opr_rates->numRates);
 			return false;
 		}
 		return true;
@@ -472,10 +467,11 @@ lim_is_sme_start_bss_req_valid(tpAniSirGlobal mac_ctx,
 		if (sirIsBrate(opr_rates->rate[i] & 0x7F))
 			continue;
 
-		lim_log(mac_ctx, LOGW,
-			FL("Invalid operational 11B rates"));
-		sir_dump_buf(mac_ctx, SIR_LIM_MODULE_ID, LOG2,
-			     opr_rates->rate, opr_rates->numRates);
+		pe_warn("Invalid operational 11B rates");
+		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE,
+				   QDF_TRACE_LEVEL_WARN,
+				   opr_rates->rate,
+				   opr_rates->numRates);
 		return false;
 	}
 	return true;
@@ -505,25 +501,26 @@ uint8_t lim_is_sme_join_req_valid(tpAniSirGlobal pMac, tpSirSmeJoinReq pJoinReq)
 {
 	uint8_t valid = true;
 
-	if (!lim_is_rsn_ie_valid_in_sme_req_message(pMac, &pJoinReq->rsnIE)) {
-		lim_log(pMac, LOGE,
-			FL("received SME_JOIN_REQ with invalid RSNIE"));
+	/*
+	 * If force_rsne_override is enabled that mean User has provided the
+	 * test RSNIE which need to be send as it is in assoc req and thus RSNIE
+	 * validity is not required.
+	 */
+	if (!pJoinReq->force_rsne_override &&
+	    !lim_is_rsn_ie_valid_in_sme_req_message(pMac, &pJoinReq->rsnIE)) {
+		pe_err("received SME_JOIN_REQ with invalid RSNIE");
 		valid = false;
 		goto end;
 	}
 
 	if (!lim_is_addie_valid_in_sme_req_message(pMac, &pJoinReq->addIEScan)) {
-		lim_log(pMac, LOGE,
-			FL
-				("received SME_JOIN_REQ with invalid additional IE for scan"));
+		pe_err("received SME_JOIN_REQ with invalid additional IE for scan");
 		valid = false;
 		goto end;
 	}
 
 	if (!lim_is_addie_valid_in_sme_req_message(pMac, &pJoinReq->addIEAssoc)) {
-		lim_log(pMac, LOGE,
-			FL
-				("received SME_JOIN_REQ with invalid additional IE for assoc"));
+		pe_err("received SME_JOIN_REQ with invalid additional IE for assoc");
 		valid = false;
 		goto end;
 	}
@@ -531,8 +528,7 @@ uint8_t lim_is_sme_join_req_valid(tpAniSirGlobal pMac, tpSirSmeJoinReq pJoinReq)
 	if (!lim_is_bss_descr_valid_in_sme_req_message(pMac, &pJoinReq->bssDescription)) {
 		/* / Received eWNI_SME_JOIN_REQ with invalid BSS Info */
 		/* Log the event */
-		lim_log(pMac, LOGE,
-			FL("received SME_JOIN_REQ with invalid bssInfo"));
+		pe_err("received SME_JOIN_REQ with invalid bssInfo");
 
 		valid = false;
 		goto end;
@@ -546,9 +542,7 @@ uint8_t lim_is_sme_join_req_valid(tpAniSirGlobal pMac, tpSirSmeJoinReq pJoinReq)
 			    (uint8_t *) pJoinReq->bssDescription.bssId,
 			    (uint8_t) (sizeof(tSirMacAddr)))) {
 		/* Log the event */
-		lim_log(pMac, LOGE,
-			FL
-				("received SME_JOIN_REQ with Self Mac and BSSID Same"));
+		pe_err("received SME_JOIN_REQ with Self Mac and BSSID Same");
 
 		valid = false;
 		goto end;
@@ -655,85 +649,6 @@ lim_is_sme_deauth_req_valid(tpAniSirGlobal pMac, tpSirSmeDeauthReq pDeauthReq,
 } /*** end lim_is_sme_deauth_req_valid() ***/
 
 /**
- * lim_is_sme_scan_req_valid()
- *
- ***FUNCTION:
- * This function is called by lim_process_sme_req_messages() upon
- * receiving SME_SCAN_REQ message from application.
- *
- ***LOGIC:
- * Message validity checks are performed in this function
- *
- ***ASSUMPTIONS:
- *
- ***NOTE:
- *
- * @param  pScanReq Pointer to received SME_SCAN_REQ message
- * @return true  when received SME_SCAN_REQ is formatted correctly
- *         false otherwise
- */
-
-uint8_t lim_is_sme_scan_req_valid(tpAniSirGlobal pMac, tpSirSmeScanReq pScanReq)
-{
-	uint8_t valid = true;
-	uint8_t i = 0;
-
-	if (pScanReq->numSsid > SIR_SCAN_MAX_NUM_SSID) {
-		valid = false;
-		lim_log(pMac, LOGE,
-			FL("Number of SSIDs > SIR_SCAN_MAX_NUM_SSID"));
-		goto end;
-	}
-
-	for (i = 0; i < pScanReq->numSsid; i++) {
-		if (pScanReq->ssId[i].length > SIR_MAC_MAX_SSID_LENGTH) {
-			lim_log(pMac, LOGE,
-				FL
-					("Requested SSID length > SIR_MAC_MAX_SSID_LENGTH"));
-			valid = false;
-			goto end;
-		}
-	}
-	if ((pScanReq->bssType < 0) || (pScanReq->bssType > eSIR_AUTO_MODE)) {
-		lim_log(pMac, LOGE, FL("Invalid BSS Type"));
-		valid = false;
-	}
-	if (qdf_is_macaddr_group(&pScanReq->bssId) &&
-		!qdf_is_macaddr_broadcast(&pScanReq->bssId)) {
-		valid = false;
-		lim_log(pMac, LOGE,
-			FL("BSSID is group addr and is not Broadcast Addr"));
-	}
-	if (!
-	    (pScanReq->scanType == eSIR_PASSIVE_SCAN
-	     || pScanReq->scanType == eSIR_ACTIVE_SCAN)) {
-		valid = false;
-		lim_log(pMac, LOGE, FL("Invalid Scan Type"));
-	}
-	if (pScanReq->channelList.numChannels > SIR_MAX_NUM_CHANNELS) {
-		valid = false;
-		lim_log(pMac, LOGE,
-			FL("Number of Channels > SIR_MAX_NUM_CHANNELS"));
-	}
-
-	/*
-	** check min/max channelTime range
-	**/
-	if (valid) {
-		if ((pScanReq->scanType == eSIR_ACTIVE_SCAN) &&
-		    (pScanReq->maxChannelTime < pScanReq->minChannelTime)) {
-			lim_log(pMac, LOGE,
-				FL("Max Channel Time < Min Channel Time"));
-			valid = false;
-			goto end;
-		}
-	}
-
-end:
-	return valid;
-} /*** end lim_is_sme_scan_req_valid() ***/
-
-/**
  * lim_is_sme_set_context_req_valid()
  *
  ***FUNCTION:
@@ -771,9 +686,7 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 		 * No keys present in case of TKIP or CCMP
 		 * Log error.
 		 */
-		lim_log(pMac, LOGW,
-			FL
-				("No keys present in SME_SETCONTEXT_REQ for edType=%d"),
+		pe_warn("No keys present in SME_SETCONTEXT_REQ for edType: %d",
 			pSetContextReq->keyMaterial.edType);
 
 		valid = false;
@@ -786,8 +699,7 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 		 * Keys present in case of no ED policy
 		 * Log error.
 		 */
-		lim_log(pMac, LOGW,
-			FL("Keys present in SME_SETCONTEXT_REQ for edType=%d"),
+		pe_warn("Keys present in SME_SETCONTEXT_REQ for edType: %d",
 			pSetContextReq->keyMaterial.edType);
 
 		valid = false;
@@ -799,8 +711,7 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 		 * Invalid edType in the message
 		 * Log error.
 		 */
-		lim_log(pMac, LOGW,
-			FL("Invalid edType=%d in SME_SETCONTEXT_REQ"),
+		pe_warn("Invalid edType: %d in SME_SETCONTEXT_REQ",
 			pSetContextReq->keyMaterial.edType);
 
 		valid = false;
@@ -809,10 +720,8 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 		uint32_t poi;
 
 		if (wlan_cfg_get_int(pMac, WNI_CFG_PRIVACY_ENABLED,
-				     &poi) != eSIR_SUCCESS) {
-			lim_log(pMac, LOGP,
-				FL("Unable to retrieve POI from CFG"));
-		}
+				     &poi) != QDF_STATUS_SUCCESS)
+			pe_warn("Unable to retrieve POI from CFG");
 
 		if (!poi) {
 			/**
@@ -821,11 +730,8 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 			 * allow BSS creation/join with no Privacy capability
 			 * yet advertising WPA IE
 			 */
-			PELOG1(lim_log(pMac, LOG1,
-				       FL
-					       ("Privacy is not enabled, yet non-None EDtype=%d in SME_SETCONTEXT_REQ"),
+			pe_debug("Privacy is not enabled, yet non-None EDtype: %d in SME_SETCONTEXT_REQ",
 				       pSetContextReq->keyMaterial.edType);
-			       )
 		}
 	}
 
@@ -840,15 +746,17 @@ lim_is_sme_set_context_req_valid(tpAniSirGlobal pMac,
 		    ((pSetContextReq->keyMaterial.edType == eSIR_ED_WPI) &&
 		     (pKey->keyLength != 32)) ||
 #endif
+		    ((pSetContextReq->keyMaterial.edType == eSIR_ED_GCMP) &&
+		     (pKey->keyLength != 16)) ||
+		    ((pSetContextReq->keyMaterial.edType == eSIR_ED_GCMP_256) &&
+		     (pKey->keyLength != 32)) ||
 		    ((pSetContextReq->keyMaterial.edType == eSIR_ED_CCMP) &&
 		     (pKey->keyLength != 16))) {
 			/**
 			 * Invalid key length for a given ED type
 			 * Log error.
 			 */
-			lim_log(pMac, LOGW,
-				FL
-					("Invalid keyLength =%d for edType=%d in SME_SETCONTEXT_REQ"),
+			pe_warn("Invalid keyLength: %d for edType: %d in SME_SETCONTEXT_REQ",
 				pKey->keyLength,
 				pSetContextReq->keyMaterial.edType);
 

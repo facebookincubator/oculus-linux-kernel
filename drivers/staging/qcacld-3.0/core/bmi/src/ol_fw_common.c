@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include "ol_if_athvar.h"
@@ -43,6 +34,7 @@
 #include <net/cnss.h>
 #endif
 #include "i_bmi.h"
+#include "cds_api.h"
 
 #ifdef CONFIG_DISABLE_SLEEP_BMI_OPTION
 static inline void ol_sdio_disable_sleep(struct ol_context *ol_ctx)
@@ -70,7 +62,7 @@ static inline void ol_sdio_disable_sleep(struct ol_context *ol_ctx)
 #endif
 
 /**
- * ol_usb_extra_initialization() - USB extra initilization
+ * ol_usb_extra_initialization() - USB extra initialization
  * @ol_ctx: pointer to ol_context
  *
  * USB specific initialization after firmware download
@@ -119,7 +111,8 @@ QDF_STATUS ol_sdio_extra_initialization(struct ol_context *ol_ctx)
 	}
 	/* note: we actually get the block size for mailbox 1,
 	 * for SDIO the block size on mailbox 0 is artificially
-	 * set to 1 must be a power of 2 */
+	 * set to 1 must be a power of 2
+	 */
 	qdf_assert((blocksizes[1] & (blocksizes[1] - 1)) == 0);
 
 	/* set the host interest area for the block size */
@@ -162,9 +155,18 @@ QDF_STATUS ol_sdio_extra_initialization(struct ol_context *ol_ctx)
 		goto exit;
 	}
 
-	param |= (HI_ACS_FLAGS_SDIO_SWAP_MAILBOX_SET|
-			 HI_ACS_FLAGS_SDIO_REDUCE_TX_COMPL_SET|
-			 HI_ACS_FLAGS_ALT_DATA_CREDIT_SIZE);
+	param |= HI_ACS_FLAGS_ALT_DATA_CREDIT_SIZE;
+
+	/* disable swap mailbox for FTM */
+	if (cds_get_conparam() != QDF_GLOBAL_FTM_MODE)
+		param |= HI_ACS_FLAGS_SDIO_SWAP_MAILBOX_SET;
+
+	if (!cds_is_ptp_tx_opt_enabled())
+		param |= HI_ACS_FLAGS_SDIO_REDUCE_TX_COMPL_SET;
+
+	/* enable TX completion to collect tx_desc for pktlog */
+	if (cds_is_packet_log_enabled())
+		param &= ~HI_ACS_FLAGS_SDIO_REDUCE_TX_COMPL_SET;
 
 	bmi_write_memory(hif_hia_item_address(target_type,
 			offsetof(struct host_interest_s,
@@ -175,13 +177,13 @@ exit:
 }
 
 /**
-* ol_extra_initialization() - OL extra initilization
-* @ol_ctx: pointer to ol_context
-*
-* Bus specific initialization after firmware download
-*
-* Return: QDF_STATUS_SUCCESS on success and error QDF status on failure
-*/
+ * ol_extra_initialization() - OL extra initialization
+ * @ol_ctx: pointer to ol_context
+ *
+ * Bus specific initialization after firmware download
+ *
+ * Return: QDF_STATUS_SUCCESS on success and error QDF status on failure
+ */
 QDF_STATUS ol_extra_initialization(struct ol_context *ol_ctx)
 {
 	struct hif_opaque_softc *scn = ol_ctx->scn;
@@ -218,6 +220,8 @@ void ol_target_ready(struct hif_opaque_softc *scn, void *cfg_ctx)
 		hif_set_mailbox_swap(scn);
 	}
 
-	if (value & HI_ACS_FLAGS_SDIO_REDUCE_TX_COMPL_FW_ACK)
+	if (value & HI_ACS_FLAGS_SDIO_REDUCE_TX_COMPL_FW_ACK) {
 		BMI_ERR("Reduced Tx Complete service is enabled!");
+		ol_cfg_set_tx_free_at_download(cfg_ctx);
+	}
 }

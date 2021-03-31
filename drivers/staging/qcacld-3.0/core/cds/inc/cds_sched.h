@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #if !defined(__CDS_SCHED_H)
@@ -45,12 +36,11 @@
 #if defined(WLAN_OPEN_SOURCE) && defined(CONFIG_HAS_WAKELOCK)
 #include <linux/wakelock.h>
 #endif
-#include <cds_mq.h>
 #include <qdf_types.h>
 #include "qdf_lock.h"
 #include "qdf_mc_timer.h"
 #include "cds_config.h"
-#include "cds_reg_service.h"
+#include "qdf_cpuhp.h"
 
 #define TX_POST_EVENT               0x001
 #define TX_SUSPEND_EVENT            0x002
@@ -67,41 +57,18 @@
 #define WD_WLAN_SHUTDOWN_EVENT      0x008
 #define WD_WLAN_REINIT_EVENT        0x010
 
-/*
- * Maximum number of messages in the system
- * These are buffers to account for all current messages
- * with some accounting of what we think is a
- * worst-case scenario.  Must be able to handle all
- * incoming frames, as well as overhead for internal
- * messaging
- *
- * Increased to 8000 to handle more RX frames
- */
-#define CDS_CORE_MAX_MESSAGES 8000
-
 #ifdef QCA_CONFIG_SMP
 /*
 ** Maximum number of cds messages to be allocated for
 ** OL Rx thread.
 */
 #define CDS_MAX_OL_RX_PKT 4000
-
-typedef void (*cds_ol_rx_thread_cb)(void *context, void *rxpkt, uint16_t staid);
 #endif
 
-/*
-** QDF Message queue definition.
-*/
-typedef struct _cds_mq_type {
-	/* Lock use to synchronize access to this message queue */
-	spinlock_t mqLock;
+typedef void (*cds_ol_rx_thread_cb)(void *context,
+				    qdf_nbuf_t rxpkt,
+				    uint16_t staid);
 
-	/* List of vOS Messages waiting on this queue */
-	struct list_head mqList;
-
-} cds_mq_type, *p_cds_mq_type;
-
-#ifdef QCA_CONFIG_SMP
 /*
 ** CDS message wrapper for data rx from TXRX
 */
@@ -110,7 +77,7 @@ struct cds_ol_rx_pkt {
 	void *context;
 
 	/* Rx skb */
-	void *Rxpkt;
+	qdf_nbuf_t Rxpkt;
 
 	/* Station id to which this packet is destined */
 	uint16_t staId;
@@ -119,7 +86,6 @@ struct cds_ol_rx_pkt {
 	cds_ol_rx_thread_cb callback;
 
 };
-#endif
 
 /*
 ** CDS Scheduler context
@@ -130,38 +96,6 @@ struct cds_ol_rx_pkt {
 **
 */
 typedef struct _cds_sched_context {
-	/* Place holder to the CDS Context */
-	void *pVContext;
-	/* WMA Message queue on the Main thread */
-	cds_mq_type wmaMcMq;
-
-	/* PE Message queue on the Main thread */
-	cds_mq_type peMcMq;
-
-	/* SME Message queue on the Main thread */
-	cds_mq_type smeMcMq;
-
-	/* SYS Message queue on the Main thread */
-	cds_mq_type sysMcMq;
-
-	/* Handle of Event for MC thread to signal startup */
-	struct completion McStartEvent;
-
-	struct task_struct *McThread;
-
-	/* completion object for MC thread shutdown */
-	struct completion McShutdown;
-
-	/* Wait queue for MC thread */
-	wait_queue_head_t mcWaitQueue;
-
-	unsigned long mcEventFlag;
-
-	/* Completion object to resume Mc thread */
-	struct completion ResumeMcEvent;
-
-	/* lock to make sure that McThread suspend/resume mechanism is in sync */
-	spinlock_t McThreadLock;
 #ifdef QCA_CONFIG_SMP
 	spinlock_t ol_rx_thread_lock;
 
@@ -174,7 +108,7 @@ typedef struct _cds_sched_context {
 	/* Completion object to suspend OL rx thread */
 	struct completion ol_suspend_rx_event;
 
-	/* Completion objext to resume OL rx thread */
+	/* Completion object to resume OL rx thread */
 	struct completion ol_resume_rx_event;
 
 	/* Completion object for OL Rxthread shutdown */
@@ -200,17 +134,24 @@ typedef struct _cds_sched_context {
 	/* Free message queue for OL Rx processing */
 	struct list_head cds_ol_rx_pkt_freeq;
 
-	/* cpu hotplug notifier */
-	struct notifier_block *cpu_hot_plug_notifier;
+	/* The CPU hotplug event registration handle, used to unregister */
+	struct qdf_cpuhp_handler *cpuhp_event_handle;
 
 	/* affinity lock */
 	struct mutex affinity_lock;
 
-	/* rx thread affinity cpu */
-	unsigned long rx_thread_cpu;
+	/* Saved rx thread CPU affinity */
+	struct cpumask rx_thread_cpu_mask;
+
+	/* CPU affinity bitmask */
+	uint8_t conf_rx_thread_cpu_mask;
 
 	/* high throughput required */
 	bool high_throughput_required;
+
+	/* affinity requied during uplink traffic*/
+	bool rx_affinity_required;
+	uint8_t conf_rx_thread_ul_cpu_mask;
 #endif
 } cds_sched_context, *p_cds_sched_context;
 
@@ -232,51 +173,27 @@ struct cds_log_complete {
 	bool recovery_needed;
 };
 
-/*
-** CDS Sched Msg Wrapper
-** Wrapper messages so that they can be chained to their respective queue
-** in the scheduler.
-*/
-typedef struct _cds_msg_wrapper {
-	/* Message node */
-	struct list_head msgNode;
-
-	/* the Vos message it is associated to */
-	cds_msg_t *pVosMsg;
-
-} cds_msg_wrapper, *p_cds_msg_wrapper;
-
 /* forward-declare hdd_context_s as it is used ina function type */
 struct hdd_context_s;
-typedef struct _cds_context_type {
-	/* Messages buffers */
-	cds_msg_t aMsgBuffers[CDS_CORE_MAX_MESSAGES];
-
-	cds_msg_wrapper aMsgWrappers[CDS_CORE_MAX_MESSAGES];
-
-	/* Free Message queue */
-	cds_mq_type freeVosMq;
-
+struct cds_context {
 	/* Scheduler Context */
 	cds_sched_context qdf_sched;
 
 	/* HDD Module Context  */
-	void *pHDDContext;
+	void *hdd_context;
 
 	/* MAC Module Context  */
-	void *pMACContext;
-
-	qdf_event_t ProbeEvent;
+	void *mac_context;
 
 	uint32_t driver_state;
-
-	qdf_event_t wmaCompleteEvent;
 	unsigned long fw_state;
 
-	/* WMA Context */
-	void *pWMAContext;
+	qdf_event_t wma_complete_event;
 
-	void *pHIFContext;
+	/* WMA Context */
+	void *wma_context;
+
+	void *hif_context;
 
 	void *htc_ctx;
 
@@ -288,10 +205,11 @@ typedef struct _cds_context_type {
 	 */
 	qdf_device_t qdf_ctx;
 
-	void *pdev_txrx_ctx;
+	struct cdp_pdev *pdev_txrx_ctx;
+	void *dp_soc;
 
 	/* Configuration handle used to get system configuration */
-	void *cfg_ctx;
+	struct cdp_cfg *cfg_ctx;
 
 	/* radio index per driver */
 	int radio_index;
@@ -304,44 +222,15 @@ typedef struct _cds_context_type {
 	uint32_t fw_debug_log_level;
 	struct cds_log_complete log_complete;
 	qdf_spinlock_t bug_report_lock;
-	qdf_event_t connection_update_done_evt;
-	qdf_mutex_t qdf_conc_list_lock;
-	qdf_mc_timer_t dbs_opportunistic_timer;
-#ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-	void (*sap_restart_chan_switch_cb)(void *, uint32_t, uint32_t);
-#endif
-	QDF_STATUS (*sme_get_valid_channels)(void*, uint16_t cfg_id,
-		uint8_t *, uint32_t *);
-	void (*sme_get_nss_for_vdev)(void*, enum tQDF_ADAPTER_MODE,
-		uint8_t *, uint8_t *);
 
-	/* Datapath callback functions */
-	void (*ol_txrx_update_mac_id_cb)(uint8_t , uint8_t);
-	void (*hdd_en_lro_in_cc_cb)(struct hdd_context_s *);
-	void (*hdd_disable_lro_in_cc_cb)(struct hdd_context_s *);
-	void (*hdd_set_rx_mode_rps_cb)(struct hdd_context_s *, void *, bool);
-
-	/* This list is not sessionized. This mandatory channel list would be
-	 * as per OEMs preference as per the regulatory/other considerations.
-	 * So, this would remain same for all the interfaces.
-	 */
-	uint8_t sap_mandatory_channels[QDF_MAX_NUM_CHAN];
-	uint32_t sap_mandatory_channels_len;
-	bool enable_sap_mandatory_chan_list;
-	bool do_hw_mode_change;
 	bool enable_fatal_event;
 	struct cds_config_info *cds_cfg;
 
-	/* This is to track if HW mode change is in progress */
-	uint32_t hw_mode_change_in_progress;
+	struct ol_tx_sched_wrr_ac_specs_t ac_specs[TX_WMM_AC_NUM];
 	qdf_work_t cds_recovery_work;
 	qdf_workqueue_t *cds_recovery_wq;
-	enum cds_hang_reason recovery_reason;
-	uint16_t unsafe_channel_count;
-	uint16_t unsafe_channel_list[NUM_CHANNELS];
-} cds_context_type, *p_cds_contextType;
-
-extern struct _cds_sched_context *gp_cds_sched_context;
+	enum qdf_hang_reason recovery_reason;
+};
 
 /*---------------------------------------------------------------------------
    Function declarations and documenation
@@ -349,6 +238,33 @@ extern struct _cds_sched_context *gp_cds_sched_context;
 #ifdef QCA_CONFIG_SMP
 int cds_sched_handle_cpu_hot_plug(void);
 int cds_sched_handle_throughput_req(bool high_tput_required);
+
+/**
+ * cds_sched_handle_rx_thread_affinity_req - rx thread affinity req handler
+ * @high_tput_required: high throughput is required or not
+ *
+ * rx thread affinity handler will find online cores and
+ * will assign proper core based on perf requirement
+ *
+ * Return: None
+ */
+void cds_sched_handle_rx_thread_affinity_req(bool high_throughput);
+
+/**
+ * cds_set_rx_thread_ul_cpu_mask() - Rx_thread affinity for UL from INI
+ * @cpu_affinity_mask: CPU affinity bitmap
+ *
+ * Return:None
+ */
+void cds_set_rx_thread_ul_cpu_mask(uint8_t cpu_affinity_mask);
+
+/**
+ * cds_set_rx_thread_cpu_mask() - Rx_thread affinity from INI
+ * @cpu_affinity_mask: CPU affinity bitmap
+ *
+ * Return:None
+ */
+void cds_set_rx_thread_cpu_mask(uint8_t cpu_affinity_mask);
 
 /*---------------------------------------------------------------------------
    \brief cds_drop_rxpkt_by_staid() - API to drop pending Rx packets for a sta
@@ -374,6 +290,15 @@ void cds_drop_rxpkt_by_staid(p_cds_sched_context pSchedContext, uint16_t staId);
    -------------------------------------------------------------------------*/
 void cds_indicate_rxpkt(p_cds_sched_context pSchedContext,
 			struct cds_ol_rx_pkt *pkt);
+
+/**
+ * cds_close_rx_thread() - close the Rx thread
+ *
+ * This api closes the Rx thread:
+ *
+ * Return: qdf status
+ */
+QDF_STATUS cds_close_rx_thread(void);
 
 /*---------------------------------------------------------------------------
    \brief cds_alloc_ol_rx_pkt() - API to return next available cds message
@@ -410,6 +335,12 @@ void cds_free_ol_rx_pkt(p_cds_sched_context pSchedContext,
    -------------------------------------------------------------------------*/
 void cds_free_ol_rx_pkt_freeq(p_cds_sched_context pSchedContext);
 #else
+static inline void
+cds_set_rx_thread_ul_cpu_mask(uint8_t cpu_affinity_mask) {}
+
+static inline void
+cds_sched_handle_rx_thread_affinity_req(bool high_throughput) {}
+
 /**
  * cds_drop_rxpkt_by_staid() - api to drop pending rx packets for a sta
  * @pSchedContext: Pointer to the global CDS Sched Context
@@ -439,6 +370,19 @@ void cds_indicate_rxpkt(p_cds_sched_context pSchedContext,
 }
 
 /**
+ * cds_close_rx_thread() - close the Rx thread
+ *
+ * This api closes the Rx thread:
+ *
+ * Return: qdf status
+ */
+static inline
+QDF_STATUS cds_close_rx_thread(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
  * cds_alloc_ol_rx_pkt() - API to return next available cds message
  * @pSchedContext: pointer to  CDS Sched Context
  *
@@ -447,6 +391,7 @@ void cds_indicate_rxpkt(p_cds_sched_context pSchedContext,
 static inline
 struct cds_ol_rx_pkt *cds_alloc_ol_rx_pkt(p_cds_sched_context pSchedContext)
 {
+	return NULL;
 }
 
 /**
@@ -505,7 +450,7 @@ static inline int cds_sched_handle_throughput_req(
    is ready to be used.
 
    QDF_STATUS_E_RESOURCES - System resources (other than memory)
-   are unavailable to initilize the scheduler
+   are unavailable to initialize the scheduler
 
    QDF_STATUS_E_NOMEM - insufficient memory exists to initialize
    the scheduler
@@ -534,8 +479,6 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 
      - The Tx thread is closed
 
-   \param  p_cds_context - pointer to the global QDF Context
-
    \return QDF_STATUS_SUCCESS - Scheduler was successfully initialized and
    is ready to be used.
 
@@ -547,19 +490,9 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
    \sa cds_sched_close()
 
    ---------------------------------------------------------------------------*/
-QDF_STATUS cds_sched_close(void *p_cds_context);
+QDF_STATUS cds_sched_close(void);
 
-/* Helper routines provided to other CDS API's */
-QDF_STATUS cds_mq_init(p_cds_mq_type pMq);
-void cds_mq_deinit(p_cds_mq_type pMq);
-void cds_mq_put(p_cds_mq_type pMq, p_cds_msg_wrapper pMsgWrapper);
-void cds_mq_put_front(p_cds_mq_type mq, p_cds_msg_wrapper msg_wrapper);
-p_cds_msg_wrapper cds_mq_get(p_cds_mq_type pMq);
-bool cds_is_mq_empty(p_cds_mq_type pMq);
 p_cds_sched_context get_cds_sched_ctxt(void);
-QDF_STATUS cds_sched_init_mqs(p_cds_sched_context pSchedContext);
-void cds_sched_deinit_mqs(p_cds_sched_context pSchedContext);
-void cds_sched_flush_mc_mqs(p_cds_sched_context pSchedContext);
 
 void qdf_timer_module_init(void);
 void qdf_timer_module_deinit(void);
@@ -605,6 +538,7 @@ QDF_STATUS cds_shutdown_notifier_register(void (*cb)(void *priv), void *priv);
  * Return: None
  */
 void cds_shutdown_notifier_purge(void);
+
 /**
  * cds_shutdown_notifier_call() - Call shutdown notifier call back
  *
@@ -612,4 +546,14 @@ void cds_shutdown_notifier_purge(void);
  * shutdown.
  */
 void cds_shutdown_notifier_call(void);
+
+/**
+ * cds_resume_rx_thread() - resume rx thread by completing its resume event
+ *
+ * Resume RX thread by completing RX thread resume event
+ *
+ * Return: None
+ */
+void cds_resume_rx_thread(void);
+
 #endif /* #if !defined __CDS_SCHED_H */

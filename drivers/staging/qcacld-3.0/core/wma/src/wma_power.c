@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -46,8 +37,6 @@
 #include "qdf_nbuf.h"
 #include "qdf_types.h"
 #include "qdf_mem.h"
-#include "ol_txrx_peer_find.h"
-
 #include "wma_types.h"
 #include "lim_api.h"
 #include "lim_session_utils.h"
@@ -62,7 +51,6 @@
 #include "csr_api.h"
 #include "ol_fw.h"
 
-#include "dfs.h"
 #include "wma_internal.h"
 
 /**
@@ -321,21 +309,33 @@ QDF_STATUS wma_set_ap_peer_uapsd(tp_wma_handle wma, uint32_t vdev_id,
  * Return: none
  */
 void wma_update_edca_params_for_ac(tSirMacEdcaParamRecord *edca_param,
-				   wmi_wmm_vparams *wmm_param, int ac)
+				   struct wmi_host_wme_vparams *wmm_param,
+				   int ac, bool mu_edca_param)
 {
 #define WMA_WMM_EXPO_TO_VAL(val)        ((1 << (val)) - 1)
-	wmm_param->cwmin = WMA_WMM_EXPO_TO_VAL(edca_param->cw.min);
-	wmm_param->cwmax = WMA_WMM_EXPO_TO_VAL(edca_param->cw.max);
+	if (mu_edca_param) {
+		wmm_param->cwmin = edca_param->cw.min;
+		wmm_param->cwmax = edca_param->cw.max;
+	} else {
+		wmm_param->cwmin = WMA_WMM_EXPO_TO_VAL(edca_param->cw.min);
+		wmm_param->cwmax = WMA_WMM_EXPO_TO_VAL(edca_param->cw.max);
+	}
 	wmm_param->aifs = edca_param->aci.aifsn;
-	wmm_param->txoplimit = edca_param->txoplimit;
+	if (mu_edca_param)
+		wmm_param->mu_edca_timer = edca_param->mu_edca_timer;
+	else
+		wmm_param->txoplimit = edca_param->txoplimit;
 	wmm_param->acm = edca_param->aci.acm;
 
-	/* TODO: No ack is not present in EdcaParamRecord */
-	wmm_param->no_ack = 0;
+	wmm_param->noackpolicy = edca_param->no_ack;
 
-	WMA_LOGI("WMM PARAMS AC[%d]: AIFS %d Min %d Max %d TXOP %d ACM %d NOACK %d",
-		ac, wmm_param->aifs, wmm_param->cwmin, wmm_param->cwmax,
-		wmm_param->txoplimit, wmm_param->acm, wmm_param->no_ack);
+	WMA_LOGD("WMM PARAMS AC[%d]: AIFS %d Min %d Max %d %s %d ACM %d NOACK %d",
+			ac, wmm_param->aifs, wmm_param->cwmin,
+			wmm_param->cwmax,
+			mu_edca_param ? "MU_EDCA TIMER" : "TXOP",
+			mu_edca_param ? wmm_param->mu_edca_timer :
+				wmm_param->txoplimit,
+			wmm_param->acm, wmm_param->noackpolicy);
 }
 
 /**
@@ -351,26 +351,26 @@ void wma_set_tx_power(WMA_HANDLE handle,
 	tp_wma_handle wma_handle = (tp_wma_handle) handle;
 	uint8_t vdev_id;
 	QDF_STATUS ret = QDF_STATUS_E_FAILURE;
-	void *pdev;
+	struct cdp_vdev *vdev;
 
 	if (tx_pwr_params->dev_mode == QDF_SAP_MODE ||
 	    tx_pwr_params->dev_mode == QDF_P2P_GO_MODE) {
-		pdev = wma_find_vdev_by_addr(wma_handle,
+		vdev = wma_find_vdev_by_addr(wma_handle,
 					     tx_pwr_params->bssId.bytes,
 					     &vdev_id);
 	} else {
-		pdev = wma_find_vdev_by_bssid(wma_handle,
+		vdev = wma_find_vdev_by_bssid(wma_handle,
 					      tx_pwr_params->bssId.bytes,
 					      &vdev_id);
 	}
-	if (!pdev) {
+	if (!vdev) {
 		WMA_LOGE("vdev handle is invalid for %pM",
 			 tx_pwr_params->bssId.bytes);
 		qdf_mem_free(tx_pwr_params);
 		return;
 	}
 
-	if (!(wma_handle->interfaces[vdev_id].vdev_up)) {
+	if (!wma_is_vdev_up(vdev_id)) {
 		WMA_LOGE("%s: vdev id %d is not up for %pM", __func__, vdev_id,
 			 tx_pwr_params->bssId.bytes);
 		qdf_mem_free(tx_pwr_params);
@@ -379,7 +379,8 @@ void wma_set_tx_power(WMA_HANDLE handle,
 
 	if (tx_pwr_params->power == 0) {
 		/* set to default. Since the app does not care the tx power
-		 * we keep the previous setting */
+		 * we keep the previous setting
+		 */
 		wma_handle->interfaces[vdev_id].tx_power = 0;
 		ret = 0;
 		goto end;
@@ -397,10 +398,9 @@ void wma_set_tx_power(WMA_HANDLE handle,
 		/* tx_power changed, Push the tx_power to FW */
 		WMA_LOGI("%s: Set TX pwr limit [WMI_VDEV_PARAM_TX_PWRLIMIT] to %d",
 			__func__, tx_pwr_params->power);
-		ret = wma_vdev_set_param(wma_handle->wmi_handle,
-						      vdev_id,
-						      WMI_VDEV_PARAM_TX_PWRLIMIT,
-						      tx_pwr_params->power);
+		ret = wma_vdev_set_param(wma_handle->wmi_handle, vdev_id,
+					      WMI_VDEV_PARAM_TX_PWRLIMIT,
+					      tx_pwr_params->power);
 		if (ret == QDF_STATUS_SUCCESS)
 			wma_handle->interfaces[vdev_id].tx_power =
 				tx_pwr_params->power;
@@ -427,25 +427,25 @@ void wma_set_max_tx_power(WMA_HANDLE handle,
 	tp_wma_handle wma_handle = (tp_wma_handle) handle;
 	uint8_t vdev_id;
 	QDF_STATUS ret = QDF_STATUS_E_FAILURE;
-	void *pdev;
+	struct cdp_vdev *vdev;
 	int8_t prev_max_power;
 
-	pdev = wma_find_vdev_by_addr(wma_handle, tx_pwr_params->bssId.bytes,
+	vdev = wma_find_vdev_by_addr(wma_handle, tx_pwr_params->bssId.bytes,
 				     &vdev_id);
-	if (pdev == NULL) {
+	if (vdev == NULL) {
 		/* not in SAP array. Try the station/p2p array */
-		pdev = wma_find_vdev_by_bssid(wma_handle,
+		vdev = wma_find_vdev_by_bssid(wma_handle,
 					      tx_pwr_params->bssId.bytes,
 					      &vdev_id);
 	}
-	if (!pdev) {
+	if (!vdev) {
 		WMA_LOGE("vdev handle is invalid for %pM",
 			 tx_pwr_params->bssId.bytes);
 		qdf_mem_free(tx_pwr_params);
 		return;
 	}
 
-	if (!(wma_handle->interfaces[vdev_id].vdev_up)) {
+	if (!wma_is_vdev_up(vdev_id)) {
 		WMA_LOGE("%s: vdev id %d is not up", __func__, vdev_id);
 		qdf_mem_free(tx_pwr_params);
 		return;
@@ -554,7 +554,7 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 {
 	QDF_STATUS ret;
 	uint32_t cfg_data_val = 0;
-	/* get mac to acess CFG data base */
+	/* get mac to access CFG data base */
 	struct sAniSirGlobal *mac = cds_get_context(QDF_MODULE_ID_PE);
 	uint32_t rx_wake_policy;
 	uint32_t tx_wake_threshold;
@@ -571,7 +571,7 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 
 	/* Set Tx/Rx Data InActivity Timeout   */
 	if (wlan_cfg_get_int(mac, WNI_CFG_PS_DATA_INACTIVITY_TIMEOUT,
-			     &cfg_data_val) != eSIR_SUCCESS) {
+			     &cfg_data_val) != QDF_STATUS_SUCCESS) {
 		QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
 			  "Failed to get WNI_CFG_PS_DATA_INACTIVITY_TIMEOUT");
 		cfg_data_val = POWERSAVE_DEFAULT_INACTIVITY_TIME;
@@ -584,7 +584,7 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 		tx_wake_threshold = WMI_STA_PS_TX_WAKE_THRESHOLD_NEVER;
 
 		if (wlan_cfg_get_int(mac, WNI_CFG_MAX_PS_POLL,
-				     &cfg_data_val) != eSIR_SUCCESS) {
+				     &cfg_data_val) != QDF_STATUS_SUCCESS) {
 			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
 				  "Failed to get value for WNI_CFG_MAX_PS_POLL");
 		}
@@ -597,7 +597,7 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 	} else {
 		/* Ps Poll Wake Policy */
 		if (wlan_cfg_get_int(mac, WNI_CFG_MAX_PS_POLL,
-				     &cfg_data_val) != eSIR_SUCCESS) {
+				     &cfg_data_val) != QDF_STATUS_SUCCESS) {
 			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
 				  "Failed to get value for WNI_CFG_MAX_PS_POLL");
 		}
@@ -694,7 +694,7 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 
 	/* Set Listen Interval */
 	if (wlan_cfg_get_int(mac, WNI_CFG_LISTEN_INTERVAL,
-			     &cfg_data_val) != eSIR_SUCCESS) {
+			     &cfg_data_val) != QDF_STATUS_SUCCESS) {
 		QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
 			  "Failed to get value for WNI_CFG_LISTEN_INTERVAL");
 		cfg_data_val = POWERSAVE_DEFAULT_LISTEN_INTERVAL;
@@ -735,17 +735,17 @@ static enum powersave_qpower_mode wma_get_qpower_config(tp_wma_handle wma)
 	switch (wma->powersave_mode) {
 	case PS_QPOWER_NODEEPSLEEP:
 	case PS_QPOWER_DEEPSLEEP:
-		WMA_LOGI("QPOWER is enabled in power save mode %d",
-			wma->powersave_mode);
+		WMA_LOGD("QPOWER is enabled in power save mode %d",
+			 wma->powersave_mode);
 		return QPOWER_ENABLED;
 	case PS_DUTY_CYCLING_QPOWER:
-		WMA_LOGI("DUTY cycling QPOWER is enabled in power save mode %d",
-			wma->powersave_mode);
+		WMA_LOGD("DUTY cycling QPOWER is enabled in power save mode %d",
+			 wma->powersave_mode);
 		return QPOWER_DUTY_CYCLING;
 
 	default:
-		WMA_LOGI("QPOWER is disabled in power save mode %d",
-			wma->powersave_mode);
+		WMA_LOGD("QPOWER is disabled in power save mode %d",
+			 wma->powersave_mode);
 		return QPOWER_DISABLED;
 	}
 }
@@ -757,15 +757,27 @@ static enum powersave_qpower_mode wma_get_qpower_config(tp_wma_handle wma)
  *
  * Return: none
  */
-void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
+void wma_enable_sta_ps_mode(tpEnablePsParams ps_req)
 {
 	uint32_t vdev_id = ps_req->sessionid;
 	QDF_STATUS ret;
-	enum powersave_qpower_mode qpower_config = wma_get_qpower_config(wma);
-	struct wma_txrx_node *iface = &wma->interfaces[vdev_id];
+	enum powersave_qpower_mode qpower_config;
+	struct wma_txrx_node *iface;
+	t_wma_handle *wma_handle;
 
-	wma->ps_setting = ps_req->psSetting;
+	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	if (!wma_handle) {
+		wma_err("wma handle is null");
+		return;
+	}
 
+	iface = &wma_handle->interfaces[vdev_id];
+	if (!iface) {
+		WMA_LOGE("%s: vdev is NULL for vdev_%d", __func__, vdev_id);
+		return;
+	}
+
+	qpower_config = wma_get_qpower_config(wma_handle);
 	if (!iface->handle) {
 		WMA_LOGE("vdev id %d is not active", vdev_id);
 		return;
@@ -776,14 +788,14 @@ void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
 			WMA_LOGD("Qpower is disabled");
 		}
 		WMA_LOGD("Enable Sta Mode Ps vdevId %d", vdev_id);
-		ret = wma_unified_set_sta_ps_param(wma->wmi_handle, vdev_id,
+		ret = wma_unified_set_sta_ps_param(wma_handle->wmi_handle, vdev_id,
 				WMI_STA_PS_PARAM_UAPSD, 0);
 		if (QDF_IS_STATUS_ERROR(ret)) {
 			WMA_LOGE("Set Uapsd param 0 Failed vdevId %d", vdev_id);
 			return;
 		}
 
-		ret = wma_set_force_sleep(wma, vdev_id, false,
+		ret = wma_set_force_sleep(wma_handle, vdev_id, false,
 				qpower_config, true);
 		if (QDF_IS_STATUS_ERROR(ret)) {
 			WMA_LOGE("Enable Sta Ps Failed vdevId %d", vdev_id);
@@ -791,12 +803,12 @@ void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
 		}
 	} else if (eSIR_ADDON_ENABLE_UAPSD == ps_req->psSetting) {
 		uint32_t uapsd_val = 0;
-		uapsd_val = wma_get_uapsd_mask(&ps_req->uapsdParams);
 
+		uapsd_val = wma_get_uapsd_mask(&ps_req->uapsdParams);
 		if (uapsd_val != iface->uapsd_cached_val) {
 			WMA_LOGD("Enable Uapsd vdevId %d Mask %d",
 					vdev_id, uapsd_val);
-			ret = wma_unified_set_sta_ps_param(wma->wmi_handle,
+			ret = wma_unified_set_sta_ps_param(wma_handle->wmi_handle,
 					vdev_id,
 					WMI_STA_PS_PARAM_UAPSD,
 					uapsd_val);
@@ -817,7 +829,7 @@ void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
 			WMA_LOGD("Qpower is disabled");
 		}
 		WMA_LOGD("Enable Forced Sleep vdevId %d", vdev_id);
-		ret = wma_set_force_sleep(wma, vdev_id, true,
+		ret = wma_set_force_sleep(wma_handle, vdev_id, true,
 				qpower_config, true);
 
 		if (QDF_IS_STATUS_ERROR(ret)) {
@@ -827,14 +839,14 @@ void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
 		}
 	}
 
-	if (wma->ito_repeat_count) {
+	if (wma_handle->ito_repeat_count) {
 		WMA_LOGI("Set ITO count to %d for vdevId %d",
-					wma->ito_repeat_count, vdev_id);
+					wma_handle->ito_repeat_count, vdev_id);
 
-		ret = wma_unified_set_sta_ps_param(wma->wmi_handle,
+		ret = wma_unified_set_sta_ps_param(wma_handle->wmi_handle,
 			vdev_id,
 			WMI_STA_PS_PARAM_MAX_RESET_ITO_COUNT_ON_TIM_NO_TXRX,
-			wma->ito_repeat_count);
+			wma_handle->ito_repeat_count);
 		if (QDF_IS_STATUS_ERROR(ret)) {
 			WMA_LOGE("Set ITO count failed vdevId %d Error %d",
 								vdev_id, ret);
@@ -853,25 +865,35 @@ void wma_enable_sta_ps_mode(tp_wma_handle wma, tpEnablePsParams ps_req)
  *
  * Return: none
  */
-void wma_disable_sta_ps_mode(tp_wma_handle wma, tpDisablePsParams ps_req)
+void wma_disable_sta_ps_mode(tpDisablePsParams ps_req)
 {
 	QDF_STATUS ret;
 	uint32_t vdev_id = ps_req->sessionid;
-	struct wma_txrx_node *iface = &wma->interfaces[vdev_id];
+	struct wma_txrx_node *iface;
+	t_wma_handle *wma_handle;
+
+	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	if (!wma_handle) {
+		wma_err("wma handle is null");
+		return;
+	}
+
+	iface = &wma_handle->interfaces[vdev_id];
 
 	WMA_LOGD("Disable Sta Mode Ps vdevId %d", vdev_id);
 
 	/* Disable Sta Mode Power save */
-	ret = wmi_unified_set_sta_ps(wma->wmi_handle, vdev_id, false);
+	ret = wmi_unified_set_sta_ps(wma_handle->wmi_handle, vdev_id, false);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		WMA_LOGE("Disable Sta Mode Ps Failed vdevId %d", vdev_id);
 		return;
 	}
 	iface->in_bmps = false;
+
 	/* Disable UAPSD incase if additional Req came */
 	if (eSIR_ADDON_DISABLE_UAPSD == ps_req->psSetting) {
 		WMA_LOGD("Disable Uapsd vdevId %d", vdev_id);
-		ret = wma_unified_set_sta_ps_param(wma->wmi_handle, vdev_id,
+		ret = wma_unified_set_sta_ps_param(wma_handle->wmi_handle, vdev_id,
 				WMI_STA_PS_PARAM_UAPSD, 0);
 		if (QDF_IS_STATUS_ERROR(ret)) {
 			WMA_LOGE("Disable Uapsd Failed vdevId %d", vdev_id);
@@ -996,7 +1018,7 @@ void wma_disable_uapsd_mode(tp_wma_handle wma,
  * @wmi_handle: wma handle
  * @vdevid: vdev id
  * @peer_addr: peer mac address
- * @autoTriggerparam: auto trigger parameters
+ * @trig_param: auto trigger parameters
  * @num_ac: number of access category
  *
  * This function sets the trigger
@@ -1010,14 +1032,14 @@ void wma_disable_uapsd_mode(tp_wma_handle wma,
 static QDF_STATUS wma_set_sta_uapsd_auto_trig_cmd(wmi_unified_t wmi_handle,
 					uint32_t vdevid,
 					uint8_t peer_addr[IEEE80211_ADDR_LEN],
-					uint8_t *autoTriggerparam,
+					struct sta_uapsd_params *trig_param,
 					uint32_t num_ac)
 {
 	QDF_STATUS ret;
 	struct sta_uapsd_trig_params cmd = {0};
 
 	cmd.vdevid = vdevid;
-	cmd.auto_triggerparam = autoTriggerparam;
+	cmd.auto_triggerparam = trig_param;
 	cmd.num_ac = num_ac;
 
 	qdf_mem_copy((uint8_t *) cmd.peer_addr, (uint8_t *) peer_addr,
@@ -1050,7 +1072,7 @@ QDF_STATUS wma_trigger_uapsd_params(tp_wma_handle wma_handle, uint32_t vdev_id,
 				    trigger_uapsd_params)
 {
 	QDF_STATUS ret;
-	wmi_sta_uapsd_auto_trig_param uapsd_trigger_param;
+	struct sta_uapsd_params uapsd_trigger_param;
 
 	WMA_LOGD("Trigger uapsd params vdev id %d", vdev_id);
 
@@ -1061,10 +1083,10 @@ QDF_STATUS wma_trigger_uapsd_params(tp_wma_handle wma_handle, uint32_t vdev_id,
 		 trigger_uapsd_params->delay_interval,
 		 trigger_uapsd_params->suspend_interval);
 
-	if (!WMI_SERVICE_IS_ENABLED(wma_handle->wmi_service_bitmap,
-				    WMI_STA_UAPSD_BASIC_AUTO_TRIG) ||
-	    !WMI_SERVICE_IS_ENABLED(wma_handle->wmi_service_bitmap,
-				    WMI_STA_UAPSD_VAR_AUTO_TRIG)) {
+	if (!wmi_service_enabled(wma_handle->wmi_handle,
+				    wmi_sta_uapsd_basic_auto_trig) ||
+	    !wmi_service_enabled(wma_handle->wmi_handle,
+				    wmi_sta_uapsd_var_auto_trig)) {
 		WMA_LOGD("Trigger uapsd is not supported vdev id %d", vdev_id);
 		return QDF_STATUS_SUCCESS;
 	}
@@ -1080,7 +1102,7 @@ QDF_STATUS wma_trigger_uapsd_params(tp_wma_handle wma_handle, uint32_t vdev_id,
 
 	ret = wma_set_sta_uapsd_auto_trig_cmd(wma_handle->wmi_handle,
 			vdev_id, wma_handle->interfaces[vdev_id].bssid,
-			(uint8_t *) (&uapsd_trigger_param), 1);
+			&uapsd_trigger_param, 1);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		WMA_LOGE("Fail to send uapsd param cmd for vdevid %d ret = %d",
 			 ret, vdev_id);
@@ -1103,7 +1125,7 @@ QDF_STATUS wma_disable_uapsd_per_ac(tp_wma_handle wma_handle,
 {
 	QDF_STATUS ret;
 	struct wma_txrx_node *iface = &wma_handle->interfaces[vdev_id];
-	wmi_sta_uapsd_auto_trig_param uapsd_trigger_param;
+	struct sta_uapsd_params uapsd_trigger_param;
 	enum uapsd_up user_priority;
 
 	WMA_LOGD("Disable Uapsd per ac vdevId %d ac %d", vdev_id, ac);
@@ -1150,7 +1172,7 @@ QDF_STATUS wma_disable_uapsd_per_ac(tp_wma_handle wma_handle,
 
 	ret = wma_set_sta_uapsd_auto_trig_cmd(wma_handle->wmi_handle,
 		vdev_id, wma_handle->interfaces[vdev_id].bssid,
-		(uint8_t *)(&uapsd_trigger_param), 1);
+		&uapsd_trigger_param, 1);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		WMA_LOGE("Fail to send auto trig cmd for vdevid %d ret = %d",
 			 ret, vdev_id);
@@ -1200,7 +1222,7 @@ int wma_pdev_temperature_evt_handler(void *handle, uint8_t *event,
 				     uint32_t len)
 {
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
-	cds_msg_t sme_msg = { 0 };
+	struct scheduler_msg sme_msg = { 0 };
 	WMI_PDEV_TEMPERATURE_EVENTID_param_tlvs *param_buf;
 	wmi_pdev_temperature_event_fixed_param *wmi_event;
 
@@ -1217,11 +1239,11 @@ int wma_pdev_temperature_evt_handler(void *handle, uint8_t *event,
 	sme_msg.bodyptr = NULL;
 	sme_msg.bodyval = wmi_event->value;
 
-	qdf_status = cds_mq_post_message(QDF_MODULE_ID_SME, &sme_msg);
-	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
+	qdf_status = scheduler_post_message(QDF_MODULE_ID_WMA,
+					    QDF_MODULE_ID_SME,
+					    QDF_MODULE_ID_SME, &sme_msg);
+	if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 		WMA_LOGE(FL("Fail to post get temperature ind msg"));
-	}
-
 	return 0;
 }
 
@@ -1316,9 +1338,8 @@ static void wma_update_beacon_noa_ie(struct beacon_info *bcn,
 	/* if there is nothing to add, just return */
 	if (new_noa_sub_ie_len == 0) {
 		if (bcn->noa_sub_ie_len && bcn->noa_ie) {
-			WMA_LOGD("%s: NoA is present in previous beacon, "
-				 "but not present in swba event, "
-				 "So Reset the NoA", __func__);
+			WMA_LOGD("%s: NoA is present in previous beacon, but not present in swba event, So Reset the NoA",
+				 __func__);
 			/* TODO: Assuming p2p noa ie is last ie in the beacon */
 			qdf_mem_zero(bcn->noa_ie, (bcn->noa_sub_ie_len +
 						   sizeof(struct p2p_ie)));
@@ -1333,16 +1354,14 @@ static void wma_update_beacon_noa_ie(struct beacon_info *bcn,
 
 	if (bcn->noa_sub_ie_len && bcn->noa_ie) {
 		/* NoA present in previous beacon, update it */
-		WMA_LOGD("%s: NoA present in previous beacon, "
-			 "update the NoA IE, bcn->len %u"
-			 "bcn->noa_sub_ie_len %u",
+		WMA_LOGD("%s: NoA present in previous beacon, update the NoA IE, bcn->len %u bcn->noa_sub_ie_len %u",
 			 __func__, bcn->len, bcn->noa_sub_ie_len);
 		bcn->len -= (bcn->noa_sub_ie_len + sizeof(struct p2p_ie));
 		qdf_mem_zero(bcn->noa_ie,
 			     (bcn->noa_sub_ie_len + sizeof(struct p2p_ie)));
 	} else {                /* NoA is not present in previous beacon */
-		WMA_LOGD("%s: NoA not present in previous beacon, add it"
-			 "bcn->len %u", __func__, bcn->len);
+		WMA_LOGD("%s: NoA not present in previous beacon, add it bcn->len %u",
+			 __func__, bcn->len);
 		buf = qdf_nbuf_data(bcn->buf);
 		bcn->noa_ie = buf + bcn->len;
 	}
@@ -1388,9 +1407,8 @@ static void wma_p2p_create_sub_ie_noa(uint8_t *buf,
 	*buf++ = noa->index;    /* Instance Index */
 
 	tmp_octet = noa->ctwindow & WMA_P2P_NOA_IE_CTWIN_MASK;
-	if (noa->oppPS) {
+	if (noa->oppPS)
 		tmp_octet |= WMA_P2P_NOA_IE_OPP_PS_SET;
-	}
 	*buf++ = tmp_octet;     /* Opp Ps and CTWin capabilities */
 
 	for (i = 0; i < noa->num_descriptors; i++) {
@@ -1552,8 +1570,7 @@ int wma_p2p_noa_event_handler(void *handle, uint8_t *event,
 				p2p_noa_info->noa_descriptors[i].interval;
 			noa_ie.noa_descriptors[i].start_time =
 				p2p_noa_info->noa_descriptors[i].start_time;
-			WMA_LOGI("%s: NoA descriptor[%d] type_count %u, "
-				 "duration %u, interval %u, start_time = %u",
+			WMA_LOGI("%s: NoA descriptor[%d] type_count %u, duration %u, interval %u, start_time = %u",
 				 __func__, i,
 				 noa_ie.noa_descriptors[i].type_count,
 				 noa_ie.noa_descriptors[i].duration,
@@ -1562,89 +1579,12 @@ int wma_p2p_noa_event_handler(void *handle, uint8_t *event,
 		}
 
 		/* Send a msg to LIM to update the NoA IE in probe response
-		 * frames transmitted by the host */
+		 * frames transmitted by the host
+		 */
 		wma_update_probe_resp_noa(wma, &noa_ie);
 	}
 
 	return 0;
-}
-
-/**
- * wma_set_p2pgo_noa_req() - send p2p go noa request to fw
- * @wma: wma handle
- * @noa: p2p power save parameters
- *
- * Return: none
- */
-static void wma_set_p2pgo_noa_req(tp_wma_handle wma, tP2pPsParams *noa)
-{
-	QDF_STATUS ret;
-	struct p2p_ps_params cmd = {0};
-
-	cmd.opp_ps = noa->opp_ps;
-	cmd.ctwindow = noa->ctWindow;
-	cmd.count = noa->count;
-	cmd.duration = noa->duration;
-	cmd.interval = noa->interval;
-	cmd.single_noa_duration = noa->single_noa_duration;
-	cmd.ps_selection = noa->psSelection;
-	cmd.session_id =  noa->sessionId;
-
-	ret = wmi_unified_set_p2pgo_noa_req_cmd(wma->wmi_handle,
-				   &cmd);
-	if (QDF_IS_STATUS_ERROR(ret))
-		WMA_LOGE("Failed to send set uapsd param ret = %d", ret);
-
-	return;
-}
-
-/**
- * wma_set_p2pgo_oppps_req() - send p2p go opp power save request to fw
- * @wma: wma handle
- * @noa: p2p opp power save parameters
- *
- * Return: none
- */
-static void wma_set_p2pgo_oppps_req(tp_wma_handle wma, tP2pPsParams *oppps)
-{
-	QDF_STATUS ret;
-	struct p2p_ps_params cmd = {0};
-
-	cmd.opp_ps = oppps->opp_ps;
-	cmd.ctwindow = oppps->ctWindow;
-	cmd.count = oppps->count;
-	cmd.duration = oppps->duration;
-	cmd.interval = oppps->interval;
-	cmd.single_noa_duration = oppps->single_noa_duration;
-	cmd.ps_selection = oppps->psSelection;
-	cmd.session_id =  oppps->sessionId;
-
-	ret = wmi_unified_set_p2pgo_oppps_req(wma->wmi_handle,
-				   &cmd);
-	if (QDF_IS_STATUS_ERROR(ret))
-		WMA_LOGE("Failed to send set uapsd param ret = %d", ret);
-
-	return;
-}
-
-/**
- * wma_process_set_p2pgo_noa_req() - process p2pgo noa request
- * @handle: wma handle
- * @ps_params: powersave params
- *
- * Return: none
- */
-void wma_process_set_p2pgo_noa_req(tp_wma_handle wma,
-				   tP2pPsParams *ps_params)
-{
-	WMA_LOGD("%s: Enter", __func__);
-	if (ps_params->opp_ps) {
-		wma_set_p2pgo_oppps_req(wma, ps_params);
-	} else {
-		wma_set_p2pgo_noa_req(wma, ps_params);
-	}
-
-	WMA_LOGD("%s: Exit", __func__);
 }
 
 /**
@@ -1748,7 +1688,7 @@ QDF_STATUS wma_set_idle_ps_config(void *wma_ptr, uint32_t idle_ps)
 		WMA_LOGE("Fail to Set Idle Ps Config %d", idle_ps);
 		return QDF_STATUS_E_FAILURE;
 	}
-	 wma->in_imps = idle_ps;
+	wma->in_imps = !!idle_ps;
 
 	WMA_LOGD("Successfully Set Idle Ps Config %d", idle_ps);
 	return QDF_STATUS_SUCCESS;
@@ -1776,282 +1716,6 @@ QDF_STATUS wma_set_smps_params(tp_wma_handle wma, uint8_t vdev_id,
 }
 
 /**
- * wma_set_vdev_suspend_dtim() - set suspend dtim parameters in fw
- * @wma: wma handle
- * @vdev_id: vdev id
- *
- * Return: none
- */
-static void wma_set_vdev_suspend_dtim(tp_wma_handle wma, uint8_t vdev_id)
-{
-	struct wma_txrx_node *iface = &wma->interfaces[vdev_id];
-	uint32_t cfg_data_val = 0;
-
-	if ((iface->type == WMI_VDEV_TYPE_STA) &&
-	    (iface->dtimPeriod != 0)) {
-		QDF_STATUS ret;
-		uint32_t listen_interval;
-		uint32_t max_mod_dtim;
-		uint32_t beacon_interval_mod;
-
-		/* get mac to acess CFG data base */
-		struct sAniSirGlobal *mac = cds_get_context(QDF_MODULE_ID_PE);
-		if (!mac) {
-			WMA_LOGE(FL("Failed to get mac context"));
-			return;
-		}
-
-		if (wma->staDynamicDtim) {
-			listen_interval = wma->staDynamicDtim;
-		} else if ((wma->staModDtim) &&
-			   (wma->staMaxLIModDtim)) {
-			/*
-			 * When the system is in suspend
-			 * (maximum beacon will be at 1s == 10)
-			 * If maxModulatedDTIM ((MAX_LI_VAL = 10) / AP_DTIM)
-			 * equal or larger than MDTIM
-			 * (configured in WCNSS_qcom_cfg.ini)
-			 * Set LI to MDTIM * AP_DTIM
-			 * If Dtim = 2 and Mdtim = 2 then LI is 4
-			 * Else
-			 * Set LI to maxModulatedDTIM * AP_DTIM
-			 */
-
-			beacon_interval_mod = iface->beaconInterval / 100;
-			if (beacon_interval_mod == 0)
-				beacon_interval_mod = 1;
-
-			max_mod_dtim = wma->staMaxLIModDtim
-				/ (iface->dtimPeriod*beacon_interval_mod);
-
-			if (max_mod_dtim <= 0)
-				max_mod_dtim = 1;
-
-			if (max_mod_dtim >= wma->staModDtim) {
-				listen_interval =
-					(wma->staModDtim * iface->dtimPeriod);
-			} else {
-				listen_interval =
-					(max_mod_dtim * iface->dtimPeriod);
-			}
-		} else {
-			/* Set Listen Interval */
-			if ((wlan_cfg_get_int(mac, WNI_CFG_LISTEN_INTERVAL,
-				&cfg_data_val) != eSIR_SUCCESS)) {
-				QDF_TRACE(QDF_MODULE_ID_WMA,
-					  QDF_TRACE_LEVEL_ERROR,
-					"Failed to listen interval");
-				cfg_data_val =
-					POWERSAVE_DEFAULT_LISTEN_INTERVAL;
-			}
-			listen_interval = cfg_data_val;
-		}
-		ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
-					      WMI_VDEV_PARAM_LISTEN_INTERVAL,
-					      listen_interval);
-		if (QDF_IS_STATUS_ERROR(ret)) {
-			/* Even it fails continue Fw will take default LI */
-			WMA_LOGE("Failed to Set Listen Interval vdevId %d",
-				 vdev_id);
-		}
-
-		WMA_LOGD("Set Listen Interval vdevId %d Listen Intv %d",
-			 vdev_id, listen_interval);
-
-		if (wlan_cfg_get_int(mac,
-				     WNI_CFG_PS_WOW_DATA_INACTIVITY_TIMEOUT,
-				     &cfg_data_val) != eSIR_SUCCESS) {
-			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
-				"Can't get WNI_CFG_PS_WOW_DATA_INACTIVITY_TO");
-			cfg_data_val = WOW_POWERSAVE_DEFAULT_INACTIVITY_TIME;
-		}
-
-		WMA_LOGD("%s: Set inactivity_time for wow: %d", __func__,
-				cfg_data_val);
-		ret = wma_unified_set_sta_ps_param(wma->wmi_handle, vdev_id,
-				WMI_STA_PS_PARAM_INACTIVITY_TIME, cfg_data_val);
-		if (ret)
-			WMA_LOGE("%s: Setting InActivity time Failed.",
-				__func__);
-
-		WMA_LOGD("%s: Set the Tx Wake Threshold 0.", __func__);
-		ret = wma_unified_set_sta_ps_param(
-				wma->wmi_handle, vdev_id,
-				WMI_STA_PS_PARAM_TX_WAKE_THRESHOLD,
-				WMI_STA_PS_TX_WAKE_THRESHOLD_NEVER);
-		if (ret)
-			WMA_LOGE("%s: Setting TxWake Threshold Failed.",
-				__func__);
-
-		iface->restore_dtim_setting = true;
-	}
-}
-
-/**
- * wma_set_suspend_dtim() - set suspend dtim
- * @wma: wma handle
- *
- * Return: none
- */
-void wma_set_suspend_dtim(tp_wma_handle wma)
-{
-	uint8_t i;
-
-	if (NULL == wma) {
-		WMA_LOGE("%s: wma is NULL", __func__);
-		return;
-	}
-
-	for (i = 0; i < wma->max_bssid; i++) {
-	  if ((wma->interfaces[i].handle) &&
-	      (false == wma->interfaces[i].alt_modulated_dtim_enabled)) {
-			wma_set_vdev_suspend_dtim(wma, i);
-		}
-	}
-}
-
-/**
- * wma_set_vdev_resume_dtim() - set resume dtim parameters in fw
- * @wma: wma handle
- * @vdev_id: vdev id
- *
- * Return: none
- */
-static void wma_set_vdev_resume_dtim(tp_wma_handle wma, uint8_t vdev_id)
-{
-	struct wma_txrx_node *iface = &wma->interfaces[vdev_id];
-	u_int32_t inactivity_time;
-	uint8_t  ito_repeat_count_value = 0;
-
-	if ((iface->type == WMI_VDEV_TYPE_STA) &&
-	    (iface->restore_dtim_setting)) {
-		QDF_STATUS ret;
-		uint32_t cfg_data_val = 0;
-		/* get mac to acess CFG data base */
-		struct sAniSirGlobal *mac = cds_get_context(QDF_MODULE_ID_PE);
-		if (!mac) {
-			WMA_LOGE(FL("Failed to get mac context"));
-			return;
-		}
-		/* Set Listen Interval */
-		if ((wlan_cfg_get_int(mac, WNI_CFG_LISTEN_INTERVAL,
-				      &cfg_data_val) != eSIR_SUCCESS)) {
-			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
-				  "Failed to get value for listen interval");
-			cfg_data_val = POWERSAVE_DEFAULT_LISTEN_INTERVAL;
-		}
-
-		ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
-						      WMI_VDEV_PARAM_LISTEN_INTERVAL,
-						      cfg_data_val);
-		if (QDF_IS_STATUS_ERROR(ret)) {
-			/* Even it fails continue Fw will take default LI */
-			WMA_LOGE("Failed to Set Listen Interval vdevId %d",
-				 vdev_id);
-		}
-
-		WMA_LOGD("Set Listen Interval vdevId %d Listen Intv %d",
-			 vdev_id, cfg_data_val);
-
-		if (wlan_cfg_get_int(mac, WNI_CFG_PS_DATA_INACTIVITY_TIMEOUT,
-					&cfg_data_val) != eSIR_SUCCESS) {
-			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
-				"Failed to get WNI_CFG_PS_DATA_INACTIVITY_TIMEOUT");
-			cfg_data_val = POWERSAVE_DEFAULT_INACTIVITY_TIME;
-		}
-
-		iface->restore_dtim_setting = false;
-		inactivity_time = (u_int32_t)cfg_data_val;
-		WMA_LOGD("%s: Setting InActivity time %d.", __func__,
-							inactivity_time);
-		ret = wma_unified_set_sta_ps_param(wma->wmi_handle, vdev_id,
-					WMI_STA_PS_PARAM_INACTIVITY_TIME,
-					inactivity_time);
-		if (ret)
-			WMA_LOGE("%s: Setting InActivity time Failed.",
-				__func__);
-
-		if (wlan_cfg_get_int(mac,
-					WNI_CFG_PS_WOW_DATA_INACTIVITY_TIMEOUT,
-					&cfg_data_val) != eSIR_SUCCESS) {
-			QDF_TRACE(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_ERROR,
-			"Failed to get WOW_DATA_INACTIVITY_TIMEOUT");
-			cfg_data_val = WOW_POWERSAVE_DEFAULT_INACTIVITY_TIME;
-		}
-
-		ito_repeat_count_value = (inactivity_time / cfg_data_val) *
-							wma->ito_repeat_count;
-
-		if (ito_repeat_count_value) {
-			ret =
-			wma_unified_set_sta_ps_param(wma->wmi_handle,
-					vdev_id,
-			WMI_STA_PS_PARAM_MAX_RESET_ITO_COUNT_ON_TIM_NO_TXRX,
-					ito_repeat_count_value);
-		WMA_LOGD("%s: Setting ito_repeat_count_value %d.", __func__,
-					ito_repeat_count_value);
-
-		if (ret)
-			WMA_LOGE("%s: Setting ITO count failed.", __func__);
-		}
-
-		if (wlan_cfg_get_int(mac, WNI_CFG_MAX_PS_POLL,
-				&cfg_data_val) != eSIR_SUCCESS) {
-				QDF_TRACE(QDF_MODULE_ID_WMA,
-				QDF_TRACE_LEVEL_ERROR,
-				"Failed to get value for WNI_CFG_MAX_PS_POLL");
-			cfg_data_val = 0;
-		}
-
-		/*
-		 * Recover the Tx Wake Threshold
-		 * 1, do not recover the value, because driver sets
-		 *    WMI_STA_PS_TX_WAKE_THRESHOLD_NEVER before suspend,
-		 * 2, recover the value, because driver sets
-		 *    WMI_STA_PS_TX_WAKE_THRESHOLD_ALWAYS before suspend,
-		 * 3, recover the value WMI_STA_PS_TX_WAKE_THRESHOLD_ALWAYS,
-		 *    which is defined by fw as default and driver does
-		 *    not set it when psSetting is eSIR_ADDON_DISABLE_UAPSD.
-		 */
-		if ((eSIR_ADDON_DISABLE_UAPSD == wma->ps_setting)
-				|| ((eSIR_ADDON_NOTHING == wma->ps_setting)
-				&& (!cfg_data_val))) {
-			WMA_LOGD("%s: Set the Tx Wake Threshold.", __func__);
-			ret = wma_unified_set_sta_ps_param(
-				wma->wmi_handle, vdev_id,
-				WMI_STA_PS_PARAM_TX_WAKE_THRESHOLD,
-				WMI_STA_PS_TX_WAKE_THRESHOLD_ALWAYS);
-			if (ret)
-				WMA_LOGE("Setting TxWake Threshold vdevId %d",
-					vdev_id);
-		}
-	}
-}
-
-/**
- * wma_set_resume_dtim() - set resume dtim
- * @wma: wma handle
- *
- * Return: none
- */
-void wma_set_resume_dtim(tp_wma_handle wma)
-{
-	uint8_t i;
-
-	if (NULL == wma) {
-		WMA_LOGE("%s: wma is NULL", __func__);
-		return;
-	}
-
-	for (i = 0; i < wma->max_bssid; i++) {
-	  if ((wma->interfaces[i].handle) &&
-	      (false == wma->interfaces[i].alt_modulated_dtim_enabled)) {
-			wma_set_vdev_resume_dtim(wma, i);
-		}
-	}
-}
-
-/**
  * wma_set_tx_power_scale() - set tx power scale
  * @vdev_id: vdev id
  * @value: value
@@ -2069,7 +1733,7 @@ QDF_STATUS wma_set_tx_power_scale(uint8_t vdev_id, int value)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!(wma_handle->interfaces[vdev_id].vdev_up)) {
+	if (!wma_is_vdev_up(vdev_id)) {
 		WMA_LOGE("%s: vdev id %d is not up", __func__, vdev_id);
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -2100,7 +1764,7 @@ QDF_STATUS wma_set_tx_power_scale_decr_db(uint8_t vdev_id, int value)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!(wma_handle->interfaces[vdev_id].vdev_up)) {
+	if (!wma_is_vdev_up(vdev_id)) {
 		WMA_LOGE("%s: vdev id %d is not up", __func__, vdev_id);
 		return QDF_STATUS_E_FAILURE;
 	}

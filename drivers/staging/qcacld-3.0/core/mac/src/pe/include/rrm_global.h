@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2012, 2014-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #if !defined(__RRMGLOBAL_H)
 #define __RRMGLOBAL_H
 
@@ -35,6 +26,11 @@
    \brief Definitions for SME APIs
 
    ========================================================================*/
+
+#define MAX_MEASUREMENT_REQUEST      5
+#define MAX_NUM_CHANNELS             255
+
+#define DEFAULT_RRM_IDX 0
 
 typedef enum eRrmRetStatus {
 	eRRM_SUCCESS,
@@ -57,6 +53,7 @@ typedef struct sSirChannelInfo {
 typedef struct sSirBeaconReportReqInd {
 	uint16_t messageType;   /* eWNI_SME_BEACON_REPORT_REQ_IND */
 	uint16_t length;
+	uint8_t measurement_idx;
 	tSirMacAddr bssId;
 	uint16_t measurementDuration[SIR_ESE_MAX_MEAS_IE_REQS]; /* ms */
 	uint16_t randomizationInterval; /* ms */
@@ -74,6 +71,7 @@ typedef struct sSirBeaconReportReqInd {
 typedef struct sSirBeaconReportXmitInd {
 	uint16_t messageType;   /* eWNI_SME_BEACON_REPORT_RESP_XMIT_IND */
 	uint16_t length;
+	uint8_t measurement_idx;
 	tSirMacAddr bssId;
 	uint16_t uDialogToken;
 	uint8_t fMeasureDone;
@@ -139,6 +137,7 @@ typedef struct sSirNeighborReportInd {
 	uint16_t messageType;   /* eWNI_SME_NEIGHBOR_REPORT_IND */
 	uint16_t length;
 	uint8_t sessionId;
+	uint8_t measurement_idx;
 	uint16_t numNeighborReports;
 	tSirMacAddr bssId;      /* For the session. */
 	tSirNeighborBssDescription sNeighborBssDescription[1];
@@ -156,12 +155,14 @@ typedef struct sRRMBeaconReportRequestedIes {
 #define BEACON_REPORTING_DETAIL_ALL_FF_IE 2
 
 typedef struct sRRMReq {
+	uint8_t measurement_idx; /* Index of the measurement report in frame */
 	uint8_t dialog_token;   /* In action frame; */
 	uint8_t token;          /* Within individual request; */
 	uint8_t type;
 	union {
 		struct {
 			uint8_t reportingDetail;
+			uint8_t last_beacon_report_indication;
 			tRRMBeaconReportRequestedIes reqIes;
 		} Beacon;
 	} request;
@@ -217,7 +218,10 @@ typedef struct sRrmPEContext {
 	int8_t txMgmtPower;
 	/* Dialog token for the request initiated from station. */
 	uint8_t DialogToken;
-	tpRRMReq pCurrentReq;
+	uint16_t prev_rrm_report_seq_num;
+	tpRRMReq pCurrentReq[MAX_MEASUREMENT_REQUEST];
+	uint8_t beacon_rpt_chan_list[MAX_NUM_CHANNELS];
+	uint8_t beacon_rpt_chan_num;
 } tRrmPEContext, *tpRrmPEContext;
 
 /* 2008 11k spec reference: 18.4.8.5 RCPI Measurement */
@@ -296,12 +300,12 @@ enum mask_rm_capability_byte3 {
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_1 = (1 << (5)),
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_2 = (1 << (6)),
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_3 = (1 << (7)),
-	RM_CAP_OPER_CHAN_MAX_DURATION = (RM_CAP_OPER_CHAN_MAX_DURATION_1 ||
-					 RM_CAP_OPER_CHAN_MAX_DURATION_2 ||
+	RM_CAP_OPER_CHAN_MAX_DURATION = (RM_CAP_OPER_CHAN_MAX_DURATION_1 |
+					 RM_CAP_OPER_CHAN_MAX_DURATION_2 |
 					 RM_CAP_OPER_CHAN_MAX_DURATION_3),
 	RM_CAP_NONOPER_CHAN_MAX_DURATION =
-				(RM_CAP_NONOPER_CHAN_MAX_DURATION_1 ||
-				 RM_CAP_NONOPER_CHAN_MAX_DURATION_2 ||
+				(RM_CAP_NONOPER_CHAN_MAX_DURATION_1 |
+				 RM_CAP_NONOPER_CHAN_MAX_DURATION_2 |
 				 RM_CAP_NONOPER_CHAN_MAX_DURATION_3),
 };
 
@@ -327,8 +331,8 @@ enum mask_rm_capability_byte4 {
 	RM_CAP_RCPI_MEASUREMENT1 = (1 << (5)),
 	RM_CAP_RSNI_MEASUREMENT = (1 << (6)),
 	RM_CAP_BSS_AVG_ACCESS_DELAY = (1 << (7)),
-	RM_CAP_MEASUREMENT_PILOT = (RM_CAP_MEASUREMENT_PILOT_1 ||
-				    RM_CAP_MEASUREMENT_PILOT_2 ||
+	RM_CAP_MEASUREMENT_PILOT = (RM_CAP_MEASUREMENT_PILOT_1 |
+				    RM_CAP_MEASUREMENT_PILOT_2 |
 				    RM_CAP_MEASUREMENT_PILOT_3),
 };
 

@@ -214,7 +214,7 @@ static long esoc_dev_ioctl(struct file *file, unsigned int cmd,
 							esoc_clink->name);
 				return -EIO;
 			}
-			put_user(req, (unsigned long __user *)uarg);
+			put_user(req, (unsigned int __user *)uarg);
 
 		}
 		return err;
@@ -224,10 +224,12 @@ static long esoc_dev_ioctl(struct file *file, unsigned int cmd,
 		clink_ops->notify(esoc_cmd, esoc_clink);
 		break;
 	case ESOC_GET_STATUS:
-		err = clink_ops->get_status(&status, esoc_clink);
-		if (err)
-			return err;
-		put_user(status, (unsigned long __user *)uarg);
+		clink_ops->get_status(&status, esoc_clink);
+		put_user(status, (unsigned int __user *)uarg);
+		break;
+	case ESOC_GET_ERR_FATAL:
+		clink_ops->get_err_fatal(&status, esoc_clink);
+		put_user(status, (unsigned int __user *)uarg);
 		break;
 	case ESOC_WAIT_FOR_CRASH:
 		err = wait_event_interruptible(esoc_udev->evt_wait,
@@ -241,7 +243,7 @@ static long esoc_dev_ioctl(struct file *file, unsigned int cmd,
 							esoc_clink->name);
 				return -EIO;
 			}
-			put_user(evt, (unsigned long __user *)uarg);
+			put_user(evt, (unsigned int __user *)uarg);
 		}
 		return err;
 		break;
@@ -260,7 +262,16 @@ static int esoc_dev_open(struct inode *inode, struct file *file)
 	unsigned int minor = iminor(inode);
 
 	esoc_udev = esoc_udev_get_by_minor(minor);
+	if (!esoc_udev) {
+		pr_err("failed to get udev\n");
+		return -ENOMEM;
+	}
+
 	esoc_clink = get_esoc_clink(esoc_udev->clink->id);
+	if (!esoc_clink) {
+		pr_err("failed to get clink\n");
+		return -ENOMEM;
+	}
 
 	uhandle = kzalloc(sizeof(*uhandle), GFP_KERNEL);
 	if (!uhandle) {
@@ -306,12 +317,12 @@ int esoc_clink_add_device(struct device *dev, void *dummy)
 	struct esoc_clink *esoc_clink = to_esoc_clink(dev);
 
 	esoc_udev = get_free_esoc_udev(esoc_clink);
-	if (IS_ERR(esoc_udev))
+	if (IS_ERR_OR_NULL(esoc_udev))
 		return PTR_ERR(esoc_udev);
 	esoc_udev->dev = device_create(esoc_class, &esoc_clink->dev,
 					MKDEV(esoc_major, esoc_clink->id),
 					esoc_clink, "esoc-%d", esoc_clink->id);
-	if (IS_ERR(esoc_udev->dev)) {
+	if (IS_ERR_OR_NULL(esoc_udev->dev)) {
 		pr_err("failed to create user device\n");
 		goto dev_err;
 	}
@@ -357,7 +368,7 @@ int __init esoc_dev_init(void)
 {
 	int ret = 0;
 	esoc_class = class_create(THIS_MODULE, "esoc-dev");
-	if (IS_ERR(esoc_class)) {
+	if (IS_ERR_OR_NULL(esoc_class)) {
 		pr_err("coudn't create class");
 		return PTR_ERR(esoc_class);
 	}

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,6 +43,7 @@
 
 #define ERR_READY	0
 #define PBL_DONE	1
+#define NMI_STATUS_REGISTER	0x44
 
 #define desc_to_data(d) container_of(d, struct pil_tz_data, desc)
 #define subsys_to_data(d) container_of(d, struct pil_tz_data, subsys_desc)
@@ -110,6 +111,7 @@ struct pil_tz_data {
 	void __iomem *irq_mask;
 	void __iomem *err_status;
 	void __iomem *err_status_spare;
+	void __iomem *reg_base;
 	u32 bits_arr[2];
 };
 
@@ -580,7 +582,8 @@ static void pil_remove_proxy_vote(struct pil_desc *pil)
 }
 
 static int pil_init_image_trusted(struct pil_desc *pil,
-		const u8 *metadata, size_t size)
+		const u8 *metadata, size_t size,
+		 phys_addr_t addr, size_t sz)
 {
 	struct pil_tz_data *d = desc_to_data(pil);
 	struct pas_init_image_req {
@@ -850,7 +853,7 @@ static int subsys_ramdump(int enable, const struct subsys_desc *subsys)
 	if (!enable)
 		return 0;
 
-	return pil_do_ramdump(&d->desc, d->ramdump_dev);
+	return pil_do_ramdump(&d->desc, d->ramdump_dev, NULL);
 }
 
 static void subsys_free_memory(const struct subsys_desc *subsys)
@@ -874,8 +877,19 @@ static void subsys_crash_shutdown(const struct subsys_desc *subsys)
 static irqreturn_t subsys_err_fatal_intr_handler (int irq, void *dev_id)
 {
 	struct pil_tz_data *d = subsys_to_data(dev_id);
+	u32 nmi_status = 0;
 
-	pr_err("Fatal error on %s!\n", d->subsys_desc.name);
+	if (d->reg_base)
+		nmi_status = readl_relaxed(d->reg_base +
+					   NMI_STATUS_REGISTER);
+
+	if (nmi_status & 0x04)
+		pr_err("%s: Fatal error on the %s due to TZ NMI\n",
+			__func__, d->subsys_desc.name);
+	else
+		pr_err("%s Fatal error on the %s\n",
+			__func__, d->subsys_desc.name);
+
 	if (subsys_get_crash_status(d->subsys)) {
 		pr_err("%s: Ignoring error fatal, restart in progress\n",
 							d->subsys_desc.name);
@@ -1011,6 +1025,13 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	d->keep_proxy_regs_on = of_property_read_bool(pdev->dev.of_node,
 						"qcom,keep-proxy-regs-on");
 
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "base_reg");
+	d->reg_base = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(d->reg_base)) {
+		dev_err(&pdev->dev, "Failed to iomap base register\n");
+		d->reg_base = NULL;
+	}
+
 	rc = of_property_read_string(pdev->dev.of_node, "qcom,firmware-name",
 				      &d->desc.name);
 	if (rc)
@@ -1145,6 +1166,7 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 		rc = PTR_ERR(d->subsys);
 		goto err_subsys;
 	}
+	d->desc.subsys_dev = d->subsys;
 
 	return 0;
 err_subsys:

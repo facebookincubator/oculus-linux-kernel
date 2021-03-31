@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,35 +16,33 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef _OL_TXRX__H_
 #define _OL_TXRX__H_
 
 #include <qdf_nbuf.h>           /* qdf_nbuf_t */
 #include <cdp_txrx_cmn.h>       /* ol_txrx_vdev_t, etc. */
 #include "cds_sched.h"
-
+#include <cdp_txrx_handle.h>
+#include <ol_txrx_types.h>
 /*
  * Pool of tx descriptors reserved for
  * high-priority traffic, such as ARP/EAPOL etc
  * only for forwarding path.
  */
 #define OL_TX_NON_FWD_RESERVE	100
-#define OL_TXRX_PEER_UNREF_DELETE(peer) \
-	ol_txrx_peer_unref_delete(peer, __func__, __LINE__);
 
-int ol_txrx_peer_unref_delete(ol_txrx_peer_handle peer,
-					      const char *fname,
-					      int line);
+#define TXRX_RFS_ENABLE_PEER_ID_UNMAP_COUNT    3
+#define TXRX_RFS_DISABLE_PEER_ID_UNMAP_COUNT   1
 
-ol_txrx_peer_handle ol_txrx_find_peer_by_addr_inc_ref(ol_txrx_pdev_handle pdev,
-						uint8_t *peer_addr,
-						uint8_t *peer_id);
+ol_txrx_peer_handle ol_txrx_peer_get_ref_by_addr(ol_txrx_pdev_handle pdev,
+						 u8 *peer_addr,
+						 u8 *peer_id,
+						 enum peer_debug_id_type
+									dbg_id);
+
+int  ol_txrx_peer_release_ref(ol_txrx_peer_handle peer,
+			      enum peer_debug_id_type dbg_id);
+
 /**
  * ol_tx_desc_pool_size_hl() - allocate tx descriptor pool size for HL systems
  * @ctrl_pdev: the control pdev handle
@@ -55,7 +50,7 @@ ol_txrx_peer_handle ol_txrx_find_peer_by_addr_inc_ref(ol_txrx_pdev_handle pdev,
  * Return: allocated pool size
  */
 u_int16_t
-ol_tx_desc_pool_size_hl(ol_pdev_handle ctrl_pdev);
+ol_tx_desc_pool_size_hl(struct cdp_cfg *ctrl_pdev);
 
 #ifndef OL_TX_AVG_FRM_BYTES
 #define OL_TX_AVG_FRM_BYTES 1000
@@ -82,70 +77,34 @@ ol_tx_desc_pool_size_hl(ol_pdev_handle ctrl_pdev);
 #define TXRX_HL_TX_DESC_HI_PRIO_RESERVED 20
 #endif
 
+struct peer_hang_data {
+	uint32_t tlv_header;
+	uint8_t peer_mac_addr[QDF_MAC_ADDR_SIZE];
+	uint16_t peer_timeout_bitmask;
+} qdf_packed;
+
 #if defined(CONFIG_HL_SUPPORT) && defined(FEATURE_WLAN_TDLS)
 
 void
-ol_txrx_hl_tdls_flag_reset(struct ol_txrx_vdev_t *vdev, bool flag);
+ol_txrx_hl_tdls_flag_reset(struct cdp_vdev *vdev, bool flag);
 #else
 
 static inline void
-ol_txrx_hl_tdls_flag_reset(struct ol_txrx_vdev_t *vdev, bool flag)
+ol_txrx_hl_tdls_flag_reset(struct cdp_vdev *vdev, bool flag)
 {
-	return;
 }
 #endif
 
-#if defined(CONFIG_HL_SUPPORT) && defined(FEATURE_WLAN_TDLS)
-void
-ol_txrx_copy_mac_addr_raw(ol_txrx_vdev_handle vdev, uint8_t *bss_addr);
-
-void
-ol_txrx_add_last_real_peer(ol_txrx_pdev_handle pdev,
-			   ol_txrx_vdev_handle vdev,
-			   uint8_t *peer_id);
-
-bool
-is_vdev_restore_last_peer(struct ol_txrx_peer_t *peer);
-
-void
-ol_txrx_update_last_real_peer(
-	ol_txrx_pdev_handle pdev,
-	struct ol_txrx_peer_t *peer,
-	uint8_t *peer_id, bool restore_last_peer);
+#ifdef WDI_EVENT_ENABLE
+void *ol_get_pldev(struct cdp_pdev *txrx_pdev);
 #else
-
-static inline void
-ol_txrx_copy_mac_addr_raw(ol_txrx_vdev_handle vdev, uint8_t *bss_addr)
+static inline
+void *ol_get_pldev(struct cdp_pdev *txrx_pdev)
 {
-	return;
-}
-
-static inline void
-ol_txrx_add_last_real_peer(ol_txrx_pdev_handle pdev,
-			   ol_txrx_vdev_handle vdev, uint8_t *peer_id)
-{
-	return;
-}
-
-static inline bool
-is_vdev_restore_last_peer(struct ol_txrx_peer_t *peer)
-{
-	return  false;
-}
-
-static inline void
-ol_txrx_update_last_real_peer(
-	ol_txrx_pdev_handle pdev,
-	struct ol_txrx_peer_t *peer,
-	uint8_t *peer_id, bool restore_last_peer)
-
-{
-	return;
+	return NULL;
 }
 #endif
-
-/**
- * ol_txrx_dump_pkt() - display the data in buffer and buffer's address
+/*
  * @nbuf: buffer which contains data to be displayed
  * @nbuf_paddr: physical address of the buffer
  * @len: defines the size of the data to be displayed
@@ -154,24 +113,6 @@ ol_txrx_update_last_real_peer(
  */
 void
 ol_txrx_dump_pkt(qdf_nbuf_t nbuf, uint32_t nbuf_paddr, int len);
-
-
-/**
- * ol_txrx_post_data_stall_event() - post data stall event
- * @indicator: Module triggering data stall
- * @data_stall_type: data stall event type
- * @pdev_id: pdev id
- * @vdev_id_bitmap: vdev id bitmap
- * @recovery_type: data stall recovery type
- *
- * Return: None
- */
-
-void ol_txrx_post_data_stall_event(
-			enum data_stall_log_event_indicator indicator,
-			enum data_stall_log_event_type data_stall_type,
-			uint32_t pdev_id, uint32_t vdev_id_bitmap,
-			enum data_stall_log_recovery_type recovery_type);
 
 /**
  * ol_txrx_fwd_desc_thresh_check() - check to forward packet to tx path
@@ -194,22 +135,79 @@ void ol_txrx_post_data_stall_event(
  */
 bool ol_txrx_fwd_desc_thresh_check(struct ol_txrx_vdev_t *vdev);
 
-ol_txrx_vdev_handle ol_txrx_get_vdev_from_vdev_id(uint8_t vdev_id);
+struct cdp_vdev *ol_txrx_get_vdev_from_vdev_id(uint8_t vdev_id);
 
-void htt_pkt_log_init(struct ol_txrx_pdev_t *handle, void *scn);
-QDF_STATUS ol_txrx_set_wisa_mode(ol_txrx_vdev_handle vdev,
-			bool enable);
-void ol_txrx_update_mac_id(uint8_t vdev_id, uint8_t mac_id);
-void ol_txrx_peer_detach_force_delete(ol_txrx_peer_handle peer);
+void *ol_txrx_find_peer_by_addr(struct cdp_pdev *pdev,
+				uint8_t *peer_addr,
+				uint8_t *peer_id);
+
+void htt_pkt_log_init(struct cdp_pdev *pdev_handle, void *scn);
 void peer_unmap_timer_handler(void *data);
 
 int ol_txrx_fw_stats_desc_pool_init(struct ol_txrx_pdev_t *pdev,
 				    uint8_t pool_size);
 void ol_txrx_fw_stats_desc_pool_deinit(struct ol_txrx_pdev_t *pdev);
 struct ol_txrx_fw_stats_desc_t
-	*ol_txrx_fw_stats_desc_alloc(struct ol_txrx_pdev_t
-				     *pdev);
-struct ol_txrx_stats_req_internal *ol_txrx_fw_stats_desc_get_req(struct
-	ol_txrx_pdev_t *pdev, uint8_t desc_id);
+	*ol_txrx_fw_stats_desc_alloc(struct ol_txrx_pdev_t *pdev);
+struct ol_txrx_stats_req_internal
+	*ol_txrx_fw_stats_desc_get_req(struct ol_txrx_pdev_t *pdev,
+				       uint8_t desc_id);
 
+/**
+ * ol_txrx_get_new_htt_msg_format() - check htt h2t msg feature
+ * @pdev - datapath device instance
+ *
+ * Check if h2t message length includes htc header length
+ *
+ * return if new htt h2t msg feature enabled
+ */
+bool ol_txrx_get_new_htt_msg_format(struct ol_txrx_pdev_t *pdev);
+
+/**
+ * ol_txrx_set_new_htt_msg_format() - set htt h2t msg feature
+ * @val - enable or disable new htt h2t msg feature
+ *
+ * Set if h2t message length includes htc header length
+ *
+ * return NONE
+ */
+void ol_txrx_set_new_htt_msg_format(uint8_t val);
+
+/**
+ * ol_txrx_set_peer_unmap_conf_support() - set peer unmap conf feature
+ * @val - enable or disable peer unmap conf feature
+ *
+ * Set if peer unamp conf feature is supported by both FW and in INI
+ *
+ * return NONE
+ */
+void ol_txrx_set_peer_unmap_conf_support(bool val);
+
+/**
+ * ol_txrx_get_peer_unmap_conf_support() - check peer unmap conf feature
+ *
+ * Check if peer unmap conf feature is enabled
+ *
+ * return true is peer unmap conf feature is enabled else false
+ */
+bool ol_txrx_get_peer_unmap_conf_support(void);
+
+/**
+ * ol_txrx_get_tx_compl_tsf64() - check tx compl tsf64 feature
+ *
+ * Check if tx compl tsf64 feature is enabled
+ *
+ * return true is tx compl tsf64 feature is enabled else false
+ */
+bool ol_txrx_get_tx_compl_tsf64(void);
+
+/**
+ * ol_txrx_set_tx_compl_tsf64() - set tx compl tsf64 feature
+ * @val - enable or disable tx compl tsf64 feature
+ *
+ * Set if tx compl tsf64 feature is supported FW
+ *
+ * return NONE
+ */
+void ol_txrx_set_tx_compl_tsf64(bool val);
 #endif /* _OL_TXRX__H_ */

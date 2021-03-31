@@ -41,8 +41,6 @@ void sdcardfs_destroy_dentry_cache(void)
 
 void free_dentry_private_data(struct dentry *dentry)
 {
-	if (!dentry || !dentry->d_fsdata)
-		return;
 	kmem_cache_free(sdcardfs_dentry_cachep, dentry->d_fsdata);
 	dentry->d_fsdata = NULL;
 }
@@ -163,16 +161,10 @@ struct inode *sdcardfs_iget(struct super_block *sb, struct inode *lower_inode, u
 }
 
 /*
- * Connect an sdcardfs inode dentry/inode with several lower ones.  This is
- * the classic stackable file system "vnode interposition" action.  Called
- * by ->lookup to handle spliced dentries.  See d_splice_alias() for the
- * return value contract.
- *
- * @dentry: sdcardfs's dentry which interposes on lower one
- * @sb: sdcardfs's super_block
- * @lower_path: the lower path (caller does path_get/put)
+ * Helper interpose routine, called directly by ->lookup to handle
+ * spliced dentries.
  */
-struct dentry *sdcardfs_interpose(struct dentry *dentry,
+static struct dentry *__sdcardfs_interpose(struct dentry *dentry,
 					 struct super_block *sb,
 					 struct path *lower_path,
 					 userid_t id)
@@ -209,6 +201,23 @@ struct dentry *sdcardfs_interpose(struct dentry *dentry,
 		update_derived_permission_lock(dentry);
 out:
 	return ret_dentry;
+}
+
+/*
+ * Connect an sdcardfs inode dentry/inode with several lower ones.  This is
+ * the classic stackable file system "vnode interposition" action.
+ *
+ * @dentry: sdcardfs's dentry which interposes on lower one
+ * @sb: sdcardfs's super_block
+ * @lower_path: the lower path (caller does path_get/put)
+ */
+int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
+		     struct path *lower_path, userid_t id)
+{
+	struct dentry *ret_dentry;
+
+	ret_dentry = __sdcardfs_interpose(dentry, sb, lower_path, id);
+	return PTR_ERR(ret_dentry);
 }
 
 struct sdcardfs_name_data {
@@ -337,7 +346,7 @@ put_name:
 
 		sdcardfs_set_lower_path(dentry, &lower_path);
 		ret_dentry =
-			sdcardfs_interpose(dentry, dentry->d_sb, &lower_path, id);
+			__sdcardfs_interpose(dentry, dentry->d_sb, &lower_path, id);
 		if (IS_ERR(ret_dentry)) {
 			err = PTR_ERR(ret_dentry);
 			 /* path_put underlying path on error */
@@ -360,17 +369,15 @@ put_name:
 	/* See if the low-level filesystem might want
 	 * to use its own hash
 	 */
-	lower_dentry = d_hash_and_lookup(lower_dir_dentry, &dname);
+	inode_lock(d_inode(lower_dir_dentry));
+	lower_dentry = lookup_one_len(dname.name, lower_dir_dentry, dname.len);
+	inode_unlock(d_inode(lower_dir_dentry));
+
 	if (IS_ERR(lower_dentry))
 		return lower_dentry;
-	if (!lower_dentry) {
-		/* We called vfs_path_lookup earlier, and did not get a negative
-		 * dentry then. Don't confuse the lower filesystem by forcing
-		 * one on it now...
-		 */
+
+	if (d_really_is_negative(lower_dentry))
 		err = -ENOENT;
-		goto out;
-	}
 
 	lower_path.dentry = lower_dentry;
 	lower_path.mnt = mntget(lower_dir_mnt);

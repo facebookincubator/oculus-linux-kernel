@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, 2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -687,7 +687,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	 * then set up the timer.  If this misses, then preemption is indeed a
 	 * thing and the timer will be set up in due time
 	 */
-	if (!adreno_in_preempt_state(adreno_dev, ADRENO_PREEMPT_NONE)) {
+	if (adreno_in_preempt_state(adreno_dev, ADRENO_PREEMPT_NONE)) {
 		if (drawqueue_is_current(dispatch_q))
 			mod_timer(&dispatcher->timer, dispatch_q->expires);
 	}
@@ -1072,6 +1072,13 @@ static void _set_ft_policy(struct adreno_device *adreno_dev,
 	 */
 	if (drawctxt->base.flags & KGSL_CONTEXT_NO_FAULT_TOLERANCE)
 		set_bit(KGSL_FT_DISABLE, &cmdobj->fault_policy);
+	/*
+	 *  Set the fault tolerance policy to FT_REPLAY - As context wants
+	 *  to invalidate it after a replay attempt fails. This doesn't
+	 *  require to execute the default FT policy.
+	 */
+	else if (drawctxt->base.flags & KGSL_CONTEXT_INVALIDATE_ON_FAULT)
+		set_bit(KGSL_FT_REPLAY, &cmdobj->fault_policy);
 	else
 		cmdobj->fault_policy = adreno_dev->ft_policy;
 }
@@ -1495,7 +1502,9 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 
 	spin_unlock(&drawctxt->lock);
 
-	kgsl_pwrctrl_update_l2pc(&adreno_dev->dev);
+	if (device->pwrctrl.l2pc_update_queue)
+		kgsl_pwrctrl_update_l2pc(&adreno_dev->dev,
+				KGSL_L2PC_QUEUE_TIMEOUT);
 
 	/* Add the context to the dispatcher pending list */
 	dispatcher_queue_context(adreno_dev, drawctxt);
@@ -1753,8 +1762,9 @@ static void adreno_fault_header(struct kgsl_device *device,
 			ib2base, ib2sz, drawctxt->rb->id);
 
 		pr_fault(device, drawobj,
-			"gpu fault ctx %d ts %d status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",
-			drawobj->context->id, drawobj->timestamp, status,
+			"gpu fault ctx %d ctx_type %s ts %d status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",
+			drawobj->context->id, get_api_type_str(drawctxt->type),
+			drawobj->timestamp, status,
 			rptr, wptr, ib1base, ib1sz, ib2base, ib2sz);
 
 		if (rb != NULL)
@@ -1875,7 +1885,8 @@ static void process_cmdobj_fault(struct kgsl_device *device,
 	 * because we won't see this cmdobj again
 	 */
 
-	if (fault & ADRENO_TIMEOUT_FAULT)
+	if ((fault & ADRENO_TIMEOUT_FAULT) ||
+				(fault & ADRENO_CTX_DETATCH_TIMEOUT_FAULT))
 		bitmap_zero(&cmdobj->fault_policy, BITS_PER_LONG);
 
 	/*
@@ -2156,7 +2167,12 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 	/* Turn off all the timers */
 	del_timer_sync(&dispatcher->timer);
 	del_timer_sync(&dispatcher->fault_timer);
-	del_timer_sync(&adreno_dev->preempt.timer);
+	/*
+	 * Deleting uninitialized timer will block for ever on kernel debug
+	 * disable build. Hence skip del timer if it is not initialized.
+	 */
+	if (adreno_is_preemption_enabled(adreno_dev))
+		del_timer_sync(&adreno_dev->preempt.timer);
 
 	mutex_lock(&device->mutex);
 
@@ -2372,7 +2388,7 @@ static void consume_cmdobj(struct adreno_device *adreno_dev,
 	if (adreno_is_a3xx(adreno_dev))
 		trace_adreno_cmdbatch_consumed(drawobj,
 			(int) dispatcher->inflight, start, secs, nsecs,
-			drawctxt->rb, ADRENO_DRAWOBJ_RB(drawobj));
+			drawctxt->rb, 0);
 	else
 		trace_adreno_cmdbatch_consumed(drawobj,
 			(int) dispatcher->inflight, start, secs, nsecs,
@@ -2975,6 +2991,16 @@ int adreno_dispatcher_init(struct adreno_device *adreno_dev)
 		&device->dev->kobj, "dispatch");
 
 	return ret;
+}
+
+void adreno_dispatcher_halt(struct kgsl_device *device)
+{
+	adreno_get_gpu_halt(ADRENO_DEVICE(device));
+}
+
+void adreno_dispatcher_unhalt(struct kgsl_device *device)
+{
+	adreno_put_gpu_halt(ADRENO_DEVICE(device));
 }
 
 /*

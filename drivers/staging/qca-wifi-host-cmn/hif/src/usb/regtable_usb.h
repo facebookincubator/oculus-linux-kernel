@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,18 +16,13 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
 #ifndef _REGTABLE_USB_H_
 #define _REGTABLE_USB_H_
 #include "if_usb.h"
 
 #define MISSING  0
 
-typedef struct targetdef_s {
+struct targetdef_s {
 	u_int32_t d_RTC_SOC_BASE_ADDRESS;
 	u_int32_t d_RTC_WMAC_BASE_ADDRESS;
 	u_int32_t d_SYSTEM_SLEEP_OFFSET;
@@ -293,7 +285,7 @@ typedef struct targetdef_s {
 	u_int32_t d_SOC_CHIP_ID_REVISION_MASK;
 	u_int32_t d_SOC_CHIP_ID_REVISION_LSB;
 	/* chip id end */
-} TARGET_REGISTER_TABLE;
+};
 
 #define RTC_SOC_BASE_ADDRESS               \
 		(scn->targetdef->d_RTC_SOC_BASE_ADDRESS)
@@ -987,7 +979,7 @@ typedef struct targetdef_s {
 			 SOC_CPU_CLOCK_STANDARD_MASK)
 /* PLL end */
 
-typedef struct hostdef_s {
+struct hostdef_s {
 	uint32_t d_INT_STATUS_ENABLE_ERROR_LSB;
 	uint32_t d_INT_STATUS_ENABLE_ERROR_MASK;
 	uint32_t d_INT_STATUS_ENABLE_CPU_LSB;
@@ -1046,7 +1038,7 @@ typedef struct hostdef_s {
 	uint32_t d_SOC_PCIE_BASE_ADDRESS;
 	uint32_t d_MSI_MAGIC_ADR_ADDRESS;
 	uint32_t d_MSI_MAGIC_ADDRESS;
-} HOST_REGISTER_TABLE;
+};
 
 #define INT_STATUS_ENABLE_ERROR_LSB        \
 		(scn->hostdef->d_INT_STATUS_ENABLE_ERROR_LSB)
@@ -1240,7 +1232,7 @@ typedef struct hostdef_s {
 #define AR6320V3_CPU_PLL_INIT_DONE_ADDR	0x404020
 #define AR6320V3_CPU_SPEED_ADDR		0x404024
 
-typedef enum {
+enum a_refclk_speed_t {
 	/* Unsupported ref clock -- use PLL Bypass */
 	SOC_REFCLK_UNKNOWN   = -1,
 	SOC_REFCLK_48_MHZ    = 0,
@@ -1251,7 +1243,7 @@ typedef enum {
 	SOC_REFCLK_38_4_MHZ  = 5,
 	SOC_REFCLK_40_MHZ    = 6,
 	SOC_REFCLK_52_MHZ    = 7,
-} A_refclk_speed_t;
+};
 
 #define A_REFCLK_UNKNOWN    SOC_REFCLK_UNKNOWN
 #define A_REFCLK_48_MHZ     SOC_REFCLK_48_MHZ
@@ -1273,21 +1265,22 @@ struct wlan_pll_s {
 };
 
 struct cmnos_clock_s {
-	A_refclk_speed_t refclk_speed;
+	enum a_refclk_speed_t refclk_speed;
 	u_int32_t         refclk_hz;
 	u_int32_t         pll_settling_time; /* 50us */
 	struct wlan_pll_s   wlan_pll;
 };
 
-typedef struct TGT_REG_SECTION {
+struct tgt_reg_section {
 	u_int32_t start_addr;
 	u_int32_t end_addr;
-} tgt_reg_section;
+};
 
-typedef struct TGT_REG_TABLE {
-	tgt_reg_section *section;
+struct tgt_reg_table {
+	const struct tgt_reg_section *section;
 	u_int32_t section_size;
-} tgt_reg_table;
+};
+
 void target_register_tbl_attach(struct hif_softc *scn,
 					uint32_t target_type);
 void hif_register_tbl_attach(struct hif_softc *scn,

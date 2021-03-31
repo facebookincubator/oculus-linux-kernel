@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -45,15 +36,11 @@
 #include "sch_api.h"
 #include "utils_api.h"
 
-#include "sys_debug.h"
 #include "sys_def.h"
 #include "sys_entry_func.h"
 #include "sys_startup.h"
 #include "lim_trace.h"
 #include "wma_types.h"
-
-tSirRetStatus postPTTMsgApi(tpAniSirGlobal pMac, tSirMsgQ *pMsg);
-
 #include "qdf_types.h"
 #include "cds_packet.h"
 
@@ -75,16 +62,14 @@ tSirRetStatus postPTTMsgApi(tpAniSirGlobal pMac, tSirMsgQ *pMsg);
  * @return None
  */
 
-tSirRetStatus sys_init_globals(tpAniSirGlobal pMac)
+QDF_STATUS sys_init_globals(tpAniSirGlobal pMac)
 {
 
-	qdf_mem_set((uint8_t *) &pMac->sys, sizeof(pMac->sys), 0);
+	qdf_mem_zero((uint8_t *) &pMac->sys, sizeof(pMac->sys));
 
-	pMac->sys.gSysEnableScanMode = 1;
 	pMac->sys.gSysEnableLinkMonitorMode = 0;
-	sch_init_globals(pMac);
 
-	return eSIR_SUCCESS;
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -98,12 +83,12 @@ tSirRetStatus sys_init_globals(tpAniSirGlobal pMac)
  *
  * Return: None
  */
-tSirRetStatus
-sys_bbt_process_message_core(tpAniSirGlobal mac_ctx, tpSirMsgQ msg,
+QDF_STATUS
+sys_bbt_process_message_core(tpAniSirGlobal mac_ctx, struct scheduler_msg *msg,
 		uint32_t type, uint32_t subtype)
 {
 	uint32_t framecount;
-	tSirRetStatus ret;
+	QDF_STATUS ret;
 	void *bd_ptr;
 	tMgmtFrmDropReason dropreason;
 	cds_pkt_t *vos_pkt = (cds_pkt_t *) msg->bodyptr;
@@ -114,14 +99,6 @@ sys_bbt_process_message_core(tpAniSirGlobal mac_ctx, tpSirMsgQ msg,
 
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 		goto fail;
-
-	sys_log(mac_ctx, LOG3, FL("Rx Mgmt Frame Subtype: %d\n"), subtype);
-	sir_dump_buf(mac_ctx, SIR_SYS_MODULE_ID, LOG3,
-		(uint8_t *) WMA_GET_RX_MAC_HEADER(bd_ptr),
-		WMA_GET_RX_MPDU_LEN(bd_ptr));
-	sir_dump_buf(mac_ctx, SIR_SYS_MODULE_ID, LOG3,
-		WMA_GET_RX_MPDU_DATA(bd_ptr),
-		WMA_GET_RX_PAYLOAD_LEN(bd_ptr));
 
 	mac_ctx->sys.gSysFrameCount[type][subtype]++;
 	framecount = mac_ctx->sys.gSysFrameCount[type][subtype];
@@ -135,108 +112,72 @@ sys_bbt_process_message_core(tpAniSirGlobal mac_ctx, tpSirMsgQ msg,
 		 */
 		if ((subtype == SIR_MAC_MGMT_BEACON) &&
 			(!lim_is_system_in_scan_state(mac_ctx)) &&
-			(GET_LIM_PROCESS_DEFD_MESGS(mac_ctx) != true) &&
-			!mac_ctx->lim.gLimSystemInScanLearnMode) {
-			sys_log(mac_ctx, LOG1,
-				FL("dropping received beacon in deffered state"));
+			(GET_LIM_PROCESS_DEFD_MESGS(mac_ctx) != true)) {
+			pe_debug("dropping received beacon in deffered state");
 			goto fail;
 		}
 
 		dropreason = lim_is_pkt_candidate_for_drop(mac_ctx, bd_ptr,
 				subtype);
 		if (eMGMT_DROP_NO_DROP != dropreason) {
-			sys_log(mac_ctx, LOG1,
-				FL("Mgmt Frame %d being dropped, reason: %d\n"),
+			pe_debug("Mgmt Frame %d being dropped, reason: %d\n",
 				subtype, dropreason);
 				MTRACE(mac_trace(mac_ctx,
 					TRACE_CODE_RX_MGMT_DROP, NO_SESSION,
-					dropreason);)
+					dropreason));
 			goto fail;
 		}
 
 		mac_hdr = WMA_GET_RX_MAC_HEADER(bd_ptr);
 		if (subtype == SIR_MAC_MGMT_ASSOC_REQ) {
-			sys_log(mac_ctx, LOG1,
-				FL("ASSOC REQ frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", Assoc Req count so far: %d\n"),
-				MAC_ADDR_ARRAY(mac_hdr->da),
-				MAC_ADDR_ARRAY(mac_hdr->sa),
-				MAC_ADDR_ARRAY(mac_hdr->bssId),
-				mac_ctx->sys.gSysFrameCount[type][subtype]);
+			pe_debug("ASSOC REQ frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", Assoc Req count so far: %d",
+				 MAC_ADDR_ARRAY(mac_hdr->da),
+				 MAC_ADDR_ARRAY(mac_hdr->sa),
+				 MAC_ADDR_ARRAY(mac_hdr->bssId),
+				 mac_ctx->sys.gSysFrameCount[type][subtype]);
 		}
 		if (subtype == SIR_MAC_MGMT_DEAUTH) {
-			sys_log(mac_ctx, LOG1,
-				FL("DEAUTH frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", DEAUTH count so far: %d\n"),
-				MAC_ADDR_ARRAY(mac_hdr->da),
-				MAC_ADDR_ARRAY(mac_hdr->sa),
-				MAC_ADDR_ARRAY(mac_hdr->bssId),
-				mac_ctx->sys.gSysFrameCount[type][subtype]);
+			pe_debug("DEAUTH frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", DEAUTH count so far: %d",
+				 MAC_ADDR_ARRAY(mac_hdr->da),
+				 MAC_ADDR_ARRAY(mac_hdr->sa),
+				 MAC_ADDR_ARRAY(mac_hdr->bssId),
+				 mac_ctx->sys.gSysFrameCount[type][subtype]);
 		}
 		if (subtype == SIR_MAC_MGMT_DISASSOC) {
-			sys_log(mac_ctx, LOG1,
-				FL("DISASSOC frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", DISASSOC count so far: %d\n"),
-				MAC_ADDR_ARRAY(mac_hdr->da),
-				MAC_ADDR_ARRAY(mac_hdr->sa),
-				MAC_ADDR_ARRAY(mac_hdr->bssId),
-				mac_ctx->sys.gSysFrameCount[type][subtype]);
+			pe_debug("DISASSOC frame allowed: da: " MAC_ADDRESS_STR ", sa: " MAC_ADDRESS_STR ", bssid: " MAC_ADDRESS_STR ", DISASSOC count so far: %d",
+				 MAC_ADDR_ARRAY(mac_hdr->da),
+				 MAC_ADDR_ARRAY(mac_hdr->sa),
+				 MAC_ADDR_ARRAY(mac_hdr->bssId),
+				 mac_ctx->sys.gSysFrameCount[type][subtype]);
 		}
 
-		/*
-		 * Post the message to PE Queue. Prioritize the
-		 * Auth and assoc frames.
-		 */
-		if ((subtype == SIR_MAC_MGMT_AUTH) ||
-		   (subtype == SIR_MAC_MGMT_ASSOC_RSP) ||
-		   (subtype == SIR_MAC_MGMT_REASSOC_RSP) ||
-		   (subtype == SIR_MAC_MGMT_ASSOC_REQ) ||
-		   (subtype == SIR_MAC_MGMT_REASSOC_REQ))
-			ret = (tSirRetStatus)
-				   lim_post_msg_high_priority(mac_ctx, msg);
-		else
-			ret = (tSirRetStatus) lim_post_msg_api(mac_ctx, msg);
-		if (ret != eSIR_SUCCESS) {
-			sys_log(mac_ctx, LOGE,
-				FL("posting to LIM2 failed, ret %d\n"), ret);
-				goto fail;
+		/* Post the message to PE Queue */
+		ret = lim_post_msg_api(mac_ctx, msg);
+		if (ret != QDF_STATUS_SUCCESS) {
+			pe_err("posting to LIM2 failed, ret %d\n", ret);
+			goto fail;
 		}
 		mac_ctx->sys.gSysBbtPostedToLim++;
-	} else if (type == SIR_MAC_DATA_FRAME) {
 #ifdef FEATURE_WLAN_ESE
-		PELOGW(sys_log(mac_ctx, LOGW, FL("IAPP Frame...\n")););
+	} else if (type == SIR_MAC_DATA_FRAME) {
+		pe_debug("IAPP Frame...");
 		/* Post the message to PE Queue */
-		ret = (tSirRetStatus) lim_post_msg_api(mac_ctx, msg);
-		if (ret != eSIR_SUCCESS) {
-			sys_log(mac_ctx, LOGE,
-				FL("posting to LIM2 failed, ret %d\n"), ret);
+		ret = lim_post_msg_api(mac_ctx, msg);
+		if (ret != QDF_STATUS_SUCCESS) {
+			pe_err("posting to LIM2 failed, ret: %d", ret);
 			goto fail;
 		}
 		mac_ctx->sys.gSysBbtPostedToLim++;
 #endif
 	} else {
-		sys_log(mac_ctx, LOG3,
-			"BBT received Invalid type %d subtype %d "
-			"LIM state %X. BD dump is:\n", type, subtype,
+		pe_debug("BBT received Invalid type: %d subtype: %d "
+			"LIM state %X", type, subtype,
 			lim_get_sme_state(mac_ctx));
 		goto fail;
 	}
-	return eSIR_SUCCESS;
+	return QDF_STATUS_SUCCESS;
 fail:
 	mac_ctx->sys.gSysBbtDropped++;
-	return eSIR_FAILURE;
+	return QDF_STATUS_E_FAILURE;
 }
 
-void sys_log(tpAniSirGlobal pMac, uint32_t loglevel, const char *pString, ...)
-{
-	/* Verify against current log level */
-	if (loglevel >
-	    pMac->utils.gLogDbgLevel[LOG_INDEX_FOR_MODULE(SIR_SYS_MODULE_ID)])
-		return;
-	else {
-		va_list marker;
-
-		va_start(marker, pString);      /* Initialize variable arguments. */
-
-		log_debug(pMac, SIR_SYS_MODULE_ID, loglevel, pString, marker);
-
-		va_end(marker); /* Reset variable arguments.      */
-	}
-}

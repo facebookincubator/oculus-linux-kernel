@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -52,18 +43,13 @@
 #define    be32toh(_x)    be32_to_cpu(_x)
 #define    htobe32(_x)    cpu_to_be32(_x)
 
-typedef struct timer_list os_timer_t;
-
 #ifdef CONFIG_SMP
 /* Undo the one provided by the kernel to debug spin locks */
 #undef spin_lock
 #undef spin_unlock
 #undef spin_trylock
 
-#define spin_lock(x) \
-	do { \
-		spin_lock_bh(x); \
-	} while (0)
+#define spin_lock(x)  spin_lock_bh(x)
 
 #define spin_unlock(x) \
 	do { \
@@ -136,6 +122,7 @@ typedef struct {
 	int32_t num_queued;
 	int32_t mesg_len;
 	uint8_t *mesg_queue_buf;
+
 	STAILQ_HEAD(, _os_mesg_t) mesg_head;
 	STAILQ_HEAD(, _os_mesg_t) mesg_free_head;
 	spinlock_t lock;
@@ -143,7 +130,7 @@ typedef struct {
 #ifdef USE_SOFTINTR
 	void *_task;
 #else
-	os_timer_t _timer;
+	qdf_timer_t _timer;
 #endif
 	os_mesg_handler_t handler;
 	void *ctx;
@@ -162,27 +149,29 @@ typedef struct {
  * @bc: hal bus context
  * @device: generic device
  * @event_queue: instance to wait queue
- * @wmi_timeout: init timeout
- * @wmi_timeout_unintr: init timeout (uninterrupted wait)
  * @is_device_asleep: keep device status, sleep or awakei
  * @acfg_event_list: event list
  * @acfg_event_queue_lock: queue lock
  * @acfg_event_os_work: schedule or create work
  * @acfg_netlink_wq_init_done: Work queue ready
  * @osdev_acfg_handle: acfg handle
+ * @vap_hardstart: Tx function specific to the radio
+ * 		   initiailzed during VAP create
  */
 struct _NIC_DEV {
 	qdf_device_t qdf_dev;
 	void *bdev;
 	struct net_device *netdev;
 	qdf_bh_t intr_tq;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+	struct rtnl_link_stats64 devstats;
+#else
 	struct net_device_stats devstats;
+#endif
 	QDF_BUS_CONTEXT bc;
 #ifdef ATH_PERF_PWR_OFFLOAD
 	struct device *device;
 	wait_queue_head_t event_queue;
-	unsigned int wmi_timeout;
-	unsigned int wmi_timeout_unintr;
 #endif /* PERF_PWR_OFFLOAD */
 #if OS_SUPPORT_ASYNC_Q
 	os_mesg_queue_t async_q;
@@ -200,13 +189,10 @@ struct _NIC_DEV {
 	void *osdev_acfg_handle;
 #endif /* ACFG_NETLINK_TX */
 #endif /* UMAC_SUPPORT_ACFG */
-
+	int (*vap_hardstart)(struct sk_buff *skb, struct net_device *dev);
 };
 
 #define __QDF_SYSCTL_PROC_DOINTVEC(ctl, write, filp, buffer, lenp, ppos) \
 	proc_dointvec(ctl, write, buffer, lenp, ppos)
-
-#define __QDF_SYSCTL_PROC_DOSTRING(ctl, write, filp, buffer, lenp, ppos) \
-	proc_dostring(ctl, write, filp, buffer, lenp, ppos)
 
 #endif /* _I_OSDEP_H */

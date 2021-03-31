@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2015, 2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,16 +16,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #if !defined(__LIM_SESSION_UTILS_H)
 #define __LIM_SESSION_UTILS_H
 
-uint8_t is_lim_session_off_channel(tpAniSirGlobal pMac, uint8_t sessionId);
 uint8_t lim_is_chan_switch_running(tpAniSirGlobal pMac);
 uint8_t lim_is_in_mcc(tpAniSirGlobal pMac);
 uint8_t pe_get_current_stas_count(tpAniSirGlobal pMac);

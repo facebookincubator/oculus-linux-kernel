@@ -269,14 +269,6 @@ EXPORT_SYMBOL_GPL(kernel_power_off);
 
 static DEFINE_MUTEX(reboot_mutex);
 
-#ifdef CONFIG_VS1_BOARD
-/*
- * This function writes the boot chime volume to the PMIC DVDD_RB_SPARE register
- * Defined in msm-poweroff.c
- */
-extern void write_boot_chime_volume(const char *cmd);
-#endif
-
 /*
  * Reboot system call: for obvious reasons only root may call it,
  * and even root needs to set up some magic numbers in the registers
@@ -339,18 +331,6 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
-#ifdef CONFIG_VS1_BOARD
-		if (arg != NULL) {
-			ret = strncpy_from_user(
-				&buffer[0], arg, sizeof(buffer) - 1);
-			if (ret < 0) {
-				ret = -EFAULT;
-				break;
-			}
-			buffer[sizeof(buffer) - 1] = '\0';
-		}
-		write_boot_chime_volume(buffer);
-#endif
 		kernel_power_off();
 		do_exit(0);
 		break;
@@ -363,9 +343,6 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		}
 		buffer[sizeof(buffer) - 1] = '\0';
 
-#ifdef CONFIG_VS1_BOARD
-		write_boot_chime_volume(buffer);
-#endif
 		kernel_restart(buffer);
 		break;
 

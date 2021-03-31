@@ -187,7 +187,7 @@ config MEMORY_HOTPLUG
 	bool "Allow for memory hot-add"
 	depends on SPARSEMEM || X86_64_ACPI_NUMA
 	depends on ARCH_ENABLE_MEMORY_HOTPLUG
-	depends on (IA64 || X86 || PPC_BOOK3S_64 || SUPERH || S390)
+	depends on (IA64 || X86 || PPC_BOOK3S_64 || SUPERH || S390 || ARM64)
 
 config MEMORY_HOTPLUG_SPARSE
 	def_bool y
@@ -601,6 +601,16 @@ config ZSMALLOC_STAT
 	  information to userspace via debugfs.
 	  If unsure, say N.
 
+config VMAP_LAZY_PURGING_FACTOR
+	int "multiplier to the size of purged vmap areas"
+	default "8" if ARM
+	default "32"
+	help
+	  It is used as a multiplier to the max VA pages purged in a
+	  single attempt. For 32-bit in order to reduce fragmentation
+	  of vmalloc space, we decrease the default value to "8".
+
+
 config GENERIC_EARLY_IOREMAP
 	bool
 
@@ -666,6 +676,7 @@ config DEFERRED_STRUCT_PAGE_INIT
 	default n
 	depends on ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
 	depends on MEMORY_HOTPLUG
+	depends on !NEED_PER_CPU_KM
 	help
 	  Ordinarily all struct pages are initialised during early boot in a
 	  single thread. On very large machines this can take a considerable

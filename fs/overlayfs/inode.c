@@ -9,6 +9,7 @@
 
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/cred.h>
 #include <linux/xattr.h>
 #include "overlayfs.h"
 
@@ -91,6 +92,7 @@ int ovl_permission(struct inode *inode, int mask)
 	struct ovl_entry *oe;
 	struct dentry *alias = NULL;
 	struct inode *realinode;
+	const struct cred *old_cred;
 	struct dentry *realdentry;
 	bool is_upper;
 	int err;
@@ -143,7 +145,18 @@ int ovl_permission(struct inode *inode, int mask)
 			goto out_dput;
 	}
 
+	/*
+	 * Check overlay inode with the creds of task and underlying inode
+	 * with creds of mounter
+	 */
+	err = generic_permission(inode, mask);
+	if (err)
+		goto out_dput;
+
+	old_cred = ovl_override_creds(inode->i_sb);
 	err = __inode_permission(realinode, mask);
+	ovl_revert_creds(old_cred);
+
 out_dput:
 	dput(alias);
 	return err;
@@ -272,6 +285,17 @@ ssize_t ovl_getxattr(struct dentry *dentry, const char *name,
 	return vfs_getxattr(realpath.dentry, name, value, size);
 }
 
+static bool ovl_can_list(const char *s)
+{
+	/* List all non-trusted xatts */
+	if (strncmp(s, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN) != 0)
+		return true;
+
+	/* Never list trusted.overlay, list other trusted for superuser only */
+	return !ovl_is_private_xattr(s) &&
+	       ns_capable_noaudit(&init_user_ns, CAP_SYS_ADMIN);
+}
+
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size)
 {
 	struct path realpath;
@@ -296,7 +320,7 @@ ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size)
 			return -EIO;
 
 		len -= slen;
-		if (ovl_is_private_xattr(s)) {
+		if (!ovl_can_list(s)) {
 			res -= slen;
 			memmove(s, s + slen, len);
 		} else {

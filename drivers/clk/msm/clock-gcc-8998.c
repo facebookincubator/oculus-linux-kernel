@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,7 +44,7 @@ static void __iomem *virt_dbgbase;
 #define gpll4_out_main_source_val 5
 #define gpll0_early_div_source_val 6
 
-#define FIXDIV(div) (div ? (2 * (div) - 1) : (0))
+#define FIXDIV(div) ((int)div ? (2 * (div) - 1) : (0))
 
 #define F(f, s, div, m, n) \
 	{ \
@@ -329,6 +329,7 @@ static struct rcg_clk blsp1_qup1_i2c_apps_clk_src = {
 static struct clk_freq_tbl ftbl_blsp_qup_spi_apps_clk_src[] = {
 	F(    960000,    cxo_clk_src,   10,    1,     2),
 	F(   4800000,    cxo_clk_src,    4,    0,     0),
+	F(   8000000, gpll0_early_div,   2,    4,    75),
 	F(   9600000,    cxo_clk_src,    2,    0,     0),
 	F(  15000000, gpll0_early_div,   5,    1,     4),
 	F(  19200000,    cxo_clk_src,    1,    0,     0),

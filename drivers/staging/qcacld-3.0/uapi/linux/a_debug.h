@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _A_DEBUG_H_
@@ -150,9 +141,9 @@ typedef struct _ATH_DEBUG_MODULE_DBG_INFO {
 #ifdef WLAN_DEBUG
 
 /* for source files that will instantiate the debug variables */
-#define ATH_DEBUG_INSTANTIATE_MODULE_VAR(s,name,moddesc,initmask,count,descriptions) \
+#define ATH_DEBUG_INSTANTIATE_MODULE_VAR(s, name, moddesc, initmask, count, descriptions) \
 	ATH_DEBUG_MODULE_DBG_INFO GET_ATH_MODULE_DEBUG_VAR_NAME(s) = \
-	{NULL,(name),(moddesc),0,(initmask),count,(descriptions)}
+	{NULL, (name), (moddesc), 0, (initmask), (count), (descriptions)}
 
 #ifdef ATH_MODULE_NAME
 extern ATH_DEBUG_MODULE_DBG_INFO
@@ -160,12 +151,12 @@ GET_ATH_MODULE_DEBUG_VAR_NAME(ATH_MODULE_NAME);
 #define AR_DEBUG_LVL_CHECK(lvl) (GET_ATH_MODULE_DEBUG_VAR_MASK(ATH_MODULE_NAME) & (lvl))
 #endif /* ATH_MODULE_NAME */
 
-#define ATH_DEBUG_SET_DEBUG_MASK(s,lvl) GET_ATH_MODULE_DEBUG_VAR_MASK(s) = (lvl)
+#define ATH_DEBUG_SET_DEBUG_MASK(s, lvl) GET_ATH_MODULE_DEBUG_VAR_MASK(s) = (lvl)
 
 #define ATH_DEBUG_DECLARE_EXTERN(s) \
 	extern ATH_DEBUG_MODULE_DBG_INFO GET_ATH_MODULE_DEBUG_VAR_NAME(s)
 
-#define AR_DEBUG_PRINTBUF(buffer, length, desc) debug_dump_bytes(buffer,length,desc)
+#define AR_DEBUG_PRINTBUF(buffer, length, desc) debug_dump_bytes(buffer, length, desc)
 
 #define AR_DEBUG_ASSERT A_ASSERT
 
@@ -181,12 +172,12 @@ void a_register_module_debug_info(ATH_DEBUG_MODULE_DBG_INFO *pInfo);
 
 #else                           /* !DEBUG */
 /* NON DEBUG */
-#define ATH_DEBUG_INSTANTIATE_MODULE_VAR(s,name,moddesc,initmask,count,descriptions)
+#define ATH_DEBUG_INSTANTIATE_MODULE_VAR(s, name, moddesc, initmask, count, descriptions)
 #define AR_DEBUG_LVL_CHECK(lvl) 0
 #define AR_DEBUG_PRINTBUF(buffer, length, desc)
 #define AR_DEBUG_ASSERT(test)
 #define ATH_DEBUG_DECLARE_EXTERN(s)
-#define ATH_DEBUG_SET_DEBUG_MASK(s,lvl)
+#define ATH_DEBUG_SET_DEBUG_MASK(s, lvl)
 #define A_DUMP_MODULE_DEBUG_INFO(s)
 #define A_REGISTER_MODULE_DEBUG_INFO(s)
 

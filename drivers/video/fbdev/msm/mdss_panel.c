@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, 2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,33 +30,14 @@
  */
 static u32 dsc_rc_buf_thresh[] = {0x0e, 0x1c, 0x2a, 0x38, 0x46, 0x54,
 		0x62, 0x69, 0x70, 0x77, 0x79, 0x7b, 0x7d, 0x7e};
-
-static char dsc_rc_range_min_qp_1_1_8bpp[] = {
-	0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 13
-};
-static char dsc_rc_range_min_qp_1_1_scr1_8bpp[] = {
-	0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5, 5, 5, 9, 12
-};
-static char dsc_rc_range_max_qp_1_1_8bpp[] = {
-4, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11, 12, 13, 13, 15
-};
-static char dsc_rc_range_max_qp_1_1_scr1_8bpp[] = {
-4, 4, 5, 6, 7, 7, 7, 8, 9, 10, 10, 11, 11, 12, 13
-};
-
-static char dsc_rc_range_min_qp_1_1_12bpp[] = {
-	0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 13
-};
-static char dsc_rc_range_min_qp_1_1_scr1_12bpp[] = {
-	0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 13
-};
-static char dsc_rc_range_max_qp_1_1_12bpp[] = {
-	2, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11, 12, 13, 13, 15
-};
-static char dsc_rc_range_max_qp_1_1_scr1_12bpp[] = {
-	2, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11, 12, 13, 13, 15
-};
-
+static char dsc_rc_range_min_qp_1_1[] = {0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5,
+				5, 5, 7, 13};
+static char dsc_rc_range_min_qp_1_1_scr1[] = {0, 0, 1, 1, 3, 3, 3, 3, 3, 3, 5,
+				5, 5, 9, 12};
+static char dsc_rc_range_max_qp_1_1[] = {4, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+			 12, 13, 13, 15};
+static char dsc_rc_range_max_qp_1_1_scr1[] = {4, 4, 5, 6, 7, 7, 7, 8, 9, 10, 10,
+			 11, 11, 12, 13};
 static char dsc_rc_range_bpg_offset[] = {2, 0, 0, -2, -4, -6, -8, -8,
 			-8, -10, -10, -12, -12, -12, -12};
 
@@ -649,6 +630,7 @@ void mdss_panel_info_from_timing(struct mdss_panel_timing *pt,
 
 	pinfo->yres = pt->yres;
 	pinfo->lcdc.v_front_porch = pt->v_front_porch;
+	pinfo->lcdc.v_front_porch_fixed = pt->v_front_porch;
 	pinfo->lcdc.v_back_porch = pt->v_back_porch;
 	pinfo->lcdc.v_pulse_width = pt->v_pulse_width;
 
@@ -713,22 +695,18 @@ void mdss_panel_dsc_parameters_calc(struct dsc_desc *dsc)
 	dsc->tgt_offset_hi = 3;
 	dsc->tgt_offset_lo = 3;
 
-	bpp = dsc->bpp;
-	bpc = dsc->bpc;
-
 	dsc->buf_thresh = dsc_rc_buf_thresh;
 	if (dsc->version == 0x11 && dsc->scr_rev == 0x1) {
-		dsc->range_min_qp = (bpp == 8) ?
-			dsc_rc_range_min_qp_1_1_scr1_8bpp : dsc_rc_range_min_qp_1_1_scr1_12bpp;
-		dsc->range_max_qp = (bpp == 8) ? 
-			dsc_rc_range_max_qp_1_1_scr1_8bpp : dsc_rc_range_max_qp_1_1_scr1_12bpp;
+		dsc->range_min_qp = dsc_rc_range_min_qp_1_1_scr1;
+		dsc->range_max_qp = dsc_rc_range_max_qp_1_1_scr1;
 	} else {
-		dsc->range_min_qp = (bpp == 8) ?
-			dsc_rc_range_min_qp_1_1_8bpp : dsc_rc_range_min_qp_1_1_12bpp;
-		dsc->range_max_qp = (bpp == 8) ?
-			dsc_rc_range_max_qp_1_1_8bpp : dsc_rc_range_max_qp_1_1_12bpp;
+		dsc->range_min_qp = dsc_rc_range_min_qp_1_1;
+		dsc->range_max_qp = dsc_rc_range_max_qp_1_1;
 	}
 	dsc->range_bpg_offset = dsc_rc_range_bpg_offset;
+
+	bpp = dsc->bpp;
+	bpc = dsc->bpc;
 
 	if (bpp == 8)
 		dsc->initial_offset = 6144;

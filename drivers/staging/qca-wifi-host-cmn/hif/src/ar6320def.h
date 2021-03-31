@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _AR6320DEF_H_
@@ -471,15 +462,15 @@ struct targetdef_s ar6320_targetdef = {
 	.d_RX_MSDU_END_4_FIRST_MSDU_MASK =
 		AR6320_RX_MSDU_END_4_FIRST_MSDU_MASK,
 	.d_RX_MSDU_END_4_FIRST_MSDU_LSB = AR6320_RX_MSDU_END_4_FIRST_MSDU_LSB,
-    .d_RX_MPDU_START_0_RETRY_LSB = AR6320_RX_MPDU_START_0_RETRY_LSB,
-    .d_RX_MPDU_START_0_RETRY_MASK = AR6320_RX_MPDU_START_0_RETRY_MASK,
+	.d_RX_MPDU_START_0_RETRY_LSB = AR6320_RX_MPDU_START_0_RETRY_LSB,
+	.d_RX_MPDU_START_0_RETRY_MASK = AR6320_RX_MPDU_START_0_RETRY_MASK,
 	.d_RX_MPDU_START_0_SEQ_NUM_MASK = AR6320_RX_MPDU_START_0_SEQ_NUM_MASK,
 	.d_RX_MPDU_START_0_SEQ_NUM_LSB = AR6320_RX_MPDU_START_0_SEQ_NUM_LSB,
 	.d_RX_MPDU_START_2_PN_47_32_LSB = AR6320_RX_MPDU_START_2_PN_47_32_LSB,
 	.d_RX_MPDU_START_2_PN_47_32_MASK =
 		AR6320_RX_MPDU_START_2_PN_47_32_MASK,
-    .d_RX_MPDU_START_2_TID_LSB = AR6320_RX_MPDU_START_2_TID_LSB,
-    .d_RX_MPDU_START_2_TID_MASK = AR6320_RX_MPDU_START_2_TID_MASK,
+	.d_RX_MPDU_START_2_TID_LSB = AR6320_RX_MPDU_START_2_TID_LSB,
+	.d_RX_MPDU_START_2_TID_MASK = AR6320_RX_MPDU_START_2_TID_MASK,
 	.d_RX_MSDU_END_1_KEY_ID_OCT_MASK =
 		AR6320_RX_MSDU_END_1_KEY_ID_OCT_MASK,
 	.d_RX_MSDU_END_1_KEY_ID_OCT_LSB = AR6320_RX_MSDU_END_1_KEY_ID_OCT_LSB,

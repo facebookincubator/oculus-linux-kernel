@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -272,7 +272,7 @@ static void __iomem *debug_base;
 #define ACD_REG_RELATIVE_ADDR_BITMASK(addr) \
 			(1 << (ACD_REG_RELATIVE_ADDR(addr)))
 
-#define FIXDIV(div) (div ? (2 * (div) - 1) : (0))
+#define FIXDIV(div) ((int)div ? (2 * (div) - 1) : (0))
 
 #define F(f, s, div, m, n) \
 	{ \
@@ -1632,8 +1632,8 @@ static int clk_osm_setup_hw_table(struct clk_osm *c)
 {
 	struct osm_entry *entry = c->osm_table;
 	int i;
-	u32 freq_val, volt_val, override_val, spare_val;
-	u32 table_entry_offset, last_spare, last_virtual_corner = 0;
+	u32 freq_val = 0, volt_val = 0, override_val = 0, spare_val = 0;
+	u32 table_entry_offset = 0, last_spare = 0, last_virtual_corner = 0;
 
 	for (i = 0; i < OSM_TABLE_SIZE; i++) {
 		if (i < c->num_entries) {
@@ -2849,7 +2849,7 @@ static ssize_t debugfs_trace_method_get(struct file *file, char __user *buf,
 					size_t count, loff_t *ppos)
 {
 	struct clk_osm *c = file->private_data;
-	int len, rc;
+	int len = 0, rc;
 
 	if (IS_ERR(file) || file == NULL) {
 		pr_err("input error %ld\n", PTR_ERR(file));

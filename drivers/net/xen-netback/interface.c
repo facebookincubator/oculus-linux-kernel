@@ -105,7 +105,11 @@ static int xenvif_poll(struct napi_struct *napi, int budget)
 
 	if (work_done < budget) {
 		napi_complete(napi);
-		xenvif_napi_schedule_or_enable_events(queue);
+		/* If the queue is rate-limited, it shall be
+		 * rescheduled in the timer callback.
+		 */
+		if (likely(!queue->rate_limited))
+			xenvif_napi_schedule_or_enable_events(queue);
 	}
 
 	return work_done;
@@ -616,7 +620,6 @@ err_tx_unbind:
 err_unmap:
 	xenvif_unmap_frontend_rings(queue);
 err:
-	module_put(THIS_MODULE);
 	return err;
 }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017,2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,22 +31,34 @@ static void sde_core_irq_callback_handler(void *arg, int irq_idx)
 	struct sde_irq *irq_obj = &sde_kms->irq_obj;
 	struct sde_irq_callback *cb;
 	unsigned long irq_flags;
+	bool cb_tbl_error = false;
+	int enable_counts = 0;
 
-	SDE_DEBUG("irq_idx=%d\n", irq_idx);
+	pr_debug("irq_idx=%d\n", irq_idx);
 
-	if (list_empty(&irq_obj->irq_cb_tbl[irq_idx]))
-		SDE_ERROR("irq_idx=%d has no registered callback\n", irq_idx);
+	spin_lock_irqsave(&sde_kms->irq_obj.cb_lock, irq_flags);
+	if (list_empty(&irq_obj->irq_cb_tbl[irq_idx])) {
+		/* print error outside lock */
+		cb_tbl_error = true;
+		enable_counts = atomic_read(
+				&sde_kms->irq_obj.enable_counts[irq_idx]);
+	}
 
 	atomic_inc(&irq_obj->irq_counts[irq_idx]);
 
 	/*
 	 * Perform registered function callback
 	 */
-	spin_lock_irqsave(&sde_kms->irq_obj.cb_lock, irq_flags);
 	list_for_each_entry(cb, &irq_obj->irq_cb_tbl[irq_idx], list)
 		if (cb->func)
 			cb->func(cb->arg, irq_idx);
 	spin_unlock_irqrestore(&sde_kms->irq_obj.cb_lock, irq_flags);
+
+	if (cb_tbl_error) {
+		SDE_ERROR("irq has no registered callback, idx %d enables %d\n",
+				irq_idx, enable_counts);
+		SDE_EVT32_IRQ(irq_idx, enable_counts, SDE_EVTLOG_ERROR);
+	}
 
 	/*
 	 * Clear pending interrupt status in HW.
@@ -376,10 +388,28 @@ void sde_core_irq_preinstall(struct sde_kms *sde_kms)
 	sde_kms->irq_obj.total_irqs = sde_kms->hw_intr->irq_idx_tbl_size;
 	sde_kms->irq_obj.irq_cb_tbl = kcalloc(sde_kms->irq_obj.total_irqs,
 			sizeof(struct list_head), GFP_KERNEL);
+	if (sde_kms->irq_obj.irq_cb_tbl == NULL) {
+		SDE_ERROR("Failed to allocate\n");
+		return;
+	}
 	sde_kms->irq_obj.enable_counts = kcalloc(sde_kms->irq_obj.total_irqs,
 			sizeof(atomic_t), GFP_KERNEL);
+	if (sde_kms->irq_obj.enable_counts == NULL) {
+		kfree(sde_kms->irq_obj.irq_cb_tbl);
+		sde_kms->irq_obj.irq_cb_tbl = NULL;
+		SDE_ERROR("Failed to allocate\n");
+		return;
+	}
 	sde_kms->irq_obj.irq_counts = kcalloc(sde_kms->irq_obj.total_irqs,
 			sizeof(atomic_t), GFP_KERNEL);
+	if (sde_kms->irq_obj.irq_counts == NULL) {
+		kfree(sde_kms->irq_obj.irq_cb_tbl);
+		kfree(sde_kms->irq_obj.enable_counts);
+		sde_kms->irq_obj.irq_cb_tbl = NULL;
+		sde_kms->irq_obj.enable_counts = NULL;
+		SDE_ERROR("Failed to allocate\n");
+		return;
+	}
 	for (i = 0; i < sde_kms->irq_obj.total_irqs; i++) {
 		INIT_LIST_HEAD(&sde_kms->irq_obj.irq_cb_tbl[i]);
 		atomic_set(&sde_kms->irq_obj.enable_counts[i], 0);
@@ -430,6 +460,99 @@ void sde_core_irq_uninstall(struct sde_kms *sde_kms)
 	sde_kms->irq_obj.enable_counts = NULL;
 	sde_kms->irq_obj.irq_counts = NULL;
 	sde_kms->irq_obj.total_irqs = 0;
+}
+
+static void sde_hw_irq_mask(struct irq_data *irqd)
+{
+	struct sde_kms *sde_kms;
+
+	if (!irqd || !irq_data_get_irq_chip_data(irqd)) {
+		SDE_ERROR("invalid parameters irqd %d\n", irqd != 0);
+		return;
+	}
+	sde_kms = irq_data_get_irq_chip_data(irqd);
+
+	smp_mb__before_atomic();
+	clear_bit(irqd->hwirq, &sde_kms->irq_controller.enabled_mask);
+	smp_mb__after_atomic();
+}
+
+static void sde_hw_irq_unmask(struct irq_data *irqd)
+{
+	struct sde_kms *sde_kms;
+
+	if (!irqd || !irq_data_get_irq_chip_data(irqd)) {
+		SDE_ERROR("invalid parameters irqd %d\n", irqd != 0);
+		return;
+	}
+	sde_kms = irq_data_get_irq_chip_data(irqd);
+
+	smp_mb__before_atomic();
+	set_bit(irqd->hwirq, &sde_kms->irq_controller.enabled_mask);
+	smp_mb__after_atomic();
+}
+
+static struct irq_chip sde_hw_irq_chip = {
+	.name = "sde",
+	.irq_mask = sde_hw_irq_mask,
+	.irq_unmask = sde_hw_irq_unmask,
+};
+
+static int sde_hw_irqdomain_map(struct irq_domain *domain,
+		unsigned int irq, irq_hw_number_t hwirq)
+{
+	struct sde_kms *sde_kms;
+	int rc;
+
+	if (!domain || !domain->host_data) {
+		SDE_ERROR("invalid parameters domain %d\n", domain != 0);
+		return -EINVAL;
+	}
+	sde_kms = domain->host_data;
+
+	irq_set_chip_and_handler(irq, &sde_hw_irq_chip, handle_level_irq);
+	rc = irq_set_chip_data(irq, sde_kms);
+
+	return rc;
+}
+
+static struct irq_domain_ops sde_hw_irqdomain_ops = {
+	.map = sde_hw_irqdomain_map,
+	.xlate = irq_domain_xlate_onecell,
+};
+
+int sde_core_irq_domain_add(struct sde_kms *sde_kms)
+{
+	struct device *dev;
+	struct irq_domain *domain;
+
+	if (!sde_kms->dev || !sde_kms->dev->dev) {
+		pr_err("invalid device handles\n");
+		return -EINVAL;
+	}
+
+	dev = sde_kms->dev->dev;
+
+	domain = irq_domain_add_linear(dev->of_node, 32,
+			&sde_hw_irqdomain_ops, sde_kms);
+	if (!domain) {
+		pr_err("failed to add irq_domain\n");
+		return -EINVAL;
+	}
+
+	sde_kms->irq_controller.enabled_mask = 0;
+	sde_kms->irq_controller.domain = domain;
+
+	return 0;
+}
+
+int sde_core_irq_domain_fini(struct sde_kms *sde_kms)
+{
+	if (sde_kms->irq_controller.domain) {
+		irq_domain_remove(sde_kms->irq_controller.domain);
+		sde_kms->irq_controller.domain = NULL;
+	}
+	return 0;
 }
 
 irqreturn_t sde_core_irq(struct sde_kms *sde_kms)

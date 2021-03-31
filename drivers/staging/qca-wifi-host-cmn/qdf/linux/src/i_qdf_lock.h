@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -94,6 +85,11 @@ typedef struct __qdf_spinlock {
 typedef struct semaphore __qdf_semaphore_t;
 
 typedef struct wakeup_source qdf_wake_lock_t;
+
+struct hif_pm_runtime_lock;
+typedef struct qdf_runtime_lock {
+	struct hif_pm_runtime_lock *lock;
+} qdf_runtime_lock_t;
 
 #define LINUX_LOCK_COOKIE 0x12345678
 
@@ -168,6 +164,7 @@ static inline int __qdf_semaphore_acquire_timeout(struct semaphore *m,
 						  unsigned long timeout)
 {
 	unsigned long jiffie_val = msecs_to_jiffies(timeout);
+
 	return down_timeout(m, jiffie_val);
 }
 
@@ -258,16 +255,15 @@ static inline int __qdf_spin_is_locked(__qdf_spinlock_t *lock)
  */
 static inline int __qdf_spin_trylock_bh(__qdf_spinlock_t *lock)
 {
-	if (likely(irqs_disabled() || in_irq() || in_softirq())) {
+	if (likely(irqs_disabled() || in_irq() || in_softirq()))
 		return spin_trylock(&lock->spinlock);
-	} else {
-		if (spin_trylock_bh(&lock->spinlock)) {
-			lock->flags |= QDF_LINUX_UNLOCK_BH;
-			return 1;
-		} else {
-			return 0;
-		}
+
+	if (spin_trylock_bh(&lock->spinlock)) {
+		lock->flags |= QDF_LINUX_UNLOCK_BH;
+		return 1;
 	}
+
+	return 0;
 }
 
 /**
@@ -295,7 +291,7 @@ static inline void __qdf_spin_lock_bh(__qdf_spinlock_t *lock)
 static inline void __qdf_spin_unlock_bh(__qdf_spinlock_t *lock)
 {
 	if (unlikely(lock->flags & QDF_LINUX_UNLOCK_BH)) {
-		lock->flags &= ~QDF_LINUX_UNLOCK_BH;
+		lock->flags &= (unsigned long)~QDF_LINUX_UNLOCK_BH;
 		spin_unlock_bh(&lock->spinlock);
 	} else
 		spin_unlock(&lock->spinlock);

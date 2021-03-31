@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- ***Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,12 +12,6 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include "athdefs.h"
@@ -40,6 +31,7 @@
 static bool pending_events_func_check;
 static uint32_t command_credits;
 static uint32_t *p_bmi_cmd_credits = &command_credits;
+
 /* BMI Access routines */
 
 /**
@@ -72,7 +64,8 @@ hif_bmi_buffer_send(struct hif_sdio_dev *device, char *buffer, uint32_t length)
 		 * byte read will hit the counter and cause
 		 * a decrement, while the remaining 3 bytes has no effect.
 		 * The rationale behind this is to make all HIF accesses
-		 * 4-byte aligned */
+		 * 4-byte aligned
+		 */
 		status =
 			hif_read_write(device, address,
 				       (uint8_t *) p_bmi_cmd_credits, 4,
@@ -84,7 +77,8 @@ hif_bmi_buffer_send(struct hif_sdio_dev *device, char *buffer, uint32_t length)
 			return QDF_STATUS_E_FAILURE;
 		}
 		/* the counter is only 8=bits, ignore anything in the
-		 *upper 3 bytes */
+		 * upper 3 bytes
+		 */
 		(*p_bmi_cmd_credits) &= 0xFF;
 	}
 
@@ -135,6 +129,7 @@ hif_bmi_read_write(struct hif_sdio_dev *device,
 		   char *buffer, uint32_t length)
 {
 	QDF_STATUS status;
+
 	status = hif_read_write(device, RX_LOOKAHEAD_VALID_ADDRESS,
 				buffer, length,
 				HIF_RD_SYNC_BYTE_INC, NULL);
@@ -166,12 +161,14 @@ hif_bmi_buffer_receive(struct hif_sdio_dev *device,
 	uint32_t address;
 	uint32_t mbox_address[HTC_MAILBOX_NUM_MAX];
 	struct _HIF_PENDING_EVENTS_INFO hif_pending_events;
+
 	static HIF_PENDING_EVENTS_FUNC get_pending_events_func;
 
 	if (!pending_events_func_check) {
 		/* see if the HIF layer implements an alternative
 		 * function to get pending events
-		 * do this only once! */
+		 * do this only once!
+		 */
 		hif_configure_device(device,
 				     HIF_DEVICE_GET_PENDING_EVENTS_FUNC,
 				     &get_pending_events_func,
@@ -292,9 +289,10 @@ hif_bmi_buffer_receive(struct hif_sdio_dev *device,
  *
  * Return: QDF_STATUS_SUCCESS for success.
  */
-QDF_STATUS hif_reg_based_get_target_info(struct hif_opaque_softc *hif_ctx,
-					 struct bmi_target_info
-					 *targ_info) {
+QDF_STATUS
+hif_reg_based_get_target_info(struct hif_opaque_softc *hif_ctx,
+			      struct bmi_target_info *targ_info)
+{
 	QDF_STATUS status;
 	uint32_t cid;
 	struct hif_sdio_softc *scn = HIF_GET_SDIO_SOFTC(hif_ctx);
@@ -340,7 +338,8 @@ QDF_STATUS hif_reg_based_get_target_info(struct hif_opaque_softc *hif_ctx,
 		/*
 		 * The Target's targ_info doesn't match the Host's targ_info.
 		 * We need to do some backwards compatibility work to make this
-		 * OK.*/
+		 * OK.
+		 */
 		QDF_ASSERT(targ_info->target_info_byte_count ==
 			 sizeof(*targ_info));
 		/* Read the remainder of the targ_info */
@@ -445,7 +444,8 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 
 QDF_STATUS
 hif_bmi_raw_write(struct hif_sdio_dev *device, char *buffer,
-	      uint32_t length) {
+	      uint32_t length)
+{
 	return hif_bmi_buffer_send(device, buffer, length);
 }
 
@@ -488,11 +488,9 @@ QDF_STATUS hif_bmi_write_scratch_register(struct hif_sdio_dev *device,
 				("%s: Unable to write to 0x%x\n",
 				 __func__, SDIO_SCRATCH_1_ADDRESS));
 		return QDF_STATUS_E_FAILURE;
-	} else {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("%s: wrote 0x%x to 0x%x\n", __func__,
-				 buffer, SDIO_SCRATCH_1_ADDRESS));
 	}
+	AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: wrote 0x%x to 0x%x\n", __func__,
+			 buffer, SDIO_SCRATCH_1_ADDRESS));
 
 	return status;
 }
@@ -516,11 +514,9 @@ QDF_STATUS hif_bmi_read_scratch_register(struct hif_sdio_dev *device)
 				("%s: Unable to read from 0x%x\n",
 				 __func__, SDIO_SCRATCH_1_ADDRESS));
 		return QDF_STATUS_E_FAILURE;
-	} else {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("%s: read 0x%x from 0x%x\n", __func__,
-				 buffer, SDIO_SCRATCH_1_ADDRESS));
 	}
+	AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: read 0x%x from 0x%x\n", __func__,
+			 buffer, SDIO_SCRATCH_1_ADDRESS));
 
 	return status;
 }

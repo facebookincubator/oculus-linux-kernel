@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC:  qdf_threads
  * QCA driver framework (QDF) thread related APIs
@@ -34,6 +25,10 @@
 #define __QDF_THREADS_H
 
 #include <qdf_types.h>
+#include "i_qdf_threads.h"
+
+typedef __qdf_thread_t qdf_thread_t;
+typedef QDF_STATUS (*qdf_thread_func)(void *context);
 
 /* Function declarations and documenation */
 
@@ -43,4 +38,112 @@ void qdf_sleep_us(uint32_t us_interval);
 
 void qdf_busy_wait(uint32_t us_interval);
 
+/**
+ * qdf_set_user_nice() - set thread's nice value
+ * @thread: pointer to thread
+ * @nice: nice value
+ *
+ * Return: none
+ */
+void qdf_set_user_nice(qdf_thread_t *thread, long nice);
+
+/**
+ * qdf_create_thread() - create a kernel thread
+ * @thread: pointer to thread
+ * @nice: nice value
+ *
+ * Return: pointer to created kernel thread
+ */
+qdf_thread_t *qdf_create_thread(int (*thread_handler)(void *data), void *data,
+				const char thread_name[]);
+
+/**
+ * qdf_thread_run() - run the given function in a new thread
+ *
+ * You must call qdf_thread_join() to avoid a reasource leak!
+ *
+ * For more flexibility, use qdf_create_thread() instead.
+ *
+ * Return: a new qdf_thread pointer
+ */
+qdf_thread_t *qdf_thread_run(qdf_thread_func callback, void *context);
+
+/**
+ * qdf_thread_join() - signal and wait for a thread to stop
+ *
+ * This sets a flag that the given thread can check to see if it should exit.
+ * The thread can check to see if this flag has been set by calling
+ * qdf_thread_should_stop().
+ *
+ * Return: QDF_STATUS - the return value from the thread function
+ */
+QDF_STATUS qdf_thread_join(qdf_thread_t *thread);
+
+/**
+ * qdf_thread_should_stop() - true if the current thread was signalled to stop
+ *
+ * If qdf_thread_join() has been called on the current thread, this API returns
+ * true. Otherwise, this returns false.
+ *
+ * Return: true if the current thread should stop
+ */
+bool qdf_thread_should_stop(void);
+
+/**
+ * qdf_wake_up_process() - wake up given thread
+ * @thread: pointer to thread which needs to be woken up
+ *
+ * Return: none
+ */
+int qdf_wake_up_process(qdf_thread_t *thread);
+
+/**
+ * qdf_print_stack_trace_thread() - prints the stack trace of the given thread
+ * @thread: the thread for which the stack trace will be printed
+ *
+ * Return: None
+ */
+void qdf_print_thread_trace(qdf_thread_t *thread);
+
+/**
+ * qdf_get_current_task() - get current task struct
+ *
+ * Return: pointer to task struct
+ */
+qdf_thread_t *qdf_get_current_task(void);
+
+/**
+ * qdf_thread_set_cpus_allowed_mask() - set cpu mask for a particular thread
+ * @thread: thread for which new cpu mask is set
+ * @new_mask: new cpu mask to be set for the thread
+ *
+ * Return: None
+ */
+void
+qdf_thread_set_cpus_allowed_mask(qdf_thread_t *thread, qdf_cpu_mask *new_mask);
+
+/**
+ * qdf_cpumask_clear() - clear all cpus in a cpumask
+ * @dstp: cpumask pointer
+ *
+ * Return: None
+ */
+void qdf_cpumask_clear(qdf_cpu_mask *dstp);
+
+/**
+ * qdf_cpumask_set_cpu() - set a cpu in a cpumask
+ * @cpu: cpu number
+ * @dstp: cpumask pointer
+ *
+ * Return: None
+ */
+void qdf_cpumask_set_cpu(unsigned int cpu, qdf_cpu_mask *dstp);
+
+/**
+ * qdf_cpumask_setall - set all cpus
+ * @dstp: cpumask pointer
+ *
+ * Return: None
+ */
+void qdf_cpumask_setall(qdf_cpu_mask *dstp);
 #endif /* __QDF_THREADS_H */

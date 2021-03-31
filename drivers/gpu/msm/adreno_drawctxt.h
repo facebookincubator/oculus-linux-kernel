@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -40,6 +40,7 @@ struct kgsl_context;
  * @pending: Priority list node for the dispatcher list of pending contexts
  * @wq: Workqueue structure for contexts to sleep pending room in the queue
  * @waiting: Workqueue structure for contexts waiting for a timestamp or event
+ * @timeout: Workqueue structure for contexts waiting to invalidate
  * @queued: Number of commands queued in the drawqueue
  * @fault_policy: GFT fault policy set in _skip_cmd();
  * @debug_root: debugfs entry for this context.
@@ -68,6 +69,7 @@ struct adreno_context {
 	struct plist_node pending;
 	wait_queue_head_t wq;
 	wait_queue_head_t waiting;
+	wait_queue_head_t timeout;
 
 	int queued;
 	unsigned int fault_policy;
@@ -136,4 +138,16 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 void adreno_drawctxt_dump(struct kgsl_device *device,
 		struct kgsl_context *context);
 
+static struct adreno_context_type ctxt_type_table[] = {KGSL_CONTEXT_TYPES};
+
+static inline const char *get_api_type_str(unsigned int type)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(ctxt_type_table); i++) {
+		if (ctxt_type_table[i].type == type)
+			return ctxt_type_table[i].str;
+	}
+	return "UNKNOWN";
+}
 #endif  /* __ADRENO_DRAWCTXT_H */

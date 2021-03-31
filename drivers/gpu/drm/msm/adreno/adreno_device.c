@@ -27,6 +27,7 @@ module_param_named(hang_debug, hang_debug, bool, 0600);
 
 struct msm_gpu *a3xx_gpu_init(struct drm_device *dev);
 struct msm_gpu *a4xx_gpu_init(struct drm_device *dev);
+struct msm_gpu *a5xx_gpu_init(struct drm_device *dev);
 
 static const struct adreno_info gpulist[] = {
 	{
@@ -77,6 +78,22 @@ static const struct adreno_info gpulist[] = {
 		.pfpfw = "a420_pfp.fw",
 		.gmem  = (SZ_1M + SZ_512K),
 		.init  = a4xx_gpu_init,
+	}, {
+		.rev = ADRENO_REV(5, 3, 0, ANY_ID),
+		.revn = 530,
+		.name = "A530",
+		.pm4fw = "a530_pm4.fw",
+		.pfpfw = "a530_pfp.fw",
+		.gmem = SZ_1M,
+		.init = a5xx_gpu_init,
+	}, {
+		.rev = ADRENO_REV(5, 4, 0, ANY_ID),
+		.revn = 540,
+		.name = "A540",
+		.pm4fw = "a530_pm4.fw",
+		.pfpfw = "a530_pfp.fw",
+		.gmem = SZ_1M,
+		.init = a5xx_gpu_init,
 	},
 };
 
@@ -86,6 +103,8 @@ MODULE_FIRMWARE("a330_pm4.fw");
 MODULE_FIRMWARE("a330_pfp.fw");
 MODULE_FIRMWARE("a420_pm4.fw");
 MODULE_FIRMWARE("a420_pfp.fw");
+MODULE_FIRMWARE("a530_fm4.fw");
+MODULE_FIRMWARE("a530_pfp.fw");
 
 static inline bool _rev_match(uint8_t entry, uint8_t id)
 {
@@ -145,17 +164,17 @@ struct msm_gpu *adreno_load_gpu(struct drm_device *dev)
 
 	if (gpu) {
 		int ret;
-		mutex_lock(&dev->struct_mutex);
-		gpu->funcs->pm_resume(gpu);
-		mutex_unlock(&dev->struct_mutex);
-		ret = gpu->funcs->hw_init(gpu);
+
+		pm_runtime_get_sync(&pdev->dev);
+		ret = msm_gpu_hw_init(gpu);
+		pm_runtime_put_sync_autosuspend(&pdev->dev);
 		if (ret) {
 			dev_err(dev->dev, "gpu hw init failed: %d\n", ret);
+			mutex_lock(&dev->struct_mutex);
+			gpu->funcs->pm_suspend(gpu);
+			mutex_unlock(&dev->struct_mutex);
 			gpu->funcs->destroy(gpu);
 			gpu = NULL;
-		} else {
-			/* give inactive pm a chance to kick in: */
-			msm_gpu_retire(gpu);
 		}
 	}
 
@@ -172,11 +191,16 @@ static void set_gpu_pdev(struct drm_device *dev,
 static int adreno_bind(struct device *dev, struct device *master, void *data)
 {
 	static struct adreno_platform_config config = {};
-	struct device_node *child, *node = dev->of_node;
-	u32 val;
+	uint32_t val = 0;
 	int ret;
 
-	ret = of_property_read_u32(node, "qcom,chipid", &val);
+	/*
+	 * Read the chip ID from the device tree at bind time - we use this
+	 * information to load the correct functions. All the rest of the
+	 * (extensive) device tree probing should happen in the GPU specific
+	 * code
+	 */
+	ret = of_property_read_u32(dev->of_node, "qcom,chipid", &val);
 	if (ret) {
 		dev_err(dev, "could not find chipid: %d\n", ret);
 		return ret;
@@ -184,29 +208,6 @@ static int adreno_bind(struct device *dev, struct device *master, void *data)
 
 	config.rev = ADRENO_REV((val >> 24) & 0xff,
 			(val >> 16) & 0xff, (val >> 8) & 0xff, val & 0xff);
-
-	/* find clock rates: */
-	config.fast_rate = 0;
-	config.slow_rate = ~0;
-	for_each_child_of_node(node, child) {
-		if (of_device_is_compatible(child, "qcom,gpu-pwrlevels")) {
-			struct device_node *pwrlvl;
-			for_each_child_of_node(child, pwrlvl) {
-				ret = of_property_read_u32(pwrlvl, "qcom,gpu-freq", &val);
-				if (ret) {
-					dev_err(dev, "could not find gpu-freq: %d\n", ret);
-					return ret;
-				}
-				config.fast_rate = max(config.fast_rate, val);
-				config.slow_rate = min(config.slow_rate, val);
-			}
-		}
-	}
-
-	if (!config.fast_rate) {
-		dev_err(dev, "could not find clk rates\n");
-		return -ENXIO;
-	}
 
 	dev->platform_data = &config;
 	set_gpu_pdev(dev_get_drvdata(master), to_platform_device(dev));
@@ -242,12 +243,35 @@ static const struct of_device_id dt_match[] = {
 	{}
 };
 
+#ifdef CONFIG_PM
+static int adreno_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_gpu *gpu = platform_get_drvdata(pdev);
+
+	return gpu->funcs->pm_resume(gpu);
+}
+
+static int adreno_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_gpu *gpu = platform_get_drvdata(pdev);
+
+	return gpu->funcs->pm_suspend(gpu);
+}
+#endif
+
+static const struct dev_pm_ops adreno_pm_ops = {
+	SET_RUNTIME_PM_OPS(adreno_suspend, adreno_resume, NULL)
+};
+
 static struct platform_driver adreno_driver = {
 	.probe = adreno_probe,
 	.remove = adreno_remove,
 	.driver = {
 		.name = "adreno",
 		.of_match_table = dt_match,
+		.pm = &adreno_pm_ops,
 	},
 };
 

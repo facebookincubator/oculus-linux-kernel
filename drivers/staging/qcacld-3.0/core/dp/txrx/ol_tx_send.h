@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011, 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * @file ol_tx_send.h
  * @brief API definitions for the tx sendriptor module within the data SW.
@@ -39,7 +30,6 @@
 
 static inline void ol_tx_discard_target_frms(ol_txrx_pdev_handle pdev)
 {
-	return;
 }
 #else
 
@@ -92,4 +82,71 @@ void
 ol_tx_send_nonstd(struct ol_txrx_pdev_t *pdev,
 		  struct ol_tx_desc_t *tx_desc,
 		  qdf_nbuf_t msdu, enum htt_pkt_type pkt_type);
+
+#ifdef QCA_COMPUTE_TX_DELAY
+/**
+ * ol_tx_set_compute_interval() - update compute interval period for TSM stats
+ * @ppdev: physical device instance
+ * @interval: interval for stats computation
+ *
+ * Return: NONE
+ */
+void ol_tx_set_compute_interval(struct cdp_pdev *ppdev, uint32_t interval);
+
+/**
+ * ol_tx_packet_count() - Return the uplink (transmitted) packet counts
+ * @ppdev: physical device instance
+ * @out_packet_count: number of packets transmitted
+ * @out_packet_loss_count: number of packets lost
+ * @category: access category of interest
+ *
+ * This function will be called for getting uplink packet count and
+ * loss count for given stream (access category) a regular interval.
+ * This also resets the counters hence, the value returned is packets
+ * counted in last 5(default) second interval. These counter are
+ * incremented per access category in ol_tx_completion_handler()
+ *
+ * Return: NONE
+ */
+void
+ol_tx_packet_count(struct cdp_pdev *ppdev,
+		   uint16_t *out_packet_count,
+		   uint16_t *out_packet_loss_count, int category);
+
+/**
+ * ol_tx_delay() - get tx packet delay
+ * @ppdev: physical device instance
+ * @queue_delay_microsec: tx packet delay within queue, usec
+ * @tx_delay_microsec: tx packet delay, usec
+ * @category: packet category
+ *
+ * Return: NONE
+ */
+void
+ol_tx_delay(struct cdp_pdev *ppdev,
+	    uint32_t *queue_delay_microsec,
+	    uint32_t *tx_delay_microsec, int category);
+
+/**
+ * ol_tx_delay_hist() - get tx packet delay histogram
+ * @ppdev: physical device instance
+ * @report_bin_values: bin
+ * @category: packet category
+ *
+ * Return: NONE
+ */
+void
+ol_tx_delay_hist(struct cdp_pdev *ppdev,
+		 uint16_t *report_bin_values, int category);
+#endif /* QCA_COMPUTE_TX_DELAY */
+
+/**
+ * ol_txrx_flow_control_cb() - call osif flow control callback
+ * @vdev: vdev handle
+ * @tx_resume: tx resume flag
+ *
+ * Return: none
+ */
+void ol_txrx_flow_control_cb(struct cdp_vdev *vdev, bool tx_resume);
+
 #endif /* _OL_TX_SEND__H_ */

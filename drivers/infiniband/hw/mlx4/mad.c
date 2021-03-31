@@ -1080,6 +1080,27 @@ void handle_port_mgmt_change_event(struct work_struct *work)
 
 		/* Generate GUID changed event */
 		if (changed_attr & MLX4_EQ_PORT_INFO_GID_PFX_CHANGE_MASK) {
+			if (mlx4_is_master(dev->dev)) {
+				union ib_gid gid;
+				int err = 0;
+
+				if (!eqe->event.port_mgmt_change.params.port_info.gid_prefix)
+					err = __mlx4_ib_query_gid(&dev->ib_dev, port, 0, &gid, 1);
+				else
+					gid.global.subnet_prefix =
+						eqe->event.port_mgmt_change.params.port_info.gid_prefix;
+				if (err) {
+					pr_warn("Could not change QP1 subnet prefix for port %d: query_gid error (%d)\n",
+						port, err);
+				} else {
+					pr_debug("Changing QP1 subnet prefix for port %d. old=0x%llx. new=0x%llx\n",
+						 port,
+						 (u64)atomic64_read(&dev->sriov.demux[port - 1].subnet_prefix),
+						 be64_to_cpu(gid.global.subnet_prefix));
+					atomic64_set(&dev->sriov.demux[port - 1].subnet_prefix,
+						     be64_to_cpu(gid.global.subnet_prefix));
+				}
+			}
 			mlx4_ib_dispatch_event(dev, port, IB_EVENT_GID_CHANGE);
 			/*if master, notify all slaves*/
 			if (mlx4_is_master(dev->dev))
@@ -1505,8 +1526,6 @@ tx_err:
 				    tx_buf_size, DMA_TO_DEVICE);
 		kfree(tun_qp->tx_ring[i].buf.addr);
 	}
-	kfree(tun_qp->tx_ring);
-	tun_qp->tx_ring = NULL;
 	i = MLX4_NUM_TUNNEL_BUFS;
 err:
 	while (i > 0) {
@@ -1515,6 +1534,8 @@ err:
 				    rx_buf_size, DMA_FROM_DEVICE);
 		kfree(tun_qp->ring[i].addr);
 	}
+	kfree(tun_qp->tx_ring);
+	tun_qp->tx_ring = NULL;
 	kfree(tun_qp->ring);
 	tun_qp->ring = NULL;
 	return -ENOMEM;
@@ -1759,7 +1780,6 @@ static void mlx4_ib_sqp_comp_worker(struct work_struct *work)
 					       "buf:%lld\n", wc.wr_id);
 				break;
 			default:
-				BUG_ON(1);
 				break;
 			}
 		} else  {
@@ -2154,6 +2174,8 @@ int mlx4_ib_init_sriov(struct mlx4_ib_dev *dev)
 		if (err)
 			goto demux_err;
 		dev->sriov.demux[i].guid_cache[0] = gid.global.interface_id;
+		atomic64_set(&dev->sriov.demux[i].subnet_prefix,
+			     be64_to_cpu(gid.global.subnet_prefix));
 		err = alloc_pv_object(dev, mlx4_master_func_num(dev->dev), i + 1,
 				      &dev->sriov.sqps[i]);
 		if (err)

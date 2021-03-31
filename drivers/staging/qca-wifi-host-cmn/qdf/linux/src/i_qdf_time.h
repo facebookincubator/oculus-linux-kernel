@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: i_qdf_time
  * This file provides OS dependent time API's.
@@ -35,16 +26,91 @@
 
 #include <linux/jiffies.h>
 #include <linux/delay.h>
+#include <linux/ktime.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
+#include <linux/timekeeping.h>
+#else
+#include <linux/hrtimer.h>
+#endif
 #ifdef MSM_PLATFORM
 #include <asm/arch_timer.h>
-#else
-#include <linux/ktime.h>
 #endif
 #ifdef CONFIG_CNSS
 #include <net/cnss.h>
 #endif
+#include <linux/version.h>
 
 typedef unsigned long __qdf_time_t;
+typedef ktime_t  __qdf_ktime_t;
+
+/**
+ * __qdf_ns_to_ktime() - Converts nanoseconds to a ktime object
+ * @ns: time in nanoseconds
+ *
+ * Return: nanoseconds as ktime object
+ */
+static inline ktime_t __qdf_ns_to_ktime(uint64_t ns)
+{
+	return ns_to_ktime(ns);
+}
+
+/**
+ * __qdf_ktime_add() - Adds two ktime objects and returns
+ * a ktime object
+ * @time1: time as ktime object
+ * @time2: time as ktime object
+ *
+ * Return: sum of ktime objects as ktime object
+ */
+static inline ktime_t __qdf_ktime_add(ktime_t ktime1, ktime_t ktime2)
+{
+	return ktime_add(ktime1, ktime2);
+}
+
+/**
+ * __qdf_ktime_get() - Gets the current time as ktime object
+ *
+ * Return: current time as ktime object
+ */
+static inline ktime_t __qdf_ktime_get(void)
+{
+	return ktime_get();
+}
+
+/**
+ * __qdf_ktime_add_ns() - Adds ktime object and nanoseconds value and
+ * returns the ktime object
+ *
+ * Return: ktime object
+ */
+static inline ktime_t __qdf_ktime_add_ns(ktime_t ktime, int64_t ns)
+{
+	return ktime_add_ns(ktime, ns);
+}
+
+/**
+ * __qdf_ktime_to_ns() - convert ktime to nanoseconds
+ * @ktime: time as ktime object
+ * @ns: time in nanoseconds
+ *
+ * Return: ktime in nanoseconds
+ */
+static inline int64_t __qdf_ktime_to_ns(ktime_t ktime)
+{
+	return ktime_to_ns(ktime);
+}
+
+/**
+ * __qdf_ktime_to_ms() - convert ktime to milliseconds
+ * @ktime: time as ktime object
+ *
+ * Return: ktime in milliseconds
+ */
+static inline int64_t __qdf_ktime_to_ms(ktime_t ktime)
+{
+	return ktime_to_ms(ktime);
+}
+
 
 /**
  * __qdf_system_ticks() - get system ticks
@@ -191,8 +257,7 @@ static inline uint64_t __qdf_get_monotonic_boottime(void)
 	return ((uint64_t) ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
 
-#ifdef QCA_WIFI_3_0_ADRASTEA
-#include <asm/arch_timer.h>
+#if defined (QCA_WIFI_3_0_ADRASTEA) && defined (MSM_PLATFORM)
 
 /**
  * __qdf_get_log_timestamp() - get QTIMER ticks
@@ -234,5 +299,29 @@ static inline uint64_t __qdf_get_log_timestamp(void)
 	return ((uint64_t) ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
 #endif /* QCA_WIFI_3_0_ADRASTEA */
+
+/**
+ * __qdf_get_bootbased_boottime_ns() - Get the bootbased time in nanoseconds
+ *
+ * __qdf_get_bootbased_boottime_ns() function returns the number of nanoseconds
+ * that have elapsed since the system was booted. It also includes the time when
+ * system was suspended.
+ *
+ * Return:
+ * The time since system booted in nanoseconds
+ */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
+static inline uint64_t __qdf_get_bootbased_boottime_ns(void)
+{
+	return ktime_get_boot_ns();
+}
+
+#else
+static inline uint64_t __qdf_get_bootbased_boottime_ns(void)
+{
+	return ktime_to_ns(ktime_get_boottime());
+}
+#endif
 
 #endif

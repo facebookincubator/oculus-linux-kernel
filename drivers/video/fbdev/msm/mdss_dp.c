@@ -68,6 +68,7 @@ static int mdss_dp_process_phy_test_pattern_request(
 		struct mdss_dp_drv_pdata *dp);
 static int mdss_dp_send_audio_notification(
 	struct mdss_dp_drv_pdata *dp, int val);
+static void mdss_dp_reset_sw_state(struct mdss_dp_drv_pdata *dp);
 
 static inline void mdss_dp_reset_sink_count(struct mdss_dp_drv_pdata *dp)
 {
@@ -1110,8 +1111,14 @@ static int dp_audio_info_setup(struct platform_device *pdev,
 	struct mdss_dp_drv_pdata *dp_ctrl = platform_get_drvdata(pdev);
 
 	if (!dp_ctrl || !params) {
-		DEV_ERR("%s: invalid input\n", __func__);
-		return -ENODEV;
+		pr_err("invalid input\n");
+		rc = -ENODEV;
+		goto end;
+	}
+
+	if (!dp_ctrl->power_on) {
+		pr_debug("DP is already power off\n");
+		goto end;
 	}
 
 	mdss_dp_audio_setup_sdps(&dp_ctrl->ctrl_io, params->num_of_channels);
@@ -1119,6 +1126,7 @@ static int dp_audio_info_setup(struct platform_device *pdev,
 	mdss_dp_set_safe_to_exit_level(&dp_ctrl->ctrl_io, dp_ctrl->lane_cnt);
 	mdss_dp_audio_enable(&dp_ctrl->ctrl_io, true);
 
+end:
 	return rc;
 } /* dp_audio_info_setup */
 
@@ -1147,6 +1155,11 @@ static void dp_audio_teardown_done(struct platform_device *pdev)
 
 	if (!dp) {
 		pr_err("invalid input\n");
+		return;
+	}
+
+	if (!dp->power_on) {
+		pr_err("DP is already power off\n");
 		return;
 	}
 
@@ -1481,7 +1494,7 @@ static void mdss_dp_configure_source_params(struct mdss_dp_drv_pdata *dp,
 	mdss_dp_config_misc(dp,
 		mdss_dp_bpp_to_test_bit_depth(mdss_dp_get_bpp(dp)),
 		mdss_dp_get_colorimetry_config(dp));
-	mdss_dp_sw_config_msa(&dp->ctrl_io, dp->link_rate, &dp->dp_cc_io);
+	mdss_dp_sw_config_msa(dp);
 	mdss_dp_timing_cfg(&dp->ctrl_io, &dp->panel_data.panel_info);
 }
 
@@ -1503,7 +1516,12 @@ static int mdss_dp_setup_main_link(struct mdss_dp_drv_pdata *dp, bool train)
 
 	pr_debug("enter\n");
 	mdss_dp_mainlink_ctrl(&dp->ctrl_io, true);
-	mdss_dp_aux_set_sink_power_state(dp, SINK_POWER_ON);
+	ret = mdss_dp_aux_send_psm_request(dp, false);
+	if (ret) {
+		pr_err("Failed to exit low power mode, rc=%d\n", ret);
+		goto end;
+	}
+
 	reinit_completion(&dp->video_comp);
 
 	if (mdss_dp_is_phy_test_pattern_requested(dp))
@@ -1550,6 +1568,19 @@ static int mdss_dp_on_irq(struct mdss_dp_drv_pdata *dp_drv, bool lt_needed)
 {
 	int ret = 0;
 	char ln_map[4];
+	bool connected;
+
+	mutex_lock(&dp_drv->attention_lock);
+	connected = dp_drv->cable_connected;
+	mutex_unlock(&dp_drv->attention_lock);
+
+	/*
+	 * If DP cable disconnected, Avoid link training or turning on DP Path
+	 */
+	if (!connected) {
+		pr_err("DP sink not connected\n");
+		return -EINVAL;
+	}
 
 	/* wait until link training is completed */
 	pr_debug("enter, lt_needed=%s\n", lt_needed ? "true" : "false");
@@ -1590,16 +1621,14 @@ static int mdss_dp_on_irq(struct mdss_dp_drv_pdata *dp_drv, bool lt_needed)
 
 		dp_drv->power_on = true;
 
-		if (dp_drv->psm_enabled) {
-			ret = mdss_dp_aux_send_psm_request(dp_drv, false);
-			if (ret) {
-				pr_err("Failed to exit low power mode, rc=%d\n",
-					ret);
-				goto exit_loop;
+		ret = mdss_dp_setup_main_link(dp_drv, lt_needed);
+		if (ret) {
+			if (ret == -ENODEV || ret == -EINVAL) {
+				pr_err("main link setup failed\n");
+				mutex_unlock(&dp_drv->train_mutex);
+				return ret;
 			}
 		}
-
-		ret = mdss_dp_setup_main_link(dp_drv, lt_needed);
 
 exit_loop:
 		mutex_unlock(&dp_drv->train_mutex);
@@ -1667,15 +1696,6 @@ int mdss_dp_on_hpd(struct mdss_dp_drv_pdata *dp_drv)
 
 	mdss_dp_configure_source_params(dp_drv, ln_map);
 
-	if (dp_drv->psm_enabled) {
-		ret = mdss_dp_aux_send_psm_request(dp_drv, false);
-		if (ret) {
-			pr_err("Failed to exit low power mode, rc=%d\n", ret);
-			goto exit;
-		}
-	}
-
-
 link_training:
 	dp_drv->power_on = true;
 
@@ -1701,6 +1721,8 @@ exit:
 int mdss_dp_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dp_drv_pdata *dp_drv = NULL;
+	bool hpd;
+	int rc = 0;
 
 	if (!pdata) {
 		pr_err("Invalid input data\n");
@@ -1709,6 +1731,22 @@ int mdss_dp_on(struct mdss_panel_data *pdata)
 
 	dp_drv = container_of(pdata, struct mdss_dp_drv_pdata,
 			panel_data);
+
+	mutex_lock(&dp_drv->attention_lock);
+	hpd = dp_drv->cable_connected;
+	mutex_unlock(&dp_drv->attention_lock);
+
+	/* In case of device coming out of PM_SUSPEND, there can be
+	 * a corner case where the sink is turned off or the DP cable
+	 * is disconnected almost at the same time as userspace triggering
+	 * unblank. This can cause the UNBLANK call to be still triggered
+	 * before the disconnect event is notified to the userspace.
+	 * Avoid turning ON DP path in such cases.
+	 */
+	if (!hpd || !dp_drv->alt_mode.dp_status.hpd_high) {
+		pr_err("DP sink not connected\n");
+		return -EINVAL;
+	}
 
 	/*
 	 * If the link already active, then nothing needs to be done here.
@@ -1734,15 +1772,18 @@ int mdss_dp_on(struct mdss_panel_data *pdata)
 	 * init/deinit during unrelated resume/suspend events,
 	 * add host initialization call before DP power-on.
 	 */
-	if (!dp_drv->dp_initialized)
-		mdss_dp_host_init(pdata);
+	if (!dp_drv->dp_initialized) {
+		rc = mdss_dp_host_init(pdata);
+		if (rc < 0)
+			return rc;
+	}
 
 	return mdss_dp_on_hpd(dp_drv);
 }
 
 static bool mdss_dp_is_ds_bridge(struct mdss_dp_drv_pdata *dp)
 {
-	return dp->dpcd.downstream_port.dfp_present;
+	return dp->dpcd.downstream_port.dsp_present;
 }
 
 static bool mdss_dp_is_ds_bridge_sink_count_zero(struct mdss_dp_drv_pdata *dp)
@@ -1926,6 +1967,7 @@ static int mdss_dp_edid_init(struct mdss_panel_data *pdata)
 
 	edid_init_data.kobj = dp_drv->kobj;
 	edid_init_data.max_pclk_khz = dp_drv->max_pclk_khz;
+	edid_init_data.yc420_support = false;
 
 	edid_data = hdmi_edid_init(&edid_init_data);
 	if (!edid_data) {
@@ -1968,6 +2010,11 @@ static int mdss_dp_host_init(struct mdss_panel_data *pdata)
 	}
 
 	dp_drv->orientation = usbpd_get_plug_orientation(dp_drv->pd);
+	if (dp_drv->orientation == ORIENTATION_NONE) {
+		pr_err("DP cable might be disconnected\n");
+		ret = -EINVAL;
+		goto orientation_error;
+	}
 
 	dp_drv->aux_sel_gpio_output = 0;
 	if (dp_drv->orientation == ORIENTATION_CC2)
@@ -2008,8 +2055,9 @@ static int mdss_dp_host_init(struct mdss_panel_data *pdata)
 	return 0;
 
 clk_error:
-	mdss_dp_regulator_ctrl(dp_drv, false);
 	mdss_dp_config_gpios(dp_drv, false);
+orientation_error:
+	mdss_dp_regulator_ctrl(dp_drv, false);
 vreg_error:
 	return ret;
 }
@@ -2104,6 +2152,12 @@ static int mdss_dp_notify_clients(struct mdss_dp_drv_pdata *dp,
 			goto invalid_request;
 		if (dp->hpd_notification_status == NOTIFY_DISCONNECT_IRQ_HPD) {
 			/*
+			 * Just in case if NOTIFY_DISCONNECT_IRQ_HPD is timedout
+			 */
+			if (dp->power_on)
+				mdss_dp_state_ctrl(&dp->ctrl_io, ST_PUSH_IDLE);
+
+			/*
 			 * user modules already turned off. Need to explicitly
 			 * turn off DP core here.
 			 */
@@ -2176,6 +2230,10 @@ static int mdss_dp_process_hpd_high(struct mdss_dp_drv_pdata *dp)
 	ret = mdss_dp_dpcd_cap_read(dp);
 	if (ret || !mdss_dp_aux_is_link_rate_valid(dp->dpcd.max_link_rate) ||
 		!mdss_dp_aux_is_lane_count_valid(dp->dpcd.max_lane_count)) {
+		if ((ret == -ENODEV) || (ret == EDP_AUX_ERR_TOUT)) {
+			pr_err("DPCD read timedout, skip connect notification\n");
+			goto end;
+		}
 		/*
 		 * If there is an error in parsing DPCD or if DPCD reports
 		 * unsupported link parameters then set the default link
@@ -2204,6 +2262,9 @@ static int mdss_dp_process_hpd_high(struct mdss_dp_drv_pdata *dp)
 read_edid:
 	ret = mdss_dp_edid_read(dp);
 	if (ret) {
+		if (ret == -ENODEV)
+			goto end;
+
 		pr_err("edid read error, setting default resolution\n");
 		goto notify;
 	}
@@ -2966,6 +3027,7 @@ static int mdss_dp_sysfs_create(struct mdss_dp_drv_pdata *dp,
 
 static void mdss_dp_mainlink_push_idle(struct mdss_panel_data *pdata)
 {
+	bool cable_connected;
 	struct mdss_dp_drv_pdata *dp_drv = NULL;
 	const int idle_pattern_completion_timeout_ms = 3 * HZ / 100;
 
@@ -2980,6 +3042,20 @@ static void mdss_dp_mainlink_push_idle(struct mdss_panel_data *pdata)
 	/* wait until link training is completed */
 	mutex_lock(&dp_drv->train_mutex);
 
+	if (!dp_drv->power_on) {
+		pr_err("DP Controller not powered on\n");
+		mutex_unlock(&dp_drv->train_mutex);
+		return;
+	}
+
+	/* power down the sink if cable is still connected */
+	mutex_lock(&dp_drv->attention_lock);
+	cable_connected = dp_drv->cable_connected;
+	mutex_unlock(&dp_drv->attention_lock);
+	if (cable_connected && dp_drv->alt_mode.dp_status.hpd_high) {
+		if (mdss_dp_aux_send_psm_request(dp_drv, true))
+			pr_err("Failed to enter low power mode\n");
+	}
 	reinit_completion(&dp_drv->idle_comp);
 	mdss_dp_state_ctrl(&dp_drv->ctrl_io, ST_PUSH_IDLE);
 	if (!wait_for_completion_timeout(&dp_drv->idle_comp,
@@ -3100,6 +3176,10 @@ static int mdss_dp_event_handler(struct mdss_panel_data *pdata,
 			pr_err("DP Controller not powered on\n");
 			break;
 		}
+		if (!atomic_read(&dp->notification_pending)) {
+			pr_debug("blank when cable is connected\n");
+			kthread_park(dp->ev_thread);
+		}
 		if (dp_is_hdcp_enabled(dp)) {
 			dp->hdcp_status = HDCP_STATE_INACTIVE;
 
@@ -3139,8 +3219,10 @@ static int mdss_dp_event_handler(struct mdss_panel_data *pdata,
 		 * when you connect DP sink while the
 		 * device is in suspend state.
 		 */
-		if ((!dp->power_on) && (dp->dp_initialized))
+		if ((!dp->power_on) && (dp->dp_initialized)) {
 			rc = mdss_dp_host_deinit(dp);
+			kthread_park(dp->ev_thread);
+		}
 
 		/*
 		 * For DP suspend/resume use case, CHECK_PARAMS is
@@ -3152,8 +3234,11 @@ static int mdss_dp_event_handler(struct mdss_panel_data *pdata,
 			dp->suspend_vic = dp->vic;
 		break;
 	case MDSS_EVENT_RESUME:
-		if (dp->suspend_vic != HDMI_VFRMT_UNKNOWN)
+		if (dp->suspend_vic != HDMI_VFRMT_UNKNOWN) {
 			dp_init_panel_info(dp, dp->suspend_vic);
+			mdss_dp_reset_sw_state(dp);
+			kthread_unpark(dp->ev_thread);
+		}
 		break;
 	default:
 		pr_debug("unhandled event=%d\n", event);
@@ -3497,9 +3582,33 @@ static void mdss_dp_reset_event_list(struct mdss_dp_drv_pdata *dp)
 
 static void mdss_dp_reset_sw_state(struct mdss_dp_drv_pdata *dp)
 {
+	int ret = 0;
+
 	pr_debug("enter\n");
 	mdss_dp_reset_event_list(dp);
+
+	/*
+	 * IRQ_HPD attention event handler first turns on DP path and then
+	 * notifies CONNECT_IRQ_HPD and waits for userspace to trigger UNBLANK.
+	 * In such cases, before UNBLANK call, if cable is disconnected, if
+	 * DISCONNECT is notified immediately, userspace might not sense any
+	 * change in connection status, leaving DP controller ON.
+	 *
+	 * To avoid such cases, wait for the connection event to complete before
+	 * sending disconnection event
+	 */
+	if (atomic_read(&dp->notification_pending)) {
+		pr_debug("waiting for the pending notitfication\n");
+		ret = wait_for_completion_timeout(&dp->notification_comp, HZ);
+		if (ret <= 0) {
+			pr_err("%s timed out\n",
+				mdss_dp_notification_status_to_string(
+					dp->hpd_notification_status));
+		}
+	}
+
 	atomic_set(&dp->notification_pending, 0);
+	/* complete any waiting completions */
 	complete_all(&dp->notification_comp);
 }
 

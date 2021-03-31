@@ -1,0 +1,312 @@
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "vplatform-lfv-msm8996-common.dtsi"
+#include "vplatform-lfv-msm8996-audio-common.dtsi"
+#include <dt-bindings/clock/msm-clocks-8996.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+/ {
+	aliases {
+		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
+	};
+
+	reserved_memory: reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		qseecom_mem: qseecom_region {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0 0x00000000 0 0xffffffff>;
+			reusable;
+			alignment = <0 0x400000>;
+			size = <0 0x1400000>;
+		};
+	};
+};
+
+#include "vplatform-lfv-ion.dtsi"
+#include "vplatform-lfv-msm8996-pinctrl.dtsi"
+#include "vplatform-lfv-msm8996-blsp.dtsi"
+#include "vplatform-lfv-msm-pm8994.dtsi"
+
+&soc {
+	sdhc_2: sdhci@74a4900 {
+		compatible = "qcom,sdhci-msm";
+		reg = <0x74a4900 0x314>, <0x74a4000 0x800>;
+		reg-names = "hc_mem", "core_mem";
+
+		interrupts = <0 125 0>, <0 221 0>;
+		interrupt-names = "hc_irq", "pwr_irq";
+
+		clock-names = "iface_clk", "core_clk";
+		clocks = <&clock_virt clk_gcc_sdcc2_ahb_clk>,
+			 <&clock_virt clk_gcc_sdcc2_apps_clk>;
+
+		qcom,large-address-bus;
+		qcom,bus-width = <4>;
+
+		qcom,devfreq,freq-table = <20000000 200000000>;
+
+		qcom,msm-bus,name = "sdhc2";
+		qcom,msm-bus,num-cases = <8>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps = <81 512 0 0>, /* No vote */
+				<81 512 1600 3200>,    /* 400 KB/s*/
+				<81 512 80000 160000>, /* 20 MB/s */
+				<81 512 100000 200000>, /* 25 MB/s */
+				<81 512 200000 400000>, /* 50 MB/s */
+				<81 512 400000 800000>, /* 100 MB/s */
+				<81 512 800000 800000>, /* 200 MB/s */
+				<81 512 2048000 4096000>; /* Max. bandwidth */
+		qcom,bus-bw-vectors-bps = <0 400000 20000000 25000000 50000000
+						100000000 200000000 4294967295>;
+
+		qcom,pm-qos-cpu-groups = <0x03 0x0c>;
+		qcom,pm-qos-legacy-latency-us = <70 70>, <70 70>;
+		qcom,pm-qos-irq-type = "affine_cores";
+		qcom,pm-qos-irq-cpu = <0>;
+		qcom,pm-qos-irq-latency = <70 70>;
+
+		status = "disabled";
+	};
+
+	qcom_seecom: qseecom@86600000 {
+		compatible = "qcom,qseecom";
+		reg = <0x86600000 0x2200000>;
+		reg-names = "secapp-region";
+		qcom,hlos-num-ce-hw-instances = <1>;
+		qcom,hlos-ce-hw-instance = <0>;
+		qcom,qsee-ce-hw-instance = <0>;
+		qcom,disk-encrypt-pipe-pair = <2>;
+		qcom,no-clock-support;
+		qcom,msm-bus,name = "qseecom-noc";
+		qcom,msm-bus,num-cases = <4>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,ce-opp-freq = <171430000>;
+		qcom,qsee-reentrancy-support = <2>;
+	};
+
+	sde_kms_hyp: qcom,sde_kms_hyp@900000 {
+		compatible = "qcom,sde-kms-hyp";
+		qcom,client-id = "7816";
+	};
+
+	qcom,sps {
+		compatible = "qcom,msm_sps_4k";
+		qcom,device-type = <3>;
+		qcom,pipe-attr-ee;
+	};
+
+	clock_virt: qcom,virtclk-frontend@0 {
+		compatible = "qcom,virtclk-frontend-8996";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	clock_gcc: qcom,gcc@300000 {
+		compatible = "qcom,dummycc";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	clock_mmss: qcom,mmsscc@8c0000 {
+		compatible = "qcom,dummycc";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	clock_gpu: qcom,gpucc@8c0000 {
+		compatible = "qcom,dummycc";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	clock_debug: qcom,cc-debug@362000 {
+		compatible = "qcom,dummycc";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	clock_cpu: qcom,cpu-clock-8996@ {
+		compatible = "qcom,dummycc";
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	pm8994_s1_corner: regulator-s1-corner {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s1_corner";
+		regulator-min-microvolt = <1>;
+		regulator-max-microvolt = <7>;
+	};
+
+	pm8994_s1_floor_corner: regulator-s1-floor-corner {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s1_floor_corner";
+	};
+
+	pm8994_s1_corner_ao: regulator-s1-corner-ao {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s1_corner_ao";
+	};
+
+	pm8994_s2_corner: regulator-s2-corner {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s2_corner";
+		regulator-min-microvolt = <1>;
+		regulator-max-microvolt = <7>;
+	};
+
+	pm8994_s2_corner_ao: regulator-s2-corner-ao {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s2_corner_ao";
+	};
+
+	pm8994_l12: regulator-l12 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l12";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+	};
+
+	pm8994_l30: regulator-l30 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l30";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		qcom,init-voltage = <1800000>;
+	};
+
+	pm8994_l18_pin_ctrl: regulator-l18-pin-ctrl {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l18_pin_ctrl";
+		regulator-min-microvolt = <2700000>;
+		regulator-max-microvolt = <2900000>;
+		qcom,init-voltage = <2700000>;
+	};
+
+	pm8994_l26_corner: regulator-l26-corner {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l26_corner";
+	};
+
+	pm8994_l26_floor_corner: regulator-l26-floor-corner {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l26_floor_corner";
+	};
+
+	pmi8994_boost_pin_ctrl: regulator-bst-pin-ctrl {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pmi8994_boost_pin_ctrl";
+	};
+
+	pm8994_s11: spm-regulator@3200 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s11";
+	};
+
+	pmi8994_s2: regulator@1700 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pmi8994_s2";
+	};
+
+	pm8994_s3: regulator-s3 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s3";
+		regulator-min-microvolt = <1300000>;
+		regulator-max-microvolt = <1300000>;
+		qcom,init-voltage = <1300000>;
+	};
+
+	pm8994_s4: regulator-s4 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_s4";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		qcom,init-voltage = <1800000>;
+	};
+
+	pm8004_s2: regulator@1700 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8004_s2";
+	};
+
+	spi_eth_vreg: spi_eth_phy_vreg {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "ethernet_phy";
+	};
+
+	usb_otg_switch: usb-otg-switch {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "usb_otg_vreg";
+	};
+
+	rome_vreg: rome_vreg {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "rome_vreg";
+	};
+
+	wlan_en_vreg: wlan_en_vreg {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "wlan_en_vreg";
+	};
+
+	hl7509_en_vreg: hl7509_en_vreg {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "hl7509_en_vreg";
+	};
+
+	gdsc_mmagic_camss: qcom,gdsc@8c3c4c {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "gdsc_mmagic_camss";
+		regulator-min-microvolt = <1>;
+		regulator-max-microvolt = <7>;
+	};
+
+	gdsc_hlos1_vote_lpass_adsp: qcom,gdsc@37d034 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "gdsc_hlos1_vote_lpass_adsp";
+		regulator-min-microvolt = <1>;
+		regulator-max-microvolt = <7>;
+	};
+
+	pm8994_l21: regulator-l21 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l21";
+		regulator-min-microvolt = <2950000>;
+		regulator-max-microvolt = <2950000>;
+	};
+
+	pm8994_l13: regulator-l13 {
+		compatible = "qcom,stub-regulator";
+		regulator-name = "pm8994_l13";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <2950000>;
+	};
+
+	qcom_rng: qrng@83000 {
+		compatible = "qcom,msm-rng";
+		reg = <0x83000 0x1000>;
+		qcom,msm-rng-iface-clk;
+		qcom,no-qrng-config;
+		qcom,msm-bus,name = "msm-rng-noc";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<1 618 0 0>,		/* No vote */
+				<1 618 0 800>;		/* 100 MB/s */
+		clocks = <&clock_gcc clk_gcc_prng_ahb_clk>;
+		clock-names = "iface_clk";
+	};
+};

@@ -181,7 +181,7 @@ static void pxamci_dma_irq(void *param);
 static void pxamci_setup_data(struct pxamci_host *host, struct mmc_data *data)
 {
 	struct dma_async_tx_descriptor *tx;
-	enum dma_data_direction direction;
+	enum dma_transfer_direction direction;
 	struct dma_slave_config	config;
 	struct dma_chan *chan;
 	unsigned int nob = data->blocks;
@@ -798,14 +798,16 @@ static int pxamci_probe(struct platform_device *pdev)
 		gpio_direction_output(gpio_power,
 				      host->pdata->gpio_power_invert);
 	}
-	if (gpio_is_valid(gpio_ro))
+	if (gpio_is_valid(gpio_ro)) {
 		ret = mmc_gpio_request_ro(mmc, gpio_ro);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed requesting gpio_ro %d\n", gpio_ro);
-		goto out;
-	} else {
-		mmc->caps2 |= host->pdata->gpio_card_ro_invert ?
-			0 : MMC_CAP2_RO_ACTIVE_HIGH;
+		if (ret) {
+			dev_err(&pdev->dev, "Failed requesting gpio_ro %d\n",
+				gpio_ro);
+			goto out;
+		} else {
+			mmc->caps2 |= host->pdata->gpio_card_ro_invert ?
+				0 : MMC_CAP2_RO_ACTIVE_HIGH;
+		}
 	}
 
 	if (gpio_is_valid(gpio_cd))

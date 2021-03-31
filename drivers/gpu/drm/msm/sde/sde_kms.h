@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -22,6 +22,7 @@
 #include "msm_drv.h"
 #include "msm_kms.h"
 #include "msm_mmu.h"
+#include "msm_gem.h"
 #include "sde_dbg.h"
 #include "sde_hw_catalog.h"
 #include "sde_hw_ctl.h"
@@ -33,6 +34,7 @@
 #include "sde_power_handle.h"
 #include "sde_irq.h"
 #include "sde_core_perf.h"
+#include "sde_splash.h"
 
 #define DRMID(x) ((x) ? (x)->base.id : -1)
 
@@ -121,8 +123,7 @@ struct sde_kms {
 	int core_rev;
 	struct sde_mdss_cfg *catalog;
 
-	struct msm_mmu *mmu[MSM_SMMU_DOMAIN_MAX];
-	int mmu_id[MSM_SMMU_DOMAIN_MAX];
+	struct msm_gem_address_space *aspace[MSM_SMMU_DOMAIN_MAX];
 	struct sde_power_client *core_client;
 
 	/* directory entry for debugfs */
@@ -133,6 +134,7 @@ struct sde_kms {
 
 	/* io/register spaces: */
 	void __iomem *mmio, *vbif[VBIF_MAX];
+	unsigned long mmio_len, vbif_len[VBIF_MAX];
 
 	struct regulator *vdd;
 	struct regulator *mmagic;
@@ -154,8 +156,14 @@ struct sde_kms {
 	void **dsi_displays;
 	int wb_display_count;
 	void **wb_displays;
-
 	bool has_danger_ctrl;
+	void **hdmi_displays;
+	int hdmi_display_count;
+	int shd_display_count;
+	void **shd_displays;
+
+	/* splash handoff structure */
+	struct sde_splash_info splash_info;
 };
 
 struct vsync_info {
@@ -300,6 +308,16 @@ void sde_kms_info_add_keyint(struct sde_kms_info *info,
 		int32_t value);
 
 /**
+ * sde_kms_info_update_keystr - update the special string's value.
+ * @info_str: Pointer to source blob str
+ * @key:      Pointer to key string
+ * @value:    Signed 32-bit integer value
+ */
+void sde_kms_info_update_keystr(char *info_str,
+		const char *key,
+		int32_t value);
+
+/**
  * sde_kms_info_add_keystr - add string value to 'sde_kms_info'
  * @info: Pointer to sde_kms_info structure
  * @key: Pointer to key string
@@ -363,6 +381,49 @@ void sde_kms_info_append_format(struct sde_kms_info *info,
  * @info: Pointer to sde_kms_info structure
  */
 void sde_kms_info_stop(struct sde_kms_info *info);
+
+/**
+ * sde_kms_rect_intersect - intersect two rectangles
+ * @r1: first rectangle
+ * @r2: scissor rectangle
+ * @result: result rectangle, all 0's on no intersection found
+ */
+void sde_kms_rect_intersect(const struct sde_rect *r1,
+		const struct sde_rect *r2,
+		struct sde_rect *result);
+
+/**
+ * sde_kms_rect_is_equal - compares two rects
+ * @r1: rect value to compare
+ * @r2: rect value to compare
+ *
+ * Returns 1 if the rects are same, 0 otherwise.
+ */
+static inline bool sde_kms_rect_is_equal(struct sde_rect *r1,
+		struct sde_rect *r2)
+{
+	if ((!r1 && r2) || (r1 && !r2))
+		return false;
+
+	if (!r1 && !r2)
+		return true;
+
+	return r1->x == r2->x && r1->y == r2->y && r1->w == r2->w &&
+			r1->h == r2->h;
+}
+
+/**
+ * sde_kms_rect_is_null - returns true if the width or height of a rect is 0
+ * @rect: rectangle to check for zero size
+ * @Return: True if width or height of rectangle is 0
+ */
+static inline bool sde_kms_rect_is_null(const struct sde_rect *r)
+{
+	if (!r)
+		return true;
+
+	return (!r->w || !r->h);
+}
 
 /**
  * Vblank enable/disable functions

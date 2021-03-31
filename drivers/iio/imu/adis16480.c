@@ -266,8 +266,11 @@ static int adis16480_set_freq(struct iio_dev *indio_dev, int val, int val2)
 	struct adis16480 *st = iio_priv(indio_dev);
 	unsigned int t;
 
+	if (val < 0 || val2 < 0)
+		return -EINVAL;
+
 	t =  val * 1000 + val2 / 1000;
-	if (t <= 0)
+	if (t == 0)
 		return -EINVAL;
 
 	t = 2460000 / t;
@@ -696,7 +699,7 @@ static const struct adis16480_chip_info adis16480_chip_info[] = {
 		.gyro_max_val = IIO_RAD_TO_DEGREE(22500),
 		.gyro_max_scale = 450,
 		.accel_max_val = IIO_M_S_2_TO_G(12500),
-		.accel_max_scale = 5,
+		.accel_max_scale = 10,
 	},
 	[ADIS16485] = {
 		.channels = adis16485_channels,

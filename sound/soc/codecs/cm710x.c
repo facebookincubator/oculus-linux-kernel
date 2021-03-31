@@ -1058,9 +1058,9 @@ static void cm710x_firmware_download_work(struct work_struct *work)
 		}
 		gain = (12 - EQ[20]) & 0xFF;
 		cm710x_eq_set_idx(cm710x_codec, 20, gain);
-	}
 
-	complete_all(&cm710x_codec->fw_download_complete);
+		complete_all(&cm710x_codec->fw_download_complete);
+	}
 }
 
 static void cm710x_pop_noise_work(struct work_struct *work)

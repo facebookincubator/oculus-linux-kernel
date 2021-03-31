@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2015-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2015-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include "targcfg.h"
@@ -41,6 +32,8 @@
 #include "ce_bmi.h"
 #include "qdf_trace.h"
 #include "hif_debug.h"
+#include "bmi_msg.h"
+#include "qdf_module.h"
 
 /* Track a BMI transaction that is in progress */
 #ifndef BIT
@@ -95,7 +88,8 @@ void hif_bmi_send_done(struct CE_handle *copyeng, void *ce_context,
 	transaction->bmi_transaction_flags |= BMI_REQ_SEND_DONE;
 
 	/* resp is't needed or has already been received,
-	 * never assume resp comes later then this */
+	 * never assume resp comes later then this
+	 */
 	if (!transaction->bmi_response_CE ||
 	    (transaction->bmi_transaction_flags & BMI_RESP_RECV_DONE)) {
 		qdf_semaphore_release(&transaction->bmi_transaction_sem);
@@ -116,11 +110,13 @@ void hif_bmi_recv_data(struct CE_handle *copyeng, void *ce_context,
 	transaction->bmi_transaction_flags |= BMI_RESP_RECV_DONE;
 
 	/* when both send/recv are done, the sem can be released */
-	if (transaction->bmi_transaction_flags & BMI_REQ_SEND_DONE) {
+	if (transaction->bmi_transaction_flags & BMI_REQ_SEND_DONE)
 		qdf_semaphore_release(&transaction->bmi_transaction_sem);
-	}
 }
 #endif
+
+/* Timeout for BMI message exchange */
+#define HIF_EXCHANGE_BMI_MSG_TIMEOUT 6000
 
 QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 				qdf_dma_addr_t bmi_cmd_da,
@@ -192,7 +188,8 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 		transaction->bmi_response_host = bmi_response;
 		transaction->bmi_response_CE = CE_response;
 		/* dma_cache_sync(dev, bmi_response,
-		    BMI_DATASZ_MAX, DMA_FROM_DEVICE); */
+		 *      BMI_DATASZ_MAX, DMA_FROM_DEVICE);
+		 */
 		qdf_mem_dma_sync_single_for_device(scn->qdf_dev,
 					       CE_response,
 					       BMI_DATASZ_MAX,
@@ -220,10 +217,15 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 
 	/* Wait for BMI request/response transaction to complete */
 	/* Always just wait for BMI request here if
-	 * BMI_RSP_POLLING is defined */
-	while (qdf_semaphore_acquire
-		       (&transaction->bmi_transaction_sem)) {
-		/*need some break out condition(time out?) */
+	 * BMI_RSP_POLLING is defined
+	 */
+	if (qdf_semaphore_acquire_timeout
+		       (&transaction->bmi_transaction_sem,
+			HIF_EXCHANGE_BMI_MSG_TIMEOUT)) {
+		HIF_ERROR("%s: Fatal error, BMI transaction timeout. Please check the HW interface!!",
+			  __func__);
+		qdf_mem_free(transaction);
+		return QDF_STATUS_E_TIMEOUT;
 	}
 
 	if (bmi_response) {
@@ -258,10 +260,11 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 	}
 
 	/* dma_unmap_single(dev, transaction->bmi_request_CE,
-		request_length, DMA_TO_DEVICE); */
-	/* bus_unmap_single(scn->sc_osdev,
-		 transaction->bmi_request_CE,
-		request_length, BUS_DMA_TODEVICE); */
+	 *     request_length, DMA_TO_DEVICE);
+	 * bus_unmap_single(scn->sc_osdev,
+	 *     transaction->bmi_request_CE,
+	 *     request_length, BUS_DMA_TODEVICE);
+	 */
 
 	if (status != QDF_STATUS_SUCCESS) {
 		qdf_dma_addr_t unused_buffer;
@@ -278,4 +281,36 @@ QDF_STATUS hif_exchange_bmi_msg(struct hif_opaque_softc *hif_ctx,
 	A_TARGET_ACCESS_UNLIKELY(scn);
 	qdf_mem_free(transaction);
 	return status;
+}
+qdf_export_symbol(hif_exchange_bmi_msg);
+
+#ifdef BMI_RSP_POLLING
+#define BMI_RSP_CB_REGISTER 0
+#else
+#define BMI_RSP_CB_REGISTER 1
+#endif
+
+/**
+ * hif_register_bmi_callbacks() - register bmi callbacks
+ * @hif_sc: hif context
+ *
+ * Bmi phase uses different copy complete callbacks than mission mode.
+ */
+void hif_register_bmi_callbacks(struct hif_softc *hif_sc)
+{
+	struct HIF_CE_pipe_info *pipe_info;
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(hif_sc);
+
+	/*
+	 * Initially, establish CE completion handlers for use with BMI.
+	 * These are overwritten with generic handlers after we exit BMI phase.
+	 */
+	pipe_info = &hif_state->pipe_info[BMI_CE_NUM_TO_TARG];
+	ce_send_cb_register(pipe_info->ce_hdl, hif_bmi_send_done, pipe_info, 0);
+
+	if (BMI_RSP_CB_REGISTER) {
+		pipe_info = &hif_state->pipe_info[BMI_CE_NUM_TO_HOST];
+		ce_recv_cb_register(
+			pipe_info->ce_hdl, hif_bmi_recv_data, pipe_info, 0);
+	}
 }

@@ -670,6 +670,7 @@ static int cgwb_bdi_init(struct backing_dev_info *bdi)
 	INIT_RADIX_TREE(&bdi->cgwb_tree, GFP_ATOMIC);
 	bdi->cgwb_congested_tree = RB_ROOT;
 	atomic_set(&bdi->usage_cnt, 1);
+	init_rwsem(&bdi->wb_switch_rwsem);
 
 	ret = wb_init(&bdi->wb, bdi, 1, GFP_KERNEL);
 	if (!ret) {
@@ -758,15 +759,20 @@ static int cgwb_bdi_init(struct backing_dev_info *bdi)
 	if (!bdi->wb_congested)
 		return -ENOMEM;
 
+	atomic_set(&bdi->wb_congested->refcnt, 1);
+
 	err = wb_init(&bdi->wb, bdi, 1, GFP_KERNEL);
 	if (err) {
-		kfree(bdi->wb_congested);
+		wb_congested_put(bdi->wb_congested);
 		return err;
 	}
 	return 0;
 }
 
-static void cgwb_bdi_destroy(struct backing_dev_info *bdi) { }
+static void cgwb_bdi_destroy(struct backing_dev_info *bdi)
+{
+	wb_congested_put(bdi->wb_congested);
+}
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */
 
@@ -949,7 +955,7 @@ static atomic_t nr_wb_congested[2];
 void clear_wb_congested(struct bdi_writeback_congested *congested, int sync)
 {
 	wait_queue_head_t *wqh = &congestion_wqh[sync];
-	enum wb_state bit;
+	enum wb_congested_state bit;
 
 	bit = sync ? WB_sync_congested : WB_async_congested;
 	if (test_and_clear_bit(bit, &congested->state))
@@ -962,7 +968,7 @@ EXPORT_SYMBOL(clear_wb_congested);
 
 void set_wb_congested(struct bdi_writeback_congested *congested, int sync)
 {
-	enum wb_state bit;
+	enum wb_congested_state bit;
 
 	bit = sync ? WB_sync_congested : WB_async_congested;
 	if (!test_and_set_bit(bit, &congested->state))

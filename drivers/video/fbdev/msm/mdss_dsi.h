@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -306,6 +306,20 @@ struct dsi_shared_data {
 	u32 pm_qos_req_cnt;
 };
 
+#ifdef CONFIG_VS1_BOARD
+/*
+ * Contains logic for Oculus AVDD regulator power sequence.
+ * Applicable for variants > P1
+ */
+struct ovr_regulator_data {
+	atomic_t refcount;
+	int vddio_1p8_en_gpio;
+	int vci_3p3_en_gpio;
+	int disp_avdd_gpio;
+	int pmi_en_gpio;
+};
+#endif
+
 struct mdss_dsi_data {
 	bool res_init;
 	struct platform_device *pdev;
@@ -316,6 +330,9 @@ struct mdss_dsi_data {
 	 * mutex, clocks, regulator information, setup information
 	 */
 	struct dsi_shared_data *shared_data;
+#ifdef CONFIG_VS1_BOARD
+	struct ovr_regulator_data *ovr_reg_data;
+#endif
 	u32 *dbg_bus;
 	int dbg_bus_size;
 };
@@ -447,20 +464,25 @@ struct mdss_dsi_ctrl_pdata {
 	struct clk *pixel_clk_rcg;
 	struct clk *vco_dummy_clk;
 	struct clk *byte_intf_clk;
+#ifdef CONFIG_VS1_BOARD
+	struct ovr_regulator_data *ovr_reg_data;
+	struct delayed_work ovr_reg_work;
+	int disp_int_gpio;
+#endif
 	u8 ctrl_state;
 	int panel_mode;
 	int irq_cnt;
 	int disp_te_gpio;
-#ifdef CONFIG_VS1_BOARD
-	bool panel_enabled;
-#endif
 	int rst_gpio;
 	int disp_en_gpio;
 	int bklt_en_gpio;
 	bool bklt_en_gpio_invert;
 	bool bklt_en_gpio_state;
+	int avdd_en_gpio;
+	bool avdd_en_gpio_invert;
 	int lcd_mode_sel_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
+	enum dsi_ctrl_op_mode bklt_dcs_op_mode; /* backlight dcs ctrl mode */
 	bool pwm_pmi;
 	int pwm_period;
 	int pwm_pmic_gpio;
@@ -630,12 +652,15 @@ int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
+#ifdef CONFIG_VS1_BOARD
+irqreturn_t hw_int_handler(int irq, void *data);
+#endif
 void disable_esd_thread(void);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 
 void mdss_dsi_set_tx_power_mode(int mode, struct mdss_panel_data *pdata);
-int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
-			    int frame_rate);
+u64 mdss_dsi_calc_bitclk(struct mdss_panel_info *panel_info, int frame_rate);
+u32 mdss_dsi_get_pclk_rate(struct mdss_panel_info *panel_info, u64 clk_rate);
 int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy);
 int mdss_dsi_link_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);

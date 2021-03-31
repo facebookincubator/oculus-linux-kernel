@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,10 +37,14 @@
 #define MDM9x45_PCIE			"PCIe"
 #define MDM9x55_LABEL			"MDM9x55"
 #define MDM9x55_PCIE			"PCIe"
+#define APQ8096_LABEL			"APQ8096"
+#define APQ8096_PCIE			"PCIe"
 #define MDM2AP_STATUS_TIMEOUT_MS	120000L
 #define MDM_MODEM_TIMEOUT		3000
 #define DEF_RAMDUMP_TIMEOUT		120000
 #define DEF_RAMDUMP_DELAY		2000
+#define DEF_SHUTDOWN_TIMEOUT		10000
+#define DEF_MDM9X55_RESET_TIME		203
 #define RD_BUF_SIZE			100
 #define SFR_MAX_RETRIES			10
 #define SFR_RETRY_INTERVAL		1000
@@ -94,6 +98,8 @@ struct mdm_ctrl {
 	bool debug_fail;
 	unsigned int dump_timeout_ms;
 	unsigned int ramdump_delay_ms;
+	unsigned int shutdown_timeout_ms;
+	unsigned int reset_time_ms;
 	struct esoc_clink *esoc;
 	bool get_restart_reason;
 	unsigned long irq_mask;
@@ -153,4 +159,5 @@ extern struct mdm_pon_ops mdm9x25_pon_ops;
 extern struct mdm_pon_ops mdm9x35_pon_ops;
 extern struct mdm_pon_ops mdm9x45_pon_ops;
 extern struct mdm_pon_ops mdm9x55_pon_ops;
+extern struct mdm_pon_ops apq8096_pon_ops;
 #endif

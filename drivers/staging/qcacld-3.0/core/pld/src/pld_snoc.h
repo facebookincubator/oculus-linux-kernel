@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef __PLD_SNOC_H__
@@ -41,40 +32,42 @@ static inline int pld_snoc_register_driver(void)
 
 static inline void pld_snoc_unregister_driver(void)
 {
-	return;
 }
-static inline int pld_snoc_wlan_enable(struct pld_wlan_enable_cfg *config,
-		    enum pld_driver_mode mode, const char *host_version)
+static inline int pld_snoc_wlan_enable(struct device *dev,
+			struct pld_wlan_enable_cfg *config,
+			enum pld_driver_mode mode, const char *host_version)
 {
 	return 0;
 }
-static inline int pld_snoc_wlan_disable(enum pld_driver_mode mode)
+static inline int pld_snoc_wlan_disable(struct device *dev,
+					enum pld_driver_mode mode)
 {
 	return 0;
 }
-static inline int pld_snoc_ce_request_irq(unsigned int ce_id,
-		       irqreturn_t (*handler)(int, void *),
-		       unsigned long flags, const char *name, void *ctx)
+static inline int pld_snoc_ce_request_irq(struct device *dev,
+					  unsigned int ce_id,
+					  irqreturn_t (*handler)(int, void *),
+					  unsigned long flags,
+					  const char *name, void *ctx)
 {
 	return 0;
 }
-static inline int pld_snoc_ce_free_irq(unsigned int ce_id, void *ctx)
+static inline int pld_snoc_ce_free_irq(struct device *dev,
+				       unsigned int ce_id, void *ctx)
 {
 	return 0;
 }
-static inline void pld_snoc_enable_irq(unsigned int ce_id)
+static inline void pld_snoc_enable_irq(struct device *dev, unsigned int ce_id)
 {
-	return;
 }
-static inline void pld_snoc_disable_irq(unsigned int ce_id)
+static inline void pld_snoc_disable_irq(struct device *dev, unsigned int ce_id)
 {
-	return;
 }
-static inline int pld_snoc_get_soc_info(struct pld_soc_info *info)
+static inline int pld_snoc_get_soc_info(struct device *dev, struct pld_soc_info *info)
 {
 	return 0;
 }
-static inline int pld_snoc_get_ce_id(int irq)
+static inline int pld_snoc_get_ce_id(struct device *dev, int irq)
 {
 	return 0;
 }
@@ -86,26 +79,7 @@ static inline int pld_snoc_power_off(struct device *dev)
 {
 	return 0;
 }
-static inline int pld_snoc_get_irq(int ce_id)
-{
-	return 0;
-}
-static inline int pld_snoc_set_wlan_unsafe_channel(u16 *unsafe_ch_list,
-						   u16 ch_count)
-{
-	return 0;
-}
-static inline int pld_snoc_get_wlan_unsafe_channel(u16 *unsafe_ch_list,
-						   u16 *ch_count,
-						   u16 buf_len)
-{
-	return 0;
-}
-static inline int pld_snoc_wlan_set_dfs_nol(const void *info, u16 info_len)
-{
-	return 0;
-}
-static inline int pld_snoc_wlan_get_dfs_nol(void *info, u16 info_len)
+static inline int pld_snoc_get_irq(struct device *dev, int ce_id)
 {
 	return 0;
 }
@@ -121,77 +95,164 @@ static inline int pld_snoc_athdiag_write(struct device *dev, uint32_t offset,
 {
 	return 0;
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static inline void *pld_snoc_smmu_get_domain(struct device *dev)
+{
+	return NULL;
+}
+
+#else
 static inline void *pld_snoc_smmu_get_mapping(struct device *dev)
 {
 	return NULL;
 }
+#endif
+
 static inline int pld_snoc_smmu_map(struct device *dev, phys_addr_t paddr,
 				    uint32_t *iova_addr, size_t size)
 {
 	return 0;
 }
+
+static inline int pld_snoc_smmu_unmap(struct device *dev,
+				      uint32_t iova_addr, size_t size)
+{
+	return 0;
+}
+
 static inline
 unsigned int pld_snoc_socinfo_get_serial_number(struct device *dev)
 {
 	return 0;
 }
-static inline int pld_snoc_is_qmi_disable(void)
+static inline int pld_snoc_is_qmi_disable(struct device *dev)
 {
 	return 0;
 }
-static inline uint8_t *pld_snoc_get_wlan_mac_address(struct device *dev,
-						     uint32_t *num)
+
+static inline int pld_snoc_is_fw_down(struct device *dev)
 {
-	*num = 0;
-	return NULL;
+	return 0;
+}
+static inline int pld_snoc_set_fw_log_mode(struct device *dev, u8 fw_log_mode)
+{
+	return 0;
 }
 static inline int pld_snoc_force_assert_target(struct device *dev)
 {
 	return 0;
 }
-static inline int pld_snoc_set_fw_log_mode(u8 fw_log_mode)
+
+static inline int pld_snoc_is_pdr(void)
 {
 	return 0;
 }
 
-static inline void pld_snoc_increment_driver_load_cnt(void)
-{
-}
-
-static inline int pld_snoc_get_driver_load_cnt(void)
+static inline int pld_snoc_is_fw_rejuvenate(void)
 {
 	return 0;
 }
+
+#ifdef FEATURE_WLAN_TIME_SYNC_FTM
+static inline int
+pld_snoc_get_audio_wlan_timestamp(struct device *dev,
+				  enum pld_wlan_time_sync_trigger_type type,
+				  uint64_t *ts)
+{
+	return 0;
+}
+#endif /* FEATURE_WLAN_TIME_SYNC_FTM */
+
 #else
 int pld_snoc_register_driver(void);
 void pld_snoc_unregister_driver(void);
-int pld_snoc_wlan_enable(struct pld_wlan_enable_cfg *config,
+int pld_snoc_wlan_enable(struct device *dev,
+			 struct pld_wlan_enable_cfg *config,
 			 enum pld_driver_mode mode, const char *host_version);
-int pld_snoc_wlan_disable(enum pld_driver_mode mode);
-int pld_snoc_get_soc_info(struct pld_soc_info *info);
-static inline int pld_snoc_ce_request_irq(unsigned int ce_id,
+int pld_snoc_wlan_disable(struct device *dev, enum pld_driver_mode mode);
+int pld_snoc_get_soc_info(struct device *dev, struct pld_soc_info *info);
+
+#ifdef FEATURE_WLAN_TIME_SYNC_FTM
+/**
+ * pld_snoc_get_audio_wlan_timestamp() - Get audio timestamp
+ * @dev: device
+ * @type: trigger type
+ * @ts: timestamp
+ *
+ * Return audio timestamp to the ts.
+ *
+ * Return: 0 for success
+ *         Non zero failure code for errors
+ */
+static inline int
+pld_snoc_get_audio_wlan_timestamp(struct device *dev,
+				  enum pld_wlan_time_sync_trigger_type type,
+				  uint64_t *ts)
+{
+	enum wlan_time_sync_trigger_type edge_type;
+
+	if (!dev)
+		return -ENODEV;
+
+	if (type == PLD_TRIGGER_POSITIVE_EDGE)
+		edge_type = CNSS_POSITIVE_EDGE_TRIGGER;
+	else
+		edge_type = CNSS_NEGATIVE_EDGE_TRIGGER;
+
+	return cnss_get_audio_wlan_timestamp(dev, edge_type, ts);
+}
+#endif /* FEATURE_WLAN_TIME_SYNC_FTM */
+
+static inline int pld_snoc_ce_request_irq(struct device *dev,
+					  unsigned int ce_id,
 					  irqreturn_t (*handler)(int, void *),
 					  unsigned long flags,
 					  const char *name, void *ctx)
 {
-	return icnss_ce_request_irq(ce_id, handler, flags, name, ctx);
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_ce_request_irq(dev, ce_id, handler, flags, name, ctx);
 }
-static inline int pld_snoc_ce_free_irq(unsigned int ce_id, void *ctx)
+
+static inline int pld_snoc_ce_free_irq(struct device *dev,
+				       unsigned int ce_id, void *ctx)
 {
-	return icnss_ce_free_irq(ce_id, ctx);
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_ce_free_irq(dev, ce_id, ctx);
 }
-static inline void pld_snoc_enable_irq(unsigned int ce_id)
+
+static inline void pld_snoc_enable_irq(struct device *dev, unsigned int ce_id)
 {
-	icnss_enable_irq(ce_id);
+	if (dev)
+		icnss_enable_irq(dev, ce_id);
 }
-static inline void pld_snoc_disable_irq(unsigned int ce_id)
+
+static inline void pld_snoc_disable_irq(struct device *dev, unsigned int ce_id)
 {
-	icnss_disable_irq(ce_id);
+	if (dev)
+		icnss_disable_irq(dev, ce_id);
 }
-static inline int pld_snoc_get_ce_id(int irq)
+
+static inline int pld_snoc_get_ce_id(struct device *dev, int irq)
 {
-	return icnss_get_ce_id(irq);
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_get_ce_id(dev, irq);
 }
+
+static inline int pld_snoc_get_irq(struct device *dev, int ce_id)
+{
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_get_irq(dev, ce_id);
+}
+
 static inline int pld_snoc_power_on(struct device *dev)
 {
 	return icnss_power_on(dev);
@@ -199,30 +260,6 @@ static inline int pld_snoc_power_on(struct device *dev)
 static inline int pld_snoc_power_off(struct device *dev)
 {
 	return icnss_power_off(dev);
-}
-static inline int pld_snoc_get_irq(int ce_id)
-{
-	return icnss_get_irq(ce_id);
-}
-static inline int pld_snoc_set_wlan_unsafe_channel(u16 *unsafe_ch_list,
-						   u16 ch_count)
-{
-	return icnss_set_wlan_unsafe_channel(unsafe_ch_list, ch_count);
-}
-static inline int pld_snoc_get_wlan_unsafe_channel(u16 *unsafe_ch_list,
-						   u16 *ch_count,
-						   u16 buf_len)
-{
-	return icnss_get_wlan_unsafe_channel(unsafe_ch_list, ch_count,
-					     buf_len);
-}
-static inline int pld_snoc_wlan_set_dfs_nol(const void *info, u16 info_len)
-{
-	return icnss_wlan_set_dfs_nol(info, info_len);
-}
-static inline int pld_snoc_wlan_get_dfs_nol(void *info, u16 info_len)
-{
-	return icnss_wlan_get_dfs_nol(info, info_len);
 }
 static inline int pld_snoc_athdiag_read(struct device *dev, uint32_t offset,
 					uint32_t memtype, uint32_t datalen,
@@ -236,28 +273,66 @@ static inline int pld_snoc_athdiag_write(struct device *dev, uint32_t offset,
 {
 	return icnss_athdiag_write(dev, offset, memtype, datalen, input);
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static inline void *pld_snoc_smmu_get_domain(struct device *dev)
+{
+	return icnss_smmu_get_domain(dev);
+}
+
+#else
 static inline void *pld_snoc_smmu_get_mapping(struct device *dev)
 {
 	return icnss_smmu_get_mapping(dev);
 }
+#endif
+
 static inline int pld_snoc_smmu_map(struct device *dev, phys_addr_t paddr,
 				    uint32_t *iova_addr, size_t size)
 {
 	return icnss_smmu_map(dev, paddr, iova_addr, size);
 }
+
+#ifdef CONFIG_SMMU_S1_UNMAP
+static inline int pld_snoc_smmu_unmap(struct device *dev,
+				      uint32_t iova_addr, size_t size)
+{
+	return icnss_smmu_unmap(dev, iova_addr, size);
+}
+
+#else
+static inline int pld_snoc_smmu_unmap(struct device *dev,
+				      uint32_t iova_addr, size_t size)
+{
+	return 0;
+}
+#endif
+
 static inline
 unsigned int pld_snoc_socinfo_get_serial_number(struct device *dev)
 {
 	return icnss_socinfo_get_serial_number(dev);
 }
-static inline int pld_snoc_is_qmi_disable(void)
+
+static inline int pld_snoc_is_fw_down(struct device *dev)
 {
-	return icnss_is_qmi_disable();
+	return icnss_is_fw_down();
 }
-static inline uint8_t *pld_snoc_get_wlan_mac_address(struct device *dev,
-						      uint32_t *num)
+
+static inline int pld_snoc_is_qmi_disable(struct device *dev)
 {
-	return icnss_get_wlan_mac_address(dev, num);
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_is_qmi_disable(dev);
+}
+
+static inline int pld_snoc_set_fw_log_mode(struct device *dev, u8 fw_log_mode)
+{
+	if (!dev)
+		return -ENODEV;
+
+	return icnss_set_fw_log_mode(dev, fw_log_mode);
 }
 
 static inline int pld_snoc_force_assert_target(struct device *dev)
@@ -265,19 +340,23 @@ static inline int pld_snoc_force_assert_target(struct device *dev)
 	return icnss_trigger_recovery(dev);
 }
 
-static inline int pld_snoc_set_fw_log_mode(u8 fw_log_mode)
+static inline int pld_snoc_is_pdr(void)
 {
-	return icnss_set_fw_log_mode(fw_log_mode);
+	return icnss_is_pdr();
 }
 
-static inline void pld_snoc_increment_driver_load_cnt(void)
+static inline int pld_snoc_is_fw_rejuvenate(void)
 {
-	icnss_increment_driver_load_cnt();
+	return icnss_is_rejuvenate();
+}
+static inline int pld_snoc_idle_restart(struct device *dev)
+{
+	return icnss_idle_restart(dev);
 }
 
-static inline int pld_snoc_get_driver_load_cnt(void)
+static inline int pld_snoc_idle_shutdown(struct device *dev)
 {
-	return icnss_get_driver_load_cnt();
+	return icnss_idle_shutdown(dev);
 }
 #endif
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,6 +38,7 @@ enum vmid {
 	VMID_WLAN = 0x18,
 	VMID_WLAN_CE = 0x19,
 	VMID_CP_CAMERA_PREVIEW = 0x1D,
+	VMID_CP_SPSS_SP_SHARED = 0x22,
 	VMID_LAST,
 	VMID_INVAL = -1
 };
@@ -53,7 +54,7 @@ int hyp_assign_table(struct sg_table *table,
 			u32 *source_vm_list, int source_nelems,
 			int *dest_vmids, int *dest_perms,
 			int dest_nelems);
-int hyp_assign_phys(phys_addr_t addr, u64 size,
+extern int hyp_assign_phys(phys_addr_t addr, u64 size,
 			u32 *source_vmlist, int source_nelems,
 			int *dest_vmids, int *dest_perms, int dest_nelems);
 bool msm_secure_v2_is_supported(void);

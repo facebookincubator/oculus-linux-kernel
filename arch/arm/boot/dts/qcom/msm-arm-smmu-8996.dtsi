@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -250,17 +250,4 @@
 	clock-names = "mmagic_ahb_clk", "mmagic_cfg_ahb_clk", "gpu_ahb_clk",
 		"gcc_mmss_bimc_gfx_clk", "gcc_bimc_gfx_clk";
 	#clock-cells = <1>;
-};
-
-&soc {
-	iommu_test_device {
-		compatible = "iommu-debug-test";
-		/*
-		 * 42 shouldn't be used by anyone on the cpp_fd_smmu.  We just
-		 * need _something_ here to get this node recognized by the
-		 * SMMU driver. Our test uses ATOS, which doesn't use SIDs
-		 * anyways, so using a dummy value is ok.
-		 */
-		iommus = <&cpp_fd_smmu 42>;
-	};
 };

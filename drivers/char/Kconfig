@@ -391,7 +391,7 @@ config XILINX_HWICAP
 
 config R3964
 	tristate "Siemens R3964 line discipline"
-	depends on TTY
+	depends on TTY && BROKEN
 	---help---
 	  This driver allows synchronous communication with devices using the
 	  Siemens R3964 packet protocol. Unless you are dealing with special
@@ -585,12 +585,24 @@ config TELCLOCK
 	  controlling the behavior of this hardware.
 
 config DEVPORT
-	bool
-	depends on !M68K
+	bool "/dev/port character device"
 	depends on ISA || PCI
 	default y
+	help
+	  Say Y here if you want to support the /dev/port device. The /dev/port
+	  device is similar to /dev/mem, but for I/O ports.
 
 source "drivers/s390/char/Kconfig"
+
+config MSM_SMD_PKT
+	bool "Enable device interface for some SMD packet ports"
+	default n
+	depends on MSM_SMD
+	help
+	  smd_pkt driver provides the interface for the userspace clients
+	  to communicate over smd via device nodes. This enable the
+	  usersapce clients to read and write to some smd packets channel
+	  for MSM chipset.
 
 config TILE_SROM
 	bool "Character-device access via hypervisor to the Tilera SPI ROM"
@@ -607,7 +619,7 @@ source "drivers/char/xillybus/Kconfig"
 
 config MSM_ADSPRPC
 	tristate "QTI ADSP RPC driver"
-	depends on MSM_GLINK
+	depends on MSM_SMD
 	help
 	  Provides a communication mechanism that allows for clients to
 	  make remote method invocations across processor boundary to
@@ -620,6 +632,13 @@ config MSM_RDBG
 	  Implements a shared memory based transport mechanism that allows
 	  for a debugger running on a host PC to communicate with a remote
 	  stub running on peripheral subsystems such as the ADSP, MODEM etc.
+
+config QTI_SDIO_CLIENT
+	bool "QTI_SDIO_CLIENT support"
+	depends on SDIO_QCN
+	default y
+	help
+	  Interface used for SDIO and sahara user spce application
 
 endmenu
 

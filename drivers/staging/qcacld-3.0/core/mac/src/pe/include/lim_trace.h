@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2016, 2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**=========================================================================
@@ -85,7 +76,7 @@ void limTraceUpdateMgmtStat(tpAniSirGlobal pMac, uint8_t subtype);
 void lim_trace_dumpMgmtStat(tpAniSirGlobal pMac, uint8_t subtype);
 uint8_t *lim_trace_get_mlm_state_string(uint32_t mlmState);
 uint8_t *lim_trace_get_sme_state_string(uint32_t smeState);
-void lim_trace_dump(tpAniSirGlobal pMac, tp_qdf_trace_record pRecord,
+void lim_trace_dump(void *pMac, tp_qdf_trace_record pRecord,
 		    uint16_t recIndex);
 void mac_trace_msg_tx(tpAniSirGlobal pMac, uint8_t session, uint32_t data);
 void mac_trace_msg_rx(tpAniSirGlobal pMac, uint8_t session, uint32_t data);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -84,6 +84,14 @@ void dsi_ctrl_hw_14_host_setup(struct dsi_ctrl_hw *ctrl,
 	reg_value |= ((cfg->data_lanes & DSI_DATA_LANE_0) ? BIT(4) : 0);
 
 	DSI_W32(ctrl, DSI_CTRL, reg_value);
+
+	/* Force clock lane in HS */
+	reg_value = DSI_R32(ctrl, DSI_LANE_CTRL);
+	if (cfg->force_clk_lane_hs)
+		reg_value |= BIT(28);
+	else
+		reg_value &= ~BIT(28);
+	DSI_W32(ctrl, DSI_LANE_CTRL, reg_value);
 
 	pr_debug("[DSI_%d]Host configuration complete\n", ctrl->index);
 }
@@ -557,7 +565,7 @@ u32 dsi_ctrl_hw_14_get_cmd_read_data(struct dsi_ctrl_hw *ctrl,
 	u32 read_cnt;
 	u32 rx_byte = 0;
 	u32 repeated_bytes = 0;
-	u8 reg[16];
+	u8 reg[16] = {0};
 	u32 pkt_size = 0;
 	int buf_offset = read_offset;
 
@@ -604,8 +612,9 @@ void dsi_ctrl_hw_14_ulps_request(struct dsi_ctrl_hw *ctrl, u32 lanes)
 {
 	u32 reg = 0;
 
+	reg = DSI_R32(ctrl, DSI_LANE_CTRL);
 	if (lanes & DSI_CLOCK_LANE)
-		reg = BIT(4);
+		reg |= BIT(4);
 	if (lanes & DSI_DATA_LANE_0)
 		reg |= BIT(0);
 	if (lanes & DSI_DATA_LANE_1)
@@ -664,7 +673,8 @@ void dsi_ctrl_hw_14_clear_ulps_request(struct dsi_ctrl_hw *ctrl, u32 lanes)
 	u32 reg = 0;
 
 	reg = DSI_R32(ctrl, DSI_LANE_CTRL);
-	reg &= ~BIT(4); /* clock lane */
+	if (lanes & DSI_CLOCK_LANE)
+		reg &= ~BIT(4); /* clock lane */
 	if (lanes & DSI_DATA_LANE_0)
 		reg &= ~BIT(0);
 	if (lanes & DSI_DATA_LANE_1)
@@ -679,7 +689,18 @@ void dsi_ctrl_hw_14_clear_ulps_request(struct dsi_ctrl_hw *ctrl, u32 lanes)
 	 * HPG recommends separate writes for clearing ULPS_REQUEST and
 	 * ULPS_EXIT.
 	 */
-	DSI_W32(ctrl, DSI_LANE_CTRL, 0x0);
+	reg = DSI_R32(ctrl, DSI_LANE_CTRL);
+	if (lanes & DSI_CLOCK_LANE)
+		reg &= ~BIT(12);
+	if (lanes & DSI_DATA_LANE_0)
+		reg &= ~BIT(8);
+	if (lanes & DSI_DATA_LANE_1)
+		reg &= ~BIT(9);
+	if (lanes & DSI_DATA_LANE_2)
+		reg &= ~BIT(10);
+	if (lanes & DSI_DATA_LANE_3)
+		reg &= ~BIT(11);
+	DSI_W32(ctrl, DSI_LANE_CTRL, reg);
 
 	pr_debug("[DSI_%d] ULPS request cleared\n", ctrl->index);
 }

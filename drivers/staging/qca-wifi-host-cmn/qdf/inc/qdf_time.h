@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: qdf_time
  * This file abstracts time related functionality.
@@ -34,9 +25,84 @@
 #define _QDF_OS_TIME_H
 
 #include <i_qdf_time.h>
-#include "qdf_util.h"
 
 typedef __qdf_time_t qdf_time_t;
+typedef __qdf_ktime_t qdf_ktime_t;
+
+/**
+ * qdf_ns_to_ktime - Converts nanoseconds to a qdf_ktime_t object
+ * @ns: time in nanoseconds
+ *
+ * Return: nanoseconds as qdf_ktime_t object
+ */
+
+static inline qdf_ktime_t qdf_ns_to_ktime(uint64_t ns)
+{
+	return __qdf_ns_to_ktime(ns);
+}
+
+/**
+ * qdf_ktime_add - Adds two qdf_ktime_t objects and returns
+ * a qdf_ktime_t object
+ * @ktime1: time as qdf_ktime_t object
+ * @ktime2: time as qdf_ktime_t object
+ *
+ * Return: sum of both qdf_ktime_t as qdf_ktime_t object
+ */
+
+static inline qdf_ktime_t qdf_ktime_add(qdf_ktime_t ktime1, qdf_ktime_t ktime2)
+{
+	return __qdf_ktime_add(ktime1, ktime2);
+}
+
+/**
+ * qdf_ktime_get - Gets the current time as qdf_ktime_t object
+ *
+ * Return: current time as qdf_ktime_t object
+ */
+
+static inline qdf_ktime_t qdf_ktime_get(void)
+{
+	return __qdf_ktime_get();
+}
+
+/**
+ * qdf_ktime_add_ns - Adds qdf_ktime_t object and nanoseconds value and
+ * returns the qdf_ktime_t object
+ * @ktime: time as qdf_ktime_t object
+ * @ns: time in nanoseconds
+ *
+ * Return: qdf_ktime_t object
+ */
+
+static inline qdf_ktime_t qdf_ktime_add_ns(qdf_ktime_t ktime, int64_t ns)
+{
+	return __qdf_ktime_add_ns(ktime, ns);
+}
+
+/**
+ * qdf_ktime_to_ms - Convert the qdf_ktime_t object into milliseconds
+ * @ktime: time as qdf_ktime_t object
+ *
+ * Return: qdf_ktime_t in milliseconds
+ */
+
+static inline int64_t qdf_ktime_to_ms(qdf_ktime_t ktime)
+{
+	return __qdf_ktime_to_ms(ktime);
+}
+
+/**
+ * qdf_ktime_to_ns - Convert the qdf_ktime_t object into nanoseconds
+ * @ktime: time as qdf_ktime_t object
+ *
+ * Return: qdf_ktime_t in nanoseconds
+ */
+
+static inline int64_t qdf_ktime_to_ns(qdf_ktime_t ktime)
+{
+	return __qdf_ktime_to_ns(ktime);
+}
 
 /**
  * qdf_system_ticks - Count the number of ticks elapsed from the time when
@@ -92,9 +158,10 @@ static inline qdf_time_t qdf_get_system_uptime(void)
  * Return:
  * The time since system booted in nanoseconds
  */
-static inline s64 qdf_get_bootbased_boottime_ns(void)
+
+static inline uint64_t qdf_get_bootbased_boottime_ns(void)
 {
-	return ktime_get_boot_ns();
+	return __qdf_get_bootbased_boottime_ns();
 }
 
 /**
@@ -184,23 +251,44 @@ enum qdf_timestamp_unit {
 #ifdef QCA_WIFI_3_0_ADRASTEA
 #define QDF_LOG_TIMESTAMP_UNIT QTIMER
 #define QDF_LOG_TIMESTAMP_CYCLES_PER_10_US 192
+
+static inline uint64_t qdf_log_timestamp_to_usecs(uint64_t time)
+{
+	/*
+	 * Try to preserve precision by multiplying by 10 first.
+	 * If that would cause a wrap around, divide first instead.
+	 */
+	if (time * 10 < time) {
+		do_div(time, QDF_LOG_TIMESTAMP_CYCLES_PER_10_US);
+		return time * 10;
+	}
+
+	time = time * 10;
+	do_div(time, QDF_LOG_TIMESTAMP_CYCLES_PER_10_US);
+
+	return time;
+}
 #else
 #define QDF_LOG_TIMESTAMP_UNIT KERNEL_LOG
 #define QDF_LOG_TIMESTAMP_CYCLES_PER_10_US 10
+
+static inline uint64_t qdf_log_timestamp_to_usecs(uint64_t time)
+{
+	/* timestamps are already in micro seconds */
+	return time;
+}
 #endif
 
-static inline unsigned long long qdf_log_timestamp_to_usecs(uint64_t time)
+static inline void qdf_log_timestamp_to_secs(uint64_t time, uint64_t *secs,
+					     uint64_t *usecs)
 {
-	if ((time * 10) < time) {
-		time = qdf_do_div(time, QDF_LOG_TIMESTAMP_CYCLES_PER_10_US);
-		return time * 10;
-	}
-	return qdf_do_div(time * 10, QDF_LOG_TIMESTAMP_CYCLES_PER_10_US);
+	*secs = qdf_log_timestamp_to_usecs(time);
+	*usecs = do_div(*secs, 1000000ul);
 }
 
 static inline uint64_t qdf_usecs_to_log_timestamp(uint64_t usecs)
 {
-	return qdf_do_div(usecs * QDF_LOG_TIMESTAMP_CYCLES_PER_10_US, 10);
+	return (usecs * QDF_LOG_TIMESTAMP_CYCLES_PER_10_US) / 10;
 }
 
 /**
@@ -216,6 +304,16 @@ static inline uint64_t qdf_usecs_to_log_timestamp(uint64_t usecs)
 static inline uint64_t qdf_get_log_timestamp(void)
 {
 	return __qdf_get_log_timestamp();
+}
+
+/**
+ * qdf_get_log_timestamp_usecs() - get time stamp for logging in microseconds
+ *
+ * Return: The current logging timestamp normalized to microsecond precision
+ */
+static inline uint64_t qdf_get_log_timestamp_usecs(void)
+{
+	return qdf_log_timestamp_to_usecs(qdf_get_log_timestamp());
 }
 
 /**

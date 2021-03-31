@@ -488,6 +488,8 @@ static int __test_aead(struct crypto_aead *tfm, int enc,
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
 				  tcrypt_complete, &result);
 
+	iv_len = crypto_aead_ivsize(tfm);
+
 	for (i = 0, j = 0; i < tcount; i++) {
 		if (template[i].np)
 			continue;
@@ -508,7 +510,6 @@ static int __test_aead(struct crypto_aead *tfm, int enc,
 
 		memcpy(input, template[i].input, template[i].ilen);
 		memcpy(assoc, template[i].assoc, template[i].alen);
-		iv_len = crypto_aead_ivsize(tfm);
 		if (template[i].iv)
 			memcpy(iv, template[i].iv, iv_len);
 		else
@@ -617,7 +618,7 @@ static int __test_aead(struct crypto_aead *tfm, int enc,
 		j++;
 
 		if (template[i].iv)
-			memcpy(iv, template[i].iv, MAX_IVLEN);
+			memcpy(iv, template[i].iv, iv_len);
 		else
 			memset(iv, 0, MAX_IVLEN);
 
@@ -3214,6 +3215,21 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "heh(aes)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = aes_heh_enc_tv_template,
+					.count = AES_HEH_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = aes_heh_dec_tv_template,
+					.count = AES_HEH_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
 		.alg = "hmac(crc32)",
 		.test = alg_test_hash,
 		.suite = {
@@ -3870,6 +3886,22 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.decomp = {
 					.vecs = zlib_decomp_tv_template,
 					.count = ZLIB_DECOMP_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "zstd",
+		.test = alg_test_comp,
+		.fips_allowed = 1,
+		.suite = {
+			.comp = {
+				.comp = {
+					.vecs = zstd_comp_tv_template,
+					.count = ZSTD_COMP_TEST_VECTORS
+				},
+				.decomp = {
+					.vecs = zstd_decomp_tv_template,
+					.count = ZSTD_DECOMP_TEST_VECTORS
 				}
 			}
 		}

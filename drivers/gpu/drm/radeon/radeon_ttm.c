@@ -213,8 +213,8 @@ static void radeon_evict_flags(struct ttm_buffer_object *bo,
 			rbo->placement.num_busy_placement = 0;
 			for (i = 0; i < rbo->placement.num_placement; i++) {
 				if (rbo->placements[i].flags & TTM_PL_FLAG_VRAM) {
-					if (rbo->placements[0].fpfn < fpfn)
-						rbo->placements[0].fpfn = fpfn;
+					if (rbo->placements[i].fpfn < fpfn)
+						rbo->placements[i].fpfn = fpfn;
 				} else {
 					rbo->placement.busy_placement =
 						&rbo->placements[i];
@@ -557,7 +557,7 @@ static int radeon_ttm_tt_pin_userptr(struct ttm_tt *ttm)
 		struct page **pages = ttm->pages + pinned;
 
 		r = get_user_pages(current, current->mm, userptr, num_pages,
-				   write, 0, pages, NULL);
+				   write ? FOLL_WRITE : 0, pages, NULL);
 		if (r < 0)
 			goto release_pages;
 

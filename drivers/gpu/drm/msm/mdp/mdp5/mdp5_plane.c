@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2014-2015, 2018 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -193,7 +193,8 @@ static void mdp5_plane_reset(struct drm_plane *plane)
 
 	kfree(to_mdp5_plane_state(plane->state));
 	mdp5_state = kzalloc(sizeof(*mdp5_state), GFP_KERNEL);
-
+	if (!mdp5_state)
+		return;
 	/* assign default blend parameters */
 	mdp5_state->alpha = 255;
 	mdp5_state->premultiplied = 0;
@@ -218,8 +219,10 @@ mdp5_plane_duplicate_state(struct drm_plane *plane)
 
 	mdp5_state = kmemdup(to_mdp5_plane_state(plane->state),
 			sizeof(*mdp5_state), GFP_KERNEL);
+	if (!mdp5_state)
+		return NULL;
 
-	if (mdp5_state && mdp5_state->base.fb)
+	if (mdp5_state->base.fb)
 		drm_framebuffer_reference(mdp5_state->base.fb);
 
 	mdp5_state->mode_changed = false;
@@ -260,7 +263,7 @@ static int mdp5_plane_prepare_fb(struct drm_plane *plane,
 		return 0;
 
 	DBG("%s: prepare: FB[%u]", mdp5_plane->name, fb->base.id);
-	return msm_framebuffer_prepare(fb, mdp5_kms->id);
+	return msm_framebuffer_prepare(fb, mdp5_kms->aspace);
 }
 
 static void mdp5_plane_cleanup_fb(struct drm_plane *plane,
@@ -274,7 +277,7 @@ static void mdp5_plane_cleanup_fb(struct drm_plane *plane,
 		return;
 
 	DBG("%s: cleanup: FB[%u]", mdp5_plane->name, fb->base.id);
-	msm_framebuffer_cleanup(fb, mdp5_kms->id);
+	msm_framebuffer_cleanup(fb, mdp5_kms->aspace);
 }
 
 static int mdp5_plane_atomic_check(struct drm_plane *plane,
@@ -400,13 +403,13 @@ static void set_scanout_locked(struct drm_plane *plane,
 			MDP5_PIPE_SRC_STRIDE_B_P3(fb->pitches[3]));
 
 	mdp5_write(mdp5_kms, REG_MDP5_PIPE_SRC0_ADDR(pipe),
-			msm_framebuffer_iova(fb, mdp5_kms->id, 0));
+			msm_framebuffer_iova(fb, mdp5_kms->aspace, 0));
 	mdp5_write(mdp5_kms, REG_MDP5_PIPE_SRC1_ADDR(pipe),
-			msm_framebuffer_iova(fb, mdp5_kms->id, 1));
+			msm_framebuffer_iova(fb, mdp5_kms->aspace, 1));
 	mdp5_write(mdp5_kms, REG_MDP5_PIPE_SRC2_ADDR(pipe),
-			msm_framebuffer_iova(fb, mdp5_kms->id, 2));
+			msm_framebuffer_iova(fb, mdp5_kms->aspace, 2));
 	mdp5_write(mdp5_kms, REG_MDP5_PIPE_SRC3_ADDR(pipe),
-			msm_framebuffer_iova(fb, mdp5_kms->id, 3));
+			msm_framebuffer_iova(fb, mdp5_kms->aspace, 3));
 
 	plane->fb = fb;
 }
@@ -684,14 +687,21 @@ static int mdp5_plane_mode_set(struct drm_plane *plane,
 	bool vflip, hflip;
 	unsigned long flags;
 	int ret;
+	const struct msm_format *msm_fmt;
 
+	msm_fmt = msm_framebuffer_format(fb);
 	nplanes = drm_format_num_planes(fb->pixel_format);
 
 	/* bad formats should already be rejected: */
 	if (WARN_ON(nplanes > pipe2nclients(pipe)))
 		return -EINVAL;
 
-	format = to_mdp_format(msm_framebuffer_format(fb));
+	if (!msm_fmt) {
+		pr_err("invalid format");
+		return -EINVAL;
+	}
+
+	format = to_mdp_format(msm_fmt);
 	pix_format = format->base.pixel_format;
 
 	/* src values are in Q16 fixed point, convert to integer: */

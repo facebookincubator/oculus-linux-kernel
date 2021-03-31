@@ -9,3 +9,5 @@ source "drivers/platform/goldfish/Kconfig"
 source "drivers/platform/chrome/Kconfig"
 
 source "drivers/platform/msm/Kconfig"
+
+source "drivers/platform/oculus/Kconfig"

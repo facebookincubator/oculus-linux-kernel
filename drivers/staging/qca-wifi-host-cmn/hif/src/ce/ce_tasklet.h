@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2015-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2015-2016,2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,16 +16,11 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef __CE_TASKLET_H__
 #define __CE_TASKLET_H__
 #include "ce_main.h"
 void init_tasklet_workers(struct hif_opaque_softc *scn);
+void deinit_tasklet_workers(struct hif_opaque_softc *scn);
 void ce_tasklet_init(struct HIF_CE_state *hif_ce_state, uint32_t mask);
 void ce_tasklet_kill(struct hif_softc *scn);
 int hif_drain_tasklets(struct hif_softc *scn);

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2014, 2017-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,21 +16,43 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #if !defined(WLAN_HDD_IOCTL_H)
 #define WLAN_HDD_IOCTL_H
 
-#include <netdevice.h>
+#include <linux/netdevice.h>
 #include <uapi/linux/if.h>
 #include "wlan_hdd_main.h"
 
+extern struct sock *cesium_nl_srv_sock;
+
 int hdd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
-int wlan_hdd_set_mc_rate(hdd_adapter_t *pAdapter, int targetRate);
+int wlan_hdd_set_mc_rate(struct hdd_adapter *adapter, int targetRate);
+
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * hdd_get_roam_scan_ch_cb() - roam scan channel list callback handler
+ * @hdd_handle: Pointer to hdd context
+ * @roam_ch: pointer to roam scan ch event data
+ * @context: cookie
+ *
+ * Callback function to processes roam scan chaanel list event. If
+ * command response field in the response message is set that means
+ * event received as a response of GETROAMSCANCHANNELS command else
+ * event was rasied by firmware upon disconnection.
+ *
+ * Return: none
+ */
+void hdd_get_roam_scan_ch_cb(hdd_handle_t hdd_handle,
+			     struct roam_scan_ch_resp *roam_ch,
+			     void *context);
+#else
+static inline void
+hdd_get_roam_scan_ch_cb(hdd_handle_t hdd_handle,
+			void *roam_ch,
+			void *context)
+{
+}
+#endif
 
 /**
  * hdd_update_smps_antenna_mode() - set smps and antenna mode
@@ -44,6 +63,16 @@ int wlan_hdd_set_mc_rate(hdd_adapter_t *pAdapter, int targetRate);
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS hdd_update_smps_antenna_mode(hdd_context_t *hdd_ctx, int mode);
+QDF_STATUS hdd_update_smps_antenna_mode(struct hdd_context *hdd_ctx, int mode);
+
+/**
+ * hdd_set_antenna_mode() - SET ANTENNA MODE command handler
+ * @adapter: Pointer to network adapter
+ * @hdd_ctx: Pointer to hdd context
+ * @mode: new anteena mode
+ */
+int hdd_set_antenna_mode(struct hdd_adapter *adapter,
+			  struct hdd_context *hdd_ctx, int mode);
+
 #endif /* end #if !defined(WLAN_HDD_IOCTL_H) */
 

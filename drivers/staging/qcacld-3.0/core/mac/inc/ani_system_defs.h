@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -63,23 +54,53 @@
 #define true    1
 #endif
 
-typedef enum eAniBool {
-	eSIR_FALSE,
-	eSIR_TRUE,
-	eSIR_DONOT_USE_BOOL = SIR_MAX_ENUM_SIZE
-} tAniBool;
-
 /* / Authentication type enum used with peer */
 typedef enum eAniAuthType {
 	eSIR_OPEN_SYSTEM,
 	eSIR_SHARED_KEY,
 	eSIR_FT_AUTH,
+	eSIR_AUTH_TYPE_SAE = 3,
 #if defined FEATURE_WLAN_ESE
 	eSIR_LEAP_AUTH = 0x80,
 #endif
+	SIR_FILS_SK_WITHOUT_PFS = 4,
+	SIR_FILS_SK_WITH_PFS = 5,
+	SIR_FILS_PK_AUTH = 6,
+	eSIR_AUTH_TYPE_OWE,
 	eSIR_AUTO_SWITCH,
 	eSIR_DONOT_USE_AUTH_TYPE = SIR_MAX_ENUM_SIZE
 } tAniAuthType;
+
+enum ani_akm_type {
+	ANI_AKM_TYPE_NONE,
+	ANI_AKM_TYPE_RSN,
+	ANI_AKM_TYPE_RSN_PSK,
+	ANI_AKM_TYPE_FT_RSN,
+	ANI_AKM_TYPE_FT_RSN_PSK,
+	ANI_AKM_TYPE_RSN_PSK_SHA256,
+	ANI_AKM_TYPE_RSN_8021X_SHA256,
+#ifdef WLAN_FEATURE_SAE
+	ANI_AKM_TYPE_SAE,
+	ANI_AKM_TYPE_FT_SAE,
+#endif
+	ANI_AKM_TYPE_SUITEB_EAP_SHA256,
+	ANI_AKM_TYPE_SUITEB_EAP_SHA384,
+	ANI_AKM_TYPE_FT_SUITEB_EAP_SHA384,
+	ANI_AKM_TYPE_FILS_SHA256,
+	ANI_AKM_TYPE_FILS_SHA384,
+	ANI_AKM_TYPE_FT_FILS_SHA256,
+	ANI_AKM_TYPE_FT_FILS_SHA384,
+	ANI_AKM_TYPE_OWE,
+#ifdef FEATURE_WLAN_ESE
+	ANI_AKM_TYPE_CCKM,
+#endif
+	ANI_AKM_TYPE_OSEN,
+	ANI_AKM_TYPE_DPP_RSN,
+	ANI_AKM_TYPE_WPA,
+	ANI_AKM_TYPE_WPA_PSK,
+	ANI_NUM_OF_SUPPORT_AKM_TYPE,
+	ANI_AKM_TYPE_UNKNOWN = 0xff,
+};
 
 /* / Encryption type enum used with peer */
 typedef enum eAniEdType {
@@ -95,6 +116,11 @@ typedef enum eAniEdType {
 	   Thus while setting BIP encryption mode in corresponding DPU Desc
 	   eSIR_ED_AES_128_CMAC should be set to eSIR_ED_CCMP */
 	eSIR_ED_AES_128_CMAC,
+	/* Firmware uses key length to find GCMP 128 or 256 */
+	eSIR_ED_GCMP,
+	eSIR_ED_GCMP_256,
+	eSIR_ED_AES_GMAC_128,
+	eSIR_ED_AES_GMAC_256,
 	eSIR_ED_NOT_IMPLEMENTED = SIR_MAX_ENUM_SIZE
 } tAniEdType;
 
@@ -180,7 +206,7 @@ typedef struct sSirMicFailureInfo {
 	tSirMacAddr srcMacAddr; /* address used to compute MIC */
 	tSirMacAddr taMacAddr;  /* transmitter address */
 	tSirMacAddr dstMacAddr;
-	tAniBool multicast;
+	bool multicast;
 	uint8_t IV1;            /* first byte of IV */
 	uint8_t keyId;          /* second byte of IV */
 	uint8_t TSC[SIR_CIPHER_SEQ_CTR_SIZE];   /* sequence number */

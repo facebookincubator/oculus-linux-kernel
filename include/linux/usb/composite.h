@@ -57,6 +57,9 @@
 /* big enough to hold our biggest descriptor */
 #define USB_COMP_EP0_BUFSIZ	4096
 
+/* OS feature descriptor length <= 4kB */
+#define USB_COMP_EP0_OS_DESC_BUFSIZ	4096
+
 #define USB_MS_TO_HS_INTERVAL(x)	(ilog2((x * 1000 / 125)) + 1)
 struct usb_configuration;
 
@@ -648,14 +651,5 @@ void usb_remove_function(struct usb_configuration *c, struct usb_function *f);
 	dev_warn(&(d)->gadget->dev , fmt , ## args)
 #define INFO(d, fmt, args...) \
 	dev_info(&(d)->gadget->dev , fmt , ## args)
-
-/*
- * Based on enumerated USB speed, draw power with set_config and resume
- * HSUSB: 500mA, SSUSB: 900mA
- */
-#define SSUSB_GADGET_VBUS_DRAW 900 /* in mA */
-#define USB_VBUS_DRAW(speed)\
-	(speed == USB_SPEED_SUPER ?\
-	SSUSB_GADGET_VBUS_DRAW : CONFIG_USB_GADGET_VBUS_DRAW)
 
 #endif	/* __LINUX_USB_COMPOSITE_H */

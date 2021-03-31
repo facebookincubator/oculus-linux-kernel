@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -137,10 +137,34 @@ enum {
 	DATA_BYTE_13,
 };
 
+enum hdmi_colorimetry {
+	HDMI_COLORIMETRY_DEFAULT,
+	HDMI_COLORIMETRY_ITU_R_601,
+	HDMI_COLORIMETRY_ITU_R_709,
+	HDMI_COLORIMETRY_EXTENDED
+};
+
+enum hdmi_ext_colorimetry {
+	HDMI_COLORIMETRY_XV_YCC_601,
+	HDMI_COLORIMETRY_XV_YCC_709,
+	HDMI_COLORIMETRY_S_YCC_601,
+	HDMI_COLORIMETRY_ADOBE_YCC_601,
+	HDMI_COLORIMETRY_ADOBE_RGB,
+	HDMI_COLORIMETRY_C_YCBCR_BT2020,
+	HDMI_COLORIMETRY_YCBCR_BT2020,
+	HDMI_COLORIMETRY_RESERVED
+
+};
+
 enum hdmi_quantization_range {
 	HDMI_QUANTIZATION_DEFAULT,
 	HDMI_QUANTIZATION_LIMITED_RANGE,
 	HDMI_QUANTIZATION_FULL_RANGE
+};
+
+enum hdmi_ycc_quantization_range {
+	HDMI_YCC_QUANTIZATION_LIMITED_RANGE,
+	HDMI_YCC_QUANTIZATION_FULL_RANGE
 };
 
 enum hdmi_scaling_info {
@@ -189,12 +213,29 @@ static int hdmi_panel_config_avi(struct hdmi_panel *panel)
 	avi->bar_info.start_of_right_bar = timing->active_h + 1;
 
 	avi->act_fmt_info_present = true;
-	avi->rgb_quantization_range = HDMI_QUANTIZATION_DEFAULT;
-	avi->yuv_quantization_range = HDMI_QUANTIZATION_DEFAULT;
+	if (pinfo->is_ce_mode) {
+		avi->rgb_quantization_range =
+			HDMI_QUANTIZATION_LIMITED_RANGE;
+		avi->yuv_quantization_range =
+			HDMI_YCC_QUANTIZATION_LIMITED_RANGE;
+	} else {
+		avi->rgb_quantization_range =
+			HDMI_QUANTIZATION_FULL_RANGE;
+		avi->yuv_quantization_range =
+			HDMI_YCC_QUANTIZATION_FULL_RANGE;
+	}
 
 	avi->scaling_info = HDMI_SCALING_NONE;
 
-	avi->colorimetry_info = 0;
+	if (avi->pixel_format == MDP_Y_CBCR_H2V2) {
+		if (pinfo->yres < 720)
+			avi->colorimetry_info = HDMI_COLORIMETRY_ITU_R_601;
+		else
+			avi->colorimetry_info = HDMI_COLORIMETRY_ITU_R_709;
+	} else {
+		avi->colorimetry_info = HDMI_COLORIMETRY_DEFAULT;
+	}
+
 	avi->ext_colorimetry_info = 0;
 
 	avi->pixel_rpt_factor = 0;
@@ -602,13 +643,29 @@ end:
 	return rc;
 }
 
+static inline int get_bitdepth(enum hdmi_deep_color_depth bitdepth)
+{
+	switch (bitdepth) {
+	case HDMI_DEEP_COLOR_DEPTH_24BPP:
+		return 24;
+	case HDMI_DEEP_COLOR_DEPTH_30BPP:
+		return 30;
+	case HDMI_DEEP_COLOR_DEPTH_36BPP:
+		return 36;
+	default:
+		return 0;
+	}
+}
+
 static int hdmi_panel_setup_dc(struct hdmi_panel *panel)
 {
 	u32 hdmi_ctrl_reg;
 	u32 vbi_pkt_reg;
 	int rc = 0;
 
-	pr_debug("Deep Color: %s\n", panel->data->dc_enable ? "ON" : "OFF");
+	pr_debug("Deep Color: %s, bitdepth = %d\n",
+			panel->data->dc_enable ? "ON" : "OFF",
+			get_bitdepth(panel->data->bitdepth));
 
 	/* enable deep color if supported */
 	if (panel->data->dc_enable) {
@@ -631,6 +688,19 @@ static int hdmi_panel_setup_dc(struct hdmi_panel *panel)
 		 */
 		vbi_pkt_reg = DSS_REG_R(panel->io, HDMI_VBI_PKT_CTRL);
 		vbi_pkt_reg |= BIT(5) | BIT(4);
+		DSS_REG_W(panel->io, HDMI_VBI_PKT_CTRL, vbi_pkt_reg);
+	} else {
+		hdmi_ctrl_reg = DSS_REG_R(panel->io, HDMI_CTRL);
+
+		/* disable GC CD override */
+		hdmi_ctrl_reg &= ~BIT(27);
+		/* disable deep color for RGB888/YUV444/YUV420 30 bits */
+		hdmi_ctrl_reg &= ~BIT(24);
+		DSS_REG_W(panel->io, HDMI_CTRL, hdmi_ctrl_reg);
+
+		/* disable the GC packet sending */
+		vbi_pkt_reg = DSS_REG_R(panel->io, HDMI_VBI_PKT_CTRL);
+		vbi_pkt_reg &= ~(BIT(5) | BIT(4));
 		DSS_REG_W(panel->io, HDMI_VBI_PKT_CTRL, vbi_pkt_reg);
 	}
 
@@ -727,6 +797,15 @@ static int hdmi_panel_setup_scrambler(struct hdmi_panel *panel)
 		rc = hdmi_setup_ddc_timers(panel->ddc,
 			HDMI_TX_DDC_TIMER_SCRAMBLER_STATUS, timeout_hsync);
 	} else {
+		tmds_clock_ratio = 0;
+		rc = hdmi_scdc_write(panel->ddc,
+			HDMI_TX_SCDC_TMDS_BIT_CLOCK_RATIO_UPDATE,
+			tmds_clock_ratio);
+		if (rc) {
+			pr_err("TMDS CLK RATIO ERR\n");
+			return rc;
+		}
+
 		hdmi_scdc_write(panel->ddc,
 			HDMI_TX_SCDC_SCRAMBLING_ENABLE, 0x0);
 
@@ -774,6 +853,53 @@ static int hdmi_panel_update_fps(void *input, u32 fps)
 	pinfo->dynamic_fps = false;
 end:
 	return panel->vic;
+}
+
+static int hdmi_panel_avi_update_colorimetry(void *input,
+		bool use_bt2020)
+{
+	struct hdmi_panel *panel = input;
+	struct mdss_panel_info *pinfo;
+	struct hdmi_video_config *vid_cfg;
+	struct hdmi_avi_infoframe_config *avi;
+	int rc = 0;
+
+	if (!panel) {
+		DEV_ERR("%s: invalid hdmi panel\n", __func__);
+		rc = -EINVAL;
+		goto error;
+	}
+
+	/* Configure AVI infoframe */
+	rc = hdmi_panel_config_avi(panel);
+	if (rc) {
+		DEV_ERR("%s: failed to configure AVI\n", __func__);
+		goto error;
+	}
+
+	pinfo = panel->data->pinfo;
+	vid_cfg = &panel->vid_cfg;
+	avi = &vid_cfg->avi_iframe;
+
+	/* Update Colorimetry */
+	avi->ext_colorimetry_info = 0;
+
+	if (use_bt2020) {
+		avi->colorimetry_info = HDMI_COLORIMETRY_EXTENDED;
+		avi->ext_colorimetry_info = HDMI_COLORIMETRY_YCBCR_BT2020;
+	} else if (avi->pixel_format == MDP_Y_CBCR_H2V2) {
+		if (pinfo->yres < 720)
+			avi->colorimetry_info = HDMI_COLORIMETRY_ITU_R_601;
+		else
+			avi->colorimetry_info = HDMI_COLORIMETRY_ITU_R_709;
+	} else {
+		avi->colorimetry_info = HDMI_COLORIMETRY_DEFAULT;
+	}
+
+	hdmi_panel_set_avi_infoframe(panel);
+
+error:
+	return rc;
 }
 
 static int hdmi_panel_power_on(void *input)
@@ -902,6 +1028,8 @@ void *hdmi_panel_init(struct hdmi_panel_init_data *data)
 		data->ops->off = hdmi_panel_power_off;
 		data->ops->vendor = hdmi_panel_set_vendor_specific_infoframe;
 		data->ops->update_fps = hdmi_panel_update_fps;
+		data->ops->update_colorimetry =
+			hdmi_panel_avi_update_colorimetry;
 	}
 end:
 	return panel;

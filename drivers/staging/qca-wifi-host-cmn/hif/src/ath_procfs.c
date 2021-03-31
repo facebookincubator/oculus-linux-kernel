@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2014, 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2014, 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,18 +16,12 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #if defined(CONFIG_ATH_PROCFS_DIAG_SUPPORT)
 #include <linux/module.h>       /* Specifically, a module */
 #include <linux/kernel.h>       /* We're doing kernel work */
 #include <linux/version.h>      /* We're doing kernel work */
 #include <linux/proc_fs.h>      /* Necessary because we use the proc fs */
-#include <asm/uaccess.h>        /* for copy_from_user */
+#include <linux/uaccess.h>        /* for copy_from_user */
 #include "hif.h"
 #include "hif_main.h"
 #if defined(HIF_USB)
@@ -41,6 +32,7 @@
 #endif
 #include "hif_debug.h"
 #include "pld_common.h"
+#include "target_type.h"
 
 #define PROCFS_NAME             "athdiagpfs"
 #ifdef MULTI_IF_NAME
@@ -71,6 +63,7 @@ static ssize_t ath_procfs_diag_read(struct file *file, char __user *buf,
 	uint8_t *read_buffer = NULL;
 	struct hif_softc *scn;
 	uint32_t offset = 0, memtype = 0;
+	struct hif_target_info *tgt_info;
 
 	hif_hdl = get_hif_hdl_from_file(file);
 	scn = HIF_GET_SOFTC(hif_hdl);
@@ -87,7 +80,11 @@ static ssize_t ath_procfs_diag_read(struct file *file, char __user *buf,
 	HIF_DBG("rd buff 0x%pK cnt %zu offset 0x%x buf 0x%pK",
 		 read_buffer, count, (int)*pos, buf);
 
-	if (scn->bus_type == QDF_BUS_TYPE_SNOC) {
+	tgt_info = hif_get_target_info_handle(GET_HIF_OPAQUE_HDL(hif_hdl));
+	if (scn->bus_type == QDF_BUS_TYPE_SNOC ||
+			(scn->bus_type ==  QDF_BUS_TYPE_PCI &&
+			 (tgt_info->target_type == TARGET_TYPE_QCA6290 ||
+			  tgt_info->target_type == TARGET_TYPE_QCA8074))) {
 		memtype = ((uint32_t)(*pos) & 0xff000000) >> 24;
 		offset = (uint32_t)(*pos) & 0xffffff;
 		HIF_TRACE("%s: offset 0x%x memtype 0x%x, datalen %zu\n",
@@ -108,17 +105,18 @@ static ssize_t ath_procfs_diag_read(struct file *file, char __user *buf,
 	}
 
 out:
-	if (rv)
+	if (rv) {
+		qdf_mem_free(read_buffer);
 		return -EIO;
+	}
 
 	if (copy_to_user(buf, read_buffer, count)) {
 		qdf_mem_free(read_buffer);
 		HIF_ERROR("%s: copy_to_user error in /proc/%s",
 			__func__, PROCFS_NAME);
 		return -EFAULT;
-	} else
-		qdf_mem_free(read_buffer);
-
+	}
+	qdf_mem_free(read_buffer);
 	return count;
 }
 
@@ -131,6 +129,7 @@ static ssize_t ath_procfs_diag_write(struct file *file,
 	uint8_t *write_buffer = NULL;
 	struct hif_softc *scn;
 	uint32_t offset = 0, memtype = 0;
+	struct hif_target_info *tgt_info;
 
 	hif_hdl = get_hif_hdl_from_file(file);
 	scn = HIF_GET_SOFTC(hif_hdl);
@@ -154,7 +153,11 @@ static ssize_t ath_procfs_diag_write(struct file *file,
 		 write_buffer, buf, count,
 		 (int)*pos, *((uint32_t *) write_buffer));
 
-	if (scn->bus_type == QDF_BUS_TYPE_SNOC) {
+	tgt_info = hif_get_target_info_handle(GET_HIF_OPAQUE_HDL(hif_hdl));
+	if (scn->bus_type == QDF_BUS_TYPE_SNOC ||
+			(scn->bus_type ==  QDF_BUS_TYPE_PCI &&
+			 (tgt_info->target_type == TARGET_TYPE_QCA6290 ||
+			  tgt_info->target_type == TARGET_TYPE_QCA8074))) {
 		memtype = ((uint32_t)(*pos) & 0xff000000) >> 24;
 		offset = (uint32_t)(*pos) & 0xffffff;
 		HIF_TRACE("%s: offset 0x%x memtype 0x%x, datalen %zu\n",
@@ -168,6 +171,7 @@ static ssize_t ath_procfs_diag_write(struct file *file,
 	if ((count == 4) && ((((uint32_t) (*pos)) & 3) == 0)) {
 		/* reading a word? */
 		uint32_t value = *((uint32_t *)write_buffer);
+
 		rv = hif_diag_write_access(hif_hdl, (uint32_t)(*pos), value);
 	} else {
 		rv = hif_diag_write_mem(hif_hdl, (uint32_t)(*pos),
@@ -177,11 +181,10 @@ static ssize_t ath_procfs_diag_write(struct file *file,
 out:
 
 	qdf_mem_free(write_buffer);
-	if (rv == 0) {
+	if (rv == 0)
 		return count;
-	} else {
+	else
 		return -EIO;
-	}
 }
 
 static const struct file_operations athdiag_fops = {
@@ -189,8 +192,8 @@ static const struct file_operations athdiag_fops = {
 	.write = ath_procfs_diag_write,
 };
 
-/**
-   *This function is called when the module is loaded
+/*
+ * This function is called when the module is loaded
  *
  */
 int athdiag_procfs_init(void *scn)
@@ -203,8 +206,7 @@ int athdiag_procfs_init(void *scn)
 		return -ENOMEM;
 	}
 
-	proc_file = proc_create_data(PROCFS_NAME,
-				     S_IRUSR | S_IWUSR, proc_dir,
+	proc_file = proc_create_data(PROCFS_NAME, 0600, proc_dir,
 				     &athdiag_fops, (void *)scn);
 	if (proc_file == NULL) {
 		remove_proc_entry(PROCFS_NAME, proc_dir);
@@ -217,8 +219,8 @@ int athdiag_procfs_init(void *scn)
 	return 0;               /* everything is ok */
 }
 
-/**
-   *This function is called when the module is unloaded
+/*
+ * This function is called when the module is unloaded
  *
  */
 void athdiag_procfs_remove(void)

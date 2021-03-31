@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef __IF_SDIO_H__
@@ -76,13 +67,7 @@ static inline int athdiag_procfs_init(void *scn)
 
 static inline void athdiag_procfs_remove(void)
 {
-	return;
 }
-#endif
-
-#ifndef REMOVE_PKT_LOG
-extern int pktlogmod_init(void *context);
-extern void pktlogmod_exit(void *context);
 #endif
 
 #define DMA_MAPPING_ERROR(dev, addr) dma_mapping_error((dev), (addr))
@@ -107,4 +92,19 @@ void hif_register_tbl_attach(struct hif_softc *scn,
 						u32 hif_type);
 void target_register_tbl_attach(struct hif_softc *scn,
 						u32 target_type);
+void hif_enable_power_gating(void *hif_ctx);
+void hif_sdio_close(struct hif_softc *hif_sc);
+QDF_STATUS hif_sdio_open(struct hif_softc *hif_sc,
+			 enum qdf_bus_type bus_type);
+void hif_ar6k_fetch_target_regs(struct hif_sdio_dev *hif_device,
+				uint32_t *targregs);
+QDF_STATUS hif_reg_based_get_target_info(struct hif_opaque_softc *hif_ctx,
+					 struct bmi_target_info *targ_info);
+QDF_STATUS
+hif_bmi_raw_write(struct hif_sdio_dev *device, char *buffer,
+		  uint32_t length);
+QDF_STATUS
+hif_bmi_raw_read(struct hif_sdio_dev *device, char *buffer,
+		 u32 length, bool want_timeout);
+
 #endif /* __IF_SDIO_H__ */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,6 +44,169 @@ static struct mdss_dsi_data *mdss_dsi_res;
 #define DSI_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
 
 static struct pm_qos_request mdss_dsi_pm_qos_request;
+
+#ifdef CONFIG_VS1_BOARD
+static void ovr_regulator_work(struct work_struct *work)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl0_pdata = mdss_dsi_get_ctrl_by_index(0);
+	struct mdss_dsi_ctrl_pdata *ctrl1_pdata = mdss_dsi_get_ctrl_by_index(1);
+	int ctrl0_gpio_val, ctrl1_gpio_val;
+	struct ovr_regulator_data *ordata = ctrl0_pdata->ovr_reg_data;
+
+	ctrl0_gpio_val = gpio_get_value(ctrl0_pdata->disp_int_gpio);
+	ctrl1_gpio_val = gpio_get_value(ctrl1_pdata->disp_int_gpio);
+
+	if (ctrl0_gpio_val == 1 && ctrl1_gpio_val == 1) {
+		/* AVDD on */
+		if (gpio_is_valid(ordata->pmi_en_gpio))
+			gpio_set_value(ordata->pmi_en_gpio, 0);
+		if (gpio_is_valid(ordata->disp_avdd_gpio))
+			gpio_set_value(ordata->disp_avdd_gpio, 1);
+	} else if (ctrl0_gpio_val == 0 && ctrl1_gpio_val == 0) {
+		/* AVDD off */
+		if (gpio_is_valid(ordata->pmi_en_gpio))
+			gpio_set_value(ordata->pmi_en_gpio, 1);
+		if (gpio_is_valid(ordata->disp_avdd_gpio))
+			gpio_set_value(ordata->disp_avdd_gpio, 0);
+	}
+}
+
+irqreturn_t hw_int_handler(int irq, void *data)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
+		(struct mdss_dsi_ctrl_pdata *)data;
+
+	mod_delayed_work(system_highpri_wq, &ctrl_pdata->ovr_reg_work, 0);
+
+	return IRQ_HANDLED;
+}
+
+static int ovr_regulator_enable(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
+		bool enable)
+{
+	struct ovr_regulator_data *ordata = ctrl_pdata->ovr_reg_data;
+	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
+	int rc = 0;
+
+	if (enable) {
+		if (atomic_inc_return(&ordata->refcount) > 1)
+			return 0;
+
+		if (gpio_is_valid(ordata->disp_avdd_gpio)) {
+			rc = gpio_request(ordata->disp_avdd_gpio,
+					"disp_avdd_enable");
+			if (rc) {
+				pr_err("%s: request disp_avdd_gpio gpio failed, rc=%d\n",
+						__func__, rc);
+				goto disp_avdd_gpio_error;
+			}
+			rc = gpio_direction_output(
+				ordata->disp_avdd_gpio,
+				pinfo->cont_splash_enabled ? 1 : 0);
+			if (rc) {
+				pr_err("%s: unable to set dir for disp_avdd_gpio, rc=%d\n",
+						__func__, rc);
+				goto disp_avdd_gpio_error;
+			}
+		}
+
+		if (gpio_is_valid(ordata->pmi_en_gpio)) {
+			rc = gpio_request(ordata->pmi_en_gpio,
+					"pmi_en_gpio");
+			if (rc) {
+				pr_err("%s: request pmi_en_gpio gpio failed, rc=%d\n",
+						__func__, rc);
+				goto pmi_en_gpio_error;
+			}
+			rc = gpio_direction_output(
+				ordata->pmi_en_gpio,
+				pinfo->cont_splash_enabled ? 0 : 1);
+			if (rc) {
+				pr_err("%s: unable to set dir for pmi_en_gpio, rc=%d\n",
+						__func__, rc);
+				goto pmi_en_gpio_error;
+			}
+		}
+
+		if (gpio_is_valid(ordata->vddio_1p8_en_gpio)) {
+			rc = gpio_request(ordata->vddio_1p8_en_gpio,
+					"vddio_1p8_en");
+			if (rc) {
+				pr_err("%s: request vddio_1p8_en failed, rc=%d\n",
+						__func__, rc);
+				goto vddio_1p8_gpio_error;
+			}
+			rc = gpio_direction_output(
+					ordata->vddio_1p8_en_gpio, 1);
+			if (rc) {
+				pr_err("%s: unable to set dir for vddio_1p8_en\n",
+						__func__);
+				goto vddio_1p8_gpio_error;
+			}
+			usleep_range(5000, 10000);
+		}
+
+		if (gpio_is_valid(ordata->vci_3p3_en_gpio)) {
+			rc = gpio_request(ordata->vci_3p3_en_gpio,
+					"vci_3p3_en");
+			if (rc) {
+				pr_err("%s: request vci_3p3_en failed, rc=%d\n",
+						__func__, rc);
+				goto vci_3p3_gpio_error;
+			}
+			rc = gpio_direction_output(ordata->vci_3p3_en_gpio,
+					1);
+			if (rc) {
+				pr_err("%s: unable to set dir for vci_3p3_en gpio\n",
+						__func__);
+				goto vci_3p3_gpio_error;
+			}
+			usleep_range(10000, 15000);
+		}
+	} else {
+		if (atomic_dec_and_test(&ordata->refcount))
+			return 0;
+
+		if (gpio_is_valid(ordata->vci_3p3_en_gpio)) {
+			gpio_set_value((ordata->vci_3p3_en_gpio), 0);
+			usleep_range(5000, 10000);
+		}
+
+		if (gpio_is_valid(ordata->vddio_1p8_en_gpio)) {
+			gpio_set_value((ordata->vddio_1p8_en_gpio), 0);
+			usleep_range(5000, 10000);
+		}
+
+		if (gpio_is_valid(ordata->vddio_1p8_en_gpio))
+			gpio_free(ordata->vddio_1p8_en_gpio);
+
+		if (gpio_is_valid(ordata->vci_3p3_en_gpio))
+			gpio_free(ordata->vci_3p3_en_gpio);
+
+		if (gpio_is_valid(ordata->disp_avdd_gpio))
+			gpio_free(ordata->disp_avdd_gpio);
+
+		if (gpio_is_valid(ordata->pmi_en_gpio))
+			gpio_free(ordata->pmi_en_gpio);
+	}
+
+	return rc;
+
+vci_3p3_gpio_error:
+	if (gpio_is_valid(ordata->vci_3p3_en_gpio))
+		gpio_free(ordata->vci_3p3_en_gpio);
+vddio_1p8_gpio_error:
+	if (gpio_is_valid(ordata->vddio_1p8_en_gpio))
+		gpio_free(ordata->vddio_1p8_en_gpio);
+pmi_en_gpio_error:
+	if (gpio_is_valid(ordata->pmi_en_gpio))
+		gpio_free(ordata->pmi_en_gpio);
+disp_avdd_gpio_error:
+	if (gpio_is_valid(ordata->disp_avdd_gpio))
+		gpio_free(ordata->disp_avdd_gpio);
+	return rc;
+}
+#endif /* CONFIG_VS1_BOARD */
 
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag,
 	u32 **dump_mem)
@@ -377,11 +540,24 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+#ifdef CONFIG_VS1_BOARD
+	if (gpio_is_valid(ctrl_pdata->disp_int_gpio))
+		disable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
+#endif
+
 	ret = mdss_dsi_panel_reset(pdata, 0);
 	if (ret) {
 		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
 		ret = 0;
 	}
+
+#ifdef CONFIG_VS1_BOARD
+	usleep_range(10000, 15000);
+	ret = ovr_regulator_enable(ctrl_pdata, false);
+	if (ret)
+		pr_err("%s: Panel regulator disable failed. rc=%d\n",
+				__func__, ret);
+#endif
 
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
@@ -409,6 +585,16 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+
+#ifdef CONFIG_VS1_BOARD
+	ret = ovr_regulator_enable(ctrl_pdata, true);
+	if (ret)
+		pr_err("%s: Panel regulator enable failed. rc=%d\n",
+				__func__, ret);
+
+	if (gpio_is_valid(ctrl_pdata->disp_int_gpio))
+		enable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
+#endif
 
 	ret = msm_dss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
@@ -450,19 +636,11 @@ static int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
 {
 	int ret = 0;
 	struct mdss_panel_info *pinfo;
-#ifdef CONFIG_VS1_BOARD
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-#endif
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
-
-#ifdef CONFIG_VS1_BOARD
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-#endif
 
 	pinfo = &pdata->panel_info;
 	pr_debug("%s: cur_power_state=%d req_power_state=%d\n", __func__,
@@ -492,9 +670,6 @@ static int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
 		if (mdss_dsi_is_panel_on_lp(pdata))
 			ret = mdss_dsi_panel_power_lp(pdata, false);
 		else
-#ifdef CONFIG_VS1_BOARD
-			if (ctrl_pdata->panel_enabled)
-#endif
 			ret = mdss_dsi_panel_power_on(pdata);
 		break;
 	case MDSS_PANEL_POWER_LP1:
@@ -673,7 +848,11 @@ static int mdss_dsi_get_dt_vreg_data(struct device *dev,
 			mp->vreg_config[i].post_off_sleep = tmp;
 		}
 
-		pr_debug("%s: %s min=%d, max=%d, enable=%d, disable=%d, preonsleep=%d, postonsleep=%d, preoffsleep=%d, postoffsleep=%d\n",
+		mp->vreg_config[i].lp_disable_allowed =
+			of_property_read_bool(supply_node,
+			"qcom,supply-lp-mode-disable-allowed");
+
+		pr_debug("%s: %s min=%d, max=%d, enable=%d, disable=%d, preonsleep=%d, postonsleep=%d, preoffsleep=%d, postoffsleep=%d lp_disable_allowed=%d\n",
 			__func__,
 			mp->vreg_config[i].vreg_name,
 			mp->vreg_config[i].min_voltage,
@@ -683,8 +862,8 @@ static int mdss_dsi_get_dt_vreg_data(struct device *dev,
 			mp->vreg_config[i].pre_on_sleep,
 			mp->vreg_config[i].post_on_sleep,
 			mp->vreg_config[i].pre_off_sleep,
-			mp->vreg_config[i].post_off_sleep
-			);
+			mp->vreg_config[i].post_off_sleep,
+			mp->vreg_config[i].lp_disable_allowed);
 		++i;
 	}
 
@@ -895,7 +1074,7 @@ static ssize_t mdss_dsi_cmd_write(struct file *file, const char __user *p,
 {
 	struct buf_data *pcmds = file->private_data;
 	ssize_t ret = 0;
-	int blen = 0;
+	unsigned int blen = 0;
 	char *string_buf;
 
 	mutex_lock(&pcmds->dbg_mutex);
@@ -907,6 +1086,11 @@ static ssize_t mdss_dsi_cmd_write(struct file *file, const char __user *p,
 
 	/* Allocate memory for the received string */
 	blen = count + (pcmds->sblen);
+	if (blen > U32_MAX - 1) {
+		mutex_unlock(&pcmds->dbg_mutex);
+		return -EINVAL;
+	}
+
 	string_buf = krealloc(pcmds->string_buf, blen + 1, GFP_KERNEL);
 	if (!string_buf) {
 		pr_err("%s: Failed to allocate memory\n", __func__);
@@ -914,6 +1098,7 @@ static ssize_t mdss_dsi_cmd_write(struct file *file, const char __user *p,
 		return -ENOMEM;
 	}
 
+	pcmds->string_buf = string_buf;
 	/* Writing in batches is possible */
 	ret = simple_write_to_buffer(string_buf, blen, ppos, p, count);
 	if (ret < 0) {
@@ -923,7 +1108,6 @@ static ssize_t mdss_dsi_cmd_write(struct file *file, const char __user *p,
 	}
 
 	string_buf[ret] = '\0';
-	pcmds->string_buf = string_buf;
 	pcmds->sblen = count;
 	mutex_unlock(&pcmds->dbg_mutex);
 	return ret;
@@ -1706,7 +1890,7 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		mdss_dsi_set_tear_on(ctrl_pdata);
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata))
-			enable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
+			panel_update_te_irq(pdata, true);
 	}
 
 	ctrl_pdata->ctrl_state |= CTRL_STATE_PANEL_INIT;
@@ -1777,9 +1961,8 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 	if ((pdata->panel_info.type == MIPI_CMD_PANEL) &&
 		mipi->vsync_enable && mipi->hw_vsync_mode) {
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
-				disable_irq(gpio_to_irq(
-					ctrl_pdata->disp_te_gpio));
-				atomic_dec(&ctrl_pdata->te_irq_ready);
+			panel_update_te_irq(pdata, false);
+			atomic_dec(&ctrl_pdata->te_irq_ready);
 		}
 		mdss_dsi_set_tear_off(ctrl_pdata);
 	}
@@ -1831,6 +2014,18 @@ static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
 	pr_debug("%s-:\n", __func__);
 
 	return 0;
+}
+
+static irqreturn_t test_hw_vsync_handler(int irq, void *data)
+{
+	struct mdss_panel_data *pdata = (struct mdss_panel_data *)data;
+
+	pr_debug("HW VSYNC\n");
+	MDSS_XLOG(0xaaa, irq);
+	complete_all(&pdata->te_done);
+	if (pdata->next)
+		complete_all(&pdata->next->te_done);
+	return IRQ_HANDLED;
 }
 
 int mdss_dsi_cont_splash_on(struct mdss_panel_data *pdata)
@@ -2039,10 +2234,9 @@ static void __mdss_dsi_calc_dfps_delay(struct mdss_panel_data *pdata)
 }
 
 static int __mdss_dsi_dfps_calc_clks(struct mdss_panel_data *pdata,
-		int new_fps)
+		u64 new_clk_rate)
 {
 	int rc = 0;
-	u64 clk_rate;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo;
 	u32 phy_rev;
@@ -2062,14 +2256,9 @@ static int __mdss_dsi_dfps_calc_clks(struct mdss_panel_data *pdata,
 	pinfo = &pdata->panel_info;
 	phy_rev = ctrl_pdata->shared_data->phy_rev;
 
-	rc = mdss_dsi_clk_div_config
-		(&ctrl_pdata->panel_data.panel_info, new_fps);
-	if (rc) {
-		pr_err("%s: unable to initialize the clk dividers\n",
-				__func__);
-		return rc;
-	}
-
+	pinfo->clk_rate = new_clk_rate;
+	pinfo->mipi.dsi_pclk_rate = mdss_dsi_get_pclk_rate(pinfo,
+		new_clk_rate);
 	__mdss_dsi_dyn_refresh_config(ctrl_pdata);
 
 	if (phy_rev == DSI_PHY_REV_20)
@@ -2082,9 +2271,8 @@ static int __mdss_dsi_dfps_calc_clks(struct mdss_panel_data *pdata,
 	ctrl_pdata->byte_clk_rate_bkp = ctrl_pdata->byte_clk_rate;
 
 	ctrl_pdata->pclk_rate = pinfo->mipi.dsi_pclk_rate;
-	clk_rate = pinfo->clk_rate;
-	do_div(clk_rate, 8U);
-	ctrl_pdata->byte_clk_rate = (u32) clk_rate;
+	do_div(new_clk_rate, 8U);
+	ctrl_pdata->byte_clk_rate = (u32) new_clk_rate;
 
 	pr_debug("byte_rate=%i\n", ctrl_pdata->byte_clk_rate);
 	pr_debug("pclk_rate=%i\n", ctrl_pdata->pclk_rate);
@@ -2092,12 +2280,11 @@ static int __mdss_dsi_dfps_calc_clks(struct mdss_panel_data *pdata,
 	return rc;
 }
 
-static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata,
-		int new_fps)
+static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_dsi_ctrl_pdata *sctrl_pdata = NULL;
-	struct mdss_panel_info *pinfo, *spinfo;
+	struct mdss_panel_info *pinfo, *spinfo = NULL;
 	int rc = 0;
 
 	if (pdata == NULL) {
@@ -2244,12 +2431,6 @@ static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata,
 	clk_disable_unprepare(ctrl_pdata->pll_byte_clk);
 	clk_disable_unprepare(ctrl_pdata->pll_pixel_clk);
 
-	/* update new fps that at this point is already updated in hw */
-	pinfo->current_fps = new_fps;
-	if (sctrl_pdata) {
-		spinfo->current_fps = new_fps;
-	}
-
 	return rc;
 
 dfps_timeout:
@@ -2326,13 +2507,108 @@ static void mdss_dsi_avr_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	MDSS_XLOG(ctrl_pdata->ndx, enabled, data);
 }
 
-static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
+static int __mdss_dsi_dynamic_clock_switch(struct mdss_panel_data *pdata,
+	u64 new_clk_rate)
 {
 	int rc = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo;
 	u32 phy_rev;
-	u32 frame_rate_bkp;
+	u64 clk_rate_bkp;
+
+	pr_debug("%s+:\n", __func__);
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+			panel_data);
+
+	phy_rev = ctrl_pdata->shared_data->phy_rev;
+	pinfo = &pdata->panel_info;
+
+	/* get the fps configured in HW */
+	clk_rate_bkp = pinfo->clk_rate;
+
+	__mdss_dsi_mask_dfps_errors(ctrl_pdata, true);
+
+	if (phy_rev == DSI_PHY_REV_20) {
+		rc = mdss_dsi_phy_calc_timing_param(pinfo, phy_rev,
+				new_clk_rate);
+		if (rc) {
+			pr_err("PHY calculations failed-%lld\n", new_clk_rate);
+			goto end_update;
+		}
+	}
+
+	rc = __mdss_dsi_dfps_calc_clks(pdata, new_clk_rate);
+	if (rc) {
+		pr_err("error calculating clocks for %lld\n", new_clk_rate);
+		goto error_clks;
+	}
+
+	rc = __mdss_dsi_dfps_update_clks(pdata);
+	if (rc) {
+		pr_err("Dynamic refresh failed-%lld\n", new_clk_rate);
+		goto error_dfps;
+	}
+	return rc;
+error_dfps:
+	if (__mdss_dsi_dfps_calc_clks(pdata, clk_rate_bkp))
+		pr_err("error reverting clock calculations for %lld\n",
+				clk_rate_bkp);
+error_clks:
+	if (mdss_dsi_phy_calc_timing_param(pinfo, phy_rev, clk_rate_bkp))
+		pr_err("Unable to revert phy timing-%lld\n", clk_rate_bkp);
+end_update:
+	return rc;
+}
+
+static int mdss_dsi_dynamic_bitclk_config(struct mdss_panel_data *pdata)
+{
+	int rc = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdss_panel_info *pinfo;
+
+	pr_debug("%s+:\n", __func__);
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+			panel_data);
+
+	if (!ctrl_pdata->panel_data.panel_info.dynamic_bitclk) {
+		pr_err("Dynamic bitclk not enabled for this panel\n");
+		return -EINVAL;
+	}
+
+	pinfo = &pdata->panel_info;
+
+	if (!pinfo->new_clk_rate || (pinfo->clk_rate == pinfo->new_clk_rate)) {
+		pr_debug("Bit clock update is not needed\n");
+		return 0;
+	}
+
+	rc = __mdss_dsi_dynamic_clock_switch(&ctrl_pdata->panel_data,
+		pinfo->new_clk_rate);
+	if (!rc && mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data)) {
+		struct mdss_dsi_ctrl_pdata *octrl =
+			mdss_dsi_get_other_ctrl(ctrl_pdata);
+		rc = __mdss_dsi_dynamic_clock_switch(&octrl->panel_data,
+			pinfo->new_clk_rate);
+		if (rc)
+			pr_err("failed to switch DSI bitclk for sctrl\n");
+	} else if (rc) {
+		pr_err("failed to switch DSI bitclk\n");
+	}
+	return rc;
+}
+
+static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
+{
+	int rc = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdss_panel_info *pinfo;
 
 	pr_debug("%s+:\n", __func__);
 
@@ -2349,11 +2625,7 @@ static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
 		return -EINVAL;
 	}
 
-	phy_rev = ctrl_pdata->shared_data->phy_rev;
 	pinfo = &pdata->panel_info;
-
-	/* get the fps configured in HW */
-	frame_rate_bkp = pinfo->current_fps;
 
 	if (new_fps == pinfo->current_fps) {
 		/*
@@ -2370,39 +2642,45 @@ static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
 		__mdss_dsi_update_video_mode_total(pdata, new_fps);
 	} else if (pinfo->dfps_update == DFPS_IMMEDIATE_CLK_UPDATE_MODE) {
 		/* Clock update method */
+		u64 new_clk_rate = mdss_dsi_calc_bitclk
+			(&ctrl_pdata->panel_data.panel_info, new_fps);
+		if (!new_clk_rate) {
+			pr_err("%s: unable to get the new bit clock rate\n",
+					__func__);
+			rc = -EINVAL;
+			goto end_update;
+		}
 
-		__mdss_dsi_mask_dfps_errors(ctrl_pdata, true);
+		rc = __mdss_dsi_dynamic_clock_switch(pdata, new_clk_rate);
+		if (!rc) {
+			struct mdss_dsi_ctrl_pdata *mctrl_pdata = NULL;
+			struct mdss_panel_info *mpinfo = NULL;
 
-		if (phy_rev == DSI_PHY_REV_20) {
-			rc = mdss_dsi_phy_calc_timing_param(pinfo, phy_rev,
-					new_fps);
-			if (rc) {
-				pr_err("PHY calculations failed-%d\n", new_fps);
+			if (mdss_dsi_is_hw_config_split
+				(ctrl_pdata->shared_data) &&
+				mdss_dsi_is_ctrl_clk_master(ctrl_pdata))
 				goto end_update;
+
+			if (mdss_dsi_is_hw_config_split
+				(ctrl_pdata->shared_data) &&
+				mdss_dsi_is_ctrl_clk_slave(ctrl_pdata)) {
+				mctrl_pdata = mdss_dsi_get_ctrl_clk_master();
+				if (IS_ERR_OR_NULL(mctrl_pdata)) {
+					pr_err("Invalid mctrl_pdata\n");
+					goto end_update;
+				}
+
+				mpinfo = &mctrl_pdata->panel_data.panel_info;
 			}
-		}
-
-		rc = __mdss_dsi_dfps_calc_clks(pdata, new_fps);
-		if (rc) {
-			pr_err("error calculating clocks for %d\n", new_fps);
-			goto error_clks;
-		}
-
-		rc = __mdss_dsi_dfps_update_clks(pdata,	new_fps);
-		if (rc) {
-			pr_err("Dynamic refresh failed-%d\n", new_fps);
-			goto error_dfps;
+			/*
+			 * update new fps that at this point is already
+			 * updated in hw
+			 */
+			pinfo->current_fps = new_fps;
+			if (mctrl_pdata && mpinfo)
+				mpinfo->current_fps = new_fps;
 		}
 	}
-
-	return rc;
-error_dfps:
-	if (__mdss_dsi_dfps_calc_clks(pdata, frame_rate_bkp))
-		pr_err("error reverting clock calculations for %d\n",
-				frame_rate_bkp);
-error_clks:
-	if (mdss_dsi_phy_calc_timing_param(pinfo, phy_rev, frame_rate_bkp))
-		pr_err("Unable to revert phy timing-%d\n", frame_rate_bkp);
 end_update:
 	return rc;
 }
@@ -2674,6 +2952,158 @@ static void mdss_dsi_timing_db_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 		  MDSS_DSI_CORE_CLK, MDSS_DSI_CLK_OFF);
 }
 
+static struct mdss_dsi_ctrl_pdata *mdss_dsi_get_drvdata(struct device *dev)
+{
+	struct msm_fb_data_type *mfd;
+	struct mdss_panel_data *pdata;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+
+	if (fbi) {
+		mfd = (struct msm_fb_data_type *)fbi->par;
+		pdata = dev_get_platdata(&mfd->pdev->dev);
+
+		ctrl_pdata = container_of(pdata,
+			struct mdss_dsi_ctrl_pdata, panel_data);
+	}
+
+	return ctrl_pdata;
+}
+
+static ssize_t supp_bitclk_list_sysfs_rda(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int i = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = mdss_dsi_get_drvdata(dev);
+	struct mdss_panel_info *pinfo = NULL;
+
+	if (!ctrl_pdata) {
+		pr_err("%s: invalid input\n", __func__);
+		return -EINVAL;
+	}
+
+	pinfo = &ctrl_pdata->panel_data.panel_info;
+	if (!pinfo) {
+		pr_err("no panel connected\n");
+		return -ENODEV;
+	}
+
+	if (!pinfo->dynamic_bitclk) {
+		pr_err_once("%s: Dynamic bitclk not enabled for this panel\n",
+				__func__);
+		return -EINVAL;
+	}
+
+	buf[0] = 0;
+	for (i = 0; i < pinfo->supp_bitclk_len; i++) {
+		if (ret > 0)
+			ret += scnprintf(buf + ret, PAGE_SIZE - ret,
+				",%d", pinfo->supp_bitclks[i]);
+		else
+			ret += scnprintf(buf + ret, PAGE_SIZE - ret,
+				"%d", pinfo->supp_bitclks[i]);
+	}
+
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
+
+	return ret;
+}
+
+static ssize_t dynamic_bitclk_sysfs_wta(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int rc = 0, i = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = mdss_dsi_get_drvdata(dev);
+	struct mdss_panel_info *pinfo = NULL;
+	int clk_rate = 0;
+
+	if (!ctrl_pdata) {
+		pr_err("%s: invalid input\n", __func__);
+		return -EINVAL;
+	}
+
+	pinfo = &ctrl_pdata->panel_data.panel_info;
+	if (!pinfo) {
+		pr_err("no panel connected\n");
+		return -ENODEV;
+	}
+
+	if (!pinfo->dynamic_bitclk) {
+		pr_err_once("%s: Dynamic bitclk not enabled for this panel\n",
+				__func__);
+		return -EINVAL;
+	}
+
+	if (mdss_panel_is_power_off(pinfo->panel_power_state)) {
+		pr_err_once("%s: Panel powered off!\n", __func__);
+		return -EINVAL;
+	}
+
+	rc = kstrtoint(buf, 10, &clk_rate);
+	if (rc) {
+		pr_err("%s: kstrtoint failed. rc=%d\n", __func__, rc);
+		return rc;
+	}
+
+	for (i = 0; i < pinfo->supp_bitclk_len; i++) {
+		if (pinfo->supp_bitclks[i] == clk_rate)
+			break;
+	}
+	if (i == pinfo->supp_bitclk_len) {
+		pr_err("Requested bitclk: %d not supported\n", clk_rate);
+		return -EINVAL;
+	}
+
+	pinfo->new_clk_rate = clk_rate;
+	if (mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data)) {
+		struct mdss_dsi_ctrl_pdata *octrl =
+			mdss_dsi_get_other_ctrl(ctrl_pdata);
+		struct mdss_panel_info *opinfo = &octrl->panel_data.panel_info;
+
+		opinfo->new_clk_rate = clk_rate;
+	}
+	return count;
+} /* dynamic_bitclk_sysfs_wta */
+
+static ssize_t dynamic_bitclk_sysfs_rda(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	ssize_t ret;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = mdss_dsi_get_drvdata(dev);
+	struct mdss_panel_info *pinfo = NULL;
+
+	if (!ctrl_pdata) {
+		pr_err("%s: invalid input\n", __func__);
+		return -EINVAL;
+	}
+
+	pinfo = &ctrl_pdata->panel_data.panel_info;
+	if (!pinfo) {
+		pr_err("no panel connected\n");
+		return -ENODEV;
+	}
+
+	ret = snprintf(buf, PAGE_SIZE, "%llu\n", pinfo->clk_rate);
+	pr_debug("%s: '%llu'\n", __func__, pinfo->clk_rate);
+
+	return ret;
+} /* dynamic_bitclk_sysfs_rda */
+
+static DEVICE_ATTR(dynamic_bitclk, S_IRUGO | S_IWUSR | S_IWGRP,
+	dynamic_bitclk_sysfs_rda, dynamic_bitclk_sysfs_wta);
+static DEVICE_ATTR(supported_bitclk, S_IRUGO, supp_bitclk_list_sysfs_rda, NULL);
+
+static struct attribute *dynamic_bitclk_fs_attrs[] = {
+	&dev_attr_dynamic_bitclk.attr,
+	&dev_attr_supported_bitclk.attr,
+	NULL,
+};
+
+static struct attribute_group mdss_dsi_fs_attrs_group = {
+	.attrs = dynamic_bitclk_fs_attrs,
+};
+
 static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				  int event, void *arg)
 {
@@ -2716,8 +3146,6 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				ctrl_pdata->update_phy_timing);
 
 		rc = mdss_dsi_on(pdata);
-		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
-							pdata);
 		break;
 	case MDSS_EVENT_UNBLANK:
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
@@ -2842,6 +3270,14 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->kobj = &fbi->dev->kobj;
 		ctrl_pdata->fb_node = fbi->node;
 
+		if (!mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data) ||
+			(mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data) &&
+			mdss_dsi_is_ctrl_clk_master(ctrl_pdata))) {
+			if (sysfs_create_group(&fbi->dev->kobj,
+				&mdss_dsi_fs_attrs_group))
+				pr_err("failed to create DSI sysfs group\n");
+		}
+
 		if (IS_ENABLED(CONFIG_MSM_DBA) &&
 			pdata->panel_info.is_dba_panel) {
 				queue_delayed_work(ctrl_pdata->workq,
@@ -2853,6 +3289,14 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_AVR_MODE:
 		mdss_dsi_avr_config(ctrl_pdata, (int)(unsigned long) arg);
+		break;
+	case MDSS_EVENT_DSI_DYNAMIC_BITCLK:
+		if (ctrl_pdata->panel_data.panel_info.dynamic_bitclk) {
+			rc = mdss_dsi_dynamic_bitclk_config(pdata);
+			if (rc)
+				pr_err("unable to change bitclk error-%d\n",
+					rc);
+		}
 		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
@@ -3049,10 +3493,6 @@ static struct device_node *mdss_dsi_config_panel(struct platform_device *pdev,
 		/* dsi panel cfg not present */
 		pr_warn("%s:%d:dsi specific cfg not present\n",
 			__func__, __LINE__);
-
-#ifdef CONFIG_VS1_BOARD
-	ctrl_pdata->panel_enabled = rc ? true : false;
-#endif
 
 	/* find panel device node */
 	dsi_pan_node = mdss_dsi_find_panel_of_node(pdev, panel_cfg);
@@ -3301,6 +3741,8 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	struct device_node *dsi_pan_node = NULL;
 	const char *ctrl_name;
 	struct mdss_util_intf *util;
+	static int te_irq_registered;
+	struct mdss_panel_data *pdata;
 
 	if (!pdev || !pdev->dev.of_node) {
 		pr_err("%s: pdev not found for DSI controller\n", __func__);
@@ -3392,7 +3834,7 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	pinfo = &(ctrl_pdata->panel_data.panel_info);
 	if (!(mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data) &&
 		mdss_dsi_is_ctrl_clk_slave(ctrl_pdata)) &&
-		pinfo->dynamic_fps) {
+		(pinfo->dynamic_fps || pinfo->dynamic_bitclk)) {
 		rc = mdss_dsi_shadow_clk_init(pdev, ctrl_pdata);
 
 		if (rc) {
@@ -3407,6 +3849,22 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pr_err("%s: Failed to set dsi clk rates\n", __func__);
 		return rc;
 	}
+
+#ifdef CONFIG_VS1_BOARD
+	if (gpio_is_valid(ctrl_pdata->disp_int_gpio)) {
+		rc = devm_request_irq(&pdev->dev,
+				gpio_to_irq(ctrl_pdata->disp_int_gpio),
+				hw_int_handler,
+				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+				IRQF_NO_THREAD | IRQF_NOBALANCING | IRQF_PERCPU,
+				"INT_GPIO", ctrl_pdata);
+		if (rc) {
+			pr_err("INT request_irq failed\n");
+			goto error_shadow_clk_deinit;
+		}
+		disable_irq(gpio_to_irq(ctrl_pdata->disp_int_gpio));
+	}
+#endif
 
 	rc = mdss_dsi_cont_splash_config(pinfo, ctrl_pdata);
 	if (rc) {
@@ -3423,7 +3881,26 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 			pr_err("%s: TE request_irq failed for ESD\n", __func__);
 			goto error_shadow_clk_deinit;
 		}
+		te_irq_registered = 1;
 		disable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
+	}
+
+	pdata = &ctrl_pdata->panel_data;
+	init_completion(&pdata->te_done);
+	mutex_init(&pdata->te_mutex);
+	if (pdata->panel_info.type == MIPI_CMD_PANEL) {
+		if (!te_irq_registered) {
+			rc = devm_request_irq(&pdev->dev,
+				gpio_to_irq(pdata->panel_te_gpio),
+				test_hw_vsync_handler, IRQF_TRIGGER_FALLING,
+				"VSYNC_GPIO", &ctrl_pdata->panel_data);
+			if (rc) {
+				pr_err("%s: TE request_irq failed\n", __func__);
+				goto error_shadow_clk_deinit;
+			}
+			te_irq_registered = 1;
+			disable_irq_nosync(gpio_to_irq(pdata->panel_te_gpio));
+		}
 	}
 
 	rc = mdss_dsi_get_bridge_chip_params(pinfo, ctrl_pdata, pdev);
@@ -3440,6 +3917,9 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	}
 
 	INIT_DELAYED_WORK(&ctrl_pdata->dba_work, mdss_dsi_dba_work);
+#ifdef CONFIG_VS1_BOARD
+	INIT_DELAYED_WORK(&ctrl_pdata->ovr_reg_work, ovr_regulator_work);
+#endif
 
 	rc = mdss_dsi_ctrl_validate_config(ctrl_pdata);
 	if (rc) {
@@ -3528,6 +4008,40 @@ static int mdss_dsi_parse_dt_params(struct platform_device *pdev,
 	return 0;
 }
 
+#ifdef CONFIG_VS1_BOARD
+static int ovr_regulator_init(struct platform_device *pdev,
+		struct ovr_regulator_data *ordata)
+{
+	ordata->vddio_1p8_en_gpio = of_get_named_gpio(
+			pdev->dev.of_node, "qcom,platform-vddio-en", 0);
+	if (!gpio_is_valid(ordata->vddio_1p8_en_gpio))
+		pr_debug("%s:%d, vddio_1p8_en gpio not specified\n",
+				__func__, __LINE__);
+
+	ordata->vci_3p3_en_gpio = of_get_named_gpio(
+			pdev->dev.of_node, "qcom,platform-vci-en", 0);
+	if (!gpio_is_valid(ordata->vci_3p3_en_gpio))
+		pr_debug("%s:%d, vci_3p3_en gpio not specified\n",
+				__func__, __LINE__);
+
+	ordata->disp_avdd_gpio = of_get_named_gpio(
+			pdev->dev.of_node, "qcom,platform-avdd-gpio", 0);
+	if (!gpio_is_valid(ordata->disp_avdd_gpio))
+		pr_debug("%s:%d, disp_avdd gpio is not specified\n",
+				__func__, __LINE__);
+
+	ordata->pmi_en_gpio = of_get_named_gpio(
+			pdev->dev.of_node, "qcom,platform-pmi-gpio", 0);
+	if (!gpio_is_valid(ordata->pmi_en_gpio))
+		pr_debug("%s:%d pmi_en gpio not specified\n",
+				__func__, __LINE__);
+
+	atomic_set(&ordata->refcount, 0);
+
+	return 0;
+}
+#endif
+
 static void mdss_dsi_res_deinit(struct platform_device *pdev)
 {
 	int i;
@@ -3610,6 +4124,18 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 			goto mem_fail;
 		}
 
+#ifdef CONFIG_VS1_BOARD
+		mdss_dsi_res->ovr_reg_data = devm_kzalloc(&pdev->dev,
+				sizeof(struct ovr_regulator_data),
+				GFP_KERNEL);
+		if (!mdss_dsi_res->ovr_reg_data) {
+			pr_err("%s Unable to alloc mem for ovr_reg_data\n",
+					__func__);
+			rc = -ENOMEM;
+			goto mem_fail;
+		}
+#endif
+
 		sdata = mdss_dsi_res->shared_data;
 
 		rc = mdss_dsi_parse_dt_params(pdev, sdata);
@@ -3657,6 +4183,15 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 		mutex_init(&sdata->phy_reg_lock);
 		mutex_init(&sdata->pm_qos_lock);
 
+#ifdef CONFIG_VS1_BOARD
+		rc = ovr_regulator_init(pdev, mdss_dsi_res->ovr_reg_data);
+		if (rc) {
+			/* Not present on all variants, log it and move on */
+			pr_debug("%s: failed to init regulator data\n",
+					__func__);
+		}
+#endif
+
 		for (i = 0; i < DSI_CTRL_MAX; i++) {
 			mdss_dsi_res->ctrl_pdata[i] = devm_kzalloc(&pdev->dev,
 					sizeof(struct mdss_dsi_ctrl_pdata),
@@ -3671,6 +4206,10 @@ static int mdss_dsi_res_init(struct platform_device *pdev)
 				__func__, i, mdss_dsi_res->ctrl_pdata[i]);
 			mdss_dsi_res->ctrl_pdata[i]->shared_data =
 				mdss_dsi_res->shared_data;
+#ifdef CONFIG_VS1_BOARD
+			mdss_dsi_res->ctrl_pdata[i]->ovr_reg_data =
+				mdss_dsi_res->ovr_reg_data;
+#endif
 		}
 
 		platform_set_drvdata(pdev, mdss_dsi_res);
@@ -4275,6 +4814,15 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 			of_property_read_bool(ctrl_pdev->dev.of_node,
 				"qcom,platform-bklight-en-gpio-invert");
 
+	ctrl_pdata->avdd_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+			"qcom,platform-avdd-en-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->avdd_en_gpio))
+		pr_info("%s: avdd_en gpio not specified\n", __func__);
+
+	ctrl_pdata->avdd_en_gpio_invert =
+			of_property_read_bool(ctrl_pdev->dev.of_node,
+				"qcom,platform-avdd-en-gpio-invert");
+
 	ctrl_pdata->rst_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 			 "qcom,platform-reset-gpio", 0);
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio))
@@ -4287,6 +4835,17 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 		pr_debug("%s:%d mode gpio not specified\n", __func__, __LINE__);
 		ctrl_pdata->lcd_mode_sel_gpio = -EINVAL;
 	}
+
+#ifdef CONFIG_VS1_BOARD
+	/*
+	 * Used to signal PMI and AVDD should be enabled
+	 */
+	ctrl_pdata->disp_int_gpio = of_get_named_gpio(
+			ctrl_pdev->dev.of_node, "qcom,platform-int-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->disp_int_gpio))
+		pr_debug("%s:%d disp_int gpio not specified\n",
+				__func__, __LINE__);
+#endif
 
 	return 0;
 }
@@ -4332,11 +4891,19 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 		((mipi->mode == DSI_VIDEO_MODE)
 			? MIPI_VIDEO_PANEL : MIPI_CMD_PANEL);
 
-	rc = mdss_dsi_clk_div_config(pinfo, mipi->frame_rate);
-	if (rc) {
-		pr_err("%s: unable to initialize the clk dividers\n", __func__);
-		return rc;
+	pinfo->clk_rate = mdss_dsi_calc_bitclk(pinfo, mipi->frame_rate);
+	if (!pinfo->clk_rate) {
+		pr_err("%s: unable to calculate the DSI bit clock\n", __func__);
+		return -EINVAL;
 	}
+
+	pinfo->mipi.dsi_pclk_rate = mdss_dsi_get_pclk_rate(pinfo,
+		pinfo->clk_rate);
+	if (!pinfo->mipi.dsi_pclk_rate) {
+		pr_err("%s: unable to calculate the DSI pclk\n", __func__);
+		return -EINVAL;
+	}
+
 	ctrl_pdata->pclk_rate = mipi->dsi_pclk_rate;
 	clk_rate = pinfo->clk_rate;
 	do_div(clk_rate, 8U);

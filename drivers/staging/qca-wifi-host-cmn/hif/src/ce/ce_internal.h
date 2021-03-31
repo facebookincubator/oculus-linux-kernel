@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,11 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
 #ifndef __COPY_ENGINE_INTERNAL_H__
 #define __COPY_ENGINE_INTERNAL_H__
 
@@ -95,8 +87,9 @@ struct CE_ring_state {
 
 	unsigned int low_water_mark_nentries;
 	unsigned int high_water_mark_nentries;
+	void *srng_ctx;
 	void **per_transfer_context;
-	OS_DMA_MEM_CONTEXT(ce_dmacontext) /* OS Specific DMA context */
+	OS_DMA_MEM_CONTEXT(ce_dmacontext); /* OS Specific DMA context */
 };
 
 /* Copy Engine internal state */
@@ -131,17 +124,19 @@ struct CE_state {
 	unsigned int src_sz_max;
 	struct CE_ring_state *src_ring;
 	struct CE_ring_state *dest_ring;
+	struct CE_ring_state *status_ring;
 	atomic_t rx_pending;
 
 	qdf_spinlock_t ce_index_lock;
-	bool force_break;	/* Flag to indicate whether to
-				 * break out the DPC context */
+	/* Flag to indicate whether to break out the DPC context */
+	bool force_break;
 
 	/* time in nanoseconds to yield control of napi poll */
 	unsigned long long ce_service_yield_time;
-	unsigned int receive_count;	/* count Num Of Receive Buffers
-					 * handled for one interrupt
-					 * DPC routine */
+	/* CE service start time in nanoseconds */
+	unsigned long long ce_service_start_time;
+	/* Num Of Receive Buffers handled for one interrupt DPC routine */
+	unsigned int receive_count;
 	/* epping */
 	bool timer_inited;
 	qdf_timer_t poll_timer;
@@ -149,8 +144,7 @@ struct CE_state {
 	/* datapath - for faster access, use bools instead of a bitmap */
 	bool htt_tx_data;
 	bool htt_rx_data;
-	void (*lro_flush_cb)(void *);
-	void *lro_data;
+	qdf_lro_ctx_t lro_data;
 };
 
 /* Descriptor rings must be aligned to this boundary */
@@ -291,6 +285,84 @@ struct CE_dest_desc {
 };
 #endif /* QCA_WIFI_3_0 */
 
+struct ce_srng_src_desc {
+	uint32_t buffer_addr_lo;
+#if _BYTE_ORDER == _BIG_ENDIAN
+	uint32_t nbytes:16,
+		 rsvd:4,
+		 gather:1,
+		 dest_swap:1,
+		 byte_swap:1,
+		 toeplitz_hash_enable:1,
+		 buffer_addr_hi:8;
+	uint32_t rsvd1:16,
+		 meta_data:16;
+	uint32_t loop_count:4,
+		 ring_id:8,
+		 rsvd3:20;
+#else
+	uint32_t buffer_addr_hi:8,
+		 toeplitz_hash_enable:1,
+		 byte_swap:1,
+		 dest_swap:1,
+		 gather:1,
+		 rsvd:4,
+		 nbytes:16;
+	uint32_t meta_data:16,
+		 rsvd1:16;
+	uint32_t rsvd3:20,
+		 ring_id:8,
+		 loop_count:4;
+#endif
+};
+struct ce_srng_dest_desc {
+	uint32_t buffer_addr_lo;
+#if _BYTE_ORDER == _BIG_ENDIAN
+	uint32_t loop_count:4,
+		 ring_id:8,
+		 rsvd1:12,
+		 buffer_addr_hi:8;
+#else
+	uint32_t buffer_addr_hi:8,
+		 rsvd1:12,
+		 ring_id:8,
+		 loop_count:4;
+#endif
+};
+struct ce_srng_dest_status_desc {
+#if _BYTE_ORDER == _BIG_ENDIAN
+	uint32_t nbytes:16,
+		 rsvd:4,
+		 gather:1,
+		 dest_swap:1,
+		 byte_swap:1,
+		 toeplitz_hash_enable:1,
+		 rsvd0:8;
+	uint32_t rsvd1:16,
+		 meta_data:16;
+#else
+	uint32_t rsvd0:8,
+		 toeplitz_hash_enable:1,
+		 byte_swap:1,
+		 dest_swap:1,
+		 gather:1,
+		 rsvd:4,
+		 nbytes:16;
+	uint32_t meta_data:16,
+		 rsvd1:16;
+#endif
+	uint32_t toeplitz_hash;
+#if _BYTE_ORDER == _BIG_ENDIAN
+	uint32_t loop_count:4,
+		 ring_id:8,
+		 rsvd3:20;
+#else
+	uint32_t rsvd3:20,
+		 ring_id:8,
+		 loop_count:4;
+#endif
+};
+
 #define CE_SENDLIST_ITEMS_MAX 12
 
 /**
@@ -321,7 +393,7 @@ union ce_desc {
  * @FAST_TX_WRITE_INDEX_UPDATE: event recorded before updating the write index
  *	of the TX ring in fastpath
  * @FAST_TX_WRITE_INDEX_SOFTWARE_UPDATE: recored when dropping a write to
- *	the wirte index in fastpath
+ *	the write index in fastpath
  * @FAST_TX_SOFTWARE_INDEX_UPDATE: event recorded before updating the software
  *	index of the RX ring in fastpath
  * @HIF_IRQ_EVENT: event recorded in the irq before scheduling the bh
@@ -334,6 +406,9 @@ union ce_desc {
  * @NAPI_POLL_ENTER: records the start of the napi poll function
  * @NAPI_COMPLETE: records when interrupts are reenabled
  * @NAPI_POLL_EXIT: records when the napi poll function returns
+ * @HIF_RX_DESC_PRE_NBUF_ALLOC: record the packet before nbuf allocation
+ * @HIF_RX_DESC_PRE_NBUF_MAP: record the packet before nbuf map
+ * @HIF_RX_DESC_POST_NBUF_MAP: record the packet after nbuf map
  */
 enum hif_ce_event_type {
 	HIF_RX_DESC_POST,
@@ -363,13 +438,18 @@ enum hif_ce_event_type {
 	HIF_RX_NBUF_ALLOC_FAILURE = 0x20,
 	HIF_RX_NBUF_MAP_FAILURE,
 	HIF_RX_NBUF_ENQUEUE_FAILURE,
+
+	HIF_RX_DESC_PRE_NBUF_ALLOC,
+	HIF_RX_DESC_PRE_NBUF_MAP,
+	HIF_RX_DESC_POST_NBUF_MAP,
 };
 
-void ce_init_ce_desc_event_log(int ce_id, int size);
+void ce_init_ce_desc_event_log(struct hif_softc *scn, int ce_id, int size);
+void ce_deinit_ce_desc_event_log(struct hif_softc *scn, int ce_id);
 void hif_record_ce_desc_event(struct hif_softc *scn, int ce_id,
 			      enum hif_ce_event_type type,
 			      union ce_desc *descriptor, void *memory,
-			      int index);
+			      int index, int len);
 
 enum ce_sendlist_type_e {
 	CE_SIMPLE_BUFFER_TYPE,
@@ -395,7 +475,8 @@ struct ce_sendlist_s {
 			unsigned int ndesc;     /* Rx descriptor list */
 		} u;
 		/* flags: externally-specified flags;
-		 * OR-ed with internal flags */
+		 * OR-ed with internal flags
+		 */
 		uint32_t flags;
 		uint32_t user_flags;
 	} item[CE_SENDLIST_ITEMS_MAX];
@@ -420,10 +501,86 @@ static inline void ce_t2h_msg_ce_cleanup(struct CE_handle *ce_hdl)
 /* which ring of a CE? */
 #define CE_RING_SRC  0
 #define CE_RING_DEST 1
+#define CE_RING_STATUS 2
 
 #define CDC_WAR_MAGIC_STR   0xceef0000
 #define CDC_WAR_DATA_CE     4
 
 /* Additional internal-only ce_send flags */
 #define CE_SEND_FLAG_GATHER             0x00010000      /* Use Gather */
+
+/**
+ * hif_get_wake_ce_id() - gets the copy engine id used for waking up
+ * @scn: The hif context to use
+ * @ce_id: a pointer where the copy engine Id should be populated
+ *
+ * Return: errno
+ */
+int hif_get_wake_ce_id(struct hif_softc *scn, uint8_t *ce_id);
+
+/*
+ * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * for defined here
+ */
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+
+#ifndef HIF_CE_HISTORY_MAX
+#define HIF_CE_HISTORY_MAX 1024
+#endif
+
+#define CE_DEBUG_MAX_DATA_BUF_SIZE 64
+/**
+ * struct hif_ce_desc_event - structure for detailing a ce event
+ * @type: what the event was
+ * @time: when it happened
+ * @descriptor: descriptor enqueued or dequeued
+ * @memory: virtual address that was used
+ * @index: location of the descriptor in the ce ring;
+ * @data: data pointed by descriptor
+ * @actual_data_len: length of the data
+ */
+struct hif_ce_desc_event {
+	uint16_t index;
+	enum hif_ce_event_type type;
+	uint64_t time;
+	union ce_desc descriptor;
+	void *memory;
+#if HIF_CE_DEBUG_DATA_BUF
+	uint8_t *data;
+	ssize_t actual_data_len;
+#endif
+
+#ifdef HIF_CONFIG_SLUB_DEBUG_ON
+	qdf_dma_addr_t dma_to_phy;
+	qdf_dma_addr_t virt_to_phy;
+#endif
+};
+
+#if HIF_CE_DEBUG_DATA_BUF
+QDF_STATUS alloc_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id);
+void free_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id);
+#endif /*HIF_CE_DEBUG_DATA_BUF*/
+#endif /* #if defined(HIF_CONFIG_SLUB_DEBUG_ON) || HIF_CE_DEBUG_DATA_BUF */
+
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) && defined(HIF_RECORD_RX_PADDR)
+/**
+ * hif_ce_desc_record_rx_paddr() - record physical address for IOMMU
+ * IOVA addr and MMU virtual addr for Rx
+ * @scn: hif_softc
+ * @event: structure detailing a ce event
+ *
+ * record physical address for ce_event_type HIF_RX_DESC_POST and
+ * HIF_RX_DESC_COMPLETION
+ *
+ * Return: none
+ */
+void hif_ce_desc_record_rx_paddr(struct hif_softc *scn,
+				 struct hif_ce_desc_event *event);
+#else
+static inline
+void hif_ce_desc_record_rx_paddr(struct hif_softc *scn,
+				 struct hif_ce_desc_event *event)
+{
+}
+#endif
 #endif /* __COPY_ENGINE_INTERNAL_H__ */

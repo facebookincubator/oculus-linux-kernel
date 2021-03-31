@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -198,12 +198,12 @@ enum dsi_video_traffic_mode {
  * @h_sync_width:     HSYNC width in pixels.
  * @h_front_porch:    Horizontal fron porch in pixels.
  * @h_skew:
- * @h_sync_polarity:  Polarity of HSYNC (false is active low).
+ * @h_sync_polarity:  Polarity of HSYNC (false is active high).
  * @v_active:         Active height of one frame in lines.
  * @v_back_porch:     Vertical back porch in lines.
  * @v_sync_width:     VSYNC width in lines.
  * @v_front_porch:    Vertical front porch in lines.
- * @v_sync_polarity:  Polarity of VSYNC (false is active low).
+ * @v_sync_polarity:  Polarity of VSYNC (false is active high).
  * @refresh_rate:     Refresh rate in Hz.
  */
 struct dsi_mode_info {
@@ -259,6 +259,7 @@ struct dsi_lane_mapping {
  * @ignore_rx_eot:       Ignore Rx EOT packets if set to true.
  * @append_tx_eot:       Append EOT packets for forward transmissions if set to
  *                       true.
+ * @force_clk_lane_hs:   Force clock lane in high speed mode.
  */
 struct dsi_host_common_cfg {
 	enum dsi_pixel_format dst_format;
@@ -277,6 +278,7 @@ struct dsi_host_common_cfg {
 	u32 t_clk_pre;
 	bool ignore_rx_eot;
 	bool append_tx_eot;
+	bool force_clk_lane_hs;
 };
 
 /**

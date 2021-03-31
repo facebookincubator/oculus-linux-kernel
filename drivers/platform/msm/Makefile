@@ -15,5 +15,5 @@ obj-$(CONFIG_MSM_11AD) += msm_11ad/
 obj-$(CONFIG_SEEMP_CORE) += seemp_core/
 obj-$(CONFIG_USB_BAM) += usb_bam.o
 obj-$(CONFIG_MSM_MHI_DEV) += mhi_dev/
-obj-$(CONFIG_OCULUS) += oculus-system-info.o
-obj-$(CONFIG_VS1_BOARD) += vs1-board.o
+obj-$(CONFIG_MSM_EXT_DISPLAY) += msm_ext_display.o
+obj-$(CONFIG_SDIO_QCN) += qcn/

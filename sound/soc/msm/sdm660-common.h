@@ -17,6 +17,9 @@
 #include <sound/q6afe-v2.h>
 #include "../codecs/wcd-mbhc-v2.h"
 
+#define DEFAULT_MCLK_RATE 9600000
+#define NATIVE_MCLK_RATE 11289600
+
 #define SAMPLING_RATE_8KHZ      8000
 #define SAMPLING_RATE_11P025KHZ 11025
 #define SAMPLING_RATE_16KHZ     16000
@@ -96,7 +99,6 @@ struct msm_asoc_mach_data {
 	struct device_node *pdm_gpio_p; /* used by pinctrl API */
 	struct device_node *comp_gpio_p; /* used by pinctrl API */
 	struct device_node *dmic_gpio_p; /* used by pinctrl API */
-	struct device_node *tert_mi2s_gpio_p; /* used by pinctrl API */
 	struct device_node *ext_spk_gpio_p; /* used by pinctrl API */
 	struct snd_soc_codec *codec;
 	struct sdm660_codec sdm660_codec_fn;

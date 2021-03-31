@@ -2037,22 +2037,14 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *uport)
 	mutex_lock(&port->mutex);
 
 	tty_dev = device_find_child(uport->dev, &match, serial_match_port);
-
-    if (tty_dev != NULL)
-    {
-        if (device_may_wakeup(tty_dev)) {
-            if (!enable_irq_wake(uport->irq))
-                uport->irq_wake = 1;
-            put_device(tty_dev);
-            mutex_unlock(&port->mutex);
-            return 0;
-        }
-        put_device(tty_dev);
-
-    }
-    else
-        pr_err("%s (%d) can't find child tty device\n", __func__, __LINE__);
-
+	if (device_may_wakeup(tty_dev)) {
+		if (!enable_irq_wake(uport->irq))
+			uport->irq_wake = 1;
+		put_device(tty_dev);
+		mutex_unlock(&port->mutex);
+		return 0;
+	}
+	put_device(tty_dev);
 
 	/* Nothing to do if the console is not suspending */
 	if (!console_suspend_enabled && uart_console(uport))
@@ -2110,24 +2102,16 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *uport)
 	mutex_lock(&port->mutex);
 
 	tty_dev = device_find_child(uport->dev, &match, serial_match_port);
-
-    if (tty_dev != NULL)
-    {
-        if (!uport->suspended && device_may_wakeup(tty_dev)) {
-            if (uport->irq_wake) {
-                disable_irq_wake(uport->irq);
-                uport->irq_wake = 0;
-            }
-            put_device(tty_dev);
-            mutex_unlock(&port->mutex);
-            return 0;
-        }
-        put_device(tty_dev);
-    }
-    else
-        pr_err("%s (%d) : can't find cheild tty device\n", __func__, __LINE__);
-
-
+	if (!uport->suspended && device_may_wakeup(tty_dev)) {
+		if (uport->irq_wake) {
+			disable_irq_wake(uport->irq);
+			uport->irq_wake = 0;
+		}
+		put_device(tty_dev);
+		mutex_unlock(&port->mutex);
+		return 0;
+	}
+	put_device(tty_dev);
 	uport->suspended = 0;
 
 	/*

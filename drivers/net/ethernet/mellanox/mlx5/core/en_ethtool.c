@@ -385,6 +385,8 @@ static int mlx5e_set_channels(struct net_device *dev,
 		mlx5e_close_locked(dev);
 
 	priv->params.num_channels = count;
+	mlx5e_build_default_indir_rqt(priv->params.indirection_rqt,
+				      MLX5E_INDIR_RQT_SIZE, count);
 
 	if (was_opened)
 		err = mlx5e_open_locked(dev);
@@ -852,6 +854,9 @@ static int mlx5e_set_pauseparam(struct net_device *netdev,
 	struct mlx5e_priv *priv    = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	int err;
+
+	if (!MLX5_CAP_GEN(mdev, vport_group_manager))
+		return -EOPNOTSUPP;
 
 	if (pauseparam->autoneg)
 		return -EINVAL;

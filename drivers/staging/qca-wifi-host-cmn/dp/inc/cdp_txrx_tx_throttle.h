@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
- /**
+/**
  * @file cdp_txrx_tx_throttle.h
  * @brief Define the host data path transmit throttle API
  * functions called by the host control SW and the OS interface
@@ -32,24 +24,53 @@
  */
 #ifndef _CDP_TXRX_TX_THROTTLE_H_
 #define _CDP_TXRX_TX_THROTTLE_H_
-
-#if defined(QCA_SUPPORT_TX_THROTTLE)
-void ol_tx_throttle_init_period(struct ol_txrx_pdev_t *pdev, int period,
-				uint8_t *dutycycle_level);
-
-void ol_tx_throttle_set_level(struct ol_txrx_pdev_t *pdev, int level);
-#else
-static inline void ol_tx_throttle_set_level(struct ol_txrx_pdev_t *pdev,
-					    int level)
+#include <cdp_txrx_ops.h>
+#include "cdp_txrx_handle.h"
+/**
+ * cdp_throttle_init_period() - init tx throttle period
+ * @soc: data path soc handle
+ * @pdev: physical device instance
+ * @period: throttle period
+ * @dutycycle_level: duty cycle level
+ *
+ * Return: NONE
+ */
+static inline void
+cdp_throttle_init_period(ol_txrx_soc_handle soc, struct cdp_pdev *pdev,
+		int period, uint8_t *dutycycle_level)
 {
-	/* no-op */
+	if (!soc || !soc->ops || !soc->ops->throttle_ops) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
+			"%s invalid instance", __func__);
+		return;
+	}
+
+	if (soc->ops->throttle_ops->throttle_init_period)
+		return soc->ops->throttle_ops->throttle_init_period(pdev,
+				period, dutycycle_level);
+	return;
 }
 
-static inline void ol_tx_throttle_init_period(struct ol_txrx_pdev_t *pdev,
-					      int period,
-					      uint8_t *dutycycle_level)
+/**
+ * cdp_throttle_init_period() - init tx throttle period
+ * @soc: data path soc handle
+ * @pdev: physical device instance
+ * @level: throttle level
+ *
+ * Return: NONE
+ */
+static inline void
+cdp_throttle_set_level(ol_txrx_soc_handle soc, struct cdp_pdev *pdev, int level)
 {
-	/* no-op */
+	if (!soc || !soc->ops || !soc->ops->throttle_ops) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
+			"%s invalid instance", __func__);
+		return;
+	}
+
+	if (soc->ops->throttle_ops->throttle_set_level)
+		return soc->ops->throttle_ops->throttle_set_level(pdev, level);
+	return;
 }
-#endif
+
 #endif /* _CDP_TXRX_TX_THROTTLE_H_ */

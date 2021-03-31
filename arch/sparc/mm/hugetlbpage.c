@@ -115,7 +115,7 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 		addr = ALIGN(addr, HPAGE_SIZE);
 		vma = find_vma(mm, addr);
 		if (task_size - len >= addr &&
-		    (!vma || addr + len <= vma->vm_start))
+		    (!vma || addr + len <= vm_start_gap(vma)))
 			return addr;
 	}
 	if (mm->get_unmapped_area == arch_get_unmapped_area)
@@ -180,7 +180,7 @@ void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 	unsigned long nptes;
 
 	if (!pte_present(*ptep) && pte_present(entry))
-		mm->context.huge_pte_count++;
+		mm->context.hugetlb_pte_count++;
 
 	addr &= HPAGE_MASK;
 
@@ -212,7 +212,7 @@ pte_t huge_ptep_get_and_clear(struct mm_struct *mm, unsigned long addr,
 
 	entry = *ptep;
 	if (pte_present(entry))
-		mm->context.huge_pte_count--;
+		mm->context.hugetlb_pte_count--;
 
 	addr &= HPAGE_MASK;
 	nptes = 1 << HUGETLB_PAGE_ORDER;

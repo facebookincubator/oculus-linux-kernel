@@ -309,6 +309,9 @@ static int m88ds3103_set_frontend(struct dvb_frontend *fe)
 	u16 u16tmp, divide_ratio = 0;
 	u32 tuner_frequency, target_mclk;
 	s32 s32tmp;
+	static const struct reg_sequence reset_buf[] = {
+		{0x07, 0x80}, {0x07, 0x00}
+	};
 
 	dev_dbg(&client->dev,
 		"delivery_system=%d modulation=%d frequency=%u symbol_rate=%d inversion=%d pilot=%d rolloff=%d\n",
@@ -321,11 +324,7 @@ static int m88ds3103_set_frontend(struct dvb_frontend *fe)
 	}
 
 	/* reset */
-	ret = regmap_write(dev->regmap, 0x07, 0x80);
-	if (ret)
-		goto err;
-
-	ret = regmap_write(dev->regmap, 0x07, 0x00);
+	ret = regmap_multi_reg_write(dev->regmap, reset_buf, 2);
 	if (ret)
 		goto err;
 
@@ -1281,11 +1280,12 @@ static int m88ds3103_select(struct i2c_adapter *adap, void *mux_priv, u32 chan)
  * New users must use I2C client binding directly!
  */
 struct dvb_frontend *m88ds3103_attach(const struct m88ds3103_config *cfg,
-		struct i2c_adapter *i2c, struct i2c_adapter **tuner_i2c_adapter)
+				      struct i2c_adapter *i2c,
+				      struct i2c_adapter **tuner_i2c_adapter)
 {
 	struct i2c_client *client;
 	struct i2c_board_info board_info;
-	struct m88ds3103_platform_data pdata;
+	struct m88ds3103_platform_data pdata = {};
 
 	pdata.clk = cfg->clock;
 	pdata.i2c_wr_max = cfg->i2c_wr_max;
@@ -1428,6 +1428,8 @@ static int m88ds3103_probe(struct i2c_client *client,
 	case M88DS3103_CHIP_ID:
 		break;
 	default:
+		ret = -ENODEV;
+		dev_err(&client->dev, "Unknown device. Chip_id=%02x\n", dev->chip_id);
 		goto err_kfree;
 	}
 

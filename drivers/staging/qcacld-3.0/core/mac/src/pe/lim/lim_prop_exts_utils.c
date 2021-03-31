@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -54,6 +45,7 @@
 #include "lim_ft_defs.h"
 #include "lim_session.h"
 #include "wma.h"
+#include "wlan_utility.h"
 
 #define LIM_GET_NOISE_MAX_TRY 5
 
@@ -109,301 +101,122 @@ static inline void get_ese_version_ie_probe_response(tpAniSirGlobal mac_ctx,
 }
 #endif
 
-/**
- * lim_get_nss_supported_by_beacon() - finds out nss from beacom
- * @bcn: beacon structure pointer
- * @session: pointer to pe session
- *
- * Return: number of nss advertised by beacon
- */
-static uint8_t lim_get_nss_supported_by_beacon(tpSchBeaconStruct bcn,
-						tpPESession session)
+#ifdef WLAN_FEATURE_11AX
+static void lim_extract_he_op(tpPESession session,
+		tSirProbeRespBeacon *beacon_struct)
 {
-	if (session->vhtCapability && bcn->VHTCaps.present) {
-		if ((bcn->VHTCaps.rxMCSMap & 0xC0) != 0xC0)
-			return 4;
-
-		if ((bcn->VHTCaps.rxMCSMap & 0x30) != 0x30)
-			return 3;
-
-		if ((bcn->VHTCaps.rxMCSMap & 0x0C) != 0x0C)
-			return 2;
-	} else if (session->htCapability && bcn->HTCaps.present) {
-		if (bcn->HTCaps.supportedMCSSet[3])
-			return 4;
-
-		if (bcn->HTCaps.supportedMCSSet[2])
-			return 3;
-
-		if (bcn->HTCaps.supportedMCSSet[1])
-			return 2;
+	if (session->he_capable && beacon_struct->he_op.present) {
+		qdf_mem_copy(&session->he_op, &beacon_struct->he_op,
+				sizeof(session->he_op));
+		pe_debug("he_op.bss_color %d", session->he_op.bss_color);
+		pe_debug("he_op.default_pe %d", session->he_op.default_pe);
 	}
-
-	return 1;
 }
 
-/**
- * lim_check_for_vendor_oui_data() - compares for vendor OUI data from IE
- * and returns true if OUI data matches with the ini
- * @extension: pointer to action oui extention data
- * @oui_ptr: pointer to Vendor IE in the beacon
- *
- * Return: true or false
- */
-	static bool
-lim_check_for_vendor_oui_data(struct wmi_action_oui_extension *extension,
-		uint8_t *oui_ptr)
-{
-	uint8_t *data, elem_len, data_len;
-	uint8_t i, j;
-	uint8_t data_mask = 0x80;
-
-	elem_len = oui_ptr[1];
-	data_len = elem_len - extension->oui_length;
-
-	if (data_len != extension->data_length)
-		return false;
-
-	data = &oui_ptr[2 + extension->oui_length];
-	for (i = 0, j = 0;
-	     (i < data_len && j < extension->data_mask_length);
-	     i++) {
-		if ((extension->data_mask[j] & data_mask) &&
-		    !(extension->data[i] == data[i]))
-			return false;
-		data_mask = data_mask >> 1;
-		if (!data_mask) {
-			data_mask = 0x80;
-			j++;
-		}
-	}
-
-	return true;
-}
-
-/**
- * lim_check_for_vendor_ap_mac() - compares for vendor AP MAC in the ini with
- * bssid from the session and returns true if matches
- * @extension: pointer to action oui extention data
- * @bssid: bssid of the AP to which we are connecting
- *
- * Return: true or false
- */
-static bool
-lim_check_for_vendor_ap_mac(struct wmi_action_oui_extension *extension,
-		tSirMacAddr bssid)
-{
-	uint8_t i;
-	uint8_t mac_mask = 0x80;
-
-	for (i = 0; i < QDF_MAC_ADDR_SIZE; i++) {
-		if ((*extension->mac_mask & mac_mask) &&
-		    !(extension->mac_addr[i] == bssid[i]))
-			return false;
-		mac_mask = mac_mask >> 1;
-	}
-
-	return true;
-}
-
-/**
- * lim_check_for_vendor_ap_capabilities() - compares for various Vendor AP
- * capabilities like NSS, HT, VHT, Band from the ini with the AP's capability
- * from the beacon and returns true if all the capability matches
- * @extension: pointer to action oui extention data
- * @beacon_struct: pointer to the beacon structure
- * @session: PE session
- *
- * Return: true or false
- */
-static bool
-lim_check_for_vendor_ap_capabilities(struct wmi_action_oui_extension *extension,
-			   tSirProbeRespBeacon *beacon_struct,
-			   tpPESession session)
-{
-	uint8_t nss = lim_get_nss_supported_by_beacon(beacon_struct,
-			session);
-	uint8_t nss_mask = 1 << (nss - 1);
-
-	if (extension->info_mask & WMI_ACTION_OUI_INFO_AP_CAPABILITY_NSS) {
-		if (!((*extension->capability &
-		    WMI_ACTION_OUI_CAPABILITY_NSS_MASK) &
-					nss_mask))
-			return false;
-	}
-
-	if (extension->info_mask & WMI_ACTION_OUI_INFO_AP_CAPABILITY_HT) {
-		if (*extension->capability &
-		    WMI_ACTION_OUI_CAPABILITY_HT_ENABLE_MASK) {
-			if (!beacon_struct->HTCaps.present)
-				return false;
-		} else {
-			if (beacon_struct->HTCaps.present)
-				return false;
-		}
-	}
-
-	if (extension->info_mask & WMI_ACTION_OUI_INFO_AP_CAPABILITY_VHT) {
-		if (*extension->capability &
-		    WMI_ACTION_OUI_CAPABILITY_VHT_ENABLE_MASK) {
-			if (!beacon_struct->VHTCaps.present)
-				return false;
-		} else {
-			if (beacon_struct->VHTCaps.present)
-				return false;
-		}
-	}
-
-	if (extension->info_mask & WMI_ACTION_OUI_INFO_AP_CAPABILITY_BAND) {
-		if ((*extension->capability &
-		    WMI_ACTION_OUI_CAPABILITY_2G_BAND_MASK) &&
-		    !(IS_24G_CH(session->currentOperChannel)))
-			return false;
-		if ((*extension->capability &
-		    WMI_ACTION_CAPABILITY_5G_BAND_MASK) &&
-		    !(IS_5G_CH(session->currentOperChannel)))
-			return false;
-	}
-
-	return true;
-}
-
-bool
-lim_check_vendor_ap_present(tpAniSirGlobal mac_ctx,
-		tSirProbeRespBeacon *beacon_struct,
-		tpPESession session, uint8_t *ie, uint16_t ie_len,
-		enum wmi_action_oui_id action_id)
-{
-	struct ani_action_oui *sme_action;
-	struct ani_action_oui_extension *sme_ext;
-	struct wmi_action_oui_extension *extension;
-	qdf_list_node_t *node = NULL;
-	qdf_list_node_t *next_node = NULL;
-	qdf_list_t *oui_ext_list;
-	QDF_STATUS qdf_status;
-	uint8_t *oui_ptr;
-
-	if (action_id > WMI_ACTION_OUI_MAXIMUM_ID) {
-		pe_debug("Invalid OUI action ID");
-		return false;
-	}
-
-	if (!mac_ctx->oui_info) {
-		pe_debug("action oui support is disabled or oui info is empty");
-		return false;
-	}
-
-	sme_action = mac_ctx->oui_info->action_oui[action_id];
-	if (!sme_action) {
-		pe_debug("action oui for id %d is empty", action_id);
-		return false;
-	}
-
-	oui_ext_list = &sme_action->oui_ext_list;
-
-	qdf_mutex_acquire(&sme_action->oui_ext_list_lock);
-	if (qdf_list_empty(oui_ext_list)) {
-		qdf_mutex_release(&sme_action->oui_ext_list_lock);
-		pe_debug("OUI List Empty");
-		return false;
-	}
-
-	qdf_list_peek_front(oui_ext_list, &node);
-	while (node) {
-		sme_ext = qdf_container_of(node,
-				struct ani_action_oui_extension,
-				item);
-
-		extension = &sme_ext->extension;
-
-		if (!extension->oui_length)
-			goto next;
-
-		oui_ptr = cfg_get_vendor_ie_ptr_from_oui(mac_ctx,
-				extension->oui,
-				extension->oui_length,
-				ie, ie_len);
-		if (!oui_ptr)
-			goto next;
-
-		if (extension->data_length && extension->data &&
-		    !lim_check_for_vendor_oui_data(extension, oui_ptr))
-			goto next;
-
-		if ((extension->info_mask & WMI_ACTION_OUI_INFO_MAC_ADDRESS) &&
-		    !lim_check_for_vendor_ap_mac(extension, session->bssId))
-			goto next;
-
-		if (!lim_check_for_vendor_ap_capabilities(extension,
-					beacon_struct,
-					session))
-			goto next;
-
-		pe_debug("Vendor AP found for OUI");
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
-				extension->oui, extension->oui_length);
-		qdf_mutex_release(&sme_action->oui_ext_list_lock);
+static bool lim_check_he_80_mcs11_supp(tpPESession session,
+		tSirProbeRespBeacon *beacon_struct) {
+	uint8_t rx_mcs_map;
+	uint8_t tx_mcs_map;
+	rx_mcs_map = beacon_struct->he_cap.rx_he_mcs_map_lt_80;
+	tx_mcs_map = beacon_struct->he_cap.tx_he_mcs_map_lt_80;
+	if ((session->nss == NSS_1x1_MODE) &&
+		((HE_GET_MCS_4_NSS(rx_mcs_map, 1) == HE_MCS_0_11) ||
+		(HE_GET_MCS_4_NSS(tx_mcs_map, 1) == HE_MCS_0_11)))
 		return true;
-next:
-		qdf_status = qdf_list_peek_next(oui_ext_list,
-				node, &next_node);
-		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
-			break;
 
-		node = next_node;
-		next_node = NULL;
-	}
+	if ((session->nss == NSS_2x2_MODE) &&
+		((HE_GET_MCS_4_NSS(rx_mcs_map, 2) == HE_MCS_0_11) ||
+		(HE_GET_MCS_4_NSS(tx_mcs_map, 2) == HE_MCS_0_11)))
+		return true;
 
-	qdf_mutex_release(&sme_action->oui_ext_list_lock);
 	return false;
 }
 
-/**
- * lim_check_vendor_ap_3_present() - Check if Vendor AP 3 is present
- * @mac_ctx: Pointer to Global MAC structure
- * @p_ie: Pointer to starting IE in Beacon/Probe Response
- * @ie_len: Length of all IEs combined
- *
- * For Vendor AP 3, the condition is that Vendor AP 3 IE should be present
- * and Vendor AP 4 IE should not be present.
- * If Vendor AP 3 IE is present and Vendor AP 4 IE is also present,
- * return false, else return true.
- *
- * Return: true or false
- */
-static bool
-lim_check_vendor_ap_3_present(tpAniSirGlobal mac_ctx, uint8_t *ie,
-		uint16_t ie_len)
+static void lim_check_he_ldpc_cap(tpPESession session,
+		tSirProbeRespBeacon *beacon_struct)
 {
-	bool ret = true;
-
-	if ((cfg_get_vendor_ie_ptr_from_oui(mac_ctx, SIR_MAC_VENDOR_AP_3_OUI,
-	    SIR_MAC_VENDOR_AP_3_OUI_LEN, ie, ie_len)) &&
-	    (cfg_get_vendor_ie_ptr_from_oui(mac_ctx, SIR_MAC_VENDOR_AP_4_OUI,
-	    SIR_MAC_VENDOR_AP_4_OUI_LEN, ie, ie_len))) {
-		pe_debug("Vendor OUI 3 and Vendor OUI 4 found");
-		ret = false;
+	if (session->he_capable && beacon_struct->he_cap.present) {
+		if (beacon_struct->he_cap.ldpc_coding)
+			return;
+		else if ((session->ch_width == CH_WIDTH_20MHZ) &&
+				!lim_check_he_80_mcs11_supp(session,
+					beacon_struct))
+			return;
+		session->he_capable = false;
+		pe_err("LDPC check failed for HE operation");
+		if (session->vhtCapability) {
+			session->dot11mode = WNI_CFG_DOT11_MODE_11AC;
+			pe_debug("Update dot11mode to 11ac");
+		} else {
+			session->dot11mode = WNI_CFG_DOT11_MODE_11N;
+			pe_debug("Update dot11mode to 11N");
+		}
 	}
+}
+#else
+static inline void lim_extract_he_op(tpPESession session,
+		tSirProbeRespBeacon *beacon_struct)
+{}
+static void lim_check_he_ldpc_cap(tpPESession session,
+		tSirProbeRespBeacon *beacon_struct)
+{}
+#endif
 
-	return ret;
+static void lim_objmgr_update_vdev_nss(struct wlan_objmgr_psoc *psoc,
+				       uint8_t vdev_id, uint8_t nss)
+{
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_LEGACY_MAC_ID);
+	if (!vdev) {
+		pe_err("vdev not found for id: %d", vdev_id);
+		return;
+	}
+	wlan_vdev_obj_lock(vdev);
+	wlan_vdev_mlme_set_nss(vdev, nss);
+	wlan_vdev_obj_unlock(vdev);
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
 }
 
+#ifdef WLAN_ADAPTIVE_11R
 /**
- * lim_extract_ap_capability() - extract AP's HCF/WME/WSM capability
- * @mac_ctx: Pointer to Global MAC structure
- * @p_ie: Pointer to starting IE in Beacon/Probe Response
- * @ie_len: Length of all IEs combined
- * @qos_cap: Bits are set according to capabilities
- * @prop_cap: Pointer to prop info IE.
- * @uapsd: pointer to uapsd
- * @local_constraint: Pointer to local power constraint.
- * @session: A pointer to session entry.
+ * lim_extract_adaptive_11r_cap() - check if the AP has adaptive 11r
+ * IE
+ * @ie: Pointer to the IE
+ * @ie_len: ie Length
  *
- * This function is called to extract AP's HCF/WME/WSM capability
- * from the IEs received from it in Beacon/Probe Response frames
- *
- * Return: None
+ * Return: True if adaptive 11r IE is present
  */
+static bool lim_extract_adaptive_11r_cap(uint8_t *ie, uint16_t ie_len)
+{
+	const uint8_t *adaptive_ie;
+	uint8_t data;
+	bool adaptive_11r;
+
+	adaptive_ie = wlan_get_vendor_ie_ptr_from_oui(LIM_ADAPTIVE_11R_OUI,
+						      LIM_ADAPTIVE_11R_OUI_SIZE,
+						      ie, ie_len);
+	if (!adaptive_ie)
+		return false;
+
+	if (adaptive_ie[1] < (OUI_LENGTH + 1) ||
+	    adaptive_ie[1] > MAX_ADAPTIVE_11R_IE_LEN)
+		return false;
+
+	data = *(adaptive_ie + OUI_LENGTH + 2);
+	adaptive_11r = (data & 0x1) ? true : false;
+
+	return adaptive_11r;
+}
+
+#else
+static inline bool lim_extract_adaptive_11r_cap(uint8_t *ie, uint16_t ie_len)
+{
+	return false;
+}
+#endif
+
 void
 lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 	uint16_t ie_len, uint8_t *qos_cap, uint16_t *prop_cap, uint8_t *uapsd,
@@ -411,10 +224,9 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 {
 	tSirProbeRespBeacon *beacon_struct;
 	uint32_t enable_txbf_20mhz;
-	tSirRetStatus cfg_get_status = eSIR_FAILURE;
+	QDF_STATUS cfg_get_status = QDF_STATUS_E_FAILURE;
 	uint8_t ap_bcon_ch_width;
 	bool new_ch_width_dfn = false;
-	bool is_vendor_ap_present;
 	tDot11fIEVHTOperation *vht_op;
 	uint8_t fw_vht_ch_wd;
 	uint8_t vht_ch_wd;
@@ -423,53 +235,22 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 
 	beacon_struct = qdf_mem_malloc(sizeof(tSirProbeRespBeacon));
 	if (NULL == beacon_struct) {
-		lim_log(mac_ctx, LOGE, FL("Unable to allocate memory"));
+		pe_err("Unable to allocate memory");
 		return;
 	}
 
 	*qos_cap = 0;
 	*prop_cap = 0;
 	*uapsd = 0;
-	lim_log(mac_ctx, LOG3,
-		FL("In lim_extract_ap_capability: The IE's being received:"));
-	sir_dump_buf(mac_ctx, SIR_LIM_MODULE_ID, LOG3, p_ie, ie_len);
+	pe_debug("In lim_extract_ap_capability: The IE's being received:");
+	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
+			   p_ie, ie_len);
 	if (sir_parse_beacon_ie(mac_ctx, beacon_struct, p_ie,
-		(uint32_t) ie_len) != eSIR_SUCCESS) {
-		lim_log(mac_ctx, LOGE, FL(
-			"sir_parse_beacon_ie failed to parse beacon"));
+		(uint32_t) ie_len) != QDF_STATUS_SUCCESS) {
+		pe_err("sir_parse_beacon_ie failed to parse beacon");
 		qdf_mem_free(beacon_struct);
 		return;
 	}
-
-	is_vendor_ap_present = lim_check_vendor_ap_present(mac_ctx,
-			beacon_struct, session,
-			p_ie, ie_len,
-			WMI_ACTION_OUI_CONNECT_1X1);
-
-	if (is_vendor_ap_present) {
-		is_vendor_ap_present = lim_check_vendor_ap_3_present(mac_ctx,
-				p_ie, ie_len);
-	}
-
-	if (mac_ctx->roam.configParam.is_force_1x1 &&
-		is_vendor_ap_present &&
-		mac_ctx->lteCoexAntShare) {
-		session->supported_nss_1x1 = true;
-		session->vdev_nss = 1;
-		session->nss = 1;
-		lim_log(mac_ctx, LOGE, FL("For special ap, NSS: %d"),
-			session->nss);
-	}
-
-	if (session->nss > lim_get_nss_supported_by_beacon(beacon_struct,
-	    session)) {
-		session->nss = lim_get_nss_supported_by_beacon(beacon_struct,
-							       session);
-		session->vdev_nss = session->nss;
-	}
-
-	if (session->nss == 1)
-		session->supported_nss_1x1 = true;
 
 	if (beacon_struct->wmeInfoPresent ||
 	    beacon_struct->wmeEdcaPresent ||
@@ -484,12 +265,6 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 		mac_ctx->lim.htCapabilityPresentInBeacon = 1;
 	else
 		mac_ctx->lim.htCapabilityPresentInBeacon = 0;
-
-	lim_log(mac_ctx, LOG1, FL(
-		"Bcon: VHTCap.present %d SU Beamformer %d BSS_VHT_CAPABLE %d"),
-		beacon_struct->VHTCaps.present,
-		beacon_struct->VHTCaps.suBeamFormerCap,
-		IS_BSS_VHT_CAPABLE(beacon_struct->VHTCaps));
 
 	vht_op = &beacon_struct->VHTOperation;
 	if (IS_BSS_VHT_CAPABLE(beacon_struct->VHTCaps) &&
@@ -513,7 +288,7 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 		cfg_get_status = wlan_cfg_get_int(mac_ctx,
 				WNI_CFG_VHT_ENABLE_TXBF_20MHZ,
 				&enable_txbf_20mhz);
-		if ((IS_SIR_STATUS_SUCCESS(cfg_get_status)) &&
+		if ((QDF_IS_STATUS_SUCCESS(cfg_get_status)) &&
 				(false == enable_txbf_20mhz))
 			session->vht_config.su_beam_formee = 0;
 	} else if (session->vhtCapabilityPresentInBeacon &&
@@ -536,6 +311,9 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 			else if (center_freq_diff > 16)
 				ap_bcon_ch_width =
 					WNI_CFG_VHT_CHANNEL_WIDTH_80_PLUS_80MHZ;
+			else
+				ap_bcon_ch_width =
+					WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ;
 		}
 
 		fw_vht_ch_wd = wma_get_vht_ch_width();
@@ -588,25 +366,17 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 				 */
 				vht_ch_wd = WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ;
 				session->ch_center_freq_seg1 = 0;
-			}
-		} else if (vht_ch_wd == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) {
-			/* DUT or AP supports only 80MHz */
-			if (ap_bcon_ch_width ==
-					WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ &&
-					!new_ch_width_dfn)
-				/* AP is in 160MHz mode */
 				session->ch_center_freq_seg0 =
 					lim_get_80Mhz_center_channel(
 						beacon_struct->channelNumber);
-			else
-				session->ch_center_freq_seg1 = 0;
+			}
+		} else if (vht_ch_wd == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) {
+			session->ch_center_freq_seg0 =
+					lim_get_80Mhz_center_channel(
+						beacon_struct->channelNumber);
+			session->ch_center_freq_seg1 = 0;
 		}
 		session->ch_width = vht_ch_wd + 1;
-		lim_log(mac_ctx, LOG1, FL(
-				"cntr_freq0 %d, cntr_freq1 %d, width %d"),
-				session->ch_center_freq_seg0,
-				session->ch_center_freq_seg1,
-				session->ch_width);
 		if (CH_WIDTH_80MHZ < session->ch_width) {
 			session->vht_config.su_beam_former = 0;
 			session->nss = 1;
@@ -626,11 +396,13 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 			else
 				session->gLimOperatingMode.chanWidth =
 					CH_WIDTH_160MHZ;
+			session->gLimOperatingMode.rxNSS = session->nss - 1;
 		} else {
-			lim_log(mac_ctx, LOGE, FL(
-					"AP does not support op_mode rx"));
+			pe_err("AP does not support op_mode rx");
 		}
 	}
+	lim_check_he_ldpc_cap(session, beacon_struct);
+	lim_extract_he_op(session, beacon_struct);
 	/* Extract the UAPSD flag from WMM Parameter element */
 	if (beacon_struct->wmeEdcaPresent)
 		*uapsd = beacon_struct->edcaParams.qosInfo.uapsd;
@@ -657,8 +429,7 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 		session->is_ext_caps_present = true;
 	/* Update HS 2.0 Information Element */
 	if (beacon_struct->hs20vendor_ie.present) {
-		lim_log(mac_ctx, LOG1,
-			FL("HS20 Indication Element Present, rel#:%u, id:%u\n"),
+		pe_debug("HS20 Indication Element Present, rel#: %u id: %u",
 			beacon_struct->hs20vendor_ie.release_num,
 			beacon_struct->hs20vendor_ie.hs_id_present);
 		qdf_mem_copy(&session->hs20vendor_ie,
@@ -670,6 +441,12 @@ lim_extract_ap_capability(tpAniSirGlobal mac_ctx, uint8_t *p_ie,
 				&beacon_struct->hs20vendor_ie.hs_id,
 				sizeof(beacon_struct->hs20vendor_ie.hs_id));
 	}
+
+	lim_objmgr_update_vdev_nss(mac_ctx->psoc, session->smeSessionId,
+				   session->nss);
+
+	session->is_adaptive_11r_connection =
+			lim_extract_adaptive_11r_cap(p_ie, ie_len);
 	qdf_mem_free(beacon_struct);
 	return;
 } /****** end lim_extract_ap_capability() ******/

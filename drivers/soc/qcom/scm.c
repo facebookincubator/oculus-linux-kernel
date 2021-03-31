@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -185,9 +185,8 @@ static int scm_remap_error(int err)
 	case SCM_ENOMEM:
 		return -ENOMEM;
 	case SCM_EBUSY:
-		return SCM_EBUSY;
 	case SCM_V2_EBUSY:
-		return SCM_V2_EBUSY;
+		return -EBUSY;
 	}
 	return -EINVAL;
 }
@@ -338,13 +337,13 @@ static int _scm_call_retry(u32 svc_id, u32 cmd_id, const void *cmd_buf,
 	do {
 		ret = scm_call_common(svc_id, cmd_id, cmd_buf, cmd_len,
 					resp_buf, resp_len, cmd, len);
-		if (ret == SCM_EBUSY)
+		if (ret == -EBUSY)
 			msleep(SCM_EBUSY_WAIT_MS);
 		if (retry_count == 33)
 			pr_warn("scm: secure world has been busy for 1 second!\n");
-	} while (ret == SCM_EBUSY && (retry_count++ < SCM_EBUSY_MAX_RETRY));
+	} while (ret == -EBUSY && (retry_count++ < SCM_EBUSY_MAX_RETRY));
 
-	if (ret == SCM_EBUSY)
+	if (ret == -EBUSY)
 		pr_err("scm: secure world busy (rc = SCM_EBUSY)\n");
 
 	return ret;
@@ -397,18 +396,22 @@ static int __scm_call_armv8_64(u64 x0, u64 x1, u64 x2, u64 x3, u64 x4, u64 x5,
 			__asmeq("%1", R1_STR)
 			__asmeq("%2", R2_STR)
 			__asmeq("%3", R3_STR)
-			__asmeq("%4", R0_STR)
-			__asmeq("%5", R1_STR)
-			__asmeq("%6", R2_STR)
-			__asmeq("%7", R3_STR)
-			__asmeq("%8", R4_STR)
-			__asmeq("%9", R5_STR)
-			__asmeq("%10", R6_STR)
+			__asmeq("%4", R4_STR)
+			__asmeq("%5", R5_STR)
+			__asmeq("%6", R6_STR)
+			__asmeq("%7", R0_STR)
+			__asmeq("%8", R1_STR)
+			__asmeq("%9", R2_STR)
+			__asmeq("%10", R3_STR)
+			__asmeq("%11", R4_STR)
+			__asmeq("%12", R5_STR)
+			__asmeq("%13", R6_STR)
 #ifdef REQUIRES_SEC
 			".arch_extension sec\n"
 #endif
 			"smc	#0\n"
-			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3)
+			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3),
+			  "=r" (r4), "=r" (r5), "=r" (r6)
 			: "r" (r0), "r" (r1), "r" (r2), "r" (r3), "r" (r4),
 			  "r" (r5), "r" (r6)
 			: "x7", "x8", "x9", "x10", "x11", "x12", "x13",
@@ -442,18 +445,22 @@ static int __scm_call_armv8_32(u32 w0, u32 w1, u32 w2, u32 w3, u32 w4, u32 w5,
 			__asmeq("%1", R1_STR)
 			__asmeq("%2", R2_STR)
 			__asmeq("%3", R3_STR)
-			__asmeq("%4", R0_STR)
-			__asmeq("%5", R1_STR)
-			__asmeq("%6", R2_STR)
-			__asmeq("%7", R3_STR)
-			__asmeq("%8", R4_STR)
-			__asmeq("%9", R5_STR)
-			__asmeq("%10", R6_STR)
+			__asmeq("%4", R4_STR)
+			__asmeq("%5", R5_STR)
+			__asmeq("%6", R6_STR)
+			__asmeq("%7", R0_STR)
+			__asmeq("%8", R1_STR)
+			__asmeq("%9", R2_STR)
+			__asmeq("%10", R3_STR)
+			__asmeq("%11", R4_STR)
+			__asmeq("%12", R5_STR)
+			__asmeq("%13", R6_STR)
 #ifdef REQUIRES_SEC
 			".arch_extension sec\n"
 #endif
 			"smc	#0\n"
-			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3)
+			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3),
+			  "=r" (r4), "=r" (r5), "=r" (r6)
 			: "r" (r0), "r" (r1), "r" (r2), "r" (r3), "r" (r4),
 			  "r" (r5), "r" (r6)
 			: "x7", "x8", "x9", "x10", "x11", "x12", "x13",
@@ -490,18 +497,22 @@ static int __scm_call_armv8_32(u32 w0, u32 w1, u32 w2, u32 w3, u32 w4, u32 w5,
 			__asmeq("%1", R1_STR)
 			__asmeq("%2", R2_STR)
 			__asmeq("%3", R3_STR)
-			__asmeq("%4", R0_STR)
-			__asmeq("%5", R1_STR)
-			__asmeq("%6", R2_STR)
-			__asmeq("%7", R3_STR)
-			__asmeq("%8", R4_STR)
-			__asmeq("%9", R5_STR)
-			__asmeq("%10", R6_STR)
+			__asmeq("%4", R4_STR)
+			__asmeq("%5", R5_STR)
+			__asmeq("%6", R6_STR)
+			__asmeq("%7", R0_STR)
+			__asmeq("%8", R1_STR)
+			__asmeq("%9", R2_STR)
+			__asmeq("%10", R3_STR)
+			__asmeq("%11", R4_STR)
+			__asmeq("%12", R5_STR)
+			__asmeq("%13", R6_STR)
 #ifdef REQUIRES_SEC
 			".arch_extension sec\n"
 #endif
 			"smc	#0\n"
-			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3)
+			: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3),
+			  "=r" (r4), "=r" (r5), "=r" (r6)
 			: "r" (r0), "r" (r1), "r" (r2), "r" (r3), "r" (r4),
 			 "r" (r5), "r" (r6));
 
@@ -624,28 +635,7 @@ static int allocate_extra_arg_buffer(struct scm_desc *desc, gfp_t flags)
 	return 0;
 }
 
-/**
- * scm_call2() - Invoke a syscall in the secure world
- * @fn_id: The function ID for this syscall
- * @desc: Descriptor structure containing arguments and return values
- *
- * Sends a command to the SCM and waits for the command to finish processing.
- * This should *only* be called in pre-emptible context.
- *
- * A note on cache maintenance:
- * Note that any buffers that are expected to be accessed by the secure world
- * must be flushed before invoking scm_call and invalidated in the cache
- * immediately after scm_call returns. An important point that must be noted
- * is that on ARMV8 architectures, invalidation actually also causes a dirty
- * cache line to be cleaned (flushed + unset-dirty-bit). Therefore it is of
- * paramount importance that the buffer be flushed before invoking scm_call2,
- * even if you don't care about the contents of that buffer.
- *
- * Note that cache maintenance on the argument buffer (desc->args) is taken care
- * of by scm_call2; however, callers are responsible for any other cached
- * buffers passed over to the secure world.
-*/
-int scm_call2(u32 fn_id, struct scm_desc *desc)
+static int __scm_call2(u32 fn_id, struct scm_desc *desc, bool retry)
 {
 	int arglen = desc->arginfo & 0xf;
 	int ret, retry_count = 0;
@@ -654,12 +644,11 @@ int scm_call2(u32 fn_id, struct scm_desc *desc)
 	if (unlikely(!is_scm_armv8()))
 		return -ENODEV;
 
-	ret = allocate_extra_arg_buffer(desc, GFP_KERNEL);
+	ret = allocate_extra_arg_buffer(desc, GFP_NOIO);
 	if (ret)
 		return ret;
 
 	x0 = fn_id | scm_version_mask;
-
 	do {
 		mutex_lock(&scm_lock);
 
@@ -689,13 +678,15 @@ int scm_call2(u32 fn_id, struct scm_desc *desc)
 			mutex_unlock(&scm_lmh_lock);
 
 		mutex_unlock(&scm_lock);
+		if (!retry)
+			goto out;
 
 		if (ret == SCM_V2_EBUSY)
 			msleep(SCM_EBUSY_WAIT_MS);
 		if (retry_count == 33)
 			pr_warn("scm: secure world has been busy for 1 second!\n");
-	}  while (ret == SCM_V2_EBUSY && (retry_count++ < SCM_EBUSY_MAX_RETRY));
-
+	} while (ret == SCM_V2_EBUSY && (retry_count++ < SCM_EBUSY_MAX_RETRY));
+out:
 	if (ret < 0)
 		pr_err("scm_call failed: func id %#llx, ret: %d, syscall returns: %#llx, %#llx, %#llx\n",
 			x0, ret, desc->ret[0], desc->ret[1], desc->ret[2]);
@@ -706,7 +697,45 @@ int scm_call2(u32 fn_id, struct scm_desc *desc)
 		return scm_remap_error(ret);
 	return 0;
 }
+
+/**
+ * scm_call2() - Invoke a syscall in the secure world
+ * @fn_id: The function ID for this syscall
+ * @desc: Descriptor structure containing arguments and return values
+ *
+ * Sends a command to the SCM and waits for the command to finish processing.
+ * This should *only* be called in pre-emptible context.
+ *
+ * A note on cache maintenance:
+ * Note that any buffers that are expected to be accessed by the secure world
+ * must be flushed before invoking scm_call and invalidated in the cache
+ * immediately after scm_call returns. An important point that must be noted
+ * is that on ARMV8 architectures, invalidation actually also causes a dirty
+ * cache line to be cleaned (flushed + unset-dirty-bit). Therefore it is of
+ * paramount importance that the buffer be flushed before invoking scm_call2,
+ * even if you don't care about the contents of that buffer.
+ *
+ * Note that cache maintenance on the argument buffer (desc->args) is taken care
+ * of by scm_call2; however, callers are responsible for any other cached
+ * buffers passed over to the secure world.
+ */
+int scm_call2(u32 fn_id, struct scm_desc *desc)
+{
+	return __scm_call2(fn_id, desc, true);
+}
 EXPORT_SYMBOL(scm_call2);
+
+/**
+ * scm_call2_noretry() - Invoke a syscall in the secure world
+ *
+ * Similar to scm_call2 except that there is no retry mechanism
+ * implemented.
+ */
+int scm_call2_noretry(u32 fn_id, struct scm_desc *desc)
+{
+	return __scm_call2(fn_id, desc, false);
+}
+EXPORT_SYMBOL(scm_call2_noretry);
 
 /**
  * scm_call2_atomic() - Invoke a syscall in the secure world
@@ -731,10 +760,6 @@ int scm_call2_atomic(u32 fn_id, struct scm_desc *desc)
 
 	x0 = fn_id | BIT(SMC_ATOMIC_SYSCALL) | scm_version_mask;
 
-	pr_debug("scm_call: func id %#llx, args: %#x, %#llx, %#llx, %#llx, %#llx\n",
-		x0, desc->arginfo, desc->args[0], desc->args[1],
-		desc->args[2], desc->x5);
-
 	if (scm_version == SCM_ARMV8_64)
 		ret = __scm_call_armv8_64(x0, desc->arginfo, desc->args[0],
 					  desc->args[1], desc->args[2],
@@ -746,9 +771,8 @@ int scm_call2_atomic(u32 fn_id, struct scm_desc *desc)
 					  desc->x5, &desc->ret[0],
 					  &desc->ret[1], &desc->ret[2]);
 	if (ret < 0)
-		pr_err("scm_call failed: func id %#llx, arginfo: %#x, args: %#llx, %#llx, %#llx, %#llx, ret: %d, syscall returns: %#llx, %#llx, %#llx\n",
-			x0, desc->arginfo, desc->args[0], desc->args[1],
-			desc->args[2], desc->x5, ret, desc->ret[0],
+		pr_err("scm_call failed: func id %#llx, ret: %d, syscall returns: %#llx, %#llx, %#llx\n",
+			x0, ret, desc->ret[0],
 			desc->ret[1], desc->ret[2]);
 
 	if (arglen > N_REGISTER_ARGS)
@@ -792,7 +816,7 @@ int scm_call(u32 svc_id, u32 cmd_id, const void *cmd_buf, size_t cmd_len,
 
 	ret = scm_call_common(svc_id, cmd_id, cmd_buf, cmd_len, resp_buf,
 				resp_len, cmd, len);
-	if (unlikely(ret == SCM_EBUSY))
+	if (unlikely(ret == -EBUSY))
 		ret = _scm_call_retry(svc_id, cmd_id, cmd_buf, cmd_len,
 				      resp_buf, resp_len, cmd, PAGE_ALIGN(len));
 	kfree(cmd);
@@ -1122,54 +1146,55 @@ int scm_is_call_available(u32 svc_id, u32 cmd_id)
 
 		ret = scm_call(SCM_SVC_INFO, IS_CALL_AVAIL_CMD, &svc_cmd,
 			sizeof(svc_cmd), &ret_val, sizeof(ret_val));
-		if (ret)
-			return ret;
+		if (!ret && ret_val)
+			return 1;
+		else
+			return 0;
 
-		return ret_val;
 	}
 	desc.arginfo = SCM_ARGS(1);
 	desc.args[0] = SCM_SIP_FNID(svc_id, cmd_id);
+	desc.ret[0] = 0;
 	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_INFO, IS_CALL_AVAIL_CMD), &desc);
-	if (ret)
-		return ret;
+	if (!ret && desc.ret[0])
+		return 1;
+	else
+		return 0;
 
-	return desc.ret[0];
 }
 EXPORT_SYMBOL(scm_is_call_available);
 
 #define GET_FEAT_VERSION_CMD	3
-int scm_get_feat_version(u32 feat)
+int scm_get_feat_version(u32 feat, u64 *scm_ret)
 {
 	struct scm_desc desc = {0};
 	int ret;
 
 	if (!is_scm_armv8()) {
 		if (scm_is_call_available(SCM_SVC_INFO, GET_FEAT_VERSION_CMD)) {
-			u32 version;
-			if (!scm_call(SCM_SVC_INFO, GET_FEAT_VERSION_CMD, &feat,
-				      sizeof(feat), &version, sizeof(version)))
-				return version;
+			ret = scm_call(SCM_SVC_INFO, GET_FEAT_VERSION_CMD,
+				&feat, sizeof(feat), scm_ret, sizeof(*scm_ret));
+			return ret;
 		}
-		return 0;
 	}
 
 	ret = scm_is_call_available(SCM_SVC_INFO, GET_FEAT_VERSION_CMD);
 	if (ret <= 0)
-		return 0;
+		return -EAGAIN;
 
 	desc.args[0] = feat;
 	desc.arginfo = SCM_ARGS(1);
 	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_INFO, GET_FEAT_VERSION_CMD),
 			&desc);
-	if (!ret)
-		return desc.ret[0];
 
-	return 0;
+	*scm_ret = desc.ret[0];
+
+	return ret;
 }
 EXPORT_SYMBOL(scm_get_feat_version);
 
 #define RESTORE_SEC_CFG    2
-int scm_restore_sec_cfg(u32 device_id, u32 spare, int *scm_ret)
+int scm_restore_sec_cfg(u32 device_id, u32 spare, u64 *scm_ret)
 {
 	struct scm_desc desc = {0};
 	int ret;

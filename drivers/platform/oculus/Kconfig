@@ -1,0 +1,17 @@
+menu "Oculus platform device drivers"
+
+config OCULUS
+	bool "Support for Oculus hardware"
+	default y
+	help
+	  Enable support for Oculus systems and boards.
+
+config VS1_BOARD
+	bool "VS1 (Monterey) Platform"
+	depends on OCULUS
+	depends on ARCH_MSM8998
+	help
+	  Enabling this option adds support for the Oculus Monterey platform
+	  and enables the required drivers.
+
+endmenu

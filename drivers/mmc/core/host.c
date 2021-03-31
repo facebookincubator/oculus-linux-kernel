@@ -52,9 +52,28 @@ static void mmc_host_classdev_release(struct device *dev)
 	kfree(host);
 }
 
+static int mmc_host_prepare(struct device *dev)
+{
+	/*
+	 * Since mmc_host is a virtual device, we don't have to do anything.
+	 * If we return a positive value, the pm framework will consider that
+	 * the runtime suspend and system suspend of this device is same and
+	 * will set direct_complete flag as true. We don't want this as the
+	 * mmc_host always has positive disable_depth and setting the flag
+	 * will not speed up the suspend process.
+	 * So return 0.
+	 */
+	return 0;
+}
+
+static const struct dev_pm_ops mmc_pm_ops = {
+	.prepare = mmc_host_prepare,
+};
+
 static struct class mmc_host_class = {
 	.name		= "mmc_host",
 	.dev_release	= mmc_host_classdev_release,
+	.pm		= &mmc_pm_ops,
 };
 
 int mmc_register_host_class(void)
@@ -369,7 +388,8 @@ int mmc_retune(struct mmc_host *host)
 	else
 		return 0;
 
-	if (!host->need_retune || host->doing_retune || !host->card)
+	if (!host->need_retune || host->doing_retune || !host->card ||
+			mmc_card_hs400es(host->card))
 		return 0;
 
 	host->need_retune = 0;
@@ -615,6 +635,8 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	host->pm_notify.notifier_call = mmc_pm_notify;
 #endif
 	setup_timer(&host->retune_timer, mmc_retune_timer, (unsigned long)host);
+
+	mutex_init(&host->rpmb_req_mutex);
 
 	/*
 	 * By default, hosts do not support SGIO or large requests.
@@ -885,7 +907,9 @@ int mmc_add_host(struct mmc_host *host)
 		pr_err("%s: failed to create sysfs group with err %d\n",
 							 __func__, err);
 
+#ifdef CONFIG_BLOCK
 	mmc_latency_hist_sysfs_init(host);
+#endif
 
 	mmc_start_host(host);
 	if (!(host->pm_flags & MMC_PM_IGNORE_PM_NOTIFY))
@@ -917,7 +941,9 @@ void mmc_remove_host(struct mmc_host *host)
 	sysfs_remove_group(&host->parent->kobj, &dev_attr_grp);
 	sysfs_remove_group(&host->class_dev.kobj, &clk_scaling_attr_grp);
 
+#ifdef CONFIG_BLOCK
 	mmc_latency_hist_sysfs_exit(host);
+#endif
 
 	device_del(&host->class_dev);
 

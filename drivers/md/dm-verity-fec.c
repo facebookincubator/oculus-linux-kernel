@@ -11,7 +11,6 @@
 
 #include "dm-verity-fec.h"
 #include <linux/math64.h>
-#include <linux/mount.h>
 #include <linux/sysfs.h>
 
 #define DM_MSG_PREFIX	"verity-fec"
@@ -620,8 +619,6 @@ int verity_fec_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v,
 	unsigned long long num_ll;
 	unsigned char num_c;
 	char dummy;
-	char devname[DM_VERITY_DEVNAME_SIZE];
-	dev_t dev;
 
 	if (!*argc) {
 		ti->error = "FEC feature arguments require a value";
@@ -630,20 +627,14 @@ int verity_fec_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v,
 
 	arg_value = dm_shift_arg(as);
 	(*argc)--;
+
 	if (!strcasecmp(arg_name, DM_VERITY_OPT_FEC_DEV)) {
-		/*
-		 * Lookup by device name (i.e., /dev/sdeXX) does not work
-		 * during android verity initialization so we convert to
-		 * major:minor instead
-		 */
-		dev = name_to_dev_t((char *)arg_value);
-		snprintf(devname, DM_VERITY_DEVNAME_SIZE, "%u:%u",
-				MAJOR(dev), MINOR(dev));
-		r = dm_get_device(ti, devname, FMODE_READ, &v->fec->dev);
+		r = dm_get_device(ti, arg_value, FMODE_READ, &v->fec->dev);
 		if (r) {
 			ti->error = "FEC device lookup failed";
 			return r;
 		}
+
 	} else if (!strcasecmp(arg_name, DM_VERITY_OPT_FEC_BLOCKS)) {
 		if (sscanf(arg_value, "%llu%c", &num_ll, &dummy) != 1 ||
 		    ((sector_t)(num_ll << (v->data_dev_block_bits - SECTOR_SHIFT))

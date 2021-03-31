@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017, 2020 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,6 +17,7 @@
 #include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/input.h>
+#include <linux/circ_buf.h>
 
 #include "mdss_hdmi_cec.h"
 #include "mdss_panel.h"
@@ -33,12 +34,19 @@
 #define CEC_OP_KEY_PRESS        0x44
 #define CEC_OP_STANDBY          0x36
 
+#define CEC_RECV_Q_SIZE		4
+#define CEC_RECV_Q_MASK		3
+
 struct hdmi_cec_ctrl {
 	bool cec_enabled;
 	bool cec_wakeup_en;
 	bool cec_device_suspend;
-
+	bool cec_clear_logical_addr;
+	u32 cec_logical_addr;
 	u32 cec_msg_wr_status;
+	struct cec_msg recv_msg[CEC_RECV_Q_SIZE];
+	u32 head;
+	u32 tail;
 	spinlock_t lock;
 	struct work_struct cec_read_work;
 	struct completion cec_msg_wr_done;
@@ -60,6 +68,20 @@ static int hdmi_cec_msg_send(void *data, struct cec_msg *msg)
 		return -EINVAL;
 	}
 
+	if (msg->sender_id != cec_ctrl->cec_logical_addr &&
+		msg->recvr_id == 0xF) {
+		/*
+		 * If the current logical address is not the
+		 * same as the sender_id and if the message is
+		 * broadcasting, the message is looping back.
+		 * Abort the message sending in that case
+		 */
+		DEV_ERR("%s: abort potential MAL msg %d:%d logical %d\n",
+			__func__, msg->sender_id, msg->recvr_id,
+			cec_ctrl->cec_logical_addr);
+		return -EINVAL;
+	}
+
 	io = cec_ctrl->init_data.io;
 
 	reinit_completion(&cec_ctrl->cec_msg_wr_done);
@@ -67,10 +89,6 @@ static int hdmi_cec_msg_send(void *data, struct cec_msg *msg)
 	frame_type = (msg->recvr_id == 15 ? BIT(0) : 0);
 	if (msg->retransmit > 0 && msg->retransmit < RETRANSMIT_MAX_NUM)
 		frame_retransmit = msg->retransmit;
-
-	/* toggle cec in order to flush out bad hw state, if any */
-	DSS_REG_W(io, HDMI_CEC_CTRL, 0);
-	DSS_REG_W(io, HDMI_CEC_CTRL, BIT(0));
 
 	frame_retransmit = (frame_retransmit & 0xF) << 4;
 	DSS_REG_W(io, HDMI_CEC_RETRANSMIT, BIT(0) | frame_retransmit);
@@ -164,14 +182,87 @@ static void hdmi_cec_deinit_input_event(struct hdmi_cec_ctrl *cec_ctrl)
 	cec_ctrl->input = NULL;
 }
 
+static int hdmi_cec_msg_read(struct hdmi_cec_ctrl *cec_ctrl)
+{
+	struct dss_io_data *io = NULL;
+	struct cec_msg *msg;
+	u32 data;
+	int i;
+	u32 head;
+	u32 tail;
+
+	if (!cec_ctrl || !cec_ctrl->init_data.io) {
+		DEV_ERR("%s: invalid input\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!cec_ctrl->cec_enabled) {
+		DEV_ERR("%s: cec not enabled\n", __func__);
+		return -ENODEV;
+	}
+
+	head = cec_ctrl->head;
+	tail = READ_ONCE(cec_ctrl->tail);
+	if (CIRC_SPACE(head, tail, CEC_RECV_Q_SIZE) < 1) {
+		DEV_ERR("%s: no more space to hold the buffer\n", __func__);
+		return 0; /* Let's just kick the thread */
+	}
+
+	msg = &cec_ctrl->recv_msg[head];
+
+	io = cec_ctrl->init_data.io;
+	data = DSS_REG_R(io, HDMI_CEC_RD_DATA);
+
+	msg->recvr_id   = (data & 0x000F);
+	msg->sender_id  = (data & 0x00F0) >> 4;
+	msg->frame_size = (data & 0x1F00) >> 8;
+	if (msg->frame_size < 1 || msg->frame_size > MAX_CEC_FRAME_SIZE) {
+		DEV_ERR("%s: invalid message (frame length = %d)\n",
+			__func__, msg->frame_size);
+		return -EINVAL;
+	} else if (msg->frame_size == 1) {
+		DEV_DBG("%s: polling message (dest[%x] <- init[%x])\n",
+			__func__, msg->recvr_id, msg->sender_id);
+		return -EINVAL;
+	}
+
+	/* data block 0 : opcode */
+	data = DSS_REG_R_ND(io, HDMI_CEC_RD_DATA);
+	msg->opcode = data & 0xFF;
+
+	/* data block 1-14 : operand 0-13 */
+	for (i = 0; i < msg->frame_size - 2; i++) {
+		data = DSS_REG_R_ND(io, HDMI_CEC_RD_DATA);
+		msg->operand[i] = data & 0xFF;
+	}
+
+	for (; i < MAX_OPERAND_SIZE; i++)
+		msg->operand[i] = 0;
+
+	/*
+	 * Clearing the logical address is used when the system doesn't
+	 * need to process CEC command any more.
+	 */
+	if (cec_ctrl->cec_clear_logical_addr)
+		return -EINVAL;
+
+	/* Update head */
+	smp_store_release(&cec_ctrl->head, (head + 1) & CEC_RECV_Q_MASK);
+
+	DEV_DBG("%s: opcode 0x%x, wakup_en %d, device_suspend %d\n", __func__,
+		msg->opcode, cec_ctrl->cec_wakeup_en,
+		cec_ctrl->cec_device_suspend);
+
+	return 0;
+}
+
 static void hdmi_cec_msg_recv(struct work_struct *work)
 {
-	int i;
-	u32 data;
 	struct hdmi_cec_ctrl *cec_ctrl = NULL;
-	struct dss_io_data *io = NULL;
 	struct cec_msg msg;
 	struct cec_cbs *cbs;
+	u32 head;
+	u32 tail;
 
 	cec_ctrl = container_of(work, struct hdmi_cec_ctrl, cec_read_work);
 	if (!cec_ctrl || !cec_ctrl->init_data.io) {
@@ -179,73 +270,42 @@ static void hdmi_cec_msg_recv(struct work_struct *work)
 		return;
 	}
 
-	if (!cec_ctrl->cec_enabled) {
-		DEV_ERR("%s: cec not enabled\n", __func__);
-		return;
-	}
-
-	io = cec_ctrl->init_data.io;
 	cbs = cec_ctrl->init_data.cbs;
 
-	data = DSS_REG_R(io, HDMI_CEC_RD_DATA);
+	/* Read head before reading contents */
+	head = smp_load_acquire(&cec_ctrl->head);
+	tail = cec_ctrl->tail;
+	while (CIRC_CNT(head, tail, CEC_RECV_Q_SIZE) >= 1) {
+		memcpy(&msg, &cec_ctrl->recv_msg[tail], sizeof(msg));
+		tail = (tail + 1) & CEC_RECV_Q_MASK;
 
-	msg.recvr_id   = (data & 0x000F);
-	msg.sender_id  = (data & 0x00F0) >> 4;
-	msg.frame_size = (data & 0x1F00) >> 8;
-	DEV_DBG("%s: Recvd init=[%u] dest=[%u] size=[%u]\n", __func__,
-		msg.sender_id, msg.recvr_id,
-		msg.frame_size);
+		/* Finishing reading before incrementing tail */
+		smp_store_release(&cec_ctrl->tail, tail);
 
-	if (msg.frame_size < 1 || msg.frame_size > MAX_CEC_FRAME_SIZE) {
-		DEV_ERR("%s: invalid message (frame length = %d)\n",
-			__func__, msg.frame_size);
-		return;
-	} else if (msg.frame_size == 1) {
-		DEV_DBG("%s: polling message (dest[%x] <- init[%x])\n",
-			__func__, msg.recvr_id, msg.sender_id);
-		return;
+		if ((msg.opcode == CEC_OP_SET_STREAM_PATH ||
+			msg.opcode == CEC_OP_KEY_PRESS) &&
+			cec_ctrl->input && cec_ctrl->cec_wakeup_en &&
+			cec_ctrl->cec_device_suspend) {
+			DEV_DBG("%s: Sending power on at wakeup\n", __func__);
+			input_report_key(cec_ctrl->input, KEY_POWER, 1);
+			input_sync(cec_ctrl->input);
+			input_report_key(cec_ctrl->input, KEY_POWER, 0);
+			input_sync(cec_ctrl->input);
+		}
+
+		if ((msg.opcode == CEC_OP_STANDBY) &&
+			cec_ctrl->input && cec_ctrl->cec_wakeup_en &&
+			!cec_ctrl->cec_device_suspend) {
+			DEV_DBG("%s: Sending power off on standby\n", __func__);
+			input_report_key(cec_ctrl->input, KEY_POWER, 1);
+			input_sync(cec_ctrl->input);
+			input_report_key(cec_ctrl->input, KEY_POWER, 0);
+			input_sync(cec_ctrl->input);
+		}
+
+		if (cbs && cbs->msg_recv_notify)
+			cbs->msg_recv_notify(cbs->data, &msg);
 	}
-
-	/* data block 0 : opcode */
-	data = DSS_REG_R_ND(io, HDMI_CEC_RD_DATA);
-	msg.opcode = data & 0xFF;
-
-	/* data block 1-14 : operand 0-13 */
-	for (i = 0; i < msg.frame_size - 2; i++) {
-		data = DSS_REG_R_ND(io, HDMI_CEC_RD_DATA);
-		msg.operand[i] = data & 0xFF;
-	}
-
-	for (; i < MAX_OPERAND_SIZE; i++)
-		msg.operand[i] = 0;
-
-	DEV_DBG("%s: opcode 0x%x, wakup_en %d, device_suspend %d\n", __func__,
-		msg.opcode, cec_ctrl->cec_wakeup_en,
-		cec_ctrl->cec_device_suspend);
-
-	if ((msg.opcode == CEC_OP_SET_STREAM_PATH ||
-		msg.opcode == CEC_OP_KEY_PRESS) &&
-		cec_ctrl->input && cec_ctrl->cec_wakeup_en &&
-		cec_ctrl->cec_device_suspend) {
-		DEV_DBG("%s: Sending power on at wakeup\n", __func__);
-		input_report_key(cec_ctrl->input, KEY_POWER, 1);
-		input_sync(cec_ctrl->input);
-		input_report_key(cec_ctrl->input, KEY_POWER, 0);
-		input_sync(cec_ctrl->input);
-	}
-
-	if ((msg.opcode == CEC_OP_STANDBY) &&
-		cec_ctrl->input && cec_ctrl->cec_wakeup_en &&
-		!cec_ctrl->cec_device_suspend) {
-		DEV_DBG("%s: Sending power off on standby\n", __func__);
-		input_report_key(cec_ctrl->input, KEY_POWER, 1);
-		input_sync(cec_ctrl->input);
-		input_report_key(cec_ctrl->input, KEY_POWER, 0);
-		input_sync(cec_ctrl->input);
-	}
-
-	if (cbs && cbs->msg_recv_notify)
-		cbs->msg_recv_notify(cbs->data, &msg);
 }
 
 /**
@@ -296,6 +356,9 @@ int hdmi_cec_isr(void *input)
 	if ((cec_intr & BIT(2)) && (cec_intr & BIT(3))) {
 		DEV_DBG("%s: CEC_IRQ_FRAME_ERROR\n", __func__);
 		DSS_REG_W(io, HDMI_CEC_INT, cec_intr | BIT(2));
+		/* toggle cec in order to flush out bad hw state, if any */
+		DSS_REG_W(io, HDMI_CEC_CTRL, 0);
+		DSS_REG_W(io, HDMI_CEC_CTRL, BIT(0));
 
 		spin_lock_irqsave(&cec_ctrl->lock, flags);
 		cec_ctrl->cec_msg_wr_status |= CEC_STATUS_WR_ERROR;
@@ -308,8 +371,12 @@ int hdmi_cec_isr(void *input)
 	if ((cec_intr & BIT(6)) && (cec_intr & BIT(7))) {
 		DEV_DBG("%s: CEC_IRQ_FRAME_RD_DONE\n", __func__);
 
+		rc = hdmi_cec_msg_read(cec_ctrl);
+		if (!rc)
+			queue_work(cec_ctrl->init_data.workq,
+					&cec_ctrl->cec_read_work);
+
 		DSS_REG_W(io, HDMI_CEC_INT, cec_intr | BIT(6));
-		queue_work(cec_ctrl->init_data.workq, &cec_ctrl->cec_read_work);
 	}
 
 	return rc;
@@ -360,8 +427,23 @@ static void hdmi_cec_write_logical_addr(void *input, u8 addr)
 		return;
 	}
 
-	if (cec_ctrl->cec_enabled)
+	if (cec_ctrl->cec_enabled) {
 		DSS_REG_W(cec_ctrl->init_data.io, HDMI_CEC_ADDR, addr & 0xF);
+		cec_ctrl->cec_logical_addr = addr & 0xF;
+	}
+}
+
+static void hdmi_cec_clear_logical_addr(void *input, bool clear_flag)
+{
+	struct hdmi_cec_ctrl *cec_ctrl = (struct hdmi_cec_ctrl *)input;
+
+	if (!cec_ctrl || !cec_ctrl->init_data.io) {
+		DEV_ERR("%s: Invalid input\n", __func__);
+		return;
+	}
+
+	if (cec_ctrl->cec_enabled)
+		cec_ctrl->cec_clear_logical_addr = clear_flag;
 }
 
 static int hdmi_cec_enable(void *input, bool enable)
@@ -474,6 +556,7 @@ void *hdmi_cec_init(struct hdmi_cec_init_data *init_data)
 	/* populate hardware specific operations to client */
 	ops->send_msg = hdmi_cec_msg_send;
 	ops->wt_logical_addr = hdmi_cec_write_logical_addr;
+	ops->clear_logical_addr = hdmi_cec_clear_logical_addr;
 	ops->enable = hdmi_cec_enable;
 	ops->data = cec_ctrl;
 	ops->wakeup_en = hdmi_cec_wakeup_en;

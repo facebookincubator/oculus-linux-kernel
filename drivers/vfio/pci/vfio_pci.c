@@ -221,11 +221,20 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
 	pci_write_config_word(pdev, PCI_COMMAND, PCI_COMMAND_INTX_DISABLE);
 
 	/*
-	 * Try to reset the device.  The success of this is dependent on
-	 * being able to lock the device, which is not always possible.
+	 * Try to get the locks ourselves to prevent a deadlock. The
+	 * success of this is dependent on being able to lock the device,
+	 * which is not always possible.
+	 * We can not use the "try" reset interface here, which will
+	 * overwrite the previously restored configuration information.
 	 */
-	if (vdev->reset_works && !pci_try_reset_function(pdev))
-		vdev->needs_reset = false;
+	if (vdev->reset_works && pci_cfg_access_trylock(pdev)) {
+		if (device_trylock(&pdev->dev)) {
+			if (!__pci_reset_function_locked(pdev))
+				vdev->needs_reset = false;
+			device_unlock(&pdev->dev);
+		}
+		pci_cfg_access_unlock(pdev);
+	}
 
 	pci_restore_state(pdev);
 out:
@@ -562,8 +571,9 @@ static long vfio_pci_ioctl(void *device_data,
 
 	} else if (cmd == VFIO_DEVICE_SET_IRQS) {
 		struct vfio_irq_set hdr;
+		size_t size;
 		u8 *data = NULL;
-		int ret = 0;
+		int max, ret = 0;
 
 		minsz = offsetofend(struct vfio_irq_set, count);
 
@@ -571,23 +581,31 @@ static long vfio_pci_ioctl(void *device_data,
 			return -EFAULT;
 
 		if (hdr.argsz < minsz || hdr.index >= VFIO_PCI_NUM_IRQS ||
+		    hdr.count >= (U32_MAX - hdr.start) ||
 		    hdr.flags & ~(VFIO_IRQ_SET_DATA_TYPE_MASK |
 				  VFIO_IRQ_SET_ACTION_TYPE_MASK))
 			return -EINVAL;
 
-		if (!(hdr.flags & VFIO_IRQ_SET_DATA_NONE)) {
-			size_t size;
-			int max = vfio_pci_get_irq_count(vdev, hdr.index);
+		max = vfio_pci_get_irq_count(vdev, hdr.index);
+		if (hdr.start >= max || hdr.start + hdr.count > max)
+			return -EINVAL;
 
-			if (hdr.flags & VFIO_IRQ_SET_DATA_BOOL)
-				size = sizeof(uint8_t);
-			else if (hdr.flags & VFIO_IRQ_SET_DATA_EVENTFD)
-				size = sizeof(int32_t);
-			else
-				return -EINVAL;
+		switch (hdr.flags & VFIO_IRQ_SET_DATA_TYPE_MASK) {
+		case VFIO_IRQ_SET_DATA_NONE:
+			size = 0;
+			break;
+		case VFIO_IRQ_SET_DATA_BOOL:
+			size = sizeof(uint8_t);
+			break;
+		case VFIO_IRQ_SET_DATA_EVENTFD:
+			size = sizeof(int32_t);
+			break;
+		default:
+			return -EINVAL;
+		}
 
-			if (hdr.argsz - minsz < hdr.count * size ||
-			    hdr.start >= max || hdr.start + hdr.count > max)
+		if (size) {
+			if (hdr.argsz - minsz < hdr.count * size)
 				return -EINVAL;
 
 			data = memdup_user((void __user *)(arg + minsz),
@@ -893,6 +911,10 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 			return ret;
 
 		vdev->barmap[index] = pci_iomap(pdev, index, 0);
+		if (!vdev->barmap[index]) {
+			pci_release_selected_regions(pdev, 1 << index);
+			return -ENOMEM;
+		}
 	}
 
 	vma->vm_private_data = vdev;
@@ -1178,11 +1200,11 @@ static void __init vfio_pci_fill_ids(void)
 		rc = pci_add_dynid(&vfio_pci_driver, vendor, device,
 				   subvendor, subdevice, class, class_mask, 0);
 		if (rc)
-			pr_warn("failed to add dynamic id [%04hx:%04hx[%04hx:%04hx]] class %#08x/%08x (%d)\n",
+			pr_warn("failed to add dynamic id [%04x:%04x[%04x:%04x]] class %#08x/%08x (%d)\n",
 				vendor, device, subvendor, subdevice,
 				class, class_mask, rc);
 		else
-			pr_info("add [%04hx:%04hx[%04hx:%04hx]] class %#08x/%08x\n",
+			pr_info("add [%04x:%04x[%04x:%04x]] class %#08x/%08x\n",
 				vendor, device, subvendor, subdevice,
 				class, class_mask);
 	}

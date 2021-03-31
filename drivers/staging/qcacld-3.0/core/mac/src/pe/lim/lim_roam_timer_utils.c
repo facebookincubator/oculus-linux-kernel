@@ -1,7 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,10 +38,10 @@
 uint32_t lim_create_timers_host_roam(tpAniSirGlobal mac_ctx)
 {
 	uint32_t cfg_value;
+
 	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_REASSOCIATION_FAILURE_TIMEOUT,
-			     &cfg_value) != eSIR_SUCCESS)
-		lim_log(mac_ctx, LOGP,
-			FL("could not retrieve ReassocFailureTimeout value"));
+			     &cfg_value) != QDF_STATUS_SUCCESS)
+		pe_warn("could not retrieve ReassocFailureTimeout value");
 
 	cfg_value = SYS_MS_TO_TICKS(cfg_value);
 	/* Create Association failure timer and activate it later */
@@ -51,7 +49,7 @@ uint32_t lim_create_timers_host_roam(tpAniSirGlobal mac_ctx)
 			&mac_ctx->lim.limTimers.gLimReassocFailureTimer,
 		    "REASSOC FAILURE TIMEOUT", lim_assoc_failure_timer_handler,
 		    LIM_REASSOC, cfg_value, 0, TX_NO_ACTIVATE) != TX_SUCCESS) {
-		lim_log(mac_ctx, LOGP, FL("failed to create Reassoc timer"));
+		pe_err("failed to create Reassoc timer");
 		return TX_TIMER_ERROR;
 	}
 	cfg_value = 1000;
@@ -61,7 +59,7 @@ uint32_t lim_create_timers_host_roam(tpAniSirGlobal mac_ctx)
 			"FT PREAUTH RSP TIMEOUT",
 			lim_timer_handler, SIR_LIM_FT_PREAUTH_RSP_TIMEOUT,
 			cfg_value, 0, TX_NO_ACTIVATE) != TX_SUCCESS) {
-		lim_log(mac_ctx, LOGP, FL("failed to create Join fail timer"));
+		pe_err("failed to create Join fail timer");
 		goto err_roam_timer;
 	}
 	return TX_SUCCESS;
@@ -71,25 +69,24 @@ err_roam_timer:
 	return TX_TIMER_ERROR;
 }
 
-/**
- * lim_delete_timers_host_roam() - Delete timers used in host based roaming
- * @mac_ctx: Global MAC context
- *
- * Delete reassoc and preauth timers
- *
- * Return: none
- */
 void lim_delete_timers_host_roam(tpAniSirGlobal mac_ctx)
 {
 	tLimTimers *lim_timer = &mac_ctx->lim.limTimers;
 
-	/* Deactivate and delete Reassociation failure timer. */
-	tx_timer_deactivate(&lim_timer->gLimReassocFailureTimer);
+	/* Delete Reassociation failure timer. */
 	tx_timer_delete(&lim_timer->gLimReassocFailureTimer);
-
-	/* Deactivate and delete FT Preauth response timer */
-	tx_timer_deactivate(&lim_timer->gLimFTPreAuthRspTimer);
+	/* Delete FT Preauth response timer */
 	tx_timer_delete(&lim_timer->gLimFTPreAuthRspTimer);
+}
+
+void lim_deactivate_timers_host_roam(tpAniSirGlobal mac_ctx)
+{
+	tLimTimers *lim_timer = &mac_ctx->lim.limTimers;
+
+	/* Deactivate Reassociation failure timer. */
+	tx_timer_deactivate(&lim_timer->gLimReassocFailureTimer);
+	/* Deactivate FT Preauth response timer */
+	tx_timer_deactivate(&lim_timer->gLimFTPreAuthRspTimer);
 }
 
 /**
@@ -111,31 +108,26 @@ void lim_deactivate_and_change_timer_host_roam(tpAniSirGlobal mac_ctx,
 	case eLIM_REASSOC_FAIL_TIMER:
 		if (tx_timer_deactivate
 			(&mac_ctx->lim.limTimers.gLimReassocFailureTimer) !=
-				TX_SUCCESS) {
-			lim_log(mac_ctx, LOGP,
-				FL("unable to deactivate Reassoc fail timer"));
-		}
+				TX_SUCCESS)
+			pe_warn("unable to deactivate Reassoc fail timer");
+
 		if (wlan_cfg_get_int(mac_ctx,
 				WNI_CFG_REASSOCIATION_FAILURE_TIMEOUT,
-				&val) != eSIR_SUCCESS) {
-			lim_log(mac_ctx, LOGP,
-				FL("could not get ReassocFailureTimeout val"));
-		}
+				&val) != QDF_STATUS_SUCCESS)
+			pe_warn("could not get ReassocFailureTimeout val");
+
 		val = SYS_MS_TO_TICKS(val);
 		if (tx_timer_change
 			(&mac_ctx->lim.limTimers.gLimReassocFailureTimer, val,
-			 0) != TX_SUCCESS) {
-			lim_log(mac_ctx, LOGP,
-				FL("unable to change Reassoc fail timer"));
-		}
+			 0) != TX_SUCCESS)
+			pe_warn("unable to change Reassoc fail timer");
 		break;
 
 	case eLIM_FT_PREAUTH_RSP_TIMER:
 		if (tx_timer_deactivate
 			(&mac_ctx->lim.limTimers.gLimFTPreAuthRspTimer) !=
 			TX_SUCCESS) {
-			lim_log(mac_ctx, LOGP,
-				FL("Unable to deactivate Preauth Fail timer"));
+			pe_err("Unable to deactivate Preauth Fail timer");
 			return;
 		}
 		val = 1000;
@@ -143,8 +135,7 @@ void lim_deactivate_and_change_timer_host_roam(tpAniSirGlobal mac_ctx,
 		if (tx_timer_change(
 				&mac_ctx->lim.limTimers.gLimFTPreAuthRspTimer,
 				val, 0) != TX_SUCCESS) {
-			lim_log(mac_ctx, LOGP,
-				FL("Unable to change Join Failure timer"));
+			pe_err("Unable to change Join Failure timer");
 			return;
 		}
 		break;

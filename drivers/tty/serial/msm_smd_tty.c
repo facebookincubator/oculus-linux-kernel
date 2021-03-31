@@ -1,5 +1,5 @@
 /* Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2015, 2020, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -368,7 +368,7 @@ static int smd_tty_dummy_probe(struct platform_device *pdev)
 	int n;
 
 	for (n = 0; n < MAX_SMD_TTYS; ++n) {
-		if (!smd_tty[n].dev_name)
+		if (smd_tty[n].dev_name == NULL)
 			continue;
 
 		if (pdev->id == smd_tty[n].edge &&
@@ -502,7 +502,7 @@ static int smd_tty_port_activate(struct tty_port *tport,
 	struct smd_tty_info *info;
 	const char *peripheral = NULL;
 
-	if (n >= MAX_SMD_TTYS || !smd_tty[n].ch_name)
+	if (n >= MAX_SMD_TTYS || smd_tty[n].ch_name == NULL)
 		return -ENODEV;
 
 	info = smd_tty + n;

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2016, 2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -123,7 +114,7 @@ uint16_t lim_assign_peer_idx(tpAniSirGlobal pMac, tpPESession pSessionEntry)
 	uint16_t peerId;
 
 	/* make sure we haven't exceeded the configurable limit on associations */
-	/* This count is global to ensure that it doesnt exceed the hardware limits. */
+	/* This count is global to ensure that it doesn't exceed the hardware limits. */
 	if (pe_get_current_stas_count(pMac) >= pMac->lim.gLimAssocStaLimit) {
 		/* too many associations already active */
 		return 0;

@@ -85,7 +85,7 @@ static int msm_fbdev_create(struct drm_fb_helper *helper,
 	struct drm_framebuffer *fb = NULL;
 	struct fb_info *fbi = NULL;
 	struct drm_mode_fb_cmd2 mode_cmd = {0};
-	uint32_t paddr;
+	uint64_t paddr;
 	int ret, size;
 
 	DBG("create fbdev: %dx%d@%d (%dx%d)", sizes->surface_width,
@@ -104,10 +104,8 @@ static int msm_fbdev_create(struct drm_fb_helper *helper,
 	/* allocate backing bo */
 	size = mode_cmd.pitches[0] * mode_cmd.height;
 	DBG("allocating %d bytes for fb %d", size, dev->primary->index);
-	mutex_lock(&dev->struct_mutex);
 	fbdev->bo = msm_gem_new(dev, size, MSM_BO_SCANOUT |
 			MSM_BO_WC | MSM_BO_STOLEN);
-	mutex_unlock(&dev->struct_mutex);
 	if (IS_ERR(fbdev->bo)) {
 		ret = PTR_ERR(fbdev->bo);
 		fbdev->bo = NULL;
@@ -133,7 +131,7 @@ static int msm_fbdev_create(struct drm_fb_helper *helper,
 	 * in panic (ie. lock-safe, etc) we could avoid pinning the
 	 * buffer now:
 	 */
-	ret = msm_gem_get_iova_locked(fbdev->bo, 0, &paddr);
+	ret = msm_gem_get_iova(fbdev->bo, 0, &paddr);
 	if (ret) {
 		dev_err(dev->dev, "failed to get buffer obj iova: %d\n", ret);
 		goto fail_unlock;
@@ -146,7 +144,7 @@ static int msm_fbdev_create(struct drm_fb_helper *helper,
 		goto fail_unlock;
 	}
 
-	DBG("fbi=%p, dev=%p", fbi, dev);
+	DBG("fbi=%pK, dev=%pK", fbi, dev);
 
 	fbdev->fb = fb;
 	helper->fb = fb;
@@ -160,14 +158,15 @@ static int msm_fbdev_create(struct drm_fb_helper *helper,
 	drm_fb_helper_fill_fix(fbi, fb->pitches[0], fb->depth);
 	drm_fb_helper_fill_var(fbi, helper, sizes->fb_width, sizes->fb_height);
 
-	dev->mode_config.fb_base = paddr;
+	/* FIXME: Verify paddr < 32 bits? */
+	dev->mode_config.fb_base = lower_32_bits(paddr);
 
-	fbi->screen_base = msm_gem_vaddr_locked(fbdev->bo);
+	fbi->screen_base = msm_gem_vaddr(fbdev->bo);
 	fbi->screen_size = fbdev->bo->size;
-	fbi->fix.smem_start = paddr;
+	fbi->fix.smem_start = lower_32_bits(paddr);
 	fbi->fix.smem_len = fbdev->bo->size;
 
-	DBG("par=%p, %dx%d", fbi->par, fbi->var.xres, fbi->var.yres);
+	DBG("par=%pK, %dx%d", fbi->par, fbi->var.xres, fbi->var.yres);
 	DBG("allocated %dx%d fb", fbdev->fb->width, fbdev->fb->height);
 
 	mutex_unlock(&dev->struct_mutex);

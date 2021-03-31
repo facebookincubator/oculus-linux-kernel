@@ -4,11 +4,16 @@
 #include <asm/processor-flags.h>
 
 #ifndef __ASSEMBLY__
+
+#include <asm/nospec-branch.h>
+
 /*
  * Interrupt control:
  */
 
-static inline unsigned long native_save_fl(void)
+/* Declaration required for gcc < 4.9 to prevent -Werror=missing-prototypes */
+extern inline unsigned long native_save_fl(void);
+extern inline unsigned long native_save_fl(void)
 {
 	unsigned long flags;
 
@@ -26,7 +31,8 @@ static inline unsigned long native_save_fl(void)
 	return flags;
 }
 
-static inline void native_restore_fl(unsigned long flags)
+extern inline void native_restore_fl(unsigned long flags);
+extern inline void native_restore_fl(unsigned long flags)
 {
 	asm volatile("push %0 ; popf"
 		     : /* no output */
@@ -46,11 +52,13 @@ static inline void native_irq_enable(void)
 
 static inline void native_safe_halt(void)
 {
+	mds_idle_clear_cpu_buffers();
 	asm volatile("sti; hlt": : :"memory");
 }
 
 static inline void native_halt(void)
 {
+	mds_idle_clear_cpu_buffers();
 	asm volatile("hlt": : :"memory");
 }
 

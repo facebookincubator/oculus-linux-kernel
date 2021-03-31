@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2017,2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,7 @@
 
 #include <linux/slab.h>
 #include <linux/idr.h>
+#include <linux/pm.h>
 #include <linux/pm_qos.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
@@ -80,6 +81,7 @@ enum kgsl_event_results {
 	{ KGSL_CONTEXT_PER_CONTEXT_TS, "PER_CONTEXT_TS" }, \
 	{ KGSL_CONTEXT_USER_GENERATED_TS, "USER_TS" }, \
 	{ KGSL_CONTEXT_NO_FAULT_TOLERANCE, "NO_FT" }, \
+	{ KGSL_CONTEXT_INVALIDATE_ON_FAULT, "INVALIDATE_ON_FAULT" }, \
 	{ KGSL_CONTEXT_PWR_CONSTRAINT, "PWR" }, \
 	{ KGSL_CONTEXT_SAVE_GMEM, "SAVE_GMEM" }
 
@@ -88,7 +90,8 @@ enum kgsl_event_results {
 	{ KGSL_CONTEXT_TYPE_GL, "GL" }, \
 	{ KGSL_CONTEXT_TYPE_CL, "CL" }, \
 	{ KGSL_CONTEXT_TYPE_C2D, "C2D" }, \
-	{ KGSL_CONTEXT_TYPE_RS, "RS" }
+	{ KGSL_CONTEXT_TYPE_RS, "RS" }, \
+	{ KGSL_CONTEXT_TYPE_VK, "VK" }
 
 #define KGSL_CONTEXT_ID(_context) \
 	((_context != NULL) ? (_context)->id : KGSL_MEMSTORE_GLOBAL)
@@ -173,6 +176,9 @@ struct kgsl_functable {
 	void (*gpu_model)(struct kgsl_device *device, char *str,
 		size_t bufsz);
 	void (*stop_fault_timer)(struct kgsl_device *device);
+	void (*suspend_device)(struct kgsl_device *device,
+		pm_message_t pm_state);
+	void (*resume_device)(struct kgsl_device *device);
 };
 
 struct kgsl_ioctl {
@@ -217,6 +223,16 @@ struct kgsl_sparseobj_node {
 	struct list_head node;
 	unsigned int virt_id;
 	struct kgsl_sparse_binding_object obj;
+};
+
+/**
+ * struct kgsl_privileged_uid_node - Descriptor for privileged process UIDs
+ * @node: Local list node for the object
+ * @uid: UID of privileged process
+ */
+struct kgsl_privileged_uid_node {
+	struct list_head node;
+	uid_t uid;
 };
 
 struct kgsl_device {
@@ -312,7 +328,7 @@ struct kgsl_device {
 	struct kobject *gpu_sysfs_kobj;
 
 	/* Allow restricting high and maximum priority contexts */
-	uid_t privileged_uid;
+	struct list_head privileged_uid_list;
 	pid_t privileged_tid;
 
 	/* pre-fault all pages after mapping a mem entry */
@@ -425,9 +441,12 @@ struct kgsl_context {
  * @kobj: Pointer to a kobj for the sysfs directory for this process
  * @debug_root: Pointer to the debugfs root for this process
  * @stats: Memory allocation statistics for this process
+ * @gpumem_mapped: KGSL memory mapped in the process address space
  * @syncsource_idr: sync sources created by this process
  * @syncsource_lock: Spinlock to protect the syncsource idr
  * @fd_count: Counter for the number of FDs for this process
+ * @ctxt_count: Count for the number of contexts for this process
+ * @ctxt_count_lock: Spinlock to protect ctxt_count
  */
 struct kgsl_process_private {
 	unsigned long priv;
@@ -444,9 +463,12 @@ struct kgsl_process_private {
 		uint64_t cur;
 		uint64_t max;
 	} stats[KGSL_MEM_ENTRY_MAX];
+	uint64_t gpumem_mapped;
 	struct idr syncsource_idr;
 	spinlock_t syncsource_lock;
 	int fd_count;
+	atomic_t ctxt_count;
+	spinlock_t ctxt_count_lock;
 };
 
 struct kgsl_thread_private {

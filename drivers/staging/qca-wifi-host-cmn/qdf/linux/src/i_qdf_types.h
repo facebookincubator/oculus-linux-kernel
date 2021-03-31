@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -55,6 +46,7 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
+#include <linux/ctype.h>
 #include <linux/sched.h>
 #include <linux/completion.h>
 #include <linux/string.h>
@@ -66,6 +58,31 @@
 #include <linux/dma-mapping.h>
 #include <linux/wireless.h>
 #include <linux/if.h>
+#ifdef IPA_OFFLOAD
+#include <linux/ipa.h>
+#endif
+
+typedef struct sg_table __sgtable_t;
+
+/*
+ * The IDs of the various system clocks
+ */
+#define __QDF_CLOCK_REALTIME CLOCK_REALTIME
+#define __QDF_CLOCK_MONOTONIC CLOCK_MONOTONIC
+
+/*
+ * Return values for the qdf_hrtimer_data_t callback function
+ */
+#define __QDF_HRTIMER_NORESTART HRTIMER_NORESTART
+#define __QDF_HRTIMER_RESTART HRTIMER_RESTART
+
+/*
+ * Mode arguments of qdf_hrtimer_data_t related functions
+ */
+#define __QDF_HRTIMER_MODE_ABS HRTIMER_MODE_ABS
+#define __QDF_HRTIMER_MODE_REL HRTIMER_MODE_REL
+#define __QDF_HRTIMER_MODE_PINNED HRTIMER_MODE_PINNED
+
 #else
 
 /*
@@ -78,6 +95,9 @@
 typedef unsigned long dma_addr_t;
 #endif
 
+typedef unsigned long phys_addr_t;
+typedef unsigned long __sgtable_t;
+
 #define SIOCGIWAP       0
 #define IWEVCUSTOM      0
 #define IWEVREGISTERED  0
@@ -86,6 +106,13 @@ typedef unsigned long dma_addr_t;
 #define DMA_TO_DEVICE   0
 #define DMA_BIDIRECTIONAL 0
 #define DMA_FROM_DEVICE 0
+#define __QDF_CLOCK_REALTIME 0
+#define __QDF_CLOCK_MONOTONIC 0
+#define __QDF_HRTIMER_MODE_ABS 0
+#define __QDF_HRTIMER_MODE_REL 0
+#define __QDF_HRTIMER_MODE_PINNED 0
+#define __QDF_HRTIMER_NORESTART 0
+#define __QDF_HRTIMER_RESTART 0
 #define __iomem
 #endif /* __KERNEL__ */
 
@@ -93,6 +120,7 @@ typedef unsigned long dma_addr_t;
  * max sg that we support
  */
 #define __QDF_MAX_SCATTER        1
+#define __QDF_NSEC_PER_MSEC NSEC_PER_MSEC
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 #define QDF_LITTLE_ENDIAN_MACHINE
@@ -127,6 +155,32 @@ typedef int (*__qdf_os_intr)(void *);
 typedef dma_addr_t __qdf_dma_addr_t;
 typedef size_t __qdf_dma_size_t;
 typedef dma_addr_t __qdf_dma_context_t;
+typedef struct net_device *__qdf_netdev_t;
+typedef struct cpumask __qdf_cpu_mask;
+typedef __le16 __qdf_le16_t;
+typedef __le32 __qdf_le32_t;
+typedef __le64 __qdf_le64_t;
+typedef __be16 __qdf_be16_t;
+typedef __be32 __qdf_be32_t;
+typedef __be64 __qdf_be64_t;
+
+#ifdef IPA_OFFLOAD
+typedef struct ipa_wdi_buffer_info __qdf_mem_info_t;
+#else
+/**
+ * struct __qdf_shared_mem_info - shared mem info struct
+ * @pa : physical address
+ * @iova: i/o virtual address
+ * @size: allocated memory size
+ * @result: status
+ */
+typedef struct __qdf_shared_mem_info {
+	phys_addr_t pa;
+	unsigned long iova;
+	size_t size;
+	int result;
+} __qdf_mem_info_t;
+#endif /* IPA_OFFLOAD */
 
 #define qdf_dma_mem_context(context) dma_addr_t context
 #define qdf_get_dma_mem_context(var, field)   ((qdf_dma_context_t)(var->field))
@@ -175,7 +229,11 @@ enum qdf_bus_type {
  * @dev: Pointer to device
  * @res: QDF resource
  * @func: Interrupt handler
- * @mem_pool: array to pointer to mem context
+ * @mem_pool: array of pointers to mem pool context
+ * @bus_type: Bus type
+ * @bid: Bus ID
+ * @smmu_s1_enabled: SMMU S1 enabled or not
+ * @iommu_mapping: DMA iommu mapping pointer
  */
 struct __qdf_device {
 	void *drv;
@@ -190,6 +248,12 @@ struct __qdf_device {
 #ifdef CONFIG_MCL
 	const struct hif_bus_id *bid;
 #endif
+	bool smmu_s1_enabled;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	struct iommu_domain *domain;
+#else
+	struct dma_iommu_mapping *iommu_mapping;
+#endif
 };
 typedef struct __qdf_device *__qdf_device_t;
 
@@ -202,7 +266,7 @@ typedef uint32_t ath_dma_addr_t;
 /**
  * typedef __qdf_segment_t - segment of memory
  * @daddr: dma address
- * @len: lenght of segment
+ * @len: length of segment
  */
 typedef struct __qdf_segment {
 	dma_addr_t  daddr;
@@ -223,7 +287,6 @@ struct __qdf_dma_map {
 	__qdf_segment_t      seg[__QDF_MAX_SCATTER];
 };
 typedef struct  __qdf_dma_map  *__qdf_dma_map_t;
-typedef uint32_t  ath_dma_addr_t;
 
 /**
  * __qdf_net_wireless_evcode - enum for event code
@@ -255,6 +318,10 @@ enum __qdf_net_wireless_evcode {
 #define __qdf_vprint              vprintk
 #define __qdf_snprint             snprintf
 #define __qdf_vsnprint            vsnprintf
+#define __qdf_toupper            toupper
+#define qdf_kstrtoint            __qdf_kstrtoint
+
+#define __qdf_kstrtoint          kstrtoint
 
 #define __QDF_DMA_BIDIRECTIONAL  DMA_BIDIRECTIONAL
 #define __QDF_DMA_TO_DEVICE      DMA_TO_DEVICE

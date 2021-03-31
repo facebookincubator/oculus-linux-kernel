@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #include "athdefs.h"
 #include "a_types.h"
 #include "a_osapi.h"
@@ -36,12 +27,15 @@
 #include "if_sdio.h"
 #include "regtable_sdio.h"
 
+#include "qdf_module.h"
+
 #define CPU_DBG_SEL_ADDRESS                      0x00000483
 #define CPU_DBG_ADDRESS                          0x00000484
 #define WORD_NON_ALIGNMENT_MASK                  0x03
 
 /**
- * hif_ar6000_set_address_window_register - set the window address register (using 4-byte register access ).
+ * hif_ar6000_set_address_window_register - set the window address register
+ *                                          (using 4-byte register access).
  * @hif_device: hif context
  * @register_addr: register address
  * @addr: addr
@@ -174,7 +168,8 @@ QDF_STATUS hif_diag_write_access(struct hif_opaque_softc *hif_ctx,
 }
 
 /**
- * hif_diag_write_mem - Write a block data to the AR6000 through its diagnostic window.
+ * hif_diag_write_mem - Write a block data to the AR6000 through its diagnostic
+ *                      window.
  * @scn: hif context
  * @address: address
  * @data: data
@@ -195,8 +190,7 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn, uint32_t address,
 	if ((address & WORD_NON_ALIGNMENT_MASK) ||
 				(nbytes & WORD_NON_ALIGNMENT_MASK)) {
 		AR_DEBUG_PRINTF(ATH_LOG_ERR,
-			("[%s]addr or length is not 4 bytes"
-			 " align.addr[0x%08x] len[0x%08x]\n",
+			("[%s]addr or length is not 4 bytes align.addr[0x%08x] len[0x%08x]\n",
 			 __func__, address, nbytes));
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -208,8 +202,7 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn, uint32_t address,
 		status = hif_diag_write_access(scn, address + i, tmp_data);
 		if (status != QDF_STATUS_SUCCESS) {
 			AR_DEBUG_PRINTF(ATH_LOG_ERR,
-				("Diag Write mem failed.addr[0x%08x]"
-				 " value[0x%08x]\n",
+				("Diag Write mem failed.addr[0x%08x] value[0x%08x]\n",
 				 address + i, tmp_data));
 			return status;
 		}
@@ -219,7 +212,8 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn, uint32_t address,
 }
 
 /**
- * hif_diag_read_mem - Read a block data to the AR6000 through its diagnostic window.
+ * hif_diag_read_mem - Read a block data to the AR6000 through its diagnostic
+ *                     window.
  * @scn: hif context
  * @data: data
  * @nbytes: nbytes
@@ -240,8 +234,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
 	if ((address & WORD_NON_ALIGNMENT_MASK) ||
 					(nbytes & WORD_NON_ALIGNMENT_MASK)) {
 		AR_DEBUG_PRINTF(ATH_LOG_ERR,
-			("[%s]addr or length is not 4 bytes"
-			" align.addr[0x%08x] len[0x%08x]\n",
+			("[%s]addr or length is not 4 bytes align.addr[0x%08x] len[0x%08x]\n",
 			 __func__, address, nbytes));
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -250,8 +243,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
 		status = hif_diag_read_access(scn, address + i, &tmp_data);
 		if (status != QDF_STATUS_SUCCESS) {
 			AR_DEBUG_PRINTF(ATH_LOG_ERR,
-					("Diag Write mem failed.addr[0x%08x]"
-					 " value[0x%08x]\n",
+					("Diag Write mem failed.addr[0x%08x] value[0x%08x]\n",
 					 address + i, tmp_data));
 			return status;
 		}
@@ -263,6 +255,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
 
 	return QDF_STATUS_SUCCESS;
 }
+qdf_export_symbol(hif_diag_read_mem);
 
 /**
  * hif_ar6k_read_target_register - call to read target register values
@@ -272,7 +265,7 @@ QDF_STATUS hif_diag_read_mem(struct hif_opaque_softc *scn,
  *
  * Return: QDF_STATUS_SUCCESS for success.
  */
-QDF_STATUS hif_ar6k_read_target_register(struct hif_sdio_dev *hif_device,
+static QDF_STATUS hif_ar6k_read_target_register(struct hif_sdio_dev *hif_device,
 					 int regsel, uint32_t *regval)
 {
 	QDF_STATUS status;
@@ -317,7 +310,7 @@ QDF_STATUS hif_ar6k_read_target_register(struct hif_sdio_dev *hif_device,
  * Return: None
  */
 void hif_ar6k_fetch_target_regs(struct hif_sdio_dev *hif_device,
-		 uint32_t *targregs)
+				uint32_t *targregs)
 {
 	int i;
 	uint32_t val;

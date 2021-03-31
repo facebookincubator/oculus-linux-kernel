@@ -221,6 +221,7 @@ struct ext4_io_submit {
 #define	EXT4_MAX_BLOCK_SIZE		65536
 #define EXT4_MIN_BLOCK_LOG_SIZE		10
 #define EXT4_MAX_BLOCK_LOG_SIZE		16
+#define EXT4_MAX_CLUSTER_LOG_SIZE	30
 #ifdef __KERNEL__
 # define EXT4_BLOCK_SIZE(s)		((s)->s_blocksize)
 #else
@@ -589,6 +590,7 @@ enum {
 #define EXT4_ENCRYPTION_MODE_AES_256_CBC	3
 #define EXT4_ENCRYPTION_MODE_AES_256_CTS	4
 #define EXT4_ENCRYPTION_MODE_PRIVATE		127
+#define EXT4_ENCRYPTION_MODE_AES_256_HEH	126
 
 #include "ext4_crypto.h"
 
@@ -2334,19 +2336,6 @@ int _ext4_get_encryption_info(struct inode *inode);
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
 int ext4_has_encryption_key(struct inode *inode);
 
-static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
-{
-	return EXT4_I(inode)->i_crypt_info;
-}
-
-static inline int ext4_using_hardware_encryption(struct inode *inode)
-{
-	struct ext4_crypt_info *ci = ext4_encryption_info(inode);
-
-	return S_ISREG(inode->i_mode) && ci &&
-		ci->ci_data_mode == EXT4_ENCRYPTION_MODE_PRIVATE;
-}
-
 static inline int ext4_get_encryption_info(struct inode *inode)
 {
 	struct ext4_crypt_info *ci = EXT4_I(inode)->i_crypt_info;
@@ -2358,6 +2347,19 @@ static inline int ext4_get_encryption_info(struct inode *inode)
 					   (1 << KEY_FLAG_DEAD)))))
 		return _ext4_get_encryption_info(inode);
 	return 0;
+}
+
+static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
+{
+	return EXT4_I(inode)->i_crypt_info;
+}
+
+static inline int ext4_using_hardware_encryption(struct inode *inode)
+{
+	struct ext4_crypt_info *ci = ext4_encryption_info(inode);
+
+	return S_ISREG(inode->i_mode) && ci &&
+		ci->ci_data_mode == EXT4_ENCRYPTION_MODE_PRIVATE;
 }
 
 #else

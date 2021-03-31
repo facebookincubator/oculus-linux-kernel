@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, 2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1249,7 +1249,7 @@ static void smem_module_init_notify(uint32_t state, void *data)
 static void smem_init_security_partition(struct smem_toc_entry *entry,
 								uint32_t num)
 {
-	uint16_t remote_host;
+	uint16_t remote_host = 0;
 	struct smem_partition_header *hdr;
 	bool is_comm_partition = false;
 

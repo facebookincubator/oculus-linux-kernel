@@ -231,10 +231,10 @@ static void qca_wq_awake_device(struct work_struct *work)
 
 	BT_DBG("hu %p wq awake device", hu);
 
+	spin_lock(&qca->hci_ibs_lock);
+
 	/* Vote for serial clock */
 	serial_clock_vote(HCI_IBS_TX_VOTE_CLOCK_ON, hu);
-
-	spin_lock(&qca->hci_ibs_lock);
 
 	/* Send wake indication to device */
 	if (send_hci_ibs_cmd(HCI_IBS_WAKE_IND, hu) < 0)
@@ -260,9 +260,10 @@ static void qca_wq_awake_rx(struct work_struct *work)
 
 	BT_DBG("hu %p wq awake rx", hu);
 
+	spin_lock(&qca->hci_ibs_lock);
+
 	serial_clock_vote(HCI_IBS_RX_VOTE_CLOCK_ON, hu);
 
-	spin_lock(&qca->hci_ibs_lock);
 	qca->rx_ibs_state = HCI_IBS_RX_AWAKE;
 
 	/* Always acknowledge device wake up,
@@ -287,7 +288,11 @@ static void qca_wq_serial_rx_clock_vote_off(struct work_struct *work)
 
 	BT_DBG("hu %p rx clock vote off", hu);
 
+	spin_lock(&qca->hci_ibs_lock);
+
 	serial_clock_vote(HCI_IBS_RX_VOTE_CLOCK_OFF, hu);
+
+	spin_unlock(&qca->hci_ibs_lock);
 }
 
 static void qca_wq_serial_tx_clock_vote_off(struct work_struct *work)
@@ -298,6 +303,8 @@ static void qca_wq_serial_tx_clock_vote_off(struct work_struct *work)
 
 	BT_DBG("hu %p tx clock vote off", hu);
 
+	spin_lock(&qca->hci_ibs_lock);
+
 	/* Run HCI tx handling unlocked */
 	hci_uart_tx_wakeup(hu);
 
@@ -305,6 +312,8 @@ static void qca_wq_serial_tx_clock_vote_off(struct work_struct *work)
 	 * It is up to the tty driver to pend the clocks off until tx done.
 	 */
 	serial_clock_vote(HCI_IBS_TX_VOTE_CLOCK_OFF, hu);
+
+	spin_unlock(&qca->hci_ibs_lock);
 }
 
 static void hci_ibs_tx_idle_timeout(unsigned long arg)
@@ -520,7 +529,11 @@ static int qca_close(struct hci_uart *hu)
 
 	BT_DBG("hu %p qca close", hu);
 
+	spin_lock(&qca->hci_ibs_lock);
+
 	serial_clock_vote(HCI_IBS_VOTE_STATS_UPDATE, hu);
+
+	spin_unlock(&qca->hci_ibs_lock);
 
 	skb_queue_purge(&qca->tx_wait_q);
 	skb_queue_purge(&qca->txq);
@@ -884,7 +897,7 @@ static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
 	 */
 	set_current_state(TASK_UNINTERRUPTIBLE);
 	schedule_timeout(msecs_to_jiffies(BAUDRATE_SETTLE_TIMEOUT_MS));
-	set_current_state(TASK_INTERRUPTIBLE);
+	set_current_state(TASK_RUNNING);
 
 	return 0;
 }
@@ -936,6 +949,15 @@ static int qca_setup(struct hci_uart *hu)
 	if (!ret) {
 		set_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
 		qca_debugfs_init(hdev);
+	} else if (ret == -ENOENT) {
+		/* No patch/nvm-config found, run with original fw/config */
+		ret = 0;
+	} else if (ret == -EAGAIN) {
+		/*
+		 * Userspace firmware loader will return -EAGAIN in case no
+		 * patch/nvm-config is found, so run with original fw/config.
+		 */
+		ret = 0;
 	}
 
 	/* Setup bdaddr */

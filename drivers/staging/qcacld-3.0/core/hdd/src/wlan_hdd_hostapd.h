@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #if !defined(WLAN_HDD_HOSTAPD_H)
 #define WLAN_HDD_HOSTAPD_H
 
@@ -38,7 +29,6 @@
 
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
-#include <linux/ieee80211.h>
 #include <qdf_list.h>
 #include <qdf_types.h>
 #include <wlan_hdd_main.h>
@@ -48,28 +38,76 @@
 /* max length of command string in hostapd ioctl */
 #define HOSTAPD_IOCTL_COMMAND_STRLEN_MAX   8192
 
-hdd_adapter_t *hdd_wlan_create_ap_dev(hdd_context_t *pHddCtx,
+struct hdd_adapter *hdd_wlan_create_ap_dev(struct hdd_context *hdd_ctx,
 				      tSirMacAddr macAddr,
 				      unsigned char name_assign_type,
 				      uint8_t *name);
 
-QDF_STATUS hdd_register_hostapd(hdd_adapter_t *pAdapter, uint8_t rtnl_held);
-
-int hdd_unregister_hostapd(hdd_adapter_t *pAdapter, bool rtnl_held);
+QDF_STATUS hdd_unregister_hostapd(struct hdd_adapter *adapter, bool rtnl_held);
 
 eCsrAuthType
 hdd_translate_rsn_to_csr_auth_type(uint8_t auth_suite[4]);
 
 int hdd_softap_set_channel_change(struct net_device *dev,
 					int target_channel,
-					enum phy_ch_width target_bw);
+					enum phy_ch_width target_bw,
+					bool forced);
 
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-void hdd_sap_restart_with_channel_switch(hdd_adapter_t *adapter,
+void hdd_sap_restart_with_channel_switch(struct hdd_adapter *adapter,
 				uint32_t target_channel,
-				uint32_t target_bw);
+				uint32_t target_bw,
+				bool forced);
+/**
+ * hdd_sap_restart_chan_switch_cb() - Function to restart SAP with
+ * a different channel
+ * @psoc: PSOC object information
+ * @vdev_id: vdev id
+ * @channel: channel to switch
+ * @forced: Force to switch channel, ignore SCC/MCC check
+ *
+ * This function restarts SAP with a different channel
+ *
+ * Return: None
+ *
+ */
+void hdd_sap_restart_chan_switch_cb(struct wlan_objmgr_psoc *psoc,
+				    uint8_t vdev_id, uint32_t channel,
+				    uint32_t channel_bw,
+				    bool forced);
+/**
+ * wlan_hdd_get_channel_for_sap_restart() - Function to get
+ * suitable channel and restart SAP
+ * @psoc: PSOC object information
+ * @vdev_id: vdev id
+ * @channel: channel to be returned
+ * @sec_ch: secondary channel to be returned
+ *
+ * This function gets the channel parameters to restart SAP
+ *
+ * Return: None
+ *
+ */
+QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
+				struct wlan_objmgr_psoc *psoc,
+				uint8_t vdev_id, uint8_t *channel,
+				uint8_t *sec_ch);
 #endif
 
+/**
+ * wlan_hdd_set_sap_csa_reason() - Function to set
+ * sap csa reason
+ * @psoc: PSOC object information
+ * @vdev_id: vdev id
+ * @reason: reason to be updated
+ *
+ * This function sets the reason for SAP channel switch
+ *
+ * Return: None
+ *
+ */
+void wlan_hdd_set_sap_csa_reason(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+				 uint8_t reason);
 eCsrEncryptionType
 hdd_translate_rsn_to_csr_encryption_type(uint8_t cipher_suite[4]);
 
@@ -82,33 +120,76 @@ hdd_translate_wpa_to_csr_auth_type(uint8_t auth_suite[4]);
 eCsrEncryptionType
 hdd_translate_wpa_to_csr_encryption_type(uint8_t cipher_suite[4]);
 
-QDF_STATUS hdd_softap_sta_deauth(hdd_adapter_t *,
-		struct tagCsrDelStaParams *);
-void hdd_softap_sta_disassoc(hdd_adapter_t *, struct tagCsrDelStaParams *);
-void hdd_softap_tkip_mic_fail_counter_measure(hdd_adapter_t *, bool);
-int hdd_softap_unpack_ie(tHalHandle halHandle,
-			 eCsrEncryptionType *pEncryptType,
-			 eCsrEncryptionType *mcEncryptType,
-			 eCsrAuthType *pAuthType,
-			 bool *pMFPCapable,
-			 bool *pMFPRequired,
-			 uint16_t gen_ie_len, uint8_t *gen_ie);
+QDF_STATUS hdd_softap_sta_deauth(struct hdd_adapter *adapter,
+		struct csr_del_sta_params *pDelStaParams);
+void hdd_softap_sta_disassoc(struct hdd_adapter *adapter,
+			     struct csr_del_sta_params *pDelStaParams);
 
 QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
-				    void *usrDataForCallback);
-QDF_STATUS hdd_init_ap_mode(hdd_adapter_t *pAdapter, bool reinit);
-void hdd_set_ap_ops(struct net_device *pWlanHostapdDev);
+				    void *context);
+/**
+ * hdd_init_ap_mode() - to init the AP adaptor
+ * @adapter: SAP/GO adapter
+ * @rtnl_held: flag to indicate if RTNL lock needs to be acquired
+ *
+ * This API can be called to open the SAP session as well as
+ * to create and store the vdev object. It also initializes necessary
+ * SAP adapter related params.
+ */
+QDF_STATUS hdd_init_ap_mode(struct hdd_adapter *adapter, bool reinit);
+/**
+ * hdd_deinit_ap_mode() - to deinit the AP adaptor
+ * @hdd_ctx: pointer to hdd_ctx
+ * @adapter: SAP/GO adapter
+ * @rtnl_held: flag to indicate if RTNL lock needs to be acquired
+ *
+ * This API can be called to close the SAP session as well as
+ * release the vdev object completely. It also deinitializes necessary
+ * SAP adapter related params.
+ */
+void hdd_deinit_ap_mode(struct hdd_context *hdd_ctx,
+			struct hdd_adapter *adapter, bool rtnl_held);
+void hdd_set_ap_ops(struct net_device *dev);
+/**
+ * hdd_sap_create_ctx() - Wrapper API to create SAP context
+ * @adapter: pointer to adapter
+ *
+ * This wrapper API can be called to create the sap context. It will
+ * eventually calls SAP API to create the sap context
+ *
+ * Return: true or false based on overall success or failure
+ */
+bool hdd_sap_create_ctx(struct hdd_adapter *adapter);
+/**
+ * hdd_sap_destroy_ctx() - Wrapper API to destroy SAP context
+ * @adapter: pointer to adapter
+ *
+ * This wrapper API can be called to destroy the sap context. It will
+ * eventually calls SAP API to destroy the sap context
+ *
+ * Return: true or false based on overall success or failure
+ */
+bool hdd_sap_destroy_ctx(struct hdd_adapter *adapter);
+/**
+ * hdd_sap_destroy_ctx_all() - Wrapper API to destroy all SAP context
+ * @adapter: pointer to adapter
+ * @is_ssr: true if SSR is in progress
+ *
+ * This wrapper API can be called to destroy all the sap context.
+ * if is_ssr is true, it will return as sap_ctx will be used when
+ * restart sap.
+ *
+ * Return: none
+ */
+void hdd_sap_destroy_ctx_all(struct hdd_context *hdd_ctx, bool is_ssr);
+
 int hdd_hostapd_stop(struct net_device *dev);
-int hdd_sap_context_init(hdd_context_t *hdd_ctx);
-void hdd_sap_context_destroy(hdd_context_t *hdd_ctx);
-#ifdef FEATURE_WLAN_FORCE_SAP_SCC
-void hdd_restart_softap(hdd_context_t *pHddCtx, hdd_adapter_t *pAdapter);
-#endif /* FEATURE_WLAN_FORCE_SAP_SCC */
+int hdd_sap_context_init(struct hdd_context *hdd_ctx);
+void hdd_sap_context_destroy(struct hdd_context *hdd_ctx);
 #ifdef QCA_HT_2040_COEX
-QDF_STATUS hdd_set_sap_ht2040_mode(hdd_adapter_t *pHostapdAdapter,
+QDF_STATUS hdd_set_sap_ht2040_mode(struct hdd_adapter *adapter,
 				   uint8_t channel_type);
 #endif
-
 
 int wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 			      struct net_device *dev);
@@ -121,8 +202,6 @@ int wlan_hdd_cfg80211_change_beacon(struct wiphy *wiphy,
 				    struct net_device *dev,
 				    struct cfg80211_beacon_data *params);
 
-QDF_STATUS wlan_hdd_config_acs(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter);
-
 /**
  * hdd_is_peer_associated - is peer connected to softap
  * @adapter: pointer to softap adapter
@@ -133,9 +212,59 @@ QDF_STATUS wlan_hdd_config_acs(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter);
  *
  * Return: true if peer mac, else false
  */
-bool hdd_is_peer_associated(hdd_adapter_t *adapter,
+bool hdd_is_peer_associated(struct hdd_adapter *adapter,
 			    struct qdf_mac_addr *mac_addr);
-void hdd_sap_indicate_disconnect_for_sta(hdd_adapter_t *adapter);
-void hdd_sap_destroy_events(hdd_adapter_t *adapter);
+
+int hdd_destroy_acs_timer(struct hdd_adapter *adapter);
+
+QDF_STATUS wlan_hdd_config_acs(struct hdd_context *hdd_ctx,
+			       struct hdd_adapter *adapter);
+
+void hdd_sap_indicate_disconnect_for_sta(struct hdd_adapter *adapter);
+
+/**
+ * wlan_hdd_disable_channels() - Cache the channels
+ * and current state of the channels from the channel list
+ * received in the command and disable the channels on the
+ * wiphy and reg table.
+ * @hdd_ctx: Pointer to hdd context
+ *
+ * Return: 0 on success, Error code on failure
+ */
+int wlan_hdd_disable_channels(struct hdd_context *hdd_ctx);
+
+/*
+ * hdd_check_and_disconnect_sta_on_invalid_channel() - Disconnect STA if it is
+ * on invalid channel
+ * @hdd_ctx: pointer to hdd context
+ * @reason: Mac Disconnect reason code as per @enum eSirMacReasonCodes
+ *
+ * STA should be disconnected before starting the SAP if it is on indoor
+ * channel.
+ *
+ * Return: void
+ */
+void
+hdd_check_and_disconnect_sta_on_invalid_channel(struct hdd_context *hdd_ctx,
+						tSirMacReasonCodes reason);
+
+/**
+ * hdd_stop_sap_due_to_invalid_channel() - to stop sap in case of invalid chnl
+ * @work: pointer to work structure
+ *
+ * Let's say SAP detected RADAR and trying to select the new channel and if no
+ * valid channel is found due to none of the channels are available or
+ * regulatory restriction then SAP needs to be stopped. so SAP state-machine
+ * will create a work to stop the bss
+ *
+ * stop bss has to happen through worker thread because radar indication comes
+ * from FW through mc thread or main host thread and if same thread is used to
+ * do stopbss then waiting for stopbss to finish operation will halt mc thread
+ * to freeze which will trigger stopbss timeout. Instead worker thread can do
+ * the stopbss operation while mc thread waits for stopbss to finish.
+ *
+ * Return: none
+ */
+void hdd_stop_sap_due_to_invalid_channel(struct work_struct *work);
 
 #endif /* end #if !defined(WLAN_HDD_HOSTAPD_H) */

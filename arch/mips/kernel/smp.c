@@ -25,7 +25,7 @@
 #include <linux/smp.h>
 #include <linux/spinlock.h>
 #include <linux/threads.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/time.h>
 #include <linux/timex.h>
 #include <linux/sched.h>
@@ -63,6 +63,9 @@ EXPORT_SYMBOL(cpu_sibling_map);
 /* representing the core map of multi-core chips of each logical CPU */
 cpumask_t cpu_core_map[NR_CPUS] __read_mostly;
 EXPORT_SYMBOL(cpu_core_map);
+
+static DECLARE_COMPLETION(cpu_starting);
+static DECLARE_COMPLETION(cpu_running);
 
 /*
  * A logcal cpu mask containing only one VPE per core to
@@ -174,6 +177,12 @@ asmlinkage void start_secondary(void)
 	cpumask_set_cpu(cpu, &cpu_coherent_mask);
 	notify_cpu_starting(cpu);
 
+	/* Notify boot CPU that we're starting & ready to sync counters */
+	complete(&cpu_starting);
+
+	synchronise_count_slave(cpu);
+
+	/* The CPU is running and counters synchronised, now mark it online */
 	set_cpu_online(cpu, true);
 
 	set_cpu_sibling_map(cpu);
@@ -181,9 +190,11 @@ asmlinkage void start_secondary(void)
 
 	calculate_cpu_foreign_map();
 
-	cpumask_set_cpu(cpu, &cpu_callin_map);
-
-	synchronise_count_slave(cpu);
+	/*
+	 * Notify boot CPU that we're up & online and it can safely return
+	 * from __cpu_up
+	 */
+	complete(&cpu_running);
 
 	/*
 	 * irq will be enabled in ->smp_finish(), enabling it too early
@@ -243,22 +254,23 @@ void smp_prepare_boot_cpu(void)
 {
 	set_cpu_possible(0, true);
 	set_cpu_online(0, true);
-	cpumask_set_cpu(0, &cpu_callin_map);
 }
 
 int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	mp_ops->boot_secondary(cpu, tidle);
 
-	/*
-	 * Trust is futile.  We should really have timeouts ...
-	 */
-	while (!cpumask_test_cpu(cpu, &cpu_callin_map)) {
-		udelay(100);
-		schedule();
+	/* Wait for CPU to start and be ready to sync counters */
+	if (!wait_for_completion_timeout(&cpu_starting,
+					 msecs_to_jiffies(1000))) {
+		pr_crit("CPU%u: failed to start\n", cpu);
+		return -EIO;
 	}
 
 	synchronise_count_master(cpu);
+
+	/* Wait for CPU to finish startup & mark itself online before return */
+	wait_for_completion(&cpu_running);
 	return 0;
 }
 

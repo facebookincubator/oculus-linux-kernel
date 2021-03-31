@@ -4,6 +4,7 @@
 obj-$(CONFIG_STAGING)		+= staging.o
 
 obj-y				+= media/
+obj-y			+= oculus/
 obj-$(CONFIG_SLICOSS)		+= slicoss/
 obj-$(CONFIG_PRISM2_USB)	+= wlan-ng/
 obj-$(CONFIG_COMEDI)		+= comedi/
@@ -47,4 +48,3 @@ obj-$(CONFIG_FSL_MC_BUS)	+= fsl-mc/
 obj-$(CONFIG_WILC1000)		+= wilc1000/
 obj-$(CONFIG_MOST)		+= most/
 obj-$(CONFIG_QCA_CLD_WLAN)	+= qcacld-3.0/
-obj-y				+= oculus/

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
+#define ATH_MODULE_NAME hif
 #include <qdf_types.h>
 #include <qdf_status.h>
 #include <qdf_timer.h>
@@ -109,6 +101,11 @@ QDF_STATUS hif_dev_send_buffer(struct hif_sdio_device *pdev,
 	uint32_t request = HIF_WR_ASYNC_BLOCK_INC;
 	uint8_t mbox_index = hif_dev_map_pipe_to_mail_box(pdev, pipe);
 
+	if (mbox_index == INVALID_MAILBOX_NUMBER) {
+		AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("pipe id(%d) invalid\n", pipe));
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	padded_length = DEV_CALC_SEND_PADDED_LEN(pdev, nbytes);
 	A_ASSERT(padded_length - nbytes < HIF_DUMMY_SPACE_MASK + 1);
 	/*
@@ -121,8 +118,9 @@ QDF_STATUS hif_dev_send_buffer(struct hif_sdio_device *pdev,
 	frag_count = qdf_nbuf_get_num_frags(buf);
 
 	if (frag_count > 1) {
-		/* header data length should be total sending length substract
-		 * internal data length of netbuf */
+		/* header data length should be total sending length subtract
+		 * internal data length of netbuf
+		 */
 		head_data_len = sizeof(struct hif_sendContext) +
 			(nbytes - qdf_nbuf_get_frag_len(buf, frag_count - 1));
 	} else {
@@ -144,7 +142,15 @@ QDF_STATUS hif_dev_send_buffer(struct hif_sdio_device *pdev,
 			(struct hif_sendContext *)
 			qdf_mem_malloc(sizeof(struct hif_sendContext) +
 				       padded_length);
-		send_context->bNewAlloc = true;
+		if (send_context) {
+			send_context->bNewAlloc = true;
+		} else {
+			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
+				("Allocate send context fail %d\n",
+				(int) sizeof(struct hif_sendContext) +
+				padded_length));
+			return QDF_STATUS_E_NOMEM;
+		}
 	}
 
 	send_context->netbuf = buf;
@@ -162,6 +168,7 @@ QDF_STATUS hif_dev_send_buffer(struct hif_sdio_device *pdev,
 	     i++) {
 		int frag_len = qdf_nbuf_get_frag_len(buf, i);
 		unsigned char *frag_addr = qdf_nbuf_get_frag_vaddr(buf, i);
+
 		if (frag_len > nbytes)
 			frag_len = nbytes;
 		memcpy(pData, frag_addr, frag_len);

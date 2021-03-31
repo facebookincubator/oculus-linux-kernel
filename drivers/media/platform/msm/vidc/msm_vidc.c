@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,13 +14,14 @@
 #include <linux/dma-direction.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/bsearch.h>
+#include <linux/delay.h>
 #include <media/msm_vidc.h>
 #include "msm_vidc_internal.h"
 #include "msm_vidc_debug.h"
 #include "msm_vdec.h"
 #include "msm_venc.h"
 #include "msm_vidc_common.h"
-#include <linux/delay.h>
 #include "vidc_hfi_api.h"
 #include "msm_vidc_dcvs.h"
 
@@ -88,7 +89,7 @@ int msm_vidc_querycap(void *instance, struct v4l2_capability *cap)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_querycap(instance, cap);
+		return msm_vdec_querycap(inst, cap);
 	else if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_querycap(instance, cap);
 	return -EINVAL;
@@ -103,12 +104,135 @@ int msm_vidc_enum_fmt(void *instance, struct v4l2_fmtdesc *f)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_enum_fmt(instance, f);
+		return msm_vdec_enum_fmt(inst, f);
 	else if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_enum_fmt(instance, f);
 	return -EINVAL;
 }
 EXPORT_SYMBOL(msm_vidc_enum_fmt);
+
+int msm_vidc_query_ctrl(void *instance, struct v4l2_queryctrl *ctrl)
+{
+	struct msm_vidc_inst *inst = instance;
+	int rc = 0;
+
+	if (!inst || !ctrl)
+		return -EINVAL;
+
+	switch (ctrl->id) {
+	case V4L2_CID_MPEG_VIDC_VIDEO_HYBRID_HIERP_MODE:
+		ctrl->maximum = inst->capability.hier_p_hybrid.max;
+		ctrl->minimum = inst->capability.hier_p_hybrid.min;
+		break;
+	case V4L2_CID_MPEG_VIDC_VIDEO_HIER_B_NUM_LAYERS:
+		ctrl->maximum = inst->capability.hier_b.max;
+		ctrl->minimum = inst->capability.hier_b.min;
+		break;
+	case V4L2_CID_MPEG_VIDC_VIDEO_HIER_P_NUM_LAYERS:
+		ctrl->maximum = inst->capability.hier_p.max;
+		ctrl->minimum = inst->capability.hier_p.min;
+		break;
+	default:
+		rc = -EINVAL;
+	}
+	return rc;
+}
+EXPORT_SYMBOL(msm_vidc_query_ctrl);
+
+static int msm_vidc_queryctrl_bsearch_cmp1(const void *key, const void *elt)
+{
+	return *(int32_t *)key - (int32_t)((struct msm_vidc_ctrl *)elt)->id;
+}
+
+static int msm_vidc_queryctrl_bsearch_cmp2(const void *key, const void *elt)
+{
+	uint32_t id = *(uint32_t *)key;
+	struct msm_vidc_ctrl *ctrl = (struct msm_vidc_ctrl *)elt;
+
+	if (id >= ctrl[0].id && id < ctrl[1].id)
+		return 0;
+	else if (id < ctrl[0].id)
+		return -1;
+	else
+		return 1;
+}
+
+int msm_vidc_query_ext_ctrl(void *instance, struct v4l2_query_ext_ctrl *ctrl)
+{
+	struct msm_vidc_inst *inst = instance;
+	bool get_next_ctrl = 0;
+	int i, num_ctrls, rc = 0;
+	struct msm_vidc_ctrl *key = NULL;
+	struct msm_vidc_ctrl *msm_vdec_ctrls;
+
+	if (!inst || !ctrl)
+		return -EINVAL;
+
+	i = ctrl->id;
+	memset(ctrl, 0, sizeof(struct v4l2_query_ext_ctrl));
+	ctrl->id = i;
+
+	if (ctrl->id & V4L2_CTRL_FLAG_NEXT_CTRL)
+		get_next_ctrl = 1;
+	else if (ctrl->id & V4L2_CTRL_FLAG_NEXT_COMPOUND)
+		goto query_ext_ctrl_err;
+
+	ctrl->id &= ~V4L2_CTRL_FLAG_NEXT_CTRL;
+	ctrl->id &= ~V4L2_CTRL_FLAG_NEXT_COMPOUND;
+
+	if (ctrl->id > V4L2_CID_PRIVATE_BASE ||
+		(ctrl->id >= V4L2_CID_BASE && ctrl->id <= V4L2_CID_LASTP1))
+		goto query_ext_ctrl_err;
+	else if (ctrl->id == V4L2_CID_PRIVATE_BASE && get_next_ctrl)
+		ctrl->id = V4L2_CID_MPEG_MSM_VIDC_BASE;
+
+	if (inst->session_type == MSM_VIDC_DECODER)
+		msm_vdec_g_ctrl(&msm_vdec_ctrls, &num_ctrls);
+	else
+		return -EINVAL;
+
+	if (!get_next_ctrl)
+		key = bsearch(&ctrl->id, msm_vdec_ctrls, num_ctrls,
+					sizeof(struct msm_vidc_ctrl),
+					msm_vidc_queryctrl_bsearch_cmp1);
+	else {
+		key = bsearch(&ctrl->id, msm_vdec_ctrls, num_ctrls-1,
+					sizeof(struct msm_vidc_ctrl),
+					msm_vidc_queryctrl_bsearch_cmp2);
+
+		if (key && ctrl->id > key->id)
+			key++;
+		if (key) {
+			for (i = key-msm_vdec_ctrls, key = NULL;
+				i < num_ctrls; i++)
+				if (!(msm_vdec_ctrls[i].flags &
+					V4L2_CTRL_FLAG_DISABLED)) {
+					key = &msm_vdec_ctrls[i];
+					break;
+				}
+		}
+	}
+
+	if (key) {
+		ctrl->id = key->id;
+		ctrl->type = key->type;
+		strlcpy(ctrl->name, key->name, MAX_NAME_LENGTH);
+		ctrl->minimum = key->minimum;
+		ctrl->maximum = key->maximum;
+		ctrl->step = key->step;
+		ctrl->default_value = key->default_value;
+		ctrl->flags = key->flags;
+		ctrl->elems = 1;
+		ctrl->nr_of_dims = 0;
+		return rc;
+	}
+
+query_ext_ctrl_err:
+	ctrl->name[0] = '\0';
+	ctrl->flags |= V4L2_CTRL_FLAG_DISABLED;
+	return -EINVAL;
+}
+EXPORT_SYMBOL(msm_vidc_query_ext_ctrl);
 
 int msm_vidc_s_fmt(void *instance, struct v4l2_format *f)
 {
@@ -118,7 +242,7 @@ int msm_vidc_s_fmt(void *instance, struct v4l2_format *f)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_s_fmt(instance, f);
+		return msm_vdec_s_fmt(inst, f);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_s_fmt(instance, f);
 	return -EINVAL;
@@ -133,7 +257,7 @@ int msm_vidc_g_fmt(void *instance, struct v4l2_format *f)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_g_fmt(instance, f);
+		return msm_vdec_g_fmt(inst, f);
 	else if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_g_fmt(instance, f);
 	return -EINVAL;
@@ -169,7 +293,7 @@ int msm_vidc_s_ext_ctrl(void *instance, struct v4l2_ext_controls *control)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_s_ext_ctrl(instance, control);
+		return msm_vdec_s_ext_ctrl(inst, control);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_s_ext_ctrl(instance, control);
 	return -EINVAL;
@@ -184,7 +308,7 @@ int msm_vidc_reqbufs(void *instance, struct v4l2_requestbuffers *b)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_reqbufs(instance, b);
+		return msm_vdec_reqbufs(inst, b);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_reqbufs(instance, b);
 	return -EINVAL;
@@ -392,7 +516,6 @@ static inline bool is_dynamic_output_buffer_mode(struct v4l2_buffer *b,
 		inst->buffer_mode_set[CAPTURE_PORT] == HAL_BUFFER_MODE_DYNAMIC;
 }
 
-
 static inline void save_v4l2_buffer(struct v4l2_buffer *b,
 						struct buffer_info *binfo)
 {
@@ -404,6 +527,13 @@ static inline void save_v4l2_buffer(struct v4l2_buffer *b,
 			continue;
 		}
 		populate_buf_info(binfo, b, i);
+	}
+
+	if (EXTRADATA_IDX(b->length)) {
+		i = EXTRADATA_IDX(b->length);
+		if (b->m.planes[i].length)
+			binfo->device_addr[i] = binfo->handle[i]->device_addr +
+				binfo->buff_off[i];
 	}
 }
 
@@ -539,6 +669,7 @@ exit:
 	kfree(binfo);
 	return rc;
 }
+
 int unmap_and_deregister_buf(struct msm_vidc_inst *inst,
 			struct buffer_info *binfo)
 {
@@ -617,7 +748,6 @@ exit:
 	return 0;
 }
 
-
 int qbuf_dynamic_buf(struct msm_vidc_inst *inst,
 			struct buffer_info *binfo)
 {
@@ -666,7 +796,8 @@ int output_buffer_cache_invalidate(struct msm_vidc_inst *inst,
 
 				if (inst->session_type == MSM_VIDC_ENCODER &&
 					!i)
-					size = b->m.planes[i].bytesused;
+					size = b->m.planes[i].bytesused +
+						b->m.planes[i].data_offset;
 				else
 					size = -1;
 
@@ -721,7 +852,7 @@ int msm_vidc_prepare_buf(void *instance, struct v4l2_buffer *b)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_prepare_buf(instance, b);
+		return msm_vdec_prepare_buf(inst, b);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_prepare_buf(instance, b);
 	return -EINVAL;
@@ -788,8 +919,7 @@ int msm_vidc_release_buffers(void *instance, int buffer_type)
 		if (!release_buf)
 			continue;
 		if (inst->session_type == MSM_VIDC_DECODER)
-			rc = msm_vdec_release_buf(instance,
-				&buffer_info);
+			rc = msm_vdec_release_buf(inst,	&buffer_info);
 		if (inst->session_type == MSM_VIDC_ENCODER)
 			rc = msm_venc_release_buf(instance,
 				&buffer_info);
@@ -901,7 +1031,8 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 		if (binfo->handle[i] &&
 			(b->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)) {
 			if (inst->session_type == MSM_VIDC_DECODER && !i)
-				size = b->m.planes[i].bytesused;
+				size = b->m.planes[i].bytesused +
+						b->m.planes[i].data_offset;
 			else
 				size = -1;
 			rc = msm_comm_smem_cache_operations(inst,
@@ -916,7 +1047,7 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 	}
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_qbuf(instance, b);
+		return msm_vdec_qbuf(inst, b);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_qbuf(instance, b);
 
@@ -969,7 +1100,7 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 				buffer_info->crop_data.width_height[0];
 		b->m.planes[i].reserved[7] =
 				buffer_info->crop_data.width_height[1];
-		if (!b->m.planes[i].m.userptr) {
+		if (!(inst->flags & VIDC_SECURE) && !b->m.planes[i].m.userptr) {
 			dprintk(VIDC_ERR,
 			"%s: Failed to find user virtual address, %#lx, %d, %d\n",
 			__func__, b->m.planes[i].m.userptr, b->type, i);
@@ -1011,7 +1142,7 @@ int msm_vidc_streamon(void *instance, enum v4l2_buf_type i)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_streamon(instance, i);
+		return msm_vdec_streamon(inst, i);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_streamon(instance, i);
 	return -EINVAL;
@@ -1026,7 +1157,7 @@ int msm_vidc_streamoff(void *instance, enum v4l2_buf_type i)
 		return -EINVAL;
 
 	if (inst->session_type == MSM_VIDC_DECODER)
-		return msm_vdec_streamoff(instance, i);
+		return msm_vdec_streamoff(inst, i);
 	if (inst->session_type == MSM_VIDC_ENCODER)
 		return msm_venc_streamoff(instance, i);
 	return -EINVAL;
@@ -1037,6 +1168,8 @@ int msm_vidc_enum_framesizes(void *instance, struct v4l2_frmsizeenum *fsize)
 {
 	struct msm_vidc_inst *inst = instance;
 	struct msm_vidc_capability *capability = NULL;
+	enum hal_video_codec codec;
+	int i;
 
 	if (!inst || !fsize) {
 		dprintk(VIDC_ERR, "%s: invalid parameter: %pK %pK\n",
@@ -1045,15 +1178,33 @@ int msm_vidc_enum_framesizes(void *instance, struct v4l2_frmsizeenum *fsize)
 	}
 	if (!inst->core)
 		return -EINVAL;
+	if (fsize->index != 0)
+		return -EINVAL;
 
-	capability = &inst->capability;
-	fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
-	fsize->stepwise.min_width = capability->width.min;
-	fsize->stepwise.max_width = capability->width.max;
-	fsize->stepwise.step_width = capability->width.step_size;
-	fsize->stepwise.min_height = capability->height.min;
-	fsize->stepwise.max_height = capability->height.max;
-	fsize->stepwise.step_height = capability->height.step_size;
+	codec = get_hal_codec(fsize->pixel_format);
+	if (codec == HAL_UNUSED_CODEC)
+		return -EINVAL;
+
+	for (i = 0; i < VIDC_MAX_SESSIONS; i++) {
+		if (inst->core->capabilities[i].codec == codec) {
+			capability = &inst->core->capabilities[i];
+			break;
+		}
+	}
+
+	if (capability) {
+		fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
+		fsize->stepwise.min_width = capability->width.min;
+		fsize->stepwise.max_width = capability->width.max;
+		fsize->stepwise.step_width = capability->width.step_size;
+		fsize->stepwise.min_height = capability->height.min;
+		fsize->stepwise.max_height = capability->height.max;
+		fsize->stepwise.step_height = capability->height.step_size;
+	} else {
+		dprintk(VIDC_ERR, "%s: Invalid Pixel Fmt %#x\n",
+				__func__, fsize->pixel_format);
+		return -EINVAL;
+	}
 	return 0;
 }
 EXPORT_SYMBOL(msm_vidc_enum_framesizes);
@@ -1281,10 +1432,6 @@ void *msm_vidc_open(int core_id, int session_type)
 
 	inst->id = msm_vidc_get_unique_id(core);
 
-	mutex_lock(&core->lock);
-	list_add_tail(&inst->list, &core->instances);
-	mutex_unlock(&core->lock);
-
 	rc = msm_comm_try_state(inst, MSM_VIDC_CORE_INIT_DONE);
 	if (rc) {
 		dprintk(VIDC_ERR,
@@ -1298,15 +1445,15 @@ void *msm_vidc_open(int core_id, int session_type)
 		goto fail_init;
 	}
 
+	mutex_lock(&core->lock);
+	list_add_tail(&inst->list, &core->instances);
+	mutex_unlock(&core->lock);
+
 	inst->debugfs_root =
 		msm_vidc_debugfs_init_inst(inst, core->debugfs_root);
 
 	return inst;
 fail_init:
-	mutex_lock(&core->lock);
-	list_del(&inst->list);
-	mutex_unlock(&core->lock);
-
 	v4l2_fh_del(&inst->event_handler);
 	v4l2_fh_exit(&inst->event_handler);
 	vb2_queue_release(&inst->bufq[OUTPUT_PORT].vb2_bufq);
@@ -1412,16 +1559,17 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
 	return 0;
 }
 
+static void close_helper(struct kref *kref)
+{
+	struct msm_vidc_inst *inst = container_of(kref,
+					struct msm_vidc_inst, kref);
+
+	msm_vidc_destroy(inst);
+}
+
+
 int msm_vidc_close(void *instance)
 {
-	void close_helper(struct kref *kref)
-	{
-		struct msm_vidc_inst *inst = container_of(kref,
-				struct msm_vidc_inst, kref);
-
-		msm_vidc_destroy(inst);
-	}
-
 	struct msm_vidc_inst *inst = instance;
 	struct buffer_info *bi, *dummy;
 	int rc = 0, i = 0;

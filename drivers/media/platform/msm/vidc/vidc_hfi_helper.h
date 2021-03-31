@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, 2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -340,7 +340,7 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x014)
 #define  HFI_PROPERTY_PARAM_VENC_H264_PPS_ID               \
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x015)
-#define HFI_PROPERTY_PARAM_VENC_H264_GENERATE_AUDNAL	\
+#define HFI_PROPERTY_PARAM_VENC_GENERATE_AUDNAL	\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x016)
 #define HFI_PROPERTY_PARAM_VENC_ASPECT_RATIO			\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x017)
@@ -388,6 +388,8 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x033)
 #define  HFI_PROPERTY_PARAM_VENC_IFRAMESIZE			\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x034)
+#define  HFI_PROPERTY_PARAM_VENC_SEND_OUTPUT_FOR_SKIPPED_FRAMES    \
+	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x035)
 
 #define HFI_PROPERTY_CONFIG_VENC_COMMON_START				\
 	(HFI_DOMAIN_BASE_VENC + HFI_ARCH_COMMON_OFFSET + 0x6000)
@@ -701,7 +703,6 @@ struct hfi_bit_depth {
 };
 
 struct hfi_picture_type {
-	u32 is_sync_frame;
 	u32 picture_type;
 };
 

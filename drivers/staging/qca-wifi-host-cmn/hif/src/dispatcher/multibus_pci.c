@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #include "hif.h"
@@ -49,6 +40,8 @@ QDF_STATUS hif_initialize_pci_ops(struct hif_softc *hif_sc)
 	bus_ops->hif_reset_soc = &hif_pci_reset_soc;
 	bus_ops->hif_bus_suspend = &hif_pci_bus_suspend;
 	bus_ops->hif_bus_resume = &hif_pci_bus_resume;
+	bus_ops->hif_bus_suspend_noirq = &hif_pci_bus_suspend_noirq;
+	bus_ops->hif_bus_resume_noirq = &hif_pci_bus_resume_noirq;
 
 	/* do not put the target to sleep for epping or maxperf mode */
 	if (CONFIG_ATH_PCIE_MAX_PERF == 0 &&
@@ -81,11 +74,16 @@ QDF_STATUS hif_initialize_pci_ops(struct hif_softc *hif_sc)
 		&hif_pci_enable_power_management;
 	bus_ops->hif_disable_power_management =
 		&hif_pci_disable_power_management;
+	bus_ops->hif_grp_irq_configure = &hif_pci_configure_grp_irq;
 	bus_ops->hif_display_stats =
 		&hif_pci_display_stats;
 	bus_ops->hif_clear_stats =
 		&hif_pci_clear_stats;
 	bus_ops->hif_addr_in_boundary = &hif_pci_addr_in_boundary;
+
+	/* default to legacy mapping handler; override as needed */
+	bus_ops->hif_map_ce_to_irq = &hif_pci_legacy_map_ce_to_irq;
+	bus_ops->hif_needs_bmi = &hif_pci_needs_bmi;
 
 	return QDF_STATUS_SUCCESS;
 }

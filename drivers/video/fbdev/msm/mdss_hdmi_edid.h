@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017,2019-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,10 +20,20 @@
 #define EDID_BLOCK_ADDR 0xA0
 #define MAX_EDID_BLOCKS 5
 
+#define EDID_COLORIMETRY_xvYCC_601	(1 << 0)
+#define EDID_COLORIMETRY_xvYCC_709	(1 << 1)
+#define EDID_COLORIMETRY_sYCC_601	(1 << 2)
+#define EDID_COLORIMETRY_ADBYCC_601	(1 << 3)
+#define EDID_COLORIMETRY_ADB_RGB	(1 << 4)
+#define EDID_COLORIMETRY_BT2020_CYCC	(1 << 5)
+#define EDID_COLORIMETRY_BT2020_YCC	(1 << 6)
+#define EDID_COLORIMETRY_BT2020_RGB	(1 << 7)
+
 struct hdmi_edid_init_data {
 	struct kobject *kobj;
 	struct hdmi_util_ds_data ds_data;
 	u32 max_pclk_khz;
+	bool yc420_support;
 	u8 *buf;
 	u32 buf_size;
 };
@@ -59,6 +69,7 @@ struct hdmi_edid_override_data {
 };
 
 int hdmi_edid_parser(void *edid_ctrl);
+int hdmi_edid_reset_parser(void *edid_ctrl);
 u32 hdmi_edid_get_raw_data(void *edid_ctrl, u8 *buf, u32 size);
 u8 hdmi_edid_get_sink_scaninfo(void *edid_ctrl, u32 resolution);
 bool hdmi_edid_is_dvi_mode(void *input);
@@ -82,5 +93,6 @@ void hdmi_edid_config_override(void *input, bool enable,
 void hdmi_edid_set_max_pclk_rate(void *input, u32 max_pclk_khz);
 bool hdmi_edid_is_audio_supported(void *input);
 u32 hdmi_edid_get_sink_caps_max_tmds_clk(void *input);
+u8 hdmi_edid_get_colorimetry(void *input);
 
 #endif /* __HDMI_EDID_H__ */

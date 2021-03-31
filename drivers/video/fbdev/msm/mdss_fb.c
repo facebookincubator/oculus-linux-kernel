@@ -1,7 +1,7 @@
 /*
  * Core MDSS framebuffer driver.
  *
- * Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  * Copyright (C) 2007 Google Incorporated
  *
  * This software is licensed under the terms of the GNU General Public
@@ -612,7 +612,7 @@ static ssize_t mdss_fb_get_panel_info(struct device *dev,
 			"red_chromaticity_x=%d\nred_chromaticity_y=%d\n"
 			"green_chromaticity_x=%d\ngreen_chromaticity_y=%d\n"
 			"blue_chromaticity_x=%d\nblue_chromaticity_y=%d\n"
-			"panel_orientation=%d\n",
+			"panel_orientation=%d\ndyn_bitclk_en=%d\n",
 			pinfo->partial_update_enabled,
 			pinfo->roi_alignment.xstart_pix_align,
 			pinfo->roi_alignment.width_pix_align,
@@ -638,7 +638,7 @@ static ssize_t mdss_fb_get_panel_info(struct device *dev,
 			pinfo->hdr_properties.display_primaries[5],
 			pinfo->hdr_properties.display_primaries[6],
 			pinfo->hdr_properties.display_primaries[7],
-			pinfo->panel_orientation);
+			pinfo->panel_orientation, pinfo->dynamic_bitclk);
 
 	return ret;
 }
@@ -3117,13 +3117,15 @@ static int __mdss_fb_sync_buf_done_callback(struct notifier_block *p,
 
 	switch (event) {
 	case MDP_NOTIFY_FRAME_BEGIN:
-		if (mfd->idle_time && !mod_delayed_work(system_wq,
+		if (mfd->idle_time) {
+			if (!mod_delayed_work(system_wq,
 					&mfd->idle_notify_work,
 					msecs_to_jiffies(WAIT_DISP_OP_TIMEOUT)))
-			pr_debug("fb%d: start idle delayed work\n",
-					mfd->index);
+				pr_debug("fb%d: start idle delayed work\n",
+						mfd->index);
 
-		mfd->idle_state = MDSS_FB_NOT_IDLE;
+			mfd->idle_state = MDSS_FB_NOT_IDLE;
+		}
 		break;
 	case MDP_NOTIFY_FRAME_READY:
 		if (sync_pt_data->async_wait_fences &&
@@ -3133,14 +3135,17 @@ static int __mdss_fb_sync_buf_done_callback(struct notifier_block *p,
 			ret = __mdss_fb_wait_for_fence_sub(sync_pt_data,
 				sync_pt_data->temp_fen, fence_cnt);
 		}
-		if (mfd->idle_time && !mod_delayed_work(system_wq,
+		if (mfd->idle_time) {
+			if (!mod_delayed_work(system_wq,
 					&mfd->idle_notify_work,
 					msecs_to_jiffies(mfd->idle_time)))
-			pr_debug("fb%d: restarted idle work\n",
-					mfd->index);
+				pr_debug("fb%d: restarted idle work\n",
+						mfd->index);
+
+			mfd->idle_state = MDSS_FB_IDLE_TIMER_RUNNING;
+		}
 		if (ret == -ETIME)
 			ret = NOTIFY_BAD;
-		mfd->idle_state = MDSS_FB_IDLE_TIMER_RUNNING;
 		break;
 	case MDP_NOTIFY_FRAME_FLUSHED:
 		pr_debug("%s: frame flushed\n", sync_pt_data->fence_name);
@@ -3509,16 +3514,19 @@ static int mdss_fb_pan_display(struct fb_var_screeninfo *var,
 {
 	struct mdp_display_commit disp_commit;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	struct mdss_data_type *mdata = mfd_to_mdata(mfd);
 
 	/*
-	 * during mode switch through mode sysfs node, it will trigger a
-	 * pan_display after switch. This assumes that fb has been adjusted,
-	 * however when using overlays we may not have the right size at this
-	 * point, so it needs to go through PREPARE first. Abort pan_display
-	 * operations until that happens
+	 * Abort pan_display operations in following cases:
+	 * 1. during mode switch through mode sysfs node, it will trigger a
+	 *    pan_display after switch. This assumes that fb has been adjusted,
+	 *    however when using overlays we may not have the right size at this
+	 *    point, so it needs to go through PREPARE first.
+	 * 2. When the splash handoff is pending.
 	 */
-	if (mfd->switch_state != MDSS_MDP_NO_UPDATE_REQUESTED) {
-		pr_debug("fb%d: pan_display skipped during switch\n",
+	if ((mfd->switch_state != MDSS_MDP_NO_UPDATE_REQUESTED) ||
+		(mdss_fb_is_hdmi_primary(mfd) && mdata->handoff_pending)) {
+		pr_debug("fb%d: pan_display skipped during switch or handoff\n",
 				mfd->index);
 		return 0;
 	}
@@ -3632,7 +3640,6 @@ static void mdss_fb_var_to_panelinfo(struct fb_var_screeninfo *var,
 		pinfo->lcdc.v_polarity = 0;
 	else
 		pinfo->lcdc.v_polarity = 1;
-
 }
 
 void mdss_panelinfo_to_fb_var(struct mdss_panel_info *pinfo,
@@ -3746,8 +3753,11 @@ skip_commit:
 	if (IS_ERR_VALUE(ret) || !sync_pt_data->flushed) {
 		mdss_fb_release_kickoff(mfd);
 		mdss_fb_signal_timeline(sync_pt_data);
-	}
 
+		if ((mfd->panel.type == MIPI_CMD_PANEL) &&
+			(mfd->mdp.signal_retire_fence))
+			mfd->mdp.signal_retire_fence(mfd, 1);
+	}
 	if (dynamic_dsi_switch) {
 		MDSS_XLOG(mfd->index, mfd->split_mode, new_dsi_mode,
 			XLOG_FUNC_EXIT);
@@ -3989,7 +3999,7 @@ static int mdss_fb_set_par(struct fb_info *info)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 	struct fb_var_screeninfo *var = &info->var;
-	int old_imgType, old_format;
+	int old_imgType, old_format, out_format;
 	int ret = 0;
 
 	ret = mdss_fb_pan_idle(mfd);
@@ -4072,17 +4082,23 @@ static int mdss_fb_set_par(struct fb_info *info)
 		mfd->fbi->fix.smem_len = PAGE_ALIGN(mfd->fbi->fix.line_length *
 				mfd->fbi->var.yres) * mfd->fb_page;
 
-	old_format = mdss_grayscale_to_mdp_format(var->grayscale);
-	if (!IS_ERR_VALUE(old_format)) {
+	old_format = mfd->panel_info->out_format;
+	out_format = mdss_grayscale_to_mdp_format(var->grayscale);
+	if (!IS_ERR_VALUE(out_format)) {
+		mfd->panel_info->out_format = out_format;
 		if (old_format != mfd->panel_info->out_format)
 			mfd->panel_reconfig = true;
 	}
+
+	if (mdss_fb_is_hdmi_primary(mfd) && mfd->panel_reconfig)
+		mfd->force_null_commit = true;
 
 	if (mfd->panel_reconfig || (mfd->fb_imgType != old_imgType)) {
 		mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info, mfd->op_enable);
 		mdss_fb_var_to_panelinfo(var, mfd->panel_info);
 		mdss_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable);
 		mfd->panel_reconfig = false;
+		mfd->force_null_commit = false;
 	}
 
 	return ret;
@@ -4661,6 +4677,8 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	struct mdp_destination_scaler_data *ds_data = NULL;
 	struct mdp_destination_scaler_data __user *ds_data_user;
 	struct msm_fb_data_type *mfd;
+	struct mdss_overlay_private *mdp5_data = NULL;
+	struct mdss_data_type *mdata;
 
 	ret = copy_from_user(&commit, argp, sizeof(struct mdp_layer_commit));
 	if (ret) {
@@ -4672,9 +4690,20 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	if (!mfd)
 		return -EINVAL;
 
+	mdp5_data = mfd_to_mdp5_data(mfd);
+
 	if (mfd->panel_info->panel_dead) {
 		pr_debug("early commit return\n");
 		MDSS_XLOG(mfd->panel_info->panel_dead);
+		/*
+		 * In case of an ESD attack, since we early return from the
+		 * commits, we need to signal the outstanding fences.
+		 */
+		mdss_fb_release_fences(mfd);
+		if ((mfd->panel.type == MIPI_CMD_PANEL) &&
+			mfd->mdp.signal_retire_fence && mdp5_data)
+			mfd->mdp.signal_retire_fence(mfd,
+						mdp5_data->retire_cnt);
 		return 0;
 	}
 
@@ -4700,6 +4729,7 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	input_layer_list = commit.commit_v1.input_layers;
 
 	if (layer_count > MAX_LAYER_COUNT) {
+		pr_err("invalid layer count :%d\n", layer_count);
 		ret = -EINVAL;
 		goto err;
 	} else if (layer_count) {
@@ -4751,6 +4781,13 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	ds_data_user = commit.commit_v1.dest_scaler;
 	if ((ds_data_user) &&
 		(commit.commit_v1.dest_scaler_cnt)) {
+		mdata = mfd_to_mdata(mfd);
+		if (!mdata || !mdata->scaler_off ||
+				 !mdata->scaler_off->has_dest_scaler) {
+			pr_err("dest scaler not supported\n");
+			ret = -EPERM;
+			goto err;
+		}
 		ret = __mdss_fb_copy_destscaler_data(info, &commit);
 		if (ret) {
 			pr_err("copy dest scaler failed\n");

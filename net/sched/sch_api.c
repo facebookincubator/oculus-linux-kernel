@@ -1004,6 +1004,9 @@ qdisc_create(struct net_device *dev, struct netdev_queue *dev_queue,
 
 		return sch;
 	}
+	/* ops->init() failed, we call ->destroy() like qdisc_create_dflt() */
+	if (ops->destroy)
+		ops->destroy(sch);
 err_out3:
 	dev_put(dev);
 	kfree((char *) sch - sch->padded);
@@ -1200,12 +1203,7 @@ tc_qdisc_flow_control(struct net_device *dev, u32 tcm_handle, int enable_flow)
 			qdisc_len = q->q.qlen;
 			if (q->ops->change(q, &req.attr) != 0)
 				pr_err("%s(): qdisc change failed", __func__);
-		} else {
-			WARN_ONCE(1, "%s(): called on queue which does %s",
-				  __func__, "not support change() operation");
 		}
-	} else {
-		WARN_ONCE(1, "%s(): called on bad queue", __func__);
 	}
 	return qdisc_len;
 }
@@ -1859,7 +1857,6 @@ done:
 int tc_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		struct tcf_result *res, bool compat_mode)
 {
-	__be16 protocol = tc_skb_protocol(skb);
 #ifdef CONFIG_NET_CLS_ACT
 	const struct tcf_proto *old_tp = tp;
 	int limit = 0;
@@ -1867,6 +1864,7 @@ int tc_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 reclassify:
 #endif
 	for (; tp; tp = rcu_dereference_bh(tp->next)) {
+		__be16 protocol = tc_skb_protocol(skb);
 		int err;
 
 		if (tp->protocol != protocol &&
@@ -1893,7 +1891,6 @@ reset:
 	}
 
 	tp = old_tp;
-	protocol = tc_skb_protocol(skb);
 	goto reclassify;
 #endif
 }

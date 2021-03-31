@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -52,6 +52,7 @@ enum sde_rm_topology_name {
  *                              of a single layer mixer.
  * @SDE_RM_TOPCTL_PPSPLIT: Require kernel to use pingpong split pipe
  *                         configuration instead of dual pipe.
+ * @SDE_RM_TOPCTL_FORCE_MIXER: Require kernel to force single mixer usage
  */
 enum sde_rm_topology_control {
 	SDE_RM_TOPCTL_RESERVE_LOCK,
@@ -59,6 +60,7 @@ enum sde_rm_topology_control {
 	SDE_RM_TOPCTL_DSPP,
 	SDE_RM_TOPCTL_FORCE_TILING,
 	SDE_RM_TOPCTL_PPSPLIT,
+	SDE_RM_TOPCTL_FORCE_MIXER,
 };
 
 /**
@@ -70,6 +72,7 @@ enum sde_rm_topology_control {
  * @hw_mdp: hardware object for mdp_top
  * @lm_max_width: cached layer mixer maximum width
  * @rsvp_next_seq: sequence number for next reservation for debugging purposes
+ * @rm_lock: resource manager mutex
  */
 struct sde_rm {
 	struct drm_device *dev;
@@ -78,6 +81,7 @@ struct sde_rm {
 	struct sde_hw_mdp *hw_mdp;
 	uint32_t lm_max_width;
 	uint32_t rsvp_next_seq;
+	struct mutex rm_lock;
 };
 
 /**
@@ -185,6 +189,18 @@ void sde_rm_init_hw_iter(
 bool sde_rm_get_hw(struct sde_rm *rm, struct sde_rm_hw_iter *iter);
 
 /**
+ * sde_rm_get_hw_by_id - retrieve hw object given hw type and hw id
+ *	Meant to do a single pass through the hardware list to iteratively
+ *	retrieve hardware blocks of a given type and id.
+ *	Function returns the hw resource pointer.
+ * @rm: SDE Resource Manager handle
+ * @type: hw type
+ * @id: hw id
+ * @Return: hw resource pointer on match found, NULL on no match found
+ */
+void *sde_rm_get_hw_by_id(struct sde_rm *rm, enum sde_hw_blk_type type, int id);
+
+/**
  * sde_rm_check_property_topctl - validate property bitmask before it is set
  * @val: user's proposed topology control bitmask
  * @Return: 0 on success or error
@@ -197,5 +213,41 @@ int sde_rm_check_property_topctl(uint64_t val);
  * @Return: 0 on success or error
  */
 int sde_rm_check_property_topctl(uint64_t val);
+
+/**
+ * sde_rm_read_resource_for_splash - read splash resource used in bootloader
+ * @rm: SDE Resource Manager handle
+ * @sinfo: handle for splash info
+ * @cat: Pointer to hardware catalog
+ */
+int sde_rm_read_resource_for_splash(struct sde_rm *rm,
+				void *sinfo,
+				struct sde_mdss_cfg *cat);
+
+/**
+ * sde_rm_ext_blk_create_reserve - Create external HW blocks
+ *	in resource manager and reserve for specific encoder.
+ * @rm: SDE Resource Manager handle
+ * @type: external HW block type
+ * @id: external HW block id
+ * @hw: external HW block
+ * @enc: DRM Encoder handle
+ * @Return: 0 on Success otherwise -ERROR
+ */
+int sde_rm_ext_blk_create_reserve(struct sde_rm *rm,
+		enum sde_hw_blk_type type,
+		uint32_t id,
+		void *hw,
+		struct drm_encoder *enc);
+
+/**
+ * sde_rm_ext_blk_destroy - Given the encoder for the display chain, release
+ *	external HW blocks created for that.
+ * @rm: SDE Resource Manager handle
+ * @enc: DRM Encoder handle
+ * @Return: 0 on Success otherwise -ERROR
+ */
+int sde_rm_ext_blk_destroy(struct sde_rm *rm,
+				struct drm_encoder *enc);
 
 #endif /* __SDE_RM_H__ */

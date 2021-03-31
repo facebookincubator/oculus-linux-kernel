@@ -588,7 +588,15 @@ static int32_t msm_actuator_move_focus(
 
 	CDBG("called, dir %d, num_steps %d\n", dir, num_steps);
 
-	if (dest_step_pos == a_ctrl->curr_step_pos)
+	if (a_ctrl->step_position_table == NULL) {
+		pr_err("Step Position Table is NULL\n");
+		return -EINVAL;
+	}
+
+	if ((dest_step_pos == a_ctrl->curr_step_pos) ||
+		((dest_step_pos <= a_ctrl->total_steps) &&
+		(a_ctrl->step_position_table[dest_step_pos] ==
+		a_ctrl->step_position_table[a_ctrl->curr_step_pos])))
 		return rc;
 
 	if ((sign_dir > MSM_ACTUATOR_MOVE_SIGNED_NEAR) ||
@@ -760,9 +768,9 @@ static int32_t msm_actuator_bivcm_move_focus(
 		a_ctrl->curr_step_pos, dest_step_pos, curr_lens_pos);
 
 	while (a_ctrl->curr_step_pos != dest_step_pos) {
-		if (a_ctrl->curr_region_index >= a_ctrl->region_size) {
+		if (a_ctrl->curr_region_index >= a_ctrl->region_size)
 			break;
-		}
+
 		step_boundary =
 			a_ctrl->region_params[a_ctrl->curr_region_index].
 			step_bound[dir];

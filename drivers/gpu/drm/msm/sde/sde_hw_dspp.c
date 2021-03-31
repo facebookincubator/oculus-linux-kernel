@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,7 @@
 #include "sde_hw_catalog.h"
 #include "sde_hw_dspp.h"
 #include "sde_hw_color_processing.h"
+#include "sde_dbg.h"
 
 static struct sde_dspp_cfg *_dspp_offset(enum sde_dspp dspp,
 		struct sde_mdss_cfg *m,
@@ -27,6 +28,7 @@ static struct sde_dspp_cfg *_dspp_offset(enum sde_dspp dspp,
 		if (dspp == m->dspp[i].id) {
 			b->base_off = addr;
 			b->blk_off = m->dspp[i].base;
+			b->length = m->dspp[i].len;
 			b->hwversion = m->hwversion;
 			b->log_mask = SDE_DBG_MASK_DSPP;
 			return &m->dspp[i];
@@ -76,7 +78,8 @@ static void _setup_dspp_ops(struct sde_hw_dspp *c, unsigned long features)
 		case SDE_DSPP_HSIC:
 			if (c->cap->sblk->hsic.version ==
 				(SDE_COLOR_PROCESS_VER(0x1, 0x7)))
-				c->ops.setup_hue = sde_setup_dspp_pa_hue_v1_7;
+				c->ops.setup_pa_hsic =
+					sde_setup_dspp_pa_hsic_v1_7;
 			break;
 		case SDE_DSPP_VLUT:
 			if (c->cap->sblk->vlut.version ==
@@ -110,6 +113,9 @@ struct sde_hw_dspp *sde_hw_dspp_init(enum sde_dspp idx,
 	c->idx = idx;
 	c->cap = cfg;
 	_setup_dspp_ops(c, c->cap->features);
+
+	sde_dbg_reg_register_dump_range(SDE_DBG_NAME, cfg->name, c->hw.blk_off,
+			c->hw.blk_off + c->hw.length, c->hw.xin_id);
 
 	return c;
 }

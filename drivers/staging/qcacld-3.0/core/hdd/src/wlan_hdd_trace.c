@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifdef HDD_TRACE_RECORD
@@ -51,12 +42,12 @@ static void
 hdd_trace_dump(void *mac, tp_qdf_trace_record record, uint16_t index)
 {
 	if (TRACE_CODE_HDD_RX_SME_MSG == record->code)
-		hdd_info("%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		hdd_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			index, record->qtime, record->time, record->session,
 			"RX SME MSG:",
 			get_e_roam_cmd_status_str(record->data), record->data);
 	else
-		hdd_info("%04d %012llu %s S%d %-14s %-30s(0x%x)",
+		hdd_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			index, record->qtime, record->time, record->session,
 			"HDD Event:",
 			hdd_trace_event_string(record->code), record->data);

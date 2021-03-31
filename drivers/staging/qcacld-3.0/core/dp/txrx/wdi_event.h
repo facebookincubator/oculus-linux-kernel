@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef _WDI_EVENT_H_
 #define _WDI_EVENT_H_
 
@@ -32,6 +23,7 @@
 #include "qdf_nbuf.h"
 #define WDI_EVENT_BASE 0x100    /* Event starting number */
 
+#define WDI_NO_VAL (-1)
 enum WDI_EVENT {
 	WDI_EVENT_TX_STATUS = WDI_EVENT_BASE,
 	WDI_EVENT_RX_DESC,
@@ -40,6 +32,9 @@ enum WDI_EVENT {
 	WDI_EVENT_RATE_UPDATE,
 	WDI_EVENT_SW_EVENT,
 	WDI_EVENT_RX_PEER_INVALID,
+	/* From WIN definations */
+	WDI_EVENT_LITE_RX,
+	WDI_EVENT_LITE_T2H,
 	/* End of new event items */
 
 	WDI_EVENT_LAST
@@ -62,7 +57,8 @@ enum WDI_EVENT_NOTIFY {
 };
 
 /* Opaque event callback */
-typedef void (*wdi_event_cb)(void *pdev, enum WDI_EVENT event, void *data);
+typedef void (*wdi_event_cb)(void *pdev, enum WDI_EVENT event, void *data,
+					u_int16_t peer_id, uint32_t status);
 
 /* Opaque event notify */
 typedef void (*wdi_event_notify)(enum WDI_EVENT_NOTIFY notify,
@@ -81,10 +77,14 @@ typedef void (*wdi_event_notify)(enum WDI_EVENT_NOTIFY notify,
  */
 
 typedef struct wdi_event_subscribe_t {
-	wdi_event_cb callback;  /* subscriber event callback structure head */
-	void *context;          /* subscriber object that processes the event callback */
+	/* subscriber event callback structure head */
+	wdi_event_cb callback;
+	/* subscriber object that processes the event callback */
+	void *context;
 	struct {
-		/* private - the event subscriber SW shall not use this struct */
+		/*
+		 * private - the event subscriber SW shall not use this struct
+		 */
 		struct wdi_event_subscribe_t *next;
 		struct wdi_event_subscribe_t *prev;
 	} priv;

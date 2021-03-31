@@ -65,8 +65,72 @@ static inline void clear_rt_mutex_waiters(struct rt_mutex *lock)
 
 static void fixup_rt_mutex_waiters(struct rt_mutex *lock)
 {
-	if (!rt_mutex_has_waiters(lock))
-		clear_rt_mutex_waiters(lock);
+	unsigned long owner, *p = (unsigned long *) &lock->owner;
+
+	if (rt_mutex_has_waiters(lock))
+		return;
+
+	/*
+	 * The rbtree has no waiters enqueued, now make sure that the
+	 * lock->owner still has the waiters bit set, otherwise the
+	 * following can happen:
+	 *
+	 * CPU 0	CPU 1		CPU2
+	 * l->owner=T1
+	 *		rt_mutex_lock(l)
+	 *		lock(l->lock)
+	 *		l->owner = T1 | HAS_WAITERS;
+	 *		enqueue(T2)
+	 *		boost()
+	 *		  unlock(l->lock)
+	 *		block()
+	 *
+	 *				rt_mutex_lock(l)
+	 *				lock(l->lock)
+	 *				l->owner = T1 | HAS_WAITERS;
+	 *				enqueue(T3)
+	 *				boost()
+	 *				  unlock(l->lock)
+	 *				block()
+	 *		signal(->T2)	signal(->T3)
+	 *		lock(l->lock)
+	 *		dequeue(T2)
+	 *		deboost()
+	 *		  unlock(l->lock)
+	 *				lock(l->lock)
+	 *				dequeue(T3)
+	 *				 ==> wait list is empty
+	 *				deboost()
+	 *				 unlock(l->lock)
+	 *		lock(l->lock)
+	 *		fixup_rt_mutex_waiters()
+	 *		  if (wait_list_empty(l) {
+	 *		    l->owner = owner
+	 *		    owner = l->owner & ~HAS_WAITERS;
+	 *		      ==> l->owner = T1
+	 *		  }
+	 *				lock(l->lock)
+	 * rt_mutex_unlock(l)		fixup_rt_mutex_waiters()
+	 *				  if (wait_list_empty(l) {
+	 *				    owner = l->owner & ~HAS_WAITERS;
+	 * cmpxchg(l->owner, T1, NULL)
+	 *  ===> Success (l->owner = NULL)
+	 *
+	 *				    l->owner = owner
+	 *				      ==> l->owner = T1
+	 *				  }
+	 *
+	 * With the check for the waiter bit in place T3 on CPU2 will not
+	 * overwrite. All tasks fiddling with the waiters bit are
+	 * serialized by l->lock, so nothing else can modify the waiters
+	 * bit. If the bit is set then nothing can change l->owner either
+	 * so the simple RMW is safe. The cmpxchg() will simply fail if it
+	 * happens in the middle of the RMW because the waiters bit is
+	 * still set.
+	 */
+	owner = READ_ONCE(*p);
+	if (owner & RT_MUTEX_HAS_WAITERS)
+		WRITE_ONCE(*p, owner & ~RT_MUTEX_HAS_WAITERS);
 }
 
 /*
@@ -1648,21 +1712,23 @@ struct task_struct *rt_mutex_next_owner(struct rt_mutex *lock)
 }
 
 /**
- * rt_mutex_finish_proxy_lock() - Complete lock acquisition
+ * rt_mutex_wait_proxy_lock() - Wait for lock acquisition
  * @lock:		the rt_mutex we were woken on
  * @to:			the timeout, null if none. hrtimer should already have
  *			been started.
  * @waiter:		the pre-initialized rt_mutex_waiter
  *
- * Complete the lock acquisition started our behalf by another thread.
+ * Wait for the the lock acquisition started on our behalf by
+ * rt_mutex_start_proxy_lock(). Upon failure, the caller must call
+ * rt_mutex_cleanup_proxy_lock().
  *
  * Returns:
  *  0 - success
  * <0 - error, one of -EINTR, -ETIMEDOUT
  *
- * Special API call for PI-futex requeue support
+ * Special API call for PI-futex support
  */
-int rt_mutex_finish_proxy_lock(struct rt_mutex *lock,
+int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
 			       struct hrtimer_sleeper *to,
 			       struct rt_mutex_waiter *waiter)
 {
@@ -1675,9 +1741,6 @@ int rt_mutex_finish_proxy_lock(struct rt_mutex *lock,
 	/* sleep on the mutex */
 	ret = __rt_mutex_slowlock(lock, TASK_INTERRUPTIBLE, to, waiter);
 
-	if (unlikely(ret))
-		remove_waiter(lock, waiter);
-
 	/*
 	 * try_to_take_rt_mutex() sets the waiter bit unconditionally. We might
 	 * have to fix that up.
@@ -1687,4 +1750,43 @@ int rt_mutex_finish_proxy_lock(struct rt_mutex *lock,
 	raw_spin_unlock(&lock->wait_lock);
 
 	return ret;
+}
+
+/**
+ * rt_mutex_cleanup_proxy_lock() - Cleanup failed lock acquisition
+ * @lock:		the rt_mutex we were woken on
+ * @waiter:		the pre-initialized rt_mutex_waiter
+ *
+ * Attempt to clean up after a failed rt_mutex_wait_proxy_lock().
+ *
+ * Unless we acquired the lock; we're still enqueued on the wait-list and can
+ * in fact still be granted ownership until we're removed. Therefore we can
+ * find we are in fact the owner and must disregard the
+ * rt_mutex_wait_proxy_lock() failure.
+ *
+ * Returns:
+ *  true  - did the cleanup, we done.
+ *  false - we acquired the lock after rt_mutex_wait_proxy_lock() returned,
+ *          caller should disregards its return value.
+ *
+ * Special API call for PI-futex support
+ */
+bool rt_mutex_cleanup_proxy_lock(struct rt_mutex *lock,
+				 struct rt_mutex_waiter *waiter)
+{
+	bool cleanup = false;
+
+	raw_spin_lock_irq(&lock->wait_lock);
+	/*
+	 * Unless we're the owner; we're still enqueued on the wait_list.
+	 * So check if we became owner, if not, take us off the wait_list.
+	 */
+	if (rt_mutex_owner(lock) != current) {
+		remove_waiter(lock, waiter);
+		fixup_rt_mutex_waiters(lock);
+		cleanup = true;
+	}
+	raw_spin_unlock_irq(&lock->wait_lock);
+
+	return cleanup;
 }

@@ -25,7 +25,7 @@
  * Byte threshold to limit memory consumption for flip buffers.
  * The actual memory limit is > 2x this amount.
  */
-#define TTYB_DEFAULT_MEM_LIMIT	65536
+#define TTYB_DEFAULT_MEM_LIMIT	(640 * 1024UL)
 
 /*
  * We default to dicing tty buffer allocations to this many characters
@@ -362,6 +362,32 @@ int tty_insert_flip_string_flags(struct tty_port *port,
 EXPORT_SYMBOL(tty_insert_flip_string_flags);
 
 /**
+ *	__tty_insert_flip_char   -	Add one character to the tty buffer
+ *	@port: tty port
+ *	@ch: character
+ *	@flag: flag byte
+ *
+ *	Queue a single byte to the tty buffering, with an optional flag.
+ *	This is the slow path of tty_insert_flip_char.
+ */
+int __tty_insert_flip_char(struct tty_port *port, unsigned char ch, char flag)
+{
+	struct tty_buffer *tb;
+	int flags = (flag == TTY_NORMAL) ? TTYB_NORMAL : 0;
+
+	if (!__tty_buffer_request_room(port, 1, flags))
+		return 0;
+
+	tb = port->buf.tail;
+	if (~tb->flags & TTYB_NORMAL)
+		*flag_buf_ptr(tb, tb->used) = flag;
+	*char_buf_ptr(tb, tb->used++) = ch;
+
+	return 1;
+}
+EXPORT_SYMBOL(__tty_insert_flip_char);
+
+/**
  *	tty_schedule_flip	-	push characters to ldisc
  *	@port: tty port to push from
  *
@@ -428,6 +454,8 @@ receive_buf(struct tty_struct *tty, struct tty_buffer *head, int count)
 		if (count && disc->ops->receive_buf)
 			disc->ops->receive_buf(tty, p, f, count);
 	}
+	if (count > 0)
+		memset(p, 0, count);
 	return count;
 }
 

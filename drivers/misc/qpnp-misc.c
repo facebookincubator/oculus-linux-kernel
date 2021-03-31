@@ -162,7 +162,8 @@ int qpnp_misc_write_reg(struct device_node *node, u16 addr, u8 val)
 
 	rc = qpnp_write_byte(mdev, addr, val);
 	if (rc < 0) {
-		dev_err(mdev->dev, "Failed to write addr %x, rc=%d\n", addr, rc);
+		dev_err(mdev->dev, "Failed to write addr %x, rc=%d\n",
+				addr, rc);
 		return rc;
 	}
 

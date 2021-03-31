@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -224,11 +224,6 @@ static int msm_ssusb_qmp_ldo_enable(struct msm_ssphy_qmp *phy, int on)
 				"enable phy->fpc_redrive_ldo failed\n");
 			return rc;
 		}
-
-		dev_dbg(phy->phy.dev,
-			"fpc redrive ldo: min_vol:%duV max_vol:%duV\n",
-			phy->redrive_voltage_levels[VOLTAGE_LEVEL_MIN],
-			phy->redrive_voltage_levels[VOLTAGE_LEVEL_MAX]);
 	}
 
 	rc = msm_ldo_enable(phy, phy->vdd, phy->vdd_levels,
@@ -238,22 +233,12 @@ static int msm_ssusb_qmp_ldo_enable(struct msm_ssphy_qmp *phy, int on)
 		goto disable_fpc_redrive;
 	}
 
-	dev_dbg(phy->phy.dev,
-		"vdd ldo: min_vol:%duV max_vol:%duV\n",
-		phy->vdd_levels[VOLTAGE_LEVEL_MIN],
-		phy->vdd_levels[VOLTAGE_LEVEL_MAX]);
-
 	rc = msm_ldo_enable(phy, phy->core_ldo, phy->core_voltage_levels,
 			USB_SSPHY_HPM_LOAD);
 	if (rc < 0) {
 		dev_err(phy->phy.dev, "enable phy->core_ldo failed\n");
 		goto disable_vdd;
 	}
-
-	dev_dbg(phy->phy.dev,
-		"core ldo: min_vol:%duV max_vol:%duV\n",
-		phy->core_voltage_levels[VOLTAGE_LEVEL_MIN],
-		phy->core_voltage_levels[VOLTAGE_LEVEL_MAX]);
 
 	return 0;
 
@@ -488,23 +473,27 @@ static int msm_ssphy_qmp_set_suspend(struct usb_phy *uphy, int suspend)
 	}
 
 	if (suspend) {
-		if (!phy->cable_connected)
+		if (phy->cable_connected) {
+			if (phy->vls_clamp_reg)
+				msm_ssusb_qmp_enable_autonomous(phy, 1);
+		} else {
 			writel_relaxed(0x00,
 			phy->base + phy->phy_reg[USB3_PHY_POWER_DOWN_CONTROL]);
-		else
-			msm_ssusb_qmp_enable_autonomous(phy, 1);
+		}
 
 		/* Make sure above write completed with PHY */
 		wmb();
 
-		clk_disable_unprepare(phy->cfg_ahb_clk);
-		clk_disable_unprepare(phy->aux_clk);
-		clk_disable_unprepare(phy->pipe_clk);
-		if (phy->ref_clk)
-			clk_disable_unprepare(phy->ref_clk);
-		if (phy->ref_clk_src)
-			clk_disable_unprepare(phy->ref_clk_src);
-		phy->clk_enabled = false;
+		if (phy->clk_enabled) {
+			clk_disable_unprepare(phy->cfg_ahb_clk);
+			clk_disable_unprepare(phy->aux_clk);
+			clk_disable_unprepare(phy->pipe_clk);
+			if (phy->ref_clk)
+				clk_disable_unprepare(phy->ref_clk);
+			if (phy->ref_clk_src)
+				clk_disable_unprepare(phy->ref_clk_src);
+			phy->clk_enabled = false;
+		}
 		phy->in_suspend = true;
 		msm_ssphy_power_enable(phy, 0);
 		dev_dbg(uphy->dev, "QMP PHY is suspend\n");
@@ -524,7 +513,8 @@ static int msm_ssphy_qmp_set_suspend(struct usb_phy *uphy, int suspend)
 			writel_relaxed(0x01,
 			phy->base + phy->phy_reg[USB3_PHY_POWER_DOWN_CONTROL]);
 		} else  {
-			msm_ssusb_qmp_enable_autonomous(phy, 0);
+			if (phy->vls_clamp_reg)
+				msm_ssusb_qmp_enable_autonomous(phy, 0);
 		}
 
 		/* Make sure that above write completed with PHY */
@@ -554,6 +544,10 @@ static int msm_ssphy_qmp_notify_disconnect(struct usb_phy *uphy,
 {
 	struct msm_ssphy_qmp *phy = container_of(uphy, struct msm_ssphy_qmp,
 					phy);
+
+	writel_relaxed(0x00,
+		phy->base + phy->phy_reg[USB3_PHY_POWER_DOWN_CONTROL]);
+	readl_relaxed(phy->base + phy->phy_reg[USB3_PHY_POWER_DOWN_CONTROL]);
 
 	dev_dbg(uphy->dev, "QMP phy disconnect notification\n");
 	dev_dbg(uphy->dev, " cable_connected=%d\n", phy->cable_connected);
@@ -659,13 +653,13 @@ static int msm_ssphy_qmp_probe(struct platform_device *pdev)
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 			"vls_clamp_reg");
 	if (!res) {
-		dev_err(dev, "failed getting vls_clamp_reg\n");
-		return -ENODEV;
-	}
-	phy->vls_clamp_reg = devm_ioremap_resource(dev, res);
-	if (IS_ERR(phy->vls_clamp_reg)) {
-		dev_err(dev, "couldn't find vls_clamp_reg address.\n");
-		return PTR_ERR(phy->vls_clamp_reg);
+		dev_dbg(dev, "vls_clamp_reg not passed\n");
+	} else {
+		phy->vls_clamp_reg = devm_ioremap_resource(dev, res);
+		if (IS_ERR(phy->vls_clamp_reg)) {
+			dev_err(dev, "couldn't find vls_clamp_reg address.\n");
+			return PTR_ERR(phy->vls_clamp_reg);
+		}
 	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,

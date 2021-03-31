@@ -111,6 +111,8 @@ static inline uint32_t HDMI_ACR_PKT_CTRL_N_MULTIPLIER(uint32_t val)
 #define HDMI_INFOFRAME_CTRL0_AUDIO_INFO_SOURCE			0x00000040
 #define HDMI_INFOFRAME_CTRL0_AUDIO_INFO_UPDATE			0x00000080
 
+#define REG_HDMI_INFOFRAME_CTRL1				0x00000030
+
 #define REG_HDMI_GEN_PKT_CTRL					0x00000034
 #define HDMI_GEN_PKT_CTRL_GENERIC0_SEND				0x00000001
 #define HDMI_GEN_PKT_CTRL_GENERIC0_CONT				0x00000002
@@ -150,6 +152,7 @@ static inline uint32_t REG_HDMI_GENERIC0(uint32_t i0) { return 0x00000088 + 0x4*
 
 #define REG_HDMI_GENERIC1_HDR					0x000000a4
 
+#define MAX_REG_HDMI_GENERIC1_INDEX				6
 static inline uint32_t REG_HDMI_GENERIC1(uint32_t i0) { return 0x000000a8 + 0x4*i0; }
 
 static inline uint32_t REG_HDMI_ACR(enum hdmi_acr_cts i0) { return 0x000000c4 + 0x8*i0; }
@@ -463,13 +466,13 @@ static inline uint32_t HDMI_DDC_REF_REFTIMER(uint32_t val)
 #define REG_HDMI_CEC_RD_FILTER					0x000002b0
 
 #define REG_HDMI_ACTIVE_HSYNC					0x000002b4
-#define HDMI_ACTIVE_HSYNC_START__MASK				0x00000fff
+#define HDMI_ACTIVE_HSYNC_START__MASK				0x00001fff
 #define HDMI_ACTIVE_HSYNC_START__SHIFT				0
 static inline uint32_t HDMI_ACTIVE_HSYNC_START(uint32_t val)
 {
 	return ((val) << HDMI_ACTIVE_HSYNC_START__SHIFT) & HDMI_ACTIVE_HSYNC_START__MASK;
 }
-#define HDMI_ACTIVE_HSYNC_END__MASK				0x0fff0000
+#define HDMI_ACTIVE_HSYNC_END__MASK				0x1fff0000
 #define HDMI_ACTIVE_HSYNC_END__SHIFT				16
 static inline uint32_t HDMI_ACTIVE_HSYNC_END(uint32_t val)
 {
@@ -477,13 +480,13 @@ static inline uint32_t HDMI_ACTIVE_HSYNC_END(uint32_t val)
 }
 
 #define REG_HDMI_ACTIVE_VSYNC					0x000002b8
-#define HDMI_ACTIVE_VSYNC_START__MASK				0x00000fff
+#define HDMI_ACTIVE_VSYNC_START__MASK				0x00001fff
 #define HDMI_ACTIVE_VSYNC_START__SHIFT				0
 static inline uint32_t HDMI_ACTIVE_VSYNC_START(uint32_t val)
 {
 	return ((val) << HDMI_ACTIVE_VSYNC_START__SHIFT) & HDMI_ACTIVE_VSYNC_START__MASK;
 }
-#define HDMI_ACTIVE_VSYNC_END__MASK				0x0fff0000
+#define HDMI_ACTIVE_VSYNC_END__MASK				0x1fff0000
 #define HDMI_ACTIVE_VSYNC_END__SHIFT				16
 static inline uint32_t HDMI_ACTIVE_VSYNC_END(uint32_t val)
 {
@@ -491,13 +494,13 @@ static inline uint32_t HDMI_ACTIVE_VSYNC_END(uint32_t val)
 }
 
 #define REG_HDMI_VSYNC_ACTIVE_F2				0x000002bc
-#define HDMI_VSYNC_ACTIVE_F2_START__MASK			0x00000fff
+#define HDMI_VSYNC_ACTIVE_F2_START__MASK			0x00001fff
 #define HDMI_VSYNC_ACTIVE_F2_START__SHIFT			0
 static inline uint32_t HDMI_VSYNC_ACTIVE_F2_START(uint32_t val)
 {
 	return ((val) << HDMI_VSYNC_ACTIVE_F2_START__SHIFT) & HDMI_VSYNC_ACTIVE_F2_START__MASK;
 }
-#define HDMI_VSYNC_ACTIVE_F2_END__MASK				0x0fff0000
+#define HDMI_VSYNC_ACTIVE_F2_END__MASK				0x1fff0000
 #define HDMI_VSYNC_ACTIVE_F2_END__SHIFT				16
 static inline uint32_t HDMI_VSYNC_ACTIVE_F2_END(uint32_t val)
 {
@@ -505,13 +508,13 @@ static inline uint32_t HDMI_VSYNC_ACTIVE_F2_END(uint32_t val)
 }
 
 #define REG_HDMI_TOTAL						0x000002c0
-#define HDMI_TOTAL_H_TOTAL__MASK				0x00000fff
+#define HDMI_TOTAL_H_TOTAL__MASK				0x00001fff
 #define HDMI_TOTAL_H_TOTAL__SHIFT				0
 static inline uint32_t HDMI_TOTAL_H_TOTAL(uint32_t val)
 {
 	return ((val) << HDMI_TOTAL_H_TOTAL__SHIFT) & HDMI_TOTAL_H_TOTAL__MASK;
 }
-#define HDMI_TOTAL_V_TOTAL__MASK				0x0fff0000
+#define HDMI_TOTAL_V_TOTAL__MASK				0x1fff0000
 #define HDMI_TOTAL_V_TOTAL__SHIFT				16
 static inline uint32_t HDMI_TOTAL_V_TOTAL(uint32_t val)
 {
@@ -519,7 +522,7 @@ static inline uint32_t HDMI_TOTAL_V_TOTAL(uint32_t val)
 }
 
 #define REG_HDMI_VSYNC_TOTAL_F2					0x000002c4
-#define HDMI_VSYNC_TOTAL_F2_V_TOTAL__MASK			0x00000fff
+#define HDMI_VSYNC_TOTAL_F2_V_TOTAL__MASK			0x00001fff
 #define HDMI_VSYNC_TOTAL_F2_V_TOTAL__SHIFT			0
 static inline uint32_t HDMI_VSYNC_TOTAL_F2_V_TOTAL(uint32_t val)
 {
@@ -559,6 +562,20 @@ static inline uint32_t HDMI_VSYNC_TOTAL_F2_V_TOTAL(uint32_t val)
 #define REG_HDMI_CEC_RD_ERR_RESP_LO				0x0000036c
 
 #define REG_HDMI_CEC_WR_CHECK_CONFIG				0x00000370
+
+#define REG_HDMI_DDC_INT_CTRL0                                 0x00000430
+#define REG_HDMI_DDC_INT_CTRL1                                 0x00000434
+#define REG_HDMI_DDC_INT_CTRL2                                 0x00000438
+#define REG_HDMI_DDC_INT_CTRL3                                 0x0000043C
+#define REG_HDMI_DDC_INT_CTRL4                                 0x00000440
+#define REG_HDMI_DDC_INT_CTRL5                                 0x00000444
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_CTRL                     0x00000464
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_TIMER_CTRL               0x00000468
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_TIMER_CTRL2              0x0000046C
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_STATUS                   0x00000470
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_TIMER_STATUS             0x00000474
+#define REG_HDMI_SCRAMBLER_STATUS_DDC_TIMER_STATUS2            0x00000478
+#define REG_HDMI_HW_DDC_CTRL                                   0x000004CC
 
 #define REG_HDMI_8x60_PHY_REG0					0x00000300
 #define HDMI_8x60_PHY_REG0_DESER_DEL_CTRL__MASK			0x0000001c

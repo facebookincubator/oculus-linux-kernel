@@ -34,6 +34,12 @@ enum nat_table_type {
 #define NAT_TABLE_ENTRY_SIZE_BYTE 32
 #define NAT_INTEX_TABLE_ENTRY_SIZE_BYTE 4
 
+/*
+ * Max NAT table entries is limited 1000 entries.
+ * Limit the memory size required by user to prevent kernel memory starvation
+ */
+#define IPA_TABLE_MAX_ENTRIES 1000
+#define MAX_ALLOC_NAT_SIZE (IPA_TABLE_MAX_ENTRIES * NAT_TABLE_ENTRY_SIZE_BYTE)
 
 static int ipa3_nat_vma_fault_remap(
 	 struct vm_area_struct *vma, struct vm_fault *vmf)
@@ -167,7 +173,7 @@ int ipa3_create_nat_device(void)
 	IPADBG("\n");
 
 	mutex_lock(&nat_ctx->lock);
-	nat_ctx->class = class_create(THIS_MODULE, NAT_DEV_NAME);
+	nat_ctx->class = class_create(THIS_MODULE, IPA_NAT_DEV_NAME);
 	if (IS_ERR(nat_ctx->class)) {
 		IPAERR("unable to create the class\n");
 		result = -ENODEV;
@@ -176,7 +182,7 @@ int ipa3_create_nat_device(void)
 	result = alloc_chrdev_region(&nat_ctx->dev_num,
 					0,
 					1,
-					NAT_DEV_NAME);
+					IPA_NAT_DEV_NAME);
 	if (result) {
 		IPAERR("alloc_chrdev_region err.\n");
 		result = -ENODEV;
@@ -185,7 +191,7 @@ int ipa3_create_nat_device(void)
 
 	nat_ctx->dev =
 	   device_create(nat_ctx->class, NULL, nat_ctx->dev_num, nat_ctx,
-			"%s", NAT_DEV_NAME);
+			"%s", IPA_NAT_DEV_NAME);
 
 	if (IS_ERR(nat_ctx->dev)) {
 		IPAERR("device_create err:%ld\n", PTR_ERR(nat_ctx->dev));
@@ -253,9 +259,10 @@ int ipa3_allocate_nat_device(struct ipa_ioc_nat_alloc_mem *mem)
 	IPADBG("passed memory size %zu\n", mem->size);
 
 	mutex_lock(&nat_ctx->lock);
-	if (strcmp(mem->dev_name, NAT_DEV_NAME)) {
+	if (strcmp(IPA_NAT_DEV_NAME, mem->dev_name)) {
 		IPAERR_RL("Nat device name mismatch\n");
-		IPAERR_RL("Expect: %s Recv: %s\n", NAT_DEV_NAME, mem->dev_name);
+		IPAERR_RL("Expect: %s Recv: %s\n",
+			IPA_NAT_DEV_NAME, mem->dev_name);
 		result = -EPERM;
 		goto bail;
 	}
@@ -269,6 +276,13 @@ int ipa3_allocate_nat_device(struct ipa_ioc_nat_alloc_mem *mem)
 	if (nat_ctx->is_dev_init == true) {
 		IPAERR("Device already init\n");
 		result = 0;
+		goto bail;
+	}
+
+	if (mem->size > MAX_ALLOC_NAT_SIZE) {
+		IPAERR("Trying allocate more size = %zu, Max allowed = %d\n",
+				mem->size, MAX_ALLOC_NAT_SIZE);
+		result = -EPERM;
 		goto bail;
 	}
 
@@ -306,6 +320,34 @@ bail:
 	return result;
 }
 
+/**
+* ipa3_allocate_nat_table() - Allocates memory for the NAT table
+* @table_alloc: [in/out] memory parameters
+*
+* Called by NAT client to allocate memory for the table entries.
+* Based on the request size either shared or system memory will be used.
+*
+* Returns:	0 on success, negative on failure
+*/
+int ipa3_allocate_nat_table(struct ipa_ioc_nat_ipv6ct_table_alloc *table_alloc)
+{
+	int result;
+	struct ipa_ioc_nat_alloc_mem tmp;
+
+	strlcpy(tmp.dev_name, IPA_NAT_DEV_NAME, IPA_RESOURCE_NAME_MAX);
+	tmp.size = table_alloc->size;
+	tmp.offset = 0;
+
+	result = ipa3_allocate_nat_device(&tmp);
+	if (result)
+		goto bail;
+
+	table_alloc->offset = tmp.offset;
+
+bail:
+	return result;
+}
+
 /* IOCTL function handlers */
 /**
  * ipa3_nat_init_cmd() - Post IP_V4_NAT_INIT command to IPA HW
@@ -340,6 +382,9 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 		IPAERR_RL("Detected overflow\n");
 		return -EPERM;
 	}
+
+	mutex_lock(&ipa3_ctx->nat_mem.lock);
+
 	/* Check Table Entry offset is not
 	   beyond allocated size */
 	tmp = init->ipv4_rules_offset +
@@ -349,6 +394,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 		IPAERR_RL("offset:%d entrys:%d size:%zu mem_size:%zu\n",
 			init->ipv4_rules_offset, (init->table_entries + 1),
 			tmp, ipa3_ctx->nat_mem.size);
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 
@@ -356,6 +402,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 	if (init->expn_rules_offset >
 		(UINT_MAX - (TBL_ENTRY_SIZE * init->expn_table_entries))) {
 		IPAERR_RL("Detected overflow\n");
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 	/* Check Expn Table Entry offset is not
@@ -367,6 +414,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 		IPAERR_RL("offset:%d entrys:%d size:%zu mem_size:%zu\n",
 			init->expn_rules_offset, init->expn_table_entries,
 			tmp, ipa3_ctx->nat_mem.size);
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 
@@ -374,6 +422,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 	if (init->index_offset >
 		UINT_MAX - (INDX_TBL_ENTRY_SIZE * (init->table_entries + 1))) {
 		IPAERR_RL("Detected overflow\n");
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 	/* Check Indx Table Entry offset is not
@@ -385,6 +434,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 		IPAERR_RL("offset:%d entrys:%d size:%zu mem_size:%zu\n",
 			init->index_offset, (init->table_entries + 1),
 			tmp, ipa3_ctx->nat_mem.size);
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 
@@ -392,6 +442,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 	if (init->index_expn_offset >
 		UINT_MAX - (INDX_TBL_ENTRY_SIZE * init->expn_table_entries)) {
 		IPAERR_RL("Detected overflow\n");
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 	/* Check Expn Table entry offset is not
@@ -403,6 +454,7 @@ int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 		IPAERR_RL("offset:%d entrys:%d size:%zu mem_size:%zu\n",
 			init->index_expn_offset, init->expn_table_entries,
 			tmp, ipa3_ctx->nat_mem.size);
+		mutex_unlock(&ipa3_ctx->nat_mem.lock);
 		return -EPERM;
 	}
 
@@ -552,6 +604,7 @@ destroy_imm_cmd:
 free_nop:
 	ipahal_destroy_imm_cmd(nop_cmd_pyld);
 bail:
+	mutex_unlock(&ipa3_ctx->nat_mem.lock);
 	return result;
 }
 
@@ -839,3 +892,22 @@ destroy_regwrt_imm_cmd:
 bail:
 	return result;
 }
+
+/**
+* ipa3_del_nat_table() - Delete the NAT table
+* @del:	[in] delete table parameters
+*
+* Called by NAT client to delete the table
+*
+* Returns:	0 on success, negative on failure
+*/
+int ipa3_del_nat_table(struct ipa_ioc_nat_ipv6ct_table_del *del)
+{
+	struct ipa_ioc_v4_nat_del tmp;
+
+	tmp.table_index = del->table_index;
+	tmp.public_ip_addr = ipa3_ctx->nat_mem.public_ip_addr;
+
+	return ipa3_nat_del_cmd(&tmp);
+}
+

@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef TXRX_H
 #define TXRX_H
 
@@ -38,10 +29,10 @@
 #define PEER_DELETION_TIMEOUT 500
 
 enum txrx_wmm_ac {
-	TXRX_WMM_AC_VO,
-	TXRX_WMM_AC_VI,
-	TXRX_WMM_AC_BK,
 	TXRX_WMM_AC_BE,
+	TXRX_WMM_AC_BK,
+	TXRX_WMM_AC_VI,
+	TXRX_WMM_AC_VO,
 
 	TXRX_NUM_WMM_AC
 };
@@ -86,12 +77,16 @@ enum wlan_sta_state {
 	/* Transition in this state made upon creation */
 	WLAN_STA_INIT = 0,
 
-	/* Transition happens after Assoc success if second level authentication
-	   is needed */
+	/*
+	 * Transition happens after Assoc success if second level authentication
+	 * is needed
+	 */
 	WLAN_STA_CONNECTED,
 
-	/* Transition happens when second level auth is successful and keys are
-	   properly installed */
+	/*
+	 * Transition happens when second level auth is successful and keys are
+	 * properly installed
+	 */
 	WLAN_STA_AUTHENTICATED,
 
 	/* Transition happens when connectivity is lost */
@@ -114,18 +109,6 @@ QDF_STATUS wlan_register_mgmt_client(void *pdev_txrx,
 typedef QDF_STATUS (*wlan_txrx_rssi_cross_thresh)(void *adapter, u8 rssi,
 						  void *usr_ctx,
 						  int8_t avg_rssi);
-
-struct wlan_txrx_ind_req {
-	u16 msgType;            /* message type is same as the request type */
-	u16 msgLen;             /* length of the entire request */
-	u8 sessionId;           /* sme Session Id */
-	u8 rssiNotification;
-	u8 avgRssi;
-	void *tlCallback;
-	void *pAdapter;
-	void *pUserCtxt;
-};
-
 
 /* Rx callback registered with txrx */
 typedef int (*wlan_txrx_cb_type)(void *g_cdsctx, qdf_nbuf_t buf, u8 sta_id,
@@ -201,22 +184,4 @@ static inline int wlan_txrx_register_rssi_indcb(void *g_cdsctx,
 	return 0;
 }
 
-/* FIXME: The following stubs will be removed eventually */
-static inline int wlan_txrx_mc_process_msg(void *g_cdsctx, cds_msg_t *msg)
-{
-	return 0;
-}
-
-static inline int wlan_txrx_tx_process_msg(void *g_cdsctx, cds_msg_t *msg)
-{
-	return 0;
-}
-
-static inline void wlan_txrx_mc_free_msg(void *g_cdsctx, cds_msg_t *msg)
-{
-}
-
-static inline void wlan_txrx_tx_free_msg(void *g_cdsctx, cds_msg_t *msg)
-{
-}
 #endif

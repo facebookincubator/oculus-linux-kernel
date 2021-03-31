@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -575,6 +575,8 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 				ps[i].seq_val = SENSOR_GPIO_CUSTOM1;
 			else if (!strcmp(seq_name, "sensor_gpio_custom2"))
 				ps[i].seq_val = SENSOR_GPIO_CUSTOM2;
+			else if (!strcmp(seq_name, "sensor_gpio_custom3"))
+				ps[i].seq_val = SENSOR_GPIO_CUSTOM3;
 			else
 				rc = -EILSEQ;
 			break;
@@ -1078,6 +1080,27 @@ int msm_camera_init_gpio_pin_tbl(struct device_node *of_node,
 		rc = 0;
 	}
 
+	rc = of_property_read_u32(of_node, "qcom,gpio-custom3", &val);
+	if (rc != -EINVAL) {
+		if (rc < 0) {
+			pr_err("%s:%d read qcom,gpio-custom3 failed rc %d\n",
+				__func__, __LINE__, rc);
+			goto ERROR;
+		} else if (val >= gpio_array_size) {
+			pr_err("%s:%d qcom,gpio-custom3 invalid %d\n",
+				__func__, __LINE__, val);
+			rc = -EINVAL;
+			goto ERROR;
+		}
+		gconf->gpio_num_info->gpio_num[SENSOR_GPIO_CUSTOM3] =
+			gpio_array[val];
+		gconf->gpio_num_info->valid[SENSOR_GPIO_CUSTOM3] = 1;
+		CDBG("%s qcom,gpio-custom3 %d\n", __func__,
+			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_CUSTOM3]);
+	} else {
+		rc = 0;
+	}
+
 	return rc;
 
 ERROR:
@@ -1330,7 +1353,7 @@ int msm_cam_sensor_handle_reg_gpio(int seq_val,
 	CDBG("%s: %d GPIO offset: %d, seq_val: %d\n", __func__, __LINE__,
 		gpio_offset, seq_val);
 
-	if ((gconf->gpio_num_info->valid[gpio_offset] == 1)) {
+	if (gconf->gpio_num_info->valid[gpio_offset] == 1) {
 		gpio_set_value_cansleep(
 			gconf->gpio_num_info->gpio_num
 			[gpio_offset], val);

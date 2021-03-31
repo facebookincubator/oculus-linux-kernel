@@ -1,7 +1,9 @@
 #!/bin/sh
 #
-# Generate the x86_cap/bug_flags[] arrays from include/asm/cpufeature.h
+# Generate the x86_cap/bug_flags[] arrays from include/asm/cpufeatures.h
 #
+
+set -e
 
 IN=$1
 OUT=$2
@@ -49,8 +51,8 @@ dump_array()
 trap 'rm "$OUT"' EXIT
 
 (
-	echo "#ifndef _ASM_X86_CPUFEATURE_H"
-	echo "#include <asm/cpufeature.h>"
+	echo "#ifndef _ASM_X86_CPUFEATURES_H"
+	echo "#include <asm/cpufeatures.h>"
 	echo "#endif"
 	echo ""
 

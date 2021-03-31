@@ -40,6 +40,7 @@ int qpnp_misc_irqs_available(struct device *consumer_dev);
   * This function returns zero if reading the MISC register succeeds.
   *
   */
+
 int qpnp_misc_write_reg(struct device_node *node, u16 addr, u8 val);
 
 /**
@@ -59,7 +60,8 @@ static inline int qpnp_misc_irqs_available(struct device *consumer_dev)
 {
 	return 0;
 }
-static inline int qpnp_misc_write_reg(struct device_node *node, u16 addr, u8 val)
+static inline int qpnp_misc_write_reg(struct device_node *node, u16 addr,
+		u8 val)
 {
 	return 0;
 }

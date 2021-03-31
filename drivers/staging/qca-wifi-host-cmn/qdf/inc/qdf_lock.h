@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -51,9 +42,10 @@
 #define QDF_LOCK_STATS_LIST 0
 #endif
 
-#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK_IRQ 1000
-#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK_BH  5000
-#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK     5000
+/* Max hold time in micro seconds, 0 to disable detection*/
+#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK_IRQ         10000
+#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK_BH        1000000
+#define QDF_MAX_HOLD_TIME_ALOWED_SPINLOCK                 0
 
 #if !QDF_LOCK_STATS
 struct lock_stats {};
@@ -295,6 +287,7 @@ static inline int qdf_spin_is_locked(qdf_spinlock_t *lock)
 static inline int qdf_spin_trylock_bh(qdf_spinlock_t *lock, const char *func)
 {
 	int trylock_return;
+
 	BEFORE_TRYLOCK(lock);
 	trylock_return = __qdf_spin_trylock_bh(&lock->lock);
 	AFTER_TRYLOCK(lock, trylock_return, func);
@@ -486,11 +479,6 @@ QDF_STATUS qdf_wake_lock_timeout_acquire(qdf_wake_lock_t *lock,
 QDF_STATUS qdf_wake_lock_release(qdf_wake_lock_t *lock, uint32_t reason);
 
 QDF_STATUS qdf_wake_lock_destroy(qdf_wake_lock_t *lock);
-
-struct hif_pm_runtime_lock;
-typedef struct qdf_runtime_lock {
-	struct hif_pm_runtime_lock *lock;
-} qdf_runtime_lock_t;
 
 QDF_STATUS qdf_runtime_pm_get(void);
 QDF_STATUS qdf_runtime_pm_put(void);

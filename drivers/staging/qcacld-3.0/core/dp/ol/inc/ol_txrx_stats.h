@@ -1,9 +1,6 @@
 /*
  * Copyright (c) 2012, 2014-2017 The Linux Foundation. All rights reserved.
  *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
- *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -76,12 +67,19 @@ struct ol_txrx_stats_tx_dropped {
 	struct ol_txrx_stats_elem host_reject;
 	/* MSDUs which could not be downloaded to the target */
 	struct ol_txrx_stats_elem download_fail;
-	/* MSDUs which the target discarded
-	   (lack of memory or old age) */
+	/*
+	 * MSDUs which the target discarded
+	 * (lack of memory or old age)
+	 */
 	struct ol_txrx_stats_elem target_discard;
-	/* MSDUs which the target sent but
-	   couldn't get an ack for */
+	/*
+	 * MSDUs which the target sent but
+	 * couldn't get an ack for
+	 */
 	struct ol_txrx_stats_elem no_ack;
+
+	/* MSDU which were dropped for other reasons */
+	struct ol_txrx_stats_elem others;
 };
 
 struct ol_txrx_tso_histogram {

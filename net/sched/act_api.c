@@ -101,8 +101,10 @@ static int tcf_dump_walker(struct sk_buff *skb, struct netlink_callback *cb,
 			a->order = n_i;
 
 			nest = nla_nest_start(skb, a->order);
-			if (nest == NULL)
+			if (nest == NULL) {
+				index--;
 				goto nla_put_failure;
+			}
 			err = tcf_action_dump_1(skb, a, 0, 0);
 			if (err < 0) {
 				index--;
@@ -820,10 +822,8 @@ static int tca_action_flush(struct net *net, struct nlattr *nla,
 		goto out_module_put;
 
 	err = a.ops->walk(skb, &dcb, RTM_DELACTION, &a);
-	if (err < 0)
+	if (err <= 0)
 		goto out_module_put;
-	if (err == 0)
-		goto noflush_out;
 
 	nla_nest_end(skb, nest);
 
@@ -840,7 +840,6 @@ static int tca_action_flush(struct net *net, struct nlattr *nla,
 out_module_put:
 	module_put(a.ops->owner);
 err_out:
-noflush_out:
 	kfree_skb(skb);
 	return err;
 }
@@ -947,10 +946,15 @@ static int
 tcf_action_add(struct net *net, struct nlattr *nla, struct nlmsghdr *n,
 	       u32 portid, int ovr)
 {
-	int ret = 0;
+	int loop, ret;
 	LIST_HEAD(actions);
 
-	ret = tcf_action_init(net, nla, NULL, NULL, ovr, 0, &actions);
+	for (loop = 0; loop < 10; loop++) {
+		ret = tcf_action_init(net, nla, NULL, NULL, ovr, 0, &actions);
+		if (ret != -EAGAIN)
+			break;
+	}
+
 	if (ret)
 		goto done;
 
@@ -993,10 +997,7 @@ static int tc_ctl_action(struct sk_buff *skb, struct nlmsghdr *n)
 		 */
 		if (n->nlmsg_flags & NLM_F_REPLACE)
 			ovr = 1;
-replay:
 		ret = tcf_action_add(net, tca[TCA_ACT_TAB], n, portid, ovr);
-		if (ret == -EAGAIN)
-			goto replay;
 		break;
 	case RTM_DELACTION:
 		ret = tca_action_gd(net, tca[TCA_ACT_TAB], n,

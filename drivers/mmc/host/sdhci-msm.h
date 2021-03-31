@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,6 +17,8 @@
 
 #include <linux/mmc/mmc.h>
 #include <linux/pm_qos.h>
+#include <linux/msm_thermal.h>
+#include <linux/msm_tsens.h>
 #include "sdhci-pltfm.h"
 
 /* This structure keeps information per regulator */
@@ -152,7 +154,6 @@ struct sdhci_msm_pltfm_data {
 	u32 ice_clk_max;
 	u32 ice_clk_min;
 	struct sdhci_msm_pm_qos_data pm_qos_data;
-	bool core_3_0v_support;
 	bool sdr104_wa;
 };
 
@@ -172,6 +173,12 @@ struct sdhci_msm_ice_data {
 	int state;
 };
 
+struct sdhci_msm_debug_data {
+	struct mmc_host copy_mmc;
+	struct mmc_card copy_card;
+	struct sdhci_host copy_host;
+};
+
 struct sdhci_msm_host {
 	struct platform_device	*pdev;
 	void __iomem *core_mem;    /* MSM SDCC mapped address */
@@ -187,6 +194,7 @@ struct sdhci_msm_host {
 	atomic_t clks_on; /* Set if clocks are enabled */
 	struct sdhci_msm_pltfm_data *pdata;
 	struct mmc_host  *mmc;
+	struct sdhci_msm_debug_data cached_data;
 	struct sdhci_pltfm_data sdhci_msm_pdata;
 	u32 curr_pwr_state;
 	u32 curr_io_level;
@@ -219,7 +227,16 @@ struct sdhci_msm_host {
 	bool tuning_in_progress;
 	bool mci_removed;
 	const struct sdhci_msm_offset *offset;
+	bool core_3_0v_support;
 	bool pltfm_init_done;
+
+	/* temperature controlled scaling */
+	int tsens_id;
+	int disable_scaling_threshold_temp;
+	int enable_scaling_threshold_temp;
+	bool temp_control_scaling;
+	atomic_t clk_scaling_disable;
+	struct threshold_info tsens_threshold_config;
 };
 
 extern char *saved_command_line;

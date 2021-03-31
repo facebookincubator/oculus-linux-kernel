@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +31,7 @@
 #include "nan_api.h"
 #include "wlan_hdd_main.h"
 #include "wlan_hdd_nan.h"
+#include <qca_vendor.h>
 
 /**
  * __wlan_hdd_cfg80211_nan_request() - cfg80211 NAN request handler
@@ -57,21 +55,21 @@ static int __wlan_hdd_cfg80211_nan_request(struct wiphy *wiphy,
 	tNanRequestReq nan_req;
 	QDF_STATUS status;
 	int ret_val;
-	hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 
-	ENTER_DEV(wdev->netdev);
+	hdd_enter_dev(wdev->netdev);
 
 	ret_val = wlan_hdd_validate_context(hdd_ctx);
 	if (ret_val)
 		return ret_val;
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
-		hdd_err("Command not allowed in FTM mode");
+		hdd_err_rl("Command not allowed in FTM mode");
 		return -EPERM;
 	}
 
 	if (!hdd_ctx->config->enable_nan_support) {
-		hdd_err("NaN support is not enabled in INI");
+		hdd_err_rl("NaN support is not enabled in INI");
 		return -EPERM;
 	}
 
@@ -79,9 +77,9 @@ static int __wlan_hdd_cfg80211_nan_request(struct wiphy *wiphy,
 	nan_req.request_data = data;
 
 	status = sme_nan_request(&nan_req);
-	if (QDF_STATUS_SUCCESS != status) {
+	if (QDF_STATUS_SUCCESS != status)
 		ret_val = -EINVAL;
-	}
+
 	return ret_val;
 }
 
@@ -112,25 +110,13 @@ int wlan_hdd_cfg80211_nan_request(struct wiphy *wiphy,
 	return ret;
 }
 
-/**
- * wlan_hdd_cfg80211_nan_callback() - cfg80211 NAN event handler
- * @ctx: global HDD context
- * @msg: NAN event message
- *
- * This is a callback function and it gets called when we need to report
- * a nan event to userspace.  The wlan host driver simply encapsulates the
- * event into a netlink payload and then forwards it to userspace via a
- * cfg80211 vendor event.
- *
- * Return: nothing
- */
-void wlan_hdd_cfg80211_nan_callback(void *ctx, tSirNanEvent *msg)
+void wlan_hdd_cfg80211_nan_callback(hdd_handle_t hdd_handle, tSirNanEvent *msg)
 {
-	hdd_context_t *hdd_ctx = ctx;
+	struct hdd_context *hdd_ctx = hdd_handle_to_context(hdd_handle);
 	struct sk_buff *vendor_event;
 	int status;
 
-	if (NULL == msg) {
+	if (!msg) {
 		hdd_err("msg received here is null");
 		return;
 	}
@@ -157,17 +143,4 @@ void wlan_hdd_cfg80211_nan_callback(void *ctx, tSirNanEvent *msg)
 		return;
 	}
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
-}
-
-/**
- * wlan_hdd_nan_is_supported() - HDD NAN support query function
- *
- * This function is called to determine if NAN is supported by the
- * driver and by the firmware.
- *
- * Return: true if NAN is supported by the driver and firmware
- */
-bool wlan_hdd_nan_is_supported(void)
-{
-	return sme_is_feature_supported_by_fw(NAN);
 }

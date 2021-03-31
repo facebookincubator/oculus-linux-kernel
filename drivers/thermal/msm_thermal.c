@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -59,11 +59,11 @@
 
 #define MSM_LIMITS_DCVSH		0x10
 #define MSM_LIMITS_NODE_DCVS		0x44435653
+#define MSM_LIMITS_SUB_FN_THERMAL	0x54484D4C
 #define MSM_LIMITS_SUB_FN_GENERAL	0x47454E00
 #define MSM_LIMITS_SUB_FN_CRNT		0x43524E54
 #define MSM_LIMITS_SUB_FN_REL		0x52454C00
-#define MSM_LIMITS_DOMAIN_MAX		0x444D4158
-#define MSM_LIMITS_DOMAIN_MIN		0x444D494E
+#define MSM_LIMITS_FREQ_CAP		0x46434150
 #define MSM_LIMITS_CLUSTER_0		0x6370302D
 #define MSM_LIMITS_CLUSTER_1		0x6370312D
 #define MSM_LIMITS_ALGO_MODE_ENABLE	0x454E424C
@@ -201,6 +201,7 @@ static bool cluster_info_probed;
 static bool cluster_info_nodes_called;
 static bool in_suspend, retry_in_progress;
 static bool lmh_dcvs_available;
+static bool lmh_dcvs_is_supported;
 static int *tsens_id_map;
 static int *zone_id_tsens_map;
 static DEFINE_MUTEX(vdd_rstr_mutex);
@@ -996,7 +997,7 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	switch (event) {
 	case CPUFREQ_ADJUST:
-		max_freq_req = (lmh_dcvs_available) ? UINT_MAX :
+		max_freq_req = (lmh_dcvs_is_supported) ? UINT_MAX :
 			cpus[policy->cpu].parent_ptr->limited_max_freq;
 		min_freq_req = cpus[policy->cpu].parent_ptr->limited_min_freq;
 		pr_debug("mitigating CPU%d to freq max: %u min: %u\n",
@@ -1017,45 +1018,58 @@ static struct notifier_block msm_thermal_cpufreq_notifier = {
 	.notifier_call = msm_thermal_cpufreq_callback,
 };
 
-static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn, uint32_t setting,
-				uint32_t val)
+static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn,
+			      uint32_t setting, uint32_t val, uint32_t val1,
+			      bool enable_val1)
 {
 	int ret;
 	struct scm_desc desc_arg;
 	uint32_t *payload = NULL;
+	uint32_t payload_len;
 
-	payload = kzalloc(sizeof(uint32_t) * 5, GFP_KERNEL);
+	payload_len = ((enable_val1) ? 6 : 5) * sizeof(uint32_t);
+	payload = kcalloc((enable_val1) ? 6 : 5, sizeof(uint32_t), GFP_KERNEL);
 	if (!payload)
 		return -ENOMEM;
 
-	payload[0] = fn;
+	payload[0] = fn; /* algorithm */
 	payload[1] = 0; /* unused sub-algorithm */
 	payload[2] = setting;
-	payload[3] = 1; /* number of values */
+	payload[3] = enable_val1 ? 2 : 1; /* number of values */
 	payload[4] = val;
+	if (enable_val1)
+		payload[5] = val1;
 
 	desc_arg.args[0] = SCM_BUFFER_PHYS(payload);
-	desc_arg.args[1] = sizeof(uint32_t) * 5;
+	desc_arg.args[1] = payload_len;
 	desc_arg.args[2] = MSM_LIMITS_NODE_DCVS;
 	desc_arg.args[3] = node_id;
 	desc_arg.args[4] = 0; /* version */
 	desc_arg.arginfo = SCM_ARGS(5, SCM_RO, SCM_VAL, SCM_VAL,
 					SCM_VAL, SCM_VAL);
 
-	dmac_flush_range(payload, (void *)payload + 5 * (sizeof(uint32_t)));
+	dmac_flush_range(payload, (void *)payload + payload_len);
 	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_LMH, MSM_LIMITS_DCVSH), &desc_arg);
 
 	kfree(payload);
+
 	return ret;
 }
 
 static int msm_lmh_dcvs_update(int cpu)
 {
 	uint32_t id = cpus[cpu].parent_ptr->cluster_id;
-	uint32_t max_freq = cpus[cpu].limited_max_freq;
-	uint32_t min_freq = cpus[cpu].limited_min_freq;
+	uint32_t max_freq = cpus[cpu].limited_max_freq, hw_max_freq = U32_MAX;
 	uint32_t affinity;
 	int ret;
+
+	/*
+	 * It is better to use max limits of cluster for given
+	 * cpu if cluster mitigation is supported. It ensures that it
+	 * requests aggregated max limits of all cpus in that cluster.
+	 */
+	if (core_ptr)
+		max_freq = cpus[cpu].parent_ptr->limited_max_freq;
 
 	switch (id) {
 	case 0:
@@ -1069,13 +1083,14 @@ static int msm_lmh_dcvs_update(int cpu)
 		return -EINVAL;
 	};
 
-	ret = msm_lmh_dcvs_write(affinity, MSM_LIMITS_SUB_FN_GENERAL,
-					MSM_LIMITS_DOMAIN_MAX, max_freq);
-	if (ret)
-		return ret;
+	if (cpus[cpu].parent_ptr->freq_table)
+		hw_max_freq =
+			cpus[cpu].parent_ptr->freq_table[
+				cpus[cpu].parent_ptr->freq_idx_high].frequency;
 
-	ret = msm_lmh_dcvs_write(affinity, MSM_LIMITS_SUB_FN_GENERAL,
-					MSM_LIMITS_DOMAIN_MIN, min_freq);
+	ret = msm_lmh_dcvs_write(affinity, MSM_LIMITS_SUB_FN_THERMAL,
+					MSM_LIMITS_FREQ_CAP, max_freq,
+					max_freq >= hw_max_freq ? 0 : 1, 1);
 	if (ret)
 		return ret;
 	/*
@@ -1718,23 +1733,23 @@ static int msm_thermal_lmh_dcvs_init(struct platform_device *pdev)
 	 */
 	ret = msm_lmh_dcvs_write(MSM_LIMITS_CLUSTER_0,
 				MSM_LIMITS_SUB_FN_REL,
-				MSM_LIMITS_ALGO_MODE_ENABLE, 1);
+				MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
 	if (ret)
 		pr_err("Unable to enable REL algo for cluster0\n");
 	ret = msm_lmh_dcvs_write(MSM_LIMITS_CLUSTER_1,
 				MSM_LIMITS_SUB_FN_REL,
-				MSM_LIMITS_ALGO_MODE_ENABLE, 1);
+				MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
 	if (ret)
 		pr_err("Unable to enable REL algo for cluster1\n");
 
 	ret = msm_lmh_dcvs_write(MSM_LIMITS_CLUSTER_0,
 				MSM_LIMITS_SUB_FN_CRNT,
-				MSM_LIMITS_ALGO_MODE_ENABLE, 1);
+				MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
 	if (ret)
 		pr_err("Unable enable CRNT algo for cluster0\n");
 	ret = msm_lmh_dcvs_write(MSM_LIMITS_CLUSTER_1,
 				MSM_LIMITS_SUB_FN_CRNT,
-				MSM_LIMITS_ALGO_MODE_ENABLE, 1);
+				MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
 	if (ret)
 		pr_err("Unable enable CRNT algo for cluster1\n");
 
@@ -2788,7 +2803,7 @@ static int do_vdd_mx(void)
 		}
 	}
 
-	if ((dis_cnt == thresh[MSM_VDD_MX_RESTRICTION].thresh_ct)) {
+	if (dis_cnt == thresh[MSM_VDD_MX_RESTRICTION].thresh_ct) {
 		ret = remove_vdd_mx_restriction();
 		if (ret)
 			pr_err("Failed to remove vdd mx restriction\n");
@@ -2859,7 +2874,7 @@ static void msm_thermal_bite(int zone_id, int temp)
 			tsens_id, temp);
 	}
 	/* If it is a secure device ignore triggering the thermal bite. */
-	if (scm_is_secure_device())
+	if (!scm_is_secure_device())
 		return;
 	if (!is_scm_armv8()) {
 		scm_call_atomic1(SCM_SVC_BOOT, THERM_SECURE_BITE_CMD, 0);
@@ -5381,7 +5396,7 @@ int msm_thermal_init(struct msm_thermal_data *pdata)
 	if (ret)
 		pr_err("cannot register cpufreq notifier. err:%d\n", ret);
 
-	if (!lmh_dcvs_available) {
+	if (!lmh_dcvs_is_supported) {
 		register_reboot_notifier(&msm_thermal_reboot_notifier);
 		pm_notifier(msm_thermal_suspend_callback, 0);
 	}
@@ -6093,6 +6108,13 @@ static int probe_vdd_rstr(struct device_node *node,
 	if (ret)
 		goto read_node_fail;
 
+	/*
+	 * Monitor only this sensor if defined, otherwise monitor all tsens
+	 */
+	key = "qcom,vdd-restriction-sensor-id";
+	if (of_property_read_u32(node, key, &data->vdd_rstr_sensor_id))
+		data->vdd_rstr_sensor_id = MONITOR_ALL_TSENS;
+
 	for_each_child_of_node(node, child_node) {
 		rails_cnt++;
 	}
@@ -6165,7 +6187,7 @@ static int probe_vdd_rstr(struct device_node *node,
 			goto read_node_fail;
 		}
 		ret = sensor_mgr_init_threshold(&thresh[MSM_VDD_RESTRICTION],
-			MONITOR_ALL_TSENS,
+			data->vdd_rstr_sensor_id,
 			data->vdd_rstr_temp_hyst_degC, data->vdd_rstr_temp_degC,
 			vdd_restriction_notify);
 		if (ret) {
@@ -6271,7 +6293,7 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 		struct platform_device *pdev)
 {
 
-	int _cpu = 0, err = 0;
+	int _cpu = 0, err = 0, sensor_name_len = 0;
 	struct device_node *cpu_node = NULL, *limits = NULL, *tsens = NULL;
 	char *key = NULL;
 	struct device_node *node = pdev->dev.of_node;
@@ -6329,8 +6351,9 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 			err = -ENOMEM;
 			goto fetch_mitig_exit;
 		}
+		sensor_name_len = strlen(sensor_name);
 		strlcpy((char *) cpus[_cpu].sensor_type, sensor_name,
-			strlen(sensor_name) + 1);
+			sensor_name_len + 1);
 		create_alias_name(_cpu, limits, pdev);
 	}
 
@@ -7101,6 +7124,10 @@ static void thermal_vdd_config_read(struct seq_file *m, void *data)
 				msm_thermal_info.vdd_rstr_temp_degC);
 		seq_printf(m, "threshold clear:%d degC\n",
 				msm_thermal_info.vdd_rstr_temp_hyst_degC);
+		if (msm_thermal_info.vdd_rstr_sensor_id != MONITOR_ALL_TSENS)
+			seq_printf(m, "tsens sensor:tsens_tz_sensor%d\n",
+				msm_thermal_info.vdd_rstr_sensor_id);
+
 		for (i = 0; i < rails_cnt; i++) {
 			if (!strcmp(rails[i].name, "vdd-dig")
 				&& rails[i].num_levels)
@@ -7416,6 +7443,7 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 	if (ret)
 		goto probe_exit;
 
+	lmh_dcvs_is_supported = of_property_read_bool(node, "clock-names");
 	probe_cc(node, &data, pdev);
 	probe_freq_mitigation(node, &data, pdev);
 	probe_cx_phase_ctrl(node, &data, pdev);

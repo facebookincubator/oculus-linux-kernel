@@ -36,15 +36,6 @@
 #define DM_VERITY_OPT_FEC_START		"fec_start"
 #define DM_VERITY_OPT_FEC_ROOTS		"fec_roots"
 
-/*
- * Max length of device name in major:minor format
- * 4 = max length of major number (12 bit int)
- * 7 = max length of minor number (20 bit int)
- * 1 = colon separator
- * 1 = EOS
- */
-#define DM_VERITY_DEVNAME_SIZE		13
-
 /* configuration */
 struct dm_verity_fec {
 	struct dm_dev *dev;	/* parity data device */

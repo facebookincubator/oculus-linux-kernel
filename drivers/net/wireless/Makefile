@@ -51,6 +51,8 @@ obj-$(CONFIG_ATH_CARDS)		+= ath/
 
 obj-$(CONFIG_MAC80211_HWSIM)	+= mac80211_hwsim.o
 
+obj-$(CONFIG_VIRT_WIFI)	+= virt_wifi.o
+
 obj-$(CONFIG_WL_TI)	+= ti/
 
 obj-$(CONFIG_MWIFIEX)	+= mwifiex/
@@ -64,5 +66,8 @@ obj-$(CONFIG_RSI_91X)	+= rsi/
 obj-$(CONFIG_WCNSS_CORE)	+= wcnss/
 
 obj-$(CONFIG_CNSS)	+= cnss/
+obj-$(CONFIG_CNSS2)	+= cnss2/
 obj-$(CONFIG_WCNSS_MEM_PRE_ALLOC) += cnss_prealloc/
 obj-$(CONFIG_CNSS_CRYPTO)	+= cnss_crypto/
+obj-$(CONFIG_CNSS_GENL) += cnss_genl/
+obj-$(CONFIG_CNSS_UTILS) += cnss_utils/

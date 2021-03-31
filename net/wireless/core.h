@@ -71,6 +71,7 @@ struct cfg80211_registered_device {
 	struct list_head bss_list;
 	struct rb_root bss_tree;
 	u32 bss_generation;
+	u32 bss_entries;
 	struct cfg80211_scan_request *scan_req; /* protected by RTNL */
 	struct sk_buff *scan_msg;
 	struct cfg80211_sched_scan_request __rcu *sched_scan_req;
@@ -207,16 +208,7 @@ struct cfg80211_event {
 	enum cfg80211_event_type type;
 
 	union {
-		struct {
-			u8 bssid[ETH_ALEN];
-			const u8 *req_ie;
-			const u8 *resp_ie;
-			size_t req_ie_len;
-			size_t resp_ie_len;
-			struct cfg80211_bss *bss;
-			int status; /* -1 = failed; 0..65535 = status code */
-			enum nl80211_timeout_reason timeout_reason;
-		} cr;
+		struct cfg80211_connect_resp_params cr;
 		struct {
 			const u8 *req_ie;
 			const u8 *resp_ie;
@@ -334,7 +326,7 @@ int cfg80211_mlme_auth(struct cfg80211_registered_device *rdev,
 		       const u8 *ssid, int ssid_len,
 		       const u8 *ie, int ie_len,
 		       const u8 *key, int key_len, int key_idx,
-		       const u8 *sae_data, int sae_data_len);
+		       const u8 *auth_data, int auth_data_len);
 int cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 			struct net_device *dev,
 			struct ieee80211_channel *chan,
@@ -372,12 +364,9 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 		     struct cfg80211_connect_params *connect,
 		     struct cfg80211_cached_keys *connkeys,
 		     const u8 *prev_bssid);
-void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
-			       const u8 *req_ie, size_t req_ie_len,
-			       const u8 *resp_ie, size_t resp_ie_len,
-			       int status, bool wextev,
-			       struct cfg80211_bss *bss,
-			       enum nl80211_timeout_reason timeout_reason);
+void __cfg80211_connect_result(struct net_device *dev,
+			       struct cfg80211_connect_resp_params *params,
+			       bool wextev);
 void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 			     size_t ie_len, u16 reason, bool from_ap);
 int cfg80211_disconnect(struct cfg80211_registered_device *rdev,
@@ -389,6 +378,7 @@ void __cfg80211_roamed(struct wireless_dev *wdev,
 		       const u8 *resp_ie, size_t resp_ie_len);
 int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
 			      struct wireless_dev *wdev);
+void cfg80211_autodisconnect_wk(struct work_struct *work);
 
 /* SME implementation */
 void cfg80211_conn_work(struct work_struct *work);
@@ -399,6 +389,7 @@ void cfg80211_sme_disassoc(struct wireless_dev *wdev);
 void cfg80211_sme_deauth(struct wireless_dev *wdev);
 void cfg80211_sme_auth_timeout(struct wireless_dev *wdev);
 void cfg80211_sme_assoc_timeout(struct wireless_dev *wdev);
+void cfg80211_sme_abandon_assoc(struct wireless_dev *wdev);
 
 /* internal helpers */
 bool cfg80211_supported_cipher_suite(struct wiphy *wiphy, u32 cipher);
@@ -447,6 +438,16 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work);
 unsigned int
 cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
 			      const struct cfg80211_chan_def *chandef);
+
+void cfg80211_sched_dfs_chan_update(struct cfg80211_registered_device *rdev);
+
+bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
+				  struct ieee80211_channel *chan);
+
+bool cfg80211_beaconing_iface_active(struct wireless_dev *wdev);
+
+bool cfg80211_is_sub_chan(struct cfg80211_chan_def *chandef,
+			  struct ieee80211_channel *chan);
 
 static inline unsigned int elapsed_jiffies_msecs(unsigned long start)
 {

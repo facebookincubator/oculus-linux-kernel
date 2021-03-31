@@ -344,6 +344,15 @@ config REGULATOR_MAX1586
 	  regulator via I2C bus. The provided regulator is suitable
 	  for PXA27x chips to control VCC_CORE and VCC_USIM voltages.
 
+config REGULATOR_MAX20010
+	tristate "Maxim MAX20010 regulator support"
+	depends on I2C
+	help
+	  This driver supports the Maxim MAX20010 switching voltage regulator
+	  (buck converter). The regulator is controlled using an I2C interface
+	  and supports 2 programmable voltage ranges from 0.5V to 1.27V in 10mV
+	  steps and 0.625V to 1.5875V in 12.5mV steps.
+
 config REGULATOR_MAX8649
 	tristate "Maxim 8649 voltage regulator"
 	depends on I2C
@@ -471,6 +480,15 @@ config REGULATOR_MT6397
 	  MediaTek MT6397 PMIC.
 	  This driver supports the control of different power rails of device
 	  through regulator interface.
+
+config REGULATOR_ONSEMI_NCP6335D
+	tristate "OnSemi NCP6335D regulator support"
+	depends on I2C
+	help
+	 This driver supports the OnSemi NCP6335D switching voltage regulator
+	 (buck converter). The regulator is controlled using an I2C interface
+	 and supports a programmable voltage range from 0.6V to 1.4V in steps
+	 of 6.25mV.
 
 config REGULATOR_OVR_OLED_AVDD
 	tristate "Oculus OLED AVDD regulator driver"

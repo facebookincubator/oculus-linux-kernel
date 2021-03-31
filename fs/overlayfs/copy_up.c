@@ -25,6 +25,7 @@ int ovl_copy_xattr(struct dentry *old, struct dentry *new)
 	ssize_t list_size, size, value_size = 0;
 	char *buf, *name, *value = NULL;
 	int uninitialized_var(error);
+	size_t slen;
 
 	if (!old->d_inode->i_op->getxattr ||
 	    !new->d_inode->i_op->getxattr)
@@ -47,7 +48,16 @@ int ovl_copy_xattr(struct dentry *old, struct dentry *new)
 		goto out;
 	}
 
-	for (name = buf; name < (buf + list_size); name += strlen(name) + 1) {
+	for (name = buf; list_size; name += slen) {
+		slen = strnlen(name, list_size) + 1;
+
+		/* underlying fs providing us with an broken xattr list? */
+		if (WARN_ON(slen > list_size)) {
+			error = -EIO;
+			break;
+		}
+		list_size -= slen;
+
 		if (ovl_is_private_xattr(name))
 			continue;
 retry:
@@ -129,6 +139,8 @@ static int ovl_copy_up_data(struct path *old, struct path *new, loff_t len)
 		len -= bytes;
 	}
 
+	if (!error)
+		error = vfs_fsync(new_file, 0);
 	fput(new_file);
 out_fput:
 	fput(old_file);
@@ -305,7 +317,6 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	struct dentry *upperdir;
 	struct dentry *upperdentry;
 	const struct cred *old_cred;
-	struct cred *override_cred;
 	char *link = NULL;
 
 	if (WARN_ON(!workdir))
@@ -324,28 +335,7 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 			return PTR_ERR(link);
 	}
 
-	err = -ENOMEM;
-	override_cred = prepare_creds();
-	if (!override_cred)
-		goto out_free_link;
-
-	override_cred->fsuid = stat->uid;
-	override_cred->fsgid = stat->gid;
-	/*
-	 * CAP_SYS_ADMIN for copying up extended attributes
-	 * CAP_DAC_OVERRIDE for create
-	 * CAP_FOWNER for chmod, timestamp update
-	 * CAP_FSETID for chmod
-	 * CAP_CHOWN for chown
-	 * CAP_MKNOD for mknod
-	 */
-	cap_raise(override_cred->cap_effective, CAP_SYS_ADMIN);
-	cap_raise(override_cred->cap_effective, CAP_DAC_OVERRIDE);
-	cap_raise(override_cred->cap_effective, CAP_FOWNER);
-	cap_raise(override_cred->cap_effective, CAP_FSETID);
-	cap_raise(override_cred->cap_effective, CAP_CHOWN);
-	cap_raise(override_cred->cap_effective, CAP_MKNOD);
-	old_cred = override_creds(override_cred);
+	old_cred = ovl_override_creds(dentry->d_sb);
 
 	err = -EIO;
 	if (lock_rename(workdir, upperdir) != NULL) {
@@ -367,10 +357,8 @@ int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	}
 out_unlock:
 	unlock_rename(workdir, upperdir);
-	revert_creds(old_cred);
-	put_cred(override_cred);
+	ovl_revert_creds(old_cred);
 
-out_free_link:
 	if (link)
 		free_page((unsigned long) link);
 

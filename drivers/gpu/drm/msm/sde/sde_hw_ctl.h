@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,6 +16,7 @@
 #include "sde_hw_mdss.h"
 #include "sde_hw_util.h"
 #include "sde_hw_catalog.h"
+#include "sde_splash.h"
 
 /**
  * sde_ctl_mode_sel: Interface mode selection
@@ -94,6 +95,13 @@ struct sde_hw_ctl_ops {
 	void (*trigger_flush)(struct sde_hw_ctl *ctx);
 
 	/**
+	 * Read the value of the flush register
+	 * @ctx       : ctl path ctx pointer
+	 * @Return: value of the ctl flush register.
+	 */
+	u32 (*get_flush_register)(struct sde_hw_ctl *ctx);
+
+	/**
 	 * Setup ctl_path interface config
 	 * @ctx
 	 * @cfg    : interface config structure pointer
@@ -101,7 +109,24 @@ struct sde_hw_ctl_ops {
 	void (*setup_intf_cfg)(struct sde_hw_ctl *ctx,
 		struct sde_hw_intf_cfg *cfg);
 
+	/**
+	 * Clear ctl_path interface config
+	 * @ctx       : ctl path ctx pointer
+	 */
+	void (*clear_intf_cfg)(struct sde_hw_ctl *ctx);
+
 	int (*reset)(struct sde_hw_ctl *c);
+
+	/*
+	 * wait_reset_status - checks ctl reset status
+	 * @ctx       : ctl path ctx pointer
+	 *
+	 * This function checks the ctl reset status bit.
+	 * If the reset bit is set, it keeps polling the status till the hw
+	 * reset is complete.
+	 * Returns: 0 on success or -error if reset incomplete within interval
+	 */
+	int (*wait_reset_status)(struct sde_hw_ctl *ctx);
 
 	uint32_t (*get_bitmask_sspp)(struct sde_hw_ctl *ctx,
 		enum sde_sspp blk);
@@ -128,17 +153,40 @@ struct sde_hw_ctl_ops {
 	/**
 	 * Set all blend stages to disabled
 	 * @ctx       : ctl path ctx pointer
+	 * @handoff   : indicate if lk is prepare for handoff
+	 * @splash_mask  : layer mixer mask of splash layers
+	 * @splash_ext_mask: layer mixer extension mask of splash layers
 	 */
-	void (*clear_all_blendstages)(struct sde_hw_ctl *ctx);
+	void (*clear_all_blendstages)(struct sde_hw_ctl *ctx,
+		bool handoff, u32 splash_mask, u32 splash_ext_mask);
 
 	/**
 	 * Configure layer mixer to pipe configuration
 	 * @ctx       : ctl path ctx pointer
 	 * @lm        : layer mixer enumeration
 	 * @cfg       : blend stage configuration
+	 * @handoff   : indicate if lk is prepare for handoff
+	 * @splash_mask  : layer mixer mask of splash layers
+	 * @splash_ext_mask: layer mixer extension mask of splash layers
 	 */
 	void (*setup_blendstage)(struct sde_hw_ctl *ctx,
-		enum sde_lm lm, struct sde_hw_stage_cfg *cfg, u32 index);
+		enum sde_lm lm, struct sde_hw_stage_cfg *cfg, u32 index,
+		bool handoff, u32 splash_mask, u32 splash_ext_mask);
+
+	/**
+	 * read CTL_TOP register value for splash case
+	 * @ctx       : ctl path ctx pointer
+	 * @Return    : CTL top register value
+	 */
+	u32 (*read_ctl_top_for_splash)(struct sde_hw_ctl *ctx);
+
+	/**
+	 * read CTL layers register value for splash case
+	 * @ctx       : ctl path ctx pointer
+	 * @index     : layer index for this ctl path
+	 * @Return    : CTL layers register value
+	 */
+	u32 (*read_ctl_layers_for_splash)(struct sde_hw_ctl *ctx, int index);
 };
 
 /**

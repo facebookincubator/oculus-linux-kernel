@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,6 +30,15 @@
 
 &soc {
 	/delete-node/ qcom,turing@1a300000;
+
+	/delete-node/ qcom,msm-cdsp-loader;
+	/delete-node/ cti@7068000;
+	/delete-node/ turing_etm0;
+	funnel@6042000 {
+		ports {
+			/delete-node/ port@4;
+		};
+	};
 
 	devfreq_memlat_4: qcom,arm-memlat-mon-4 {
 		qcom,core-dev-table =
@@ -64,14 +73,8 @@
 	};
 };
 
-&soc {
-	/delete-node/ qcom,turing@1a300000;
-
-	/delete-node/ cti@7068000;
-	/delete-node/ turing_etm0;
-	funnel@6042000 {
-		ports {
-			/delete-node/ port@4;
-		};
-	};
+/* GPU overrides */
+&msm_gpu {
+		/* Update GPU chip ID*/
+		qcom,chipid = <0x05000900>;
 };

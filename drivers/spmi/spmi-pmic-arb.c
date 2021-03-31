@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,7 +25,6 @@
 #include <linux/slab.h>
 #include <linux/spmi.h>
 #include <linux/syscore_ops.h>
-#include <linux/wakeup_reason.h>
 
 /* PMIC Arbiter configuration registers */
 #define PMIC_ARB_VERSION		0x0000
@@ -566,7 +565,6 @@ static void periph_interrupt(struct spmi_pmic_arb *pa, u16 apid, bool show)
 
 			pr_warn("spmi_show_resume_irq: %d triggered [0x%01x, 0x%02x, 0x%01x] %s\n",
 				irq, sid, per, id, name);
-			log_wakeup_reason(irq);
 		} else {
 			generic_handle_irq(irq);
 		}
@@ -693,19 +691,26 @@ static int qpnpint_irq_set_type(struct irq_data *d, unsigned int flow_type)
 	if (flow_type & (IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING)) {
 		type.type |= bit_mask_irq;
 		if (flow_type & IRQF_TRIGGER_RISING)
-			type.polarity_high |= bit_mask_irq;
+			type.polarity_high |=  bit_mask_irq;
+		else
+			type.polarity_high &= ~bit_mask_irq;
 		if (flow_type & IRQF_TRIGGER_FALLING)
-			type.polarity_low  |= bit_mask_irq;
+			type.polarity_low  |=  bit_mask_irq;
+		else
+			type.polarity_low  &= ~bit_mask_irq;
 	} else {
 		if ((flow_type & (IRQF_TRIGGER_HIGH)) &&
 		    (flow_type & (IRQF_TRIGGER_LOW)))
 			return -EINVAL;
 
 		type.type &= ~bit_mask_irq; /* level trig */
-		if (flow_type & IRQF_TRIGGER_HIGH)
-			type.polarity_high |= bit_mask_irq;
-		else
-			type.polarity_low  |= bit_mask_irq;
+		if (flow_type & IRQF_TRIGGER_HIGH) {
+			type.polarity_high |=  bit_mask_irq;
+			type.polarity_low  &= ~bit_mask_irq;
+		} else {
+			type.polarity_low  |=  bit_mask_irq;
+			type.polarity_high &= ~bit_mask_irq;
+		}
 	}
 
 	qpnpint_spmi_write(d, QPNPINT_REG_SET_TYPE, &type, sizeof(type));

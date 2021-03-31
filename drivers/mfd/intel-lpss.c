@@ -267,12 +267,15 @@ static void intel_lpss_init_dev(const struct intel_lpss *lpss)
 {
 	u32 value = LPSS_PRIV_SSP_REG_DIS_DMA_FIN;
 
+	/* Set the device in reset state */
+	writel(0, lpss->priv + LPSS_PRIV_RESETS);
+
 	intel_lpss_deassert_reset(lpss);
+
+	intel_lpss_set_remap_addr(lpss);
 
 	if (!intel_lpss_has_idma(lpss))
 		return;
-
-	intel_lpss_set_remap_addr(lpss);
 
 	/* Make sure that SPI multiblock DMA transfers are re-enabled */
 	if (lpss->type == LPSS_DEV_SPI)
@@ -493,9 +496,6 @@ int intel_lpss_suspend(struct device *dev)
 	/* Save device context */
 	for (i = 0; i < LPSS_PRIV_REG_COUNT; i++)
 		lpss->priv_ctx[i] = readl(lpss->priv + i * 4);
-
-	/* Put the device into reset state */
-	writel(0, lpss->priv + LPSS_PRIV_RESETS);
 
 	return 0;
 }

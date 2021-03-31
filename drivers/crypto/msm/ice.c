@@ -125,6 +125,9 @@ static int qti_ice_setting_config(struct request *req,
 		return -EPERM;
 	}
 
+	if (!setting)
+		return -EINVAL;
+
 	if ((short)(crypto_data->key_index) >= 0) {
 
 		memcpy(&setting->crypto_data, crypto_data,
@@ -972,7 +975,8 @@ static int qcom_ice_secure_ice_init(struct ice_device *ice_dev)
 
 static int qcom_ice_update_sec_cfg(struct ice_device *ice_dev)
 {
-	int ret = 0, scm_ret = 0;
+	int ret = 0;
+	u64 scm_ret = 0;
 
 	/* scm command buffer structure */
 	struct qcom_scm_cmd_buf {
@@ -998,7 +1002,7 @@ static int qcom_ice_update_sec_cfg(struct ice_device *ice_dev)
 	cbuf.device_id = ICE_TZ_DEV_ID;
 	ret = scm_restore_sec_cfg(cbuf.device_id, cbuf.spare, &scm_ret);
 	if (ret || scm_ret) {
-		pr_err("%s: failed, ret %d scm_ret %d\n",
+		pr_err("%s: failed, ret %d scm_ret %llu\n",
 						__func__, ret, scm_ret);
 		if (!ret)
 			ret = scm_ret;
@@ -1429,7 +1433,7 @@ static int qcom_ice_config_start(struct platform_device *pdev,
 	int ret = 0;
 	bool is_pfe = false;
 
-	if (!pdev || !req || !setting) {
+	if (!pdev || !req) {
 		pr_err("%s: Invalid params passed\n", __func__);
 		return -EINVAL;
 	}
@@ -1584,7 +1588,8 @@ struct platform_device *qcom_ice_get_pdevice(struct device_node *node)
 
 	list_for_each_entry(ice_dev, &ice_devices, list) {
 		if (ice_dev->pdev->of_node == node) {
-			pr_debug("%s: found ice device %p\n", __func__, ice_dev);
+			pr_info("%s: found ice device %pK\n", __func__,
+			ice_dev);
 			ice_pdev = to_platform_device(ice_dev->pdev);
 			break;
 		}

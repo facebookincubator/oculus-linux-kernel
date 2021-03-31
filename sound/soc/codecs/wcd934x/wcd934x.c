@@ -138,7 +138,6 @@ static const struct snd_kcontrol_new name##_mux = \
 #define  CF_MIN_3DB_75HZ		0x1
 #define  CF_MIN_3DB_150HZ		0x2
 
-#define  SB_OF_UF_MAX_RETRY_CNT		5
 #define CPE_ERR_WDOG_BITE BIT(0)
 #define CPE_FATAL_IRQS CPE_ERR_WDOG_BITE
 
@@ -658,8 +657,6 @@ struct tavil_priv {
 	int power_active_ref;
 	int sidetone_coeff_array[IIR_MAX][BAND_MAX]
 		[WCD934X_CDC_SIDETONE_IIR_COEFF_MAX];
-
-	unsigned short slim_tx_of_uf_cnt[WCD934X_TX_MAX][SB_PORT_ERR_MAX];
 };
 
 static const struct tavil_reg_mask_val tavil_spkr_default[] = {
@@ -1669,7 +1666,6 @@ static int tavil_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 	struct tavil_priv *tavil_p = snd_soc_codec_get_drvdata(codec);
 	struct wcd9xxx_codec_dai_data *dai;
 	struct wcd9xxx *core;
-	struct wcd9xxx_ch *ch;
 	int ret = 0;
 
 	dev_dbg(codec->dev,
@@ -1701,13 +1697,6 @@ static int tavil_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 			dev_dbg(codec->dev, "%s: Disconnect RX port, ret = %d\n",
 				 __func__, ret);
 		}
-		/* reset overflow and underflow counts */
-		list_for_each_entry(ch, &dai->wcd9xxx_ch_list, list) {
-			tavil_p->slim_tx_of_uf_cnt[ch->port][SB_PORT_ERR_OF]
-									= 0;
-			tavil_p->slim_tx_of_uf_cnt[ch->port][SB_PORT_ERR_UF]
-									= 0;
-		}
 		break;
 	}
 	return ret;
@@ -1722,7 +1711,6 @@ static int tavil_codec_enable_slimvi_feedback(struct snd_soc_dapm_widget *w,
 	struct tavil_priv *tavil_p = NULL;
 	int ret = 0;
 	struct wcd9xxx_codec_dai_data *dai = NULL;
-	struct wcd9xxx_ch *ch;
 
 	codec = snd_soc_dapm_to_codec(w->dapm);
 	tavil_p = snd_soc_codec_get_drvdata(codec);
@@ -1814,13 +1802,6 @@ static int tavil_codec_enable_slimvi_feedback(struct snd_soc_dapm_widget *w,
 				dai->grph);
 			dev_dbg(codec->dev, "%s: Disconnect TX port, ret = %d\n",
 				__func__, ret);
-		}
-		/* reset over.f and under.f counts */
-		list_for_each_entry(ch, &dai->wcd9xxx_ch_list, list) {
-			tavil_p->slim_tx_of_uf_cnt[ch->port][SB_PORT_ERR_OF]
-									= 0;
-			tavil_p->slim_tx_of_uf_cnt[ch->port][SB_PORT_ERR_UF]
-									= 0;
 		}
 		if (test_bit(VI_SENSE_1, &tavil_p->status_mask)) {
 			/* Disable V&I sensing */
@@ -2033,6 +2014,8 @@ static int tavil_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_update_bits(codec, WCD934X_ANA_RX_SUPPLIES,
 					    0x02, 0x02);
 		}
+		if (!(strcmp(w->name, "HPHR PA")))
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x40, 0x40);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		if ((!(strcmp(w->name, "ANC HPHR PA")))) {
@@ -2131,6 +2114,8 @@ static int tavil_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 				    0x10, 0x10);
 		if (!(strcmp(w->name, "ANC HPHR PA")))
 			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x40, 0x00);
+		if (!(strcmp(w->name, "HPHR PA")))
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x40, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		/*
@@ -2180,6 +2165,8 @@ static int tavil_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		    (test_bit(HPH_PA_DELAY, &tavil->status_mask)))
 			snd_soc_update_bits(codec, WCD934X_ANA_HPH,
 					    0xC0, 0xC0);
+		if (!(strcmp(w->name, "HPHL PA")))
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x80, 0x80);
 		set_bit(HPH_PA_DELAY, &tavil->status_mask);
 		if (dsd_conf &&
 		    (snd_soc_read(codec, WCD934X_CDC_DSD0_PATH_CTL) & 0x01)) {
@@ -2285,6 +2272,8 @@ static int tavil_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		if (!(strcmp(w->name, "ANC HPHL PA")))
 			snd_soc_update_bits(codec, WCD934X_ANA_HPH,
 					    0x80, 0x00);
+		if (!(strcmp(w->name, "HPHL PA")))
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x80, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		/*
@@ -2437,6 +2426,10 @@ static int tavil_codec_hphr_dac_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		if (!(strcmp(w->name, "RX INT2 DAC"))) {
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x20, 0x20);
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x10, 0x10);
+		}
 		if (tavil->anc_func) {
 			ret = tavil_codec_enable_anc(w, kcontrol, event);
 			/* 40 msec delay is needed to avoid click and pop */
@@ -2476,6 +2469,10 @@ static int tavil_codec_hphr_dac_event(struct snd_soc_dapm_widget *w,
 			snd_soc_update_bits(codec,
 					    WCD934X_CDC_RX2_RX_PATH_CFG0,
 					    0x10, 0x10);
+		break;
+	case SND_SOC_DAPM_PRE_PMD:
+		if (!(strcmp(w->name, "RX INT2 DAC")))
+			snd_soc_update_bits(codec, WCD934X_ANA_HPH, 0x30, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		/* 1000us required as per HW requirement */
@@ -7397,12 +7394,12 @@ static const struct snd_soc_dapm_widget tavil_dapm_widgets[] = {
 		0, 0, tavil_codec_ear_dac_event,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_DAC_E("RX INT1 DAC", NULL, WCD934X_ANA_HPH,
-		5, 0, tavil_codec_hphl_dac_event,
+	SND_SOC_DAPM_DAC_E("RX INT1 DAC", NULL, SND_SOC_NOPM,
+		0, 0, tavil_codec_hphl_dac_event,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_DAC_E("RX INT2 DAC", NULL, WCD934X_ANA_HPH,
-		4, 0, tavil_codec_hphr_dac_event,
+	SND_SOC_DAPM_DAC_E("RX INT2 DAC", NULL, SND_SOC_NOPM,
+		0, 0, tavil_codec_hphr_dac_event,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_DAC_E("RX INT3 DAC", NULL, SND_SOC_NOPM,
@@ -7415,11 +7412,11 @@ static const struct snd_soc_dapm_widget tavil_dapm_widgets[] = {
 	SND_SOC_DAPM_PGA_E("EAR PA", WCD934X_ANA_EAR, 7, 0, NULL, 0,
 		tavil_codec_enable_ear_pa,
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_PGA_E("HPHL PA", WCD934X_ANA_HPH, 7, 0, NULL, 0,
+	SND_SOC_DAPM_PGA_E("HPHL PA", SND_SOC_NOPM, 0, 0, NULL, 0,
 		tavil_codec_enable_hphl_pa,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_PGA_E("HPHR PA", WCD934X_ANA_HPH, 6, 0, NULL, 0,
+	SND_SOC_DAPM_PGA_E("HPHR PA", SND_SOC_NOPM, 0, 0, NULL, 0,
 		tavil_codec_enable_hphr_pa,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
@@ -8639,10 +8636,6 @@ static const struct tavil_reg_mask_val tavil_codec_reg_init_common_val[] = {
 	{WCD934X_TLMM_DMIC3_DATA_PINCFG, 0xFF, 0x0a},
 	{WCD934X_CPE_SS_SVA_CFG, 0x60, 0x00},
 	{WCD934X_CPE_SS_CPAR_CFG, 0x10, 0x10},
-	{WCD934X_MICB1_TEST_CTL_1, 0xff, 0xfa},
-	{WCD934X_MICB2_TEST_CTL_1, 0xff, 0xfa},
-	{WCD934X_MICB3_TEST_CTL_1, 0xff, 0xfa},
-	{WCD934X_MICB4_TEST_CTL_1, 0xff, 0xfa},
 };
 
 static void tavil_codec_init_reg(struct tavil_priv *priv)
@@ -8785,42 +8778,14 @@ static irqreturn_t tavil_slimbus_irq(int irq, void *data)
 		if (val & WCD934X_SLIM_IRQ_UNDERFLOW)
 			dev_err_ratelimited(tavil->dev, "%s: underflow error on %s port %d, value %x\n",
 			   __func__, (tx ? "TX" : "RX"), port_id, val);
-
-		if (tx) {
-			/* inc count */
-			if (val & WCD934X_SLIM_IRQ_OVERFLOW) {
-				tavil->slim_tx_of_uf_cnt[port_id]
-							[SB_PORT_ERR_OF]++;
-				dev_err_ratelimited(tavil->dev, "%s: tx port(%d) overflow cnt: %d\n",
-					__func__, port_id,
-					tavil->slim_tx_of_uf_cnt[port_id]
-							[SB_PORT_ERR_OF]);
-			}
-			if (val & WCD934X_SLIM_IRQ_UNDERFLOW) {
-				tavil->slim_tx_of_uf_cnt[port_id]
-							[SB_PORT_ERR_UF]++;
-				dev_err_ratelimited(tavil->dev, "%s: tx port(%d) underflow cnt: %d\n",
-						__func__, port_id,
-					tavil->slim_tx_of_uf_cnt[port_id]
-							[SB_PORT_ERR_UF]);
-			}
-
-		}
-
 		if ((val & WCD934X_SLIM_IRQ_OVERFLOW) ||
 			(val & WCD934X_SLIM_IRQ_UNDERFLOW)) {
 			if (!tx)
 				reg = WCD934X_SLIM_PGD_PORT_INT_RX_EN0 +
 					(port_id / 8);
-			else if ((tavil->slim_tx_of_uf_cnt[port_id]
-				[SB_PORT_ERR_OF] > SB_OF_UF_MAX_RETRY_CNT) ||
-				(tavil->slim_tx_of_uf_cnt[port_id]
-				[SB_PORT_ERR_UF] > SB_OF_UF_MAX_RETRY_CNT))
+			else
 				reg = WCD934X_SLIM_PGD_PORT_INT_TX_EN0 +
 					(port_id / 8);
-			else
-				goto skip_port_disable;
-
 			int_val = wcd9xxx_interface_reg_read(
 				tavil->wcd9xxx, reg);
 			if (int_val & (1 << (port_id % 8))) {
@@ -8829,7 +8794,6 @@ static irqreturn_t tavil_slimbus_irq(int irq, void *data)
 					reg, int_val);
 			}
 		}
-skip_port_disable:
 		if (val & WCD934X_SLIM_IRQ_PORT_CLOSED) {
 			/*
 			 * INT SOURCE register starts from RX to TX

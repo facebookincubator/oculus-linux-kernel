@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011, 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef _OL_RX__H_
 #define _OL_RX__H_
 
@@ -34,11 +25,13 @@
 
 void
 ol_rx_deliver(struct ol_txrx_vdev_t *vdev,
-	      struct ol_txrx_peer_t *peer, unsigned tid, qdf_nbuf_t head_msdu);
+	      struct ol_txrx_peer_t *peer, unsigned int tid,
+	      qdf_nbuf_t head_msdu);
 
 void
 ol_rx_discard(struct ol_txrx_vdev_t *vdev,
-	      struct ol_txrx_peer_t *peer, unsigned tid, qdf_nbuf_t head_msdu);
+	      struct ol_txrx_peer_t *peer, unsigned int tid,
+	      qdf_nbuf_t head_msdu);
 
 void ol_rx_frames_free(htt_pdev_handle htt_pdev, qdf_nbuf_t frames);
 
@@ -47,25 +40,31 @@ void ol_rx_peer_init(struct ol_txrx_pdev_t *pdev, struct ol_txrx_peer_t *peer);
 void
 ol_rx_peer_cleanup(struct ol_txrx_vdev_t *vdev, struct ol_txrx_peer_t *peer);
 
+#ifdef WDI_EVENT_ENABLE
 void ol_rx_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
-	struct ol_txrx_peer_t *peer, qdf_nbuf_t msdu, uint8_t pktlog_bit);
+			     struct ol_txrx_peer_t *peer, qdf_nbuf_t msdu,
+			     uint8_t pktlog_bit);
+#else
+static inline
+void ol_rx_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
+			     struct ol_txrx_peer_t *peer, qdf_nbuf_t msdu,
+			     uint8_t pktlog_bit)
+{
+}
+#endif
 
 
 void
 ol_rx_in_order_deliver(struct ol_txrx_vdev_t *vdev,
 		       struct ol_txrx_peer_t *peer,
-		       unsigned tid, qdf_nbuf_t head_msdu);
+		       unsigned int tid, qdf_nbuf_t head_msdu);
 
 void ol_rx_log_packet(htt_pdev_handle htt_pdev,
 		 uint8_t peer_id, qdf_nbuf_t msdu);
-
-#ifndef CONFIG_HL_SUPPORT
 void
 ol_rx_offload_paddr_deliver_ind_handler(htt_pdev_handle htt_pdev,
 					uint32_t msdu_count,
 					uint32_t *msg_word);
-#endif
-
 void ol_rx_update_histogram_stats(uint32_t msdu_count,
 		uint8_t frag_ind, uint8_t offload_ind);
 
@@ -76,5 +75,7 @@ ol_rx_mic_error_handler(
 	u_int16_t peer_id,
 	void *msdu_desc,
 	qdf_nbuf_t msdu);
+
+void ol_rx_timestamp(struct cdp_cfg *cfg_pdev, void *rx_desc, qdf_nbuf_t msdu);
 
 #endif /* _OL_RX__H_ */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -73,6 +73,11 @@
 	(strnlen((str), IPA_AGGR_MAX_STR_LENGTH - 1) + 1)
 
 #define IPA_SPS_PROD_TIMEOUT_MSEC 100
+
+#define EP_EMPTY_MAX_RETRY 5
+#define IPA_BAM_REG_MAP_SIZE 4
+#define IPA_BAM_REG_N_OFST 0x1000
+
 
 #ifdef CONFIG_COMPAT
 #define IPA_IOC_ADD_HDR32 _IOWR(IPA_IOC_MAGIC, \
@@ -277,6 +282,28 @@ int ipa2_active_clients_log_print_table(char *buf, int size)
 			ipa_ctx->ipa_active_clients.cnt);
 
 	return cnt;
+}
+
+
+static int ipa2_clean_modem_rule(void)
+{
+	struct ipa_install_fltr_rule_req_msg_v01 *req;
+	int val = 0;
+
+	req = kzalloc(
+		sizeof(struct ipa_install_fltr_rule_req_msg_v01),
+		GFP_KERNEL);
+	if (!req) {
+		IPAERR("mem allocated failed!\n");
+		return -ENOMEM;
+	}
+	req->filter_spec_list_valid = false;
+	req->filter_spec_list_len = 0;
+	req->source_pipe_index_valid = 0;
+	val = qmi_filter_request_send(req);
+	kfree(req);
+
+	return val;
 }
 
 static int ipa2_active_clients_panic_notifier(struct notifier_block *this,
@@ -532,7 +559,7 @@ static void ipa_wan_msg_free_cb(void *buff, u32 len, u32 type)
 }
 
 static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type,
-							bool is_cache)
+	bool is_cache)
 {
 	int retval;
 	struct ipa_wan_msg *wan_msg;
@@ -717,7 +744,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		if (ipa2_add_hdr((struct ipa_ioc_add_hdr *)param)) {
+		if (ipa2_add_hdr_usr((struct ipa_ioc_add_hdr *)param,
+			true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -797,7 +825,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		if (ipa2_add_rt_rule((struct ipa_ioc_add_rt_rule *)param)) {
+		if (ipa2_add_rt_rule_usr((struct ipa_ioc_add_rt_rule *)param,
+				true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -916,7 +945,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		if (ipa2_add_flt_rule((struct ipa_ioc_add_flt_rule *)param)) {
+		if (ipa2_add_flt_rule_usr((struct ipa_ioc_add_flt_rule *)param,
+				true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -1010,19 +1040,19 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		retval = ipa2_commit_hdr();
 		break;
 	case IPA_IOC_RESET_HDR:
-		retval = ipa2_reset_hdr();
+		retval = ipa2_reset_hdr(false);
 		break;
 	case IPA_IOC_COMMIT_RT:
 		retval = ipa2_commit_rt(arg);
 		break;
 	case IPA_IOC_RESET_RT:
-		retval = ipa2_reset_rt(arg);
+		retval = ipa2_reset_rt(arg, false);
 		break;
 	case IPA_IOC_COMMIT_FLT:
 		retval = ipa2_commit_flt(arg);
 		break;
 	case IPA_IOC_RESET_FLT:
-		retval = ipa2_reset_flt(arg);
+		retval = ipa2_reset_flt(arg, false);
 		break;
 	case IPA_IOC_GET_RT_TBL:
 		if (copy_from_user(header, (u8 *)arg,
@@ -1402,7 +1432,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		if (ipa2_add_hdr_proc_ctx(
-			(struct ipa_ioc_add_hdr_proc_ctx *)param)) {
+			(struct ipa_ioc_add_hdr_proc_ctx *)param, true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -1466,7 +1496,22 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 
-	default:        /* redundant, as cmd was checked against MAXNR */
+	case IPA_IOC_CLEANUP:
+		/*Route and filter rules will also be clean*/
+		IPADBG("Got IPA_IOC_CLEANUP\n");
+		retval = ipa2_reset_hdr(true);
+		memset(&nat_del, 0, sizeof(nat_del));
+		nat_del.table_index = 0;
+		retval = ipa2_nat_del_cmd(&nat_del);
+		retval = ipa2_clean_modem_rule();
+		break;
+
+	case IPA_IOC_QUERY_WLAN_CLIENT:
+		IPADBG("Got IPA_IOC_QUERY_WLAN_CLIENT\n");
+		retval = ipa2_resend_wlan_msg();
+		break;
+
+	default:
 		IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 		return -ENOTTY;
 	}
@@ -1479,7 +1524,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 /**
 * ipa_setup_dflt_rt_tables() - Setup default routing tables
-*
+
 * Return codes:
 * 0: success
 * -ENOMEM: failed to allocate memory
@@ -1753,6 +1798,31 @@ int ipa_q6_pipe_delay(bool zip_pipes)
 	return 0;
 }
 
+/* Remove delay only for IPA consumer pipes */
+static void ipa_pipe_delay(bool set_reset)
+{
+	u32 reg_val = 0;
+	int client_idx;
+	int ep_idx;
+
+	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
+		/* Break the processing for IPA PROD pipes and avoid looping. */
+		if (IPA_CLIENT_IS_CONS(client_idx))
+			break;
+
+		ep_idx = ipa2_get_ep_mapping(client_idx);
+		if (ep_idx == -1)
+			continue;
+
+		IPA_SETFIELD_IN_REG(reg_val, set_reset,
+			IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_SHFT,
+			IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_BMSK);
+
+		ipa_write_reg(ipa_ctx->mmio,
+			IPA_ENDP_INIT_CTRL_N_OFST(ep_idx), reg_val);
+	}
+}
+
 int ipa_q6_monitor_holb_mitigation(bool enable)
 {
 	int ep_idx;
@@ -1829,6 +1899,51 @@ static int ipa_q6_avoid_holb(bool zip_pipes)
 	}
 
 	return 0;
+}
+
+/*
+ * Set HOLB drop on all IPA producer/client cons pipes,
+ * do not set suspend
+ */
+static void ipa_avoid_holb(void)
+{
+	u32 reg_val;
+	int ep_idx;
+	int client_idx = IPA_CLIENT_MAX - 1;
+
+	for (; client_idx >= 0; client_idx--) {
+		/* Break the processing for IPA CONS pipes and avoid looping. */
+		if (IPA_CLIENT_IS_PROD(client_idx))
+			break;
+
+		ep_idx = ipa2_get_ep_mapping(client_idx);
+		if (ep_idx == -1)
+			continue;
+
+		/*
+		 * ipa2_cfg_ep_holb is not used here because we are
+		 * also setting HOLB on Q6 pipes, and from APPS perspective
+		 * they are not valid, therefore, the above function
+		 * will fail.
+		 */
+		reg_val = 0;
+		IPA_SETFIELD_IN_REG(reg_val, 0,
+			IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_SHFT,
+			IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_BMSK);
+
+		ipa_write_reg(ipa_ctx->mmio,
+		IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_OFST_v2_0(ep_idx),
+			reg_val);
+
+		reg_val = 0;
+		IPA_SETFIELD_IN_REG(reg_val, 1,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_SHFT,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_BMSK);
+
+		ipa_write_reg(ipa_ctx->mmio,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_OFST_v2_0(ep_idx),
+			reg_val);
+	}
 }
 
 static u32 ipa_get_max_flt_rt_cmds(u32 num_pipes)
@@ -2002,6 +2117,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 	int index;
 	struct ipa_register_write *reg_write;
 	int retval;
+	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	desc = kcalloc(ipa_ctx->ipa_num_pipes, sizeof(struct ipa_desc),
 			GFP_KERNEL);
@@ -2019,7 +2135,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 		if (ipa_ctx->ep[ep_idx].valid &&
 			ipa_ctx->ep[ep_idx].skip_ep_cfg) {
 			BUG_ON(num_descs >= ipa_ctx->ipa_num_pipes);
-			reg_write = kzalloc(sizeof(*reg_write), GFP_KERNEL);
+			reg_write = kzalloc(sizeof(*reg_write), flag);
 
 			if (!reg_write) {
 				IPAERR("failed to allocate memory\n");
@@ -2052,7 +2168,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 			continue;
 		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
 			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx)) {
-			reg_write = kzalloc(sizeof(*reg_write), GFP_KERNEL);
+			reg_write = kzalloc(sizeof(*reg_write), flag);
 
 			if (!reg_write) {
 				IPAERR("failed to allocate memory\n");
@@ -2087,6 +2203,51 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 	kfree(desc);
 
 	return retval;
+}
+
+int register_ipa_platform_cb(int (*q6_cleanup_cb)(void))
+{
+	IPAERR("In register_ipa_platform_cb\n");
+	if (ipa_ctx) {
+		if (ipa_ctx->q6_cleanup_cb == NULL) {
+			IPAERR("reg q6_cleanup_cb\n");
+			ipa_ctx->q6_cleanup_cb = q6_cleanup_cb;
+		} else
+			IPAERR("Already registered\n");
+	} else {
+		IPAERR("IPA driver not initialized, retry\n");
+		return -EAGAIN;
+	}
+	return 0;
+}
+
+/**
+* ipa_apps_shutdown_cleanup() - Take care Apps ep's cleanup
+* 1) Set HOLB drop on all IPA producer pipes.
+* 2) Remove delay for all IPA consumer pipes.
+* 3) Wait for all IPA consumer pipes to go empty and
+*    reset it.
+* 4) Do aggregation force close for all pipes.
+* 5) Reset all IPA producer pipes
+
+* 0: success
+*/
+
+int ipa_apps_shutdown_cleanup(void)
+{
+	IPA_ACTIVE_CLIENTS_INC_SPECIAL("APPS_SHUTDOWN");
+
+	ipa_avoid_holb();
+
+	ipa_pipe_delay(false);
+
+	ipa2_apps_shutdown_apps_ep_reset();
+
+	iounmap_non_ap_bam_regs();
+
+	IPA_ACTIVE_CLIENTS_DEC_SPECIAL("APPS_SHUTDOWN");
+
+	return 0;
 }
 
 /**
@@ -2139,6 +2300,205 @@ int ipa_q6_pre_shutdown_cleanup(void)
 	return 0;
 }
 
+static void __iomem *ioremap_sw_desc_ofst_bam_register(int ep_idx)
+{
+	int ep_ofst = IPA_BAM_REG_N_OFST * ep_idx;
+
+	return ioremap(ipa_ctx->ipa_wrapper_base
+		+ IPA_BAM_REG_BASE_OFST
+		+ IPA_BAM_SW_DESC_OFST
+		+ ep_ofst,
+		IPA_BAM_REG_MAP_SIZE);
+}
+
+static void __iomem *ioremap_peer_desc_ofst_bam_register(int ep_idx)
+{
+	int ep_ofst = IPA_BAM_REG_N_OFST * ep_idx;
+
+	return ioremap(ipa_ctx->ipa_wrapper_base
+		+ IPA_BAM_REG_BASE_OFST
+		+ IPA_BAM_PEER_DESC_OFST
+		+ ep_ofst,
+		IPA_BAM_REG_MAP_SIZE);
+}
+
+/**
+* ioremap_non_ap_bam_regs() -
+	perform ioremap of non-apps eps
+	bam sw_ofsts and evnt_ring
+	register.
+	Present only Q6 ep's are done.
+*
+* Return codes:
+* 0: success
+* non-Zero: In case of memory failure
+*/
+int ioremap_non_ap_bam_regs(void)
+{
+	int client_idx;
+	int ep_idx;
+
+	if (!ipa_ctx) {
+		IPAERR("IPA driver init not done\n");
+		return -ENODEV;
+	}
+
+	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
+		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_NON_ZIP_PROD(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_PROD(client_idx)) {
+
+			ep_idx = ipa2_get_ep_mapping(client_idx);
+
+			if (ep_idx == -1)
+				continue;
+
+			ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx] =
+				ioremap_sw_desc_ofst_bam_register(ep_idx);
+			ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx] =
+				ioremap_peer_desc_ofst_bam_register(ep_idx);
+
+			if (!ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx] ||
+				!ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx]) {
+				IPAERR("IOREMA Failure @ ep %d\n", ep_idx);
+				return -ENOMEM;
+			}
+		}
+		return 0;
+}
+
+/**
+* iounmap_non_ap_bam_regs() -
+	unmap the ioremapped addr of
+	non-apps ep bam sw_ofsts and
+	evnt_ring register.
+*/
+void iounmap_non_ap_bam_regs(void)
+{
+	int client_idx;
+	int ep_idx;
+
+	if (!ipa_ctx) {
+		IPAERR("IPA driver init not done\n");
+		return;
+	}
+
+	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
+		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_NON_ZIP_PROD(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_PROD(client_idx)) {
+
+			ep_idx = ipa2_get_ep_mapping(client_idx);
+
+			if (ep_idx == -1)
+				continue;
+
+			if (ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx])
+				iounmap
+				(ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx]);
+			if (ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx])
+				iounmap
+				(ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx]);
+		}
+}
+
+/**
+* wait_for_ep_empty() - Wait for sps bam empty
+*
+* @client: ipa client to check for empty
+*
+* Return codes:
+* 0: success upon ep empty
+* non-Zero: Failure if ep non-empty
+*/
+
+int wait_for_ep_empty(enum ipa_client_type client)
+{
+	struct ipa_ep_context *ep = NULL;
+	u32 is_ep_empty = 0;
+	int ret = 0;
+	union ipa_bam_sw_peer_desc read_sw_desc;
+	union ipa_bam_sw_peer_desc read_peer_desc;
+	u32 retry = EP_EMPTY_MAX_RETRY;
+	int ep_idx = ipa2_get_ep_mapping(client);
+
+	if (ep_idx == -1)
+		return -ENODEV;
+
+	ep = &ipa_ctx->ep[ep_idx];
+
+check_ap_ep_empty:
+	if (ep->valid) {
+		ret = sps_is_pipe_empty(ep->ep_hdl, &is_ep_empty);
+		if (ret && retry--) {
+			usleep_range(IPA_UC_WAIT_MIN_SLEEP,
+				IPA_UC_WAII_MAX_SLEEP);
+			goto check_ap_ep_empty;
+		} else {
+			IPAERR("Ep %d is non-empty even after retries\n",
+				ep_idx);
+			ret = -1;
+		}
+	} else {
+		/* Might be Q6 ep, which is non-AP ep */
+
+check_non_ap_ep_empty:
+		IPADBG("request is for non-Apps ep %d\n", ep_idx);
+
+		if (IPA_CLIENT_IS_CONS(client)) {
+			/*
+			 * Do not wait for empty in client CONS ep's
+			 * It is software responsibility
+			 * to set sus/holb on client cons ep
+			 * and ipa would be empty due to that.
+			*/
+			ret = 0;
+			goto success;
+		}
+
+		if (ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx] &&
+			ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx]) {
+
+			read_sw_desc.read_reg =
+			ioread32
+			(ipa_ctx->ipa_non_ap_bam_s_desc_iova[ep_idx]);
+			read_peer_desc.read_reg =
+			ioread32
+			(ipa_ctx->ipa_non_ap_bam_p_desc_iova[ep_idx]);
+
+			IPADBG("sw_desc reg 0x%x\n",
+				read_sw_desc.read_reg);
+			IPADBG("sw_dsc_ofst = 0x%x\n",
+				read_sw_desc.sw_desc.sw_dsc_ofst);
+			IPADBG("sw_desc reg 0x%x\n",
+				read_peer_desc.read_reg);
+			IPADBG("p_dsc_fifo_peer_ofst = 0x%x\n",
+			read_peer_desc.peer_desc.p_dsc_fifo_peer_ofst);
+
+			if (read_sw_desc.sw_desc.sw_dsc_ofst ==
+				read_peer_desc.peer_desc.p_dsc_fifo_peer_ofst) {
+				IPADBG("EP %d is empty\n", ep_idx);
+				ret = 0;
+			} else if (retry) {
+				retry--;
+				usleep_range(IPA_UC_WAIT_MIN_SLEEP * 5,
+				IPA_UC_WAII_MAX_SLEEP * 5);
+				goto check_non_ap_ep_empty;
+			} else {
+				IPAERR
+				("Ep %d is non-empty even after retries\n",
+				ep_idx);
+				ret = -1;
+			}
+		}
+	}
+
+success:
+	return ret;
+}
+
 /**
 * ipa_q6_post_shutdown_cleanup() - A cleanup for the Q6 pipes
 *                    in IPA HW after modem shutdown. This is performed
@@ -2177,6 +2537,18 @@ int ipa_q6_post_shutdown_cleanup(void)
 			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx) ||
 			IPA_CLIENT_IS_Q6_NON_ZIP_PROD(client_idx) ||
 			IPA_CLIENT_IS_Q6_ZIP_PROD(client_idx)) {
+
+			if (ipa_ctx->is_apps_shutdown_support &&
+				(ipa2_get_ep_mapping(client_idx) != -1)) {
+				/*
+				 * Check  for Q6 ep empty
+				 * before issue a reset
+				 */
+				res = wait_for_ep_empty(client_idx);
+				if (res)
+					IPAERR("ep %d not empty\n",
+					ipa2_get_ep_mapping(client_idx));
+			}
 			res = ipa_uc_reset_pipe(client_idx);
 			if (res)
 				BUG();
@@ -3882,11 +4254,8 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	}
 
 	ipa_ctx->logbuf = ipc_log_context_create(IPA_IPC_LOG_PAGES, "ipa", 0);
-	if (ipa_ctx->logbuf == NULL) {
-		IPAERR("failed to get logbuf\n");
-		result = -ENOMEM;
-		goto fail_logbuf;
-	}
+	if (ipa_ctx->logbuf == NULL)
+		IPADBG("failed to create IPC log, continue...\n");
 
 	ipa_ctx->pdev = ipa_dev;
 	ipa_ctx->uc_pdev = ipa_dev;
@@ -3910,6 +4279,8 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	ipa_ctx->skip_uc_pipe_reset = resource_p->skip_uc_pipe_reset;
 	ipa_ctx->use_dma_zone = resource_p->use_dma_zone;
 	ipa_ctx->tethered_flow_control = resource_p->tethered_flow_control;
+	ipa_ctx->is_apps_shutdown_support =
+		resource_p->is_apps_shutdown_support;
 
 	/* Setting up IPA RX Polling Timeout Seconds */
 	ipa_rx_timeout_min_max_calc(&ipa_ctx->ipa_rx_min_timeout_usec,
@@ -4189,6 +4560,10 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	init_waitqueue_head(&ipa_ctx->msg_waitq);
 	mutex_init(&ipa_ctx->msg_lock);
 
+	/* store wlan client-connect-msg-list */
+	INIT_LIST_HEAD(&ipa_ctx->msg_wlan_client_list);
+	mutex_init(&ipa_ctx->msg_wlan_client_lock);
+
 	mutex_init(&ipa_ctx->lock);
 	mutex_init(&ipa_ctx->nat_mem.lock);
 	mutex_init(&ipa_ctx->ipa_cne_evt_lock);
@@ -4357,6 +4732,15 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 
 	ipa_register_panic_hdlr();
 
+	if (ipa_ctx->is_apps_shutdown_support) {
+		result = ioremap_non_ap_bam_regs();
+		if (result) {
+			IPAERR(":IOREMAP Failed (%d)\n", result);
+			goto fail_add_interrupt_handler;
+		} else {
+			IPAERR(":IOREMAP success (%d)\n", result);
+		}
+	}
 	pr_info("IPA driver initialization was successful.\n");
 
 	return 0;
@@ -4425,8 +4809,8 @@ fail_bus_reg:
 fail_bind:
 	kfree(ipa_ctx->ctrl);
 fail_mem_ctrl:
-	ipc_log_context_destroy(ipa_ctx->logbuf);
-fail_logbuf:
+	if (ipa_ctx->logbuf)
+		ipc_log_context_destroy(ipa_ctx->logbuf);
 	kfree(ipa_ctx);
 	ipa_ctx = NULL;
 fail_mem_ctx:
@@ -4450,6 +4834,7 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	ipa_drv_res->ipa_wdi2 = false;
 	ipa_drv_res->wan_rx_ring_size = IPA_GENERIC_RX_POOL_SZ;
 	ipa_drv_res->lan_rx_ring_size = IPA_GENERIC_RX_POOL_SZ;
+	ipa_drv_res->is_apps_shutdown_support = false;
 
 	/* Get IPA HW Version */
 	result = of_property_read_u32(pdev->dev.of_node, "qcom,ipa-hw-ver",
@@ -4475,6 +4860,14 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 		"qcom,ipa-uc-monitor-holb");
 	IPADBG(": ipa uc monitor holb = %s\n",
 		ipa_drv_res->ipa_uc_monitor_holb
+		? "Enabled" : "Disabled");
+
+	/* Check apps_shutdown_support enabled or disabled */
+	ipa_drv_res->is_apps_shutdown_support =
+		of_property_read_bool(pdev->dev.of_node,
+		"qcom,apps-shutdown-support");
+	IPAERR(": apps shutdown support = %s\n",
+		ipa_drv_res->is_apps_shutdown_support
 		? "Enabled" : "Disabled");
 
 	/* Get IPA WAN / LAN RX  pool sizes */
@@ -4919,6 +5312,37 @@ static int ipa_smmu_ap_cb_probe(struct device *dev)
 	}
 
 	return result;
+}
+
+/**
+* ipa_platform_shutdown() - Ensure Q6 ep cleanup is done and
+*                           followed by APPS ep's cleanup.
+*/
+void ipa_platform_shutdown(void)
+{
+	IPADBG("****************ipa_platform_shutdown****************\n");
+	if (ipa_ctx->q6_cleanup_cb)
+		ipa_ctx->q6_cleanup_cb();
+	else
+		IPADBG("No Q6 cleanup callback registered\n");
+	ipa_apps_shutdown_cleanup();
+}
+
+int ipa_plat_drv_shutdown(struct platform_device *pdev_p,
+	struct ipa_api_controller *api_ctrl,
+	const struct of_device_id *pdrv_match)
+{
+	if (!ipa_ctx) {
+		pr_err("IPA driver not initialized\n");
+		return -EOPNOTSUPP;
+	}
+	if (ipa_ctx->is_apps_shutdown_support)
+		ipa_platform_shutdown();
+	else {
+		pr_err("There is no apps IPA driver shutdown support\n");
+		return -EOPNOTSUPP;
+	}
+	return 0;
 }
 
 int ipa_plat_drv_probe(struct platform_device *pdev_p,

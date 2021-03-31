@@ -577,7 +577,7 @@ group_add_out:
 		if (err == 0)
 			err = err2;
 		mnt_drop_write_file(filp);
-		if (!err && (o_group > EXT4_SB(sb)->s_groups_count) &&
+		if (!err && (o_group < EXT4_SB(sb)->s_groups_count) &&
 		    ext4_has_group_desc_csum(sb) &&
 		    test_opt(sb, INIT_INODE_TABLE))
 			err = ext4_register_li_request(sb, o_group);
@@ -603,6 +603,14 @@ resizefs_out:
 
 		if ((flags & BLKDEV_DISCARD_SECURE) && !blk_queue_secdiscard(q))
 			return -EOPNOTSUPP;
+
+		/*
+		 * We haven't replayed the journal, so we cannot use our
+		 * block-bitmap-guided storage zapping commands.
+		 */
+		if (test_opt(sb, NOLOAD) && ext4_has_feature_journal(sb))
+			return -EROFS;
+
 		if (copy_from_user(&range, (struct fstrim_range __user *)arg,
 		    sizeof(range)))
 			return -EFAULT;
@@ -633,7 +641,17 @@ resizefs_out:
 			goto encryption_policy_out;
 		}
 
+		err = mnt_want_write_file(filp);
+		if (err)
+			goto encryption_policy_out;
+
+		mutex_lock(&inode->i_mutex);
+
 		err = ext4_process_policy(&policy, inode);
+
+		mutex_unlock(&inode->i_mutex);
+
+		mnt_drop_write_file(filp);
 encryption_policy_out:
 		return err;
 #else

@@ -98,16 +98,11 @@ int __init early_init_dt_scan_opal(unsigned long node,
 	pr_debug("OPAL Entry = 0x%llx (sizep=%p runtimesz=%d)\n",
 		 opal.size, sizep, runtimesz);
 
-	powerpc_firmware_features |= FW_FEATURE_OPAL;
 	if (of_flat_dt_is_compatible(node, "ibm,opal-v3")) {
-		powerpc_firmware_features |= FW_FEATURE_OPALv2;
-		powerpc_firmware_features |= FW_FEATURE_OPALv3;
-		pr_info("OPAL V3 detected !\n");
-	} else if (of_flat_dt_is_compatible(node, "ibm,opal-v2")) {
-		powerpc_firmware_features |= FW_FEATURE_OPALv2;
-		pr_info("OPAL V2 detected !\n");
+		powerpc_firmware_features |= FW_FEATURE_OPAL;
+		pr_info("OPAL detected !\n");
 	} else {
-		pr_info("OPAL V1 detected !\n");
+		panic("OPAL != V3 detected, no longer supported.\n");
 	}
 
 	/* Reinit all cores with the right endian */
@@ -352,17 +347,15 @@ int opal_put_chars(uint32_t vtermno, const char *data, int total_len)
 	 * enough room and be done with it
 	 */
 	spin_lock_irqsave(&opal_write_lock, flags);
-	if (firmware_has_feature(FW_FEATURE_OPALv2)) {
-		rc = opal_console_write_buffer_space(vtermno, &olen);
-		len = be64_to_cpu(olen);
-		if (rc || len < total_len) {
-			spin_unlock_irqrestore(&opal_write_lock, flags);
-			/* Closed -> drop characters */
-			if (rc)
-				return total_len;
-			opal_poll_events(NULL);
-			return -EAGAIN;
-		}
+	rc = opal_console_write_buffer_space(vtermno, &olen);
+	len = be64_to_cpu(olen);
+	if (rc || len < total_len) {
+		spin_unlock_irqrestore(&opal_write_lock, flags);
+		/* Closed -> drop characters */
+		if (rc)
+			return total_len;
+		opal_poll_events(NULL);
+		return -EAGAIN;
 	}
 
 	/* We still try to handle partial completions, though they
@@ -378,7 +371,7 @@ int opal_put_chars(uint32_t vtermno, const char *data, int total_len)
 		/* Closed or other error drop */
 		if (rc != OPAL_SUCCESS && rc != OPAL_BUSY &&
 		    rc != OPAL_BUSY_EVENT) {
-			written = total_len;
+			written += total_len;
 			break;
 		}
 		if (rc == OPAL_SUCCESS) {
@@ -587,7 +580,10 @@ static ssize_t symbol_map_read(struct file *fp, struct kobject *kobj,
 				       bin_attr->size);
 }
 
-static BIN_ATTR_RO(symbol_map, 0);
+static struct bin_attribute symbol_map_attr = {
+	.attr = {.name = "symbol_map", .mode = 0400},
+	.read = symbol_map_read
+};
 
 static void opal_export_symmap(void)
 {
@@ -604,10 +600,10 @@ static void opal_export_symmap(void)
 		return;
 
 	/* Setup attributes */
-	bin_attr_symbol_map.private = __va(be64_to_cpu(syms[0]));
-	bin_attr_symbol_map.size = be64_to_cpu(syms[1]);
+	symbol_map_attr.private = __va(be64_to_cpu(syms[0]));
+	symbol_map_attr.size = be64_to_cpu(syms[1]);
 
-	rc = sysfs_create_bin_file(opal_kobj, &bin_attr_symbol_map);
+	rc = sysfs_create_bin_file(opal_kobj, &symbol_map_attr);
 	if (rc)
 		pr_warn("Error %d creating OPAL symbols file\n", rc);
 }
@@ -696,10 +692,7 @@ static int __init opal_init(void)
 	}
 
 	/* Register OPAL consoles if any ports */
-	if (firmware_has_feature(FW_FEATURE_OPALv2))
-		consoles = of_find_node_by_path("/ibm,opal/consoles");
-	else
-		consoles = of_node_get(opal_node);
+	consoles = of_find_node_by_path("/ibm,opal/consoles");
 	if (consoles) {
 		for_each_child_of_node(consoles, np) {
 			if (strcmp(np->name, "serial"))

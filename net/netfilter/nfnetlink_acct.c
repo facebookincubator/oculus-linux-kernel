@@ -97,6 +97,8 @@ nfnl_acct_new(struct sock *nfnl, struct sk_buff *skb,
 			return -EINVAL;
 		if (flags & NFACCT_F_OVERQUOTA)
 			return -EINVAL;
+		if ((flags & NFACCT_F_QUOTA) && !tb[NFACCT_QUOTA])
+			return -EINVAL;
 
 		size += sizeof(u64);
 	}
@@ -242,6 +244,9 @@ nfacct_filter_alloc(const struct nlattr * const attr)
 	err = nla_parse_nested(tb, NFACCT_FILTER_MAX, attr, filter_policy);
 	if (err < 0)
 		return ERR_PTR(err);
+
+	if (!tb[NFACCT_FILTER_MASK] || !tb[NFACCT_FILTER_VALUE])
+		return ERR_PTR(-EINVAL);
 
 	filter = kzalloc(sizeof(struct nfacct_filter), GFP_KERNEL);
 	if (!filter)

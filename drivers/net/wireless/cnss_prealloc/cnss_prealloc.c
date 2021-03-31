@@ -1,5 +1,4 @@
-/* Copyright (c) 2012, 2014-2015, 2018 The Linux Foundation. All rights
- * reserved.
+/* Copyright (c) 2012,2014-2015 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,7 +18,7 @@
 #include <linux/spinlock.h>
 #include <linux/debugfs.h>
 #include <net/cnss_prealloc.h>
-#ifdef CONFIG_WCNSS_SKB_PRE_ALLOC
+#ifdef	CONFIG_WCNSS_SKB_PRE_ALLOC
 #include <linux/skbuff.h>
 #endif
 
@@ -230,6 +229,7 @@ void wcnss_prealloc_check_memory_leak(void)
 #else
 void wcnss_prealloc_check_memory_leak(void) {}
 #endif
+EXPORT_SYMBOL(wcnss_prealloc_check_memory_leak);
 
 int wcnss_pre_alloc_reset(void)
 {
@@ -245,6 +245,7 @@ int wcnss_pre_alloc_reset(void)
 
 	return n;
 }
+EXPORT_SYMBOL(wcnss_pre_alloc_reset);
 
 int prealloc_memory_stats_show(struct seq_file *fp, void *data)
 {

@@ -33,6 +33,7 @@
 *.lzo
 *.patch
 *.gcno
+*.ll
 modules.builtin
 Module.symvers
 *.dwo
@@ -112,6 +113,9 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# fetched Android config fragments
+android/configs/android-*.cfg
 
 # directories mapped in via AOSP repo
 drivers/staging/fw-api/

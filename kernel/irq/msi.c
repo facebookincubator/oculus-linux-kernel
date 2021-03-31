@@ -268,7 +268,7 @@ int msi_domain_alloc_irqs(struct irq_domain *domain, struct device *dev,
 	struct msi_domain_ops *ops = info->ops;
 	msi_alloc_info_t arg;
 	struct msi_desc *desc;
-	int i, ret, virq;
+	int i, ret, virq = 0;
 
 	ret = ops->msi_check(domain, info, dev);
 	if (ret == 0)
@@ -298,6 +298,7 @@ int msi_domain_alloc_irqs(struct irq_domain *domain, struct device *dev,
 		ops->msi_finish(&arg, 0);
 
 	for_each_msi_entry(desc, dev) {
+		virq = desc->irq;
 		if (desc->nvec_used == 1)
 			dev_dbg(dev, "irq %d for MSI\n", virq);
 		else

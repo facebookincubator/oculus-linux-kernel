@@ -19,6 +19,7 @@
 #include "msm_gem.h"
 
 #include <linux/dma-buf.h>
+#include <linux/ion.h>
 
 struct sg_table *msm_gem_prime_get_sg_table(struct drm_gem_object *obj)
 {
@@ -55,7 +56,16 @@ int msm_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 struct drm_gem_object *msm_gem_prime_import_sg_table(struct drm_device *dev,
 		struct dma_buf_attachment *attach, struct sg_table *sg)
 {
-	return msm_gem_import(dev, attach->dmabuf->size, sg);
+	u32 flags = 0;
+
+	/*
+	 * Check to see if this is a secure buffer by way of Ion and set the
+	 * appropriate flag if so.
+	 */
+	if (ion_dma_buf_is_secure(attach->dmabuf))
+		flags |= MSM_BO_SECURE;
+
+	return msm_gem_import(dev, attach->dmabuf->size, sg, flags);
 }
 
 int msm_gem_prime_pin(struct drm_gem_object *obj)
@@ -69,4 +79,11 @@ void msm_gem_prime_unpin(struct drm_gem_object *obj)
 {
 	if (!obj->import_attach)
 		msm_gem_put_pages(obj);
+}
+
+struct reservation_object *msm_gem_prime_res_obj(struct drm_gem_object *obj)
+{
+	struct msm_gem_object *msm_obj = to_msm_bo(obj);
+
+	return msm_obj->resv;
 }

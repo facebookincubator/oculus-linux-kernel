@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012, 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012, 2014-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,12 +17,6 @@
  */
 
 /*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
-/*
  * This file contains the source code for composing and sending messages
  * to host.
  *
@@ -38,7 +29,6 @@
 #include "cds_api.h"
 #include "cfg_priv.h"
 #include "lim_trace.h"
-#include "cfg_debug.h"
 
 /*--------------------------------------------------------------------*/
 /* ATTENTION:  The functions contained in this module are to be used  */
@@ -75,26 +65,19 @@ cfg_send_host_msg(tpAniSirGlobal pMac, uint16_t msgType, uint32_t msgLen,
 		  uint32_t *pData)
 {
 	uint32_t *pMsg, *pEnd;
-	tSirMsgQ mmhMsg;
+	struct scheduler_msg mmhMsg = {0};
 
-	/* sanity */
 	if ((paramNum > 0) && (NULL == pParamList)) {
-		PELOGE(cfg_log(pMac, LOGE,
-			       FL
-				       ("pParamList NULL when paramNum greater than 0!"));
-		       )
+		pe_err("pParamList NULL when paramNum greater than 0!");
 		return;
 	}
 	if ((dataLen > 0) && (NULL == pData)) {
-		PELOGE(cfg_log(pMac, LOGE,
-			       FL("pData NULL when dataLen greater than 0!"));
-		       )
+		pe_err("pData NULL when dataLen greater than 0!");
 		return;
 	}
-	/* Allocate message buffer */
 	pMsg = qdf_mem_malloc(msgLen);
 	if (NULL == pMsg) {
-		PELOGE(cfg_log(pMac, LOGE, FL("Memory allocation failure!"));)
+		pe_err("Memory allocation failure!");
 		return;
 	}
 	/* Fill in message details */
@@ -128,7 +111,7 @@ cfg_send_host_msg(tpAniSirGlobal pMac, uint16_t msgType, uint32_t msgLen,
 		break;
 
 	default:
-		PELOGE(cfg_log(pMac, LOGE, FL("Unknown msg %d!"), (int)msgType);)
+		pe_warn("Unknown msg: %d!", (int)msgType);
 		qdf_mem_free(pMsg);
 		return;
 	}

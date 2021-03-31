@@ -218,6 +218,27 @@ int ath10k_htt_tx_alloc_msdu_id(struct ath10k_htt *htt, struct sk_buff *skb)
 	return ret;
 }
 
+struct sk_buff *ath10k_htt_tx_find_msdu_by_id(struct ath10k_htt *htt,
+					      u16 msdu_id)
+{
+	struct ath10k *ar;
+	struct sk_buff *ret;
+
+	if (!htt)
+		return NULL;
+
+	ar = htt->ar;
+
+	lockdep_assert_held(&htt->tx_lock);
+
+	ret = (struct sk_buff *)idr_find(&htt->pending_tx, msdu_id);
+
+	ath10k_dbg(ar, ATH10K_DBG_HTT, "htt tx find msdu by msdu_id %s\n",
+		   !ret ? "Failed" : "Success");
+
+	return ret;
+}
+
 void ath10k_htt_tx_free_msdu_id(struct ath10k_htt *htt, u16 msdu_id)
 {
 	struct ath10k *ar = htt->ar;
@@ -1051,8 +1072,14 @@ int ath10k_htt_tx(struct ath10k_htt *htt, enum ath10k_hw_txrx_mode txmode,
 	    !test_bit(ATH10K_FLAG_RAW_MODE, &ar->dev_flags)) {
 		flags1 |= HTT_DATA_TX_DESC_FLAGS1_CKSUM_L3_OFFLOAD;
 		flags1 |= HTT_DATA_TX_DESC_FLAGS1_CKSUM_L4_OFFLOAD;
-		if (ar->hw_params.continuous_frag_desc)
+		if (ar->hw_params.continuous_frag_desc) {
 			ext_desc->flags |= HTT_MSDU_CHECKSUM_ENABLE;
+			if (QCA_REV_WCN3990(ar)) {
+				memset(ext_desc->tso_flag, 0,
+				       sizeof(ext_desc->tso_flag));
+				ext_desc->tso_flag[3] |= HTT_TX_CHECKSUM_ENABLE;
+			}
+		}
 	}
 
 	/* Prevent firmware from sending up tx inspection requests. There's

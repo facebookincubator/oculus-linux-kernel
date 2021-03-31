@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**=========================================================================
@@ -54,6 +45,7 @@
 typedef struct sSirFTPreAuthReq {
 	uint16_t messageType;   /* eWNI_SME_FT_PRE_AUTH_REQ */
 	uint16_t length;
+	uint32_t dot11mode;
 	/*
 	 * Track if response is processed for this request
 	 * We expect only one response per request.
@@ -78,7 +70,7 @@ typedef struct sSirFTPreAuthRsp {
 	uint16_t length;
 	uint8_t smeSessionId;
 	tSirMacAddr preAuthbssId;       /* BSSID to preauth to */
-	tSirRetStatus status;
+	QDF_STATUS status;
 	uint16_t ft_ies_length;
 	uint8_t ft_ies[MAX_FTIE_SIZE];
 	uint16_t ric_ies_length;
@@ -110,7 +102,7 @@ typedef struct sSirFTPreAuthKeyInfo {
    ------------------------------------------------------------------------*/
 typedef struct sFTPEContext {
 	tpSirFTPreAuthReq pFTPreAuthReq;        /* Saved FT Pre Auth Req */
-	tSirRetStatus ftPreAuthStatus;
+	QDF_STATUS ftPreAuthStatus;
 	uint16_t saved_auth_rsp_length;
 	uint8_t saved_auth_rsp[MAX_FTIE_SIZE];
 	tSirFTPreAuthKeyInfo PreAuthKeyInfo;
@@ -121,7 +113,7 @@ typedef struct sFTPEContext {
 	uint32_t smeSessionId;
 
 	/* This flag is required to indicate on which session the preauth
-	 * has taken place, since the auth reponse for preauth will come
+	 * has taken place, since the auth response for preauth will come
 	 * for a new BSSID for which there is no session yet. This flag
 	 * will be used to extract the session from the session preauth
 	 * has been initiated

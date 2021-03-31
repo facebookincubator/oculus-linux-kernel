@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,19 +16,12 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /**
  * DOC: wlan_hdd_ftm.c
  *
  * This file contains the WLAN factory test mode implementation
  */
 
-#include <cds_mq.h>
 #include "cds_sched.h"
 #include <cds_api.h>
 #include "sir_types.h"
@@ -50,66 +40,19 @@
 #include "wma_types.h"
 #include "cfg_api.h"
 
-#if  defined(QCA_WIFI_FTM)
-#include "bmi.h"
-#include "ol_fw.h"
+#ifdef QCA_WIFI_FTM
+
 #include "wlan_hdd_cfg80211.h"
 #include "hif.h"
-#endif
+#include <wlan_ioctl_ftm.h>
+#include <wlan_cfg80211_ftm.h>
 
-#define HDD_FTM_WMA_PRE_START_TIMEOUT (30000) /* 30 seconds */
-
-#if  defined(QCA_WIFI_FTM)
-#if defined(LINUX_QCMBR)
-#define ATH_XIOCTL_UNIFIED_UTF_CMD  0x1000
-#define ATH_XIOCTL_UNIFIED_UTF_RSP  0x1001
-#define MAX_UTF_LENGTH              1024
-typedef struct qcmbr_data_s {
+struct qcmbr_data {
 	unsigned int cmd;
 	unsigned int length;
-	unsigned char buf[MAX_UTF_LENGTH + 4];
+	unsigned char buf[WLAN_FTM_DATA_MAX_LEN + 4];
 	unsigned int copy_to_user;
-} qcmbr_data_t;
-typedef struct qcmbr_queue_s {
-	unsigned char utf_buf[MAX_UTF_LENGTH + 4];
-	struct list_head list;
-} qcmbr_queue_t;
-LIST_HEAD(qcmbr_queue_head);
-DEFINE_SPINLOCK(qcmbr_queue_lock);
-static void wlanqcmbr_mc_process_msg(void *message);
-#endif
-#endif
-
-/**
- * wlan_ftm_postmsg() - Post FTM message
- * @cmd_ptr: Pointer to FTM command buffer
- * @cmd_len: Length of command in @cmd_ptr
- *
- * This function is used to send FTM commands to firmware
- *
- * Return: 0 for success, non zero for failure
- */
-static uint32_t wlan_ftm_postmsg(uint8_t *cmd_ptr, uint16_t cmd_len)
-{
-	cds_msg_t ftmMsg;
-
-	ENTER();
-
-	ftmMsg.type = WMA_FTM_CMD_REQ;
-	ftmMsg.reserved = 0;
-	ftmMsg.bodyptr = (uint8_t *) cmd_ptr;
-	ftmMsg.bodyval = 0;
-
-	if (QDF_STATUS_SUCCESS != cds_mq_post_message(QDF_MODULE_ID_WMA,
-						      &ftmMsg)) {
-		hdd_err("Failed to post Msg to HAL");
-
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	EXIT();
-	return QDF_STATUS_SUCCESS;
-}
+};
 
 /**
  * hdd_update_cds_config_ftm() - API to update cds configuration parameters
@@ -119,7 +62,7 @@ static uint32_t wlan_ftm_postmsg(uint8_t *cmd_ptr, uint16_t cmd_len)
  * Return: 0 on success; errno on failure
  */
 
-int hdd_update_cds_config_ftm(hdd_context_t *hdd_ctx)
+int hdd_update_cds_config_ftm(struct hdd_context *hdd_ctx)
 {
 	struct cds_config_info *cds_cfg;
 
@@ -129,49 +72,19 @@ int hdd_update_cds_config_ftm(hdd_context_t *hdd_ctx)
 		return -ENOMEM;
 	}
 
-	cds_cfg->driver_type = eDRIVER_TYPE_MFG;
+	cds_cfg->driver_type = QDF_DRIVER_TYPE_MFG;
 	cds_cfg->powersave_offload_enabled =
 			hdd_ctx->config->enablePowersaveOffload;
 	hdd_lpass_populate_cds_config(cds_cfg, hdd_ctx);
 	cds_cfg->sub_20_channel_width = WLAN_SUB_20_CH_WIDTH_NONE;
+	cds_cfg->num_vdevs = hdd_ctx->config->num_vdevs;
 	cds_init_ini_config(cds_cfg);
 
 	return 0;
 }
 
-/**
- * hdd_ftm_mc_process_msg() - Process FTM mailbox message
- * @message: FTM response message
- *
- * Process FTM mailbox message
- *
- * Return: void
- */
-void hdd_ftm_mc_process_msg(void *message)
-{
-	void *data;
-	uint32_t data_len;
+#ifdef LINUX_QCMBR
 
-	if (!message) {
-		hdd_err("Message is NULL, nothing to process.");
-		return;
-	}
-
-	data_len = *((uint32_t *) message);
-	data = (uint32_t *) message + 1;
-
-#if defined(LINUX_QCMBR)
-	wlanqcmbr_mc_process_msg(message);
-#else
-#ifdef CONFIG_NL80211_TESTMODE
-	wlan_hdd_testmode_rx_event(data, (size_t) data_len);
-#endif
-#endif
-	return;
-}
-
-#if  defined(QCA_WIFI_FTM)
-#if defined(LINUX_QCMBR)
 /**
  * wlan_hdd_qcmbr_command() - QCMBR command handler
  * @adapter: adapter upon which the command was received
@@ -179,73 +92,41 @@ void hdd_ftm_mc_process_msg(void *message)
  *
  * Return: 0 on success, non-zero on error
  */
-static int wlan_hdd_qcmbr_command(hdd_adapter_t *adapter,
-				  qcmbr_data_t *pqcmbr_data)
+static int wlan_hdd_qcmbr_command(struct hdd_adapter *adapter,
+				  struct qcmbr_data *pqcmbr_data)
 {
 	int ret = 0;
-	qcmbr_queue_t *qcmbr_buf = NULL;
+	struct hdd_context *hdd_ctx;
 
-	switch (pqcmbr_data->cmd) {
-	case ATH_XIOCTL_UNIFIED_UTF_CMD: {
-		pqcmbr_data->copy_to_user = 0;
-		if (pqcmbr_data->length &&
-			pqcmbr_data->length <= sizeof(pqcmbr_data->buf)) {
-			if (wlan_hdd_ftm_testmode_cmd(pqcmbr_data->buf,
-						      pqcmbr_data->
-						      length)
-			    != QDF_STATUS_SUCCESS) {
-				ret = -EBUSY;
-			} else {
-				ret = 0;
-			}
-		}
-	}
-	break;
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	ret = wlan_hdd_validate_context(hdd_ctx);
+	if (ret)
+		return ret;
 
-	case ATH_XIOCTL_UNIFIED_UTF_RSP: {
-		pqcmbr_data->copy_to_user = 1;
-
-		spin_lock_bh(&qcmbr_queue_lock);
-		if (!list_empty(&qcmbr_queue_head)) {
-			qcmbr_buf = list_first_entry(&qcmbr_queue_head,
-						     qcmbr_queue_t,
-						     list);
-			list_del(&qcmbr_buf->list);
-			ret = 0;
-		} else {
-			ret = -1;
-		}
-		spin_unlock_bh(&qcmbr_queue_lock);
-
-		if (!ret) {
-			memcpy(pqcmbr_data->buf, qcmbr_buf->utf_buf,
-			       (MAX_UTF_LENGTH + 4));
-			qdf_mem_free(qcmbr_buf);
-		} else {
-			ret = -EAGAIN;
-		}
-	}
-	break;
-	}
+	ret = wlan_ioctl_ftm_testmode_cmd(hdd_ctx->pdev,
+					  pqcmbr_data->cmd,
+					  pqcmbr_data->buf,
+					  pqcmbr_data->length);
 
 	return ret;
 }
 
 #ifdef CONFIG_COMPAT
+
 /**
- * wlan_hdd_qcmbr_ioctl() - Compatability-mode QCMBR ioctl handler
+ * wlan_hdd_qcmbr_ioctl() - Compatibility-mode QCMBR ioctl handler
  * @adapter: adapter upon which the ioctl was received
  * @ifr: the ioctl request
  *
  * Return: 0 on success, non-zero on error
  */
-static int wlan_hdd_qcmbr_compat_ioctl(hdd_adapter_t *adapter,
+static int wlan_hdd_qcmbr_compat_ioctl(struct hdd_adapter *adapter,
 				       struct ifreq *ifr)
 {
-	qcmbr_data_t *qcmbr_data;
+	struct qcmbr_data *qcmbr_data;
 	int ret = 0;
 
-	qcmbr_data = qdf_mem_malloc(sizeof(qcmbr_data_t));
+	qcmbr_data = qdf_mem_malloc(sizeof(*qcmbr_data));
 	if (qcmbr_data == NULL)
 		return -ENOMEM;
 
@@ -255,9 +136,9 @@ static int wlan_hdd_qcmbr_compat_ioctl(hdd_adapter_t *adapter,
 	}
 
 	ret = wlan_hdd_qcmbr_command(adapter, qcmbr_data);
-	if ((ret == 0) && qcmbr_data->copy_to_user) {
+	if ((ret == 0) && (qcmbr_data->cmd == 0x1001)) {
 		ret = copy_to_user(ifr->ifr_data, qcmbr_data->buf,
-				   (MAX_UTF_LENGTH + 4));
+				   (WLAN_FTM_DATA_MAX_LEN + 4));
 	}
 
 exit:
@@ -265,7 +146,7 @@ exit:
 	return ret;
 }
 #else                           /* CONFIG_COMPAT */
-static int wlan_hdd_qcmbr_compat_ioctl(hdd_adapter_t *adapter,
+static int wlan_hdd_qcmbr_compat_ioctl(struct hdd_adapter *adapter,
 				       struct ifreq *ifr)
 {
 	return 0;
@@ -279,12 +160,12 @@ static int wlan_hdd_qcmbr_compat_ioctl(hdd_adapter_t *adapter,
  *
  * Return: 0 on success, non-zero on error
  */
-static int wlan_hdd_qcmbr_ioctl(hdd_adapter_t *adapter, struct ifreq *ifr)
+static int wlan_hdd_qcmbr_ioctl(struct hdd_adapter *adapter, struct ifreq *ifr)
 {
-	qcmbr_data_t *qcmbr_data;
+	struct qcmbr_data *qcmbr_data;
 	int ret = 0;
 
-	qcmbr_data = qdf_mem_malloc(sizeof(qcmbr_data_t));
+	qcmbr_data = qdf_mem_malloc(sizeof(*qcmbr_data));
 	if (qcmbr_data == NULL)
 		return -ENOMEM;
 
@@ -294,9 +175,9 @@ static int wlan_hdd_qcmbr_ioctl(hdd_adapter_t *adapter, struct ifreq *ifr)
 	}
 
 	ret = wlan_hdd_qcmbr_command(adapter, qcmbr_data);
-	if ((ret == 0) && qcmbr_data->copy_to_user) {
+	if ((ret == 0) && (qcmbr_data->cmd == 0x1001)) {
 		ret = copy_to_user(ifr->ifr_data, qcmbr_data->buf,
-				   (MAX_UTF_LENGTH + 4));
+				   (WLAN_FTM_DATA_MAX_LEN + 4));
 	}
 
 exit:
@@ -311,80 +192,18 @@ exit:
  *
  * Return: 0 on success, non-zero on error
  */
-int wlan_hdd_qcmbr_unified_ioctl(hdd_adapter_t *adapter, struct ifreq *ifr)
+int wlan_hdd_qcmbr_unified_ioctl(struct hdd_adapter *adapter,
+				 struct ifreq *ifr)
 {
 	int ret = 0;
 
-	if (is_compat_task()) {
+	if (in_compat_syscall())
 		ret = wlan_hdd_qcmbr_compat_ioctl(adapter, ifr);
-	} else {
+	else
 		ret = wlan_hdd_qcmbr_ioctl(adapter, ifr);
-	}
 
 	return ret;
 }
 
-/**
- * wlanqcmbr_mc_process_msg() - Process QCMBR response message
- * @message: QCMBR message
- *
- * Return: None
- */
-static void wlanqcmbr_mc_process_msg(void *message)
-{
-	qcmbr_queue_t *qcmbr_buf = NULL;
-	uint32_t data_len;
-
-	data_len = *((uint32_t *) message) + sizeof(uint32_t);
-	if (data_len > MAX_UTF_LENGTH + 4)
-		return;
-
-	qcmbr_buf = qdf_mem_malloc(sizeof(qcmbr_queue_t));
-	if (qcmbr_buf != NULL) {
-		memcpy(qcmbr_buf->utf_buf, message, data_len);
-		spin_lock_bh(&qcmbr_queue_lock);
-		list_add_tail(&(qcmbr_buf->list), &qcmbr_queue_head);
-		spin_unlock_bh(&qcmbr_queue_lock);
-	}
-}
-#endif /*LINUX_QCMBR */
-
-/**
- * wlan_hdd_ftm_testmode_cmd() - Process FTM testmode command
- * @data: FTM testmode command
- * @len: length of @data
- *
- * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
- */
-QDF_STATUS wlan_hdd_ftm_testmode_cmd(void *data, int len)
-{
-	struct ar6k_testmode_cmd_data *cmd_data;
-
-	cmd_data = (struct ar6k_testmode_cmd_data *)
-		   qdf_mem_malloc(sizeof(*cmd_data));
-
-	if (!cmd_data) {
-		hdd_err("Failed to allocate FTM command data");
-		return QDF_STATUS_E_NOMEM;
-	}
-
-	cmd_data->data = qdf_mem_malloc(len);
-
-	if (!cmd_data->data) {
-		hdd_err("Failed to allocate FTM command data buffer");
-		qdf_mem_free(cmd_data);
-		return QDF_STATUS_E_NOMEM;
-	}
-
-	cmd_data->len = len;
-	qdf_mem_copy(cmd_data->data, data, len);
-
-	if (wlan_ftm_postmsg((uint8_t *) cmd_data, sizeof(*cmd_data))) {
-		qdf_mem_free(cmd_data->data);
-		qdf_mem_free(cmd_data);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-#endif /*QCA_WIFI_FTM */
+#endif /* LINUX_QCMBR */
+#endif /* QCA_WIFI_FTM */

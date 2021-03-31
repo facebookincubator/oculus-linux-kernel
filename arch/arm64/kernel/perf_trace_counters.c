@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -65,7 +65,7 @@ void tracectr_notifier(void *ignore, bool preempt,
 {
 	u32 cnten_val;
 	int current_pid;
-	u32 cpu = task_thread_info(next)->cpu;
+	u32 cpu = task_cpu(next);
 
 	if (tp_pid_state != 1)
 		return;
@@ -124,6 +124,7 @@ static ssize_t write_enabled_perftp_file_bool(struct file *file,
 	char buf[32];
 	size_t buf_size;
 
+	buf[0] = 0;
 	buf_size = min(count, (sizeof(buf)-1));
 	if (copy_from_user(buf, user_buf, buf_size))
 		return -EFAULT;

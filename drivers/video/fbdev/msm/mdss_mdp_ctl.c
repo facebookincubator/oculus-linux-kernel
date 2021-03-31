@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -77,13 +77,15 @@ static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
 	u64 result = val;
 
 	if (val) {
-		u64 temp = -1UL;
+		u64 temp = U64_MAX;
 
 		do_div(temp, val);
 		if (temp > numer) {
 			/* no overflow, so we can do the operation*/
 			result = (val * (u64)numer);
 			do_div(result, denom);
+		} else {
+			pr_warn("Overflow, skip fudge factor\n");
 		}
 	}
 	return result;
@@ -1525,7 +1527,7 @@ static bool is_mdp_prefetch_needed(struct mdss_panel_info *pinfo)
  * the mdp fetch lines  as the last (25 - vbp - vpw) lines of vertical
  * front porch.
  */
-int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo)
+int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo, bool is_fixed)
 {
 	int prefetch_avail = 0;
 	int v_total, vfp_start;
@@ -1534,7 +1536,11 @@ int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo)
 	if (!is_mdp_prefetch_needed(pinfo))
 		return 0;
 
-	v_total = mdss_panel_get_vtotal(pinfo);
+	if (is_fixed)
+		v_total = mdss_panel_get_vtotal_fixed(pinfo);
+	else
+		v_total = mdss_panel_get_vtotal(pinfo);
+
 	vfp_start = (pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width +
 			pinfo->yres);
 
@@ -2573,6 +2579,7 @@ struct mdss_mdp_mixer *mdss_mdp_mixer_alloc(
 			mixer_pool += ctl->mdata->ndspp;
 			nmixers -= ctl->mdata->ndspp;
 		} else if ((ctl->panel_data->panel_info.is_pluggable) &&
+				!(ctl->panel_data->panel_info.is_prim_panel) &&
 				nmixers_active) {
 			mixer_pool += ctl->mdata->ndspp;
 			nmixers -= ctl->mdata->ndspp;
@@ -4888,7 +4895,8 @@ static inline void __mdss_mdp_mixer_write_layer(struct mdss_mdp_ctl *ctl,
 	u32 off[NUM_MIXERCFG_REGS];
 	int i;
 
-	BUG_ON(!values || count < NUM_MIXERCFG_REGS);
+	if (WARN_ON(!values || count < NUM_MIXERCFG_REGS))
+		return;
 
 	__mdss_mdp_mixer_get_offsets(mixer_num, off, ARRAY_SIZE(off));
 
@@ -5921,9 +5929,7 @@ int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 		} else {
 			sctl_flush_bits = sctl->flush_bits;
 		}
-		sctl->commit_in_progress = true;
 	}
-	ctl->commit_in_progress = true;
 	ctl_flush_bits = ctl->flush_bits;
 
 	ATRACE_END("postproc_programming");
@@ -5937,6 +5943,9 @@ int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 			MDP_COMMIT_STAGE_SETUP_DONE,
 			commit_cb->data);
 	ret = mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_READY);
+	ctl->commit_in_progress = true;
+	if (sctl)
+		sctl->commit_in_progress = true;
 
 	/*
 	 * When wait for fence timed out, driver ignores the fences
@@ -6068,10 +6077,11 @@ int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	    !bitmap_empty(mdata->bwc_enable_map, MAX_DRV_SUP_PIPES))
 		mdss_mdp_bwcpanic_ctrl(mdata, true);
 
-	ret = mdss_mdp_cwb_setup(ctl);
-	if (ret)
-		pr_warn("concurrent setup failed ctl=%d\n", ctl->num);
-
+	if (mdata->mdp_rev >= MDSS_MDP_HW_REV_300) {
+		ret = mdss_mdp_cwb_setup(ctl);
+		if (ret)
+			pr_warn("concurrent setup failed ctl=%d\n", ctl->num);
+	}
 	ctl_flush_bits |= ctl->flush_bits;
 
 	ATRACE_BEGIN("flush_kickoff");

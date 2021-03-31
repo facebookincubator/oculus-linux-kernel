@@ -33,6 +33,7 @@
 #include <linux/memblock.h>
 #include <linux/bootmem.h>
 #include <linux/compaction.h>
+#include <linux/rmap.h>
 
 #include <asm/tlbflush.h>
 
@@ -45,7 +46,7 @@
  * and restore_online_page_callback() for generic callback restore.
  */
 
-static void generic_online_page(struct page *page);
+static int generic_online_page(struct page *page);
 
 static online_page_callback_t online_page_callback = generic_online_page;
 static DEFINE_MUTEX(online_page_callback_lock);
@@ -857,11 +858,12 @@ void __online_page_free(struct page *page)
 }
 EXPORT_SYMBOL_GPL(__online_page_free);
 
-static void generic_online_page(struct page *page)
+static int generic_online_page(struct page *page)
 {
 	__online_page_set_limits(page);
 	__online_page_increment_counters(page);
 	__online_page_free(page);
+	return 0;
 }
 
 static int online_pages_range(unsigned long start_pfn, unsigned long nr_pages,
@@ -870,11 +872,13 @@ static int online_pages_range(unsigned long start_pfn, unsigned long nr_pages,
 	unsigned long i;
 	unsigned long onlined_pages = *(unsigned long *)arg;
 	struct page *page;
+	int ret;
 	if (PageReserved(pfn_to_page(start_pfn)))
 		for (i = 0; i < nr_pages; i++) {
 			page = pfn_to_page(start_pfn + i);
-			(*online_page_callback)(page);
-			onlined_pages++;
+			ret = (*online_page_callback)(page);
+			if (!ret)
+				onlined_pages++;
 		}
 	*(unsigned long *)arg = onlined_pages;
 	return 0;
@@ -1360,7 +1364,8 @@ static struct page *next_active_pageblock(struct page *page)
 int is_mem_section_removable(unsigned long start_pfn, unsigned long nr_pages)
 {
 	struct page *page = pfn_to_page(start_pfn);
-	struct page *end_page = page + nr_pages;
+	unsigned long end_pfn = min(start_pfn + nr_pages, zone_end_pfn(page_zone(page)));
+	struct page *end_page = pfn_to_page(end_pfn);
 
 	/* Check the starting page of each pageblock within the range */
 	for (; page < end_page; page = next_active_pageblock(page)) {
@@ -1374,17 +1379,20 @@ int is_mem_section_removable(unsigned long start_pfn, unsigned long nr_pages)
 }
 
 /*
- * Confirm all pages in a range [start, end) is belongs to the same zone.
+ * Confirm all pages in a range [start, end) belong to the same zone.
+ * When true, return its valid [start, end).
  */
-int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn)
+int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn,
+			 unsigned long *valid_start, unsigned long *valid_end)
 {
 	unsigned long pfn, sec_end_pfn;
+	unsigned long start, end;
 	struct zone *zone = NULL;
 	struct page *page;
 	int i;
-	for (pfn = start_pfn, sec_end_pfn = SECTION_ALIGN_UP(start_pfn);
+	for (pfn = start_pfn, sec_end_pfn = SECTION_ALIGN_UP(start_pfn + 1);
 	     pfn < end_pfn;
-	     pfn = sec_end_pfn + 1, sec_end_pfn += PAGES_PER_SECTION) {
+	     pfn = sec_end_pfn, sec_end_pfn += PAGES_PER_SECTION) {
 		/* Make sure the memory section is present first */
 		if (!present_section_nr(pfn_to_section_nr(pfn)))
 			continue;
@@ -1397,20 +1405,33 @@ int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn)
 				i++;
 			if (i == MAX_ORDER_NR_PAGES)
 				continue;
+			/* Check if we got outside of the zone */
+			if (zone && !zone_spans_pfn(zone, pfn + i))
+				return 0;
 			page = pfn_to_page(pfn + i);
 			if (zone && page_zone(page) != zone)
 				return 0;
+			if (!zone)
+				start = pfn + i;
 			zone = page_zone(page);
+			end = pfn + MAX_ORDER_NR_PAGES;
 		}
 	}
-	return 1;
+
+	if (zone) {
+		*valid_start = start;
+		*valid_end = end;
+		return 1;
+	} else {
+		return 0;
+	}
 }
 
 /*
- * Scan pfn range [start,end) to find movable/migratable pages (LRU pages
- * and hugepages). We scan pfn because it's much easier than scanning over
- * linked list. This function returns the pfn of the first found movable
- * page if it's found, otherwise 0.
+ * Scan pfn range [start,end) to find movable/migratable pages (LRU pages,
+ * non-lru movable pages and hugepages). We scan pfn because it's much
+ * easier than scanning over linked list. This function returns the pfn
+ * of the first found movable page if it's found, otherwise 0.
  */
 static unsigned long scan_movable_pages(unsigned long start, unsigned long end)
 {
@@ -1420,6 +1441,8 @@ static unsigned long scan_movable_pages(unsigned long start, unsigned long end)
 		if (pfn_valid(pfn)) {
 			page = pfn_to_page(pfn);
 			if (PageLRU(page))
+				return pfn;
+			if (__PageMovable(page))
 				return pfn;
 			if (PageHuge(page)) {
 				if (page_huge_active(page))
@@ -1461,25 +1484,42 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 			continue;
 		}
 
+		/*
+		 * HWPoison pages have elevated reference counts so the migration would
+		 * fail on them. It also doesn't make any sense to migrate them in the
+		 * first place. Still try to unmap such a page in case it is still mapped
+		 * (e.g. current hwpoison implementation doesn't unmap KSM pages but keep
+		 * the unmap as the catch all safety net).
+		 */
+		if (PageHWPoison(page)) {
+			if (WARN_ON(PageLRU(page)))
+				isolate_lru_page(page);
+			if (page_mapped(page))
+				try_to_unmap(page, TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS, NULL);
+			continue;
+		}
+
 		if (!get_page_unless_zero(page))
 			continue;
 		/*
-		 * We can skip free pages. And we can only deal with pages on
-		 * LRU.
+		 * We can skip free pages. And we can deal with pages on
+		 * LRU and non-lru movable pages.
 		 */
-		ret = isolate_lru_page(page);
+		if (PageLRU(page))
+			ret = isolate_lru_page(page);
+		else
+			ret = isolate_movable_page(page, ISOLATE_UNEVICTABLE);
 		if (!ret) { /* Success */
 			put_page(page);
 			list_add_tail(&page->lru, &source);
 			move_pages--;
-			inc_zone_page_state(page, NR_ISOLATED_ANON +
-					    page_is_file_cache(page));
-
+			if (!__PageMovable(page))
+				inc_zone_page_state(page, NR_ISOLATED_ANON +
+						    page_is_file_cache(page));
 		} else {
 #ifdef CONFIG_DEBUG_VM
-			printk(KERN_ALERT "removing pfn %lx from LRU failed\n",
-			       pfn);
-			dump_page(page, "failed to remove from LRU");
+			pr_alert("failed to isolate pfn %lx\n", pfn);
+			dump_page(page, "isolation failed");
 #endif
 			put_page(page);
 			/* Because we don't have big zone->lock. we should
@@ -1721,6 +1761,7 @@ static int __ref __offline_pages(unsigned long start_pfn,
 	long offlined_pages;
 	int ret, drain, retry_max, node;
 	unsigned long flags;
+	unsigned long valid_start, valid_end;
 	struct zone *zone;
 	struct memory_notify arg;
 
@@ -1731,10 +1772,10 @@ static int __ref __offline_pages(unsigned long start_pfn,
 		return -EINVAL;
 	/* This makes hotplug much easier...and readable.
 	   we assume this for now. .*/
-	if (!test_pages_in_a_zone(start_pfn, end_pfn))
+	if (!test_pages_in_a_zone(start_pfn, end_pfn, &valid_start, &valid_end))
 		return -EINVAL;
 
-	zone = page_zone(pfn_to_page(start_pfn));
+	zone = page_zone(pfn_to_page(valid_start));
 	node = zone_to_nid(zone);
 	nr_pages = end_pfn - start_pfn;
 
@@ -1918,8 +1959,7 @@ static int check_memblock_offlined_cb(struct memory_block *mem, void *arg)
 
 		beginpa = PFN_PHYS(section_nr_to_pfn(mem->start_section_nr));
 		endpa = PFN_PHYS(section_nr_to_pfn(mem->end_section_nr + 1))-1;
-		pr_warn("removing memory fails, because memory "
-			"[%pa-%pa] is onlined\n",
+		pr_warn("removing memory fails, because memory [%pa-%pa] is onlined\n",
 			&beginpa, &endpa);
 	}
 

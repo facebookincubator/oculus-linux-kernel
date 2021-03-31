@@ -532,6 +532,14 @@ config HDCP_QSEECOM
 	  Environment (QSEE) via the QSEECOM Driver and also calls the APIs
 	  exposed by the HDMI driver to communicate with the Receiver.
 
+config PROFILER
+	tristate "Qualcomm Technologies, Inc. trustzone Communicator driver"
+	help
+	  Provides a communication interface between userspace and
+	  trustzone using Secure Channel Manager (SCM) interface.
+	  It exposes APIs for userspace to get system profiling
+	  information.
+
 config VEXPRESS_SYSCFG
 	bool "Versatile Express System Configuration driver"
 	depends on VEXPRESS_CONFIG
@@ -541,11 +549,13 @@ config VEXPRESS_SYSCFG
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
 
-config UID_CPUTIME
-	bool "Per-UID cpu time statistics"
-	depends on PROFILING
+config UID_SYS_STATS
+	bool "Per-UID statistics"
+	depends on PROFILING && TASK_XACCT && TASK_IO_ACCOUNTING
 	help
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
+	  Per UID based io statistics exported to /proc/uid_io
+	  Per UID based procstat control in /proc/uid_procstat
 
 config QPNP_MISC
 	tristate "QPNP Misc Peripheral"
@@ -555,6 +565,14 @@ config QPNP_MISC
 	  peripheral. The MISC peripheral holds the USB ID interrupt
 	  and the driver provides an API to check if this interrupt
 	  is available on the current PMIC chip.
+
+config UID_SYS_STATS_DEBUG
+	bool "Per-TASK statistics"
+	depends on UID_SYS_STATS
+	default n
+	help
+	  Per TASK based io statistics exported to /proc/uid_io
+
 config MEMORY_STATE_TIME
 	tristate "Memory freq/bandwidth time statistics"
 	depends on PROFILING

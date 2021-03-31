@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -59,17 +50,69 @@ typedef __in6_addr_t in6_addr_t;
 #define QDF_NET_IF_NAME_SIZE     64
 #define QDF_NET_ETH_LEN          QDF_NET_MAC_ADDR_MAX_LEN
 #define QDF_NET_MAX_MCAST_ADDR   64
+#define QDF_NET_IPV4_LEN         4
 
 /* Extended Traffic ID  passed to target if the TID is unknown */
 #define QDF_NBUF_TX_EXT_TID_INVALID    0x1f
 
 #define QDF_ETH_TYPE_IPV4              0x0800  /* IPV4 */
 #define QDF_ETH_TYPE_IPV6              0x86dd  /* IPV6 */
+#define QDF_IEEE80211_4ADDR_HDR_LEN     30
+#define QDF_IEEE80211_3ADDR_HDR_LEN     24
+#define QDF_IEEE80211_FC0_SUBTYPE_QOS   0x80
+#define QDF_IEEE80211_FC1_TODS          0x01
+#define QDF_IEEE80211_FC1_FROMDS        0x02
+
+#define QDF_NET_IS_MAC_MULTICAST(_a)   (*(_a) & 0x01)
 
 typedef struct qdf_net_ethaddr {
 	uint8_t addr[QDF_NET_ETH_LEN];
 } qdf_net_ethaddr_t;
 
+/**
+ * typedef qdf_net_arphdr_t - ARP header info
+ * @ar_hrd: hardware type
+ * @ar_pro: protocol type
+ * @ar_hln: hardware address length
+ * @ar_pln: protocol length
+ * @ar_op: arp operation code
+ * @ar_sha: sender hardware address
+ * @ar_sip: sender IP address
+ * @ar_tha: target hardware address
+ * @ar_tip: target IP address
+ */
+typedef struct qdf_net_arphdr {
+	uint16_t ar_hrd;
+	uint16_t ar_pro;
+	uint8_t  ar_hln;
+	uint8_t  ar_pln;
+	uint16_t ar_op;
+	uint8_t  ar_sha[QDF_NET_ETH_LEN];
+	uint8_t  ar_sip[QDF_NET_IPV4_LEN];
+	uint8_t  ar_tha[QDF_NET_ETH_LEN];
+	uint8_t  ar_tip[QDF_NET_IPV4_LEN];
+} qdf_net_arphdr_t;
+
+/**
+ * typedef qdf_net_icmp6_11addr_t - ICMP6 header info
+ * @type: hardware type
+ * @len: hardware address length
+ * @addr: hardware address
+ */
+typedef struct qdf_net_icmp6_11addr {
+	uint8_t type;
+	uint8_t len;
+	uint8_t addr[QDF_NET_ETH_LEN];
+} qdf_net_icmp6_11addr_t;
+
+#define QDF_TCPHDR_FIN __QDF_TCPHDR_FIN
+#define QDF_TCPHDR_SYN __QDF_TCPHDR_SYN
+#define QDF_TCPHDR_RST __QDF_TCPHDR_RST
+#define QDF_TCPHDR_PSH __QDF_TCPHDR_PSH
+#define QDF_TCPHDR_ACK __QDF_TCPHDR_ACK
+#define QDF_TCPHDR_URG __QDF_TCPHDR_URG
+#define QDF_TCPHDR_ECE __QDF_TCPHDR_ECE
+#define QDF_TCPHDR_CWR __QDF_TCPHDR_CWR
 
 typedef struct {
 	uint16_t  source;
@@ -159,6 +202,7 @@ typedef enum {
 
 /**
  * typedef qdf_nbuf_l4_rx_cksum_type_t - receive checksum API types
+ * @QDF_NBUF_RX_CKSUM_ZERO: Rx checksum zero
  * @QDF_NBUF_RX_CKSUM_TCP: Rx checksum TCP
  * @QDF_NBUF_RX_CKSUM_UDP: Rx checksum UDP
  * @QDF_NBUF_RX_CKSUM_TCPIPV6: Rx checksum TCP IPV6
@@ -168,6 +212,7 @@ typedef enum {
  * @QDF_NBUF_RX_CKSUM_TCPSUM16: Rx checksum TCP SUM16
  */
 typedef enum {
+	QDF_NBUF_RX_CKSUM_ZERO = 0x0000,
 	QDF_NBUF_RX_CKSUM_TCP = 0x0001,
 	QDF_NBUF_RX_CKSUM_UDP = 0x0002,
 	QDF_NBUF_RX_CKSUM_TCPIPV6 = 0x0010,
@@ -455,4 +500,75 @@ static inline int32_t qdf_csum_ipv6(const in6_addr_t *saddr,
 	return (int32_t)__qdf_csum_ipv6(saddr, daddr, len, proto, sum);
 }
 
+typedef struct {
+	uint8_t i_fc[2];
+	uint8_t i_dur[2];
+	uint8_t i_addr1[QDF_NET_MAC_ADDR_MAX_LEN];
+	uint8_t i_addr2[QDF_NET_MAC_ADDR_MAX_LEN];
+	uint8_t i_addr3[QDF_NET_MAC_ADDR_MAX_LEN];
+	uint8_t i_seq[2];
+	uint8_t i_qos[2];
+} qdf_dot3_qosframe_t;
+
+typedef struct {
+	uint8_t ether_dhost[QDF_NET_MAC_ADDR_MAX_LEN];
+	uint8_t ether_shost[QDF_NET_MAC_ADDR_MAX_LEN];
+	uint16_t vlan_TCI;
+	uint16_t vlan_encapsulated_proto;
+	uint16_t ether_type;
+} qdf_ethervlan_header_t;
+
+/**
+ * typedef qdf_ether_header_t - ethernet header info
+ * @ether_dhost: destination hardware address
+ * @ether_shost: source hardware address
+ * @ether_type: ethernet type
+ */
+typedef struct {
+	uint8_t  ether_dhost[QDF_NET_ETH_LEN];
+	uint8_t  ether_shost[QDF_NET_ETH_LEN];
+	uint16_t ether_type;
+} qdf_ether_header_t;
+
+typedef struct {
+	uint8_t llc_dsap;
+	uint8_t llc_ssap;
+	union {
+		struct {
+			uint8_t control;
+			uint8_t format_id;
+			uint8_t class;
+			uint8_t window_x2;
+		} __packed type_u;
+		struct {
+			uint8_t num_snd_x2;
+			uint8_t num_rcv_x2;
+		} __packed type_i;
+		struct {
+			uint8_t control;
+			uint8_t num_rcv_x2;
+		} __packed type_s;
+		struct {
+			uint8_t control;
+			/*
+			 * We cannot put the following fields in a structure
+			 * because the structure rounding might cause padding.
+			 */
+			uint8_t frmr_rej_pdu0;
+			uint8_t frmr_rej_pdu1;
+			uint8_t frmr_control;
+			uint8_t frmr_control_ext;
+			uint8_t frmr_cause;
+		} __packed type_frmr;
+		struct {
+			uint8_t  control;
+			uint8_t  org_code[3];
+			uint16_t ether_type;
+		} __packed type_snap;
+		struct {
+			uint8_t control;
+			uint8_t control_ext;
+		} __packed type_raw;
+	} llc_un /* XXX __packed ??? */;
+} qdf_llc_t;
 #endif /*_QDF_NET_TYPES_H*/

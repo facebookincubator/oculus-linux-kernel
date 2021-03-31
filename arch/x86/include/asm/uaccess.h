@@ -7,6 +7,7 @@
 #include <linux/compiler.h>
 #include <linux/thread_info.h>
 #include <linux/string.h>
+#include <linux/preempt.h>
 #include <asm/asm.h>
 #include <asm/page.h>
 #include <asm/smap.h>
@@ -29,7 +30,12 @@
 
 #define get_ds()	(KERNEL_DS)
 #define get_fs()	(current_thread_info()->addr_limit)
-#define set_fs(x)	(current_thread_info()->addr_limit = (x))
+static inline void set_fs(mm_segment_t fs)
+{
+	current_thread_info()->addr_limit = fs;
+	/* On user-mode return, check fs is correct */
+	set_thread_flag(TIF_FSCHECK);
+}
 
 #define segment_eq(a, b)	((a).seg == (b).seg)
 
@@ -66,6 +72,12 @@ static inline bool __chk_range_not_ok(unsigned long addr, unsigned long size, un
 	__chk_range_not_ok((unsigned long __force)(addr), size, limit); \
 })
 
+#ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+# define WARN_ON_IN_IRQ()	WARN_ON_ONCE(!in_task())
+#else
+# define WARN_ON_IN_IRQ()
+#endif
+
 /**
  * access_ok: - Checks if a user space pointer is valid
  * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE.  Note that
@@ -86,8 +98,11 @@ static inline bool __chk_range_not_ok(unsigned long addr, unsigned long size, un
  * checks that the pointer is in the user space range - after calling
  * this function, memory access functions may still return -EFAULT.
  */
-#define access_ok(type, addr, size) \
-	likely(!__range_not_ok(addr, size, user_addr_max()))
+#define access_ok(type, addr, size)					\
+({									\
+	WARN_ON_IN_IRQ();						\
+	likely(!__range_not_ok(addr, size, user_addr_max()));		\
+})
 
 /*
  * The exception table consists of pairs of addresses relative to the
@@ -136,6 +151,11 @@ extern int __get_user_bad(void);
 
 #define __uaccess_begin() stac()
 #define __uaccess_end()   clac()
+#define __uaccess_begin_nospec()	\
+({					\
+	stac();				\
+	barrier_nospec();		\
+})
 
 /*
  * This is a type: either unsigned long, if the argument fits into
@@ -299,8 +319,7 @@ do {									\
 		__put_user_asm(x, ptr, retval, "l", "k", "ir", errret);	\
 		break;							\
 	case 8:								\
-		__put_user_asm_u64((__typeof__(*ptr))(x), ptr, retval,	\
-				   errret);				\
+		__put_user_asm_u64(x, ptr, retval, errret);		\
 		break;							\
 	default:							\
 		__put_user_bad();					\
@@ -339,7 +358,7 @@ do {									\
 #define __get_user_asm_u64(x, ptr, retval, errret) \
 	 __get_user_asm(x, ptr, retval, "q", "", "=r", errret)
 #define __get_user_asm_ex_u64(x, ptr) \
-	 __get_user_asm_ex(x, ptr, "q", "", "=r")
+	 __get_user_asm_ex(x, ptr, "q", "", "=&r")
 #endif
 
 #define __get_user_size(x, ptr, size, retval, errret)			\
@@ -386,13 +405,13 @@ do {									\
 	__chk_user_ptr(ptr);						\
 	switch (size) {							\
 	case 1:								\
-		__get_user_asm_ex(x, ptr, "b", "b", "=q");		\
+		__get_user_asm_ex(x, ptr, "b", "b", "=&q");		\
 		break;							\
 	case 2:								\
-		__get_user_asm_ex(x, ptr, "w", "w", "=r");		\
+		__get_user_asm_ex(x, ptr, "w", "w", "=&r");		\
 		break;							\
 	case 4:								\
-		__get_user_asm_ex(x, ptr, "l", "k", "=r");		\
+		__get_user_asm_ex(x, ptr, "l", "k", "=&r");		\
 		break;							\
 	case 8:								\
 		__get_user_asm_ex_u64(x, ptr);				\
@@ -406,13 +425,15 @@ do {									\
 	asm volatile("1:	mov"itype" %1,%"rtype"0\n"		\
 		     "2:\n"						\
 		     _ASM_EXTABLE_EX(1b, 2b)				\
-		     : ltype(x) : "m" (__m(addr)))
+		     : ltype(x) : "m" (__m(addr)), "0" (0))
 
 #define __put_user_nocheck(x, ptr, size)			\
 ({								\
 	int __pu_err;						\
+	__typeof__(*(ptr)) __pu_val;				\
+	__pu_val = x;						\
 	__uaccess_begin();					\
-	__put_user_size((x), (ptr), (size), __pu_err, -EFAULT);	\
+	__put_user_size(__pu_val, (ptr), (size), __pu_err, -EFAULT);\
 	__uaccess_end();					\
 	__builtin_expect(__pu_err, 0);				\
 })
@@ -421,7 +442,7 @@ do {									\
 ({									\
 	int __gu_err;							\
 	unsigned long __gu_val;						\
-	__uaccess_begin();						\
+	__uaccess_begin_nospec();					\
 	__get_user_size(__gu_val, (ptr), (size), __gu_err, -EFAULT);	\
 	__uaccess_end();						\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
@@ -462,6 +483,10 @@ struct __large_struct { unsigned long buf[100]; };
 	current_thread_info()->uaccess_err = 0;				\
 	__uaccess_begin();						\
 	barrier();
+
+#define uaccess_try_nospec do {						\
+	current_thread_info()->uaccess_err = 0;				\
+	__uaccess_begin_nospec();					\
 
 #define uaccess_catch(err)						\
 	__uaccess_end();						\
@@ -527,7 +552,7 @@ struct __large_struct { unsigned long buf[100]; };
  *	get_user_ex(...);
  * } get_user_catch(err)
  */
-#define get_user_try		uaccess_try
+#define get_user_try		uaccess_try_nospec
 #define get_user_catch(err)	uaccess_catch(err)
 
 #define get_user_ex(x, ptr)	do {					\
@@ -562,7 +587,7 @@ extern void __cmpxchg_wrong_size(void)
 	__typeof__(ptr) __uval = (uval);				\
 	__typeof__(*(ptr)) __old = (old);				\
 	__typeof__(*(ptr)) __new = (new);				\
-	__uaccess_begin();						\
+	__uaccess_begin_nospec();					\
 	switch (size) {							\
 	case 1:								\
 	{								\

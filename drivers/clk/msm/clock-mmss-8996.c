@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, 2018, 2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -53,7 +53,7 @@ static void __iomem *virt_base_gpu;
 #define dsi1phypll_mm_source_val		2
 #define ext_extpclk_clk_src_mm_source_val	1
 
-#define FIXDIV(div) (div ? (2 * (div) - 1) : (0))
+#define FIXDIV(div) ((int)div ? (2 * (div) - 1) : (0))
 
 #define F_MM(f, s, div, m, n) \
 	{ \
@@ -1517,6 +1517,7 @@ static struct rcg_clk extpclk_clk_src = {
 		.dbg_name = "extpclk_clk_src",
 		.parent = &ext_extpclk_clk_src.c,
 		.ops = &clk_ops_byte,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 150000000, LOW, 300000000,
 							NOMINAL, 600000000),
 		CLK_INIT(extpclk_clk_src.c),
@@ -2532,6 +2533,7 @@ static struct branch_clk mdss_extpclk_clk = {
 		.dbg_name = "mdss_extpclk_clk",
 		.parent = &extpclk_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_extpclk_clk.c),
 	},
 };
@@ -3646,6 +3648,21 @@ void __iomem *gpu_base;
 u64 efuse;
 int gpu_speed_bin;
 
+static int mmss_pll_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int mmss_pll_resume(struct device *dev)
+{
+#ifdef CONFIG_HIBERNATION
+	mmpll9.c.ops->set_rate(&mmpll9.c, 1248000000);
+	mmpll8.c.ops->set_rate(&mmpll8.c, 510000);
+	mmpll2.c.ops->set_rate(&mmpll2.c, 510000);
+#endif
+	return 0;
+}
+
 int msm_mmsscc_8996_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -3808,11 +3825,19 @@ static struct of_device_id msm_clock_mmss_match_table[] = {
 	{},
 };
 
+static const struct dev_pm_ops msm_clock_mmss_pm_ops = {
+	.freeze_late = mmss_pll_suspend,
+	.thaw_early = mmss_pll_resume,
+	.poweroff_late = mmss_pll_suspend,
+	.restore_early = mmss_pll_resume,
+};
+
 static struct platform_driver msm_clock_mmss_driver = {
 	.probe = msm_mmsscc_8996_probe,
 	.driver = {
 		.name = "qcom,mmsscc-8996",
 		.of_match_table = msm_clock_mmss_match_table,
+		.pm = &msm_clock_mmss_pm_ops,
 		.owner = THIS_MODULE,
 	},
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, 2018-2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,6 +36,7 @@ static struct netlink_kernel_cfg nlcfg = {
 
 static void _sockev_event(unsigned long event, __u8 *evstr, int buflen)
 {
+
 	switch (event) {
 	case SOCKEV_SOCKET:
 		strlcpy(evstr, "SOCKEV_SOCKET", buflen);
@@ -99,6 +100,7 @@ static int sockev_client_cb(struct notifier_block *nb,
 	NETLINK_CB(skb).dst_group = SKNLGRP_SOCKEV;
 
 	smsg = nlmsg_data(nlh);
+	memset(smsg, 0, sizeof(struct sknlsockevmsg));
 	smsg->pid = current->pid;
 	_sockev_event(event, smsg->event, sizeof(smsg->event));
 	smsg->skfamily = sk->sk_family;

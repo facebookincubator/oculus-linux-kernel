@@ -357,7 +357,7 @@ struct tty_driver *tty_find_polling_driver(char *name, int *line)
 	mutex_lock(&tty_mutex);
 	/* Search through the tty devices to look for a match */
 	list_for_each_entry(p, &tty_drivers, tty_drivers) {
-		if (strncmp(name, p->name, len) != 0)
+		if (!len || strncmp(name, p->name, len) != 0)
 			continue;
 		stp = str;
 		if (*stp == ',')
@@ -512,6 +512,8 @@ void proc_clear_tty(struct task_struct *p)
 	spin_unlock_irqrestore(&p->sighand->siglock, flags);
 	tty_kref_put(tty);
 }
+
+extern void tty_sysctl_init(void);
 
 /**
  * proc_set_tty -  set the controlling terminal
@@ -702,6 +704,14 @@ static void __tty_hangup(struct tty_struct *tty, int exit_session)
 		return;
 	}
 
+	/*
+	 * Some console devices aren't actually hung up for technical and
+	 * historical reasons, which can lead to indefinite interruptible
+	 * sleep in n_tty_read().  The following explicitly tells
+	 * n_tty_read() to abort readers.
+	 */
+	set_bit(TTY_HUPPING, &tty->flags);
+
 	/* inuse_filps is protected by the single tty lock,
 	   this really needs to change if we want to flush the
 	   workqueue with the lock held */
@@ -757,6 +767,7 @@ static void __tty_hangup(struct tty_struct *tty, int exit_session)
 	 * can't yet guarantee all that.
 	 */
 	set_bit(TTY_HUPPED, &tty->flags);
+	clear_bit(TTY_HUPPING, &tty->flags);
 	tty_unlock(tty);
 
 	if (f)
@@ -1694,6 +1705,8 @@ static void release_tty(struct tty_struct *tty, int idx)
 	if (tty->link)
 		tty->link->port->itty = NULL;
 	tty_buffer_cancel_work(tty->port);
+	if (tty->link)
+		tty_buffer_cancel_work(tty->link->port);
 
 	tty_kref_put(tty->link);
 	tty_kref_put(tty);
@@ -2070,13 +2083,12 @@ retry_open:
 		if (tty) {
 			mutex_unlock(&tty_mutex);
 			retval = tty_lock_interruptible(tty);
+			tty_kref_put(tty);  /* drop kref from tty_driver_lookup_tty() */
 			if (retval) {
 				if (retval == -EINTR)
 					retval = -ERESTARTSYS;
 				goto err_unref;
 			}
-			/* safe to drop the kref from tty_driver_lookup_tty() */
-			tty_kref_put(tty);
 			retval = tty_reopen(tty);
 			if (retval < 0) {
 				tty_unlock(tty);
@@ -2287,7 +2299,8 @@ static int tiocsti(struct tty_struct *tty, char __user *p)
 		return -EFAULT;
 	tty_audit_tiocsti(tty, ch);
 	ld = tty_ldisc_ref_wait(tty);
-	ld->ops->receive_buf(tty, &ch, &mbz, 1);
+	if (ld->ops->receive_buf)
+		ld->ops->receive_buf(tty, &ch, &mbz, 1);
 	tty_ldisc_deref(ld);
 	return 0;
 }
@@ -3144,7 +3157,10 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 
 	kref_init(&tty->kref);
 	tty->magic = TTY_MAGIC;
-	tty_ldisc_init(tty);
+	if (tty_ldisc_init(tty)) {
+		kfree(tty);
+		return NULL;
+	}
 	tty->session = NULL;
 	tty->pgrp = NULL;
 	mutex_init(&tty->legacy_mutex);
@@ -3675,6 +3691,7 @@ void console_sysfs_notify(void)
  */
 int __init tty_init(void)
 {
+	tty_sysctl_init();
 	cdev_init(&tty_cdev, &tty_fops);
 	if (cdev_add(&tty_cdev, MKDEV(TTYAUX_MAJOR, 0), 1) ||
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 0), 1, "/dev/tty") < 0)

@@ -528,16 +528,6 @@ struct nfs_pgio_header *nfs_pgio_header_alloc(const struct nfs_rw_ops *ops)
 }
 EXPORT_SYMBOL_GPL(nfs_pgio_header_alloc);
 
-/*
- * nfs_pgio_header_free - Free a read or write header
- * @hdr: The header to free
- */
-void nfs_pgio_header_free(struct nfs_pgio_header *hdr)
-{
-	hdr->rw_ops->rw_free_header(hdr);
-}
-EXPORT_SYMBOL_GPL(nfs_pgio_header_free);
-
 /**
  * nfs_pgio_data_destroy - make @hdr suitable for reuse
  *
@@ -546,14 +536,24 @@ EXPORT_SYMBOL_GPL(nfs_pgio_header_free);
  *
  * @hdr: A header that has had nfs_generic_pgio called
  */
-void nfs_pgio_data_destroy(struct nfs_pgio_header *hdr)
+static void nfs_pgio_data_destroy(struct nfs_pgio_header *hdr)
 {
 	if (hdr->args.context)
 		put_nfs_open_context(hdr->args.context);
 	if (hdr->page_array.pagevec != hdr->page_array.page_array)
 		kfree(hdr->page_array.pagevec);
 }
-EXPORT_SYMBOL_GPL(nfs_pgio_data_destroy);
+
+/*
+ * nfs_pgio_header_free - Free a read or write header
+ * @hdr: The header to free
+ */
+void nfs_pgio_header_free(struct nfs_pgio_header *hdr)
+{
+	nfs_pgio_data_destroy(hdr);
+	hdr->rw_ops->rw_free_header(hdr);
+}
+EXPORT_SYMBOL_GPL(nfs_pgio_header_free);
 
 /**
  * nfs_pgio_rpcsetup - Set up arguments for a pageio call
@@ -593,7 +593,7 @@ static void nfs_pgio_rpcsetup(struct nfs_pgio_header *hdr,
 	}
 
 	hdr->res.fattr   = &hdr->fattr;
-	hdr->res.count   = count;
+	hdr->res.count   = 0;
 	hdr->res.eof     = 0;
 	hdr->res.verf    = &hdr->verf;
 	nfs_fattr_init(&hdr->fattr);
@@ -671,7 +671,6 @@ static int nfs_pgio_error(struct nfs_pageio_descriptor *desc,
 	u32 midx;
 
 	set_bit(NFS_IOHDR_REDO, &hdr->flags);
-	nfs_pgio_data_destroy(hdr);
 	hdr->completion_ops->completion(hdr);
 	/* TODO: Make sure it's right to clean up all mirrors here
 	 *       and not just hdr->pgio_mirror_idx */
@@ -689,7 +688,6 @@ static int nfs_pgio_error(struct nfs_pageio_descriptor *desc,
 static void nfs_pgio_release(void *calldata)
 {
 	struct nfs_pgio_header *hdr = calldata;
-	nfs_pgio_data_destroy(hdr);
 	hdr->completion_ops->completion(hdr);
 }
 
@@ -874,6 +872,9 @@ static int nfs_pageio_setup_mirroring(struct nfs_pageio_descriptor *pgio,
 
 	mirror_count = pgio->pg_ops->pg_get_mirror_count(pgio, req);
 
+	if (pgio->pg_error < 0)
+		return pgio->pg_error;
+
 	if (!mirror_count || mirror_count > NFS_PAGEIO_DESCRIPTOR_MIRROR_MAX)
 		return -EINVAL;
 
@@ -982,6 +983,8 @@ static int nfs_pageio_do_add_request(struct nfs_pageio_descriptor *desc,
 	} else {
 		if (desc->pg_ops->pg_init)
 			desc->pg_ops->pg_init(desc, req);
+		if (desc->pg_error < 0)
+			return 0;
 		mirror->pg_base = req->wb_pgbase;
 	}
 	if (!nfs_can_coalesce_requests(prev, req, desc))
@@ -1104,7 +1107,6 @@ static int nfs_do_recoalesce(struct nfs_pageio_descriptor *desc)
 			struct nfs_page *req;
 
 			req = list_first_entry(&head, struct nfs_page, wb_list);
-			nfs_list_remove_request(req);
 			if (__nfs_pageio_add_request(desc, req))
 				continue;
 			if (desc->pg_error < 0) {
@@ -1147,6 +1149,8 @@ int nfs_pageio_add_request(struct nfs_pageio_descriptor *desc,
 	bytes = req->wb_bytes;
 
 	nfs_pageio_setup_mirroring(desc, req);
+	if (desc->pg_error < 0)
+		return 0;
 
 	for (midx = 0; midx < desc->pg_mirror_count; midx++) {
 		if (midx) {
@@ -1198,7 +1202,7 @@ static void nfs_pageio_complete_mirror(struct nfs_pageio_descriptor *desc,
 		desc->pg_mirror_idx = mirror_idx;
 	for (;;) {
 		nfs_pageio_doio(desc);
-		if (!mirror->pg_recoalesce)
+		if (desc->pg_error < 0 || !mirror->pg_recoalesce)
 			break;
 		if (!nfs_do_recoalesce(desc))
 			break;
@@ -1232,7 +1236,7 @@ int nfs_pageio_resend(struct nfs_pageio_descriptor *desc,
 	nfs_pageio_complete(desc);
 	if (!list_empty(&failed)) {
 		list_move(&failed, &hdr->pages);
-		return -EIO;
+		return desc->pg_error < 0 ? desc->pg_error : -EIO;
 	}
 	return 0;
 }
@@ -1275,8 +1279,10 @@ void nfs_pageio_cond_complete(struct nfs_pageio_descriptor *desc, pgoff_t index)
 		mirror = &desc->pg_mirrors[midx];
 		if (!list_empty(&mirror->pg_list)) {
 			prev = nfs_list_entry(mirror->pg_list.prev);
-			if (index != prev->wb_index + 1)
-				nfs_pageio_complete_mirror(desc, midx);
+			if (index != prev->wb_index + 1) {
+				nfs_pageio_complete(desc);
+				break;
+			}
 		}
 	}
 }

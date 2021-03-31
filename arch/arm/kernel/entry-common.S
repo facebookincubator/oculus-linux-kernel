@@ -12,6 +12,12 @@
 #include <asm/unistd.h>
 #include <asm/ftrace.h>
 #include <asm/unwind.h>
+#include <asm/memory.h>
+#ifdef CONFIG_AEABI
+#include <asm/unistd-oabi.h>
+#endif
+
+	.equ    NR_syscalls, __NR_syscalls
 
 #ifdef CONFIG_NEED_RET_TO_USER
 #include <mach/entry-macro.S>
@@ -35,6 +41,9 @@ ret_fast_syscall:
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)
 	disable_irq_notrace			@ disable interrupts
+	ldr	r2, [tsk, #TI_ADDR_LIMIT]
+	cmp	r2, #TASK_SIZE
+	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
 	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
 	bne	fast_work_pending
@@ -61,6 +70,9 @@ ret_fast_syscall:
  UNWIND(.cantunwind	)
 	str	r0, [sp, #S_R0 + S_OFF]!	@ save returned r0
 	disable_irq_notrace			@ disable interrupts
+	ldr	r2, [tsk, #TI_ADDR_LIMIT]
+	cmp	r2, #TASK_SIZE
+	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
 	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
 	beq	no_work_pending
@@ -93,6 +105,9 @@ ENTRY(ret_to_user)
 ret_slow_syscall:
 	disable_irq_notrace			@ disable interrupts
 ENTRY(ret_to_user_from_irq)
+	ldr	r2, [tsk, #TI_ADDR_LIMIT]
+	cmp	r2, #TASK_SIZE
+	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]
 	tst	r1, #_TIF_WORK_MASK
 	bne	slow_work_pending
@@ -119,21 +134,6 @@ ENTRY(ret_from_fork)
 1:	get_thread_info tsk
 	b	ret_slow_syscall
 ENDPROC(ret_from_fork)
-
-	.equ NR_syscalls,0
-#define CALL(x) .equ NR_syscalls,NR_syscalls+1
-#include "calls.S"
-
-/*
- * Ensure that the system call table is equal to __NR_syscalls,
- * which is the value the rest of the system sees
- */
-.ifne NR_syscalls - __NR_syscalls
-.error "__NR_syscalls is not equal to the size of the syscall table"
-.endif
-
-#undef CALL
-#define CALL(x) .long x
 
 /*=============================================================================
  * SWI handler
@@ -223,9 +223,7 @@ local_restart:
 	tst	r10, #_TIF_SYSCALL_WORK		@ are we tracing syscalls?
 	bne	__sys_trace
 
-	cmp	scno, #NR_syscalls		@ check upper syscall limit
-	badr	lr, ret_fast_syscall		@ return address
-	ldrcc	pc, [tbl, scno, lsl #2]		@ call sys_* routine
+	invoke_syscall tbl, scno, r10, ret_fast_syscall
 
 	add	r1, sp, #S_OFF
 2:	cmp	scno, #(__ARM_NR_BASE - __NR_SYSCALL_BASE)
@@ -258,27 +256,20 @@ __sys_trace:
 	mov	r1, scno
 	add	r0, sp, #S_OFF
 	bl	syscall_trace_enter
-
-	badr	lr, __sys_trace_return		@ return address
-	mov	scno, r0			@ syscall number (possibly new)
-	add	r1, sp, #S_R0 + S_OFF		@ pointer to regs
-	cmp	scno, #NR_syscalls		@ check upper syscall limit
-	ldmccia	r1, {r0 - r6}			@ have to reload r0 - r6
-	stmccia	sp, {r4, r5}			@ and update the stack args
-	ldrcc	pc, [tbl, scno, lsl #2]		@ call sys_* routine
+	mov	scno, r0
+	invoke_syscall tbl, scno, r10, __sys_trace_return, reload=1
 	cmp	scno, #-1			@ skip the syscall?
 	bne	2b
 	add	sp, sp, #S_OFF			@ restore stack
-	b	ret_slow_syscall
 
-__sys_trace_return:
-	str	r0, [sp, #S_R0 + S_OFF]!	@ save returned r0
+__sys_trace_return_nosave:
+	enable_irq_notrace
 	mov	r0, sp
 	bl	syscall_trace_exit
 	b	ret_slow_syscall
 
-__sys_trace_return_nosave:
-	enable_irq_notrace
+__sys_trace_return:
+	str	r0, [sp, #S_R0 + S_OFF]!	@ save returned r0
 	mov	r0, sp
 	bl	syscall_trace_exit
 	b	ret_slow_syscall
@@ -291,22 +282,48 @@ __cr_alignment:
 #endif
 	.ltorg
 
+	.macro	syscall_table_start, sym
+	.equ	__sys_nr, 0
+	.type	\sym, #object
+ENTRY(\sym)
+	.endm
+
+	.macro	syscall, nr, func
+	.ifgt	__sys_nr - \nr
+	.error	"Duplicated/unorded system call entry"
+	.endif
+	.rept	\nr - __sys_nr
+	.long	sys_ni_syscall
+	.endr
+	.long	\func
+	.equ	__sys_nr, \nr + 1
+	.endm
+
+	.macro	syscall_table_end, sym
+	.ifgt	__sys_nr - __NR_syscalls
+	.error	"System call table too big"
+	.endif
+	.rept	__NR_syscalls - __sys_nr
+	.long	sys_ni_syscall
+	.endr
+	.size	\sym, . - \sym
+	.endm
+
+#define NATIVE(nr, func) syscall nr, func
+
 /*
  * This is the syscall table declaration for native ABI syscalls.
  * With EABI a couple syscalls are obsolete and defined as sys_ni_syscall.
  */
-#define ABI(native, compat) native
+	syscall_table_start sys_call_table
+#define COMPAT(nr, native, compat) syscall nr, native
 #ifdef CONFIG_AEABI
-#define OBSOLETE(syscall) sys_ni_syscall
+#include <calls-eabi.S>
 #else
-#define OBSOLETE(syscall) syscall
+#include <calls-oabi.S>
 #endif
-
-	.type	sys_call_table, #object
-ENTRY(sys_call_table)
-#include "calls.S"
-#undef ABI
-#undef OBSOLETE
+#undef COMPAT
+	syscall_table_end sys_call_table
 
 /*============================================================================
  * Special system call wrappers
@@ -317,6 +334,10 @@ sys_syscall:
 		bic	scno, r0, #__NR_OABI_SYSCALL_BASE
 		cmp	scno, #__NR_syscall - __NR_SYSCALL_BASE
 		cmpne	scno, #NR_syscalls	@ check range
+#ifdef CONFIG_CPU_SPECTRE
+		movhs	scno, #0
+		csdb
+#endif
 		stmloia	sp, {r5, r6}		@ shuffle args
 		movlo	r0, r1
 		movlo	r1, r2
@@ -407,14 +428,10 @@ ENDPROC(sys_oabi_readahead)
  * Let's declare a second syscall table for old ABI binaries
  * using the compatibility syscall entries.
  */
-#define ABI(native, compat) compat
-#define OBSOLETE(syscall) syscall
-
-	.type	sys_oabi_call_table, #object
-ENTRY(sys_oabi_call_table)
-#include "calls.S"
-#undef ABI
-#undef OBSOLETE
+	syscall_table_start sys_oabi_call_table
+#define COMPAT(nr, native, compat) syscall nr, compat
+#include <calls-oabi.S>
+	syscall_table_end sys_oabi_call_table
 
 #endif
 

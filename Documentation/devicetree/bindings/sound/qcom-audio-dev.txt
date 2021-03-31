@@ -8,6 +8,15 @@ Required properties:
 
  - qcom,msm-pcm-dsp-id : device node id
 
+   Optional properties
+
+      - qcom,avs-version:
+	This property can be used to specify the ADSP version/name.
+	Based on ADSP version, we decide if we have to use older
+	ADSP APIs or newer. Right now we are using "AVS 2.7" for
+	8996 purpose.If the ADSP version is anything other than this
+	we use new ADSP APIs.
+
 * msm-pcm-low-latency
 
 Required properties:
@@ -27,6 +36,13 @@ Required properties:
                             regular : regular low latency stream
                             ultra : ultra low latency stream
                             ull-pp : ultra low latency stream with post-processing capability
+
+      - qcom,avs-version:
+	This property can be used to specify the ADSP version/name.
+	Based on ADSP version, we decide if we have to use older
+	ADSP APIs or newer. Right now we are using "AVS 2.7" for
+	8996 purpose.If the ADSP version is anything other than this
+	we use new ADSP APIs.
 
 * msm-pcm-dsp-noirq
 
@@ -73,6 +89,13 @@ Optional properties
 	Based on ADSP version, we decide if we have to use older
 	ADSP APIs or newer. Right now we are adding "MDSP 1.2" for
 	8909 purpose.If the ADSP version is anything other than this
+	we use new ADSP APIs.
+
+ - qcom,avs-version:
+	This property can be used to specify the ADSP version/name.
+	Based on ADSP version, we decide if we have to use older
+	ADSP APIs or newer. Right now we are using "AVS 2.7" for
+	8996 purpose.If the ADSP version is anything other than this
 	we use new ADSP APIs.
 
 * msm-voip-dsp
@@ -182,6 +205,12 @@ Optional properties:
  - qcom,msm-pcm-loopback-low-latency : Flag indicating whether
    the device node is of type low latency.
 
+* msm-transcode-loopback
+
+Required properties:
+
+ - compatible : "qcom,msm-transcode-loopback"
+
 * msm-dai-q6
 
 [First Level Nodes]
@@ -282,6 +311,20 @@ Optional properties:
 Required properties:
 
  - compatible : "qcom,msm-pcm-hostless"
+
+* msm-audio-apr
+
+Required properties:
+
+ - compatible : "qcom,msm-audio-apr"
+		This device is added to represent APR module.
+
+Optional properties:
+
+ - compatible : "qcom,msm-audio-apr-dummy"
+		Add this compatible as child device to msm-audio-apr device.
+		This child device is added after lpass is up to invoke
+		deferred probe devices.
 
 * msm-ocmem-audio
 
@@ -885,8 +928,6 @@ Optional properties:
 	 "lpaif_quat_mode_muxsel": Physical address of MUX to select between
 				   Secondary PCM and Quarternary MI2S
 - qcom,hdmi-audio-rx: specifies if HDMI audio support is enabled or not.
-- qcom,ext-disp-audio-rx: specifies if external display(HDMI/DP) audio support
-			  is enabled or not.
 - qcom,ext-ult-spk-amp-gpio : GPIO for enabling of speaker path amplifier.
 
 - qcom,ext-ult-lo-amp-gpio: GPIO to enable external ultrasound lineout
@@ -1065,6 +1106,68 @@ qcom,msm-adsp-loader {
 	qcom,proc-img-to-load = "modem";
 };
 
+* msm-lpass-resource-manager
+
+Required properties:
+ - compatible : "qcom,lpass-resource-manager"
+ - qcom,lpass-lpaif-reg:
+	The physical base address and size of the LPASS LPAIF registers
+	should be specified here.
+ - qcom,lpass-max-rddma:
+	The maximum number of LPASS read DMA indices for the chipset.
+ - qcom,lpass-max-wrdma:
+	The maximum number of LPASS write DMA indices for the chipset.
+ - qcom,num-reserved-rddma:
+	The number of LPASS read DMA indices to be reserved. The value
+	must be less than the value given in lpass-max-rddma.
+ - qcom,num-reserved-wrdma:
+	The number of LPASS write DMA indices to be reserved. The value
+	must be less than the value given in lpass-max-wrdma.
+ - qcom,reserved-rddma:
+	The specific LPASS read DMA indices reserved by HLOS in an array.
+	The number of values in this field should be equal to
+	num-reserved-rddma. If num-reserved-rddma is 0, this property won't
+	be read. The values themselves should be less than
+	lpass-max-rddma.
+ - qcom,reserved-wrdma:
+	The specific LPASS write DMA indices reserved by HLOS in an array.
+	The number of values in this field should be equal to
+	num-reserved-wrdma. If num-reserved-wrdma is 0, this property won't
+	be read. The values themselves should be less than
+	lpass-max-wrdma.
+
+Optional properties:
+ - qcom,early-audio-enabled:
+	It is possible that early audio is enabled in the bootloader. A value
+	of 0 indicates that early audio is not being used. A value of 1
+	will launch a thread that will check the LPASS to see if
+	early audio playback is active.  If it is not, the thread will
+	then check the state of the LPASS.  Once all services are up,
+	the thread will reserve the DMA index used by early audio.
+ - qcom,max-num-pcm-intf:
+	The number of PCM interfaces present in the LPASS for the
+	chipset.
+ - qcom,early-audio-pcm:
+	Must be included if early-audio-enabled is of value 1. This
+	specifies the PCM interface index used by the Early Audio
+	feature. The value must be less than max-num-pcm-intf.
+
+Example:
+
+qcom,msm-lpass-resource-manager {
+	compatible = "qcom,lpass-resource-manager";
+	qcom,lpass-lpaif-reg = <0x09100000 0x20000>;
+	qcom,lpass-max-rddma = <5>;
+	qcom,lpass-max-wrdma = <4>;
+	qcom,num-reserved-rddma = <2>;
+	qcom,num-reserved-wrdma = <1>;
+	qcom,reserved-rddma = <0>, <1>;
+	qcom,reserved-wrdma = <0>;
+	qcom,early-audio-enabled = <1>;
+	qcom,max-num-pcm-intf = <4>;
+	qcom,early-audio-pcm = <2>;
+};
+
 * msm-audio-ion
 
 Required properties:
@@ -1089,6 +1192,26 @@ Example:
 
 qcom,msm-audio-ion {
 	compatible = "qcom,msm-audio-ion;
+	qcom,smmu-enabled;
+};
+
+* msm-audio-ion-vm
+
+Required properties:
+ - compatible : "qcom,msm-audio-ion-vm"
+
+Optional properties:
+ - qcom,smmu-enabled:
+	It is possible that some MSM have SMMU in ADSP.  While other
+	MSM use no SMMU. Audio lib introduce wrapper for ION APIs.
+	The wrapper needs presence of SMMU in ADSP to handle ION
+	APIs differently. Presence of this property means ADSP has
+	SMMU in it.
+
+Example:
+
+qcom,msm-audio-ion-vm {
+	compatible = "qcom,msm-audio-ion-vm;
 	qcom,smmu-enabled;
 };
 
@@ -1247,12 +1370,9 @@ Required properties:
 				When clock rate is set to zero,
 				then external clock is assumed.
 
- [Second Level Nodes]
-
-Required properties:
-
- - compatible : "qcom,msm-dai-q6-tdm"
- - qcom,msm-dai-q6-mi2s-dev-id: TDM port ID.
+ - qcom,msm-cpudai-tdm-clk-internal: Clock Source.
+				0 - EBIT clock from clk tree
+				1 - IBIT clock from clk tree
 
  - qcom,msm-cpudai-tdm-sync-mode: Synchronization setting.
 				0 - Short sync bit mode
@@ -1276,6 +1396,13 @@ Required properties:
 				0 - 0 bit clock cycle
 				1 - 1 bit clock cycle
 				2 - 2 bit clock cycle
+
+ [Second Level Nodes]
+
+Required properties:
+
+ - compatible : "qcom,msm-dai-q6-tdm"
+ - qcom,msm-dai-q6-mi2s-dev-id: TDM port ID.
 
  - qcom,msm-cpudai-tdm-data-align: Indicate how data is packed
 				within the slot. For example, 32 slot width in case of
@@ -1303,6 +1430,13 @@ Optional properties:
 
  - pinctrl-x: Defines pinctrl state for each pin group.
 
+ - qcom,msm-cpudai-tdm-clk-attribute: Clock attribute for tdm.
+				0 - Clk invalid attribute
+				1 - Clk attribute couple no
+				2 - Clk attribute couple dividend
+				3 - Clk attribute couple divisor
+				4 - Clk attribute invert couple no
+
 Example:
 
 	qcom,msm-dai-tdm-quat-rx {
@@ -1311,17 +1445,18 @@ Example:
 		qcom,msm-cpudai-tdm-group-num-ports = <1>;
 		qcom,msm-cpudai-tdm-group-port-id = <36912>;
 		qcom,msm-cpudai-tdm-clk-rate = <12288000>;
+		qcom,msm-cpudai-tdm-clk-internal = <1>;
+		qcom,msm-cpudai-tdm-sync-mode = <0>;
+		qcom,msm-cpudai-tdm-sync-src = <1>;
+		qcom,msm-cpudai-tdm-data-out = <0>;
+		qcom,msm-cpudai-tdm-invert-sync = <0>;
+		qcom,msm-cpudai-tdm-data-delay = <0>;
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&quat_tdm_active &quat_tdm_dout_active>;
 		pinctrl-1 = <&quat_tdm_sleep &quat_tdm_dout_sleep>;
 		dai_quat_tdm_rx_0: qcom,msm-dai-q6-tdm-quat-rx-0 {
 			compatible = "qcom,msm-dai-q6-tdm";
 			qcom,msm-cpudai-tdm-dev-id = <36912>;
-			qcom,msm-cpudai-tdm-sync-mode = <0>;
-			qcom,msm-cpudai-tdm-sync-src = <1>;
-			qcom,msm-cpudai-tdm-data-out = <0>;
-			qcom,msm-cpudai-tdm-invert-sync = <0>;
-			qcom,msm-cpudai-tdm-data-delay = <0>;
 			qcom,msm-cpudai-tdm-data-align = <0>;
 			qcom,msm-cpudai-tdm-header-start-offset = <0>;
 			qcom,msm-cpudai-tdm-header-width = <2>;
@@ -1372,6 +1507,8 @@ Optional properties:
 - qcom,wsa-max-devs : Maximum number of WSA881x devices present in the target
 - qcom,wsa-devs : List of phandles for all possible WSA881x devices supported for the target
 - qcom,wsa-aux-dev-prefix : Name prefix with Left/Right configuration for WSA881x device
+- qcom,tdm-audio-intf : Boolean. This property is used to specify whether TDM interface
+			is supported or not to the machine driver.
 
 Example:
 
@@ -1678,7 +1815,6 @@ mclk frequency needs to be configured for internal and external PA.
 - qcom,cdc-comp-gpios : phandle for compander gpios.
 - qcom,cdc-dmic-gpios : phandle for Digital mic clk and data gpios.
 - qcom,cdc-sdw-gpios : phandle for soundwire clk and data gpios.
-- qcom,tert-mi2s-gpios : phandle for tertiary mi2s gpios.
 - qcom,msm-mbhc-moist-cfg: This property is used to set moisture detection
 		threshold values for different codecs. First parameter is V(voltage)
 		second one is i(current), third one is r (resistance). Depending on the
@@ -1710,7 +1846,6 @@ Example:
 		qcom,cdc-comp-gpios = <&cdc_comp_gpios>;
 		qcom,cdc-dmic-gpios = <&cdc_dmic_gpios>;
 		qcom,cdc-sdw-gpios = <&cdc_sdw_gpios>;
-		qcom,tert-mi2s-gpios = <&tert_mi2s_gpios>;
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
 				<&afe>, <&lsm>, <&routing>, <&lpa>;
@@ -2111,7 +2246,9 @@ Required properties:
 		"qcom,apq8096-asoc-snd-adp-agave" for adp agave codec and
 		node is "sound-adp-agave",
 		"qcom,apq8096-asoc-snd-adp-mmxf" for adp mmxf codec and
-		node is "sound-adp-mmxf".
+		node is "sound-adp-mmxf",
+		"qcom,apq8096-asoc-snd-auto-custom" for auto custom codec and
+		node is "sound-auto-custom".
 - qcom,model : The user-visible name of this sound card.
 - asoc-platform: This is phandle list containing the references to platform device
 		nodes that are used as part of the sound card dai-links.
@@ -2398,14 +2535,15 @@ Example:
 		qcom,tasha-mclk-clk-freq = <9600000>;
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
-				<&afe>, <&lsm>, <&routing>, <&cpe>, <&compr>;
+				<&afe>, <&lsm>, <&routing>, <&cpe>, <&compr>,
+				<&trans_loopback>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-pcm-dsp.2", "msm-voip-dsp",
 				"msm-pcm-voice", "msm-pcm-loopback",
 				"msm-compress-dsp", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-lsm-client",
 				"msm-pcm-routing", "msm-cpe-lsm",
-				"msm-compr-dsp";
+				"msm-compr-dsp","msm-transcode-loopback";
 		asoc-cpu = <&dai_hdmi>,
 				<&sb_0_rx>, <&sb_0_tx>, <&sb_1_rx>, <&sb_1_tx>,
 				<&sb_2_rx>, <&sb_2_tx>, <&sb_3_rx>, <&sb_3_tx>,
@@ -2511,3 +2649,173 @@ Example of child node that would have qcom,wdsp-cmpnt-dev-name property
 	wcd934x_cdc: tavil_codec {
 		qcom,wdsp-cmpnt-dev-name = "tavil_codec";
 	};
+
+
+* MSM external ANC driver
+
+Required properties:
+- compatible : "qcom,msm-ext-anc"
+- qcom,refs-port-id : This is AFE port ID for playback in ADSP used for ANC Algo refers input.
+- qcom,spkr-port-id : This is AFE port ID for ANC speaker in Sensor DSP.
+- qcom,mic-port-id : This is AFE port ID for ANC mic in Sensor DSP.
+- qcom,num-anc-mic : Define the number of microphones which are directly involved in ANC processing.
+- qcom,num-add-mic-signal : Define additional microphone which might be required for monitoring the environment, input reference signal.
+- qcom,anc-mic-array : Array that specifies the channel or slot index used for ANC in one MIC hardware interface like TDM Tx.
+			The channel or slot index is count from 0.
+			Always place the valid channel or slot index value setting in from index 0 of this array.
+			This array include two parts:
+			Part I  ---- num_anc_mic, define the number of microphones which are directly involved in ANC processing.
+			Part II ---- num_add_mic_signal, define additional microphones which might be required for
+			monitoring the environment, input reference signal.
+			num_add_mic_signal is always appened at the end of num_anc_mic.
+- qcom,num-anc-spkr : Define the number of speakers which are directly involved in ANC processing.
+- qcom,num-add-spkr-signal : Define additional speaker channels which connects to interested speakers for example a subwoofer.
+- qcom,anc-spkr-array : Array that specifies the channel or slot index used for ANC in one SPEAKER hardware interface like TDM Rx.
+			The channel or slot index is count from 0.
+			Always place the valid channel or slot index value setting in from index 0 of this array.
+			This array include two parts:
+			Part I  ---- num_anc_spkr, define the number of speakers which are directly involved in ANC processing.
+			Part II ---- num_add_spkr_signal, define additional speakers.
+			num_add_spkr_signal is always appened at the end of num_anc_spkr.
+- qcom,refs-tdm-rx : Point to phandle for refs tdm port info.
+- qcom,spkr-tdm-rx : Point to phandle for spkr tdm port info.
+- qcom,mic-tdm-tx : Point to phandle for mic tdm port info.
+Example 1:
+
+	qcom,msm-ext-anc {
+		compatible = "qcom,msm-ext-anc";
+		qcom,refs-port-id = <36906>;
+		qcom,spkr-port-id = <36912>;
+		qcom,mic-port-id = <36913>;
+		qcom,num-anc-mic = <4>;
+		qcom,num-add-mic-signal = <0>;
+		qcom,anc-mic-array = <0 1 2 3>;
+		qcom,num-anc-spkr = <4>;
+		qcom,num-add-spkr-signal = <0>;
+		qcom,anc-spkr-array = <0 1 2 3>;
+		qcom,refs-tdm-rx = <&dai_tert_tdm_rx_5>;
+		qcom,spkr-tdm-rx = <&dai_quat_tdm_rx_0>;
+		qcom,mic-tdm-tx = <&dai_quat_tdm_tx_0>;
+	};
+
+Example 2:
+
+	qcom,msm-ext-anc {
+		compatible = "qcom,msm-ext-anc";
+		qcom,refs-port-id = <36906>;
+		qcom,spkr-port-id = <36912>;
+		qcom,mic-port-id = <36913>;
+		qcom,num-anc-mic = <4>;
+		qcom,num-add-mic-signal = <2>;
+		qcom,anc-mic-array = <2 1 0 3 6 7>;
+		qcom,num-anc-spkr = <4>;
+		qcom,num-add-spkr-signal = <1>;
+		qcom,anc-spkr-array = <0 1 2 3 6>;
+		qcom,refs-tdm-rx = <&dai_tert_tdm_rx_5>;
+		qcom,spkr-tdm-rx = <&dai_quat_tdm_rx_0>;
+		qcom,mic-tdm-tx = <&dai_quat_tdm_tx_0>;
+	};
+
+* msm-dai-group-mi2s
+
+[First Level Nodes]
+
+Required properties:
+
+ - compatible : "qcom,msm-dai-group-mi2s"
+ - qcom,msm-cpudai-mi2s-group-id: ID of the group device. MI2S interface
+				supports up to 8 groups:
+				Secondary RX: 	4354
+				Secondary TX: 	4355
+				Tertiary RX: 	4356
+				Tertiary TX: 	4357
+				Quaternary RX: 	4358
+				Quaternary TX: 	4359
+
+ - qcom,msm-cpudai-mi2s-group-num-ports: Number of ports in
+				msm-cpudai-mi2s-group-port-id array.
+				Max number of ports supported by DSP is 8.
+
+ - qcom,msm-cpudai-mi2s-group-port-id: Array of mi2s port IDs of the group.
+				The size of the array is determined by
+				the value in msm-cpudai-mi2s-group-num-ports.
+				Each group supports up to 4 ports:
+				Secondary RX: 	4160, 4162, 4164, 4166,
+				Secondary TX:	4161, 4163, 4165, 4167,
+				Tertiary RX: 	4168, 4170, 4172, 4174,
+				Tertiary TX: 	4169, 4171, 4173, 4175,
+				Quaternary RX:	4128, 4130, 4132, 4134,
+				Quaternary TX:	4129, 4131, 4133, 4135,
+
+ - qcom,msm-cpudai-mi2s-channel-mode: group mi2s line channel mode.
+				I2S_SD0    :                  0x1
+				I2S_SD1    :                  0x2
+				I2S_SD2    :                  0x3
+				I2S_SD3    :                  0x4
+				I2S_QUAD01 :                  0x5
+				I2S_QUAD23 :                  0x6
+				I2S_6CHS   :                  0x7
+				I2S_8CHS   :                  0x8
+
+ - qcom,msm-cpudai-mi2s-sync-mode: group mi2s master mode.
+				0 - Slave
+				1 - Master
+
+ - qcom,msm-cpudai-mi2s-mclk: mi2s mclk value if required.
+				0 - not provided any mclk
+				others - the real mclk value, at least
+				equal with bclk.
+
+ - qcom,msm-cpudai-mi2s-bclk: mi2s bclk value required, the clk value should
+				equal channels * bit_width * rate.
+
+ [Second Level Nodes]
+
+Required properties:
+
+ - compatible : "qcom,msm-dai-group-mi2s-dev"
+ - qcom,msm-dai-q6-mi2s-dev-id: mi2s port ID.
+ - qcom,msm-cpudai-mi2s-channel-mode:  mi2s port line channel mode
+				I2S_SD0    :                  0x1
+				I2S_SD1    :                  0x2
+				I2S_SD2    :                  0x3
+				I2S_SD3    :                  0x4
+				I2S_QUAD01 :                  0x5
+				I2S_QUAD23 :                  0x6
+				I2S_6CHS   :                  0x7
+				I2S_8CHS   :                  0x8
+
+ - qcom,msm-cpudai-mi2s-data-align: Indicate how data is packed
+				within the slot. For example, 32 slot width in case of
+				sample bit width is 24.
+				0 - MSB
+				1 - LSB
+
+Optional properties:
+
+ - pinctrl-names: Pinctrl state names for each pin group
+				configuration.
+
+ - pinctrl-x: Defines pinctrl state for each pin group.
+
+Example:
+    qcom,msm-dai-group-mi2s-tert-tx {
+        compatible = "qcom,msm-dai-group-mi2s";
+        qcom,msm-cpudai-mi2s-group-id = <4357>;
+		qcom,msm-cpudai-mi2s-group-num-ports = <2>;
+        qcom,msm-cpudai-mi2s-group-port-id = <4167 4169>;
+	    qcom,msm-cpudai-mi2s-channel-mode = <5>;
+        dai_tert_mi2s_tx_1:qcom,msm-dai-q6-mi2s-tert-tx-1 {
+            compatible = "qcom,msm-dai-group-mi2s-dev";
+            qcom,msm-cpudai-mi2s-dev-id = <4167>;
+            qcom,msm-cpudai-mi2s-dev-channel-mode = <1>;
+			qcom,msm-cpudai-mi2s-data-align = <0>;
+        };
+
+        dai_tert_mi2s_tx_2:qcom,msm-dai-q6-mi2s-tert-tx-2 {
+            compatible = "qcom,msm-dai-group-mi2s-dev";
+            qcom,msm-cpudai-mi2s-dev-id = <4169>;
+            qcom,msm-cpudai-mi2s-dev-channel-mode = <2>;
+			qcom,msm-cpudai-mi2s-data-align = <0>;
+        };
+    };

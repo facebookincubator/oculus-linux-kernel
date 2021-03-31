@@ -20,6 +20,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/termios.h>
 #include <linux/serial_core.h>
+#include <linux/module.h>
 
 #include "serial_mctrl_gpio.h"
 
@@ -66,6 +67,9 @@ EXPORT_SYMBOL_GPL(mctrl_gpio_set);
 struct gpio_desc *mctrl_gpio_to_gpiod(struct mctrl_gpios *gpios,
 				      enum mctrl_gpio_idx gidx)
 {
+	if (gpios == NULL)
+		return NULL;
+
 	return gpios->gpio[gidx];
 }
 EXPORT_SYMBOL_GPL(mctrl_gpio_to_gpiod);
@@ -193,6 +197,7 @@ struct mctrl_gpios *mctrl_gpio_init(struct uart_port *port, unsigned int idx)
 
 	return gpios;
 }
+EXPORT_SYMBOL_GPL(mctrl_gpio_init);
 
 void mctrl_gpio_free(struct device *dev, struct mctrl_gpios *gpios)
 {
@@ -247,3 +252,6 @@ void mctrl_gpio_disable_ms(struct mctrl_gpios *gpios)
 		disable_irq(gpios->irq[i]);
 	}
 }
+EXPORT_SYMBOL_GPL(mctrl_gpio_disable_ms);
+
+MODULE_LICENSE("GPL");

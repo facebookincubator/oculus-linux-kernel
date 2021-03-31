@@ -20,6 +20,7 @@
 #include <linux/of_irq.h>
 #include <linux/qpnp/qpnp-revid.h>
 #include <linux/pmic-voter.h>
+#include <linux/delay.h>
 
 #define QNOVO_REVISION1		0x00
 #define QNOVO_REVISION2		0x01
@@ -29,6 +30,8 @@
 #define QNOVO_PTRAIN_STS	0x08
 #define QNOVO_ERROR_STS		0x09
 #define QNOVO_ERROR_BIT		BIT(0)
+#define QNOVO_ERROR_STS2	0x0A
+#define QNOVO_ERROR_CHARGING_DISABLED	BIT(1)
 #define QNOVO_INT_RT_STS	0x10
 #define QNOVO_INT_SET_TYPE	0x11
 #define QNOVO_INT_POLARITY_HIGH	0x12
@@ -87,7 +90,16 @@
 #define QNOVO_STRM_CTRL		0xA8
 #define QNOVO_IADC_OFFSET_OVR_VAL	0xA9
 #define QNOVO_IADC_OFFSET_OVR		0xAA
+
 #define QNOVO_DISABLE_CHARGING		0xAB
+#define ERR_SWITCHER_DISABLED		BIT(7)
+#define ERR_JEITA_SOFT_CONDITION	BIT(6)
+#define ERR_BAT_OV			BIT(5)
+#define ERR_CV_MODE			BIT(4)
+#define ERR_BATTERY_MISSING		BIT(3)
+#define ERR_SAFETY_TIMER_EXPIRED	BIT(2)
+#define ERR_CHARGING_DISABLED		BIT(1)
+#define ERR_JEITA_HARD_CONDITION	BIT(0)
 
 #define QNOVO_TR_IADC_OFFSET_0	0xF1
 #define QNOVO_TR_IADC_OFFSET_1	0xF2
@@ -100,27 +112,26 @@
 #define GAIN_LSB_FACTOR	976560
 
 #define USER_VOTER		"user_voter"
+#define SHUTDOWN_VOTER		"user_voter"
 #define OK_TO_QNOVO_VOTER	"ok_to_qnovo_voter"
 
 #define QNOVO_VOTER		"qnovo_voter"
+#define FG_AVAILABLE_VOTER	"FG_AVAILABLE_VOTER"
+#define QNOVO_OVERALL_VOTER	"QNOVO_OVERALL_VOTER"
+#define QNI_PT_VOTER		"QNI_PT_VOTER"
+#define ESR_VOTER		"ESR_VOTER"
+
+#define HW_OK_TO_QNOVO_VOTER	"HW_OK_TO_QNOVO_VOTER"
+#define CHG_READY_VOTER		"CHG_READY_VOTER"
+#define USB_READY_VOTER		"USB_READY_VOTER"
+#define DC_READY_VOTER		"DC_READY_VOTER"
+
+#define PT_RESTART_VOTER	"PT_RESTART_VOTER"
 
 struct qnovo_dt_props {
 	bool			external_rsense;
 	struct device_node	*revid_dev_node;
-};
-
-enum {
-	QNOVO_NO_ERR_STS_BIT		= BIT(0),
-};
-
-struct chg_props {
-	bool		charging;
-	bool		usb_online;
-	bool		dc_online;
-};
-
-struct chg_status {
-	bool		ok_to_qnovo;
+	bool			enable_for_dc;
 };
 
 struct qnovo {
@@ -130,6 +141,10 @@ struct qnovo {
 	struct qnovo_dt_props	dt;
 	struct device		*dev;
 	struct votable		*disable_votable;
+	struct votable		*pt_dis_votable;
+	struct votable		*not_ok_to_qnovo_votable;
+	struct votable		*chg_ready_votable;
+	struct votable		*awake_votable;
 	struct class		qnovo_class;
 	struct pmic_revid_data	*pmic_rev_id;
 	u32			wa_flags;
@@ -141,13 +156,18 @@ struct qnovo {
 	s64			v_gain_mega;
 	struct notifier_block	nb;
 	struct power_supply	*batt_psy;
+	struct power_supply	*bms_psy;
 	struct power_supply	*usb_psy;
 	struct power_supply	*dc_psy;
-	struct chg_props	cp;
-	struct chg_status	cs;
 	struct work_struct	status_change_work;
 	int			fv_uV_request;
 	int			fcc_uA_request;
+	int			usb_present;
+	int			dc_present;
+	struct delayed_work	usb_debounce_work;
+	struct delayed_work	dc_debounce_work;
+
+	struct delayed_work	ptrain_restart_work;
 };
 
 static int debug_mask;
@@ -235,6 +255,39 @@ static bool is_batt_available(struct qnovo *chip)
 	return true;
 }
 
+static bool is_fg_available(struct qnovo *chip)
+{
+	if (!chip->bms_psy)
+		chip->bms_psy = power_supply_get_by_name("bms");
+
+	if (!chip->bms_psy)
+		return false;
+
+	return true;
+}
+
+static bool is_usb_available(struct qnovo *chip)
+{
+	if (!chip->usb_psy)
+		chip->usb_psy = power_supply_get_by_name("usb");
+
+	if (!chip->usb_psy)
+		return false;
+
+	return true;
+}
+
+static bool is_dc_available(struct qnovo *chip)
+{
+	if (!chip->dc_psy)
+		chip->dc_psy = power_supply_get_by_name("dc");
+
+	if (!chip->dc_psy)
+		return false;
+
+	return true;
+}
+
 static int qnovo_batt_psy_update(struct qnovo *chip, bool disable)
 {
 	union power_supply_propval pval = {0};
@@ -272,29 +325,99 @@ static int qnovo_disable_cb(struct votable *votable, void *data, int disable,
 					const char *client)
 {
 	struct qnovo *chip = data;
-	int rc = 0;
+	union power_supply_propval pval = {0};
+	int rc;
+
+	if (!is_batt_available(chip))
+		return -EINVAL;
+
+	pval.intval = !disable;
+	rc = power_supply_set_property(chip->batt_psy,
+			POWER_SUPPLY_PROP_CHARGE_QNOVO_ENABLE,
+			&pval);
+	if (rc < 0) {
+		pr_err("Couldn't set prop qnovo_enable rc = %d\n", rc);
+		return -EINVAL;
+	}
+
+	/*
+	 * fg must be available for enable FG_AVAILABLE_VOTER
+	 * won't enable it otherwise
+	 */
+
+	if (is_fg_available(chip))
+		power_supply_set_property(chip->bms_psy,
+				POWER_SUPPLY_PROP_CHARGE_QNOVO_ENABLE,
+				&pval);
+
+	vote(chip->pt_dis_votable, QNOVO_OVERALL_VOTER, disable, 0);
+	rc = qnovo_batt_psy_update(chip, disable);
+	return rc;
+}
+
+static int pt_dis_votable_cb(struct votable *votable, void *data, int disable,
+					const char *client)
+{
+	struct qnovo *chip = data;
+	int rc;
 
 	if (disable) {
-		rc = qnovo_batt_psy_update(chip, true);
-		if (rc < 0)
-			return rc;
+		cancel_delayed_work_sync(&chip->ptrain_restart_work);
+		vote(chip->awake_votable, PT_RESTART_VOTER, false, 0);
 	}
 
 	rc = qnovo_masked_write(chip, QNOVO_PTRAIN_EN, QNOVO_PTRAIN_EN_BIT,
-				 disable ? 0 : QNOVO_PTRAIN_EN_BIT);
+				 (bool)disable ? 0 : QNOVO_PTRAIN_EN_BIT);
 	if (rc < 0) {
 		dev_err(chip->dev, "Couldn't %s pulse train rc=%d\n",
-			disable ? "disable" : "enable", rc);
+			(bool)disable ? "disable" : "enable", rc);
 		return rc;
 	}
 
 	if (!disable) {
-		rc = qnovo_batt_psy_update(chip, false);
-		if (rc < 0)
-			return rc;
+		vote(chip->awake_votable, PT_RESTART_VOTER, true, 0);
+		schedule_delayed_work(&chip->ptrain_restart_work,
+				msecs_to_jiffies(20));
 	}
 
-	return rc;
+	return 0;
+}
+
+static int not_ok_to_qnovo_cb(struct votable *votable, void *data,
+					int not_ok_to_qnovo,
+					const char *client)
+{
+	struct qnovo *chip = data;
+
+	vote(chip->disable_votable, OK_TO_QNOVO_VOTER, not_ok_to_qnovo, 0);
+	if (not_ok_to_qnovo)
+		vote(chip->disable_votable, USER_VOTER, true, 0);
+
+	kobject_uevent(&chip->dev->kobj, KOBJ_CHANGE);
+	return 0;
+}
+
+static int chg_ready_cb(struct votable *votable, void *data, int ready,
+					const char *client)
+{
+	struct qnovo *chip = data;
+
+	vote(chip->not_ok_to_qnovo_votable, CHG_READY_VOTER, !ready, 0);
+
+	return 0;
+}
+
+static int awake_cb(struct votable *votable, void *data, int awake,
+					const char *client)
+{
+	struct qnovo *chip = data;
+
+	if (awake)
+		pm_stay_awake(chip->dev);
+	else
+		pm_relax(chip->dev);
+
+	return 0;
 }
 
 static int qnovo_parse_dt(struct qnovo *chip)
@@ -321,26 +444,8 @@ static int qnovo_parse_dt(struct qnovo *chip)
 		pr_err("Missing qcom,pmic-revid property - driver failed\n");
 		return -EINVAL;
 	}
-
-	return 0;
-}
-
-static int qnovo_check_chg_version(struct qnovo *chip)
-{
-	int rc;
-
-	chip->pmic_rev_id = get_revid_data(chip->dt.revid_dev_node);
-	if (IS_ERR(chip->pmic_rev_id)) {
-		rc = PTR_ERR(chip->pmic_rev_id);
-		if (rc != -EPROBE_DEFER)
-			pr_err("Unable to get pmic_revid rc=%d\n", rc);
-		return rc;
-	}
-
-	if ((chip->pmic_rev_id->pmic_subtype == PMI8998_SUBTYPE)
-		   && (chip->pmic_rev_id->rev4 < PMI8998_V2P0_REV4)) {
-		chip->wa_flags |= QNOVO_NO_ERR_STS_BIT;
-	}
+	chip->dt.enable_for_dc = of_property_read_bool(node,
+					"qcom,enable-for-dc");
 
 	return 0;
 }
@@ -348,13 +453,15 @@ static int qnovo_check_chg_version(struct qnovo *chip)
 enum {
 	VER = 0,
 	OK_TO_QNOVO,
-	ENABLE,
+	QNOVO_ENABLE,
+	PT_ENABLE,
 	FV_REQUEST,
 	FCC_REQUEST,
 	PE_CTRL_REG,
 	PE_CTRL2_REG,
 	PTRAIN_STS_REG,
 	INT_RT_STS_REG,
+	ERR_STS2_REG,
 	PREST1,
 	PPULS1,
 	NREST1,
@@ -394,6 +501,12 @@ struct param_info {
 };
 
 static struct param_info params[] = {
+	[PT_ENABLE] = {
+		.name			= "PT_ENABLE",
+		.start_addr		= QNOVO_PTRAIN_EN,
+		.num_regs		= 1,
+		.units_str		= "",
+	},
 	[FV_REQUEST] = {
 		.units_str		= "uV",
 	},
@@ -421,6 +534,12 @@ static struct param_info params[] = {
 	[INT_RT_STS_REG] = {
 		.name			= "INT_RT_STS",
 		.start_addr		= QNOVO_INT_RT_STS,
+		.num_regs		= 1,
+		.units_str		= "",
+	},
+	[ERR_STS2_REG] = {
+		.name			= "RAW_CHGR_ERR",
+		.start_addr		= QNOVO_ERROR_STS2,
 		.num_regs		= 1,
 		.units_str		= "",
 	},
@@ -644,34 +763,55 @@ static ssize_t ok_to_qnovo_show(struct class *c, struct class_attribute *attr,
 			char *buf)
 {
 	struct qnovo *chip = container_of(c, struct qnovo, qnovo_class);
+	int val = get_effective_result(chip->not_ok_to_qnovo_votable);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", chip->cs.ok_to_qnovo);
+	return snprintf(buf, PAGE_SIZE, "%d\n", !val);
 }
 
-static ssize_t enable_show(struct class *c, struct class_attribute *attr,
+static ssize_t qnovo_enable_show(struct class *c, struct class_attribute *attr,
 			char *ubuf)
 {
 	struct qnovo *chip = container_of(c, struct qnovo, qnovo_class);
-	int val;
+	int val = get_effective_result(chip->disable_votable);
 
-	val = get_client_vote(chip->disable_votable, USER_VOTER);
-	val = !val;
-	return snprintf(ubuf, PAGE_SIZE, "%d\n", val);
+	return snprintf(ubuf, PAGE_SIZE, "%d\n", !val);
 }
 
-static ssize_t enable_store(struct class *c, struct class_attribute *attr,
+static ssize_t qnovo_enable_store(struct class *c, struct class_attribute *attr,
 			const char *ubuf, size_t count)
 {
 	struct qnovo *chip = container_of(c, struct qnovo, qnovo_class);
 	unsigned long val;
-	bool disable;
 
 	if (kstrtoul(ubuf, 0, &val))
 		return -EINVAL;
 
-	disable = !val;
+	vote(chip->disable_votable, USER_VOTER, !val, 0);
 
-	vote(chip->disable_votable, USER_VOTER, disable, 0);
+	return count;
+}
+
+static ssize_t pt_enable_show(struct class *c, struct class_attribute *attr,
+			char *ubuf)
+{
+	struct qnovo *chip = container_of(c, struct qnovo, qnovo_class);
+	int val = get_effective_result(chip->pt_dis_votable);
+
+	return snprintf(ubuf, PAGE_SIZE, "%d\n", !val);
+}
+
+static ssize_t pt_enable_store(struct class *c, struct class_attribute *attr,
+			const char *ubuf, size_t count)
+{
+	struct qnovo *chip = container_of(c, struct qnovo, qnovo_class);
+	unsigned long val;
+
+	if (kstrtoul(ubuf, 0, &val))
+		return -EINVAL;
+
+	/* val being 0, userspace wishes to disable pt so vote true */
+	vote(chip->pt_dis_votable, QNI_PT_VOTER, val ? false : true, 0);
+
 	return count;
 }
 
@@ -706,6 +846,9 @@ static ssize_t val_store(struct class *c, struct class_attribute *attr,
 
 	if (i == FCC_REQUEST)
 		chip->fcc_uA_request = val;
+
+	if (!get_effective_result(chip->disable_votable))
+		qnovo_batt_psy_update(chip, false);
 
 	return count;
 }
@@ -827,7 +970,11 @@ static ssize_t current_show(struct class *c, struct class_attribute *attr,
 		pr_err("Couldn't read %s rc = %d\n", params[i].name, rc);
 		return -EINVAL;
 	}
-	regval_nA = buf[1] << 8 | buf[0];
+
+	if (buf[1] & BIT(5))
+		buf[1] |= GENMASK(7, 6);
+
+	regval_nA = (s16)(buf[1] << 8 | buf[0]);
 	regval_nA = div_s64(regval_nA * params[i].reg_to_unit_multiplier,
 					params[i].reg_to_unit_divider)
 			- params[i].reg_to_unit_offset;
@@ -1016,8 +1163,8 @@ static ssize_t batt_prop_show(struct class *c, struct class_attribute *attr,
 static struct class_attribute qnovo_attributes[] = {
 	[VER]			= __ATTR_RO(version),
 	[OK_TO_QNOVO]		= __ATTR_RO(ok_to_qnovo),
-	[ENABLE]		= __ATTR(enable, 0644,
-					enable_show, enable_store),
+	[QNOVO_ENABLE]		= __ATTR_RW(qnovo_enable),
+	[PT_ENABLE]		= __ATTR_RW(pt_enable),
 	[FV_REQUEST]		= __ATTR(fv_uV_request, 0644,
 					val_show, val_store),
 	[FCC_REQUEST]		= __ATTR(fcc_uA_request, 0644,
@@ -1029,6 +1176,8 @@ static struct class_attribute qnovo_attributes[] = {
 	[PTRAIN_STS_REG]	= __ATTR(PTRAIN_STS_REG, 0444,
 					reg_show, NULL),
 	[INT_RT_STS_REG]	= __ATTR(INT_RT_STS_REG, 0444,
+					reg_show, NULL),
+	[ERR_STS2_REG]		= __ATTR(ERR_STS2_REG, 0444,
 					reg_show, NULL),
 	[PREST1]		= __ATTR(PREST1_mS, 0644,
 					time_show, time_store),
@@ -1050,7 +1199,7 @@ static struct class_attribute qnovo_attributes[] = {
 					time_show, NULL),
 	[PREST2]		= __ATTR(PREST2_mS, 0644,
 					time_show, time_store),
-	[PPULS2]		= __ATTR(PPULS2_mS, 0644,
+	[PPULS2]		= __ATTR(PPULS2_uC, 0644,
 					coulomb_show, coulomb_store),
 	[NREST2]		= __ATTR(NREST2_mS, 0644,
 					time_show, time_store),
@@ -1081,96 +1230,174 @@ static struct class_attribute qnovo_attributes[] = {
 	__ATTR_NULL,
 };
 
-static void get_chg_props(struct qnovo *chip, struct chg_props *cp)
+static int qnovo_update_status(struct qnovo *chip)
 {
-	union power_supply_propval pval;
 	u8 val = 0;
 	int rc;
+	bool hw_ok_to_qnovo;
 
-	cp->charging = true;
-	rc = qnovo_read(chip, QNOVO_ERROR_STS, &val, 1);
+	rc = qnovo_read(chip, QNOVO_ERROR_STS2, &val, 1);
 	if (rc < 0) {
 		pr_err("Couldn't read error sts rc = %d\n", rc);
-		cp->charging = false;
+		hw_ok_to_qnovo = false;
 	} else {
-		cp->charging = (!(val & QNOVO_ERROR_BIT));
-	}
-
-	if (chip->wa_flags & QNOVO_NO_ERR_STS_BIT) {
 		/*
-		 * on v1.0 and v1.1 pmic's force charging to true
-		 * if things are not good to charge s/w gets a PTRAIN_DONE
-		 * interrupt
+		 * For CV mode keep qnovo enabled, userspace is expected to
+		 * disable it after few runs
 		 */
-		cp->charging = true;
+		hw_ok_to_qnovo = (val == ERR_CV_MODE || val == 0) ?
+			true : false;
 	}
 
-	cp->usb_online = false;
-	if (!chip->usb_psy)
-		chip->usb_psy = power_supply_get_by_name("usb");
-	if (chip->usb_psy) {
-		rc = power_supply_get_property(chip->usb_psy,
-				POWER_SUPPLY_PROP_ONLINE, &pval);
-		if (rc < 0)
-			pr_err("Couldn't read usb online rc = %d\n", rc);
-		else
-			cp->usb_online = (bool)pval.intval;
-	}
-
-	cp->dc_online = false;
-	if (!chip->dc_psy)
-		chip->dc_psy = power_supply_get_by_name("dc");
-	if (chip->dc_psy) {
-		rc = power_supply_get_property(chip->dc_psy,
-				POWER_SUPPLY_PROP_ONLINE, &pval);
-		if (rc < 0)
-			pr_err("Couldn't read dc online rc = %d\n", rc);
-		else
-			cp->dc_online = (bool)pval.intval;
-	}
+	vote(chip->not_ok_to_qnovo_votable, HW_OK_TO_QNOVO_VOTER,
+					!hw_ok_to_qnovo, 0);
+	return 0;
 }
 
-static void get_chg_status(struct qnovo *chip, const struct chg_props *cp,
-				struct chg_status *cs)
+static void usb_debounce_work(struct work_struct *work)
 {
-	cs->ok_to_qnovo = false;
+	struct qnovo *chip = container_of(work,
+				struct qnovo, usb_debounce_work.work);
 
-	if (cp->charging &&
-		(cp->usb_online || cp->dc_online))
-		cs->ok_to_qnovo = true;
+	vote(chip->chg_ready_votable, USB_READY_VOTER, true, 0);
+	vote(chip->awake_votable, USB_READY_VOTER, false, 0);
 }
 
+static void dc_debounce_work(struct work_struct *work)
+{
+	struct qnovo *chip = container_of(work,
+				struct qnovo, dc_debounce_work.work);
+
+	vote(chip->chg_ready_votable, DC_READY_VOTER, true, 0);
+	vote(chip->awake_votable, DC_READY_VOTER, false, 0);
+}
+
+#define DEBOUNCE_MS 15000  /* 15 seconds */
 static void status_change_work(struct work_struct *work)
 {
 	struct qnovo *chip = container_of(work,
 			struct qnovo, status_change_work);
-	bool notify_uevent = false;
-	struct chg_props cp;
-	struct chg_status cs;
+	union power_supply_propval pval;
+	bool usb_present = false, dc_present = false;
+	int rc;
 
-	get_chg_props(chip, &cp);
-	get_chg_status(chip, &cp, &cs);
+	if (is_fg_available(chip))
+		vote(chip->disable_votable, FG_AVAILABLE_VOTER, false, 0);
 
-	if (cs.ok_to_qnovo ^ chip->cs.ok_to_qnovo) {
-		/*
-		 * when it is not okay to Qnovo charge, disable both voters,
-		 * so that when it becomes okay to Qnovo charge the user voter
-		 * has to specifically enable its vote to being Qnovo charging
-		 */
-		if (!cs.ok_to_qnovo) {
-			vote(chip->disable_votable, OK_TO_QNOVO_VOTER, 1, 0);
-			vote(chip->disable_votable, USER_VOTER, 1, 0);
-		} else {
-			vote(chip->disable_votable, OK_TO_QNOVO_VOTER, 0, 0);
-		}
-		notify_uevent = true;
+	if (is_usb_available(chip)) {
+		rc = power_supply_get_property(chip->usb_psy,
+				POWER_SUPPLY_PROP_PRESENT, &pval);
+		usb_present = (rc < 0) ? 0 : pval.intval;
 	}
 
-	memcpy(&chip->cp, &cp, sizeof(struct chg_props));
-	memcpy(&chip->cs, &cs, sizeof(struct chg_status));
+	if (chip->usb_present && !usb_present) {
+		/* removal */
+		chip->usb_present = 0;
+		cancel_delayed_work_sync(&chip->usb_debounce_work);
+		vote(chip->awake_votable, USB_READY_VOTER, false, 0);
+		vote(chip->chg_ready_votable, USB_READY_VOTER, false, 0);
+	} else if (!chip->usb_present && usb_present) {
+		/* insertion */
+		chip->usb_present = 1;
+		vote(chip->awake_votable, USB_READY_VOTER, true, 0);
+		schedule_delayed_work(&chip->usb_debounce_work,
+				msecs_to_jiffies(DEBOUNCE_MS));
+	}
 
-	if (notify_uevent)
-		kobject_uevent(&chip->dev->kobj, KOBJ_CHANGE);
+	if (is_dc_available(chip)) {
+		rc = power_supply_get_property(chip->dc_psy,
+			POWER_SUPPLY_PROP_PRESENT,
+			&pval);
+		dc_present = (rc < 0) ? 0 : pval.intval;
+	}
+
+	if (usb_present)
+		dc_present = 0;
+
+	/* disable qnovo for dc path by forcing dc_present = 0 always */
+	if (!chip->dt.enable_for_dc)
+		dc_present = 0;
+
+	if (chip->dc_present && !dc_present) {
+		/* removal */
+		chip->dc_present = 0;
+		cancel_delayed_work_sync(&chip->dc_debounce_work);
+		vote(chip->awake_votable, DC_READY_VOTER, false, 0);
+		vote(chip->chg_ready_votable, DC_READY_VOTER, false, 0);
+	} else if (!chip->dc_present && dc_present) {
+		/* insertion */
+		chip->dc_present = 1;
+		vote(chip->awake_votable, DC_READY_VOTER, true, 0);
+		schedule_delayed_work(&chip->dc_debounce_work,
+				msecs_to_jiffies(DEBOUNCE_MS));
+	}
+
+	qnovo_update_status(chip);
+}
+
+static void ptrain_restart_work(struct work_struct *work)
+{
+	struct qnovo *chip = container_of(work,
+				struct qnovo, ptrain_restart_work.work);
+	u8 pt_t1, pt_t2;
+	int rc;
+	u8 pt_en;
+
+	rc = qnovo_read(chip, QNOVO_PTRAIN_EN, &pt_en, 1);
+	if (rc < 0) {
+		dev_err(chip->dev, "Couldn't read QNOVO_PTRAIN_EN rc = %d\n",
+				rc);
+		goto clean_up;
+	}
+
+	if (!pt_en) {
+		rc = qnovo_masked_write(chip, QNOVO_PTRAIN_EN,
+				QNOVO_PTRAIN_EN_BIT, QNOVO_PTRAIN_EN_BIT);
+		if (rc < 0) {
+			dev_err(chip->dev, "Couldn't enable pulse train rc=%d\n",
+					rc);
+			goto clean_up;
+		}
+		/* sleep 20ms for the pulse trains to restart and settle */
+		msleep(20);
+	}
+
+	rc = qnovo_read(chip, QNOVO_PTTIME_STS, &pt_t1, 1);
+	if (rc < 0) {
+		dev_err(chip->dev, "Couldn't read QNOVO_PTTIME_STS rc = %d\n",
+			rc);
+		goto clean_up;
+	}
+
+	/* pttime increments every 2 seconds */
+	msleep(2100);
+
+	rc = qnovo_read(chip, QNOVO_PTTIME_STS, &pt_t2, 1);
+	if (rc < 0) {
+		dev_err(chip->dev, "Couldn't read QNOVO_PTTIME_STS rc = %d\n",
+			rc);
+		goto clean_up;
+	}
+
+	if (pt_t1 != pt_t2)
+		goto clean_up;
+
+	/* Toggle pt enable to restart pulse train */
+	rc = qnovo_masked_write(chip, QNOVO_PTRAIN_EN, QNOVO_PTRAIN_EN_BIT, 0);
+	if (rc < 0) {
+		dev_err(chip->dev, "Couldn't disable pulse train rc=%d\n", rc);
+		goto clean_up;
+	}
+	msleep(1000);
+	rc = qnovo_masked_write(chip, QNOVO_PTRAIN_EN, QNOVO_PTRAIN_EN_BIT,
+				QNOVO_PTRAIN_EN_BIT);
+	if (rc < 0) {
+		dev_err(chip->dev, "Couldn't enable pulse train rc=%d\n", rc);
+		goto clean_up;
+	}
+
+clean_up:
+	vote(chip->awake_votable, PT_RESTART_VOTER, false, 0);
 }
 
 static int qnovo_notifier_call(struct notifier_block *nb,
@@ -1181,8 +1408,11 @@ static int qnovo_notifier_call(struct notifier_block *nb,
 
 	if (ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
-	if ((strcmp(psy->desc->name, "battery") == 0)
-		|| (strcmp(psy->desc->name, "usb") == 0))
+
+	if (strcmp(psy->desc->name, "battery") == 0
+		|| strcmp(psy->desc->name, "bms") == 0
+		|| strcmp(psy->desc->name, "usb") == 0
+		|| strcmp(psy->desc->name, "dc") == 0)
 		schedule_work(&chip->status_change_work);
 
 	return NOTIFY_OK;
@@ -1191,9 +1421,27 @@ static int qnovo_notifier_call(struct notifier_block *nb,
 static irqreturn_t handle_ptrain_done(int irq, void *data)
 {
 	struct qnovo *chip = data;
+	union power_supply_propval pval = {0};
 
-	/* disable user voter here */
-	vote(chip->disable_votable, USER_VOTER, 0, 0);
+	qnovo_update_status(chip);
+
+	/*
+	 * hw resets pt_en bit once ptrain_done triggers.
+	 * vote on behalf of QNI to disable it such that
+	 * once QNI enables it, the votable state changes
+	 * and the callback that sets it is indeed invoked
+	 */
+	vote(chip->pt_dis_votable, QNI_PT_VOTER, true, 0);
+
+	vote(chip->pt_dis_votable, ESR_VOTER, true, 0);
+	if (is_fg_available(chip)
+		&& !get_client_vote(chip->disable_votable, USER_VOTER)
+		&& !get_effective_result(chip->not_ok_to_qnovo_votable))
+		power_supply_set_property(chip->bms_psy,
+				POWER_SUPPLY_PROP_RESISTANCE,
+				&pval);
+
+	vote(chip->pt_dis_votable, ESR_VOTER, false, 0);
 	kobject_uevent(&chip->dev->kobj, KOBJ_CHANGE);
 	return IRQ_HANDLED;
 }
@@ -1206,7 +1454,15 @@ static int qnovo_hw_init(struct qnovo *chip)
 	u8 vadc_offset, vadc_gain;
 	u8 val;
 
-	vote(chip->disable_votable, USER_VOTER, 1, 0);
+	vote(chip->chg_ready_votable, USB_READY_VOTER, false, 0);
+	vote(chip->chg_ready_votable, DC_READY_VOTER, false, 0);
+
+	vote(chip->disable_votable, USER_VOTER, true, 0);
+	vote(chip->disable_votable, FG_AVAILABLE_VOTER, true, 0);
+
+	vote(chip->pt_dis_votable, QNI_PT_VOTER, true, 0);
+	vote(chip->pt_dis_votable, QNOVO_OVERALL_VOTER, true, 0);
+	vote(chip->pt_dis_votable, ESR_VOTER, false, 0);
 
 	val = 0;
 	rc = qnovo_write(chip, QNOVO_STRM_CTRL, &val, 1);
@@ -1281,6 +1537,16 @@ static int qnovo_hw_init(struct qnovo *chip)
 	chip->v_gain_mega = 1000000000 + (s64)(s8)vadc_gain * GAIN_LSB_FACTOR;
 	chip->v_gain_mega = div_s64(chip->v_gain_mega, 1000);
 
+	/* allow charger error conditions to disable qnovo, CV mode excluded */
+	val = ERR_SWITCHER_DISABLED | ERR_JEITA_SOFT_CONDITION | ERR_BAT_OV |
+		ERR_BATTERY_MISSING | ERR_SAFETY_TIMER_EXPIRED |
+		ERR_CHARGING_DISABLED | ERR_JEITA_HARD_CONDITION;
+	rc = qnovo_write(chip, QNOVO_DISABLE_CHARGING, &val, 1);
+	if (rc < 0) {
+		pr_err("Couldn't write QNOVO_DISABLE_CHARGING rc = %d\n", rc);
+		return rc;
+	}
+
 	return 0;
 }
 
@@ -1318,6 +1584,9 @@ static int qnovo_request_interrupts(struct qnovo *chip)
 					irq_ptrain_done, rc);
 		return rc;
 	}
+
+	enable_irq_wake(irq_ptrain_done);
+
 	return rc;
 }
 
@@ -1347,13 +1616,6 @@ static int qnovo_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	rc = qnovo_check_chg_version(chip);
-	if (rc < 0) {
-		if (rc != -EPROBE_DEFER)
-			pr_err("Couldn't check version rc=%d\n", rc);
-		return rc;
-	}
-
 	/* set driver data before resources request it */
 	platform_set_drvdata(pdev, chip);
 
@@ -1364,12 +1626,45 @@ static int qnovo_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+	chip->pt_dis_votable = create_votable("QNOVO_PT_DIS", VOTE_SET_ANY,
+					pt_dis_votable_cb, chip);
+	if (IS_ERR(chip->pt_dis_votable)) {
+		rc = PTR_ERR(chip->pt_dis_votable);
+		goto destroy_disable_votable;
+	}
+
+	chip->not_ok_to_qnovo_votable = create_votable("QNOVO_NOT_OK",
+					VOTE_SET_ANY,
+					not_ok_to_qnovo_cb, chip);
+	if (IS_ERR(chip->not_ok_to_qnovo_votable)) {
+		rc = PTR_ERR(chip->not_ok_to_qnovo_votable);
+		goto destroy_pt_dis_votable;
+	}
+
+	chip->chg_ready_votable = create_votable("QNOVO_CHG_READY",
+					VOTE_SET_ANY,
+					chg_ready_cb, chip);
+	if (IS_ERR(chip->chg_ready_votable)) {
+		rc = PTR_ERR(chip->chg_ready_votable);
+		goto destroy_not_ok_to_qnovo_votable;
+	}
+
+	chip->awake_votable = create_votable("QNOVO_AWAKE", VOTE_SET_ANY,
+					awake_cb, chip);
+	if (IS_ERR(chip->awake_votable)) {
+		rc = PTR_ERR(chip->awake_votable);
+		goto destroy_chg_ready_votable;
+	}
+
 	INIT_WORK(&chip->status_change_work, status_change_work);
+	INIT_DELAYED_WORK(&chip->dc_debounce_work, dc_debounce_work);
+	INIT_DELAYED_WORK(&chip->usb_debounce_work, usb_debounce_work);
+	INIT_DELAYED_WORK(&chip->ptrain_restart_work, ptrain_restart_work);
 
 	rc = qnovo_hw_init(chip);
 	if (rc < 0) {
 		pr_err("Couldn't initialize hardware rc=%d\n", rc);
-		goto destroy_votable;
+		goto destroy_awake_votable;
 	}
 
 	rc = qnovo_register_notifier(chip);
@@ -1399,11 +1694,21 @@ static int qnovo_probe(struct platform_device *pdev)
 		goto unreg_notifier;
 	}
 
+	device_init_wakeup(chip->dev, true);
+
 	return rc;
 
 unreg_notifier:
 	power_supply_unreg_notifier(&chip->nb);
-destroy_votable:
+destroy_awake_votable:
+	destroy_votable(chip->awake_votable);
+destroy_chg_ready_votable:
+	destroy_votable(chip->chg_ready_votable);
+destroy_not_ok_to_qnovo_votable:
+	destroy_votable(chip->not_ok_to_qnovo_votable);
+destroy_pt_dis_votable:
+	destroy_votable(chip->pt_dis_votable);
+destroy_disable_votable:
 	destroy_votable(chip->disable_votable);
 cleanup:
 	platform_set_drvdata(pdev, NULL);
@@ -1416,9 +1721,19 @@ static int qnovo_remove(struct platform_device *pdev)
 
 	class_unregister(&chip->qnovo_class);
 	power_supply_unreg_notifier(&chip->nb);
+	destroy_votable(chip->chg_ready_votable);
+	destroy_votable(chip->not_ok_to_qnovo_votable);
+	destroy_votable(chip->pt_dis_votable);
 	destroy_votable(chip->disable_votable);
 	platform_set_drvdata(pdev, NULL);
 	return 0;
+}
+
+static void qnovo_shutdown(struct platform_device *pdev)
+{
+	struct qnovo *chip = platform_get_drvdata(pdev);
+
+	vote(chip->not_ok_to_qnovo_votable, SHUTDOWN_VOTER, true, 0);
 }
 
 static const struct of_device_id match_table[] = {
@@ -1434,6 +1749,7 @@ static struct platform_driver qnovo_driver = {
 	},
 	.probe		= qnovo_probe,
 	.remove		= qnovo_remove,
+	.shutdown	= qnovo_shutdown,
 };
 module_platform_driver(qnovo_driver);
 

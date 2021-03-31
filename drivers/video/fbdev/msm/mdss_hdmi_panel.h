@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,6 +16,13 @@
 #include "mdss_panel.h"
 #include "mdss_hdmi_util.h"
 
+enum hdmi_deep_color_depth {
+	HDMI_DEEP_COLOR_DEPTH_24BPP,
+	HDMI_DEEP_COLOR_DEPTH_30BPP,
+	HDMI_DEEP_COLOR_DEPTH_36BPP,
+	HDMI_DEEP_COLOR_DEPTH_RESERVED,
+};
+
 /**
  * struct hdmi_panel_data - panel related data information
  *
@@ -29,6 +36,7 @@
  * @is_it_content: set to true if content is IT
  * @scrambler: set to true if scrambler needs to be enabled
  * @dc_enable: set to true if deep color is enabled
+ * @bitdepth: set the output bitdepth like 24/30 bpp
  */
 struct hdmi_panel_data {
 	struct mdss_panel_info *pinfo;
@@ -41,6 +49,7 @@ struct hdmi_panel_data {
 	bool is_it_content;
 	bool scrambler;
 	bool dc_enable;
+	enum hdmi_deep_color_depth bitdepth;
 };
 
 /**
@@ -56,6 +65,7 @@ struct hdmi_panel_ops {
 	int (*off)(void *input);
 	void (*vendor)(void *input);
 	int (*update_fps)(void *input, u32 fps);
+	int (*update_colorimetry)(void *input, bool use_bt2020);
 };
 
 /**

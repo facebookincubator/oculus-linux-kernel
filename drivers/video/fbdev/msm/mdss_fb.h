@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -234,6 +234,8 @@ struct msm_mdp_interface {
 	int (*input_event_handler)(struct msm_fb_data_type *mfd);
 	void (*footswitch_ctrl)(bool on);
 	int (*pp_release_fnc)(struct msm_fb_data_type *mfd);
+	void (*signal_retire_fence)(struct msm_fb_data_type *mfd,
+					int retire_cnt);
 	void *private1;
 };
 
@@ -290,6 +292,7 @@ struct msm_fb_data_type {
 	int op_enable;
 	u32 fb_imgType;
 	int panel_reconfig;
+	int force_null_commit;
 	u32 panel_orientation;
 
 	u32 dst_format;

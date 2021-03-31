@@ -1,7 +1,7 @@
 /*
  * Atmel maXTouch Touchscreen driver
  *
- * Copyright (c) 2014-2015, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018 The Linux Foundation.  All rights reserved.
  *
  * Linux foundation chooses to take subject only to the GPLv2 license terms,
  * and distributes only under these terms.
@@ -529,6 +529,8 @@ static ssize_t mxt_debug_msg_read(struct file *filp, struct kobject *kobj,
 
 static int mxt_debug_msg_init(struct mxt_data *data)
 {
+	int ret;
+
 	sysfs_bin_attr_init(&data->debug_msg_attr);
 	data->debug_msg_attr.attr.name = "debug_msg";
 	data->debug_msg_attr.attr.mode = 0666;
@@ -536,11 +538,20 @@ static int mxt_debug_msg_init(struct mxt_data *data)
 	data->debug_msg_attr.write = mxt_debug_msg_write;
 	data->debug_msg_attr.size = data->T5_msg_size * DEBUG_MSG_MAX;
 
-	if (sysfs_create_bin_file(&data->client->dev.kobj,
-				  &data->debug_msg_attr) < 0)
-		dev_info(&data->client->dev, "Debugfs already exists\n");
+	ret = sysfs_create_bin_file(&data->client->dev.kobj,
+				  &data->debug_msg_attr);
+	if (ret < 0) {
+		if (ret == -EEXIST) {
+			dev_info(&data->client->dev,
+					"Debugfs already exists\n");
+			ret = 0;
+		} else {
+			dev_err(&data->client->dev,
+					"Failed to create 'debug_msg' file\n");
+		}
+	}
 
-	return 0;
+	return ret;
 }
 
 static void mxt_debug_msg_remove(struct mxt_data *data)
@@ -1462,7 +1473,7 @@ static int mxt_t6_command(struct mxt_data *data, u16 cmd_offset,
 			  u8 value, bool wait)
 {
 	u16 reg;
-	u8 command_register;
+	u8 command_register = 0;
 	int timeout_counter = 0;
 	int ret;
 
@@ -1567,7 +1578,7 @@ static int mxt_check_retrigen(struct mxt_data *data)
 {
 	struct i2c_client *client = data->client;
 	int error;
-	int val;
+	int val = 0;
 
 	if (data->pdata->irqflags & IRQF_TRIGGER_LOW)
 		return 0;
@@ -1612,8 +1623,11 @@ static int mxt_update_t100_resolution(struct mxt_data *data)
 	struct i2c_client *client = data->client;
 	int error;
 	struct mxt_object *object;
-	u16 range_x, range_y, temp;
-	u8 cfg, tchaux;
+	u16 range_x = 0;
+	u16 range_y = 0;
+	u16 temp;
+	u8 cfg = 0;
+	u8 tchaux = 0;
 	u8 aux;
 	bool update = false;
 
@@ -1648,10 +1662,6 @@ static int mxt_update_t100_resolution(struct mxt_data *data)
 				1, &tchaux);
 	if (error)
 		return error;
-
-	/* Handle default values */
-	if (range_x == 0)
-		range_x = 1023;
 
 	/* Handle default values */
 	if (range_x == 0)
@@ -1728,8 +1738,8 @@ static int mxt_update_t9_resolution(struct mxt_data *data)
 {
 	struct i2c_client *client = data->client;
 	int error;
-	struct t9_range range;
-	unsigned char orient;
+	struct t9_range range = {0};
+	unsigned char orient = 0;
 	struct mxt_object *object;
 	u16 temp;
 	bool update = false;
@@ -1850,11 +1860,6 @@ static int mxt_load_cfg(struct mxt_data *data, bool force)
 	u8 val;
 	int ver[3];
 	u16 reg;
-
-	if (!data->cfg_name) {
-		dev_dbg(dev, "Skipping cfg download\n");
-		goto report_enable;
-	}
 
 	ret = request_firmware(&cfg, data->cfg_name, dev);
 	if (ret < 0) {
@@ -4014,6 +4019,7 @@ static int mxt_probe(struct i2c_client *client,
 		len = strlen(data->pdata->cfg_name);
 		if (len > MXT_NAME_MAX_LEN - 1) {
 			dev_err(&client->dev, "Invalid config name\n");
+			error = -EINVAL;
 			goto err_destroy_mutex;
 		}
 

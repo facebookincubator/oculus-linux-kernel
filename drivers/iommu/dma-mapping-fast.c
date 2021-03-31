@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017,2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,13 @@
 #define FAST_PAGE_SIZE (1UL << FAST_PAGE_SHIFT)
 #define FAST_PAGE_MASK (~(PAGE_SIZE - 1))
 #define FAST_PTE_ADDR_MASK		((av8l_fast_iopte)0xfffffffff000)
+#define FAST_MAIR_ATTR_IDX_CACHE	1
+#define FAST_PTE_ATTRINDX_SHIFT		2
+#define FAST_PTE_ATTRINDX_MASK		0x7
+#define FAST_PTE_SH_SHIFT		8
+#define FAST_PTE_SH_MASK	   (((av8l_fast_iopte)0x3) << FAST_PTE_SH_SHIFT)
+#define FAST_PTE_SH_OS             (((av8l_fast_iopte)2) << FAST_PTE_SH_SHIFT)
+#define FAST_PTE_SH_IS             (((av8l_fast_iopte)3) << FAST_PTE_SH_SHIFT)
 
 static pgprot_t __get_dma_pgprot(struct dma_attrs *attrs, pgprot_t prot,
 				 bool coherent)
@@ -54,6 +61,36 @@ static void fast_dmac_clean_range(struct dma_fast_smmu_mapping *mapping,
 {
 	if (!mapping->is_smmu_pt_coherent)
 		dmac_clean_range(start, end);
+}
+
+static bool __fast_is_pte_coherent(av8l_fast_iopte *ptep)
+{
+	int attr_idx = (*ptep & (FAST_PTE_ATTRINDX_MASK <<
+			FAST_PTE_ATTRINDX_SHIFT)) >>
+			FAST_PTE_ATTRINDX_SHIFT;
+
+	if ((attr_idx == FAST_MAIR_ATTR_IDX_CACHE) &&
+		(((*ptep & FAST_PTE_SH_MASK) == FAST_PTE_SH_IS) ||
+		  (*ptep & FAST_PTE_SH_MASK) == FAST_PTE_SH_OS))
+		return true;
+
+	return false;
+}
+
+static bool is_dma_coherent(struct device *dev, struct dma_attrs *attrs)
+{
+	bool is_coherent;
+
+	if (dma_get_attr(DMA_ATTR_FORCE_COHERENT, attrs))
+		is_coherent = true;
+	else if (dma_get_attr(DMA_ATTR_FORCE_NON_COHERENT, attrs))
+		is_coherent = false;
+	else if (is_device_dma_coherent(dev))
+		is_coherent = true;
+	else
+		is_coherent = false;
+
+	return is_coherent;
 }
 
 /*
@@ -317,7 +354,7 @@ static dma_addr_t fast_smmu_map_page(struct device *dev, struct page *page,
 	int nptes = len >> FAST_PAGE_SHIFT;
 	bool skip_sync = dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs);
 	int prot = __fast_dma_direction_to_prot(dir);
-	bool is_coherent = is_device_dma_coherent(dev);
+	bool is_coherent = is_dma_coherent(dev, attrs);
 
 	prot = __get_iommu_pgprot(attrs, prot, is_coherent);
 
@@ -364,7 +401,7 @@ static void fast_smmu_unmap_page(struct device *dev, dma_addr_t iova,
 	int nptes = len >> FAST_PAGE_SHIFT;
 	struct page *page = phys_to_page((*pmd & FAST_PTE_ADDR_MASK));
 	bool skip_sync = dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs);
-	bool is_coherent = is_device_dma_coherent(dev);
+	bool is_coherent = is_dma_coherent(dev, attrs);
 
 	if (!skip_sync && !is_coherent)
 		__fast_dma_page_dev_to_cpu(page, offset, size, dir);
@@ -386,7 +423,7 @@ static void fast_smmu_sync_single_for_cpu(struct device *dev,
 	unsigned long offset = iova & ~FAST_PAGE_MASK;
 	struct page *page = phys_to_page((*pmd & FAST_PTE_ADDR_MASK));
 
-	if (!is_device_dma_coherent(dev))
+	if (!__fast_is_pte_coherent(pmd))
 		__fast_dma_page_dev_to_cpu(page, offset, size, dir);
 }
 
@@ -400,7 +437,7 @@ static void fast_smmu_sync_single_for_device(struct device *dev,
 	unsigned long offset = iova & ~FAST_PAGE_MASK;
 	struct page *page = phys_to_page((*pmd & FAST_PTE_ADDR_MASK));
 
-	if (!is_device_dma_coherent(dev))
+	if (!__fast_is_pte_coherent(pmd))
 		__fast_dma_page_cpu_to_dev(page, offset, size, dir);
 }
 
@@ -476,11 +513,21 @@ static void *fast_smmu_alloc(struct device *dev, size_t size,
 	av8l_fast_iopte *ptep;
 	unsigned long flags;
 	struct sg_mapping_iter miter;
-	unsigned int count = ALIGN(size, SZ_4K) >> PAGE_SHIFT;
+	size_t count = ALIGN(size, SZ_4K) >> PAGE_SHIFT;
 	int prot = IOMMU_READ | IOMMU_WRITE; /* TODO: extract from attrs */
-	bool is_coherent = is_device_dma_coherent(dev);
+	bool is_coherent = is_dma_coherent(dev, attrs);
 	pgprot_t remap_prot = __get_dma_pgprot(attrs, PAGE_KERNEL, is_coherent);
 	struct page **pages;
+
+	/*
+	 * sg_alloc_table_from_pages accepts unsigned int value for count
+	 * so check count doesn't exceed UINT_MAX.
+	 */
+
+	if (count > UINT_MAX) {
+		dev_err(dev, "count: %zx exceeds UNIT_MAX\n", count);
+		return NULL;
+	}
 
 	prot = __get_iommu_pgprot(attrs, prot, is_coherent);
 
@@ -606,7 +653,7 @@ static int fast_smmu_mmap_attrs(struct device *dev, struct vm_area_struct *vma,
 	unsigned long uaddr = vma->vm_start;
 	struct page **pages;
 	int i, nr_pages, ret = 0;
-	bool coherent = is_device_dma_coherent(dev);
+	bool coherent = is_dma_coherent(dev, attrs);
 
 	vma->vm_page_prot = __get_dma_pgprot(attrs, vma->vm_page_prot,
 					     coherent);

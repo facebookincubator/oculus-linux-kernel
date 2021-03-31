@@ -20,6 +20,7 @@ config SPARC
 	select HAVE_OPROFILE
 	select HAVE_ARCH_KGDB if !SMP || SPARC64
 	select HAVE_ARCH_TRACEHOOK
+	select HAVE_EXIT_THREAD
 	select SYSCTL_EXCEPTION_TRACE
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
@@ -183,9 +184,9 @@ config NR_CPUS
 	int "Maximum number of CPUs"
 	depends on SMP
 	range 2 32 if SPARC32
-	range 2 1024 if SPARC64
+	range 2 4096 if SPARC64
 	default 32 if SPARC32
-	default 64 if SPARC64
+	default 4096 if SPARC64
 
 source kernel/Kconfig.hz
 
@@ -549,9 +550,6 @@ config SYSVIPC_COMPAT
 	bool
 	depends on COMPAT && SYSVIPC
 	default y
-
-config KEYS_COMPAT
-	def_bool y if COMPAT && KEYS
 
 endmenu
 

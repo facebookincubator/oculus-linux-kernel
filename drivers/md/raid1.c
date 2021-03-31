@@ -570,7 +570,7 @@ static int read_balance(struct r1conf *conf, struct r1bio *r1_bio, int *max_sect
 			if (best_dist_disk < 0) {
 				if (is_badblock(rdev, this_sector, sectors,
 						&first_bad, &bad_sectors)) {
-					if (first_bad < this_sector)
+					if (first_bad <= this_sector)
 						/* Cannot use this */
 						continue;
 					best_good_sectors = first_bad - this_sector;
@@ -877,7 +877,8 @@ static sector_t wait_barrier(struct r1conf *conf, struct bio *bio)
 				     ((conf->start_next_window <
 				       conf->next_resync + RESYNC_SECTORS) &&
 				      current->bio_list &&
-				      !bio_list_empty(current->bio_list))),
+				     (!bio_list_empty(&current->bio_list[0]) ||
+				      !bio_list_empty(&current->bio_list[1])))),
 				    conf->resync_lock);
 		conf->nr_waiting--;
 	}
@@ -1087,7 +1088,7 @@ static void make_request(struct mddev *mddev, struct bio * bio)
 		 */
 		DEFINE_WAIT(w);
 		for (;;) {
-			flush_signals(current);
+			sigset_t full, old;
 			prepare_to_wait(&conf->wait_barrier,
 					&w, TASK_INTERRUPTIBLE);
 			if (bio_end_sector(bio) <= mddev->suspend_lo ||
@@ -1096,7 +1097,10 @@ static void make_request(struct mddev *mddev, struct bio * bio)
 			     !md_cluster_ops->area_resyncing(mddev, WRITE,
 				     bio->bi_iter.bi_sector, bio_end_sector(bio))))
 				break;
+			sigfillset(&full);
+			sigprocmask(SIG_BLOCK, &full, &old);
 			schedule();
+			sigprocmask(SIG_SETMASK, &old, NULL);
 		}
 		finish_wait(&conf->wait_barrier, &w);
 	}
@@ -1601,6 +1605,7 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 	 */
 	if (rdev->saved_raid_disk >= 0 &&
 	    rdev->saved_raid_disk >= first &&
+	    rdev->saved_raid_disk < conf->raid_disks &&
 	    conf->mirrors[rdev->saved_raid_disk].rdev == NULL)
 		first = last = rdev->saved_raid_disk;
 
@@ -1682,6 +1687,17 @@ static int raid1_remove_disk(struct mddev *mddev, struct md_rdev *rdev)
 			struct md_rdev *repl =
 				conf->mirrors[conf->raid_disks + number].rdev;
 			freeze_array(conf, 0);
+			if (atomic_read(&repl->nr_pending)) {
+				/* It means that some queued IO of retry_list
+				 * hold repl. Thus, we cannot set replacement
+				 * as NULL, avoiding rdev NULL pointer
+				 * dereference in sync_request_write and
+				 * handle_write_finished.
+				 */
+				err = -EBUSY;
+				unfreeze_array(conf);
+				goto abort;
+			}
 			clear_bit(Replacement, &repl->flags);
 			p->rdev = repl;
 			conf->mirrors[conf->raid_disks + number].rdev = NULL;
@@ -2942,6 +2958,13 @@ static int run(struct mddev *mddev)
 		    !test_bit(In_sync, &conf->mirrors[i].rdev->flags) ||
 		    test_bit(Faulty, &conf->mirrors[i].rdev->flags))
 			mddev->degraded++;
+	/*
+	 * RAID1 needs at least one disk in active
+	 */
+	if (conf->raid_disks - mddev->degraded < 1) {
+		ret = -EINVAL;
+		goto abort;
+	}
 
 	if (conf->raid_disks - mddev->degraded == 1)
 		mddev->recovery_cp = MaxSector;
@@ -2976,8 +2999,12 @@ static int run(struct mddev *mddev)
 	ret =  md_integrity_register(mddev);
 	if (ret) {
 		md_unregister_thread(&mddev->thread);
-		raid1_free(mddev, conf);
+		goto abort;
 	}
+	return 0;
+
+abort:
+	raid1_free(mddev, conf);
 	return ret;
 }
 

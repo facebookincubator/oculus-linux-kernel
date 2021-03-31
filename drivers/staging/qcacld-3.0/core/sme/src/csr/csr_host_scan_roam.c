@@ -1,7 +1,5 @@
 /*
- * Copyright (c) 2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,9 +23,7 @@
  */
 
 #include "wma_types.h"
-#include "cds_mq.h"
 #include "csr_inside_api.h"
-#include "sms_debug.h"
 #include "sme_qos_internal.h"
 #include "sme_inside.h"
 #include "host_diag_core_event.h"
@@ -36,7 +32,7 @@
 #include "sme_api.h"
 #include "csr_neighbor_roam.h"
 #include "mac_trace.h"
-#include "cds_concurrency.h"
+#include "wlan_policy_mgr_api.h"
 
 /**
  * csr_roam_issue_reassociate() - Issue Reassociate
@@ -50,13 +46,13 @@
  */
 QDF_STATUS csr_roam_issue_reassociate(tpAniSirGlobal pMac,
 	uint32_t sessionId, tSirBssDescription *pSirBssDesc,
-	tDot11fBeaconIEs *pIes, tCsrRoamProfile *pProfile)
+	tDot11fBeaconIEs *pIes, struct csr_roam_profile *pProfile)
 {
 	csr_roam_state_change(pMac, eCSR_ROAMING_STATE_JOINING, sessionId);
 	/* Set the roaming substate to 'join attempt'... */
 	csr_roam_substate_change(pMac, eCSR_ROAM_SUBSTATE_REASSOC_REQ,
 			sessionId);
-	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_INFO,
+	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 		  FL(" calling csr_send_join_req_msg (eWNI_SME_REASSOC_REQ)"));
 	/* attempt to Join this BSS... */
 	return csr_send_join_req_msg(pMac, sessionId, pSirBssDesc, pProfile,
@@ -78,34 +74,58 @@ QDF_STATUS csr_roam_issue_reassociate_cmd(tpAniSirGlobal pMac,
 	bool fHighPriority = true;
 	bool fRemoveCmd = false;
 	tListElem *pEntry;
-	pEntry = csr_ll_peek_head(&pMac->sme.smeCmdActiveList, LL_ACCESS_LOCK);
+	tSmeCmd *tmp_command;
+
+	pEntry = csr_nonscan_active_ll_peek_head(pMac, LL_ACCESS_LOCK);
 	if (pEntry) {
 		pCommand = GET_BASE_ADDR(pEntry, tSmeCmd, Link);
 		if (!pCommand) {
-			sms_log(pMac, LOGE, FL(" fail to get command buffer"));
+			sme_err("fail to get command buffer");
 			return QDF_STATUS_E_RESOURCES;
 		}
 		if (eSmeCommandRoam == pCommand->command) {
 			if (pCommand->u.roamCmd.roamReason ==
 			    eCsrSmeIssuedAssocToSimilarAP)
 				fRemoveCmd =
-					csr_ll_remove_entry(&pMac->sme.
-							    smeCmdActiveList,
+					csr_nonscan_active_ll_remove_entry(pMac,
 							    pEntry,
 							    LL_ACCESS_LOCK);
 			else
-				sms_log(pMac, LOGE,
-					FL(" Unexpected  roam cmd present"));
+				sme_err("Unexpected roam cmd present");
 			if (fRemoveCmd == false)
 				pCommand = NULL;
 		}
 	}
 	if (NULL == pCommand) {
-		sms_log(pMac, LOGE,
-			FL(" fail to get cmd buf based on prev roam command"));
+		sme_err("fail to get cmd buf based on prev roam command");
 		return QDF_STATUS_E_RESOURCES;
 	}
 	do {
+		/*
+		 * Get a new sme command to save the necessary info for
+		 * the following roaming process, such as BSS list and
+		 * roam profile. Or those info will be freed in function
+		 * csr_reinit_roam_cmd when releasing the current command.
+		 */
+		tmp_command = csr_get_command_buffer(pMac);
+		if (tmp_command == NULL) {
+			sme_err("fail to get cmd buf!");
+			csr_release_command(pMac, pCommand);
+			return QDF_STATUS_E_RESOURCES;
+		}
+		qdf_mem_copy(tmp_command, pCommand, sizeof(*pCommand));
+		pCommand->u.roamCmd.fReleaseBssList = false;
+		pCommand->u.roamCmd.hBSSList = CSR_INVALID_SCANRESULT_HANDLE;
+		pCommand->u.roamCmd.fReleaseProfile = false;
+		/*
+		 * Invoking csr_release_command to release the current command
+		 * or the following command will be stuck in pending queue.
+		 * Because the API csr_nonscan_active_ll_remove_entry does
+		 * not remove the current command from active queue.
+		 */
+		csr_release_command(pMac, pCommand);
+
+		pCommand = tmp_command;
 		/* Change the substate in case it is wait-for-key */
 		if (CSR_IS_WAIT_FOR_KEY(pMac, sessionId)) {
 			csr_roam_stop_wait_for_key_timer(pMac);
@@ -116,11 +136,8 @@ QDF_STATUS csr_roam_issue_reassociate_cmd(tpAniSirGlobal pMac,
 		pCommand->sessionId = (uint8_t) sessionId;
 		pCommand->u.roamCmd.roamReason = eCsrSmeIssuedFTReassoc;
 		status = csr_queue_sme_command(pMac, pCommand, fHighPriority);
-		if (!QDF_IS_STATUS_SUCCESS(status)) {
-			sms_log(pMac, LOGE,
-				FL("fail to send message status=%d"), status);
-			csr_release_command_roam(pMac, pCommand);
-		}
+		if (!QDF_IS_STATUS_SUCCESS(status))
+			sme_err("fail to send message status: %d", status);
 	} while (0);
 
 	return status;
@@ -197,7 +214,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 				 * in the roamable AP list
 				 */
 				QDF_TRACE(QDF_MODULE_ID_SME,
-					  QDF_TRACE_LEVEL_INFO,
+					  QDF_TRACE_LEVEL_DEBUG,
 					  "SKIP-currently associated AP");
 				continue;
 			}
@@ -206,8 +223,9 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			 * Continue if MCC is disabled in INI and if AP
 			 * will create MCC
 			 */
-			if (cds_concurrent_open_sessions_running() &&
-			   !mac_ctx->roam.configParam.fenableMCCMode) {
+			if (policy_mgr_concurrent_open_sessions_running(
+				mac_ctx->psoc) &&
+				!mac_ctx->roam.configParam.fenableMCCMode) {
 				uint8_t conc_channel;
 
 				conc_channel =
@@ -215,7 +233,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 				if (conc_channel &&
 				   (conc_channel !=
 				   scan_result->BssDescriptor.channelId)) {
-					sms_log(mac_ctx, LOG1, FL("MCC not supported so Ignore AP on channel %d"),
+					sme_debug("MCC not supported so Ignore AP on channel %d",
 					  scan_result->BssDescriptor.channelId);
 					continue;
 				}
@@ -232,7 +250,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			     || (descr->channelId !=
 				 n_roam_info->handoffReqInfo.channel))) {
 				QDF_TRACE(QDF_MODULE_ID_SME,
-					  QDF_TRACE_LEVEL_INFO,
+					  QDF_TRACE_LEVEL_DEBUG,
 					  "SKIP-not a candidate AP for OS requested roam");
 				continue;
 			}
@@ -240,8 +258,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			if ((n_roam_info->is11rAssoc) &&
 			    (!csr_neighbor_roam_is_preauth_candidate(mac_ctx,
 					sessionid, descr->bssId))) {
-				sms_log(mac_ctx, LOGE,
-					FL("BSSID in preauth faillist.Ignore"));
+				sme_err("BSSID in preauth fail list. Ignore");
 				continue;
 			}
 
@@ -250,8 +267,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			    (n_roam_info->isESEAssoc) &&
 			    !csr_neighbor_roam_is_preauth_candidate(mac_ctx,
 				sessionid, descr->bssId)) {
-				sms_log(mac_ctx, LOGE,
-					FL("BSSID in preauth faillist.Ignore"));
+				sme_err("BSSID in preauth faillist. Ignore");
 				continue;
 			}
 
@@ -259,21 +275,20 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			qavail = descr->QBSSLoad_avail;
 			voadmitted = n_roam_info->isVOAdmitted;
 			if (voadmitted)
-				sms_log(mac_ctx, LOG1,
-					FL("New QBSS=%s,BWavail=0x%x,req=0x%x"),
+				sme_debug("New QBSS=%s,BWavail=0x%x,req=0x%x",
 					((qpresent) ? "yes" : "no"), qavail,
 					n_roam_info->MinQBssLoadRequired);
 			if (voadmitted && qpresent &&
 			    (qavail < n_roam_info->MinQBssLoadRequired)) {
 				QDF_TRACE(QDF_MODULE_ID_SME,
-					QDF_TRACE_LEVEL_INFO,
+					QDF_TRACE_LEVEL_DEBUG,
 					"BSSID:" MAC_ADDRESS_STR "has no BW",
 					MAC_ADDR_ARRAY(descr->bssId));
 				continue;
 			}
 			if (voadmitted && !qpresent) {
 				QDF_TRACE(QDF_MODULE_ID_SME,
-					QDF_TRACE_LEVEL_INFO,
+					QDF_TRACE_LEVEL_DEBUG,
 					"BSSID:" MAC_ADDRESS_STR "no LOAD IE",
 					MAC_ADDR_ARRAY(descr->bssId));
 				continue;
@@ -288,8 +303,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			if (csr_roam_is_fast_roam_enabled(mac_ctx, sessionid) &&
 			    !csr_neighbor_roam_is_preauth_candidate(mac_ctx,
 				sessionid, descr->bssId)) {
-				sms_log(mac_ctx, LOGE,
-					FL("BSSID in preauth faillist Ignore"));
+				sme_err("BSSID in preauth faillist Ignore");
 				continue;
 			}
 
@@ -310,8 +324,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 			bss_info =
 				qdf_mem_malloc(sizeof(tCsrNeighborRoamBSSInfo));
 			if (NULL == bss_info) {
-				sms_log(mac_ctx, LOGE,
-					FL("Memory alloc fail. Ignored cnd."));
+				sme_err("Memory alloc fail");
 				continue;
 			}
 			bss_info->pBssDescription =
@@ -321,8 +334,7 @@ void csr_neighbor_roam_process_scan_results(tpAniSirGlobal mac_ctx,
 				qdf_mem_copy(bss_info->pBssDescription, descr,
 					descr->length + sizeof(descr->length));
 			} else {
-				sms_log(mac_ctx, LOGE,
-					FL("Mem alloc failed. Ignore cand."));
+				sme_err("Memory alloc fail");
 				qdf_mem_free(bss_info);
 				continue;
 			}
@@ -378,7 +390,7 @@ void csr_neighbor_roam_trigger_handoff(tpAniSirGlobal mac_ctx,
 	if (csr_roam_is_fast_roam_enabled(mac_ctx, session_id))
 		csr_neighbor_roam_issue_preauth_req(mac_ctx, session_id);
 	else
-		sms_log(mac_ctx, LOGE, FL("Roaming is disabled"));
+		sme_err("Roaming is disabled");
 }
 
 /**
@@ -401,21 +413,16 @@ QDF_STATUS csr_neighbor_roam_process_scan_complete(tpAniSirGlobal pMac,
 	hstatus = csr_neighbor_roam_prepare_scan_profile_filter(pMac,
 								&scanFilter,
 								sessionId);
-	sms_log(pMac, LOGW,
-		FL("Prepare scan to find neighbor AP filter status  = %d"),
+	sme_debug("Prepare scan to find neighbor AP filter status: %d",
 		hstatus);
 	if (QDF_STATUS_SUCCESS != hstatus) {
-		sms_log(pMac, LOGE,
-			FL("Scan Filter prep fail for Assoc %d Bail out"),
+		sme_err("Scan Filter prep fail for Assoc %d Bail out",
 			tempVal);
 		return QDF_STATUS_E_FAILURE;
 	}
 	hstatus = csr_scan_get_result(pMac, &scanFilter, &scanResult);
-	if (hstatus != QDF_STATUS_SUCCESS) {
-		sms_log(pMac, LOGE,
-			FL("Get Scan Result status code %d"),
-			hstatus);
-	}
+	if (hstatus != QDF_STATUS_SUCCESS)
+		sme_err("Get Scan Result status code %d", hstatus);
 	/* Process the scan results and update roamable AP list */
 	csr_neighbor_roam_process_scan_results(pMac, sessionId, &scanResult);
 
@@ -437,7 +444,8 @@ QDF_STATUS csr_neighbor_roam_process_scan_complete(tpAniSirGlobal pMac,
 			pNeighborRoamInfo->uOsRequestedHandoff = 0;
 		} else {
 			/* There is no candidate or We are not roaming Now.
-			 * Inform the FW to restart Roam Offload Scan  */
+			 * Inform the FW to restart Roam Offload Scan
+			 */
 			csr_roam_offload_scan(pMac, sessionId,
 				ROAM_SCAN_OFFLOAD_RESTART,
 				REASON_NO_CAND_FOUND_OR_NOT_ROAMING_NOW);
@@ -470,22 +478,15 @@ QDF_STATUS csr_neighbor_roam_candidate_found_ind_hdlr(tpAniSirGlobal pMac,
 		&pMac->roam.neighborRoamInfo[sessionId];
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
-	sms_log(pMac, LOG1, FL("Received indication from firmware"));
+	sme_debug("Received indication from firmware");
 
 	/* we must be in connected state, if not ignore it */
 	if ((eCSR_NEIGHBOR_ROAM_STATE_CONNECTED !=
 	     pNeighborRoamInfo->neighborRoamState)
 	    || (pNeighborRoamInfo->uOsRequestedHandoff)) {
-		sms_log(pMac, LOGE,
-			FL("Recvd in NotCONNECTED or OsReqHandoff. Ignore"));
+		sme_err("Recvd in NotCONNECTED or OsReqHandoff. Ignore");
 		status = QDF_STATUS_E_FAILURE;
 	} else {
-		/* Firmware indicated that roaming candidate is found. Beacons
-		 * are already in the SME scan results table.
-		 * Process the results for choosing best roaming candidate.
-		 */
-		csr_save_scan_results(pMac, eCsrScanCandidateFound,
-				      sessionId);
 		/* Future enhancements:
 		 * If firmware tags candidate beacons, give them preference
 		 * for roaming.
@@ -495,8 +496,7 @@ QDF_STATUS csr_neighbor_roam_candidate_found_ind_hdlr(tpAniSirGlobal pMac,
 		status = csr_neighbor_roam_process_scan_complete(pMac,
 								 sessionId);
 		if (QDF_STATUS_SUCCESS != status) {
-			sms_log(pMac, LOGE,
-				FL("scan process complete failed, status %d"),
+			sme_err("scan process complete failed, status %d",
 				status);
 			return QDF_STATUS_E_FAILURE;
 		}
@@ -519,10 +519,6 @@ void csr_neighbor_roam_free_roamable_bss_list(tpAniSirGlobal mac_ctx,
 {
 	tpCsrNeighborRoamBSSInfo result = NULL;
 
-	sms_log(mac_ctx, LOG2,
-		FL("Emptying the BSS list. Current count = %d"),
-		csr_ll_count(llist));
-
 	/*
 	 * Pick up the head, remove and free the node till
 	 * the list becomes empty
@@ -533,7 +529,6 @@ void csr_neighbor_roam_free_roamable_bss_list(tpAniSirGlobal mac_ctx,
 			llist, result);
 		csr_neighbor_roam_free_neighbor_roam_bss_node(mac_ctx, result);
 	}
-	return;
 }
 
 /**
@@ -557,8 +552,7 @@ bool csr_neighbor_roam_remove_roamable_ap_list_entry(tpAniSirGlobal pMac,
 					   LL_ACCESS_LOCK);
 	}
 
-	sms_log(pMac, LOGE,
-		FL("Remove neigh BSS node from fail list. Current count = %d"),
+	sme_debug("Remove neigh BSS node from fail list. Current count: %d",
 		csr_ll_count(pList));
 
 	return false;
@@ -611,7 +605,7 @@ tpCsrNeighborRoamBSSInfo csr_neighbor_roam_next_roamable_ap(
 void csr_neighbor_roam_request_handoff(tpAniSirGlobal mac_ctx,
 		uint8_t session_id)
 {
-	tCsrRoamInfo roam_info;
+	struct csr_roam_info *roam_info;
 	tpCsrNeighborRoamControlInfo neighbor_roam_info =
 		&mac_ctx->roam.neighborRoamInfo[session_id];
 	tCsrNeighborRoamBSSInfo handoff_node;
@@ -623,8 +617,7 @@ void csr_neighbor_roam_request_handoff(tpAniSirGlobal mac_ctx,
 
 	if (neighbor_roam_info->neighborRoamState !=
 		eCSR_NEIGHBOR_ROAM_STATE_PREAUTH_DONE) {
-		sms_log(mac_ctx, LOGE,
-			FL("Roam requested when Neighbor roam is in %s state"),
+		sme_err("Roam requested when Neighbor roam is in %s state",
 			mac_trace_get_neighbour_roam_state(
 			neighbor_roam_info->neighborRoamState));
 		return;
@@ -640,11 +633,13 @@ void csr_neighbor_roam_request_handoff(tpAniSirGlobal mac_ctx,
 		  FL("HANDOFF CANDIDATE BSSID "MAC_ADDRESS_STR),
 		  MAC_ADDR_ARRAY(handoff_node.pBssDescription->bssId));
 
-	qdf_mem_zero(&roam_info, sizeof(tCsrRoamInfo));
-	csr_roam_call_callback(mac_ctx, session_id, &roam_info, roamid,
-			       eCSR_ROAM_FT_START, eSIR_SME_SUCCESS);
+	roam_info = qdf_mem_malloc(sizeof(*roam_info));
+	if (!roam_info)
+		return;
+	csr_roam_call_callback(mac_ctx, session_id, roam_info, roamid,
+			       eCSR_ROAM_FT_START, eCSR_ROAM_RESULT_SUCCESS);
 
-	qdf_mem_zero(&roam_info, sizeof(tCsrRoamInfo));
+	qdf_mem_zero(roam_info, sizeof(*roam_info));
 	csr_neighbor_roam_state_transition(mac_ctx,
 			eCSR_NEIGHBOR_ROAM_STATE_REASSOCIATING, session_id);
 
@@ -665,6 +660,7 @@ void csr_neighbor_roam_request_handoff(tpAniSirGlobal mac_ctx,
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			FL("csr_roam_copy_connected_profile failed %d"),
 			status);
+		qdf_mem_free(roam_info);
 		return;
 	}
 	qdf_mem_copy(neighbor_roam_info->csrNeighborRoamProfile.BSSIDs.bssid,
@@ -672,28 +668,28 @@ void csr_neighbor_roam_request_handoff(tpAniSirGlobal mac_ctx,
 	neighbor_roam_info->csrNeighborRoamProfile.ChannelInfo.ChannelList[0] =
 		handoff_node.pBssDescription->channelId;
 
-	sms_log(mac_ctx, LOGW,
-		" csr_roamHandoffRequested: disassociating with current AP");
+	sme_debug("csr_roamHandoffRequested: disassociating with current AP");
 
-	if (!QDF_IS_STATUS_SUCCESS
-		    (csr_roam_issue_disassociate_cmd
-			    (mac_ctx, session_id,
-			    eCSR_DISCONNECT_REASON_HANDOFF))) {
-		sms_log(mac_ctx, LOGW,
-			"csr_roamHandoffRequested:  fail to issue disassoc");
+	if (!QDF_IS_STATUS_SUCCESS(csr_roam_issue_disassociate_cmd(
+					mac_ctx,
+					session_id,
+					eCSR_DISCONNECT_REASON_HANDOFF,
+					eSIR_MAC_UNSPEC_FAILURE_REASON))) {
+		sme_warn("csr_roamHandoffRequested: fail to issue disassoc");
+		qdf_mem_free(roam_info);
 		return;
 	}
 	/* notify HDD for handoff, providing the BSSID too */
-	roam_info.reasonCode = eCsrRoamReasonBetterAP;
+	roam_info->reasonCode = eCsrRoamReasonBetterAP;
 
-	qdf_mem_copy(roam_info.bssid.bytes,
+	qdf_mem_copy(roam_info->bssid.bytes,
 		     handoff_node.pBssDescription->bssId,
 		     sizeof(struct qdf_mac_addr));
 
-	csr_roam_call_callback(mac_ctx, session_id, &roam_info, 0,
+	csr_roam_call_callback(mac_ctx, session_id, roam_info, 0,
 			       eCSR_ROAM_ROAMING_START, eCSR_ROAM_RESULT_NONE);
+	qdf_mem_free(roam_info);
 
-	return;
 }
 
 
@@ -729,8 +725,7 @@ bool csr_neighbor_roam_get_handoff_ap_info(tpAniSirGlobal pMac,
 			pMac,
 			&ngbr_roam_info->FTRoamInfo.preAuthDoneList,
 			NULL);
-		sms_log(pMac, LOG1,
-			FL("Number of Handoff candidates = %d"),
+		sme_debug("Number of Handoff candidates: %d",
 			csr_ll_count(&
 				ngbr_roam_info->FTRoamInfo.preAuthDoneList));
 	} else
@@ -741,8 +736,7 @@ bool csr_neighbor_roam_get_handoff_ap_info(tpAniSirGlobal pMac,
 			csr_neighbor_roam_next_roamable_ap(pMac,
 				&ngbr_roam_info->FTRoamInfo.preAuthDoneList,
 				NULL);
-		sms_log(pMac, LOG1,
-			FL("Number of Handoff candidates = %d"),
+		sme_debug("Number of Handoff candidates: %d",
 			csr_ll_count(&ngbr_roam_info->FTRoamInfo.
 			preAuthDoneList));
 	} else
@@ -753,8 +747,7 @@ bool csr_neighbor_roam_get_handoff_ap_info(tpAniSirGlobal pMac,
 			csr_neighbor_roam_next_roamable_ap(pMac,
 			&ngbr_roam_info->FTRoamInfo.preAuthDoneList,
 			NULL);
-		sms_log(pMac, LOG1,
-			FL("Number of Handoff candidates = %d"),
+		sme_debug("Number of Handoff candidates: %d",
 			csr_ll_count(
 				&ngbr_roam_info->FTRoamInfo.preAuthDoneList));
 	} else {
@@ -762,8 +755,7 @@ bool csr_neighbor_roam_get_handoff_ap_info(tpAniSirGlobal pMac,
 			csr_neighbor_roam_next_roamable_ap(pMac,
 				&ngbr_roam_info->roamableAPList,
 				NULL);
-		sms_log(pMac, LOG1,
-			FL("Number of Handoff candidates = %d"),
+		sme_debug("Number of Handoff candidates: %d",
 			csr_ll_count(&ngbr_roam_info->roamableAPList));
 	}
 	if (NULL == bss_node)
@@ -816,7 +808,5 @@ void csr_neighbor_roam_free_neighbor_roam_bss_node(tpAniSirGlobal pMac,
 		qdf_mem_free(neighborRoamBSSNode);
 		neighborRoamBSSNode = NULL;
 	}
-
-	return;
 }
 

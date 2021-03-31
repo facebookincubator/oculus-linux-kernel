@@ -1218,6 +1218,26 @@ enum v4l2_mpeg_vidc_video_venc_iframesize_type {
 #define V4L2_CID_MPEG_VIDC_VIDEO_B_FRAME_QP \
 		(V4L2_CID_MPEG_MSM_VIDC_BASE + 101)
 
+#define V4L2_CID_MPEG_VIDC_VIDEO_AU_DELIMITER \
+		(V4L2_CID_MPEG_MSM_VIDC_BASE + 102)
+enum v4l2_mpeg_vidc_video_au_delimiter {
+	V4L2_MPEG_VIDC_VIDEO_AU_DELIMITER_DISABLED = 0,
+	V4L2_MPEG_VIDC_VIDEO_AU_DELIMITER_ENABLED = 1
+};
+
+#define V4L2_CID_MPEG_VIDC_VIDEO_SEND_SKIPPED_FRAME \
+		(V4L2_CID_MPEG_MSM_VIDC_BASE + 103)
+enum v4l2_mpeg_vidc_video_venc_send_skipped_frame {
+	V4L2_MPEG_VIDC_VIDEO_SEND_SKIPPED_FRAME_DISABLE = 0,
+	V4L2_MPEG_VIDC_VIDEO_SEND_SKIPPED_FRAME_ENABLE = 1
+};
+
+#define V4L2_CID_MPEG_VIDC_VIDEO_ALLOW_UBWC_LINEAR_EVENT \
+		(V4L2_CID_MPEG_MSM_VIDC_BASE + 104)
+enum v4l2_mpeg_vidc_video_allow_ubwc_linear_event {
+	V4L2_MPEG_VIDC_VIDEO_ALLOW_UBWC_LINEAR_EVENT_DISABLE = 0,
+	V4L2_MPEG_VIDC_VIDEO_ALLOW_UBWC_LINEAR_EVENT_ENABLE = 1
+};
 
 /*  Camera class control IDs */
 
@@ -1330,6 +1350,12 @@ enum v4l2_auto_focus_range {
 
 #define V4L2_CID_PAN_SPEED			(V4L2_CID_CAMERA_CLASS_BASE+32)
 #define V4L2_CID_TILT_SPEED			(V4L2_CID_CAMERA_CLASS_BASE+33)
+
+/* User-class control IDs specific to the msm_ba driver */
+
+#define MSM_BA_PRIV_BASE_START			(V4L2_CID_USER_BASE | 0x7000)
+#define MSM_BA_PRIV_SD_NODE_ADDR		(MSM_BA_PRIV_BASE_START + 1)
+#define MSM_BA_PRIV_FPS			(MSM_BA_PRIV_BASE_START + 2)
 
 /* FM Modulator class control IDs */
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,13 +10,10 @@
  * GNU General Public License for more details.
  */
 
-#include "dsi-panel-sim-video.dtsi"
-#include "dsi-panel-sim-dualmipi-video.dtsi"
 #include "dsi-panel-nt35597-dualmipi-wqxga-video.dtsi"
 #include "dsi-panel-nt35597-dualmipi-wqxga-cmd.dtsi"
 #include "dsi-panel-nt35597-truly-dualmipi-wqxga-video.dtsi"
 #include "dsi-panel-nt35597-truly-dualmipi-wqxga-cmd.dtsi"
-#include "dsi-panel-nt36850-truly-dualmipi-wqhd-cmd.dtsi"
 #include "dsi-panel-nt35597-dsc-wqxga-video.dtsi"
 #include "dsi-panel-nt35597-dsc-wqxga-cmd.dtsi"
 #include "dsi-panel-sharp-dsc-4k-video.dtsi"
@@ -33,6 +30,8 @@
 #include "dsi-panel-sim-dualmipi-cmd.dtsi"
 #include "dsi-panel-s6e3ha3-amoled-dualmipi-wqhd-cmd.dtsi"
 #include "dsi-panel-nt36850-truly-dualmipi-wqhd-cmd.dtsi"
+#include "dsi-panel-sharp-dualdsi-wqhd-video.dtsi"
+#include "dsi-panel-sharp-dualdsi-wqhd-cmd.dtsi"
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -91,6 +90,10 @@
 	qcom,mdss-dsi-t-clk-pre = <0x25>;
 	qcom,mdss-dsi-tx-eot-append;
 	qcom,esd-check-enabled;
+	qcom,mdss-dsi-min-refresh-rate = <55>;
+	qcom,mdss-dsi-max-refresh-rate = <60>;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
 	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
 	qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
@@ -140,6 +143,10 @@
 	qcom,mdss-dsi-panel-on-check-value = <0x9c>;
 	qcom,mdss-dsi-panel-status-read-length = <1>;
 	qcom,mdss-dsi-panel-max-error-count = <3>;
+	qcom,mdss-dsi-min-refresh-rate = <55>;
+	qcom,mdss-dsi-max-refresh-rate = <60>;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 };
 
 &dsi_nt35597_dsc_cmd {
@@ -161,6 +168,10 @@
 	qcom,mdss-dsi-panel-timings = [00 35 0a 0c 15 1b 09 0d 0a 03 04 00];
 	qcom,mdss-dsi-t-clk-post = <0x0d>;
 	qcom,mdss-dsi-t-clk-pre = <0x26>;
+	qcom,mdss-dsi-min-refresh-rate = <55>;
+	qcom,mdss-dsi-max-refresh-rate = <60>;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 };
 
 &dsi_sharp_4k_dsc_cmd {
@@ -217,4 +228,16 @@
 	qcom,mdss-dsi-panel-timings = [00 1c 06 06 0b 11 06 07 05 03 04 00];
 	qcom,mdss-dsi-t-clk-post = <0x34>;
 	qcom,mdss-dsi-t-clk-pre = <0x2a>;
+};
+
+&dsi_dual_sharp_wqhd_video {
+	qcom,mdss-dsi-panel-timings = [00 2e 08 0a 12 18 08 0b 09 03 04 00];
+	qcom,mdss-dsi-t-clk-post = <0x0c>;
+	qcom,mdss-dsi-t-clk-pre = <0x21>;
+};
+
+&dsi_dual_sharp_wqhd_cmd {
+	qcom,mdss-dsi-panel-timings = [00 2e 08 0a 12 18 08 0b 09 03 04 00];
+	qcom,mdss-dsi-t-clk-post = <0x0c>;
+	qcom,mdss-dsi-t-clk-pre = <0x21>;
 };

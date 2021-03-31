@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,6 +21,7 @@
 #include "mdss_hdmi_audio.h"
 
 #define MAX_SWITCH_NAME_SIZE        5
+#define HDMI_GEN_PKT_CTRL_CLR_MASK  0x7
 
 enum hdmi_tx_io_type {
 	HDMI_TX_CORE_IO,
@@ -90,7 +91,13 @@ struct hdmi_tx_ctrl {
 	struct msm_ext_disp_audio_setup_params audio_params;
 	struct msm_ext_disp_init_data ext_audio_data;
 	struct work_struct fps_work;
-	struct mdp_hdr_stream hdr_data;
+	struct mdp_hdr_stream_ctrl hdr_ctrl;
+
+	int pending_event;
+	bool handle_pe;
+	atomic_t notification_pending;
+	struct completion notification_comp;
+	u32 notification_status;
 
 	spinlock_t hpd_state_lock;
 
@@ -116,6 +123,7 @@ struct hdmi_tx_ctrl {
 	u8 hdcp_status;
 	u8 spd_vendor_name[9];
 	u8 spd_product_description[17];
+	u8 curr_hdr_state;
 
 	bool hdcp_feature_on;
 	bool hpd_disabled;
@@ -130,6 +138,7 @@ struct hdmi_tx_ctrl {
 	bool power_data_enable[HDMI_TX_MAX_PM];
 	bool dc_support;
 	bool dc_feature_on;
+	bool use_bt2020;
 
 	void (*hdmi_tx_hpd_done)(void *data);
 	void *downstream_data;
@@ -140,6 +149,9 @@ struct hdmi_tx_ctrl {
 	u8 *edid_buf;
 
 	char disp_switch_name[MAX_SWITCH_NAME_SIZE];
+
+	u64 actual_clk_rate;
+	bool pll_update_enable;
 
 	/* pre/post is done in the context without tx_lock */
 	hdmi_tx_evt_handler pre_evt_handler[MDSS_EVENT_MAX - 1];

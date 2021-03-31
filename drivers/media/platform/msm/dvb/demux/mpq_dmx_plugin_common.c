@@ -3973,6 +3973,18 @@ static int mpq_dmx_process_video_packet_framing(
 
 			mpq_dmx_update_decoder_stat(mpq_feed);
 
+			if (video_b_frame_events == 1) {
+				if (non_predicted_video_frame == 0) {
+					struct dmx_pts_dts_info *pts_dts;
+
+					pts_dts =
+					&meta_data.info.framing.pts_dts_info;
+					pts_dts->pts_exist = 0;
+					pts_dts->pts = 0;
+					pts_dts->dts_exist = 0;
+					pts_dts->dts = 0;
+				}
+			}
 			/*
 			 * Write meta-data that includes the framing information
 			 */
@@ -3990,14 +4002,7 @@ static int mpq_dmx_process_video_packet_framing(
 					stream_buffer, &data, ret);
 
 				/* Trigger ES Data Event for VPTS */
-				if (video_b_frame_events == 1) {
-					if (non_predicted_video_frame == 1)
-						feed->data_ready_cb.ts
-							(&feed->feed.ts, &data);
-				} else {
-					feed->data_ready_cb.ts(&feed->feed.ts,
-							       &data);
-				}
+				feed->data_ready_cb.ts(&feed->feed.ts, &data);
 
 				if (feed_data->video_buffer->mode ==
 					MPQ_STREAMBUFFER_BUFFER_MODE_LINEAR)
@@ -6535,10 +6540,8 @@ static int mpq_sdmx_write(struct mpq_demux *mpq_demux,
 	const char *buf,
 	size_t count)
 {
-	struct ion_handle *ion_handle =
-		mpq_demux->demux.dmx.dvr_input.priv_handle;
-	struct dvb_ringbuffer *rbuf = (struct dvb_ringbuffer *)
-		mpq_demux->demux.dmx.dvr_input.ringbuff;
+	struct ion_handle *ion_handle;
+	struct dvb_ringbuffer *rbuf;
 	struct sdmx_buff_descr buf_desc;
 	u32 read_offset;
 	int ret;
@@ -6548,10 +6551,13 @@ static int mpq_sdmx_write(struct mpq_demux *mpq_demux,
 		return -EINVAL;
 	}
 
+	ion_handle = mpq_demux->demux.dmx.dvr_input.priv_handle;
+	rbuf = (struct dvb_ringbuffer *)mpq_demux->demux.dmx.dvr_input.ringbuff;
+
 	ret = mpq_sdmx_dvr_buffer_desc(mpq_demux, &buf_desc);
 	if (ret) {
 		MPQ_DVB_ERR_PRINT(
-			"%s: Failed to init input buffer descriptor. ret = %d\n",
+		"%s: Failed to init input buffer descriptor. ret = %d\n",
 			__func__, ret);
 		return ret;
 	}

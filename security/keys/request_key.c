@@ -544,6 +544,7 @@ struct key *request_key_and_link(struct key_type *type,
 	struct keyring_search_context ctx = {
 		.index_key.type		= type,
 		.index_key.description	= description,
+		.index_key.desc_len	= strlen(description),
 		.cred			= current_cred(),
 		.match_data.cmp		= key_default_cmp,
 		.match_data.raw_data	= description,
@@ -622,10 +623,9 @@ int wait_for_key_construction(struct key *key, bool intr)
 			  intr ? TASK_INTERRUPTIBLE : TASK_UNINTERRUPTIBLE);
 	if (ret)
 		return -ERESTARTSYS;
-	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags)) {
-		smp_rmb();
-		return key->reject_error;
-	}
+	ret = key_read_state(key);
+	if (ret < 0)
+		return ret;
 	return key_validate(key);
 }
 EXPORT_SYMBOL(wait_for_key_construction);

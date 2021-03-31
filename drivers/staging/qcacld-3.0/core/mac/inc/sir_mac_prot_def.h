@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,13 +17,6 @@
  */
 
 /*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
-
-/*
  * This file sir_mac_prot_def.h contains the MAC/PHY protocol
  * definitions used across various projects.
  */
@@ -39,6 +29,7 @@
 #include "cds_api.h"
 #include "sir_types.h"
 #include "wni_cfg.h"
+#include <lim_fils_defs.h>
 
 /* /Capability information related */
 #define CAPABILITY_INFO_DELAYED_BA_BIT 14
@@ -160,6 +151,15 @@
 #define SIR_MAC_QOS_DEF_BA_REQ      4
 #define SIR_MAC_QOS_DEF_BA_RSP      5
 
+#define SIR_MAC_ADDBA_REQ     0
+#define SIR_MAC_ADDBA_RSP     1
+#define SIR_MAC_DELBA_REQ     2
+
+#define SIR_MAC_BA_POLICY_DELAYED       0
+#define SIR_MAC_BA_POLICY_IMMEDIATE     1
+#define SIR_MAC_BA_AMSDU_SUPPORTED      1
+#define SIR_MAC_BA_DEFAULT_BUFF_SIZE    64
+
 #ifdef ANI_SUPPORT_11H
 #define SIR_MAC_ACTION_MEASURE_REQUEST_ID      0
 #define SIR_MAC_ACTION_MEASURE_REPORT_ID       1
@@ -199,6 +199,8 @@
 #define SIR_MAC_VHT_GID_NOTIFICATION           1
 #define SIR_MAC_VHT_OPMODE_NOTIFICATION        2
 
+#define SIR_MAC_VHT_OPMODE_SIZE                3
+
 #define NUM_OF_SOUNDING_DIMENSIONS	1 /*Nss - 1, (Nss = 2 for 2x2)*/
 /* HT Action Field Codes */
 #define SIR_MAC_SM_POWER_SAVE       1
@@ -208,7 +210,7 @@
 #define SIR_MAC_DLP_RSP             1
 #define SIR_MAC_DLP_TEARDOWN        2
 
-/* block acknowledgement action frame types */
+/* block acknowledgment action frame types */
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC 9
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY     0x7F
 #define SIR_MAC_ACTION_P2P_SUBTYPE_PRESENCE_RSP     2
@@ -217,6 +219,11 @@
 #define SIR_MAC_ACTION_2040_BSS_COEXISTENCE     0
 #define SIR_MAC_ACTION_EXT_CHANNEL_SWITCH_ID    4
 
+/* Public Action frames for GAS */
+#define SIR_MAC_ACTION_GAS_INITIAL_REQUEST      0x0A
+#define SIR_MAC_ACTION_GAS_INITIAL_RESPONSE     0x0B
+#define SIR_MAC_ACTION_GAS_COMEBACK_REQUEST     0x0C
+#define SIR_MAC_ACTION_GAS_COMEBACK_RESPONSE    0x0D
 
 #ifdef WLAN_FEATURE_11W
 /* 11w SA query request/response action frame category code */
@@ -402,12 +409,19 @@
 #define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2       780
 #define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2       780
 
-#define VHT_CAP_80_SUPP 0
+#define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80 433
+#define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80 433
+#define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80 866
+#define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80 866
+
 #define VHT_CAP_160_SUPP 1
 #define VHT_CAP_160_AND_80P80_SUPP 2
 
 #define VHT_MCS_1x1 0xFFFC
 #define VHT_MCS_2x2 0xFFF3
+
+/* Mask to check if BTM offload is enabled/disabled*/
+#define BTM_OFFLOAD_ENABLED_MASK     0x01
 
 #ifdef FEATURE_AP_MCC_CH_AVOIDANCE
 #define SIR_MAC_QCOM_VENDOR_EID      200
@@ -420,7 +434,7 @@
 #define SIR_MAC_ANI_WORKAROUND_EID_MIN     0
 #define SIR_MAC_ANI_WORKAROUND_EID_MAX     255
 
-#define SIR_MAC_MAX_ADD_IE_LENGTH       500
+#define SIR_MAC_MAX_ADD_IE_LENGTH       2048
 
 /* / Maximum length of each IE */
 #define SIR_MAC_MAX_IE_LENGTH       255
@@ -443,6 +457,9 @@
 
 #define SIR_MAC_OUI_VERSION_1         1
 
+/* OWE DH Parameter element https://tools.ietf.org/html/rfc8110 */
+#define SIR_DH_PARAMETER_ELEMENT_EXT_EID 32
+
 /* OUI and type definition for WPA IE in network byte order */
 #define SIR_MAC_WPA_OUI             0x01F25000
 #define SIR_MAC_WME_OUI             0x02F25000
@@ -458,6 +475,13 @@
 
 #define SIR_MAC_CISCO_OUI "\x00\x40\x96"
 #define SIR_MAC_CISCO_OUI_SIZE 3
+
+#define SIR_MAC_QCN_OUI_TYPE   "\x8c\xfd\xf0\x01"
+#define SIR_MAC_QCN_OUI_TYPE_SIZE  4
+
+/* MBO OUI definitions */
+#define SIR_MAC_MBO_OUI "\x50\x6f\x9a\x16"
+#define SIR_MAC_MBO_OUI_SIZE 4
 
 /* min size of wme oui header: oui(3) + type + subtype + version */
 #define SIR_MAC_OUI_WME_HDR_MIN       6
@@ -541,7 +565,6 @@
 #define SIR_MAC_AUTH_ALGO_OFFSET             0
 #define SIR_MAC_AUTH_XACT_SEQNUM_OFFSET      2
 #define SIR_MAC_AUTH_STATUS_CODE_OFFSET      4
-#define SIR_MAC_AUTH_CHALLENGE_OFFSET        6
 
 /* / Transaction sequence number definitions (used in Authentication frames) */
 #define    SIR_MAC_AUTH_FRAME_1        1
@@ -562,6 +585,9 @@
 
 /* 2 bytes each for auth algo number, transaction number and status code */
 #define SIR_MAC_AUTH_FRAME_INFO_LEN          6
+/* 2 bytes for ID and length + SIR_MAC_AUTH_CHALLENGE_LENGTH */
+#define SIR_MAC_AUTH_CHALLENGE_BODY_LEN    (SIR_MAC_CHALLENGE_ID_LEN + \
+					    SIR_MAC_AUTH_CHALLENGE_LENGTH)
 
 /* / MAX key length when ULA is used */
 #define SIR_MAC_MAX_KEY_LENGTH               32
@@ -625,7 +651,12 @@
 #define SIR_MAC_VENDOR_AP_4_OUI             "\x8C\xFD\xF0"
 #define SIR_MAC_VENDOR_AP_4_OUI_LEN         3
 
-/* / Status Code (present in Management response frames) enum */
+/* Maximum allowable size of a beacon and probe rsp frame */
+#define SIR_MAX_BEACON_SIZE    512
+#define SIR_MAX_PROBE_RESP_SIZE 512
+
+/* Status Code (present in Management response frames) enum */
+/* (IEEE Std 802.11-2016, 9.4.1.9, Table 9-46) */
 
 typedef enum eSirMacStatusCodes {
 	eSIR_MAC_SUCCESS_STATUS = 0,    /* Reserved */
@@ -665,16 +696,22 @@ typedef enum eSirMacStatusCodes {
 	/* element is unacceptable */
 	eSIR_MAC_SPRTD_CHANNELS_BAD_STATUS = 24,        /* Association request rejected because the information in the Supported Channels */
 	/* element is unacceptable */
-	eSIR_MAC_SHORT_SLOT_NOT_SUPORTED_STATUS = 25,   /* Association denied due to requesting station not supporting the Short Slot Time */
+	eSIR_MAC_SHORT_SLOT_NOT_SUPPORTED_STATUS = 25,   /* Association denied due to requesting station not supporting the Short Slot Time */
 	/* option */
 	eSIR_MAC_DSSS_OFDM_NOT_SUPPORTED_STATUS = 26,   /* Association denied due to requesting station not supporting the DSSS-OFDM option */
 	/* reserved                                     27-29 */
 	eSIR_MAC_TRY_AGAIN_LATER = 30,  /* Association request rejected temporarily, try again later */
-	/* reserved                                     31 */
+#ifdef WLAN_FEATURE_11W
+	eSIR_MAC_ROBUST_MGMT_FRAMES_POLICY_VIOLATION_STATUS = 31,    /* Robust management frames policy violation */
+#endif
 	eSIR_MAC_QOS_UNSPECIFIED_FAILURE_STATUS = 32,   /* Unspecified, QoS-related failure */
 	eSIR_MAC_QAP_NO_BANDWIDTH_STATUS = 33,  /* Association denied because QoS AP has insufficient bandwidth to handle another */
 	/* QoS STA */
-	eSIR_MAC_XS_FRAME_LOSS_STATUS = 34,     /* Association denied due to excessive frame loss rates and/or poor conditions on cur- */
+	/*
+	 * Association denied due to excessive frame loss rates
+	 * and/or poor conditions/RSSI on cur channel
+	 */
+	eSIR_MAC_XS_FRAME_LOSS_POOR_CHANNEL_RSSI_STATUS = 34,
 	/* rent operating channel */
 	eSIR_MAC_STA_QOS_NOT_SUPPORTED_STATUS = 35,     /* Association (with QoS BSS) denied because the requesting STA does not support the */
 	/* QoS facility */
@@ -684,7 +721,7 @@ typedef enum eSirMacStatusCodes {
 	eSIR_MAC_TS_NOT_HONOURED_STATUS = 39,   /* The TS has not been created because the request cannot be honored; however, a suggested */
 	/* TSPEC is provided so that the initiating STA may attempt to set another TS */
 	/* with the suggested changes to the TSPEC */
-	eSIR_MAC_INVALID_INFORMATION_ELEMENT_STATUS = 40,       /* Invalid information element, i.e., an information element defined in this standard for */
+	eSIR_MAC_INVALID_IE_STATUS = 40,       /* Invalid information element, i.e., an information element defined in this standard for */
 	/* which the content does not meet the specifications in Clause 7 */
 	eSIR_MAC_INVALID_GROUP_CIPHER_STATUS = 41,      /* Invalid group cipher */
 	eSIR_MAC_INVALID_PAIRWISE_CIPHER_STATUS = 42,   /* Invalid pairwise cipher */
@@ -699,9 +736,8 @@ typedef enum eSirMacStatusCodes {
 	eSIR_MAC_DEST_STA_NOT_QSTA_STATUS = 50, /* The Destination STA is not a QoS STA */
 	eSIR_MAC_INVALID_LISTEN_INTERVAL_STATUS = 51,   /* Association denied because the ListenInterval is too large */
 
-	eSIR_MAC_DSSS_CCK_RATE_MUST_SUPPORT_STATUS = 52,        /* FIXME: */
-	eSIR_MAC_DSSS_CCK_RATE_NOT_SUPPORT_STATUS = 53,
-	eSIR_MAC_PSMP_CONTROLLED_ACCESS_ONLY_STATUS = 54,
+	eSIR_MAC_INVALID_FT_ACTION_FRAME_COUNT = 52,
+	eSIR_MAC_INVALID_PMKID = 53,
 #ifdef FEATURE_WLAN_ESE
 	eSIR_MAC_ESE_UNSPECIFIED_QOS_FAILURE_STATUS = 200,      /* ESE-Unspecified, QoS related failure in (Re)Assoc response frames */
 	eSIR_MAC_ESE_TSPEC_REQ_REFUSED_STATUS = 201,    /* ESE-TSPEC request refused due to AP's policy configuration in AddTs Rsp, (Re)Assoc Rsp. */
@@ -728,7 +764,7 @@ typedef enum eSirMacReasonCodes {
 	eSIR_MAC_STA_NOT_PRE_AUTHENTICATED_REASON = 9,  /* Station requesting (re)association is not authenticated with responding station */
 	eSIR_MAC_PWR_CAPABILITY_BAD_REASON = 10,        /* Disassociated because the information in the Power Capability element is unacceptable */
 	eSIR_MAC_SPRTD_CHANNELS_BAD_REASON = 11,        /* Disassociated because the information in the Supported Channels element is unacceptable */
-	/* reserved                                        12 */
+	eSIR_MAC_BSS_TRANSITION_DISASSOC = 12,
 	eSIR_MAC_INVALID_IE_REASON = 13,        /* Invalid information element, i.e., an information element defined in this standard for */
 	/* which the content does not meet the specifications in Clause 7 */
 	eSIR_MAC_MIC_FAILURE_REASON = 14,       /* Message integrity code (MIC) failure */
@@ -764,7 +800,29 @@ typedef enum eSirMacReasonCodes {
 	eSIR_MAC_CIPHER_NOT_SUPPORTED_REASON = 45,      /* Peer STA does not support the requested cipher suite */
 	eSIR_MAC_DISASSOC_DUE_TO_FTHANDOFF_REASON = 46, /* FT reason */
 	/* reserved                                         47 - 65535. */
-	eSIR_BEACON_MISSED = 65534,     /* We invented this to tell beacon missed case */
+
+	/*
+	 * Internal reason codes: Add any internal reason code just after
+	 * eSIR_MAC_REASON_PROP_START and decrease the value of
+	 * eSIR_MAC_REASON_PROP_START accordingly.
+	 */
+	eSIR_MAC_REASON_PROP_START = 65519,
+	eSIR_MAC_HOST_TRIGGERED_ROAM_FAILURE  = 65519,
+	eSIR_MAC_FW_TRIGGERED_ROAM_FAILURE = 65520,
+	eSIR_MAC_GATEWAY_REACHABILITY_FAILURE = 65521,
+	eSIR_MAC_UNSUPPORTED_CHANNEL_CSA = 65522,
+	eSIR_MAC_OPER_CHANNEL_DISABLED_INDOOR = 65523,
+	eSIR_MAC_OPER_CHANNEL_USER_DISABLED = 65524,
+	eSIR_MAC_DEVICE_RECOVERY = 65525,
+	eSIR_MAC_KEY_TIMEOUT = 65526,
+	eSIR_MAC_OPER_CHANNEL_BAND_CHANGE = 65527,
+	eSIR_MAC_IFACE_DOWN = 65528,
+	eSIR_MAC_PEER_XRETRY_FAIL = 65529,
+	eSIR_MAC_PEER_INACTIVITY = 65530,
+	eSIR_MAC_SA_QUERY_TIMEOUT = 65531,
+	eSIR_MAC_CHANNEL_SWITCH_FAILED = 65532,
+	eSIR_MAC_BEACON_MISSED = 65533,
+	eSIR_MAC_USER_TRIGGERED_ROAM_FAILURE = 65534,
 } tSirMacReasonCodes;
 
 /* BA Initiator v/s Recipient */
@@ -983,10 +1041,19 @@ typedef struct sSirMacRateSet {
 	uint8_t rate[SIR_MAC_RATESET_EID_MAX];
 } qdf_packed tSirMacRateSet;
 
+/** struct merged_mac_rate_set - merged mac rate set
+ * @num_rates: num of rates
+ * @rate: rate list
+ */
+struct merged_mac_rate_set {
+	uint8_t num_rates;
+	uint8_t rate[2 * SIR_MAC_RATESET_EID_MAX];
+};
+
 /* Reserve 1 byte for NULL character in the SSID name field to print in %s */
 typedef struct sSirMacSSid {
 	uint8_t length;
-	uint8_t ssId[SIR_MAC_MAX_SSID_LENGTH + 1];
+	uint8_t ssId[SIR_MAC_MAX_SSID_LENGTH +1];
 } qdf_packed tSirMacSSid;
 
 typedef struct sSirMacWpaInfo {
@@ -994,11 +1061,11 @@ typedef struct sSirMacWpaInfo {
 	uint8_t info[SIR_MAC_MAX_IE_LENGTH];
 } qdf_packed tSirMacWpaInfo, *tpSirMacWpaInfo,
 tSirMacRsnInfo, *tpSirMacRsnInfo;
+
 typedef struct sSirMacWapiInfo {
 	uint8_t length;
 	uint8_t info[SIR_MAC_MAX_IE_LENGTH];
-} qdf_packed tSirMacWapiInfo, *tpSirMacWapiInfo,
-tSirMacWapiInfo, *tpSirMacWapiInfo;
+} qdf_packed tSirMacWapiInfo, *tpSirMacWapiInfo;
 
 typedef struct sSirMacFHParamSet {
 	uint16_t dwellTime;
@@ -1125,7 +1192,11 @@ typedef struct sSirMacCW {
 typedef struct sSirMacEdcaParamRecord {
 	tSirMacAciAifsn aci;
 	tSirMacCW cw;
-	uint16_t txoplimit;
+	union {
+		uint16_t txoplimit;
+		uint16_t mu_edca_timer;
+	};
+	uint8_t no_ack;
 } qdf_packed tSirMacEdcaParamRecord;
 
 typedef struct sSirMacQosInfo {
@@ -1943,6 +2014,15 @@ typedef struct sSirMacAuthFrameBody {
 	uint8_t type;           /* = SIR_MAC_CHALLENGE_TEXT_EID */
 	uint8_t length;         /* = SIR_MAC_AUTH_CHALLENGE_LENGTH */
 	uint8_t challengeText[SIR_MAC_AUTH_CHALLENGE_LENGTH];
+#ifdef WLAN_FEATURE_FILS_SK
+	tSirMacRsnInfo rsn_ie;
+	struct mac_ft_ie ft_ie;
+	uint8_t assoc_delay_info;
+	uint8_t session[SIR_FILS_SESSION_LENGTH];
+	uint8_t wrapped_data_len;
+	uint8_t wrapped_data[SIR_FILS_WRAPPED_DATA_MAX_SIZE];
+	uint8_t nonce[SIR_FILS_NONCE_LENGTH];
+#endif
 } qdf_packed tSirMacAuthFrameBody, *tpSirMacAuthFrameBody;
 
 typedef struct sSirMacAuthenticationFrame {
@@ -2035,6 +2115,43 @@ typedef struct sSirMacLinkReport {
 } tSirMacLinkReport, *tpSirMacLinkReport;
 
 #define BEACON_REPORT_MAX_IES 224       /* Refer IEEE 802.11k-2008, Table 7-31d */
+/* Max number of beacon reports per channel supported in the driver */
+#define MAX_BEACON_REPORTS 8
+/* Offset of IEs after Fixed Fields in Beacon Frame */
+#define BEACON_FRAME_IES_OFFSET 12
+
+/**
+ * struct bcn_report_frame_body_frag_id - beacon report reported frame body
+ *					  fragment ID sub element params
+ * @id: report ID
+ * @frag_id: fragment ID
+ * @more_frags: more frags present or not present
+ */
+struct bcn_report_frame_body_frag_id {
+	uint8_t id;
+	uint8_t frag_id;
+	bool more_frags;
+};
+
+/**
+ * struct sSirMacBeaconReport - Beacon Report Structure
+ * @regClass: Regulatory Class
+ * @channel: Channel for which the current report is being sent
+ * @measStartTime: RRM scan start time for this report
+ * @measDuration: Scan duration for the current channel
+ * @phyType: Condensed Phy Type
+ * @bcnProbeRsp: Beacon or probe response being reported
+ * @rsni: Received signal-to-noise indication
+ * @rcpi: Received Channel Power indication
+ * @bssid: BSSID of the AP requesting the beacon report
+ * @antennaId: Number of Antennas used for measurement
+ * @parentTSF: measuring STA's TSF timer value
+ * @numIes: Number of IEs included in the beacon frames
+ * @last_bcn_report_ind_support: Support for Last beacon report indication
+ * @is_last_bcn_report: Is the current report last or more reports present
+ * @frame_body_frag_id: Reported Frame Body Frag Id sub-element params
+ * @Ies: IEs included in the beacon report
+ */
 typedef struct sSirMacBeaconReport {
 	uint8_t regClass;
 	uint8_t channel;
@@ -2048,6 +2165,9 @@ typedef struct sSirMacBeaconReport {
 	uint8_t antennaId;
 	uint32_t parentTSF;
 	uint8_t numIes;
+	uint8_t last_bcn_report_ind_support;
+	uint8_t is_last_bcn_report;
+	struct bcn_report_frame_body_frag_id frame_body_frag_id;
 	uint8_t Ies[BEACON_REPORT_MAX_IES];
 
 } tSirMacBeaconReport, *tpSirMacBeaconReport;
@@ -2063,6 +2183,305 @@ typedef struct sSirMacRadioMeasureReport {
 	} report;
 
 } tSirMacRadioMeasureReport, *tpSirMacRadioMeasureReport;
+
+#ifdef WLAN_FEATURE_11AX
+struct he_cap_network_endian {
+	uint32_t htc_he:1;
+	uint32_t twt_request:1;
+	uint32_t twt_responder:1;
+	uint32_t fragmentation:2;
+	uint32_t max_num_frag_msdu:3;
+	uint32_t min_frag_size:2;
+	uint32_t trigger_frm_mac_pad:2;
+	uint32_t multi_tid_aggr:3;
+	uint32_t he_link_adaptation:2;
+	uint32_t all_ack:1;
+	uint32_t ul_mu_rsp_sched:1;
+	uint32_t a_bsr:1;
+	uint32_t broadcast_twt:1;
+	uint32_t ba_32bit_bitmap:1;
+	uint32_t mu_cascade:1;
+	uint32_t ack_enabled_multitid:1;
+	uint32_t dl_mu_ba:1;
+	uint32_t omi_a_ctrl:1;
+	uint32_t ofdma_ra:1;
+	uint32_t max_ampdu_len:2;
+	uint32_t amsdu_frag:1;
+	uint32_t flex_twt_sched:1;
+	uint32_t rx_ctrl_frame:1;
+
+	uint8_t bsrp_ampdu_aggr:1;
+	uint8_t qtp:1;
+	uint8_t a_bqr:1;
+	uint8_t sr_responder:1;
+	uint8_t ndp_feedback_supp:1;
+	uint8_t ops_supp:1;
+	uint8_t amsdu_in_ampdu:1;
+	uint8_t reserved1:1;
+
+	uint32_t dual_band:1;
+	uint32_t chan_width:7;
+	uint32_t rx_pream_puncturing:4;
+	uint32_t device_class:1;
+	uint32_t ldpc_coding:1;
+	uint32_t he_1x_ltf_800_gi_ppdu:1;
+	uint32_t midamble_rx_max_nsts:2;
+	uint32_t he_4x_ltf_3200_gi_ndp:1;
+	uint32_t tx_stbc_lt_80mhz:1;
+	uint32_t rx_stbc_lt_80mhz:1;
+	uint32_t doppler:2;
+	uint32_t ul_mu:2;
+	uint32_t dcm_enc_tx:3;
+	uint32_t dcm_enc_rx:3;
+	uint32_t ul_he_mu:1;
+	uint32_t su_beamformer:1;
+
+	uint32_t su_beamformee:1;
+	uint32_t mu_beamformer:1;
+	uint32_t bfee_sts_lt_80:3;
+	uint32_t bfee_sts_gt_80:3;
+	uint32_t num_sounding_lt_80:3;
+	uint32_t num_sounding_gt_80:3;
+	uint32_t su_feedback_tone16:1;
+	uint32_t mu_feedback_tone16:1;
+	uint32_t codebook_su:1;
+	uint32_t codebook_mu:1;
+	uint32_t beamforming_feedback:3;
+	uint32_t he_er_su_ppdu:1;
+	uint32_t dl_mu_mimo_part_bw:1;
+	uint32_t ppet_present:1;
+	uint32_t srp:1;
+	uint32_t power_boost:1;
+	uint32_t he_ltf_800_gi_4x:1;
+	uint32_t max_nc:3;
+	uint32_t tx_stbc_gt_80mhz:1;
+	uint32_t rx_stbc_gt_80mhz:1;
+
+	uint8_t er_he_ltf_800_gi_4x:1;
+	uint8_t he_ppdu_20_in_40Mhz_2G:1;
+	uint8_t he_ppdu_20_in_160_80p80Mhz:1;
+	uint8_t he_ppdu_80_in_160_80p80Mhz:1;
+	uint8_t er_1x_he_ltf_gi:1;
+	uint8_t midamble_rx_1x_he_ltf:1;
+	uint8_t reserved2:2;
+
+	uint16_t rx_he_mcs_map_lt_80;
+	uint16_t tx_he_mcs_map_lt_80;
+	uint16_t rx_he_mcs_map_160;
+	uint16_t tx_he_mcs_map_160;
+	uint16_t rx_he_mcs_map_80_80;
+	uint16_t tx_he_mcs_map_80_80;
+} qdf_packed;
+
+struct he_ops_network_endian {
+	uint32_t            bss_color:6;
+	uint32_t           default_pe:3;
+	uint32_t         twt_required:1;
+	uint32_t        rts_threshold:10;
+	uint32_t      partial_bss_col:1;
+	uint32_t     vht_oper_present:1;
+	uint32_t            reserved1:6;
+	uint32_t            mbssid_ap:1;
+	uint32_t         tx_bssid_ind:1;
+	uint32_t     bss_col_disabled:1;
+	uint32_t            reserved2:1;
+	uint8_t             basic_mcs_nss[2];
+	union {
+		struct {
+			uint8_t chan_width;
+			uint8_t center_freq_seg0;
+			uint8_t center_freq_seg1;
+		} info; /* vht_oper_present = 1 */
+	} vht_oper;
+	union {
+		struct {
+			uint8_t data;
+		} info; /* mbssid_ap = 1 */
+	} maxbssid_ind;
+} qdf_packed;
+
+/* HE Capabilities Info */
+struct he_capability_info {
+#ifndef ANI_LITTLE_BIT_ENDIAN
+	uint32_t rx_ctrl_frame:1;
+	uint32_t flex_twt_sched:1;
+	uint32_t amsdu_frag:1;
+	uint32_t max_ampdu_len:2;
+	uint32_t ofdma_ra:1;
+	uint32_t omi_a_ctrl:1;
+	uint32_t dl_mu_ba:1;
+	uint32_t ack_enabled_multitid:1;
+	uint32_t mu_cascade:1;
+	uint32_t ba_32bit_bitmap:1;
+	uint32_t broadcast_twt:1;
+	uint32_t a_bsr:1;
+	uint32_t ul_mu_rsp_sched:1;
+	uint32_t all_ack:1;
+	uint32_t he_link_adaptation:2;
+	uint32_t multi_tid_aggr:3;
+	uint32_t trigger_frm_mac_pad:2;
+	uint32_t min_frag_size:2;
+	uint32_t max_num_frag_msdu:3;
+	uint32_t fragmentation:2;
+	uint32_t twt_responder:1;
+	uint32_t twt_request:1;
+	uint32_t htc_he:1;
+
+	uint8_t reserved1:1;
+	uint8_t amsdu_in_ampdu:1;
+	uint8_t ops_supp:1;
+	uint8_t ndp_feedback_supp:1;
+	uint8_t sr_responder:1;
+	uint8_t a_bqr:1;
+	uint8_t qtp:1;
+	uint8_t bsrp_ampdu_aggr:1;
+
+	uint32_t su_beamformer:1;
+	uint32_t ul_he_mu:1;
+	uint32_t dcm_enc_rx:3;
+	uint32_t dcm_enc_tx:3;
+	uint32_t ul_mu:2;
+	uint32_t doppler:2;
+	uint32_t rx_stbc_lt_80mhz:1;
+	uint32_t tx_stbc_lt_80mhz:1;
+	uint32_t he_4x_ltf_3200_gi_ndp:1;
+	uint32_t midamble_rx_max_nsts:2;
+	uint32_t he_1x_ltf_800_gi_ppdu:1;
+	uint32_t ldpc_coding:1;
+	uint32_t device_class:1;
+	uint32_t rx_pream_puncturing:4;
+	uint32_t chan_width:7;
+	uint32_t dual_band:1;
+
+	uint32_t rx_stbc_gt_80mhz:1;
+	uint32_t tx_stbc_gt_80mhz:1;
+	uint32_t max_nc:3;
+	uint32_t he_ltf_800_gi_4x:1;
+	uint32_t power_boost:1;
+	uint32_t srp:1;
+	uint32_t ppet_present:1;
+	uint32_t dl_mu_mimo_part_bw:1;
+	uint32_t he_er_su_ppdu:1;
+	uint32_t beamforming_feedback:3;
+	uint32_t codebook_mu:1;
+	uint32_t codebook_su:1;
+	uint32_t mu_feedback_tone16:1;
+	uint32_t su_feedback_tone16:1;
+	uint32_t num_sounding_gt_80:3;
+	uint32_t num_sounding_lt_80:3;
+	uint32_t bfee_sts_gt_80:3;
+	uint32_t bfee_sts_lt_80:3;
+	uint32_t mu_beamformer:1;
+	uint32_t su_beamformee:1;
+
+	uint8_t reserved2:2;
+	uint8_t midamble_rx_1x_he_ltf:1;
+	uint8_t er_1x_he_ltf_gi:1;
+	uint8_t he_ppdu_80_in_160_80p80Mhz:1;
+	uint8_t he_ppdu_20_in_160_80p80Mhz:1;
+	uint8_t he_ppdu_20_in_40Mhz_2G:1;
+	uint8_t er_he_ltf_800_gi_4x:1;
+
+	uint16_t tx_he_mcs_map_80_80;
+	uint16_t rx_he_mcs_map_80_80;
+	uint16_t tx_he_mcs_map_160;
+	uint16_t rx_he_mcs_map_160;
+	uint16_t tx_he_mcs_map_lt_80;
+	uint16_t rx_he_mcs_map_lt_80;
+#else
+	uint32_t htc_he:1;
+	uint32_t twt_request:1;
+	uint32_t twt_responder:1;
+	uint32_t fragmentation:2;
+	uint32_t max_num_frag_msdu:3;
+	uint32_t min_frag_size:2;
+	uint32_t trigger_frm_mac_pad:2;
+	uint32_t multi_tid_aggr:3;
+	uint32_t he_link_adaptation:2;
+	uint32_t all_ack:1;
+	uint32_t ul_mu_rsp_sched:1;
+	uint32_t a_bsr:1;
+	uint32_t broadcast_twt:1;
+	uint32_t ba_32bit_bitmap:1;
+	uint32_t mu_cascade:1;
+	uint32_t ack_enabled_multitid:1;
+	uint32_t dl_mu_ba:1;
+	uint32_t omi_a_ctrl:1;
+	uint32_t ofdma_ra:1;
+	uint32_t max_ampdu_len:2;
+	uint32_t amsdu_frag:1;
+	uint32_t flex_twt_sched:1;
+	uint32_t rx_ctrl_frame:1;
+
+	uint8_t bsrp_ampdu_aggr:1;
+	uint8_t qtp:1;
+	uint8_t a_bqr:1;
+	uint8_t sr_responder:1;
+	uint8_t ndp_feedback_supp:1;
+	uint8_t ops_supp:1;
+	uint8_t amsdu_in_ampdu:1;
+	uint8_t reserved1:1;
+
+	uint32_t dual_band:1;
+	uint32_t chan_width:7;
+	uint32_t rx_pream_puncturing:4;
+	uint32_t device_class:1;
+	uint32_t ldpc_coding:1;
+	uint32_t he_1x_ltf_800_gi_ppdu:1;
+	uint32_t midamble_rx_max_nsts:2;
+	uint32_t he_4x_ltf_3200_gi_ndp:1;
+	uint32_t tx_stbc_lt_80mhz:1;
+	uint32_t rx_stbc_lt_80mhz:1;
+	uint32_t doppler:2;
+	uint32_t ul_mu:2;
+	uint32_t dcm_enc_tx:3;
+	uint32_t dcm_enc_rx:3;
+	uint32_t ul_he_mu:1;
+	uint32_t su_beamformer:1;
+
+	uint32_t su_beamformee:1;
+	uint32_t mu_beamformer:1;
+	uint32_t bfee_sts_lt_80:3;
+	uint32_t bfee_sts_gt_80:3;
+	uint32_t num_sounding_lt_80:3;
+	uint32_t num_sounding_gt_80:3;
+	uint32_t su_feedback_tone16:1;
+	uint32_t mu_feedback_tone16:1;
+	uint32_t codebook_su:1;
+	uint32_t codebook_mu:1;
+	uint32_t beamforming_feedback:3;
+	uint32_t he_er_su_ppdu:1;
+	uint32_t dl_mu_mimo_part_bw:1;
+	uint32_t ppet_present:1;
+	uint32_t srp:1;
+	uint32_t power_boost:1;
+	uint32_t he_ltf_800_gi_4x:1;
+	uint32_t max_nc:3;
+	uint32_t tx_stbc_gt_80mhz:1;
+	uint32_t rx_stbc_gt_80mhz:1;
+
+	uint8_t er_he_ltf_800_gi_4x:1;
+	uint8_t he_ppdu_20_in_40Mhz_2G:1;
+	uint8_t he_ppdu_20_in_160_80p80Mhz:1;
+	uint8_t he_ppdu_80_in_160_80p80Mhz:1;
+	uint8_t er_1x_he_ltf_gi:1;
+	uint8_t midamble_rx_1x_he_ltf:1;
+	uint8_t reserved2:2;
+
+	uint16_t rx_he_mcs_map_lt_80;
+	uint16_t tx_he_mcs_map_lt_80;
+	uint16_t rx_he_mcs_map_160;
+	uint16_t tx_he_mcs_map_160;
+	uint16_t rx_he_mcs_map_80_80;
+	uint16_t tx_he_mcs_map_80_80;
+#endif
+} qdf_packed;
+#endif
+
+/*
+ * frame parser does not include optional 160 and 80+80 mcs set for MIN IE len
+ */
+#define SIR_MAC_HE_CAP_MIN_LEN       (DOT11F_IE_HE_CAP_MIN_LEN + 8)
 
 /* QOS action frame definitions */
 

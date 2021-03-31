@@ -325,10 +325,15 @@ static ssize_t snd_info_text_entry_write(struct file *file,
 	size_t next;
 	int err = 0;
 
+	if (!entry->c.text.write)
+		return -EIO;
 	pos = *offset;
 	if (!valid_pos(pos, count))
 		return -EIO;
 	next = pos + count;
+	/* don't handle too large text inputs */
+	if (next > 16 * 1024)
+		return -EIO;
 	mutex_lock(&entry->access);
 	buf = data->wbuffer;
 	if (!buf) {
@@ -366,7 +371,9 @@ static int snd_info_seq_show(struct seq_file *seq, void *p)
 	struct snd_info_private_data *data = seq->private;
 	struct snd_info_entry *entry = data->entry;
 
-	if (entry->c.text.read) {
+	if (!entry->c.text.read) {
+		return -EIO;
+	} else {
 		data->rbuffer->buffer = (char *)seq; /* XXX hack! */
 		entry->c.text.read(entry, data->rbuffer);
 	}
@@ -747,8 +754,11 @@ snd_info_create_entry(const char *name, struct snd_info_entry *parent)
 	INIT_LIST_HEAD(&entry->children);
 	INIT_LIST_HEAD(&entry->list);
 	entry->parent = parent;
-	if (parent)
+	if (parent) {
+		mutex_lock(&parent->access);
 		list_add_tail(&entry->list, &parent->children);
+		mutex_unlock(&parent->access);
+	}
 	return entry;
 }
 
@@ -832,7 +842,12 @@ void snd_info_free_entry(struct snd_info_entry * entry)
 	list_for_each_entry_safe(p, n, &entry->children, list)
 		snd_info_free_entry(p);
 
-	list_del(&entry->list);
+	p = entry->parent;
+	if (p) {
+		mutex_lock(&p->access);
+		list_del(&entry->list);
+		mutex_unlock(&p->access);
+	}
 	kfree(entry->name);
 	if (entry->private_free)
 		entry->private_free(entry);

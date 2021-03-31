@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef _REGTABLE_PCIE_H_
@@ -209,7 +200,7 @@
 #define SOC_POWER_REG_OFFSET    (scn->targetdef->d_SOC_POWER_REG_OFFSET)
 /* end */
 
-#ifndef CONFIG_WIN
+#if !defined(CONFIG_WIN)
 /* htt_rx.c */
 #define RX_MSDU_END_4_FIRST_MSDU_MASK \
 	(pdev->targetdef->d_RX_MSDU_END_4_FIRST_MSDU_MASK)
@@ -261,12 +252,6 @@
 	(pdev->targetdef->d_RX_MSDU_START_0_MSDU_LENGTH_MASK)
 #define RX_MSDU_START_0_MSDU_LENGTH_LSB \
 	(pdev->targetdef->d_RX_MSDU_START_0_MSDU_LENGTH_LSB)
-#define RX_MSDU_START_2_DECAP_FORMAT_OFFSET \
-	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_OFFSET)
-#define RX_MSDU_START_2_DECAP_FORMAT_MASK \
-	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_MASK)
-#define RX_MSDU_START_2_DECAP_FORMAT_LSB \
-	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_LSB)
 #define RX_MPDU_START_0_ENCRYPTED_MASK \
 	(pdev->targetdef->d_RX_MPDU_START_0_ENCRYPTED_MASK)
 #define RX_MPDU_START_0_ENCRYPTED_LSB \
@@ -277,6 +262,20 @@
 	(pdev->targetdef->d_RX_ATTENTION_0_MSDU_DONE_MASK)
 #define RX_ATTENTION_0_TCP_UDP_CHKSUM_FAIL_MASK \
 	(pdev->targetdef->d_RX_ATTENTION_0_TCP_UDP_CHKSUM_FAIL_MASK)
+#if !defined(QCA6290_HEADERS_DEF)
+#ifndef RX_MSDU_START_2_DECAP_FORMAT_OFFSET
+#define RX_MSDU_START_2_DECAP_FORMAT_OFFSET \
+	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_OFFSET)
+#endif
+#ifndef RX_MSDU_START_2_DECAP_FORMAT_LSB
+#define RX_MSDU_START_2_DECAP_FORMAT_LSB \
+	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_LSB)
+#endif
+#ifndef RX_MSDU_START_2_DECAP_FORMAT_MASK
+#define RX_MSDU_START_2_DECAP_FORMAT_MASK \
+	(pdev->targetdef->d_RX_MSDU_START_2_DECAP_FORMAT_MASK)
+#endif
+#endif /*!QCA6290_HEADERS_DEF*/
 /* end */
 #endif
 
@@ -688,7 +687,7 @@
 #define AR6320V3_CPU_PLL_INIT_DONE_ADDR 0x404020
 #define AR6320V3_CPU_SPEED_ADDR         0x404024
 
-typedef enum {
+enum a_refclk_speed_t {
 	SOC_REFCLK_UNKNOWN = -1, /* Unsupported ref clock -- use PLL Bypass */
 	SOC_REFCLK_48_MHZ = 0,
 	SOC_REFCLK_19_2_MHZ = 1,
@@ -698,7 +697,7 @@ typedef enum {
 	SOC_REFCLK_38_4_MHZ = 5,
 	SOC_REFCLK_40_MHZ = 6,
 	SOC_REFCLK_52_MHZ = 7,
-} A_refclk_speed_t;
+};
 
 #define A_REFCLK_UNKNOWN    SOC_REFCLK_UNKNOWN
 #define A_REFCLK_48_MHZ     SOC_REFCLK_48_MHZ
@@ -720,21 +719,21 @@ struct wlan_pll_s {
 };
 
 struct cmnos_clock_s {
-	A_refclk_speed_t refclk_speed;
+	enum a_refclk_speed_t refclk_speed;
 	uint32_t refclk_hz;
 	uint32_t pll_settling_time;     /* 50us */
 	struct wlan_pll_s wlan_pll;
 };
 
-typedef struct TGT_REG_SECTION {
+struct tgt_reg_section {
 	uint32_t start_addr;
 	uint32_t end_addr;
-} tgt_reg_section;
+};
 
-typedef struct TGT_REG_TABLE {
-	tgt_reg_section *section;
+struct tgt_reg_table {
+	const struct tgt_reg_section *section;
 	uint32_t section_size;
-} tgt_reg_table;
+};
 
 struct hif_softc;
 void hif_target_register_tbl_attach(struct hif_softc *scn, u32 target_type);

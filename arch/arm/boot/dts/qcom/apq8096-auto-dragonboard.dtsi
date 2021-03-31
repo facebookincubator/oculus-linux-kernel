@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,11 @@
 		qca,bt-vdd-io-voltage-level = <1800000 1800000>;
 		qca,bt-vdd-xtal-voltage-level = <1800000 1800000>;
 	};
+};
+
+&msm_vidc {
+	disable-dcvs-enc;
+	disable-dcvs-dec;
 };
 
 &ufs_ice {
@@ -339,6 +344,77 @@
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
+	qcom,sde-plane-id-map {
+		qcom,sde-plane-id@0 {
+			reg = <0x0>;
+			qcom,display-type = "primary";
+			qcom,plane-name = "rgb0", "rgb1";
+			qcom,plane-type = "primary";
+		};
+
+		qcom,sde-plane-id@1 {
+			reg = <0x1>;
+			qcom,display-type = "primary";
+			qcom,plane-name = "vig0", "vig1";
+			qcom,plane-type = "overlay";
+		};
+
+		qcom,sde-plane-id@2 {
+			reg = <0x2>;
+			qcom,display-type = "primary";
+			qcom,plane-name = "cursor0";
+			qcom,plane-type = "cursor";
+		};
+
+		qcom,sde-plane-id@3 {
+			reg = <0x3>;
+			qcom,display-type = "secondary";
+			qcom,plane-name = "rgb2";
+			qcom,plane-type = "primary";
+		};
+
+		qcom,sde-plane-id@4 {
+			reg = <0x4>;
+			qcom,display-type = "secondary";
+			qcom,plane-name = "vig2";
+			qcom,plane-type = "overlay";
+		};
+
+		qcom,sde-plane-id@5 {
+			reg = <0x5>;
+			qcom,display-type = "secondary";
+			qcom,plane-name = "dma0";
+			qcom,plane-type = "overlay";
+		};
+
+		qcom,sde-plane-id@6 {
+			reg = <0x6>;
+			qcom,display-type = "secondary";
+			qcom,plane-name = "cursor1";
+			qcom,plane-type = "cursor";
+		};
+
+		qcom,sde-plane-id@7 {
+			reg = <0x7>;
+			qcom,display-type = "tertiary";
+			qcom,plane-name = "rgb3";
+			qcom,plane-type = "primary";
+		};
+
+		qcom,sde-plane-id@8 {
+			reg = <0x8>;
+			qcom,display-type = "tertiary";
+			qcom,plane-name = "vig3";
+			qcom,plane-type = "overlay";
+		};
+
+		qcom,sde-plane-id@9 {
+			reg = <0x9>;
+			qcom,display-type = "tertiary";
+			qcom,plane-name = "dma1";
+			qcom,plane-type = "overlay";
+		};
+	};
 };
 
 &mdss_dsi {
@@ -528,6 +604,26 @@
 };
 
 &soc {
+	qcom,msm-audio-apr {
+		compatible = "qcom,msm-audio-apr";
+		msm_audio_apr_dummy {
+			compatible = "qcom,msm-audio-apr-dummy";
+		};
+	};
+
+	qcom,ntn_avb {
+		compatible = "qcom,ntn_avb";
+
+		ntn-rst-gpio = <&pm8994_gpios 13 0>;
+
+		vdd-ntn-hsic-supply = <&pm8994_l25>;
+		vdd-ntn-pci-supply = <&pm8994_s4>;
+		vdd-ntn-io-supply = <&pm8994_s4>;
+
+		qcom,ntn-rst-delay-msec = <100>;
+		qcom,ntn-rc-num = <1>;
+	};
+
 	qcom,cnss {
 		wlan-bootstrap-gpio = <&tlmm 46 0>;
 		wlan-en-gpio = <&pm8994_gpios 8 0>;
@@ -614,42 +710,86 @@
 
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
-				<&afe>, <&lsm>, <&routing>, <&compr>;
+				<&afe>, <&lsm>, <&routing>, <&pcmnoirq>,
+				<&loopback1>, <&pcm_dtmf>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-pcm-dsp.2", "msm-voip-dsp",
 				"msm-pcm-voice", "msm-pcm-loopback",
 				"msm-compress-dsp", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-lsm-client",
-				"msm-pcm-routing", "msm-compr-dsp";
+				"msm-pcm-routing", "msm-pcm-dsp-noirq",
+				"msm-pcm-loopback.1", "msm-pcm-dtmf";
 		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>, <&dai_hdmi>,
-				<&dai_mi2s>, <&dai_mi2s_quat>,
+				<&dai_mi2s_sec>, <&dai_mi2s>, <&dai_mi2s_quat>,
 				<&afe_pcm_rx>, <&afe_pcm_tx>,
 				<&afe_proxy_rx>, <&afe_proxy_tx>,
 				<&incall_record_rx>, <&incall_record_tx>,
 				<&incall_music_rx>, <&incall_music2_rx>,
+				<&dai_pri_tdm_tx_0>, <&dai_pri_tdm_tx_1>,
+				<&dai_pri_tdm_tx_2>, <&dai_pri_tdm_tx_3>,
+				<&dai_pri_tdm_rx_0>, <&dai_pri_tdm_rx_1>,
+				<&dai_pri_tdm_rx_2>, <&dai_pri_tdm_rx_3>,
+				<&dai_sec_tdm_rx_0>, <&dai_sec_tdm_rx_1>,
+				<&dai_sec_tdm_rx_2>, <&dai_sec_tdm_rx_3>,
+				<&dai_sec_tdm_tx_0>, <&dai_sec_tdm_tx_1>,
+				<&dai_sec_tdm_tx_2>, <&dai_sec_tdm_tx_3>,
 				<&dai_tert_tdm_rx_0>, <&dai_tert_tdm_rx_1>,
 				<&dai_tert_tdm_rx_2>, <&dai_tert_tdm_rx_3>,
-				<&dai_tert_tdm_tx_0>, <&dai_tert_tdm_tx_1>,
-				<&dai_tert_tdm_tx_2>, <&dai_tert_tdm_tx_3>,
-				<&dai_quat_tdm_rx_0>, <&dai_quat_tdm_rx_1>,
-				<&dai_quat_tdm_rx_2>, <&dai_quat_tdm_rx_3>,
-				<&dai_quat_tdm_tx_0>, <&dai_quat_tdm_tx_1>,
-				<&dai_quat_tdm_tx_2>, <&dai_quat_tdm_tx_3>;
+				<&dai_tert_tdm_rx_4>, <&dai_tert_tdm_tx_0>,
+				<&dai_tert_tdm_tx_1>, <&dai_tert_tdm_tx_2>,
+				<&dai_tert_tdm_tx_3>, <&dai_quat_tdm_rx_0>,
+				<&dai_quat_tdm_rx_1>, <&dai_quat_tdm_rx_2>,
+				<&dai_quat_tdm_rx_3>, <&dai_quat_tdm_tx_0>,
+				<&dai_quat_tdm_tx_1>, <&dai_quat_tdm_tx_2>,
+				<&dai_quat_tdm_tx_3>, <&dai_sec_mi2s_rx_1>,
+				<&dai_sec_mi2s_rx_2>, <&dai_sec_mi2s_rx_3>,
+				<&dai_sec_mi2s_rx_4>, <&dai_sec_mi2s_tx_1>,
+				<&dai_sec_mi2s_tx_2>, <&dai_sec_mi2s_tx_3>,
+				<&dai_sec_mi2s_tx_4>, <&dai_tert_mi2s_rx_1>,
+				<&dai_tert_mi2s_rx_2>, <&dai_tert_mi2s_rx_3>,
+				<&dai_tert_mi2s_rx_4>, <&dai_tert_mi2s_tx_1>,
+				<&dai_tert_mi2s_tx_2>, <&dai_tert_mi2s_tx_3>,
+				<&dai_tert_mi2s_tx_4>, <&dai_quat_mi2s_rx_1>,
+				<&dai_quat_mi2s_rx_2>, <&dai_quat_mi2s_rx_3>,
+				<&dai_quat_mi2s_rx_4>, <&dai_quat_mi2s_tx_1>,
+				<&dai_quat_mi2s_tx_2>, <&dai_quat_mi2s_tx_3>,
+				<&dai_quat_mi2s_tx_4>;
 		asoc-cpu-names = "msm-dai-q6-auxpcm.1", "msm-dai-q6-auxpcm.2",
-				"msm-dai-q6-hdmi.8",
+				"msm-dai-q6-hdmi.8", "msm-dai-q6-mi2s.1",
 				"msm-dai-q6-mi2s.2", "msm-dai-q6-mi2s.3",
 				"msm-dai-q6-dev.224", "msm-dai-q6-dev.225",
 				"msm-dai-q6-dev.241", "msm-dai-q6-dev.240",
 				"msm-dai-q6-dev.32771", "msm-dai-q6-dev.32772",
 				"msm-dai-q6-dev.32773", "msm-dai-q6-dev.32770",
+				"msm-dai-q6-tdm.36865", "msm-dai-q6-tdm.36867",
+				"msm-dai-q6-tdm.36869", "msm-dai-q6-tdm.36871",
+				"msm-dai-q6-tdm.36864", "msm-dai-q6-tdm.36866",
+				"msm-dai-q6-tdm.36868", "msm-dai-q6-tdm.36870",
+				"msm-dai-q6-tdm.36880", "msm-dai-q6-tdm.36882",
+				"msm-dai-q6-tdm.36884", "msm-dai-q6-tdm.36886",
+				"msm-dai-q6-tdm.36881", "msm-dai-q6-tdm.36883",
+				"msm-dai-q6-tdm.36885", "msm-dai-q6-tdm.36887",
 				"msm-dai-q6-tdm.36896", "msm-dai-q6-tdm.36898",
 				"msm-dai-q6-tdm.36900", "msm-dai-q6-tdm.36902",
-				"msm-dai-q6-tdm.36897", "msm-dai-q6-tdm.36899",
-				"msm-dai-q6-tdm.36901", "msm-dai-q6-tdm.36903",
-				"msm-dai-q6-tdm.36912", "msm-dai-q6-tdm.36914",
-				"msm-dai-q6-tdm.36916", "msm-dai-q6-tdm.36918",
-				"msm-dai-q6-tdm.36913", "msm-dai-q6-tdm.36915",
-				"msm-dai-q6-tdm.36917", "msm-dai-q6-tdm.36919";
+				"msm-dai-q6-tdm.36904", "msm-dai-q6-tdm.36897",
+				"msm-dai-q6-tdm.36899", "msm-dai-q6-tdm.36901",
+				"msm-dai-q6-tdm.36903", "msm-dai-q6-tdm.36912",
+				"msm-dai-q6-tdm.36914", "msm-dai-q6-tdm.36916",
+				"msm-dai-q6-tdm.36918", "msm-dai-q6-tdm.36913",
+				"msm-dai-q6-tdm.36915", "msm-dai-q6-tdm.36917",
+				"msm-dai-q6-tdm.36919", "msm-dai-q6-mi2s.4160",
+				"msm-dai-q6-mi2s.4162", "msm-dai-q6-mi2s.4164",
+				"msm-dai-q6-mi2s.4166", "msm-dai-q6-mi2s.4161",
+				"msm-dai-q6-mi2s.4163", "msm-dai-q6-mi2s.4165",
+				"msm-dai-q6-mi2s.4167", "msm-dai-q6-mi2s.4168",
+				"msm-dai-q6-mi2s.4170", "msm-dai-q6-mi2s.4172",
+				"msm-dai-q6-mi2s.4174", "msm-dai-q6-mi2s.4169",
+				"msm-dai-q6-mi2s.4171", "msm-dai-q6-mi2s.4173",
+				"msm-dai-q6-mi2s.4175", "msm-dai-q6-mi2s.4128",
+				"msm-dai-q6-mi2s.4130", "msm-dai-q6-mi2s.4132",
+				"msm-dai-q6-mi2s.4134", "msm-dai-q6-mi2s.4129",
+				"msm-dai-q6-mi2s.4131", "msm-dai-q6-mi2s.4133",
+				"msm-dai-q6-mi2s.4135";
 		asoc-codec = <&stub_codec>;
 		asoc-codec-names = "msm-stub-codec.1";
 	};
@@ -660,12 +800,37 @@
 		vin-supply = <&vph_pwr_vreg>;
 	};
 
+	loopback1: qcom,msm-pcm-loopback-low-latency {
+		compatible = "qcom,msm-pcm-loopback";
+		qcom,msm-pcm-loopback-low-latency;
+	};
+
+	pcm_dtmf: qcom,msm-pcm-dtmf {
+		compatible = "qcom,msm-pcm-dtmf";
+	};
+
 	qcom,msm-dai-mi2s {
+		dai_mi2s_sec: qcom,msm-dai-q6-mi2s-sec {
+			qcom,msm-mi2s-rx-lines = <2>;
+			qcom,msm-mi2s-tx-lines = <1>;
+			pinctrl-names = "default", "sleep";
+			pinctrl-0 = <&sec_mi2s_active &sec_mi2s_sd0_active
+				&sec_mi2s_sd1_active>;
+			pinctrl-1 = <&sec_mi2s_sleep &sec_mi2s_sd0_sleep
+				&sec_mi2s_sd1_sleep>;
+		};
+
 		dai_mi2s_quat: qcom,msm-dai-q6-mi2s-quat {
 			pinctrl-names = "default", "sleep";
 			pinctrl-0 = <&quat_mi2s_active &quat_mi2s_sd0_active>;
 			pinctrl-1 = <&quat_mi2s_sleep &quat_mi2s_sd0_sleep>;
 		};
+	};
+
+	qcom,msm-dai-tdm-tert-rx {
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&tert_tdm_dout_active>;
+		pinctrl-1 = <&tert_tdm_dout_sleep>;
 	};
 
 	qcom,msm-dai-tdm-quat-rx {
@@ -747,11 +912,14 @@
 		status = "okay";
 	};
 
-	gpio@cc00 { /* GPIO 13 */
-		qcom,mode = <1>;	/* DIGITAL OUT */
-		qcom,vin-sel = <2>;	/* 1.8 */
-		qcom,src-sel = <0>;	/* GPIO */
-		qcom,master-en = <1>;	/* Enable GPIO */
+	gpio@cc00 { /* GPIO 13 - NTN_RST */
+		qcom,mode = <1>; /* DIGITAL OUT */
+		qcom,output-type = <0>; /* CMOS logic */
+		qcom,pull = <5>;
+		qcom,vin-sel = <2>; /* 1.8 */
+		qcom,out-strength = <1>;
+		qcom,src-sel = <0>; /* GPIO */
+		qcom,master-en = <0>; /* Disable GPIO */
 		status = "okay";
 	};
 
@@ -876,9 +1044,10 @@
 };
 
 &spi_0 {
-	spi_codec@2 {
+	spi_codec@0 {
 		compatible = "qcom,spi-msm-codec-slave";
-		reg = <2>;
-		spi-max-frequency = <19200000>;
+		reg = <0>;
+		spi-max-frequency = <2000000>;
+		spi-cpha;
 	};
 };

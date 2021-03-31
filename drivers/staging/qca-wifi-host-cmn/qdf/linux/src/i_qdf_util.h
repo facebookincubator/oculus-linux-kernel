@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /**
@@ -40,6 +31,7 @@
 #include <linux/errno.h>
 
 #include <linux/random.h>
+#include <linux/io.h>
 
 #include <qdf_types.h>
 #include <qdf_status.h>
@@ -55,7 +47,7 @@
 #endif
 
 #include <qdf_types.h>
-#include <asm/io.h>
+#include <linux/io.h>
 #include <asm/byteorder.h>
 
 #ifdef QCA_PARTNER_PLATFORM
@@ -64,9 +56,27 @@
 #include <linux/byteorder/generic.h>
 #endif
 
-/*
- * Generic compiler-dependent macros if defined by the OS
- */
+typedef wait_queue_head_t __qdf_wait_queue_head_t;
+
+/* Generic compiler-dependent macros if defined by the OS */
+#define __qdf_wait_queue_interruptible(wait_queue, condition) \
+		wait_event_interruptible(wait_queue, condition)
+
+#define __qdf_wait_queue_timeout( \
+			wait_queue, condition, timeout) \
+		wait_event_timeout(wait_queue, condition,\
+			 timeout)
+
+
+#define __qdf_init_waitqueue_head(_q) init_waitqueue_head(_q)
+
+#define __qdf_wake_up_interruptible(_q) wake_up_interruptible(_q)
+
+#define __qdf_wake_up(_q) wake_up(_q)
+
+
+#define __qdf_wake_up_completion(_q) wake_up_completion(_q)
+
 #define __qdf_unlikely(_expr)   unlikely(_expr)
 #define __qdf_likely(_expr)     likely(_expr)
 
@@ -124,8 +134,64 @@ static inline int __qdf_status_to_os_return(QDF_STATUS status)
 		return -EIO;
 	case QDF_STATUS_E_NETRESET:
 		return -ENETRESET;
+	case QDF_STATUS_E_PENDING:
+		return -EINPROGRESS;
+	case QDF_STATUS_E_TIMEOUT:
+		return -ETIMEDOUT;
 	default:
 		return -EPERM;
+	}
+}
+
+static inline QDF_STATUS __qdf_status_from_os_return(int rc)
+{
+	switch (rc) {
+	case 0:
+		return QDF_STATUS_SUCCESS;
+	case -ENOMEM:
+		return QDF_STATUS_E_NOMEM;
+	case -EAGAIN:
+		return QDF_STATUS_E_AGAIN;
+	case -EINVAL:
+		return QDF_STATUS_E_INVAL;
+	case -EFAULT:
+		return QDF_STATUS_E_FAULT;
+	case -EALREADY:
+		return QDF_STATUS_E_ALREADY;
+	case -EBADMSG:
+		return QDF_STATUS_E_BADMSG;
+	case -EBUSY:
+		return QDF_STATUS_E_BUSY;
+	case -ECANCELED:
+		return QDF_STATUS_E_CANCELED;
+	case -ECONNABORTED:
+		return QDF_STATUS_E_ABORTED;
+	case -EPERM:
+		return QDF_STATUS_E_PERM;
+	case -EEXIST:
+		return QDF_STATUS_E_EXISTS;
+	case -ENOENT:
+		return QDF_STATUS_E_NOENT;
+	case -E2BIG:
+		return QDF_STATUS_E_E2BIG;
+	case -ENOSPC:
+		return QDF_STATUS_E_NOSPC;
+	case -EADDRNOTAVAIL:
+		return QDF_STATUS_E_ADDRNOTAVAIL;
+	case -ENXIO:
+		return QDF_STATUS_E_ENXIO;
+	case -ENETDOWN:
+		return QDF_STATUS_E_NETDOWN;
+	case -EIO:
+		return QDF_STATUS_E_IO;
+	case -ENETRESET:
+		return QDF_STATUS_E_NETRESET;
+	case -EINPROGRESS:
+		return QDF_STATUS_E_PENDING;
+	case -ETIMEDOUT:
+		return QDF_STATUS_E_TIMEOUT;
+	default:
+		return QDF_STATUS_E_PERM;
 	}
 }
 
@@ -139,6 +205,28 @@ static inline int __qdf_status_to_os_return(QDF_STATUS status)
 static inline void __qdf_set_bit(unsigned int nr, unsigned long *addr)
 {
 	__set_bit(nr, addr);
+}
+
+static inline void __qdf_clear_bit(unsigned int nr, unsigned long *addr)
+{
+	__clear_bit(nr, addr);
+}
+
+static inline bool __qdf_test_bit(unsigned int nr, unsigned long *addr)
+{
+	return test_bit(nr, addr);
+}
+
+static inline bool __qdf_test_and_clear_bit(unsigned int nr,
+					unsigned long *addr)
+{
+	return __test_and_clear_bit(nr, addr);
+}
+
+static inline unsigned long __qdf_find_first_bit(unsigned long *addr,
+					unsigned long nbits)
+{
+	return find_first_bit(addr, nbits);
 }
 
 /**
@@ -190,11 +278,10 @@ static inline bool __qdf_is_macaddr_equal(struct qdf_mac_addr *mac_addr1,
  */
 #define qdf_in_interrupt          in_interrupt
 
-/**
- * @brief memory barriers.
- */
-#define __qdf_min(_a, _b)         ((_a) < (_b) ? _a : _b)
-#define __qdf_max(_a, _b)         ((_a) > (_b) ? _a : _b)
+#define __qdf_min(_a, _b) min(_a, _b)
+#define __qdf_max(_a, _b) max(_a, _b)
+
+#define __qdf_ffz(mask) (~(mask) == 0 ? -1 : ffz(mask))
 
 #define MEMINFO_KB(x)  ((x) << (PAGE_SHIFT - 10))   /* In kilobytes */
 
@@ -222,7 +309,12 @@ static inline bool __qdf_is_macaddr_equal(struct qdf_mac_addr *mac_addr1,
 	}     \
 } while (0)
 
-#define __qdf_cpu_to_le64                cpu_to_le64
+/**
+ * @brief Compile time Assert
+ */
+#define QDF_COMPILE_TIME_ASSERT(assertion_name, predicate) \
+    typedef char assertion_name[(predicate) ? 1 : -1]
+
 #define __qdf_container_of(ptr, type, member) container_of(ptr, type, member)
 
 #define __qdf_ntohs                      ntohs
@@ -231,17 +323,21 @@ static inline bool __qdf_is_macaddr_equal(struct qdf_mac_addr *mac_addr1,
 #define __qdf_htons                      htons
 #define __qdf_htonl                      htonl
 
-#define __qdf_cpu_to_le16                cpu_to_le16
-#define __qdf_cpu_to_le32                cpu_to_le32
-#define __qdf_cpu_to_le64                cpu_to_le64
+#define __qdf_cpu_to_le16 cpu_to_le16
+#define __qdf_cpu_to_le32 cpu_to_le32
+#define __qdf_cpu_to_le64 cpu_to_le64
 
-#define __qdf_le16_to_cpu                le16_to_cpu
-#define __qdf_le32_to_cpu                le32_to_cpu
+#define __qdf_le16_to_cpu le16_to_cpu
+#define __qdf_le32_to_cpu le32_to_cpu
+#define __qdf_le64_to_cpu le64_to_cpu
 
-#define __qdf_be32_to_cpu                be32_to_cpu
-#define __qdf_be64_to_cpu                be64_to_cpu
-#define __qdf_le64_to_cpu                le64_to_cpu
-#define __qdf_le16_to_cpu                le16_to_cpu
+#define __qdf_cpu_to_be16 cpu_to_be16
+#define __qdf_cpu_to_be32 cpu_to_be32
+#define __qdf_cpu_to_be64 cpu_to_be64
+
+#define __qdf_be16_to_cpu be16_to_cpu
+#define __qdf_be32_to_cpu be32_to_cpu
+#define __qdf_be64_to_cpu be64_to_cpu
 
 /**
  * @brief memory barriers.
@@ -249,6 +345,8 @@ static inline bool __qdf_is_macaddr_equal(struct qdf_mac_addr *mac_addr1,
 #define __qdf_wmb()                wmb()
 #define __qdf_rmb()                rmb()
 #define __qdf_mb()                 mb()
+#define __qdf_ioread32(offset)             ioread32(offset)
+#define __qdf_iowrite32(offset, value)     iowrite32(value, offset)
 
 #define __qdf_roundup(x, y) roundup(x, y)
 
@@ -288,6 +386,7 @@ static inline uint64_t
 __qdf_get_totalramsize(void)
 {
 	struct sysinfo meminfo;
+
 	si_meminfo(&meminfo);
 	return MEMINFO_KB(meminfo.totalram);
 }
@@ -371,6 +470,17 @@ int __qdf_set_dma_coherent_mask(struct device *dev, uint8_t addr_bits)
 	return dma_set_coherent_mask(dev, DMA_BIT_MASK(addr_bits));
 }
 #endif
+/**
+ * qdf_get_random_bytes() - returns nbytes bytes of random
+ * data
+ *
+ * Return: random bytes of data
+ */
+static inline
+void __qdf_get_random_bytes(void *buf, int nbytes)
+{
+	return get_random_bytes(buf, nbytes);
+}
 
 /**
  * __qdf_do_div() - wrapper function for kernel macro(do_div).
@@ -388,16 +498,47 @@ uint64_t __qdf_do_div(uint64_t dividend, uint32_t divisor)
 }
 
 /**
- * __qdf_do_mod() - wrapper function for kernel macro(do_div).
+ * __qdf_do_div_rem() - wrapper function for kernel macro(do_div)
+ *                      to get remainder.
  * @dividend: Dividend value
  * @divisor : Divisor value
  *
- * Return: Modulo
+ * Return: remainder
  */
 static inline
-uint64_t __qdf_do_mod(uint64_t dividend, uint32_t divisor)
+uint64_t __qdf_do_div_rem(uint64_t dividend, uint32_t divisor)
 {
 	return do_div(dividend, divisor);
+}
+
+/**
+ * __qdf_hex_to_bin() - Wrapper function to kernel API to get unsigned
+ * integer from hexa decimal ASCII character.
+ * @ch: hexa decimal ASCII character
+ *
+ * Return: For hexa decimal ASCII char return actual decimal value
+ *	   else -1 for bad input.
+ */
+static inline
+int __qdf_hex_to_bin(char ch)
+{
+	return hex_to_bin(ch);
+}
+
+/**
+ * __qdf_hex_str_to_binary() - Wrapper function to get array of unsigned
+ * integers from string of hexa decimal ASCII characters.
+ * @dst: output array to hold converted values
+ * @src: input string of hexa decimal ASCII characters
+ * @count: size of dst string
+ *
+ * Return: For a string of hexa decimal ASCII characters return 0
+ *	   else -1 for bad input.
+ */
+static inline
+int __qdf_hex_str_to_binary(u8 *dst, const char *src, size_t count)
+{
+	return hex2bin(dst, src, count);
 }
 
 #endif /*_I_QDF_UTIL_H*/

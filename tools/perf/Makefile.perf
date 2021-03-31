@@ -313,6 +313,21 @@ export srctree OUTPUT RM CC LD AR CFLAGS V BISON FLEX AWK
 include $(srctree)/tools/build/Makefile.include
 
 $(PERF_IN): prepare FORCE
+	@(test -f ../../arch/x86/include/asm/disabled-features.h && ( \
+        (diff -B ../arch/x86/include/asm/disabled-features.h ../../arch/x86/include/asm/disabled-features.h >/dev/null) \
+        || echo "Warning: tools/arch/x86/include/asm/disabled-features.h differs from kernel" >&2 )) || true
+	@(test -f ../../arch/x86/include/asm/required-features.h && ( \
+        (diff -B ../arch/x86/include/asm/required-features.h ../../arch/x86/include/asm/required-features.h >/dev/null) \
+        || echo "Warning: tools/arch/x86/include/asm/required-features.h differs from kernel" >&2 )) || true
+	@(test -f ../../arch/x86/include/asm/cpufeatures.h && ( \
+        (diff -B ../arch/x86/include/asm/cpufeatures.h ../../arch/x86/include/asm/cpufeatures.h >/dev/null) \
+        || echo "Warning: tools/arch/x86/include/asm/cpufeatures.h differs from kernel" >&2 )) || true
+	@(test -f ../../arch/x86/lib/memcpy_64.S && ( \
+        (diff -B ../arch/x86/lib/memcpy_64.S ../../arch/x86/lib/memcpy_64.S >/dev/null) \
+        || echo "Warning: tools/arch/x86/lib/memcpy_64.S differs from kernel" >&2 )) || true
+	@(test -f ../../arch/x86/lib/memset_64.S && ( \
+        (diff -B ../arch/x86/lib/memset_64.S ../../arch/x86/lib/memset_64.S >/dev/null) \
+        || echo "Warning: tools/arch/x86/lib/memset_64.S differs from kernel" >&2 )) || true
 	$(Q)$(MAKE) $(build)=perf
 
 $(OUTPUT)perf: $(PERFLIBS) $(PERF_IN) $(LIBTRACEEVENT_DYNAMIC_LIST)
@@ -423,7 +438,7 @@ $(LIBTRACEEVENT)-clean:
 	$(call QUIET_CLEAN, libtraceevent)
 	$(Q)$(MAKE) -C $(TRACE_EVENT_DIR) O=$(OUTPUT) clean >/dev/null
 
-install-traceevent-plugins: $(LIBTRACEEVENT)
+install-traceevent-plugins: libtraceevent_plugins
 	$(Q)$(MAKE) -C $(TRACE_EVENT_DIR) $(LIBTRACEEVENT_FLAGS) O=$(OUTPUT) install_plugins
 
 $(LIBAPI): fixdep FORCE
@@ -566,9 +581,9 @@ install-tests: all install-gtk
 		$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(perfexec_instdir_SQ)/tests/attr'; \
 		$(INSTALL) tests/attr/* '$(DESTDIR_SQ)$(perfexec_instdir_SQ)/tests/attr'
 
-install-bin: install-tools install-tests
+install-bin: install-tools install-tests install-traceevent-plugins
 
-install: install-bin try-install-man install-traceevent-plugins
+install: install-bin try-install-man
 
 install-python_ext:
 	$(PYTHON_WORD) util/setup.py --quiet install --root='/$(DESTDIR_SQ)'

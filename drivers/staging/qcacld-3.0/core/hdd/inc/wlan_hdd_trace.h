@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #ifndef __WLAN_HDD_TRACE_H__
@@ -109,6 +100,7 @@
 	ENUM(TRACE_CODE_HDD_CFG80211_SCHED_SCAN_START) \
 	ENUM(TRACE_CODE_HDD_CFG80211_SCHED_SCAN_STOP) \
 	ENUM(TRACE_CODE_HDD_CFG80211_DEL_PMKSA) \
+	ENUM(TRACE_CODE_HDD_SEND_MGMT_TX) \
 	/*
 	 * New CFG80211 enums to be added before this comment.
 	 * TRACE_CODE_HDD_RX_SME_MSG is used as code for MTRACE commands.
@@ -132,7 +124,6 @@ static inline const char *hdd_trace_event_string(uint32_t code)
 	switch (code) {
 	default:
 		return "UNKNOWN";
-		break;
 #undef ENUM
 #define ENUM(enum) CASE_RETURN_STRING(enum)
 	ENUMS

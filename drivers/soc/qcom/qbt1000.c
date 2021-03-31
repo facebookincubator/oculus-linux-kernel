@@ -971,7 +971,6 @@ static irqreturn_t qbt1000_ipc_irq_handler(int irq, void *dev_id)
 			retry_count -= 1;
 			continue;
 		} else {
-			pr_err("retry_count %d\n", retry_count);
 			break;
 		}
 	}

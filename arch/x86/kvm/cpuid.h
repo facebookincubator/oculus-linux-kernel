@@ -4,6 +4,7 @@
 #include "x86.h"
 
 int kvm_update_cpuid(struct kvm_vcpu *vcpu);
+bool kvm_mpx_supported(void);
 struct kvm_cpuid_entry2 *kvm_find_cpuid_entry(struct kvm_vcpu *vcpu,
 					      u32 function, u32 index);
 int kvm_dev_ioctl_get_cpuid(struct kvm_cpuid2 *cpuid,
@@ -134,20 +135,20 @@ static inline bool guest_cpuid_has_rtm(struct kvm_vcpu *vcpu)
 	return best && (best->ebx & bit(X86_FEATURE_RTM));
 }
 
-static inline bool guest_cpuid_has_mpx(struct kvm_vcpu *vcpu)
-{
-	struct kvm_cpuid_entry2 *best;
-
-	best = kvm_find_cpuid_entry(vcpu, 7, 0);
-	return best && (best->ebx & bit(X86_FEATURE_MPX));
-}
-
 static inline bool guest_cpuid_has_pcommit(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpuid_entry2 *best;
 
 	best = kvm_find_cpuid_entry(vcpu, 7, 0);
 	return best && (best->ebx & bit(X86_FEATURE_PCOMMIT));
+}
+
+static inline bool guest_cpuid_has_mpx(struct kvm_vcpu *vcpu)
+{
+	struct kvm_cpuid_entry2 *best;
+
+	best = kvm_find_cpuid_entry(vcpu, 7, 0);
+	return best && (best->ebx & bit(X86_FEATURE_MPX));
 }
 
 static inline bool guest_cpuid_has_rdtscp(struct kvm_vcpu *vcpu)
@@ -157,6 +158,46 @@ static inline bool guest_cpuid_has_rdtscp(struct kvm_vcpu *vcpu)
 	best = kvm_find_cpuid_entry(vcpu, 0x80000001, 0);
 	return best && (best->edx & bit(X86_FEATURE_RDTSCP));
 }
+
+static inline bool guest_cpuid_has_ibpb(struct kvm_vcpu *vcpu)
+{
+	struct kvm_cpuid_entry2 *best;
+
+	best = kvm_find_cpuid_entry(vcpu, 0x80000008, 0);
+	if (best && (best->ebx & bit(X86_FEATURE_AMD_IBPB)))
+		return true;
+	best = kvm_find_cpuid_entry(vcpu, 7, 0);
+	return best && (best->edx & bit(X86_FEATURE_SPEC_CTRL));
+}
+
+static inline bool guest_cpuid_has_spec_ctrl(struct kvm_vcpu *vcpu)
+{
+	struct kvm_cpuid_entry2 *best;
+
+	best = kvm_find_cpuid_entry(vcpu, 0x80000008, 0);
+	if (best && (best->ebx & (bit(X86_FEATURE_AMD_IBRS | bit(X86_FEATURE_AMD_SSBD)))))
+		return true;
+	best = kvm_find_cpuid_entry(vcpu, 7, 0);
+	return best && (best->edx & (bit(X86_FEATURE_SPEC_CTRL) | bit(X86_FEATURE_SPEC_CTRL_SSBD)));
+}
+
+static inline bool guest_cpuid_has_arch_capabilities(struct kvm_vcpu *vcpu)
+{
+	struct kvm_cpuid_entry2 *best;
+
+	best = kvm_find_cpuid_entry(vcpu, 7, 0);
+	return best && (best->edx & bit(X86_FEATURE_ARCH_CAPABILITIES));
+}
+
+static inline bool guest_cpuid_has_virt_ssbd(struct kvm_vcpu *vcpu)
+{
+	struct kvm_cpuid_entry2 *best;
+
+	best = kvm_find_cpuid_entry(vcpu, 0x80000008, 0);
+	return best && (best->ebx & bit(X86_FEATURE_VIRT_SSBD));
+}
+
+
 
 /*
  * NRIPS is provided through cpuidfn 0x8000000a.edx bit 3

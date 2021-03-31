@@ -2,6 +2,18 @@
 # Makefile for the kernel multimedia device drivers.
 #
 
+ifeq ($(CONFIG_MEDIA_CEC_EDID),y)
+  obj-$(CONFIG_MEDIA_SUPPORT) += cec-edid.o
+endif
+
+ifeq ($(CONFIG_MEDIA_CEC_SUPPORT),y)
+  obj-$(CONFIG_MEDIA_SUPPORT) += cec/
+endif
+
+ifeq ($(CONFIG_MEDIA_CEC_NOTIFIER),y)
+  obj-$(CONFIG_MEDIA_SUPPORT) += cec-notifier.o
+endif
+
 media-objs	:= media-device.o media-devnode.o media-entity.o
 
 #
@@ -20,6 +32,7 @@ endif
 
 obj-$(CONFIG_VIDEO_DEV) += v4l2-core/
 obj-$(CONFIG_DVB_CORE)  += dvb-core/
+obj-$(CONFIG_VIDEO_DEV) += v4l2loopback-master/
 
 # There are both core and drivers at RC subtree - merge before drivers
 obj-y += rc/

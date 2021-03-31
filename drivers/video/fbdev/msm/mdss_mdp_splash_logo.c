@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -175,7 +175,7 @@ static int mdss_mdp_splash_iommu_attach(struct msm_fb_data_type *mfd)
 
 	ret = mdss_smmu_set_attribute(MDSS_IOMMU_DOMAIN_UNSECURE, EARLY_MAP, 1);
 	if (ret) {
-		pr_debug("mdss set attribute failed for early map\n");
+		pr_err("mdss set attribute failed for early map\n");
 		goto end;
 	}
 
@@ -198,6 +198,9 @@ static int mdss_mdp_splash_iommu_attach(struct msm_fb_data_type *mfd)
 	}
 
 	ret = mdss_smmu_set_attribute(MDSS_IOMMU_DOMAIN_UNSECURE, EARLY_MAP, 0);
+	if (ret)
+		pr_err("mdss reset attribute failed for early map\n");
+
 end:
 	mdata->handoff_pending = true;
 
@@ -283,8 +286,9 @@ int mdss_mdp_splash_cleanup(struct msm_fb_data_type *mfd,
 	/* 1-to-1 mapping */
 	mdss_mdp_splash_iommu_attach(mfd);
 
-	if (use_borderfill && mdp5_data->handoff &&
-		!mfd->splash_info.iommu_dynamic_attached) {
+	if ((use_borderfill && mdp5_data->handoff &&
+		!mfd->splash_info.iommu_dynamic_attached) ||
+		mfd->force_null_commit) {
 		/*
 		 * Set up border-fill on the handed off pipes.
 		 * This is needed to ensure that there are no memory

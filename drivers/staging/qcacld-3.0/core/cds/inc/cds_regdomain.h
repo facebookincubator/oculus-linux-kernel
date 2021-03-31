@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011, 2014-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -71,10 +62,10 @@
 #ifndef __CDS_REGDOMAIN_H
 #define __CDS_REGDOMAIN_H
 
-#define MAX_CHANNELS_PER_OPERATING_CLASS  25
-#define CDS_MAX_SUPP_OPER_CLASSES 32
+#include <reg_services_public_struct.h>
+
 #define MIN_TX_PWR_CAP    8
-#define MAX_TX_PWR_CAP    22
+#define MAX_TX_PWR_CAP    24
 
 #define CTRY_DEFAULT          0
 #define CTRY_FLAG             0x8000
@@ -141,6 +132,7 @@ enum country_code {
 	CTRY_GEORGIA = 268,
 	CTRY_GERMANY = 276,
 	CTRY_GHANA = 288,
+	CTRY_GIBRALTAR = 292,
 	CTRY_GREECE = 300,
 	CTRY_GREENLAND = 304,
 	CTRY_GRENADA = 308,
@@ -155,7 +147,7 @@ enum country_code {
 	CTRY_ICELAND = 352,
 	CTRY_INDIA = 356,
 	CTRY_INDONESIA = 360,
-	CTRY_IRAN = 364,
+	CTRY_IRAQ = 368,
 	CTRY_IRELAND = 372,
 	CTRY_ISRAEL = 376,
 	CTRY_ITALY = 380,
@@ -163,7 +155,6 @@ enum country_code {
 	CTRY_JORDAN = 400,
 	CTRY_KAZAKHSTAN = 398,
 	CTRY_KENYA = 404,
-	CTRY_KOREA_NORTH = 408,
 	CTRY_KOREA_ROC = 410,
 	CTRY_KOREA_ROC_AP = 412,
 	CTRY_KUWAIT = 414,
@@ -236,7 +227,6 @@ enum country_code {
 	CTRY_SRI_LANKA = 144,
 	CTRY_SWEDEN = 752,
 	CTRY_SWITZERLAND = 756,
-	CTRY_SYRIA = 760,
 	CTRY_TAIWAN = 158,
 	CTRY_TANZANIA = 834,
 	CTRY_THAILAND = 764,
@@ -262,38 +252,11 @@ enum country_code {
 	CTRY_WALLIS_AND_FUTUNA = 876,
 	CTRY_YEMEN = 887,
 	CTRY_ZIMBABWE = 716,
-	CTRY_JAPAN7 = 4007,
-	CTRY_JAPAN8 = 4008,
 	CTRY_JAPAN9 = 4009,
-	CTRY_JAPAN10 = 4010,
-	CTRY_JAPAN11 = 4011,
-	CTRY_JAPAN12 = 4012,
-	CTRY_JAPAN13 = 4013,
-	CTRY_JAPAN14 = 4014,
 	CTRY_JAPAN15 = 4015,
-	CTRY_JAPAN25 = 4025,
-	CTRY_JAPAN26 = 4026,
-	CTRY_JAPAN27 = 4027,
-	CTRY_JAPAN28 = 4028,
-	CTRY_JAPAN29 = 4029,
-	CTRY_JAPAN34 = 4034,
-	CTRY_JAPAN35 = 4035,
-	CTRY_JAPAN36 = 4036,
-	CTRY_JAPAN37 = 4037,
-	CTRY_JAPAN38 = 4038,
-	CTRY_JAPAN39 = 4039,
-	CTRY_JAPAN40 = 4040,
-	CTRY_JAPAN41 = 4041,
-	CTRY_JAPAN42 = 4042,
-	CTRY_JAPAN43 = 4043,
-	CTRY_JAPAN44 = 4044,
-	CTRY_JAPAN45 = 4045,
-	CTRY_JAPAN46 = 4046,
-	CTRY_JAPAN47 = 4047,
 	CTRY_JAPAN48 = 4048,
-	CTRY_JAPAN49 = 4049,
 	CTRY_JAPAN55 = 4055,
-	CTRY_JAPAN56 = 4056,
+	CTRY_JAPAN60 = 4060,
 	CTRY_XA = 4100,
 };
 
@@ -320,6 +283,8 @@ enum reg_domain {
 	FCC9_FCCA = 0x17,
 	FCC10_FCCA = 0x18,
 	FCC11_WORLD = 0x19,
+	FCC13_WORLD = 0xE4,
+	FCC14_FCCB = 0xE6,
 
 	ETSI1_WORLD = 0x37,
 	ETSI3_ETSIA = 0x32,
@@ -362,6 +327,9 @@ enum reg_domain {
 	APL14_WORLD = 0x57,
 	APL15_WORLD = 0x59,
 	APL16_WORLD = 0x70,
+	APL17_ETSID = 0xE0,
+	APL20_WORLD = 0xE5,
+	APL23_WORLD = 0xE3,
 
 	WOR0_WORLD = 0x60,
 	WOR1_WORLD = 0x61,
@@ -409,6 +377,7 @@ enum reg_domain {
 	MKK11_MKKA1 = 0xD6,
 	MKK11_MKKC = 0xD7,
 	MKK11_MKKA2 = 0xD8,
+	MKK16_MKKC = 0xDF,
 
 	FCC1 = 0x0110,
 	FCC2 = 0x0120,
@@ -421,6 +390,8 @@ enum reg_domain {
 	FCC9 = 0x0910,
 	FCC10 = 0x0B10,
 	FCC11 = 0x0B20,
+	FCC13 = 0x0B60,
+	FCC14 = 0x0B70,
 
 	ETSI1 = 0x0130,
 	ETSI2 = 0x0230,
@@ -449,24 +420,27 @@ enum reg_domain {
 	APL14 = 0x1180,
 	APL15 = 0x1190,
 	APL16 = 0x1200,
+	APL17 = 0x1210,
+	APL23 = 0x1280,
+	APL20 = 0x1250,
 
 	NULL1 = 0x0198,
 	MKK3 = 0x0340,
-	MKK4 = 0x0440,
 	MKK5 = 0x0540,
-	MKK9 = 0x0940,
-	MKK10 = 0x1040,
 	MKK11 = 0x1140,
+	MKK16 =  0x1640,
 
 	WORLD = 0x0199,
 	FCCA = 0x0A10,
+	FCCB = 0x0B90,
 	MKKA = 0x0A40,
 	MKKC = 0x0A50,
 	ETSIC = 0x0C30,
+
 };
 
 /**
- * enum ctl_val - CTL value
+ * enum ctl_val: CTL value
  * @FCC: FCC
  * @MKK: MKK
  * @ETSI: ETSI
@@ -477,22 +451,6 @@ enum ctl_val {
 	MKK = 0x40,
 	ETSI = 0x30,
 	NO_CTL = 0xff
-};
-
-/**
- * enum offset_t: channel offset
- * @BW20: 20 mhz channel
- * @BW40_LOW_PRIMARY: lower channel in 40 mhz
- * @BW40_HIGH_PRIMARY: higher channel in 40 mhz
- * @BW80: 80 mhz channel
- * @BWALL: unknown bandwidth
- */
-enum offset_t {
-	BW20 = 0,
-	BW40_LOW_PRIMARY = 1,
-	BW40_HIGH_PRIMARY = 3,
-	BW80,
-	BWALL
 };
 
 /**
@@ -534,30 +492,6 @@ struct reg_dmn {
 };
 
 /**
- * struct reg_dmn_op_class_map_t: operating class
- * @op_class: operating class number
- * @ch_spacing: channel spacing
- * @offset: offset
- * @channels: channel set
- */
-struct reg_dmn_op_class_map_t {
-	uint8_t op_class;
-	uint8_t ch_spacing;
-	enum offset_t offset;
-	uint8_t channels[MAX_CHANNELS_PER_OPERATING_CLASS];
-};
-
-/**
- * struct reg_dmn_supp_op_classes: operating classes
- * @num_classes: number of classes
- * @classes: classes
- */
-struct reg_dmn_supp_op_classes {
-	uint8_t num_classes;
-	uint8_t classes[CDS_MAX_SUPP_OPER_CLASSES];
-};
-
-/**
  * struct reg_dmn_tables: reg domain table
  * @reg_dmn_pairs: list of reg domain pairs
  * @all_countries: list of countries
@@ -578,14 +512,11 @@ struct reg_dmn_tables {
 int32_t cds_fill_some_regulatory_info(struct regulatory *reg);
 int32_t cds_get_country_from_alpha2(uint8_t *alpha2);
 void cds_fill_and_send_ctl_to_fw(struct regulatory *reg);
-void cds_set_wma_dfs_region(uint8_t dfs_region);
-uint16_t cds_reg_dmn_get_opclass_from_channel(uint8_t *country,
-					      uint8_t channel,
-					      uint8_t offset);
-uint16_t cds_reg_dmn_get_chanwidth_from_opclass(uint8_t *country,
-						uint8_t channel,
-						uint8_t opclass);
-uint16_t cds_reg_dmn_set_curr_opclasses(uint8_t num_classes, uint8_t *class);
-uint16_t cds_reg_dmn_get_curr_opclasses(uint8_t *num_classes, uint8_t *class);
-
+/**
+ * cds_is_etsi_europe_country - check ETSI Europe country or not
+ * @country: country string with two Characters
+ *
+ * Return: true if country in ETSI Europe country list
+ */
+bool cds_is_etsi_europe_country(uint8_t *country);
 #endif /* __CDS_REGDOMAIN_H */

@@ -43,6 +43,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_AK5386
 	select SND_SOC_ALC5623 if I2C
 	select SND_SOC_ALC5632 if I2C
+	select SND_SOC_CM710X_SPI if SPI_MASTER
+	select SND_SOC_CM710X if I2C
 	select SND_SOC_CQ0093VC if MFD_DAVINCI_VOICECODEC
 	select SND_SOC_CS35L32 if I2C
 	select SND_SOC_CS42L51_I2C if I2C
@@ -76,8 +78,6 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX98095 if I2C
 	select SND_SOC_MAX98357A if GPIOLIB
 	select SND_SOC_MAX98925 if I2C
-	select SND_SOC_CM710X_SPI
-	select SND_SOC_CM710X if I2C
 	select SND_SOC_MAX98927 if I2C
 	select SND_SOC_MAX9850 if I2C
 	select SND_SOC_MAX9768 if I2C
@@ -352,6 +352,14 @@ config SND_SOC_ALC5623
 config SND_SOC_ALC5632
 	tristate
 
+config SND_SOC_CM710X
+	tristate "C-Media CM710X CODEC"
+	depends on I2C
+
+config SND_SOC_CM710X_SPI
+	tristate "C-Media CM710X CODEC (SPI)"
+	depends on SPI_MASTER
+
 config SND_SOC_CQ0093VC
 	tristate
 
@@ -499,18 +507,9 @@ config SND_SOC_MAX98357A
 config SND_SOC_MAX98925
        tristate
 
-config SND_SOC_CM710X_SPI
-       tristate "C-Media CM710X SPI CODEC"
-       depends on SPI
-       default y
-
-config SND_SOC_CM710X
-       tristate "Cmedia CM710X CODEC"
-       depends on I2C
-
 config SND_SOC_MAX98927
-       tristate "Maxim Integrated MAX98927 Speaker Amplifier"
-       depends on I2C
+	tristate "Maxim Integrated MAX98927 Speaker Amplifier"
+	depends on I2C
 
 config SND_SOC_MAX9850
 	tristate
@@ -1005,7 +1004,7 @@ config SND_SOC_MSM_STUB
 
 config SND_SOC_MSM_HDMI_CODEC_RX
 	bool "HDMI Audio Playback"
-	depends on FB_MSM_MDSS_HDMI_PANEL && (SND_SOC_APQ8084 || SND_SOC_MSM8994 || SND_SOC_MSM8996 || SND_SOC_MSM8998 || SND_SOC_SDM660_COMMON)
+	depends on FB_MSM_MDSS_HDMI_PANEL && (SND_SOC_APQ8084 || SND_SOC_MSM8994 || SND_SOC_MSM8996 || SND_SOC_MSM8998 || SND_SOC_MSM8998_CM710X || SND_SOC_SDM660_COMMON)
 	help
 	HDMI audio drivers should be built only if the platform
         supports hdmi panel.

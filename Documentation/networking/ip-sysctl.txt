@@ -112,14 +112,11 @@ min_adv_mss - INTEGER
 
 IP Fragmentation:
 
-ipfrag_high_thresh - INTEGER
-	Maximum memory used to reassemble IP fragments. When
-	ipfrag_high_thresh bytes of memory is allocated for this purpose,
-	the fragment handler will toss packets until ipfrag_low_thresh
-	is reached. This also serves as a maximum limit to namespaces
-	different from the initial one.
+ipfrag_high_thresh - LONG INTEGER
+	Maximum memory used to reassemble IP fragments.
 
-ipfrag_low_thresh - INTEGER
+ipfrag_low_thresh - LONG INTEGER
+	(Obsolete since linux-4.4.174, backported from linux-4.17)
 	Maximum memory used to reassemble IP fragments before the kernel
 	begins to remove incomplete fragment queues to free up resources.
 	The kernel still accepts new fragments for defragmentation.
@@ -222,6 +219,14 @@ tcp_base_mss - INTEGER
 	The initial value of search_low to be used by the packetization layer
 	Path MTU discovery (MTU probing).  If MTU probing is enabled,
 	this is the initial MSS used by the connection.
+
+tcp_min_snd_mss - INTEGER
+	TCP SYN and SYNACK messages usually advertise an ADVMSS option,
+	as described in RFC 1122 and RFC 6691.
+	If this ADVMSS option is smaller than tcp_min_snd_mss,
+	it is silently capped to tcp_min_snd_mss.
+
+	Default : 48 (at least 8 bytes of payload per segment)
 
 tcp_congestion_control - STRING
 	Set the congestion control algorithm to be used for new
@@ -390,6 +395,7 @@ tcp_min_rtt_wlen - INTEGER
 	minimum RTT when it is moved to a longer path (e.g., due to traffic
 	engineering). A longer window makes the filter more resistant to RTT
 	inflations such as transient congestion. The unit is seconds.
+	Possible values: 0 - 86400 (1 day)
 	Default: 300
 
 tcp_moderate_rcvbuf - BOOLEAN
@@ -1239,6 +1245,10 @@ igmp_link_local_mcast_reports - BOOLEAN
 	224.0.0.X range.
 	Default TRUE
 
+nf_ipv4_defrag_skip - BOOLEAN
+	Skip defragmentation per interface if set.
+	Default : 0 (always defrag)
+
 Alexey Kuznetsov.
 kuznet@ms2.inr.ac.ru
 
@@ -1418,11 +1428,20 @@ accept_ra_pinfo - BOOLEAN
 	Functional default: enabled if accept_ra is enabled.
 			    disabled if accept_ra is disabled.
 
+accept_ra_rt_info_min_plen - INTEGER
+	Minimum prefix length of Route Information in RA.
+
+	Route Information w/ prefix smaller than this variable shall
+	be ignored.
+
+	Functional default: 0 if accept_ra_rtr_pref is enabled.
+			    -1 if accept_ra_rtr_pref is disabled.
+
 accept_ra_rt_info_max_plen - INTEGER
 	Maximum prefix length of Route Information in RA.
 
-	Route Information w/ prefix larger than or equal to this
-	variable shall be ignored.
+	Route Information w/ prefix larger than this variable shall
+	be ignored.
 
 	Functional default: 0 if accept_ra_rtr_pref is enabled.
 			    -1 if accept_ra_rtr_pref is disabled.

@@ -25,6 +25,7 @@
 #include <linux/async.h>
 #include <linux/pm_runtime.h>
 #include <linux/pinctrl/devinfo.h>
+#include <linux/platform_device.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -328,14 +329,6 @@ static int really_probe(struct device *dev, struct device_driver *drv)
 		if (ret)
 			goto probe_failed;
 	}
-
-	/*
-	 * Ensure devices are listed in devices_kset in correct order
-	 * It's important to move Dev to the end of devices_kset before
-	 * calling .probe, because it could be recursive and parent Dev
-	 * should always go first
-	 */
-	devices_kset_move_last(dev);
 
 	if (dev->bus->probe) {
 		ret = dev->bus->probe(dev);
@@ -642,6 +635,20 @@ void device_initial_probe(struct device *dev)
 {
 	__device_attach(dev, true);
 }
+#ifdef CONFIG_PLATFORM_AUTO
+static inline int lock_parent(struct device *dev)
+{
+	if (!dev->parent || dev->bus == &platform_bus_type)
+		return 0;
+
+	return 1;
+}
+#else
+static inline int lock_parent(struct device *dev)
+{
+	return dev->parent ? 1 : 0;
+}
+#endif
 
 static int __driver_attach(struct device *dev, void *data)
 {
@@ -659,14 +666,13 @@ static int __driver_attach(struct device *dev, void *data)
 
 	if (!driver_match_device(drv, dev))
 		return 0;
-
-	if (dev->parent)	/* Needed for USB */
+	if (lock_parent(dev))
 		device_lock(dev->parent);
 	device_lock(dev);
 	if (!dev->driver)
 		driver_probe_device(drv, dev);
 	device_unlock(dev);
-	if (dev->parent)
+	if (lock_parent(dev))
 		device_unlock(dev->parent);
 
 	return 0;

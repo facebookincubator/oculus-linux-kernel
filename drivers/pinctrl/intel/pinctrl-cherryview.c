@@ -1466,12 +1466,11 @@ static int chv_gpio_probe(struct chv_pinctrl *pctrl, int irq)
 		offset += range->npins;
 	}
 
-	/* Mask and clear all interrupts */
-	chv_writel(0, pctrl->regs + CHV_INTMASK);
+	/* Clear all interrupts */
 	chv_writel(0xffff, pctrl->regs + CHV_INTSTAT);
 
 	ret = gpiochip_irqchip_add(chip, &chv_gpio_irqchip, 0,
-				   handle_simple_irq, IRQ_TYPE_NONE);
+				   handle_bad_irq, IRQ_TYPE_NONE);
 	if (ret) {
 		dev_err(pctrl->dev, "failed to add IRQ chip\n");
 		goto fail;
@@ -1564,11 +1563,14 @@ static int chv_pinctrl_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_PM_SLEEP
-static int chv_pinctrl_suspend(struct device *dev)
+static int chv_pinctrl_suspend_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct chv_pinctrl *pctrl = platform_get_drvdata(pdev);
+	unsigned long flags;
 	int i;
+
+	raw_spin_lock_irqsave(&chv_lock, flags);
 
 	pctrl->saved_intmask = readl(pctrl->regs + CHV_INTMASK);
 
@@ -1590,14 +1592,19 @@ static int chv_pinctrl_suspend(struct device *dev)
 		ctx->padctrl1 = readl(reg);
 	}
 
+	raw_spin_unlock_irqrestore(&chv_lock, flags);
+
 	return 0;
 }
 
-static int chv_pinctrl_resume(struct device *dev)
+static int chv_pinctrl_resume_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct chv_pinctrl *pctrl = platform_get_drvdata(pdev);
+	unsigned long flags;
 	int i;
+
+	raw_spin_lock_irqsave(&chv_lock, flags);
 
 	/*
 	 * Mask all interrupts before restoring per-pin configuration
@@ -1643,12 +1650,15 @@ static int chv_pinctrl_resume(struct device *dev)
 	chv_writel(0xffff, pctrl->regs + CHV_INTSTAT);
 	chv_writel(pctrl->saved_intmask, pctrl->regs + CHV_INTMASK);
 
+	raw_spin_unlock_irqrestore(&chv_lock, flags);
+
 	return 0;
 }
 #endif
 
 static const struct dev_pm_ops chv_pinctrl_pm_ops = {
-	SET_LATE_SYSTEM_SLEEP_PM_OPS(chv_pinctrl_suspend, chv_pinctrl_resume)
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(chv_pinctrl_suspend_noirq,
+				      chv_pinctrl_resume_noirq)
 };
 
 static const struct acpi_device_id chv_pinctrl_acpi_match[] = {

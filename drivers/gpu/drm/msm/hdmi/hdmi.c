@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, 2016-2017 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -95,7 +95,7 @@ static struct hdmi *hdmi_init(struct platform_device *pdev)
 	struct hdmi_platform_config *config = pdev->dev.platform_data;
 	struct hdmi *hdmi = NULL;
 	struct resource *res;
-	int i, ret;
+	int i, ret = 0;
 
 	hdmi = devm_kzalloc(&pdev->dev, sizeof(*hdmi), GFP_KERNEL);
 	if (!hdmi) {
@@ -119,9 +119,19 @@ static struct hdmi *hdmi_init(struct platform_device *pdev)
 		}
 	}
 
+	res = platform_get_resource_byname(pdev,
+			IORESOURCE_MEM, config->mmio_name);
+	if (!res) {
+		dev_err(&pdev->dev, "failed to find ctrl resource\n");
+		ret = -ENOMEM;
+		goto fail;
+	}
+	hdmi->mmio_len = (u32)resource_size(res);
 	hdmi->mmio = msm_ioremap(pdev, config->mmio_name, "HDMI");
 	if (IS_ERR(hdmi->mmio)) {
 		ret = PTR_ERR(hdmi->mmio);
+		dev_info(&pdev->dev, "can't map hdmi resource\n");
+		hdmi->mmio = NULL;
 		goto fail;
 	}
 
@@ -130,11 +140,37 @@ static struct hdmi *hdmi_init(struct platform_device *pdev)
 		config->mmio_name);
 	hdmi->mmio_phy_addr = res->start;
 
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+	config->qfprom_mmio_name);
+
+	if (!res) {
+		dev_err(&pdev->dev, "failed to find qfprom resource\n");
+		ret = -ENOMEM;
+		goto fail;
+	}
+	hdmi->qfprom_mmio_len = (u32)resource_size(res);
+
 	hdmi->qfprom_mmio = msm_ioremap(pdev,
 		config->qfprom_mmio_name, "HDMI_QFPROM");
+
 	if (IS_ERR(hdmi->qfprom_mmio)) {
-		dev_info(&pdev->dev, "can't find qfprom resource\n");
+		dev_info(&pdev->dev, "can't map qfprom resource\n");
 		hdmi->qfprom_mmio = NULL;
+	}
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+			config->hdcp_mmio_name);
+	if (!res) {
+		dev_err(&pdev->dev, "failed to find hdcp resource: %d\n", ret);
+		ret = -ENOMEM;
+		goto fail;
+	}
+	hdmi->hdcp_mmio_len = (u32)resource_size(res);
+	hdmi->hdcp_mmio = msm_ioremap(pdev,
+		config->hdcp_mmio_name, "HDMI_HDCP");
+	if (IS_ERR(hdmi->hdcp_mmio)) {
+		dev_info(&pdev->dev, "can't map hdcp resource\n");
+		hdmi->hdcp_mmio = NULL;
 	}
 
 	hdmi->hpd_regs = devm_kzalloc(&pdev->dev, sizeof(hdmi->hpd_regs[0]) *
@@ -234,6 +270,11 @@ static struct hdmi *hdmi_init(struct platform_device *pdev)
 		dev_warn(&pdev->dev, "failed to init hdcp: disabled\n");
 		hdmi->hdcp_ctrl = NULL;
 	}
+	/*making it false currently to avoid ifdefs
+	 *will get rid of this flag when HDCP SW
+	 *support gets added to HDMI DRM driver
+	 */
+	hdmi->is_hdcp_supported = false;
 
 	return hdmi;
 
@@ -383,13 +424,40 @@ static struct hdmi_platform_config hdmi_tx_8994_config = {
 static struct hdmi_platform_config hdmi_tx_8996_config = {
 		.phy_init = NULL,
 		HDMI_CFG(pwr_reg, none),
-		HDMI_CFG(hpd_reg, none),
+		HDMI_CFG(hpd_reg, 8x74),
 		HDMI_CFG(pwr_clk, 8x74),
 		HDMI_CFG(hpd_clk, 8x74),
 		.hpd_freq      = hpd_clk_freq_8x74,
 };
 
+/*TO DO*/
+static const char *pwr_reg_names_8x98[] = {"core-vdda", "core-vcc"};
+/*TO DO*/
+static const char *hpd_reg_names_8x98[] = {"hpd-gdsc", "hpd-5v"};
+
+static const char *pwr_clk_names_8x98[] = {"core_extp_clk",
+				   "hpd_alt_iface_clk"};
+
+static const char *hpd_clk_names_8x98[] = {"hpd_iface_clk",
+				   "hpd_core_clk",
+				   "hpd_mdp_core_clk",
+				   "mnoc_clk",
+				   "hpd_misc_ahb_clk",
+				   "hpd_bus_clk"};
+
+static unsigned long hpd_clk_freq_8x98[] = {0, 19200000, 0, 0, 0, 0};
+
+static struct hdmi_platform_config hdmi_tx_8998_config = {
+		.phy_init = NULL,
+		HDMI_CFG(pwr_reg, 8x98),
+		HDMI_CFG(hpd_reg, 8x98),
+		HDMI_CFG(pwr_clk, 8x98),
+		HDMI_CFG(hpd_clk, 8x98),
+		.hpd_freq      = hpd_clk_freq_8x98,
+};
+
 static const struct of_device_id dt_match[] = {
+	{ .compatible = "qcom,hdmi-tx-8998", .data = &hdmi_tx_8998_config },
 	{ .compatible = "qcom,hdmi-tx-8996", .data = &hdmi_tx_8996_config },
 	{ .compatible = "qcom,hdmi-tx-8994", .data = &hdmi_tx_8994_config },
 	{ .compatible = "qcom,hdmi-tx-8084", .data = &hdmi_tx_8084_config },
@@ -425,7 +493,6 @@ static int hdmi_bind(struct device *dev, struct device *master, void *data)
 #ifdef CONFIG_OF
 	struct device_node *of_node = dev->of_node;
 	const struct of_device_id *match;
-
 	match = of_match_node(dt_match, of_node);
 	if (match && match->data) {
 		hdmi_cfg = (struct hdmi_platform_config *)match->data;
@@ -437,18 +504,20 @@ static int hdmi_bind(struct device *dev, struct device *master, void *data)
 
 	hdmi_cfg->mmio_name     = "core_physical";
 	hdmi_cfg->qfprom_mmio_name = "qfprom_physical";
+	hdmi_cfg->hdcp_mmio_name = "hdcp_physical";
 	hdmi_cfg->ddc_clk_gpio  = get_gpio(dev, of_node, "qcom,hdmi-tx-ddc-clk");
 	hdmi_cfg->ddc_data_gpio = get_gpio(dev, of_node, "qcom,hdmi-tx-ddc-data");
 	hdmi_cfg->hpd_gpio      = get_gpio(dev, of_node, "qcom,hdmi-tx-hpd");
 	hdmi_cfg->mux_en_gpio   = get_gpio(dev, of_node, "qcom,hdmi-tx-mux-en");
 	hdmi_cfg->mux_sel_gpio  = get_gpio(dev, of_node, "qcom,hdmi-tx-mux-sel");
 	hdmi_cfg->mux_lpm_gpio  = get_gpio(dev, of_node, "qcom,hdmi-tx-mux-lpm");
-
+	hdmi_cfg->hpd5v_gpio    = get_gpio(dev, of_node, "qcom,hdmi-tx-hpd5v");
 #else
 	static struct hdmi_platform_config config = {};
 	static const char *hpd_clk_names[] = {
 			"core_clk", "master_iface_clk", "slave_iface_clk",
 	};
+
 	if (cpu_is_apq8064()) {
 		static const char *hpd_reg_names[] = {"8921_hdmi_mvs"};
 		config.phy_init      = hdmi_phy_8960_init;

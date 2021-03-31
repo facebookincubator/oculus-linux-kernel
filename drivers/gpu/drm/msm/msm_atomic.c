@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  * Copyright (C) 2014 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -19,6 +19,7 @@
 #include "msm_drv.h"
 #include "msm_kms.h"
 #include "msm_gem.h"
+#include "sde_trace.h"
 
 struct msm_commit {
 	struct drm_device *dev;
@@ -26,22 +27,26 @@ struct msm_commit {
 	uint32_t fence;
 	struct msm_fence_cb fence_cb;
 	uint32_t crtc_mask;
+	uint32_t plane_mask;
 	struct kthread_work commit_work;
 };
 
 /* block until specified crtcs are no longer pending update, and
  * atomically mark them as pending update
  */
-static int start_atomic(struct msm_drm_private *priv, uint32_t crtc_mask)
+static int start_atomic(struct msm_drm_private *priv, uint32_t crtc_mask,
+			uint32_t plane_mask)
 {
 	int ret;
 
 	spin_lock(&priv->pending_crtcs_event.lock);
 	ret = wait_event_interruptible_locked(priv->pending_crtcs_event,
-			!(priv->pending_crtcs & crtc_mask));
+			!(priv->pending_crtcs & crtc_mask) &&
+			!(priv->pending_planes & plane_mask));
 	if (ret == 0) {
 		DBG("start: %08x", crtc_mask);
 		priv->pending_crtcs |= crtc_mask;
+		priv->pending_planes |= plane_mask;
 	}
 	spin_unlock(&priv->pending_crtcs_event.lock);
 
@@ -50,18 +55,21 @@ static int start_atomic(struct msm_drm_private *priv, uint32_t crtc_mask)
 
 /* clear specified crtcs (no longer pending update)
  */
-static void end_atomic(struct msm_drm_private *priv, uint32_t crtc_mask)
+static void end_atomic(struct msm_drm_private *priv, uint32_t crtc_mask,
+			uint32_t plane_mask)
 {
 	spin_lock(&priv->pending_crtcs_event.lock);
 	DBG("end: %08x", crtc_mask);
 	priv->pending_crtcs &= ~crtc_mask;
+	priv->pending_planes &= ~plane_mask;
 	wake_up_all_locked(&priv->pending_crtcs_event);
 	spin_unlock(&priv->pending_crtcs_event.lock);
 }
 
 static void commit_destroy(struct msm_commit *commit)
 {
-	end_atomic(commit->dev->dev_private, commit->crtc_mask);
+	end_atomic(commit->dev->dev_private, commit->crtc_mask,
+			commit->plane_mask);
 	kfree(commit);
 }
 
@@ -94,8 +102,13 @@ static void msm_atomic_wait_for_commit_done(
 		if (old_state->legacy_cursor_update)
 			continue;
 
+		if (drm_crtc_vblank_get(crtc))
+			continue;
+
 		if (kms->funcs->wait_for_crtc_commit_done)
 			kms->funcs->wait_for_crtc_commit_done(kms, crtc);
+
+		drm_crtc_vblank_put(crtc);
 	}
 }
 
@@ -108,6 +121,7 @@ msm_disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 	struct drm_crtc_state *old_crtc_state;
 	int i;
 
+	SDE_ATRACE_BEGIN("msm_disable");
 	for_each_connector_in_state(old_state, connector, old_conn_state, i) {
 		const struct drm_encoder_helper_funcs *funcs;
 		struct drm_encoder *encoder;
@@ -188,6 +202,7 @@ msm_disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 		else
 			funcs->dpms(crtc, DRM_MODE_DPMS_OFF);
 	}
+	SDE_ATRACE_END("msm_disable");
 }
 
 static void
@@ -297,6 +312,7 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 	int bridge_enable_count = 0;
 	int i;
 
+	SDE_ATRACE_BEGIN("msm_enable");
 	for_each_crtc_in_state(old_state, crtc, old_crtc_state, i) {
 		const struct drm_crtc_helper_funcs *funcs;
 
@@ -364,8 +380,10 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 	}
 
 	/* If no bridges were pre_enabled, skip iterating over them again */
-	if (bridge_enable_count == 0)
+	if (bridge_enable_count == 0) {
+		SDE_ATRACE_END("msm_enable");
 		return;
+	}
 
 	for_each_connector_in_state(old_state, connector, old_conn_state, i) {
 		struct drm_encoder *encoder;
@@ -385,6 +403,7 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 
 		drm_bridge_enable(encoder->bridge);
 	}
+	SDE_ATRACE_END("msm_enable");
 }
 
 /* The (potentially) asynchronous part of the commit.  At this point
@@ -429,11 +448,21 @@ static void complete_commit(struct msm_commit *commit)
 	commit_destroy(commit);
 }
 
+static int msm_atomic_commit_dispatch(struct drm_device *dev,
+		struct drm_atomic_state *state, struct msm_commit *commit);
+
 static void fence_cb(struct msm_fence_cb *cb)
 {
 	struct msm_commit *commit =
 			container_of(cb, struct msm_commit, fence_cb);
-	complete_commit(commit);
+	int ret = -EINVAL;
+
+	ret = msm_atomic_commit_dispatch(commit->dev, commit->state, commit);
+	if (ret) {
+		DRM_ERROR("%s: atomic commit failed\n", __func__);
+		drm_atomic_state_free(commit->state);
+		commit_destroy(commit);
+	}
 }
 
 static void _msm_drm_commit_work_cb(struct kthread_work *work)
@@ -447,7 +476,9 @@ static void _msm_drm_commit_work_cb(struct kthread_work *work)
 
 	commit = container_of(work, struct msm_commit, commit_work);
 
+	SDE_ATRACE_BEGIN("complete_commit");
 	complete_commit(commit);
+	SDE_ATRACE_END("complete_commit");
 }
 
 static struct msm_commit *commit_init(struct drm_atomic_state *state)
@@ -543,9 +574,17 @@ int msm_atomic_commit(struct drm_device *dev,
 	struct msm_commit *commit;
 	int i, ret;
 
+	if (!priv || priv->shutdown_in_progress) {
+		DRM_ERROR("priv is null or shutdwon is in-progress\n");
+		return -EINVAL;
+	}
+
+	SDE_ATRACE_BEGIN("atomic_commit");
 	ret = drm_atomic_helper_prepare_planes(dev, state);
-	if (ret)
+	if (ret) {
+		SDE_ATRACE_END("atomic_commit");
 		return ret;
+	}
 
 	commit = commit_init(state);
 	if (IS_ERR_OR_NULL(commit)) {
@@ -561,7 +600,7 @@ int msm_atomic_commit(struct drm_device *dev,
 		struct drm_crtc *crtc = state->crtcs[i];
 		if (!crtc)
 			continue;
-		commit->crtc_mask |= (1 << drm_crtc_index(crtc));
+		commit->crtc_mask |= (1 << i);
 	}
 
 	/*
@@ -576,13 +615,16 @@ int msm_atomic_commit(struct drm_device *dev,
 
 		if ((plane->state->fb != new_state->fb) && new_state->fb)
 			commit_set_fence(commit, new_state->fb);
+
+		commit->plane_mask |= (1 << i);
 	}
 
 	/*
 	 * Wait for pending updates on any of the same crtc's and then
 	 * mark our set of crtc's as busy:
 	 */
-	ret = start_atomic(dev->dev_private, commit->crtc_mask);
+	ret = start_atomic(dev->dev_private, commit->crtc_mask,
+			commit->plane_mask);
 	if (ret) {
 		DRM_ERROR("start_atomic failed: %d\n", ret);
 		commit_destroy(commit);
@@ -624,13 +666,8 @@ int msm_atomic_commit(struct drm_device *dev,
 	 */
 
 	if (async) {
-		ret = msm_atomic_commit_dispatch(dev, state, commit);
-		if (ret) {
-			DRM_ERROR("%s: atomic commit failed\n", __func__);
-			drm_atomic_state_free(state);
-			commit_destroy(commit);
-			goto error;
-		}
+		msm_queue_fence_cb(dev, &commit->fence_cb, commit->fence);
+		SDE_ATRACE_END("atomic_commit");
 		return 0;
 	}
 
@@ -641,9 +678,11 @@ int msm_atomic_commit(struct drm_device *dev,
 
 	complete_commit(commit);
 
+	SDE_ATRACE_END("atomic_commit");
 	return 0;
 
 error:
 	drm_atomic_helper_cleanup_planes(dev, state);
+	SDE_ATRACE_END("atomic_commit");
 	return ret;
 }

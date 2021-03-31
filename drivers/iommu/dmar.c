@@ -143,7 +143,7 @@ dmar_alloc_pci_notify_info(struct pci_dev *dev, unsigned long event)
 		for (tmp = dev; tmp; tmp = tmp->bus->self)
 			level++;
 
-	size = sizeof(*info) + level * sizeof(struct acpi_dmar_pci_path);
+	size = sizeof(*info) + level * sizeof(info->path[0]);
 	if (size <= sizeof(dmar_pci_notify_info_buf)) {
 		info = (struct dmar_pci_notify_info *)dmar_pci_notify_info_buf;
 	} else {
@@ -326,7 +326,9 @@ static int dmar_pci_bus_notifier(struct notifier_block *nb,
 	struct pci_dev *pdev = to_pci_dev(data);
 	struct dmar_pci_notify_info *info;
 
-	/* Only care about add/remove events for physical functions */
+	/* Only care about add/remove events for physical functions.
+	 * For VFs we actually do the lookup based on the corresponding
+	 * PF in device_to_iommu() anyway. */
 	if (pdev->is_virtfn)
 		return NOTIFY_DONE;
 	if (action != BUS_NOTIFY_ADD_DEVICE &&
@@ -1313,8 +1315,8 @@ void qi_flush_iotlb(struct intel_iommu *iommu, u16 did, u64 addr,
 	qi_submit_sync(&desc, iommu);
 }
 
-void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 qdep,
-			u64 addr, unsigned mask)
+void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 pfsid,
+			u16 qdep, u64 addr, unsigned mask)
 {
 	struct qi_desc desc;
 
@@ -1329,7 +1331,7 @@ void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 qdep,
 		qdep = 0;
 
 	desc.low = QI_DEV_IOTLB_SID(sid) | QI_DEV_IOTLB_QDEP(qdep) |
-		   QI_DIOTLB_TYPE;
+		   QI_DIOTLB_TYPE | QI_DEV_IOTLB_PFSID(pfsid);
 
 	qi_submit_sync(&desc, iommu);
 }
@@ -1858,10 +1860,11 @@ static int dmar_hp_remove_drhd(struct acpi_dmar_header *header, void *arg)
 	/*
 	 * All PCI devices managed by this unit should have been destroyed.
 	 */
-	if (!dmaru->include_all && dmaru->devices && dmaru->devices_cnt)
+	if (!dmaru->include_all && dmaru->devices && dmaru->devices_cnt) {
 		for_each_active_dev_scope(dmaru->devices,
 					  dmaru->devices_cnt, i, dev)
 			return -EBUSY;
+	}
 
 	ret = dmar_ir_hotplug(dmaru, false);
 	if (ret == 0)

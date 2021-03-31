@@ -2,7 +2,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm Technologies, Inc. MSM SDHCI Platform
  * driver source file
  *
- * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -39,6 +39,9 @@
 #include <linux/msm-bus.h>
 #include <linux/pm_runtime.h>
 #include <trace/events/mmc.h>
+#include <soc/qcom/boot_stats.h>
+#include <linux/msm_thermal.h>
+#include <linux/msm_tsens.h>
 
 #include "sdhci-msm.h"
 #include "sdhci-msm-ice.h"
@@ -167,6 +170,8 @@
 #define NUM_TUNING_PHASES		16
 #define MAX_DRV_TYPES_SUPPORTED_HS200	4
 #define MSM_AUTOSUSPEND_DELAY_MS 100
+
+#define CENTI_DEGREE_TO_DEGREE 10
 
 struct sdhci_msm_offset {
 	u32 CORE_MCI_DATA_CNT;
@@ -801,19 +806,23 @@ static int msm_init_cm_dll(struct sdhci_host *host)
 			| CORE_CK_OUT_EN), host->ioaddr +
 			msm_host_offset->CORE_DLL_CONFIG);
 
-	wait_cnt = 50;
-	/* Wait until DLL_LOCK bit of DLL_STATUS register becomes '1' */
-	while (!(readl_relaxed(host->ioaddr +
-		msm_host_offset->CORE_DLL_STATUS) & CORE_DLL_LOCK)) {
-		/* max. wait for 50us sec for LOCK bit to be set */
-		if (--wait_cnt == 0) {
-			pr_err("%s: %s: DLL failed to LOCK\n",
-				mmc_hostname(mmc), __func__);
-			rc = -ETIMEDOUT;
-			goto out;
+	/* For hs400es mode, no need to wait for core dll lock */
+	if (!(msm_host->enhanced_strobe &&
+				mmc_card_strobe(msm_host->mmc->card))) {
+		wait_cnt = 50;
+		/* Wait until DLL_LOCK bit of DLL_STATUS register becomes '1' */
+		while (!(readl_relaxed(host->ioaddr +
+			msm_host_offset->CORE_DLL_STATUS) & CORE_DLL_LOCK)) {
+			/* max. wait for 50us sec for LOCK bit to be set */
+			if (--wait_cnt == 0) {
+				pr_err("%s: %s: DLL failed to LOCK\n",
+					mmc_hostname(mmc), __func__);
+				rc = -ETIMEDOUT;
+				goto out;
+			}
+			/* wait for 1us before polling again */
+			udelay(1);
 		}
-		/* wait for 1us before polling again */
-		udelay(1);
 	}
 
 out:
@@ -1279,6 +1288,34 @@ retry:
 		} else {
 			pr_debug("%s: %s: found ## bad ## phase = %d\n",
 				mmc_hostname(mmc), __func__, phase);
+
+			if (phase == 15 && tuned_phase_cnt) {
+				pr_err("%s: %s: Ping with known good phase\n",
+					mmc_hostname(mmc), __func__);
+				/* set the phase in delay line hw block */
+				rc = msm_config_cm_dll_phase(host,
+					tuned_phases[tuned_phase_cnt - 1]);
+				if (rc)
+					goto kfree;
+
+				cmd.opcode = opcode;
+				cmd.flags = MMC_RSP_R1 | MMC_CMD_ADTC;
+
+				data.blksz = size;
+				data.blocks = 1;
+				data.flags = MMC_DATA_READ;
+				data.timeout_ns = 1000 * 1000 * 1000;
+
+				data.sg = &sg;
+				data.sg_len = 1;
+				sg_init_one(&sg, data_buf, size);
+				memset(data_buf, 0, size);
+				mmc_wait_for_req(mmc, &mrq);
+
+				if ((cmd.error || data.error))
+					pr_err("%s: %s: Ping with known good phase failed\n",
+					mmc_hostname(mmc), __func__);
+			}
 		}
 	} while (++phase < 16);
 
@@ -1841,7 +1878,7 @@ struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 	}
 
 	pdata->status_gpio = of_get_named_gpio_flags(np, "cd-gpios", 0, &flags);
-	if (gpio_is_valid(pdata->status_gpio) & !(flags & OF_GPIO_ACTIVE_LOW))
+	if (gpio_is_valid(pdata->status_gpio) && !(flags & OF_GPIO_ACTIVE_LOW))
 		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
 
 	of_property_read_u32(np, "qcom,bus-width", &bus_width);
@@ -1976,7 +2013,7 @@ struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 	sdhci_msm_pm_qos_parse(dev, pdata);
 
 	if (of_get_property(np, "qcom,core_3_0v_support", NULL))
-		pdata->core_3_0v_support = true;
+		msm_host->core_3_0v_support = true;
 
 	pdata->sdr104_wa = of_property_read_bool(np, "qcom,sdr104-wa");
 
@@ -2659,7 +2696,9 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 	 */
 	mb();
 
-	if ((io_level & REQ_IO_HIGH) && (msm_host->caps_0 & CORE_3_0V_SUPPORT))
+	if ((io_level & REQ_IO_HIGH) &&
+			(msm_host->caps_0 & CORE_3_0V_SUPPORT) &&
+			!msm_host->core_3_0v_support)
 		writel_relaxed((readl_relaxed(host->ioaddr +
 				msm_host_offset->CORE_VENDOR_SPEC) &
 				~CORE_IO_PAD_PWR_SWITCH), host->ioaddr +
@@ -3164,7 +3203,10 @@ static void sdhci_msm_set_clock(struct sdhci_host *host, unsigned int clock)
 					| CORE_HC_SELECT_IN_EN), host->ioaddr +
 					msm_host_offset->CORE_VENDOR_SPEC);
 		}
-		if (!host->mmc->ios.old_rate && !msm_host->use_cdclp533) {
+		/* No need to check for DLL lock for HS400es mode */
+		if (!host->mmc->ios.old_rate && !msm_host->use_cdclp533 &&
+				!((card && mmc_card_strobe(card) &&
+				 msm_host->enhanced_strobe))) {
 			/*
 			 * Poll on DLL_LOCK and DDR_DLL_LOCK bits in
 			 * CORE_DLL_STATUS to be set.  This should get set
@@ -3331,6 +3373,21 @@ static void sdhci_msm_cmdq_dump_debug_ram(struct sdhci_host *host)
 	pr_err("-------------------------\n");
 }
 
+static void sdhci_msm_cache_debug_data(struct sdhci_host *host)
+{
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	struct sdhci_msm_debug_data *cached_data = &msm_host->cached_data;
+
+	memcpy(&cached_data->copy_mmc, msm_host->mmc,
+		sizeof(struct mmc_host));
+	if (msm_host->mmc->card)
+		memcpy(&cached_data->copy_card, msm_host->mmc->card,
+			sizeof(struct mmc_card));
+	memcpy(&cached_data->copy_host, host,
+		sizeof(struct sdhci_host));
+}
+
 void sdhci_msm_dump_vendor_regs(struct sdhci_host *host)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
@@ -3343,6 +3400,7 @@ void sdhci_msm_dump_vendor_regs(struct sdhci_host *host)
 	u32 debug_reg[MAX_TEST_BUS] = {0};
 	u32 sts = 0;
 
+	sdhci_msm_cache_debug_data(host);
 	pr_info("----------- VENDOR REGISTER DUMP -----------\n");
 	if (host->cq_host)
 		sdhci_msm_cmdq_dump_debug_ram(host);
@@ -3507,6 +3565,151 @@ int sdhci_msm_notify_load(struct sdhci_host *host, enum mmc_load state)
 	}
 	return 0;
 }
+
+static void sdhci_msm_tsens_threshold_notify(
+			struct therm_threshold *tsens_cb_data)
+{
+	struct threshold_info *info = tsens_cb_data->parent;
+	struct sdhci_msm_host *msm_host = container_of(info,
+			struct sdhci_msm_host, tsens_threshold_config);
+	int ret = 0;
+
+	pr_debug("%s: Triggered tsens-notification type=%d zone_id =%d\n",
+		mmc_hostname(msm_host->mmc), tsens_cb_data->trip_triggered,
+		tsens_cb_data->sensor_id);
+
+	switch (tsens_cb_data->trip_triggered) {
+	case THERMAL_TRIP_CONFIGURABLE_HI:
+		atomic_set(&msm_host->clk_scaling_disable, 0);
+		break;
+	case THERMAL_TRIP_CONFIGURABLE_LOW:
+		atomic_set(&msm_host->clk_scaling_disable, 1);
+		break;
+	default:
+		pr_err("%s: trip type %d not supported\n",
+			mmc_hostname(msm_host->mmc),
+			tsens_cb_data->trip_triggered);
+		break;
+	}
+
+	ret = sensor_mgr_set_threshold(tsens_cb_data->sensor_id,
+						tsens_cb_data->threshold);
+	if (ret < 0)
+		pr_err("%s: failed to set threshold temp, ret==%d\n",
+					__func__, ret);
+}
+
+static int sdhci_msm_check_tsens(struct sdhci_msm_host *msm_host)
+{
+	int ret = 0;
+	int temp = 0;
+	bool disable;
+	struct tsens_device tsens_dev;
+
+	if (tsens_is_ready() > 0) {
+		tsens_dev.sensor_num = msm_host->tsens_id;
+		ret = tsens_get_temp(&tsens_dev, &temp);
+		if (ret < 0) {
+			pr_err("%s: failed to read tsens, ret = %d\n",
+				mmc_hostname(msm_host->mmc), ret);
+			return ret;
+		}
+		/* convert centidegree to degree*/
+		temp /= CENTI_DEGREE_TO_DEGREE;
+		disable = temp <= msm_host->disable_scaling_threshold_temp;
+		if (disable)
+			atomic_set(&msm_host->clk_scaling_disable, 1);
+	}
+	return ret;
+}
+
+static int sdhci_msm_register_cb(struct sdhci_msm_host *msm_host)
+{
+	int ret;
+
+	ret = sdhci_msm_check_tsens(msm_host);
+	if (ret) {
+		pr_err("%s: unable to check tsens\n",
+				mmc_hostname(msm_host->mmc));
+		return ret;
+	}
+
+	ret  = sensor_mgr_init_threshold(&msm_host->tsens_threshold_config,
+				msm_host->tsens_id,
+				msm_host->enable_scaling_threshold_temp,/*high*/
+				msm_host->disable_scaling_threshold_temp,/*low*/
+				sdhci_msm_tsens_threshold_notify);
+	if (ret) {
+		pr_err("%s: failed to register cb for tsens, ret = %d\n",
+					mmc_hostname(msm_host->mmc), ret);
+		return ret;
+	}
+
+	ret = sensor_mgr_convert_id_and_set_threshold(
+				&msm_host->tsens_threshold_config);
+	if (ret) {
+		pr_err("%s: failed to set tsens threshold, ret = %d\n",
+					mmc_hostname(msm_host->mmc), ret);
+		return ret;
+	}
+	return ret;
+}
+
+static int sdhci_msm_tsens_pltfm_init(struct sdhci_msm_host *msm_host)
+{
+	int ret = 0;
+	struct device *dev = &msm_host->pdev->dev;
+	struct device_node *np = dev->of_node;
+
+	of_property_read_u32(np, "qcom,tsens-id", &msm_host->tsens_id);
+	of_property_read_s32(np, "qcom,disable_scaling_threshold_temp",
+				&msm_host->disable_scaling_threshold_temp);
+	of_property_read_s32(np, "qcom,enable_scaling_threshold_temp",
+				&msm_host->enable_scaling_threshold_temp);
+
+	if (msm_host->tsens_id)
+		msm_host->temp_control_scaling = true;
+	else
+		msm_host->temp_control_scaling = false;
+
+	atomic_set(&msm_host->clk_scaling_disable, 0);
+	return ret;
+}
+
+static int sdhci_msm_dereg_temp_callback(struct sdhci_host *host)
+{
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+
+	if (msm_host->temp_control_scaling)
+		sensor_mgr_remove_threshold(
+			&msm_host->tsens_threshold_config);
+	return 0;
+}
+
+static int sdhci_msm_reg_temp_callback(struct sdhci_host *host)
+{
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	int ret = 0;
+
+	if (msm_host->temp_control_scaling) {
+		ret = sdhci_msm_register_cb(msm_host);
+		if (ret)
+			pr_err("%s: failed register temp monitoring call back, ret = %d\n",
+				mmc_hostname(msm_host->mmc), ret);
+	}
+	return ret;
+}
+
+static int sdhci_msm_check_temp(struct sdhci_host *host)
+{
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+
+	return atomic_read(&msm_host->clk_scaling_disable);
+}
+
 
 void sdhci_msm_reset_workaround(struct sdhci_host *host, u32 enable)
 {
@@ -3924,8 +4127,8 @@ void sdhci_msm_pm_qos_cpu_init(struct sdhci_host *host,
 		group->req.type = PM_QOS_REQ_AFFINE_CORES;
 		cpumask_copy(&group->req.cpus_affine,
 			&msm_host->pdata->pm_qos_data.cpu_group_map.mask[i]);
-		/* For initialization phase, set the performance mode latency */
-		group->latency = latency[i].latency[SDHCI_PERFORMANCE_MODE];
+		/* We set default latency here for all pm_qos cpu groups. */
+		group->latency = PM_QOS_DEFAULT_VALUE;
 		pm_qos_add_request(&group->req, PM_QOS_CPU_DMA_LATENCY,
 			group->latency);
 		pr_info("%s (): voted for group #%d (mask=0x%lx) latency=%d\n",
@@ -4054,6 +4257,9 @@ static struct sdhci_ops sdhci_msm_ops = {
 	.clear_set_dumpregs = sdhci_msm_clear_set_dumpregs,
 	.enhanced_strobe_mask = sdhci_msm_enhanced_strobe_mask,
 	.notify_load = sdhci_msm_notify_load,
+	.check_temp = sdhci_msm_check_temp,
+	.reg_temp_callback = sdhci_msm_reg_temp_callback,
+	.dereg_temp_callback = sdhci_msm_dereg_temp_callback,
 	.reset_workaround = sdhci_msm_reset_workaround,
 	.init = sdhci_msm_init,
 	.pre_req = sdhci_msm_pre_req,
@@ -4140,7 +4346,7 @@ static void sdhci_set_default_hw_caps(struct sdhci_msm_host *msm_host,
 		msm_host->use_14lpp_dll = true;
 
 	/* Fake 3.0V support for SDIO devices which requires such voltage */
-	if (msm_host->pdata->core_3_0v_support) {
+	if (msm_host->core_3_0v_support) {
 		caps |= CORE_3_0V_SUPPORT;
 			writel_relaxed((readl_relaxed(host->ioaddr +
 			SDHCI_CAPABILITIES) | caps), host->ioaddr +
@@ -4161,8 +4367,10 @@ static void sdhci_set_default_hw_caps(struct sdhci_msm_host *msm_host,
 	/* keep track of the value in SDHCI_CAPABILITIES */
 	msm_host->caps_0 = caps;
 
-	if ((major == 1) && (minor >= 0x6b))
+	if ((major == 1) && (minor >= 0x6b)) {
 		msm_host->ice_hci_support = true;
+		host->cdr_support = true;
+	}
 }
 
 #ifdef CONFIG_MMC_CQ_HCI
@@ -4229,6 +4437,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	struct resource *tlmm_memres = NULL;
 	void __iomem *tlmm_mem;
 	unsigned long flags;
+	bool force_probe;
+	char boot_marker[40];
 
 	pr_debug("%s: Enter %s\n", dev_name(&pdev->dev), __func__);
 	msm_host = devm_kzalloc(&pdev->dev, sizeof(struct sdhci_msm_host),
@@ -4252,6 +4462,10 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		ret = PTR_ERR(host);
 		goto out_host_free;
 	}
+
+	snprintf(boot_marker, sizeof(boot_marker),
+			"M - DRIVER %s Init", mmc_hostname(host->mmc));
+	place_marker(boot_marker);
 
 	pltfm_host = sdhci_priv(host);
 	pltfm_host->priv = msm_host;
@@ -4292,8 +4506,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			goto pltfm_free;
 		}
 
+		/* Read property to determine if the probe is forced */
+		force_probe = of_find_property(pdev->dev.of_node,
+			"qcom,force-sdhc1-probe", NULL);
+
 		/* skip the probe if eMMC isn't a boot device */
-		if ((ret == 1) && !sdhci_msm_is_bootdevice(&pdev->dev)) {
+		if ((ret == 1) && !sdhci_msm_is_bootdevice(&pdev->dev)
+		    && !force_probe) {
 			ret = -ENODEV;
 			goto pltfm_free;
 		}
@@ -4611,6 +4830,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 				MMC_CAP2_PACKED_WR_CONTROL);
 	}
 
+	sdhci_msm_tsens_pltfm_init(msm_host);
 	init_completion(&msm_host->pwr_irq_completion);
 
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
@@ -4718,6 +4938,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		       mmc_hostname(host->mmc), __func__, ret);
 		device_remove_file(&pdev->dev, &msm_host->auto_cmd21_attr);
 	}
+	if (sdhci_msm_is_bootdevice(&pdev->dev))
+		mmc_flush_detect_work(host->mmc);
+
+	snprintf(boot_marker, sizeof(boot_marker),
+			"M - DRIVER %s Ready", mmc_hostname(host->mmc));
+	place_marker(boot_marker);
+
 	/* Successful initialization */
 	goto out;
 
@@ -4911,6 +5138,7 @@ static int sdhci_msm_suspend(struct device *dev)
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	struct mmc_host *mmc = host->mmc;
 	int ret = 0;
 	int sdio_cfg = 0;
 	ktime_t start = ktime_get();
@@ -4926,6 +5154,8 @@ static int sdhci_msm_suspend(struct device *dev)
 	}
 	ret = sdhci_msm_runtime_suspend(dev);
 out:
+	/* cancel any clock gating work scheduled by mmc_host_clk_release() */
+	cancel_delayed_work_sync(&mmc->clk_gate_work);
 	sdhci_msm_disable_controller_clock(host);
 	if (host->mmc->card && mmc_card_sdio(host->mmc->card)) {
 		sdio_cfg = sdhci_msm_cfg_sdio_wakeup(host, true);
@@ -4995,7 +5225,7 @@ static int sdhci_msm_suspend_noirq(struct device *dev)
 }
 
 static const struct dev_pm_ops sdhci_msm_pmops = {
-	SET_SYSTEM_SLEEP_PM_OPS(sdhci_msm_suspend, sdhci_msm_resume)
+	SET_LATE_SYSTEM_SLEEP_PM_OPS(sdhci_msm_suspend, sdhci_msm_resume)
 	SET_RUNTIME_PM_OPS(sdhci_msm_runtime_suspend, sdhci_msm_runtime_resume,
 			   NULL)
 	.suspend_noirq = sdhci_msm_suspend_noirq,
@@ -5019,12 +5249,38 @@ static struct platform_driver sdhci_msm_driver = {
 	.driver		= {
 		.name	= "sdhci_msm",
 		.owner	= THIS_MODULE,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 		.of_match_table = sdhci_msm_dt_match,
 		.pm	= SDHCI_MSM_PMOPS,
 	},
 };
 
 module_platform_driver(sdhci_msm_driver);
+
+static const struct of_device_id late_sdhci_msm_dt_match[] = {
+	{.compatible = "qcom,late-sdhci-msm"},
+	{.compatible = "qcom,sdhci-msm-v5"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, late_sdhci_msm_dt_match);
+
+static struct platform_driver late_sdhci_msm_driver = {
+	.probe          = sdhci_msm_probe,
+	.remove         = sdhci_msm_remove,
+	.driver         = {
+		.name   = "late_sdhci_msm",
+		.owner  = THIS_MODULE,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+		.of_match_table = late_sdhci_msm_dt_match,
+		.pm     = SDHCI_MSM_PMOPS,
+	},
+};
+
+static int __init late_sdhci_msm_init_driver(void)
+{
+	return platform_driver_register(&late_sdhci_msm_driver);
+}
+late_initcall(late_sdhci_msm_init_driver);
 
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Secure Digital Host Controller Interface driver");
 MODULE_LICENSE("GPL v2");

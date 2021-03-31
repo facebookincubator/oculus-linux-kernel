@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,12 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 #ifndef QWLAN_VERSION_H
 #define QWLAN_VERSION_H
 /*===========================================================================
@@ -34,16 +25,16 @@
 
    BRIEF DESCRIPTION:
    WLAN Host Version file.
-   Build number automaticly updated by build scripts.
+    Build number automatically updated by build scripts.
 
    ===========================================================================*/
 
 #define QWLAN_VERSION_MAJOR            5
-#define QWLAN_VERSION_MINOR            1
-#define QWLAN_VERSION_PATCH            0
+#define QWLAN_VERSION_MINOR            2
+#define QWLAN_VERSION_PATCH            03
 #define QWLAN_VERSION_EXTRA            "Q"
-#define QWLAN_VERSION_BUILD            70
+#define QWLAN_VERSION_BUILD            29
 
-#define QWLAN_VERSIONSTR               "5.1.0.70Q"
+#define QWLAN_VERSIONSTR               "5.2.03.29Q"
 
 #endif /* QWLAN_VERSION_H */

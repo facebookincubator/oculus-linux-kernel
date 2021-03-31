@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011,2013-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011,2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -69,91 +60,6 @@
 #include "wma.h"
 #include "cds_regdomain.h"
 
-static struct reg_dmn_supp_op_classes reg_dmn_curr_supp_opp_classes = { 0 };
-
-static const struct reg_dmn_op_class_map_t global_op_class[] = {
-	{81, 25, BW20, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13} },
-	{82, 25, BW20, {14} },
-	{83, 40, BW40_LOW_PRIMARY, {1, 2, 3, 4, 5, 6, 7, 8, 9} },
-	{84, 40, BW40_HIGH_PRIMARY, {5, 6, 7, 8, 9, 10, 11, 12, 13} },
-	{115, 20, BW20, {36, 40, 44, 48} },
-	{116, 40, BW40_LOW_PRIMARY, {36, 44} },
-	{117, 40, BW40_HIGH_PRIMARY, {40, 48} },
-	{118, 20, BW20, {52, 56, 60, 64} },
-	{119, 40, BW40_LOW_PRIMARY, {52, 60} },
-	{120, 40, BW40_HIGH_PRIMARY, {56, 64} },
-	{121, 20, BW20,
-	 {100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140} },
-	{122, 40, BW40_LOW_PRIMARY, {100, 108, 116, 124, 132} },
-	{123, 40, BW40_HIGH_PRIMARY, {104, 112, 120, 128, 136} },
-	{125, 20, BW20, {149, 153, 157, 161, 165, 169} },
-	{126, 40, BW40_LOW_PRIMARY, {149, 157} },
-	{127, 40, BW40_HIGH_PRIMARY, {153, 161} },
-	{128, 80, BW80, {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
-			   112, 116, 120, 124, 128, 132, 136, 140, 144,
-			   149, 153, 157, 161} },
-	{0, 0, 0, {0} },
-};
-
-static const struct reg_dmn_op_class_map_t us_op_class[] = {
-	{1, 20, BW20, {36, 40, 44, 48} },
-	{2, 20, BW20, {52, 56, 60, 64} },
-	{4, 20, BW20, {100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140,
-		       144} },
-	{5, 20, BW20, {149, 153, 157, 161, 165} },
-	{12, 25, BW20, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11} },
-	{22, 40, BW40_LOW_PRIMARY, {36, 44} },
-	{23, 40, BW40_LOW_PRIMARY, {52, 60} },
-	{24, 40, BW40_LOW_PRIMARY, {100, 108, 116, 124, 132} },
-	{26, 40, BW40_LOW_PRIMARY, {149, 157} },
-	{27, 40, BW40_HIGH_PRIMARY, {40, 48} },
-	{28, 40, BW40_HIGH_PRIMARY, {56, 64} },
-	{29, 40, BW40_HIGH_PRIMARY, {104, 112, 120, 128, 136} },
-	{31, 40, BW40_HIGH_PRIMARY, {153, 161} },
-	{32, 40, BW40_LOW_PRIMARY, {1, 2, 3, 4, 5, 6, 7} },
-	{33, 40, BW40_HIGH_PRIMARY, {5, 6, 7, 8, 9, 10, 11} },
-	{128, 80, BW80, {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
-			 112, 116, 120, 124, 128, 132, 136, 140, 144,
-			 149, 153, 157, 161} },
-	{0, 0, 0, {0} },
-};
-
-static const struct reg_dmn_op_class_map_t euro_op_class[] = {
-	{1, 20, BW20, {36, 40, 44, 48} },
-	{2, 20, BW20, {52, 56, 60, 64} },
-	{3, 20, BW20, {100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140} },
-	{4, 25, BW20, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13} },
-	{5, 40, BW40_LOW_PRIMARY, {36, 44} },
-	{6, 40, BW40_LOW_PRIMARY, {52, 60} },
-	{7, 40, BW40_LOW_PRIMARY, {100, 108, 116, 124, 132} },
-	{8, 40, BW40_HIGH_PRIMARY, {40, 48} },
-	{9, 40, BW40_HIGH_PRIMARY, {56, 64} },
-	{10, 40, BW40_HIGH_PRIMARY, {104, 112, 120, 128, 136} },
-	{11, 40, BW40_LOW_PRIMARY, {1, 2, 3, 4, 5, 6, 7, 8, 9} },
-	{12, 40, BW40_HIGH_PRIMARY, {5, 6, 7, 8, 9, 10, 11, 12, 13} },
-	{17, 20, BW20, {149, 153, 157, 161, 165, 169} },
-	{128, 80, BW80, {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112,
-			 116, 120, 124, 128} },
-	{0, 0, 0, {0} },
-};
-
-static const struct reg_dmn_op_class_map_t japan_op_class[] = {
-	{1, 20, BW20, {36, 40, 44, 48} },
-	{30, 25, BW20, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13} },
-	{31, 25, BW20, {14} },
-	{32, 20, BW20, {52, 56, 60, 64} },
-	{34, 20, BW20,
-		{100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140} },
-	{36, 40, BW40_LOW_PRIMARY, {36, 44} },
-	{37, 40, BW40_LOW_PRIMARY, {52, 60} },
-	{39, 40, BW40_LOW_PRIMARY, {100, 108, 116, 124, 132} },
-	{41, 40, BW40_HIGH_PRIMARY, {40, 48} },
-	{42, 40, BW40_HIGH_PRIMARY, {56, 64} },
-	{44, 40, BW40_HIGH_PRIMARY, {104, 112, 120, 128, 136} },
-	{128, 80, BW80, {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112,
-			 116, 120, 124, 128} },
-	{0, 0, 0, {0} },
-};
 
 static const struct reg_dmn_pair g_reg_dmn_pairs[] = {
 	{NO_ENUMRD, FCC8, FCCA, CTRY_DEFAULT},
@@ -162,6 +68,7 @@ static const struct reg_dmn_pair g_reg_dmn_pairs[] = {
 	{FCC1_WORLD, FCC1, WORLD, CTRY_DEFAULT},
 	{FCC2_WORLD, FCC2, WORLD, CTRY_DEFAULT},
 	{FCC2_ETSIC, FCC2, ETSIC, CTRY_DEFAULT},
+	{FCC2_FCCA, FCC2, FCCA, CTRY_DEFAULT},
 	{FCC3_FCCA, FCC3, FCCA, CTRY_DEFAULT},
 	{FCC3_WORLD, FCC3, WORLD, CTRY_DEFAULT},
 	{FCC3_ETSIC, FCC3, ETSIC, CTRY_DEFAULT},
@@ -174,6 +81,8 @@ static const struct reg_dmn_pair g_reg_dmn_pairs[] = {
 	{FCC9_FCCA, FCC9, FCCA, CTRY_DEFAULT},
 	{FCC10_FCCA, FCC10, FCCA, CTRY_DEFAULT},
 	{FCC11_WORLD, FCC11, WORLD, CTRY_DEFAULT},
+	{FCC13_WORLD, FCC13, WORLD, CTRY_DEFAULT},
+	{FCC14_FCCB, FCC14, FCCB, CTRY_DEFAULT},
 	{ETSI1_WORLD, ETSI1, WORLD, CTRY_DEFAULT},
 	{ETSI3_WORLD, ETSI3, WORLD, CTRY_DEFAULT},
 	{ETSI4_WORLD, ETSI4, WORLD, CTRY_DEFAULT},
@@ -196,6 +105,9 @@ static const struct reg_dmn_pair g_reg_dmn_pairs[] = {
 	{APL14_WORLD, APL14, WORLD, CTRY_DEFAULT},
 	{APL15_WORLD, APL15, WORLD, CTRY_DEFAULT},
 	{APL16_WORLD, APL16, WORLD, CTRY_DEFAULT},
+	{APL17_ETSID, APL17, WORLD, CTRY_DEFAULT},
+	{APL20_WORLD, APL20, WORLD, CTRY_DEFAULT},
+	{APL23_WORLD, APL23, WORLD, CTRY_DEFAULT},
 	{WOR0_WORLD, WOR0_WORLD, WOR0_WORLD, CTRY_DEFAULT},
 	{WOR1_WORLD, WOR1_WORLD, WOR1_WORLD, CTRY_DEFAULT},
 	{WOR2_WORLD, WOR2_WORLD, WOR2_WORLD, CTRY_DEFAULT},
@@ -209,7 +121,8 @@ static const struct reg_dmn_pair g_reg_dmn_pairs[] = {
 	{WORA_WORLD, WORA_WORLD, WORA_WORLD, CTRY_DEFAULT},
 	{WORB_WORLD, WORB_WORLD, WORB_WORLD, CTRY_DEFAULT},
 	{WORC_WORLD, WORC_WORLD, WORC_WORLD, CTRY_DEFAULT},
-	{MKK5_MKKA2, MKK5, MKKA, CTRY_JAPAN14},
+	{MKK5_MKKC, MKK5, MKKC, CTRY_JAPAN15},
+	{MKK5_MKKA2, MKK5, MKKA, CTRY_DEFAULT},
 };
 
 static const struct country_code_to_reg_dmn g_all_countries[] = {
@@ -218,7 +131,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_ALGERIA, APL13_WORLD, "DZ", "ALGERIA"},
 	{CTRY_AMERICAN_SAMOA, FCC3_FCCA, "AS", "AMERICAN SAMOA"},
 	{CTRY_ANGUILLA, ETSI1_WORLD, "AI", "ANGUILLA"},
-	{CTRY_ARGENTINA, APL16_WORLD, "AR", "ARGENTINA"},
+	{CTRY_ARGENTINA, APL17_ETSID, "AR", "ARGENTINA"},
 	{CTRY_ARMENIA, ETSI4_WORLD, "AM", "ARMENIA"},
 	{CTRY_ARUBA, ETSI1_WORLD, "AW", "ARUBA"},
 	{CTRY_AUSTRALIA, FCC6_WORLD, "AU", "AUSTRALIA"},
@@ -230,7 +143,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_BARBADOS, FCC2_WORLD, "BB", "BARBADOS"},
 	{CTRY_BELARUS, ETSI1_WORLD, "BY", "BELARUS"},
 	{CTRY_BELGIUM, ETSI1_WORLD, "BE", "BELGIUM"},
-	{CTRY_BELIZE, FCC3_ETSIC, "BZ", "BELIZE"},
+	{CTRY_BELIZE, ETSI8_WORLD, "BZ", "BELIZE"},
 	{CTRY_BERMUDA, FCC3_FCCA, "BM", "BERMUDA"},
 	{CTRY_BHUTAN, ETSI1_WORLD, "BT", "BHUTAN"},
 	{CTRY_BOLIVIA, APL8_WORLD, "BO", "BOLIVIA"},
@@ -240,11 +153,11 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_BULGARIA, ETSI1_WORLD, "BG", "BULGARIA"},
 	{CTRY_BURKINA_FASO, FCC3_WORLD, "BF", "BURKINA-FASO"},
 	{CTRY_CAMBODIA, ETSI1_WORLD, "KH", "CAMBODIA"},
-	{CTRY_CANADA, FCC6_FCCA, "CA", "CANADA"},
+	{CTRY_CANADA, FCC3_FCCA, "CA", "CANADA"},
 	{CTRY_CAYMAN_ISLANDS, FCC3_WORLD, "KY", "CAYMAN ISLANDS"},
 	{CTRY_CENTRAL_AFRICA_REPUBLIC, FCC3_WORLD, "CF", "AFRICA REPUBLIC"},
 	{CTRY_CHAD, ETSI1_WORLD, "TD", "CHAD"},
-	{CTRY_CHILE, APL6_WORLD, "CL", "CHILE"},
+	{CTRY_CHILE, APL23_WORLD, "CL", "CHILE"},
 	{CTRY_CHINA, APL14_WORLD, "CN", "CHINA"},
 	{CTRY_CHRISTMAS_ISLAND, FCC3_WORLD, "CX", "CHRISTMAS ISLAND"},
 	{CTRY_COLOMBIA, FCC3_WORLD, "CO", "COLOMBIA"},
@@ -254,11 +167,11 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_CYPRUS, ETSI1_WORLD, "CY", "CYPRUS"},
 	{CTRY_CZECH, ETSI1_WORLD, "CZ", "CZECH REPUBLIC"},
 	{CTRY_DENMARK, ETSI1_WORLD, "DK", "DENMARK"},
-	{CTRY_DOMINICA, FCC1_FCCA, "DM", "DOMINICA"},
-	{CTRY_DOMINICAN_REPUBLIC, FCC1_FCCA, "DO", "DOMINICAN REPUBLIC"},
+	{CTRY_DOMINICA, FCC2_FCCA, "DM", "DOMINICA"},
+	{CTRY_DOMINICAN_REPUBLIC, FCC2_FCCA, "DO", "DOMINICAN REPUBLIC"},
 	{CTRY_ECUADOR, FCC3_WORLD, "EC", "ECUADOR"},
 	{CTRY_EGYPT, ETSI3_WORLD, "EG", "EGYPT"},
-	{CTRY_EL_SALVADOR, FCC1_WORLD, "SV", "EL SALVADOR"},
+	{CTRY_EL_SALVADOR, FCC2_WORLD, "SV", "EL SALVADOR"},
 	{CTRY_ESTONIA, ETSI1_WORLD, "EE", "ESTONIA"},
 	{CTRY_ETHIOPIA, ETSI1_WORLD, "ET", "ETHIOPIA"},
 	{CTRY_FINLAND, ETSI1_WORLD, "FI", "FINLAND"},
@@ -268,6 +181,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_GEORGIA, ETSI4_WORLD, "GE", "GEORGIA"},
 	{CTRY_GERMANY, ETSI1_WORLD, "DE", "GERMANY"},
 	{CTRY_GHANA, FCC3_WORLD, "GH", "GHANA"},
+	{CTRY_GIBRALTAR, ETSI1_WORLD, "GI", "GIBRALTAR"},
 	{CTRY_GREECE, ETSI1_WORLD, "GR", "GREECE"},
 	{CTRY_GREENLAND, ETSI1_WORLD, "GL", "GREENLAND"},
 	{CTRY_GRENADA, FCC3_FCCA, "GD", "GRENADA"},
@@ -276,21 +190,20 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_GUATEMALA, ETSI1_WORLD, "GT", "GUATEMALA"},
 	{CTRY_GUYANA, APL1_ETSIC, "GY", "GUYANA"},
 	{CTRY_HAITI, FCC3_FCCA, "HT", "HAITI"},
-	{CTRY_HONDURAS, FCC3_WORLD, "HN", "HONDURAS"},
+	{CTRY_HONDURAS, FCC13_WORLD, "HN", "HONDURAS"},
 	{CTRY_HONG_KONG, FCC3_WORLD, "HK", "HONG KONG"},
 	{CTRY_HUNGARY, ETSI1_WORLD, "HU", "HUNGARY"},
 	{CTRY_ICELAND, ETSI1_WORLD, "IS", "ICELAND"},
 	{CTRY_INDIA, APL15_WORLD, "IN", "INDIA"},
 	{CTRY_INDONESIA, APL2_ETSIC, "ID", "INDONESIA"},
-	{CTRY_IRAN, APL1_WORLD, "IR", "IRAN"},
+	{CTRY_IRAQ, ETSI1_WORLD, "IQ", "IRAQ"},
 	{CTRY_IRELAND, ETSI1_WORLD, "IE", "IRELAND"},
 	{CTRY_ISRAEL, ETSI3_WORLD, "IL", "ISRAEL"},
 	{CTRY_ITALY, ETSI1_WORLD, "IT", "ITALY"},
-	{CTRY_JAMAICA, FCC3_WORLD, "JM", "JAMAICA"},
+	{CTRY_JAMAICA, FCC13_WORLD, "JM", "JAMAICA"},
 	{CTRY_JORDAN, APL4_WORLD, "JO", "JORDAN"},
 	{CTRY_KAZAKHSTAN, NULL1_WORLD, "KZ", "KAZAKHSTAN"},
 	{CTRY_KENYA, APL12_WORLD, "KE", "KENYA"},
-	{CTRY_KOREA_NORTH, APL9_WORLD, "KP", "NORTH KOREA"},
 	{CTRY_KOREA_ROC, APL9_WORLD, "KR", "KOREA REPUBLIC"},
 	{CTRY_KUWAIT, ETSI3_WORLD, "KW", "KUWAIT"},
 	{CTRY_LATVIA, ETSI1_WORLD, "LV", "LATVIA"},
@@ -317,8 +230,8 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_MONGOLIA, FCC3_WORLD, "MN", "MONGOLIA"},
 	{CTRY_MONTENEGRO, ETSI1_WORLD, "ME", "MONTENEGRO"},
 	{CTRY_MOROCCO, ETSI3_WORLD, "MA", "MOROCCO"},
-	{CTRY_NAMIBIA, APL9_WORLD, "NA", "NAMIBIA"},
-	{CTRY_NEPAL, APL6_WORLD, "NP", "NEPAL"},
+	{CTRY_NAMIBIA, APL20_WORLD, "NA", "NAMIBIA"},
+	{CTRY_NEPAL, APL23_WORLD, "NP", "NEPAL"},
 	{CTRY_NETHERLANDS, ETSI1_WORLD, "NL", "NETHERLANDS"},
 	{CTRY_NETHERLANDS_ANTILLES, ETSI1_WORLD, "AN", "NETHERLANDS ANTILLES"},
 	{CTRY_NEW_ZEALAND, FCC3_ETSIC, "NZ", "NEW ZEALAND"},
@@ -329,7 +242,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_OMAN, ETSI1_WORLD, "OM", "OMAN"},
 	{CTRY_PAKISTAN, APL1_ETSIC, "PK", "PAKISTAN"},
 	{CTRY_PALAU, FCC3_FCCA, "PW", "PALAU"},
-	{CTRY_PANAMA, FCC1_FCCA, "PA", "PANAMA"},
+	{CTRY_PANAMA, FCC14_FCCB, "PA", "PANAMA"},
 	{CTRY_PAPUA_NEW_GUINEA, FCC3_WORLD, "PG", "PAPUA NEW GUINEA"},
 	{CTRY_PARAGUAY, FCC3_WORLD, "PY", "PARAGUAY"},
 	{CTRY_PERU, FCC3_WORLD, "PE", "PERU"},
@@ -350,7 +263,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_SAINT_VINCENT_AND_THE_GRENADIENS, ETSI1_WORLD, "VC", "VINCENT"},
 	{CTRY_SAMOA, ETSI1_WORLD, "WS", "SAMOA"},
 	{CTRY_SAUDI_ARABIA, ETSI1_WORLD, "SA", "SAUDI ARABIA"},
-	{CTRY_SENEGAL, FCC3_WORLD, "SN", "SENEGAL"},
+	{CTRY_SENEGAL, FCC13_WORLD, "SN", "SENEGAL"},
 	{CTRY_SERBIA, ETSI1_WORLD, "RS", "REPUBLIC OF SERBIA"},
 	{CTRY_SINGAPORE, FCC3_WORLD, "SG", "SINGAPORE"},
 	{CTRY_SLOVAKIA, ETSI1_WORLD, "SK", "SLOVAKIA"},
@@ -361,7 +274,6 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_SRI_LANKA, FCC3_WORLD, "LK", "SRI LANKA"},
 	{CTRY_SWEDEN, ETSI1_WORLD, "SE", "SWEDEN"},
 	{CTRY_SWITZERLAND, ETSI1_WORLD, "CH", "SWITZERLAND"},
-	{CTRY_SYRIA, NULL1_WORLD, "SY", "SYRIAN ARAB REPUBLIC"},
 	{CTRY_TAIWAN, FCC3_FCCA, "TW", "TAIWAN"},
 	{CTRY_TANZANIA, APL1_WORLD, "TZ", "TANZANIA"},
 	{CTRY_THAILAND, FCC3_WORLD, "TH", "THAILAND"},
@@ -374,8 +286,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_UKRAINE, ETSI9_WORLD, "UA", "UKRAINE"},
 	{CTRY_UAE, FCC3_WORLD, "AE", "UNITED ARAB EMIRATES"},
 	{CTRY_UNITED_KINGDOM, ETSI1_WORLD, "GB", "UNITED KINGDOM"},
-	{CTRY_UNITED_STATES, FCC3_FCCA, "US", "UNITED STATES"},
-	{CTRY_UNITED_STATES_PS, FCC4_FCCA, "PS", "US PUBLIC SAFETY"},
+	{CTRY_UNITED_STATES, FCC8_FCCA, "US", "UNITED STATES"},
 	{CTRY_URUGUAY, FCC2_WORLD, "UY", "URUGUAY"},
 	{CTRY_UZBEKISTAN, ETSI3_WORLD, "UZ", "UZBEKISTAN"},
 	{CTRY_VANUATU, FCC3_WORLD, "VU", "VANUATU"},
@@ -385,7 +296,7 @@ static const struct country_code_to_reg_dmn g_all_countries[] = {
 	{CTRY_WALLIS_AND_FUTUNA, ETSI1_WORLD, "WF" "WALLIS"},
 	{CTRY_YEMEN, NULL1_WORLD, "YE", "YEMEN"},
 	{CTRY_ZIMBABWE, ETSI1_WORLD, "ZW", "ZIMBABWE"},
-	{CTRY_JAPAN14, MKK5_MKKA2, "JP", "JAPAN"},
+	{CTRY_JAPAN15, MKK5_MKKC, "JP", "JAPAN"},
 	{CTRY_XA, MKK5_MKKA2, "XA", "JAPAN PASSIVE"}
 };
 
@@ -401,6 +312,8 @@ static const struct reg_dmn g_reg_dmns[] = {
 	{FCC9, FCC},
 	{FCC10, FCC},
 	{FCC11, FCC},
+	{FCC13, FCC},
+	{FCC14, FCC},
 	{ETSI1, ETSI},
 	{ETSI2, ETSI},
 	{ETSI3, ETSI},
@@ -427,12 +340,12 @@ static const struct reg_dmn g_reg_dmns[] = {
 	{APL14, FCC},
 	{APL15, FCC},
 	{APL16, FCC},
+	{APL17, FCC},
+	{APL20, ETSI},
+	{APL23, ETSI},
 	{NULL1, NO_CTL},
 	{MKK3, MKK},
-	{MKK4, MKK},
 	{MKK5, MKK},
-	{MKK9, MKK},
-	{MKK10, MKK},
 	{MKK11, MKK},
 	{WORLD, ETSI},
 	{FCCA, FCC},
@@ -464,6 +377,63 @@ struct reg_dmn_tables g_reg_dmn_tbl = {
 	QDF_ARRAY_SIZE(g_reg_dmns),
 };
 
+/*
+ *  ETSI is updating EN 301 893, which specifies 5 GHz channel access
+ *  in Europe
+ */
+static const char etsi_europe_country[][2] = {
+	{'A', 'T'},
+	{'B', 'E'},
+	{'B', 'G'},
+	{'C', 'Z'},
+	{'D', 'K'},
+	{'E', 'E'},
+	{'F', 'R'},
+
+	{'D', 'E'},
+	{'I', 'S'},
+	{'I', 'E'},
+	{'I', 'T'},
+	{'E', 'L'},
+	{'E', 'S'},
+	{'C', 'Y'},
+
+	{'L', 'V'},
+	{'L', 'I'},
+	{'L', 'T'},
+	{'L', 'U'},
+	{'H', 'U'},
+	{'M', 'T'},
+	{'N', 'L'},
+
+	{'N', 'O'},
+	{'P', 'L'},
+	{'P', 'T'},
+	{'R', 'O'},
+	{'S', 'I'},
+	{'S', 'K'},
+	{'T', 'R'},
+
+	{'F', 'I'},
+	{'S', 'E'},
+	{'C', 'H'},
+	{'U', 'K'},
+	{'H', 'R'},
+};
+
+bool cds_is_etsi_europe_country(uint8_t *country)
+{
+	int32_t i;
+
+	for (i = 0; i < QDF_ARRAY_SIZE(etsi_europe_country); i++) {
+		if (country[0] == etsi_europe_country[i][0] &&
+		    country[1] == etsi_europe_country[i][1])
+			return true;
+	}
+
+	return false;
+}
+
 /**
  * get_bdf_reg_dmn() - get regulatory domain from BDF
  * @reg_dmn: BDF regulatory domain
@@ -487,6 +457,7 @@ static bool is_reg_dmn_valid(uint16_t reg_dmn)
 
 	if (reg_dmn & CTRY_FLAG) {
 		uint16_t cc = reg_dmn & ~CTRY_FLAG;
+
 		for (i = 0; i < g_reg_dmn_tbl.all_countries_cnt; i++)
 			if (g_reg_dmn_tbl.all_countries[i].country_code == cc)
 				return true;
@@ -497,8 +468,7 @@ static bool is_reg_dmn_valid(uint16_t reg_dmn)
 				return true;
 	}
 
-	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-		  "invalid regulatory domain/country code 0x%x", reg_dmn);
+	cds_err("invalid regulatory domain/country code 0x%x", reg_dmn);
 
 	return false;
 }
@@ -666,8 +636,7 @@ int32_t cds_fill_some_regulatory_info(struct regulatory *reg)
 	if (country_code != CTRY_DEFAULT) {
 		country = find_country(country_code);
 		if (!country) {
-			QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-				  "not a valid country code");
+			cds_err("not a valid country code");
 			return -EINVAL;
 		}
 
@@ -676,8 +645,7 @@ int32_t cds_fill_some_regulatory_info(struct regulatory *reg)
 
 	reg->regpair = get_reg_dmn_pair(reg_dmn);
 	if (!reg->regpair) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "no regpair is found, can not proceeed");
+		cds_err("no regpair is found, can not proceeed");
 		return -EINVAL;
 	}
 
@@ -707,28 +675,29 @@ void cds_fill_and_send_ctl_to_fw(struct regulatory *reg)
 {
 	const struct reg_dmn *reg_dmn_2g = NULL;
 	const struct reg_dmn *reg_dmn_5g = NULL;
-	int8_t ctl_2g, ctl_5g;
+	uint8_t ctl_2g, ctl_5g;
 	const struct reg_dmn_pair *regpair;
 	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
 
 	if (!wma) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "unable to get WMA handle");
+		cds_err("unable to get WMA handle");
 		return;
 	}
 
+	if (!reg->regpair) {
+		cds_err(FL("no regpair is found, can not proceed"));
+		return;
+	}
 	regpair = reg->regpair;
 	reg_dmn_2g = get_reg_dmn(regpair->reg_dmn_2ghz);
 	if (!reg_dmn_2g) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "failed to get regdmn 2G");
+		cds_err("failed to get regdmn 2G");
 		return;
 	}
 
 	reg_dmn_5g = get_reg_dmn(regpair->reg_dmn_5ghz);
 	if (!reg_dmn_5g) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "failed to get regdmn 5G");
+		cds_err("failed to get regdmn 5G");
 		return;
 	}
 
@@ -741,161 +710,4 @@ void cds_fill_and_send_ctl_to_fw(struct regulatory *reg)
 
 	wma_send_regdomain_info_to_fw(reg->reg_domain, regpair->reg_dmn_2ghz,
 				      regpair->reg_dmn_5ghz, ctl_2g, ctl_5g);
-}
-
-/**
- * cds_set_wma_dfs_region() - to set the dfs region to wma
- * @reg: the regulatory handle
- *
- * Return: none
- */
-void cds_set_wma_dfs_region(uint8_t dfs_region)
-{
-	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
-
-	if (!wma) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "unable to get WMA handle");
-		return;
-	}
-
-	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_INFO,
-		  "dfs_region: %d", dfs_region);
-
-	wma_set_dfs_region(wma, dfs_region);
-}
-
-/**
- * cds_reg_dmn_get_chanwidth_from_opclass() - return chan width based on opclass
- * @country: country name
- * @channel: operating channel
- * @opclass: operating class
- *
- * Given a value of country, channel and opclass this API will return value of
- * channel width.
- *
- * Return: channel width
- *
- */
-uint16_t cds_reg_dmn_get_chanwidth_from_opclass(uint8_t *country,
-						uint8_t channel,
-						uint8_t opclass)
-{
-	const struct reg_dmn_op_class_map_t *class;
-	uint16_t i;
-
-	if (!qdf_mem_cmp(country, "US", 2))
-		class = us_op_class;
-	else if (!qdf_mem_cmp(country, "EU", 2))
-		class = euro_op_class;
-	else if (!qdf_mem_cmp(country, "JP", 2))
-		class = japan_op_class;
-	else
-		class = global_op_class;
-
-	while (class->op_class) {
-		if (opclass == class->op_class) {
-			for (i = 0;
-			  (i < MAX_CHANNELS_PER_OPERATING_CLASS &&
-			   class->channels[i]);
-			   i++) {
-				if (channel == class->channels[i])
-					return class->ch_spacing;
-			}
-		}
-		class++;
-	}
-
-	return 0;
-}
-
-
-/**
- * cds_reg_dmn_get_opclass_from_channel() - get operating class from channel
- * @country: the complete reg domain
- * @channel: channel number
- * @offset: the value of offset
- *
- * Return: operating class
- */
-uint16_t cds_reg_dmn_get_opclass_from_channel(uint8_t *country, uint8_t channel,
-					      uint8_t offset)
-{
-	const struct reg_dmn_op_class_map_t *class = NULL;
-	uint16_t i = 0;
-
-	if (!qdf_mem_cmp(country, "US", 2)) {
-		class = us_op_class;
-	} else if (!qdf_mem_cmp(country, "EU", 2)) {
-		class = euro_op_class;
-	} else if (!qdf_mem_cmp(country, "JP", 2)) {
-		class = japan_op_class;
-	} else {
-		class = global_op_class;
-	}
-
-	while (class->op_class) {
-		if ((offset == class->offset) || (offset == BWALL)) {
-			for (i = 0;
-			     (i < MAX_CHANNELS_PER_OPERATING_CLASS &&
-			      class->channels[i]); i++) {
-				if (channel == class->channels[i])
-					return class->op_class;
-			}
-		}
-		class++;
-	}
-
-	return 0;
-}
-
-/**
- * cds_reg_dmn_set_curr_opclasses() - set the current operating class
- * @num_classes: number of classes
- * @class: operating class
- *
- * Return: error code
- */
-uint16_t cds_reg_dmn_set_curr_opclasses(uint8_t num_classes, uint8_t *class)
-{
-	uint8_t i;
-
-	if (CDS_MAX_SUPP_OPER_CLASSES < num_classes) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "invalid num classes %d", num_classes);
-		return -1;
-	}
-
-	for (i = 0; i < num_classes; i++) {
-		reg_dmn_curr_supp_opp_classes.classes[i] = class[i];
-	}
-
-	reg_dmn_curr_supp_opp_classes.num_classes = num_classes;
-
-	return 0;
-}
-
-/**
- * cds_reg_dmn_get_curr_opclasses() - get the current operating class
- * @num_classes: number of classes
- * @class: operating class
- *
- * Return: error code
- */
-uint16_t cds_reg_dmn_get_curr_opclasses(uint8_t *num_classes, uint8_t *class)
-{
-	uint8_t i;
-
-	if (!num_classes || !class) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "either num_classes or class is null");
-		return -1;
-	}
-
-	for (i = 0; i < reg_dmn_curr_supp_opp_classes.num_classes; i++)
-		class[i] = reg_dmn_curr_supp_opp_classes.classes[i];
-
-	*num_classes = reg_dmn_curr_supp_opp_classes.num_classes;
-
-	return 0;
 }

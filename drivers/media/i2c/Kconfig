@@ -233,6 +233,18 @@ config VIDEO_ADV7481
 	  To compile this driver as a module, choose M here: the
 	  module will be called adv7481.
 
+config VIDEO_TVTUNER
+	tristate "Analog Tv Tuner driver"
+	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
+	---help---
+	  Support for the Dummy TV Tuner.
+
+	  This is a Dummy TV Tuner Driver to Validate call flow
+	  from tv_input_test unit-test app.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tv-tuner.
+
 config VIDEO_BT819
 	tristate "BT819A VideoStream decoder"
 	depends on VIDEO_V4L2 && I2C
@@ -619,6 +631,7 @@ config VIDEO_S5K6A3
 config VIDEO_S5K4ECGX
         tristate "Samsung S5K4ECGX sensor support"
         depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	select CRC32
         ---help---
           This is a V4L2 sensor-level driver for Samsung S5K4ECGX 5M
           camera sensor with an embedded SoC image signal processor.

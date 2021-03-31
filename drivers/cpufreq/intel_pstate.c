@@ -285,14 +285,14 @@ static void intel_pstate_hwp_set(void)
 	int min, hw_min, max, hw_max, cpu, range, adj_range;
 	u64 value, cap;
 
-	rdmsrl(MSR_HWP_CAPABILITIES, cap);
-	hw_min = HWP_LOWEST_PERF(cap);
-	hw_max = HWP_HIGHEST_PERF(cap);
-	range = hw_max - hw_min;
-
 	get_online_cpus();
 
 	for_each_online_cpu(cpu) {
+		rdmsrl_on_cpu(cpu, MSR_HWP_CAPABILITIES, &cap);
+		hw_min = HWP_LOWEST_PERF(cap);
+		hw_max = HWP_HIGHEST_PERF(cap);
+		range = hw_max - hw_min;
+
 		rdmsrl_on_cpu(cpu, MSR_HWP_REQUEST, &value);
 		adj_range = limits->min_perf_pct * range / 100;
 		min = hw_min + adj_range;
@@ -368,13 +368,13 @@ static void __init intel_pstate_debug_expose_params(void)
 /************************** sysfs begin ************************/
 #define show_one(file_name, object)					\
 	static ssize_t show_##file_name					\
-	(struct kobject *kobj, struct attribute *attr, char *buf)	\
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)	\
 	{								\
 		return sprintf(buf, "%u\n", limits->object);		\
 	}
 
 static ssize_t show_turbo_pct(struct kobject *kobj,
-				struct attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct cpudata *cpu;
 	int total, no_turbo, turbo_pct;
@@ -390,7 +390,7 @@ static ssize_t show_turbo_pct(struct kobject *kobj,
 }
 
 static ssize_t show_num_pstates(struct kobject *kobj,
-				struct attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct cpudata *cpu;
 	int total;
@@ -401,7 +401,7 @@ static ssize_t show_num_pstates(struct kobject *kobj,
 }
 
 static ssize_t show_no_turbo(struct kobject *kobj,
-			     struct attribute *attr, char *buf)
+			     struct kobj_attribute *attr, char *buf)
 {
 	ssize_t ret;
 
@@ -414,7 +414,7 @@ static ssize_t show_no_turbo(struct kobject *kobj,
 	return ret;
 }
 
-static ssize_t store_no_turbo(struct kobject *a, struct attribute *b,
+static ssize_t store_no_turbo(struct kobject *a, struct kobj_attribute *b,
 			      const char *buf, size_t count)
 {
 	unsigned int input;
@@ -438,7 +438,7 @@ static ssize_t store_no_turbo(struct kobject *a, struct attribute *b,
 	return count;
 }
 
-static ssize_t store_max_perf_pct(struct kobject *a, struct attribute *b,
+static ssize_t store_max_perf_pct(struct kobject *a, struct kobj_attribute *b,
 				  const char *buf, size_t count)
 {
 	unsigned int input;
@@ -463,7 +463,7 @@ static ssize_t store_max_perf_pct(struct kobject *a, struct attribute *b,
 	return count;
 }
 
-static ssize_t store_min_perf_pct(struct kobject *a, struct attribute *b,
+static ssize_t store_min_perf_pct(struct kobject *a, struct kobj_attribute *b,
 				  const char *buf, size_t count)
 {
 	unsigned int input;
@@ -1361,6 +1361,11 @@ static inline bool intel_pstate_platform_pwr_mgmt_exists(void) { return false; }
 static inline bool intel_pstate_has_acpi_ppc(void) { return false; }
 #endif /* CONFIG_ACPI */
 
+static const struct x86_cpu_id hwp_support_ids[] __initconst = {
+	{ X86_VENDOR_INTEL, 6, X86_MODEL_ANY, X86_FEATURE_HWP },
+	{}
+};
+
 static int __init intel_pstate_init(void)
 {
 	int cpu, rc = 0;
@@ -1370,15 +1375,14 @@ static int __init intel_pstate_init(void)
 	if (no_load)
 		return -ENODEV;
 
+	if (x86_match_cpu(hwp_support_ids) && !no_hwp) {
+		copy_cpu_funcs(&core_params.funcs);
+		hwp_active++;
+		goto hwp_cpu_matched;
+	}
+
 	id = x86_match_cpu(intel_pstate_cpu_ids);
 	if (!id)
-		return -ENODEV;
-
-	/*
-	 * The Intel pstate driver will be ignored if the platform
-	 * firmware has its own power management modes.
-	 */
-	if (intel_pstate_platform_pwr_mgmt_exists())
 		return -ENODEV;
 
 	cpu_def = (struct cpu_defaults *)id->driver_data;
@@ -1389,16 +1393,19 @@ static int __init intel_pstate_init(void)
 	if (intel_pstate_msrs_not_valid())
 		return -ENODEV;
 
+hwp_cpu_matched:
+	/*
+	 * The Intel pstate driver will be ignored if the platform
+	 * firmware has its own power management modes.
+	 */
+	if (intel_pstate_platform_pwr_mgmt_exists())
+		return -ENODEV;
+
 	pr_info("Intel P-state driver initializing.\n");
 
 	all_cpu_data = vzalloc(sizeof(void *) * num_possible_cpus());
 	if (!all_cpu_data)
 		return -ENOMEM;
-
-	if (static_cpu_has_safe(X86_FEATURE_HWP) && !no_hwp) {
-		pr_info("intel_pstate: HWP enabled\n");
-		hwp_active++;
-	}
 
 	if (!hwp_active && hwp_only)
 		goto out;
@@ -1409,6 +1416,9 @@ static int __init intel_pstate_init(void)
 
 	intel_pstate_debug_expose_params();
 	intel_pstate_sysfs_expose_params();
+
+	if (hwp_active)
+		pr_info("intel_pstate: HWP enabled\n");
 
 	return rc;
 out:

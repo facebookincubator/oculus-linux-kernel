@@ -876,7 +876,7 @@ static int __vote_buses(struct venus_hfi_device *device,
 {
 	int rc = 0;
 	struct bus_info *bus = NULL;
-	struct vidc_bus_vote_data *new_data = NULL;
+	struct vidc_bus_vote_data *new_data = NULL, *old_data;
 
 	if (!num_data) {
 		dprintk(VIDC_DBG, "No vote data available\n");
@@ -894,10 +894,12 @@ static int __vote_buses(struct venus_hfi_device *device,
 	}
 
 no_data_count:
-	kfree(device->bus_vote.data);
+	device->bus_vote.data_count = 0;
+	old_data = device->bus_vote.data;
 	device->bus_vote.data = new_data;
 	device->bus_vote.data_count = num_data;
 	device->bus_vote.imem_size = device->res->imem_size;
+	kfree(old_data);
 
 	venus_hfi_for_each_bus(device, bus) {
 		if (bus && bus->devfreq) {
@@ -1633,6 +1635,7 @@ static int __scale_clocks(struct venus_hfi_device *device,
 
 	return rc;
 }
+
 static int venus_hfi_scale_clocks(void *dev, int load,
 					struct vidc_clk_scale_data *data,
 					unsigned long instant_bitrate)
@@ -1657,6 +1660,41 @@ static int venus_hfi_scale_clocks(void *dev, int load,
 exit:
 	mutex_unlock(&device->lock);
 	return rc;
+}
+
+static void __save_clock_rate(struct venus_hfi_device *device, bool reset)
+{
+	struct clock_info *cl;
+
+	venus_hfi_for_each_clock(device, cl) {
+		if (cl->has_scaling) {
+			cl->rate_on_enable =
+				reset ? 0 : clk_get_rate(cl->clk);
+			dprintk(VIDC_PROF, "Saved clock %s rate %lu\n",
+					cl->name, cl->rate_on_enable);
+		}
+	}
+}
+
+static void __restore_clock_rate(struct venus_hfi_device *device)
+{
+	struct clock_info *cl;
+
+	venus_hfi_for_each_clock(device, cl) {
+		if (cl->has_scaling && cl->rate_on_enable) {
+			int rc;
+
+			rc = __set_clk_rate(device, cl, cl->rate_on_enable);
+			if (rc)
+				dprintk(VIDC_ERR,
+				"Failed to restore clock %s rate %lu\n",
+					cl->name, cl->rate_on_enable);
+			else
+				dprintk(VIDC_DBG,
+					"Restored clock %s rate %lu\n",
+					cl->name, cl->rate_on_enable);
+		}
+	}
 }
 
 /* Writes into cmdq without raising an interrupt */
@@ -3782,8 +3820,7 @@ err_no_work:
 	for (i = 0; !IS_ERR_OR_NULL(device->response_pkt) &&
 		i < num_responses; ++i) {
 		struct msm_vidc_cb_info *r = &device->response_pkt[i];
-
-		if (!__core_in_valid_state(device)) {
+		 if (!__core_in_valid_state(device)) {
 			dprintk(VIDC_ERR,
 				"Ignore responses from %d to %d as device is in invalid state",
 				(i + 1), num_responses);
@@ -4452,6 +4489,7 @@ static inline int __suspend(struct venus_hfi_device *device)
 		goto err_tzbsp_suspend;
 	}
 
+	__save_clock_rate(device, false);
 	__venus_power_off(device, true);
 	dprintk(VIDC_PROF, "Venus power collapsed\n");
 	return rc;
@@ -4481,6 +4519,7 @@ static inline int __resume(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Failed to power on venus\n");
 		goto err_venus_power_on;
 	}
+	__restore_clock_rate(device);
 
 	/* Reboot the firmware */
 	rc = __tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
@@ -4518,6 +4557,7 @@ exit:
 err_reset_core:
 	__tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
 err_set_video_state:
+	__save_clock_rate(device, true);
 	__venus_power_off(device, true);
 err_venus_power_on:
 	dprintk(VIDC_ERR, "Failed to resume from power collapse\n");
@@ -4576,6 +4616,7 @@ fail_protect_mem:
 		subsystem_put(device->resources.fw.cookie);
 	device->resources.fw.cookie = NULL;
 fail_load_fw:
+	__save_clock_rate(device, true);
 	__venus_power_off(device, true);
 fail_venus_power_on:
 fail_init_pkt:
@@ -4597,6 +4638,7 @@ static void __unload_fw(struct venus_hfi_device *device)
 	__vote_buses(device, NULL, 0);
 	subsystem_put(device->resources.fw.cookie);
 	__interface_queues_release(device);
+	__save_clock_rate(device, true);
 	__venus_power_off(device, false);
 	device->resources.fw.cookie = NULL;
 	__deinit_resources(device);

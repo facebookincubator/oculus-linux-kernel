@@ -1,8 +1,6 @@
 /*
- * Copyright (c) 2011-2012, 2014-2015 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2012, 2014-2015, 2017-2018, 2020 The Linux Foundation. All
+ * rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +15,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -41,83 +33,34 @@
 #define LOG2    5
 #define LOG3    6
 #define LOG4    7
-
-#ifdef WLAN_MDM_CODE_REDUCTION_OPT
-#ifdef PE_DEBUG_LOGE
-#define PELOGE(p) { p }
-#else
-#define PELOGE(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOGW
-#define PELOGW(p) { p }
-#else
-#define PELOGW(p) { }
-#endif
-
-#define PELOG1(p) { }
-#define PELOG2(p) { }
-#define PELOG3(p) { }
-#define PELOG4(p) { }
-
-#else                           /* WLAN_MDM_CODE_REDUCTION_OPT */
-
-#ifdef PE_DEBUG_LOGE
-#define PELOGE(p) { p }
-#else
-#define PELOGE(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOGW
-#define PELOGW(p) { p }
-#else
-#define PELOGW(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOG1
-#define PELOG1(p) { p }
-#else
-#define PELOG1(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOG2
-#define PELOG2(p) { p }
-#else
-#define PELOG2(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOG3
-#define PELOG3(p) { p }
-#else
-#define PELOG3(p) { }
-#endif
-
-#ifdef PE_DEBUG_LOG4
-#define PELOG4(p) { p }
-#else
-#define PELOG4(p) { }
-#endif
-
-#endif /* WLAN_MDM_CODE_REDUCTION_OPT */
+#define LOGD    8
 
 #define MAC_ADDR_ARRAY(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
 #define MAC_ADDRESS_STR "%02x:%02x:%02x:%02x:%02x:%02x"
 
-#define pe_log(level, args...) QDF_TRACE(QDF_MODULE_ID_PE, level, ## args)
-#define pe_logfl(level, format, args...) pe_log(level, FL(format), ## args)
+#define pe_alert_rl(params...) QDF_TRACE_FATAL_RL(QDF_MODULE_ID_PE, params)
+#define pe_err_rl(params...) QDF_TRACE_ERROR_RL(QDF_MODULE_ID_PE, params)
+#define pe_warn_rl(params...) QDF_TRACE_WARN_RL(QDF_MODULE_ID_PE, params)
+#define pe_info_rl(params...) QDF_TRACE_INFO_RL(QDF_MODULE_ID_PE, params)
+#define pe_debug_rl(params...) QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_PE, params)
 
-#define pe_alert(format, args...) \
-		pe_logfl(QDF_TRACE_LEVEL_FATAL, format, ## args)
-#define pe_err(format, args...) \
-		pe_logfl(QDF_TRACE_LEVEL_ERROR, format, ## args)
-#define pe_warn(format, args...) \
-		pe_logfl(QDF_TRACE_LEVEL_WARN, format, ## args)
-#define pe_info(format, args...) \
-		pe_logfl(QDF_TRACE_LEVEL_INFO, format, ## args)
-#define pe_debug(format, args...) \
-		pe_logfl(QDF_TRACE_LEVEL_DEBUG, format, ## args)
+#define pe_alert(params...) QDF_TRACE_FATAL(QDF_MODULE_ID_PE, params)
+#define pe_err(params...) QDF_TRACE_ERROR(QDF_MODULE_ID_PE, params)
+#define pe_warn(params...) QDF_TRACE_WARN(QDF_MODULE_ID_PE, params)
+#define pe_info(params...) QDF_TRACE_INFO(QDF_MODULE_ID_PE, params)
+#define pe_debug(params...) QDF_TRACE_DEBUG(QDF_MODULE_ID_PE, params)
 
-#define PE_ENTER() pe_logfl(QDF_TRACE_LEVEL_DEBUG, "enter")
-#define PE_EXIT() pe_logfl(QDF_TRACE_LEVEL_DEBUG, "exit")
+#define pe_nofl_alert(params...) \
+	QDF_TRACE_FATAL_NO_FL(QDF_MODULE_ID_PE, params)
+#define pe_nofl_err(params...) \
+	QDF_TRACE_ERROR_NO_FL(QDF_MODULE_ID_PE, params)
+#define pe_nofl_warn(params...) \
+	QDF_TRACE_WARN_NO_FL(QDF_MODULE_ID_PE, params)
+#define pe_nofl_info(params...) \
+	QDF_TRACE_INFO_NO_FL(QDF_MODULE_ID_PE, params)
+#define pe_nofl_debug(params...) \
+	QDF_TRACE_DEBUG_NO_FL(QDF_MODULE_ID_PE, params)
 
+#define PE_ENTER() pe_debug("enter")
+#define PE_EXIT() pe_debug("exit")
 #endif
